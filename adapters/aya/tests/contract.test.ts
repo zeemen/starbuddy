@@ -92,8 +92,24 @@ test("契约里的阿鸦示例请求能被适配器按契约解析（题目是�
   const doc = parse(readFileSync(DEFAULT_CONTRACT_PATH, "utf8")) as Json;
   const ex = structuredClone(doc.components.examples.GradeRequestAyaObjective.value);
   assert.deepEqual(contract.validate("GradeRequest", ex), { ok: true });
-  ex.context.content_version.content_version = "0.1.0";
+  ex.context.content_version = { ...realPack.pack.curriculum };
   const r = adapter.handle("POST", "grade", ex);
   assert.equal(r.status, 404);
   assert.equal((r.body as Json).code, "ITEM_NOT_FOUND");
+});
+
+test("content_version 六段都要一致，否则 CONTENT_VERSION_NOT_FOUND", () => {
+  for (const [k, v] of [["region", "suzhou"], ["exam_year", 2030], ["grade", 7], ["textbook_version", "bubian-2024"]] as const) {
+    const body = gradeBody("Q-EQU-U03-D-001", { text: "1" }) as Json;
+    body.context.content_version[k] = v;
+    const r = adapter.handle("POST", "grade", body);
+    assert.equal(r.status, 404, k);
+    assert.equal((r.body as Json).code, "CONTENT_VERSION_NOT_FOUND");
+  }
+});
+
+test("选择题：重复的 key 拒绝；单选只能选一个", () => {
+  const item = realPack.pack.items.find((i) => i.format === "single")!;
+  const k = item.options![0]!.key;
+  assert.equal(adapter.handle("POST", "grade", gradeBody(item.id, { choice: [k, k] })).status, 422);
 });

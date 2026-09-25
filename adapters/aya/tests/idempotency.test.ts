@@ -44,3 +44,11 @@ test("不同 key：不同的 evidence_id；diagnose 里每道作答的证据 ID 
   const d = a.handle("POST", "diagnose", { context: context(), mode: "intake", attempts: [att, att, att] }).body as Json;
   assert.equal(new Set(d.evidence_ids).size, 6);
 });
+
+test("appeal 缺省与 appeal: false 视为同一请求体", () => {
+  const body = gradeBody("Q-EQU-U03-D-001", { text: "9" }) as Json;
+  const explicit = { ...structuredClone(body), appeal: false };
+  const a = makeAdapter().handle("POST", "grade", body).body as Json;
+  const b = makeAdapter().handle("POST", "grade", explicit).body as Json;
+  assert.deepEqual(a.evidence_ids, b.evidence_ids);
+});

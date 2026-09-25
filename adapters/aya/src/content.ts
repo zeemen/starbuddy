@@ -55,6 +55,11 @@ export function indexPack(pack: ContentPack): LoadedPack {
   const problems: string[] = [];
   if (pack.format !== PACK_FORMAT) problems.push(`format 应为 ${PACK_FORMAT}`);
   if (!VERSION_PART.test(pack.pack_version)) problems.push("pack_version 不符合 SourceVersion 的版本格式");
+  const c = pack.curriculum;
+  if (!Number.isInteger(c.exam_year) || !Number.isInteger(c.grade)) problems.push("curriculum 的 exam_year、grade 必须是整数");
+  if (!/^[a-z][a-z0-9\-]{1,31}$/.test(c.region) || !/^[a-z0-9][a-z0-9\-]{1,31}$/.test(c.textbook_version) || !/^\d+\.\d+\.\d+$/.test(c.content_version)) {
+    problems.push("curriculum 的六段标识不符合契约 ContentVersion 格式");
+  }
   const nodeIds = new Set(pack.nodes.map((n) => n.id));
   const trapByCode = new Map<string, RootCause>();
   for (const t of pack.traps) {

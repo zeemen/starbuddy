@@ -49,3 +49,25 @@ test("非法 JSON 400、请求体过大 413、未实现方法 501、前缀之外
   assert.equal((await post("teach", "{}")).status, 501);
   assert.equal((await fetch(base.replace("/plugin/v0", "/grade"), { headers: auth })).status, 404);
 });
+
+test("畸形请求目标与中途断开的请求体都不会让进程崩溃", async () => {
+  const net = await import("node:net");
+  const port = (server.address() as AddressInfo).port;
+  const raw = (payload: string, end = true) =>
+    new Promise<string>((resolve) => {
+      const s = net.connect(port, "127.0.0.1", () => {
+        s.write(payload);
+        if (!end) setTimeout(() => s.destroy(), 50);
+      });
+      let got = "";
+      s.on("data", (d) => (got += d));
+      s.on("close", () => resolve(got));
+      s.on("error", () => resolve(got));
+    });
+  const bad = await raw("GET http://[ HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n");
+  assert.match(bad, /^HTTP\/1\.1 400/);
+  await raw(`POST /plugin/v0/grade HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer ${CREDENTIAL}\r\nContent-Length: 1000\r\n\r\n{"cont`, false);
+  // 服务仍然可用
+  const r = await fetch(`${base}/capabilities`, { headers: auth });
+  assert.equal(r.status, 200);
+});

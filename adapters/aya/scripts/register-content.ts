@@ -6,9 +6,13 @@
 //   psql -X -v ON_ERROR_STOP=1 -f /tmp/aya-register.sql    # 目标库由执行人决定
 //
 // 只增不改：已登记的行 ON CONFLICT DO NOTHING。准入状态的升级（例如来源核实后改为 admitted）属于
-// 发布闸门，不由本脚本做。
+// 发布闸门，不由本脚本做：新题最高登记为 pending_review。准入降级（例如改为 rejected）同样不由本脚本同步，
+// 要走发布流程（lessons 待人确认）。
 import { fileURLToPath } from "node:url";
-import { loadPack, type LoadedPack } from "../src/content.ts";
+import { loadPack, type Admission, type LoadedPack } from "../src/content.ts";
+
+/** 登记时的准入状态：内容包说 admitted 也只登记为 pending_review（准入升级属于发布闸门） */
+export const registeredAdmission = (a: Admission): Admission => (a === "admitted" ? "pending_review" : a);
 
 const lit = (s: string) => `'${s.replace(/'/g, "''")}'`;
 
@@ -19,7 +23,8 @@ export function registrationSql({ pack }: LoadedPack): string {
     `textbook_version = ${lit(c.textbook_version)} AND subject = 'aya' AND content_version = ${lit(c.content_version)}`;
   const nodes = pack.nodes.map((n) => `(${lit(n.id)})`).join(",\n  ");
   const items = pack.items
-    .map((it) => `(${lit(it.id)}, ${lit(it.mainNodes[0]!)}, ${lit(it.admission)}::platform.admission)`)
+    // 发布闸门：登记时最高只到 pending_review，admitted 只能由发布流程升级
+    .map((it) => `(${lit(it.id)}, ${lit(it.mainNodes[0]!)}, ${lit(registeredAdmission(it.admission))}::platform.admission)`)
     .join(",\n  ");
   return `-- 生成自 adapters/aya/content/pack.json（${pack.pack_name}@${pack.pack_version}，legacy ${pack.legacy_commit}）
 -- ${pack.items.length} 道题、${pack.nodes.length} 个能力点。以 starbuddy_learning 身份写入；只增不改。
@@ -38,8 +43,7 @@ SELECT 'aya', v.local_id, cv.id, v.local_id
 ON CONFLICT (subject, local_id) DO NOTHING;
 
 INSERT INTO platform.item (subject, item_id, curriculum_version_id, skill_local_id, admission, admitted_at)
-SELECT 'aya', v.item_id, cv.id, v.skill_local_id, v.admission,
-       CASE WHEN v.admission = 'admitted' THEN now() END
+SELECT 'aya', v.item_id, cv.id, v.skill_local_id, v.admission, NULL
   FROM (SELECT id FROM platform.curriculum_version WHERE ${cvWhere}) cv,
        (VALUES
   ${items}) AS v(item_id, skill_local_id, admission)

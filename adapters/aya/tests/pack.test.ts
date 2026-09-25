@@ -1,7 +1,7 @@
 // 内容包与登记脚本。
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { registrationSql } from "../scripts/register-content.ts";
+import { registeredAdmission, registrationSql } from "../scripts/register-content.ts";
 import { indexPack } from "../src/content.ts";
 import { keysOf, realPack } from "./helpers.ts";
 
@@ -35,4 +35,23 @@ test("登记 SQL：以 starbuddy_learning 身份写入，全部题目登记为 s
   assert.equal((sql.match(/'source_unverified'::platform\.admission/g) ?? []).length, 721);
   assert.equal((sql.match(/ON CONFLICT .* DO NOTHING;/g) ?? []).length, 3);
   assert.doesNotMatch(sql, /\b(UPDATE|DELETE|TRUNCATE|DROP)\b/);
+  assert.doesNotMatch(sql, /'admitted'::platform\.admission/);
+});
+
+test("登记不绕过发布闸门：内容包里 admitted 的题也只登记为 pending_review", () => {
+  assert.equal(registeredAdmission("admitted"), "pending_review");
+  assert.equal(registeredAdmission("source_unverified"), "source_unverified");
+  assert.equal(registeredAdmission("rejected"), "rejected");
+});
+
+test("适配器源码不引用测试代码、不连数据库（规则 1）", async () => {
+  const { readdirSync, readFileSync } = await import("node:fs");
+  const walk = (d: string): string[] =>
+    readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(`${d}/${e.name}`) : [`${d}/${e.name}`]));
+  for (const f of walk(new URL("../src", import.meta.url).pathname)) {
+    const src = readFileSync(f, "utf8");
+    assert.doesNotMatch(src, /from\s+"[^"]*tests\//, f);
+    assert.doesNotMatch(src, /from\s+"(pg|postgres|@supabase\/[^"]*)"/, f);
+    assert.doesNotMatch(src, /\bplatform\.[a-z_]+/, f);
+  }
 });

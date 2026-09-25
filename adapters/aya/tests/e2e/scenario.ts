@@ -64,7 +64,7 @@ const attr = A.resp.result.error_attributions[0];
 check(`EXISTS (SELECT 1 FROM platform.error_attribution a
           WHERE a.student_id = ${lit(STUDENT)} AND a.subject_category = ${lit(attr.subject_category)}
             AND a.cross_subject_category = ${lit(attr.cross_subject_category)} AND a.evidence_ids = ${uuids([aResponse])}
-            AND a.algorithm_version = 'aya-trap-attr@0.1.0' AND a.confidence = 0.8)`,
+            AND a.algorithm_version = 'aya-trap-attr@0.1.0-tax0.9.0' AND a.confidence = 0.8)`,
   `A：error_attribution 查到 ${attr.subject_category} → ${attr.cross_subject_category}，证据 ID 与响应一致`);
 
 // ---------- B：选择题答对 ----------

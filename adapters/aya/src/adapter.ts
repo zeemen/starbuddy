@@ -19,12 +19,15 @@ import {
 } from "./verifier.ts";
 
 export const ADAPTER_VERSION = "0.1.0";
-export const TRAP_ATTRIBUTION_ALGORITHM = "aya-trap-attr@0.1.0";
+export const TRAP_ATTRIBUTION_ALGORITHM_BASE = "aya-trap-attr@0.1.0";
+/** 错因的算法版本同时带映射表版本（规则 6）：映射表签字后改动，已落库的错因仍能分清按哪一版映射 */
+export const trapAttributionAlgorithm = (taxonomyVersion: string) => `${TRAP_ATTRIBUTION_ALGORITHM_BASE}-tax${taxonomyVersion}`;
 export const TRAP_ATTRIBUTION_CONFIDENCE = 0.8;
 export const DIAGNOSE_ALGORITHM = "aya-diag@0.1.0";
 export const GUESSED_MAX_CONFIDENCE = 0.3;
 export const HEAVY_HINT_LEVEL = 4;
 export const HEAVY_HINT_MAX_CONFIDENCE = 0.5;
+export const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 
 // ---------- 契约里用到的类型（只列本适配器读写的字段） ----------
 interface RequestContext {
@@ -35,7 +38,7 @@ interface RequestContext {
   idempotency_key: string;
   usage_id?: string;
   contract_version: string;
-  content_version?: { subject: string; content_version: string };
+  content_version?: Record<string, string | number>;
 }
 interface AttemptInput {
   attempt_id?: string;
@@ -98,6 +101,8 @@ export interface LogRecord {
   code?: ProblemCode;
   request_id?: string;
   duration_ms: number;
+  /** 只在 500 时出现：异常的类名（不含消息，消息可能带内容） */
+  error_class?: string;
 }
 
 export interface AdapterDeps {
@@ -105,7 +110,7 @@ export interface AdapterDeps {
   taxonomy: AyaTaxonomy;
   contract: ContractValidator;
   log?: (record: LogRecord) => void;
-  /** 幂等缓存条数上限（用于同 key 不同请求体的冲突检测；ID 本身是确定性派生的） */
+  /** 幂等缓存条数上限（只存指纹，用于同 key 不同请求体的冲突检测；ID 本身是确定性派生的） */
   idempotencyCacheSize?: number;
 }
 
@@ -128,7 +133,7 @@ export function createAdapter(deps: AdapterDeps) {
   const { content, taxonomy, contract } = deps;
   const log = deps.log ?? (() => {});
   const cacheSize = deps.idempotencyCacheSize ?? 10_000;
-  const idempotency = new Map<string, { fingerprint: string; result: HandlerResult }>();
+  const idempotency = new Map<string, { fingerprint: string; at: number }>();
 
   const problem = (e: ProblemError, requestId?: string): HandlerResult => {
     const body: Record<string, unknown> = {
@@ -155,7 +160,9 @@ export function createAdapter(deps: AdapterDeps) {
       if (requireContentVersion) throw new ProblemError(400, "INVALID_REQUEST", "content_version is required");
       return;
     }
-    if (cv.subject !== "aya" || cv.content_version !== content.pack.curriculum.content_version) {
+    const served = content.pack.curriculum;
+    const same = (Object.keys(served) as (keyof typeof served)[]).every((k) => cv[k] === served[k]);
+    if (!same) {
       throw new ProblemError(404, "CONTENT_VERSION_NOT_FOUND", "content_version is not served by this adapter");
     }
   };
@@ -181,7 +188,8 @@ export function createAdapter(deps: AdapterDeps) {
     if (!r.choice) throw new ProblemError(422, "INVALID_REQUEST", "choice item expects response.choice");
     const keys = new Set((item.options ?? []).map((o) => o.key));
     if (!r.choice.every((k) => keys.has(k))) throw new ProblemError(422, "INVALID_REQUEST", "response.choice contains an unknown option key");
-    if (item.format === "single" && new Set(r.choice).size !== 1) {
+    if (new Set(r.choice).size !== r.choice.length) throw new ProblemError(422, "INVALID_REQUEST", "response.choice contains duplicate keys");
+    if (item.format === "single" && r.choice.length !== 1) {
       throw new ProblemError(422, "INVALID_REQUEST", "single choice item expects exactly one option");
     }
     return verifyChoice(item, r.choice);
@@ -225,7 +233,7 @@ export function createAdapter(deps: AdapterDeps) {
         cross_subject_category: entry.crossSubject,
         confidence: TRAP_ATTRIBUTION_CONFIDENCE,
         evidence_ids: [responseEvidenceId],
-        algorithm_version: TRAP_ATTRIBUTION_ALGORITHM,
+        algorithm_version: trapAttributionAlgorithm(taxonomy.version),
       });
     }
     return out;
@@ -244,20 +252,26 @@ export function createAdapter(deps: AdapterDeps) {
     };
   };
 
-  /** 幂等包装：同 key 同请求体 → 同一响应；同 key 不同请求体 → IDEMPOTENCY_CONFLICT */
+  /**
+   * 幂等包装：同 key 同请求体 → 同一响应；同 key 不同请求体 → IDEMPOTENCY_CONFLICT。
+   * 缓存里只存请求体指纹（不存响应，因此不在内存里长期保留学生原文）。命中时重新计算：
+   * 证据 ID 由 key 与指纹确定性派生、判分是确定性的，所以重算结果与第一次完全相同。
+   */
   const idempotent = (method: string, key: string, fingerprint: string, run: () => HandlerResult): HandlerResult => {
     const cacheKey = `${method}\0${key}`;
-    const hit = idempotency.get(cacheKey);
-    if (hit) {
-      if (hit.fingerprint !== fingerprint) {
-        throw new ProblemError(409, "IDEMPOTENCY_CONFLICT", "idempotency_key was used with a different request body");
-      }
-      return hit.result;
+    const now = Date.now();
+    let hit = idempotency.get(cacheKey);
+    if (hit && now - hit.at > IDEMPOTENCY_TTL_MS) {
+      idempotency.delete(cacheKey);
+      hit = undefined;
+    }
+    if (hit && hit.fingerprint !== fingerprint) {
+      throw new ProblemError(409, "IDEMPOTENCY_CONFLICT", "idempotency_key was used with a different request body");
     }
     const result = run();
-    if (result.status === 200) {
+    if (result.status === 200 && !hit) {
       if (idempotency.size >= cacheSize) idempotency.delete(idempotency.keys().next().value!);
-      idempotency.set(cacheKey, { fingerprint, result });
+      idempotency.set(cacheKey, { fingerprint, at: now });
     }
     return result;
   };
@@ -295,7 +309,8 @@ export function createAdapter(deps: AdapterDeps) {
     if (req.rubric_version !== VERIFIER_REF) {
       throw new ProblemError(400, "INVALID_REQUEST", `rubric_version must be ${VERIFIER_REF}`);
     }
-    const fp = requestFingerprint(req as unknown as Parameters<typeof requestFingerprint>[0]);
+    // appeal 缺省等于 false：归一后再算指纹，两种写法得到同一批 evidence_id
+    const fp = requestFingerprint({ ...req, appeal: req.appeal === true } as unknown as Parameters<typeof requestFingerprint>[0]);
     return idempotent("grade", req.context.idempotency_key, fp, () => {
       const item = findItem(req.attempt.item_ref);
       const v = verifyAttempt(item, req.attempt);
@@ -395,6 +410,7 @@ export function createAdapter(deps: AdapterDeps) {
   };
 
   const NOT_IMPLEMENTED = new Set(["plan", "teach", "generate_variation", "report"]);
+  const KNOWN_ROUTES = new Set(["capabilities", "grade", "diagnose", ...NOT_IMPLEMENTED]);
 
   /** 路由（路径不含 /plugin/v0 前缀）。所有错误都转成契约 Problem。 */
   const handle = (method: string, path: string, body: unknown): HandlerResult => {
@@ -404,6 +420,7 @@ export function createAdapter(deps: AdapterDeps) {
     const rid = typeof requestId === "string" && UUID_RE.test(requestId) ? requestId : undefined;
     let result: HandlerResult;
     let code: ProblemCode | undefined;
+    let errorClass: string | undefined;
     try {
       const name = path.replace(/^\/+/, "");
       if (method === "GET" && name === "capabilities") result = capabilities();
@@ -415,11 +432,13 @@ export function createAdapter(deps: AdapterDeps) {
         throw new ProblemError(404, "JOB_NOT_FOUND", "the aya adapter runs synchronously and has no jobs");
       } else throw new ProblemError(404, "INVALID_REQUEST", "unknown route");
     } catch (e) {
+      if (!(e instanceof ProblemError)) errorClass = e instanceof Error ? e.constructor.name.slice(0, 48) : typeof e;
       const err = e instanceof ProblemError ? e : new ProblemError(500, "INTERNAL", "internal error");
       code = err.code;
       result = problem(err, rid);
     }
-    log({ method: path.replace(/^\/+/, ""), status: result.status, ...(code ? { code } : {}), ...(rid ? { request_id: rid } : {}), duration_ms: Math.round(performance.now() - started) });
+    const logged = path.replace(/^\/+/, "");
+    log({ method: KNOWN_ROUTES.has(logged) ? logged : logged.startsWith("jobs/") ? "jobs" : "unknown", status: result.status, ...(code ? { code } : {}), ...(rid ? { request_id: rid } : {}), duration_ms: Math.round(performance.now() - started), ...(errorClass ? { error_class: errorClass } : {}) });
     return result;
   };
 

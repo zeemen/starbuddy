@@ -1,7 +1,7 @@
 // 映射单元测试：陷阱码 → 十二根因 → 映射表阿鸦编码 → 跨科大类（spec 映射规则 grade 表 error_attributions 行）。
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { TRAP_ATTRIBUTION_ALGORITHM, TRAP_ATTRIBUTION_CONFIDENCE } from "../src/adapter.ts";
+import { trapAttributionAlgorithm, TRAP_ATTRIBUTION_CONFIDENCE } from "../src/adapter.ts";
 import { ROOT_CAUSES } from "../src/core/types.ts";
 import { gradeBody, makeAdapter, realPack, sweepCases, syntheticPack, taxonomy, type Json } from "./helpers.ts";
 
@@ -32,7 +32,7 @@ test("内容包里全部 429 个陷阱码都能映射到跨科大类", () => {
   for (const t of realPack.pack.traps) assert.ok(taxonomy.byRootCause.get(t.rootCause), t.code);
 });
 
-test("全部题目：答错且命中陷阱时，错因与陷阱逐一对应；置信度 0.8；算法版本 aya-trap-attr@0.1.0", () => {
+test("全部题目：答错且命中陷阱时，错因与陷阱逐一对应；置信度 0.8；算法版本带映射表版本", () => {
   const adapter = makeAdapter();
   let withTraps = 0;
   for (const c of sweepCases()) {
@@ -50,7 +50,8 @@ test("全部题目：答错且命中陷阱时，错因与陷阱逐一对应；�
     const responseEvidence = b.evidence.find((e: Json) => e.kind !== "verifier_trace").evidence_id;
     for (const a of attrs) {
       assert.equal(a.confidence, TRAP_ATTRIBUTION_CONFIDENCE);
-      assert.equal(a.algorithm_version, TRAP_ATTRIBUTION_ALGORITHM);
+      assert.equal(a.algorithm_version, trapAttributionAlgorithm(taxonomy.version));
+      assert.equal(a.algorithm_version, "aya-trap-attr@0.1.0-tax0.9.0");
       assert.equal(a.cross_subject_category, [...taxonomy.byRootCause.values()].find((e) => e.code === a.subject_category)!.crossSubject);
       assert.deepEqual(a.evidence_ids, [responseEvidence]);
       assert.equal(a.skill_node, `aya:${c.item.mainNodes[0]}`);

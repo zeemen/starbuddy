@@ -54,18 +54,7 @@ adapter-aya-test:
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
 
 eval-persona:
-	@echo "# 阿鸦适配器：类型检查 + 单测（契约、验证器、映射、泄露、幂等、HTTP）+ 端到端（本地临时 Postgres，约 5 秒）
-# 依赖需先在 adapters/aya 下 npm ci；没装时非严格模式打印“跳过”
-adapter-aya-test:
-	@if [ ! -d adapters/aya/node_modules/ajv ]; then \
-	  echo "adapter-aya-test: 跳过（没有安装依赖；cd adapters/aya && npm ci）"; \
-	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
-	@cd adapters/aya && npx --no-install tsc -p tsconfig.json && echo "adapter-aya-test: 类型检查通过"
-	@cd adapters/aya && node --no-warnings --test --test-reporter=dot tests/*.test.ts
-	@bash adapters/aya/tests/e2e/run.sh; rc=$$?; \
-	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
-
-eval-persona: evals/persona 尚未建立，跳过"
+	@echo "eval-persona: evals/persona 尚未建立，跳过"
 
 eval-grade:
 	@echo "eval-grade: SUBJECT=$(SUBJECT)，evals 尚未建立，跳过"
