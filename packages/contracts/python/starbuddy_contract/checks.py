@@ -26,6 +26,7 @@ def rejected(reason: str) -> ContractViolation:
 
 # 准入状态由松到严（契约 Admission；aya adapter-design §3.1）
 ADMISSION_RANK = {"admitted": 0, "pending_review": 1, "source_unverified": 2, "rejected": 3}
+SUPPORTED_METHODS = ("grade", "diagnose")
 RESPONSE_KINDS = ("response_text", "response_choice", "ocr_transcription", "asr_transcription")
 TIME_RE = re.compile(r"\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(\.\d{1,6})?([Zz]|[+-]\d{2}:\d{2})")
 # 这些证据含照片、语音转写，属于 L3（ADR 09 §2；契约 RequestContext.data_class）
@@ -111,7 +112,11 @@ def verify(
     registered_nodes: set[str],
     prior_admission: dict[str, str] | None = None,
 ) -> Verified:
-    """registered_items：local item_id → 平台准入状态；registered_nodes：已登记的 local skill id。"""
+    """registered_items：local item_id → 平台准入状态；registered_nodes：已登记的 local skill id。
+
+    目前只覆盖 grade 与 diagnose（有作答的方法）；其他方法的平台侧规则在对应冲刺补上。"""
+    if method not in SUPPORTED_METHODS:
+        raise ValueError(f"platform checks for method {method} are not implemented yet")
     subject = request["context"]["subject"]
     schema = "GradeResponse" if method == "grade" else "DiagnoseResponse"
 
@@ -132,8 +137,14 @@ def verify(
 
     # 1c. 契约写明由平台校验的项（契约守护 / 安全审查 S2）
     if method == "grade":
-        if response["result"]["rubric_version"] != request["rubric_version"]:
+        r = response["result"]
+        if r["rubric_version"] != request["rubric_version"]:
             raise rejected("result.rubric_version differs from the request")
+        # 分数不超过满分（契约 DimensionScore.score、GradeResult.score 的“平台侧校验”；冲刺 1-A 契约守护 S6）
+        if r["score"]["total"] is not None and r["score"]["total"] > r["score"]["max_total"]:
+            raise rejected("score.total exceeds max_total")
+        if any(d["score"] is not None and d["score"] > d["max_score"] for d in r["dimensions"]):
+            raise rejected("dimension score exceeds max_score")
 
     evidence: list[dict] = [dict(e) for e in response.get("evidence", [])]
     new_ids = [e["evidence_id"] for e in evidence]
@@ -202,7 +213,7 @@ def verify(
     hrr = bool(response["human_review_required"]) or bool(reasons)
 
     # 7. 作答 ↔ 作答证据：按 item_ref + occurred_at 匹配，不依赖数组顺序；零条或多条都拒绝
-    attempts = [request["attempt"]] if method == "grade" else request["attempts"]
+    attempts = [request["attempt"]] if method == "grade" else request.get("attempts", [])
     response_evidence_ids = []
     for a in attempts:
         t = parse_time(a["occurred_at"])

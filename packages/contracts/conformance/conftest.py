@@ -16,6 +16,7 @@ import pytest
 from support import METHODS, AdapterClient, load_fixtures
 
 _results: dict[str, list[str]] = defaultdict(list)
+_untagged_failures: list[str] = []
 
 
 def pytest_addoption(parser):
@@ -58,11 +59,13 @@ def capabilities(client):
 
 
 def pytest_runtest_logreport(report):
-    if report.when != "call" and not (report.when == "setup" and report.failed):
+    tagged = [v for k, v in report.user_properties if k == "method"]
+    if report.failed and not tagged:
+        _untagged_failures.append(report.nodeid)  # 能力声明、令牌等全局用例，或 setup 阶段的失败
+    if report.when != "call":
         return
-    for k, v in report.user_properties:
-        if k == "method":
-            _results[v].append(report.outcome)
+    for v in tagged:
+        _results[v].append(report.outcome)
 
 
 def pytest_sessionfinish(session, exitstatus):
@@ -75,6 +78,8 @@ def pytest_sessionfinish(session, exitstatus):
         caps = client.call("GET", "capabilities").body or {}
     except Exception:  # noqa: BLE001 — 报告尽力而为
         caps, fx = {}, None
+    # 任何全局用例失败（例如不校验令牌、契约版本不对），或整套测试没有通过，所有方法都不算“通过”（契约守护 S1）
+    suite_ok = int(exitstatus) == 0 and not _untagged_failures
     methods = {}
     for m in METHODS:
         implemented = bool(((caps.get("methods") or {}).get(m) or {}).get("implemented"))
@@ -83,7 +88,7 @@ def pytest_sessionfinish(session, exitstatus):
             "implemented": implemented,
             "tests": len(outcomes),
             "failed": sum(o != "passed" for o in outcomes),
-            "passed": implemented and bool(outcomes) and all(o == "passed" for o in outcomes),
+            "passed": suite_ok and implemented and bool(outcomes) and all(o == "passed" for o in outcomes),
         }
     report = {
         "subject": fx.subject if fx else None,
@@ -94,6 +99,7 @@ def pytest_sessionfinish(session, exitstatus):
         "of": len(METHODS),
         "methods": methods,
         "suite_exit_status": int(exitstatus),
+        "global_failures": _untagged_failures,
     }
     with open(path, "w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=2)

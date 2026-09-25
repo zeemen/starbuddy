@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -21,21 +22,28 @@ except ImportError:  # pragma: no cover
 from reference_adapter import FAULTS  # noqa: E402
 
 
-def run(fault: str | None) -> int:
+def run(fault: str | None, asynchronous: bool = False) -> tuple[int, str]:
     cmd = [sys.executable, str(HERE / "cli.py"), "--reference", "--quiet"] + (["--fault", fault] if fault else [])
-    return subprocess.run(cmd, capture_output=True, text=True).returncode
+    if asynchronous:
+        cmd.append("--reference-async")
+    p = subprocess.run(cmd, capture_output=True, text=True)
+    return p.returncode, p.stdout
 
 
 def main() -> int:
-    base = run(None)
-    if base != 0:
-        print(f"conformance-mutation: 失败（不注入违约时一致性测试就不通过，退出码 {base}）")
-        return 1
+    for asynchronous in (False, True):
+        base, _ = run(None, asynchronous)
+        if base != 0:
+            print(f"conformance-mutation: 失败（不注入违约时一致性测试就不通过，异步={asynchronous}，退出码 {base}）")
+            return 1
     missed = []
-    for fault, desc in FAULTS.items():
-        rc = run(fault)
+    for fault, (desc, expected) in FAULTS.items():
+        rc, out = run(fault)
+        failed = re.findall(r"^FAILED \S*::(\w+)", out, re.M)
         if rc != 1:  # 1 = 有测试失败；其他值说明不是被测试发现的
             missed.append(f"{fault}（{desc}）：退出码 {rc}")
+        elif expected not in failed:  # 必须由指定的测试发现，而不是碰巧被别的测试抓到
+            missed.append(f"{fault}（{desc}）：应由 {expected} 发现，实际失败的是 {sorted(set(failed))}")
     if missed:
         print(f"conformance-mutation: 失败（{len(missed)} 个违约没有被发现）")
         for m in missed:

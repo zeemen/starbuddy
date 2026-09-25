@@ -64,7 +64,7 @@ def run_suite(url: str, credential: str, fixtures: Path, report: Path | None, qu
             "--adapter-url", url, "--conformance-fixtures", str(fixtures)]
     if report:
         args += ["--conformance-report", str(report)]
-    args += ["-q", "--no-header", "-p", "no:randomly"] if quiet else ["-v"]
+    args += ["-q", "--no-header", "-rf"] if quiet else ["-v", "-rf"]
     return int(pytest.main(args))
 
 
@@ -78,7 +78,8 @@ def main() -> int:
     ap.add_argument("--port-var", default="PORT", help="被测适配器读取端口的环境变量名")
     ap.add_argument("--fixtures", default=None, help="学科夹具 YAML（相对仓库根目录）")
     ap.add_argument("--report", default=None, help="覆盖率报告 JSON 输出路径")
-    ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("-q", "--quiet", action="store_true")
+    ap.add_argument("--reference-async", action="store_true", help="参考假适配器以异步方式（202 + /jobs）返回结果")
     a = ap.parse_args()
 
     credential = secrets.token_urlsafe(32)  # 每次随机，不落盘
@@ -88,7 +89,7 @@ def main() -> int:
         fixtures = ROOT / (a.fixtures or "packages/contracts/conformance/fixtures/reference.yaml")
         import yaml  # noqa: PLC0415
         subject = yaml.safe_load(fixtures.read_text(encoding="utf-8"))["subject"]
-        server, url = serve(subject, credential, a.fault)
+        server, url = serve(subject, credential, a.fault, asynchronous=a.reference_async)
         try:
             return run_suite(url, credential, fixtures, report, a.quiet)
         finally:

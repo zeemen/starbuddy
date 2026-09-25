@@ -51,7 +51,7 @@ def _load(path: Path, uri: str) -> ContractDoc:
 def plugin_contract() -> ContractDoc:
     c = _load(PLUGIN_CONTRACT, "urn:starbuddy:plugin-api")
     if c.version != CONTRACT_VERSION:
-        raise RuntimeError(f"契约版本 {c.version} 与学习服务实现的 {CONTRACT_VERSION} 不一致")
+        raise RuntimeError(f"契约版本 {c.version} 与共享库实现的 {CONTRACT_VERSION} 不一致")
     return c
 
 

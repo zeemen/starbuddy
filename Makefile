@@ -59,18 +59,20 @@ learning-test:
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
 	@cd services/learning && LEARNING_TEST_STRICT=$(if $(filter 1,$(CONTRACT_STRICT)),1,0) .venv/bin/python -m pytest -q
 
-# 契约一致性测试（冲刺 1-A）：同一套测试跑参考假适配器与阿鸦适配器（约 5 秒）
+# 契约一致性测试（冲刺 1-A）：共享核对库单测；同一套测试跑参考假适配器（同步、异步）与阿鸦适配器（约 10 秒）
 # 覆盖率报告写到 $(CONFORMANCE_REPORT_DIR)/conformance-<学科>.json，供 Gate 0 统计
 # 需要 packages/contracts/requirements-dev.txt；阿鸦部分还需要 adapters/aya 已 npm ci
 CONFORMANCE_REPORT_DIR ?= $(or $(TMPDIR),/tmp)
 conformance:
+	$(call run_contract,-m pytest -q -p no:cacheprovider packages/contracts/python/tests)
 	$(call run_contract,packages/contracts/conformance/cli.py --reference --quiet --report $(CONFORMANCE_REPORT_DIR)/conformance-reference.json)
+	$(call run_contract,packages/contracts/conformance/cli.py --reference --reference-async --quiet)
 	@if [ ! -d adapters/aya/node_modules/ajv ]; then \
 	  echo "conformance: 阿鸦部分跳过（没有安装依赖；cd adapters/aya && npm ci）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
 	$(call run_contract,packages/contracts/conformance/cli.py --quiet --adapter-cmd "node --no-warnings src/main.ts" --adapter-cwd adapters/aya --token-var AYA_ADAPTER_SERVICE_TOKEN --fixtures adapters/aya/conformance/fixtures.yaml --report $(CONFORMANCE_REPORT_DIR)/conformance-aya.json)
 
-# 一致性测试的变异测试：参考假适配器逐一注入 16 类违约，断言每次都被发现（约 30 秒）
+# 一致性测试的变异测试：参考假适配器逐一注入 28 类违约，断言每次都由指定的测试发现（约 45 秒）
 conformance-mutation:
 	$(call run_contract,packages/contracts/conformance/mutation.py)
 
