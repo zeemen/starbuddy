@@ -13,7 +13,8 @@ permissions:
 
 concurrency:
   group: check-${{ github.ref }}
-  cancel-in-progress: true
+  # 只取消同一 PR 的旧运行；主干上的每次推送都要跑完（安全审查 N7）
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   make-check:
@@ -21,6 +22,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false   # 仓库令牌不写进 .git/config（安全审查 S3）
 
       - uses: actions/setup-python@v5
         with:

@@ -128,6 +128,20 @@ class Reply:
     body: object
     raw: str
 
+    def __repr__(self) -> str:  # 断言失败时不打印响应体（安全审查 N5）
+        return f"Reply(status={self.status}, bytes={len(self.raw)})"
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """不跟随重定向：3xx 直接当作失败（被测方不能用重定向“代答”，也不会把令牌转发给别的主机）。"""
+
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+# 不走任何代理（安全审查 S1）：测试流量带服务间令牌和合成作答，只发往本机被测适配器
+OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
+
 
 class AdapterClient:
     def __init__(self, base_url: str, credential: str) -> None:
@@ -141,7 +155,7 @@ class AdapterClient:
         if auth:
             req.add_header("authorization", f"Bearer {self.credential}")
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as r:
+            with OPENER.open(req, timeout=timeout) as r:
                 raw = r.read().decode()
                 status = r.status
         except urllib.error.HTTPError as e:

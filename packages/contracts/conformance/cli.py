@@ -23,6 +23,9 @@ import time
 import urllib.request
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from support import OPENER  # noqa: E402
+
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
 
@@ -46,7 +49,7 @@ def _wait_ready(url: str, credential: str, proc: subprocess.Popen, seconds: floa
             return False
         try:
             req = urllib.request.Request(f"{url}/plugin/v0/capabilities", headers={"authorization": f"Bearer {credential}"})
-            with urllib.request.urlopen(req, timeout=2) as r:
+            with OPENER.open(req, timeout=2) as r:
                 if r.status == 200:
                     return True
         except OSError:
@@ -94,7 +97,9 @@ def main() -> int:
     if not a.adapter_cmd or not a.fixtures:
         ap.error("需要 --reference，或者同时给出 --adapter-cmd 与 --fixtures")
     port = _free_port()
-    env = dict(os.environ)
+    # 环境变量白名单（安全审查 S2）：被测适配器可能是任何一科、任何团队写的，不把开发者 shell 里的凭据交给它
+    env = {k: os.environ[k] for k in ("PATH", "HOME", "LANG", "LC_ALL", "TZ", "TMPDIR") if k in os.environ}
+    env["NO_PROXY"] = env["no_proxy"] = "127.0.0.1,localhost"
     env[a.token_var] = credential
     env[a.port_var] = str(port)
     proc = subprocess.Popen(shlex.split(a.adapter_cmd), cwd=ROOT / a.adapter_cwd, env=env,

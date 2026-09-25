@@ -166,8 +166,9 @@ class ReferenceAdapter:
     # ---------- HTTP ----------
     def handle(self, verb: str, path: str, headers, raw: bytes) -> tuple[int, dict]:
         if self.fault != "no_auth":
-            m = (headers.get("authorization") or "").removeprefix("Bearer ")
-            if not hmac.compare_digest(hashlib.sha256(m.encode()).digest(), hashlib.sha256(self.credential.encode()).digest()):
+            h = headers.get("authorization") or ""
+            m = h[len("Bearer "):] if h.startswith("Bearer ") else ""
+            if not m or not hmac.compare_digest(hashlib.sha256(m.encode()).digest(), hashlib.sha256(self.credential.encode()).digest()):
                 return 401, _problem(401, "INVALID_REQUEST", "missing or invalid service token")
         if not path.startswith("/plugin/v0/"):
             return 404, _problem(404, "INVALID_REQUEST", "unknown route")
@@ -207,8 +208,12 @@ def serve(subject: str, credential: str, fault: str | None = None) -> tuple[Thre
 
     class Handler(BaseHTTPRequestHandler):
         def _go(self, verb):
-            n = int(self.headers.get("content-length") or 0)
-            status, body = adapter.handle(verb, self.path, self.headers, self.rfile.read(n) if n else b"")
+            declared = self.headers.get("content-length") or "0"
+            n = int(declared) if declared.isdigit() else -1
+            if n < 0 or n > 1024 * 1024:
+                status, body = 413, _problem(413, "INVALID_REQUEST", "request body too large or invalid length")
+            else:
+                status, body = adapter.handle(verb, self.path, self.headers, self.rfile.read(n) if n else b"")
             data = json.dumps(body, ensure_ascii=False).encode()
             self.send_response(status)
             self.send_header("content-type", "application/problem+json" if status >= 400 else "application/json")
