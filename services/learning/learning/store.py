@@ -7,6 +7,7 @@ SQLSTATE 与约束名转成 IngestError，原文不进日志、不进响应。
 from __future__ import annotations
 
 import json
+import math
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -118,7 +119,11 @@ class LeaseLost(Exception):
 
 
 def _num(v) -> str | None:
-    return None if v is None else repr(v)
+    if v is None:
+        return None
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+        raise IngestError(502, "ADAPTER_RESULT_REJECTED", "adapter result rejected by platform checks", detail="non-finite number")
+    return repr(v)
 
 
 async def _insert_evidence(conn, e: dict, *, student_id, subject, method, ctx) -> None:

@@ -17,7 +17,12 @@ info:
     - 并发到达的同 key 请求只执行一次，其余等它完成后拿到同一结果。
 
     ## 计量
-    学习服务不预留、不结算（ADR 06）。BFF 按本接口的结果结算：200 结算，错误回滚。
+    学习服务不预留、不结算（ADR 06）。BFF 按本接口的结果结算：
+    - 200：结算。
+    - `retryable: false` 的错误：结果确定没有写入，回滚。
+    - `retryable: true` 的错误（`BUSY`、`UPSTREAM_TIMEOUT`、`UPSTREAM_UNAVAILABLE` 等）、5xx、或 BFF 自己超时：
+      **结果未知**，原来那次执行可能随后成功落库。BFF 不能直接回滚，必须用**同一个** `idempotency_key`
+      重试，按重试的结果结算或回滚（安全审查 S7；需在 ADR 06 里确认）。
   license:
     name: 内部，未授权对外
     identifier: LicenseRef-StarBuddy-Internal
@@ -140,7 +145,7 @@ components:
             - STUDENT_NOT_FOUND
             - CONTENT_NOT_REGISTERED
             - IDEMPOTENCY_CONFLICT
-            - BUSY
+            - BUSY  # 同 key 的另一请求仍在执行；响应头 retry-after
             - UPSTREAM_REJECTED
             - UPSTREAM_UNAVAILABLE
             - UPSTREAM_TIMEOUT

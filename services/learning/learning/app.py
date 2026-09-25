@@ -18,12 +18,28 @@ import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from .adapter_client import strict_json
 from .config import Settings
 from .errors import IngestError
 from .service import IngestService
 
 log = logging.getLogger("starbuddy.learning")
-UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
+UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
+MAX_BODY_BYTES = 1024 * 1024
+
+
+async def _read_limited(request: Request) -> bytes:
+    """边读边累计，超过上限立即中断（不信任 Content-Length，分块传输也一样）。"""
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > MAX_BODY_BYTES:
+        raise IngestError(413, "INVALID_REQUEST", "request body too large")
+    chunks, size = [], 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > MAX_BODY_BYTES:
+            raise IngestError(413, "INVALID_REQUEST", "request body too large")
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def _bearer_ok(header: str | None, expected: str) -> bool:
@@ -36,7 +52,8 @@ def _bearer_ok(header: str | None, expected: str) -> bool:
 
 
 def _problem(e: IngestError, request_id: str | None) -> JSONResponse:
-    return JSONResponse(e.problem(request_id), status_code=e.status, media_type="application/problem+json")
+    headers = {"retry-after": "2"} if e.code == "BUSY" else None
+    return JSONResponse(e.problem(request_id), status_code=e.status, media_type="application/problem+json", headers=headers)
 
 
 def create_app(
@@ -52,7 +69,8 @@ def create_app(
     async def lifespan(_app: FastAPI):
         own_pool = pool is None
         p = pool or await asyncpg.create_pool(settings.database_url, min_size=1, max_size=10)
-        client = httpx.AsyncClient(transport=transport) if transport else httpx.AsyncClient()
+        # trust_env=False：不读 HTTP(S)_PROXY 等环境变量，含学生作答的请求体不会被悄悄送进代理（安全审查 S1）
+        client = httpx.AsyncClient(transport=transport, trust_env=False, follow_redirects=False)
         state["service"] = IngestService(settings, p, client)
         try:
             yield
@@ -70,15 +88,13 @@ def create_app(
         try:
             if not _bearer_ok(request.headers.get("authorization"), settings.service_credential):
                 raise IngestError(401, "UNAUTHENTICATED", "missing or invalid service token")
-            raw = await request.body()
-            if len(raw) > 1024 * 1024:
-                raise IngestError(413, "INVALID_REQUEST", "request body too large")
+            raw = await _read_limited(request)
             try:
-                body = json.loads(raw)
+                body = strict_json(raw)
             except ValueError:
                 raise IngestError(400, "INVALID_REQUEST", "request body is not valid JSON") from None
             candidate = body.get("context", {}).get("request_id") if isinstance(body, dict) else None
-            rid = candidate if isinstance(candidate, str) and UUID_RE.match(candidate) else None
+            rid = candidate if isinstance(candidate, str) and UUID_RE.fullmatch(candidate) else None
             summary, replayed = await state["service"].ingest(method, body)
             record.update(status=200, replayed=replayed)
             return JSONResponse(summary, headers={"idempotent-replayed": "true" if replayed else "false"})

@@ -41,6 +41,7 @@ BEGIN
 END $$;
 CREATE TRIGGER guard_ingest_request BEFORE UPDATE ON platform.ingest_request
   FOR EACH ROW EXECUTE FUNCTION platform.guard_ingest_request();
+REVOKE EXECUTE ON FUNCTION platform.guard_ingest_request() FROM PUBLIC;
 
 CREATE TABLE platform.evidence_registry (
   evidence_id               uuid PRIMARY KEY,

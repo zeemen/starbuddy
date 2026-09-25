@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import random
 import time
 import uuid
 
@@ -23,6 +24,7 @@ from .fingerprint import request_fingerprint
 
 METHODS = ("grade", "diagnose")
 BUSY_POLL_SECONDS = 0.1
+BUSY_MAX_POLL_SECONDS = 2.0
 
 
 class IngestService:
@@ -41,13 +43,15 @@ class IngestService:
         subject = body["context"]["subject"]
         if subject not in self.settings.adapters:
             raise IngestError(400, "SUBJECT_NOT_SUPPORTED", "no adapter is configured for this subject")
-        if method == "diagnose":
-            if body["mode"] not in ("intake", "gap_test") or not body.get("attempts"):
-                raise IngestError(422, "INVALID_REQUEST", "sprint 1 supports synchronous diagnose with attempts only")
-            keys = [(a["item_ref"], parse_time(a["occurred_at"])) for a in body["attempts"]]
-            if len(set(keys)) != len(keys):
-                raise IngestError(422, "INVALID_REQUEST", "attempts must differ in item_ref or occurred_at")
+        if method == "diagnose" and (body["mode"] not in ("intake", "gap_test") or not body.get("attempts")):
+            raise IngestError(422, "INVALID_REQUEST", "sprint 1 supports synchronous diagnose with attempts only")
         attempts = [body["attempt"]] if method == "grade" else body["attempts"]
+        try:
+            keys = [(a["item_ref"], parse_time(a["occurred_at"])) for a in attempts]
+        except ValueError:
+            raise IngestError(400, "INVALID_REQUEST", "attempt occurred_at is not an RFC 3339 date-time with time zone") from None
+        if len(set(keys)) != len(keys):
+            raise IngestError(422, "INVALID_REQUEST", "attempts must differ in item_ref or occurred_at")
         for a in attempts:
             if a["item_ref"].split(":", 1)[0] != subject:
                 raise IngestError(400, "INVALID_REQUEST", "attempt item_ref is outside the request subject")
@@ -87,7 +91,10 @@ class IngestService:
         if {local_id(a["item_ref"]) for a in attempts} - set(items):
             raise IngestError(422, "CONTENT_NOT_REGISTERED", "item_ref is not registered on the platform")
 
-        deadline = time.monotonic() + 2 * self.settings.lease_seconds + 5
+        # 等同 key 的另一请求：指数退避加抖动，最多等一个租约；再等不到就返回 503 BUSY，让 BFF 稍后用同一个 key 重试
+        #（安全审查 S5：每 100ms 取一次连接会占满连接池）
+        deadline = time.monotonic() + self.settings.lease_seconds + 5
+        backoff = BUSY_POLL_SECONDS
         while True:
             c = await store.claim(
                 self.pool, method=method, key=key, subject=ctx["subject"], student_id=ctx["student_ref"],
@@ -100,7 +107,8 @@ class IngestService:
             if c.kind == "busy":
                 if time.monotonic() > deadline:
                     raise IngestError(503, "BUSY", "another request with this key is still running", retryable=True)
-                await asyncio.sleep(BUSY_POLL_SECONDS)
+                await asyncio.sleep(backoff * (0.5 + random.random()))
+                backoff = min(backoff * 2, BUSY_MAX_POLL_SECONDS)
                 continue
             try:
                 summary = await self._run(method, request, key, c)

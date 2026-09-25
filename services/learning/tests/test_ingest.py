@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import json
 import uuid
 
 import pytest
@@ -209,6 +210,22 @@ def _tamper(kind):
             out["semantics"] = "formal"
         elif kind == "no_response_evidence":
             out["evidence"][0]["occurred_at"] = "2026-10-09T00:00:00+00:00"
+        elif kind == "media_ref_injected":  # 安全审查 B2：指向别的学生的照片
+            out["evidence"][1]["media_ref"] = "objstore://students/other/paper-p1.jpg"
+        elif kind == "rubric_mismatch":
+            out["result"]["rubric_version"] = "aya-symbolic-ts@0.0.9"
+        elif kind == "fabricated_text":  # 安全审查 S3：把讲解或答案当成学生原文
+            out["evidence"][0]["payload"]["text"] = "正确答案是 42"
+        elif kind == "extra_response_evidence":
+            extra = dict(out["evidence"][0], evidence_id=str(uuid.uuid4()), occurred_at="2026-10-01T00:00:00+00:00")
+            out["evidence"].append(extra)
+        elif kind == "l3_in_l2_request":
+            out["evidence"][1]["kind"] = "asr_transcription"
+            out["evidence"][1]["payload"] = {"text": "synthetic"}
+        elif kind == "bad_time":
+            out["evidence"][1]["occurred_at"] = "epoch"
+        elif kind == "nan":
+            out["result"]["score"]["max_total"] = float("nan")
         elif kind == "db_constraint":
             out["result"]["score"]["total"] = 5  # 总分超过满分：契约交给平台侧校验，数据库约束拦下
         return out
@@ -216,7 +233,9 @@ def _tamper(kind):
 
 
 @pytest.mark.parametrize("kind", ["extra_field", "dangling_id", "other_subject", "unregistered_item", "unregistered_node",
-                                  "looser_semantics", "no_response_evidence", "db_constraint"])
+                                  "looser_semantics", "no_response_evidence", "db_constraint", "media_ref_injected",
+                                  "rubric_mismatch", "fabricated_text", "extra_response_evidence", "l3_in_l2_request",
+                                  "bad_time", "nan"])
 async def test_rejected_results_write_nothing(api, pools, student, fake_adapter, kind):
     _, admin = pools
     fake_adapter.mutate = _tamper(kind)
@@ -313,3 +332,67 @@ def test_fingerprint_ignores_request_id_and_normalizes_appeal():
     assert request_fingerprint("grade", b) == request_fingerprint("grade", c)
     c["appeal"] = True
     assert request_fingerprint("grade", b) != request_fingerprint("grade", c)
+
+
+async def test_appeal_forces_review_even_if_adapter_forgets(api, pools, student, fake_adapter):
+    _, admin = pools
+    fake_adapter.admission = "admitted"
+    r = await post(api, "grade", grade_body(student, item="SYN-ADM", text="42", appeal=True))
+    assert r.status_code == 200, r.text
+    assert r.json()["human_review_required"] is True
+    async with admin.acquire() as c:
+        reasons = await c.fetchval("SELECT review_reasons::text[] FROM platform.grade_result WHERE student_id = $1::uuid", student)
+    assert reasons == ["student_appeal"]
+
+
+async def test_upstream_code_must_look_like_a_code(api, student, fake_adapter):
+    """安全审查 B1：适配器在 code 里夹带文本时不转发。"""
+    fake_adapter.status = 422
+    for code in ("学生李某某的作答ABC", "13812345678 X", "张三A", "lower_case"):
+        fake_adapter.problem = {"code": code, "retryable": False}
+        r = await post(api, "grade", grade_body(student))
+        assert r.status_code == 422
+        assert "upstream_code" not in r.json() and code not in r.text
+        assert internal_contract().validate("Problem", r.json()) == []
+
+
+async def test_adapter_auth_failure_is_not_passed_through_as_401(api, student, fake_adapter):
+    fake_adapter.status = 401
+    fake_adapter.problem = {"code": "INVALID_REQUEST", "retryable": False}
+    r = await post(api, "grade", grade_body(student))
+    assert r.status_code == 502 and r.json()["code"] == "UPSTREAM_UNAVAILABLE"
+
+
+async def test_request_time_must_be_rfc3339_with_zone(api, student, fake_adapter):
+    for bad in ("epoch", "2026-10-08T19:30:00", "infinity"):
+        b = grade_body(student)
+        b["attempt"]["occurred_at"] = bad
+        r = await post(api, "grade", b)
+        assert r.status_code == 400, (bad, r.text)
+    assert fake_adapter.calls == 0
+
+
+async def test_non_finite_numbers_in_request_are_rejected(api, student):
+    raw = json.dumps(grade_body(student)).replace('"elapsed_sec": 60', '"elapsed_sec": NaN')
+    r = await api.post("/internal/v0/grade", content=raw, headers={"content-type": "application/json"})
+    assert r.status_code == 400
+
+
+async def test_request_body_limit(api):
+    r = await api.post("/internal/v0/grade", content=b"x" * (1024 * 1024 + 1), headers={"content-type": "application/json"})
+    assert r.status_code == 413
+
+
+def test_config_refuses_unsafe_settings():
+    from learning.config import Settings
+    base = {"LEARNING_ENV": "dev", "LEARNING_DATABASE_URL": "postgresql:///x", "LEARNING_SERVICE_TOKEN": "s" * 32}
+    Settings.from_env(base)
+    with pytest.raises(RuntimeError):
+        Settings.from_env({**base, "LEARNING_ENV": "prod"})
+    with pytest.raises(RuntimeError):
+        Settings.from_env({**base, "LEARNING_ADAPTER_AYA_URL": "http://127.0.0.1:8787"})  # 缺令牌
+    with pytest.raises(RuntimeError):
+        Settings.from_env({**base, "LEARNING_ADAPTER_AYA_URL": "http://adapter.example", "LEARNING_ADAPTER_AYA_TOKEN": "a" * 32})
+    ok = Settings.from_env({**base, "LEARNING_ADAPTER_AYA_URL": "http://127.0.0.1:8787/", "LEARNING_ADAPTER_AYA_TOKEN": "a" * 32})
+    assert ok.adapters["aya"].base_url == "http://127.0.0.1:8787"
+    assert ok.lease_seconds > 2 * ok.diagnose_timeout + 1, "租约必须长于适配器调用的总预算"

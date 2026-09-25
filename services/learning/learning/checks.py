@@ -5,6 +5,8 @@
 """
 from __future__ import annotations
 
+import math
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -14,6 +16,9 @@ from .errors import rejected
 # 准入状态由松到严（契约 Admission；aya adapter-design §3.1）
 ADMISSION_RANK = {"admitted": 0, "pending_review": 1, "source_unverified": 2, "rejected": 3}
 RESPONSE_KINDS = ("response_text", "response_choice", "ocr_transcription", "asr_transcription")
+TIME_RE = re.compile(r"\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(\.\d{1,6})?([Zz]|[+-]\d{2}:\d{2})")
+# 这些证据含照片、语音转写，属于 L3（ADR 09 §2；契约 RequestContext.data_class）
+L3_KINDS = ("ocr_transcription", "asr_transcription", "speech_features")
 
 
 def local_id(ref: str) -> str:
@@ -21,7 +26,14 @@ def local_id(ref: str) -> str:
 
 
 def parse_time(s: str) -> datetime:
-    return datetime.fromisoformat(s.replace("Z", "+00:00"))
+    """RFC 3339 时间，必须带时区。jsonschema 在没装格式插件时不检查 date-time，
+    Postgres 又接受 epoch / infinity 这类值，所以这里自己严格解析（安全审查 S4）。"""
+    if not isinstance(s, str) or not TIME_RE.fullmatch(s):
+        raise ValueError("occurred_at is not an RFC 3339 date-time")
+    t = datetime.fromisoformat(s.replace("Z", "+00:00").replace("z", "+00:00"))
+    if t.tzinfo is None:
+        raise ValueError("occurred_at must carry a time zone")
+    return t
 
 
 def _walk(node: object, key: str):
@@ -34,6 +46,31 @@ def _walk(node: object, key: str):
     elif isinstance(node, list):
         for v in node:
             yield from _walk(v, key)
+
+
+def _numbers(node: object):
+    if isinstance(node, bool):
+        return
+    if isinstance(node, (int, float)):
+        yield float(node)
+    elif isinstance(node, dict):
+        for v in node.values():
+            yield from _numbers(v)
+    elif isinstance(node, list):
+        for v in node:
+            yield from _numbers(v)
+
+
+def _request_media_refs(request: dict) -> set[str]:
+    refs: set[str] = set()
+    attempts = [request["attempt"]] if "attempt" in request else request.get("attempts", [])
+    for a in attempts:
+        for k in ("image_ref", "transcript_ref"):
+            if k in a["response"]:
+                refs.add(a["response"][k])
+    refs.update(request.get("paper_image_refs", []))
+    refs.update(p["media_ref"] for p in request.get("prior_evidence", []) if "media_ref" in p)
+    return refs
 
 
 def collect_refs(response: dict) -> tuple[set[str], set[str]]:
@@ -71,6 +108,21 @@ def verify(
     if errors:
         raise rejected("contract: " + "; ".join(errors[:10]))
 
+    # 1b. 数值必须有限；时间必须可解析（NaN 能穿过 schema 的 minimum/maximum）
+    for v in _numbers(response):
+        if not math.isfinite(v):
+            raise rejected("non-finite number in response")
+    for e in response.get("evidence", []):
+        try:
+            parse_time(e["occurred_at"])
+        except ValueError:
+            raise rejected("evidence occurred_at is not a valid date-time") from None
+
+    # 1c. 契约写明由平台校验的项（契约守护 / 安全审查 S2）
+    if method == "grade":
+        if response["result"]["rubric_version"] != request["rubric_version"]:
+            raise rejected("result.rubric_version differs from the request")
+
     evidence: list[dict] = [dict(e) for e in response.get("evidence", [])]
     new_ids = [e["evidence_id"] for e in evidence]
     if len(set(new_ids)) != len(new_ids):
@@ -102,6 +154,16 @@ def verify(
     if missing_items or missing_nodes:
         raise rejected(f"unregistered content: {len(missing_items)} item(s), {len(missing_nodes)} skill node(s)")
 
+    # 4b. media_ref 只能是本次请求里出现过的引用，防止把别的学生的照片记在这个学生名下（安全审查 B2）
+    allowed_media = _request_media_refs(request)
+    for e in evidence:
+        if "media_ref" in e and e["media_ref"] not in allowed_media:
+            raise rejected("evidence media_ref does not come from this request")
+
+    # 4c. 含照片、语音的证据要求请求声明为 L3（ADR 04 第 2 条：声明低于实际级别时平台拒绝）
+    if request["context"]["data_class"] != "L3" and any(e["kind"] in L3_KINDS or "media_ref" in e for e in evidence):
+        raise rejected("L3 evidence in a request declared below L3")
+
     # 5. 准入以平台为准：只能往更严的方向改
     rewritten = []
     for e in evidence:
@@ -119,6 +181,9 @@ def verify(
     reasons = list(response.get("review_reasons", []))
     if not all_admitted and "content_not_admitted" not in reasons:
         reasons.append("content_not_admitted")
+    # 申诉重判必须进复核（契约 GradeRequest.appeal）；适配器漏标时平台补上，只会更严
+    if method == "grade" and request.get("appeal") is True and "student_appeal" not in reasons:
+        reasons.append("student_appeal")
     hrr = bool(response["human_review_required"]) or bool(reasons)
 
     # 7. 作答 ↔ 作答证据：按 item_ref + occurred_at 匹配，不依赖数组顺序；零条或多条都拒绝
@@ -136,6 +201,20 @@ def verify(
         response_evidence_ids.append(matches[0])
     if len(set(response_evidence_ids)) != len(response_evidence_ids):
         raise rejected("two attempts matched the same response evidence")
+
+    # 8. 作答类证据只能是本次作答本身：内容必须等于请求里的作答，题目必须是本次作答的题目。
+    #    否则适配器可以把讲解或正确答案当成“学生原文”存下来（安全审查 S3）
+    by_id = {e["evidence_id"]: e for e in evidence}
+    for a, ev_id in zip(attempts, response_evidence_ids):
+        e = by_id[ev_id]
+        given = a["response"]
+        if e["kind"] == "response_text" and e["payload"].get("text") != given.get("text"):
+            raise rejected("response_text evidence differs from the student's response")
+        if e["kind"] == "response_choice" and e["payload"].get("choice") != given.get("choice"):
+            raise rejected("response_choice evidence differs from the student's response")
+    extra = [e for e in evidence if e["kind"] in ("response_text", "response_choice") and e["evidence_id"] not in response_evidence_ids]
+    if extra:
+        raise rejected("response evidence that does not belong to any attempt")
 
     return Verified(
         evidence=evidence,

@@ -187,7 +187,8 @@ class FakeAdapter:
         out = fake_grade(body, self.admission) if method == "grade" else fake_diagnose(body, self.admission)
         if self.mutate:
             out = self.mutate(copy.deepcopy(out)) or out
-        return httpx.Response(200, json=out)
+        # 原样编码（允许 NaN），模拟有缺陷的适配器
+        return httpx.Response(200, content=json.dumps(out).encode(), headers={"content-type": "application/json"})
 
 
 @pytest.fixture

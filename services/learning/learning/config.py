@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 
 SUBJECTS = ("wenli", "aya", "zhixing", "echo")
@@ -28,8 +29,9 @@ class Settings:
     database_url: str
     service_credential: str
     adapters: dict[str, AdapterTarget] = field(default_factory=dict)
-    # pending 租约（spec 待人确认 #5）：比适配器超时加一次重试更长
-    lease_seconds: float = 60.0
+    # pending 租约（spec 待人确认 #5）：必须长于适配器调用的总预算（2 × 超时 + 1）再加核对与落库的余量
+    # （安全审查 S6）。diagnose 总预算 61 秒，所以租约 90 秒。
+    lease_seconds: float = 90.0
     grade_timeout: float = 10.0
     diagnose_timeout: float = 30.0
 
@@ -49,5 +51,10 @@ class Settings:
         for subject in SUBJECTS:
             url = e.get(f"LEARNING_ADAPTER_{subject.upper()}_URL")
             if url:
-                adapters[subject] = AdapterTarget(url.rstrip("/"), e.get(f"LEARNING_ADAPTER_{subject.upper()}_TOKEN", ""))
+                cred = e.get(f"LEARNING_ADAPTER_{subject.upper()}_TOKEN", "")
+                if len(cred) < 32:
+                    raise RuntimeError(f"LEARNING_ADAPTER_{subject.upper()}_TOKEN 缺失或少于 32 个字符")
+                if not (url.startswith("https://") or re.match(r"http://(127\.0\.0\.1|localhost|\[::1\])(:\d+)?(/|$)", url)):
+                    raise RuntimeError(f"LEARNING_ADAPTER_{subject.upper()}_URL 必须是 https，或本机回环地址")
+                adapters[subject] = AdapterTarget(url.rstrip("/"), cred)
         return Settings(env=env, database_url=database_url, service_credential=credential, adapters=adapters)
