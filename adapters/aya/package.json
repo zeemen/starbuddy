@@ -9,7 +9,6 @@
     "start": "node src/main.ts",
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --test --test-reporter=dot tests/*.test.ts",
-    "test:e2e": "bash tests/e2e/run.sh",
     "build:pack": "node --import ./scripts/legacy-loader.ts scripts/build-content-pack.ts",
     "register:sql": "node scripts/register-content.ts"
   },
