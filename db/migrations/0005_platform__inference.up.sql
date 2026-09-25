@@ -1,0 +1,171 @@
+-- 0005 platform · 模型推断：能力观测、错因归因、掌握估计、判分结果
+-- 每条推断都记录算法版本、置信度、证据 ID 与更正历史（CLAUDE.md 规则 6）。
+-- 只有 starbuddy_learning 能写；学生与家长只读（ADR 02 第 4 条，修正知行 owner for all 的漏洞）。
+-- 更正不改原记录：写一条新记录，再把旧记录的 superseded_by 指过去。
+
+CREATE TABLE platform.skill_observation (
+  id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  student_id          uuid NOT NULL REFERENCES platform.student_profile (id),
+  subject             platform.subject NOT NULL,
+  skill_local_id      platform.skill_local_id NOT NULL,
+  outcome             text NOT NULL CHECK (outcome IN ('demonstrated', 'not_demonstrated', 'partial', 'inconclusive')),
+  local_level         text CHECK (local_level ~ '^[A-Za-z0-9_\-]{1,16}$'),
+  confidence          platform.confidence NOT NULL,
+  algorithm_version   platform.versioned_name NOT NULL,
+  evidence_ids        uuid[] NOT NULL CHECK (cardinality(evidence_ids) >= 1),
+  source_request_id   uuid NOT NULL,
+  created_at          timestamptz NOT NULL DEFAULT now(),
+  superseded_by       uuid REFERENCES platform.skill_observation (id) DEFERRABLE INITIALLY DEFERRED,
+  superseded_at       timestamptz,
+  CHECK ((superseded_by IS NULL) = (superseded_at IS NULL))
+);
+CREATE INDEX skill_observation_student_idx ON platform.skill_observation (student_id, subject, skill_local_id, created_at);
+
+CREATE TABLE platform.error_attribution (
+  id                       uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  student_id               uuid NOT NULL REFERENCES platform.student_profile (id),
+  subject                  platform.subject NOT NULL,
+  skill_local_id           platform.skill_local_id,
+  subject_category         text NOT NULL CHECK (subject_category ~ '^[a-z0-9_\-]{1,48}$'),
+  cross_subject_category   platform.cross_subject_error NOT NULL,
+  confidence               platform.confidence NOT NULL,
+  algorithm_version        platform.versioned_name NOT NULL,
+  evidence_ids             uuid[] NOT NULL CHECK (cardinality(evidence_ids) >= 1),
+  source_request_id        uuid NOT NULL,
+  created_at               timestamptz NOT NULL DEFAULT now(),
+  superseded_by            uuid REFERENCES platform.error_attribution (id) DEFERRABLE INITIALLY DEFERRED,
+  superseded_at            timestamptz,
+  CHECK ((superseded_by IS NULL) = (superseded_at IS NULL))
+);
+CREATE INDEX error_attribution_student_idx ON platform.error_attribution (student_id, cross_subject_category, created_at);
+
+-- 掌握估计：平台唯一真相源（规则 2）。每个学生每个能力点只有一条 is_current。
+CREATE TABLE platform.mastery_estimate (
+  id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  student_id          uuid NOT NULL REFERENCES platform.student_profile (id),
+  subject             platform.subject NOT NULL,
+  skill_local_id      platform.skill_local_id NOT NULL,
+  state               platform.mastery_state NOT NULL,
+  p_mastery           platform.confidence,
+  confidence          platform.confidence NOT NULL,
+  algorithm_version   platform.versioned_name NOT NULL,
+  evidence_ids        uuid[] NOT NULL CHECK (cardinality(evidence_ids) >= 1),
+  computed_at         timestamptz NOT NULL DEFAULT now(),
+  next_retest_at      timestamptz,
+  is_current          boolean NOT NULL DEFAULT true,
+  superseded_by       uuid REFERENCES platform.mastery_estimate (id) DEFERRABLE INITIALLY DEFERRED,
+  CHECK (is_current = (superseded_by IS NULL))
+);
+CREATE UNIQUE INDEX mastery_estimate_current_uq
+  ON platform.mastery_estimate (student_id, subject, skill_local_id) WHERE is_current;
+COMMENT ON TABLE platform.mastery_estimate IS
+  '掌握估计（规则 + BKT，冲刺 4-C）。只能由已准入内容的证据推动星亮门槛（transfer 及以上），由学习服务保证';
+
+CREATE TABLE platform.grade_result (
+  id                      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  student_id              uuid NOT NULL REFERENCES platform.student_profile (id),
+  subject                 platform.subject NOT NULL,
+  attempt_id              uuid NOT NULL,
+  attempt_occurred_at     timestamptz NOT NULL,
+  verdict                 text NOT NULL CHECK (verdict IN ('correct', 'incorrect', 'partial', 'needs_review', 'not_applicable')),
+  rubric_version          platform.versioned_name NOT NULL,
+  score_total             numeric CHECK (score_total >= 0),
+  max_total               numeric NOT NULL CHECK (max_total > 0),
+  calibrated              boolean NOT NULL,
+  confidence              platform.confidence NOT NULL,
+  source_version          text NOT NULL CHECK (source_version ~ '^(rubric|verifier|prompt|items|algo|graph):[a-z0-9][a-z0-9\-]{0,47}@[A-Za-z0-9][A-Za-z0-9._\-]{0,31}(;(rubric|verifier|prompt|items|algo|graph):[a-z0-9][a-z0-9\-]{0,47}@[A-Za-z0-9][A-Za-z0-9._\-]{0,31}){0,7}$'),
+  model_version           platform.model_version NOT NULL,
+  verifier_id             text CHECK (verifier_id ~ '^[a-z0-9][a-z0-9\-]{0,47}$'),
+  verifier_version        text CHECK (verifier_version ~ '^\d+\.\d+\.\d+$'),
+  verifier_reason_codes   text[] NOT NULL DEFAULT '{}',
+  human_review_required   boolean NOT NULL,
+  review_reasons          platform.review_reason[] NOT NULL DEFAULT '{}',
+  semantics               platform.semantics NOT NULL,
+  evidence_ids            uuid[] NOT NULL CHECK (cardinality(evidence_ids) >= 1),
+  source_request_id       uuid NOT NULL,
+  created_at              timestamptz NOT NULL DEFAULT now(),
+  superseded_by           uuid REFERENCES platform.grade_result (id) DEFERRABLE INITIALLY DEFERRED,
+  superseded_at           timestamptz,
+  CONSTRAINT grade_total_le_max CHECK (score_total IS NULL OR score_total <= max_total),
+  CONSTRAINT grade_review_has_reason CHECK (NOT human_review_required OR cardinality(review_reasons) >= 1),
+  CONSTRAINT grade_needs_review CHECK (verdict <> 'needs_review' OR (human_review_required AND confidence <= 0.5)),
+  CONSTRAINT grade_verifier_boundary CHECK (cardinality(verifier_reason_codes) = 0 OR human_review_required),
+  CONSTRAINT grade_verifier_pair CHECK ((verifier_id IS NULL) = (verifier_version IS NULL)),
+  CONSTRAINT grade_superseded_pair CHECK ((superseded_by IS NULL) = (superseded_at IS NULL))
+);
+CREATE INDEX grade_result_student_idx ON platform.grade_result (student_id, subject, created_at);
+CREATE INDEX grade_result_review_idx ON platform.grade_result (created_at) WHERE human_review_required;
+
+CREATE TABLE platform.grade_dimension (
+  grade_result_id   uuid NOT NULL REFERENCES platform.grade_result (id) ON DELETE CASCADE,
+  dimension_id      text NOT NULL CHECK (dimension_id ~ '^[a-z0-9_\-]{1,48}$'),
+  score             numeric CHECK (score >= 0),
+  max_score         numeric NOT NULL CHECK (max_score > 0),
+  judged_by         text NOT NULL CHECK (judged_by IN ('verifier', 'rubric_rule', 'rubric_model')),
+  subjective        boolean NOT NULL,
+  rule_ref          platform.versioned_name,
+  confidence        platform.confidence NOT NULL,
+  evidence_ids      uuid[] NOT NULL CHECK (cardinality(evidence_ids) >= 1),
+  PRIMARY KEY (grade_result_id, dimension_id),
+  CONSTRAINT dim_score_le_max CHECK (score IS NULL OR score <= max_score),
+  CONSTRAINT dim_model_is_subjective CHECK (judged_by <> 'rubric_model' OR subjective),
+  CONSTRAINT dim_subjective_low_conf CHECK (NOT subjective OR confidence <= 0.5),
+  CONSTRAINT dim_rule_ref CHECK (judged_by = 'rubric_model' OR rule_ref IS NOT NULL)
+);
+
+-- 跨行规则（主观维度 / null 维度 → 父判分必须复核）：CHECK 做不到，用约束触发器，事务提交时检查。
+CREATE FUNCTION platform.grade_dimension_requires_review() RETURNS trigger
+  LANGUAGE plpgsql SET search_path = pg_catalog, platform
+  AS $$
+BEGIN
+  IF (NEW.subjective OR NEW.score IS NULL) AND NOT EXISTS (
+       SELECT 1 FROM platform.grade_result g
+        WHERE g.id = NEW.grade_result_id AND g.human_review_required
+          AND (NOT NEW.subjective OR 'subjective_dimension' = ANY (g.review_reasons))
+          AND (NEW.score IS NOT NULL OR 'dimension_unavailable' = ANY (g.review_reasons))) THEN
+    RAISE EXCEPTION 'grade % has a subjective or unavailable dimension but is not flagged for review', NEW.grade_result_id
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NULL;
+END $$;
+CREATE CONSTRAINT TRIGGER grade_dimension_requires_review
+  AFTER INSERT OR UPDATE ON platform.grade_dimension
+  DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW EXECUTE FUNCTION platform.grade_dimension_requires_review();
+
+-- ---------- 权限与 RLS ----------
+GRANT SELECT, INSERT ON platform.skill_observation, platform.error_attribution, platform.mastery_estimate,
+  platform.grade_result, platform.grade_dimension TO starbuddy_learning;
+-- 更正只能改“被取代”相关的列，不能改推断内容本身
+GRANT UPDATE (superseded_by, superseded_at) ON platform.skill_observation, platform.error_attribution,
+  platform.grade_result TO starbuddy_learning;
+GRANT UPDATE (is_current, superseded_by) ON platform.mastery_estimate TO starbuddy_learning;
+GRANT SELECT ON platform.skill_observation, platform.error_attribution, platform.mastery_estimate,
+  platform.grade_result, platform.grade_dimension TO starbuddy_bff;
+
+ALTER TABLE platform.skill_observation ENABLE ROW LEVEL SECURITY;
+ALTER TABLE platform.skill_observation FORCE ROW LEVEL SECURITY;
+CREATE POLICY obs_read ON platform.skill_observation FOR SELECT TO starbuddy_bff USING (platform.can_read_student(student_id));
+CREATE POLICY obs_service ON platform.skill_observation FOR ALL TO starbuddy_learning USING (true) WITH CHECK (true);
+
+ALTER TABLE platform.error_attribution ENABLE ROW LEVEL SECURITY;
+ALTER TABLE platform.error_attribution FORCE ROW LEVEL SECURITY;
+CREATE POLICY attr_read ON platform.error_attribution FOR SELECT TO starbuddy_bff USING (platform.can_read_student(student_id));
+CREATE POLICY attr_service ON platform.error_attribution FOR ALL TO starbuddy_learning USING (true) WITH CHECK (true);
+
+ALTER TABLE platform.mastery_estimate ENABLE ROW LEVEL SECURITY;
+ALTER TABLE platform.mastery_estimate FORCE ROW LEVEL SECURITY;
+CREATE POLICY mastery_read ON platform.mastery_estimate FOR SELECT TO starbuddy_bff USING (platform.can_read_student(student_id));
+CREATE POLICY mastery_service ON platform.mastery_estimate FOR ALL TO starbuddy_learning USING (true) WITH CHECK (true);
+
+ALTER TABLE platform.grade_result ENABLE ROW LEVEL SECURITY;
+ALTER TABLE platform.grade_result FORCE ROW LEVEL SECURITY;
+CREATE POLICY grade_read ON platform.grade_result FOR SELECT TO starbuddy_bff USING (platform.can_read_student(student_id));
+CREATE POLICY grade_service ON platform.grade_result FOR ALL TO starbuddy_learning USING (true) WITH CHECK (true);
+
+ALTER TABLE platform.grade_dimension ENABLE ROW LEVEL SECURITY;
+ALTER TABLE platform.grade_dimension FORCE ROW LEVEL SECURITY;
+CREATE POLICY dim_read ON platform.grade_dimension FOR SELECT TO starbuddy_bff
+  USING (EXISTS (SELECT 1 FROM platform.grade_result g
+                 WHERE g.id = grade_result_id AND platform.can_read_student(g.student_id)));
+CREATE POLICY dim_service ON platform.grade_dimension FOR ALL TO starbuddy_learning USING (true) WITH CHECK (true);
