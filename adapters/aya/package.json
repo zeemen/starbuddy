@@ -1,0 +1,25 @@
+{
+  "name": "@starbuddy/adapter-aya",
+  "version": "0.1.0",
+  "private": true,
+  "description": "阿鸦（数学）学科适配器：实现学科插件 API v0.9 的 capabilities / grade / diagnose",
+  "type": "module",
+  "engines": { "node": ">=22.18" },
+  "scripts": {
+    "start": "node src/main.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --test --test-reporter=dot tests/*.test.ts",
+    "test:e2e": "bash tests/e2e/run.sh",
+    "build:pack": "node --import ./scripts/legacy-loader.ts scripts/build-content-pack.ts",
+    "register:sql": "node scripts/register-content.ts"
+  },
+  "dependencies": {
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "yaml": "2.9.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.4",
+    "typescript": "5.9.3"
+  }
+}

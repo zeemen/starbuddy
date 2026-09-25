@@ -1,0 +1,429 @@
+// 阿鸦适配器的三个接口：capabilities、grade（客观题）、diagnose（intake / gap_test）。
+// 规格：specs/adapter-aya-sprint1/spec.md“映射规则”。契约：packages/contracts/openapi/plugin-api.v0.9.yaml。
+//
+// 适配器不读写任何平台表（CLAUDE.md 规则 1）：证据与推断放在响应里，由学习服务落库。
+// 不输出掌握度（规则 2）；判分只来自验证器（规则 3）；响应和日志里不出现答案、解析、评分标准（decisions #4）。
+import type { ContractValidator, SchemaName } from "./contract.ts";
+import { CONTRACT_VERSION } from "./contract.ts";
+import type { Admission, LoadedPack, PackItem } from "./content.ts";
+import { deriveUuid, requestFingerprint } from "./ids.ts";
+import type { AyaTaxonomy } from "./taxonomy.ts";
+import {
+  BOUNDARY_MAX_CONFIDENCE,
+  VERIFIER_ID,
+  VERIFIER_REF,
+  VERIFIER_VERSION,
+  verifyChoice,
+  verifyFill,
+  type Verification,
+} from "./verifier.ts";
+
+export const ADAPTER_VERSION = "0.1.0";
+export const TRAP_ATTRIBUTION_ALGORITHM = "aya-trap-attr@0.1.0";
+export const TRAP_ATTRIBUTION_CONFIDENCE = 0.8;
+export const DIAGNOSE_ALGORITHM = "aya-diag@0.1.0";
+export const GUESSED_MAX_CONFIDENCE = 0.3;
+export const HEAVY_HINT_LEVEL = 4;
+export const HEAVY_HINT_MAX_CONFIDENCE = 0.5;
+
+// ---------- 契约里用到的类型（只列本适配器读写的字段） ----------
+interface RequestContext {
+  request_id: string;
+  subject: string;
+  student_ref: string;
+  data_class: string;
+  idempotency_key: string;
+  usage_id?: string;
+  contract_version: string;
+  content_version?: { subject: string; content_version: string };
+}
+interface AttemptInput {
+  attempt_id?: string;
+  item_ref: string;
+  occurred_at: string;
+  response: { text?: string; choice?: string[]; image_ref?: string; transcript_ref?: string };
+  elapsed_sec?: number;
+  hint_level_used?: number;
+  self_report?: "confident" | "unsure" | "guessed";
+}
+interface GradeRequest {
+  context: RequestContext;
+  attempt: AttemptInput;
+  rubric_version: string;
+  appeal?: boolean;
+}
+interface DiagnoseRequest {
+  context: RequestContext;
+  mode: "intake" | "paper" | "gap_test" | "process";
+  attempts?: AttemptInput[];
+  paper_image_refs?: string[];
+}
+interface EvidenceDraft {
+  evidence_id: string;
+  kind: "response_text" | "response_choice" | "verifier_trace";
+  occurred_at: string;
+  item_ref: string;
+  skill_node: string;
+  admission: Admission;
+  payload: Record<string, unknown>;
+}
+interface ErrorAttribution {
+  skill_node: string;
+  subject_category: string;
+  cross_subject_category: string;
+  confidence: number;
+  evidence_ids: string[];
+  algorithm_version: string;
+}
+
+type ProblemCode =
+  | "INVALID_REQUEST"
+  | "SUBJECT_MISMATCH"
+  | "METHOD_NOT_IMPLEMENTED"
+  | "CONTENT_VERSION_NOT_FOUND"
+  | "ITEM_NOT_FOUND"
+  | "IDEMPOTENCY_CONFLICT"
+  | "JOB_NOT_FOUND"
+  | "INTERNAL";
+
+export interface HandlerResult {
+  status: number;
+  body: unknown;
+}
+
+/** 日志记录只含这些字段：不写作答、答案、题目内容（decisions #4；契约 Problem.detail） */
+export interface LogRecord {
+  method: string;
+  status: number;
+  code?: ProblemCode;
+  request_id?: string;
+  duration_ms: number;
+}
+
+export interface AdapterDeps {
+  content: LoadedPack;
+  taxonomy: AyaTaxonomy;
+  contract: ContractValidator;
+  log?: (record: LogRecord) => void;
+  /** 幂等缓存条数上限（用于同 key 不同请求体的冲突检测；ID 本身是确定性派生的） */
+  idempotencyCacheSize?: number;
+}
+
+class ProblemError extends Error {
+  status: number;
+  code: ProblemCode;
+  detail: string | undefined;
+  constructor(status: number, code: ProblemCode, title: string, detail?: string) {
+    super(title);
+    this.status = status;
+    this.code = code;
+    this.detail = detail;
+  }
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const round3 = (x: number) => Math.round(x * 1000) / 1000;
+
+export function createAdapter(deps: AdapterDeps) {
+  const { content, taxonomy, contract } = deps;
+  const log = deps.log ?? (() => {});
+  const cacheSize = deps.idempotencyCacheSize ?? 10_000;
+  const idempotency = new Map<string, { fingerprint: string; result: HandlerResult }>();
+
+  const problem = (e: ProblemError, requestId?: string): HandlerResult => {
+    const body: Record<string, unknown> = {
+      type: `/problems/${e.code.toLowerCase()}`,
+      title: e.message,
+      status: e.status,
+      code: e.code,
+      retryable: false,
+    };
+    if (e.detail) body.detail = e.detail.slice(0, 500);
+    if (requestId) body.request_id = requestId;
+    return { status: e.status, body };
+  };
+
+  const validateOrThrow = (schema: SchemaName, value: unknown) => {
+    const r = contract.validate(schema, value);
+    if (!r.ok) throw new ProblemError(400, "INVALID_REQUEST", "request does not match the contract", r.errors.join("; "));
+  };
+
+  const checkContext = (ctx: RequestContext, requireContentVersion: boolean) => {
+    if (ctx.subject !== "aya") throw new ProblemError(400, "SUBJECT_MISMATCH", "this adapter only serves subject aya");
+    const cv = ctx.content_version;
+    if (!cv) {
+      if (requireContentVersion) throw new ProblemError(400, "INVALID_REQUEST", "content_version is required");
+      return;
+    }
+    if (cv.subject !== "aya" || cv.content_version !== content.pack.curriculum.content_version) {
+      throw new ProblemError(404, "CONTENT_VERSION_NOT_FOUND", "content_version is not served by this adapter");
+    }
+  };
+
+  const findItem = (itemRef: string): PackItem => {
+    const [subject, localId] = itemRef.split(":", 2) as [string, string];
+    if (subject !== "aya") throw new ProblemError(400, "SUBJECT_MISMATCH", "item_ref is not an aya item");
+    const item = content.itemById.get(localId);
+    if (!item) throw new ProblemError(404, "ITEM_NOT_FOUND", "item_ref is not in the content pack");
+    return item;
+  };
+
+  /** 判一道作答：只支持客观题（单选、多选、填空）。过程题（拍照）在后续冲刺。 */
+  const verifyAttempt = (item: PackItem, attempt: AttemptInput): Verification => {
+    const r = attempt.response;
+    if (r.image_ref || r.transcript_ref) {
+      throw new ProblemError(422, "INVALID_REQUEST", "process grading from photos or transcripts is not implemented");
+    }
+    if (item.format === "fill") {
+      if (r.text === undefined) throw new ProblemError(422, "INVALID_REQUEST", "fill item expects response.text");
+      return verifyFill(item, r.text);
+    }
+    if (!r.choice) throw new ProblemError(422, "INVALID_REQUEST", "choice item expects response.choice");
+    const keys = new Set((item.options ?? []).map((o) => o.key));
+    if (!r.choice.every((k) => keys.has(k))) throw new ProblemError(422, "INVALID_REQUEST", "response.choice contains an unknown option key");
+    if (item.format === "single" && new Set(r.choice).size !== 1) {
+      throw new ProblemError(422, "INVALID_REQUEST", "single choice item expects exactly one option");
+    }
+    return verifyChoice(item, r.choice);
+  };
+
+  /** 一道作答的证据：作答本身 + 一条验证器轨迹 */
+  const buildEvidence = (item: PackItem, attempt: AttemptInput, v: Verification, id: (label: string) => string) => {
+    const common = {
+      occurred_at: attempt.occurred_at,
+      item_ref: `aya:${item.id}`,
+      skill_node: `aya:${item.mainNodes[0]}`,
+      admission: item.admission,
+    };
+    const response: EvidenceDraft =
+      item.format === "fill"
+        ? { evidence_id: id("response"), kind: "response_text", ...common, payload: { text: attempt.response.text } }
+        : { evidence_id: id("response"), kind: "response_choice", ...common, payload: { choice: attempt.response.choice } };
+    const trace: EvidenceDraft = {
+      evidence_id: id("trace"),
+      kind: "verifier_trace",
+      ...common,
+      payload: { sampled_points: v.sampled, agreeing_points: v.agreeing, reason_codes: v.reasonCodes },
+    };
+    return { response, trace };
+  };
+
+  /** 错因：答错且命中预标注陷阱 → 陷阱码 → 十二根因 → 映射表编码 → 跨科大类。没命中陷阱不产出。 */
+  const attribute = (item: PackItem, v: Verification, responseEvidenceId: string): ErrorAttribution[] => {
+    if (v.verdict !== "incorrect") return [];
+    const seen = new Set<string>();
+    const out: ErrorAttribution[] = [];
+    for (const trap of v.trapsHit) {
+      const rootCause = content.trapByCode.get(trap);
+      const entry = rootCause && taxonomy.byRootCause.get(rootCause);
+      // 敏感类（心理与习惯）不自动归因：完整方案第四章红线，是否保留待教研与产品决定
+      if (!entry || entry.sensitive || seen.has(entry.code)) continue;
+      seen.add(entry.code);
+      out.push({
+        skill_node: `aya:${item.mainNodes[0]}`,
+        subject_category: entry.code,
+        cross_subject_category: entry.crossSubject,
+        confidence: TRAP_ATTRIBUTION_CONFIDENCE,
+        evidence_ids: [responseEvidenceId],
+        algorithm_version: TRAP_ATTRIBUTION_ALGORITHM,
+      });
+    }
+    return out;
+  };
+
+  /** 信封的复核原因与效力：任何一条证据未准入 → practice + content_not_admitted（decisions #11） */
+  const envelopeFlags = (evidence: EvidenceDraft[], extra: string[]) => {
+    const reasons = new Set<string>();
+    const allAdmitted = evidence.every((e) => e.admission === "admitted");
+    if (!allAdmitted) reasons.add("content_not_admitted");
+    for (const r of extra) reasons.add(r);
+    return {
+      human_review_required: reasons.size > 0,
+      ...(reasons.size > 0 ? { review_reasons: [...reasons] } : {}),
+      semantics: allAdmitted ? "formal" : "practice",
+    };
+  };
+
+  /** 幂等包装：同 key 同请求体 → 同一响应；同 key 不同请求体 → IDEMPOTENCY_CONFLICT */
+  const idempotent = (method: string, key: string, fingerprint: string, run: () => HandlerResult): HandlerResult => {
+    const cacheKey = `${method}\0${key}`;
+    const hit = idempotency.get(cacheKey);
+    if (hit) {
+      if (hit.fingerprint !== fingerprint) {
+        throw new ProblemError(409, "IDEMPOTENCY_CONFLICT", "idempotency_key was used with a different request body");
+      }
+      return hit.result;
+    }
+    const result = run();
+    if (result.status === 200) {
+      if (idempotency.size >= cacheSize) idempotency.delete(idempotency.keys().next().value!);
+      idempotency.set(cacheKey, { fingerprint, result });
+    }
+    return result;
+  };
+
+  /** 出门前按契约自检：不合契约的响应不发出去（fail closed） */
+  const selfCheck = (schema: SchemaName, body: unknown): HandlerResult => {
+    const r = contract.validate(schema, body);
+    if (!r.ok) throw new ProblemError(500, "INTERNAL", "adapter produced a response that violates the contract", r.errors.join("; "));
+    return { status: 200, body };
+  };
+
+  const sourceVersion = (...parts: string[]) => [...parts, content.itemsSourceVersion].join(";");
+
+  // ---------- 方法 ----------
+  const capabilities = (): HandlerResult =>
+    selfCheck("Capabilities", {
+      subject: "aya",
+      adapter_version: ADAPTER_VERSION,
+      contract_version: CONTRACT_VERSION,
+      methods: {
+        diagnose: { implemented: true, async: false },
+        plan: { implemented: false },
+        teach: { implemented: false },
+        grade: { implemented: true, async: false },
+        generate_variation: { implemented: false },
+        report: { implemented: false },
+      },
+      verifiers: [{ verifier_id: VERIFIER_ID, version: VERIFIER_VERSION }],
+    });
+
+  const grade = (body: unknown): HandlerResult => {
+    validateOrThrow("GradeRequest", body);
+    const req = body as GradeRequest;
+    checkContext(req.context, true);
+    if (req.rubric_version !== VERIFIER_REF) {
+      throw new ProblemError(400, "INVALID_REQUEST", `rubric_version must be ${VERIFIER_REF}`);
+    }
+    const fp = requestFingerprint(req as unknown as Parameters<typeof requestFingerprint>[0]);
+    return idempotent("grade", req.context.idempotency_key, fp, () => {
+      const item = findItem(req.attempt.item_ref);
+      const v = verifyAttempt(item, req.attempt);
+      const id = (label: string) => deriveUuid("grade", req.context.idempotency_key, fp, `a0:${label}`);
+      const { response, trace } = buildEvidence(item, req.attempt, v, id);
+      const evidence = [response, trace];
+      const score = v.verdict === "correct" ? 1 : v.verdict === "incorrect" ? 0 : null;
+      const extra: string[] = [];
+      if (v.verdict === "needs_review" || v.reasonCodes.length > 0) extra.push("verifier_boundary_case");
+      if (score === null) extra.push("dimension_unavailable");
+      if (req.appeal) extra.push("student_appeal");
+      const confidence = round3(v.verdict === "needs_review" ? Math.min(v.confidence, BOUNDARY_MAX_CONFIDENCE) : v.confidence);
+      return selfCheck("GradeResponse", {
+        contract_version: CONTRACT_VERSION,
+        result: {
+          verdict: v.verdict,
+          rubric_version: req.rubric_version,
+          // 未经金标准校准（evals/grade 尚未建立），如实标 false
+          score: { total: score, max_total: 1, calibrated: false, ...(score === null ? { excluded_dimensions: ["answer"] } : {}) },
+          dimensions: [
+            {
+              dimension_id: "answer",
+              score,
+              max_score: 1,
+              judged_by: "verifier",
+              subjective: false,
+              rule_ref: VERIFIER_REF,
+              confidence,
+              evidence_ids: [response.evidence_id, trace.evidence_id],
+            },
+          ],
+          error_attributions: attribute(item, v, response.evidence_id),
+          verifier: { verifier_id: VERIFIER_ID, version: VERIFIER_VERSION, reason_codes: v.reasonCodes },
+        },
+        evidence,
+        evidence_ids: evidence.map((e) => e.evidence_id),
+        confidence,
+        source_version: sourceVersion(`verifier:${VERIFIER_REF}`),
+        model_version: `algo:${VERIFIER_REF}`,
+        ...envelopeFlags(evidence, extra),
+      });
+    });
+  };
+
+  const diagnose = (body: unknown): HandlerResult => {
+    validateOrThrow("DiagnoseRequest", body);
+    const req = body as DiagnoseRequest;
+    checkContext(req.context, false);
+    if (req.mode !== "intake" && req.mode !== "gap_test") {
+      throw new ProblemError(422, "INVALID_REQUEST", "aya diagnose supports mode intake and gap_test only");
+    }
+    if (!req.attempts || req.attempts.length === 0) {
+      throw new ProblemError(422, "INVALID_REQUEST", "aya diagnose needs at least one attempt");
+    }
+    const attempts = req.attempts;
+    const fp = requestFingerprint(req as unknown as Parameters<typeof requestFingerprint>[0]);
+    return idempotent("diagnose", req.context.idempotency_key, fp, () => {
+      const evidence: EvidenceDraft[] = [];
+      const observations: Record<string, unknown>[] = [];
+      const attributions: ErrorAttribution[] = [];
+      let anyBoundary = false;
+      attempts.forEach((attempt, i) => {
+        const item = findItem(attempt.item_ref);
+        const v = verifyAttempt(item, attempt);
+        const id = (label: string) => deriveUuid("diagnose", req.context.idempotency_key, fp, `a${i}:${label}`);
+        const { response, trace } = buildEvidence(item, attempt, v, id);
+        evidence.push(response, trace);
+        if (v.verdict === "needs_review") anyBoundary = true;
+        const outcome = v.verdict === "correct" ? "demonstrated" : v.verdict === "incorrect" ? "not_demonstrated" : "inconclusive";
+        let confidence = v.verdict === "needs_review" ? Math.min(v.confidence, BOUNDARY_MAX_CONFIDENCE) : v.confidence;
+        // 答对但自评“猜的”：降权（aya adapter-design §1）；用了 4 级及以上提示：降权
+        if (v.verdict === "correct" && attempt.self_report === "guessed") confidence = Math.min(confidence, GUESSED_MAX_CONFIDENCE);
+        if ((attempt.hint_level_used ?? 0) >= HEAVY_HINT_LEVEL) confidence = Math.min(confidence, HEAVY_HINT_MAX_CONFIDENCE);
+        for (const node of new Set(item.mainNodes)) {
+          observations.push({
+            skill_node: `aya:${node}`,
+            outcome,
+            confidence: round3(confidence),
+            evidence_ids: [response.evidence_id, trace.evidence_id],
+            algorithm_version: DIAGNOSE_ALGORITHM,
+          });
+        }
+        attributions.push(...attribute(item, v, response.evidence_id));
+      });
+      const confidence = Math.min(...observations.map((o) => o.confidence as number));
+      return selfCheck("DiagnoseResponse", {
+        contract_version: CONTRACT_VERSION,
+        result: { observations, error_attributions: attributions },
+        evidence,
+        evidence_ids: evidence.map((e) => e.evidence_id),
+        confidence,
+        source_version: sourceVersion(`verifier:${VERIFIER_REF}`, `algo:${DIAGNOSE_ALGORITHM}`),
+        model_version: `algo:${DIAGNOSE_ALGORITHM}`,
+        ...envelopeFlags(evidence, anyBoundary ? ["verifier_boundary_case"] : []),
+      });
+    });
+  };
+
+  const NOT_IMPLEMENTED = new Set(["plan", "teach", "generate_variation", "report"]);
+
+  /** 路由（路径不含 /plugin/v0 前缀）。所有错误都转成契约 Problem。 */
+  const handle = (method: string, path: string, body: unknown): HandlerResult => {
+    const started = performance.now();
+    const requestId = (body as { context?: { request_id?: unknown } } | undefined)?.context?.request_id;
+    // 只接受 UUID 形状的 request_id，防止把任意字符串带进日志
+    const rid = typeof requestId === "string" && UUID_RE.test(requestId) ? requestId : undefined;
+    let result: HandlerResult;
+    let code: ProblemCode | undefined;
+    try {
+      const name = path.replace(/^\/+/, "");
+      if (method === "GET" && name === "capabilities") result = capabilities();
+      else if (method === "POST" && name === "grade") result = grade(body);
+      else if (method === "POST" && name === "diagnose") result = diagnose(body);
+      else if (method === "POST" && NOT_IMPLEMENTED.has(name)) {
+        throw new ProblemError(501, "METHOD_NOT_IMPLEMENTED", `${name} is not implemented by the aya adapter yet`);
+      } else if (method === "GET" && name.startsWith("jobs/")) {
+        throw new ProblemError(404, "JOB_NOT_FOUND", "the aya adapter runs synchronously and has no jobs");
+      } else throw new ProblemError(404, "INVALID_REQUEST", "unknown route");
+    } catch (e) {
+      const err = e instanceof ProblemError ? e : new ProblemError(500, "INTERNAL", "internal error");
+      code = err.code;
+      result = problem(err, rid);
+    }
+    log({ method: path.replace(/^\/+/, ""), status: result.status, ...(code ? { code } : {}), ...(rid ? { request_id: rid } : {}), duration_ms: Math.round(performance.now() - started) });
+    return result;
+  };
+
+  return { capabilities, handle };
+}
+
+export type Adapter = ReturnType<typeof createAdapter>;
