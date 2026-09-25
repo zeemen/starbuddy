@@ -1,5 +1,0 @@
-check-fast:
-	@echo "check-fast: 暂无代码，跳过"
-
-check:
-	@echo "check: 暂无代码，跳过"
