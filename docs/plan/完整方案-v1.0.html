@@ -99,7 +99,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.9em;background
   <h1>魁星点斗 StarBuddy 产品开发完整方案</h1>
   <p class="sub">面向南京初中家庭的七科 AI 一对一学习平台——产品、角色、技术、商业与交付的统一方案，含四款既有学科产品的融合路径</p>
   <div class="meta">
-    <div><b>版本</b>v1.0 · 供产品、教研、研发、运营共同评审</div>
+    <div><b>版本</b>v1.0.1 · 供产品、教研、研发、运营共同评审</div>
     <div><b>日期</b>2026 年 9 月 24 日</div>
     <div><b>整合来源</b>《平台产品规划》v1.2 · 《产品系统架构与技术实施蓝图》V2.0 · 角色体系七份文档 · 四款产品 PRD</div>
     <div><b>品牌</b>魁星点斗 StarBuddy（简称点斗）；搭子"点点"</div>
@@ -181,7 +181,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.9em;background
       <li><strong>先有学情，再有通识。</strong>通识内容按学情触发，不按栏目推。</li>
       <li><strong>可信优先于可爱。</strong>讲解不能覆盖验证器或 Rubric 的结果；置信度不足时提示复核或转人工。</li>
       <li><strong>不做治疗，做转介。</strong>学生心理相关内容止于学习动力与压力管理教育。</li>
-      <li><strong>数据是资产，模型是零件。</strong>国内可商用模型为首选，通过模型路由接既有 Anthropic / Gemini 开发链；不默认调用境外 API 处理个人信息。</li>
+      <li><strong>数据是资产，模型是零件。</strong>国内可商用模型为首选，通过模型路由接既有开发链（盘点现状：文砺、知行、开口成章默认用 Anthropic，阿鸦用国内模型）；不默认调用境外 API 处理个人信息。</li>
     </ol>
   </div>
 </section>
@@ -196,7 +196,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.9em;background
       <tr><th>学科 · 现有产品</th><th>老师 · 身份</th><th>模式 · 出场</th><th>首要学习闭环</th><th>可核验的评测</th><th>状态</th></tr>
       <tr><td>语文 · 文砺</td><td>妙笔 · 主笔</td><td>导师主导 · 常驻</td><td>阅读审题 / 定位 / 表达；作文逐句朱批与升格</td><td>阅读采分点；作文五维 Rubric + 不确定度 + 人工抽检</td><td>初步开发；规格书 V1.0</td></tr>
       <tr><td>数学 · 阿鸦</td><td>阿鸦 · 教练</td><td>导师主导 · 常驻</td><td>双轴诊断、0–6 级提示、三层变式与五道门槛</td><td>符号 / 数值 / 几何规则验证，步骤追踪</td><td>初步开发；规格书 V1.1</td></tr>
-      <tr><td>英语 · 开口成章</td><td>雅典娜 · 考官（点点陪练）</td><td>陪练主导 · 考官型</td><td>听说场景、发音改进、语法阅读</td><td>ASR 识别与发音评估分开；Rubric；低置信度复核</td><td>初步开发（Gemini 链路）；角色卡 V1.1</td></tr>
+      <tr><td>英语 · 开口成章</td><td>雅典娜 · 考官（点点陪练）</td><td>陪练主导 · 考官型</td><td>听说场景、发音改进、语法阅读</td><td>ASR 识别与发音评估分开；Rubric；低置信度复核</td><td>初步开发（Anthropic + 浏览器语音）；角色卡 V1.1</td></tr>
       <tr><td>道法 · 知行</td><td>方圆 · 规矩之官（点点主持）</td><td>陪练主导 · 考官型</td><td>逆向拆题、开卷定位、组织采分点</td><td>版本化教材依据 + 采分点 Rubric</td><td>初步开发；角色卡 V1.1</td></tr>
       <tr><td>历史 · 知行·史</td><td>春秋 · 史官（点点主持）</td><td>陪练主导 · 考官型</td><td>时序、史料解释、因果与开卷检索</td><td>独立历史 Rubric；与道法共用限时合场训练</td><td>规划；角色卡 V1.1</td></tr>
       <tr><td>物理</td><td>阿基 · 教授</td><td>导师主导 · 常驻</td><td>猜想 → 交互实验 → 解释 → 迁移</td><td>单位 / 量纲 / 电路 / 光路 / 数值规则</td><td>规划</td></tr>
@@ -236,7 +236,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.9em;background
       <li><strong>学科插件 API 是唯一硬接口。</strong>四科通过适配器实现 <code>diagnose / plan / teach / grade / generate_variation / report</code> 六个方法；内部怎么实现平台不管。</li>
       <li><strong>学生模型是唯一硬数据。</strong>能力点、错因、掌握度、证据事件必须写入平台 Schema；各科可保留自己的私有表，但不得成为学生画像的第二真相源。</li>
       <li><strong>人设按规范迁移，不按产品迁移。</strong>备考搭子升格为点点，特级教师改为妙笔，英语学伴并入点点、考官定名雅典娜，阿鸦不动。</li>
-      <li><strong>英语保留既有模型链路。</strong>Gemini 实时语音链是四科里技术风险最高、投入最重的模块，通过模型路由接入，不强制迁移；点点的人设层跨模型一致性是前提验证项。</li>
+      <li><strong>英语模型与语音链路另行决策。</strong>盘点确认英语没有 Gemini 实时语音链：现状是 Anthropic 对话加浏览器 Web Speech，没有第三方发音评测。语音链需要按境内供应商重建，仍是四科里技术风险最高、投入最重的模块；接入方式见 ADR 08（草稿，待签字）。点点的人设层跨模型一致性仍是前提验证项。</li>
       <li><strong>前端合并壳，不合并页。</strong>统一学生端提供今日计划、星图、七科入口、点点、家长端；各科的课堂页面作为路由模块挂入，先共享舞台组件，再逐步统一。</li>
       <li><strong>计量前置。</strong>四科的每一次诊断、批改、讲评、语音都必须带 <code>usage_id</code> 与幂等键经过权益引擎，接入前不得上线付费。</li>
     </ol>
@@ -244,7 +244,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.9em;background
     <h3>5.2 四科现状盘点</h3>
     <div class="tbl"><table>
       <tr><th>维度</th><th>语文 · 文砺</th><th>数学 · 阿鸦</th><th>道法 · 知行</th><th>英语 · 开口成章</th></tr>
-      <tr><td>技术栈</td><td>Next.js 14 / TS / Tailwind / shadcn；Supabase；Railway 长任务；Anthropic</td><td>设计方案建议 FastAPI + Postgres + Redis + SymPy；实际开发沿用产品线共享栈</td><td>同文砺（"文砺架构的第二学科实例化"）；Orchestrator + 多 Agent + 人设表达层</td><td>Next.js PWA + Supabase；实际以 Google AI（Gemini）开发；实时语音链（流式 ASR → LLM → 流式 TTS）；第三方音素级评测</td></tr>
+      <tr><td>技术栈</td><td>Next.js 14 / TS / Tailwind / shadcn；Supabase；Railway 长任务；Anthropic</td><td>设计方案建议 FastAPI + Postgres + Redis + SymPy；实际开发沿用产品线共享栈</td><td>同文砺（"文砺架构的第二学科实例化"）；Orchestrator + 多 Agent + 人设表达层</td><td>React + Vite 前端 + 零依赖 Node 代理（主线 echo-quest）；没有数据库，学习状态存在浏览器；对话模型为 Anthropic；语音用浏览器 Web Speech（非流式）；没有第三方发音评测（原方案中的 Gemini 实时语音链与音素级评测均未实现，见四科盘点）</td></tr>
       <tr><td>核心引擎</td><td>M1 诊断（OCR 试卷）· M2 处方 ROI · M3 微课方法库 · M4 命题 · M5 作文批改升格 · M6 陪练与复盘</td><td>12 个 Agent：总控、学生模型、诊断、知识教师、思维教练、训练、错误分析、规划、中考教练、陪伴激励、验证、报告</td><td>F1 拆题 · F2 开卷定位 + 限时 · F3 采分点批改 · F4 润色 · F5 时政挂接 · F6 答疑 · F7 变式图谱 · F8 语音闪卡 · F9 家长 · F10 合场模拟 · F11 情境卡</td><td>F04 实时语音 · F09 发音评测 · NPC 状态机与长期记忆 · 场景资产 · 试炼之塔 · 双语报告</td></tr>
       <tr><td>能力坐标</td><td>7 域 × 4 级 = 28 点</td><td>10 板块 × 10 能力 = 100 点 + 五图谱</td><td>审题 → 定位 → 转化 → 表达 四步过程能力</td><td>译林教材七层图谱；语法 / 词汇 / 达意三维</td></tr>
       <tr><td>错因体系</td><td>六类：知识 / 审题 / 定位 / 思维 / 表达规范 / 策略时间</td><td>十二类根因</td><td>四类：审题 / 定位 / 转化 / 规范</td><td>三维 + 音素级语音信号</td></tr>
@@ -305,7 +305,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.9em;background
     <text x="1035" y="186" font-size="13.5" font-weight="700" fill="var(--ink)">开口成章 · 英语</text>
     <text x="1035" y="206" fill="var(--ink-2)">实时语音链 · NPC 状态机</text>
     <text x="1035" y="224" fill="var(--ink-2)">音素级评测 · 试炼之塔</text>
-    <text x="1035" y="242" fill="var(--ink-2)">Gemini 链路（保留）</text>
+    <text x="1035" y="242" fill="var(--ink-2)">英语链路（见 ADR 08）</text>
     <text x="1035" y="266" fill="var(--red)">人设：学伴 → 点点；考官 → 雅典娜</text>
     <text x="1035" y="290" fill="var(--ink-3)">适配器工作量：重（语音 + 模型路由）</text>
   </g>
@@ -347,7 +347,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.9em;background
   <text x="40" y="552" font-size="15" font-weight="700" fill="var(--ink)">基础层</text>
   <g font-size="11.5" text-anchor="middle">
     <rect x="40" y="564" width="180" height="56" fill="var(--paper)" stroke="var(--slate)"/><text x="130" y="586" font-size="12.5" font-weight="700" fill="var(--ink)">账号 / 家庭 / 权益 / 计量</text><text x="130" y="604" fill="var(--ink-2)">usage_ledger · 幂等</text>
-    <rect x="232" y="564" width="180" height="56" fill="var(--paper)" stroke="var(--slate)"/><text x="322" y="586" font-size="12.5" font-weight="700" fill="var(--ink)">模型路由</text><text x="322" y="604" fill="var(--ink-2)">国内首选 · Anthropic · Gemini</text>
+    <rect x="232" y="564" width="180" height="56" fill="var(--paper)" stroke="var(--slate)"/><text x="322" y="586" font-size="12.5" font-weight="700" fill="var(--ink)">模型路由</text><text x="322" y="604" fill="var(--ink-2)">国内首选 · 多供应商（ADR 04）</text>
     <rect x="424" y="564" width="180" height="56" fill="var(--paper)" stroke="var(--slate)"/><text x="514" y="586" font-size="12.5" font-weight="700" fill="var(--ink)">语音 / OCR</text><text x="514" y="604" fill="var(--ink-2)">ASR · TTS · 发音评测 可插拔</text>
     <rect x="616" y="564" width="180" height="56" fill="var(--paper)" stroke="var(--slate)"/><text x="706" y="586" font-size="12.5" font-weight="700" fill="var(--ink)">存储</text><text x="706" y="604" fill="var(--ink-2)">Postgres（Supabase 首期）· Redis · 对象存储</text>
     <rect x="808" y="564" width="180" height="56" fill="var(--paper)" stroke="var(--slate)"/><text x="898" y="586" font-size="12.5" font-weight="700" fill="var(--ink)">队列 / Worker</text><text x="898" y="604" fill="var(--ink-2)">批改 · 诊断 · 抓取长任务</text>
@@ -413,7 +413,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.9em;background
       <tr><td>人设治理</td><td>各科老师与点点通过家族级回归测试（合同符合性、角色三型边界、跨科静默、命名格式、比喻隔离、模式一致、转介一致）</td></tr>
       <tr><td>计量</td><td>扣次幂等、失败回滚、额度可见三项通过测试</td></tr>
       <tr><td>家庭隔离</td><td>家长按档案授权访问，同手机号不可跨档案；RLS 通过渗透测试</td></tr>
-      <tr><td>英语专项</td><td>点点人设在 Gemini 与 Anthropic 两条链路上通过同一套一致性回归测试；语音延迟 p95 达标</td></tr>
+      <tr><td>英语专项</td><td>点点人设在英语所用的各条模型链路上（供应商以 ADR 04 / 08 签字结果为准）通过同一套一致性回归测试；语音延迟 p95 达标</td></tr>
     </table></div>
   </div>
 </section>
@@ -429,7 +429,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.9em;background
       <tr><td>API / 业务</td><td>TypeScript BFF 负责账号 / 权益 / 支付回调；Python FastAPI 负责诊断、内容编排和学科验证；OpenAPI 契约</td><td>无状态容器弹性扩容；服务按流量分域，而非首日微服务化</td></tr>
       <tr><td>Agent 编排</td><td>显式有限状态流程（诊断 → 计划 → 教学 → 批改 → 复测），学科工具注册；复杂多步环节才引入 LangGraph</td><td>每一步幂等、超时、重试、审计；长任务持久化与断点恢复</td></tr>
       <tr><td>内容与知识</td><td>Postgres 存版本化题库、图谱及作答；对象存储存图片 / 语音 / 课程资产；pgvector 仅用于经审核内容辅助检索</td><td>热门检索缓存、读副本 / 搜索服务按瓶颈加入；答案依据来自图谱与审核内容</td></tr>
-      <tr><td>模型与语音</td><td>国内可商用模型首选，通过模型路由接既有 Anthropic / Gemini 开发链；OCR、ASR、TTS 可插拔；数学 SymPy / 几何规则</td><td>按任务选成本 / 延迟 / 质量档，供应商限流与熔断；个人信息跨境另行评估，不默认调用境外 API</td></tr>
+      <tr><td>模型与语音</td><td>国内可商用模型首选，通过模型路由接既有开发链（现状多为 Anthropic）；OCR、ASR、TTS 可插拔；数学 SymPy / 几何规则</td><td>按任务选成本 / 延迟 / 质量档，供应商限流与熔断；个人信息跨境另行评估，不默认调用境外 API</td></tr>
       <tr><td>存储与异步</td><td>PostgreSQL（现有 Supabase 首期）、Redis、S3 兼容对象存储、队列 / Worker</td><td>连接池、读写隔离、分区事件表、备份恢复演练；分析仓库单独承接报表</td></tr>
       <tr><td>监控安全</td><td>OpenTelemetry；WAF、私有对象存储、KMS、RLS 与服务端权限；敏感日志脱敏</td><td>多可用区容灾、容量预警、成本仪表盘、内容与权益审计</td></tr>
     </table></div>
@@ -641,6 +641,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.9em;background
       <table>
         <tr><th>版本</th><th>日期</th><th>变更</th></tr>
         <tr><td>v1.0</td><td>2026-09-24</td><td>首版：合并《平台产品规划》v1.2 与《产品系统架构与技术实施蓝图》V2.0，纳入角色体系七份文档的结论；新增第五章"四科融合"（原则、盘点、架构图、API 映射、数据迁移、人设迁移、前端壳、计量、分科验收）；交付路线加入四科融合子轨与决策门</td></tr>
+        <tr><td>v1.0.1</td><td>2026-09-25</td><td>更正英语技术栈描述（第 5.1、5.2、5.9 节，第六章，架构图）：盘点确认英语没有 Gemini 链路，现状是 Anthropic + 浏览器 Web Speech，没有第三方发音评测；英语模型与语音链路改由 ADR 08 决策（开口成章 decisions #1）。其余内容不变</td></tr>
       </table>
     </div>
   </div>
