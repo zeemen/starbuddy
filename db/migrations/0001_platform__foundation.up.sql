@@ -2,9 +2,7 @@
 -- 状态：草稿 v0.9（specs/learner-schema-v0.9/spec.md）。只写文件，由人执行（CLAUDE.md 必停项）。
 -- 只用标准 Postgres 16 能力，不依赖托管专有 schema（ADR 02 第 1 条）。
 
-CREATE SCHEMA platform;
-COMMENT ON SCHEMA platform IS '平台 schema：家庭关系、学习者模型（唯一真相源，CLAUDE.md 规则 2）';
-
+-- 请以单事务执行（psql -1）。角色断言放在建 schema 之前：断言失败时不会留下空 schema。
 -- 数据库角色由 db/bootstrap/roles.sql 创建（人执行）。这里只断言角色存在且属性安全：
 -- 预先存在一个带 BYPASSRLS 或 SUPERUSER 的同名角色时，RLS 会静默失效，必须拒绝（安全审查阻断 5）。
 DO $$
@@ -34,6 +32,10 @@ BEGIN
     RAISE EXCEPTION '同一个角色不能直接或间接同时继承 starbuddy_bff、starbuddy_learning、starbuddy_review 中的两个';
   END IF;
 END $$;
+
+
+CREATE SCHEMA platform;
+COMMENT ON SCHEMA platform IS '平台 schema：家庭关系、学习者模型（唯一真相源，CLAUDE.md 规则 2）';
 
 REVOKE ALL ON SCHEMA platform FROM PUBLIC;
 GRANT USAGE ON SCHEMA platform TO starbuddy_bff, starbuddy_learning, starbuddy_review, starbuddy_authz;
