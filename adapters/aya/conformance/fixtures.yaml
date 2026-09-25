@@ -1,0 +1,303 @@
+# 阿鸦一致性测试夹具（合成数据，CLAUDE.md 规则 8）。由独立会话依据内容包与 spec 编写，不参考适配器实现。
+#
+# 期望的推导依据（只读）：
+#   - specs/adapter-aya-sprint1/spec.md「映射规则」
+#   - specs/contract-conformance-sprint1/spec.md「学科夹具格式」
+#   - adapters/aya/content/pack.json（题目答案、选项陷阱、wrongAnswerTraps、mainNodes、准入状态；陷阱码 → 根因）
+#   - docs/mapping/error-taxonomy.v0.9.yaml（阿鸦根因 → 编码 → 跨科大类）
+#   - packages/contracts/openapi/plugin-api.v0.9.yaml（字段名与枚举）
+#
+# 本夹具用到的根因 → 跨科大类（映射表 v0.9 草稿，签字后如有变化需同步本文件）：
+#   概念错误 gainian_cuowu   → knowledge
+#   运算错误 yunsuan_cuowu   → computation_or_grammar
+#   表征错误 biaozheng_cuowu → thinking_method（disputed）
+#   推理错误 tuili_cuowu     → thinking_method
+#   心理与习惯 xinli_xiguan 为 sensitive，不计入期望；本夹具所选陷阱均不涉及。
+#
+# 通用约定：
+#   - 721 道题全部 Q1、来源待核（admission = source_unverified），所以每条 grade 用例都要求
+#     review_reasons 含 content_not_admitted（spec「admission / semantics」行）。
+#   - 边界情况只断言 needs_review 与 verifier_boundary_case，不断言具体 reason_code（spec 未规定取哪一个）。
+#   - needs_review 时不产出错因（spec：只有“答错且命中陷阱”才产出），error_categories 为空。
+#   - 待教研抽查：每条用例的 verdict（尤其是“等价写法”三条是否符合教学口径）。
+subject: aya
+authored_by: "独立会话（冲刺 1-A，待该科负责人与教研抽查）"
+content_version: {region: nanjing, exam_year: 2027, grade: 9, textbook_version: suke-2024, subject: aya, content_version: "0.1.0"}
+rubric_version: aya-symbolic-ts@0.1.0
+
+registry:
+  items:
+    Q-LEQ-U02-D-002: source_unverified
+    Q-MUL-U03-D-001: source_unverified
+    Q-PRB-U02-D-004: source_unverified
+    Q-EQU-U07-D-001: source_unverified
+    Q-DCE-U03-D-003: source_unverified
+    Q-MUL-U03-D-004: source_unverified
+    Q-MUL-U04-D-006: source_unverified
+    Q-LEQ-U05-D-001: source_unverified
+    Q-LEQ-U04-D-002: source_unverified
+    Q-FUN-U06-D-001: source_unverified
+    Q-INV-U03-R-001: source_unverified
+    Q-ALG-U05-R-001: source_unverified
+    Q-LIN-U06-D-001: source_unverified
+    Q-LEQ-U04-D-001: source_unverified
+    Q-MUS-U04-D-001: source_unverified
+    Q-AXS-U02-D-001: source_unverified
+  skill_nodes:
+    - P-LEQ-0409      # Q-LEQ-U02-D-002
+    - P-MUL-0812      # Q-MUL-U03-D-001
+    - P-PRB-0416      # Q-PRB-U02-D-004
+    - S-EQU-0934      # Q-EQU-U07-D-001
+    - S-EQU-0933      # Q-EQU-U07-D-001
+    - S-DCE-0711      # Q-DCE-U03-D-003
+    - K-MUL-0815      # Q-MUL-U03-D-004
+    - K-MUL-0825      # Q-MUL-U04-D-006
+    - S-LEQ-0419      # Q-LEQ-U05-D-001
+    - S-LEQ-0416      # Q-LEQ-U04-D-002
+    - S-FUN-0934      # Q-FUN-U06-D-001
+    - P-FUN-0931      # Q-FUN-U06-D-001
+    - P-INV-1123      # Q-INV-U03-R-001
+    - K-ALG-0318      # Q-ALG-U05-R-001
+    - K-LIN-0651      # Q-LIN-U06-D-001
+    - S-LEQ-0415      # Q-LEQ-U04-D-001
+    - K-MUS-0114      # Q-MUS-U04-D-001
+    - P-AXS-0205      # Q-AXS-U02-D-001
+
+# 标准答案（不得出现在任何响应中）。取舍规则：
+#   - 排除任何用例作为学生作答发送的字符串（例如 "5"、"x^2-x-6"、"3n+1"、"-14"、"13"、"2"、"3"）；
+#   - 排除单字符；
+#   - 排除整数与整数列表（如 "2,3"），避免与 UUID、时间戳等受控字符串偶然重合而误报；分数、小数、式子保留。
+secrets:
+  - "x²-x-6"          # Q-MUL-U03-D-001
+  - "2/5"             # Q-PRB-U02-D-004
+  - "0.17"            # Q-DCE-U03-D-003（带小数点，不会出现在 UUID/时间戳；若置信度恰为 0.17 会误报，届时请移除）
+  - "x^2+5x+6"        # Q-MUL-U03-D-004
+  - "x²+5x+6"
+  - "2x^2-4x+3"       # Q-MUL-U04-D-006
+  - "2x²-4x+3"
+  - "3x-4=17"         # Q-LEQ-U05-D-001
+  - "3x - 4 = 17"
+  - "3n + 1"          # Q-MUS-U04-D-001（"3n+1" 作为学生作答发送，故不列）
+
+cases:
+  # ---------------- grade · 填空 · 正例 ----------------
+  - id: fill-exact-integer
+    method: grade
+    attempt:
+      item_ref: "aya:Q-LEQ-U02-D-002"
+      response: {text: "5"}            # 标准答案 ["5"]
+      elapsed_sec: 40
+    expect:
+      verdict: correct
+      review_reasons_include: [content_not_admitted]
+      error_categories: []
+
+  - id: fill-exact-polynomial
+    method: grade
+    attempt:
+      item_ref: "aya:Q-MUL-U03-D-001"
+      response: {text: "x^2-x-6"}      # 标准答案 ["x^2-x-6", "x²-x-6"]
+    expect:
+      verdict: correct
+      review_reasons_include: [content_not_admitted]
+      error_categories: []
+
+  # ---------------- grade · 填空 · 等价写法 ----------------
+  - id: fill-equivalent-reordered-terms
+    method: grade
+    attempt:
+      item_ref: "aya:Q-MUL-U03-D-001"
+      response: {text: "x^2-6-x"}      # 项的顺序不同，与 x^2-x-6 恒等；单变量多项式，非边界
+    expect:
+      verdict: correct
+      review_reasons_include: [content_not_admitted]
+      error_categories: []
+
+  - id: fill-equivalent-decimal-for-fraction
+    method: grade
+    attempt:
+      item_ref: "aya:Q-PRB-U02-D-004"
+      response: {text: "0.4"}          # 标准答案 ["2/5"]；0.4 = 2/5；不等于任何陷阱 3/5、1/3、2/3
+    expect:
+      verdict: correct
+      review_reasons_include: [content_not_admitted]
+      error_categories: []
+
+  - id: fill-equivalent-reordered-roots
+    method: grade
+    attempt:
+      item_ref: "aya:Q-EQU-U07-D-001"
+      response: {text: "3,2"}          # 标准答案 ["2,3"]（方程两根，顺序无关）；陷阱为 "-2,-3" 与 "2"
+    expect:
+      verdict: correct
+      review_reasons_include: [content_not_admitted]
+      error_categories: []
+
+  # ---------------- grade · 填空 · 陷阱命中 ----------------
+  - id: fill-trap-computation
+    method: grade
+    attempt:
+      item_ref: "aya:Q-MUL-U03-D-001"
+      response: {text: "x^2-5x-6"}     # 陷阱 E-MUL-002 → 运算错误 → yunsuan_cuowu
+      self_report: confident
+    expect:
+      verdict: incorrect
+      review_reasons_include: [content_not_admitted]
+      error_categories: [computation_or_grammar]
+
+  - id: fill-trap-sign-integer
+    method: grade
+    attempt:
+      item_ref: "aya:Q-LEQ-U02-D-002"
+      response: {text: "-5"}           # 陷阱 E-LEQ-004 → 运算错误
+    expect:
+      verdict: incorrect
+      review_reasons_include: [content_not_admitted]
+      error_categories: [computation_or_grammar]
+
+  - id: fill-trap-two-root-causes
+    method: grade
+    attempt:
+      item_ref: "aya:Q-DCE-U03-D-003"
+      response: {text: "14"}           # 陷阱 E-DCE-006（概念错误）+ E-DCE-007（运算错误）；14 ≠ 0.17
+    expect:
+      verdict: incorrect
+      review_reasons_include: [content_not_admitted]
+      error_categories: [knowledge, computation_or_grammar]
+
+  # ---------------- grade · 填空 · 答错但不命中陷阱 ----------------
+  - id: fill-wrong-no-trap-polynomial
+    method: grade
+    attempt:
+      item_ref: "aya:Q-MUL-U03-D-001"
+      response: {text: "x^2+x-6"}      # 与 x^2-x-6 不恒等（x=1 时 -4 ≠ -6）；不在陷阱 x^2-6、x^2-5x-6 中
+    expect:
+      verdict: incorrect
+      review_reasons_include: [content_not_admitted]
+      error_categories: []
+
+  - id: fill-wrong-no-trap-integer
+    method: grade
+    attempt:
+      item_ref: "aya:Q-LEQ-U02-D-002"
+      response: {text: "7"}            # ≠ 5；陷阱只有 -5、15
+    expect:
+      verdict: incorrect
+      review_reasons_include: [content_not_admitted]
+      error_categories: []
+
+  # ---------------- grade · 填空 · 验证器边界 → needs_review ----------------
+  - id: fill-boundary-trig-function
+    method: grade
+    attempt:
+      item_ref: "aya:Q-MUL-U03-D-004"
+      response: {text: "sin(x)"}       # 标准答案为含变量的单个式子 x^2+5x+6；三角函数 → 边界
+    expect:
+      verdict: needs_review
+      review_reasons_include: [content_not_admitted, verifier_boundary_case]
+      error_categories: []
+
+  - id: fill-boundary-parse-failure
+    method: grade
+    attempt:
+      item_ref: "aya:Q-MUL-U04-D-006"
+      response: {text: "2x+"}          # 标准答案均为单值（无逗号）；表达式不完整 → 解析失败 → 边界
+    expect:
+      verdict: needs_review
+      review_reasons_include: [content_not_admitted, verifier_boundary_case]
+      error_categories: []
+
+  - id: fill-boundary-equation
+    method: grade
+    attempt:
+      item_ref: "aya:Q-LEQ-U05-D-001"
+      response: {text: "3x=21"}        # 标准答案是方程 3x-4=17；作答也是方程，字面不同 → 方程求解类边界；不在陷阱中
+    expect:
+      verdict: needs_review
+      review_reasons_include: [content_not_admitted, verifier_boundary_case]
+      error_categories: []
+
+  # ---------------- grade · 申诉 ----------------
+  - id: fill-appeal-trap
+    method: grade
+    attempt:
+      item_ref: "aya:Q-LEQ-U04-D-002"
+      response: {text: "8"}            # 标准答案 13；陷阱 E-LEQ-005 → 运算错误
+    appeal: true
+    expect:
+      verdict: incorrect               # 申诉不改变验证器结论，只要求进入复核
+      review_reasons_include: [content_not_admitted, student_appeal]
+      error_categories: [computation_or_grammar]
+
+  # ---------------- grade · 单选 ----------------
+  - id: single-correct
+    method: grade
+    attempt:
+      item_ref: "aya:Q-FUN-U06-D-001"
+      response: {choice: ["A"]}        # 标准答案 A
+    expect:
+      verdict: correct
+      review_reasons_include: [content_not_admitted]
+      error_categories: []
+
+  - id: single-wrong-two-root-causes
+    method: grade
+    attempt:
+      item_ref: "aya:Q-INV-U03-R-001"
+      response: {choice: ["B"]}        # B 陷阱 E-INV-004（表征错误）+ E-INV-003（概念错误）
+    expect:
+      verdict: incorrect
+      review_reasons_include: [content_not_admitted]
+      error_categories: [thinking_method, knowledge]
+
+  - id: single-wrong-dedup-category
+    method: grade
+    attempt:
+      item_ref: "aya:Q-INV-U03-R-001"
+      response: {choice: ["D"]}        # D 陷阱 E-INV-004（表征错误）+ E-INV-006（推理错误），两者都映射到 thinking_method，去重
+    expect:
+      verdict: incorrect
+      review_reasons_include: [content_not_admitted]
+      error_categories: [thinking_method]
+
+  # ---------------- grade · 多选 ----------------
+  - id: multi-correct-any-order
+    method: grade
+    attempt:
+      item_ref: "aya:Q-ALG-U05-R-001"
+      response: {choice: ["D", "A"]}   # 标准答案 {A, D}；key 集合比对，顺序无关
+    expect:
+      verdict: correct
+      review_reasons_include: [content_not_admitted]
+      error_categories: []
+
+  - id: multi-missing-option
+    method: grade
+    attempt:
+      item_ref: "aya:Q-ALG-U05-R-001"
+      response: {choice: ["A"]}        # 少选 D，集合不等 → 错；所选 A 不带陷阱 → 无错因
+    expect:
+      verdict: incorrect
+      review_reasons_include: [content_not_admitted]
+      error_categories: []
+
+  # ---------------- diagnose ----------------
+  - id: diagnose-intake-three-attempts
+    method: diagnose
+    mode: intake
+    attempts:
+      - {item_ref: "aya:Q-LIN-U06-D-001", response: {text: "2"}, self_report: guessed}     # 答对但自评“猜的” → ≤ 0.3
+      - {item_ref: "aya:Q-LEQ-U04-D-001", response: {text: "14"}, self_report: confident}  # 标准答案 -14；答错（陷阱 E-LEQ-013）
+      - {item_ref: "aya:Q-MUS-U04-D-001", response: {text: "3n+1"}, hint_level_used: 4}    # 答对但用了 4 级提示 → ≤ 0.5
+    expect:
+      outcomes: [demonstrated, not_demonstrated, demonstrated]
+      max_confidence: [0.3, null, 0.5]
+
+  - id: diagnose-gap-test-two-attempts
+    method: diagnose
+    mode: gap_test
+    attempts:
+      - {item_ref: "aya:Q-INV-U03-R-001", response: {choice: ["A"]}, self_report: confident, elapsed_sec: 60}  # 单选答对
+      - {item_ref: "aya:Q-AXS-U02-D-001", response: {text: "6"}, self_report: unsure}                         # 标准答案 3；答错（陷阱 E-AXS-006）
+    expect:
+      outcomes: [demonstrated, not_demonstrated]

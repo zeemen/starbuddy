@@ -305,6 +305,45 @@ def run_checks(doc: dict) -> list[str]:
     return errors
 
 
+INTERNAL_SPEC = HERE.parent / "openapi" / "learning-internal.v0.yaml"
+
+
+def check_internal(errors: list[str]) -> int:
+    """学习服务内部 API（BFF → 学习服务）：OpenAPI 合法，跨文件 $ref 都能解析（冲刺 1-A 范围第 5 条）。"""
+    doc = load(INTERNAL_SPEC)
+    try:
+        validate_openapi(doc, base_uri=INTERNAL_SPEC.as_uri())
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"learning-internal OpenAPI 校验失败：{str(exc)[:500]}")
+    refs = 0
+
+    def walk(node):
+        nonlocal refs
+        if isinstance(node, dict):
+            ref = node.get("$ref")
+            if isinstance(ref, str) and not ref.startswith("#"):
+                refs += 1
+                file, _, pointer = ref.partition("#")
+                target = (INTERNAL_SPEC.parent / file).resolve()
+                if not target.exists():
+                    errors.append(f"learning-internal：$ref 指向的文件不存在 {file}")
+                else:
+                    cur = load(target)
+                    for part in pointer.strip("/").split("/"):
+                        if not isinstance(cur, dict) or part not in cur:
+                            errors.append(f"learning-internal：$ref 无法解析 {ref}")
+                            break
+                        cur = cur[part]
+            for v in node.values():
+                walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+
+    walk(doc)
+    return refs
+
+
 def load(path: Path) -> dict:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
@@ -313,6 +352,7 @@ def main() -> int:
     spec = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_SPEC
     doc = load(spec)
     errors = run_checks(doc)
+    internal_refs = check_internal(errors) if len(sys.argv) <= 1 else None
     if errors:
         print(f"contract-test: 失败（{len(errors)} 项）")
         for e in errors:
@@ -322,7 +362,8 @@ def main() -> int:
     sys.path.insert(0, str(HERE.parent / "tests"))
     from counterexamples import CASES  # noqa: PLC0415
     print(f"contract-test: 通过（OpenAPI 3.1 合法；{n_ex} 个示例符合 schema 且证据引用闭合；"
-          f"{len(CASES)} 个反例全部被拒绝；六方法信封、计量字段、无约束文本扫描、JobStatus 绑定、示例无 PII）")
+          f"{len(CASES)} 个反例全部被拒绝；六方法信封、计量字段、无约束文本扫描、JobStatus 绑定、示例无 PII"
+          + (f"；learning-internal 合法、{internal_refs} 个跨文件引用可解析" if internal_refs is not None else "") + "）")
     return 0
 
 

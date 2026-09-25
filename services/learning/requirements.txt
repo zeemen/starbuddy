@@ -6,3 +6,4 @@ asyncpg==0.31.0
 httpx==0.28.1
 jsonschema==4.26.0
 pyyaml==6.0.3
+# 契约共享库（packages/contracts/python）以可编辑方式安装：pip install -e ../../packages/contracts/python

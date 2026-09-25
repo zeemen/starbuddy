@@ -4,3 +4,6 @@
 # 其余传递依赖均为 MIT / BSD / Apache-2.0 / PSF-2.0。没有 GPL / LGPL / AGPL。
 openapi-spec-validator==0.9.0
 PyYAML>=6.0,<7
+# 一致性测试（packages/contracts/conformance）：pytest MIT；jsonschema MIT（上面已作为传递依赖引入，这里锁版本）
+pytest==9.1.1
+jsonschema==4.26.0

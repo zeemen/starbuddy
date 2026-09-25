@@ -1,0 +1,39 @@
+# 参考假适配器的夹具（合成数据，规则 8）。与 reference_adapter.py 的 ITEMS 对应。
+# 学科写成 zhixing：参考适配器扮演另一科，用来证明一致性测试与学科无关（cli.py 可以用 --reference-subject 换成别的学科）。
+subject: zhixing
+authored_by: "冲刺 1-A 框架自带（参考适配器，不代表任何真实学科）"
+content_version: {region: nanjing, exam_year: 2027, grade: 9, textbook_version: ref-2024, subject: zhixing, content_version: "1.0.0"}
+rubric_version: ref-verifier@1.0.0
+registry:
+  items: {REF-1: source_unverified, REF-2: admitted}
+  skill_nodes: [REF-N1, REF-N2]
+secrets: [answer_key_ref_2]
+cases:
+  - id: grade-correct-unadmitted
+    method: grade
+    attempt: {item_ref: "zhixing:REF-1", response: {text: "12"}, elapsed_sec: 30}
+    expect: {verdict: correct, review_reasons_include: [content_not_admitted], error_categories: []}
+  - id: grade-trap
+    method: grade
+    attempt: {item_ref: "zhixing:REF-1", response: {text: "13"}}
+    expect: {verdict: incorrect, review_reasons_include: [content_not_admitted], error_categories: [computation_or_grammar]}
+  - id: grade-correct-admitted
+    method: grade
+    attempt: {item_ref: "zhixing:REF-2", response: {text: "ab"}}
+    expect: {verdict: correct, error_categories: []}
+  - id: grade-boundary
+    method: grade
+    attempt: {item_ref: "zhixing:REF-2", response: {text: "?"}}
+    expect: {verdict: needs_review, review_reasons_include: [verifier_boundary_case]}
+  - id: grade-appeal
+    method: grade
+    appeal: true
+    attempt: {item_ref: "zhixing:REF-2", response: {text: "ab"}}
+    expect: {verdict: correct, review_reasons_include: [student_appeal]}
+  - id: diagnose-mixed
+    method: diagnose
+    mode: intake
+    attempts:
+      - {item_ref: "zhixing:REF-1", response: {text: "12"}, self_report: guessed}
+      - {item_ref: "zhixing:REF-2", response: {text: "ba"}}
+    expect: {outcomes: [demonstrated, not_demonstrated], max_confidence: [0.3, null]}
