@@ -2,8 +2,10 @@
 -- 原始证据、模型推断、家长自述分开存（CLAUDE.md 规则 6）：本迁移只放“观察到的事实”。
 -- 语音只存评测结果与特征，不存原始音频（完整方案 5.5）。
 --
--- 幂等（spec 待人确认 #2）：契约要求适配器重试时返回同一个 evidence_id / attempt_id，
--- 所以以它们作为幂等身份，主键 (id, occurred_at) 同时满足“唯一约束含分区键”（ADR 05 第 2 条）。
+-- 幂等（spec 待人确认 #2）：契约要求适配器重试时返回同一个 evidence_id / attempt_id，并且 occurred_at
+-- 保持不变，所以以它们作为幂等身份，主键 (id, occurred_at) 同时满足“唯一约束含分区键”（ADR 05 第 2 条）。
+-- 注意：分区表上无法对 evidence_id 单独建全局唯一约束；同一 ID 换一个 occurred_at 会被当作另一条证据，
+-- 由学习服务在写入前按 evidence_id 查重（安全审查建议 1）。
 -- 请求级 idempotency_key 另存一列并建索引，用于对账。
 
 -- payload 字段白名单，与契约 EvidencePayload* 对应。禁止游戏化数值与掌握度（echo #12；规则 2）。
@@ -20,6 +22,7 @@ CREATE FUNCTION platform.evidence_payload_ok(p_kind text, p_payload jsonb) RETUR
           WHEN p_kind = 'verifier_trace' THEN ARRAY['sampled_points', 'agreeing_points', 'reason_codes']
           WHEN p_kind IN ('interaction_signal', 'speech_features') THEN ARRAY['signal_code', 'value']
           ELSE ARRAY[]::text[] END))
+     AND (NOT (p_payload ? 'text') OR char_length(p_payload ->> 'text') <= 20000)
      AND (p_kind NOT IN ('interaction_signal', 'speech_features')
           OR (p_payload ->> 'signal_code') ~ '^(?!xp_|achievement_|mastery_)[a-z0-9_]{1,48}$')
   $$;
@@ -42,7 +45,9 @@ CREATE TABLE platform.evidence_event (
   request_id                uuid NOT NULL,
   request_idempotency_key   text NOT NULL CHECK (length(request_idempotency_key) BETWEEN 16 AND 128),
   recorded_at               timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY (evidence_id, occurred_at)
+  PRIMARY KEY (evidence_id, occurred_at),
+  -- 题目必须已登记（安全审查建议 8）；未准入的题也要登记，准入状态记在 admission
+  FOREIGN KEY (subject, item_id) REFERENCES platform.item (subject, item_id)
 ) PARTITION BY RANGE (occurred_at);
 CREATE INDEX evidence_event_student_idx ON platform.evidence_event (student_id, occurred_at);
 CREATE INDEX evidence_event_skill_idx ON platform.evidence_event (subject, skill_local_id, occurred_at);
@@ -61,7 +66,8 @@ CREATE TABLE platform.attempt (
   self_report               text CHECK (self_report IN ('confident', 'unsure', 'guessed')),
   request_idempotency_key   text NOT NULL CHECK (length(request_idempotency_key) BETWEEN 16 AND 128),
   recorded_at               timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY (attempt_id, occurred_at)
+  PRIMARY KEY (attempt_id, occurred_at),
+  FOREIGN KEY (subject, item_id) REFERENCES platform.item (subject, item_id)
 ) PARTITION BY RANGE (occurred_at);
 CREATE INDEX attempt_student_idx ON platform.attempt (student_id, occurred_at);
 CREATE INDEX attempt_item_idx ON platform.attempt (subject, item_id, occurred_at);
@@ -70,7 +76,7 @@ CREATE INDEX attempt_item_idx ON platform.attempt (subject, item_id, occurred_at
 -- 分区上不授予任何角色权限：只能经父表访问，父表的 RLS 才会生效。
 CREATE FUNCTION platform.ensure_monthly_partitions(p_parent regclass, p_from date, p_months integer)
   RETURNS integer
-  LANGUAGE plpgsql VOLATILE SET search_path = pg_catalog, platform
+  LANGUAGE plpgsql VOLATILE SET search_path = pg_catalog, platform, pg_temp
   AS $$
 DECLARE
   v_start date := date_trunc('month', p_from)::date;

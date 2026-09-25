@@ -2,6 +2,14 @@
 
 `db/migrations/` 下的任何文件都是必停项（CLAUDE.md）：PR 首行写 `[NEEDS-HUMAN]`，**迁移由人执行**。Claude Code 只写文件，不执行 `supabase db push` 之类的命令（守卫会拦截）。
 
+## 角色（每个环境执行一次，由人执行）
+
+```bash
+psql -f db/bootstrap/roles.sql   # 建 starbuddy_bff / starbuddy_learning / starbuddy_authz
+```
+
+迁移 0001 会断言这些角色存在且属性安全，否则拒绝执行。迁移的 down 不删除角色。
+
 ## 约定（ADR 02）
 - 只有一条迁移序列，编号递增：`NNNN_<schema>__<名称>.up.sql`，每个都有对应的 `.down.sql`。
 - 每个迁移只改一个 schema。
@@ -22,9 +30,9 @@ make db-mutation   # 逐条放宽 RLS 或约束，断言测试能发现（约 40
 | 文件 | 内容 |
 |---|---|
 | `tests/00_helpers.sql` | 断言函数 `t.ok`、`t.throws` |
-| `tests/10_fixtures.sql` | 两户家庭 + 一位未绑定的家长（合成） |
-| `tests/20_rls_household.sql` | 家庭隔离、同手机号跨档案、绑定与邀请、家长自述可见性 |
-| `tests/30_learning_service.sql` | 学习服务的读写边界、证据幂等、推断更正 |
+| `tests/10_fixtures.sql` | 两户家庭 + 一位未绑定的家长（合成；手机号用未分配的 +999） |
+| `tests/20_rls_household.sql` | 家庭隔离、同手机号跨档案、注册 / 建档 / 绑定 / 邀请只能经函数、每张表的读隔离、家长自述可见性、禁用账号 |
+| `tests/30_learning_service.sql` | 学习服务的读写边界、证据幂等、推断更正只能单向且指向同一对象 |
 | `tests/40_constraints.sql` | 与契约一致的判分溯源约束 |
 | `tests/mutations.sh` | 数据库变异测试 |
 

@@ -36,4 +36,39 @@ SELECT t.ok((SELECT state FROM platform.mastery_estimate
 SELECT t.ok((SELECT count(*) FROM platform.mastery_estimate WHERE student_id = 'c1000000-0000-4000-8000-0000000000c1') = 2,
             '更正历史保留');
 SELECT t.throws($$UPDATE platform.mastery_estimate SET confidence = 1$$, '42501', '推断内容不能被改写，只能更正');
+SELECT t.throws($$UPDATE platform.mastery_estimate SET state = 'retain'$$, '42501', '学习服务不能直接改掌握状态，只能写新记录');
+SELECT t.throws($$UPDATE platform.grade_result SET human_review_required = false, review_reasons = '{}'$$, '42501',
+                '学习服务不能撤掉判分的复核标记');
+
+-- ---- 更正只能单向、一次、指向同一对象的新记录（安全审查阻断 6）----
+CREATE TEMP TABLE obs AS SELECT
+  (SELECT id FROM platform.skill_observation WHERE student_id = 'c1000000-0000-4000-8000-0000000000c1') AS s1,
+  (SELECT id FROM platform.skill_observation WHERE student_id = 'c2000000-0000-4000-8000-0000000000c2') AS s2;
+SELECT t.throws(format($$SET CONSTRAINTS platform.check_supersede_target IMMEDIATE;
+                         UPDATE platform.skill_observation SET superseded_by = %L WHERE id = %L$$,
+                       (SELECT s2 FROM obs), (SELECT s1 FROM obs)),
+                '23514', '不能用别的学生的记录“更正”');
+SELECT t.throws(format($$UPDATE platform.skill_observation SET superseded_by = %L WHERE id = %L$$,
+                       (SELECT s1 FROM obs), (SELECT s1 FROM obs)),
+                '23514', '记录不能取代自己');
+SELECT t.throws($$UPDATE platform.mastery_estimate SET is_current = true, superseded_by = NULL
+                  WHERE student_id = 'c1000000-0000-4000-8000-0000000000c1' AND NOT is_current$$,
+                '23514', '已被取代的掌握度不能复活');
+SELECT t.throws(format($$UPDATE platform.mastery_estimate SET superseded_by = %L
+                         WHERE student_id = 'c1000000-0000-4000-8000-0000000000c1' AND NOT is_current$$,
+                       'ab000000-0000-4000-8000-0000000000ab'),
+                '23514', '已经做过的更正不能再改');
+SELECT t.ok((SELECT superseded_at > now() - interval '1 minute' FROM platform.mastery_estimate
+              WHERE student_id = 'c1000000-0000-4000-8000-0000000000c1' AND NOT is_current),
+            'superseded_at 由库写 now()');
+-- 合法更正：同一学生、同一能力点的新观测
+BEGIN;
+INSERT INTO platform.skill_observation (id, student_id, subject, skill_local_id, outcome, confidence, algorithm_version, evidence_ids, source_request_id)
+VALUES ('0b500000-0000-4000-8000-0000000000b5', 'c1000000-0000-4000-8000-0000000000c1', 'aya', 'K-QF-0301', 'demonstrated', 0.6,
+        'aya-diag@0.1.1', '{e1000000-0000-4000-8000-000000000003}', gen_random_uuid());
+UPDATE platform.skill_observation SET superseded_by = '0b500000-0000-4000-8000-0000000000b5' WHERE id = (SELECT s1 FROM obs);
+COMMIT;
+SELECT t.ok((SELECT superseded_by FROM platform.skill_observation WHERE id = (SELECT s1 FROM obs)) = '0b500000-0000-4000-8000-0000000000b5',
+            '同一学生、同一能力点的合法更正可以提交');
+
 RESET ROLE;

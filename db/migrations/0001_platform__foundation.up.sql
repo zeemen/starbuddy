@@ -5,20 +5,29 @@
 CREATE SCHEMA platform;
 COMMENT ON SCHEMA platform IS '平台 schema：家庭关系、学习者模型（唯一真相源，CLAUDE.md 规则 2）';
 
--- 数据库角色（NOLOGIN，由部署时的登录角色 GRANT 继承）
---   starbuddy_bff      ：TS BFF，代表当前登录账号访问；每个事务开头 SET LOCAL app.account_id
---   starbuddy_learning ：Python 学习服务，唯一能写学习证据与推断的角色（ADR 01 第 1 条）
---   starbuddy_authz    ：授权函数的属主，BYPASSRLS，只用于 SECURITY DEFINER 函数，不授予任何登录角色
+-- 数据库角色由 db/bootstrap/roles.sql 创建（人执行）。这里只断言角色存在且属性安全：
+-- 预先存在一个带 BYPASSRLS 或 SUPERUSER 的同名角色时，RLS 会静默失效，必须拒绝（安全审查阻断 5）。
 DO $$
+DECLARE r record;
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'starbuddy_bff') THEN
-    CREATE ROLE starbuddy_bff NOLOGIN;
+  FOR r IN SELECT n AS rolname FROM unnest(ARRAY['starbuddy_bff', 'starbuddy_learning', 'starbuddy_authz']) n LOOP
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r.rolname) THEN
+      RAISE EXCEPTION '角色 % 不存在：请先执行 db/bootstrap/roles.sql', r.rolname;
+    END IF;
+  END LOOP;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname IN ('starbuddy_bff', 'starbuddy_learning')
+             AND (rolsuper OR rolbypassrls)) THEN
+    RAISE EXCEPTION 'starbuddy_bff / starbuddy_learning 不能是 SUPERUSER 或 BYPASSRLS';
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'starbuddy_learning') THEN
-    CREATE ROLE starbuddy_learning NOLOGIN;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'starbuddy_authz' AND (rolcanlogin OR rolsuper))
+     OR EXISTS (SELECT 1 FROM pg_auth_members m JOIN pg_roles ra ON ra.oid = m.roleid WHERE ra.rolname = 'starbuddy_authz') THEN
+    RAISE EXCEPTION 'starbuddy_authz 必须 NOLOGIN、非 SUPERUSER，且不能授予任何角色';
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'starbuddy_authz') THEN
-    CREATE ROLE starbuddy_authz NOLOGIN BYPASSRLS;
+  IF EXISTS (SELECT 1 FROM pg_auth_members m
+               JOIN pg_roles a ON a.oid = m.roleid AND a.rolname = 'starbuddy_bff'
+               JOIN pg_auth_members m2 ON m2.member = m.member
+               JOIN pg_roles b ON b.oid = m2.roleid AND b.rolname = 'starbuddy_learning') THEN
+    RAISE EXCEPTION '同一个角色不能同时继承 starbuddy_bff 与 starbuddy_learning';
   END IF;
 END $$;
 

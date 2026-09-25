@@ -5,3 +5,5 @@ DROP TABLE IF EXISTS platform.grade_result;
 DROP TABLE IF EXISTS platform.mastery_estimate;
 DROP TABLE IF EXISTS platform.error_attribution;
 DROP TABLE IF EXISTS platform.skill_observation;
+DROP FUNCTION IF EXISTS platform.check_supersede_target();
+DROP FUNCTION IF EXISTS platform.guard_supersede();

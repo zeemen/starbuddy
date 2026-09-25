@@ -44,7 +44,8 @@ CREATE FUNCTION pg_temp.grade_sql(overrides text) RETURNS text LANGUAGE sql AS $
            confidence, source_version, model_version, human_review_required, review_reasons::platform.review_reason[],
            verifier_id, verifier_version, verifier_reason_codes, semantics::platform.semantics, evidence_ids, source_request_id
     FROM (SELECT 'c1000000-0000-4000-8000-0000000000c1'::uuid AS student_id, 'aya'::platform.subject AS subject,
-                 gen_random_uuid() AS attempt_id, now() AS attempt_occurred_at, 'correct'::text AS verdict,
+                 'a7000000-0000-4000-8000-0000000000a7'::uuid AS attempt_id,
+                 '2026-10-08 11:30:00+00'::timestamptz AS attempt_occurred_at, 'correct'::text AS verdict,
                  'aya-symbolic-ts@0.1.0'::text AS rubric_version, 1::numeric AS score_total, 1::numeric AS max_total,
                  true AS calibrated, 1.0::numeric AS confidence, 'rubric:aya-symbolic-ts@0.1.0'::text AS source_version,
                  'algo:aya-symbolic-ts@0.1.0'::text AS model_version, false AS human_review_required,
@@ -69,15 +70,38 @@ SELECT t.throws(replace(pg_temp.grade_sql(''), '''{}''::text[] AS verifier_reaso
                 '23514', '验证器报了边界原因码必须复核');
 SELECT t.throws(replace(pg_temp.grade_sql(''), '''0.1.0''::text AS verifier_version', 'NULL::text AS verifier_version'),
                 '23514', '验证器必须带版本');
+SELECT t.throws(replace(replace(replace(replace(pg_temp.grade_sql(''),
+                  '''correct''::text AS verdict', '''needs_review''::text AS verdict'),
+                  'false AS human_review_required', 'true AS human_review_required'),
+                  '1.0::numeric AS confidence', '0.3::numeric AS confidence'),
+                  '''{}''::text[] AS review_reasons', '''{spot_check}''::text[] AS review_reasons'),
+                '23514', 'needs_review 的复核原因必须含 verifier_boundary_case');
+SELECT t.throws(replace(replace(replace(pg_temp.grade_sql(''),
+                  '''{}''::text[] AS verifier_reason_codes', '''{老师说对}''::text[] AS verifier_reason_codes'),
+                  'false AS human_review_required', 'true AS human_review_required'),
+                  '''{}''::text[] AS review_reasons', '''{verifier_boundary_case}''::text[] AS review_reasons'),
+                '23514', '验证器原因码只能取已知枚举');
+SELECT t.throws($$INSERT INTO platform.evidence_event (evidence_id, occurred_at, student_id, subject, kind, item_id, admission, payload,
+                  source_method, request_id, request_idempotency_key) VALUES (gen_random_uuid(), '2026-10-11 00:00:00+00',
+                  'c1000000-0000-4000-8000-0000000000c1', 'aya', 'response_text', 'not-registered-item', 'admitted', '{"text": "x"}',
+                  'grade', gen_random_uuid(), 'synthetic-constraint-0005')$$,
+                '23503', '证据引用的题目必须已登记');
+SELECT t.throws($$INSERT INTO platform.evidence_event (evidence_id, occurred_at, student_id, subject, kind, admission, payload,
+                  source_method, request_id, request_idempotency_key) VALUES (gen_random_uuid(), '2026-10-11 00:00:00+00',
+                  'c1000000-0000-4000-8000-0000000000c1', 'aya', 'response_text', 'admitted',
+                  jsonb_build_object('text', repeat('x', 20001)), 'grade', gen_random_uuid(), 'synthetic-constraint-0006')$$,
+                '23514', '证据文本不能超过 20000 字');
+SELECT t.throws(replace(pg_temp.grade_sql(''), '''a7000000-0000-4000-8000-0000000000a7''::uuid AS attempt_id', 'gen_random_uuid() AS attempt_id'),
+                '23503', '判分必须对应一次真实作答');
 
 -- 判分维度
 INSERT INTO platform.grade_result (id, student_id, subject, attempt_id, attempt_occurred_at, verdict, rubric_version, score_total,
   max_total, calibrated, confidence, source_version, model_version, human_review_required, review_reasons, semantics, evidence_ids,
   source_request_id)
-VALUES ('9a000000-0000-4000-8000-00000000009a', 'c1000000-0000-4000-8000-0000000000c1', 'wenli', gen_random_uuid(), now(), 'partial',
+VALUES ('9a000000-0000-4000-8000-00000000009a', 'c1000000-0000-4000-8000-0000000000c1', 'wenli', 'a8000000-0000-4000-8000-0000000000a8', '2026-10-09 11:30:00+00', 'partial',
   'wenli-essay-5d@1.2.0', 8, 10, false, 0.4, 'rubric:wenli-essay-5d@1.2.0', 'model:deepseek/deepseek-chat@2026-09', true,
   '{subjective_dimension}', 'formal', '{e1000000-0000-4000-8000-000000000001}', gen_random_uuid()),
-       ('9b000000-0000-4000-8000-00000000009b', 'c1000000-0000-4000-8000-0000000000c1', 'wenli', gen_random_uuid(), now(), 'partial',
+       ('9b000000-0000-4000-8000-00000000009b', 'c1000000-0000-4000-8000-0000000000c1', 'wenli', 'a8000000-0000-4000-8000-0000000000a8', '2026-10-09 11:30:00+00', 'partial',
   'wenli-essay-5d@1.2.0', 8, 10, false, 0.9, 'rubric:wenli-essay-5d@1.2.0', 'model:deepseek/deepseek-chat@2026-09', false,
   '{}', 'formal', '{e1000000-0000-4000-8000-000000000001}', gen_random_uuid());
 INSERT INTO platform.grade_dimension (grade_result_id, dimension_id, score, max_score, judged_by, subjective, confidence, evidence_ids)
@@ -99,6 +123,17 @@ SELECT t.throws($$SET CONSTRAINTS platform.grade_dimension_requires_review IMMED
                   INSERT INTO platform.grade_dimension (grade_result_id, dimension_id, score, max_score, judged_by, subjective, confidence, evidence_ids)
                   VALUES ('9b000000-0000-4000-8000-00000000009b', 'structure', 8, 10, 'rubric_model', true, 0.4, '{e1000000-0000-4000-8000-000000000001}')$$,
                 '23514', '有主观维度时父判分必须复核（跨行约束）');
+-- 父判分已复核、原因也对，但整体置信度 0.9：主观维度要求父判分置信度 ≤ 0.5
+INSERT INTO platform.grade_result (id, student_id, subject, attempt_id, attempt_occurred_at, verdict, rubric_version, score_total,
+  max_total, calibrated, confidence, source_version, model_version, human_review_required, review_reasons, semantics, evidence_ids,
+  source_request_id)
+VALUES ('9d000000-0000-4000-8000-00000000009d', 'c1000000-0000-4000-8000-0000000000c1', 'wenli', 'a8000000-0000-4000-8000-0000000000a8',
+  '2026-10-09 11:30:00+00', 'partial', 'wenli-essay-5d@1.2.0', 8, 10, false, 0.9, 'rubric:wenli-essay-5d@1.2.0',
+  'model:deepseek/deepseek-chat@2026-09', true, '{subjective_dimension}', 'formal', '{e1000000-0000-4000-8000-000000000001}', gen_random_uuid());
+SELECT t.throws($$SET CONSTRAINTS platform.grade_dimension_requires_review IMMEDIATE;
+                  INSERT INTO platform.grade_dimension (grade_result_id, dimension_id, score, max_score, judged_by, subjective, confidence, evidence_ids)
+                  VALUES ('9d000000-0000-4000-8000-00000000009d', 'structure', 8, 10, 'rubric_model', true, 0.4, '{e1000000-0000-4000-8000-000000000001}')$$,
+                '23514', '有主观维度时父判分置信度不能超过 0.5');
 SELECT t.throws($$SET CONSTRAINTS platform.grade_dimension_requires_review IMMEDIATE;
                   INSERT INTO platform.grade_dimension (grade_result_id, dimension_id, score, max_score, judged_by, subjective, rule_ref, confidence, evidence_ids)
                   VALUES ('9a000000-0000-4000-8000-00000000009a', 'pronunciation', NULL, 10, 'verifier', false, 'echo-eval@0.1.0', 0.9, '{e1000000-0000-4000-8000-000000000001}')$$,
@@ -111,4 +146,23 @@ SELECT t.throws($$INSERT INTO platform.review_task (subject, student_id, source_
 INSERT INTO platform.review_task (subject, student_id, source_kind, source_id, reasons)
 VALUES ('wenli', 'c1000000-0000-4000-8000-0000000000c1', 'grade_result', '9a000000-0000-4000-8000-00000000009a', '{subjective_dimension}');
 SELECT t.ok((SELECT count(*) FROM platform.review_task WHERE status = 'open') = 1, '主观判分进入统一复核队列');
+
+-- 不能借“更正”绕过复核（安全审查阻断 6）：待复核的主观判分被一条不复核、高置信的判分取代
+INSERT INTO platform.grade_result (id, student_id, subject, attempt_id, attempt_occurred_at, verdict, rubric_version, score_total,
+  max_total, calibrated, confidence, source_version, model_version, human_review_required, semantics, evidence_ids, source_request_id)
+VALUES ('9c000000-0000-4000-8000-00000000009c', 'c1000000-0000-4000-8000-0000000000c1', 'wenli', 'a8000000-0000-4000-8000-0000000000a8',
+  '2026-10-09 11:30:00+00', 'correct', 'wenli-essay-5d@1.2.0', 10, 10, false, 0.95, 'rubric:wenli-essay-5d@1.2.0',
+  'model:deepseek/deepseek-chat@2026-09', false, 'formal', '{e1000000-0000-4000-8000-000000000001}', gen_random_uuid());
+SELECT t.throws($$SET CONSTRAINTS platform.check_supersede_target IMMEDIATE;
+                  UPDATE platform.grade_result SET superseded_by = '9c000000-0000-4000-8000-00000000009c'
+                  WHERE id = '9a000000-0000-4000-8000-00000000009a'$$,
+                '23514', '复核未结案时，不能用“不复核”的判分取代待复核判分');
+-- 复核结案后可以
+UPDATE platform.review_task SET status = 'resolved', resolved_at = now(), resolution_code = 'teacher_confirmed'
+ WHERE source_id = '9a000000-0000-4000-8000-00000000009a';
+BEGIN;
+UPDATE platform.grade_result SET superseded_by = '9c000000-0000-4000-8000-00000000009c' WHERE id = '9a000000-0000-4000-8000-00000000009a';
+COMMIT;
+SELECT t.ok((SELECT superseded_by FROM platform.grade_result WHERE id = '9a000000-0000-4000-8000-00000000009a') = '9c000000-0000-4000-8000-00000000009c',
+            '复核结案后，判分可以被复核结果取代');
 RESET ROLE;

@@ -53,16 +53,27 @@ erDiagram
 - **当前账号**：BFF 在每个事务开头 `SET LOCAL app.account_id = '<账号 UUID>'`。没有设置时，按账号的策略一律不放行（spec 待人确认 #1）。
 - **授权函数**：`is_self_student`、`is_linked_guardian`、`can_read_student`、`can_read_household`。属主是 `starbuddy_authz`（BYPASSRLS，不授予任何登录角色），固定了 search_path。
 - **家长访问**只看 `guardian_student_link` 中 `status = 'active'` 的记录。**手机号不参与任何授权判断**（规则 5）。
-- **建立绑定**只有两种方式：
-  - 家庭创建者绑定本家庭的学生（RLS 策略 `link_household_creator`）；
-  - 兑换学生或已绑定家长签发的一次性邀请（`redeem_guardian_invite`）。
+- **写入路径只有函数**：BFF 对账号、联系方式、家庭、学生档案、绑定、邀请都没有 INSERT 权限，只能调用属主为 `starbuddy_authz` 的函数：
+
+| 函数 | 做什么 | 身份要求 |
+|---|---|---|
+| `signup_guardian(phone)` | 注册家长账号（BFF 在短信验证码通过后调用） | — |
+| `lookup_accounts_by_phone(phone)` | 登录时按手机号查账号 ID | — |
+| `create_student(...)` | 同一事务里建学生账号、档案与创建者绑定；可以新建家庭 | 有效家长；已有家庭必须是自己创建的 |
+| `create_guardian_invite(student, ttl)` | 签发一次性邀请，库内生成邀请码，只存哈希 | 学生本人或有效绑定的家长 |
+| `redeem_guardian_invite(token)` | 兑换邀请，建立绑定 | 有效家长；不是签发人；签发人此刻仍有权限 |
+
+- **解除绑定**：只能 active → revoked，`revoked_at` 由库写入；同时作废被解除的家长为该学生签发的未用邀请。
+- **更正推断**：只能单向、一次，指向同一学生、同一对象、更晚的记录；复核未结案的判分不能被“不复核”的判分取代。
 - **角色**：
 
 | 角色 | 用途 |
 |---|---|
 | `starbuddy_bff` | 代表登录账号访问，受 RLS 约束 |
 | `starbuddy_learning` | 唯一能写证据与推断的服务角色；读不到联系方式 |
-| `starbuddy_authz` | 只作为授权函数的属主 |
+| `starbuddy_authz` | 只作为授权函数的属主（NOLOGIN、BYPASSRLS、不授予任何角色） |
+
+角色由 `db/bootstrap/roles.sql` 创建（人执行），迁移 0001 只断言属性：bff 与 learning 不能是 SUPERUSER 或 BYPASSRLS，不能被同一角色同时继承。
 
 ## 分区（ADR 05）
 
@@ -85,4 +96,7 @@ erDiagram
 
 库约束还补上了契约里表达不了的规则：
 - 总分、维度分不超过满分；
-- 有主观维度或 null 维度时，父判分必须复核。这条是跨行约束，用约束触发器在事务提交时检查。
+- 有主观维度或 null 维度时，父判分必须复核，主观时父判分置信度 ≤ 0.5。这条是跨行约束，用约束触发器在事务提交时检查；
+- 判分必须对应一次真实作答（外键），证据引用的题目必须已登记（外键）。
+
+还没做到的跨表规则见 spec 待人确认 #12、#13。

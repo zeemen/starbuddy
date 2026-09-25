@@ -7,7 +7,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-PGBIN="${PGBIN:-$(ls -d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V | tail -1 || true)}"
+# 固定优先用 PG16（迁移按 Postgres 16 编写），没有再退到本机最新版本
+PGBIN="${PGBIN:-$( [ -x /usr/lib/postgresql/16/bin/initdb ] && echo /usr/lib/postgresql/16/bin \
+                   || ls -d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V | tail -1 || true)}"
 if [ -z "$PGBIN" ] && command -v pg_config >/dev/null 2>&1; then PGBIN="$(pg_config --bindir)"; fi
 if [ -z "$PGBIN" ] || [ ! -x "$PGBIN/initdb" ]; then
   echo "db-test: 跳过（本机没有 Postgres 服务端；需要 postgresql-16）"
@@ -18,7 +20,9 @@ fi
 as_pg() { if [ "$(id -u)" = "0" ]; then runuser -u postgres -- "$@"; else "$@"; fi; }
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/starbuddy-dbtest.XXXXXX")"
-chmod 777 "$WORK"
+# 只让 postgres 用户访问：trust 认证下，目录可访问就等于能以超级用户连进测试库
+if [ "$(id -u)" = "0" ]; then chown postgres "$WORK"; fi
+chmod 700 "$WORK"
 cleanup() {
   as_pg "$PGBIN/pg_ctl" -D "$WORK/data" -m immediate stop >/dev/null 2>&1 || true
   rm -rf "$WORK"
@@ -45,6 +49,8 @@ apply() {
   done
 }
 
+# 角色由人执行的 bootstrap 脚本创建（不属于迁移）
+apply "$ROOT/db/bootstrap/roles.sql"
 apply "${UPS[@]}"
 apply "${DOWNS[@]}"
 left=$(psql_run -tAc "SELECT count(*) FROM pg_namespace WHERE nspname = 'platform'" </dev/null)
@@ -63,5 +69,15 @@ if ! cat "$ROOT"/db/tests/[0-9]*.sql | psql_run > "$OUT" 2>&1; then
   echo "db-test: 失败"
   exit 1
 fi
+# 角色属性断言（安全审查阻断 5）：BFF 角色带 BYPASSRLS 时，0001 必须拒绝执行
+as_pg "$PGBIN/createdb" -h "$WORK" -U postgres role_check
+psql_role() { as_pg "$PGBIN/psql" -h "$WORK" -U postgres -d role_check -X -q -v ON_ERROR_STOP=1 "$@"; }
+psql_run -c "ALTER ROLE starbuddy_bff BYPASSRLS" </dev/null
+if psql_role -1 < "$ROOT/db/migrations/0001_platform__foundation.up.sql" >/dev/null 2>&1; then
+  echo "db-test: 失败（starbuddy_bff 带 BYPASSRLS 时 0001 仍然执行成功）"; exit 1
+fi
+psql_run -c "ALTER ROLE starbuddy_bff NOBYPASSRLS" </dev/null
+echo "ok - 角色带 BYPASSRLS 时迁移拒绝执行" >> "$OUT"
+
 n=$(grep -c 'ok - ' "$OUT" || true)
 echo "db-test: 通过（${n} 项断言）"

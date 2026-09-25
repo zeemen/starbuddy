@@ -54,7 +54,9 @@ CREATE TABLE platform.mastery_estimate (
   next_retest_at      timestamptz,
   is_current          boolean NOT NULL DEFAULT true,
   superseded_by       uuid REFERENCES platform.mastery_estimate (id) DEFERRABLE INITIALLY DEFERRED,
-  CHECK (is_current = (superseded_by IS NULL))
+  superseded_at       timestamptz,
+  CHECK (is_current = (superseded_by IS NULL)),
+  CHECK ((superseded_by IS NULL) = (superseded_at IS NULL))
 );
 CREATE UNIQUE INDEX mastery_estimate_current_uq
   ON platform.mastery_estimate (student_id, subject, skill_local_id) WHERE is_current;
@@ -88,10 +90,17 @@ CREATE TABLE platform.grade_result (
   superseded_at           timestamptz,
   CONSTRAINT grade_total_le_max CHECK (score_total IS NULL OR score_total <= max_total),
   CONSTRAINT grade_review_has_reason CHECK (NOT human_review_required OR cardinality(review_reasons) >= 1),
-  CONSTRAINT grade_needs_review CHECK (verdict <> 'needs_review' OR (human_review_required AND confidence <= 0.5)),
-  CONSTRAINT grade_verifier_boundary CHECK (cardinality(verifier_reason_codes) = 0 OR human_review_required),
+  CONSTRAINT grade_needs_review CHECK (verdict <> 'needs_review' OR (human_review_required AND confidence <= 0.5
+                                        AND 'verifier_boundary_case' = ANY (review_reasons))),
+  CONSTRAINT grade_verifier_boundary CHECK (cardinality(verifier_reason_codes) = 0
+                                            OR (human_review_required AND 'verifier_boundary_case' = ANY (review_reasons))),
   CONSTRAINT grade_verifier_pair CHECK ((verifier_id IS NULL) = (verifier_version IS NULL)),
-  CONSTRAINT grade_superseded_pair CHECK ((superseded_by IS NULL) = (superseded_at IS NULL))
+  CONSTRAINT grade_superseded_pair CHECK ((superseded_by IS NULL) = (superseded_at IS NULL)),
+  CONSTRAINT grade_reason_codes_known CHECK (verifier_reason_codes <@ ARRAY[
+    'trig_or_multiletter_function', 'equation_or_inequality_solving', 'proof_or_multi_answer',
+    'parse_failure', 'sampling_insufficient', 'no_reference_answer']::text[]),
+  -- 判分必须对应一次真实作答（安全审查建议 1）
+  FOREIGN KEY (attempt_id, attempt_occurred_at) REFERENCES platform.attempt (attempt_id, occurred_at)
 );
 CREATE INDEX grade_result_student_idx ON platform.grade_result (student_id, subject, created_at);
 CREATE INDEX grade_result_review_idx ON platform.grade_result (created_at) WHERE human_review_required;
@@ -113,15 +122,16 @@ CREATE TABLE platform.grade_dimension (
   CONSTRAINT dim_rule_ref CHECK (judged_by = 'rubric_model' OR rule_ref IS NOT NULL)
 );
 
--- 跨行规则（主观维度 / null 维度 → 父判分必须复核）：CHECK 做不到，用约束触发器，事务提交时检查。
+-- 跨行规则（主观维度 / null 维度 → 父判分必须复核，且主观时父判分置信度 ≤ 0.5）：
+-- CHECK 做不到，用约束触发器，事务提交时检查。
 CREATE FUNCTION platform.grade_dimension_requires_review() RETURNS trigger
-  LANGUAGE plpgsql SET search_path = pg_catalog, platform
+  LANGUAGE plpgsql SET search_path = pg_catalog, platform, pg_temp
   AS $$
 BEGIN
   IF (NEW.subjective OR NEW.score IS NULL) AND NOT EXISTS (
        SELECT 1 FROM platform.grade_result g
         WHERE g.id = NEW.grade_result_id AND g.human_review_required
-          AND (NOT NEW.subjective OR 'subjective_dimension' = ANY (g.review_reasons))
+          AND (NOT NEW.subjective OR ('subjective_dimension' = ANY (g.review_reasons) AND g.confidence <= 0.5))
           AND (NEW.score IS NOT NULL OR 'dimension_unavailable' = ANY (g.review_reasons))) THEN
     RAISE EXCEPTION 'grade % has a subjective or unavailable dimension but is not flagged for review', NEW.grade_result_id
       USING ERRCODE = 'check_violation';
@@ -133,13 +143,81 @@ CREATE CONSTRAINT TRIGGER grade_dimension_requires_review
   DEFERRABLE INITIALLY DEFERRED
   FOR EACH ROW EXECUTE FUNCTION platform.grade_dimension_requires_review();
 
+-- ---------- 更正：只能单向、一次、指向同一对象的更新记录（安全审查阻断 6） ----------
+-- 第一步（BEFORE UPDATE）：superseded_by 只能从 NULL 改成别的记录，改过就不能再改；superseded_at 由库写 now()。
+CREATE FUNCTION platform.guard_supersede() RETURNS trigger
+  LANGUAGE plpgsql SET search_path = pg_catalog, platform, pg_temp
+  AS $$
+BEGIN
+  IF OLD.superseded_by IS NOT NULL THEN
+    RAISE EXCEPTION '% % has already been superseded', TG_TABLE_NAME, OLD.id USING ERRCODE = 'check_violation';
+  END IF;
+  IF NEW.superseded_by IS NULL OR NEW.superseded_by = OLD.id THEN
+    RAISE EXCEPTION 'superseded_by must point to another record' USING ERRCODE = 'check_violation';
+  END IF;
+  NEW.superseded_at := now();
+  RETURN NEW;
+END $$;
+
+-- 第二步（提交时检查）：被指向的新记录必须是同一学生、同一对象，且不早于旧记录；
+-- 待复核且复核未结案的判分，只能被同样待复核的判分取代（不能借“更正”绕过复核）。
+CREATE FUNCTION platform.check_supersede_target() RETURNS trigger
+  LANGUAGE plpgsql SET search_path = pg_catalog, platform, pg_temp
+  AS $$
+DECLARE ok boolean;
+BEGIN
+  IF TG_TABLE_NAME = 'skill_observation' THEN
+    SELECT EXISTS (SELECT 1 FROM platform.skill_observation n WHERE n.id = NEW.superseded_by
+                     AND n.student_id = OLD.student_id AND n.subject = OLD.subject
+                     AND n.skill_local_id = OLD.skill_local_id AND n.created_at >= OLD.created_at) INTO ok;
+  ELSIF TG_TABLE_NAME = 'error_attribution' THEN
+    SELECT EXISTS (SELECT 1 FROM platform.error_attribution n WHERE n.id = NEW.superseded_by
+                     AND n.student_id = OLD.student_id AND n.subject = OLD.subject
+                     AND n.skill_local_id IS NOT DISTINCT FROM OLD.skill_local_id
+                     AND n.created_at >= OLD.created_at) INTO ok;
+  ELSIF TG_TABLE_NAME = 'mastery_estimate' THEN
+    SELECT EXISTS (SELECT 1 FROM platform.mastery_estimate n WHERE n.id = NEW.superseded_by
+                     AND n.student_id = OLD.student_id AND n.subject = OLD.subject
+                     AND n.skill_local_id = OLD.skill_local_id AND n.computed_at >= OLD.computed_at) INTO ok;
+  ELSIF TG_TABLE_NAME = 'grade_result' THEN
+    SELECT EXISTS (SELECT 1 FROM platform.grade_result n WHERE n.id = NEW.superseded_by
+                     AND n.student_id = OLD.student_id AND n.subject = OLD.subject
+                     AND n.attempt_id = OLD.attempt_id AND n.created_at >= OLD.created_at
+                     AND (NOT OLD.human_review_required OR n.human_review_required
+                          OR EXISTS (SELECT 1 FROM platform.review_task r
+                                      WHERE r.source_kind = 'grade_result' AND r.source_id = OLD.id
+                                        AND r.status = 'resolved'))) INTO ok;
+  END IF;
+  IF NOT coalesce(ok, false) THEN
+    RAISE EXCEPTION 'invalid supersede target for % %', TG_TABLE_NAME, OLD.id USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NULL;
+END $$;
+
+CREATE TRIGGER guard_supersede BEFORE UPDATE ON platform.skill_observation
+  FOR EACH ROW EXECUTE FUNCTION platform.guard_supersede();
+CREATE CONSTRAINT TRIGGER check_supersede_target AFTER UPDATE ON platform.skill_observation
+  DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION platform.check_supersede_target();
+CREATE TRIGGER guard_supersede BEFORE UPDATE ON platform.error_attribution
+  FOR EACH ROW EXECUTE FUNCTION platform.guard_supersede();
+CREATE CONSTRAINT TRIGGER check_supersede_target AFTER UPDATE ON platform.error_attribution
+  DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION platform.check_supersede_target();
+CREATE TRIGGER guard_supersede BEFORE UPDATE ON platform.mastery_estimate
+  FOR EACH ROW EXECUTE FUNCTION platform.guard_supersede();
+CREATE CONSTRAINT TRIGGER check_supersede_target AFTER UPDATE ON platform.mastery_estimate
+  DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION platform.check_supersede_target();
+CREATE TRIGGER guard_supersede BEFORE UPDATE ON platform.grade_result
+  FOR EACH ROW EXECUTE FUNCTION platform.guard_supersede();
+CREATE CONSTRAINT TRIGGER check_supersede_target AFTER UPDATE ON platform.grade_result
+  DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION platform.check_supersede_target();
+
 -- ---------- 权限与 RLS ----------
 GRANT SELECT, INSERT ON platform.skill_observation, platform.error_attribution, platform.mastery_estimate,
   platform.grade_result, platform.grade_dimension TO starbuddy_learning;
 -- 更正只能改“被取代”相关的列，不能改推断内容本身
 GRANT UPDATE (superseded_by, superseded_at) ON platform.skill_observation, platform.error_attribution,
   platform.grade_result TO starbuddy_learning;
-GRANT UPDATE (is_current, superseded_by) ON platform.mastery_estimate TO starbuddy_learning;
+GRANT UPDATE (is_current, superseded_by, superseded_at) ON platform.mastery_estimate TO starbuddy_learning;
 GRANT SELECT ON platform.skill_observation, platform.error_attribution, platform.mastery_estimate,
   platform.grade_result, platform.grade_dimension TO starbuddy_bff;
 
