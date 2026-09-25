@@ -1,5 +1,5 @@
 # 未实现的目标明确打印“跳过”，不得伪装为通过。
-.PHONY: check-fast check contract-test contract-mutation db-test db-mutation eval-persona eval-grade
+.PHONY: check-fast check contract-test contract-mutation taxonomy-check db-test db-mutation eval-persona eval-grade
 
 # 可指向装了 packages/contracts/requirements-dev.txt 的解释器，例如 make check PYTHON=.venv/bin/python
 PYTHON ?= python3
@@ -14,9 +14,9 @@ define run_contract
 endef
 
 # 契约检查约 1 秒，改动后也跑一遍
-check-fast: contract-test
+check-fast: contract-test taxonomy-check
 
-check: contract-test contract-mutation db-test db-mutation
+check: contract-test contract-mutation taxonomy-check db-test db-mutation
 	@echo "check: 类型检查、lint、单测尚无代码，跳过"
 
 # 契约合法性 + 示例 + 反例集
@@ -26,6 +26,10 @@ contract-test:
 # 变异测试：证明契约检查没有盲区（约 15 秒）
 contract-mutation:
 	$(call run_contract,packages/contracts/tests/test_mutations.py)
+
+# 错因跨科映射表：七大类与契约、数据库一致，编码合法，文档表格与 YAML 同步
+taxonomy-check:
+	$(call run_contract,docs/mapping/check_error_taxonomy.py)
 
 # 迁移与 RLS：在一次性的本地 Postgres 上跑 up → down → up 与 RLS / 约束测试（约 3 秒）
 # 只连本机临时实例，不连接任何共享或生产库（CLAUDE.md 规则 9）
