@@ -1,0 +1,132 @@
+# 错因跨科大类映射表 v0.9（草稿，待教研逐条签字）
+# 唯一数据源：docs/mapping/error-taxonomy.md 里的映射表由 check_error_taxonomy.py --write 从本文件生成。
+# 依据：开发计划 冲刺 0 W2（七大类）、完整方案 v1.0 第 5.5 节（跨科大类映射）、第四章（跨科指标须有至少两科证据）。
+# 七大类的 id 必须与契约 CrossSubjectErrorCategory、数据库枚举 platform.cross_subject_error 完全一致。
+#
+# 每个学科编码字段：
+#   code        学科内编码（契约 ErrorAttribution.subject_category，格式 ^[a-z0-9_\-]{1,48}$）
+#   label       原产品里的名称
+#   source      原产品中的定义位置（legacy 只读）
+#   maps_to     七大类之一
+#   status      clear = 对应关系明确；disputed = 有歧义，需要教研拍板（alternatives 列出备选）
+#   note        说明
+version: 0.9.0
+status: draft
+
+categories:
+  - id: reading_the_question
+    label: 审题
+    desc: 没读懂题干、设问类型、限定词或主体，作答方向偏离
+  - id: locating_information
+    label: 定位信息
+    desc: 没找到或找错了答题依据所在的位置（文本区间、材料、知识挂接点）
+  - id: thinking_method
+    label: 思维方法
+    desc: 方法选择、推理、归纳、分类、转化等思维过程出错
+  - id: computation_or_grammar
+    label: 运算语法
+    desc: 运算步骤出错，或语言形式（语法）出错
+  - id: expression_convention
+    label: 表达规范
+    desc: 方向与内容基本正确，但表述、术语、格式、书写不规范或不完整
+  - id: strategy_and_time
+    label: 策略时间
+    desc: 时间分配、检查验算、答题策略与习惯问题
+  - id: knowledge
+    label: 知识
+    desc: 概念、知识点、词汇本身不会或记错
+
+subjects:
+  wenli:
+    label: 语文 · 文砺
+    groups:
+      - name: 平台层六类（诊断、错题本使用）
+        source: legacy/wenli/初中语文_AI_class/wenli/supabase/migrations/0001_*.sql:16（枚举 error_t）
+        codes:
+          - { code: zhishi,        label: 知识性,     maps_to: knowledge,             status: clear }
+          - { code: shenti,        label: 审题性,     maps_to: reading_the_question,  status: clear }
+          - { code: dingwei,       label: 定位性,     maps_to: locating_information,  status: clear }
+          - { code: siwei,         label: 思维性,     maps_to: thinking_method,       status: clear }
+          - { code: biaoda_guifan, label: 表达规范性, maps_to: expression_convention, status: clear }
+          - { code: celue_shijian, label: 策略时间性, maps_to: strategy_and_time,     status: clear }
+      - name: 阅读模块六个大类（下辖 15 个错因标签，标签继承所属大类的映射）
+        source: legacy/wenli/初中语文_AI_class/wenli/content/reading/错因标签.json（categories、error_tags）
+        codes:
+          - { code: reading_misread_prompt, label: 审题偏差, maps_to: reading_the_question, status: clear,
+              tags: [prompt_type_confuse, prompt_requirement_miss] }
+          - { code: reading_wrong_location, label: 定位错误, maps_to: locating_information, status: clear,
+              tags: [location_wrong_region] }
+          - { code: reading_summarize_inaccurate, label: 概括不准, maps_to: thinking_method, status: disputed,
+              alternatives: [expression_convention],
+              tags: [summary_copy_original, summary_point_missing, surface_meaning_only],
+              note: 只摘原句、要点遗漏属于归纳能力（思维）；但判分维度记在“要点”，也可看作表达不到位 }
+          - { code: reading_evidence_insufficient, label: 依据不足, maps_to: locating_information, status: disputed,
+              alternatives: [thinking_method],
+              tags: [evidence_label_only],
+              note: 判分维度记在“依据”，与定位同维；但“标签化答案”更像没有建立文本与结论的推理 }
+          - { code: reading_angle_missing, label: 角度遗漏, maps_to: thinking_method, status: clear,
+              tags: [effect_missing, structure_or_content_missing, angle_incomplete, material_compare_missing] }
+          - { code: reading_expression_weak, label: 表达空泛, maps_to: expression_convention, status: disputed,
+              alternatives: [thinking_method],
+              tags: [theme_vague, opinion_unsupported, verbose_no_point, logic_disordered],
+              note: 其中“逻辑混乱无层次”“开放题观点无支撑”更接近思维方法；是否把这两个标签单独映射，请教研决定 }
+
+  aya:
+    label: 数学 · 阿鸦
+    groups:
+      - name: 十二大错误根因
+        source: legacy/aya/lib/types.ts:63-77（ROOT_CAUSES）
+        codes:
+          - { code: gainian_cuowu, label: 概念错误, maps_to: knowledge,            status: clear }
+          - { code: zhishi_queshi, label: 知识缺失, maps_to: knowledge,            status: clear }
+          - { code: shenti_cuowu,  label: 审题错误, maps_to: reading_the_question, status: clear }
+          - { code: biaozheng_cuowu, label: 表征错误, maps_to: thinking_method,     status: disputed,
+              alternatives: [locating_information],
+              note: 表征转换（图形、式子、文字之间）是思维过程；但若指“从图中读错信息”，更接近定位信息 }
+          - { code: fangfa_cuowu,  label: 方法错误, maps_to: thinking_method,      status: clear }
+          - { code: tuili_cuowu,   label: 推理错误, maps_to: thinking_method,      status: clear }
+          - { code: yunsuan_cuowu, label: 运算错误, maps_to: computation_or_grammar, status: clear }
+          - { code: fenlei_yilou,  label: 分类遗漏, maps_to: thinking_method,      status: disputed,
+              alternatives: [reading_the_question, strategy_and_time],
+              note: 分类讨论不全是思维完整性问题；若因漏看条件导致，属审题；若因没有检验，属策略 }
+          - { code: biaoda_cuowu,  label: 表达错误, maps_to: expression_convention, status: clear }
+          - { code: jianyan_cuowu, label: 检验错误, maps_to: strategy_and_time,    status: disputed,
+              alternatives: [thinking_method],
+              note: 没有验根、没有检验结果合理性，按“检查验算习惯”归策略；若是检验方法本身不会，属思维方法 }
+          - { code: shijian_wenti, label: 时间问题, maps_to: strategy_and_time,    status: clear }
+          - { code: xinli_xiguan,  label: 心理与习惯, maps_to: strategy_and_time,  status: disputed,
+              alternatives: [],
+              sensitive: true,
+              note: 完整方案第四章红线“心理与情绪只记学习相关状态，不记诊断”。建议只保留“学习习惯”含义，改名为“学习习惯”，家长端不出现“心理”字样；是否保留这一类请教研与产品一起决定 }
+
+  zhixing:
+    label: 道法 · 知行
+    groups:
+      - name: 采分点归因四类（M3 主观题判分）
+        source: legacy/wenli/初中语文_AI_class/wenli/packages/shared/lib/domain/daofa-m3-schema.ts:17（ATTRIBUTION）；定义见 packages/shared/lib/prompts/daofa-m3-rubric.ts:15-18
+        codes:
+          - { code: shenti_cuo,   label: 审题错, maps_to: reading_the_question,  status: clear }
+          - { code: dingwei_cuo,  label: 定位错, maps_to: locating_information,  status: disputed,
+              alternatives: [knowledge],
+              note: 知行的“定位错”是“把设问挂到错误的教材章节或大概念”，不是从文本里找错位置。完整方案 5.5 把它与文砺定位归为一类，但语义上也可以算知识 }
+          - { code: zhuanhua_cuo, label: 转化错, maps_to: thinking_method,       status: disputed,
+              alternatives: [expression_convention],
+              note: 盘点疑点 zhixing 第 8 条。“命中材料事实但没有上升为学科术语、没有建立材料到理论的因果闭环”，核心是转化思维；但表现也可以是表述停留在叙述层 }
+          - { code: guifan_cuo,   label: 规范错, maps_to: expression_convention, status: clear }
+
+  echo:
+    label: 英语 · 开口成章
+    groups:
+      - name: 即时评估三维 + 发音信号
+        source: docs/subjects/echo-开口成章PRD-V1.2.md:559（语法 / 词汇 / 达意三维快评）；发音见 specs/inventory-echo/adapter-design.md（D 维，评测供应商到位前为 null）
+        codes:
+          - { code: grammar,        label: 语法, maps_to: computation_or_grammar, status: clear }
+          - { code: vocabulary,     label: 词汇, maps_to: knowledge,              status: disputed,
+              alternatives: [computation_or_grammar],
+              note: 不认识、不会用的词归知识；词形、搭配错误更接近语言形式（语法） }
+          - { code: task_fulfilment, label: 达意, maps_to: expression_convention, status: disputed,
+              alternatives: [thinking_method],
+              note: 没有完成交际任务、表达不完整。若是没想清楚要说什么，属思维方法 }
+          - { code: pronunciation,  label: 发音, maps_to: expression_convention,  status: disputed,
+              alternatives: [],
+              note: 七大类里没有专门对应语音的类。阶段 0 发音维为 null，不产生错因；是否需要为语音新增第八类，或不纳入跨科指标，请教研决定 }
