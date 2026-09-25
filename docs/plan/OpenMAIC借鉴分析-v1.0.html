@@ -113,7 +113,7 @@ td:first-child{font-weight:500}
   <h1>OpenMAIC 借鉴分析</h1>
   <p class="sub">面向"阿鸦"AI 一对一辅导产品的产品思路、学习方法与架构对照</p>
   <div class="meta">
-    <div><b>版本</b>v1.0</div>
+    <div><b>版本</b>v1.0.1</div>
     <div><b>日期</b>2026 年 9 月 21 日</div>
     <div><b>分析对象</b>THU-MAIC/OpenMAIC v0.3.2（MIT）</div>
     <div><b>适用产品</b>阿鸦 · 南京初中数学 AI 一对一</div>
@@ -158,7 +158,7 @@ td:first-child{font-weight:500}
     <p>五个月七个版本，社区 20.7k star、4.1k fork、156 个开放 issue。迭代极快，意味着直接依赖主干代码会被拖着走。</p>
 
     <h3>技术栈</h3>
-    <p>Next.js 16 / React 19 / TypeScript 5 / Tailwind 4 / shadcn + Radix / LangGraph 1.1 / Zustand。与阿鸦既有栈（Next.js、TypeScript、Tailwind、shadcn、Supabase、Anthropic API）高度重合，迁移摩擦低。</p>
+    <p>Next.js 16 / React 19 / TypeScript 5 / Tailwind 4 / shadcn + Radix / LangGraph 1.1 / Zustand。与阿鸦既有栈（Next.js 16、React 18、TypeScript、Tailwind 3、KaTeX、Supabase；模型用 DeepSeek 与 DashScope）高度重合，迁移摩擦低。阿鸦没有使用 shadcn，公式渲染用的是 KaTeX（据 2026-09-25 盘点更正）。</p>
   </div>
 </section>
 
@@ -279,7 +279,7 @@ td:first-child{font-weight:500}
   <g>
     <rect x="790" y="598" width="360" height="86" fill="var(--paper)" stroke="var(--crow)" stroke-width="1.4"/>
     <text x="806" y="622" font-size="15" font-weight="700" fill="var(--ink)">基础层</text>
-    <text x="806" y="645" font-size="12.5" fill="var(--ink-2)">Next.js · Supabase（RLS） · Railway · Anthropic API（既有）</text>
+    <text x="806" y="645" font-size="12.5" fill="var(--ink-2)">Next.js · Supabase（RLS） · Vercel · DeepSeek / DashScope（既有）</text>
     <text x="806" y="666" font-size="12.5" fill="var(--ink-2)">分阶段模型路由 · 国产 TTS · 离线校内包（新增，复用）</text>
   </g>
   <!-- R7 IP -->
@@ -349,7 +349,7 @@ td:first-child{font-weight:500}
       <tr><td>编排</td><td>LangGraph 状态机管理 AI 教师与 AI 同学的发言轮次</td><td>阿鸦导师 + AI 同学角色；剧本由学习者模型驱动而非随机人设</td><td><span class="tag adapt">借鉴改造</span></td></tr>
       <tr><td>执行</td><td>播放态按剧本走、学生插话切直播态，28+ 种舞台动作</td><td>讲解态 / 对话态切换，控制成本与延迟；动作集裁剪到数学所需</td><td><span class="tag adapt">借鉴改造</span></td></tr>
       <tr><td>呈现</td><td>幻灯片 + SVG 白板 + TTS + 深度交互 UI；离线导出</td><td>白板逐步演算、初中数学交互模板库、家长可读导出</td><td><span class="tag reuse">复用</span></td></tr>
-      <tr><td>基础</td><td>多供应商抽象、分阶段模型路由、Postgres</td><td>保留 Supabase / Railway；引入分阶段路由与离线校内包</td><td><span class="tag reuse">复用</span></td></tr>
+      <tr><td>基础</td><td>多供应商抽象、分阶段模型路由、Postgres</td><td>存储沿用 Supabase（pilot 与生产的托管见 ADR 10）；引入分阶段路由与离线校内包</td><td><span class="tag reuse">复用</span></td></tr>
       <tr><td>学习者模型</td><td>无</td><td>能力评估、掌握度、错因、遗忘曲线</td><td><span class="tag moat">阿鸦独有</span></td></tr>
       <tr><td>课标与考情</td><td>无</td><td>2022 课标图谱、南京中考题型分值、题库、典型错误清单</td><td><span class="tag moat">阿鸦独有</span></td></tr>
       <tr><td>陪伴与 IP</td><td>每课随机人设</td><td>阿鸦跨课记忆、角色一致、三年成长叙事</td><td><span class="tag moat">阿鸦独有</span></td></tr>
@@ -452,6 +452,7 @@ td:first-child{font-weight:500}
       <table>
         <tr><th>版本</th><th>日期</th><th>变更</th></tr>
         <tr><td>v1.0</td><td>2026-09-21</td><td>首版：基于 OpenMAIC v0.3.2 的定位、架构对照与借鉴建议</td></tr>
+        <tr><td>v1.0.1</td><td>2026-09-25</td><td>按四科盘点更正阿鸦既有技术栈（第二章“技术栈”，第三章架构对照图的基础层与对照表“基础”一行）：没有 shadcn、没有 Railway，模型是 DeepSeek 与 DashScope 而非 Anthropic，部署在 Vercel。借鉴结论不变</td></tr>
       </table>
     </div>
   </div>
