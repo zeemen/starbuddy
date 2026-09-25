@@ -31,13 +31,13 @@ src/server.ts    node:http，服务间令牌，路径前缀 /plugin/v0
 content/pack.json   由 legacy 生成的内容包：只有判分需要的字段，没有题干、解析、提示
 scripts/build-content-pack.ts  从 legacy 生成内容包（legacy 有未提交改动时拒绝）
 scripts/register-content.ts    输出内容登记 SQL（课程版本、能力点、题目），只增不改
-tests/           单测；tests/e2e/ 端到端（本地临时 Postgres）
+tests/           单测。端到端（学习服务 → 本适配器 → 平台库）在 services/learning/tests/test_e2e_aya.py
 ```
 
 ## 常用命令
 ```bash
 npm ci                                   # 安装依赖（ajv、ajv-formats、yaml；开发依赖 typescript）
-make adapter-aya-test                    # 在仓库根目录：类型检查 + 单测 + 端到端
+make adapter-aya-test                    # 在仓库根目录：类型检查 + 单测（端到端见 make learning-test）
 AYA_ADAPTER_SERVICE_TOKEN=... npm start  # 启动（令牌 ≥ 32 字符，由部署环境注入）
 AYA_LEGACY_ROOT=/path/to/ayaheshui npm run build:pack   # 重新生成内容包
 npm run register:sql > aya-register.sql  # 生成登记 SQL；目标库由执行人决定（pilot 与生产由人执行）
