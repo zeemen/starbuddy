@@ -7,3 +7,4 @@ DROP TABLE IF EXISTS platform.error_attribution;
 DROP TABLE IF EXISTS platform.skill_observation;
 DROP FUNCTION IF EXISTS platform.check_supersede_target();
 DROP FUNCTION IF EXISTS platform.guard_supersede();
+DROP FUNCTION IF EXISTS platform.guard_inference_insert();

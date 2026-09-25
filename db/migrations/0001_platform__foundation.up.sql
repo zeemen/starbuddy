@@ -8,31 +8,35 @@ COMMENT ON SCHEMA platform IS '平台 schema：家庭关系、学习者模型（
 -- 数据库角色由 db/bootstrap/roles.sql 创建（人执行）。这里只断言角色存在且属性安全：
 -- 预先存在一个带 BYPASSRLS 或 SUPERUSER 的同名角色时，RLS 会静默失效，必须拒绝（安全审查阻断 5）。
 DO $$
-DECLARE r record;
+DECLARE v_role record;
 BEGIN
-  FOR r IN SELECT n AS rolname FROM unnest(ARRAY['starbuddy_bff', 'starbuddy_learning', 'starbuddy_authz']) n LOOP
-    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r.rolname) THEN
-      RAISE EXCEPTION '角色 % 不存在：请先执行 db/bootstrap/roles.sql', r.rolname;
+  FOR v_role IN SELECT n AS rolname FROM unnest(ARRAY['starbuddy_bff', 'starbuddy_learning', 'starbuddy_review', 'starbuddy_authz']) n LOOP
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = v_role.rolname) THEN
+      RAISE EXCEPTION '角色 % 不存在：请先执行 db/bootstrap/roles.sql', v_role.rolname;
     END IF;
   END LOOP;
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname IN ('starbuddy_bff', 'starbuddy_learning')
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname IN ('starbuddy_bff', 'starbuddy_learning', 'starbuddy_review')
              AND (rolsuper OR rolbypassrls)) THEN
-    RAISE EXCEPTION 'starbuddy_bff / starbuddy_learning 不能是 SUPERUSER 或 BYPASSRLS';
+    RAISE EXCEPTION 'starbuddy_bff / starbuddy_learning / starbuddy_review 不能是 SUPERUSER 或 BYPASSRLS';
   END IF;
+  -- 成员关系按递归判断（pg_has_role），多层继承也算（安全审查 N1）。超级用户天然是所有角色的成员，排除。
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'starbuddy_authz' AND (rolcanlogin OR rolsuper))
-     OR EXISTS (SELECT 1 FROM pg_auth_members m JOIN pg_roles ra ON ra.oid = m.roleid WHERE ra.rolname = 'starbuddy_authz') THEN
-    RAISE EXCEPTION 'starbuddy_authz 必须 NOLOGIN、非 SUPERUSER，且不能授予任何角色';
+     OR EXISTS (SELECT 1 FROM pg_roles r
+                 WHERE NOT r.rolsuper AND r.rolname <> 'starbuddy_authz'
+                   AND pg_has_role(r.oid, 'starbuddy_authz', 'MEMBER')) THEN
+    RAISE EXCEPTION 'starbuddy_authz 必须 NOLOGIN、非 SUPERUSER，且不能直接或间接授予任何角色';
   END IF;
-  IF EXISTS (SELECT 1 FROM pg_auth_members m
-               JOIN pg_roles a ON a.oid = m.roleid AND a.rolname = 'starbuddy_bff'
-               JOIN pg_auth_members m2 ON m2.member = m.member
-               JOIN pg_roles b ON b.oid = m2.roleid AND b.rolname = 'starbuddy_learning') THEN
-    RAISE EXCEPTION '同一个角色不能同时继承 starbuddy_bff 与 starbuddy_learning';
+  IF EXISTS (SELECT 1 FROM pg_roles r
+              WHERE NOT r.rolsuper
+                AND (pg_has_role(r.oid, 'starbuddy_bff', 'MEMBER')::int
+                     + pg_has_role(r.oid, 'starbuddy_learning', 'MEMBER')::int
+                     + pg_has_role(r.oid, 'starbuddy_review', 'MEMBER')::int) > 1) THEN
+    RAISE EXCEPTION '同一个角色不能直接或间接同时继承 starbuddy_bff、starbuddy_learning、starbuddy_review 中的两个';
   END IF;
 END $$;
 
 REVOKE ALL ON SCHEMA platform FROM PUBLIC;
-GRANT USAGE ON SCHEMA platform TO starbuddy_bff, starbuddy_learning, starbuddy_authz;
+GRANT USAGE ON SCHEMA platform TO starbuddy_bff, starbuddy_learning, starbuddy_review, starbuddy_authz;
 
 -- 公共枚举：取值与契约 packages/contracts/openapi/plugin-api.v0.9.yaml 保持一致
 CREATE TYPE platform.subject AS ENUM ('wenli', 'aya', 'zhixing', 'echo');
@@ -56,7 +60,7 @@ CREATE TYPE platform.review_reason AS ENUM (
 CREATE FUNCTION platform.current_account_id() RETURNS uuid
   LANGUAGE sql STABLE PARALLEL SAFE
   AS $$ SELECT NULLIF(current_setting('app.account_id', true), '')::uuid $$;
-GRANT EXECUTE ON FUNCTION platform.current_account_id() TO starbuddy_bff, starbuddy_learning, starbuddy_authz;
+GRANT EXECUTE ON FUNCTION platform.current_account_id() TO starbuddy_bff, starbuddy_learning, starbuddy_review, starbuddy_authz;
 
 -- 带版本名称的格式（契约 VersionedName / ModelVersion）
 CREATE DOMAIN platform.versioned_name AS text

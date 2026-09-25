@@ -78,6 +78,14 @@ if psql_role -1 < "$ROOT/db/migrations/0001_platform__foundation.up.sql" >/dev/n
 fi
 psql_run -c "ALTER ROLE starbuddy_bff NOBYPASSRLS" </dev/null
 echo "ok - 角色带 BYPASSRLS 时迁移拒绝执行" >> "$OUT"
+# 嵌套继承（安全审查 N1）：登录角色经两层中间角色同时继承 bff 与 learning，0001 也必须拒绝执行
+psql_run </dev/null -c "CREATE ROLE t_grp_a IN ROLE starbuddy_bff; CREATE ROLE t_grp_b IN ROLE starbuddy_learning;
+                        CREATE ROLE t_app_login LOGIN IN ROLE t_grp_a, t_grp_b;"
+if psql_role -1 < "$ROOT/db/migrations/0001_platform__foundation.up.sql" >/dev/null 2>&1; then
+  echo "db-test: 失败（登录角色间接同时继承 bff 与 learning 时 0001 仍然执行成功）"; exit 1
+fi
+psql_run </dev/null -c "DROP ROLE t_app_login; DROP ROLE t_grp_a; DROP ROLE t_grp_b;"
+echo "ok - 登录角色间接同时继承 bff 与 learning 时迁移拒绝执行" >> "$OUT"
 
 n=$(grep -c 'ok - ' "$OUT" || true)
 echo "db-test: 通过（${n} 项断言）"

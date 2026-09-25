@@ -159,32 +159,53 @@ BEGIN
   RETURN NEW;
 END $$;
 
--- 第二步（提交时检查）：被指向的新记录必须是同一学生、同一对象，且不早于旧记录；
--- 待复核且复核未结案的判分，只能被同样待复核的判分取代（不能借“更正”绕过复核）。
-CREATE FUNCTION platform.check_supersede_target() RETURNS trigger
+-- 插入时（安全审查 R6b）：新记录不能一出生就是“已被取代”；创建时间由库写 now()，不能伪造。
+CREATE FUNCTION platform.guard_inference_insert() RETURNS trigger
   LANGUAGE plpgsql SET search_path = pg_catalog, platform, pg_temp
+  AS $$
+BEGIN
+  IF NEW.superseded_by IS NOT NULL OR NEW.superseded_at IS NOT NULL THEN
+    RAISE EXCEPTION 'a new % cannot be inserted as already superseded', TG_TABLE_NAME USING ERRCODE = 'check_violation';
+  END IF;
+  IF TG_TABLE_NAME = 'mastery_estimate' THEN
+    IF NOT NEW.is_current THEN
+      RAISE EXCEPTION 'a new mastery_estimate must be current' USING ERRCODE = 'check_violation';
+    END IF;
+    NEW.computed_at := now();
+  ELSE
+    NEW.created_at := now();
+  END IF;
+  RETURN NEW;
+END $$;
+
+-- 第二步（提交时检查）：被指向的新记录必须是同一学生、同一对象，且不早于旧记录；
+-- 被指向的新记录自己不能已被取代（防止成环，安全审查 R6b）；
+-- 待复核的判分，只能被同样待复核的判分取代，除非复核已由教研人员经 resolve_review_task 结案（R6a）。
+CREATE FUNCTION platform.check_supersede_target() RETURNS trigger
+  LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, platform, pg_temp
   AS $$
 DECLARE ok boolean;
 BEGIN
   IF TG_TABLE_NAME = 'skill_observation' THEN
-    SELECT EXISTS (SELECT 1 FROM platform.skill_observation n WHERE n.id = NEW.superseded_by
+    SELECT EXISTS (SELECT 1 FROM platform.skill_observation n WHERE n.id = NEW.superseded_by AND n.superseded_by IS NULL
                      AND n.student_id = OLD.student_id AND n.subject = OLD.subject
                      AND n.skill_local_id = OLD.skill_local_id AND n.created_at >= OLD.created_at) INTO ok;
   ELSIF TG_TABLE_NAME = 'error_attribution' THEN
-    SELECT EXISTS (SELECT 1 FROM platform.error_attribution n WHERE n.id = NEW.superseded_by
+    SELECT EXISTS (SELECT 1 FROM platform.error_attribution n WHERE n.id = NEW.superseded_by AND n.superseded_by IS NULL
                      AND n.student_id = OLD.student_id AND n.subject = OLD.subject
                      AND n.skill_local_id IS NOT DISTINCT FROM OLD.skill_local_id
                      AND n.created_at >= OLD.created_at) INTO ok;
   ELSIF TG_TABLE_NAME = 'mastery_estimate' THEN
-    SELECT EXISTS (SELECT 1 FROM platform.mastery_estimate n WHERE n.id = NEW.superseded_by
+    SELECT EXISTS (SELECT 1 FROM platform.mastery_estimate n WHERE n.id = NEW.superseded_by AND n.is_current
                      AND n.student_id = OLD.student_id AND n.subject = OLD.subject
                      AND n.skill_local_id = OLD.skill_local_id AND n.computed_at >= OLD.computed_at) INTO ok;
   ELSIF TG_TABLE_NAME = 'grade_result' THEN
-    SELECT EXISTS (SELECT 1 FROM platform.grade_result n WHERE n.id = NEW.superseded_by
+    SELECT EXISTS (SELECT 1 FROM platform.grade_result n WHERE n.id = NEW.superseded_by AND n.superseded_by IS NULL
                      AND n.student_id = OLD.student_id AND n.subject = OLD.subject
                      AND n.attempt_id = OLD.attempt_id AND n.created_at >= OLD.created_at
                      AND (NOT OLD.human_review_required OR n.human_review_required
                           OR EXISTS (SELECT 1 FROM platform.review_task r
+                                      JOIN platform.account a ON a.id = r.resolved_by_account AND a.kind = 'staff'
                                       WHERE r.source_kind = 'grade_result' AND r.source_id = OLD.id
                                         AND r.status = 'resolved'))) INTO ok;
   END IF;
@@ -210,6 +231,20 @@ CREATE TRIGGER guard_supersede BEFORE UPDATE ON platform.grade_result
   FOR EACH ROW EXECUTE FUNCTION platform.guard_supersede();
 CREATE CONSTRAINT TRIGGER check_supersede_target AFTER UPDATE ON platform.grade_result
   DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION platform.check_supersede_target();
+
+CREATE TRIGGER guard_inference_insert BEFORE INSERT ON platform.skill_observation
+  FOR EACH ROW EXECUTE FUNCTION platform.guard_inference_insert();
+CREATE TRIGGER guard_inference_insert BEFORE INSERT ON platform.error_attribution
+  FOR EACH ROW EXECUTE FUNCTION platform.guard_inference_insert();
+CREATE TRIGGER guard_inference_insert BEFORE INSERT ON platform.mastery_estimate
+  FOR EACH ROW EXECUTE FUNCTION platform.guard_inference_insert();
+CREATE TRIGGER guard_inference_insert BEFORE INSERT ON platform.grade_result
+  FOR EACH ROW EXECUTE FUNCTION platform.guard_inference_insert();
+
+ALTER FUNCTION platform.check_supersede_target() OWNER TO starbuddy_authz;
+REVOKE EXECUTE ON FUNCTION platform.check_supersede_target() FROM PUBLIC;
+GRANT SELECT ON platform.skill_observation, platform.error_attribution, platform.mastery_estimate,
+  platform.grade_result TO starbuddy_authz;
 
 -- ---------- 权限与 RLS ----------
 GRANT SELECT, INSERT ON platform.skill_observation, platform.error_attribution, platform.mastery_estimate,

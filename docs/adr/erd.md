@@ -12,7 +12,7 @@
 | **原始证据** | evidence_event、attempt（按月分区） | 只有学习服务，只追加 | 自己的 | 已绑定学生的 |
 | **模型推断** | skill_observation、error_attribution、mastery_estimate、grade_result、grade_dimension | 只有学习服务，只能更正不能改写 | 自己的 | 已绑定学生的 |
 | **家长自述** | guardian_report | 写它的家长 | **不可见** | 只有写它的家长 |
-| 复核 | review_task | 学习服务 | 否 | 否 |
+| 复核 | review_task | 学习服务只能新建“待处理”；只有教研账号经 `resolve_review_task` 结案 | 否 | 否 |
 
 ## 关系图
 
@@ -64,16 +64,17 @@ erDiagram
 | `redeem_guardian_invite(token)` | 兑换邀请，建立绑定 | 有效家长；不是签发人；签发人此刻仍有权限 |
 
 - **解除绑定**：只能 active → revoked，`revoked_at` 由库写入；同时作废被解除的家长为该学生签发的未用邀请。
-- **更正推断**：只能单向、一次，指向同一学生、同一对象、更晚的记录；复核未结案的判分不能被“不复核”的判分取代。
+- **更正推断**：新记录插入时不能带“已被取代”，创建时间由库写入；更正只能单向、一次，指向同一学生、同一对象、不更早且自身未被取代的记录（不会成环）；待复核的判分只能被同样待复核的判分取代，除非复核已由教研账号结案。
 - **角色**：
 
 | 角色 | 用途 |
 |---|---|
 | `starbuddy_bff` | 代表登录账号访问，受 RLS 约束 |
 | `starbuddy_learning` | 唯一能写证据与推断的服务角色；读不到联系方式 |
+| `starbuddy_review` | 教研复核后台：读复核队列、调用结案函数 |
 | `starbuddy_authz` | 只作为授权函数的属主（NOLOGIN、BYPASSRLS、不授予任何角色） |
 
-角色由 `db/bootstrap/roles.sql` 创建（人执行），迁移 0001 只断言属性：bff 与 learning 不能是 SUPERUSER 或 BYPASSRLS，不能被同一角色同时继承。
+角色由 `db/bootstrap/roles.sql` 创建（人执行），迁移 0001 只断言属性：bff、learning、review 不能是 SUPERUSER 或 BYPASSRLS，不能被同一角色直接或间接同时继承。
 
 ## 分区（ADR 05）
 

@@ -5,6 +5,18 @@ set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 declare -A M=(
+  ["学习服务可以自己结案"]="GRANT UPDATE (status, resolved_at, resolved_by_account, resolution_code) ON platform.review_task TO starbuddy_learning; CREATE POLICY rt_upd ON platform.review_task FOR UPDATE TO starbuddy_learning USING (true) WITH CHECK (true);"
+  ["学习服务可以插入已结案任务"]="DROP POLICY review_service_open ON platform.review_task; CREATE POLICY review_service_open ON platform.review_task FOR INSERT TO starbuddy_learning WITH CHECK (true);"
+  ["结案不校验教研身份"]="DO \$\$ DECLARE d text := pg_get_functiondef('platform.resolve_review_task(uuid, text)'::regprocedure); BEGIN IF position('AND a.kind = ''staff''' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'AND a.kind = ''staff''', ''); END \$\$;"
+  ["更正放行不看结案人身份"]="DO \$\$ DECLARE d text := pg_get_functiondef('platform.check_supersede_target()'::regprocedure); BEGIN IF position('AND a.kind = ''staff''' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'AND a.kind = ''staff''', ''); END \$\$;"
+  ["插入时可以是已被取代"]="DROP TRIGGER guard_inference_insert ON platform.grade_result; DROP TRIGGER guard_inference_insert ON platform.mastery_estimate; DROP TRIGGER guard_inference_insert ON platform.error_attribution;"
+  ["更正可以成环"]="DO \$\$ DECLARE d text := pg_get_functiondef('platform.check_supersede_target()'::regprocedure); BEGIN IF position('WHERE n.id = NEW.superseded_by AND n.superseded_by IS NULL
+                     AND n.student_id = OLD.student_id AND n.subject = OLD.subject
+                     AND n.attempt_id' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'WHERE n.id = NEW.superseded_by AND n.superseded_by IS NULL
+                     AND n.student_id = OLD.student_id AND n.subject = OLD.subject
+                     AND n.attempt_id', 'WHERE n.id = NEW.superseded_by
+                     AND n.student_id = OLD.student_id AND n.subject = OLD.subject
+                     AND n.attempt_id'); END \$\$;"
   ["学生档案对所有 BFF 请求可读"]="DROP POLICY student_profile_read ON platform.student_profile; CREATE POLICY student_profile_read ON platform.student_profile FOR SELECT TO starbuddy_bff USING (true);"
   ["授权改成按手机号关联"]="CREATE OR REPLACE FUNCTION platform.is_linked_guardian(p_student uuid) RETURNS boolean
      LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, platform, pg_temp AS \$\$

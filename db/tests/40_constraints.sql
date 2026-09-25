@@ -147,6 +147,54 @@ INSERT INTO platform.review_task (subject, student_id, source_kind, source_id, r
 VALUES ('wenli', 'c1000000-0000-4000-8000-0000000000c1', 'grade_result', '9a000000-0000-4000-8000-00000000009a', '{subjective_dimension}');
 SELECT t.ok((SELECT count(*) FROM platform.review_task WHERE status = 'open') = 1, '主观判分进入统一复核队列');
 
+-- 结案人不是教研账号时（例如人工误操作留下的数据），不能据此放行更正
+RESET ROLE;
+INSERT INTO platform.review_task (subject, student_id, source_kind, source_id, reasons, status, resolved_at, resolved_by_account, resolution_code)
+VALUES ('wenli', 'c1000000-0000-4000-8000-0000000000c1', 'grade_result', '9d000000-0000-4000-8000-00000000009d', '{subjective_dimension}',
+        'resolved', now(), 'a0000000-0000-4000-8000-00000000000a', 'guardian_says_ok');
+SET ROLE starbuddy_learning;
+INSERT INTO platform.grade_result (id, student_id, subject, attempt_id, attempt_occurred_at, verdict, rubric_version, score_total,
+  max_total, calibrated, confidence, source_version, model_version, human_review_required, semantics, evidence_ids, source_request_id)
+VALUES ('9e000000-0000-4000-8000-00000000009e', 'c1000000-0000-4000-8000-0000000000c1', 'wenli', 'a8000000-0000-4000-8000-0000000000a8',
+  '2026-10-09 11:30:00+00', 'correct', 'wenli-essay-5d@1.2.0', 10, 10, false, 0.95, 'rubric:wenli-essay-5d@1.2.0',
+  'model:deepseek/deepseek-chat@2026-09', false, 'formal', '{e1000000-0000-4000-8000-000000000001}', gen_random_uuid());
+SELECT t.throws($$SET CONSTRAINTS platform.check_supersede_target IMMEDIATE;
+                  UPDATE platform.grade_result SET superseded_by = '9e000000-0000-4000-8000-00000000009e'
+                  WHERE id = '9d000000-0000-4000-8000-00000000009d'$$,
+                '23514', '非教研账号结的案，不能用来放行“不复核”的更正');
+
+-- 插入时不能一出生就是“已被取代”，创建时间不能伪造（安全审查 R6b）
+SELECT t.throws($$INSERT INTO platform.grade_result (student_id, subject, attempt_id, attempt_occurred_at, verdict, rubric_version, score_total,
+                  max_total, calibrated, confidence, source_version, model_version, human_review_required, semantics, evidence_ids,
+                  source_request_id, superseded_by, superseded_at) VALUES ('c1000000-0000-4000-8000-0000000000c1', 'aya',
+                  'a7000000-0000-4000-8000-0000000000a7', '2026-10-08 11:30:00+00', 'correct', 'aya-symbolic-ts@0.1.0', 1, 1, true, 1,
+                  'rubric:aya-symbolic-ts@0.1.0', 'algo:aya-symbolic-ts@0.1.0', false, 'formal', '{e1000000-0000-4000-8000-000000000001}',
+                  gen_random_uuid(), '92000000-0000-4000-8000-000000000092', '2000-01-01')$$,
+                '23514', '新判分不能插入成“已被取代”');
+SELECT t.throws($$INSERT INTO platform.mastery_estimate (student_id, subject, skill_local_id, state, confidence, algorithm_version,
+                  evidence_ids, is_current, superseded_by, superseded_at) VALUES ('c1000000-0000-4000-8000-0000000000c1', 'aya',
+                  'K-QF-0301', 'retain', 0.9, 'bkt-v0@0.1.0', '{e1000000-0000-4000-8000-000000000001}', false,
+                  'ab000000-0000-4000-8000-0000000000ab', now())$$,
+                '23514', '新掌握度不能插入成非当前');
+INSERT INTO platform.error_attribution (id, student_id, subject, subject_category, cross_subject_category, confidence, algorithm_version,
+  evidence_ids, source_request_id, created_at)
+VALUES ('0e000000-0000-4000-8000-00000000000e', 'c1000000-0000-4000-8000-0000000000c1', 'aya', 'x', 'knowledge', 0.4, 'x@1.0.0',
+        '{e1000000-0000-4000-8000-000000000001}', gen_random_uuid(), '2099-01-01');
+SELECT t.ok((SELECT created_at < now() + interval '1 minute' FROM platform.error_attribution WHERE id = '0e000000-0000-4000-8000-00000000000e'),
+            '创建时间由库写 now()，不能伪造成未来');
+-- 更正不能成环：两条判分互相取代
+INSERT INTO platform.grade_result (id, student_id, subject, attempt_id, attempt_occurred_at, verdict, rubric_version, score_total,
+  max_total, calibrated, confidence, source_version, model_version, verifier_id, verifier_version, human_review_required, semantics,
+  evidence_ids, source_request_id)
+SELECT v.id, 'c1000000-0000-4000-8000-0000000000c1', 'aya', 'a7000000-0000-4000-8000-0000000000a7', '2026-10-08 11:30:00+00', 'correct',
+       'aya-symbolic-ts@0.1.0', 1, 1, true, 1, 'rubric:aya-symbolic-ts@0.1.0', 'algo:aya-symbolic-ts@0.1.0', 'aya-symbolic-ts', '0.1.0',
+       false, 'formal', '{e1000000-0000-4000-8000-000000000001}', gen_random_uuid()
+  FROM (VALUES ('f1000000-0000-4000-8000-0000000000f1'::uuid), ('f2000000-0000-4000-8000-0000000000f2'::uuid)) v(id);
+SELECT t.throws($$SET CONSTRAINTS platform.check_supersede_target IMMEDIATE;
+                  UPDATE platform.grade_result SET superseded_by = 'f2000000-0000-4000-8000-0000000000f2' WHERE id = 'f1000000-0000-4000-8000-0000000000f1';
+                  UPDATE platform.grade_result SET superseded_by = 'f1000000-0000-4000-8000-0000000000f1' WHERE id = 'f2000000-0000-4000-8000-0000000000f2'$$,
+                '23514', '更正不能成环（生效判分不能消失）');
+
 -- 不能借“更正”绕过复核（安全审查阻断 6）：待复核的主观判分被一条不复核、高置信的判分取代
 INSERT INTO platform.grade_result (id, student_id, subject, attempt_id, attempt_occurred_at, verdict, rubric_version, score_total,
   max_total, calibrated, confidence, source_version, model_version, human_review_required, semantics, evidence_ids, source_request_id)
@@ -157,9 +205,28 @@ SELECT t.throws($$SET CONSTRAINTS platform.check_supersede_target IMMEDIATE;
                   UPDATE platform.grade_result SET superseded_by = '9c000000-0000-4000-8000-00000000009c'
                   WHERE id = '9a000000-0000-4000-8000-00000000009a'$$,
                 '23514', '复核未结案时，不能用“不复核”的判分取代待复核判分');
--- 复核结案后可以
-UPDATE platform.review_task SET status = 'resolved', resolved_at = now(), resolution_code = 'teacher_confirmed'
- WHERE source_id = '9a000000-0000-4000-8000-00000000009a';
+-- 学习服务不能自己结案，也不能插入“已结案”的复核任务（安全审查 R6a）
+SELECT t.throws($$UPDATE platform.review_task SET status = 'resolved', resolved_at = now(), resolution_code = 'auto_ok'
+                  WHERE source_id = '9a000000-0000-4000-8000-00000000009a'$$, '42501', '学习服务不能给复核任务结案');
+SELECT t.throws($$INSERT INTO platform.review_task (subject, student_id, source_kind, source_id, reasons, status, resolved_at,
+                  resolved_by_account, resolution_code) VALUES ('wenli', 'c1000000-0000-4000-8000-0000000000c1', 'grade_result',
+                  '9d000000-0000-4000-8000-00000000009d', '{subjective_dimension}', 'resolved', now(),
+                  '5f000000-0000-4000-8000-00000000005f', 'auto_ok')$$, '42501', '学习服务不能插入已结案的复核任务');
+SELECT t.throws($$SELECT platform.resolve_review_task((SELECT id FROM platform.review_task LIMIT 1), 'auto_ok')$$,
+                '42501', '学习服务不能调用结案函数');
+-- 教研人员结案后可以
+RESET ROLE;
+SET ROLE starbuddy_review;
+SELECT t.as_account('a0000000-0000-4000-8000-00000000000a');
+SELECT t.throws($$SELECT platform.resolve_review_task((SELECT id FROM platform.review_task WHERE source_id = '9a000000-0000-4000-8000-00000000009a'), 'ok')$$,
+                '42501', '非教研账号不能结案');
+SELECT t.as_account('5f000000-0000-4000-8000-00000000005f');
+SELECT platform.resolve_review_task((SELECT id FROM platform.review_task WHERE source_id = '9a000000-0000-4000-8000-00000000009a'), 'teacher_confirmed');
+SELECT t.ok((SELECT resolved_by_account FROM platform.review_task WHERE source_id = '9a000000-0000-4000-8000-00000000009a')
+            = '5f000000-0000-4000-8000-00000000005f', '结案记录结案人');
+SELECT t.as_account(NULL);
+RESET ROLE;
+SET ROLE starbuddy_learning;
 BEGIN;
 UPDATE platform.grade_result SET superseded_by = '9c000000-0000-4000-8000-00000000009c' WHERE id = '9a000000-0000-4000-8000-00000000009a';
 COMMIT;

@@ -23,17 +23,41 @@ CREATE TABLE platform.review_task (
   reasons           platform.review_reason[] NOT NULL CHECK (cardinality(reasons) >= 1),
   status            text NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'in_progress', 'resolved')),
   created_at        timestamptz NOT NULL DEFAULT now(),
-  resolved_at       timestamptz,
-  resolution_code   text CHECK (resolution_code ~ '^[a-z0-9_]{1,48}$'),
-  CHECK ((status = 'resolved') = (resolved_at IS NOT NULL AND resolution_code IS NOT NULL)),
+  resolved_at           timestamptz,
+  resolved_by_account   uuid REFERENCES platform.account (id),
+  resolution_code       text CHECK (resolution_code ~ '^[a-z0-9_]{1,48}$'),
+  CHECK ((status = 'resolved') = (resolved_at IS NOT NULL AND resolution_code IS NOT NULL AND resolved_by_account IS NOT NULL)),
   UNIQUE (source_kind, source_id)
 );
 CREATE INDEX review_task_open_idx ON platform.review_task (subject, created_at) WHERE status <> 'resolved';
 
 GRANT SELECT, INSERT, DELETE ON platform.guardian_report TO starbuddy_bff;
 GRANT SELECT ON platform.guardian_report TO starbuddy_learning;
+-- 学习服务只能新建“待处理”的复核任务，不能改状态、不能结案（安全审查 R6a：被复核的一方不能自己签字）
 GRANT SELECT, INSERT ON platform.review_task TO starbuddy_learning;
-GRANT UPDATE (status, resolved_at, resolution_code) ON platform.review_task TO starbuddy_learning;
+GRANT SELECT ON platform.review_task TO starbuddy_review, starbuddy_authz;
+GRANT UPDATE (status, resolved_at, resolved_by_account, resolution_code) ON platform.review_task TO starbuddy_authz;
+
+-- 结案只能由教研人员（staff 账号）经 starbuddy_review 调用，记录结案人
+CREATE FUNCTION platform.resolve_review_task(p_task uuid, p_resolution_code text) RETURNS void
+  LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, platform, pg_temp
+  AS $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM platform.account a
+                  WHERE a.id = platform.current_account_id() AND a.kind = 'staff' AND a.status = 'active') THEN
+    RAISE EXCEPTION 'only an active staff account can resolve review tasks' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  UPDATE platform.review_task
+     SET status = 'resolved', resolved_at = now(), resolved_by_account = platform.current_account_id(),
+         resolution_code = p_resolution_code
+   WHERE id = p_task AND status <> 'resolved';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'review task not found or already resolved' USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+END $$;
+ALTER FUNCTION platform.resolve_review_task(uuid, text) OWNER TO starbuddy_authz;
+REVOKE EXECUTE ON FUNCTION platform.resolve_review_task(uuid, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION platform.resolve_review_task(uuid, text) TO starbuddy_review;
 
 ALTER TABLE platform.guardian_report ENABLE ROW LEVEL SECURITY;
 ALTER TABLE platform.guardian_report FORCE ROW LEVEL SECURITY;
@@ -49,5 +73,8 @@ CREATE POLICY greport_service_read ON platform.guardian_report FOR SELECT TO sta
 
 ALTER TABLE platform.review_task ENABLE ROW LEVEL SECURITY;
 ALTER TABLE platform.review_task FORCE ROW LEVEL SECURITY;
-CREATE POLICY review_service ON platform.review_task FOR ALL TO starbuddy_learning USING (true) WITH CHECK (true);
--- 教研后台（staff）的访问在后续迁移里加；BFF 不能读复核队列。
+CREATE POLICY review_service_read ON platform.review_task FOR SELECT TO starbuddy_learning USING (true);
+CREATE POLICY review_service_open ON platform.review_task FOR INSERT TO starbuddy_learning
+  WITH CHECK (status = 'open' AND resolved_at IS NULL AND resolved_by_account IS NULL);
+CREATE POLICY review_staff_read ON platform.review_task FOR SELECT TO starbuddy_review USING (true);
+-- BFF 不能读复核队列。

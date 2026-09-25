@@ -5,7 +5,7 @@
 ## 角色（每个环境执行一次，由人执行）
 
 ```bash
-psql -f db/bootstrap/roles.sql   # 建 starbuddy_bff / starbuddy_learning / starbuddy_authz
+psql -f db/bootstrap/roles.sql   # 建 starbuddy_bff / starbuddy_learning / starbuddy_review / starbuddy_authz
 ```
 
 迁移 0001 会断言这些角色存在且属性安全，否则拒绝执行。迁移的 down 不删除角色。
