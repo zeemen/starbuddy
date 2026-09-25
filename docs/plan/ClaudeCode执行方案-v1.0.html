@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>魁星点斗 StarBuddy · Claude Code 驱动的开发执行方案 v1.0</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  --paper:#F7F8F5;--paper-2:#EEF0EA;--ink:#1B2130;--ink-2:#4A5163;--ink-3:#7C8394;
+  --rule:#CDD2C9;--crow:#2E4A7D;--crow-soft:#DCE4F2;--slate:#6B7280;--slate-soft:#E5E7EB;
+  --gold:#C9962E;--gold-soft:#F5E7C4;--green:#3F7A5A;--green-soft:#DCEBE1;--red:#A34A3E;--red-soft:#F1DCD8;
+  --serif:"Noto Serif SC","Songti SC","SimSun","Source Han Serif SC",serif;
+  --sans:"Noto Sans SC","PingFang SC","Microsoft YaHei","Source Han Sans SC",sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#151922;--paper-2:#1D222D;--ink:#E8EAE4;--ink-2:#B7BCC7;--ink-3:#868D9C;
+    --rule:#343A47;--crow:#8FAAD8;--crow-soft:#243352;--slate:#A0A6B3;--slate-soft:#2B303B;
+    --gold:#DDB35A;--gold-soft:#3D3320;--green:#7FB89A;--green-soft:#1F3328;--red:#D48A7E;--red-soft:#3A2622;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#151922;--paper-2:#1D222D;--ink:#E8EAE4;--ink-2:#B7BCC7;--ink-3:#868D9C;
+  --rule:#343A47;--crow:#8FAAD8;--crow-soft:#243352;--slate:#A0A6B3;--slate-soft:#2B303B;
+  --gold:#DDB35A;--gold-soft:#3D3320;--green:#7FB89A;--green-soft:#1F3328;--red:#D48A7E;--red-soft:#3A2622;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:inherit}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.8;-webkit-font-smoothing:antialiased}
+a{color:var(--crow)}
+svg{max-width:100%}
+.page{max-width:1120px;margin:0 auto;padding:0 20px 80px}
+.masthead{padding:56px 0 28px;border-bottom:2px solid var(--ink)}
+.masthead .doc-no{font-size:13px;color:var(--ink-3);letter-spacing:.04em}
+.masthead h1{font-family:var(--serif);font-weight:700;font-size:clamp(26px,3.6vw,40px);line-height:1.3;margin:10px 0 6px}
+.masthead .sub{font-family:var(--serif);font-size:clamp(16px,2vw,20px);color:var(--ink-2);margin:0 0 22px;max-width:44em}
+.meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px 24px;font-size:14px;color:var(--ink-2)}
+.meta b{display:block;color:var(--ink-3);font-weight:500;font-size:12px}
+section{display:grid;grid-template-columns:150px 1fr;gap:0 36px;padding:44px 0 8px;border-bottom:1px solid var(--rule)}
+section:last-of-type{border-bottom:0}
+.margin{font-family:var(--serif);color:var(--crow);font-size:15px;line-height:1.6;padding-top:8px;position:sticky;top:calc(env(safe-area-inset-top,0px) + 16px);align-self:start}
+.margin .n{display:block;font-size:34px;font-weight:700;line-height:1;color:var(--ink);margin-bottom:6px}
+.body{min-width:0}
+h2{font-family:var(--serif);font-size:24px;font-weight:700;margin:0 0 14px;line-height:1.4}
+h3{font-family:var(--serif);font-size:18px;font-weight:700;margin:30px 0 8px}
+p{margin:0 0 14px;max-width:76ch}
+ul,ol{padding-left:1.4em;max-width:76ch}
+li{margin-bottom:6px}
+.lead{font-size:17px;max-width:76ch}
+.callout{background:var(--paper-2);border-left:3px solid var(--crow);padding:14px 18px;margin:18px 0;max-width:76ch}
+.callout.gold{border-left-color:var(--gold);background:var(--gold-soft)}
+.callout.red{border-left-color:var(--red);background:var(--red-soft)}
+.callout p:last-child{margin-bottom:0}
+.tbl{overflow-x:auto;margin:16px 0 8px}
+table{border-collapse:collapse;width:100%;font-size:14px;line-height:1.6}
+th,td{text-align:left;vertical-align:top;padding:9px 11px;border-bottom:1px solid var(--rule)}
+th{font-weight:700;border-bottom:2px solid var(--ink);white-space:nowrap}
+td:first-child{font-weight:500}
+.tag{display:inline-block;font-size:12px;padding:1px 8px;border-radius:3px;white-space:nowrap}
+.tag.cc{background:var(--crow-soft);color:var(--crow)}
+.tag.h{background:var(--red-soft);color:var(--red)}
+.tag.hc{background:var(--gold-soft);color:var(--gold)}
+.figure{margin:22px 0 10px;overflow-x:auto;background:var(--paper-2);padding:18px 10px;border:1px solid var(--rule)}
+.figure svg{display:block;min-width:900px;width:100%;height:auto;font-family:var(--sans)}
+.figcap{font-size:13.5px;color:var(--ink-3);margin:8px 0 18px;max-width:76ch}
+pre{background:var(--paper-2);border:1px solid var(--rule);padding:14px 16px;overflow-x:auto;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;line-height:1.6;max-width:100%;white-space:pre-wrap}
+code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.9em;background:var(--paper-2);padding:1px 5px;border-radius:3px}
+.foot{margin-top:48px;padding-top:18px;border-top:2px solid var(--ink);font-size:13px;color:var(--ink-3)}
+.foot table{font-size:13px}
+@media (max-width:760px){
+  section{grid-template-columns:1fr;gap:8px}
+  .margin{position:static;padding-top:0}
+  .margin .n{display:inline;font-size:22px;margin-right:8px}
+  .masthead{padding-top:36px}
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="masthead">
+  <div class="doc-no">huabo.ai 魁星点斗 StarBuddy · 开发执行 · HB-EDU-2026-0924-03</div>
+  <h1>Claude Code 驱动的开发执行方案</h1>
+  <p class="sub">把编码交给 Claude Code，把判断留给人——分工边界、仓库 harness、工作循环、重排后的阶段 0 与安全红线</p>
+  <div class="meta">
+    <div><b>版本</b>v1.0 · 执行稿</div>
+    <div><b>日期</b>2026 年 9 月 24 日</div>
+    <div><b>修订</b>《开发计划》v1.0 第一章团队假设与第四章任务负责人</div>
+    <div><b>配套</b>starbuddy-claude-code-kit（CLAUDE.md、hooks、5 个子代理、3 个 skill）</div>
+    <div><b>密级</b>内部</div>
+  </div>
+</header>
+
+<!-- 〇 -->
+<section>
+  <div class="margin"><span class="n">〇</span>结论</div>
+  <div class="body">
+    <h2>可以，但交出去的是"写代码"，不是"负责"</h2>
+    <p class="lead">Claude Code 可以承担这个项目绝大部分的工程工作：四科盘点、契约与 Schema 起草、适配器、平台后端、前端壳、测试、评测框架、文档。按工程量估算，这是原计划里 70%–80% 的人天。</p>
+    <p class="lead">但有四类事不能、也不应该交给它：<strong>对学生负责的判断</strong>（判分是否公正、内容是否正确、话术是否合适——必须由教研签字）；<strong>对法律负责的判断</strong>（监管分类、监护人同意、数据出境——必须由人和律师定）；<strong>对真实世界的操作</strong>（生产部署、生产数据、支付、备案、招募试点家庭）；<strong>对方向的决定</strong>（七项待拍板、Gate 通过与否）。</p>
+    <div class="callout gold">
+      <p><strong>一个直接的后果：</strong>瓶颈从"写代码的人手"移到"审核的人手"。Claude Code 一天可以开出十几个 PR，但一个面向未成年人的学习平台，每一个涉及家庭数据、计量、判分、人设的 PR 都需要人看。阶段 0 因此只能从 13 周压到约 10 周，而不是压到 3 周；寒假试点的日期锚点不变。</p>
+    </div>
+  </div>
+</section>
+
+<!-- 一 分工 -->
+<section>
+  <div class="margin"><span class="n">一</span>分工边界</div>
+  <div class="body">
+    <h2>谁做什么</h2>
+    <p><span class="tag cc">Claude Code</span> 独立完成，人抽查　<span class="tag hc">人机协作</span> Claude Code 起草，人确认后生效　<span class="tag h">人</span> 只能由人完成</p>
+    <div class="tbl"><table>
+      <tr><th>工作</th><th>归属</th><th>说明</th></tr>
+      <tr><td>四科代码盘点、模块状态打标</td><td><span class="tag hc">人机协作</span></td><td>Claude Code 只读审计出初稿；各科负责人确认"真实可用"——代码看不出线上是否有人在用</td></tr>
+      <tr><td>OpenAPI 契约、学习者 Schema、ADR 起草</td><td><span class="tag hc">人机协作</span></td><td>起草快；冻结必须人签</td></tr>
+      <tr><td>适配器、平台后端、前端壳、舞台组件</td><td><span class="tag cc">Claude Code</span></td><td>主力产出；PR 由人合并</td></tr>
+      <tr><td>数据库迁移、RLS、计量与权益</td><td><span class="tag hc">人机协作</span></td><td>Claude Code 实现并自测，安全审查子代理先审，人最后审；强制 [NEEDS-HUMAN]</td></tr>
+      <tr><td>单元测试、契约测试、压测脚本</td><td><span class="tag cc">Claude Code</span></td><td>但不能只靠它为自己的代码写测试（见第六章）</td></tr>
+      <tr><td>评测金标准（判分一致率、人设用例的期望答案）</td><td><span class="tag h">人</span></td><td>教研标注；Claude Code 只能读，hook 阻止修改</td></tr>
+      <tr><td>人设 Prompt 与话术</td><td><span class="tag hc">人机协作</span></td><td>Claude Code 按规格书起草并跑回归；教研与产品负责人签字</td></tr>
+      <tr><td>题目、Rubric、图谱、讲解内容</td><td><span class="tag hc">人机协作</span></td><td>AI 草稿经发布闸门；判分用内容必须教研审核版本</td></tr>
+      <tr><td>角色形象</td><td><span class="tag hc">人机协作</span></td><td>Claude Code 可按视觉家族规范出 SVG 原型；定稿需人的审美判断</td></tr>
+      <tr><td>监管分类、隐私政策定稿、供应商数据协议</td><td><span class="tag h">人</span></td><td>Claude Code 可整理材料与草拟条款，意见必须来自律师</td></tr>
+      <tr><td>生产部署、生产凭据、真实学生数据</td><td><span class="tag h">人</span></td><td>Claude Code 不持有生产凭据，hook 阻止生产操作</td></tr>
+      <tr><td>试点家庭招募、访谈、同意书</td><td><span class="tag h">人</span></td><td>—</td></tr>
+      <tr><td>七项待拍板、Gate 评审</td><td><span class="tag h">人</span></td><td>Claude Code 用 /gate-check 汇总证据，不下结论</td></tr>
+    </table></div>
+  </div>
+</section>
+
+<!-- 二 团队 -->
+<section>
+  <div class="margin"><span class="n">二</span>最小团队</div>
+  <div class="body">
+    <h2>从 14 个角色到 6 个人</h2>
+    <div class="tbl"><table>
+      <tr><th>人</th><th>投入</th><th>职责</th></tr>
+      <tr><td>产品负责人 · Claude Code 操作者</td><td>全职</td><td>写 spec、驱动 Claude Code 会话、合并常规 PR、主持决策与 Gate</td></tr>
+      <tr><td>资深工程师（审查者）</td><td>全职或 0.6</td><td>审 [NEEDS-HUMAN] PR：迁移、RLS、计量、契约、第三方；维护 CLAUDE.md 与 hooks；兜底 Claude Code 卡住的问题</td></tr>
+      <tr><td>学科教研顾问 × 4</td><td>各 0.3</td><td>金标准标注、Rubric 分库、错因映射签字、人设话术签字、内容审核</td></tr>
+      <tr><td>合规顾问（外部）</td><td>按需</td><td>监管分类、隐私与同意、数据出境</td></tr>
+    </table></div>
+    <p>原四科开发者如仍在，建议转为各自学科的"领域审查者"：确认盘点、审本科适配器 PR、回答 Claude Code 在 lessons.md 里留下的疑问。他们对各自代码的隐性知识，是 Claude Code 最缺的东西。</p>
+    <div class="callout red">
+      <p><strong>不建议的形态：</strong>没有资深工程师审查、由产品负责人一人合并全部 PR。这个项目处理未成年人的数据与付费，迁移、权限、计量上的一个疏漏，代价远高于省下的一个工程师。</p>
+    </div>
+  </div>
+</section>
+
+<!-- 三 harness -->
+<section>
+  <div class="margin"><span class="n">三</span>仓库 harness</div>
+  <div class="body">
+    <h2>让 Claude Code 在这个项目里"守规矩"的五件东西</h2>
+    <p>Claude Code 的扩展层分工是：CLAUDE.md 提供常驻上下文，skills 提供按需加载的知识与工作流，MCP 连接外部服务，子代理提供隔离的上下文，hooks 负责自动化。官方建议 CLAUDE.md 控制在 200 行以内，参考资料放进按需加载的 skills（参见 code.claude.com/docs/en/features-overview）。配套启动包按此组织：</p>
+    <div class="tbl"><table>
+      <tr><th>件</th><th>内容</th><th>为什么这样放</th></tr>
+      <tr><td>CLAUDE.md（根目录，50 行）</td><td>仓库结构、10 条不可违反的规则、必停清单、工作方式、常用命令</td><td>每个会话都会读到；规则写成可检查的句子，不写口号</td></tr>
+      <tr><td>hooks（settings.json + guard.py + post_edit.sh）</td><td>PreToolUse：阻止推主干、强推、直接推迁移、读写密钥、生产操作、改教研金标准；PostToolUse：改动后跑 <code>make check-fast</code>，失败即回传</td><td>安全红线不能靠"提醒"，要靠确定性拦截；已用样例验证可拦截</td></tr>
+      <tr><td>子代理 × 5</td><td>inventory-auditor（只读盘点）、adapter-implementer（实现）、contract-guardian（契约守卫）、security-reviewer（安全审查）、persona-evaluator（人设回归）</td><td>实现与审查分开上下文，审查者不背实现者的"思路包袱"；审查类子代理只给读权限</td></tr>
+      <tr><td>skills × 3</td><td><code>/subject-inventory</code>、<code>/implement-adapter</code>、<code>/gate-check</code></td><td>把每周重复的流程固化成一个命令</td></tr>
+      <tr><td>specs/_template</td><td>目标、范围、可测试的验收标准、必停项自查、待人确认</td><td>规格先于代码；没有已确认的 spec，skill 会停下</td></tr>
+    </table></div>
+    <h3>MCP 与外部连接</h3>
+    <p>你已连接 GitHub、Supabase、Vercel。建议：GitHub 用于开 PR 与读 issue；Supabase 只连<strong>开发项目</strong>，并在 Supabase 侧为 Claude Code 使用的凭据设最小权限；Vercel 只用于预览部署。生产项目不配置给 Claude Code，生产部署由人在 CI 中手动批准。</p>
+  </div>
+</section>
+
+<!-- 四 工作循环 -->
+<section>
+  <div class="margin"><span class="n">四</span>工作循环</div>
+  <div class="body">
+    <h2>一个任务从 spec 到合并</h2>
+    <div class="figure">
+<svg viewBox="0 0 1180 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="工作循环">
+  <defs><marker id="w" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--ink-3)"/></marker></defs>
+  <g font-size="12" text-anchor="middle">
+    <rect x="20" y="60" width="140" height="70" fill="var(--gold-soft)" stroke="var(--gold)"/><text x="90" y="88" font-weight="700" fill="var(--ink)">① spec 起草</text><text x="90" y="108" fill="var(--ink-2)">人写或 CC 起草</text>
+    <rect x="190" y="60" width="140" height="70" fill="var(--red-soft)" stroke="var(--red)"/><text x="260" y="88" font-weight="700" fill="var(--ink)">② spec 确认</text><text x="260" y="108" fill="var(--ink-2)">人</text>
+    <rect x="360" y="60" width="140" height="70" fill="var(--crow-soft)" stroke="var(--crow)"/><text x="430" y="88" font-weight="700" fill="var(--ink)">③ 实现</text><text x="430" y="108" fill="var(--ink-2)">worktree · 实现子代理</text>
+    <rect x="530" y="60" width="140" height="70" fill="var(--crow-soft)" stroke="var(--crow)"/><text x="600" y="88" font-weight="700" fill="var(--ink)">④ 自检</text><text x="600" y="108" fill="var(--ink-2)">make check · hook</text>
+    <rect x="700" y="60" width="140" height="70" fill="var(--crow-soft)" stroke="var(--crow)"/><text x="770" y="88" font-weight="700" fill="var(--ink)">⑤ 子代理审查</text><text x="770" y="108" fill="var(--ink-2)">契约 · 安全 · 人设</text>
+    <rect x="870" y="60" width="140" height="70" fill="var(--red-soft)" stroke="var(--red)"/><text x="940" y="88" font-weight="700" fill="var(--ink)">⑥ 人审 PR</text><text x="940" y="108" fill="var(--ink-2)">[NEEDS-HUMAN] 必审</text>
+    <rect x="1040" y="60" width="120" height="70" fill="var(--red-soft)" stroke="var(--red)"/><text x="1100" y="88" font-weight="700" fill="var(--ink)">⑦ 合并</text><text x="1100" y="108" fill="var(--ink-2)">人</text>
+  </g>
+  <g stroke="var(--ink-3)" stroke-width="1.4" marker-end="url(#w)">
+    <line x1="160" y1="95" x2="188" y2="95"/><line x1="330" y1="95" x2="358" y2="95"/><line x1="500" y1="95" x2="528" y2="95"/><line x1="670" y1="95" x2="698" y2="95"/><line x1="840" y1="95" x2="868" y2="95"/><line x1="1010" y1="95" x2="1038" y2="95"/>
+  </g>
+  <path d="M600,130 C600,180 430,180 430,132" fill="none" stroke="var(--crow)" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#w)"/>
+  <text x="515" y="186" font-size="11" fill="var(--crow)" text-anchor="middle">失败即修</text>
+  <path d="M770,130 C770,210 430,210 430,132" fill="none" stroke="var(--crow)" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#w)"/>
+  <text x="600" y="222" font-size="11" fill="var(--crow)" text-anchor="middle">审查不通过即返工</text>
+  <g font-size="11.5" fill="var(--ink-2)">
+    <rect x="20" y="250" width="14" height="10" fill="var(--red-soft)" stroke="var(--red)"/><text x="40" y="259">人的环节</text>
+    <rect x="120" y="250" width="14" height="10" fill="var(--crow-soft)" stroke="var(--crow)"/><text x="140" y="259">Claude Code 的环节</text>
+    <text x="300" y="259">常规 PR：产品负责人合并；命中必停清单的 PR：资深工程师合并</text>
+  </g>
+</svg>
+    </div>
+    <p class="figcap">图 1 · 任务工作循环。Claude Code 在 ③–⑤ 可以自循环直到通过；② ⑥ ⑦ 是人的环节，不可跳过。</p>
+    <h3>并行方式</h3>
+    <p>每个任务在独立 git worktree 与分支中进行，多个 Claude Code 会话可并行（例如同时实现阿鸦与知行的适配器）。并行度受人审能力约束：建议同时在途的 [NEEDS-HUMAN] PR 不超过 3 个，常规 PR 不超过 8 个。超过即暂停开新任务，先清审查队列。</p>
+  </div>
+</section>
+
+<!-- 五 阶段 0 重排 -->
+<section>
+  <div class="margin"><span class="n">五</span>阶段 0 重排</div>
+  <div class="body">
+    <h2>13 周压到约 10 周：压的是哪里</h2>
+    <div class="tbl"><table>
+      <tr><th>周</th><th>Claude Code 做</th><th>人做</th><th>人的检查点</th></tr>
+      <tr><td>W1</td><td><code>/subject-inventory</code> 对四科并行盘点；起草四份适配器设计</td><td>各科负责人逐项确认"真实可用"；联系合规顾问</td><td>周五：四份盘点确认</td></tr>
+      <tr><td>W2</td><td>起草 OpenAPI、Schema、错因映射、ADR 01–08；搭平台单仓骨架与 Makefile</td><td>七项待拍板决策会；教研审映射</td><td>周五：契约 v0.9、Schema v0.9、ADR 签字</td></tr>
+      <tr><td>W3–W4</td><td>平台 schema 与 RLS、证据事件、阿鸦适配器、模型路由骨架、点点一致性用例起草</td><td>资深工程师审迁移与 RLS；教研标注一致性用例的期望答案</td><td>W4：契约 v1.0 冻结；第一条端到端链路演示</td></tr>
+      <tr><td>W5–W6</td><td>知行、文砺适配器；计量预留 / 结算 / 回滚；复核队列；一致性首轮</td><td>资深工程师审计量；教研拆分道法 / 历史 Rubric</td><td>W6：计量幂等测试全绿（人审）</td></tr>
+      <tr><td>W7–W8</td><td>开口成章异步适配、人设治理组件与家族回归、星图、掌握估计 v0、发布闸门</td><td>外部渗透测试；教研配置星亮门槛；英语技术栈结论</td><td>W8：点点跨模型一致性结论（人定）</td></tr>
+      <tr><td>W9</td><td>统一壳 MVP、周报 v0、讲评课原型、压测脚本、20 名合成学生端到端</td><td>产品负责人验收体验</td><td>—</td></tr>
+      <tr><td>W10</td><td><code>/gate-check 0</code> 汇总证据；修阻断缺陷</td><td>Gate 0 评审</td><td>Gate 0（约 12 月中旬）</td></tr>
+    </table></div>
+    <p><strong>压缩来源：</strong>编码类任务（适配器、后端、前端、测试）平均缩短约一半。<strong>压不动的部分：</strong>盘点确认、决策会、教研标注、渗透测试、一致性结论、Gate 评审——它们决定了 10 周是下限。多出来的约 3 周建议全部给寒假试点做准备（试点内容包审核、同意书、家长招募），而不是提前开始阶段 1 的新功能。</p>
+  </div>
+</section>
+
+<!-- 六 质量 -->
+<section>
+  <div class="margin"><span class="n">六</span>质量保障</div>
+  <div class="body">
+    <h2>为什么不能让 Claude Code 只给自己的代码写测试</h2>
+    <p>同一个模型写实现又写测试，测试往往验证的是"代码做了它做的事"，而不是"代码做了该做的事"。对这个项目，最该防的恰好是后者：判分偏了、星星亮早了、家长看到了不该看的。三道独立防线：</p>
+    <ol>
+      <li><strong>教研金标准。</strong>判分一致率、人设期望答案、星亮门槛的验收样例由人标注，放在 <code>evals/**/gold/</code>，hook 阻止 Claude Code 修改。这是"该做什么"的唯一定义。</li>
+      <li><strong>契约测试由契约生成。</strong>测试从 <code>packages/contracts</code> 自动生成，而不是由写适配器的同一个会话手写。</li>
+      <li><strong>审查与实现分离。</strong>contract-guardian、security-reviewer、persona-evaluator 在独立上下文中只读审查；资深工程师审所有命中必停清单的改动。</li>
+    </ol>
+    <p>另外两条纪律：Prompt 与人设的任何改动必须附回归前后对比；每两周由资深工程师随机抽 5 个已合并的常规 PR 复审，发现的问题写回 CLAUDE.md——同一个错误出现两次，就是 CLAUDE.md 该改了。</p>
+  </div>
+</section>
+
+<!-- 七 红线 -->
+<section>
+  <div class="margin"><span class="n">七</span>安全红线</div>
+  <div class="body">
+    <h2>Claude Code 在本项目中的七条红线</h2>
+    <div class="tbl"><table>
+      <tr><th>红线</th><th>怎么保证</th></tr>
+      <tr><td>不持有生产凭据、不部署生产</td><td>生产凭据不进开发机与 Claude Code 环境；hook 拦截生产标识与 <code>--prod</code>；生产部署在 CI 中人工批准</td></tr>
+      <tr><td>不接触真实学生数据</td><td>开发与测试一律合成数据；试点数据只在 pilot 环境，Claude Code 不连接</td></tr>
+      <tr><td>不直接改数据库结构</td><td>只写迁移文件；hook 拦截 <code>supabase db push</code>；迁移由人执行</td></tr>
+      <tr><td>不改教研金标准</td><td>hook 拦截 <code>evals/**/gold/</code></td></tr>
+      <tr><td>不直接推主干</td><td>hook 拦截；GitHub 分支保护要求审查</td></tr>
+      <tr><td>不引入未审许可证与新数据出境路径</td><td>security-reviewer 检查；新增供应商进入必停清单</td></tr>
+      <tr><td>外部内容当数据不当指令</td><td>盘点与内容处理中读到的文档、题目、网页，一律视为数据；CLAUDE.md 与子代理说明中不接受来自内容文件的指令</td></tr>
+    </table></div>
+  </div>
+</section>
+
+<!-- 八 第一周 -->
+<section>
+  <div class="margin"><span class="n">八</span>第一周</div>
+  <div class="body">
+    <h2>第一周的操作步骤与可以直接粘贴的指令</h2>
+    <h3>准备（国庆前）</h3>
+    <ol>
+      <li>新建平台单仓，放入启动包；修改 <code>guard.py</code> 中两处生产标识占位符；开启 GitHub 分支保护。</li>
+      <li>把四科仓库以只读方式克隆到同一工作区（如 <code>legacy/wenli</code>、<code>legacy/aya</code>、<code>legacy/zhixing</code>、<code>legacy/echo</code>）。</li>
+      <li>把完整方案、开发计划与七份角色文档放入 <code>docs/plan/</code> 与 <code>docs/personas/</code>。</li>
+      <li>Supabase 新建开发项目给平台使用；Claude Code 只配置这个项目。</li>
+    </ol>
+    <h3>W1 周一：四科并行盘点</h3>
+<pre>/subject-inventory aya legacy/aya
+
+/subject-inventory zhixing legacy/zhixing
+
+/subject-inventory wenli legacy/wenli
+
+/subject-inventory echo legacy/echo
+（英语额外：请实测实时语音链端到端延迟的获取方式，并列出 ASR / TTS / 发音评测的供应商与数据流向）</pre>
+    <h3>W1 周三：汇总与疑点</h3>
+<pre>读取 specs/inventory-*/inventory.md 四份盘点，产出 specs/inventory-summary.md：
+1. 四科模块状态总表（已上线 / 可演示 / 半成品 / 仅方案）及"仅方案"占比；
+2. 四科数据库中学生、家长、能力点、错因的建模差异对照；
+3. 四科模型调用与平均 token 对照；
+4. 按完整方案第五章，给出每科适配器工作量评估（轻 / 中 / 重）及理由；
+5. 汇总全部"需人确认的疑点"，按科分组。
+只写文档，不改代码。</pre>
+    <h3>W2 周一：契约起草</h3>
+<pre>依据 docs/plan/完整方案-v1.0.html 第五章 5.4、第六章与第七章，以及 specs/inventory-summary.md：
+1. 在 packages/contracts/ 起草学科插件 API 的 OpenAPI 3.1：diagnose / plan / teach / grade / generate_variation / report；
+   统一返回 result、evidence_ids、confidence、source_version、model_version、human_review_required；
+2. 在 db/migrations/ 起草 platform schema v0.9 的迁移文件（不执行）与 ERD（docs/adr/erd.md）；
+3. 起草错因跨科大类映射表 docs/mapping/error-taxonomy.md（七大类）；
+4. 起草 ADR 01–08（题目见开发计划第三章 W2），每份写"背景 / 选项 / 决定 / 后果"，决定一栏写"待签字"。
+全部 PR 首行写 [NEEDS-HUMAN]。不执行任何迁移。</pre>
+  </div>
+</section>
+
+<!-- 九 -->
+<section>
+  <div class="margin"><span class="n">九</span>成本与节奏</div>
+  <div class="body">
+    <h2>需要提前决定的三件事</h2>
+    <ol>
+      <li><strong>Claude Code 的使用方式与额度。</strong>并行会话数决定吞吐，也决定费用。建议阶段 0 以 2–4 个并行会话为上限，与人审能力匹配；订阅或 API 的选择以你所在组织的账户情况为准，价格与额度请以官方当前信息为准。</li>
+      <li><strong>Claude Code 本身的数据边界。</strong>开发环境里只有代码与合成数据，这是它可以工作的前提；这条也是合规顾问需要确认的供应商之一。</li>
+      <li><strong>节奏。</strong>每天一次审查窗口（例如下午 4 点集中审 PR），每周五演示与复盘；复盘时把本周 Claude Code 的重复错误写进 CLAUDE.md，把重复的操作写成 skill。</li>
+    </ol>
+    <div class="foot">
+      <table>
+        <tr><th>版本</th><th>日期</th><th>变更</th></tr>
+        <tr><td>v1.0</td><td>2026-09-24</td><td>首版：分工边界、最小团队、仓库 harness、工作循环、阶段 0 重排为约 10 周、质量三道防线、七条红线、第一周指令、配套启动包</td></tr>
+      </table>
+    </div>
+  </div>
+</section>
+
+</div>
+</body>
+</html>

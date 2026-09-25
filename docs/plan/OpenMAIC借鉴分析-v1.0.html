@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>OpenMAIC 借鉴分析：面向"阿鸦"AI一对一辅导产品的架构对照 v1.0</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  --paper:#F7F8F5;
+  --paper-2:#EEF0EA;
+  --ink:#1B2130;
+  --ink-2:#4A5163;
+  --ink-3:#7C8394;
+  --rule:#CDD2C9;
+  --crow:#2E4A7D;
+  --crow-soft:#DCE4F2;
+  --slate:#6B7280;
+  --slate-soft:#E5E7EB;
+  --gold:#C9962E;
+  --gold-soft:#F5E7C4;
+  --serif:"Noto Serif SC","Songti SC","SimSun","Source Han Serif SC",serif;
+  --sans:"Noto Sans SC","PingFang SC","Microsoft YaHei","Source Han Sans SC",sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#151922;--paper-2:#1D222D;--ink:#E8EAE4;--ink-2:#B7BCC7;--ink-3:#868D9C;
+    --rule:#343A47;--crow:#8FAAD8;--crow-soft:#243352;--slate:#A0A6B3;--slate-soft:#2B303B;
+    --gold:#DDB35A;--gold-soft:#3D3320;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#151922;--paper-2:#1D222D;--ink:#E8EAE4;--ink-2:#B7BCC7;--ink-3:#868D9C;
+  --rule:#343A47;--crow:#8FAAD8;--crow-soft:#243352;--slate:#A0A6B3;--slate-soft:#2B303B;
+  --gold:#DDB35A;--gold-soft:#3D3320;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px);}
+*{box-sizing:inherit}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.8;-webkit-font-smoothing:antialiased}
+a{color:var(--crow)}
+img,svg{max-width:100%}
+
+.page{max-width:1100px;margin:0 auto;padding:0 20px 80px}
+
+/* Title block */
+.masthead{padding:56px 0 28px;border-bottom:2px solid var(--ink)}
+.masthead .doc-no{font-size:13px;color:var(--ink-3);letter-spacing:.04em}
+.masthead h1{font-family:var(--serif);font-weight:700;font-size:clamp(26px,3.6vw,40px);line-height:1.3;margin:10px 0 6px;letter-spacing:.01em}
+.masthead .sub{font-family:var(--serif);font-size:clamp(16px,2vw,20px);color:var(--ink-2);margin:0 0 22px}
+.meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px 24px;font-size:14px;color:var(--ink-2)}
+.meta b{display:block;color:var(--ink-3);font-weight:500;font-size:12px}
+
+/* Sections with margin column */
+section{display:grid;grid-template-columns:150px 1fr;gap:0 36px;padding:44px 0 8px;border-bottom:1px solid var(--rule)}
+section:last-of-type{border-bottom:0}
+.margin{font-family:var(--serif);color:var(--crow);font-size:15px;line-height:1.6;padding-top:8px;position:sticky;top:calc(env(safe-area-inset-top,0px) + 16px);align-self:start}
+.margin .n{display:block;font-size:34px;font-weight:700;line-height:1;color:var(--ink);margin-bottom:6px}
+.body{min-width:0}
+h2{font-family:var(--serif);font-size:24px;font-weight:700;margin:0 0 14px;line-height:1.4}
+h3{font-family:var(--serif);font-size:18px;font-weight:700;margin:30px 0 8px;color:var(--ink)}
+p{margin:0 0 14px;max-width:72ch}
+ul,ol{padding-left:1.4em;max-width:72ch}
+li{margin-bottom:6px}
+.lead{font-size:17px;color:var(--ink);max-width:72ch}
+.callout{background:var(--paper-2);border-left:3px solid var(--crow);padding:14px 18px;margin:18px 0;max-width:72ch}
+.callout.gold{border-left-color:var(--gold);background:var(--gold-soft)}
+.callout p:last-child{margin-bottom:0}
+
+/* Tables */
+.tbl{overflow-x:auto;margin:16px 0 8px}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{text-align:left;vertical-align:top;padding:10px 12px;border-bottom:1px solid var(--rule)}
+th{font-weight:700;color:var(--ink);border-bottom:2px solid var(--ink);background:transparent;white-space:nowrap}
+td:first-child{font-weight:500}
+.tag{display:inline-block;font-size:12px;padding:1px 8px;border-radius:3px;white-space:nowrap}
+.tag.reuse{background:var(--crow-soft);color:var(--crow)}
+.tag.adapt{background:var(--slate-soft);color:var(--slate)}
+.tag.moat{background:var(--gold-soft);color:var(--gold)}
+
+/* Diagram */
+.figure{margin:22px 0 10px;overflow-x:auto;background:var(--paper-2);padding:18px 10px;border:1px solid var(--rule)}
+.figure svg{display:block;min-width:820px;width:100%;height:auto;font-family:var(--sans)}
+.figcap{font-size:13.5px;color:var(--ink-3);margin:8px 0 18px}
+
+/* Roadmap */
+.road{list-style:none;padding:0;margin:14px 0;max-width:72ch;border-left:2px solid var(--rule)}
+.road li{padding:0 0 18px 22px;position:relative;margin:0}
+.road li::before{content:"";position:absolute;left:-7px;top:10px;width:12px;height:12px;border-radius:50%;background:var(--paper);border:2px solid var(--crow)}
+.road li.stop::before{border-color:var(--ink-3);background:var(--ink-3)}
+.road b{display:block;font-family:var(--serif);font-size:16px}
+
+.foot{margin-top:48px;padding-top:18px;border-top:2px solid var(--ink);font-size:13px;color:var(--ink-3)}
+.foot table{font-size:13px}
+
+@media (max-width:760px){
+  section{grid-template-columns:1fr;gap:8px}
+  .margin{position:static;padding-top:0}
+  .margin .n{display:inline;font-size:22px;margin-right:8px}
+  .masthead{padding-top:36px}
+}
+@media (prefers-reduced-motion: reduce){*{scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="masthead">
+  <div class="doc-no">huabo.ai 中考教育产品线 · 竞品与开源项目分析 · HB-EDU-2026-0921</div>
+  <h1>OpenMAIC 借鉴分析</h1>
+  <p class="sub">面向"阿鸦"AI 一对一辅导产品的产品思路、学习方法与架构对照</p>
+  <div class="meta">
+    <div><b>版本</b>v1.0</div>
+    <div><b>日期</b>2026 年 9 月 21 日</div>
+    <div><b>分析对象</b>THU-MAIC/OpenMAIC v0.3.2（MIT）</div>
+    <div><b>适用产品</b>阿鸦 · 南京初中数学 AI 一对一</div>
+    <div><b>密级</b>内部讨论稿</div>
+  </div>
+</header>
+
+<!-- 1 摘要 -->
+<section>
+  <div class="margin"><span class="n">一</span>摘要</div>
+  <div class="body">
+    <h2>三句话结论</h2>
+    <p class="lead">OpenMAIC 与阿鸦不是同一类产品。前者解决"把任意主题一键变成一堂课"，后者解决"把一个具体学生带到中考目标线"。</p>
+    <p class="lead">最值得借鉴的不是整体，而是三块可拆下来的零件：<strong>课堂化的呈现层</strong>、<strong>事件驱动的引擎架构</strong>、<strong>"AI 同学"这一学习机制</strong>。</p>
+    <p class="lead">阿鸦的护城河——学习者模型、课标与考情锚定、长期陪伴的 IP——恰是 OpenMAIC 的空白，追赶它的功能时不能稀释这三样。</p>
+    <div class="callout gold">
+      <p><strong>一个动作建议：</strong>本周在本地跑起 OpenMAIC，把"上传一张南京期中试卷 → 自动生成阿鸦讲评课"走通一遍。这是最能让家长感知价值的功能，也是验证复用可行性成本最低的实验。</p>
+    </div>
+  </div>
+</section>
+
+<!-- 2 概览 -->
+<section>
+  <div class="margin"><span class="n">二</span>OpenMAIC 是什么</div>
+  <div class="body">
+    <h2>定位、来源与形态</h2>
+    <p>OpenMAIC（Open Multi-Agent Interactive Classroom）是清华大学 MAIC 项目的开源版本。学术起点是 2026 年 1 月发表于 JCST 的论文《From MOOC to MAIC》：用 LLM 驱动的多智能体构建 AI 增强课堂，在规模化与自适应之间取平衡。论文的实验数据来自清华 500 余名学生、10 万余条学习记录。</p>
+    <div class="callout"><p><strong>关键事实：</strong>实验对象是大学生，产品基因是"MOOC 的下一代"，不是 K12 辅导。它默认学习者有自驱力、能听完一堂 30 分钟的课——这个假设在初中生身上不成立。</p></div>
+    <p>产品形态：描述一个主题或附上材料，AI 在几分钟内生成整堂课；AI 教师与 AI 同学讲课、讨论并实时互动；场景类型包括幻灯片、测验、交互式 HTML 模拟和项目制学习（PBL）；智能体可在白板上画图、写公式、语音讲解；可导出可编辑的 .pptx 或可交互 .html。</p>
+
+    <h3>演进节奏（2026 年）</h3>
+    <div class="tbl"><table>
+      <tr><th>时间</th><th>版本</th><th>要点</th></tr>
+      <tr><td>03-26</td><td>v0.1.0</td><td>讨论 TTS、沉浸模式、白板增强</td></tr>
+      <tr><td>04-20</td><td>v0.2.0</td><td>深度交互模式：3D 可视化、模拟、游戏、思维导图、在线编程</td></tr>
+      <tr><td>04-26</td><td>v0.2.1</td><td>VoxCPM2 语音克隆 TTS；课程完成页与测验状态持久化</td></tr>
+      <tr><td>06-02</td><td>v0.2.2</td><td>幻灯片 Pro 编辑器；生成前可编辑大纲；离线课堂导出</td></tr>
+      <tr><td>06-28</td><td>v0.3.0</td><td>PBL v2；"Edit with AI"；@openmaic/* SDK 发布到 npm；分阶段模型路由；<strong>许可从 AGPL-3.0 改为 MIT</strong></td></tr>
+      <tr><td>07-21</td><td>v0.3.1</td><td>一键 MP4 导出；服务端持久化（Postgres）；多格式文档解析（MinerU 等）</td></tr>
+      <tr><td>08-14</td><td>v0.3.2</td><td>视频导出加固；资产注册表；@openmaic/generation 包；FunASR 本地识别</td></tr>
+    </table></div>
+    <p>五个月七个版本，社区 20.7k star、4.1k fork、156 个开放 issue。迭代极快，意味着直接依赖主干代码会被拖着走。</p>
+
+    <h3>技术栈</h3>
+    <p>Next.js 16 / React 19 / TypeScript 5 / Tailwind 4 / shadcn + Radix / LangGraph 1.1 / Zustand。与阿鸦既有栈（Next.js、TypeScript、Tailwind、shadcn、Supabase、Anthropic API）高度重合，迁移摩擦低。</p>
+  </div>
+</section>
+
+<!-- 3 架构对照 -->
+<section>
+  <div class="margin"><span class="n">三</span>架构对照</div>
+  <div class="body">
+    <h2>OpenMAIC 引擎分层 vs 阿鸦目标架构</h2>
+    <p>左侧是 OpenMAIC 的六层结构（依据仓库 <code>lib/</code> 目录与官方架构说明整理）；右侧是阿鸦的目标架构，含既有部分与本次建议新增部分。中间连线标注三种关系：<span class="tag reuse">复用</span> 可直接引入代码或设计；<span class="tag adapt">借鉴改造</span> 取思路、自己实现；<span class="tag moat">阿鸦独有</span> OpenMAIC 没有、阿鸦必须有。</p>
+
+    <div class="figure">
+<svg viewBox="0 0 1200 820" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="OpenMAIC 与阿鸦架构对照图">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--crow)"/>
+    </marker>
+    <marker id="arr-slate" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--slate)"/>
+    </marker>
+  </defs>
+
+  <!-- Column headers -->
+  <text x="230" y="40" text-anchor="middle" font-size="20" font-weight="700" fill="var(--ink)">OpenMAIC · 开源 AI 课堂</text>
+  <text x="230" y="64" text-anchor="middle" font-size="13" fill="var(--ink-3)">课程生成器：主题 → 一堂课</text>
+  <text x="970" y="40" text-anchor="middle" font-size="20" font-weight="700" fill="var(--ink)">阿鸦 · AI 一对一辅导</text>
+  <text x="970" y="64" text-anchor="middle" font-size="13" fill="var(--ink-3)">学习者驱动：诊断 → 针对性辅导 → 中考</text>
+  <line x1="50" y1="78" x2="410" y2="78" stroke="var(--ink)" stroke-width="1.5"/>
+  <line x1="790" y1="78" x2="1150" y2="78" stroke="var(--ink)" stroke-width="1.5"/>
+
+  <!-- ===== LEFT: OpenMAIC layers (x 50..410) ===== -->
+  <!-- L1 输入 -->
+  <g>
+    <rect x="50" y="98" width="360" height="86" fill="var(--paper)" stroke="var(--slate)" stroke-width="1.2"/>
+    <text x="66" y="122" font-size="15" font-weight="700" fill="var(--ink)">输入与生成管线</text>
+    <text x="66" y="145" font-size="12.5" fill="var(--ink-2)">主题 / 文档 / 音视频 → 两阶段生成</text>
+    <text x="66" y="166" font-size="12.5" fill="var(--ink-2)">① 大纲生成（可人工编辑） → ② 逐项场景生成</text>
+  </g>
+  <!-- L2 内容 DSL -->
+  <g>
+    <rect x="50" y="198" width="360" height="86" fill="var(--paper)" stroke="var(--slate)" stroke-width="1.2"/>
+    <text x="66" y="222" font-size="15" font-weight="700" fill="var(--ink)">内容层：场景 DSL</text>
+    <text x="66" y="245" font-size="12.5" fill="var(--ink-2)">幻灯片 · 测验 · 交互 HTML · PBL 四类场景</text>
+    <text x="66" y="266" font-size="12.5" fill="var(--ink-2)">@openmaic/* SDK（DSL / 渲染器 / 导入器）已发 npm</text>
+  </g>
+  <!-- L3 编排 -->
+  <g>
+    <rect x="50" y="298" width="360" height="86" fill="var(--paper)" stroke="var(--slate)" stroke-width="1.2"/>
+    <text x="66" y="322" font-size="15" font-weight="700" fill="var(--ink)">编排层：LangGraph 导演图</text>
+    <text x="66" y="345" font-size="12.5" fill="var(--ink-2)">AI 教师 + 多个 AI 同学，管理发言轮次与讨论</text>
+    <text x="66" y="366" font-size="12.5" fill="var(--ink-2)">课堂讨论 · 圆桌辩论 · 自由问答 三种模式</text>
+  </g>
+  <!-- L4 执行 -->
+  <g>
+    <rect x="50" y="398" width="360" height="86" fill="var(--paper)" stroke="var(--slate)" stroke-width="1.2"/>
+    <text x="66" y="422" font-size="15" font-weight="700" fill="var(--ink)">执行层：播放状态机 + 动作引擎</text>
+    <text x="66" y="445" font-size="12.5" fill="var(--ink-2)">idle → playing（按剧本） → live（学生插话时 LLM 接管）</text>
+    <text x="66" y="466" font-size="12.5" fill="var(--ink-2)">28+ 动作：语音 / 白板绘制·文字·图形 / 聚光灯 / 激光笔</text>
+  </g>
+  <!-- L5 呈现 -->
+  <g>
+    <rect x="50" y="498" width="360" height="86" fill="var(--paper)" stroke="var(--slate)" stroke-width="1.2"/>
+    <text x="66" y="522" font-size="15" font-weight="700" fill="var(--ink)">呈现层：舞台</text>
+    <text x="66" y="545" font-size="12.5" fill="var(--ink-2)">幻灯片渲染器 · SVG 白板 · TTS/ASR · 深度交互 UI</text>
+    <text x="66" y="566" font-size="12.5" fill="var(--ink-2)">导出 .pptx / 交互 .html / 离线 .maic.zip（CDN 内联）</text>
+  </g>
+  <!-- L6 基础 -->
+  <g>
+    <rect x="50" y="598" width="360" height="86" fill="var(--paper)" stroke="var(--slate)" stroke-width="1.2"/>
+    <text x="66" y="622" font-size="15" font-weight="700" fill="var(--ink)">基础层</text>
+    <text x="66" y="645" font-size="12.5" fill="var(--ink-2)">19 家模型供应商抽象 · 分阶段模型路由 · 本地模型</text>
+    <text x="66" y="666" font-size="12.5" fill="var(--ink-2)">Postgres 持久化 · 资产注册表 · 视频渲染服务</text>
+  </g>
+  <!-- Missing -->
+  <g>
+    <rect x="50" y="698" width="360" height="86" fill="none" stroke="var(--ink-3)" stroke-width="1.2" stroke-dasharray="6 4"/>
+    <text x="66" y="722" font-size="15" font-weight="700" fill="var(--ink-3)">（空白）学习者模型 / 课标锚定</text>
+    <text x="66" y="745" font-size="12.5" fill="var(--ink-3)">每堂课是孤岛：无跨课画像、无掌握度、无遗忘曲线</text>
+    <text x="66" y="766" font-size="12.5" fill="var(--ink-3)">生成任意主题，但不知道课标层级与中考题型分值</text>
+  </g>
+
+  <!-- ===== RIGHT: 阿鸦 layers (x 790..1150) ===== -->
+  <!-- R1 输入 -->
+  <g>
+    <rect x="790" y="98" width="360" height="86" fill="var(--paper)" stroke="var(--crow)" stroke-width="1.4"/>
+    <text x="806" y="122" font-size="15" font-weight="700" fill="var(--ink)">输入层</text>
+    <text x="806" y="145" font-size="12.5" fill="var(--ink-2)">学生作答 · 试卷 / 错题拍照上传 · 语音"阿鸦喝水"</text>
+    <text x="806" y="166" font-size="12.5" fill="var(--ink-2)">三层信号采集（既有） + 文档解析管线（新增，复用）</text>
+  </g>
+  <!-- R2 学习者模型 (moat) -->
+  <g>
+    <rect x="790" y="198" width="360" height="86" fill="var(--gold-soft)" stroke="var(--gold)" stroke-width="1.6"/>
+    <text x="806" y="222" font-size="15" font-weight="700" fill="var(--ink)">学习者模型层</text>
+    <text x="806" y="245" font-size="12.5" fill="var(--ink-2)">能力评估体系 · 知识点掌握度 · 错因归类 · 遗忘曲线</text>
+    <text x="806" y="266" font-size="12.5" fill="var(--ink-2)">自适应诊断（既有）—— 一对一的本体，护城河 ①</text>
+  </g>
+  <!-- R3 课标锚定 (moat) -->
+  <g>
+    <rect x="790" y="298" width="360" height="86" fill="var(--gold-soft)" stroke="var(--gold)" stroke-width="1.6"/>
+    <text x="806" y="322" font-size="15" font-weight="700" fill="var(--ink)">课标与考情锚定层</text>
+    <text x="806" y="345" font-size="12.5" fill="var(--ink-2)">《2022 课标》知识图谱 · 南京中考题型分值 · 题库</text>
+    <text x="806" y="366" font-size="12.5" fill="var(--ink-2)">典型错误清单 · 人工审核管线（既有）—— 护城河 ②</text>
+  </g>
+  <!-- R4 教学编排 (adapt) -->
+  <g>
+    <rect x="790" y="398" width="360" height="86" fill="var(--paper)" stroke="var(--crow)" stroke-width="1.4"/>
+    <text x="806" y="422" font-size="15" font-weight="700" fill="var(--ink)">教学编排层</text>
+    <text x="806" y="445" font-size="12.5" fill="var(--ink-2)">阿鸦导师（不直接给答案） + 1–2 个 AI 同学角色（新增）</text>
+    <text x="806" y="466" font-size="12.5" fill="var(--ink-2)">错误剧本库由学生薄弱点驱动 · 讲解态 / 对话态切换</text>
+  </g>
+  <!-- R5 讲解呈现 (reuse) -->
+  <g>
+    <rect x="790" y="498" width="360" height="86" fill="var(--crow-soft)" stroke="var(--crow)" stroke-width="1.4"/>
+    <text x="806" y="522" font-size="15" font-weight="700" fill="var(--ink)">讲解呈现层</text>
+    <text x="806" y="545" font-size="12.5" fill="var(--ink-2)">白板逐步演算 · 初中数学交互模板库 · 讲解 DSL 可回放</text>
+    <text x="806" y="566" font-size="12.5" fill="var(--ink-2)">家长可读的讲评导出 · 平板 / 手机优先</text>
+  </g>
+  <!-- R6 基础 -->
+  <g>
+    <rect x="790" y="598" width="360" height="86" fill="var(--paper)" stroke="var(--crow)" stroke-width="1.4"/>
+    <text x="806" y="622" font-size="15" font-weight="700" fill="var(--ink)">基础层</text>
+    <text x="806" y="645" font-size="12.5" fill="var(--ink-2)">Next.js · Supabase（RLS） · Railway · Anthropic API（既有）</text>
+    <text x="806" y="666" font-size="12.5" fill="var(--ink-2)">分阶段模型路由 · 国产 TTS · 离线校内包（新增，复用）</text>
+  </g>
+  <!-- R7 IP -->
+  <g>
+    <rect x="790" y="698" width="360" height="86" fill="var(--gold-soft)" stroke="var(--gold)" stroke-width="1.6"/>
+    <text x="806" y="722" font-size="15" font-weight="700" fill="var(--ink)">陪伴与 IP 层</text>
+    <text x="806" y="745" font-size="12.5" fill="var(--ink-2)">阿鸦记得这个学生上周在哪里卡住 · 角色一致性</text>
+    <text x="806" y="766" font-size="12.5" fill="var(--ink-2)">初一到初三三年的成长叙事 —— 护城河 ③</text>
+  </g>
+
+  <!-- ===== Middle connectors (x 410..790) ===== -->
+  <!-- 输入 → 输入: 文档解析 复用 -->
+  <line x1="410" y1="141" x2="790" y2="141" stroke="var(--crow)" stroke-width="1.6" marker-end="url(#arr)"/>
+  <rect x="540" y="124" width="120" height="30" rx="3" fill="var(--crow-soft)"/>
+  <text x="600" y="144" text-anchor="middle" font-size="12.5" font-weight="500" fill="var(--crow)">复用 · 文档解析</text>
+
+  <!-- 内容DSL → 讲解呈现: 复用 -->
+  <path d="M410,241 C560,241 640,541 790,541" fill="none" stroke="var(--crow)" stroke-width="1.6" marker-end="url(#arr)"/>
+  <rect x="470" y="262" width="150" height="30" rx="3" fill="var(--crow-soft)"/>
+  <text x="545" y="282" text-anchor="middle" font-size="12.5" font-weight="500" fill="var(--crow)">复用 · DSL / 渲染器</text>
+
+  <!-- 编排 → 教学编排: 借鉴改造 AI同学 -->
+  <path d="M410,341 C560,341 640,441 790,441" fill="none" stroke="var(--slate)" stroke-width="1.6" stroke-dasharray="7 4" marker-end="url(#arr-slate)"/>
+  <rect x="525" y="372" width="150" height="30" rx="3" fill="var(--slate-soft)"/>
+  <text x="600" y="392" text-anchor="middle" font-size="12.5" font-weight="500" fill="var(--slate)">借鉴改造 · AI 同学</text>
+
+  <!-- 执行 → 教学编排: 借鉴改造 播放态/直播态 -->
+  <path d="M410,455 C560,455 640,462 790,462" fill="none" stroke="var(--slate)" stroke-width="1.6" stroke-dasharray="7 4" marker-end="url(#arr-slate)"/>
+  <rect x="510" y="423" width="180" height="30" rx="3" fill="var(--slate-soft)"/>
+  <text x="600" y="443" text-anchor="middle" font-size="12.5" font-weight="500" fill="var(--slate)">借鉴改造 · 播放态 / 直播态</text>
+
+  <!-- 呈现 → 讲解呈现: 复用 白板 -->
+  <line x1="410" y1="562" x2="790" y2="562" stroke="var(--crow)" stroke-width="1.6" marker-end="url(#arr)"/>
+  <rect x="520" y="545" width="160" height="30" rx="3" fill="var(--crow-soft)"/>
+  <text x="600" y="565" text-anchor="middle" font-size="12.5" font-weight="500" fill="var(--crow)">复用 · 白板 / 交互 UI</text>
+
+  <!-- 基础 → 基础: 复用 路由/离线 -->
+  <line x1="410" y1="655" x2="790" y2="655" stroke="var(--crow)" stroke-width="1.6" marker-end="url(#arr)"/>
+  <rect x="515" y="638" width="170" height="30" rx="3" fill="var(--crow-soft)"/>
+  <text x="600" y="658" text-anchor="middle" font-size="12.5" font-weight="500" fill="var(--crow)">复用 · 模型路由 / 离线包</text>
+
+  <!-- 空白 → 学习者模型/课标/IP: 阿鸦独有 -->
+  <path d="M410,741 C520,741 560,241 790,241" fill="none" stroke="var(--gold)" stroke-width="1.8" stroke-dasharray="2 4"/>
+  <path d="M410,741 C520,741 560,341 790,341" fill="none" stroke="var(--gold)" stroke-width="1.8" stroke-dasharray="2 4"/>
+  <line x1="410" y1="741" x2="790" y2="741" stroke="var(--gold)" stroke-width="1.8" stroke-dasharray="2 4"/>
+  <rect x="525" y="712" width="150" height="30" rx="3" fill="var(--gold-soft)" stroke="var(--gold)" stroke-width="1"/>
+  <text x="600" y="732" text-anchor="middle" font-size="12.5" font-weight="700" fill="var(--gold)">阿鸦独有 · 护城河</text>
+
+  <!-- Legend -->
+  <g font-size="12.5">
+    <line x1="60" y1="808" x2="100" y2="808" stroke="var(--crow)" stroke-width="1.6"/>
+    <text x="108" y="812" fill="var(--ink-2)">复用：MIT 许可，可直接引入代码</text>
+    <line x1="340" y1="808" x2="380" y2="808" stroke="var(--slate)" stroke-width="1.6" stroke-dasharray="7 4"/>
+    <text x="388" y="812" fill="var(--ink-2)">借鉴改造：取设计思路，自行实现</text>
+    <line x1="630" y1="808" x2="670" y2="808" stroke="var(--gold)" stroke-width="1.8" stroke-dasharray="2 4"/>
+    <text x="678" y="812" fill="var(--ink-2)">阿鸦独有：OpenMAIC 空白，不可外求</text>
+  </g>
+</svg>
+    </div>
+    <p class="figcap">图 1 · OpenMAIC 六层引擎与阿鸦七层目标架构对照。左列依据仓库 lib/generation、lib/orchestration、lib/playback、lib/action、components/、lib/ai 整理；右列"既有"指阿鸦现有方案中已有的部分，"新增"为本文建议。</p>
+
+    <h3>逐层对照说明</h3>
+    <div class="tbl"><table>
+      <tr><th>层级</th><th>OpenMAIC 做法</th><th>阿鸦对应</th><th>关系</th></tr>
+      <tr><td>输入与生成</td><td>主题或文档 → 大纲 → 场景，两阶段管线，大纲可先人工编辑</td><td>学生数据是主输入；试卷 / 错题上传走文档解析后进入"讲评课生成"</td><td><span class="tag reuse">复用</span></td></tr>
+      <tr><td>内容结构</td><td>课程编译为场景 DSL，渲染与内容解耦，可回放、可编辑、可导出</td><td>辅导内容从聊天记录改为结构化讲解 DSL，接入既有人工审核管线</td><td><span class="tag reuse">复用</span></td></tr>
+      <tr><td>编排</td><td>LangGraph 状态机管理 AI 教师与 AI 同学的发言轮次</td><td>阿鸦导师 + AI 同学角色；剧本由学习者模型驱动而非随机人设</td><td><span class="tag adapt">借鉴改造</span></td></tr>
+      <tr><td>执行</td><td>播放态按剧本走、学生插话切直播态，28+ 种舞台动作</td><td>讲解态 / 对话态切换，控制成本与延迟；动作集裁剪到数学所需</td><td><span class="tag adapt">借鉴改造</span></td></tr>
+      <tr><td>呈现</td><td>幻灯片 + SVG 白板 + TTS + 深度交互 UI；离线导出</td><td>白板逐步演算、初中数学交互模板库、家长可读导出</td><td><span class="tag reuse">复用</span></td></tr>
+      <tr><td>基础</td><td>多供应商抽象、分阶段模型路由、Postgres</td><td>保留 Supabase / Railway；引入分阶段路由与离线校内包</td><td><span class="tag reuse">复用</span></td></tr>
+      <tr><td>学习者模型</td><td>无</td><td>能力评估、掌握度、错因、遗忘曲线</td><td><span class="tag moat">阿鸦独有</span></td></tr>
+      <tr><td>课标与考情</td><td>无</td><td>2022 课标图谱、南京中考题型分值、题库、典型错误清单</td><td><span class="tag moat">阿鸦独有</span></td></tr>
+      <tr><td>陪伴与 IP</td><td>每课随机人设</td><td>阿鸦跨课记忆、角色一致、三年成长叙事</td><td><span class="tag moat">阿鸦独有</span></td></tr>
+    </table></div>
+  </div>
+</section>
+
+<!-- 4 三层借鉴 -->
+<section>
+  <div class="margin"><span class="n">四</span>可借鉴的三层</div>
+  <div class="body">
+    <h2>产品思路 · 学习方法 · 技术架构</h2>
+
+    <h3>4.1 产品思路：从"对话框"升级为"课堂"</h3>
+    <p>OpenMAIC 的核心洞察是：教学需要舞台，不只是对话。幻灯片、白板、语音、测验、模拟是同一条时间轴上的多轨内容。对初中生而言，"阿鸦在白板上一步步演算"与"阿鸦发一段带公式的文字"，在注意力与理解上相差一个量级。</p>
+    <div class="tbl"><table>
+      <tr><th>OpenMAIC 机制</th><th>对阿鸦的价值</th><th>落地方式</th><th>优先级</th></tr>
+      <tr><td>白板逐步演算</td><td>数学最需要过程可视：等式变形、辅助线、动点轨迹</td><td>复用 SVG whiteboard 组件与白板动作类型</td><td>高</td></tr>
+      <tr><td>文档一键生成课</td><td>家长上传试卷 / 错题照片 → 自动生成针对性讲评课，家长最可感知</td><td>复用文档解析管线，输出挂到讲解 DSL</td><td>高</td></tr>
+      <tr><td>深度交互 UI</td><td>函数图像拖拽、几何变换、圆的动点问题</td><td>初中数学高频难点做成 20–30 个标准交互模板，不每次生成</td><td>中</td></tr>
+      <tr><td>测验实时 AI 判分</td><td>与能力评估体系衔接</td><td>判分标准绑定课标与南京中考评分口径，不用其通用判分</td><td>中</td></tr>
+      <tr><td>PBL 角色扮演</td><td>初三冲刺"专题攻坚项目"</td><td>中考场景弱，暂缓</td><td>低</td></tr>
+    </table></div>
+
+    <h3>4.2 学习方法："AI 同学"是最值得抄的一招</h3>
+    <p>一对一最大的隐性缺陷是只有师生两个角色，学生永远处于"被问"的位置。OpenMAIC 引入 AI 同学后，智能体会主动发起讨论，学生可随时插话或被点名；多个不同人设的智能体可围绕话题进行圆桌辩论。这对应三个成熟的教育心理机制：</p>
+    <ul>
+      <li><strong>以教促学。</strong>让一个"比学生稍弱"的 AI 同学犯典型错误，由学生来纠正它。这是把"不直接给答案"理念做到极致的方式，比阿鸦单方面苏格拉底追问更自然，也更保护初中生的自尊。</li>
+      <li><strong>社会参照。</strong>AI 同学说"我也卡在这一步"，显著降低挫败感。</li>
+      <li><strong>认知冲突。</strong>两个 AI 同学给出不同解法，学生当裁判——正是训练"举一反三"的场景。</li>
+    </ul>
+    <div class="callout">
+      <p><strong>IP 扩展建议：</strong>把阿鸦从单一角色扩展为一个小世界观——阿鸦是导师，再设计 1–2 个同学角色：一个爱犯计算错误、一个思路跳跃但不严谨。课标知识点的"典型错误"清单正好作为同学角色的错误剧本库，而具体调用哪条剧本，由该学生的薄弱点决定。这一步 OpenMAIC 做不到，因为它没有学习者模型。</p>
+    </div>
+
+    <h3>4.3 技术架构：四个模块值得直接参考</h3>
+    <ol>
+      <li><strong>内容与呈现解耦（DSL）。</strong>一堂课编译成场景 DSL，再由渲染器播放。阿鸦的辅导内容若也存为结构化 DSL 而非聊天记录，就能做到同一份讲解可回放、可导出给家长、可被人工审核修改后复用——与既有的人工审核管线路线吻合。</li>
+      <li><strong>播放态 vs 直播态。</strong>预生成内容按剧本播放，学生一插话切入 live 由 LLM 实时接管，结束后回到剧本。这是控制成本和延迟的关键：不需要每一秒都在调大模型。</li>
+      <li><strong>多供应商抽象 + 分阶段模型路由。</strong>大纲用强模型、白板动作用快模型、TTS 用国产供应商，成本才能压到可持续。</li>
+      <li><strong>离线导出。</strong>导出课程时把 KaTeX、Three.js 等外部资源内联为 data URI，可在内网完整播放。南京学校机房普遍限制外网，进校时这是刚需，可直接复用。</li>
+    </ol>
+  </div>
+</section>
+
+<!-- 5 护城河 -->
+<section>
+  <div class="margin"><span class="n">五</span>不可稀释的部分</div>
+  <div class="body">
+    <h2>OpenMAIC 没有、而阿鸦必须有</h2>
+    <ol>
+      <li><strong>学习者模型。</strong>OpenMAIC 没有跨课程的学生画像、知识点掌握度、遗忘曲线，每堂课是孤岛。阿鸦"先评估再辅导"的路线才是一对一的本体，OpenMAIC 只是一个更好的"输出端"。</li>
+      <li><strong>课标与考情锚定。</strong>它生成任何主题，但不知道《义务教育数学课程标准（2022 年版）》的层级要求、南京中考的题型分值分布、初三 120 分卷的命题风格。阿鸦的知识图谱与题库才是内容质量保证；生成式内容必须挂在这个骨架上。LLM 生成的初中几何证明出错率不低，家长零容忍。</li>
+      <li><strong>长期陪伴与 IP 一致性。</strong>它的 agent 每课随机人设；阿鸦需要记住这个学生上周在哪里错过。</li>
+      <li><strong>移动优先。</strong>它是桌面课堂形态；初中生与家长的主战场是 iPad 和手机。</li>
+    </ol>
+  </div>
+</section>
+
+<!-- 6 路线 -->
+<section>
+  <div class="margin"><span class="n">六</span>行动路线</div>
+  <div class="body">
+    <h2>建议的动作顺序</h2>
+    <ul class="road">
+      <li><b>本周 · 立即做</b>本地跑起 OpenMAIC，走通"上传试卷 → 生成讲评课"流程，作为家长可感知价值的原型验证；同时评估其文档解析对手写作业照片的识别质量。</li>
+      <li><b>一个月内 · 呈现层替换</b>评估复用 whiteboard、slide-renderer、@openmaic/* DSL 渲染器包，替换阿鸦讲解层的呈现方式。先只做"阿鸦白板演算"一个场景，验证移动端表现。</li>
+      <li><b>一个季度内 · AI 同学</b>设计 1–2 个同学角色与错误剧本库，接入诊断体系——错误类型由学生薄弱点决定。同步把讲解内容改为 DSL 存储，接入人工审核管线。</li>
+      <li class="stop"><b>不做</b>全量多智能体课堂、PBL、在线编程、圆桌辩论。中考产品的 token 预算与学生注意力预算都撑不起。</li>
+    </ul>
+  </div>
+</section>
+
+<!-- 7 风险 -->
+<section>
+  <div class="margin"><span class="n">七</span>风险与成本</div>
+  <div class="body">
+    <h2>三个提醒</h2>
+    <div class="tbl"><table>
+      <tr><th>风险</th><th>说明</th><th>对策</th></tr>
+      <tr><td>单课成本</td><td>多智能体 + TTS 的单课成本可能是纯对话的 5–10 倍</td><td>先算定价模型；分阶段模型路由；讲解态用预生成，只在对话态调强模型</td></tr>
+      <tr><td>依赖漂移</td><td>156 个开放 issue、五个月七个版本，主干代码变动剧烈</td><td>只 vendor 稳定的渲染层包并锁版本，编排逻辑自己写</td></tr>
+      <tr><td>内容准确性</td><td>通用 LLM 生成初中数学内容的错误率对中考场景不可接受</td><td>生成内容必须挂在课标图谱与题库上，经人工审核管线后复用；禁止未审核内容直达学生</td></tr>
+      <tr><td>许可细节</td><td>根目录 MIT，但 packages/mathml2omml 为 LGPL-3.0</td><td>复用 pptx 导出链路时注意 LGPL 边界，或不复用该包</td></tr>
+    </table></div>
+  </div>
+</section>
+
+<!-- 8 附录 -->
+<section>
+  <div class="margin"><span class="n">附</span>参考</div>
+  <div class="body">
+    <h2>来源与版本记录</h2>
+    <ul>
+      <li>仓库：<a href="https://github.com/THU-MAIC/OpenMAIC">github.com/THU-MAIC/OpenMAIC</a>（README 与 CHANGELOG，2026-09-21 访问）</li>
+      <li>论文：Yu JF 等，From MOOC to MAIC: Reimagine Online Teaching and Learning Through LLM-Driven Agents，JCST 41(1): 394–414, 2026</li>
+      <li>在线演示：open.maic.chat</li>
+    </ul>
+    <div class="foot">
+      <table>
+        <tr><th>版本</th><th>日期</th><th>变更</th></tr>
+        <tr><td>v1.0</td><td>2026-09-21</td><td>首版：基于 OpenMAIC v0.3.2 的定位、架构对照与借鉴建议</td></tr>
+      </table>
+    </div>
+  </div>
+</section>
+
+</div>
+</body>
+</html>

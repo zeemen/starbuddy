@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>魁星点斗 StarBuddy 产品开发完整方案 v1.0</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  --paper:#F7F8F5;--paper-2:#EEF0EA;--ink:#1B2130;--ink-2:#4A5163;--ink-3:#7C8394;
+  --rule:#CDD2C9;--crow:#2E4A7D;--crow-soft:#DCE4F2;--slate:#6B7280;--slate-soft:#E5E7EB;
+  --gold:#C9962E;--gold-soft:#F5E7C4;--green:#3F7A5A;--green-soft:#DCEBE1;--red:#A34A3E;--red-soft:#F1DCD8;
+  --serif:"Noto Serif SC","Songti SC","SimSun","Source Han Serif SC",serif;
+  --sans:"Noto Sans SC","PingFang SC","Microsoft YaHei","Source Han Sans SC",sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#151922;--paper-2:#1D222D;--ink:#E8EAE4;--ink-2:#B7BCC7;--ink-3:#868D9C;
+    --rule:#343A47;--crow:#8FAAD8;--crow-soft:#243352;--slate:#A0A6B3;--slate-soft:#2B303B;
+    --gold:#DDB35A;--gold-soft:#3D3320;--green:#7FB89A;--green-soft:#1F3328;--red:#D48A7E;--red-soft:#3A2622;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#151922;--paper-2:#1D222D;--ink:#E8EAE4;--ink-2:#B7BCC7;--ink-3:#868D9C;
+  --rule:#343A47;--crow:#8FAAD8;--crow-soft:#243352;--slate:#A0A6B3;--slate-soft:#2B303B;
+  --gold:#DDB35A;--gold-soft:#3D3320;--green:#7FB89A;--green-soft:#1F3328;--red:#D48A7E;--red-soft:#3A2622;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:inherit}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.8;-webkit-font-smoothing:antialiased}
+a{color:var(--crow)}
+img,svg{max-width:100%}
+.page{max-width:1140px;margin:0 auto;padding:0 20px 80px}
+.masthead{padding:56px 0 28px;border-bottom:2px solid var(--ink)}
+.masthead .doc-no{font-size:13px;color:var(--ink-3);letter-spacing:.04em}
+.masthead h1{font-family:var(--serif);font-weight:700;font-size:clamp(26px,3.6vw,40px);line-height:1.3;margin:10px 0 6px}
+.masthead .sub{font-family:var(--serif);font-size:clamp(16px,2vw,20px);color:var(--ink-2);margin:0 0 22px;max-width:44em}
+.meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px 24px;font-size:14px;color:var(--ink-2)}
+.meta b{display:block;color:var(--ink-3);font-weight:500;font-size:12px}
+section{display:grid;grid-template-columns:150px 1fr;gap:0 36px;padding:44px 0 8px;border-bottom:1px solid var(--rule)}
+section:last-of-type{border-bottom:0}
+.margin{font-family:var(--serif);color:var(--crow);font-size:15px;line-height:1.6;padding-top:8px;position:sticky;top:calc(env(safe-area-inset-top,0px) + 16px);align-self:start}
+.margin .n{display:block;font-size:34px;font-weight:700;line-height:1;color:var(--ink);margin-bottom:6px}
+.body{min-width:0}
+h2{font-family:var(--serif);font-size:24px;font-weight:700;margin:0 0 14px;line-height:1.4}
+h3{font-family:var(--serif);font-size:18px;font-weight:700;margin:30px 0 8px}
+h4{font-family:var(--serif);font-size:16px;font-weight:700;margin:20px 0 6px;color:var(--ink-2)}
+p{margin:0 0 14px;max-width:76ch}
+ul,ol{padding-left:1.4em;max-width:76ch}
+li{margin-bottom:6px}
+.lead{font-size:17px;max-width:76ch}
+.callout{background:var(--paper-2);border-left:3px solid var(--crow);padding:14px 18px;margin:18px 0;max-width:76ch}
+.callout.gold{border-left-color:var(--gold);background:var(--gold-soft)}
+.callout.green{border-left-color:var(--green);background:var(--green-soft)}
+.callout.red{border-left-color:var(--red);background:var(--red-soft)}
+.callout p:last-child{margin-bottom:0}
+.tbl{overflow-x:auto;margin:16px 0 8px}
+table{border-collapse:collapse;width:100%;font-size:14px;line-height:1.6}
+th,td{text-align:left;vertical-align:top;padding:9px 11px;border-bottom:1px solid var(--rule)}
+th{font-weight:700;border-bottom:2px solid var(--ink);white-space:nowrap}
+td:first-child{font-weight:500}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+.tag{display:inline-block;font-size:12px;padding:1px 8px;border-radius:3px;white-space:nowrap}
+.tag.keep{background:var(--crow-soft);color:var(--crow)}
+.tag.adapt{background:var(--slate-soft);color:var(--slate)}
+.tag.replace{background:var(--red-soft);color:var(--red)}
+.tag.new{background:var(--green-soft);color:var(--green)}
+.tag.moat{background:var(--gold-soft);color:var(--gold)}
+.figure{margin:22px 0 10px;overflow-x:auto;background:var(--paper-2);padding:18px 10px;border:1px solid var(--rule)}
+.figure svg{display:block;min-width:860px;width:100%;height:auto;font-family:var(--sans)}
+.figcap{font-size:13.5px;color:var(--ink-3);margin:8px 0 18px;max-width:76ch}
+.road{list-style:none;padding:0;margin:14px 0;max-width:76ch;border-left:2px solid var(--rule)}
+.road li{padding:0 0 18px 22px;position:relative;margin:0}
+.road li::before{content:"";position:absolute;left:-7px;top:10px;width:12px;height:12px;border-radius:50%;background:var(--paper);border:2px solid var(--crow)}
+.road b{display:block;font-family:var(--serif);font-size:16px}
+.principles{counter-reset:p;list-style:none;padding:0;max-width:76ch}
+.principles li{padding-left:2.4em;position:relative;margin-bottom:10px}
+.principles li::before{counter-increment:p;content:counter(p);position:absolute;left:0;top:0;font-family:var(--serif);font-weight:700;color:var(--crow);font-size:18px;line-height:1.5}
+code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.9em;background:var(--paper-2);padding:1px 5px;border-radius:3px}
+.foot{margin-top:48px;padding-top:18px;border-top:2px solid var(--ink);font-size:13px;color:var(--ink-3)}
+.foot table{font-size:13px}
+@media (max-width:760px){
+  section{grid-template-columns:1fr;gap:8px}
+  .margin{position:static;padding-top:0}
+  .margin .n{display:inline;font-size:22px;margin-right:8px}
+  .masthead{padding-top:36px}
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="masthead">
+  <div class="doc-no">huabo.ai 中考教育产品线 · 总方案 · HB-EDU-2026-0924-01</div>
+  <h1>魁星点斗 StarBuddy 产品开发完整方案</h1>
+  <p class="sub">面向南京初中家庭的七科 AI 一对一学习平台——产品、角色、技术、商业与交付的统一方案，含四款既有学科产品的融合路径</p>
+  <div class="meta">
+    <div><b>版本</b>v1.0 · 供产品、教研、研发、运营共同评审</div>
+    <div><b>日期</b>2026 年 9 月 24 日</div>
+    <div><b>整合来源</b>《平台产品规划》v1.2 · 《产品系统架构与技术实施蓝图》V2.0 · 角色体系七份文档 · 四款产品 PRD</div>
+    <div><b>品牌</b>魁星点斗 StarBuddy（简称点斗）；搭子"点点"</div>
+    <div><b>性质</b>设计方案，非已实现功能清单</div>
+    <div><b>密级</b>内部</div>
+  </div>
+</header>
+
+<!-- 〇 文档关系 -->
+<section>
+  <div class="margin"><span class="n">〇</span>文档关系</div>
+  <div class="body">
+    <h2>本方案与既有文档的关系</h2>
+    <p>本方案是总纲，把此前分头推进的三条线合成一份：产品线（《平台产品规划》v1.2）、技术与商业线（《产品系统架构与技术实施蓝图》V2.0）、角色线（七份规格与规范）。合并规则：产品定位、学习者模型、通识层以规划为准；三端边界、会员权益、数据模型、技术架构、容量与合规以蓝图为准；角色以规范与规格书为准。两份上游文档合并后归档，本方案取代它们成为总纲；角色文档继续作为分册维护。</p>
+    <p>新增而两份上游都没有的内容集中在第五章：四款已初步开发的学科产品如何与平台融合——适配器接入、数据迁移、人设迁移、前端壳合并、计量接入、分科验收。这是本方案存在的主要理由。</p>
+    <div class="tbl"><table>
+      <tr><th>编号</th><th>文档</th><th>版本</th><th>在本方案中的位置</th></tr>
+      <tr><td>HB-EDU-2026-0921-02</td><td>平台产品规划</td><td>v1.2</td><td>归档，并入一至四、九、十二、十三章</td></tr>
+      <tr><td>—</td><td>产品系统架构与技术实施蓝图</td><td>V2.0</td><td>归档，并入二、六至八、十、十一、十四章</td></tr>
+      <tr><td>HB-EDU-2026-0921</td><td>OpenMAIC 借鉴分析</td><td>v1.0</td><td>分册；第六章引用其使用边界</td></tr>
+      <tr><td>HB-EDU-2026-0922-04</td><td>七科 AI 老师角色规范</td><td>v1.1</td><td>分册；第三章引用</td></tr>
+      <tr><td>HB-EDU-2026-0922-01 / 02 / 05 / 0923-01</td><td>点点、阿鸦、考官型基线 + 角色卡、妙笔 规格书</td><td>V1.2 / V1.1 / V1.1 / V1.0</td><td>分册；第五章人设迁移引用</td></tr>
+      <tr><td>HB-EDU-2026-0922-03</td><td>角色视觉家族规范</td><td>v1.2</td><td>分册</td></tr>
+      <tr><td>待编</td><td>阿基、X 博士规格书；学科插件 API 契约（OpenAPI）；四科适配器设计文档</td><td>—</td><td>第五、六、十四章排期</td></tr>
+    </table></div>
+  </div>
+</section>
+
+<!-- 一 执行摘要 -->
+<section>
+  <div class="margin"><span class="n">一</span>执行摘要</div>
+  <div class="body">
+    <h2>定位、承诺与核心资产</h2>
+    <p class="lead"><strong>定位。</strong>面向初中生及家长，以南京中考为首个深耕地区，把"识别现有水平 → 定位失分根因 → 个性化教学 → 迁移练习 → 延迟复测 → 调整计划"做成一套长期服务。一个家庭账号下学生按需选科；七科共享学习者模型与点点，保留每科独立的教研、知识图谱、评测和 AI 老师。已初步开发的语文、数学、道法、英语四科优先融合；历史、物理、化学依次建设。</p>
+    <p class="lead"><strong>承诺。</strong>让学生清楚"我会什么、为何失分、下一步练什么、练后是否真的会了"；让家长看到可追溯的进步证据和本周一件可以做的事。不承诺提分数值、不押题、不预测排名；星图只展示自己的进展，不做同伴比较。</p>
+    <p class="lead"><strong>核心资产。</strong>版本化的本地考情与学科内容、跨科能力与错因模型、经验证的批改体系、学生长期学习事件、教研审核流程。大模型是可替换的推理与交互能力，不是资产。</p>
+    <h3>三个基本判断</h3>
+    <ol class="principles">
+      <li><strong>四款产品已经长出了同一副骨架。</strong>能力坐标 + 错因分类 + 三层信号采集 + 自适应诊断 + 人机协同审核 + 学科人设 + 家长报告 + 南京本地化。平台不是合并四个 App，而是把这副骨架显性化为共享引擎，让后三科用一半成本长出来。</li>
+      <li><strong>七科是南京中考的全部笔试学科（660 分）。</strong>做完七科，承诺从"帮一科"变成"帮这场考试"。平台负责共享基座，每科仍窄而深——壁垒锁在采分点语料、验证引擎与本地教研里。</li>
+      <li><strong>两大目标统一于一个学习者模型。</strong>一对一辅导写入内层学科能力，家庭共成长读取中层学习力与外层家庭环境。没有这个统一模型，通识内容只是又一个公众号。</li>
+    </ol>
+    <div class="callout gold">
+      <p><strong>主线：</strong>阶段 0 抽基座并做四科适配器原型（0–3 个月）；阶段 1 四科融合上线、点点、会员四级、通识 MVP（3–9 个月）；阶段 2 历史 → 物理 → 化学（9–18 个月）；阶段 3 按真实增长规模化并复制地区包。高考不在本方案范围内。</p>
+    </div>
+  </div>
+</section>
+
+<!-- 二 产品边界 -->
+<section>
+  <div class="margin"><span class="n">二</span>产品边界</div>
+  <div class="body">
+    <h2>两大目标、三端与学习旅程</h2>
+    <h3>两大目标的关系</h3>
+    <div class="tbl"><table>
+      <tr><th></th><th>目标一：七科一对一 + 学习搭子</th><th>目标二：家长学生共成长通识平台</th></tr>
+      <tr><td>解决的问题</td><td>这门课为什么不会、下一步学什么</td><td>为什么学不进去、家里怎么陪</td></tr>
+      <tr><td>对学习者模型</td><td>写入：学科能力、错因、掌握度</td><td>读取：动力、压力、自律、陪读方式；写入：干预记录</td></tr>
+      <tr><td>合规属性</td><td>学科类，须取得业务形态的专业分类判断</td><td>非学科类，监管风险低，可作为获客前门</td></tr>
+      <tr><td>付费方感知</td><td>可追溯的进步证据</td><td>家长自身获得感 + 孩子状态改善</td></tr>
+    </table></div>
+
+    <h3>三端</h3>
+    <div class="tbl"><table>
+      <tr><th>端</th><th>首页与核心操作</th><th>信息边界</th></tr>
+      <tr><td>学生端（移动网页先行，平板 / PC 兼容）</td><td>今日 20–40 分钟计划、学科星图、题目 / 拍照 / 语音输入、逐步讲解、错题再练、限时模考、点点跨科复盘</td><td>不展示其他学生数据；可关闭陪伴功能；休息提醒；先练后看答案</td></tr>
+      <tr><td>家长端（同一家庭账号）</td><td>授权与订阅、周报、错因趋势、各科使用与剩余额度、家长学院、学习计划协商</td><td>看证据和建议，不看孩子逐句对话与同伴排名；监护操作留痕</td></tr>
+      <tr><td>教研 / 运营管理端</td><td>图谱与题目版本、Rubric / 验证器、批改抽检、内容审核、申诉复核、会员与成本分析</td><td>按岗位最小授权；教师或学校端为后期单独评估模块</td></tr>
+    </table></div>
+
+    <h3>典型学习旅程与三层诊断</h3>
+    <p>家长建立家庭并授权 → 学生选科与目标 → 学段 / 教材 / 近期试卷录入 → 低门槛起点诊断 → 生成 2 周学习路径 → 每次 10–20 分钟微闭环 → 每周巩固与错题变式 → 2–4 周延迟复测 → 学生与家长分别看到星图和证据 → 系统更新路径。证据不足时显示"不确定 / 待验证"，一次答对不等于掌握。</p>
+    <p>诊断分三层：①免费 5–10 分钟入口筛查，给粗略薄弱方向；②分科 20–35 分钟适应性诊断，输出能力点与可信度；③针对试卷或阶段模考的深度诊断，结合错因、耗时与作答过程。关键诊断同等条件复测，避免把题目熟悉度当作学习增益。</p>
+
+    <h3>六条平台原则</h3>
+    <ol class="principles">
+      <li><strong>基座共享，学科窄深。</strong>能共享的（学生模型、诊断、审核、人设治理、报告、舞台、计量）下沉平台；不能共享的（考情、图谱、Rubric、验证器、教研）留在学科包。</li>
+      <li><strong>前台角色克制，后台 Agent 自由。</strong>学生面前只有本科老师和点点；后台 Agent 负责出题、检索、验证、讲解、内容安全、评测。不以自发多角色对话消耗学生注意力。</li>
+      <li><strong>先有学情，再有通识。</strong>通识内容按学情触发，不按栏目推。</li>
+      <li><strong>可信优先于可爱。</strong>讲解不能覆盖验证器或 Rubric 的结果；置信度不足时提示复核或转人工。</li>
+      <li><strong>不做治疗，做转介。</strong>学生心理相关内容止于学习动力与压力管理教育。</li>
+      <li><strong>数据是资产，模型是零件。</strong>国内可商用模型为首选，通过模型路由接既有 Anthropic / Gemini 开发链；不默认调用境外 API 处理个人信息。</li>
+    </ol>
+  </div>
+</section>
+
+<!-- 三 学科包与老师 -->
+<section>
+  <div class="margin"><span class="n">三</span>学科包与老师</div>
+  <div class="body">
+    <h2>七科八件套与角色三型</h2>
+    <p>每个学科包交付八件套：考情锚定、知识图谱、能力坐标与错因、学科闭环、Rubric 与验证器、人设及场景、审核过的内容、三视角报告模板。内容资产以 <code>region/exam_year/grade/textbook_version/subject/content_version</code> 标识；南京首发，以后按地区加包，不直接复制南京分值与题型。</p>
+    <div class="tbl"><table>
+      <tr><th>学科 · 现有产品</th><th>老师 · 身份</th><th>模式 · 出场</th><th>首要学习闭环</th><th>可核验的评测</th><th>状态</th></tr>
+      <tr><td>语文 · 文砺</td><td>妙笔 · 主笔</td><td>导师主导 · 常驻</td><td>阅读审题 / 定位 / 表达；作文逐句朱批与升格</td><td>阅读采分点；作文五维 Rubric + 不确定度 + 人工抽检</td><td>初步开发；规格书 V1.0</td></tr>
+      <tr><td>数学 · 阿鸦</td><td>阿鸦 · 教练</td><td>导师主导 · 常驻</td><td>双轴诊断、0–6 级提示、三层变式与五道门槛</td><td>符号 / 数值 / 几何规则验证，步骤追踪</td><td>初步开发；规格书 V1.1</td></tr>
+      <tr><td>英语 · 开口成章</td><td>雅典娜 · 考官（点点陪练）</td><td>陪练主导 · 考官型</td><td>听说场景、发音改进、语法阅读</td><td>ASR 识别与发音评估分开；Rubric；低置信度复核</td><td>初步开发（Gemini 链路）；角色卡 V1.1</td></tr>
+      <tr><td>道法 · 知行</td><td>方圆 · 规矩之官（点点主持）</td><td>陪练主导 · 考官型</td><td>逆向拆题、开卷定位、组织采分点</td><td>版本化教材依据 + 采分点 Rubric</td><td>初步开发；角色卡 V1.1</td></tr>
+      <tr><td>历史 · 知行·史</td><td>春秋 · 史官（点点主持）</td><td>陪练主导 · 考官型</td><td>时序、史料解释、因果与开卷检索</td><td>独立历史 Rubric；与道法共用限时合场训练</td><td>规划；角色卡 V1.1</td></tr>
+      <tr><td>物理</td><td>阿基 · 教授</td><td>导师主导 · 常驻</td><td>猜想 → 交互实验 → 解释 → 迁移</td><td>单位 / 量纲 / 电路 / 光路 / 数值规则</td><td>规划</td></tr>
+      <tr><td>化学</td><td>X 博士 · 博士</td><td>导师主导 · 常驻</td><td>实验观察、方程式、推断链</td><td>配平守恒、化学式与推断约束</td><td>规划</td></tr>
+    </table></div>
+    <p>角色三型与十条老师合同以《七科 AI 老师角色规范》v1.1 为准：老师一科一位，点点全平台唯一，场景角色不判分。两种学科模式是刻意保留的差异：道法与英语的第一障碍是说教感与开口意愿，由点点带着练，权威退到判分时刻；语文与数学需要能讲、能演算的权威常驻。考官型三位（方圆、春秋、雅典娜）共用一份基线加各自角色卡。视觉上七位老师与点点同属一个家族：阿鸦是唯一做品牌运营的 IP，五色池已分配完毕，考官型素色。</p>
+  </div>
+</section>
+
+<!-- 四 学习者模型 -->
+<section>
+  <div class="margin"><span class="n">四</span>学习者模型</div>
+  <div class="body">
+    <h2>三层模型、星图与掌握估计</h2>
+    <p>内层是各科能力坐标（学科包写入，对学生与家长可见的形态是星图：每科一片星空，每个能力点一颗星）；中层是跨学科学习力（读题与信息转换、表达规范、时间管理、元认知、提示依赖、动力、压力、节律——由多科信号归纳）；外层是家庭与环境（陪读方式、家长认知与期待、作息、家校关系——家长端与通识层维护）。中层与外层不以星呈现。</p>
+    <div class="tbl"><table>
+      <tr><th>规则</th><th>内容</th></tr>
+      <tr><td>掌握估计</td><td>先用可解释规则 + BKT；累积足够题目参数与校准数据后试点 IRT；遗忘复习用间隔规则起步</td></tr>
+      <tr><td>星亮门槛</td><td>不同题型多次正确、低提示依赖、间隔复测通过；由各科教研配置，防"刷同题点亮"。对应五道门槛：理解 → 执行 → 稳定 → 迁移（亮）→ 保持（外圈）</td></tr>
+      <tr><td>跨科指标</td><td>"审题力"等中层指标须有至少两科的明确证据；不作人格或心理诊断</td></tr>
+      <tr><td>三条硬约束</td><td>每条判断可追溯到作答证据或家长自述；心理与情绪只记学习相关状态，不记诊断与倾诉；家庭层数据家长可见可删，学生端不展示家长评价</td></tr>
+      <tr><td>数据分离</td><td>作答原始证据、模型推断、家长自述分开存；推断记录算法版本、置信度、证据 ID 与更正历史</td></tr>
+    </table></div>
+    <p>两个只有平台能回答的问题：跨科时间预算（七科 ROI 在同一张表里比较，由点点执行）；共性根因（语文"审题性"、数学"审题错误"、道法"审题错"并成一条学习力指标，家长端一句话读完）。</p>
+  </div>
+</section>
+
+<!-- 五 四科融合 -->
+<section>
+  <div class="margin"><span class="n">五</span>四科融合</div>
+  <div class="body">
+    <h2>已初步开发的四款产品如何接入平台</h2>
+    <p class="lead">这是本方案的核心章节。原则只有一条：<strong>不重写，适配接入。</strong>四款产品各自继续迭代，接入平台的硬要求是"把信号写入统一学生模型、把判分走统一 Rubric 接口、把角色纳入统一治理、把消耗记入统一计量"。其余——各自的引擎、语料、界面、模型链路——按各科节奏逐步靠拢。</p>
+
+    <h3>5.1 融合原则</h3>
+    <ol class="principles">
+      <li><strong>学科插件 API 是唯一硬接口。</strong>四科通过适配器实现 <code>diagnose / plan / teach / grade / generate_variation / report</code> 六个方法；内部怎么实现平台不管。</li>
+      <li><strong>学生模型是唯一硬数据。</strong>能力点、错因、掌握度、证据事件必须写入平台 Schema；各科可保留自己的私有表，但不得成为学生画像的第二真相源。</li>
+      <li><strong>人设按规范迁移，不按产品迁移。</strong>备考搭子升格为点点，特级教师改为妙笔，英语学伴并入点点、考官定名雅典娜，阿鸦不动。</li>
+      <li><strong>英语保留既有模型链路。</strong>Gemini 实时语音链是四科里技术风险最高、投入最重的模块，通过模型路由接入，不强制迁移；点点的人设层跨模型一致性是前提验证项。</li>
+      <li><strong>前端合并壳，不合并页。</strong>统一学生端提供今日计划、星图、七科入口、点点、家长端；各科的课堂页面作为路由模块挂入，先共享舞台组件，再逐步统一。</li>
+      <li><strong>计量前置。</strong>四科的每一次诊断、批改、讲评、语音都必须带 <code>usage_id</code> 与幂等键经过权益引擎，接入前不得上线付费。</li>
+    </ol>
+
+    <h3>5.2 四科现状盘点</h3>
+    <div class="tbl"><table>
+      <tr><th>维度</th><th>语文 · 文砺</th><th>数学 · 阿鸦</th><th>道法 · 知行</th><th>英语 · 开口成章</th></tr>
+      <tr><td>技术栈</td><td>Next.js 14 / TS / Tailwind / shadcn；Supabase；Railway 长任务；Anthropic</td><td>设计方案建议 FastAPI + Postgres + Redis + SymPy；实际开发沿用产品线共享栈</td><td>同文砺（"文砺架构的第二学科实例化"）；Orchestrator + 多 Agent + 人设表达层</td><td>Next.js PWA + Supabase；实际以 Google AI（Gemini）开发；实时语音链（流式 ASR → LLM → 流式 TTS）；第三方音素级评测</td></tr>
+      <tr><td>核心引擎</td><td>M1 诊断（OCR 试卷）· M2 处方 ROI · M3 微课方法库 · M4 命题 · M5 作文批改升格 · M6 陪练与复盘</td><td>12 个 Agent：总控、学生模型、诊断、知识教师、思维教练、训练、错误分析、规划、中考教练、陪伴激励、验证、报告</td><td>F1 拆题 · F2 开卷定位 + 限时 · F3 采分点批改 · F4 润色 · F5 时政挂接 · F6 答疑 · F7 变式图谱 · F8 语音闪卡 · F9 家长 · F10 合场模拟 · F11 情境卡</td><td>F04 实时语音 · F09 发音评测 · NPC 状态机与长期记忆 · 场景资产 · 试炼之塔 · 双语报告</td></tr>
+      <tr><td>能力坐标</td><td>7 域 × 4 级 = 28 点</td><td>10 板块 × 10 能力 = 100 点 + 五图谱</td><td>审题 → 定位 → 转化 → 表达 四步过程能力</td><td>译林教材七层图谱；语法 / 词汇 / 达意三维</td></tr>
+      <tr><td>错因体系</td><td>六类：知识 / 审题 / 定位 / 思维 / 表达规范 / 策略时间</td><td>十二类根因</td><td>四类：审题 / 定位 / 转化 / 规范</td><td>三维 + 音素级语音信号</td></tr>
+      <tr><td>可信判分</td><td>五维量表 + 不确定度 + 人工抽样校准</td><td>符号计算 / 几何引擎验证</td><td>采分点 Rubric（关键词族 / 分值 / 主体）</td><td>音素级评测引擎 + Rubric</td></tr>
+      <tr><td>人设</td><td>无形象的"特级教师"</td><td>阿鸦（规格书 V1.1）</td><td>备考搭子（三风格、双层人格、禁语表）</td><td>AI 学伴（学长 / 学姐可选）+ 剧情 NPC + 考官</td></tr>
+      <tr><td>家长端</td><td>周报、能力雷达、位次区间</td><td>低频高价值周报，不排名</td><td>F9 学情报告（严肃口吻）</td><td>双语报告</td></tr>
+      <tr><td>开发状态</td><td>初步开发</td><td>初步开发</td><td>初步开发</td><td>初步开发</td></tr>
+    </table></div>
+    <div class="callout">
+      <p><strong>盘点结论：</strong>四科在"三层信号、自适应诊断、人机审核、家长报告"上完全同构，在"能力坐标粒度、错因分类数、判分机制"上各异但可映射，在"人设与模型链路"上分歧最大。融合工作量因此分三档：数据层最轻（映射即可），角色层中等（按规范迁移），前端与语音最重（英语单独排期）。</p>
+    </div>
+
+    <h3>5.3 融合架构</h3>
+    <div class="figure">
+<svg viewBox="0 0 1200 720" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="四科融合架构图">
+  <defs><marker id="fa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--crow)"/></marker></defs>
+  <!-- top: unified shell -->
+  <rect x="40" y="30" width="1120" height="86" fill="var(--paper)" stroke="var(--ink)" stroke-width="1.4"/>
+  <text x="56" y="56" font-size="15" font-weight="700" fill="var(--ink)">统一前端壳（平台新建）</text>
+  <g font-size="12" fill="var(--ink-2)">
+    <rect x="60" y="68" width="150" height="36" fill="var(--crow-soft)" stroke="var(--crow)"/><text x="135" y="91" text-anchor="middle">今日计划 · 星图</text>
+    <rect x="222" y="68" width="150" height="36" fill="var(--crow-soft)" stroke="var(--crow)"/><text x="297" y="91" text-anchor="middle">七科入口（路由模块）</text>
+    <rect x="384" y="68" width="150" height="36" fill="var(--gold-soft)" stroke="var(--gold)"/><text x="459" y="91" text-anchor="middle">点点</text>
+    <rect x="546" y="68" width="150" height="36" fill="var(--crow-soft)" stroke="var(--crow)"/><text x="621" y="91" text-anchor="middle">舞台组件（白板 / DSL）</text>
+    <rect x="708" y="68" width="150" height="36" fill="var(--crow-soft)" stroke="var(--crow)"/><text x="783" y="91" text-anchor="middle">家长端 · 家长学院</text>
+    <rect x="870" y="68" width="150" height="36" fill="var(--crow-soft)" stroke="var(--crow)"/><text x="945" y="91" text-anchor="middle">会员 / 额度可见</text>
+    <rect x="1032" y="68" width="118" height="36" fill="var(--paper)" stroke="var(--crow)"/><text x="1091" y="91" text-anchor="middle">教研管理端</text>
+  </g>
+
+  <!-- middle: four existing products -->
+  <text x="40" y="150" font-size="15" font-weight="700" fill="var(--ink)">四款既有产品（各自继续迭代）</text>
+  <g font-size="11.5" text-anchor="middle">
+    <rect x="40" y="162" width="250" height="150" fill="var(--paper)" stroke="var(--crow)" stroke-width="1.4"/>
+    <text x="165" y="186" font-size="13.5" font-weight="700" fill="var(--ink)">文砺 · 语文</text>
+    <text x="165" y="206" fill="var(--ink-2)">M1–M6 引擎 · 28 点 · 六类错因</text>
+    <text x="165" y="224" fill="var(--ink-2)">五维量表 + 不确定度</text>
+    <text x="165" y="242" fill="var(--ink-2)">Next.js / Supabase / Anthropic</text>
+    <text x="165" y="266" fill="var(--red)">人设：特级教师 → 妙笔</text>
+    <text x="165" y="290" fill="var(--ink-3)">适配器工作量：中</text>
+
+    <rect x="330" y="162" width="250" height="150" fill="var(--paper)" stroke="var(--crow)" stroke-width="1.4"/>
+    <text x="455" y="186" font-size="13.5" font-weight="700" fill="var(--ink)">阿鸦 · 数学</text>
+    <text x="455" y="206" fill="var(--ink-2)">12 Agent · 100 点 · 十二类根因</text>
+    <text x="455" y="224" fill="var(--ink-2)">符号 / 几何验证器</text>
+    <text x="455" y="242" fill="var(--ink-2)">共享栈（SymPy 验证服务）</text>
+    <text x="455" y="266" fill="var(--crow)">人设：阿鸦不动</text>
+    <text x="455" y="290" fill="var(--ink-3)">适配器工作量：轻（模板科）</text>
+
+    <rect x="620" y="162" width="250" height="150" fill="var(--paper)" stroke="var(--crow)" stroke-width="1.4"/>
+    <text x="745" y="186" font-size="13.5" font-weight="700" fill="var(--ink)">知行 · 道法（+ 历史）</text>
+    <text x="745" y="206" fill="var(--ink-2)">F1–F11 · 过程四步 · 四类错因</text>
+    <text x="745" y="224" fill="var(--ink-2)">采分点 Rubric · 开卷定位</text>
+    <text x="745" y="242" fill="var(--ink-2)">Next.js / Supabase / Anthropic</text>
+    <text x="745" y="266" fill="var(--red)">人设：备考搭子 → 点点 + 方圆</text>
+    <text x="745" y="290" fill="var(--ink-3)">适配器工作量：中（Rubric 分库）</text>
+
+    <rect x="910" y="162" width="250" height="150" fill="var(--paper)" stroke="var(--crow)" stroke-width="1.4"/>
+    <text x="1035" y="186" font-size="13.5" font-weight="700" fill="var(--ink)">开口成章 · 英语</text>
+    <text x="1035" y="206" fill="var(--ink-2)">实时语音链 · NPC 状态机</text>
+    <text x="1035" y="224" fill="var(--ink-2)">音素级评测 · 试炼之塔</text>
+    <text x="1035" y="242" fill="var(--ink-2)">Gemini 链路（保留）</text>
+    <text x="1035" y="266" fill="var(--red)">人设：学伴 → 点点；考官 → 雅典娜</text>
+    <text x="1035" y="290" fill="var(--ink-3)">适配器工作量：重（语音 + 模型路由）</text>
+  </g>
+
+  <!-- adapters -->
+  <g font-size="12" text-anchor="middle">
+    <rect x="40" y="338" width="1120" height="64" fill="var(--gold-soft)" stroke="var(--gold)" stroke-width="1.4"/>
+    <text x="600" y="362" font-size="14" font-weight="700" fill="var(--ink)">学科适配器层：实现统一学科插件 API</text>
+    <text x="600" y="385" fill="var(--ink-2)">diagnose · plan · teach · grade · generate_variation · report　→　返回 result / evidence_ids / confidence / source_version / model_version / human_review_required</text>
+  </g>
+  <g stroke="var(--crow)" stroke-width="1.4" fill="none" marker-end="url(#fa)">
+    <line x1="165" y1="312" x2="165" y2="336"/><line x1="455" y1="312" x2="455" y2="336"/><line x1="745" y1="312" x2="745" y2="336"/><line x1="1035" y1="312" x2="1035" y2="336"/>
+    <line x1="600" y1="116" x2="600" y2="160" stroke-dasharray="4 3"/>
+  </g>
+  <text x="612" y="142" font-size="11" fill="var(--ink-3)">壳挂载各科路由模块</text>
+
+  <!-- platform core -->
+  <text x="40" y="436" font-size="15" font-weight="700" fill="var(--ink)">平台共享引擎（阶段 0 新建）</text>
+  <g font-size="11.5" text-anchor="middle">
+    <rect x="40" y="448" width="212" height="70" fill="var(--gold-soft)" stroke="var(--gold)" stroke-width="1.6"/>
+    <text x="146" y="474" font-size="13" font-weight="700" fill="var(--ink)">学习者模型</text>
+    <text x="146" y="494" fill="var(--ink-2)">skill_node · mastery · error_attribution</text>
+    <rect x="266" y="448" width="212" height="70" fill="var(--paper)" stroke="var(--crow)" stroke-width="1.2"/>
+    <text x="372" y="474" font-size="13" font-weight="700" fill="var(--ink)">诊断 · 计划 · 复测</text>
+    <text x="372" y="494" fill="var(--ink-2)">规则 + BKT · ROI · 间隔复测</text>
+    <rect x="492" y="448" width="212" height="70" fill="var(--paper)" stroke="var(--crow)" stroke-width="1.2"/>
+    <text x="598" y="474" font-size="13" font-weight="700" fill="var(--ink)">Rubric / 验证器注册</text>
+    <text x="598" y="494" fill="var(--ink-2)">各科注册；低置信度转复核</text>
+    <rect x="718" y="448" width="212" height="70" fill="var(--paper)" stroke="var(--crow)" stroke-width="1.2"/>
+    <text x="824" y="474" font-size="13" font-weight="700" fill="var(--ink)">人设治理 · 报告引擎</text>
+    <text x="824" y="494" fill="var(--ink-2)">禁语 / 漂移 / 回归测试 · 三视角</text>
+    <rect x="944" y="448" width="216" height="70" fill="var(--paper)" stroke="var(--crow)" stroke-width="1.2"/>
+    <text x="1052" y="474" font-size="13" font-weight="700" fill="var(--ink)">内容发布闸门</text>
+    <text x="1052" y="494" fill="var(--ink-2)">草稿 → 确定性检查 → 审核 → 版本</text>
+  </g>
+  <line x1="600" y1="402" x2="600" y2="446" stroke="var(--crow)" stroke-width="1.4" marker-end="url(#fa)"/>
+
+  <!-- base -->
+  <text x="40" y="552" font-size="15" font-weight="700" fill="var(--ink)">基础层</text>
+  <g font-size="11.5" text-anchor="middle">
+    <rect x="40" y="564" width="180" height="56" fill="var(--paper)" stroke="var(--slate)"/><text x="130" y="586" font-size="12.5" font-weight="700" fill="var(--ink)">账号 / 家庭 / 权益 / 计量</text><text x="130" y="604" fill="var(--ink-2)">usage_ledger · 幂等</text>
+    <rect x="232" y="564" width="180" height="56" fill="var(--paper)" stroke="var(--slate)"/><text x="322" y="586" font-size="12.5" font-weight="700" fill="var(--ink)">模型路由</text><text x="322" y="604" fill="var(--ink-2)">国内首选 · Anthropic · Gemini</text>
+    <rect x="424" y="564" width="180" height="56" fill="var(--paper)" stroke="var(--slate)"/><text x="514" y="586" font-size="12.5" font-weight="700" fill="var(--ink)">语音 / OCR</text><text x="514" y="604" fill="var(--ink-2)">ASR · TTS · 发音评测 可插拔</text>
+    <rect x="616" y="564" width="180" height="56" fill="var(--paper)" stroke="var(--slate)"/><text x="706" y="586" font-size="12.5" font-weight="700" fill="var(--ink)">存储</text><text x="706" y="604" fill="var(--ink-2)">Postgres（Supabase 首期）· Redis · 对象存储</text>
+    <rect x="808" y="564" width="180" height="56" fill="var(--paper)" stroke="var(--slate)"/><text x="898" y="586" font-size="12.5" font-weight="700" fill="var(--ink)">队列 / Worker</text><text x="898" y="604" fill="var(--ink-2)">批改 · 诊断 · 抓取长任务</text>
+    <rect x="1000" y="564" width="160" height="56" fill="var(--paper)" stroke="var(--slate)"/><text x="1080" y="586" font-size="12.5" font-weight="700" fill="var(--ink)">监控 / 安全</text><text x="1080" y="604" fill="var(--ink-2)">OTel · WAF · KMS · RLS</text>
+  </g>
+  <line x1="600" y1="518" x2="600" y2="562" stroke="var(--crow)" stroke-width="1.4" marker-end="url(#fa)"/>
+  <g font-size="12" fill="var(--ink-2)">
+    <rect x="40" y="650" width="16" height="12" fill="var(--paper)" stroke="var(--crow)"/><text x="64" y="661">既有产品，保留并适配</text>
+    <rect x="240" y="650" width="16" height="12" fill="var(--gold-soft)" stroke="var(--gold)"/><text x="264" y="661">平台新建的硬接口与核心资产</text>
+    <text x="520" y="661" fill="var(--red)">红字 = 人设迁移项</text>
+    <text x="40" y="690" fill="var(--ink-3)">四科接入平台的唯一硬要求：经适配器写入学习者模型、走 Rubric 接口、纳入人设治理、记入计量。其余按各科节奏靠拢。</text>
+  </g>
+</svg>
+    </div>
+    <p class="figcap">图 1 · 四科融合架构。既有产品在中间一行保持独立迭代；适配器层是唯一硬接口；平台共享引擎与基础层由阶段 0 新建；统一前端壳在顶层挂载各科路由模块。</p>
+
+    <h3>5.4 学科插件 API 与四科映射</h3>
+    <p>统一学科插件 API 六个方法与返回结构以蓝图为准。下表给出四科既有模块到六个方法的映射，这是适配器的设计输入：</p>
+    <div class="tbl"><table>
+      <tr><th>方法</th><th>语文 · 文砺</th><th>数学 · 阿鸦</th><th>道法 · 知行</th><th>英语 · 开口成章</th></tr>
+      <tr><td><code>diagnose</code></td><td>M1 试卷 OCR 诊断 → 28 点 × 六类错因</td><td>诊断评估 Agent：三阶段动态诊断 → 100 点</td><td>F1 拆题 + F3 批改结果反推过程四步</td><td>入口筛查 + 语音表现信号 → 图谱节点</td></tr>
+      <tr><td><code>plan</code></td><td>M2 处方引擎（ROI + 三层计划）</td><td>规划 Agent（优先级算法、四种路径）</td><td>Orchestrator 任务路由 + F7 图谱</td><td>五步单元闭环序列</td></tr>
+      <tr><td><code>teach</code></td><td>M3 微课方法库 + M6 三级提示 + 妙笔话术</td><td>知识教师 + 思维教练 Agent + 0–6 级提示 + 阿鸦话术</td><td>点点主持 F1 / F2 / F4 / F6 / F11；方圆不在此方法内</td><td>NPC 场景对话 + 点点伴随提示；雅典娜不在此方法内</td></tr>
+      <tr><td><code>grade</code></td><td>M5 五维量表（客观维主判 / 主观维参考分 + 不确定度）；阅读采分点</td><td>验证 Agent：SymPy / 几何规则</td><td>F3 采分点批改（方圆出场）</td><td>发音评测引擎 + Rubric（雅典娜出场）</td></tr>
+      <tr><td><code>generate_variation</code></td><td>M4 命题引擎（维度 × 难度 × 错因）</td><td>训练 Agent + 思维教练三层变式</td><td>F7 错题变式</td><td>变式练习 / 场景重玩</td></tr>
+      <tr><td><code>report</code></td><td>七域雷达、错因分布、作文二改幅度</td><td>报告 Agent 三视角</td><td>F9 学情报告</td><td>双语报告</td></tr>
+      <tr><td>返回字段</td><td colspan="4">所有方法统一返回 <code>result · evidence_ids · confidence · source_version · model_version · human_review_required</code>；<code>human_review_required</code> 为真时进入教研复核队列（文砺人工抽样、知行申诉复核、英语低置信度复核复用同一队列）</td></tr>
+    </table></div>
+
+    <h3>5.5 数据迁移与能力坐标映射</h3>
+    <div class="tbl"><table>
+      <tr><th>既有对象</th><th>平台对象</th><th>映射规则</th></tr>
+      <tr><td>文砺 28 点 / 阿鸦 100 点 / 知行过程四步 / 英语图谱节点与三维</td><td><code>skill_node</code>（带 <code>subject</code> 命名空间）</td><td>各科保持自己的粒度与坐标系，不强行统一；平台以 <code>skill_node.subject + local_id</code> 索引；星图按科渲染</td></tr>
+      <tr><td>文砺六类 / 阿鸦十二类 / 知行四类 / 英语三维</td><td><code>error_attribution</code>（学科分类 + 跨科大类）</td><td>建立跨科大类映射表：审题类（文砺审题性、阿鸦审题错误、知行审题错）、定位 / 信息类、表达规范类、运算 / 语法类、策略时间类；跨科指标只用大类</td></tr>
+      <tr><td>三层信号（结果 / 过程 / 行为；英语加语音层）</td><td><code>evidence_event</code></td><td>事件化写入；语音信号只存评测结果与特征，不存原始音频到学生模型</td></tr>
+      <tr><td>错题本 / 错因库</td><td><code>attempt</code> + <code>error_attribution</code></td><td>错题不再是收藏夹，是带归因的作答记录</td></tr>
+      <tr><td>五道门槛（阿鸦）/ 三次复盘（文砺、知行）</td><td><code>mastery_estimate</code> 状态机 + 复测调度</td><td>门槛映射：理解 → 执行 → 稳定 → 迁移（星亮）→ 保持；三次复盘映射为 0 / 3 / 14 天的复测事件</td></tr>
+      <tr><td>各科题库元数据</td><td><code>item</code> + <code>curriculum_version</code></td><td>补齐 <code>region/exam_year/grade/textbook_version/subject/content_version</code> 六段标识；审核状态字段统一</td></tr>
+      <tr><td>各科家长报告</td><td>报告引擎 + 三视角模板</td><td>各科提供字段，跨科周报由报告引擎合成；星图为主视图</td></tr>
+      <tr><td>各科 Supabase 库</td><td>平台 Postgres（首期仍在 Supabase）</td><td>先共库分 schema（<code>platform.*</code> 与 <code>wenli.* / aya.* / zhixing.* / echo.*</code>），家庭关系与 RLS 由平台 schema 统一；后期按瓶颈拆分</td></tr>
+    </table></div>
+
+    <h3>5.6 人设迁移</h3>
+    <div class="tbl"><table>
+      <tr><th>产品</th><th>迁移动作</th><th>依据文档</th><th>顺序</th></tr>
+      <tr><td>知行</td><td>备考搭子升格为点点（三风格、禁语表、身份披露继承）；新设方圆为采分点引擎的脸，F3 第二段由方圆出场执行；点点主持其余环节</td><td>点点 V1.2、考官型基线 + 方圆角色卡 V1.1</td><td>第一</td></tr>
+      <tr><td>开口成章</td><td>AI 学伴职能并入点点（伴随不参演、心电感应提示、复盘、费曼机制）；删除"学长 / 学姐男女各一"；考官定名雅典娜，按基线补齐治理；NPC 群保留</td><td>点点 V1.2、雅典娜角色卡 V1.1、开口成章 PRD 待升 V1.3</td><td>第二（先验证点点跨模型一致性）</td></tr>
+      <tr><td>文砺</td><td>特级教师改为妙笔；三级提示、五维量表、朱批升格装入妙笔话术；反代写以"盖笔帽"动作实现</td><td>妙笔 V1.0</td><td>第三</td></tr>
+      <tr><td>阿鸦</td><td>不动；作为常驻型模板</td><td>阿鸦 V1.1</td><td>—</td></tr>
+    </table></div>
+
+    <h3>5.7 前端壳与舞台</h3>
+    <p>统一学生端壳由平台新建：家庭账号登录、今日计划（跨科）、星图、七科入口、点点常驻入口、额度可见、休息提醒、陪伴开关。各科课堂页面作为路由模块挂入，首期保持各自界面；共享的舞台组件（白板 SVG / Canvas、KaTeX、讲解 DSL 播放器、SSE 流式讲解）先在数学落地"白板演算"，再向语文（朱批）、理化（实验）推广。英语的场景舞台独立，不套用老师锚点布局。家长端全部由平台新建，四科的家长报告只提供字段。</p>
+
+    <h3>5.8 计量接入</h3>
+    <p>四科的以下动作必须经权益引擎：分科完整诊断（次）、限时整卷模考（次）、新上传错题深度分析（题）、讲评课堂 / 白板（节）、语音实时互动（分钟）、AI 互动有效时长（分钟）。每次请求带 <code>usage_id</code> 与 <code>idempotency_key</code>，开始预留、成功结算、失败回滚；同题 24 小时内复看不重复扣次，服务错误重试不扣第二次。英语的实时语音按分钟计量并单独建资源池。</p>
+
+    <h3>5.9 分科验收</h3>
+    <div class="tbl"><table>
+      <tr><th>验收项</th><th>通过条件</th></tr>
+      <tr><td>学生模型写入</td><td>四科任一动作产生的能力点、错因、证据事件可在平台 Schema 查询，并在星图渲染</td></tr>
+      <tr><td>Rubric 接口</td><td><code>grade</code> 返回带 <code>confidence</code> 与 <code>human_review_required</code>；低置信度进入统一复核队列</td></tr>
+      <tr><td>人设治理</td><td>各科老师与点点通过家族级回归测试（合同符合性、角色三型边界、跨科静默、命名格式、比喻隔离、模式一致、转介一致）</td></tr>
+      <tr><td>计量</td><td>扣次幂等、失败回滚、额度可见三项通过测试</td></tr>
+      <tr><td>家庭隔离</td><td>家长按档案授权访问，同手机号不可跨档案；RLS 通过渗透测试</td></tr>
+      <tr><td>英语专项</td><td>点点人设在 Gemini 与 Anthropic 两条链路上通过同一套一致性回归测试；语音延迟 p95 达标</td></tr>
+    </table></div>
+  </div>
+</section>
+
+<!-- 六 技术架构 -->
+<section>
+  <div class="margin"><span class="n">六</span>技术架构</div>
+  <div class="body">
+    <h2>系统架构与组件选择</h2>
+    <div class="tbl"><table>
+      <tr><th>层</th><th>首版建议</th><th>到 50 万–100 万注册用户时的演进</th></tr>
+      <tr><td>前端</td><td>Next.js + TypeScript + React；PWA 优先、响应式三端；白板 SVG / Canvas，KaTeX；SSE 流式讲解</td><td>静态资源 CDN；考试页面独立降级；必要时再做原生 App</td></tr>
+      <tr><td>API / 业务</td><td>TypeScript BFF 负责账号 / 权益 / 支付回调；Python FastAPI 负责诊断、内容编排和学科验证；OpenAPI 契约</td><td>无状态容器弹性扩容；服务按流量分域，而非首日微服务化</td></tr>
+      <tr><td>Agent 编排</td><td>显式有限状态流程（诊断 → 计划 → 教学 → 批改 → 复测），学科工具注册；复杂多步环节才引入 LangGraph</td><td>每一步幂等、超时、重试、审计；长任务持久化与断点恢复</td></tr>
+      <tr><td>内容与知识</td><td>Postgres 存版本化题库、图谱及作答；对象存储存图片 / 语音 / 课程资产；pgvector 仅用于经审核内容辅助检索</td><td>热门检索缓存、读副本 / 搜索服务按瓶颈加入；答案依据来自图谱与审核内容</td></tr>
+      <tr><td>模型与语音</td><td>国内可商用模型首选，通过模型路由接既有 Anthropic / Gemini 开发链；OCR、ASR、TTS 可插拔；数学 SymPy / 几何规则</td><td>按任务选成本 / 延迟 / 质量档，供应商限流与熔断；个人信息跨境另行评估，不默认调用境外 API</td></tr>
+      <tr><td>存储与异步</td><td>PostgreSQL（现有 Supabase 首期）、Redis、S3 兼容对象存储、队列 / Worker</td><td>连接池、读写隔离、分区事件表、备份恢复演练；分析仓库单独承接报表</td></tr>
+      <tr><td>监控安全</td><td>OpenTelemetry；WAF、私有对象存储、KMS、RLS 与服务端权限；敏感日志脱敏</td><td>多可用区容灾、容量预警、成本仪表盘、内容与权益审计</td></tr>
+    </table></div>
+
+    <h3>内容发布闸门</h3>
+    <p>AI 草稿 → 可重复验证的确定性检查 → 学科教研抽检 / 审核 → 版本发布 → 线上申诉和错误回收。可个性化表达，但用于判分的题、答案、Rubric 与基础讲解要有审核版本。时政 / 当年考情有生效和失效日期。试卷拍照 OCR 低置信度先让学生确认题目，再判分。四科既有的审核流程（文砺人工抽样、知行四线审核、英语 NPC 人设卡审核）合并为同一条流水线的四条审核线，通识内容为第五条。</p>
+
+    <h3>OpenMAIC 使用边界</h3>
+    <p>优先验证其课程 DSL、白板和"按脚本播放 / 学生插话转实时"的呈现模式，以"一张试卷生成讲评课"做技术原型。它不替代学习者模型、学科评分和权益系统。引入的仓库 / 子包锁版本、核对每个依赖的许可证（根目录 MIT，<code>packages/mathml2omml</code> 为 LGPL-3.0）；渲染器不承担学生隐私数据的持久化。AI 同学机制落地在点点身上，不引入其多智能体课堂。</p>
+  </div>
+</section>
+
+<!-- 七 数据模型 -->
+<section>
+  <div class="margin"><span class="n">七</span>业务与数据</div>
+  <div class="body">
+    <h2>业务流程与关键对象</h2>
+    <p>主流程：家庭授权与选科 → 学科诊断 → 学习者模型更新 → 跨科任务计划 → 学科老师教学与练习 → 验证器与 Rubric 批改 → 错因归档与星图 → 延迟复测 → 回到模型更新；错因归档同时产出家长周报。</p>
+    <div class="tbl"><table>
+      <tr><th>域</th><th>关键对象</th></tr>
+      <tr><td>家庭与身份</td><td><code>household</code> · <code>guardian_student_link</code> · <code>student_profile</code> · <code>consent_record</code></td></tr>
+      <tr><td>学科与内容</td><td><code>subject_enrollment</code> · <code>curriculum_version</code> · <code>knowledge_node</code> · <code>skill_node</code> · <code>item</code> · <code>item_exposure</code> · <code>content_review</code></td></tr>
+      <tr><td>学习证据</td><td><code>attempt</code> · <code>evidence_event</code> · <code>mastery_estimate</code> · <code>error_attribution</code> · <code>diagnostic_run</code> · <code>rubric_result</code></td></tr>
+      <tr><td>教学过程</td><td><code>study_plan</code> · <code>lesson_session</code> · <code>exam_run</code> · <code>appeal</code></td></tr>
+      <tr><td>商业</td><td><code>subscription</code> · <code>entitlement</code> · <code>usage_ledger</code></td></tr>
+    </table></div>
+    <p>作答原始证据、模型推断、家长自述分开存；推断记录算法版本、置信度、证据 ID 与更正历史。家长关系按档案授权，不可仅凭同手机号访问孩子数据。</p>
+  </div>
+</section>
+
+<!-- 八 会员 -->
+<section>
+  <div class="margin"><span class="n">八</span>会员与权益</div>
+  <div class="body">
+    <h2>四级会员与权益引擎（首版供验证的配额假设）</h2>
+    <p>"普通会员"指注册后的基础会员；价格、付费周期和具体额度均为产品实验参数，不代表对外承诺。PLUS、PRO、MAX 在同一家庭主账号下购买；第一版按一个学生档案计费，第二个孩子须单独购买学生席位，家长访问免费。基础会员有限额体验四科；付费级别所含"同时开通科目数"与七科开放进度挂钩；尚未上线科目不纳入售卖承诺。</p>
+    <div class="tbl"><table>
+      <tr><th>权益 / 每个学生每 30 天</th><th>普通</th><th>PLUS</th><th>PRO</th><th>MAX</th></tr>
+      <tr><td>同时开通科目</td><td class="num">1</td><td class="num">2</td><td class="num">4</td><td class="num">已上线全部（≤ 7）</td></tr>
+      <tr><td>AI 互动有效时长¹</td><td class="num">120 分钟</td><td class="num">600 分钟</td><td class="num">1,800 分钟</td><td class="num">4,000 分钟²</td></tr>
+      <tr><td>分科完整诊断</td><td class="num">1 次筛查 + 1 次完整</td><td class="num">2 次</td><td class="num">6 次</td><td class="num">12 次</td></tr>
+      <tr><td>限时整卷模考</td><td class="num">0</td><td class="num">1 次</td><td class="num">4 次</td><td class="num">10 次</td></tr>
+      <tr><td>新上传错题深度分析</td><td class="num">20 题</td><td class="num">100 题</td><td class="num">300 题</td><td class="num">800 题</td></tr>
+      <tr><td>讲评课堂 / 白板</td><td class="num">文字与静态步骤</td><td class="num">10 节</td><td class="num">40 节</td><td class="num">100 节</td></tr>
+      <tr><td>语音实时互动</td><td class="num">试听 10 分钟</td><td class="num">60 分钟</td><td class="num">240 分钟</td><td class="num">600 分钟</td></tr>
+      <tr><td>周报与家长学院</td><td>基础周报、公共课</td><td>完整周报</td><td>跨科策略与月报</td><td>跨科深度报告、优先人工申诉</td></tr>
+    </table></div>
+    <p>¹ 仅学生主动交互或播放课程时计费；暂停、等待、故障和后台生成不计；另设后台 token 成本闸门。² MAX 为公平使用上限，非无限服务。升级当日差额补足、降级到期生效。到上限时保存进度并提供低成本自练题，不强迫续费。各档用户享有相同的核心批改口径，差异在服务量与呈现能力。</p>
+    <h3>商业策略</h3>
+    <p>初期以免费筛查和已上线单科体验获客；四科稳定后推广"家庭 PLUS 两科""PRO 四科"；七科实装后再开放 MAX 七科。价格不在核算单位经济性与监管路径前给出。按科加购与初三冲刺专题可作附加权益，不形成无法理解的叠加扣费。通识层免费部分作为非学科类前门。模考与诊断保留可复核的交付记录及退款规则。</p>
+  </div>
+</section>
+
+<!-- 九 通识 -->
+<section>
+  <div class="margin"><span class="n">九</span>通识成长层</div>
+  <div class="body">
+    <h2>由学情触发的家庭教育</h2>
+    <p>内容按"学情信号 → 推送课程 → 家长践行 → 状态回流"运转。家长学院：教育常识与考情认知、陪读方法（"本周做一件事"卡片）、青春期心理与沟通、健康与作息、家校沟通；学生成长课：学习动力、压力疏解、情商与人际（情境决策卡）、自律与时间管理（跨科时间预算工具）。三条红线：不做心理治疗与诊断，出现超出学习范畴的情绪困扰按转介话术引导至学校心理老师、班主任与家长；不用学情制造焦虑；家长自身的学习内容不进入学生模型。特别防止点点被理解为现实中的同学、鼓励依赖或对心理健康作诊断。</p>
+  </div>
+</section>
+
+<!-- 十 容量与经济 -->
+<section>
+  <div class="margin"><span class="n">十</span>容量与经济</div>
+  <div class="body">
+    <h2>100 万用户容量与单位经济（待压测的规划假设）</h2>
+    <p>"100 万用户"定义为累计注册学生上限：日活 15% = 15 万；高峰同时在线为日活 5% = 7,500；其中 10% 正在等待 AI 流式回答 = 750 模型并发；平均占用 20 秒，对应约 37.5 次新请求 / 秒；按两倍突发规划约 75 次 / 秒、1,500 模型并发。实时语音、OCR、模拟考试另建池。容量公式：新请求率 ≈ 模型并发 / 平均占用秒数。</p>
+    <div class="tbl"><table>
+      <tr><th>阶段</th><th>用户规模与触发条件</th><th>建设动作与验证指标</th></tr>
+      <tr><td>内测</td><td>1 千–1 万注册；四科部分上线</td><td>单库单区域、异步批改、单模型故障降级；验证成绩正确率和错题处理</td></tr>
+      <tr><td>增长</td><td>1 万–10 万注册；稳定周活</td><td>队列、缓存、连接池、分学科限流、负载与成本仪表盘；2 倍峰值压测</td></tr>
+      <tr><td>规模</td><td>10 万–50 万注册</td><td>独立 Worker、分科资源池、分析数据隔离、供应商多路容灾、备份恢复演练</td></tr>
+      <tr><td>上限准备</td><td>50 万–100 万注册，连续实际峰值证明需要</td><td>读副本 / 分区 / 热点迁移、多区域容灾按业务评估；分批扩容并复测</td></tr>
+    </table></div>
+    <p>首次性能目标：非 AI API p95 &lt; 500 ms；文字首 token p95 &lt; 3 s；诊断异步任务 p95 &lt; 90 s；月可用性 ≥ 99.9%（目标，按预算与供应商 SLA 调整）。压测覆盖模考开考、支付回调、流式断线重连、队列积压及单模型失效。</p>
+    <p>单位经济：单月每位活跃学生成本 = 模型 token × 实际单价 + 语音分钟 + OCR 页数 + 存储 / 带宽 + 教研审核摊销 + 客服 / 支付；毛利 = 净收入 − 可变服务成本。每种会员分别观察 P50 / P90 / P99 成本与异常账户消耗；上线前用真实会话测算。降本手段：题库复用、预生成、短上下文、任务模型路由、缓存（不缓存跨学生隐私输出）、讲解态 / 对话态分离。</p>
+  </div>
+</section>
+
+<!-- 十一 合规 -->
+<section>
+  <div class="margin"><span class="n">十一</span>合规与安全</div>
+  <div class="body">
+    <h2>未成年人、安全与上线前决策</h2>
+    <div class="callout red">
+      <p><strong>上线前必须取得的判断：</strong>面向境内初中生销售前，对"学科类 AI 一对一服务是否构成线上学科培训"取得具体业务形态的专业判断；"自主学习工具"宣传口径不能代替分类认定。同步梳理属地教育、电信与网信要求、收费 / 退费规则和已备案模型调用的应用登记适用性。</p>
+    </div>
+    <p>设计输入：支付主体为家长；监护人同意（不满 14 周岁需家长授权）；年龄适配；AI 身份显著提示（七位老师与点点首次对话均声明 AI 扮演）；时长控制与夜间限制；危机转介；学习对话删除 / 导出；未成年人数据最小化；供应商数据协议；语音为敏感个人信息，发音评测若调用第三方引擎须专项审查出境与共享条款。</p>
+    <p>审核指标：各科评分与人工教师一致率、错误判分率、可追溯证据覆盖率、低置信度转人工率、身份 / 角色漂移与禁语率；有造成系统性误判的故障时可一键停用该评分版本并重新计算受影响报告。参考法规：《全国校外教育培训监管与服务综合平台应用管理办法》《未成年人网络保护条例》《个人信息保护法》《生成式人工智能服务管理暂行办法》《人工智能拟人化互动服务管理暂行办法》。</p>
+  </div>
+</section>
+
+<!-- 十二 指标 -->
+<section>
+  <div class="margin"><span class="n">十二</span>指标体系</div>
+  <div class="body">
+    <h2>北极星与分层指标</h2>
+    <div class="tbl"><table>
+      <tr><th>层级</th><th>指标</th><th>意义</th></tr>
+      <tr><td>北极星</td><td>持续使用 8 周以上的学生，在延迟复测中保持掌握的跨科有效能力点数（亮星数）</td><td>各科北极星的跨科合并；不以时长或题量为核心</td></tr>
+      <tr><td>平台化是否成立</td><td>多科渗透率、跨科时间预算采纳率</td><td>证明"一个学生多位老师"比单科更有价值</td></tr>
+      <tr><td>目标二是否成立</td><td>家长学院完课率、"本周一件事"践行率、家长 NPS、学生"说教感"负反馈率</td><td>证明通识层改变了家庭行为</td></tr>
+      <tr><td>可信度（发布阻断）</td><td>各科批改与教师一致率、验证器拦截率、不确定度标注率、代写拦截率、引用幻觉率、人设禁语触发率</td><td>任一科超阈值阻断该科发布</td></tr>
+      <tr><td>融合进度</td><td>四科 API 覆盖率（六方法 × 四科）、学生模型写入覆盖率、家族级回归测试通过率</td><td>阶段 0–1 的工程验收</td></tr>
+      <tr><td>经营</td><td>家庭续费率、学科包加购率、冲刺包转化率、每活跃学生成本 P50 / P90</td><td>—</td></tr>
+    </table></div>
+  </div>
+</section>
+
+<!-- 十三 组织 -->
+<section>
+  <div class="margin"><span class="n">十三</span>组织与内容</div>
+  <div class="body">
+    <h2>平台组、学科组、通识组、审核中心</h2>
+    <div class="tbl"><table>
+      <tr><th>组</th><th>职责</th><th>关键角色</th></tr>
+      <tr><td>平台组</td><td>共享引擎、舞台、模型路由、权益与计量、人设治理、数据合规；对学科包只提供接口不写内容；负责四科适配器的框架与验收</td><td>平台架构师、全栈工程、语音 / OCR 工程、合规顾问</td></tr>
+      <tr><td>学科组 × 7</td><td>各科八件套；实现本科适配器；教研顾问是每科的品控人格化担保</td><td>每科 1 名南京本地教研顾问 + 学科产品经理；道法与历史各设教研，共用引擎团队</td></tr>
+      <tr><td>通识教研组</td><td>家长学院与学生成长课；与学情信号对齐的触发规则</td><td>家庭教育 / 教育心理背景教研 1–2 人</td></tr>
+      <tr><td>审核中心</td><td>七科统一审核队列：人设语料、生成题、时政、批改抽检、通识内容五线；申诉复核</td><td>各科教研顾问轮值</td></tr>
+    </table></div>
+  </div>
+</section>
+
+<!-- 十四 交付 -->
+<section>
+  <div class="margin"><span class="n">十四</span>交付路线</div>
+  <div class="body">
+    <h2>四个阶段与决策门</h2>
+    <div class="figure">
+<svg viewBox="0 0 1200 380" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="交付路线">
+  <g font-size="12" fill="var(--ink-3)">
+    <line x1="60" y1="60" x2="1140" y2="60" stroke="var(--rule)"/>
+    <text x="60" y="50">0</text><text x="240" y="50">3 个月</text><text x="600" y="50">9 个月</text><text x="1080" y="50">18 个月</text>
+  </g>
+  <!-- phase bars -->
+  <rect x="60" y="80" width="180" height="46" fill="var(--gold-soft)" stroke="var(--gold)" stroke-width="1.4"/>
+  <text x="150" y="100" text-anchor="middle" font-size="13" font-weight="700" fill="var(--ink)">阶段 0 · 基座</text>
+  <text x="150" y="117" text-anchor="middle" font-size="11" fill="var(--ink-2)">Schema · 插件 API · 计量 · 路由</text>
+  <rect x="240" y="80" width="360" height="46" fill="var(--crow-soft)" stroke="var(--crow)" stroke-width="1.4"/>
+  <text x="420" y="100" text-anchor="middle" font-size="13" font-weight="700" fill="var(--ink)">阶段 1 · 四科融合上线</text>
+  <text x="420" y="117" text-anchor="middle" font-size="11" fill="var(--ink-2)">点点 · 周报 · 会员四级 · 数学白板 · 通识 MVP</text>
+  <rect x="600" y="80" width="540" height="46" fill="var(--green-soft)" stroke="var(--green)" stroke-width="1.4"/>
+  <text x="870" y="100" text-anchor="middle" font-size="13" font-weight="700" fill="var(--ink)">阶段 2 · 七科</text>
+  <text x="870" y="117" text-anchor="middle" font-size="11" fill="var(--ink-2)">历史（春秋） → 物理（阿基） → 化学（X 博士） · MAX 七科</text>
+  <text x="1140" y="150" text-anchor="end" font-size="11" fill="var(--ink-3)">阶段 3 规模化按真实增长触发，不设固定月份</text>
+
+  <!-- fusion sub-track -->
+  <text x="60" y="190" font-size="13" font-weight="700" fill="var(--ink)">四科融合子轨</text>
+  <g font-size="11" text-anchor="middle">
+    <rect x="60" y="200" width="180" height="34" fill="var(--paper)" stroke="var(--gold)"/><text x="150" y="222">四科适配器原型 · 模型写入</text>
+    <rect x="240" y="200" width="120" height="34" fill="var(--paper)" stroke="var(--crow)"/><text x="300" y="222">知行 → 点点 + 方圆</text>
+    <rect x="360" y="200" width="120" height="34" fill="var(--paper)" stroke="var(--crow)"/><text x="420" y="222">开口成章 → 点点 + 雅典娜</text>
+    <rect x="480" y="200" width="120" height="34" fill="var(--paper)" stroke="var(--crow)"/><text x="540" y="222">文砺 → 妙笔</text>
+    <rect x="240" y="244" width="360" height="34" fill="var(--paper)" stroke="var(--crow)" stroke-dasharray="4 3"/><text x="420" y="266">统一壳合并 · 舞台组件推广 · 计量接入 · 家长端统一（贯穿阶段 1）</text>
+  </g>
+  <!-- decision gates -->
+  <g font-size="11" fill="var(--ink-2)">
+    <line x1="240" y1="70" x2="240" y2="300" stroke="var(--ink)" stroke-width="1" stroke-dasharray="3 3"/>
+    <text x="246" y="316">门 0：四科能写入同一学生模型；家长隔离与扣次幂等通过</text>
+    <line x1="600" y1="70" x2="600" y2="340" stroke="var(--ink)" stroke-width="1" stroke-dasharray="3 3"/>
+    <text x="606" y="356">门 1：批改可靠；试点用户 8 周延迟复测改善且续用；合规路径明确</text>
+    <line x1="1140" y1="70" x2="1140" y2="200" stroke="var(--ink)" stroke-width="1" stroke-dasharray="3 3"/>
+    <text x="1134" y="216" text-anchor="end">门 2：每科经教研发布与压测；线上口径与可用权益一致</text>
+  </g>
+</svg>
+    </div>
+    <p class="figcap">图 2 · 交付路线与决策门。四科融合是阶段 0–1 的独立子轨：适配器原型在阶段 0 完成，人设迁移按知行、开口成章、文砺的顺序在阶段 1 内完成。</p>
+    <div class="tbl"><table>
+      <tr><th>阶段</th><th>时间（估算）</th><th>可验收交付物</th><th>通过条件</th></tr>
+      <tr><td>0 基座</td><td>0–3 个月</td><td>学习者 Schema、学科插件 API（OpenAPI）、统一家庭关系、计量账本、模型路由、教研发布流水线；四科适配器原型；人设治理组件（禁语表、漂移检测、回归测试框架）</td><td>四科能写入同一学生模型；家长隔离与扣次幂等通过测试；点点跨模型一致性验证结论</td></tr>
+      <tr><td>1 四科融合</td><td>3–9 个月</td><td>统一壳与今日计划、星图、四科诊断 / 教学 / 错题闭环、点点、周报、会员四级；数学白板讲评；知行 → 方圆、开口成章 → 雅典娜、文砺 → 妙笔三次人设迁移；家长学院前 20 课</td><td>批改可靠；试点用户 8 周延迟复测改善且续用；四科通过分科验收（5.9）；合规路径明确</td></tr>
+      <tr><td>2 七科</td><td>9–18 个月</td><td>历史 → 物理 → 化学八件套；春秋、阿基、X 博士规格书与形象；开卷双科合场训练与"换卷"；实验模板；MAX 七科权益</td><td>每科经教研发布与压测；线上口径与可用权益一致；新科交付周期 ≤ 既有科一半</td></tr>
+      <tr><td>3 规模化</td><td>按真实增长触发</td><td>从 10 万逐级到 100 万注册的容量与成本优化；地区包复制（苏州、无锡）；教师 / 学校端评估</td><td>每级峰值 2 倍演练；成本与容灾指标达标</td></tr>
+    </table></div>
+  </div>
+</section>
+
+<!-- 十五 待拍板 -->
+<section>
+  <div class="margin"><span class="n">十五</span>待拍板</div>
+  <div class="body">
+    <h2>优先拍板的七件事</h2>
+    <p>前五项来自蓝图，是实施参数，不阻断今天讨论架构与启动基座工程；后两项来自融合与角色线。</p>
+    <ol>
+      <li><strong>首发地区与教材版本</strong>（南京；各科教材版本以当年考试说明为准）。</li>
+      <li><strong>现有四科系统的数据字段和真实可用状态</strong>——这是四科适配器设计的直接输入，建议在阶段 0 第一周完成一次代码与数据盘点，产出四份适配器设计文档。</li>
+      <li><strong>首期监管分类与收费主体。</strong></li>
+      <li><strong>四级额度与可承受的每活跃学生成本。</strong></li>
+      <li><strong>英语是否保持独立技术栈</strong>（建议适配接入；前提是点点跨模型一致性验证通过）。</li>
+      <li><strong>通识层的免费边界</strong>：家长学院全免费作前门，还是部分课程随家庭订阅解锁。</li>
+      <li><strong>七位老师形象出稿顺序与预算</strong>：建议阿鸦母版先定稿作家族锚，其后方圆 + 春秋同批、雅典娜、妙笔、阿基、X 博士。</li>
+    </ol>
+
+    <h3>附录 · 术语</h3>
+    <div class="tbl"><table>
+      <tr><th>术语</th><th>含义</th></tr>
+      <tr><td>魁星点斗 StarBuddy / 点斗</td><td>平台品牌与简称；典出"魁星点斗"，取"点亮"之意，避开"金榜"的排名意象</td></tr>
+      <tr><td>星 / 星图 / 星亮</td><td>能力点 / 学生的能力图谱 / 能力点通过掌握门槛（迁移层）</td></tr>
+      <tr><td>点点</td><td>全平台唯一的同辈搭子，由知行备考搭子升格</td></tr>
+      <tr><td>常驻型 / 考官型</td><td>老师的两种出场方式：课堂常驻 / 只在判分时刻出场</td></tr>
+      <tr><td>导师主导型 / 陪练主导型</td><td>两种学科模式：老师主持课堂 / 点点主持课堂</td></tr>
+      <tr><td>八件套</td><td>学科包必须交付的八项：考情、图谱、能力与错因、闭环、Rubric 与验证器、人设与场景、内容、报告模板</td></tr>
+      <tr><td>学科插件 API</td><td>diagnose / plan / teach / grade / generate_variation / report 六方法与统一返回结构</td></tr>
+      <tr><td>题名</td><td>中考结算仪式：把自己的名字写在自己的星图下面</td></tr>
+    </table></div>
+    <div class="foot">
+      <table>
+        <tr><th>版本</th><th>日期</th><th>变更</th></tr>
+        <tr><td>v1.0</td><td>2026-09-24</td><td>首版：合并《平台产品规划》v1.2 与《产品系统架构与技术实施蓝图》V2.0，纳入角色体系七份文档的结论；新增第五章"四科融合"（原则、盘点、架构图、API 映射、数据迁移、人设迁移、前端壳、计量、分科验收）；交付路线加入四科融合子轨与决策门</td></tr>
+      </table>
+    </div>
+  </div>
+</section>
+
+</div>
+</body>
+</html>

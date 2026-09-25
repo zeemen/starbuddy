@@ -30,8 +30,15 @@ if tool == "Bash":
         if re.search(pat, cmd, re.I):
             block("命令涉及生产环境")
 
+if tool == "Read":
+    path = inp.get("file_path", "")
+    if re.search(r"(^|/)\.env(\.(?!example)|$)|(^|/)secrets?/|\.pem$|\.key$", path):
+        block(f"读取密钥类文件 {path}")
+
 if tool in ("Write", "Edit", "MultiEdit"):
     path = inp.get("file_path", "")
+    if re.search(r"(^|/)legacy/", path):
+        block(f"legacy/ 下的四科旧代码只读 {path}")
     if re.search(r"(^|/)\.env(\.|$)|(^|/)secrets?/|\.pem$|\.key$", path):
         block(f"写入密钥类文件 {path}")
     if re.search(r"(^|/)evals/.+/gold/", path):

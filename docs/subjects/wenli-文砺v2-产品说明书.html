@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>文砺 v2.0 · AI语文精准成长系统 — 产品说明书与开发计划（整合版）</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600;700;900&family=Noto+Sans+SC:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#15171E;--ink-soft:#3C4049;--ink-faint:#6B6F79;
+  --paper:#ECE7DA;--panel:#F4F1E8;--panel-2:#E4DECF;
+  --azure:#1F4E5F;--azure-bright:#327487;--azure-wash:rgba(31,78,95,.08);
+  --cinnabar:#B23A2E;--cinnabar-soft:rgba(178,58,46,.10);
+  --gold:#9A6B14;
+  --line:rgba(21,23,30,.14);--line-soft:rgba(21,23,30,.07);
+  --serif:'Noto Serif SC','Songti SC','STSong','SimSun',serif;
+  --sans:'Noto Sans SC','PingFang SC','Microsoft YaHei',system-ui,sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,'SFMono-Regular',Menlo,monospace;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);line-height:1.85;font-size:16.5px;-webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(rgba(21,23,30,.022) 1px,transparent 1px);background-size:22px 22px}
+.wrap{max-width:1000px;margin:0 auto;padding:0 28px}
+h1,h2,h3,h4{font-family:var(--serif);font-weight:700;line-height:1.3;letter-spacing:.01em}
+.mono{font-family:var(--mono)}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--azure);font-weight:500}
+p{margin:0 0 1.05em}
+a{color:var(--azure);text-decoration:none}
+
+.masthead{position:relative;padding:74px 0 52px;border-bottom:2px solid var(--ink);overflow:hidden}
+.seal{position:absolute;top:60px;right:28px;width:84px;height:84px;border:2.5px solid var(--cinnabar);border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--cinnabar);font-family:var(--serif);font-weight:700;transform:rotate(-4deg);opacity:.92}
+.seal span{font-size:30px;writing-mode:vertical-rl;letter-spacing:.05em}
+.ver{position:absolute;top:150px;right:30px;font-family:var(--mono);font-size:11px;color:var(--ink-faint);letter-spacing:.1em}
+.masthead .eyebrow{margin-bottom:20px}
+.logo{font-family:var(--serif);font-weight:900;font-size:clamp(58px,11vw,120px);line-height:.92;letter-spacing:.06em;margin:0}
+.logo .sub{display:block;font-family:var(--sans);font-weight:300;font-size:clamp(15px,2.3vw,22px);letter-spacing:.32em;color:var(--ink-soft);margin-top:16px}
+.thesis{max-width:690px;margin:30px 0 0;font-family:var(--serif);font-size:clamp(18px,2.4vw,24px);font-weight:500;line-height:1.7}
+.thesis .src{display:block;font-size:13.5px;font-family:var(--mono);color:var(--azure);letter-spacing:.08em;margin-top:11px;font-weight:500}
+.factbar{display:flex;flex-wrap:wrap;margin-top:42px;border:1px solid var(--line)}
+.fact{flex:1;min-width:148px;padding:15px 18px;border-right:1px solid var(--line)}
+.fact:last-child{border-right:none}
+.fact b{display:block;font-family:var(--serif);font-size:28px;font-weight:900;color:var(--azure)}
+.fact small{font-size:12px;color:var(--ink-faint)}
+
+.tocbar{position:sticky;top:0;z-index:40;background:rgba(236,231,218,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);font-family:var(--mono);font-size:11.5px}
+.tocbar .wrap{display:flex;gap:3px;overflow-x:auto;padding:9px 28px;scrollbar-width:none}
+.tocbar .wrap::-webkit-scrollbar{display:none}
+.tocbar a{color:var(--ink-soft);white-space:nowrap;padding:4px 9px;border-radius:4px;letter-spacing:.04em}
+.tocbar a:hover{background:var(--azure-wash);color:var(--azure)}
+
+section{padding:60px 0;border-bottom:1px solid var(--line-soft)}
+.part-label{font-family:var(--mono);font-size:12px;letter-spacing:.2em;color:var(--cinnabar);font-weight:600;text-transform:uppercase;margin-bottom:10px}
+.sec-head{display:flex;align-items:baseline;gap:16px;margin-bottom:8px}
+.sec-num{font-family:var(--mono);font-size:14px;font-weight:600;color:var(--azure);padding-top:6px}
+.sec-head h2{font-size:clamp(26px,3.8vw,38px);margin:0}
+.sec-lead{font-size:17.5px;color:var(--ink-soft);max-width:780px;margin:6px 0 32px;line-height:1.78}
+h3{font-size:20px;margin:36px 0 12px;color:var(--ink)}
+h3::before{content:"";display:inline-block;width:9px;height:9px;background:var(--cinnabar);margin-right:11px;transform:translateY(-2px) rotate(45deg)}
+h4{font-size:16px;margin:22px 0 6px;font-weight:600;color:var(--azure)}
+
+.tbl{width:100%;border-collapse:collapse;margin:22px 0;font-size:14px;background:var(--panel)}
+.tbl caption{font-family:var(--mono);font-size:11.5px;letter-spacing:.1em;color:var(--ink-faint);text-align:left;padding:0 0 9px;text-transform:uppercase}
+.tbl th{background:var(--ink);color:var(--paper);font-family:var(--sans);font-weight:500;text-align:left;padding:10px 12px;font-size:12.5px;letter-spacing:.03em;vertical-align:top}
+.tbl td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top;line-height:1.6}
+.tbl tr:last-child td{border-bottom:none}
+.tbl tbody tr:nth-child(even){background:rgba(21,23,30,.025)}
+.tbl .lv{font-family:var(--mono);font-weight:600;color:var(--azure);white-space:nowrap}
+.tbl .w{font-family:var(--mono);font-weight:600;color:var(--cinnabar);white-space:nowrap}
+.tag{font-family:var(--mono);font-size:11px;padding:2px 7px;border:1px solid var(--azure);color:var(--azure);border-radius:3px;letter-spacing:.04em;white-space:nowrap;display:inline-block}
+.tag.red{border-color:var(--cinnabar);color:var(--cinnabar)}
+.tag.gold{border-color:var(--gold);color:var(--gold)}
+
+.note{border-left:3px solid var(--azure);background:var(--panel);padding:15px 19px;margin:24px 0;font-size:14.5px;line-height:1.72}
+.note.warn{border-left-color:var(--cinnabar);background:var(--cinnabar-soft)}
+.note .t{font-family:var(--mono);font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:var(--azure);font-weight:600;display:block;margin-bottom:5px}
+.note.warn .t{color:var(--cinnabar)}
+
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:26px 0}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin:26px 0}
+.card{background:var(--panel);border:1px solid var(--line);padding:20px 22px}
+.card .k{font-family:var(--mono);font-size:11px;color:var(--cinnabar);letter-spacing:.1em;font-weight:600}
+.card h4{margin:8px 0 8px;font-size:17px;color:var(--ink)}
+.card p{margin:0;font-size:14px;color:var(--ink-soft);line-height:1.68}
+
+figure{margin:30px 0;background:var(--panel);border:1px solid var(--line);padding:24px}
+figure svg{display:block;width:100%;height:auto}
+figcaption{font-family:var(--mono);font-size:11.5px;color:var(--ink-faint);letter-spacing:.05em;margin-top:14px;text-align:center}
+
+.mod{border-top:1px solid var(--ink);padding:24px 0}
+.mod-top{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+.mod-id{font-family:var(--mono);font-weight:600;color:var(--cinnabar);font-size:14px}
+.mod h3{margin:0;font-size:21px}
+.mod h3::before{display:none}
+.mod .role{font-family:var(--mono);font-size:11px;color:var(--ink-faint);letter-spacing:.05em}
+.mod p{margin:13px 0 0;color:var(--ink-soft);font-size:14.5px}
+.mod ul{margin:13px 0 0;padding-left:0;list-style:none}
+.mod ul li{position:relative;padding-left:21px;margin-bottom:6px;font-size:14px;color:var(--ink-soft)}
+.mod ul li::before{content:"";position:absolute;left:0;top:9px;width:7px;height:7px;background:var(--azure);transform:rotate(45deg)}
+.mod ul li b{color:var(--ink)}
+
+.phase{display:grid;grid-template-columns:92px 1fr;gap:22px;padding:24px 0;border-bottom:1px solid var(--line)}
+.phase .pid{font-family:var(--serif);font-weight:900;font-size:32px;color:var(--azure);line-height:1}
+.phase .pid small{display:block;font-family:var(--mono);font-size:11px;font-weight:500;color:var(--ink-faint);letter-spacing:.08em;margin-top:7px}
+.phase h3{margin:0 0 4px;font-size:19px}
+.phase h3::before{display:none}
+.phase .goal{font-family:var(--serif);font-style:italic;color:var(--cinnabar);font-size:14.5px;margin-bottom:10px}
+
+footer{padding:54px 0 70px;color:var(--ink-faint);font-size:13px}
+footer .wrap{border-top:2px solid var(--ink);padding-top:24px}
+footer .mono{color:var(--ink-soft);letter-spacing:.04em}
+
+@media(max-width:680px){
+  body{font-size:15.5px}
+  .grid2,.grid3{grid-template-columns:1fr}
+  .seal{width:58px;height:58px;top:28px;right:18px}.seal span{font-size:20px}.ver{top:96px;right:20px}
+  .factbar{flex-direction:column}.fact{border-right:none;border-bottom:1px solid var(--line)}
+  .phase{grid-template-columns:1fr;gap:8px}
+  .tbl{font-size:12.5px}.tbl th,.tbl td{padding:8px 8px}
+}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="wrap">
+    <div class="seal"><span>文砺</span></div>
+    <div class="ver">v2.0 · 整合版</div>
+    <div class="eyebrow">产品说明书 · 开发计划 / Consolidated PRD</div>
+    <h1 class="logo">文砺<span class="sub">A I · 语 文 精 准 成 长 系 统</span></h1>
+    <p class="thesis">金就砺则利，君子博学而日参省乎己。<br>
+      以教材为石，以诊断为砺，以日省为道——把一名学生的语文，从基础打磨到高分。
+      <span class="src">— 荀子《劝学》 · 面向南京中考的一对一 AI 提分系统（金陵·语文学伴 思路整合）</span>
+    </p>
+    <div class="factbar">
+      <div class="fact"><b>120<small style="font-size:14px">分</small></b><small>南京中考语文 · 全市排位胜负手</small></div>
+      <div class="fact"><b>7×4</b><small>能力坐标：7 能力域 × 4 梯度 = 28 子能力点</small></div>
+      <div class="fact"><b>4</b><small>具体提分闭环：试卷 / 作文 / 阅读 / 考前</small></div>
+      <div class="fact"><b>人机</b><small>大模型 + 规则引擎 + 教研审核 协同</small></div>
+    </div>
+  </div>
+</header>
+
+<nav class="tocbar">
+  <div class="wrap">
+    <a href="#s1">01 立意</a><a href="#s2">02 分值地图</a><a href="#s3">03 能力模型</a><a href="#s4">04 核心闭环</a>
+    <a href="#s5">05 功能模块</a><a href="#s6">06 用户分型</a><a href="#s7">07 系统架构</a><a href="#s8">08 合规边界</a>
+    <a href="#s9">09 研发路线</a><a href="#s10">10 内容生产</a><a href="#s11">11 技术·团队</a><a href="#s12">12 风险</a><a href="#s13">13 度量</a>
+  </div>
+</nav>
+
+<main class="wrap">
+
+<!-- 01 -->
+<section id="s1">
+  <div class="part-label">第一部 · 产品说明书</div>
+  <div class="sec-head"><span class="sec-num">01</span><h2>立意与教育理念</h2></div>
+  <p class="sec-lead">文砺不是题库 App，也不是作文代写器，而是一位被产品化的特级语文教师。它回应一个真实判断：南京中考语文是排位的胜负手，而语文提分难，难在它不是知识点的堆叠，而是能力系统的竞争——刷题能换来达标，换不来高分。</p>
+
+  <h3>三条底层判断</h3>
+  <div class="grid3">
+    <div class="card"><div class="k">CONVICTION 01</div><h4>考的是能力系统，不是知识堆叠</h4><p>120 分表面考字词、默写、阅读、作文，底层考的是真实情境中的理解、判断、表达与审美。所以产品做"能力建模"，不做"题目搬运"。</p></div>
+    <div class="card"><div class="k">CONVICTION 02</div><h4>提分关键不是多写，是写后知道为何丢分</h4><p>很多学生长期低效，因为练完只得到一个分数，不知失分机制。文砺把失分拆成可诊断、可训练、可复盘的细颗粒能力点。</p></div>
+    <div class="card"><div class="k">CONVICTION 03</div><h4>AI 是过程型老师，不是答案贩卖机</h4><p>AI 承担四个角色：<b>诊断师 · 陪练教练 · 批改助教 · 复盘导师</b>。它把隐性的语文思维显性化，但不代写、不套作、不押题、不背模板。</p></div>
+  </div>
+
+  <h3>命题在变，思路也要变</h3>
+  <p>近年南京卷走向清晰：<strong>取消单项选择、阅读量加大、整卷以"游""味"等大情境串联、跨学科命题渐增，整体向高考靠拢。</strong>命题组反复传递"授人以渔"。这意味着以"套路 + 题海"为内核的产品方向上就站错了队。文砺把训练重心放在<strong>关键能力与思维品质</strong>上，套路只是脚手架，不是终点。</p>
+
+  <h3>立在课程标准的四根柱子上</h3>
+  <p>《义务教育语文课程标准（2022 年版）》把核心素养凝练为四维：<strong>文化自信、语言运用、思维能力、审美创造</strong>。文砺的每一个能力维度、每一道生成题、每一条提分建议，都向这四维回溯——既是教育正当性，也是与南京"素养立意"命题趋势的对齐。</p>
+
+  <h3>五条设计原则</h3>
+  <div class="grid2">
+    <div class="card"><div class="k">PRINCIPLE 01 · 本于教材</div><h4>课本为本，绝不超纲</h4><p>南京卷"以书为本"。知识底座以七至九年级统编课本为根，讲解与命题可溯源到具体课文、单元、页码；85 篇必背、120 实词、18 虚词全部入库。</p></div>
+    <div class="card"><div class="k">PRINCIPLE 02 · 情境为纲</div><h4>真实任务驱动</h4><p>对齐南京"基于单题/板块/整卷"的情境命题。训练以真实任务展开——办寿宴、为卫星命名、写洗手说明——在动态情境中综合调用能力。</p></div>
+    <div class="card"><div class="k">PRINCIPLE 03 · 读写一体</div><h4>读什么喂养写什么</h4><p>阅读与写作不拆两张皮。名著整本书、现代文精读与作文素材在同一脉络上流动：写不顺，回溯读得不深。</p></div>
+    <div class="card"><div class="k">PRINCIPLE 04 · 诊断驱动</div><h4>一生一案</h4><p>不预设通用进度，先读懂"这一个学生"的失分结构，再开"这一个学生"的方子。这是"一对一"的实质，也是"日参省"的算法化。</p></div>
+    <div class="card"><div class="k">PRINCIPLE 05 · 南京在地</div><h4>带着这座城的呼吸</h4><p>"世界文学之都"是南京卷底色：文学踪迹、金陵文脉、城市记忆频频入题。内置南京文化语料，供情境命题与写作素材调用。</p></div>
+    <div class="card"><div class="k">PRINCIPLE 06 · 人机协同</div><h4>AI 起草，教师把关</h4><p>诊断、命题、批改的产物，关键处必经教研规则与人工审核。AI 加速，但语文内容的最终品控是人——这是质量的根，不是点缀。</p></div>
+  </div>
+</section>
+
+<!-- 02 分值地图 -->
+<section id="s2">
+  <div class="sec-head"><span class="sec-num">02</span><h2>南京卷分值地图</h2></div>
+  <p class="sec-lead">一切能力建模与提分排序，都建在这张图上。把 120 分按真实板块拆开，每个板块有不同的"得分性格"——有的零容错必须满分，有的是拉开差距的战场，有的是占比最大的决胜高地。看清这张图，才知道时间该花在哪。</p>
+
+  <table class="tbl">
+    <caption>南京中考语文试卷结构（近年代表，2023–2025）</caption>
+    <thead><tr><th style="width:14%">板块</th><th style="width:9%">分值</th><th style="width:40%">主要构成</th><th>得分定位</th></tr></thead>
+    <tbody>
+      <tr><td><strong>积累与运用</strong></td><td><span class="w">≈23</span></td><td>古诗文默写 ≈10 · 字音字形词语 ≈4 · 文学文化常识 ≈3 · 语言运用/综合性学习 ≈6</td><td><span class="tag">满分区</span> 会就得分，零容错</td></tr>
+      <tr><td><strong>阅读理解</strong></td><td><span class="w">≈43</span></td><td>古诗文阅读 ≈10 · 说明/非连续文本 ≈11 · 文学类现代文 ≈14 · 名著阅读 ≈7–8</td><td><span class="tag red">拉分区</span> 区分中等生与优等生</td></tr>
+      <tr><td><strong>写作</strong></td><td><span class="w">≈54</span></td><td>小作文/应用文 ≈9 · 大作文记叙/议论 ≈45（含书写）</td><td><span class="tag red">决胜区</span> 占 45%，基础+发展双轨</td></tr>
+      <tr><td><strong>书写卷面</strong></td><td><span class="w">3–5</span></td><td>正楷/行楷规范、整洁（部分年份含于大作文计分）</td><td><span class="tag gold">保分区</span> 稳拿不丢</td></tr>
+      <tr><td><strong>合计</strong></td><td><span class="w">120</span></td><td colspan="2">闭卷笔试，120 分钟</td></tr>
+    </tbody>
+  </table>
+  <div class="note warn"><span class="t">口径说明</span>上表为近年真题的<strong>代表性结构</strong>，各板块细分分值、书写计分方式（独立计 3 分 / 含于大作文 5 分）逐年微调。系统须以南京市当年《考试说明》与真题为准动态校准，<strong>不得对外宣称固定分值或押中结构。</strong></div>
+
+  <h3>ROI 的来源</h3>
+  <p>这张分值地图直接喂给"提分 ROI"算法（见 §4）。举两个对照：作文从基准约 35 分提到 42 分（+7），其性价比相当于数学多对一道大题；而积累板块的默写、字形属"满分区"，补满见效快、确定性高。<strong>优先级 = 板块权重 × 当前失分 × 可提升系数</strong>——让有限的复习时间落在回报最高的格子上。</p>
+</section>
+
+<!-- 03 能力模型 -->
+<section id="s3">
+  <div class="sec-head"><span class="sec-num">03</span><h2>能力模型「文砺坐标」</h2></div>
+  <p class="sec-lead">产品的脊柱。把"语文好不好"这件模糊的事，拆成 7 个能力域 × 4 个难度梯度的网格、下辖 28 个子能力点。学生的每一次失分都能落到坐标里某一格；每一步成长都能在坐标上被看见。</p>
+
+  <figure>
+    <svg viewBox="0 0 920 540" xmlns="http://www.w3.org/2000/svg" font-family="'IBM Plex Mono',monospace">
+      <text x="60" y="32" font-size="13" fill="#1F4E5F" font-weight="600" letter-spacing="1">能力域 ↓ × 难度梯度 → ＝ 文砺坐标（含板块权重）</text>
+      <g font-size="12" fill="#15171E" font-weight="600">
+        <text x="345" y="66" text-anchor="middle">L1 识记达标</text>
+        <text x="475" y="66" text-anchor="middle">L2 理解应用</text>
+        <text x="605" y="66" text-anchor="middle">L3 分析综合</text>
+        <text x="735" y="66" text-anchor="middle">L4 鉴赏创造</text>
+      </g>
+      <text x="822" y="66" font-size="11" fill="#9A6B14" font-weight="600">基础→高分</text>
+      <line x1="280" y1="76" x2="820" y2="76" stroke="#9A6B14" stroke-width="1.2"/><polygon points="820,76 812,72 812,80" fill="#9A6B14"/>
+      <!-- rows -->
+      <g font-size="12.5" fill="#15171E" font-weight="600">
+        <text x="36" y="106">D1 基础积累·语用</text>
+        <text x="36" y="164">D2 古诗文·传统文化</text>
+        <text x="36" y="222">D3 现代文阅读</text>
+        <text x="36" y="280">D4 名著·整本书</text>
+        <text x="36" y="338">D5 写作表达</text>
+        <text x="36" y="396">D6 综合性学习·情境</text>
+        <text x="36" y="454">D7 考场策略·稳定</text>
+      </g>
+      <g font-size="10.5" fill="#B23A2E" font-weight="600">
+        <text x="36" y="120">权重 ≈23</text><text x="36" y="178">≈20</text><text x="36" y="236">≈22</text>
+        <text x="36" y="294">≈8</text><text x="36" y="352">≈54</text><text x="36" y="410">跨板块</text><text x="36" y="468">跨板块</text>
+      </g>
+      <!-- cells: x=280+col*130 w=120 h=42 ; y=88+row*58 -->
+      <g>
+        <!-- D1 --><rect x="280" y="88" width="120" height="42" fill="#1F4E5F" opacity="0.85"/><rect x="410" y="88" width="120" height="42" fill="#1F4E5F" opacity="0.55"/><rect x="540" y="88" width="120" height="42" fill="#1F4E5F" opacity="0.30"/><rect x="670" y="88" width="150" height="42" fill="#1F4E5F" opacity="0.14"/>
+        <!-- D2 --><rect x="280" y="146" width="120" height="42" fill="#1F4E5F" opacity="0.80"/><rect x="410" y="146" width="120" height="42" fill="#1F4E5F" opacity="0.30"/><rect x="540" y="146" width="120" height="42" fill="#1F4E5F" opacity="0.18" stroke="#B23A2E" stroke-width="2.5"/><rect x="670" y="146" width="150" height="42" fill="#1F4E5F" opacity="0.10"/>
+        <!-- D3 --><rect x="280" y="204" width="120" height="42" fill="#1F4E5F" opacity="0.70"/><rect x="410" y="204" width="120" height="42" fill="#1F4E5F" opacity="0.42"/><rect x="540" y="204" width="120" height="42" fill="#1F4E5F" opacity="0.22" stroke="#B23A2E" stroke-width="2.5"/><rect x="670" y="204" width="150" height="42" fill="#1F4E5F" opacity="0.10"/>
+        <!-- D4 --><rect x="280" y="262" width="120" height="42" fill="#1F4E5F" opacity="0.60"/><rect x="410" y="262" width="120" height="42" fill="#1F4E5F" opacity="0.34"/><rect x="540" y="262" width="120" height="42" fill="#1F4E5F" opacity="0.18"/><rect x="670" y="262" width="150" height="42" fill="#1F4E5F" opacity="0.10"/>
+        <!-- D5 --><rect x="280" y="320" width="120" height="42" fill="#1F4E5F" opacity="0.55"/><rect x="410" y="320" width="120" height="42" fill="#1F4E5F" opacity="0.40"/><rect x="540" y="320" width="120" height="42" fill="#1F4E5F" opacity="0.20" stroke="#B23A2E" stroke-width="2.5"/><rect x="670" y="320" width="150" height="42" fill="#1F4E5F" opacity="0.10"/>
+        <!-- D6 --><rect x="280" y="378" width="120" height="42" fill="#1F4E5F" opacity="0.45"/><rect x="410" y="378" width="120" height="42" fill="#1F4E5F" opacity="0.28"/><rect x="540" y="378" width="120" height="42" fill="#1F4E5F" opacity="0.16"/><rect x="670" y="378" width="150" height="42" fill="#1F4E5F" opacity="0.10"/>
+        <!-- D7 --><rect x="280" y="436" width="120" height="42" fill="#1F4E5F" opacity="0.50"/><rect x="410" y="436" width="120" height="42" fill="#1F4E5F" opacity="0.30"/><rect x="540" y="436" width="120" height="42" fill="#1F4E5F" opacity="0.20"/><rect x="670" y="436" width="150" height="42" fill="#1F4E5F" opacity="0.10"/>
+      </g>
+      <g font-size="11" fill="#3C4049">
+        <rect x="280" y="500" width="20" height="13" fill="#1F4E5F" opacity="0.85"/><text x="306" y="511">已掌握</text>
+        <rect x="368" y="500" width="20" height="13" fill="#1F4E5F" opacity="0.15"/><text x="394" y="511">薄弱</text>
+        <rect x="448" y="500" width="20" height="13" fill="#1F4E5F" opacity="0.18" stroke="#B23A2E" stroke-width="2.5"/><text x="476" y="511" fill="#B23A2E" font-weight="600">优先提分点（权重×失分×可提升）</text>
+      </g>
+    </svg>
+    <figcaption>图 3-1　文砺能力坐标：7 域 × 4 级，左栏标注板块权重，朱框为系统判定的优先提分点</figcaption>
+  </figure>
+
+  <table class="tbl">
+    <caption>七大能力域 · 28 子能力点（节选示意）</caption>
+    <thead><tr><th style="width:16%">能力域</th><th style="width:46%">子能力点</th><th>四级梯度形态</th></tr></thead>
+    <tbody>
+      <tr><td><strong>D1 基础积累·语用</strong></td><td>字音字形 · 词语辨析 · 病句标点 · 句式衔接 · 语境表达 · 图文转换 · 应用文微写作</td><td><span class="lv">L1</span>认读默写→<span class="lv">L4</span>跨学科情境得体表达</td></tr>
+      <tr><td><strong>D2 古诗文·传统文化</strong></td><td>课内积累 · 实词虚词 · 断句翻译 · 内容理解 · 诗歌意象情感 · 手法赏析 · 文化常识</td><td><span class="lv">L1</span>背诵默写→<span class="lv">L4</span>比较鉴赏与文化阐释</td></tr>
+      <tr><td><strong>D3 现代文阅读</strong></td><td>信息筛选 · 概括 · 句段作用 · 人物形象 · 语言赏析 · 主旨把握 · 观点评价 · 非连续整合</td><td><span class="lv">L1</span>信息提取→<span class="lv">L4</span>评价创意与批判性阅读</td></tr>
+      <tr><td><strong>D4 名著·整本书</strong></td><td>人物情节 · 主题理解 · 人物比较 · 情节勾连 · 读书方法 · 专题探究 · 名著联系现实</td><td><span class="lv">L1</span>情节识记→<span class="lv">L4</span>整本书方法迁移</td></tr>
+      <tr><td><strong>D5 写作表达</strong></td><td>审题立意 · 选材构思 · 结构层次 · 细节描写 · 思想深度 · 语言表现 · 小作文任务表达</td><td><span class="lv">L1</span>切题成文→<span class="lv">L4</span>立意深刻·发展等级</td></tr>
+      <tr><td><strong>D6 综合性学习·情境</strong></td><td>活动策划 · 材料探究 · 观点表达 · 口语交际 · 演讲稿倡议书 · 推荐语 · 跨学科小综合</td><td><span class="lv">L1</span>完成任务→<span class="lv">L4</span>复杂情境综合解决</td></tr>
+      <tr><td><strong>D7 考场策略·稳定</strong></td><td>时间分配 · 答题顺序 · 阅读标注 · 作文构思 · 检查策略 · 难题取舍 · 卷面规范</td><td><span class="lv">L1</span>不犯低级错→<span class="lv">L4</span>高压下稳定发挥</td></tr>
+    </tbody>
+  </table>
+  <p>D6、D7 是本版相较初稿的关键补全——它们正是南京卷最爱考、又最难靠刷题解决的两块（情境化综合表达、考场稳定性）。贯穿七域之上还有一层<strong>思维与素养主线</strong>（逻辑、批判、审美、文化自信），不单独成题，却是 L3–L4 高分区的隐性门槛，也是"刷题到不了高分"的真正原因。</p>
+
+  <h3>错因分类学：把"做错了"翻译成"为什么错"</h3>
+  <p>诊断的价值不在指出"错了"，而在归因。每处失分映射到六类错因，处方因错因而异——审题性的错，练再多知识点也无效。</p>
+  <table class="tbl">
+    <thead><tr><th style="width:16%">错因</th><th style="width:44%">典型表现</th><th>处方方向</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tag">知识性</span></td><td>字词记错、实词义项不清、默写错字、文学常识混淆</td><td>知识微课 + 间隔复现</td></tr>
+      <tr><td><span class="tag">审题性</span></td><td>答非所问、漏答分点、未抓限定词、作文立意漂移</td><td>审题四步法 + 题干圈画</td></tr>
+      <tr><td><span class="tag">定位性</span></td><td>文本区域找错、信息筛选遗漏、依据缺失</td><td>圈点勾画 + 回归文本训练</td></tr>
+      <tr><td><span class="tag">思维性</span></td><td>概括不全、推断无据、赏析无层次、论证断裂</td><td>思维支架 + 同类变式</td></tr>
+      <tr><td><span class="tag red">表达规范性</span></td><td>要点对但表述乱、术语缺失、语言平淡、书写潦草、字数不足</td><td>答题范式 + 升格 + 卷面专项</td></tr>
+      <tr><td><span class="tag red">策略时间性</span></td><td>时间分配失衡、难题死磕、阅读量大读不完</td><td>整卷节奏 + 取舍策略训练</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- 04 核心闭环 -->
+<section id="s4">
+  <div class="sec-head"><span class="sec-num">04</span><h2>核心闭环</h2></div>
+  <p class="sec-lead">文砺的运转是一个不断收紧的螺旋：诊断 → 规划 → 学习 → 训练 → 批改 → 复盘 → 再诊断。每一轮都让能力坐标上的薄弱格更亮一点。这是"日参省"的产品形态。</p>
+
+  <figure>
+    <svg viewBox="0 0 920 360" xmlns="http://www.w3.org/2000/svg" font-family="'IBM Plex Mono',monospace">
+      <defs><marker id="ar" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#1F4E5F"/></marker></defs>
+      <circle cx="120" cy="160" r="50" fill="#F4F1E8" stroke="#1F4E5F" stroke-width="2"/><text x="120" y="152" text-anchor="middle" font-family="'Noto Serif SC',serif" font-size="28" font-weight="700" fill="#1F4E5F">诊</text><text x="120" y="178" text-anchor="middle" font-size="10.5" fill="#3C4049">上传·测评</text>
+      <circle cx="320" cy="100" r="50" fill="#F4F1E8" stroke="#1F4E5F" stroke-width="2"/><text x="320" y="92" text-anchor="middle" font-family="'Noto Serif SC',serif" font-size="28" font-weight="700" fill="#1F4E5F">断</text><text x="320" y="118" text-anchor="middle" font-size="10.5" fill="#3C4049">归因·画像</text>
+      <circle cx="520" cy="100" r="50" fill="#F4F1E8" stroke="#1F4E5F" stroke-width="2"/><text x="520" y="92" text-anchor="middle" font-family="'Noto Serif SC',serif" font-size="28" font-weight="700" fill="#1F4E5F">方</text><text x="520" y="118" text-anchor="middle" font-size="10.5" fill="#3C4049">处方·计划</text>
+      <circle cx="720" cy="160" r="50" fill="#F4F1E8" stroke="#1F4E5F" stroke-width="2"/><text x="720" y="152" text-anchor="middle" font-family="'Noto Serif SC',serif" font-size="28" font-weight="700" fill="#1F4E5F">练</text><text x="720" y="178" text-anchor="middle" font-size="10.5" fill="#3C4049">微课·陪练</text>
+      <circle cx="520" cy="270" r="50" fill="#15171E" stroke="#B23A2E" stroke-width="2.5"/><text x="520" y="262" text-anchor="middle" font-family="'Noto Serif SC',serif" font-size="28" font-weight="700" fill="#ECE7DA">验</text><text x="520" y="288" text-anchor="middle" font-size="10.5" fill="#ECE7DA">出题·复测</text>
+      <path d="M161,130 Q230,90 269,98" fill="none" stroke="#1F4E5F" stroke-width="2" marker-end="url(#ar)"/>
+      <path d="M370,100 L468,100" fill="none" stroke="#1F4E5F" stroke-width="2" marker-end="url(#ar)"/>
+      <path d="M570,130 Q650,90 678,130" fill="none" stroke="#1F4E5F" stroke-width="2" marker-end="url(#ar)"/>
+      <path d="M698,205 Q630,270 572,268" fill="none" stroke="#1F4E5F" stroke-width="2" marker-end="url(#ar)"/>
+      <path d="M470,278 Q250,300 152,208" fill="none" stroke="#B23A2E" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#ar)"/>
+      <text x="250" y="332" font-size="11" fill="#B23A2E" font-weight="600">复测结果回流 → 重写学情画像，收紧下一轮</text>
+    </svg>
+    <figcaption>图 4-1　主闭环：朱色虚线为"日参省"回流——每轮复测都更新能力坐标</figcaption>
+  </figure>
+
+  <h3>四条可落地的子闭环</h3>
+  <p>主闭环之下，是四条针对具体场景、可直接编码实现的回路。它们让"闭环"从概念变成产品里看得见的流程。</p>
+  <table class="tbl">
+    <thead><tr><th style="width:13%">闭环</th><th>流程</th></tr></thead>
+    <tbody>
+      <tr><td><strong>试卷闭环</strong></td><td>上传试卷 → 识别得分与错题 → 失分报告 → 圈出 3 个最关键薄弱点 → 推送对应微课 → 变式训练 → 3 天后复测 → 更新画像</td></tr>
+      <tr><td><strong>作文闭环</strong></td><td>上传作文 → 五维诊断 → 给出 3 条最关键修改建议 → 学生二次修改 → 对比修改前后 → 收录优秀句段 → 推送下一篇针对性训练</td></tr>
+      <tr><td><strong>阅读闭环</strong></td><td>完成阅读题 → 判断错因 → AI 引导回到文本找依据 → 学生重答 → 展示标准答题结构 → 同类变式 → 沉淀为题型方法卡</td></tr>
+      <tr><td><strong>考前闭环</strong></td><td>模拟卷训练 → 分模块失分统计 → 生成考前失分清单 → 一周内集中修复高频失分 → 限时组合训练 → 形成个人考场策略</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note"><span class="t">提分 ROI 优先级算法</span>并非"哪里弱补哪里"，而是按 <strong>板块权重 × 当前失分 × 可提升系数</strong> 排序：默写补满（高确定、快见效）排在作文深度立意（慢周期）之前同等失分下优先处理。这让有限时间花在回报最高的格子——"顶层系统设计"在学习路径上的落点。</div>
+</section>
+
+<!-- 05 功能模块 -->
+<section id="s5">
+  <div class="sec-head"><span class="sec-num">05</span><h2>功能模块</h2></div>
+  <p class="sec-lead">六大引擎支撑完整闭环。每个模块都以学生能感知的语言命名，而非系统内部术语。</p>
+
+  <div class="mod">
+    <div class="mod-top"><span class="mod-id">M1</span><h3>学情诊断引擎</h3><span class="role">DIAGNOSTIC · 入口与地基</span></div>
+    <p>学生拍下作业本、月考卷、作文、错题、老师批改稿，系统十几秒还原一张可读的"语文体检报告"。它解决最痛的盲区：知道分低，不知道低在哪、为什么低。</p>
+    <ul>
+      <li><b>多源采集：</b>日常作业、单元/期中期末卷、模拟卷、作文原稿、批改后作文、错题本、课堂笔记；手写与印刷混排</li>
+      <li><b>首次诊断卷：</b>历史材料不足时，提供 30–45 分钟、少量高区分度题的 AI 诊断卷，快速判定能力层级（不追求覆盖全考点）</li>
+      <li><b>归因引擎：</b>每处失分落到「能力坐标 × 六类错因」，而非只判对错</li>
+      <li><b>三件套输出：</b>七域能力雷达图、失分热力图、全市位次预估区间（对齐南京不公开排名、只给位次的口径）</li>
+    </ul>
+    <div class="note"><span class="t">失分画像的语言</span>系统不说"阅读差"，而说——"信息筛选有遗漏 + 概括语言不够抽象 + 缺少作用分析的答题角度"；不说"作文不好"，而说——"审题能扣住，但材料普通、叙事没有转折、结尾升华空泛"。可诊断，才可训练。</div>
+  </div>
+
+  <div class="mod">
+    <div class="mod-top"><span class="mod-id">M2</span><h3>处方与学习计划引擎</h3><span class="role">PRESCRIPTION · 一对一的实质</span></div>
+    <p>把诊断翻译成可执行的方子。不是发通用大纲，而是为"这一个学生"给出排好优先级的提分路径与个人化方法建议。</p>
+    <ul>
+      <li><b>三层计划：</b>长期路线（按年级设年度目标）→ 阶段计划（4 周一周期）→ 每日任务（20–40 分钟，避免无效堆量）</li>
+      <li><b>ROI 排序：</b>高权重×高失分×高可提升的格子排在最前，标注"预计提分区间"（明示为预测非承诺）</li>
+      <li><b>方法处方：</b>针对个体错因画像，推送对应学习心法（审题四步、文言断句、阅读答题范式、碎片时间古诗文循环记忆）</li>
+      <li><b>动态调整：</b>同一能力点连续三次出错自动降阶讲解，连续三次稳定正确自动升阶训练</li>
+    </ul>
+  </div>
+
+  <div class="mod">
+    <div class="mod-top"><span class="mod-id">M3</span><h3>内容与学霸方法库</h3><span class="role">CONTENT · 把暗知识显性化</span></div>
+    <p>两类内容：体系化的<strong>知识微课</strong>（对齐每一个能力格，3–6 分钟），与历年高分生的<strong>方法心法</strong>——那些"学霸会、老师懂、却很少被结构化写下来"的暗知识。课程按基础/专题/冲刺三类、初一/初二/初三三阶组织。</p>
+    <ul>
+      <li><b>基础课：</b>统编六册字词、古诗文逐句讲解与默写坑点、文言实虚词、课文精读、名著导读</li>
+      <li><b>专题课：</b>现代文按概括/含义/作用/赏析/形象/主旨/探究/非连分型突破；古诗文意象情感手法；作文审题/选材/结构/语言</li>
+      <li><b>冲刺课：</b>复杂文本、跨文本比较、文学类深度赏析、思辨写作、南京地方文化素材库、限时模拟、考场失误清单</li>
+      <li><b>学霸方法库：</b>默写记忆法、五步精读法、"一材通吃六类主题"的素材活用、卷面提分术——经脱敏提炼自真实高分生</li>
+    </ul>
+  </div>
+
+  <div class="mod">
+    <div class="mod-top"><span class="mod-id">M4</span><h3>命题与测评引擎</h3><span class="role">ASSESSMENT · "验"的核心</span></div>
+    <p>验证学习成果的发动机。按能力维度与难度层<strong>仿南京命题风格</strong>生成新题——情境化、本于教材、带"文学之都"气息、跨学科——再自动批改、复测、回流。所有 AI 生成题<strong>必经教研审核方可入库</strong>，不直接推给学生。</p>
+    <ul>
+      <li><b>定向生成：</b>指定「维度×难度×错因」出变式题或全新题，绝不题海</li>
+      <li><b>题目标签体系：</b>每题至少标注 年级·册别·知识点·能力点·题型·难度·预计用时·区分度·常见错因·解析层级·对应课程</li>
+      <li><b>自适应出题：</b>基于知识追踪（BKT/DKT）实时调难度，使训练落在"最近发展区"；薄弱生先做低难度高反馈题</li>
+      <li><b>测评分级：</b>每日小测（5–10 分）· 周测（20–30 分）· 月测（接近中考结构）· 考前全真限时模拟</li>
+    </ul>
+  </div>
+
+  <div class="mod">
+    <div class="mod-top"><span class="mod-id">M5</span><h3>作文批改与升格引擎</h3><span class="role">WRITING · 决胜高地</span></div>
+    <p>作文占全卷约 45%，是"想拿高分却最难"之处。文砺以五维量表批改，逐句朱批，给可操作的升格路径，而非一句"语言再优美些"。<strong>严禁一键生成整篇作文作为学生作品</strong>——只做诊断、局部修改、句段润色示范、素材追问与二次修改任务。</p>
+    <ul>
+      <li><b>五维量表：</b>审题立意 · 内容材料 · 结构层次 · 语言表达 · 书写卷面（小作文另设任务完成度、格式规范、对象意识、语言得体）</li>
+      <li><b>对齐南京评分：</b>基础等级 + 发展等级双轨，参照基准分约 35 给"起步分 + 加分项"</li>
+      <li><b>五阶训练路径：</b>写清楚（中心结构）→ 写具体（细节场景）→ 写深刻（升华思辨）→ 写有文采（语言节奏修辞）→ 写稳定（限时构思成文）</li>
+      <li><b>作文成长档案：</b>常用题材、常见问题、优秀句段、修改前后对比、二次成文质量留痕</li>
+    </ul>
+    <div class="note warn"><span class="t">能力诚实声明</span>作文"立意深刻 / 发展等级"判断是当前 AI 最难稳定对齐人工阅卷之处。策略：<strong>客观维度（结构、规范、语言硬伤）AI 主判；主观高分维度给"参考分 + 依据"并显式标注不确定度</strong>，引入人工复核抽样校准——不向学生承诺"AI 判分等于中考阅卷"。</div>
+  </div>
+
+  <div class="mod">
+    <div class="mod-top"><span class="mod-id">M6</span><h3>AI 陪练与错题复盘</h3><span class="role">COACHING · 过程型老师</span></div>
+    <p>做题时 AI 不直接给答案，而以苏格拉底式追问引导；错题不进收藏夹，而进"错因数据库"。这是"过程型老师"定位最实的落点，也是反代写的护栏。</p>
+    <ul>
+      <li><b>三级提示：</b>一级提醒审题方向 → 二级定位文本区域 → 三级给出答题结构 → 多次无法推进才展示完整解析</li>
+      <li><b>苏格拉底追问：</b>"题干要你分析人物形象，文中哪些动作、语言、心理可作依据？""你只写了性格词，能从第 3 段找一句话支撑吗？"</li>
+      <li><b>错题=错因库：</b>每道错题关联同能力点训练题；三次复盘机制——当天理解错因、3 天后做变式、14 天后混合检测</li>
+      <li><b>复发预警：</b>"你不是不会这道题，而是'句段作用题'的答题结构没有稳定形成。"</li>
+    </ul>
+  </div>
+</section>
+
+<!-- 06 用户分型 -->
+<section id="s6">
+  <div class="sec-head"><span class="sec-num">06</span><h2>用户分型与三端</h2></div>
+  <p class="sec-lead">同一套引擎，对四类学生给出四条提分路径，对三端角色给出三种界面。学生是主体，家长需要"看懂价值"，教师/教研端是人机协同的放大器。</p>
+
+  <table class="tbl">
+    <caption>四类学生 × 提分路径</caption>
+    <thead><tr><th style="width:18%">学生类型</th><th style="width:34%">特征</th><th>推荐提分路径</th></tr></thead>
+    <tbody>
+      <tr><td><strong>基础薄弱型</strong></td><td>字词默写文言不稳、答题缺规范、作文素材贫乏、波动大</td><td>课内基础稳固 → 文言默写与翻译 → 阅读答题规范 → 作文基本结构</td></tr>
+      <tr><td><strong>中等提升型</strong></td><td>基础能拿一部分，阅读、作文、综合性学习易失分</td><td>阅读题型归纳 → 答案层次训练 → 作文素材升级 → 模拟卷复盘</td></tr>
+      <tr><td><strong>高分冲刺型</strong></td><td>基础稳，分数卡在瓶颈区间</td><td>复杂文本阅读 → 赏析题高阶表达 → 思辨型作文 → 限时整卷策略</td></tr>
+      <tr><td><strong>目标校冲刺型</strong></td><td>总分竞争激烈，语文需成为拉分项</td><td>高强度高质量高复盘密度训练系统 + 考场稳定性专项</td></tr>
+    </tbody>
+  </table>
+
+  <table class="tbl">
+    <caption>三端职责</caption>
+    <thead><tr><th style="width:18%">角色</th><th style="width:40%">核心诉求</th><th>关键界面</th></tr></thead>
+    <tbody>
+      <tr><td><strong>学生端</strong>（主）</td><td>知道补哪、怎么补、补没补上，且不被题海淹没</td><td>今日任务 · 能力雷达 · 微课与精练 · AI 陪练 · 作文批改 · 错题复盘</td></tr>
+      <tr><td><strong>家长端</strong></td><td>看见价值——用自然语言讲清进度、问题、下周建议，不堆技术指标</td><td>学习周报 · 能力变化 · 薄弱点提醒 · 阶段诊断报告</td></tr>
+      <tr><td><strong>教师/教研端</strong></td><td>班级共性薄弱点、批量布置与组卷、作文批改辅助；人机协同而非替代</td><td>班级看板 · 一键组卷 · 作文批改辅助 · 讲评材料 · 题库审核后台</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><span class="t">家长报告的语气</span>"本周孩子现代文阅读完成较好，但答案层次仍偏单薄。建议下周重点训练'概括 + 依据 + 作用'三步表达。"——自然语言，可理解，给方向。</div>
+</section>
+
+<!-- 07 架构 -->
+<section id="s7">
+  <div class="sec-head"><span class="sec-num">07</span><h2>AI 系统架构</h2></div>
+  <p class="sec-lead">面向工程实现的一层。本版最重要的修订：架构从"全 AI"改为<strong>人机协同混合体</strong>——大模型负责理解与生成，知识图谱负责结构化关联，规则引擎负责评分与调度，教研审核负责质量门禁，学生画像负责个性化。选型贴合 Next.js / Supabase / Vercel + Anthropic Messages &amp; Skills 路径。</p>
+
+  <figure>
+    <svg viewBox="0 0 920 560" xmlns="http://www.w3.org/2000/svg" font-family="'IBM Plex Mono',monospace" font-size="12">
+      <defs><marker id="a2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#3C4049"/></marker></defs>
+      <rect x="40" y="26" width="840" height="58" fill="#F4F1E8" stroke="#15171E" stroke-width="1.5"/>
+      <text x="56" y="48" font-weight="600" fill="#1F4E5F">① 客户端　CLIENT（移动优先）</text>
+      <text x="56" y="70" fill="#3C4049">Next.js / React · 拍照上传 · 任务卡 · AI 陪练 · 批改视图 · 成长看板　｜　学生 · 家长 · 教研</text>
+      <rect x="40" y="106" width="840" height="138" fill="#ECE7DA" stroke="#1F4E5F" stroke-width="1.8"/>
+      <text x="56" y="128" font-weight="600" fill="#1F4E5F">② AI 编排层　AGENT ORCHESTRATION</text>
+      <g>
+        <rect x="58" y="144" width="148" height="86" fill="#F4F1E8" stroke="#15171E"/><text x="132" y="170" text-anchor="middle" font-weight="600">诊断 Agent</text><text x="132" y="190" text-anchor="middle" fill="#3C4049" font-size="10.5">OCR·版面解析</text><text x="132" y="207" text-anchor="middle" fill="#3C4049" font-size="10.5">错因归因</text>
+        <rect x="217" y="144" width="148" height="86" fill="#F4F1E8" stroke="#15171E"/><text x="291" y="170" text-anchor="middle" font-weight="600">处方 Agent</text><text x="291" y="190" text-anchor="middle" fill="#3C4049" font-size="10.5">ROI 排序</text><text x="291" y="207" text-anchor="middle" fill="#3C4049" font-size="10.5">计划生成</text>
+        <rect x="376" y="144" width="148" height="86" fill="#F4F1E8" stroke="#15171E"/><text x="450" y="170" text-anchor="middle" font-weight="600">命题 Agent</text><text x="450" y="190" text-anchor="middle" fill="#3C4049" font-size="10.5">定向出题</text><text x="450" y="207" text-anchor="middle" fill="#3C4049" font-size="10.5">风格对齐</text>
+        <rect x="535" y="144" width="148" height="86" fill="#F4F1E8" stroke="#B23A2E" stroke-width="1.8"/><text x="609" y="170" text-anchor="middle" font-weight="600" fill="#B23A2E">批改 Agent</text><text x="609" y="190" text-anchor="middle" fill="#3C4049" font-size="10.5">量表评分</text><text x="609" y="207" text-anchor="middle" fill="#3C4049" font-size="10.5">逐句升格</text>
+        <rect x="694" y="144" width="168" height="86" fill="#F4F1E8" stroke="#15171E"/><text x="778" y="170" text-anchor="middle" font-weight="600">陪练 Agent</text><text x="778" y="190" text-anchor="middle" fill="#3C4049" font-size="10.5">苏格拉底分层提示</text><text x="778" y="207" text-anchor="middle" fill="#3C4049" font-size="10.5">微课·答疑</text>
+      </g>
+      <!-- 规则引擎 + 教研审核 side rails -->
+      <rect x="40" y="266" width="410" height="62" fill="#ECE7DA" stroke="#9A6B14" stroke-width="1.8"/>
+      <text x="56" y="288" font-weight="600" fill="#9A6B14">③a 规则引擎　RULE ENGINE</text>
+      <text x="56" y="308" fill="#3C4049" font-size="11">评分规则 · 题目推荐 · 计划调整 · 风险控制（确定性逻辑兜底）</text>
+      <rect x="470" y="266" width="392" height="62" fill="#ECE7DA" stroke="#B23A2E" stroke-width="1.8"/>
+      <text x="486" y="288" font-weight="600" fill="#B23A2E">③b 教研审核回路　HUMAN-IN-LOOP</text>
+      <text x="486" y="308" fill="#3C4049" font-size="11">AI 生成内容必过教研审核方可入库 · 作文判分人工抽样校准</text>
+      <!-- skills -->
+      <rect x="40" y="350" width="822" height="56" fill="#F4F1E8" stroke="#1F4E5F" stroke-width="1.2"/>
+      <text x="56" y="372" font-weight="600" fill="#1F4E5F">④ 技能层　SKILLS — 每个能力格封装为可调度 Skill（28 格 + 跨域素养），按权限分级下发</text>
+      <text x="56" y="392" fill="#3C4049" font-size="11">默写·字形 / 文言断句 / 诗歌鉴赏 / 现代文推断 / 名著专题 / 作文审题 / 作文升格 / 考场策略 …</text>
+      <!-- KB -->
+      <rect x="40" y="428" width="822" height="104" fill="#15171E"/>
+      <text x="56" y="452" font-weight="600" fill="#ECE7DA">⑤ 知识底座　KNOWLEDGE BASE（知识图谱 + RAG 向量 + 结构化）</text>
+      <text x="56" y="476" fill="#ECE7DA" font-size="11">统编教材（7–9 年级）· 南京历年真题/各区模拟 · 课程标准 · 必读名著全文 · 学霸方法库 · 评分细则 · 南京在地文化语料</text>
+      <text x="56" y="498" fill="#ECE7DA" font-size="11">图谱关联：教材—课文—知识点—能力点—题型—错因—课程—训练题</text>
+      <text x="56" y="520" fill="#9A6B14" font-size="10.5">数据层 Supabase Postgres + RLS + Storage　｜　部署 Vercel　｜　模型 Anthropic Messages API（底座可多模型冗余）</text>
+      <line x1="450" y1="84" x2="450" y2="104" stroke="#3C4049" stroke-width="1.5" marker-end="url(#a2)"/>
+      <line x1="450" y1="244" x2="450" y2="264" stroke="#3C4049" stroke-width="1.5" marker-end="url(#a2)"/>
+      <line x1="450" y1="328" x2="450" y2="348" stroke="#3C4049" stroke-width="1.5" marker-end="url(#a2)"/>
+      <line x1="450" y1="406" x2="450" y2="426" stroke="#3C4049" stroke-width="1.5" marker-end="url(#a2)"/>
+    </svg>
+    <figcaption>图 7-1　人机协同混合架构：大模型 + 规则引擎兜底 + 教研审核门禁 + 知识图谱底座</figcaption>
+  </figure>
+
+  <table class="tbl">
+    <caption>核心数据模型（节选）</caption>
+    <thead><tr><th style="width:24%">实体</th><th>承载</th></tr></thead>
+    <tbody>
+      <tr><td><span class="mono">student_profile</span></td><td>学生画像：年级、距考时间、分型、目标</td></tr>
+      <tr><td><span class="mono">ability_state</span></td><td>能力坐标当前态：28 格掌握度 + 时间序列快照（成长追踪数据源）</td></tr>
+      <tr><td><span class="mono">submission</span></td><td>每次上传：原图、OCR、版面结构、得分、批改痕迹</td></tr>
+      <tr><td><span class="mono">error_record</span></td><td>逐处失分：映射 能力格 × 错因，错题本与归因的原子单位</td></tr>
+      <tr><td><span class="mono">item_bank</span></td><td>题库：题干、答案、量表、11 维标签、审核状态</td></tr>
+      <tr><td><span class="mono">study_plan</span></td><td>处方与计划：任务卡、ROI 优先级、预计提分区间、完成度</td></tr>
+      <tr><td><span class="mono">essay_review</span></td><td>作文批改：五维分、逐句朱批、升格路径、不确定度</td></tr>
+      <tr><td><span class="mono">review_log</span></td><td>三次复盘记录、错题复发计数、艾宾浩斯复现节点</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- 08 合规 -->
+<section id="s8">
+  <div class="sec-head"><span class="sec-num">08</span><h2>数据与合规边界</h2></div>
+  <p class="sec-lead">面向未成年人、涉及教育、易碰提分承诺——三条高压线同时存在。下面不是免责声明，而是立项阶段就必须纳入设计的硬约束。诚实摆上台面，比事后补救成本低得多。</p>
+
+  <div class="note warn"><span class="t">边界 01 · 未成年人保护</span>用户是初中生，受《个人信息保护法》《未成年人网络保护条例》约束。需求：监护人知情同意（不满 14 周岁需家长授权）、最小必要采集、试卷作文图像加密存储与一键删除、不做超范围画像、每日学习时长提醒与夜间使用限制、过度依赖提示。<strong>这一条决定数据架构，不能后置。</strong></div>
+
+  <div class="note warn"><span class="t">边界 02 · 教培政策定位</span>"双减"对义务教育阶段学科类校外培训有明确限制。文砺须定位为<strong>面向学生自主学习的 AI 工具/软件</strong>，而非学科类校外培训机构或直播授课。该定位合规性需法务在立项期专项评估，并据此约束功能边界（是否做真人直播授课、C/B 端口径差异）。<strong>此为立项级风险，不可含糊。</strong></div>
+
+  <div class="note warn"><span class="t">边界 03 · 不当宣传红线</span>《广告法》禁止"保过""提分 X 分""效果保证""全额退款"等绝对化用语；亦不宣传"押题""预测全市排名""状元模型"。"预计提分区间"必须明示为<strong>基于数据的预测而非承诺</strong>。<strong>各头脑风暴稿中出现的"60 天明显提升 / 三个月未达标退款 / 稳定提分 10–20 分"等表述，本版一律剔除。</strong></div>
+
+  <div class="note"><span class="t">边界 04 · 不诱导代写 + 内容审核</span>作文模块禁止一键生成整篇作品供学生提交，只提供启发、局部修改、范例片段与二次修改指导。所有 AI 生成的题目、范文、批改语经内容安全审核与教研把关，建立人工抽检与快速纠错回路；训练模型不得直接使用可识别学生身份的数据。</div>
+</section>
+
+<!-- 09 路线图 -->
+<section id="s9">
+  <div class="part-label">第二部 · 产品开发计划</div>
+  <div class="sec-head"><span class="sec-num">09</span><h2>研发路线图</h2></div>
+  <p class="sec-lead">原则：先用最小闭环证明诊断价值，再逐层加厚。最危险的做法是先囤大题库——文砺的命脉是"诊断—处方—复测"链路跑通，而非内容规模。四阶段递进，每阶段有可独立验收的产物。</p>
+
+  <figure>
+    <svg viewBox="0 0 920 240" xmlns="http://www.w3.org/2000/svg" font-family="'IBM Plex Mono',monospace" font-size="11.5">
+      <line x1="60" y1="40" x2="880" y2="40" stroke="#15171E" stroke-width="1.5"/>
+      <g fill="#6B6F79"><text x="60" y="30">M0</text><text x="270" y="30">M2</text><text x="480" y="30">M5</text><text x="690" y="30">M8</text><text x="855" y="30">M12+</text></g>
+      <rect x="60" y="56" width="200" height="30" fill="#1F4E5F"/><text x="70" y="76" fill="#ECE7DA" font-weight="600">P0 诊断闭环 MVP</text>
+      <rect x="262" y="96" width="220" height="30" fill="#327487"/><text x="272" y="116" fill="#ECE7DA" font-weight="600">P1 处方·训练·命题</text>
+      <rect x="484" y="136" width="206" height="30" fill="#9A6B14"/><text x="494" y="156" fill="#ECE7DA" font-weight="600">P2 作文批改·模考·家长端</text>
+      <rect x="692" y="176" width="180" height="30" fill="#B23A2E"/><text x="702" y="196" fill="#ECE7DA" font-weight="600">P3 规模化·精调·教研端</text>
+      <g stroke="#15171E" stroke-width="1"><line x1="60" y1="36" x2="60" y2="44"/><line x1="270" y1="36" x2="270" y2="44"/><line x1="480" y1="36" x2="480" y2="44"/><line x1="690" y1="36" x2="690" y2="44"/></g>
+    </svg>
+    <figcaption>图 9-1　四阶段路线（月度示意，按团队规模与内容生产并行度调整）</figcaption>
+  </figure>
+
+  <div class="phase">
+    <div class="pid">P0<small>≈ M0–M2</small></div>
+    <div><h3>诊断闭环 MVP</h3>
+      <div class="goal">证明"上传一张试卷，就能得到有用的诊断 + 一条该补什么的建议"。</div>
+      <p><strong>范围：</strong>单板块切入（建议先做 D1 基础积累 + D2 古诗文默写——OCR 与判分最可控、最快见效）。打通：上传 → OCR/解析 → 能力归因 → 诊断报告 → 单题测验。</p>
+      <p><strong>验收：</strong>对真实月考卷，板块定位与人工判读一致率 ≥ 85%；学生/家长看完能说出"该补哪"。</p>
+    </div>
+  </div>
+  <div class="phase">
+    <div class="pid">P1<small>≈ M2–M5</small></div>
+    <div><h3>处方 · 训练 · 命题</h3>
+      <div class="goal">从"看懂问题"走到"给出并执行方案"，闭环首次完整运转。</div>
+      <p><strong>范围：</strong>补齐七域能力坐标；上线处方引擎（ROI + 三层计划）、知识微课与方法库 V1、命题引擎（客观题 + 简单主观题量表）、AI 陪练分层提示、错题库与三次复盘。现代文与名著维度接入。</p>
+      <p><strong>验收：</strong>"诊—断—方—练—验"跑通；定向生成题能力标签与难度准确率达标；连续使用两周后薄弱格复测可见改善。</p>
+    </div>
+  </div>
+  <div class="phase">
+    <div class="pid">P2<small>≈ M5–M8</small></div>
+    <div><h3>作文批改 · 整卷模考 · 家长端</h3>
+      <div class="goal">啃下最难、最值钱的作文，并让价值对家长可见。</div>
+      <p><strong>范围：</strong>作文五维批改 + 逐句升格 + 五阶路径 + 范文对照；整卷限时模考与位次预估；成长追踪时间轴；家长端周报。引入人工复核抽样校准作文判分。</p>
+      <p><strong>验收：</strong>作文客观维度判分与教师一致性达标、主观维度提供可信参考分 + 依据；家长端报告可读性获正反馈。</p>
+    </div>
+  </div>
+  <div class="phase">
+    <div class="pid">P3<small>≈ M8 起</small></div>
+    <div><h3>规模化 · 风格精调 · 教研端</h3>
+      <div class="goal">从"能用"到"好用、可信、可放大"。</div>
+      <p><strong>范围：</strong>题库与微课扩容；用真实数据精调命题风格与批改一致性；上线教研/教师端（班级看板、一键组卷、审核后台）；持续 A/B 验证提分有效性。</p>
+      <p><strong>验收：</strong>北极星指标（§13）达成；规模化下诊断与批改质量不衰减；形成"口碑—数据—精调"正循环。</p>
+    </div>
+  </div>
+</section>
+
+<!-- 10 内容生产 -->
+<section id="s10">
+  <div class="sec-head"><span class="sec-num">10</span><h2>内容生产计划（并行轨）</h2></div>
+  <p class="sec-lead">内容是文砺的"教材级护城河"，也是冷启动最大工程，须与研发并行、由教研专家主导。AI 能加速生产，但教育内容的最终品控必须是人——尤其评分细则与范文这类"标准件"。所有 AI 生成内容只能作初稿，必经教研审核方可发布。</p>
+  <table class="tbl">
+    <thead><tr><th style="width:22%">内容资产</th><th style="width:13%">优先级</th><th>冷启动策略</th></tr></thead>
+    <tbody>
+      <tr><td>南京历年真题/各区模拟语料</td><td><span class="tag red">P0 必备</span></td><td>合规收集近 8–10 年真题与各区一模二模，结构化标注「板块×能力×难度×情境类型」，作为命题风格对齐金标准</td></tr>
+      <tr><td>统编教材结构化语料</td><td><span class="tag red">P0 必备</span></td><td>7–9 年级课文、单元、综合性学习、名著导读全量入库；85 篇必背、120 实词、18 虚词建可溯源索引</td></tr>
+      <tr><td>评分细则 / 五维量表</td><td><span class="tag red">P0 必备</span></td><td>教研专家依课标与南京评分标准编写各题型 rubric，作文五维逐档锚点——这是判分可信的根</td></tr>
+      <tr><td>知识微课库</td><td><span class="tag">P1</span></td><td>按 28 能力格颗粒化生产，AI 起草 + 教师定稿，先覆盖高 ROI 格</td></tr>
+      <tr><td>学霸方法库</td><td><span class="tag">P1</span></td><td>访谈历年高分生 + 一线名师，把暗知识结构化为可教方法卡（脱敏）</td></tr>
+      <tr><td>题库（教材同步+专题+南京风格）</td><td><span class="tag">P1</span></td><td>原创为主，11 维标签齐全，全部经教研三审；AI 生成题入审核队列</td></tr>
+      <tr><td>范文 / 病文对照库</td><td><span class="tag gold">P2</span></td><td>分档作文样本 + 升格示范，支撑作文批改"参照系"</td></tr>
+      <tr><td>南京在地文化语料</td><td><span class="tag gold">P2</span></td><td>明城墙、雨花台、科举博物馆、金陵文脉，供情境命题与写作素材</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><span class="t">数据飞轮</span>真实使用数据（失分分布、批改人工校准、命题采纳率、错题复发率）持续回流，反哺归因模型、ROI 权重与命题风格——用得越久，对"南京这一届学生"越懂。这是规模化后最难被复制的资产。</div>
+</section>
+
+<!-- 11 技术团队 -->
+<section id="s11">
+  <div class="sec-head"><span class="sec-num">11</span><h2>技术栈与团队</h2></div>
+  <div class="grid2">
+    <div class="card"><div class="k">FRONTEND</div><h4>客户端</h4><p>Next.js / React + TypeScript，移动优先（学生主要用手机拍照上传）；家长端、教研端同栈复用组件。</p></div>
+    <div class="card"><div class="k">BACKEND · DATA</div><h4>数据与服务</h4><p>Supabase（Postgres + RLS + Auth + Storage）承载画像、能力档案、题库与图像；Vercel 部署；技能按 entitlement 分层下发。</p></div>
+    <div class="card"><div class="k">AI LAYER</div><h4>模型与编排</h4><p>Anthropic Messages API 驱动多 Agent；能力格即 Skill；RAG + 知识图谱检索教材与真题；底座可多模型冗余以保稳定。</p></div>
+    <div class="card"><div class="k">RULE + REVIEW</div><h4>规则引擎与教研审核</h4><p>确定性规则兜底评分/推荐/计划/风控；教研审核后台作为 AI 生成内容的质量门禁——人机协同的关键基础设施。</p></div>
+  </div>
+  <h3>关键团队角色</h3>
+  <table class="tbl">
+    <thead><tr><th style="width:26%">角色</th><th>职责</th></tr></thead>
+    <tbody>
+      <tr><td><strong>语文教研负责人</strong>（特级/资深）</td><td>能力模型、错因分类、评分量表、内容品控的最终权威——产品教育正当性的人格化担保</td></tr>
+      <tr><td>南京本地教研专家 / 作文批改老师</td><td>真题标注、题库审核、作文评分标准制定、范文与方法卡定稿</td></tr>
+      <tr><td>AI 算法 / 全栈工程</td><td>Agent 编排、知识图谱、RAG、知识追踪推荐、数据模型、客户端</td></tr>
+      <tr><td>OCR / 文档解析工程</td><td>试卷版面解析与手写识别——P0 技术地基与首要攻坚点</td></tr>
+      <tr><td>产品 / 设计</td><td>三端体验，诊断报告与成长报告的可读性（让家长"看懂价值"）</td></tr>
+      <tr><td>法务 / 合规（顾问）</td><td>未成年人数据、教培定位、广告法——立项期即介入</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- 12 风险 -->
+<section id="s12">
+  <div class="sec-head"><span class="sec-num">12</span><h2>关键风险与对策</h2></div>
+  <table class="tbl">
+    <thead><tr><th style="width:9%">等级</th><th style="width:26%">风险</th><th>对策</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tag red">高</span></td><td>作文判分难稳定对齐人工阅卷</td><td>客观维度 AI 主判、主观高分维度给参考分+依据并标注不确定度；人工抽样校准；不承诺等同中考阅卷</td></tr>
+      <tr><td><span class="tag red">高</span></td><td>教培政策/合规定位风险</td><td>立项期法务专项评估，明确"自主学习工具"定位与功能边界，C/B 端口径分离</td></tr>
+      <tr><td><span class="tag red">高</span></td><td>OCR 对手写、潦草卷面、复杂版面识别不稳</td><td>P0 即攻坚；先从印刷体+规整作业切入逐步扩边界；低置信时引导用户确认</td></tr>
+      <tr><td><span class="tag gold">中</span></td><td>命题"形似神不似"，偏离南京真实风格</td><td>以真题语料为金标准做风格对齐 + 教研抽检采纳率把关</td></tr>
+      <tr><td><span class="tag gold">中</span></td><td>内容冷启动慢、教研产能成瓶颈</td><td>AI 加速起草 + 教师定稿；按 ROI 优先生产高价值格；审核流程标准化</td></tr>
+      <tr><td><span class="tag gold">中</span></td><td>诊断不准导致处方失效，损伤信任</td><td>诊断准确率设为 P0 验收硬指标；初期保守归因、宁缺毋滥</td></tr>
+      <tr><td><span class="tag">低</span></td><td>提分效果验证周期长（依赖大考节点）</td><td>用阶段复测、错题复发率、位次轨迹做近端代理指标，不空等中考结果</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- 13 度量 -->
+<section id="s13">
+  <div class="sec-head"><span class="sec-num">13</span><h2>成功度量与 MVP 优先级</h2></div>
+  <p class="sec-lead">一个产品若不能证明"用了就提分"，再精巧的架构也是自娱自乐。度量围绕一个北极星，分层支撑。</p>
+  <div class="note"><span class="t">北极星指标 · North Star</span><strong>持续使用 8 周以上学生的"薄弱能力格复测提升率"。</strong>它同时锁住三件事：留存（用得久）、有效（真提分）、闭环（复测可证）——而非单纯的活跃或题量。</div>
+  <table class="tbl">
+    <thead><tr><th style="width:22%">层级</th><th>关键指标</th></tr></thead>
+    <tbody>
+      <tr><td><strong>诊断质量</strong></td><td>板块定位准确率、错因归因与人工一致率、位次预估命中率、AI 误判率</td></tr>
+      <tr><td><strong>提分有效性</strong></td><td>薄弱格复测提升率、错题复发率下降、作文二改提升幅度、阶段模考分数/位次轨迹</td></tr>
+      <tr><td><strong>命题与批改</strong></td><td>生成题教研采纳率、作文客观维度判分一致性、批改被采信度、解析满意度</td></tr>
+      <tr><td><strong>使用与体验</strong></td><td>任务完成率、复盘完成率、作文提交率、学生/家长满意度、教师可用性评价</td></tr>
+    </tbody>
+  </table>
+
+  <h3>MVP 功能优先级</h3>
+  <table class="tbl">
+    <thead><tr><th style="width:16%">优先级</th><th>功能</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tag red">P0</span></td><td>上传试卷诊断 · 能力雷达图 · 个性化学习计划 · 错题复盘 · 单题测验</td></tr>
+      <tr><td><span class="tag">P1</span></td><td>作文批改 · AI 陪练分层提示 · 阅读题短答批改 · 题库自适应推荐 · 家长周报</td></tr>
+      <tr><td><span class="tag gold">P2</span></td><td>整卷模考与位次预估 · 教研端班级看板 · 一键组卷 · 讲评材料生成</td></tr>
+      <tr><td><span class="tag gold">P3</span></td><td>南京地方文化素材库 · 高分作文训练营 · 目标校差距模型</td></tr>
+    </tbody>
+  </table>
+
+  <h3>一句话收束</h3>
+  <p style="font-family:var(--serif);font-size:18px;line-height:1.8;border-left:3px solid var(--cinnabar);padding-left:20px;margin-top:24px">
+  文砺把一位特级教师最珍贵的两种能力——<strong>读懂这一个学生的失分结构</strong>，与<strong>为他开出最短的提分路径</strong>——做成了可规模化、可审核、可追踪的系统。教材是石，诊断为砺，日省为道。金就砺，则利。</p>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="mono">文砺 v2.0 · AI 语文精准成长系统 / 产品说明书 · 开发计划（整合版，仅含产品本身，已剔除商业化内容）</div>
+    <p style="margin-top:10px">面向南京中考（语文 120 分 · 积累运用 / 阅读 / 写作）。整合自五份头脑风暴稿（金陵语文学伴 / 琥珀导师 / 金陵 AI 学伴 / 智语学堂 / 文砺）。政策与命题特征依据公开资料整理，分值结构为近年代表，执行前以南京市教育局、江苏省教育厅最新文件及法务评估为准。"预计提分区间"为基于数据的预测，非效果承诺；不押题、不保分、不预测全市排名。</p>
+  </div>
+</footer>
+
+</body>
+</html>
