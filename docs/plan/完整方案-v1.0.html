@@ -99,7 +99,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.9em;background
   <h1>魁星点斗 StarBuddy 产品开发完整方案</h1>
   <p class="sub">面向南京初中家庭的七科 AI 一对一学习平台——产品、角色、技术、商业与交付的统一方案，含四款既有学科产品的融合路径</p>
   <div class="meta">
-    <div><b>版本</b>v1.0.1 · 供产品、教研、研发、运营共同评审</div>
+    <div><b>版本</b>v1.0.2 · 供产品、教研、研发、运营共同评审</div>
     <div><b>日期</b>2026 年 9 月 24 日</div>
     <div><b>整合来源</b>《平台产品规划》v1.2 · 《产品系统架构与技术实施蓝图》V2.0 · 角色体系七份文档 · 四款产品 PRD</div>
     <div><b>品牌</b>魁星点斗 StarBuddy（简称点斗）；搭子"点点"</div>
@@ -244,14 +244,14 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.9em;background
     <h3>5.2 四科现状盘点</h3>
     <div class="tbl"><table>
       <tr><th>维度</th><th>语文 · 文砺</th><th>数学 · 阿鸦</th><th>道法 · 知行</th><th>英语 · 开口成章</th></tr>
-      <tr><td>技术栈</td><td>Next.js 14 / TS / Tailwind / shadcn；Supabase；Railway 长任务；Anthropic</td><td>设计方案建议 FastAPI + Postgres + Redis + SymPy；实际开发沿用产品线共享栈</td><td>同文砺（"文砺架构的第二学科实例化"）；Orchestrator + 多 Agent + 人设表达层</td><td>React + Vite 前端 + 零依赖 Node 代理（主线 echo-quest）；没有数据库，学习状态存在浏览器；对话模型为 Anthropic；语音用浏览器 Web Speech（非流式）；没有第三方发音评测（原方案中的 Gemini 实时语音链与音素级评测均未实现，见四科盘点）</td></tr>
+      <tr><td>技术栈</td><td>Next.js 16（App Router）/ React 18 / TS / Tailwind 3，自研 UI 组件（没有 shadcn）；npm workspaces（学生端、家长端、共享包）；Supabase（Postgres + RLS + Auth + Storage + pgvector）；没有 Railway，长请求靠延长函数超时；模型路由默认 Anthropic（自述线上用 DeepSeek + Qwen-VL）</td><td>设计方案建议 FastAPI + Postgres + Redis + SymPy；实际是 Next.js 16 单体 / React 18 / TS / Tailwind 3 / KaTeX；学习状态存浏览器，整份同步到 Supabase 一张表；模型为 DeepSeek（教练）+ DashScope qwen-vl（拍照判分）；没有 SymPy，用 TS 数值采样做等价判定</td><td>代码寄宿在文砺仓库（apps/daofa），共用文砺的共享包、Supabase 与模型路由（默认 Anthropic）；Next.js 16；每个功能一次模型调用，没有 Orchestrator，页面上的多 Agent 日志是装饰</td><td>React + Vite 前端 + 零依赖 Node 代理（主线 echo-quest）；没有数据库，学习状态存在浏览器；对话模型为 Anthropic；语音用浏览器 Web Speech（非流式）；没有第三方发音评测（原方案中的 Gemini 实时语音链与音素级评测均未实现，见四科盘点）</td></tr>
       <tr><td>核心引擎</td><td>M1 诊断（OCR 试卷）· M2 处方 ROI · M3 微课方法库 · M4 命题 · M5 作文批改升格 · M6 陪练与复盘</td><td>12 个 Agent：总控、学生模型、诊断、知识教师、思维教练、训练、错误分析、规划、中考教练、陪伴激励、验证、报告</td><td>F1 拆题 · F2 开卷定位 + 限时 · F3 采分点批改 · F4 润色 · F5 时政挂接 · F6 答疑 · F7 变式图谱 · F8 语音闪卡 · F9 家长 · F10 合场模拟 · F11 情境卡</td><td>F04 实时语音 · F09 发音评测 · NPC 状态机与长期记忆 · 场景资产 · 试炼之塔 · 双语报告</td></tr>
       <tr><td>能力坐标</td><td>7 域 × 4 级 = 28 点</td><td>10 板块 × 10 能力 = 100 点 + 五图谱</td><td>审题 → 定位 → 转化 → 表达 四步过程能力</td><td>译林教材七层图谱；语法 / 词汇 / 达意三维</td></tr>
       <tr><td>错因体系</td><td>六类：知识 / 审题 / 定位 / 思维 / 表达规范 / 策略时间</td><td>十二类根因</td><td>四类：审题 / 定位 / 转化 / 规范</td><td>三维 + 音素级语音信号</td></tr>
       <tr><td>可信判分</td><td>五维量表 + 不确定度 + 人工抽样校准</td><td>符号计算 / 几何引擎验证</td><td>采分点 Rubric（关键词族 / 分值 / 主体）</td><td>音素级评测引擎 + Rubric</td></tr>
       <tr><td>人设</td><td>无形象的"特级教师"</td><td>阿鸦（规格书 V1.1）</td><td>备考搭子（三风格、双层人格、禁语表）</td><td>AI 学伴（学长 / 学姐可选）+ 剧情 NPC + 考官</td></tr>
       <tr><td>家长端</td><td>周报、能力雷达、位次区间</td><td>低频高价值周报，不排名</td><td>F9 学情报告（严肃口吻）</td><td>双语报告</td></tr>
-      <tr><td>开发状态</td><td>初步开发</td><td>初步开发</td><td>初步开发</td><td>初步开发</td></tr>
+      <tr><td>开发状态（2026-09-25 盘点）</td><td>6 个模块：可演示 4、半成品 2</td><td>12 Agent：可演示 7、半成品 5</td><td>11 个模块：可演示 3、半成品 4、仅方案 4</td><td>24 个模块：可演示 4、半成品 10、仅方案 10</td></tr>
     </table></div>
     <div class="callout">
       <p><strong>盘点结论：</strong>四科在"三层信号、自适应诊断、人机审核、家长报告"上完全同构，在"能力坐标粒度、错因分类数、判分机制"上各异但可映射，在"人设与模型链路"上分歧最大。融合工作量因此分三档：数据层最轻（映射即可），角色层中等（按规范迁移），前端与语音最重（英语单独排期）。</p>
@@ -642,6 +642,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.9em;background
         <tr><th>版本</th><th>日期</th><th>变更</th></tr>
         <tr><td>v1.0</td><td>2026-09-24</td><td>首版：合并《平台产品规划》v1.2 与《产品系统架构与技术实施蓝图》V2.0，纳入角色体系七份文档的结论；新增第五章"四科融合"（原则、盘点、架构图、API 映射、数据迁移、人设迁移、前端壳、计量、分科验收）；交付路线加入四科融合子轨与决策门</td></tr>
         <tr><td>v1.0.1</td><td>2026-09-25</td><td>更正英语技术栈描述（第 5.1、5.2、5.9 节，第六章，架构图）：盘点确认英语没有 Gemini 链路，现状是 Anthropic + 浏览器 Web Speech，没有第三方发音评测；英语模型与语音链路改由 ADR 08 决策（开口成章 decisions #1）。其余内容不变</td></tr>
+        <tr><td>v1.0.2</td><td>2026-09-25</td><td>更正 5.2 现状表中文砺、阿鸦、知行的技术栈描述，开发状态改为盘点统计（四科均无真实用户、无模块可确认已上线；详见 specs/inventory-summary.md）。其余内容不变</td></tr>
       </table>
     </div>
   </div>
