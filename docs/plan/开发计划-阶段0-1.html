@@ -95,7 +95,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.9em;background
   <h1>下一步开发计划</h1>
   <p class="sub">阶段 0 · 基座与四科适配（13 周逐周计划） + 阶段 1 · 四科融合上线（月度计划，对齐南京学年）</p>
   <div class="meta">
-    <div><b>版本</b>v1.0 · 执行稿</div>
+    <div><b>版本</b>v1.0.1 · 执行稿</div>
     <div><b>日期</b>2026 年 9 月 24 日</div>
     <div><b>上游</b>《产品开发完整方案》v1.0（HB-EDU-2026-0924-01）</div>
     <div><b>计划起点</b>W1 = 国庆假期后首个工作周（约 10 月 8 日）</div>
@@ -200,7 +200,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.9em;background
     <rect x="544" y="228" width="258" height="24" fill="var(--crow-soft)" stroke="var(--crow)"/><text x="673" y="245" fill="var(--ink)">预留 · 结算 · 回滚 · 幂等</text>
     <rect x="808" y="228" width="126" height="24" fill="var(--paper)" stroke="var(--crow)"/><text x="871" y="245" fill="var(--ink)">额度可见</text>
     <!-- F -->
-    <rect x="412" y="268" width="258" height="24" fill="var(--crow-soft)" stroke="var(--crow)"/><text x="541" y="285" fill="var(--ink)">模型路由（国内 · Anthropic · Gemini）</text>
+    <rect x="412" y="268" width="258" height="24" fill="var(--crow-soft)" stroke="var(--crow)"/><text x="541" y="285" fill="var(--ink)">模型路由（国内首选 · 多供应商）</text>
     <rect x="676" y="268" width="390" height="24" fill="var(--crow-soft)" stroke="var(--crow)"/><text x="871" y="285" fill="var(--ink)">禁语分类器 · 漂移抽检 · 家族级回归测试框架</text>
     <!-- G -->
     <rect x="544" y="308" width="258" height="24" fill="var(--crow-soft)" stroke="var(--crow)"/><text x="673" y="325" fill="var(--ink)">统一复核队列（human_review_required）</text>
@@ -210,7 +210,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.9em;background
     <rect x="808" y="348" width="258" height="24" fill="var(--crow-soft)" stroke="var(--crow)"/><text x="937" y="365" fill="var(--ink)">统一壳 MVP · 周报 v0 · 讲评课原型</text>
     <!-- I -->
     <rect x="280" y="388" width="126" height="24" fill="var(--red-soft)" stroke="var(--red)"/><text x="343" y="405" fill="var(--ink)">语音链盘点</text>
-    <rect x="412" y="388" width="390" height="24" fill="var(--red-soft)" stroke="var(--red)"/><text x="607" y="405" fill="var(--ink)">点点跨模型一致性验证（Gemini ↔ Anthropic ↔ 国内）</text>
+    <rect x="412" y="388" width="390" height="24" fill="var(--red-soft)" stroke="var(--red)"/><text x="607" y="405" fill="var(--ink)">点点跨模型一致性验证（候选模型见 ADR 04 / 08）</text>
     <rect x="808" y="388" width="258" height="24" fill="var(--paper)" stroke="var(--red)"/><text x="937" y="405" fill="var(--ink)">国内 ASR / 评测盲测 · 语音计量</text>
     <!-- J -->
     <rect x="280" y="428" width="786" height="24" fill="var(--green-soft)" stroke="var(--green)"/><text x="673" y="445" fill="var(--ink)">监管分类专业意见 · 隐私政策 · 监护人同意 · 供应商数据协议 · 跨境评估</text>
@@ -263,7 +263,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.9em;background
       <tr><td>8 六方法对应</td><td>本科哪段代码可以直接包成 diagnose / plan / teach / grade / generate_variation / report</td><td>适配器设计文档初稿</td></tr>
     </table></div>
     <div class="callout red">
-      <p><strong>盘点纪律：</strong>状态只按"学生今天能不能真的用"打标，不按"方案里写了"打标。英语产品由 Gemini 开发，额外盘点：实时语音链的端到端延迟实测、所用 ASR / TTS / 评测供应商及数据流向（是否跨境）。</p>
+      <p><strong>盘点纪律：</strong>状态只按"学生今天能不能真的用"打标，不按"方案里写了"打标。英语产品额外盘点（盘点结论：没有 Gemini 链路，见 specs/inventory-echo）：实时语音链的端到端延迟实测、所用 ASR / TTS / 评测供应商及数据流向（是否跨境）。</p>
     </div>
 
     <h3>W2 · 契约冻结与架构决策</h3>
@@ -271,7 +271,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.9em;background
       <li><strong>学科插件 API OpenAPI v0.9</strong>：六方法的请求 / 响应模型、统一返回结构、错误码、超时与重试语义、<code>human_review_required</code> 的触发约定。W2 周五评审，W4 冻结为 v1.0。</li>
       <li><strong>学习者 Schema v0.9</strong>：ERD 与迁移脚本草稿；<code>skill_node</code> 的学科命名空间；证据 / 推断 / 家长自述三分存；推断记录算法版本与置信度。</li>
       <li><strong>错因跨科大类映射表 v0.9</strong>：文砺六类、阿鸦十二类、知行四类、英语三维 → 审题 / 定位信息 / 思维方法 / 运算语法 / 表达规范 / 策略时间 / 知识 七大类；教研顾问逐条签字。</li>
-      <li><strong>架构决策记录（ADR）</strong>：01 BFF（TS）与学科服务（FastAPI）分工；02 Supabase 共库分 schema（<code>platform.*</code> / <code>wenli.*</code> / <code>aya.*</code> / <code>zhixing.*</code> / <code>echo.*</code>）；03 编排用显式状态机，LangGraph 仅限复杂多步；04 模型路由接口与供应商优先级（国内首选）；05 事件表分区策略；06 计量账本的一致性模型；07 讲解 DSL 采用 OpenMAIC 子包的范围与许可证；08 英语保留 Gemini 链路的接入方式。</li>
+      <li><strong>架构决策记录（ADR）</strong>：01 BFF（TS）与学科服务（FastAPI）分工；02 Supabase 共库分 schema（<code>platform.*</code> / <code>wenli.*</code> / <code>aya.*</code> / <code>zhixing.*</code> / <code>echo.*</code>）；03 编排用显式状态机，LangGraph 仅限复杂多步；04 模型路由接口与供应商优先级（国内首选）；05 事件表分区策略；06 计量账本的一致性模型；07 讲解 DSL 采用 OpenMAIC 子包的范围与许可证；08 英语模型与语音链路的接入方式（原题“英语保留 Gemini 链路”，盘点后改写）。盘点后又新增 09 数据驻留、10 境内托管选型，02 改为 Postgres 共库分 schema，见 docs/adr/README.md。</li>
       <li><strong>七项待拍板决策会</strong>：产品负责人主持，至少关闭第 1、2、5 项（首发地区与教材版本、四科真实状态、英语技术栈）；第 3 项（监管分类）启动外部顾问；第 4、6、7 项给出决策日期。</li>
     </ul>
     <p><strong>冲刺 0 验收：</strong>四份盘点文档与模块状态表经各科负责人确认；OpenAPI 与 Schema 通过评审进入 v0.9；八份 ADR 合并；映射表教研签字。</p>
@@ -292,7 +292,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.9em;background
       <tr><td>D</td><td>阿鸦适配器：<code>diagnose</code> 与 <code>grade</code>（SymPy 验证结果带 confidence）写回平台</td><td>数学开发 + 技术负责人</td><td>一道数学题从作答到能力点写入平台，可查询</td></tr>
       <tr><td>A</td><td>OpenAPI v1.0 冻结；契约测试框架（消费者驱动）接入 CI</td><td>技术负责人</td><td>四科适配器共用同一套契约测试</td></tr>
       <tr><td>E</td><td>usage_ledger 与 entitlement 表设计；四级额度配置表（按完整方案第八章）</td><td>TS 后端</td><td>设计评审通过</td></tr>
-      <tr><td>F</td><td>模型路由骨架：统一接口、三类供应商适配（国内首选 / Anthropic / Gemini）、超时与熔断</td><td>模型工程</td><td>同一请求可按配置切换供应商</td></tr>
+      <tr><td>F</td><td>模型路由骨架：统一接口、多供应商适配（国内首选；境外供应商的使用范围见 ADR 04 / 09）、超时与熔断</td><td>模型工程</td><td>同一请求可按配置切换供应商</td></tr>
       <tr><td>I</td><td>点点一致性测试集 v0：从点点 V1.2 与备考搭子规格抽取 120 条用例（身份披露、禁语 A–E、转介、星图话术、出场协议）</td><td>QA + 模型工程</td><td>用例入库，可自动评分</td></tr>
     </table></div>
 
@@ -303,7 +303,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.9em;background
       <tr><td>D</td><td>文砺适配器：<code>diagnose</code>（M1 试卷诊断）、<code>grade</code>（M5 五维量表，主观维度带不确定度）、<code>plan</code>（M2 ROI）</td><td>语文开发</td><td>一篇作文的五维结果写入平台，主观维 <code>human_review_required</code> 按规则触发</td></tr>
       <tr><td>E</td><td>计量实现：开始预留、成功结算、失败回滚；24 小时同题复看不重复扣；服务错误重试不扣第二次</td><td>TS 后端</td><td>幂等与回滚测试全绿（含并发与断线）</td></tr>
       <tr><td>G</td><td>统一复核队列：三科低置信度 / 申诉 / 抽检进入同一队列，教研后台可处理</td><td>Py 后端</td><td>三科各一条复核记录走完闭环</td></tr>
-      <tr><td>I</td><td>点点一致性首轮：同一用例集在 Gemini、Anthropic、一家国内模型上各跑 3 次</td><td>模型工程</td><td>出首轮差异报告</td></tr>
+      <tr><td>I</td><td>点点一致性首轮：同一用例集在三家候选模型上各跑 3 次（候选名单以 ADR 04 / 08 签字结果为准）</td><td>模型工程</td><td>出首轮差异报告</td></tr>
     </table></div>
 
     <h3>冲刺 3（W7–W8）· 英语接入、人设治理、星图原型</h3>
@@ -313,7 +313,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.9em;background
       <tr><td>F</td><td>人设治理组件：禁语分类器（A–G 类）、长对话漂移抽检、家族级回归测试接入 CI（合同符合性、角色三型边界、跨科静默、命名、比喻隔离、模式一致、转介一致）</td><td>QA + 模型工程</td><td>任一老师或点点的 Prompt 变更自动触发回归</td></tr>
       <tr><td>H</td><td>星图渲染原型：按科星空、三态（未亮 / 半亮 / 亮）、16px 可辨；读平台 mastery_estimate</td><td>前端 + 视觉</td><td>阿鸦与知行数据可在同一学生的星图上显示</td></tr>
       <tr><td>B</td><td>家庭隔离渗透测试（外部或交叉团队）</td><td>QA</td><td>无越权访问；报告归档</td></tr>
-      <tr><td>I</td><td>点点一致性二轮：按首轮差异修订人设层 Prompt 与后处理；定"英语保留 Gemini 链路"的最终结论</td><td>模型工程</td><td>三家模型在核心用例上通过率差 ≤ 5 个百分点，或给出不通过的替代方案</td></tr>
+      <tr><td>I</td><td>点点一致性二轮：按首轮差异修订人设层 Prompt 与后处理；定英语模型链路的最终结论（ADR 08）</td><td>模型工程</td><td>三家模型在核心用例上通过率差 ≤ 5 个百分点，或给出不通过的替代方案</td></tr>
     </table></div>
 
     <h3>冲刺 4（W9–W10）· 掌握估计、统一壳、发布闸门</h3>
@@ -370,7 +370,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.9em;background
       <tr><th>类型</th><th>条件</th><th>证据</th></tr>
       <tr><td>硬</td><td>四科能写入同一学生模型</td><td>20 名测试学生四科诊断 / 批改 / 复测的事件与能力点查询记录；星图截图</td></tr>
       <tr><td>硬</td><td>家长隔离与扣次幂等通过测试</td><td>渗透测试报告；计量并发、断线、重试、回滚测试全绿</td></tr>
-      <tr><td>硬</td><td>点点跨模型一致性有明确结论</td><td>三家模型对照报告与"英语保留 Gemini 链路"或替代方案的决策记录</td></tr>
+      <tr><td>硬</td><td>点点跨模型一致性有明确结论</td><td>三家模型对照报告与英语模型链路（ADR 08）的决策记录</td></tr>
       <tr><td>软</td><td>契约测试覆盖率达标</td><td>阿鸦 6/6、知行与文砺 ≥ 5/6、开口成章 ≥ 4/6</td></tr>
       <tr><td>软</td><td>人设家族级回归在 CI 中运行</td><td>最近一次运行报告</td></tr>
       <tr><td>软</td><td>发布闸门四科各有一个内容版本</td><td>版本记录</td></tr>
@@ -458,6 +458,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.9em;background
       <table>
         <tr><th>版本</th><th>日期</th><th>变更</th></tr>
         <tr><td>v1.0</td><td>2026-09-24</td><td>首版：阶段 0 十条工作流、13 周逐冲刺任务与验收、并行四轨、Gate 0 清单、阶段 1 月度计划（对齐 2027 学年）、工程规范、风险与本周行动</td></tr>
+        <tr><td>v1.0.1</td><td>2026-09-25</td><td>更正英语与模型路由相关表述（第二、三、四、六章，甘特图）：删除“英语由 Gemini 开发”“英语保留 Gemini 链路”等不成立的前提；模型路由与点点一致性验证的候选供应商改为以 ADR 04 / 08 签字结果为准；W2 ADR 清单注明 08 改题与 09、10 新增（开口成章 decisions #1）。排期与验收口径不变</td></tr>
       </table>
     </div>
   </div>
