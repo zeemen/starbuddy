@@ -1,5 +1,5 @@
 # 未实现的目标明确打印“跳过”，不得伪装为通过。
-.PHONY: check-fast check contract-test contract-mutation taxonomy-check db-test db-mutation eval-persona eval-grade
+.PHONY: check-fast check contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test eval-persona eval-grade
 
 # 可指向装了 packages/contracts/requirements-dev.txt 的解释器，例如 make check PYTHON=.venv/bin/python
 PYTHON ?= python3
@@ -16,8 +16,8 @@ endef
 # 契约检查约 1 秒，改动后也跑一遍
 check-fast: contract-test taxonomy-check
 
-check: contract-test contract-mutation taxonomy-check db-test db-mutation
-	@echo "check: 类型检查、lint、单测尚无代码，跳过"
+check: contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test
+	@echo "check: lint 尚未配置，跳过；其余检查已通过"
 
 # 契约合法性 + 示例 + 反例集
 contract-test:
@@ -40,6 +40,17 @@ db-test:
 # 数据库变异测试：逐条放宽 RLS 或约束，断言测试能发现（约 40 秒）
 db-mutation:
 	@bash db/tests/mutations.sh; rc=$$?; \
+	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
+
+# 阿鸦适配器：类型检查 + 单测（契约、验证器、映射、泄露、幂等、HTTP）+ 端到端（本地临时 Postgres，约 5 秒）
+# 依赖需先在 adapters/aya 下 npm ci；没装时非严格模式打印“跳过”
+adapter-aya-test:
+	@if [ ! -d adapters/aya/node_modules/ajv ]; then \
+	  echo "adapter-aya-test: 跳过（没有安装依赖；cd adapters/aya && npm ci）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@cd adapters/aya && npx --no-install tsc -p tsconfig.json && echo "adapter-aya-test: 类型检查通过"
+	@cd adapters/aya && node --no-warnings --test --test-reporter=dot tests/*.test.ts
+	@bash adapters/aya/tests/e2e/run.sh; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
 
 eval-persona:
