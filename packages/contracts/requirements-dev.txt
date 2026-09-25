@@ -1,0 +1,6 @@
+# 契约检查用（packages/contracts/scripts/check_contract.py），不进入任何运行时服务。
+# 许可证已核（2026-09-25）：openapi-spec-validator Apache-2.0；其依赖 jsonschema MIT、
+# openapi-schema-validator BSD-3-Clause、jsonschema-path Apache-2.0、referencing MIT、PyYAML MIT，
+# 其余传递依赖均为 MIT / BSD / Apache-2.0 / PSF-2.0。没有 GPL / LGPL / AGPL。
+openapi-spec-validator==0.9.0
+PyYAML>=6.0,<7
