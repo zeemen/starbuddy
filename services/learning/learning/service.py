@@ -91,8 +91,14 @@ class IngestService:
         if {local_id(a["item_ref"]) for a in attempts} - set(items):
             raise IngestError(422, "CONTENT_NOT_REGISTERED", "item_ref is not registered on the platform")
 
+        # 既有证据必须真在库里、属于这个学生和学科；准入状态以平台为准（契约守护阻断 1）
+        prior_ids = [p["evidence_id"] for p in request.get("prior_evidence", [])]
+        prior = await store.prior_evidence_admission(self.pool, ctx["student_ref"], ctx["subject"], prior_ids)
+        if len(prior) != len(set(prior_ids)):
+            raise IngestError(422, "INVALID_REQUEST", "prior_evidence contains ids that are not this student's recorded evidence")
+
         # 等同 key 的另一请求：指数退避加抖动，最多等一个租约；再等不到就返回 503 BUSY，让 BFF 稍后用同一个 key 重试
-        #（安全审查 S5：每 100ms 取一次连接会占满连接池）
+        #（安全审查 S5：每 100ms 取一次连接会占满连接池）。接管分支同样受这个期限约束（契约守护阻断 2）。
         deadline = time.monotonic() + self.settings.lease_seconds + 5
         backoff = BUSY_POLL_SECONDS
         while True:
@@ -104,14 +110,17 @@ class IngestService:
                 raise IngestError(409, "IDEMPOTENCY_CONFLICT", "idempotency_key was used with a different request body")
             if c.kind == "done":
                 return c.summary or {}, True
+            if time.monotonic() > deadline:
+                # 包括接管分支：租约配置过短时，两个同 key 请求不会无限轮流接管（契约守护阻断 2）
+                if c.kind == "takeover":
+                    await store.mark_failed(self.pool, method=method, key=key, lease_token=c.lease_token, error_code="BUSY")
+                raise IngestError(503, "BUSY", "another request with this key is still running", retryable=True)
             if c.kind == "busy":
-                if time.monotonic() > deadline:
-                    raise IngestError(503, "BUSY", "another request with this key is still running", retryable=True)
                 await asyncio.sleep(backoff * (0.5 + random.random()))
                 backoff = min(backoff * 2, BUSY_MAX_POLL_SECONDS)
                 continue
             try:
-                summary = await self._run(method, request, key, c)
+                summary = await self._run(method, request, key, c, prior)
                 return summary, False
             except store.LeaseLost:
                 continue  # 别人接管并可能已完成：回到幂等检查拿它的结果
@@ -122,7 +131,7 @@ class IngestService:
                 await store.mark_failed(self.pool, method=method, key=key, lease_token=c.lease_token, error_code="INTERNAL")
                 raise
 
-    async def _run(self, method: str, request: dict, key: str, c: store.Claim) -> dict:
+    async def _run(self, method: str, request: dict, key: str, c: store.Claim, prior: dict[str, str]) -> dict:
         ctx = request["context"]
         # 转发给适配器：带上平台的 attempt_id（重试时沿用，适配器派生的证据 ID 因此不变）
         forward = copy.deepcopy(request)
@@ -134,7 +143,8 @@ class IngestService:
 
         items, nodes = collect_refs(response)
         reg_items, reg_nodes = await store.registered(self.pool, ctx["subject"], items, nodes)
-        verified = verify(method, forward, response, registered_items=reg_items, registered_nodes=reg_nodes)
+        verified = verify(method, forward, response, registered_items=reg_items, registered_nodes=reg_nodes,
+                          prior_admission=prior)
         base = self._summary_base(method, forward, response, verified, c.attempt_ids)
         return await store.persist(
             self.pool, method=method, key=key, lease_token=c.lease_token, request=forward, response=response,

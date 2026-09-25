@@ -95,8 +95,8 @@ async def mark_failed(pool, *, method, key, lease_token, error_code) -> None:
                     WHERE method = $1 AND idempotency_key = $2 AND status = 'pending' AND lease_token = $3::uuid""",
                 method, key, lease_token, error_code,
             )
-    except asyncpg.PostgresError:
-        pass  # 标记失败本身失败：租约到期后照样能被接管
+    except Exception:  # noqa: BLE001 — 标记失败本身失败（含取连接超时）：不能盖住原始错误，租约到期后照样能被接管
+        pass
 
 
 # ---------- 登记查询 ----------
@@ -111,6 +111,23 @@ async def registered(pool, subject: str, item_refs: set[str], node_refs: set[str
             subject, [local_id(r) for r in node_refs],
         )
     return {r[0]: r[1] for r in items}, {r[0] for r in nodes}
+
+
+async def prior_evidence_admission(pool, student_id: str, subject: str, ids: list[str]) -> dict[str, str]:
+    """请求里的既有证据必须真在平台库里，且属于同一学生、同一学科（契约守护阻断 1）。
+    返回 evidence_id → 平台判定的准入状态（证据自身与题目当前登记，取更严的那个）。"""
+    if not ids:
+        return {}
+    async with learning_tx(pool) as conn:
+        rows = await conn.fetch(
+            """SELECT e.evidence_id::text, e.admission::text AS ev_adm, i.admission::text AS item_adm
+                 FROM platform.evidence_event e
+                 LEFT JOIN platform.item i ON i.subject = e.subject AND i.item_id = e.item_id
+                WHERE e.evidence_id = ANY($1::text[]::uuid[]) AND e.student_id = $2::uuid AND e.subject = $3::platform.subject""",
+            ids, student_id, subject,
+        )
+    rank = {"admitted": 0, "pending_review": 1, "source_unverified": 2, "rejected": 3}
+    return {r[0]: max((r["ev_adm"], r["item_adm"] or "admitted"), key=rank.__getitem__) for r in rows}
 
 
 # ---------- 落库 ----------
@@ -133,11 +150,11 @@ async def _insert_evidence(conn, e: dict, *, student_id, subject, method, ctx) -
         "kind": e["kind"],
         "item_id": local_id(e["item_ref"]) if "item_ref" in e else None,
         "skill_local_id": local_id(e["skill_node"]) if "skill_node" in e else None,
-        "admission": e["admission"],
         "payload": e["payload"],
         "media_ref": e.get("media_ref"),
         "occurred_at": e["occurred_at"],
     }
+    # 摘要不含准入状态：题目的准入状态之后可能变严，同一证据重试不应因此被判为“内容不同”
     digest = sha256_hex(stored)
     inserted = await conn.fetchval(
         """INSERT INTO platform.evidence_registry (evidence_id, occurred_at, student_id, content_digest, request_idempotency_key)
@@ -242,6 +259,11 @@ async def persist(pool, *, method, key, lease_token, request, response, verified
                 raise LeaseLost()
             for e in verified.evidence:
                 await _insert_evidence(conn, e, student_id=student_id, subject=subject, method=method, ctx=ctx)
+            taken = await conn.fetchval(
+                "SELECT count(*) FROM platform.attempt WHERE attempt_id = ANY($1::text[]::uuid[])", attempt_ids
+            )
+            if taken:
+                raise IngestError(409, "ATTEMPT_ID_CONFLICT", "attempt_id is already recorded for another request")
             for a, attempt_id, ev_id in zip(attempts, attempt_ids, verified.response_evidence_ids):
                 await _insert_attempt(conn, a, attempt_id, ev_id, student_id=student_id, subject=subject, ctx=ctx)
             summary = dict(summary_base)

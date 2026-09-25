@@ -379,7 +379,7 @@ async def test_non_finite_numbers_in_request_are_rejected(api, student):
 
 
 async def test_request_body_limit(api):
-    r = await api.post("/internal/v0/grade", content=b"x" * (1024 * 1024 + 1), headers={"content-type": "application/json"})
+    r = await api.post("/internal/v0/grade", content=b"x" * (16 * 1024 * 1024 + 1), headers={"content-type": "application/json"})
     assert r.status_code == 413
 
 
@@ -396,3 +396,93 @@ def test_config_refuses_unsafe_settings():
     ok = Settings.from_env({**base, "LEARNING_ADAPTER_AYA_URL": "http://127.0.0.1:8787/", "LEARNING_ADAPTER_AYA_TOKEN": "a" * 32})
     assert ok.adapters["aya"].base_url == "http://127.0.0.1:8787"
     assert ok.lease_seconds > 2 * ok.diagnose_timeout + 1, "租约必须长于适配器调用的总预算"
+
+
+# ---------- 契约守护复核 ----------
+def _prior_record(evidence_id: str, item: str, admission: str) -> dict:
+    return {"evidence_id": evidence_id, "kind": "verifier_trace", "occurred_at": "2026-10-01T00:00:00+00:00",
+            "item_ref": f"aya:{item}", "admission": admission,
+            "payload": {"sampled_points": 8, "agreeing_points": 8, "reason_codes": []}}
+
+
+def _cite_prior(prior_id: str):
+    def f(out):
+        out["result"]["observations"][0]["evidence_ids"].append(prior_id)
+        out["semantics"], out["human_review_required"] = "formal", False
+        out.pop("review_reasons", None)
+        return out
+    return f
+
+
+async def test_prior_evidence_must_exist_for_this_student(api, pools, student, fake_adapter):
+    """阻断 1：请求自带的既有证据必须真在库里、属于这个学生；否则调适配器之前就拒绝。"""
+    other = grade_body(student)
+    r = await post(api, "grade", other)
+    known = r.json()["evidence_ids"][0]
+    calls = fake_adapter.calls
+    for pid in (str(uuid.uuid4()),):
+        body = diagnose_body(student, [at("SYN-UNV", "42", 5)])
+        body["prior_evidence"] = [_prior_record(pid, "SYN-UNV", "admitted")]
+        r = await post(api, "diagnose", body)
+        assert r.status_code == 422, r.text
+    # 别的学生的证据
+    _, admin = pools
+    other_student = str(uuid.uuid4())
+    body = diagnose_body(other_student, [at("SYN-UNV", "42", 6)])
+    body["prior_evidence"] = [_prior_record(known, "SYN-UNV", "admitted")]
+    r = await post(api, "diagnose", body)
+    assert r.status_code == 422
+    assert fake_adapter.calls == calls
+
+
+async def test_prior_evidence_admission_comes_from_platform(api, pools, student, fake_adapter):
+    """阻断 1：既有证据自称 admitted，平台库里是 source_unverified：结果必须是 practice + 复核。"""
+    first = (await post(api, "grade", grade_body(student, item="SYN-UNV"))).json()
+    prior_id = first["evidence_ids"][0]
+    fake_adapter.admission = "admitted"
+    fake_adapter.mutate = _cite_prior(prior_id)
+    body = diagnose_body(student, [at("SYN-ADM", "42", 7)])
+    body["prior_evidence"] = [_prior_record(prior_id, "SYN-UNV", "admitted")]
+    r = await post(api, "diagnose", body)
+    assert r.status_code == 200, r.text
+    assert r.json()["semantics"] == "practice" and r.json()["human_review_required"] is True
+
+
+async def test_attempt_id_is_globally_unique(api, pools, student):
+    """应修 2：两个请求带同一个 attempt_id（作答时间不同）：第二个 409，不写任何行。"""
+    _, admin = pools
+    shared = str(uuid.uuid4())
+    b1 = grade_body(student)
+    b1["attempt"]["attempt_id"] = shared
+    assert (await post(api, "grade", b1)).status_code == 200
+    b2 = grade_body(student)
+    b2["attempt"]["attempt_id"] = shared
+    b2["attempt"]["occurred_at"] = "2026-10-09T08:00:00+08:00"
+    r = await post(api, "grade", b2)
+    assert r.status_code == 409 and r.json()["code"] == "ATTEMPT_ID_CONFLICT"
+    assert await counts(admin, student) == ONE_GRADE
+    # 同一请求重放不受影响
+    assert (await post(api, "grade", b1)).headers["idempotent-replayed"] == "true"
+
+
+async def test_too_short_lease_terminates_without_duplicate_rows(pools, student, fake_adapter):
+    """阻断 2：租约配置得比适配器调用还短时，两个同 key 请求不能无限轮流接管；最终都返回，且至多写一次。"""
+    import httpx
+    from conftest import CREDENTIAL, settings
+    from learning.app import create_app
+    app_pool, admin = pools
+    fake_adapter.delay = 0.5
+    app = create_app(settings(lease_seconds=0.3, grade_timeout=1.0), pool=app_pool,
+                     transport=httpx.MockTransport(fake_adapter.handler))
+    body = grade_body(student)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://l.test",
+                                     headers={"authorization": f"Bearer {CREDENTIAL}"}) as c:
+            first = asyncio.create_task(c.post("/internal/v0/grade", json=body))
+            await asyncio.sleep(0.4)
+            second = asyncio.create_task(c.post("/internal/v0/grade", json=body))
+            done = await asyncio.wait_for(asyncio.gather(first, second), timeout=20)
+    assert {r.status_code for r in done} <= {200, 503}
+    assert fake_adapter.calls < 20
+    got = await counts(admin, student)
+    assert got in (ONE_GRADE, NOTHING)

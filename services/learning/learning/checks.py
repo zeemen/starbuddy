@@ -98,6 +98,7 @@ def verify(
     *,
     registered_items: dict[str, str],
     registered_nodes: set[str],
+    prior_admission: dict[str, str] | None = None,
 ) -> Verified:
     """registered_items：local item_id → 平台准入状态；registered_nodes：已登记的 local skill id。"""
     subject = request["context"]["subject"]
@@ -129,7 +130,10 @@ def verify(
         raise rejected("duplicate evidence_id in response")
 
     # 2. 证据 ID 闭合：引用只能指向本次证据或请求里的既有证据
-    prior = {p["evidence_id"]: p for p in request.get("prior_evidence", [])}
+    # 既有证据只认平台库里查到的（契约守护阻断 1）：请求里自带的 admission 不作数
+    prior_admission = prior_admission or {}
+    prior = {p["evidence_id"]: {**p, "admission": prior_admission[p["evidence_id"]]}
+             for p in request.get("prior_evidence", []) if p["evidence_id"] in prior_admission}
     allowed = set(new_ids) | set(prior)
     referenced = set(response.get("evidence_ids", []))
     for ids in _walk(response.get("result", {}), "evidence_ids"):

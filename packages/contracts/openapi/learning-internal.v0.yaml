@@ -7,7 +7,8 @@ info:
     状态：**草稿，随冲刺 1-C 实现提交，待评审**（specs/learning-ingest-sprint1/spec.md；待人确认 #2 默认方案 a）。
 
     请求体就是学科插件 API v0.9 的 `GradeRequest` / `DiagnoseRequest`（`plugin-api.v0.9.yaml`），
-    BFF 在调用前已完成鉴权、家长授权与计量预留（ADR 01 第 4 条、ADR 06）。学习服务调用对应学科的适配器，
+    BFF 在调用前已完成鉴权、家长授权、选科（subject_enrollment）与同意（consent）检查，以及计量预留
+    （ADR 01 第 4 条、ADR 06）。学习服务不重复检查这些。学习服务调用对应学科的适配器，
     按平台规则核对结果，在一个事务里幂等地写入学习者模型，然后返回**平台摘要**，不原样转发适配器响应。
 
     ## 幂等
@@ -146,6 +147,7 @@ components:
             - CONTENT_NOT_REGISTERED
             - IDEMPOTENCY_CONFLICT
             - BUSY  # 同 key 的另一请求仍在执行；响应头 retry-after
+            - ATTEMPT_ID_CONFLICT  # BFF 带来的 attempt_id 已被另一请求用过
             - UPSTREAM_REJECTED
             - UPSTREAM_UNAVAILABLE
             - UPSTREAM_TIMEOUT
@@ -155,6 +157,6 @@ components:
         upstream_code:
           type: string
           description: 适配器返回的 Problem.code（UPSTREAM_REJECTED 时），例如 ITEM_NOT_FOUND。
-          pattern: '^[A-Z_]{1,48}$'
+          pattern: '^[A-Z][A-Z0-9_]{0,47}$'
         retryable: { type: boolean, description: 为真时 BFF 可用同一个 idempotency_key 重试。 }
         request_id: { $ref: '#/components/schemas/Uuid' }

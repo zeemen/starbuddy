@@ -25,7 +25,8 @@ from .service import IngestService
 
 log = logging.getLogger("starbuddy.learning")
 UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
-MAX_BODY_BYTES = 1024 * 1024
+# 契约允许 diagnose 带 200 道作答、每道 20000 字（UTF-8 最多约 12 MB），再加 500 条既有证据
+MAX_BODY_BYTES = 16 * 1024 * 1024
 
 
 async def _read_limited(request: Request) -> bytes:
