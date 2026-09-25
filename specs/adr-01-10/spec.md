@@ -2,7 +2,7 @@
 
 状态：草稿 v0.2（待产品负责人确认标题与决策人；确认人、日期：＿＿＿）
 关联：开发计划 冲刺 0 W2 · ClaudeCode 执行方案 第八章“W2 周一：契约起草”第 4 条 · 完整方案 第五、六、七章 ·
-四科盘点 `specs/inventory-*/decisions.md`（负责人已于 2026-09-25 确认） · `docs/adr/09-data-residency.md`（草稿，分支 `docs/adr-09-data-residency`）
+四科盘点 `specs/inventory-*/decisions.md`（负责人已于 2026-09-25 确认） · `docs/adr/09-data-residency.md`（草稿，待签字）
 
 ## v0.2 变更
 - 范围从 01–08 扩到 01–10：纳入已起草的 ADR 09“数据驻留”，另外新增 ADR 10“境内托管选型”（ADR 09 第 4 节要求另起）。
@@ -48,20 +48,15 @@
 - 只写文档，不直接修改 migrations / RLS / 计量 / contracts。但 ADR 02、06 的决定会约束这些内容，ADR 04、08、09、10 涉及第三方供应商与数据出境。整体按必停项处理。
 
 ## 依赖与输入
-- 四科盘点及 decisions（已确认）：`specs/inventory-{aya,wenli,zhixing,echo}/`，分支 `docs/sprint0-inventory`。
-- ADR 09 草稿，分支 `docs/adr-09-data-residency`。
+- 四科盘点及 decisions（已确认）：`specs/inventory-{aya,wenli,zhixing,echo}/`。
+- ADR 09 草稿：`docs/adr/09-data-residency.md`。
 - 七项待拍板决策会（W2 周三）：第 5 项“英语是否保持独立技术栈”的前提已经变了（没有 Gemini 链路），建议会上改成“英语境内语音供应商选型”。
 
-## 分支与合并建议
-ADR 01–08、10 起草时要引用 ADR 09 和四科 decisions，但这两部分目前在两条不同的分支上。建议：
-1. 先合并 `docs/sprint0-inventory` 与 `docs/adr-09-data-residency` 到 main（两条分支改动的文件互不重叠）；
-2. 再从 main 新开 `docs/adr-01-10` 分支起草。
-
-也可以不等合并，直接从 `docs/adr-09-data-residency` 分出，但这样后续要多一次合并。
+## 分支建议
+盘点（#1）与 ADR 09（#2）已合入 main。起草 ADR 01–08、10 时，从 main 新开 `docs/adr-01-10` 分支。
 
 ## 待人确认
 1. 上表“建议决策人”是否正确？团队按标准配置还是按 ClaudeCode 执行方案的最小团队？
 2. 新增 ADR 10“境内托管选型”，编号是否就用 10？
 3. ADR 09 待人确认 #6（单独存在还是并入评审）：本 spec 建议并入，01–10 在 W2 周五一起评审，09 第一个签。
 4. ADR 08 标题按上表改写是否同意？
-5. 上面“分支与合并建议”采用第 1 种还是第 2 种？

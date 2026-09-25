@@ -9,11 +9,11 @@
 | # | 事项 | 状态 | 证据 / 说明 |
 |---|---|---|---|
 | 1 | 确认团队配置，指定技术负责人与四科盘点负责人 | 仓库外，无法核验 | ClaudeCode 执行方案改为“产品负责人 + 资深工程师 + Claude Code”的最小团队，需确认采用哪一版 |
-| 2 | 下发盘点模板，约定 W1 周五交稿 | ✅ 提前完成 | 四科盘点、适配器设计 v0.2、decisions 都在分支 `docs/sprint0-inventory`，负责人已于 9/25 确认。**尚未合并到 main**；`specs/inventory-summary.md` 还没有产出 |
+| 2 | 下发盘点模板，约定 W1 周五交稿 | ✅ 提前完成 | 四科盘点、适配器设计 v0.2、decisions 负责人已于 9/25 确认，已合并到 main（zeemen/starbuddy#1）；`specs/inventory-summary.md` 还没有产出 |
 | 3 | 开通平台单仓与三套环境；集中四科仓库只读访问 | 部分完成 | 单仓已建立；四科仓库在负责人本地的 `legacy/` 下都有（知行的主体代码在文砺仓库的 `apps/daofa`，开口成章在 `legacy/echo/Ai-english-claude/echo-quest`）。三套环境：ADR 09 已提出按“dev/staging 境外 + 合成数据、pilot/生产境内”分环境，待签字；环境本身还没开 |
 | 4 | 联系外部合规顾问 | 仓库外，无法核验 | — |
 | 5 | 排定 W2 周三七项待拍板决策会 | 仓库外，无法核验 | 七项议题见完整方案第十五章 |
-| 6 | 起草 ADR 01–08 的标题与决策人 | **已起草，待确认** | `specs/adr-01-10/spec.md`（已按 ADR 09 扩到 01–10）；ADR 09 正文已起草（分支 `docs/adr-09-data-residency`） |
+| 6 | 起草 ADR 01–08 的标题与决策人 | **已起草，待确认** | `specs/adr-01-10/spec.md`（已按 ADR 09 扩到 01–10）；ADR 09 正文已起草并合入 main（zeemen/starbuddy#2，待签字） |
 | 7 | 教研审阅错因跨科映射草稿 | 未开始 | 仓库里还没有 `docs/mapping/error-taxonomy.md` 草稿，教研无稿可审 |
 | 8 | 视觉：阿鸦母版定稿 | 仓库外 | 有视觉家族规范 v1.2；新增落地页原型 `docs/design/落地页原型-北斗七科-v0.html`，仅作参考 |
 | 9 | 语音工程整理开口成章语音链供应商与数据流向 | ✅ 现状已查清 | 没有 Gemini 链路，现状是 Anthropic + 浏览器 Web Speech，没有第三方评测（echo decisions #1）。境内 ASR/TTS/评测三家盲测已纳入 ADR 09 |
@@ -40,5 +40,5 @@
 3. 确认 Supabase 连接器指向的项目。
 4. `Downloads/` 下两个 zip（启动包与文档包，1.1 MB）内容已经展开到仓库里，是否删除？（我没有删）
 5. `zeemen/ai-yuwen` 看起来也是语文相关仓库，它和文砺是什么关系，要不要一起盘点？
-6. 合并 `docs/sprint0-inventory` 与 `docs/adr-09-data-residency` 到 main（后续 ADR 与契约起草都要引用它们）。
+6. ~~合并盘点与 ADR 09 分支到 main~~：已完成（#1、#2）。
 7. 文砺盘点提到 wenli 仓库根目录有 `starbuddy-secrets-backup`（守卫拦截了读取，内容未核查）。如果里面是真实密钥，需要移出代码仓库并轮换。

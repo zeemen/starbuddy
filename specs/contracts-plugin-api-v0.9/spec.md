@@ -52,8 +52,8 @@ W2 周五评审进入 v0.9，W4 冻结为 v1.0。
 - migrations / RLS / 计量逻辑 / 人设 / 第三方：否（计量只约定字段，不实现）。
 
 ## 依赖与输入
-- 四科盘点与 decisions：`specs/inventory-{aya,wenli,zhixing,echo}/`（分支 `docs/sprint0-inventory`，已确认）。
-- ADR 09 数据驻留（分支 `docs/adr-09-data-residency`，草稿）。
+- 四科盘点与 decisions：`specs/inventory-{aya,wenli,zhixing,echo}/`（已确认）。
+- ADR 09 数据驻留：`docs/adr/09-data-residency.md`（草稿）。
 - `specs/inventory-summary.md`（W1 周三产出，尚未产出）。
 - 错因跨科七大类映射表 v0.9（教研签字前，契约先用枚举占位）。
 
