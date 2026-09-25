@@ -41,11 +41,12 @@ W2 周五评审进入 v0.9，W4 冻结为 v1.0。
 ## 验收标准（可测试）
 - [x] `plugin-api.v0.9.yaml` 通过 OpenAPI 3.1 校验（改用 openapi-spec-validator，Apache-2.0；`make contract-test`）。
 - [x] 六个方法的响应都 `$ref` 同一个信封 `PluginResultBase`，六个必需字段全部 `required`（脚本检查）。
-- [x] `grade` 的响应 schema 里没有“讲解 / 人设文本覆盖分数”的字段；`GradeResult` 无自由文本，六个响应信封之外不允许额外字段（规则 3；脚本与反向测试检查）。
+- [x] `grade` 的响应 schema 里没有“讲解 / 人设文本覆盖分数”的字段：检查脚本遍历响应的完整 schema 树，确认没有无约束字符串、开放对象或 patternProperties（只有学生原文除外）；主观判分低置信加复核写进结构；反例集（`tests/counterexamples.py`，39 个）与变异测试（`tests/test_mutations.py`，30 个）验证（规则 3）。
+  - 修订说明：初版勾选时，“反向测试”只在会话里跑过、没有进仓库，字段检查也只是黑名单。contract-guardian 审查（2026-09-25）指出这一点后补齐。
 - [x] 所有消耗类方法都把 `usage_id` 与 `idempotency_key` 设为必填；非消耗类方法写明理由（`info.description` 计量一节）。
 - [x] 示例全部为合成数据，不含任何真实姓名、学校、手机号（规则 8；脚本做手机号、身份证号、邮箱扫描）。
 - [x] 5.4 映射表中四科 × 六方法的每一格，都能在契约里找到对应的请求字段（`packages/contracts/README.md` 映射表）；映射不上的列入“待人确认”第 8、9 条。
-- [ ] 由 contract-guardian 子代理只读审查，结论附在 PR 中。
+- [x] 由 contract-guardian 子代理只读审查（2026-09-25）。首轮结论“不通过”，阻断 6 项已全部修复；建议项的处理见下文“评审议程”。复核结论附在 PR 中。
 
 ## 涉及的必停项（见 CLAUDE.md）
 - packages/contracts：**是**，PR 首行写 `[NEEDS-HUMAN]`。
@@ -68,6 +69,31 @@ W2 周五评审进入 v0.9，W4 冻结为 v1.0。
 8. 文砺“作文二改幅度”没有数据来源，契约 v0.9 未设字段（wenli adapter-design §1）。
 9. 知行的 skill_node 坐标（五维还是过程四步）待教研定；契约只约束 `zhixing:<local_id>` 格式。
 10. `teach` 是否需要流式（SSE）变体？阿鸦教练现在是 SSE。契约 v0.9 只定义了整包返回。
+
+## 评审议程：contract-guardian 建议项（首轮审查）
+已在本轮采纳：
+- 带 `student_ref` 的请求 `data_class` 只允许 L2/L3（建议 1）。
+- teach 的人设只允许常驻型老师和点点（建议 2）。
+- 新增错误码 `DISCIPLINE_NOT_SUPPORTED`，用于 zhixing 历史判分（建议 3）。
+- 异步受理回传 `usage_id` 与 `idempotency_key`，同 key 返回同 job_id（建议 4 部分）。
+- JobStatus 结果与 method 绑定，只有 succeeded 带结果（建议 5）。
+- `calibrated` 必填，分数非负（建议 6 部分）。
+- 变式候选至少同节点或同错因之一（建议 7 部分）。
+- `local_level`、`subject_category` 加 pattern，`SkillObservation` 加 `algorithm_version`，payload 不能写 XP（建议 8）。
+- 新增证据类型 `speech_features`、维度级 `uncertainty`、复核原因“双评分歧 / 满分二评”（建议 9 部分）。
+- grade 的 `content_version` 必填（建议 11）。
+- Makefile 严格模式 `CONTRACT_STRICT=1`（建议 13）。
+- 检查脚本不再因为缺路径崩溃；新增证据引用闭合检查、202 与主观判分示例（建议 14 部分）。
+
+留给评审决定：
+- 普通提示是否计量（建议 4；即待人确认 #2）。计量的结算单位、内容指纹字段（ADR 06 §3.3、§3.5）。
+- 分数不超过满分、总分与各维之和一致、请求学科与引用前缀一致：JSON Schema 表达不了，目前写成“平台侧校验”（建议 6、12）。
+- 文砺“维度 × 难度”的变式参数（建议 7）。
+- 英语安全审核 flag 与复核分开（建议 9）。
+- 各方法的超时约定（建议 10）。
+- 姓名、学校类 PII 的检测（建议 14）。
+- 一次结果用到两个模型时 `model_version` 怎么写（建议 15）。
+- 非消耗类方法不计量的理由需要更完整的说明（建议 16）。
 
 ## 起草时采用的默认值（评审可推翻）
 - 待人确认 #1：`confidence` 保持 0–1，加可选 `uncertainty` 区间；主观维度上限未写死在 schema 里，由各维 `subjective = true` 标识。
