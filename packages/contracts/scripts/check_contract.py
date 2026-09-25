@@ -46,13 +46,16 @@ RESPONSES = {
 # 允许出现“无约束字符串 / 开放对象”的位置：(schema 名, 属性名) -> 允许的响应
 # 学生作答原文是证据本身；teach 的讲解文本就是教学内容。grade 不允许任何其他自由文本（CLAUDE.md 规则 3）。
 FREE_TEXT_ALLOW = {
-    ("EvidencePayloadText", "text"): set(RESPONSES.values()),
+    ("EvidencePayloadText", "text"): {*RESPONSES.values(), "JobStatus"},
     ("TeachSegment", "text"): {"TeachResponse"},
     ("TeachSegment", "latex"): {"TeachResponse"},
     ("TeachSegment", "dsl"): {"TeachResponse"},
-    ("TeachSegment", "dsl_version"): {"TeachResponse"},
     ("TeachResult.verified_claims", "claim"): {"TeachResponse"},
+    ("Problem", "title"): {"JobStatus"},
+    ("Problem", "detail"): {"JobStatus"},
 }
+# 自由文本扫描的根：六个响应 + 异步任务状态（失败时带 Problem）
+SCAN_ROOTS = [*RESPONSES.values(), "JobStatus"]
 PII_PATTERNS = {
     "手机号": re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)"),
     "身份证号": re.compile(r"(?<!\d)\d{17}[\dXx](?!\d)"),
@@ -107,6 +110,11 @@ def _free_text_leaks(doc: dict, root: str) -> list[str]:
         types = types if isinstance(types, list) else [types]
         if "string" in types and not allowed and not any(k in node for k in ("enum", "const", "pattern", "format")):
             leaks.append(f"{trail}：无约束字符串（没有 enum / const / pattern / format）")
+        pat = node.get("pattern")
+        if isinstance(pat, str) and not (pat.startswith("^") and pat.endswith("$")):
+            leaks.append(f"{trail}：pattern 没有同时锚定开头和结尾，可以夹带任意文本：{pat}")
+        if "string" in types and allowed and "maxLength" not in node:
+            leaks.append(f"{trail}：允许的自由文本也必须有 maxLength")
         if node.get("additionalProperties") is True and not allowed:
             leaks.append(f"{trail}：开放对象（additionalProperties: true）")
         if node.get("patternProperties"):
@@ -164,9 +172,27 @@ def check_structure(doc: dict, errors: list[str]) -> None:
     if "semantics" not in base.get("required", []):
         errors.append("PluginResultBase.semantics 必须必填（内容准入）")
 
-    for name in RESPONSES.values():
+    for name in SCAN_ROOTS:
         if name in schemas:
             errors.extend(_free_text_leaks(doc, name))
+
+    # 规则 1/2：适配器需要的数据由平台放进请求（内容，不是 ID），适配器不查库
+    need_content = {
+        "DiagnoseRequest": {"prior_evidence": "EvidenceRecord"},
+        "TeachRequest": {"recent_evidence": "EvidenceRecord"},
+        "ReportRequest": {"evidence": "EvidenceRecord", "error_attributions": "ErrorAttribution",
+                          "mastery_history": None},
+    }
+    for req_name, fields in need_content.items():
+        props = schemas.get(req_name, {}).get("properties", {})
+        for field, item_ref in fields.items():
+            if field not in props:
+                errors.append(f"{req_name} 缺少 {field}：平台必须把数据内容放进请求（规则 1/2）")
+            elif item_ref and _refname(props[field].get("items", {}).get("$ref", "")) != item_ref:
+                errors.append(f"{req_name}.{field} 的元素必须是 {item_ref}（传内容，不是只传 ID）")
+        leaked_ids = [f for f in props if f.endswith("evidence_ids")]
+        if leaked_ids:
+            errors.append(f"{req_name} 只传证据 ID（{leaked_ids}），适配器会被迫查库（规则 1/2）")
 
     job = schemas.get("JobStatus", {})
     bound = {_refname(c.get("then", {}).get("properties", {}).get("response", {}).get("$ref", ""))

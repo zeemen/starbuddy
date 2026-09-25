@@ -3,6 +3,7 @@
 
 # 可指向装了 packages/contracts/requirements-dev.txt 的解释器，例如 make check PYTHON=.venv/bin/python
 PYTHON ?= python3
+export PYTHONDONTWRITEBYTECODE = 1
 # CI 里设 CONTRACT_STRICT=1：缺依赖直接失败，不允许“跳过”变绿
 CONTRACT_STRICT ?= 0
 

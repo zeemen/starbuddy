@@ -77,7 +77,7 @@ MUTATIONS = {
     "删除“模型判分一律主观”": drop_allof_clause("DimensionScore", "模型判分一律是主观维度"),
     "删除“主观维度低置信”": drop_allof_clause("DimensionScore", "主观维度一律低置信"),
     "删除“主观维度必须复核”": drop_allof_clause("GradeResponse", "含主观维度"),
-    "删除“needs_review 必须复核”": drop_allof_clause("GradeResponse", "needs_review"),
+    "删除“needs_review 必须复核”": drop_allof_clause("GradeResponse", "needs_review → 复核"),
     "删除“null 维度必须复核”": drop_allof_clause("GradeResponse", "有维度分为 null → 复核"),
     "删除“null 维度必须列出”": drop_allof_clause("GradeResult", "总分必须列出被排除的维度"),
     "删除“验证器判分必须带 verifier”": drop_allof_clause("GradeResult", "必须给出验证器对象"),
@@ -98,6 +98,27 @@ MUTATIONS = {
                                      ["request_id", "subject", "student_ref", "data_class", "contract_version"]),
     "报告 ReportFields 改为开放对象": assign(f"{S}.ReportFields.additionalProperties", True),
     "异步受理不回传 usage_id": assign(f"{S}.JobAccepted.required", ["job_id", "method", "status", "poll_after_ms"]),
+    # contract-guardian 复核（2026-09-25）发现漏检的变异
+    "删除 kind→payload 绑定": delete(f"{S}.EvidenceDraft.allOf"),
+    "DimensionScore.subjective 改为可选": assign(f"{S}.DimensionScore.required",
+                                              ["dimension_id", "score", "max_score", "judged_by", "confidence", "evidence_ids"]),
+    "删除主观判分的信封级置信上限": delete(f"{S}.GradeResponse.allOf.2.then.properties.confidence"),
+    "删除未准入条件里的 content_not_admitted": delete(f"{S}.PluginResultBase.allOf.1.then.properties.review_reasons"),
+    "ScoringPoint.evidence_ids 允许为空": delete(f"{S}.ScoringPoint.properties.evidence_ids.minItems"),
+    "verifier.version 改为可选": assign(f"{S}.GradeResult.properties.verifier.required", ["verifier_id", "reason_codes"]),
+    "prior_evidence 改回只传 ID": lambda d: (_get(d, f"{S}.DiagnoseRequest.properties").pop("prior_evidence"),
+                                          _get(d, f"{S}.DiagnoseRequest.properties").__setitem__(
+                                              "prior_evidence_ids", {"type": "array", "items": {"$ref": "#/components/schemas/EvidenceId"}})),
+    "删除 mastery_history": delete(f"{S}.ReportRequest.properties.mastery_history"),
+    "objstore 引用改回弱 pattern": assign(f"{S}.EvidenceDraft.properties.media_ref.pattern", "^objstore://"),
+    # 本轮新增规则
+    "删除“验证器边界原因码 → 复核”": drop_allof_clause("GradeResponse", "边界情况原因码"),
+    "删除“needs_review 低置信”": drop_allof_clause("GradeResponse", "整体低置信"),
+    "删除“采分点无法判定 → 复核”": drop_allof_clause("GradeResponse", "采分点无法判定"),
+    "删除“规则判分必带 rule_ref”": drop_allof_clause("DimensionScore", "已登记的规则引用"),
+    "证据 payload 改为可选": assign(f"{S}.EvidenceDraft.required", ["evidence_id", "kind", "occurred_at", "admission"]),
+    "交互信号允许 xp_ 前缀": assign(f"{S}.EvidencePayloadSignal.properties.signal_code.pattern", "^[a-z0-9_]{1,48}$"),
+    "Problem.title 去掉长度限制": delete(f"{S}.Problem.properties.title.maxLength"),
 }
 
 

@@ -34,8 +34,8 @@ make contract-mutation PYTHON=.venv/bin/python  # 约 15 秒，make check 会跑
 ## 设计要点（评审时请重点看）
 
 1. **适配器不写平台表，也不读平台表**。证据以 `evidence` 草稿的形式放在响应里，带适配器生成的 UUID；学习服务按这个 ID 落库（ADR 01）。适配器需要的既有证据、错因、掌握度时间序列，都由平台放进请求（`prior_evidence`、`recent_evidence`、`ReportRequest.evidence / error_attributions / mastery_history`），适配器不自行查库，也不保存副本。
-2. **判分没有自由文本**。检查脚本遍历六个响应的完整 schema 树，任何字符串字段都必须有 enum、const、pattern 或 format 约束；开放对象和 `patternProperties` 也不允许。只有两处例外：学生作答原文（`EvidencePayloadText.text`），以及 teach 的讲解文本。六个响应信封之外不允许任何额外字段（`unevaluatedProperties: false`）。评语由人设层单独生成。
-2a. **复核规则写进结构**。模型判分一律算主观维度；主观维度的置信度 ≤ 0.5，并且必须复核；`verdict = needs_review` 必须复核；维度分为 null 时，必须列出被排除的维度并复核；由验证器判分时必须带验证器对象和版本。grade 至少要带一条新证据。
+2. **判分没有自由文本**。检查脚本遍历六个响应的完整 schema 树，任何字符串字段都必须有 enum、const、pattern 或 format 约束；开放对象和 `patternProperties` 也不允许。只有两处例外：学生作答或转写原文（`EvidencePayloadText.text`），以及 teach 的讲解文本；例外字段也必须限长。所有 pattern 都必须同时锚定开头和结尾，否则也算没约束。采分点片段只引用原文偏移，不复制文本。六个响应信封之外不允许任何额外字段（`unevaluatedProperties: false`）。评语由人设层单独生成。
+2a. **复核规则写进结构**。模型判分一律算主观维度；主观维度的置信度 ≤ 0.5，并且必须复核；`verdict = needs_review` 必须复核且低置信；验证器报了边界原因码必须复核；采分点无法判定必须复核；维度分为 null 时，必须列出被排除的维度并复核。验证器或规则判分的维度必须带已登记的 `rule_ref`；验证器判分还要带验证器对象和版本。grade 至少要带一条新证据。
 3. **计量字段**。`diagnose`、`grade`、`teach` 用 `MeteredContext`，`usage_id` 必填；六个方法都要求 `idempotency_key` 必填。
 4. **内容准入**。证据带 `admission`，结果必须带 `semantics`（`formal` / `practice`）。只要有一条证据未准入，结果就只能是 `practice`，并且必须复核。
 5. **可追溯**。`model_version` 必须是 `model:供应商/模型@版本` 或 `algo:名称@版本`，不允许 `routed` 这类值。
@@ -48,6 +48,8 @@ make contract-mutation PYTHON=.venv/bin/python  # 约 15 秒，make check 会跑
 - 证据引用闭合：`evidence_ids` 只能指向本响应的草稿，或者请求里的既有证据（示例已由检查脚本验证闭合）。
 - 请求 `subject` 与 `item_ref`、`skill_node` 的前缀一致。
 - 申诉（`appeal = true`）的结果必须复核。
+- `semantics` 按结果引用的全部证据（请求里的加本次草稿）的准入状态重新判定，适配器声明的只能更严；`forecast` 只计已准入证据。
+- `rule_ref` 必须在平台 Rubric / 验证器注册表里，否则按模型判分处理。
 - `EvidencePayloadText.text` 只能是学生原文，不能是评语（由人设与判分评测抽检）。
 
 ## 四科 × 六方法映射（完整方案 5.4 → 契约字段）

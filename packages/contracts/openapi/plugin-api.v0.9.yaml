@@ -454,7 +454,7 @@ components:
         适配器产生的证据草稿，由学习服务落库为 `evidence_event`（ADR 01）。原始证据与推断分开：
         这里只放**观察到的事实**（作答、转写、命中的采分点片段），推断放在各方法的 result 里。
         语音只存评测结果与特征，不存原始音频（完整方案 5.5）。
-      required: [evidence_id, kind, occurred_at, admission]
+      required: [evidence_id, kind, occurred_at, admission, payload]
       additionalProperties: false
       properties:
         evidence_id: { $ref: '#/components/schemas/EvidenceId' }
@@ -485,16 +485,19 @@ components:
             和掌握度不能写进证据（echo #12/A6；CLAUDE.md 规则 2）。
           oneOf:
             - $ref: '#/components/schemas/EvidencePayloadText'
+            - $ref: '#/components/schemas/EvidencePayloadSpan'
             - $ref: '#/components/schemas/EvidencePayloadChoice'
             - $ref: '#/components/schemas/EvidencePayloadVerifierTrace'
             - $ref: '#/components/schemas/EvidencePayloadSignal'
         media_ref:
           type: string
           description: 对象存储中的引用（照片、转写来源）。不得是公网可直接访问的 URL。
-          pattern: '^objstore://'
+          pattern: '^objstore://[a-z0-9][a-z0-9/_.\-]{0,255}$'
       allOf:
-        - if: { properties: { kind: { enum: [response_text, ocr_transcription, asr_transcription, scoring_point_span] } }, required: [kind] }
+        - if: { properties: { kind: { enum: [response_text, ocr_transcription, asr_transcription] } }, required: [kind] }
           then: { properties: { payload: { $ref: '#/components/schemas/EvidencePayloadText' } } }
+        - if: { properties: { kind: { const: scoring_point_span } }, required: [kind] }
+          then: { properties: { payload: { $ref: '#/components/schemas/EvidencePayloadSpan' } } }
         - if: { properties: { kind: { const: response_choice } }, required: [kind] }
           then: { properties: { payload: { $ref: '#/components/schemas/EvidencePayloadChoice' } } }
         - if: { properties: { kind: { const: verifier_trace } }, required: [kind] }
@@ -513,7 +516,15 @@ components:
       required: [text]
       additionalProperties: false
       properties:
-        text: { type: string, maxLength: 20000, description: 学生作答或转写原文。 }
+        text: { type: string, maxLength: 20000, description: 学生作答或转写原文（只来自学生，不能是适配器写的内容）。 }
+
+    EvidencePayloadSpan:
+      type: object
+      description: 采分点命中的片段：引用学生原文证据的偏移，不复制文本（防止适配器借片段写评语）。
+      required: [source_evidence_id, span_start, span_end]
+      additionalProperties: false
+      properties:
+        source_evidence_id: { $ref: '#/components/schemas/EvidenceId' }
         span_start: { type: integer, minimum: 0 }
         span_end: { type: integer, minimum: 0 }
 
@@ -538,7 +549,10 @@ components:
       required: [signal_code]
       additionalProperties: false
       properties:
-        signal_code: { type: string, pattern: '^[a-z0-9_]{1,48}$' }
+        signal_code:
+          type: string
+          description: 信号编码。禁止 `xp_`、`achievement_`、`mastery_` 前缀：游戏化数值与掌握度不进证据（echo #12/A6；CLAUDE.md 规则 2）。
+          pattern: '^(?!xp_|achievement_|mastery_)[a-z0-9_]{1,48}$'
         value: { type: number }
 
     VerifierReasonCode:
@@ -593,7 +607,13 @@ components:
           type: array
           items: { $ref: '#/components/schemas/ReviewReason' }
           uniqueItems: true
-        semantics: { $ref: '#/components/schemas/Semantics' }
+        semantics:
+          description: |
+            适配器声明的结果效力。**平台侧规则**：平台按结果引用的全部证据（请求里的 EvidenceRecord
+            加本次草稿）的 admission 重新判定 semantics；适配器声明的只能比平台判定的更严，不能更松。
+            报告的 `forecast` 只计已准入证据。复核完成前，`human_review_required = true` 的结果不计入
+            正式测评与掌握门槛（待评审确认）。schema 只能约束本次草稿，下面的条件是其中一部分。
+          $ref: '#/components/schemas/Semantics'
       allOf:
         - description: human_review_required 为真时必须给出原因。
           if: { properties: { human_review_required: { const: true } }, required: [human_review_required] }
@@ -652,8 +672,8 @@ components:
           properties:
             text: { type: string, maxLength: 20000 }
             choice: { type: array, items: { type: string }, minItems: 1 }
-            image_ref: { type: string, pattern: '^objstore://' }
-            transcript_ref: { type: string, pattern: '^objstore://' }
+            image_ref: { type: string, pattern: '^objstore://[a-z0-9][a-z0-9/_.\-]{0,255}$' }
+            transcript_ref: { type: string, pattern: '^objstore://[a-z0-9][a-z0-9/_.\-]{0,255}$' }
         elapsed_sec: { type: integer, minimum: 0 }
         hint_level_used: { type: integer, minimum: 0, maximum: 6 }
         self_report:
@@ -680,7 +700,7 @@ components:
         paper_image_refs:
           type: array
           description: 整卷照片（mode = paper）。OCR 低置信时先请学生确认题目再判分（完整方案第六章）。
-          items: { type: string, pattern: '^objstore://' }
+          items: { type: string, pattern: '^objstore://[a-z0-9][a-z0-9/_.\-]{0,255}$' }
           maxItems: 20
         prior_evidence:
           type: array
@@ -866,7 +886,7 @@ components:
         text: { type: string, maxLength: 4000 }
         latex: { type: string, maxLength: 2000 }
         dsl: { type: object, description: 讲解 DSL（ADR 07；内容需经发布闸门）。, additionalProperties: true }
-        dsl_version: { type: string }
+        dsl_version: { type: string, pattern: '^\d+\.\d+\.\d+$' }
         item_ref: { $ref: '#/components/schemas/ItemRef' }
 
     TeachResult:
@@ -942,6 +962,11 @@ components:
             `rubric_model` 模型按 Rubric 判分——模型判分一律视为主观维度。
           enum: [verifier, rubric_rule, rubric_model]
         subjective: { type: boolean, description: 是否主观维度。 }
+        rule_ref:
+          description: |
+            已登记到平台 Rubric / 验证器注册表的规则或验证器（`名称@版本`）。`judged_by` 为 verifier 或
+            rubric_rule 时必填，平台据此对照注册表核实；不在注册表里的一律按模型判分处理。
+          $ref: '#/components/schemas/VersionedName'
         confidence: { type: number, minimum: 0, maximum: 1 }
         uncertainty: { $ref: '#/components/schemas/Uncertainty' }
         evidence_ids:
@@ -952,6 +977,9 @@ components:
         - description: 模型判分一律是主观维度（wenli A2、zhixing A2、echo adapter-design §1）。
           if: { properties: { judged_by: { const: rubric_model } }, required: [judged_by] }
           then: { properties: { subjective: { const: true } } }
+        - description: 验证器或规则判分必须带已登记的规则引用。
+          if: { properties: { judged_by: { enum: [verifier, rubric_rule] } }, required: [judged_by] }
+          then: { required: [rule_ref] }
         - description: 主观维度一律低置信，上限 0.5（spec 待人确认 #1 的默认值）。
           if: { properties: { subjective: { const: true } }, required: [subjective] }
           then: { properties: { confidence: { maximum: 0.5 } } }
@@ -1062,6 +1090,29 @@ components:
             properties:
               human_review_required: { const: true }
               review_reasons: { contains: { const: verifier_boundary_case } }
+        - description: 验证器报了边界情况原因码 → 复核，原因含 verifier_boundary_case（aya decisions #10）。
+          if:
+            properties:
+              result:
+                required: [verifier]
+                properties: { verifier: { required: [reason_codes], properties: { reason_codes: { minItems: 1 } } } }
+          then:
+            properties:
+              human_review_required: { const: true }
+              review_reasons: { contains: { const: verifier_boundary_case } }
+        - description: verdict = needs_review 时整体低置信（aya adapter-design §2“confidence 置低”）。
+          if:
+            properties: { result: { required: [verdict], properties: { verdict: { const: needs_review } } } }
+          then:
+            properties: { confidence: { maximum: 0.5 } }
+        - description: 有采分点无法判定（achieved = null）→ 复核。
+          if:
+            properties:
+              result:
+                required: [scoring_points]
+                properties: { scoring_points: { contains: { required: [achieved], properties: { achieved: { type: 'null' } } } } }
+          then:
+            properties: { human_review_required: { const: true } }
         - description: 有维度分为 null → 复核，原因含 dimension_unavailable。
           if:
             properties:
@@ -1321,7 +1372,7 @@ components:
       additionalProperties: false
       properties:
         type: { type: string, format: uri-reference }
-        title: { type: string }
+        title: { type: string, maxLength: 120, description: 简短的错误标题，不得包含学生原文。 }
         status: { type: integer, minimum: 400, maximum: 599 }
         detail:
           type: string
@@ -1539,6 +1590,7 @@ components:
               max_score: 1
               judged_by: verifier
               subjective: false
+              rule_ref: aya-symbolic-ts@0.1.0
               confidence: 1.0
               evidence_ids: [00000000-0000-4000-8000-00000000e401]
           verifier: { verifier_id: aya-symbolic-ts, version: 0.1.0, reason_codes: [] }
@@ -1602,6 +1654,7 @@ components:
               max_score: 10
               judged_by: rubric_rule
               subjective: false
+              rule_ref: wenli-convention-rules@1.0.0
               confidence: 0.9
               evidence_ids: [00000000-0000-4000-8000-00000000e403]
         evidence:
