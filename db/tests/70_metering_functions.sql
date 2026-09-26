@@ -17,7 +17,7 @@ DECLARE v jsonb;
 BEGIN
   PERFORM t.as_account(acct);
   SET LOCAL ROLE starbuddy_bff;
-  v := platform.meter_reserve(student, res, k, fp, qty, cfp, 'grade');
+  v := platform.meter_reserve(student, res, k, fp, qty, cfp, CASE WHEN res LIKE 'diagnosis%' THEN 'diagnose' ELSE 'grade' END);
   RESET ROLE;
   RETURN v;
 END $$;
@@ -34,25 +34,29 @@ SELECT t.ok(NOT EXISTS (
    WHERE n.nspname = 'platform'
      AND p.proname IN ('meter_reserve', 'meter_settle', 'meter_release', 'meter_expire_due', 'meter_renew_due',
                        'meter_open_subscription', 'meter_check_entitlement', 'meter_grant_period', 'meter_same_key',
-                       'meter_lock_reservation', 'enroll_subject', 'pause_subject')
+                       'meter_lock_reservation', 'meter_authorize_usage', 'meter_current_config', 'meter_subject_limit',
+                       'enroll_subject', 'pause_subject')
      AND NOT (p.prosecdef AND pg_get_userbyid(p.proowner) = 'starbuddy_authz'
               AND coalesce('search_path=pg_catalog, platform, pg_temp' = ANY (p.proconfig), false))),
   '写入函数都是 SECURITY DEFINER、属主 starbuddy_authz、固定 search_path');
 SELECT t.ok(
   (SELECT bool_and(has_function_privilege('starbuddy_bff', f, 'EXECUTE')) FROM unnest(ARRAY[
      'platform.meter_reserve(uuid, text, text, text, numeric, text, text)', 'platform.meter_settle(uuid, numeric)',
-     'platform.meter_release(uuid, text)', 'platform.meter_open_subscription(uuid, platform.plan_tier, text, text)',
+     'platform.meter_release(uuid, text)', 'platform.meter_open_subscription(uuid, text)',
      'platform.enroll_subject(uuid, platform.subject)', 'platform.pause_subject(uuid, platform.subject)']::regprocedure[]) f)
   AND NOT (SELECT bool_or(has_function_privilege('starbuddy_bff', f, 'EXECUTE')) FROM unnest(ARRAY[
      'platform.meter_expire_due(integer)', 'platform.meter_renew_due(integer)', 'platform.meter_check_entitlement(uuid)',
-     'platform.meter_grant_period(uuid)', 'platform.meter_lock_reservation(uuid)',
-     'platform.meter_same_key(platform.usage_reservation, uuid, text, text)']::regprocedure[]) f),
+     'platform.meter_grant_period(uuid)', 'platform.meter_lock_reservation(uuid)', 'platform.meter_authorize_usage(uuid)',
+     'platform.meter_same_key(platform.usage_reservation, uuid, text, text, text, text)']::regprocedure[]) f),
   'BFF 只能调用用户请求类函数，不能调用定时任务与内部函数');
 SELECT t.ok(
   (SELECT bool_and(has_function_privilege('starbuddy_scheduler', f, 'EXECUTE')) FROM unnest(ARRAY[
      'platform.meter_expire_due(integer)', 'platform.meter_renew_due(integer)']::regprocedure[]) f)
-  AND NOT has_function_privilege('starbuddy_scheduler', 'platform.meter_reserve(uuid, text, text, text, numeric, text, text)', 'EXECUTE')
-  AND NOT has_function_privilege('starbuddy_scheduler', 'platform.meter_settle(uuid, numeric)', 'EXECUTE'),
+  AND NOT (SELECT bool_or(has_function_privilege('starbuddy_scheduler', f, 'EXECUTE')) FROM unnest(ARRAY[
+     'platform.meter_reserve(uuid, text, text, text, numeric, text, text)', 'platform.meter_settle(uuid, numeric)',
+     'platform.meter_release(uuid, text)', 'platform.meter_open_subscription(uuid, text)',
+     'platform.enroll_subject(uuid, platform.subject)', 'platform.pause_subject(uuid, platform.subject)',
+     'platform.meter_check_entitlement(uuid)', 'platform.meter_grant_period(uuid)']::regprocedure[]) f),
   '定时任务角色只能调用过期与续期');
 SELECT t.ok(NOT EXISTS (
   SELECT 1 FROM unnest(ARRAY['starbuddy_learning', 'starbuddy_review']) r(role)
@@ -80,22 +84,29 @@ SELECT t.ok(has_table_privilege('starbuddy_authz', 'platform.usage_ledger', 'INS
 -- ================= 二、开通订阅 =================
 SET ROLE starbuddy_bff;
 SELECT t.as_account('a1000000-0000-4000-8000-0000000000a1');  -- 学生本人不能开通
-SELECT t.throws_like($$SELECT platform.meter_open_subscription('c1000000-0000-4000-8000-0000000000c1', 'pro', 'synthetic-plan@1', 'pilot_virtual')$$,
-                '42501', 'not permitted', '学生不能给自己开通订阅（家长是支付主体）');
+SELECT t.throws_like($$SELECT platform.meter_open_subscription('c1000000-0000-4000-8000-0000000000c1', 'trial')$$,
+                     '42501', 'not permitted', '学生不能给自己开通订阅（家长是支付主体）');
 SELECT t.as_account('b0000000-0000-4000-8000-00000000000b');  -- 另一户家长
-SELECT t.throws_like($$SELECT platform.meter_open_subscription('c1000000-0000-4000-8000-0000000000c1', 'pro', 'synthetic-plan@1', 'pilot_virtual')$$,
-                '42501', 'not permitted', '不能给别家的学生开通订阅');
+SELECT t.throws_like($$SELECT platform.meter_open_subscription('c1000000-0000-4000-8000-0000000000c1', 'trial')$$,
+                     '42501', 'not permitted', '不能给别家的学生开通订阅');
 SELECT t.as_account('a0000000-0000-4000-8000-00000000000a');
-SELECT t.throws($$SELECT platform.meter_open_subscription('c1000000-0000-4000-8000-0000000000c1', 'pro', 'synthetic-plan@1', 'trial')$$,
-                '22023', '基础会员（trial）只能是 basic 档');
-SELECT t.throws($$SELECT platform.meter_open_subscription('c1000000-0000-4000-8000-0000000000c1', 'pro', 'synthetic-plan@1', 'paid')$$,
+SELECT t.throws($$SELECT platform.meter_open_subscription('c1000000-0000-4000-8000-0000000000c1', 'paid')$$,
                 '22023', '付费订阅不能经这个函数开通（等支付接入）');
-SELECT t.ok(platform.meter_open_subscription('c1000000-0000-4000-8000-0000000000c1', 'pro', 'synthetic-plan@1', 'pilot_virtual')->>'outcome'
-            = 'opened', '家长可以给孩子开通试点虚拟额度（PRO）');
-SELECT t.ok(platform.meter_open_subscription('c1000000-0000-4000-8000-0000000000c1', 'pro', 'synthetic-plan@1', 'pilot_virtual')->>'outcome'
+SELECT t.ok(platform.meter_open_subscription('c1000000-0000-4000-8000-0000000000c1', 'pilot_virtual') = '{"outcome": "not_in_pilot"}',
+            '不在试点名单里的家庭开不了试点额度');
+SELECT t.as_account(NULL);
+RESET ROLE;
+INSERT INTO platform.pilot_household (household_id, cohort_code) VALUES ('d1000000-0000-4000-8000-0000000000d1', 'synthetic_cohort');
+SET ROLE starbuddy_bff;
+SELECT t.as_account('a0000000-0000-4000-8000-00000000000a');
+SELECT t.throws($$SELECT * FROM platform.pilot_household$$, '42501', 'BFF 读不到试点名单');
+SELECT t.ok(platform.meter_open_subscription('c1000000-0000-4000-8000-0000000000c1', 'pilot_virtual')
+            @> '{"outcome": "opened", "config_version": "synthetic-plan@1"}',
+            '名单里的家庭开通试点额度；配置取当前已发布版本（不由调用方指定）');
+SELECT t.ok(platform.meter_open_subscription('c1000000-0000-4000-8000-0000000000c1', 'pilot_virtual')->>'outcome'
             = 'already_active', '重复开通返回“已有有效订阅”');
 SELECT t.as_account('b0000000-0000-4000-8000-00000000000b');
-SELECT t.ok(platform.meter_open_subscription('c2000000-0000-4000-8000-0000000000c2', 'basic', 'synthetic-plan@1', 'trial')->>'outcome'
+SELECT t.ok(platform.meter_open_subscription('c2000000-0000-4000-8000-0000000000c2', 'trial')->>'outcome'
             = 'opened', '另一户开通基础会员');
 SELECT t.as_account(NULL);
 RESET ROLE;
@@ -106,8 +117,10 @@ SELECT t.ok((SELECT count(*) FROM platform.entitlement e JOIN platform.subscript
                     AND e.resource_type = 'diagnosis_full') = 6
             AND (SELECT period_start FROM platform.subscription WHERE student_id = 'c1000000-0000-4000-8000-0000000000c1'
                   AND status = 'active') = '2026-10-15 00:00:00+00'
+            AND (SELECT tier FROM platform.subscription WHERE student_id = 'c1000000-0000-4000-8000-0000000000c1' AND status = 'active') = 'pro'
+            AND (SELECT tier FROM platform.subscription WHERE student_id = 'c2000000-0000-4000-8000-0000000000c2' AND status = 'active') = 'basic'
             AND NOT EXISTS (SELECT 1 FROM platform.entitlement_reconciliation),
-            '开通时按配置建 7 个额度桶、写 grant 流水，周期从计量时钟起算，对账为零行');
+            '开通时按配置建 7 个额度桶、写 grant 流水；试点固定 PRO、基础会员固定 basic；周期从计量时钟起算；对账为零行');
 
 -- ================= 三、预留、结算、释放 =================
 SELECT t.throws_like($$SELECT t.reserve('a0000000-0000-4000-8000-00000000000a', 'c1000000-0000-4000-8000-0000000000c1', 'diagnosis_full',
@@ -132,6 +145,16 @@ SELECT t.throws($$SELECT t.reserve('a1000000-0000-4000-8000-0000000000a1', 'c100
                                    'b0b00000-0000-4000-8000-000000000001', repeat('1', 64), 1, NULL)$$,
                 '22023', '错题分析必须带内容指纹（用于 24 小时复看）');
 
+SET ROLE starbuddy_bff;
+SELECT t.as_account('a1000000-0000-4000-8000-0000000000a1');
+SELECT t.throws($$SELECT platform.meter_reserve('c1000000-0000-4000-8000-0000000000c1', 'diagnosis_full',
+                    'b0b00000-0000-4000-8000-000000000001', repeat('1', 64), 1, NULL, 'grade')$$,
+                '22023', '资源与方法必须对应（完整诊断只能记在 diagnose 上）');
+SELECT t.throws($$SELECT platform.meter_reserve('c1000000-0000-4000-8000-0000000000c1', 'diagnosis_full',
+                    'b0b00000-0000-4000-8000-000000000001', repeat('1', 64), 1, NULL, NULL)$$,
+                '22023', '来源方法必填');
+SELECT t.as_account(NULL);
+RESET ROLE;
 SELECT t.ok(t.reserve('a1000000-0000-4000-8000-0000000000a1', 'c1000000-0000-4000-8000-0000000000c1', 'diagnosis_full',
                       'b0b00000-0000-4000-8000-000000000001', repeat('1', 64), 1, NULL)
             @> jsonb_build_object('outcome', 'reserved', 'reserved_qty', 1, 'remaining', 5,
@@ -146,6 +169,9 @@ SELECT t.ok(t.reserve('a1000000-0000-4000-8000-0000000000a1', 'c1000000-0000-400
 SELECT t.ok(t.reserve('b1000000-0000-4000-8000-0000000000b1', 'c2000000-0000-4000-8000-0000000000c2', 'diagnosis_full',
                       'b0b00000-0000-4000-8000-000000000001', repeat('1', 64), 1, NULL)
             = '{"outcome": "conflict"}', '别的学生撞上同一个 key → 冲突，而且不透露已有记录的任何信息');
+SELECT t.ok(t.reserve('a1000000-0000-4000-8000-0000000000a1', 'c1000000-0000-4000-8000-0000000000c1', 'diagnosis_full',
+                      'b0b00000-0000-4000-8000-000000000001', repeat('1', 64), 1, 'item:aya:synthetic-0301-07')
+            = '{"outcome": "conflict"}', '同 key 换内容指纹 → 冲突');
 SELECT t.ok((SELECT reserved FROM platform.entitlement e JOIN platform.subscription s ON s.id = e.subscription_id
               WHERE s.student_id = 'c1000000-0000-4000-8000-0000000000c1' AND s.status = 'active' AND e.resource_type = 'diagnosis_full') = 1,
             '重试与冲突都没有多扣');
@@ -198,6 +224,8 @@ SELECT t.ok(t.reserve('b1000000-0000-4000-8000-0000000000b1', 'c2000000-0000-400
 SELECT t.ok(t.reserve('b1000000-0000-4000-8000-0000000000b1', 'c2000000-0000-4000-8000-0000000000c2', 'diagnosis_full',
                       'b0b00000-0000-4000-8000-000000000004', repeat('4', 64), 1, NULL)
             = '{"outcome": "insufficient", "remaining": 0}', '额度用完 → 额度不足（预留中的也算占用）');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM platform.entitlement_reconciliation)
+            AND NOT EXISTS (SELECT 1 FROM platform.reservation_ledger_mismatch), '预留、结算、释放之后对账为零行');
 SELECT t.ok(t.reserve('b1000000-0000-4000-8000-0000000000b1', 'c2000000-0000-4000-8000-0000000000c2', 'mock_exam',
                       'b0b00000-0000-4000-8000-000000000005', repeat('5', 64), 1, NULL)
             = '{"outcome": "insufficient", "remaining": 0}', '档位没有的资源（基础会员模考 0 次）→ 额度不足');
@@ -236,12 +264,18 @@ SELECT t.ok(t.reserve('a1000000-0000-4000-8000-0000000000a1', 'c1000000-0000-400
 SELECT t.ok((SELECT reserved = 1 AND settled = 1 FROM platform.entitlement e JOIN platform.subscription s ON s.id = e.subscription_id
               WHERE s.student_id = 'c1000000-0000-4000-8000-0000000000c1' AND s.status = 'active' AND e.resource_type = 'mistake_analysis'),
             '错题分析：首次扣 1、复看扣 0、25 小时后又预留 1');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM platform.entitlement_reconciliation)
+            AND NOT EXISTS (SELECT 1 FROM platform.reservation_ledger_mismatch), '复看之后对账为零行');
 
 -- ================= 五、过期释放（定时任务） =================
 SELECT t.ok(t.reserve('a1000000-0000-4000-8000-0000000000a1', 'c1000000-0000-4000-8000-0000000000c1', 'diagnosis_full',
                       'b0b00000-0000-4000-8000-000000000021', repeat('1', 64), 1, NULL)->>'outcome' = 'reserved', '预留后断线（不再回来）');
 UPDATE t.clock SET now = now + interval '11 minutes';
 SET ROLE starbuddy_bff;
+SELECT t.as_account('a1000000-0000-4000-8000-0000000000a1');
+SELECT t.ok(platform.meter_settle(platform.meter_usage_id('b0b00000-0000-4000-8000-000000000021'), 1)
+            @> '{"outcome": "conflict", "state": "expired"}', '过了过期时间、过期任务还没跑到时也不能结算（是否扣费不取决于任务节奏）');
+SELECT t.as_account(NULL);
 SELECT t.throws($$SELECT platform.meter_expire_due(100)$$, '42501', 'BFF 不能调用过期任务');
 RESET ROLE;
 SET ROLE starbuddy_scheduler;
@@ -274,6 +308,14 @@ SELECT t.throws($$SELECT t.reserve('a1000000-0000-4000-8000-0000000000a1', 'c100
 ROLLBACK;
 
 -- ================= 六、续期（含降级到期生效） =================
+SET ROLE starbuddy_bff;
+SELECT t.as_account('a0000000-0000-4000-8000-00000000000a');
+SELECT t.ok(platform.enroll_subject('c1000000-0000-4000-8000-0000000000c1', 'wenli') = '{"outcome": "enrolled", "max_active_subjects": 4}',
+            'PRO 可以同时开通 4 科：再选文砺');
+SELECT t.ok(platform.enroll_subject('c1000000-0000-4000-8000-0000000000c1', 'zhixing') = '{"outcome": "not_launched"}',
+            '没有已发布课程的学科不能选');
+SELECT t.as_account(NULL);
+RESET ROLE;
 UPDATE platform.subscription SET next_tier = 'basic', next_config_version = 'synthetic-plan@1'
  WHERE student_id = 'c1000000-0000-4000-8000-0000000000c1' AND status = 'active';
 UPDATE t.clock SET now = '2026-11-14 00:00:01+00';
@@ -294,11 +336,21 @@ SELECT t.ok((SELECT tier = 'basic' AND next_tier IS NULL AND period_start = '202
             AND (SELECT count(*) FROM platform.entitlement e JOIN platform.subscription s ON s.id = e.subscription_id
                   WHERE s.student_id = 'c1000000-0000-4000-8000-0000000000c1' AND s.status = 'active') = 14,
             '续期应用降级：新周期按基础会员发放；上一周期的额度桶保留');
+SELECT t.ok((SELECT array_agg(subject::text ORDER BY subject) FROM platform.subject_enrollment
+              WHERE student_id = 'c1000000-0000-4000-8000-0000000000c1' AND status = 'active') = ARRAY['aya'],
+            '降级到基础会员后超出上限的科目被暂停（保留先选的阿鸦）');
 SELECT t.ok(t.reserve('a1000000-0000-4000-8000-0000000000a1', 'c1000000-0000-4000-8000-0000000000c1', 'diagnosis_full',
                       'b0b00000-0000-4000-8000-000000000041', repeat('1', 64), 1, NULL)->>'outcome' = 'reserved',
             '续期后可以继续预留');
 SELECT t.ok(NOT EXISTS (SELECT 1 FROM platform.entitlement_reconciliation)
             AND NOT EXISTS (SELECT 1 FROM platform.reservation_ledger_mismatch), '续期后对账仍为零行');
+
+SET ROLE starbuddy_bff;
+SELECT t.as_account('a1000000-0000-4000-8000-0000000000a1');
+SELECT t.throws($$SELECT source_idempotency_key FROM platform.usage_ledger$$, '42501', 'BFF 读不到流水的来源 key（数据最小化）');
+SELECT t.ok((SELECT count(*) FROM (SELECT source_method, kind, quantity FROM platform.usage_ledger) x) > 0, 'BFF 可以读流水的展示列');
+SELECT t.as_account(NULL);
+RESET ROLE;
 
 -- ================= 七、选科上限（RLS 变更附测试） =================
 SET ROLE starbuddy_bff;

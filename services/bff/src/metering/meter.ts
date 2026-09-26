@@ -58,11 +58,17 @@ export async function release(pool: Pool, accountId: string, usageId: string, re
   });
 }
 
+// 本冲刺接通 BFF 流程的资源（学习服务只有 grade、diagnose；teach 类资源只实现了数据库函数）。
+// 资源决定契约方法（设计文档第 5 节对照表），调用方不能另选。
+export type MeteredResource = 'diagnosis_screen' | 'diagnosis_full' | 'mistake_analysis';
+const METHOD_OF: Record<MeteredResource, MeteredMethod> = {
+  diagnosis_screen: 'diagnose', diagnosis_full: 'diagnose', mistake_analysis: 'grade',
+};
+
 export interface MeteredCallInput {
   accountId: string;          // 已通过 BFF 鉴权的当前账号（鉴权中间件不在本冲刺）
-  studentId: string;
-  resourceType: ResourceType;
-  method: MeteredMethod;
+  studentId: string;          // 被扣费、也是被写入的学生：请求体的 context.student_ref 必须与它一致
+  resourceType: MeteredResource;
   idempotencyKey: string;     // 前端为每次用户动作生成的 UUIDv4，重试时原样复用
   body: Record<string, unknown>;  // 发给学习服务的请求体（契约的 GradeRequest / DiagnoseRequest）
   quantity?: number;
@@ -91,20 +97,27 @@ const DEFAULT_DELAYS = [1000, 2000, 4000, 8000];
 
 export async function meteredCall(deps: MeterDeps, input: MeteredCallInput): Promise<MeteredCallResult> {
   if (!isUuidV4(input.idempotencyKey)) throw new TypeError('idempotencyKey must be a lowercase UUIDv4');
+  const method = METHOD_OF[input.resourceType];
+  if (method === undefined) throw new TypeError(`${String(input.resourceType)} is not metered through the BFF in this sprint`);
   const metrics = deps.metrics ?? noopMetrics;
   const usageId = usageIdFor(input.idempotencyKey);
-  const body = structuredClone(input.body);
-  const context = { ...(body['context'] as Record<string, unknown> | undefined), idempotency_key: input.idempotencyKey, usage_id: usageId };
-  body['context'] = context;
+  // 按实际发出去的 JSON 处理（Date 等值先按 JSON.stringify 的规则转换），指纹与请求体一致
+  const body = JSON.parse(JSON.stringify(input.body)) as Record<string, unknown>;
+  const given = (body['context'] ?? {}) as Record<string, unknown>;
+  // 扣谁的额度，就只能写谁的学习记录：学习服务以 student_ref 为准且不再核对（安全审查阻断 A）
+  if (given['student_ref'] !== undefined && given['student_ref'] !== input.studentId) {
+    throw new TypeError('context.student_ref must equal the metered student');
+  }
+  body['context'] = { ...given, student_ref: input.studentId, idempotency_key: input.idempotencyKey, usage_id: usageId };
 
   const r = await reserve(deps.pool, input.accountId, {
     studentId: input.studentId,
     resourceType: input.resourceType,
     idempotencyKey: input.idempotencyKey,
-    requestFingerprint: meteringFingerprint(input.method, body),
+    requestFingerprint: meteringFingerprint(method, body),
     quantity: input.quantity ?? 1,
     contentFingerprint: input.contentFingerprint,
-    sourceMethod: input.method,
+    sourceMethod: method,
   });
   switch (r.outcome) {
     case 'insufficient':
@@ -119,9 +132,9 @@ export async function meteredCall(deps: MeterDeps, input: MeteredCallInput): Pro
   if (r.outcome === 'existing' && r.state !== 'reserved') {
     if (r.state === 'released') return { status: 'failed_previously', usageId };
     // settled：之前已经扣过；expired：过期不扣费。两种都用原 key 拿学习服务的重放结果，不再预留
-    const replay = await callWithRetry(deps, input.method, body, r.expires_at, metrics);
+    const replay = await callWithRetry(deps, method, body, r.expires_at, metrics);
     if (replay.kind === 'success') {
-      if (r.state === 'expired') metrics.increment('replay_after_expiry');
+      if (r.state === 'expired') metrics.increment(replay.replayed ? 'replay_after_expiry' : 'reexecuted_without_reservation');
       return { status: 'ok', usageId, charged: r.state === 'settled', replay: true, dedup: r.dedup_of !== null, result: replay.body };
     }
     if (replay.kind === 'failure') {
@@ -136,14 +149,14 @@ export async function meteredCall(deps: MeterDeps, input: MeteredCallInput): Pro
   // 新预留、复看预留，或同 key 找回的仍在预留中的那一笔
   const reservedQty = r.reserved_qty;
   const dedup = r.outcome === 'dedup' || (r.outcome === 'existing' && r.dedup_of !== null);
-  const outcome = await callWithRetry(deps, input.method, body, r.expires_at, metrics);
+  const outcome = await callWithRetry(deps, method, body, r.expires_at, metrics);
   if (outcome.kind === 'success') {
     const s = await settle(deps.pool, input.accountId, usageId, reservedQty);
     if (s.outcome === 'settled') {
       return { status: 'ok', usageId, charged: reservedQty > 0, replay: false, dedup, result: outcome.body };
     }
-    // 结算前预留已被过期任务处理：宁可少扣，不报错（设计文档场景 5）
-    metrics.increment('late_success_after_expiry');
+    // 结算前预留已过期，或同 key 的另一个请求确定失败后已释放：宁可少扣，不报错（设计文档场景 5）
+    metrics.increment(s.state === 'released' ? 'success_after_release' : 'late_success_after_expiry');
     return { status: 'ok', usageId, charged: false, replay: false, dedup, result: outcome.body };
   }
   if (outcome.kind === 'failure') {

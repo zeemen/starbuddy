@@ -20,6 +20,8 @@ inputs = [
  ("strings-escape", '{"s":"quote\\" backslash\\\\ slash/ tab\\t nl\\n cr\\r bs\\b ff\\f nul\\u0000 us\\u001f del\\u007f"}'),
  ("strings-unicode", '{"s":"中文，全角：。 emoji 😀 é ñ \\u2028\\u2029"}'),
  ("keys-unicode-order", '{"é":1,"z":2,"中":3,"😀":4,"\\uff5e":5,"a":6,"A":7,"":8}'),
+ ("float-edges", '{"f":[0.30000000000000004,5e-324,-1.7976931348623157e-300,2.2250738585072014e-308,0.1e-3]}'),
+ ("c1-controls-and-escaped-keys", '{"\\u0080-\\u009f":"\u0080\u0085\u009f","key\\"quote":1,"key\\\\slash":2,"tab\\tkey":3}'),
  ("nested-arrays", '{"a":[[],[{}],[1,[2,[3]]],"x",null,true]}'),
  ("grade-request-shape", '{"method":"grade","body":{"context":{"subject":"aya","student_ref":"c1000000-0000-4000-8000-0000000000c1","idempotency_key":"b0b00000-0000-4000-8000-000000000001","locale":"zh-CN"},"attempt":{"item_ref":"aya:synthetic-0301-07","response":{"text":"2(x-1)"},"time_spent_ms":35000,"self_assessment":"guessed"},"appeal":false}}'),
 ]

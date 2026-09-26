@@ -51,6 +51,11 @@ export async function setupHarness(): Promise<Harness> {
                     SELECT $1, tier, feature_code, value_code FROM platform.plan_feature WHERE config_version = 'ch8-hypothesis@1'`, [CONFIG]);
     await su.query(`UPDATE platform.plan_config SET status = 'published', published_at = now() WHERE version = $1`, [CONFIG]);
   }
+  // 选科只能选已上线（有已发布课程版本）的学科：阿鸦、文砺
+  await su.query(`INSERT INTO platform.curriculum_version (region, exam_year, grade, textbook_version, subject, content_version, status, published_at)
+                  SELECT 'nanjing', 2027, 9, 'bubian-2024', s::platform.subject, '0.1.0', 'published', now()
+                    FROM unnest(ARRAY['aya', 'wenli']) s
+                   WHERE NOT EXISTS (SELECT 1 FROM platform.curriculum_version c WHERE c.subject = s::platform.subject AND c.status = 'published')`);
   const bff = new pg.Pool({ user: 'bff_app', max: 40 });
   const scheduler = new pg.Pool({ user: 'scheduler_app', max: 5 });
   const setClock = async (ms: number) => {
@@ -72,13 +77,16 @@ export interface Family {
   students: { id: string; account: string }[];
 }
 
-// 一户家庭：家长建档，n 个孩子；由家长经函数开通订阅（与生产路径相同）
-export async function createFamily(h: Harness, opts: { tier: 'basic' | 'plus' | 'pro' | 'max'; source: 'trial' | 'pilot_virtual';
-                                                       children?: number }): Promise<Family> {
+// 一户家庭：家长建档，n 个孩子；由家长经函数开通订阅（与生产路径相同）。
+// 基础会员（trial）固定 basic；试点（pilot_virtual）固定 PRO，家庭先进试点名单（名单只能由人工写入，这里用超级用户）
+export async function createFamily(h: Harness, opts: { source: 'trial' | 'pilot_virtual'; children?: number }): Promise<Family> {
   const guardian = randomUUID();
   const household = randomUUID();
   await h.su.query(`INSERT INTO platform.account (id, kind) VALUES ($1, 'guardian')`, [guardian]);
   await h.su.query(`INSERT INTO platform.household (id, created_by_account) VALUES ($1, $2)`, [household, guardian]);
+  if (opts.source === 'pilot_virtual') {
+    await h.su.query(`INSERT INTO platform.pilot_household (household_id, cohort_code) VALUES ($1, 'bff_integration')`, [household]);
+  }
   const students: Family['students'] = [];
   for (let i = 0; i < (opts.children ?? 1); i++) {
     const account = randomUUID();
@@ -92,7 +100,7 @@ export async function createFamily(h: Harness, opts: { tier: 'basic' | 'plus' | 
     try {
       await c.query('BEGIN');
       await c.query("SELECT set_config('app.account_id', $1, true)", [guardian]);
-      const { rows } = await c.query('SELECT platform.meter_open_subscription($1, $2, $3, $4) AS r', [id, opts.tier, CONFIG, opts.source]);
+      const { rows } = await c.query('SELECT platform.meter_open_subscription($1, $2) AS r', [id, opts.source]);
       if (rows[0].r.outcome !== 'opened') throw new Error('subscription not opened: ' + JSON.stringify(rows[0].r));
       await c.query('COMMIT');
     } finally {
@@ -141,7 +149,7 @@ export class FakeLearning {
   private done = new Map<string, LearningOutcome>();
   private script: (attempt: number, key: string) => LearningOutcome | Promise<LearningOutcome>;
   constructor(script: (attempt: number, key: string) => LearningOutcome | Promise<LearningOutcome> =
-                () => ({ kind: 'success', status: 200, body: { verdict: 'correct' } })) {
+                () => ({ kind: 'success', status: 200, body: { verdict: 'correct' }, replayed: false })) {
     this.script = script;
   }
 
@@ -149,11 +157,14 @@ export class FakeLearning {
     this.script = script;
   }
 
+  lastBody: Record<string, unknown> | undefined;
+
   readonly call: LearningCall = async (method, body) => {
+    this.lastBody = body;
     const ctx = body['context'] as { idempotency_key: string; usage_id: string };
     this.calls.push({ method, key: ctx.idempotency_key, usageId: ctx.usage_id });
     const prior = this.done.get(ctx.idempotency_key);
-    if (prior) return prior;
+    if (prior) return { ...prior, replayed: true } as LearningOutcome;
     const attempt = this.calls.filter((c) => c.key === ctx.idempotency_key).length;
     const out = await this.script(attempt, ctx.idempotency_key);
     if (out.kind === 'success') this.done.set(ctx.idempotency_key, out);
@@ -175,6 +186,6 @@ export class CountingMetrics implements Metrics {
   }
 }
 
-export const SUCCESS: LearningOutcome = { kind: 'success', status: 200, body: { verdict: 'correct' } };
+export const SUCCESS: LearningOutcome = { kind: 'success', status: 200, body: { verdict: 'correct' }, replayed: false };
 export const REJECTED: LearningOutcome = { kind: 'failure', status: 422, problem: { code: 'INVALID_REQUEST', retryable: false } };
 export const UNAVAILABLE: LearningOutcome = { kind: 'unknown', reason: 'retryable 503 UPSTREAM_UNAVAILABLE' };

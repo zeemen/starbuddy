@@ -12,9 +12,9 @@ fr() {  # 函数定义里的文本替换；找不到模式时让变异本身失�
 }
 RS='platform.meter_reserve(uuid, text, text, text, numeric, text, text)'
 declare -A M=(
-  ["预留不锁额度桶"]="$(fr "$RS" "'FOR UPDATE OF en LOOP'" "'LOOP'")"
-  ["预留加锁后不再查同 key"]="$(fr "$RS" "E'SELECT * INTO r FROM platform.usage_reservation WHERE idempotency_key = p_key;\n  IF FOUND THEN\n    RETURN platform.meter_same_key(r, p_student, p_resource, p_fingerprint);\n  END IF;\n\n  -- 24'" "'-- 24'")"
-  ["过期任务加锁后不重查状态"]="$(fr 'platform.meter_expire_due(integer)' "'CONTINUE WHEN r.state <> ''reserved'' OR r.expires_at >= v_now;'" "''")"
+  ["预留不锁额度桶"]="$(fr "$RS" "'ORDER BY en.id FOR UPDATE OF en;'" "'ORDER BY en.id;'")"
+  ["预留加锁后不再查同 key"]="$(fr "$RS" "E'SELECT * INTO r FROM platform.usage_reservation WHERE idempotency_key = p_key;\n  IF FOUND THEN\n    RETURN platform.meter_same_key(r, p_student, p_resource, p_fingerprint, p_content_fingerprint, p_source_method);\n  END IF;\n\n  -- 24'" "'-- 24'")"
+  ["选科不按学生加锁"]="$(fr 'platform.enroll_subject(uuid, platform.subject)' "'PERFORM pg_advisory_xact_lock(hashtextextended'" "'PERFORM pg_advisory_xact_lock_shared(hashtextextended'")"
 )
 
 missed=0; total=0

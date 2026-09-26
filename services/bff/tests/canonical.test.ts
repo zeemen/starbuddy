@@ -47,6 +47,10 @@ test('计量指纹：不含 request_id 与 usage_id；appeal 缺省等于 false'
   assert.notEqual(a, meteringFingerprint('grade', { ...base, attempt: { x: 2 } }));
   assert.notEqual(a, meteringFingerprint('diagnose', base));
   assert.match(a, /^[0-9a-f]{64}$/);
+  // 按实际发出去的 JSON 计算：Date 与它的 ISO 字符串是同一个请求，不同日期是不同请求
+  const d = meteringFingerprint('grade', { at: new Date('2026-10-15T00:00:00Z') });
+  assert.equal(d, meteringFingerprint('grade', { at: '2026-10-15T00:00:00.000Z' }));
+  assert.notEqual(d, meteringFingerprint('grade', { at: new Date('2026-10-16T00:00:00Z') }));
 });
 
 test('内容指纹满足计量表的格式约束', () => {

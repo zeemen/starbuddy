@@ -2,7 +2,8 @@
 // 本冲刺只提供一次性执行入口；接入调度器是 ADR 03 的事。
 import type { Pool } from 'pg';
 
-export async function runExpiry(pool: Pool, batchSize = 500): Promise<number> {
+// 小批量循环：每批一个事务，持锁时间短（0009 的 meter_expire_due 一批在一个事务里）
+export async function runExpiry(pool: Pool, batchSize = 50): Promise<number> {
   let total = 0;
   for (;;) {
     const { rows } = await pool.query('SELECT platform.meter_expire_due($1) AS n', [batchSize]);
@@ -12,7 +13,7 @@ export async function runExpiry(pool: Pool, batchSize = 500): Promise<number> {
   }
 }
 
-export async function runRenewal(pool: Pool, batchSize = 200): Promise<number> {
+export async function runRenewal(pool: Pool, batchSize = 50): Promise<number> {
   let total = 0;
   for (;;) {
     const { rows } = await pool.query('SELECT platform.meter_renew_due($1) AS n', [batchSize]);
