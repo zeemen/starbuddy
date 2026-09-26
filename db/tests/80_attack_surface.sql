@@ -92,6 +92,13 @@ INSERT INTO t.visibility_exempt VALUES
   ('curriculum_version', '内容登记，公开'), ('skill_node', '内容登记，公开'), ('item', '内容登记，公开'),
   ('resource_type', '计量配置，公开'), ('plan_config', '额度配置，只看非草稿'), ('plan_allowance', '额度配置，只看非草稿'),
   ('plan_feature', '额度配置，只看非草稿');
+-- BFF 可执行、但不进函数越权矩阵的 SECURITY DEFINER 函数：没有“另一户的对象”可以作为参数，逐个写明由哪里覆盖
+CREATE TABLE t.function_matrix_exempt (sig text PRIMARY KEY, reason text NOT NULL);
+INSERT INTO t.function_matrix_exempt VALUES
+  ('platform.is_active_guardian()', '没有参数，只看当前账号自身状态'),
+  ('platform.signup_guardian(text)', '参数是手机号，只给当前身份注册；20_rls_household 的注册与账号接管断言'),
+  ('platform.lookup_accounts_by_phone(text)', '登录查号，只返回账号 ID；攻击面 C3（第二轮）'),
+  ('platform.redeem_guardian_invite(text)', '参数是邀请码；20_rls_household 的兑换断言（攻击面 D1、D2、D4）');
 
 CREATE FUNCTION t.readable_students(acc uuid) RETURNS uuid[] LANGUAGE sql STABLE AS $$
   SELECT coalesce(array_agg(DISTINCT s.id ORDER BY s.id), '{}')
@@ -272,6 +279,18 @@ BEGIN
   PERFORM set_config('app.account_id', '', false);
   IF cardinality(v_fail) > 0 THEN RAISE NOTICE '函数越权矩阵：%', array_to_string(v_fail[1:5], E'\n'); END IF;
   PERFORM t.ok(v_calls >= 20, format('攻击面：函数越权矩阵覆盖了足够多的（攻击者 × 函数）组合（%s 组）', v_calls));
+  -- 不能靠参数名静默漏掉函数：BFF 可执行的每个 SECURITY DEFINER 函数，要么完整进矩阵
+  -- （第一个参数是学生、使用或家庭，而且没有别的 uuid 参数），要么登记在 t.function_matrix_exempt 里写明理由
+  SELECT coalesce(string_agg(p.oid::regprocedure::text, '、' ORDER BY p.oid::regprocedure::text), '') INTO v_missing
+    FROM pg_proc p
+   WHERE p.pronamespace IN (SELECT t.app_schemas()) AND p.prosecdef
+     AND has_function_privilege('starbuddy_bff', p.oid, 'EXECUTE')
+     AND NOT (p.pronargs >= 1 AND p.proargnames[1] IN ('p_student', 'p_usage', 'p_household')
+              AND p.proargtypes[0] = 'uuid'::regtype
+              AND (SELECT count(*) FROM unnest(p.proargtypes::oid[]) u WHERE u = 'uuid'::regtype) = 1)
+     AND NOT EXISTS (SELECT 1 FROM t.function_matrix_exempt e WHERE e.sig = p.oid::regprocedure::text);
+  PERFORM t.ok(v_missing = '', format('攻击面：BFF 可执行的 SECURITY DEFINER 函数要么在函数越权矩阵里，要么登记了豁免理由（未登记：%s）',
+                                      v_missing));
   PERFORM t.ok(cardinality(v_fail) = 0, format('攻击面：函数越权矩阵——对另一户的对象与不存在的对象结果相同且被拒绝（%s 处不一致）',
                                              cardinality(v_fail)));
 END $$;

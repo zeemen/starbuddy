@@ -130,6 +130,12 @@ declare -A M=(
   ["攻击面：BFF 多了一条 USING (true) 策略"]="CREATE POLICY pentest_open ON platform.mastery_estimate FOR SELECT TO starbuddy_bff USING (true);"
   ["攻击面：BFF 能在 platform 上建对象"]="GRANT CREATE ON SCHEMA platform TO starbuddy_bff;"
   ["攻击面：默认授权给 BFF"]="ALTER DEFAULT PRIVILEGES IN SCHEMA platform GRANT SELECT ON TABLES TO starbuddy_bff;"
+  ["攻击面：新函数的学生参数换个名字躲过越权矩阵"]="CREATE FUNCTION platform.peek_student(p_student_id uuid) RETURNS smallint
+     LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, platform, pg_temp AS \$\$
+     SELECT grade FROM platform.student_profile WHERE id = p_student_id \$\$;
+     ALTER FUNCTION platform.peek_student(uuid) OWNER TO starbuddy_authz;
+     REVOKE ALL ON FUNCTION platform.peek_student(uuid) FROM PUBLIC;
+     GRANT EXECUTE ON FUNCTION platform.peek_student(uuid) TO starbuddy_bff;"
   ["判分不关联作答"]="ALTER TABLE platform.grade_result DROP CONSTRAINT grade_result_attempt_id_attempt_occurred_at_fkey;"
   ["预留对所有登录用户可读"]="DROP POLICY usage_reservation_read ON platform.usage_reservation; CREATE POLICY usage_reservation_read ON platform.usage_reservation FOR SELECT TO starbuddy_bff USING (platform.can_read_student(student_id) OR platform.current_account_id() IS NOT NULL);"
   ["流水不按预留核对"]="DROP TRIGGER guard_ledger_insert ON platform.usage_ledger;"
