@@ -31,7 +31,7 @@ if [ -n "${DBTEST_MUTATION_SQL:-}" ]; then
 fi
 
 OUT="$WORK/tests.out"
-if ! cat "$ROOT"/db/tests/[0-9]*.sql | psql_run > "$OUT" 2>&1; then
+if ! cat "$ROOT"/db/tests/[0-9]*.sql | psql_run -v testdir="$ROOT/db/tests" > "$OUT" 2>&1; then
   grep -E 'FAIL|ERROR' "$OUT" | head -20
   echo "db-test: 失败"
   exit 1

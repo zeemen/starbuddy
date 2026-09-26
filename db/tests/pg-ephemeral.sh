@@ -36,7 +36,8 @@ pg_ephemeral_start() {  # 成功返回 0；没有 Postgres 返回 3
   # 只让 postgres 用户访问：trust 认证下，目录可访问就等于能以超级用户连进测试库
   if [ "$(id -u)" = "0" ]; then chown postgres "$WORK"; fi
   chmod 700 "$WORK"
-  trap pg_ephemeral_stop EXIT
+  # PGEPHEMERAL_KEEP=1：实例在脚本退出后继续运行（渗透测试环境 db/pentest/up.sh 用），由调用方负责销毁
+  if [ "${PGEPHEMERAL_KEEP:-0}" != "1" ]; then trap pg_ephemeral_stop EXIT; fi
   as_pg "$PGBIN/initdb" -D "$WORK/data" -A trust -U postgres -E UTF8 --no-sync >/dev/null
   as_pg "$PGBIN/pg_ctl" -D "$WORK/data" -w -l "$WORK/pg.log" \
     -o "-k $WORK -c listen_addresses='' -c fsync=off -c timezone=UTC -c max_connections=200" start >/dev/null
