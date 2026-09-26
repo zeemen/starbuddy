@@ -125,9 +125,9 @@
 
 ## M. 同冲刺新增的攻击面
 
-3-H、3-D 与本冲刺并行。测试窗口开始前已合并的，一并纳入本轮；没合并的登记到第二轮。M1（3-H 星图）已实现，补上了断言引用；M2（3-D）还没有实现，仍标第二轮。
+3-H、3-D 与本冲刺并行。测试窗口开始前已合并的，一并纳入本轮；没合并的登记到第二轮。M1（3-H 星图）已实现，补上了断言引用；M2（3-D）已搁置（英语课程调整，2026-09-26），两轮都不纳入；英语方案调整后按新 spec 重新登记。
 
 | 编号 | 攻击面 | 攻击者 / 前提 | 现有防护 | 已有自动化断言 | 渗透测试要做的 | 已知遗留 |
 |---|---|---|---|---|---|---|
 | M1 | 星图读接口 `GET /bff/v0/students/{id}/star-map`：跨家庭、跨学生读；解除绑定后能否读；未授权与“学生不存在”是否同样 404；响应是否带出 `p_mastery`、`confidence`、`evidence_ids`；开发身份桩在关闭时是否真的关得住 | 层 2（开发身份桩）/ 层 3（真实会话） | 授权完全交给 RLS（`can_read_student`）；预先序列化的同一个 404；只返回三态展示字段；身份桩要求开关打开、监听 loopback、请求来自 loopback | `ref:services/bff/tests/star-map.integration.test.ts#兄妹互看、另一户家长、不存在、非法 ID：都是 404，响应体逐字节相同`；`ref:services/bff/tests/star-map.integration.test.ts#绑定撤销后立刻看不到；停用的学生账号看不到自己`；`ref:services/bff/tests/star-map.integration.test.ts#响应只含展示字段`；`ref:services/bff/tests/star-map.integration.test.ts#开发身份桩关得住`；`ref:services/bff/tests/mutations.sh#未授权与不存在的响应不同`；`ref:services/bff/tests/mutations.sh#开发身份桩不看监听地址`；`ref:apps/web/e2e/star-map.spec.ts#兄妹互看、另一户家长、不存在的学生` | 人工：在渗透测试环境里另起星图服务（`services/bff/src/star-map/main.ts`）复测；开发身份桩本身就是“持有任意账号 ID 即可冒充”，只能在本机开发环境开启。第二轮：换成真实会话后重测 | 开发身份桩在 4-H 删除（3-H 待人确认 #3）；前端还没有 CSP（3-H lessons 待人确认 #13） |
-| M2 | 开口成章异步批改：`/jobs/{job_id}` 能否被猜出或跨学生读取；对象存储读取器的路径穿越；`transcript_ref` 指向别人的转写；`audio/` 前缀引用一律拒绝；伪造转写能否作为学生原话写入平台 | 层 2 | 见 `specs/adapter-echo-sprint3/spec.md` | 无 | 第二轮（或实现合并后纳入本轮） | — |
+| M2 | 开口成章异步批改：`/jobs/{job_id}` 能否被猜出或跨学生读取；对象存储读取器的路径穿越；`transcript_ref` 指向别人的转写；`audio/` 前缀引用一律拒绝；伪造转写能否作为学生原话写入平台 | 层 2 | 见 `specs/adapter-echo-sprint3/spec.md` | 无 | 第二轮：搁置，不纳入（3-D 开口成章已搁置，英语课程调整） | 搁置（`specs/adapter-echo-sprint3/lessons.md`） |
