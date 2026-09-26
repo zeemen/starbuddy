@@ -1,0 +1,71 @@
+{
+  "description": "规范化 JSON 的共享测试向量：services/learning 的 canonical()（Python json.dumps sort_keys、紧凑分隔符、ensure_ascii=False）与 services/bff 的 canonical() 必须逐字节一致。生成脚本 packages/contracts/scripts/gen_canonical_vectors.py。不含整数值的浮点数（1.0；绝对值 ≥ 2^53 的浮点数都属于这一类）、超出安全整数范围的整数、NaN、孤立代理项：两种语言对这些值的表示不同，BFF 的 canonical() 直接拒绝后两类。",
+  "vectors": [
+    {
+      "name": "empty-object",
+      "input": "{}",
+      "canonical": "{}",
+      "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+    },
+    {
+      "name": "key-order",
+      "input": "{\"b\":1,\"a\":2,\"c\":{\"z\":null,\"y\":true,\"x\":false}}",
+      "canonical": "{\"a\":2,\"b\":1,\"c\":{\"x\":false,\"y\":true,\"z\":null}}",
+      "sha256": "448aa8d1521322a3e71c53c640a4825106e007e80c36b05bf04c49c0fcc1c819"
+    },
+    {
+      "name": "integers",
+      "input": "{\"n\":[0,-0,1,-1,42,9007199254740991,-9007199254740991]}",
+      "canonical": "{\"n\":[0,0,1,-1,42,9007199254740991,-9007199254740991]}",
+      "sha256": "56ba0ffce2d1d129616bd2b943eec1048bf212faf096c04bb0596fd34e4e6ffe"
+    },
+    {
+      "name": "floats",
+      "input": "{\"f\":[0.5,-0.25,0.1,123.456,1e-05,0.0001,1.5e-07,1234567.891,-98765.4321e-3,3.14159,1e-310]}",
+      "canonical": "{\"f\":[0.5,-0.25,0.1,123.456,1e-05,0.0001,1.5e-07,1234567.891,-98.7654321,3.14159,1e-310]}",
+      "sha256": "0cc54b325d2f2954f5e7c22c02b9f83c852148dfe8a039fa92a09d58cd398b56"
+    },
+    {
+      "name": "strings-escape",
+      "input": "{\"s\":\"quote\\\" backslash\\\\ slash/ tab\\t nl\\n cr\\r bs\\b ff\\f nul\\u0000 us\\u001f del\\u007f\"}",
+      "canonical": "{\"s\":\"quote\\\" backslash\\\\ slash/ tab\\t nl\\n cr\\r bs\\b ff\\f nul\\u0000 us\\u001f del\"}",
+      "sha256": "38090ac6bfc15c6ca0b507c50c7a20168cd4f7a8732e31b8716929c037f49f45"
+    },
+    {
+      "name": "strings-unicode",
+      "input": "{\"s\":\"中文，全角：。 emoji 😀 é ñ \\u2028\\u2029\"}",
+      "canonical": "{\"s\":\"中文，全角：。 emoji 😀 é ñ   \"}",
+      "sha256": "d02c126d4483530665186512979210ec01bc557add37225b819dacace2bb668b"
+    },
+    {
+      "name": "keys-unicode-order",
+      "input": "{\"é\":1,\"z\":2,\"中\":3,\"😀\":4,\"\\uff5e\":5,\"a\":6,\"A\":7,\"\":8}",
+      "canonical": "{\"\":8,\"A\":7,\"a\":6,\"z\":2,\"é\":1,\"中\":3,\"～\":5,\"😀\":4}",
+      "sha256": "db7890d0e1b8215132edfb3be7f4a2500d5398cc49f1c3c49250986e1a6e5c1a"
+    },
+    {
+      "name": "float-edges",
+      "input": "{\"f\":[0.30000000000000004,5e-324,-1.7976931348623157e-300,2.2250738585072014e-308,0.1e-3]}",
+      "canonical": "{\"f\":[0.30000000000000004,5e-324,-1.7976931348623157e-300,2.2250738585072014e-308,0.0001]}",
+      "sha256": "de95ebe6e71a16c2ca54d8d5664e6185c6056f07911931322a86410668d0d5e3"
+    },
+    {
+      "name": "c1-controls-and-escaped-keys",
+      "input": "{\"\\u0080-\\u009f\":\"\",\"key\\\"quote\":1,\"key\\\\slash\":2,\"tab\\tkey\":3}",
+      "canonical": "{\"key\\\"quote\":1,\"key\\\\slash\":2,\"tab\\tkey\":3,\"-\":\"\"}",
+      "sha256": "11c56812de3ca691056e34991f72d0072200d1d8a1c58215e8bedd8a876fd8b1"
+    },
+    {
+      "name": "nested-arrays",
+      "input": "{\"a\":[[],[{}],[1,[2,[3]]],\"x\",null,true]}",
+      "canonical": "{\"a\":[[],[{}],[1,[2,[3]]],\"x\",null,true]}",
+      "sha256": "ed22af37de0abce2675b44f6cc7a7451752ce9b052838e1b40a38c3ae7af5e52"
+    },
+    {
+      "name": "grade-request-shape",
+      "input": "{\"method\":\"grade\",\"body\":{\"context\":{\"subject\":\"aya\",\"student_ref\":\"c1000000-0000-4000-8000-0000000000c1\",\"idempotency_key\":\"b0b00000-0000-4000-8000-000000000001\",\"locale\":\"zh-CN\"},\"attempt\":{\"item_ref\":\"aya:synthetic-0301-07\",\"response\":{\"text\":\"2(x-1)\"},\"time_spent_ms\":35000,\"self_assessment\":\"guessed\"},\"appeal\":false}}",
+      "canonical": "{\"body\":{\"appeal\":false,\"attempt\":{\"item_ref\":\"aya:synthetic-0301-07\",\"response\":{\"text\":\"2(x-1)\"},\"self_assessment\":\"guessed\",\"time_spent_ms\":35000},\"context\":{\"idempotency_key\":\"b0b00000-0000-4000-8000-000000000001\",\"locale\":\"zh-CN\",\"student_ref\":\"c1000000-0000-4000-8000-0000000000c1\",\"subject\":\"aya\"}},\"method\":\"grade\"}",
+      "sha256": "ca23d87a0dde6957da057ac93555e874ba29ab998c2e2353afbcad5635d9bdb4"
+    }
+  ]
+}
