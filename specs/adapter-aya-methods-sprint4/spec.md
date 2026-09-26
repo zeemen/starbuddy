@@ -383,6 +383,26 @@ teach 是四个方法里最难的一个。完整的 teach 依赖这几样东西�
     - plan 和 generate_variation 只返回 `item_ref`。**平台上没有阿鸦题干的来源**：内容包不含题干，`aya.question` 表没建（sprint1 待人确认 #2）。4-H 要显示题目，必须先定题干从哪来。
   - **5-H**：report 需要平台附上时间窗之前的最后一条掌握记录。
 
+## 与同期 spec 的协调（冲刺 4 四份 spec 复核时统一，以本节为准）
+四份 spec（4-H `specs/unified-shell-sprint4/`、4-C `specs/mastery-estimate-sprint4/`、4-G `specs/release-gate-sprint4/`、4-D `specs/adapter-aya-methods-sprint4/`）是并行起草的。起草时彼此看不到，正文里“某 spec 还不存在”之类的说法以本节为准。
+1. **迁移编号**：按需要的先后排定，最终以合并顺序为准。
+   - `0010`：4-H 会话；
+   - `0011`：4-G 发布闸门；
+   - `0012`：4-C 复测任务表与题型列。4-C 要在 4-G 改过的 `platform.item` 上加 `item_type`，需同时放行 4-G 保护触发器里的这一列。
+2. **plan 内部接口**：4-H 负责在 `learning-internal` 里新增 plan 接口（契约变更，必停）。4-D 只实现适配器侧的 `plan`，不新增平台接口。
+3. **复测任务的唯一来源**：4-C 的 `platform.retest_task`。平台调 `plan` 时，由它填好 `mastery[].next_retest_at`；适配器的 `plan` 只按它排序，不自己排复测。legacy 的 2/7/14/21 天间隔不再使用。
+4. **已发布课程版本的测试数据**：4-G 上线后，已发布版本与已准入题目只能经发布函数产生。4-G 的 PR 要在同一个 PR 里改掉 `db/tests/10_fixtures.sql`、3-H 的 `db/seeds/dev/star-map-synthetic.sql`（知行合成版本要发布，否则会从星图上消失），以及 4-H 已有的测试种子。4-H 的验收用合成已发布版本，不以 4-G 为门禁。
+5. **阿鸦内容包格式**：4-G 升到 `aya-content-pack/2`（逐题来源、准入决定文件），4-D 在其上升到 `/3`（提示阶梯原文）。4-G 的 C9 词表检查要覆盖 4-D 加进去的提示原文。
+6. **作答要带提示等级**：统一壳（4-H）提交作答时必须带 `hint_level_used`。4-C 的“低提示依赖”条件要用它，没有就最多到 understand。
+7. **复测作答扣不扣额度**：4-C 建议不扣，4-H 本冲刺不做消耗类入口。接入时如果要不扣，属于计量逻辑变更，必停。
+8. **两个没有任何 spec 负责的缺口**（交人决定）：
+   - 阿鸦题干：平台和内容包里都没有题干，`plan` 和变式题只返回题目 ID，统一壳显示不了题目；
+   - pilot 家庭开通订阅：`enroll_subject` 要求有效主订阅，而 `meter_open_subscription` 的入口不在任何 spec 里。
+9. **Gate 0 口径**（交人决定，与 `specs/adapter-echo-sprint3/lessons.md` 待决事项是同一件事）：
+   - 4-G：“四科各发布一个版本”只能到 1/4；
+   - 4-D：“契约覆盖率达标”只有阿鸦能到 6/6；
+   - 4-H：“进入四科”只能是数学真实、其余占位。
+
 ## 待人确认
 1. **teach 做不做 v0**：
    - 默认：做确定性提示阶梯（只有 hint 模式、最高 5 级、不调模型、不写话术）。阿鸦达到 6/6。提示原文视为学科内容，不视为人设话术，所以不是必停项。
