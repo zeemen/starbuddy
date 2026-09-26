@@ -695,11 +695,11 @@ SELECT t.throws($$SELECT * FROM platform.usage_ledger$$, '42501', '复核角色�
 SELECT t.throws($$SELECT * FROM platform.subscription$$, '42501', '复核角色读不到订阅');
 RESET ROLE;
 
--- 本冲刺授权函数属主只读配置（开订阅时的校验要用）；2-E 按列精确授权后改写这几条断言
+-- 授权函数属主（2-E 的写入函数以它的身份执行）的精确列级授权在 70_metering_functions.sql 里逐项断言；
+-- 这里只断言它改不了额度配置，也删不了、清不空任何计量表
 SET ROLE starbuddy_authz;
-SELECT t.throws($$SELECT * FROM platform.entitlement$$, '42501', '授权函数属主读不到额度桶');
-SELECT t.throws($$SELECT * FROM platform.usage_ledger$$, '42501', '授权函数属主读不到流水');
 SELECT t.throws($$UPDATE platform.plan_config SET note_code = 'x'$$, '42501', '授权函数属主不能改额度配置');
+SELECT t.throws($$DELETE FROM platform.usage_ledger$$, '42501', '授权函数属主不能删流水');
 RESET ROLE;
 
 SELECT t.ok(NOT EXISTS (
@@ -712,7 +712,7 @@ SELECT t.ok(NOT EXISTS (
 -- 用 has_*_privilege 按角色逐一检查（含经由角色继承、列级授权），不依赖 information_schema 的授权人可见性
 SELECT t.ok(NOT EXISTS (
   SELECT 1
-    FROM unnest(ARRAY['starbuddy_bff', 'starbuddy_learning', 'starbuddy_review', 'starbuddy_authz']) AS r(role)
+    FROM unnest(ARRAY['starbuddy_bff', 'starbuddy_learning', 'starbuddy_review', 'starbuddy_scheduler']) AS r(role)
    CROSS JOIN (SELECT c.oid FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
                 WHERE n.nspname = 'platform'
                   AND (c.relname IN ('resource_type', 'plan_config', 'plan_allowance', 'plan_feature', 'subscription', 'entitlement',
@@ -721,7 +721,7 @@ SELECT t.ok(NOT EXISTS (
                        OR c.oid IN (SELECT inhrelid FROM pg_inherits WHERE inhparent = 'platform.usage_ledger'::regclass))) t
    WHERE has_any_column_privilege(r.role, t.oid, 'INSERT') OR has_any_column_privilege(r.role, t.oid, 'UPDATE')
       OR has_table_privilege(r.role, t.oid, 'DELETE') OR has_table_privilege(r.role, t.oid, 'TRUNCATE')),
-  '任何应用角色对计量表都没有直接写权限（写入只经 2-E 的函数）');
+  'BFF、学习服务、复核、定时任务角色对计量表都没有直接写权限（写入只经函数）');
 SELECT t.ok(NOT EXISTS (
   SELECT 1
     FROM unnest(ARRAY['starbuddy_bff', 'starbuddy_learning', 'starbuddy_review']) AS r(role)

@@ -61,7 +61,7 @@ declare -A M=(
   ["更正不校验目标"]="DROP TRIGGER check_supersede_target ON platform.skill_observation; DROP TRIGGER check_supersede_target ON platform.grade_result;"
   ["同意记录任意写"]="DROP POLICY consent_write ON platform.consent_record; CREATE POLICY consent_write ON platform.consent_record FOR INSERT TO starbuddy_bff WITH CHECK (true);"
   ["同意记录全表可读"]="DROP POLICY consent_read ON platform.consent_record; CREATE POLICY consent_read ON platform.consent_record FOR SELECT TO starbuddy_bff USING (true);"
-  ["选科任意写"]="DROP POLICY enrollment_write ON platform.subject_enrollment; CREATE POLICY enrollment_write ON platform.subject_enrollment FOR INSERT TO starbuddy_bff WITH CHECK (true);"
+  ["选科任意写"]="GRANT INSERT ON platform.subject_enrollment TO starbuddy_bff; CREATE POLICY enrollment_write ON platform.subject_enrollment FOR INSERT TO starbuddy_bff WITH CHECK (true);"
   ["选科全表可读"]="DROP POLICY enrollment_read ON platform.subject_enrollment; CREATE POLICY enrollment_read ON platform.subject_enrollment FOR SELECT TO starbuddy_bff USING (true);"
   ["任意解除绑定"]="DROP POLICY link_revoke ON platform.guardian_student_link; CREATE POLICY link_revoke ON platform.guardian_student_link FOR UPDATE TO starbuddy_bff USING (true) WITH CHECK (true);"
   ["绑定全表可读"]="DROP POLICY link_read ON platform.guardian_student_link; CREATE POLICY link_read ON platform.guardian_student_link FOR SELECT TO starbuddy_bff USING (true);"
@@ -92,6 +92,28 @@ declare -A M=(
   ["证据加 DEFAULT 分区"]="CREATE TABLE platform.evidence_event_default PARTITION OF platform.evidence_event DEFAULT;"
   ["对象存储引用不限格式"]="ALTER TABLE platform.evidence_event DROP CONSTRAINT evidence_event_media_ref_check;"
   ["分区授权给 BFF"]="GRANT SELECT ON platform.evidence_event_202610 TO starbuddy_bff;"
+  ["预留不校验学生本人"]="DO \$\$ DECLARE d text := pg_get_functiondef('platform.meter_reserve(uuid, text, text, text, numeric, text, text)'::regprocedure); BEGIN IF position('IF p_student IS NULL OR NOT platform.is_self_student(p_student) THEN' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'IF p_student IS NULL OR NOT platform.is_self_student(p_student) THEN', 'IF false THEN'); END \$\$;"
+  ["结算不校验学生本人"]="DO \$\$ DECLARE d text := pg_get_functiondef('platform.meter_settle(uuid, numeric)'::regprocedure); BEGIN IF position('IF r.usage_id IS NULL OR NOT platform.is_self_student(r.student_id) THEN' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'IF r.usage_id IS NULL OR NOT platform.is_self_student(r.student_id) THEN', 'IF r.usage_id IS NULL THEN'); END \$\$;"
+  ["释放不校验学生本人"]="DO \$\$ DECLARE d text := pg_get_functiondef('platform.meter_release(uuid, text)'::regprocedure); BEGIN IF position('IF r.usage_id IS NULL OR NOT platform.is_self_student(r.student_id) THEN' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'IF r.usage_id IS NULL OR NOT platform.is_self_student(r.student_id) THEN', 'IF r.usage_id IS NULL THEN'); END \$\$;"
+  ["同 key 不比请求指纹"]="DO \$\$ DECLARE d text := pg_get_functiondef('platform.meter_same_key(platform.usage_reservation, uuid, text, text)'::regprocedure); BEGIN IF position(' OR r.request_fingerprint <> p_fingerprint' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, ' OR r.request_fingerprint <> p_fingerprint', ''); END \$\$;"
+  ["同 key 不比学生"]="DO \$\$ DECLARE d text := pg_get_functiondef('platform.meter_same_key(platform.usage_reservation, uuid, text, text)'::regprocedure); BEGIN IF position('r.student_id <> p_student OR ' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'r.student_id <> p_student OR ', ''); END \$\$;"
+  ["复看不看处理中的首次"]="DO \$\$ DECLARE d text := pg_get_functiondef('platform.meter_reserve(uuid, text, text, text, numeric, text, text)'::regprocedure); BEGIN IF position('x.state = ''reserved'') THEN' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'x.state = ''reserved'') THEN', 'x.state = ''reserved'' AND false) THEN'); END \$\$;"
+  ["复看不看时间窗口"]="DO \$\$ DECLARE d text := pg_get_functiondef('platform.meter_reserve(uuid, text, text, text, numeric, text, text)'::regprocedure); BEGIN IF position('AND x.finished_at > v_now - rt.dedup_window' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'AND x.finished_at > v_now - rt.dedup_window', ''); END \$\$;"
+  ["去重键不含学生"]="DO \$\$ DECLARE d text := pg_get_functiondef('platform.meter_reserve(uuid, text, text, text, numeric, text, text)'::regprocedure); BEGIN IF position('p_student::text || ''|'' || ' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'p_student::text || ''|'' || ', ''); END \$\$;"
+  ["重复结算不幂等"]="DO \$\$ DECLARE d text := pg_get_functiondef('platform.meter_settle(uuid, numeric)'::regprocedure); BEGIN IF position('IF r.state = ''settled'' THEN' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'IF r.state = ''settled'' THEN', 'IF false THEN'); END \$\$;"
+  ["额度不足也能预留"]="DO \$\$ DECLARE d text := pg_get_functiondef('platform.meter_reserve(uuid, text, text, text, numeric, text, text)'::regprocedure); BEGIN IF position('e.granted + e.fair_use_margin - e.reserved - e.settled >= p_quantity THEN' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'e.granted + e.fair_use_margin - e.reserved - e.settled >= p_quantity THEN', 'true THEN'); END \$\$;"
+  ["key 不校验格式"]="DO \$\$ DECLARE d text := pg_get_functiondef('platform.meter_reserve(uuid, text, text, text, numeric, text, text)'::regprocedure); BEGIN IF position('IF p_key IS NULL OR p_key !~' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'IF p_key IS NULL OR p_key !~', 'IF p_key IS NULL AND p_key !~'); END \$\$;"
+  ["开通不校验家长"]="DO \$\$ DECLARE d text := pg_get_functiondef('platform.meter_open_subscription(uuid, platform.plan_tier, text, text)'::regprocedure); BEGIN IF position('IF p_student IS NULL OR NOT platform.is_linked_guardian(p_student) THEN' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'IF p_student IS NULL OR NOT platform.is_linked_guardian(p_student) THEN', 'IF false THEN'); END \$\$;"
+  ["基础会员可以开高档"]="DO \$\$ DECLARE d text := pg_get_functiondef('platform.meter_open_subscription(uuid, platform.plan_tier, text, text)'::regprocedure); BEGIN IF position('IF p_source = ''trial'' AND p_tier <> ''basic'' THEN' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'IF p_source = ''trial'' AND p_tier <> ''basic'' THEN', 'IF false THEN'); END \$\$;"
+  ["续期不应用降级"]="DO \$\$ DECLARE d text := pg_get_functiondef('platform.meter_renew_due(integer)'::regprocedure); BEGIN IF position('tier = coalesce(s.next_tier, s.tier)' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'tier = coalesce(s.next_tier, s.tier)', 'tier = s.tier'); END \$\$;"
+  ["写入后不核对本桶"]="DO \$\$ DECLARE d text := pg_get_functiondef('platform.meter_check_entitlement(uuid)'::regprocedure); BEGIN IF position('IF e.granted <> v_granted' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'IF e.granted <> v_granted', 'IF false AND e.granted <> v_granted'); END \$\$;"
+  ["选科不校验上限"]="DO \$\$ DECLARE d text := pg_get_functiondef('platform.enroll_subject(uuid, platform.subject)'::regprocedure); BEGIN IF position('IF v_active >= v_max THEN' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'IF v_active >= v_max THEN', 'IF false THEN'); END \$\$;"
+  ["选科不校验授权"]="DO \$\$ DECLARE d text := pg_get_functiondef('platform.enroll_subject(uuid, platform.subject)'::regprocedure); BEGIN IF position('IF p_student IS NULL OR p_subject IS NULL OR NOT platform.can_read_student(p_student) THEN' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'IF p_student IS NULL OR p_subject IS NULL OR NOT platform.can_read_student(p_student) THEN', 'IF false THEN'); END \$\$;"
+  ["暂停选科不校验授权"]="DO \$\$ DECLARE d text := pg_get_functiondef('platform.pause_subject(uuid, platform.subject)'::regprocedure); BEGIN IF position('IF p_student IS NULL OR p_subject IS NULL OR NOT platform.can_read_student(p_student) THEN' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'IF p_student IS NULL OR p_subject IS NULL OR NOT platform.can_read_student(p_student) THEN', 'IF false THEN'); END \$\$;"
+  ["BFF 可以调用过期任务"]="GRANT EXECUTE ON FUNCTION platform.meter_expire_due(integer) TO starbuddy_bff;"
+  ["学习服务可以预留"]="GRANT EXECUTE ON FUNCTION platform.meter_reserve(uuid, text, text, text, numeric, text, text) TO starbuddy_learning;"
+  ["函数属主可以改公平使用余量"]="GRANT UPDATE (fair_use_margin) ON platform.entitlement TO starbuddy_authz;"
+  ["计量函数不固定 search_path"]="ALTER FUNCTION platform.meter_settle(uuid, numeric) RESET search_path;"
   ["判分不关联作答"]="ALTER TABLE platform.grade_result DROP CONSTRAINT grade_result_attempt_id_attempt_occurred_at_fkey;"
   ["预留对所有登录用户可读"]="DROP POLICY usage_reservation_read ON platform.usage_reservation; CREATE POLICY usage_reservation_read ON platform.usage_reservation FOR SELECT TO starbuddy_bff USING (platform.can_read_student(student_id) OR platform.current_account_id() IS NOT NULL);"
   ["流水不按预留核对"]="DROP TRIGGER guard_ledger_insert ON platform.usage_ledger;"
@@ -146,13 +168,30 @@ declare -A M=(
   ["对账不认更正"]="DO \$\$ DECLARE d text := pg_get_viewdef('platform.entitlement_reconciliation'::regclass); BEGIN IF position('COALESCE(usage_ledger.corrects_kind, usage_ledger.kind)' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE 'CREATE OR REPLACE VIEW platform.entitlement_reconciliation WITH (security_invoker = true) AS ' || replace(d, 'COALESCE(usage_ledger.corrects_kind, usage_ledger.kind)', 'usage_ledger.kind'); END \$\$;"
 )
 
-missed=0; total=0
+# 并行执行（每个变异各起一个一次性 Postgres，互不影响）；DBMUT_JOBS 控制并发数，默认等于 CPU 核数
+JOBS="${DBMUT_JOBS:-$(nproc 2>/dev/null || echo 2)}"
+RES="$(mktemp -d "${TMPDIR:-/tmp}/starbuddy-dbmut.XXXXXX")"
+trap 'rm -rf "$RES"' EXIT
+run_one() {  # $1 序号，$2 名字
+  local out rc
+  out=$(DBTEST_MUTATION_SQL="${M[$2]}" bash "$HERE/run.sh" 2>&1); rc=$?
+  if echo "$out" | grep -q '变异 SQL 执行失败'; then rc=97; fi
+  printf '%s\t%s\n' "$rc" "$2" > "$RES/$1"
+}
+i=0
 for name in "${!M[@]}"; do
-  total=$((total + 1))
-  out=$(DBTEST_MUTATION_SQL="${M[$name]}" bash "$HERE/run.sh" 2>&1); rc=$?
-  if [ $rc -eq 3 ]; then echo "db-mutation: 跳过（本机没有 Postgres）"; exit 3; fi
-  if [ $rc -eq 0 ]; then echo "  漏检：$name"; missed=$((missed + 1)); fi
-  if echo "$out" | grep -q '变异 SQL 执行失败'; then echo "  变异本身写错：$name"; missed=$((missed + 1)); fi
+  i=$((i + 1))
+  while [ "$(jobs -rp | wc -l)" -ge "$JOBS" ]; do wait -n; done
+  run_one "$i" "$name" &
 done
+wait
+missed=0; total=0
+while IFS=$'\t' read -r rc name; do
+  total=$((total + 1))
+  if [ "$rc" = "3" ]; then echo "db-mutation: 跳过（本机没有 Postgres）"; exit 3; fi
+  if [ "$rc" = "0" ]; then echo "  漏检：$name"; missed=$((missed + 1)); fi
+  if [ "$rc" = "97" ]; then echo "  变异本身写错：$name"; missed=$((missed + 1)); fi
+done < <(cat "$RES"/*)
+if [ "$total" -ne "${#M[@]}" ]; then echo "db-mutation: 失败（只收到 $total/${#M[@]} 个结果）"; exit 1; fi
 if [ $missed -gt 0 ]; then echo "db-mutation: 失败，$missed/$total 个变异没有被发现"; exit 1; fi
 echo "db-mutation: 通过（$total 个变异全部被发现）"

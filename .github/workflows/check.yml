@@ -54,5 +54,9 @@ jobs:
         working-directory: adapters/aya
         run: npm ci --no-audit --no-fund
 
+      - name: BFF 依赖
+        working-directory: services/bff
+        run: npm ci --no-audit --no-fund
+
       - name: make check（严格模式）
         run: make check CONTRACT_STRICT=1 PYTHON=.venv-contracts/bin/python PGBIN=/usr/lib/postgresql/16/bin
