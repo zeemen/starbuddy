@@ -16,7 +16,7 @@ endef
 # 契约检查约 1 秒，改动后也跑一遍
 check-fast: contract-test taxonomy-check attack-surface-check
 
-check: contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test learning-test bff-test bff-mutation conformance conformance-mutation pentest-env-test
+check: contract-test contract-mutation taxonomy-check attack-surface-check db-test db-mutation adapter-aya-test learning-test bff-test bff-mutation conformance conformance-mutation pentest-env-test
 	@echo "check: lint 尚未配置，跳过；其余检查已通过"
 
 # 契约合法性 + 示例 + 反例集

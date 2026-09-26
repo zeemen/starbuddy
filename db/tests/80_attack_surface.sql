@@ -1,12 +1,12 @@
 -- 攻击面自动化回归（specs/household-pentest-sprint3/spec.md 第 7 节；攻击面清单 docs/security/attack-surface.md）
 -- 按系统目录生成检查项：新表、新函数、新分区不用改这个文件就会被检查到。
 -- 放在最后执行：前面各测试文件留下的合成数据（10–70）就是可见性矩阵的数据。
--- 需要 run.sh 传入 -v testdir=<仓库>/db/tests（快照文件的位置）。
+-- 需要 run.sh 传入 -v testdir=<仓库>/db/tests（快照查询的位置）与 -v expecteddir=<期望快照目录>（通常是 db/tests/expected）。
 
--- 被检查的 schema：除系统 schema 与测试辅助 schema t 以外的全部
+-- 被检查的 schema：除系统 schema 与测试辅助 schema t 以外的全部，含 public（托管 Postgres 经 PostgREST 暴露 public）
 CREATE FUNCTION t.app_schemas() RETURNS SETOF oid LANGUAGE sql STABLE AS $$
   SELECT oid FROM pg_namespace
-   WHERE nspname NOT IN ('pg_catalog', 'information_schema', 't', 'pg_toast', 'public')
+   WHERE nspname NOT IN ('pg_catalog', 'information_schema', 't', 'pg_toast')
      AND nspname NOT LIKE 'pg_temp%' AND nspname NOT LIKE 'pg_toast_temp%' $$;
 CREATE FUNCTION t.app_roles() RETURNS SETOF text LANGUAGE sql IMMUTABLE AS $$
   SELECT unnest(ARRAY['starbuddy_bff', 'starbuddy_learning', 'starbuddy_review', 'starbuddy_scheduler', 'starbuddy_authz']) $$;
@@ -24,6 +24,13 @@ SELECT t.ok(NOT EXISTS (
           OR has_any_column_privilege(r.role, c.oid, 'UPDATE') OR has_table_privilege(r.role, c.oid, 'DELETE')
           OR has_table_privilege(r.role, c.oid, 'TRUNCATE'))),
   '攻击面：子分区对任何应用角色都没有权限（不能绕过父表的 RLS 直读分区）');
+-- 物化视图、外部表开不了 RLS：应用角色对它们不能有任何权限
+SELECT t.ok(NOT EXISTS (
+  SELECT 1 FROM pg_class c CROSS JOIN t.app_roles() r(role)
+   WHERE c.relnamespace IN (SELECT t.app_schemas()) AND c.relkind IN ('m', 'f')
+     AND (has_any_column_privilege(r.role, c.oid, 'SELECT') OR has_any_column_privilege(r.role, c.oid, 'INSERT')
+          OR has_any_column_privilege(r.role, c.oid, 'UPDATE') OR has_table_privilege(r.role, c.oid, 'DELETE'))),
+  '攻击面：物化视图与外部表对任何应用角色都没有权限（它们开不了 RLS）');
 
 -- ================= 二、SECURITY DEFINER 函数（I1） =================
 SELECT t.ok(NOT EXISTS (
@@ -47,6 +54,18 @@ SELECT t.ok(NOT EXISTS (
 SELECT t.ok(NOT EXISTS (
   SELECT 1 FROM pg_auth_members m WHERE pg_get_userbyid(m.member) IN (SELECT t.app_roles())),
   '攻击面：应用角色不是任何其他角色的成员');
+SELECT t.ok(NOT EXISTS (
+  SELECT 1 FROM pg_roles r
+   WHERE r.rolname IN (SELECT t.app_roles())
+     AND (r.rolsuper OR (r.rolbypassrls AND r.rolname <> 'starbuddy_authz') OR r.rolcreaterole OR r.rolcreatedb
+          OR r.rolreplication OR r.rolcanlogin)),
+  '攻击面：应用角色没有危险属性（SUPERUSER、BYPASSRLS、CREATEROLE、CREATEDB、REPLICATION、LOGIN；只有 authz 按设计带 BYPASSRLS）');
+-- H2：任何非超级用户角色（含经多层中间角色）都不能同时是两个应用角色的成员
+SELECT t.ok(NOT EXISTS (
+  SELECT 1 FROM pg_roles r, t.app_roles() a1(role), t.app_roles() a2(role)
+   WHERE NOT r.rolsuper AND a1.role < a2.role AND r.rolname NOT IN (SELECT t.app_roles())
+     AND pg_has_role(r.oid, a1.role, 'MEMBER') AND pg_has_role(r.oid, a2.role, 'MEMBER')),
+  '攻击面：没有角色同时继承两个应用角色（含 scheduler，经中间角色也算）');
 
 -- ================= 四、授权与策略快照（任何授权或策略变动都要同步更新 db/tests/expected/） =================
 -- 不一致时打印第一处差异；重新生成：bash db/tests/update-snapshots.sh
@@ -57,8 +76,8 @@ CREATE FUNCTION t.first_diff(actual text, expected text) RETURNS text LANGUAGE s
                   (SELECT '缺少：' || x FROM e EXCEPT SELECT '缺少：' || x FROM a ORDER BY 1 LIMIT 1), '无差异') $$;
 \i :testdir/snapshot/privileges.sql
 \i :testdir/snapshot/policies.sql
-\set expected_privileges `cat :testdir/expected/privileges.txt`
-\set expected_policies `cat :testdir/expected/policies.txt`
+\set expected_privileges `cat :expecteddir/privileges.txt`
+\set expected_policies `cat :expecteddir/policies.txt`
 -- \gset 遇到 NULL 会删除变量，所以没有差异时写空串
 SELECT CASE WHEN :'snap_privileges' <> :'expected_privileges'
             THEN t.first_diff(:'snap_privileges', :'expected_privileges') ELSE '' END AS privileges_diff \gset
@@ -69,29 +88,34 @@ SELECT t.ok(:'snap_privileges' = :'expected_privileges',
 SELECT t.ok(:'snap_policies' = :'expected_policies',
             '攻击面：策略快照与 db/tests/expected/policies.txt 一致' || coalesce('（' || nullif(:'policies_diff', '') || '）', ''));
 
--- ================= 五、跨家庭可见性矩阵（A1、B1、C1、E1、E2） =================
--- 对 BFF 可读的每张表和视图、夹具里的每个账号（含未登录、不存在、已禁用），断言看得到的学生集合 = 预期集合。
--- 预期集合由账号状态、guardian_student_link 与学生本人关系算出（不手写），再与表里实际有数据的学生取交集。
--- 默认规则 equal：看得到 = 能读的学生（学生本人或有效绑定的有效家长）。少数表规则不同，登记在下面：
-CREATE TABLE t.visibility_rule (relname text PRIMARY KEY, key_expr text NOT NULL, mode text NOT NULL, reason text NOT NULL);
+-- ================= 五、跨家庭可见性矩阵（A1、A4、B1、C1、E1、E2、E3） =================
+-- 对 BFF 可读的每张表和视图（所有应用 schema）、每个账号（含未登录、不存在、已禁用、staff），断言看得到的集合 = 预期集合。
+-- 做法：以 BFF 身份只取可见行的原始键（raw_expr，只用本表的列，不能再经过别的受 RLS 保护的表，否则别家的行
+-- 会被映射成 NULL 而空转，安全审查阻断 1）；RESET ROLE 之后再以超级用户身份把原始键映射到学生 / 账号 / 家庭（map_expr，%s 是原始键）。
+-- 预期集合由账号状态、guardian_student_link、学生本人关系算出（不手写），再与表里实际有数据的对象取交集。
+-- domain：student（默认）、account、household。mode：equal（默认，看得到 = 能读的学生）、link、author、self、household。
+CREATE TABLE t.visibility_rule (rel text PRIMARY KEY, raw_expr text NOT NULL, map_expr text NOT NULL, domain text NOT NULL,
+                                mode text NOT NULL, reason text NOT NULL);
 INSERT INTO t.visibility_rule VALUES
-  ('student_profile', 'id', 'equal', '学生键是 id'),
-  ('grade_dimension', '(SELECT g.student_id FROM platform.grade_result g WHERE g.id = grade_result_id)', 'equal',
-   '经 grade_result 关联到学生'),
-  ('guardian_report', 'student_id', 'author', '家长自述只有写它的有效绑定家长看得到，学生本人看不到（0006 greport_own）'),
-  ('guardian_student_link', 'student_id', 'link', '家长看得到自己名下的全部绑定（含已解除），学生看得到自己的绑定（0002 link_read）');
+  ('platform.student_profile', 'id', '%s', 'student', 'equal', '学生键是 id'),
+  ('platform.grade_dimension', 'grade_result_id', '(SELECT g.student_id FROM platform.grade_result g WHERE g.id = %s)', 'student', 'equal',
+   '经 grade_result 关联到学生；映射在超级用户身份下做'),
+  ('platform.guardian_report', 'student_id', '%s', 'student', 'author', '家长自述只有写它的有效绑定家长看得到，学生本人看不到（0006 greport_own）'),
+  ('platform.guardian_student_link', 'student_id', '%s', 'student', 'link',
+   '家长看得到自己名下的全部绑定（含已解除），学生看得到自己的绑定（0002 link_read）'),
+  ('platform.account', 'id', '%s', 'account', 'self', '只能读自己的账号行，禁用的账号也能读自己（0002 account_self_read）'),
+  ('platform.household', 'id', '%s', 'household', 'household',
+   '有效家长读自己创建的家庭，或能读家庭内任一学生（0002 can_read_household；解除绑定的创建者仍可读是已登记风险 A4）');
 -- 可以没有两户数据的关系（写明理由；其余的数据不足两户就失败）
-CREATE TABLE t.visibility_thin_ok (relname text PRIMARY KEY, reason text NOT NULL);
+CREATE TABLE t.visibility_thin_ok (rel text PRIMARY KEY, reason text NOT NULL);
 INSERT INTO t.visibility_thin_ok VALUES
-  ('entitlement_balance', '余额视图按真实时钟取当前周期，测试订阅用的是推进过的计量时钟，可能没有当前周期；底表 entitlement 已逐户检查');
--- BFF 可读但没有学生键的表：逐张写明理由；新表不在这里也不在矩阵里，测试就失败，逼着人判断
-CREATE TABLE t.visibility_exempt (relname text PRIMARY KEY, reason text NOT NULL);
+  ('platform.entitlement_balance', '余额视图按真实时钟取当前周期，测试订阅用的是推进过的计量时钟，可能没有当前周期；底表 entitlement 已逐户检查');
+-- BFF 可读但不含任何家庭数据的表：逐张写明理由；新表不在这里也不在矩阵里，测试就失败，逼着人判断
+CREATE TABLE t.visibility_exempt (rel text PRIMARY KEY, reason text NOT NULL);
 INSERT INTO t.visibility_exempt VALUES
-  ('account', '只能读自己的账号行（account_self_read），20_rls_household 已断言'),
-  ('household', '按 can_read_household，20_rls_household 已断言；被解除绑定的创建者仍可读是已登记风险 A4'),
-  ('curriculum_version', '内容登记，公开'), ('skill_node', '内容登记，公开'), ('item', '内容登记，公开'),
-  ('resource_type', '计量配置，公开'), ('plan_config', '额度配置，只看非草稿'), ('plan_allowance', '额度配置，只看非草稿'),
-  ('plan_feature', '额度配置，只看非草稿');
+  ('platform.curriculum_version', '内容登记，公开'), ('platform.skill_node', '内容登记，公开'), ('platform.item', '内容登记，公开'),
+  ('platform.resource_type', '计量配置，公开'), ('platform.plan_config', '额度配置，只看非草稿'),
+  ('platform.plan_allowance', '额度配置，只看非草稿'), ('platform.plan_feature', '额度配置，只看非草稿');
 -- BFF 可执行、但不进函数越权矩阵的 SECURITY DEFINER 函数：没有“另一户的对象”可以作为参数，逐个写明由哪里覆盖
 CREATE TABLE t.function_matrix_exempt (sig text PRIMARY KEY, reason text NOT NULL);
 INSERT INTO t.function_matrix_exempt VALUES
@@ -108,12 +132,21 @@ CREATE FUNCTION t.readable_students(acc uuid) RETURNS uuid[] LANGUAGE sql STABLE
       OR EXISTS (SELECT 1 FROM platform.account a JOIN platform.guardian_student_link l ON l.guardian_account_id = a.id
                   WHERE a.id = acc AND a.kind = 'guardian' AND a.status = 'active' AND l.status = 'active' AND l.student_id = s.id) $$;
 
+-- 把一组原始键映射成排好序、去重、去 NULL 的 uuid 数组（以调用者身份执行；矩阵在 RESET ROLE 之后调用）
+CREATE FUNCTION t.map_keys(raw uuid[], map_expr text) RETURNS uuid[] LANGUAGE plpgsql AS $$
+DECLARE v uuid[];
+BEGIN
+  EXECUTE format('SELECT coalesce(array_agg(DISTINCT m ORDER BY m), ''{}'') FROM (SELECT %s AS m FROM unnest($1) r) x WHERE m IS NOT NULL',
+                 format(map_expr, 'r')) USING raw INTO v;
+  RETURN v;
+END $$;
+
 DO $$
 DECLARE
   rel record;
   acc uuid;
-  v_key text;
-  v_mode text;
+  r t.visibility_rule%ROWTYPE;
+  v_raw uuid[];
   v_present uuid[];
   v_expected uuid[];
   v_visible uuid[];
@@ -121,66 +154,80 @@ DECLARE
   v_unjudged text[] := '{}';
   v_thin text[] := '{}';
   v_accounts uuid[];
+  v_rels integer := 0;
 BEGIN
   SELECT array_agg(id ORDER BY id) || ARRAY[NULL::uuid, '00000000-0000-4000-8000-000000000000'::uuid]
     INTO v_accounts FROM platform.account;
-  FOR rel IN SELECT c.oid, c.relname,
+  FOR rel IN SELECT c.oid, format('%s.%s', n.nspname, c.relname) AS qname,
                     EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = c.oid AND a.attname = 'student_id' AND NOT a.attisdropped) AS has_sid
-               FROM pg_class c
-              WHERE c.relnamespace = 'platform'::regnamespace AND c.relkind IN ('r', 'p', 'v') AND NOT c.relispartition
+               FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+              WHERE c.relnamespace IN (SELECT t.app_schemas()) AND c.relkind IN ('r', 'p', 'v', 'm', 'f') AND NOT c.relispartition
                 AND has_any_column_privilege('starbuddy_bff', c.oid, 'SELECT')
-              ORDER BY c.relname LOOP
-    SELECT key_expr, mode INTO v_key, v_mode FROM t.visibility_rule WHERE relname = rel.relname;
+              ORDER BY 2 LOOP
+    SELECT * INTO r FROM t.visibility_rule WHERE t.visibility_rule.rel = rel.qname;
     IF NOT FOUND THEN
-      IF rel.has_sid THEN
-        v_key := 'student_id'; v_mode := 'equal';
-      ELSE
-        IF NOT EXISTS (SELECT 1 FROM t.visibility_exempt e WHERE e.relname = rel.relname) THEN
-          v_unjudged := v_unjudged || rel.relname::text;
+      IF NOT rel.has_sid THEN
+        IF NOT EXISTS (SELECT 1 FROM t.visibility_exempt e WHERE e.rel = rel.qname) THEN
+          v_unjudged := v_unjudged || rel.qname;
         END IF;
         CONTINUE;
       END IF;
+      r := ROW(rel.qname, 'student_id', '%s', 'student', 'equal', '默认');
     END IF;
-    EXECUTE format('SELECT coalesce(array_agg(DISTINCT k ORDER BY k), ''{}'') FROM (SELECT %s AS k FROM platform.%I) x WHERE k IS NOT NULL',
-                   v_key, rel.relname) INTO v_present;
+    v_rels := v_rels + 1;
+    EXECUTE format('SELECT coalesce(array_agg(DISTINCT k), ''{}'') FROM (SELECT (%s)::uuid AS k FROM %s) x WHERE k IS NOT NULL',
+                   r.raw_expr, rel.oid::regclass) INTO v_raw;
+    v_present := t.map_keys(v_raw, r.map_expr);
     -- 数据要来自至少两户，否则“看不到别人的”会空转（1-E lessons）
-    IF (SELECT count(DISTINCT s.household_id) FROM platform.student_profile s WHERE s.id = ANY (v_present)) < 2
-       AND NOT EXISTS (SELECT 1 FROM t.visibility_thin_ok o WHERE o.relname = rel.relname) THEN
-      v_thin := v_thin || rel.relname::text;
+    IF r.domain <> 'account' AND (CASE r.domain
+         WHEN 'student' THEN (SELECT count(DISTINCT s.household_id) FROM platform.student_profile s WHERE s.id = ANY (v_present))
+         ELSE cardinality(v_present) END) < 2
+       AND NOT EXISTS (SELECT 1 FROM t.visibility_thin_ok o WHERE o.rel = rel.qname) THEN
+      v_thin := v_thin || rel.qname;
     END IF;
     FOREACH acc IN ARRAY v_accounts LOOP
-      v_expected := CASE v_mode
+      v_expected := CASE r.mode
         WHEN 'equal' THEN t.readable_students(acc)
-        WHEN 'link' THEN (SELECT coalesce(array_agg(DISTINCT x ORDER BY x), '{}') FROM (
+        WHEN 'link' THEN (SELECT coalesce(array_agg(DISTINCT x), '{}') FROM (
                             SELECT unnest(t.readable_students(acc)) x WHERE EXISTS (
                               SELECT 1 FROM platform.account a WHERE a.id = acc AND a.kind = 'student')
                             UNION
                             SELECT l.student_id FROM platform.guardian_student_link l JOIN platform.account a ON a.id = l.guardian_account_id
                              WHERE a.id = acc AND a.kind = 'guardian' AND a.status = 'active') y)
-        WHEN 'author' THEN (SELECT coalesce(array_agg(DISTINCT r.student_id ORDER BY r.student_id), '{}')
-                              FROM platform.guardian_report r
-                             WHERE r.guardian_account_id = acc AND r.student_id = ANY (t.readable_students(acc))
+        WHEN 'author' THEN (SELECT coalesce(array_agg(DISTINCT gr.student_id), '{}')
+                              FROM platform.guardian_report gr
+                             WHERE gr.guardian_account_id = acc AND gr.student_id = ANY (t.readable_students(acc))
                                AND EXISTS (SELECT 1 FROM platform.account a WHERE a.id = acc AND a.kind = 'guardian'))
+        WHEN 'self' THEN (SELECT coalesce(array_agg(a.id), '{}') FROM platform.account a WHERE a.id = acc)
+        WHEN 'household' THEN (SELECT coalesce(array_agg(DISTINCT h.id), '{}') FROM platform.household h
+                                WHERE EXISTS (SELECT 1 FROM platform.account a WHERE a.id = acc AND a.kind = 'guardian'
+                                                AND a.status = 'active' AND h.created_by_account = a.id)
+                                   OR EXISTS (SELECT 1 FROM platform.student_profile s
+                                               WHERE s.household_id = h.id AND s.id = ANY (t.readable_students(acc))))
       END;
       SELECT coalesce(array_agg(x ORDER BY x), '{}') INTO v_expected FROM unnest(v_expected) x WHERE x = ANY (v_present);
       PERFORM set_config('app.account_id', coalesce(acc::text, ''), false);
       EXECUTE 'SET ROLE starbuddy_bff';
-      EXECUTE format('SELECT coalesce(array_agg(DISTINCT k ORDER BY k), ''{}'') FROM (SELECT %s AS k FROM platform.%I) x WHERE k IS NOT NULL',
-                     v_key, rel.relname) INTO v_visible;
+      EXECUTE format('SELECT coalesce(array_agg(DISTINCT k), ''{}'') FROM (SELECT (%s)::uuid AS k FROM %s) x WHERE k IS NOT NULL',
+                     r.raw_expr, rel.oid::regclass) INTO v_raw;
       EXECUTE 'RESET ROLE';
+      v_visible := t.map_keys(v_raw, r.map_expr);
       IF v_visible IS DISTINCT FROM v_expected THEN
-        v_fail := v_fail || format('%s 账号 %s：看到 %s，预期 %s', rel.relname, coalesce(acc::text, '未登录'), v_visible, v_expected);
+        v_fail := v_fail || format('%s 账号 %s：看到 %s，预期 %s', rel.qname, coalesce(acc::text, '未登录'), v_visible, v_expected);
       END IF;
     END LOOP;
   END LOOP;
   PERFORM set_config('app.account_id', '', false);
   IF cardinality(v_fail) > 0 THEN RAISE NOTICE '可见性矩阵不一致：%', array_to_string(v_fail[1:5], E'\n'); END IF;
-  PERFORM t.ok(cardinality(v_fail) = 0, format('攻击面：可见性矩阵——BFF 可读的每张表，每个账号看到的学生集合 = 预期集合（%s 处不一致）',
-                                             cardinality(v_fail)));
+  -- 最小覆盖：筛选条件坏掉、一张表都没选上时不能“全部通过”（安全审查阻断 2）
+  PERFORM t.ok(v_rels >= 19 AND cardinality(v_accounts) >= 8,
+               format('攻击面：可见性矩阵覆盖了足够多的表与账号（%s 张表、%s 个账号）', v_rels, cardinality(v_accounts)));
   PERFORM t.ok(cardinality(v_unjudged) = 0, '攻击面：BFF 可读但没有学生键的表都登记了豁免理由' ||
                                             coalesce('（未登记：' || array_to_string(v_unjudged, '、') || '）', ''));
   PERFORM t.ok(cardinality(v_thin) = 0, '攻击面：可见性矩阵的每张表都有至少两户的数据（不空转）' ||
                                         coalesce('（数据不足：' || array_to_string(v_thin, '、') || '）', ''));
+  PERFORM t.ok(cardinality(v_fail) = 0, format('攻击面：可见性矩阵——BFF 可读的每张表，每个账号看到的集合 = 预期集合（%s 处不一致）',
+                                             cardinality(v_fail)));
 END $$;
 
 -- 身份设成非法字符串：直接报错，不返回任何数据（E2）
@@ -206,14 +253,18 @@ CREATE FUNCTION t.dummy_arg(typ regtype) RETURNS text LANGUAGE sql IMMUTABLE AS 
     WHEN 'platform.subject' THEN quote_literal('aya') || '::platform.subject'
     ELSE NULL END $$;
 
+-- 结果含 SQLSTATE、消息、DETAIL、HINT：任何一项因“对象存在”而不同，都算泄露存在性（安全审查建议 2）
 CREATE FUNCTION t.try_call(sql text) RETURNS text LANGUAGE plpgsql AS $$
-DECLARE v text;
+DECLARE v text; v_detail text; v_hint text;
 BEGIN
   BEGIN
     EXECUTE sql INTO v;
     RAISE EXCEPTION USING ERRCODE = 'P0999', MESSAGE = 'returned:' || coalesce(v, 'null');
   EXCEPTION WHEN OTHERS THEN
-    RETURN CASE WHEN SQLSTATE = 'P0999' THEN SQLERRM ELSE SQLSTATE || ':' || SQLERRM END;
+    GET STACKED DIAGNOSTICS v_detail = PG_EXCEPTION_DETAIL, v_hint = PG_EXCEPTION_HINT;
+    RETURN CASE WHEN SQLSTATE = 'P0999' THEN SQLERRM
+                ELSE SQLSTATE || ':' || SQLERRM || coalesce(' detail=' || nullif(v_detail, ''), '')
+                     || coalesce(' hint=' || nullif(v_hint, ''), '') END;
   END;
 END $$;
 
@@ -230,7 +281,7 @@ DECLARE
   i integer;
 BEGIN
   FOR attacker IN SELECT a.id, a.kind FROM platform.account a
-                   WHERE a.status = 'active' AND a.kind IN ('guardian', 'student') AND cardinality(t.readable_students(a.id)) > 0
+                   WHERE a.status = 'active'  -- 所有有效账号，含没有任何绑定的、同号第二账号、staff（安全审查建议 2）
                    ORDER BY a.id LOOP
     FOR f IN SELECT p.oid, p.oid::regprocedure AS sig, p.proname, p.proargnames[1] AS first_arg, p.proargtypes,
                     p.prorettype = 'boolean'::regtype AS is_bool

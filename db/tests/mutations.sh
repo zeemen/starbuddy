@@ -130,6 +130,25 @@ declare -A M=(
   ["攻击面：BFF 多了一条 USING (true) 策略"]="CREATE POLICY pentest_open ON platform.mastery_estimate FOR SELECT TO starbuddy_bff USING (true);"
   ["攻击面：BFF 能在 platform 上建对象"]="GRANT CREATE ON SCHEMA platform TO starbuddy_bff;"
   ["攻击面：默认授权给 BFF"]="ALTER DEFAULT PRIVILEGES IN SCHEMA platform GRANT SELECT ON TABLES TO starbuddy_bff;"
+  ["攻击面：维度表对 BFF 全开"]="DROP POLICY dim_read ON platform.grade_dimension; CREATE POLICY dim_read ON platform.grade_dimension FOR SELECT TO starbuddy_bff USING (true);"
+  ["攻击面：账号表对登录用户全开"]="CREATE POLICY pentest_account ON platform.account FOR SELECT TO starbuddy_bff USING (platform.current_account_id() IS NOT NULL);"
+  ["攻击面：家庭表对登录用户全开"]="CREATE POLICY pentest_household ON platform.household FOR SELECT TO starbuddy_bff USING (platform.current_account_id() IS NOT NULL);"
+  ["攻击面：可转授的授权"]="GRANT SELECT ON platform.student_profile TO starbuddy_bff WITH GRANT OPTION;"
+  ["攻击面：应用角色带 BYPASSRLS"]="ALTER ROLE starbuddy_review BYPASSRLS;"
+  ["攻击面：登录角色同时继承定时任务与 BFF"]="CREATE ROLE pentest_both LOGIN IN ROLE starbuddy_scheduler, starbuddy_bff;"
+  ["攻击面：函数经 DETAIL 泄露学生是否存在"]="CREATE FUNCTION platform.peek_exists(p_student uuid) RETURNS jsonb
+     LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, platform, pg_temp AS \$\$
+     BEGIN
+       IF NOT platform.can_read_student(p_student) THEN
+         RAISE EXCEPTION 'not permitted' USING ERRCODE = '42501',
+           DETAIL = CASE WHEN EXISTS (SELECT 1 FROM platform.student_profile WHERE id = p_student) THEN 'e' ELSE 'n' END;
+       END IF;
+       RETURN '{}'::jsonb;
+     END \$\$;
+     ALTER FUNCTION platform.peek_exists(uuid) OWNER TO starbuddy_authz;
+     REVOKE ALL ON FUNCTION platform.peek_exists(uuid) FROM PUBLIC;
+     GRANT EXECUTE ON FUNCTION platform.peek_exists(uuid) TO starbuddy_bff;"
+  ["攻击面：物化视图授权给 BFF"]="CREATE MATERIALIZED VIEW platform.pentest_mv AS SELECT id FROM platform.student_profile; GRANT SELECT ON platform.pentest_mv TO starbuddy_bff;"
   ["攻击面：新函数的学生参数换个名字躲过越权矩阵"]="CREATE FUNCTION platform.peek_student(p_student_id uuid) RETURNS smallint
      LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, platform, pg_temp AS \$\$
      SELECT grade FROM platform.student_profile WHERE id = p_student_id \$\$;
@@ -194,12 +213,52 @@ declare -A M=(
 JOBS="${DBMUT_JOBS:-$(nproc 2>/dev/null || echo 2)}"
 RES="$(mktemp -d "${TMPDIR:-/tmp}/starbuddy-dbmut.XXXXXX")"
 trap 'rm -rf "$RES"' EXIT
+# 攻击面变异：只跑 80（在渗透测试夹具上），而且第一条失败的必须是这里登记的断言（安全审查阻断 2）。
+# 这样才能证明是 80 本身发现了变异，而不是 20–70 的逐表断言或快照先拦下。
+# 除 KEEP_SNAPSHOT 里的以外，快照都按变异后的状态重新生成，不让快照先拦截。
+declare -A EXPECT=(
+  ["攻击面：新表不开 RLS"]="攻击面：每张表（含分区父表）都 ENABLE + FORCE RLS"
+  ["攻击面：新表开了 RLS 却没有策略"]="攻击面：可见性矩阵——"
+  ["攻击面：新分区授权给 BFF"]="攻击面：子分区对任何应用角色都没有权限"
+  ["攻击面：SECURITY DEFINER 函数不固定 pg_temp"]="攻击面：每个 SECURITY DEFINER 函数"
+  ["攻击面：计量函数对 PUBLIC 开放"]="攻击面：每个 SECURITY DEFINER 函数"
+  ["攻击面：BFF 多了一条 USING (true) 策略"]="攻击面：可见性矩阵——"
+  ["攻击面：BFF 能在 platform 上建对象"]="攻击面：应用角色在任何 schema"
+  ["攻击面：默认授权给 BFF"]="攻击面：没有让新建对象自动授权"
+  ["攻击面：维度表对 BFF 全开"]="攻击面：可见性矩阵——"
+  ["攻击面：账号表对登录用户全开"]="攻击面：可见性矩阵——"
+  ["攻击面：家庭表对登录用户全开"]="攻击面：可见性矩阵——"
+  ["攻击面：可转授的授权"]="攻击面：授权快照"
+  ["攻击面：应用角色带 BYPASSRLS"]="攻击面：应用角色没有危险属性"
+  ["攻击面：登录角色同时继承定时任务与 BFF"]="攻击面：没有角色同时继承两个应用角色"
+  ["攻击面：函数经 DETAIL 泄露学生是否存在"]="攻击面：函数越权矩阵——"
+  ["攻击面：物化视图授权给 BFF"]="攻击面：物化视图与外部表"
+  ["攻击面：新函数的学生参数换个名字躲过越权矩阵"]="攻击面：BFF 可执行的 SECURITY DEFINER 函数要么在函数越权矩阵里"
+)
+declare -A KEEP_SNAPSHOT=(["攻击面：可转授的授权"]=1)
+for name in "${!EXPECT[@]}"; do [ -n "${M[$name]+x}" ] || { echo "db-mutation: EXPECT 里的 $name 不是变异"; exit 1; }; done
+for name in "${!M[@]}"; do
+  case "$name" in 攻击面：*) [ -n "${EXPECT[$name]+x}" ] || { echo "db-mutation: 攻击面变异 $name 没有登记预期断言"; exit 1; } ;; esac
+done
+
 run_one() {  # $1 序号，$2 名字
-  local out rc
-  out=$(DBTEST_MUTATION_SQL="${M[$2]}" bash "$HERE/run.sh" 2>&1); rc=$?
+  local out rc first
+  if [ -n "${EXPECT[$2]+x}" ]; then
+    out=$(DBTEST_ATTACK_ONLY=1 DBTEST_KEEP_SNAPSHOT="${KEEP_SNAPSHOT[$2]:-0}" DBTEST_MUTATION_SQL="${M[$2]}" bash "$HERE/run.sh" 2>&1); rc=$?
+    first="$(printf '%s\n' "$out" | grep -m1 'FAIL' || true)"
+    if [ $rc -ne 0 ] && [ $rc -ne 3 ] && [[ "$first" != *"FAIL: ${EXPECT[$2]}"* ]]; then
+      rc=98; printf '%s\n' "${first:-$(printf '%s\n' "$out" | tail -3)}" > "$RES/why.$1"
+    fi
+  else
+    out=$(DBTEST_MUTATION_SQL="${M[$2]}" bash "$HERE/run.sh" 2>&1); rc=$?
+  fi
   if echo "$out" | grep -q '变异 SQL 执行失败'; then rc=97; fi
-  printf '%s\t%s\n' "$rc" "$2" > "$RES/$1"
+  printf '%s\t%s\t%s\n' "$rc" "$2" "$1" > "$RES/$1"
 }
+# DBMUT_FILTER=<前缀>：只跑名字以这个前缀开头的变异（本地调试用；make check 不设）
+if [ -n "${DBMUT_FILTER:-}" ]; then
+  for name in "${!M[@]}"; do [[ "$name" == "$DBMUT_FILTER"* ]] || unset "M[$name]"; done
+fi
 i=0
 for name in "${!M[@]}"; do
   i=$((i + 1))
@@ -208,12 +267,13 @@ for name in "${!M[@]}"; do
 done
 wait
 missed=0; total=0
-while IFS=$'\t' read -r rc name; do
+while IFS=$'\t' read -r rc name idx; do
   total=$((total + 1))
   if [ "$rc" = "3" ]; then echo "db-mutation: 跳过（本机没有 Postgres）"; exit 3; fi
   if [ "$rc" = "0" ]; then echo "  漏检：$name"; missed=$((missed + 1)); fi
   if [ "$rc" = "97" ]; then echo "  变异本身写错：$name"; missed=$((missed + 1)); fi
-done < <(cat "$RES"/*)
+  if [ "$rc" = "98" ]; then echo "  不是被预期的断言发现：$name（预期“${EXPECT[$name]}”，实际：$(cat "$RES/why.$idx")）"; missed=$((missed + 1)); fi
+done < <(cat "$RES"/[0-9]*)
 if [ "$total" -ne "${#M[@]}" ]; then echo "db-mutation: 失败（只收到 $total/${#M[@]} 个结果）"; exit 1; fi
 if [ $missed -gt 0 ]; then echo "db-mutation: 失败，$missed/$total 个变异没有被发现"; exit 1; fi
 echo "db-mutation: 通过（$total 个变异全部被发现）"

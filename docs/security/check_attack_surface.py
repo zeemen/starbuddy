@@ -7,7 +7,8 @@ make check-fast / make attack-surface-check 调用。只用标准库，约 0.1 �
    - `ref:路径#片段`：文件存在且含这段文字（表格里的 \\| 还原成 |）；
    - `mut:名称`：db/tests/mutations.sh 里有这个变异；`mut-bff:名称`：services/bff/tests/mutations.sh 里有；
 3. 没有引用的条目，这一列写“无”，而且“渗透测试要做的”一列标了“人工”或“第二轮”；每条都要标这两者之一；
-4. docs/security/pentest/scope.md 的 SECURITY DEFINER 函数表与 db/tests/expected/privileges.txt 的 secdef| 行一致；
+4. docs/security/pentest/scope.md 的 SECURITY DEFINER 函数表与 db/tests/expected/privileges.txt 一致：
+   函数清单对 secdef| 行，“可执行的应用角色”一列对 func| 行；
 5. 交接包文件齐全，findings.csv 表头与 spec 第 6 节一致。
 退出码：0 通过；1 失败。
 """
@@ -114,7 +115,20 @@ def main() -> int:
     if not table:
         errors.append("scope.md 里找不到 SECURITY DEFINER 函数表（secdef-table 标记）")
     else:
-        listed = re.findall(r"^\| `(platform\.[a-z_]+\([^`]*\))` \|", table.group(1), re.M)
+        rows_ = re.findall(r"^\| `(platform\.[a-z_]+\([^`]*\))` \| [^|]+ \| ([^|]+) \|", table.group(1), re.M)
+        listed = [f for f, _ in rows_]
+        # “可执行的应用角色”一列与快照的 func| 行一致（属主 authz 与超级用户不算）
+        granted: dict[str, set[str]] = {}
+        for line in PRIVILEGES.read_text(encoding="utf-8").splitlines():
+            parts = line.split("|")
+            if parts[0] == "func" and parts[3] == "EXECUTE" and parts[2] not in ("starbuddy_authz", "SUPERUSER"):
+                granted.setdefault(parts[1], set()).add(parts[2])
+        for f, who in rows_:
+            want = set() if who.strip().startswith("无") else {
+                "starbuddy_" + w.strip() for w in re.split(r"[、,，]", who) if w.strip()}
+            if granted.get(f, set()) != want:
+                errors.append(f"scope.md 函数表 {f} 的可执行角色写的是“{who.strip()}”，授权快照里是 "
+                              f"{'、'.join(sorted(granted.get(f, set()))) or '无'}")
         if len(listed) != len(set(listed)):
             errors.append("scope.md 函数表有重复行")
         for f in sorted(snapshot - set(listed)):

@@ -29,6 +29,7 @@ const LEARNING_CREDENTIAL = "synthetic-bff-to-learning-credential-0001"; // 学�
 const BAD_AUTH: Record<string, string> = {
   空值: "",
   只有Bearer: "Bearer",
+  Bearer后空令牌: "Bearer ",
   错误令牌: "Bearer wrong",
   令牌前缀: `Bearer ${CREDENTIAL.slice(0, -1)}`,
   令牌多一个字符: `Bearer ${CREDENTIAL}x`,

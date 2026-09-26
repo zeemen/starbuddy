@@ -8,6 +8,8 @@
 # 退出码：3 表示本机没有 Postgres（由 Makefile 决定是否算失败）。
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# 调用方环境里的这些变量会让 libpq 连到别处（例如 PGHOSTADDR 优先走 TCP），一律清掉，只连本实例（安全审查建议 8）
+unset PGHOSTADDR PGSERVICE PGSERVICEFILE PGPORT PGUSER PGPASSWORD PGPASSFILE PGSSLMODE PGOPTIONS
 # 固定优先用 PG16（迁移按 Postgres 16 编写），没有再退到本机最新版本
 PGBIN="${PGBIN:-$( [ -x /usr/lib/postgresql/16/bin/initdb ] && echo /usr/lib/postgresql/16/bin \
                    || ls -d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V | tail -1 || true)}"
@@ -32,7 +34,8 @@ pg_ephemeral_start() {  # 成功返回 0；没有 Postgres 返回 3
     echo "pg-ephemeral: 跳过（本机没有 Postgres 服务端；需要 postgresql-16）"
     return 3
   fi
-  WORK="$(mktemp -d "${TMPDIR:-/tmp}/starbuddy-pg.XXXXXX")"
+  # PGEPHEMERAL_PREFIX：目录名前缀（渗透测试环境用 starbuddy-pentest，与测试实例区分，down.sh 不会误删测试实例）
+  WORK="$(mktemp -d "${TMPDIR:-/tmp}/${PGEPHEMERAL_PREFIX:-starbuddy-pg}.XXXXXX")"
   # 只让 postgres 用户访问：trust 认证下，目录可访问就等于能以超级用户连进测试库
   if [ "$(id -u)" = "0" ]; then chown postgres "$WORK"; fi
   chmod 700 "$WORK"
