@@ -1,0 +1,20 @@
+-- 0008 回滚
+DROP VIEW IF EXISTS platform.entitlement_balance;
+DROP VIEW IF EXISTS platform.reservation_ledger_mismatch;
+DROP VIEW IF EXISTS platform.entitlement_reconciliation;
+DROP TABLE IF EXISTS platform.usage_ledger;
+DROP TABLE IF EXISTS platform.usage_reservation;
+DROP TABLE IF EXISTS platform.entitlement;
+DROP TABLE IF EXISTS platform.subscription;
+DROP TABLE IF EXISTS platform.plan_feature;
+DROP TABLE IF EXISTS platform.plan_allowance;
+DROP TABLE IF EXISTS platform.plan_config;
+DROP TABLE IF EXISTS platform.resource_type;
+DROP FUNCTION IF EXISTS platform.reject_ledger_change();
+DROP FUNCTION IF EXISTS platform.guard_usage_reservation();
+DROP FUNCTION IF EXISTS platform.guard_subscription();
+DROP FUNCTION IF EXISTS platform.guard_plan_rows();
+DROP FUNCTION IF EXISTS platform.guard_plan_config();
+DROP TYPE IF EXISTS platform.ledger_kind;
+DROP TYPE IF EXISTS platform.reservation_state;
+DROP TYPE IF EXISTS platform.plan_tier;
