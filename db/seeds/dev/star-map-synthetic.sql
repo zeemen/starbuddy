@@ -3,7 +3,9 @@
 --
 -- 前提：已执行全部迁移，并已跑过阿鸦内容登记（959 个能力点）：
 --   node adapters/aya/scripts/register-content.ts > /tmp/aya-register.sql && psql -f /tmp/aya-register.sql
--- 用法：psql -X -v ON_ERROR_STOP=1 -1 -f db/seeds/dev/star-map-synthetic.sql（以迁移执行者身份；只能执行一次）
+-- 用法（以迁移执行者身份；只能执行一次；文件自带事务，不要再加 -1）：
+--   PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -v ON_ERROR_STOP=1 -f db/seeds/dev/star-map-synthetic.sql
+--   不设 starbuddy.allow_synthetic_seed=on 时直接报错：防止误跑到开发库以外（合成的知行能力点会出现在该库每个知行学生的星空里）
 --
 -- 内容：
 --   家庭 HS（合成）：家长 gS，兄妹 S1、S2。S1 选了阿鸦与知行（都在读）；S2 选了阿鸦（在读）与知行（已暂停）。
@@ -11,10 +13,19 @@
 --   知行：一个合成课程版本与 4 个合成能力点 SYN-ZX-01..04（模拟“过程四步”，不是教研坐标，spec 待人确认 #9）。
 --   掌握记录以 starbuddy_learning 身份写入（模拟学习服务）；阿鸦取已登记能力点按 local_id 排序的前 8 个。
 --   期望的星图计数写在文件末尾的注释里，BFF 与前端测试都按它断言。
+--
+-- 与真实学习服务的差异（只为原型演示，不能当作溯源或准入示例）：
+--   - mastery_estimate 表注释要求“只有已准入内容的证据能推动 transfer 及以上”；这里的证据全部未准入
+--     （知行 source_unverified，阿鸦登记时最高只到 pending_review），却写了 transfer / retain。真实学习服务（4-C）必须拒绝；
+--   - 证据只为满足 evidence_ids 非空：每个学生每个学科一条，与具体能力点对不上，不代表推断依据；
+--   - computed_at 会被 guard_inference_insert 触发器改写为 now()。
 BEGIN;
 
 DO $$
 BEGIN
+  IF coalesce(current_setting('starbuddy.allow_synthetic_seed', true), '') <> 'on' THEN
+    RAISE EXCEPTION '合成种子只能用于开发库与一次性测试库：执行方须显式设置 starbuddy.allow_synthetic_seed=on';
+  END IF;
   IF EXISTS (SELECT 1 FROM platform.household WHERE id = '5a000000-0000-4000-8000-0000000000d1') THEN
     RAISE EXCEPTION '星图合成种子已经执行过（只能执行一次）';
   END IF;

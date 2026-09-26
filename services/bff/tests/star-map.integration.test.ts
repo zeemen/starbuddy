@@ -55,7 +55,13 @@ before(async () => {
     const register = execFileSync(process.execPath, ['--no-warnings', 'scripts/register-content.ts'],
       { cwd: new URL('adapters/aya/', ROOT), encoding: 'utf8', maxBuffer: 16 << 20 });
     await su.query(register);
-    await su.query(readFileSync(new URL('db/seeds/dev/star-map-synthetic.sql', ROOT), 'utf8'));
+    const seeder = await su.connect();
+    try {
+      await seeder.query(`SET starbuddy.allow_synthetic_seed = 'on'`);
+      await seeder.query(readFileSync(new URL('db/seeds/dev/star-map-synthetic.sql', ROOT), 'utf8'));
+    } finally {
+      seeder.release(true);  // 会话级设置不带回连接池
+    }
   }
   ayaCount = Number((await su.query(`SELECT count(*) FROM platform.skill_node WHERE subject = 'aya'`)).rows[0].count);
   bff = new pg.Pool({ user: 'bff_app', max: 5 });
