@@ -1,0 +1,111 @@
+# BFF ↔ 统一壳前端的星图接口（冲刺 3-H，specs/star-map-sprint3/spec.md 第 1 节）。
+# 服务内部接口，不是学科插件契约，不放 packages/contracts（spec 待人确认 #2）。
+openapi: 3.1.0
+info:
+  title: StarBuddy BFF · star map (v0, prototype)
+  version: 0.1.0
+  description: >
+    学生本人或已绑定的有效家长读取学生的星图。授权完全由数据库 RLS（can_read_student）决定；
+    未授权与学生不存在返回同一个 404，响应体逐字节相同。只返回三态展示数据，不返回 p_mastery、
+    confidence、evidence_ids、algorithm_version。本冲刺的身份来源是开发桩（x-dev-account-id，
+    只在 STARBUDDY_DEV_AUTH=1 且只监听 loopback 时生效），4-H 用真实会话替换。
+servers:
+  - url: http://127.0.0.1:8787
+paths:
+  /bff/v0/students/{student_id}/star-map:
+    get:
+      operationId: getStarMap
+      parameters:
+        - name: student_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: x-dev-account-id
+          in: header
+          required: false
+          description: 开发身份桩（仅开发环境）；4-H 删除
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: 星图
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StarMap' }
+        '401':
+          description: 未登录
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '404':
+          description: 学生不存在，或当前账号无权查看（两者不区分）
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '405':
+          description: 只支持 GET
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '500':
+          description: 内部错误（响应不含任何数据或异常消息）
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+components:
+  schemas:
+    StarMap:
+      type: object
+      additionalProperties: false
+      required: [student_id, generated_at, skies]
+      properties:
+        student_id: { type: string, format: uuid }
+        generated_at: { type: string, format: date-time }
+        skies:
+          type: array
+          description: 每个在读学科一片星空；没有选科时为空数组
+          items: { $ref: '#/components/schemas/Sky' }
+    Sky:
+      type: object
+      additionalProperties: false
+      required: [subject, enrollment_status, stars, summary]
+      properties:
+        subject: { type: string, enum: [wenli, aya, zhixing, echo] }
+        enrollment_status: { type: string, enum: [active, paused] }
+        stars:
+          type: array
+          description: 该学科全部已登记能力点，按 local_id 排序
+          items: { $ref: '#/components/schemas/Star' }
+        summary:
+          type: object
+          additionalProperties: false
+          description: 本人各态计数（不含任何跨学生统计）
+          required: [unlit, half, lit]
+          properties:
+            unlit: { type: integer, minimum: 0 }
+            half: { type: integer, minimum: 0 }
+            lit: { type: integer, minimum: 0 }
+    Star:
+      type: object
+      additionalProperties: false
+      required: [skill, label_code, display, retained, needs_verification]
+      properties:
+        skill: { type: string, description: '"<subject>:<local_id>"' }
+        label_code: { type: string, description: 平台只存编码，显示名由内容包提供（待人确认 #9） }
+        display:
+          type: string
+          enum: [unlit, half, lit]
+          description: >
+            无记录 / unseen / understand → unlit；execute / stable → half；transfer / retain → lit
+            （只按 is_current 记录的 state，不看 p_mastery；映射在 src/star-map/display-state.ts）
+        retained: { type: boolean, description: state = retain（亮星外圈） }
+        needs_verification: { type: boolean, description: confidence < 0.5（只在列表与详情显示“待验证”） }
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        code: { type: string, enum: [UNAUTHENTICATED, NOT_FOUND, METHOD_NOT_ALLOWED, INTERNAL] }

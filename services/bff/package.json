@@ -2,12 +2,15 @@
   "name": "@starbuddy/bff",
   "version": "0.1.0",
   "private": true,
-  "description": "TS BFF：本冲刺只有计量模块（specs/metering-impl-sprint2/spec.md）",
+  "description": "TS BFF：计量模块（2-E）与星图读模块（3-H）",
   "type": "module",
-  "engines": { "node": ">=22.18" },
+  "engines": {
+    "node": ">=22.18"
+  },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "test": "node --test --test-concurrency=1 --test-reporter=dot tests/*.test.ts"
+    "test": "node --test --test-concurrency=1 --test-reporter=dot tests/*.test.ts",
+    "star-map": "node --no-warnings src/star-map/main.ts"
   },
   "dependencies": {
     "pg": "8.23.0"

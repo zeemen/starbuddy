@@ -1,0 +1,40 @@
+{
+  "name": "@starbuddy/web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "统一壳前端（原型）：本冲刺只有星图页与符号样张页（specs/star-map-sprint3/spec.md）",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "dev": "NEXT_TELEMETRY_DISABLED=1 next dev -H 127.0.0.1",
+    "build": "NEXT_TELEMETRY_DISABLED=1 next build",
+    "start": "NEXT_TELEMETRY_DISABLED=1 next start -H 127.0.0.1",
+    "test": "node --no-warnings --test tests/*.test.ts",
+    "licenses": "node scripts/license-check.mjs",
+    "e2e": "bash scripts/e2e.sh --grep-invert @visual",
+    "visual": "bash scripts/e2e.sh --grep @visual"
+  },
+  "dependencies": {
+    "next": "16.3.6",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "sharp": "file:./vendor/no-sharp"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@playwright/test": "1.56.1",
+    "@types/node": "22.20.4",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "axe-core": "4.13.0",
+    "typescript": "5.9.3"
+  },
+  "overrides": {
+    "sharp": "$sharp",
+    "@axe-core/playwright": {
+      "playwright-core": "1.56.1"
+    }
+  }
+}

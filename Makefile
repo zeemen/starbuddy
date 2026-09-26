@@ -1,5 +1,5 @@
 # 未实现的目标明确打印“跳过”，不得伪装为通过。
-.PHONY: check-fast check contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test learning-test bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check eval-persona eval-grade
+.PHONY: check-fast check contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test learning-test bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-visual eval-persona eval-grade
 
 # 可指向装了 packages/contracts/requirements-dev.txt 的解释器，例如 make check PYTHON=.venv/bin/python
 PYTHON ?= python3
@@ -16,7 +16,7 @@ endef
 # 契约检查约 1 秒，改动后也跑一遍
 check-fast: contract-test taxonomy-check attack-surface-check
 
-check: contract-test contract-mutation taxonomy-check attack-surface-check db-test db-mutation adapter-aya-test learning-test bff-test bff-mutation conformance conformance-mutation pentest-env-test
+check: contract-test contract-mutation taxonomy-check attack-surface-check db-test db-mutation adapter-aya-test learning-test bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test
 	@echo "check: lint 尚未配置，跳过；其余检查已通过"
 
 # 契约合法性 + 示例 + 反例集
@@ -109,6 +109,29 @@ pentest-env-test:
 # 攻击面清单（docs/security/attack-surface.md）引用的断言、变异名都真实存在；没有引用的条目必须标“人工”或“第二轮”
 attack-surface-check:
 	$(call run_contract,docs/security/check_attack_surface.py)
+
+# 统一壳前端（冲刺 3-H，specs/star-map-sprint3/spec.md）：许可证清单 → next build → 单测与静态检查（含构建产物不外链）→
+# 端到端（一次性 Postgres + 阿鸦登记 + 星图合成种子 + BFF 星图服务 + Playwright：计数、授权、16px 像素、axe、不外链、不存储）
+# 依赖：apps/web 与 services/bff 已 npm ci，Playwright 的 chromium 已安装；没装时非严格模式打印“跳过”
+WEB_DEPS_OK = [ -d apps/web/node_modules/next ] && [ -d services/bff/node_modules/pg ]
+web-test:
+	@if ! $(WEB_DEPS_OK); then \
+	  echo "web-test: 跳过（没有安装依赖；cd apps/web && npm ci，cd services/bff && npm ci）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@cd apps/web && node scripts/license-check.mjs
+	@cd apps/web && NEXT_TELEMETRY_DISABLED=1 npx --no-install next build > .next-build.log 2>&1 || { tail -30 .next-build.log; rm -f .next-build.log; exit 1; }; \
+	  rm -f .next-build.log; echo "web-test: next build 通过（含类型检查）"
+	@cd apps/web && node --no-warnings --test --test-reporter=dot tests/*.test.ts && echo "web-test: 单测与静态检查通过"
+	@bash apps/web/scripts/e2e.sh --grep-invert @visual --reporter=dot; rc=$$?; \
+	  if [ $$rc -eq 0 ]; then echo "web-test: 端到端通过"; fi; \
+	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
+
+# 视觉回归（@visual）：与已提交的基线比较，差异像素 ≤ 0.1%。基线要在固定版本的容器与浏览器里生成，
+# 首次提交需视觉负责人签字（lessons）。暂不进 make check 与 CI（spec 待人确认 #11）；更新基线：加 UPDATE=1
+web-visual:
+	@if ! $(WEB_DEPS_OK); then echo "web-visual: 跳过（没有安装依赖）"; exit 0; fi
+	@cd apps/web && NEXT_TELEMETRY_DISABLED=1 npx --no-install next build > /dev/null
+	@bash apps/web/scripts/e2e.sh --grep @visual $(if $(filter 1,$(UPDATE)),--update-snapshots,)
 
 eval-persona:
 	@echo "eval-persona: evals/persona 尚未建立，跳过"

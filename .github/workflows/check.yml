@@ -19,7 +19,9 @@ concurrency:
 jobs:
   make-check:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"   # Next.js 默认会向境外发匿名遥测（ADR 09）
     steps:
       - uses: actions/checkout@v4
         with:
@@ -57,6 +59,12 @@ jobs:
       - name: BFF 依赖
         working-directory: services/bff
         run: npm ci --no-audit --no-fund
+
+      - name: 统一壳前端依赖与 Playwright 浏览器（冲刺 3-H；浏览器只处理合成数据，spec 待人确认 #11）
+        working-directory: apps/web
+        run: |
+          npm ci --no-audit --no-fund
+          npx --no-install playwright install --with-deps chromium
 
       - name: make check（严格模式）
         run: make check CONTRACT_STRICT=1 PYTHON=.venv-contracts/bin/python PGBIN=/usr/lib/postgresql/16/bin
