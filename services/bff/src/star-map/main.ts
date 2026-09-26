@@ -3,6 +3,7 @@
 //   PORT              默认 8787
 //   STARBUDDY_DEV_AUTH=1  启用开发身份桩（x-dev-account-id）；不设时所有请求都是 401
 import pg from 'pg';
+import { assertBffRole } from './query.ts';
 import { createStarMapServer } from './server.ts';
 
 const url = process.env['BFF_DATABASE_URL'];
@@ -13,6 +14,13 @@ if (!url) {
 const port = Number(process.env['PORT'] ?? 8787);
 const devAuth = process.env['STARBUDDY_DEV_AUTH'] === '1';
 const pool = new pg.Pool({ connectionString: url, max: 10 });
+try {
+  await assertBffRole(pool);  // 连接角色配错会让 RLS 整体失效：拒绝启动
+} catch (e) {
+  console.error(`star-map: ${(e as Error).message}`);
+  await pool.end();
+  process.exit(2);
+}
 const server = createStarMapServer({ pool, devAuth });
 server.listen(port, '127.0.0.1', () => {
   console.log(JSON.stringify({ event: 'listening', port, dev_auth: devAuth }));

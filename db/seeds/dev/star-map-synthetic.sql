@@ -5,7 +5,8 @@
 --   node adapters/aya/scripts/register-content.ts > /tmp/aya-register.sql && psql -f /tmp/aya-register.sql
 -- 用法（以迁移执行者身份；只能执行一次；文件自带事务，不要再加 -1）：
 --   PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -v ON_ERROR_STOP=1 -f db/seeds/dev/star-map-synthetic.sql
---   不设 starbuddy.allow_synthetic_seed=on 时直接报错：防止误跑到开发库以外（合成的知行能力点会出现在该库每个知行学生的星空里）
+--   不设 starbuddy.allow_synthetic_seed=on、或库名不是 starbuddy_dev* / starbuddy_test* 时直接报错：防止误跑到开发库以外
+--   （合成的知行能力点会出现在该库每个知行学生的星空里）
 --
 -- 内容：
 --   家庭 HS（合成）：家长 gS，兄妹 S1、S2。S1 选了阿鸦与知行（都在读）；S2 选了阿鸦（在读）与知行（已暂停）。
@@ -25,6 +26,10 @@ DO $$
 BEGIN
   IF coalesce(current_setting('starbuddy.allow_synthetic_seed', true), '') <> 'on' THEN
     RAISE EXCEPTION '合成种子只能用于开发库与一次性测试库：执行方须显式设置 starbuddy.allow_synthetic_seed=on';
+  END IF;
+  -- 第二道：库名必须是开发或测试库的约定名（安全审查 S7：执行方自己设的开关挡不住连错库）
+  IF current_database() !~ '^starbuddy_(dev|test)(_[a-z0-9_]+)?$' THEN
+    RAISE EXCEPTION '合成种子只能用于开发库与测试库（库名 starbuddy_dev* 或 starbuddy_test*），当前库：%', current_database();
   END IF;
   IF EXISTS (SELECT 1 FROM platform.household WHERE id = '5a000000-0000-4000-8000-0000000000d1') THEN
     RAISE EXCEPTION '星图合成种子已经执行过（只能执行一次）';

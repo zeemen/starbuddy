@@ -5,7 +5,7 @@
 // 身份来源是开发桩（待人确认 #3，4-H 用真实会话替换）：只有同时满足
 //   - 创建服务时 devAuth 为真（main.ts 只在 STARBUDDY_DEV_AUTH=1 时传 true）；
 //   - 服务实际监听的地址是 loopback；
-//   - 请求来自 loopback；
+//   - 请求来自 loopback，并且没有转发头（经过代理的请求也来自 loopback）；
 // 才读请求头 x-dev-account-id。任一条件不满足，这个头一律忽略，请求按未登录处理（401）。
 import { createHash } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
@@ -15,6 +15,7 @@ import { getStarMap, isUuid } from './query.ts';
 
 const ROUTE = /^\/bff\/v0\/students\/([^/]+)\/star-map$/;
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+const FORWARDED_HEADERS = ['forwarded', 'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'x-real-ip'];
 
 const problem = (status: number, code: string, title: string) =>
   JSON.stringify({ type: `/problems/${code.toLowerCase()}`, title, status, code });
@@ -40,6 +41,8 @@ function devAccount(req: IncomingMessage, server: Server, devAuth: boolean): str
   const addr = server.address() as AddressInfo | null;
   if (!addr || !LOOPBACK.has(addr.address)) return null;
   if (!LOOPBACK.has(req.socket.remoteAddress ?? '')) return null;
+  // 经过代理（同机反向代理、sidecar）转来的请求也来自 loopback：带转发头时一律不认身份头（安全审查 S1）
+  if (FORWARDED_HEADERS.some((h) => req.headers[h] !== undefined)) return null;
   const v = req.headers['x-dev-account-id'];
   return typeof v === 'string' && isUuid(v) ? v : null;
 }

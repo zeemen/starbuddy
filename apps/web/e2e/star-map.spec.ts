@@ -71,14 +71,18 @@ test('家长看到的星空与学生本人相同；同一家长的另一个孩�
   await expect(aya.locator('svg.star[data-display="half"]')).toHaveCount(2);
 });
 
-test('兄妹互看、另一户家长、不存在的学生：同一个“没有找到”页面', async ({ page }) => {
-  await login(page, ACC.S1, STU.S2);
-  const sibling = await page.locator('main').innerText();
-  expect(sibling).toContain('没有找到');
-  await login(page, ACC.gO, STU.S1);
-  expect(await page.locator('main').innerText()).toBe(sibling);
-  await page.goto('/star-map/5a000000-0000-4000-8000-00000000ffff');
-  expect(await page.locator('main').innerText()).toBe(sibling);
+test('兄妹互看、另一户家长、不存在的学生：同一个“没有找到”页面，状态码与缓存头也相同', async ({ page }) => {
+  const shape = async (res: Awaited<ReturnType<Page['goto']>>) => ({
+    status: res?.status(),
+    cache: res?.headers()['cache-control'] ?? '',
+    text: await page.locator('main').innerText(),
+  });
+  const sibling = await shape(await login(page, ACC.S1, STU.S2));
+  expect(sibling.status).toBe(404);
+  expect(sibling.cache).toContain('no-store');
+  expect(sibling.text).toContain('没有找到');
+  expect(await shape(await login(page, ACC.gO, STU.S1))).toEqual(sibling);
+  expect(await shape(await page.goto('/star-map/5a000000-0000-4000-8000-00000000ffff'))).toEqual(sibling);
   await expect(page.locator('.sky-field')).toHaveCount(0);
 });
 

@@ -71,3 +71,20 @@ export async function getStarMap(pool: Pool, accountId: string, studentId: strin
     return { student_id: studentId, generated_at: now().toISOString(), skies: [...skies.values()] };
   });
 }
+
+/**
+ * 启动时核对连接角色（安全审查 S2）：授权完全交给 RLS，连接角色配错（超级用户、BYPASSRLS、表属主、
+ * 同时继承别的应用角色）会让 RLS 整体失效。只允许“继承 starbuddy_bff、别的应用角色一个都不继承”的普通角色。
+ */
+export async function assertBffRole(pool: Pool): Promise<void> {
+  const { rows } = await pool.query<{ ok: boolean; who: string }>(
+    `SELECT current_user AS who,
+            NOT r.rolsuper AND NOT r.rolbypassrls
+            AND pg_has_role(current_user, 'starbuddy_bff', 'MEMBER')
+            AND NOT EXISTS (SELECT 1 FROM unnest(ARRAY['starbuddy_learning', 'starbuddy_review', 'starbuddy_scheduler', 'starbuddy_authz']) o(name)
+                             WHERE pg_has_role(current_user, o.name, 'MEMBER'))
+            AND NOT EXISTS (SELECT 1 FROM pg_class c WHERE c.relnamespace = 'platform'::regnamespace AND c.relowner = r.oid) AS ok
+       FROM pg_roles r WHERE r.rolname = current_user`,
+  );
+  if (!rows[0]?.ok) throw new Error(`BFF 连接角色 ${rows[0]?.who ?? '?'} 不合格：必须只继承 starbuddy_bff，不能是超级用户、BYPASSRLS 或表属主`);
+}

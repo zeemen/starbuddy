@@ -50,3 +50,16 @@ test('不画装饰性背景：CSS 里没有背景图与渐变', () => {
     assert.ok(!/background(-image)?\s*:[^;]*(url\(|gradient\()/.test(f.text), f.path);
   }
 });
+
+test('所有调用 next 的脚本都关掉遥测（Next 默认向境外发匿名遥测，ADR 09）', () => {
+  const pkg = JSON.parse(readFileSync(join(WEB, 'package.json'), 'utf8')) as { scripts: Record<string, string> };
+  for (const [name, cmd] of Object.entries(pkg.scripts)) {
+    if (/\bnext\b/.test(cmd)) assert.match(cmd, /NEXT_TELEMETRY_DISABLED=1/, name);
+  }
+  const root = join(WEB, '..', '..');
+  const make = readFileSync(join(root, 'Makefile'), 'utf8').split('\n').filter((l) => /npx --no-install next /.test(l));
+  assert.ok(make.length > 0);
+  for (const l of make) assert.match(l, /NEXT_TELEMETRY_DISABLED=1/, l);
+  assert.match(readFileSync(join(root, '.github/workflows/check.yml'), 'utf8'), /NEXT_TELEMETRY_DISABLED: "1"/);
+  assert.match(readFileSync(join(WEB, 'playwright.config.ts'), 'utf8'), /NEXT_TELEMETRY_DISABLED: '1'/);
+});

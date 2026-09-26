@@ -12,16 +12,16 @@ const config: NextConfig = {
     return [
       {
         source: '/star-map/:path*',
-        headers: [
-          { key: 'Cache-Control', value: 'no-store' },
-          { key: 'Referrer-Policy', value: 'no-referrer' },
-        ],
+        headers: [{ key: 'Cache-Control', value: 'no-store' }],
       },
       {
+        // 全站安全响应头。CSP 需要给 Next 的内联脚本配 nonce，留给 4-H（lessons 待人确认）
         source: '/:path*',
         headers: [
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'Referrer-Policy', value: 'no-referrer' },
+          { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(), interest-cohort=()' },
         ],
       },
     ];

@@ -8,6 +8,7 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { after, before, test } from 'node:test';
 import pg from 'pg';
+import { assertBffRole } from '../src/star-map/query.ts';
 import { createStarMapServer } from '../src/star-map/server.ts';
 
 const HAS_DB = Boolean(process.env['PGHOST']);
@@ -137,9 +138,13 @@ test('兄妹互看、另一户家长、不存在、非法 ID：都是 404，响�
   assert.equal(missing.status, 404);
   assert.equal(missing.headers.get('cache-control'), 'no-store');
   const ref = await missing.text();
+  // 响应头也要一致（去掉每次都不同的 date）
+  const headersOf = (r: Response) => [...r.headers].filter(([k]) => k !== 'date').sort();
+  const refHeaders = headersOf(missing);
   for (const [student, account] of [[ID.S2, ID.S1acc], [ID.S1, ID.S2acc], [ID.S1, ID.gO], [ID.S3, ID.gS], ['not-a-uuid', ID.gS], ['%E0%A4%A', ID.gS]]) {
     const r = await starMap(student!, account);
     assert.equal(r.status, 404, `${student} as ${account}`);
+    assert.deepEqual(headersOf(r), refHeaders, `${student} as ${account}`);
     assert.equal(await r.text(), ref);
   }
 });
@@ -158,16 +163,44 @@ test('只有 GET；其他路由 404', { skip: !HAS_DB }, async () => {
   assert.equal((await fetch(`${base}/bff/v0/students`)).status, 404);
 });
 
-test('开发身份桩关得住：没开 devAuth，或监听地址不是 loopback，身份头一律忽略（401）', { skip: !HAS_DB }, async () => {
-  const off = createStarMapServer({ pool: bff, devAuth: false, log: () => {} });
-  const offBase = await listen(off, '127.0.0.1');
-  assert.equal((await starMap(ID.S1, ID.S1acc, offBase)).status, 401);
-  await new Promise<void>((r) => off.close(() => r()));
+/** 起一个临时服务跑 fn；无论断言是否失败都关掉，否则进程挂起（安全审查阻断 2） */
+async function withServer(devAuth: boolean, host: string, fn: (base: string) => Promise<void>) {
+  const s = createStarMapServer({ pool: bff, devAuth, log: () => {} });
+  const b = await listen(s, host);
+  try {
+    await fn(b);
+  } finally {
+    s.closeAllConnections();
+    await new Promise<void>((r) => s.close(() => r()));
+  }
+}
 
-  const wide = createStarMapServer({ pool: bff, devAuth: true, log: () => {} });
-  const wideBase = await listen(wide, '0.0.0.0');
-  assert.equal((await starMap(ID.S1, ID.S1acc, wideBase)).status, 401);
-  await new Promise<void>((r) => wide.close(() => r()));
+test('开发身份桩关得住：没开 devAuth，或监听地址不是 loopback，身份头一律忽略（401）', { skip: !HAS_DB }, async () => {
+  await withServer(false, '127.0.0.1', async (b) => assert.equal((await starMap(ID.S1, ID.S1acc, b)).status, 401));
+  await withServer(true, '0.0.0.0', async (b) => assert.equal((await starMap(ID.S1, ID.S1acc, b)).status, 401));
+});
+
+test('开发身份桩：请求带转发头（经过代理）时忽略身份头（401）', { skip: !HAS_DB }, async () => {
+  for (const h of ['forwarded', 'x-forwarded-for', 'x-forwarded-host', 'x-real-ip']) {
+    const r = await fetch(`${base}/bff/v0/students/${ID.S1}/star-map`, { headers: { 'x-dev-account-id': ID.S1acc, [h]: '203.0.113.9' } });
+    assert.equal(r.status, 401, h);
+  }
+});
+
+test('连接角色核对：只继承 starbuddy_bff 的登录角色通过；超级用户、绕过 RLS 的角色拒绝', { skip: !HAS_DB }, async () => {
+  await assertBffRole(bff);
+  await assert.rejects(() => assertBffRole(su), /BFF 连接角色/);
+  // 只继承 starbuddy_bff、但带 BYPASSRLS 的登录角色：RLS 对它无效，必须拒绝
+  await su.query(`DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'bff_bypass_app') THEN
+      CREATE ROLE bff_bypass_app LOGIN BYPASSRLS IN ROLE starbuddy_bff;
+    END IF; END $$;`);
+  const bypass = new pg.Pool({ user: 'bff_bypass_app', max: 1 });
+  try {
+    await assert.rejects(() => assertBffRole(bypass), /BFF 连接角色/);
+  } finally {
+    await bypass.end();
+  }
 });
 
 test('绑定撤销后立刻看不到；停用的学生账号看不到自己', { skip: !HAS_DB }, async () => {
