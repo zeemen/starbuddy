@@ -6,3 +6,5 @@ asyncpg==0.31.0
 httpx==0.28.1
 jsonschema==4.26.0
 pyyaml==6.0.3
+# 契约共享库（运行时需要；在 services/learning 目录下安装。部署方式待人确认，见 specs/contract-conformance-sprint1/lessons.md）
+-e ../../packages/contracts/python

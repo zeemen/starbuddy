@@ -18,7 +18,7 @@
    - 同 key 正在执行：等它完成。
    - 失败过，或持有者租约已过期：接管，沿用原 attempt_id。
 3. 调适配器，把平台生成的 attempt_id 带过去。只在连接失败或上游 `retryable` 时重试一次。
-4. **平台核对**（`learning/checks.py`），任何一条不通过就整体拒绝、一行不写：
+4. **平台核对**（规则在共享库 `packages/contracts/python/starbuddy_contract/checks.py`，一致性测试也用它），任何一条不通过就整体拒绝、一行不写：
    - 契约 schema；
    - 证据 ID 闭合；
    - 学科一致；
@@ -36,7 +36,7 @@
 
 ## 常用命令
 ```bash
-python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt   # 在本目录执行；含可编辑安装的契约共享库
 make learning-test          # 在仓库根目录：单测 + 幂等与核对测试 + 端到端（需要本机 PostgreSQL 16 与 node）
 LEARNING_ENV=dev LEARNING_DATABASE_URL=... LEARNING_SERVICE_TOKEN=... \
 LEARNING_ADAPTER_AYA_URL=http://127.0.0.1:8787 LEARNING_ADAPTER_AYA_TOKEN=... .venv/bin/python -m learning

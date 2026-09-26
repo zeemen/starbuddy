@@ -1,6 +1,10 @@
-# 契约检查用（packages/contracts/scripts/check_contract.py），不进入任何运行时服务。
+# 契约检查与一致性测试用的开发依赖，不进入任何运行时服务。
+# 注意：共享库 python/starbuddy_contract 会进入学习服务的运行时，它自己的依赖声明在 python/pyproject.toml。
 # 许可证已核（2026-09-25）：openapi-spec-validator Apache-2.0；其依赖 jsonschema MIT、
 # openapi-schema-validator BSD-3-Clause、jsonschema-path Apache-2.0、referencing MIT、PyYAML MIT，
 # 其余传递依赖均为 MIT / BSD / Apache-2.0 / PSF-2.0。没有 GPL / LGPL / AGPL。
 openapi-spec-validator==0.9.0
 PyYAML>=6.0,<7
+# 一致性测试（packages/contracts/conformance）：pytest MIT；jsonschema MIT（上面已作为传递依赖引入，这里锁版本）
+pytest==9.1.1
+jsonschema==4.26.0

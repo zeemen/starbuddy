@@ -3,3 +3,6 @@ legacy/
 __pycache__/
 *.pyc
 .venv/
+*.egg-info/
+build/
+.venv-contracts/

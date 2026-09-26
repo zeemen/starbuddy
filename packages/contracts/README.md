@@ -9,7 +9,10 @@
 | `scripts/check_contract.py` | 契约检查：OpenAPI 合法性、示例符合 schema 且证据引用闭合、反例集、验收标准的结构化检查 |
 | `tests/counterexamples.py` | 反例集：每个反例都必须被 schema 拒绝。新增规则时同时新增反例 |
 | `tests/test_mutations.py` | 变异测试：把契约故意改坏，断言检查能发现，证明每条规则都在起作用 |
-| `requirements-dev.txt` | 检查脚本的依赖（许可证已核，见文件头注释） |
+| `openapi/learning-internal.v0.yaml` | 学习服务内部 API（BFF → 学习服务），草稿 |
+| `python/starbuddy_contract/` | 共享库：契约加载与校验、平台侧核对规则。学习服务与一致性测试共用（冲刺 1-A） |
+| `conformance/` | 与学科无关的一致性测试：对运行中的适配器跑同一套测试，输出 Gate 0 覆盖率。见 `conformance/README.md` |
+| `requirements-dev.txt` | 检查脚本与一致性测试的依赖（许可证已核，见文件头注释） |
 
 起草计划与验收标准：`specs/contracts-plugin-api-v0.9/spec.md`。
 
@@ -19,6 +22,8 @@
 python3 -m venv .venv && .venv/bin/pip install -r packages/contracts/requirements-dev.txt
 make contract-test PYTHON=.venv/bin/python      # 约 1 秒，check-fast 也会跑
 make contract-mutation PYTHON=.venv/bin/python  # 约 15 秒，make check 会跑
+make conformance PYTHON=.venv/bin/python        # 一致性测试：参考假适配器与阿鸦（约 5 秒）
+make conformance-mutation PYTHON=.venv/bin/python  # 一致性测试的变异测试（约 30 秒）
 ```
 
 没装依赖时，两个目标都只打印“跳过”，不算失败。CI 里请设 `CONTRACT_STRICT=1`，这样缺依赖会直接失败。装了依赖后，任何一项不通过都会让 `make` 返回非零。

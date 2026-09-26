@@ -20,6 +20,7 @@ from fastapi.responses import JSONResponse
 
 from .adapter_client import strict_json
 from .config import Settings
+from .contract import internal_contract, plugin_contract
 from .errors import IngestError
 from .service import IngestService
 
@@ -68,6 +69,9 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
+        # 启动时就加载契约：共享库或契约文件缺失时立即失败，而不是等到第一个请求（安全审查 S6）
+        plugin_contract()
+        internal_contract()
         own_pool = pool is None
         p = pool or await asyncpg.create_pool(settings.database_url, min_size=1, max_size=10)
         # trust_env=False：不读 HTTP(S)_PROXY 等环境变量，含学生作答的请求体不会被悄悄送进代理（安全审查 S1）

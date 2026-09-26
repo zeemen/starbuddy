@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "starbuddy-contract"
+version = "0.9.0"
+description = "StarBuddy 学科插件 API 契约的共享库：契约校验与平台侧核对（内部使用）"
+requires-python = ">=3.11"
+# rfc3339-validator（MIT）：没有它时 jsonschema 不检查 date-time 格式，学习服务与一致性测试会对同一响应得出不同结论
+dependencies = ["jsonschema>=4.26,<5", "pyyaml>=6,<7", "referencing>=0.37", "rfc3339-validator==0.1.4"]
+license = { text = "LicenseRef-StarBuddy-Internal" }
+
+[tool.setuptools]
+packages = ["starbuddy_contract"]
