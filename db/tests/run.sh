@@ -25,13 +25,46 @@ left=$(psql_run -tAc "SELECT count(*) FROM pg_namespace WHERE nspname = 'platfor
 apply_or_exit "${UPS[@]}"
 echo "db-test: 迁移 up → down → up 通过（${#UPS[@]} 个迁移）"
 
-# 变异测试用：在迁移之后、测试之前额外执行一段 SQL（故意放宽某条规则）
-if [ -n "${DBTEST_MUTATION_SQL:-}" ]; then
+apply_mutation() {
+  [ -n "${DBTEST_MUTATION_SQL:-}" ] || return 0
   printf '%s\n' "$DBTEST_MUTATION_SQL" | psql_run -1 >/dev/null || { echo "db-test: 变异 SQL 执行失败"; exit 1; }
+}
+
+# 攻击面变异专用（db/tests/mutations.sh 按变异设置 DBTEST_ATTACK_ONLY=1）：证明变异是被 80_attack_surface 本身发现的，
+# 而不是被 20–70 的某条逐表断言或快照先拦下（安全审查阻断 2）。做法：
+#   先加载 10_fixtures 与渗透测试夹具（4 户、16 个账号），再执行变异，然后按变异后的状态重新生成快照
+#   （DBTEST_KEEP_SNAPSHOT=1 时不重新生成，用来证明快照本身能发现），最后只跑 00_helpers 与 80。
+if [ "${DBTEST_ATTACK_ONLY:-0}" = "1" ]; then
+  apply_or_exit "$ROOT/db/tests/10_fixtures.sql" "$ROOT/db/pentest/fixtures.sql"
+  apply_mutation
+  EXPECTED="$ROOT/db/tests/expected"
+  if [ "${DBTEST_KEEP_SNAPSHOT:-0}" != "1" ]; then
+    EXPECTED="$WORK/expected"; mkdir -p "$EXPECTED"; [ "$(id -u)" = "0" ] && chown postgres "$EXPECTED"
+    psql_run -v testdir="$ROOT/db/tests" >/dev/null <<SQL || { echo "db-test: 重新生成快照失败"; exit 1; }
+\i :testdir/snapshot/privileges.sql
+\i :testdir/snapshot/policies.sql
+\o $EXPECTED/privileges.txt
+\qecho :snap_privileges
+\o $EXPECTED/policies.txt
+\qecho :snap_policies
+SQL
+  fi
+  OUT="$WORK/tests.out"
+  if ! cat "$ROOT/db/tests/00_helpers.sql" "$ROOT/db/tests/80_attack_surface.sql" |
+       psql_run -v testdir="$ROOT/db/tests" -v expecteddir="$EXPECTED" > "$OUT" 2>&1; then
+    grep -E 'FAIL|ERROR' "$OUT" | head -20
+    echo "db-test: 失败"
+    exit 1
+  fi
+  echo "db-test: 通过（只跑攻击面，$(grep -c 'ok - ' "$OUT") 项断言）"
+  exit 0
 fi
 
+# 变异测试用：在迁移之后、测试之前额外执行一段 SQL（故意放宽某条规则）
+apply_mutation
+
 OUT="$WORK/tests.out"
-if ! cat "$ROOT"/db/tests/[0-9]*.sql | psql_run > "$OUT" 2>&1; then
+if ! cat "$ROOT"/db/tests/[0-9]*.sql | psql_run -v testdir="$ROOT/db/tests" -v expecteddir="$ROOT/db/tests/expected" > "$OUT" 2>&1; then
   grep -E 'FAIL|ERROR' "$OUT" | head -20
   echo "db-test: 失败"
   exit 1

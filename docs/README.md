@@ -5,5 +5,6 @@
 - design/     视觉与交互原型（单文件 HTML，仅作 apps/web 的视觉参考，不是实现依据）。
 - subjects/   四款既有学科产品的原始方案/PRD，是盘点时核对"方案写了什么"的依据。
 - archive/    已被完整方案合并的旧版文档，仅供追溯，不作为依据。
+- security/   攻击面清单（attack-surface.md，引用由 check_attack_surface.py 核对）与渗透测试交接包、报告归档（pentest/）。
 
 注意：方案里写了 ≠ 代码里有。盘点时以代码与可运行证据为准。

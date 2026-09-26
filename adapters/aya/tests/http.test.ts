@@ -24,6 +24,73 @@ test("没有令牌或令牌错误：401，契约 Problem", async () => {
   }
 });
 
+// 冲刺 3-B 攻击面 F2、F3：令牌变形、别的方案、混用的令牌都要 401
+const LEARNING_CREDENTIAL = "synthetic-bff-to-learning-credential-0001"; // 学习服务那一侧的令牌（混用）
+const BAD_AUTH: Record<string, string> = {
+  空值: "",
+  只有Bearer: "Bearer",
+  Bearer后空令牌: "Bearer ",
+  错误令牌: "Bearer wrong",
+  令牌前缀: `Bearer ${CREDENTIAL.slice(0, -1)}`,
+  令牌多一个字符: `Bearer ${CREDENTIAL}x`,
+  令牌前面多字符: `Bearer x${CREDENTIAL}`,
+  令牌转大写: `Bearer ${CREDENTIAL.toUpperCase()}`,
+  方案小写: `bearer ${CREDENTIAL}`,
+  方案大写: `BEARER ${CREDENTIAL}`,
+  Basic方案: `Basic ${CREDENTIAL}`,
+  Bearer后两个空格: `Bearer  ${CREDENTIAL}`,
+  Bearer后制表符: `Bearer\t${CREDENTIAL}`,
+  令牌重复两次: `Bearer ${CREDENTIAL}${CREDENTIAL}`,
+  两个令牌用逗号拼接: `Bearer ${CREDENTIAL}, Bearer ${CREDENTIAL}`,
+  较长的头8KiB: "Bearer " + "A".repeat(8 * 1024),
+  学习服务令牌打适配器: `Bearer ${LEARNING_CREDENTIAL}`,
+};
+
+test("令牌变形、别的方案、学习服务令牌混用：GET 与 POST 都是 401，响应不回显令牌", async () => {
+  assert.notEqual(LEARNING_CREDENTIAL, CREDENTIAL);
+  for (const [label, value] of Object.entries(BAD_AUTH)) {
+    for (const [method, path] of [["GET", "capabilities"], ["POST", "grade"], ["POST", "diagnose"]] as const) {
+      const r = await fetch(`${base}/${path}`, {
+        method,
+        headers: { authorization: value, "content-type": "application/json" },
+        body: method === "POST" ? JSON.stringify(gradeBody("Q-EQU-U03-D-001", { text: "9,-5" })) : undefined,
+      });
+      const text = await r.text();
+      assert.equal(r.status, 401, `${label} ${method} ${path}`);
+      assert.deepEqual(contract.validate("Problem", JSON.parse(text)), { ok: true });
+      assert.ok(!text.includes(CREDENTIAL) && !text.includes(LEARNING_CREDENTIAL), label);
+    }
+  }
+});
+
+test("超长 authorization 头（64 KiB）：在鉴权之前就被 HTTP 层拒绝（431）", async () => {
+  const r = await fetch(`${base}/capabilities`, { headers: { authorization: "Bearer " + "A".repeat(64 * 1024) } });
+  assert.equal(r.status, 431);
+});
+
+test("鉴权失败时不读请求体：只发请求头就立即得到 401；令牌正确时才会等请求体（对照组）", async () => {
+  const net = await import("node:net");
+  const port = (server.address() as AddressInfo).port;
+  // 声明 1000 字节请求体但一个字节也不发，等 300 毫秒看服务有没有回应
+  const probe = (authorization: string) =>
+    new Promise<string>((resolve) => {
+      let got = "";
+      const s = net.connect(port, "127.0.0.1", () => {
+        s.write(`POST /plugin/v0/grade HTTP/1.1\r\nHost: x\r\nAuthorization: ${authorization}\r\nContent-Type: application/json\r\nContent-Length: 1000\r\n\r\n`);
+      });
+      s.on("data", (d) => (got += d));
+      s.on("error", () => resolve(got));
+      setTimeout(() => {
+        s.destroy();
+        resolve(got);
+      }, 300);
+    });
+  for (const value of ["Bearer wrong", `Bearer ${LEARNING_CREDENTIAL}`, `bearer ${CREDENTIAL}`]) {
+    assert.match(await probe(value), /^HTTP\/1\.1 401/, value);
+  }
+  assert.equal(await probe(`Bearer ${CREDENTIAL}`), "", "对照组：令牌正确时服务在等请求体，不应已回应");
+});
+
 test("令牌过短时拒绝创建服务", () => {
   assert.throws(() => createAdapterServer(makeAdapter(), "short"));
 });

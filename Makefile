@@ -1,5 +1,5 @@
 # 未实现的目标明确打印“跳过”，不得伪装为通过。
-.PHONY: check-fast check contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test learning-test bff-test bff-mutation conformance conformance-mutation eval-persona eval-grade
+.PHONY: check-fast check contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test learning-test bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check eval-persona eval-grade
 
 # 可指向装了 packages/contracts/requirements-dev.txt 的解释器，例如 make check PYTHON=.venv/bin/python
 PYTHON ?= python3
@@ -14,9 +14,9 @@ define run_contract
 endef
 
 # 契约检查约 1 秒，改动后也跑一遍
-check-fast: contract-test taxonomy-check
+check-fast: contract-test taxonomy-check attack-surface-check
 
-check: contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test learning-test bff-test bff-mutation conformance conformance-mutation
+check: contract-test contract-mutation taxonomy-check attack-surface-check db-test db-mutation adapter-aya-test learning-test bff-test bff-mutation conformance conformance-mutation pentest-env-test
 	@echo "check: lint 尚未配置，跳过；其余检查已通过"
 
 # 契约合法性 + 示例 + 反例集
@@ -95,6 +95,20 @@ conformance:
 # 一致性测试的变异测试：参考假适配器逐一注入 28 类违约，断言每次都由指定的测试发现（约 45 秒）
 conformance-mutation:
 	$(call run_contract,packages/contracts/conformance/mutation.py)
+
+# 渗透测试环境自检（冲刺 3-B）：up.sh 一条命令起环境 → 只监听本机、令牌随机且不落仓库、夹具齐全 → down.sh 什么都不留（约 15 秒）
+# 服务依赖没装时非严格模式只测数据库部分（--db-only）；严格模式要求完整环境
+pentest-env-test:
+	@args=""; \
+	  if [ ! -d adapters/aya/node_modules/ajv ] || [ ! -x services/learning/.venv/bin/python ]; then \
+	    if [ "$(CONTRACT_STRICT)" = "1" ]; then echo "pentest-env-test: 失败（学习服务或阿鸦适配器依赖没装）"; exit 1; fi; \
+	    echo "pentest-env-test: 服务依赖没装，只测数据库部分"; args="--db-only"; fi; \
+	  bash db/pentest/selftest.sh $$args; rc=$$?; \
+	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
+
+# 攻击面清单（docs/security/attack-surface.md）引用的断言、变异名都真实存在；没有引用的条目必须标“人工”或“第二轮”
+attack-surface-check:
+	$(call run_contract,docs/security/check_attack_surface.py)
 
 eval-persona:
 	@echo "eval-persona: evals/persona 尚未建立，跳过"
