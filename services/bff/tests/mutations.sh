@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# BFF 集成测试的变异测试：逐条去掉计量函数里的加锁或并发判断，断言 Gate 0 集成测试能发现。
+# BFF 集成测试的变异测试：逐条去掉计量函数里的加锁或并发判断，断言 Gate 0 集成测试能发现；
+# 另有星图读模块的源码变异（见下方 SM），断言星图集成测试能发现。
 # 这几条只有在多连接并发下才会出错，所以放在这里而不是 db/tests/mutations.sh。
 # 并发相关的失败依赖时序：每个变异最多跑 3 次，任何一次失败就算“被发现”。
 set -uo pipefail
@@ -28,6 +29,39 @@ for name in "${!M[@]}"; do
     if [ $rc -ne 0 ]; then caught=1; break; fi
   done
   if [ $caught -eq 0 ]; then echo "  漏检：$name"; missed=$((missed + 1)); fi
+done
+
+# 星图（冲刺 3-H）的源码变异：把 services/bff 复制到临时目录，改一处源码，跑星图集成测试，断言能发现。
+# 每条是“名字<TAB>文件<TAB>原文<TAB>替换为”（替换为可以为空，表示删掉原文）；原文找不到时算变异本身写错。
+SM=(
+  $'星图不按 is_current 过滤\tsrc/star-map/query.ts\t AND m.is_current'
+  $'星图把 understand 当半亮\tsrc/star-map/display-state.ts\tunderstand: \'unlit\'\tunderstand: \'half\''
+  $'星图不标保持层\tsrc/star-map/display-state.ts\tretained: state === \'retain\'\tretained: false'
+  $'星图也显示已暂停的学科\tsrc/star-map/query.ts\t AND e.status = \'active\'\t'
+  $'开发身份桩不看监听地址\tsrc/star-map/server.ts\tif (!addr || !LOOPBACK.has(addr.address)) return null;\t'
+  $'开发身份桩不看开关\tsrc/star-map/server.ts\tif (!devAuth) return null;\t'
+  $'未授权与不存在的响应不同\tsrc/star-map/server.ts\tif (!map) return send(404, NOT_FOUND);\tif (!map) return send(403, UNAUTHENTICATED);'
+  $'星图响应可以缓存\tsrc/star-map/server.ts\t\'cache-control\': \'no-store\',\t'
+  $'日志记原始 student_id\tsrc/star-map/server.ts\trecord[\'student\'] = hashId(studentId);\trecord[\'student\'] = studentId;'
+)
+for spec in "${SM[@]}"; do
+  IFS=$'\t' read -r name file from to <<< "$spec"
+  total=$((total + 1))
+  work="$(mktemp -d "${TMPDIR:-/tmp}/starbuddy-bffmut.XXXXXX")"
+  cp -r src tests package.json tsconfig.json "$work/"; ln -s "$PWD/node_modules" "$work/node_modules"
+  if ! MUT_FILE="$work/$file" MUT_FROM="$from" MUT_TO="$to" python3 - <<'PYM'
+import os, sys
+p, a, b = os.environ['MUT_FILE'], os.environ['MUT_FROM'], os.environ['MUT_TO']
+s = open(p, encoding='utf-8').read()
+if a not in s: sys.exit(1)
+open(p, 'w', encoding='utf-8').write(s.replace(a, b, 1))
+PYM
+  then echo "  变异本身写错：$name"; missed=$((missed + 1)); rm -rf "$work"; continue; fi
+  ( cd "$work" && bash "$ROOT/db/tests/pg-ephemeral.sh" -- \
+      node --no-warnings --test --test-concurrency=1 tests/star-map.test.ts tests/star-map.integration.test.ts ) >/dev/null 2>&1; rc=$?
+  rm -rf "$work"
+  if [ $rc -eq 3 ]; then echo "bff-mutation: 跳过（本机没有 Postgres）"; exit 3; fi
+  if [ $rc -eq 0 ]; then echo "  漏检：$name"; missed=$((missed + 1)); fi
 done
 if [ $missed -gt 0 ]; then echo "bff-mutation: 失败，$missed/$total 个变异没有被发现"; exit 1; fi
 echo "bff-mutation: 通过（$total 个变异全部被发现）"

@@ -1,0 +1,8 @@
+{
+  "name": "sharp",
+  "version": "0.0.0-starbuddy-stub",
+  "description": "占位包：不安装 sharp 与 @img/sharp-libvips-*（LGPL-3.0-or-later，ADR 07 待人确认 #2）。图片优化已关闭（next.config images.unoptimized）。",
+  "license": "MIT",
+  "private": true,
+  "main": "index.js"
+}
