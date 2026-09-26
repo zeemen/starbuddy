@@ -350,7 +350,7 @@
     | react / react-dom | MIT |
     | typescript | Apache-2.0（与 BFF 同锁 5.9.3） |
     | @playwright/test（开发） | Apache-2.0 |
-    | axe-core / @axe-core/playwright（开发） | 待实现时核实（axe-core 通常为 MPL-2.0，属于弱 copyleft） |
+    | axe-core / @axe-core/playwright（开发，4.13.0） | MPL-2.0（弱 copyleft） |
 
     - 不引入 UI 组件库、图表库、CSS 框架；星空布局自己写。
     - MPL-2.0 是否可以接受（只用于测试，不进构建产物）？默认可以。
