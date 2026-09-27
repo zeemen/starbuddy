@@ -204,7 +204,10 @@ BEGIN
                              WHERE gr.guardian_account_id = acc AND gr.student_id = ANY (t.readable_students(acc))
                                AND EXISTS (SELECT 1 FROM platform.account a WHERE a.id = acc AND a.kind = 'guardian'))
         WHEN 'claim' THEN (SELECT coalesce(array_agg(DISTINCT c.student_id), '{}') FROM insight.claim c
-                            WHERE c.status IN ('hypothesis', 'established', 'to_verify') AND c.student_id = ANY (t.readable_students(acc))
+                            WHERE c.status IN ('hypothesis', 'established', 'to_verify') AND c.expires_at > now()
+                              AND EXISTS (SELECT 1 FROM insight.claim_template tp WHERE tp.template_key = c.template_key
+                                            AND tp.version = c.template_version AND tp.status = 'approved')
+                              AND c.student_id = ANY (t.readable_students(acc))
                               AND ((EXISTS (SELECT 1 FROM platform.account a JOIN platform.student_profile s ON s.account_id = a.id
                                              WHERE a.id = acc AND a.kind = 'student' AND s.id = c.student_id)
                                     AND 'student' = ANY (c.visibility))

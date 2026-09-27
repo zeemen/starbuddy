@@ -14,7 +14,7 @@ categories:
     name: 智力或天赋
     patterns:
       - "智力|智商|天赋|天分|聪明|笨|脑子(不)?(好使|灵)|反应(很)?慢"
-      - "\\biq\\b|intelligen|\\bgifted\\b|\\btalent(ed)?\\b|\\bsmart\\b|\\bdumb\\b"
+      - "\\biq\\b|intelligen|\\bgifted\\b|\\btalent(ed)?\\b|\\bsmart\\b|\\bdumb\\b|\\bgenius\\b"
     forbidden_examples:
       - 你很聪明，只是不够努力
       - 孩子的天赋不在理科
@@ -24,8 +24,10 @@ categories:
   - id: personality
     name: 人格与性格
     patterns:
-      - "性格|人格|内向|外向|MBTI|懒惰|懒散|拖延症"
-      - "personality|introvert|extrovert|\\blazy\\b"
+      - "性格|人格|内向|外向|MBTI|懒惰|懒散|拖延症|玻璃心|叛逆|不够努力|没有毅力|缺乏毅力|自控力差|意志力(差|薄弱)|不自觉"
+      # 把“粗心、马虎”当成特质来说（学生本人选“那次是粗心”走异议流程，不是平台的陈述）
+      - "(是|属于|总是|老是|一向|向来|天生|太)(个|一个)?(粗心|马虎|大意|毛躁|不细心|不认真)"
+      - "personality|introvert|extrovert|\\blazy\\b|\\bcareless\\b|\\bsloppy\\b|unmotivated|lacks? (motivation|discipline)"
     forbidden_examples:
       - 你性格偏内向，所以不爱提问
       - 孩子有点懒惰
@@ -35,8 +37,8 @@ categories:
   - id: mental_health
     name: 心理健康状态或诊断
     patterns:
-      - "抑郁|焦虑症|多动症|多动|注意力缺陷|心理(问题|疾病|障碍|不健康)|自闭"
-      - "mental (health|illness|disorder)|depress|\\badhd\\b|anxiety disorder|autis"
+      - "抑郁|焦虑症|多动症|多动|注意力缺陷|心理(问题|疾病|障碍|不健康)|自闭|阅读障碍|学习障碍|读写障碍|自伤|自残|自杀"
+      - "mental (health|illness|disorder)|depress|\\badhd\\b|anxiety disorder|autis|dyslexi|self[- ]harm|suicid"
     forbidden_examples:
       - 孩子可能有多动的倾向
       - 你的心理问题影响了学习
@@ -46,7 +48,7 @@ categories:
   - id: emotion_state
     name: 持续的情绪状态推断
     patterns:
-      - "(情绪|心情|心态)(一直|持续|长期)?(低落|不稳定|不好|很差|差|消极)|焦虑|沮丧|厌学|压力(很|太|过)?大|崩溃"
+      - "(情绪|心情|心态)(一直|持续|长期)?(低落|不稳定|不好|很差|差|消极)|焦虑|沮丧|厌学|压力(很|太|过)?大|(心态|情绪|精神)崩溃|注意力不集中|专注力差|走神"
       - "emotional(ly)? (state|unstable)|frustrated|\\bstressed\\b|\\banxious\\b|burn(ed|t)? out"
     forbidden_examples:
       - 你最近情绪低落
@@ -57,7 +59,7 @@ categories:
   - id: family
     name: 家庭经济与关系推断
     patterns:
-      - "家庭(经济|条件|关系|矛盾|收入|困难|背景)|父母(关系|离异|不和|吵架)|单亲|留守|贫困|家境"
+      - "家庭(经济|条件|关系|矛盾|收入|困难|背景)|父母(关系|离异|离婚|不和|吵架)|离婚|单亲|留守|贫困|家境"
       - "family (income|conflict|background)|divorc|poverty|single[- ]parent"
     forbidden_examples:
       - 孩子家境一般，缺少辅导资源
@@ -81,6 +83,10 @@ categories:
     patterns:
       - "(同校|同班|同龄|同地区|同区|你们学校|这所学校|这个学校)的?(学生|孩子|同学)(一般|通常|大多|大都|普遍|都)"
       - "(重点|普通|薄弱)(学校|中学|校)的(学生|孩子)"
+      - "同龄人(一般|通常|大多|普遍|都)|大部分初[一二三]学生|(南京|本地|这个地区|这个区)的(孩子|学生)(一般|通常|大多|普遍|都)"
+      # 性别刻板印象
+      - "(女生|男生|女孩|男孩)(通常|一般|大多|天生|普遍|都)"
+      - "(girls|boys) (are|tend to be|usually)"
       - "students (at|from|in) (your|this|that) school (usually|tend|generally)"
     forbidden_examples:
       - 你们学校的学生一般数学较弱
@@ -126,7 +132,8 @@ allowed_examples:
   - 这道题审题时漏看了限定词
   - 二次函数顶点式还不稳定，下一步做两道无提示变式
   - 你说最近有点累，我们把今天的任务缩短一点
-  - 那次是粗心，先记下来，看同类题会不会再出现
+  - 那次符号写错了，先记下来，看同类题会不会再出现
+  - 这段代码运行时程序崩溃了
   - 这周你独立做对了 5 道分类讨论，三周前还需要提示
   - 考试范围内的节点里，函数图像的判断尚待验证
   - 与一个月前的自己相比，保持率提高了

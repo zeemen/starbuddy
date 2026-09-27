@@ -112,14 +112,14 @@ erDiagram
   claim_template ||--o{ claim : "template_key + version（只能引用已审核模板）"
   claim ||--o{ claim_history : "每次新建与状态变化一行（触发器写，只追加）"
   skill_node ||..o{ claim : "target_type = node 时 target_id = local_id（KGE-01 后改指 knowledge_node）"
-  mastery_estimate ||..o{ claim : "evidence_ids 引用证据；掌握由 KGE 计算"
+  mastery_estimate ||..o{ claim : "basis_kind / basis_id 引用依据行（真相源），库层核对属于同一学生"
 ```
 
 | 表 | 谁写 | 谁读 | 要点 |
 |---|---|---|---|
 | `insight.claim_template` | 人工登记（必停项） | insight、learning、bff（只看已审核） | 可见范围上限；对学生或家长可见的必须有文本模板 |
-| `insight.claim` | 只有 `starbuddy_insight`（无 DELETE，UPDATE 限定列） | bff 按学生本人 / 绑定家长与可见范围；learning 只看含 agent 的 | 五种状态，推翻与撤回为终态；推断必须有证据与模型版本；必须有到期时间 |
-| `insight.claim_history` | 触发器（属主 `starbuddy_authz`） | 只有 insight | 只能追加；只随判断级联删除 |
+| `insight.claim` | 只有 `starbuddy_insight`（无 DELETE，UPDATE 限定列） | bff 按学生本人 / 绑定家长与可见范围；learning 只看含 agent 的；都只看未过期、模板仍有效的非终态判断 | 五种状态，推翻与撤回为终态；每次写入带原因（行内 change_reason）；推断必须有证据、模型版本与依据行；到期时间不超过模板最长有效期 |
+| `insight.claim_history` | 触发器（属主 `starbuddy_authz`） | 只有 insight | 每次新建与修改一行（原因加快照）；只能追加；只随判断级联删除 |
 
-状态机：假设 → 成立 → 待验证 → 成立 / 推翻；任何非终态 → 撤回。每次流转要带原因，原因必须与流转匹配；假设不能直接推翻（SIE-00 待人确认 #1）。
+状态机：假设 → 成立 → 待验证 → 成立 / 推翻；任何非终态 → 撤回。每次写入都要在行里带原因，原因必须与流转匹配；不改状态的修改只能是 revised 或 visibility_changed；假设不能直接推翻（SIE-00 待人确认 #1）。判断是陈述层，不是第二真相源（规则 2）。
 

@@ -12,8 +12,9 @@
 | `source_type` | 客观记录 / 学生自述 / 家长观察 / 模型推断；多来源时各自单独存，说法不同时两边都存 |
 | `collect` | 采集级别（必填 / 建议 / 可选 / 自动）与时机（建档 / 周期 / 持续） |
 | `visibility` | 默认可见范围（Agent / 学生 / 家长）。属于“画像可见范围”，改动是必停项 |
-| `storage` | 落库位置；还没建的表写 `built_by`（由哪个任务包建） |
-| `exposed_via` | 推断类字段对外的唯一通道：判断账本 `insight.claim`（CLAUDE.md 规则 11） |
+| `storage` | 落库位置，也是这个字段的唯一真相源；不能指向判断账本。学生与家长都可能提供的字段按来源分开写 `{self: …, guardian: …}`（规则 6：说法不同两边都存）；还没建的表写 `built_by`（由哪个任务包建） |
+| `source_column` | 同一张事实表里记录“由谁录入”的列（考试记录、异议），用它代替按来源分表 |
+| `exposed_via` | 推断类字段对外的唯一通道：判断账本 `insight.claim`（CLAUDE.md 规则 11）。判断只是陈述层，经 `basis_kind / basis_id` 引用 `storage` 里的行，不作为计算输入 |
 | `teaching_decision` | 它改变哪个教学决策。写不出来的字段不准入（SIE 风险表） |
 | `guardian_deletable` | 家长能否单独删除；不能单独删的要写明删除途径 |
 | `status` | live 现在就在采 / silent 静默采集（效度检验前只给 Agent）/ planned 后续任务包建 |
@@ -24,7 +25,7 @@
 ## 字典
 
 <!-- BEGIN GENERATED: dictionary -->
-字典版本 0.9.0（draft）；字段 46 个。
+字典版本 0.9.0（draft）；字段 47 个。
 
 ### g1 基础身份与学习环境（outer）
 
@@ -34,18 +35,18 @@
 | `outer.g1.region` | 地区 | fact | 学生自述、家长观察 | Agent、家长 | `platform.student_profile.region` | live | 选择地区考情投影（题位与权重） |
 | `outer.g1.textbook_version` | 各科教材版本 | fact | 学生自述、家长观察 | Agent、家长 | `platform.student_profile.textbook_version` | live | 按教材投影渲染页码与原句，决定节点的教材进度 |
 | `outer.g1.birth_year_month` | 出生年月 | fact | 家长观察 | Agent、家长 | `platform.student_profile.birth_year_month` | live | （合规用途）判断是否未满 14 周岁、需要监护人同意；不参与任何推断与教学决策 |
-| `outer.g1.weekly_available_time` | 每周可用时间 | fact | 学生自述、家长观察 | Agent、家长 | `insight.self_report.value（SIE-01 建）` | planned | 决定每日计划时长与跨科时间预算 |
-| `outer.g1.devices` | 学习设备 | fact | 学生自述、家长观察 | Agent、家长 | `insight.self_report.value（SIE-01 建）` | planned | 决定是否安排手写拍照、语音讲述等需要设备支持的任务 |
-| `outer.g1.tutoring` | 校外补习情况（自愿） | fact | 学生自述、家长观察 | Agent、家长 | `insight.guardian_report.value（SIE-01 建）` | planned | 避免与校外进度重复布置同一节点的练习 |
+| `outer.g1.weekly_available_time` | 每周可用时间 | fact | 学生自述、家长观察 | Agent、家长 | `学生自述→insight.self_report.value；家长观察→insight.guardian_report.value（SIE-01 建）` | planned | 决定每日计划时长与跨科时间预算 |
+| `outer.g1.devices` | 学习设备 | fact | 学生自述、家长观察 | Agent、家长 | `学生自述→insight.self_report.value；家长观察→insight.guardian_report.value（SIE-01 建）` | planned | 决定是否安排手写拍照、语音讲述等需要设备支持的任务 |
+| `outer.g1.tutoring` | 校外补习情况（自愿） | fact | 学生自述、家长观察 | Agent、家长 | `学生自述→insight.self_report.value；家长观察→insight.guardian_report.value（SIE-01 建）` | planned | 避免与校外进度重复布置同一节点的练习 |
 
 ### g2 学业水平与历史成绩（inner）
 
 | id | 名称 | 层 | 来源 | 默认可见 | 落库 | 状态 | 改变的教学决策 |
 |---|---|---|---|---|---|---|---|
-| `inner.g2.exam_score` | 学校考试成绩（原始分与满分） | fact | 学生自述、家长观察 | Agent、学生、家长 | `insight.exam_record.raw_score（SIE-01 建）` | planned | 外部锚点：校准掌握判断，生成对账卡；七八年级 100 分制与九年级 120 分制分别归一 |
-| `inner.g2.exam_scope` | 考试范围与日期 | fact | 学生自述、家长观察 | Agent、学生、家长 | `insight.exam_record.scope_node_ids（SIE-01 建）` | planned | 考前 14 天按“考情权重 × 当前缺口 × 可提升”重排计划，并在考试当天冻结预测 |
-| `inner.g2.exam_rank_band` | 考试排名区间（学生或家长录入） | fact | 学生自述、家长观察 | Agent、家长 | `insight.exam_record.rank_band（SIE-01 建）` | planned | 只作考试难度与区分度的参考，校准预测区间；不对学生展示，不做同伴比较 |
-| `inner.g2.exam_difficulty_note` | 试卷难度说明 | fact | 学生自述、家长观察 | Agent、家长 | `insight.exam_record.difficulty_note（SIE-01 建）` | planned | 对账时区分“试卷偏难”与“此前判断偏乐观” |
+| `inner.g2.exam_score` | 学校考试成绩（原始分与满分） | fact | 学生自述、家长观察 | Agent、学生、家长 | `insight.exam_record.raw_score（记录录入人：insight.exam_record.confirmed_by）（SIE-01 建）` | planned | 外部锚点：校准掌握判断，生成对账卡；七八年级 100 分制与九年级 120 分制分别归一 |
+| `inner.g2.exam_scope` | 考试范围与日期 | fact | 学生自述、家长观察 | Agent、学生、家长 | `insight.exam_record.scope_node_ids（记录录入人：insight.exam_record.confirmed_by）（SIE-01 建）` | planned | 考前 14 天按“考情权重 × 当前缺口 × 可提升”重排计划，并在考试当天冻结预测 |
+| `inner.g2.exam_rank_band` | 考试排名区间（学生或家长录入） | fact | 学生自述、家长观察 | Agent、家长 | `insight.exam_record.rank_band（记录录入人：insight.exam_record.confirmed_by）（SIE-01 建）` | planned | 只作考试难度与区分度的参考，校准预测区间；不对学生展示，不做同伴比较 |
+| `inner.g2.exam_difficulty_note` | 试卷难度说明 | fact | 学生自述、家长观察 | Agent、家长 | `insight.exam_record.difficulty_note（记录录入人：insight.exam_record.confirmed_by）（SIE-01 建）` | planned | 对账时区分“试卷偏难”与“此前判断偏乐观” |
 | `inner.g2.graded_paper_upload` | 带批改痕迹的整卷试卷 | fact | 客观记录 | Agent | `kge.attempt.answer_raw（KGE-05 建）` | planned | 作为先验与外部锚点；C 级识别内容先请学生核对，确认前不生成薄弱结论 |
 | `inner.g2.exam_prediction` | 考试分数预测区间 | inference | 模型推断 | Agent | `insight.exam_prediction.low（SIE-03 建）` | planned | 考前冻结、考后对账，偏差分析修正个体参数与判断 |
 
@@ -101,6 +102,7 @@
 | id | 名称 | 层 | 来源 | 默认可见 | 落库 | 状态 | 改变的教学决策 |
 |---|---|---|---|---|---|---|---|
 | `outer.g8.study_routine` | 作息与学习安排（家长观察原文） | fact | 家长观察 | Agent、家长 | `platform.guardian_report.content` | live | 把任务排进学生实际可学习的时段，并给出休息提醒 |
+| `outer.g8.sleep_schedule` | 作息时间（家长观察原文） | fact | 家长观察 | Agent、家长 | `platform.guardian_report.content` | live | 夜间不安排任务，按作息给出休息提醒 |
 | `outer.g8.accompany_style` | 陪读方式 | fact | 家长观察 | Agent、家长 | `platform.guardian_report.content` | live | 决定周报里“本周一件事”建议家长怎样配合 |
 | `outer.g8.expectation` | 家长期望 | fact | 家长观察 | Agent、家长 | `platform.guardian_report.content` | live | 周报与对账卡的解释口径；与学生自述目标不同时两边都存，落差作为信号 |
 | `outer.g8.cooperation_capacity` | 家长可配合程度 | fact | 家长观察 | Agent、家长 | `insight.guardian_report.value（SIE-01 建）` | planned | 决定是否给家长布置配合任务以及任务的分量 |
@@ -112,10 +114,10 @@
 |---|---|---|---|---|---|---|---|
 | `through.g9.focus_subject` | 最想改善的学科 | fact | 学生自述 | Agent、学生、家长 | `insight.self_report.value（SIE-01 建）` | planned | 跨科时间预算的优先级 |
 | `through.g9.near_term_goal` | 近期目标（学生自述） | fact | 学生自述 | Agent、学生、家长 | `insight.self_report.value（SIE-01 建）` | planned | 两周学习路径的终点与复盘口径；与家长期望不同时两边都存 |
-| `through.g9.disputes` | 对判断的异议 | fact | 学生自述、家长观察 | Agent、学生、家长 | `insight.dispute.kind（SIE-03 建）` | planned | “我其实会”24 小时内推送验证题；“识别错了”打开原始事实供更正 |
+| `through.g9.disputes` | 对判断的异议 | fact | 学生自述、家长观察 | Agent、学生、家长 | `insight.dispute.kind（记录录入人：insight.dispute.raised_by）（SIE-03 建）` | planned | “我其实会”24 小时内推送验证题；“识别错了”打开原始事实供更正 |
 | `through.g9.interventions` | 触发的提醒、处方、鼓励与降负 | fact | 客观记录 | Agent | `insight.intervention_log.action（SIE-03 建）` | planned | 评估触发规则是否奏效，避免同一提醒重复 |
 | `through.g9.weekly_snapshot` | 每周画像快照 | inference | 模型推断 | Agent | `insight.profile_snapshot.payload（SIE-03 建）` | planned | 成长轨迹与“与一个月前的自己相比”的依据 |
-| `through.g9.star_lit_history` | 星的点亮记录 | inference | 模型推断 | Agent、学生、家长 | `insight.claim_history.to_status` | live | 证据化鼓励（具体到哪颗星何时点亮、依据是什么） |
+| `through.g9.star_lit_history` | 星的点亮记录 | inference | 模型推断 | Agent、学生、家长 | `platform.mastery_estimate.state` | live | 证据化鼓励（具体到哪颗星何时点亮、依据是什么） |
 
 ### 中圈指标（效度检验通过前只给 Agent）
 
@@ -161,8 +163,9 @@
 | 字段 | 旧产品对应 |
 |---|---|
 | `inner.g2.exam_score` | aya lib/exam.ts ExamAnalysis、wenli 表 semester_score |
-| `inner.g2.exam_prediction` | aya lib/exam.ts ExamAnalysis.scoreLow/scoreHigh、aya lib/consultation.ts Consultation.estLow/estHigh、wenli GradeResultSchema.score_range |
-| `inner.g3.node_mastery` | aya lib/types.ts NodeMastery、wenli 表 point_mastery、wenli 表 ability_state |
+| `inner.g2.exam_prediction` | aya lib/exam.ts ExamAnalysis.scoreLow/scoreHigh、aya lib/consultation.ts Consultation.estLow/estHigh、wenli GradeResultSchema.score_range、契约 v0.9 ReportFields.forecast |
+| `inner.g3.node_mastery` | aya lib/types.ts NodeMastery、wenli 表 point_mastery |
+| `inner.g3.next_retest_at` | wenli 表 point_mastery.next_review_at、wenli 表 point_mastery.review_stage |
 | `inner.g3.error_attribution` | aya lib/types.ts StudentProfile.rootCauseCounts、wenli 表 error_record、daofa 失分归因 |
 | `inner.g4.skill_view` | aya lib/types.ts StudentProfile.abilityScores、aya lib/evaluation.ts EvalDimension、wenli 表 ability_state、daofa 表 daofa_ability |
 | `through.g9.weekly_snapshot` | aya lib/weekly.ts WeeklyReport、aya lib/trends.ts TrendPoint、wenli 表 mastery_snapshot、wenli 表 parent_report、wenli 表 stage_report |
@@ -181,7 +184,7 @@
 | 第四章 建议：最近一次大考成绩与排名区间 | `inner.g2.exam_score`、`inner.g2.exam_rank_band` |
 | 第四章 建议：带批改的试卷 | `inner.g2.graded_paper_upload` |
 | 第四章 建议：学生自评痛点 | `middle.g6.self_pain_points` |
-| 第四章 可选：家长问卷（作息、陪读方式、期望与可配合程度） | `outer.g8.study_routine`、`outer.g8.accompany_style`、`outer.g8.expectation`、`outer.g8.cooperation_capacity` |
+| 第四章 可选：家长问卷（作息、陪读方式、期望与可配合程度） | `outer.g8.study_routine`、`outer.g8.sleep_schedule`、`outer.g8.accompany_style`、`outer.g8.expectation`、`outer.g8.cooperation_capacity` |
 | 第四章 可选：错题本、作业、教师评语 | `inner.g2.graded_paper_upload` |
 | 第四章 可选：校外补习情况 | `outer.g1.tutoring` |
 | 第四章 周期：考试成绩与范围、考前冻结预测 | `inner.g2.exam_score`、`inner.g2.exam_scope`、`inner.g2.exam_prediction` |

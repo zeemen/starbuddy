@@ -1,3 +1,6 @@
+col|insight.claim.basis_id|starbuddy_insight|UPDATE|SUPERUSER
+col|insight.claim.basis_kind|starbuddy_insight|UPDATE|SUPERUSER
+col|insight.claim.change_reason|starbuddy_insight|UPDATE|SUPERUSER
 col|insight.claim.confidence|starbuddy_insight|UPDATE|SUPERUSER
 col|insight.claim.evidence_ids|starbuddy_insight|UPDATE|SUPERUSER
 col|insight.claim.expires_at|starbuddy_insight|UPDATE|SUPERUSER
@@ -9,6 +12,8 @@ col|insight.claim.visibility|starbuddy_insight|UPDATE|SUPERUSER
 col|platform.entitlement.granted|starbuddy_authz|UPDATE|SUPERUSER
 col|platform.entitlement.reserved|starbuddy_authz|UPDATE|SUPERUSER
 col|platform.entitlement.settled|starbuddy_authz|UPDATE|SUPERUSER
+col|platform.error_attribution.id|starbuddy_authz|SELECT|SUPERUSER
+col|platform.error_attribution.student_id|starbuddy_authz|SELECT|SUPERUSER
 col|platform.error_attribution.superseded_at|starbuddy_learning|UPDATE|SUPERUSER
 col|platform.error_attribution.superseded_by|starbuddy_learning|UPDATE|SUPERUSER
 col|platform.grade_result.superseded_at|starbuddy_learning|UPDATE|SUPERUSER
@@ -23,13 +28,17 @@ col|platform.ingest_request.lease_until|starbuddy_learning|UPDATE|SUPERUSER
 col|platform.ingest_request.status|starbuddy_learning|UPDATE|SUPERUSER
 col|platform.ingest_request.summary|starbuddy_learning|UPDATE|SUPERUSER
 col|platform.ingest_request.updated_at|starbuddy_learning|UPDATE|SUPERUSER
+col|platform.mastery_estimate.id|starbuddy_authz|SELECT|SUPERUSER
 col|platform.mastery_estimate.is_current|starbuddy_learning|UPDATE|SUPERUSER
+col|platform.mastery_estimate.student_id|starbuddy_authz|SELECT|SUPERUSER
 col|platform.mastery_estimate.superseded_at|starbuddy_learning|UPDATE|SUPERUSER
 col|platform.mastery_estimate.superseded_by|starbuddy_learning|UPDATE|SUPERUSER
 col|platform.review_task.resolution_code|starbuddy_authz|UPDATE|SUPERUSER
 col|platform.review_task.resolved_at|starbuddy_authz|UPDATE|SUPERUSER
 col|platform.review_task.resolved_by_account|starbuddy_authz|UPDATE|SUPERUSER
 col|platform.review_task.status|starbuddy_authz|UPDATE|SUPERUSER
+col|platform.skill_observation.id|starbuddy_authz|SELECT|SUPERUSER
+col|platform.skill_observation.student_id|starbuddy_authz|SELECT|SUPERUSER
 col|platform.skill_observation.superseded_at|starbuddy_learning|UPDATE|SUPERUSER
 col|platform.skill_observation.superseded_by|starbuddy_learning|UPDATE|SUPERUSER
 col|platform.subject_enrollment.status|starbuddy_authz|UPDATE|SUPERUSER
@@ -68,9 +77,12 @@ col|platform.usage_reservation.state|starbuddy_authz|UPDATE|SUPERUSER
 col|platform.usage_reservation.state|starbuddy_bff|SELECT|SUPERUSER
 col|platform.usage_reservation.student_id|starbuddy_bff|SELECT|SUPERUSER
 col|platform.usage_reservation.usage_id|starbuddy_bff|SELECT|SUPERUSER
+func|insight.basis_belongs(insight.basis_kind,uuid,uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|insight.basis_belongs(insight.basis_kind,uuid,uuid)|starbuddy_insight|EXECUTE|starbuddy_authz
+func|insight.change_allowed(insight.claim_status,insight.claim_status,text)|starbuddy_authz|EXECUTE|SUPERUSER
+func|insight.change_allowed(insight.claim_status,insight.claim_status,text)|starbuddy_insight|EXECUTE|SUPERUSER
 func|insight.claim_history_guard()|starbuddy_authz|EXECUTE|starbuddy_authz
 func|insight.claim_log()|starbuddy_authz|EXECUTE|starbuddy_authz
-func|insight.transition_allowed(insight.claim_status,insight.claim_status,text)|starbuddy_insight|EXECUTE|SUPERUSER
 func|platform.can_read_household(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.can_read_household(uuid)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|platform.can_read_student(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
@@ -136,6 +148,7 @@ func|platform.resolve_review_task(uuid,text)|starbuddy_authz|EXECUTE|starbuddy_a
 func|platform.resolve_review_task(uuid,text)|starbuddy_review|EXECUTE|starbuddy_authz
 func|platform.signup_guardian(text)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.signup_guardian(text)|starbuddy_bff|EXECUTE|starbuddy_authz
+owner|insight.basis_belongs(insight.basis_kind,uuid,uuid)|starbuddy_authz
 owner|insight.claim_history_guard()|starbuddy_authz
 owner|insight.claim_log()|starbuddy_authz
 owner|platform.can_read_household(uuid)|starbuddy_authz
@@ -290,6 +303,7 @@ schema|public|pg_database_owner|CREATE|pg_database_owner
 schema|public|pg_database_owner|USAGE|pg_database_owner
 schema|starbuddy_ext|starbuddy_authz|USAGE|SUPERUSER
 schema|starbuddy_ext|starbuddy_bff|USAGE|SUPERUSER
+secdef|insight.basis_belongs(insight.basis_kind,uuid,uuid)
 secdef|insight.claim_history_guard()
 secdef|insight.claim_log()
 secdef|platform.can_read_household(uuid)

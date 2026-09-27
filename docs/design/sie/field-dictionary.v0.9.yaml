@@ -78,7 +78,7 @@ fields:
     source_type: [self, guardian]
     collect: { level: required, timing: onboarding }
     visibility: [agent, guardian]
-    storage: insight.self_report.value
+    storage: { self: insight.self_report.value, guardian: insight.guardian_report.value }
     built_by: SIE-01
     status: planned
     teaching_decision: 决定每日计划时长与跨科时间预算
@@ -89,7 +89,7 @@ fields:
     source_type: [self, guardian]
     collect: { level: optional, timing: onboarding }
     visibility: [agent, guardian]
-    storage: insight.self_report.value
+    storage: { self: insight.self_report.value, guardian: insight.guardian_report.value }
     built_by: SIE-01
     status: planned
     teaching_decision: 决定是否安排手写拍照、语音讲述等需要设备支持的任务
@@ -100,11 +100,12 @@ fields:
     source_type: [self, guardian]
     collect: { level: optional, timing: onboarding }
     visibility: [agent, guardian]
-    storage: insight.guardian_report.value
+    storage: { self: insight.self_report.value, guardian: insight.guardian_report.value }
     built_by: SIE-01
     status: planned
     teaching_decision: 避免与校外进度重复布置同一节点的练习
     guardian_deletable: true
+    note: 只用于避免与校外进度重复布置练习，不用于其他任何推断
 
   # ================= 外圈 · ⑧ 家庭与外部支持（全部可选，家长可见可删，学生端不展示） =================
   - id: outer.g8.study_routine
@@ -117,7 +118,17 @@ fields:
     status: live
     teaching_decision: 把任务排进学生实际可学习的时段，并给出休息提醒
     guardian_deletable: true
-    note: "现表按主题存家长自由文本（study_routine、sleep_schedule）；结构化字段在 SIE-01 另建（待人确认 #6，已按默认确认）"
+    note: "现表按主题存家长自由文本；结构化字段在 SIE-01 另建（待人确认 #6，已按默认确认）。同一主题只存一处：五个既有主题在 platform.guardian_report，新增主题在 insight.guardian_report"
+  - id: outer.g8.sleep_schedule
+    name: 作息时间（家长观察原文）
+    layer: fact
+    source_type: [guardian]
+    collect: { level: optional, timing: onboarding }
+    visibility: [agent, guardian]
+    storage: platform.guardian_report.content
+    status: live
+    teaching_decision: 夜间不安排任务，按作息给出休息提醒
+    guardian_deletable: true
   - id: outer.g8.accompany_style
     name: 陪读方式
     layer: fact
@@ -159,6 +170,7 @@ fields:
     status: live
     teaching_decision: 考前提醒家长录入考试范围与日期，决定对账卡的录入时机
     guardian_deletable: true
+    note: 录入界面提示不要写学校、班级与老师的姓名（与“只收地区”一致）
 
   # ================= 内圈 · ② 学业水平与历史成绩 =================
   - id: inner.g2.exam_score
@@ -169,6 +181,7 @@ fields:
     visibility: [agent, student, guardian]
     storage: insight.exam_record.raw_score
     built_by: SIE-01
+    source_column: insight.exam_record.confirmed_by
     status: planned
     teaching_decision: 外部锚点：校准掌握判断，生成对账卡；七八年级 100 分制与九年级 120 分制分别归一
     guardian_deletable: true
@@ -181,6 +194,7 @@ fields:
     visibility: [agent, student, guardian]
     storage: insight.exam_record.scope_node_ids
     built_by: SIE-01
+    source_column: insight.exam_record.confirmed_by
     status: planned
     teaching_decision: 考前 14 天按“考情权重 × 当前缺口 × 可提升”重排计划，并在考试当天冻结预测
     guardian_deletable: true
@@ -192,6 +206,7 @@ fields:
     visibility: [agent, guardian]
     storage: insight.exam_record.rank_band
     built_by: SIE-01
+    source_column: insight.exam_record.confirmed_by
     status: planned
     teaching_decision: 只作考试难度与区分度的参考，校准预测区间；不对学生展示，不做同伴比较
     guardian_deletable: true
@@ -203,6 +218,7 @@ fields:
     visibility: [agent, guardian]
     storage: insight.exam_record.difficulty_note
     built_by: SIE-01
+    source_column: insight.exam_record.confirmed_by
     status: planned
     teaching_decision: 对账时区分“试卷偏难”与“此前判断偏乐观”
     guardian_deletable: true
@@ -217,7 +233,7 @@ fields:
     status: planned
     teaching_decision: 作为先验与外部锚点；C 级识别内容先请学生核对，确认前不生成薄弱结论
     guardian_deletable: true
-    note: 原图解析核对后按保留期限删除，只保留结构化结果（SIE 第十章）
+    note: 原图可能含姓名与学校；解析只用境内已备案模型（规则 13），核对后按保留期限删除，只保留结构化结果（SIE 第十章）
   - id: inner.g2.exam_prediction
     name: 考试分数预测区间
     layer: inference
@@ -230,8 +246,8 @@ fields:
     status: planned
     teaching_decision: 考前冻结、考后对账，偏差分析修正个体参数与判断
     guardian_deletable: true
-    note: 对学生与家长的可见范围在对账卡上线时（SIE-03）由人确认后放开
-    legacy_sources: [aya lib/exam.ts ExamAnalysis.scoreLow/scoreHigh, aya lib/consultation.ts Consultation.estLow/estHigh, wenli GradeResultSchema.score_range]
+    note: 对学生与家长的可见范围在对账卡上线时（SIE-03）由人确认后放开；契约 v0.9 report 的 forecast 已登记到 v1.0 评审
+    legacy_sources: [aya lib/exam.ts ExamAnalysis.scoreLow/scoreHigh, aya lib/consultation.ts Consultation.estLow/estHigh, wenli GradeResultSchema.score_range, 契约 v0.9 ReportFields.forecast]
 
   # ================= 内圈 · ③ 学科知识掌握 =================
   - id: inner.g3.node_mastery
@@ -248,7 +264,7 @@ fields:
     teaching_decision: 选下一步教学节点、决定是否点亮星与安排 0 / 3 / 14 天复测
     guardian_deletable: true
     note: 计算在 KGE；对学生家长的陈述只能引用判断（规则 11）
-    legacy_sources: [aya lib/types.ts NodeMastery, wenli 表 point_mastery, wenli 表 ability_state]
+    legacy_sources: [aya lib/types.ts NodeMastery, wenli 表 point_mastery]
   - id: inner.g3.next_retest_at
     name: 下一次复测时间
     layer: inference
@@ -262,6 +278,7 @@ fields:
     status: live
     teaching_decision: 把到期复测放进今日计划
     guardian_deletable: true
+    legacy_sources: [wenli 表 point_mastery.next_review_at, wenli 表 point_mastery.review_stage]
   - id: inner.g3.error_attribution
     name: 错因（学科码与跨科大类）
     layer: inference
@@ -524,7 +541,7 @@ fields:
     status: planned
     teaching_decision: 同类节点优先选用之后首次独立做对的讲法，并保留轮换
     guardian_deletable: true
-    note: 替代固定学习风格标签；只记具体节点上的经验
+    note: 不按固定类型匹配讲法；只记具体节点上哪种讲法之后首次独立做对
 
   # ================= 贯穿 · ⑨ 成长轨迹与目标 =================
   - id: through.g9.focus_subject
@@ -557,9 +574,11 @@ fields:
     visibility: [agent, student, guardian]
     storage: insight.dispute.kind
     built_by: SIE-03
+    source_column: insight.dispute.raised_by
     status: planned
     teaching_decision: “我其实会”24 小时内推送验证题；“识别错了”打开原始事实供更正
     guardian_deletable: true
+    note: 默认按提出人可见：学生提的异议只给学生本人，家长提的只给家长（SIE-03 实现，可见范围需人确认）
   - id: through.g9.interventions
     name: 触发的提醒、处方、鼓励与降负
     layer: fact
@@ -590,13 +609,14 @@ fields:
     source_type: [inferred]
     collect: { level: automatic, timing: continuous }
     visibility: [agent, student, guardian]
-    storage: insight.claim_history.to_status
+    storage: platform.mastery_estimate.state
     exposed_via: insight.claim
     dimension: knowledge_mastery
     launch_subjects: [aya]
     status: live
     teaching_decision: 证据化鼓励（具体到哪颗星何时点亮、依据是什么）
     guardian_deletable: true
+    note: 真相源是 platform.mastery_estimate 的更替链（门槛进入 transfer 的时刻），判断账本只做对外陈述
 
 # 不再采集的旧字段（KGE-00 结论字段清单，specs/kge-00-asset-inventory/report/conclusion-fields.md）。
 # 检查脚本保证它们不会以原名或别名回到上面的字段里。旧数值不迁移、只存档（完整方案 v1.1 5.5）。

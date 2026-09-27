@@ -1,7 +1,12 @@
 insight.claim_history|history_insight_read|SELECT|starbuddy_insight|PERMISSIVE|using=true|check=-
-insight.claim_template|template_read|SELECT|starbuddy_bff,starbuddy_insight,starbuddy_learning|PERMISSIVE|using=(status = 'approved'::text)|check=-
-insight.claim|claim_agent_read|SELECT|starbuddy_learning|PERMISSIVE|using=((status = ANY (ARRAY['hypothesis'::insight.claim_status, 'established'::insight.claim_status, 'to_verify'::insight.claim_status])) AND ('agent'::text = ANY (visibility)))|check=-
-insight.claim|claim_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=((status = ANY (ARRAY['hypothesis'::insight.claim_status, 'established'::insight.claim_status, 'to_verify'::insight.claim_status])) AND ((platform.is_self_student(student_id) AND ('student'::text = ANY (visibility))) OR (platform.is_linked_guardian(student_id) AND ('guardian'::text = ANY (visibility)))))|check=-
+insight.claim_template|template_insight_read|SELECT|starbuddy_insight|PERMISSIVE|using=(status = ANY (ARRAY['approved'::text, 'retired'::text]))|check=-
+insight.claim_template|template_read|SELECT|starbuddy_bff,starbuddy_learning|PERMISSIVE|using=(status = 'approved'::text)|check=-
+insight.claim|claim_agent_read|SELECT|starbuddy_learning|PERMISSIVE|using=((status = ANY (ARRAY['hypothesis'::insight.claim_status, 'established'::insight.claim_status, 'to_verify'::insight.claim_status])) AND (expires_at > now()) AND ('agent'::text = ANY (visibility)) AND (EXISTS ( SELECT 1
+   FROM insight.claim_template t
+  WHERE ((t.template_key = claim.template_key) AND (t.version = claim.template_version)))))|check=-
+insight.claim|claim_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=((status = ANY (ARRAY['hypothesis'::insight.claim_status, 'established'::insight.claim_status, 'to_verify'::insight.claim_status])) AND (expires_at > now()) AND (EXISTS ( SELECT 1
+   FROM insight.claim_template t
+  WHERE ((t.template_key = claim.template_key) AND (t.version = claim.template_version)))) AND ((platform.is_self_student(student_id) AND ('student'::text = ANY (visibility))) OR (platform.is_linked_guardian(student_id) AND ('guardian'::text = ANY (visibility)))))|check=-
 insight.claim|claim_insight|ALL|starbuddy_insight|PERMISSIVE|using=true|check=true
 platform.account|account_self_read|SELECT|starbuddy_bff|PERMISSIVE|using=(id = platform.current_account_id())|check=-
 platform.attempt|attempt_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-

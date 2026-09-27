@@ -7,9 +7,11 @@
 3. 外圈不对学生可见；家庭层 g8 与学生自述字段必须家长可删（g1 必填的基础身份除外，走整档删除）；不可删的字段要写明删除途径；
 4. 中圈指标在效度检验通过前只给 agent；指标的定义、最低样本、效度检验三项齐全；
    对学生或家长可见的推断只能是首发维度（数学的知识掌握、知识迁移）；可见的事实只能由学生或家长自己填写；
-5. 推断类字段落在推断层，并经判断账本 insight.claim 对外；
+5. 推断类字段落在推断层，并经判断账本 insight.claim 对外；storage 是真相源，不能指向判断账本本身（判断只是陈述层）；
 6. storage 指向的已有表与列在 db/migrations 里真实存在；还没建的表必须写 built_by，且状态不能是 live；
-7. 字段的 id、名称、说明不命中禁用推断词表，也不复用 retired 段里的旧字段名与别名；
+   学生与家长都可能提供的字段（g1 必填基础身份除外）按来源分开落库（storage 写成 {self: …, guardian: …}），
+   或写 source_column 说明同一张事实表里记录由谁录入（规则 6：说法不同两边都存）；
+7. 字段的 id、名称、说明、备注、教学决策、指标定义不命中禁用推断词表，也不复用 retired 段里的旧字段名与别名；
 8. 人读版 field-dictionary.md 与 YAML 一致（--write 重新生成）。
 同时跑禁用推断词表的正反例自检（sie_lexicon.py）。
 
@@ -66,7 +68,8 @@ COVERAGE: dict[str, list[str] | str] = {
     "第四章 建议：带批改的试卷": ["inner.g2.graded_paper_upload"],
     "第四章 建议：学生自评痛点": ["middle.g6.self_pain_points"],
     "第四章 可选：家长问卷（作息、陪读方式、期望与可配合程度）": [
-        "outer.g8.study_routine", "outer.g8.accompany_style", "outer.g8.expectation", "outer.g8.cooperation_capacity"],
+        "outer.g8.study_routine", "outer.g8.sleep_schedule", "outer.g8.accompany_style", "outer.g8.expectation",
+        "outer.g8.cooperation_capacity"],
     "第四章 可选：错题本、作业、教师评语": ["inner.g2.graded_paper_upload"],
     "第四章 可选：校外补习情况": ["outer.g1.tutoring"],
     "第四章 周期：考试成绩与范围、考前冻结预测": ["inner.g2.exam_score", "inner.g2.exam_scope", "inner.g2.exam_prediction"],
@@ -210,29 +213,43 @@ def check(data: dict, lex: sie_lexicon.Lexicon, tables: dict[str, set[str]]) -> 
                 errors.append(f"{fid}：推断来源的字段必须在推断层")
             if f.get("exposed_via") != "insight.claim":
                 errors.append(f"{fid}：推断类字段必须经 insight.claim 对外（exposed_via）")
-        # 6. 落库位置
-        sm = STORAGE_RE.match(str(f.get("storage") or ""))
-        if not sm:
-            errors.append(f"{fid}：storage 格式应为 schema.table.column")
-        else:
+        # 6. 落库位置（可按来源分开）
+        storage = f.get("storage")
+        locations = list(storage.values()) if isinstance(storage, dict) else [storage]
+        if isinstance(storage, dict) and set(storage) != src:
+            errors.append(f"{fid}：按来源分开的 storage 必须恰好覆盖 source_type（{sorted(src)}）")
+        if len(src & {"self", "guardian"}) == 2 and not basic_identity and not isinstance(storage, dict) \
+                and not f.get("source_column"):
+            errors.append(f"{fid}：学生与家长都可能提供的字段必须按来源分开落库，或写 source_column")
+        for loc in locations + ([f.get("source_column")] if f.get("source_column") else []):
+            sm = STORAGE_RE.match(str(loc or ""))
+            if not sm:
+                errors.append(f"{fid}：storage 格式应为 schema.table.column")
+                continue
             table = f"{sm.group(1)}.{sm.group(2)}"
+            if table in ("insight.claim", "insight.claim_history"):
+                errors.append(f"{fid}：storage 不能指向判断账本（判断只是陈述层，真相源在事实表或推断表）")
             if table in tables:
                 if sm.group(3) not in tables[table]:
                     errors.append(f"{fid}：{table} 里不存在列 {sm.group(3)}")
-                if f.get("built_by"):
-                    errors.append(f"{fid}：{table} 已存在，不应写 built_by")
             else:
                 if not f.get("built_by"):
                     errors.append(f"{fid}：{table} 还没建，必须写 built_by（由哪个任务包建）")
                 if f.get("status") == "live":
                     errors.append(f"{fid}：表还没建，status 不能是 live")
+        if f.get("built_by") and all(
+                (m := STORAGE_RE.match(str(loc or ""))) and f"{m.group(1)}.{m.group(2)}" in tables for loc in locations):
+            errors.append(f"{fid}：落库的表都已存在，不应写 built_by")
         if f.get("exposed_via") and f.get("exposed_via") not in tables:
             errors.append(f"{fid}：exposed_via 指向的 {f.get('exposed_via')} 不存在")
         # 7. 禁用推断词表与旧字段
-        for key in ("id", "name", "desc"):
+        for key in ("id", "name", "desc", "note", "teaching_decision", "compliance_purpose"):
             text = str(f.get(key) or "")
             for h in lex.find(text):
                 errors.append(f"{fid}：{key} 命中禁用推断词表 {h.category}（{h.match}）")
+        if metric:
+            for h in lex.find(str(metric.get("definition") or "")):
+                errors.append(f"{fid}：metric.definition 命中禁用推断词表 {h.category}（{h.match}）")
         names = {str(f.get("id", "")).split(".")[-1].lower(), str(f.get("name", "")).lower()}
         for r in retired:
             for old in [r["name"], *r.get("aliases", [])]:
@@ -267,7 +284,10 @@ def render(data: dict) -> str:
                 "| id | 名称 | 层 | 来源 | 默认可见 | 落库 | 状态 | 改变的教学决策 |", "|---|---|---|---|---|---|---|---|"]
         for f in rows:
             decision = f.get("teaching_decision") or f"（合规用途）{f.get('compliance_purpose', '')}"
-            storage = f["storage"] + (f"（{f['built_by']} 建）" if f.get("built_by") else "")
+            st = f["storage"]
+            storage = ("；".join(f"{src_name[k]}→{v}" for k, v in st.items()) if isinstance(st, dict) else st) \
+                + (f"（记录录入人：{f['source_column']}）" if f.get("source_column") else "") \
+                + (f"（{f['built_by']} 建）" if f.get("built_by") else "")
             out.append(f"| `{f['id']}` | {cell(f['name'])} | {f['layer']} | {cell([src_name[s] for s in f['source_type']])} | "
                        f"{cell([vis_name[v] for v in f['visibility']])} | `{cell(storage)}` | {f['status']} | {cell(decision)} |")
         out.append("")
@@ -328,6 +348,9 @@ def self_test(data: dict, lex: sie_lexicon.Lexicon, tables: dict[str, set[str]],
     def m_live_planned(d): field(d, "outer.g1.devices")["status"] = "live"
     def m_lexicon(d): field(d, "middle.g6.stated_interests")["name"] = "学生性格与兴趣"
     def m_retired(d): field(d, "inner.g2.exam_rank_band")["id"] = "inner.g2.rank_range"
+    def m_storage_claim(d): field(d, "inner.g3.node_mastery")["storage"] = "insight.claim_history.to_status"
+    def m_multi_source(d): field(d, "outer.g1.devices")["storage"] = "insight.self_report.value"
+    def m_note_lexicon(d): field(d, "outer.g8.accompany_style")["note"] = "可以看出家庭经济条件"
 
     cases = [
         ("id 重复", m_dup, "重复"), ("id 的圈与组不一致", m_circle, "圈与组不一致"),
@@ -340,6 +363,9 @@ def self_test(data: dict, lex: sie_lexicon.Lexicon, tables: dict[str, set[str]],
         ("落库列不存在", m_column, "不存在列 school_name"), ("未建表缺 built_by", m_built_by, "必须写 built_by"),
         ("未建表标 live", m_live_planned, "status 不能是 live"), ("命中禁用推断词表", m_lexicon, "命中禁用推断词表 personality"),
         ("复用旧字段", m_retired, "复用了已退役的旧字段 rank_range"),
+        ("落库指向判断账本", m_storage_claim, "storage 不能指向判断账本"),
+        ("学生与家长说法混存", m_multi_source, "必须按来源分开落库"),
+        ("备注命中禁用推断词表", m_note_lexicon, "note 命中禁用推断词表 family"),
     ]
     errors: list[str] = []
     for name, mutate, expected in cases:
@@ -373,7 +399,7 @@ def main(argv: list[str]) -> int:
         print(f"sie-dictionary-check: 失败（{len(errors)} 处）")
         return 1
     print(f"sie-dictionary-check: 通过（{len(data['fields'])} 个字段、{len(data['retired'])} 个退役旧字段、"
-          f"词表 {len(lex.categories)} 类；17 个反例与人读版篡改全部被拦下）")
+          f"词表 {len(lex.categories)} 类；20 个反例与人读版篡改全部被拦下）")
     return 0
 
 

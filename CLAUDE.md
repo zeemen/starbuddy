@@ -18,7 +18,7 @@ v1.0 的总纲与开发计划已移到 docs/archive/，只供追溯。仓库现�
 - packages/stage      舞台组件：白板、讲解 DSL 播放器（OpenMAIC 子包需锁版本）
 - adapters/{aya,zhixing,wenli,echo}  四科适配器，实现 diagnose/plan/teach/grade/generate_variation/report
   （echo 已搁置，见 specs/adapter-echo-sprint3/lessons.md）
-- db/migrations       平台 schema（platform.*）、两个核心的 schema（insight.* 已有判断账本 0010；kge.* 尚未建）与各科 schema
+- db/migrations       平台 schema（platform.*）、两个核心的 schema（insight.* 判断账本为迁移 0010 草稿，待人执行；kge.* 尚未建）与各科 schema
 - evals/              人设一致性、学科判分、契约测试、金标回归、禁用推断用例（评测即代码）
 - specs/              每个任务一个目录：spec.md / plan.md / tasks.md / lessons.md
 - docs/adr/           架构决策记录
@@ -29,7 +29,7 @@ v1.0 的总纲与开发计划已移到 docs/archive/，只供追溯。仓库现�
 1. 学科插件 API 以 packages/contracts 为准。不得在适配器里绕过契约直接读写平台表或两个核心的表。
 2. 学生画像只有一个真相源。个人层表的归属（platform.* 还是 kge.* / insight.*）以 ADR 为准；ADR 之前 platform.*
    是唯一真相源，任何新 schema 不得存放同一事实的副本。各科私有表不得成为第二真相源。
-   分工：证据事件与掌握状态由 KGE 计算；对学生的判断只存判断账本 insight.claim（0010，只有 starbuddy_insight 能写）。
+   分工：证据事件与掌握状态由 KGE 计算；对学生的判断只存判断账本（insight.claim，迁移 0010 与 ADR 13 均为草稿）。
 3. 判分只能来自验证器或 Rubric 结果；讲解与人设文本不得覆盖判分。所有 grade 返回必须带
    evidence_ids、confidence、source_version、model_version、human_review_required。
 4. 计量：任何消耗类请求必须带 usage_id 与 idempotency_key，开始预留、成功结算、失败回滚。
