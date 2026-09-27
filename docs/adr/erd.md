@@ -101,3 +101,25 @@ erDiagram
 - 判分必须对应一次真实作答（外键），证据引用的题目必须已登记（外键）。
 
 还没做到的跨表规则见 spec 待人确认 #12、#13。
+
+## insight schema：判断账本（0010，SIE-00）
+
+对学生的任何陈述都必须对应一条判断（CLAUDE.md 规则 11）。判断账本只由洞察服务 `starbuddy_insight` 写（ADR 13 草稿）。已有的个人层表留在 `platform.*`，`insight.*` 只放新增对象（对照文档 #3）。
+
+```mermaid
+erDiagram
+  student_profile ||--o{ claim : "student_id（删除档案时级联删除）"
+  claim_template ||--o{ claim : "template_key + version（只能引用已审核模板）"
+  claim ||--o{ claim_history : "每次新建与状态变化一行（触发器写，只追加）"
+  skill_node ||..o{ claim : "target_type = node 时 target_id = local_id（KGE-01 后改指 knowledge_node）"
+  mastery_estimate ||..o{ claim : "evidence_ids 引用证据；掌握由 KGE 计算"
+```
+
+| 表 | 谁写 | 谁读 | 要点 |
+|---|---|---|---|
+| `insight.claim_template` | 人工登记（必停项） | insight、learning、bff（只看已审核） | 可见范围上限；对学生或家长可见的必须有文本模板 |
+| `insight.claim` | 只有 `starbuddy_insight`（无 DELETE，UPDATE 限定列） | bff 按学生本人 / 绑定家长与可见范围；learning 只看含 agent 的 | 五种状态，推翻与撤回为终态；推断必须有证据与模型版本；必须有到期时间 |
+| `insight.claim_history` | 触发器（属主 `starbuddy_authz`） | 只有 insight | 只能追加；只随判断级联删除 |
+
+状态机：假设 → 成立 → 待验证 → 成立 / 推翻；任何非终态 → 撤回。每次流转要带原因，原因必须与流转匹配；假设不能直接推翻（SIE-00 待人确认 #1）。
+

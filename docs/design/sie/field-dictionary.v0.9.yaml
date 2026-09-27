@@ -1,0 +1,612 @@
+# 学生洞察引擎（SIE）画像字段字典 v0.9（草稿）
+# 任务包 SIE-00（specs/sie-00-field-dictionary/spec.md）。W2 评审冻结；之后 SIE-01/02/03 按本字典实现，不再各自发明字段。
+# 检查：make sie-dictionary-check（docs/design/sie/check_field_dictionary.py），人读版 field-dictionary.md 由脚本生成。
+# 必停项：字段的默认可见范围属于“画像可见范围”，改动须人确认（CLAUDE.md）。
+#
+# 字段键说明见 field-dictionary.md 开头。准入规则（SIE 风险表）：写不出 teaching_decision 的字段不收。
+version: 0.9.0
+status: draft
+
+groups:
+  g1: { circle: outer, name: 基础身份与学习环境 }
+  g2: { circle: inner, name: 学业水平与历史成绩 }
+  g3: { circle: inner, name: 学科知识掌握 }
+  g4: { circle: inner, name: 核心学习能力（学科内） }
+  g5: { circle: middle, name: 学习行为与习惯 }
+  g6: { circle: middle, name: 学习动力与兴趣 }
+  g7: { circle: middle, name: 学习策略与认知特点 }
+  g8: { circle: outer, name: 家庭与外部支持 }
+  g9: { circle: through, name: 成长轨迹与目标 }
+
+# 六维画像只是呈现视图，跨圈取数，不存独立分数（SIE 第三章）。首发只对外展示数学的前两维（SIE 拍板第 2 项，已按默认确认）。
+dimensions:
+  knowledge_mastery: { name: 知识掌握, launch: visible }
+  knowledge_transfer: { name: 知识迁移, launch: visible }
+  learning_strategy: { name: 学习策略, launch: silent }
+  self_directed: { name: 自主学习, launch: silent }
+  expression: { name: 表达应用, launch: silent }
+  persistence: { name: 学习持续性, launch: silent }
+
+fields:
+  # ================= 外圈 · ① 基础身份与学习环境 =================
+  - id: outer.g1.grade
+    name: 年级
+    layer: fact
+    source_type: [self, guardian]
+    collect: { level: required, timing: onboarding }
+    visibility: [agent, guardian]
+    storage: platform.student_profile.grade
+    status: live
+    teaching_decision: 选择教材进度与年级内的知识节点，决定冷启动先验
+    guardian_deletable: false
+    note: 删除年级等于删除档案，走整档删除流程
+  - id: outer.g1.region
+    name: 地区
+    layer: fact
+    source_type: [self, guardian]
+    collect: { level: required, timing: onboarding }
+    visibility: [agent, guardian]
+    storage: platform.student_profile.region
+    status: live
+    teaching_decision: 选择地区考情投影（题位与权重）
+    guardian_deletable: false
+    note: "只收地区，不收学校与班级（待人确认 #7，已按默认确认）；删除走整档删除流程"
+  - id: outer.g1.textbook_version
+    name: 各科教材版本
+    layer: fact
+    source_type: [self, guardian]
+    collect: { level: required, timing: onboarding }
+    visibility: [agent, guardian]
+    storage: platform.student_profile.textbook_version
+    status: live
+    teaching_decision: 按教材投影渲染页码与原句，决定节点的教材进度
+    guardian_deletable: false
+    note: 现表只有一列；按科分开存由 SIE-01 决定；删除走整档删除流程
+  - id: outer.g1.birth_year_month
+    name: 出生年月
+    layer: fact
+    source_type: [guardian]
+    collect: { level: required, timing: onboarding }
+    visibility: [agent, guardian]
+    storage: platform.student_profile.birth_year_month
+    status: live
+    compliance_purpose: 判断是否未满 14 周岁、需要监护人同意；不参与任何推断与教学决策
+    guardian_deletable: false
+  - id: outer.g1.weekly_available_time
+    name: 每周可用时间
+    layer: fact
+    source_type: [self, guardian]
+    collect: { level: required, timing: onboarding }
+    visibility: [agent, guardian]
+    storage: insight.self_report.value
+    built_by: SIE-01
+    status: planned
+    teaching_decision: 决定每日计划时长与跨科时间预算
+    guardian_deletable: true
+  - id: outer.g1.devices
+    name: 学习设备
+    layer: fact
+    source_type: [self, guardian]
+    collect: { level: optional, timing: onboarding }
+    visibility: [agent, guardian]
+    storage: insight.self_report.value
+    built_by: SIE-01
+    status: planned
+    teaching_decision: 决定是否安排手写拍照、语音讲述等需要设备支持的任务
+    guardian_deletable: true
+  - id: outer.g1.tutoring
+    name: 校外补习情况（自愿）
+    layer: fact
+    source_type: [self, guardian]
+    collect: { level: optional, timing: onboarding }
+    visibility: [agent, guardian]
+    storage: insight.guardian_report.value
+    built_by: SIE-01
+    status: planned
+    teaching_decision: 避免与校外进度重复布置同一节点的练习
+    guardian_deletable: true
+
+  # ================= 外圈 · ⑧ 家庭与外部支持（全部可选，家长可见可删，学生端不展示） =================
+  - id: outer.g8.study_routine
+    name: 作息与学习安排（家长观察原文）
+    layer: fact
+    source_type: [guardian]
+    collect: { level: optional, timing: onboarding }
+    visibility: [agent, guardian]
+    storage: platform.guardian_report.content
+    status: live
+    teaching_decision: 把任务排进学生实际可学习的时段，并给出休息提醒
+    guardian_deletable: true
+    note: "现表按主题存家长自由文本（study_routine、sleep_schedule）；结构化字段在 SIE-01 另建（待人确认 #6，已按默认确认）"
+  - id: outer.g8.accompany_style
+    name: 陪读方式
+    layer: fact
+    source_type: [guardian]
+    collect: { level: optional, timing: onboarding }
+    visibility: [agent, guardian]
+    storage: platform.guardian_report.content
+    status: live
+    teaching_decision: 决定周报里“本周一件事”建议家长怎样配合
+    guardian_deletable: true
+  - id: outer.g8.expectation
+    name: 家长期望
+    layer: fact
+    source_type: [guardian]
+    collect: { level: optional, timing: onboarding }
+    visibility: [agent, guardian]
+    storage: platform.guardian_report.content
+    status: live
+    teaching_decision: 周报与对账卡的解释口径；与学生自述目标不同时两边都存，落差作为信号
+    guardian_deletable: true
+  - id: outer.g8.cooperation_capacity
+    name: 家长可配合程度
+    layer: fact
+    source_type: [guardian]
+    collect: { level: optional, timing: onboarding }
+    visibility: [agent, guardian]
+    storage: insight.guardian_report.value
+    built_by: SIE-01
+    status: planned
+    teaching_decision: 决定是否给家长布置配合任务以及任务的分量
+    guardian_deletable: true
+  - id: outer.g8.school_communication
+    name: 家校沟通情况
+    layer: fact
+    source_type: [guardian]
+    collect: { level: optional, timing: periodic }
+    visibility: [agent, guardian]
+    storage: platform.guardian_report.content
+    status: live
+    teaching_decision: 考前提醒家长录入考试范围与日期，决定对账卡的录入时机
+    guardian_deletable: true
+
+  # ================= 内圈 · ② 学业水平与历史成绩 =================
+  - id: inner.g2.exam_score
+    name: 学校考试成绩（原始分与满分）
+    layer: fact
+    source_type: [self, guardian]
+    collect: { level: suggested, timing: periodic }
+    visibility: [agent, student, guardian]
+    storage: insight.exam_record.raw_score
+    built_by: SIE-01
+    status: planned
+    teaching_decision: 外部锚点：校准掌握判断，生成对账卡；七八年级 100 分制与九年级 120 分制分别归一
+    guardian_deletable: true
+    legacy_sources: [aya lib/exam.ts ExamAnalysis, wenli 表 semester_score]
+  - id: inner.g2.exam_scope
+    name: 考试范围与日期
+    layer: fact
+    source_type: [self, guardian]
+    collect: { level: suggested, timing: periodic }
+    visibility: [agent, student, guardian]
+    storage: insight.exam_record.scope_node_ids
+    built_by: SIE-01
+    status: planned
+    teaching_decision: 考前 14 天按“考情权重 × 当前缺口 × 可提升”重排计划，并在考试当天冻结预测
+    guardian_deletable: true
+  - id: inner.g2.exam_rank_band
+    name: 考试排名区间（学生或家长录入）
+    layer: fact
+    source_type: [self, guardian]
+    collect: { level: suggested, timing: periodic }
+    visibility: [agent, guardian]
+    storage: insight.exam_record.rank_band
+    built_by: SIE-01
+    status: planned
+    teaching_decision: 只作考试难度与区分度的参考，校准预测区间；不对学生展示，不做同伴比较
+    guardian_deletable: true
+  - id: inner.g2.exam_difficulty_note
+    name: 试卷难度说明
+    layer: fact
+    source_type: [self, guardian]
+    collect: { level: optional, timing: periodic }
+    visibility: [agent, guardian]
+    storage: insight.exam_record.difficulty_note
+    built_by: SIE-01
+    status: planned
+    teaching_decision: 对账时区分“试卷偏难”与“此前判断偏乐观”
+    guardian_deletable: true
+  - id: inner.g2.graded_paper_upload
+    name: 带批改痕迹的整卷试卷
+    layer: fact
+    source_type: [objective]
+    collect: { level: suggested, timing: periodic }
+    visibility: [agent]
+    storage: kge.attempt.answer_raw
+    built_by: KGE-05
+    status: planned
+    teaching_decision: 作为先验与外部锚点；C 级识别内容先请学生核对，确认前不生成薄弱结论
+    guardian_deletable: true
+    note: 原图解析核对后按保留期限删除，只保留结构化结果（SIE 第十章）
+  - id: inner.g2.exam_prediction
+    name: 考试分数预测区间
+    layer: inference
+    source_type: [inferred]
+    collect: { level: automatic, timing: periodic }
+    visibility: [agent]
+    storage: insight.exam_prediction.low
+    built_by: SIE-03
+    exposed_via: insight.claim
+    status: planned
+    teaching_decision: 考前冻结、考后对账，偏差分析修正个体参数与判断
+    guardian_deletable: true
+    note: 对学生与家长的可见范围在对账卡上线时（SIE-03）由人确认后放开
+    legacy_sources: [aya lib/exam.ts ExamAnalysis.scoreLow/scoreHigh, aya lib/consultation.ts Consultation.estLow/estHigh, wenli GradeResultSchema.score_range]
+
+  # ================= 内圈 · ③ 学科知识掌握 =================
+  - id: inner.g3.node_mastery
+    name: 节点掌握状态（五道门槛）
+    layer: inference
+    source_type: [inferred]
+    collect: { level: automatic, timing: continuous }
+    visibility: [agent, student, guardian]
+    storage: platform.mastery_estimate.state
+    exposed_via: insight.claim
+    dimension: knowledge_mastery
+    launch_subjects: [aya]
+    status: live
+    teaching_decision: 选下一步教学节点、决定是否点亮星与安排 0 / 3 / 14 天复测
+    guardian_deletable: true
+    note: 计算在 KGE；对学生家长的陈述只能引用判断（规则 11）
+    legacy_sources: [aya lib/types.ts NodeMastery, wenli 表 point_mastery, wenli 表 ability_state]
+  - id: inner.g3.next_retest_at
+    name: 下一次复测时间
+    layer: inference
+    source_type: [inferred]
+    collect: { level: automatic, timing: continuous }
+    visibility: [agent, student, guardian]
+    storage: platform.mastery_estimate.next_retest_at
+    exposed_via: insight.claim
+    dimension: knowledge_mastery
+    launch_subjects: [aya]
+    status: live
+    teaching_decision: 把到期复测放进今日计划
+    guardian_deletable: true
+  - id: inner.g3.error_attribution
+    name: 错因（学科码与跨科大类）
+    layer: inference
+    source_type: [inferred]
+    collect: { level: automatic, timing: continuous }
+    visibility: [agent]
+    storage: platform.error_attribution.cross_subject_category
+    exposed_via: insight.claim
+    status: live
+    teaching_decision: 选择处方（限时专项、同题多解、回退补前置、圈画条件训练）
+    guardian_deletable: true
+    note: 家长端错因趋势在后续版本开放，需人确认可见范围
+    legacy_sources: [aya lib/types.ts StudentProfile.rootCauseCounts, wenli 表 error_record, daofa 失分归因]
+  - id: inner.g3.evidence_events
+    name: 作答证据事件
+    layer: evidence
+    source_type: [objective]
+    collect: { level: automatic, timing: continuous }
+    visibility: [agent]
+    storage: platform.evidence_event.payload
+    status: live
+    teaching_decision: 所有掌握判断的证据来源；“为什么”展开到具体题与提示等级
+    guardian_deletable: true
+  - id: inner.g3.answer_confidence
+    name: 作答时的把握度（自报）
+    layer: fact
+    source_type: [self]
+    collect: { level: automatic, timing: continuous }
+    visibility: [agent]
+    storage: platform.attempt.self_report
+    status: live
+    teaching_decision: 区分猜对与会做，猜对不加掌握
+    guardian_deletable: true
+    note: 与做题前的“能做对吗”（middle.g7.confidence_probe）时机不同，不合并
+
+  # ================= 内圈 · ④ 核心学习能力（学科内） =================
+  - id: inner.g4.skill_view
+    name: 各科能力视图（阿鸦 100 点、文砺 28 点、知行五维）
+    layer: inference
+    source_type: [inferred]
+    collect: { level: automatic, timing: continuous }
+    visibility: [agent]
+    storage: platform.skill_observation.outcome
+    exposed_via: insight.claim
+    status: live
+    teaching_decision: 星图旁的能力视图侧栏与跨章节的弱项定位；不单独点亮
+    guardian_deletable: true
+    legacy_sources: [aya lib/types.ts StudentProfile.abilityScores, aya lib/evaluation.ts EvalDimension, wenli 表 ability_state, daofa 表 daofa_ability]
+  - id: inner.g4.transfer_gap_math
+    name: 数学迁移差（知识迁移）
+    layer: inference
+    source_type: [inferred]
+    collect: { level: automatic, timing: continuous }
+    visibility: [agent, student, guardian]
+    storage: insight.learner_metric.value
+    built_by: SIE-02
+    exposed_via: insight.claim
+    dimension: knowledge_transfer
+    launch_subjects: [aya]
+    status: planned
+    teaching_decision: 迁移差大时增加变式与跨章题，而不是重复母题
+    guardian_deletable: true
+    note: 呈现为“会做原题”与“换个样子也会”的对比
+
+  # ================= 中圈 · ⑤ 学习行为与习惯 =================
+  - id: middle.g5.behavior_events
+    name: 学习行为事件（会话、计划完成与跳过、连错后退出、异议）
+    layer: fact
+    source_type: [objective]
+    collect: { level: automatic, timing: continuous }
+    visibility: [agent]
+    storage: insight.behavior_event.payload
+    built_by: SIE-01
+    status: planned
+    teaching_decision: 降负触发（连续中断、连错后退出）与计划调整
+    guardian_deletable: true
+  - id: middle.g5.plan_completion_rate
+    name: 计划完成率
+    layer: inference
+    source_type: [inferred]
+    collect: { level: automatic, timing: continuous }
+    visibility: [agent]
+    storage: insight.learner_metric.value
+    built_by: SIE-02
+    exposed_via: insight.claim
+    dimension: self_directed
+    status: silent
+    teaching_decision: 计划偏重时缩短任务，并先询问原因
+    guardian_deletable: true
+    metric: { definition: 完成任务数 ÷ 计划任务数（以学生调整后的计划为准）, min_sample: 至少 2 周, validity: 与后续进步相关（观察用）, validated: false }
+  - id: middle.g5.persistence
+    name: 学习持续性
+    layer: inference
+    source_type: [inferred]
+    collect: { level: automatic, timing: continuous }
+    visibility: [agent]
+    storage: insight.learner_metric.value
+    built_by: SIE-02
+    exposed_via: insight.claim
+    dimension: persistence
+    status: silent
+    teaching_decision: 中断后缩短任务、插入熟悉题；只与自己过去比较
+    guardian_deletable: true
+    metric: { definition: 周活跃天数；中断 3 天以上后 7 天内恢复的比例, min_sample: 至少 4 周, validity: 观察用，不参与评价, validated: false }
+
+  # ================= 中圈 · ⑥ 学习动力与兴趣（只记学生本人说过的，不从行为推断） =================
+  - id: middle.g6.stated_interests
+    name: 学生本人说出的兴趣
+    layer: fact
+    source_type: [self]
+    collect: { level: optional, timing: continuous }
+    visibility: [agent, student]
+    storage: insight.self_report.value
+    built_by: SIE-01
+    status: planned
+    teaching_decision: 用于题目的情境包装，可随时删除
+    guardian_deletable: true
+  - id: middle.g6.self_initiated_sessions
+    name: 主动发起学习
+    layer: inference
+    source_type: [inferred]
+    collect: { level: automatic, timing: continuous }
+    visibility: [agent]
+    storage: insight.learner_metric.value
+    built_by: SIE-02
+    exposed_via: insight.claim
+    dimension: self_directed
+    status: silent
+    teaching_decision: 主动学习少时把复习放进今日计划而不是单独推送
+    guardian_deletable: true
+    metric: { definition: 学生主动发起、非提醒触发的学习会话数 ÷ 周, min_sample: 至少 4 周, validity: 与计划完成率、延迟复测结果的相关（观察用）, validated: false }
+  - id: middle.g6.learning_mode_preference
+    name: 学习方式偏好（学生自述）
+    layer: fact
+    source_type: [self]
+    collect: { level: required, timing: onboarding }
+    visibility: [agent, student]
+    storage: insight.self_report.value
+    built_by: SIE-01
+    status: planned
+    teaching_decision: 首次教学的节奏（一步步引导 / 先讲再练 / 多独立尝试 / 闯关），之后以讲法响应为准
+    guardian_deletable: true
+  - id: middle.g6.self_pain_points
+    name: 学生自评痛点
+    layer: fact
+    source_type: [self]
+    collect: { level: suggested, timing: onboarding }
+    visibility: [agent, student]
+    storage: insight.self_report.value
+    built_by: SIE-01
+    status: planned
+    teaching_decision: 冷启动时优先诊断学生自己说的卡点；与客观证据不同时两边都存
+    guardian_deletable: true
+
+  # ================= 中圈 · ⑦ 学习策略与认知特点 =================
+  - id: middle.g7.confidence_probe
+    name: 做题前“能做对吗”
+    layer: fact
+    source_type: [self]
+    collect: { level: automatic, timing: continuous }
+    visibility: [agent]
+    storage: insight.confidence_probe.predicted_correct
+    built_by: SIE-01
+    status: planned
+    teaching_decision: 自评校准的输入；高估的学生多安排自检
+    guardian_deletable: true
+  - id: middle.g7.independent_solve_rate
+    name: 独立解题率
+    layer: inference
+    source_type: [inferred]
+    collect: { level: automatic, timing: continuous }
+    visibility: [agent]
+    storage: insight.learner_metric.value
+    built_by: SIE-02
+    exposed_via: insight.claim
+    dimension: learning_strategy
+    status: silent
+    teaching_decision: 提示后做对率明显高于独立做对率时增加无提示练习
+    guardian_deletable: true
+    metric: { definition: 无提示首次作答正确数 ÷ 无提示首次作答数，按学科与认知层次滚动 14 天, min_sample: 每层至少 10 题, validity: 与延迟复测结果相关, validated: false }
+  - id: middle.g7.hint_dependency
+    name: 提示依赖度
+    layer: inference
+    source_type: [inferred]
+    collect: { level: automatic, timing: continuous }
+    visibility: [agent]
+    storage: insight.learner_metric.value
+    built_by: SIE-02
+    exposed_via: insight.claim
+    dimension: learning_strategy
+    status: silent
+    teaching_decision: 上调提示阶梯起点，安排无提示变式
+    guardian_deletable: true
+    metric: { definition: 完成一题所用最高提示等级，按各科阶梯长度归一后取均值，看趋势, min_sample: 至少 15 题, validity: 下降是否伴随独立解题率上升, validated: false }
+  - id: middle.g7.transfer_gap
+    name: 迁移差（跨科）
+    layer: inference
+    source_type: [inferred]
+    collect: { level: automatic, timing: continuous }
+    visibility: [agent]
+    storage: insight.learner_metric.value
+    built_by: SIE-02
+    exposed_via: insight.claim
+    dimension: learning_strategy
+    status: silent
+    teaching_decision: 跨科都偏大时由点点安排迁移专项
+    guardian_deletable: true
+    metric: { definition: 变式与跨章题独立正确率减同节点母题独立正确率, min_sample: 两类各至少 10 题, validity: 预测综合题得分, validated: false }
+  - id: middle.g7.self_assessment_calibration
+    name: 自评校准
+    layer: inference
+    source_type: [inferred]
+    collect: { level: automatic, timing: continuous }
+    visibility: [agent]
+    storage: insight.learner_metric.value
+    built_by: SIE-02
+    exposed_via: insight.claim
+    dimension: learning_strategy
+    status: silent
+    teaching_decision: 高估者多安排自检，低估者多呈现“你比自己以为的更好”的对比证据
+    guardian_deletable: true
+    metric: { definition: 做题前预判与实际结果的 Brier 分数及偏差方向, min_sample: 至少 20 次, validity: 与考试预测偏差方向的一致性, validated: false }
+  - id: middle.g7.retention_rate
+    name: 保持率
+    layer: inference
+    source_type: [inferred]
+    collect: { level: automatic, timing: continuous }
+    visibility: [agent]
+    storage: insight.learner_metric.value
+    built_by: SIE-02
+    exposed_via: insight.claim
+    dimension: persistence
+    status: silent
+    teaching_decision: 调整复习间隔与个体遗忘参数
+    guardian_deletable: true
+    metric: { definition: 间隔 7 天以上的复测做对数 ÷ 应复测数, min_sample: 至少 8 次, validity: 预测学校考试同节点得分, validated: false }
+  - id: middle.g7.reading_question_error_share
+    name: 审题类错因占比
+    layer: inference
+    source_type: [inferred]
+    collect: { level: automatic, timing: continuous }
+    visibility: [agent]
+    storage: insight.learner_metric.value
+    built_by: SIE-02
+    exposed_via: insight.claim
+    dimension: learning_strategy
+    status: silent
+    teaching_decision: 安排圈画条件训练；跨科指标须至少两科各有足够证据
+    guardian_deletable: true
+    metric: { definition: 审题大类错因数 ÷ 全部错因数；跨科时至少两科各 5 条, min_sample: 见定义, validity: 针对训练后是否下降, validated: false }
+  - id: middle.g7.teaching_response
+    name: 讲法响应
+    layer: inference
+    source_type: [inferred]
+    collect: { level: automatic, timing: continuous }
+    visibility: [agent]
+    storage: insight.teaching_response.successes
+    built_by: SIE-02
+    exposed_via: insight.claim
+    status: planned
+    teaching_decision: 同类节点优先选用之后首次独立做对的讲法，并保留轮换
+    guardian_deletable: true
+    note: 替代固定学习风格标签；只记具体节点上的经验
+
+  # ================= 贯穿 · ⑨ 成长轨迹与目标 =================
+  - id: through.g9.focus_subject
+    name: 最想改善的学科
+    layer: fact
+    source_type: [self]
+    collect: { level: required, timing: onboarding }
+    visibility: [agent, student, guardian]
+    storage: insight.self_report.value
+    built_by: SIE-01
+    status: planned
+    teaching_decision: 跨科时间预算的优先级
+    guardian_deletable: true
+  - id: through.g9.near_term_goal
+    name: 近期目标（学生自述）
+    layer: fact
+    source_type: [self]
+    collect: { level: required, timing: onboarding }
+    visibility: [agent, student, guardian]
+    storage: insight.self_report.value
+    built_by: SIE-01
+    status: planned
+    teaching_decision: 两周学习路径的终点与复盘口径；与家长期望不同时两边都存
+    guardian_deletable: true
+  - id: through.g9.disputes
+    name: 对判断的异议
+    layer: fact
+    source_type: [self, guardian]
+    collect: { level: optional, timing: continuous }
+    visibility: [agent, student, guardian]
+    storage: insight.dispute.kind
+    built_by: SIE-03
+    status: planned
+    teaching_decision: “我其实会”24 小时内推送验证题；“识别错了”打开原始事实供更正
+    guardian_deletable: true
+  - id: through.g9.interventions
+    name: 触发的提醒、处方、鼓励与降负
+    layer: fact
+    source_type: [objective]
+    collect: { level: automatic, timing: continuous }
+    visibility: [agent]
+    storage: insight.intervention_log.action
+    built_by: SIE-03
+    status: planned
+    teaching_decision: 评估触发规则是否奏效，避免同一提醒重复
+    guardian_deletable: true
+  - id: through.g9.weekly_snapshot
+    name: 每周画像快照
+    layer: inference
+    source_type: [inferred]
+    collect: { level: automatic, timing: periodic }
+    visibility: [agent]
+    storage: insight.profile_snapshot.payload
+    built_by: SIE-03
+    exposed_via: insight.claim
+    status: planned
+    teaching_decision: 成长轨迹与“与一个月前的自己相比”的依据
+    guardian_deletable: true
+    legacy_sources: [aya lib/weekly.ts WeeklyReport, aya lib/trends.ts TrendPoint, wenli 表 mastery_snapshot, wenli 表 parent_report, wenli 表 stage_report]
+  - id: through.g9.star_lit_history
+    name: 星的点亮记录
+    layer: inference
+    source_type: [inferred]
+    collect: { level: automatic, timing: continuous }
+    visibility: [agent, student, guardian]
+    storage: insight.claim_history.to_status
+    exposed_via: insight.claim
+    dimension: knowledge_mastery
+    launch_subjects: [aya]
+    status: live
+    teaching_decision: 证据化鼓励（具体到哪颗星何时点亮、依据是什么）
+    guardian_deletable: true
+
+# 不再采集的旧字段（KGE-00 结论字段清单，specs/kge-00-asset-inventory/report/conclusion-fields.md）。
+# 检查脚本保证它们不会以原名或别名回到上面的字段里。旧数值不迁移、只存档（完整方案 v1.1 5.5）。
+retired:
+  - { name: student_seg_t, source: wenli 迁移枚举, aliases: [segment, student_segment, 学生分型], reason: 层级标签（规则 12） }
+  - { name: 基础薄弱, source: wenli student_seg_t 取值, aliases: [], reason: 层级标签（规则 12） }
+  - { name: 中等提升, source: wenli student_seg_t 取值, aliases: [], reason: 层级标签（规则 12） }
+  - { name: 高分冲刺, source: wenli student_seg_t 取值, aliases: [], reason: 层级标签（规则 12） }
+  - { name: 目标校冲刺, source: wenli student_seg_t 取值, aliases: [], reason: 层级标签（规则 12） }
+  - { name: profiles.segment, source: wenli 表 profiles, aliases: [segment], reason: 层级标签（规则 12） }
+  - { name: student_label, source: wenli DiagnoseResultSchema, aliases: [student_type, 学生标签], reason: 层级标签（规则 12） }
+  - { name: rank_range, source: wenli DiagnoseResultSchema（全市位次区间）, aliases: [city_rank, rank_estimate, 位次区间], reason: 同伴比较；外部考试只记录学生或家长录入的排名信息（inner.g2.exam_rank_band） }
+  - { name: abilityBand, source: aya lib/calibration.ts CalibrationState, aliases: [ability_band, 能力分档], reason: 层级标签（规则 12） }

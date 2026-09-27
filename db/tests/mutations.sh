@@ -17,6 +17,19 @@ declare -A M=(
                      AND n.attempt_id', 'WHERE n.id = NEW.superseded_by
                      AND n.student_id = OLD.student_id AND n.subject = OLD.subject
                      AND n.attempt_id'); END \$\$;"
+  ["判断可以用未审核模板"]="DO \$\$ DECLARE d text := pg_get_functiondef('insight.claim_guard()'::regprocedure); BEGIN IF position('IF NOT FOUND OR v_tpl.status <> ''approved'' THEN' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'IF NOT FOUND OR v_tpl.status <> ''approved'' THEN', 'IF NOT FOUND THEN'); END \$\$; DROP POLICY template_read ON insight.claim_template; CREATE POLICY template_read ON insight.claim_template FOR SELECT TO starbuddy_insight, starbuddy_learning, starbuddy_bff USING (true);"
+  ["判断可见范围不受模板上限"]="DO \$\$ DECLARE d text := pg_get_functiondef('insight.claim_guard()'::regprocedure); BEGIN IF position('IF NOT (NEW.visibility <@ v_tpl.max_visibility) THEN' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'IF NOT (NEW.visibility <@ v_tpl.max_visibility) THEN', 'IF false THEN'); END \$\$;"
+  ["终态判断可以修改"]="DO \$\$ DECLARE d text := pg_get_functiondef('insight.claim_guard()'::regprocedure); BEGIN IF position('IF TG_OP = ''UPDATE'' AND OLD.status IN (''refuted'', ''withdrawn'') THEN' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'IF TG_OP = ''UPDATE'' AND OLD.status IN (''refuted'', ''withdrawn'') THEN', 'IF false THEN'); END \$\$;"
+  ["判断状态流转不校验"]="CREATE OR REPLACE FUNCTION insight.transition_allowed(p_from insight.claim_status, p_to insight.claim_status, p_reason text) RETURNS boolean LANGUAGE sql IMMUTABLE AS \$\$ SELECT true \$\$;"
+  ["推断判断可以不带证据"]="ALTER TABLE insight.claim DROP CONSTRAINT claim_inferred_has_evidence;"
+  ["判断可以不设到期"]="ALTER TABLE insight.claim ALTER COLUMN expires_at DROP NOT NULL;"
+  ["洞察服务可以自己写历史"]="GRANT INSERT ON insight.claim_history TO starbuddy_insight; CREATE POLICY h ON insight.claim_history FOR INSERT TO starbuddy_insight WITH CHECK (true);"
+  ["判断历史可以修改"]="DROP TRIGGER claim_history_guard ON insight.claim_history;"
+  ["新建判断不写历史"]="DROP TRIGGER claim_log_insert ON insight.claim;"
+  ["学科服务可以写判断"]="GRANT INSERT ON insight.claim TO starbuddy_learning; CREATE POLICY l ON insight.claim FOR INSERT TO starbuddy_learning WITH CHECK (true);"
+  ["前端能看到推翻与撤回的判断"]="DROP POLICY claim_front_read ON insight.claim; CREATE POLICY claim_front_read ON insight.claim FOR SELECT TO starbuddy_bff USING ((platform.is_self_student(student_id) AND 'student' = ANY (visibility)) OR (platform.is_linked_guardian(student_id) AND 'guardian' = ANY (visibility)));"
+  ["家长能看到仅学生可见的判断"]="DROP POLICY claim_front_read ON insight.claim; CREATE POLICY claim_front_read ON insight.claim FOR SELECT TO starbuddy_bff USING (status IN ('hypothesis', 'established', 'to_verify') AND platform.can_read_student(student_id));"
+  ["删除档案不删判断"]="ALTER TABLE insight.claim DROP CONSTRAINT claim_student_id_fkey;"
   ["学生档案对所有 BFF 请求可读"]="DROP POLICY student_profile_read ON platform.student_profile; CREATE POLICY student_profile_read ON platform.student_profile FOR SELECT TO starbuddy_bff USING (true);"
   ["授权改成按手机号关联"]="CREATE OR REPLACE FUNCTION platform.is_linked_guardian(p_student uuid) RETURNS boolean
      LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, platform, pg_temp AS \$\$

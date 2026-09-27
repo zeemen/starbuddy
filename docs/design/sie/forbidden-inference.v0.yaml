@@ -1,0 +1,137 @@
+# 禁用推断词表 v0（草稿）
+# 状态：草稿，待产品负责人、教研与外部合规顾问签字（CLAUDE.md 必停项“判断模板、禁用推断词表”；SIE-00 待人确认 #4）。
+# 依据：CLAUDE.md 规则 12；SIE V1.1 第二章“只写学习事实”、第十章“不推断清单”；完整方案 v1.1 4.4、第十一章。
+# 用途（specs/sie-00-field-dictionary/spec.md 设计要点 5）：
+#   1. 字段字典检查：字段的 id、名称、说明不能命中；
+#   2. 判断模板登记前的检查：模板文本不能命中；
+#   3. SIE-03 的禁用推断自动化测试与档案页“陈述—判断一致性检查”复用同一个匹配函数（docs/design/sie/sie_lexicon.py）。
+# 规则：patterns 是正则，不区分大小写。每类的 forbidden_examples 必须被本类命中；
+#       全部 allowed_examples 不能被任何一类命中（防误伤）。改动须跑 make sie-dictionary-check。
+version: 0.1.0
+status: draft
+categories:
+  - id: intelligence
+    name: 智力或天赋
+    patterns:
+      - "智力|智商|天赋|天分|聪明|笨|脑子(不)?(好使|灵)|反应(很)?慢"
+      - "\\biq\\b|intelligen|\\bgifted\\b|\\btalent(ed)?\\b|\\bsmart\\b|\\bdumb\\b"
+    forbidden_examples:
+      - 你很聪明，只是不够努力
+      - 孩子的天赋不在理科
+      - The student is gifted in math
+    allowed_examples: []
+
+  - id: personality
+    name: 人格与性格
+    patterns:
+      - "性格|人格|内向|外向|MBTI|懒惰|懒散|拖延症"
+      - "personality|introvert|extrovert|\\blazy\\b"
+    forbidden_examples:
+      - 你性格偏内向，所以不爱提问
+      - 孩子有点懒惰
+      - She is an introvert
+    allowed_examples: []
+
+  - id: mental_health
+    name: 心理健康状态或诊断
+    patterns:
+      - "抑郁|焦虑症|多动症|多动|注意力缺陷|心理(问题|疾病|障碍|不健康)|自闭"
+      - "mental (health|illness|disorder)|depress|\\badhd\\b|anxiety disorder|autis"
+    forbidden_examples:
+      - 孩子可能有多动的倾向
+      - 你的心理问题影响了学习
+      - Signs of depression detected
+    allowed_examples: []
+
+  - id: emotion_state
+    name: 持续的情绪状态推断
+    patterns:
+      - "(情绪|心情|心态)(一直|持续|长期)?(低落|不稳定|不好|很差|差|消极)|焦虑|沮丧|厌学|压力(很|太|过)?大|崩溃"
+      - "emotional(ly)? (state|unstable)|frustrated|\\bstressed\\b|\\banxious\\b|burn(ed|t)? out"
+    forbidden_examples:
+      - 你最近情绪低落
+      - 孩子学习压力很大，有厌学倾向
+      - The student seems anxious and frustrated
+    allowed_examples: []
+
+  - id: family
+    name: 家庭经济与关系推断
+    patterns:
+      - "家庭(经济|条件|关系|矛盾|收入|困难|背景)|父母(关系|离异|不和|吵架)|单亲|留守|贫困|家境"
+      - "family (income|conflict|background)|divorc|poverty|single[- ]parent"
+    forbidden_examples:
+      - 孩子家境一般，缺少辅导资源
+      - 可能是单亲家庭，陪伴不足
+      - Low family income may explain the gap
+    allowed_examples: []
+
+  - id: biometric
+    name: 基于摄像头、面部、眼动、声纹的推断
+    patterns:
+      - "摄像头|面部|人脸|表情识别|微表情|眼动|视线追踪|声纹"
+      - "camera|facial|face (detect|recogni)|eye[- ]?track|gaze|voiceprint"
+    forbidden_examples:
+      - 摄像头显示你走神了
+      - 根据眼动数据，孩子注意力不集中
+      - Facial expression shows boredom
+    allowed_examples: []
+
+  - id: group_to_individual
+    name: 从学校、地区等群体推给个人
+    patterns:
+      - "(同校|同班|同龄|同地区|同区|你们学校|这所学校|这个学校)的?(学生|孩子|同学)(一般|通常|大多|大都|普遍|都)"
+      - "(重点|普通|薄弱)(学校|中学|校)的(学生|孩子)"
+      - "students (at|from|in) (your|this|that) school (usually|tend|generally)"
+    forbidden_examples:
+      - 你们学校的学生一般数学较弱
+      - 普通中学的孩子通常考不到 100 分
+      - Students at your school usually struggle with geometry
+    allowed_examples: []
+
+  - id: level_label
+    name: 层级标签
+    patterns:
+      - "学霸|学渣|差生|学困生|后进生|尖子生|优等生|培优生|中等生|基础薄弱(型|生|类|的学生)|(高分|目标校)冲刺(型|生|类)|中等提升(型|生|类)?|[A-D]类学生"
+      - "top student|weak student|slow learner|low achiever|\\bsegment\\b|student_label|ability_?band"
+    forbidden_examples:
+      - 你属于基础薄弱型学生
+      - 孩子是中等生
+      - He is a slow learner
+    allowed_examples: []
+
+  - id: learning_style
+    name: 固定学习风格
+    patterns:
+      - "视觉型|听觉型|动觉型|叙事型|形式化型|(学习|认知)风格"
+      - "visual learner|auditory learner|kinesthetic learner|learning style"
+    forbidden_examples:
+      - 你是视觉型学习者
+      - 孩子的学习风格偏听觉
+      - The student is a visual learner
+    allowed_examples: []
+
+  - id: qualitative_negation
+    name: 定性否定
+    patterns:
+      - "不擅长|不适合学|学不好|学不会|不是学.{0,4}的料|没救了?|没希望"
+      - "not good at|\\bbad at\\b|hopeless|no aptitude"
+    forbidden_examples:
+      - 你不擅长数学
+      - 孩子不是学理科的料
+      - You are bad at algebra
+    allowed_examples: []
+
+# 容易误伤、应当允许的句子（学习事实、具体到节点与证据、学生本人说出的感受只记录不推断）
+allowed_examples:
+  - 这道题审题时漏看了限定词
+  - 二次函数顶点式还不稳定，下一步做两道无提示变式
+  - 你说最近有点累，我们把今天的任务缩短一点
+  - 那次是粗心，先记下来，看同类题会不会再出现
+  - 这周你独立做对了 5 道分类讨论，三周前还需要提示
+  - 考试范围内的节点里，函数图像的判断尚待验证
+  - 与一个月前的自己相比，保持率提高了
+  - 每周可用时间由家长填写，可以随时修改或删除
+  - 学生本人说出的兴趣，只用于题目的情境包装
+  - 家长观察到的作息，家长可见可删
+  - 迁移差是变式题与母题独立正确率之差
+  - The quadratic vertex form is not yet stable; two unhinted variants are scheduled next

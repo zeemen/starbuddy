@@ -9,7 +9,8 @@ CREATE FUNCTION t.app_schemas() RETURNS SETOF oid LANGUAGE sql STABLE AS $$
    WHERE nspname NOT IN ('pg_catalog', 'information_schema', 't', 'pg_toast')
      AND nspname NOT LIKE 'pg_temp%' AND nspname NOT LIKE 'pg_toast_temp%' $$;
 CREATE FUNCTION t.app_roles() RETURNS SETOF text LANGUAGE sql IMMUTABLE AS $$
-  SELECT unnest(ARRAY['starbuddy_bff', 'starbuddy_learning', 'starbuddy_review', 'starbuddy_scheduler', 'starbuddy_authz']) $$;
+  SELECT unnest(ARRAY['starbuddy_bff', 'starbuddy_learning', 'starbuddy_review', 'starbuddy_scheduler', 'starbuddy_insight',
+                       'starbuddy_authz']) $$;
 
 -- ================= 一、每张表都 ENABLE + FORCE RLS；子分区对应用角色没有任何权限（I1、J1） =================
 SELECT t.ok(NOT EXISTS (
@@ -93,7 +94,8 @@ SELECT t.ok(:'snap_policies' = :'expected_policies',
 -- 做法：以 BFF 身份只取可见行的原始键（raw_expr，只用本表的列，不能再经过别的受 RLS 保护的表，否则别家的行
 -- 会被映射成 NULL 而空转，安全审查阻断 1）；RESET ROLE 之后再以超级用户身份把原始键映射到学生 / 账号 / 家庭（map_expr，%s 是原始键）。
 -- 预期集合由账号状态、guardian_student_link、学生本人关系算出（不手写），再与表里实际有数据的对象取交集。
--- domain：student（默认）、account、household。mode：equal（默认，看得到 = 能读的学生）、link、author、self、household。
+-- domain：student（默认）、account、household。mode：equal（默认，看得到 = 能读的学生）、link、author、self、household、
+-- claim（判断账本：学生本人看可见范围含 student 的、有效绑定家长看含 guardian 的，且只看非终态）。
 CREATE TABLE t.visibility_rule (rel text PRIMARY KEY, raw_expr text NOT NULL, map_expr text NOT NULL, domain text NOT NULL,
                                 mode text NOT NULL, reason text NOT NULL);
 INSERT INTO t.visibility_rule VALUES
@@ -104,6 +106,8 @@ INSERT INTO t.visibility_rule VALUES
   ('platform.guardian_student_link', 'student_id', '%s', 'student', 'link',
    '家长看得到自己名下的全部绑定（含已解除），学生看得到自己的绑定（0002 link_read）'),
   ('platform.account', 'id', '%s', 'account', 'self', '只能读自己的账号行，禁用的账号也能读自己（0002 account_self_read）'),
+  ('insight.claim', 'student_id', '%s', 'student', 'claim',
+   '判断账本按可见范围与状态过滤（0010 claim_front_read）；逐行的可见性断言在 75_claim_ledger'),
   ('platform.household', 'id', '%s', 'household', 'household',
    '有效家长读自己创建的家庭，或能读家庭内任一学生（0002 can_read_household；解除绑定的创建者仍可读是已登记风险 A4）');
 -- 可以没有两户数据的关系（写明理由；其余的数据不足两户就失败）
@@ -115,7 +119,8 @@ CREATE TABLE t.visibility_exempt (rel text PRIMARY KEY, reason text NOT NULL);
 INSERT INTO t.visibility_exempt VALUES
   ('platform.curriculum_version', '内容登记，公开'), ('platform.skill_node', '内容登记，公开'), ('platform.item', '内容登记，公开'),
   ('platform.resource_type', '计量配置，公开'), ('platform.plan_config', '额度配置，只看非草稿'),
-  ('platform.plan_allowance', '额度配置，只看非草稿'), ('platform.plan_feature', '额度配置，只看非草稿');
+  ('platform.plan_allowance', '额度配置，只看非草稿'), ('platform.plan_feature', '额度配置，只看非草稿'),
+  ('insight.claim_template', '判断模板登记，只看已审核的，不含任何学生数据');
 -- BFF 可执行、但不进函数越权矩阵的 SECURITY DEFINER 函数：没有“另一户的对象”可以作为参数，逐个写明由哪里覆盖
 CREATE TABLE t.function_matrix_exempt (sig text PRIMARY KEY, reason text NOT NULL);
 INSERT INTO t.function_matrix_exempt VALUES
@@ -198,6 +203,13 @@ BEGIN
                               FROM platform.guardian_report gr
                              WHERE gr.guardian_account_id = acc AND gr.student_id = ANY (t.readable_students(acc))
                                AND EXISTS (SELECT 1 FROM platform.account a WHERE a.id = acc AND a.kind = 'guardian'))
+        WHEN 'claim' THEN (SELECT coalesce(array_agg(DISTINCT c.student_id), '{}') FROM insight.claim c
+                            WHERE c.status IN ('hypothesis', 'established', 'to_verify') AND c.student_id = ANY (t.readable_students(acc))
+                              AND ((EXISTS (SELECT 1 FROM platform.account a JOIN platform.student_profile s ON s.account_id = a.id
+                                             WHERE a.id = acc AND a.kind = 'student' AND s.id = c.student_id)
+                                    AND 'student' = ANY (c.visibility))
+                                   OR (EXISTS (SELECT 1 FROM platform.account a WHERE a.id = acc AND a.kind = 'guardian')
+                                       AND 'guardian' = ANY (c.visibility))))
         WHEN 'self' THEN (SELECT coalesce(array_agg(a.id), '{}') FROM platform.account a WHERE a.id = acc)
         WHEN 'household' THEN (SELECT coalesce(array_agg(DISTINCT h.id), '{}') FROM platform.household h
                                 WHERE EXISTS (SELECT 1 FROM platform.account a WHERE a.id = acc AND a.kind = 'guardian'
