@@ -1,0 +1,17 @@
+{
+  "name": "@starbuddy/kge-inventory",
+  "version": "0.1.0",
+  "private": true,
+  "description": "KGE-00：三科知识资产盘点（只读 legacy，生成盘点报告与结论字段清单）",
+  "type": "module",
+  "engines": { "node": ">=22.18" },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --no-warnings --test --test-reporter=dot tests/*.test.ts",
+    "inventory": "node --no-warnings src/main.ts"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.4",
+    "typescript": "5.9.3"
+  }
+}
