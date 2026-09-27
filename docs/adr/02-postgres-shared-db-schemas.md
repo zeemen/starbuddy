@@ -84,3 +84,13 @@ ADR 09 建议 pilot 和生产全链路境内。Supabase 托管版没有中国大
 1. 认证方案在 ADR 10 里决定，还是另起一份 ADR？
 2. 各科私有 schema 的表，由各科负责人提、技术负责人批，还是统一由平台组设计？
 3. 文砺 `guardians` 表的 RLS 漏洞（with check 没约束 student_id）只存在于 legacy 里，平台不会沿用。是否还需要在 legacy 里修？（legacy 只读，修复要去原仓库）
+
+---
+
+## 增补：kge schema（草稿，2026-09-27，specs/kge-schema-v0.9）
+
+- **新增 `kge` schema**：放知识与成长引擎的公共知识层（地图版本、骨架、投影、原子、成长治理）。它与 `platform`、`insight` 同库，理由与本 ADR 选项 A 相同：发布流程要在同一事务里核对题目登记（`platform.item`）与能力视图（`platform.skill_node`）。
+- **不含学生数据**：公共层没有学生键，外键只指向 `kge` 自身与 platform 的内容登记，`db/tests/80_attack_surface.sql` 断言（CLAUDE.md 规则 13）。个人层表（证据、作答、掌握）仍在 `platform.*`（对照文档 #3）。
+- **一个迁移只改一个 schema（第 2 条）**：`0011_kge__knowledge_map` 只建 kge；`platform.curriculum_version.map_version_id` 单独放在 `0012_platform__curriculum_map_version`。
+- **写入方**：新增数据库角色 `starbuddy_kge`，是公共层的唯一写入方，与其他应用角色互斥（0011 断言）；没有任何角色能删除公共层的行。
+- 待签字：随 0011 / 0012 的 PR 一起评审（必停项）。

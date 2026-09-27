@@ -10,7 +10,7 @@ CREATE FUNCTION t.app_schemas() RETURNS SETOF oid LANGUAGE sql STABLE AS $$
      AND nspname NOT LIKE 'pg_temp%' AND nspname NOT LIKE 'pg_toast_temp%' $$;
 CREATE FUNCTION t.app_roles() RETURNS SETOF text LANGUAGE sql IMMUTABLE AS $$
   SELECT unnest(ARRAY['starbuddy_bff', 'starbuddy_learning', 'starbuddy_review', 'starbuddy_scheduler', 'starbuddy_insight',
-                       'starbuddy_authz']) $$;
+                       'starbuddy_kge', 'starbuddy_authz']) $$;
 
 -- ================= 一、每张表都 ENABLE + FORCE RLS；子分区对应用角色没有任何权限（I1、J1） =================
 SELECT t.ok(NOT EXISTS (
@@ -32,6 +32,19 @@ SELECT t.ok(NOT EXISTS (
      AND (has_any_column_privilege(r.role, c.oid, 'SELECT') OR has_any_column_privilege(r.role, c.oid, 'INSERT')
           OR has_any_column_privilege(r.role, c.oid, 'UPDATE') OR has_table_privilege(r.role, c.oid, 'DELETE'))),
   '攻击面：物化视图与外部表对任何应用角色都没有权限（它们开不了 RLS）');
+
+-- 公共知识层不含学生数据（CLAUDE.md 规则 13；specs/kge-schema-v0.9 验收）：kge 下任何表与视图都没有指向学生、账号、家庭的列
+SELECT t.ok(NOT EXISTS (
+  SELECT 1 FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid
+   WHERE c.relnamespace = 'kge'::regnamespace AND c.relkind IN ('r', 'p', 'v', 'm') AND a.attnum > 0 AND NOT a.attisdropped
+     AND a.attname ~ '(student|account|household|guardian|phone|learner|attempt|evidence_event)'),
+  '攻击面：公共知识层（kge）没有学生、账号、家庭等个人层的键');
+SELECT t.ok(NOT EXISTS (
+  SELECT 1 FROM pg_constraint k JOIN pg_class c ON c.oid = k.conrelid
+   WHERE c.relnamespace = 'kge'::regnamespace AND k.contype = 'f'
+     AND k.confrelid NOT IN (SELECT oid FROM pg_class WHERE relnamespace = 'kge'::regnamespace
+                             UNION ALL SELECT 'platform.item'::regclass UNION ALL SELECT 'platform.skill_node'::regclass)),
+  '攻击面：公共知识层的外键只指向 kge 自身与 platform 的内容登记（题目、能力视图）');
 
 -- ================= 二、SECURITY DEFINER 函数（I1） =================
 SELECT t.ok(NOT EXISTS (
@@ -120,7 +133,10 @@ INSERT INTO t.visibility_exempt VALUES
   ('platform.curriculum_version', '内容登记，公开'), ('platform.skill_node', '内容登记，公开'), ('platform.item', '内容登记，公开'),
   ('platform.resource_type', '计量配置，公开'), ('platform.plan_config', '额度配置，只看非草稿'),
   ('platform.plan_allowance', '额度配置，只看非草稿'), ('platform.plan_feature', '额度配置，只看非草稿'),
-  ('insight.claim_template', '判断模板登记，只看已审核的，不含任何学生数据');
+  ('insight.claim_template', '判断模板登记，只看已审核的，不含任何学生数据'),
+  ('kge.map_version', '公共知识层，只看已发布版本，没有学生键（本文件第一节断言）'),
+  ('kge.knowledge_node', '公共知识层，只看已发布版本的有效节点'), ('kge.knowledge_edge', '公共知识层，只看已发布版本的有效边'),
+  ('kge.textbook_projection', '公共知识层，只看已发布版本；核对人列不授予'), ('kge.region_projection', '公共知识层，只看已发布版本');
 -- BFF 可执行、但不进函数越权矩阵的 SECURITY DEFINER 函数：没有“另一户的对象”可以作为参数，逐个写明由哪里覆盖
 CREATE TABLE t.function_matrix_exempt (sig text PRIMARY KEY, reason text NOT NULL);
 INSERT INTO t.function_matrix_exempt VALUES

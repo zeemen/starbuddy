@@ -123,3 +123,43 @@ erDiagram
 
 状态机：假设 → 成立 → 待验证 → 成立 / 推翻；任何非终态 → 撤回。每次写入都要在行里带原因，原因必须与流转匹配；不改状态的修改只能是 revised 或 visibility_changed；假设不能直接推翻（SIE-00 待人确认 #1）。判断是陈述层，不是第二真相源（规则 2）。
 
+
+## kge schema：公共知识层（0011 与 0012，KGE schema v0.9）
+
+公共知识层：地图版本、骨架、投影、原子与成长治理。唯一写入方是知识服务 `starbuddy_kge`；不含任何学生数据，也没有学生键（规则 13，攻击面测试断言）。规范见 `docs/design/kge/id-and-segments.md`，spec 见 `specs/kge-schema-v0.9/spec.md`。
+
+```mermaid
+erDiagram
+  map_version ||--o{ knowledge_node : "主键 (map_version_id, id)；ID 段数 = 层级，parent_id = 去掉最后一段"
+  knowledge_node ||--o{ knowledge_node : "parent_id（同版本）"
+  knowledge_node ||--o{ knowledge_edge : "from / to；前置与从属边两端同版本"
+  knowledge_node ||--o{ textbook_projection : "原句哈希由库计算"
+  knowledge_node ||--o{ region_projection : "地区权重"
+  knowledge_node ||--o{ skill_link : "挂到能力视图"
+  skill_node ||--o{ skill_link : "platform.skill_node（能力视图不单独点亮）"
+  knowledge_node ||--o{ id_migration : "旧编码 → 新 ID"
+  item ||--o{ item_tag : "platform.item（题目身份与准入只在这里）"
+  knowledge_node ||--o{ item_tag : "main_node_id；node_ids 由触发器核对"
+  item ||--o{ scoring_point : "rubric_version 必填"
+  map_version ||--o{ current_affair : "有效期必填"
+  map_version ||--o{ map_change : "target_version；批准须两人"
+  curriculum_version }o--o| map_version : "0012：(subject, map_version_id)，可空"
+```
+
+| 表 | 谁写 | 谁读 | 要点 |
+|---|---|---|---|
+| `kge.map_version` | kge（发布只能经 `kge.publish_map_version`，属主 authz） | learning、insight 全部；bff 只看已发布 | 草稿 → 已发布 → 撤下；同学科只一个已发布；非草稿只能改状态 |
+| `kge.knowledge_node` / `knowledge_edge` | kge | learning、insight 全部；bff 只看已发布版本的有效行 | 七种类型、四个层级、五种范围；易错点必须写错因大类；只有计掌握度的类型带认知层次；细目只能是易错点或考点 |
+| `kge.textbook_projection` / `region_projection` | kge | learning；bff 只看已发布版本（投影的核对人列不给 bff） | 已核对必须写核对人与时间 |
+| `kge.skill_link` / `id_migration` | kge | learning | 学科与版本一致；撤销的旧编码没有新 ID |
+| `kge.item_tag` / `item_family` / `scoring_point` / `current_affair` | kge | learning | 原子，不随骨架冻结；节点数组由触发器核对；题干、答案、解析不进库 |
+| `kge.curriculum_item` / `map_change` / `content_review` | kge | learning | 变更单批准须两个不同审核人；审核结论必须写审核人与时间 |
+
+骨架冻结：地图版本发布或撤下后，节点、边、投影、能力视图挂接、旧编码迁移都不能再新增或修改，改地图走新版本。任何角色都没有公共层的 DELETE，撤下走状态。
+发布前校验 `kge.validate_map_version`：以下六项阻断发布，主考点题目少于 3 道只报警告。
+
+- 环、传递边；
+- 孤点；
+- 缺包含、不包含或典型题例；
+- 悬空引用；
+- 过期但仍发布的时政。

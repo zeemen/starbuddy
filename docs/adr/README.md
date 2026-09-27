@@ -28,7 +28,7 @@
 | [13](13-claim-ledger-single-writer.md) | 11 | 判断账本唯一写入方为洞察服务 | 草稿，待签字（随 SIE-00 与迁移 0010） | 是（schema、权限） |
 | 14 | 12 | Claude Code 任务包格式与人审点 | 待起草 | — |
 
-另外，v2.0 要求的 schema 从一个（platform.*）变成三个（platform.* / kge.* / insight.*），ADR 02“共库分 schema”需要补一节说明个人层表放哪一个 schema（#3：默认留在 platform.*，W2 Schema v0.9 评审时定）。
+另外，v2.0 要求的 schema 从一个（platform.*）变成三个（platform.* / kge.* / insight.*），ADR 02“共库分 schema”需要补一节说明个人层表放哪一个 schema（#3：默认留在 platform.*，W2 Schema v0.9 评审时定）。kge 一节已作为草稿增补在 ADR 02 末尾（specs/kge-schema-v0.9），随迁移 0011 / 0012 一起评审。
 
 ## 依赖关系
 

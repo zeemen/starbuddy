@@ -115,7 +115,7 @@ def main() -> int:
     if not table:
         errors.append("scope.md 里找不到 SECURITY DEFINER 函数表（secdef-table 标记）")
     else:
-        rows_ = re.findall(r"^\| `((?:platform|insight)\.[a-z_]+\([^`]*\))` \| [^|]+ \| ([^|]+) \|", table.group(1), re.M)
+        rows_ = re.findall(r"^\| `((?:platform|insight|kge)\.[a-z_]+\([^`]*\))` \| [^|]+ \| ([^|]+) \|", table.group(1), re.M)
         listed = [f for f, _ in rows_]
         # “可执行的应用角色”一列与快照的 func| 行一致（属主 authz 与超级用户不算）
         granted: dict[str, set[str]] = {}
