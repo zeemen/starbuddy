@@ -100,7 +100,8 @@ export interface Inventory {
   answers: Answer[];
   blockers: BlockerCheck[];
   conclusions: ConclusionSymbol[];
-  db: { provided: boolean; rows: DbOutputRow[] };
+  /** rejected：键不在白名单或值不合规、被拒绝并入的行数 */
+  db: { provided: boolean; rows: DbOutputRow[]; rejected: number };
 }
 
 export const SAMPLE_LIMIT = 10;

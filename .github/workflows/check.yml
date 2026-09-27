@@ -58,7 +58,7 @@ jobs:
 
       - name: KGE-00 盘点工具依赖（只有 typescript 与 @types/node）
         working-directory: tools/kge-inventory
-        run: npm ci --no-audit --no-fund
+        run: npm ci --no-audit --no-fund --ignore-scripts
 
       - name: BFF 依赖
         working-directory: services/bff

@@ -1,38 +1,85 @@
 // KGE-00 盘点入口（静态模式）。
 // 用法：node src/main.ts --aya <阿鸦 legacy 根> --wenli <文砺 legacy 根> --out <输出目录> [--db-output <库名>=<文件> ...]
 // 只读 legacy，不联网、不连库；运行前后核对 legacy 的 git 状态没有变化（spec 验收最后一条）。
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
-import { resolve, join } from "node:path";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, readFileSync, realpathSync, writeFileSync, existsSync } from "node:fs";
+import { basename, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { inventoryConclusions } from "./conclusions.ts";
-import { gitMeta, registerLegacyHooks } from "./legacy.ts";
+import { gitMeta } from "./legacy.ts";
 import type { DbOutputRow, Inventory } from "./model.ts";
 import { longCjkRuns, renderConclusionsMd, renderInventoryMd, renderJson } from "./report.ts";
-import { inventoryChinese } from "./subjects/chinese.ts";
-import { inventoryMath } from "./subjects/math.ts";
-import { inventoryMoral } from "./subjects/moral.ts";
+import { allowedOutputKeys } from "./sqlcheck.ts";
+
+const TOOL_DIR = new URL("..", import.meta.url).pathname;
+
+/** 隔离子进程的启动参数：只读 legacy 与本工具目录，不给写文件与起子进程的权限（Node 22 的权限模型不管网络） */
+export function isolatedArgs(ayaRoot: string, wenliRoot: string, script: string, args: string[] = []): string[] {
+  // Node 22 的目录授权写成 <目录>/*，每个目录一个 --allow-fs-read
+  const readable = [ayaRoot, wenliRoot, TOOL_DIR].map((p) => `${realpathSync(p).replace(/\/$/, "")}/*`);
+  return [
+    "--no-warnings",
+    "--permission",
+    ...readable.map((p) => `--allow-fs-read=${p}`),
+    "--allow-worker", // module.register 的解析钩子运行在 worker 线程里
+    script,
+    ...args,
+  ];
+}
+
+/**
+ * 在隔离子进程里 import legacy 并提取数据（src/extract.ts）：只读权限、不能写文件与起子进程、环境变量清空。
+ * 返回提取结果；子进程失败时抛错。
+ */
+export function extractIsolated(ayaRoot: string, wenliRoot: string): Pick<Inventory, "subjects" | "answers" | "blockers" | "conclusions"> {
+  const out = execFileSync(
+    process.execPath,
+    isolatedArgs(ayaRoot, wenliRoot, join(TOOL_DIR, "src/extract.ts"), [realpathSync(ayaRoot), realpathSync(wenliRoot)]),
+    { env: {}, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "inherit"] },
+  );
+  return JSON.parse(out);
+}
 
 export const TOOL_VERSION = "0.1.0";
 
-/** 解析库模式输出（psql -At -F '|'）：每行 section|key|value */
-export function parseDbOutput(database: string, text: string): DbOutputRow[] {
+const OUTPUT_KEYS = allowedOutputKeys();
+
+/** 库模式的值只能是计数、absent、列名清单，或值全为计数的小 JSON 对象（安全审查：不让任何行内容回灌进报告） */
+function valueOk(key: string, value: string): boolean {
+  if (value === "absent" || value === "column absent") return true;
+  if (key.startsWith("columns:")) return /^[a-z_][a-z0-9_]*(,[a-z_][a-z0-9_]*)*$/.test(value);
+  if (/^\d+$/.test(value)) return !key.startsWith("group:");
+  if (!key.startsWith("group:")) return false;
+  try {
+    const obj = JSON.parse(value) as unknown;
+    if (obj === null || typeof obj !== "object" || Array.isArray(obj)) return false;
+    const entries = Object.entries(obj);
+    return entries.length <= 50 && entries.every(([k, n]) => k.length <= 32 && Number.isInteger(n));
+  } catch {
+    return false;
+  }
+}
+
+/** 解析库模式输出（psql -At -F '|'）：每行 section|key|value。键不在白名单或值不合规的行拒绝并计数。 */
+export function parseDbOutput(database: string, text: string): { rows: DbOutputRow[]; rejected: number } {
   const rows: DbOutputRow[] = [];
+  let rejected = 0;
   for (const line of text.split("\n")) {
     const t = line.trim();
     if (t === "" || !t.includes("|")) continue;
     const [section, key, ...rest] = t.split("|");
-    rows.push({ database, key: `${section}:${key}`, value: rest.join("|") });
+    const k = `${section}:${key}`;
+    const value = rest.join("|");
+    if (OUTPUT_KEYS.has(k) && valueOk(k, value)) rows.push({ database, key: k, value });
+    else rejected++;
   }
-  return rows;
+  return { rows, rejected };
 }
 
 export async function buildInventory(ayaRoot: string, wenliRoot: string, dbFiles: [string, string][], rootLabel: (p: string) => string): Promise<Inventory> {
-  registerLegacyHooks(ayaRoot, [ayaRoot, wenliRoot]);
-  const math = await inventoryMath(ayaRoot);
-  const chinese = await inventoryChinese(wenliRoot);
-  const moral = await inventoryMoral(wenliRoot);
-  const conclusions = inventoryConclusions(ayaRoot, wenliRoot);
-  const db = dbFiles.flatMap(([name, file]) => parseDbOutput(name, readFileSync(file, "utf8")));
+  const extracted = extractIsolated(ayaRoot, wenliRoot);
+  const parsed = dbFiles.map(([name, file]) => parseDbOutput(name, readFileSync(file, "utf8")));
+  const db = parsed.flatMap((p) => p.rows);
+  const rejected = parsed.reduce((a, p) => a + p.rejected, 0);
   return {
     meta: {
       tool: "tools/kge-inventory",
@@ -42,11 +89,8 @@ export async function buildInventory(ayaRoot: string, wenliRoot: string, dbFiles
         { name: "wenli", root: rootLabel(wenliRoot), ...gitMeta(wenliRoot) },
       ],
     },
-    subjects: [math.report, chinese.report, moral.report],
-    answers: [...math.answers, ...chinese.answers, ...moral.answers],
-    blockers: [...math.blockers, ...chinese.blockers, ...moral.blockers],
-    conclusions,
-    db: { provided: db.length > 0, rows: db },
+    ...extracted,
+    db: { provided: db.length > 0, rows: db, rejected },
   };
 }
 
@@ -83,7 +127,8 @@ async function main(): Promise<number> {
   }
 
   const before = [gitMeta(aya), gitMeta(wenli)];
-  const label = (p: string) => (p.startsWith(here) ? p.slice(here.length) : p);
+  // 仓库外的 legacy 只写目录名，不把本机绝对路径写进报告（安全审查）
+  const label = (p: string) => (p.startsWith(here) ? p.slice(here.length) : `（仓库外）${basename(p)}`);
   const inv = await buildInventory(aya, wenli, dbFiles, label);
   const after = [gitMeta(aya), gitMeta(wenli)];
   if (JSON.stringify(before) !== JSON.stringify(after)) {

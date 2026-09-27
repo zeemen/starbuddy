@@ -1,14 +1,22 @@
 -- KGE-00 库模式：各科 legacy 数据库的只读内容盘点（specs/kge-00-asset-inventory/spec.md 设计要点 4）。
 --
--- 由有只读权限的人运行，本仓库不自动执行、不保存任何连接信息（CLAUDE.md 规则 9）：
---   psql "<只读连接串>" -X -At -F '|' -f tools/kge-inventory/db/readonly-inventory.sql > db-output-<库名>.txt
+-- 由有只读权限的人运行，本仓库不自动执行、不保存任何连接信息（CLAUDE.md 规则 9）。
+-- 运行前请确认：
+--   1. 优先在只读副本或按时间点恢复出的副本上运行，不要直接在主库上跑；
+--   2. 用专用的只读角色：只有这几张表的 SELECT 权限，且能绕过 RLS（BYPASSRLS 或表的 owner），不要用 service_role；
+--      本文件设置 row_security = off，角色受 RLS 约束时会直接报错，而不是返回被过滤后的错误计数；
+--   3. 只能用 psql 运行（\set 与事务语句在 Supabase SQL Editor 等图形界面里行为不确定）；
+--   4. 密码不要写进连接串（会留在 shell 历史与进程列表），用 PGPASSFILE、pg_service.conf 或交互输入：
+--        psql "service=<服务名>" -X -At -F '|' -f tools/kge-inventory/db/readonly-inventory.sql > db-output-<库名>.txt
 -- 同一份 SQL 对阿鸦库与文砺库都能跑；库里没有的表输出 absent，没有的列输出 column absent。
 --
--- 只查白名单里的内容表（知识点、题目、篇目、原文、Rubric），不查任何学生个人表，
--- 只输出计数、分组计数与列名，不输出任何行内容。整段在只读事务里执行，最后回滚。
+-- 只查白名单里的内容表与列（知识点、题目、篇目、Rubric 的计数与状态），不查任何学生个人表，
+-- 只输出计数、分组计数（最多 50 组）与列名，不输出任何行内容。整段在只读事务里执行，最后回滚。
 \set ON_ERROR_STOP on
 BEGIN TRANSACTION READ ONLY;
 SET LOCAL statement_timeout = '30s';
+SET LOCAL lock_timeout = '2s';
+SET LOCAL row_security = off;
 
 WITH spec(section, tbl, col) AS (
   VALUES
@@ -58,7 +66,7 @@ SELECT section, tbl || COALESCE('.' || col, '') AS key,
                   WHEN 'rows'    THEN format('SELECT count(*)::text AS v FROM %I.%I', table_schema, tbl)
                   WHEN 'true'    THEN format('SELECT count(*)::text AS v FROM %I.%I WHERE %I', table_schema, tbl, col)
                   WHEN 'notnull' THEN format('SELECT count(*)::text AS v FROM %I.%I WHERE %I IS NOT NULL', table_schema, tbl, col)
-                  WHEN 'group'   THEN format('SELECT COALESCE(json_object_agg(k, n ORDER BY k), ''{}'')::text AS v FROM (SELECT COALESCE(%I::text, ''(null)'') AS k, count(*) AS n FROM %I.%I GROUP BY 1) g', col, table_schema, tbl)
+                  WHEN 'group'   THEN format('SELECT COALESCE(json_object_agg(k, n ORDER BY k), ''{}'')::text AS v FROM (SELECT COALESCE(%I::text, ''(null)'') AS k, count(*) AS n FROM %I.%I GROUP BY 1 ORDER BY 1 LIMIT 50) g', col, table_schema, tbl)
                 END, false, true, '')))[1]::text
        END AS value
 FROM resolved

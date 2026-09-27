@@ -83,17 +83,21 @@ test("语文：能力格、20 格、篇目、错因", () => {
   assert.equal(v("chn.grid.legacy20"), 1);
   assert.deepEqual(sample("chn.grid.legacy20"), ["docs/old-grid.md"]);
   assert.equal(v("chn.catalog.rows"), 2);
-  assert.equal(v("chn.catalog.overlap"), "1 / 1 / 0");
+  assert.equal(v("chn.catalog.overlap"), "1 / 0 / 0");
   assert.equal(v("chn.must_recite.db"), 1);
   assert.equal(v("chn.reading_tags.mapping"), "1/2（50.0%）");
   assert.equal(v("chn.reading_tags.ts_vs_json"), "1 / 1");
   assert.equal(v("chn.error_types.db_match"), "是");
 });
 
-test("语文：引用第三方包的 legacy 模块被拒绝加载并记录", () => {
+test("语文：引用第三方包、内置模块或 legacy 以外文件的模块被拒绝加载并记录", () => {
   const chinese = inv.subjects.find((s) => s.subject === "chinese")!;
   assert.ok(chinese.loadErrors.some((e) => e.includes("reading-methods.ts") && e.includes("zod")));
+  assert.ok(chinese.loadErrors.some((e) => e.includes("writing-syllabus.ts") && e.includes("node:fs")));
+  assert.ok(chinese.loadErrors.some((e) => e.includes("classical-catalog.ts") && e.includes("legacy 目录以外")));
   assert.equal(v("chn.reading_methods"), 0);
+  assert.equal(v("chn.writing.units"), 0);
+  assert.equal(v("chn.classical.rows"), 0);
 });
 
 test("道法：页码、版次、Rubric、时政、读本", () => {

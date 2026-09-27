@@ -18,12 +18,27 @@ test("topLevelKeys：只取顶层字段", () => {
   assert.deepEqual(topLevelKeys(`x: z.object({ y: z.string() }), // 注释 w: 1\n "q": z.number()`), ["x", "q"]);
 });
 
-test("parseDbOutput：section|key|value，值里可以有竖线", () => {
-  assert.deepEqual(parseDbOutput("wenli", "rows|item_bank|3\ncolumns|t|a,b\n\ngroup|t.k|{\"a|b\":1}\n"), [
+test("parseDbOutput：只收白名单键与合规值，其余拒绝并计数", () => {
+  const text = [
+    "BEGIN",
+    "rows|item_bank|3",
+    "columns|item_bank|id,domain,content",
+    "group|daofa_item.status|{\"a|b\" : 1, \"approved\" : 2}",
+    "true|textbook_catalog.must_recite|column absent",
+    "rows|profiles|12", // 不在白名单的表
+    "group|daofa_item.status|{\"x\" : \"张三\"}", // 值不是计数
+    "group|daofa_item.status|{\"这是一段很长很长很长很长很长很长很长很长的键超过三十二个字符了吗是的\" : 1}",
+    "rows|item_bank|一段文字", // 计数位置出现文本
+    "columns|item_bank|id; drop", // 列名清单不合规
+  ].join("\n");
+  const { rows, rejected } = parseDbOutput("wenli", text);
+  assert.deepEqual(rows, [
     { database: "wenli", key: "rows:item_bank", value: "3" },
-    { database: "wenli", key: "columns:t", value: "a,b" },
-    { database: "wenli", key: "group:t.k", value: "{\"a|b\":1}" },
+    { database: "wenli", key: "columns:item_bank", value: "id,domain,content" },
+    { database: "wenli", key: "group:daofa_item.status", value: "{\"a|b\" : 1, \"approved\" : 2}" },
+    { database: "wenli", key: "true:textbook_catalog.must_recite", value: "column absent" },
   ]);
+  assert.equal(rejected, 5);
 });
 
 test("longCjkRuns：40 个以上连续汉字为正例，带标点的句子为反例", () => {

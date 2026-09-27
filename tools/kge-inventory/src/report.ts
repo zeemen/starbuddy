@@ -76,6 +76,7 @@ export function renderInventoryMd(inv: Inventory): string {
       "",
     );
   } else {
+    if (inv.db.rejected > 0) out.push(`**有 ${inv.db.rejected} 行库模式输出因键不在白名单或值不合规被拒绝并入**，请核对运行的 SQL 是否被改过。`, "");
     out.push("| 库 | 键 | 值 |", "|---|---|---|");
     for (const r of inv.db.rows) out.push(`| ${esc(r.database)} | \`${esc(r.key)}\` | ${esc(r.value)} |`);
     out.push("");

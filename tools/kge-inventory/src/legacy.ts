@@ -56,7 +56,11 @@ export function readJson<T = unknown>(root: string, rel: string, errors: string[
 /** git 元数据：提交号、工作区是否干净、提交数（浅克隆时为 1）。不是 git 目录时返回 null。 */
 export function gitMeta(root: string): { commit: string | null; clean: boolean | null; commits: number | null } {
   const git = (...args: string[]) =>
-    execFileSync("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    // 关掉 fsmonitor 与 hooks：legacy 若是拷贝来的仓库，.git/config 里的这两项可以执行任意命令（安全审查）
+    execFileSync("git", ["-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-C", root, ...args], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
   try {
     return {
       commit: git("rev-parse", "HEAD"),
