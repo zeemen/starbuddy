@@ -104,6 +104,9 @@ func|insight.claim_log()|starbuddy_authz|EXECUTE|starbuddy_authz
 func|kge.distinct_count(text[])|starbuddy_authz|EXECUTE|SUPERUSER
 func|kge.distinct_count(text[])|starbuddy_kge|EXECUTE|SUPERUSER
 func|kge.distinct_count(text[])|starbuddy_learning|EXECUTE|SUPERUSER
+func|kge.has_personal_key(jsonb)|starbuddy_authz|EXECUTE|SUPERUSER
+func|kge.has_personal_key(jsonb)|starbuddy_kge|EXECUTE|SUPERUSER
+func|kge.has_personal_key(jsonb)|starbuddy_learning|EXECUTE|SUPERUSER
 func|kge.id_depth(text)|starbuddy_authz|EXECUTE|SUPERUSER
 func|kge.id_depth(text)|starbuddy_kge|EXECUTE|SUPERUSER
 func|kge.id_depth(text)|starbuddy_learning|EXECUTE|SUPERUSER
@@ -287,7 +290,6 @@ rel|kge.region_projection|starbuddy_learning|SELECT|SUPERUSER
 rel|kge.scoring_point|starbuddy_authz|SELECT|SUPERUSER
 rel|kge.scoring_point|starbuddy_kge|INSERT|SUPERUSER
 rel|kge.scoring_point|starbuddy_kge|SELECT|SUPERUSER
-rel|kge.scoring_point|starbuddy_kge|UPDATE|SUPERUSER
 rel|kge.scoring_point|starbuddy_learning|SELECT|SUPERUSER
 rel|kge.skill_link|starbuddy_authz|SELECT|SUPERUSER
 rel|kge.skill_link|starbuddy_kge|INSERT|SUPERUSER

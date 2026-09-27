@@ -1,6 +1,6 @@
 # KGE schema v0.9：知识地图骨架与原子层的迁移草案、ID 与六段标识规范
 
-状态：**已确认（按默认建议）**，实现中。确认：用户，2026-09-27（“按默认建议，开始实现”，待人确认 #1–#7 全部按默认）。实现记录见 lessons.md
+状态：**已确认（按默认建议）**，已实现。**实现与本文的偏差（platform 加列拆到 0012、校验项增补、骨架冻结等）以 lessons.md 为准。**确认：用户，2026-09-27（“按默认建议，开始实现”，待人确认 #1–#7 全部按默认）。实现记录见 lessons.md
 任务包：KGE-00 的第二部分（KGE V1.1 第九章 S0：“kge schema v1 迁移草案；ID 与六段标识规范”）；开发计划 v2.0 冲刺 0 · W2“Schema v0.9：platform.*、kge.*、insight.* 三个 schema 的 ERD 与迁移草稿”。
 
 关联：
@@ -75,7 +75,7 @@ KGE 第八章的草案里有 `curriculum_version`、`item`、`skill_node`，仓�
 2. 传递边：可由其他路径推出的直连前置；
 3. 孤点：没有边、没有题目标签、也没有投影的 node 层节点；
 4. 包含 / 不包含 / 典型题例缺失：node 层的 kp、ability_kp、viewpoint；
-5. 悬空引用：边、投影、题目标签、采分点指向其他地图版本或不存在的节点；
+5. 悬空引用：边、投影、题目标签、采分点指向已停用或不存在的节点（实现：非前置边可以跨版本，见 lessons 偏差 9）；
 6. 主考点少于 3 道题的节点（粒度信号，只报警告，不阻断）；
 7. 时政已过期仍标为 published。
 
@@ -100,12 +100,12 @@ KGE 第八章的草案里有 `curriculum_version`、`item`、`skill_node`，仓�
 - **版本号**：地图版本“主.次.修订”——修订按周、次版本按月、主版本按学期，并尽量避开学期中。
 - **旧编码迁移规则**：
   - 阿鸦 `K-FUN-0901` 类编码；
-  - 157 条自然语言前置：不自动映射，列入 KGE-01 的人工映射清单；
+  - 156 条自然语言前置：不自动映射，列入 KGE-01 的人工映射清单；
   - 道法 `m1` / `xr1` 类短编码：进 `id_migration`；
   - 无法可靠迁移的掌握度标为“待复测”（KGE 第五章）。
 
 ### 6. 对 platform 的最小改动
-只加一列：`platform.curriculum_version.map_version_id uuid REFERENCES kge.map_version`，可空；现有行为空，发布新内容版本时由 4-G 发布流程填写。这是 platform 迁移的改动，也放在 0011 里一起评审。其余 platform 表不动。
+只加一列：`platform.curriculum_version.map_version_id uuid REFERENCES kge.map_version`，可空；现有行为空，发布新内容版本时由 4-G 发布流程填写。这是 platform 迁移的改动，与 0011 一起评审（实现：按 ADR 02 第 2 条拆为 `0012_platform__curriculum_map_version`）。其余 platform 表不动。
 
 ### 7. 测试
 - 迁移 up → down → up；
@@ -129,7 +129,7 @@ KGE 第八章的草案里有 `curriculum_version`、`item`、`skill_node`，仓�
 
 ## 范围
 ### 做
-- 迁移 `0011_kge__knowledge_map`：kge schema、表、约束、RLS、发布校验与发布函数、`starbuddy_kge` 角色断言；`platform.curriculum_version.map_version_id`。
+- 迁移 `0011_kge__knowledge_map`：kge schema、表、约束、RLS、发布校验与发布函数、`starbuddy_kge` 角色断言；`platform.curriculum_version.map_version_id`（实现拆为 0012）。
 - `db/bootstrap/roles.sql` 增加 `starbuddy_kge`。
 - 测试 `db/tests/76_kge_map.sql`（在 80 之前运行）、快照、变异、攻击面文档。
 - `docs/design/kge/id-and-segments.md`；ERD 增加 kge 一节；ADR 02 增补 kge 一节（草稿）。
@@ -154,7 +154,7 @@ KGE 第八章的草案里有 `curriculum_version`、`item`、`skill_node`，仓�
 - [ ] `docs/design/kge/id-and-segments.md` 写明节点 ID 正则、学科前缀对应、六段标识的归属、版本号规则与旧编码迁移规则；节点 ID 的正则与迁移里的 CHECK 一致，由脚本比对。
 
 ## 涉及的必停项（见 CLAUDE.md）
-- db/migrations（0011）、RLS 与权限、新数据库角色：是。PR 首行写 `[NEEDS-HUMAN]`。
+- db/migrations（0011、0012）、RLS 与权限、新数据库角色：是。PR 首行写 `[NEEDS-HUMAN]`。
 - 契约、计量、人设、判分与掌握逻辑、判断模板：否。发布校验只管结构，不涉及掌握计算。
 - 第三方与出境：否。
 

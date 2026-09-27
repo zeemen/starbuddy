@@ -13,8 +13,15 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'starbuddy_kge') THEN
     RAISE EXCEPTION '角色 starbuddy_kge 不存在：请先执行 db/bootstrap/roles.sql';
   END IF;
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'starbuddy_kge' AND (rolsuper OR rolbypassrls)) THEN
-    RAISE EXCEPTION 'starbuddy_kge 不能是 SUPERUSER 或 BYPASSRLS';
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'starbuddy_kge'
+               AND (rolsuper OR rolbypassrls OR rolcanlogin OR rolcreaterole OR rolcreatedb OR rolreplication)) THEN
+    RAISE EXCEPTION 'starbuddy_kge 必须 NOLOGIN，且不能是 SUPERUSER、BYPASSRLS、CREATEROLE、CREATEDB、REPLICATION';
+  END IF;
+  -- 发布的信任判断（guard_map_version 里的 current_user = 'starbuddy_authz'）依赖 authz 没有任何成员：迁移时复核 0001 的断言
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'starbuddy_authz' AND (rolcanlogin OR rolsuper))
+     OR EXISTS (SELECT 1 FROM pg_roles r
+                 WHERE NOT r.rolsuper AND r.rolname <> 'starbuddy_authz' AND pg_has_role(r.oid, 'starbuddy_authz', 'MEMBER')) THEN
+    RAISE EXCEPTION 'starbuddy_authz 必须 NOLOGIN、非 SUPERUSER，且不能直接或间接授予任何角色';
   END IF;
   IF EXISTS (SELECT 1 FROM pg_roles r
               WHERE NOT r.rolsuper AND pg_has_role(r.oid, 'starbuddy_kge', 'MEMBER')
@@ -54,13 +61,17 @@ CREATE FUNCTION kge.id_parent(p_id text) RETURNS text
 -- 原句哈希：UTF-8 字节的 sha256。convert_to 只标为 STABLE（依赖编码），库编码固定为 UTF8（本迁移开头断言），所以这里可声明 IMMUTABLE 供生成列使用
 CREATE FUNCTION kge.quote_sha256(p text) RETURNS bytea
   LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$ SELECT sha256(convert_to(p, 'UTF8')) $$;
+-- 公共层的 jsonb 不能带个人层的键（规则 13）：任何层级的键名含 student、attempt、evidence_event、account、guardian、household、learner 都拒绝
+CREATE FUNCTION kge.has_personal_key(p jsonb) RETURNS boolean
+  LANGUAGE sql IMMUTABLE PARALLEL SAFE
+  AS $$ SELECT p::text ~* '"[^"]*(student|attempt|evidence_event|account|guardian|household|learner)[^"]*"\s*:' $$;
 -- 数组去重后的个数（变更单审核人不能重复）
 CREATE FUNCTION kge.distinct_count(p text[]) RETURNS integer
   LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$ SELECT count(DISTINCT x)::integer FROM unnest(p) x $$;
 REVOKE EXECUTE ON FUNCTION kge.subject_prefix(platform.subject), kge.id_depth(text), kge.id_parent(text), kge.distinct_count(text[]),
-  kge.quote_sha256(text) FROM PUBLIC;
+  kge.quote_sha256(text), kge.has_personal_key(jsonb) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION kge.subject_prefix(platform.subject), kge.id_depth(text), kge.id_parent(text), kge.distinct_count(text[]),
-  kge.quote_sha256(text)
+  kge.quote_sha256(text), kge.has_personal_key(jsonb)
   TO starbuddy_kge, starbuddy_learning, starbuddy_authz;
 
 -- ---------- 版本与课标 ----------
@@ -201,9 +212,10 @@ CREATE TABLE kge.map_change (
   subject          platform.subject NOT NULL,
   change_type      text NOT NULL CHECK (change_type IN ('node_add', 'node_split', 'node_merge', 'node_retire', 'node_revise',
                                                          'edge_add', 'edge_remove', 'projection_fix', 'other')),
-  payload          jsonb NOT NULL CHECK (jsonb_typeof(payload) = 'object' AND pg_column_size(payload) <= 16384),
-  -- 证据包只放聚合统计与样本 ID，不放个人层数据（规则 13；最小人数门槛由知识服务保证）
-  evidence_pack    jsonb NOT NULL DEFAULT '{}' CHECK (jsonb_typeof(evidence_pack) = 'object' AND pg_column_size(evidence_pack) <= 16384),
+  payload          jsonb NOT NULL CHECK (jsonb_typeof(payload) = 'object' AND pg_column_size(payload) <= 16384 AND NOT kge.has_personal_key(payload)),
+  -- 证据包只放聚合统计与公共层对象的 ID（题目、节点）；不得放作答、证据或学生的 ID 等任何个人层指针（规则 13；最小人数门槛由知识服务保证）
+  evidence_pack    jsonb NOT NULL DEFAULT '{}' CHECK (jsonb_typeof(evidence_pack) = 'object' AND pg_column_size(evidence_pack) <= 16384
+                                                      AND NOT kge.has_personal_key(evidence_pack)),
   confidence       platform.confidence,
   status           text NOT NULL DEFAULT 'proposed' CHECK (status IN ('proposed', 'approved', 'rejected', 'applied')),
   reviewers        text[] NOT NULL DEFAULT '{}' CHECK (cardinality(reviewers) <= 8),  -- 审核人工号
@@ -236,7 +248,8 @@ CREATE TABLE kge.item_family (
   main_node_id     kge.node_id NOT NULL,
   code             text NOT NULL CHECK (code ~ '^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$'),
   FOREIGN KEY (map_version_id, main_node_id) REFERENCES kge.knowledge_node (map_version_id, id),
-  UNIQUE (map_version_id, code)
+  UNIQUE (map_version_id, code),
+  UNIQUE (map_version_id, id)  -- 题目标签按（版本, 题目族）引用，不能挂到别的地图版本的题目族
 );
 
 CREATE TABLE kge.item_tag (
@@ -247,12 +260,14 @@ CREATE TABLE kge.item_tag (
   node_ids           kge.node_id[] NOT NULL DEFAULT '{}' CHECK (cardinality(node_ids) <= 16),
   cognitive_level    text CHECK (cognitive_level IN ('know', 'understand', 'apply', 'synthesize')),
   prior_difficulty   numeric(4, 3) CHECK (prior_difficulty BETWEEN 0 AND 1),
-  family_id          uuid REFERENCES kge.item_family (id),
+  family_id          uuid,
   source_kind        text NOT NULL CHECK (source_kind IN ('textbook', 'exam_paper', 'original', 'adapted', 'third_party')),
   license_state      text NOT NULL DEFAULT 'unverified' CHECK (license_state IN ('unverified', 'licensed', 'original', 'public', 'restricted')),
   quality_grade      text CHECK (quality_grade IN ('A', 'B', 'C')),
-  review_status      text NOT NULL DEFAULT 'pending' CHECK (review_status IN ('pending', 'approved', 'rejected')),
+  -- 只是打标审核，不是题目准入：准入只在 platform.item.admission
+  tag_review_status  text NOT NULL DEFAULT 'pending' CHECK (tag_review_status IN ('pending', 'approved', 'rejected')),
   PRIMARY KEY (map_version_id, subject, item_id),
+  FOREIGN KEY (map_version_id, family_id) REFERENCES kge.item_family (map_version_id, id),
   -- 题目的身份与准入只在 platform.item（不做第二份）
   FOREIGN KEY (subject, item_id) REFERENCES platform.item (subject, item_id),
   FOREIGN KEY (map_version_id, main_node_id) REFERENCES kge.knowledge_node (map_version_id, id)
@@ -266,17 +281,22 @@ CREATE TABLE kge.scoring_point (
   subject              platform.subject NOT NULL,
   item_id              platform.skill_local_id NOT NULL,
   rubric_version       platform.versioned_name NOT NULL,  -- 判分结果据此绑定版本（KGE 第七章）
+  -- 采分点编号：与 platform.grade_dimension.dimension_id 同一套写法，判分维度据此指回采分点
+  point_id             text NOT NULL CHECK (point_id ~ '^[a-z0-9_\-]{1,48}$'),
   score                numeric(5, 2) NOT NULL CHECK (score > 0),
   node_ids             kge.node_id[] NOT NULL CHECK (cardinality(node_ids) BETWEEN 1 AND 8),
   subject_dimension    text CHECK (char_length(subject_dimension) BETWEEN 1 AND 64),
-  keyword_family       jsonb NOT NULL DEFAULT '{}' CHECK (pg_column_size(keyword_family) <= 4096),
+  keyword_family       jsonb NOT NULL DEFAULT '{}' CHECK (pg_column_size(keyword_family) <= 4096 AND NOT kge.has_personal_key(keyword_family)),
   required_logic       text CHECK (char_length(required_logic) BETWEEN 1 AND 1000),
   material_linkage     text CHECK (char_length(material_linkage) BETWEEN 1 AND 1000),
-  partial_credit_rule  jsonb NOT NULL DEFAULT '{}' CHECK (pg_column_size(partial_credit_rule) <= 4096),
-  common_errors        jsonb NOT NULL DEFAULT '[]' CHECK (pg_column_size(common_errors) <= 4096),
-  FOREIGN KEY (subject, item_id) REFERENCES platform.item (subject, item_id)
+  partial_credit_rule  jsonb NOT NULL DEFAULT '{}' CHECK (pg_column_size(partial_credit_rule) <= 4096 AND NOT kge.has_personal_key(partial_credit_rule)),
+  -- 常见错误只写去标识的错误形态，不写真实作答原文（规则 13）
+  common_errors        jsonb NOT NULL DEFAULT '[]' CHECK (pg_column_size(common_errors) <= 4096 AND NOT kge.has_personal_key(common_errors)),
+  FOREIGN KEY (subject, item_id) REFERENCES platform.item (subject, item_id),
+  UNIQUE (subject, item_id, rubric_version, point_id)
 );
-CREATE INDEX scoring_point_item_idx ON kge.scoring_point (subject, item_id, rubric_version);
+COMMENT ON TABLE kge.scoring_point IS
+  '采分点（Rubric 原子）。写入后不能修改：改内容就发新 rubric_version，已有判分才能按原版本复算（规则 3）；一个 rubric_version 只属于一个地图版本';
 
 CREATE TABLE kge.current_affair (
   id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -288,7 +308,7 @@ CREATE TABLE kge.current_affair (
   review_status    text NOT NULL DEFAULT 'pending' CHECK (review_status IN ('pending', 'published', 'retired')),
   CONSTRAINT current_affair_validity CHECK (valid_until > valid_from)
 );
-COMMENT ON TABLE kge.current_affair IS '道法时政素材：生效与失效日期必填；过期仍为 published 时发布校验阻断';
+COMMENT ON TABLE kge.current_affair IS '道法时政素材：生效与失效日期必填；过期仍为 published 时发布校验报警告，由体检流程下架（KGE 第七章）';
 
 CREATE TABLE kge.content_review (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -296,7 +316,7 @@ CREATE TABLE kge.content_review (
                                                      'region_projection', 'item_tag', 'scoring_point', 'current_affair', 'map_change')),
   object_id     text NOT NULL CHECK (char_length(object_id) BETWEEN 1 AND 160),
   risk_level    text NOT NULL CHECK (risk_level IN ('low', 'medium', 'high')),
-  diff          jsonb NOT NULL DEFAULT '{}' CHECK (pg_column_size(diff) <= 16384),
+  diff          jsonb NOT NULL DEFAULT '{}' CHECK (pg_column_size(diff) <= 16384 AND NOT kge.has_personal_key(diff)),
   decision      text NOT NULL DEFAULT 'pending' CHECK (decision IN ('pending', 'approved', 'rejected')),
   reviewer      text CHECK (char_length(reviewer) BETWEEN 1 AND 64),  -- 审核人工号
   decided_at    timestamptz,
@@ -342,11 +362,22 @@ CREATE TRIGGER guard_map_version BEFORE INSERT OR UPDATE ON kge.map_version
 CREATE FUNCTION kge.guard_frozen() RETURNS trigger LANGUAGE plpgsql
   SET search_path = pg_catalog, kge, platform, pg_temp
   AS $$
+DECLARE
+  v_ids uuid[] := ARRAY[NEW.map_version_id] || CASE WHEN TG_OP = 'UPDATE' THEN ARRAY[OLD.map_version_id] ELSE '{}'::uuid[] END;
+  v_status text;
+  v_seen integer := 0;
 BEGIN
-  IF EXISTS (SELECT 1 FROM kge.map_version v
-              WHERE v.id IN (NEW.map_version_id, CASE WHEN TG_OP = 'UPDATE' THEN OLD.map_version_id END)
-                AND v.status <> 'draft') THEN
-    RAISE EXCEPTION '地图版本已发布或已撤下，% 不能再改（改地图走新版本）', TG_TABLE_NAME USING ERRCODE = 'check_violation';
+  -- 对版本行加共享锁：与 publish_map_version 的 FOR UPDATE 互斥，发布期间的写入会等发布结束后按最新状态重新判断
+  -- （安全审查 B1：否则校验看不到未提交的写入，或写入读到发布前的草稿状态）
+  FOR v_status IN SELECT v.status FROM kge.map_version v WHERE v.id = ANY (v_ids) ORDER BY v.id FOR SHARE LOOP
+    v_seen := v_seen + 1;
+    IF v_status <> 'draft' THEN
+      RAISE EXCEPTION '地图版本已发布或已撤下，% 不能再改（改地图走新版本）', TG_TABLE_NAME USING ERRCODE = 'check_violation';
+    END IF;
+  END LOOP;
+  -- 看不到版本行时拒绝，不放行
+  IF v_seen = 0 THEN
+    RAISE EXCEPTION '% 引用的地图版本不存在或不可见', TG_TABLE_NAME USING ERRCODE = 'check_violation';
   END IF;
   RETURN NEW;
 END $$;
@@ -384,9 +415,29 @@ BEGIN
               WHERE NOT EXISTS (SELECT 1 FROM kge.knowledge_node n WHERE n.map_version_id = NEW.map_version_id AND n.id = x)) THEN
     RAISE EXCEPTION '% 引用了本地图版本里不存在的节点', TG_TABLE_NAME USING ERRCODE = 'foreign_key_violation';
   END IF;
+  -- 已发布或已撤下的版本不再跑发布前校验：原子只能挂在有效节点上，否则发布时的结论不再成立（安全审查建议 3）
+  IF EXISTS (SELECT 1 FROM kge.map_version v WHERE v.id = NEW.map_version_id AND v.status <> 'draft')
+     AND EXISTS (SELECT 1 FROM unnest(NEW.node_ids) x
+                  WHERE NOT EXISTS (SELECT 1 FROM kge.knowledge_node n
+                                     WHERE n.map_version_id = NEW.map_version_id AND n.id = x AND n.status = 'active')) THEN
+    RAISE EXCEPTION '% 在非草稿地图版本上引用了已停用的节点', TG_TABLE_NAME USING ERRCODE = 'check_violation';
+  END IF;
   RETURN NEW;
 END $$;
-REVOKE EXECUTE ON FUNCTION kge.guard_map_version(), kge.guard_frozen(), kge.guard_node(), kge.guard_subject(), kge.guard_node_refs() FROM PUBLIC;
+-- 采分点：同一（学科, 题目, Rubric 版本）只属于一个地图版本（按 Rubric 版本取采分点不能有歧义）
+CREATE FUNCTION kge.guard_scoring_point() RETURNS trigger LANGUAGE plpgsql
+  SET search_path = pg_catalog, kge, platform, pg_temp
+  AS $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM kge.scoring_point s
+              WHERE s.subject = NEW.subject AND s.item_id = NEW.item_id AND s.rubric_version = NEW.rubric_version
+                AND s.map_version_id <> NEW.map_version_id) THEN
+    RAISE EXCEPTION 'Rubric 版本 % 已属于另一个地图版本', NEW.rubric_version USING ERRCODE = 'unique_violation';
+  END IF;
+  RETURN NEW;
+END $$;
+REVOKE EXECUTE ON FUNCTION kge.guard_map_version(), kge.guard_frozen(), kge.guard_node(), kge.guard_subject(), kge.guard_node_refs(),
+  kge.guard_scoring_point() FROM PUBLIC;
 
 CREATE TRIGGER guard_frozen BEFORE INSERT OR UPDATE ON kge.knowledge_node FOR EACH ROW EXECUTE FUNCTION kge.guard_frozen();
 CREATE TRIGGER guard_frozen BEFORE INSERT OR UPDATE ON kge.knowledge_edge FOR EACH ROW EXECUTE FUNCTION kge.guard_frozen();
@@ -401,12 +452,13 @@ CREATE TRIGGER guard_subject BEFORE INSERT OR UPDATE ON kge.item_tag FOR EACH RO
 CREATE TRIGGER guard_subject BEFORE INSERT OR UPDATE ON kge.scoring_point FOR EACH ROW EXECUTE FUNCTION kge.guard_subject();
 CREATE TRIGGER guard_node_refs BEFORE INSERT OR UPDATE ON kge.item_tag FOR EACH ROW EXECUTE FUNCTION kge.guard_node_refs();
 CREATE TRIGGER guard_node_refs BEFORE INSERT OR UPDATE ON kge.scoring_point FOR EACH ROW EXECUTE FUNCTION kge.guard_node_refs();
+CREATE TRIGGER guard_scoring_point BEFORE INSERT ON kge.scoring_point FOR EACH ROW EXECUTE FUNCTION kge.guard_scoring_point();
 CREATE TRIGGER guard_node_refs BEFORE INSERT OR UPDATE ON kge.current_affair FOR EACH ROW EXECUTE FUNCTION kge.guard_node_refs();
 
 -- ---------- 发布前校验（spec 设计要点 3）：只读，按调用者身份执行 ----------
 -- 图的定义与 KGE-00 工具（tools/kge-inventory/src/graph.ts）一致：
 --   环 = 前置边上能回到自身的节点；传递边 = a→c 存在，且经 a 的另一个直接后续 b（b ≠ c）也能到达 c。
--- severity：error 阻断发布，warning 只报警。
+-- severity：error 阻断发布，warning 只报警。检查项的完整清单见 docs/design/kge/id-and-segments.md 第 4 节。
 CREATE FUNCTION kge.validate_map_version(p_version uuid)
   RETURNS TABLE (check_name text, severity text, object_id text, detail text)
   LANGUAGE plpgsql STABLE
@@ -451,19 +503,23 @@ BEGIN
      WHERE n.map_version_id = p_version AND n.level = 'node' AND n.status = 'active'
        AND NOT EXISTS (SELECT 1 FROM kge.knowledge_edge k WHERE k.status = 'active'
                         AND ((k.map_version_id = p_version AND k.from_id = n.id) OR (k.to_map_version_id = p_version AND k.to_id = n.id)))
-       AND NOT EXISTS (SELECT 1 FROM kge.item_tag i WHERE i.map_version_id = p_version AND (i.main_node_id = n.id OR n.id = ANY (i.node_ids)))
+       AND NOT EXISTS (SELECT 1 FROM kge.item_tag i WHERE i.map_version_id = p_version AND i.tag_review_status <> 'rejected'
+                        AND (i.main_node_id = n.id OR n.id = ANY (i.node_ids)))
        AND NOT EXISTS (SELECT 1 FROM kge.textbook_projection p WHERE p.map_version_id = p_version AND p.node_id = n.id)
      ORDER BY 3;
 
-  -- 4. 包含 / 不包含 / 典型题例缺失（参与掌握度计算的知识节点）
+  -- 4. 边界缺失：参与掌握度计算的知识节点缺包含、不包含、典型题例或认知层次；易错点缺识别特征（includes，“在作答中表现为什么样子”，KGE 第三章）
   RETURN QUERY
     SELECT 'missing_boundary', 'error', n.id::text,
-           concat_ws('、', CASE WHEN cardinality(n.includes) = 0 THEN '缺包含' END,
-                           CASE WHEN cardinality(n.excludes) = 0 THEN '缺不包含' END,
-                           CASE WHEN cardinality(n.examples) = 0 THEN '缺典型题例' END)
+           concat_ws('、', CASE WHEN cardinality(n.includes) = 0 THEN CASE WHEN n.kind = 'pitfall' THEN '缺识别特征' ELSE '缺包含' END END,
+                           CASE WHEN n.kind <> 'pitfall' AND cardinality(n.excludes) = 0 THEN '缺不包含' END,
+                           CASE WHEN n.kind <> 'pitfall' AND cardinality(n.examples) = 0 THEN '缺典型题例' END,
+                           CASE WHEN n.kind <> 'pitfall' AND cardinality(n.cognitive_levels) = 0 THEN '缺认知层次' END)
       FROM kge.knowledge_node n
-     WHERE n.map_version_id = p_version AND n.level = 'node' AND n.status = 'active' AND n.kind IN ('kp', 'ability_kp', 'viewpoint')
-       AND (cardinality(n.includes) = 0 OR cardinality(n.excludes) = 0 OR cardinality(n.examples) = 0)
+     WHERE n.map_version_id = p_version AND n.status = 'active'
+       AND ((n.level = 'node' AND n.kind IN ('kp', 'ability_kp', 'viewpoint')
+             AND (cardinality(n.includes) = 0 OR cardinality(n.excludes) = 0 OR cardinality(n.examples) = 0 OR cardinality(n.cognitive_levels) = 0))
+            OR (n.kind = 'pitfall' AND cardinality(n.includes) = 0))
      ORDER BY 3;
 
   -- 5. 悬空引用：有效的边、投影、挂接、标签、采分点、时政指向已停用或不存在的节点
@@ -482,7 +538,7 @@ BEGIN
       SELECT 'skill_link:' || s.subject || ':' || s.local_id, s.map_version_id, s.node_id::text FROM kge.skill_link s WHERE s.map_version_id = p_version
       UNION ALL
       SELECT 'item_tag:' || i.subject || ':' || i.item_id, i.map_version_id, x::text
-        FROM kge.item_tag i, unnest(i.node_ids || i.main_node_id) x WHERE i.map_version_id = p_version AND i.review_status <> 'rejected'
+        FROM kge.item_tag i, unnest(i.node_ids || i.main_node_id) x WHERE i.map_version_id = p_version AND i.tag_review_status <> 'rejected'
       UNION ALL
       SELECT 'scoring_point:' || s.id, s.map_version_id, x::text FROM kge.scoring_point s, unnest(s.node_ids) x WHERE s.map_version_id = p_version
       UNION ALL
@@ -494,19 +550,48 @@ BEGIN
      WHERE NOT EXISTS (SELECT 1 FROM kge.knowledge_node n WHERE n.map_version_id = refs.ver AND n.id = refs.node AND n.status = 'active')
      ORDER BY 3;
 
+  -- 8. 边类型与端点类型不符：素材不进依赖图；has_pitfall 指向易错点；uses_method 指向方法
+  RETURN QUERY
+    SELECT DISTINCT 'edge_kind_mismatch', 'error', 'knowledge_edge:' || k.id,
+           CASE WHEN k.type = 'prerequisite' THEN '素材节点不进前置依赖图' WHEN k.type = 'has_pitfall' THEN '终点不是易错点' ELSE '终点不是方法' END
+      FROM kge.knowledge_edge k
+      JOIN kge.knowledge_node a ON a.map_version_id = k.map_version_id AND a.id = k.from_id
+      JOIN kge.knowledge_node b ON b.map_version_id = k.to_map_version_id AND b.id = k.to_id
+     WHERE k.map_version_id = p_version AND k.status = 'active'
+       AND ((k.type = 'prerequisite' AND 'material' IN (a.kind, b.kind))
+            OR (k.type = 'has_pitfall' AND b.kind IS DISTINCT FROM 'pitfall')
+            OR (k.type = 'uses_method' AND b.kind IS DISTINCT FROM 'method'))
+     ORDER BY 3;
+
+  -- 9. 题目标签的认知层次不在主考点节点的层次集合里（诊断单元是“节点 × 层次”）
+  RETURN QUERY
+    SELECT 'tag_level_mismatch', 'error', 'item_tag:' || i.subject || ':' || i.item_id,
+           format('层次 %s 不在主考点 %s 的 %s 里', i.cognitive_level, i.main_node_id, n.cognitive_levels)
+      FROM kge.item_tag i JOIN kge.knowledge_node n ON n.map_version_id = i.map_version_id AND n.id = i.main_node_id
+     WHERE i.map_version_id = p_version AND i.tag_review_status <> 'rejected' AND i.cognitive_level IS NOT NULL
+       AND NOT (i.cognitive_level = ANY (n.cognitive_levels))
+     ORDER BY 3;
+
+  -- 10. 跨版本的边指向未发布的版本（对端学科换版后旧边过期；本版本冻结后只能在新版本里改，只报警告）
+  RETURN QUERY
+    SELECT 'stale_cross_edge', 'warning', 'knowledge_edge:' || k.id, '对端地图版本不是已发布'
+      FROM kge.knowledge_edge k JOIN kge.map_version v ON v.id = k.to_map_version_id
+     WHERE k.map_version_id = p_version AND k.to_map_version_id <> p_version AND k.status = 'active' AND v.status <> 'published'
+     ORDER BY 3;
+
   -- 6. 主考点少于 3 道题（粒度信号，只报警告）
   RETURN QUERY
     SELECT 'few_items', 'warning', n.id::text,
            format('主考点题目 %s 道', (SELECT count(*) FROM kge.item_tag i WHERE i.map_version_id = p_version AND i.main_node_id = n.id
-                                                                         AND i.review_status <> 'rejected'))
+                                                                         AND i.tag_review_status <> 'rejected'))
       FROM kge.knowledge_node n
      WHERE n.map_version_id = p_version AND n.level = 'node' AND n.status = 'active' AND n.kind IN ('kp', 'ability_kp', 'viewpoint')
-       AND (SELECT count(*) FROM kge.item_tag i WHERE i.map_version_id = p_version AND i.main_node_id = n.id AND i.review_status <> 'rejected') < 3
+       AND (SELECT count(*) FROM kge.item_tag i WHERE i.map_version_id = p_version AND i.main_node_id = n.id AND i.tag_review_status <> 'rejected') < 3
      ORDER BY 3;
 
-  -- 7. 时政已过期仍为已发布
+  -- 7. 时政已过期仍为已发布：只报警告，由体检流程下架（KGE 第七章“过期由体检自动下架，不进骨架”）
   RETURN QUERY
-    SELECT 'expired_current_affair', 'error', c.id::text, format('失效日期 %s', c.valid_until)
+    SELECT 'expired_current_affair', 'warning', c.id::text, format('失效日期 %s', c.valid_until)
       FROM kge.current_affair c
      WHERE c.map_version_id = p_version AND c.review_status = 'published' AND c.valid_until < current_date
      ORDER BY 3;
@@ -528,7 +613,8 @@ BEGIN
   IF NOT FOUND OR v.status <> 'draft' THEN
     RAISE EXCEPTION '只能发布草稿地图版本' USING ERRCODE = 'check_violation';
   END IF;
-  -- 同一学科的发布串行执行，避免两个草稿同时通过校验
+  -- 同一学科的发布串行执行（事务级咨询锁）：两个草稿并发发布时，后一个等前一个提交，不会静默撤下刚发布的版本（安全审查建议 2）
+  PERFORM pg_advisory_xact_lock(hashtext('kge.publish_map_version:' || v.subject::text));
   PERFORM 1 FROM kge.map_version WHERE subject = v.subject AND status = 'published' FOR UPDATE;
   SELECT count(*) INTO v_errors FROM kge.validate_map_version(p_version) c WHERE c.severity = 'error';
   IF v_errors > 0 THEN
@@ -547,8 +633,10 @@ GRANT SELECT, INSERT ON kge.map_version TO starbuddy_kge;
 GRANT UPDATE (version, standard_year, status) ON kge.map_version TO starbuddy_kge;
 GRANT SELECT, INSERT, UPDATE ON kge.curriculum_item, kge.knowledge_node, kge.knowledge_edge, kge.textbook_projection,
                                  kge.region_projection, kge.skill_link, kge.map_change, kge.id_migration, kge.item_family,
-                                 kge.item_tag, kge.scoring_point, kge.current_affair, kge.content_review
+                                 kge.item_tag, kge.current_affair, kge.content_review
   TO starbuddy_kge;
+-- 采分点只能新增，不能修改（改内容发新 rubric_version）
+GRANT SELECT, INSERT ON kge.scoring_point TO starbuddy_kge;
 -- quote_hash 是生成列：任何角色写它都会被库拒绝（76_kge_map 断言）
 -- 学科服务与编排：读全部
 GRANT SELECT ON kge.map_version, kge.curriculum_item, kge.knowledge_node, kge.knowledge_edge, kge.textbook_projection,
@@ -595,15 +683,21 @@ ALTER TABLE kge.textbook_projection ENABLE ROW LEVEL SECURITY;
 ALTER TABLE kge.textbook_projection FORCE ROW LEVEL SECURITY;
 CREATE POLICY textbook_kge ON kge.textbook_projection FOR ALL TO starbuddy_kge USING (true) WITH CHECK (true);
 CREATE POLICY textbook_read ON kge.textbook_projection FOR SELECT TO starbuddy_learning USING (true);
+-- 前端只看已核对的投影（页码错对开卷定位是致命错误），且所在节点有效
 CREATE POLICY textbook_front_read ON kge.textbook_projection FOR SELECT TO starbuddy_bff
-  USING (EXISTS (SELECT 1 FROM kge.map_version v WHERE v.id = map_version_id AND v.status = 'published'));
+  USING (mapping_state = 'verified'
+         AND EXISTS (SELECT 1 FROM kge.map_version v WHERE v.id = map_version_id AND v.status = 'published')
+         AND EXISTS (SELECT 1 FROM kge.knowledge_node n WHERE n.map_version_id = textbook_projection.map_version_id
+                       AND n.id = textbook_projection.node_id AND n.status = 'active'));
 
 ALTER TABLE kge.region_projection ENABLE ROW LEVEL SECURITY;
 ALTER TABLE kge.region_projection FORCE ROW LEVEL SECURITY;
 CREATE POLICY region_kge ON kge.region_projection FOR ALL TO starbuddy_kge USING (true) WITH CHECK (true);
 CREATE POLICY region_read ON kge.region_projection FOR SELECT TO starbuddy_learning USING (true);
 CREATE POLICY region_front_read ON kge.region_projection FOR SELECT TO starbuddy_bff
-  USING (EXISTS (SELECT 1 FROM kge.map_version v WHERE v.id = map_version_id AND v.status = 'published'));
+  USING (EXISTS (SELECT 1 FROM kge.map_version v WHERE v.id = map_version_id AND v.status = 'published')
+         AND EXISTS (SELECT 1 FROM kge.knowledge_node n WHERE n.map_version_id = region_projection.map_version_id
+                       AND n.id = region_projection.node_id AND n.status = 'active'));
 
 -- 其余表：知识服务读写（没有 DELETE 授权），学科服务只读；BFF 与洞察服务没有授权
 DO $$

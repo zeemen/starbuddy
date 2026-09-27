@@ -37,18 +37,22 @@ kge.map_change|map_change_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|c
 kge.map_version|map_version_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=(status = 'published'::text)|check=-
 kge.map_version|map_version_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
 kge.map_version|map_version_read|SELECT|starbuddy_insight,starbuddy_learning|PERMISSIVE|using=true|check=-
-kge.region_projection|region_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=(EXISTS ( SELECT 1
+kge.region_projection|region_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=((EXISTS ( SELECT 1
    FROM kge.map_version v
-  WHERE ((v.id = region_projection.map_version_id) AND (v.status = 'published'::text))))|check=-
+  WHERE ((v.id = region_projection.map_version_id) AND (v.status = 'published'::text)))) AND (EXISTS ( SELECT 1
+   FROM kge.knowledge_node n
+  WHERE ((n.map_version_id = region_projection.map_version_id) AND ((n.id)::text = (region_projection.node_id)::text) AND (n.status = 'active'::text)))))|check=-
 kge.region_projection|region_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
 kge.region_projection|region_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
 kge.scoring_point|scoring_point_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
 kge.scoring_point|scoring_point_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
 kge.skill_link|skill_link_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
 kge.skill_link|skill_link_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
-kge.textbook_projection|textbook_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=(EXISTS ( SELECT 1
+kge.textbook_projection|textbook_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=((mapping_state = 'verified'::text) AND (EXISTS ( SELECT 1
    FROM kge.map_version v
-  WHERE ((v.id = textbook_projection.map_version_id) AND (v.status = 'published'::text))))|check=-
+  WHERE ((v.id = textbook_projection.map_version_id) AND (v.status = 'published'::text)))) AND (EXISTS ( SELECT 1
+   FROM kge.knowledge_node n
+  WHERE ((n.map_version_id = textbook_projection.map_version_id) AND ((n.id)::text = (textbook_projection.node_id)::text) AND (n.status = 'active'::text)))))|check=-
 kge.textbook_projection|textbook_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
 kge.textbook_projection|textbook_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
 platform.account|account_self_read|SELECT|starbuddy_bff|PERMISSIVE|using=(id = platform.current_account_id())|check=-

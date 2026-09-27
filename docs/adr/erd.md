@@ -150,16 +150,22 @@ erDiagram
 |---|---|---|---|
 | `kge.map_version` | kge（发布只能经 `kge.publish_map_version`，属主 authz） | learning、insight 全部；bff 只看已发布 | 草稿 → 已发布 → 撤下；同学科只一个已发布；非草稿只能改状态 |
 | `kge.knowledge_node` / `knowledge_edge` | kge | learning、insight 全部；bff 只看已发布版本的有效行 | 七种类型、四个层级、五种范围；易错点必须写错因大类；只有计掌握度的类型带认知层次；细目只能是易错点或考点 |
-| `kge.textbook_projection` / `region_projection` | kge | learning；bff 只看已发布版本（投影的核对人列不给 bff） | 已核对必须写核对人与时间 |
+| `kge.textbook_projection` / `region_projection` | kge | learning；bff 只看已发布版本里有效节点上的行，教材投影只看已核对的（核对人列不给 bff） | 已核对必须写核对人与时间 |
 | `kge.skill_link` / `id_migration` | kge | learning | 学科与版本一致；撤销的旧编码没有新 ID |
-| `kge.item_tag` / `item_family` / `scoring_point` / `current_affair` | kge | learning | 原子，不随骨架冻结；节点数组由触发器核对；题干、答案、解析不进库 |
+| `kge.item_tag` / `item_family` / `scoring_point` / `current_affair` | kge | learning | 原子，不随骨架冻结，但在非草稿版本上只能挂有效节点；节点数组由触发器核对；题干、答案、解析不进库；采分点写入后不能修改（改内容发新 rubric_version），`point_id` 与判分维度对应 |
 | `kge.curriculum_item` / `map_change` / `content_review` | kge | learning | 变更单批准须两个不同审核人；审核结论必须写审核人与时间 |
 
 骨架冻结：地图版本发布或撤下后，节点、边、投影、能力视图挂接、旧编码迁移都不能再新增或修改，改地图走新版本。任何角色都没有公共层的 DELETE，撤下走状态。
-发布前校验 `kge.validate_map_version`：以下六项阻断发布，主考点题目少于 3 道只报警告。
+发布前校验 `kge.validate_map_version`：以下几项阻断发布，主考点题目少于 3 道只报警告。
 
 - 环、传递边；
 - 孤点；
-- 缺包含、不包含或典型题例；
+- 缺包含、不包含、典型题例或认知层次，易错点缺识别特征；
 - 悬空引用；
-- 过期但仍发布的时政。
+- 边类型与端点不符；
+- 题目标签的层次不在主考点的层次集合里。
+
+过期时政与指向未发布版本的跨版本边也只报警告，完整清单见 `docs/design/kge/id-and-segments.md` 第 4 节。
+公共层的 jsonb 在任何层级都不能带学生、作答、账号等个人层的键（CHECK 约束 `kge.has_personal_key`）。
+
+个人层计划中的改动（冲刺 1-C，未建，只在这里画出）：`platform.evidence_event` 增加 `evidence_kind`、`map_version`、`cognitive_level` 三列，分别记录证据种类、证据产生时的地图版本、证据对应的认知层次，与契约 `EvidenceDraft` 一起改（必停项）。
