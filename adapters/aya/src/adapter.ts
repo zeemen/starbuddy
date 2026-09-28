@@ -1,10 +1,11 @@
 // 阿鸦适配器的三个接口：capabilities、grade（客观题）、diagnose（intake / gap_test）。
-// 规格：specs/adapter-aya-sprint1/spec.md“映射规则”。契约：packages/contracts/openapi/plugin-api.v0.9.yaml。
+// 规格：specs/adapter-aya-sprint1/spec.md“映射规则”。契约：packages/contracts/openapi/plugin-api.v0.9.yaml 与
+// v1.0 候选版 plugin-api.v1.0.yaml：迁移期按请求的 context.contract_version 选版本校验与应答，能力声明报默认版本
+// （specs/plugin-api-v1.0-step2/spec.md 第 3 条、待人确认 #2）。
 //
 // 适配器不读写任何平台表（CLAUDE.md 规则 1）：证据与推断放在响应里，由学习服务落库。
 // 不输出掌握度（规则 2）；判分只来自验证器（规则 3）；响应和日志里不出现答案、解析、评分标准（decisions #4）。
-import type { ContractValidator, SchemaName } from "./contract.ts";
-import { CONTRACT_VERSION } from "./contract.ts";
+import type { ContractValidator, ContractVersion, SchemaName } from "./contract.ts";
 import type { Admission, LoadedPack, PackItem } from "./content.ts";
 import { deriveUuid, requestFingerprint } from "./ids.ts";
 import type { AyaTaxonomy } from "./taxonomy.ts";
@@ -63,6 +64,8 @@ interface DiagnoseRequest {
 }
 interface EvidenceDraft {
   evidence_id: string;
+  /** v1.0：证据属于哪道作答（请求里 AttemptInput.attempt_id；作答类证据必填，评审 N3） */
+  attempt_id?: string;
   kind: "response_text" | "response_choice" | "verifier_trace";
   occurred_at: string;
   item_ref: string;
@@ -81,6 +84,7 @@ interface ErrorAttribution {
 
 type ProblemCode =
   | "INVALID_REQUEST"
+  | "CONTRACT_VERSION_UNSUPPORTED"
   | "SUBJECT_MISMATCH"
   | "METHOD_NOT_IMPLEMENTED"
   | "CONTENT_VERSION_NOT_FOUND"
@@ -148,8 +152,22 @@ export function createAdapter(deps: AdapterDeps) {
     return { status: e.status, body };
   };
 
-  const validateOrThrow = (schema: SchemaName, value: unknown) => {
-    const r = contract.validate(schema, value);
+  /**
+   * 请求按哪个契约版本校验与应答：取 context.contract_version。不是字符串（缺失、类型不对）时按默认版本校验，
+   * 由 schema 报 INVALID_REQUEST；是字符串但不在支持范围 → CONTRACT_VERSION_UNSUPPORTED。
+   */
+  const requestVersion = (body: unknown): ContractVersion => {
+    const ctx = (body as { context?: unknown } | null | undefined)?.context;
+    const v = ctx && typeof ctx === "object" ? (ctx as { contract_version?: unknown }).contract_version : undefined;
+    if (typeof v !== "string") return contract.version;
+    if (!contract.supports(v)) {
+      throw new ProblemError(400, "CONTRACT_VERSION_UNSUPPORTED", "contract_version is not supported by this adapter", `supported: ${contract.versions.join(", ")}`);
+    }
+    return v;
+  };
+
+  const validateOrThrow = (schema: SchemaName, value: unknown, version: ContractVersion) => {
+    const r = contract.validate(schema, value, version);
     if (!r.ok) throw new ProblemError(400, "INVALID_REQUEST", "request does not match the contract", r.errors.join("; "));
   };
 
@@ -196,8 +214,10 @@ export function createAdapter(deps: AdapterDeps) {
   };
 
   /** 一道作答的证据：作答本身 + 一条验证器轨迹 */
-  const buildEvidence = (item: PackItem, attempt: AttemptInput, v: Verification, id: (label: string) => string) => {
+  const buildEvidence = (item: PackItem, attempt: AttemptInput, v: Verification, id: (label: string) => string, version: ContractVersion) => {
     const common = {
+      // v1.0：作答与验证器轨迹都指回所属作答（schema 已要求 v1.0 请求带 attempt_id）；v0.9 不输出，行为不变
+      ...(version !== "0.9.0" && attempt.attempt_id ? { attempt_id: attempt.attempt_id } : {}),
       occurred_at: attempt.occurred_at,
       item_ref: `aya:${item.id}`,
       skill_node: `aya:${item.mainNodes[0]}`,
@@ -277,8 +297,8 @@ export function createAdapter(deps: AdapterDeps) {
   };
 
   /** 出门前按契约自检：不合契约的响应不发出去（fail closed） */
-  const selfCheck = (schema: SchemaName, body: unknown): HandlerResult => {
-    const r = contract.validate(schema, body);
+  const selfCheck = (schema: SchemaName, body: unknown, version: ContractVersion): HandlerResult => {
+    const r = contract.validate(schema, body, version);
     if (!r.ok) throw new ProblemError(500, "INTERNAL", "adapter produced a response that violates the contract", r.errors.join("; "));
     return { status: 200, body };
   };
@@ -290,7 +310,7 @@ export function createAdapter(deps: AdapterDeps) {
     selfCheck("Capabilities", {
       subject: "aya",
       adapter_version: ADAPTER_VERSION,
-      contract_version: CONTRACT_VERSION,
+      contract_version: contract.version,
       methods: {
         diagnose: { implemented: true, async: false },
         plan: { implemented: false },
@@ -300,10 +320,11 @@ export function createAdapter(deps: AdapterDeps) {
         report: { implemented: false },
       },
       verifiers: [{ verifier_id: VERIFIER_ID, version: VERIFIER_VERSION }],
-    });
+    }, contract.version);
 
   const grade = (body: unknown): HandlerResult => {
-    validateOrThrow("GradeRequest", body);
+    const version = requestVersion(body);
+    validateOrThrow("GradeRequest", body, version);
     const req = body as GradeRequest;
     checkContext(req.context, true);
     if (req.rubric_version !== VERIFIER_REF) {
@@ -315,7 +336,7 @@ export function createAdapter(deps: AdapterDeps) {
       const item = findItem(req.attempt.item_ref);
       const v = verifyAttempt(item, req.attempt);
       const id = (label: string) => deriveUuid("grade", req.context.idempotency_key, fp, `a0:${label}`);
-      const { response, trace } = buildEvidence(item, req.attempt, v, id);
+      const { response, trace } = buildEvidence(item, req.attempt, v, id, version);
       const evidence = [response, trace];
       const score = v.verdict === "correct" ? 1 : v.verdict === "incorrect" ? 0 : null;
       const extra: string[] = [];
@@ -324,7 +345,7 @@ export function createAdapter(deps: AdapterDeps) {
       if (req.appeal) extra.push("student_appeal");
       const confidence = round3(v.verdict === "needs_review" ? Math.min(v.confidence, BOUNDARY_MAX_CONFIDENCE) : v.confidence);
       return selfCheck("GradeResponse", {
-        contract_version: CONTRACT_VERSION,
+        contract_version: version,
         result: {
           verdict: v.verdict,
           rubric_version: req.rubric_version,
@@ -351,12 +372,13 @@ export function createAdapter(deps: AdapterDeps) {
         source_version: sourceVersion(`verifier:${VERIFIER_REF}`),
         model_version: `algo:${VERIFIER_REF}`,
         ...envelopeFlags(evidence, extra),
-      });
+      }, version);
     });
   };
 
   const diagnose = (body: unknown): HandlerResult => {
-    validateOrThrow("DiagnoseRequest", body);
+    const version = requestVersion(body);
+    validateOrThrow("DiagnoseRequest", body, version);
     const req = body as DiagnoseRequest;
     checkContext(req.context, false);
     if (req.mode !== "intake" && req.mode !== "gap_test") {
@@ -376,7 +398,7 @@ export function createAdapter(deps: AdapterDeps) {
         const item = findItem(attempt.item_ref);
         const v = verifyAttempt(item, attempt);
         const id = (label: string) => deriveUuid("diagnose", req.context.idempotency_key, fp, `a${i}:${label}`);
-        const { response, trace } = buildEvidence(item, attempt, v, id);
+        const { response, trace } = buildEvidence(item, attempt, v, id, version);
         evidence.push(response, trace);
         if (v.verdict === "needs_review") anyBoundary = true;
         const outcome = v.verdict === "correct" ? "demonstrated" : v.verdict === "incorrect" ? "not_demonstrated" : "inconclusive";
@@ -397,7 +419,7 @@ export function createAdapter(deps: AdapterDeps) {
       });
       const confidence = Math.min(...observations.map((o) => o.confidence as number));
       return selfCheck("DiagnoseResponse", {
-        contract_version: CONTRACT_VERSION,
+        contract_version: version,
         result: { observations, error_attributions: attributions },
         evidence,
         evidence_ids: evidence.map((e) => e.evidence_id),
@@ -405,7 +427,7 @@ export function createAdapter(deps: AdapterDeps) {
         source_version: sourceVersion(`verifier:${VERIFIER_REF}`, `algo:${DIAGNOSE_ALGORITHM}`),
         model_version: `algo:${DIAGNOSE_ALGORITHM}`,
         ...envelopeFlags(evidence, anyBoundary ? ["verifier_boundary_case"] : []),
-      });
+      }, version);
     });
   };
 
