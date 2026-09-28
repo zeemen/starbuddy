@@ -1,0 +1,39 @@
+{
+  "topic": "fun",
+  "version": "0.1.0",
+  "map_version_id": "ee911eb8-51b3-454e-85c0-fdb6c7e501e1",
+  "legacy_nodes": 45,
+  "imported_nodes": 24,
+  "topics": 7,
+  "by_kind": {
+    "ability_kp": 10,
+    "kp": 10,
+    "method": 4
+  },
+  "not_imported": [
+    "C-FUN-0909",
+    "C-FUN-0936",
+    "C-FUN-0948",
+    "C-FUN-0956",
+    "C-FUN-GEO",
+    "C-FUN-OPT",
+    "C-FUN-RNG",
+    "P-FUN-0912",
+    "P-FUN-0914",
+    "P-FUN-0915",
+    "P-FUN-0917",
+    "P-FUN-0918",
+    "P-FUN-0927",
+    "P-FUN-0931",
+    "P-FUN-0933",
+    "P-FUN-0942",
+    "P-FUN-0945",
+    "P-FUN-0961",
+    "P-FUN-0962",
+    "P-FUN-0963",
+    "P-FUN-0967"
+  ],
+  "edges": 9,
+  "dropped_transitive": [],
+  "worklist_items": 79
+}
