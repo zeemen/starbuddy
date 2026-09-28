@@ -260,6 +260,38 @@ SERVICE_MUTATIONS = {
 }
 
 
+# ---------- v1.0 候选版（specs/plugin-api-v1.0/spec.md 验收第 4 条） ----------
+V1_MUTATIONS = {
+    "删除“作答类证据必带 attempt_id”": drop_allof_clause("EvidenceDraft", "作答类证据必须指出"),
+    "作答 attempt_id 改回可选": assign(f"{S}.AttemptInput.required", ["item_ref", "occurred_at", "response"]),
+    "删除判分请求的前缀规则": delete(f"{S}.GradeRequest.allOf"),
+    "删除诊断请求的前缀规则": delete(f"{S}.DiagnoseRequest.allOf"),
+    "删除讲解请求的前缀规则": delete(f"{S}.TeachRequest.allOf"),
+    "删除变式请求的前缀规则": delete(f"{S}.GenerateVariationRequest.allOf"),
+    "时间戳去掉 pattern": delete(f"{S}.Timestamp.pattern"),
+    "报告恢复 forecast": assign(f"{S}.ReportFields.properties.forecast",
+                              {"type": "object", "properties": {"low": {"type": "number"}, "high": {"type": "number"},
+                                                                "basis_admitted_items": {"type": "integer"}}}),
+    "讲解恢复 verified_claims": assign(f"{S}.TeachResult.properties.verified_claims",
+                                     {"type": "array", "items": {"type": "object", "additionalProperties": False,
+                                                                 "properties": {"claim": {"type": "string", "maxLength": 500},
+                                                                                "verdict": {"type": "string", "enum": ["verified"]}}}}),
+    "采分点编号允许大写": assign(f"{S}.ScoringPoint.properties.point_id.pattern", "^[A-Za-z0-9_\\-]{1,48}$"),
+    "信号编码放开声纹与面部": assign(f"{S}.EvidencePayloadSignal.properties.signal_code.pattern",
+                                   "^(?!xp_|achievement_|mastery_)[a-z0-9_]{1,48}$"),
+    "学生 ID 去掉小写 pattern": delete(f"{S}.RequestContext.properties.student_ref.pattern"),
+    "证据等级加入 D": assign(f"{S}.GradeRequest.properties.evidence_level.enum", ["A", "B", "C", "D"]),
+    "考试满分允许 0": assign(f"{S}.ExamConfig.properties.full_score.minimum", 0),
+    "作答形态不再多选一": delete(f"{S}.AttemptInput.properties.response.maxProperties"),
+    "信封版本停在 0.9.0": assign(f"{S}.PluginResultBase.properties.contract_version.const", "0.9.0"),
+    "删除错误码 UNAUTHENTICATED": lambda d: _get(d, f"{S}.Problem.properties.code.enum").remove("UNAUTHENTICATED"),
+    "删除衔接字段 learner_context": delete(f"{S}.DiagnoseRequest.properties.learner_context"),
+    "衔接字段 scoring_points 改为必填": assign(f"{S}.GradeRequest.required", ["context", "attempt", "rubric_version", "scoring_points"]),
+    "作图语义的操作名放开": assign(f"{S}.AttemptInput.properties.response.properties.semantic.items.properties.op",
+                                  {"type": "string", "maxLength": 32}),
+}
+
+
 def main() -> int:
     base = cc.load(cc.DEFAULT_SPEC)
     baseline = cc.run_checks(base)
@@ -291,13 +323,30 @@ def main() -> int:
         if not [e for e in errs if "OpenAPI 3.1 校验失败" not in e and "无法完成" not in e]:
             missed.append(name)
 
-    total = len(MUTATIONS) + len(SERVICE_MUTATIONS)
+    v09 = cc.load(cc.DEFAULT_SPEC)
+    v1_base = cc.load(cc.V1_SPEC)
+    v1_baseline = cc.run_checks(v1_base, cc.V1_SPEC)
+    cc.check_breaking(v09, v1_base, v1_baseline)
+    if v1_baseline:
+        print("mutation-test: v1.0 候选版基线本身就不通过，先修契约：")
+        for e in v1_baseline:
+            print(f"  - {e}")
+        return 1
+    for name, mutate in V1_MUTATIONS.items():
+        doc = copy.deepcopy(v1_base)
+        mutate(doc)
+        errs = cc.run_checks(doc, cc.V1_SPEC)
+        cc.check_breaking(v09, doc, errs)
+        if not [e for e in errs if "OpenAPI 3.1 校验失败" not in e and "无法完成" not in e]:
+            missed.append(f"v1.0：{name}")
+
+    total = len(MUTATIONS) + len(SERVICE_MUTATIONS) + len(V1_MUTATIONS)
     if missed:
         print(f"mutation-test: 失败，{len(missed)}/{total} 个变异没有被发现：")
         for m in missed:
             print(f"  - {m}")
         return 1
-    print(f"mutation-test: 通过（{total} 个变异全部被发现，其中服务契约 {len(SERVICE_MUTATIONS)} 个）")
+    print(f"mutation-test: 通过（{total} 个变异全部被发现，其中服务契约 {len(SERVICE_MUTATIONS)} 个、v1.0 候选版 {len(V1_MUTATIONS)} 个）")
     return 0
 
 

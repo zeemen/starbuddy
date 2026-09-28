@@ -563,7 +563,7 @@ components:
         subject: { $ref: './plugin-api.v0.9.yaml#/components/schemas/Subject' }
         exam_type: { type: string, enum: [monthly, midterm, final, mock, other] }
         exam_date: { type: string, format: date }
-        full_score: { type: integer, enum: [100, 120, 150] }
+        full_score: { type: integer, minimum: 1, maximum: 300, description: 取自学生届别已发布考情方案的计分科目满分，服务端对照政策库校验（v1.0 评审 pol-#2 放宽）。 }
         scope_node_ids: { type: array, minItems: 1, maxItems: 400, items: { $ref: '#/components/schemas/NodeId' } }
     InsightPredictRequest:
       type: object

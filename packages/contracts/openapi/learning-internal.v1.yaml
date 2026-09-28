@@ -1,0 +1,192 @@
+openapi: 3.1.0
+info:
+  title: StarBuddy 学习服务内部 API（BFF → 学习服务）
+  version: 1.0.0
+  summary: 冲刺 1-C 写入接口。只供 BFF 调用，学生与家长不能直接访问。
+  description: |
+    状态：**v1 候选版，待评审签字**（`specs/plugin-api-v1.0/spec.md`；评审清单 N17、N18）。v0 保留到迁移期结束。
+
+    相对 v0：请求体改为插件 API v1.0 的 `GradeRequest` / `DiagnoseRequest`；新增只查询、不执行的重放接口（N17）；
+    写明 5xx 一律是结果未知（N18）。
+
+    请求体就是学科插件 API v1.0 的 `GradeRequest` / `DiagnoseRequest`（`plugin-api.v1.0.yaml`），
+    BFF 在调用前已完成鉴权、家长授权、选科（subject_enrollment）与同意（consent）检查，以及计量预留
+    （ADR 01 第 4 条、ADR 06）。学习服务不重复检查这些。学习服务调用对应学科的适配器，
+    按平台规则核对结果，在一个事务里幂等地写入学习者模型，然后返回**平台摘要**，不原样转发适配器响应。
+
+    ## 幂等
+    - 同一个 `context.idempotency_key` 与同一请求体（不含 `request_id`）重试：返回同一摘要，
+      响应头 `idempotent-replayed: true`，不再调用适配器、不写任何行。
+    - 同一个 key 配不同请求体：409 `IDEMPOTENCY_CONFLICT`。
+    - 并发到达的同 key 请求只执行一次，其余等它完成后拿到同一结果。
+
+    ## 计量
+    学习服务不预留、不结算（ADR 06）。BFF 按本接口的结果结算：
+    - 200：结算。
+    - 4xx 且 `retryable: false`：结果确定没有写入，回滚。
+    - **5xx 一律是结果未知**，不论 `retryable` 取值（评审 N18）；`retryable: true` 的 4xx（`BUSY` 等）与 BFF 自己超时同样是结果未知。
+      原来那次执行可能随后成功落库。BFF 不能直接回滚，必须用**同一个** `idempotency_key` 重试，按重试的结果结算或回滚
+      （安全审查 S7；ADR 06）。
+    - 计量预留过期后，BFF 先用重放接口（`GET /internal/v1/replay/{method}/{idempotency_key}`）查结果，
+      只查不执行：已写入就拿回摘要且不扣费；没有记录或失败过就换新 key，不会出现一次没有预留的执行（评审 N17）。
+  license:
+    name: 内部，未授权对外
+    identifier: LicenseRef-StarBuddy-Internal
+servers:
+  - url: http://127.0.0.1:8788
+    description: 学习服务只监听本机，由平台侧网关转发。
+security:
+  - bffServiceToken: []
+
+paths:
+  /internal/v1/grade:
+    post:
+      operationId: ingestGrade
+      summary: 判分并写入学习者模型
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: './plugin-api.v1.0.yaml#/components/schemas/GradeRequest' }
+      responses:
+        '200':
+          description: 已写入（或重放已写入的结果）
+          headers:
+            idempotent-replayed: { schema: { type: string, enum: ['true', 'false'] } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GradeSummary' }
+        default: { $ref: '#/components/responses/Problem' }
+  /internal/v1/diagnose:
+    post:
+      operationId: ingestDiagnose
+      summary: 诊断并写入学习者模型（冲刺 1 只支持带 attempts 的同步诊断）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: './plugin-api.v1.0.yaml#/components/schemas/DiagnoseRequest' }
+      responses:
+        '200':
+          description: 已写入（或重放已写入的结果）
+          headers:
+            idempotent-replayed: { schema: { type: string, enum: ['true', 'false'] } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DiagnoseSummary' }
+        default: { $ref: '#/components/responses/Problem' }
+  /internal/v1/replay/{method}/{idempotency_key}:
+    get:
+      operationId: replayResult
+      summary: 只查询、不执行：按方法与幂等键返回已有结果（评审 N17）
+      description: |
+        不调用适配器，不写任何行。已成功写入 → 200 与原摘要（响应头 `idempotent-replayed: true`）；
+        没有记录，或之前的执行确定失败 → 404 `REPLAY_NOT_FOUND`；同 key 的执行仍在进行 → 409 `BUSY`（结果未知，稍后再查）。
+      parameters:
+        - { name: method, in: path, required: true, schema: { type: string, enum: [grade, diagnose] } }
+        - { name: idempotency_key, in: path, required: true, schema: { type: string, minLength: 16, maxLength: 128 } }
+      responses:
+        '200':
+          description: 已写入的结果
+          headers:
+            idempotent-replayed: { schema: { type: string, enum: ['true'] } }
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/GradeSummary'
+                  - $ref: '#/components/schemas/DiagnoseSummary'
+        default: { $ref: '#/components/responses/Problem' }
+
+components:
+  securitySchemes:
+    bffServiceToken:
+      type: http
+      scheme: bearer
+      description: BFF 到学习服务的服务间令牌。
+
+  responses:
+    Problem:
+      description: 统一错误体
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+    Uuid: { type: string, format: uuid }
+    SummaryBase:
+      type: object
+      description: 平台摘要：只有 ID 与编码，不含作答、答案、维度分（spec 待人确认 #6）。
+      required: [method, subject, attempt_ids, evidence_ids, semantics, human_review_required, error_categories]
+      properties:
+        method: { type: string, enum: [grade, diagnose] }
+        subject: { type: string, enum: [wenli, aya, zhixing, echo] }
+        attempt_ids: { type: array, minItems: 1, items: { $ref: '#/components/schemas/Uuid' } }
+        evidence_ids: { type: array, minItems: 1, items: { $ref: '#/components/schemas/Uuid' } }
+        semantics:
+          type: string
+          enum: [formal, practice]
+          description: 平台判定的效力（按平台登记的准入状态，只会比适配器声明的更严）。
+        human_review_required: { type: boolean }
+        error_categories:
+          type: array
+          description: 本次错因的跨科大类（去重）。
+          items:
+            type: string
+            enum: [reading_the_question, locating_information, thinking_method, computation_or_grammar,
+                   expression_convention, strategy_and_time, knowledge]
+    GradeSummary:
+      unevaluatedProperties: false
+      allOf:
+        - $ref: '#/components/schemas/SummaryBase'
+        - required: [grade_result_id, verdict]
+          properties:
+            method: { const: grade }
+            grade_result_id: { $ref: '#/components/schemas/Uuid' }
+            verdict: { type: string, enum: [correct, incorrect, partial, needs_review, not_applicable] }
+    DiagnoseSummary:
+      unevaluatedProperties: false
+      allOf:
+        - $ref: '#/components/schemas/SummaryBase'
+        - required: [observation_count]
+          properties:
+            method: { const: diagnose }
+            observation_count: { type: integer, minimum: 0 }
+    Problem:
+      type: object
+      required: [type, title, status, code, retryable]
+      additionalProperties: false
+      properties:
+        type: { type: string, format: uri-reference }
+        title: { type: string, maxLength: 120, description: 不得包含学生原文。 }
+        status: { type: integer, minimum: 400, maximum: 599 }
+        detail:
+          type: string
+          maxLength: 500
+          description: 面向开发者的编码化说明。不得包含学生作答、答案或数据库报错原文。
+        code:
+          type: string
+          enum:
+            - INVALID_REQUEST
+            - UNAUTHENTICATED
+            - SUBJECT_NOT_SUPPORTED
+            - STUDENT_NOT_FOUND
+            - CONTENT_NOT_REGISTERED
+            - IDEMPOTENCY_CONFLICT
+            - BUSY  # 同 key 的另一请求仍在执行；响应头 retry-after
+            - ATTEMPT_ID_CONFLICT  # BFF 带来的 attempt_id 已被另一请求用过
+            - UPSTREAM_REJECTED
+            - UPSTREAM_UNAVAILABLE
+            - UPSTREAM_TIMEOUT
+            - ASYNC_NOT_SUPPORTED
+            - ADAPTER_RESULT_REJECTED
+            - REPLAY_NOT_FOUND  # 重放接口：没有记录或之前确定失败（评审 N17）
+            - INTERNAL
+        upstream_code:
+          type: string
+          description: 适配器返回的 Problem.code（UPSTREAM_REJECTED 时），例如 ITEM_NOT_FOUND。
+          pattern: '^[A-Z][A-Z0-9_]{0,47}$'
+        retryable:
+          type: boolean
+          description: 为真时 BFF 可用同一个 idempotency_key 重试。只对 4xx 有意义：5xx 一律是结果未知（评审 N18）。
+        request_id: { $ref: '#/components/schemas/Uuid' }

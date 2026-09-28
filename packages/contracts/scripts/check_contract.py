@@ -14,6 +14,7 @@
 由 Makefile 决定如何呈现；本脚本不会在缺依赖时假装通过。
 
 用法：check_contract.py [契约 yaml 路径]
+不带参数时检查 v0.9 与 v1.0 候选版两份（迁移期两份并存，specs/plugin-api-v1.0/spec.md），外加 v1.0 的破坏性变更反例。
 """
 from __future__ import annotations
 
@@ -22,7 +23,10 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-DEFAULT_SPEC = HERE.parent / "openapi" / "plugin-api.v0.9.yaml"
+OPENAPI = HERE.parent / "openapi"
+DEFAULT_SPEC = OPENAPI / "plugin-api.v0.9.yaml"
+V1_SPEC = OPENAPI / "plugin-api.v1.0.yaml"
+SPECS = [DEFAULT_SPEC, V1_SPEC]
 
 try:
     import yaml
@@ -51,6 +55,7 @@ FREE_TEXT_ALLOW = {
     ("TeachSegment", "latex"): {"TeachResponse"},
     ("TeachSegment", "dsl"): {"TeachResponse"},
     ("TeachResult.verified_claims", "claim"): {"TeachResponse"},
+    ("TeachResult.verified_statements", "statement"): {"TeachResponse"},  # v1.0 改名（评审 sie-#4）
     ("Problem", "title"): {"JobStatus"},
     ("Problem", "detail"): {"JobStatus"},
 }
@@ -61,6 +66,16 @@ PII_PATTERNS = {
     "身份证号": re.compile(r"(?<!\d)\d{17}[\dXx](?!\d)"),
     "邮箱": re.compile(r"[\w.+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b"),
 }
+
+
+def _registry(doc: dict, path: Path) -> tuple[Registry, str]:
+    """示例与反例校验用的注册表：契约本身按文件 URI 登记，同目录的其他契约也登记，跨文件 $ref（v1.0 引用两份服务契约）能解析。"""
+    registry = Registry()
+    for other in sorted(OPENAPI.glob("*.yaml")):
+        if other.resolve() != path.resolve():
+            registry = registry.with_resource(other.resolve().as_uri(), Resource(contents=load(other), specification=DRAFT202012))
+    uri = path.resolve().as_uri()
+    return registry.with_resource(uri, Resource(contents=doc, specification=DRAFT202012)), uri
 
 
 def _schemas(doc: dict) -> dict:
@@ -213,13 +228,13 @@ def _collect_evidence_refs(node, acc: set[str]) -> None:
             _collect_evidence_refs(v, acc)
 
 
-def check_examples(doc: dict, errors: list[str]) -> None:
-    registry = Registry().with_resource("urn:contract", Resource(contents=doc, specification=DRAFT202012))
+def check_examples(doc: dict, errors: list[str], path: Path = DEFAULT_SPEC) -> None:
+    registry, uri = _registry(doc, path)
     fmt = FormatChecker()
     examples = doc.get("components", {}).get("examples", {})
 
     def validate(schema_name: str, value) -> list[str]:
-        v = Draft202012Validator({"$ref": f"urn:contract#/components/schemas/{schema_name}"},
+        v = Draft202012Validator({"$ref": f"{uri}#/components/schemas/{schema_name}"},
                                  registry=registry, format_checker=fmt)
         return [f"{'/'.join(map(str, e.absolute_path))}：{e.message[:200]}" for e in v.iter_errors(value)]
 
@@ -276,45 +291,121 @@ def check_examples(doc: dict, errors: list[str]) -> None:
             errors.append(f"示例里出现疑似{label}：{hit.group(0)}（示例只能用合成数据）")
 
 
-def check_counterexamples(doc: dict, errors: list[str]) -> None:
-    """反例集：每个反例都必须被 schema 拒绝（packages/contracts/tests/counterexamples.py）。"""
+def _validator(registry: Registry, uri: str, schema: str, formats: bool = True) -> Draft202012Validator:
+    return Draft202012Validator({"$ref": f"{uri}#/components/schemas/{schema}"}, registry=registry,
+                                format_checker=FormatChecker() if formats else None)
+
+
+def check_counterexamples(doc: dict, errors: list[str], path: Path = DEFAULT_SPEC) -> None:
+    """反例集：每个反例都必须被 schema 拒绝（packages/contracts/tests/counterexamples.py）。
+    v1.0 另有自己的反例（counterexamples_v1.V1_CASES），只对 v1.0 校验。"""
     sys.path.insert(0, str(HERE.parent / "tests"))
     from counterexamples import CASES  # noqa: PLC0415
+    from counterexamples_v1 import V1_CASES  # noqa: PLC0415
 
-    registry = Registry().with_resource("urn:contract", Resource(contents=doc, specification=DRAFT202012))
+    registry, uri = _registry(doc, path)
     examples = doc["components"]["examples"]
-    for case in CASES:
+    cases = [*CASES, *(V1_CASES if doc["info"]["version"] == "1.0.0" else [])]
+    for case in cases:
         value = case.build(examples)
-        v = Draft202012Validator({"$ref": f"urn:contract#/components/schemas/{case.schema}"},
-                                 registry=registry, format_checker=FormatChecker())
-        if v.is_valid(value):
+        if _validator(registry, uri, case.schema).is_valid(value):
             errors.append(f"反例未被拒绝：{case.name}（{case.rule}）")
 
 
-def run_checks(doc: dict) -> list[str]:
+def check_breaking(v09: dict, v1: dict, errors: list[str]) -> int:
+    """v1.0 的每条破坏性变更：同一个实例 v0.9 接受、v1.0 拒绝（specs/plugin-api-v1.0/spec.md 验收第 2 条）。"""
+    sys.path.insert(0, str(HERE.parent / "tests"))
+    from counterexamples_v1 import BREAKING, to_v1  # noqa: PLC0415
+
+    reg0, uri0 = _registry(v09, DEFAULT_SPEC)
+    reg1, uri1 = _registry(v1, V1_SPEC)
+    for case in BREAKING:
+        value = case.build(v09["components"]["examples"])
+        if not _validator(reg0, uri0, case.schema, case.formats).is_valid(value):
+            errors.append(f"破坏性变更用例在 v0.9 下就不合法（证明不了是 v1.0 收紧）：{case.name}")
+        if _validator(reg1, uri1, case.schema, case.formats).is_valid(to_v1(value)):
+            errors.append(f"破坏性变更没有生效（v1.0 仍接受）：{case.name}（{case.rule}）")
+    return len(BREAKING)
+
+
+def check_versions(doc: dict, errors: list[str]) -> None:
+    """info.version、RequestContext、信封、能力声明四处的契约版本必须一致（README“版本策略”）。"""
+    version = doc["info"]["version"]
+    schemas = _schemas(doc)
+    found = {
+        "RequestContext": schemas["RequestContext"]["properties"]["contract_version"].get("const"),
+        "PluginResultBase": schemas["PluginResultBase"]["properties"]["contract_version"].get("const"),
+        "Capabilities": schemas["Capabilities"]["properties"]["contract_version"].get("const"),
+    }
+    for where, v in found.items():
+        if str(v) != version:
+            errors.append(f"{where}.contract_version（{v}）与 info.version（{version}）不一致")
+
+
+V1_FIELDS = {  # v1.0 与两个核心、考情库、输入通道的衔接字段（评审 svc-#1、#5、#6、pol-#1、ADR 15）
+    "DiagnoseRequest": ["learner_context", "node_path"],
+    "PlanRequest": ["learner_context", "node_path", "exam_config"],
+    "TeachRequest": ["knowledge_page"],
+    "GradeRequest": ["scoring_points", "answer_evidence_ref", "evidence_level", "exam_config"],
+    "GenerateVariationRequest": ["item_family", "exam_config"],
+    "ReportRequest": ["learner_context"],
+}
+V1_CODES = {"UNAUTHENTICATED", "MODE_NOT_SUPPORTED"}  # 评审 N1、N9
+
+
+def check_v1_rules(doc: dict, errors: list[str]) -> None:
+    """v1.0 才有的结构要求：衔接字段都在且不是必填（迁移期平台未必能填）；新增错误码在枚举里；预测不在报告里。"""
+    if doc["info"]["version"] != "1.0.0":
+        return
+    schemas = _schemas(doc)
+    for req, fields in V1_FIELDS.items():
+        props = schemas.get(req, {}).get("properties", {})
+        for f in fields:
+            if f not in props:
+                errors.append(f"{req} 缺少 v1.0 衔接字段 {f}")
+            if f in schemas.get(req, {}).get("required", []):
+                errors.append(f"{req}.{f} 必须是可选字段（平台上线对应服务后才填）")
+    missing = V1_CODES - set(schemas["Problem"]["properties"]["code"]["enum"])
+    if missing:
+        errors.append(f"Problem.code 缺少 v1.0 新增的错误码：{sorted(missing)}")
+    if "forecast" in schemas["ReportFields"].get("properties", {}):
+        errors.append("ReportFields 不能再有 forecast（评审 sie-#2：预测只由洞察服务提供）")
+
+
+def run_checks(doc: dict, path: Path = DEFAULT_SPEC) -> list[str]:
     errors: list[str] = []
     try:
-        validate_openapi(doc)
+        validate_openapi(doc, base_uri=path.resolve().as_uri())
     except Exception as exc:  # noqa: BLE001 - 打印校验器的原始信息
         errors.append(f"OpenAPI 3.1 校验失败：{str(exc)[:500]}")
-    for fn in (check_structure, check_examples, check_counterexamples):
+    for fn in (check_structure, check_versions, check_v1_rules):
         try:
             fn(doc, errors)
         except Exception as exc:  # noqa: BLE001 - 结构不完整时报错而不是崩溃
+            errors.append(f"{fn.__name__} 无法完成：{type(exc).__name__}: {exc}")
+    for fn in (check_examples, check_counterexamples):
+        try:
+            fn(doc, errors, path)
+        except Exception as exc:  # noqa: BLE001
             errors.append(f"{fn.__name__} 无法完成：{type(exc).__name__}: {exc}")
     return errors
 
 
 INTERNAL_SPEC = HERE.parent / "openapi" / "learning-internal.v0.yaml"
+INTERNAL_SPECS = [INTERNAL_SPEC, HERE.parent / "openapi" / "learning-internal.v1.yaml"]
 
 
 def check_internal(errors: list[str]) -> int:
-    """学习服务内部 API（BFF → 学习服务）：OpenAPI 合法，跨文件 $ref 都能解析（冲刺 1-A 范围第 5 条）。"""
-    doc = load(INTERNAL_SPEC)
+    """学习服务内部 API（BFF → 学习服务）v0 与 v1：OpenAPI 合法，跨文件 $ref 都能解析（冲刺 1-A 范围第 5 条）。"""
+    return sum(_check_internal_one(spec, errors) for spec in INTERNAL_SPECS)
+
+
+def _check_internal_one(spec: Path, errors: list[str]) -> int:
+    doc = load(spec)
     try:
-        validate_openapi(doc, base_uri=INTERNAL_SPEC.as_uri())
+        validate_openapi(doc, base_uri=spec.as_uri())
     except Exception as exc:  # noqa: BLE001
-        errors.append(f"learning-internal OpenAPI 校验失败：{str(exc)[:500]}")
+        errors.append(f"{spec.name} OpenAPI 校验失败：{str(exc)[:500]}")
     refs = 0
 
     def walk(node):
@@ -324,14 +415,14 @@ def check_internal(errors: list[str]) -> int:
             if isinstance(ref, str) and not ref.startswith("#"):
                 refs += 1
                 file, _, pointer = ref.partition("#")
-                target = (INTERNAL_SPEC.parent / file).resolve()
+                target = (spec.parent / file).resolve()
                 if not target.exists():
-                    errors.append(f"learning-internal：$ref 指向的文件不存在 {file}")
+                    errors.append(f"{spec.name}：$ref 指向的文件不存在 {file}")
                 else:
                     cur = load(target)
                     for part in pointer.strip("/").split("/"):
                         if not isinstance(cur, dict) or part not in cur:
-                            errors.append(f"learning-internal：$ref 无法解析 {ref}")
+                            errors.append(f"{spec.name}：$ref 无法解析 {ref}")
                             break
                         cur = cur[part]
             for v in node.values():
@@ -349,9 +440,19 @@ def load(path: Path) -> dict:
 
 
 def main() -> int:
-    spec = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_SPEC
-    doc = load(spec)
-    errors = run_checks(doc)
+    if len(sys.argv) > 1:
+        spec = Path(sys.argv[1])
+        doc = load(spec)
+        errors = run_checks(doc, spec)
+    else:
+        doc = load(DEFAULT_SPEC)
+        v1 = load(V1_SPEC)
+        errors = run_checks(doc, DEFAULT_SPEC) + [f"v1.0：{e}" for e in run_checks(v1, V1_SPEC)]
+        try:
+            n_breaking = check_breaking(doc, v1, errors)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"check_breaking 无法完成：{type(exc).__name__}: {exc}")
+            n_breaking = 0
     internal_refs = check_internal(errors) if len(sys.argv) <= 1 else None
     service_summary = None
     if len(sys.argv) <= 1:
@@ -369,10 +470,13 @@ def main() -> int:
     n_ex = len(doc["components"]["examples"])
     sys.path.insert(0, str(HERE.parent / "tests"))
     from counterexamples import CASES  # noqa: PLC0415
+    from counterexamples_v1 import V1_CASES  # noqa: PLC0415
     print(f"contract-test: 通过（OpenAPI 3.1 合法；{n_ex} 个示例符合 schema 且证据引用闭合；"
-          f"{len(CASES)} 个反例全部被拒绝；六方法信封、计量字段、无约束文本扫描、JobStatus 绑定、示例无 PII"
-          + (f"；learning-internal 合法、{internal_refs} 个跨文件引用可解析" if internal_refs is not None else "")
-          + (f"；{service_summary}" if service_summary else "") + "）")
+          f"{len(CASES)} 个反例全部被拒绝（v1.0 另加 {len(V1_CASES)} 个）；六方法信封、计量字段、无约束文本扫描、JobStatus 绑定、示例无 PII"
+          + (f"；learning-internal v0 与 v1 合法、{internal_refs} 个跨文件引用可解析" if internal_refs is not None else "")
+          + (f"；{service_summary}" if service_summary else "")
+          + (f"；v1.0 候选版合法、{len(v1['components']['examples'])} 个示例、{n_breaking} 条破坏性变更 v0.9 接受 / v1.0 拒绝"
+             if len(sys.argv) <= 1 else "") + "）")
     return 0
 
 

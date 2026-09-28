@@ -117,6 +117,8 @@ def build_request(fx: Fixtures, case: dict) -> dict:
     body: dict = {"context": context(fx, case)}
     if m == "grade":
         body["attempt"] = {**copy.deepcopy(case["attempt"]), "occurred_at": T0.isoformat()}
+        if CONTRACT_VERSION != "0.9.0":  # v1.0：attempt_id 由平台生成，必填（评审 N3、N4）
+            body["attempt"].setdefault("attempt_id", str(uuid.uuid4()))
         body["rubric_version"] = case.get("rubric_version", fx.rubric_version)
         if "appeal" in case:
             body["appeal"] = case["appeal"]
@@ -126,6 +128,9 @@ def build_request(fx: Fixtures, case: dict) -> dict:
             body["attempts"] = [
                 {**copy.deepcopy(a), "occurred_at": (T0 + timedelta(minutes=i)).isoformat()} for i, a in enumerate(case["attempts"])
             ]
+            if CONTRACT_VERSION != "0.9.0":
+                for a in body["attempts"]:
+                    a.setdefault("attempt_id", str(uuid.uuid4()))
         body.update(copy.deepcopy(case.get("body", {})))
     else:
         body.update(copy.deepcopy(case.get("body", {})))

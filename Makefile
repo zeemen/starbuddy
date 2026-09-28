@@ -95,6 +95,11 @@ conformance:
 	$(call run_contract,-m pytest -q -p no:cacheprovider packages/contracts/python/tests)
 	$(call run_contract,packages/contracts/conformance/cli.py --reference --quiet --report $(CONFORMANCE_REPORT_DIR)/conformance-reference.json)
 	$(call run_contract,packages/contracts/conformance/cli.py --reference --reference-async --quiet)
+	@# v1.0 候选版：参考适配器按 1.0.0 再跑一遍（迁移期两版并存，specs/plugin-api-v1.0/spec.md）；阿鸦在第二步切换前仍按 0.9.0
+	@STARBUDDY_CONTRACT_VERSION=1.0.0 $(PYTHON) packages/contracts/conformance/cli.py --reference --quiet; rc=$$?; \
+	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
+	@STARBUDDY_CONTRACT_VERSION=1.0.0 $(PYTHON) packages/contracts/conformance/cli.py --reference --reference-async --quiet; rc=$$?; \
+	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
 	@if [ ! -d adapters/aya/node_modules/ajv ]; then \
 	  echo "conformance: 阿鸦部分跳过（没有安装依赖；cd adapters/aya && npm ci）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi

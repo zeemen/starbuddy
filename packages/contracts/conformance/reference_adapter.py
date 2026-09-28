@@ -115,6 +115,8 @@ class ReferenceAdapter:
                   "admission": admission}
         text = it["answer"] if self.fault == "fabricated_text" else a["response"].get("text", "")
         resp = {"evidence_id": self._id(key, fp, f"{i}:r"), "kind": "response_text", **common, "payload": {"text": text}}
+        if CONTRACT_VERSION != "0.9.0" and "attempt_id" in a:  # v1.0：作答类证据指回所属作答（评审 N3）
+            resp["attempt_id"] = a["attempt_id"]
         trace = {"evidence_id": self._id(key, fp, f"{i}:t"), "kind": "verifier_trace", **common,
                  "payload": {"sampled_points": 0, "agreeing_points": 0, "reason_codes": []}}
         return resp, trace, it
