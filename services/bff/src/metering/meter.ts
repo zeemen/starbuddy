@@ -14,6 +14,9 @@ export type ResourceType =
   | 'diagnosis_screen' | 'diagnosis_full' | 'mock_exam' | 'mistake_analysis'
   | 'lesson_whiteboard' | 'voice_realtime' | 'ai_active_time';
 
+// 0015 的拒绝原因：留存态不调用 AI；宵禁时段；分钟类资源超过当日上限（规格书 V1.2 §3、§7、§12.2）
+export type GuardRejection = 'retained_no_ai' | 'curfew' | 'daily_cap_reached';
+
 export interface ReserveInput {
   studentId: string;
   resourceType: ResourceType;
@@ -30,7 +33,8 @@ export type ReserveResult =
   | { outcome: 'existing'; usage_id: string; state: 'reserved' | 'settled' | 'released' | 'expired';
       reserved_qty: number; settled_qty: number | null; expires_at: string; dedup_of: string | null }
   | { outcome: 'insufficient'; remaining: number }
-  | { outcome: 'conflict' | 'dedup_in_progress' | 'no_entitlement' };
+  | { outcome: 'daily_cap_reached'; remaining_today: number }
+  | { outcome: 'conflict' | 'dedup_in_progress' | 'no_entitlement' | 'retained_no_ai' | 'curfew' };
 
 export type TerminalResult = { outcome: 'settled' | 'released' | 'conflict'; usage_id: string; state: string; idempotent?: boolean };
 
@@ -91,7 +95,8 @@ export type MeteredCallResult =
   | { status: 'expired_retry_with_new_key'; usageId: string; problem: Problem }
   | { status: 'unknown'; usageId: string }
   | { status: 'insufficient'; remaining: number }
-  | { status: 'conflict' | 'dedup_in_progress' | 'no_entitlement' };
+  | { status: 'daily_cap_reached'; remainingToday: number }
+  | { status: 'conflict' | 'dedup_in_progress' | 'no_entitlement' | 'retained_no_ai' | 'curfew' };
 
 const DEFAULT_DELAYS = [1000, 2000, 4000, 8000];
 
@@ -122,9 +127,13 @@ export async function meteredCall(deps: MeterDeps, input: MeteredCallInput): Pro
   switch (r.outcome) {
     case 'insufficient':
       return { status: 'insufficient', remaining: r.remaining };
+    case 'daily_cap_reached':
+      return { status: 'daily_cap_reached', remainingToday: r.remaining_today };
     case 'conflict':
     case 'dedup_in_progress':
     case 'no_entitlement':
+    case 'retained_no_ai':
+    case 'curfew':
       return { status: r.outcome };
   }
   if (r.usage_id !== usageId) throw new Error('usage_id derived by the database does not match the BFF');

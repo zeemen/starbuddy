@@ -301,8 +301,10 @@ describe('Gate 0 计量场景', { skip: HAS_DB ? false : '没有 PGHOST（make b
   });
 
   test('选科并发：基础会员同时选两科，只有一科成功', async () => {
-    const fam = await createFamily(h, { source: 'trial' });
+    // 已上线学科在目录里是 beta，只对试点开放（0015）：用试点家庭，档位改成 basic（只能开 1 科）
+    const fam = await createFamily(h, { source: 'pilot_virtual' });
     const s = fam.students[0]!;
+    await h.su.query(`UPDATE platform.subscription SET tier = 'basic' WHERE student_id = $1 AND status = 'active'`, [s.id]);
     const enroll = async (subject: string) => {
       const c = await h.bff.connect();
       try {
@@ -323,11 +325,44 @@ describe('Gate 0 计量场景', { skip: HAS_DB ? false : '没有 PGHOST（make b
   });
 
   test('续期：周期结束后定时任务按配置发放下一周期', async () => {
-    const fam = await createFamily(h, { source: 'trial' });
+    const fam = await createFamily(h, { source: 'pilot_virtual' });
     const s = fam.students[0]!;
     await h.advance(31 * 24 * HOUR);
     assert.ok(await runRenewal(h.scheduler) >= 1);
-    assert.deepEqual(await counters(h, s.id, 'diagnosis_full'), { granted: 1, reserved: 0, settled: 0 });
+    assert.deepEqual(await counters(h, s.id, 'diagnosis_full'), { granted: 6, reserved: 0, settled: 0 });
     assert.ok(await ledgerConsistent(h));
+  });
+
+  test('试用 14 天到期不续期；留存态的计量请求被拒，不调学习服务（0015）', async () => {
+    const fam = await createFamily(h, { source: 'trial' });
+    const s = fam.students[0]!;
+    await h.advance(14 * 24 * HOUR + 1000);
+    assert.ok(await runRenewal(h.scheduler) >= 1);
+    const fake = new FakeLearning();
+    const r = await meteredCall(deps(fake), {
+      accountId: s.account, studentId: s.id, resourceType: 'diagnosis_full', idempotencyKey: key(),
+      body: { context: { subject: 'aya', student_ref: s.id }, attempts: [] },
+    });
+    assert.deepEqual(r, { status: 'retained_no_ai' });
+    assert.equal(fake.calls.length, 0);
+    assert.ok(await ledgerConsistent(h));
+  });
+
+  test('宵禁时段的计量请求被拒，不调学习服务（0015）', async () => {
+    const fam = await createFamily(h, { source: 'pilot_virtual' });
+    const s = fam.students[0]!;
+    const start = h.clockMs();
+    // 推进到上海时间 23:00（UTC 15:00）
+    const d = new Date(start);
+    const target = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 15, 0, 0) + (d.getUTCHours() >= 15 ? 24 * HOUR : 0);
+    await h.setClock(target);
+    const fake = new FakeLearning();
+    const r = await meteredCall(deps(fake), {
+      accountId: s.account, studentId: s.id, resourceType: 'diagnosis_full', idempotencyKey: key(),
+      body: { context: { subject: 'aya', student_ref: s.id }, attempts: [] },
+    });
+    assert.deepEqual(r, { status: 'curfew' });
+    assert.equal(fake.calls.length, 0);
+    assert.equal((await reservationsByStudent(h, s.id)).length, 0);
   });
 });

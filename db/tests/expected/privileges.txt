@@ -59,6 +59,12 @@ col|platform.skill_observation.id|starbuddy_authz|SELECT|SUPERUSER
 col|platform.skill_observation.student_id|starbuddy_authz|SELECT|SUPERUSER
 col|platform.skill_observation.superseded_at|starbuddy_learning|UPDATE|SUPERUSER
 col|platform.skill_observation.superseded_by|starbuddy_learning|UPDATE|SUPERUSER
+col|platform.student_time_guard.curfew_end|starbuddy_authz|UPDATE|SUPERUSER
+col|platform.student_time_guard.curfew_start|starbuddy_authz|UPDATE|SUPERUSER
+col|platform.student_time_guard.daily_cap_minutes|starbuddy_authz|UPDATE|SUPERUSER
+col|platform.student_time_guard.updated_at|starbuddy_authz|UPDATE|SUPERUSER
+col|platform.student_time_guard.updated_by|starbuddy_authz|UPDATE|SUPERUSER
+col|platform.subject_enrollment.paused_at|starbuddy_authz|UPDATE|SUPERUSER
 col|platform.subject_enrollment.status|starbuddy_authz|UPDATE|SUPERUSER
 col|platform.subscription.config_version|starbuddy_authz|UPDATE|SUPERUSER
 col|platform.subscription.next_config_version|starbuddy_authz|UPDATE|SUPERUSER
@@ -225,31 +231,50 @@ func|platform.is_self_student(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.is_self_student(uuid)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|platform.lookup_accounts_by_phone(text)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.lookup_accounts_by_phone(text)|starbuddy_bff|EXECUTE|starbuddy_authz
+func|platform.meter_apply_subject_limits(uuid,text,platform.plan_tier)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.meter_authorize_usage(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.meter_check_entitlement(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.meter_current_config()|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.meter_daily_cap(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.meter_expire_due(integer)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.meter_expire_due(integer)|starbuddy_scheduler|EXECUTE|starbuddy_authz
 func|platform.meter_grant_period(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.meter_in_curfew(uuid,timestamp with time zone)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.meter_in_window(time without time zone,time without time zone,time without time zone)|starbuddy_authz|EXECUTE|SUPERUSER
 func|platform.meter_lock_reservation(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.meter_main_subscription(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.meter_method_allowed(text,text)|starbuddy_authz|EXECUTE|SUPERUSER
+func|platform.meter_minutes_today(uuid,timestamp with time zone)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.meter_now()|starbuddy_authz|EXECUTE|SUPERUSER
 func|platform.meter_open_subscription(uuid,text)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.meter_open_subscription(uuid,text)|starbuddy_bff|EXECUTE|starbuddy_authz
+func|platform.meter_phone_digest(text)|starbuddy_authz|EXECUTE|SUPERUSER
+func|platform.meter_plan_daily_cap(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.meter_practice(uuid,text)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.meter_practice(uuid,text)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|platform.meter_release(uuid,text)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.meter_release(uuid,text)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|platform.meter_renew_due(integer)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.meter_renew_due(integer)|starbuddy_scheduler|EXECUTE|starbuddy_authz
 func|platform.meter_reserve(uuid,text,text,text,numeric,text,text)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.meter_reserve(uuid,text,text,text,numeric,text,text)|starbuddy_bff|EXECUTE|starbuddy_authz
+func|platform.meter_reserve_impl(uuid,text,text,text,numeric,text,text,boolean)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.meter_reserve_upload(uuid,text,text,text,integer)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.meter_reserve_upload(uuid,text,text,text,integer)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|platform.meter_same_key(platform.usage_reservation,uuid,text,text,text,text)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.meter_settle(uuid,numeric)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.meter_settle(uuid,numeric)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|platform.meter_sha1(bytea)|starbuddy_authz|EXECUTE|SUPERUSER
 func|platform.meter_sha1(bytea)|starbuddy_bff|EXECUTE|SUPERUSER
+func|platform.meter_slot_limit(text,platform.plan_tier,boolean)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.meter_state_of(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.meter_student_state(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.meter_student_state(uuid)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|platform.meter_subject_limit(text)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.meter_upgrade(uuid,platform.plan_tier)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.meter_usage_id(text)|starbuddy_authz|EXECUTE|SUPERUSER
 func|platform.meter_usage_id(text)|starbuddy_bff|EXECUTE|SUPERUSER
+func|platform.meter_uses_slots(text,platform.plan_tier)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.meter_uuidv5(uuid,text)|starbuddy_authz|EXECUTE|SUPERUSER
 func|platform.meter_uuidv5(uuid,text)|starbuddy_bff|EXECUTE|SUPERUSER
 func|platform.pause_subject(uuid,platform.subject)|starbuddy_authz|EXECUTE|starbuddy_authz
@@ -259,6 +284,8 @@ func|platform.redeem_guardian_invite(text)|starbuddy_authz|EXECUTE|starbuddy_aut
 func|platform.redeem_guardian_invite(text)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|platform.resolve_review_task(uuid,text)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.resolve_review_task(uuid,text)|starbuddy_review|EXECUTE|starbuddy_authz
+func|platform.set_time_guard(uuid,integer,time without time zone,time without time zone)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.set_time_guard(uuid,integer,time without time zone,time without time zone)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|platform.signup_guardian(text)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.signup_guardian(text)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|policy.distinct_count(text[])|starbuddy_authz|EXECUTE|SUPERUSER
@@ -291,22 +318,37 @@ owner|platform.is_active_guardian()|starbuddy_authz
 owner|platform.is_linked_guardian(uuid)|starbuddy_authz
 owner|platform.is_self_student(uuid)|starbuddy_authz
 owner|platform.lookup_accounts_by_phone(text)|starbuddy_authz
+owner|platform.meter_apply_subject_limits(uuid,text,platform.plan_tier)|starbuddy_authz
 owner|platform.meter_authorize_usage(uuid)|starbuddy_authz
 owner|platform.meter_check_entitlement(uuid)|starbuddy_authz
 owner|platform.meter_current_config()|starbuddy_authz
+owner|platform.meter_daily_cap(uuid)|starbuddy_authz
 owner|platform.meter_expire_due(integer)|starbuddy_authz
 owner|platform.meter_grant_period(uuid)|starbuddy_authz
+owner|platform.meter_in_curfew(uuid,timestamp with time zone)|starbuddy_authz
 owner|platform.meter_lock_reservation(uuid)|starbuddy_authz
+owner|platform.meter_main_subscription(uuid)|starbuddy_authz
+owner|platform.meter_minutes_today(uuid,timestamp with time zone)|starbuddy_authz
 owner|platform.meter_open_subscription(uuid,text)|starbuddy_authz
+owner|platform.meter_plan_daily_cap(uuid)|starbuddy_authz
+owner|platform.meter_practice(uuid,text)|starbuddy_authz
 owner|platform.meter_release(uuid,text)|starbuddy_authz
 owner|platform.meter_renew_due(integer)|starbuddy_authz
 owner|platform.meter_reserve(uuid,text,text,text,numeric,text,text)|starbuddy_authz
+owner|platform.meter_reserve_impl(uuid,text,text,text,numeric,text,text,boolean)|starbuddy_authz
+owner|platform.meter_reserve_upload(uuid,text,text,text,integer)|starbuddy_authz
 owner|platform.meter_same_key(platform.usage_reservation,uuid,text,text,text,text)|starbuddy_authz
 owner|platform.meter_settle(uuid,numeric)|starbuddy_authz
+owner|platform.meter_slot_limit(text,platform.plan_tier,boolean)|starbuddy_authz
+owner|platform.meter_state_of(uuid)|starbuddy_authz
+owner|platform.meter_student_state(uuid)|starbuddy_authz
 owner|platform.meter_subject_limit(text)|starbuddy_authz
+owner|platform.meter_upgrade(uuid,platform.plan_tier)|starbuddy_authz
+owner|platform.meter_uses_slots(text,platform.plan_tier)|starbuddy_authz
 owner|platform.pause_subject(uuid,platform.subject)|starbuddy_authz
 owner|platform.redeem_guardian_invite(text)|starbuddy_authz
 owner|platform.resolve_review_task(uuid,text)|starbuddy_authz
+owner|platform.set_time_guard(uuid,integer,time without time zone,time without time zone)|starbuddy_authz
 owner|platform.signup_guardian(text)|starbuddy_authz
 owner|policy.publish_scheme(uuid)|starbuddy_authz
 rel|insight.claim_history|starbuddy_authz|INSERT|SUPERUSER
@@ -446,6 +488,7 @@ rel|platform.mastery_estimate|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.mastery_estimate|starbuddy_bff|SELECT|SUPERUSER
 rel|platform.mastery_estimate|starbuddy_learning|INSERT|SUPERUSER
 rel|platform.mastery_estimate|starbuddy_learning|SELECT|SUPERUSER
+rel|platform.meter_secret|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.pilot_household|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.plan_allowance|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.plan_allowance|starbuddy_bff|SELECT|SUPERUSER
@@ -453,6 +496,9 @@ rel|platform.plan_config|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.plan_config|starbuddy_bff|SELECT|SUPERUSER
 rel|platform.plan_feature|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.plan_feature|starbuddy_bff|SELECT|SUPERUSER
+rel|platform.practice_log|starbuddy_authz|INSERT|SUPERUSER
+rel|platform.practice_log|starbuddy_authz|SELECT|SUPERUSER
+rel|platform.practice_log|starbuddy_bff|SELECT|SUPERUSER
 rel|platform.resource_type|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.resource_type|starbuddy_bff|SELECT|SUPERUSER
 rel|platform.review_task|starbuddy_authz|SELECT|SUPERUSER
@@ -471,6 +517,11 @@ rel|platform.student_profile|starbuddy_authz|INSERT|SUPERUSER
 rel|platform.student_profile|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.student_profile|starbuddy_bff|SELECT|SUPERUSER
 rel|platform.student_profile|starbuddy_learning|SELECT|SUPERUSER
+rel|platform.student_time_guard|starbuddy_authz|INSERT|SUPERUSER
+rel|platform.student_time_guard|starbuddy_authz|SELECT|SUPERUSER
+rel|platform.student_time_guard|starbuddy_bff|SELECT|SUPERUSER
+rel|platform.subject_catalog|starbuddy_authz|SELECT|SUPERUSER
+rel|platform.subject_catalog|starbuddy_bff|SELECT|SUPERUSER
 rel|platform.subject_enrollment|starbuddy_authz|INSERT|SUPERUSER
 rel|platform.subject_enrollment|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.subject_enrollment|starbuddy_bff|SELECT|SUPERUSER
@@ -478,6 +529,10 @@ rel|platform.subject_enrollment|starbuddy_learning|SELECT|SUPERUSER
 rel|platform.subscription|starbuddy_authz|INSERT|SUPERUSER
 rel|platform.subscription|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.subscription|starbuddy_bff|SELECT|SUPERUSER
+rel|platform.trial_claim_phone|starbuddy_authz|INSERT|SUPERUSER
+rel|platform.trial_claim_phone|starbuddy_authz|SELECT|SUPERUSER
+rel|platform.trial_claim|starbuddy_authz|INSERT|SUPERUSER
+rel|platform.trial_claim|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.usage_ledger|starbuddy_authz|INSERT|SUPERUSER
 rel|platform.usage_ledger|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.usage_reservation|starbuddy_authz|INSERT|SUPERUSER
@@ -563,21 +618,36 @@ secdef|platform.is_active_guardian()
 secdef|platform.is_linked_guardian(uuid)
 secdef|platform.is_self_student(uuid)
 secdef|platform.lookup_accounts_by_phone(text)
+secdef|platform.meter_apply_subject_limits(uuid,text,platform.plan_tier)
 secdef|platform.meter_authorize_usage(uuid)
 secdef|platform.meter_check_entitlement(uuid)
 secdef|platform.meter_current_config()
+secdef|platform.meter_daily_cap(uuid)
 secdef|platform.meter_expire_due(integer)
 secdef|platform.meter_grant_period(uuid)
+secdef|platform.meter_in_curfew(uuid,timestamp with time zone)
 secdef|platform.meter_lock_reservation(uuid)
+secdef|platform.meter_main_subscription(uuid)
+secdef|platform.meter_minutes_today(uuid,timestamp with time zone)
 secdef|platform.meter_open_subscription(uuid,text)
+secdef|platform.meter_plan_daily_cap(uuid)
+secdef|platform.meter_practice(uuid,text)
 secdef|platform.meter_release(uuid,text)
 secdef|platform.meter_renew_due(integer)
 secdef|platform.meter_reserve(uuid,text,text,text,numeric,text,text)
+secdef|platform.meter_reserve_impl(uuid,text,text,text,numeric,text,text,boolean)
+secdef|platform.meter_reserve_upload(uuid,text,text,text,integer)
 secdef|platform.meter_same_key(platform.usage_reservation,uuid,text,text,text,text)
 secdef|platform.meter_settle(uuid,numeric)
+secdef|platform.meter_slot_limit(text,platform.plan_tier,boolean)
+secdef|platform.meter_state_of(uuid)
+secdef|platform.meter_student_state(uuid)
 secdef|platform.meter_subject_limit(text)
+secdef|platform.meter_upgrade(uuid,platform.plan_tier)
+secdef|platform.meter_uses_slots(text,platform.plan_tier)
 secdef|platform.pause_subject(uuid,platform.subject)
 secdef|platform.redeem_guardian_invite(text)
 secdef|platform.resolve_review_task(uuid,text)
+secdef|platform.set_time_guard(uuid,integer,time without time zone,time without time zone)
 secdef|platform.signup_guardian(text)
 secdef|policy.publish_scheme(uuid)

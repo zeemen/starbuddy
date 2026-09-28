@@ -160,6 +160,7 @@ INSERT INTO t.visibility_exempt VALUES
   ('platform.curriculum_version', '内容登记，公开'), ('platform.skill_node', '内容登记，公开'), ('platform.item', '内容登记，公开'),
   ('platform.resource_type', '计量配置，公开'), ('platform.plan_config', '额度配置，只看非草稿'),
   ('platform.plan_allowance', '额度配置，只看非草稿'), ('platform.plan_feature', '额度配置，只看非草稿'),
+  ('platform.subject_catalog', '学科目录（学科码、上线状态、年级），公开信息'),
   ('insight.claim_template', '判断模板登记，只看已审核的，不含任何学生数据'),
   ('kge.map_version', '公共知识层，只看已发布版本，没有学生键（本文件第一节断言）'),
   ('kge.knowledge_node', '公共知识层，只看已发布版本的有效节点'), ('kge.knowledge_edge', '公共知识层，只看已发布版本的有效边'),
@@ -313,6 +314,7 @@ CREATE FUNCTION t.dummy_arg(typ regtype) RETURNS text LANGUAGE sql IMMUTABLE AS 
     WHEN 'date' THEN quote_literal('2012-03-01') || '::date'
     WHEN 'interval' THEN quote_literal('1 day') || '::interval'
     WHEN 'platform.subject' THEN quote_literal('aya') || '::platform.subject'
+    WHEN 'time without time zone' THEN quote_literal('22:00') || '::time'
     ELSE NULL END $$;
 
 -- 结果含 SQLSTATE、消息、DETAIL、HINT：任何一项因“对象存在”而不同，都算泄露存在性（安全审查建议 2）

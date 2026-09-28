@@ -312,6 +312,25 @@ sequenceDiagram
 
 ---
 
+## 9. 计量与权益 v2（迁移 0015，规格书 V1.2）
+
+spec：`specs/metering-v2/spec.md`；记录与待人确认：`specs/metering-v2/lessons.md`。账本、预留状态机、加锁顺序与本文第 1–5 节相同，只增加下面几项。
+
+| 项 | 做法 |
+|---|---|
+| 订阅状态 | 状态值不改名（active / grace / ended）。规格的 trialing / active / grace / retained / none 由 `platform.meter_state_of` 从订阅推出，不另存 |
+| 试用 | 14 天一期、不续期，发放基本档完整额度；到期由续期任务结束，学生转留存态。一次性：同一家庭、同一手机号（带密钥的 HMAC 摘要，密钥只有函数属主能读）各一次 |
+| 付费到期 | active → grace → 7 天后 ended（付费续期随支付接入） |
+| 留存态 | 任何计量预留返回 `retained_no_ai`；题库自练（`meter_practice`，不进额度账本）每天 5 次，按上海时间换日 |
+| 新资源 | `upload`（按页折算：ceil(页数 / 4)，只能经 `meter_reserve_upload`；同内容 24 小时去重）、`storage_bytes`（周期累计字节）、`deep_report`；三者不对应插件方法（`bff_only`） |
+| 宵禁 | 默认上海时间 22:00–6:00；家长只能收紧。`curfew_applies` 的资源在宵禁内返回 `curfew`（存储、深度报告、题库自练不受限） |
+| 单日上限 | 档位的 `daily_minutes_cap`（缺省 180）与家长设定取小；分钟类资源的“已结算 + 预留中”超过上限返回 `daily_cap_reached`；同一学生的分钟类预留按学生 advisory 锁串行（先于额度桶锁） |
+| 选科 | 学科目录 `platform.subject_catalog`（planned / beta / live，beta 只对试点）；配置有 `core_subjects` 时按“核心 + 选修槽”：换下的科目本周期仍占槽，每周期只能换下 1 科；否则沿用 `max_active_subjects` |
+| 升级 | `meter_upgrade`：即时生效，按“新档额度 − 旧档额度”补差，已用量保留；支付接入前不授权给任何应用角色 |
+| 配置发布检查 | 四档资源集合相同且非空；每档有讲评、报告、申诉与一种选科规则；单日上限可缺省 |
+
+---
+
 ## 签字
 
 | 角色 | 结论（通过 / 修改后通过 / 不通过） | 签字 | 日期 |

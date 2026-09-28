@@ -5,7 +5,7 @@
 -- 凡是“会被拒绝”的断言，同一 SQLSTATE 可能来自多条规则时用 t.throws_like 核对错误信息，避免被别的规则顶替。
 
 -- ================= 一、种子：与完整方案第八章逐格一致 =================
-SELECT t.ok((SELECT count(*) FROM platform.resource_type) = 7, '资源类型 7 种');
+SELECT t.ok((SELECT count(*) FROM platform.resource_type) = 10, '资源类型 10 种（0008 的 7 种 + 0015 的上传、存储、深度报告）');
 SELECT t.ok((SELECT status FROM platform.plan_config WHERE version = 'ch8-hypothesis@1') = 'draft',
             '第八章额度以草稿版本入库（ch8-hypothesis@1，待产品发布）');
 SELECT t.ok(NOT EXISTS (
@@ -43,17 +43,19 @@ SELECT t.ok(NOT EXISTS (
   WHERE f.tier IS NULL OR e.tier IS NULL OR f.value_code <> e.val),
   '四级权益（可选学科数、讲评形式、报告、申诉）与第八章一致（16 格）');
 SELECT t.ok((SELECT dedup_window FROM platform.resource_type WHERE code = 'mistake_analysis') = interval '24 hours'
-            AND (SELECT count(*) FROM platform.resource_type WHERE dedup_window IS NOT NULL) = 1,
-            '只有错题解析有 24 小时复看不重复扣');
+            AND (SELECT dedup_window FROM platform.resource_type WHERE code = 'upload') = interval '24 hours'
+            AND (SELECT count(*) FROM platform.resource_type WHERE dedup_window IS NOT NULL) = 2,
+            '只有错题解析与上传（0015）有 24 小时不重复扣');
 SELECT t.ok((SELECT count(*) FROM platform.resource_type WHERE unit = 'minute' AND rounding = 'ceil') = 2
             AND (SELECT pool FROM platform.resource_type WHERE code = 'voice_realtime') = 'voice',
             '语音与 AI 互动时长按分钟向上取整；语音单独成池');
 SELECT t.throws_like($$INSERT INTO platform.resource_type (code, unit, rounding, pool, reservation_ttl, max_per_reservation)
                        VALUES ('synthetic_minutes', 'minute', 'none', 'general', interval '10 minutes', 1)$$,
                      '23514', 'resource_minute_rounds_up', '按分钟计的资源必须向上取整');
-SELECT t.throws_like($$INSERT INTO platform.resource_type (code, unit, rounding, dedup_window, pool, reservation_ttl, max_per_reservation)
-                       VALUES ('synthetic_batch', 'count', 'none', interval '1 day', 'general', interval '10 minutes', 5)$$,
-                     '23514', 'resource_dedup_single', '可去重的资源一笔预留只能对应一份内容');
+-- 0015 去掉了“可去重只能单次 1”（上传按页折算后一笔可以大于 1，仍按内容去重）
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'resource_dedup_single')
+            AND (SELECT max_per_reservation FROM platform.resource_type WHERE code = 'upload') = 8,
+            '上传可去重且一笔最多 8 次（32 页 PDF）');
 
 -- ================= 二、额度配置：草稿可改，发布后只读 =================
 INSERT INTO platform.plan_config (version, note_code) VALUES ('synthetic-plan@1', 'synthetic_test_plan');
