@@ -28,12 +28,17 @@ async def learning_tx(pool: asyncpg.Pool):
 
 
 def db_error(e: asyncpg.PostgresError) -> IngestError:
+    """约束类错误（23xxx）说明结果本身违反平台规则：确定失败。其余（连接中断 08、关停 57P、并发冲突 40 等）
+    发生在提交阶段时事务可能已提交：结果未知，同 key 重试（评审 N18 b；契约审查建议 2）。"""
+    sqlstate = e.sqlstate or ""
+    if not sqlstate.startswith("23"):
+        return IngestError(500, "INTERNAL", "internal error", retryable=True)
     constraint = getattr(e, "constraint_name", None) or ""
     return IngestError(
         502,
         "ADAPTER_RESULT_REJECTED",
         "result violates platform constraints",
-        detail=f"sqlstate {e.sqlstate}" + (f" constraint {constraint}" if constraint else ""),
+        detail=f"sqlstate {sqlstate}" + (f" constraint {constraint}" if constraint else ""),
     )
 
 

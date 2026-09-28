@@ -2,7 +2,7 @@
 -- BFF 的计量预留过期后，先调学习服务的重放接口（只查不执行）。没有记录或之前确定失败时，重放接口封存这个
 -- (method, idempotency_key)：之后以它到达的原请求不再执行（409 IDEMPOTENCY_KEY_SEALED），不会出现一次没有预留的执行。
 -- 只有学习服务能读写；封存只追加，不能改、不能删（学生档案删除时级联删除）。
--- 重放要核对原请求的 usage_id，所以幂等表补一列（旧行为空：旧行不能被重放拿到结果，只能被封存）。
+-- 重放要核对原请求的 usage_id，所以幂等表补一列（旧行为空：重放时只核对学生）。
 
 ALTER TABLE platform.ingest_request ADD COLUMN usage_id uuid;
 COMMENT ON COLUMN platform.ingest_request.usage_id IS '原请求的计量预留 ID；重放接口按它与 student_id 核对（0016）';

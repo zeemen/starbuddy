@@ -229,6 +229,8 @@ def verify(
             e["evidence_id"]
             for e in evidence
             if e["kind"] in RESPONSE_KINDS and e.get("item_ref") == a["item_ref"] and parse_time(e["occurred_at"]) == t
+            # v1.0：作答证据的 attempt_id 必须就是这道作答的（契约审查建议 1：对调两道作答的 attempt_id 也要拒绝）
+            and (version == "0.9.0" or e.get("attempt_id") == a.get("attempt_id"))
         ]
         if len(matches) != 1:
             raise rejected(f"attempt must match exactly one response evidence, got {len(matches)}")

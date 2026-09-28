@@ -23,6 +23,9 @@
 8. 阿鸦自己也有候选版开关（`allowCandidate`），关着时声明 1.0.0 的请求返回 `CONTRACT_VERSION_UNSUPPORTED`，与学习服务形成两道闸。
 9. 覆盖缺口：BFF 侧“封存 → 晚到原请求被拒”只用假学习服务验证；真实学习服务与数据库的组合在 `services/learning/tests/test_v1_replay.py` 单独验证，没有两服务联跑的冒烟测试。
 5. 指标 `reexecuted_without_reservation` 已改为 `sealed_after_expiry`：过期后不再发原请求，N17 缺口关闭。
+10. 契约审查：v1.0 作答证据按 `item_ref + occurred_at` 配对后还要求 `attempt_id` 就是这道作答的（两道作答对调也拒绝）；
+    提交阶段的数据库错误只有约束类（23xxx）算确定失败，其余改为 500 `INTERNAL`、`retryable: true`（N18 b）；
+    阿鸦在 v1.0 下对不支持的模式与作答形态报 `MODE_NOT_SUPPORTED`，0.9.0 仍报 `INVALID_REQUEST`。
 
 ## 待人确认
 1. 迁移 0016 由人先在副本演练再执行（必停项），**必须先于本版本学习服务上线**：v0、v1 写入都要查封存表，
@@ -35,3 +38,7 @@
    `latex` 能否按现有符号验证器解析，待教研与负责人决定。
 6. 阿鸦的默认契约版本用启动参数 `--contract-version 1.0.0 --allow-candidate-contract` 切换（一致性测试的 CLI 不向适配器进程传环境变量）；
    1.0.0 那条一致性测试不写覆盖率报告，避免 Gate 0 重复计数。v1.0 新增的 `MODE_NOT_SUPPORTED`、`UNAUTHENTICATED` 编码暂未启用。
+7. v0 路径的封存复用 409 `IDEMPOTENCY_CONFLICT`，超出了 v0 契约对它“同 key 不同请求体”的语义；是否在 v0 契约里补 `IDEMPOTENCY_KEY_SEALED`（契约变更，必停项）。
+8. 平台还没对照注册表核实 `rule_ref`、`rubric_version`、`verifier_id@version`（契约写明“不在注册表里的一律按模型判分处理”）；
+   建议随 Rubric / 验证器注册落地时在 `checks.verify` 补上（本次 diff 之前就存在）。
+9. `adapters/aya/scripts/register-content.ts` 生成写平台内容表的 SQL（由人执行、不连库）：迁到 `tools/` 或在 spec 里明确“内容登记例外”（本次 diff 之前就存在）。

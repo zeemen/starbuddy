@@ -84,6 +84,7 @@ interface ErrorAttribution {
 
 type ProblemCode =
   | "INVALID_REQUEST"
+  | "MODE_NOT_SUPPORTED"  // v1.0 起（评审 N9）；0.9.0 请求仍报 INVALID_REQUEST
   | "CONTRACT_VERSION_UNSUPPORTED"
   | "SUBJECT_MISMATCH"
   | "METHOD_NOT_IMPLEMENTED"
@@ -172,6 +173,10 @@ export function createAdapter(deps: AdapterDeps) {
     return v;
   };
 
+  /** 不支持的模式或作答形态：v1.0 用 MODE_NOT_SUPPORTED，0.9.0 仍用 INVALID_REQUEST（契约审查建议 3） */
+  const unsupported = (version: ContractVersion, title: string) =>
+    new ProblemError(422, version === "0.9.0" ? "INVALID_REQUEST" : "MODE_NOT_SUPPORTED", title);
+
   const validateOrThrow = (schema: SchemaName, value: unknown, version: ContractVersion) => {
     const r = contract.validate(schema, value, version);
     if (!r.ok) throw new ProblemError(400, "INVALID_REQUEST", "request does not match the contract", r.errors.join("; "));
@@ -200,10 +205,14 @@ export function createAdapter(deps: AdapterDeps) {
   };
 
   /** 判一道作答：只支持客观题（单选、多选、填空）。过程题（拍照）在后续冲刺。 */
-  const verifyAttempt = (item: PackItem, attempt: AttemptInput): Verification => {
-    const r = attempt.response;
+  const verifyAttempt = (item: PackItem, attempt: AttemptInput, version: ContractVersion): Verification => {
+    const r = attempt.response as AttemptInput["response"] & Record<string, unknown>;
     if (r.image_ref || r.transcript_ref) {
-      throw new ProblemError(422, "INVALID_REQUEST", "process grading from photos or transcripts is not implemented");
+      throw unsupported(version, "process grading from photos or transcripts is not implemented");
+    }
+    // v1.0 新增的作答形态：阿鸦暂不支持（latex 能否接现有验证器待教研决定，lessons 待人确认）
+    if (r["latex"] !== undefined || r["mhchem"] !== undefined || r["semantic"] !== undefined) {
+      throw unsupported(version, "aya accepts response.text and response.choice only");
     }
     if (item.format === "fill") {
       if (r.text === undefined) throw new ProblemError(422, "INVALID_REQUEST", "fill item expects response.text");
@@ -340,7 +349,7 @@ export function createAdapter(deps: AdapterDeps) {
     const fp = requestFingerprint({ ...req, appeal: req.appeal === true } as unknown as Parameters<typeof requestFingerprint>[0]);
     return idempotent("grade", req.context.idempotency_key, fp, () => {
       const item = findItem(req.attempt.item_ref);
-      const v = verifyAttempt(item, req.attempt);
+      const v = verifyAttempt(item, req.attempt, version);
       const id = (label: string) => deriveUuid("grade", req.context.idempotency_key, fp, `a0:${label}`);
       const { response, trace } = buildEvidence(item, req.attempt, v, id, version);
       const evidence = [response, trace];
@@ -388,7 +397,7 @@ export function createAdapter(deps: AdapterDeps) {
     const req = body as DiagnoseRequest;
     checkContext(req.context, false);
     if (req.mode !== "intake" && req.mode !== "gap_test") {
-      throw new ProblemError(422, "INVALID_REQUEST", "aya diagnose supports mode intake and gap_test only");
+      throw unsupported(version, "aya diagnose supports mode intake and gap_test only");
     }
     if (!req.attempts || req.attempts.length === 0) {
       throw new ProblemError(422, "INVALID_REQUEST", "aya diagnose needs at least one attempt");
@@ -402,7 +411,7 @@ export function createAdapter(deps: AdapterDeps) {
       let anyBoundary = false;
       attempts.forEach((attempt, i) => {
         const item = findItem(attempt.item_ref);
-        const v = verifyAttempt(item, attempt);
+        const v = verifyAttempt(item, attempt, version);
         const id = (label: string) => deriveUuid("diagnose", req.context.idempotency_key, fp, `a${i}:${label}`);
         const { response, trace } = buildEvidence(item, attempt, v, id, version);
         evidence.push(response, trace);

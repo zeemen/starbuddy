@@ -293,3 +293,39 @@ async def test_startup_refuses_without_migration_0016():
     with pytest.raises(RuntimeError, match="0016"):
         async with app.router.lifespan_context(app):
             pass
+
+
+async def test_v1_diagnose_swapped_attempt_ids_are_rejected(api, pools, student, fake_adapter):
+    """契约审查建议 1：两道作答的 attempt_id 对调（都属于本次请求）也要拒绝。"""
+    from conftest import at, diagnose_body
+    _, admin = pools
+    body = to_v1_body(diagnose_body(student, [at("SYN-UNV", "42", 1), at("SYN-UNV2", "41", 2)]))
+    ids = [a["attempt_id"] for a in body["attempts"]]
+
+    def swap(out):
+        for e in out["evidence"]:
+            if "attempt_id" in e:
+                e["attempt_id"] = ids[1] if e["attempt_id"] == ids[0] else ids[0]
+        return out
+    assert (await api.post("/internal/v1/diagnose", json=body)).status_code == 200, "对照：不对调时通过"
+    body2 = to_v1_body(diagnose_body(student, [at("SYN-UNV", "42", 3), at("SYN-UNV2", "41", 4)]))
+    ids[:] = [a["attempt_id"] for a in body2["attempts"]]
+    before = await counts(admin, student)
+    fake_adapter.mutate = swap
+    r = await api.post("/internal/v1/diagnose", json=body2)
+    assert r.status_code == 502 and r.json()["code"] == "ADAPTER_RESULT_REJECTED"
+    assert await counts(admin, student) == before
+
+
+@pytest.mark.parametrize("sqlstate,status,code,retryable", [
+    ("23505", 502, "ADAPTER_RESULT_REJECTED", False),
+    ("08006", 500, "INTERNAL", True),
+    ("57P01", 500, "INTERNAL", True),
+    ("40001", 500, "INTERNAL", True),
+])
+def test_db_error_mapping(sqlstate, status, code, retryable):
+    """契约审查建议 2：只有约束类错误是确定失败，其余提交阶段错误是结果未知（N18 b）。"""
+    import asyncpg
+    e = asyncpg.PostgresError.new({"C": sqlstate, "M": "synthetic", "S": "ERROR"})
+    err = store.db_error(e)
+    assert (err.status, err.code, err.retryable) == (status, code, retryable)

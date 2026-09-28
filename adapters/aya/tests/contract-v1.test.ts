@@ -248,3 +248,14 @@ test("候选版开关没开：声明 1.0.0 的请求返回 CONTRACT_VERSION_UNSU
   const ok = closed.handle("POST", "grade", gradeBody(fillItem.id, { text: fillItem.answer[0]! }));
   assert.equal(ok.status, 200);
 });
+
+test("v1.0 不支持的作答形态报 MODE_NOT_SUPPORTED，0.9.0 仍报 INVALID_REQUEST", () => {
+  const latex = adapter.handle("POST", "grade", gradeBodyV1(fillItem.id, { latex: "42" } as unknown as Response));
+  assert.equal(latex.status, 422);
+  assert.equal((latex.body as Json).code, "MODE_NOT_SUPPORTED");
+  assert.deepEqual(contract.validate("Problem", latex.body, "1.0.0"), { ok: true });
+  const photoV1 = adapter.handle("POST", "grade", gradeBodyV1(fillItem.id, { image_ref: "objstore://synthetic/p.jpg" } as unknown as Response));
+  assert.equal((photoV1.body as Json).code, "MODE_NOT_SUPPORTED");
+  const photoV0 = adapter.handle("POST", "grade", gradeBody(fillItem.id, { image_ref: "objstore://synthetic/p.jpg" } as unknown as Response));
+  assert.equal((photoV0.body as Json).code, "INVALID_REQUEST");
+});

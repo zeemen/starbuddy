@@ -138,3 +138,56 @@ def test_other_methods_are_explicitly_unsupported():
 def test_parse_time_is_strict(bad):
     with pytest.raises(ValueError):
         parse_time(bad)
+
+
+# ---------- 双版本（specs/plugin-api-v1.0-step2；契约审查“共享库补单测”） ----------
+from starbuddy_contract.contract import UnsupportedContractVersion, plugin_contract  # noqa: E402
+
+A1 = str(uuid.uuid4())
+
+
+def v1(req, resp):
+    req["context"].update(contract_version="1.0.0", idempotency_key=str(uuid.uuid4()))
+    req["attempt"]["attempt_id"] = A1
+    resp["contract_version"] = "1.0.0"
+    for e in resp["evidence"]:
+        e["attempt_id"] = A1
+    return req, resp
+
+
+def test_plugin_contract_version_gate(monkeypatch):
+    assert plugin_contract("0.9.0").version == "0.9.0"
+    with pytest.raises(UnsupportedContractVersion):
+        plugin_contract("2.0.0")
+    assert plugin_contract(None).version == "0.9.0", "不指定版本时用环境默认版本"
+    monkeypatch.delenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", raising=False)
+    with pytest.raises(UnsupportedContractVersion):
+        plugin_contract("1.0.0")
+    monkeypatch.setenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", "1")
+    assert plugin_contract("1.0.0").version == "1.0.0"
+
+
+def test_v1_result_passes(monkeypatch):
+    monkeypatch.setenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", "1")
+    assert run(*v1(request(), response())).response_evidence_ids == [E1]
+
+
+@pytest.mark.parametrize("name,mutate", [
+    ("response_version_differs", lambda r: r.__setitem__("contract_version", "0.9.0")),
+    ("missing_attempt_id", lambda r: r["evidence"][0].pop("attempt_id")),
+    ("foreign_attempt_id", lambda r: r["evidence"][0].__setitem__("attempt_id", str(uuid.uuid4()))),
+    ("trace_foreign_attempt_id", lambda r: r["evidence"][1].__setitem__("attempt_id", str(uuid.uuid4()))),
+])
+def test_v1_violations_are_rejected(monkeypatch, name, mutate):
+    monkeypatch.setenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", "1")
+    req, resp = v1(request(), response())
+    mutate(resp)
+    with pytest.raises(ContractViolation):
+        run(req, resp)
+
+
+def test_v0_response_to_v0_request_must_say_v0():
+    resp = response()
+    resp["contract_version"] = "1.0.0"
+    with pytest.raises(ContractViolation):
+        run(request(), resp)

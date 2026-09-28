@@ -143,7 +143,7 @@ def create_app(
     async def replay(method: str, key: str, request: Request) -> JSONResponse:
         """只查询、不执行（learning-internal.v1，评审 N17）。不存在、参数不匹配都返回同样的 404，不透露 key 是否存在。"""
         started = time.monotonic()
-        record: dict = {"method": f"replay:{method}"[:32]}
+        record: dict = {"method": f"replay:{method}" if method in ("grade", "diagnose") else "replay:invalid"}
         try:
             if not _bearer_ok(request.headers.get("authorization"), settings.service_credential):
                 raise IngestError(401, "UNAUTHENTICATED", "missing or invalid service token")
@@ -158,7 +158,7 @@ def create_app(
                 return JSONResponse(r.summary, headers={"idempotent-replayed": "true"})
             if r.kind == "busy":
                 raise IngestError(409, "BUSY", "another request with this key is still running", retryable=True)
-            raise IngestError(404, "REPLAY_NOT_FOUND", "no recorded result for this key; the key is now sealed")
+            raise IngestError(404, "REPLAY_NOT_FOUND", "no recorded result for this key")
         except IngestError as e:
             record.update(status=e.status, code=e.code)
             return _problem(e, None)
