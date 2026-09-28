@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>点斗 StarBuddy 平台规划 v1.3 增补篇 · 升学导航与家庭支持</title>
+<style>
+:root{
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  --paper:#F7F8F5;--paper-2:#EEF0EA;--ink:#1B2130;--ink-2:#4A5163;--ink-3:#7C8394;
+  --rule:#CDD2C9;--crow:#2E4A7D;--crow-soft:#DCE4F2;--slate:#6B7280;--slate-soft:#E5E7EB;
+  --gold:#C9962E;--gold-soft:#F5E7C4;--green:#3F7A5A;--green-soft:#DCEBE1;
+  --serif:"Noto Serif SC","Songti SC","SimSun","Source Han Serif SC",serif;
+  --sans:"Noto Sans SC","PingFang SC","Microsoft YaHei","Source Han Sans SC",sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#151922;--paper-2:#1D222D;--ink:#E8EAE4;--ink-2:#B7BCC7;--ink-3:#868D9C;
+    --rule:#343A47;--crow:#8FAAD8;--crow-soft:#243352;--slate:#A0A6B3;--slate-soft:#2B303B;
+    --gold:#DDB35A;--gold-soft:#3D3320;--green:#7FB89A;--green-soft:#1F3328;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#151922;--paper-2:#1D222D;--ink:#E8EAE4;--ink-2:#B7BCC7;--ink-3:#868D9C;
+  --rule:#343A47;--crow:#8FAAD8;--crow-soft:#243352;--slate:#A0A6B3;--slate-soft:#2B303B;
+  --gold:#DDB35A;--gold-soft:#3D3320;--green:#7FB89A;--green-soft:#1F3328;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:inherit}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.8;-webkit-font-smoothing:antialiased}
+a{color:var(--crow)}
+img,svg{max-width:100%}
+.page{max-width:1120px;margin:0 auto;padding:0 20px 80px}
+.masthead{padding:56px 0 28px;border-bottom:2px solid var(--ink)}
+.masthead .doc-no{font-size:13px;color:var(--ink-3);letter-spacing:.04em}
+.masthead h1{font-family:var(--serif);font-weight:700;font-size:clamp(26px,3.6vw,40px);line-height:1.3;margin:10px 0 6px}
+.masthead .sub{font-family:var(--serif);font-size:clamp(16px,2vw,20px);color:var(--ink-2);margin:0 0 22px;max-width:40em}
+.meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px 24px;font-size:14px;color:var(--ink-2)}
+.meta b{display:block;color:var(--ink-3);font-weight:500;font-size:12px}
+section{display:grid;grid-template-columns:150px 1fr;gap:0 36px;padding:44px 0 8px;border-bottom:1px solid var(--rule)}
+section:last-of-type{border-bottom:0}
+.margin{font-family:var(--serif);color:var(--crow);font-size:15px;line-height:1.6;padding-top:8px;position:sticky;top:calc(env(safe-area-inset-top,0px) + 16px);align-self:start}
+.margin .n{display:block;font-size:34px;font-weight:700;line-height:1;color:var(--ink);margin-bottom:6px}
+.body{min-width:0}
+h2{font-family:var(--serif);font-size:24px;font-weight:700;margin:0 0 14px;line-height:1.4}
+h3{font-family:var(--serif);font-size:18px;font-weight:700;margin:30px 0 8px}
+h4{font-family:var(--serif);font-size:16px;font-weight:700;margin:20px 0 6px;color:var(--ink-2)}
+p{margin:0 0 14px;max-width:74ch}
+ul,ol{padding-left:1.4em;max-width:74ch}
+li{margin-bottom:6px}
+.lead{font-size:17px;max-width:74ch}
+.callout{background:var(--paper-2);border-left:3px solid var(--crow);padding:14px 18px;margin:18px 0;max-width:74ch}
+.callout.gold{border-left-color:var(--gold);background:var(--gold-soft)}
+.callout.green{border-left-color:var(--green);background:var(--green-soft)}
+.callout p:last-child{margin-bottom:0}
+.tbl{overflow-x:auto;margin:16px 0 8px}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{text-align:left;vertical-align:top;padding:10px 12px;border-bottom:1px solid var(--rule)}
+th{font-weight:700;border-bottom:2px solid var(--ink);white-space:nowrap}
+td:first-child{font-weight:500}
+.tag{display:inline-block;font-size:12px;padding:1px 8px;border-radius:3px;white-space:nowrap}
+.tag.reuse{background:var(--crow-soft);color:var(--crow)}
+.tag.adapt{background:var(--slate-soft);color:var(--slate)}
+.tag.moat{background:var(--gold-soft);color:var(--gold)}
+.tag.new{background:var(--green-soft);color:var(--green)}
+.figure{margin:22px 0 10px;overflow-x:auto;background:var(--paper-2);padding:18px 10px;border:1px solid var(--rule)}
+.figure svg{display:block;min-width:860px;width:100%;height:auto;font-family:var(--sans)}
+.figure.small svg{min-width:700px}
+.figcap{font-size:13.5px;color:var(--ink-3);margin:8px 0 18px;max-width:74ch}
+.road{list-style:none;padding:0;margin:14px 0;max-width:74ch;border-left:2px solid var(--rule)}
+.road li{padding:0 0 18px 22px;position:relative;margin:0}
+.road li::before{content:"";position:absolute;left:-7px;top:10px;width:12px;height:12px;border-radius:50%;background:var(--paper);border:2px solid var(--crow)}
+.road b{display:block;font-family:var(--serif);font-size:16px}
+.principles{counter-reset:p;list-style:none;padding:0;max-width:74ch}
+.principles li{padding-left:2.4em;position:relative;margin-bottom:10px}
+.principles li::before{counter-increment:p;content:counter(p);position:absolute;left:0;top:0;font-family:var(--serif);font-weight:700;color:var(--crow);font-size:18px;line-height:1.5}
+.foot{margin-top:48px;padding-top:18px;border-top:2px solid var(--ink);font-size:13px;color:var(--ink-3)}
+.foot table{font-size:13px}
+code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.92em;background:var(--paper-2);padding:1px 5px;border-radius:3px}
+@media (max-width:760px){
+  section{grid-template-columns:1fr;gap:8px}
+  .margin{position:static;padding-top:0}
+  .margin .n{display:inline;font-size:22px;margin-right:8px}
+  .masthead{padding-top:36px}
+}
+
+.tag.no{background:var(--paper-2);color:var(--ink-3);border:1px solid var(--rule)}
+.tag.chg{background:var(--gold-soft);color:var(--gold)}
+td .tag{margin-right:4px}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0;max-width:74ch}
+.pair>div{background:var(--paper-2);border-top:3px solid var(--crow);padding:12px 16px}
+.pair>div.g{border-top-color:var(--gold)}
+.pair h4{margin-top:0}
+.pair p{font-size:15px;margin-bottom:6px}
+@media (max-width:760px){section{grid-template-columns:1fr}.margin{position:static}.pair{grid-template-columns:1fr}}
+</style></head><body>
+<div class="page">
+
+<header class="masthead">
+  <div class="doc-no">huabo.ai 中考教育产品线 · 平台级产品规划 · HB-EDU-2026-0927-01</div>
+  <h1>点斗 StarBuddy 平台规划 v1.3 增补篇</h1>
+  <p class="sub">从"学会"到"去向"：补上升学导航、考情政策库与家庭支持层，并把四份输入文档对齐到 v1.2 的红线</p>
+  <div class="meta">
+    <div><b>版本</b>v1.3 · 增补篇 · 讨论稿</div>
+    <div><b>日期</b>2026 年 9 月 27 日</div>
+    <div><b>与 v1.2 的关系</b>增补，不替换；合并入《产品开发完整方案》时按第九章的插入位置处理</div>
+    <div><b>输入文档</b>《四个维度的功能补充》《用第一性原理设计功能模块》《中考政策动态适配分析报告》《目标学校推荐模块设计报告》</div>
+    <div><b>密级</b>内部</div>
+  </div>
+</header>
+
+<section>
+  <div class="margin"><span class="n">一</span>摘要</div>
+  <div class="body">
+    <h2>三个判断</h2>
+    <p class="lead"><strong>判断一：v1.2 的承诺停在"学会"，家庭的承诺停在"录取"。</strong>一个中考家庭最终要的是两件事：孩子进入一所合适的高中；这一年家里撑得住。v1.2 对第一件只做了前半程（七科学会、星图点亮），对第二件只给了课程（家长学院）。中间缺三块：<em>去向</em>（我在哪、目标在哪、差在哪）、<em>考情政策</em>（按城市与届别准确的规则）、<em>家长的"此刻"</em>（不是一门课，而是吵完架那一刻能打开的东西）。</p>
+    <p class="lead"><strong>判断二：四份输入文档的方向是对的，但约一半的解法与 v1.2 红线正面冲突。</strong>位次导航、录取概率百分比、推断学生"焦虑/挫败"、积分与电子宠物——这些都会把 v1.2 花力气关掉的排名与焦虑重新打开。本增补的主要工作是<strong>保留它们要解决的问题，换掉解法</strong>，而不是照单全收。</p>
+    <p class="lead"><strong>判断三：升学导航不另起一条产品线，而是学习者模型的第四个读方。</strong>v1.2 的跨科 ROI 公式里有一项"板块权重"，本增补把它从"卷面分值"扩展为"对家庭目标的边际价值"。去向与学习在这一个公式里接上：差距最终落到"先点亮哪几颗星"，进入今日任务。</p>
+    <div class="callout gold">
+      <p><strong>路线调整一句话：</strong>阶段 0 增加两张数据表（考情政策库、招录库）；阶段 1 增加中考百科、目标学校与分数带、家长"此刻"入口。<strong>时间锚点：</strong>2027 届初三已经开学，若要服务这一届，南京招录库须在 2027 年春季一模前可用，否则本届只能用到出分后的志愿核对。</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="margin"><span class="n">二</span>输入审阅</div>
+  <div class="body">
+    <h2>逐项结论：采纳、改写、已有、不采纳</h2>
+    <p>四份文档共提出约二十项功能。按"它要解决的问题是否真实"与"它的解法能否与 v1.2 共存"两道筛子过一遍：</p>
+    <div class="tbl"><table>
+      <tr><th>输入功能</th><th>结论</th><th>处理方式</th></tr>
+      <tr><td>第一性原理"四条真理"</td><td><span class="tag reuse">已有</span><span class="tag chg">改写</span></td><td>真理二、三、四与 v1.2 的学习者模型、点点、通识层一致。真理一（排序竞争）事实正确，但推论"产品本质是排序导航"不采纳，改为<strong>"录取按位次，学习按星"双坐标</strong>（第五章）。</td></tr>
+      <tr><td>位次导航（每次成绩转全市位次）</td><td><span class="tag chg">改写</span></td><td>南京不向个人公布模考全市排名，平台也拿不到合法的全市位次；强行估算即伪精确。改为<strong>分数带</strong>：预估中考分的区间，与学校历年线比较，不与其他学生比较。</td></tr>
+      <tr><td>目标学校推荐（冲稳保 + 录取概率 %）</td><td><span class="tag chg">改写</span></td><td>先"家庭自选目标"，系统给四档参考标签而非百分比；完整冲稳保梯度只在一模后和出分后开放。在拿到一届真实出分数据前，任何百分比都没有校准来源。</td></tr>
+      <tr><td>贝叶斯博弈修正（报考热度、咨询量）</td><td><span class="tag no">不采纳</span></td><td>所需信号平台无合法可得来源；在无用户阶段属于纯假设。阶段 2 后若有真实志愿数据再议。</td></tr>
+      <tr><td>差距分解到科、到知识点</td><td><span class="tag new">采纳</span></td><td>这是真正的差异化，并入跨科 ROI：分数差 → 各科可提升空间 → 最高 ROI 的星。</td></tr>
+      <tr><td>敏感性分析（"数学 +10 分，概率 35%→58%"）</td><td><span class="tag chg">改写</span></td><td>改为"点亮这 6 颗星，预估分数带上沿约 +8～12 分"，只说分数区间，不说概率。</td></tr>
+      <tr><td>长期目标与阶段里程碑</td><td><span class="tag new">采纳</span></td><td>里程碑用"星数 + 分数带"表达，不用名次。</td></tr>
+      <tr><td>目标学校主动追踪（招生计划、开放日）</td><td><span class="tag new">采纳</span></td><td>只推送家庭"关注"的学校，信息全部出自招录库并经审核。</td></tr>
+      <tr><td>政策数据库四层模型 + 过渡规则</td><td><span class="tag new">采纳</span></td><td>作为学科包第 1 件"考情锚定"的升级，键从"南京"改为"城市 × 中考届别"（第六章）。</td></tr>
+      <tr><td>MVP 覆盖南京、苏州、南通、泰州四城</td><td><span class="tag no">不采纳</span></td><td>与 v1.2"南京本地化是壁垒、苏锡在阶段 3"冲突；四城教研无人支撑。阶段 1 只做南京。</td></tr>
+      <tr><td>政策自动监测 + 人工审核 + 内容触发</td><td><span class="tag new">采纳</span></td><td>审核中心新增第六条审核线"考情政策线"。</td></tr>
+      <tr><td>中考百科 + 信息可信度标记</td><td><span class="tag new">采纳</span></td><td>P0，家庭支持层的公开前门。改一处：<strong>无法核对来源的条目不收录</strong>，而不是标"可能过期"后照样展示。</td></tr>
+      <tr><td>家长情绪支持（吵架后、深夜焦虑）</td><td><span class="tag new">采纳</span></td><td>做成家长端"此刻"入口，加三条边界：不做咨询、危机转介、数据不入学生模型（第七章）。</td></tr>
+      <tr><td>沟通话术库</td><td><span class="tag reuse">已有</span></td><td>并入家长学院"青春期心理与沟通"，扩成情境话术卡。</td></tr>
+      <tr><td>家庭协同看板</td><td><span class="tag reuse">已有</span></td><td>即 v1.2 家长周报；新增"学生知情"原则：学生端能看到"爸妈看到的是什么"。</td></tr>
+      <tr><td>微目标系统</td><td><span class="tag reuse">已有</span></td><td>即"今日任务"；把"小到不可能失败、完成即反馈、未完成不累积欠账"写入点点规格。</td></tr>
+      <tr><td>状态感知（推断专注、焦虑、挫败）</td><td><span class="tag chg">改写</span></td><td>只读学习节奏信号，会话内调量，不命名情绪、不持久化、不给家长看。</td></tr>
+      <tr><td>游戏化：积分、勋章兑换、电子宠物、装扮</td><td><span class="tag no">不采纳</span></td><td>星图已是激励体系，星光金只在掌握时出现；宠物"饿了"是用愧疚驱动未成年人打开 App；积分最容易长出排行榜（第八章）。</td></tr>
+      <tr><td>考前调适：计时模考、呼吸、正念</td><td><span class="tag reuse">已有</span><span class="tag new">采纳</span></td><td>计时模考归学科包，合场时间分配已由点点承担；呼吸作息归"压力疏解"课。</td></tr>
+      <tr><td>时间管理（高专注时段）</td><td><span class="tag new">采纳</span></td><td>并入点点日程，依据 v1.2 已有的行为信号（使用节律）。</td></tr>
+      <tr><td>知识点优先级 = 缺口 × 分值权重 × 出现频率</td><td><span class="tag reuse">已有</span><span class="tag chg">改写</span></td><td>即 v1.2 跨科 ROI，增加"目标边际项"；分值权重改由考情政策库按届别提供。</td></tr>
+    </table></div>
+    <div class="callout">
+      <p>输入文档中有若干数据与表述需要在入库前核实，已列入附录 A。其中最需要注意的是：<strong>文档里的南京招录数值与江苏统一命题安排未附官方来源</strong>，而这两项恰好是阶段 1 的入库对象。</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="margin"><span class="n">三</span>红线对齐</div>
+  <div class="body">
+    <h2>哪条红线要修订，哪条不动</h2>
+    <p>v1.2 有一条对外红线写着"不预测排名"。加入去向层后，这条红线必须更精确，否则要么做不了升学导航，要么被升学导航悄悄突破。修订后的边界是：<strong>可以与学校的历史比较，不可以与其他孩子比较。</strong></p>
+    <div class="tbl"><table>
+      <tr><th>v1.2 红线</th><th>输入文档中的冲突点</th><th>v1.3 处理</th></tr>
+      <tr><td>对外不承诺提分、不押题、不预测排名</td><td>位次导航；录取概率百分比；"提分效率最高的路径"</td><td><span class="tag chg">修订</span>改为"不显示个人名次、不做同伴比较、不给录取概率百分比、不承诺录取"。分数带与学校历年线的比较允许，因为比较对象是学校的历史。对外文案用"优先点亮这几颗星"，不用"提分最快"。</td></tr>
+      <tr><td>家长端"不排名、不焦虑、可行动"</td><td>输入文档自身反对"还差 50 分"，但方向系统又要向家长展示差距——文档内部矛盾</td><td><span class="tag reuse">不动</span>规则化：<strong>任何差距都必须与"下一步做什么"同屏出现</strong>；家长端的分数带需家庭共同开启（5.6）。</td></tr>
+      <tr><td>星图只给自己看</td><td>积分、勋章易长出排行</td><td><span class="tag reuse">不动</span>不引入积分体系。</td></tr>
+      <tr><td>学习者模型只记学习相关状态；不做治疗，做转介</td><td>推断学生"焦虑、挫败"并据此调整</td><td><span class="tag reuse">不动</span>只保留学习节奏信号，不产生情绪标签。</td></tr>
+      <tr><td>家长自身内容不进入学生模型</td><td>家长情绪支持</td><td><span class="tag reuse">不动</span>并延伸到"此刻"入口：家长说了什么，孩子端永远看不到，也不改变孩子的画像。</td></tr>
+      <tr><td>唯一奖励色星光金，只在星亮时出现</td><td>电子宠物、装扮奖励</td><td><span class="tag reuse">不动</span></td></tr>
+    </table></div>
+  </div>
+</section>
+
+<section>
+  <div class="margin"><span class="n">四</span>架构调整</div>
+  <div class="body">
+    <h2>五层加一侧：v1.3 的变化在哪里</h2>
+    <p>输入文档的"方向、能力、动力、支持"四系统，在 v1.2 架构里已有三个半的位置。真正新增的是一个引擎和两张表；其余是改名与扩展。</p>
+    <div class="tbl"><table>
+      <tr><th>输入文档的系统</th><th>在 v1.3 架构中的位置</th><th>状态</th></tr>
+      <tr><td>方向系统</td><td>④ 共享引擎新增<strong>去向引擎</strong>；⑤ 数据新增<strong>招录库</strong>；学生端新增"我的方向"（可选开启）</td><td><span class="tag new">新增</span></td></tr>
+      <tr><td>能力系统</td><td>③ 七科学科包 + ④ 学习者模型、诊断、规划</td><td><span class="tag reuse">已有</span></td></tr>
+      <tr><td>动力系统</td><td>② 点点 + 星图 + 今日任务 + 学生成长课</td><td><span class="tag reuse">已有</span><span class="tag chg">补原则</span></td></tr>
+      <tr><td>支持系统</td><td>侧 · 通识成长层更名<strong>家庭支持层</strong>，新增中考百科与"此刻"</td><td><span class="tag chg">升级</span></td></tr>
+      <tr><td>政策动态适配</td><td>⑤ 数据新增<strong>考情政策库</strong>；③ 学科包第 1 件改为按届别引用</td><td><span class="tag new">新增</span></td></tr>
+    </table></div>
+    <div class="figure">
+<svg viewBox="0 0 1240 640" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="v1.3 架构变化图">
+  <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--crow)"/></marker></defs>
+  <g font-size="12" fill="var(--ink-2)">
+  <!-- layer frames -->
+  <g fill="var(--paper)" stroke="var(--ink)" stroke-width="1.2">
+    <rect x="30" y="24" width="960" height="100"/><rect x="30" y="136" width="960" height="92"/>
+    <rect x="30" y="240" width="960" height="92"/><rect x="30" y="344" width="960" height="110"/>
+    <rect x="30" y="466" width="960" height="110"/>
+  </g>
+  <g font-size="14" font-weight="700" fill="var(--ink)">
+    <text x="44" y="46">① 端与舞台</text><text x="44" y="158">② 角色</text><text x="44" y="262">③ 学科包</text><text x="44" y="366">④ 共享引擎</text><text x="44" y="488">⑤ 基础与数据</text>
+  </g>
+  <!-- row 1 -->
+  <rect x="170" y="40" width="250" height="70" fill="var(--crow-soft)" stroke="var(--crow)"/>
+  <text x="182" y="62" font-weight="700" fill="var(--ink)" font-size="13.5">学生端</text><text x="182" y="82">今日任务 · 星图 · 七科入口 · 点点</text>
+  <rect x="440" y="40" width="160" height="70" fill="var(--green-soft)" stroke="var(--green)" stroke-width="1.6"/>
+  <text x="452" y="62" font-weight="700" fill="var(--green)" font-size="13.5">新 · 我的方向</text><text x="452" y="82">目标学校 · 分数带</text><text x="452" y="99">学生自行开启</text>
+  <rect x="620" y="40" width="200" height="70" fill="var(--crow-soft)" stroke="var(--crow)"/>
+  <text x="632" y="62" font-weight="700" fill="var(--ink)" font-size="13.5">家长端</text><text x="632" y="82">周报 · 家长学院</text>
+  <rect x="836" y="40" width="140" height="70" fill="var(--green-soft)" stroke="var(--green)" stroke-width="1.6"/>
+  <text x="848" y="62" font-weight="700" fill="var(--green)" font-size="13.5">新 · 此刻</text><text x="848" y="82">家长即时支持</text><text x="848" y="99">入口</text>
+  <!-- row 2 -->
+  <rect x="170" y="150" width="300" height="64" fill="var(--paper-2)" stroke="var(--rule)"/>
+  <text x="182" y="172" font-weight="700" fill="var(--ink)" font-size="13.5">七位老师</text><text x="182" y="192">不谈目标学校、不谈分数带（老师合同不变）</text>
+  <rect x="490" y="150" width="230" height="64" fill="var(--gold-soft)" stroke="var(--gold)" stroke-width="1.4"/>
+  <text x="502" y="172" font-weight="700" fill="var(--ink)" font-size="13.5">改 · 点点</text><text x="502" y="192">新增：讲述"方向"，把差距译成星</text>
+  <rect x="740" y="150" width="236" height="64" fill="var(--gold-soft)" stroke="var(--gold)" stroke-width="1.4"/>
+  <text x="752" y="172" font-weight="700" fill="var(--ink)" font-size="13.5">改 · 家庭成长顾问</text><text x="752" y="192">新增："此刻"与志愿核对的口吻</text>
+  <!-- row 3 -->
+  <rect x="170" y="254" width="806" height="64" fill="var(--gold-soft)" stroke="var(--gold)" stroke-width="1.4"/>
+  <text x="182" y="276" font-weight="700" fill="var(--ink)" font-size="13.5">改 · 七科学科包 · 第 1 件"考情锚定"</text>
+  <text x="182" y="298">分值地图、题型、考试形式不再写死在包内，按学生的"城市 × 中考届别"从考情政策库读取</text>
+  <!-- row 4 -->
+  <rect x="170" y="358" width="240" height="82" fill="var(--crow-soft)" stroke="var(--crow)"/>
+  <text x="182" y="380" font-weight="700" fill="var(--ink)" font-size="13.5">学习者模型 / 星图</text><text x="182" y="400">三层模型不变</text><text x="182" y="418">新增只读字段：家庭目标</text>
+  <rect x="428" y="358" width="250" height="82" fill="var(--gold-soft)" stroke="var(--gold)" stroke-width="1.4"/>
+  <text x="440" y="380" font-weight="700" fill="var(--ink)" font-size="13.5">改 · 诊断与规划</text><text x="440" y="400">跨科 ROI 增加"目标边际项"</text><text x="440" y="418">权重来自政策库</text>
+  <rect x="696" y="358" width="280" height="82" fill="var(--green-soft)" stroke="var(--green)" stroke-width="1.6"/>
+  <text x="708" y="380" font-weight="700" fill="var(--green)" font-size="13.5">新 · 去向引擎</text><text x="708" y="400">预估分数带 · 学校线带 · 四档标签</text><text x="708" y="418">差距分科 → 最高 ROI 的星</text>
+  <!-- row 5 -->
+  <rect x="170" y="480" width="200" height="82" fill="var(--paper-2)" stroke="var(--rule)"/>
+  <text x="182" y="502" font-weight="700" fill="var(--ink)" font-size="13.5">路由 · 语音 · 合规</text><text x="182" y="522">不变</text>
+  <rect x="388" y="480" width="190" height="82" fill="var(--green-soft)" stroke="var(--green)" stroke-width="1.6"/>
+  <text x="400" y="502" font-weight="700" fill="var(--green)" font-size="13.5">新 · 考情政策库</text><text x="400" y="522">城市 × 中考届别</text><text x="400" y="540">五层 · 版本化</text>
+  <rect x="596" y="480" width="180" height="82" fill="var(--green-soft)" stroke="var(--green)" stroke-width="1.6"/>
+  <text x="608" y="502" font-weight="700" fill="var(--green)" font-size="13.5">新 · 招录库</text><text x="608" y="522">学校 × 年度 × 批次</text><text x="608" y="540">投档线 · 计划 · 指标生</text>
+  <rect x="794" y="480" width="182" height="82" fill="var(--gold-soft)" stroke="var(--gold)" stroke-width="1.4"/>
+  <text x="806" y="502" font-weight="700" fill="var(--ink)" font-size="13.5">改 · 审核中心</text><text x="806" y="522">新增第六线：</text><text x="806" y="540">考情政策线</text>
+  <!-- arrows -->
+  <path d="M836,440 L836,468" stroke="var(--crow)" stroke-width="1.4" fill="none" marker-start="url(#ar)"/>
+  <path d="M686,480 L760,442" stroke="var(--crow)" stroke-width="1.4" fill="none" marker-end="url(#ar)"/>
+  <path d="M483,480 L553,442" stroke="var(--crow)" stroke-width="1.4" fill="none" marker-end="url(#ar)"/>
+  <path d="M483,480 C 483,420 300,340 300,320" stroke="var(--crow)" stroke-width="1.2" fill="none" stroke-dasharray="4 3" marker-end="url(#ar)"/>
+  <!-- side -->
+  <rect x="1010" y="24" width="200" height="552" fill="var(--paper)" stroke="var(--ink)" stroke-width="1.2"/>
+  <text x="1024" y="48" font-size="14" font-weight="700" fill="var(--ink)">侧 · 家庭支持层</text>
+  <text x="1024" y="66" font-size="11.5">原"通识成长层"，更名</text>
+  <g font-size="13" font-weight="700">
+    <rect x="1024" y="84" width="172" height="70" fill="var(--green-soft)" stroke="var(--green)" stroke-width="1.6"/><text x="1036" y="106" fill="var(--green)">新 · 中考百科</text>
+    <rect x="1024" y="170" width="172" height="70" fill="var(--green-soft)" stroke="var(--green)" stroke-width="1.6"/><text x="1036" y="192" fill="var(--green)">新 · 此刻</text>
+    <rect x="1024" y="256" width="172" height="70" fill="var(--gold-soft)" stroke="var(--gold)" stroke-width="1.4"/><text x="1036" y="278" fill="var(--ink)">改 · 家长学院</text>
+    <rect x="1024" y="342" width="172" height="70" fill="var(--crow-soft)" stroke="var(--crow)"/><text x="1036" y="364" fill="var(--ink)">学生成长课</text>
+  </g>
+  <g font-size="11.5">
+    <text x="1036" y="126">公开前门 · 免登录可问</text><text x="1036" y="142">只答政策库里有的</text>
+    <text x="1036" y="212">接住 → 一件事 → 延伸</text><text x="1036" y="228">危机即转介</text>
+    <text x="1036" y="298">话术卡并入沟通模块</text><text x="1036" y="314">新增：目标不一致怎么谈</text>
+    <text x="1036" y="384">不变</text>
+    <text x="1024" y="450">与学习者模型的关系不变：</text><text x="1024" y="468">按学情触发；家长自身内容</text><text x="1024" y="486">不进入学生模型</text>
+  </g>
+  </g>
+  <!-- legend -->
+  <g font-size="12" fill="var(--ink-2)">
+    <rect x="30" y="600" width="16" height="12" fill="var(--green-soft)" stroke="var(--green)"/><text x="54" y="611">新增</text>
+    <rect x="110" y="600" width="16" height="12" fill="var(--gold-soft)" stroke="var(--gold)"/><text x="134" y="611">改动或扩展</text>
+    <rect x="222" y="600" width="16" height="12" fill="var(--crow-soft)" stroke="var(--crow)"/><text x="246" y="611">v1.2 已有，不变</text>
+  </g>
+</svg>
+    </div>
+    <p class="figcap">图 1 · v1.3 相对 v1.2 的变化。新增一个引擎（去向）、两张表（考情政策库、招录库）、两个入口（我的方向、此刻）和一个公开前门（中考百科）；七位老师的合同不变，方向话题只由点点和家庭成长顾问承接。</p>
+  </div>
+</section>
+
+<section>
+  <div class="margin"><span class="n">五</span>去向层</div>
+  <div class="body">
+    <h2>录取按位次，学习按星：两套坐标并存</h2>
+    <p>输入文档说"中考是排序竞争"，这是事实。但把位次做成学生的主视图，等于每天提醒一个十五岁的人"你排在第几"。v1.3 的做法是让两套坐标各管一件事，并在一处接上：</p>
+    <div class="pair">
+      <div><h4>星 · 学习坐标</h4><p>回答"我会了什么、下一步学什么"。每天可见，只给自己看。v1.2 已有，不变。</p><p>只增不减：星亮了就是亮了，一次模考失常不会让星熄灭。</p></div>
+      <div class="g"><h4>分数带 · 去向坐标</h4><p>回答"按现在的样子，大概在哪一档学校的线附近"。按需打开，默认不推送。</p><p>会上下浮动，所以永远以区间出现，永远和"下一步点亮哪几颗星"同屏。</p></div>
+    </div>
+
+    <h3>5.1 分数带怎么算</h3>
+    <p><strong>预估中考分</strong>是一个区间，不是一个数。三路输入按可信度加权：</p>
+    <ol>
+      <li><strong>真实考试分</strong>（家庭上传的月考、一模、二模各科分数）——最强信号，但间隔长、各校卷难度不一，需按考试类型折算。</li>
+      <li><strong>星图折算</strong>——各科已亮星覆盖的分值 × 分值地图（来自考情政策库），给出"会的部分值多少分"。</li>
+      <li><strong>平台测评</strong>——学科包内的阶段诊断卷。</li>
+    </ol>
+    <p><strong>学校线带</strong>是某校某批次近 3～5 年投档线的区间（统招与指标生分开记录）。二者比较，得到四档标签：</p>
+    <div class="tbl"><table>
+      <tr><th>标签</th><th>判定（示意，阈值由教研定）</th><th>对家庭说的话</th></tr>
+      <tr><td>稳</td><td>预估下沿高于学校线带上沿</td><td>"按现在的状态，这所学校在你的范围里。"</td></tr>
+      <tr><td>可达</td><td>预估区间与学校线带重叠</td><td>"这所学校就在你的区间里，差别在临场。"</td></tr>
+      <tr><td>够一够</td><td>预估上沿低于线带下沿，差距在可跨越范围内</td><td>"还差一段。先点亮这几颗星。"</td></tr>
+      <tr><td>远景</td><td>差距超出可跨越范围</td><td>"这是一个长期方向，今天先做这件事。"</td></tr>
+    </table></div>
+    <div class="callout">
+      <p><strong>为什么不给百分比：</strong>平台目前没有一个真实用户，更没有"平台预估 → 实际中考分"的对照数据。录取概率所需的校准只能来自出分后的回收。在拿到第一届完整数据之前，百分比是伪精确，而家长会把"62%"当成事实。区间宽一点、标签粗一点，是诚实的代价。<strong>第一届出分后，用"实际分落在预估区间内的比例"决定下一年能否收窄区间。</strong></p>
+    </div>
+    <p><strong>跨年可比性：</strong>南京卷面总分与科目结构稳定时，直接比较分数；考情政策库一旦记录某届总分或计分科目变化，去向引擎自动切换为"折算比较"，并在界面上标注"今年规则有变化，参考性下降"。</p>
+
+    <h3>5.2 南京的特殊一条路：指标生</h3>
+    <p>南京四星高中有一部分计划按初中学校分配，学生在本校内竞争并须达到控制线。对这部分学生，真实问题往往不是"全市在哪"，而是"在本校能不能拿到"。平台不采集同学数据，也不应推算校内名次，因此：</p>
+    <ul>
+      <li>去向层把指标生作为<strong>单独一条路</strong>展示：规则、本校历年分到的名额（如有公开）、控制线。</li>
+      <li>是否走这条路、校内大致处于什么位置，由家庭自己判断并可选填写为粗粒度区间；平台不存精确名次，也不据此给结论。</li>
+      <li>具体规则、控制线数值一律以南京市教育考试院当年公告为准，入库经审核线。</li>
+    </ul>
+
+    <h3>5.3 差距怎么落到星上</h3>
+    <div class="figure small">
+<svg viewBox="0 0 1000 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="去向与学习的闭环">
+  <defs><marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--crow)"/></marker></defs>
+  <g font-size="12" fill="var(--ink-2)">
+  <g stroke-width="1.4">
+    <rect x="16" y="60" width="130" height="64" fill="var(--paper)" stroke="var(--ink)"/>
+    <rect x="176" y="60" width="140" height="64" fill="var(--green-soft)" stroke="var(--green)"/>
+    <rect x="346" y="60" width="140" height="64" fill="var(--green-soft)" stroke="var(--green)"/>
+    <rect x="516" y="60" width="140" height="64" fill="var(--gold-soft)" stroke="var(--gold)"/>
+    <rect x="686" y="60" width="130" height="64" fill="var(--crow-soft)" stroke="var(--crow)"/>
+    <rect x="846" y="60" width="138" height="64" fill="var(--gold-soft)" stroke="var(--gold)"/>
+  </g>
+  <g font-size="13.5" font-weight="700" fill="var(--ink)">
+    <text x="28" y="84">家庭目标</text><text x="188" y="84">分数带 vs 线带</text><text x="358" y="84">差距分科</text><text x="528" y="84">最高 ROI 的星</text><text x="698" y="84">今日任务</text><text x="858" y="84">星亮</text>
+  </g>
+  <text x="28" y="104">学生与家长各自设定</text>
+  <text x="188" y="104">四档标签，不给 %</text>
+  <text x="358" y="104">各科可提升空间</text>
+  <text x="528" y="104">缺口 × 权重 × 频率</text>
+  <text x="698" y="104">点点讲述</text>
+  <text x="858" y="104">通过掌握门槛</text>
+  <g stroke="var(--crow)" stroke-width="1.4" fill="none">
+    <path d="M146,92 L172,92" marker-end="url(#ar2)"/><path d="M316,92 L342,92" marker-end="url(#ar2)"/>
+    <path d="M486,92 L512,92" marker-end="url(#ar2)"/><path d="M656,92 L682,92" marker-end="url(#ar2)"/>
+    <path d="M816,92 L842,92" marker-end="url(#ar2)"/>
+    <path d="M915,124 C915,200 246,200 246,128" marker-end="url(#ar2)" stroke-dasharray="5 4"/>
+    <path d="M246,26 L246,56" marker-end="url(#ar2)"/>
+  </g>
+  <text x="440" y="214" text-anchor="middle">星图折算更新 → 预估分数带刷新（不是每天，而是每周或每次真实考试后）</text>
+  <text x="258" y="22">真实考试分上传</text>
+  </g>
+</svg>
+    </div>
+    <p class="figcap">图 2 · 去向与学习的闭环。目标只进入一个地方：跨科 ROI 的权重。学生每天看到的仍然是"今日任务"和星，而不是分差。</p>
+    <p>刷新节奏刻意放慢：分数带每周或每次真实考试后刷新一次，不随每道题跳动。每天看分数带的人，会被噪声折磨。</p>
+
+    <h3>5.4 按年级开放</h3>
+    <div class="tbl"><table>
+      <tr><th>阶段</th><th>开放内容</th><th>不开放</th></tr>
+      <tr><td>初一、初二</td><td>"认识高中"：学校卡、办学特色、开放日；可以关注学校</td><td>分数带、四档标签</td></tr>
+      <tr><td>初三上学期</td><td>家庭可选开启分数带与目标；差距只以"够一够 / 远景 + 星"表达</td><td>冲稳保梯度</td></tr>
+      <tr><td>初三下学期 · 一模后</td><td>完整四档标签；长期里程碑（星数 + 分数带）；指标生规则说明</td><td>录取百分比</td></tr>
+      <tr><td>出分后 · 志愿期</td><td>志愿核对：梯度是否断档、批次规则、截止时间提醒</td><td>代填、替家庭排定志愿</td></tr>
+    </table></div>
+
+    <h3>5.5 谁能看到</h3>
+    <ul>
+      <li><strong>学生端"我的方向"默认关闭</strong>，由学生自己打开；打开后由点点讲述，老师不谈目标（老师合同不变）。</li>
+      <li><strong>家长端分数带需要家庭共同开启</strong>：学生开启且同意共享后，家长端才显示分数带；未开启时，家长端只看到"本周向目标点亮的星"。</li>
+      <li><strong>目标可以不一致</strong>：学生与家长可以各设一个目标。系统不裁决，也不告诉任何一方"对方的目标更现实"；家长学院推送一课"目标不一致时怎么谈"。</li>
+      <li><strong>学生知情</strong>：学生端有一页"爸妈能看到的"镜像，内容与家长端逐字一致。</li>
+    </ul>
+
+    <h3>5.6 志愿核对与目标学校追踪</h3>
+    <p>志愿期只做<strong>核对</strong>，不做推荐方案：检查梯度是否断档、是否理解批次与指标生规则、关键截止时间。最终以官方填报系统与学校通知为准，界面上常驻这句话。目标学校追踪只推送家庭关注的学校，内容包括招生计划变化、开放日、招生简章发布，全部出自招录库。</p>
+  </div>
+</section>
+
+<section>
+  <div class="margin"><span class="n">六</span>考情政策库</div>
+  <div class="body">
+    <h2>从学科包的"件 1"升级为平台的一张表</h2>
+    <p>v1.2 的"考情锚定"写在每个学科包里，默认只有南京一套。输入报告对"一市一策、年年调整、过渡期多版本并行"的分析是准确的，结论也对：<strong>考情是基础数据，不是学科内容。</strong>v1.3 把它从七个学科包里抽出来，变成平台的一张版本化表。</p>
+    <h3>6.1 键：城市 × 中考届别</h3>
+    <p>学生注册时就确定"中考届别"（如 2027 届），此后所有规则按届别读取，而不是按"当前年份"。这一处设计直接解决了过渡期问题：同一城市同一时间，初一与初三可以适用不同方案，互不覆盖。</p>
+    <div class="tbl"><table>
+      <tr><th>层</th><th>内容</th><th>驱动什么</th></tr>
+      <tr><td>1 元数据</td><td>文件编号、发布日期、适用届别、官方链接、最后核对日期</td><td>中考百科的来源标注</td></tr>
+      <tr><td>2 科目配置</td><td>计分科目、各科满分、命题方式、考试形式与时长</td><td>分值地图 → 跨科 ROI 权重；学科包题型训练重点</td></tr>
+      <tr><td>3 考查科目</td><td>非计分科目的考查方式、时间、对毕业与升学资格的影响</td><td>点点日程中的节点提醒</td></tr>
+      <tr><td>4 过渡规则</td><td>变更生效届别、过渡安排</td><td>自动判断适用版本；变更影响分析</td></tr>
+      <tr><td>5 招录规则（新增）</td><td>批次结构、指标生规则、控制线口径；关联招录库</td><td>去向引擎的比较口径</td></tr>
+    </table></div>
+    <h3>6.2 变更怎么流动</h3>
+    <ol>
+      <li><strong>监测</strong>：订阅南京市教育局、南京市教育考试院、江苏省教育厅的发布页，关键词触发。</li>
+      <li><strong>解读</strong>：教研提取变更点（分值、科目、形式、批次、指标生），标注受影响届别。</li>
+      <li><strong>审核</strong>：进入审核中心第六线"考情政策线"，双人复核后发布。</li>
+      <li><strong>触发</strong>：更新分值地图与 ROI 权重；去向引擎重算受影响届别的分数带；仅向受影响届别的家庭推送变更说明。</li>
+    </ol>
+    <h3>6.3 范围</h3>
+    <p>阶段 1 只做南京，并回填过去 5 届的招录规则以支撑学校线带。输入报告建议的"南京、苏州、南通、泰州四城 MVP"不采纳：数据模型可以按全国设计，但每进一座城，都意味着一套本地教研、一批真题语料和一个审核责任人。苏州、无锡维持在阶段 3。</p>
+    <h3>6.4 中考百科：建在库上，只答库里有的</h3>
+    <ul>
+      <li>问答只检索考情政策库与招录库，不检索开放网络；库里没有的，回答"这个我还没有核实过的资料"，并给出官方渠道。</li>
+      <li>每条回答带来源、发布日期、适用届别与最后核对日期。</li>
+      <li><strong>无法核对来源的信息不收录</strong>。输入文档建议给"无年份"信息打"可能过期"标签后展示——在家长群谣言泛滥的环境里，一个带着警告标签的错误答案仍然会被截图转发。</li>
+      <li>免登录可问，作为家庭支持层的公开前门；这也是"双减"环境下合规风险最低的获客入口。</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <div class="margin"><span class="n">七</span>家庭支持层</div>
+  <div class="body">
+    <h2>从"一门课"到"那一刻"</h2>
+    <p>v1.2 的通识成长层按学情触发课程，适合"周报出来后的周末"。输入文档指出的是另一种时刻：模考成绩刚出来、刚和孩子吵完、凌晨两点睡不着。那一刻家长不需要一门 5 分钟短课，需要被接住，然后知道今晚能做的一件事。v1.3 将该层更名为<strong>家庭支持层</strong>，新增"此刻"入口。</p>
+    <h3>7.1 "此刻"入口</h3>
+    <div class="tbl"><table>
+      <tr><th>步骤</th><th>内容</th><th>规则</th></tr>
+      <tr><td>接住</td><td>一两句话，承认这一刻难受</td><td>不评判家长，不评判孩子；不说"你应该"</td></tr>
+      <tr><td>一件事</td><td>今晚或明天就能做的一件具体的事</td><td>只给一件；比如"今晚不谈成绩，明早只问一句睡得怎么样"</td></tr>
+      <tr><td>延伸</td><td>一张话术卡或一节相关短课</td><td>可选，不强推</td></tr>
+    </table></div>
+    <p>场景首批覆盖：模考后、争吵后、孩子不想上学、孩子沉迷手机、夫妻陪读分歧、夜里焦虑。口吻使用家庭成长顾问，不使用任何学生端人设。</p>
+    <h3>7.2 三条边界</h3>
+    <ol class="principles">
+      <li><strong>不做咨询。</strong>"此刻"是支持与方法，不是心理咨询或治疗；不做评估、不给诊断性结论。家长持续求助同一类困扰时，建议寻求线下专业支持。</li>
+      <li><strong>危机即转介。</strong>家长表达伤害自己或他人的念头、描述家庭暴力，或转述孩子有轻生、自伤的言语时，立即停止常规内容，给出专业求助渠道（心理援助热线、学校心理老师、就医；具体号码与机构上线前逐一核实），并说明为什么此刻最重要的是联系真人。转介话术与点点规格书第 4.9 节共用一套审核口径。</li>
+      <li><strong>不进入学生模型。</strong>家长在"此刻"里说的话，不改变孩子的画像，不出现在学生端，不作为任何报告的依据。这是 v1.2 红线三的延伸。</li>
+    </ol>
+    <h3>7.3 其他调整</h3>
+    <ul>
+      <li><strong>话术库</strong>并入家长学院"青春期心理与沟通"模块，改为情境卡片：一个场景、一句不要说的话、一句可以试的话、为什么。</li>
+      <li><strong>家长学院新增</strong>"为什么我们不给录取概率""目标不一致时怎么谈""一模之后的一周"三课，与去向层配套上线。</li>
+      <li><strong>协同看板</strong>即 v1.2 家长周报，不另建；新增"学生知情"镜像（5.5）。</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <div class="margin"><span class="n">八</span>动力侧</div>
+  <div class="body">
+    <h2>补原则，不补玩法</h2>
+    <p>输入文档关于"掌控感"的判断，与 v1.2 的点点和星图是同一个方向。需要补的是写进规格书的原则，而不是新的玩法。</p>
+    <ul>
+      <li><strong>今日任务的三条原则</strong>写入点点规格：最小单元小到几乎不会失败；完成即反馈；未完成不累积成"欠账"，第二天重新生成。</li>
+      <li><strong>学习状态自适应</strong>：只读耗时变化、连续错误、会话时长等节奏信号，在会话内调整题量与难度。不命名情绪（不说"你看起来很焦虑"），不写入持久画像，不出现在家长端。</li>
+      <li><strong>时段建议</strong>：点点依据使用节律建议把难任务放在状态较好的时段；夜间高频使用继续触发 v1.2 的作息提醒。</li>
+      <li><strong>考试节奏训练</strong>：计时模考归各学科包；道法历史合场的时间分配训练已由点点承担；呼吸与作息归"压力疏解"课。</li>
+      <li><strong>学习天数</strong>：可显示"本周学了几天"，不显示会断签清零的"连续 X 天"。</li>
+    </ul>
+    <div class="callout">
+      <p><strong>不采纳积分、兑换、电子宠物与装扮，理由有三。</strong>其一，星光金只在掌握时出现，积分会把"做了"与"会了"混在一起。其二，积分天然可比较，排行榜只差一步，而星图只给自己看。其三，"宠物饿了"用愧疚驱动未成年人打开 App，班级里短期有效的做法，放进一个每天打开的产品会变成负担。输入文档自己也提醒了"避免功利化"，这里把提醒落实为不做。</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="margin"><span class="n">九</span>路线与优先级</div>
+  <div class="body">
+    <h2>插入 v1.2 四个阶段的位置</h2>
+    <div class="tbl"><table>
+      <tr><th>优先级</th><th>内容</th><th>放入阶段</th><th>理由</th></tr>
+      <tr><td>P0</td><td>考情政策库、招录库 Schema；南京近 5 届回填</td><td>阶段 0</td><td>去向层与分值权重都依赖它；越晚建，四科越多写死的考情要回迁</td></tr>
+      <tr><td>P0</td><td>中考百科（南京）</td><td>阶段 1 首批</td><td>家长最迫切、合规风险最低、可免登录获客</td></tr>
+      <tr><td>P0</td><td>认识高中 + 关注 + 自选目标 + 追踪推送</td><td>阶段 1 首批</td><td>不涉及预测，先建立"方向"这一习惯</td></tr>
+      <tr><td>P1</td><td>分数带与四档标签（初三可选开启）；ROI 目标边际项</td><td>阶段 1，须在 2027 年春季一模前</td><td>服务 2027 届的唯一窗口</td></tr>
+      <tr><td>P1</td><td>家长"此刻"入口 + 危机转介</td><td>阶段 1</td><td>高差异化；转介话术须先过审</td></tr>
+      <tr><td>P1</td><td>今日任务原则、学习状态自适应写入点点规格</td><td>阶段 1</td><td>改规格，不改架构，成本低</td></tr>
+      <tr><td>P2</td><td>志愿核对（出分后）</td><td>阶段 1 末（2027 年 7 月）</td><td>窗口短、责任重，只做核对</td></tr>
+      <tr><td>P2</td><td>用一届真实出分数据评估是否收窄区间、是否引入概率</td><td>阶段 2</td><td>唯一合法的校准来源</td></tr>
+      <tr><td>P3</td><td>苏州、无锡政策库与招录库</td><td>阶段 3</td><td>与 v1.2 城市扩展节奏一致</td></tr>
+    </table></div>
+    <p>阶段 0 的验收标准增加一条："四科任一产品的分值权重从考情政策库读取，而不是写在包内。"</p>
+  </div>
+</section>
+
+<section>
+  <div class="margin"><span class="n">十</span>指标</div>
+  <div class="body">
+    <h2>新增指标与一条护栏</h2>
+    <div class="tbl"><table>
+      <tr><th>层级</th><th>指标</th><th>意义</th></tr>
+      <tr><td>去向层是否成立</td><td>初三目标设定率；由去向引擎推荐的星在 4 周内点亮的比例</td><td>方向是否真的转化为学习行为</td></tr>
+      <tr><td>校准</td><td>出分后实际分落在预估区间内的比例</td><td>决定下一年能否收窄区间；也是对外可以说的唯一"准确度"</td></tr>
+      <tr><td>中考百科可信度</td><td>"答不了"比例；错答被纠正数（发布阻断指标）</td><td>宁可答不了，不可答错</td></tr>
+      <tr><td>家庭支持</td><td>"此刻"后的"一件事"践行率；危机转介触发后的处理时效</td><td>是否改变了当晚的家庭行为</td></tr>
+      <tr><td><strong>护栏</strong></td><td>开启分数带的学生，其说教感负反馈率、会话中断率、次周留存与未开启者的差异</td><td>若开启者显著变差，分数带改为默认仅家长端可见或整体收回</td></tr>
+    </table></div>
+  </div>
+</section>
+
+<section>
+  <div class="margin"><span class="n">十一</span>风险</div>
+  <div class="body">
+    <h2>五项新增风险</h2>
+    <div class="tbl"><table>
+      <tr><th>风险</th><th>等级</th><th>对策</th></tr>
+      <tr><td>去向层重新引入排名焦虑</td><td>高</td><td>默认关闭、区间表达、差距与下一步同屏、护栏指标可回收</td></tr>
+      <tr><td>招录数据的可得性与准确性</td><td>高</td><td>只用官方公告；人工整理 + 双人复核；无法核实不入库；每条保留来源链接</td></tr>
+      <tr><td>对外表述触及升学宣传与"预测"</td><td>高</td><td>法务审查"分数带、四档标签、志愿核对"的对外口径；营销不得使用任何录取结果案例</td></tr>
+      <tr><td>家长"此刻"的责任边界</td><td>中</td><td>三条边界写入顾问口吻规格；转介话术与热线信息上线前核实、每季度复核</td></tr>
+      <tr><td>政策变更滞后</td><td>中</td><td>热更新，不随版本发布；变更时对受影响届别标注"规则更新中"</td></tr>
+    </table></div>
+  </div>
+</section>
+
+<section>
+  <div class="margin"><span class="n">十二</span>待决</div>
+  <div class="body">
+    <h2>需要拍板的五件事</h2>
+    <ol class="principles">
+      <li><strong>家长端分数带的开启条件。</strong>本稿建议"学生开启并同意共享"；另一选项是"初三下学期起家长端默认可见"。前者保护学生，后者更符合付费方预期。</li>
+      <li><strong>"够一够"与"远景"的分界阈值</strong>由谁定：数学教研按分值地图给经验值，还是等第一届数据。建议前者，并在界面上写明是经验值。</li>
+      <li><strong>志愿核对是否进入阶段 1。</strong>窗口只有几天，出错代价大；也可推迟到阶段 2，第一年只做规则说明。</li>
+      <li><strong>中考百科是否完全免费。</strong>建议完全免费，与 v1.2 待决项"通识层免费边界"一并决定。</li>
+      <li><strong>招录库的人工成本归属</strong>：平台组还是通识教研组。建议新设"考情数据专员"一人，挂在审核中心。</li>
+    </ol>
+  </div>
+</section>
+
+<section>
+  <div class="margin"><span class="n">附</span>A · 数据核查</div>
+  <div class="body">
+    <h2>输入文档中需在入库前核实的内容</h2>
+    <div class="tbl"><table>
+      <tr><th>位置</th><th>问题</th><th>处理</th></tr>
+      <tr><td>政策报告 1.1 与 2.1 表</td><td>正文称"南京、常州、镇江均为 700 分"，表中镇江为 688 分（体育 28）；自相矛盾</td><td>以镇江市当年方案为准</td></tr>
+      <tr><td>政策报告 2.1 表</td><td>"数据来源"一栏为空；连云港整行、宿迁多列缺失</td><td>补官方文件编号后方可引用</td></tr>
+      <tr><td>政策报告 2.2</td><td>"2026 年道法、历史及八年级地理、生物全省统一命题、开卷"</td><td>以江苏省教育厅正式文件核对后写入政策库</td></tr>
+      <tr><td>目标学校报告 2.2</td><td>南京 2026 年批次结构与"593 分""535 分"控制线</td><td>以南京市教育考试院当年公告核对</td></tr>
+      <tr><td>目标学校报告 2.1</td><td>苏州中学 2025 年分数线及变化值</td><td>非阶段 1 城市，仅作结构示例，不入库</td></tr>
+      <tr><td>四维度补充 1.2</td><td>"指标生比例从 50% 提升到 60%"</td><td>是示例句而非事实；用作中考百科文案样例时须替换为真实条目</td></tr>
+      <tr><td>各文档引用的竞品与案例</td><td>佛山智慧助手、计时工具、班级电子宠物等</td><td>可作设计参考，不构成效果证据</td></tr>
+    </table></div>
+  </div>
+</section>
+
+<section>
+  <div class="margin"><span class="n">附</span>B · 版本</div>
+  <div class="body">
+    <div class="tbl"><table>
+      <tr><th>版本</th><th>日期</th><th>变更</th></tr>
+      <tr><td>v1.2</td><td>2026-09-23</td><td>角色体系定稿，七位老师定名，历史独立学科包</td></tr>
+      <tr><td>v1.3 增补篇</td><td>2026-09-27</td><td>审阅四份输入文档；新增去向引擎、考情政策库、招录库、中考百科、家长"此刻"；通识成长层更名家庭支持层；修订"不预测排名"红线为"不显示个人名次、不做同伴比较、不给录取概率"；审核中心新增第六线；阶段 0～2 插入新增项</td></tr>
+    </table></div>
+    <div class="foot">点斗 StarBuddy · huabo.ai · HB-EDU-2026-0927-01 · 内部讨论稿。本文与 v1.2 合读；合并入《产品开发完整方案》时，第五至七章分别插入 v1.2 的第六章之后、第五章学科包第 1 件、第八章。</div>
+  </div>
+</section>
+
+</div>
+
+</body></html>

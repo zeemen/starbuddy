@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>点斗 StarBuddy 技术蓝图 v2.1 · 输入与识别</title>
+<style>
+:root{
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  --paper:#F7F8F5;--paper-2:#EEF0EA;--ink:#1B2130;--ink-2:#4A5163;--ink-3:#7C8394;
+  --rule:#CDD2C9;--crow:#2E4A7D;--crow-soft:#DCE4F2;--slate:#6B7280;--slate-soft:#E5E7EB;
+  --gold:#C9962E;--gold-soft:#F5E7C4;--green:#3F7A5A;--green-soft:#DCEBE1;
+  --serif:"Noto Serif SC","Songti SC","SimSun","Source Han Serif SC",serif;
+  --sans:"Noto Sans SC","PingFang SC","Microsoft YaHei","Source Han Sans SC",sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#151922;--paper-2:#1D222D;--ink:#E8EAE4;--ink-2:#B7BCC7;--ink-3:#868D9C;
+    --rule:#343A47;--crow:#8FAAD8;--crow-soft:#243352;--slate:#A0A6B3;--slate-soft:#2B303B;
+    --gold:#DDB35A;--gold-soft:#3D3320;--green:#7FB89A;--green-soft:#1F3328;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#151922;--paper-2:#1D222D;--ink:#E8EAE4;--ink-2:#B7BCC7;--ink-3:#868D9C;
+  --rule:#343A47;--crow:#8FAAD8;--crow-soft:#243352;--slate:#A0A6B3;--slate-soft:#2B303B;
+  --gold:#DDB35A;--gold-soft:#3D3320;--green:#7FB89A;--green-soft:#1F3328;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:inherit}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.8;-webkit-font-smoothing:antialiased}
+a{color:var(--crow)}
+img,svg{max-width:100%}
+.page{max-width:1120px;margin:0 auto;padding:0 20px 80px}
+.masthead{padding:56px 0 28px;border-bottom:2px solid var(--ink)}
+.masthead .doc-no{font-size:13px;color:var(--ink-3);letter-spacing:.04em}
+.masthead h1{font-family:var(--serif);font-weight:700;font-size:clamp(26px,3.6vw,40px);line-height:1.3;margin:10px 0 6px}
+.masthead .sub{font-family:var(--serif);font-size:clamp(16px,2vw,20px);color:var(--ink-2);margin:0 0 22px;max-width:40em}
+.meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px 24px;font-size:14px;color:var(--ink-2)}
+.meta b{display:block;color:var(--ink-3);font-weight:500;font-size:12px}
+section{display:grid;grid-template-columns:150px 1fr;gap:0 36px;padding:44px 0 8px;border-bottom:1px solid var(--rule)}
+section:last-of-type{border-bottom:0}
+.margin{font-family:var(--serif);color:var(--crow);font-size:15px;line-height:1.6;padding-top:8px;position:sticky;top:calc(env(safe-area-inset-top,0px) + 16px);align-self:start}
+.margin .n{display:block;font-size:34px;font-weight:700;line-height:1;color:var(--ink);margin-bottom:6px}
+.body{min-width:0}
+h2{font-family:var(--serif);font-size:24px;font-weight:700;margin:0 0 14px;line-height:1.4}
+h3{font-family:var(--serif);font-size:18px;font-weight:700;margin:30px 0 8px}
+h4{font-family:var(--serif);font-size:16px;font-weight:700;margin:20px 0 6px;color:var(--ink-2)}
+p{margin:0 0 14px;max-width:74ch}
+ul,ol{padding-left:1.4em;max-width:74ch}
+li{margin-bottom:6px}
+.lead{font-size:17px;max-width:74ch}
+.callout{background:var(--paper-2);border-left:3px solid var(--crow);padding:14px 18px;margin:18px 0;max-width:74ch}
+.callout.gold{border-left-color:var(--gold);background:var(--gold-soft)}
+.callout.green{border-left-color:var(--green);background:var(--green-soft)}
+.callout p:last-child{margin-bottom:0}
+.tbl{overflow-x:auto;margin:16px 0 8px}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6}
+th,td{text-align:left;vertical-align:top;padding:10px 12px;border-bottom:1px solid var(--rule)}
+th{font-weight:700;border-bottom:2px solid var(--ink);white-space:nowrap}
+td:first-child{font-weight:500}
+.tag{display:inline-block;font-size:12px;padding:1px 8px;border-radius:3px;white-space:nowrap}
+.tag.reuse{background:var(--crow-soft);color:var(--crow)}
+.tag.adapt{background:var(--slate-soft);color:var(--slate)}
+.tag.moat{background:var(--gold-soft);color:var(--gold)}
+.tag.new{background:var(--green-soft);color:var(--green)}
+.figure{margin:22px 0 10px;overflow-x:auto;background:var(--paper-2);padding:18px 10px;border:1px solid var(--rule)}
+.figure svg{display:block;min-width:860px;width:100%;height:auto;font-family:var(--sans)}
+.figure.small svg{min-width:700px}
+.figcap{font-size:13.5px;color:var(--ink-3);margin:8px 0 18px;max-width:74ch}
+.road{list-style:none;padding:0;margin:14px 0;max-width:74ch;border-left:2px solid var(--rule)}
+.road li{padding:0 0 18px 22px;position:relative;margin:0}
+.road li::before{content:"";position:absolute;left:-7px;top:10px;width:12px;height:12px;border-radius:50%;background:var(--paper);border:2px solid var(--crow)}
+.road b{display:block;font-family:var(--serif);font-size:16px}
+.principles{counter-reset:p;list-style:none;padding:0;max-width:74ch}
+.principles li{padding-left:2.4em;position:relative;margin-bottom:10px}
+.principles li::before{counter-increment:p;content:counter(p);position:absolute;left:0;top:0;font-family:var(--serif);font-weight:700;color:var(--crow);font-size:18px;line-height:1.5}
+.foot{margin-top:48px;padding-top:18px;border-top:2px solid var(--ink);font-size:13px;color:var(--ink-3)}
+.foot table{font-size:13px}
+code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.92em;background:var(--paper-2);padding:1px 5px;border-radius:3px}
+@media (max-width:760px){
+  section{grid-template-columns:1fr;gap:8px}
+  .margin{position:static;padding-top:0}
+  .margin .n{display:inline;font-size:22px;margin-right:8px}
+  .masthead{padding-top:36px}
+}
+
+.tag.no{background:var(--paper-2);color:var(--ink-3);border:1px solid var(--rule)}
+.tag.chg{background:var(--gold-soft);color:var(--gold)}
+td .tag{margin-right:4px}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0;max-width:74ch}
+.pair>div{background:var(--paper-2);border-top:3px solid var(--crow);padding:12px 16px}
+.pair>div.g{border-top-color:var(--gold)}
+.pair h4{margin-top:0}
+.pair p{font-size:15px;margin-bottom:6px}
+@media (max-width:760px){section{grid-template-columns:1fr}.margin{position:static}.pair{grid-template-columns:1fr}}
+
+pre.code{background:var(--paper-2);border:1px solid var(--rule);padding:14px 16px;overflow-x:auto;font-size:13px;line-height:1.6;font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;max-width:100%;margin:14px 0}
+code{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:.9em;background:var(--paper-2);padding:0 4px;border-radius:3px}
+pre.code code{background:none;padding:0}
+</style></head><body>
+<div class="page">
+
+<header class="masthead">
+  <div class="doc-no">huabo.ai 中考教育产品线 · 技术蓝图专章 · HB-EDU-2026-0927-02</div>
+  <h1>技术蓝图 v2.1 · 输入与识别</h1>
+  <p class="sub">拍照、屏幕书写、语音三条输入通道的统一方案：少识别、错误不进学习者模型、说出不确定</p>
+  <div class="meta">
+    <div><b>版本</b>v2.1 专章 · 讨论稿</div>
+    <div><b>日期</b>2026 年 9 月 27 日</div>
+    <div><b>与 v2.0 的关系</b>展开 v2.0 第 6 章"模型与语音：OCR、ASR、TTS 可插拔"一行；新增为第 6A 章</div>
+    <div><b>输入</b>《几个基础技术问题解决方案》；平台规划 v1.2 / v1.3 增补篇；技术蓝图 v2.0</div>
+    <div><b>密级</b>内部</div>
+  </div>
+</header>
+
+<section>
+  <div class="margin"><span class="n">一</span>摘要</div>
+  <div class="body">
+    <h2>三条原则</h2>
+    <p class="lead"><strong>原则一：少识别。</strong>识别出错的概率接近百分之百，最有效的对策是减少需要识别的内容。题干靠题库匹配而不是 OCR；填空、方程式、辅助线、受力图做成结构化输入；只有学生的手写作答区真正需要识别。</p>
+    <p class="lead"><strong>原则二：错误不进学习者模型。</strong>识别错误最多让一次批改出错，不能让星误亮或熄灭。所有作答证据按来源分为 A、B、C 三级，只有 A 级（平台内独立作答）能点亮星；低置信度、未确认的证据不写入掌握概率。</p>
+    <p class="lead"><strong>原则三：说出不确定。</strong>会影响判分的不确定之处，向学生展示"我可能没看清 / 没听清"，请学生确认；不影响判分的不确定不打扰学生。确认次数本身是一个受控指标。</p>
+    <div class="callout gold">
+      <p><strong>合规前提（沿用 v2.0 第 6、8 章）：</strong>国内可商用服务优先，不默认调用境外 API；不满 14 周岁未成年人的个人信息属于敏感个人信息，照片、手写笔迹、语音都按此处理；原始素材最小化保存，不提取声纹，未经监护人单独同意不用于模型训练。</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="margin"><span class="n">二</span>数据契约</div>
+  <div class="body">
+    <h2>三条通道，一种"作答证据"</h2>
+    <p>拍照、屏幕、语音三条通道最终都产出同一种结构：<strong>作答证据（AnswerEvidence）</strong>。学科包的 <code>grade(attempt, rubric_version)</code> 只接收它，不关心来源通道；学习者模型只按它的证据等级决定是否写入。</p>
+<pre class="code">{
+  "evidence_id": "ev_…",
+  "channel": "photo | keypad | canvas | voice",
+  "item": { "item_id": "NJ-MATH-…", "match": "bank | external", "match_confidence": 0.97 },
+  "regions": [{
+    "region_id": "r3",
+    "bbox": [x, y, w, h],             // 原图坐标
+    "crop_ref": "oss://…/r3.png",     // 切片引用，按保存策略删除
+    "kind": "handwriting | print | formula | figure",
+    "raw": "x-1=5",                   // 引擎原始输出，永不覆盖
+    "corrected": "x+1=5",             // 校正后
+    "correction_log": [{ "pos": 1, "from": "-", "to": "+", "rule": "confusion_set", "conf": 0.58 }],
+    "confidence": 0.62,
+    "engine": "ocr-x", "engine_version": "…",
+    "status": "ok | struck | missing"   // struck=已划去，missing=缺损未见
+  }],
+  "normalized": { "latex": "x+1=5", "ast": {…}, "mhchem": null, "semantic": [] },
+  "confirm": { "required": true, "reason": "grade_flip", "by": "student", "at": "…", "changed": false },
+  "grading_effect": { "flip_on_correction": true },
+  "level": "A | B | C",
+  "consent_scope": "grading_only"
+}</pre>
+    <h3>2.1 证据等级</h3>
+    <div class="tbl"><table>
+      <tr><th>等级</th><th>来源</th><th>对学习者模型的作用</th></tr>
+      <tr><td>A</td><td>平台内独立作答：键盘、点选、画布经回显确认、语音经复述确认</td><td>更新掌握概率；可参与掌握门槛判定，<strong>可点亮星</strong></td></tr>
+      <tr><td>B</td><td>拍照题库题，识别高置信或经学生确认</td><td>更新掌握概率（权重低于 A），更新错因统计；<strong>不点亮星</strong>，但可触发"去平台内验证这颗星"的任务</td></tr>
+      <tr><td>C</td><td>低置信未确认；外部题（题库未匹配）；学生申诉中的条目</td><td>只展示批改结果，<strong>不写入</strong>学习者模型</td></tr>
+    </table></div>
+    <p>这一分级让"拍照批改"与"星图可信"彻底解耦：拍照是一个方便的入口，但星只认平台内的独立作答。</p>
+  </div>
+</section>
+
+<section>
+  <div class="margin"><span class="n">三</span>拍照通道</div>
+  <div class="body">
+    <h2>八道工序，每一道都可以拒收</h2>
+    <div class="figure">
+<svg viewBox="0 0 1200 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="拍照通道流水线">
+  <defs><marker id="p1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--crow)"/></marker></defs>
+  <g font-size="12" fill="var(--ink-2)">
+  <g stroke-width="1.4">
+    <rect x="14" y="40" width="130" height="80" fill="var(--crow-soft)" stroke="var(--crow)"/>
+    <rect x="162" y="40" width="130" height="80" fill="var(--crow-soft)" stroke="var(--crow)"/>
+    <rect x="310" y="40" width="130" height="80" fill="var(--green-soft)" stroke="var(--green)"/>
+    <rect x="458" y="40" width="130" height="80" fill="var(--crow-soft)" stroke="var(--crow)"/>
+    <rect x="606" y="40" width="130" height="80" fill="var(--crow-soft)" stroke="var(--crow)"/>
+    <rect x="754" y="40" width="130" height="80" fill="var(--gold-soft)" stroke="var(--gold)"/>
+    <rect x="902" y="40" width="130" height="80" fill="var(--gold-soft)" stroke="var(--gold)"/>
+    <rect x="1050" y="40" width="136" height="80" fill="var(--paper)" stroke="var(--ink)"/>
+  </g>
+  <g font-size="13.5" font-weight="700" fill="var(--ink)">
+    <text x="26" y="64">① 拍摄引导</text><text x="174" y="64">② 质量闸门</text><text x="322" y="64">③ 题目匹配</text><text x="470" y="64">④ 版面切分</text>
+    <text x="618" y="64">⑤ 作答识别</text><text x="766" y="64">⑥ 约束校正</text><text x="914" y="64">⑦ 置信与确认</text><text x="1062" y="64">⑧ 判分入模</text>
+  </g>
+  <text x="26" y="86">端侧：清晰度</text><text x="26" y="104">倾斜 · 反光</text>
+  <text x="174" y="86">不合格即重拍</text><text x="174" y="104">不强行识别</text>
+  <text x="322" y="86">题干、图形、答案</text><text x="322" y="104">取自题库</text>
+  <text x="470" y="86">印刷 / 手写分离</text><text x="470" y="104">只切作答区</text>
+  <text x="618" y="86">涂改→已划去</text><text x="618" y="104">缺损→未见</text>
+  <text x="766" y="86">只改易混集合</text><text x="766" y="104">保留原始输出</text>
+  <text x="914" y="86">只确认影响</text><text x="914" y="104">判分的条目</text>
+  <text x="1062" y="86">证据分级</text><text x="1062" y="104">A / B / C</text>
+  <g stroke="var(--crow)" stroke-width="1.4" fill="none">
+    <path d="M144,80 L158,80" marker-end="url(#p1)"/><path d="M292,80 L306,80" marker-end="url(#p1)"/><path d="M440,80 L454,80" marker-end="url(#p1)"/>
+    <path d="M588,80 L602,80" marker-end="url(#p1)"/><path d="M736,80 L750,80" marker-end="url(#p1)"/><path d="M884,80 L898,80" marker-end="url(#p1)"/>
+    <path d="M1032,80 L1046,80" marker-end="url(#p1)"/>
+    <path d="M227,120 C227,190 80,190 80,124" stroke-dasharray="5 4" marker-end="url(#p1)"/>
+    <path d="M375,120 L375,196" marker-end="url(#p1)"/>
+    <path d="M1118,120 L1118,196" marker-end="url(#p1)"/>
+  </g>
+  <text x="96" y="206">不合格：返回重拍建议</text>
+  <rect x="300" y="200" width="300" height="100" fill="var(--paper-2)" stroke="var(--rule)"/>
+  <text x="312" y="222" font-weight="700" fill="var(--ink)" font-size="13">未匹配 = 外部题</text>
+  <text x="312" y="242">题干也需识别，学科与知识点由模型打标</text>
+  <text x="312" y="260">批改照常给出，但证据最高为 C 级</text>
+  <text x="312" y="278">累计高频外部题 → 进入题库入库队列</text>
+  <rect x="930" y="200" width="256" height="100" fill="var(--paper-2)" stroke="var(--rule)"/>
+  <text x="942" y="222" font-weight="700" fill="var(--ink)" font-size="13">申诉与重算</text>
+  <text x="942" y="242">"这题判错了" → 回溯到识别片段</text>
+  <text x="942" y="260">评分或识别版本出错 → 一键停用</text>
+  <text x="942" y="278">并重算受影响的报告</text>
+  </g>
+</svg>
+    </div>
+    <p class="figcap">图 1 · 拍照通道流水线。蓝色为识别前处理，绿色为"少识别"的关键工序，金色为防止错误级联的两道工序。</p>
+
+    <h3>3.1 拍摄引导与质量闸门</h3>
+    <ul>
+      <li>取景时端侧实时检测清晰度、倾斜、反光与阴影，显示取景框；满足条件自动拍摄。</li>
+      <li>上传后自动裁切、透视矫正、去阴影；仍不合格的，返回具体原因（"右下角反光""太倾斜"）并请重拍，<strong>不在不合格图片上强行识别</strong>。</li>
+      <li>多页作业按页处理，某页不合格只重拍该页。</li>
+    </ul>
+
+    <h3>3.2 题目匹配：题干不靠识别</h3>
+    <p>先用版面特征与印刷体关键词，把整道题匹配到题库（平台题库、南京真题、常用教辅的已授权题目）。匹配成功后，题干、图形、标准答案、Rubric 全部取自题库，<strong>图形扭曲、题干模糊的问题在这一步消失</strong>，后续只识别作答区。匹配失败的"外部题"照常批改，但证据等级封顶为 C；同一外部题被多名学生上传后，进入题库入库队列，经教研审核后转为题库题。</p>
+
+    <h3>3.3 作答识别</h3>
+    <ul>
+      <li><strong>涂改</strong>：检测划线、涂黑、叉号覆盖区域，标为 <code>struck</code>，不参与判分，也不送去校正。</li>
+      <li><strong>缺损</strong>：被遮挡、出框、撕损的区域标为 <code>missing</code>；系统不猜测缺失内容，该步按"未见"处理并提示学生。</li>
+      <li><strong>公式区</strong>：检测为公式的区域走公式专用识别，输出 LaTeX；多行推导按行关联，保留行序。</li>
+      <li><strong>多引擎</strong>：默认单引擎；只对"解答题且低置信度"的区域调用第二引擎交叉比对，两者不一致即视为低置信。不对全量内容双跑。</li>
+    </ul>
+
+    <h3>3.4 约束校正：五条规则</h3>
+    <ol class="principles">
+      <li><strong>只改低置信字符。</strong>高置信字符一律不动。</li>
+      <li><strong>只在视觉易混集合内改。</strong>首版集合：1 / 7 / l / I、0 / o / O、2 / z / Z、5 / s / S、x / × / χ、− / = / —、+ / t、6 / b、9 / q / g、· / .、( / 1 / )；化学加入 l / 1（Cl）、0 / O（CO₂）。集合由教研维护，版本化。</li>
+      <li><strong>依据上下文，不依据"正确答案"。</strong>校正模型看得到题目和学生前后步骤，<strong>看不到标准答案</strong>。这是防止"把学生的错改成对"最直接的办法。</li>
+      <li><strong>原始输出永不覆盖。</strong><code>raw</code> 与 <code>corrected</code> 并存，每一处改动写入 <code>correction_log</code>。</li>
+      <li><strong>判分翻转必须确认。</strong>若按 <code>raw</code> 与按 <code>corrected</code> 判分结果不同（无论错变对还是对变错），该条目必须请学生确认后才能判分。</li>
+    </ol>
+
+    <h3>3.5 确认策略：只打扰必要的地方</h3>
+    <div class="tbl"><table>
+      <tr><th>情形</th><th>处理</th></tr>
+      <tr><td>高置信，且不影响判分</td><td>直接判分</td></tr>
+      <tr><td>低置信，但不影响判分（如过程中与结果无关的笔误）</td><td>直接判分，报告中该处浅色显示，不请求确认</td></tr>
+      <tr><td>低置信且影响判分；或判分翻转</td><td>请学生确认：原图切片与识别结果并排，一键"对 / 改"</td></tr>
+      <tr><td>单次上传需确认条目 &gt; 3</td><td>不逐条确认，改为提示重拍该页；连续两次仍超出，该页按 C 级只给参考批改</td></tr>
+    </table></div>
+    <p>确认由学生完成，不要求家长参与。另一种确认方式是请学生口头说出这一步（走语音通道的复述确认），这也是苏格拉底式追问的自然入口。</p>
+
+    <h3>3.6 个人混淆表，而不是个人模型</h3>
+    <p>不为单个用户训练识别模型。学生每次确认中"改"的记录，累计形成一张小表（例：该生的 7 常被识别为 1），作为该生后续识别的先验。表只存字符对与次数，不存图像；学生注销即删除。</p>
+  </div>
+</section>
+
+<section>
+  <div class="margin"><span class="n">四</span>屏幕通道</div>
+  <div class="body">
+    <h2>能结构化的输入，就不做识别</h2>
+    <div class="tbl"><table>
+      <tr><th>题型</th><th>手机</th><th>平板 + 笔</th><th>产出</th></tr>
+      <tr><td>选择、判断</td><td colspan="2">点选</td><td>选项</td></tr>
+      <tr><td>数学填空</td><td colspan="2">数学键盘（模板槽位）</td><td>LaTeX + 表达式树</td></tr>
+      <tr><td>化学方程式、化学式</td><td colspan="2">化学键盘</td><td>mhchem</td></tr>
+      <tr><td>物理数值</td><td colspan="2">数值 + 单位选择器</td><td>数值 + 量纲</td></tr>
+      <tr><td>解答题</td><td>纸上写 + 拍照（第三章）；短步骤可用画布</td><td>手写画布，逐行回显</td><td>多行 LaTeX</td></tr>
+      <tr><td>几何辅助线</td><td colspan="2">题图上画线，端点吸附</td><td>作图语义</td></tr>
+      <tr><td>受力图、电路、光路</td><td colspan="2">组件拖放</td><td>力列表 / 网表 / 光路元素</td></tr>
+    </table></div>
+
+    <h3>4.1 学科键盘</h3>
+    <ul>
+      <li><strong>数学</strong>：分式、根号（含 n 次）、上下标、绝对值、括号成对、±、≥ ≤ ≠、∠ △ ⊥ ∥ ≌ ∽、π、°、方程组大括号、区间。输入即结构，存储为 LaTeX 与表达式树，判分用符号引擎做<strong>等价判定</strong>（如 <code>2(x+1)</code> 与 <code>2x+2</code>），不比对字符串；数值题带容差与有效数字规则。</li>
+      <li><strong>化学</strong>：化学式中数字自动下标；离子电荷上标；↑ ↓ △、可逆号、"点燃 / 高温 / 催化剂"等条件写在箭头上方；存为 mhchem，直接送配平与守恒校验器。</li>
+      <li><strong>物理</strong>：数值与单位分开输入，单位从当前题型相关的单位表中选择，送量纲检查；矢量用箭头标记。</li>
+    </ul>
+
+    <h3>4.2 手写画布</h3>
+    <ul>
+      <li>采集笔迹矢量（笔顺、时序），按行识别；每写完一行，在行尾实时回显"我读到的是……"，学生当场点改。</li>
+      <li>提交前全部行都已被学生看过，<strong>提交的即是确认后的内容</strong>，证据等级为 A。</li>
+      <li>设备策略：平板 + 笔为主力；手机上的画布只用于一两行的短步骤，长篇证明引导为纸写拍照。</li>
+    </ul>
+
+    <h3>4.3 几何作图：画线即语义</h3>
+    <p>学生在题图（来自题库的矢量图）上作图，端点自动吸附到已有点、边上任意点或交点；新点提示命名。每一笔输出结构化语义，而不是像素：</p>
+<pre class="code">[{ "op": "connect", "from": "A", "to": "D" },
+ { "op": "perpendicular", "through": "A", "to": "BC", "foot": "H" },
+ { "op": "parallel", "through": "E", "to": "AB", "meets": "BC", "at": "F" },
+ { "op": "midpoint", "of": "BC", "name": "M" },
+ { "op": "extend", "segment": "CB", "beyond": "B", "to": "G" }]</pre>
+    <p><strong>声明优先：</strong>中考数学答题规范本就要求用文字声明辅助线（"作 AH⊥BC 于 H"）。判分以文字声明为准，作图语义用于校验声明与图是否一致，并驱动讲评时的白板重放。纸面上的辅助线因此无需图形识别，只识别那句声明。</p>
+
+    <h3>4.4 物理作图：组件，不是手绘</h3>
+    <ul>
+      <li><strong>受力分析</strong>：力箭头工具，作用点吸附到物体重心或接触点，方向可按 15° 步进或自由，标签从 G / F / N / f / F浮 中选；产出力列表，校验"受力完整、方向正确、作用点正确"。</li>
+      <li><strong>电路</strong>：元件库（电源、开关、灯泡、电阻、滑动变阻器、电流表、电压表），连线吸附到端子；产出网表，送串并联与电表接法规则校验。</li>
+      <li><strong>光路</strong>：面与法线自动生成，入射 / 反射 / 折射光线吸附到入射点；产出角度关系。</li>
+    </ul>
+    <div class="callout">
+      <p><strong>组件选型：</strong>手写数学识别首选评估 MyScript iink（商业授权；需确认移动端是否端侧识别、授权费用、React Native 原生桥接工作量——须使用 Expo dev client，不能用 Expo Go）。作图与键盘为自研组件，与舞台层白板共用 SVG 渲染与 KaTeX。</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="margin"><span class="n">五</span>语音通道</div>
+  <div class="body">
+    <h2>级联架构：中间必须有一层文本</h2>
+    <p>老师角色采用"识别 → 文本 → 引擎 / 模型 → 合成"的级联架构，不用端到端语音模型。原因是平台红线：判分可追溯、禁语检测、人设治理、内容审核，全部依赖中间的文本层。端到端实时语音只在阶段 2 以后于点点闲聊、英语自由对话中试点，且保留完整文字记录。</p>
+    <div class="figure">
+<svg viewBox="0 0 1200 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="语音通道架构">
+  <defs><marker id="p2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--crow)"/></marker></defs>
+  <g font-size="12" fill="var(--ink-2)">
+  <g stroke-width="1.4">
+    <rect x="14" y="60" width="120" height="76" fill="var(--paper)" stroke="var(--ink)"/>
+    <rect x="152" y="60" width="130" height="76" fill="var(--crow-soft)" stroke="var(--crow)"/>
+    <rect x="300" y="60" width="150" height="76" fill="var(--crow-soft)" stroke="var(--crow)"/>
+    <rect x="468" y="60" width="140" height="76" fill="var(--crow-soft)" stroke="var(--crow)"/>
+    <rect x="626" y="44" width="200" height="108" fill="var(--gold-soft)" stroke="var(--gold)" stroke-width="1.8"/>
+    <rect x="844" y="60" width="150" height="76" fill="var(--crow-soft)" stroke="var(--crow)"/>
+    <rect x="1012" y="60" width="174" height="76" fill="var(--crow-soft)" stroke="var(--crow)"/>
+  </g>
+  <g font-size="13.5" font-weight="700" fill="var(--ink)">
+    <text x="26" y="84">麦克风</text><text x="164" y="84">端点检测</text><text x="312" y="84">流式识别</text><text x="480" y="84">口述数学归一</text>
+    <text x="638" y="68">文本层（平台红线）</text><text x="856" y="84">引擎 / 模型</text><text x="1024" y="84">流式合成 → 播放</text>
+  </g>
+  <text x="26" y="104">回声消除 · 降噪</text><text x="26" y="122">按住说话 / 自动</text>
+  <text x="164" y="104">静音阈值可调</text><text x="164" y="122">思考停顿放宽</text>
+  <text x="312" y="104">学科 × 章节热词</text><text x="312" y="122">实时显示部分结果</text>
+  <text x="480" y="104">"x 的平方加 2x"</text><text x="480" y="122">→ x^2+2x</text>
+  <text x="638" y="90">判分答案 → 复述确认</text><text x="638" y="108">禁语 · 人设 · 审核</text><text x="638" y="126">全量文字记录</text><text x="638" y="144">危机信号 → 转介</text>
+  <text x="856" y="104">快模型：审核短句接话</text><text x="856" y="122">强模型：讲解</text>
+  <text x="1024" y="104">按句分段合成</text><text x="1024" y="122">学生插话可打断</text>
+  <g stroke="var(--crow)" stroke-width="1.4" fill="none">
+    <path d="M134,98 L148,98" marker-end="url(#p2)"/><path d="M282,98 L296,98" marker-end="url(#p2)"/><path d="M450,98 L464,98" marker-end="url(#p2)"/>
+    <path d="M608,98 L622,98" marker-end="url(#p2)"/><path d="M826,98 L840,98" marker-end="url(#p2)"/><path d="M994,98 L1008,98" marker-end="url(#p2)"/>
+    <path d="M375,136 L375,220" marker-end="url(#p2)"/>
+    <path d="M1099,220 L1099,140" marker-end="url(#p2)"/>
+  </g>
+  <rect x="236" y="224" width="300" height="104" fill="var(--green-soft)" stroke="var(--green)" stroke-width="1.4"/>
+  <text x="248" y="246" font-weight="700" fill="var(--green)" font-size="13">旁路 · 英语口语评测</text>
+  <text x="248" y="266">朗读 / 跟读：发音评测（音素级）</text>
+  <text x="248" y="284">开放题：转写 + 采分点 Rubric + 发音流利度</text>
+  <text x="248" y="302">口径对齐南京听说考试（第 5.4 节）</text>
+  <rect x="890" y="224" width="296" height="104" fill="var(--paper-2)" stroke="var(--rule)"/>
+  <text x="902" y="246" font-weight="700" fill="var(--ink)" font-size="13">播放态 · 预合成缓存</text>
+  <text x="902" y="266">按剧本的讲解在审核发布时即合成</text>
+  <text x="902" y="284">播放零等待；只有插话才走实时链路</text>
+  <text x="902" y="302">同一段讲解全体学生复用</text>
+  </g>
+</svg>
+    </div>
+    <p class="figcap">图 2 · 语音通道。金色文本层是不可省略的环节；绿色旁路为英语评测；右下的预合成缓存对应 v1.2 借鉴 OpenMAIC 的"播放态 / 直播态"。</p>
+
+    <h3>5.1 延迟预算</h3>
+    <p>"即时"定义为：学生说完到听到回应第一个字，p95 ≤ 1.5 秒；说话过程中文字实时出现。</p>
+    <div class="tbl"><table>
+      <tr><th>环节</th><th>预算</th><th>手段</th></tr>
+      <tr><td>端点判定</td><td>400–600ms</td><td>答题用"按住说话"，松手即结束，省掉这一段；对话用自动检测，思考停顿阈值放宽</td></tr>
+      <tr><td>识别最终结果</td><td>100–200ms</td><td>流式识别，部分结果实时上屏</td></tr>
+      <tr><td>模型首字</td><td>300–700ms</td><td>快模型先从审核短句库选一句接话（不即兴生成），强模型随后接讲解</td></tr>
+      <tr><td>合成首包</td><td>150–300ms</td><td>按句分段流式合成；支持插话打断</td></tr>
+      <tr><td>剧本讲解</td><td>≈ 0</td><td>预合成缓存</td></tr>
+    </table></div>
+
+    <h3>5.2 准确：热词、归一、复述</h3>
+    <ul>
+      <li><strong>热词</strong>：从知识图谱按"学科 × 当前章节"导出术语表（勾股定理、欧姆定律、摩尔质量、《孟子》人名等），会话开始时注入识别服务；热词表随图谱版本发布。</li>
+      <li><strong>口述数学归一</strong>：规则优先、模型兜底，把口语表达转为 LaTeX；转换后的式子上屏展示。</li>
+      <li><strong>复述确认</strong>：会被判分的口头答案，一律复述确认（"你说的是 x=3，对吗？"），确认后证据等级为 A；闲聊与提问不复述。</li>
+    </ul>
+
+    <h3>5.3 两种说话方式</h3>
+    <div class="tbl"><table>
+      <tr><th>场景</th><th>方式</th><th>理由</th></tr>
+      <tr><td>答题、口述步骤</td><td>按住说话</td><td>家里环境嘈杂，避免误触发；端点清晰，延迟更低</td></tr>
+      <tr><td>英语对话练习、听说模考</td><td>自动检测（模考按考试流程计时）</td><td>贴近人机对话考试形态</td></tr>
+      <tr><td>向点点提问</td><td>学生可选</td><td>—</td></tr>
+    </table></div>
+
+    <h3>5.4 英语口语评测：先对齐考场口径</h3>
+    <ol>
+      <li><strong>查清南京听说考试所用的评测技术供应商</strong>，优先接入同一家；平台给的分与考场给的分偏差最小，是这一科最硬的可信度。</li>
+      <li><strong>朗读、跟读</strong>：发音评测接口，要求音素级错误定位。</li>
+      <li><strong>情景问答、话题简述</strong>：转写后按采分点 Rubric 评内容（方法同知行），叠加评测接口的发音与流利度分。</li>
+      <li><strong>校准研究</strong>：用南京题型的真实学生录音，由两位英语教师与引擎三方独立评分，计算一致性后再上线评分；不达标的题型只给练习反馈，不给分数。</li>
+      <li>开口成章现有的 Gemini 对话链路经模型路由保留，评测引擎单独接入国内服务。</li>
+    </ol>
+
+    <h3>5.5 语音合成与角色声音</h3>
+    <p>国内流式合成服务。七位老师与点点各有一套声音设定，写入《角色视觉家族规范》的"声"层（与线、形、色、动并列）；更换供应商时以同一试音文本做 A/B 对比，保证角色声音一致。英语示范朗读单独选用母语级音色。</p>
+  </div>
+</section>
+
+<section>
+  <div class="margin"><span class="n">六</span>选型</div>
+  <div class="body">
+    <h2>候选与核实状态</h2>
+    <div class="tbl"><table>
+      <tr><th>能力</th><th>候选</th><th>状态</th><th>备注</th></tr>
+      <tr><td>中文流式识别</td><td>阿里 Fun-ASR 实时版</td><td><span class="tag new">已核实</span></td><td>双向流式；口音覆盖列明南京、江苏；按秒计费。首选</td></tr>
+      <tr><td>自托管识别</td><td>Qwen3-ASR（0.6B / 1.7B）+ 强制对齐模型</td><td><span class="tag new">已核实</span></td><td>开源 Apache 2.0；阶段 2 视成本与数据要求评估</td></tr>
+      <tr><td>英语发音评测</td><td>讯飞流式评测、有道评测、驰声等</td><td><span class="tag new">接口已核实</span></td><td>最终取决于南京考试供应商（待查）与校准研究结果</td></tr>
+      <tr><td>拍照 OCR / 公式识别</td><td>自托管 PaddleOCR 系列；国内云教育 OCR</td><td><span class="tag chg">待实测</span></td><td>用第八章的南京样本集比较，不以厂商宣称指标为准</td></tr>
+      <tr><td>手写数学（画布）</td><td>MyScript iink</td><td><span class="tag chg">待核实</span></td><td>授权、端侧识别、RN 桥接</td></tr>
+      <tr><td>流式合成</td><td>国内主流云服务</td><td><span class="tag chg">待选型</span></td><td>按角色试音选定</td></tr>
+      <tr><td>境外服务</td><td>Azure 发音评测、Mathpix 等</td><td><span class="tag no">不默认</span></td><td>跨境传输另行评估；仅作技术对照基准</td></tr>
+      <tr><td>名称未能查证</td><td>"Qwen-Audio-3.1-ASR""Confucius4-R2T2"</td><td><span class="tag no">不引用</span></td><td>输入文档所列，查证前不写入方案</td></tr>
+    </table></div>
+    <p>所有识别、评测、合成服务经模型路由层可插拔接入，按任务配置主备供应商、限流与熔断（v2.0 第 6 章）；返回结果统一带 <code>engine</code>、<code>engine_version</code>，写入作答证据。</p>
+  </div>
+</section>
+
+<section>
+  <div class="margin"><span class="n">七</span>数据与合规</div>
+  <div class="body">
+    <h2>最小化保存（建议值，待法务确认）</h2>
+    <div class="tbl"><table>
+      <tr><th>素材</th><th>建议保存策略</th></tr>
+      <tr><td>作业原图</td><td>批改完成后保留 30 天用于申诉，到期删除；家长或学生可随时手动删除</td></tr>
+      <tr><td>识别切片</td><td>随原图删除；进入申诉的条目保留至申诉结束</td></tr>
+      <tr><td>画布笔迹</td><td>只保存识别后的结构化结果，不长期保存原始笔迹</td></tr>
+      <tr><td>对话语音</td><td>默认不保存原始音频，只保存文字</td></tr>
+      <tr><td>英语评测录音</td><td>保存供学生回放对比，学生可删除；不提取声纹</td></tr>
+      <tr><td>个人混淆表</td><td>只存字符对与次数，注销即删</td></tr>
+      <tr><td>模型训练</td><td>以上素材一律不用于训练，除非取得监护人单独同意</td></tr>
+    </table></div>
+    <p>供应商合同须包含：数据境内处理、不留存或限期留存、不用于其训练、安全事件通知。</p>
+  </div>
+</section>
+
+<section>
+  <div class="margin"><span class="n">八</span>验收</div>
+  <div class="body">
+    <h2>先建样本集，再定门槛</h2>
+    <p>厂商公布的准确率不能代表南京初中生的作业本。阶段 0 须建立<strong>南京真实作业样本集</strong>（授权采集，覆盖七科、光线、角度、潦草、涂改、缺损、公式与作图）和<strong>学生录音样本集</strong>（普通话与英语、家庭环境噪声），所有选型与版本升级都在同一样本集上回归。</p>
+    <div class="tbl"><table>
+      <tr><th>指标</th><th>含义</th><th>性质</th></tr>
+      <tr><td>识别导致的判分翻转率</td><td>因识别或校正导致判分与教师不一致的比例</td><td>核心指标，发布阻断</td></tr>
+      <tr><td>批改与教师一致率</td><td>按题型分别统计</td><td>发布阻断</td></tr>
+      <tr><td>过度校正率</td><td>校正把学生原本的错误改为正确的次数</td><td>目标为零，发布阻断</td></tr>
+      <tr><td>确认请求率 / 单次上传确认条数</td><td>学生负担</td><td>体验护栏</td></tr>
+      <tr><td>确认后修改率</td><td>学生在确认时改动的比例；过低说明确认过多，过高说明识别过差</td><td>调参依据</td></tr>
+      <tr><td>学生录音字错误率（中 / 英）</td><td>样本集上测</td><td>选型依据</td></tr>
+      <tr><td>语音首字延迟 p95</td><td>说完到听到第一个字</td><td>≤ 1.5 秒</td></tr>
+      <tr><td>口语评测与教师一致性</td><td>按题型</td><td>不达标题型不出分</td></tr>
+    </table></div>
+    <p>各指标的具体门槛在样本集基线测出后确定，不在本稿写死。</p>
+  </div>
+</section>
+
+<section>
+  <div class="margin"><span class="n">九</span>路线</div>
+  <div class="body">
+    <h2>插入 v2.0 交付顺序</h2>
+    <div class="tbl"><table>
+      <tr><th>优先级</th><th>内容</th><th>阶段</th></tr>
+      <tr><td>P0</td><td>作答证据契约与 A / B / C 分级；两个样本集；拍摄引导与质量闸门；题目匹配</td><td>阶段 0</td></tr>
+      <tr><td>P0</td><td>约束校正五规则、判分翻转确认、申诉与重算</td><td>阶段 0 末–阶段 1 初</td></tr>
+      <tr><td>P0</td><td>数学键盘、化学键盘、单位选择器；Fun-ASR 流式识别 + 热词 + 实时上屏 + 复述确认</td><td>阶段 1</td></tr>
+      <tr><td>P1</td><td>平板手写画布；几何作图吸附与语义；英语评测接入与校准研究；剧本讲解预合成</td><td>阶段 1</td></tr>
+      <tr><td>P1</td><td>物理受力、电路、光路组件（随物理包）</td><td>阶段 2</td></tr>
+      <tr><td>P2</td><td>低置信区域双引擎；自托管 Qwen3-ASR 评估；端到端实时语音试点</td><td>阶段 2</td></tr>
+    </table></div>
+  </div>
+</section>
+
+<section>
+  <div class="margin"><span class="n">十</span>待决</div>
+  <div class="body">
+    <h2>需要拍板的五件事</h2>
+    <ol class="principles">
+      <li><strong>拍照批改是否对免费用户开放。</strong>OCR 与视觉模型成本在各类调用中最高，需与五级会员的上传次数额度一并定。</li>
+      <li><strong>B 级证据的权重</strong>：拍照证据对掌握概率的影响系数，建议由数学先定经验值，样本集验证后调整。</li>
+      <li><strong>MyScript 是否采购</strong>：取决于授权报价与 RN 桥接工作量；备选是自研画布 + 渲染成图后送公式识别（损失笔顺信息）。</li>
+      <li><strong>作业原图保存期限</strong>：30 天为建议值，需法务确认。</li>
+      <li><strong>样本集的采集方式</strong>：合作学校授权采集，或招募试点家庭，需要监护人同意书模板。</li>
+    </ol>
+  </div>
+</section>
+
+<section>
+  <div class="margin"><span class="n">附</span>A · 输入核查</div>
+  <div class="body">
+    <h2>对《几个基础技术问题解决方案》的处理</h2>
+    <div class="tbl"><table>
+      <tr><th>原文内容</th><th>处理</th></tr>
+      <tr><td>四层防御、置信度分级、学生确认、可回溯</td><td><span class="tag new">采纳</span>方向正确，本章具体化为八道工序与五条校正规则</td></tr>
+      <tr><td>"校正格式，不校正逻辑"</td><td><span class="tag new">采纳</span>落实为"校正模型看不到标准答案"与"判分翻转必须确认"</td></tr>
+      <tr><td>低置信条目逐条请学生或家长确认</td><td><span class="tag chg">改写</span>只确认影响判分的条目，超过 3 条改为重拍；不要求家长参与</td></tr>
+      <tr><td>客观题端侧模型与云端双通道并行交叉</td><td><span class="tag chg">改写</span>仅对低置信解答题区域调用第二引擎</td></tr>
+      <tr><td>学习用户手写风格以校准识别模型</td><td><span class="tag chg">改写</span>个人混淆表，不训练个人模型</td></tr>
+      <tr><td>MVP 优先屏幕绘图</td><td><span class="tag new">采纳</span>并补充"声明优先"：判分以文字声明为准</td></tr>
+      <tr><td>Azure 发音评测为英语首选</td><td><span class="tag no">不采纳</span>跨境；改为对齐南京考试口径的国内评测</td></tr>
+      <tr><td>"37%–85% 错误率""97.8% 准确率""98% 批改精准度"</td><td><span class="tag no">不引用</span>未给出处；以本平台样本集实测为准</td></tr>
+      <tr><td>"Qwen-Audio-3.1-ASR""Confucius4-R2T2"</td><td><span class="tag no">不引用</span>未能查证；以 Fun-ASR、Qwen3-ASR 替代</td></tr>
+      <tr><td>拍摄分辨率"不低于 300 DPI"</td><td><span class="tag chg">改写</span>手机拍照不以 DPI 衡量，改为端侧清晰度与字符像素高度检测</td></tr>
+    </table></div>
+  </div>
+</section>
+
+<section>
+  <div class="margin"><span class="n">附</span>B · 版本</div>
+  <div class="body">
+    <div class="tbl"><table>
+      <tr><th>版本</th><th>日期</th><th>变更</th></tr>
+      <tr><td>v2.0</td><td>—</td><td>产品系统架构与技术实施蓝图：三端、会员权益、学科插件 API、容量假设、合规与交付门</td></tr>
+      <tr><td>v2.1 输入与识别专章</td><td>2026-09-27</td><td>新增作答证据契约与 A / B / C 证据等级；拍照通道八道工序与约束校正五规则；屏幕通道结构化输入、几何作图语义与物理组件；语音通道级联架构、延迟预算、英语评测口径对齐；选型核实表、数据保存建议、样本集与验收指标；插入交付顺序</td></tr>
+    </table></div>
+    <div class="foot">点斗 StarBuddy · huabo.ai · HB-EDU-2026-0927-02 · 内部讨论稿。本章与技术蓝图 v2.0、平台规划 v1.2 及 v1.3 增补篇合读；并入《产品开发完整方案》时作为第 6A 章。</div>
+  </div>
+</section>
+
+</div>
+
+</body></html>
