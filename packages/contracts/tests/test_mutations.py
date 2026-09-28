@@ -188,6 +188,36 @@ SERVICE_MUTATIONS = {
         "operationId": "node_delete", "responses": {"200": {"description": "x"}}}})),
     "示例证据引用不闭合": svc("knowledge", assign("components.examples.MasteryExplainResponse.value.evidence_ids", [])),
     "示例出现手机号": svc("knowledge", assign("components.examples.NodeResolveRequest.value.text", "合成 13812345678")),
+    # 安全审查（2026-09-28）新增规则
+    "删除“BFF 受众与身份绑定”": svc_drop_allof("insight", "InsightContext", "BFF 代表学生或家长访问"),
+    "删除“编排层只用 Agent 受众”": svc_drop_allof("insight", "InsightContext", "编排层只能以 Agent 受众访问"),
+    "删除“家长必须带绑定关系”": svc_drop_allof("insight", "Actor", "家长访问必须带绑定关系"),
+    "上下文包对 BFF 开放": svc("insight", assign(f"{S}.InsightContextRequest.properties.context",
+                                              {"$ref": "#/components/schemas/InsightContext"})),
+    "删除改为学生也能发起": svc("insight", assign(f"{S}.InsightEraseRequest.properties.context",
+                                               {"$ref": "#/components/schemas/InsightWriteContext"})),
+    "删除的确认码改为可选": svc("insight", assign(f"{S}.InsightEraseRequest.required", ["context"])),
+    "删除范围允许为空": svc("insight", delete(
+        f"{S}.InsightEraseResponse.allOf.1.properties.result.properties.scopes.minItems")),
+    "导出完成可以不给凭据": svc("insight", delete(f"{S}.InsightExportResponse.allOf.1.properties.result.allOf")),
+    "下载凭据允许任意引用": svc("insight", assign(
+        f"{S}.InsightExportResponse.allOf.1.properties.result.properties.download_ref.pattern", "^.{1,300}$")),
+    "删除“学生自述只由本人提交”": svc_drop_allof("insight", "InsightRecordRequest", "学生自述只能由学生本人提交"),
+    "删除“行为事件只由编排层记录”": svc_drop_allof("insight", "InsightRecordRequest", "行为事件只能由编排层记录"),
+    "删除“失误只能学生本人提出”": svc_drop_allof("insight", "InsightDisputeRequest", "只能由学生本人提出"),
+    "取值编码允许大写": svc("insight", assign(f"{S}.CodeValue.oneOf.2.pattern", "^[A-Za-z0-9][A-Za-z0-9_.:\\-]{0,63}$")),
+    "洞察调用方加入 adapter": svc("insight", assign(f"{S}.InsightContext.properties.caller.enum", ["bff", "orchestrator", "adapter"])),
+    "幂等键去掉 pattern": svc("insight", delete(f"{S}.InsightContext.properties.idempotency_key.pattern")),
+    "上下文条目加 display_name": svc("insight", assign(f"{S}.ContextEntry.properties.display_name", {"type": "string", "maxLength": 32})),
+    "node.resolve 对 BFF 开放": svc("knowledge", assign(f"{S}.NodeResolveRequest.properties.context",
+                                                     {"$ref": "#/components/schemas/PublicContext"})),
+    "公共层响应可引用学生证据": svc("knowledge", delete(f"{S}.NodeGetResponse.allOf.1.properties.evidence_ids")),
+    "删除“照片语音是 L3”": svc("knowledge", delete(f"{S}.EvidenceWriteRequest.allOf")),
+    "个人层工具对 BFF 开放": svc("knowledge", assign(f"{S}.StudentContext.properties.caller.enum", ["bff", "orchestrator", "learning"])),
+    "公共层上下文加 user_ref": svc("knowledge", assign(f"{S}.PublicContext.properties.user_ref", {"type": "string", "format": "uuid"})),
+    "公共层允许 L3": svc("knowledge", assign(f"{S}.PublicContext.properties.data_class.allOf.1.enum", ["L1", "L2", "L3"])),
+    "证据内联 base64 音频": svc("knowledge", assign(f"{S}.EvidenceWriteItem.properties.audio",
+                                                {"type": "string", "contentEncoding": "base64", "maxLength": 100000})),
 }
 
 

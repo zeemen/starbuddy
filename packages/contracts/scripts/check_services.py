@@ -81,7 +81,23 @@ FREE_TEXT_ALLOW = {
     },
     "insight": {("RenderedStatement", "text")},
 }
-PERSONAL_NAMES = re.compile(r"(student|attempt|evidence_event|account|guardian|household|learner)", re.I)
+PERSONAL_NAMES = re.compile(r"(student|attempt|evidence_event|account|guardian|household|learner|user|child|pupil|parent"
+                            r"|phone|mobile|email|school|id_card|uid\b|wechat|openid|device|actor)", re.I)
+# 请求里允许的自由文本（学生原文）：node.resolve 的输入文本，证据草稿里的作答原文
+REQUEST_FREE_TEXT_ALLOW = {
+    "knowledge": {("NodeResolveRequest", "text"), ("EvidencePayloadText", "text")},
+    "insight": set(),
+}
+# 上下文的字段集合与调用方类别固定下来：新增字段或调用方必须同时改这里（安全审查 S6）
+CONTEXT_SNAPSHOT = {
+    ("knowledge", "PublicContext"): ({"request_id", "contract_version", "caller", "data_class", "map_version"},
+                                     {"bff", "orchestrator", "learning"}),
+    ("knowledge", "StudentContext"): ({"request_id", "contract_version", "caller", "data_class", "student_ref",
+                                       "idempotency_key"}, {"orchestrator", "learning"}),
+    ("insight", "InsightContext"): ({"request_id", "contract_version", "caller", "data_class", "student_ref", "audience",
+                                     "actor", "idempotency_key"}, {"bff", "orchestrator"}),
+    ("insight", "Actor"): ({"role", "actor_ref", "link_id"}, None),
+}
 RANKING_NAMES = re.compile(r"(rank|percentile|probabilit|position|排名|名次|概率)", re.I)
 VISIBLE_STATUSES = {"hypothesis", "established", "to_verify"}
 PII_PATTERNS = {
@@ -141,8 +157,8 @@ def walk(docs: dict, cur: str, root: str, visit_fn) -> None:
     visit(docs[cur]["components"]["schemas"][root], cur, root, None, root)
 
 
-def free_text_leaks(docs: dict, svc: str, root: str) -> list[str]:
-    allow = FREE_TEXT_ALLOW[svc]
+def free_text_leaks(docs: dict, svc: str, root: str, allow: set | None = None) -> list[str]:
+    allow = FREE_TEXT_ALLOW[svc] if allow is None else allow
     leaks: list[str] = []
 
     def fn(node, owner, prop, trail, _k):
@@ -162,6 +178,8 @@ def free_text_leaks(docs: dict, svc: str, root: str) -> list[str]:
             leaks.append(f"{svc}:{trail}：开放对象（additionalProperties: true）")
         if node.get("patternProperties"):
             leaks.append(f"{svc}:{trail}：patternProperties 可以绕过字段白名单")
+        if "contentEncoding" in node or node.get("format") in ("byte", "binary"):
+            leaks.append(f"{svc}:{trail}：不允许内联二进制（原图、音频只能以平台侧引用出现）")
         # ServiceResultBase 是信封基类，由各响应的 unevaluatedProperties: false 收口
         if node.get("type") == "object" and "properties" in node and node.get("additionalProperties") is not False \
                 and "unevaluatedProperties" not in node and not (owner == "ServiceResultBase" and prop is None):
@@ -247,6 +265,7 @@ def check_structure(docs: dict, errors: list[str]) -> None:
                     if PERSONAL_NAMES.search(name):
                         errors.append(f"{svc}：公共层工具 {tool} 出现个人层字段 {where}（规则 13）")
             errors.extend(free_text_leaks(docs, svc, resp_name))
+            errors.extend(free_text_leaks(docs, svc, req_name, REQUEST_FREE_TEXT_ALLOW[svc]))
             if svc == "insight":
                 for name, where in names_in(docs, svc, req_name) + names_in(docs, svc, resp_name):
                     if RANKING_NAMES.search(name):
@@ -254,6 +273,15 @@ def check_structure(docs: dict, errors: list[str]) -> None:
         raw = yaml.safe_dump(doc.get("paths", {})) + yaml.safe_dump(schemas)
         if re.search(r"\busage_id\b", raw):
             errors.append(f"{svc}：出现 usage_id。本接口不计次，计量在插件请求与 BFF 层（规则 4）")
+
+    for (svc_key, name), (props, callers) in CONTEXT_SNAPSHOT.items():
+        node = docs[svc_key]["components"]["schemas"].get(name, {})
+        got = set(node.get("properties", {}))
+        if got != props:
+            errors.append(f"{svc_key}：{name} 的字段与快照不一致（多出 {sorted(got - props)}，缺少 {sorted(props - got)}）；"
+                          "上下文字段的增减要同时改 check_services.CONTEXT_SNAPSHOT 并经评审")
+        if callers is not None and set(node.get("properties", {}).get("caller", {}).get("enum", [])) != callers:
+            errors.append(f"{svc_key}：{name}.caller 的调用方类别与快照不一致（应为 {sorted(callers)}）")
 
     ins = docs["insight"]["components"]["schemas"]
     rs = ins.get("RenderedStatement", {})

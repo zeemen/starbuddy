@@ -21,9 +21,25 @@ info:
     - 学生自述、家长观察、客观记录、模型推断分开记录（规则 6）：`insight.record` 的来源由事件类型决定，调用方不能填写。
     - 请求带 `audience`，响应只含该受众可见的条目（与迁移 0010 的 RLS 一致）。BFF 仍须先按档案授权（规则 5）。
 
+    ## 调用方、受众与代表谁
+    - `caller` 由服务从令牌取，请求体里的值必须与令牌一致，否则 403；服务不信任请求体自报的调用方类别。
+    - `caller = bff` 时受众只能是 `student` 或 `guardian`，并且必须带 `actor`（当前登录的学生本人或家长、以及授权依据的
+      `guardian_student_link`）；洞察服务按 `actor` 与 `student_ref` 再核对一次授权（与 BFF 的检查重叠是有意的，规则 5）。
+    - `caller = orchestrator` 时受众只能是 `agent`。`insight.context`、`insight.claims` 只给编排层；
+      `insight.export`、`insight.erase` 只给家长（`caller = bff`、`audience = guardian`）。
+    - 按对象 ID 取数的工具（`insight.explain`、`insight.dispute`、`insight.reconcile`）必须核对对象属于 `student_ref`；
+      不属于时的响应与“对象不存在”完全相同（同一 status、code、title，不带 detail）。
+
+    ## 错误与日志
+    - 无权访问与对象不存在返回同一个 404，`code` 与 `title` 相同，不带 `detail`；`detail` 里永远不出现 `student_ref`、`claim_id` 等标识。
+    - 服务日志只记 `request_id`、`caller` 与工具名，不记请求体里的 `value`、`student_ref`、`actor`。
+
     ## 幂等与计量
-    写入类工具（`insight.dispute`、`insight.predict`、`insight.record`、`insight.erase`）必须带 `idempotency_key`。
-    本接口不计次，所以没有 `usage_id`：验证题由后续的 `grade` 计量（规则 4）。
+    - 写入类工具（`insight.dispute`、`insight.predict`、`insight.record`、`insight.export`、`insight.erase`）必须带 `idempotency_key`：
+      同 key 同体返回原结果（导出返回当前状态），同 key 异体返回 409 `IDEMPOTENCY_CONFLICT`；key 的作用域是“调用方 + 工具 + 学生”，
+      不同学生之间的 key 冲突不会返回别人的结果。
+    - 本接口不计次，所以没有 `usage_id`：验证题由后续的 `grade` 计量（规则 4）。模型参与的工具只用境内已备案模型（规则 13）；
+      对 BFF 的调用由 BFF 按会话限频（spec 待人确认，见 lessons）。
   license:
     name: 内部，未授权对外
     identifier: LicenseRef-StarBuddy-Internal
@@ -239,14 +255,29 @@ components:
       description: 来源类型（规则 6）：客观记录、学生自述、家长观察、模型推断。
       enum: [objective, self, guardian, inferred]
     CodeValue:
-      description: 字段取值只能是数值、布尔、编码或编码数组，不能是自由文本。
+      description: |
+        字段取值只能是数值、布尔、小写编码或编码数组，不能是自由文本。服务按字段字典校验每个字段的类型与取值范围，
+        未登记的字段或取值返回 422。
       oneOf:
         - { type: number }
         - { type: boolean }
-        - { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.:\-]{0,63}$' }
-        - { type: array, maxItems: 32, items: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.:\-]{0,63}$' } }
+        - { type: string, pattern: '^[a-z][a-z0-9_.:\-]{0,63}$' }
+        - { type: array, maxItems: 32, items: { type: string, pattern: '^[a-z][a-z0-9_.:\-]{0,63}$' } }
 
     # ---------- 请求上下文 ----------
+    Actor:
+      type: object
+      description: 代表谁访问：当前登录的学生本人或家长，以及授权依据（guardian_student_link）。只有 BFF 调用时带。
+      required: [role, actor_ref]
+      additionalProperties: false
+      properties:
+        role: { type: string, enum: [student, guardian] }
+        actor_ref: { type: string, format: uuid, description: 当前登录账号的平台 ID。 }
+        link_id: { type: string, format: uuid, description: 家长访问时的 guardian_student_link ID。 }
+      allOf:
+        - description: 家长访问必须带绑定关系
+          if: { properties: { role: { const: guardian } }, required: [role] }
+          then: { required: [link_id] }
     InsightContext:
       type: object
       description: 每个请求都带的上下文。`student_ref` 只能是平台学生 ID，不得携带手机号、姓名、学校。
@@ -262,12 +293,37 @@ components:
             - enum: [L2, L3]
         student_ref: { type: string, format: uuid }
         audience: { $ref: '#/components/schemas/Audience' }
-        idempotency_key: { type: string, minLength: 16, maxLength: 128 }
+        actor: { $ref: '#/components/schemas/Actor' }
+        idempotency_key: { type: string, minLength: 16, maxLength: 128, pattern: '^[A-Za-z0-9][A-Za-z0-9_.:\-]{15,127}$' }
+      allOf:
+        - description: BFF 代表学生或家长访问，受众与身份一致，并且必须说明代表谁
+          if: { properties: { caller: { const: bff } }, required: [caller] }
+          then:
+            required: [actor]
+            properties: { audience: { enum: [student, guardian] } }
+            oneOf:
+              - properties: { audience: { const: student }, actor: { properties: { role: { const: student } } } }
+              - properties: { audience: { const: guardian }, actor: { properties: { role: { const: guardian } } } }
+        - description: 编排层只能以 Agent 受众访问，不带代表的身份
+          if: { properties: { caller: { const: orchestrator } }, required: [caller] }
+          then:
+            properties: { audience: { const: agent } }
+            not: { required: [actor] }
+    InsightAgentContext:
+      description: 只给编排层的工具（insight.context、insight.claims）。
+      allOf:
+        - $ref: '#/components/schemas/InsightContext'
+        - properties: { caller: { const: orchestrator } }
     InsightWriteContext:
       description: 写入类工具的上下文：`idempotency_key` 必填。
       allOf:
         - $ref: '#/components/schemas/InsightContext'
         - required: [idempotency_key]
+    InsightGuardianWriteContext:
+      description: 只给家长的写入工具（insight.export、insight.erase）。
+      allOf:
+        - $ref: '#/components/schemas/InsightWriteContext'
+        - properties: { caller: { const: bff }, audience: { const: guardian } }
 
     # ---------- 统一信封 ----------
     ServiceResultBase:
@@ -341,7 +397,7 @@ components:
       required: [context, task]
       additionalProperties: false
       properties:
-        context: { $ref: '#/components/schemas/InsightContext' }
+        context: { $ref: '#/components/schemas/InsightAgentContext' }
         task: { type: string, enum: [diagnose, plan, teach, report, companion] }
         subject: { $ref: './plugin-api.v0.9.yaml#/components/schemas/Subject' }
         token_budget: { type: integer, minimum: 200, maximum: 16000 }
@@ -380,7 +436,7 @@ components:
       required: [context]
       additionalProperties: false
       properties:
-        context: { $ref: '#/components/schemas/InsightContext' }
+        context: { $ref: '#/components/schemas/InsightAgentContext' }
         subject: { $ref: './plugin-api.v0.9.yaml#/components/schemas/Subject' }
         target_type: { type: string, enum: [node, skill, metric, exam, preference] }
         statuses: { type: array, uniqueItems: true, items: { $ref: '#/components/schemas/ClaimStatusVisible' } }
@@ -404,7 +460,7 @@ components:
       additionalProperties: false
       properties:
         context: { $ref: '#/components/schemas/InsightContext' }
-        claim_id: { type: string, format: uuid }
+        claim_id: { type: string, format: uuid, description: 必须属于 student_ref；不属于时按“对象不存在”响应。 }
     ExplainEvidence:
       type: object
       required: [evidence_id, occurred_at, source_type]
@@ -440,11 +496,15 @@ components:
       additionalProperties: false
       properties:
         context: { $ref: '#/components/schemas/InsightWriteContext' }
-        claim_id: { type: string, format: uuid }
+        claim_id: { type: string, format: uuid, description: 必须属于 student_ref；不属于时按“对象不存在”响应。 }
         kind:
           type: string
           description: i_know = 我其实会；one_off_slip = 学生本人说那次只是失误（记录并观察，不改判）；data_error = 识别错了或分数录错了。
           enum: [i_know, one_off_slip, data_error]
+      allOf:
+        - description: 学生本人说“那次只是失误”只能由学生本人提出（规则 6）
+          if: { properties: { kind: { const: one_off_slip } }, required: [kind] }
+          then: { properties: { context: { properties: { audience: { const: student } } } } }
     InsightDisputeResponse:
       allOf:
         - $ref: '#/components/schemas/ServiceResultBase'
@@ -522,7 +582,7 @@ components:
       additionalProperties: false
       properties:
         context: { $ref: '#/components/schemas/InsightContext' }
-        exam_record_id: { type: string, format: uuid }
+        exam_record_id: { type: string, format: uuid, description: 必须属于 student_ref；不属于时按“对象不存在”响应。 }
     InsightReconcileResponse:
       allOf:
         - $ref: '#/components/schemas/ServiceResultBase'
@@ -578,6 +638,16 @@ components:
           oneOf:
             - $ref: '#/components/schemas/BehaviorEvent'
             - $ref: '#/components/schemas/ReportEvent'
+      allOf:
+        - description: 学生自述只能由学生本人提交（规则 6）
+          if: { properties: { event: { properties: { event_type: { const: self_report } }, required: [event_type] } }, required: [event] }
+          then: { properties: { context: { properties: { audience: { const: student } } } } }
+        - description: 家长观察只能由家长提交（规则 6）
+          if: { properties: { event: { properties: { event_type: { const: guardian_report } }, required: [event_type] } }, required: [event] }
+          then: { properties: { context: { properties: { audience: { const: guardian } } } } }
+        - description: 行为事件只能由编排层记录
+          if: { properties: { event: { properties: { event_type: { const: behavior } }, required: [event_type] } }, required: [event] }
+          then: { properties: { context: { properties: { caller: { const: orchestrator } } } } }
     InsightRecordResponse:
       allOf:
         - $ref: '#/components/schemas/ServiceResultBase'
@@ -597,7 +667,7 @@ components:
       required: [context]
       additionalProperties: false
       properties:
-        context: { $ref: '#/components/schemas/InsightWriteContext' }
+        context: { $ref: '#/components/schemas/InsightGuardianWriteContext' }
     InsightExportResponse:
       allOf:
         - $ref: '#/components/schemas/ServiceResultBase'
@@ -609,15 +679,28 @@ components:
               properties:
                 export_job_id: { type: string, format: uuid }
                 status: { type: string, enum: [queued, running, ready, failed] }
-                download_ref: { type: string, pattern: '^objstore://[a-z0-9][a-z0-9/_.\-]{0,255}$' }
+                download_ref:
+                  type: string
+                  description: 不透明的一次性下载凭据（随机值，不含学生标识）；下载只能经 BFF 重新鉴权后兑换。
+                  pattern: '^dl_[A-Za-z0-9_\-]{32,64}$'
+                expires_at: { type: string, format: date-time, description: 下载凭据的失效时间，签发后不超过 24 小时。 }
+              allOf:
+                - description: 导出完成时必须给出下载凭据与失效时间
+                  if: { properties: { status: { const: ready } }, required: [status] }
+                  then: { required: [download_ref, expires_at] }
       unevaluatedProperties: false
     InsightEraseRequest:
       type: object
       required: [context, confirmation_code]
       additionalProperties: false
       properties:
-        context: { $ref: '#/components/schemas/InsightWriteContext' }
-        confirmation_code: { type: string, pattern: '^[A-Z0-9]{8}$', description: BFF 向家长二次确认后得到的一次性确认码。 }
+        context: { $ref: '#/components/schemas/InsightGuardianWriteContext' }
+        confirmation_code:
+          type: string
+          pattern: '^[A-Z0-9]{8}$'
+          description: |
+            BFF 向家长二次确认后得到的一次性确认码。由服务端校验：绑定家长、学生与“删除”动作三者，只能用一次，
+            10 分钟内有效，连续 5 次错误后锁定。
     InsightEraseResponse:
       allOf:
         - $ref: '#/components/schemas/ServiceResultBase'
@@ -631,6 +714,7 @@ components:
                 status: { type: string, enum: [scheduled, completed] }
                 scopes:
                   type: array
+                  minItems: 1
                   uniqueItems: true
                   items: { type: string, enum: [claim_ledger, facts, evidence, inference, reports, uploads] }
       unevaluatedProperties: false
@@ -702,6 +786,7 @@ components:
           data_class: L2
           student_ref: 00000000-0000-4000-8000-00000000a001
           audience: student
+          actor: { role: student, actor_ref: 00000000-0000-4000-8000-00000000a101 }
         claim_id: 00000000-0000-4000-8000-00000000f001
     InsightExplainResponse:
       value:
@@ -736,6 +821,7 @@ components:
           data_class: L2
           student_ref: 00000000-0000-4000-8000-00000000a001
           audience: student
+          actor: { role: student, actor_ref: 00000000-0000-4000-8000-00000000a101 }
           idempotency_key: synthetic-dispute-0001
         claim_id: 00000000-0000-4000-8000-00000000f001
         kind: i_know
@@ -761,6 +847,7 @@ components:
           data_class: L2
           student_ref: 00000000-0000-4000-8000-00000000a001
           audience: guardian
+          actor: { role: guardian, actor_ref: 00000000-0000-4000-8000-00000000a201, link_id: 00000000-0000-4000-8000-00000000a301 }
           idempotency_key: synthetic-predict-0001
         exam:
           subject: aya
@@ -793,6 +880,7 @@ components:
           data_class: L2
           student_ref: 00000000-0000-4000-8000-00000000a001
           audience: guardian
+          actor: { role: guardian, actor_ref: 00000000-0000-4000-8000-00000000a201, link_id: 00000000-0000-4000-8000-00000000a301 }
         exam_record_id: 00000000-0000-4000-8000-00000000f301
     InsightReconcileResponse:
       value:
@@ -819,6 +907,7 @@ components:
           data_class: L2
           student_ref: 00000000-0000-4000-8000-00000000a001
           audience: guardian
+          actor: { role: guardian, actor_ref: 00000000-0000-4000-8000-00000000a201, link_id: 00000000-0000-4000-8000-00000000a301 }
           idempotency_key: synthetic-record-0001
         event:
           event_type: guardian_report
@@ -845,6 +934,7 @@ components:
           data_class: L3
           student_ref: 00000000-0000-4000-8000-00000000a001
           audience: guardian
+          actor: { role: guardian, actor_ref: 00000000-0000-4000-8000-00000000a201, link_id: 00000000-0000-4000-8000-00000000a301 }
           idempotency_key: synthetic-export-0001
     InsightExportResponse:
       value:
@@ -866,6 +956,7 @@ components:
           data_class: L3
           student_ref: 00000000-0000-4000-8000-00000000a001
           audience: guardian
+          actor: { role: guardian, actor_ref: 00000000-0000-4000-8000-00000000a201, link_id: 00000000-0000-4000-8000-00000000a301 }
           idempotency_key: synthetic-erase-0001
         confirmation_code: SYNTH001
     InsightEraseResponse:

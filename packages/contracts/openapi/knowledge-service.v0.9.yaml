@@ -26,9 +26,16 @@ info:
     拍照通道只能是 B 级。“只有 A 级能点亮星”“B 级权重”属于掌握计算（必停项），不在本契约里写数值。
 
     ## 鉴权、幂等、计量
-    - 只接受平台内部服务令牌；学生与家长的请求由 BFF 先按档案授权（规则 5）。
-    - `evidence.write` 必须带 `idempotency_key`：同 key 同体返回原结果，同 key 异体返回 409 `IDEMPOTENCY_CONFLICT`。
+    - 只接受平台内部服务令牌；`caller` 由服务从令牌取，请求体里的值必须与令牌一致，否则 403。学生与家长的请求由 BFF 先按档案授权（规则 5）。
+    - 个人层工具只给编排层与学习服务（`caller` 没有 `bff`）：`mastery.*` 的结果是推断，对学生家长的任何陈述仍要经洞察服务的判断（规则 11）。
+    - `evidence.write` 必须带 `idempotency_key`：同 key 同体返回原结果，同 key 异体返回 409 `IDEMPOTENCY_CONFLICT`；
+      key 的作用域是“调用方 + 工具 + 学生”。
     - 本接口不计次，所以没有 `usage_id`：调用由已计量的插件请求或 BFF 会话触发，计量仍在那一层（规则 4）。
+    - `node.resolve` 的输入文本可能来自学生：只给编排层调用，数据级别固定为 L2，只用境内已备案模型，服务不记录输入文本（规则 13、ADR 04）。
+
+    ## 错误与日志
+    - 无权访问与对象不存在返回同一个 404，`code` 与 `title` 相同，不带 `detail`；`detail` 里永远不出现 `student_ref` 等标识。
+    - 服务日志只记 `request_id`、`caller` 与工具名，不记请求体里的 `text`、`payload` 与 `student_ref`。
   license:
     name: 内部，未授权对外
     identifier: LicenseRef-StarBuddy-Internal
@@ -275,6 +282,11 @@ components:
             - $ref: './plugin-api.v0.9.yaml#/components/schemas/DataClass'
             - enum: [L1, L2]
         map_version: { $ref: '#/components/schemas/MapVersion' }
+    ResolveContext:
+      description: node.resolve 的上下文：只给编排层，输入文本按 L2 处理。
+      allOf:
+        - $ref: '#/components/schemas/PublicContext'
+        - properties: { caller: { const: orchestrator }, data_class: { const: L2 } }
     StudentContext:
       type: object
       description: 个人层请求的上下文。`student_ref` 只能是平台学生 ID，不得携带手机号、姓名、学校。
@@ -289,7 +301,7 @@ components:
             - $ref: './plugin-api.v0.9.yaml#/components/schemas/DataClass'
             - enum: [L2, L3]
         student_ref: { type: string, format: uuid }
-        idempotency_key: { type: string, minLength: 16, maxLength: 128 }
+        idempotency_key: { type: string, minLength: 16, maxLength: 128, pattern: '^[A-Za-z0-9][A-Za-z0-9_.:\-]{15,127}$' }
     WriteContext:
       description: 写入类工具的上下文：`idempotency_key` 必填。
       allOf:
@@ -327,7 +339,7 @@ components:
       required: [context, subject, text]
       additionalProperties: false
       properties:
-        context: { $ref: '#/components/schemas/PublicContext' }
+        context: { $ref: '#/components/schemas/ResolveContext' }
         subject: { $ref: './plugin-api.v0.9.yaml#/components/schemas/Subject' }
         text: { type: string, minLength: 1, maxLength: 2000, description: 待解析的文本（题目片段或学生的问题）。 }
         max_candidates: { type: integer, minimum: 1, maximum: 10, default: 5 }
@@ -344,6 +356,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/ServiceResultBase'
         - properties:
+            evidence_ids: { maxItems: 0, description: 公共层不引用任何学生证据。 }
             result:
               type: object
               required: [map_version, candidates]
@@ -406,6 +419,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/ServiceResultBase'
         - properties:
+            evidence_ids: { maxItems: 0, description: 公共层不引用任何学生证据。 }
             result:
               type: object
               required: [node, textbook_projections, region_weights]
@@ -438,6 +452,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/ServiceResultBase'
         - properties:
+            evidence_ids: { maxItems: 0, description: 公共层不引用任何学生证据。 }
             result:
               type: object
               required: [root, direction, steps]
@@ -463,6 +478,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/ServiceResultBase'
         - properties:
+            evidence_ids: { maxItems: 0, description: 公共层不引用任何学生证据。 }
             result:
               type: object
               description: 公共知识页面。学情档案页属于个人层，不经本工具返回（规则 13）。
@@ -509,6 +525,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/ServiceResultBase'
         - properties:
+            evidence_ids: { maxItems: 0, description: 公共层不引用任何学生证据。 }
             result:
               type: object
               required: [items]
@@ -528,6 +545,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/ServiceResultBase'
         - properties:
+            evidence_ids: { maxItems: 0, description: 公共层不引用任何学生证据。 }
             result:
               type: object
               required: [items]
@@ -570,6 +588,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/ServiceResultBase'
         - properties:
+            evidence_ids: { maxItems: 0, description: 公共层不引用任何学生证据。 }
             result:
               type: object
               required: [item_ref, rubric_version, points]
@@ -614,6 +633,17 @@ components:
       properties:
         context: { $ref: '#/components/schemas/WriteContext' }
         evidences: { type: array, minItems: 1, maxItems: 50, items: { $ref: '#/components/schemas/EvidenceWriteItem' } }
+      allOf:
+        - description: 照片、语音或带原始素材引用的证据是 L3（ADR 09 §2）
+          if:
+            properties:
+              evidences:
+                contains:
+                  anyOf:
+                    - { properties: { channel: { enum: [photo, voice] } }, required: [channel] }
+                    - { properties: { draft: { required: [media_ref] } }, required: [draft] }
+            required: [evidences]
+          then: { properties: { context: { properties: { data_class: { const: L3 } } } } }
     EvidenceWriteResponse:
       allOf:
         - $ref: '#/components/schemas/ServiceResultBase'
