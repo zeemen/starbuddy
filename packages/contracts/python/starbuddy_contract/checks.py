@@ -121,9 +121,17 @@ def verify(
     schema = "GradeResponse" if method == "grade" else "DiagnoseResponse"
 
     # 1. 契约 schema
-    errors = plugin_contract().validate(schema, response)
+    version = request["context"].get("contract_version")
+    errors = plugin_contract(version).validate(schema, response)
     if errors:
         raise rejected("contract: " + "; ".join(errors[:10]))
+    if response.get("contract_version") != version:
+        raise rejected("response contract_version differs from the request")
+    # v1.0：证据的 attempt_id 只能指向本次请求里的作答（评审 N3；specs/plugin-api-v1.0-step2）
+    if version != "0.9.0":
+        attempt_ids = {a.get("attempt_id") for a in ([request["attempt"]] if method == "grade" else request.get("attempts", []))}
+        if any("attempt_id" in e and e["attempt_id"] not in attempt_ids for e in response.get("evidence", [])):
+            raise rejected("evidence attempt_id does not belong to this request")
 
     # 1b. 数值必须有限；时间必须可解析（NaN 能穿过 schema 的 minimum/maximum）
     for v in _numbers(response):

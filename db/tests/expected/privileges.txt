@@ -506,6 +506,8 @@ rel|platform.plan_feature|starbuddy_bff|SELECT|SUPERUSER
 rel|platform.practice_log|starbuddy_authz|INSERT|SUPERUSER
 rel|platform.practice_log|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.practice_log|starbuddy_bff|SELECT|SUPERUSER
+rel|platform.replay_seal|starbuddy_learning|INSERT|SUPERUSER
+rel|platform.replay_seal|starbuddy_learning|SELECT|SUPERUSER
 rel|platform.resource_type|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.resource_type|starbuddy_bff|SELECT|SUPERUSER
 rel|platform.review_task|starbuddy_authz|SELECT|SUPERUSER

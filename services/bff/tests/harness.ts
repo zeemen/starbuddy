@@ -4,7 +4,7 @@
 //   - 已发布的测试额度配置 bfftest-plan@1（照抄种子 ch8-hypothesis@1）
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
-import type { LearningCall, LearningOutcome } from '../src/metering/learning-client.ts';
+import type { LearningCall, LearningOutcome, LearningReplay } from '../src/metering/learning-client.ts';
 import type { MeteringMetric, Metrics } from '../src/metering/metrics.ts';
 
 export const HAS_DB = Boolean(process.env['PGHOST']);
@@ -143,10 +143,15 @@ export function gradeBody(studentId: string, itemRef = 'aya:synthetic-0301-07', 
   };
 }
 
-// 假学习服务：按 key 记住首次成功的结果（学习服务的幂等），脚本决定每次调用的结果
+// 假学习服务：按 key 记住首次成功的结果（学习服务的幂等），脚本决定每次调用的结果；
+// 重放接口只查不执行：没有结果时封存 key，之后同 key 的原请求 409 IDEMPOTENCY_KEY_SEALED；学生或 usage_id 对不上时 404 但不封存
 export class FakeLearning {
   calls: { method: string; key: string; usageId: string }[] = [];
+  replays: { method: string; key: string; studentRef: string; usageId: string }[] = [];
+  sealed = new Set<string>();
+  busy = false;
   private done = new Map<string, LearningOutcome>();
+  private owner = new Map<string, { studentRef: string; usageId: string }>();
   private script: (attempt: number, key: string) => LearningOutcome | Promise<LearningOutcome>;
   constructor(script: (attempt: number, key: string) => LearningOutcome | Promise<LearningOutcome> =
                 () => ({ kind: 'success', status: 200, body: { verdict: 'correct' }, replayed: false })) {
@@ -163,12 +168,28 @@ export class FakeLearning {
     this.lastBody = body;
     const ctx = body['context'] as { idempotency_key: string; usage_id: string };
     this.calls.push({ method, key: ctx.idempotency_key, usageId: ctx.usage_id });
+    if (this.sealed.has(ctx.idempotency_key)) {
+      return { kind: 'failure', status: 409, problem: { code: 'IDEMPOTENCY_KEY_SEALED', retryable: false } };
+    }
+    this.owner.set(ctx.idempotency_key, { studentRef: (body['context'] as { student_ref: string }).student_ref, usageId: ctx.usage_id });
     const prior = this.done.get(ctx.idempotency_key);
     if (prior) return { ...prior, replayed: true } as LearningOutcome;
     const attempt = this.calls.filter((c) => c.key === ctx.idempotency_key).length;
     const out = await this.script(attempt, ctx.idempotency_key);
     if (out.kind === 'success') this.done.set(ctx.idempotency_key, out);
     return out;
+  };
+
+  readonly replay: LearningReplay = async (method, key, studentRef, usageId) => {
+    this.replays.push({ method, key, studentRef, usageId });
+    const notFound = { kind: 'not_found' as const, problem: { code: 'REPLAY_NOT_FOUND', retryable: false } };
+    if (this.busy) return { kind: 'busy' };
+    const o = this.owner.get(key);
+    if (o && (o.studentRef !== studentRef || o.usageId !== usageId)) return notFound;
+    const prior = this.done.get(key);
+    if (prior?.kind === 'success') return { kind: 'found', body: prior.body };
+    this.sealed.add(key);
+    return notFound;
   };
 
   callsFor(k: string): number {

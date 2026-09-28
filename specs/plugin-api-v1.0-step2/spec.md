@@ -1,6 +1,6 @@
 # 插件 API v1.0 第二步：学习服务双版本、重放接口、阿鸦切到 v1.0、BFF 用重放
 
-状态：**草稿 v0.1，待确认**（2026-09-28）
+状态：**已确认（2026-09-28，用户“按默认建议，开始实现”）**，待人确认 #1–#3 按默认执行；实现记录见 lessons.md
 任务包：开发计划 v2.0 冲刺 1（W3–W4）A 流“三份 OpenAPI 与三个 Schema 冻结 v1.0；消费者驱动契约测试进 CI”的插件 API 部分；
 承接 `specs/plugin-api-v1.0/`（第一步已交付候选版，lessons“第二步”）。
 关联：`packages/contracts/openapi/plugin-api.v1.0.yaml`、`learning-internal.v1.yaml`；评审清单 `specs/contract-conformance-sprint1/v1.0-review.md`（N17、N18）；

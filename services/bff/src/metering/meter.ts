@@ -2,11 +2,12 @@
 //   确定成功 → meter_settle；确定失败 → meter_release；
 //   结果未知 → 用同一个 key 退避重试，直到确定或用完预算（预留剩余时间的一半）；仍不确定就不结算，留给过期任务。
 // 同 key 重试（existing）：reserved 继续同一笔；settled 拿学习服务的重放结果，不再扣；
-// released 返回“之前已失败”；expired 仍用原 key 拿重放结果，不扣费（spec 待人确认 #6）。
+// released 返回“之前已失败”；expired 只调重放接口（只查不执行，specs/plugin-api-v1.0-step2）：有结果 → 不扣费返回；
+// 没有 → 学习服务封存这个 key，前端换新 key 重新预留；这样不会出现一次没有预留的执行（评审 N17）。
 import type { Pool } from 'pg';
 import { withAccount } from './db.ts';
 import { meteringFingerprint, type MeteredMethod } from './fingerprint.ts';
-import type { LearningCall, LearningOutcome, Problem } from './learning-client.ts';
+import type { LearningCall, LearningOutcome, LearningReplay, Problem } from './learning-client.ts';
 import { noopMetrics, type Metrics } from './metrics.ts';
 import { isUuidV4, usageIdFor } from './uuid.ts';
 
@@ -85,6 +86,7 @@ export interface MeteredCallInput {
 export interface MeterDeps {
   pool: Pool;
   learning: LearningCall;
+  replay: LearningReplay;         // 预留过期后只查询、不执行
   metrics?: Metrics;
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;             // 与数据库计量时钟同一时间轴（测试里注入）
@@ -146,17 +148,13 @@ export async function meteredCall(deps: MeterDeps, input: MeteredCallInput): Pro
 
   if (r.outcome === 'existing' && r.state !== 'reserved') {
     if (r.state === 'released') return { status: 'failed_previously', usageId };
-    // settled：之前已经扣过；expired：过期不扣费。两种都用原 key 拿学习服务的重放结果，不再预留
+    if (r.state === 'expired') return replayAfterExpiry(deps, method, input.studentId, usageId, input.idempotencyKey, r.dedup_of, metrics);
+    // settled：之前已经扣过，用原 key 拿学习服务的重放结果，不再预留
     const replay = await callWithRetry(deps, method, body, r.expires_at, metrics);
     if (replay.kind === 'success') {
-      if (r.state === 'expired') metrics.increment(replay.replayed ? 'replay_after_expiry' : 'reexecuted_without_reservation');
-      return { status: 'ok', usageId, charged: r.state === 'settled', replay: true, dedup: r.dedup_of !== null, result: replay.body };
+      return { status: 'ok', usageId, charged: true, replay: true, dedup: r.dedup_of !== null, result: replay.body };
     }
-    if (replay.kind === 'failure') {
-      return r.state === 'expired'
-        ? { status: 'expired_retry_with_new_key', usageId, problem: replay.problem }
-        : { status: 'failed', usageId, httpStatus: replay.status, problem: replay.problem };
-    }
+    if (replay.kind === 'failure') return { status: 'failed', usageId, httpStatus: replay.status, problem: replay.problem };
     metrics.increment('result_unknown');
     return { status: 'unknown', usageId };
   }
@@ -177,6 +175,22 @@ export async function meteredCall(deps: MeterDeps, input: MeteredCallInput): Pro
   if (outcome.kind === 'failure') {
     await release(deps.pool, input.accountId, usageId, 'upstream_rejected');
     return { status: 'failed', usageId, httpStatus: outcome.status, problem: outcome.problem };
+  }
+  metrics.increment('result_unknown');
+  return { status: 'unknown', usageId };
+}
+
+// 预留已过期：不再发原请求（那会是一次没有预留的执行），只查询重放接口
+async function replayAfterExpiry(deps: MeterDeps, method: MeteredMethod, studentId: string, usageId: string, key: string,
+                                 dedupOf: string | null, metrics: Metrics): Promise<MeteredCallResult> {
+  const out = await deps.replay(method, key, studentId, usageId);
+  if (out.kind === 'found') {
+    metrics.increment('replay_after_expiry');
+    return { status: 'ok', usageId, charged: false, replay: true, dedup: dedupOf !== null, result: out.body };
+  }
+  if (out.kind === 'not_found') {
+    metrics.increment('sealed_after_expiry');
+    return { status: 'expired_retry_with_new_key', usageId, problem: out.problem };
   }
   metrics.increment('result_unknown');
   return { status: 'unknown', usageId };

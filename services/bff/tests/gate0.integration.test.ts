@@ -23,7 +23,7 @@ describe('Gate 0 计量场景', { skip: HAS_DB ? false : '没有 PGHOST（make b
 
   function deps(learning: FakeLearning, metrics = new CountingMetrics()): MeterDeps {
     // 退避时“睡眠”就是推进计量时钟：数据库与 BFF 看到同一条时间轴
-    return { pool: h.bff, learning: learning.call, metrics, now: h.clockMs, sleep: (ms) => h.advance(ms) };
+    return { pool: h.bff, learning: learning.call, replay: learning.replay, metrics, now: h.clockMs, sleep: (ms) => h.advance(ms) };
   }
 
   test('场景 1：并发扣同一额度——额度只剩 1，20 个连接同时预留，恰好 1 个成功', async () => {
@@ -167,7 +167,7 @@ describe('Gate 0 计量场景', { skip: HAS_DB ? false : '没有 PGHOST（make b
     assert.ok(await ledgerConsistent(h));
   });
 
-  test('场景 5：过期后迟到的成功不扣费；过期后同 key 重试拿重放结果', async () => {
+  test('场景 5：过期后迟到的成功不扣费；过期后同 key 重试只调重放接口', async () => {
     const fam = await createFamily(h, { source: 'pilot_virtual' });
     const s = fam.students[0]!;
     const k = key();
@@ -185,19 +185,73 @@ describe('Gate 0 计量场景', { skip: HAS_DB ? false : '没有 PGHOST（make b
     assert.equal(metrics.get('late_success_after_expiry'), 1);
     assert.deepEqual(await counters(h, s.id, 'diagnosis_full'), { granted: 6, reserved: 0, settled: 0 });
 
+    const callsBefore = slow.calls.length;
     const replay = await meteredCall(deps(slow, metrics), input);
     assert.deepEqual([replay.status, replay.status === 'ok' && replay.replay, replay.status === 'ok' && replay.charged], ['ok', true, false]);
     assert.equal(metrics.get('replay_after_expiry'), 1);
-    assert.equal(slow.calls.at(-1)?.key, k, '过期后重试，学习服务收到的仍是原 key');
+    assert.equal(slow.calls.length, callsBefore, '过期后不再发原请求');
+    assert.deepEqual(slow.replays.at(-1), { method: 'diagnose', key: k, studentRef: s.id, usageId: usageIdFor(k) },
+                     '重放按原 key、学生、usage_id 查询');
     assert.equal((await reservationsByStudent(h, s.id)).length, 1, '过期后重试不重新预留');
-
-    // 学习服务那边没有这个 key 的成功记录（之前失败过）：过期后同 key 会被重新执行一次，不扣费、单独记指标（N17 缺口）
-    const fresh = new FakeLearning();
-    const reexec = await meteredCall(deps(fresh, metrics), input);
-    assert.deepEqual([reexec.status, reexec.status === 'ok' && reexec.charged], ['ok', false]);
-    assert.equal(metrics.get('reexecuted_without_reservation'), 1);
     assert.deepEqual(await counters(h, s.id, 'diagnosis_full'), { granted: 6, reserved: 0, settled: 0 });
     assert.ok(await ledgerConsistent(h));
+  });
+
+  test('场景 5：过期后重放没有结果——key 被封存，晚到的原请求被拒，前端换新 key 重新预留并扣费', async () => {
+    const fam = await createFamily(h, { source: 'pilot_virtual' });
+    const s = fam.students[0]!;
+    const k = key();
+    const metrics = new CountingMetrics();
+    const input = { accountId: s.account, studentId: s.id, resourceType: 'diagnosis_full' as const,
+                    idempotencyKey: k, body: { context: { subject: 'aya', student_ref: s.id }, attempts: [] } };
+    const down = new FakeLearning(() => UNAVAILABLE);
+    assert.equal((await meteredCall(deps(down, metrics), input)).status, 'unknown');
+    await h.advance(11 * MIN);
+    await runExpiry(h.scheduler);
+
+    // 学习服务那边这个 key 没有成功记录：重放 404 并封存，BFF 不发原请求
+    const learning = new FakeLearning();
+    const r = await meteredCall(deps(learning, metrics), input);
+    assert.equal(r.status, 'expired_retry_with_new_key');
+    assert.equal(metrics.get('sealed_after_expiry'), 1);
+    assert.equal(learning.calls.length, 0, '没有预留的执行为 0');
+    assert.ok(learning.sealed.has(k));
+    // 之前卡在路上的原请求此时才到学习服务：被封存拒绝
+    const lateOriginal = await learning.call('diagnose', { context: { idempotency_key: k, usage_id: usageIdFor(k), student_ref: s.id } });
+    assert.ok(lateOriginal.kind === 'failure' && lateOriginal.problem.code === 'IDEMPOTENCY_KEY_SEALED');
+    assert.deepEqual(await counters(h, s.id, 'diagnosis_full'), { granted: 6, reserved: 0, settled: 0 });
+
+    // 前端换新 key：重新预留、执行、扣费
+    const k2 = key();
+    const fresh = await meteredCall(deps(learning, metrics), { ...input, idempotencyKey: k2 });
+    assert.deepEqual([fresh.status, fresh.status === 'ok' && fresh.charged], ['ok', true]);
+    assert.deepEqual(await counters(h, s.id, 'diagnosis_full'), { granted: 6, reserved: 0, settled: 1 });
+    assert.ok(await ledgerConsistent(h));
+  });
+
+  test('场景 5：过期后重放参数对不上不封存；同 key 仍在执行时结果未知', async () => {
+    const fam = await createFamily(h, { source: 'pilot_virtual' });
+    const s = fam.students[0]!;
+    const k = key();
+    const metrics = new CountingMetrics();
+    const learning = new FakeLearning();
+    // 另一个学生先用过这个 key（学习服务里记录的学生不同）
+    await learning.call('grade', { context: { idempotency_key: k, usage_id: usageIdFor(k), student_ref: randomUUID() } });
+    const r0 = await learning.replay('grade', k, s.id, usageIdFor(k));
+    assert.equal(r0.kind, 'not_found');
+    assert.ok(!learning.sealed.has(k), '参数对不上：不替别人封存');
+
+    const input = { accountId: s.account, studentId: s.id, resourceType: 'diagnosis_full' as const,
+                    idempotencyKey: key(), body: { context: { subject: 'aya', student_ref: s.id }, attempts: [] } };
+    const down = new FakeLearning(() => UNAVAILABLE);
+    await meteredCall(deps(down, metrics), input);
+    await h.advance(11 * MIN);
+    await runExpiry(h.scheduler);
+    down.busy = true;
+    const busy = await meteredCall(deps(down, metrics), input);
+    assert.equal(busy.status, 'unknown', '重放 BUSY：结果未知，不换 key、不扣费');
+    assert.ok(!down.sealed.has(input.idempotencyKey));
+    assert.deepEqual(await counters(h, s.id, 'diagnosis_full'), { granted: 6, reserved: 0, settled: 0 });
   });
 
   test('场景 5：过期任务与结算并发——到期的只会被过期、未到期的只会被结算，不死锁、不出错', async () => {

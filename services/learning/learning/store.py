@@ -40,24 +40,33 @@ def db_error(e: asyncpg.PostgresError) -> IngestError:
 # ---------- 请求级幂等（0007 ingest_request） ----------
 @dataclass
 class Claim:
-    kind: str  # new | takeover | done | conflict | busy
+    kind: str  # new | takeover | done | conflict | busy | sealed
     attempt_ids: list[str]
     lease_token: str | None = None
     summary: dict | None = None
 
 
-async def claim(pool, *, method, key, subject, student_id, fingerprint, attempt_ids, lease_seconds) -> Claim:
+async def _key_lock(conn, method: str, key: str) -> None:
+    """同一 (method, key) 的执行认领与重放封存串行（0016：否则重放看到“没有记录”封存的同时，原请求刚好插入）。"""
+    await conn.execute("SELECT pg_advisory_xact_lock(hashtextextended('platform.ingest:' || $1 || ':' || $2, 0))", method, key)
+
+
+async def claim(pool, *, method, key, subject, student_id, fingerprint, attempt_ids, lease_seconds, usage_id=None) -> Claim:
     token = str(uuid.uuid4())
     try:
         async with learning_tx(pool) as conn:
+            await _key_lock(conn, method, key)
+            # 重放接口封存过的 key：原请求一律不执行（learning-internal.v1 IDEMPOTENCY_KEY_SEALED）
+            if await conn.fetchval("SELECT 1 FROM platform.replay_seal WHERE method = $1 AND idempotency_key = $2", method, key):
+                return Claim("sealed", [])
             row = await conn.fetchrow(
                 """INSERT INTO platform.ingest_request (method, idempotency_key, subject, student_id, request_fingerprint,
-                     attempt_ids, lease_token, lease_until)
+                     attempt_ids, lease_token, lease_until, usage_id)
                    VALUES ($1, $2, $3::platform.subject, $4::uuid, $5, $6::text[]::uuid[], $7::uuid,
-                           now() + make_interval(secs => $8::float8))
+                           now() + make_interval(secs => $8::float8), $9::uuid)
                    ON CONFLICT (method, idempotency_key) DO NOTHING
                    RETURNING attempt_ids::text[]""",
-                method, key, subject, student_id, fingerprint, attempt_ids, token, lease_seconds,
+                method, key, subject, student_id, fingerprint, attempt_ids, token, lease_seconds, usage_id,
             )
             if row:
                 return Claim("new", list(row[0]), token)
@@ -83,6 +92,41 @@ async def claim(pool, *, method, key, subject, student_id, fingerprint, attempt_
             return Claim("takeover", list(row["attempt_ids"]), token)
     except asyncpg.ForeignKeyViolationError:
         raise IngestError(404, "STUDENT_NOT_FOUND", "student_ref is not a registered student") from None
+
+
+@dataclass
+class Replay:
+    kind: str  # found | not_found | busy
+    summary: dict | None = None
+
+
+async def replay(pool, *, method, key, student_id, usage_id) -> Replay:
+    """只查不执行（learning-internal.v1 重放接口，评审 N17）。
+    - 已成功且学生、usage_id 都对得上 → found；
+    - 同 key 仍在执行（租约未过期）→ busy；
+    - 学生或 usage_id 对不上 → not_found，**不封存**（不能替别人封 key，也不透露 key 是否存在）；
+    - 没有记录、失败过、或持有者租约已过期 → not_found，并封存这个 key。"""
+    async with learning_tx(pool) as conn:
+        await _key_lock(conn, method, key)
+        row = await conn.fetchrow(
+            """SELECT student_id::text, usage_id::text, status, lease_until > now() AS leased, summary
+                 FROM platform.ingest_request WHERE method = $1 AND idempotency_key = $2""",
+            method, key,
+        )
+        if row is not None and (row["student_id"] != student_id or row["usage_id"] != usage_id):
+            return Replay("not_found")
+        if row is not None and row["status"] == "succeeded":
+            return Replay("found", json.loads(row["summary"]))
+        if row is not None and row["status"] == "pending" and row["leased"]:
+            return Replay("busy")
+        if not await conn.fetchval("SELECT 1 FROM platform.student_profile WHERE id = $1::uuid", student_id):
+            return Replay("not_found")
+        await conn.execute(
+            """INSERT INTO platform.replay_seal (method, idempotency_key, student_id, usage_id)
+               VALUES ($1, $2, $3::uuid, $4::uuid) ON CONFLICT (method, idempotency_key) DO NOTHING""",
+            method, key, student_id, usage_id,
+        )
+        return Replay("not_found")
 
 
 async def mark_failed(pool, *, method, key, lease_token, error_code) -> None:
@@ -250,6 +294,10 @@ async def persist(pool, *, method, key, lease_token, request, response, verified
     attempts = [request["attempt"]] if method == "grade" else request["attempts"]
     try:
         async with learning_tx(pool) as conn:
+            # 与重放封存串行：租约已过期的持有者若在封存之后才提交，就成了一次重放说“没有”的执行（N17），所以封存后一律不落库
+            await _key_lock(conn, method, key)
+            if await conn.fetchval("SELECT 1 FROM platform.replay_seal WHERE method = $1 AND idempotency_key = $2", method, key):
+                raise LeaseLost()
             holder = await conn.fetchval(
                 """SELECT lease_token::text FROM platform.ingest_request
                     WHERE method = $1 AND idempotency_key = $2 AND status = 'pending' FOR UPDATE""",

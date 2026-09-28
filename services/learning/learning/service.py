@@ -18,7 +18,7 @@ from . import store
 from .adapter_client import call_adapter
 from .checks import collect_refs, local_id, parse_time, verify
 from .config import Settings
-from .contract import plugin_contract
+from .contract import UnsupportedContractVersion, plugin_contract
 from .errors import IngestError
 from .fingerprint import request_fingerprint
 
@@ -34,9 +34,17 @@ class IngestService:
         self.client = client
 
     # ---------- 请求校验（调适配器之前） ----------
-    def _validate_request(self, method: str, body: object) -> dict:
+    def _validate_request(self, method: str, body: object, version: str) -> dict:
         schema = "GradeRequest" if method == "grade" else "DiagnoseRequest"
-        errors = plugin_contract().validate(schema, body)
+        # 迁移期两个契约版本并存：路径决定版本（/internal/v0 → 0.9.0，/internal/v1 → 1.0.0），请求声明的版本必须一致
+        declared = body.get("context", {}).get("contract_version") if isinstance(body, dict) and isinstance(body.get("context"), dict) else None
+        if declared != version:
+            raise IngestError(400, "INVALID_REQUEST", "context.contract_version does not match this endpoint")
+        try:
+            contract = plugin_contract(version)
+        except UnsupportedContractVersion:
+            raise IngestError(400, "INVALID_REQUEST", "contract version is not enabled on this service") from None
+        errors = contract.validate(schema, body)
         if errors:
             raise IngestError(400, "INVALID_REQUEST", "request does not match the contract", detail="; ".join(errors[:10]))
         assert isinstance(body, dict)
@@ -77,9 +85,12 @@ class IngestService:
         return s
 
     # ---------- 主流程 ----------
-    async def ingest(self, method: str, body: object) -> tuple[dict, bool]:
+    async def replay(self, method: str, key: str, student_id: str, usage_id: str) -> store.Replay:
+        return await store.replay(self.pool, method=method, key=key, student_id=student_id, usage_id=usage_id)
+
+    async def ingest(self, method: str, body: object, version: str = "0.9.0") -> tuple[dict, bool]:
         """返回 (摘要, 是否为重放)。"""
-        request = self._validate_request(method, body)
+        request = self._validate_request(method, body, version)
         ctx = request["context"]
         key = ctx["idempotency_key"]
         fp = request_fingerprint(method, request)
@@ -105,7 +116,10 @@ class IngestService:
             c = await store.claim(
                 self.pool, method=method, key=key, subject=ctx["subject"], student_id=ctx["student_ref"],
                 fingerprint=fp, attempt_ids=proposed_ids, lease_seconds=self.settings.lease_seconds,
+                usage_id=ctx.get("usage_id"),
             )
+            if c.kind == "sealed":
+                raise IngestError(409, "IDEMPOTENCY_KEY_SEALED", "idempotency_key was sealed by a replay lookup; use a new key")
             if c.kind == "conflict":
                 raise IngestError(409, "IDEMPOTENCY_CONFLICT", "idempotency_key was used with a different request body")
             if c.kind == "done":

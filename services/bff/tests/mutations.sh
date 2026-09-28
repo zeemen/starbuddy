@@ -49,15 +49,21 @@ SM=(
   $'未授权与不存在的响应不同\tsrc/star-map/server.ts\tif (!map) return send(404, NOT_FOUND);\tif (!map) return send(403, UNAUTHENTICATED);'
   $'星图响应可以缓存\tsrc/star-map/server.ts\t\'cache-control\': \'no-store\',\t'
   $'日志记原始 student_id\tsrc/star-map/server.ts\trecord[\'student\'] = hashId(studentId);\trecord[\'student\'] = studentId;'
+  # 计量（plugin-api-v1.0-step2）：预留过期后只查询重放接口，不发原请求；这几条跑计量测试
+  $'计量：过期后仍发原请求\tsrc/metering/meter.ts\tif (r.state === \'expired\') return replayAfterExpiry(\t if (false) return replayAfterExpiry('
+  $'计量：重放没有结果当成功\tsrc/metering/meter.ts\tif (out.kind === \'found\') {\tif (out.kind !== \'busy\') {'
+  $'计量：路由 404 当作已封存\tsrc/metering/learning-client.ts\tif (status === 404 && problem.code === \'REPLAY_NOT_FOUND\')\tif (status === 404)'
+  $'计量：重放 BUSY 当作已封存\tsrc/metering/learning-client.ts\tif (status === 409 && problem.code === \'BUSY\') return { kind: \'busy\' };\tif (status === 409) return { kind: \'not_found\', problem };'
 )
 # 副本保持仓库结构（测试按 ../../../ 找仓库根：adapters/aya 的登记脚本、db/seeds 的种子），adapters、db 软链接回仓库。
 # 安全审查阻断 1：原来的副本不保持结构，测试的 before 在任何代码下都失败，变异全部“被发现”却不说明任何问题。
 # 所以：先跑一次不变异的对照，必须通过；每条变异限时（挂起算漏检）；只有“至少一项测试通过、另有失败”才算被发现，
 # 保证失败来自断言而不是环境没起来。
-star_run() {  # $1 副本根目录；输出 rc 与通过数
-  local out rc pass
+star_run() {  # $1 副本根目录，$2 变异名（“计量：”开头的跑计量测试）；输出 rc 与通过数
+  local out rc pass tests="tests/star-map.test.ts tests/star-map.integration.test.ts"
+  [[ "${2:-}" == 计量：* ]] && tests="tests/learning-client.test.ts tests/gate0.integration.test.ts"
   out=$( cd "$1/services/bff" && timeout 240 bash "$ROOT/db/tests/pg-ephemeral.sh" -- \
-      node --no-warnings --test --test-concurrency=1 --test-timeout=60000 tests/star-map.test.ts tests/star-map.integration.test.ts 2>&1 ); rc=$?
+      node --no-warnings --test --test-concurrency=1 --test-timeout=60000 $tests 2>&1 ); rc=$?
   pass=$(printf '%s\n' "$out" | sed -n 's/^# pass \([0-9]*\)$/\1/p' | tail -1)
   echo "$rc ${pass:-0}"
 }
@@ -85,7 +91,7 @@ if a not in s: sys.exit(1)
 open(p, 'w', encoding='utf-8').write(s.replace(a, b, 1))
 PYM
   then echo "  变异本身写错：$name"; missed=$((missed + 1)); rm -rf "$work"; continue; fi
-  read -r rc pass <<< "$(star_run "$work")"
+  read -r rc pass <<< "$(star_run "$work" "$name")"
   rm -rf "$work"
   if [ "$rc" = "0" ]; then echo "  漏检：$name"; missed=$((missed + 1))
   elif [ "$rc" = "124" ]; then echo "  超时（测试挂起，不算发现）：$name"; missed=$((missed + 1))

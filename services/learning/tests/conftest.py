@@ -160,6 +160,22 @@ def fake_diagnose(body: dict, admission: str) -> dict:
             "model_version": "algo:aya-diag@0.1.0"}
 
 
+RESPONSE_EVIDENCE_KINDS = ("response_text", "response_choice", "asr_transcription")
+
+
+def _answer_in_version(body: dict, out: dict) -> dict:
+    """按请求声明的契约版本应答；v1.0 下作答类证据带 attempt_id（评审 N3）。"""
+    version = body["context"]["contract_version"]
+    out["contract_version"] = version
+    if version != "0.9.0":
+        attempts = [body["attempt"]] if "attempt" in body else body["attempts"]
+        by_ref = {(a["item_ref"], a["occurred_at"]): a["attempt_id"] for a in attempts}
+        for e in out["evidence"]:
+            if e["kind"] in RESPONSE_EVIDENCE_KINDS:
+                e["attempt_id"] = by_ref[(e["item_ref"], e["occurred_at"])]
+    return out
+
+
 class FakeAdapter:
     """按契约形状返回；可以篡改（mutate）、改状态码（status）、延时（delay）、先失败几次（fail_first）。"""
 
@@ -185,6 +201,7 @@ class FakeAdapter:
             return httpx.Response(self.status, json=self.problem or {})
         method = request.url.path.rsplit("/", 1)[-1]
         out = fake_grade(body, self.admission) if method == "grade" else fake_diagnose(body, self.admission)
+        out = _answer_in_version(body, out)
         if self.mutate:
             out = self.mutate(copy.deepcopy(out)) or out
         # 原样编码（允许 NaN），模拟有缺陷的适配器
@@ -231,6 +248,15 @@ def grade_body(student_id: str, item: str = "SYN-UNV", text: str = "41", **over)
     }
     body.update(over)
     return body
+
+
+def to_v1_body(body: dict) -> dict:
+    """同一作答的 v1.0 写法：契约版本 1.0.0、UUIDv4 幂等键、平台生成的 attempt_id。"""
+    b = copy.deepcopy(body)
+    b["context"].update(contract_version="1.0.0", idempotency_key=str(uuid.uuid4()))
+    for a in [b["attempt"]] if "attempt" in b else b["attempts"]:
+        a["attempt_id"] = str(uuid.uuid4())
+    return b
 
 
 def diagnose_body(student_id: str, attempts: list[dict]) -> dict:

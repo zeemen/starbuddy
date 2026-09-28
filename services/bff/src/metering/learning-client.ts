@@ -64,3 +64,49 @@ export function httpLearningClient(opts: HttpLearningOptions): LearningCall {
     return classifyResponse(res.status, parsed, res.headers.get('idempotent-replayed') === 'true');
   };
 }
+
+// 只查询的重放接口（learning-internal.v1.yaml，评审 N17；specs/plugin-api-v1.0-step2）。预留过期后用它代替原请求：
+//   found：学习服务有这个 key 的成功结果；not_found：没有记录或之前失败过，学习服务已封存这个 key（之后同 key 的原请求 409）；
+//   busy：同 key 的请求还在执行；unknown：网络或 5xx，结果未知。参数与原请求对不上时学习服务同样返回 404，但不封存。
+export type ReplayOutcome =
+  | { kind: 'found'; body: unknown }
+  | { kind: 'not_found'; problem: Problem }
+  | { kind: 'busy' }
+  | { kind: 'unknown'; reason: string };
+
+export type LearningReplay = (method: MeteredMethod, idempotencyKey: string, studentRef: string, usageId: string) => Promise<ReplayOutcome>;
+
+export function classifyReplay(status: number, body: unknown): ReplayOutcome {
+  const problem: Problem = body !== null && typeof body === 'object' ? (body as Problem) : {};
+  if (status === 200) return { kind: 'found', body };
+  if (status === 404 && problem.code === 'REPLAY_NOT_FOUND') return { kind: 'not_found', problem };
+  if (status === 409 && problem.code === 'BUSY') return { kind: 'busy' };
+  // 其余（400、401、没有 code 的 404 如路由不存在、5xx）都不能当作“已封存”：按结果未知处理，留给过期任务与人工排查
+  return { kind: 'unknown', reason: `${status} ${problem.code ?? ''}`.trim() };
+}
+
+export function httpLearningReplay(opts: HttpLearningOptions): LearningReplay {
+  const doFetch = opts.fetchImpl ?? fetch;
+  return async (method, key, studentRef, usageId) => {
+    const q = new URLSearchParams({ student_ref: studentRef, usage_id: usageId });
+    let res: Response;
+    try {
+      res = await doFetch(
+        `${opts.baseUrl.replace(/\/$/, '')}/internal/v1/replay/${encodeURIComponent(method)}/${encodeURIComponent(key)}?${q}`, {
+          method: 'GET',
+          headers: { authorization: `Bearer ${opts.token}` },
+          signal: AbortSignal.timeout(5_000),
+          redirect: 'error',
+        });
+    } catch (err) {
+      return { kind: 'unknown', reason: err instanceof Error ? err.name : 'fetch failed' };
+    }
+    let parsed: unknown = null;
+    try {
+      parsed = await res.json();
+    } catch {
+      return { kind: 'unknown', reason: `${res.status} unreadable body` };
+    }
+    return classifyReplay(res.status, parsed);
+  };
+}

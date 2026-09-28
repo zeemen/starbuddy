@@ -7,8 +7,10 @@
 |---|---|
 | `POST /internal/v0/grade` | 请求体是契约 `GradeRequest`；调适配器判分，核对后写入 |
 | `POST /internal/v0/diagnose` | 请求体是契约 `DiagnoseRequest`（冲刺 1 只支持带 attempts 的同步诊断） |
+| `POST /internal/v1/grade`、`/internal/v1/diagnose` | 插件契约 1.0.0 候选版（需 `STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1`）；请求声明的 `contract_version` 必须与路径一致 |
+| `GET /internal/v1/replay/{method}/{key}?student_ref=&usage_id=` | 只查不执行：200 原摘要；404 `REPLAY_NOT_FOUND` 并封存 key（`platform.replay_seal`，迁移 0016）；409 `BUSY` |
 
-接口定义：`packages/contracts/openapi/learning-internal.v0.yaml`。只供 BFF 调用，服务间令牌鉴权。
+接口定义：`packages/contracts/openapi/learning-internal.v0.yaml`、`learning-internal.v1.yaml`（迁移期并存到 W6，specs/plugin-api-v1.0-step2）。只供 BFF 调用，服务间令牌鉴权。
 
 ## 一次请求怎么走
 1. 按契约校验请求；学科必须配置了适配器；作答的题目必须已在平台登记。

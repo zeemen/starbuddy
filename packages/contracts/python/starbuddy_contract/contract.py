@@ -26,7 +26,17 @@ if CONTRACT_VERSION not in PLUGIN_CONTRACTS:
 # 候选版签字前只能在测试里用（安全审查建议 3）：还要显式设 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1，
 # 防止服务进程因为全局环境变量误用候选版（学习服务的内部契约还停在 v0）
 CANDIDATE_VERSIONS = {"1.0.0"}
-if CONTRACT_VERSION in CANDIDATE_VERSIONS and os.environ.get("STARBUDDY_ALLOW_CANDIDATE_CONTRACT") != "1":
+
+
+def candidate_allowed() -> bool:
+    return os.environ.get("STARBUDDY_ALLOW_CANDIDATE_CONTRACT") == "1"
+
+
+class UnsupportedContractVersion(ValueError):
+    """请求声明的契约版本不支持，或是签字前未开放的候选版。"""
+
+
+if CONTRACT_VERSION in CANDIDATE_VERSIONS and not candidate_allowed():
     raise RuntimeError(f"契约 {CONTRACT_VERSION} 是候选版，签字前只能在测试里使用（需 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1）")
 PLUGIN_CONTRACT = PLUGIN_CONTRACTS[CONTRACT_VERSION]
 INTERNAL_CONTRACT = OPENAPI / "learning-internal.v0.yaml"
@@ -77,11 +87,22 @@ def _has_file_refs(node) -> bool:
     return False
 
 
-@lru_cache(maxsize=1)
-def plugin_contract() -> ContractDoc:
-    c = _load(PLUGIN_CONTRACT, "urn:starbuddy:plugin-api")
-    if c.version != CONTRACT_VERSION:
-        raise RuntimeError(f"契约版本 {c.version} 与共享库实现的 {CONTRACT_VERSION} 不一致")
+def plugin_contract(version: str | None = None) -> ContractDoc:
+    """按版本取插件契约；不给版本时取缺省版本（环境变量 STARBUDDY_CONTRACT_VERSION，缺省 0.9.0）。
+    迁移期学习服务按请求的 context.contract_version 选版本（specs/plugin-api-v1.0-step2/spec.md）。"""
+    v = version or CONTRACT_VERSION
+    if v not in PLUGIN_CONTRACTS:
+        raise UnsupportedContractVersion(f"contract version {v} is not supported")
+    if v in CANDIDATE_VERSIONS and not candidate_allowed():
+        raise UnsupportedContractVersion(f"contract version {v} is a candidate and not enabled here")
+    return _plugin_contract_cached(v)
+
+
+@lru_cache(maxsize=4)
+def _plugin_contract_cached(version: str) -> ContractDoc:
+    c = _load(PLUGIN_CONTRACTS[version], f"urn:starbuddy:plugin-api:{version}")
+    if c.version != version:
+        raise RuntimeError(f"契约文件版本 {c.version} 与登记的 {version} 不一致")
     return c
 
 
