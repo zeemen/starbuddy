@@ -224,6 +224,13 @@ async def _insert_evidence(conn, e: dict, *, student_id, subject, method, ctx, a
         if existing != digest:
             raise IngestError(502, "ADAPTER_RESULT_REJECTED", "adapter result rejected by platform checks",
                               detail="evidence_id already recorded with different content")
+        # 内容相同但补列不同（例如换了通道或等级）：不能静默沿用旧属性，否则作答与证据会分叉（契约审查建议 2）
+        recorded = await conn.fetchrow(
+            """SELECT evidence_kind, evidence_level, channel, map_version_id::text FROM platform.evidence_event
+                WHERE evidence_id = $1::uuid""", e["evidence_id"])
+        if recorded is not None and tuple(recorded) != (evidence_kind, attrs.evidence_level, attrs.channel, attrs.map_version_id):
+            raise IngestError(502, "ADAPTER_RESULT_REJECTED", "adapter result rejected by platform checks",
+                              detail="evidence_id already recorded with different attributes")
         return  # 同一证据重试：跳过
     await conn.execute(
         """INSERT INTO platform.evidence_event (evidence_id, occurred_at, student_id, subject, kind, item_id, skill_local_id,
@@ -328,8 +335,9 @@ async def persist(pool, *, method, key, lease_token, request, response, verified
         if e["kind"] == "interaction_signal" and e["payload"].get("signal_code") == "hint_opened" and e["payload"].get("value")}
     def attempt_kind(a: dict) -> str | None:
         return attrs.kind_for(a.get("hint_level_used"), hint_signal=None in hint_items or a["item_ref"] in hint_items)
-    # 每条证据的作答情境取它所属作答的（按 item_ref + 时间配对，与核对第 7 步同一口径）
+    # 每条证据的作答情境取它所属作答的：v1.0 证据带 attempt_id 时按它配对（契约审查建议 3），否则按 item_ref + 时间（核对第 7 步口径）
     kind_of = {(a["item_ref"], parse_time(a["occurred_at"])): attempt_kind(a) for a in attempts}
+    kind_by_attempt = {a["attempt_id"]: attempt_kind(a) for a in attempts if a.get("attempt_id")}
     try:
         async with learning_tx(pool) as conn:
             # 与重放封存串行：租约已过期的持有者若在封存之后才提交，就成了一次重放说“没有”的执行（N17），所以封存后一律不落库
@@ -344,7 +352,9 @@ async def persist(pool, *, method, key, lease_token, request, response, verified
             if holder != lease_token:
                 raise LeaseLost()
             for e in verified.evidence:
-                kind = None if e["kind"] in NON_ATTEMPT_KINDS else kind_of.get((e.get("item_ref"), parse_time(e["occurred_at"])))
+                kind = (None if e["kind"] in NON_ATTEMPT_KINDS
+                        else kind_by_attempt[e["attempt_id"]] if e.get("attempt_id") in kind_by_attempt
+                        else kind_of.get((e.get("item_ref"), parse_time(e["occurred_at"]))))
                 await _insert_evidence(conn, e, student_id=student_id, subject=subject, method=method, ctx=ctx,
                                        attrs=attrs, evidence_kind=kind)
             taken = await conn.fetchval(

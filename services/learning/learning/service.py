@@ -96,6 +96,8 @@ class IngestService:
         if not isinstance(body, dict) or set(body) != {"request", "ingest"}:
             raise IngestError(400, "INVALID_REQUEST", "v1 request body must be an envelope {request, ingest}")
         errors = internal_contract("1.0.0").validate("IngestContext", body["ingest"])
+        if method == "grade" and isinstance(body["ingest"], dict) and "evidence_level" in body["ingest"]:
+            errors.append("/ingest/evidence_level not allowed for grade (use request.evidence_level)")
         if errors:
             raise IngestError(400, "INVALID_REQUEST", "ingest does not match the contract", detail="; ".join(errors[:10]))
         return body["request"], body["ingest"]
@@ -110,8 +112,8 @@ class IngestService:
         attrs: Attributes = v0_attributes(method, request)
         if ingest is not None:
             attrs = derive(method, request, ingest)
-            # 指纹含平台上下文：同 key 换输入通道、用途或等级算冲突（缺省用途先归一）
-            fp = sha256_hex({"request": fp, "ingest": {**ingest, "purpose": ingest.get("purpose", "practice")}})
+            # 指纹含推导后的平台上下文：同 key 换输入通道、用途或等级算冲突；语义相同的不同写法得到同一指纹（契约审查建议 7）
+            fp = sha256_hex({"request": fp, "ingest": {"channel": attrs.channel, "purpose": attrs.purpose, "level": attrs.evidence_level}})
             attrs = Attributes(attrs.channel, attrs.evidence_level, attrs.purpose,
                                await store.map_version_for(self.pool, ctx["subject"], ctx.get("content_version")))
         attempts = [request["attempt"]] if method == "grade" else request["attempts"]
@@ -190,6 +192,11 @@ class IngestService:
         base = self._summary_base(method, forward, response, verified, c.attempt_ids)
         if versioned:  # v0 摘要没有这两个字段（learning-internal.v0 不改）
             base.update(evidence_level=attrs.evidence_level, learner_model_updated=attrs.learner_model_updated)
+        if not attrs.learner_model_updated:
+            # 没有落库的错因与观察不出现在摘要里：否则就是没有依据的关于学生的陈述（规则 11；契约审查建议 4）
+            base["error_categories"] = []
+            if method == "diagnose":
+                base["observation_count"] = 0
         return await store.persist(
             self.pool, method=method, key=key, lease_token=c.lease_token, request=forward, response=response,
             verified=verified, attempt_ids=c.attempt_ids, summary_base=base, attrs=attrs,

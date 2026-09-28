@@ -6,10 +6,12 @@ info:
   description: |
     状态：**v1 候选版，待评审签字**（`specs/plugin-api-v1.0/spec.md`；评审清单 N17、N18）。v0 保留到迁移期结束。
 
-    相对 v0：请求体改为插件 API v1.0 的 `GradeRequest` / `DiagnoseRequest`；新增只查询、不执行的重放接口（N17）；
-    写明 5xx 一律是结果未知（N18）。
+    相对 v0：请求体改为信封（插件 API v1.0 的 `GradeRequest` / `DiagnoseRequest` 加平台侧的 `IngestContext`）；
+    新增只查询、不执行的重放接口（N17）；写明 5xx 一律是结果未知（N18）；摘要带证据等级与是否写入学习者模型。
 
-    请求体就是学科插件 API v1.0 的 `GradeRequest` / `DiagnoseRequest`（`plugin-api.v1.0.yaml`），
+    请求体是信封 `{ request, ingest }`：`request` 是学科插件 API v1.0 的 `GradeRequest` / `DiagnoseRequest`
+    （`plugin-api.v1.0.yaml`），原样转发给适配器；`ingest` 是平台侧的作答上下文（输入通道、用途），只由学习服务使用，
+    不转发给适配器（ADR 15；specs/evidence-attributes-sprint1）。
     BFF 在调用前已完成鉴权、家长授权、选科（subject_enrollment）与同意（consent）检查，以及计量预留
     （ADR 01 第 4 条、ADR 06）。学习服务不重复检查这些。学习服务调用对应学科的适配器，
     按平台规则核对结果，在一个事务里幂等地写入学习者模型，然后返回**平台摘要**，不原样转发适配器响应。
@@ -72,6 +74,8 @@ paths:
         content:
           application/json:
             schema: { $ref: '#/components/schemas/DiagnoseIngest' }
+            examples:
+              canvasC: { $ref: '#/components/examples/DiagnoseIngestCanvasC' }
       responses:
         '200':
           description: 已写入（或重放已写入的结果）
@@ -80,6 +84,8 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/DiagnoseSummary' }
+              examples:
+                levelC: { $ref: '#/components/examples/DiagnoseSummaryLevelC' }
         default: { $ref: '#/components/responses/Problem' }
   /internal/v1/replay/{method}/{idempotency_key}:
     get:
@@ -170,6 +176,40 @@ components:
         grade_result_id: 00000000-0000-4000-8000-00000000f401
         verdict: incorrect
 
+    DiagnoseIngestCanvasC:
+      summary: 画布作答未经回显确认：记 C 级，诊断照常返回，不写入学习者模型
+      value:
+        request:
+          context:
+            request_id: 00000000-0000-4000-8000-000000000402
+            contract_version: 1.0.0
+            subject: aya
+            student_ref: 00000000-0000-4000-8000-00000000a002
+            data_class: L2
+            usage_id: 00000000-0000-4000-8000-00000000b005
+            idempotency_key: 00000000-0000-4000-8000-00000000c402
+          mode: intake
+          attempts:
+            - attempt_id: 00000000-0000-4000-8000-0000000000a2
+              item_ref: 'aya:synthetic-0301-07'
+              occurred_at: '2026-10-08T19:30:00+08:00'
+              response: { text: '2(x-1)' }
+              hint_level_used: 0
+        ingest: { channel: canvas, evidence_level: C }
+    DiagnoseSummaryLevelC:
+      summary: C 级诊断：观察数为 0
+      value:
+        method: diagnose
+        subject: aya
+        attempt_ids: [00000000-0000-4000-8000-0000000000a2]
+        evidence_ids: [00000000-0000-4000-8000-00000000e403]
+        semantics: practice
+        human_review_required: true
+        error_categories: []
+        evidence_level: C
+        learner_model_updated: false
+        observation_count: 0
+
   schemas:
     Uuid: { type: string, format: uuid }
     IngestContext:
@@ -179,10 +219,11 @@ components:
         - `evidence_kind`：用过提示（`hint_level_used > 0`，或适配器证据里有 `hint_opened` 信号）→ `hinted`；
           作答没报 `hint_level_used` → 空（交给掌握计算按保守口径）；否则 `purpose = retest` → `delayed_retest`，
           `transfer_check` → `transfer`，其余 `independent`；
-        - `evidence_level`：`request.evidence_level`（grade）或本对象的 `evidence_level`，两处都给时必须一致；都没给时
+        - `evidence_level`：grade 取 `request.evidence_level`，diagnose 取本对象的 `evidence_level`（插件诊断请求没有这个字段）；都没给时
           `channel = keypad` 记 A，其余通道必须给出（否则 400）；拍照最高 B；画布、语音记 A 必须带
           `request.answer_evidence_ref`（确认记录在平台侧，否则 400）；`request.appeal = true` 一律记 C（ADR 15“申诉中”）；
         - C 级证据照常写入证据、作答与判分结果（批改要展示），但不写能力观察与错因（不进入学习者模型），
+          摘要里 `error_categories` 为空、`observation_count` 为 0（没有落库的结论不出现在摘要里，规则 11），
           也不能作为之后请求的 `prior_evidence`（422）；键盘通道的结果里出现识别转写证据 → 502。
       required: [channel]
       additionalProperties: false
@@ -200,7 +241,11 @@ components:
       additionalProperties: false
       properties:
         request: { $ref: './plugin-api.v1.0.yaml#/components/schemas/GradeRequest' }
-        ingest: { $ref: '#/components/schemas/IngestContext' }
+        ingest:
+          description: grade 的证据等级只写在 `request.evidence_level`，不能在 ingest 里再给一次（同一事实只有一处，契约审查建议 7）。
+          allOf:
+            - $ref: '#/components/schemas/IngestContext'
+            - not: { required: [evidence_level] }
     DiagnoseIngest:
       type: object
       required: [request, ingest]

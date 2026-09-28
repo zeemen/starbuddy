@@ -4,7 +4,7 @@
 - evidence_kind：用过提示（hint_level_used > 0，或适配器证据里有 hint_opened 信号）→ hinted（优先，最保守）；
   没报 hint_level_used → 空（不知道有没有用提示，交给 KGE-04 按保守口径，安全审查必须改 3）；
   否则用途 retest → delayed_retest，transfer_check → transfer，其余 independent；
-- evidence_level：grade 请求的 evidence_level 与 ingest.evidence_level 两处都给时必须一致；都没给时键盘记 A，其余通道必须显式给出；
+- evidence_level：grade 取请求的 evidence_level（ingest 里不许再给），diagnose 取 ingest.evidence_level；都没给时键盘记 A，其余通道必须显式给出；
   拍照最高 B；画布、语音记 A 必须带作答证据引用 answer_evidence_ref（回显、复述确认记录在平台侧，安全审查必须改 1）；
   申诉一律 C（ADR 15“申诉中”）；
 - C 级：照常写证据、作答、判分结果（批改要展示），不写能力观察与错因（不进入学习者模型）。
@@ -55,12 +55,13 @@ def derive(method: str, request: dict, ingest: dict) -> Attributes:
     if len(given) > 1:
         raise IngestError(400, "INVALID_REQUEST", "request.evidence_level and ingest.evidence_level disagree")
     level = given.pop() if given else ("A" if channel == "keypad" else None)
+    if method == "grade" and request.get("appeal") is True:
+        # 申诉先于其他规则：结果一律 C，不要求补等级（契约审查建议 8）
+        return Attributes(channel=channel, evidence_level="C", purpose=purpose)
     if level is None:
         raise IngestError(400, "INVALID_REQUEST", "evidence_level is required for channels other than keypad")
     if channel == "photo" and level == "A":
         raise IngestError(400, "INVALID_REQUEST", "photo evidence is at most level B")
     if channel in ("canvas", "voice") and level == "A" and not (method == "grade" and request.get("answer_evidence_ref")):
         raise IngestError(400, "INVALID_REQUEST", "level A on canvas or voice needs answer_evidence_ref (confirmation record)")
-    if method == "grade" and request.get("appeal") is True:
-        level = "C"
     return Attributes(channel=channel, evidence_level=level, purpose=purpose)

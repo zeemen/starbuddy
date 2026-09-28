@@ -6,7 +6,10 @@ import uuid
 
 import pytest
 
+import json
+
 from conftest import at, counts, diagnose_body, env, grade_body, to_v1_body
+from learning.contract import internal_contract
 
 
 @pytest.fixture(autouse=True)
@@ -81,10 +84,11 @@ async def test_photo_with_level_b(api, pools, student):
     assert (attempts[0]["channel"], attempts[0]["evidence_level"]) == ("photo", "B")
 
 
-async def test_conflicting_levels_are_rejected(api, student, fake_adapter):
+async def test_grade_level_only_in_request(api, student, fake_adapter):
+    """契约审查建议 7：grade 的证据等级只写在 request.evidence_level，ingest 里再给一次就拒绝（即使取值相同）。"""
     body = v1_grade(student)
-    body["evidence_level"] = "A"
-    r = await post(api, body, channel="canvas", evidence_level="B")
+    body["evidence_level"] = "B"
+    r = await post(api, body, channel="voice", evidence_level="B")
     assert r.status_code == 400 and fake_adapter.calls == 0
 
 
@@ -97,6 +101,8 @@ async def test_appeal_is_level_c_and_skips_learner_model(api, pools, student):
     assert r.status_code == 200, r.text
     s = r.json()
     assert s["evidence_level"] == "C" and s["learner_model_updated"] is False
+    assert s["error_categories"] == [], "没落库的错因不出现在摘要里（规则 11）"
+    assert internal_contract("1.0.0").validate("GradeSummary", s) == []
     c = await counts(admin, student)
     assert (c["evidence_event"], c["attempt"], c["grade_result"]) == (2, 1, 1), "批改照常落库，可展示、可回溯"
     assert (c["error_attribution"], c["skill_observation"]) == (0, 0), "C 级不写错因与能力观察"
@@ -107,7 +113,8 @@ async def test_level_c_diagnose_writes_no_observations(api, pools, student):
     body = to_v1_body(diagnose_body(student, [at("SYN-UNV", "42", 1), at("SYN-UNV2", "41", 2)]))
     r = await post(api, body, "diagnose", channel="canvas", evidence_level="C")
     assert r.status_code == 200, r.text
-    assert r.json()["learner_model_updated"] is False and r.json()["observation_count"] == 2
+    assert r.json()["learner_model_updated"] is False and r.json()["observation_count"] == 0, "没落库的观察不报数"
+    assert internal_contract("1.0.0").validate("DiagnoseSummary", r.json()) == []
     c = await counts(admin, student)
     assert (c["attempt"], c["skill_observation"]) == (2, 0)
 
@@ -118,7 +125,9 @@ async def test_same_key_other_channel_conflicts(api, pools, student, fake_adapte
     body = v1_grade(student)
     assert (await post(api, body)).status_code == 200
     before = await counts(admin, student)
-    r = await post(api, body, channel="voice", evidence_level="B")
+    body_b = copy.deepcopy(body)
+    body_b["evidence_level"] = "B"
+    r = await post(api, body_b, channel="voice")
     assert r.status_code == 409 and r.json()["code"] == "IDEMPOTENCY_CONFLICT"
     again = await post(api, copy.deepcopy(body), purpose="practice")  # 缺省用途与显式 practice 视为同一请求
     assert again.status_code == 200 and again.headers["idempotent-replayed"] == "true"
@@ -254,3 +263,37 @@ async def test_v0_appeal_skips_learner_model(api, pools, student):
     assert (await api.post("/internal/v0/grade", json=body)).status_code == 200
     c = await counts(admin, student)
     assert (c["grade_result"], c["error_attribution"]) == (1, 0)
+
+
+async def test_appeal_on_photo_needs_no_level(api, student):
+    """契约审查建议 8：申诉先于“非键盘必须给等级”，结果一律 C。"""
+    body = v1_grade(student)
+    body["appeal"] = True
+    r = await post(api, body, channel="photo")
+    assert r.status_code == 200 and r.json()["evidence_level"] == "C"
+
+
+async def test_same_evidence_with_other_attributes_is_rejected(api, pools, student, fake_adapter):
+    """契约审查建议 2：同一 evidence_id、同样内容，但通道或等级不同，不能静默沿用旧属性。"""
+    _, admin = pools
+    fixed: dict[str, str] = {}
+
+    def pin_ids(out):
+        text = json.dumps(out)
+        for e in out["evidence"]:
+            fixed.setdefault(e["kind"], str(uuid.uuid5(uuid.NAMESPACE_URL, f"{student}:{e['kind']}")))
+            text = text.replace(e["evidence_id"], fixed[e["kind"]])
+        return json.loads(text)
+    fake_adapter.mutate = pin_ids
+    first = v1_grade(student)
+    assert (await post(api, first)).status_code == 200
+    second = v1_grade(student)  # 新 key、同样作答内容与时间
+    second["evidence_level"] = "B"
+    r = await post(api, second, channel="voice")
+    assert r.status_code == 502 and r.json()["code"] == "ADAPTER_RESULT_REJECTED"
+    assert (await counts(admin, student))["attempt"] == 1
+
+
+async def test_v1_summaries_match_contract(api, student):
+    r = await post(api, v1_grade(student))
+    assert internal_contract("1.0.0").validate("GradeSummary", r.json()) == []

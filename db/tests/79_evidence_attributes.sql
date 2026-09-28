@@ -18,6 +18,19 @@ CREATE FUNCTION t.at(n integer, cols text DEFAULT '', vals text DEFAULT '') RETU
                     'synthetic-0301-07', 'e1700000-0000-4000-8000-000000000001', 'synthetic-0017-key-0001'%s)$f$,
                 cols, lpad(n::text, 12, '0'), vals) $$;
 
+-- 每种载荷类型都有来源类型（契约审查：新增载荷类型时必须同步 platform.evidence_source_type），取值从 0004 的约束里读
+SELECT t.ok(NOT EXISTS (
+  SELECT 1 FROM regexp_matches(pg_get_constraintdef((SELECT oid FROM pg_constraint
+                 WHERE conrelid = 'platform.evidence_event'::regclass AND contype = 'c' AND pg_get_constraintdef(oid) ~ 'response_text'
+                   AND pg_get_constraintdef(oid) ~ 'speech_features' AND pg_get_constraintdef(oid) !~ 'evidence_source_type' LIMIT 1)),
+               '''([a-z_]+)''::text', 'g') m
+   WHERE platform.evidence_source_type(m[1]) IS NULL),
+  '每种载荷类型都能推出来源类型');
+SELECT t.ok((SELECT count(*) FROM regexp_matches(pg_get_constraintdef((SELECT oid FROM pg_constraint
+                 WHERE conrelid = 'platform.evidence_event'::regclass AND contype = 'c' AND pg_get_constraintdef(oid) ~ 'response_text'
+                   AND pg_get_constraintdef(oid) ~ 'speech_features' AND pg_get_constraintdef(oid) !~ 'evidence_source_type' LIMIT 1)),
+               '''([a-z_]+)''::text', 'g')) = 8, '对照：从约束里读到 8 种载荷类型');
+
 SET ROLE starbuddy_learning;
 -- 来源类型：不给时按载荷类型补齐；给了必须一致
 DO $$ BEGIN EXECUTE t.ev(1, 'response_text', ', evidence_kind, evidence_level, channel, map_version_id',

@@ -109,7 +109,7 @@ def _plugin_contract_cached(version: str) -> ContractDoc:
 INTERNAL_CONTRACTS = {"0.9.0": INTERNAL_CONTRACT, "1.0.0": OPENAPI / "learning-internal.v1.yaml"}
 
 
-@lru_cache(maxsize=2)
+@lru_cache(maxsize=None)
 def internal_contract(version: str = "0.9.0") -> ContractDoc:
     """学习服务内部 API：0.9.0 对应 /internal/v0，1.0.0 对应 /internal/v1（信封请求，specs/evidence-attributes-sprint1）。"""
     return _load(INTERNAL_CONTRACTS[version], f"urn:starbuddy:learning-internal:{version}")

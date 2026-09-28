@@ -18,7 +18,6 @@
 """
 from __future__ import annotations
 
-import os
 import re
 import sys
 from pathlib import Path
@@ -420,18 +419,26 @@ INTERNAL_V1_COUNTER = [
     ("信封顶层夹带多余字段", "GradeIngest", "GradeIngestKeypad", lambda v: v.__setitem__("student_name", "（合成）")),
     ("插件请求直接放在顶层（旧写法）", "GradeIngest", "GradeIngestKeypad", lambda v: v.update(v.pop("request"))),
     ("摘要的证据等级是 D", "GradeSummary", "GradeSummaryLevelC", lambda v: v.__setitem__("evidence_level", "D")),
+    ("grade 的证据等级在 ingest 里再给一次", "GradeIngest", "GradeIngestKeypad", lambda v: v["ingest"].__setitem__("evidence_level", "A")),
+    ("ingest 的证据等级是 D", "DiagnoseIngest", "DiagnoseIngestCanvasC", lambda v: v["ingest"].__setitem__("evidence_level", "D")),
+    ("诊断信封缺 ingest", "DiagnoseIngest", "DiagnoseIngestCanvasC", lambda v: v.pop("ingest")),
+    ("诊断信封顶层夹带多余字段", "DiagnoseIngest", "DiagnoseIngestCanvasC", lambda v: v.__setitem__("note", "（合成）")),
+    ("诊断信封里放判分请求", "DiagnoseIngest", "DiagnoseIngestCanvasC",
+     lambda v: (v["request"].pop("mode"), v["request"].__setitem__("attempt", v["request"].pop("attempts")[0]),
+                v["request"].__setitem__("rubric_version", "aya-symbolic-ts@0.1.0"))),
+    ("诊断摘要的证据等级是 D", "DiagnoseSummary", "DiagnoseSummaryLevelC", lambda v: v.__setitem__("evidence_level", "D")),
     ("摘要的是否写入学习者模型不是布尔", "GradeSummary", "GradeSummaryLevelC", lambda v: v.__setitem__("learner_model_updated", "no")),
 ]
 
 
 def _check_internal_v1_examples(errors: list[str]) -> None:
     import copy  # noqa: PLC0415
-    os.environ.setdefault("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", "1")
     sys.path.insert(0, str(HERE.parent / "python"))
     from starbuddy_contract.contract import internal_contract  # noqa: PLC0415
     c = internal_contract("1.0.0")
     examples = load(INTERNAL_SPECS[1])["components"]["examples"]
-    schema_of = {"GradeIngestKeypad": "GradeIngest", "GradeSummaryLevelC": "GradeSummary"}
+    schema_of = {"GradeIngestKeypad": "GradeIngest", "GradeSummaryLevelC": "GradeSummary",
+                 "DiagnoseIngestCanvasC": "DiagnoseIngest", "DiagnoseSummaryLevelC": "DiagnoseSummary"}
     for name, schema in schema_of.items():
         errs = c.validate(schema, examples[name]["value"])
         if errs:

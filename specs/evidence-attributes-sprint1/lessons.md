@@ -26,6 +26,15 @@
 7. 摘要的 `evidence_level`、`learner_model_updated` 在契约里改为可选：重放 `/internal/v0` 写入的结果时没有；经 v1 写入的必带。
 8. 启动时预加载 v1 内部契约，文件缺失即启动失败。
 
+## 契约审查后的调整（按默认处理）
+1. grade 的证据等级只写在 `request.evidence_level`：`GradeIngest` 禁止 ingest 再带等级（schema 与服务端都拦）；diagnose 仍用 `ingest.evidence_level`。
+2. 指纹取推导后的（通道、用途、等级），语义相同的不同写法不再互相 409。
+3. 申诉先于“非键盘必须给等级”：拍照、画布的申诉不带等级也记 C。
+4. C 级摘要 `error_categories` 为空、诊断 `observation_count` 为 0：没落库的结论不出现在摘要里（规则 11；原待人确认 #4 就此关闭）。
+5. 证据的作答情境在 v1.0 下按 `attempt_id` 配对，v0 仍按题目 + 时间。
+6. 同一 evidence_id、同样内容再次出现但补列不同（换了通道或等级）→ 502，不静默沿用旧属性。
+7. 契约补 `DiagnoseIngest`、`DiagnoseSummary` 示例与 6 个反例（共 15 个），并用对照实例确认检查真的在跑；数据库断言每种载荷类型都能推出来源类型。
+
 ## 经验
 - 证据表的 `kind`（载荷类型）与 KGE 的 `evidence_kind`（作答情境）名字相近、含义不同；新列、函数、测试都用 `evidence_kind` 全名，避免混用。
 - 地图版本的测试最初复用共享内容版本、`ON CONFLICT DO NOTHING`，绑定可能被跳过而“空对空”通过；改为每次用专用内容版本并断言等于新建的地图版本。
@@ -42,4 +51,5 @@
 8. `skill_observation` 没有等级标记，KGE-04 须按证据的 `evidence_level` 过滤“只有 A 级点亮”（安全审查建议 5）；判断账本 `insight.claim.evidence_ids`
    同样不按等级过滤，建议 SIE 首个任务包一并处理。
 9. 迁移演练注意：分区表上的 BEFORE ROW 触发器需 PG 13 及以上；`source_type` 回填是整表单事务 UPDATE，会长时间持锁。
-4. C 级诊断仍返回 `observation_count`（适配器给出的观察数），但一条都不落库：摘要里以 `learner_model_updated = false` 区分，是否改成 0 待定。
+4. ADR 15 说“申诉中的条目”记 C：现在只有重判请求本身记 C，原来那条 A 级证据仍在学习者模型里；申诉期间是否临时降级原证据待定（契约审查建议 8）。
+10. 地图版本有两个来源：证据的 `map_version_id` 取自内容版本绑定，`grade_result.source_version` 的 `graph:` 段由适配器声明，目前不交叉核对；建议 KGE-04 前补（契约审查建议 10）。
