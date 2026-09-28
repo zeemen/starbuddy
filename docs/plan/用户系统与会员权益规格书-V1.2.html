@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>魁星点斗 StarBuddy · 用户系统与会员权益规格书 V1.2</title>
+<style>
+:root{--paper:#F7F8F5;--paper-2:#EEF0EA;--ink:#1B2130;--ink-2:#4A5163;--ink-3:#7C8394;--rule:#CDD2C9;--crow:#2E4A7D;--crow-soft:#DCE4F2;--gold:#C9962E;--gold-soft:#F5E7C4;--green:#3F7A5A;--green-soft:#DCEBE1;--red:#A3423A;--red-soft:#F4DEDB;
+--serif:"Noto Serif SC","Songti SC","SimSun","Source Han Serif SC",serif;--sans:"Noto Sans SC","PingFang SC","Microsoft YaHei","Source Han Sans SC",sans-serif;--mono:ui-monospace,Menlo,Consolas,monospace;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--paper:#151922;--paper-2:#1D222D;--ink:#E8EAE4;--ink-2:#B7BCC7;--ink-3:#868D9C;--rule:#343A47;--crow:#8FAAD8;--crow-soft:#243352;--gold:#DDB35A;--gold-soft:#3D3320;--green:#7FB89A;--green-soft:#1F3328;--red:#E08A80;--red-soft:#3A2220}}
+:root[data-theme="dark"]{--paper:#151922;--paper-2:#1D222D;--ink:#E8EAE4;--ink-2:#B7BCC7;--ink-3:#868D9C;--rule:#343A47;--crow:#8FAAD8;--crow-soft:#243352;--gold:#DDB35A;--gold-soft:#3D3320;--green:#7FB89A;--green-soft:#1F3328;--red:#E08A80;--red-soft:#3A2220}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:15.5px;line-height:1.75}
+main{max-width:1040px;margin:0 auto;padding:40px 22px 80px}
+h1,h2,h3{font-family:var(--serif);line-height:1.35}
+h1{font-size:30px;margin:6px 0 4px}
+h2{font-size:22px;margin:52px 0 12px;padding-top:16px;border-top:2px solid var(--ink)}
+h2 .no{color:var(--gold);margin-right:10px}
+h3{font-size:17px;margin:28px 0 8px;color:var(--crow)}
+.meta{color:var(--ink-3);font-size:13px}
+.lede{font-size:16.5px;color:var(--ink-2);border-left:4px solid var(--gold);padding:6px 0 6px 16px;margin:22px 0}
+.tbl{overflow-x:auto;margin:14px 0;border:1px solid var(--rule);border-radius:8px}
+table{border-collapse:collapse;width:100%;min-width:640px;font-size:14px}
+th,td{padding:8px 11px;border-bottom:1px solid var(--rule);text-align:left;vertical-align:top}
+th{background:var(--paper-2);font-weight:600;white-space:nowrap}
+tr:last-child td{border-bottom:none}
+td.n{text-align:center;white-space:nowrap}
+.tier th.t{text-align:center}
+.tag{display:inline-block;font-size:12px;padding:1px 8px;border-radius:10px;margin-right:4px;white-space:nowrap}
+.g{background:var(--green-soft);color:var(--green)}.b{background:var(--crow-soft);color:var(--crow)}.y{background:var(--gold-soft);color:var(--gold)}.r{background:var(--red-soft);color:var(--red)}
+.note{background:var(--paper-2);border-radius:8px;padding:12px 16px;margin:14px 0;font-size:14px;color:var(--ink-2)}
+.warn{background:var(--red-soft);border-left:4px solid var(--red);border-radius:6px;padding:12px 16px;margin:16px 0;font-size:14.5px}
+.warn b{color:var(--red)}
+code{font-family:var(--mono);font-size:13px;background:var(--paper-2);padding:1px 5px;border-radius:4px}
+pre.code{font-family:var(--mono);font-size:12.5px;line-height:1.55;background:var(--paper-2);border:1px solid var(--rule);border-radius:8px;padding:14px 16px;overflow-x:auto}
+pre.mermaid{background:#fff;border:1px solid var(--rule);border-radius:8px;padding:12px;overflow-x:auto;text-align:center}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:14px 0}
+.card{border:1px solid var(--rule);border-radius:10px;padding:12px 14px;background:var(--paper)}
+.card h4{margin:0 0 4px;font-family:var(--serif);font-size:15.5px}
+.card p{margin:0;font-size:13.5px;color:var(--ink-2)}
+.toc{columns:2;font-size:14px;margin:18px 0;padding:14px 18px 14px 34px;background:var(--paper-2);border-radius:8px}
+.toc a{color:var(--crow);text-decoration:none}
+ol.dec li{margin-bottom:8px}
+@media (max-width:640px){.toc{columns:1}h1{font-size:24px}}
+</style>
+</head>
+<body>
+<main>
+<div class="meta">魁星点斗 StarBuddy · 平台基座文档 · 用户与商业化域</div>
+<h1>用户系统与会员权益规格书 V1.2</h1>
+<div class="meta">2026-09-27 · V1.2 已决：iOS 首发开放内购；APP 采用 React Native（Expo） · 上游：《产品系统架构与技术实施蓝图 V2.0》§4 四级会员与权益引擎、《平台产品规划 v1.2》 · 下游：Claude Code 开发任务包 · 所有额度与价格系数均为<b>待验证的产品实验参数</b></div>
+
+<p class="lede">本规格把思维导图"用户等级模式"的八个分支——用户数据库、付费周期、五级用户、学科选择、学时、测试次数、上传限制、学情报告——落成一个可开发的用户系统：<b>家庭账号承载关系与授权，订阅承载付费，权益引擎承载额度，计量账本承载每一次扣减。</b>四层分开，额度改动只改配置、不改代码。</p>
+<div class="note"><b>V1.1 呈现形态：</b>StarBuddy 以 <b>Web 端（网站服务）</b>与<b>手机 APP（iOS / Android）</b>两种方式提供。两端共用同一账号、同一份权益与同一本计量账本——在哪一端买、在哪一端用都不影响额度。双端带来的差异集中在支付渠道、会话与设备、APP 合规三处，见 <a href="#s12">§12</a>。</div>
+
+<div class="toc">
+<a href="#s1">1 设计输入与对蓝图 V2.0 的变更</a><br>
+<a href="#s2">2 账号与家庭关系</a><br>
+<a href="#s3">3 五级用户与生命周期</a><br>
+<a href="#s4">4 权益矩阵（核心表）</a><br>
+<a href="#s5">5 学科选择模型</a><br>
+<a href="#s6">6 付费周期与订阅规则</a><br>
+<a href="#s7">7 计量规则：学时 / 测试 / 上传 / 报告</a><br>
+<a href="#s8">8 用户数据库设计</a><br>
+<a href="#s9">9 权益引擎与接口</a><br>
+<a href="#s10">10 合规红线</a><br>
+<a href="#s11">11 Claude Code 开发任务与验收</a><br>
+<a href="#s12">12 双端呈现：Web 与手机 APP</a><br>
+<a href="#s13">13 待拍板决策</a>
+</div>
+
+<h2 id="s1"><span class="no">01</span>设计输入与对蓝图 V2.0 的变更</h2>
+<p>思维导图与蓝图 V2.0 §4 有四处实质差异，本规格以思维导图为准并做如下调和：</p>
+<div class="tbl"><table>
+<tr><th>维度</th><th>蓝图 V2.0</th><th>思维导图（本次输入）</th><th>本规格处理</th></tr>
+<tr><td>等级</td><td>普通 / PLUS / PRO / MAX 四级</td><td>免费（试用）/ 基本 / Plus / Pro / Max 五级</td><td>"普通会员"拆为<b>免费试用</b>（限时一次性）+ <b>基本</b>（最低付费档）；试用到期后进入不计为等级的<b>"留存态"</b></td></tr>
+<tr><td>学科开通</td><td>按"同时开通科目数"1/2/4/7</td><td>基础核心（语数英）打包 + 单科选修</td><td>改为<b>"核心包 + 选修槽位"</b>：语数英作为一个整体，其余按槽位选</td></tr>
+<tr><td>科目范围</td><td>七科</td><td>新增<b>生物、地理</b>，共九科</td><td>用户系统按九科建模；生地进入"已规划·未上线"状态，<b>未上线科目不售卖</b>。老师角色与学科包需在平台规划中另行补齐</td></tr>
+<tr><td>付费周期</td><td>未定，按 30 天计量</td><td>学年 / 学期 / 月度</td><td>三种购买周期；额度<b>一律按 30 天周期发放</b>，与付款周期解耦（见 §6、§10 的预收费红线）</td></tr>
+<tr><td>上传</td><td>按"新题深度分析"题数计</td><td>上传次数 + 文件大小限制</td><td>"上传"计入口次数与体积；深度分析后续的讲解消耗学时</td></tr>
+<tr><td>报告</td><td>按等级给周报/月报类型</td><td>学情报告次数</td><td>周报自动生成不计次；<b>按需深度学情报告</b>计次</td></tr>
+</table></div>
+
+<h2 id="s2"><span class="no">02</span>账号与家庭关系</h2>
+<p>沿用蓝图"一个家庭账号、家长付费、按学生席位计费"的原则。核心是把"登录身份"与"学习档案"分开：一个人可以有多种身份，一个学生档案可以被多位监护人关注。</p>
+<div class="grid">
+<div class="card"><h4>家庭 household</h4><p>订阅、支付、席位的归属单位。一个家庭 1 位主监护人（付费人），最多 2 位协同监护人。</p></div>
+<div class="card"><h4>监护人 guardian</h4><p>手机号 + 短信验证码 / 微信登录。可查看孩子的星图、周报、额度，<b>不可看逐句私密对话</b>。</p></div>
+<div class="card"><h4>学生档案 student_profile</h4><p>学习者模型的挂载点。年级、地区、教材版本、目标。可无独立手机号——由家长在设备上生成"家庭码 + 4 位 PIN"登录。</p></div>
+<div class="card"><h4>后台人员 staff</h4><p>教研、运营、客服、财务，按岗位 RBAC 最小授权；所有查看学生数据的操作写审计日志。</p></div>
+</div>
+<h3>角色与权限</h3>
+<div class="tbl"><table>
+<tr><th>操作</th><th>主监护人</th><th>协同监护人</th><th>学生</th><th>客服</th></tr>
+<tr><td>购买 / 升降级 / 退款申请</td><td class="n">✓</td><td class="n">—</td><td class="n">—</td><td class="n">代办需工单</td></tr>
+<tr><td>选科与换科</td><td class="n">✓</td><td class="n">—</td><td class="n">提议，家长确认</td><td class="n">—</td></tr>
+<tr><td>查看星图、周报、额度</td><td class="n">✓</td><td class="n">✓</td><td class="n">✓（仅自己）</td><td class="n">脱敏</td></tr>
+<tr><td>设置每日时长上限 / 宵禁</td><td class="n">✓</td><td class="n">✓</td><td class="n">—</td><td class="n">—</td></tr>
+<tr><td>导出 / 删除学习数据</td><td class="n">✓</td><td class="n">—</td><td class="n">申请</td><td class="n">执行</td></tr>
+<tr><td>AI 对话原文</td><td class="n">不可见</td><td class="n">不可见</td><td class="n">✓</td><td class="n">仅申诉/安全事件授权</td></tr>
+</table></div>
+<div class="note"><b>关系不靠手机号推断。</b>监护关系只能通过"主监护人创建学生档案"或"主监护人邀请协同监护人 + 对方确认"建立，并写入 <code>consent_record</code>。孩子不满 14 周岁时，其个人信息按敏感个人信息处理，建档前取得监护人单独同意。</div>
+
+<h2 id="s3"><span class="no">03</span>五级用户与生命周期</h2>
+<div class="grid">
+<div class="card"><h4><span class="tag g">试用</span>免费试用</h4><p>注册即得，<b>14 天、一次性</b>。目标：完成一次起点诊断、看到第一张星图和一份试用结束报告。</p></div>
+<div class="card"><h4><span class="tag b">基本</span>基本</h4><p>最低付费档，只含<b>核心包（语数英）</b>。面向"只要主科日常陪练"的家庭。</p></div>
+<div class="card"><h4><span class="tag b">Plus</span>Plus</h4><p>核心包 + <b>2 个选修槽</b>。初二加物理、初三加化学的典型选择。</p></div>
+<div class="card"><h4><span class="tag y">Pro</span>Pro</h4><p>核心包 + <b>4 个选修槽</b>，跨科学情报告。初三全面备考主力档。</p></div>
+<div class="card"><h4><span class="tag y">Max</span>Max</h4><p>全部<b>已上线</b>科目，公平使用上限（非无限），优先人工申诉。</p></div>
+</div>
+<pre class="mermaid">
+stateDiagram-v2
+    [*] --> 试用: 注册并建学生档案
+    试用 --> 付费中: 购买 基本/Plus/Pro/Max
+    试用 --> 留存态: 14天到期未购买
+    留存态 --> 付费中: 购买
+    付费中 --> 付费中: 升级(即时) / 降级(到期生效)
+    付费中 --> 宽限期: 续费失败
+    宽限期 --> 付费中: 7天内补款
+    宽限期 --> 留存态: 宽限期结束
+    付费中 --> 留存态: 到期未续 / 退款完成
+    留存态 --> [*]: 家长申请注销(数据删除)
+</pre>
+<div class="note"><b>留存态</b>不是一个等级，而是"不付费但数据仍在"的状态：可登录、查看星图与历史报告、每天做 5 道题库自练题（零模型成本，不调用 AI 老师）。设计意图是蓝图里那句"到上限时保存学习进度，不强迫续费"——学生的星图不会因为不付费而消失，这是信任的底线。留存态数据保存 12 个月，到期前 30 天通知家长导出或续费。</div>
+
+<h2 id="s4"><span class="no">04</span>权益矩阵（核心表）</h2>
+<p>口径：<b>每个学生、每 30 天计量周期</b>。试用列为 14 天总量。数字为首版实验参数，存放在 <code>plan_version.entitlements</code> 配置中，调整无需发版。</p>
+<div class="tbl tier"><table>
+<tr><th>权益</th><th class="t">试用（14天）</th><th class="t">基本</th><th class="t">Plus</th><th class="t">Pro</th><th class="t">Max</th></tr>
+<tr><td><b>学科</b></td><td class="n">核心包 + 1 选修体验</td><td class="n">核心包</td><td class="n">核心包 + 2 选修</td><td class="n">核心包 + 4 选修</td><td class="n">全部已上线</td></tr>
+<tr><td><b>学时</b>（AI 互动有效时长）</td><td class="n">2 小时</td><td class="n">10 小时</td><td class="n">20 小时</td><td class="n">40 小时</td><td class="n">66 小时¹</td></tr>
+<tr><td>　其中 实时语音</td><td class="n">10 分钟</td><td class="n">60 分钟</td><td class="n">120 分钟</td><td class="n">300 分钟</td><td class="n">600 分钟</td></tr>
+<tr><td>　其中 白板讲评课</td><td class="n">1 节</td><td class="n">静态步骤</td><td class="n">10 节</td><td class="n">40 节</td><td class="n">100 节</td></tr>
+<tr><td>单日学时上限（家长可调低）</td><td class="n">60 分钟</td><td class="n">90 分钟</td><td class="n">120 分钟</td><td class="n">150 分钟</td><td class="n">180 分钟</td></tr>
+<tr><td><b>测试</b>：分科完整诊断</td><td class="n">1 次</td><td class="n">3 次</td><td class="n">5 次</td><td class="n">10 次</td><td class="n">20 次</td></tr>
+<tr><td><b>测试</b>：限时整卷模考</td><td class="n">0</td><td class="n">1 次</td><td class="n">2 次</td><td class="n">6 次</td><td class="n">12 次</td></tr>
+<tr><td>测试：章节小测 / 当堂检测</td><td colspan="5" class="n">不单独计次，计入学时</td></tr>
+<tr><td><b>上传次数</b>（错题 / 试卷 / 作文）</td><td class="n">10 次</td><td class="n">60 次</td><td class="n">150 次</td><td class="n">400 次</td><td class="n">800 次</td></tr>
+<tr><td>　单文件上限</td><td class="n">图片 5MB</td><td class="n">图片 10MB · PDF 20MB</td><td class="n">图片 10MB · PDF 30MB</td><td class="n">图片 15MB · PDF 50MB</td><td class="n">图片 15MB · PDF 50MB</td></tr>
+<tr><td>　PDF 页数上限 / 份</td><td class="n">不支持</td><td class="n">8 页</td><td class="n">16 页</td><td class="n">24 页</td><td class="n">32 页</td></tr>
+<tr><td>　周期存储总量</td><td class="n">100MB</td><td class="n">500MB</td><td class="n">1.5GB</td><td class="n">4GB</td><td class="n">8GB</td></tr>
+<tr><td><b>学情报告</b>：周报</td><td class="n">—</td><td class="n">基础周报</td><td class="n">完整周报</td><td class="n">完整周报</td><td class="n">完整周报</td></tr>
+<tr><td><b>学情报告</b>：按需深度报告</td><td class="n">1 份（到期自动）</td><td class="n">1 份</td><td class="n">2 份</td><td class="n">4 份 · 含跨科</td><td class="n">8 份 · 含跨科</td></tr>
+<tr><td>月度学情报告（自动）</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">✓</td><td class="n">✓</td></tr>
+<tr><td>家长学院</td><td class="n">公共课</td><td class="n">公共课</td><td class="n">全部课程</td><td class="n">全部课程</td><td class="n">全部 + 专题直播</td></tr>
+<tr><td>人工申诉复核</td><td class="n">—</td><td class="n">标准</td><td class="n">标准</td><td class="n">标准</td><td class="n">优先（48h）</td></tr>
+<tr><td>点点学伴 / 星图</td><td colspan="5" class="n">全部等级可用（点点对话计入学时；星图查看不计）</td></tr>
+</table></div>
+<p class="meta">¹ Max 为公平使用上限。所有等级<b>教学质量与批改口径一致</b>——同一道题在基本和 Max 得到同样的判分与讲解质量，差异只在服务量和呈现形式（语音、白板、跨科报告）。这是蓝图 §7 的原则，定价时不得突破。</p>
+
+<h2 id="s5"><span class="no">05</span>学科选择模型</h2>
+<h3>核心包 + 选修槽</h3>
+<p>语文、数学、英语三科作为<b>一个不可拆分的核心包</b>，所有付费等级都含；物理、化学、道法、历史、生物、地理六科占用选修槽。道法与历史虽合场开卷考试，但老师（方圆、春秋）与学科包独立，<b>各占 1 槽</b>；可设"开卷合场套装"作为运营组合，不改变计槽规则。</p>
+<div class="tbl"><table>
+<tr><th>科目</th><th>老师</th><th>上线状态</th><th>适用年级</th><th>可售</th></tr>
+<tr><td>语文 · 数学 · 英语</td><td>妙笔 · 阿鸦 · 雅典娜</td><td><span class="tag y">开发测试</span></td><td>初一–初三</td><td>核心包</td></tr>
+<tr><td>道法</td><td>方圆</td><td><span class="tag y">开发测试</span></td><td>初一–初三</td><td>选修</td></tr>
+<tr><td>历史</td><td>春秋</td><td><span class="tag b">规划中</span></td><td>初一–初三</td><td>上线后</td></tr>
+<tr><td>物理</td><td>阿基</td><td><span class="tag b">规划中</span></td><td>初二–初三</td><td>上线后</td></tr>
+<tr><td>化学</td><td>X 博士</td><td><span class="tag b">规划中</span></td><td>初三</td><td>上线后</td></tr>
+<tr><td>生物 · 地理</td><td><span class="tag r">待定义</span></td><td><span class="tag r">新增·未立项</span></td><td>初一–初二</td><td>上线后</td></tr>
+</table></div>
+<h3>规则</h3>
+<ol>
+<li><b>上线门控</b>：<code>subject.status ≠ live</code> 的科目在购买页只显示"即将开放·预约提醒"，不可占槽、不计入等级宣传。Max 的"全部"始终指"已上线全部"。</li>
+<li><b>年级推荐</b>：选科页按年级预选——初二默认推荐物理，初三默认推荐物理 + 化学；初一选物理/化学时提示"尚未开课"，但允许（预习需求）。</li>
+<li><b>换科</b>：每个 30 天周期可更换选修科目 1 次，下个周期生效；旧科目学习数据与星图<b>保留不删</b>，重新选回即恢复。限制换科频率是为了防止"一个槽轮流吃遍所有科"。</li>
+<li><b>单科加购</b>：已满槽可按月加购 1 科（不需升级整档），加购价格高于升档后的边际价，引导合理升级而非叠加扣费。</li>
+<li><b>学时共享</b>：学时在一个学生的全部已开科目间<b>共享池</b>，不按科切分。周报里分科展示用量，让家长看得到时间花在哪。</li>
+</ol>
+
+<h2 id="s6"><span class="no">06</span>付费周期与订阅规则</h2>
+<div class="tbl"><table>
+<tr><th>周期</th><th>时长</th><th>价格系数（占位）</th><th>额度发放</th><th>典型人群</th></tr>
+<tr><td>月度</td><td>30 天，连续包月可取消</td><td class="n">1.00 × 月价</td><td rowspan="3">一律每 30 天发放一次当期额度；<b>当期未用完不结转</b>（学时可结转 20% 至下一期，上限一次）</td><td>试水、短期冲刺</td></tr>
+<tr><td>学期</td><td>约 5 个月（秋季 9–1 月 / 春季 2–6 月）</td><td class="n">≈ 0.85 × 月价 × 月数</td><td>稳定使用家庭</td></tr>
+<tr><td>学年</td><td>12 个月（含寒暑假）</td><td class="n">≈ 0.70 × 月价 × 12</td><td>长期陪伴</td></tr>
+</table></div>
+<div class="warn"><b>学期 / 学年付费是本规格最大的合规风险点，上线前必须取得书面法律意见。</b>若平台的学科辅导服务被认定为线上学科类培训，现行校外培训预收费监管要求不得一次性或变相收取超过 3 个月或 60 课时的费用——此时"学期、学年一次性付款"不能照做，需改为<b>"学期/学年价格锁定 + 按月（或按 3 个月内）分期扣款"</b>，并使用资金监管账户。系统因此把"价格承诺"（<code>subscription.price_lock</code>）与"扣款计划"（<code>billing_schedule</code>）拆成两个对象，任一认定结论下都无需重构。另注意"学时"一词易被对应为"课时"，对外展示建议统一用"AI 陪练时长"。以上为风险提示，不构成法律意见。</div>
+<h3>升级 / 降级 / 退款</h3>
+<div class="tbl"><table>
+<tr><th>动作</th><th>生效</th><th>计价</th><th>额度</th></tr>
+<tr><td>升级</td><td>即时</td><td>按剩余天数折算差价</td><td>当期额度<b>补足差额</b>（新档额度 − 旧档额度），已用量保留，不双重扣次</td></tr>
+<tr><td>降级</td><td>当前周期结束</td><td>下一期按新档</td><td>本期维持原档；超出新档槽位的选修科目由家长选择保留哪几科</td></tr>
+<tr><td>取消续费</td><td>当前已付周期结束</td><td>—</td><td>到期转留存态</td></tr>
+<tr><td>退款</td><td>审核通过后</td><td>按未发放周期全额 + 当期按"未消耗额度占比"折算</td><td>模考、诊断必须有可复核的交付记录作为扣除依据</td></tr>
+<tr><td>第二个孩子</td><td>即时</td><td>学生席位加购，同档折扣（占位 0.6）</td><td>独立额度，不与第一个孩子共享</td></tr>
+</table></div>
+<p class="meta">支付渠道因端而异：Web 与 Android 使用微信支付、支付宝；iOS APP 内购买须走苹果应用内购买（IAP），其周期、升降级、退款规则与上表的差异见 <a href="#s12">§12</a>。</p>
+
+<h2 id="s7"><span class="no">07</span>计量规则：学时 / 测试 / 上传 / 报告</h2>
+<h3>学时（AI 陪练时长）</h3>
+<ul>
+<li><b>只计有效时长</b>：学生发出输入后到 AI 完成回答的交互窗口、课堂/白板播放中的时间。暂停、排队、服务故障、后台生成、学生静默超过 90 秒均停表。</li>
+<li>按秒累计、按分钟展示；每次会话结束结算一次，实时显示剩余。</li>
+<li>另设后台 <b>token 成本闸门</b>：单次输入超长、异常高频会触发限流而非直接扣时，防止"挂机"和刷量。</li>
+<li>单日上限到达：保存进度，提示"今天的陪练到这里"，可继续做题库自练（不计学时）。22:00–次日 6:00 默认不提供 AI 互动，家长可调整。</li>
+</ul>
+<h3>测试次数</h3>
+<ul>
+<li><b>诊断</b>：一次"完整诊断"= 一科一套自适应诊断跑完出报告。中途退出 24 小时内可续做不另扣；模型或服务失败不扣。</li>
+<li><b>整卷模考</b>：限定卷型与时长（与南京中考该科一致），开考即预留、交卷批改成功后结算；小测不得占用整卷次数。</li>
+</ul>
+<h3>上传次数与文件大小</h3>
+<ul>
+<li>1 次上传 = 1 个文件（1 张图片或 1 份 PDF）。一份 PDF 超过 4 页的，按 <code>ceil(页数 ÷ 4)</code> 计次。</li>
+<li>格式：JPG / PNG / HEIC / PDF；英语口语录音走语音通道，计入学时不计上传。</li>
+<li>同一文件（内容哈希相同）24 小时内重复上传不重复扣次；OCR 失败不扣次，提示重拍。</li>
+<li>上传包含 OCR 与首轮错因识别；之后的讲解、变式练习消耗学时。</li>
+<li>存储总量按周期计，超出时提示清理旧文件；原图在完成识别后 90 天可按家长设置自动删除，只保留结构化题目与作答证据。</li>
+</ul>
+<h3>学情报告次数</h3>
+<ul>
+<li><b>周报</b>：每周日自动生成推送家长，不计次；基本档为基础版（各科用时、星图变化、本周一件事）。</li>
+<li><b>按需深度报告</b>：家长或学生主动发起，基于近 30 天证据的错因趋势与学习路径建议；证据不足时报告标注"待验证"，<b>不计次</b>。</li>
+<li>跨科报告（Pro、Max）：分析时间分配与学科间迁移，例如数学建模能力对物理的影响。</li>
+</ul>
+
+<h2 id="s8"><span class="no">08</span>用户数据库设计</h2>
+<p>PostgreSQL，所有表带 <code>created_at / updated_at</code>，金额以"分"整数存储，时间以 UTC 存储。与学习者模型（<code>student_profile</code> 下挂的 <code>mastery_estimate</code> 等）通过 <code>student_id</code> 关联，但<b>用户域与学习域分库分权</b>：客服可看订阅，不可看学习证据。</p>
+<pre class="mermaid">
+erDiagram
+    household ||--o{ guardian_link : has
+    account ||--o{ guardian_link : is
+    household ||--o{ student_profile : owns
+    student_profile ||--o{ consent_record : covered_by
+    household ||--o{ subscription : pays
+    subscription }o--|| plan_version : uses
+    subscription ||--o{ billing_schedule : charged_by
+    subscription ||--o{ entitlement_period : grants
+    student_profile ||--o{ subject_enrollment : selects
+    entitlement_period ||--o{ usage_ledger : consumed_by
+    student_profile ||--o{ upload_object : uploads
+    student_profile ||--o{ report_job : receives
+</pre>
+<pre class="code">-- 身份与家庭 ------------------------------------------------------------
+account(id, phone_e164 UNIQUE, wechat_unionid UNIQUE NULL, status, last_login_at)
+household(id, owner_account_id, region_code, created_via)
+guardian_link(household_id, account_id, role ENUM('owner','member'), invited_by, confirmed_at)
+student_profile(id, household_id, nickname, birth_year_month, grade, region_code,
+                textbook_versions JSONB,          -- 各科教材版本
+                login_pin_hash, status ENUM('active','retained','deleting'))
+consent_record(id, student_id, guardian_account_id, scope, policy_version, granted_at, revoked_at)
+
+-- 产品与定价（配置化）----------------------------------------------------
+plan(id, code ENUM('trial','basic','plus','pro','max'), rank SMALLINT)
+plan_version(id, plan_id, version, effective_from,
+             entitlements JSONB,                  -- §4 整张矩阵，一个等级一份
+             price_monthly_fen, semester_factor, annual_factor)
+subject(code, name, teacher, status ENUM('planned','beta','live'), grades INT[], is_core BOOL)
+
+-- 订阅与支付 --------------------------------------------------------------
+subscription(id, household_id, student_id, plan_version_id,
+             cycle ENUM('monthly','semester','annual'),
+             state ENUM('trialing','active','grace','canceled','expired'),
+             period_start, period_end, auto_renew, price_lock_fen, pending_change JSONB)
+billing_schedule(id, subscription_id, due_at, amount_fen, status, order_id)   -- 分期/合规扣款计划
+order(id, household_id, amount_fen, channel ENUM('wechat','alipay','apple_iap'),
+      platform ENUM('web','ios','android'), status, paid_at, external_txn_id)
+refund(id, order_id, amount_fen, reason, calc_detail JSONB, status)
+trial_claim(id, phone_hash, device_fingerprint, household_id, claimed_at)     -- 一次性试用防刷
+
+-- 权益与计量 --------------------------------------------------------------
+entitlement_period(id, student_id, subscription_id, period_start, period_end,
+                   granted JSONB,                 -- 当期发放量快照（含升级补差）
+                   carried_over_minutes INT)
+subject_enrollment(student_id, subject_code, slot_type ENUM('core','elective','addon'),
+                   active_from, active_to, changed_in_period_id)
+usage_ledger(id, period_id, student_id, meter ENUM('minutes','voice_minutes','whiteboard',
+             'diagnostic','mock_exam','upload','storage_bytes','deep_report'),
+             subject_code, quantity, state ENUM('reserved','settled','released'),
+             usage_id, idempotency_key UNIQUE, source_ref, created_at)
+daily_usage(student_id, local_date, minutes_used, cap_minutes)               -- 单日上限
+upload_object(id, student_id, content_sha256, mime, bytes, pages, storage_key,
+              ocr_status, purge_after)
+report_job(id, student_id, kind ENUM('weekly','monthly','deep','cross_subject'),
+           metered BOOL, status, evidence_window, output_ref)
+audit_log(id, actor_id, actor_type, action, target_type, target_id, reason, at)</pre>
+<div class="note"><b>三个关键约束：</b>① <code>usage_ledger.idempotency_key</code> 唯一，保证重试不重复扣；② 剩余额度 = <code>entitlement_period.granted</code> − 已结算 − 已预留，<b>永远由账本推导</b>，不另存可被并发写坏的"余额"字段（可加缓存，但以账本为准）；③ <code>plan_version</code> 只增不改，老用户保留购买时的版本直到续费。</div>
+
+<h2 id="s9"><span class="no">09</span>权益引擎与接口</h2>
+<p>学科插件（阿鸦、妙笔等）<b>不直接读写会员数据</b>，只调用权益引擎的三个动作：检查、预留、结算。这让四款已开发产品以适配器方式接入，无需各自实现收费逻辑。</p>
+<pre class="mermaid">
+sequenceDiagram
+    participant S as 学生端
+    participant P as 学科插件(如阿鸦)
+    participant E as 权益引擎
+    participant L as 计量账本
+    S->>P: 发起模考 / 上传 / 对话
+    P->>E: check(student, meter, subject)
+    E-->>P: allowed / 拒绝原因(科目未开/额度不足/单日上限/宵禁)
+    P->>E: reserve(usage_id, idem_key, qty)
+    E->>L: 写 reserved
+    P->>P: 执行 AI 服务
+    alt 成功
+        P->>E: settle(usage_id, 实际用量)
+        E->>L: reserved→settled
+    else 失败 / 超时
+        P->>E: release(usage_id)
+        E->>L: reserved→released（不扣）
+    end
+    Note over E,L: 预留超过 15 分钟未结算自动释放
+</pre>
+<div class="tbl"><table>
+<tr><th>接口</th><th>调用方</th><th>说明</th></tr>
+<tr><td><code>POST /auth/sms</code> · <code>/auth/wechat</code> · <code>/auth/student-pin</code></td><td>三端</td><td>家长登录 / 学生家庭码 + PIN 登录</td></tr>
+<tr><td><code>POST /households/{id}/students</code></td><td>家长端</td><td>建档，要求附带 consent 版本号</td></tr>
+<tr><td><code>GET /students/{id}/entitlements</code></td><td>三端</td><td>当期额度、已用、剩余、重置日、已开科目</td></tr>
+<tr><td><code>PUT /students/{id}/enrollments</code></td><td>家长端</td><td>选科 / 换科，校验槽位、上线状态、换科频率</td></tr>
+<tr><td><code>POST /checkout</code> · <code>POST /payments/callback/{channel}</code></td><td>家长端 / 支付回调</td><td>下单；回调验签、幂等入账、发放权益</td></tr>
+<tr><td><code>POST /subscriptions/{id}/change</code></td><td>家长端</td><td>升级即时补差；降级写入 pending_change</td></tr>
+<tr><td><code>POST /meter/check|reserve|settle|release</code></td><td>学科插件（内部）</td><td>服务间鉴权，全部需 idempotency_key</td></tr>
+<tr><td><code>POST /uploads/presign</code></td><td>学生端</td><td>签发直传 URL 前校验次数、大小、页数、存储余量</td></tr>
+<tr><td><code>POST /reports</code></td><td>家长 / 学生端</td><td>发起深度报告；证据不足返回"待验证"且不扣次</td></tr>
+<tr><td><code>GET /config/purchase-options?platform=</code></td><td>三端</td><td>按端返回可售商品与价格；iOS 只返回 IAP 商品，且不含任何网站购买引导</td></tr>
+<tr><td><code>POST /iap/apple/transactions</code> · <code>POST /iap/apple/notifications</code></td><td>iOS APP / 苹果服务器</td><td>验证签名交易并发放权益；接收续订、升降级、退款、到期通知</td></tr>
+<tr><td><code>GET/DELETE /accounts/me/devices</code></td><td>三端</td><td>查看与移除已登录设备</td></tr>
+<tr><td><code>POST /students/{id}/export</code> · <code>DELETE /students/{id}</code></td><td>家长端</td><td>数据导出 / 注销，注销走冷静期后物理删除</td></tr>
+</table></div>
+
+<h2 id="s10"><span class="no">10</span>合规红线</h2>
+<div class="tbl"><table>
+<tr><th>事项</th><th>系统落点</th></tr>
+<tr><td>业务定性（学科类线上培训 vs 自主学习工具）</td><td>决定学期/学年能否一次性收费、是否需资金监管；由 <code>billing_schedule</code> 承接两种结论</td></tr>
+<tr><td>付费主体为监护人</td><td>只有 <code>guardian_link.role=owner</code> 可下单；学生端不出现支付入口与促销弹窗</td></tr>
+<tr><td>未成年人个人信息</td><td>建档单独同意；出生信息只存年月；最小化采集；导出与删除可自助</td></tr>
+<tr><td>使用时长保护</td><td><code>daily_usage</code> 单日上限 + 夜间默认关闭；不以"连续打卡"制造焦虑</td></tr>
+<tr><td>APP 上架与运营资质</td><td>APP 备案、隐私政策与第三方 SDK 清单、应用内注销；网站 ICP 备案，线上收费经营需评估经营性 ICP 许可证（详见 §12）</td></tr>
+<tr><td>营销口径</td><td>不承诺提分数值、不押题、不做同伴排名；等级宣传不得暗示"高档讲得更对"</td></tr>
+<tr><td>退费可复核</td><td>诊断、模考、报告均有交付记录（<code>usage_ledger.source_ref</code> 指向结果）</td></tr>
+</table></div>
+
+<h2 id="s11"><span class="no">11</span>Claude Code 开发任务与验收</h2>
+<p>对应蓝图"阶段 0 基座"。建议拆为 6 个可独立提交的任务包，每包附测试用例作为完成标准。</p>
+<div class="tbl"><table>
+<tr><th>#</th><th>任务包</th><th>验收（自动化测试必须通过）</th></tr>
+<tr><td>U1</td><td>账号、家庭、学生档案、同意记录、RBAC</td><td>协同监护人无法下单；同手机号不同家庭无法互看；学生 PIN 连错 5 次锁定 15 分钟</td></tr>
+<tr><td>U2</td><td>plan / plan_version / subject 配置与种子数据</td><td>修改额度只需新增 plan_version；老订阅仍读旧版本</td></tr>
+<tr><td>U3</td><td>订阅状态机、支付回调、升降级、退款计算</td><td>同一回调重放 10 次只入账一次；升级当日补差正确；降级不影响本期</td></tr>
+<tr><td>U4</td><td>权益引擎 + 计量账本（check/reserve/settle/release）</td><td>并发 100 个 reserve 不超发；失败必释放；预留 15 分钟自动过期；余额=账本推导</td></tr>
+<tr><td>U5</td><td>选科槽位、上线门控、换科频率、单日上限与宵禁</td><td>未上线科目不可选；一周期第二次换科被拒；到单日上限后 AI 接口拒绝但自练可用</td></tr>
+<tr><td>U6</td><td>上传直传与去重、报告任务、留存态、导出与注销</td><td>同哈希 24h 不重复扣；PDF 按页折算；试用到期自动转留存态且星图可见</td></tr>
+<tr><td>U7</td><td>设备与会话：多端登录、单一活跃 AI 会话、设备上限与踢出</td><td>同一学生在手机开课后 Web 端会话自动暂停且不双重计时；第 4 台设备登录需家长确认；APP 退后台 30 秒停表</td></tr>
+<tr><td>U8</td><td>苹果 IAP：商品目录映射、交易验证、服务器通知 V2、退款撤权</td><td>沙盒购买后 Web 端即时可见权益；苹果退款通知到达后权益撤回并写账本；同一 originalTransactionId 不重复发放</td></tr>
+<tr><td>U9</td><td>APP 合规包：隐私弹窗先于 SDK 初始化、权限按需申请、应用内注销、未成年人模式</td><td>未同意隐私政策前无任何第三方 SDK 发起网络请求；注销流程可在 APP 内完成；学生端无营销推送</td></tr>
+<tr><td>U10</td><td>Expo 工程基线：单仓结构、dev client、微信 / 支付宝 / 内购原生模块、国内厂商推送、自建热更新服务</td><td>iOS 与安卓开发构建可安装运行；OpenAPI 生成的客户端在两端通过同一套接口测试；未同意隐私政策前推送 SDK 未初始化；热更新从境内服务器拉取成功</td></tr>
+</table></div>
+<p>四款已开发产品的接入顺序建议：先阿鸦（数学，模考与上传最典型），再妙笔、雅典娜、方圆。每科只需实现一个 <code>MeterAdapter</code>，把本科的"一次模考""一次作文批改"映射为 §7 的计量单位。</p>
+
+
+<h2 id="s12"><span class="no">12</span>双端呈现：Web 与手机 APP</h2>
+<p>两端不是两个产品，而是<b>同一套服务的两个入口</b>。所有权益判断、计时、扣次都在服务端完成，客户端只负责展示和采集，这保证了"手机上做了 20 分钟，电脑上立刻看到剩余少了 20 分钟"。</p>
+
+<h3>12.1 端的分工</h3>
+<div class="tbl"><table>
+<tr><th>场景</th><th>Web 端（网站）</th><th>手机 APP</th><th>设计取舍</th></tr>
+<tr><td>日常陪练 / 点点对话</td><td class="n">✓</td><td class="n">✓ 主场景</td><td>碎片时间以手机为主</td></tr>
+<tr><td>拍照上传错题 / 试卷</td><td>支持图片与 PDF 拖拽</td><td class="n">✓ 主场景</td><td>APP 端相机取景、自动裁边、客户端压缩到限额以内再上传，正常拍照不会触到文件大小上限</td></tr>
+<tr><td>实时语音（英语听说等）</td><td class="n">✓（需浏览器麦克风授权）</td><td class="n">✓ 主场景</td><td>APP 录音质量更稳定</td></tr>
+<tr><td>白板讲评课</td><td class="n">✓ 主场景</td><td class="n">✓ 横屏</td><td>大屏体验更好，手机可看</td></tr>
+<tr><td>整卷模考</td><td class="n">✓ 推荐</td><td>允许，开考前提示"建议在电脑或平板完成"</td><td>整卷阅读量大，手机小屏易影响发挥；不强制，免得没电脑的家庭被挡在外面</td></tr>
+<tr><td>家长端：周报、额度、选科</td><td class="n">✓</td><td class="n">✓ 主场景</td><td>周报通过 APP 推送送达；未装 APP 的家长走短信 / 微信服务号链接到网页</td></tr>
+<tr><td>购买与续费</td><td>微信支付（扫码 / H5 / 微信内 JSAPI）、支付宝</td><td>Android：微信 / 支付宝；iOS：苹果 IAP</td><td>见 12.3</td></tr>
+</table></div>
+
+<h3>12.2 统一账号、设备与会话</h3>
+<ul>
+<li><b>一个账号走两端</b>：家长用手机号或微信在任一端登录，看到同一个家庭；学生在 APP 上可用"家庭码 + PIN"，也可由家长手机扫码授权登录网页端。</li>
+<li><b>设备上限</b>：每个学生同时保持登录的设备 ≤ 3 台，每位监护人 ≤ 5 台。超出时由主监护人在"设备管理"里移除旧设备。这既是账号安全，也防止一份会员被多个孩子共用。</li>
+<li><b>单一活跃 AI 会话</b>：同一学生同一时刻只能在一台设备上进行 AI 互动。在新设备开始时，旧设备会话自动暂停并提示"已在另一台设备继续"，学习进度无缝接续，<b>计时不会叠加</b>。</li>
+<li><b>计时以服务端为准</b>：APP 退到后台超过 30 秒、断网、锁屏即停表；客户端时钟不参与计费，避免改系统时间刷时长。</li>
+<li><b>单日上限与宵禁跨端合并</b>：两端用量累加进同一个 <code>daily_usage</code>，不能"手机用满再去电脑用"。</li>
+</ul>
+
+<h3>12.3 支付渠道与 iOS 的特殊规则</h3>
+<div class="warn"><b>iOS 是双端方案里约束最多的一环。</b>在 iOS APP 内售卖数字会员，按苹果审核规则须使用应用内购买（IAP），苹果收取分成（常规 30%，符合小型企业计划或订阅满一年后为 15%）；中国区 APP 内不得出现引导用户去网站购买的链接或文案。网站或 Android 购买的会员，可以在 iOS APP 中登录使用。以下规则为方案设计，上架前请以苹果当期审核指南为准。</div>
+<div class="tbl"><table>
+<tr><th>规则</th><th>Web / Android</th><th>iOS（IAP）</th></tr>
+<tr><td>月度</td><td>连续包月（微信 / 支付宝签约代扣）</td><td>1 个月自动续期订阅</td></tr>
+<tr><td>学期（约 5 个月）</td><td>按 §6 执行</td><td>苹果自动续期没有 5 个月档，<b>用"非续期订阅"实现</b>，到期时间由我方服务端管理；或暂不在 iOS 售卖学期档</td></tr>
+<tr><td>学年</td><td>按 §6 执行</td><td>1 年自动续期订阅</td></tr>
+<tr><td>若监管认定须分期扣款</td><td>价格锁定 + 分月扣款</td><td>苹果不支持分期，<b>iOS 只保留月度</b>（必要时加 3 个月档）</td></tr>
+<tr><td>升级 / 降级</td><td>我方按 §6 折算</td><td>由苹果订阅组处理：升级即时生效并由苹果按比例退差，降级在下次续订生效——与 §6 的方向一致；服务端收到通知后同步调整 <code>entitlement_period</code></td></tr>
+<tr><td>退款</td><td>我方审核并按消耗折算</td><td><b>由苹果裁决</b>，我方无法按消耗折算；收到退款通知即撤回剩余权益并写账本</td></tr>
+<tr><td>第二个孩子席位</td><td>席位加购</td><td>作为独立 IAP 商品；购买时用 <code>appAccountToken</code> 把交易绑定到具体 <code>student_id</code>，因为苹果交易只认 Apple ID，不认孩子</td></tr>
+<tr><td>免费试用</td><td colspan="2">两端统一使用我方的 14 天账号级试用，<b>不使用苹果的"免费试用优惠"</b>，避免同一家庭经由两条路径领到两次试用</td></tr>
+<tr><td>定价</td><td>基准价</td><td>可单独定价（<code>plan_version.channel_prices</code>），差价建议不超过分成比例</td></tr>
+</table></div>
+<div class="note"><b>✅ 已决（V1.2）：iOS 首发即开放应用内购买。</b>首发上架商品：<b>月度自动续期</b>、<b>学年自动续期</b>（基本 / Plus / Pro / Max 各一组，置于同一订阅组以支持苹果升降级），以及<b>第二个孩子席位</b>。学期档首发不在 iOS 售卖，需要学期档的家庭可在网站或安卓购买后到 iOS 登录使用；APP 内不出现这句引导，由客服与官网说明。若法律意见要求分期扣款，iOS 学年商品下架，仅保留月度。</div>
+<p><b>跨渠道重复购买</b>：APP 读取 <code>/config/purchase-options</code> 时，若家庭已有其他渠道的有效订阅，iOS 端隐藏购买按钮，只显示"会员有效至 X 日"。若仍然发生重复购买，权益取两者较高档，不叠加时长，并提示家长取消其中一个续订。</p>
+
+<h3>12.4 数据库增量</h3>
+<pre class="code">device_session(id, account_id, student_id NULL, platform ENUM('web','ios','android'),
+               device_id, app_version, os_version, push_token NULL,
+               last_active_at, revoked_at)
+active_ai_session(student_id PRIMARY KEY, device_session_id, started_at, heartbeat_at)  -- 单一活跃会话锁
+
+product_catalog(id, plan_code, cycle, platform, store_product_id,
+                store_type ENUM('auto_renew','non_renewing','consumable','direct'))
+store_transaction(id, household_id, student_id, store ENUM('apple'),
+                  original_transaction_id, transaction_id UNIQUE, product_id,
+                  environment ENUM('sandbox','production'), app_account_token,
+                  signed_payload, status, expires_at, revoked_at)
+store_notification(id, store, notification_uuid UNIQUE, type, subtype,
+                   payload, processed_at)                      -- 通知幂等
+
+plan_version.channel_prices JSONB   -- {"web": 价格, "android": 价格, "ios": 价格}</pre>
+
+<h3>12.5 双端合规清单</h3>
+<div class="tbl"><table>
+<tr><th>对象</th><th>事项</th></tr>
+<tr><td>网站</td><td>ICP 备案；网站在线收费属于经营性互联网信息服务，需评估办理经营性 ICP 许可证</td></tr>
+<tr><td>APP</td><td>APP 备案；隐私政策首次启动弹窗，<b>用户同意前不初始化任何第三方 SDK</b>；个人信息收集清单与第三方 SDK 共享清单；相机、麦克风、相册按使用时申请，不在启动时一次索取</td></tr>
+<tr><td>APP</td><td>应用内可完成账号注销（苹果审核要求，也是国内个人信息保护要求）</td></tr>
+<tr><td>APP</td><td>适配系统级未成年人模式；学生端不做营销推送，21:30 后不推送</td></tr>
+<tr><td>两端</td><td>AI 生成内容显著标识、生成式 AI 服务相关备案 / 登记（沿用蓝图 V2.0 合规章节）</td></tr>
+</table></div>
+<p class="meta">以上为方案层面的风险梳理，不构成法律意见，上线前请由法务逐项确认。</p>
+
+
+<h3>12.6 APP 技术栈：React Native（Expo）<span class="tag g" style="margin-left:8px">V1.2 已决</span></h3>
+<p>选择 Expo 的核心理由是<b>与 Web 端共享一套 TypeScript</b>：类型、接口客户端、权益展示逻辑写一次，两端复用，Claude Code 维护一个代码库而不是两个。但 Expo 默认工具链有几处面向海外环境，国内上架需要替换，下表是需要提前定下的工程约束。</p>
+<div class="tbl"><table>
+<tr><th>环节</th><th>方案</th><th>要点</th></tr>
+<tr><td>工程结构</td><td>pnpm + Turborepo 单仓：<code>apps/web</code>（Next.js）、<code>apps/mobile</code>（Expo）、<code>packages/api-client</code>（由 OpenAPI 契约生成）、<code>packages/types</code>、<code>packages/entitlement-ui</code></td><td>BFF 的 OpenAPI 契约是两端唯一的接口来源，改接口先改契约</td></tr>
+<tr><td>运行方式</td><td><b>Expo 开发构建（dev client）+ prebuild</b>，不使用 Expo Go</td><td>内购、微信 / 支付宝 SDK、国内推送都是原生模块，Expo Go 无法加载</td></tr>
+<tr><td>苹果内购</td><td><code>expo-iap</code>（或 <code>react-native-iap</code>）+ <b>自建服务端校验</b>（App Store Server API 与服务器通知 V2）</td><td>不使用海外第三方订阅托管服务，交易与用户数据留在境内服务端，落到 §12.4 的 <code>store_transaction</code></td></tr>
+<tr><td>安卓支付</td><td>微信开放平台 SDK、支付宝 SDK，经 config plugin 接入</td><td>微信登录与微信支付共用同一 SDK</td></tr>
+<tr><td>推送</td><td>iOS：APNs；<b>安卓：厂商通道</b>（华为、小米、OPPO、vivo、荣耀），通过国内聚合推送 SDK 接入</td><td>国内安卓没有谷歌推送服务，<code>expo-notifications</code> 不能单独满足；推送 SDK 必须在用户同意隐私政策后才初始化</td></tr>
+<tr><td>拍照上传</td><td><code>expo-camera</code> + <code>expo-image-manipulator</code></td><td>客户端裁边、压缩到当前等级单文件上限以内，再用 §9 的预签名地址直传</td></tr>
+<tr><td>语音</td><td>录音评测用 <code>expo-audio</code>；实时语音对话用 WebRTC 原生模块</td><td>实时语音单独建连接池，与蓝图 V2.0 容量章节一致</td></tr>
+<tr><td>公式与白板</td><td>讲解中的公式、白板讲评课先以 WebView 复用 Web 端组件；性能不足再换 Skia 原生绘制</td><td>首发优先一致性，不做两套白板</td></tr>
+<tr><td>构建与分发</td><td>EAS Build 出包；iOS 上 App Store；安卓上国内主流应用商店，不走 Google Play</td><td>各安卓商店对虚拟商品支付与分成政策不同，上架前逐一确认</td></tr>
+<tr><td>热更新</td><td><code>expo-updates</code> 接<b>自建更新服务器</b>（境内部署）</td><td>只热更新 JS 与资源，不借热更新改变 APP 主要功能，以符合苹果审核要求；原生模块变更必须走商店发版</td></tr>
+</table></div>
+
+<h2 id="s13"><span class="no">13</span>待拍板决策</h2>
+<ol class="dec">
+<li><b>"基本"是付费档还是永久免费档？</b>本规格按思维导图的排列理解为最低付费档，免费仅限 14 天试用 + 留存态。若希望有永久免费档，建议把"留存态"升级为"免费档"并给每周少量 AI 学时，但需先测算获客成本。</li>
+<li><b>核心包是否可拆？</b>若大量家庭只想要数学，可考虑"基本档 = 核心包中任选 1 科"。打包更利于客单价，可拆更利于转化，建议试点期 A/B。</li>
+<li><b>生物、地理是否正式立项？</b>若立项，需补老师角色（按角色规范须有师者身份与传统故事来源）、学科包与南京考情调研，并同步平台规划至九科。</li>
+<li><b>学期 / 学年收费方式</b>：等待法律意见确认是一次性收取还是价格锁定 + 分期扣款。</li>
+<li><b>学时结转</b>：20% 结转是否保留——保留提升好感，但增加成本预测难度。</li>
+<li><b>所有额度数字</b>：用 8 周试点的 P50 / P90 真实用量回调，再定价格。</li>
+<li><span class="tag g">已决</span><b>iOS 首发开放内购</b>（月度 + 学年 + 第二孩子席位，见 §12.3）。原议题：<b>iOS 是否首发即开放内购？</b>不开内购只做"网站购买后登录使用"，按苹果规则存在审核风险（非阅读类 App 通常要求同时提供 IAP）；开放内购则要承担分成并适配周期映射。建议首发即接 IAP，但只上架月度与年度两个商品。</li>
+<li><b>iOS 渠道是否单独定价？</b>允许 iOS 价格高于网站以覆盖分成，但同一权益在不同端价差过大会引发家长投诉，建议差价控制在分成比例以内。</li>
+<li><span class="tag g">已决</span><b>APP 采用 React Native（Expo）</b>，工程约束见 §12.6。原议题：<b>APP 技术选型</b>：推荐 React Native（Expo），与 Web 端（TypeScript）共享类型、API 客户端和权益展示逻辑；若后续要做微信小程序，可评估 uni-app。</li>
+</ol>
+<p class="meta" style="margin-top:40px">版本记录：V1.0（2026-09-27）首版，基于"用户等级模式"思维导图与蓝图 V2.0 §4 整合。<br>V1.1（2026-09-27）确定 Web 端 + 手机 APP 双端呈现：新增 §12 双端呈现（端的分工、设备与单一活跃会话、iOS IAP 规则、数据库增量、双端合规），同步更新 §6 支付、§8 数据库、§9 接口、§10 合规、§11 任务包 U7–U9、§13 决策 7–9。<br>V1.2（2026-09-27）拍板：iOS 首发开放内购（月度 + 学年 + 席位，学期档不在 iOS 首发）；APP 采用 React Native（Expo）。新增 §12.6 APP 技术栈与任务包 U10。</p>
+</main>
+
+<!--claude-mermaid-runtime-begin:3477-->
+<style>.mermaid-diagram{margin-block:4px}.mermaid-diagram svg{display:block;margin:0 auto;max-width:100%;height:auto}</style>
+<script src="/_runtime/mermaid-11.16.1.min.js"></script>
+<script>(function(){
+var CFG={"palettes":{"light":{"surface":"#f4efe4","text":"#42392e","line":"#8a7f6d","border":"#7a6c52","bg":"#fffdf8"},"dark":{"surface":"#262b34","text":"#f2f3f5","line":"#a8adb8","border":"#9aa4b8","bg":"#1f232b"}}};
+if(typeof mermaid==='undefined')return;
+var pres=Array.prototype.slice.call(document.querySelectorAll('pre.mermaid')).filter(function(p){if(p.hasAttribute('data-claude-mermaid-claimed'))return false;p.setAttribute('data-claude-mermaid-claimed','1');return true;});
+if(!pres.length)return;
+var mq=window.matchMedia?window.matchMedia('(prefers-color-scheme: dark)'):null;
+var root=document.documentElement;
+var items=pres.map(function(pre){
+var mount=document.createElement('div');mount.className='mermaid-diagram';
+return {pre:pre,mount:mount,src:pre.textContent||''};
+});
+var seq=0;
+var renderGen=0;
+var lastKey='';
+function pageBg(fallback){
+var els=[document.body,document.documentElement];
+for(var i=0;i<els.length;i++){
+var c=els[i]&&getComputedStyle(els[i]).backgroundColor;
+if(c&&c!=='transparent'&&c!=='rgba(0, 0, 0, 0)')return c;
+}
+return fallback;
+}
+function render(){
+var theme=root.getAttribute('data-theme');
+var dark=theme==='dark'||(!!(mq&&mq.matches)&&theme!=='light');
+var pal=dark?CFG.palettes.dark:CFG.palettes.light;
+var bg=pageBg(pal.bg);
+var key=(dark?'d':'l')+'|'+bg;
+if(key===lastKey)return;
+lastKey=key;
+var gen=++renderGen;
+var font=getComputedStyle(document.body).fontFamily||'sans-serif';
+var nat={useMaxWidth:false};
+mermaid.initialize({
+startOnLoad:false,securityLevel:'strict',theme:'base',
+flowchart:nat,sequence:nat,er:nat,state:nat,class:nat,pie:nat,
+gantt:nat,journey:nat,timeline:nat,gitGraph:nat,mindmap:nat,xyChart:nat,
+quadrantChart:nat,sankey:nat,c4:nat,requirement:nat,block:nat,
+packet:nat,kanban:nat,architecture:nat,radar:nat,
+themeVariables:{background:bg,mainBkg:pal.surface,primaryColor:pal.surface,
+primaryTextColor:pal.text,lineColor:pal.line,primaryBorderColor:pal.border,
+nodeBorder:pal.border,clusterBorder:pal.border,edgeLabelBackground:bg,
+clusterBkg:'rgba(127,127,127,0.07)',titleColor:pal.text,
+darkMode:dark,rowOdd:bg,rowEven:'rgba(127,127,127,0.07)',
+attributeBackgroundColorOdd:bg,attributeBackgroundColorEven:'rgba(127,127,127,0.07)',
+fontSize:'16px',fontFamily:font},
+themeCSS:'.node rect, .node circle, .node polygon, .node path, .cluster rect { stroke-width: 2px; }'
+});
+items.forEach(function(it){
+var id='claude-mermaid-'+seq++;
+mermaid.render(id,it.src).then(function(r){
+if(gen!==renderGen)return;
+var prev=it.pre.previousElementSibling;
+if(prev&&prev.className==='mermaid-diagram'&&prev!==it.mount)return;
+it.mount.innerHTML=r.svg;
+if(!it.mount.parentNode)it.pre.parentNode.insertBefore(it.mount,it.pre);
+it.pre.style.display='none';
+},function(){
+var scratch=document.getElementById(id);
+if(scratch)scratch.parentNode.removeChild(scratch);
+scratch=document.getElementById('d'+id);
+if(scratch)scratch.parentNode.removeChild(scratch);
+if(gen!==renderGen)return;
+if(it.mount.parentNode)it.mount.parentNode.removeChild(it.mount);
+it.pre.style.display='';
+});
+});
+}
+render();
+if(mq&&mq.addEventListener)mq.addEventListener('change',render);
+if(typeof MutationObserver!=='undefined')new MutationObserver(render).observe(root,{attributes:true,attributeFilter:['data-theme']});
+})();</script>
+<!--claude-mermaid-runtime-end-->
+</body>
+</html>

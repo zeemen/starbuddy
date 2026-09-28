@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>魁星点斗 StarBuddy · 底层大模型选型建议 V1.0</title>
+<style>
+:root{--paper:#F7F8F5;--paper-2:#EEF0EA;--ink:#1B2130;--ink-2:#4A5163;--ink-3:#7C8394;--rule:#CDD2C9;--crow:#2E4A7D;--crow-soft:#DCE4F2;--gold:#C9962E;--gold-soft:#F5E7C4;--green:#3F7A5A;--green-soft:#DCEBE1;--red:#A3423A;--red-soft:#F4DEDB;
+--serif:"Noto Serif SC","Songti SC","SimSun","Source Han Serif SC",serif;--sans:"Noto Sans SC","PingFang SC","Microsoft YaHei","Source Han Sans SC",sans-serif;--mono:ui-monospace,Menlo,Consolas,monospace;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--paper:#151922;--paper-2:#1D222D;--ink:#E8EAE4;--ink-2:#B7BCC7;--ink-3:#868D9C;--rule:#343A47;--crow:#8FAAD8;--crow-soft:#243352;--gold:#DDB35A;--gold-soft:#3D3320;--green:#7FB89A;--green-soft:#1F3328;--red:#E08A80;--red-soft:#3A2220}}
+:root[data-theme="dark"]{--paper:#151922;--paper-2:#1D222D;--ink:#E8EAE4;--ink-2:#B7BCC7;--ink-3:#868D9C;--rule:#343A47;--crow:#8FAAD8;--crow-soft:#243352;--gold:#DDB35A;--gold-soft:#3D3320;--green:#7FB89A;--green-soft:#1F3328;--red:#E08A80;--red-soft:#3A2220}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:15.5px;line-height:1.75}
+main{max-width:1040px;margin:0 auto;padding:40px 22px 80px}
+h1,h2,h3{font-family:var(--serif);line-height:1.35}
+h1{font-size:30px;margin:6px 0 4px}
+h2{font-size:22px;margin:52px 0 12px;padding-top:16px;border-top:2px solid var(--ink)}
+h2 .no{color:var(--gold);margin-right:10px}
+h3{font-size:17px;margin:28px 0 8px;color:var(--crow)}
+.meta{color:var(--ink-3);font-size:13px}
+.lede{font-size:16.5px;color:var(--ink-2);border-left:4px solid var(--gold);padding:6px 0 6px 16px;margin:22px 0}
+.tbl{overflow-x:auto;margin:14px 0;border:1px solid var(--rule);border-radius:8px}
+table{border-collapse:collapse;width:100%;min-width:640px;font-size:14px}
+th,td{padding:8px 11px;border-bottom:1px solid var(--rule);text-align:left;vertical-align:top}
+th{background:var(--paper-2);font-weight:600;white-space:nowrap}
+tr:last-child td{border-bottom:none}
+td.n{text-align:center;white-space:nowrap}
+.tier th.t{text-align:center}
+.tag{display:inline-block;font-size:12px;padding:1px 8px;border-radius:10px;margin-right:4px;white-space:nowrap}
+.g{background:var(--green-soft);color:var(--green)}.b{background:var(--crow-soft);color:var(--crow)}.y{background:var(--gold-soft);color:var(--gold)}.r{background:var(--red-soft);color:var(--red)}
+.note{background:var(--paper-2);border-radius:8px;padding:12px 16px;margin:14px 0;font-size:14px;color:var(--ink-2)}
+.warn{background:var(--red-soft);border-left:4px solid var(--red);border-radius:6px;padding:12px 16px;margin:16px 0;font-size:14.5px}
+.warn b{color:var(--red)}
+code{font-family:var(--mono);font-size:13px;background:var(--paper-2);padding:1px 5px;border-radius:4px}
+pre.code{font-family:var(--mono);font-size:12.5px;line-height:1.55;background:var(--paper-2);border:1px solid var(--rule);border-radius:8px;padding:14px 16px;overflow-x:auto}
+pre.mermaid{background:#fff;border:1px solid var(--rule);border-radius:8px;padding:12px;overflow-x:auto;text-align:center}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:14px 0}
+.card{border:1px solid var(--rule);border-radius:10px;padding:12px 14px;background:var(--paper)}
+.card h4{margin:0 0 4px;font-family:var(--serif);font-size:15.5px}
+.card p{margin:0;font-size:13.5px;color:var(--ink-2)}
+.toc{columns:2;font-size:14px;margin:18px 0;padding:14px 18px 14px 34px;background:var(--paper-2);border-radius:8px}
+.toc a{color:var(--crow);text-decoration:none}
+ol.dec li{margin-bottom:8px}
+@media (max-width:640px){.toc{columns:1}h1{font-size:24px}}
+</style>
+</head>
+<body>
+<main>
+<div class="meta">魁星点斗 StarBuddy · 平台基座文档 · 模型与推理域</div>
+<h1>底层大模型选型建议 V1.0</h1>
+<div class="meta">2026-09-27 · 上游：《产品系统架构与技术实施蓝图 V2.0》§6 模型路由、《用户系统与会员权益规格书 V1.2》 · 模型版本与价格截至 2026 年 9 月下旬公开信息，<b>上线前以各平台控制台实时信息为准</b></div>
+
+<p class="lede">结论先行：StarBuddy 不应押注"一个最强模型"，而应<b>按任务分层选型、双云部署、用验证器兜底</b>。生产环境只使用<b>境内已备案的大模型服务</b>；首期以 API 调用 + 应用登记上线、<b>不做微调</b>；判分类任务的正确性由规则验证器和交叉复核保证，而不是寄托于某一家模型的能力。</p>
+
+<div class="grid">
+<div class="card"><h4><span class="tag g">主平台</span>阿里云百炼</h4><p>千问 Qwen3.8 全家（Max / Flash / Omni 实时语音）＋ 托管 DeepSeek ＋ 向量、ASR、内容安全，一份合同覆盖大部分任务。</p></div>
+<div class="card"><h4><span class="tag b">第二平台</span>火山方舟</h4><p>豆包 2.1 Pro / Turbo ＋ 豆包语音全套（实时语音、TTS 2.0、声音复刻）＋ 托管 DeepSeek，承担语音与容灾。</p></div>
+<div class="card"><h4><span class="tag y">专项</span>科大讯飞语音评测</h4><p>英语听说口语打分。它是大量地市中考听说考试的评测技术提供方，口径最接近真实考场。</p></div>
+<div class="card"><h4><span class="tag r">不用于生产</span>Claude / Gemini / GPT</h4><p>境外模型无法满足境内备案登记与未成年人数据不出境要求，只保留在开发工具链中。</p></div>
+</div>
+
+<div class="toc">
+<a href="#s1">1 硬约束：先划掉不能用的</a><br>
+<a href="#s2">2 任务分层与模型推荐（核心表）</a><br>
+<a href="#s3">3 双云策略与模型路由</a><br>
+<a href="#s4">4 成本量级估算</a><br>
+<a href="#s5">5 合规路径与时间线</a><br>
+<a href="#s6">6 现有四科从 Anthropic API 迁移</a><br>
+<a href="#s7">7 用数据定型：南京中考评测集</a><br>
+<a href="#s8">8 待拍板决策</a>
+</div>
+
+<h2 id="s1"><span class="no">01</span>硬约束：先划掉不能用的</h2>
+<div class="tbl"><table>
+<tr><th>约束</th><th>来源</th><th>对选型的影响</th></tr>
+<tr><td><b>备案与登记</b></td><td>《生成式人工智能服务管理暂行办法》：直接调用已备案模型能力的应用，由地方网信办登记；上线后须在显著位置公示所用模型名称与备案号 / 上线编号</td><td>只能调用<b>境内已备案</b>的模型服务；首期走"登记"路径（周期明显短于"备案"）；APP 与网站设置"AI 服务信息公示"页</td></tr>
+<tr><td><b>未成年人个人信息不出境</b></td><td>个人信息保护法、未成年人网络保护条例；蓝图 V2.0 合规章节</td><td>境外 API 在生产链路中出局；模型服务区域选境内（如华北 2 北京）</td></tr>
+<tr><td><b>拟人化互动</b></td><td>《人工智能拟人化互动服务管理暂行办法》，2026 年 7 月 15 日起施行</td><td>七位 AI 老师与点点都有人格化设定，需按此办法做服务属性自查：禁止向未成年人提供虚拟亲密关系；不满 14 周岁须监护人同意；须有未成年人模式、使用时长提醒、防沉迷与情感依赖识别。<b>模型要能稳定守住人设边界</b>，这是人设类任务的首要评测项</td></tr>
+<tr><td><b>不微调</b>（首期）</td><td>对模型做实质性训练优化会从"登记"转为"备案"路径，审查更重、周期更长</td><td>首期能力全部靠提示工程、知识库检索（RAG）、规则验证器实现；自部署开源模型与微调放到第二阶段评估</td></tr>
+<tr><td><b>判分可追溯</b></td><td>蓝图 V2.0：讲解不能覆盖验证器或 Rubric 结果</td><td>数学、物理、化学判分必须有符号计算验证；作文判分须多次采样 + 校准，不能单次调用定分</td></tr>
+</table></div>
+
+<h2 id="s2"><span class="no">02</span>任务分层与模型推荐（核心表）</h2>
+<p>StarBuddy 的 AI 调用可分成九类任务，它们对"智能、速度、价格、稳定性"的要求差别很大。每类只给<b>主选 + 备选</b>两个模型，主备分属不同厂商或不同平台，便于容灾。</p>
+<div class="tbl"><table>
+<tr><th>#</th><th>任务</th><th>关键要求</th><th>主选</th><th>备选</th><th>兜底 / 验证</th></tr>
+<tr><td>T1</td><td><b>AI 老师教学对话</b><br>讲解、苏格拉底式追问、错因引导</td><td>中文表达、指令遵循、人设稳定、流式首字快、价格低（调用量最大）</td><td>Qwen3.8-Flash（非思考模式）</td><td>豆包 2.1 Turbo</td><td>人设回归测试集；需要推理时升级到 T2</td></tr>
+<tr><td>T2</td><td><b>解题与判分推理</b><br>数学、物理、化学计算与推导</td><td>推理正确率优先，延迟可放宽</td><td>Qwen3.8-Max（思考模式，按难度调推理强度）</td><td>DeepSeek V4.1-Flash（思考模式）</td><td><b>SymPy / 几何规则验证器定分</b>；模考判分主备双模型交叉，不一致转人工复核</td></tr>
+<tr><td>T3</td><td><b>拍照识题与手写识别</b><br>错题、试卷、手写作答</td><td>公式、图形、手写体识别；版面理解</td><td>Qwen3.8-Flash（原生多模态）</td><td>DeepSeek V4.1-Flash（原生视觉）</td><td>专用 OCR 模型作兜底候选；识别置信度低时请学生确认题面</td></tr>
+<tr><td>T4</td><td><b>作文批改</b><br>语文作文（45 分）、英语书面表达</td><td>中文审美判断、Rubric 一致性、评语温度</td><td>Qwen3.8-Max</td><td>豆包 2.1 Pro</td><td>同篇多次采样取中位分；用南京阅卷样卷校准；分差超阈值转人工</td></tr>
+<tr><td>T5</td><td><b>英语口语评测</b><br>朗读、情景问答、复述</td><td>音素级发音、流利度、与中考听说口径一致</td><td>科大讯飞语音评测</td><td>—</td><td>大模型只负责评语与改进建议，<b>不负责打分</b></td></tr>
+<tr><td>T6</td><td><b>语音交互</b><br>识别、合成、实时对话</td><td>七位老师 + 点点的专属音色；低延迟</td><td>识别：豆包 Seed-ASR；合成：豆包 Seed-TTS 2.0（配声音复刻 2.0 定制角色音色）</td><td>百炼语音识别与合成</td><td>教学场景用"识别 → 大模型 → 合成"三段式，可控可审；端到端实时语音（豆包实时语音 / qwen3.8-omni-flash-realtime）只用于英语口语陪练与点点闲聊</td></tr>
+<tr><td>T7</td><td><b>知识库检索</b><br>向量化与重排</td><td>中文教材与题目语义匹配；版本长期稳定</td><td>百炼文本向量模型 + 重排模型</td><td>豆包 Seed-Embedding（支持图文）</td><td><b>向量模型一经选定即锁版本</b>，更换需全量重建索引，不做主备切换</td></tr>
+<tr><td>T8</td><td><b>后台批量生产</b><br>变式题、预生成讲解、题目标注、知识图谱</td><td>价格最低，可离线、可夜间</td><td>DeepSeek V4.1-Flash（闲时价格 + 上下文缓存）</td><td>Qwen3.8-Flash 批量调用</td><td>全部产出进入教研审核流水线，未审核内容不出现在学生端</td></tr>
+<tr><td>T9</td><td><b>内容安全与人设守卫</b></td><td>输入输出审核；危机信号识别；情感依赖识别</td><td>平台内容安全服务（与主平台同云）+ 自建规则与关键词库</td><td>另一云的内容安全服务</td><td>危机信号直接转人工与监护人通知流程，不交给模型自由回应</td></tr>
+</table></div>
+<div class="note"><b>为什么点点不单独用"更聪明"的模型？</b>点点是调用频次最高、最需要守边界的角色。拟人化办法要求避免过度迎合、诱导情感依赖，这更依赖人设提示、守卫规则和回归测试，而不是模型的智力上限。所以点点跑 T1 档的快速模型，外面套 T9 守卫。</div>
+
+<h2 id="s3"><span class="no">03</span>双云策略与模型路由</h2>
+<p>之所以选百炼 + 方舟，还有一个工程上的好处：<b>两家都托管 DeepSeek</b>。同一个模型在两朵云上都可调用，一家限流或故障时可以切到另一家，而输出口径不变，回归测试不用重跑。</p>
+<pre class="mermaid">
+flowchart LR
+    A[学科插件<br>阿鸦 / 妙笔 / 雅典娜 / 方圆 …] --> R[模型路由层<br>按任务类型 T1–T9 选模型]
+    R --> Q[阿里云百炼<br>Qwen3.8-Flash / Max · DeepSeek · 向量 · ASR]
+    R --> V[火山方舟<br>豆包 2.1 · Seed 语音全套 · DeepSeek]
+    R --> X[讯飞语音评测]
+    R --> S[验证器<br>SymPy · 几何规则 · Rubric]
+    Q -. 限流/故障 .-> V
+    V -. 限流/故障 .-> Q
+    R --> L[调用账本<br>任务 · 模型版本 · token · 成本 · 学生权益扣减]
+</pre>
+<ul>
+<li><b>路由按任务，不按学科</b>：学科插件只声明"我要一次 T2 推理"，由路由层决定调用哪个模型、哪个版本。换模型只改路由配置。</li>
+<li><b>锁定快照版本</b>：生产只调用带日期的快照模型名（如千问的日期快照），不调用会自动漂移的"最新版"别名。模型升级走"评测集回归 → 灰度 5% → 全量"。</li>
+<li><b>调用账本</b>：每次调用记录模型、版本、token、成本，并关联到《用户系统规格书》的 <code>usage_ledger</code>。这样才能按会员档位核算单位经济。</li>
+<li><b>各档会员同一教学质量</b>：路由不按会员等级给不同的判分模型。Max 用户多的是服务量，不是"更准的模型"。</li>
+</ul>
+
+<h2 id="s4"><span class="no">04</span>成本量级估算</h2>
+<p>以 T1 主力模型 Qwen3.8-Flash 当前公开价（输入约 0.8 元 / 百万 token、输出约 2.7 元 / 百万 token）粗算。以下假设均为估算口径，需用真实会话替换：</p>
+<div class="tbl"><table>
+<tr><th>项目</th><th>假设</th><th>每小时有效学时成本</th></tr>
+<tr><td>T1 教学对话</td><td>每小时约 120 轮；每轮输入 6k token（系统提示 + 知识库 + 历史，其中约 80% 命中缓存），输出 400 token</td><td>约 0.3 元</td></tr>
+<tr><td>T2 推理判分</td><td>约占调用量 15%，思考模式输出量为 T1 的 5–10 倍</td><td>约 0.3–0.8 元</td></tr>
+<tr><td>T6 语音合成</td><td>取决于语音占比与音色计费方式</td><td>待实测，<b>可能是最大单项</b></td></tr>
+<tr><td colspan="2"><b>合计（不含语音）</b></td><td><b>约 0.6–1.1 元 / 小时</b></td></tr>
+</table></div>
+<p>按《用户系统规格书》额度换算，Plus 档每月 20 小时，文本类模型成本约 12–22 元 / 学生；Max 档 66 小时的公平使用上限约 40–75 元。这意味着<b>模型费用不太可能是单位经济的主要矛盾</b>，语音、教研审核与获客成本更值得盯。价格近几个月变动频繁（涨降都有），估算每季度更新一次。</p>
+
+<h2 id="s5"><span class="no">05</span>合规路径与时间线</h2>
+<div class="tbl"><table>
+<tr><th>阶段</th><th>模型使用方式</th><th>合规动作</th><th>备注</th></tr>
+<tr><td>0 基座（现在起）</td><td>API 调用已备案模型；无微调</td><td>算法备案 + 生成式 AI 应用登记同步启动；拟人化服务属性自查；AI 服务信息公示页</td><td>登记周期以月计，<b>应与开发并行启动</b>，不要等产品做完再办</td></tr>
+<tr><td>1 四科上线</td><td>同上；路由与评测成熟</td><td>登记完成后公测；未成年人模式、时长提醒上线</td><td>—</td></tr>
+<tr><td>2 规模化（约 50 万用户后）</td><td>评估自部署开源模型（Qwen3.8-27B、DeepSeek V4.1-Flash 等开放权重模型）以降本；评估针对南京考情的微调</td><td>自部署或微调后对外服务，需评估是否转为自行大模型备案</td><td>届时用阶段 1 积累的真实数据判断是否值得</td></tr>
+</table></div>
+<p class="meta">以上为方案层面的风险梳理，不构成法律意见；备案与登记的具体适用，请以属地网信部门与法务意见为准。</p>
+
+<h2 id="s6"><span class="no">06</span>现有四科从 Anthropic API 迁移</h2>
+<p>文砺、阿鸦、知行、开口成章目前在开发测试阶段使用 Anthropic API（英语另有 Google AI 链路）。迁移原则仍是蓝图的"不重写、适配接入"：</p>
+<ol>
+<li><b>接口层</b>：各产品的模型调用统一改为调路由层。Qwen3.8-Flash 同时兼容 OpenAI 与 Anthropic 接口协议，现有基于 Anthropic SDK 的调用代码可以先以最小改动接到百炼，降低切换门槛。</li>
+<li><b>提示词层</b>：为 Claude 调好的提示词不一定在千问、豆包上等效。每个老师的人设提示与判分提示，都要在新模型上用评测集重跑并调整，<b>这是迁移的主要工作量</b>。</li>
+<li><b>开发工具链不受影响</b>：Claude Code 继续作为开发工具使用，这与生产环境调用哪个模型是两回事。</li>
+<li><b>数据与部署同步迁移</b>：模型换到境内后，学生数据若仍存放在境外托管的数据库与服务上，数据出境问题依然存在。生产环境的数据库、对象存储与后端服务也需要部署在境内云。</li>
+</ol>
+
+<h2 id="s7"><span class="no">07</span>用数据定型：南京中考评测集</h2>
+<p>本文的"主选"是基于公开信息的初始推荐，<b>最终选型要用自己的评测集定</b>。国产模型迭代以月计，公开榜单与教学场景之间的差距很大，只有自己的评测集能回答"哪个模型判南京中考作文最准"。</p>
+<div class="tbl"><table>
+<tr><th>评测集</th><th>规模（建议）</th><th>衡量指标</th></tr>
+<tr><td>判分一致性</td><td>每科 200 份真实作答，含人工阅卷分</td><td>与人工分的一致率、平均分差、极端误判数</td></tr>
+<tr><td>解题正确率</td><td>数理化各 300 题，覆盖南京中考难度结构</td><td>最终答案正确率、过程正确率（验证器判定）</td></tr>
+<tr><td>拍照识题</td><td>500 张真实学生拍摄（含手写、倾斜、阴影）</td><td>题面还原准确率、公式识别准确率</td></tr>
+<tr><td>人设与安全</td><td>每位老师与点点各 100 条对抗对话</td><td>人设漂移率、越界率（含亲密关系、依赖诱导）、危机信号识别率</td></tr>
+<tr><td>体验与成本</td><td>真实会话回放</td><td>首字延迟 p95、每小时成本</td></tr>
+</table></div>
+<p>第一轮建议每类任务比较 3 个候选（本表主选、备选，再加一个 GLM 或 Kimi 系列模型作为对照），两周内出结论。此后每次模型升级都跑这套回归。</p>
+
+<h2 id="s8"><span class="no">08</span>待拍板决策</h2>
+<ol class="dec">
+<li><b>主平台选百炼还是方舟？</b>本文推荐百炼为主（千问全家 + 托管 DeepSeek），方舟为辅（语音强项）。若语音在产品中占比很高，可反过来。</li>
+<li><b>英语口语评测是否采购讯飞？</b>它的打分口径最接近中考，但有采购成本与商务谈判周期；替代方案是用通用语音模型自建，打分可信度会明显下降。</li>
+<li><b>七位老师与点点的音色</b>：用平台预置音色，还是用声音复刻定制专属音色（涉及配音演员授权）。</li>
+<li><b>算法备案与应用登记的启动时间</b>：建议本月即启动，与阶段 0 开发并行。</li>
+<li><b>数据与后端迁移境内</b>：现有境外托管的数据库与服务的迁移时点，需在第一个真实学生注册前完成。</li>
+</ol>
+
+<h3>主要信息来源</h3>
+<p class="meta">国家网信办生成式人工智能服务已备案信息公告（2026 年 1–2 月、3–4 月）；《人工智能拟人化互动服务管理暂行办法》；阿里云百炼模型价格与 Qwen3.8-Flash 调价公告；DeepSeek API 定价文档与 9 月调价公告；火山引擎豆包大模型产品页与豆包 2.1 发布报道；科大讯飞智慧教育英语听说评测介绍。模型价格与版本变化快，引用前请核对原始页面。</p>
+<p class="meta" style="margin-top:30px">版本记录：V1.0（2026-09-27）首版。</p>
+</main>
+
+<!--claude-mermaid-runtime-begin:3477-->
+<style>.mermaid-diagram{margin-block:4px}.mermaid-diagram svg{display:block;margin:0 auto;max-width:100%;height:auto}</style>
+<script src="/_runtime/mermaid-11.16.1.min.js"></script>
+<script>(function(){
+var CFG={"palettes":{"light":{"surface":"#f4efe4","text":"#42392e","line":"#8a7f6d","border":"#7a6c52","bg":"#fffdf8"},"dark":{"surface":"#262b34","text":"#f2f3f5","line":"#a8adb8","border":"#9aa4b8","bg":"#1f232b"}}};
+if(typeof mermaid==='undefined')return;
+var pres=Array.prototype.slice.call(document.querySelectorAll('pre.mermaid')).filter(function(p){if(p.hasAttribute('data-claude-mermaid-claimed'))return false;p.setAttribute('data-claude-mermaid-claimed','1');return true;});
+if(!pres.length)return;
+var mq=window.matchMedia?window.matchMedia('(prefers-color-scheme: dark)'):null;
+var root=document.documentElement;
+var items=pres.map(function(pre){
+var mount=document.createElement('div');mount.className='mermaid-diagram';
+return {pre:pre,mount:mount,src:pre.textContent||''};
+});
+var seq=0;
+var renderGen=0;
+var lastKey='';
+function pageBg(fallback){
+var els=[document.body,document.documentElement];
+for(var i=0;i<els.length;i++){
+var c=els[i]&&getComputedStyle(els[i]).backgroundColor;
+if(c&&c!=='transparent'&&c!=='rgba(0, 0, 0, 0)')return c;
+}
+return fallback;
+}
+function render(){
+var theme=root.getAttribute('data-theme');
+var dark=theme==='dark'||(!!(mq&&mq.matches)&&theme!=='light');
+var pal=dark?CFG.palettes.dark:CFG.palettes.light;
+var bg=pageBg(pal.bg);
+var key=(dark?'d':'l')+'|'+bg;
+if(key===lastKey)return;
+lastKey=key;
+var gen=++renderGen;
+var font=getComputedStyle(document.body).fontFamily||'sans-serif';
+var nat={useMaxWidth:false};
+mermaid.initialize({
+startOnLoad:false,securityLevel:'strict',theme:'base',
+flowchart:nat,sequence:nat,er:nat,state:nat,class:nat,pie:nat,
+gantt:nat,journey:nat,timeline:nat,gitGraph:nat,mindmap:nat,xyChart:nat,
+quadrantChart:nat,sankey:nat,c4:nat,requirement:nat,block:nat,
+packet:nat,kanban:nat,architecture:nat,radar:nat,
+themeVariables:{background:bg,mainBkg:pal.surface,primaryColor:pal.surface,
+primaryTextColor:pal.text,lineColor:pal.line,primaryBorderColor:pal.border,
+nodeBorder:pal.border,clusterBorder:pal.border,edgeLabelBackground:bg,
+clusterBkg:'rgba(127,127,127,0.07)',titleColor:pal.text,
+darkMode:dark,rowOdd:bg,rowEven:'rgba(127,127,127,0.07)',
+attributeBackgroundColorOdd:bg,attributeBackgroundColorEven:'rgba(127,127,127,0.07)',
+fontSize:'16px',fontFamily:font},
+themeCSS:'.node rect, .node circle, .node polygon, .node path, .cluster rect { stroke-width: 2px; }'
+});
+items.forEach(function(it){
+var id='claude-mermaid-'+seq++;
+mermaid.render(id,it.src).then(function(r){
+if(gen!==renderGen)return;
+var prev=it.pre.previousElementSibling;
+if(prev&&prev.className==='mermaid-diagram'&&prev!==it.mount)return;
+it.mount.innerHTML=r.svg;
+if(!it.mount.parentNode)it.pre.parentNode.insertBefore(it.mount,it.pre);
+it.pre.style.display='none';
+},function(){
+var scratch=document.getElementById(id);
+if(scratch)scratch.parentNode.removeChild(scratch);
+scratch=document.getElementById('d'+id);
+if(scratch)scratch.parentNode.removeChild(scratch);
+if(gen!==renderGen)return;
+if(it.mount.parentNode)it.mount.parentNode.removeChild(it.mount);
+it.pre.style.display='';
+});
+});
+}
+render();
+if(mq&&mq.addEventListener)mq.addEventListener('change',render);
+if(typeof MutationObserver!=='undefined')new MutationObserver(render).observe(root,{attributes:true,attributeFilter:['data-theme']});
+})();</script>
+<!--claude-mermaid-runtime-end-->
+</body>
+</html>
