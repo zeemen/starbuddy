@@ -80,7 +80,7 @@ test("能力声明默认报 0.9.0；默认版本设为 1.0.0 时报 1.0.0 并通
   const r0 = adapter.handle("GET", "capabilities", undefined);
   assert.equal((r0.body as Json).contract_version, "0.9.0");
   assert.deepEqual(contract.validate("Capabilities", r0.body, "0.9.0"), { ok: true });
-  const v1 = createAdapter({ content: realPack, taxonomy, contract: loadContract({ defaultVersion: "1.0.0" }) });
+  const v1 = createAdapter({ content: realPack, taxonomy, contract: loadContract({ defaultVersion: "1.0.0" }), allowCandidate: true });
   const r1 = v1.handle("GET", "capabilities", undefined);
   assert.equal(r1.status, 200);
   assert.equal((r1.body as Json).contract_version, "1.0.0");
@@ -238,4 +238,13 @@ test("v0.9 行为不变：响应报 0.9.0、不带 attempt_id（即使请求带�
   assert.equal(b.contract_version, "0.9.0");
   assert.deepEqual(contract.validate("GradeResponse", b, "0.9.0"), { ok: true });
   for (const e of b.evidence) assert.ok(!("attempt_id" in e));
+});
+
+test("候选版开关没开：声明 1.0.0 的请求返回 CONTRACT_VERSION_UNSUPPORTED，0.9.0 照常", () => {
+  const closed = makeAdapter(realPack, undefined, false);
+  const r = closed.handle("POST", "grade", gradeBodyV1(fillItem.id, { text: fillItem.answer[0]! }));
+  assert.equal(r.status, 400);
+  assert.equal((r.body as Json).code, "CONTRACT_VERSION_UNSUPPORTED");
+  const ok = closed.handle("POST", "grade", gradeBody(fillItem.id, { text: fillItem.answer[0]! }));
+  assert.equal(ok.status, 200);
 });

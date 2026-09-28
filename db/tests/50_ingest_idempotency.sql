@@ -71,6 +71,7 @@ SELECT t.ok((SELECT count(*) FROM platform.replay_seal WHERE idempotency_key = '
 RESET ROLE;
 SELECT t.throws($$UPDATE platform.replay_seal SET usage_id = 'a0b16000-0000-4000-8000-000000000009'$$, '42501',
                 '触发器兜底：连表属主也不能改封存');
+SELECT t.throws($$TRUNCATE platform.replay_seal$$, '42501', '封存表不能清空（连表属主也不行）');
 
 SET ROLE starbuddy_bff;
 SELECT t.throws($$SELECT * FROM platform.replay_seal$$, '42501', 'BFF 读不到封存表');

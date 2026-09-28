@@ -5,7 +5,7 @@
 //
 // 适配器不读写任何平台表（CLAUDE.md 规则 1）：证据与推断放在响应里，由学习服务落库。
 // 不输出掌握度（规则 2）；判分只来自验证器（规则 3）；响应和日志里不出现答案、解析、评分标准（decisions #4）。
-import type { ContractValidator, ContractVersion, SchemaName } from "./contract.ts";
+import { CANDIDATE_CONTRACT_VERSIONS, type ContractValidator, type ContractVersion, type SchemaName } from "./contract.ts";
 import type { Admission, LoadedPack, PackItem } from "./content.ts";
 import { deriveUuid, requestFingerprint } from "./ids.ts";
 import type { AyaTaxonomy } from "./taxonomy.ts";
@@ -116,6 +116,8 @@ export interface AdapterDeps {
   log?: (record: LogRecord) => void;
   /** 幂等缓存条数上限（只存指纹，用于同 key 不同请求体的冲突检测；ID 本身是确定性派生的） */
   idempotencyCacheSize?: number;
+  /** 候选版（CANDIDATE_CONTRACT_VERSIONS）签字前只在测试与演练里接受：未开时声明候选版的请求返回 CONTRACT_VERSION_UNSUPPORTED */
+  allowCandidate?: boolean;
 }
 
 class ProblemError extends Error {
@@ -162,6 +164,10 @@ export function createAdapter(deps: AdapterDeps) {
     if (typeof v !== "string") return contract.version;
     if (!contract.supports(v)) {
       throw new ProblemError(400, "CONTRACT_VERSION_UNSUPPORTED", "contract_version is not supported by this adapter", `supported: ${contract.versions.join(", ")}`);
+    }
+    // 适配器自己的第二道闸（安全审查建议 4）：学习服务之外，候选版未开放时也不应答
+    if (CANDIDATE_CONTRACT_VERSIONS.includes(v) && !deps.allowCandidate) {
+      throw new ProblemError(400, "CONTRACT_VERSION_UNSUPPORTED", "candidate contract version is not enabled on this adapter");
     }
     return v;
   };

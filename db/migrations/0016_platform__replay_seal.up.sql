@@ -25,9 +25,14 @@ BEGIN
 END $$;
 CREATE TRIGGER reject_replay_seal_change BEFORE UPDATE ON platform.replay_seal
   FOR EACH ROW EXECUTE FUNCTION platform.reject_replay_seal_change();
+-- TRUNCATE 也挡住；DELETE 不加触发器（学生档案删除时要级联删除），只靠不授权
+CREATE TRIGGER reject_replay_seal_truncate BEFORE TRUNCATE ON platform.replay_seal
+  FOR EACH STATEMENT EXECUTE FUNCTION platform.reject_replay_seal_change();
 REVOKE EXECUTE ON FUNCTION platform.reject_replay_seal_change() FROM PUBLIC;
 
 GRANT SELECT, INSERT ON platform.replay_seal TO starbuddy_learning;
 ALTER TABLE platform.replay_seal ENABLE ROW LEVEL SECURITY;
 ALTER TABLE platform.replay_seal FORCE ROW LEVEL SECURITY;
-CREATE POLICY replay_seal_service ON platform.replay_seal FOR ALL TO starbuddy_learning USING (true) WITH CHECK (true);
+-- 按操作分开写：以后误授 UPDATE / DELETE 时 RLS 这一层也不放行（安全审查建议 6）
+CREATE POLICY replay_seal_read ON platform.replay_seal FOR SELECT TO starbuddy_learning USING (true);
+CREATE POLICY replay_seal_insert ON platform.replay_seal FOR INSERT TO starbuddy_learning WITH CHECK (true);

@@ -12,8 +12,9 @@ export const realPack = loadPack();
 export const STUDENT = "c1000000-0000-4000-8000-0000000000c1";
 export const RUBRIC = "aya-symbolic-ts@0.1.0";
 
-export function makeAdapter(content: LoadedPack = realPack, logs?: LogRecord[]) {
-  return createAdapter({ content, taxonomy, contract, ...(logs ? { log: (r) => logs.push(r) } : {}) });
+// 测试即演练环境：打开候选版开关；关着时的行为由 contract-v1.test.ts 单独测
+export function makeAdapter(content: LoadedPack = realPack, logs?: LogRecord[], allowCandidate = true) {
+  return createAdapter({ content, taxonomy, contract, allowCandidate, ...(logs ? { log: (r) => logs.push(r) } : {}) });
 }
 
 let seq = 0;

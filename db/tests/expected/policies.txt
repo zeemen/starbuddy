@@ -94,7 +94,8 @@ platform.plan_feature|plan_feature_read|SELECT|starbuddy_bff|PERMISSIVE|using=(E
    FROM platform.plan_config c
   WHERE (((c.version)::text = (plan_feature.config_version)::text) AND (c.status <> 'draft'::text))))|check=-
 platform.practice_log|practice_log_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
-platform.replay_seal|replay_seal_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
+platform.replay_seal|replay_seal_insert|INSERT|starbuddy_learning|PERMISSIVE|using=-|check=true
+platform.replay_seal|replay_seal_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
 platform.resource_type|resource_type_read|SELECT|starbuddy_bff|PERMISSIVE|using=true|check=-
 platform.review_task|review_service_open|INSERT|starbuddy_learning|PERMISSIVE|using=-|check=((status = 'open'::text) AND (resolved_at IS NULL) AND (resolved_by_account IS NULL))
 platform.review_task|review_service_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-

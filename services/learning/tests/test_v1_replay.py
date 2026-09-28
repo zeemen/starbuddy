@@ -239,3 +239,57 @@ async def test_holder_with_expired_lease_cannot_commit_after_seal(api, pools, st
     r = await running
     assert r.status_code == 409 and r.json()["code"] == "IDEMPOTENCY_KEY_SEALED"
     assert await counts(admin, student) == NOTHING
+
+
+async def _legacy_row(admin, student: str, key: str, status: str, summary: str | None = None) -> None:
+    """0016 之前写入的旧行：没有 usage_id。"""
+    async with admin.acquire() as c:
+        await c.execute(
+            """INSERT INTO platform.ingest_request (method, idempotency_key, subject, student_id, request_fingerprint, attempt_ids,
+                 status, summary, error_code)
+               VALUES ('grade', $1, 'aya', $2::uuid, repeat('a', 64), ARRAY[gen_random_uuid()], $3, $4::jsonb,
+                       CASE WHEN $3 = 'failed' THEN 'INTERNAL' END)""", key, student, status, summary)
+
+
+async def test_legacy_row_without_usage_id_is_matched_by_student(api, pools, student):
+    """安全审查必须改 2：旧行 usage_id 为空时只核对学生——成功的拿到结果，失败的被封存。"""
+    _, admin = pools
+    ok = to_v1_body(grade_body(student))
+    await _legacy_row(admin, student, ok["context"]["idempotency_key"], "succeeded", '{"verdict": "correct"}')
+    r = await api.get(replay_url("grade", ok))
+    assert r.status_code == 200 and r.json() == {"verdict": "correct"}
+    failed = to_v1_body(grade_body(student))
+    await _legacy_row(admin, student, failed["context"]["idempotency_key"], "failed")
+    assert (await api.get(replay_url("grade", failed))).status_code == 404
+    assert await seals(admin, failed["context"]["idempotency_key"]) == 1
+    other = copy.deepcopy(failed)
+    other["context"]["student_ref"] = str(uuid.uuid4())
+    other["context"]["idempotency_key"] = str(uuid.uuid4())
+    await _legacy_row(admin, student, other["context"]["idempotency_key"], "failed")
+    assert (await api.get(replay_url("grade", other))).status_code == 404
+    assert await seals(admin, other["context"]["idempotency_key"]) == 0, "旧行学生对不上：不封存"
+
+
+async def test_sealed_key_on_v0_path_uses_v0_error_code(api, pools, student, fake_adapter):
+    """安全审查必须改 3：v0 契约没有 IDEMPOTENCY_KEY_SEALED，v0 路径返回 409 IDEMPOTENCY_CONFLICT。"""
+    _, admin = pools
+    body = grade_body(student)
+    body["context"]["idempotency_key"] = str(uuid.uuid4())
+    assert (await api.get(replay_url("grade", body))).status_code == 404
+    r = await api.post("/internal/v0/grade", json=body)
+    assert r.status_code == 409 and r.json()["code"] == "IDEMPOTENCY_CONFLICT" and r.json()["retryable"] is False
+    assert fake_adapter.calls == 0 and await counts(admin, student) == NOTHING
+
+
+async def test_startup_refuses_without_migration_0016():
+    """安全审查必须改 1：封存表不存在时拒绝启动（v0 写入也依赖它）。"""
+    from conftest import settings
+    from learning.app import create_app
+
+    class NoSealPool:
+        async def fetchval(self, q, *a):
+            return False
+    app = create_app(settings(), pool=NoSealPool())
+    with pytest.raises(RuntimeError, match="0016"):
+        async with app.router.lifespan_context(app):
+            pass

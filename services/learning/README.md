@@ -12,6 +12,9 @@
 
 接口定义：`packages/contracts/openapi/learning-internal.v0.yaml`、`learning-internal.v1.yaml`（迁移期并存到 W6，specs/plugin-api-v1.0-step2）。只供 BFF 调用，服务间令牌鉴权。
 
+部署注意（specs/plugin-api-v1.0-step2）：先执行迁移 0016 再上线本版本（启动时检查 `platform.replay_seal`，不存在就拒绝启动）；
+重放接口的查询串带 `student_ref`、`usage_id`，运行 uvicorn 时加 `--no-access-log`，不经会记录 URL 的代理。
+
 ## 一次请求怎么走
 1. 按契约校验请求；学科必须配置了适配器；作答的题目必须已在平台登记。
 2. **幂等检查**（`platform.ingest_request`，不分区）：

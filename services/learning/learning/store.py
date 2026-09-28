@@ -104,7 +104,7 @@ async def replay(pool, *, method, key, student_id, usage_id) -> Replay:
     """只查不执行（learning-internal.v1 重放接口，评审 N17）。
     - 已成功且学生、usage_id 都对得上 → found；
     - 同 key 仍在执行（租约未过期）→ busy；
-    - 学生或 usage_id 对不上 → not_found，**不封存**（不能替别人封 key，也不透露 key 是否存在）；
+    - 学生或 usage_id 对不上（旧行 usage_id 为空时只比学生）→ not_found，**不封存**（不能替别人封 key，也不透露 key 是否存在）；
     - 没有记录、失败过、或持有者租约已过期 → not_found，并封存这个 key。"""
     async with learning_tx(pool) as conn:
         await _key_lock(conn, method, key)
@@ -113,7 +113,8 @@ async def replay(pool, *, method, key, student_id, usage_id) -> Replay:
                  FROM platform.ingest_request WHERE method = $1 AND idempotency_key = $2""",
             method, key,
         )
-        if row is not None and (row["student_id"] != student_id or row["usage_id"] != usage_id):
+        # 0016 之前的旧行没有 usage_id：只核对学生（安全审查必须改 2：否则 404 却不封存，BFF 换新 key 后原 key 仍可能执行）
+        if row is not None and (row["student_id"] != student_id or row["usage_id"] not in (None, usage_id)):
             return Replay("not_found")
         if row is not None and row["status"] == "succeeded":
             return Replay("found", json.loads(row["summary"]))

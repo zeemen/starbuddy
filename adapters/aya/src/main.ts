@@ -39,6 +39,7 @@ const adapter = createAdapter({
   content: loadPack(),
   taxonomy: loadTaxonomy(),
   contract: loadContract({ defaultVersion }),
+  allowCandidate: candidateAllowed,
   // 日志只含方法、状态码、错误码、request_id、耗时（adapter.ts LogRecord）
   log: (r) => console.log(JSON.stringify(r)),
 });

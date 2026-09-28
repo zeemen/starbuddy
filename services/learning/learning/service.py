@@ -119,6 +119,9 @@ class IngestService:
                 usage_id=ctx.get("usage_id"),
             )
             if c.kind == "sealed":
+                # v0 契约的错误码枚举里没有 IDEMPOTENCY_KEY_SEALED：v0 路径用已有的 IDEMPOTENCY_CONFLICT（同为 409、不可重试）
+                if version == "0.9.0":
+                    raise IngestError(409, "IDEMPOTENCY_CONFLICT", "idempotency_key was sealed by a replay lookup; use a new key")
                 raise IngestError(409, "IDEMPOTENCY_KEY_SEALED", "idempotency_key was sealed by a replay lookup; use a new key")
             if c.kind == "conflict":
                 raise IngestError(409, "IDEMPOTENCY_CONFLICT", "idempotency_key was used with a different request body")

@@ -76,6 +76,11 @@ def create_app(
         internal_contract()
         own_pool = pool is None
         p = pool or await asyncpg.create_pool(settings.database_url, min_size=1, max_size=10)
+        # 迁移 0016 必须先于本版本执行：v0、v1 写入都要查封存表（安全审查必须改 1）
+        if not await p.fetchval("SELECT to_regclass('platform.replay_seal') IS NOT NULL"):
+            if own_pool:
+                await p.close()
+            raise RuntimeError("platform.replay_seal is missing: run migration 0016 before starting this version")
         # trust_env=False：不读 HTTP(S)_PROXY 等环境变量，含学生作答的请求体不会被悄悄送进代理（安全审查 S1）
         client = httpx.AsyncClient(transport=transport, trust_env=False, follow_redirects=False)
         state["service"] = IngestService(settings, p, client)
