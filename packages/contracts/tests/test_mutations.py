@@ -17,6 +17,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "scripts"))
 
 import check_contract as cc  # noqa: E402
+import check_services as cs  # noqa: E402
 
 S = "components.schemas"
 
@@ -122,6 +123,74 @@ MUTATIONS = {
 }
 
 
+# ---------- 知识服务与洞察服务（specs/service-openapi-v0.9/spec.md 第 6 节） ----------
+def svc(service, fn):
+    """把针对单份文档的变异包装成针对 {plugin, knowledge, insight} 的变异。"""
+    return lambda docs: fn(docs[service])
+
+
+def svc_drop_allof(service, schema, predicate_text):
+    """删掉 allOf 里的那一条；删空时连 allOf 一起删（空 allOf 本身不合法，会被 OpenAPI 校验先拦下，证明不了反例有效）。"""
+    def f(doc):
+        drop_allof_clause(schema, predicate_text)(doc)
+        node = _get(doc, f"{S}.{schema}")
+        if not node["allOf"]:
+            del node["allOf"]
+    return svc(service, f)
+
+
+SERVICE_MUTATIONS = {
+    "陈述的 claim_id 改为可选": svc("insight", assign(f"{S}.RenderedStatement.required",
+                                                   ["template_key", "template_version", "status", "display", "text"])),
+    "可展示状态加入 refuted": svc("insight", assign(f"{S}.ClaimStatusVisible.enum",
+                                                ["hypothesis", "established", "to_verify", "refuted"])),
+    "删除“待验证只画虚线”": svc_drop_allof("insight", "RenderedStatement", "待验证的判断只能以虚线展示"),
+    "陈述文本去掉限长": svc("insight", delete(f"{S}.RenderedStatement.properties.text.maxLength")),
+    "删除“推断条目必须引用判断”": svc_drop_allof("insight", "ContextEntry", "推断类条目必须引用判断"),
+    "上下文取值允许自由文本": svc("insight", assign(f"{S}.CodeValue.oneOf.2", {"type": "string"})),
+    "判断摘要加自由文本 note": svc("insight", assign(f"{S}.ClaimSummary.properties.note", {"type": "string", "maxLength": 200})),
+    "预测结果加 probability": svc("insight", assign(
+        f"{S}.InsightPredictResponse.allOf.1.properties.result.properties.probability", {"type": "number"})),
+    "对账卡加 class_rank": svc("insight", assign(
+        f"{S}.InsightReconcileResponse.allOf.1.properties.result.properties.class_rank", {"type": "integer"})),
+    "记录事件允许调用方填来源": svc("insight", assign(f"{S}.ReportEvent.properties.source_type",
+                                                  {"$ref": "#/components/schemas/SourceType"})),
+    "洞察写入上下文不要求幂等键": svc("insight", assign(f"{S}.InsightWriteContext.allOf.1.required", [])),
+    "异议改用普通上下文": svc("insight", assign(f"{S}.InsightDisputeRequest.properties.context",
+                                            {"$ref": "#/components/schemas/InsightContext"})),
+    "受众改为可选": svc("insight", assign(f"{S}.InsightContext.required",
+                                          ["request_id", "contract_version", "caller", "data_class", "student_ref"])),
+    "洞察上下文加 usage_id": svc("insight", assign(f"{S}.InsightContext.properties.usage_id", {"type": "string", "format": "uuid"})),
+    "洞察描述写入禁用推断": svc("insight", assign(f"{S}.RenderedStatement.description", "例如：孩子很聪明")),
+    "示例用字段字典之外的字段": svc("insight", assign(
+        "components.examples.InsightRecordRequest.value.event.field_id", "outer.g1.not_in_dictionary")),
+    "删除 insight.erase 路径": svc("insight", lambda d: d["paths"].pop("/v0/insight.erase")),
+    "insight.explain 的 operationId 写错": svc("insight", lambda d: d["paths"]["/v0/insight.explain"]["post"].__setitem__("operationId", "explain")),
+    "洞察响应去掉 unevaluatedProperties": svc("insight", delete(f"{S}.InsightExplainResponse.unevaluatedProperties")),
+    "信封去掉 source_version 必填": svc("knowledge", assign(f"{S}.ServiceResultBase.required",
+                                                     ["result", "evidence_ids", "confidence", "model_version",
+                                                      "human_review_required", "contract_version"])),
+    "删除“复核必须给原因”": svc_drop_allof("knowledge", "ServiceResultBase", "需要复核时必须给出原因"),
+    "信封版本与 info 不一致": svc("knowledge", assign(f"{S}.ServiceResultBase.properties.contract_version.const", "0.9.1")),
+    "公共层节点加 student_id": svc("knowledge", assign(f"{S}.NodeView.properties.student_id", {"type": "string", "format": "uuid"})),
+    "公共层上下文加 student_ref": svc("knowledge", assign(f"{S}.PublicContext.properties.student_ref", {"type": "string", "format": "uuid"})),
+    "节点改为开放对象": svc("knowledge", assign(f"{S}.NodeView.additionalProperties", True)),
+    "页面正文去掉限长": svc("knowledge", delete(f"{S}.PageGetResponse.allOf.1.properties.result.properties.body_md.maxLength")),
+    "题目标签加题干": svc("knowledge", assign(f"{S}.ItemTagView.properties.stem", {"type": "string"})),
+    "证据等级加入 C": svc("knowledge", assign(f"{S}.EvidenceLevel.enum", ["A", "B", "C"])),
+    "删除“拍照只能是 B 级”": svc_drop_allof("knowledge", "EvidenceWriteItem", "拍照通道只能是 B 级"),
+    "证据等级改为可选": svc("knowledge", assign(f"{S}.EvidenceWriteItem.required", ["draft", "channel"])),
+    "证据写入不要求幂等键": svc("knowledge", assign(f"{S}.WriteContext.allOf.1.required", [])),
+    "证据写入加 usage_id": svc("knowledge", assign(f"{S}.StudentContext.properties.usage_id", {"type": "string", "format": "uuid"})),
+    "采分点编号去掉 pattern": svc("knowledge", delete(f"{S}.ScoringPointView.properties.point_id.pattern")),
+    "删除 mastery.explain 路径": svc("knowledge", lambda d: d["paths"].pop("/v0/mastery.explain")),
+    "多出一个 node.delete": svc("knowledge", lambda d: d["paths"].__setitem__("/v0/node.delete", {"post": {
+        "operationId": "node_delete", "responses": {"200": {"description": "x"}}}})),
+    "示例证据引用不闭合": svc("knowledge", assign("components.examples.MasteryExplainResponse.value.evidence_ids", [])),
+    "示例出现手机号": svc("knowledge", assign("components.examples.NodeResolveRequest.value.text", "合成 13812345678")),
+}
+
+
 def main() -> int:
     base = cc.load(cc.DEFAULT_SPEC)
     baseline = cc.run_checks(base)
@@ -138,12 +207,26 @@ def main() -> int:
         if not cc.run_checks(doc):
             missed.append(name)
 
+    service_base = cs.load_all()
+    service_baseline = cs.run_service_checks(service_base)
+    if service_baseline:
+        print("mutation-test: 服务契约基线本身就不通过，先修契约：")
+        for e in service_baseline:
+            print(f"  - {e}")
+        return 1
+    for name, mutate in SERVICE_MUTATIONS.items():
+        docs = copy.deepcopy(service_base)
+        mutate(docs)
+        if not cs.run_service_checks(docs):
+            missed.append(name)
+
+    total = len(MUTATIONS) + len(SERVICE_MUTATIONS)
     if missed:
-        print(f"mutation-test: 失败，{len(missed)}/{len(MUTATIONS)} 个变异没有被发现：")
+        print(f"mutation-test: 失败，{len(missed)}/{total} 个变异没有被发现：")
         for m in missed:
             print(f"  - {m}")
         return 1
-    print(f"mutation-test: 通过（{len(MUTATIONS)} 个变异全部被发现）")
+    print(f"mutation-test: 通过（{total} 个变异全部被发现，其中服务契约 {len(SERVICE_MUTATIONS)} 个）")
     return 0
 
 

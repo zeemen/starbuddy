@@ -10,11 +10,14 @@
 | `tests/counterexamples.py` | 反例集：每个反例都必须被 schema 拒绝。新增规则时同时新增反例 |
 | `tests/test_mutations.py` | 变异测试：把契约故意改坏，断言检查能发现，证明每条规则都在起作用 |
 | `openapi/learning-internal.v0.yaml` | 学习服务内部 API（BFF → 学习服务），草稿 |
+| `openapi/knowledge-service.v0.9.yaml` | 知识服务 API（KGE 第八章十个工具），草稿 v0.9。公共层读知识、题目、采分点；个人层写证据、读掌握 |
+| `openapi/insight-service.v0.9.yaml` | 洞察服务 API（SIE 第九章九个工具），草稿 v0.9。画像视图、判断解释、异议、预测与对账、事实记录、导出与删除 |
+| `scripts/check_services.py` | 两份服务契约的检查（`check_contract.py` 默认运行时一起调用）；反例在 `tests/service_counterexamples.py`，变异在 `tests/test_mutations.py` 的 `SERVICE_MUTATIONS` |
 | `python/starbuddy_contract/` | 共享库：契约加载与校验、平台侧核对规则。学习服务与一致性测试共用（冲刺 1-A） |
 | `conformance/` | 与学科无关的一致性测试：对运行中的适配器跑同一套测试，输出 Gate 0 覆盖率。见 `conformance/README.md` |
 | `requirements-dev.txt` | 检查脚本与一致性测试的依赖（许可证已核，见文件头注释） |
 
-起草计划与验收标准：`specs/contracts-plugin-api-v0.9/spec.md`。
+起草计划与验收标准：`specs/contracts-plugin-api-v0.9/spec.md`；两份服务契约见 `specs/service-openapi-v0.9/spec.md`。
 
 ## 运行检查
 
@@ -46,6 +49,16 @@ make conformance-mutation PYTHON=.venv/bin/python  # 一致性测试的变异测
 5. **可追溯**。`model_version` 必须是 `model:供应商/模型@版本` 或 `algo:名称@版本`，不允许 `routed` 这类值。
 6. **数据级别**。每个请求都带 `data_class`，插件请求都能关联到学生，所以只允许 L2 或 L3（ADR 09 §2）。适配器如果要调用模型，必须经平台模型路由（ADR 04）。
 7. **异步**。`diagnose`、`grade` 可以返回 `202 + job_id`，平台轮询 `GET /jobs/{job_id}`。受理时回传 `usage_id` 和 `idempotency_key`；同一个 key 重试返回同一个 job_id。任务结果的类型与 method 绑定，只有 succeeded 状态才带结果。
+
+## 两份服务契约的要点（v0.9）
+- **统一信封**：每个 200 响应都带 `result`、`evidence_ids`、`confidence`、`source_version`、`model_version`、`human_review_required`、`contract_version`，信封外不允许额外字段（KGE 第八章）。
+- **工具即接口**：路径 `POST /v0/<工具名>`，`operationId` 为工具名（点换成下划线）；清单与 KGE / SIE 文档逐一对应，多一个少一个都算失败。KGE-03 的 MCP 工具由同一份契约生成。
+- **公共层不含个人数据**：知识服务的 `node.*`、`page.*`、`item.*`、`rubric.*` 请求不带学生标识，请求与响应的字段名里没有学生、作答、账号、家长等个人层字段（规则 13）。题干、答案、解析不经知识服务返回。
+- **判断先于展示**：洞察服务里面向学生家长的文字只有 `RenderedStatement`，必须带 `claim_id`，状态只能是假设、成立、待验证（待验证画虚线）；除此之外没有自由文本（规则 11）。
+- **不做名次与概率**：洞察服务的请求与响应里没有名次、百分位、概率类字段与取值（平台规划 v1.3 §3）。
+- **证据等级**：`evidence.write` 只接受 A、B 两级，拍照只能是 B 级；C 级不进学习者模型（技术蓝图 v2.1 §2.1）。
+- **幂等与计量**：写入类工具必须带 `idempotency_key`；两份契约都不带 `usage_id`，计量在插件请求与 BFF 层。
+- **词表与字段字典**：两份契约的描述、枚举与示例过禁用推断词表（`docs/design/sie/sie_lexicon.py`）；洞察服务示例里的字段 ID 必须在 SIE 字段字典里。
 
 ## 结构上表达不了、由平台侧校验的规则
 - 分数不超过满分；总分与各维之和一致。

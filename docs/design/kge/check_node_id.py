@@ -5,6 +5,7 @@
   1. 文档里的节点 ID 正则与迁移中 kge.node_id 域的 CHECK 逐字一致；
   2. 文档的正例、反例表逐条符合该正则；
   3. 文档的学科前缀对照表与迁移中 kge.subject_prefix 的 CASE 一致；
+  3a. 知识服务契约的 NodeId pattern 与迁移逐字一致；
   4. 自检：把正则、前缀改错的反例必须被本脚本发现。
 退出码：0 通过；1 失败。只用标准库。
 """
@@ -17,6 +18,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 DOC = ROOT / "docs/design/kge/id-and-segments.md"
 MIGRATION = ROOT / "db/migrations/0011_kge__knowledge_map.up.sql"
+CONTRACT = ROOT / "packages/contracts/openapi/knowledge-service.v0.9.yaml"
 
 
 def section(text: str, name: str) -> str | None:
@@ -34,7 +36,13 @@ def table_rows(block: str) -> list[list[str]]:
     return rows[1:]  # 去掉表头
 
 
-def check(doc: str, sql: str) -> list[str]:
+def contract_regex(text: str) -> str | None:
+    """知识服务契约里 NodeId 的 pattern（只用标准库：按固定写法截取，不解析 YAML）。"""
+    m = re.search(r"^    NodeId:\n(?:      .*\n)*?      pattern: '([^']+)'", text, re.M)
+    return m.group(1) if m else None
+
+
+def check(doc: str, sql: str, contract: str | None = None) -> list[str]:
     errors: list[str] = []
     m = re.search(r"CREATE DOMAIN kge\.node_id AS text\s+CHECK \(VALUE ~ '([^']+)'\)", sql)
     if not m:
@@ -47,6 +55,12 @@ def check(doc: str, sql: str) -> list[str]:
     if doc_m.group(1) != sql_regex:
         errors.append(f"文档正则 {doc_m.group(1)} 与迁移 {sql_regex} 不一致")
     pattern = re.compile(sql_regex)
+    if contract is not None:
+        c = contract_regex(contract)
+        if c is None:
+            errors.append("知识服务契约里找不到 NodeId 的 pattern")
+        elif c != sql_regex:
+            errors.append(f"知识服务契约 NodeId 的 pattern {c} 与迁移 {sql_regex} 不一致")
 
     examples = table_rows(section(doc, "node-id-examples") or "")
     if sum(1 for r in examples if r[1] == "合法") < 3 or sum(1 for r in examples if r[1] == "不合法") < 3:
@@ -81,23 +95,29 @@ def self_test(doc: str, sql: str) -> list[str]:
         "文档前缀改错": (doc.replace("| wenli | CHN |", "| wenli | ZH |"), sql),
         "迁移前缀少一科": (doc, sql.replace("WHEN 'zhixing' THEN 'MORAL' ", "", 1)),
     }
+    contract = CONTRACT.read_text(encoding="utf-8")
+    bad_contract = contract.replace("{1,9}(\\.[A-Z0-9]", "{1,9}(\\.[A-Za-z0-9]", 1)
     out = []
     for name, (d, s) in mutants.items():
         if d == doc and s == sql:
             out.append(f"自检反例“{name}”没有改动任何内容（替换目标不存在）")
         elif not check(d, s):
             out.append(f"自检反例“{name}”没有被发现")
+    if bad_contract == contract:
+        out.append("自检反例“契约正则放宽”没有改动任何内容（替换目标不存在）")
+    elif not check(doc, sql, bad_contract):
+        out.append("自检反例“契约正则放宽”没有被发现")
     return out
 
 
 def main() -> int:
     doc = DOC.read_text(encoding="utf-8")
     sql = MIGRATION.read_text(encoding="utf-8")
-    errors = check(doc, sql) + self_test(doc, sql)
+    errors = check(doc, sql, CONTRACT.read_text(encoding="utf-8")) + self_test(doc, sql)
     for e in errors:
         print(f"kge-id-check: {e}")
     n = len(table_rows(section(doc, "node-id-examples") or ""))
-    print(f"kge-id-check: {'失败' if errors else '通过'}（正则一致，{n} 个例子，5 个自检反例）")
+    print(f"kge-id-check: {'失败' if errors else '通过'}（文档、迁移、知识服务契约三处正则一致，{n} 个例子，6 个自检反例）")
     return 1 if errors else 0
 
 

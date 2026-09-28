@@ -353,6 +353,14 @@ def main() -> int:
     doc = load(spec)
     errors = run_checks(doc)
     internal_refs = check_internal(errors) if len(sys.argv) <= 1 else None
+    service_summary = None
+    if len(sys.argv) <= 1:
+        # 知识服务与洞察服务 OpenAPI v0.9（specs/service-openapi-v0.9/spec.md）
+        import check_services  # noqa: PLC0415
+
+        service_docs = check_services.load_all()
+        errors.extend(check_services.run_service_checks(service_docs))
+        service_summary = check_services.summary(service_docs)
     if errors:
         print(f"contract-test: 失败（{len(errors)} 项）")
         for e in errors:
@@ -363,7 +371,8 @@ def main() -> int:
     from counterexamples import CASES  # noqa: PLC0415
     print(f"contract-test: 通过（OpenAPI 3.1 合法；{n_ex} 个示例符合 schema 且证据引用闭合；"
           f"{len(CASES)} 个反例全部被拒绝；六方法信封、计量字段、无约束文本扫描、JobStatus 绑定、示例无 PII"
-          + (f"；learning-internal 合法、{internal_refs} 个跨文件引用可解析" if internal_refs is not None else "") + "）")
+          + (f"；learning-internal 合法、{internal_refs} 个跨文件引用可解析" if internal_refs is not None else "")
+          + (f"；{service_summary}" if service_summary else "") + "）")
     return 0
 
 

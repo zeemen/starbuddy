@@ -1,0 +1,882 @@
+openapi: 3.1.0
+info:
+  title: StarBuddy 洞察服务 API（SIE）
+  version: 0.9.0
+  summary: 画像视图、判断解释、异议、考试预测与对账、事实记录、导出与删除。平台内部接口，学生与家长不能直接访问。
+  description: |
+    状态：**草稿 v0.9，待评审**（specs/service-openapi-v0.9/spec.md；W2 评审，W4 与学科插件 API 一起冻结 v1.0）。
+
+    九个工具与 SIE V1.1 第九章“接口”一一对应，`operationId` 即工具名（点换成下划线）。
+    洞察服务是判断账本（insight.claim）的唯一写入方（ADR 13 草稿）。学科插件的 diagnose、plan、report 经编排层
+    调用本接口读画像；grade、teach 只经知识服务的 `evidence.write` 写证据，不调用本接口的写入工具。
+
+    ## 判断先于展示（CLAUDE.md 规则 11）
+    面向学生或家长的文字只以 `RenderedStatement` 出现：它必须带 `claim_id`，由判断模板渲染，
+    状态只能是 `hypothesis`、`established` 或 `to_verify`。`to_verify` 带 `display: dashed`，
+    前端画虚线、不作为陈述（ADR 13 待人确认 #2）。除 `RenderedStatement.text` 外，响应里没有其他自由文本。
+
+    ## 边界
+    - 只写学习事实，不写 CLAUDE.md 规则 12 列出的推断；模板键、指标键、字段键都用编码约束。
+    - 不显示个人名次、不做同伴比较、不给录取概率百分比（平台规划 v1.3 §3）：响应里没有名次、百分位、概率类字段。
+    - 学生自述、家长观察、客观记录、模型推断分开记录（规则 6）：`insight.record` 的来源由事件类型决定，调用方不能填写。
+    - 请求带 `audience`，响应只含该受众可见的条目（与迁移 0010 的 RLS 一致）。BFF 仍须先按档案授权（规则 5）。
+
+    ## 幂等与计量
+    写入类工具（`insight.dispute`、`insight.predict`、`insight.record`、`insight.erase`）必须带 `idempotency_key`。
+    本接口不计次，所以没有 `usage_id`：验证题由后续的 `grade` 计量（规则 4）。
+  license:
+    name: 内部，未授权对外
+    identifier: LicenseRef-StarBuddy-Internal
+servers:
+  - url: http://127.0.0.1:8791
+    description: 只监听本机，由平台侧网关转发。部署位置另行决定（spec 待人确认 #3）。
+security:
+  - platformServiceToken: []
+
+paths:
+  /v0/insight.context:
+    post:
+      operationId: insight_context
+      summary: 按任务裁剪的上下文包
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InsightContextRequest' }
+            examples: { basic: { $ref: '#/components/examples/InsightContextRequest' } }
+      responses:
+        '200':
+          description: 字段白名单内的条目；推断类条目都带判断 ID
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InsightContextResponse' }
+              examples: { basic: { $ref: '#/components/examples/InsightContextResponse' } }
+        default: { $ref: '#/components/responses/Problem' }
+  /v0/insight.claims:
+    post:
+      operationId: insight_claims
+      summary: 判断列表与状态
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InsightClaimsRequest' }
+            examples: { basic: { $ref: '#/components/examples/InsightClaimsRequest' } }
+      responses:
+        '200':
+          description: 判断摘要
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InsightClaimsResponse' }
+              examples: { basic: { $ref: '#/components/examples/InsightClaimsResponse' } }
+        default: { $ref: '#/components/responses/Problem' }
+  /v0/insight.explain:
+    post:
+      operationId: insight_explain
+      summary: 一条判断的结论、证据链与置信度说明
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InsightExplainRequest' }
+            examples: { basic: { $ref: '#/components/examples/InsightExplainRequest' } }
+      responses:
+        '200':
+          description: 按模板渲染的结论与证据链
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InsightExplainResponse' }
+              examples: { basic: { $ref: '#/components/examples/InsightExplainResponse' } }
+        default: { $ref: '#/components/responses/Problem' }
+  /v0/insight.dispute:
+    post:
+      operationId: insight_dispute
+      summary: 提出异议（“我不同意”三条路）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InsightDisputeRequest' }
+            examples: { basic: { $ref: '#/components/examples/InsightDisputeRequest' } }
+      responses:
+        '200':
+          description: 异议单与下一步
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InsightDisputeResponse' }
+              examples: { basic: { $ref: '#/components/examples/InsightDisputeResponse' } }
+        default: { $ref: '#/components/responses/Problem' }
+  /v0/insight.predict:
+    post:
+      operationId: insight_predict
+      summary: 冻结一份学校考试的分数区间预测
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InsightPredictRequest' }
+            examples: { basic: { $ref: '#/components/examples/InsightPredictRequest' } }
+      responses:
+        '200':
+          description: 冻结的区间与依据（不含概率）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InsightPredictResponse' }
+              examples: { basic: { $ref: '#/components/examples/InsightPredictResponse' } }
+        default: { $ref: '#/components/responses/Problem' }
+  /v0/insight.reconcile:
+    post:
+      operationId: insight_reconcile
+      summary: 考后对账卡
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InsightReconcileRequest' }
+            examples: { basic: { $ref: '#/components/examples/InsightReconcileRequest' } }
+      responses:
+        '200':
+          description: 是否落在区间内、偏差节点、偏差方向、平台据此的调整
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InsightReconcileResponse' }
+              examples: { basic: { $ref: '#/components/examples/InsightReconcileResponse' } }
+        default: { $ref: '#/components/responses/Problem' }
+  /v0/insight.record:
+    post:
+      operationId: insight_record
+      summary: 记录行为事件、学生自述或家长观察
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InsightRecordRequest' }
+            examples: { basic: { $ref: '#/components/examples/InsightRecordRequest' } }
+      responses:
+        '200':
+          description: 事件 ID
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InsightRecordResponse' }
+              examples: { basic: { $ref: '#/components/examples/InsightRecordResponse' } }
+        default: { $ref: '#/components/responses/Problem' }
+  /v0/insight.export:
+    post:
+      operationId: insight_export
+      summary: 发起画像全量导出（异步）
+      description: v0.9 只定接口；导出范围与格式随 SIE-03 评审（spec 待人确认 #6）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InsightExportRequest' }
+            examples: { basic: { $ref: '#/components/examples/InsightExportRequest' } }
+      responses:
+        '200':
+          description: 导出任务
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InsightExportResponse' }
+              examples: { basic: { $ref: '#/components/examples/InsightExportResponse' } }
+        default: { $ref: '#/components/responses/Problem' }
+  /v0/insight.erase:
+    post:
+      operationId: insight_erase
+      summary: 删除学生画像并返回回执
+      description: v0.9 只定接口；删除范围（platform.* 个人层与判断账本的级联）与回执格式随 SIE-03 评审，属于必停项。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InsightEraseRequest' }
+            examples: { basic: { $ref: '#/components/examples/InsightEraseRequest' } }
+      responses:
+        '200':
+          description: 删除回执
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InsightEraseResponse' }
+              examples: { basic: { $ref: '#/components/examples/InsightEraseResponse' } }
+        default: { $ref: '#/components/responses/Problem' }
+
+components:
+  securitySchemes:
+    platformServiceToken:
+      type: http
+      scheme: bearer
+      description: 平台内部服务令牌，按调用方类别（bff、orchestrator）签发。
+
+  responses:
+    Problem:
+      description: 统一错误体（与学科插件 API 相同）
+      content:
+        application/problem+json:
+          schema: { $ref: './plugin-api.v0.9.yaml#/components/schemas/Problem' }
+
+  schemas:
+    # ---------- 公共类型 ----------
+    Uuid: { type: string, format: uuid }
+    NodeId: { $ref: './knowledge-service.v0.9.yaml#/components/schemas/NodeId' }
+    Confidence: { type: number, minimum: 0, maximum: 1 }
+    Audience:
+      type: string
+      description: 谁会看到结果。响应只含该受众可见的条目（insight.claim.visibility）。
+      enum: [student, guardian, agent]
+    ClaimStatusVisible:
+      type: string
+      description: 可展示的判断状态。推翻与撤回的判断不经本接口返回。
+      enum: [hypothesis, established, to_verify]
+    TemplateKey:
+      type: string
+      description: 判断模板键（insight.claim_template.template_key）。
+      pattern: '^[a-z][a-z0-9_]*(\.[a-z0-9_]+){1,4}$'
+    FieldId:
+      type: string
+      description: 字段字典的字段 ID（docs/design/sie/field-dictionary.v0.9.yaml），例如 inner.g3.node_mastery。
+      pattern: '^(inner|middle|outer|through)\.g[1-9]\.[a-z][a-z0-9_]{0,63}$'
+    SourceType:
+      type: string
+      description: 来源类型（规则 6）：客观记录、学生自述、家长观察、模型推断。
+      enum: [objective, self, guardian, inferred]
+    CodeValue:
+      description: 字段取值只能是数值、布尔、编码或编码数组，不能是自由文本。
+      oneOf:
+        - { type: number }
+        - { type: boolean }
+        - { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.:\-]{0,63}$' }
+        - { type: array, maxItems: 32, items: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.:\-]{0,63}$' } }
+
+    # ---------- 请求上下文 ----------
+    InsightContext:
+      type: object
+      description: 每个请求都带的上下文。`student_ref` 只能是平台学生 ID，不得携带手机号、姓名、学校。
+      required: [request_id, contract_version, caller, data_class, student_ref, audience]
+      additionalProperties: false
+      properties:
+        request_id: { type: string, format: uuid }
+        contract_version: { type: string, const: 0.9.0 }
+        caller: { type: string, enum: [bff, orchestrator] }
+        data_class:
+          allOf:
+            - $ref: './plugin-api.v0.9.yaml#/components/schemas/DataClass'
+            - enum: [L2, L3]
+        student_ref: { type: string, format: uuid }
+        audience: { $ref: '#/components/schemas/Audience' }
+        idempotency_key: { type: string, minLength: 16, maxLength: 128 }
+    InsightWriteContext:
+      description: 写入类工具的上下文：`idempotency_key` 必填。
+      allOf:
+        - $ref: '#/components/schemas/InsightContext'
+        - required: [idempotency_key]
+
+    # ---------- 统一信封 ----------
+    ServiceResultBase:
+      type: object
+      description: 与知识服务相同的统一返回字段。
+      required: [result, evidence_ids, confidence, source_version, model_version, human_review_required, contract_version]
+      properties:
+        contract_version: { type: string, const: 0.9.0 }
+        result: {}
+        evidence_ids:
+          type: array
+          items: { type: string, format: uuid }
+          uniqueItems: true
+        confidence: { $ref: '#/components/schemas/Confidence' }
+        source_version: { $ref: './plugin-api.v0.9.yaml#/components/schemas/SourceVersion' }
+        model_version: { $ref: './plugin-api.v0.9.yaml#/components/schemas/ModelVersion' }
+        human_review_required: { type: boolean }
+        review_reasons:
+          type: array
+          items: { $ref: './plugin-api.v0.9.yaml#/components/schemas/ReviewReason' }
+          uniqueItems: true
+      allOf:
+        - description: 需要复核时必须给出原因
+          if: { properties: { human_review_required: { const: true } }, required: [human_review_required] }
+          then: { required: [review_reasons], properties: { review_reasons: { minItems: 1 } } }
+
+    # ---------- 陈述 ----------
+    RenderedStatement:
+      type: object
+      description: |
+        面向学生或家长的一句话：由判断模板渲染，必须带 `claim_id`（规则 11）。
+        模型只能写排序与衔接，不能改结论（SIE 第九章“档案页编译”）。
+      required: [claim_id, template_key, template_version, status, display, text]
+      additionalProperties: false
+      properties:
+        claim_id: { type: string, format: uuid }
+        template_key: { $ref: '#/components/schemas/TemplateKey' }
+        template_version: { type: integer, minimum: 1 }
+        status: { $ref: '#/components/schemas/ClaimStatusVisible' }
+        display:
+          type: string
+          description: 待验证的判断画虚线，不作为陈述。
+          enum: [solid, dashed]
+        text: { type: string, minLength: 1, maxLength: 300 }
+      allOf:
+        - description: 待验证的判断只能以虚线展示
+          if: { properties: { status: { const: to_verify } }, required: [status] }
+          then: { properties: { display: { const: dashed } } }
+        - description: 假设与成立的判断以实线展示
+          if: { properties: { status: { enum: [hypothesis, established] } }, required: [status] }
+          then: { properties: { display: { const: solid } } }
+    ClaimSummary:
+      type: object
+      required: [claim_id, target_type, target_id, template_key, template_version, status, confidence, evidence_ids, expires_at]
+      additionalProperties: false
+      properties:
+        claim_id: { type: string, format: uuid }
+        subject: { $ref: './plugin-api.v0.9.yaml#/components/schemas/Subject' }
+        target_type: { type: string, enum: [node, skill, metric, exam, preference] }
+        target_id: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.:\-]{0,127}$' }
+        template_key: { $ref: '#/components/schemas/TemplateKey' }
+        template_version: { type: integer, minimum: 1 }
+        status: { $ref: '#/components/schemas/ClaimStatusVisible' }
+        confidence: { $ref: '#/components/schemas/Confidence' }
+        evidence_ids: { type: array, maxItems: 200, items: { type: string, format: uuid } }
+        expires_at: { type: string, format: date-time }
+
+    # ---------- insight.context ----------
+    InsightContextRequest:
+      type: object
+      required: [context, task]
+      additionalProperties: false
+      properties:
+        context: { $ref: '#/components/schemas/InsightContext' }
+        task: { type: string, enum: [diagnose, plan, teach, report, companion] }
+        subject: { $ref: './plugin-api.v0.9.yaml#/components/schemas/Subject' }
+        token_budget: { type: integer, minimum: 200, maximum: 16000 }
+    ContextEntry:
+      type: object
+      description: 上下文包里的一条。推断类条目必须带判断 ID。
+      required: [field_id, source_type, value]
+      additionalProperties: false
+      properties:
+        field_id: { $ref: '#/components/schemas/FieldId' }
+        source_type: { $ref: '#/components/schemas/SourceType' }
+        value: { $ref: '#/components/schemas/CodeValue' }
+        claim_id: { type: string, format: uuid }
+        evidence_ids: { type: array, maxItems: 50, items: { type: string, format: uuid } }
+      allOf:
+        - description: 推断类条目必须引用判断
+          if: { properties: { source_type: { const: inferred } }, required: [source_type] }
+          then: { required: [claim_id] }
+    InsightContextResponse:
+      allOf:
+        - $ref: '#/components/schemas/ServiceResultBase'
+        - properties:
+            result:
+              type: object
+              required: [task, entries, statements]
+              additionalProperties: false
+              properties:
+                task: { type: string, enum: [diagnose, plan, teach, report, companion] }
+                entries: { type: array, maxItems: 200, items: { $ref: '#/components/schemas/ContextEntry' } }
+                statements: { type: array, maxItems: 50, items: { $ref: '#/components/schemas/RenderedStatement' } }
+      unevaluatedProperties: false
+
+    # ---------- insight.claims ----------
+    InsightClaimsRequest:
+      type: object
+      required: [context]
+      additionalProperties: false
+      properties:
+        context: { $ref: '#/components/schemas/InsightContext' }
+        subject: { $ref: './plugin-api.v0.9.yaml#/components/schemas/Subject' }
+        target_type: { type: string, enum: [node, skill, metric, exam, preference] }
+        statuses: { type: array, uniqueItems: true, items: { $ref: '#/components/schemas/ClaimStatusVisible' } }
+        limit: { type: integer, minimum: 1, maximum: 200, default: 50 }
+    InsightClaimsResponse:
+      allOf:
+        - $ref: '#/components/schemas/ServiceResultBase'
+        - properties:
+            result:
+              type: object
+              required: [claims]
+              additionalProperties: false
+              properties:
+                claims: { type: array, maxItems: 200, items: { $ref: '#/components/schemas/ClaimSummary' } }
+      unevaluatedProperties: false
+
+    # ---------- insight.explain ----------
+    InsightExplainRequest:
+      type: object
+      required: [context, claim_id]
+      additionalProperties: false
+      properties:
+        context: { $ref: '#/components/schemas/InsightContext' }
+        claim_id: { type: string, format: uuid }
+    ExplainEvidence:
+      type: object
+      required: [evidence_id, occurred_at, source_type]
+      additionalProperties: false
+      properties:
+        evidence_id: { type: string, format: uuid }
+        occurred_at: { type: string, format: date-time }
+        source_type: { $ref: '#/components/schemas/SourceType' }
+        evidence_level: { type: string, enum: [A, B] }
+        node_id: { $ref: '#/components/schemas/NodeId' }
+    InsightExplainResponse:
+      allOf:
+        - $ref: '#/components/schemas/ServiceResultBase'
+        - properties:
+            result:
+              type: object
+              required: [statement, evidence_chain, confidence_band]
+              additionalProperties: false
+              properties:
+                statement: { $ref: '#/components/schemas/RenderedStatement' }
+                evidence_chain: { type: array, maxItems: 200, items: { $ref: '#/components/schemas/ExplainEvidence' } }
+                confidence_band:
+                  type: string
+                  description: 置信度说明的编码，由前端按模板展示。
+                  enum: [few_evidence, moderate, strong]
+                expires_at: { type: string, format: date-time }
+      unevaluatedProperties: false
+
+    # ---------- insight.dispute ----------
+    InsightDisputeRequest:
+      type: object
+      required: [context, claim_id, kind]
+      additionalProperties: false
+      properties:
+        context: { $ref: '#/components/schemas/InsightWriteContext' }
+        claim_id: { type: string, format: uuid }
+        kind:
+          type: string
+          description: i_know = 我其实会；one_off_slip = 学生本人说那次只是失误（记录并观察，不改判）；data_error = 识别错了或分数录错了。
+          enum: [i_know, one_off_slip, data_error]
+    InsightDisputeResponse:
+      allOf:
+        - $ref: '#/components/schemas/ServiceResultBase'
+        - properties:
+            result:
+              type: object
+              required: [dispute_id, next_step]
+              additionalProperties: false
+              properties:
+                dispute_id: { type: string, format: uuid }
+                next_step:
+                  type: string
+                  description: |
+                    verification_scheduled：已安排验证题；observe_followups：记录并观察后续同类作答；
+                    open_fact_for_correction：打开原始事实供更正（事实在原录入通道更正，本服务据此撤回判断）。
+                  enum: [verification_scheduled, observe_followups, open_fact_for_correction]
+                verification_item_refs:
+                  type: array
+                  maxItems: 5
+                  items: { $ref: './plugin-api.v0.9.yaml#/components/schemas/ItemRef' }
+                fact_ref: { type: string, pattern: '^(attempt|exam_record|upload):[A-Za-z0-9][A-Za-z0-9_\-]{7,63}$' }
+                verify_by: { type: string, format: date-time }
+              allOf:
+                - if: { properties: { next_step: { const: verification_scheduled } }, required: [next_step] }
+                  then: { required: [verification_item_refs, verify_by], properties: { verification_item_refs: { minItems: 1 } } }
+                - if: { properties: { next_step: { const: open_fact_for_correction } }, required: [next_step] }
+                  then: { required: [fact_ref] }
+      unevaluatedProperties: false
+
+    # ---------- insight.predict / insight.reconcile ----------
+    ExamSpec:
+      type: object
+      required: [subject, exam_type, exam_date, full_score, scope_node_ids]
+      additionalProperties: false
+      properties:
+        subject: { $ref: './plugin-api.v0.9.yaml#/components/schemas/Subject' }
+        exam_type: { type: string, enum: [monthly, midterm, final, mock, other] }
+        exam_date: { type: string, format: date }
+        full_score: { type: integer, enum: [100, 120, 150] }
+        scope_node_ids: { type: array, minItems: 1, maxItems: 400, items: { $ref: '#/components/schemas/NodeId' } }
+    InsightPredictRequest:
+      type: object
+      required: [context, exam]
+      additionalProperties: false
+      properties:
+        context: { $ref: '#/components/schemas/InsightWriteContext' }
+        exam: { $ref: '#/components/schemas/ExamSpec' }
+    InsightPredictResponse:
+      allOf:
+        - $ref: '#/components/schemas/ServiceResultBase'
+        - properties:
+            result:
+              type: object
+              description: 分数区间（默认 80% 区间，证据少则更宽），考试当天零点冻结。只给区间，不给概率。
+              required: [prediction_id, claim_id, low, high, interval_level, frozen_at, basis]
+              additionalProperties: false
+              properties:
+                prediction_id: { type: string, format: uuid }
+                claim_id: { type: string, format: uuid, description: 这份预测对应的判断（对象类型 exam）。 }
+                low: { type: number, minimum: 0, maximum: 150 }
+                high: { type: number, minimum: 0, maximum: 150 }
+                interval_level: { type: number, const: 0.8 }
+                frozen_at: { type: string, format: date-time }
+                basis:
+                  type: object
+                  required: [node_count, evidence_count]
+                  additionalProperties: false
+                  properties:
+                    node_count: { type: integer, minimum: 0 }
+                    evidence_count: { type: integer, minimum: 0 }
+      unevaluatedProperties: false
+    InsightReconcileRequest:
+      type: object
+      required: [context, exam_record_id]
+      additionalProperties: false
+      properties:
+        context: { $ref: '#/components/schemas/InsightContext' }
+        exam_record_id: { type: string, format: uuid }
+    InsightReconcileResponse:
+      allOf:
+        - $ref: '#/components/schemas/ServiceResultBase'
+        - properties:
+            result:
+              type: object
+              required: [prediction_id, actual_score, within_interval, deviation_directions, adjustments, statements]
+              additionalProperties: false
+              properties:
+                prediction_id: { type: string, format: uuid }
+                actual_score: { type: number, minimum: 0, maximum: 150 }
+                within_interval: { type: boolean }
+                deviation_nodes: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/NodeId' } }
+                deviation_directions:
+                  type: array
+                  description: 偏差分析固定检查的四个方向（SIE 第五章）。
+                  uniqueItems: true
+                  items: { type: string, enum: [item_type_transfer, time_shortage, calculation_slip, diagnosis_optimistic] }
+                adjustments:
+                  type: array
+                  description: 平台据此改了什么（编码）。
+                  uniqueItems: true
+                  items: { type: string, enum: [claims_to_verify, retest_scheduled, interval_widened, model_parameter_adjusted, none] }
+                statements: { type: array, maxItems: 20, items: { $ref: '#/components/schemas/RenderedStatement' } }
+      unevaluatedProperties: false
+
+    # ---------- insight.record ----------
+    BehaviorEvent:
+      type: object
+      required: [event_type, kind, occurred_at]
+      additionalProperties: false
+      properties:
+        event_type: { const: behavior }
+        kind: { type: string, enum: [session_start, session_end, plan_done, plan_skip, exit_after_errors, appeal] }
+        occurred_at: { type: string, format: date-time }
+    ReportEvent:
+      type: object
+      description: 学生自述或家长观察。两方对同一字段的说法分开存、不合并（规则 6）；来源由 event_type 决定。
+      required: [event_type, field_id, value, occurred_at]
+      additionalProperties: false
+      properties:
+        event_type: { type: string, enum: [self_report, guardian_report] }
+        field_id: { $ref: '#/components/schemas/FieldId' }
+        value: { $ref: '#/components/schemas/CodeValue' }
+        occurred_at: { type: string, format: date-time }
+    InsightRecordRequest:
+      type: object
+      required: [context, event]
+      additionalProperties: false
+      properties:
+        context: { $ref: '#/components/schemas/InsightWriteContext' }
+        event:
+          oneOf:
+            - $ref: '#/components/schemas/BehaviorEvent'
+            - $ref: '#/components/schemas/ReportEvent'
+    InsightRecordResponse:
+      allOf:
+        - $ref: '#/components/schemas/ServiceResultBase'
+        - properties:
+            result:
+              type: object
+              required: [event_id, source_type]
+              additionalProperties: false
+              properties:
+                event_id: { type: string, format: uuid }
+                source_type: { $ref: '#/components/schemas/SourceType' }
+      unevaluatedProperties: false
+
+    # ---------- insight.export / insight.erase ----------
+    InsightExportRequest:
+      type: object
+      required: [context]
+      additionalProperties: false
+      properties:
+        context: { $ref: '#/components/schemas/InsightWriteContext' }
+    InsightExportResponse:
+      allOf:
+        - $ref: '#/components/schemas/ServiceResultBase'
+        - properties:
+            result:
+              type: object
+              required: [export_job_id, status]
+              additionalProperties: false
+              properties:
+                export_job_id: { type: string, format: uuid }
+                status: { type: string, enum: [queued, running, ready, failed] }
+                download_ref: { type: string, pattern: '^objstore://[a-z0-9][a-z0-9/_.\-]{0,255}$' }
+      unevaluatedProperties: false
+    InsightEraseRequest:
+      type: object
+      required: [context, confirmation_code]
+      additionalProperties: false
+      properties:
+        context: { $ref: '#/components/schemas/InsightWriteContext' }
+        confirmation_code: { type: string, pattern: '^[A-Z0-9]{8}$', description: BFF 向家长二次确认后得到的一次性确认码。 }
+    InsightEraseResponse:
+      allOf:
+        - $ref: '#/components/schemas/ServiceResultBase'
+        - properties:
+            result:
+              type: object
+              required: [erase_receipt_id, status, scopes]
+              additionalProperties: false
+              properties:
+                erase_receipt_id: { type: string, format: uuid }
+                status: { type: string, enum: [scheduled, completed] }
+                scopes:
+                  type: array
+                  uniqueItems: true
+                  items: { type: string, enum: [claim_ledger, facts, evidence, inference, reports, uploads] }
+      unevaluatedProperties: false
+
+  examples:
+    InsightContextRequest:
+      value:
+        context: &ctx_agent
+          request_id: 00000000-0000-4000-8000-00000000d001
+          contract_version: 0.9.0
+          caller: orchestrator
+          data_class: L2
+          student_ref: 00000000-0000-4000-8000-00000000a001
+          audience: agent
+        task: plan
+        subject: aya
+        token_budget: 2000
+    InsightContextResponse:
+      value:
+        contract_version: 0.9.0
+        result:
+          task: plan
+          entries:
+            - field_id: inner.g3.node_mastery
+              source_type: inferred
+              value: execute
+              claim_id: 00000000-0000-4000-8000-00000000f001
+              evidence_ids: [00000000-0000-4000-8000-00000000e101]
+            - field_id: outer.g1.weekly_available_time
+              source_type: guardian
+              value: 240
+          statements: []
+        evidence_ids: [00000000-0000-4000-8000-00000000e101]
+        confidence: 0.6
+        source_version: 'algo:sie-context@0.1.0'
+        model_version: 'algo:sie-context@0.1.0'
+        human_review_required: false
+    InsightClaimsRequest:
+      value:
+        context: *ctx_agent
+        subject: aya
+        statuses: [hypothesis, established]
+    InsightClaimsResponse:
+      value:
+        contract_version: 0.9.0
+        result:
+          claims:
+            - claim_id: 00000000-0000-4000-8000-00000000f001
+              subject: aya
+              target_type: node
+              target_id: MATH.FUNC.QUAD.VERTEX_FORM
+              template_key: math.node.mastery
+              template_version: 1
+              status: established
+              confidence: 0.7
+              evidence_ids: [00000000-0000-4000-8000-00000000e101]
+              expires_at: '2026-11-09T00:00:00Z'
+        evidence_ids: [00000000-0000-4000-8000-00000000e101]
+        confidence: 0.7
+        source_version: 'algo:sie-claims@0.1.0'
+        model_version: 'algo:sie-claims@0.1.0'
+        human_review_required: false
+    InsightExplainRequest:
+      value:
+        context:
+          request_id: 00000000-0000-4000-8000-00000000d003
+          contract_version: 0.9.0
+          caller: bff
+          data_class: L2
+          student_ref: 00000000-0000-4000-8000-00000000a001
+          audience: student
+        claim_id: 00000000-0000-4000-8000-00000000f001
+    InsightExplainResponse:
+      value:
+        contract_version: 0.9.0
+        result:
+          statement:
+            claim_id: 00000000-0000-4000-8000-00000000f001
+            template_key: math.node.mastery
+            template_version: 1
+            status: established
+            display: solid
+            text: 合成模板句：这个知识点你已经能独立做对
+          evidence_chain:
+            - evidence_id: 00000000-0000-4000-8000-00000000e101
+              occurred_at: '2026-10-09T08:00:00Z'
+              source_type: objective
+              evidence_level: A
+              node_id: MATH.FUNC.QUAD.VERTEX_FORM
+          confidence_band: moderate
+          expires_at: '2026-11-09T00:00:00Z'
+        evidence_ids: [00000000-0000-4000-8000-00000000e101]
+        confidence: 0.7
+        source_version: 'algo:sie-explain@0.1.0'
+        model_version: 'algo:sie-explain@0.1.0'
+        human_review_required: false
+    InsightDisputeRequest:
+      value:
+        context:
+          request_id: 00000000-0000-4000-8000-00000000d004
+          contract_version: 0.9.0
+          caller: bff
+          data_class: L2
+          student_ref: 00000000-0000-4000-8000-00000000a001
+          audience: student
+          idempotency_key: synthetic-dispute-0001
+        claim_id: 00000000-0000-4000-8000-00000000f001
+        kind: i_know
+    InsightDisputeResponse:
+      value:
+        contract_version: 0.9.0
+        result:
+          dispute_id: 00000000-0000-4000-8000-00000000f101
+          next_step: verification_scheduled
+          verification_item_refs: ['aya:synthetic-0301-08']
+          verify_by: '2026-10-10T08:00:00Z'
+        evidence_ids: []
+        confidence: 1
+        source_version: 'algo:sie-dispute@0.1.0'
+        model_version: 'algo:sie-dispute@0.1.0'
+        human_review_required: false
+    InsightPredictRequest:
+      value:
+        context:
+          request_id: 00000000-0000-4000-8000-00000000d005
+          contract_version: 0.9.0
+          caller: bff
+          data_class: L2
+          student_ref: 00000000-0000-4000-8000-00000000a001
+          audience: guardian
+          idempotency_key: synthetic-predict-0001
+        exam:
+          subject: aya
+          exam_type: monthly
+          exam_date: '2026-11-05'
+          full_score: 120
+          scope_node_ids: [MATH.FUNC.QUAD.VERTEX_FORM, MATH.FUNC.QUAD.GRAPH]
+    InsightPredictResponse:
+      value:
+        contract_version: 0.9.0
+        result:
+          prediction_id: 00000000-0000-4000-8000-00000000f201
+          claim_id: 00000000-0000-4000-8000-00000000f002
+          low: 88
+          high: 104
+          interval_level: 0.8
+          frozen_at: '2026-11-05T00:00:00+08:00'
+          basis: { node_count: 2, evidence_count: 1 }
+        evidence_ids: [00000000-0000-4000-8000-00000000e101]
+        confidence: 0.5
+        source_version: 'algo:sie-predict@0.1.0'
+        model_version: 'algo:sie-predict@0.1.0'
+        human_review_required: false
+    InsightReconcileRequest:
+      value:
+        context:
+          request_id: 00000000-0000-4000-8000-00000000d006
+          contract_version: 0.9.0
+          caller: bff
+          data_class: L2
+          student_ref: 00000000-0000-4000-8000-00000000a001
+          audience: guardian
+        exam_record_id: 00000000-0000-4000-8000-00000000f301
+    InsightReconcileResponse:
+      value:
+        contract_version: 0.9.0
+        result:
+          prediction_id: 00000000-0000-4000-8000-00000000f201
+          actual_score: 96
+          within_interval: true
+          deviation_nodes: []
+          deviation_directions: []
+          adjustments: [none]
+          statements: []
+        evidence_ids: []
+        confidence: 1
+        source_version: 'algo:sie-reconcile@0.1.0'
+        model_version: 'algo:sie-reconcile@0.1.0'
+        human_review_required: false
+    InsightRecordRequest:
+      value:
+        context:
+          request_id: 00000000-0000-4000-8000-00000000d007
+          contract_version: 0.9.0
+          caller: bff
+          data_class: L2
+          student_ref: 00000000-0000-4000-8000-00000000a001
+          audience: guardian
+          idempotency_key: synthetic-record-0001
+        event:
+          event_type: guardian_report
+          field_id: outer.g1.weekly_available_time
+          value: 240
+          occurred_at: '2026-10-09T20:00:00+08:00'
+    InsightRecordResponse:
+      value:
+        contract_version: 0.9.0
+        result:
+          event_id: 00000000-0000-4000-8000-00000000f401
+          source_type: guardian
+        evidence_ids: []
+        confidence: 1
+        source_version: 'algo:sie-record@0.1.0'
+        model_version: 'algo:sie-record@0.1.0'
+        human_review_required: false
+    InsightExportRequest:
+      value:
+        context:
+          request_id: 00000000-0000-4000-8000-00000000d008
+          contract_version: 0.9.0
+          caller: bff
+          data_class: L3
+          student_ref: 00000000-0000-4000-8000-00000000a001
+          audience: guardian
+          idempotency_key: synthetic-export-0001
+    InsightExportResponse:
+      value:
+        contract_version: 0.9.0
+        result:
+          export_job_id: 00000000-0000-4000-8000-00000000f501
+          status: queued
+        evidence_ids: []
+        confidence: 1
+        source_version: 'algo:sie-export@0.1.0'
+        model_version: 'algo:sie-export@0.1.0'
+        human_review_required: false
+    InsightEraseRequest:
+      value:
+        context:
+          request_id: 00000000-0000-4000-8000-00000000d009
+          contract_version: 0.9.0
+          caller: bff
+          data_class: L3
+          student_ref: 00000000-0000-4000-8000-00000000a001
+          audience: guardian
+          idempotency_key: synthetic-erase-0001
+        confirmation_code: SYNTH001
+    InsightEraseResponse:
+      value:
+        contract_version: 0.9.0
+        result:
+          erase_receipt_id: 00000000-0000-4000-8000-00000000f601
+          status: scheduled
+          scopes: [claim_ledger, facts, evidence, inference, reports, uploads]
+        evidence_ids: []
+        confidence: 1
+        source_version: 'algo:sie-erase@0.1.0'
+        model_version: 'algo:sie-erase@0.1.0'
+        human_review_required: false
