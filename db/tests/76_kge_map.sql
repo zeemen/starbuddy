@@ -202,8 +202,8 @@ SELECT t.throws_like($$INSERT INTO kge.content_review (object_type, object_id, r
 
 -- ================= 发布前校验与发布：干净的 k1 =================
 SELECT t.ok(t.kge_issues(:k1, 'error') = '{}', '干净的地图版本没有阻断问题');
-SELECT t.ok(t.kge_issues(:k1, 'warning') = '{few_items:MATH.FUNC.QUAD.GRAPH,few_items:MATH.FUNC.QUAD.VERTEX_FORM}',
-            '主考点少于 3 道题只报警告：' || array_to_string(t.kge_issues(:k1, 'warning'), ','));
+SELECT t.ok(t.kge_issues(:k1, 'warning') = '{few_items:MATH.FUNC.QUAD.GRAPH,few_items:MATH.FUNC.QUAD.VERTEX_FORM,policy_scheme_missing:nanjing:2027}',
+            '主考点少于 3 道题、政策库缺方案只报警告：' || array_to_string(t.kge_issues(:k1, 'warning'), ','));
 SELECT t.ok(kge.publish_map_version(:k1) IS NOT NULL, '没有阻断问题时可以发布');
 SELECT t.ok((SELECT status = 'published' AND published_at IS NOT NULL FROM kge.map_version WHERE id = :k1), '发布后状态与发布时间由发布函数写入');
 SELECT t.throws_like($$SELECT kge.publish_map_version('b1000000-0000-4000-8000-0000000000b1')$$, '23514', '只能发布草稿', '已发布的版本不能再发布');

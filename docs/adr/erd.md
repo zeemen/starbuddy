@@ -169,3 +169,28 @@ erDiagram
 公共层的 jsonb 在任何层级都不能带学生、作答、账号等个人层的键（CHECK 约束 `kge.has_personal_key`）。
 
 个人层计划中的改动（冲刺 1-C，未建，只在这里画出）：`platform.evidence_event` 增加 `evidence_kind`、`map_version`、`cognitive_level` 三列，分别记录证据种类、证据产生时的地图版本、证据对应的认知层次，与契约 `EvidenceDraft` 一起改（必停项）。
+
+## policy schema：考情政策库与招录库（0013、0014）
+
+公共基础数据：城市 × 中考届别的考试方案（五层），学校 × 年度 × 批次的录取数据。唯一写入方是 `starbuddy_kge`，不含学生数据。录入规范见 `docs/design/policy/data-entry-rules.md`。
+
+```mermaid
+erDiagram
+  source_domain ||..o{ source_document : "链接主机名必须在清单里"
+  source_document ||--o{ exam_scheme : "方案引用来源文件"
+  exam_scheme ||--o{ subject_config : "科目配置（第 2、3 层）"
+  exam_scheme ||--o{ transition_rule : "过渡规则（第 4 层）"
+  exam_scheme ||--o{ admission_rule : "招录规则（第 5 层）"
+  school ||--o{ admission_line : "学校 × 年度 × 批次 × 类别"
+  source_document ||--o{ admission_line : "来源覆盖该年"
+  student_profile }o..|| exam_scheme : "0014：exam_cohort 与（region, 届别）对应，不加外键"
+```
+
+| 表 | 谁写 | 谁读 | 要点 |
+|---|---|---|---|
+| `policy.source_domain` | 人工登记 | kge、learning | 官方来源主机名清单 |
+| `policy.source_document` | kge | learning；bff 只看已发布，不看复核人 | https、主机名在清单里、两人复核后发布；发布后只能更新核对日期或撤下 |
+| `policy.exam_scheme` | kge（发布只能经 `policy.publish_scheme`，属主 authz） | learning；bff 只看已发布 | 同城市同届别只一个已发布；非草稿只能改状态 |
+| `policy.subject_config` / `transition_rule` / `admission_rule` | kge | learning；bff 只看已发布方案的 | 方案发布后冻结；计分科目必须有满分；总分由库计算 |
+| `policy.school` / `policy.admission_line` | kge | learning、bff（招录行只看已发布） | 分数不超过该年方案总分；来源覆盖该年；已发布行只能撤下，更正走新行 |
+

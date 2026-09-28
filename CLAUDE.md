@@ -21,7 +21,7 @@ v1.0 的总纲与开发计划已移到 docs/archive/，只供追溯。仓库现�
 - packages/stage      舞台组件：白板、讲解 DSL 播放器（OpenMAIC 子包需锁版本）
 - adapters/{aya,zhixing,wenli,echo}  四科适配器，实现 diagnose/plan/teach/grade/generate_variation/report
   （echo 已搁置，见 specs/adapter-echo-sprint3/lessons.md）
-- db/migrations       平台 schema（platform.*）、两个核心的 schema（insight.* 判断账本为迁移 0010 草稿、kge.* 公共知识层为迁移 0011 草稿，均待人执行）与各科 schema
+- db/migrations       平台 schema（platform.*）、两个核心的 schema（insight.* 判断账本为迁移 0010 草稿、kge.* 公共知识层为迁移 0011 草稿）、policy.* 考情政策库与招录库（迁移 0013 草稿）与各科 schema；草稿均待人执行
 - evals/              人设一致性、学科判分、契约测试、金标回归、禁用推断用例（评测即代码）
 - specs/              每个任务一个目录：spec.md / plan.md / tasks.md / lessons.md
 - docs/adr/           架构决策记录

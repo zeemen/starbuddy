@@ -20,8 +20,8 @@ apply_or_exit() { apply "$@" || exit 1; }
 apply_or_exit "$ROOT/db/bootstrap/roles.sql"
 apply_or_exit "${UPS[@]}"
 apply_or_exit "${DOWNS[@]}"
-left=$(psql_run -tAc "SELECT count(*) FROM pg_namespace WHERE nspname IN ('platform', 'insight', 'kge')" </dev/null)
-[ "$left" = "0" ] || { echo "db-test: 失败（down 之后 platform、insight 或 kge schema 仍存在）"; exit 1; }
+left=$(psql_run -tAc "SELECT count(*) FROM pg_namespace WHERE nspname IN ('platform', 'insight', 'kge', 'policy')" </dev/null)
+[ "$left" = "0" ] || { echo "db-test: 失败（down 之后 platform、insight、kge 或 policy schema 仍存在）"; exit 1; }
 apply_or_exit "${UPS[@]}"
 echo "db-test: 迁移 up → down → up 通过（${#UPS[@]} 个迁移）"
 

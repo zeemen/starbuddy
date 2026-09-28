@@ -36,23 +36,23 @@ SELECT t.ok(NOT EXISTS (
 -- 公共知识层不含学生数据（CLAUDE.md 规则 13；specs/kge-schema-v0.9 验收）：kge 下任何表与视图都没有指向学生、账号、家庭的列
 SELECT t.ok(NOT EXISTS (
   SELECT 1 FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid
-   WHERE c.relnamespace = 'kge'::regnamespace AND c.relkind IN ('r', 'p', 'v', 'm') AND a.attnum > 0 AND NOT a.attisdropped
+   WHERE c.relnamespace IN ('kge'::regnamespace, 'policy'::regnamespace) AND c.relkind IN ('r', 'p', 'v', 'm') AND a.attnum > 0 AND NOT a.attisdropped
      AND a.attname ~ '(student|account|household|guardian|phone|learner|attempt|evidence_event|user|profile|child|parent_account|session|email|openid|device|wechat)'),
   '攻击面：公共知识层（kge）没有学生、账号、家庭等个人层的键');
 SELECT t.ok(NOT EXISTS (
   SELECT 1 FROM pg_constraint k JOIN pg_class c ON c.oid = k.conrelid
-   WHERE c.relnamespace = 'kge'::regnamespace AND k.contype = 'f'
-     AND k.confrelid NOT IN (SELECT oid FROM pg_class WHERE relnamespace = 'kge'::regnamespace
+   WHERE c.relnamespace IN ('kge'::regnamespace, 'policy'::regnamespace) AND k.contype = 'f'
+     AND k.confrelid NOT IN (SELECT oid FROM pg_class WHERE relnamespace = c.relnamespace
                              UNION ALL SELECT 'platform.item'::regclass UNION ALL SELECT 'platform.skill_node'::regclass)),
   '攻击面：公共知识层的外键只指向 kge 自身与 platform 的内容登记（题目、能力视图）');
 -- 没有外键的 uuid 列同样能存学生 ID：kge 的每个 uuid / uuid[] 列要么是本表主键 id，要么被指向 kge 自身的外键覆盖（安全审查建议 5）
 SELECT t.ok(NOT EXISTS (
   SELECT 1 FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid
-   WHERE c.relnamespace = 'kge'::regnamespace AND c.relkind IN ('r', 'p') AND a.attnum > 0 AND NOT a.attisdropped
+   WHERE c.relnamespace IN ('kge'::regnamespace, 'policy'::regnamespace) AND c.relkind IN ('r', 'p') AND a.attnum > 0 AND NOT a.attisdropped
      AND a.atttypid IN ('uuid'::regtype, 'uuid[]'::regtype)
      AND NOT (a.attname = 'id' AND EXISTS (SELECT 1 FROM pg_constraint k WHERE k.conrelid = c.oid AND k.contype = 'p' AND k.conkey = ARRAY[a.attnum]))
      AND NOT EXISTS (SELECT 1 FROM pg_constraint k WHERE k.conrelid = c.oid AND k.contype = 'f' AND a.attnum = ANY (k.conkey)
-                       AND k.confrelid IN (SELECT oid FROM pg_class WHERE relnamespace = 'kge'::regnamespace))),
+                       AND k.confrelid IN (SELECT oid FROM pg_class WHERE relnamespace = c.relnamespace))),
   '攻击面：公共知识层的 uuid 列只能是本表主键或指向 kge 自身的外键（不能挂学生 ID）');
 -- 金丝雀：夹具里每个学生、账号的 ID 都不能出现在 kge 任何文本、数组或 jsonb 列里
 DO $$
@@ -60,7 +60,7 @@ DECLARE col record; v_hits text[] := '{}'; v_n bigint;
 BEGIN
   FOR col IN SELECT c.oid::regclass AS rel, a.attname
                FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid
-              WHERE c.relnamespace = 'kge'::regnamespace AND c.relkind = 'r' AND a.attnum > 0 AND NOT a.attisdropped
+              WHERE c.relnamespace IN ('kge'::regnamespace, 'policy'::regnamespace) AND c.relkind = 'r' AND a.attnum > 0 AND NOT a.attisdropped
                 AND a.atttypid NOT IN ('uuid'::regtype, 'uuid[]'::regtype, 'bytea'::regtype) LOOP
     EXECUTE format('SELECT count(*) FROM %s x WHERE EXISTS (SELECT 1 FROM (SELECT id::text AS k FROM platform.student_profile
                       UNION ALL SELECT id::text FROM platform.account) ids WHERE position(ids.k IN x.%I::text) > 0)', col.rel, col.attname)
@@ -161,7 +161,11 @@ INSERT INTO t.visibility_exempt VALUES
   ('insight.claim_template', '判断模板登记，只看已审核的，不含任何学生数据'),
   ('kge.map_version', '公共知识层，只看已发布版本，没有学生键（本文件第一节断言）'),
   ('kge.knowledge_node', '公共知识层，只看已发布版本的有效节点'), ('kge.knowledge_edge', '公共知识层，只看已发布版本的有效边'),
-  ('kge.textbook_projection', '公共知识层，只看已发布版本；核对人列不授予'), ('kge.region_projection', '公共知识层，只看已发布版本');
+  ('kge.textbook_projection', '公共知识层，只看已发布版本；核对人列不授予'), ('kge.region_projection', '公共知识层，只看已发布版本'),
+  ('policy.source_document', '考情库，只看已发布；复核人列不授予'), ('policy.exam_scheme', '考情库，只看已发布方案；复核人列不授予'),
+  ('policy.subject_config', '考情库，只看已发布方案的内容'), ('policy.transition_rule', '考情库，只看已发布方案的内容'),
+  ('policy.admission_rule', '考情库，只看已发布方案的内容'), ('policy.school', '招录库，高中学校公开信息'),
+  ('policy.admission_line', '招录库，只看已发布行；复核人列不授予');
 -- BFF 可执行、但不进函数越权矩阵的 SECURITY DEFINER 函数：没有“另一户的对象”可以作为参数，逐个写明由哪里覆盖
 CREATE TABLE t.function_matrix_exempt (sig text PRIMARY KEY, reason text NOT NULL);
 INSERT INTO t.function_matrix_exempt VALUES

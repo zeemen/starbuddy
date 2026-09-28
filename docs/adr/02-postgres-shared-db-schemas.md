@@ -94,3 +94,11 @@ ADR 09 建议 pilot 和生产全链路境内。Supabase 托管版没有中国大
 - **一个迁移只改一个 schema（第 2 条）**：`0011_kge__knowledge_map` 只建 kge；`platform.curriculum_version.map_version_id` 单独放在 `0012_platform__curriculum_map_version`。
 - **写入方**：新增数据库角色 `starbuddy_kge`，是公共层的唯一写入方，与其他应用角色互斥（0011 断言）；没有任何角色能删除公共层的行。
 - 待签字：随 0011 / 0012 的 PR 一起评审（必停项）。
+
+## 增补：policy schema（草稿，2026-09-28，specs/policy-schema-v0.9）
+
+- **新增 `policy` schema**：放考情政策库与招录库。它们是基础数据，不是学科内容（平台规划 v1.3 §6），与 kge 分开；版本节奏也不同：kge 按地图版本冻结，policy 按城市届别版本化。
+- **写入方复用 `starbuddy_kge`**：公共层只有一个写入方，审核台后端统一；发布经 SECURITY DEFINER 函数。
+- **一个迁移只改一个 schema**：0013 只建 policy；学生档案的中考届别在 0014（platform）。kge 地图校验对政策库的读取写在 0011 的校验函数里，用动态查询，政策库不存在时跳过。
+- **不含学生数据**：攻击面测试的公共层断言扩到 policy。
+
