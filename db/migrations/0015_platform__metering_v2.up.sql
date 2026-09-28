@@ -144,6 +144,17 @@ ALTER TABLE platform.trial_claim ENABLE ROW LEVEL SECURITY;
 ALTER TABLE platform.trial_claim FORCE ROW LEVEL SECURITY;
 ALTER TABLE platform.trial_claim_phone ENABLE ROW LEVEL SECURITY;
 ALTER TABLE platform.trial_claim_phone FORCE ROW LEVEL SECURITY;
+-- 回填：0015 之前开通过试用的家庭算已领取（契约审查必须改 1）；手机号取家庭创建者账号的号码
+-- 领取记录不能从订阅推出：注销、订阅清理后仍要能拦住再领（lessons 偏差 8）
+INSERT INTO platform.trial_claim (household_id, student_id, claimed_at)
+SELECT DISTINCT ON (s.household_id) s.household_id, s.student_id, s.created_at
+  FROM platform.subscription s WHERE s.source = 'trial' ORDER BY s.household_id, s.created_at, s.id;
+INSERT INTO platform.trial_claim_phone (phone_digest, household_id)
+SELECT DISTINCT ON (platform.meter_phone_digest(ac.phone_e164)) platform.meter_phone_digest(ac.phone_e164), c.household_id
+  FROM platform.trial_claim c
+  JOIN platform.household h ON h.id = c.household_id
+  JOIN platform.account_contact ac ON ac.account_id = h.created_by_account
+ ORDER BY platform.meter_phone_digest(ac.phone_e164), c.claimed_at, c.household_id;
 
 -- ---------- 五、单日上限与宵禁（规格 §7、§12.2） ----------
 -- 家长只能调低上限、只能收紧宵禁（宵禁时段必须覆盖默认的 22:00–6:00，Asia/Shanghai）。没有行 = 全部取默认。
@@ -243,12 +254,21 @@ CREATE FUNCTION platform.meter_in_curfew(p_student uuid, p_at timestamptz) RETUR
                                         coalesce(g.curfew_start, time '22:00'), coalesce(g.curfew_end, time '06:00'))
           FROM (SELECT 1) one LEFT JOIN platform.student_time_guard g ON g.student_id = p_student $$;
 
--- 当日（Asia/Shanghai）已用分钟：分钟类资源的已结算 + 预留中（释放、过期的不算）
+-- 距宵禁开始还有几分钟（向下取整）；当前已在宵禁内返回 0
+CREATE FUNCTION platform.meter_minutes_until_curfew(p_student uuid, p_at timestamptz) RETURNS integer
+  LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, platform, pg_temp
+  AS $$ SELECT CASE WHEN platform.meter_in_curfew(p_student, p_at) THEN 0
+                    ELSE floor(extract(epoch FROM (coalesce(g.curfew_start, time '22:00') - (p_at AT TIME ZONE 'Asia/Shanghai')::time
+                                                   + interval '24 hours')) / 60)::integer % 1440 END
+          FROM (SELECT 1) one LEFT JOIN platform.student_time_guard g ON g.student_id = p_student $$;
+
+-- 当日（Asia/Shanghai）已用分钟：分钟类资源的已结算 + 未过期的预留中（释放、过期的不算；已过期但过期任务还没跑到的也不算）
 CREATE FUNCTION platform.meter_minutes_today(p_student uuid, p_at timestamptz) RETURNS numeric
   LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, platform, pg_temp
   AS $$ SELECT coalesce(sum(CASE r.state WHEN 'settled' THEN r.settled_qty ELSE r.reserved_qty END), 0)
           FROM platform.usage_reservation r JOIN platform.resource_type rt ON rt.code = r.resource_type
-         WHERE r.student_id = p_student AND rt.unit = 'minute' AND r.state IN ('reserved', 'settled')
+         WHERE r.student_id = p_student AND rt.unit = 'minute'
+           AND (r.state = 'settled' OR (r.state = 'reserved' AND r.expires_at > p_at))
            AND r.reserved_at >= ((p_at AT TIME ZONE 'Asia/Shanghai')::date::timestamp AT TIME ZONE 'Asia/Shanghai')
            AND r.reserved_at < ((p_at AT TIME ZONE 'Asia/Shanghai')::date::timestamp AT TIME ZONE 'Asia/Shanghai') + interval '1 day' $$;
 
@@ -317,9 +337,18 @@ BEGIN
   IF rt.curfew_applies AND platform.meter_in_curfew(p_student, v_now) THEN
     RETURN jsonb_build_object('outcome', 'curfew');
   END IF;
+  -- 分钟类一笔不能跨进宵禁（安全审查必须改 2）：超过距宵禁的分钟数时拒绝，并告诉调用方最多还能预留多少
+  IF rt.curfew_applies AND rt.unit = 'minute' AND p_quantity > platform.meter_minutes_until_curfew(p_student, v_now) THEN
+    RETURN jsonb_build_object('outcome', 'curfew_soon', 'minutes_until_curfew', platform.meter_minutes_until_curfew(p_student, v_now));
+  END IF;
   IF rt.unit = 'minute' THEN
     -- 同一学生的分钟类预留串行，挡住并发的两笔各自没超、合计超过上限
     PERFORM pg_advisory_xact_lock(hashtextextended('platform.meter_daily:' || p_student, 0));
+    -- 拿锁后重查同 key：同 key 的并发重试要拿到已有预留，而不是被上限拒绝（安全审查必须改 1）
+    SELECT * INTO r FROM platform.usage_reservation WHERE idempotency_key = p_key;
+    IF FOUND THEN
+      RETURN platform.meter_same_key(r, p_student, p_resource, p_fingerprint, p_content_fingerprint, p_source_method);
+    END IF;
     v_cap := platform.meter_daily_cap(p_student);
     v_used := platform.meter_minutes_today(p_student, v_now);
     IF v_used + p_quantity > v_cap THEN
@@ -761,6 +790,9 @@ DECLARE
   e platform.entitlement;
   v_topup numeric;
 BEGIN
+  IF p_tier IS NULL THEN
+    RAISE EXCEPTION 'tier is required' USING ERRCODE = 'invalid_parameter_value';
+  END IF;
   SELECT * INTO s FROM platform.subscription WHERE id = p_subscription FOR UPDATE;
   IF NOT FOUND OR s.source <> 'paid' OR s.status <> 'active' OR v_now < s.period_start OR v_now >= s.period_end THEN
     RETURN jsonb_build_object('outcome', 'not_upgradable');
@@ -854,6 +886,7 @@ ALTER FUNCTION platform.meter_plan_daily_cap(uuid) OWNER TO starbuddy_authz;
 ALTER FUNCTION platform.meter_daily_cap(uuid) OWNER TO starbuddy_authz;
 ALTER FUNCTION platform.meter_in_curfew(uuid, timestamptz) OWNER TO starbuddy_authz;
 ALTER FUNCTION platform.meter_minutes_today(uuid, timestamptz) OWNER TO starbuddy_authz;
+ALTER FUNCTION platform.meter_minutes_until_curfew(uuid, timestamptz) OWNER TO starbuddy_authz;
 ALTER FUNCTION platform.meter_reserve_impl(uuid, text, text, text, numeric, text, text, boolean) OWNER TO starbuddy_authz;
 ALTER FUNCTION platform.meter_reserve_upload(uuid, text, text, text, integer) OWNER TO starbuddy_authz;
 ALTER FUNCTION platform.meter_practice(uuid, text) OWNER TO starbuddy_authz;
@@ -867,6 +900,7 @@ REVOKE EXECUTE ON FUNCTION platform.meter_phone_digest(text), platform.reject_pr
   platform.meter_main_subscription(uuid), platform.meter_state_of(uuid), platform.meter_student_state(uuid),
   platform.meter_plan_daily_cap(uuid), platform.meter_daily_cap(uuid), platform.meter_in_window(time, time, time),
   platform.meter_in_curfew(uuid, timestamptz), platform.meter_minutes_today(uuid, timestamptz),
+  platform.meter_minutes_until_curfew(uuid, timestamptz),
   platform.meter_reserve_impl(uuid, text, text, text, numeric, text, text, boolean),
   platform.meter_reserve_upload(uuid, text, text, text, integer), platform.meter_practice(uuid, text),
   platform.set_time_guard(uuid, integer, time, time), platform.meter_slot_limit(text, platform.plan_tier, boolean),
@@ -885,4 +919,6 @@ GRANT UPDATE (paused_at) ON platform.subject_enrollment TO starbuddy_authz;
 ALTER TABLE platform.subject_catalog ENABLE ROW LEVEL SECURITY;
 ALTER TABLE platform.subject_catalog FORCE ROW LEVEL SECURITY;
 CREATE POLICY subject_catalog_read ON platform.subject_catalog FOR SELECT TO starbuddy_bff USING (true);
-GRANT SELECT ON platform.subject_catalog, platform.student_time_guard, platform.practice_log TO starbuddy_bff;
+GRANT SELECT ON platform.subject_catalog, platform.practice_log TO starbuddy_bff;
+-- 设置人（家长账号 ID）不给前端读：学生端不应看到是哪位家长改的（安全审查需要人决定项，默认收紧）
+GRANT SELECT (student_id, daily_cap_minutes, curfew_start, curfew_end, updated_at) ON platform.student_time_guard TO starbuddy_bff;

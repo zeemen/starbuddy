@@ -1,8 +1,11 @@
 -- 0015 回滚：恢复 0008 / 0009 的函数正文与约束，删除新表、新列、新资源与 v12-pilot@1 草稿配置。
 -- 订阅状态值没有改名，不需要映射回去；已按新规则结束的试用保持 ended。
--- 注意：回滚前若已有引用新资源的额度桶或流水（上传、存储、深度报告），DELETE resource_type 会因外键失败，需先由人处理。
+-- 注意（先在副本演练）：
+--   - 回滚前若已有引用新资源的额度桶或流水（上传、存储、深度报告），或 v12-pilot@1 已发布、已被订阅引用，删除会失败，需先由人处理；
+--   - 恢复 0009 的续期后，进行中的试用会按 0009 每 30 天续期；0015 之后才可能出现的付费宽限期订阅在 0009 下不会再推进。
 
-REVOKE SELECT ON platform.subject_catalog, platform.student_time_guard, platform.practice_log FROM starbuddy_bff;
+REVOKE SELECT ON platform.subject_catalog, platform.practice_log FROM starbuddy_bff;
+REVOKE SELECT (student_id, daily_cap_minutes, curfew_start, curfew_end, updated_at) ON platform.student_time_guard FROM starbuddy_bff;
 REVOKE UPDATE (paused_at) ON platform.subject_enrollment FROM starbuddy_authz;
 
 -- 函数正文恢复（meter_reserve 从 SQL 包装恢复为 0009 的 plpgsql 正文；授权与属主不变）
@@ -304,6 +307,7 @@ DROP FUNCTION platform.meter_practice(uuid, text);
 DROP FUNCTION platform.meter_reserve_upload(uuid, text, text, text, integer);
 DROP FUNCTION platform.meter_reserve_impl(uuid, text, text, text, numeric, text, text, boolean);
 DROP FUNCTION platform.meter_minutes_today(uuid, timestamptz);
+DROP FUNCTION platform.meter_minutes_until_curfew(uuid, timestamptz);
 DROP FUNCTION platform.meter_in_curfew(uuid, timestamptz);
 DROP FUNCTION platform.meter_in_window(time, time, time);
 DROP FUNCTION platform.meter_daily_cap(uuid);

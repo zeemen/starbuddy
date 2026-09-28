@@ -77,13 +77,16 @@ SELECT t.ok(NOT has_table_privilege('starbuddy_bff', 'platform.meter_secret', 'S
             AND NOT has_table_privilege('starbuddy_bff', 'platform.trial_claim', 'SELECT')
             AND NOT has_table_privilege('starbuddy_bff', 'platform.trial_claim_phone', 'SELECT')
             AND NOT has_table_privilege('starbuddy_bff', 'platform.student_time_guard', 'INSERT')
+            AND NOT has_column_privilege('starbuddy_bff', 'platform.student_time_guard', 'updated_by', 'SELECT')
+            AND has_column_privilege('starbuddy_bff', 'platform.student_time_guard', 'daily_cap_minutes', 'SELECT')
             AND NOT has_any_column_privilege('starbuddy_bff', 'platform.student_time_guard', 'UPDATE')
             AND NOT has_table_privilege('starbuddy_bff', 'platform.practice_log', 'INSERT')
             AND NOT has_table_privilege('starbuddy_authz', 'platform.practice_log', 'DELETE')
             AND NOT has_any_column_privilege('starbuddy_authz', 'platform.practice_log', 'UPDATE')
             AND NOT has_table_privilege('starbuddy_bff', 'platform.subject_catalog', 'INSERT')
             AND NOT has_any_column_privilege('starbuddy_authz', 'platform.subject_catalog', 'UPDATE'),
-            'BFF 读不到密钥与试用领取记录；时间设置、自练记录、学科目录都不能直接写');
+            'BFF 读不到密钥、试用领取记录与时间设置的设置人；时间设置、自练记录、学科目录都不能直接写');
+SELECT t.throws($$SELECT platform.meter_upgrade('5b000000-0000-4000-8000-00000000005b', NULL)$$, '22023', '升级必须给档位');
 
 -- ================= 二、试用：14 天、一次性、到期转留存 =================
 SELECT t.ok(t.call('b0000000-0000-4000-8000-00000000000b',
@@ -202,6 +205,10 @@ SELECT t.ok(t.call('a1000000-0000-4000-8000-0000000000a1',
                        $$platform.meter_reserve('c1000000-0000-4000-8000-0000000000c1', 'ai_active_time', t.k(112), repeat('4', 64), 1, NULL, 'teach')$$)
                 = '{"outcome": "daily_cap_reached", "remaining_today": 0}',
             '次日按家长设定的 60 分钟计');
+UPDATE t.clock SET now = '2026-12-17 02:31:00+00';  -- 两笔预留已过期，过期任务还没跑
+SELECT t.ok(t.call('a1000000-0000-4000-8000-0000000000a1',
+                   $$platform.meter_reserve('c1000000-0000-4000-8000-0000000000c1', 'ai_active_time', t.k(113), repeat('4', 64), 30, NULL, 'teach')$$)
+            @> '{"outcome": "reserved"}', '已过期、还没回收的预留不计入当日用量');
 
 -- ================= 五、宵禁 =================
 SELECT t.ok(t.call('a0000000-0000-4000-8000-00000000000a',
@@ -212,6 +219,13 @@ SELECT t.ok(t.call('a0000000-0000-4000-8000-00000000000a',
             = '{"outcome": "curfew_must_cover_default"}', '宵禁只能收紧，不能早于 6:00 结束');
 SELECT t.throws($$SELECT t.call('a0000000-0000-4000-8000-00000000000a', 'platform.set_time_guard(''c1000000-0000-4000-8000-0000000000c1'', 60, time ''22:00'', NULL)')$$,
                 '22023', '宵禁起止必须成对');
+UPDATE t.clock SET now = '2026-12-17 13:45:00+00';  -- 上海 21:45，距默认宵禁 15 分钟
+SELECT t.ok(t.call('a1000000-0000-4000-8000-0000000000a1',
+                   $$platform.meter_reserve('c1000000-0000-4000-8000-0000000000c1', 'ai_active_time', t.k(119), repeat('5', 64), 30, NULL, 'teach')$$)
+            = '{"outcome": "curfew_soon", "minutes_until_curfew": 15}', '分钟类一笔不能跨进宵禁');
+SELECT t.ok(t.call('a1000000-0000-4000-8000-0000000000a1',
+                   $$platform.meter_reserve('c1000000-0000-4000-8000-0000000000c1', 'ai_active_time', t.k(118), repeat('5', 64), 15, NULL, 'teach')$$)
+            @> '{"outcome": "reserved"}', '预留到宵禁开始为止可以');
 UPDATE t.clock SET now = '2026-12-17 15:30:00+00';  -- 上海 23:30
 SELECT t.ok(t.call('a1000000-0000-4000-8000-0000000000a1',
                    $$platform.meter_reserve('c1000000-0000-4000-8000-0000000000c1', 'diagnosis_full', t.k(120), repeat('5', 64), 1, NULL, 'diagnose')$$)
@@ -245,7 +259,10 @@ SELECT t.ok(t.call('a0000000-0000-4000-8000-00000000000a',
 UPDATE t.clock SET now = '2026-12-18 23:30:00+00';
 SELECT t.ok(t.call('a1000000-0000-4000-8000-0000000000a1',
                    $$platform.meter_reserve('c1000000-0000-4000-8000-0000000000c1', 'ai_active_time', t.k(126), repeat('5', 64), 30, NULL, 'teach')$$)
-            @> '{"outcome": "reserved"}', '上海 07:30 预留 30 分钟');
+            @> '{"outcome": "reserved"}'
+            AND t.call('a1000000-0000-4000-8000-0000000000a1', format('platform.meter_settle(%L, 30)', platform.meter_usage_id(t.k(126))))
+                @> '{"outcome": "settled"}',
+            '上海 07:30 用了 30 分钟（已结算）');
 UPDATE t.clock SET now = '2026-12-19 01:00:00+00';
 SELECT t.ok(t.call('a1000000-0000-4000-8000-0000000000a1',
                    $$platform.meter_reserve('c1000000-0000-4000-8000-0000000000c1', 'ai_active_time', t.k(127), repeat('5', 64), 30, NULL, 'teach')$$)
@@ -316,6 +333,14 @@ SELECT t.ok(t.call('a0000000-0000-4000-8000-00000000000a', $$platform.pause_subj
             AND t.call('a0000000-0000-4000-8000-00000000000a', $$platform.enroll_subject('c1000000-0000-4000-8000-0000000000c1', 'aya')$$)
                 @> '{"outcome": "enrolled"}',
             '换下的科目本周期仍占槽，新科目下个周期才能开；换回原科目可以');
+-- 选修槽：道法（选修、beta）补一个已发布课程版本
+INSERT INTO platform.curriculum_version (region, exam_year, grade, textbook_version, subject, content_version, status, published_at)
+VALUES ('nanjing', 2027, 9, 'bubian-2024', 'zhixing', '0.1.0', 'published', now());
+SELECT t.ok(t.call('a0000000-0000-4000-8000-00000000000a', $$platform.enroll_subject('c1000000-0000-4000-8000-0000000000c1', 'zhixing')$$)
+            = '{"slot": "elective", "limit": 0, "outcome": "limit_reached"}', '基本档没有选修槽');
+UPDATE platform.subscription SET tier = 'plus' WHERE student_id = 'c1000000-0000-4000-8000-0000000000c1' AND status = 'active';
+SELECT t.ok(t.call('a0000000-0000-4000-8000-00000000000a', $$platform.enroll_subject('c1000000-0000-4000-8000-0000000000c1', 'zhixing')$$)
+            = '{"slot": "elective", "limit": 2, "outcome": "enrolled"}', 'Plus 有 2 个选修槽');
 ROLLBACK;
 
 -- ================= 八、升级补差、宽限期 =================

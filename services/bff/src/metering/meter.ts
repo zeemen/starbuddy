@@ -12,10 +12,12 @@ import { isUuidV4, usageIdFor } from './uuid.ts';
 
 export type ResourceType =
   | 'diagnosis_screen' | 'diagnosis_full' | 'mock_exam' | 'mistake_analysis'
-  | 'lesson_whiteboard' | 'voice_realtime' | 'ai_active_time';
+  | 'lesson_whiteboard' | 'voice_realtime' | 'ai_active_time'
+  // 0015：不对应插件方法，由 BFF 自己发起（上传经 meter_reserve_upload，按页折算）
+  | 'upload' | 'storage_bytes' | 'deep_report';
 
 // 0015 的拒绝原因：留存态不调用 AI；宵禁时段；分钟类资源超过当日上限（规格书 V1.2 §3、§7、§12.2）
-export type GuardRejection = 'retained_no_ai' | 'curfew' | 'daily_cap_reached';
+export type GuardRejection = 'retained_no_ai' | 'curfew' | 'curfew_soon' | 'daily_cap_reached';
 
 export interface ReserveInput {
   studentId: string;
@@ -34,6 +36,7 @@ export type ReserveResult =
       reserved_qty: number; settled_qty: number | null; expires_at: string; dedup_of: string | null }
   | { outcome: 'insufficient'; remaining: number }
   | { outcome: 'daily_cap_reached'; remaining_today: number }
+  | { outcome: 'curfew_soon'; minutes_until_curfew: number }
   | { outcome: 'conflict' | 'dedup_in_progress' | 'no_entitlement' | 'retained_no_ai' | 'curfew' };
 
 export type TerminalResult = { outcome: 'settled' | 'released' | 'conflict'; usage_id: string; state: string; idempotent?: boolean };
@@ -96,6 +99,7 @@ export type MeteredCallResult =
   | { status: 'unknown'; usageId: string }
   | { status: 'insufficient'; remaining: number }
   | { status: 'daily_cap_reached'; remainingToday: number }
+  | { status: 'curfew_soon'; minutesUntilCurfew: number }
   | { status: 'conflict' | 'dedup_in_progress' | 'no_entitlement' | 'retained_no_ai' | 'curfew' };
 
 const DEFAULT_DELAYS = [1000, 2000, 4000, 8000];
@@ -129,6 +133,8 @@ export async function meteredCall(deps: MeterDeps, input: MeteredCallInput): Pro
       return { status: 'insufficient', remaining: r.remaining };
     case 'daily_cap_reached':
       return { status: 'daily_cap_reached', remainingToday: r.remaining_today };
+    case 'curfew_soon':
+      return { status: 'curfew_soon', minutesUntilCurfew: r.minutes_until_curfew };
     case 'conflict':
     case 'dedup_in_progress':
     case 'no_entitlement':

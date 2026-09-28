@@ -60,9 +60,14 @@ col|platform.skill_observation.student_id|starbuddy_authz|SELECT|SUPERUSER
 col|platform.skill_observation.superseded_at|starbuddy_learning|UPDATE|SUPERUSER
 col|platform.skill_observation.superseded_by|starbuddy_learning|UPDATE|SUPERUSER
 col|platform.student_time_guard.curfew_end|starbuddy_authz|UPDATE|SUPERUSER
+col|platform.student_time_guard.curfew_end|starbuddy_bff|SELECT|SUPERUSER
 col|platform.student_time_guard.curfew_start|starbuddy_authz|UPDATE|SUPERUSER
+col|platform.student_time_guard.curfew_start|starbuddy_bff|SELECT|SUPERUSER
 col|platform.student_time_guard.daily_cap_minutes|starbuddy_authz|UPDATE|SUPERUSER
+col|platform.student_time_guard.daily_cap_minutes|starbuddy_bff|SELECT|SUPERUSER
+col|platform.student_time_guard.student_id|starbuddy_bff|SELECT|SUPERUSER
 col|platform.student_time_guard.updated_at|starbuddy_authz|UPDATE|SUPERUSER
+col|platform.student_time_guard.updated_at|starbuddy_bff|SELECT|SUPERUSER
 col|platform.student_time_guard.updated_by|starbuddy_authz|UPDATE|SUPERUSER
 col|platform.subject_enrollment.paused_at|starbuddy_authz|UPDATE|SUPERUSER
 col|platform.subject_enrollment.status|starbuddy_authz|UPDATE|SUPERUSER
@@ -245,6 +250,7 @@ func|platform.meter_lock_reservation(uuid)|starbuddy_authz|EXECUTE|starbuddy_aut
 func|platform.meter_main_subscription(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.meter_method_allowed(text,text)|starbuddy_authz|EXECUTE|SUPERUSER
 func|platform.meter_minutes_today(uuid,timestamp with time zone)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.meter_minutes_until_curfew(uuid,timestamp with time zone)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.meter_now()|starbuddy_authz|EXECUTE|SUPERUSER
 func|platform.meter_open_subscription(uuid,text)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.meter_open_subscription(uuid,text)|starbuddy_bff|EXECUTE|starbuddy_authz
@@ -329,6 +335,7 @@ owner|platform.meter_in_curfew(uuid,timestamp with time zone)|starbuddy_authz
 owner|platform.meter_lock_reservation(uuid)|starbuddy_authz
 owner|platform.meter_main_subscription(uuid)|starbuddy_authz
 owner|platform.meter_minutes_today(uuid,timestamp with time zone)|starbuddy_authz
+owner|platform.meter_minutes_until_curfew(uuid,timestamp with time zone)|starbuddy_authz
 owner|platform.meter_open_subscription(uuid,text)|starbuddy_authz
 owner|platform.meter_plan_daily_cap(uuid)|starbuddy_authz
 owner|platform.meter_practice(uuid,text)|starbuddy_authz
@@ -519,7 +526,6 @@ rel|platform.student_profile|starbuddy_bff|SELECT|SUPERUSER
 rel|platform.student_profile|starbuddy_learning|SELECT|SUPERUSER
 rel|platform.student_time_guard|starbuddy_authz|INSERT|SUPERUSER
 rel|platform.student_time_guard|starbuddy_authz|SELECT|SUPERUSER
-rel|platform.student_time_guard|starbuddy_bff|SELECT|SUPERUSER
 rel|platform.subject_catalog|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.subject_catalog|starbuddy_bff|SELECT|SUPERUSER
 rel|platform.subject_enrollment|starbuddy_authz|INSERT|SUPERUSER
@@ -629,6 +635,7 @@ secdef|platform.meter_in_curfew(uuid,timestamp with time zone)
 secdef|platform.meter_lock_reservation(uuid)
 secdef|platform.meter_main_subscription(uuid)
 secdef|platform.meter_minutes_today(uuid,timestamp with time zone)
+secdef|platform.meter_minutes_until_curfew(uuid,timestamp with time zone)
 secdef|platform.meter_open_subscription(uuid,text)
 secdef|platform.meter_plan_daily_cap(uuid)
 secdef|platform.meter_practice(uuid,text)
