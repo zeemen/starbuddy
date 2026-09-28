@@ -65,9 +65,17 @@ DO $$ BEGIN EXECUTE replace(t.at(1, ', hint_level_used, evidence_kind, evidence_
                             'e1700000-0000-4000-8000-000000000001', 'e1700000-0000-4000-8000-000000000016'); END $$;
 SELECT t.ok((SELECT source_type FROM platform.attempt WHERE attempt_id = 'a1700000-0000-4000-8000-000000000001') = 'objective',
             '作答的来源类型默认客观记录');
-SELECT t.throws(t.at(2, ', hint_level_used, evidence_kind', ', 1, ''independent'''), '23514', '用过提示的作答不能记成独立');
-SELECT t.throws(t.at(3, ', hint_level_used, evidence_kind', ', 3, ''delayed_retest'''), '23514', '用过提示的作答不能记成延迟复测');
-SELECT t.throws(t.at(4, ', source_type', ', ''student_self_report'''), '23514', '作答表不收学生自述');
+-- 以下每条都让作答与它的证据补列一致，确保拦下它的是被测的那条约束而不是一致性触发器
+SELECT t.throws_like(t.at(2, ', hint_level_used, evidence_kind, evidence_level, channel, map_version_id',
+                     ', 1, ''independent'', ''A'', ''keypad'', ''b1000000-0000-4000-8000-0000000000b1'''),
+                     '23514', 'attempt_hinted_kind', '用过提示的作答不能记成独立');
+DO $$ BEGIN EXECUTE t.ev(17, 'response_text', ', evidence_kind, evidence_level, channel', ', ''delayed_retest'', ''A'', ''keypad'''); END $$;
+SELECT t.throws_like(replace(t.at(3, ', hint_level_used, evidence_kind, evidence_level, channel', ', 3, ''delayed_retest'', ''A'', ''keypad'''),
+                             'e1700000-0000-4000-8000-000000000001', 'e1700000-0000-4000-8000-000000000017'),
+                     '23514', 'attempt_hinted_kind', '用过提示的作答不能记成延迟复测');
+SELECT t.throws_like(replace(t.at(4, ', source_type', ', ''student_self_report'''),
+                             'e1700000-0000-4000-8000-000000000001', 'e1700000-0000-4000-8000-000000000002'),
+                     '23514', 'attempt_source_type_check', '作答表不收学生自述');
 SELECT t.throws_like(t.at(5, ', evidence_kind, evidence_level, channel, map_version_id',
                 ', ''independent'', ''B'', ''keypad'', ''b1000000-0000-4000-8000-0000000000b1'''), '23514', 'differ from its response evidence',
                 '作答的证据等级必须与它的作答证据一致');
