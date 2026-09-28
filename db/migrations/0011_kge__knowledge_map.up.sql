@@ -591,7 +591,9 @@ BEGIN
 
   -- 11. 地区投影的（地区, 考试年份）在考情政策库里没有已发布方案（警告；政策库回填前不阻断）。
   --     政策库由迁移 0013 建；这里用动态查询，0013 未执行或已回滚时跳过（specs/policy-schema-v0.9 设计要点 5）
-  IF to_regclass('policy.exam_scheme') IS NOT NULL THEN
+  --     调用者没有 policy 的使用权时也跳过（to_regclass 在无权限时会报错，不会返回 NULL）
+  IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'policy') THEN
+  IF has_schema_privilege(current_user, 'policy', 'USAGE') AND to_regclass('policy.exam_scheme') IS NOT NULL THEN
     RETURN QUERY EXECUTE
       'SELECT DISTINCT ''policy_scheme_missing''::text, ''warning''::text, p.region || '':'' || p.exam_year,
               ''考情政策库没有该城市该届别的已发布方案''::text
@@ -600,6 +602,7 @@ BEGIN
           AND NOT EXISTS (SELECT 1 FROM policy.exam_scheme e
                            WHERE e.city = p.region AND e.cohort = p.exam_year AND e.status = ''published'')
         ORDER BY 3' USING p_version;
+  END IF;
   END IF;
 
   -- 7. 时政已过期仍为已发布：只报警告，由体检流程下架（KGE 第七章“过期由体检自动下架，不进骨架”）

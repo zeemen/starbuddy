@@ -60,7 +60,7 @@ CREATE TABLE policy.source_document (
   doc_number          text NOT NULL CHECK (char_length(doc_number) BETWEEN 1 AND 64),  -- 文号
   title               text NOT NULL CHECK (char_length(title) BETWEEN 1 AND 200),
   published_on        date NOT NULL,
-  url                 text NOT NULL CHECK (url ~ '^https://[a-z0-9][a-z0-9.\-]{2,252}(/[A-Za-z0-9._~%/?#=&+\-]*)?$'),
+  url                 text NOT NULL CHECK (url ~ '^https://[a-z0-9][a-z0-9.\-]{2,252}(/[A-Za-z0-9._~/+\-]*)?$'),
   applies_from_cohort policy.cohort NOT NULL,
   applies_to_cohort   policy.cohort,
   last_verified_on    date NOT NULL,
@@ -106,6 +106,7 @@ CREATE TABLE policy.subject_config (
   duration_minutes    smallint CHECK (duration_minutes BETWEEN 10 AND 300),
   combined_group      policy.code,                                          -- 合场分组（例如道法与历史合场）
   taken_in_grade      smallint NOT NULL CHECK (taken_in_grade BETWEEN 7 AND 9),
+  exam_month          smallint CHECK (exam_month BETWEEN 1 AND 12),  -- 考查时间（月份），驱动点点日程提醒（v1.3 §6.1 第 3 层）
   eligibility_effect  text NOT NULL DEFAULT 'none' CHECK (eligibility_effect IN ('none', 'graduation', 'admission', 'graduation_and_admission')),
   PRIMARY KEY (scheme_id, subject),
   -- 计分科目必须有满分；非计分科目（第 3 层考查科目）不写满分，总分只由计分科目算
@@ -143,7 +144,12 @@ CREATE TABLE policy.school (
   public_name   text NOT NULL CHECK (char_length(public_name) BETWEEN 1 AND 64),  -- 学校公开名称；不收任何师生个人信息
   level_code    policy.code NOT NULL,                                               -- 办学层级（编码）
   status        text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'closed')),
-  UNIQUE (city, code)
+  source_document_id  uuid NOT NULL REFERENCES policy.source_document (id),
+  review_status policy.pub_status NOT NULL DEFAULT 'draft',
+  reviewers     text[] NOT NULL DEFAULT '{}' CHECK (cardinality(reviewers) <= 4),
+  reviewed_at   timestamptz,
+  UNIQUE (city, code),
+  CONSTRAINT school_two_reviewers CHECK (review_status = 'draft' OR (policy.distinct_count(reviewers) >= 2 AND reviewed_at IS NOT NULL))
 );
 COMMENT ON TABLE policy.school IS '高中学校的公开信息。初中学校与指标生按初中分配的名额 v0.9 不收（spec 待人确认 #5）';
 
@@ -182,7 +188,9 @@ CREATE FUNCTION policy.guard_source_document() RETURNS trigger LANGUAGE plpgsql
   SET search_path = pg_catalog, policy, pg_temp
   AS $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM policy.source_domain d WHERE d.host = policy.url_host(NEW.url) AND d.status = 'active') THEN
+  -- 只在新建或改链接时核对主机名：主机名下线后，挂在它下面的文件仍要能更新核对日期或撤下
+  IF (TG_OP = 'INSERT' OR NEW.url IS DISTINCT FROM OLD.url)
+     AND NOT EXISTS (SELECT 1 FROM policy.source_domain d WHERE d.host = policy.url_host(NEW.url) AND d.status = 'active') THEN
     RAISE EXCEPTION '来源链接的主机名不在官方来源清单里' USING ERRCODE = 'check_violation';
   END IF;
   IF TG_OP = 'INSERT' THEN
@@ -294,7 +302,11 @@ BEGIN
   ELSE
     NEW.created_at := now();
   END IF;
-  SELECT s.city INTO v_city FROM policy.school s WHERE s.id = NEW.school_id;
+  SELECT s.city INTO v_city FROM policy.school s WHERE s.id = NEW.school_id AND s.review_status = 'published';
+  IF v_city IS NULL THEN
+    RAISE EXCEPTION '学校未复核发布' USING ERRCODE = 'check_violation';
+  END IF;
+  PERFORM 1 FROM policy.source_document d WHERE d.id = NEW.source_document_id FOR SHARE;
   IF NOT EXISTS (SELECT 1 FROM policy.source_document d
                   WHERE d.id = NEW.source_document_id AND d.status = 'published' AND d.city = v_city
                     AND NEW.year BETWEEN d.applies_from_cohort AND coalesce(d.applies_to_cohort, NEW.year)) THEN
@@ -305,6 +317,11 @@ BEGIN
   IF v_total IS NULL THEN
     RAISE EXCEPTION '该城市该年没有已发布的中考方案，先录入方案' USING ERRCODE = 'check_violation';
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM policy.admission_rule r JOIN policy.exam_scheme e ON e.id = r.scheme_id
+                  WHERE e.city = v_city AND e.cohort = NEW.year AND e.status = 'published'
+                    AND r.batch_code = NEW.batch_code AND r.track = NEW.track) THEN
+    RAISE EXCEPTION '该年已发布方案的招录规则里没有这个批次与类别' USING ERRCODE = 'check_violation';
+  END IF;
   IF NEW.line_score > v_total OR NEW.control_line > v_total THEN
     RAISE EXCEPTION '分数超过该年方案的计分总分 %', v_total USING ERRCODE = 'check_violation';
   END IF;
@@ -312,8 +329,24 @@ BEGIN
 END $$;
 CREATE TRIGGER guard_admission_line BEFORE INSERT OR UPDATE ON policy.admission_line
   FOR EACH ROW EXECUTE FUNCTION policy.guard_admission_line();
+-- 学校：来源文件已发布且同城市；复核发布后只能改办学状态（停办），更正走新的来源与复核
+CREATE FUNCTION policy.guard_school() RETURNS trigger LANGUAGE plpgsql
+  SET search_path = pg_catalog, policy, pg_temp
+  AS $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM policy.source_document d WHERE d.id = NEW.source_document_id AND d.status = 'published' AND d.city = NEW.city) THEN
+    RAISE EXCEPTION '学校的来源文件未发布或不是同一城市' USING ERRCODE = 'check_violation';
+  END IF;
+  IF TG_OP = 'UPDATE' AND OLD.review_status = 'published'
+     AND (NEW.city, NEW.code, NEW.public_name, NEW.level_code, NEW.review_status, NEW.reviewers, NEW.reviewed_at)
+         IS DISTINCT FROM (OLD.city, OLD.code, OLD.public_name, OLD.level_code, OLD.review_status, OLD.reviewers, OLD.reviewed_at) THEN
+    RAISE EXCEPTION '已复核发布的学校只能改办学状态' USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER guard_school BEFORE INSERT OR UPDATE ON policy.school FOR EACH ROW EXECUTE FUNCTION policy.guard_school();
 REVOKE EXECUTE ON FUNCTION policy.guard_source_document(), policy.guard_scheme(), policy.guard_scheme_frozen(),
-  policy.guard_admission_line() FROM PUBLIC;
+  policy.guard_admission_line(), policy.guard_school() FROM PUBLIC;
 
 -- ---------- 发布前校验与发布 ----------
 CREATE FUNCTION policy.validate_scheme(p_scheme uuid)
@@ -350,6 +383,12 @@ BEGIN
   RETURN QUERY
     SELECT 'reviewers', 'error', p_scheme::text, '复核人不足两位'
      WHERE policy.distinct_count(s.reviewers) < 2 OR s.reviewed_at IS NULL;
+  -- 5a. 版本号必须高于当前已发布版本（不能用旧版本撤下新版本）
+  RETURN QUERY
+    SELECT 'version_not_newer', 'error', p_scheme::text, '版本号不高于当前已发布版本 ' || cur.version
+      FROM policy.exam_scheme cur
+     WHERE cur.city = s.city AND cur.cohort = s.cohort AND cur.status = 'published'
+       AND string_to_array(s.version, '.')::int[] <= string_to_array(cur.version, '.')::int[];
   -- 6. 与上一届相比总分或计分科目变了却没有过渡规则（警告）
   RETURN QUERY
     SELECT 'missing_transition', 'warning', p_scheme::text, '与上一届相比计分总分或计分科目变化，未登记过渡规则'
@@ -379,6 +418,8 @@ BEGIN
   -- 同一城市同一届别的发布串行执行
   PERFORM pg_advisory_xact_lock(hashtext('policy.publish_scheme:' || s.city || ':' || s.cohort));
   PERFORM 1 FROM policy.exam_scheme WHERE city = s.city AND cohort = s.cohort AND status = 'published' FOR UPDATE;
+  -- 锁住来源文件，校验通过后提交前它不能被并发撤下
+  PERFORM 1 FROM policy.source_document WHERE id = s.source_document_id FOR SHARE;
   SELECT count(*) INTO v_errors FROM policy.validate_scheme(p_scheme) c WHERE c.severity = 'error';
   IF v_errors > 0 THEN
     RAISE EXCEPTION '发布校验有 % 个阻断问题，拒绝发布', v_errors USING ERRCODE = 'check_violation';
@@ -400,7 +441,10 @@ GRANT UPDATE (last_verified_on, status, reviewers, reviewed_at, issuer, doc_numb
 GRANT UPDATE (version, source_document_id, status, reviewers, reviewed_at) ON policy.exam_scheme TO starbuddy_kge;
 GRANT UPDATE (line_score, plan_count, control_line, source_document_id, status, reviewers, reviewed_at)
   ON policy.admission_line TO starbuddy_kge;
-GRANT SELECT, INSERT, UPDATE ON policy.subject_config, policy.transition_rule, policy.admission_rule, policy.school TO starbuddy_kge;
+GRANT SELECT, INSERT, UPDATE ON policy.subject_config, policy.transition_rule, policy.admission_rule TO starbuddy_kge;
+-- 学校的城市与编码写入后不能改（已发布招录行“来源同城市”的前提）
+GRANT SELECT, INSERT ON policy.school TO starbuddy_kge;
+GRANT UPDATE (public_name, level_code, status, source_document_id, review_status, reviewers, reviewed_at) ON policy.school TO starbuddy_kge;
 GRANT SELECT ON policy.source_document, policy.exam_scheme, policy.subject_config, policy.transition_rule, policy.admission_rule,
                 policy.school, policy.admission_line
   TO starbuddy_learning;
@@ -408,13 +452,16 @@ GRANT SELECT ON policy.source_document, policy.exam_scheme, policy.subject_confi
 GRANT SELECT (id, city, issuer, doc_number, title, published_on, url, applies_from_cohort, applies_to_cohort, last_verified_on, status)
   ON policy.source_document TO starbuddy_bff;
 GRANT SELECT (id, city, cohort, version, source_document_id, status, published_at) ON policy.exam_scheme TO starbuddy_bff;
-GRANT SELECT ON policy.subject_config, policy.transition_rule, policy.admission_rule, policy.school TO starbuddy_bff;
+GRANT SELECT ON policy.subject_config, policy.transition_rule, policy.admission_rule TO starbuddy_bff;
+GRANT SELECT (id, city, code, public_name, level_code, status, source_document_id, review_status) ON policy.school TO starbuddy_bff;
 GRANT SELECT (id, school_id, year, batch_code, track, line_score, plan_count, control_line, source_document_id, status)
   ON policy.admission_line TO starbuddy_bff;
 -- 发布函数的属主：跑校验、改方案状态
 GRANT SELECT ON policy.source_document, policy.exam_scheme, policy.subject_config, policy.transition_rule, policy.admission_rule
   TO starbuddy_authz;
 GRANT UPDATE (status, published_at) ON policy.exam_scheme TO starbuddy_authz;
+-- 只为发布时对来源文件加 FOR SHARE 锁（行锁要求 UPDATE 权限）；函数体不更新来源文件
+GRANT UPDATE (last_verified_on) ON policy.source_document TO starbuddy_authz;
 
 -- ---------- RLS ----------
 ALTER TABLE policy.source_domain ENABLE ROW LEVEL SECURITY;
@@ -450,7 +497,8 @@ END $$;
 ALTER TABLE policy.school ENABLE ROW LEVEL SECURITY;
 ALTER TABLE policy.school FORCE ROW LEVEL SECURITY;
 CREATE POLICY school_kge ON policy.school FOR ALL TO starbuddy_kge USING (true) WITH CHECK (true);
-CREATE POLICY school_read ON policy.school FOR SELECT TO starbuddy_learning, starbuddy_bff USING (true);
+CREATE POLICY school_read ON policy.school FOR SELECT TO starbuddy_learning USING (true);
+CREATE POLICY school_front_read ON policy.school FOR SELECT TO starbuddy_bff USING (review_status = 'published');
 
 ALTER TABLE policy.admission_line ENABLE ROW LEVEL SECURITY;
 ALTER TABLE policy.admission_line FORCE ROW LEVEL SECURITY;

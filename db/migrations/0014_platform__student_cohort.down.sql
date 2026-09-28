@@ -2,3 +2,4 @@
 DROP TRIGGER guard_student_cohort ON platform.student_profile;
 DROP FUNCTION platform.guard_student_cohort();
 ALTER TABLE platform.student_profile DROP COLUMN exam_cohort;
+DROP FUNCTION platform.expected_cohort(smallint, timestamptz);

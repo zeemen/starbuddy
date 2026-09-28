@@ -306,7 +306,7 @@ declare -A M=(
   ["跨版本边过期不报"]="DO \$\$ DECLARE d text := pg_get_functiondef('kge.validate_map_version(uuid)'::regprocedure); BEGIN IF position('AND v.status <> ''published''' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'AND v.status <> ''published''', 'AND false'); END \$\$;"
   ["攻击面：公共层加无外键的 uuid 列"]="ALTER TABLE kge.map_change ADD COLUMN sample_ref uuid;"
   ["攻击面：公共层文本里写学生 ID"]="INSERT INTO kge.map_change (subject, change_type, payload, evidence_pack) VALUES ('aya', 'other', '{}', '{\"note\": \"c1000000-0000-4000-8000-0000000000c1\"}');"
-  ["考情：来源主机名不校验"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.guard_source_document()'::regprocedure); BEGIN IF position('IF NOT EXISTS (SELECT 1 FROM policy.source_domain d WHERE d.host = policy.url_host(NEW.url) AND d.status = ''active'') THEN' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'IF NOT EXISTS (SELECT 1 FROM policy.source_domain d WHERE d.host = policy.url_host(NEW.url) AND d.status = ''active'') THEN', 'IF false THEN'); END \$\$;"
+  ["考情：来源主机名不校验"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.guard_source_document()'::regprocedure); BEGIN IF position('AND NOT EXISTS (SELECT 1 FROM policy.source_domain d WHERE d.host = policy.url_host(NEW.url) AND d.status = ''active'') THEN' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'AND NOT EXISTS (SELECT 1 FROM policy.source_domain d WHERE d.host = policy.url_host(NEW.url) AND d.status = ''active'') THEN', 'AND false THEN'); END \$\$;"
   ["考情：已发布来源文件可改内容"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.guard_source_document()'::regprocedure); BEGIN IF position('IF OLD.status = ''published'' AND (NEW.city,' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'IF OLD.status = ''published'' AND (NEW.city,', 'IF false AND (NEW.city,'); END \$\$;"
   ["考情：来源文件一人即可发布"]="ALTER TABLE policy.source_document DROP CONSTRAINT source_document_two_reviewers;"
   ["考情：适用届别起止不校验"]="ALTER TABLE policy.source_document DROP CONSTRAINT source_document_cohort_range;"
@@ -342,6 +342,12 @@ declare -A M=(
   ["学生届别：与年级不符也能写"]="DO \$\$ DECLARE d text := pg_get_functiondef('platform.guard_student_cohort()'::regprocedure); BEGIN IF position('ELSIF abs(NEW.exam_cohort - v_expected) > 1' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'ELSIF abs(NEW.exam_cohort - v_expected) > 1', 'ELSIF false'); END \$\$;"
   ["学生届别：推算不按 9 月切换"]="CREATE OR REPLACE FUNCTION platform.expected_cohort(p_grade smallint, p_at timestamptz) RETURNS smallint LANGUAGE sql STABLE SET search_path = pg_catalog, platform, pg_temp AS \$\$ SELECT (extract(year FROM p_at)::int + 1 + (9 - p_grade))::smallint \$\$;"
   ["攻击面：考情库加学生键"]="ALTER TABLE policy.school ADD COLUMN student_id uuid;"
+  ["考情：主机名下线后来源文件改不动"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.guard_source_document()'::regprocedure); BEGIN IF position('IF (TG_OP = ''INSERT'' OR NEW.url IS DISTINCT FROM OLD.url)' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'IF (TG_OP = ''INSERT'' OR NEW.url IS DISTINCT FROM OLD.url)', 'IF true'); END \$\$;"
+  ["招录：批次类别不对照招录规则"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.guard_admission_line()'::regprocedure); BEGIN IF position('AND r.batch_code = NEW.batch_code AND r.track = NEW.track) THEN' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'AND r.batch_code = NEW.batch_code AND r.track = NEW.track) THEN', 'AND false) THEN'); END \$\$;"
+  ["招录：学校未复核也能录"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.guard_admission_line()'::regprocedure); BEGIN IF position('SELECT s.city INTO v_city FROM policy.school s WHERE s.id = NEW.school_id AND s.review_status = ''published'';' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'SELECT s.city INTO v_city FROM policy.school s WHERE s.id = NEW.school_id AND s.review_status = ''published'';', 'SELECT s.city INTO v_city FROM policy.school s WHERE s.id = NEW.school_id;'); END \$\$;"
+  ["招录：学校一人即可发布"]="ALTER TABLE policy.school DROP CONSTRAINT school_two_reviewers;"
+  ["招录：已发布学校可改名"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.guard_school()'::regprocedure); BEGIN IF position('IF TG_OP = ''UPDATE'' AND OLD.review_status = ''published''' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'IF TG_OP = ''UPDATE'' AND OLD.review_status = ''published''', 'IF false'); END \$\$;"
+  ["招录：BFF 能看未复核学校"]="DROP POLICY school_front_read ON policy.school; CREATE POLICY school_front_read ON policy.school FOR SELECT TO starbuddy_bff USING (true);"
 )
 
 # 并行执行（每个变异各起一个一次性 Postgres，互不影响）；DBMUT_JOBS 控制并发数，默认等于 CPU 核数
@@ -352,11 +358,11 @@ trap 'rm -rf "$RES"' EXIT
 # 这样才能证明是 80 本身发现了变异，而不是 20–70 的逐表断言或快照先拦下。
 # 除 KEEP_SNAPSHOT 里的以外，快照都按变异后的状态重新生成，不让快照先拦截。
 declare -A EXPECT=(
-  ["攻击面：考情库加学生键"]="攻击面：公共知识层（kge）没有学生"
-  ["攻击面：公共层加无外键的 uuid 列"]="攻击面：公共知识层的 uuid 列只能是"
-  ["攻击面：公共层文本里写学生 ID"]="攻击面：公共知识层的文本与 jsonb 列里没有"
-  ["攻击面：公共知识层加学生键"]="攻击面：公共知识层（kge）没有学生"
-  ["攻击面：公共知识层外键指向学生档案"]="攻击面：公共知识层的外键只指向"
+  ["攻击面：考情库加学生键"]="攻击面：公共知识层与考情库（kge、policy）没有学生"
+  ["攻击面：公共层加无外键的 uuid 列"]="攻击面：公共知识层与考情库的 uuid 列只能是"
+  ["攻击面：公共层文本里写学生 ID"]="攻击面：公共知识层与考情库的文本与 jsonb 列里没有"
+  ["攻击面：公共知识层加学生键"]="攻击面：公共知识层与考情库（kge、policy）没有学生"
+  ["攻击面：公共知识层外键指向学生档案"]="攻击面：公共知识层与考情库的外键只指向"
   ["攻击面：新表不开 RLS"]="攻击面：每张表（含分区父表）都 ENABLE + FORCE RLS"
   ["攻击面：新表开了 RLS 却没有策略"]="攻击面：可见性矩阵——"
   ["攻击面：新分区授权给 BFF"]="攻击面：子分区对任何应用角色都没有权限"

@@ -119,8 +119,9 @@ policy.admission_rule|admission_rule_read|SELECT|starbuddy_learning|PERMISSIVE|u
 policy.exam_scheme|exam_scheme_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=(status = 'published'::policy.pub_status)|check=-
 policy.exam_scheme|exam_scheme_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
 policy.exam_scheme|exam_scheme_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
+policy.school|school_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=(review_status = 'published'::policy.pub_status)|check=-
 policy.school|school_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
-policy.school|school_read|SELECT|starbuddy_bff,starbuddy_learning|PERMISSIVE|using=true|check=-
+policy.school|school_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
 policy.source_document|source_document_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=(status = 'published'::policy.pub_status)|check=-
 policy.source_document|source_document_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
 policy.source_document|source_document_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-

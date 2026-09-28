@@ -38,13 +38,13 @@ SELECT t.ok(NOT EXISTS (
   SELECT 1 FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid
    WHERE c.relnamespace IN ('kge'::regnamespace, 'policy'::regnamespace) AND c.relkind IN ('r', 'p', 'v', 'm') AND a.attnum > 0 AND NOT a.attisdropped
      AND a.attname ~ '(student|account|household|guardian|phone|learner|attempt|evidence_event|user|profile|child|parent_account|session|email|openid|device|wechat)'),
-  '攻击面：公共知识层（kge）没有学生、账号、家庭等个人层的键');
+  '攻击面：公共知识层与考情库（kge、policy）没有学生、账号、家庭等个人层的键');
 SELECT t.ok(NOT EXISTS (
   SELECT 1 FROM pg_constraint k JOIN pg_class c ON c.oid = k.conrelid
    WHERE c.relnamespace IN ('kge'::regnamespace, 'policy'::regnamespace) AND k.contype = 'f'
      AND k.confrelid NOT IN (SELECT oid FROM pg_class WHERE relnamespace = c.relnamespace
                              UNION ALL SELECT 'platform.item'::regclass UNION ALL SELECT 'platform.skill_node'::regclass)),
-  '攻击面：公共知识层的外键只指向 kge 自身与 platform 的内容登记（题目、能力视图）');
+  '攻击面：公共知识层与考情库的外键只指向本 schema 与 platform 的内容登记（题目、能力视图）');
 -- 没有外键的 uuid 列同样能存学生 ID：kge 的每个 uuid / uuid[] 列要么是本表主键 id，要么被指向 kge 自身的外键覆盖（安全审查建议 5）
 SELECT t.ok(NOT EXISTS (
   SELECT 1 FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid
@@ -53,7 +53,7 @@ SELECT t.ok(NOT EXISTS (
      AND NOT (a.attname = 'id' AND EXISTS (SELECT 1 FROM pg_constraint k WHERE k.conrelid = c.oid AND k.contype = 'p' AND k.conkey = ARRAY[a.attnum]))
      AND NOT EXISTS (SELECT 1 FROM pg_constraint k WHERE k.conrelid = c.oid AND k.contype = 'f' AND a.attnum = ANY (k.conkey)
                        AND k.confrelid IN (SELECT oid FROM pg_class WHERE relnamespace = c.relnamespace))),
-  '攻击面：公共知识层的 uuid 列只能是本表主键或指向 kge 自身的外键（不能挂学生 ID）');
+  '攻击面：公共知识层与考情库的 uuid 列只能是本表主键或指向本 schema 的外键（不能挂学生 ID）');
 -- 金丝雀：夹具里每个学生、账号的 ID 都不能出现在 kge 任何文本、数组或 jsonb 列里
 DO $$
 DECLARE col record; v_hits text[] := '{}'; v_n bigint;
@@ -67,7 +67,7 @@ BEGIN
       INTO v_n;
     IF v_n > 0 THEN v_hits := v_hits || format('%s.%s', col.rel, col.attname); END IF;
   END LOOP;
-  PERFORM t.ok(cardinality(v_hits) = 0, '攻击面：公共知识层的文本与 jsonb 列里没有任何学生或账号 ID（金丝雀）'
+  PERFORM t.ok(cardinality(v_hits) = 0, '攻击面：公共知识层与考情库的文本与 jsonb 列里没有任何学生或账号 ID（金丝雀）'
                                        || coalesce('（命中：' || array_to_string(v_hits, '、') || '）', ''));
 END $$;
 
@@ -99,6 +99,8 @@ SELECT t.ok(NOT EXISTS (
      AND (r.rolsuper OR (r.rolbypassrls AND r.rolname <> 'starbuddy_authz') OR r.rolcreaterole OR r.rolcreatedb
           OR r.rolreplication OR r.rolcanlogin)),
   '攻击面：应用角色没有危险属性（SUPERUSER、BYPASSRLS、CREATEROLE、CREATEDB、REPLICATION、LOGIN；只有 authz 按设计带 BYPASSRLS）');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM pg_auth_members WHERE roleid = 'starbuddy_authz'::regrole),
+  '攻击面：starbuddy_authz 没有任何成员（发布函数的 current_user 信任判断依赖这一点）');
 -- H2：任何非超级用户角色（含经多层中间角色）都不能同时是两个应用角色的成员
 SELECT t.ok(NOT EXISTS (
   SELECT 1 FROM pg_roles r, t.app_roles() a1(role), t.app_roles() a2(role)

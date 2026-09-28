@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 在一次性的本地 Postgres 上验证迁移与 RLS（spec：specs/learner-schema-v0.9/spec.md）。
-#   1. 全部 up → 全部 down → 全部 up（迁移可回滚，开发计划 冲刺 1-B）
+#   1. 全部 up → 全部 down → 全部 up，再把最新迁移单独 down → up（迁移可回滚，开发计划 冲刺 1-B）
 #   2. 按文件名顺序执行 db/tests/*.sql（合成数据，CLAUDE.md 规则 8）
 # 只连本机临时实例（Unix socket，不监听 TCP），结束即删除；不连接任何共享或生产库（规则 9）。
 # 退出码：0 通过；1 失败；3 本机没有 Postgres（由 Makefile 决定是否算失败）。
@@ -24,6 +24,10 @@ left=$(psql_run -tAc "SELECT count(*) FROM pg_namespace WHERE nspname IN ('platf
 [ "$left" = "0" ] || { echo "db-test: 失败（down 之后 platform、insight、kge 或 policy schema 仍存在）"; exit 1; }
 apply_or_exit "${UPS[@]}"
 echo "db-test: 迁移 up → down → up 通过（${#UPS[@]} 个迁移）"
+# 最新迁移单独 down → up（只回滚最后一步时，前面的迁移不受影响）
+apply_or_exit "${DOWNS[0]}"
+apply_or_exit "${UPS[${#UPS[@]}-1]}"
+echo "db-test: 最新迁移单独 down → up 通过（$(basename "${UPS[${#UPS[@]}-1]}")）"
 
 apply_mutation() {
   [ -n "${DBTEST_MUTATION_SQL:-}" ] || return 0

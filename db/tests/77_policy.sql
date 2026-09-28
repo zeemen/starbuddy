@@ -9,7 +9,7 @@
 \set school '''a6000000-0000-4000-8000-0000000000f1'''
 
 -- 官方来源主机名由人登记（超级用户身份模拟人工登记；应用角色都不能写）
-INSERT INTO policy.source_domain (host, issuer, added_by) VALUES ('jyj.synthcity.example', '合成教育局', 'staff-001');
+INSERT INTO policy.source_domain (host, issuer, added_by) VALUES ('jyj.synthcity.example', '合成教育局', 'staff-001'), ('jyj.othercity.example', '另一合成教育局', 'staff-001');
 
 CREATE FUNCTION t.policy_issues(p_scheme uuid, p_severity text) RETURNS text[] LANGUAGE sql AS $$
   SELECT coalesce(array_agg(c.check_name ORDER BY c.check_name), '{}') FROM policy.validate_scheme(p_scheme) c WHERE c.severity = p_severity $$;
@@ -35,10 +35,26 @@ SELECT t.throws_like($$UPDATE policy.source_document SET status = 'published', r
 SELECT t.throws_like($$UPDATE policy.source_document SET status = 'published', reviewers = '{staff-001,staff-001}', reviewed_at = now() WHERE id = 'a1000000-0000-4000-8000-0000000000d1'$$,
                      '23514', 'source_document_two_reviewers', '两位复核人不能是同一人');
 UPDATE policy.source_document SET status = 'published', reviewers = '{staff-001,staff-002}', reviewed_at = now() WHERE id IN (:doc1, :doc2);
+INSERT INTO policy.source_document (id, city, issuer, doc_number, title, published_on, url, applies_from_cohort, last_verified_on, status, reviewers, reviewed_at) VALUES
+  ('a8000000-0000-4000-8000-0000000000d3', 'othercity', '另一合成教育局', '合成〔2026〕3号', '另一城市的合成文件', '2026-05-01', 'https://jyj.othercity.example/doc/3', 2026, '2026-09-01', 'published', '{staff-001,staff-002}', now()),
+  ('a9000000-0000-4000-8000-0000000000d4', 'synthcity', '合成教育局', '合成〔2026〕4号', '未发布的合成文件', '2026-05-01', 'https://jyj.synthcity.example/doc/4', 2026, '2026-09-01', 'draft', '{}', NULL);
+SELECT t.throws_like($$UPDATE policy.source_document SET status = 'draft' WHERE id = 'a2000000-0000-4000-8000-0000000000d2'$$,
+                     '23514', '不能退回草稿', '已发布的来源文件不能退回草稿');
+SELECT t.throws_like($$INSERT INTO policy.source_document (city, issuer, doc_number, title, published_on, url, applies_from_cohort, last_verified_on)
+                       VALUES ('synthcity', '合成', 'x5', '合成', '2026-01-01', 'https://jyj.synthcity.example/r?u=https%3A%2F%2Fevil.example', 2026, '2026-02-01')$$,
+                     '23514', 'source_document_url_check', '来源链接不能带查询串（防跳转链接）');
 SELECT t.throws_like($$UPDATE policy.source_document SET title = '改标题' WHERE id = 'a1000000-0000-4000-8000-0000000000d1'$$,
                      '23514', '只能更新核对日期或撤下', '已发布的来源文件不能改内容');
 UPDATE policy.source_document SET last_verified_on = '2026-09-20' WHERE id = :doc1;
-SELECT t.ok((SELECT last_verified_on = '2026-09-20' FROM policy.source_document WHERE id = :doc1), '已发布的来源文件可以更新核对日期');
+RESET ROLE;
+UPDATE policy.source_domain SET status = 'retired' WHERE host = 'jyj.synthcity.example';
+SET ROLE starbuddy_kge;
+UPDATE policy.source_document SET last_verified_on = '2026-09-21' WHERE id = :doc1;
+SELECT t.ok(true, '主机名下线后，挂在它下面的来源文件仍能更新核对日期（可以撤下）');
+RESET ROLE;
+UPDATE policy.source_domain SET status = 'active' WHERE host = 'jyj.synthcity.example';
+SET ROLE starbuddy_kge;
+SELECT t.ok((SELECT last_verified_on = '2026-09-21' FROM policy.source_document WHERE id = :doc1), '已发布的来源文件可以更新核对日期');
 
 -- ================= 方案、科目配置、规则 =================
 INSERT INTO policy.exam_scheme (id, city, cohort, version, source_document_id) VALUES
@@ -73,7 +89,7 @@ SELECT t.throws_like($$INSERT INTO policy.subject_config (scheme_id, subject, sc
                      '23514', 'subject_config_scored_full_score', '非计分科目不写满分');
 INSERT INTO policy.admission_rule (scheme_id, batch_code, batch_order, track, control_line_basis) VALUES
   (:sch1, 'batch_1', 1, 'unified', 'none'), (:sch2, 'batch_1', 1, 'unified', 'none'), (:sch2, 'batch_1', 1, 'quota_allocation', 'total_score'),
-  (:sch3, 'batch_1', 1, 'unified', 'none');
+  (:sch3, 'batch_1', 1, 'unified', 'none'), (:sch3, 'batch_1', 1, 'quota_allocation', 'total_score');
 SELECT t.throws_like($$INSERT INTO policy.admission_rule (scheme_id, batch_code, batch_order, track, control_line_basis)
                        VALUES ('a3000000-0000-4000-8000-0000000000e1', 'batch_2', 2, 'unified', 'total_score')$$,
                      '23514', 'admission_rule_control_line', '控制线只对指标生有意义');
@@ -113,6 +129,10 @@ SELECT t.throws_like($$UPDATE policy.exam_scheme SET status = 'draft' WHERE id =
                      '23514', '不允许的方案状态变化', '已撤下方案不能回到草稿');
 SELECT t.throws($$SELECT policy.validate_scheme('a0000000-0000-4000-8000-000000000000')$$, 'P0002', '校验不存在的方案时报错');
 INSERT INTO policy.exam_scheme (id, city, cohort, version, source_document_id, reviewers, reviewed_at)
+  VALUES ('aa000000-0000-4000-8000-0000000000e5', 'synthcity', 2027, '1.0.5', 'a9000000-0000-4000-8000-0000000000d4', '{staff-001,staff-002}', now());
+SELECT t.ok(t.policy_issues('aa000000-0000-4000-8000-0000000000e5', 'error') @> '{source_document,version_not_newer}',
+            '来源文件未发布、版本号不高于当前已发布版本时都阻断（实际：' || array_to_string(t.policy_issues('aa000000-0000-4000-8000-0000000000e5', 'error'), ',') || '）');
+INSERT INTO policy.exam_scheme (id, city, cohort, version, source_document_id, reviewers, reviewed_at)
   VALUES ('a7000000-0000-4000-8000-0000000000e4', 'synthcity', 2027, '1.2.0', :doc1, '{staff-001,staff-002}', now());
 RESET ROLE;
 -- 唯一已发布：即使以发布函数属主身份直接改，同城市同届别也不能有第二个已发布方案
@@ -123,7 +143,16 @@ RESET ROLE;
 SET ROLE starbuddy_kge;
 
 -- ================= 招录库 =================
-INSERT INTO policy.school (id, city, code, public_name, level_code) VALUES (:school, 'synthcity', 'synth-hs-1', '合成高级中学（非真实）', 'level_a');
+INSERT INTO policy.school (id, city, code, public_name, level_code, source_document_id) VALUES
+  (:school, 'synthcity', 'synth-hs-1', '合成高级中学（非真实）', 'level_a', :doc2);
+SELECT t.throws_like($$INSERT INTO policy.admission_line (school_id, year, batch_code, track, line_score, source_document_id)
+                       VALUES ('a6000000-0000-4000-8000-0000000000f1', 2026, 'batch_1', 'unified', 100, 'a2000000-0000-4000-8000-0000000000d2')$$,
+                     '23514', '学校未复核发布', '学校未复核发布前不能录招录行');
+SELECT t.throws_like($$UPDATE policy.school SET review_status = 'published', reviewers = '{staff-001}', reviewed_at = now()$$,
+                     '23514', 'school_two_reviewers', '学校发布须两位复核人');
+UPDATE policy.school SET review_status = 'published', reviewers = '{staff-001,staff-002}', reviewed_at = now();
+SELECT t.throws_like($$UPDATE policy.school SET public_name = '改名' WHERE id = 'a6000000-0000-4000-8000-0000000000f1'$$,
+                     '23514', '只能改办学状态', '已复核发布的学校不能改名称');
 INSERT INTO policy.admission_line (school_id, year, batch_code, track, line_score, plan_count, control_line, source_document_id) VALUES
   (:school, 2026, 'batch_1', 'unified', 180, 300, NULL, :doc2),
   (:school, 2027, 'batch_1', 'quota_allocation', NULL, 50, 300, :doc2);
@@ -131,16 +160,23 @@ SELECT t.throws_like($$INSERT INTO policy.admission_line (school_id, year, batch
                        VALUES ('a6000000-0000-4000-8000-0000000000f1', 2026, 'batch_1', 'unified', 201, 'a2000000-0000-4000-8000-0000000000d2')$$,
                      '23514', '超过该年方案的计分总分', '投档线不能超过该年方案的计分总分');
 SELECT t.throws_like($$INSERT INTO policy.admission_line (school_id, year, batch_code, track, line_score, source_document_id)
+                       VALUES ('a6000000-0000-4000-8000-0000000000f1', 2026, 'batch_1', 'unified', 100, 'a8000000-0000-4000-8000-0000000000d3')$$,
+                     '23514', '不是同一城市', '招录行的来源文件必须是同一城市');
+SELECT t.throws($$UPDATE policy.school SET city = 'othercity'$$, '42501', '学校的城市写入后不能改');
+SELECT t.throws_like($$INSERT INTO policy.admission_line (school_id, year, batch_code, track, line_score, source_document_id)
                        VALUES ('a6000000-0000-4000-8000-0000000000f1', 2028, 'batch_1', 'unified', 100, 'a1000000-0000-4000-8000-0000000000d1')$$,
                      '23514', '不覆盖该年', '来源文件必须覆盖该年');
 SELECT t.throws_like($$INSERT INTO policy.admission_line (school_id, year, batch_code, track, line_score, source_document_id)
                        VALUES ('a6000000-0000-4000-8000-0000000000f1', 2029, 'batch_1', 'unified', 100, 'a2000000-0000-4000-8000-0000000000d2')$$,
                      '23514', '没有已发布的中考方案', '该年没有已发布方案时不能录招录行');
+SELECT t.throws_like($$INSERT INTO policy.admission_line (school_id, year, batch_code, track, line_score, source_document_id)
+                       VALUES ('a6000000-0000-4000-8000-0000000000f1', 2026, 'batch_7', 'unified', 100, 'a2000000-0000-4000-8000-0000000000d2')$$,
+                     '23514', '招录规则里没有这个批次', '招录行的批次与类别必须在该年已发布方案的招录规则里');
 SELECT t.throws_like($$INSERT INTO policy.admission_line (school_id, year, batch_code, track, line_score, control_line, source_document_id)
                        VALUES ('a6000000-0000-4000-8000-0000000000f1', 2026, 'batch_1', 'unified', 100, 90, 'a2000000-0000-4000-8000-0000000000d2')$$,
                      '23514', 'admission_line_control_line', '统招行不写控制线');
 SELECT t.throws_like($$INSERT INTO policy.admission_line (school_id, year, batch_code, track, source_document_id)
-                       VALUES ('a6000000-0000-4000-8000-0000000000f1', 2026, 'batch_1', 'other', 'a2000000-0000-4000-8000-0000000000d2')$$,
+                       VALUES ('a6000000-0000-4000-8000-0000000000f1', 2026, 'batch_1', 'unified', 'a2000000-0000-4000-8000-0000000000d2')$$,
                      '23514', 'admission_line_has_value', '招录行至少有分数线或计划数');
 SELECT t.throws_like($$UPDATE policy.admission_line SET status = 'published', reviewers = '{staff-001}', reviewed_at = now() WHERE year = 2026$$,
                      '23514', 'admission_line_two_reviewers', '招录行发布须两位复核人');
@@ -155,6 +191,11 @@ UPDATE policy.admission_line SET status = 'retired' WHERE year = 2026 AND line_s
 UPDATE policy.admission_line SET status = 'published', reviewers = '{staff-001,staff-002}', reviewed_at = now() WHERE year = 2026 AND line_score = 181;
 SELECT t.ok((SELECT count(*) FROM policy.admission_line WHERE year = 2026) = 2 AND (SELECT line_score FROM policy.admission_line WHERE year = 2026 AND status = 'published') = 181,
             '更正走新行加撤下旧行，历史保留');
+SELECT t.throws_like($$UPDATE policy.admission_line SET status = 'published' WHERE year = 2026 AND line_score = 180$$,
+                     '23514', '已撤下的招录行不能再改', '已撤下的招录行不能复活');
+UPDATE policy.source_document SET status = 'retired' WHERE id = 'a8000000-0000-4000-8000-0000000000d3';
+SELECT t.throws_like($$UPDATE policy.source_document SET last_verified_on = '2026-09-25' WHERE id = 'a8000000-0000-4000-8000-0000000000d3'$$,
+                     '23514', '已撤下的来源文件不能再改', '已撤下的来源文件不能再改');
 SELECT t.throws($$DELETE FROM policy.admission_line$$, '42501', '写入方也不能删除招录行');
 RESET ROLE;
 
@@ -170,6 +211,12 @@ SELECT t.ok(NOT has_schema_privilege('starbuddy_insight', 'policy', 'USAGE'), '�
 SET ROLE starbuddy_bff;
 SELECT t.ok((SELECT array_agg(id ORDER BY id) FROM policy.exam_scheme) = ARRAY[:sch1::uuid, :sch3::uuid], 'BFF 只看得到已发布方案');
 SELECT t.ok((SELECT count(DISTINCT scheme_id) FROM policy.subject_config) = 2, 'BFF 只看得到已发布方案的科目配置');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM policy.transition_rule WHERE scheme_id NOT IN (:sch1::uuid, :sch3::uuid))
+            AND (SELECT count(*) FROM policy.transition_rule) = 1, 'BFF 只看得到已发布方案的过渡规则');
+SELECT t.ok((SELECT count(DISTINCT scheme_id) FROM policy.admission_rule) = 2, 'BFF 只看得到已发布方案的招录规则');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM policy.source_document WHERE status <> 'published') AND (SELECT count(*) FROM policy.source_document) = 2,
+            'BFF 只看得到已发布的来源文件');
+SELECT t.ok((SELECT count(*) FROM policy.school) = 1, 'BFF 看得到已复核发布的学校');
 SELECT t.ok((SELECT count(*) FROM policy.admission_line) = 2 AND NOT EXISTS (SELECT 1 FROM policy.admission_line WHERE status <> 'published'),
             'BFF 只看得到已发布的招录行');
 SELECT t.throws($$SELECT reviewers FROM policy.exam_scheme$$, '42501', 'BFF 看不到方案复核人');
@@ -178,7 +225,7 @@ SELECT t.throws($$SELECT count(*) FROM policy.source_domain$$, '42501', 'BFF 不
 SELECT t.throws($$SELECT policy.publish_scheme('a3000000-0000-4000-8000-0000000000e1')$$, '42501', 'BFF 不能发布方案');
 RESET ROLE;
 SET ROLE starbuddy_learning;
-SELECT t.ok((SELECT count(*) FROM policy.exam_scheme) = 4, '学科服务读得到全部方案（含已撤下与草稿）');
+SELECT t.ok((SELECT count(*) FROM policy.exam_scheme) = 5, '学科服务读得到全部方案（含已撤下与草稿）');
 SELECT t.throws($$SELECT policy.publish_scheme('a3000000-0000-4000-8000-0000000000e1')$$, '42501', '学科服务不能发布方案');
 RESET ROLE;
 
@@ -190,13 +237,14 @@ SELECT t.ok(EXISTS (SELECT 1 FROM kge.validate_map_version('b1000000-0000-4000-8
 -- ================= 学生档案届别（0014） =================
 SELECT t.ok(NOT EXISTS (SELECT 1 FROM platform.student_profile WHERE exam_cohort IS NULL), '已有学生档案的届别全部回填');
 SELECT t.ok((SELECT exam_cohort FROM platform.student_profile WHERE id = 'c1000000-0000-4000-8000-0000000000c1')
-            = platform.expected_cohort((SELECT grade FROM platform.student_profile WHERE id = 'c1000000-0000-4000-8000-0000000000c1'), now()),
-            '建档时按年级与当前学年推算届别');
+            = (SELECT platform.expected_cohort(grade, created_at) FROM platform.student_profile WHERE id = 'c1000000-0000-4000-8000-0000000000c1'),
+            '按建档时的年级与建档时间推算届别');
 SELECT t.ok(platform.expected_cohort(9::smallint, '2026-10-01T00:00:00+08:00') = 2027 AND platform.expected_cohort(9::smallint, '2027-03-01T00:00:00+08:00') = 2027
             AND platform.expected_cohort(7::smallint, '2026-09-01T00:00:00+08:00') = 2029 AND platform.expected_cohort(9::smallint, '2026-08-31T12:00:00+08:00') = 2026,
             '届别推算：学年以 9 月 1 日切换');
 SELECT t.throws_like($$UPDATE platform.student_profile SET exam_cohort = exam_cohort + 3 WHERE id = 'c1000000-0000-4000-8000-0000000000c1'$$,
                      '23514', '与年级', '届别与年级推算值相差超过 1 时拒绝');
 UPDATE platform.student_profile SET exam_cohort = exam_cohort + 1 WHERE id = 'c1000000-0000-4000-8000-0000000000c1';
-SELECT t.ok(true, '届别可以在推算值 ±1 内更正（留级、跳级）');
+SELECT t.ok((SELECT exam_cohort = platform.expected_cohort(grade, created_at) + 1 FROM platform.student_profile WHERE id = 'c1000000-0000-4000-8000-0000000000c1'),
+            '届别可以在推算值 ±1 内更正（留级、跳级）');
 UPDATE platform.student_profile SET exam_cohort = exam_cohort - 1 WHERE id = 'c1000000-0000-4000-8000-0000000000c1';
