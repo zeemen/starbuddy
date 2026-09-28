@@ -23,6 +23,11 @@ PLUGIN_CONTRACTS = {"0.9.0": OPENAPI / "plugin-api.v0.9.yaml", "1.0.0": OPENAPI 
 CONTRACT_VERSION = os.environ.get("STARBUDDY_CONTRACT_VERSION", "0.9.0")
 if CONTRACT_VERSION not in PLUGIN_CONTRACTS:
     raise RuntimeError(f"不支持的契约版本 {CONTRACT_VERSION}（可选：{sorted(PLUGIN_CONTRACTS)}）")
+# 候选版签字前只能在测试里用（安全审查建议 3）：还要显式设 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1，
+# 防止服务进程因为全局环境变量误用候选版（学习服务的内部契约还停在 v0）
+CANDIDATE_VERSIONS = {"1.0.0"}
+if CONTRACT_VERSION in CANDIDATE_VERSIONS and os.environ.get("STARBUDDY_ALLOW_CANDIDATE_CONTRACT") != "1":
+    raise RuntimeError(f"契约 {CONTRACT_VERSION} 是候选版，签字前只能在测试里使用（需 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1）")
 PLUGIN_CONTRACT = PLUGIN_CONTRACTS[CONTRACT_VERSION]
 INTERNAL_CONTRACT = OPENAPI / "learning-internal.v0.yaml"
 

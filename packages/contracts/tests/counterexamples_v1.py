@@ -9,6 +9,8 @@
 from __future__ import annotations
 
 import copy
+import hashlib
+import re
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -23,19 +25,45 @@ class BreakingCase:
     base: str
     mutate: Callable[[dict], Any]
     formats: bool = True
+    convert_keys: bool = True
+    # 对照实例：同一个示例不做这处修改（必要时先补齐 v1.0 的其他要求），升到 v1.0 写法后必须被 v1.0 接受
+    fix_control: Callable[[dict], Any] | None = None
 
     def build(self, examples: dict) -> dict:
         value = copy.deepcopy(examples[self.base]["value"])
         out = self.mutate(value)
         return value if out is None else out
 
+    def control(self, examples: dict) -> dict:
+        value = copy.deepcopy(examples[self.base]["value"])
+        if self.fix_control:
+            self.fix_control(value)
+        return value
 
-def to_v1(value):
-    """把实例里的契约版本从 0.9.0 换成 1.0.0（其余不动）。"""
+
+def _uuid4_like(text: str) -> str:
+    h = hashlib.sha256(text.encode()).hexdigest()
+    return f"{h[:8]}-{h[8:12]}-4{h[13:16]}-8{h[17:20]}-{h[20:32]}"
+
+
+UUID4 = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+
+
+def to_v1(value, convert_keys: bool = True):
+    """把实例升到 v1.0 的写法：契约版本 0.9.0 → 1.0.0；v0.9 示例里可读的幂等键换成确定性的 UUIDv4（v1.0 只收 UUIDv4）。
+    其余不动，这样 v1.0 拒绝的原因只能是用例本身要证明的那条收紧。convert_keys=False 用于证明幂等键收紧的那条用例。"""
     if isinstance(value, dict):
-        return {k: ("1.0.0" if k == "contract_version" and v == "0.9.0" else to_v1(v)) for k, v in value.items()}
+        out = {}
+        for k, v in value.items():
+            if k == "contract_version" and v == "0.9.0":
+                out[k] = "1.0.0"
+            elif k == "idempotency_key" and convert_keys and isinstance(v, str) and not UUID4.match(v):
+                out[k] = _uuid4_like(v)
+            else:
+                out[k] = to_v1(v, convert_keys)
+        return out
     if isinstance(value, list):
-        return [to_v1(v) for v in value]
+        return [to_v1(v, convert_keys) for v in value]
     return value
 
 
@@ -68,9 +96,11 @@ def _upper_point(v):
 
 BREAKING = [
     BreakingCase("作答类证据没有 attempt_id", "N3：作答类证据必须指出属于哪道作答", "GradeResponse",
-                 "GradeResponseWenliEssay", _identity),
+                 "GradeResponseWenliEssay", _identity,
+                 fix_control=_set("evidence.0.attempt_id", "00000000-0000-4000-8000-0000000000a2")),
     BreakingCase("作答没有 attempt_id", "N3、N4：attempt_id 由平台生成，必填", "GradeRequest",
-                 "GradeRequestEchoTranscript", _identity),
+                 "GradeRequestEchoTranscript", _identity,
+                 fix_control=_set("attempt.attempt_id", "00000000-0000-4000-8000-0000000000a3")),
     BreakingCase("数学判分引用语文题目", "N7：请求学科与 item_ref 前缀一致", "GradeRequest", "GradeRequestAyaObjective",
                  _set("attempt.item_ref", "wenli:synthetic-q05")),
     BreakingCase("诊断作答引用别科题目", "N7：请求学科与 item_ref 前缀一致", "DiagnoseRequest", "DiagnoseRequestWenliPaper",
@@ -80,6 +110,8 @@ BREAKING = [
                                                        "response": {"text": "（合成示例）"}}])),
     BreakingCase("变式排除列表混入别科题目", "N7：请求学科与引用前缀一致", "GenerateVariationRequest",
                  "GenerateVariationRequestZhixing", _set("exclude_item_refs", ["aya:synthetic-0301-07"])),
+    BreakingCase("数学计划的掌握快照混入语文能力点", "N7：计划请求的能力点前缀一致", "PlanRequest", "PlanRequestAya",
+                 _set("mastery.0.skill_node", "wenli:R3-L2")),
     BreakingCase("数学讲解挂语文能力点", "N7：请求学科与 skill_node 前缀一致", "TeachRequest", "TeachRequestAya",
                  _set("skill_node", "wenli:R3-L2")),
     BreakingCase("作答时间不带时区", "N10：时间字段必须是带时区的 RFC 3339（不依赖 format 插件）", "GradeRequest",
@@ -95,6 +127,18 @@ BREAKING = [
                  _add_signal("face_attention")),
     BreakingCase("证据信号记录情绪", "svc-#9：不记录情绪状态（规则 12）", "DiagnoseResponse", "DiagnoseResponseWenliPaper",
                  _add_signal("emotion_frustrated")),
+    BreakingCase("证据信号记录眼动（词根在中间）", "svc-#9：按分段拦截眼动（安全审查必须改 1）", "DiagnoseResponse",
+                 "DiagnoseResponseWenliPaper", _add_signal("eye_gaze_ratio")),
+    BreakingCase("证据信号记录面部（facial）", "svc-#9：按分段拦截面部", "DiagnoseResponse", "DiagnoseResponseWenliPaper",
+                 _add_signal("facial_tension")),
+    BreakingCase("证据信号记录语音身份", "svc-#9：按分段拦截声纹与说话人", "DiagnoseResponse", "DiagnoseResponseWenliPaper",
+                 _add_signal("speaker_match")),
+    BreakingCase("证据信号记录心情（后缀）", "svc-#9：按分段拦截情绪", "DiagnoseResponse", "DiagnoseResponseWenliPaper",
+                 _add_signal("session_mood")),
+    BreakingCase("幂等键是可读文本", "安全审查必须改 2：幂等键只能是 UUIDv4", "GradeRequest", "GradeRequestAyaObjective",
+                 _set("context.idempotency_key", "zhangsan-grade-0001-abcdef"), convert_keys=False),
+    BreakingCase("选择题选项夹带文字", "安全审查建议 1：选项只能是编码", "GradeRequest", "GradeRequestAyaObjective",
+                 _set("attempt.response", {"choice": ["我觉得是A"]})),
     BreakingCase("学生 ID 用大写 UUID", "N13：student_ref 强制小写 UUID", "GradeRequest", "GradeRequestAyaObjective",
                  _set("context.student_ref", "00000000-0000-4000-8000-00000000A002"), formats=False),
 ]
@@ -113,7 +157,18 @@ V1_CASES = [
     Case("作图语义操作名含空格", "ADR 15：作图语义是结构化的", "GradeRequest", _SUBJ,
          _set("attempt.response", {"semantic": [{"op": "connect A", "args": ["A", "D"]}]})),
     Case("诊断的画像上下文夹带自由文本", "svc-#1：上下文条目来自洞察服务", "DiagnoseRequest", "DiagnoseRequestWenliPaper",
-         _set("learner_context", [{"field_id": "inner.g1.goal", "source_type": "student_self", "value": "x", "note": "y"}])),
+         _set("learner_context", [{"field_id": "outer.g1.weekly_available_time", "source_type": "self", "value": 300,
+                                   "note": "（合成示例）夹带的文字"}])),
+    Case("画像条目取值是自由文本", "svc-#1：取值只能是编码", "DiagnoseRequest", "DiagnoseRequestAyaWithContext",
+         _set("learner_context.0.value", "最近状态不好")),
+    Case("推断条目不带判断 ID", "svc-#1、规则 11：推断条目必须引用判断", "DiagnoseRequest", "DiagnoseRequestAyaWithContext",
+         lambda v: (v["learner_context"][0].pop("claim_id"), None)[1]),
+    Case("latex 夹带 \\text 文字", "安全审查建议 1：归一化内容不能夹带自由文本", "DiagnoseRequest", "DiagnoseRequestAyaWithContext",
+         _set("attempts.0.response", {"latex": "2(x-1) \\text{老师我不会}"})),
+    Case("latex 含中文", "安全审查建议 1：只允许可打印 ASCII", "DiagnoseRequest", "DiagnoseRequestAyaWithContext",
+         _set("attempts.0.response", {"latex": "解：2(x-1)"})),
+    Case("知识页面夹带学生字段", "规则 13：知识页面是公共层内容", "TeachRequest", "TeachRequestAyaWithPage",
+         _set("knowledge_page.student_ref", "00000000-0000-4000-8000-00000000a002")),
     Case("时间戳带非法时区", "N10", "GradeRequest", "GradeRequestAyaObjective", _set("attempt.occurred_at", "2026-10-08T19:30:00+8")),
     Case("未认证错误码拼错", "N1：错误码是枚举", "Problem", "GradeRequestAyaObjective",
          lambda v: {"type": "about:blank", "title": "x", "status": 401, "code": "UNAUTHORIZED", "retryable": False}),

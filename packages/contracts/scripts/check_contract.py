@@ -250,9 +250,10 @@ def check_examples(doc: dict, errors: list[str], path: Path = DEFAULT_SPEC) -> N
             for resp in op.get("responses", {}).values():
                 if isinstance(resp, dict) and "$ref" in resp:
                     resp = doc["components"]["responses"][_refname(resp["$ref"])]
-                content = resp.get("content", {}).get("application/json") if isinstance(resp, dict) else None
-                if content:
-                    medias.append(content)
+                for ctype in ("application/json", "application/problem+json"):  # 错误体示例也要校验（v1.0 新错误码）
+                    content = resp.get("content", {}).get(ctype) if isinstance(resp, dict) else None
+                    if content:
+                        medias.append(content)
             for media in medias:
                 if "$ref" not in media.get("schema", {}):
                     continue
@@ -323,8 +324,12 @@ def check_breaking(v09: dict, v1: dict, errors: list[str]) -> int:
         value = case.build(v09["components"]["examples"])
         if not _validator(reg0, uri0, case.schema, case.formats).is_valid(value):
             errors.append(f"破坏性变更用例在 v0.9 下就不合法（证明不了是 v1.0 收紧）：{case.name}")
-        if _validator(reg1, uri1, case.schema, case.formats).is_valid(to_v1(value)):
+        if _validator(reg1, uri1, case.schema, case.formats).is_valid(to_v1(value, case.convert_keys)):
             errors.append(f"破坏性变更没有生效（v1.0 仍接受）：{case.name}（{case.rule}）")
+        # 对照：不做这处修改的同一实例升到 v1.0 写法后，v1.0 必须接受，才能证明拒绝来自这条收紧（契约审查）
+        control = case.control(v09["components"]["examples"]) if case.control else None
+        if control is not None and not _validator(reg1, uri1, case.schema, case.formats).is_valid(to_v1(control)):
+            errors.append(f"破坏性变更用例的对照实例在 v1.0 下不合法，证明不了拒绝原因：{case.name}")
     return len(BREAKING)
 
 

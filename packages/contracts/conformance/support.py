@@ -103,7 +103,9 @@ def context(fx: Fixtures, case: dict) -> dict:
         "student_ref": STUDENT,
         # 夹具可以声明 L3（照片、语音类作答）；默认 L2
         "data_class": case.get("data_class", "L2"),
-        "idempotency_key": f"conformance-{case['id']}-{uuid.uuid4().hex[:12]}"[:128],
+        # v1.0 只收 UUIDv4 幂等键；v0.9 保留可读前缀便于排查
+        "idempotency_key": (str(uuid.uuid4()) if CONTRACT_VERSION != "0.9.0"
+                            else f"conformance-{case['id']}-{uuid.uuid4().hex[:12]}"[:128]),
         "content_version": dict(fx.content_version),
     }
     if case["method"] in METERED:

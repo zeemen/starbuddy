@@ -12,13 +12,17 @@ info:
     ## 相对 v0.9 的破坏性变更（迁移期：v0.9 保留到冲刺 2 结束，W6）
     - 作答类证据（`response_text`、`response_choice`、`asr_transcription`）必须带 `attempt_id`；
       `AttemptInput.attempt_id` 改为必填（评审 N3、N4）。
-    - 请求里的 `item_ref` / `skill_node` 前缀必须与 `context.subject` 一致（N7；道法只约束 `item_ref`）。
+    - grade、diagnose、teach、generate_variation、plan 请求里的 `item_ref` / `skill_node` 前缀必须与 `context.subject` 一致
+      （N7；道法只约束 `item_ref`；report 的历史数据由平台选取，不约束）。
+    - `idempotency_key` 必须是小写 UUIDv4（安全审查：键会出现在日志与重放路径里）。
     - 时间字段必须是带时区的 RFC 3339（`Timestamp`，N10）。
     - `ReportFields.forecast` 移除：考试预测只由洞察服务 `insight.predict` 提供，只给编排层（sie-#2）。
     - `TeachResult.verified_claims` 改名 `verified_statements`（sie-#4，避免与判断账本的“判断”混淆）。
     - `ScoringPoint.point_id` 只允许小写，与采分点、判分维度同一写法（svc-#7）。
     - `EvidencePayloadSignal.signal_code` 拒收 `voiceprint`、`face`、`gaze`、`emotion` 开头的编码（svc-#9；CLAUDE.md 规则 12）。
-    - 废弃（迁移期仍接受）：`AttemptInput.response.image_ref`、`transcript_ref`（ADR 15：适配器不接触原图与转写原件）。
+    - 选择题选项、`latex`、`mhchem` 有字符与命令约束（不能夹带自由文本）。
+    - 废弃（迁移期仍接受）：`AttemptInput.response.image_ref`、`transcript_ref`、`DiagnoseRequest.paper_image_refs`
+      （ADR 15：适配器不接触原图与转写原件）。
 
     ## 结果未知与重试（N8、N18）
     `Problem.retryable = true` 表示**结果未知**：平台必须用同一个 `idempotency_key` 重试，按重试结果结算或回滚。
@@ -126,6 +130,8 @@ paths:
             examples:
               wenli_paper:
                 $ref: '#/components/examples/DiagnoseRequestWenliPaper'
+              aya_with_context:
+                $ref: '#/components/examples/DiagnoseRequestAyaWithContext'
       responses:
         '200':
           description: 同步完成
@@ -182,6 +188,8 @@ paths:
             examples:
               aya_hint:
                 $ref: '#/components/examples/TeachRequestAya'
+              aya_lesson_with_page:
+                $ref: '#/components/examples/TeachRequestAyaWithPage'
       responses:
         '200':
           description: 教学片段
@@ -216,6 +224,8 @@ paths:
                 $ref: '#/components/examples/GradeRequestAyaObjective'
               aya_with_context:
                 $ref: '#/components/examples/GradeRequestAyaWithContext'
+              aya_geometry:
+                $ref: '#/components/examples/GradeRequestAyaGeometry'
               echo_async:
                 $ref: '#/components/examples/GradeRequestEchoTranscript'
               wenli_essay:
@@ -251,6 +261,8 @@ paths:
             examples:
               zhixing:
                 $ref: '#/components/examples/GenerateVariationRequestZhixing'
+              aya_family:
+                $ref: '#/components/examples/GenerateVariationRequestAyaFamily'
       responses:
         '200':
           description: 选题结果
@@ -329,6 +341,11 @@ components:
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
+          examples:
+            unauthenticated:
+              $ref: '#/components/examples/ProblemUnauthenticated'
+            mode_not_supported:
+              $ref: '#/components/examples/ProblemModeNotSupported'
 
   schemas:
     # ---------- 公共类型 ----------
@@ -429,6 +446,7 @@ components:
         产生本结果的模型或算法。模型调用写 `model:<供应商>/<模型>@<版本>`，由平台模型路由回传；
         确定性算法写 `algo:<名称>@<版本>`；两者都用到时写模型的那一个，算法版本写进
         `source_version`。禁止写 `routed` 之类不可追溯的值（wenli KD-04、zhixing KD-07）。
+        `@` 后写模型的快照版本（带日期或版本号），不写会漂移的“最新版”别名（评审 v09-#5；ADR 04 增补第 4 条）。
       pattern: '^(model:[a-z0-9\-]+/[A-Za-z0-9._\-]+@[A-Za-z0-9._\-]+|algo:[A-Za-z0-9._\-]+@[A-Za-z0-9._\-]+)$'
       examples: ['algo:aya-symbolic-ts@0.1.0', 'model:dashscope/qwen-plus@2026-09']
 
@@ -502,9 +520,9 @@ components:
           description: 计量预留 ID。消耗类方法必填（ADR 06）。
         idempotency_key:
           type: string
-          minLength: 16
-          maxLength: 128
+          pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
           description: |
+            小写 UUIDv4（v1.0 起，安全审查：键会出现在日志与重放路径里，不能携带任何可读信息）。
             重试时保持不变。同一个 key 配不同的请求体，返回 `IDEMPOTENCY_CONFLICT`；比较请求体时不含 `request_id`。
             冲突检测由平台负责，适配器尽力而为（评审 N13、N14）。
         content_version: { $ref: '#/components/schemas/ContentVersion' }
@@ -627,8 +645,9 @@ components:
           type: string
           description: |
             信号编码。禁止 `xp_`、`achievement_`、`mastery_` 前缀：游戏化数值与掌握度不进证据（echo #12/A6；CLAUDE.md 规则 2）。
-            禁止 `voiceprint`、`face`、`gaze`、`emotion` 开头：不用声纹、面部、眼动做推断，不记录情绪状态（v1.0 评审 svc-#9；规则 12）。
-          pattern: '^(?!xp_|achievement_|mastery_|voiceprint|face|gaze|emotion)[a-z0-9_]{1,48}$'
+            禁止任何一段（按下划线分隔）是声纹、语音身份、面部、眼动、情绪类词根：不用声纹、面部、眼动做推断，
+            不记录情绪状态（v1.0 评审 svc-#9；规则 12）。按分段匹配，`facet_count` 这类不受影响，`eye_gaze`、`x_emotion` 被拒。
+          pattern: '^(?!xp_|achievement_|mastery_)(?!(?:[a-z0-9]+_)*(?:voiceprint|voice|speaker|face|facial|gaze|eye|eyes|iris|emotion|emotional|mood|affect|affective)(?:_|$))[a-z0-9_]{1,48}$'
         value: { type: number }
 
     VerifierReasonCode:
@@ -687,8 +706,8 @@ components:
           description: |
             适配器声明的结果效力。**平台侧规则**：平台按结果引用的全部证据（请求里的 EvidenceRecord
             加本次草稿）的 admission 重新判定 semantics；适配器声明的只能比平台判定的更严，不能更松。
-            报告的 `forecast` 只计已准入证据。复核完成前，`human_review_required = true` 的结果不计入
-            正式测评与掌握门槛（待评审确认）。schema 只能约束本次草稿，下面的条件是其中一部分。
+            复核完成前，`human_review_required = true` 的结果不计入正式测评，也不推动掌握门槛与星亮
+            （评审第三节结论；ADR 11）。schema 只能约束本次草稿，下面的条件是其中一部分。
           $ref: '#/components/schemas/Semantics'
       allOf:
         - description: human_review_required 为真时必须给出原因。
@@ -753,9 +772,17 @@ components:
           maxProperties: 1
           properties:
             text: { type: string, maxLength: 20000 }
-            choice: { type: array, items: { type: string }, minItems: 1 }
-            latex: { type: string, maxLength: 20000, description: 平台归一化后的数学表达（数学键盘、画布、拍照识别的校正结果）。 }
-            mhchem: { type: string, maxLength: 4000, description: 平台归一化后的化学式或方程式。 }
+            choice: { type: array, minItems: 1, maxItems: 16, items: { type: string, pattern: '^[A-Za-z0-9]{1,8}$' } }
+            latex:
+              type: string
+              maxLength: 20000
+              description: 平台归一化后的数学表达（数学键盘、画布、拍照识别的校正结果）。只允许可打印 ASCII，不允许 `\text` 类命令夹带文字。
+              pattern: '^(?!.*\\(?:text|mbox|mathrm|operatorname|textrm|textbf|textit|verb))[\x20-\x7E]{1,20000}$'
+            mhchem:
+              type: string
+              maxLength: 4000
+              description: 平台归一化后的化学式或方程式。只允许可打印 ASCII，不允许 `\text` 类命令。
+              pattern: '^(?!.*\\(?:text|mbox|mathrm|operatorname|textrm|textbf|textit|verb))[\x20-\x7E]{1,4000}$'
             semantic:
               type: array
               description: 作图语义（几何辅助线、受力图等），由平台作图组件产出。
@@ -794,7 +821,10 @@ components:
           maxItems: 200
         paper_image_refs:
           type: array
-          description: 整卷照片（mode = paper）。OCR 低置信时先请学生确认题目再判分（完整方案第六章）。
+          deprecated: true
+          description: |
+            整卷照片（mode = paper）。**v1.0 废弃**（ADR 15：适配器不接触原图）：迁移期后由平台输入通道识别整卷，
+            以带 `attempt_id` 的归一化作答放进 `attempts`。OCR 低置信时先请学生确认题目再判分（完整方案第六章）。
           items: { type: string, pattern: '^objstore://[a-z0-9][a-z0-9/_.\-]{0,255}$' }
           maxItems: 20
         prior_evidence:
@@ -926,6 +956,26 @@ components:
           items: { $ref: './knowledge-service.v0.9.yaml#/components/schemas/PathStep' }
         exam_config: { $ref: '#/components/schemas/ExamConfig' }
 
+      allOf:
+        - description: 请求学科为 wenli 时，引用前缀必须一致（评审 N7）。
+          if: { properties: { context: { properties: { subject: { const: wenli } }, required: [subject] } }, required: [context] }
+          then:
+            allOf:
+              - { properties: { mastery: { items: { properties: { skill_node: { pattern: '^wenli:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } } } } }
+              - { properties: { constraints: { properties: { focus_skill_nodes: { items: { pattern: '^wenli:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } } } } }
+        - description: 请求学科为 aya 时，引用前缀必须一致（评审 N7）。
+          if: { properties: { context: { properties: { subject: { const: aya } }, required: [subject] } }, required: [context] }
+          then:
+            allOf:
+              - { properties: { mastery: { items: { properties: { skill_node: { pattern: '^aya:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } } } } }
+              - { properties: { constraints: { properties: { focus_skill_nodes: { items: { pattern: '^aya:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } } } } }
+        - description: 请求学科为 echo 时，引用前缀必须一致（评审 N7）。
+          if: { properties: { context: { properties: { subject: { const: echo } }, required: [subject] } }, required: [context] }
+          then:
+            allOf:
+              - { properties: { mastery: { items: { properties: { skill_node: { pattern: '^echo:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } } } } }
+              - { properties: { constraints: { properties: { focus_skill_nodes: { items: { pattern: '^echo:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } } } } }
+
     PlanTask:
       type: object
       required: [task_id, kind, skill_nodes, priority, estimated_minutes, rationale_code]
@@ -986,8 +1036,8 @@ components:
         mode:
           type: string
           description: |
-            `hint` 练习中的提示；`lesson` 讲评课 / 白板（按节计量，完整方案 5.8）。
-            是否拆成两个操作待评审（spec 待人确认 #2）。
+            `hint` 练习中的提示，计入 AI 陪练时长（资源 `ai_active_time`）；`lesson` 讲评课 / 白板，按节计量
+            （资源 `lesson_whiteboard`）；实时语音另计 `voice_realtime`（评审 v09-#2；计量 v2）。不拆成两个操作。
           enum: [hint, lesson]
         skill_node: { $ref: '#/components/schemas/SkillNodeRef' }
         item_ref: { $ref: '#/components/schemas/ItemRef' }
@@ -1533,7 +1583,7 @@ components:
         status: { const: queued }
         poll_after_ms: { type: integer, minimum: 200, maximum: 60000 }
         usage_id: { type: string, format: uuid }
-        idempotency_key: { type: string, minLength: 16, maxLength: 128 }
+        idempotency_key: { type: string, pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' }
 
     JobStatus:
       type: object
@@ -1675,7 +1725,7 @@ components:
           student_ref: 00000000-0000-4000-8000-00000000a001
           data_class: L3
           usage_id: 00000000-0000-4000-8000-00000000b001
-          idempotency_key: synthetic-wenli-diag-0001
+          idempotency_key: 00000000-0000-4000-8000-00000000c101
           content_version:
             region: nanjing
             exam_year: 2027
@@ -1729,11 +1779,15 @@ components:
           subject: aya
           student_ref: 00000000-0000-4000-8000-00000000a002
           data_class: L2
-          idempotency_key: synthetic-aya-plan-0001
+          idempotency_key: 00000000-0000-4000-8000-00000000c201
         mastery:
           - { skill_node: 'aya:K-QF-0301', state: execute, p_mastery: 0.55 }
           - { skill_node: 'aya:K-QE-0102', state: stable, p_mastery: 0.8, next_retest_at: '2026-10-11T08:00:00+08:00' }
         constraints: { time_budget_minutes: 30 }
+        learner_context:
+          - { field_id: inner.g3.node_mastery, source_type: inferred, value: execute,
+              claim_id: 00000000-0000-4000-8000-0000000000f7, evidence_ids: [00000000-0000-4000-8000-00000000e401] }
+        exam_config: { cohort: 2027, full_score: 120, duration_minutes: 120 }
 
     PlanResponseAya:
       value:
@@ -1768,7 +1822,7 @@ components:
           student_ref: 00000000-0000-4000-8000-00000000a002
           data_class: L2
           usage_id: 00000000-0000-4000-8000-00000000b003
-          idempotency_key: synthetic-aya-teach-0001
+          idempotency_key: 00000000-0000-4000-8000-00000000c301
         mode: hint
         skill_node: 'aya:K-QF-0301'
         item_ref: 'aya:synthetic-0301-07'
@@ -1789,6 +1843,8 @@ components:
           hint_level_used: 2
           ai_disclosure_shown: false
           referral_triggered: false
+          verified_statements:
+            - { statement: '（合成示例）2(x-1) 展开等于 2x-2', verdict: verified }
         evidence_ids: []
         confidence: 0.6
         source_version: 'prompt:aya-coach@1.1.0'
@@ -1805,7 +1861,7 @@ components:
           student_ref: 00000000-0000-4000-8000-00000000a002
           data_class: L2
           usage_id: 00000000-0000-4000-8000-00000000b004
-          idempotency_key: synthetic-aya-grade-0001
+          idempotency_key: 00000000-0000-4000-8000-00000000c401
           content_version:
             region: nanjing
             exam_year: 2027
@@ -1821,6 +1877,54 @@ components:
           elapsed_sec: 95
           hint_level_used: 0
         rubric_version: aya-symbolic-ts@0.1.0
+
+    DiagnoseRequestAyaWithContext:
+      value:
+        context:
+          request_id: 00000000-0000-4000-8000-000000000102
+          contract_version: 1.0.0
+          subject: aya
+          student_ref: 00000000-0000-4000-8000-00000000a002
+          data_class: L2
+          usage_id: 00000000-0000-4000-8000-00000000b002
+          idempotency_key: 00000000-0000-4000-8000-00000000c102
+        mode: gap_test
+        attempts:
+          - attempt_id: 00000000-0000-4000-8000-0000000000a6
+            item_ref: 'aya:synthetic-0301-07'
+            occurred_at: '2026-10-12T19:00:00+08:00'
+            response: { latex: '2(x-1)' }
+        learner_context:
+          - { field_id: inner.g3.node_mastery, source_type: inferred, value: understand,
+              claim_id: 00000000-0000-4000-8000-0000000000f8, evidence_ids: [00000000-0000-4000-8000-00000000e401] }
+        node_path:
+          - { from_id: MA.ALG.EXP_0001, to_id: MA.ALG.EXP_0002, depth: 1 }
+
+    TeachRequestAyaWithPage:
+      value:
+        context:
+          request_id: 00000000-0000-4000-8000-000000000302
+          contract_version: 1.0.0
+          subject: aya
+          student_ref: 00000000-0000-4000-8000-00000000a002
+          data_class: L2
+          usage_id: 00000000-0000-4000-8000-00000000b009
+          idempotency_key: 00000000-0000-4000-8000-00000000c302
+        mode: lesson
+        skill_node: 'aya:K-QF-0301'
+        allowed_hint_level: 4
+        persona: { persona_id: aya, prompt_version: 1.1.0 }
+        knowledge_page:
+          page_id: ma.alg.exp_0001
+          page_version: 1.0.0
+          body_md: '（合成示例）配方法：把二次三项式写成完全平方加常数。'
+          atom_refs: ['node:MA.ALG.EXP_0001']
+
+    ProblemUnauthenticated:
+      value: { type: 'about:blank', title: 服务令牌无效, status: 401, code: UNAUTHENTICATED, retryable: false }
+
+    ProblemModeNotSupported:
+      value: { type: 'about:blank', title: 不支持的诊断模式, status: 422, code: MODE_NOT_SUPPORTED, retryable: false }
 
     GradeResponseAyaObjective:
       value:
@@ -1863,7 +1967,7 @@ components:
           student_ref: 00000000-0000-4000-8000-00000000a002
           data_class: L2
           usage_id: 00000000-0000-4000-8000-00000000b007
-          idempotency_key: synthetic-aya-grade-0002
+          idempotency_key: 00000000-0000-4000-8000-00000000c404
           content_version:
             region: nanjing
             exam_year: 2027
@@ -1883,6 +1987,34 @@ components:
           - { point_id: factor_out, score: 1, node_ids: ['MA.ALG.EXP_0001'], partial_credit: all_or_nothing }
         exam_config: { cohort: 2027, full_score: 120, duration_minutes: 120 }
 
+    GradeRequestAyaGeometry:
+      value:
+        context:
+          request_id: 00000000-0000-4000-8000-000000000405
+          contract_version: 1.0.0
+          subject: aya
+          student_ref: 00000000-0000-4000-8000-00000000a002
+          data_class: L2
+          usage_id: 00000000-0000-4000-8000-00000000b008
+          idempotency_key: 00000000-0000-4000-8000-00000000c405
+          content_version:
+            region: nanjing
+            exam_year: 2027
+            grade: 9
+            textbook_version: bubian-2024
+            subject: aya
+            content_version: 0.1.0
+        attempt:
+          attempt_id: 00000000-0000-4000-8000-0000000000a5
+          item_ref: 'aya:synthetic-geo-12'
+          occurred_at: '2026-10-12T20:10:00+08:00'
+          response:
+            semantic:
+              - { op: perpendicular, args: [A, BC, H] }
+              - { op: connect, args: [A, D] }
+        rubric_version: aya-geometry-points@0.1.0
+        evidence_level: A
+
     GradeRequestWenliEssay:
       value:
         context:
@@ -1892,7 +2024,7 @@ components:
           student_ref: 00000000-0000-4000-8000-00000000a001
           data_class: L2
           usage_id: 00000000-0000-4000-8000-00000000b006
-          idempotency_key: synthetic-wenli-essay-0001
+          idempotency_key: 00000000-0000-4000-8000-00000000c403
           content_version:
             region: nanjing
             exam_year: 2027
@@ -1955,7 +2087,7 @@ components:
         status: queued
         poll_after_ms: 2000
         usage_id: 00000000-0000-4000-8000-00000000b005
-        idempotency_key: synthetic-echo-grade-0001
+        idempotency_key: 00000000-0000-4000-8000-00000000c402
 
     GradeRequestEchoTranscript:
       value:
@@ -1966,7 +2098,7 @@ components:
           student_ref: 00000000-0000-4000-8000-00000000a003
           data_class: L2
           usage_id: 00000000-0000-4000-8000-00000000b005
-          idempotency_key: synthetic-echo-grade-0001
+          idempotency_key: 00000000-0000-4000-8000-00000000c402
           content_version:
             region: nanjing
             exam_year: 2027
@@ -1989,11 +2121,27 @@ components:
           subject: zhixing
           student_ref: 00000000-0000-4000-8000-00000000a004
           data_class: L2
-          idempotency_key: synthetic-zhixing-var-0001
+          idempotency_key: 00000000-0000-4000-8000-00000000c501
         source_item_ref: 'zhixing:synthetic-m3-01'
         subject_error_category: locate
         count: 3
         exclude_item_refs: ['zhixing:synthetic-m3-01']
+
+    GenerateVariationRequestAyaFamily:
+      value:
+        context:
+          request_id: 00000000-0000-4000-8000-000000000502
+          contract_version: 1.0.0
+          subject: aya
+          student_ref: 00000000-0000-4000-8000-00000000a002
+          data_class: L2
+          idempotency_key: 00000000-0000-4000-8000-00000000c502
+        source_item_ref: 'aya:synthetic-0301-07'
+        count: 2
+        exclude_item_refs: ['aya:synthetic-0301-07']
+        item_family:
+          - { item_ref: 'aya:synthetic-0301-08', main_node_id: MA.ALG.EXP_0001, prior_difficulty: 0.4, license_state: original }
+        exam_config: { cohort: 2027, full_score: 120 }
 
     GenerateVariationResponseZhixingEmpty:
       value:
@@ -2016,7 +2164,7 @@ components:
           subject: wenli
           student_ref: 00000000-0000-4000-8000-00000000a001
           data_class: L2
-          idempotency_key: synthetic-wenli-report-0001
+          idempotency_key: 00000000-0000-4000-8000-00000000c601
         window: { from: '2026-10-05T00:00:00+08:00', to: '2026-10-12T00:00:00+08:00' }
         audience: parent
         evidence:
@@ -2034,6 +2182,8 @@ components:
             confidence: 0.4
             evidence_ids: [00000000-0000-4000-8000-00000000e001]
             algorithm_version: wenli-attr@0.1.0
+        learner_context:
+          - { field_id: outer.g1.weekly_available_time, source_type: self, value: 300 }
 
     ReportResponseWenliParent:
       value:

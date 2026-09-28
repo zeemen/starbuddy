@@ -27,8 +27,10 @@ info:
     - **5xx 一律是结果未知**，不论 `retryable` 取值（评审 N18）；`retryable: true` 的 4xx（`BUSY` 等）与 BFF 自己超时同样是结果未知。
       原来那次执行可能随后成功落库。BFF 不能直接回滚，必须用**同一个** `idempotency_key` 重试，按重试的结果结算或回滚
       （安全审查 S7；ADR 06）。
-    - 计量预留过期后，BFF 先用重放接口（`GET /internal/v1/replay/{method}/{idempotency_key}`）查结果，
-      只查不执行：已写入就拿回摘要且不扣费；没有记录或失败过就换新 key，不会出现一次没有预留的执行（评审 N17）。
+    - 计量预留过期后，BFF 先用重放接口（`GET /internal/v1/replay/{method}/{idempotency_key}`）查结果，只查不执行：
+      已写入就拿回摘要且不扣费；没有记录或失败过，重放接口**同时封存这个 key**，之后以它到达的原请求一律返回
+      409 `IDEMPOTENCY_KEY_SEALED`、不执行，BFF 再换新 key 重新预留。这样晚到的原请求不会在没有预留的情况下执行，
+      同一次作答也不会写两遍（评审 N17；安全审查、契约审查必须改）。
   license:
     name: 内部，未授权对外
     identifier: LicenseRef-StarBuddy-Internal
@@ -81,10 +83,18 @@ paths:
       summary: 只查询、不执行：按方法与幂等键返回已有结果（评审 N17）
       description: |
         不调用适配器，不写任何行。已成功写入 → 200 与原摘要（响应头 `idempotent-replayed: true`）；
-        没有记录，或之前的执行确定失败 → 404 `REPLAY_NOT_FOUND`；同 key 的执行仍在进行 → 409 `BUSY`（结果未知，稍后再查）。
+        没有记录，或之前的执行确定失败 → 404 `REPLAY_NOT_FOUND`，并封存这个 key（见“计量”）；
+        同 key 的执行仍在进行 → 409 `BUSY`（结果未知，稍后再查）。
+        必须带 `student_ref` 与 `usage_id`：与原请求不一致时和“没有记录”同样返回 404，不透露 key 是否存在，也不封存别人的 key。
+        只供 BFF 以服务令牌调用，**禁止**经网关对客户端开放。
       parameters:
         - { name: method, in: path, required: true, schema: { type: string, enum: [grade, diagnose] } }
-        - { name: idempotency_key, in: path, required: true, schema: { type: string, minLength: 16, maxLength: 128 } }
+        - name: idempotency_key
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' }
+        - { name: student_ref, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: usage_id, in: query, required: true, schema: { type: string, format: uuid } }
       responses:
         '200':
           description: 已写入的结果
@@ -180,7 +190,8 @@ components:
             - UPSTREAM_TIMEOUT
             - ASYNC_NOT_SUPPORTED
             - ADAPTER_RESULT_REJECTED
-            - REPLAY_NOT_FOUND  # 重放接口：没有记录或之前确定失败（评审 N17）
+            - REPLAY_NOT_FOUND  # 重放接口：没有记录或之前确定失败，同时封存该 key（评审 N17）
+            - IDEMPOTENCY_KEY_SEALED  # 该 key 已被重放接口封存，原请求不再执行
             - INTERNAL
         upstream_code:
           type: string

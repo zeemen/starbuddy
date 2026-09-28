@@ -287,6 +287,15 @@ V1_MUTATIONS = {
     "删除错误码 UNAUTHENTICATED": lambda d: _get(d, f"{S}.Problem.properties.code.enum").remove("UNAUTHENTICATED"),
     "删除衔接字段 learner_context": delete(f"{S}.DiagnoseRequest.properties.learner_context"),
     "衔接字段 scoring_points 改为必填": assign(f"{S}.GradeRequest.required", ["context", "attempt", "rubric_version", "scoring_points"]),
+    "只删判分请求里数学的前缀子句": lambda d: _get(d, f"{S}.GradeRequest").__setitem__("allOf", [
+        c for c in _get(d, f"{S}.GradeRequest.allOf") if "为 aya 时" not in c.get("description", "")]),
+    "删除计划请求的前缀规则": delete(f"{S}.PlanRequest.allOf"),
+    "幂等键放开为任意文本": assign(f"{S}.RequestContext.properties.idempotency_key",
+                                  {"type": "string", "minLength": 16, "maxLength": 128}),
+    "latex 去掉字符与命令约束": delete(f"{S}.AttemptInput.properties.response.properties.latex.pattern"),
+    "信号编码不拦眼动与心情": assign(f"{S}.EvidencePayloadSignal.properties.signal_code.pattern",
+                                   "^(?!xp_|achievement_|mastery_)(?!(?:[a-z0-9]+_)*(?:voiceprint|voice|speaker|face|facial|emotion|emotional|affect|affective)(?:_|$))[a-z0-9_]{1,48}$"),
+    "选择题选项放开": assign(f"{S}.AttemptInput.properties.response.properties.choice.items", {"type": "string"}),
     "作图语义的操作名放开": assign(f"{S}.AttemptInput.properties.response.properties.semantic.items.properties.op",
                                   {"type": "string", "maxLength": 32}),
 }
