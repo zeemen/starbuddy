@@ -4,17 +4,20 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { isolatedArgs } from "../main.ts";
-import { build, ImportError, type LegacyNode, type Overrides } from "./build.ts";
+import { build, checkLegacy, ImportError, type LegacyNode, type Overrides } from "./build.ts";
 
-const HERE = new URL(".", import.meta.url).pathname;
+const HERE = fileURLToPath(new URL(".", import.meta.url));
 
 export function loadTopic(aya: string, topic: string): LegacyNode[] {
   const root = realpathSync(aya);
   const out = execFileSync(process.execPath, isolatedArgs(root, root, join(HERE, "extract-topic.ts"), [root, topic]),
     { env: {}, encoding: "utf8", maxBuffer: 16 * 1024 * 1024, stdio: ["ignore", "pipe", "inherit"] });
-  return JSON.parse(out) as LegacyNode[];
+  const parsed: unknown = JSON.parse(out);
+  checkLegacy(parsed); // 子进程与 legacy 代码同进程，输出按不可信数据核对（安全审查建议 2）
+  return parsed;
 }
 
 export async function main(argv = process.argv.slice(2)): Promise<number> {
@@ -28,8 +31,8 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       out: { type: "string" },
     },
   });
-  if (!values.aya || !values.out) {
-    console.error("kge-import: 需要 --aya 与 --out");
+  if (!values.aya || !values.out || !/^[a-z]{2,8}$/.test(values.topic!)) {
+    console.error("kge-import: 需要 --aya、--out，专题代码为 2–8 个小写字母");
     return 2;
   }
   try {

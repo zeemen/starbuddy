@@ -3,6 +3,7 @@
 // 2. 省略后缀的相对路径补 .ts / /index.ts；
 // 3. legacy 目录里的模块只能 import 同样位于 legacy 目录内的文件：第三方包、node: 内置模块、跳出 legacy 的路径一律拒绝，
 //    报告里记“无法加载”（spec 设计要点 2；安全审查）。这只是约束，不是安全边界；安全边界是子进程的权限与空环境变量。
+//    Node 的权限模型不管网络：子进程能联网（KGE-01 安全审查建议 1）。需要禁网时在无网络环境（如 unshare -n）里运行。
 import { existsSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 

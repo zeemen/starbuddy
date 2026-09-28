@@ -21,28 +21,28 @@ const issues = (r: ReturnType<typeof build>, old: string) => r.worklist.filter((
 test("节点：领域、按知识簇的主题、机械 ID；类型映射 K/S/M(MD)；C 与缺错因的 P 不导入", () => {
   const r = build(BASE, OPTS);
   assert.deepEqual(ids(r), [
-    "MATH.FUNC", "MATH.FUNC.CON", "MATH.FUNC.DET", "MATH.FUNC.GRA", "MATH.FUNC.MOD",
-    "MATH.FUNC.CON.K_FUN_0001", "MATH.FUNC.CON.K_FUN_0002", "MATH.FUNC.DET.M_FUN_0004", "MATH.FUNC.MOD.MD_FUN_0005",
-    "MATH.FUNC.GRA.S_FUN_0003",
+    "MATH.FUNC", "MATH.FUNC.FUN_CON", "MATH.FUNC.FUN_DET", "MATH.FUNC.FUN_GRA", "MATH.FUNC.FUN_MOD",
+    "MATH.FUNC.FUN_CON.K_FUN_0001", "MATH.FUNC.FUN_CON.K_FUN_0002", "MATH.FUNC.FUN_DET.M_FUN_0004", "MATH.FUNC.FUN_MOD.MD_FUN_0005",
+    "MATH.FUNC.FUN_GRA.S_FUN_0003",
   ]);
   const kind = Object.fromEntries(r.nodes.map((x) => [x.id, x.kind]));
-  assert.equal(kind["MATH.FUNC.CON.K_FUN_0001"], "kp");
-  assert.equal(kind["MATH.FUNC.GRA.S_FUN_0003"], "ability_kp");
-  assert.equal(kind["MATH.FUNC.MOD.MD_FUN_0005"], "method");
+  assert.equal(kind["MATH.FUNC.FUN_CON.K_FUN_0001"], "kp");
+  assert.equal(kind["MATH.FUNC.FUN_GRA.S_FUN_0003"], "ability_kp");
+  assert.equal(kind["MATH.FUNC.FUN_MOD.MD_FUN_0005"], "method");
   assert.equal(kind["MATH.FUNC"], null);
-  assert.match(issues(r, "C-FUN-RNG")[0]!, /能力视图候选/);
-  assert.match(issues(r, "P-FUN-0006")[0]!, /缺错因大类/);
+  assert.ok(issues(r, "C-FUN-RNG").some((i) => /能力视图候选/.test(i)));
+  assert.ok(issues(r, "P-FUN-0006").some((i) => /缺错因大类/.test(i)));
 });
 
 test("前置边：只连本专题内已导入的节点；传递边丢弃；自然语言、专题外、未导入的前置进工作单", () => {
   const r = build(BASE, OPTS);
   assert.deepEqual(r.edges.map((e) => e.join(" -> ")), [
-    "MATH.FUNC.CON.K_FUN_0001 -> MATH.FUNC.CON.K_FUN_0002",
-    "MATH.FUNC.CON.K_FUN_0002 -> MATH.FUNC.GRA.S_FUN_0003",
-    "MATH.FUNC.DET.M_FUN_0004 -> MATH.FUNC.MOD.MD_FUN_0005",
-    "MATH.FUNC.GRA.S_FUN_0003 -> MATH.FUNC.DET.M_FUN_0004",
+    "MATH.FUNC.FUN_CON.K_FUN_0001 -> MATH.FUNC.FUN_CON.K_FUN_0002",
+    "MATH.FUNC.FUN_CON.K_FUN_0002 -> MATH.FUNC.FUN_GRA.S_FUN_0003",
+    "MATH.FUNC.FUN_DET.M_FUN_0004 -> MATH.FUNC.FUN_MOD.MD_FUN_0005",
+    "MATH.FUNC.FUN_GRA.S_FUN_0003 -> MATH.FUNC.FUN_DET.M_FUN_0004",
   ]);
-  assert.deepEqual(r.droppedTransitive.map((e) => e.join(" -> ")), ["MATH.FUNC.CON.K_FUN_0001 -> MATH.FUNC.GRA.S_FUN_0003"]);
+  assert.deepEqual(r.droppedTransitive.map((e) => e.join(" -> ")), ["MATH.FUNC.FUN_CON.K_FUN_0001 -> MATH.FUNC.FUN_GRA.S_FUN_0003"]);
   const m4 = issues(r, "M-FUN-0004");
   assert.ok(m4.some((i) => i.includes("自然语言前置“二元一次方程组”")));
   assert.ok(m4.some((i) => i.includes("K-EQU-0901 在本专题之外")));
@@ -71,15 +71,15 @@ test("覆盖文件：语义化命名、边界、易错点错因、类型映射�
     },
   };
   const r = build(BASE, OPTS, ov);
-  assert.ok(ids(r).includes("MATH.FUNC.CON.QUAD_RELATION"));
-  assert.ok(ids(r).includes("MATH.FUNC.GRA.P_FUN_0006"));
-  assert.ok(ids(r).includes("MATH.FUNC.MOD.C_FUN_RNG"));
+  assert.ok(ids(r).includes("MATH.FUNC.FUN_CON.QUAD_RELATION"));
+  assert.ok(ids(r).includes("MATH.FUNC.FUN_GRA.P_FUN_0006"));
+  assert.ok(ids(r).includes("MATH.FUNC.FUN_MOD.C_FUN_RNG"));
   assert.equal(issues(r, "K-FUN-0001").some((i) => i.startsWith("缺")), false);
-  assert.ok(r.edges.some(([a, b]) => a === "MATH.FUNC.GRA.P_FUN_0006" && b === "MATH.FUNC.MOD.MD_FUN_0005"), "补充前置连成边");
+  assert.ok(r.edges.some(([a, b]) => a === "MATH.FUNC.FUN_GRA.P_FUN_0006" && b === "MATH.FUNC.FUN_MOD.MD_FUN_0005"), "补充前置连成边");
   const cyclic = { ...ov, nodes: { ...ov.nodes, "K-FUN-0002": { extra_prerequisites: ["C-FUN-RNG"] } } };
   assert.throws(() => build(BASE, OPTS, cyclic), /成环/, "补充前置造成的环同样拒绝");
   assert.match(r.sql, /'knowledge'::platform.cross_subject_error/);
-  assert.match(r.sql, /\('[0-9a-f-]+', 'aya', 'K-FUN-0001', 'MATH\.FUNC\.CON\.QUAD_RELATION', 'rename'\)/, "旧编码登记进迁移表");
+  assert.match(r.sql, /\('[0-9a-f-]+', 'aya', 'K-FUN-0001', 'MATH\.FUNC\.FUN_CON\.QUAD_RELATION', 'rename'\)/, "旧编码登记进迁移表");
 });
 
 test("覆盖文件取值不合法：拒绝", () => {
@@ -88,6 +88,16 @@ test("覆盖文件取值不合法：拒绝", () => {
     { nodes: { "K-FUN-0001": { cognitive_levels: ["remember"] } } },
     { nodes: { "P-FUN-0006": { error_type: "carelessness" } } },
     { kind_map: { P: "concept" as never } },
+    { nodes: { "K-FUN-9999": { includes: ["（合成）"] } } }, // 拼错的编码
+    { nodes: { "K-FUN-0001": { includes: "abc" as never } } }, // 类型不对
+    { nodes: { "K-FUN-0001": { examples: ["学生13912345678的作答"] } } }, // 个人信息
+    { nodes: { "K-FUN-0001": { examples: ["（合成）张三同学写的"] } } },
+    { nodes: { "K-FUN-0001": { includes: ["a\u0000b"] } } }, // 控制字符
+    { nodes: { "K-FUN-0001": { includes: Array(33).fill("x") } } },
+    { nodes: { "K-FUN-0001": { error_type: "knowledge" } } }, // 不是易错点
+    { nodes: { "M-FUN-0004": { cognitive_levels: ["apply"] } } }, // 方法不带认知层次
+    { domain: { segment: "FUNC", name: 1 as never } },
+    { extra: 1 } as never,
     { nodes: { "K-FUN-0002": { extra_prerequisites: ["K-EQU-0901"] } } }, // 专题外
     { nodes: { "K-FUN-0002": { extra_prerequisites: ["二次式"] } } },
   ];
@@ -106,4 +116,46 @@ test("确定性：同样输入逐字节同样输出；输入顺序不影响结�
 test("SQL 转义：名称里的单引号不会截断语句", () => {
   const r = build([{ ...n("K-FUN-0001", "FUN-CON"), name: "（合成）a'); DROP TABLE x; --" }], OPTS);
   assert.ok(r.sql.includes("'（合成）a''); DROP TABLE x; --'"));
+});
+
+test("未导入节点的前置：每条进工作单，报告列出未连接的边（契约审查阻断 2）", () => {
+  const r = build(BASE, OPTS);
+  assert.ok(issues(r, "C-FUN-RNG").some((i) => i.includes("前置 MD-FUN-0005；本节点未导入") && i.includes("已导入")));
+  assert.ok(issues(r, "P-FUN-0006").some((i) => i.startsWith("前置 S-FUN-0003；本节点未导入")));
+  assert.deepEqual(r.report.unconnected_edges, ["MD-FUN-0005 -> C-FUN-RNG", "S-FUN-0003 -> P-FUN-0006"]);
+});
+
+test("报告列出预期的孤点与缺边界节点（供库上逐条比对）", () => {
+  const r = build([...BASE, n("K-FUN-0009", "FUN-CON")], OPTS);
+  assert.deepEqual(r.report.expected_orphans, ["MATH.FUNC.FUN_CON.K_FUN_0009"]);
+  assert.ok((r.report.expected_missing_boundary as string[]).includes("MATH.FUNC.FUN_CON.K_FUN_0001"));
+  assert.equal((r.report.expected_missing_boundary as string[]).includes("MATH.FUNC.FUN_DET.M_FUN_0004"), false);
+});
+
+test("能力视图挂接权重为 1；重复前置只连一条边", () => {
+  const r = build([n("K-FUN-0001", "FUN-CON"), n("K-FUN-0002", "FUN-CON", ["K-FUN-0001", "K-FUN-0001"])], OPTS);
+  assert.equal(r.edges.length, 1);
+  assert.match(r.sql, /'aya', 'K-FUN-0002', 1\)/);
+  assert.equal((r.sql.match(/'prerequisite'/g) ?? []).length, 1);
+});
+
+test("主题段保留章节前缀；不同章节的同名簇不撞 ID，同一主题 ID 对应两个簇则拒绝", () => {
+  const r = build([n("K-FUN-0001", "FUN-CON"), n("K-LIN-0001", "LIN-CON")], OPTS);
+  assert.ok(ids(r).includes("MATH.FUNC.FUN_CON") && ids(r).includes("MATH.FUNC.LIN_CON"));
+  assert.throws(() => build([n("K-FUN-0001", "FUN-A-B"), n("K-FUN-0002", "FUN_A-B")], OPTS), ImportError);
+});
+
+test("专题代码与 legacy 输出都按不可信输入核对", () => {
+  assert.throws(() => build(BASE, { ...OPTS, topic: "fun\nDROP" }), ImportError);
+  assert.throws(() => build([{ ...n("K-FUN-0001", "FUN-CON"), name: "" }], OPTS), ImportError);
+  assert.throws(() => build([{ ...n("K-FUN-0001", "FUN-CON"), prerequisites: "K" as never }], OPTS), ImportError);
+  assert.throws(() => build([{ ...n("K-FUN-0001", "FUN-CON"), name: "a\rb" }], OPTS), ImportError);
+});
+
+test("SQL：反斜杠按字面（standard_conforming_strings）、以知识服务角色写入", () => {
+  const r = build([{ ...n("K-FUN-0001", "FUN-CON"), name: "（合成）$a\\neq0$ \\'" }], OPTS);
+  assert.ok(r.sql.includes("SET LOCAL standard_conforming_strings = on;"));
+  assert.ok(r.sql.indexOf("SET LOCAL standard_conforming_strings") < r.sql.indexOf("INSERT"));
+  assert.ok(r.sql.includes("SET LOCAL ROLE starbuddy_kge;"));
+  assert.ok(r.sql.includes("'（合成）$a\\neq0$ \\'''"));
 });
