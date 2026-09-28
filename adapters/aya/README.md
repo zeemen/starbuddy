@@ -1,6 +1,10 @@
 # 阿鸦（数学）适配器
 
 实现学科插件 API v0.9（`packages/contracts/openapi/plugin-api.v0.9.yaml`）的三个接口。
+迁移期同时支持 v1.0 候选版（`plugin-api.v1.0.yaml`，`specs/plugin-api-v1.0-step2/spec.md` 第 3 条）：按请求的
+`context.contract_version` 校验与应答（v1.0 下作答类证据带 `attempt_id`），其他版本返回 400 `CONTRACT_VERSION_UNSUPPORTED`；
+能力声明默认报 0.9.0，可用 `--contract-version 1.0.0 --allow-candidate-contract`（或环境变量 `AYA_CONTRACT_VERSION`、
+`STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1`）改报 1.0.0，签字前只在测试与演练里用。
 规格见 `specs/adapter-aya-sprint1/spec.md`，实现记录与待人确认见同目录的 `lessons.md`。
 
 | 接口 | 状态 |
