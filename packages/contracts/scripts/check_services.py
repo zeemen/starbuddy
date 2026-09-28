@@ -98,7 +98,11 @@ CONTEXT_SNAPSHOT = {
                                      "actor", "idempotency_key"}, {"bff", "orchestrator"}),
     ("insight", "Actor"): ({"role", "actor_ref", "link_id"}, None),
 }
-RANKING_NAMES = re.compile(r"(rank|percentile|probabilit|position|排名|名次|概率)", re.I)
+RANKING_NAMES = re.compile(r"(rank|percentile|probabilit|position|likelihood|chance|odds|admission_(chance|prob|rate)"
+                           r"|peer|cohort|average|beat|exceed|top_?pct|排名|名次|概率|同伴|平均|超过)", re.I)
+# 有约束的字符串：pattern 不能接受任意文字（用这几段探针验证），format 只能是下列几种
+PATTERN_PROBES = ["合成 自由 文本", "free text with spaces", "他的数学不好。"]
+ALLOWED_FORMATS = {"uuid", "date", "date-time", "uri-reference"}
 VISIBLE_STATUSES = {"hypothesis", "established", "to_verify"}
 PII_PATTERNS = {
     "手机号": re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)"),
@@ -132,13 +136,14 @@ def _resolve(docs: dict, ref: str, cur: str):
 
 
 def walk(docs: dict, cur: str, root: str, visit_fn) -> None:
-    """遍历 schema 子树（跨文件解析 $ref），对每个节点调用 visit_fn(node, owner, prop, trail, doc_key)。"""
-    seen: set[int] = set()
+    """遍历 schema 子树（跨文件解析 $ref），对每个节点调用 visit_fn(node, owner, prop, trail, doc_key)。
+    去重按（节点, owner, 属性）：同一个 YAML 锚点对象出现在不同位置时，每个位置都检查（契约审查建议 10）。"""
+    seen: set[tuple] = set()
 
     def visit(node, doc_key, owner, prop, trail):
-        if not isinstance(node, dict) or id(node) in seen:
+        if not isinstance(node, dict) or (id(node), owner, prop) in seen:
             return
-        seen.add(id(node))
+        seen.add((id(node), owner, prop))
         if "$ref" in node:
             k, name, target = _resolve(docs, node["$ref"], doc_key)
             if target is not None:
@@ -148,7 +153,7 @@ def walk(docs: dict, cur: str, root: str, visit_fn) -> None:
         for k in ("allOf", "anyOf", "oneOf"):
             for sub in node.get(k, []):
                 visit(sub, doc_key, owner, prop, trail)
-        for k in ("if", "then", "else", "not", "contains", "items", "additionalProperties"):
+        for k in ("if", "then", "else", "not", "contains", "items", "additionalProperties", "unevaluatedProperties"):
             if isinstance(node.get(k), dict):
                 visit(node[k], doc_key, owner, prop, trail)
         for name, sub in node.get("properties", {}).items():
@@ -174,6 +179,26 @@ def free_text_leaks(docs: dict, svc: str, root: str, allow: set | None = None) -
         pat = node.get("pattern")
         if isinstance(pat, str) and not (pat.startswith("^") and pat.endswith("$")):
             leaks.append(f"{svc}:{trail}：pattern 没有同时锚定开头和结尾：{pat}")
+        elif isinstance(pat, str) and not allowed:
+            try:
+                loose = [p for p in PATTERN_PROBES if re.fullmatch(pat, p)]
+            except re.error:
+                loose = ["（无法编译）"]
+            if loose:
+                leaks.append(f"{svc}:{trail}：pattern 能接受任意文字（{loose[0]}），等于没有约束：{pat}")
+        fmt = node.get("format")
+        if isinstance(fmt, str) and fmt not in ALLOWED_FORMATS and not allowed:
+            leaks.append(f"{svc}:{trail}：format {fmt} 不在允许清单 {sorted(ALLOWED_FORMATS)} 里")
+        if prop is not None and not {k for k in node if k not in ("description", "title", "examples", "default")} \
+                and not (owner == "ServiceResultBase" and prop == "result"):
+            leaks.append(f"{svc}:{trail}：没有类型也没有约束的 schema（等于接受任何值）")
+        if node.get("type") == "object" and "properties" not in node and node.get("additionalProperties") is not False \
+                and "oneOf" not in node and "anyOf" not in node:
+            leaks.append(f"{svc}:{trail}：没有字段清单的对象（等于接受任何字段）")
+        if node.get("unevaluatedProperties") is True:
+            leaks.append(f"{svc}:{trail}：unevaluatedProperties: true")
+        if "prefixItems" in node:
+            leaks.append(f"{svc}:{trail}：prefixItems 可以绕过 items 的约束")
         if node.get("additionalProperties") is True:
             leaks.append(f"{svc}:{trail}：开放对象（additionalProperties: true）")
         if node.get("patternProperties"):
@@ -204,6 +229,22 @@ def names_in(docs: dict, svc: str, root: str, with_values: bool = True) -> list[
 
     walk(docs, svc, root, fn)
     return out
+
+
+def _check_evidence_levels(docs: dict, svc: str, root: str, errors: list[str]) -> None:
+    """任何叫 evidence_level 的属性（不管是否引用共享定义），取值都只能是 A、B（契约审查建议 7）。"""
+    def fn(node, _owner, _prop, trail, k):
+        sub = node.get("properties", {}).get("evidence_level")
+        if not isinstance(sub, dict):
+            return
+        target = sub
+        if "$ref" in sub:
+            _, _, target = _resolve(docs, sub["$ref"], k)
+        values = set((target or {}).get("enum", [])) | ({target["const"]} if target and "const" in target else set())
+        if not values or not values <= {"A", "B"}:
+            errors.append(f"{svc}：{trail}.evidence_level 的取值必须只有 A、B（C 级不进学习者模型），实际 {sorted(values)}")
+
+    walk(docs, svc, root, fn)
 
 
 def _requires(docs: dict, svc: str, schema_ref: str, field: str) -> bool:
@@ -266,10 +307,11 @@ def check_structure(docs: dict, errors: list[str]) -> None:
                         errors.append(f"{svc}：公共层工具 {tool} 出现个人层字段 {where}（规则 13）")
             errors.extend(free_text_leaks(docs, svc, resp_name))
             errors.extend(free_text_leaks(docs, svc, req_name, REQUEST_FREE_TEXT_ALLOW[svc]))
-            if svc == "insight":
-                for name, where in names_in(docs, svc, req_name) + names_in(docs, svc, resp_name):
-                    if RANKING_NAMES.search(name):
-                        errors.append(f"insight：{tool} 出现名次、百分位或概率类字段 {where}（平台规划 v1.3 §3）")
+            for name, where in names_in(docs, svc, req_name) + names_in(docs, svc, resp_name):
+                if RANKING_NAMES.search(name):
+                    errors.append(f"{svc}：{tool} 出现名次、同伴比较或概率类字段 {where}（平台规划 v1.3 §3）")
+            _check_evidence_levels(docs, svc, req_name, errors)
+            _check_evidence_levels(docs, svc, resp_name, errors)
         raw = yaml.safe_dump(doc.get("paths", {})) + yaml.safe_dump(schemas)
         if re.search(r"\busage_id\b", raw):
             errors.append(f"{svc}：出现 usage_id。本接口不计次，计量在插件请求与 BFF 层（规则 4）")
@@ -285,7 +327,7 @@ def check_structure(docs: dict, errors: list[str]) -> None:
 
     ins = docs["insight"]["components"]["schemas"]
     rs = ins.get("RenderedStatement", {})
-    for f in ("claim_id", "text", "status"):
+    for f in ("claim_id", "text", "status", "display", "template_key", "template_version", "confidence_band"):
         if f not in rs.get("required", []):
             errors.append(f"insight：RenderedStatement.{f} 必须必填（规则 11）")
     if (rs.get("properties", {}).get("text", {}).get("maxLength") or 10**9) > 300:
@@ -337,9 +379,40 @@ def _collect(node, keys: set[str], acc: set[str]) -> None:
             _collect(v, keys, acc)
 
 
-def _dictionary_ids() -> set[str]:
+def _dictionary() -> dict[str, dict]:
     data = load(FIELD_DICTIONARY)
-    return {f["id"] for f in data.get("fields", [])}
+    return {f["id"]: f for f in data.get("fields", [])}
+
+
+def _dictionary_ids() -> set[str]:
+    return set(_dictionary())
+
+
+EVENT_SOURCE = {"self_report": "self", "guardian_report": "guardian"}
+
+
+def check_field_visibility(docs: dict, errors: list[str]) -> None:
+    """洞察服务示例：条目的来源必须是字典为该字段登记的来源，受众必须在字段的可见范围里（契约审查 5、建议 3）。"""
+    fields = _dictionary()
+    for name, ex in docs["insight"]["components"].get("examples", {}).items():
+        value = ex.get("value") or {}
+        audience = (value.get("context") or {}).get("audience")
+        entries = []
+        if isinstance(value.get("event"), dict) and value["event"].get("event_type") in EVENT_SOURCE:
+            entries.append((value["event"].get("field_id"), EVENT_SOURCE[value["event"]["event_type"]]))
+        for e in ((value.get("result") or {}).get("entries") or []):
+            entries.append((e.get("field_id"), e.get("source_type")))
+        req_name = name.replace("Response", "Request")
+        audience = audience or ((docs["insight"]["components"]["examples"].get(req_name, {}).get("value") or {})
+                                .get("context", {}).get("audience"))
+        for fid, src in entries:
+            f = fields.get(fid)
+            if not f:
+                continue
+            if src not in (f.get("source_type") or []):
+                errors.append(f"insight：示例 {name} 把 {fid} 标为来源 {src}，字段字典登记的是 {f.get('source_type')}")
+            if audience and audience not in (f.get("visibility") or []):
+                errors.append(f"insight：示例 {name} 以受众 {audience} 返回 {fid}，字段字典的可见范围是 {f.get('visibility')}")
 
 
 def check_examples(docs: dict, errors: list[str]) -> None:
@@ -413,6 +486,22 @@ def _example_strings(node, acc: list[str]) -> None:
         acc.append(node)
 
 
+def _schema_words(node, acc: list[str]) -> None:
+    """schema 里的属性名、const、default、examples 列表中的字符串（契约审查 7）。"""
+    if isinstance(node, dict):
+        for k, v in node.items():
+            if k == "properties" and isinstance(v, dict):
+                acc.extend(v.keys())
+            if k in ("const", "default") and isinstance(v, str):
+                acc.append(v)
+            if k == "examples" and isinstance(v, list):
+                acc.extend(x for x in v if isinstance(x, str))
+            _schema_words(v, acc)
+    elif isinstance(node, list):
+        for v in node:
+            _schema_words(v, acc)
+
+
 def check_lexicon(docs: dict, errors: list[str]) -> None:
     sys.path.insert(0, str(LEXICON_DIR))
     import sie_lexicon  # noqa: PLC0415
@@ -423,8 +512,10 @@ def check_lexicon(docs: dict, errors: list[str]) -> None:
         _texts({k: v for k, v in docs[svc].items() if k != "components"}, texts)
         _texts(docs[svc]["components"].get("schemas", {}), texts)
         _example_strings(docs[svc]["components"].get("examples", {}), texts)
+        _schema_words(docs[svc]["components"].get("schemas", {}), texts)
         for t in texts:
-            for h in lex.find(t):
+            # 编码里的 _ . - 换成空格再查，词表按词边界匹配（契约审查 7）
+            for h in lex.find(t) + lex.find(re.sub(r"[_.\-]+", " ", t)):
                 errors.append(f"{svc}：描述、枚举或示例命中禁用推断词表 {h.category}（{h.match}）：{t[:60]}")
 
 
@@ -450,7 +541,7 @@ def run_service_checks(docs: dict | None = None) -> list[str]:
             validate_openapi(copy.deepcopy(docs[svc]), base_uri=FILES[svc].as_uri())
         except Exception as exc:  # noqa: BLE001 - 打印校验器的原始信息
             errors.append(f"{svc}：OpenAPI 3.1 校验失败：{str(exc)[:400]}")
-    for fn in (check_structure, check_examples, check_lexicon, check_counterexamples):
+    for fn in (check_structure, check_examples, check_field_visibility, check_lexicon, check_counterexamples):
         try:
             fn(docs, errors)
         except Exception as exc:  # noqa: BLE001 - 结构不完整时报错而不是崩溃

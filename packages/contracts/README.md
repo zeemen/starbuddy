@@ -58,7 +58,14 @@ make conformance-mutation PYTHON=.venv/bin/python  # 一致性测试的变异测
 - **不做名次与概率**：洞察服务的请求与响应里没有名次、百分位、概率类字段与取值（平台规划 v1.3 §3）。
 - **证据等级**：`evidence.write` 只接受 A、B 两级，拍照只能是 B 级；C 级不进学习者模型（技术蓝图 v2.1 §2.1）。
 - **幂等与计量**：写入类工具必须带 `idempotency_key`；两份契约都不带 `usage_id`，计量在插件请求与 BFF 层。
-- **词表与字段字典**：两份契约的描述、枚举与示例过禁用推断词表（`docs/design/sie/sie_lexicon.py`）；洞察服务示例里的字段 ID 必须在 SIE 字段字典里。
+- **词表与字段字典**：两份契约的描述、枚举、示例、属性名、`const` / `default` 都过禁用推断词表（`docs/design/sie/sie_lexicon.py`，编码里的 `_ . -` 换成空格再查）；洞察服务示例里的字段必须在 SIE 字段字典里，来源与受众要符合字典登记。
+- **无约束文本的判定**：字符串必须有 enum / const、允许的 format（uuid、date、date-time、uri-reference），或者不能接受任意文字的 pattern（用含空格与中文的探针验证）；没有类型的 `{}`、没有字段清单的对象、`unevaluatedProperties: true`、`prefixItems`、内联二进制一律报错。
+
+## 结构上表达不了、由平台侧校验的规则（服务契约）
+- `rubric.get` 响应的 `rubric_version` 等于请求里的 `rubric_version`。
+- 预测区间 `low ≤ high ≤ 满分`。
+- 对象（判断、考试记录）属于请求的 `student_ref`；不属于时与“不存在”响应相同。
+- 上下文包与记录里的来源、受众，与字段字典为该字段登记的来源、可见范围一致（示例由检查脚本核对，运行时由洞察服务强制）。
 
 ## 结构上表达不了、由平台侧校验的规则
 - 分数不超过满分；总分与各维之和一致。

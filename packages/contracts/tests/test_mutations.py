@@ -218,6 +218,45 @@ SERVICE_MUTATIONS = {
     "公共层允许 L3": svc("knowledge", assign(f"{S}.PublicContext.properties.data_class.allOf.1.enum", ["L1", "L2", "L3"])),
     "证据内联 base64 音频": svc("knowledge", assign(f"{S}.EvidenceWriteItem.properties.audio",
                                                 {"type": "string", "contentEncoding": "base64", "maxLength": 100000})),
+    # 契约审查（2026-09-28）新增规则
+    "对账卡陈述改为宽松 pattern 的字符串": svc("insight", assign(f"{S}.InsightReconcileResponse.allOf.1.properties.result.properties.statements",
+        {"type": "array", "maxItems": 20, "items": {"type": "string", "pattern": "^[\\s\\S]{1,300}$"}})),
+    "字符串改用自定义 format": svc("insight", assign(f"{S}.ClaimSummary.properties.target_id", {"type": "string", "format": "text"})),
+    "字段改为没有类型的 {}": svc("insight", assign(f"{S}.ClaimSummary.properties.extra", {})),
+    "字段改为没有字段清单的对象": svc("insight", assign(f"{S}.ClaimSummary.properties.extra", {"type": "object"})),
+    "对账卡结果 unevaluatedProperties: true": svc("insight", assign(
+        f"{S}.InsightReconcileResponse.allOf.1.properties.result.unevaluatedProperties", True)),
+    "偏差节点改用 prefixItems": svc("insight", assign(f"{S}.InsightReconcileResponse.allOf.1.properties.result.properties.deviation_nodes.prefixItems", [{"type": "string"}])),
+    "陈述的 display 改为可选": svc("insight", assign(f"{S}.RenderedStatement.required",
+                                                  ["claim_id", "template_key", "template_version", "status", "text", "confidence_band"])),
+    "删除“假设与成立画实线”": svc_drop_allof("insight", "RenderedStatement", "假设与成立的判断以实线展示"),
+    "陈述不再要求置信度说明": svc("insight", assign(f"{S}.RenderedStatement.required",
+                                                ["claim_id", "template_key", "template_version", "status", "display", "text"])),
+    "判断摘要的来源改为可选": svc("insight", assign(f"{S}.ClaimSummary.required",
+        ["claim_id", "target_type", "target_id", "template_key", "template_version", "status", "confidence", "evidence_ids", "expires_at"])),
+    "删除“推断必须带模型版本”": svc_drop_allof("insight", "ClaimSummary", "推断类判断必须带模型版本"),
+    "预测改为 BFF 可调用": svc("insight", assign(f"{S}.InsightPredictRequest.properties.context",
+                                              {"$ref": "#/components/schemas/InsightWriteContext"})),
+    "对账卡改为 BFF 可调用": svc("insight", assign(f"{S}.InsightReconcileRequest.properties.context",
+                                                {"$ref": "#/components/schemas/InsightContext"})),
+    "解释证据的等级内联并加入 C": svc("insight", assign(f"{S}.ExplainEvidence.properties.evidence_level",
+                                                   {"type": "string", "enum": ["A", "B", "C"]})),
+    "判断摘要加 iq_score": svc("insight", assign(f"{S}.ClaimSummary.properties.iq_score", {"type": "number"})),
+    "对账方向加入 learning_style": svc("insight", assign(f"{S}.InsightReconcileResponse.allOf.1.properties.result.properties.deviation_directions.items.enum",
+        ["item_type_transfer", "time_shortage", "calculation_slip", "diagnosis_optimistic", "learning_style"])),
+    "预测结果加 likelihood": svc("insight", assign(
+        f"{S}.InsightPredictResponse.allOf.1.properties.result.properties.likelihood", {"type": "number"})),
+    "对账卡加 peer_average": svc("insight", assign(f"{S}.InsightReconcileResponse.allOf.1.properties.result.properties.peer_average", {"type": "number"})),
+    "示例以家长观察记录只给 Agent 的推断字段": svc("insight", assign(
+        "components.examples.InsightRecordRequest.value.event.field_id", "inner.g2.exam_prediction")),
+    "掌握状态加 class_rank": svc("knowledge", assign(f"{S}.MasteryState.properties.class_rank", {"type": "integer"})),
+    "删除“OCR 只能来自拍照”": svc_drop_allof("knowledge", "EvidenceWriteItem", "识别转写只能来自对应的通道"),
+    "删除“ASR 只能来自语音”": svc_drop_allof("knowledge", "EvidenceWriteItem", "语音转写只能来自语音通道"),
+    "删除“拍照必须匹配题库”": svc_drop_allof("knowledge", "EvidenceWriteItem", "拍照证据必须匹配到题库题"),
+    "删除“画布语音需确认才是 A 级”": svc_drop_allof("knowledge", "EvidenceWriteItem", "画布与语音只有经学生确认后才是 A 级"),
+    "删除“未准入不能是 A 级”": svc_drop_allof("knowledge", "EvidenceWriteItem", "未准入内容上的作答不能是 A 级"),
+    "采分点结果的地图版本改为可选": svc("knowledge", assign(
+        f"{S}.RubricGetResponse.allOf.1.properties.result.required", ["item_ref", "rubric_version", "points"])),
 }
 
 
@@ -247,7 +286,9 @@ def main() -> int:
     for name, mutate in SERVICE_MUTATIONS.items():
         docs = copy.deepcopy(service_base)
         mutate(docs)
-        if not cs.run_service_checks(docs):
+        errs = cs.run_service_checks(docs)
+        # 只被 OpenAPI 合法性或“无法完成”拦下，不能证明对应规则有效（契约审查建议 9）
+        if not [e for e in errs if "OpenAPI 3.1 校验失败" not in e and "无法完成" not in e]:
             missed.append(name)
 
     total = len(MUTATIONS) + len(SERVICE_MUTATIONS)

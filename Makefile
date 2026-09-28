@@ -23,7 +23,7 @@ check: contract-test contract-mutation taxonomy-check attack-surface-check sie-d
 contract-test:
 	$(call run_contract,packages/contracts/scripts/check_contract.py)
 
-# 变异测试：证明契约检查没有盲区（约 15 秒）
+# 变异测试：证明契约检查没有盲区（约 1 分钟，含两份服务契约）
 contract-mutation:
 	$(call run_contract,packages/contracts/tests/test_mutations.py)
 

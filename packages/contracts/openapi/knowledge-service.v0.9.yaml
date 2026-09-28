@@ -31,7 +31,8 @@ info:
     - `evidence.write` 必须带 `idempotency_key`：同 key 同体返回原结果，同 key 异体返回 409 `IDEMPOTENCY_CONFLICT`；
       key 的作用域是“调用方 + 工具 + 学生”。
     - 本接口不计次，所以没有 `usage_id`：调用由已计量的插件请求或 BFF 会话触发，计量仍在那一层（规则 4）。
-    - `node.resolve` 的输入文本可能来自学生：只给编排层调用，数据级别固定为 L2，只用境内已备案模型，服务不记录输入文本（规则 13、ADR 04）。
+    - `node.resolve` 的输入文本可能来自学生：只给编排层调用，数据级别固定为 L2，只用境内已备案模型；
+      服务不落库、不记录输入文本，不回流公共层或编译层；低置信进复核队列时只带候选节点，不带原文（规则 13、ADR 04）。
 
     ## 错误与日志
     - 无权访问与对象不存在返回同一个 404，`code` 与 `title` 相同，不带 `detail`；`detail` 里永远不出现 `student_ref` 等标识。
@@ -591,10 +592,11 @@ components:
             evidence_ids: { maxItems: 0, description: 公共层不引用任何学生证据。 }
             result:
               type: object
-              required: [item_ref, rubric_version, points]
+              required: [item_ref, rubric_version, map_version, points]
               additionalProperties: false
               properties:
                 item_ref: { $ref: './plugin-api.v0.9.yaml#/components/schemas/ItemRef' }
+                map_version: { $ref: '#/components/schemas/MapVersion' }
                 rubric_version: { $ref: './plugin-api.v0.9.yaml#/components/schemas/VersionedName' }
                 points: { type: array, minItems: 1, maxItems: 30, items: { $ref: '#/components/schemas/ScoringPointView' } }
       unevaluatedProperties: false
@@ -622,9 +624,29 @@ components:
         node_id: { $ref: '#/components/schemas/NodeId' }
         map_version: { $ref: '#/components/schemas/MapVersion' }
         cognitive_level: { $ref: '#/components/schemas/CognitiveLevel' }
+        confirmed:
+          type: boolean
+          description: 画布经逐行回显、语音经复述，由学生确认过（技术蓝图 v2.1 §4.2、§5.2）。
       allOf:
         - description: 拍照通道只能是 B 级（只有平台内独立作答才可能是 A 级）
           if: { properties: { channel: { const: photo } }, required: [channel] }
+          then: { properties: { evidence_level: { const: B } } }
+        - description: 识别转写只能来自对应的通道（OCR 来自拍照，ASR 来自语音），不能改填通道绕开等级
+          if: { properties: { draft: { properties: { kind: { const: ocr_transcription } }, required: [kind] } }, required: [draft] }
+          then: { properties: { channel: { const: photo } } }
+        - description: 语音转写只能来自语音通道
+          if: { properties: { draft: { properties: { kind: { const: asr_transcription } }, required: [kind] } }, required: [draft] }
+          then: { properties: { channel: { const: voice } } }
+        - description: 拍照证据必须匹配到题库题（外部题最高 C 级，不写入）
+          if: { properties: { channel: { const: photo } }, required: [channel] }
+          then: { properties: { draft: { required: [item_ref] } } }
+        - description: 画布与语音只有经学生确认后才是 A 级
+          if:
+            properties: { channel: { enum: [canvas, voice] }, evidence_level: { const: A } }
+            required: [channel, evidence_level]
+          then: { required: [confirmed], properties: { confirmed: { const: true } } }
+        - description: 未准入内容上的作答不能是 A 级（不能点亮星）
+          if: { properties: { draft: { properties: { admission: { not: { const: admitted } } }, required: [admission] } }, required: [draft] }
           then: { properties: { evidence_level: { const: B } } }
     EvidenceWriteRequest:
       type: object
@@ -873,12 +895,13 @@ components:
         result:
           item_ref: 'aya:synthetic-0301-07'
           rubric_version: aya-quad-rubric@0.1.0
+          map_version: 0.1.0
           points:
             - { point_id: vertex, score: 2, node_ids: [MATH.FUNC.QUAD.VERTEX_FORM], partial_credit: all_or_nothing }
             - { point_id: axis, score: 1, node_ids: [MATH.FUNC.QUAD.GRAPH], partial_credit: all_or_nothing }
         evidence_ids: []
         confidence: 1
-        source_version: 'rubric:aya-quad-rubric@0.1.0'
+        source_version: 'rubric:aya-quad-rubric@0.1.0;graph:math-map@0.1.0'
         model_version: 'algo:kge-rubric-get@0.1.0'
         human_review_required: false
     EvidenceWriteRequest:
