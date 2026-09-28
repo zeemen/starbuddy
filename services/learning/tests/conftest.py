@@ -259,6 +259,11 @@ def to_v1_body(body: dict) -> dict:
     return b
 
 
+def env(request: dict, **ingest) -> dict:
+    """learning-internal v1 的信封：插件请求加平台侧作答上下文（缺省键盘作答）。"""
+    return {"request": request, "ingest": {"channel": "keypad", **ingest}}
+
+
 def diagnose_body(student_id: str, attempts: list[dict]) -> dict:
     b = grade_body(student_id)
     del b["attempt"], b["rubric_version"]

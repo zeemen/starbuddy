@@ -105,7 +105,8 @@ def create_app(
                 body = strict_json(raw)
             except ValueError:
                 raise IngestError(400, "INVALID_REQUEST", "request body is not valid JSON") from None
-            candidate = body.get("context", {}).get("request_id") if isinstance(body, dict) else None
+            inner = body.get("request", body) if isinstance(body, dict) and version != "0.9.0" else body  # v1 是信封
+            candidate = inner.get("context", {}).get("request_id") if isinstance(inner, dict) and isinstance(inner.get("context"), dict) else None
             rid = candidate if isinstance(candidate, str) and UUID_RE.fullmatch(candidate) else None
             summary, replayed = await state["service"].ingest(method, body, version)
             record.update(status=200, replayed=replayed)

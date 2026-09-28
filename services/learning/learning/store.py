@@ -14,7 +14,8 @@ from dataclasses import dataclass
 
 import asyncpg
 
-from .checks import local_id
+from .attributes import NON_ATTEMPT_KINDS, V0, Attributes
+from .checks import local_id, parse_time
 from .errors import IngestError
 from .fingerprint import sha256_hex
 
@@ -193,7 +194,8 @@ def _num(v) -> str | None:
     return repr(v)
 
 
-async def _insert_evidence(conn, e: dict, *, student_id, subject, method, ctx) -> None:
+async def _insert_evidence(conn, e: dict, *, student_id, subject, method, ctx, attrs: Attributes = V0,
+                           evidence_kind: str | None = None) -> None:
     stored = {
         "student_id": student_id,
         "subject": subject,
@@ -222,25 +224,28 @@ async def _insert_evidence(conn, e: dict, *, student_id, subject, method, ctx) -
         return  # 同一证据重试：跳过
     await conn.execute(
         """INSERT INTO platform.evidence_event (evidence_id, occurred_at, student_id, subject, kind, item_id, skill_local_id,
-             admission, payload, media_ref, source_method, request_id, request_idempotency_key)
+             admission, payload, media_ref, source_method, request_id, request_idempotency_key,
+             evidence_kind, evidence_level, channel, map_version_id)
            VALUES ($1::uuid, $2::text::timestamptz, $3::uuid, $4::platform.subject, $5, $6, $7, $8::platform.admission,
-                   $9::jsonb, $10, $11, $12::uuid, $13)""",
+                   $9::jsonb, $10, $11, $12::uuid, $13, $14, $15, $16, $17::uuid)""",
         e["evidence_id"], e["occurred_at"], student_id, subject, e["kind"], stored["item_id"], stored["skill_local_id"],
         e["admission"], json.dumps(e["payload"], ensure_ascii=False), e.get("media_ref"), method, ctx["request_id"],
-        ctx["idempotency_key"],
+        ctx["idempotency_key"], evidence_kind, attrs.evidence_level, attrs.channel, attrs.map_version_id,
     )
 
 
-async def _insert_attempt(conn, a: dict, attempt_id: str, response_evidence_id: str, *, student_id, subject, ctx) -> None:
+async def _insert_attempt(conn, a: dict, attempt_id: str, response_evidence_id: str, *, student_id, subject, ctx,
+                          attrs: Attributes = V0, evidence_kind: str | None = None) -> None:
     await conn.execute(
         """INSERT INTO platform.attempt (attempt_id, occurred_at, student_id, subject, item_id, response_evidence_id,
-             hint_level_used, elapsed_sec, self_report, request_idempotency_key)
+             hint_level_used, elapsed_sec, self_report, request_idempotency_key,
+             evidence_kind, evidence_level, channel, map_version_id)
            VALUES ($1::uuid, $2::text::timestamptz, $3::uuid, $4::platform.subject, $5, $6::uuid,
-                   $7::text::smallint, $8::text::integer, $9, $10)""",
+                   $7::text::smallint, $8::text::integer, $9, $10, $11, $12, $13, $14::uuid)""",
         attempt_id, a["occurred_at"], student_id, subject, local_id(a["item_ref"]), response_evidence_id,
         None if a.get("hint_level_used") is None else str(a["hint_level_used"]),
         None if a.get("elapsed_sec") is None else str(a["elapsed_sec"]),
-        a.get("self_report"), ctx["idempotency_key"],
+        a.get("self_report"), ctx["idempotency_key"], evidence_kind, attrs.evidence_level, attrs.channel, attrs.map_version_id,
     )
 
 
@@ -293,11 +298,29 @@ async def _insert_grade(conn, response: dict, verified, attempt: dict, attempt_i
     return grade_id
 
 
-async def persist(pool, *, method, key, lease_token, request, response, verified, attempt_ids, summary_base) -> dict:
-    """一个事务写完全部行，并把幂等记录推进到 succeeded。返回结果摘要。"""
+async def map_version_for(pool, subject: str, content_version: dict | None) -> str | None:
+    """请求内容版本绑定的知识地图版本（0012 curriculum_version.map_version_id）；未登记或未绑定为空。"""
+    if not content_version:
+        return None
+    async with learning_tx(pool) as conn:
+        return await conn.fetchval(
+            """SELECT map_version_id::text FROM platform.curriculum_version
+                WHERE subject = $1::platform.subject AND region = $2 AND exam_year = $3 AND grade = $4
+                  AND textbook_version = $5 AND content_version = $6""",
+            subject, content_version["region"], content_version["exam_year"], content_version["grade"],
+            content_version["textbook_version"], content_version["content_version"],
+        )
+
+
+async def persist(pool, *, method, key, lease_token, request, response, verified, attempt_ids, summary_base,
+                  attrs: Attributes = V0) -> dict:
+    """一个事务写完全部行，并把幂等记录推进到 succeeded。返回结果摘要。
+    C 级证据（迁移 0017、ADR 15）照常写证据、作答、判分结果，不写能力观察与错因。"""
     ctx = request["context"]
     student_id, subject = ctx["student_ref"], ctx["subject"]
     attempts = [request["attempt"]] if method == "grade" else request["attempts"]
+    # 每条证据的作答情境取它所属作答的（按 item_ref + 时间配对，与核对第 7 步同一口径）
+    kind_of = {(a["item_ref"], parse_time(a["occurred_at"])): attrs.kind_for(a.get("hint_level_used")) for a in attempts}
     try:
         async with learning_tx(pool) as conn:
             # 与重放封存串行：租约已过期的持有者若在封存之后才提交，就成了一次重放说“没有”的执行（N17），所以封存后一律不落库
@@ -312,23 +335,27 @@ async def persist(pool, *, method, key, lease_token, request, response, verified
             if holder != lease_token:
                 raise LeaseLost()
             for e in verified.evidence:
-                await _insert_evidence(conn, e, student_id=student_id, subject=subject, method=method, ctx=ctx)
+                kind = None if e["kind"] in NON_ATTEMPT_KINDS else kind_of.get((e.get("item_ref"), parse_time(e["occurred_at"])))
+                await _insert_evidence(conn, e, student_id=student_id, subject=subject, method=method, ctx=ctx,
+                                       attrs=attrs, evidence_kind=kind)
             taken = await conn.fetchval(
                 "SELECT count(*) FROM platform.attempt WHERE attempt_id = ANY($1::text[]::uuid[])", attempt_ids
             )
             if taken:
                 raise IngestError(409, "ATTEMPT_ID_CONFLICT", "attempt_id is already recorded for another request")
             for a, attempt_id, ev_id in zip(attempts, attempt_ids, verified.response_evidence_ids):
-                await _insert_attempt(conn, a, attempt_id, ev_id, student_id=student_id, subject=subject, ctx=ctx)
+                await _insert_attempt(conn, a, attempt_id, ev_id, student_id=student_id, subject=subject, ctx=ctx,
+                                      attrs=attrs, evidence_kind=attrs.kind_for(a.get("hint_level_used")))
             summary = dict(summary_base)
             if method == "grade":
                 summary["grade_result_id"] = await _insert_grade(
                     conn, response, verified, attempts[0], attempt_ids[0], student_id=student_id, subject=subject, ctx=ctx
                 )
-            for o in response["result"].get("observations", []):
-                await _insert_observation(conn, o, student_id=student_id, subject=subject, ctx=ctx)
-            for a in response["result"].get("error_attributions", []):
-                await _insert_attribution(conn, a, student_id=student_id, subject=subject, ctx=ctx)
+            if attrs.learner_model_updated:
+                for o in response["result"].get("observations", []):
+                    await _insert_observation(conn, o, student_id=student_id, subject=subject, ctx=ctx)
+                for a in response["result"].get("error_attributions", []):
+                    await _insert_attribution(conn, a, student_id=student_id, subject=subject, ctx=ctx)
             await conn.execute(
                 """UPDATE platform.ingest_request
                       SET status = 'succeeded', summary = $3::jsonb, lease_token = NULL, lease_until = NULL

@@ -221,6 +221,7 @@ func|platform.current_account_id()|starbuddy_review|EXECUTE|SUPERUSER
 func|platform.enroll_subject(uuid,platform.subject)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.enroll_subject(uuid,platform.subject)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|platform.evidence_payload_ok(text,jsonb)|PUBLIC|EXECUTE|SUPERUSER
+func|platform.evidence_source_type(text)|starbuddy_learning|EXECUTE|SUPERUSER
 func|platform.expected_cohort(smallint,timestamp with time zone)|starbuddy_authz|EXECUTE|SUPERUSER
 func|platform.expected_cohort(smallint,timestamp with time zone)|starbuddy_bff|EXECUTE|SUPERUSER
 func|platform.expected_cohort(smallint,timestamp with time zone)|starbuddy_learning|EXECUTE|SUPERUSER

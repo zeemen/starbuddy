@@ -18,9 +18,10 @@ from . import store
 from .adapter_client import call_adapter
 from .checks import collect_refs, local_id, parse_time, verify
 from .config import Settings
-from .contract import UnsupportedContractVersion, plugin_contract
+from .attributes import V0, Attributes, derive
+from .contract import UnsupportedContractVersion, internal_contract, plugin_contract
 from .errors import IngestError
-from .fingerprint import request_fingerprint
+from .fingerprint import request_fingerprint, sha256_hex
 
 METHODS = ("grade", "diagnose")
 BUSY_POLL_SECONDS = 0.1
@@ -88,12 +89,31 @@ class IngestService:
     async def replay(self, method: str, key: str, student_id: str, usage_id: str) -> store.Replay:
         return await store.replay(self.pool, method=method, key=key, student_id=student_id, usage_id=usage_id)
 
+    def _unwrap(self, method: str, body: object, version: str) -> tuple[object, dict | None]:
+        """v1 的请求体是信封 {request, ingest}（learning-internal.v1，specs/evidence-attributes-sprint1）；v0 就是插件请求本身。"""
+        if version == "0.9.0":
+            return body, None
+        if not isinstance(body, dict) or set(body) != {"request", "ingest"}:
+            raise IngestError(400, "INVALID_REQUEST", "v1 request body must be an envelope {request, ingest}")
+        errors = internal_contract("1.0.0").validate("IngestContext", body["ingest"])
+        if errors:
+            raise IngestError(400, "INVALID_REQUEST", "ingest does not match the contract", detail="; ".join(errors[:10]))
+        return body["request"], body["ingest"]
+
     async def ingest(self, method: str, body: object, version: str = "0.9.0") -> tuple[dict, bool]:
         """返回 (摘要, 是否为重放)。"""
-        request = self._validate_request(method, body, version)
+        inner, ingest = self._unwrap(method, body, version)
+        request = self._validate_request(method, inner, version)
         ctx = request["context"]
         key = ctx["idempotency_key"]
         fp = request_fingerprint(method, request)
+        attrs: Attributes = V0
+        if ingest is not None:
+            attrs = derive(method, request, ingest)
+            # 指纹含平台上下文：同 key 换输入通道、用途或等级算冲突（缺省用途先归一）
+            fp = sha256_hex({"request": fp, "ingest": {**ingest, "purpose": ingest.get("purpose", "practice")}})
+            attrs = Attributes(attrs.channel, attrs.evidence_level, attrs.purpose,
+                               await store.map_version_for(self.pool, ctx["subject"], ctx.get("content_version")))
         attempts = [request["attempt"]] if method == "grade" else request["attempts"]
         proposed_ids = [a.get("attempt_id") or str(uuid.uuid4()) for a in attempts]
 
@@ -137,7 +157,7 @@ class IngestService:
                 backoff = min(backoff * 2, BUSY_MAX_POLL_SECONDS)
                 continue
             try:
-                summary = await self._run(method, request, key, c, prior)
+                summary = await self._run(method, request, key, c, prior, attrs, versioned=ingest is not None)
                 return summary, False
             except store.LeaseLost:
                 continue  # 别人接管并可能已完成：回到幂等检查拿它的结果
@@ -148,7 +168,8 @@ class IngestService:
                 await store.mark_failed(self.pool, method=method, key=key, lease_token=c.lease_token, error_code="INTERNAL")
                 raise
 
-    async def _run(self, method: str, request: dict, key: str, c: store.Claim, prior: dict[str, str]) -> dict:
+    async def _run(self, method: str, request: dict, key: str, c: store.Claim, prior: dict[str, str], attrs: Attributes,
+                   *, versioned: bool) -> dict:
         ctx = request["context"]
         # 转发给适配器：带上平台的 attempt_id（重试时沿用，适配器派生的证据 ID 因此不变）
         forward = copy.deepcopy(request)
@@ -163,7 +184,9 @@ class IngestService:
         verified = verify(method, forward, response, registered_items=reg_items, registered_nodes=reg_nodes,
                           prior_admission=prior)
         base = self._summary_base(method, forward, response, verified, c.attempt_ids)
+        if versioned:  # v0 摘要没有这两个字段（learning-internal.v0 不改）
+            base.update(evidence_level=attrs.evidence_level, learner_model_updated=attrs.learner_model_updated)
         return await store.persist(
             self.pool, method=method, key=key, lease_token=c.lease_token, request=forward, response=response,
-            verified=verified, attempt_ids=c.attempt_ids, summary_base=base,
+            verified=verified, attempt_ids=c.attempt_ids, summary_base=base, attrs=attrs,
         )

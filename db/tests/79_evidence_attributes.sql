@@ -1,0 +1,57 @@
+-- 0017 证据补列（specs/evidence-attributes-sprint1/spec.md）：取值约束、来源类型由载荷类型决定、提示与作答情境一致、地图版本同学科。
+-- 合成数据（规则 8）：沿用 10 号夹具的学生 c1、题目 synthetic-0301-07；地图版本用 76 号测试建的 b1（aya）与 b3（wenli）。
+RESET ROLE;
+-- 以学习服务身份插一条证据；cols / vals 追加列
+CREATE FUNCTION t.ev(n integer, kind text, cols text DEFAULT '', vals text DEFAULT '') RETURNS text LANGUAGE sql AS $$
+  SELECT format($f$INSERT INTO platform.evidence_event (evidence_id, occurred_at, student_id, subject, kind, item_id, admission, payload,
+                   source_method, request_id, request_idempotency_key%s) VALUES
+                   ('e1700000-0000-4000-8000-%s', '2026-10-11 12:00:00+00', 'c1000000-0000-4000-8000-0000000000c1', 'aya', %L,
+                    'synthetic-0301-07', 'admitted', %L, 'grade', 'f1700000-0000-4000-8000-000000000001', 'synthetic-0017-key-0001'%s)$f$,
+                cols, lpad(n::text, 12, '0'), kind,
+                CASE kind WHEN 'verifier_trace' THEN '{"sampled_points": 8, "agreeing_points": 8}'
+                          WHEN 'interaction_signal' THEN '{"signal_code": "hint_opened", "value": 1}'
+                          ELSE '{"text": "（合成）42"}' END, vals) $$;
+CREATE FUNCTION t.at(n integer, cols text DEFAULT '', vals text DEFAULT '') RETURNS text LANGUAGE sql AS $$
+  SELECT format($f$INSERT INTO platform.attempt (attempt_id, occurred_at, student_id, subject, item_id, response_evidence_id,
+                   request_idempotency_key%s) VALUES
+                   ('a1700000-0000-4000-8000-%s', '2026-10-11 12:00:00+00', 'c1000000-0000-4000-8000-0000000000c1', 'aya',
+                    'synthetic-0301-07', 'e1700000-0000-4000-8000-000000000001', 'synthetic-0017-key-0001'%s)$f$,
+                cols, lpad(n::text, 12, '0'), vals) $$;
+
+SET ROLE starbuddy_learning;
+-- 来源类型：不给时按载荷类型补齐；给了必须一致
+DO $$ BEGIN EXECUTE t.ev(1, 'response_text', ', evidence_kind, evidence_level, channel, map_version_id',
+                          ', ''independent'', ''A'', ''keypad'', ''b1000000-0000-4000-8000-0000000000b1'''); END $$;
+SELECT t.ok((SELECT source_type FROM platform.evidence_event WHERE evidence_id = 'e1700000-0000-4000-8000-000000000001') = 'objective',
+            '作答原文的来源类型自动补为客观记录');
+DO $$ BEGIN EXECUTE t.ev(2, 'verifier_trace'); END $$;
+SELECT t.ok((SELECT evidence_kind IS NULL AND evidence_level IS NULL AND channel IS NULL
+               FROM platform.evidence_event WHERE evidence_id = 'e1700000-0000-4000-8000-000000000002'),
+            '补列都可空（v0 路径与旧证据）');
+SELECT t.throws(t.ev(3, 'response_text', ', source_type', ', ''model_inference'''), '23514', '来源类型必须与载荷类型一致');
+SELECT t.throws(t.ev(4, 'response_text', ', source_type', ', ''guardian_observation'''), '23514',
+                '证据表不收家长观察（规则 6：分表存）');
+SELECT t.throws(t.ev(5, 'response_text', ', evidence_kind', ', ''retest'''), '23514', '作答情境只有四种取值');
+SELECT t.throws(t.ev(6, 'response_text', ', evidence_level', ', ''D'''), '23514', '证据等级只有 A / B / C');
+SELECT t.throws(t.ev(7, 'response_text', ', channel', ', ''camera'''), '23514', '输入通道只有四种取值');
+SELECT t.throws(t.ev(8, 'interaction_signal', ', evidence_kind', ', ''independent'''), '23514', '交互信号不带作答情境');
+SELECT t.throws(t.ev(9, 'response_text', ', map_version_id', ', ''b3000000-0000-4000-8000-0000000000b3'''), '23503',
+                '数学证据不能引用语文的地图版本');
+SELECT t.throws(t.ev(10, 'response_text', ', map_version_id', ', ''b9000000-0000-4000-8000-0000000000b9'''), '23503',
+                '地图版本必须存在');
+
+-- 作答：来源类型只能是客观记录；用过提示的不能记成独立、迁移或复测
+DO $$ BEGIN EXECUTE t.at(1, ', hint_level_used, evidence_kind, evidence_level, channel', ', 2, ''hinted'', ''A'', ''keypad'''); END $$;
+SELECT t.ok((SELECT source_type FROM platform.attempt WHERE attempt_id = 'a1700000-0000-4000-8000-000000000001') = 'objective',
+            '作答的来源类型默认客观记录');
+SELECT t.throws(t.at(2, ', hint_level_used, evidence_kind', ', 1, ''independent'''), '23514', '用过提示的作答不能记成独立');
+SELECT t.throws(t.at(3, ', hint_level_used, evidence_kind', ', 3, ''delayed_retest'''), '23514', '用过提示的作答不能记成延迟复测');
+SELECT t.throws(t.at(4, ', source_type', ', ''student_self_report'''), '23514', '作答表不收学生自述');
+DO $$ BEGIN EXECUTE t.at(5, ', hint_level_used, evidence_kind', ', 0, ''transfer'''); END $$;
+SELECT t.ok(true, '没用提示的作答可以记成迁移');
+RESET ROLE;
+
+-- BFF 能读新列（星图等读模块随 RLS 可见）；不能写
+SET ROLE starbuddy_bff;
+SELECT t.throws(t.ev(11, 'response_text'), '42501', 'BFF 不能写证据');
+RESET ROLE;

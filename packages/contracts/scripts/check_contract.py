@@ -18,6 +18,7 @@
 """
 from __future__ import annotations
 
+import os
 import re
 import sys
 from pathlib import Path
@@ -401,8 +402,45 @@ INTERNAL_SPECS = [INTERNAL_SPEC, HERE.parent / "openapi" / "learning-internal.v1
 
 
 def check_internal(errors: list[str]) -> int:
-    """学习服务内部 API（BFF → 学习服务）v0 与 v1：OpenAPI 合法，跨文件 $ref 都能解析（冲刺 1-A 范围第 5 条）。"""
-    return sum(_check_internal_one(spec, errors) for spec in INTERNAL_SPECS)
+    """学习服务内部 API（BFF → 学习服务）v0 与 v1：OpenAPI 合法，跨文件 $ref 都能解析（冲刺 1-A 范围第 5 条）；
+    v1 的示例符合 schema，信封与摘要的反例被拒绝（specs/evidence-attributes-sprint1）。"""
+    n = sum(_check_internal_one(spec, errors) for spec in INTERNAL_SPECS)
+    _check_internal_v1_examples(errors)
+    return n
+
+
+# v1 信封与摘要的反例：每条都从合法示例出发只改一处，必须被拒绝
+INTERNAL_V1_COUNTER = [
+    ("信封缺 ingest", "GradeIngest", "GradeIngestKeypad", lambda v: v.pop("ingest")),
+    ("ingest 缺输入通道", "GradeIngest", "GradeIngestKeypad", lambda v: v["ingest"].pop("channel")),
+    ("输入通道拼错", "GradeIngest", "GradeIngestKeypad", lambda v: v["ingest"].__setitem__("channel", "camera")),
+    ("用途不在枚举里", "GradeIngest", "GradeIngestKeypad", lambda v: v["ingest"].__setitem__("purpose", "exam")),
+    ("ingest 夹带作答情境（由平台推导，不由调用方指定）", "GradeIngest", "GradeIngestKeypad",
+     lambda v: v["ingest"].__setitem__("evidence_kind", "transfer")),
+    ("信封顶层夹带多余字段", "GradeIngest", "GradeIngestKeypad", lambda v: v.__setitem__("student_name", "（合成）")),
+    ("插件请求直接放在顶层（旧写法）", "GradeIngest", "GradeIngestKeypad", lambda v: v.update(v.pop("request"))),
+    ("摘要缺证据等级", "GradeSummary", "GradeSummaryLevelC", lambda v: v.pop("evidence_level")),
+    ("摘要缺是否写入学习者模型", "GradeSummary", "GradeSummaryLevelC", lambda v: v.pop("learner_model_updated")),
+]
+
+
+def _check_internal_v1_examples(errors: list[str]) -> None:
+    import copy  # noqa: PLC0415
+    os.environ.setdefault("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", "1")
+    sys.path.insert(0, str(HERE.parent / "python"))
+    from starbuddy_contract.contract import internal_contract  # noqa: PLC0415
+    c = internal_contract("1.0.0")
+    examples = load(INTERNAL_SPECS[1])["components"]["examples"]
+    schema_of = {"GradeIngestKeypad": "GradeIngest", "GradeSummaryLevelC": "GradeSummary"}
+    for name, schema in schema_of.items():
+        errs = c.validate(schema, examples[name]["value"])
+        if errs:
+            errors.append(f"learning-internal.v1 示例 {name} 不符合 {schema}：{errs[:3]}")
+    for label, schema, base, mutate in INTERNAL_V1_COUNTER:
+        value = copy.deepcopy(examples[base]["value"])
+        mutate(value)
+        if not c.validate(schema, value):
+            errors.append(f"learning-internal.v1 反例没有被拒绝：{label}")
 
 
 def _check_internal_one(spec: Path, errors: list[str]) -> int:
@@ -478,7 +516,7 @@ def main() -> int:
     from counterexamples_v1 import V1_CASES  # noqa: PLC0415
     print(f"contract-test: 通过（OpenAPI 3.1 合法；{n_ex} 个示例符合 schema 且证据引用闭合；"
           f"{len(CASES)} 个反例全部被拒绝（v1.0 另加 {len(V1_CASES)} 个）；六方法信封、计量字段、无约束文本扫描、JobStatus 绑定、示例无 PII"
-          + (f"；learning-internal v0 与 v1 合法、{internal_refs} 个跨文件引用可解析" if internal_refs is not None else "")
+          + (f"；learning-internal v0 与 v1 合法、{internal_refs} 个跨文件引用可解析、v1 信封与摘要 {len(INTERNAL_V1_COUNTER)} 个反例全部被拒绝" if internal_refs is not None else "")
           + (f"；{service_summary}" if service_summary else "")
           + (f"；v1.0 候选版合法、{len(v1['components']['examples'])} 个示例、{n_breaking} 条破坏性变更 v0.9 接受 / v1.0 拒绝"
              if len(sys.argv) <= 1 else "") + "）")

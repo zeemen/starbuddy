@@ -7,7 +7,7 @@ import uuid
 
 import pytest
 
-from conftest import CREDENTIAL, counts, grade_body, to_v1_body
+from conftest import CREDENTIAL, counts, env, grade_body, to_v1_body
 from learning import store
 
 ONE_GRADE = {"evidence_event": 2, "attempt": 1, "grade_result": 1, "grade_dimension": 1, "error_attribution": 1, "skill_observation": 0}
@@ -35,7 +35,7 @@ async def test_same_attempt_writes_via_v0_and_v1(api, pools, student, fake_adapt
     v0 = grade_body(student)
     v1 = to_v1_body(grade_body(student))
     r0 = await api.post("/internal/v0/grade", json=v0)
-    r1 = await api.post("/internal/v1/grade", json=v1)
+    r1 = await api.post("/internal/v1/grade", json=env(v1))
     assert r0.status_code == 200 and r1.status_code == 200, (r0.text, r1.text)
     assert r1.json()["attempt_ids"] == [v1["attempt"]["attempt_id"]], "v1.0 用平台在请求里给的 attempt_id"
     assert await counts(admin, student) == {k: 2 * v for k, v in ONE_GRADE.items()}
@@ -48,7 +48,7 @@ async def test_v1_request_without_attempt_id_is_rejected(api, pools, student, fa
     _, admin = pools
     body = to_v1_body(grade_body(student))
     del body["attempt"]["attempt_id"]
-    r = await api.post("/internal/v1/grade", json=body)
+    r = await api.post("/internal/v1/grade", json=env(body))
     assert r.status_code == 400 and r.json()["code"] == "INVALID_REQUEST"
     assert fake_adapter.calls == 0 and await counts(admin, student) == NOTHING
 
@@ -61,7 +61,7 @@ async def test_v1_evidence_without_attempt_id_is_rejected(api, pools, student, f
             e.pop("attempt_id", None)
         return out
     fake_adapter.mutate = drop
-    r = await api.post("/internal/v1/grade", json=to_v1_body(grade_body(student)))
+    r = await api.post("/internal/v1/grade", json=env(to_v1_body(grade_body(student))))
     assert r.status_code == 502 and r.json()["code"] == "ADAPTER_RESULT_REJECTED"
     assert await counts(admin, student) == NOTHING
 
@@ -75,7 +75,7 @@ async def test_v1_evidence_pointing_at_foreign_attempt_is_rejected(api, pools, s
                 e["attempt_id"] = str(uuid.uuid4())
         return out
     fake_adapter.mutate = foreign
-    r = await api.post("/internal/v1/grade", json=to_v1_body(grade_body(student)))
+    r = await api.post("/internal/v1/grade", json=env(to_v1_body(grade_body(student))))
     assert r.status_code == 502 and await counts(admin, student) == NOTHING
 
 
@@ -89,14 +89,14 @@ async def test_declared_version_must_match_endpoint(api, student, fake_adapter, 
 
 async def test_v1_refused_when_candidate_not_enabled(api, student, fake_adapter, monkeypatch):
     monkeypatch.delenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT")
-    r = await api.post("/internal/v1/grade", json=to_v1_body(grade_body(student)))
+    r = await api.post("/internal/v1/grade", json=env(to_v1_body(grade_body(student))))
     assert r.status_code == 400 and fake_adapter.calls == 0
 
 
 async def test_adapter_answering_in_other_version_is_rejected(api, pools, student, fake_adapter):
     _, admin = pools
     fake_adapter.mutate = lambda out: {**out, "contract_version": "0.9.0"}
-    r = await api.post("/internal/v1/grade", json=to_v1_body(grade_body(student)))
+    r = await api.post("/internal/v1/grade", json=env(to_v1_body(grade_body(student))))
     assert r.status_code == 502 and await counts(admin, student) == NOTHING
 
 
@@ -104,7 +104,7 @@ async def test_adapter_answering_in_other_version_is_rejected(api, pools, studen
 async def test_replay_found_returns_summary_and_writes_nothing(api, pools, student, fake_adapter):
     _, admin = pools
     body = to_v1_body(grade_body(student))
-    first = await api.post("/internal/v1/grade", json=body)
+    first = await api.post("/internal/v1/grade", json=env(body))
     assert first.status_code == 200
     r = await api.get(replay_url("grade", body))
     assert r.status_code == 200 and r.headers["idempotent-replayed"] == "true"
@@ -119,7 +119,7 @@ async def test_replay_not_found_seals_key_and_late_original_is_refused(api, pool
     r = await api.get(replay_url("grade", body))
     assert r.status_code == 404 and r.json()["code"] == "REPLAY_NOT_FOUND"
     assert await seals(admin, body["context"]["idempotency_key"]) == 1
-    late = await api.post("/internal/v1/grade", json=body)
+    late = await api.post("/internal/v1/grade", json=env(body))
     assert late.status_code == 409 and late.json()["code"] == "IDEMPOTENCY_KEY_SEALED"
     assert fake_adapter.calls == 0 and await counts(admin, student) == NOTHING
     again = await api.get(replay_url("grade", body))
@@ -131,10 +131,10 @@ async def test_replay_after_failure_seals(api, pools, student, fake_adapter):
     fake_adapter.status = 422
     fake_adapter.problem = {"code": "ITEM_NOT_FOUND", "retryable": False}
     body = to_v1_body(grade_body(student))
-    assert (await api.post("/internal/v1/grade", json=body)).status_code >= 400
+    assert (await api.post("/internal/v1/grade", json=env(body))).status_code >= 400
     fake_adapter.status = 200
     assert (await api.get(replay_url("grade", body))).status_code == 404
-    assert (await api.post("/internal/v1/grade", json=body)).json()["code"] == "IDEMPOTENCY_KEY_SEALED"
+    assert (await api.post("/internal/v1/grade", json=env(body))).json()["code"] == "IDEMPOTENCY_KEY_SEALED"
     assert await counts(admin, student) == NOTHING
 
 
@@ -142,7 +142,7 @@ async def test_replay_after_failure_seals(api, pools, student, fake_adapter):
 async def test_replay_mismatch_is_404_without_seal(api, pools, student, fake_adapter, field):
     _, admin = pools
     body = to_v1_body(grade_body(student))
-    assert (await api.post("/internal/v1/grade", json=body)).status_code == 200
+    assert (await api.post("/internal/v1/grade", json=env(body))).status_code == 200
     other = copy.deepcopy(body)
     other["context"][field] = str(uuid.uuid4())
     r = await api.get(replay_url("grade", other))
@@ -163,7 +163,7 @@ async def test_replay_while_running_is_busy_and_does_not_seal(api, pools, studen
     _, admin = pools
     fake_adapter.delay = 0.5
     body = to_v1_body(grade_body(student))
-    running = asyncio.create_task(api.post("/internal/v1/grade", json=body))
+    running = asyncio.create_task(api.post("/internal/v1/grade", json=env(body)))
     for _ in range(50):
         async with admin.acquire() as c:
             if await c.fetchval("SELECT 1 FROM platform.ingest_request WHERE idempotency_key = $1", body["context"]["idempotency_key"]):
@@ -181,7 +181,7 @@ async def test_replay_and_original_race_never_both_lose(api, pools, student, fak
     for _ in range(5):
         body = to_v1_body(grade_body(student))
         before = await counts(admin, student)
-        post, rep = await asyncio.gather(api.post("/internal/v1/grade", json=body), api.get(replay_url("grade", body)))
+        post, rep = await asyncio.gather(api.post("/internal/v1/grade", json=env(body)), api.get(replay_url("grade", body)))
         sealed = await seals(admin, body["context"]["idempotency_key"])
         if sealed:
             assert post.status_code == 409 and rep.status_code == 404
@@ -211,7 +211,7 @@ async def test_internal_error_is_retryable(api, pools, student, monkeypatch):
     async def boom(*a, **kw):
         raise RuntimeError("synthetic commit-phase failure")
     monkeypatch.setattr(store, "_insert_attempt", boom)
-    r = await api.post("/internal/v1/grade", json=to_v1_body(grade_body(student)))
+    r = await api.post("/internal/v1/grade", json=env(to_v1_body(grade_body(student))))
     assert r.status_code == 500 and r.json() == {**r.json(), "code": "INTERNAL", "retryable": True}
 
 
@@ -227,7 +227,7 @@ async def test_holder_with_expired_lease_cannot_commit_after_seal(api, pools, st
         await gate.wait()
         return await original(*a, **kw)
     monkeypatch.setattr(store, "persist", slow_persist)
-    running = asyncio.create_task(api.post("/internal/v1/grade", json=body))
+    running = asyncio.create_task(api.post("/internal/v1/grade", json=env(body)))
     for _ in range(100):
         if fake_adapter.calls:
             break
@@ -307,12 +307,12 @@ async def test_v1_diagnose_swapped_attempt_ids_are_rejected(api, pools, student,
             if "attempt_id" in e:
                 e["attempt_id"] = ids[1] if e["attempt_id"] == ids[0] else ids[0]
         return out
-    assert (await api.post("/internal/v1/diagnose", json=body)).status_code == 200, "对照：不对调时通过"
+    assert (await api.post("/internal/v1/diagnose", json=env(body))).status_code == 200, "对照：不对调时通过"
     body2 = to_v1_body(diagnose_body(student, [at("SYN-UNV", "42", 3), at("SYN-UNV2", "41", 4)]))
     ids[:] = [a["attempt_id"] for a in body2["attempts"]]
     before = await counts(admin, student)
     fake_adapter.mutate = swap
-    r = await api.post("/internal/v1/diagnose", json=body2)
+    r = await api.post("/internal/v1/diagnose", json=env(body2))
     assert r.status_code == 502 and r.json()["code"] == "ADAPTER_RESULT_REJECTED"
     assert await counts(admin, student) == before
 

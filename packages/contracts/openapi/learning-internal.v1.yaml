@@ -15,7 +15,7 @@ info:
     按平台规则核对结果，在一个事务里幂等地写入学习者模型，然后返回**平台摘要**，不原样转发适配器响应。
 
     ## 幂等
-    - 同一个 `context.idempotency_key` 与同一请求体（不含 `request_id`）重试：返回同一摘要，
+    - 同一个 `request.context.idempotency_key` 与同一请求体（含 `ingest`，不含 `request_id`）重试：返回同一摘要，
       响应头 `idempotent-replayed: true`，不再调用适配器、不写任何行。
     - 同一个 key 配不同请求体：409 `IDEMPOTENCY_CONFLICT`。
     - 并发到达的同 key 请求只执行一次，其余等它完成后拿到同一结果。
@@ -49,7 +49,9 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: './plugin-api.v1.0.yaml#/components/schemas/GradeRequest' }
+            schema: { $ref: '#/components/schemas/GradeIngest' }
+            examples:
+              keypad: { $ref: '#/components/examples/GradeIngestKeypad' }
       responses:
         '200':
           description: 已写入（或重放已写入的结果）
@@ -58,6 +60,8 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GradeSummary' }
+              examples:
+                levelC: { $ref: '#/components/examples/GradeSummaryLevelC' }
         default: { $ref: '#/components/responses/Problem' }
   /internal/v1/diagnose:
     post:
@@ -67,7 +71,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: './plugin-api.v1.0.yaml#/components/schemas/DiagnoseRequest' }
+            schema: { $ref: '#/components/schemas/DiagnoseIngest' }
       responses:
         '200':
           description: 已写入（或重放已写入的结果）
@@ -122,12 +126,90 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
 
+  examples:
+    GradeIngestKeypad:
+      summary: 键盘作答、练习用途：证据记 A 级、独立作答
+      value:
+        request:
+          context:
+            request_id: 00000000-0000-4000-8000-000000000401
+            contract_version: 1.0.0
+            subject: aya
+            student_ref: 00000000-0000-4000-8000-00000000a002
+            data_class: L2
+            usage_id: 00000000-0000-4000-8000-00000000b004
+            idempotency_key: 00000000-0000-4000-8000-00000000c401
+            content_version:
+              region: nanjing
+              exam_year: 2027
+              grade: 9
+              textbook_version: bubian-2024
+              subject: aya
+              content_version: 0.1.0
+          attempt:
+            attempt_id: 00000000-0000-4000-8000-0000000000a1
+            item_ref: 'aya:synthetic-0301-07'
+            occurred_at: '2026-10-08T19:30:00+08:00'
+            response: { text: '2(x-1)' }
+            elapsed_sec: 95
+            hint_level_used: 0
+          rubric_version: aya-symbolic-ts@0.1.0
+        ingest: { channel: keypad, purpose: practice }
+    GradeSummaryLevelC:
+      summary: 申诉中的作答：记 C 级，批改照常返回，不写入学习者模型
+      value:
+        method: grade
+        subject: aya
+        attempt_ids: [00000000-0000-4000-8000-0000000000a1]
+        evidence_ids: [00000000-0000-4000-8000-00000000e401, 00000000-0000-4000-8000-00000000e402]
+        semantics: practice
+        human_review_required: true
+        error_categories: []
+        evidence_level: C
+        learner_model_updated: false
+        grade_result_id: 00000000-0000-4000-8000-00000000f401
+        verdict: incorrect
+
   schemas:
     Uuid: { type: string, format: uuid }
+    IngestContext:
+      type: object
+      description: |
+        平台侧的作答上下文（specs/evidence-attributes-sprint1），学习服务据此补齐证据的作答情境、证据等级、输入通道：
+        - `evidence_kind`：用过提示（`hint_level_used > 0`）→ `hinted`；否则 `purpose = retest` → `delayed_retest`，
+          `transfer_check` → `transfer`，其余 `independent`；
+        - `evidence_level`：`request.evidence_level`（grade）或本对象的 `evidence_level`，两处都给时必须一致；都没给时
+          `channel = keypad` 记 A，其余通道必须给出（否则 400）；`request.appeal = true` 一律记 C（ADR 15“申诉中”）；
+        - C 级证据照常写入证据、作答与判分结果（批改要展示），但不写能力观察与错因（不进入学习者模型）。
+      required: [channel]
+      additionalProperties: false
+      properties:
+        channel: { type: string, enum: [keypad, canvas, voice, photo], description: 输入通道（ADR 15）。 }
+        purpose:
+          type: string
+          enum: [practice, retest, transfer_check]
+          default: practice
+          description: 这次作答的用途，由编排层（复测调度、迁移检验）给出；客户端不能直接指定。
+        evidence_level: { type: string, enum: [A, B, C] }
+    GradeIngest:
+      type: object
+      required: [request, ingest]
+      additionalProperties: false
+      properties:
+        request: { $ref: './plugin-api.v1.0.yaml#/components/schemas/GradeRequest' }
+        ingest: { $ref: '#/components/schemas/IngestContext' }
+    DiagnoseIngest:
+      type: object
+      required: [request, ingest]
+      additionalProperties: false
+      properties:
+        request: { $ref: './plugin-api.v1.0.yaml#/components/schemas/DiagnoseRequest' }
+        ingest: { $ref: '#/components/schemas/IngestContext' }
     SummaryBase:
       type: object
       description: 平台摘要：只有 ID 与编码，不含作答、答案、维度分（spec 待人确认 #6）。
-      required: [method, subject, attempt_ids, evidence_ids, semantics, human_review_required, error_categories]
+      required: [method, subject, attempt_ids, evidence_ids, semantics, human_review_required, error_categories, evidence_level,
+                 learner_model_updated]
       properties:
         method: { type: string, enum: [grade, diagnose] }
         subject: { type: string, enum: [wenli, aya, zhixing, echo] }
@@ -145,6 +227,10 @@ components:
             type: string
             enum: [reading_the_question, locating_information, thinking_method, computation_or_grammar,
                    expression_convention, strategy_and_time, knowledge]
+        evidence_level: { type: string, enum: [A, B, C], description: 本次证据的等级（平台补齐）。 }
+        learner_model_updated:
+          type: boolean
+          description: 是否写入了能力观察与错因。C 级证据为 false：只展示批改，不进入学习者模型（ADR 15）。
     GradeSummary:
       unevaluatedProperties: false
       allOf:
