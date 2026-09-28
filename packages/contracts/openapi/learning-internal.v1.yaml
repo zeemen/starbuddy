@@ -176,11 +176,14 @@ components:
       type: object
       description: |
         平台侧的作答上下文（specs/evidence-attributes-sprint1），学习服务据此补齐证据的作答情境、证据等级、输入通道：
-        - `evidence_kind`：用过提示（`hint_level_used > 0`）→ `hinted`；否则 `purpose = retest` → `delayed_retest`，
+        - `evidence_kind`：用过提示（`hint_level_used > 0`，或适配器证据里有 `hint_opened` 信号）→ `hinted`；
+          作答没报 `hint_level_used` → 空（交给掌握计算按保守口径）；否则 `purpose = retest` → `delayed_retest`，
           `transfer_check` → `transfer`，其余 `independent`；
         - `evidence_level`：`request.evidence_level`（grade）或本对象的 `evidence_level`，两处都给时必须一致；都没给时
-          `channel = keypad` 记 A，其余通道必须给出（否则 400）；`request.appeal = true` 一律记 C（ADR 15“申诉中”）；
-        - C 级证据照常写入证据、作答与判分结果（批改要展示），但不写能力观察与错因（不进入学习者模型）。
+          `channel = keypad` 记 A，其余通道必须给出（否则 400）；拍照最高 B；画布、语音记 A 必须带
+          `request.answer_evidence_ref`（确认记录在平台侧，否则 400）；`request.appeal = true` 一律记 C（ADR 15“申诉中”）；
+        - C 级证据照常写入证据、作答与判分结果（批改要展示），但不写能力观察与错因（不进入学习者模型），
+          也不能作为之后请求的 `prior_evidence`（422）；键盘通道的结果里出现识别转写证据 → 502。
       required: [channel]
       additionalProperties: false
       properties:
@@ -208,8 +211,7 @@ components:
     SummaryBase:
       type: object
       description: 平台摘要：只有 ID 与编码，不含作答、答案、维度分（spec 待人确认 #6）。
-      required: [method, subject, attempt_ids, evidence_ids, semantics, human_review_required, error_categories, evidence_level,
-                 learner_model_updated]
+      required: [method, subject, attempt_ids, evidence_ids, semantics, human_review_required, error_categories]
       properties:
         method: { type: string, enum: [grade, diagnose] }
         subject: { type: string, enum: [wenli, aya, zhixing, echo] }
@@ -227,7 +229,10 @@ components:
             type: string
             enum: [reading_the_question, locating_information, thinking_method, computation_or_grammar,
                    expression_convention, strategy_and_time, knowledge]
-        evidence_level: { type: string, enum: [A, B, C], description: 本次证据的等级（平台补齐）。 }
+        evidence_level:
+          type: string
+          enum: [A, B, C]
+          description: 本次证据的等级（平台补齐）。经 `/internal/v1` 写入的结果必带；重放 `/internal/v0` 写入的结果时没有这个字段与下一个字段。
         learner_model_updated:
           type: boolean
           description: 是否写入了能力观察与错因。C 级证据为 false：只展示批改，不进入学习者模型（ADR 15）。

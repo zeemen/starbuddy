@@ -166,17 +166,20 @@ async def registered(pool, subject: str, item_refs: set[str], node_refs: set[str
 
 async def prior_evidence_admission(pool, student_id: str, subject: str, ids: list[str]) -> dict[str, str]:
     """请求里的既有证据必须真在平台库里，且属于同一学生、同一学科（契约守护阻断 1）。
-    返回 evidence_id → 平台判定的准入状态（证据自身与题目当前登记，取更严的那个）。"""
+    返回 evidence_id → 平台判定的准入状态（证据自身与题目当前登记，取更严的那个）。
+    C 级证据不进入学习者模型，也不能经“既有证据”间接进入：引用 C 级证据的请求一律 422（安全审查必须改 2）。"""
     if not ids:
         return {}
     async with learning_tx(pool) as conn:
         rows = await conn.fetch(
-            """SELECT e.evidence_id::text, e.admission::text AS ev_adm, i.admission::text AS item_adm
+            """SELECT e.evidence_id::text, e.admission::text AS ev_adm, i.admission::text AS item_adm, e.evidence_level
                  FROM platform.evidence_event e
                  LEFT JOIN platform.item i ON i.subject = e.subject AND i.item_id = e.item_id
                 WHERE e.evidence_id = ANY($1::text[]::uuid[]) AND e.student_id = $2::uuid AND e.subject = $3::platform.subject""",
             ids, student_id, subject,
         )
+    if any(r["evidence_level"] == "C" for r in rows):
+        raise IngestError(422, "INVALID_REQUEST", "prior_evidence cites level C evidence, which does not enter the learner model")
     rank = {"admitted": 0, "pending_review": 1, "source_unverified": 2, "rejected": 3}
     return {r[0]: max((r["ev_adm"], r["item_adm"] or "admitted"), key=rank.__getitem__) for r in rows}
 
@@ -319,8 +322,14 @@ async def persist(pool, *, method, key, lease_token, request, response, verified
     ctx = request["context"]
     student_id, subject = ctx["student_ref"], ctx["subject"]
     attempts = [request["attempt"]] if method == "grade" else request["attempts"]
+    # 适配器证据里的“打开提示”信号：带题目的只标那道作答，不带题目的标全部作答（最保守，安全审查必须改 3）
+    hint_items: set[str | None] = {
+        e.get("item_ref") for e in verified.evidence
+        if e["kind"] == "interaction_signal" and e["payload"].get("signal_code") == "hint_opened" and e["payload"].get("value")}
+    def attempt_kind(a: dict) -> str | None:
+        return attrs.kind_for(a.get("hint_level_used"), hint_signal=None in hint_items or a["item_ref"] in hint_items)
     # 每条证据的作答情境取它所属作答的（按 item_ref + 时间配对，与核对第 7 步同一口径）
-    kind_of = {(a["item_ref"], parse_time(a["occurred_at"])): attrs.kind_for(a.get("hint_level_used")) for a in attempts}
+    kind_of = {(a["item_ref"], parse_time(a["occurred_at"])): attempt_kind(a) for a in attempts}
     try:
         async with learning_tx(pool) as conn:
             # 与重放封存串行：租约已过期的持有者若在封存之后才提交，就成了一次重放说“没有”的执行（N17），所以封存后一律不落库
@@ -345,7 +354,7 @@ async def persist(pool, *, method, key, lease_token, request, response, verified
                 raise IngestError(409, "ATTEMPT_ID_CONFLICT", "attempt_id is already recorded for another request")
             for a, attempt_id, ev_id in zip(attempts, attempt_ids, verified.response_evidence_ids):
                 await _insert_attempt(conn, a, attempt_id, ev_id, student_id=student_id, subject=subject, ctx=ctx,
-                                      attrs=attrs, evidence_kind=attrs.kind_for(a.get("hint_level_used")))
+                                      attrs=attrs, evidence_kind=attempt_kind(a))
             summary = dict(summary_base)
             if method == "grade":
                 summary["grade_result_id"] = await _insert_grade(

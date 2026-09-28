@@ -116,10 +116,9 @@ async def test_level_c_diagnose_writes_no_observations(api, pools, student):
 async def test_same_key_other_channel_conflicts(api, pools, student, fake_adapter):
     _, admin = pools
     body = v1_grade(student)
-    body["evidence_level"] = "A"
     assert (await post(api, body)).status_code == 200
     before = await counts(admin, student)
-    r = await post(api, body, channel="canvas")
+    r = await post(api, body, channel="voice", evidence_level="B")
     assert r.status_code == 409 and r.json()["code"] == "IDEMPOTENCY_CONFLICT"
     again = await post(api, copy.deepcopy(body), purpose="practice")  # 缺省用途与显式 practice 视为同一请求
     assert again.status_code == 200 and again.headers["idempotent-replayed"] == "true"
@@ -168,3 +167,90 @@ async def test_v0_path_writes_kind_only(api, pools, student):
     ev, attempts = await rows(admin, student)
     assert {(e["evidence_kind"], e["evidence_level"], e["channel"]) for e in ev} == {("hinted", None, None)}
     assert attempts[0]["evidence_kind"] == "hinted"
+
+
+# ---------- 安全审查必须改 1–3 与建议 3、4 ----------
+@pytest.mark.parametrize("channel,level,ref,ok", [
+    ("photo", "A", False, False),        # 拍照最高 B
+    ("canvas", "A", False, False),       # 画布记 A 要确认记录
+    ("voice", "A", False, False),
+    ("canvas", "A", True, True),
+    ("voice", "B", False, True),
+])
+async def test_level_a_needs_confirmed_channel(api, student, fake_adapter, channel, level, ref, ok):
+    body = v1_grade(student)
+    body["evidence_level"] = level
+    if ref:
+        body["answer_evidence_ref"] = str(uuid.uuid4())
+    r = await post(api, body, channel=channel)
+    assert (r.status_code == 200) is ok, r.text
+    if not ok:
+        assert r.status_code == 400 and fake_adapter.calls == 0
+
+
+async def test_missing_hint_level_leaves_kind_empty(api, pools, student):
+    _, admin = pools
+    body = v1_grade(student)
+    del body["attempt"]["hint_level_used"]
+    assert (await post(api, body, purpose="retest")).status_code == 200
+    ev, attempts = await rows(admin, student)
+    assert attempts[0]["evidence_kind"] is None and {e["evidence_kind"] for e in ev} == {None}, "不知道有没有用提示：不推成复测"
+
+
+async def test_hint_signal_forces_hinted(api, pools, student, fake_adapter):
+    _, admin = pools
+
+    def add_signal(out):
+        out["evidence"].append({"evidence_id": str(uuid.uuid4()), "kind": "interaction_signal", "occurred_at": out["evidence"][0]["occurred_at"],
+                                "admission": out["evidence"][0]["admission"], "payload": {"signal_code": "hint_opened", "value": 1}})
+        out["evidence_ids"].append(out["evidence"][-1]["evidence_id"])
+        return out
+    fake_adapter.mutate = add_signal
+    r = await post(api, v1_grade(student), purpose="transfer_check")
+    assert r.status_code == 200, r.text
+    ev, attempts = await rows(admin, student)
+    assert attempts[0]["evidence_kind"] == "hinted"
+    assert {(e["kind"], e["evidence_kind"]) for e in ev} >= {("response_text", "hinted"), ("interaction_signal", None)}
+
+
+async def test_level_c_evidence_cannot_be_cited_as_prior(api, pools, student, fake_adapter):
+    """必须改 2：C 级证据不能经“既有证据”间接进入学习者模型。"""
+    _, admin = pools
+    appeal = v1_grade(student)
+    appeal["appeal"] = True
+    assert (await post(api, appeal)).status_code == 200
+    async with admin.acquire() as c:
+        c_id = await c.fetchval("""SELECT evidence_id::text FROM platform.evidence_event
+                                    WHERE student_id = $1::uuid AND kind = 'verifier_trace'""", student)
+        occurred = await c.fetchval("SELECT occurred_at FROM platform.evidence_event WHERE evidence_id = $1::uuid", c_id)
+    calls = fake_adapter.calls
+    later = to_v1_body(diagnose_body(student, [at("SYN-UNV", "42", 30)]))
+    later["prior_evidence"] = [{"evidence_id": c_id, "kind": "verifier_trace", "occurred_at": occurred.isoformat(),
+                                "item_ref": "aya:SYN-UNV", "admission": "source_unverified",
+                                "payload": {"sampled_points": 8, "agreeing_points": 8, "reason_codes": []}}]
+    r = await post(api, later, "diagnose")
+    assert r.status_code == 422, r.text
+    assert fake_adapter.calls == calls and (await counts(admin, student))["skill_observation"] == 0
+
+
+async def test_keypad_with_recognition_evidence_is_rejected(api, pools, student, fake_adapter):
+    _, admin = pools
+
+    def to_ocr(out):
+        e = out["evidence"][0]
+        e["kind"] = "ocr_transcription"
+        e["payload"] = {"text": e["payload"]["text"], "confidence": 0.99}
+        return out
+    fake_adapter.mutate = to_ocr
+    r = await post(api, v1_grade(student))
+    assert r.status_code == 502 and (await counts(admin, student))["evidence_event"] == 0
+
+
+async def test_v0_appeal_skips_learner_model(api, pools, student):
+    """建议 4：v0 路径的申诉同样不写能力观察与错因（ADR 15“申诉中”）。"""
+    _, admin = pools
+    body = grade_body(student)
+    body["appeal"] = True
+    assert (await api.post("/internal/v0/grade", json=body)).status_code == 200
+    c = await counts(admin, student)
+    assert (c["grade_result"], c["error_attribution"]) == (1, 0)

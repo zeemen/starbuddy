@@ -74,6 +74,7 @@ def create_app(
         # 启动时就加载契约：共享库或契约文件缺失时立即失败，而不是等到第一个请求（安全审查 S6）
         plugin_contract()
         internal_contract()
+        internal_contract("1.0.0")  # v1 信封契约（安全审查建议 9：文件缺失时启动即失败）
         own_pool = pool is None
         p = pool or await asyncpg.create_pool(settings.database_url, min_size=1, max_size=10)
         # 迁移 0016 必须先于本版本执行：v0、v1 写入都要查封存表（安全审查必须改 1）

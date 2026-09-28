@@ -18,7 +18,7 @@ from . import store
 from .adapter_client import call_adapter
 from .checks import collect_refs, local_id, parse_time, verify
 from .config import Settings
-from .attributes import V0, Attributes, derive
+from .attributes import Attributes, derive, v0_attributes
 from .contract import UnsupportedContractVersion, internal_contract, plugin_contract
 from .errors import IngestError
 from .fingerprint import request_fingerprint, sha256_hex
@@ -107,7 +107,7 @@ class IngestService:
         ctx = request["context"]
         key = ctx["idempotency_key"]
         fp = request_fingerprint(method, request)
-        attrs: Attributes = V0
+        attrs: Attributes = v0_attributes(method, request)
         if ingest is not None:
             attrs = derive(method, request, ingest)
             # 指纹含平台上下文：同 key 换输入通道、用途或等级算冲突（缺省用途先归一）
@@ -183,6 +183,10 @@ class IngestService:
         reg_items, reg_nodes = await store.registered(self.pool, ctx["subject"], items, nodes)
         verified = verify(method, forward, response, registered_items=reg_items, registered_nodes=reg_nodes,
                           prior_admission=prior)
+        # 键盘作答不会有识别转写：出现了说明通道或结果不实（安全审查建议 3）
+        if attrs.channel == "keypad" and any(e["kind"] in ("ocr_transcription", "asr_transcription") for e in verified.evidence):
+            raise IngestError(502, "ADAPTER_RESULT_REJECTED", "adapter result rejected by platform checks",
+                              detail="recognition evidence on keypad channel")
         base = self._summary_base(method, forward, response, verified, c.attempt_ids)
         if versioned:  # v0 摘要没有这两个字段（learning-internal.v0 不改）
             base.update(evidence_level=attrs.evidence_level, learner_model_updated=attrs.learner_model_updated)

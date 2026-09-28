@@ -419,8 +419,8 @@ INTERNAL_V1_COUNTER = [
      lambda v: v["ingest"].__setitem__("evidence_kind", "transfer")),
     ("信封顶层夹带多余字段", "GradeIngest", "GradeIngestKeypad", lambda v: v.__setitem__("student_name", "（合成）")),
     ("插件请求直接放在顶层（旧写法）", "GradeIngest", "GradeIngestKeypad", lambda v: v.update(v.pop("request"))),
-    ("摘要缺证据等级", "GradeSummary", "GradeSummaryLevelC", lambda v: v.pop("evidence_level")),
-    ("摘要缺是否写入学习者模型", "GradeSummary", "GradeSummaryLevelC", lambda v: v.pop("learner_model_updated")),
+    ("摘要的证据等级是 D", "GradeSummary", "GradeSummaryLevelC", lambda v: v.__setitem__("evidence_level", "D")),
+    ("摘要的是否写入学习者模型不是布尔", "GradeSummary", "GradeSummaryLevelC", lambda v: v.__setitem__("learner_model_updated", "no")),
 ]
 
 

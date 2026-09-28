@@ -35,7 +35,12 @@ CREATE TRIGGER fill_evidence_source_type BEFORE INSERT ON platform.evidence_even
   FOR EACH ROW EXECUTE FUNCTION platform.fill_evidence_source_type();
 ALTER TABLE platform.evidence_event
   ALTER COLUMN source_type SET NOT NULL,
-  ADD CONSTRAINT evidence_event_source_type CHECK (source_type = platform.evidence_source_type(kind)),
+  -- 新增载荷类型忘了改函数时函数返回空：coalesce 让约束拒绝而不是放行（安全审查建议 6）
+  ADD CONSTRAINT evidence_event_source_type CHECK (coalesce(source_type = platform.evidence_source_type(kind), false)),
+  -- 拍照最高 B 级（ADR 15；安全审查必须改 1）
+  ADD CONSTRAINT evidence_event_photo_level CHECK (channel IS DISTINCT FROM 'photo' OR evidence_level IN ('B', 'C')),
+  -- 键盘作答不会有识别转写（安全审查建议 3）
+  ADD CONSTRAINT evidence_event_keypad_kind CHECK (channel IS DISTINCT FROM 'keypad' OR kind NOT IN ('ocr_transcription', 'asr_transcription')),
   -- 作答情境只描述作答：交互信号、语音特征不属于某次作答，不带
   ADD CONSTRAINT evidence_event_kind_applies CHECK (evidence_kind IS NULL OR kind NOT IN ('interaction_signal', 'speech_features')),
   ADD CONSTRAINT evidence_event_map_version_fk FOREIGN KEY (subject, map_version_id) REFERENCES kge.map_version (subject, id);
@@ -52,7 +57,29 @@ ALTER TABLE platform.attempt
   ADD COLUMN map_version_id uuid,
   ADD COLUMN source_type    text NOT NULL DEFAULT 'objective' CHECK (source_type = 'objective'),
   -- 用过提示的作答不能记成独立、迁移或复测（最保守口径，spec 推导规则）
+  ADD CONSTRAINT attempt_photo_level CHECK (channel IS DISTINCT FROM 'photo' OR evidence_level IN ('B', 'C')),
   ADD CONSTRAINT attempt_hinted_kind CHECK (coalesce(hint_level_used, 0) = 0 OR evidence_kind IS NULL OR evidence_kind = 'hinted'),
   ADD CONSTRAINT attempt_map_version_fk FOREIGN KEY (subject, map_version_id) REFERENCES kge.map_version (subject, id);
 COMMENT ON COLUMN platform.attempt.source_type IS
   '来源类型（规则 6）：作答本身是客观记录。self_report 列是学生自述，按规则 6 应分表，迁出另起任务（spec 待人确认 #5）';
+
+-- 作答行的补列必须与它的作答证据一致（安全审查建议 2）：同一事实只有一个取值，不会一处 A、一处 B
+CREATE FUNCTION platform.check_attempt_attributes() RETURNS trigger
+  LANGUAGE plpgsql SET search_path = pg_catalog, platform, pg_temp
+  AS $$
+DECLARE e record;
+BEGIN
+  SELECT evidence_kind, evidence_level, channel, map_version_id INTO e
+    FROM platform.evidence_event WHERE evidence_id = NEW.response_evidence_id AND student_id = NEW.student_id;
+  IF NOT FOUND THEN
+    RETURN NEW;  -- 作答证据不存在时由学习服务的核对负责（0004 没有这条外键）
+  END IF;
+  IF (e.evidence_kind, e.evidence_level, e.channel, e.map_version_id)
+     IS DISTINCT FROM (NEW.evidence_kind, NEW.evidence_level, NEW.channel, NEW.map_version_id) THEN
+    RAISE EXCEPTION 'attempt attributes differ from its response evidence' USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$;
+REVOKE EXECUTE ON FUNCTION platform.check_attempt_attributes() FROM PUBLIC;
+CREATE TRIGGER check_attempt_attributes BEFORE INSERT ON platform.attempt
+  FOR EACH ROW EXECUTE FUNCTION platform.check_attempt_attributes();

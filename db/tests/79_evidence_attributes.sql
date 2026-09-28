@@ -40,15 +40,29 @@ SELECT t.throws(t.ev(9, 'response_text', ', map_version_id', ', ''b3000000-0000-
 SELECT t.throws(t.ev(10, 'response_text', ', map_version_id', ', ''b9000000-0000-4000-8000-0000000000b9'''), '23503',
                 '地图版本必须存在');
 
--- 作答：来源类型只能是客观记录；用过提示的不能记成独立、迁移或复测
-DO $$ BEGIN EXECUTE t.at(1, ', hint_level_used, evidence_kind, evidence_level, channel', ', 2, ''hinted'', ''A'', ''keypad'''); END $$;
+-- 拍照最高 B；键盘不会有识别转写
+SELECT t.throws_like(t.ev(12, 'response_text', ', channel, evidence_level', ', ''photo'', ''A'''), '23514', 'evidence_event_photo_level', '拍照证据不能是 A 级');
+DO $$ BEGIN EXECUTE t.ev(13, 'response_text', ', channel, evidence_level', ', ''photo'', ''B'''); END $$;
+SELECT t.ok(true, '拍照证据可以是 B 级');
+SELECT t.throws_like(t.ev(14, 'ocr_transcription', ', channel', ', ''keypad'''), '23514', 'evidence_event_keypad_kind', '键盘作答不能带识别转写');
+
+-- 作答：来源类型只能是客观记录；用过提示的不能记成独立、迁移或复测；补列必须与作答证据一致
+DO $$ BEGIN EXECUTE t.ev(16, 'response_text', ', evidence_kind, evidence_level, channel', ', ''hinted'', ''A'', ''keypad'''); END $$;
+DO $$ BEGIN EXECUTE replace(t.at(1, ', hint_level_used, evidence_kind, evidence_level, channel', ', 2, ''hinted'', ''A'', ''keypad'''),
+                            'e1700000-0000-4000-8000-000000000001', 'e1700000-0000-4000-8000-000000000016'); END $$;
 SELECT t.ok((SELECT source_type FROM platform.attempt WHERE attempt_id = 'a1700000-0000-4000-8000-000000000001') = 'objective',
             '作答的来源类型默认客观记录');
 SELECT t.throws(t.at(2, ', hint_level_used, evidence_kind', ', 1, ''independent'''), '23514', '用过提示的作答不能记成独立');
 SELECT t.throws(t.at(3, ', hint_level_used, evidence_kind', ', 3, ''delayed_retest'''), '23514', '用过提示的作答不能记成延迟复测');
 SELECT t.throws(t.at(4, ', source_type', ', ''student_self_report'''), '23514', '作答表不收学生自述');
-DO $$ BEGIN EXECUTE t.at(5, ', hint_level_used, evidence_kind', ', 0, ''transfer'''); END $$;
-SELECT t.ok(true, '没用提示的作答可以记成迁移');
+SELECT t.throws_like(t.at(5, ', evidence_kind, evidence_level, channel, map_version_id',
+                ', ''independent'', ''B'', ''keypad'', ''b1000000-0000-4000-8000-0000000000b1'''), '23514', 'differ from its response evidence',
+                '作答的证据等级必须与它的作答证据一致');
+DO $$ BEGIN EXECUTE t.at(6, ', hint_level_used, evidence_kind, evidence_level, channel, map_version_id',
+                          ', 0, ''independent'', ''A'', ''keypad'', ''b1000000-0000-4000-8000-0000000000b1'''); END $$;
+SELECT t.ok(true, '与作答证据一致的作答可以写入');
+-- 作答的拍照约束是第二道闸：一致性触发器先于 CHECK 执行，而证据本身不能是拍照 A 级，所以这里只断言被拒
+SELECT t.throws(t.at(7, ', channel, evidence_level', ', ''photo'', ''A'''), '23514', '拍照作答不能是 A 级');
 RESET ROLE;
 
 -- BFF 能读新列（星图等读模块随 RLS 可见）；不能写
