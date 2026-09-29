@@ -371,8 +371,8 @@ def self_test(data: dict, lex: sie_lexicon.Lexicon, tables: dict[str, set[str]],
     def m_inferred_layer(d): field(d, "middle.g7.hint_dependency")["layer"] = "fact"
     def m_exposed(d): field(d, "inner.g3.error_attribution").pop("exposed_via")
     def m_column(d): field(d, "outer.g1.region")["storage"] = "platform.student_profile.school_name"
-    def m_built_by(d): field(d, "middle.g7.confidence_probe").pop("built_by")
-    def m_live_planned(d): field(d, "middle.g7.confidence_probe")["status"] = "live"
+    def m_built_by(d): field(d, "middle.g7.independent_solve_rate").pop("built_by")
+    def m_live_planned(d): field(d, "middle.g7.independent_solve_rate")["status"] = "live"
     def m_lexicon(d): field(d, "middle.g6.stated_interests")["name"] = "学生性格与兴趣"
     def m_retired(d): field(d, "inner.g2.exam_rank_band")["id"] = "inner.g2.rank_range"
     def m_storage_claim(d): field(d, "inner.g3.node_mastery")["storage"] = "insight.claim_history.to_status"

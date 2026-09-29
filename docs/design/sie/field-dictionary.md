@@ -71,7 +71,7 @@
 
 | id | 名称 | 层 | 来源 | 默认可见 | 落库 | 状态 | 改变的教学决策 |
 |---|---|---|---|---|---|---|---|
-| `middle.g5.behavior_events` | 学习行为事件（会话、计划完成与跳过、连错后退出、异议） | fact | 客观记录 | Agent | `insight.behavior_event.payload（SIE-01 建）` | planned | 降负触发（连续中断、连错后退出）与计划调整 |
+| `middle.g5.behavior_events` | 学习行为事件（会话、计划完成与跳过、连错后退出、异议） | fact | 客观记录 | Agent | `insight.behavior_event.payload` | live | 降负触发（连续中断、连错后退出）与计划调整 |
 | `middle.g5.plan_completion_rate` | 计划完成率 | inference | 模型推断 | Agent | `insight.learner_metric.value（SIE-02 建）` | silent | 计划偏重时缩短任务，并先询问原因 |
 | `middle.g5.persistence` | 学习持续性 | inference | 模型推断 | Agent | `insight.learner_metric.value（SIE-02 建）` | silent | 中断后缩短任务、插入熟悉题；只与自己过去比较 |
 
@@ -88,7 +88,7 @@
 
 | id | 名称 | 层 | 来源 | 默认可见 | 落库 | 状态 | 改变的教学决策 |
 |---|---|---|---|---|---|---|---|
-| `middle.g7.confidence_probe` | 做题前“能做对吗” | fact | 学生自述 | Agent | `insight.confidence_probe.predicted_correct（SIE-01 建）` | planned | 自评校准的输入；高估的学生多安排自检 |
+| `middle.g7.confidence_probe` | 做题前“能做对吗” | fact | 学生自述 | Agent | `insight.confidence_probe.prediction` | live | 自评校准的输入；高估的学生多安排自检 |
 | `middle.g7.independent_solve_rate` | 独立解题率 | inference | 模型推断 | Agent | `insight.learner_metric.value（SIE-02 建）` | silent | 提示后做对率明显高于独立做对率时增加无提示练习 |
 | `middle.g7.hint_dependency` | 提示依赖度 | inference | 模型推断 | Agent | `insight.learner_metric.value（SIE-02 建）` | silent | 上调提示阶梯起点，安排无提示变式 |
 | `middle.g7.transfer_gap` | 迁移差（跨科） | inference | 模型推断 | Agent | `insight.learner_metric.value（SIE-02 建）` | silent | 跨科都偏大时由点点安排迁移专项 |

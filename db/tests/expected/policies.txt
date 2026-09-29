@@ -1,3 +1,4 @@
+insight.behavior_event|behavior_event_service_read|SELECT|starbuddy_insight,starbuddy_learning|PERMISSIVE|using=true|check=-
 insight.claim_history|history_insight_read|SELECT|starbuddy_insight|PERMISSIVE|using=true|check=-
 insight.claim_template|template_insight_read|SELECT|starbuddy_insight|PERMISSIVE|using=(status = ANY (ARRAY['approved'::text, 'retired'::text]))|check=-
 insight.claim_template|template_read|SELECT|starbuddy_bff,starbuddy_learning|PERMISSIVE|using=(status = 'approved'::text)|check=-
@@ -8,6 +9,7 @@ insight.claim|claim_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=((status = 
    FROM insight.claim_template t
   WHERE ((t.template_key = claim.template_key) AND (t.version = claim.template_version)))) AND ((platform.is_self_student(student_id) AND ('student'::text = ANY (visibility))) OR (platform.is_linked_guardian(student_id) AND ('guardian'::text = ANY (visibility)))))|check=-
 insight.claim|claim_insight|ALL|starbuddy_insight|PERMISSIVE|using=true|check=true
+insight.confidence_probe|confidence_probe_service_read|SELECT|starbuddy_insight,starbuddy_learning|PERMISSIVE|using=true|check=-
 insight.exam_record|exam_record_service_read|SELECT|starbuddy_insight,starbuddy_learning|PERMISSIVE|using=true|check=-
 insight.guardian_report|guardian_report_service_read|SELECT|starbuddy_insight,starbuddy_learning|PERMISSIVE|using=true|check=-
 insight.onboarding_progress|onboarding_progress_service_read|SELECT|starbuddy_insight|PERMISSIVE|using=true|check=-

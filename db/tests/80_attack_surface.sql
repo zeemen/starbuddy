@@ -175,7 +175,13 @@ INSERT INTO t.function_matrix_exempt VALUES
   ('platform.is_active_guardian()', '没有参数，只看当前账号自身状态'),
   ('platform.signup_guardian(text)', '参数是手机号，只给当前身份注册；20_rls_household 的注册与账号接管断言'),
   ('platform.lookup_accounts_by_phone(text)', '登录查号，只返回账号 ID；攻击面 C3（第二轮）'),
-  ('platform.redeem_guardian_invite(text)', '参数是邀请码；20_rls_household 的兑换断言（攻击面 D1、D2、D4）');
+  ('platform.redeem_guardian_invite(text)', '参数是邀请码；20_rls_household 的兑换断言（攻击面 D1、D2、D4）'),
+  ('insight.record_behavior_event(uuid,text,jsonb,timestamp with time zone,uuid)',
+   '第二个 uuid 是幂等键（按学生隔离）；只认学生本人：79g_behavior_events 的“学生不能给别的学生写事件”“家长不能冒充学生写事件”'),
+  ('insight.record_confidence_probe(uuid,platform.subject,text,text,timestamp with time zone,uuid)',
+   '第二个 uuid 是幂等键（按学生隔离）；只认学生本人：79g_behavior_events 的“学生不能给别的学生写探针”'),
+  ('insight.link_probe_attempt(uuid,uuid,uuid)',
+   '探针与作答都按学生本人核对，别人的探针与“不存在”同样报错：79g_behavior_events 的“不能关联别人的探针”');
 
 CREATE FUNCTION t.readable_students(acc uuid) RETURNS uuid[] LANGUAGE sql STABLE AS $$
   SELECT coalesce(array_agg(DISTINCT s.id ORDER BY s.id), '{}')

@@ -9,6 +9,7 @@ col|insight.claim.status|starbuddy_insight|UPDATE|SUPERUSER
 col|insight.claim.updated_at|starbuddy_insight|UPDATE|SUPERUSER
 col|insight.claim.value|starbuddy_insight|UPDATE|SUPERUSER
 col|insight.claim.visibility|starbuddy_insight|UPDATE|SUPERUSER
+col|insight.confidence_probe.attempt_id|starbuddy_authz|UPDATE|SUPERUSER
 col|kge.item_tag.node_ids|starbuddy_authz|UPDATE|SUPERUSER
 col|kge.map_change.confidence|starbuddy_kge|UPDATE|SUPERUSER
 col|kge.map_change.evidence_pack|starbuddy_kge|UPDATE|SUPERUSER
@@ -196,12 +197,18 @@ func|insight.change_allowed(insight.claim_status,insight.claim_status,text)|star
 func|insight.change_allowed(insight.claim_status,insight.claim_status,text)|starbuddy_insight|EXECUTE|SUPERUSER
 func|insight.claim_history_guard()|starbuddy_authz|EXECUTE|starbuddy_authz
 func|insight.claim_log()|starbuddy_authz|EXECUTE|starbuddy_authz
+func|insight.link_probe_attempt(uuid,uuid,uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|insight.link_probe_attempt(uuid,uuid,uuid)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|insight.onboarding_role(uuid)|starbuddy_authz|EXECUTE|SUPERUSER
 func|insight.onboarding_stats(timestamp with time zone,timestamp with time zone)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|insight.onboarding_stats(timestamp with time zone,timestamp with time zone)|starbuddy_insight|EXECUTE|starbuddy_authz
 func|insight.onboarding_stats(timestamp with time zone,timestamp with time zone)|starbuddy_report|EXECUTE|starbuddy_authz
 func|insight.onboarding_view(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|insight.onboarding_view(uuid)|starbuddy_bff|EXECUTE|starbuddy_authz
+func|insight.record_behavior_event(uuid,text,jsonb,timestamp with time zone,uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|insight.record_behavior_event(uuid,text,jsonb,timestamp with time zone,uuid)|starbuddy_bff|EXECUTE|starbuddy_authz
+func|insight.record_confidence_probe(uuid,platform.subject,text,text,timestamp with time zone,uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|insight.record_confidence_probe(uuid,platform.subject,text,text,timestamp with time zone,uuid)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|insight.record_onboarding_step(uuid,text,text)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|insight.record_onboarding_step(uuid,text,text)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|insight.submit_exam_record(uuid,platform.subject,text,date,numeric,numeric,text,text,text)|starbuddy_authz|EXECUTE|starbuddy_authz
@@ -210,6 +217,7 @@ func|insight.submit_guardian_report(uuid,text,jsonb)|starbuddy_authz|EXECUTE|sta
 func|insight.submit_guardian_report(uuid,text,jsonb)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|insight.submit_self_report(uuid,text,jsonb)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|insight.submit_self_report(uuid,text,jsonb)|starbuddy_bff|EXECUTE|starbuddy_authz
+func|insight.valid_behavior_payload(text,jsonb)|starbuddy_authz|EXECUTE|SUPERUSER
 func|insight.valid_report_value(text,jsonb)|starbuddy_authz|EXECUTE|SUPERUSER
 func|insight.valid_set(jsonb,text[],integer)|starbuddy_authz|EXECUTE|SUPERUSER
 func|insight.valid_text(jsonb)|starbuddy_authz|EXECUTE|SUPERUSER
@@ -399,8 +407,11 @@ func|policy.validate_scheme(uuid)|starbuddy_learning|EXECUTE|SUPERUSER
 owner|insight.basis_belongs(insight.basis_kind,uuid,uuid)|starbuddy_authz
 owner|insight.claim_history_guard()|starbuddy_authz
 owner|insight.claim_log()|starbuddy_authz
+owner|insight.link_probe_attempt(uuid,uuid,uuid)|starbuddy_authz
 owner|insight.onboarding_stats(timestamp with time zone,timestamp with time zone)|starbuddy_authz
 owner|insight.onboarding_view(uuid)|starbuddy_authz
+owner|insight.record_behavior_event(uuid,text,jsonb,timestamp with time zone,uuid)|starbuddy_authz
+owner|insight.record_confidence_probe(uuid,platform.subject,text,text,timestamp with time zone,uuid)|starbuddy_authz
 owner|insight.record_onboarding_step(uuid,text,text)|starbuddy_authz
 owner|insight.submit_exam_record(uuid,platform.subject,text,date,numeric,numeric,text,text,text)|starbuddy_authz
 owner|insight.submit_guardian_report(uuid,text,jsonb)|starbuddy_authz
@@ -469,6 +480,10 @@ owner|platform.staff_logout(text)|starbuddy_authz
 owner|platform.staff_session_resolve(text)|starbuddy_authz
 owner|platform.take_review_task(uuid)|starbuddy_authz
 owner|policy.publish_scheme(uuid)|starbuddy_authz
+rel|insight.behavior_event|starbuddy_authz|INSERT|SUPERUSER
+rel|insight.behavior_event|starbuddy_authz|SELECT|SUPERUSER
+rel|insight.behavior_event|starbuddy_insight|SELECT|SUPERUSER
+rel|insight.behavior_event|starbuddy_learning|SELECT|SUPERUSER
 rel|insight.claim_history|starbuddy_authz|INSERT|SUPERUSER
 rel|insight.claim_history|starbuddy_insight|SELECT|SUPERUSER
 rel|insight.claim_template|starbuddy_bff|SELECT|SUPERUSER
@@ -479,6 +494,10 @@ rel|insight.claim|starbuddy_bff|SELECT|SUPERUSER
 rel|insight.claim|starbuddy_insight|INSERT|SUPERUSER
 rel|insight.claim|starbuddy_insight|SELECT|SUPERUSER
 rel|insight.claim|starbuddy_learning|SELECT|SUPERUSER
+rel|insight.confidence_probe|starbuddy_authz|INSERT|SUPERUSER
+rel|insight.confidence_probe|starbuddy_authz|SELECT|SUPERUSER
+rel|insight.confidence_probe|starbuddy_insight|SELECT|SUPERUSER
+rel|insight.confidence_probe|starbuddy_learning|SELECT|SUPERUSER
 rel|insight.exam_record|starbuddy_authz|INSERT|SUPERUSER
 rel|insight.exam_record|starbuddy_authz|SELECT|SUPERUSER
 rel|insight.exam_record|starbuddy_authz|UPDATE|SUPERUSER
@@ -580,6 +599,7 @@ rel|platform.account_contact|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.account|starbuddy_authz|INSERT|SUPERUSER
 rel|platform.account|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.account|starbuddy_bff|SELECT|SUPERUSER
+rel|platform.attempt|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.attempt|starbuddy_bff|SELECT|SUPERUSER
 rel|platform.attempt|starbuddy_learning|INSERT|SUPERUSER
 rel|platform.attempt|starbuddy_learning|SELECT|SUPERUSER
@@ -627,6 +647,7 @@ rel|platform.household|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.household|starbuddy_bff|SELECT|SUPERUSER
 rel|platform.ingest_request|starbuddy_learning|INSERT|SUPERUSER
 rel|platform.ingest_request|starbuddy_learning|SELECT|SUPERUSER
+rel|platform.item|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.item|starbuddy_bff|SELECT|SUPERUSER
 rel|platform.item|starbuddy_learning|INSERT|SUPERUSER
 rel|platform.item|starbuddy_learning|SELECT|SUPERUSER
@@ -772,8 +793,11 @@ schema|starbuddy_ext|starbuddy_bff|USAGE|SUPERUSER
 secdef|insight.basis_belongs(insight.basis_kind,uuid,uuid)
 secdef|insight.claim_history_guard()
 secdef|insight.claim_log()
+secdef|insight.link_probe_attempt(uuid,uuid,uuid)
 secdef|insight.onboarding_stats(timestamp with time zone,timestamp with time zone)
 secdef|insight.onboarding_view(uuid)
+secdef|insight.record_behavior_event(uuid,text,jsonb,timestamp with time zone,uuid)
+secdef|insight.record_confidence_probe(uuid,platform.subject,text,text,timestamp with time zone,uuid)
 secdef|insight.record_onboarding_step(uuid,text,text)
 secdef|insight.submit_exam_record(uuid,platform.subject,text,date,numeric,numeric,text,text,text)
 secdef|insight.submit_guardian_report(uuid,text,jsonb)
