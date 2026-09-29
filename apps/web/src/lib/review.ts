@@ -225,3 +225,160 @@ export const RETIRE_BASIS = [
   { code: 'content_error', label: '内容错误' },
   { code: 'withdrawn', label: '暂停使用' },
 ] as const;
+
+// ---------- 统一复核队列（specs/review-queue-sprint2 设计要点 2） ----------
+// 可见范围：只有不透明学生指针（student_ref，后端按学生 id 截断哈希）、学科、原因、结构化判分与证据 ID；没有作答原文与可识别信息。
+export const QUEUE_STATUSES = ['open', 'in_progress', 'resolved'] as const;
+export type QueueStatus = (typeof QUEUE_STATUSES)[number];
+export const isQueueStatus = (s: string): s is QueueStatus => (QUEUE_STATUSES as readonly string[]).includes(s);
+export const QUEUE_REASONS = [
+  'subjective_dimension', 'low_confidence', 'verifier_boundary_case', 'content_not_admitted', 'ocr_low_confidence',
+  'dimension_unavailable', 'student_appeal', 'spot_check', 'double_grading_disagreement', 'full_score_second_review', 'profile_dispute',
+] as const;
+export type QueueReason = (typeof QUEUE_REASONS)[number];
+export const isQueueReason = (s: string): s is QueueReason => (QUEUE_REASONS as readonly string[]).includes(s);
+/** 结案码与后端白名单表的格式一致（码是否在白名单、是否适用由库函数核对） */
+export const isResolutionCode = (s: string): boolean => /^[a-z0-9_]{1,48}$/.test(s);
+export type SourceKind = 'grade_result' | 'skill_observation' | 'error_attribution' | 'claim';
+
+export interface QueueItem {
+  id: string;
+  subject: string;
+  student_ref: string;
+  source_kind: SourceKind;
+  source_id: string;
+  reasons: string[];
+  status: QueueStatus;
+  created_at: string;
+  assigned: boolean;
+  assigned_to_me: boolean;
+  assigned_at: string | null;
+  resolution_code: string | null;
+  resolved_at: string | null;
+}
+
+export interface GradeDimension {
+  dimension_id: string;
+  score: number | null;
+  max_score: number;
+  judged_by: 'verifier' | 'rubric_rule' | 'rubric_model';
+  subjective: boolean;
+  rule_ref: string | null;
+  confidence: number;
+  evidence_ids: string[];
+}
+
+export interface GradeSource {
+  verdict: string;
+  score_total: number | null;
+  max_total: number;
+  confidence: number;
+  calibrated: boolean;
+  rubric_version: string;
+  source_version: string;
+  model_version: string;
+  review_reasons: string[];
+  evidence_ids: string[];
+  superseded: boolean;
+  created_at: string;
+  dimensions: GradeDimension[];
+}
+
+export interface ClaimSource {
+  template_key: string;
+  template_version: string;
+  target_type: string;
+  status: string;
+  confidence: number;
+  source_type: string;
+  model_version: string | null;
+  evidence_ids: string[];
+  created_at: string;
+}
+
+export interface QueueTask extends QueueItem {
+  resolved_by_me: boolean;
+  source: GradeSource | ClaimSource | null;
+}
+
+export interface ResolutionCode {
+  code: string;
+  label: string;
+  applies_to: string[];
+}
+
+export interface QueueFilter {
+  subject: SubjectCode;
+  status: QueueStatus;
+  reason?: QueueReason;
+  /** 翻页游标：上一页最后一条的创建时间与 id，两个一起用（后端安全审查 S2：同一时刻的多条不漏不重） */
+  before?: string;
+  before_id?: string;
+  limit?: number;
+}
+
+export interface QueueCursor {
+  before: string;
+  before_id: string;
+}
+
+/** 列表查询串（也用于页面链接）：只拼经过校验的值，before 编码（ISO 时间里的“+”不能原样放进地址） */
+export function queueQuery(f: QueueFilter): string {
+  const q = new URLSearchParams({ subject: f.subject, status: f.status });
+  if (f.reason) q.set('reason', f.reason);
+  // 游标两个参数只一起出现
+  if (f.before && f.before_id) {
+    q.set('before', f.before);
+    q.set('before_id', f.before_id);
+  }
+  if (f.limit !== undefined) q.set('limit', String(f.limit));
+  return q.toString();
+}
+
+/** 翻页游标的时间：只收带时区、能解析的 ISO 时间（后端给的 created_at 原样回传；后端要求带时区） */
+export const isCursor = (s: string): boolean =>
+  s.length <= 40 && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}:\d{2})$/.test(s) && !Number.isNaN(Date.parse(s));
+
+export const queue = (staff: string, f: QueueFilter) =>
+  call<{ items: QueueItem[]; next: QueueCursor | null }>(staff, 'GET', `/review/v0/queue?${queueQuery({ limit: 50, ...f })}`);
+export const queueTask = (staff: string, id: string) => call<QueueTask>(staff, 'GET', `/review/v0/queue/${id}`);
+export const resolutionCodes = (staff: string) => call<{ items: ResolutionCode[] }>(staff, 'GET', '/review/v0/queue/resolution-codes');
+export const takeTask = (staff: string, id: string) => call<{ status: string }>(staff, 'POST', `/review/v0/queue/${id}/take`);
+export const releaseTask = (staff: string, id: string) => call<{ status: string }>(staff, 'POST', `/review/v0/queue/${id}/release`);
+export const resolveTask = (staff: string, id: string, resolution_code: string) =>
+  call<{ status: string }>(staff, 'POST', `/review/v0/queue/${id}/resolve`, { resolution_code });
+
+/** 复核原因（platform.review_reason） */
+export const QUEUE_REASON_LABEL: Record<QueueReason, string> = {
+  subjective_dimension: '主观维度', low_confidence: '置信度低', verifier_boundary_case: '验证器边界情况',
+  content_not_admitted: '题目未准入', ocr_low_confidence: '识别置信度低', dimension_unavailable: '维度不可判',
+  student_appeal: '学生申诉', spot_check: '抽检', double_grading_disagreement: '双评不一致',
+  full_score_second_review: '满分复核', profile_dispute: '画像异议',
+};
+export const QUEUE_STATUS_LABEL: Record<QueueStatus, string> = { open: '待处理', in_progress: '处理中', resolved: '已结案' };
+export const SOURCE_KIND_LABEL: Record<SourceKind, string> = {
+  grade_result: '判分', skill_observation: '能力观察', error_attribution: '错因归因', claim: '判断（画像异议）',
+};
+export const JUDGED_BY_LABEL: Record<string, string> = { verifier: '验证器', rubric_rule: 'Rubric 规则', rubric_model: 'Rubric 模型' };
+export const VERDICT_LABEL: Record<string, string> = {
+  correct: '正确', incorrect: '错误', partial: '部分正确', needs_review: '待复核', not_applicable: '不适用',
+};
+export const reasonLabel = (r: string): string => (Object.hasOwn(QUEUE_REASON_LABEL, r) ? QUEUE_REASON_LABEL[r as QueueReason] : r);
+
+/** 领取情况：我已领取 / 他人已领取 / 未领取 */
+export function assignmentLabel(t: Pick<QueueItem, 'assigned' | 'assigned_to_me'>): string {
+  return t.assigned_to_me ? '我已领取' : t.assigned ? '他人已领取' : '未领取';
+}
+
+export const formatTime = (iso: string | null): string =>
+  iso ? new Date(iso).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) : '—';
+
+/** 复核队列的结果提示：规则类错误不是“发布规则”，另给文字；说明（如“复核任务已被其他人领取”）照常附在后面 */
+export const QUEUE_RESULT_LABEL: Record<string, string> = {
+  ...RESULT_LABEL,
+  taken: '已领取', released: '已放回队列', resolved: '已结案',
+  RULE_VIOLATION: '不能这样操作', FORBIDDEN: '没有权限（需要在职的 staff 账号）', NOT_FOUND: '复核任务不存在',
+  INVALID_PARAMETER: '结案码不合格式、不在白名单或不适用于这类任务',
+};
+/** 复核任务 id 是 UUID */
+export const isTaskId = isVersionId;

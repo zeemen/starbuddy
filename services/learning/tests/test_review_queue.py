@@ -5,7 +5,6 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import asyncpg
-import pytest
 
 from conftest import grade_body
 from review_loop import STAFF_A, as_staff, close_loop, console, find_task
@@ -51,18 +50,27 @@ async def test_appeal_enters_queue(api, pools, student, fake_adapter):
     assert len(t) == 1 and t[0]["source_id"] == s["grade_result_id"] and "student_appeal" in t[0]["reasons"]
 
 
-async def test_adapter_cannot_self_select_spot_check(api, pools, student, fake_adapter):
-    """适配器自己标 spot_check 不据此进队（抽检只由调度角色按比例抽）。"""
+async def test_adapter_declared_spot_check_enters_queue(api, pools, student, fake_adapter):
+    """契约里 spot_check 是合法的复核原因：适配器声明了，平台照常进队，不能比适配器更松（契约审查 A1）。"""
     _, admin = pools
     fake_adapter.admission = "admitted"
 
     def mutate(out):
         out["human_review_required"], out["review_reasons"] = True, ["spot_check"]
+        return out
     fake_adapter.mutate = mutate
-    r = await api.post("/internal/v0/grade", json=grade_body(student, item="SYN-ADM", text="42"))
-    if r.status_code != 200:
-        pytest.skip("学习服务不接受只带 spot_check 的判分")
-    assert await tasks_for(admin, student) == []
+    s = await post_grade(api, grade_body(student, item="SYN-ADM", text="42"))
+    t = await tasks_for(admin, student)
+    assert len(t) == 1 and t[0]["source_id"] == s["grade_result_id"] and t[0]["reasons"] == ["spot_check"]
+
+
+async def test_console_reason_list_matches_db_enum(pools):
+    """审核台后端的原因白名单与库里的 platform.review_reason 一致（契约审查 B2：防漂移）。"""
+    from review_console.app import QUEUE_REASONS
+    _, admin = pools
+    async with admin.acquire() as c:
+        db = await c.fetchval("SELECT enum_range(NULL::platform.review_reason)::text[]")
+    assert list(QUEUE_REASONS) == list(db)
 
 
 async def test_console_closed_loop_aya(api, pools, pg, student):
@@ -80,6 +88,16 @@ async def test_console_closed_loop_aya(api, pools, pg, student):
         assert {c["code"] for c in codes} == {"upheld", "regrade_required", "content_issue", "dispute_forwarded", "not_actionable"}
         r = await client.get(f"/review/v0/queue/{uuid.uuid4()}", headers=as_staff(STAFF_A))
         assert r.status_code == 404
+        # 翻页：游标是 (创建时间, id)；不带时区的时间与单独的 before_id 都拒绝
+        p1 = (await client.get("/review/v0/queue", params={"limit": 1}, headers=as_staff(STAFF_A))).json()
+        assert len(p1["items"]) == 1 and p1["next"] and set(p1["next"]) == {"before", "before_id"}
+        p2 = (await client.get("/review/v0/queue", params={"limit": 1, **p1["next"]}, headers=as_staff(STAFF_A))).json()
+        assert p2["items"] and p2["items"][0]["id"] != p1["items"][0]["id"]
+        assert (p2["items"][0]["created_at"], p2["items"][0]["id"]) < (p1["items"][0]["created_at"], p1["items"][0]["id"])
+        r = await client.get("/review/v0/queue", params={"before": "2026-10-01T00:00:00"}, headers=as_staff(STAFF_A))
+        assert r.status_code == 422
+        r = await client.get("/review/v0/queue", params={"before_id": str(uuid.uuid4())}, headers=as_staff(STAFF_A))
+        assert r.status_code == 422
 
 
 async def test_spot_check_and_profile_dispute(api, pools, pg, student, fake_adapter):

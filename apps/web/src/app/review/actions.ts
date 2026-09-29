@@ -7,8 +7,8 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { currentSession, staffCookieName, staffCookieOptions } from '../../lib/review-session.ts';
 import {
-  editNode, isBasis, isDigest, isNodeId, isVersionId, lines, loginRequest, logoutRequest, publishVersion, retireVersion,
-  signChange, signVersion, type Result,
+  editNode, isBasis, isDigest, isNodeId, isResolutionCode, isTaskId, isVersionId, lines, loginRequest, logoutRequest, publishVersion,
+  releaseTask, resolveTask, retireVersion, signChange, signVersion, takeTask, type Result,
 } from '../../lib/review.ts';
 
 export interface ActionState {
@@ -115,4 +115,38 @@ export async function retireAction(_: ActionState | null, f: FormData): Promise<
   // 撤下必须勾选确认（契约审查 PR 3 S8）
   if (!isVersionId(version) || !isBasis(basis) || text(f, 'confirm') !== 'yes') return INVALID;
   return done(await retireVersion(who, version, { basis_code: basis }), 'retired', version);
+}
+
+// ---------- 统一复核队列（specs/review-queue-sprint2 设计要点 2）：领取、放回、结案 ----------
+// 前端只校验格式（任务 id 是 UUID、结案码合格式）；是否 active staff、是否本人领取、结案码是否在白名单且适用，都由库函数核对。
+function queueDone<T>(r: Result<T>, okCode: string, task: string): ActionState {
+  if (!r.ok) return { code: r.problem.code, detail: r.problem.detail };
+  revalidatePath(`/review/queue/${task}`);
+  revalidatePath('/review/queue');
+  return { code: okCode };
+}
+
+export async function takeTaskAction(_: ActionState | null, f: FormData): Promise<ActionState> {
+  const who = await staff();
+  if (!who) return { code: 'UNAUTHENTICATED' };
+  const task = text(f, 'task');
+  if (!isTaskId(task)) return INVALID;
+  return queueDone(await takeTask(who, task), 'taken', task);
+}
+
+export async function releaseTaskAction(_: ActionState | null, f: FormData): Promise<ActionState> {
+  const who = await staff();
+  if (!who) return { code: 'UNAUTHENTICATED' };
+  const task = text(f, 'task');
+  if (!isTaskId(task)) return INVALID;
+  return queueDone(await releaseTask(who, task), 'released', task);
+}
+
+export async function resolveTaskAction(_: ActionState | null, f: FormData): Promise<ActionState> {
+  const who = await staff();
+  if (!who) return { code: 'UNAUTHENTICATED' };
+  const task = text(f, 'task');
+  const code = text(f, 'resolution_code');
+  if (!isTaskId(task) || !isResolutionCode(code)) return INVALID;
+  return queueDone(await resolveTask(who, task, code), 'resolved', task);
 }

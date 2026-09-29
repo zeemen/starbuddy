@@ -4,7 +4,7 @@
 DROP FUNCTION platform.enqueue_claim_dispute(uuid);
 DROP FUNCTION platform.review_sample_spot_checks(platform.subject, timestamptz, numeric);
 DROP FUNCTION platform.review_task_detail(uuid);
-DROP FUNCTION platform.review_queue(platform.subject, text, text, integer, timestamptz);
+DROP FUNCTION platform.review_queue(platform.subject, text, text, integer, timestamptz, uuid);
 DROP FUNCTION platform.release_review_task(uuid);
 DROP FUNCTION platform.take_review_task(uuid);
 
@@ -30,15 +30,18 @@ DROP FUNCTION platform.review_current_staff();
 
 GRANT SELECT ON platform.review_task TO starbuddy_review;
 CREATE POLICY review_staff_read ON platform.review_task FOR SELECT TO starbuddy_review USING (true);
+REVOKE INSERT (subject, student_id, source_kind, source_id, reasons) ON platform.review_task FROM starbuddy_learning;
+GRANT INSERT ON platform.review_task TO starbuddy_learning;
 DROP POLICY review_service_open ON platform.review_task;
 CREATE POLICY review_service_open ON platform.review_task FOR INSERT TO starbuddy_learning
   WITH CHECK (status = 'open' AND resolved_at IS NULL AND resolved_by_account IS NULL);
 
-REVOKE SELECT ON platform.grade_result, platform.grade_dimension FROM starbuddy_authz;
+-- 只收回 0023 新授的维度表；grade_result 的 SELECT 是 0005 给 check_supersede_target 的，不能动（安全审查 B2）
+REVOKE SELECT ON platform.grade_dimension FROM starbuddy_authz;
 REVOKE INSERT ON platform.review_task FROM starbuddy_authz;
 REVOKE UPDATE (assigned_to, assigned_at) ON platform.review_task FROM starbuddy_authz;
 -- 0023 之后领取过、仍在处理中的任务放回待处理，再删领取列
-UPDATE platform.review_task SET status = 'open' WHERE status = 'in_progress';
+UPDATE platform.review_task SET status = 'open', assigned_to = NULL, assigned_at = NULL WHERE status = 'in_progress';
 ALTER TABLE platform.review_task DROP CONSTRAINT review_task_assignment;
 ALTER TABLE platform.review_task DROP COLUMN assigned_at, DROP COLUMN assigned_to;
 ALTER TABLE platform.review_task DROP CONSTRAINT review_task_claim_is_dispute;
@@ -47,3 +50,4 @@ ALTER TABLE platform.review_task ADD CONSTRAINT review_task_source_kind_check
   CHECK (source_kind IN ('grade_result', 'skill_observation', 'error_attribution'));
 
 DROP TABLE platform.review_resolution_code;
+COMMENT ON TABLE platform.review_task IS NULL;

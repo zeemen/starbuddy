@@ -266,14 +266,18 @@ def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthen
     # ---------- 统一复核队列（冲刺 2-G） ----------
     @app.get("/review/v0/queue")
     async def queue(request: Request, subject: str | None = None, status: str | None = None, reason: str | None = None,
-                    limit: int = 50, before: datetime | None = None):
+                    limit: int = 50, before: datetime | None = None, before_id: uuid.UUID | None = None):
         if subject is not None:
             _subject(subject)
         if (status is not None and status not in QUEUE_STATUSES) or (reason is not None and reason not in QUEUE_REASONS) \
-                or not 1 <= limit <= 200:
+                or not 1 <= limit <= 200 or (before_id is not None and before is None):
             raise ReviewError(422, "INVALID_PARAMETER")
-        items = await state["review"].queue(request.state.staff, subject, status, reason, limit, before)
-        return {"items": items, "next_before": items[-1]["created_at"] if len(items) == limit else None}
+        if before is not None and before.tzinfo is None:  # 不带时区的时间会被当成 UTC（安全审查 N3）
+            raise ReviewError(422, "INVALID_PARAMETER", "before 必须带时区")
+        items = await state["review"].queue(request.state.staff, subject, status, reason, limit, before, before_id)
+        # 游标是 (创建时间, id)：同一刻批量进队的任务不会被跳过（安全审查 S2）
+        nxt = {"before": items[-1]["created_at"], "before_id": items[-1]["id"]} if len(items) == limit else None
+        return {"items": items, "next": nxt}
 
     @app.get("/review/v0/queue/resolution-codes")
     async def resolution_codes(request: Request):

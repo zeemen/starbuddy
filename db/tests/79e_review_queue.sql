@@ -56,7 +56,26 @@ SELECT t.throws(format($$INSERT INTO platform.review_task (subject, student_id, 
                 '42501', '进队的学科必须与判分一致');
 SELECT t.throws(format($$INSERT INTO platform.review_task (subject, student_id, source_kind, source_id, reasons)
                          VALUES ('aya', %L, 'skill_observation', gen_random_uuid(), '{spot_check}')$$, :S1),
-                '42501', '学习服务不能放抽检任务');
+                '42501', '学习服务不能为观测放抽检任务');
+SELECT t.throws(format($$INSERT INTO platform.review_task (subject, student_id, source_kind, source_id, reasons)
+                         VALUES ('aya', %L, 'error_attribution', gen_random_uuid(), '{low_confidence}')$$, :S1),
+                '42501', '本冲刺学习服务只为判分进队（观测、错因随 KGE-04）');
+SELECT t.throws(format($$INSERT INTO platform.review_task (subject, student_id, source_kind, source_id, reasons, created_at)
+                         VALUES ('zhixing', %L, 'grade_result', %L, '{subjective_dimension}', '2000-01-01')$$, :S1, :g1),
+                '42501', '学习服务不能指定创建时间（不能借此排到队首或队尾）');
+SELECT t.throws(format($$INSERT INTO platform.review_task (subject, student_id, source_kind, source_id, reasons)
+                         VALUES ('zhixing', %L, 'grade_result', %L, '{subjective_dimension,low_confidence}')$$, :S1, :g1),
+                '42501', '进队原因必须是判分声明的复核原因的子集（不能凭空造原因）');
+INSERT INTO platform.grade_result (id, student_id, subject, attempt_id, attempt_occurred_at, verdict, rubric_version, score_total, max_total,
+  calibrated, confidence, source_version, model_version, verifier_id, verifier_version, human_review_required, review_reasons, semantics,
+  evidence_ids, source_request_id)
+VALUES ('9b300000-0000-4000-8000-0000000009b3', :S1, 'aya', 'a7000000-0000-4000-8000-0000000000a7', '2026-10-08 11:30:00+00', 'correct',
+        'aya-symbolic-ts@0.1.0', 1, 1, true, 1, 'rubric:aya-symbolic-ts@0.1.0', 'algo:aya-symbolic-ts@0.1.0', 'aya-symbolic-ts', '0.1.0',
+        true, '{spot_check}', 'formal', '{e1000000-0000-4000-8000-000000000001}', gen_random_uuid());
+INSERT INTO platform.review_task (subject, student_id, source_kind, source_id, reasons)
+VALUES ('aya', :S1, 'grade_result', '9b300000-0000-4000-8000-0000000009b3', '{spot_check}');
+SELECT t.ok(EXISTS (SELECT 1 FROM platform.review_task WHERE source_id = '9b300000-0000-4000-8000-0000000009b3' AND reasons = '{spot_check}'),
+            '适配器声明的抽检随判分进队（平台不比适配器更松）');
 SELECT t.throws(format($$INSERT INTO platform.review_task (subject, student_id, source_kind, source_id, reasons)
                          VALUES ('aya', %L, 'claim', 'c1a10000-0000-4000-8000-0000000000c1', '{profile_dispute}')$$, :S1),
                 '42501', '学习服务不能放画像异议');
@@ -65,7 +84,7 @@ SELECT t.throws(format($$INSERT INTO platform.review_task (subject, student_id, 
                 '42501', '学习服务不能插入已领取的任务');
 SELECT t.throws(format('SELECT platform.take_review_task(%L)', (SELECT id FROM platform.review_task WHERE source_id = :g1)),
                 '42501', '学习服务不能领取');
-SELECT t.throws($$SELECT count(*) FROM platform.review_queue(NULL, NULL, NULL, 10, NULL)$$, '42501', '学习服务不能调用审核台读函数');
+SELECT t.throws($$SELECT count(*) FROM platform.review_queue(NULL, NULL, NULL, 10, NULL, NULL)$$, '42501', '学习服务不能调用审核台读函数');
 SELECT t.throws($$SELECT platform.review_sample_spot_checks('aya', now() - interval '1 day', 0.1)$$, '42501', '学习服务不能抽检');
 SELECT t.throws($$SELECT platform.enqueue_claim_dispute('c1a10000-0000-4000-8000-0000000000c1')$$, '42501', '学习服务不能放画像异议（函数）');
 RESET ROLE;
@@ -87,33 +106,33 @@ SELECT t.as_account(:sf);
 SELECT t.throws($$SELECT count(*) FROM platform.review_task$$, '42501', '审核台不能直接读队列表（有 student_id）');
 SELECT t.as_account(NULL);
 RESET ROLE;
-SELECT t.ok(t.rq(:sf, $$SELECT count(*)::text FROM platform.review_queue(NULL, 'open', NULL, 50, NULL) WHERE id IN (SELECT NULL::uuid)$$) = '0'
-            AND t.rq(:sf, format($$SELECT string_agg(source_id::text, ',' ORDER BY source_id) FROM platform.review_queue(NULL, 'open', NULL, 200, NULL)
+SELECT t.ok(t.rq(:sf, $$SELECT count(*)::text FROM platform.review_queue(NULL, 'open', NULL, 50, NULL, NULL) WHERE id IN (SELECT NULL::uuid)$$) = '0'
+            AND t.rq(:sf, format($$SELECT string_agg(source_id::text, ',' ORDER BY source_id) FROM platform.review_queue(NULL, 'open', NULL, 200, NULL, NULL)
                                    WHERE source_id IN (%L, %L)$$, :g1, :g2)) = :g1 || ',' || :g2,
             'staff 经读函数看到待处理任务');
-SELECT t.ok(t.rq(:sf, $$SELECT count(*)::text FROM platform.review_queue('aya', 'open', 'student_appeal', 200, NULL)$$)::int >= 1
+SELECT t.ok(t.rq(:sf, $$SELECT count(*)::text FROM platform.review_queue('aya', 'open', 'student_appeal', 200, NULL, NULL)$$)::int >= 1
             AND t.rq(:sf, $$SELECT bool_and(subject = 'aya' AND 'student_appeal' = ANY (reasons))::text
-                             FROM platform.review_queue('aya', 'open', 'student_appeal', 200, NULL)$$) = 'true',
+                             FROM platform.review_queue('aya', 'open', 'student_appeal', 200, NULL, NULL)$$) = 'true',
             '队列按学科、状态、原因筛选');
-SELECT t.ok(pg_get_function_result('platform.review_queue(platform.subject, text, text, integer, timestamptz)'::regprocedure) !~ 'student_id'
-            AND t.rq(:sf, format($$SELECT student_ref FROM platform.review_queue(NULL, NULL, NULL, 200, NULL) WHERE id = %L$$, :'t1')) ~ '^s-[0-9a-f]{12}$'
+SELECT t.ok(pg_get_function_result('platform.review_queue(platform.subject, text, text, integer, timestamptz, uuid)'::regprocedure) !~ 'student_id'
+            AND t.rq(:sf, format($$SELECT student_ref FROM platform.review_queue(NULL, NULL, NULL, 200, NULL, NULL) WHERE id = %L$$, :'t1')) ~ '^s-[0-9a-f]{12}$'
             AND position(replace(:S1, '-', '') IN t.rq(:sf, format($$SELECT platform.review_task_detail(%L)::text$$, :'t1'))) = 0
             AND position(:S1 IN t.rq(:sf, format($$SELECT platform.review_task_detail(%L)::text$$, :'t1'))) = 0,
             '队列与详情只给学生的不透明指针，不给 student_id');
-SELECT t.ok(t.rq(:sf, format($$SELECT student_ref FROM platform.review_queue(NULL, NULL, NULL, 200, NULL) WHERE id = %L$$, :'t1'))
-            <> t.rq(:sf, format($$SELECT student_ref FROM platform.review_queue(NULL, NULL, NULL, 200, NULL) WHERE id = %L$$, :'t2')),
+SELECT t.ok(t.rq(:sf, format($$SELECT student_ref FROM platform.review_queue(NULL, NULL, NULL, 200, NULL, NULL) WHERE id = %L$$, :'t1'))
+            <> t.rq(:sf, format($$SELECT student_ref FROM platform.review_queue(NULL, NULL, NULL, 200, NULL, NULL) WHERE id = %L$$, :'t2')),
             '不同学生的指针不同');
 SELECT t.ok(t.rq(:sf, format($$SELECT jsonb_array_length(platform.review_task_detail(%L)->'source'->'dimensions')::text$$, :'t1')) = '2'
             AND t.rq(:sf, format($$SELECT (platform.review_task_detail(%L)->'source'->>'model_version')$$, :'t1')) = 'model:fake-a/fake-reasoner@2026-09-01'
             AND t.rq(:sf, format($$SELECT (platform.review_task_detail(%L)->'source'->'dimensions'->0 ? 'confidence')::text$$, :'t1')) = 'true',
             '详情带逐维分、置信度与版本');
-SELECT t.throws(format('SELECT t.rq(%L, %L)', :gA, $$SELECT count(*)::text FROM platform.review_queue(NULL, NULL, NULL, 10, NULL)$$),
+SELECT t.throws(format('SELECT t.rq(%L, %L)', :gA, $$SELECT count(*)::text FROM platform.review_queue(NULL, NULL, NULL, 10, NULL, NULL)$$),
                 '42501', '非 staff 账号不能看队列');
-SELECT t.throws(format('SELECT t.rq(%L, %L)', :sdis, $$SELECT count(*)::text FROM platform.review_queue(NULL, NULL, NULL, 10, NULL)$$),
+SELECT t.throws(format('SELECT t.rq(%L, %L)', :sdis, $$SELECT count(*)::text FROM platform.review_queue(NULL, NULL, NULL, 10, NULL, NULL)$$),
                 '42501', '已停用的 staff 不能看队列');
-SELECT t.throws(format('SELECT t.rq(%L, %L)', :sf, $$SELECT count(*)::text FROM platform.review_queue(NULL, NULL, NULL, 500, NULL)$$),
+SELECT t.throws(format('SELECT t.rq(%L, %L)', :sf, $$SELECT count(*)::text FROM platform.review_queue(NULL, NULL, NULL, 500, NULL, NULL)$$),
                 '22023', '一页最多 200 条');
-SELECT t.throws(format('SELECT t.rq(%L, %L)', :sf, $$SELECT count(*)::text FROM platform.review_queue(NULL, 'closed', NULL, 10, NULL)$$),
+SELECT t.throws(format('SELECT t.rq(%L, %L)', :sf, $$SELECT count(*)::text FROM platform.review_queue(NULL, 'closed', NULL, 10, NULL, NULL)$$),
                 '22023', '状态只收 open / in_progress / resolved');
 
 -- ================= 领取、放回、结案 =================
@@ -126,8 +145,8 @@ SELECT t.ok((SELECT status = 'in_progress' AND assigned_to = :sf::uuid AND assig
             '领取后处理中，记领取人与时间');
 SELECT t.rq(:sf, format('SELECT platform.take_review_task(%L)::text', :'t1'));
 SELECT t.ok((SELECT assigned_to = :sf::uuid FROM platform.review_task WHERE id = :'t1'), '重复领取自己的任务是幂等的');
-SELECT t.ok(t.rq(:sf, format($$SELECT assigned_to_me::text FROM platform.review_queue(NULL, NULL, NULL, 200, NULL) WHERE id = %L$$, :'t1')) = 'true'
-            AND t.rq(:se, format($$SELECT (assigned AND NOT assigned_to_me)::text FROM platform.review_queue(NULL, NULL, NULL, 200, NULL) WHERE id = %L$$, :'t1')) = 'true',
+SELECT t.ok(t.rq(:sf, format($$SELECT assigned_to_me::text FROM platform.review_queue(NULL, NULL, NULL, 200, NULL, NULL) WHERE id = %L$$, :'t1')) = 'true'
+            AND t.rq(:se, format($$SELECT (assigned AND NOT assigned_to_me)::text FROM platform.review_queue(NULL, NULL, NULL, 200, NULL, NULL) WHERE id = %L$$, :'t1')) = 'true',
             '队列标出是否已领取、是否是自己领取的（不给领取人 ID）');
 SELECT t.throws(format('SELECT t.rq(%L, %L)', :se, format('SELECT platform.take_review_task(%L)::text', :'t1')), '23514', '别人领取的不能领');
 SELECT t.throws(format('SELECT t.rq(%L, %L)', :se, format('SELECT platform.release_review_task(%L)::text', :'t1')), '23514', '别人领取的不能放回');
@@ -146,7 +165,8 @@ SELECT t.ok((SELECT status = 'resolved' AND resolution_code = 'regrade_required'
                     AND assigned_to = :se::uuid AND resolved_at IS NOT NULL FROM platform.review_task WHERE id = :'t1'),
             '领取人结案：码、结案人、时间齐全，领取人保留');
 SELECT t.ok((SELECT score_total = 2 AND superseded_by IS NULL FROM platform.grade_result WHERE id = :g1), '结案不改分（改判另写一条判分）');
-SELECT t.throws(format('SELECT t.rq(%L, %L)', :sf, format('SELECT platform.take_review_task(%L)::text', :'t1')), '23514', '已结案的不能再领');
+SELECT t.throws_like(format('SELECT t.rq(%L, %L)', :sf, format('SELECT platform.take_review_task(%L)::text', :'t1')), '23514', '复核任务已结案',
+                     '已结案的不能再领（函数先拦，不靠表约束兜底）');
 SELECT t.throws(format('SELECT t.rq(%L, %L)', :se, format('SELECT platform.resolve_review_task(%L, %L)::text', :'t1', 'upheld')),
                 '23514', '已结案的不能再结案');
 SELECT t.throws(format('SELECT t.rq(%L, %L)', :sf, 'SELECT platform.take_review_task(gen_random_uuid())::text'), 'P0002', '不存在的任务');
@@ -155,7 +175,7 @@ SELECT t.ok(t.rq(:sf, format($$SELECT (platform.review_task_detail(%L)->>'resolv
             '详情标出是否是自己结的案（不给结案人 ID）');
 SELECT t.ok(t.rq(:sf, $$SELECT count(*)::text FROM platform.review_resolution_code$$) = '5', '审核台能读结案码白名单');
 SELECT t.throws($$SELECT t.as_role('starbuddy_bff', 'SELECT count(*)::text FROM platform.review_resolution_code')$$, '42501', 'BFF 读不到结案码表');
-SELECT t.throws(format($$SELECT t.as_role('starbuddy_bff', %L)$$, 'SELECT count(*)::text FROM platform.review_queue(NULL, NULL, NULL, 10, NULL)'),
+SELECT t.throws(format($$SELECT t.as_role('starbuddy_bff', %L)$$, 'SELECT count(*)::text FROM platform.review_queue(NULL, NULL, NULL, 10, NULL, NULL)'),
                 '42501', 'BFF 不能调用审核台读函数');
 SELECT t.throws(format($$SELECT t.as_role('starbuddy_review', %L)$$, format('UPDATE platform.review_task SET status = %L WHERE id = %L', 'open', :'t1')),
                 '42501', '审核台不能直接改任务');
@@ -184,6 +204,17 @@ SELECT t.ok(t.as_role('starbuddy_scheduler', $$SELECT platform.review_sample_spo
 SELECT t.ok(t.as_role('starbuddy_scheduler', $$SELECT platform.review_sample_spot_checks('wenli', now() - interval '1 day', 0.2)::text$$)::int > 0
             AND (SELECT count(*) FROM (SELECT source_id FROM platform.review_task WHERE source_kind = 'grade_result' GROUP BY source_id HAVING count(*) > 1) d) = 0,
             '提高比例只补新抽中的，已进队的不重复');
+-- 翻页：抽检是一条 INSERT 批量写入，这一批的创建时间相同；按 (创建时间, id) 做游标，不漏不重（安全审查 S2）
+SELECT t.as_account(:sf);
+CREATE TEMP TABLE rq_p1 AS SELECT id, created_at FROM platform.review_queue('wenli', 'open', 'spot_check', 10, NULL, NULL);
+SELECT created_at AS pbc, id AS pbi FROM rq_p1 ORDER BY created_at, id LIMIT 1 \gset
+CREATE TEMP TABLE rq_p2 AS SELECT id FROM platform.review_queue('wenli', 'open', 'spot_check', 200, :'pbc', :'pbi');
+SELECT t.as_account(NULL);
+SELECT t.ok((SELECT count(*) FROM rq_p1) = 10 AND (SELECT count(DISTINCT created_at) FROM platform.review_task WHERE subject = 'wenli' AND 'spot_check' = ANY (reasons::text[])) = 1
+            AND (SELECT count(*) FROM rq_p1) + (SELECT count(*) FROM rq_p2)
+                = (SELECT count(*) FROM platform.review_task WHERE subject = 'wenli' AND status = 'open' AND 'spot_check' = ANY (reasons::text[]))
+            AND NOT EXISTS (SELECT 1 FROM rq_p1 JOIN rq_p2 USING (id)),
+            '同一刻批量进队的任务翻页不漏不重');
 SELECT t.throws($$SELECT t.as_role('starbuddy_scheduler', $q$SELECT platform.review_sample_spot_checks('wenli', now() - interval '1 day', 0.6)::text$q$)$$,
                 '22023', '抽检比例不超过 0.5');
 SELECT t.throws($$SELECT t.as_role('starbuddy_scheduler', $q$SELECT platform.review_sample_spot_checks('wenli', now() - interval '40 days', 0.1)::text$q$)$$,
@@ -220,10 +251,21 @@ SELECT t.ok(t.rq(:sf, format($$SELECT (platform.review_task_detail(%L)->'source'
 SELECT t.rq(:sf, format('SELECT platform.take_review_task(%L)::text', :'t3'));
 SELECT t.throws(format('SELECT t.rq(%L, %L)', :sf, format('SELECT platform.resolve_review_task(%L, %L)::text', :'t3', 'regrade_required')),
                 '22023', '画像异议不能用“需要改判”结案');
+SELECT t.throws(format('SELECT t.rq(%L, %L)', :sf, format('SELECT platform.resolve_review_task(%L, %L)::text', :'t3', 'upheld')),
+                '22023', '画像异议不能由审核台“维持”（只能转洞察服务，判断的结论由洞察服务定）');
 SELECT t.rq(:sf, format('SELECT platform.resolve_review_task(%L, %L)::text', :'t3', 'dispute_forwarded'));
 SELECT t.ok((SELECT status::text FROM insight.claim WHERE id = 'c1a10000-0000-4000-8000-0000000000c1') = 'established',
             '结案不改判断（判断的流转由洞察服务做）');
 SELECT t.throws($$SELECT t.as_role('starbuddy_insight', $q$SELECT platform.enqueue_claim_dispute('c1a10000-0000-4000-8000-0000000000c1')::text$q$)$$,
                 '23514', '已复核过的判断再入队拒绝');
+
+-- ================= 回滚 0023（安全审查 B1、B2）：有处理中的任务时 down 也能跑通，且不收回 0005 给 authz 的判分读权限 =================
+SELECT t.rq(:sf, format('SELECT platform.take_review_task(%L)::text', :'t2'));
+SELECT t.ok((SELECT status FROM platform.review_task WHERE id = :'t2') = 'in_progress', '回滚前有一条处理中的任务');
+DELETE FROM platform.review_task WHERE source_kind = 'claim';
+\i :testdir/../migrations/0023_platform__review_queue.down.sql
+SELECT t.ok((SELECT status FROM platform.review_task WHERE id = :'t2') = 'open', '回滚后处理中的任务放回待处理');
+SELECT t.ok(has_table_privilege('starbuddy_authz', 'platform.grade_result', 'SELECT'), '回滚后 authz 仍能读判分（0005 的改判检查要用）');
+SELECT t.ok(NOT has_table_privilege('starbuddy_authz', 'platform.grade_dimension', 'SELECT'), '回滚收回 0023 新授的维度读权限');
 
 ROLLBACK;

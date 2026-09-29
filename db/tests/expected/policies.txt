@@ -103,9 +103,9 @@ platform.replay_seal|replay_seal_insert|INSERT|starbuddy_learning|PERMISSIVE|usi
 platform.replay_seal|replay_seal_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
 platform.resource_type|resource_type_read|SELECT|starbuddy_bff|PERMISSIVE|using=true|check=-
 platform.review_resolution_code|resolution_code_read|SELECT|starbuddy_review|PERMISSIVE|using=true|check=-
-platform.review_task|review_service_open|INSERT|starbuddy_learning|PERMISSIVE|using=-|check=((status = 'open'::text) AND (resolved_at IS NULL) AND (resolved_by_account IS NULL) AND (assigned_to IS NULL) AND (assigned_at IS NULL) AND (source_kind = ANY (ARRAY['grade_result'::text, 'skill_observation'::text, 'error_attribution'::text])) AND (NOT ((reasons)::text[] && ARRAY['spot_check'::text, 'profile_dispute'::text])) AND ((source_kind <> 'grade_result'::text) OR (EXISTS ( SELECT 1
+platform.review_task|review_service_open|INSERT|starbuddy_learning|PERMISSIVE|using=-|check=((status = 'open'::text) AND (resolved_at IS NULL) AND (resolved_by_account IS NULL) AND (assigned_to IS NULL) AND (assigned_at IS NULL) AND (NOT ('profile_dispute'::text = ANY ((reasons)::text[]))) AND (source_kind = 'grade_result'::text) AND (EXISTS ( SELECT 1
    FROM platform.grade_result g
-  WHERE ((g.id = review_task.source_id) AND (g.student_id = review_task.student_id) AND (g.subject = review_task.subject))))))
+  WHERE ((g.id = review_task.source_id) AND (g.student_id = review_task.student_id) AND (g.subject = review_task.subject) AND ((review_task.reasons)::text[] <@ (g.review_reasons)::text[])))))
 platform.review_task|review_service_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
 platform.skill_node|skill_node_read|SELECT|starbuddy_bff|PERMISSIVE|using=true|check=-
 platform.skill_node|skill_node_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true

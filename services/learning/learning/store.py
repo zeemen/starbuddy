@@ -280,8 +280,8 @@ async def _insert_observation(conn, o: dict, *, student_id, subject, ctx) -> Non
     )
 
 
-# 复核原因里只能由调度角色（抽检）与洞察服务（画像异议）放进队列的两类
-QUEUE_RESERVED_REASONS = frozenset({"spot_check", "profile_dispute"})
+# 复核原因里只能由洞察服务放进队列的一类（画像异议）；它不在插件契约的原因枚举里，适配器不会返回
+QUEUE_RESERVED_REASONS = frozenset({"profile_dispute"})
 
 
 async def _insert_grade(conn, response: dict, verified, attempt: dict, attempt_id: str, *, student_id, subject, ctx) -> str:
@@ -309,8 +309,8 @@ async def _insert_grade(conn, response: dict, verified, attempt: dict, attempt_i
             grade_id, d["dimension_id"], _num(d["score"]), _num(d["max_score"]), d["judged_by"], d["subjective"],
             d.get("rule_ref"), _num(d["confidence"]), d["evidence_ids"],
         )
-    # 需要复核的判分在同一事务里进统一复核队列（冲刺 2-G）。抽检由调度角色按比例抽，画像异议只由洞察服务放，
-    # 学习服务不放这两类（0023 策略也拒绝）；适配器自己标的 spot_check 不据此进队。
+    # 需要复核的判分在同一事务里进统一复核队列（冲刺 2-G）。原因与判分的 review_reasons 一致（0023 策略要求是其子集）：
+    # 适配器声明的 spot_check 照常进队，平台不能比适配器更松（契约审查 A1）；画像异议只由洞察服务放。
     reasons = [x for x in verified.review_reasons if x not in QUEUE_RESERVED_REASONS]
     if verified.human_review_required and reasons:
         await conn.execute(

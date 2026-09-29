@@ -250,9 +250,10 @@ class ReviewStore:
 
     # ---------- 统一复核队列（冲刺 2-G，迁移 0023；staff 与领取人都由库函数核对） ----------
     async def queue(self, staff: uuid.UUID, subject: str | None, status: str | None, reason: str | None, limit: int,
-                    before: datetime | None) -> list[dict[str, Any]]:
+                    before: datetime | None, before_id: uuid.UUID | None) -> list[dict[str, Any]]:
         rows = await self._as_staff(staff, lambda c: c.fetch(
-            "SELECT * FROM platform.review_queue($1::text::platform.subject, $2, $3, $4, $5)", subject, status, reason, limit, before))
+            "SELECT * FROM platform.review_queue($1::text::platform.subject, $2, $3, $4, $5, $6)",
+            subject, status, reason, limit, before, before_id))
         return [_task_row(dict(r)) for r in rows]
 
     async def task_detail(self, staff: uuid.UUID, task_id: uuid.UUID) -> dict[str, Any]:

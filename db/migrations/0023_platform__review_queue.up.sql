@@ -20,11 +20,12 @@ CREATE TABLE platform.review_resolution_code (
 COMMENT ON TABLE platform.review_resolution_code IS
   '复核结案码白名单（冲刺 2-G）。结案只写码，不改分、不改掌握、不改判断；改判由判分侧另写一条 grade_result（0005 supersede）';
 INSERT INTO platform.review_resolution_code (code, label, applies_to) VALUES
-  ('upheld',            '维持原结果',           ARRAY['grade_result', 'skill_observation', 'error_attribution', 'claim']),
+  ('upheld',            '维持原结果',           ARRAY['grade_result', 'skill_observation', 'error_attribution']),
   ('regrade_required',  '需要改判',             ARRAY['grade_result']),
   ('content_issue',     '题目或 Rubric 有问题', ARRAY['grade_result', 'skill_observation', 'error_attribution']),
   ('dispute_forwarded', '已转洞察服务',         ARRAY['claim']),
-  ('not_actionable',    '无需处理',             ARRAY['grade_result', 'skill_observation', 'error_attribution', 'claim']);
+  ('not_actionable',    '无需处理',             ARRAY['grade_result', 'skill_observation', 'error_attribution']);
+-- 画像异议只能“转洞察服务”结案：判断的结论与流转只由洞察服务做（规则 11；契约审查 B4），审核台不在账本外裁决判断
 ALTER TABLE platform.review_resolution_code ENABLE ROW LEVEL SECURITY;
 ALTER TABLE platform.review_resolution_code FORCE ROW LEVEL SECURITY;
 GRANT SELECT ON platform.review_resolution_code TO starbuddy_review, starbuddy_authz;
@@ -48,18 +49,26 @@ ALTER TABLE platform.review_task ADD CONSTRAINT review_task_assignment CHECK (CA
 GRANT UPDATE (assigned_to, assigned_at) ON platform.review_task TO starbuddy_authz;
 GRANT INSERT ON platform.review_task TO starbuddy_authz;
 -- 抽检与详情要读判分与维度；画像异议要读判断（0010 已授 authz SELECT insight.claim）
-GRANT SELECT ON platform.grade_result, platform.grade_dimension TO starbuddy_authz;
+-- （grade_result 的 SELECT 在 0005 已授给 authz）
+GRANT SELECT ON platform.grade_dimension TO starbuddy_authz;
+COMMENT ON TABLE platform.review_task IS
+  '统一复核队列（0006、0023）。student_id、subject、reasons 是进队时的路由快照，事实以源对象（grade_result、insight.claim 等）为准';
 
--- 学习服务只能为判分、观测、错因进队；判分要真实存在且学生、学科一致；抽检与画像异议不能由它放进来
+-- 学习服务本冲刺只为判分进队（spec 待人确认 #1；观测与错因的复核随 KGE-04，安全审查 S3）；画像异议不能由它放进来。
+-- 判分必须真实存在、学生与学科一致，原因必须是该判分 review_reasons 的子集——既不能凭空造原因，也不会丢掉适配器声明的原因
+-- （契约里 spot_check 是合法的判分原因，适配器声明的抽检照常随判分进队；契约审查 A1、B1）。
+-- 列级 INSERT：id、状态、时间、领取与结案列都只能取默认值（不能伪造创建时间来排到队首或队尾）。
+REVOKE INSERT ON platform.review_task FROM starbuddy_learning;
+GRANT INSERT (subject, student_id, source_kind, source_id, reasons) ON platform.review_task TO starbuddy_learning;
 DROP POLICY review_service_open ON platform.review_task;
 CREATE POLICY review_service_open ON platform.review_task FOR INSERT TO starbuddy_learning
   WITH CHECK (status = 'open' AND resolved_at IS NULL AND resolved_by_account IS NULL
               AND assigned_to IS NULL AND assigned_at IS NULL
-              AND source_kind IN ('grade_result', 'skill_observation', 'error_attribution')
-              AND NOT (reasons::text[] && ARRAY['spot_check', 'profile_dispute'])
-              AND (source_kind <> 'grade_result' OR EXISTS (
+              AND NOT ('profile_dispute' = ANY (reasons::text[]))
+              AND source_kind = 'grade_result' AND EXISTS (
                      SELECT 1 FROM platform.grade_result g
-                      WHERE g.id = source_id AND g.student_id = review_task.student_id AND g.subject = review_task.subject)));
+                      WHERE g.id = source_id AND g.student_id = review_task.student_id AND g.subject = review_task.subject
+                        AND review_task.reasons::text[] <@ g.review_reasons::text[]));
 
 -- 审核台不再直接读队列表（表里有 student_id）；只经下面两个读函数（spec 待人确认 #4）
 DROP POLICY review_staff_read ON platform.review_task;
@@ -138,9 +147,10 @@ BEGIN
 END $$;
 
 -- ---------- 审核台的两个读函数（只授 starbuddy_review） ----------
--- 队列：按学科、状态、原因筛，按创建时间倒序，p_before 翻页；不返回 student_id、领取人 ID
+-- 队列：按学科、状态、原因筛，按 (创建时间, id) 倒序，(p_before, p_before_id) 作游标翻页（同一刻批量进队的抽检任务不会被跳过，
+-- 安全审查 S2）；不返回 student_id、领取人 ID
 CREATE FUNCTION platform.review_queue(p_subject platform.subject, p_status text, p_reason text, p_limit integer,
-                                      p_before timestamptz)
+                                      p_before timestamptz, p_before_id uuid)
   RETURNS TABLE (id uuid, subject platform.subject, student_ref text, source_kind text, source_id uuid, reasons text[],
                  status text, created_at timestamptz, assigned boolean, assigned_to_me boolean, assigned_at timestamptz,
                  resolution_code text, resolved_at timestamptz)
@@ -162,8 +172,8 @@ BEGIN
      WHERE (p_subject IS NULL OR t.subject = p_subject)
        AND (p_status IS NULL OR t.status = p_status)
        AND (p_reason IS NULL OR p_reason = ANY (t.reasons::text[]))
-       AND (p_before IS NULL OR t.created_at < p_before)
-     ORDER BY t.created_at DESC, t.id
+       AND (p_before IS NULL OR (t.created_at, t.id) < (p_before, coalesce(p_before_id, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid)))
+     ORDER BY t.created_at DESC, t.id DESC
      LIMIT p_limit;
 END $$;
 
@@ -246,16 +256,18 @@ BEGIN
   IF c.subject IS NULL THEN
     RAISE EXCEPTION 'cross-subject claims cannot be queued yet' USING ERRCODE = 'invalid_parameter_value';
   END IF;
-  SELECT t.id, t.status INTO v_task, v_status FROM platform.review_task t WHERE t.source_kind = 'claim' AND t.source_id = p_claim;
-  IF FOUND THEN
-    IF v_status = 'resolved' THEN
-      RAISE EXCEPTION 'dispute on this claim was already reviewed' USING ERRCODE = 'check_violation';
-    END IF;
-    RETURN v_task;
-  END IF;
+  -- 并发的两次异议：ON CONFLICT 让后到的等先到的提交，再返回同一条任务（安全审查 S5）
   INSERT INTO platform.review_task (subject, student_id, source_kind, source_id, reasons)
   VALUES (c.subject, c.student_id, 'claim', p_claim, ARRAY['profile_dispute']::text[]::platform.review_reason[])
+  ON CONFLICT (source_kind, source_id) DO NOTHING
   RETURNING id INTO v_task;
+  IF v_task IS NOT NULL THEN
+    RETURN v_task;
+  END IF;
+  SELECT t.id, t.status INTO v_task, v_status FROM platform.review_task t WHERE t.source_kind = 'claim' AND t.source_id = p_claim;
+  IF v_status = 'resolved' THEN
+    RAISE EXCEPTION 'dispute on this claim was already reviewed' USING ERRCODE = 'check_violation';
+  END IF;
   RETURN v_task;
 END $$;
 
@@ -263,7 +275,7 @@ DO $$
 DECLARE f regprocedure;
 BEGIN
   FOREACH f IN ARRAY ARRAY['platform.take_review_task(uuid)', 'platform.release_review_task(uuid)',
-                           'platform.review_queue(platform.subject, text, text, integer, timestamptz)',
+                           'platform.review_queue(platform.subject, text, text, integer, timestamptz, uuid)',
                            'platform.review_task_detail(uuid)', 'platform.review_sample_spot_checks(platform.subject, timestamptz, numeric)',
                            'platform.enqueue_claim_dispute(uuid)']::regprocedure[] LOOP
     EXECUTE format('ALTER FUNCTION %s OWNER TO starbuddy_authz', f);
@@ -271,6 +283,6 @@ BEGIN
   END LOOP;
 END $$;
 GRANT EXECUTE ON FUNCTION platform.take_review_task(uuid), platform.release_review_task(uuid),
-  platform.review_queue(platform.subject, text, text, integer, timestamptz), platform.review_task_detail(uuid) TO starbuddy_review;
+  platform.review_queue(platform.subject, text, text, integer, timestamptz, uuid), platform.review_task_detail(uuid) TO starbuddy_review;
 GRANT EXECUTE ON FUNCTION platform.review_sample_spot_checks(platform.subject, timestamptz, numeric) TO starbuddy_scheduler;
 GRANT EXECUTE ON FUNCTION platform.enqueue_claim_dispute(uuid) TO starbuddy_insight;

@@ -58,10 +58,15 @@ col|platform.mastery_estimate.superseded_at|starbuddy_learning|UPDATE|SUPERUSER
 col|platform.mastery_estimate.superseded_by|starbuddy_learning|UPDATE|SUPERUSER
 col|platform.review_task.assigned_at|starbuddy_authz|UPDATE|SUPERUSER
 col|platform.review_task.assigned_to|starbuddy_authz|UPDATE|SUPERUSER
+col|platform.review_task.reasons|starbuddy_learning|INSERT|SUPERUSER
 col|platform.review_task.resolution_code|starbuddy_authz|UPDATE|SUPERUSER
 col|platform.review_task.resolved_at|starbuddy_authz|UPDATE|SUPERUSER
 col|platform.review_task.resolved_by_account|starbuddy_authz|UPDATE|SUPERUSER
+col|platform.review_task.source_id|starbuddy_learning|INSERT|SUPERUSER
+col|platform.review_task.source_kind|starbuddy_learning|INSERT|SUPERUSER
 col|platform.review_task.status|starbuddy_authz|UPDATE|SUPERUSER
+col|platform.review_task.student_id|starbuddy_learning|INSERT|SUPERUSER
+col|platform.review_task.subject|starbuddy_learning|INSERT|SUPERUSER
 col|platform.skill_observation.id|starbuddy_authz|SELECT|SUPERUSER
 col|platform.skill_observation.student_id|starbuddy_authz|SELECT|SUPERUSER
 col|platform.skill_observation.superseded_at|starbuddy_learning|UPDATE|SUPERUSER
@@ -344,8 +349,8 @@ func|platform.release_review_task(uuid)|starbuddy_review|EXECUTE|starbuddy_authz
 func|platform.resolve_review_task(uuid,text)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.resolve_review_task(uuid,text)|starbuddy_review|EXECUTE|starbuddy_authz
 func|platform.review_current_staff()|starbuddy_authz|EXECUTE|SUPERUSER
-func|platform.review_queue(platform.subject,text,text,integer,timestamp with time zone)|starbuddy_authz|EXECUTE|starbuddy_authz
-func|platform.review_queue(platform.subject,text,text,integer,timestamp with time zone)|starbuddy_review|EXECUTE|starbuddy_authz
+func|platform.review_queue(platform.subject,text,text,integer,timestamp with time zone,uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.review_queue(platform.subject,text,text,integer,timestamp with time zone,uuid)|starbuddy_review|EXECUTE|starbuddy_authz
 func|platform.review_sample_spot_checks(platform.subject,timestamp with time zone,numeric)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.review_sample_spot_checks(platform.subject,timestamp with time zone,numeric)|starbuddy_scheduler|EXECUTE|starbuddy_authz
 func|platform.review_student_ref(uuid)|starbuddy_authz|EXECUTE|SUPERUSER
@@ -447,7 +452,7 @@ owner|platform.pause_subject(uuid,platform.subject)|starbuddy_authz
 owner|platform.redeem_guardian_invite(text)|starbuddy_authz
 owner|platform.release_review_task(uuid)|starbuddy_authz
 owner|platform.resolve_review_task(uuid,text)|starbuddy_authz
-owner|platform.review_queue(platform.subject,text,text,integer,timestamp with time zone)|starbuddy_authz
+owner|platform.review_queue(platform.subject,text,text,integer,timestamp with time zone,uuid)|starbuddy_authz
 owner|platform.review_sample_spot_checks(platform.subject,timestamp with time zone,numeric)|starbuddy_authz
 owner|platform.review_task_detail(uuid)|starbuddy_authz
 owner|platform.set_subject_textbook(uuid,platform.subject,text)|starbuddy_authz
@@ -641,7 +646,6 @@ rel|platform.review_resolution_code|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.review_resolution_code|starbuddy_review|SELECT|SUPERUSER
 rel|platform.review_task|starbuddy_authz|INSERT|SUPERUSER
 rel|platform.review_task|starbuddy_authz|SELECT|SUPERUSER
-rel|platform.review_task|starbuddy_learning|INSERT|SUPERUSER
 rel|platform.review_task|starbuddy_learning|SELECT|SUPERUSER
 rel|platform.skill_node|starbuddy_bff|SELECT|SUPERUSER
 rel|platform.skill_node|starbuddy_learning|INSERT|SUPERUSER
@@ -814,7 +818,7 @@ secdef|platform.pause_subject(uuid,platform.subject)
 secdef|platform.redeem_guardian_invite(text)
 secdef|platform.release_review_task(uuid)
 secdef|platform.resolve_review_task(uuid,text)
-secdef|platform.review_queue(platform.subject,text,text,integer,timestamp with time zone)
+secdef|platform.review_queue(platform.subject,text,text,integer,timestamp with time zone,uuid)
 secdef|platform.review_sample_spot_checks(platform.subject,timestamp with time zone,numeric)
 secdef|platform.review_task_detail(uuid)
 secdef|platform.set_subject_textbook(uuid,platform.subject,text)
