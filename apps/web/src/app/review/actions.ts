@@ -29,7 +29,8 @@ export async function loginAction(_: ActionState | null, f: FormData): Promise<A
   const login = text(f, 'login_name').trim();
   const password = text(f, 'password');
   const code = text(f, 'code').trim();
-  if (!/^[a-z][a-z0-9_.-]{2,31}$/.test(login) || password.length < 1 || password.length > 128 || !/^[0-9]{6}$/.test(code)) {
+  // 口令最多 72 字节（bcrypt 只看前 72 字节，库里同样拦）
+  if (!/^[a-z][a-z0-9_.-]{2,31}$/.test(login) || password.length < 1 || Buffer.byteLength(password, 'utf8') > 72 || !/^[0-9]{6}$/.test(code)) {
     return { code: 'LOGIN_FAILED' };
   }
   const r = await loginRequest(login, password, code);
@@ -38,12 +39,16 @@ export async function loginAction(_: ActionState | null, f: FormData): Promise<A
   redirect('/review');
 }
 
-/** 退出：撤销库里的会话，删 cookie，回登录页 */
+/**
+ * 退出：撤销库里的会话，删 cookie，回登录页。
+ * 删 cookie 要带与写入时相同的属性（__Host- 前缀要求 Secure、Path=/，否则浏览器不认这次删除，安全审查 PR 4 B-1）；
+ * 后端撤销失败时 cookie 照样删掉，但登录页明确提示“退出未完成”（库里的会话可能还在，空闲 30 分钟后失效）。
+ */
 export async function logoutAction(): Promise<void> {
   const token = await currentSession();
-  if (token) await logoutRequest(token);
-  (await cookies()).delete(staffCookieName());
-  redirect('/review/login');
+  const r = token ? await logoutRequest(token) : null;
+  (await cookies()).set(staffCookieName(), '', { ...staffCookieOptions(), maxAge: 0 });
+  redirect(r && !r.ok ? '/review/login?logout=incomplete' : '/review/login');
 }
 
 function done<T>(r: Result<T>, okCode: string, version: string): ActionState {

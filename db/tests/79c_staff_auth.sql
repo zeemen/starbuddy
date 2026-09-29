@@ -5,7 +5,7 @@ CREATE TABLE t.sclock (now timestamptz NOT NULL);
 INSERT INTO t.sclock VALUES ('2027-03-01 08:00:10+00');
 GRANT SELECT ON t.sclock TO starbuddy_authz;
 CREATE OR REPLACE FUNCTION platform.staff_now() RETURNS timestamptz
-  LANGUAGE sql STABLE SET search_path = pg_catalog AS $$ SELECT now FROM t.sclock $$;
+  LANGUAGE sql VOLATILE SET search_path = pg_catalog AS $$ SELECT now FROM t.sclock $$;
 CREATE FUNCTION t.sadvance(p interval) RETURNS void LANGUAGE sql AS $$ UPDATE t.sclock SET now = now + p $$;
 -- 当前时钟下第 p_offset 个时间步的 6 位码（测试方按 RFC 6238 独立计算：与函数同一公式，另有 RFC 测试向量核对）
 CREATE FUNCTION t.scode(p_secret bytea, p_offset integer DEFAULT 0) RETURNS text LANGUAGE sql AS $$
@@ -31,6 +31,8 @@ SELECT t.ok(platform.staff_totp(:secret::bytea, 1111111109 / 30) = '081804', 'RF
 SELECT t.throws(format('SELECT platform.staff_enroll(%L, %L, %L, %L::bytea)', 'a0000000-0000-4000-8000-00000000000a', 'guardian.a',
                        'synthetic-password-01', :secret), '23514', '家长账号不能有审核台凭据');
 SELECT t.throws(format('SELECT platform.staff_enroll(%L, %L, %L, %L::bytea)', :sa, 'teacher.a', 'short', :secret), '22023', '口令至少 12 位');
+SELECT t.throws(format('SELECT platform.staff_enroll(%L, %L, %L, %L::bytea)', :sa, 'teacher.a', repeat('口', 25), :secret), '22023',
+                '口令超过 72 字节被拒（bcrypt 只看前 72 字节）');
 SELECT platform.staff_enroll(:sa, 'teacher.a', 'synthetic-password-01', :secret::bytea);
 SELECT platform.staff_enroll(:sd, 'teacher.d', 'synthetic-password-02', :secret::bytea);
 SELECT t.ok((SELECT password_hash ~ '^\$2a\$12\$' AND password_hash NOT LIKE '%synthetic%' FROM platform.staff_credential WHERE account_id = :sa),
@@ -80,6 +82,21 @@ SELECT t.ok(t.slogin('teacher.a', 'synthetic-password-01', t.scode(:secret::byte
 SELECT t.sadvance('2 minutes');
 SELECT t.ok(t.slogin('teacher.a', 'synthetic-password-01', t.scode(:secret::bytea)) ~ '^[0-9a-f]{64}$', '锁定期过后可以登录');
 SELECT t.ok((SELECT failed_count = 0 AND locked_until IS NULL FROM platform.staff_credential WHERE account_id = :sa), '成功后清零');
+-- 失败计次只看最近 15 分钟
+SELECT t.sadvance('1 minute');
+DO $$ BEGIN FOR i IN 1..4 LOOP PERFORM t.slogin('teacher.a', 'wrong-password-000', '000000'); END LOOP; END $$;
+SELECT t.sadvance('16 minutes');
+SELECT t.ok(t.slogin('teacher.a', 'wrong-password-000', '000000') IS NULL, '又错一次');
+-- 同一条语句里的子查询看不到函数刚写的计次（语句快照），所以分成两条
+SELECT t.ok((SELECT failed_count = 1 AND locked_until IS NULL FROM platform.staff_credential WHERE account_id = :sa),
+            '上一次失败超过 15 分钟：从 1 重新计，不会被旧的失败凑满锁定');
+SELECT t.sadvance('1 minute');
+SELECT t.ok(t.slogin('teacher.a', 'synthetic-password-01', t.scode(:secret::bytea)) IS NOT NULL, '之后正确凭据可以登录');
+-- 口令超过 72 字节：bcrypt 只看前 72 字节，不拦就会让“72 字节口令 + 任意后缀”也登录成功
+INSERT INTO platform.account (id, kind) VALUES ('5b5b0000-0000-4000-8000-00000000005b', 'staff');
+SELECT platform.staff_enroll('5b5b0000-0000-4000-8000-00000000005b', 'teacher.l', repeat('p', 72), :secret::bytea);
+SELECT t.ok(t.slogin('teacher.l', repeat('p', 72) || 'suffix', t.scode(:secret::bytea)) IS NULL, '口令超过 72 字节：失败（不因截断误放行）');
+SELECT t.ok(t.slogin('teacher.l', repeat('p', 72), t.scode(:secret::bytea, 1)) IS NOT NULL, '72 字节口令本身可以登录');
 -- 停用账号
 UPDATE platform.account SET status = 'disabled' WHERE id = :sd;
 SELECT t.ok(t.slogin('teacher.d', 'synthetic-password-02', t.scode(:secret::bytea)) IS NULL, '停用的 staff 不能登录');
@@ -109,6 +126,12 @@ SELECT t.sadvance('1 minute');
 UPDATE tok SET v = t.slogin('teacher.a', 'synthetic-password-01', t.scode(:secret::bytea));
 SELECT t.as_staff(NULL, format('SELECT platform.staff_logout(%L)::text', (SELECT v FROM tok)));
 SELECT t.ok(t.sresolve((SELECT v FROM tok)) IS NULL, '退出后令牌失效');
+-- 一个账号同时只有一个有效会话
+SELECT t.sadvance('1 minute');
+UPDATE tok SET v = t.slogin('teacher.a', 'synthetic-password-01', t.scode(:secret::bytea));
+SELECT t.sadvance('1 minute');
+SELECT t.ok(t.slogin('teacher.a', 'synthetic-password-01', t.scode(:secret::bytea)) IS NOT NULL
+            AND t.sresolve((SELECT v FROM tok)) IS NULL, '新登录撤销同一账号的旧会话');
 -- 账号停用：已有会话立即失效
 SELECT t.sadvance('1 minute');
 UPDATE tok SET v = t.slogin('teacher.a', 'synthetic-password-01', t.scode(:secret::bytea));
@@ -128,8 +151,8 @@ SELECT t.throws(format('UPDATE platform.staff_credential SET account_id = %L WHE
 
 -- 恢复时钟函数（与迁移里的定义一致），清理本文件的数据
 CREATE OR REPLACE FUNCTION platform.staff_now() RETURNS timestamptz
-  LANGUAGE sql STABLE SET search_path = pg_catalog AS $$ SELECT clock_timestamp() $$;
+  LANGUAGE sql VOLATILE SET search_path = pg_catalog AS $$ SELECT clock_timestamp() $$;
 DELETE FROM platform.staff_session;
 DELETE FROM platform.staff_credential;
-DELETE FROM platform.account WHERE id IN (:sa, :sd);
+DELETE FROM platform.account WHERE id IN (:sa, :sd, '5b5b0000-0000-4000-8000-00000000005b');
 DROP TABLE tok;

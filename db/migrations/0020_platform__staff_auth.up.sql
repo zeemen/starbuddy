@@ -6,7 +6,13 @@
 --   - 建立与重置凭据的函数不授任何应用角色，只能由人（迁移执行者）在库里调用；
 --   - 口令用 bcrypt（cost 12），第二因素是验证器 App 的 6 位码（RFC 6238：HMAC-SHA1、30 秒步长、前后各容 1 步、同一步不能重用）；
 --   - 失败一律返回 NULL（不区分没有这个人、口令错、码错、已锁定、账号停用），连错 5 次锁 15 分钟；
---   - 会话绝对 12 小时、空闲 30 分钟；账号停用后已有会话立即失效（每次解析都核对）。
+--   - 会话绝对 12 小时、空闲 30 分钟；一个账号同时只有一个有效会话（新登录撤销旧会话）；账号停用后已有会话立即失效（每次解析都核对）；
+--   - 失败计次只看最近 15 分钟：上一次失败超过 15 分钟就从头计（安全审查 PR 4 建议 9）；
+--   - 口令最多 72 字节（bcrypt 只看前 72 字节，超出的部分不参与核对，安全审查建议 7）。
+-- 数据库服务器日志：登录函数的参数是明文口令与 6 位码。部署时须对审核台的签字登录角色关掉语句与参数日志（安全审查 B-2），例如：
+--   ALTER ROLE <签字登录角色> SET log_statement = 'none';  ALTER ROLE <签字登录角色> SET log_min_duration_statement = -1;
+--   ALTER ROLE <签字登录角色> SET log_parameter_max_length = 0;  ALTER ROLE <签字登录角色> SET log_parameter_max_length_on_error = 0;
+-- 见 services/learning/README.md“审核台部署要求”。
 
 DO $$
 BEGIN
@@ -17,7 +23,7 @@ END $$;
 
 -- ---------- 时钟（测试库可以替换成可推进的时钟；生产就是当前时间） ----------
 CREATE FUNCTION platform.staff_now() RETURNS timestamptz
-  LANGUAGE sql STABLE SET search_path = pg_catalog
+  LANGUAGE sql VOLATILE SET search_path = pg_catalog
   AS $$ SELECT clock_timestamp() $$;
 REVOKE EXECUTE ON FUNCTION platform.staff_now() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION platform.staff_now() TO starbuddy_authz;
@@ -64,6 +70,7 @@ CREATE TABLE platform.staff_credential (
   totp_secret     bytea NOT NULL CHECK (octet_length(totp_secret) BETWEEN 16 AND 64),
   totp_last_step  bigint,                 -- 最近一次登录用掉的时间步：同一步（及更早）的码不能再用
   failed_count    integer NOT NULL DEFAULT 0 CHECK (failed_count BETWEEN 0 AND 5),
+  last_failed_at  timestamptz,            -- 最近一次失败：超过 15 分钟没有失败，计次从头算
   locked_until    timestamptz,
   updated_at      timestamptz NOT NULL DEFAULT now()
 );
@@ -113,18 +120,24 @@ CREATE FUNCTION platform.staff_login(p_login text, p_password text, p_code text)
 DECLARE
   c platform.staff_credential%ROWTYPE;
   v_now timestamptz := platform.staff_now();
-  v_step bigint := floor(extract(epoch FROM platform.staff_now()) / 30)::bigint;
+  v_step bigint := floor(extract(epoch FROM v_now) / 30)::bigint;
   v_hit bigint;
+  v_fails integer;
   v_ok boolean;
   v_token text;
 BEGIN
   -- 格式不对：直接失败，不查凭据、不计次（避免借格式错误撞锁别人）
-  IF p_login IS NULL OR p_login !~ '^[a-z][a-z0-9_.-]{2,31}$' OR p_password IS NULL OR char_length(p_password) NOT BETWEEN 1 AND 128
+  IF p_login IS NULL OR p_login !~ '^[a-z][a-z0-9_.-]{2,31}$' OR p_password IS NULL OR octet_length(p_password) NOT BETWEEN 1 AND 72
      OR p_code IS NULL OR p_code !~ '^[0-9]{6}$' THEN
     RETURN NULL;
   END IF;
-  SELECT * INTO c FROM platform.staff_credential WHERE login_name = p_login FOR UPDATE;
-  IF NOT FOUND THEN
+  -- 同一登录名的并发登录不排队占连接：拿不到行锁就直接失败（安全审查建议 1）
+  BEGIN
+    SELECT * INTO c FROM platform.staff_credential WHERE login_name = p_login FOR UPDATE NOWAIT;
+  EXCEPTION WHEN lock_not_available THEN
+    RETURN NULL;
+  END;
+  IF c.account_id IS NULL THEN
     -- 没有这个人：也算一次 bcrypt，耗时与口令错时相近
     PERFORM platform.staff_crypt(p_password, '$2a$12$abcdefghijklmnopqrstuu');
     RETURN NULL;
@@ -141,16 +154,20 @@ BEGIN
           AND v_hit IS NOT NULL
           AND EXISTS (SELECT 1 FROM platform.account a WHERE a.id = c.account_id AND a.kind = 'staff' AND a.status = 'active');
   IF NOT v_ok THEN
-    -- 失败计次（函数返回 NULL 而不是抛错，计次才能提交）；满 5 次锁 15 分钟并清零
+    -- 失败计次（函数返回 NULL 而不是抛错，计次才能提交）；只看最近 15 分钟；满 5 次锁 15 分钟并清零
+    v_fails := CASE WHEN c.last_failed_at IS NOT NULL AND c.last_failed_at > v_now - interval '15 minutes' THEN c.failed_count ELSE 0 END + 1;
     UPDATE platform.staff_credential
-       SET failed_count = CASE WHEN c.failed_count + 1 >= 5 THEN 0 ELSE c.failed_count + 1 END,
-           locked_until = CASE WHEN c.failed_count + 1 >= 5 THEN v_now + interval '15 minutes' ELSE NULL END,
+       SET failed_count = CASE WHEN v_fails >= 5 THEN 0 ELSE v_fails END,
+           locked_until = CASE WHEN v_fails >= 5 THEN v_now + interval '15 minutes' ELSE NULL END,
+           last_failed_at = v_now,
            updated_at = v_now
      WHERE account_id = c.account_id;
     RETURN NULL;
   END IF;
-  UPDATE platform.staff_credential SET failed_count = 0, locked_until = NULL, totp_last_step = v_hit, updated_at = v_now
+  UPDATE platform.staff_credential SET failed_count = 0, last_failed_at = NULL, locked_until = NULL, totp_last_step = v_hit, updated_at = v_now
    WHERE account_id = c.account_id;
+  -- 一个账号同时只有一个有效会话：新登录撤销旧会话（安全审查建议 6）
+  UPDATE platform.staff_session SET revoked_at = v_now WHERE account_id = c.account_id AND revoked_at IS NULL;
   v_token := encode(platform.staff_random_bytes(32), 'hex');
   INSERT INTO platform.staff_session (token_hash, account_id, created_at, last_seen_at, expires_at)
   VALUES (sha256(convert_to(v_token, 'UTF8')), c.account_id, v_now, v_now, v_now + interval '12 hours');
@@ -202,13 +219,17 @@ GRANT EXECUTE ON FUNCTION platform.staff_logout(text) TO starbuddy_review;
 
 -- ---------- 建立与重置凭据：只由人（迁移执行者）在库里调用，不授任何应用角色 ----------
 -- 用法（staging，工程负责人执行；TOTP 密钥当面交给教研，pr4 待人确认 #4）：
---   SELECT platform.staff_enroll('<staff 账号>', 'login.name', '<至少 12 位口令>', '<20 字节随机密钥>'::bytea);
+--   执行者必须是超级用户或 BYPASSRLS 角色（两张表强制 RLS 且没有策略）；
+--   先关掉本会话的语句日志，并用不写历史文件的 psql（HISTFILE=/dev/null），口令不进任何日志（安全审查 B-2）：
+--     SET log_statement = 'none'; SET log_min_error_statement = 'panic'; SET log_min_duration_statement = -1;
+--   密钥：SELECT encode(<pgcrypto schema>.gen_random_bytes(20), 'hex'); 交给验证器 App 时换成 base32；
+--   SELECT platform.staff_enroll('<staff 账号>', 'login.name', '<12 位以上、72 字节以内的口令>', '\x<40 位十六进制>'::bytea);
 CREATE FUNCTION platform.staff_enroll(p_account uuid, p_login text, p_password text, p_totp_secret bytea) RETURNS void
   LANGUAGE plpgsql VOLATILE SET search_path = pg_catalog, platform, pg_temp
   AS $$
 BEGIN
-  IF p_password IS NULL OR char_length(p_password) NOT BETWEEN 12 AND 128 THEN
-    RAISE EXCEPTION '口令长度须为 12–128 位' USING ERRCODE = 'invalid_parameter_value';
+  IF p_password IS NULL OR char_length(p_password) < 12 OR octet_length(p_password) > 72 THEN
+    RAISE EXCEPTION '口令须至少 12 位、不超过 72 字节' USING ERRCODE = 'invalid_parameter_value';
   END IF;
   INSERT INTO platform.staff_credential (account_id, login_name, password_hash, totp_secret)
   VALUES (p_account, p_login, platform.staff_crypt(p_password, platform.staff_bf_salt()), p_totp_secret);
@@ -220,12 +241,12 @@ CREATE FUNCTION platform.staff_reset(p_account uuid, p_password text, p_totp_sec
   LANGUAGE plpgsql VOLATILE SET search_path = pg_catalog, platform, pg_temp
   AS $$
 BEGIN
-  IF p_password IS NULL OR char_length(p_password) NOT BETWEEN 12 AND 128 THEN
-    RAISE EXCEPTION '口令长度须为 12–128 位' USING ERRCODE = 'invalid_parameter_value';
+  IF p_password IS NULL OR char_length(p_password) < 12 OR octet_length(p_password) > 72 THEN
+    RAISE EXCEPTION '口令须至少 12 位、不超过 72 字节' USING ERRCODE = 'invalid_parameter_value';
   END IF;
   UPDATE platform.staff_credential
      SET password_hash = platform.staff_crypt(p_password, platform.staff_bf_salt()), totp_secret = p_totp_secret,
-         totp_last_step = NULL, failed_count = 0, locked_until = NULL, updated_at = platform.staff_now()
+         totp_last_step = NULL, failed_count = 0, last_failed_at = NULL, locked_until = NULL, updated_at = platform.staff_now()
    WHERE account_id = p_account;
   IF NOT FOUND THEN
     RAISE EXCEPTION '这个账号没有审核台凭据' USING ERRCODE = 'no_data_found';

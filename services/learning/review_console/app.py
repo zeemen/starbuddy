@@ -38,6 +38,15 @@ class StaffAuthenticator(Protocol):
 
 
 SESSION_HEADER = "x-review-session"
+# 后端只给同机前端用：Host 必须是本机地址（挡 DNS 重绑定页面直接调登录接口去撞锁或爆破，安全审查 PR 4 建议 5）
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "[::1]"})
+
+
+def host_name(host: str) -> str:
+    """Host 头去掉端口：`127.0.0.1:8790` → `127.0.0.1`，`[::1]:8790` → `[::1]`。"""
+    if host.startswith("["):
+        return host[: host.find("]") + 1] if "]" in host else host
+    return host.rsplit(":", 1)[0] if host.count(":") == 1 else host
 TOKEN = re.compile(r"^[0-9a-f]{64}$")
 # 不需要会话的接口：只有登录
 PUBLIC_ROUTES = {("POST", "/review/v0/auth/login")}
@@ -73,7 +82,7 @@ class RetireBody(_Strict):
 
 class LoginBody(_Strict):
     login_name: str = Field(pattern=r"^[a-z][a-z0-9_.-]{2,31}$")
-    password: str = Field(min_length=1, max_length=128)
+    password: str = Field(min_length=1, max_length=72)  # 字节数另在库里核对（bcrypt 只看前 72 字节）
     code: str = Field(pattern=r"^[0-9]{6}$")
 
 
@@ -119,19 +128,25 @@ def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthen
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        lp = None
         if pools is not None:
             kp, rp, own = pools[0], pools[1], False
         else:
             s = settings or ReviewSettings.from_env()
             kp = await asyncpg.create_pool(s.kge_database_url, min_size=1, max_size=5)
             rp = await asyncpg.create_pool(s.review_database_url, min_size=1, max_size=3)
+            # 登录专用：同一个签字登录角色，单独两条连接，语句 5 秒超时
+            lp = await asyncpg.create_pool(s.review_database_url, min_size=1, max_size=2,
+                                           server_settings={"statement_timeout": "5000"})
             own = True
         await check_roles(kp, rp)
-        state["kge"], state["review"] = KgeStore(kp), ReviewStore(rp)
+        state["kge"], state["review"] = KgeStore(kp), ReviewStore(rp, lp)
         yield
         if own:
             await kp.close()
             await rp.close()
+            if lp is not None:
+                await lp.close()
 
     app = FastAPI(lifespan=lifespan, openapi_url=None, docs_url=None, redoc_url=None)
 
@@ -139,6 +154,8 @@ def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthen
     async def guard(request: Request, call_next):
         status, code = 500, "INTERNAL"
         try:
+            if host_name(request.headers.get("host", "")) not in LOOPBACK_HOSTS:
+                raise ReviewError(421, "MISDIRECTED")
             if (request.method, request.url.path) not in PUBLIC_ROUTES:
                 staff = await auth(request)
                 if staff is None:

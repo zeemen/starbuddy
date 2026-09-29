@@ -178,10 +178,12 @@ class KgeStore:
 
 
 class ReviewStore:
-    """签字身份。每个方法一个事务；staff 账号只经 set_config 传给库，库里的函数再核对。"""
+    """签字身份。每个方法一个事务；staff 账号只经 set_config 传给库，库里的函数再核对。
+    登录走单独的小连接池（login_pool）：未登录请求能调登录，每次要做一次 bcrypt，不能占满签字用的连接（安全审查 PR 4 建议 1）。"""
 
-    def __init__(self, pool: asyncpg.Pool) -> None:
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool | None = None) -> None:
         self.pool = pool
+        self.login_pool = login_pool or pool
 
     async def _as_staff(self, staff: uuid.UUID, fn):
         try:
@@ -224,7 +226,7 @@ class ReviewStore:
     async def login(self, login_name: str, password: str, code: str) -> str | None:
         """成功返回会话令牌；任何失败都是 None（库里不区分原因，连错 5 次锁 15 分钟）。"""
         try:
-            return await self.pool.fetchval("SELECT platform.staff_login($1, $2, $3)", login_name, password, code)
+            return await self.login_pool.fetchval("SELECT platform.staff_login($1, $2, $3)", login_name, password, code, timeout=5)
         except asyncpg.PostgresError as e:
             raise db_error(e) from None
 

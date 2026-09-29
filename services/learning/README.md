@@ -92,5 +92,11 @@ LEARNING_ADAPTER_AYA_URL=http://127.0.0.1:8787 LEARNING_ADAPTER_AYA_TOKEN=... .v
       proxy_pass http://127.0.0.1:3000;
   }
   ```
+- **数据库服务器日志不能记下口令、6 位码、令牌**（安全审查 PR 4 B-2）：登录函数的参数是明文。对审核台的签字登录角色（超级用户执行）：
+  `ALTER ROLE <签字登录角色> SET log_statement = 'none';`、`SET log_min_duration_statement = -1;`、`SET log_parameter_max_length = 0;`、
+  `SET log_parameter_max_length_on_error = 0;`。人工执行 `platform.staff_enroll` / `staff_reset` 时，先在本会话关掉语句日志，
+  并用不写历史文件的 psql（`HISTFILE=/dev/null`），见迁移 0020 的用法注释。执行者须是超级用户或 BYPASSRLS 角色。
+- **staging 库名不能以 `starbuddy_dev` 或 `starbuddy_test` 开头**：合成种子只认这两类库名，里面的合成凭据很好猜。
 - 走 https；前端设 `STARBUDDY_ENV=staging`（会话 cookie 用 `__Host-sb_staff`、Secure）；不设 `STARBUDDY_DEV_AUTH`。
+  `STARBUDDY_ENV` 误设成 dev / test 会让会话 cookie 失去 Secure 与 `__Host-` 前缀，上线检查要核对。
 - 上线前验证：同一来源连续提交超过上限得到 429；限流不影响已登录会话的其他页面。

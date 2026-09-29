@@ -8,12 +8,19 @@ import { loginAction } from '../actions.ts';
 
 export const dynamic = 'force-dynamic';
 
-export default async function ReviewLogin() {
+export default async function ReviewLogin({ searchParams }: { searchParams: Promise<{ logout?: string }> }) {
   const token = await currentSession();
   if (token && (await whoAmI(token)).ok) redirect('/review');
+  // 只认一个固定取值、显示固定文字（地址栏参数不能带任意提示文字）
+  const incomplete = (await searchParams).logout === 'incomplete';
   return (
     <main>
       <h1>审核台登录</h1>
+      {incomplete ? (
+        <p role="alert" className="review-result error" data-testid="logout-incomplete">
+          退出未完成：本机已清除登录状态，但服务器上的会话没能撤销（空闲 30 分钟后自动失效）。在共用电脑上请联系工程负责人。
+        </p>
+      ) : null}
       <p className="muted">账号由工程负责人建立；6 位码来自绑定的验证器 App。连错 5 次锁定 15 分钟。</p>
       <ActionForm action={loginAction} labels={RESULT_LABEL} testId="login">
         <p>
@@ -22,7 +29,7 @@ export default async function ReviewLogin() {
         </p>
         <p>
           <label htmlFor="login-password">口令</label>{' '}
-          <input id="login-password" name="password" type="password" autoComplete="current-password" required maxLength={128} />
+          <input id="login-password" name="password" type="password" autoComplete="current-password" required maxLength={72} />
         </p>
         <p>
           <label htmlFor="login-code">6 位码</label>{' '}

@@ -61,7 +61,7 @@ async def rc(pg):
     rp = await asyncpg.create_pool(**pg.dsn("review_sign_app"), min_size=1, max_size=2)
     app = create_app(authenticate=staff_auth(None), pools=(kp, rp))
     async with app.router.lifespan_context(app):
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://rc") as client:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1") as client:
             yield client, kp, rp
     await kp.close()
     await rp.close()
@@ -89,7 +89,7 @@ async def test_session_login_flow(pg, rc, caplog):
     app = create_app(pools=(kp, rp))  # 默认：staff 登录会话
     caplog.set_level(logging.DEBUG)
     async with app.router.lifespan_context(app):
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://rc") as c:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1") as c:
             r = await c.get("/review/v0/map-versions", params={"subject": "wenli"})
             assert r.status_code == 401 and r.json()["code"] == "UNAUTHENTICATED"
             # 自报账号头、伪造令牌都不被采信
@@ -105,6 +105,10 @@ async def test_session_login_flow(pg, rc, caplog):
                 assert r.status_code == 401 and r.json() == {"type": "urn:starbuddy:review:login_failed", "status": 401, "code": "LOGIN_FAILED"}
             r = await c.post("/review/v0/auth/login", json={"login_name": "teacher.rc1", "password": PASSWORD, "code": "12ab56"})
             assert r.status_code == 422
+            # Host 不是本机（DNS 重绑定）：连登录接口都不给调
+            r = await c.post("/review/v0/auth/login", headers={"host": "evil.example.test"},
+                             json={"login_name": "teacher.rc1", "password": PASSWORD, "code": totp(SECRET, step)})
+            assert r.status_code == 421 and r.json()["code"] == "MISDIRECTED"
             # 成功
             r = await c.post("/review/v0/auth/login", json={"login_name": "teacher.rc1", "password": PASSWORD, "code": totp(SECRET, step)})
             assert r.status_code == 200
