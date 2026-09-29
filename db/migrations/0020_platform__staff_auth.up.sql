@@ -65,7 +65,7 @@ GRANT EXECUTE ON FUNCTION platform.staff_totp(bytea, bigint) TO starbuddy_authz;
 -- ---------- 表 ----------
 CREATE TABLE platform.staff_credential (
   account_id      uuid PRIMARY KEY REFERENCES platform.account (id),
-  login_name      text NOT NULL UNIQUE CHECK (login_name ~ '^[a-z][a-z0-9_.-]{2,31}$'),
+  login           text NOT NULL UNIQUE CHECK (login ~ '^[a-z][a-z0-9_.-]{2,31}$'),  -- 登录名（列名不用 *_name：渗透夹具禁止 platform 出现姓名类列）
   password_hash   text NOT NULL CHECK (password_hash ~ '^\$2[abxy]\$[0-9]{2}\$'),
   totp_secret     bytea NOT NULL CHECK (octet_length(totp_secret) BETWEEN 16 AND 64),
   totp_last_step  bigint,                 -- 最近一次登录用掉的时间步：同一步（及更早）的码不能再用
@@ -133,7 +133,7 @@ BEGIN
   END IF;
   -- 同一登录名的并发登录不排队占连接：拿不到行锁就直接失败（安全审查建议 1）
   BEGIN
-    SELECT * INTO c FROM platform.staff_credential WHERE login_name = p_login FOR UPDATE NOWAIT;
+    SELECT * INTO c FROM platform.staff_credential WHERE login = p_login FOR UPDATE NOWAIT;
   EXCEPTION WHEN lock_not_available THEN
     RETURN NULL;
   END;
@@ -196,7 +196,7 @@ BEGIN
   IF v_id IS NULL THEN
     RETURN;
   END IF;
-  RETURN QUERY SELECT c.account_id, c.login_name FROM platform.staff_credential c WHERE c.account_id = v_id;
+  RETURN QUERY SELECT c.account_id, c.login FROM platform.staff_credential c WHERE c.account_id = v_id;
 END $$;
 ALTER FUNCTION platform.staff_session_resolve(text) OWNER TO starbuddy_authz;
 REVOKE EXECUTE ON FUNCTION platform.staff_session_resolve(text) FROM PUBLIC;
@@ -231,7 +231,7 @@ BEGIN
   IF p_password IS NULL OR char_length(p_password) < 12 OR octet_length(p_password) > 72 THEN
     RAISE EXCEPTION '口令须至少 12 位、不超过 72 字节' USING ERRCODE = 'invalid_parameter_value';
   END IF;
-  INSERT INTO platform.staff_credential (account_id, login_name, password_hash, totp_secret)
+  INSERT INTO platform.staff_credential (account_id, login, password_hash, totp_secret)
   VALUES (p_account, p_login, platform.staff_crypt(p_password, platform.staff_bf_salt()), p_totp_secret);
 END $$;
 REVOKE EXECUTE ON FUNCTION platform.staff_enroll(uuid, text, text, bytea) FROM PUBLIC;

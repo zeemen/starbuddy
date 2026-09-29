@@ -38,6 +38,7 @@ class StaffAuthenticator(Protocol):
 
 
 SESSION_HEADER = "x-review-session"
+MAX_BODY_BYTES = 64 * 1024  # 审核台请求体上限（契约审查 PR 4 S7）：最大的是节点编辑，远小于此
 # 后端只给同机前端用：Host 必须是本机地址（挡 DNS 重绑定页面直接调登录接口去撞锁或爆破，安全审查 PR 4 建议 5）
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "[::1]"})
 
@@ -156,6 +157,10 @@ def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthen
         try:
             if host_name(request.headers.get("host", "")) not in LOOPBACK_HOSTS:
                 raise ReviewError(421, "MISDIRECTED")
+            declared = request.headers.get("content-length", "")
+            if (declared and (not declared.isdigit() or int(declared) > MAX_BODY_BYTES)) or \
+                    "chunked" in request.headers.get("transfer-encoding", "").lower():
+                raise ReviewError(413, "TOO_LARGE")
             if (request.method, request.url.path) not in PUBLIC_ROUTES:
                 staff = await auth(request)
                 if staff is None:

@@ -79,6 +79,11 @@ test('登录失败统一提示；退出后回登录页，旧会话失效', async
   await page.getByRole('button', { name: '登录' }).click();
   await expect(page.getByTestId('login').getByRole('status')).toHaveAttribute('data-code', 'LOGIN_FAILED');
   await expect(page).toHaveURL(/\/review\/login$/);
+  // 错口令：同一个提示（不区分原因）
+  await page.getByLabel('口令').fill('wrong-password-000');
+  await page.getByLabel('6 位码').fill(await nextCode(page, T2));
+  await page.getByRole('button', { name: '登录' }).click();
+  await expect(page.getByTestId('login').getByRole('status')).toHaveAttribute('data-code', 'LOGIN_FAILED');
   await asStaff(page, T2);
   const cookie = (await page.context().cookies()).find((c) => c.name === 'sb_staff');
   expect(cookie?.httpOnly && cookie.sameSite === 'Strict').toBeTruthy();

@@ -70,7 +70,7 @@
 5. 版本记录的粒度：现在每行一次签字、发布或撤下（spec 写“每行一次发布”）；六段标识（冲刺 4）与页面提交号（冲刺 3）到时补列。
 6. 教材投影的差异同时显示原句与哈希（spec 只要求哈希），原句是公共层教材内容。
 7. `/review/v0` 是审核台内部接口，不是插件或知识服务契约；迁到知识服务时再定是否进 packages/contracts。
-3. 审核台后端的部署（进程、端口、与学习服务是否同机）随 PR 4 staff 登录一起定。
+3. ~~审核台后端的部署（进程、端口、与学习服务是否同机）随 PR 4 staff 登录一起定。~~ 已处理：见 `services/learning/README.md`“审核台部署要求”（PR 4）。
 
 ## 冲刺 1 · PR 3：审核台前端（apps/web /review）
 ### 交付
@@ -111,7 +111,7 @@
 ### 交付
 - 迁移 `0020_platform__staff_auth`（只改 platform，`[NEEDS-HUMAN]`）：凭据表、会话表（RLS 强制、无策略，应用角色读不到）；
   `staff_login` / `staff_session_resolve` / `staff_logout`（只授 review）；`staff_enroll` / `staff_reset`（不授任何应用角色）；
-  bcrypt、TOTP、随机令牌都用 0009 已装的 pgcrypto，没有新依赖。DB 测试 `79c_staff_auth.sql`（55 项，含 RFC 6238 测试向量）、变异 21 条、
+  bcrypt、TOTP、随机令牌都用 0009 已装的 pgcrypto，没有新依赖。DB 测试 `79c_staff_auth.sql`（约 70 项断言，含 RFC 6238 测试向量）、变异 24 条、
   授权快照与攻击面清单（59 个函数）。
 - 审核台后端：默认认证器改为会话解析（请求头 `x-review-session`）；新增登录、退出、`me` 接口；登录失败统一 401 `LOGIN_FAILED`；
   删除 `devauth.py`。单测覆盖失败统一、码不能重用、退出后失效、日志里没有令牌、口令与登录名。
@@ -132,6 +132,14 @@
 - 一个账号同时只有一个有效会话：新登录撤销旧会话（建议 6）。口令最多 72 字节（前端、后端、库三处）（建议 7）。
 - `staff_now` 改为 VOLATILE，时间步由同一个时间点算出（建议 8）。失败计次只看最近 15 分钟（新列 `last_failed_at`）（建议 9）。
 - 迁移注释写明凭据函数的执行者要求与密钥生成方法（建议 10）；清掉本地残留的字节码与构建缓存后重新构建核对（建议 11）。
+### 契约审查意见处理（按默认）
+- **阻断 B1**：新列 `staff_credential.login_name` 命中渗透夹具“platform 里不得出现姓名类列”的自检，严格检查里 db-mutation 与 pentest-env-test 失败。
+  按首选修法把列改名为 `login`（不给自检开排除口子）；函数返回列与接口字段仍叫 `login_name`（不进 information_schema.columns）。
+- S1：部署层限流改为覆盖 `/review` 下所有 POST（server action 按 `Next-Action` 头分派、不看路径），参考配置只限 POST，上线验证加一条“向其他路径提交登录 action 也 429”。
+- S2：端到端补错口令用例；锁定与会话过期由 79c（可推进的时钟）覆盖，端到端不等 15 分钟 / 30 分钟。
+- S3：`make web-test` 构建后扫描产物（`.next`，不含缓存），出现开发 staff 身份桩的字符串就失败。
+- S5：scope.md 写明三个 staff 函数不取 `current_account_id()` 的例外，服务路由表加审核台后端；攻击面清单加 M3（渗透测试 spec 第 2 节同步登记，列入第二轮）。
+- S6：本节数字更新；PR 2 待人确认 #3（部署）标为已处理。S7：后端请求体上限 64 KB（超出 413）。S8：spec 冲刺 1 端到端一条在严格检查通过后打勾。
 - 没采纳：建议 4（cookie 名与 Secure 按 `NODE_ENV` 定）——端到端用 `next start`（生产构建）跑在本机 http 上，按 `NODE_ENV` 会让测试拿不到 cookie；
   改为在部署要求里写明 `STARBUDDY_ENV` 必须是 staging，上线检查核对。建议 3（登录名枚举的计时差）靠部署层限流兜住。
 
@@ -143,6 +151,8 @@
 3. 自审修改人（PR 2 安全审查 A-3）仍未做，按设计待人确认 #5 默认留到以后。
 4. 知道登录名的人可以每 15 分钟错 5 次，让某个 staff 一直处于锁定（安全审查建议 2）。部署层限流能缓解；是否改为“锁定期间口令与码都对仍放行”（会削弱防爆破）。
 5. 过期会话不清理（安全审查建议 6 后半）：需要定期删除，要给调度身份单独授权（改迁移），随 PLT-01 后台审计一起定。
+6. 与 4-H 家庭登录合并（契约审查 S4）：PLT-01 / 4-H 时 `platform.staff_session` 并入 4-H 的 `auth_session`（origin = staff），
+   时钟函数统一，解析函数返回账号类型；cookie 继续分开（staff 为 SameSite=Strict、一账号一会话，家庭为 Lax、多设备）。
 
 ## 冲刺 1 · 其余
 - 走查（需要真实教研在 staging 操作）：staging 部署、凭据发放与走查记录由人完成。

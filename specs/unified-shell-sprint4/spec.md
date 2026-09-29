@@ -77,7 +77,7 @@
 - 星图读模块读 `platform.skill_node` 与 `platform.mastery_estimate`（3-H），三态映射在 `src/star-map/display-state.ts`，接口 `services/bff/openapi/star-map.v0.yaml`。
 
 ### 数据库（迁移 0001–0015，0010–0015 为草稿待人执行）
-- **家庭与同意**（`0002_platform__household`）：`signup_guardian`、`lookup_accounts_by_phone`、`create_student`、`create_guardian_invite` / `redeem_guardian_invite`；只有家长账号有联系方式；`student_profile` 没有姓名或昵称；`consent_record` 只追加、只有已绑定家长能写。**没有会话、验证码、限流表，没有主 / 协同监护人角色，没有学生登录凭据。**
+- **家庭与同意**（`0002_platform__household`）：`signup_guardian`、`lookup_accounts_by_phone`、`create_student`、`create_guardian_invite` / `redeem_guardian_invite`；只有家长账号有联系方式；`student_profile` 没有姓名或昵称；`consent_record` 只追加、只有已绑定家长能写。**没有会话、验证码、限流表，没有主 / 协同监护人角色，没有学生登录凭据。**（2026-09-29 补：迁移 0020 已有审核台 staff 专用的凭据与会话表 `platform.staff_credential` / `staff_session`，见 `specs/release-gate-sprint4/lessons.md` PR 4；4-H 建家庭会话时按其“待人确认 #6”合并。）
 - **计量 v2**（`0015_platform__metering_v2`）：
   - `enroll_subject` 按“核心 + 选修槽”校验，outcome 为 `enrolled`（带 `slot`、`limit`）、`already_active`、`limit_reached`（带 `slot`、`limit`）、`change_next_period`、`no_subscription`、`not_launched`；`pause_subject` 为 `paused`、`not_active`、`change_limit_reached`；学生本人与已绑定家长都能调；
   - `platform.subject_catalog`：九科、上线状态（语文、数学、道法 beta，只对试点订阅开放；英语等 planned）、适用年级、是否核心、对应产品命名空间；

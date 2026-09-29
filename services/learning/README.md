@@ -80,13 +80,15 @@ LEARNING_ADAPTER_AYA_URL=http://127.0.0.1:8787 LEARNING_ADAPTER_AYA_TOKEN=... .v
 ### 审核台部署要求（staging；由人配置，仓库里没有部署配置）
 - 审核台后端只监听 127.0.0.1，只接受同机前端（apps/web 服务端）的请求；浏览器不直连。
 - **登录限流放在部署层**（2026-09-29 用户决定）：库里只按账号锁定（连错 5 次锁 15 分钟），后端看不到用户来源，
-  所以在 apps/web 前面的反向代理按来源 IP 限制对 `/review/login` 的 POST（登录表单的 server action 提交到页面路径）。
+  所以在 apps/web 前面的反向代理按来源 IP 限流。Next 的 server action 按请求头 `Next-Action` 分派、不看路径，
+  登录 action 可以被提交到任意 `/review` 路径，所以**对 `/review` 下所有 POST（或所有带 `Next-Action` 头的请求）限流**，不能只限 `/review/login`。
   建议值：每个来源每分钟 10 次、突发 5 次，超出返回 429；另设全站登录总量上限，防止换来源轮流试。
   参考（nginx，只作示意，按实际网关改写）：
 
   ```nginx
-  limit_req_zone $binary_remote_addr zone=review_login:10m rate=10r/m;
-  location = /review/login {
+  map $request_method $review_post_key { POST $binary_remote_addr; default ""; }  # 只限 POST（键为空不计数）
+  limit_req_zone $review_post_key zone=review_login:10m rate=10r/m;
+  location ^~ /review {
       limit_req zone=review_login burst=5 nodelay;
       limit_req_status 429;
       proxy_pass http://127.0.0.1:3000;
@@ -99,4 +101,4 @@ LEARNING_ADAPTER_AYA_URL=http://127.0.0.1:8787 LEARNING_ADAPTER_AYA_TOKEN=... .v
 - **staging 库名不能以 `starbuddy_dev` 或 `starbuddy_test` 开头**：合成种子只认这两类库名，里面的合成凭据很好猜。
 - 走 https；前端设 `STARBUDDY_ENV=staging`（会话 cookie 用 `__Host-sb_staff`、Secure）；不设 `STARBUDDY_DEV_AUTH`。
   `STARBUDDY_ENV` 误设成 dev / test 会让会话 cookie 失去 Secure 与 `__Host-` 前缀，上线检查要核对。
-- 上线前验证：同一来源连续提交超过上限得到 429；限流不影响已登录会话的其他页面。
+- 上线前验证：同一来源连续提交超过上限得到 429；向其他 /review 路径提交登录 action 同样 429；已登录用户的正常浏览不受影响（建议 GET 不限或放宽）。
