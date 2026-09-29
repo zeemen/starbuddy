@@ -1,6 +1,6 @@
 # 冲刺 2-G：统一复核队列（低置信、申诉、抽检、画像异议）
 
-状态：**草稿，等人确认后才开始实现**（涉及迁移、RLS、复核改判与画像可见范围，均为必停项）。确认人、日期：＿＿＿
+状态：**已确认（2026-09-29，用户“按默认建议，开始实现”）**，待人确认 #1–#7 按默认执行；迁移 0023 为草稿，由人执行。PR 首行 `[NEEDS-HUMAN]`。
 任务包：开发计划 v2.0 冲刺 2（W5–W6）G 流“统一复核队列：低置信、申诉、抽检、画像异议四类进同一队列”，验收“三科各一条记录走完闭环”。
 关联：迁移 0006（`platform.review_task`、`resolve_review_task`）、0001（`review_reason`）、0005（grade_result 复核约束与 supersede 规则）、0010（判断账本）、0020（staff 登录）；
 审核台（`services/learning/review_console/`、`apps/web/src/app/review/`，`specs/release-gate-sprint4/` 设计要点 3：沿用同一套 staff 登录与签字模式）；

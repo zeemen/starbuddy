@@ -214,18 +214,19 @@ SELECT t.throws($$INSERT INTO platform.review_task (subject, student_id, source_
                   '5f000000-0000-4000-8000-00000000005f', 'auto_ok')$$, '42501', '学习服务不能插入已结案的复核任务');
 SELECT t.throws($$SELECT platform.resolve_review_task((SELECT id FROM platform.review_task LIMIT 1), 'auto_ok')$$,
                 '42501', '学习服务不能调用结案函数');
--- 教研人员结案后可以
+-- 教研人员领取后结案可以（0023 起先领取、结案码在白名单里；审核台读不到队列表，任务 ID 由超级用户取出）
 RESET ROLE;
+SELECT id AS rt9a FROM platform.review_task WHERE source_id = '9a000000-0000-4000-8000-00000000009a' \gset
 SET ROLE starbuddy_review;
 SELECT t.as_account('a0000000-0000-4000-8000-00000000000a');
-SELECT t.throws($$SELECT platform.resolve_review_task((SELECT id FROM platform.review_task WHERE source_id = '9a000000-0000-4000-8000-00000000009a'), 'ok')$$,
-                '42501', '非教研账号不能结案');
+SELECT t.throws(format('SELECT platform.resolve_review_task(%L, %L)', :'rt9a', 'upheld'), '42501', '非教研账号不能结案');
 SELECT t.as_account('5f000000-0000-4000-8000-00000000005f');
-SELECT platform.resolve_review_task((SELECT id FROM platform.review_task WHERE source_id = '9a000000-0000-4000-8000-00000000009a'), 'teacher_confirmed');
-SELECT t.ok((SELECT resolved_by_account FROM platform.review_task WHERE source_id = '9a000000-0000-4000-8000-00000000009a')
-            = '5f000000-0000-4000-8000-00000000005f', '结案记录结案人');
+SELECT platform.take_review_task(:'rt9a');
+SELECT platform.resolve_review_task(:'rt9a', 'upheld');
 SELECT t.as_account(NULL);
 RESET ROLE;
+SELECT t.ok((SELECT resolved_by_account FROM platform.review_task WHERE id = :'rt9a')
+            = '5f000000-0000-4000-8000-00000000005f', '结案记录结案人');
 SET ROLE starbuddy_learning;
 BEGIN;
 UPDATE platform.grade_result SET superseded_by = '9c000000-0000-4000-8000-00000000009c' WHERE id = '9a000000-0000-4000-8000-00000000009a';

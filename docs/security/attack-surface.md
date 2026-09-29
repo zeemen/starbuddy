@@ -87,7 +87,7 @@
 
 | 编号 | 攻击面 | 攻击者 / 前提 | 现有防护 | 已有自动化断言 | 渗透测试要做的 | 已知遗留 |
 |---|---|---|---|---|---|---|
-| H1 | `starbuddy_scheduler` 只能调用 `meter_expire_due`、`meter_renew_due`，没有表权限；BFF 不能调用这两个函数 | 层 1 | 按角色授 EXECUTE | `ref:db/tests/70_metering_functions.sql#定时任务角色只能调用过期与续期`；`ref:db/tests/70_metering_functions.sql#定时任务角色读不到任何计量表`；`ref:db/tests/70_metering_functions.sql#BFF 不能调用过期任务`；`ref:db/tests/70_metering_functions.sql#BFF 不能调用续期任务`；`mut:BFF 可以调用过期任务` | 人工：以 `scheduler_app` 登录逐表、逐函数试 | — |
+| H1 | `starbuddy_scheduler` 只能调用 `meter_expire_due`、`meter_renew_due` 与抽检 `review_sample_spot_checks`（0023），没有表权限；BFF 不能调用这些函数 | 层 1 | 按角色授 EXECUTE | `ref:db/tests/70_metering_functions.sql#定时任务角色只能调用过期、续期与抽检`；`ref:db/tests/70_metering_functions.sql#定时任务角色读不到任何计量表`；`ref:db/tests/70_metering_functions.sql#BFF 不能调用过期任务`；`ref:db/tests/70_metering_functions.sql#BFF 不能调用续期任务`；`mut:BFF 可以调用过期任务` | 人工：以 `scheduler_app` 登录逐表、逐函数试 | — |
 | H2 | 一个登录角色不能同时继承 scheduler 和其他应用角色 | 部署 | `0009` 执行时检查 | `ref:db/migrations/0009_platform__metering_functions.up.sql#同一个角色不能同时继承 starbuddy_scheduler`；`ref:db/tests/80_attack_surface.sql#攻击面：没有角色同时继承两个应用角色`；`ref:db/tests/80_attack_surface.sql#攻击面：应用角色没有危险属性`；`mut:攻击面：登录角色同时继承定时任务与 BFF`；`mut:攻击面：应用角色带 BYPASSRLS` | 人工：80 只在跑测试的库上检查；部署后授予的继承要靠部署清单或定期巡检 | 部署环境的角色只能靠部署检查 |
 | H3 | 过期任务在没有设身份时运行，不能借此以别人的身份写入 | 层 1 | 过期任务只写 `ttl_elapsed` 流水 | `ref:db/tests/60_metering.sql#过期流水只能由定时任务写`；`ref:db/tests/70_metering_functions.sql#再跑一次没有可过期的（幂等）` | 人工：代码审查 `meter_expire_due`、`meter_renew_due` | — |
 
