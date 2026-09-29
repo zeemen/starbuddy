@@ -66,6 +66,7 @@ test('登录后只能跳回星图页、建档页或探针演示页', () => {
   assert.equal(safeNext('/star-map/5a000000-0000-4000-8000-0000000000c1'), '/star-map/5a000000-0000-4000-8000-0000000000c1');
   assert.equal(safeNext('/onboarding/5a000000-0000-4000-8000-0000000000c1'), '/onboarding/5a000000-0000-4000-8000-0000000000c1');
   assert.equal(safeNext('/dev/probe/5a000000-0000-4000-8000-0000000000c1'), '/dev/probe/5a000000-0000-4000-8000-0000000000c1');
+  assert.equal(safeNext('/dev/diagnosis/5a000000-0000-4000-8000-0000000000c5'), '/dev/diagnosis/5a000000-0000-4000-8000-0000000000c5');
   for (const bad of ['https://evil.example/', '//evil.example', '/star-map/x/../../admin', '/dev/session?x', null, '',
     '/dev/probe/x', '/dev/probex/5a000000-0000-4000-8000-0000000000c1', '/dev/login/5a000000-0000-4000-8000-0000000000c1',
     '/onboarding/5a000000-0000-4000-8000-0000000000c1?step=1', '/onboardingx/5a000000-0000-4000-8000-0000000000c1', '/review']) {

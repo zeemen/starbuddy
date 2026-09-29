@@ -234,12 +234,13 @@ export const isQueueStatus = (s: string): s is QueueStatus => (QUEUE_STATUSES as
 export const QUEUE_REASONS = [
   'subjective_dimension', 'low_confidence', 'verifier_boundary_case', 'content_not_admitted', 'ocr_low_confidence',
   'dimension_unavailable', 'student_appeal', 'spot_check', 'double_grading_disagreement', 'full_score_second_review', 'profile_dispute',
+  'process_observation',
 ] as const;
 export type QueueReason = (typeof QUEUE_REASONS)[number];
 export const isQueueReason = (s: string): s is QueueReason => (QUEUE_REASONS as readonly string[]).includes(s);
 /** 结案码与后端白名单表的格式一致（码是否在白名单、是否适用由库函数核对） */
 export const isResolutionCode = (s: string): boolean => /^[a-z0-9_]{1,48}$/.test(s);
-export type SourceKind = 'grade_result' | 'skill_observation' | 'error_attribution' | 'claim';
+export type SourceKind = 'grade_result' | 'skill_observation' | 'error_attribution' | 'claim' | 'diagnosis_step';
 
 export interface QueueItem {
   id: string;
@@ -296,9 +297,20 @@ export interface ClaimSource {
   created_at: string;
 }
 
+/** 诊断步骤（0027 过程观察）：只有步骤引用与判分引用；书写原文按证据 ID 另取（lessons 待人确认） */
+export interface DiagnosisStepSource {
+  kind: 'process' | 'explain';
+  node_id: string;
+  item_id: string | null;
+  grade_result_id: string | null;
+  evidence_ids: string[] | null;
+  verdict: string | null;
+  answered_at: string | null;
+}
+
 export interface QueueTask extends QueueItem {
   resolved_by_me: boolean;
-  source: GradeSource | ClaimSource | null;
+  source: GradeSource | ClaimSource | DiagnosisStepSource | null;
 }
 
 export interface ResolutionCode {
@@ -353,11 +365,12 @@ export const QUEUE_REASON_LABEL: Record<QueueReason, string> = {
   subjective_dimension: '主观维度', low_confidence: '置信度低', verifier_boundary_case: '验证器边界情况',
   content_not_admitted: '题目未准入', ocr_low_confidence: '识别置信度低', dimension_unavailable: '维度不可判',
   student_appeal: '学生申诉', spot_check: '抽检', double_grading_disagreement: '双评不一致',
-  full_score_second_review: '满分复核', profile_dispute: '画像异议',
+  full_score_second_review: '满分复核', profile_dispute: '画像异议', process_observation: '过程观察',
 };
 export const QUEUE_STATUS_LABEL: Record<QueueStatus, string> = { open: '待处理', in_progress: '处理中', resolved: '已结案' };
 export const SOURCE_KIND_LABEL: Record<SourceKind, string> = {
   grade_result: '判分', skill_observation: '能力观察', error_attribution: '错因归因', claim: '判断（画像异议）',
+  diagnosis_step: '诊断步骤（过程观察）',
 };
 export const JUDGED_BY_LABEL: Record<string, string> = { verifier: '验证器', rubric_rule: 'Rubric 规则', rubric_model: 'Rubric 模型' };
 export const VERDICT_LABEL: Record<string, string> = {

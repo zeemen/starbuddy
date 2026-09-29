@@ -22,6 +22,8 @@ from fastapi.responses import JSONResponse
 from .adapter_client import strict_json
 from .config import Settings
 from .contract import internal_contract, plugin_contract
+from .diagnosis import api as diagnosis_api
+from .diagnosis.engine import Params as DiagnosisParams
 from .errors import IngestError
 from .model_router import ModelRouter
 from .model_router.config import load_for_deployment
@@ -64,14 +66,38 @@ def _problem(e: IngestError, request_id: str | None) -> JSONResponse:
     return JSONResponse(e.problem(request_id), status_code=e.status, media_type="application/problem+json", headers=headers)
 
 
+def _diagnosis(settings: Settings, pool, client: httpx.AsyncClient, ingest: IngestService, params: DiagnosisParams | None):
+    """自适应诊断（SIE-02a）：合成题面只在 test 环境（配置层与构造函数各拦一道）；选题信息来自合成夹具或知识服务。"""
+    from .diagnosis.presenter import SyntheticPresenter
+    from .diagnosis.service import DiagnosisService
+    from .diagnosis.source import FixtureSource, KnowledgeServiceSource
+
+    presenter = SyntheticPresenter(settings.env)
+    if settings.diagnosis_source == "knowledge":
+        assert settings.knowledge is not None and settings.diagnosis_map_version is not None
+        ks = KnowledgeServiceSource(client, settings.knowledge.base_url, settings.knowledge.credential, "aya",
+                                    settings.diagnosis_targets, settings.diagnosis_map_version)
+
+        async def factory(grade):
+            await ks.load(grade)
+            return ks
+    else:
+        fixture = FixtureSource(settings.env)
+
+        async def factory(grade):
+            return fixture
+    return DiagnosisService(pool, ingest, factory, presenter, params or DiagnosisParams())
+
+
 def create_app(
     settings: Settings,
     *,
     pool: asyncpg.Pool | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
     model_router: ModelRouter | None = None,
+    diagnosis_params: DiagnosisParams | None = None,
 ) -> FastAPI:
-    """pool、transport、model_router 供测试注入；不传时按配置创建。"""
+    """pool、transport、model_router、diagnosis_params 供测试注入；不传时按配置创建。"""
     state: dict = {"router": model_router}
 
     @asynccontextmanager
@@ -90,6 +116,8 @@ def create_app(
         # trust_env=False：不读 HTTP(S)_PROXY 等环境变量，含学生作答的请求体不会被悄悄送进代理（安全审查 S1）
         client = httpx.AsyncClient(transport=transport, trust_env=False, follow_redirects=False)
         state["service"] = IngestService(settings, p, client)
+        if settings.diagnosis_presenter == "synthetic":
+            state["diagnosis"] = _diagnosis(settings, p, client, state["service"], diagnosis_params)
         # 有路由客户端时才建模型路由：环境从 LEARNING_ENV 读，配置不合规（出境、未批准供应商等）即拒绝启动
         own_router = state["router"] is None and bool(settings.route_clients)
         if own_router:
@@ -135,6 +163,8 @@ def create_app(
                 record["request_id"] = rid
             record["duration_ms"] = round((time.monotonic() - started) * 1000)
             log.info(json.dumps(record, ensure_ascii=False))
+
+    diagnosis_api.register(app, lambda r: _bearer_ok(r.headers.get("authorization"), settings.service_credential), state)
 
     @app.post("/internal/v0/grade")
     async def grade(request: Request) -> JSONResponse:

@@ -64,6 +64,17 @@ SM=(
   $'计量：重放没有结果当成功\tsrc/metering/meter.ts\tif (out.kind === \'found\') {\tif (out.kind !== \'busy\') {'
   $'计量：路由 404 当作已封存\tsrc/metering/learning-client.ts\tif (status === 404 && problem.code === \'REPLAY_NOT_FOUND\')\tif (status === 404)'
   $'计量：重放 BUSY 当作已封存\tsrc/metering/learning-client.ts\tif (status === 409 && problem.code === \'BUSY\') return { kind: \'busy\' };\tif (status === 409) return { kind: \'not_found\', problem };'
+  # 数学自适应诊断（SIE-02a）：只认学生本人、计量（开始预留、结束结算、放弃与确定失败释放、结果未知不释放、续做不另占）、
+  # 视图不带题号、日志只记哈希；这几条跑诊断集成测试（学习服务与阿鸦适配器进程）
+  $'诊断：开始不核对学生本人\tsrc/diagnosis/service.ts\tif (!(await isSelf(deps.pool, account, student))) return FORBIDDEN;\t'
+  $'诊断：取当前题不核对会话归属\tsrc/diagnosis/service.ts\tif (!(await ownsSession(deps.pool, account, student, session))) return FORBIDDEN;\t'
+  $'诊断：学习服务确定拒绝时不释放\tsrc/diagnosis/service.ts\t    if (holding) await releaseQuietly(deps, account, usage, \'upstream_rejected\');\t'
+  $'诊断：结果未知就释放\tsrc/diagnosis/service.ts\t  if (r.kind === \'unknown\') return UNAVAILABLE;  // 不释放\t  if (r.kind === \'unknown\') { await releaseQuietly(deps, account, usage, \'unknown\'); return UNAVAILABLE; }  // 不释放'
+  $'诊断：续做也另占一笔额度\tsrc/diagnosis/service.ts\t  if (open !== null) {\t  if (open === \'never\') {'
+  $'诊断：会话结束不结算\tsrc/diagnosis/service.ts\t  if (v.status === \'finished\') await settleQuietly(deps, account, v.usage_id);\t'
+  $'诊断：放弃不释放\tsrc/diagnosis/service.ts\tawait releaseQuietly(deps, account, r.body.usage_id, \'abandoned\');\t'
+  $'诊断：视图带出题号\tsrc/diagnosis/service.ts\t    seq: v.step.seq, kind: v.step.kind,\t    seq: v.step.seq, item_id: v.step.item_id, kind: v.step.kind,'
+  $'诊断：日志记原始 student_id\tsrc/star-map/server.ts\trecord[\'student\'] = hashId(studentId); // 诊断\trecord[\'student\'] = studentId; // 诊断'
 )
 # 副本保持仓库结构（测试按 ../../../ 找仓库根：adapters/aya 的登记脚本、db/seeds 的种子），adapters、db 软链接回仓库。
 # 安全审查阻断 1：原来的副本不保持结构，测试的 before 在任何代码下都失败，变异全部“被发现”却不说明任何问题。
@@ -72,6 +83,7 @@ SM=(
 star_run() {  # $1 副本根目录，$2 变异名（“计量：”开头的跑计量测试）；输出 rc 与通过数
   local out rc pass tests="tests/star-map.test.ts tests/star-map.integration.test.ts tests/onboarding.integration.test.ts tests/events.integration.test.ts"
   [[ "${2:-}" == 计量：* ]] && tests="tests/learning-client.test.ts tests/gate0.integration.test.ts"
+  [[ "${2:-}" == 诊断：* ]] && tests="tests/diagnosis.integration.test.ts"
   out=$( cd "$1/services/bff" && timeout 240 bash "$ROOT/db/tests/pg-ephemeral.sh" -- \
       node --no-warnings --test --test-concurrency=1 --test-timeout=60000 $tests 2>&1 ); rc=$?
   pass=$(printf '%s\n' "$out" | sed -n 's/^# pass \([0-9]*\)$/\1/p' | tail -1)
@@ -84,6 +96,7 @@ star_copy() {
   cp -r src tests openapi package.json tsconfig.json "$work/services/bff/"
   ln -s "$PWD/node_modules" "$work/services/bff/node_modules"
   ln -s "$ROOT/adapters" "$work/adapters"; ln -s "$ROOT/db" "$work/db"
+  ln -s "$ROOT/services/learning" "$work/services/learning"  # 诊断集成测试起学习服务进程（只读用，不改）
   echo "$work"
 }
 work="$(star_copy)"; read -r rc pass <<< "$(star_run "$work")"; rm -rf "$work"

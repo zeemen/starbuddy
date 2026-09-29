@@ -2,7 +2,9 @@
 //   BFF_DATABASE_URL  连接串，登录角色只继承 starbuddy_bff（例如 postgresql://bff_app@/starbuddy_dev?host=/tmp/x）
 //   PORT              默认 8787
 //   STARBUDDY_DEV_AUTH=1  启用开发身份桩（x-dev-account-id）；不设时所有请求都是 401
+//   BFF_LEARNING_URL / BFF_LEARNING_TOKEN  学习服务地址（https 或本机回环）与服务间令牌（≥ 32 字符）；不设时诊断接口 503
 import pg from 'pg';
+import { httpDiagnosisLearning } from '../diagnosis/learning-client.ts';
 import { assertBffRole } from './query.ts';
 import { createStarMapServer } from './server.ts';
 
@@ -21,7 +23,18 @@ try {
   await pool.end();
   process.exit(2);
 }
-const server = createStarMapServer({ pool, devAuth });
+const learningUrl = process.env['BFF_LEARNING_URL'];
+const learningCredential = process.env['BFF_LEARNING_TOKEN'] ?? '';
+let diagnosis;
+if (learningUrl) {
+  if (learningCredential.length < 32 || !/^(https:\/\/|http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?(\/|$))/.test(learningUrl)) {
+    console.error('star-map: BFF_LEARNING_URL 必须是 https 或本机回环地址，服务间令牌至少 32 个字符');
+    await pool.end();
+    process.exit(2);
+  }
+  diagnosis = { learning: httpDiagnosisLearning({ baseUrl: learningUrl, token: learningCredential }) };
+}
+const server = createStarMapServer({ pool, devAuth, ...(diagnosis ? { diagnosis } : {}) });
 server.listen(port, '127.0.0.1', () => {
   console.log(JSON.stringify({ event: 'listening', port, dev_auth: devAuth }));
 });

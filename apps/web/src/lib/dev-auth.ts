@@ -30,7 +30,7 @@ export function devAccountFromCookie(value: string | undefined, env: Env = proce
   return SYNTHETIC_ACCOUNTS.some((a) => a.account_id === value) ? value : null;
 }
 
-/** 登录后只能跳回星图页、建档页或探针演示页（只在开发、测试构建里存在），不能被带去任意地址 */
+/** 登录后只能跳回星图页、建档页或探针、诊断演示页（只在开发、测试构建里存在），不能被带去任意地址 */
 export function safeNext(next: string | null): string {
-  return next && /^\/(star-map|onboarding|dev\/probe)\/[0-9a-f-]{36}$/.test(next) ? next : '/dev/login';
+  return next && /^\/(star-map|onboarding|dev\/probe|dev\/diagnosis)\/[0-9a-f-]{36}$/.test(next) ? next : '/dev/login';
 }

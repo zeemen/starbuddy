@@ -16,8 +16,15 @@ shift
 set -e
 # 下面在 pg-ephemeral 里执行：PGHOST、PGDATABASE、PGUSER 已指向一次性实例
 psql -X -q -v ON_ERROR_STOP=1 -c "CREATE ROLE bff_app LOGIN IN ROLE starbuddy_bff" >/dev/null
+# 计量时钟（只在这个一次性测试库里，做法同 services/bff/tests/harness.ts）：把北京时间挪到当天白天，
+# 否则夜里跑端到端会撞上 22:00–06:00 的宵禁（数学诊断开始时要预留额度，SIE-02a）。时间照常往前走。
+psql -X -q -v ON_ERROR_STOP=1 -c "CREATE OR REPLACE FUNCTION platform.meter_now() RETURNS timestamptz LANGUAGE sql STABLE
+  SET search_path = pg_catalog AS \$f\$ SELECT ((date_trunc('day', now() AT TIME ZONE 'Asia/Shanghai') + interval '10 hours')
+  AT TIME ZONE 'Asia/Shanghai') + (now() - date_trunc('hour', now())) \$f\$" >/dev/null
 node --no-warnings "$ROOT/adapters/aya/scripts/register-content.ts" | psql -X -q -v ON_ERROR_STOP=1 >/dev/null
 PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -q -v ON_ERROR_STOP=1 -f "$ROOT/db/seeds/dev/star-map-synthetic.sql" >/dev/null
+# 数学诊断演示（SIE-02a）：九年级合成学生 D1 与家长 gD，试点会员（完整诊断额度）
+PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -q -v ON_ERROR_STOP=1 -f "$ROOT/db/seeds/dev/diagnosis-synthetic.sql" >/dev/null
 AYA_COUNT="$(psql -X -At -c "SELECT count(*) FROM platform.skill_node WHERE subject = 'aya'")"
 export AYA_COUNT
 
@@ -25,11 +32,35 @@ free_port() { python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",
 BFF_PORT="$(free_port)"
 WEB_PORT="$(free_port)"
 LOG="$(mktemp)"
+# 数学诊断（SIE-02a）：阿鸦适配器（验证器）+ 学习服务（合成题面只在 LEARNING_ENV=test）。服务间凭据每次随机生成，不落仓库。
+# 需要 services/learning/.venv（同 make learning-test）。
+PY="$ROOT/services/learning/.venv/bin/python"
+if [ ! -x "$PY" ]; then echo "e2e: 缺少 services/learning/.venv（学习服务、审核台后端）"; exit 3; fi
+psql -X -q -v ON_ERROR_STOP=1 -c "CREATE ROLE learning_app LOGIN IN ROLE starbuddy_learning" >/dev/null
+AYA_PORT="$(free_port)"
+LEARNING_PORT="$(free_port)"
+AYA_CRED="$(python3 -c 'import secrets; print(secrets.token_hex(24))')"
+SVC_CRED="$(python3 -c 'import secrets; print(secrets.token_hex(24))')"
+LLOG="$(mktemp)"
+( cd "$ROOT/adapters/aya" || exit 1
+  exec env AYA_ADAPTER_SERVICE_TOKEN="$AYA_CRED" PORT="$AYA_PORT" node --no-warnings src/main.ts ) > /dev/null 2>&1 < /dev/null &
+AYA_PID=$!
+( cd "$ROOT/services/learning" || exit 1
+  exec env -i PATH="$PATH" LEARNING_ENV=test PORT="$LEARNING_PORT" LEARNING_DIAGNOSIS_PRESENTER=synthetic \
+    LEARNING_DATABASE_URL="postgresql://learning_app@/starbuddy_test?host=$PGHOST" LEARNING_SERVICE_TOKEN="$SVC_CRED" \
+    LEARNING_ADAPTER_AYA_URL="http://127.0.0.1:$AYA_PORT" LEARNING_ADAPTER_AYA_TOKEN="$AYA_CRED" "$PY" -m learning ) > "$LLOG" 2>&1 < /dev/null &
+LEARNING_PID=$!
+trap 'kill "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true; rm -f "$LLOG"' EXIT
+for _ in $(seq 1 80); do
+  python3 -c "import socket,sys; ok=all(socket.socket().connect_ex(('127.0.0.1', p)) == 0 for p in ($LEARNING_PORT, $AYA_PORT)); sys.exit(0 if ok else 1)" && break
+  sleep 0.25
+done
 ( cd "$ROOT/services/bff" || exit 1
   exec env BFF_DATABASE_URL="postgresql://bff_app@/starbuddy_test?host=$PGHOST" PORT="$BFF_PORT" STARBUDDY_DEV_AUTH=1 \
+    BFF_LEARNING_URL="http://127.0.0.1:$LEARNING_PORT" BFF_LEARNING_TOKEN="$SVC_CRED" \
     node --no-warnings src/star-map/main.ts ) > "$LOG" 2>&1 < /dev/null &
 BFF_PID=$!
-trap 'kill "$BFF_PID" 2>/dev/null || true; rm -f "$LOG"' EXIT
+trap 'kill "$BFF_PID" "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true; rm -f "$LOG" "$LLOG"' EXIT
 for _ in $(seq 1 80); do
   python3 -c "import socket,sys; s=socket.socket(); sys.exit(0 if s.connect_ex(('127.0.0.1', $BFF_PORT)) == 0 else 1)" && break
   sleep 0.25
@@ -37,8 +68,6 @@ done
 
 # 审核台后端（services/learning/review_console）：两个登录角色分别只继承 kge、review；合成 staff 与语文合成地图；
 # 身份来自 staff 登录（PR 4，合成凭据在种子里）。需要 services/learning/.venv（同 make learning-test）。
-PY="$ROOT/services/learning/.venv/bin/python"
-if [ ! -x "$PY" ]; then echo "e2e: 缺少 services/learning/.venv（审核台后端）"; exit 3; fi
 psql -X -q -v ON_ERROR_STOP=1 -c "CREATE ROLE review_kge_app LOGIN IN ROLE starbuddy_kge" \
   -c "CREATE ROLE review_sign_app LOGIN IN ROLE starbuddy_review" >/dev/null
 PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -q -v ON_ERROR_STOP=1 -f "$ROOT/db/seeds/dev/review-synthetic.sql" >/dev/null
@@ -54,8 +83,8 @@ REVIEW_PID=$!
 ENVDTS="$(mktemp)"
 if [ -f "$WEB/next-env.d.ts" ]; then cp "$WEB/next-env.d.ts" "$ENVDTS"; else rm -f "$ENVDTS"; fi
 cleanup() {
-  kill "$BFF_PID" "$REVIEW_PID" 2>/dev/null || true
-  rm -f "$LOG" "$RLOG"
+  kill "$BFF_PID" "$REVIEW_PID" "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true
+  rm -f "$LOG" "$RLOG" "$LLOG"
   if [ -f "$ENVDTS" ]; then cp "$ENVDTS" "$WEB/next-env.d.ts"; rm -f "$ENVDTS"; else rm -f "$WEB/next-env.d.ts"; fi
   rm -rf "${WEB:?}/.next-e2e"
 }
@@ -78,5 +107,5 @@ rm -f "$BLOG"
 set +e
 npx --no-install playwright test "$@"
 rc=$?
-if [ $rc -ne 0 ]; then echo "--- BFF 日志（最后 20 行）"; tail -20 "$LOG"; echo "--- 审核台后端日志（最后 20 行）"; tail -20 "$RLOG"; fi
+if [ $rc -ne 0 ]; then echo "--- BFF 日志（最后 20 行）"; tail -20 "$LOG"; echo "--- 审核台后端日志（最后 20 行）"; tail -20 "$RLOG"; echo "--- 学习服务日志（最后 20 行）"; tail -20 "$LLOG"; fi
 exit $rc

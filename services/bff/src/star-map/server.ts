@@ -17,6 +17,15 @@
 //   学生不存在一律同一个 403）；409 IDEMPOTENCY_KEY_REUSED 同一幂等键内容不同（换新键再发，原样重试不会成功）、
 //   409 PROBE_ALREADY_LINKED 探针已关联别的作答；422 未知键、自由文本、取值不合要求（不回显输入）；
 //   429 24 小时写入上限（0025：事件 2000、探针 500）。
+// 数学自适应诊断（SIE-02a，specs/sie-02a-math-diagnosis/spec.md）同一个服务、同一套身份，只认学生本人：
+//   POST /bff/v0/students/{student_id}/diagnosis/sessions                          开始 / 续做 {subject, idempotency_key}
+//   GET  /bff/v0/students/{student_id}/diagnosis/sessions/{session_id}             当前题（只有题面、序号、题型与进度）
+//   POST /bff/v0/students/{student_id}/diagnosis/sessions/{session_id}/probe       {seq, prediction, asked_at, idempotency_key}
+//   POST /bff/v0/students/{student_id}/diagnosis/sessions/{session_id}/answer      {seq, answer, work?, elapsed_sec, idempotency_key}
+//   POST /bff/v0/students/{student_id}/diagnosis/sessions/{session_id}/pause       {seq?, step_elapsed_sec?, idempotency_key}
+//   POST /bff/v0/students/{student_id}/diagnosis/sessions/{session_id}/abandon     {idempotency_key}
+//   401 未登录；403 不是学生本人（家长、其他学生、不存在同一个 403）；422 请求体不合要求（不回显）；402 额度不可用；
+//   409 步骤已推进或幂等键冲突；503 学习服务不可用（同一请求重试）；没配学习服务时 503 DIAGNOSIS_UNAVAILABLE。接口定义 openapi/diagnosis.v0.yaml。
 //
 // 身份来源是开发桩（待人确认 #3，4-H 用真实会话替换）：只有同时满足
 //   - 创建服务时 devAuth 为真（main.ts 只在 STARBUDDY_DEV_AUTH=1 时传 true）；
@@ -30,11 +39,17 @@ import type { Pool } from 'pg';
 import { getStarMap, isUuid } from './query.ts';
 import { getOnboarding, recordStep, setTextbook, submitAnswer, submitExam, type ExamInput, type Outcome } from '../onboarding/query.ts';
 import { linkProbeAttempt, parseAttempt, parseEvent, parseProbe, recordEvent, recordProbe, type Recorded, type WriteOutcome } from '../events/query.ts';
+import {
+  abandonSession, currentStep, parseAbandon, parseAnswer, parsePause, parseProbe as parseDiagnosisProbe, parseStart, pauseSession,
+  startDiagnosis, submitAnswer as submitDiagnosisAnswer, submitProbe, type DiagnosisDeps, type Reply,
+} from '../diagnosis/service.ts';
 
 const ROUTE = /^\/bff\/v0\/students\/([^/]+)\/star-map$/;
 const ONBOARDING = /^\/bff\/v0\/students\/([^/]+)\/onboarding(?:\/(answers|exams|textbooks|progress))?$/;
 // 行为事件与探针：events、probes、probes/{id}/attempt
 const EVENTS = /^\/bff\/v0\/students\/([^/]+)\/(events|probes)(?:\/([^/]+)\/(attempt))?$/;
+// 数学自适应诊断：sessions、sessions/{id}、sessions/{id}/(probe|answer|pause|abandon)
+const DIAGNOSIS = /^\/bff\/v0\/students\/([^/]+)\/diagnosis\/sessions(?:\/([^/]+)(?:\/(probe|answer|pause|abandon))?)?$/;
 const MAX_BODY = 16 * 1024;
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 const FORWARDED_HEADERS = ['forwarded', 'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'x-real-ip'];
@@ -55,6 +70,7 @@ const TOO_MANY = problem(429, 'TOO_MANY', 'too many writes');
 const KEY_REUSED = problem(409, 'IDEMPOTENCY_KEY_REUSED', 'idempotency key reused with different content');
 const PROBE_LINKED = problem(409, 'PROBE_ALREADY_LINKED', 'probe already linked to a different attempt');
 const FORBIDDEN = problem(403, 'FORBIDDEN', 'not allowed');
+const DIAGNOSIS_UNAVAILABLE = problem(503, 'DIAGNOSIS_UNAVAILABLE', 'diagnosis is not available');
 const OK = JSON.stringify({ status: 'ok' });
 
 class BodyError extends Error {
@@ -94,6 +110,8 @@ export interface StarMapServerOptions {
   /** 访问日志；只收到路由、状态码、耗时与 student_id 的哈希，不含星图内容 */
   log?: (line: Record<string, unknown>) => void;
   now?: () => Date;
+  /** 数学自适应诊断：学习服务客户端等（不配时诊断接口一律 503） */
+  diagnosis?: Omit<DiagnosisDeps, 'pool'>;
 }
 
 /** 日志里的 student_id 只记哈希前 16 位 */
@@ -141,6 +159,46 @@ export function createStarMapServer(opts: StarMapServerOptions): Server {
           return null;
         }
       };
+      const dg = DIAGNOSIS.exec(url.pathname);
+      if (dg) {
+        const sub = dg[3] ?? (dg[2] ? 'current' : 'start');
+        record['route'] = `diagnosis/${sub}`;
+        if (req.method !== (sub === 'current' ? 'GET' : 'POST')) return send(405, METHOD_NOT_ALLOWED);
+        let studentId: string;
+        let sessionId: string;
+        try {
+          studentId = decodeURIComponent(dg[1]!);
+          sessionId = dg[2] === undefined ? '' : decodeURIComponent(dg[2]);
+        } catch {
+          return send(403, FORBIDDEN);
+        }
+        record['student'] = hashId(studentId); // 诊断：日志只记哈希，不记作答
+        const account = devAccount(req, server, opts.devAuth);
+        if (!account) return send(401, UNAUTHENTICATED);
+        if (!opts.diagnosis) return send(503, DIAGNOSIS_UNAVAILABLE);
+        const deps: DiagnosisDeps = { ...opts.diagnosis, pool: opts.pool };
+        const out = (r: Reply) => send(r.status, JSON.stringify(r.body), r.headers ?? {});
+        if (sub === 'current') return out(await currentStep(deps, account, studentId, sessionId));
+        const b = await readBody();
+        if (!b) return;
+        if (sub === 'start') {
+          const input = parseStart(b);
+          return input ? out(await startDiagnosis(deps, account, studentId, input)) : send(422, INVALID);
+        }
+        if (sub === 'probe') {
+          const input = parseDiagnosisProbe(b);
+          return input ? out(await submitProbe(deps, account, studentId, sessionId, input)) : send(422, INVALID);
+        }
+        if (sub === 'answer') {
+          const input = parseAnswer(b);
+          return input ? out(await submitDiagnosisAnswer(deps, account, studentId, sessionId, input)) : send(422, INVALID);
+        }
+        if (sub === 'pause') {
+          const input = parsePause(b);
+          return input ? out(await pauseSession(deps, account, studentId, sessionId, input)) : send(422, INVALID);
+        }
+        return parseAbandon(b) ? out(await abandonSession(deps, account, studentId, sessionId)) : send(422, INVALID);
+      }
       const ev = EVENTS.exec(url.pathname);
       if (ev) {
         const sub = ev[2] === 'events' ? 'events' : ev[4] ? 'probes/attempt' : 'probes';

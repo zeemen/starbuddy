@@ -86,3 +86,12 @@ a { color: inherit; }
 .probe-question { font-size: 1.125rem; }
 .probe-options { display: flex; flex-wrap: wrap; gap: 8px; }
 .probe-options button { font: inherit; min-height: 44px; min-width: 88px; }
+
+/* 数学自适应诊断组件（SIE-02a） */
+.diagnosis { max-width: 720px; }
+.diagnosis-timer { font-variant-numeric: tabular-nums; }
+.diagnosis-field { display: flex; flex-direction: column; gap: 4px; }
+.diagnosis-field textarea, .diagnosis-field input { font: inherit; padding: 8px; min-height: 44px; }
+.diagnosis-options { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--rule); padding: 8px 12px; }
+.diagnosis-options label { min-height: 44px; display: flex; align-items: center; gap: 8px; }
+.diagnosis-actions button { font: inherit; min-height: 44px; min-width: 88px; }

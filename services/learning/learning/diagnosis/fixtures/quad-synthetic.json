@@ -1,0 +1,543 @@
+{
+ "format": "starbuddy-diagnosis-fixture/1",
+ "note": "合成夹具（SIE-02a）：节点与边是合成的，题目 ID 借用阿鸦内容包里已登记的题（只作验证器判分的槽位），题面是占位文字；不含答案。只在 LEARNING_ENV=test 时可加载。",
+ "subject": "aya",
+ "map_version": "0.1.0",
+ "nodes": [
+  {
+   "node_id": "MATH.FUNC.BASIC.COORD",
+   "name": "平面直角坐标系"
+  },
+  {
+   "node_id": "MATH.ALG.EXPR.COMPLETE_SQ",
+   "name": "配方"
+  },
+  {
+   "node_id": "MATH.ALG.EQ.QUAD_SOLVE",
+   "name": "解一元二次方程"
+  },
+  {
+   "node_id": "MATH.FUNC.QUAD.CONCEPT",
+   "name": "二次函数的概念"
+  },
+  {
+   "node_id": "MATH.FUNC.QUAD.GRAPH_BASIC",
+   "name": "y=ax² 的图象"
+  },
+  {
+   "node_id": "MATH.FUNC.QUAD.VERTEX_FORM",
+   "name": "顶点式"
+  },
+  {
+   "node_id": "MATH.FUNC.QUAD.AXIS",
+   "name": "对称轴与顶点"
+  },
+  {
+   "node_id": "MATH.FUNC.QUAD.GENERAL_FORM",
+   "name": "一般式与配方"
+  },
+  {
+   "node_id": "MATH.FUNC.QUAD.COEF_SIGN",
+   "name": "系数与图象位置"
+  },
+  {
+   "node_id": "MATH.FUNC.QUAD.ROOTS",
+   "name": "与一元二次方程的关系"
+  },
+  {
+   "node_id": "MATH.FUNC.QUAD.INEQ",
+   "name": "与一元二次不等式"
+  },
+  {
+   "node_id": "MATH.FUNC.QUAD.EXTREMUM",
+   "name": "最值"
+  },
+  {
+   "node_id": "MATH.FUNC.QUAD.APPLY",
+   "name": "实际问题"
+  },
+  {
+   "node_id": "MATH.FUNC.QUAD.ANALYTIC",
+   "name": "求解析式"
+  }
+ ],
+ "edges": [
+  {
+   "from": "MATH.FUNC.BASIC.COORD",
+   "to": "MATH.FUNC.QUAD.CONCEPT",
+   "strength": "strong"
+  },
+  {
+   "from": "MATH.FUNC.QUAD.CONCEPT",
+   "to": "MATH.FUNC.QUAD.GRAPH_BASIC",
+   "strength": "strong"
+  },
+  {
+   "from": "MATH.FUNC.QUAD.GRAPH_BASIC",
+   "to": "MATH.FUNC.QUAD.VERTEX_FORM",
+   "strength": "strong"
+  },
+  {
+   "from": "MATH.FUNC.QUAD.VERTEX_FORM",
+   "to": "MATH.FUNC.QUAD.AXIS",
+   "strength": "strong"
+  },
+  {
+   "from": "MATH.FUNC.QUAD.VERTEX_FORM",
+   "to": "MATH.FUNC.QUAD.GENERAL_FORM",
+   "strength": "strong"
+  },
+  {
+   "from": "MATH.ALG.EXPR.COMPLETE_SQ",
+   "to": "MATH.FUNC.QUAD.GENERAL_FORM",
+   "strength": "strong"
+  },
+  {
+   "from": "MATH.FUNC.QUAD.GENERAL_FORM",
+   "to": "MATH.FUNC.QUAD.COEF_SIGN",
+   "strength": "strong"
+  },
+  {
+   "from": "MATH.FUNC.QUAD.AXIS",
+   "to": "MATH.FUNC.QUAD.COEF_SIGN",
+   "strength": "strong"
+  },
+  {
+   "from": "MATH.FUNC.QUAD.GENERAL_FORM",
+   "to": "MATH.FUNC.QUAD.ROOTS",
+   "strength": "strong"
+  },
+  {
+   "from": "MATH.ALG.EQ.QUAD_SOLVE",
+   "to": "MATH.FUNC.QUAD.ROOTS",
+   "strength": "strong"
+  },
+  {
+   "from": "MATH.FUNC.QUAD.ROOTS",
+   "to": "MATH.FUNC.QUAD.INEQ",
+   "strength": "strong"
+  },
+  {
+   "from": "MATH.FUNC.QUAD.AXIS",
+   "to": "MATH.FUNC.QUAD.EXTREMUM",
+   "strength": "strong"
+  },
+  {
+   "from": "MATH.FUNC.QUAD.GENERAL_FORM",
+   "to": "MATH.FUNC.QUAD.EXTREMUM",
+   "strength": "strong"
+  },
+  {
+   "from": "MATH.FUNC.QUAD.EXTREMUM",
+   "to": "MATH.FUNC.QUAD.APPLY",
+   "strength": "strong"
+  },
+  {
+   "from": "MATH.FUNC.QUAD.GENERAL_FORM",
+   "to": "MATH.FUNC.QUAD.ANALYTIC",
+   "strength": "strong"
+  },
+  {
+   "from": "MATH.FUNC.QUAD.CONCEPT",
+   "to": "MATH.FUNC.QUAD.APPLY",
+   "strength": "weak"
+  },
+  {
+   "from": "MATH.FUNC.QUAD.ROOTS",
+   "to": "MATH.FUNC.QUAD.EXTREMUM",
+   "strength": "weak"
+  },
+  {
+   "from": "MATH.FUNC.BASIC.COORD",
+   "to": "MATH.FUNC.QUAD.AXIS",
+   "strength": "weak"
+  },
+  {
+   "from": "MATH.ALG.EQ.QUAD_SOLVE",
+   "to": "MATH.FUNC.QUAD.ANALYTIC",
+   "strength": "weak"
+  },
+  {
+   "from": "MATH.FUNC.QUAD.GRAPH_BASIC",
+   "to": "MATH.FUNC.QUAD.INEQ",
+   "strength": "weak"
+  }
+ ],
+ "targets": {
+  "9": [
+   "MATH.FUNC.QUAD.APPLY",
+   "MATH.FUNC.QUAD.INEQ",
+   "MATH.FUNC.QUAD.COEF_SIGN",
+   "MATH.FUNC.QUAD.ANALYTIC",
+   "MATH.FUNC.QUAD.EXTREMUM"
+  ]
+ },
+ "items": [
+  {
+   "item_id": "Q-FUN-U01-T-002",
+   "node_id": "MATH.ALG.EQ.QUAD_SOLVE",
+   "format": "single",
+   "stem": "【合成题面·仅测试环境】解一元二次方程 · 第 1 题",
+   "options": [
+    {
+     "key": "A",
+     "text": "合成选项 A"
+    },
+    {
+     "key": "B",
+     "text": "合成选项 B"
+    },
+    {
+     "key": "C",
+     "text": "合成选项 C"
+    },
+    {
+     "key": "D",
+     "text": "合成选项 D"
+    }
+   ]
+  },
+  {
+   "item_id": "Q-FUN-U07-P-004",
+   "node_id": "MATH.ALG.EQ.QUAD_SOLVE",
+   "format": "fill",
+   "stem": "【合成题面·仅测试环境】解一元二次方程 · 第 2 题"
+  },
+  {
+   "item_id": "Q-FUN-U03-L-003",
+   "node_id": "MATH.FUNC.QUAD.CONCEPT",
+   "format": "single",
+   "stem": "【合成题面·仅测试环境】二次函数的概念 · 第 1 题",
+   "options": [
+    {
+     "key": "A",
+     "text": "合成选项 A"
+    },
+    {
+     "key": "B",
+     "text": "合成选项 B"
+    },
+    {
+     "key": "C",
+     "text": "合成选项 C"
+    },
+    {
+     "key": "D",
+     "text": "合成选项 D"
+    }
+   ]
+  },
+  {
+   "item_id": "Q-FUN-U10-D-001",
+   "node_id": "MATH.FUNC.QUAD.CONCEPT",
+   "format": "fill",
+   "stem": "【合成题面·仅测试环境】二次函数的概念 · 第 2 题"
+  },
+  {
+   "item_id": "Q-FUN-U11-D-001",
+   "node_id": "MATH.FUNC.QUAD.CONCEPT",
+   "format": "fill",
+   "stem": "【合成题面·仅测试环境】二次函数的概念 · 第 3 题"
+  },
+  {
+   "item_id": "Q-FUN-U03-P-002",
+   "node_id": "MATH.FUNC.QUAD.GRAPH_BASIC",
+   "format": "single",
+   "stem": "【合成题面·仅测试环境】y=ax² 的图象 · 第 1 题",
+   "options": [
+    {
+     "key": "A",
+     "text": "合成选项 A"
+    },
+    {
+     "key": "B",
+     "text": "合成选项 B"
+    },
+    {
+     "key": "C",
+     "text": "合成选项 C"
+    },
+    {
+     "key": "D",
+     "text": "合成选项 D"
+    }
+   ]
+  },
+  {
+   "item_id": "Q-FUN-U11-R-001",
+   "node_id": "MATH.FUNC.QUAD.GRAPH_BASIC",
+   "format": "fill",
+   "stem": "【合成题面·仅测试环境】y=ax² 的图象 · 第 2 题"
+  },
+  {
+   "item_id": "Q-FUN-U04-D-001",
+   "node_id": "MATH.FUNC.QUAD.VERTEX_FORM",
+   "format": "single",
+   "stem": "【合成题面·仅测试环境】顶点式 · 第 1 题",
+   "options": [
+    {
+     "key": "A",
+     "text": "合成选项 A"
+    },
+    {
+     "key": "B",
+     "text": "合成选项 B"
+    },
+    {
+     "key": "C",
+     "text": "合成选项 C"
+    },
+    {
+     "key": "D",
+     "text": "合成选项 D"
+    }
+   ]
+  },
+  {
+   "item_id": "Q-FUN-U13-D-001",
+   "node_id": "MATH.FUNC.QUAD.VERTEX_FORM",
+   "format": "fill",
+   "stem": "【合成题面·仅测试环境】顶点式 · 第 2 题"
+  },
+  {
+   "item_id": "Q-FUN-U13-L-002",
+   "node_id": "MATH.FUNC.QUAD.VERTEX_FORM",
+   "format": "fill",
+   "stem": "【合成题面·仅测试环境】顶点式 · 第 3 题"
+  },
+  {
+   "item_id": "Q-FUN-U05-P-003",
+   "node_id": "MATH.FUNC.QUAD.AXIS",
+   "format": "single",
+   "stem": "【合成题面·仅测试环境】对称轴与顶点 · 第 1 题",
+   "options": [
+    {
+     "key": "A",
+     "text": "合成选项 A"
+    },
+    {
+     "key": "B",
+     "text": "合成选项 B"
+    },
+    {
+     "key": "C",
+     "text": "合成选项 C"
+    },
+    {
+     "key": "D",
+     "text": "合成选项 D"
+    }
+   ]
+  },
+  {
+   "item_id": "Q-FUN-U13-R-001",
+   "node_id": "MATH.FUNC.QUAD.AXIS",
+   "format": "fill",
+   "stem": "【合成题面·仅测试环境】对称轴与顶点 · 第 2 题"
+  },
+  {
+   "item_id": "Q-FUN-U06-D-001",
+   "node_id": "MATH.FUNC.QUAD.GENERAL_FORM",
+   "format": "single",
+   "stem": "【合成题面·仅测试环境】一般式与配方 · 第 1 题",
+   "options": [
+    {
+     "key": "A",
+     "text": "合成选项 A"
+    },
+    {
+     "key": "B",
+     "text": "合成选项 B"
+    },
+    {
+     "key": "C",
+     "text": "合成选项 C"
+    },
+    {
+     "key": "D",
+     "text": "合成选项 D"
+    }
+   ]
+  },
+  {
+   "item_id": "Q-FUN-U13-T-003",
+   "node_id": "MATH.FUNC.QUAD.GENERAL_FORM",
+   "format": "fill",
+   "stem": "【合成题面·仅测试环境】一般式与配方 · 第 2 题"
+  },
+  {
+   "item_id": "Q-FUN-U14-D-001",
+   "node_id": "MATH.FUNC.QUAD.GENERAL_FORM",
+   "format": "fill",
+   "stem": "【合成题面·仅测试环境】一般式与配方 · 第 3 题"
+  },
+  {
+   "item_id": "Q-FUN-U06-R-001",
+   "node_id": "MATH.FUNC.QUAD.COEF_SIGN",
+   "format": "single",
+   "stem": "【合成题面·仅测试环境】系数与图象位置 · 第 1 题",
+   "options": [
+    {
+     "key": "A",
+     "text": "合成选项 A"
+    },
+    {
+     "key": "B",
+     "text": "合成选项 B"
+    },
+    {
+     "key": "C",
+     "text": "合成选项 C"
+    },
+    {
+     "key": "D",
+     "text": "合成选项 D"
+    }
+   ]
+  },
+  {
+   "item_id": "Q-SPR-DP-C1",
+   "node_id": "MATH.FUNC.QUAD.COEF_SIGN",
+   "format": "fill",
+   "stem": "【合成题面·仅测试环境】系数与图象位置 · 第 2 题"
+  },
+  {
+   "item_id": "Q-SPR-DP-S1",
+   "node_id": "MATH.FUNC.QUAD.COEF_SIGN",
+   "format": "fill",
+   "stem": "【合成题面·仅测试环境】系数与图象位置 · 第 3 题"
+  },
+  {
+   "item_id": "Q-FUN-U06-T-002",
+   "node_id": "MATH.FUNC.QUAD.ROOTS",
+   "format": "single",
+   "stem": "【合成题面·仅测试环境】与一元二次方程的关系 · 第 1 题",
+   "options": [
+    {
+     "key": "A",
+     "text": "合成选项 A"
+    },
+    {
+     "key": "B",
+     "text": "合成选项 B"
+    },
+    {
+     "key": "C",
+     "text": "合成选项 C"
+    },
+    {
+     "key": "D",
+     "text": "合成选项 D"
+    }
+   ]
+  },
+  {
+   "item_id": "Q-SPR-DP-S4",
+   "node_id": "MATH.FUNC.QUAD.ROOTS",
+   "format": "fill",
+   "stem": "【合成题面·仅测试环境】与一元二次方程的关系 · 第 2 题"
+  },
+  {
+   "item_id": "Q-FUN-U07-D-001",
+   "node_id": "MATH.FUNC.QUAD.EXTREMUM",
+   "format": "single",
+   "stem": "【合成题面·仅测试环境】最值 · 第 1 题",
+   "options": [
+    {
+     "key": "A",
+     "text": "合成选项 A"
+    },
+    {
+     "key": "B",
+     "text": "合成选项 B"
+    },
+    {
+     "key": "C",
+     "text": "合成选项 C"
+    },
+    {
+     "key": "D",
+     "text": "合成选项 D"
+    }
+   ]
+  },
+  {
+   "item_id": "Q-SPR-DP-V1",
+   "node_id": "MATH.FUNC.QUAD.EXTREMUM",
+   "format": "fill",
+   "stem": "【合成题面·仅测试环境】最值 · 第 2 题"
+  },
+  {
+   "item_id": "Q-SPR-QF-C1",
+   "node_id": "MATH.FUNC.QUAD.EXTREMUM",
+   "format": "fill",
+   "stem": "【合成题面·仅测试环境】最值 · 第 3 题"
+  },
+  {
+   "item_id": "Q-FUN-U07-R-001",
+   "node_id": "MATH.FUNC.QUAD.APPLY",
+   "format": "single",
+   "stem": "【合成题面·仅测试环境】实际问题 · 第 1 题",
+   "options": [
+    {
+     "key": "A",
+     "text": "合成选项 A"
+    },
+    {
+     "key": "B",
+     "text": "合成选项 B"
+    },
+    {
+     "key": "C",
+     "text": "合成选项 C"
+    },
+    {
+     "key": "D",
+     "text": "合成选项 D"
+    }
+   ]
+  },
+  {
+   "item_id": "Q-SPR-QF-S1",
+   "node_id": "MATH.FUNC.QUAD.APPLY",
+   "format": "fill",
+   "stem": "【合成题面·仅测试环境】实际问题 · 第 2 题"
+  },
+  {
+   "item_id": "Q-SPR-QF-S3",
+   "node_id": "MATH.FUNC.QUAD.APPLY",
+   "format": "fill",
+   "stem": "【合成题面·仅测试环境】实际问题 · 第 3 题"
+  },
+  {
+   "item_id": "Q-FUN-U09-P-002",
+   "node_id": "MATH.FUNC.QUAD.ANALYTIC",
+   "format": "single",
+   "stem": "【合成题面·仅测试环境】求解析式 · 第 1 题",
+   "options": [
+    {
+     "key": "A",
+     "text": "合成选项 A"
+    },
+    {
+     "key": "B",
+     "text": "合成选项 B"
+    },
+    {
+     "key": "C",
+     "text": "合成选项 C"
+    },
+    {
+     "key": "D",
+     "text": "合成选项 D"
+    }
+   ]
+  },
+  {
+   "item_id": "Q-SPR-QF-V1",
+   "node_id": "MATH.FUNC.QUAD.ANALYTIC",
+   "format": "fill",
+   "stem": "【合成题面·仅测试环境】求解析式 · 第 2 题"
+  }
+ ]
+}

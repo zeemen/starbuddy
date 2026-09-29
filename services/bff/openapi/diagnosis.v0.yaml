@@ -1,0 +1,308 @@
+# BFF ↔ 统一壳前端的数学自适应诊断接口（SIE-02a，specs/sie-02a-math-diagnosis/spec.md 设计要点 5）。
+# 服务内部接口，不是学科插件契约，不放 packages/contracts（与 events.v0.yaml、onboarding.v0.yaml 同一做法）。
+openapi: 3.1.0
+info:
+  title: StarBuddy BFF · adaptive math diagnosis (v0, prototype)
+  version: 0.1.0
+  description: >
+    学生本人做数学基线诊断：开始 / 续做、取当前题、提交“能做对吗”探针、提交作答、暂停、放弃。
+    只认学生本人：家长、其他学生、学生或会话不存在一律同一个 403（与 events.v0.yaml 同一套错误码）；未登录 401。
+    返回给前端的只有题面、步骤序号、题型与进度（已用秒数、上限、题数），不含答案、题号、知识节点、选题理由与对错；
+    诊断不产生任何对学生、家长可见的结论（CLAUDE.md 规则 3、11）。判分只来自阿鸦验证器，经学习服务落库。
+    计量（规则 4）：开始时以学生身份预留一次 diagnosis_full（幂等键即请求的 idempotency_key，usage_id 由键派生，迁移 0009），
+    会话结束结算、放弃或学习服务确定拒绝时释放；已有暂停的会话时“开始”即续做同一个会话，不另占额度；
+    学习服务结果未知时回 503 且不释放，同一请求重试会找回同一笔预留与同一个会话。
+    幂等：开始按 idempotency_key；探针按 idempotency_key 写 2-L 探针，同一步只认第一次；作答、暂停、放弃以（会话、步骤序号）为幂等锚点
+    （请求里的 idempotency_key 只做格式核对），同一步重放不重复判分、不重复写证据，响应头 `idempotent-replayed: true`。
+    题面在契约 present_item 签字前只有测试环境的合成题面（学习服务 LEARNING_ENV=test）。
+    身份来源是开发桩（x-dev-account-id，只在 STARBUDDY_DEV_AUTH=1 且只监听 loopback 时生效），4-H 用真实会话替换。请求体上限 16 KB。
+servers:
+  - url: http://127.0.0.1:8787
+paths:
+  /bff/v0/students/{student_id}/diagnosis/sessions:
+    parameters:
+      - $ref: '#/components/parameters/StudentId'
+      - $ref: '#/components/parameters/DevAccount'
+    post:
+      operationId: startDiagnosis
+      description: 开始诊断；已有未结束（进行中或暂停）的会话时续做它。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartInput' }
+      responses:
+        '200': { $ref: '#/components/responses/Session' }
+        '201': { $ref: '#/components/responses/Session' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '402':
+          description: 额度不可用（用完、没有权益、宵禁、留存态等），reason 给出编码
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/QuotaProblem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '413': { $ref: '#/components/responses/Problem' }
+        '415': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/diagnosis/sessions/{session_id}:
+    parameters:
+      - $ref: '#/components/parameters/StudentId'
+      - $ref: '#/components/parameters/SessionId'
+      - $ref: '#/components/parameters/DevAccount'
+    get:
+      operationId: getDiagnosisCurrent
+      description: 当前题与进度。会话结束时 step 为空（结束页只说“完成了，老师会看你的过程”，不给结论）。
+      responses:
+        '200':
+          description: 当前状态
+          headers: { Cache-Control: { schema: { const: no-store } } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionView' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/diagnosis/sessions/{session_id}/probe:
+    parameters:
+      - $ref: '#/components/parameters/StudentId'
+      - $ref: '#/components/parameters/SessionId'
+      - $ref: '#/components/parameters/DevAccount'
+    post:
+      operationId: postDiagnosisProbe
+      description: 当前题出题前的“这道题你觉得能做对吗？”（跳过不调用）。写 insight.confidence_probe（学生自述），作答后自动关联作答。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProbeInput' }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/diagnosis/sessions/{session_id}/answer:
+    parameters:
+      - $ref: '#/components/parameters/StudentId'
+      - $ref: '#/components/parameters/SessionId'
+      - $ref: '#/components/parameters/DevAccount'
+    post:
+      operationId: postDiagnosisAnswer
+      description: >
+        提交当前题的作答。判分只来自验证器，结果不返回（只回会话状态）。过程题（process）与讲解题（explain）另带 work（写出的全过程 /
+        用自己的话讲给老师听），整段进统一复核队列。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AnswerInput' }
+      responses:
+        '200': { $ref: '#/components/responses/Status' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/diagnosis/sessions/{session_id}/pause:
+    parameters:
+      - $ref: '#/components/parameters/StudentId'
+      - $ref: '#/components/parameters/SessionId'
+      - $ref: '#/components/parameters/DevAccount'
+    post:
+      operationId: pauseDiagnosis
+      description: 暂停（可跨天续做）。带上当前题已用秒数，续做时接着算；暂停期间不计时。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PauseInput' }
+      responses:
+        '200': { $ref: '#/components/responses/Status' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/diagnosis/sessions/{session_id}/abandon:
+    parameters:
+      - $ref: '#/components/parameters/StudentId'
+      - $ref: '#/components/parameters/SessionId'
+      - $ref: '#/components/parameters/DevAccount'
+    post:
+      operationId: abandonDiagnosis
+      description: 放弃本次诊断：释放开始时的额度预留；之后可以重新开始。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AbandonInput' }
+      responses:
+        '200': { $ref: '#/components/responses/Status' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+components:
+  parameters:
+    StudentId:
+      name: student_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    SessionId:
+      name: session_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    DevAccount:
+      name: x-dev-account-id
+      in: header
+      required: false
+      description: 开发身份桩（4-H 替换）。
+      schema: { type: string, format: uuid }
+  schemas:
+    Key: { type: string, pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' }
+    Seq: { type: integer, minimum: 1, maximum: 100 }
+    StartInput:
+      type: object
+      additionalProperties: false
+      required: [subject, idempotency_key]
+      properties:
+        subject: { const: aya, description: 试点期只有数学（阿鸦）的二次函数主题（待人确认 #1）。 }
+        idempotency_key: { $ref: '#/components/schemas/Key' }
+    ProbeInput:
+      type: object
+      additionalProperties: false
+      required: [seq, prediction, asked_at, idempotency_key]
+      properties:
+        seq: { $ref: '#/components/schemas/Seq' }
+        prediction: { enum: [yes, no, unsure] }
+        asked_at: { type: string, format: date-time }
+        idempotency_key: { $ref: '#/components/schemas/Key' }
+    AnswerInput:
+      type: object
+      additionalProperties: false
+      required: [seq, answer, elapsed_sec, idempotency_key]
+      properties:
+        seq: { $ref: '#/components/schemas/Seq' }
+        answer:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [text]
+              properties: { text: { type: string, minLength: 1, maxLength: 200 } }
+            - type: object
+              additionalProperties: false
+              required: [choice]
+              properties:
+                choice: { type: array, minItems: 1, maxItems: 8, uniqueItems: true, items: { type: string, pattern: '^[A-Z]$' } }
+        work: { type: string, minLength: 1, maxLength: 20000, description: 只给过程题与讲解题；自适应题带了回 422。 }
+        elapsed_sec: { type: integer, minimum: 0, maximum: 7200, description: 这道题实际作答用时（不含暂停），累计进会话用时。 }
+        idempotency_key: { $ref: '#/components/schemas/Key' }
+    PauseInput:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key]
+      properties:
+        seq: { $ref: '#/components/schemas/Seq' }
+        step_elapsed_sec: { type: integer, minimum: 0, maximum: 7200 }
+        idempotency_key: { $ref: '#/components/schemas/Key' }
+    AbandonInput:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key]
+      properties:
+        idempotency_key: { $ref: '#/components/schemas/Key' }
+    SessionView:
+      type: object
+      additionalProperties: false
+      required: [session_id, status, elapsed_sec, time_budget_sec, item_count, item_limit, step]
+      properties:
+        session_id: { type: string, format: uuid }
+        status: { enum: [active, paused, finished, abandoned] }
+        elapsed_sec: { type: integer, minimum: 0 }
+        time_budget_sec: { type: integer, description: 缺省 2100（35 分钟，待人确认 #4）。 }
+        item_count: { type: integer, minimum: 0 }
+        item_limit: { type: integer, description: 缺省 20。 }
+        step:
+          oneOf:
+            - type: 'null'
+            - type: object
+              additionalProperties: false
+              required: [seq, kind, item, probe_recorded, step_elapsed_sec]
+              properties:
+                seq: { $ref: '#/components/schemas/Seq' }
+                kind: { enum: [adaptive, process, explain], description: process = 写出全过程；explain = 用自己的话讲给老师听。 }
+                probe_recorded: { type: boolean }
+                step_elapsed_sec: { type: integer, minimum: 0, description: 这道题暂停前已用的秒数。 }
+                item:
+                  type: object
+                  additionalProperties: false
+                  required: [format, stem]
+                  properties:
+                    format: { enum: [single, multi, fill] }
+                    stem: { type: string }
+                    options:
+                      type: array
+                      items:
+                        type: object
+                        additionalProperties: false
+                        required: [key, text]
+                        properties: { key: { type: string }, text: { type: string } }
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        code:
+          type: string
+          description: >
+            UNAUTHENTICATED、FORBIDDEN、INVALID、IDEMPOTENCY_KEY_REUSED、STEP_NOT_CURRENT（会话已推进，重新取当前题）、
+            INVALID_STATE（例如暂停中作答）、SESSION_INCONSISTENT、KEY_EXPIRED / KEY_FAILED_PREVIOUSLY（换新键重新开始）、
+            NO_TARGETS、TOO_MANY、UPSTREAM_UNAVAILABLE（同一请求重试）、DIAGNOSIS_UNAVAILABLE。
+    QuotaProblem:
+      allOf:
+        - $ref: '#/components/schemas/Problem'
+        - type: object
+          required: [reason]
+          properties:
+            reason: { enum: [insufficient, no_entitlement, daily_cap_reached, curfew, curfew_soon, retained_no_ai, dedup_in_progress] }
+  responses:
+    Session:
+      description: 会话 ID 与状态（201 新建；200 续做或同一幂等键重放，响应头 idempotent-replayed 标明是否重放）
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [session_id, status]
+            properties:
+              session_id: { type: string, format: uuid }
+              status: { enum: [active, paused, finished, abandoned] }
+    Status:
+      description: 会话状态（作答后不回对错）
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [status]
+            properties:
+              status: { enum: [active, paused, finished, abandoned] }
+    Ok:
+      description: 已记录（或同一步已有探针，只认第一次）
+      content:
+        application/json:
+          schema: { type: object, additionalProperties: false, required: [status], properties: { status: { const: ok } } }
+    Problem:
+      description: 错误（不回显请求内容）
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

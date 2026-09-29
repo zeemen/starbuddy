@@ -40,14 +40,17 @@ test('构建产物里没有外部资源引用', { skip: BUILT ? false : '没有 
 // 开发专用页面（冲刺 2-L 探针演示页 /dev/probe，文件名 page.dev.tsx）不在生产构建里：路由表里没有、服务端产物里没有、
 // 任何产物里都没有演示页的文案与标记。端到端的测试构建输出到单独的 .next-e2e（scripts/e2e.sh），.next 永远是生产构建，
 // 这项检查不再有“测试构建就跳过”的出口。
-test('生产构建里没有开发专用页面（探针演示页）', {
+test('生产构建里没有开发专用页面（探针演示页、数学诊断演示页）', {
   skip: BUILT ? false : '没有 .next 构建产物（先 next build）',
 }, () => {
   const routes = JSON.parse(readFileSync(join(NEXT, 'app-path-routes-manifest.json'), 'utf8')) as Record<string, string>;
   assert.ok(Object.keys(routes).length > 0, '路由表为空，检查不到东西');
-  assert.deepEqual(Object.values(routes).filter((r) => r.startsWith('/dev/probe')), []);
+  assert.deepEqual(Object.values(routes).filter((r) => r.startsWith('/dev/probe') || r.startsWith('/dev/diagnosis')), []);
   assert.ok(!existsSync(join(NEXT, 'server', 'app', 'dev', 'probe')));
-  const markers = ['探针演示', '\\u63a2\\u9488\\u6f14\\u793a', 'probe-demo', 'page.dev'];
+  assert.ok(!existsSync(join(NEXT, 'server', 'app', 'dev', 'diagnosis')));  // 数学诊断演示页（SIE-02a）
+  const markers = ['探针演示', '\\u63a2\\u9488\\u6f14\\u793a', 'probe-demo', 'page.dev',
+    '数学诊断演示', '\\u6570\\u5b66\\u8bca\\u65ad\\u6f14\\u793a', 'diagnosis-page', '老师会看你的过程',
+    '\\u8001\\u5e08\\u4f1a\\u770b\\u4f60\\u7684\\u8fc7\\u7a0b'];
   const hits = files(NEXT).filter((p) => /\.(css|html|js|json|rsc|txt)$/.test(p))  // 不查 .map：源码映射里带注释原文
     .filter((p) => { const t = readFileSync(p, 'utf8'); return markers.some((m) => t.includes(m)); })
     .map((p) => relative(NEXT, p));

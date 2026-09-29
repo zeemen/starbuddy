@@ -117,3 +117,10 @@ LEARNING_ADAPTER_AYA_URL=http://127.0.0.1:8787 LEARNING_ADAPTER_AYA_TOKEN=... .v
 - 400 `ROUTE_REJECTED`（任务、数据级别、Prompt 版本不合要求）、403 `SUBJECT_MISMATCH`、503 `ROUTE_UNAVAILABLE`（可重试）；日志只记学科、任务、数据级别、状态与耗时。
 - 本接口不预留、不结算、不按幂等键去重：调用方（适配器）的 usage_id / idempotency_key 由学习服务上游的计量预留覆盖。
 - 端到端：`tests/test_e2e_zhixing.py`（学习服务 → 知行适配器进程 → 本接口 → 假供应商 → 平台库）。
+
+## 数学自适应诊断（`learning/diagnosis/`，specs/sie-02a-math-diagnosis，冲刺 3-L）
+- 内部接口 `/internal/v1/diagnosis/sessions[...]`（开始 / 续做、当前题、探针、作答、暂停、放弃），文档 `openapi/diagnosis-internal.v0.yaml`；只供 BFF 调用，服务间令牌鉴权。
+- 显式状态机与选题规则 `aya-diag-trace@0.1.0` 在 `engine.py`（纯函数，按步骤历史复算）；判分只经既有 grade 写入流程调阿鸦验证器；只写迁移 0027 两张表、证据与复核队列。
+- 题面：契约 `present_item` 签字前只有测试环境的合成题面（`LEARNING_DIAGNOSIS_PRESENTER=synthetic`，只允许 `LEARNING_ENV=test`）；不配时诊断接口 501。
+  选题信息来自合成夹具（缺省）或知识服务（`LEARNING_DIAGNOSIS_SOURCE=knowledge`，见 `config.py`）。
+- `make diagnosis-mutation`：18 个变异，断言诊断测试能发现。

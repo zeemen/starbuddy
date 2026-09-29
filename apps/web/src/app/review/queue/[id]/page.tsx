@@ -5,7 +5,8 @@ import { notFound, redirect } from 'next/navigation';
 import { currentSession } from '../../../../lib/review-session.ts';
 import {
   JUDGED_BY_LABEL, QUEUE_RESULT_LABEL, QUEUE_STATUS_LABEL, SOURCE_KIND_LABEL, SUBJECTS, VERDICT_LABEL, assignmentLabel, formatTime,
-  isTaskId, queueTask, reasonLabel, resolutionCodes, type ClaimSource, type GradeSource, type QueueTask, type ResolutionCode,
+  isTaskId, queueTask, reasonLabel, resolutionCodes, type ClaimSource, type DiagnosisStepSource, type GradeSource, type QueueTask,
+  type ResolutionCode,
 } from '../../../../lib/review.ts';
 import { ActionForm } from '../../ActionForm.tsx';
 import { releaseTaskAction, resolveTaskAction, takeTaskAction } from '../../actions.ts';
@@ -61,6 +62,20 @@ function ClaimView({ c }: { c: ClaimSource }) {
         <li>状态 {c.status} · 置信度 {c.confidence} · 来源 {c.source_type}{c.model_version ? <> · 模型版本 <code>{c.model_version}</code></> : null}</li>
         <li>证据 ID {c.evidence_ids.length} 个 · 建立时间 {formatTime(c.created_at)}</li>
       </ul>
+    </section>
+  );
+}
+
+function DiagnosisStepView({ d }: { d: DiagnosisStepSource }) {
+  return (
+    <section aria-labelledby="h-diagnosis" data-testid="diagnosis-step-source">
+      <h2 id="h-diagnosis">诊断步骤（过程观察）</h2>
+      <ul>
+        <li>任务 {d.kind === 'process' ? '写出全过程' : '讲给老师听'} · 知识节点 <code>{d.node_id}</code> · 题目 <code>{d.item_id ?? '—'}</code></li>
+        <li>最终答案的判分：{d.verdict ? VERDICT_LABEL[d.verdict] ?? d.verdict : '—'} · 证据 ID {d.evidence_ids?.length ?? 0} 个
+          · 作答时间 {formatTime(d.answered_at)}</li>
+      </ul>
+      <p className="muted">过程部分不自动评分；结案只记“已看过程并记录”或“无需处理”，不改分、不改掌握。</p>
     </section>
   );
 }
@@ -141,7 +156,8 @@ export default async function QueueTaskPage({ params }: { params: Promise<{ id: 
       </section>
       {src === null ? <p className="muted">来源对象暂无可显示的结构化内容</p>
         : t.source_kind === 'grade_result' ? <GradeView g={src as GradeSource} />
-        : t.source_kind === 'claim' ? <ClaimView c={src as ClaimSource} /> : null}
+        : t.source_kind === 'claim' ? <ClaimView c={src as ClaimSource} />
+        : t.source_kind === 'diagnosis_step' ? <DiagnosisStepView d={src as DiagnosisStepSource} /> : null}
       <section aria-labelledby="h-actions">
         <h2 id="h-actions">处理</h2>
         <Actions t={t} codes={codes} />

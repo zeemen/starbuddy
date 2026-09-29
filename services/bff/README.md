@@ -15,6 +15,10 @@
   - `POST /bff/v0/students/{id}/events`、`POST …/probes`、`POST …/probes/{probe_id}/attempt`；接口定义在 `openapi/events.v0.yaml`。
   - 只写不读，只回记录 ID；BFF 先校验请求体（未知键、自由文本一律 422），再调迁移 0025 的库函数（只认学生本人，家长、其他学生 403）。
   - 不消耗额度，不走计量预留；日志只记路由、状态码、耗时与学生 ID 的哈希，不记 payload。
+- 数学自适应诊断（SIE-02a，`specs/sie-02a-math-diagnosis/spec.md`）：`src/diagnosis/`，同一个服务、同一套身份，只认学生本人。
+  - `…/diagnosis/sessions`（开始 / 续做）、`…/sessions/{id}`（当前题）、`…/{id}/probe|answer|pause|abandon`；接口定义在 `openapi/diagnosis.v0.yaml`。
+  - 开始预留 `diagnosis_full`、结束结算、放弃与确定失败释放、结果未知不释放；续做不另占额度。探针经 2-L 库函数写入并在作答后关联。
+  - 学习服务地址与令牌：`BFF_LEARNING_URL`、`BFF_LEARNING_TOKEN`（不设时诊断接口 503）。
 
 ## 测试
 ```bash

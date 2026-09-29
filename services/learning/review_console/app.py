@@ -89,7 +89,7 @@ class ResolveBody(_Strict):
 QUEUE_STATUSES = ("open", "in_progress", "resolved")
 QUEUE_REASONS = ("subjective_dimension", "low_confidence", "verifier_boundary_case", "content_not_admitted", "ocr_low_confidence",
                  "dimension_unavailable", "student_appeal", "spot_check", "double_grading_disagreement",
-                 "full_score_second_review", "profile_dispute")
+                 "full_score_second_review", "profile_dispute", "process_observation")
 
 
 class LoginBody(_Strict):
