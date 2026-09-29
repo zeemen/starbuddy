@@ -4,7 +4,8 @@
 # 仓库里只提交 dev、test 两节，供应商只有本地假供应商（fake-a、fake-b 走本机 HTTP 桩，fake-x 模拟境外）。
 # staging、pilot、prod 留空：真实供应商进路由表属必停项（新增第三方或模型供应商），由人按白名单流程另起 PR，
 # 并在 docs/compliance/vendors.md 登记。pilot、prod 启动时校验：不出境、只用已批准的供应商、锁定快照、主备不同厂商或平台。
-# 地址与 Key 只写环境变量名，值不进仓库。
+# 地址与 Key 只写环境变量名，值不进仓库；allowed_hosts 登记地址允许的主机名，启动时核对（pilot、prod 必填且只接受 https）。
+# 版本与模型名必须写成带引号的字符串（YAML 会把 1.10 读成 1.1、把日期读成 date）；pilot、prod 必须显式写带版本的 api_name。
 version: 1
 defaults:
   # 待人确认 #5 的默认值，接真实供应商后再调
@@ -22,6 +23,7 @@ environments:
         protocol: openai_compat
         whitelist: test_only
         base_url_env: MODEL_FAKE_A_URL
+        allowed_hosts: [127.0.0.1, localhost]
       fake-b:
         org: fake-org-b
         platform: fake-platform-b
@@ -29,6 +31,7 @@ environments:
         protocol: openai_compat
         whitelist: test_only
         base_url_env: MODEL_FAKE_B_URL
+        allowed_hosts: [127.0.0.1, localhost]
       fake-x:
         # 模拟境外供应商：dev、test 只接 L0（合成数据，ADR 09 第 5 条、spec 待人确认 #3）
         org: fake-org-x
@@ -37,28 +40,29 @@ environments:
         protocol: openai_compat
         whitelist: test_only
         base_url_env: MODEL_FAKE_X_URL
+        allowed_hosts: [127.0.0.1, localhost]
     routes:
       T1:
         data_classes: [L0, L1, L2]
-        primary: { vendor: fake-a, model: fake-chat, version: 2026-09-01 }
-        backup: { vendor: fake-b, model: fake-chat, version: 2026-09-01 }
+        primary: { vendor: fake-a, model: fake-chat, version: "2026-09-01" }
+        backup: { vendor: fake-b, model: fake-chat, version: "2026-09-01" }
       T2:
         data_classes: [L0, L1, L2]
-        primary: { vendor: fake-a, model: fake-reasoner, version: 2026-09-01, params: { temperature: 0 } }
-        backup: { vendor: fake-b, model: fake-reasoner, version: 2026-09-01, params: { temperature: 0 } }
+        primary: { vendor: fake-a, model: fake-reasoner, version: "2026-09-01", params: { temperature: 0 } }
+        backup: { vendor: fake-b, model: fake-reasoner, version: "2026-09-01", params: { temperature: 0 } }
       T4:
         data_classes: [L0, L1, L2]
-        primary: { vendor: fake-a, model: fake-chat, version: 2026-09-01 }
-        backup: { vendor: fake-b, model: fake-chat, version: 2026-09-01 }
+        primary: { vendor: fake-a, model: fake-chat, version: "2026-09-01" }
+        backup: { vendor: fake-b, model: fake-chat, version: "2026-09-01" }
       T8:
         # 后台批量只处理内容（L0）：主选可以是模拟境外供应商
         data_classes: [L0]
-        primary: { vendor: fake-x, model: fake-batch, version: 2026-09-01 }
-        backup: { vendor: fake-a, model: fake-chat, version: 2026-09-01 }
+        primary: { vendor: fake-x, model: fake-batch, version: "2026-09-01" }
+        backup: { vendor: fake-a, model: fake-chat, version: "2026-09-01" }
       T9:
         data_classes: [L0, L1, L2, L3]
-        primary: { vendor: fake-b, model: fake-guard, version: 2026-09-01 }
-        backup: { vendor: fake-a, model: fake-guard, version: 2026-09-01 }
+        primary: { vendor: fake-b, model: fake-guard, version: "2026-09-01" }
+        backup: { vendor: fake-a, model: fake-guard, version: "2026-09-01" }
   test: *synthetic
   staging: {}
   pilot: {}

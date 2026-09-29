@@ -36,6 +36,7 @@ class CallRecord:
     output_tokens: int
     elapsed_ms: int
     model_mismatch: bool = False  # 供应商报告的模型名与配置不一致（按配置记录，告警）
+    reported_model: str | None = None  # 供应商报告的模型名（元数据，截断到 128 字符、只留安全字符）
 
 
 class LedgerSink(Protocol):

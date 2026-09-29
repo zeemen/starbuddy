@@ -106,6 +106,7 @@ LEARNING_ADAPTER_AYA_URL=http://127.0.0.1:8787 LEARNING_ADAPTER_AYA_TOKEN=... .v
 ## 模型路由骨架（`learning/model_router/`，specs/model-router-sprint1，冲刺 1-F）
 - 所有模型调用只经 `ModelRouter.route(RouteRequest)`：调用方声明任务类型（T1–T9）与数据级别（L0–L3），不指定模型；返回 `model_version`（`model:<供应商>/<模型>@<快照>`）与 `source_version`（`prompt:<模板>@<版本>`）。
 - 路由表 `config/model_routes.yaml`：仓库里只有 dev、test 两节与本地假供应商；staging、pilot、prod 由人按 `docs/compliance/vendors.md` 填写（必停项）。
-  pilot、prod 启动校验：不出境、只用已批准的供应商、锁定快照、主备不同厂商或平台；运行时再按数据级别过滤一次（境外只在 dev、test、staging 接 L0）。
+  pilot、prod 启动校验：不出境、只用已批准的供应商、登记主机名并只接受 https、显式写带版本的快照名、主备不同厂商或平台；staging 可达 L2 的路由也只能用已批准的供应商；运行时再按数据级别过滤一次（境外只在 dev、test 接 L0）。部署入口 `load_for_deployment()` 从 `LEARNING_ENV` 读环境。
 - 供应商地址与 Key 只写环境变量名（例如 `MODEL_FAKE_A_URL`），值由部署环境提供。调用记录只含元数据，默认写结构化日志（logger `starbuddy.model_router`）。
-- `make model-router-mutation`：改坏出境过滤、启动校验、熔断等 16 处关键检查，断言测试能发现。
+- `make model-router-mutation`：改坏出境过滤、启动校验、地址核对、熔断令牌、契约格式等 31 处关键检查，断言测试能发现（只有断言失败算发现）。
+- 部署要求：错误上报（例如 Sentry）关闭局部变量采集（`with_locals` 之类），避免把请求内容、Key 带进异常上报。

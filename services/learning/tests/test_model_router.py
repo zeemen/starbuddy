@@ -25,7 +25,7 @@ def repo_doc() -> dict:
 
 def vendor(org: str, residency: str = "domestic", protocol: str = "openai_compat", whitelist: str = "test_only", env: str = "X") -> dict:
     return {"org": org, "platform": org, "residency": residency, "protocol": protocol, "whitelist": whitelist,
-            "base_url_env": f"MODEL_{env}_URL"}
+            "base_url_env": f"MODEL_{env}_URL", "allowed_hosts": ["127.0.0.1", "api.example.invalid"]}
 
 
 def doc_with(env: str, vendors: dict, routes: dict) -> dict:
@@ -33,16 +33,34 @@ def doc_with(env: str, vendors: dict, routes: dict) -> dict:
             "environments": {env: {"vendors": vendors, "routes": routes}}}
 
 
-def target(v: str, model: str = "m", version: str = "2026-09-01") -> dict:
-    return {"vendor": v, "model": model, "version": version}
+def target(v: str, model: str = "m", version: str = "2026-09-01", pinned: bool = False) -> dict:
+    t = {"vendor": v, "model": model, "version": version}
+    if pinned:
+        t["api_name"] = f"{model}-{version}"
+    return t
 
 
 def req(task: Task = Task.T1, dc: DataClass = DataClass.L2, **kw) -> RouteRequest:
-    base = dict(task=task, data_class=dc, subject="aya", prompt_template="tutor/aya-hint", prompt_version="1.0",
+    base = dict(task=task, data_class=dc, subject="aya", prompt_template="tutor-aya-hint", prompt_version="1.0",
                 messages=({"role": "user", "content": SECRET_PROMPT},), usage_id="usage-0001-synthetic",
                 idempotency_key="idem-0001-synthetic")
     base.update(kw)
     return RouteRequest(**base)
+
+
+@pytest.fixture(autouse=True)
+def no_real_sleep(monkeypatch):
+    import asyncio
+
+    import learning.model_router.router as router_mod
+    slept: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        slept.append(seconds)
+        await asyncio.sleep(0)
+
+    monkeypatch.setattr(router_mod, "_default_sleep", fake_sleep)
+    return slept
 
 
 class Clock:
@@ -87,7 +105,7 @@ BAD_CONFIGS = {
     "prod 用测试专用的供应商": ("prod", {"a": vendor("a", whitelist="test_only")}, {"T1": {"data_classes": ["L2"], "primary": target("a")}}),
     "pilot 用假协议": ("pilot", {"a": vendor("a", protocol="fake", whitelist="approved")}, {"T1": {"data_classes": ["L2"], "primary": target("a")}}),
     "latest 别名": ("test", {"a": vendor("a")}, {"T1": {"data_classes": ["L0"], "primary": {**target("a"), "model": "chat-latest"}}}),
-    "api_name 用 latest": ("test", {"a": vendor("a")}, {"T1": {"data_classes": ["L0"], "primary": {**target("a"), "api_name": "qwen-max-latest"}}}),
+    "api_name 用 latest": ("test", {"a": vendor("a")}, {"T1": {"data_classes": ["L0"], "primary": {**target("a"), "api_name": "fake-chat-latest"}}}),
     "没有锁定版本": ("test", {"a": vendor("a")}, {"T1": {"data_classes": ["L0"], "primary": {"vendor": "a", "model": "m", "version": "stable"}}}),
     "主备同一厂商同一平台": ("test", {"a": vendor("same"), "b": vendor("same")},
                     {"T1": {"data_classes": ["L0"], "primary": target("a"), "backup": target("b")}}),
@@ -113,8 +131,49 @@ def test_bad_config_refuses_to_start(name):
 
 def test_valid_pilot_config_is_accepted():
     cfg = parse(doc_with("pilot", {"a": vendor("a", whitelist="approved"), "b": vendor("b", whitelist="approved")},
-                         {"T1": {"data_classes": ["L2"], "primary": target("a"), "backup": target("b")}}), "pilot")
+                         {"T1": {"data_classes": ["L2"], "primary": target("a", pinned=True), "backup": target("b", pinned=True)}}), "pilot")
     assert cfg.routes[Task.T1].backup is not None
+
+
+MORE_BAD = {
+    "YAML 不带引号的版本号（1.10 读成 1.1）": ("test", {"a": vendor("a")}, {"T1": {"data_classes": ["L0"], "primary": {**target("a"), "version": 1.1}}}),
+    "供应商 ID 带大写（不合契约）": ("test", {"Fake_A": vendor("a")}, {"T1": {"data_classes": ["L0"], "primary": target("Fake_A")}}),
+    "模型名带斜杠（不合契约）": ("test", {"a": vendor("a")}, {"T1": {"data_classes": ["L0"], "primary": {**target("a"), "model": "qwen/plus"}}}),
+    "pilot 没写 api_name": ("pilot", {"a": vendor("a", whitelist="approved")}, {"T1": {"data_classes": ["L2"], "primary": target("a")}}),
+    "pilot 的 api_name 不带版本": ("pilot", {"a": vendor("a", whitelist="approved")},
+                                {"T1": {"data_classes": ["L2"], "primary": {**target("a"), "api_name": "chat"}}}),
+    "pilot 没登记 allowed_hosts": ("pilot", {"a": {**vendor("a", whitelist="approved"), "allowed_hosts": []}},
+                                 {"T1": {"data_classes": ["L2"], "primary": target("a", pinned=True)}}),
+    "staging 可达 L2 却用未批准的供应商": ("staging", {"a": vendor("a", whitelist="pending")}, {"T1": {"data_classes": ["L2"], "primary": target("a")}}),
+    "供应商有未知键": ("test", {"a": {**vendor("a"), "base_url": "https://x.invalid"}}, {}),
+}
+
+
+@pytest.mark.parametrize("name", sorted(MORE_BAD))
+def test_more_bad_configs_refuse_to_start(name):
+    env, vendors, routes = MORE_BAD[name]
+    with pytest.raises(ConfigError):
+        parse(doc_with(env, vendors, routes), env)
+
+
+def test_hand_built_config_cannot_bypass_invariants():
+    import dataclasses
+    good = parse(doc_with("pilot", {"a": vendor("a", whitelist="approved")},
+                          {"T1": {"data_classes": ["L2"], "primary": target("a", pinned=True)}}), "pilot")
+    foreign = dataclasses.replace(good.vendors["a"], residency=Residency.FOREIGN)
+    bad = dataclasses.replace(good, vendors={"a": foreign})
+    with pytest.raises(ConfigError):
+        ModelRouter(bad, {"a": FakeProvider(foreign)}, sink=MemorySink())
+    with pytest.raises(TypeError):
+        good.vendors["b"] = foreign  # type: ignore[index]  配置只读
+
+
+def test_load_for_deployment_reads_env_from_environment():
+    from learning.model_router.config import load_for_deployment
+    assert load_for_deployment(DEFAULT_PATH, {"LEARNING_ENV": "test"}).env == "test"
+    for bad in ({}, {"LEARNING_ENV": "production"}):
+        with pytest.raises(ConfigError):
+            load_for_deployment(DEFAULT_PATH, bad)
 
 
 def test_config_errors_do_not_echo_secrets():
@@ -137,7 +196,20 @@ async def test_same_request_switches_vendor_by_config():
     rb = await ModelRouter(cfg_b, fakes(cfg_b), sink=MemorySink()).route(req())
     assert ra.model_version == "model:fake-a/fake-chat@2026-09-01"
     assert rb.model_version == "model:fake-b/fake-chat@2026-09-01"
-    assert ra.source_version == "prompt:tutor/aya-hint@1.0"
+    assert ra.source_version == "prompt:tutor-aya-hint@1.0"
+
+
+async def test_result_versions_match_plugin_api_contract():
+    """契约审查应改 1、2：两个字段直接用契约 plugin-api v1.0 的正则校验"""
+    import re
+    from pathlib import Path
+    spec = yaml.safe_load((Path(__file__).resolve().parents[3] / "packages/contracts/openapi/plugin-api.v1.0.yaml").read_text(encoding="utf-8"))
+    schemas = spec["components"]["schemas"]
+    mv, sv = re.compile(schemas["ModelVersion"]["pattern"]), re.compile(schemas["SourceVersion"]["pattern"])
+    cfg = load(DEFAULT_PATH, "test")
+    for task in (Task.T1, Task.T2, Task.T4, Task.T9):
+        res = await ModelRouter(cfg, fakes(cfg), sink=MemorySink()).route(req(task=task))
+        assert mv.match(res.model_version) and sv.match(res.source_version), (res.model_version, res.source_version)
 
 
 async def test_retries_reuse_idempotency_key_then_fall_back_to_backup():
@@ -264,7 +336,8 @@ async def test_deadline_caps_total_time():
 
 
 @pytest.mark.parametrize("field,value", [("usage_id", ""), ("idempotency_key", ""), ("prompt_version", ""), ("prompt_version", "latest"),
-                                         ("usage_id", "x" * 200), ("messages", ())])
+                                         ("usage_id", "x" * 200), ("messages", ()), ("prompt_template", "tutor/aya-hint"),
+                                         ("prompt_template", "Tutor")])
 async def test_missing_metering_or_prompt_fields_are_rejected(field, value):
     cfg = load(DEFAULT_PATH, "test")
     provs = fakes(cfg)
@@ -304,11 +377,126 @@ async def test_reported_model_mismatch_is_flagged():
     cfg = load(DEFAULT_PATH, "test")
 
     async def other(t, m, k):
-        return ProviderReply("x", Usage(), "some-other-model")
+        return ProviderReply("x", Usage(), "some-other-model\n<script>")
 
     mem = MemorySink()
     res = await ModelRouter(cfg, fakes(cfg, {"fake-a": other}), sink=mem).route(req())
-    assert res.model_version == "model:fake-a/fake-chat@2026-09-01" and mem.records[-1].model_mismatch
+    assert res.model_version == "model:fake-a/fake-chat@2026-09-01"
+    assert res.model_mismatch and res.reported_model == "some-other-modelscript", "调用方能收到不一致信号；报告的名字只留安全字符"
+    assert mem.records[-1].model_mismatch and mem.records[-1].reported_model == "some-other-modelscript"
+    ok = await ModelRouter(cfg, fakes(cfg), sink=mem).route(req())
+    assert not ok.model_mismatch
+
+
+async def test_unexpected_adapter_exception_releases_probe_and_is_recorded():
+    """安全审查应改 3：半开试探抛出意外异常时，试探名额要放回（重新打开），调用也要有记录"""
+    cfg = load(DEFAULT_PATH, "test")
+    clock = Clock()
+    mode = {"k": "server"}
+
+    async def a(t, m, k):
+        if mode["k"] == "server":
+            raise ProviderError("server")
+        if mode["k"] == "boom":
+            raise KeyError("unexpected")
+        return ProviderReply("ok-a", Usage(), t.api_name)
+
+    mem = MemorySink()
+    router = ModelRouter(cfg, fakes(cfg, {"fake-a": a, "fake-b": ok_reply("ok-b")}), sink=mem, clock=clock)
+    for _ in range(2):
+        await router.route(req())
+    clock.t += 31
+    mode["k"] = "boom"
+    res = await router.route(req())
+    assert res.output == "ok-b" and "bad_response" in [x.status for x in res.attempts]
+    assert router.breaker.state("fake-a", "T1") == "open", "试探失败重新打开，而不是卡在半开"
+    clock.t += 31
+    mode["k"] = "ok"
+    assert (await router.route(req())).output == "ok-a", "冷却后还能再试探并恢复"
+
+
+async def test_record_written_even_when_cancelled():
+    import asyncio
+    cfg = load(DEFAULT_PATH, "test")
+    gate = asyncio.Event()
+
+    async def hang(t, m, k):
+        await gate.wait()
+        return ProviderReply("x", Usage(), t.api_name)
+
+    mem = MemorySink()
+    task = asyncio.create_task(ModelRouter(cfg, fakes(cfg, {"fake-a": hang}), sink=mem).route(req()))
+    await asyncio.sleep(0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert mem.records[-1].outcome == "error"
+
+
+async def test_concurrent_client_error_does_not_free_the_probe():
+    """安全审查应改 4：半开时，非试探请求的 client 错误不能释放试探名额"""
+    import asyncio
+    cfg = load(DEFAULT_PATH, "test")
+    clock = Clock()
+    gate = asyncio.Event()
+    mode = {"k": "server"}
+
+    async def a(t, m, k):
+        if mode["k"] == "server":
+            raise ProviderError("server")
+        await gate.wait()
+        return ProviderReply("ok-a", Usage(), t.api_name)
+
+    provs = fakes(cfg, {"fake-a": a, "fake-b": ok_reply("ok-b")})
+    router = ModelRouter(cfg, provs, sink=MemorySink(), clock=clock)
+    for _ in range(2):
+        await router.route(req())
+    clock.t += 31
+    mode["k"] = "hold"
+    n = len(provs["fake-a"].calls)
+    probe = asyncio.create_task(router.route(req()))
+    await asyncio.sleep(0)
+    from learning.model_router.breaker import Ticket
+    router.breaker.release(Ticket("fake-a", "T1", True))  # 伪造的试探令牌不能释放名额
+    router.breaker.release(Ticket("fake-a", "T1", False))
+    second = await router.route(req())
+    gate.set()
+    assert (await probe).output == "ok-a" and second.output == "ok-b"
+    assert len(provs["fake-a"].calls) == n + 1
+
+
+async def test_default_deadline_applies(no_real_sleep):
+    cfg = load(DEFAULT_PATH, "test")
+    clock = Clock()
+
+    async def slow(t, m, k):
+        clock.t += 100
+        raise ProviderError("timeout")
+
+    with pytest.raises(RouteUnavailable) as e:
+        await ModelRouter(cfg, fakes(cfg, {"fake-a": slow, "fake-b": slow}), sink=MemorySink(), clock=clock).route(req())
+    assert len(e.value.attempts) == 2, "不传 deadline_ms 时总时限 180 秒"
+
+
+async def test_backoff_and_retry_after(no_real_sleep):
+    cfg = load(DEFAULT_PATH, "test")
+
+    async def limited(t, m, k):
+        raise ProviderError("rate_limited", retry_after=3.0)
+
+    async def down(t, m, k):
+        raise ProviderError("server")
+
+    with pytest.raises(RouteUnavailable):
+        await ModelRouter(cfg, fakes(cfg, {"fake-a": limited, "fake-b": down}), sink=MemorySink()).route(req())
+    assert no_real_sleep == [3.0, 3.0, 0.2, 0.4], "429 按 Retry-After 等；其他可重试错误按 0.2 × 2^n 退避"
+
+
+@pytest.mark.parametrize("subject", ["math", "AYA", "aya; drop"])
+async def test_subject_must_be_platform_code(subject):
+    cfg = load(DEFAULT_PATH, "test")
+    with pytest.raises(RouteRejected):
+        await ModelRouter(cfg, fakes(cfg), sink=MemorySink()).route(req(subject=subject))
 
 
 # ---------------- 性质测试：任何配置、任何故障序列都不出境 ----------------
@@ -321,14 +509,14 @@ def random_doc(rng: random.Random, env: str) -> dict:
         vendors[f"v{i}"] = {"org": f"o{i}" if rng.random() > bad else "o0", "platform": f"p{rng.randint(0, 2)}",
                             "residency": "foreign" if rng.random() < bad else "domestic",
                             "protocol": "fake" if rng.random() < bad / 2 else "openai_compat",
-                            "whitelist": ("approved" if strict else "test_only") if rng.random() > bad / 2 else "pending",
-                            "base_url_env": f"MODEL_V{i}_URL"}
+                            "whitelist": ("test_only" if env in ("dev", "test") else "approved") if rng.random() > bad / 2 else "pending",
+                            "base_url_env": f"MODEL_V{i}_URL", "allowed_hosts": ["api.example.invalid"]}
     routes = {}
     for t in rng.sample(["T1", "T2", "T3", "T4", "T8", "T9"], rng.randint(1, 4)):
         classes = sorted(rng.sample(["L0", "L1", "L2", "L3"], rng.randint(1, 4))) if rng.random() < 0.6 else ["L0"]
-        r = {"data_classes": classes, "primary": target(rng.choice(list(vendors)))}
+        r = {"data_classes": classes, "primary": target(rng.choice(list(vendors)), pinned=True)}
         if rng.random() < 0.7:
-            r["backup"] = target(rng.choice(list(vendors)), model="m2")
+            r["backup"] = target(rng.choice(list(vendors)), model="m2", pinned=True)
         routes[t] = r
     return doc_with(env, vendors, routes)
 
@@ -367,7 +555,7 @@ async def test_property_never_egress_beyond_allowed(env):
                 pass
         for vid, dc in reached:
             if cfg.vendors[vid].residency is Residency.FOREIGN:
-                assert env not in ("pilot", "prod"), f"{env} 到达了境外供应商"
+                assert env in ("dev", "test"), f"{env} 到达了境外供应商"
                 assert dc is DataClass.L0, f"{env} 把 {dc.value} 发到了境外供应商"
     assert parsed >= 40, f"随机配置几乎都被拒（{parsed}），性质测试没有测到东西"
 
@@ -378,7 +566,7 @@ def test_egress_allowed_table():
     for env in ("dev", "test", "staging", "pilot", "prod"):
         for dc in DataClass:
             assert egress_allowed(a, dc, env)
-            assert egress_allowed(x, dc, env) == (env in ("dev", "test", "staging") and dc is DataClass.L0)
+            assert egress_allowed(x, dc, env) == (env in ("dev", "test") and dc is DataClass.L0)
 
 
 # ---------------- OpenAI 兼容适配器（本机模拟传输，不联网） ----------------
@@ -427,6 +615,30 @@ async def test_openai_compat_timeout():
     with pytest.raises(ProviderError) as e:
         await compat(handler).complete(t, [], idempotency_key="k" * 8, timeout=5)
     assert e.value.kind == "timeout"
+
+
+def test_openai_compat_checks_scheme_and_host():
+    v = parse(doc_with("test", {"a": vendor("a", env="A")}, {}), "test").vendors["a"]
+    with pytest.raises(ConfigError):
+        OpenAICompatProvider(v, {"MODEL_A_URL": "http://127.0.0.1:9"}, env="pilot")  # pilot 只接受 https
+    with pytest.raises(ConfigError) as e:
+        OpenAICompatProvider(v, {"MODEL_A_URL": "https://evil.example.org/v1"}, env="test")  # 主机名不在登记里
+    assert "evil" not in str(e.value)
+    with pytest.raises(ConfigError):
+        OpenAICompatProvider(v, {"MODEL_A_URL": "https://u:p@api.example.invalid"}, env="test")
+    OpenAICompatProvider(v, {"MODEL_A_URL": "https://api.example.invalid/v1"}, env="pilot")
+
+
+async def test_openai_compat_limits_response_size_and_reads_retry_after():
+    t = parse(doc_with("test", {"a": vendor("a")}, {"T1": {"data_classes": ["L0"], "primary": target("a")}}), "test").routes[Task.T1].primary
+    big = compat(lambda r: httpx.Response(200, content=b"x" * (2 << 20)))
+    with pytest.raises(ProviderError) as e:
+        await big.complete(t, [], idempotency_key="k" * 8, timeout=5)
+    assert e.value.kind == "bad_response"
+    limited = compat(lambda r: httpx.Response(429, headers={"retry-after": "999"}))
+    with pytest.raises(ProviderError) as e:
+        await limited.complete(t, [], idempotency_key="k" * 8, timeout=5)
+    assert e.value.kind == "rate_limited" and e.value.retry_after == 30.0, "Retry-After 封顶 30 秒"
 
 
 def test_openai_compat_requires_env_values():

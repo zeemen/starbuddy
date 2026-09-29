@@ -14,7 +14,8 @@ class Task(str, enum.Enum):
     """九类任务（《底层大模型选型建议 V1.0》，ADR 04 增补）"""
 
     T1 = "T1"  # 教学对话
-    T2 = "T2"  # 解题与判分推理
+    # 解题与判分推理。输出是模型文本，不是分数：分数只能由验证器或 Rubric 解析、确定（CLAUDE.md 规则 3，ADR 04 增补第 8 条）
+    T2 = "T2"
     T3 = "T3"  # 拍照识题与手写识别
     T4 = "T4"  # 作文批改
     T5 = "T5"  # 英语口语评测
@@ -110,6 +111,10 @@ class RouteResult:
     source_version: str
     attempts: tuple[Attempt, ...]
     usage: Usage = field(default_factory=Usage)
+    # 供应商报告的模型名与配置的快照名不一致（契约审查应改 3）：调用方据此决定是否转人工复核；
+    # 判分类任务出现不一致要不要直接拒收属于判分逻辑（必停项，lessons 待人确认）
+    model_mismatch: bool = False
+    reported_model: str | None = None
 
     def __repr__(self) -> str:
         return f"RouteResult(model_version={self.model_version}, source_version={self.source_version}, output=<redacted>)"
