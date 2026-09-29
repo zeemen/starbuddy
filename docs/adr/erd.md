@@ -155,7 +155,7 @@ erDiagram
 
 ## kge schema：公共知识层（0011 与 0012，KGE schema v0.9）
 
-公共知识层：地图版本、骨架、投影、原子与成长治理。唯一写入方是知识服务 `starbuddy_kge`；不含任何学生数据，也没有学生键（规则 13，攻击面测试断言）。规范见 `docs/design/kge/id-and-segments.md`，spec 见 `specs/kge-schema-v0.9/spec.md`。
+公共知识层：地图版本、骨架、投影、原子与成长治理。唯一写入方是知识服务 `starbuddy_kge`；不含任何学生数据，也没有学生键（规则 13，攻击面测试断言）。对外只读工具用 `starbuddy_kge_read`（迁移 0026 草稿）：只读已发布版本里有效的节点、边、已核对投影、审核通过的标签、有效期内的时政，不能写任何表，读不到审核与治理对象，也没有任何 platform / insight / policy 表权限（`db/tests/79h_kge_reader.sql`）。规范见 `docs/design/kge/id-and-segments.md`，spec 见 `specs/kge-schema-v0.9/spec.md`。
 
 ```mermaid
 erDiagram

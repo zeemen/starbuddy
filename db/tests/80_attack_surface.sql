@@ -10,7 +10,7 @@ CREATE FUNCTION t.app_schemas() RETURNS SETOF oid LANGUAGE sql STABLE AS $$
      AND nspname NOT LIKE 'pg_temp%' AND nspname NOT LIKE 'pg_toast_temp%' $$;
 CREATE FUNCTION t.app_roles() RETURNS SETOF text LANGUAGE sql IMMUTABLE AS $$
   SELECT unnest(ARRAY['starbuddy_bff', 'starbuddy_learning', 'starbuddy_review', 'starbuddy_scheduler', 'starbuddy_insight',
-                       'starbuddy_kge', 'starbuddy_report', 'starbuddy_authz']) $$;
+                       'starbuddy_kge', 'starbuddy_kge_read', 'starbuddy_report', 'starbuddy_authz']) $$;
 
 -- ================= 一、每张表都 ENABLE + FORCE RLS；子分区对应用角色没有任何权限（I1、J1） =================
 SELECT t.ok(NOT EXISTS (
