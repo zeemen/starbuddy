@@ -324,6 +324,18 @@ func|platform.set_time_guard(uuid,integer,time without time zone,time without ti
 func|platform.set_time_guard(uuid,integer,time without time zone,time without time zone)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|platform.signup_guardian(text)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.signup_guardian(text)|starbuddy_bff|EXECUTE|starbuddy_authz
+func|platform.staff_bf_salt()|starbuddy_authz|EXECUTE|SUPERUSER
+func|platform.staff_crypt(text,text)|starbuddy_authz|EXECUTE|SUPERUSER
+func|platform.staff_hmac_sha1(bytea,bytea)|starbuddy_authz|EXECUTE|SUPERUSER
+func|platform.staff_login(text,text,text)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.staff_login(text,text,text)|starbuddy_review|EXECUTE|starbuddy_authz
+func|platform.staff_logout(text)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.staff_logout(text)|starbuddy_review|EXECUTE|starbuddy_authz
+func|platform.staff_now()|starbuddy_authz|EXECUTE|SUPERUSER
+func|platform.staff_random_bytes(integer)|starbuddy_authz|EXECUTE|SUPERUSER
+func|platform.staff_session_resolve(text)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.staff_session_resolve(text)|starbuddy_review|EXECUTE|starbuddy_authz
+func|platform.staff_totp(bytea,bigint)|starbuddy_authz|EXECUTE|SUPERUSER
 func|policy.distinct_count(text[])|starbuddy_authz|EXECUTE|SUPERUSER
 func|policy.distinct_count(text[])|starbuddy_kge|EXECUTE|SUPERUSER
 func|policy.distinct_count(text[])|starbuddy_learning|EXECUTE|SUPERUSER
@@ -394,6 +406,9 @@ owner|platform.redeem_guardian_invite(text)|starbuddy_authz
 owner|platform.resolve_review_task(uuid,text)|starbuddy_authz
 owner|platform.set_time_guard(uuid,integer,time without time zone,time without time zone)|starbuddy_authz
 owner|platform.signup_guardian(text)|starbuddy_authz
+owner|platform.staff_login(text,text,text)|starbuddy_authz
+owner|platform.staff_logout(text)|starbuddy_authz
+owner|platform.staff_session_resolve(text)|starbuddy_authz
 owner|policy.publish_scheme(uuid)|starbuddy_authz
 rel|insight.claim_history|starbuddy_authz|INSERT|SUPERUSER
 rel|insight.claim_history|starbuddy_insight|SELECT|SUPERUSER
@@ -566,6 +581,11 @@ rel|platform.skill_observation|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.skill_observation|starbuddy_bff|SELECT|SUPERUSER
 rel|platform.skill_observation|starbuddy_learning|INSERT|SUPERUSER
 rel|platform.skill_observation|starbuddy_learning|SELECT|SUPERUSER
+rel|platform.staff_credential|starbuddy_authz|SELECT|SUPERUSER
+rel|platform.staff_credential|starbuddy_authz|UPDATE|SUPERUSER
+rel|platform.staff_session|starbuddy_authz|INSERT|SUPERUSER
+rel|platform.staff_session|starbuddy_authz|SELECT|SUPERUSER
+rel|platform.staff_session|starbuddy_authz|UPDATE|SUPERUSER
 rel|platform.student_profile|starbuddy_authz|INSERT|SUPERUSER
 rel|platform.student_profile|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.student_profile|starbuddy_bff|SELECT|SUPERUSER
@@ -711,4 +731,7 @@ secdef|platform.redeem_guardian_invite(text)
 secdef|platform.resolve_review_task(uuid,text)
 secdef|platform.set_time_guard(uuid,integer,time without time zone,time without time zone)
 secdef|platform.signup_guardian(text)
+secdef|platform.staff_login(text,text,text)
+secdef|platform.staff_logout(text)
+secdef|platform.staff_session_resolve(text)
 secdef|policy.publish_scheme(uuid)
