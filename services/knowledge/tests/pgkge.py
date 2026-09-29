@@ -24,6 +24,9 @@ APP_ROLE = "knowledge_app"          # 只继承 starbuddy_kge_read（正例）
 BYPASS_ROLE = "knowledge_bypass"    # 继承 kge_read 但有 BYPASSRLS（反例）
 WRITER_ROLE = "knowledge_writer"    # 同时继承 kge_read 与 starbuddy_kge（反例）
 OTHER_ROLE = "knowledge_other"      # 不继承 kge_read（反例）
+PREDEF_ROLE = "knowledge_predef"    # 继承 kge_read 且是 pg_read_all_data 成员（反例）
+CREATEDB_ROLE = "knowledge_createdb"  # 继承 kge_read 但有 CREATEDB（反例）
+CREATEROLE_ROLE = "knowledge_createrole"  # 继承 kge_read 但有 CREATEROLE（反例）
 
 VR = "c0000000-0000-4000-8000-0000000000a8"
 VD = "c0000000-0000-4000-8000-0000000000aa"
@@ -126,8 +129,13 @@ INSERT INTO kge.item_tag (map_version_id, subject, item_id, main_node_id, node_i
   ('{VP}', 'aya', 'SYN-I5', '{LINEAR}', '{{}}', 'apply', 0.5, '{FAM}', 'original', 'original', 'rejected');
 INSERT INTO kge.scoring_point (map_version_id, subject, item_id, rubric_version, point_id, score, node_ids, subject_dimension,
                                keyword_family, partial_credit_rule) VALUES
-  ('{VP}', 'aya', 'SYN-I1', 'syn-rubric@0.1.0', 'transpose', 2, '{{{TRANSPOSE}}}', 'computation', '{{"core": ["移项", "变号"]}}', '{{}}'),
-  ('{VP}', 'aya', 'SYN-I1', 'syn-rubric@0.1.0', 'solve', 1, '{{{LINEAR}}}', NULL, '[]', '{{"mode": "stepwise"}}');
+  ('{VP}', 'aya', 'SYN-I1', 'syn-rubric@0.1.0', 'transpose', 2, '{{{TRANSPOSE}}}', 'computation', '["移项", "变号", "移项"]', '{{}}'),
+  ('{VP}', 'aya', 'SYN-I1', 'syn-rubric@0.1.0', 'solve', 1, '{{{LINEAR}}}', NULL, '[]', '{{"mode": "stepwise"}}'),
+  -- 映射有损（fail closed，回 500）：关键词按类别分组的对象写法；部分给分规则带 mode 以外的键
+  ('{VP}', 'aya', 'SYN-I2', 'syn-rubric@0.1.0', 'grouped', 1, '{{{LINEAR}}}', NULL, '{{"core": ["移项"]}}', '{{}}'),
+  ('{VP}', 'aya', 'SYN-I3', 'syn-rubric@0.1.0', 'extra', 1, '{{{APPLY}}}', NULL, '[]', '{{"mode": "stepwise", "cap": 1}}'),
+  -- 题目标签待审（SYN-I4）：采分点不返回
+  ('{VP}', 'aya', 'SYN-I4', 'syn-rubric@0.1.0', 'pending', 1, '{{{LINEAR}}}', NULL, '[]', '{{}}');
 INSERT INTO kge.current_affair (map_version_id, node_ids, source, valid_from, valid_until, review_status) VALUES
   ('{VP}', '{{{LINEAR}}}', '合成来源：有效', current_date - 1, current_date + 30, 'published'),
   ('{VP}', '{{{LINEAR}}}', '合成来源：已过期', current_date - 60, current_date, 'published'),
@@ -138,6 +146,9 @@ CREATE ROLE {APP_ROLE} LOGIN IN ROLE starbuddy_kge_read;
 CREATE ROLE {BYPASS_ROLE} LOGIN BYPASSRLS IN ROLE starbuddy_kge_read;
 CREATE ROLE {WRITER_ROLE} LOGIN IN ROLE starbuddy_kge_read, starbuddy_kge;
 CREATE ROLE {OTHER_ROLE} LOGIN;
+CREATE ROLE {PREDEF_ROLE} LOGIN IN ROLE starbuddy_kge_read, pg_read_all_data;
+CREATE ROLE {CREATEDB_ROLE} LOGIN CREATEDB IN ROLE starbuddy_kge_read;
+CREATE ROLE {CREATEROLE_ROLE} LOGIN CREATEROLE IN ROLE starbuddy_kge_read;
 """
 
 

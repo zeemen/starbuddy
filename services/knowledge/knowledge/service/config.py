@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import ipaddress
 import os
+import socket
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -28,17 +29,33 @@ DEFAULT_PORT = 8790
 _WILDCARD = {"", "*", "0.0.0.0", "::", "[::]", "0:0:0:0:0:0:0:0"}
 
 
+def _resolved(h: str) -> list[ipaddress.IPv4Address | ipaddress.IPv6Address]:
+    """把监听地址解析成 IP：IP 字面量直接取；IPv4 旧式写法（"0"、"0x0"、"0.0" 等）按 inet_aton 取；主机名经 getaddrinfo"""
+    bare = h[1:-1] if h.startswith("[") and h.endswith("]") else h
+    try:
+        return [ipaddress.ip_address(bare)]
+    except ValueError:
+        pass
+    try:
+        return [ipaddress.IPv4Address(socket.inet_aton(bare))]
+    except OSError:
+        pass
+    try:
+        infos = socket.getaddrinfo(bare, None, type=socket.SOCK_STREAM)
+    except (socket.gaierror, UnicodeError):
+        raise RuntimeError("KNOWLEDGE_HOST 无法解析：请配置具体地址") from None
+    return [ipaddress.ip_address(str(info[4][0]).split("%", 1)[0]) for info in infos]
+
+
 def check_host(host: str) -> str:
-    """监听地址只能是具体地址：回环、内网 IP 或主机名；通配地址一律拒绝"""
+    """监听地址只能是具体地址：回环、内网 IP 或主机名；通配地址一律拒绝。
+    主机名与旧式 IPv4 写法先解析，解析结果里有 unspecified（0.0.0.0、::）同样拒绝（"0" 会被解析成 0.0.0.0）"""
     h = host.strip()
     if h.lower() in _WILDCARD:
         raise RuntimeError("KNOWLEDGE_HOST 不能是通配地址（0.0.0.0、:: 等）：只在服务内网监听，请配置具体地址")
-    try:
-        ip = ipaddress.ip_address(h.strip("[]"))
-    except ValueError:
-        return h
-    if ip.is_unspecified:
-        raise RuntimeError("KNOWLEDGE_HOST 不能是通配地址")
+    ips = _resolved(h)
+    if not ips or any(ip.is_unspecified for ip in ips):
+        raise RuntimeError("KNOWLEDGE_HOST 不能是通配地址（解析结果是 0.0.0.0 或 ::）")
     return h
 
 

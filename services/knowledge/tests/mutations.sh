@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 知识服务（KGE-03 PR ① + PR ② + PR ③）的变异测试：逐条把编译器、程序体检、知识服务读工具、兜底检索、M1 报表与
+# 知识服务（KGE-03 PR ① + PR ② + PR ③ + 审查处理）的变异测试：逐条把编译器、程序体检、知识服务读工具、兜底检索、M1 报表与
 # 对照评测脚本（evals/kge-compile）的关键检查改坏，断言测试能发现。
 # 仿照 services/bff/tests/mutations.sh 的源码变异：把 services/knowledge 复制到临时目录（保持仓库结构，docs、evals、
 # services/learning 等软链接回仓库），改一处源码，跑指定的测试文件。
@@ -18,7 +18,7 @@ HAVE_PG=0
 if [ -n "${PGBIN:-}" ] && [ -x "$PGBIN/initdb" ]; then HAVE_PG=1; fi
 if ls /usr/lib/postgresql/*/bin/initdb >/dev/null 2>&1; then HAVE_PG=1; fi
 
-# 每条：名字<TAB>文件（相对 services/knowledge；以 evals/ 开头的相对仓库根）<TAB>原文<TAB>替换为<TAB>测试文件（空格分隔；
+# 每条：名字<TAB>文件（相对 services/knowledge；以 evals/ 或 tools/ 开头的相对仓库根）<TAB>原文<TAB>替换为<TAB>测试文件（空格分隔；
 # 以 evals/kge-compile/ 开头的在副本的 evals/kge-compile 目录下跑）
 M=(
   $'锁定段与上一审核版比对失效\tknowledge/lint/checks.py\tif not any(old_hash.get(k) != new_hash.get(k) for k in keys):\tif False:\ttests/test_lint.py'
@@ -28,7 +28,7 @@ M=(
   $'SymPy 代入取值不生效\tknowledge/lint/mathcheck.py\t        if subs:\n\t        if False:\n\ttests/test_lint.py tests/test_mathcheck_lexicon.py'
   $'标了 check 却无法解析只报警告\tknowledge/lint/checks.py\tout.append(_issue(pf, "sympy", "block", f"标了 % check 的式子无法解析\tout.append(_issue(pf, "sympy", "warn", f"标了 % check 的式子无法解析\ttests/test_lint.py'
   $'手机号模式失效\tknowledge/lint/checks.py\t(?<!\\d)1[3-9]\\d[- ]?\t(?<!\\d)0[3-9]\\d[- ]?\ttests/test_lint.py'
-  $'姓名加学校组合不查\tknowledge/lint/checks.py\t        for label, pat in PII_PATTERNS:\t        for label, pat in PII_PATTERNS[:-1]:\ttests/test_lint.py'
+  $'姓名加学校组合不查\tknowledge/lint/checks.py\t[label for label, pat in PII_PATTERNS if\t[label for label, pat in PII_PATTERNS[:-1] if\ttests/test_lint.py'
   $'群体统计人数门槛失效\tknowledge/lint/checks.py\telif min(ns) < ctx.min_group:\telif min(ns) < 1:\ttests/test_lint.py'
   $'人设词表：角色名称呼口头禅不查\tknowledge/lint/checks.py\tliteral = [("角色名", w) for w in lex.role_names] + [("称呼", w) for w in lex.address_terms] + [("口头禅或固定句式", w) for w in lex.catchphrases]\tliteral = []\ttests/test_lint.py'
   $'禁语不查\tknowledge/lint/checks.py\t        for rule in lex.forbidden:\t        for rule in lex.forbidden[:0]:\ttests/test_lint.py'
@@ -86,6 +86,34 @@ M=(
   $'对照评测：报告带出问题原文\tevals/kge-compile/compare_retrieval.py\t        row: dict[str, Any] = {"id": q.id}\t        row: dict[str, Any] = {"id": q.id, "q": q.question}\tevals/kge-compile/tests/test_compare.py'
   $'对照评测：token 估算按字母逐个计\tevals/kge-compile/compare_retrieval.py\t|[0-9A-Za-z]+|\t|[0-9A-Za-z]|\tevals/kge-compile/tests/test_compare.py'
   $'对照评测：主问题只取一次\tevals/kge-compile/compare_retrieval.py\t[r.lookup(q.question) for _ in range(runs)]\t[r.lookup(q.question) for _ in range(1)]\tevals/kge-compile/tests/test_compare.py'
+  # 审查处理（specs/kge-03-compile-layer/lessons.md“审查处理”）
+  $'审查：正文个人信息只扫剥掉引用后的文字\tknowledge/lint/checks.py\tif pat.search(text) or pat.search(stripped)]\tif pat.search(stripped)]\ttests/test_lint.py'
+  $'审查：头部值不扫个人信息\tknowledge/lint/checks.py\t    for where, text in header_strings(page.header):\t    for where, text in []:\ttests/test_lint.py'
+  $'审查：原子 ID 不按白名单校验\tknowledge/lint/checks.py\t            elif not valid_atom_id(r["type"], r["id"]):\t            elif False:\ttests/test_lint.py'
+  $'审查：节点 ID 按宽松白名单校验\tknowledge/lint/checks.py\t    if atype == "node":\n        return is_node_id(aid)\t    if atype == "node":\n        return bool(ATOM_ID.fullmatch(aid))\ttests/test_lint.py'
+  $'审查：体检缺引用消息回显原文\tknowledge/lint/checks.py\t"citation", "block", "自然段缺原子引用",\t"citation", "block", f"自然段缺原子引用：{para.strip()[:30]}",\ttests/test_lint.py'
+  $'审查：SymPy 失败消息回显式子\tknowledge/lint/mathcheck.py\tf"第 {k + 1} 个等号两边{what}")\tf"第 {k + 1} 个等号两边{what}：{parts[k].strip()}")\ttests/test_lint.py tests/test_mathcheck_lexicon.py'
+  $'审查：CI 体检不强制地图快照\tknowledge/lint/__main__.py\t        if args.require_map_snapshot and not args.map_snapshot:\t        if False:\ttests/test_lint.py'
+  $'审查：快照载入不再跑页面体检\tknowledge/service/pages.py\t        if blocks:\t        if False:\ttests/test_service_unit.py'
+  $'审查：快照载入放过符号链接\tknowledge/service/pages.py\t    if stat.S_ISLNK(st.st_mode):\n        raise SnapshotLoadError\t    if False:\n        raise SnapshotLoadError\ttests/test_service_unit.py'
+  $'审查：快照载入放过属组可写\tknowledge/service/pages.py\t    if st.st_mode & (stat.S_IWGRP | stat.S_IWOTH):\t    if False:\ttests/test_service_unit.py'
+  $'审查：SymPy 小数点规则失效\tknowledge/lint/mathcheck.py\t    if _BAD_DOT.search(text):\t    if False:\ttests/test_mathcheck_lexicon.py'
+  $'审查：SymPy 常数指数不限\tknowledge/lint/mathcheck.py\tor abs(v) > MAX_EXPONENT:\t:\ttests/test_mathcheck_lexicon.py'
+  $'审查：SymPy 树检查放过函数与元组\tknowledge/lint/mathcheck.py\t        if not isinstance(e, (sympy.Add, sympy.Mul, sympy.Pow)):\n            raise LatexError("验算不支持的写法")\t        if False:\n            raise LatexError("验算不支持的写法")\ttests/test_mathcheck_lexicon.py'
+  $'审查：parse_expr 带回 builtins\tknowledge/lint/mathcheck.py\t_GLOBALS = {"__builtins__": {}, \t_GLOBALS = {\ttests/test_mathcheck_lexicon.py'
+  $'审查：验算超时不按无法验证\tknowledge/lint/mathcheck.py\t        if not recv.poll(timeout):\n            return UNVERIFIABLE_LIMIT\t        if not recv.poll(timeout):\n            return CheckOutcome(True, True, "通过")\ttests/test_mathcheck_lexicon.py'
+  $'审查：全量重编不扫值里的个人信息\tknowledge/compiler/full.py\t        if hits:\t        if False:\ttests/test_full.py'
+  $'审查：通配地址解析后不拒绝\tknowledge/service/config.py\t    if not ips or any(ip.is_unspecified for ip in ips):\t    if not ips:\ttests/test_service_unit.py'
+  $'审查：IPv6 地址重复加方括号\tknowledge/service/mcp_server.py\t    h = _bare(host)\n    names\t    h = host.strip()\n    names\ttests/test_service_unit.py'
+  $'审查：MCP 鉴权只管 http\tknowledge/service/app.py\t            if scope["type"] != "http" or caller_for(\t            if scope["type"] == "http" and caller_for(\ttests/test_service_unit.py'
+  $'审查：Host 校验放过任意端口写法\tknowledge/service/mcp_server.py\t            if port.isdigit() and len(port) <= 5:\t            if value.startswith(base + ":"):\ttests/test_service_unit.py'
+  $'审查：jieba 缓存回到系统临时目录\tknowledge/retrieval/tokenize.py\t            t.tmp_dir = str(cache_dir())\t            t.tmp_dir = None\ttests/test_retrieval.py'
+  $'审查：jieba 缓存目录不查权限\tknowledge/retrieval/tokenize.py\t    if st.st_mode & (stat.S_IWGRP | stat.S_IWOTH):\t    if False:\ttests/test_retrieval.py'
+  $'审查：M1 发布率分子含落后页\tknowledge/m1.py\t    r = Ratio(len(published) - len(stale), len(kp))\t    r = Ratio(len(published), len(kp))\ttests/test_m1.py'
+  $'审查：模板 CI 从头部取 lint.sh\ttools/kge-pages-template/repo/ci/github-actions.yml.example\t        run: bash main/ci/lint.sh\t        run: bash head/ci/lint.sh\ttests/test_template.py'
+  $'审查：模板 CI 引用 secrets\ttools/kge-pages-template/repo/ci/github-actions.yml.example\t          persist-credentials: false\n          sparse-checkout\t          persist-credentials: false\n          token: ${{ secrets.PAGES_TOKEN }}\n          sparse-checkout\ttests/test_template.py'
+  $'审查：lint.sh 用头部的地图快照\ttools/kge-pages-template/repo/ci/lint.sh\tsnapshot="$root/snapshots/current.yaml"\tsnapshot="${HEAD_PAGES_DIR:-$root/pages}/../snapshots/current.yaml"\ttests/test_template.py'
+  $'审查：安装检查工具不要求哈希\ttools/kge-pages-template/repo/ci/install-tools.sh\t--require-hashes -r\t-r\ttests/test_template.py'
 )
 
 # 知识服务读工具（PR ②）：需要一次性 Postgres
@@ -107,8 +135,22 @@ M_DB=(
   $'知识服务：page.get 不查节点是否在已发布版本\tknowledge/service/tools.py\t        if n is None:  # 节点已撤下\t        if False:  # 节点已撤下\ttests/test_service_e2e.py'
   $'知识服务：page.get 教材投影不按版次取\tknowledge/service/tools.py\tawait self.reader.textbook_projections(v.id, pp.node_id, edition)]\tawait self.reader.textbook_projections(v.id, pp.node_id, None)]\ttests/test_service_e2e.py'
   $'知识服务：快照导出放过体检阻断\tknowledge/compiler/snapshot.py\t        if report.blocks:\t        if False:\ttests/test_service_e2e.py'
-  $'知识服务：MCP 端点不鉴权\tknowledge/service/app.py\t            if caller_for(headers.get("authorization"), self.tokens) is None:\t            if False:\ttests/test_service_mcp.py'
-  $'知识服务：MCP 关闭 DNS 重绑定防护\tknowledge/service/app.py\thost=settings.host, transport_security=transport_security(settings.host),\thost="0.0.0.0", transport_security=None,\ttests/test_service_mcp.py'
+  $'知识服务：MCP 端点不鉴权\tknowledge/service/app.py\t            if scope["type"] != "http" or caller_for(_headers(scope).get("authorization"), self.tokens) is None:\t            if False:\ttests/test_service_mcp.py'
+  $'知识服务：MCP 关闭 DNS 重绑定防护\tknowledge/service/mcp_server.py\treturn TransportSecuritySettings(enable_dns_rebinding_protection=True,\treturn TransportSecuritySettings(enable_dns_rebinding_protection=False,\ttests/test_service_unit.py'
+  # 审查处理
+  $'审查：page.get 服务地图版本落后的页\tknowledge/service/tools.py\t        if pp.map_version != v.version:\t        if False:\ttests/test_service_e2e.py'
+  $'审查：快照导出不核对受保护分支\tknowledge/compiler/snapshot.py\t    assert_on_branch(repo, sha, branch)\t    pass\ttests/test_service_e2e.py'
+  $'审查：快照导出不要求地图快照\tknowledge/compiler/snapshot.py\t    if MAP_SNAPSHOT_PATH not in _git(\t    if False and MAP_SNAPSHOT_PATH not in _git(\ttests/test_service_e2e.py'
+  $'审查：调 git 不带安全参数\tknowledge/compiler/snapshot.py\tGIT_SAFE = ("-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false")\tGIT_SAFE = ()\ttests/test_service_e2e.py'
+  $'审查：登录角色是 pg_ 预置角色成员也放过\tknowledge/service/reader.py\t    if row["predefined"]:\t    if False:\ttests/test_service_db.py'
+  $'审查：登录角色有 CREATEDB 也放过\tknowledge/service/reader.py\t    if row["rolcreaterole"] or row["rolcreatedb"]:\t    if row["rolcreaterole"]:\ttests/test_service_db.py'
+  $'审查：连接时区不固定北京时间\tknowledge/service/reader.py\t, "TimeZone": "Asia/Shanghai"}\t}\ttests/test_service_db.py'
+  $'审查：rubric.get 不联查标签审核\tknowledge/service/reader.py\tAND t.item_id = s.item_id AND {_APPROVED}\tAND t.item_id = s.item_id\ttests/test_service_db.py'
+  $'审查：部分给分规则的多余键被丢掉\tknowledge/service/tools.py\tset(rule) == {"mode"} and \t\ttests/test_service_db.py'
+  $'审查：关键词对象写法被展开\tknowledge/service/tools.py\t    if not isinstance(value, list) or not all(isinstance(w, str) for w in value):\n        raise LossyMapping("keyword_family")\t    if isinstance(value, dict):\n        value = [w for k in sorted(value) for w in value[k]]\ttests/test_service_db.py'
+  $'审查：MCP 列出个人层工具\tknowledge/service/mcp_server.py\t    public = {name: t for name, t in contract.tools.items() if name in PUBLIC_TOOLS}\t    public = dict(contract.tools)\ttests/test_service_mcp.py'
+  $'审查：整个应用不校验 Host\tknowledge/service/app.py\t    app.add_middleware(HostGuard, allowed=allowed_hosts(settings.host))\n\t\ttests/test_service_mcp.py'
+  $'审查：node.resolve 不带分词器版本\tknowledge/service/tools.py\t"source_version": f"{graph_source(subject, v)};{tokenizer_source()}"\t"source_version": graph_source(subject, v)\ttests/test_service_db.py'
 )
 if [ "$HAVE_PG" = "1" ]; then M+=("${M_DB[@]}"); else echo "knowledge-mutation: 本机没有 Postgres，知识服务的 ${#M_DB[@]} 条变异跳过"; fi
 
@@ -118,9 +160,10 @@ trap 'rm -rf "$WORK"' EXIT
 copy_tree() {  # $1 目标根目录：services/knowledge 复制一份，其余软链接回仓库
   local dst="$1"
   mkdir -p "$dst/services" "$dst/tools"
-  (cd "$SVC" && tar --exclude=.venv --exclude=__pycache__ -cf - .) | (mkdir -p "$dst/services/knowledge" && cd "$dst/services/knowledge" && tar -xf -)
+  (cd "$SVC" && tar --exclude=.venv --exclude=__pycache__ --exclude=.cache -cf - .) | (mkdir -p "$dst/services/knowledge" && cd "$dst/services/knowledge" && tar -xf -)
   ln -s "$ROOT/services/learning" "$dst/services/learning"
-  ln -s "$ROOT/tools/kge-pages-template" "$dst/tools/kge-pages-template"
+  # 页面仓库模板复制一份（审查处理的 CI 样例变异要改它）
+  (cd "$ROOT/tools/kge-pages-template" && tar -cf - .) | (mkdir -p "$dst/tools/kge-pages-template" && cd "$dst/tools/kge-pages-template" && tar -xf -)
   for d in docs db packages; do ln -s "$ROOT/$d" "$dst/$d"; done
   # evals：对照评测（kge-compile）复制一份以便变异，其余软链接回仓库
   mkdir -p "$dst/evals"
@@ -148,7 +191,7 @@ for entry in "${M[@]}"; do
   # M 里用 $'...' 写的 \n 是真换行；以 NUL 为记录分隔读入，字段里的换行原样保留
   total=$((total + 1)); i=$((i + 1))
   dst="$WORK/m$i"; copy_tree "$dst"
-  case "$file" in evals/*) mut_file="$dst/$file" ;; *) mut_file="$dst/services/knowledge/$file" ;; esac
+  case "$file" in evals/*|tools/*) mut_file="$dst/$file" ;; *) mut_file="$dst/services/knowledge/$file" ;; esac
   if ! MUT_FILE="$mut_file" MUT_ORIG="$orig" MUT_REPL="$repl" "$PY" - <<'PY'
 import os, sys
 p = os.environ["MUT_FILE"]; o = os.environ["MUT_ORIG"]; r = os.environ["MUT_REPL"]

@@ -15,8 +15,8 @@ import mcp_types as types
 from mcp.server import Server
 from mcp.server.transport_security import TransportSecuritySettings
 
-from .contract import Contract
-from .errors import unauthenticated
+from .contract import PUBLIC_TOOLS, Contract
+from .errors import not_found, unauthenticated
 from .tools import ToolCore
 
 SERVER_NAME = "starbuddy-knowledge"
@@ -34,19 +34,21 @@ def _result(status: int, body: dict) -> types.CallToolResult:
 def build_mcp_server(core: ToolCore, caller_of: CallerOf) -> Server:
     contract: Contract = core.contract
 
+    # 只暴露公共层工具（7 个）；个人层三个（evidence.write、mastery.get、mastery.explain）在 MCP 不列、不接（HTTP 仍回契约的 501）
+    public = {name: t for name, t in contract.tools.items() if name in PUBLIC_TOOLS}
+
     @lru_cache(maxsize=None)
     def tool_list() -> tuple[types.Tool, ...]:
         return tuple(types.Tool(name=t.operation_id, description=t.summary, input_schema=contract.bundle(t.request_schema))
-                     for t in sorted(contract.tools.values(), key=lambda t: t.operation_id))
+                     for t in sorted(public.values(), key=lambda t: t.operation_id))
 
     async def list_tools(ctx: Any, params: Any) -> types.ListToolsResult:
         return types.ListToolsResult(tools=list(tool_list()))
 
     async def call_tool(ctx: Any, params: types.CallToolRequestParams) -> types.CallToolResult:
         spec = contract.by_operation_id(params.name)
-        if spec is None:
-            return _result(404, {"type": "/problems/content-version-not-found", "title": "CONTENT_VERSION_NOT_FOUND",
-                                 "status": 404, "code": "CONTENT_VERSION_NOT_FOUND", "retryable": False})
+        if spec is None or spec.name not in public:
+            return _result(404, not_found().problem())
         caller = caller_of(ctx)
         if caller is None:
             return _result(401, unauthenticated().problem())
@@ -56,11 +58,36 @@ def build_mcp_server(core: ToolCore, caller_of: CallerOf) -> Server:
     return Server(SERVER_NAME, version=SERVER_VERSION, on_list_tools=list_tools, on_call_tool=call_tool)
 
 
+def _bare(host: str) -> str:
+    h = host.strip()
+    return h[1:-1] if h.startswith("[") and h.endswith("]") else h
+
+
+def allowed_hosts(host: str) -> list[str]:
+    """Host 头允许列表（整个应用与 MCP 共用一份）：回环地址只收回环 Host；内网地址只收该地址。
+    写法同 MCP SDK：精确值，或 `<主机>:*`（任意端口）；IPv6 地址加方括号（`[::1]`，不会重复加）"""
+    h = _bare(host)
+    names = ["127.0.0.1", "localhost", "[::1]"] if h in LOOPBACK else [f"[{h}]" if ":" in h else h]
+    return [x for n in names for x in (n, f"{n}:*")]
+
+
+def host_allowed(value: str | None, allowed: list[str]) -> bool:
+    """与 MCP SDK 的判断一致（精确或 `<主机>:*`），另要求端口只含数字"""
+    if not value:
+        return False
+    if value in allowed:
+        return True
+    for a in allowed:
+        if a.endswith(":*"):
+            base = a[:-2]
+            port = value[len(base) + 1:] if value.startswith(base + ":") else ""
+            if port.isdigit() and len(port) <= 5:
+                return True
+    return False
+
+
 def transport_security(host: str) -> TransportSecuritySettings:
-    """DNS 重绑定防护一律开启：回环地址只收回环 Host；内网地址只收该地址"""
-    if host in LOOPBACK:
-        return TransportSecuritySettings(enable_dns_rebinding_protection=True,
-                                         allowed_hosts=["127.0.0.1:*", "localhost:*", "[::1]:*"],
-                                         allowed_origins=["http://127.0.0.1:*", "http://localhost:*", "http://[::1]:*"])
-    h = f"[{host}]" if ":" in host else host
-    return TransportSecuritySettings(enable_dns_rebinding_protection=True, allowed_hosts=[f"{h}:*"], allowed_origins=[])
+    """DNS 重绑定防护一律开启：Host 允许列表与整个应用相同（allowed_hosts）"""
+    hosts = allowed_hosts(host)
+    origins = [f"http://{h}" for h in hosts] if _bare(host) in LOOPBACK else []
+    return TransportSecuritySettings(enable_dns_rebinding_protection=True, allowed_hosts=hosts, allowed_origins=origins)

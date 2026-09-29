@@ -270,3 +270,46 @@ def test_tool_core_uses_rule_plus_fulltext_by_default():
 def test_vector_search_is_interface_only():
     with pytest.raises(NotImplementedError):
         VectorSearchNotConfigured().search("x", 3)
+
+
+# ---------- 审查处理：分词器版本进 source_version；jieba 缓存放服务私有目录 ----------
+def test_tokenizer_source_version_matches_contract_pattern():
+    import re
+
+    import yaml
+    from conftest import ROOT
+    from knowledge.service.tools import tokenizer_source
+    from knowledge.retrieval.tokenize import TOKENIZER_VERSION
+    plugin = yaml.safe_load((ROOT / "packages/contracts/openapi/plugin-api.v0.9.yaml").read_text(encoding="utf-8"))
+    pattern = re.compile(plugin["components"]["schemas"]["SourceVersion"]["pattern"])
+    src = tokenizer_source()
+    assert src == "algo:kge-tokenize@" + TOKENIZER_VERSION.replace("+", ".")
+    assert pattern.fullmatch(f"graph:math-map@0.9.0;{src}")
+    assert pattern.fullmatch(tokenizer_source("jieba 1.0+x/y"))
+
+
+def test_jieba_cache_dir_is_private(tmp_path, monkeypatch):
+    import os
+    import stat
+    from knowledge.retrieval import tokenize as tk
+    monkeypatch.setenv(tk.CACHE_DIR_ENV, str(tmp_path / "svc-data"))
+    d = tk.cache_dir()
+    assert d == tmp_path / "svc-data" / "jieba" and stat.S_IMODE(os.stat(d).st_mode) & 0o077 == 0
+    os.chmod(d, 0o770)
+    with pytest.raises(tk.CacheDirError):
+        tk.cache_dir()
+    os.chmod(d, 0o700)
+    real = tmp_path / "elsewhere"
+    real.mkdir(mode=0o700)
+    (tmp_path / "linked").mkdir()
+    (tmp_path / "linked" / "jieba").symlink_to(real)
+    monkeypatch.setenv(tk.CACHE_DIR_ENV, str(tmp_path / "linked"))
+    with pytest.raises(tk.CacheDirError):
+        tk.cache_dir()
+    # 缺省不在系统共享临时目录
+    monkeypatch.delenv(tk.CACHE_DIR_ENV)
+    import tempfile
+    assert tk.DEFAULT_CACHE_DIR == Path(tk.__file__).resolve().parents[2] / ".cache"  # 服务目录下，不是 tempfile.gettempdir()
+    assert tk.DEFAULT_CACHE_DIR != Path(tempfile.gettempdir())
+    tk.tokenize("一元一次方程")
+    assert tk._jieba().tmp_dir == str(tk.cache_dir()) and tk._jieba().cache_file == tk.CACHE_FILE

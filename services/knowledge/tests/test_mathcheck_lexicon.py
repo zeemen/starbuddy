@@ -114,3 +114,68 @@ def test_lexicon_fails_closed_when_anchor_missing(tmp_path, rel, anchor):
 def test_lexicon_fails_closed_when_source_missing(tmp_path):
     with pytest.raises(LexiconError, match="找不到"):
         load_from_repo(tmp_path)
+
+
+# ---------- 审查处理：SymPy 加固 ----------
+@pytest.mark.parametrize("formula", ["2^{2^{2^{20}}} = 1", "E.n(99999) = 1", "N(pi,999999) = 1", "N(\\pi,999999) = 1",
+                                     "2^{60+60} = 1", "x.__class__ = 1", "1. = 1", ".5 = 1"])
+def test_resource_attacks_rejected_fast(formula):
+    import time
+    t = time.monotonic()
+    res = mathcheck.verify_chain(formula, None)
+    assert not res.ok and res.verifiable is False
+    assert time.monotonic() - t < mathcheck.VERIFY_TIMEOUT + 1.5
+
+
+def test_parse_globals_are_minimal():
+    g = mathcheck._GLOBALS
+    assert g["__builtins__"] == {}
+    assert set(g) == {"__builtins__", "Integer", "Float", "Rational", "Symbol", "Add", "Mul", "Pow", "Function"}
+    for name in ("N", "E", "exp", "Integral", "evalf"):
+        assert name not in g and name not in mathcheck._LOCALS
+
+
+def test_tree_limits():
+    with pytest.raises(mathcheck.LatexError):
+        mathcheck.to_expr("+".join(["x"] * 300))           # 节点数上限
+    with pytest.raises(mathcheck.LatexError):
+        mathcheck.to_expr("(" * 40 + "x" + ")" * 40 + "^{2^{7}}")  # 常数指数 128 超上限
+    assert mathcheck.to_expr("x^{\\frac{1}{2}}") is not None   # 分式指数照常
+
+
+def test_verify_timeout_is_unverifiable(monkeypatch):
+    """验算放在子进程里限时：超时按“无法验证”（带 % check 的即阻断），父进程不被拖住"""
+    import time
+
+    def slow(formula, assignment):
+        time.sleep(30)
+    monkeypatch.setattr(mathcheck, "_verify_chain_inproc", slow)
+    t = time.monotonic()
+    res = mathcheck.verify_chain("x = x + 0 % slow", None, timeout=0.5)
+    assert res == mathcheck.UNVERIFIABLE_LIMIT and not res.ok and res.verifiable is False
+    assert time.monotonic() - t < 3
+
+
+def test_verify_child_crash_is_unverifiable(monkeypatch):
+    def boom(formula, assignment):
+        raise MemoryError
+    monkeypatch.setattr(mathcheck, "_verify_chain_inproc", boom)
+    res = mathcheck.verify_chain("y = y % crash", None)
+    assert not res.ok and res.verifiable is False
+
+
+def test_assignment_digits_limited():
+    res = mathcheck.verify_chain("x^{n} = 1", "x=2, n=9999999")
+    assert not res.ok and res.verifiable is False
+
+
+def test_failure_message_does_not_echo_formula():
+    res = mathcheck.verify_chain("(x+1)^2 = x^2 + 1", None)
+    assert not res.ok and res.verifiable and "x^2" not in res.message and "(x+1)" not in res.message
+
+
+@pytest.mark.parametrize("text", ["N( pi ,999999)", "f(x,y)"])
+def test_check_tree_rejects_calls_and_tuples(text):
+    raw = mathcheck._parse(text, evaluate=False)
+    with pytest.raises(mathcheck.LatexError, match="不支持的写法"):
+        mathcheck.check_tree(raw)

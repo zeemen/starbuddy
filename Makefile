@@ -250,7 +250,7 @@ kge-inventory:
 # PR ②：知识服务读工具（HTTP + MCP）、页面快照导出与 page.get；库上测试、契约一致性（knowledge-service.v0.9 严格校验）、
 # 端到端在 tests/pgkge.py 起的一次性 Postgres 上跑（约 25 秒）。没有 Postgres 时库上测试非严格跳过、严格失败
 # PR ③：兜底检索（jieba + 进程内 BM25，只切公共层）、node.resolve 接全文检索、补页面信号、M1 报表（tests/test_retrieval.py、test_m1.py）
-# 依赖需先安装：cd services/knowledge && python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+# 依赖需先安装（带哈希的锁文件）：cd services/knowledge && python3 -m venv .venv && .venv/bin/pip install --require-hashes -r requirements-dev.lock
 knowledge-test:
 	@if [ ! -x services/knowledge/.venv/bin/pytest ] || ! services/knowledge/.venv/bin/python -c "import fastapi, asyncpg, mcp, jsonschema, jieba" 2>/dev/null; then \
 	  echo "knowledge-test: 跳过（没有安装依赖；见 services/knowledge/README.md）"; \
@@ -261,7 +261,8 @@ knowledge-test:
 # 变异测试：改坏编译器与程序体检（锁定段比对、缺引用、SymPy 验算、个人信息模式、人设词表、合并窗口、全量重编）和
 # 知识服务读工具（草稿 / 退役版本、未核对投影、待审标签、弱前置边、caller 绑定、请求与响应校验、角色断言、未发布页、
 # 快照导出体检、MCP 鉴权与监听地址）的关键检查，以及 PR ③ 的兜底检索（BM25、分词、只切公共层、兜底条件、补页面信号）、
-# M1 报表与对照评测脚本（evals/kge-compile）的关键计算，断言测试能发现（81 条，约 4.5 分钟）。没有 Postgres 时知识服务的变异
+# M1 报表与对照评测脚本（evals/kge-compile）的关键计算，以及审查处理（个人信息与 ID 白名单、快照载入与导出、SymPy 加固、
+# 角色断言、Host 校验、MCP 工具清单、页面仓库 CI 样例）的检查，断言测试能发现（121 条，约 10 分钟）。没有 Postgres 时知识服务的变异
 # 跳过（退出码 3：非严格算跳过、严格算失败）
 knowledge-mutation:
 	@bash services/knowledge/tests/mutations.sh; rc=$$?; \

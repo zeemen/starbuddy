@@ -1,0 +1,6 @@
+# 检查工具的固定版本（平台负责人维护，CODEOWNERS 审核；BRANCH_PROTECTION.md 第 13、15 条）。
+# ci/install-tools.sh 只读下面两行的值，不执行本文件。两行都是占位，启用前必须替换：
+#   KGE_TOOLS_URL     StarBuddy 发布流程产出的 services/knowledge 只读制品（tar.gz，含 requirements.lock），内网匿名只读可取，必须 https
+#   KGE_TOOLS_SHA256  该制品的 sha256（64 位小写十六进制）
+KGE_TOOLS_URL=https://artifacts.example.invalid/starbuddy/kge-tools/REPLACE-WITH-STARBUDDY-COMMIT.tar.gz
+KGE_TOOLS_SHA256=0000000000000000000000000000000000000000000000000000000000000000

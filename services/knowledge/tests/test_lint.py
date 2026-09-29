@@ -388,3 +388,79 @@ def test_cli_lexicon_export_and_reuse(pages_dir, tmp_path):
 
 def test_transpose_page_is_fine(pages_dir, snap_v1, run_lint):
     assert run_lint(pages_dir, snap_v1).for_page(TRANSPOSE) == []
+
+
+# ---------- 审查处理：个人信息检查不可绕过、ID 白名单、消息不回显原文 ----------
+
+REVIEW_PII_ID = "王小明@南京一中13812345678"
+
+
+def _add_ref(path, atype: str, aid: str) -> None:
+    edit(path, "atom_refs:\n", f"atom_refs:\n  - {{type: {atype}, id: \"{aid}\", hash: sha256:0000000000000000}}\n")
+
+
+def test_review_repro_pii_in_citation_key_blocks_without_snapshot(pages_dir, run_lint):
+    """审查者的复现：叙述段 [@node:王小明@南京一中13812345678] + 头部同名 atom_ref，不给地图快照也必须阻断"""
+    p = page_file(pages_dir, APPLY)
+    _add_ref(p, "node", REVIEW_PII_ID)
+    edit(p, "设未知数时没有写单位", f"设未知数时没有写单位 [@node:{REVIEW_PII_ID}]")
+    report = run_lint(pages_dir)  # 没有快照
+    assert report.blocked
+    kinds = {i.check_type for i in report.for_page(APPLY) if i.severity == "block"}
+    assert {"pii", "header", "link"} <= kinds
+    assert any(i.check_type == "pii" and i.line == 2 for i in report.blocks)       # 头部
+    assert any(i.check_type == "pii" and i.line != 2 for i in report.blocks)       # 正文（不剥引用）
+    out = report.to_json()
+    assert "王小明" not in out and "13812345678" not in out                          # 消息与明细都不回显
+
+
+def test_pii_in_header_value_blocks_even_when_id_is_well_formed(pages_dir, run_lint):
+    """头部所有值都扫：投影 ID 合白名单，但就是一个手机号"""
+    _add_ref(page_file(pages_dir, APPLY), "projection", "tp-13812345678")
+    report = run_lint(pages_dir)
+    hits = [i for i in report.blocks if i.check_type == "pii"]
+    assert hits and all(i.line == 2 and i.detail.get("field") == "atom_refs" for i in hits)
+    assert "13812345678" not in report.to_json()
+
+
+def test_pii_inside_quote_slot_blocks(pages_dir, run_lint):
+    p = page_file(pages_dir, APPLY)
+    edit(p, "设未知数时没有写单位", "设未知数时没有写单位 {{quote:13812345678}}")
+    assert "pii" in checks_of(run_lint(pages_dir))
+
+
+@pytest.mark.parametrize("atype,aid,ok", [
+    ("node", "MATH.SYN.EQ.LINEAR", True), ("node", "math.syn.eq.linear", False), ("node", "MATH.SYN.王", False),
+    ("edge", "MATH.A.B>prerequisite>MATH.A.C", True), ("curriculum", "2022/SYN-EQ-01", True), ("projection", "tp-0123abcd", True),
+    ("projection", "教材第一页", False), ("region", "rp 1", False), ("affair", "x" * 201, False), ("affair", "x" * 200, True),
+])
+def test_atom_id_whitelist(atype, aid, ok):
+    from knowledge.lint.checks import valid_atom_id
+    assert valid_atom_id(atype, aid) is ok
+
+
+def test_header_atom_id_outside_whitelist_blocks(pages_dir, run_lint):
+    _add_ref(page_file(pages_dir, APPLY), "projection", "教材第一页")
+    hits = [i for i in run_lint(pages_dir).blocks if i.check_type == "header"]
+    assert any("id 不合" in i.message for i in hits) and all("教材第一页" not in i.message for i in hits)
+
+
+def test_messages_never_echo_page_text(pages_dir, snap_v1, run_lint):
+    """所有检查项的消息只给定位与结论：缺引用段、段落外内容、公式、失效链接、外部链接都不回显原文"""
+    marker = "合成回显探针文字"
+    p = page_file(pages_dir, APPLY)
+    edit(p, "## 易错\n\n", f"## 易错\n\n{marker}没有引用。\n\n")
+    edit(p, "# ", f"{marker}段落外\n\n# ")
+    edit(p, "设未知数时没有写单位", f"设未知数时没有写单位 [[{marker}页]] [链接](https://{marker}.example) [相对](../{marker}.md)")
+    text = p.read_text(encoding="utf-8").replace("## 讲解要点\n\n", f"## 讲解要点\n\n$$\n{marker}x = 1 % check\n$$\n\n", 1)
+    p.write_text(text, encoding="utf-8")
+    report = run_lint(pages_dir, snap_v1)
+    assert {"citation", "sections", "link", "sympy"} <= {i.check_type for i in report.issues}
+    assert marker not in report.to_json()
+
+
+def test_cli_require_map_snapshot(pages_dir):
+    r = _cli(str(pages_dir), "--require-map-snapshot")
+    assert r.returncode == 2
+    r = _cli(str(pages_dir), "--require-map-snapshot", "--map-snapshot", str(MAP_V1), "--today", TODAY.isoformat())
+    assert r.returncode == 0, r.stdout + r.stderr

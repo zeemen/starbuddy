@@ -201,3 +201,99 @@ async def test_page_snapshot_config(kgedb, tmp_path):
                 pass
     finally:
         await pool.close()
+
+
+@pytest.mark.anyio
+async def test_page_with_stale_map_version_not_served(kgedb, page_repo, tmp_path):
+    """快照里页面的 map_version 与当前已发布版本不一致（升版到重编合并之间）：回 404 CONTENT_VERSION_NOT_FOUND，
+    title = code，不带 detail；同一快照里版本一致的页照常服务"""
+    _, _, _, snap = page_repo
+    pages = build_pages(snap, [LINEAR, TRANSPOSE])
+    rel = f"pages/kp/{TRANSPOSE}.md"
+    assert "map_version: 0.9.0" in pages[rel]
+    pages[rel] = pages[rel].replace("map_version: 0.9.0", "map_version: 0.8.0", 1)
+    loaded = load_snapshot_dir(write_snapshot_dir(tmp_path / "s", pages))
+    async with running_app(kgedb, pages=loaded) as client:
+        r = await call(client, "page.get", {"context": ctx(), "page_id": "math.syn.eq.transpose"})
+        body = r.json()
+        assert r.status_code == 404 and body["code"] == "CONTENT_VERSION_NOT_FOUND"
+        assert body["title"] == "CONTENT_VERSION_NOT_FOUND" and "detail" not in body
+        assert C.problem_errors(body) == []
+        r = await call(client, "page.get", {"context": ctx(), "page_id": "math.syn.eq.linear"})
+        assert r.status_code == 200
+
+
+def _clone(repo: Path, work: Path) -> None:
+    subprocess.run(["git", "clone", "-q", str(repo), str(work)], check=True, capture_output=True,
+                   env={k: v for k, v in os.environ.items() if not k.startswith("GIT_")})
+
+
+def test_export_only_from_protected_branch(page_repo, tmp_path):
+    """只导出受保护分支（缺省 main）上的提交：功能分支上的提交退出码 2；--branch 可指定；manifest 记分支名"""
+    repo, c1, _, _ = page_repo
+    work = tmp_path / "clone"
+    _clone(repo, work)
+    git(work, "checkout", "-q", "-b", "feature")
+    p = work / "pages" / "kp" / f"{LINEAR}.md"
+    text = p.read_text(encoding="utf-8").replace("每一步变形都要有依据。", "每一步变形都要写出依据。", 1)
+    feature = commit_files(work, {f"pages/kp/{LINEAR}.md": text}, "合成：功能分支上的改动")
+    with pytest.raises(ExportError, match="不在受保护分支"):
+        export_snapshot(work, feature, tmp_path / "f1", today=TODAY)
+    with pytest.raises(ExportError, match="不在受保护分支"):
+        export_snapshot(work, "feature", tmp_path / "f2", today=TODAY)
+    r = subprocess.run([sys.executable, "-m", "knowledge.compiler.snapshot", "--repo", str(work), "--commit", feature,
+                        "--out", str(tmp_path / "f3"), "--today", TODAY.isoformat()], capture_output=True, text=True, cwd=str(SERVICE))
+    assert r.returncode == 2 and not (tmp_path / "f3").exists()
+    m = export_snapshot(work, feature, tmp_path / "f4", today=TODAY, branch="feature")
+    assert m["branch"] == "feature" and m["commit"] == git(work, "rev-parse", "feature")
+    m = export_snapshot(work, c1, tmp_path / "f5", today=TODAY)  # main 上的旧提交：是 main 的祖先，可以导出
+    assert m["branch"] == "main" and m["commit"] == c1
+    for bad in ("--x", "../main", "main..feature", "a b", ""):
+        with pytest.raises(ExportError):
+            export_snapshot(work, c1, tmp_path / "bad", today=TODAY, branch=bad)
+
+
+def test_export_requires_map_snapshot(page_repo, tmp_path):
+    repo, _, _, _ = page_repo
+    work = tmp_path / "clone"
+    _clone(repo, work)
+    git(work, "rm", "-q", "snapshots/current.yaml")
+    git(work, "commit", "-q", "-m", "合成：删掉地图快照")
+    out = tmp_path / "nosnap"
+    with pytest.raises(ExportError, match="没有地图快照"):
+        export_snapshot(work, "main", out, today=TODAY)
+    r = subprocess.run([sys.executable, "-m", "knowledge.compiler.snapshot", "--repo", str(work), "--commit", "main", "--out", str(out),
+                        "--today", TODAY.isoformat()], capture_output=True, text=True, cwd=str(SERVICE))
+    assert r.returncode == 2 and not out.exists()
+
+
+def test_export_ignores_repo_fsmonitor_and_uses_cat_file(page_repo, tmp_path):
+    """仓库配置里的 fsmonitor 命令不执行（-c core.hooksPath=/dev/null -c core.fsmonitor=false）；读文件用 cat-file"""
+    repo, c1, _, _ = page_repo
+    work = tmp_path / "clone"
+    _clone(repo, work)
+    marker = tmp_path / "fsmonitor-ran"
+    hook = tmp_path / "fsmonitor.sh"
+    hook.write_text(f"#!/bin/sh\ntouch {marker}\nexit 1\n", encoding="utf-8")
+    hook.chmod(0o755)
+    git(work, "config", "core.fsmonitor", str(hook))
+    m = export_snapshot(work, c1, tmp_path / "ok", today=TODAY)
+    assert m["commit"] == c1 and not marker.exists()
+    import inspect
+    from knowledge.compiler import snapshot as snapmod
+    src = inspect.getsource(snapmod)
+    assert '"show"' not in src
+    assert snapmod.GIT_SAFE == ("-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false")
+    calls = []
+    real = snapmod.subprocess.run
+
+    def spy(cmd, *a, **kw):
+        calls.append(list(cmd))
+        return real(cmd, *a, **kw)
+    snapmod.subprocess.run = spy
+    try:
+        export_snapshot(work, c1, tmp_path / "ok2", today=TODAY)
+    finally:
+        snapmod.subprocess.run = real
+    git_calls = [c for c in calls if c[0] == "git"]
+    assert git_calls and all(c[1:5] == list(snapmod.GIT_SAFE) for c in git_calls)

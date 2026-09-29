@@ -1,5 +1,8 @@
 """程序体检的各项检查（spec 设计要点 4）。每项检查一个函数，返回 LintIssue 列表；阻断即不能合并。
 
+消息只给定位（段落、行号、检查类型）与检查结论，不回显页面原文片段（原文可能就是个人信息，规则 13）；
+回显的只有已按白名单校验过的节点 ID、原子键，以及来自地图快照、人设词表的内容。
+
 语义体检（与原子冲突、跨页矛盾、超纲、角色语言混入的语义层）不在本任务：阶段 0 中风险按高风险处理。
 """
 from __future__ import annotations
@@ -25,6 +28,16 @@ KP_NODE_KINDS = ("kp", "ability_kp")
 KP_NODE_LEVELS = ("node", "detail")
 _HASH = re.compile(rf"^{re.escape(HASH_PREFIX)}[0-9a-f]{{{HASH_HEX_LEN}}}$")
 _MD_LINK = re.compile(r"\]\(([^)\s]+)\)")
+# 原子 ID 白名单：节点用节点 ID 规范（is_node_id）；其余类型只收编码字符（边 <from>><类型>><to>、课标 <年份>/<编码>、投影等 <前缀>-<哈希>）
+ATOM_ID = re.compile(r"^[A-Za-z0-9_./>:-]{1,200}$")
+
+
+def valid_atom_id(atype: str, aid: object) -> bool:
+    if not isinstance(aid, str):
+        return False
+    if atype == "node":
+        return is_node_id(aid)
+    return bool(ATOM_ID.fullmatch(aid))
 
 # ---------- 规则 13：个人信息与学生标识 ----------
 _SURNAMES = ("王李张刘陈杨黄赵吴周徐孙马朱胡郭何高林罗郑梁谢宋唐许韩冯邓曹彭曾肖田董袁潘于蒋蔡余杜叶程苏魏吕丁任沈姚卢姜崔"
@@ -115,24 +128,24 @@ def check_header(pf: PageFile) -> list[LintIssue]:
         bad(f"头部缺字段：{', '.join(missing)}", fields=missing)
     unknown = sorted(set(h) - set(HEADER_KEYS))
     if unknown:
-        bad(f"头部有未登记字段：{', '.join(unknown)}", fields=unknown)
+        bad(f"头部有 {len(unknown)} 个未登记字段")
     ptype = h.get("page_type")
     if ptype in RESERVED_PAGE_TYPES:
         bad(f"页面类型 {ptype} 已预留但首期未实现（只做知识点页 kp）")
     elif ptype not in PAGE_TYPES:
-        bad(f"页面类型不合法：{ptype!r}")
+        bad("页面类型不合法")
     subject, node_id = h.get("subject"), h.get("node_id")
     if subject not in SUBJECT_PREFIX:
-        bad(f"subject 只收平台学科编码：{subject!r}")
+        bad("subject 只收平台学科编码")
     if not is_node_id(node_id):
-        bad(f"node_id 不合节点 ID 规范：{node_id!r}")
+        bad("node_id 不合节点 ID 规范")
     elif subject in SUBJECT_PREFIX and str(node_id).split(".")[0] != SUBJECT_PREFIX[subject]:
         bad(f"node_id 的学科前缀与 subject 不符（{subject} 应为 {SUBJECT_PREFIX[subject]}）")
     if h.get("page_id") != node_id:
         bad("page_id 必须等于 node_id（KGE 第二章：页面 ID = 节点 ID）")
     rel = PurePosixPath(pf.rel)
     if rel.name != f"{h.get('page_id')}.md" or rel.parent.name != str(ptype):
-        bad(f"文件位置应为 {ptype}/{h.get('page_id')}.md")
+        bad("文件位置应为 <页面类型>/<page_id>.md")
     if not isinstance(h.get("map_version"), str) or not MAP_VERSION.match(h["map_version"]):
         bad("map_version 应为 主.次.修订")
     sv = h.get("schema_version")
@@ -160,12 +173,14 @@ def check_header(pf: PageFile) -> list[LintIssue]:
                 bad(f"atom_refs[{i}] 必须只有 type、id、hash 三个字段")
                 continue
             if r["type"] not in ATOM_TYPES:
-                bad(f"atom_refs[{i}] 的 type 不合法：{r['type']!r}")
+                bad(f"atom_refs[{i}] 的 type 不合法")
+            elif not valid_atom_id(r["type"], r["id"]):
+                bad(f"atom_refs[{i}] 的 id 不合该类型的 ID 规范（节点按节点 ID 规范，其余只收字母、数字与 _./>:-，限 200 字符）")
             if not isinstance(r["hash"], str) or not _HASH.match(r["hash"]):
                 bad(f"atom_refs[{i}] 的 hash 应为 {HASH_PREFIX}<{HASH_HEX_LEN} 位十六进制>")
             key = f"{r['type']}:{r['id']}"
             if key in seen:
-                bad(f"atom_refs 重复：{key}")
+                bad(f"atom_refs[{i}] 重复")
             seen.add(key)
     return out
 
@@ -178,9 +193,10 @@ def check_node(pf: PageFile, ctx: LintContext) -> list[LintIssue]:
     out = []
     node_id = page.header.get("node_id")
     if snap.node(str(node_id)) is None:
-        out.append(_issue(pf, "node_id", "block", f"节点 {node_id} 不在地图快照 {snap.subject} {snap.map_version} 里", 2))
+        shown = f"节点 {node_id}" if is_node_id(node_id) else "页面的节点"
+        out.append(_issue(pf, "node_id", "block", f"{shown} 不在地图快照 {snap.subject} {snap.map_version} 里", 2))
     if page.header.get("map_version") != snap.map_version:
-        out.append(_issue(pf, "node_id", "block", f"页面的 map_version {page.header.get('map_version')} 与指定地图快照 {snap.map_version} 不一致", 2))
+        out.append(_issue(pf, "node_id", "block", f"页面的 map_version 与指定地图快照 {snap.map_version} 不一致", 2))
     if page.header.get("subject") != snap.subject:
         out.append(_issue(pf, "node_id", "block", "页面的 subject 与地图快照不一致", 2))
     return out
@@ -194,7 +210,7 @@ def check_sections(pf: PageFile) -> list[LintIssue]:
     if not page.title:
         out.append(_issue(pf, "sections", "block", "缺一级标题（# 节点名称）"))
     for lineno, text in page.stray:
-        out.append(_issue(pf, "sections", "block", f"段落标记之外有内容：{text[:40]}", lineno))
+        out.append(_issue(pf, "sections", "block", "段落标记之外有内容", lineno))
     if specs is None:
         return out
     got = [(s.id, s.kind) for s in page.sections]
@@ -266,29 +282,42 @@ def check_locked_baseline(pf: PageFile, ctx: LintContext) -> list[LintIssue]:
 def check_links(pf: PageFile, ctx: LintContext) -> list[LintIssue]:
     page = pf.page
     assert page is not None
-    refs = {r.key for r in page.atom_refs}
-    out = []
+    out = check_citation_refs(pf, ctx.snapshot)
     for lineno, sid, ln in body_lines(page):
         for m in WIKILINK.finditer(ln):
             if m.group(1) not in ctx.page_ids:
-                out.append(_issue(pf, "link", "block", f"失效链接：页面 {m.group(1)} 不存在", lineno, sid))
-        for m in CITATION.finditer(ln):
-            key = f"{m.group(1)}:{m.group(2)}"
-            if m.group(1) not in ATOM_TYPES:
-                out.append(_issue(pf, "link", "block", f"引用的原子类型不合法：{key}", lineno, sid))
-            elif key not in refs:
-                out.append(_issue(pf, "link", "block", f"引用 {key} 没有登记在头部 atom_refs", lineno, sid))
-            elif ctx.snapshot is not None and ctx.snapshot.get(m.group(1), m.group(2)) is None:
-                out.append(_issue(pf, "link", "block", f"失效引用：原子 {key} 不在地图快照里", lineno, sid))
-        for m in QUOTE_SLOT.finditer(ln):
-            if f"projection:{m.group(1)}" not in refs:
-                out.append(_issue(pf, "link", "block", f"教材原句占位引用的投影 {m.group(1)} 没有登记在 atom_refs", lineno, sid))
+                out.append(_issue(pf, "link", "block", "失效链接：链接的页面不存在", lineno, sid))
         for m in _MD_LINK.finditer(ln):
             target = m.group(1)
             if re.match(r"^[a-z]+:", target):
-                out.append(_issue(pf, "link", "warn", f"页面里有外部链接：{target[:60]}", lineno, sid))
+                out.append(_issue(pf, "link", "warn", "页面里有外部链接", lineno, sid))
             elif not target.startswith("#"):
-                out.append(_issue(pf, "link", "block", f"用 [[页面 ID]] 链接其他页面，不用相对路径：{target[:60]}", lineno, sid))
+                out.append(_issue(pf, "link", "block", "用 [[页面 ID]] 链接其他页面，不用相对路径", lineno, sid))
+    return out
+
+
+def check_citation_refs(pf: PageFile, snapshot: Snapshot | None = None) -> list[LintIssue]:
+    """正文里的原子引用与原句占位：类型合法、ID 合白名单、登记在头部 atom_refs；给了地图快照时还要在快照里"""
+    page = pf.page
+    assert page is not None
+    refs = {r.key for r in page.atom_refs}
+    out = []
+    for lineno, sid, ln in body_lines(page):
+        for m in CITATION.finditer(ln):
+            key = f"{m.group(1)}:{m.group(2)}"
+            if m.group(1) not in ATOM_TYPES:
+                out.append(_issue(pf, "link", "block", "引用的原子类型不合法", lineno, sid))
+            elif not valid_atom_id(m.group(1), m.group(2)):
+                out.append(_issue(pf, "link", "block", "引用的原子 ID 不合该类型的 ID 规范", lineno, sid))
+            elif key not in refs:
+                out.append(_issue(pf, "link", "block", f"引用 {key} 没有登记在头部 atom_refs", lineno, sid))
+            elif snapshot is not None and snapshot.get(m.group(1), m.group(2)) is None:
+                out.append(_issue(pf, "link", "block", f"失效引用：原子 {key} 不在地图快照里", lineno, sid))
+        for m in QUOTE_SLOT.finditer(ln):
+            if not valid_atom_id("projection", m.group(1)):
+                out.append(_issue(pf, "link", "block", "教材原句占位的投影 ID 不合规范", lineno, sid))
+            elif f"projection:{m.group(1)}" not in refs:
+                out.append(_issue(pf, "link", "block", f"教材原句占位引用的投影 {m.group(1)} 没有登记在 atom_refs", lineno, sid))
     return out
 
 
@@ -310,8 +339,9 @@ def check_orphans(ctx: LintContext) -> list[LintIssue]:
             out.append(_issue(pf, "orphan", "block", f"孤立页：节点 {nid} 的类型（{node.get('level')}/{node.get('kind')}）挂不了知识点页"))
     for nid, pfs in by_node.items():
         if len(pfs) > 1:
+            shown = f"节点 {nid}" if is_node_id(nid) else "同一节点"
             for pf in pfs:
-                out.append(_issue(pf, "orphan", "block", f"节点 {nid} 挂了 {len(pfs)} 个页面：{', '.join(p.rel for p in pfs)}"))
+                out.append(_issue(pf, "orphan", "block", f"{shown} 挂了 {len(pfs)} 个页面：{', '.join(p.rel for p in pfs)}"))
     return out
 
 
@@ -323,7 +353,7 @@ def check_citations(pf: PageFile) -> list[LintIssue]:
     for s in page.sections:
         for rel, para in paragraphs(s.content):
             if not CITATION.search(para):
-                out.append(_issue(pf, "citation", "block", f"自然段缺原子引用：{para.strip()[:30]}", s.line + 1 + rel, s.id))
+                out.append(_issue(pf, "citation", "block", "自然段缺原子引用", s.line + 1 + rel, s.id))
     return out
 
 
@@ -336,10 +366,14 @@ def check_atom_hash(pf: PageFile, ctx: LintContext) -> list[LintIssue]:
     for r in page.atom_refs:
         atom = snap.get(r.type, r.id)
         if atom is None:
-            out.append(_issue(pf, "atom_hash", "block", f"引用的原子 {r.key} 已不在地图快照里", 2, atom=r.key))
+            if valid_atom_id(r.type, r.id) and r.type in ATOM_TYPES:
+                out.append(_issue(pf, "atom_hash", "block", f"引用的原子 {r.key} 已不在地图快照里", 2, atom=r.key))
+            else:
+                out.append(_issue(pf, "atom_hash", "block", "头部引用的原子不在地图快照里", 2))
         elif atom.hash != r.hash:
-            out.append(_issue(pf, "atom_hash", "block", f"原子 {r.key} 的哈希已过期（页面 {r.hash}，快照 {atom.hash}），需要重编",
-                              2, atom=r.key, page_hash=r.hash, snapshot_hash=atom.hash))
+            page_hash = r.hash if _HASH.match(r.hash) else "<不合规范>"
+            out.append(_issue(pf, "atom_hash", "block", f"原子 {r.key} 的哈希已过期（页面 {page_hash}，快照 {atom.hash}），需要重编",
+                              2, atom=r.key, page_hash=page_hash, snapshot_hash=atom.hash))
     return out
 
 
@@ -376,30 +410,51 @@ def check_formulas(pf: PageFile) -> list[LintIssue]:
             syntax = mathcheck.syntax_problems(f.source)
             if f.check is None:
                 if syntax:
-                    out.append(_issue(pf, "latex", "warn", f"公式无法解析：{'；'.join(syntax)}", line, s.id, formula=f.source))
+                    out.append(_issue(pf, "latex", "warn", f"公式无法解析：{'；'.join(sorted(set(syntax)))}", line, s.id))
                 continue
             if syntax:
-                out.append(_issue(pf, "sympy", "block", f"标了 % check 的式子无法解析：{'；'.join(syntax)}", line, s.id, formula=f.source))
+                out.append(_issue(pf, "sympy", "block", f"标了 % check 的式子无法解析：{'；'.join(sorted(set(syntax)))}", line, s.id))
                 continue
             res = mathcheck.verify_chain(f.source, f.check or None)
             if not res.ok:
-                out.append(_issue(pf, "sympy", "block", f"SymPy 验算不通过：{res.message}", line, s.id, formula=f.source,
-                                  verifiable=res.verifiable))
+                out.append(_issue(pf, "sympy", "block", f"SymPy 验算不通过：{res.message}", line, s.id, verifiable=res.verifiable))
     return out
 
 
 # ---------- 规则 13 ----------
 
+def header_strings(value: object, path: str = "") -> Iterator[tuple[str, str]]:
+    """头部所有字符串（含键名与 atom_refs[].id 等嵌套值）：（位置，文本）"""
+    if isinstance(value, dict):
+        for k, v in value.items():
+            yield f"{path}.{k}" if path else str(k), str(k)
+            yield from header_strings(v, f"{path}.{k}" if path else str(k))
+    elif isinstance(value, (list, tuple)):
+        for i, v in enumerate(value):
+            yield from header_strings(v, f"{path}[{i}]")
+    elif value is not None:
+        yield path, str(value)
+
+
+def pii_hits(text: str) -> list[str]:
+    """命中的个人信息模式名（原文与去掉引用、占位后的文字各扫一遍：引用键与原句占位里写个人信息同样拦）"""
+    stripped = _strip_refs(text)
+    return [label for label, pat in PII_PATTERNS if pat.search(text) or pat.search(stripped)]
+
+
 def check_pii(pf: PageFile) -> list[LintIssue]:
     page = pf.page
     assert page is not None
     out = []
+    for where, text in header_strings(page.header):
+        for label in pii_hits(text):
+            # 定位里不回显命中的原文（可能就是个人信息）；头部只给字段位置
+            top = where.split(".")[0].split("[")[0]
+            field_name = top if top in HEADER_KEYS else "未登记字段"
+            out.append(_issue(pf, "pii", "block", f"头部 {field_name} 疑似个人信息或学生标识：{label}", 2, pattern=label, field=field_name))
     for lineno, sid, ln in body_lines(page):
-        text = _strip_refs(ln)
-        for label, pat in PII_PATTERNS:
-            if pat.search(text):
-                # 定位里不回显命中的原文（可能就是个人信息）
-                out.append(_issue(pf, "pii", "block", f"疑似个人信息或学生标识：{label}", lineno, sid, pattern=label))
+        for label in pii_hits(ln):
+            out.append(_issue(pf, "pii", "block", f"疑似个人信息或学生标识：{label}", lineno, sid, pattern=label))
     return out
 
 
@@ -482,6 +537,14 @@ def check_textbook_quote(pf: PageFile, ctx: LintContext) -> list[LintIssue]:
                                   lineno, sid, projection=pid))
                 break
     return out
+
+
+def published_page_checks(pf: PageFile, lex: Lexicon) -> list[LintIssue]:
+    """读取已发布快照时逐页再跑一遍（知识服务启动时，knowledge.service.pages）：头部、原子引用登记、缺引用、个人信息、
+    人设中立与禁语。不需要地图快照与其他页面（页面间链接与模板在导出前的体检里已查）"""
+    if pf.page is None:
+        return check_format(pf)
+    return (check_header(pf) + check_citation_refs(pf) + check_citations(pf) + check_pii(pf) + check_persona(pf, lex))
 
 
 def load_files(pages_dir: Path) -> list[PageFile]:

@@ -19,6 +19,7 @@ from .errors import ServiceError, forbidden, internal, invalid, not_found
 from .pages import PageSnapshot, render_page
 from .reader import KgeReader, MapVersionRow, jsonb, node_record, projection_record, region_record, subject_of
 from ..retrieval.resolver import CombinedResolver
+from ..retrieval.tokenize import TOKENIZER_VERSION
 from .resolve import LOW_CONFIDENCE, RESOLVER_VERSION, Resolver
 
 log = logging.getLogger("starbuddy.knowledge")
@@ -39,6 +40,12 @@ MAX_PROJECTIONS = 16
 
 def graph_source(subject: str, v: MapVersionRow) -> str:
     return f"graph:{SUBJECT_PREFIX[subject].lower()}-map@{v.version}"
+
+
+def tokenizer_source(version: str = TOKENIZER_VERSION) -> str:
+    """node.resolve 的全文检索依赖分词器与停用词表：版本进 source_version（契约 SourceVersion 的 algo 类别，版本段只收
+    [A-Za-z0-9._-]，所以把其他字符换成点）"""
+    return "algo:kge-tokenize@" + re.sub(r"[^A-Za-z0-9._\-]", ".", version)[:32]
 
 
 class ToolCore:
@@ -154,7 +161,7 @@ class ToolCore:
                 item["kind"] = c.kind
             out.append(item)
         top = cands[0].confidence if cands else 0.0
-        meta = {"source_version": graph_source(subject, v), "confidence": top,
+        meta = {"source_version": f"{graph_source(subject, v)};{tokenizer_source()}", "confidence": top,
                 "model_version": getattr(self.resolver, "version", RESOLVER_VERSION)}
         if top < LOW_CONFIDENCE:
             meta["review_reasons"] = ["low_confidence"]
@@ -220,6 +227,10 @@ class ToolCore:
         if pp is None:  # 只有快照 manifest 列出的页面算已发布
             raise not_found()
         subject, v = await self._node_version(pp.node_id, body["context"])
+        if pp.map_version != v.version:
+            # 页面按旧地图版本编译：升版到重编合并之间暂不服务（继续服务旧页需让 source_version 反映编译版本，属契约变更，
+            # 见 lessons）。与“对象不存在”同一个 404（title = code，不带 detail）
+            raise not_found()
         n = await self.reader.node(v.id, pp.node_id)
         if n is None:  # 节点已撤下或不在已发布版本里：页面不再服务
             raise not_found()
@@ -274,26 +285,28 @@ class ToolCore:
         return result, {"source_version": f"rubric:{body['rubric_version']};{graph_source(subject, v)}"}
 
 
+class LossyMapping(ValueError):
+    """库里的写法映射到契约会丢信息：fail closed（回 500，日志只记异常类名，不回显内容；lessons 待内容侧确认写法）"""
+
+
 def _partial_credit(rule: Any) -> str:
-    """kge.scoring_point.partial_credit_rule（jsonb）→ 契约枚举：空对象 = all_or_nothing；{"mode": <枚举值>}；其他写法报错（回 500）"""
+    """kge.scoring_point.partial_credit_rule（jsonb）→ 契约枚举：空对象 = all_or_nothing；恰好 {"mode": <枚举值>}；
+    有 mode 以外的键或其他写法一律报错（回 500），不静默丢掉规则里的其他条件"""
     if rule in ({}, None):
         return "all_or_nothing"
-    if isinstance(rule, dict) and rule.get("mode") in PARTIAL_CREDIT:
+    if isinstance(rule, dict) and set(rule) == {"mode"} and rule["mode"] in PARTIAL_CREDIT:
         return str(rule["mode"])
-    raise ValueError("partial_credit_rule 无法映射到契约枚举")
+    raise LossyMapping("partial_credit_rule")
 
 
 def _keywords(value: Any) -> list[str]:
-    """kge.scoring_point.keyword_family（jsonb）→ 字符串数组：数组原样；对象按键排序展开各数组值；去重保序"""
-    words: list[Any] = []
-    if isinstance(value, list):
-        words = value
-    elif isinstance(value, dict):
-        for k in sorted(value):
-            if isinstance(value[k], list):
-                words += value[k]
+    """kge.scoring_point.keyword_family（jsonb）→ 字符串数组：只收字符串数组（去重保序）；空值 = 无。
+    对象形式（按类别分组的关键词）映射到契约的扁平数组会丢掉分组，fail closed（回 500）"""
+    if value in (None, [], {}):
+        return []
+    if not isinstance(value, list) or not all(isinstance(w, str) for w in value):
+        raise LossyMapping("keyword_family")
     seen: dict[str, None] = {}
-    for w in words:
-        if isinstance(w, str):
-            seen.setdefault(w, None)
+    for w in value:
+        seen.setdefault(w, None)
     return list(seen)

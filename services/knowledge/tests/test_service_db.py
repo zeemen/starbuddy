@@ -15,7 +15,7 @@ import pytest
 from knowledge.service.app import create_app
 from knowledge.service.contract import contract
 from knowledge.service.reader import DbAtomSource, KgeReader, ReaderRoleError, atom_key, create_reader_pool
-from pgkge import (APP_ROLE, APPLY, BAD, BYPASS_ROLE, DRAFT_NAME, DRAFT_ONLY, FORBIDDEN_TEXT, LINEAR, OLD, OTHER_ROLE, QUOTE_A,
+from pgkge import (APP_ROLE, APPLY, BAD, BYPASS_ROLE, CREATEDB_ROLE, CREATEROLE_ROLE, DRAFT_NAME, DRAFT_ONLY, FORBIDDEN_TEXT, LINEAR, OLD, OTHER_ROLE, PREDEF_ROLE, QUOTE_A,
                    QUOTE_B, QUOTE_T, RETIRED_ONLY, TRANSPOSE, VP, WEAK, WRITER_ROLE)
 from svc import call, ctx, running_app, settings
 
@@ -24,10 +24,21 @@ C = contract()
 
 
 # ---------- 角色 ----------
-@pytest.mark.parametrize("role, message", [("postgres", "超级用户"), (BYPASS_ROLE, "BYPASSRLS"), (WRITER_ROLE, "应用角色")])
+@pytest.mark.parametrize("role, message", [("postgres", "超级用户"), (BYPASS_ROLE, "BYPASSRLS"), (WRITER_ROLE, "应用角色"),
+                                           (PREDEF_ROLE, "预置角色"), (CREATEDB_ROLE, "CREATEDB"), (CREATEROLE_ROLE, "CREATEROLE")])
 async def test_unsafe_roles_refused_at_startup(kgedb, role, message):
     with pytest.raises(ReaderRoleError, match=message):
         await create_reader_pool(**kgedb.connect_kwargs(role))
+
+
+async def test_connection_timezone_is_beijing(kgedb):
+    """时政有效期按北京时间判断：连接固定 TimeZone=Asia/Shanghai（测试库的服务端缺省是 UTC）"""
+    pool = await create_reader_pool(**kgedb.connect_kwargs(APP_ROLE))
+    try:
+        async with pool.acquire() as c:
+            assert await c.fetchval("SELECT current_setting('TimeZone')") == "Asia/Shanghai"
+    finally:
+        await pool.close()
 
 
 async def test_role_without_reader_membership_refused(kgedb):
@@ -179,6 +190,16 @@ async def test_rubric_points(kgedb):
              "subject_dimension": "computation", "keyword_family": ["移项", "变号"]}]
         assert body["result"]["rubric_version"] == "syn-rubric@0.1.0"
         assert body["source_version"] == "rubric:syn-rubric@0.1.0;graph:math-map@0.9.0"
+        # 题目标签待审：采分点不返回（与 item_tag 联查）
+        r = await call(client, "rubric.get", {"context": ctx("learning"), "item_ref": "aya:SYN-I4",
+                                               "rubric_version": "syn-rubric@0.1.0"}, "learning")
+        assert r.status_code == 404 and r.json()["code"] == "ITEM_NOT_FOUND"
+        # 映射有损 fail closed：关键词对象写法、部分给分规则带 mode 以外的键 → 500，不回显内容
+        for item in ("aya:SYN-I2", "aya:SYN-I3"):
+            r = await call(client, "rubric.get", {"context": ctx("learning"), "item_ref": item,
+                                                   "rubric_version": "syn-rubric@0.1.0"}, "learning")
+            assert r.status_code == 500 and r.json()["code"] == "INTERNAL", item
+            assert "移项" not in r.text and "cap" not in r.text
 
 
 async def test_node_resolve_rule_candidates(kgedb):
@@ -189,6 +210,8 @@ async def test_node_resolve_rule_candidates(kgedb):
         ids = [c["node_id"] for c in body["result"]["candidates"]]
         assert ids[:2] == [LINEAR, TRANSPOSE] and body["confidence"] == body["result"]["candidates"][0]["confidence"]
         assert body["human_review_required"] is False and body["model_version"] == "algo:kge-node-resolve@0.2.0"  # PR ③：规则 + 全文
+        # 分词器版本进 source_version（契约 SourceVersion 允许多段与 algo 类别）
+        assert body["source_version"] == "graph:math-map@0.9.0;algo:kge-tokenize@jieba-0.42.1.search-nohmm.sw1"
         r = await call(client, "node.resolve", {"context": ctx(data_class="L2"), "subject": "aya", "text": "完全无关的合成文字"})
         body = r.json()
         assert body["result"]["candidates"] == [] and body["human_review_required"] is True
@@ -219,6 +242,8 @@ async def test_reader_sql_filters_without_rls(kgedb):
         items = await r.item_search(v.id, "aya", None, None, None, None, None, 50)
         assert sorted(i["item_id"] for i in items) == ["SYN-I1", "SYN-I2", "SYN-I3"]
         assert await r.item(v.id, "aya", "SYN-I4") is None and await r.item(v.id, "aya", "SYN-I5") is None
+        assert await r.scoring_points(v.id, "aya", "SYN-I4", "syn-rubric@0.1.0") == []  # 标签待审：不返回采分点
+        assert [p["point_id"] for p in await r.scoring_points(v.id, "aya", "SYN-I1", "syn-rubric@0.1.0")] == ["solve", "transpose"]
         sims = await r.item_similar(v.id, "aya", "SYN-I1", None, LINEAR, 20)
         assert sorted(i["item_id"] for i in sims) == ["SYN-I2"]
         doc = await r.snapshot_doc("aya")

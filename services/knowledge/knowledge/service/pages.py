@@ -5,6 +5,13 @@
     pages/kp/<节点 ID>.md       页面原文（与页面仓库该提交逐字节相同）
 manifest 的每页：page_id（页面仓库里的页面 ID = 节点 ID）、path、page_version、map_version、sha256。
 启动时逐页核对哈希、头部与 manifest 一致，任何一处不符就拒绝加载（fail closed）；只有 manifest 列出的页面算“已发布”。
+载入时还要：
+- 快照目录、pages/、pages/kp/、manifest.json 与每个页面文件都不能是符号链接（lstat），也不能对属组或其他用户可写；
+- 对每页再跑一遍程序体检里不依赖地图快照的检查（头部含原子 ID 白名单、原子引用登记、缺引用、个人信息、人设中立与禁语，
+  knowledge.lint.checks.published_page_checks）：导出后被人改过、或绕过导出直接拼出来的快照，读取时渲染也绕不过体检；
+  有阻断即拒绝加载（知识服务拒绝启动）。
+manifest 的签名（HMAC）属于密钥管理，未实现（lessons 待人确认）。
+page.get 只服务 map_version 与当前已发布地图版本一致的页面（tools.page_get）：升版到重编合并之间，落后的页面回 404。
 
 契约的 PageId 是小写编码（`math.func.quad.vertex-form`）：节点 ID 转小写、下划线换连字符（节点 ID 里没有连字符，
 所以可逆）。page_version 取页面头部的语义化版本；提交号按 ADR 12 映射进 source_version（`graph:kge-pages@<提交号前 12 位>`）。
@@ -16,7 +23,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping
@@ -38,6 +47,20 @@ MAX_ATOM_REFS = 200
 
 class SnapshotLoadError(RuntimeError):
     """快照目录不合格：拒绝加载"""
+
+
+def _safe_entry(path: Path, *, directory: bool) -> None:
+    """不是符号链接、类型对、属组与其他用户不可写"""
+    try:
+        st = os.lstat(path)
+    except OSError:
+        raise SnapshotLoadError("页面快照缺少必要的文件或目录") from None
+    if stat.S_ISLNK(st.st_mode):
+        raise SnapshotLoadError("页面快照里不能有符号链接")
+    if directory != stat.S_ISDIR(st.st_mode) or (not directory and not stat.S_ISREG(st.st_mode)):
+        raise SnapshotLoadError("页面快照里的文件类型不对")
+    if st.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+        raise SnapshotLoadError("页面快照的文件或目录对属组或其他用户可写")
 
 
 def contract_page_id(node_id: str) -> str:
@@ -71,10 +94,16 @@ class PageSnapshot:
         return self.pages.get(page_id)
 
 
-def load_snapshot_dir(root: str | Path) -> PageSnapshot:
+def load_snapshot_dir(root: str | Path, lexicon: Any = None) -> PageSnapshot:
+    """lexicon：人设词表（缺省从 docs/personas 只读抽取，与体检同一份）"""
+    from ..lint.checks import PageFile, published_page_checks
+    from ..lint.lexicon import LexiconError, default_lexicon
+
     d = Path(root)
     if not d.is_dir():
         raise SnapshotLoadError("页面快照目录不存在")
+    _safe_entry(d, directory=True)
+    _safe_entry(d / "manifest.json", directory=False)
     try:
         manifest = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -87,6 +116,13 @@ def load_snapshot_dir(root: str | Path) -> PageSnapshot:
     entries = manifest.get("pages")
     if not isinstance(entries, list):
         raise SnapshotLoadError("manifest.pages 必须是数组")
+    if entries:
+        _safe_entry(d / "pages", directory=True)
+        _safe_entry(d / "pages" / "kp", directory=True)
+    try:
+        lex = lexicon if lexicon is not None else default_lexicon()
+    except LexiconError:
+        raise SnapshotLoadError("人设词表无法载入，不能核对页面") from None
     pages: dict[str, PublishedPage] = {}
     for i, e in enumerate(entries):
         if not isinstance(e, dict) or set(e) != {"page_id", "path", "page_version", "map_version", "sha256"}:
@@ -95,6 +131,7 @@ def load_snapshot_dir(root: str | Path) -> PageSnapshot:
         if not is_node_id(nid) or rel != f"pages/kp/{nid}.md" or not SEMVER.fullmatch(str(ver)) or not SHA256.fullmatch(str(digest)):
             raise SnapshotLoadError(f"manifest.pages[{i}] 取值不合规范")
         path = d / rel
+        _safe_entry(path, directory=False)
         try:
             raw = path.read_bytes()
         except OSError:
@@ -109,6 +146,10 @@ def load_snapshot_dir(root: str | Path) -> PageSnapshot:
         if h.get("page_id") != nid or h.get("node_id") != nid or h.get("page_type") != "kp" or str(h.get("page_version")) != ver \
                 or str(h.get("map_version")) != str(e["map_version"]):
             raise SnapshotLoadError(f"manifest.pages[{i}] 与页面头部不一致")
+        blocks = [i for i in published_page_checks(PageFile(rel, raw.decode("utf-8"), page), lex) if i.severity == "block"]
+        if blocks:
+            kinds = "、".join(sorted({i.check_type for i in blocks}))
+            raise SnapshotLoadError(f"manifest.pages[{i}] 的页面有体检阻断（{kinds}），拒绝加载")
         pid = contract_page_id(nid)
         if not CONTRACT_PAGE_ID.fullmatch(pid) or pid in pages:
             raise SnapshotLoadError(f"manifest.pages[{i}] 的页面 ID 重复或不合契约")

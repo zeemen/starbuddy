@@ -4,14 +4,19 @@
 - 只用词典切分（HMM=False）+ 搜索引擎模式（长词再切出短词），不做新词发现，同一输入的结果只取决于 jieba 版本与词典；
 - 先做 NFKC 与小写；去掉页面标记（原子引用、页面链接、原句占位）；只保留含汉字、字母或数字的词；去停用词。
 分词器与停用词表的任何改动都改变检索结果：改动时升 TOKENIZER_VERSION，并重跑对照评测。
+jieba 的词典缓存（marshal 格式）写在服务私有目录，不用系统共享的临时目录：环境变量 KNOWLEDGE_CACHE_DIR 指定，
+缺省 services/knowledge/.cache（已被 .gitignore 忽略）；目录建成 0700，必须属于本进程用户、不是符号链接、属组与其他用户不可写。
 """
 from __future__ import annotations
 
 import logging
+import os
 import re
+import stat
 import threading
 import unicodedata
 import warnings
+from pathlib import Path
 
 TOKENIZER_VERSION = "jieba-0.42.1+search-nohmm+sw1"
 # 停用词：只收虚词与问句套话（问句里常见、页面里常见、对区分知识点没有帮助）。改动须升 TOKENIZER_VERSION
@@ -23,8 +28,30 @@ STOPWORDS = frozenset({
 _MARKUP = re.compile(r"\[@[a-z]+:[^\]\s]+\]|\{\{quote:[^}\s]+\}\}|\[\[[^\]\s|]+\]\]|<!--.*?-->")
 _WORDY = re.compile(r"[0-9a-z㐀-䶿一-鿿]")
 
+CACHE_DIR_ENV = "KNOWLEDGE_CACHE_DIR"
+DEFAULT_CACHE_DIR = Path(__file__).resolve().parents[2] / ".cache"
+CACHE_FILE = "jieba.cache"
+
 _lock = threading.Lock()
 _tokenizer = None
+
+
+class CacheDirError(RuntimeError):
+    """分词器缓存目录不安全"""
+
+
+def cache_dir() -> Path:
+    """jieba 词典缓存的目录（服务私有）：<KNOWLEDGE_CACHE_DIR 或缺省目录>/jieba"""
+    d = Path(os.environ.get(CACHE_DIR_ENV) or DEFAULT_CACHE_DIR) / "jieba"
+    d.mkdir(mode=0o700, parents=True, exist_ok=True)
+    st = os.lstat(d)
+    if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode):
+        raise CacheDirError("分词器缓存目录必须是真实目录，不能是符号链接")
+    if hasattr(os, "geteuid") and st.st_uid != os.geteuid():
+        raise CacheDirError("分词器缓存目录必须属于服务进程用户")
+    if st.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+        raise CacheDirError("分词器缓存目录不能对属组或其他用户可写")
+    return d
 
 
 def _jieba():
@@ -37,6 +64,8 @@ def _jieba():
 
             jieba.setLogLevel(logging.WARNING)
             t = jieba.Tokenizer()
+            t.tmp_dir = str(cache_dir())  # 不用系统共享 /tmp
+            t.cache_file = CACHE_FILE
             t.initialize()
             _tokenizer = t
         return _tokenizer

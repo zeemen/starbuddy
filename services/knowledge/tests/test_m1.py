@@ -69,10 +69,30 @@ def test_kp_publish_rate_hand_count(tmp_path):
     assert (m["numerator"], m["denominator"]) == (3, 3) and m["pages_not_on_active_kp"] == [SQUARE]
 
 
-def test_kp_publish_rate_counts_stale_pages_separately(tmp_path):
+def test_kp_publish_rate_excludes_stale_pages_and_reports_both(tmp_path):
+    """map_version 落后的页面 page.get 不服务：主口径分子不含它们；并列“含落后页”口径"""
     m = build_report(map_doc(), page_snapshot_dir=make_page_snapshot(tmp_path / "s", map_version="0.8.0"))
     k = m["metrics"]["kp_page_publish_rate"]
-    assert (k["numerator"], k["denominator"]) == (4, 4) and k["stale_map_version"] == sorted([APPLY, LINEAR, SQUARE, TRANSPOSE])
+    assert (k["numerator"], k["denominator"], k["percent"], k["met"]) == (0, 4, "0.0%", False)
+    assert k["stale_map_version"] == sorted([APPLY, LINEAR, SQUARE, TRANSPOSE])
+    assert k["including_stale"] == {"numerator": 4, "denominator": 4, "percent": "100.0%", "met": True}
+    md = render_markdown(m)
+    assert "| 知识点页发布率 | 100% | 0.0%（0 / 4） | 未达到 |" in md
+    assert "| 知识点页发布率（含地图版本落后的页） | 100% | 100.0%（4 / 4） | 达到（仅供对照：落后页不对外服务） |" in md
+    # 只有一页落后：3 / 4 与 4 / 4
+    mixed = make_page_snapshot(tmp_path / "mixed")
+    import hashlib
+    manifest = json.loads((mixed / "manifest.json").read_text(encoding="utf-8"))
+    p = mixed / "pages" / "kp" / f"{APPLY}.md"
+    raw = p.read_text(encoding="utf-8").replace("map_version: 0.9.0", "map_version: 0.8.0", 1).encode("utf-8")
+    p.write_bytes(raw)
+    for e in manifest["pages"]:
+        if e["page_id"] == APPLY:
+            e.update(map_version="0.8.0", sha256=hashlib.sha256(raw).hexdigest())
+    (mixed / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    k = build_report(map_doc(), page_snapshot_dir=mixed)["metrics"]["kp_page_publish_rate"]
+    assert (k["numerator"], k["denominator"], k["stale_map_version"]) == (3, 4, [APPLY])
+    assert (k["including_stale"]["numerator"], k["including_stale"]["percent"]) == (4, "100.0%")
     assert build_report(map_doc())["metrics"]["kp_page_publish_rate"]["status"] == "not_computable"
 
 

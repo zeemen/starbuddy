@@ -28,18 +28,20 @@ KGE-03 编译层（`specs/kge-03-compile-layer/spec.md`）。本目录现在包�
 
 ## 常用命令
 ```bash
-python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt     # 在本目录执行（.venv 已被 .gitignore 忽略）
+python3 -m venv .venv && .venv/bin/pip install --require-hashes -r requirements-dev.lock   # 在本目录执行（.venv 已被 .gitignore 忽略）
+# 只装运行依赖（部署、页面仓库 CI 的检查工具制品）：pip install --require-hashes -r requirements.lock
 make knowledge-test knowledge-mutation                                       # 在仓库根目录：单测 + 端到端 + 变异
 
-# 程序体检（页面仓库 CI 用同一条命令，见 tools/kge-pages-template/repo/ci/lint.sh）
-.venv/bin/python -m knowledge.lint tests/fixtures/pages --map-snapshot tests/fixtures/map-v1.yaml --baseline tests/fixtures/pages --json
+# 程序体检（页面仓库 CI 用同一条命令，见 tools/kge-pages-template/repo/ci/lint.sh；CI 带 --require-map-snapshot）
+.venv/bin/python -m knowledge.lint tests/fixtures/pages --map-snapshot tests/fixtures/map-v1.yaml --require-map-snapshot \
+  --baseline tests/fixtures/pages --json
 .venv/bin/python -m knowledge.lint --export-lexicon /path/to/lexicon.json    # 导出人设词表给页面仓库
 
 # 编译（渲染重建 + 合并窗口），只写本地目录，不推送任何远程仓库
 .venv/bin/python -m knowledge.compiler --pages tests/fixtures/pages --old-snapshot tests/fixtures/map-v1.yaml \
   --new-snapshot /path/to/map-v2.yaml --out /tmp/kge-out --now 2026-09-29T10:00:00+08:00
 ```
-退出码：`knowledge.lint` 0 无阻断、1 有阻断、2 参数或输入错误（快照、词表读不了一律失败，不当作通过）；
+退出码：`knowledge.lint` 0 无阻断、1 有阻断、2 参数或输入错误（快照、词表读不了一律失败，不当作通过；带 `--require-map-snapshot` 时没给快照也是 2）；
 `knowledge.compiler` 0 完成、1 有合并请求体检阻断、2 参数或输入错误。
 
 ```bash
@@ -51,8 +53,10 @@ make knowledge-test knowledge-mutation                                       # �
 
 ```bash
 # 导出已发布页面快照（合并窗口时对页面仓库主分支的指定提交执行；只读 Git 对象，不改工作区、不访问远程）
-.venv/bin/python -m knowledge.compiler.snapshot --repo /path/to/kge-pages --commit main --out /srv/kge/snapshots/<提交号>
-# 退出码：0 完成，1 体检阻断（不产生任何输出目录），2 参数、仓库或页面错误；目标目录已存在即拒绝（快照不可变）
+.venv/bin/python -m knowledge.compiler.snapshot --repo /path/to/kge-pages --commit main --out /srv/kge/snapshots/<提交号> [--branch main]
+# 退出码：0 完成，1 体检阻断（不产生任何输出目录），2 参数、仓库或页面错误——含提交不在受保护分支上
+#   （git merge-base --is-ancestor <提交> refs/heads/<分支>）、提交里没有地图快照 snapshots/current.yaml；目标目录已存在即拒绝（快照不可变）。
+# 调 git 一律带 -c core.hooksPath=/dev/null -c core.fsmonitor=false，读文件用 git cat-file blob；manifest 记下分支名
 
 # 知识服务（缺省只监听 127.0.0.1:8790）
 KNOWLEDGE_ENV=dev KNOWLEDGE_DATABASE_URL=... KNOWLEDGE_TOKEN_ORCHESTRATOR=... KNOWLEDGE_PAGE_SNAPSHOT=/srv/kge/snapshots/<提交号> \
@@ -63,12 +67,18 @@ KNOWLEDGE_ENV=dev KNOWLEDGE_DATABASE_URL=... KNOWLEDGE_TOKEN_ORCHESTRATOR=... KN
 | 环境变量 | 说明 |
 |---|---|
 | `KNOWLEDGE_ENV` | `dev` 或 `test`；本服务不连接 pilot 或生产（规则 9） |
-| `KNOWLEDGE_DATABASE_URL` | asyncpg 连接串。登录角色**只继承** `starbuddy_kge_read`（例：`CREATE ROLE knowledge_app LOGIN IN ROLE starbuddy_kge_read`，由人按 `db/bootstrap/roles.sql` 的约定创建）。连接建立后服务执行 `SET ROLE starbuddy_kge_read`，会话默认只读事务；启动时断言登录角色不是超级用户、没有 BYPASSRLS、不继承 `starbuddy_kge` 或其他应用角色，不满足即拒绝启动 |
+| `KNOWLEDGE_DATABASE_URL` | asyncpg 连接串。登录角色**只继承** `starbuddy_kge_read`（例：`CREATE ROLE knowledge_app LOGIN IN ROLE starbuddy_kge_read`，由人按 `db/bootstrap/roles.sql` 的约定创建）。连接建立后服务执行 `SET ROLE starbuddy_kge_read`，会话默认只读事务、`TimeZone=Asia/Shanghai`（时政有效期按北京时间）；启动时断言登录角色不是超级用户、没有 BYPASSRLS、CREATEROLE、CREATEDB，不继承 `starbuddy_kge` 或其他应用角色，也不是任何 `pg_` 预置角色（`pg_read_all_data` 等）的成员，不满足即拒绝启动 |
 | `KNOWLEDGE_TOKEN_BFF` / `_ORCHESTRATOR` / `_LEARNING` | 服务间令牌（≥ 32 字符、各不相同、至少配一个）。令牌决定 caller，请求体 `context.caller` 必须一致（否则 403）；`node.resolve` 只给编排层，个人层工具没有 bff。学生与家长没有令牌（401） |
-| `KNOWLEDGE_PAGE_SNAPSHOT` | 页面快照目录。不设：`page.get` 回契约规定的 501；设了但目录不存在或不合格：拒绝启动。换快照 = 导出新目录、改配置、重启（快照在启动时整体核对后载入内存） |
-| `KNOWLEDGE_HOST` / `KNOWLEDGE_PORT` | 缺省 `127.0.0.1:8790`（契约 servers）；不接受 `0.0.0.0`、`::` 等通配地址，需要内网地址时显式配置具体地址。MCP 与 HTTP 同一监听地址，DNS 重绑定防护一律开启 |
+| `KNOWLEDGE_PAGE_SNAPSHOT` | 页面快照目录。不设：`page.get` 回契约规定的 501；设了但目录不存在或不合格：拒绝启动。换快照 = 导出新目录、改配置、重启（快照在启动时整体核对后载入内存）。载入时：目录、manifest 与页面文件不能是符号链接、不能对属组或其他用户可写；逐页再跑头部（含原子 ID 白名单）、引用登记、缺引用、个人信息、人设与禁语检查，有阻断即拒绝启动。manifest 签名未实现（待人确认） |
+| `KNOWLEDGE_HOST` / `KNOWLEDGE_PORT` | 缺省 `127.0.0.1:8790`（契约 servers）；不接受 `0.0.0.0`、`::` 等通配地址，主机名与旧式写法（如 `0`）先解析，结果是通配地址或解析不了一律拒绝；需要内网地址时显式配置具体地址。MCP 与 HTTP 同一监听地址；整个应用（`/v0/*` 与 `/mcp`）按同一份 Host 允许列表校验（不在列表回 400），MCP 另有 DNS 重绑定防护 |
+| `KNOWLEDGE_CACHE_DIR` | 服务私有的运行时目录（缺省 `services/knowledge/.cache`，已被忽略）；jieba 的词典缓存写在 `<目录>/jieba/`（0700，必须属于服务进程用户、不是符号链接），不用系统共享的临时目录 |
 
 - 鉴权照学习服务内部接口：Bearer 令牌 sha256 后常量时间比较、全部比完再取结果；请求体限 64 KB，JSON 拒绝 NaN / Infinity 与重复键。
+  `/mcp` 前置鉴权对 lifespan 以外的所有 scope 生效（websocket 等一律拒绝）；MCP 只列、只接 7 个公共层工具，个人层三个只在 HTTP 回 501。
+- `page.get` 只服务 `map_version` 与当前已发布地图版本一致的页面：升版到重编合并之间，落后页回 404 `CONTENT_VERSION_NOT_FOUND`（与“不存在”同一个错误体）。
+- `rubric.get` 只返回已发布版本里、题目标签审核通过的题目的采分点（SQL 与 `item_tag` 联查）；库里的写法映射到契约会丢信息时
+  （`partial_credit_rule` 有 `mode` 以外的键、`keyword_family` 是对象或含非字符串）回 500，日志只记异常类名。
+- `node.resolve` 的 `source_version` 附分词器版本：`graph:<学科>-map@<版本>;algo:kge-tokenize@<TOKENIZER_VERSION，非编码字符换成点>`。
 - 日志只记 request_id（UUID 形状才记）、caller、工具名、状态码、错误码、耗时；不记请求体（`node.resolve` 的文本可能来自学生，规则 13）。
 - 测试：`tests/pgkge.py` 起一次性 Postgres（做法同 `services/learning/tests/pgharness.py`），执行 bootstrap 角色与全部迁移、灌合成 kge 数据；
   `make knowledge-test CONTRACT_STRICT=1` 时没有 Postgres 直接失败，非严格模式下库上测试跳过。
@@ -88,11 +98,18 @@ KNOWLEDGE_ENV=dev KNOWLEDGE_DATABASE_URL=... KNOWLEDGE_TOKEN_ORCHESTRATOR=... KN
 | asyncpg | 0.31.0 | Apache-2.0 | 只读数据库连接（psycopg 3 为 LGPL-3.0，不引入） |
 | jsonschema / referencing | 4.26.0 / 0.37.0 | MIT / MIT | 契约严格校验；传递依赖 jsonschema-specifications（MIT）、rpds-py（MIT）、attrs（MIT） |
 | mcp / mcp-types | 2.2.0 / 2.2.0 | MIT / MIT | MCP 官方 Python SDK（spec 待人确认 #4）。传递依赖：httpx2 / httpcore2 2.13.1（BSD-3）、sse-starlette 3.5.0（BSD-3）、python-multipart 0.0.32（Apache-2.0）、PyJWT 2.15.1（MIT）、cryptography 50.0.1（Apache-2.0 或 BSD-3）、cffi 2.1.1（MIT-0）、pycparser 3.0（BSD-3）、opentelemetry-api 1.45.0（Apache-2.0）、truststore 0.10.4（MIT）。SDK 的 OAuth、stdio、客户端网络功能本服务不用；只用低层 Server、streamable HTTP 与测试用的进程内客户端 |
-| jieba | 0.42.1 | MIT | 兜底检索与 `node.resolve` 全文检索的中文分词（spec 待人确认 #5）。只有源码包（纯 Python，安装时本地构建），自带词典；没有运行时依赖（导入时若有 setuptools 会用其 `pkg_resources` 读词典，否则按文件路径读）。首次分词在系统临时目录写一份词典缓存 `jieba.cache`（只含公共词典，不含任何查询） |
+| jieba | 0.42.1 | MIT | 兜底检索与 `node.resolve` 全文检索的中文分词（spec 待人确认 #5）。只有源码包（纯 Python，安装时本地构建），自带词典；没有运行时依赖（导入时若有 setuptools 会用其 `pkg_resources` 读词典，否则按文件路径读）。首次分词在服务私有目录（`KNOWLEDGE_CACHE_DIR`，缺省 `.cache/jieba/`）写一份词典缓存 `jieba.cache`（只含公共词典，不含任何查询），不用系统临时目录 |
 | pytest（开发） | 9.1.1 | MIT | 单测；传递依赖 pluggy（MIT）、iniconfig（MIT）、packaging（Apache-2.0 或 BSD-2）、Pygments（BSD-2） |
+| pip-tools（只在 .venv 里生成锁文件） | 7.6.1 | BSD-3-Clause | 生成带哈希的 `requirements.lock` / `requirements-dev.lock`（`pip-compile --generate-hashes`）；不是运行依赖，不进锁文件 |
+
+供应链：`requirements.lock`（运行）与 `requirements-dev.lock`（运行 + pytest）由 `requirements*.txt` 用 pip-compile 生成，逐包带 sha256；
+安装一律 `pip install --require-hashes -r <锁文件>`。改 `requirements*.txt` 后必须重新生成锁文件并复核许可证（命令写在锁文件头部）。
 
 LaTeX 解析没有引入 `sympy.parsing.latex`（需要 antlr4 或 lark 运行时，属新增依赖）：体检自带一个 LaTeX 子集转换器
 （`knowledge/lint/mathcheck.py`，分式、根式、乘方、下标变量、四则、括号、π），转换结果先过字符与标识符白名单再交给 SymPy。
+SymPy 加固：`.` 只允许在两个数字之间；`parse_expr` 的全局名字只给最小集合、不给 builtins；先 `evaluate=False` 解析并遍历表达式树
+（只收加、乘、乘方、符号、有理数、浮点数与 π，限节点数 256、深度 32，常数指数绝对值 ≤ 64）；验算放进 fork 出的子进程
+（限 CPU 3 秒、地址空间 +512 MB，墙钟 2 秒），超时或超限按“无法验证”处理，带 `% check` 的即阻断。体检消息不回显页面原文。
 
 ## 兜底检索与补页面信号（PR ③）
 - 查阅路径：定位节点 → 读已发布页面 → 按需查原子 → 兜底检索（没定位到、置信度 < 0.5、节点没有页面、页面对查询词的 idf 加权覆盖率 < 0.5）→

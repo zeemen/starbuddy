@@ -15,7 +15,7 @@ from conftest import PAGES
 from knowledge.service.app import caller_for, strict_json
 from knowledge.service.config import DEFAULT_HOST, Settings, check_host
 from knowledge.service.contract import PERSONAL_TOOLS, PUBLIC_TOOLS, contract
-from knowledge.service.mcp_server import transport_security
+from knowledge.service.mcp_server import allowed_hosts, host_allowed, transport_security
 from knowledge.service.pages import FORMAT, SnapshotLoadError, contract_page_id, load_snapshot_dir, node_id_of
 from knowledge.service.resolve import RuleResolver
 from knowledge.service.tools import ALLOWED_CALLERS
@@ -95,17 +95,87 @@ def test_default_host_is_loopback_and_wildcards_rejected():
     s = Settings.from_env(dict(ENV))
     assert s.host == DEFAULT_HOST == "127.0.0.1" and s.port == 8790
     for wild in ("0.0.0.0", "::", "[::]", "", "*", " 0.0.0.0 "):
-        with pytest.raises(RuntimeError):
+        with pytest.raises(RuntimeError, match="0.0.0.0、::"):  # 字面通配地址直接拒绝，不经解析
             Settings.from_env({**ENV, "KNOWLEDGE_HOST": wild})
     assert check_host("10.8.0.12") == "10.8.0.12"
     assert Settings.from_env({**ENV, "KNOWLEDGE_HOST": "10.8.0.12"}).host == "10.8.0.12"
+    # 解析后是 unspecified 的写法同样拒绝（"0" 会被解析成 0.0.0.0）
+    for wild in ("0", "0x0", "0.0", "000.000.000.000", "[::]", "0:0::0", "::0"):
+        with pytest.raises(RuntimeError):
+            check_host(wild)
+    assert check_host("localhost") == "localhost" and check_host("[::1]") == "[::1]"
+    with pytest.raises(RuntimeError):
+        check_host("no-such-host.invalid")  # 解析不了：拒绝（fail closed）
 
 
 def test_mcp_transport_security_always_on():
     loop = transport_security("127.0.0.1")
     assert loop.enable_dns_rebinding_protection and all(h.startswith(("127.0.0.1", "localhost", "[::1]")) for h in loop.allowed_hosts)
     lan = transport_security("10.8.0.12")
-    assert lan.enable_dns_rebinding_protection and lan.allowed_hosts == ["10.8.0.12:*"]
+    assert lan.enable_dns_rebinding_protection and lan.allowed_hosts == ["10.8.0.12", "10.8.0.12:*"]
+    # IPv6：只加一层方括号（原来 [::1] 会生成 [[::1]]:*）
+    for h in ("::1", "[::1]"):
+        assert transport_security(h).allowed_hosts == allowed_hosts("127.0.0.1")
+    assert allowed_hosts("fd00::5") == allowed_hosts("[fd00::5]") == ["[fd00::5]", "[fd00::5]:*"]
+    assert all("[[" not in h for h in allowed_hosts("[::1]") + allowed_hosts("[fd00::5]"))
+
+
+def test_host_allowed_matches_mcp_semantics():
+    allowed = allowed_hosts("127.0.0.1")
+    for ok in ("127.0.0.1", "127.0.0.1:8790", "localhost:1", "[::1]:8790", "[::1]"):
+        assert host_allowed(ok, allowed), ok
+    for bad in (None, "", "evil.example", "127.0.0.1.evil.example", "127.0.0.1:", "127.0.0.1:80x", "localhost:123456",
+                "[::1]evil", "10.8.0.12:8790"):
+        assert not host_allowed(bad, allowed), bad
+
+
+def _asgi_probe():
+    calls: list = []
+
+    async def app(scope, receive, send):
+        calls.append(scope["type"])
+    return app, calls
+
+
+@pytest.mark.anyio
+async def test_mcp_auth_rejects_every_scope_but_lifespan_and_authorized_http():
+    from knowledge.service.app import McpAuth
+    app, calls = _asgi_probe()
+    guard = McpAuth(app, {"orchestrator": "o" * 40})
+    sent: list = []
+
+    async def send(msg):
+        sent.append(msg)
+
+    async def receive():
+        return {"type": "websocket.connect"}
+    await guard({"type": "websocket", "headers": [(b"authorization", b"Bearer " + b"o" * 40)]}, receive, send)
+    assert calls == [] and sent == [{"type": "websocket.close", "code": 1008}]  # 带了有效令牌的 websocket 也拒绝
+    await guard({"type": "custom", "headers": []}, receive, send)
+    assert calls == []
+    await guard({"type": "lifespan"}, receive, send)
+    assert calls == ["lifespan"]
+
+
+@pytest.mark.anyio
+async def test_host_guard_rejects_bad_host_for_http_and_websocket():
+    from knowledge.service.app import HostGuard
+    app, calls = _asgi_probe()
+    guard = HostGuard(app, allowed_hosts("127.0.0.1"))
+    sent: list = []
+
+    async def send(msg):
+        sent.append(msg)
+
+    async def receive():
+        return {"type": "http.request", "body": b""}
+    await guard({"type": "websocket", "headers": [(b"host", b"evil.example")]}, receive, send)
+    assert calls == [] and sent[-1] == {"type": "websocket.close", "code": 1008}
+    await guard({"type": "http", "method": "POST", "path": "/v0/node.get", "headers": [(b"host", b"evil.example")]}, receive, send)
+    assert calls == [] and any(m.get("status") == 400 for m in sent)
+    await guard({"type": "http", "method": "POST", "path": "/v0/node.get", "headers": [(b"host", b"127.0.0.1:8790")]}, receive, send)
+    await guard({"type": "lifespan"}, receive, send)
+    assert calls == ["http", "lifespan"]
 
 
 def test_settings_require_env_tokens_and_distinct():
@@ -220,3 +290,86 @@ def test_snapshot_rejects_broken(tmp_path, breakage):
         (d / "manifest.json").write_text(json.dumps(m), encoding="utf-8")
     with pytest.raises(SnapshotLoadError):
         load_snapshot_dir(d)
+
+
+def _rewrite_page(d: Path, e: dict, old: str, new: str, *, header_old: str | None = None, header_new: str | None = None) -> None:
+    """改写快照里的页面，并同步 manifest 的哈希（模拟导出后被人改过、或绕过导出直接拼出的快照）"""
+    p = d / e["path"]
+    text = p.read_text(encoding="utf-8")
+    assert old in text
+    text = text.replace(old, new, 1)
+    if header_old is not None:
+        text = text.replace(header_old, header_new, 1)
+    p.write_bytes(text.encode("utf-8"))
+    e["sha256"] = hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+@pytest.mark.parametrize("attack", ["pii_in_citation_key", "pii_plain", "persona", "forbidden_phrase", "missing_citation",
+                                    "unregistered_citation", "bad_atom_id"])
+def test_snapshot_reruns_page_checks_at_load(tmp_path, attack):
+    """读取时渲染也绕不过体检：哈希核对通过、但页面有体检阻断的快照拒绝加载（服务拒绝启动），消息不回显原文"""
+    d = _make_snapshot(tmp_path)
+    m = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
+    e = next(x for x in m["pages"] if x["page_id"] == "MATH.SYN.EQ.APPLY")
+    anchor = "设未知数时没有写单位"
+    pii_id = "王小明@南京一中13812345678"
+    if attack == "pii_in_citation_key":
+        _rewrite_page(d, e, anchor, f"{anchor} [@node:{pii_id}]",
+                      header_old="atom_refs:\n", header_new=f"atom_refs:\n  - {{type: node, id: \"{pii_id}\", hash: sha256:0000000000000000}}\n")
+    elif attack == "pii_plain":
+        _rewrite_page(d, e, anchor, f"联系 13912345678，{anchor}")
+    elif attack == "persona":
+        _rewrite_page(d, e, anchor, f"阿鸦提醒，{anchor}")
+    elif attack == "forbidden_phrase":
+        _rewrite_page(d, e, anchor, f"这题很简单，{anchor}")
+    elif attack == "missing_citation":
+        _rewrite_page(d, e, "## 易错\n\n", "## 易错\n\n合成：一段没有引用的叙述。\n\n")
+    elif attack == "unregistered_citation":
+        _rewrite_page(d, e, anchor, f"{anchor} [@node:MATH.SYN.EQ.NOT_REGISTERED]")
+    elif attack == "bad_atom_id":
+        _rewrite_page(d, e, anchor, anchor, header_old="atom_refs:\n",
+                      header_new="atom_refs:\n  - {type: projection, id: \"教材第一页\", hash: sha256:0000000000000000}\n")
+    (d / "manifest.json").write_text(json.dumps(m), encoding="utf-8")
+    with pytest.raises(SnapshotLoadError, match="体检阻断") as exc:
+        load_snapshot_dir(d)
+    assert "13812345678" not in str(exc.value) and "王小明" not in str(exc.value)
+
+
+def test_snapshot_rejects_symlinks_and_writable_entries(tmp_path):
+    import os
+    d = _make_snapshot(tmp_path)
+    assert load_snapshot_dir(d).commit == "a" * 40
+    m = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
+    page = d / m["pages"][0]["path"]
+    # 页面文件换成指向同内容的符号链接：哈希照样对得上，但拒绝
+    real = tmp_path / "outside.md"
+    shutil.copy(page, real)
+    page.unlink()
+    page.symlink_to(real)
+    with pytest.raises(SnapshotLoadError, match="符号链接"):
+        load_snapshot_dir(d)
+    page.unlink()
+    shutil.copy(real, page)
+    os.chmod(page, 0o644)
+    load_snapshot_dir(d)
+    # manifest、目录换成符号链接
+    link_root = tmp_path / "link"
+    link_root.symlink_to(d)
+    with pytest.raises(SnapshotLoadError, match="符号链接"):
+        load_snapshot_dir(link_root)
+    kp = d / "pages" / "kp"
+    moved = tmp_path / "kp-real"
+    kp.rename(moved)
+    kp.symlink_to(moved)
+    with pytest.raises(SnapshotLoadError, match="符号链接"):
+        load_snapshot_dir(d)
+    kp.unlink()
+    moved.rename(kp)
+    # 属组或其他用户可写：文件、目录、manifest 都拒绝
+    for target, mode in ((page, 0o664), (page, 0o646), (kp, 0o775), (d, 0o757), (d / "manifest.json", 0o666)):
+        old = os.stat(target).st_mode & 0o777
+        os.chmod(target, mode)
+        with pytest.raises(SnapshotLoadError, match="可写"):
+            load_snapshot_dir(d)
+        os.chmod(target, old)
+    assert len(load_snapshot_dir(d).pages) == 4

@@ -23,7 +23,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from .config import Settings
 from .contract import Contract, contract as default_contract
 from .errors import ServiceError, invalid, unauthenticated
-from .mcp_server import build_mcp_server, transport_security
+from .mcp_server import allowed_hosts, build_mcp_server, host_allowed, transport_security
 from .pages import PageSnapshot, load_snapshot_dir
 from .reader import KgeReader, assert_reader_role, create_reader_pool
 from .tools import ToolCore
@@ -79,19 +79,46 @@ def _problem(e: ServiceError) -> JSONResponse:
     return JSONResponse(e.problem(), status_code=e.status, media_type="application/problem+json")
 
 
+def _headers(scope: Scope) -> dict[str, str]:
+    return {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope.get("headers", [])}
+
+
+async def _refuse(scope: Scope, receive: Receive, send: Send, error: ServiceError) -> None:
+    if scope["type"] == "http":
+        await _problem(error)(scope, receive, send)
+    elif scope["type"] == "websocket":
+        await send({"type": "websocket.close", "code": 1008})
+    # 其他未知 scope 类型：不回应、不交给下游
+
+
 class McpAuth:
-    """/mcp 前置鉴权：没有有效令牌直接 401，不进 MCP 会话（call_tool 里还会按令牌再取一次 caller）"""
+    """/mcp 前置鉴权：没有有效令牌直接 401，不进 MCP 会话（call_tool 里还会按令牌再取一次 caller）。
+    除 lifespan 外，http 以外的 scope 类型（websocket 等）一律拒绝"""
 
     def __init__(self, app: ASGIApp, tokens: dict[str, str]) -> None:
         self.app = app
         self.tokens = tokens
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] == "http":
-            headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope.get("headers", [])}
-            if caller_for(headers.get("authorization"), self.tokens) is None:
-                await _problem(unauthenticated())(scope, receive, send)
+        if scope["type"] != "lifespan":
+            if scope["type"] != "http" or caller_for(_headers(scope).get("authorization"), self.tokens) is None:
+                await _refuse(scope, receive, send, unauthenticated())
                 return
+        await self.app(scope, receive, send)
+
+
+class HostGuard:
+    """整个应用（/v0/* 与 /mcp）的 Host 校验，允许列表与 MCP 的 DNS 重绑定防护同一份（mcp_server.allowed_hosts）。
+    lifespan 放行；其余 scope 的 Host 不在列表里即拒绝（http 回 400，websocket 关闭）"""
+
+    def __init__(self, app: ASGIApp, allowed: list[str]) -> None:
+        self.app = app
+        self.allowed = list(allowed)
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "lifespan" and not host_allowed(_headers(scope).get("host"), self.allowed):
+            await _refuse(scope, receive, send, ServiceError(400, "INVALID_REQUEST", "invalid host header"))
+            return
         await self.app(scope, receive, send)
 
 
@@ -163,4 +190,5 @@ def create_app(settings: Settings, *, pool: asyncpg.Pool | None = None, contract
     for spec in the_contract.tools.values():
         app.add_api_route(spec.path, route(spec.name), methods=["POST"])
     app.mount("/", McpAuth(mcp_app, settings.tokens))
+    app.add_middleware(HostGuard, allowed=allowed_hosts(settings.host))
     return app

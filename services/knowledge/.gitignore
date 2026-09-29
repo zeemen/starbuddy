@@ -1,0 +1,2 @@
+# 分词器词典缓存等服务私有运行时文件（knowledge/retrieval/tokenize.py 的 KNOWLEDGE_CACHE_DIR 缺省目录）
+.cache/

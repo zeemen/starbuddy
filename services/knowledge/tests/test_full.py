@@ -86,6 +86,24 @@ def test_assert_public_rejects_personal_fields():
         full.build_messages({**payload, "guardian": "x"})
 
 
+@pytest.mark.parametrize("path,value", [
+    (("node", "name"), "合成方程 13812345678"),
+    (("node", "includes"), ["王小明，南京第一中学"]),
+    (("curriculum",), [{"ref": "curriculum:2022/SYN", "level": "理解", "text": "学号 SYN20260001"}]),
+    (("citable",), ["node:MATH.SYN.EQ.LINEAR", "affair:12345678-1234-1234-1234-123456789abc"]),
+])
+def test_assert_public_rejects_pii_in_any_value(path, value):
+    """键名之外，所有值（含嵌套）也扫个人信息模式；消息不回显值"""
+    payload = json.loads(json.dumps(full.public_payload(parse_snapshot(map_doc()), LINEAR), ensure_ascii=False))
+    target = payload
+    for k in path[:-1]:
+        target = target[k]
+    target[path[-1]] = value
+    with pytest.raises(CompileError, match="疑似个人信息") as e:
+        full.build_messages(payload)
+    assert "13812345678" not in str(e.value) and "王小明" not in str(e.value) and "SYN20260001" not in str(e.value)
+
+
 def test_full_recompile_is_always_high_risk_and_major_bump(tmp_path, lexicon):
     result, _, _ = run_full()
     assert result.risk == "high" and result.rebuild_kind == "full"

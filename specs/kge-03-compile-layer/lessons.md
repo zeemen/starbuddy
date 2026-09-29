@@ -138,7 +138,7 @@
   `register_judge`）；一致性 = 主问题重复 `--runs` 次 + 同义改写各 1 次的来源集合两两 Jaccard 平均；成本 = 字符数与 token 估算。
   报告只含汇总与题目 ID（测试逐条核对问题、改写、答案要点、切块原文都不在报告里），`synthetic: true` 时头部标“流程样例，不是评测结论”，
   题量 < 50 时写明不足以支撑结论。测试核对样例报告与夹具是最新的（改检索后要重跑样例，命令见 `evals/kge-compile/README.md`）。
-- 坑：jieba 0.42.1 导入时用 `pkg_resources`（弃用警告），导入处局部屏蔽；它首次分词在系统临时目录写 `jieba.cache`（只有公共词典）。
+- 坑：jieba 0.42.1 导入时用 `pkg_resources`（弃用警告），导入处局部屏蔽；它首次分词会写词典缓存 `jieba.cache`（只有公共词典；审查处理后改写在服务私有目录，见“审查处理”12）。
   `CombinedResolver` 调子解析器时候选上限要取 max(节点数, 调用方上限)，否则没有节点列表的测试桩被截成空。
 
 ### 与 spec / 任务说明的偏差
@@ -173,3 +173,100 @@
 | 留出集盲测（无处可标率 < 2%） | 教研负责人，在封存环境 | `bash evals/kge-tagging/run_holdout.sh ...`，只打印汇总；结果填入 M1 验收记录（规则 14，构建方不接触） | KGE-02 已交付的脚本 |
 | M1 报表 | 执行人 | `python -m knowledge.m1 --map-snapshot/--database-url ... --page-snapshot ... --lint-report ...`，与留出集结果、对照评测结论一起进 M1 验收记录 | `knowledge.m1` |
 | M1 是否达成 | 人 | 课标承接 100%、无处可标 < 2%、知识点页发布率 100%、体检零阻断、对照评测达标；真实 M1 不在本任务通过条件里（后续验收） | — |
+
+## 审查处理（子代理）
+范围：按审查意见修 KGE-03 的 `services/knowledge`、`tools/kge-pages-template`、`evals/kge-compile`（阻断 4 条、建议 12 条）。
+不改 `db/`（迁移与 DB 测试由主会话改）、`packages/contracts`、`docs/personas`、evals 金标数据；本任务的库上测试只改了
+`services/knowledge/tests`（`pgkge.py` 的合成种子加了三个反例角色与三条反例采分点）。全部是合成数据。
+
+### 阻断
+1. **page.get 旧版本页面**：`tools.page_get` 在节点核对之前比较快照里页面的 `map_version` 与当前已发布版本，不一致回 404
+   `CONTENT_VERSION_NOT_FOUND`（`not_found()`：title = code，不带 detail，与“不存在”同一个错误体）。端到端测试
+   `test_page_with_stale_map_version_not_served`。**取舍**：升版到重编合并之间，落后页暂不服务；若要继续服务旧页，
+   需要让 `source_version` 反映页面编译时的地图版本（现在写的是当前已发布版本），属契约变更，登记到 v1.0（待人确认 9）。
+   M1 报表的发布率随之改口径（建议 14）。
+2. **页面仓库 CI 可被合并请求篡改**：`ci/lint.sh` 改为从 `main` 的检出运行，地图快照、人设词表、上一审核版一律取自它自己所在的
+   `main` 检出，合并请求头部只经 `HEAD_PAGES_DIR` 提供 `pages/`（头部页面目录里有符号链接即退出码 2）；CI 必须带
+   `--require-map-snapshot`，快照或词表缺失退出码 2。检查工具改为固定版本的预构建只读制品：新增 `ci/install-tools.sh`
+   （只读 `ci/kge-tools.pin` 两行值、只接 https、先核 sha256 再解包、`pip install --require-hashes -r requirements.lock`，不带任何凭据）。
+   GitHub 样例只用 `pull_request`、`permissions: contents: read`、两次检出 `persist-credentials: false`、不引用任何 secrets，
+   注释写明不得用 `pull_request_target` 检出头部代码；action 固定到 40 位提交 SHA（占位 `0000…`，注明必须替换）。
+   GitLab 样例用 `git worktree` 检出 `main` 再跑它的 `ci/lint.sh`，镜像按 digest 固定（占位）。`BRANCH_PROTECTION.md` 加第 13–18 条
+   （CODEOWNERS 与路径规则：`ci/`、`.github/`、`.gitlab/`、`.gitlab-ci.yml`、`snapshots/`、`lexicon/`、`CODEOWNERS` 由平台负责人审核；
+   信任边界；无凭据；触发器；固定版本；地图升版顺序），新增 `repo/.github/CODEOWNERS` 样例（团队名占位）。
+   测试 `tests/test_template.py`：样例 YAML 解析后断言触发器、无 secrets、SHA 固定、头部只取 `pages/`、体检入口来自 `main`；
+   头部改了 `ci/lint.sh`、快照、词表时坏页面照样阻断；安装脚本拒绝占位与非 https。
+3. **个人信息检查可绕过**：`check_pii` 对原文与剥掉引用 / 占位后的文字各扫一遍（引用键、原句占位里的个人信息同样拦）；
+   头部所有值与键名（含 `atom_refs[].id`）也扫，消息只给字段名；原子 ID 按类型白名单校验（节点 `is_node_id`，其余
+   `[A-Za-z0-9_./>:-]{1,200}`），头部与正文引用、原句占位都查。`knowledge.lint --require-map-snapshot`、快照导出缺
+   `snapshots/current.yaml` 均退出码 2。`load_snapshot_dir` 载入时逐页跑 `published_page_checks`（头部含 ID 白名单、引用登记、
+   缺引用、个人信息、人设与禁语），有阻断即拒绝加载（服务拒绝启动）。审查者的复现写成测试
+   `test_review_repro_pii_in_citation_key_blocks_without_snapshot`（无快照体检：header、pii、link 三类阻断，报告不含原文），
+   快照侧 `test_snapshot_reruns_page_checks_at_load`。
+4. **快照导出不核对 main**：`git merge-base --is-ancestor <提交> refs/heads/<分支>`（缺省 `main`，`--branch` 可指定，分支名校验），
+   不在即退出码 2；manifest 记 `branch`；调 git 一律带 `-c core.hooksPath=/dev/null -c core.fsmonitor=false`，读文件改用
+   `git cat-file blob <提交>:<路径>`。测试 `test_export_only_from_protected_branch`、`test_export_requires_map_snapshot`。
+
+### 建议（按默认修复）
+5. 全量重编请求：`assert_public` 除键名外对所有字符串值跑 `PII_PATTERNS`（与体检同一份 `pii_hits`），命中即拒绝送出，消息不回显值。
+6. SymPy：`.` 只允许在两个数字之间；`parse_expr` 的 global_dict 为 Integer、Float、Rational、Symbol、Add、Mul、Pow、Function
+   （后四个是 `evaluate=False` 改写与 `auto_symbol` 必需的；Function 生成的调用与逗号生成的 Tuple 在树检查里拒收），`__builtins__` 置空；
+   先 `evaluate=False` 解析，遍历树只收加、乘、乘方、符号、有理数、浮点数与 π，限节点 256、深度 32、常数指数 |e| ≤ 64，
+   通过后再 `evaluate=True` 解析；代入取值每段限 6 位。验算放进 fork 出的子进程（RLIMIT_CPU 3 秒、RLIMIT_AS 为 fork 时地址空间
+   + 512 MB，墙钟 2 秒），超时、超限、子进程异常一律“无法验证”（带 `% check` 的阻断）；正常结论按（式子，取值）在本进程缓存
+   （fork 冷启动使体检测试从约 11 秒涨到 39 秒，缓存后约 13 秒）。`2^{2^{2^{20}}}`、`E.n(99999)`、`N(pi,999999)` 有测试。
+7. `reader.assert_reader_role`：登录角色与当前角色不能有 CREATEROLE、CREATEDB，登录角色不能是任何 `pg_%` 预置角色的成员；
+   server settings 固定 `TimeZone=Asia/Shanghai` 并在启动时核对。库上测试新增 `knowledge_predef`（pg_read_all_data）、
+   `knowledge_createdb`、`knowledge_createrole` 三个反例角色（只在测试的一次性库里建）。
+8. `rubric.get`：SQL 与 `kge.item_tag` 联查，只返回标签审核通过的题目的采分点；`partial_credit_rule` 有 `mode` 以外的键、
+   `keyword_family` 是对象（或数组里有非字符串）时抛 `LossyMapping` 回 500，日志只记异常类名。score > 999 已由响应校验回 500（登记）。
+9. 服务与 MCP：`McpAuth` 对 lifespan 以外的所有 scope 生效（websocket 以 1008 关闭，未知类型不回应不下传）；新增 `HostGuard`
+   中间件对整个应用（含 `/v0/*`）校验 Host，允许列表与 MCP 的 DNS 重绑定防护同一份（`mcp_server.allowed_hosts`，精确值或
+   `<主机>:*`，端口只收数字）；`check_host` 对主机名与旧式 IPv4 写法（`0`、`0x0`）解析，结果有 unspecified 或解析不了即拒绝；
+   修正 `[::1]` 生成 `[[::1]]:*`；MCP `list_tools` 只列 7 个公共工具，个人层三个在 MCP 回 404（与未知工具同），HTTP 仍回 501。
+10. 快照载入：目录、`pages/`、`pages/kp/`、manifest 与每页 lstat 拒绝符号链接，属组或其他用户可写即拒绝。manifest 签名（HMAC）未实现（待人确认 2）。
+11. 体检消息不回显页面原文：缺引用段、段落外内容、公式（含 `detail.formula`）、SymPy 等式两边、LaTeX 命令名、失效链接目标、
+    外部链接、未登记头部键名、非法类型或 ID 都不再回显；只回显已校验的节点 ID 与原子键、快照与词表里的内容、人数。
+    测试 `test_messages_never_echo_page_text` 用探针文字扫整份报告。
+12. jieba 缓存：`tmp_dir` 指向 `KNOWLEDGE_CACHE_DIR`（缺省 `services/knowledge/.cache`，新增 `services/knowledge/.gitignore`）下的
+    `jieba/`，建成 0700，必须属于本进程用户、不是符号链接、属组与其他用户不可写。
+13. 供应链：pip-tools 7.6.1（BSD-3-Clause，只装在 `.venv`）生成 `requirements.lock`、`requirements-dev.lock`（逐包 sha256，
+    与 `.venv` 现装版本一致，`pip install --require-hashes --dry-run` 通过）；README 与 Makefile 的安装提示改为 `--require-hashes`。jieba 是否接受仍由人定。
+14. M1：知识点页发布率主口径的分子排除 `map_version` 落后的页（它们 `page.get` 不服务），并列 `including_stale` 口径（Markdown 多一行，
+    注明“仅供对照”）；测试更新。
+15. `node.resolve` 的 `source_version` 附 `algo:kge-tokenize@<TOKENIZER_VERSION>`（契约 SourceVersion 允许 `;` 多段与 algo 类别；
+    版本段不收 `+`，换成 `.`：`jieba-0.42.1.search-nohmm.sw1`），不改契约。
+16. 本节。变异：`tests/mutations.sh` 新增 40 条（审查处理 27 条 + 库上 13 条，共 121 条），模板目录在副本里复制一份以便变异 CI 样例。
+    首轮变异漏检 7 条，已补测试：通配地址字面值走快速路径（消息核对）；SymPy 失败消息不回显式子；`check_tree` 直接拒收函数与元组；
+    安装脚本按去注释后的代码核对 `--require-hashes`；调 git 的每次调用都带安全参数（spy `subprocess.run`）；`scoring_points` 在不受 RLS
+    约束的连接上也不返回待审题目的采分点。原“MCP 关闭 DNS 重绑定防护”变异因 `HostGuard` 在外层兜住而等价，改为变异
+    `transport_security` 的开关（单测核对）。
+
+### 与审查意见的偏差
+1. **Host 不合法回 400**（`INVALID_REQUEST` Problem），不是 MCP SDK 的 421；`HostGuard` 在最外层，`/mcp` 的坏 Host 也先被它拦下。
+2. **`check_host` 解析不了的主机名也拒绝**（比“解析结果为 unspecified 才拒绝”更严）：解析不了本来也监听不上。
+3. **SymPy 子进程用 fork**，不是新解释器（新解释器每次导入 SymPy 约 0.5 秒）；没有 fork 的平台一律“无法验证”。
+4. **`keyword_family` 数组里有非字符串也 fail closed**（原实现静默丢弃）。
+5. **快照载入时的复查不含页面间链接与模板**：这两项要完整页面集与地图快照，已在导出前的体检里查。
+6. **地图快照取自 `main`** 带来升版顺序约束：先合并只改 `snapshots/` 的请求，再合并重编请求（`BRANCH_PROTECTION.md` 第 18 条）。
+7. **GitLab 的 `CI_JOB_TOKEN` 无法去掉**：样例不显式使用它，清单要求把作业令牌访问范围限定为本项目；`.gitlab-ci.yml` 与 GitHub 工作流文件
+   本身来自合并请求，只能靠 CODEOWNERS 或平台的“必需工作流 / 流水线执行策略”兜住（写进清单第 16 条）。
+8. **`knowledge.lint` 本身不拒绝符号链接**：由 `ci/lint.sh` 在调用前拒绝头部页面目录里的符号链接；快照载入另有 lstat 检查。
+
+### 待人确认（更新）
+1. **历史 rubric_version 查询**：`rubric.get` 只查当前已发布地图版本里的采分点；要查历史地图版本的 rubric，需改 0026 的 RLS
+   放开非发布版本的 `scoring_point`（迁移与权限变更，必停）。
+2. **manifest 签名与密钥**：快照 manifest 的 HMAC 签名属于密钥管理（密钥存放、轮换、导出机与服务间分发），本次不实现。
+3. **全量重编的出境与 T8 供应商**：请求只含公共原子且已扫个人信息，但 T8 的真实供应商、是否境外（数据出境路径）由人定（必停项“新增模型供应商或数据出境路径”）。
+4. **jieba 与 mcp 依赖**：仍待人确认是否接受（jieba 0.42.1 只有源码包、2020 年后未发布；mcp 2.2.0 传递依赖较多）；pip-tools 只在开发环境。
+5. **契约 v1.0 登记项**（本次不改契约）：SourceVersion 新增 `pages` 类别（页面快照提交号现在借用 `graph:kge-pages@<前 12 位>`）；
+   Problem.code 增加 `UNAUTHENTICATED` / `FORBIDDEN`（现在 401 / 403 借用 `INVALID_REQUEST`）；`PageGetResponse.atom_refs` 补
+   `edge`、`curriculum_item`、`region_projection` 类型；写明契约 `page_id` 与节点 ID 的映射关系（小写、下划线换连字符）；
+   写明 `textbook_projection:tp-<哈希>` 等派生键只用于溯源、不能反查数据库行；`page.get` 服务旧版页面时 `source_version` 如何反映编译版本（阻断 1 的取舍）。
+6. **全量重编 SYSTEM_PROMPT 不跑 evals/persona**：它是编译任务的指令（要求页面人设中立），不是任何角色的人设 Prompt，也不面向学生；
+   按 CLAUDE.md“人设 Prompt 变更跑人设回归”的范围不适用。改它仍需审查，是否另设编译 Prompt 的回归由人定。
+7. **采分点的写法**：`partial_credit_rule` 除 `mode` 外是否有其他条件、`keyword_family` 的分组对象是否要进契约，由内容侧确认；
+   score > 999 的采分点现在由响应校验回 500。
+8. **页面仓库检查工具制品**：StarBuddy 发布流程打包 `services/knowledge`（含 `requirements.lock`）、放到内网匿名只读的 https 地址、
+   把地址与 sha256 写进 `ci/kge-tools.pin`，由平台定；CI 样例里 action 的提交 SHA、镜像 digest、CODEOWNERS 团队名都是占位。
+9. **旧版页面是否继续服务**：见阻断 1；默认升版到重编合并之间回 404。

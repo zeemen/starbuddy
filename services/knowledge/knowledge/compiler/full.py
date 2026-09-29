@@ -3,7 +3,9 @@
 - 任务类型 T8（后台批量生产）：路由表里最贴近“离线公共知识构建”的任务；数据级别固定 L0（非个人数据）。
   路由表 T8 只接 L0（services/learning/config/model_routes.yaml），不需要改路由配置，也不新增供应商。
 - 请求只含公共原子：节点的名称与范围、课标条目、前置与后续节点名、可引用的原子键（白名单逐字段挑出，不整条转发）；
-  发出前再扫一遍键名，出现任何个人层字段就拒绝（fail closed，规则 13）。
+  发出前再扫一遍：键名出现任何个人层字段、或任何值（含嵌套）命中个人信息模式（与体检同一份 PII_PATTERNS）就拒绝
+  （fail closed，规则 13）。出境路径与 T8 的供应商由人定（lessons 待人确认）。
+- SYSTEM_PROMPT 是编译任务的指令，不是任何角色的人设 Prompt，所以不跑 evals/persona（lessons 说明）；改它仍要走审查。
 - 结果一律高风险，必须教研审核（两人确认）。模型标识只记在路由的调用记录里，不写进页面与合并请求说明。
 - 本仓不连任何真实模型：测试用路由 test 环境的假供应商。
 """
@@ -83,7 +85,9 @@ def public_payload(snapshot: Snapshot, node_id: str) -> dict[str, Any]:
 
 
 def assert_public(value: Any, path: str = "$") -> None:
-    """请求体里不得出现任何个人层字段名（递归）"""
+    """请求体里不得出现任何个人层字段名，任何字符串值不得命中个人信息模式（递归；消息只给位置与模式名，不回显值）"""
+    from ..lint.checks import pii_hits
+
     if isinstance(value, Mapping):
         for k, v in value.items():
             if str(k).lower() in PERSONAL_FIELDS:
@@ -92,6 +96,10 @@ def assert_public(value: Any, path: str = "$") -> None:
     elif isinstance(value, (list, tuple)):
         for i, v in enumerate(value):
             assert_public(v, f"{path}[{i}]")
+    elif isinstance(value, str):
+        hits = pii_hits(value)
+        if hits:
+            raise CompileError(f"全量重编请求的 {path} 疑似个人信息（{'、'.join(hits)}）：拒绝发送（规则 13）")
 
 
 def build_messages(payload: dict[str, Any]) -> tuple[dict[str, str], ...]:

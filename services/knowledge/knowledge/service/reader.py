@@ -3,7 +3,10 @@
 两道防线：
 1. 数据库：登录角色只继承 starbuddy_kge_read，连接建立后 SET ROLE starbuddy_kge_read，会话默认只读事务；
    RLS 只放出已发布地图版本里的有效节点与边、已核对的投影、审核通过的标签、已发布且在有效期内的时政。
-   启动时断言登录角色不是超级用户、没有 BYPASSRLS、不继承 starbuddy_kge 或任何其他应用角色（assert_reader_role）。
+   启动时断言登录角色不是超级用户、没有 BYPASSRLS、CREATEROLE、CREATEDB，不继承 starbuddy_kge 或任何其他应用角色，
+   也不是任何 pg_ 预置角色（pg_read_all_data、pg_write_all_data、pg_read_server_files、pg_write_server_files、
+   pg_execute_server_program 等）的成员（assert_reader_role）。
+   连接的 server settings 固定 TimeZone=Asia/Shanghai：时政有效期等按北京时间判断（current_date）。
 2. 本模块的 SQL 自己也按同样的条件过滤（不依赖 RLS 才正确；有测试在不受 RLS 约束的连接上核对）。
 
 不读写任何个人层表（规则 1、2、13）；不读投影的核对人工号与核对时间（0026 没有授予这两列）。
@@ -26,7 +29,7 @@ WRITER_ROLE = "starbuddy_kge"
 # 读服务的登录角色不能同时继承这些角色（0026 的断言同一份清单）
 OTHER_APP_ROLES = ("starbuddy_kge", "starbuddy_bff", "starbuddy_learning", "starbuddy_review", "starbuddy_scheduler",
                    "starbuddy_insight", "starbuddy_report", "starbuddy_authz")
-SERVER_SETTINGS = {"default_transaction_read_only": "on", "application_name": "starbuddy-knowledge"}
+SERVER_SETTINGS = {"default_transaction_read_only": "on", "application_name": "starbuddy-knowledge", "TimeZone": "Asia/Shanghai"}
 PREFIX_SUBJECT = {v: k for k, v in SUBJECT_PREFIX.items()}
 
 
@@ -49,9 +52,12 @@ async def _init_connection(conn: asyncpg.Connection) -> None:
 
 async def assert_reader_role(conn: asyncpg.Connection) -> None:
     row = await conn.fetchrow(
-        """SELECT current_user::text AS cur, r.rolsuper, r.rolbypassrls,
+        """SELECT current_user::text AS cur, r.rolsuper, r.rolbypassrls, r.rolcreaterole, r.rolcreatedb,
                   pg_has_role(session_user, $1, 'MEMBER') AS is_reader,
-                  ARRAY(SELECT x FROM unnest($2::text[]) x WHERE pg_has_role(session_user, x, 'MEMBER')) AS others
+                  ARRAY(SELECT x FROM unnest($2::text[]) x WHERE pg_has_role(session_user, x, 'MEMBER')) AS others,
+                  ARRAY(SELECT p.rolname::text FROM pg_roles p
+                         WHERE p.rolname LIKE 'pg\\_%' AND pg_has_role(session_user, p.oid, 'MEMBER')
+                         ORDER BY p.rolname) AS predefined
              FROM pg_roles r WHERE r.rolname = session_user""", READER_ROLE, list(OTHER_APP_ROLES))
     if row is None:
         raise ReaderRoleError("无法确认登录角色")
@@ -59,15 +65,22 @@ async def assert_reader_role(conn: asyncpg.Connection) -> None:
         raise ReaderRoleError("知识服务不能以超级用户连接数据库")
     if row["rolbypassrls"]:
         raise ReaderRoleError("知识服务的登录角色不能有 BYPASSRLS")
+    if row["rolcreaterole"] or row["rolcreatedb"]:
+        raise ReaderRoleError("知识服务的登录角色不能有 CREATEROLE 或 CREATEDB")
+    if row["predefined"]:
+        raise ReaderRoleError("知识服务的登录角色不能是 pg_ 预置角色的成员（pg_read_all_data 等）")
     if not row["is_reader"]:
         raise ReaderRoleError(f"登录角色必须继承 {READER_ROLE}")
     if row["others"]:
         raise ReaderRoleError(f"登录角色不能同时继承 {READER_ROLE} 以外的应用角色（含 {WRITER_ROLE}）")
     if row["cur"] != READER_ROLE:
         raise ReaderRoleError(f"当前角色必须是 {READER_ROLE}")
-    cur = await conn.fetchrow("SELECT r.rolsuper, r.rolbypassrls FROM pg_roles r WHERE r.rolname = current_user")
-    if cur is None or cur["rolsuper"] or cur["rolbypassrls"]:
+    cur = await conn.fetchrow("SELECT r.rolsuper, r.rolbypassrls, r.rolcreaterole, r.rolcreatedb FROM pg_roles r WHERE r.rolname = current_user")
+    if cur is None or cur["rolsuper"] or cur["rolbypassrls"] or cur["rolcreaterole"] or cur["rolcreatedb"]:
         raise ReaderRoleError(f"{READER_ROLE} 的属性不安全")
+    tz = await conn.fetchval("SELECT current_setting('TimeZone')")
+    if tz != SERVER_SETTINGS["TimeZone"]:
+        raise ReaderRoleError("连接的时区必须是 Asia/Shanghai（时政有效期按北京时间）")
 
 
 async def create_reader_pool(dsn: str | None = None, **connect: Any) -> asyncpg.Pool:
@@ -182,12 +195,15 @@ class KgeReader:
                                    version_id, subject, item_id, family_id, main_node_id, limit)
 
     async def scoring_points(self, version_id: Any, subject: str, item_id: str, rubric_version: str) -> list[asyncpg.Record]:
+        """只返回已发布版本里、题目标签审核通过的题目的采分点（与 item_tag 联查，第二道防线）"""
         async with self.pool.acquire() as c:
-            return await c.fetch("""SELECT point_id, score, node_ids::text[] AS node_ids, subject_dimension, keyword_family,
-                                           partial_credit_rule
-                                      FROM kge.scoring_point
-                                     WHERE map_version_id = $1 AND subject::text = $2 AND item_id = $3 AND rubric_version = $4
-                                     ORDER BY point_id""", version_id, subject, item_id, rubric_version)
+            return await c.fetch(f"""SELECT s.point_id, s.score, s.node_ids::text[] AS node_ids, s.subject_dimension, s.keyword_family,
+                                            s.partial_credit_rule
+                                       FROM kge.scoring_point s
+                                       JOIN kge.item_tag t ON t.map_version_id = s.map_version_id AND t.subject = s.subject
+                                                          AND t.item_id = s.item_id AND {_APPROVED}
+                                      WHERE s.map_version_id = $1 AND s.subject::text = $2 AND s.item_id = $3 AND s.rubric_version = $4
+                                      ORDER BY s.point_id""", version_id, subject, item_id, rubric_version)
 
     # ---------- 编译器数据源：已发布地图版本的公共层快照 ----------
     async def snapshot_doc(self, subject: str) -> dict[str, Any]:

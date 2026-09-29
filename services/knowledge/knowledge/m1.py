@@ -8,8 +8,9 @@
 - 课标承接率 = 被至少一个有效节点承接的课标条目数 / 该地图课标年份的课标条目数。
   快照里没有 `curriculum_links` 字段（例如数据库数据源：kge.* 尚无承接表）时如实报“不可计算：承接关系未入库”，不推算；
   字段在但为空列表时照算（结果为 0%）。
-- 知识点页发布率 = 在已发布页面快照（manifest）里有页面的 kp 节点数 / 有效 kp 节点数（kind = kp，status = active）。
-  页面头部的 map_version 与本地图版本不同的另计“待重编”，仍算已发布。
+- 知识点页发布率 = 在已发布页面快照（manifest）里有页面、且页面 map_version 与本地图版本一致的 kp 节点数 / 有效 kp 节点数
+  （kind = kp，status = active）。map_version 落后的页面 page.get 不服务（回 404），所以不进主口径的分子；
+  报表并列“含落后页”口径（分子含落后页），落后页单列“待重编”。
 - 体检阻断数 = 体检 JSON 的 summary.blocks（与 issues 里 severity = block 的条数核对，不一致即输入错误）。
 - 留出集无处可标率：不在这里算。来源是 KGE-02 的 `evals/kge-tagging/run_holdout.sh`，由教研负责人在封存环境执行（规则 14），
   构建方不接触留出集；报表只写明来源与执行人。
@@ -92,8 +93,10 @@ def kp_publish_rate(doc: Mapping[str, Any], page_snapshot_dir: str | Path | None
     by_node = {pp.node_id: pp for pp in pages.pages.values()}
     published = [n for n in kp if n in by_node]
     stale = [n for n in published if by_node[n].map_version != snap.map_version]
-    r = Ratio(len(published), len(kp))
+    r = Ratio(len(published) - len(stale), len(kp))
+    incl = Ratio(len(published), len(kp))
     return {"status": "computed", **r.to_dict(), "met": r.num == r.den, "snapshot_commit": pages.commit,
+            "including_stale": {**incl.to_dict(), "met": incl.num == incl.den},
             "missing": [n for n in kp if n not in by_node], "stale_map_version": stale,
             "pages_not_on_active_kp": sorted(n for n in by_node if n not in kp)}
 
@@ -155,6 +158,10 @@ def render_markdown(rep: Mapping[str, Any]) -> str:
     for k, label in names.items():
         value, verdict = _cell(ms[k])
         lines.append(f"| {label} | {rep['targets'][k]} | {value} | {verdict} |")
+        if k == "kp_page_publish_rate" and ms[k]["status"] == "computed":
+            inc = ms[k]["including_stale"]
+            lines.append(f"| {label}（含地图版本落后的页） | {rep['targets'][k]} | {inc['percent']}（{inc['numerator']} / {inc['denominator']}） | "
+                         f"{'达到' if inc['met'] else '未达到'}（仅供对照：落后页不对外服务） |")
     cc, kp, lb = ms["curriculum_coverage"], ms["kp_page_publish_rate"], ms["lint_blocks"]
     lines += ["", "## 明细", ""]
     if cc["status"] == "computed":
