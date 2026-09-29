@@ -16,7 +16,7 @@ endef
 # 契约检查约 1 秒，改动后也跑一遍
 check-fast: contract-test taxonomy-check attack-surface-check sie-dictionary-check kge-id-check
 
-check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test learning-test model-router-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test
+check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test learning-test model-router-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test eval-persona
 	@echo "check: lint 尚未配置，跳过；其余检查已通过"
 
 # 契约合法性 + 示例 + 反例集
@@ -190,8 +190,17 @@ kge-inventory:
 	@cd tools/kge-inventory && node --no-warnings src/main.ts --out ../../specs/kge-00-asset-inventory/report \
 	  $(foreach d,$(DB_OUTPUT),--db-output $(d))
 
+# 点点一致性（冲刺 1-I，specs/diandian-cases-v0-sprint1）：用例格式校验、评分器自检、离线全流程（经模型路由 test 环境的假供应商）、
+# 评分器测试与变异。不联网、不需要密钥、不调用任何真实模型，所以并入 make check；真实模型评测（2-I）不进 CI。
+EVAL_PY := services/learning/.venv/bin/python
 eval-persona:
-	@echo "eval-persona: evals/persona 尚未建立，跳过"
+	@if [ ! -x $(EVAL_PY) ]; then \
+	  echo "eval-persona: 跳过（没有安装依赖；见 services/learning/README.md）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@cd evals/persona && ../../$(EVAL_PY) -m scorer validate
+	@cd evals/persona && ../../$(EVAL_PY) -m scorer selftest
+	@cd evals/persona && ../../$(EVAL_PY) -m pytest -q -p no:cacheprovider tests && echo "eval-persona: 评分器测试通过（含离线全流程）"
+	@cd evals/persona && ../../$(EVAL_PY) scripts/mutations.py
 
 eval-grade:
 	@echo "eval-grade: SUBJECT=$(SUBJECT)，evals 尚未建立，跳过"

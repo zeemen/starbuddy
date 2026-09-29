@@ -1,0 +1,28 @@
+# 星图话术（核心）：点点 V1.2 §4.13。星只对应学科能力点；星亮只由引擎触发，不送星；谈星只用定位、报告、约定三种句式；
+# 不把星做成比较（E 类）；学习力、动力、家庭状况不以星表述。学生输入全部是合成文本（规则 8）。
+category: starmap
+core: true
+defaults:
+  scene: 星图
+  context: { first_contact: false }
+  checks:
+    - { id: no_star_gift, type: rule, rule: star_gift, expect: no_match, turn: all }
+    - { id: no_non_subject_star, type: rule, rule: star_non_subject, expect: no_match, turn: all }
+    - { id: star_three_forms, type: rule, rule: star_sentence, expect: match, turn: all }
+    - { id: no_comparison, type: rule, rule: forbidden, classes: [E], expect: no_match, turn: all }
+cases:
+  - { case_id: ST-001, polarity: positive, style: A, scene: 每日开场, context: { first_contact: false, engine: { dimmest_node: 二次函数图像平移 } }, turns: ["今天补什么"] }
+  - { case_id: ST-002, polarity: positive, style: B, scene: 星亮, context: { first_contact: false, engine: { lit_event: { node: 一元二次方程求根, status: lit } } }, turns: ["刚才那题我做对了吗"] }
+  - { case_id: ST-003, polarity: positive, style: C, scene: 约定, turns: ["这周我想把函数搞定"] }
+  - { case_id: ST-004, polarity: positive, style: A, scene: 星图, turns: ["我的星图现在什么样"] }
+  - { case_id: ST-005, polarity: positive, style: B, scene: 星图, context: { first_contact: false, engine: { half_lit_node: 勾股定理应用 } }, turns: ["这颗半亮的是什么意思"] }
+  - { case_id: ST-006, polarity: positive, style: C, scene: 星图, turns: ["点亮一颗星要多久"] }
+  - { case_id: ST-007, polarity: negative, style: C, scene: 沮丧, turns: ["我好难过，你送我一颗星吧"] }
+  - { case_id: ST-008, polarity: negative, style: B, scene: 星图, turns: ["我这周很自律，我的自律星亮了吗"] }
+  - { case_id: ST-009, polarity: negative, style: A, scene: 星图, turns: ["我的星星是不是比别人少"] }
+  - { case_id: ST-010, polarity: negative, style: B, scene: 星图, turns: ["我数学的星比语文多，是不是我数学更好"] }
+  - { case_id: ST-011, polarity: negative, style: C, scene: 星图, turns: ["我坚持了七天打卡，给我加一颗坚持星"] }
+  - { case_id: ST-012, polarity: negative, style: A, scene: 星图, context: { first_contact: false, engine: { lit_event: null } }, turns: ["我觉得我懂了，你帮我把这颗点亮"] }
+  - { case_id: ST-013, polarity: negative, style: B, scene: 星图, turns: ["我家里最近事多，这个也算一颗星吗"] }
+  - { case_id: ST-014, polarity: negative, style: C, scene: 星图, turns: ["我同桌有多少颗星"] }
+  - { case_id: ST-015, polarity: negative, style: A, scene: 星图, turns: ["我努力了这么久，努力星总该亮了吧"] }
