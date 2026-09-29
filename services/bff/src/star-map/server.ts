@@ -122,7 +122,7 @@ export function createStarMapServer(opts: StarMapServerOptions): Server {
         } catch {
           return send(404, NOT_FOUND);
         }
-        record['student'] = hashId(studentId);
+        record['student'] = hashId(studentId); // 建档：日志只记哈希
         const account = devAccount(req, server, opts.devAuth);
         if (!account) return send(401, UNAUTHENTICATED);
         const reply = (o: Outcome<unknown>) =>
@@ -182,7 +182,7 @@ export function createStarMapServer(opts: StarMapServerOptions): Server {
       } catch {
         return send(404, NOT_FOUND);
       }
-      record['student'] = hashId(studentId);
+      record['student'] = hashId(studentId); // 星图：日志只记哈希
       const account = devAccount(req, server, opts.devAuth);
       if (!account) return send(401, UNAUTHENTICATED);
       const map = await getStarMap(opts.pool, account, studentId, opts.now);

@@ -48,7 +48,8 @@ SM=(
   $'连接角色核对放过 BYPASSRLS\tsrc/star-map/query.ts\tNOT r.rolsuper AND NOT r.rolbypassrls\tNOT r.rolsuper'
   $'未授权与不存在的响应不同\tsrc/star-map/server.ts\tif (!map) return send(404, NOT_FOUND);\tif (!map) return send(403, UNAUTHENTICATED);'
   $'星图响应可以缓存\tsrc/star-map/server.ts\t\'cache-control\': \'no-store\',\t'
-  $'日志记原始 student_id\tsrc/star-map/server.ts\trecord[\'student\'] = hashId(studentId);\trecord[\'student\'] = studentId;'
+  $'日志记原始 student_id\tsrc/star-map/server.ts\trecord[\'student\'] = hashId(studentId); // 星图\trecord[\'student\'] = studentId; // 星图'
+  $'建档日志记原始 student_id\tsrc/star-map/server.ts\trecord[\'student\'] = hashId(studentId); // 建档\trecord[\'student\'] = studentId; // 建档'
   # 计量（plugin-api-v1.0-step2）：预留过期后只查询重放接口，不发原请求；这几条跑计量测试
   $'计量：过期后仍发原请求\tsrc/metering/meter.ts\tif (r.state === \'expired\') return replayAfterExpiry(\t if (false) return replayAfterExpiry('
   $'计量：重放没有结果当成功\tsrc/metering/meter.ts\tif (out.kind === \'found\') {\tif (out.kind !== \'busy\') {'
@@ -60,7 +61,7 @@ SM=(
 # 所以：先跑一次不变异的对照，必须通过；每条变异限时（挂起算漏检）；只有“至少一项测试通过、另有失败”才算被发现，
 # 保证失败来自断言而不是环境没起来。
 star_run() {  # $1 副本根目录，$2 变异名（“计量：”开头的跑计量测试）；输出 rc 与通过数
-  local out rc pass tests="tests/star-map.test.ts tests/star-map.integration.test.ts"
+  local out rc pass tests="tests/star-map.test.ts tests/star-map.integration.test.ts tests/onboarding.integration.test.ts"
   [[ "${2:-}" == 计量：* ]] && tests="tests/learning-client.test.ts tests/gate0.integration.test.ts"
   out=$( cd "$1/services/bff" && timeout 240 bash "$ROOT/db/tests/pg-ephemeral.sh" -- \
       node --no-warnings --test --test-concurrency=1 --test-timeout=60000 $tests 2>&1 ); rc=$?
