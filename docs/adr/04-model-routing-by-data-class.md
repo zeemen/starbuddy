@@ -8,6 +8,8 @@
 
 > [NEEDS-HUMAN] 本 ADR 决定模型供应商与数据出境路径，属于 CLAUDE.md 规定的必停项。
 
+> 实现状态（2026-09-29）：冲刺 1-F 路由骨架已按正文第 3 节与增补实现（`services/learning/learning/model_router/`，`specs/model-router-sprint1/`），只含本地假供应商与 OpenAI 兼容通用适配器；未接任何真实供应商。本 ADR 签字后如有变化，只改配置校验。
+
 ---
 
 ## 1. 背景

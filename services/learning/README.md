@@ -102,3 +102,10 @@ LEARNING_ADAPTER_AYA_URL=http://127.0.0.1:8787 LEARNING_ADAPTER_AYA_TOKEN=... .v
 - 走 https；前端设 `STARBUDDY_ENV=staging`（会话 cookie 用 `__Host-sb_staff`、Secure）；不设 `STARBUDDY_DEV_AUTH`。
   `STARBUDDY_ENV` 误设成 dev / test 会让会话 cookie 失去 Secure 与 `__Host-` 前缀，上线检查要核对。
 - 上线前验证：同一来源连续提交超过上限得到 429；向其他 /review 路径提交登录 action 同样 429；已登录用户的正常浏览不受影响（建议 GET 不限或放宽）。
+
+## 模型路由骨架（`learning/model_router/`，specs/model-router-sprint1，冲刺 1-F）
+- 所有模型调用只经 `ModelRouter.route(RouteRequest)`：调用方声明任务类型（T1–T9）与数据级别（L0–L3），不指定模型；返回 `model_version`（`model:<供应商>/<模型>@<快照>`）与 `source_version`（`prompt:<模板>@<版本>`）。
+- 路由表 `config/model_routes.yaml`：仓库里只有 dev、test 两节与本地假供应商；staging、pilot、prod 由人按 `docs/compliance/vendors.md` 填写（必停项）。
+  pilot、prod 启动校验：不出境、只用已批准的供应商、锁定快照、主备不同厂商或平台；运行时再按数据级别过滤一次（境外只在 dev、test、staging 接 L0）。
+- 供应商地址与 Key 只写环境变量名（例如 `MODEL_FAKE_A_URL`），值由部署环境提供。调用记录只含元数据，默认写结构化日志（logger `starbuddy.model_router`）。
+- `make model-router-mutation`：改坏出境过滤、启动校验、熔断等 16 处关键检查，断言测试能发现。
