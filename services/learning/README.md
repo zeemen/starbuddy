@@ -76,3 +76,21 @@ LEARNING_ADAPTER_AYA_URL=http://127.0.0.1:8787 LEARNING_ADAPTER_AYA_TOKEN=... .v
 | `__main__.py` | `python -m review_console record --subject aya [--format csv\|json]` 导出版本记录 |
 
 签字（版本与变更单）、发布、改节点都要带上“看到的摘要”（`expected_digest`），与当前内容不同就拒绝（409）。
+
+### 审核台部署要求（staging；由人配置，仓库里没有部署配置）
+- 审核台后端只监听 127.0.0.1，只接受同机前端（apps/web 服务端）的请求；浏览器不直连。
+- **登录限流放在部署层**（2026-09-29 用户决定）：库里只按账号锁定（连错 5 次锁 15 分钟），后端看不到用户来源，
+  所以在 apps/web 前面的反向代理按来源 IP 限制对 `/review/login` 的 POST（登录表单的 server action 提交到页面路径）。
+  建议值：每个来源每分钟 10 次、突发 5 次，超出返回 429；另设全站登录总量上限，防止换来源轮流试。
+  参考（nginx，只作示意，按实际网关改写）：
+
+  ```nginx
+  limit_req_zone $binary_remote_addr zone=review_login:10m rate=10r/m;
+  location = /review/login {
+      limit_req zone=review_login burst=5 nodelay;
+      limit_req_status 429;
+      proxy_pass http://127.0.0.1:3000;
+  }
+  ```
+- 走 https；前端设 `STARBUDDY_ENV=staging`（会话 cookie 用 `__Host-sb_staff`、Secure）；不设 `STARBUDDY_DEV_AUTH`。
+- 上线前验证：同一来源连续提交超过上限得到 429；限流不影响已登录会话的其他页面。
