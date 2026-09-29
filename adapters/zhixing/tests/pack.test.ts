@@ -2,7 +2,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { registeredAdmission, registrationSql } from "../scripts/register-content.ts";
-import { indexPack, itemNodes, VERSIONED_NAME } from "../src/content.ts";
+import { readFileSync } from "node:fs";
+import { indexPack, itemNodes, KGE_NODE_ID, partialCreditProblems, VERSIONED_NAME } from "../src/content.ts";
 import { leaves, realPack } from "./helpers.ts";
 
 test("内容包是合成题（3–5 道，zhixing:synthetic-m3-0N），明确标注非真题，全部 pending_review", () => {
@@ -31,10 +32,18 @@ test("rubric_version 是契约 VersionedName；source_version 里写作 rubric:<
 test("采分点字段对齐 KGE scoring_point：point_id 小写、score、subject_dimension、keyword_family 三档、required_logic、material_linkage、partial_credit_rule、common_errors", () => {
   for (const it of realPack.pack.items) {
     for (const pt of it.points) {
-      assert.deepEqual(Object.keys(pt).sort(), ["common_errors", "keyword_family", "material_linkage", "partial_credit_rule", "point_id", "required_logic", "score", "skill_node", "subject_dimension"]);
+      assert.deepEqual(Object.keys(pt).sort(), ["common_errors", "keyword_family", "material_linkage", "node_ids", "partial_credit_rule", "point_id", "required_logic", "score", "skill_node", "subject_dimension"]);
       assert.match(pt.point_id, /^[a-z0-9_\-]{1,48}$/);
       assert.deepEqual(Object.keys(pt.keyword_family).sort(), ["accepted", "colloquial", "core"]);
       assert.ok(["all_or_nothing", "proportional", "stepwise"].includes(pt.partial_credit_rule.mode));
+      assert.deepEqual(Object.keys(pt.partial_credit_rule).sort(), ["allowed_scores", "description", "mode"]);
+      assert.deepEqual(partialCreditProblems(pt.partial_credit_rule, pt.score), []);
+      // node_ids：kge.node_id 格式（迁移 0011），MORAL 命名空间，1–8 个
+      assert.ok(pt.node_ids.length >= 1 && pt.node_ids.length <= 8);
+      for (const id of pt.node_ids) {
+        assert.match(id, /^[A-Z][A-Z0-9]{1,9}(\.[A-Z0-9][A-Z0-9_]{0,31}){1,4}$/);
+        assert.ok(id.startsWith("MORAL.SYN."), id);
+      }
     }
   }
 });
@@ -67,6 +76,42 @@ test("内容包不完整时拒绝加载", () => {
   const rv = structuredClone(realPack.pack);
   rv.items[0]!.rubric_version = "rubric:zhixing-synthetic@0.1.0";
   assert.throws(() => indexPack(rv), /VersionedName/);
+});
+
+test("节点 ID 正则与迁移 0011 的 kge.node_id 域逐字一致", () => {
+  const sql = readFileSync(new URL("../../../db/migrations/0011_kge__knowledge_map.up.sql", import.meta.url), "utf8");
+  const m = /CREATE DOMAIN kge\.node_id AS text\s+CHECK \(VALUE ~ '([^']+)'\)/.exec(sql);
+  assert.ok(m);
+  assert.equal(KGE_NODE_ID.source, m[1]);
+});
+
+test("给分规则校验：allowed_scores 升序、含 0 与满分、0.5 倍数、不超过分值；all_or_nothing 只允许 0 与满分", () => {
+  const bad: [unknown, RegExp][] = [
+    [{ mode: "stepwise", allowed_scores: [0, 2, 1], description: "x" }, /升序/],
+    [{ mode: "stepwise", allowed_scores: [1, 2], description: "x" }, /含 0/],
+    [{ mode: "stepwise", allowed_scores: [0, 1], description: "x" }, /含满分/],
+    [{ mode: "stepwise", allowed_scores: [0, 0.3, 2], description: "x" }, /0\.5 倍数/],
+    [{ mode: "stepwise", allowed_scores: [0, 2, 3], description: "x" }, /含满分|超出/],
+    [{ mode: "all_or_nothing", allowed_scores: [0, 1, 2], description: "x" }, /all_or_nothing/],
+    [{ mode: "guess", allowed_scores: [0, 2], description: "x" }, /mode/],
+    [{ mode: "stepwise", description: "x" }, /allowed_scores/],
+  ];
+  for (const [rule, re] of bad) {
+    const pk = structuredClone(realPack.pack);
+    (pk.items[0]!.points[0] as { partial_credit_rule: unknown }).partial_credit_rule = rule;
+    assert.throws(() => indexPack(pk), re, JSON.stringify(rule));
+  }
+  const good = structuredClone(realPack.pack);
+  good.items[0]!.points[0]!.partial_credit_rule = { mode: "all_or_nothing", allowed_scores: [0, 2], description: "合成" };
+  assert.doesNotThrow(() => indexPack(good));
+});
+
+test("node_ids 校验：格式、MORAL 命名空间、1–8 个、不重复", () => {
+  for (const ids of [[], ["moral.syn.x"], ["MATH.SYN.X"], ["MORAL"], Array.from({ length: 9 }, (_, i) => `MORAL.SYN.N${i}`), ["MORAL.SYN.A", "MORAL.SYN.A"]]) {
+    const pk = structuredClone(realPack.pack);
+    pk.items[0]!.points[0]!.node_ids = ids;
+    assert.throws(() => indexPack(pk), /node_ids/, JSON.stringify(ids));
+  }
 });
 
 test("登记 SQL：只输出 SQL，题目一律 pending_review，只增不改", () => {

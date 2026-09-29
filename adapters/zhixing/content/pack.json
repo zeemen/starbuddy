@@ -37,6 +37,7 @@
           "score": 2,
           "subject_dimension": "citizen",
           "skill_node": "syn-dim-zhuanhua",
+          "node_ids": ["MORAL.SYN.CIVIC.DEMOCRATIC_PARTICIPATION"],
           "keyword_family": {
             "core": ["参与民主决策", "行使民主权利", "参与民主生活"],
             "accepted": ["民主参与", "表达意愿"],
@@ -44,7 +45,7 @@
           },
           "required_logic": null,
           "material_linkage": "需指出居民议事、讨论表决是公民参与民主生活的具体做法",
-          "partial_credit_rule": { "mode": "stepwise", "description": "只写出民主权利而未结合议事过程的，给 1 分" },
+          "partial_credit_rule": { "mode": "stepwise", "allowed_scores": [0, 1, 2], "description": "只写出民主权利而未结合议事过程的，给 1 分" },
           "common_errors": [
             { "type": "zhuanhua_cuo", "pattern": "只复述召开议事会、讨论表决的经过", "note": "停留在叙述材料，未上升为参与民主生活的学科表述" }
           ]
@@ -54,6 +55,7 @@
           "score": 2,
           "subject_dimension": "grassroots",
           "skill_node": "syn-dim-dingwei",
+          "node_ids": ["MORAL.SYN.CIVIC.GRASSROOTS_AUTONOMY"],
           "keyword_family": {
             "core": ["基层群众自治", "协商民主"],
             "accepted": ["居民自治", "民主协商"],
@@ -61,7 +63,7 @@
           },
           "required_logic": null,
           "material_linkage": null,
-          "partial_credit_rule": { "mode": "stepwise", "description": "只写到自治或协商之一但表述不完整的，给 1 分" },
+          "partial_credit_rule": { "mode": "stepwise", "allowed_scores": [0, 1, 2], "description": "只写到自治或协商之一但表述不完整的，给 1 分" },
           "common_errors": [
             { "type": "dingwei_cuo", "pattern": "把居民议事答成人民代表大会制度", "note": "挂接到错误的制度知识点" }
           ]
@@ -71,6 +73,7 @@
           "score": 2,
           "subject_dimension": "society",
           "skill_node": "syn-dim-guifan",
+          "node_ids": ["MORAL.SYN.SOCIETY.RULE_AWARENESS"],
           "keyword_family": {
             "core": ["增强规则意识", "促进社区和谐"],
             "accepted": ["遵守约定", "邻里和谐"],
@@ -78,7 +81,7 @@
           },
           "required_logic": "由共同制定约定推出规则意识增强、社区更加和谐",
           "material_linkage": null,
-          "partial_credit_rule": { "mode": "stepwise", "description": "只写结果未写规则意识的，给 1 分" },
+          "partial_credit_rule": { "mode": "stepwise", "allowed_scores": [0, 1, 2], "description": "只写结果未写规则意识的，给 1 分" },
           "common_errors": [
             { "type": "guifan_cuo", "pattern": "用口语描述关系变好，未使用学科术语", "note": "意思接近但表述不规范" }
           ]
@@ -102,6 +105,7 @@
           "score": 2,
           "subject_dimension": "responsibility",
           "skill_node": "syn-dim-zhuanhua",
+          "node_ids": ["MORAL.SYN.SOCIETY.SOCIAL_RESPONSIBILITY"],
           "keyword_family": {
             "core": ["承担社会责任", "积极参与社会公益"],
             "accepted": ["关爱社会", "服务社会"],
@@ -109,7 +113,7 @@
           },
           "required_logic": null,
           "material_linkage": "需把开设修补站、免费服务居民与承担社会责任联系起来",
-          "partial_credit_rule": { "mode": "stepwise", "description": "只写服务社会未结合材料的，给 1 分" },
+          "partial_credit_rule": { "mode": "stepwise", "allowed_scores": [0, 1, 2], "description": "只写服务社会未结合材料的，给 1 分" },
           "common_errors": [
             { "type": "zhuanhua_cuo", "pattern": "只罗列修补了哪些物品", "note": "只叙事不提炼" }
           ]
@@ -119,6 +123,7 @@
           "score": 2,
           "subject_dimension": "value",
           "skill_node": "syn-dim-guifan",
+          "node_ids": ["MORAL.SYN.LIFE.VALUE_DEDICATION"],
           "keyword_family": {
             "core": ["在奉献中实现人生价值", "奉献社会"],
             "accepted": ["实现自身价值"],
@@ -126,7 +131,7 @@
           },
           "required_logic": null,
           "material_linkage": null,
-          "partial_credit_rule": { "mode": "stepwise", "description": "表述不完整的，给 1 分" },
+          "partial_credit_rule": { "mode": "stepwise", "allowed_scores": [0, 1, 2], "description": "表述不完整的，给 1 分" },
           "common_errors": [
             { "type": "guifan_cuo", "pattern": "用个人感受代替学科表述", "note": "意思接近但术语不对" }
           ]
@@ -136,6 +141,7 @@
           "score": 2,
           "subject_dimension": "resource",
           "skill_node": "syn-dim-dingwei",
+          "node_ids": ["MORAL.SYN.NATION.RESOURCE_CONSERVATION"],
           "keyword_family": {
             "core": ["节约资源", "绿色生活方式"],
             "accepted": ["保护环境", "循环利用"],
@@ -143,7 +149,7 @@
           },
           "required_logic": null,
           "material_linkage": null,
-          "partial_credit_rule": { "mode": "stepwise", "description": "只写不浪费的，给 1 分" },
+          "partial_credit_rule": { "mode": "stepwise", "allowed_scores": [0, 1, 2], "description": "只写不浪费的，给 1 分" },
           "common_errors": [
             { "type": "shenti_cuo", "pattern": "答成修补技术如何提高", "note": "偏离设问所问的道理" }
           ]
@@ -167,6 +173,7 @@
           "score": 2,
           "subject_dimension": "culture",
           "skill_node": "syn-dim-dingwei",
+          "node_ids": ["MORAL.SYN.CULTURE.CULTURAL_CONFIDENCE"],
           "keyword_family": {
             "core": ["坚定文化自信", "传承中华优秀传统文化"],
             "accepted": ["传承传统文化", "弘扬传统文化"],
@@ -174,7 +181,7 @@
           },
           "required_logic": null,
           "material_linkage": "需结合开设工作坊传授技艺",
-          "partial_credit_rule": { "mode": "stepwise", "description": "只写传承未写文化自信的，给 1 分" },
+          "partial_credit_rule": { "mode": "stepwise", "allowed_scores": [0, 1, 2], "description": "只写传承未写文化自信的，给 1 分" },
           "common_errors": [
             { "type": "dingwei_cuo", "pattern": "答成科技创新是第一动力", "note": "知识点挂接偏离" }
           ]
@@ -184,6 +191,7 @@
           "score": 2,
           "subject_dimension": "innovation",
           "skill_node": "syn-dim-zhuanhua",
+          "node_ids": ["MORAL.SYN.CULTURE.CREATIVE_TRANSFORMATION"],
           "keyword_family": {
             "core": ["推动文化创造性转化", "创新性发展"],
             "accepted": ["创新发展", "守正创新"],
@@ -191,7 +199,7 @@
           },
           "required_logic": "由竹编与现代设计结合推出创造性转化、创新性发展",
           "material_linkage": null,
-          "partial_credit_rule": { "mode": "stepwise", "description": "只写创新未说明与传统结合的，给 1 分" },
+          "partial_credit_rule": { "mode": "stepwise", "allowed_scores": [0, 1, 2], "description": "只写创新未说明与传统结合的，给 1 分" },
           "common_errors": [
             { "type": "zhuanhua_cuo", "pattern": "只列举开发了哪些新产品", "note": "只叙事不提炼" }
           ]
@@ -215,6 +223,7 @@
           "score": 2,
           "subject_dimension": "law",
           "skill_node": "syn-dim-shizheng",
+          "node_ids": ["MORAL.SYN.LAW.MINOR_ONLINE_PROTECTION"],
           "keyword_family": {
             "core": ["网络保护", "未成年人特殊保护"],
             "accepted": ["保护未成年人上网安全"],
@@ -222,7 +231,7 @@
           },
           "required_logic": null,
           "material_linkage": "需结合平台上线青少年模式、限制夜间时长",
-          "partial_credit_rule": { "mode": "stepwise", "description": "只写保护未写网络保护的，给 1 分" },
+          "partial_credit_rule": { "mode": "stepwise", "allowed_scores": [0, 1, 2], "description": "只写保护未写网络保护的，给 1 分" },
           "common_errors": [
             { "type": "shenti_cuo", "pattern": "答成青少年应当自觉远离网络", "note": "设问问的是保护做法，答成个人自律" }
           ]
@@ -232,6 +241,7 @@
           "score": 2,
           "subject_dimension": "cooperation",
           "skill_node": "syn-dim-guifan",
+          "node_ids": ["MORAL.SYN.LAW.MINOR_PROTECTION_PARTIES"],
           "keyword_family": {
             "core": ["家庭保护", "学校保护", "政府保护"],
             "accepted": ["各方共同保护"],
@@ -239,7 +249,7 @@
           },
           "required_logic": "由多方参与推出形成保护合力",
           "material_linkage": null,
-          "partial_credit_rule": { "mode": "stepwise", "description": "只写出一种保护主体的，给 1 分" },
+          "partial_credit_rule": { "mode": "stepwise", "allowed_scores": [0, 1, 2], "description": "只写出一种保护主体的，给 1 分" },
           "common_errors": [
             { "type": "guifan_cuo", "pattern": "用口语概括多方参与", "note": "意思接近但术语不对" }
           ]

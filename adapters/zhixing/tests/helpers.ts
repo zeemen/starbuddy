@@ -40,7 +40,14 @@ export interface Harness {
 
 /** 起一个路由桩与一个适配器实例。默认用关键词桩判定器；测试可以换成自定义的桩回复 */
 export async function harness(
-  opts: { handler?: StubHandler; content?: LoadedPack; allowCandidate?: boolean; clientTimeoutMs?: number; route?: RouteConfig | null } = {},
+  opts: {
+    handler?: StubHandler;
+    content?: LoadedPack;
+    allowCandidate?: boolean;
+    clientTimeoutMs?: number;
+    route?: RouteConfig | null;
+    idempotencyCacheSize?: number;
+  } = {},
 ): Promise<Harness> {
   const content = opts.content ?? realPack;
   const stub = await startRouteStub(opts.handler ?? keywordJudge(content));
@@ -52,6 +59,7 @@ export async function harness(
     route: opts.route === undefined ? routeConfig(stub, { ...(opts.clientTimeoutMs ? { clientTimeoutMs: opts.clientTimeoutMs } : {}) }) : opts.route,
     allowCandidate: opts.allowCandidate ?? true,
     log: (r) => logs.push(r),
+    ...(opts.idempotencyCacheSize ? { idempotencyCacheSize: opts.idempotencyCacheSize } : {}),
   });
   return { adapter, stub, logs, close: () => stub.close() };
 }

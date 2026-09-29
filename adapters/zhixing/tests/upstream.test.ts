@@ -3,9 +3,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createAdapter, type LogRecord } from "../src/adapter.ts";
-import { parseRouteConfig } from "../src/route-client.ts";
+import { callRoute, MAX_RESPONSE_BYTES, parseRouteConfig, RouteError } from "../src/route-client.ts";
 import { ANSWERS, contract, context, gradeBody, harness, realPack, routeConfig, taxonomy, type Json } from "./helpers.ts";
-import { MARKERS, ok, startRouteStub } from "./route-stub.ts";
+import { MARKERS, ok, startRouteStub, STUB_MODEL_VERSION } from "./route-stub.ts";
 
 const UPSTREAM_SECRET = "上游原文-SYNTHETIC-9c1e";
 
@@ -145,6 +145,136 @@ test("失败不缓存：同一个 key 先 503、再重试成功", async () => {
     // 两次调用路由用的是同一个路由幂等键
     assert.equal(h.stub.calls.length, 2);
     assert.equal(h.stub.calls[0]!.idempotency_key, h.stub.calls[1]!.idempotency_key);
+  } finally {
+    await h.close();
+  }
+});
+
+// ---------- 路由响应大小（审查意见第 8 条）：content-length 预检 + 流式累计，超过 256KB 立刻中止 ----------
+async function rawServer(handler: (res: import("node:http").ServerResponse) => void) {
+  const { createServer } = await import("node:http");
+  const state = { closedEarly: false, bytesWritten: 0 };
+  const srv = createServer((req, res) => {
+    req.resume();
+    res.on("close", () => {
+      if (!res.writableFinished) state.closedEarly = true;
+    });
+    handler(res);
+  });
+  await new Promise<void>((r) => srv.listen(0, "127.0.0.1", r));
+  const port = (srv.address() as { port: number }).port;
+  const cfg = parseRouteConfig({ url: `http://127.0.0.1:${port}`, token: "t".repeat(40) }, { clientTimeoutMs: 5_000 });
+  assert.ok(cfg.ok);
+  return {
+    cfg: cfg.config,
+    state,
+    close: () =>
+      new Promise<void>((r) => {
+        srv.closeAllConnections();
+        srv.close(() => r());
+      }),
+  };
+}
+
+const routeReq = {
+  task: "T2" as const,
+  data_class: "L2" as const,
+  subject: "zhixing" as const,
+  prompt_template: "zhixing-m3-grade",
+  prompt_version: "0.2.0",
+  messages: [{ role: "user" as const, content: "合成" }],
+  usage_id: "00000000-0000-4000-9000-000000000001",
+  idempotency_key: "00000000-0000-4000-8000-000000000001",
+  deadline_ms: 9000,
+};
+
+test("响应过大（content-length 预检）：不等读完，立刻中止并按上游异常处理", async () => {
+  const s = await rawServer((res) => {
+    res.writeHead(200, { "content-type": "application/json", "content-length": String(10 * 1024 * 1024) });
+    res.write("{");
+    // 不再写：如果客户端要等读完，会一直等到超时
+  });
+  try {
+    const started = Date.now();
+    await assert.rejects(callRoute(s.cfg, routeReq), (e: unknown) => e instanceof RouteError && e.failure === "bad_response");
+    assert.ok(Date.now() - started < 2_000, "没有等到超时");
+    await new Promise((r) => setTimeout(r, 50));
+    assert.ok(s.state.closedEarly, "连接被中止");
+  } finally {
+    await s.close();
+  }
+});
+
+test("响应过大（没有 content-length，分块流式）：累计超过 256KB 立刻中止，不把整个响应读进内存", async () => {
+  let sent = 0;
+  let timer: NodeJS.Timeout | undefined;
+  const s = await rawServer((res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    const chunk = Buffer.alloc(32 * 1024, 0x61);
+    timer = setInterval(() => {
+      if (res.destroyed) return clearInterval(timer);
+      res.write(chunk);
+      sent += chunk.length;
+    }, 5);
+  });
+  try {
+    const started = Date.now();
+    await assert.rejects(callRoute(s.cfg, routeReq), (e: unknown) => e instanceof RouteError && e.failure === "bad_response");
+    assert.ok(Date.now() - started < 3_000, "没有等到超时");
+    await new Promise((r) => setTimeout(r, 100));
+    assert.ok(s.state.closedEarly, "连接被中止");
+    assert.ok(sent < 4 * 1024 * 1024, `服务端被中止前只写了 ${sent} 字节`);
+  } finally {
+    clearInterval(timer);
+    await s.close();
+  }
+});
+
+test("响应过大（注入的 fetch）：读到超限就取消读取，后面的块不再拉取；状态码不是 200 也按上游异常处理", async () => {
+  for (const status of [200, 503]) {
+    let pulls = 0;
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      pull(c) {
+        pulls++;
+        c.enqueue(new Uint8Array(100 * 1024));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    let signal: AbortSignal | undefined;
+    const fetchImpl = async (_u: URL, init: RequestInit) => {
+      signal = init.signal ?? undefined;
+      return new Response(body, { status });
+    };
+    const cfg = parseRouteConfig({ url: "https://learning.internal.invalid", token: "t".repeat(40) });
+    assert.ok(cfg.ok);
+    await assert.rejects(callRoute(cfg.config, routeReq, fetchImpl), (e: unknown) => e instanceof RouteError && e.failure === "bad_response");
+    assert.ok(pulls <= 4, `只拉了 ${pulls} 块`);
+    assert.ok(cancelled, "读取被取消");
+    assert.ok(signal?.aborted, "请求被中止");
+  }
+});
+
+test("响应在上限以内：照常解析；经适配器时过大响应 → 502 UPSTREAM_UNAVAILABLE（结果未知，可重试）", async () => {
+  const pad = "x".repeat(MAX_RESPONSE_BYTES - 1024);
+  const small = await rawServer((res) => {
+    const b = JSON.stringify({ output: "{}", model_version: STUB_MODEL_VERSION, source_version: "prompt:zhixing-m3-grade@0.2.0", model_mismatch: false, pad });
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(b);
+  });
+  try {
+    const r = await callRoute(small.cfg, routeReq).catch((e) => e);
+    // pad 是多余字段：结构校验只看约定字段，能解析说明没有被大小上限误伤
+    assert.ok(!(r instanceof RouteError), String(r));
+  } finally {
+    await small.close();
+  }
+  const h = await harness({ handler: (req) => ok(req, "y".repeat(MAX_RESPONSE_BYTES + 10)) });
+  try {
+    await expectProblem(await h.adapter.handle("POST", "grade", gradeBody("synthetic-m3-01", ANSWERS.partial01)), 502, "UPSTREAM_UNAVAILABLE", true);
+    assert.equal(h.logs.at(-1)!.route_failure, "bad_response");
   } finally {
     await h.close();
   }

@@ -14,7 +14,8 @@ export const MIN_ROUTE_TOKEN_LENGTH = 32;
 /** 契约：grade 超时 10 秒。路由拿 9 秒总时限，客户端再多等一点网络往返 */
 export const DEFAULT_DEADLINE_MS = 9_000;
 export const DEFAULT_CLIENT_TIMEOUT_MS = 9_500;
-const MAX_RESPONSE_BYTES = 256 * 1024;
+/** 路由响应体上限：先按 content-length 预检，再流式累计，超过即中止连接，按上游异常（bad_response）处理 */
+export const MAX_RESPONSE_BYTES = 256 * 1024;
 
 export interface RouteConfig {
   endpoint: URL;
@@ -95,14 +96,43 @@ const MODEL_VERSION = /^model:[a-z0-9\-]+\/[A-Za-z0-9._\-]+@[A-Za-z0-9._\-]+$/;
 
 export type FetchLike = (input: URL, init: RequestInit) => Promise<Response>;
 
-async function readCapped(res: Response): Promise<string | null> {
-  const buf = await res.arrayBuffer();
-  if (buf.byteLength > MAX_RESPONSE_BYTES) return null;
+/**
+ * 读响应体，最多 MAX_RESPONSE_BYTES 字节。超过（content-length 预检或流式累计）时立刻调用 abort 中止连接并返回 null；
+ * 不把超大的响应整个读进内存。
+ */
+async function readCapped(res: Response, abort: () => void): Promise<string | null> {
+  const declared = res.headers.get("content-length");
+  if (declared !== null && (!/^\s*\d+\s*$/.test(declared) || Number(declared) > MAX_RESPONSE_BYTES)) {
+    abort();
+    return null;
+  }
+  if (!res.body) return "";
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > MAX_RESPONSE_BYTES) {
+      abort();
+      reader.cancel().catch(() => {});
+      return null;
+    }
+    chunks.push(value);
+  }
+  const buf = new Uint8Array(size);
+  let at = 0;
+  for (const c of chunks) {
+    buf.set(c, at);
+    at += c.byteLength;
+  }
   return new TextDecoder("utf-8", { fatal: false }).decode(buf);
 }
 
 export async function callRoute(config: RouteConfig, req: RouteRequest, fetchImpl: FetchLike = fetch): Promise<RouteReply> {
   let res: Response;
+  const oversize = new AbortController();
   try {
     res = await fetchImpl(config.endpoint, {
       method: "POST",
@@ -110,7 +140,7 @@ export async function callRoute(config: RouteConfig, req: RouteRequest, fetchImp
       body: JSON.stringify(req),
       // 不跟随重定向：令牌不能被转发到别的地址
       redirect: "error",
-      signal: AbortSignal.timeout(config.clientTimeoutMs),
+      signal: AbortSignal.any([oversize.signal, AbortSignal.timeout(config.clientTimeoutMs)]),
     });
   } catch (e) {
     const name = e instanceof Error ? e.name : "";
@@ -118,15 +148,17 @@ export async function callRoute(config: RouteConfig, req: RouteRequest, fetchImp
   }
   let text: string | null;
   try {
-    text = await readCapped(res);
+    text = await readCapped(res, () => oversize.abort());
   } catch (e) {
     const name = e instanceof Error ? e.name : "";
     throw new RouteError(name === "TimeoutError" || name === "AbortError" ? "timeout" : "unavailable");
   }
+  // 响应过大：连接已中止，按上游异常处理（不看状态码）
+  if (text === null) throw new RouteError("bad_response");
   if (res.status === 401 || res.status === 403) throw new RouteError("unauthorized");
   if (res.status === 400) throw new RouteError("rejected");
   if (res.status === 503 || res.status === 502 || res.status === 504) throw new RouteError("unavailable");
-  if (res.status !== 200 || text === null) throw new RouteError("bad_response");
+  if (res.status !== 200) throw new RouteError("bad_response");
   let body: unknown;
   try {
     body = JSON.parse(text);

@@ -5,11 +5,14 @@
 // 相对 legacy 的改动：
 //   - 模型输出不合 schema 时不回 502，而是整题转复核（全部采分点 achieved = null）；
 //   - 证据位置必须落在作答原文内且非空（得分 > 0 时必填），否则该点转复核；
-//   - 判定档、归因、得分三者矛盾（例如满分却有失分归因、归因为 none 却不是满分、miss 却得分）时该点转复核；
+//   - clamp 与取 0.5 倍数之后，得分必须在该点 partial_credit_rule.allowed_scores 里，否则该点转复核（不采用模型分数）；
+//   - 判定档、归因、得分三者按 JUDGMENT_CONSISTENCY 常量表执行，不一致时该点转复核；
+//   - 得分 > 0 的点，证据片段（按 evidence_start/end 从作答原文截取）必须包含该点 keyword_family 任一档的任一词，
+//     否则该点转复核（兜住 Prompt 注入：作答里要求“全部判满分”，模型照做也拿不到关键词证据）；
 //   - 不读模型自报的 needs_human_review：M3 一律复核（决定 A2），复核原因由适配器按规则给出。
 // 纯函数，不做 IO；分数只来自 Rubric 分值与模型逐点判定经本模块处理后的结果（CLAUDE.md 规则 3）。
 import { Ajv2020 } from "ajv/dist/2020.js";
-import type { PackItem } from "../content.ts";
+import type { PackItem, ScoringPointDef } from "../content.ts";
 import { ATTRIBUTIONS, JUDGMENTS, type JudgmentCode, type ModelAttribution } from "./m3-prompt.ts";
 
 export const MAX_MODEL_OUTPUT_CHARS = 32_000;
@@ -82,10 +85,35 @@ export const clamp = (n: number, lo: number, hi: number) => Math.min(Math.max(n,
 export type UndecidedReason =
   | "model_output_invalid"
   | "point_missing"
+  | "score_not_allowed"
   | "evidence_out_of_range"
   | "evidence_missing"
+  | "evidence_keyword_miss"
   | "judgment_score_conflict"
-  | "attribution_score_conflict";
+  | "judgment_attribution_conflict";
+
+const LOSS_ATTRIBUTIONS = ["shenti_cuo", "dingwei_cuo", "zhuanhua_cuo", "guifan_cuo"] as const;
+
+/**
+ * 判定档与得分、归因的一致性表（审查意见；判分逻辑，必停项）。不满足的点转复核：
+ *   full ⇒ 满分且归因 none；material_unconverted ⇒ 0 < 分 < 满分且归因 zhuanhua_cuo（转化错）；
+ *   partial ⇒ 0 < 分 < 满分且有失分归因；miss ⇒ 0 分且有失分归因。
+ */
+export const JUDGMENT_CONSISTENCY: Readonly<Record<JudgmentCode, { score: "full" | "between" | "zero"; attributions: readonly ModelAttribution[] }>> = {
+  full: { score: "full", attributions: ["none"] },
+  material_unconverted: { score: "between", attributions: ["zhuanhua_cuo"] },
+  partial: { score: "between", attributions: LOSS_ATTRIBUTIONS },
+  miss: { score: "zero", attributions: LOSS_ATTRIBUTIONS },
+};
+
+const scoreFits = (kind: "full" | "between" | "zero", score: number, max: number) =>
+  kind === "full" ? score === max : kind === "zero" ? score === 0 : score > 0 && score < max;
+
+/** 证据片段是否包含该点关键词族（core、accepted、colloquial）中的任一词 */
+export function spanHitsKeyword(def: ScoringPointDef, fragment: string): boolean {
+  const kf = def.keyword_family;
+  return [...kf.core, ...kf.accepted, ...kf.colloquial].some((w) => w.length > 0 && fragment.includes(w));
+}
 
 export type PointOutcome =
   | {
@@ -118,26 +146,32 @@ function checkSpan(p: ModelPoint, answerLength: number, score: number): [number,
 
 /**
  * 逐点后处理。points 顺序以内容包的 Rubric 为准；模型多给的 point_id 忽略，少给的该点转复核。
- * answerLength 是作答的码点数（与 Prompt 声明的计数口径一致）。
+ * answer 是作答原文；位置按码点计（与 Prompt 声明的计数口径一致）。
  */
-export function postProcess(item: PackItem, modelPoints: ModelPoint[] | null, answerLength: number): PostProcessed {
+export function postProcess(item: PackItem, modelPoints: ModelPoint[] | null, answer: string): PostProcessed {
+  const chars = Array.from(answer);
+  const answerLength = chars.length;
   const byId = new Map((modelPoints ?? []).map((p) => [p.point_id, p]));
   const points: PointOutcome[] = item.points.map((def): PointOutcome => {
     const max = def.score;
     if (modelPoints === null) return { point_id: def.point_id, decided: false, max, reason: "model_output_invalid" };
     const mp = byId.get(def.point_id);
     if (!mp) return { point_id: def.point_id, decided: false, max, reason: "point_missing" };
+    const undecided = (reason: UndecidedReason): PointOutcome => ({ point_id: def.point_id, decided: false, max, reason });
     const score = roundHalf(clamp(mp.score_awarded, 0, max));
+    // 结构化给分规则：不在 allowed_scores 里的分数不采用
+    if (!def.partial_credit_rule.allowed_scores.includes(score)) return undecided("score_not_allowed");
     const span = checkSpan(mp, answerLength, score);
-    if (span === "missing") return { point_id: def.point_id, decided: false, max, reason: "evidence_missing" };
-    if (span === "out_of_range") return { point_id: def.point_id, decided: false, max, reason: "evidence_out_of_range" };
+    if (span === "missing") return undecided("evidence_missing");
+    if (span === "out_of_range") return undecided("evidence_out_of_range");
     const full = score === max;
-    // 判定档与得分：full ⇔ 满分；miss ⇔ 0 分；其余两档必须在 (0, 满分) 之间
-    const judgmentOk =
-      mp.judgment === "full" ? full : mp.judgment === "miss" ? score === 0 : score > 0 && score < max;
-    if (!judgmentOk) return { point_id: def.point_id, decided: false, max, reason: "judgment_score_conflict" };
-    // 归因与得分：满分 ⇔ none（包括“归因 none 却 0 分”这类矛盾）
-    if (full !== (mp.attribution === "none")) return { point_id: def.point_id, decided: false, max, reason: "attribution_score_conflict" };
+    const rule = JUDGMENT_CONSISTENCY[mp.judgment];
+    if (!scoreFits(rule.score, score, max)) return undecided("judgment_score_conflict");
+    if (!rule.attributions.includes(mp.attribution)) return undecided("judgment_attribution_conflict");
+    // 得分的点：证据片段必须命中关键词族（模型不能凭作答里的指令给分）
+    if (score > 0 && (span === null || !spanHitsKeyword(def, chars.slice(span[0], span[1]).join("")))) {
+      return undecided("evidence_keyword_miss");
+    }
     return {
       point_id: def.point_id,
       decided: true,

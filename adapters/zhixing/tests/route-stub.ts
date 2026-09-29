@@ -1,6 +1,8 @@
 // 学习服务内部模型路由接口的本机 HTTP 桩（只用于测试与一致性测试；不是模型、不连任何供应商）。
 // 接口约定见 src/route-client.ts。桩按约定校验请求（令牌、任务、数据级别、Prompt 版本、幂等键形状），
-// 默认用“关键词桩判定器”返回结构化 JSON：作答里出现核心术语 → full；出现可接受或口语表述 → partial；都没有 → miss。
+// 默认用“关键词桩判定器”返回结构化 JSON：作答里出现核心术语 → full；出现可接受或口语表述 → partial
+// （分数取 allowed_scores 里最接近一半分的中间档；all_or_nothing 没有中间档 → miss）；都没有 → miss。
+// 证据位置指向命中的那个词，所以正常用例能通过后处理的“allowed_scores”与“证据命中关键词”两道检查。
 // 作答里的合成标记可以触发各种异常输出（见 MARKERS），用来覆盖“JSON 不合格”“证据越界”等情况。
 // 全部数据是合成的（CLAUDE.md 规则 8）。
 import { randomBytes } from "node:crypto";
@@ -120,8 +122,10 @@ export async function startRouteStub(handler: StubHandler, token = randomBytes(2
 
 // ---------- 从适配器发来的 messages 里取回题目与作答（桩判定器用） ----------
 export function extractAnswer(req: StubRequest): { itemId: string; answer: string } {
+  // Prompt 0.2.0：题目与 Rubric 在 system，作答单独在最后一条 user 消息
+  const system = req.messages.filter((m) => m.role === "system").map((m) => m.content).join("\n");
   const user = req.messages.filter((m) => m.role === "user").at(-1)!.content;
-  const itemId = /题目编号：(\S+)/.exec(user)![1]!;
+  const itemId = /题目编号：(\S+)/.exec(system)![1]!;
   const marker = "作答原文（JSON 字符串）：\n";
   const answer = JSON.parse(user.slice(user.lastIndexOf(marker) + marker.length)) as string;
   return { itemId, answer };
@@ -155,7 +159,12 @@ export function keywordPoints(item: PackItem, answer: string): StubPoint[] {
     const core = find(p.keyword_family.core);
     if (core) return { point_id: p.point_id, judgment: "full", score_awarded: p.score, evidence_start: core[0], evidence_end: core[1], attribution: "none" };
     const near = find([...p.keyword_family.accepted, ...p.keyword_family.colloquial]);
-    if (near) return { point_id: p.point_id, judgment: "partial", score_awarded: p.score / 2, evidence_start: near[0], evidence_end: near[1], attribution: "guifan_cuo" };
+    const middle = p.partial_credit_rule.allowed_scores
+      .filter((s) => s > 0 && s < p.score)
+      .sort((a, b) => Math.abs(a - p.score / 2) - Math.abs(b - p.score / 2) || a - b)[0];
+    if (near && middle !== undefined) {
+      return { point_id: p.point_id, judgment: "partial", score_awarded: middle, evidence_start: near[0], evidence_end: near[1], attribution: "guifan_cuo" };
+    }
     return { point_id: p.point_id, judgment: "miss", score_awarded: 0, evidence_start: null, evidence_end: null, attribution: "dingwei_cuo" };
   });
 }

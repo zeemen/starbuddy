@@ -15,26 +15,33 @@ ADP-道法-01。实现学科插件 API v0.9（`packages/contracts/openapi/plugin
 | `plan` `teach` `report` | 返回 501 `METHOD_NOT_IMPLEMENTED` |
 
 ## grade：两段式
-1. **模型逐点判定**（`judged_by: rubric_model`）：Prompt `prompt:zhixing-m3-grade@0.1.0` 移植自 legacy `buildM3GradePrompt`，
+1. **模型逐点判定**（`judged_by: rubric_model`）：Prompt `prompt:zhixing-m3-grade@0.2.0` 移植自 legacy `buildM3GradePrompt`，
    去掉人设语气与总评等自由文本；模型只输出 JSON（每点 `point_id`、判定档、`score_awarded`、证据在作答中的字符位置、归因编码）。
-2. **确定性后处理**（`src/core/m3-postprocess.ts`）：模型输出不合 schema → 整题待复核；逐点 clamp 到 [0, 分值]、取 0.5 倍数、重算总分；
-   得分点的证据位置必须落在作答原文内且非空，否则该点 `achieved = null`；判定档、得分、归因矛盾（满分却有失分归因、归因 none 却 0 分等）
-   → 该点待复核；满分 → `full_score_second_review`。
+   判分规则、题目与 Rubric（含每点可给分值）放 system；**学生作答单独一条 user 消息**，只含 JSON 字符串转义后的作答。
+   作答里出现指令特征（`INJECTION_PATTERNS`：“满分”“判…full/满分/正确”“忽略以上/前面”、`score_awarded`、`judgment`、`point_id`、花括号等，
+   NFKC 归一后比对）时，复核原因加 `low_confidence`。
+2. **确定性后处理**（`src/core/m3-postprocess.ts`）：模型输出不合 schema → 整题待复核；逐点 clamp 到 [0, 分值]、取 0.5 倍数；
+   得分**不在该点 `partial_credit_rule.allowed_scores` 里** → 该点转复核（不采用模型分数）；得分点的证据位置必须落在作答原文内且非空；
+   判定档与得分、归因按一致性表 `JUDGMENT_CONSISTENCY` 执行（full ⇒ 满分且归因 none；material_unconverted ⇒ 0 < 分 < 满分且归因 zhuanhua_cuo；
+   partial ⇒ 0 < 分 < 满分且有失分归因；miss ⇒ 0 分且有失分归因）；得分 > 0 的点，**证据片段必须包含该点 keyword_family 任一档的任一词**
+   （兜住 Prompt 注入）。不满足的点 `achieved = null`；全部判定后重算总分；满分 → `full_score_second_review`。
 
 输出：每维 `judged_by: rubric_model`、`subjective: true`、置信度 0.4（≤ 0.5）；`human_review_required = true`，`review_reasons` 含
-`subjective_dimension`；`model_version` 用路由回传的快照名；`source_version = rubric:<rubric_version>;prompt:zhixing-m3-grade@0.1.0;items:<内容包>@<版本>`。
+`subjective_dimension`；`model_version` 用路由回传的快照名；`source_version = rubric:<rubric_version>;prompt:zhixing-m3-grade@0.2.0;items:<内容包>@<版本>`。
 证据：作答原文一条 `response_text`，每个得分点一条 `scoring_point_span`（只记位置，不复制原文）。结果里没有任何自由文本。
 
 请求的 `rubric_version` 是契约 `VersionedName`（例如 `zhixing-synthetic@0.1.0`，不带 `rubric:` 前缀），必须等于内容包里该题的版本，否则 400。
+`context.data_class = L3` 的 grade 请求直接回 422 `INVALID_REQUEST`（detail `data_class L3 not supported for grade`）：路由表里判分任务只接到 L2，
+不送路由（否则会变成 502）。
 
 ## 与学习服务模型路由接口的关系
 适配器**不持有任何模型供应商的地址或 Key**（ADR 04 第 1 条）。模型调用只经学习服务的内部接口：
 ```
 POST {ZHIXING_ROUTE_URL}/internal/v1/model/route
 Authorization: Bearer {ZHIXING_ROUTE_TOKEN}
-{ "task": "T2", "data_class": <原样取自请求>, "subject": "zhixing", "prompt_template": "zhixing-m3-grade", "prompt_version": "0.1.0",
+{ "task": "T2", "data_class": "L2", "subject": "zhixing", "prompt_template": "zhixing-m3-grade", "prompt_version": "0.2.0",
   "messages": [...], "usage_id": <请求的 usage_id>, "idempotency_key": <由请求 key 与请求体派生的小写 UUIDv4>, "deadline_ms": 9000 }
-→ 200 { "output", "model_version": "model:<供应商>/<模型>@<版本>", "source_version": "prompt:zhixing-m3-grade@0.1.0", "model_mismatch" }
+→ 200 { "output", "model_version": "model:<供应商>/<模型>@<版本>", "source_version": "prompt:zhixing-m3-grade@0.2.0", "model_mismatch" }
 ```
 学习服务把请求交给平台模型路由（`ModelRouter.route`），由路由按数据级别选境内模型、记调用账。这个接口由学习服务一侧实现，
 它的 OpenAPI 进 `packages/contracts/openapi/learning-internal.v1.yaml` 属于契约变更（spec 待人确认 #1，必停项），不在本目录。
@@ -46,14 +53,18 @@ Authorization: Bearer {ZHIXING_ROUTE_TOKEN}
 | 503 / 502 / 504、网络不通 | 503 `UPSTREAM_UNAVAILABLE`，`retryable: true` |
 | 400 `ROUTE_REJECTED`、401 / 403 | 502 `UPSTREAM_UNAVAILABLE`，`retryable: false` |
 | 200 但结构不对（`model_version` 不是 `model:` 形态、`source_version` 不是本 Prompt 等） | 502 `UPSTREAM_UNAVAILABLE` |
+| 响应体超过 256KB（先按 content-length 预检，再流式累计；超限立刻中止连接，不看状态码） | 502 `UPSTREAM_UNAVAILABLE`，`retryable: true` |
 | 启动时没配或配置不合格 | 503 `UPSTREAM_UNAVAILABLE`，`retryable: false`；其他方法照常 |
 
 上游响应原文不写进错误体与日志；不跟随重定向（令牌不会被转发）。
+**不走代理**：设置了 `NODE_USE_ENV_PROXY`（任何非空值），或命令行 / `NODE_OPTIONS` 里有 `--use-env-proxy` 时拒绝启动（`src/startup.ts`，
+退出码 1，错误信息不含地址与令牌）；`ZHIXING_ROUTE_TOKEN` 与 `ZHIXING_ADAPTER_SERVICE_TOKEN` 相同也拒绝启动。
 
 ## 幂等
 同 `idempotency_key` 同请求体（不含 `request_id`）→ 同一结果与同一批 `evidence_id`，模型只调一次（并发请求共享一次调用）；
 同 key 不同请求体 → 409 `IDEMPOTENCY_CONFLICT`。缓存只存请求体指纹与判定结果（点号、分数、字符位置、模型版本），
-不存学生原文与模型原文；失败不缓存。请求带 `attempt_id`（v1.0 必带）时，作答证据 ID 按作答本身派生：同一道作答在 grade 与 diagnose
+不存学生原文与模型原文；失败不缓存。缓存满时淘汰最早的**已完成**条目，进行中的条目不淘汰；全是进行中时新请求回
+429 `RATE_LIMITED`（`retryable: true`，稍后用同一个 key 重试）。请求带 `attempt_id`（v1.0 必带）时，作答证据 ID 按作答本身派生：同一道作答在 grade 与 diagnose
 里是同一个 `evidence_id`（契约“证据只记一次”）。
 
 ## 环境变量
@@ -62,15 +73,18 @@ Authorization: Bearer {ZHIXING_ROUTE_TOKEN}
 | `ZHIXING_ADAPTER_SERVICE_TOKEN` | 平台到适配器的服务间令牌（必填，≥ 32 字符，由部署环境注入） |
 | `PORT` | 监听端口，默认 8788；只监听 127.0.0.1 |
 | `ZHIXING_ROUTE_URL` | 学习服务内部路由接口地址：https，或本机回环的 http；不得带凭据、查询串 |
-| `ZHIXING_ROUTE_TOKEN` | 调用该接口的服务间令牌（≥ 32 字符） |
+| `ZHIXING_ROUTE_TOKEN` | 调用该接口的服务间令牌（≥ 32 字符；必须与 `ZHIXING_ADAPTER_SERVICE_TOKEN` 不同，否则拒绝启动） |
+| `NODE_USE_ENV_PROXY` | 不得设置（设置了就拒绝启动；`--use-env-proxy` 同） |
 | `ZHIXING_CONTRACT_VERSION` | 能力声明报的默认契约版本（缺省 0.9.0） |
 | `STARBUDDY_ALLOW_CANDIDATE_CONTRACT` | 设为 1 时接受候选版 1.0.0 |
 
 ## 内容
 `content/pack.json` 是 4 道**合成**道法主观题（`zhixing:synthetic-m3-01`–`04`，标注“合成、非真题”，材料与人物都是虚构），
 题目一律 `pending_review`，`rubric_version = zhixing-synthetic@0.1.0`。采分点字段对齐 KGE `kge.scoring_point`：`point_id`（小写）、
-`score`、`subject_dimension`、`keyword_family`（`core` / `accepted` / `colloquial` 三档）、`required_logic`、`material_linkage`、
-`partial_credit_rule`、`common_errors`（合成的错误形态）。`skill_node` 是五个判分维度各一个的合成节点（审题、定位、转化、规范、时政），
+`score`、`node_ids`（合成的知识节点 ID，格式同 `kge.node_id`，`MORAL.SYN.…`，1–8 个）、`subject_dimension`、
+`keyword_family`（`core` / `accepted` / `colloquial` 三档）、`required_logic`、`material_linkage`、
+`partial_credit_rule`（结构化：`mode`、`allowed_scores`、`description`；`allowed_scores` 升序、含 0 与满分、0.5 倍数、不超过分值，
+`all_or_nothing` 只允许 0 与满分；加载时校验）、`common_errors`（合成的错误形态）。`skill_node` 是五个判分维度各一个的合成节点（审题、定位、转化、规范、时政），
 正式坐标待教研定（spec 待人确认 #3）。legacy 的内置题、样卷、定位题、M1 案例都没有进仓库（来源待核）。
 
 ## 边界
@@ -90,6 +104,7 @@ src/route-client.ts          学习服务内部模型路由接口的客户端
 src/contract.ts              直接加载契约 YAML，ajv 校验请求与响应；响应不合契约回 500（fail closed）
 src/content.ts / taxonomy.ts 内容包加载与完整性检查 / 错因映射表（docs/mapping/error-taxonomy.v0.9.yaml）
 src/server.ts / main.ts      node:http，服务间令牌，路径前缀 /plugin/v0 / 启动入口
+src/startup.ts               启动前检查：不走代理、两个服务间令牌不同
 scripts/register-content.ts  输出内容登记 SQL（题目一律 pending_review，只增不改）
 tests/                       单测（node --test）；tests/route-stub.ts 是路由接口的本机 HTTP 桩
 conformance/fixtures.yaml    一致性测试夹具；conformance/harness.ts 是一致性测试专用启动器（起路由桩再加载 src/main.ts）

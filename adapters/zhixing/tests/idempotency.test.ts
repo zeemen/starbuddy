@@ -2,7 +2,7 @@
 // 同 key 不同请求体 → 409；并发的同 key 请求共享一次模型调用。全部是合成数据。
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ANSWERS, gradeBody, gradeBodyV1, harness, type Json } from "./helpers.ts";
+import { ANSWERS, contract, gradeBody, gradeBodyV1, harness, type Json } from "./helpers.ts";
 import { keywordJudge, ok } from "./route-stub.ts";
 import { realPack } from "./helpers.ts";
 
@@ -109,6 +109,59 @@ test("不同 key：v0.9 下作答证据 ID 不同；diagnose 与 generate_variat
     delete v.context.usage_id;
     assert.equal((await h.adapter.handle("POST", "generate_variation", v)).status, 200);
     assert.equal((await h.adapter.handle("POST", "generate_variation", { ...v, count: 2 })).status, 409);
+  } finally {
+    await h.close();
+  }
+});
+
+// ---------- 缓存满时的淘汰（审查意见第 10 条） ----------
+test("缓存满：优先淘汰已完成的条目，进行中的条目不淘汰（同 key 重试仍共享那一次模型调用）", async () => {
+  const judge = keywordJudge(realPack);
+  let delay = 0;
+  const h = await harness({ idempotencyCacheSize: 2, handler: async (req) => ({ ...(await judge(req)), delayMs: delay }) });
+  try {
+    const done = gradeBody("synthetic-m3-01", ANSWERS.partial01);
+    assert.equal((await h.adapter.handle("POST", "grade", done)).status, 200);
+    delay = 150;
+    const slow = gradeBody("synthetic-m3-01", ANSWERS.full01);
+    const slowRun = h.adapter.handle("POST", "grade", slow);
+    await new Promise((r) => setTimeout(r, 30));
+    // 第三个 key：缓存已满（1 条已完成 + 1 条进行中）→ 淘汰已完成的那条，不动进行中的
+    delay = 0;
+    assert.equal((await h.adapter.handle("POST", "grade", gradeBody("synthetic-m3-01", ANSWERS.miss01))).status, 200);
+    const callsBefore = h.stub.calls.length;
+    const slowRetry = h.adapter.handle("POST", "grade", slow);
+    const [a, b] = await Promise.all([slowRun, slowRetry]);
+    assert.equal(a.status, 200);
+    assert.deepEqual(b, a);
+    assert.equal(h.stub.calls.length, callsBefore, "进行中的条目还在：重试没有再调模型");
+    // 被淘汰的已完成条目：同 key 再来会重新计算（多调一次模型），不报冲突
+    const again = await h.adapter.handle("POST", "grade", done);
+    assert.equal(again.status, 200);
+    assert.equal(h.stub.calls.length, callsBefore + 1);
+  } finally {
+    await h.close();
+  }
+});
+
+test("缓存满且全是进行中的请求：新请求回 429 RATE_LIMITED（retryable，稍后用同一个 key 重试），不调模型", async () => {
+  const judge = keywordJudge(realPack);
+  const h = await harness({ idempotencyCacheSize: 2, handler: async (req) => ({ ...(await judge(req)), delayMs: 150 }) });
+  try {
+    const runs = [h.adapter.handle("POST", "grade", gradeBody("synthetic-m3-01", ANSWERS.partial01)), h.adapter.handle("POST", "grade", gradeBody("synthetic-m3-01", ANSWERS.full01))];
+    await new Promise((r) => setTimeout(r, 30));
+    const busyBody = gradeBody("synthetic-m3-01", ANSWERS.miss01);
+    const busy = await h.adapter.handle("POST", "grade", busyBody);
+    assert.equal(busy.status, 429);
+    const pb = busy.body as Json;
+    assert.equal(pb.code, "RATE_LIMITED");
+    assert.equal(pb.retryable, true);
+    assert.deepEqual(contract.validate("Problem", pb), { ok: true });
+    assert.deepEqual(contract.validate("Problem", pb, "1.0.0"), { ok: true });
+    assert.equal(h.stub.calls.length, 2, "被拒的请求没有调模型");
+    for (const r of await Promise.all(runs)) assert.equal(r.status, 200);
+    // 进行中的完成之后，同一个 key 重试成功
+    assert.equal((await h.adapter.handle("POST", "grade", busyBody)).status, 200);
   } finally {
     await h.close();
   }

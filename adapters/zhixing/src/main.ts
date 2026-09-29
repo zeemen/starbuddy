@@ -4,25 +4,30 @@
 //   ZHIXING_ROUTE_URL              学习服务内部模型路由接口的地址（https，或本机回环的 http）
 //   ZHIXING_ROUTE_TOKEN            调用该接口的服务间令牌（≥ 32 字符）
 //                                  两者缺一或不合格：照常启动，但 grade 返回 503 UPSTREAM_UNAVAILABLE，其他方法照常
+//                                  与 ZHIXING_ADAPTER_SERVICE_TOKEN 相同：拒绝启动（src/startup.ts）
 //   ZHIXING_CONTRACT_VERSION       能力声明报的默认契约版本（缺省 0.9.0）。请求一律按各自的 context.contract_version 应答。
 //                                  设为候选版 1.0.0 还需 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1（签字前只在测试与演练里用）
 // 命令行参数（优先于环境变量；一致性测试的 cli.py 不向适配器进程透传环境变量，用参数选版本）：
 //   --contract-version <v>        同 ZHIXING_CONTRACT_VERSION
 //   --allow-candidate-contract    同 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1
 // 适配器不读取、也不需要任何模型供应商的地址或 Key（ADR 04 第 1 条）。
+// 设置了 NODE_USE_ENV_PROXY（任何非空值），或命令行 / NODE_OPTIONS 里有 --use-env-proxy：拒绝启动（路由调用不得走代理）。
 import { parseArgs } from "node:util";
 import { createAdapter } from "./adapter.ts";
 import { loadPack } from "./content.ts";
 import { CANDIDATE_CONTRACT_VERSIONS, DEFAULT_CONTRACT_VERSION, isSupportedVersion, loadContract } from "./contract.ts";
 import { parseRouteConfig } from "./route-client.ts";
 import { createAdapterServer } from "./server.ts";
+import { startupRefusal } from "./startup.ts";
 import { loadTaxonomy } from "./taxonomy.ts";
 
-const credential = process.env.ZHIXING_ADAPTER_SERVICE_TOKEN;
-if (!credential) {
-  console.error("zhixing-adapter: 缺少 ZHIXING_ADAPTER_SERVICE_TOKEN，拒绝启动");
+const refusal = startupRefusal(process.env, process.execArgv);
+if (refusal) {
+  // 只写原因，不写地址、令牌与代理配置
+  console.error(`zhixing-adapter: ${refusal}，拒绝启动`);
   process.exit(1);
 }
+const credential = process.env.ZHIXING_ADAPTER_SERVICE_TOKEN!;
 const { values: args } = parseArgs({
   options: {
     "contract-version": { type: "string" },

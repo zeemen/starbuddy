@@ -1,6 +1,7 @@
 // 服务端只读内容包（spec 设计要点 2）。内容包是合成题（待人确认 #4），题面与采分点只进本进程与模型路由，
 // 任何接口都不返回。采分点字段对齐 KGE kge.scoring_point（迁移 0011）：point_id、score、subject_dimension、
-// keyword_family（三档）、required_logic、material_linkage、partial_credit_rule、common_errors。
+// node_ids（kge.node_id，MORAL 命名空间，1–8 个）、keyword_family（三档）、required_logic、material_linkage、
+// partial_credit_rule（结构化：mode + allowed_scores + description）、common_errors。
 // skill_node 是合成的能力视图节点（五个判分维度各一个，待人确认 #3），正式坐标待教研定。
 import { readFileSync } from "node:fs";
 
@@ -22,15 +23,30 @@ export interface KeywordFamily {
   colloquial: string[];
 }
 
+export const PARTIAL_CREDIT_MODES = ["all_or_nothing", "proportional", "stepwise"] as const;
+export type PartialCreditMode = (typeof PARTIAL_CREDIT_MODES)[number];
+
+/**
+ * 结构化的给分规则：模型给出的分数（clamp、取 0.5 倍数之后）必须落在 allowed_scores 里，否则该点转复核。
+ * allowed_scores 升序、含 0 与满分、都是 0.5 的倍数且不超过分值；all_or_nothing 只允许 [0, 满分]。
+ */
+export interface PartialCreditRule {
+  mode: PartialCreditMode;
+  allowed_scores: number[];
+  description: string;
+}
+
 export interface ScoringPointDef {
   point_id: string;
   score: number;
   subject_dimension: string;
   skill_node: string;
+  /** 合成的知识节点 ID（kge.scoring_point.node_ids；格式同 kge.node_id，学科命名空间 MORAL），1–8 个 */
+  node_ids: string[];
   keyword_family: KeywordFamily;
   required_logic: string | null;
   material_linkage: string | null;
-  partial_credit_rule: { mode: "all_or_nothing" | "proportional" | "stepwise"; description: string };
+  partial_credit_rule: PartialCreditRule;
   /** 合成的错误形态（去标识，不是真实作答，规则 13） */
   common_errors: { type: AttributionCode; pattern: string; note: string }[];
 }
@@ -91,10 +107,34 @@ const NAME_PART = /^[a-z0-9][a-z0-9\-]{0,47}$/;
 /** 契约 VersionedName（GradeRequest.rubric_version；kge.scoring_point.rubric_version 是 platform.versioned_name） */
 export const VERSIONED_NAME = /^[a-z0-9][a-z0-9\-]{0,47}@[A-Za-z0-9][A-Za-z0-9._\-]{0,31}$/;
 const POINT_ID = /^[a-z0-9_\-]{1,48}$/;
+/** kge.node_id（db/migrations/0011_kge__knowledge_map.up.sql；docs/design/kge/check_node_id.py 比对的同一正则） */
+export const KGE_NODE_ID = /^[A-Z][A-Z0-9]{1,9}(\.[A-Z0-9][A-Z0-9_]{0,31}){1,4}$/;
+/** kge.subject_prefix('zhixing') */
+export const ZHIXING_NODE_PREFIX = "MORAL";
+export const MAX_NODE_IDS = 8;
 const CODE_64 = /^[a-z0-9_\-]{1,64}$/;
 
 const isHalfStep = (x: number) => Number.isFinite(x) && Math.round(x * 2) === x * 2;
 const nonEmptyStrings = (a: unknown) => Array.isArray(a) && a.every((s) => typeof s === "string" && s.length > 0 && s.length <= 64);
+
+/** 给分规则的问题清单（空数组 = 合格） */
+export function partialCreditProblems(rule: PartialCreditRule | undefined, score: number): string[] {
+  if (!rule || typeof rule !== "object") return ["缺失"];
+  const out: string[] = [];
+  if (!(PARTIAL_CREDIT_MODES as readonly string[]).includes(rule.mode)) out.push("mode 未知");
+  if (typeof rule.description !== "string" || rule.description.length === 0 || rule.description.length > 1000) out.push("description 为空或过长");
+  const a = rule.allowed_scores;
+  if (!Array.isArray(a) || a.length < 2 || !a.every((x) => typeof x === "number" && isHalfStep(x))) {
+    out.push("allowed_scores 必须是 0.5 倍数的数组，至少含 0 与满分");
+    return out;
+  }
+  for (let i = 1; i < a.length; i++) if (!(a[i]! > a[i - 1]!)) out.push("allowed_scores 必须严格升序");
+  if (a[0] !== 0) out.push("allowed_scores 必须含 0");
+  if (a[a.length - 1] !== score) out.push("allowed_scores 必须含满分");
+  if (a.some((x) => x < 0 || x > score)) out.push("allowed_scores 不得超出 [0, 分值]");
+  if (rule.mode === "all_or_nothing" && !(a.length === 2 && a[0] === 0 && a[1] === score)) out.push("all_or_nothing 只允许 0 与满分");
+  return out;
+}
 
 /** 检查内容包的完整性；不通过就拒绝启动，而不是运行中才发现。 */
 export function indexPack(pack: ContentPack): LoadedPack {
@@ -155,9 +195,17 @@ export function indexPack(pack: ContentPack): LoadedPack {
         const v = p[k];
         if (v !== null && (typeof v !== "string" || v.length === 0 || v.length > 1000)) problems.push(`${pw} 的 ${k} 不合格`);
       }
-      if (!p.partial_credit_rule || !["all_or_nothing", "proportional", "stepwise"].includes(p.partial_credit_rule.mode)) {
-        problems.push(`${pw} 的 partial_credit_rule.mode 未知`);
+      const ids = p.node_ids;
+      if (!Array.isArray(ids) || ids.length < 1 || ids.length > MAX_NODE_IDS) problems.push(`${pw} 的 node_ids 必须有 1–${MAX_NODE_IDS} 个`);
+      else {
+        if (new Set(ids).size !== ids.length) problems.push(`${pw} 的 node_ids 重复`);
+        for (const id of ids) {
+          if (typeof id !== "string" || !KGE_NODE_ID.test(id) || id.split(".")[0] !== ZHIXING_NODE_PREFIX) {
+            problems.push(`${pw} 的 node_ids 不符合 kge.node_id 格式或不在 ${ZHIXING_NODE_PREFIX} 命名空间`);
+          }
+        }
       }
+      problems.push(...partialCreditProblems(p.partial_credit_rule, p.score).map((m) => `${pw} 的 partial_credit_rule ${m}`));
       for (const e of p.common_errors ?? []) {
         if (!(ATTRIBUTION_CODES as readonly string[]).includes(e.type)) problems.push(`${pw} 的常见失分类型未知`);
       }

@@ -19,7 +19,7 @@ import {
   type PackItem,
 } from "./content.ts";
 import { parseModelOutput, postProcess, type PointOutcome } from "./core/m3-postprocess.ts";
-import { buildM3GradeMessages, PROMPT_SOURCE_VERSION, PROMPT_TEMPLATE, PROMPT_VERSION } from "./core/m3-prompt.ts";
+import { buildM3GradeMessages, hasInjectionSignal, PROMPT_SOURCE_VERSION, PROMPT_TEMPLATE, PROMPT_VERSION } from "./core/m3-prompt.ts";
 import { contentUuid, deriveUuid, requestFingerprint, routeIdempotencyKey } from "./ids.ts";
 import { callRoute, RouteError, type FetchLike, type RouteConfig, type RouteFailure } from "./route-client.ts";
 import type { ZhixingTaxonomy } from "./taxonomy.ts";
@@ -103,6 +103,7 @@ type ProblemCode =
   | "IDEMPOTENCY_CONFLICT"
   | "UPSTREAM_TIMEOUT"
   | "UPSTREAM_UNAVAILABLE"
+  | "RATE_LIMITED" // 幂等缓存全是进行中的请求：稍后用同一个 key 重试
   | "DISCIPLINE_NOT_SUPPORTED"
   | "JOB_NOT_FOUND"
   | "INTERNAL";
@@ -183,6 +184,8 @@ interface GradeOutcome {
   fullScore: boolean;
   modelVersion: string;
   modelMismatch: boolean;
+  /** 作答里有指令特征（Prompt 注入的信号）：复核原因加 low_confidence */
+  injectionSuspected: boolean;
 }
 
 export function createAdapter(deps: AdapterDeps) {
@@ -306,7 +309,20 @@ export function createAdapter(deps: AdapterDeps) {
     }
     if (hit?.pending) return (await hit.pending) as T;
     if (hit && "value" in hit) return hit.value as T;
-    if (idempotency.size >= cacheSize) idempotency.delete(idempotency.keys().next().value!);
+    if (idempotency.size >= cacheSize) {
+      // 缓存满：淘汰最早的已完成条目；进行中的条目不淘汰（淘汰了同 key 重试就会再调一次模型）
+      let victim: string | undefined;
+      for (const [k, v] of idempotency) {
+        if (!v.pending) {
+          victim = k;
+          break;
+        }
+      }
+      if (victim === undefined) {
+        throw new ProblemError(429, "RATE_LIMITED", "adapter is busy; retry later with the same idempotency_key", undefined, true);
+      }
+      idempotency.delete(victim);
+    }
     const entry: { fingerprint: string; at: number; value?: unknown; pending?: Promise<unknown> } = { fingerprint, at: now };
     const pending = run();
     entry.pending = pending;
@@ -351,7 +367,7 @@ export function createAdapter(deps: AdapterDeps) {
     try {
       reply = await callRoute(deps.route, {
         task: "T2",
-        data_class: req.context.data_class,
+        data_class: "L2",
         subject: "zhixing",
         prompt_template: PROMPT_TEMPLATE,
         prompt_version: PROMPT_VERSION,
@@ -364,8 +380,8 @@ export function createAdapter(deps: AdapterDeps) {
       if (e instanceof RouteError) throw routeProblem(e.failure);
       throw e;
     }
-    const processed = postProcess(item, parseModelOutput(reply.output), codePoints(text));
-    return { ...processed, modelVersion: reply.model_version, modelMismatch: reply.model_mismatch };
+    const processed = postProcess(item, parseModelOutput(reply.output), text);
+    return { ...processed, modelVersion: reply.model_version, modelMismatch: reply.model_mismatch, injectionSuspected: hasInjectionSignal(text) };
   };
 
   const gradeResponse = (req: GradeRequest, version: ContractVersion, item: PackItem, text: string, fp: string, o: GradeOutcome) => {
@@ -431,7 +447,7 @@ export function createAdapter(deps: AdapterDeps) {
     // 待复核的点：契约要求 verdict = needs_review 时带 verifier_boundary_case，维度分为 null 时带 dimension_unavailable
     if (undecided.length > 0) extra.push("verifier_boundary_case", "dimension_unavailable");
     if (o.fullScore) extra.push("full_score_second_review");
-    if (o.modelMismatch) extra.push("low_confidence");
+    if (o.modelMismatch || o.injectionSuspected) extra.push("low_confidence");
     if (req.appeal) extra.push("student_appeal");
     const evidence = [response, ...spans];
     return selfCheck("GradeResponse", {
@@ -464,6 +480,10 @@ export function createAdapter(deps: AdapterDeps) {
     validateOrThrow("GradeRequest", body, version);
     const req = body as GradeRequest;
     checkContext(req.context, true);
+    // 路由表里判分任务（T2）只接到 L2：L3 请求在这里明确拒绝，不送路由（否则会变成 502）
+    if (req.context.data_class !== "L2") {
+      throw new ProblemError(422, "INVALID_REQUEST", "data_class is not supported for grade", "data_class L3 not supported for grade");
+    }
     const item = findItem(req.attempt.item_ref);
     if (req.rubric_version !== item.rubric_version) {
       throw new ProblemError(400, "INVALID_REQUEST", "rubric_version does not match the content pack for this item");
