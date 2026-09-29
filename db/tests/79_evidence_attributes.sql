@@ -1,5 +1,5 @@
 -- 0017 证据补列（specs/evidence-attributes-sprint1/spec.md）：取值约束、来源类型由载荷类型决定、提示与作答情境一致、地图版本同学科。
--- 合成数据（规则 8）：沿用 10 号夹具的学生 c1、题目 synthetic-0301-07；地图版本用 76 号测试建的 b1（aya）与 b3（wenli）。
+-- 合成数据（规则 8）：沿用 10 号夹具的学生 c1、题目 synthetic-0301-07；地图版本用 76 号测试建的 ca01（aya）与 ca03（wenli）。
 RESET ROLE;
 -- 以学习服务身份插一条证据；cols / vals 追加列
 CREATE FUNCTION t.ev(n integer, kind text, cols text DEFAULT '', vals text DEFAULT '') RETURNS text LANGUAGE sql AS $$
@@ -34,7 +34,7 @@ SELECT t.ok((SELECT count(*) FROM regexp_matches(pg_get_constraintdef((SELECT oi
 SET ROLE starbuddy_learning;
 -- 来源类型：不给时按载荷类型补齐；给了必须一致
 DO $$ BEGIN EXECUTE t.ev(1, 'response_text', ', evidence_kind, evidence_level, channel, map_version_id',
-                          ', ''independent'', ''A'', ''keypad'', ''b1000000-0000-4000-8000-0000000000b1'''); END $$;
+                          ', ''independent'', ''A'', ''keypad'', ''ca100000-0000-4000-8000-00000000ca01'''); END $$;
 SELECT t.ok((SELECT source_type FROM platform.evidence_event WHERE evidence_id = 'e1700000-0000-4000-8000-000000000001') = 'objective',
             '作答原文的来源类型自动补为客观记录');
 DO $$ BEGIN EXECUTE t.ev(2, 'verifier_trace'); END $$;
@@ -48,7 +48,7 @@ SELECT t.throws(t.ev(5, 'response_text', ', evidence_kind', ', ''retest'''), '23
 SELECT t.throws(t.ev(6, 'response_text', ', evidence_level', ', ''D'''), '23514', '证据等级只有 A / B / C');
 SELECT t.throws(t.ev(7, 'response_text', ', channel', ', ''camera'''), '23514', '输入通道只有四种取值');
 SELECT t.throws(t.ev(8, 'interaction_signal', ', evidence_kind', ', ''independent'''), '23514', '交互信号不带作答情境');
-SELECT t.throws(t.ev(9, 'response_text', ', map_version_id', ', ''b3000000-0000-4000-8000-0000000000b3'''), '23503',
+SELECT t.throws(t.ev(9, 'response_text', ', map_version_id', ', ''ca300000-0000-4000-8000-00000000ca03'''), '23503',
                 '数学证据不能引用语文的地图版本');
 SELECT t.throws(t.ev(10, 'response_text', ', map_version_id', ', ''b9000000-0000-4000-8000-0000000000b9'''), '23503',
                 '地图版本必须存在');
@@ -67,7 +67,7 @@ SELECT t.ok((SELECT source_type FROM platform.attempt WHERE attempt_id = 'a17000
             '作答的来源类型默认客观记录');
 -- 以下每条都让作答与它的证据补列一致，确保拦下它的是被测的那条约束而不是一致性触发器
 SELECT t.throws_like(t.at(2, ', hint_level_used, evidence_kind, evidence_level, channel, map_version_id',
-                     ', 1, ''independent'', ''A'', ''keypad'', ''b1000000-0000-4000-8000-0000000000b1'''),
+                     ', 1, ''independent'', ''A'', ''keypad'', ''ca100000-0000-4000-8000-00000000ca01'''),
                      '23514', 'attempt_hinted_kind', '用过提示的作答不能记成独立');
 DO $$ BEGIN EXECUTE t.ev(17, 'response_text', ', evidence_kind, evidence_level, channel', ', ''delayed_retest'', ''A'', ''keypad'''); END $$;
 SELECT t.throws_like(replace(t.at(3, ', hint_level_used, evidence_kind, evidence_level, channel', ', 3, ''delayed_retest'', ''A'', ''keypad'''),
@@ -77,10 +77,10 @@ SELECT t.throws_like(replace(t.at(4, ', source_type', ', ''student_self_report''
                              'e1700000-0000-4000-8000-000000000001', 'e1700000-0000-4000-8000-000000000002'),
                      '23514', 'attempt_source_type_check', '作答表不收学生自述');
 SELECT t.throws_like(t.at(5, ', evidence_kind, evidence_level, channel, map_version_id',
-                ', ''independent'', ''B'', ''keypad'', ''b1000000-0000-4000-8000-0000000000b1'''), '23514', 'differ from its response evidence',
+                ', ''independent'', ''B'', ''keypad'', ''ca100000-0000-4000-8000-00000000ca01'''), '23514', 'differ from its response evidence',
                 '作答的证据等级必须与它的作答证据一致');
 DO $$ BEGIN EXECUTE t.at(6, ', hint_level_used, evidence_kind, evidence_level, channel, map_version_id',
-                          ', 0, ''independent'', ''A'', ''keypad'', ''b1000000-0000-4000-8000-0000000000b1'''); END $$;
+                          ', 0, ''independent'', ''A'', ''keypad'', ''ca100000-0000-4000-8000-00000000ca01'''); END $$;
 SELECT t.ok(true, '与作答证据一致的作答可以写入');
 -- 作答的拍照约束是第二道闸：一致性触发器先于 CHECK 执行，而证据本身不能是拍照 A 级，所以这里只断言被拒
 SELECT t.throws(t.at(7, ', channel, evidence_level', ', ''photo'', ''A'''), '23514', '拍照作答不能是 A 级');

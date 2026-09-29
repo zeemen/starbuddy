@@ -87,20 +87,26 @@ kge_fixture() {  # $1 = 版本 uuid，$2 = 版本号
 }
 KC=c0000000-0000-4000-8000-00000000c0c0; KD=d0000000-0000-4000-8000-00000000d0d0
 kge_fixture "$KC" 7.0.0 && kge_fixture "$KD" 7.0.1 || { echo "db-test: 失败（并发测试夹具）"; exit 1; }
+# 0019 起发布由 staff 经 starbuddy_review 执行，且要先签字（10 号夹具的 staff 账号）
+AS_STAFF="SELECT set_config('app.account_id', '5f000000-0000-4000-8000-00000000005f', false); SET ROLE starbuddy_review;"
+for v in "$KC" "$KD"; do
+  printf '%s\n' "$AS_STAFF SELECT kge.sign_review('map_version', '$v', 'approved', 'high', 'race');" | psql_run >/dev/null \
+    || { echo "db-test: 失败（并发测试签字）"; exit 1; }
+done
 # 场景 1：会话 A 往草稿写入一个孤点并持有事务；会话 B 此时发布。发布必须等 A 提交后再校验，因而拒绝
 printf '%s\n' "BEGIN; SET ROLE starbuddy_kge;
   INSERT INTO kge.knowledge_node (map_version_id, id, level, parent_id, kind, name, includes, excludes, examples, cognitive_levels)
     VALUES ('$KC', 'MATH.RACE.T.ORPHAN', 'node', 'MATH.RACE.T', 'kp', 'r', '{a}', '{b}', '{c}', '{understand}');
   SELECT pg_sleep(1.5); COMMIT;" | psql_run >/dev/null 2>"$WORK/race_a.err" &
 sleep 0.5
-if printf '%s\n' "SET ROLE starbuddy_kge; SELECT kge.publish_map_version('$KC');" | psql_run >/dev/null 2>"$WORK/race_b.err"; then
+if printf '%s\n' "$AS_STAFF SELECT kge.publish_map_version('$KC');" | psql_run >/dev/null 2>"$WORK/race_b.err"; then
   wait; echo "db-test: 失败（发布没有等待进行中的骨架写入，带孤点的版本被发布）"; exit 1
 fi
 wait
 grep -q '阻断问题' "$WORK/race_b.err" || { echo "db-test: 失败（并发场景 1 的发布不是被校验拒绝：$(cat "$WORK/race_b.err")）"; exit 1; }
 echo "ok - 并发：发布等待进行中的骨架写入提交后再校验，带孤点的版本被拒绝" >> "$OUT"
 # 场景 2：会话 B 发布后事务未提交；会话 A 此时往该版本写节点。写入必须等发布提交，然后按已发布状态拒绝
-printf '%s\n' "BEGIN; SET ROLE starbuddy_kge; SELECT kge.publish_map_version('$KD'); SELECT pg_sleep(1.5); COMMIT;" \
+printf '%s\n' "BEGIN; $AS_STAFF SELECT kge.publish_map_version('$KD'); SELECT pg_sleep(1.5); COMMIT;" \
   | psql_run >/dev/null 2>"$WORK/race_c.err" &
 sleep 0.5
 if printf '%s\n' "SET ROLE starbuddy_kge;
@@ -135,7 +141,7 @@ echo "ok - 登录角色间接同时继承 bff 与 learning 时迁移拒绝执行
 as_pg "$PGBIN/createdb" -h "$WORK" -U postgres kge_role_check
 psql_kge() { as_pg "$PGBIN/psql" -h "$WORK" -U postgres -d kge_role_check -X -q -v ON_ERROR_STOP=1 "$@"; }
 for f in "${UPS[@]}"; do
-  case "$(basename "$f")" in 0011_*|0012_*|0017_*) continue ;; esac  # 0012、0017 依赖 0011 的 kge.map_version
+  case "$(basename "$f")" in 0011_*|0012_*|0017_*|0018_*|0019_*) continue ;; esac  # 0012、0017–0019 依赖 0011 的 kge 表
   psql_kge -1 < "$f" >/dev/null 2>&1 || { echo "db-test: 失败（角色断言测试库执行 $(basename "$f") 出错）"; exit 1; }
 done
 kge_must_refuse() {  # $1 = 布置 SQL，$2 = 撤销 SQL，$3 = 说明

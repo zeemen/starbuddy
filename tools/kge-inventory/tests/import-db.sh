@@ -21,6 +21,10 @@ mapfile -t UPS < <(ls "$ROOT"/db/migrations/*.up.sql | sort)
 apply "${UPS[@]}"
 fail() { echo "kge-import-db: 失败：$*"; exit 1; }
 q() { as_pg "$PGBIN/psql" -h "$WORK" -U postgres -d starbuddy_test -X -At -v ON_ERROR_STOP=1 -c "$1"; }
+# 0019 起发布要先由 active staff 签字，再以 starbuddy_review 身份发布（合成 staff 账号）
+STAFF=5f000000-0000-4000-8000-0000000000aa
+AS_STAFF="SELECT set_config('app.account_id', '$STAFF', false); SET ROLE starbuddy_review;"
+sign_publish() { q "$AS_STAFF SELECT kge.sign_review('map_version', '$1', 'approved', 'high', 'kge01'); SELECT kge.publish_map_version('$1')"; }
 report() { node -e 'const r=require(process.argv[1]);const v=r[process.argv[2]];console.log(Array.isArray(v)?v.join("\n"):v)' "$1" "$2"; }
 
 # 能力视图：登记阿鸦 fun 专题的 skill_node（与 adapters/aya/scripts/register-content.ts 同一套 local_id；只收合法编码）
@@ -29,6 +33,7 @@ report() { node -e 'const r=require(process.argv[1]);const v=r[process.argv[2]];
   node -e 'const p=require(process.argv[1]);console.log(p.nodes.map(n=>n.id).filter(i=>i.includes("-FUN-")).join("\n"))' "$REPO/adapters/aya/content/pack.json" \
     | grep -E "$LEGACY_ID" \
     | while read -r id; do echo "INSERT INTO platform.skill_node (subject, local_id, curriculum_version_id, label_code) VALUES ('aya', '$id', 'e0000000-0000-4000-8000-0000000000f1', '$id');"; done
+  echo "INSERT INTO platform.account (id, kind) VALUES ('$STAFF', 'staff');"
 } | psql_run -1
 
 # ---------- 第一段：仓库里的种子 ----------
@@ -44,7 +49,8 @@ for kind in orphan missing_boundary; do
   want="$(report "$SEED/import-report.json" "expected_${kind/orphan/orphans}" | sort)"
   [ "$got" = "$want" ] || fail "$kind 与报告清单不一致：库里 $(wc -l <<<"$got") 条，报告 $(wc -l <<<"$want") 条"
 done
-if q "SET ROLE starbuddy_kge; SELECT kge.publish_map_version('$mv1')" >/dev/null 2>&1; then fail "有阻断问题时不应能发布"; fi
+err="$(sign_publish "$mv1" 2>&1 >/dev/null || true)"
+grep -q '阻断问题' <<<"$err" || fail "有阻断问题时应被发布前校验拒绝，实际：$err"
 [ "$(q "SELECT count(*) FROM kge.knowledge_node n WHERE map_version_id = '$mv1' AND level = 'node' AND NOT EXISTS (
        SELECT 1 FROM kge.id_migration m WHERE m.map_version_id = n.map_version_id AND m.new_id = n.id AND m.rule = 'rename')")" = "0" ] \
   || fail "每个导入节点都要有迁移表记录"
@@ -73,7 +79,7 @@ mv2="$(report "$TMP/v2/import-report.json" map_version_id)"
   || fail "合成补齐应带 2 个易错点"
 left="$(q "SELECT count(*) FROM kge.validate_map_version('$mv2') WHERE severity = 'error'")"
 [ "$left" = "0" ] || fail "合成补齐后仍有 $left 个阻断问题：$(q "SELECT check_name || ':' || object_id FROM kge.validate_map_version('$mv2') WHERE severity = 'error' LIMIT 5" | tr '\n' ' ')"
-q "SET ROLE starbuddy_kge; SELECT kge.publish_map_version('$mv2')" >/dev/null || fail "补齐后应能发布"
+sign_publish "$mv2" >/dev/null || fail "补齐后签字应能发布"
 [ "$(q "SELECT status FROM kge.map_version WHERE id = '$mv2'")" = "published" ] || fail "发布后状态应为 published"
 echo "ok - 0.2.0（合成补齐，含易错点）：发布前校验全绿，已发布"
 echo "kge-import-db: 通过"

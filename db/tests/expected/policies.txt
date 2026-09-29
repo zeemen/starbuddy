@@ -8,7 +8,8 @@ insight.claim|claim_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=((status = 
    FROM insight.claim_template t
   WHERE ((t.template_key = claim.template_key) AND (t.version = claim.template_version)))) AND ((platform.is_self_student(student_id) AND ('student'::text = ANY (visibility))) OR (platform.is_linked_guardian(student_id) AND ('guardian'::text = ANY (visibility)))))|check=-
 insight.claim|claim_insight|ALL|starbuddy_insight|PERMISSIVE|using=true|check=true
-kge.content_review|content_review_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
+kge.content_review|content_review_kge_read|SELECT|starbuddy_kge|PERMISSIVE|using=true|check=-
+kge.content_review|content_review_kge_submit|INSERT|starbuddy_kge|PERMISSIVE|using=-|check=((decision = 'pending'::text) AND (digest IS NULL) AND (action = 'review'::text))
 kge.content_review|content_review_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
 kge.current_affair|current_affair_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
 kge.current_affair|current_affair_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-

@@ -230,7 +230,7 @@ SELECT t.throws($$SELECT policy.publish_scheme('a3000000-0000-4000-8000-00000000
 RESET ROLE;
 
 -- ================= kge 地图校验读政策库 =================
-SELECT t.ok(EXISTS (SELECT 1 FROM kge.validate_map_version('b1000000-0000-4000-8000-0000000000b1') c
+SELECT t.ok(EXISTS (SELECT 1 FROM kge.validate_map_version('ca100000-0000-4000-8000-00000000ca01') c
                      WHERE c.check_name = 'policy_scheme_missing' AND c.object_id = 'nanjing:2027' AND c.severity = 'warning'),
             '地区投影的城市届别在政策库没有已发布方案时，地图校验报警告');
 
