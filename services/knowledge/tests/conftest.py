@@ -95,3 +95,30 @@ def kgedb():
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"
+
+
+# ---------- PR ③：已发布页面快照目录（合成） ----------
+def make_page_snapshot(root: Path, *, commit: str = "d" * 40, drop: tuple[str, ...] = (),
+                       map_version: str | None = None) -> Path:
+    """把合成页面按 knowledge.compiler.snapshot 的导出格式放进 root（manifest.json + pages/kp/*.md）。
+    drop：manifest 不列的页面（文件仍在 = 未发布）；map_version：改写 manifest 与页面头部的地图版本（模拟页面落后）"""
+    import hashlib
+    import json
+
+    (root / "pages" / "kp").mkdir(parents=True)
+    entries = []
+    for p in sorted((PAGES / "kp").glob("*.md")):
+        text = p.read_text(encoding="utf-8")
+        mv = "0.9.0"
+        if map_version is not None:
+            text = text.replace("map_version: 0.9.0", f"map_version: {map_version}", 1)
+            mv = map_version
+        raw = text.encode("utf-8")
+        (root / "pages" / "kp" / p.name).write_bytes(raw)
+        if p.stem in drop:
+            continue
+        entries.append({"page_id": p.stem, "path": f"pages/kp/{p.name}", "page_version": "1.0.0", "map_version": mv,
+                        "sha256": hashlib.sha256(raw).hexdigest()})
+    (root / "manifest.json").write_text(json.dumps({"format": "kge-page-snapshot/1", "commit": commit, "pages": entries}),
+                                        encoding="utf-8")
+    return root

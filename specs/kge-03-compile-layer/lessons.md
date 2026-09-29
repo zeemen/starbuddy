@@ -102,3 +102,74 @@
 5. **部署**：知识服务的登录角色（只继承 `starbuddy_kge_read`）由人在演练库创建；快照目录的存放位置、换快照的流程（导出新目录 → 改 `KNOWLEDGE_PAGE_SNAPSHOT` → 重启）写进运维手册；MCP 的内网地址由平台侧网关规划。
 6. **MCP SDK 版本**：固定 2.2.0（MIT），它带进来的传递依赖较多（cryptography、PyJWT、opentelemetry-api、httpx2 等，许可证已核，见 README）；本服务不用其 OAuth 与客户端网络功能。是否接受由人定；另一个选择是 MCP 随编排层（冲刺 4）再加。
 7. **没有声明 MCP outputSchema**：错误结果的 `structured_content` 是 Problem，与成功信封形状不同，声明后客户端会按 outputSchema 校验失败；需要时可在 v1.0 把两者合成一个 oneOf。
+
+## PR ③：兜底检索 + 对照评测 + M1 报表（子代理）
+范围：spec 设计要点 6、7、8，待人确认 #5、#8。不改迁移、契约、人设与金标数据；不接触留出集；全部是合成数据。
+
+### 交付
+- `services/knowledge/knowledge/retrieval/`：`tokenize`（jieba 0.42.1，MIT，独立 `Tokenizer` 实例、只用词典 HMM=False、搜索引擎模式、NFKC + 小写、去页面标记与停用词）、
+  `bm25`（进程内 BM25）、`chunks`（只切公共层）、`pipeline`（`PageFirstRetriever` 查阅路径与上下文包、`ChunkRetriever` 对照路径、`Corpus`）、
+  `resolver`（`FullTextResolver`、`CombinedResolver`）、`signals`（补页面信号与 sink）、`vector`（向量检索只留接口）。
+- `knowledge/service/tools.py`：`ToolCore` 缺省解析器由 `RuleResolver` 改为 `CombinedResolver`（规则 + 全文），经 PR ② 的 `Resolver` 接口；
+  `model_version` 取解析器的版本（`algo:kge-node-resolve@0.2.0`）。契约不变，低置信仍只标复核。
+- `knowledge/m1.py`（`python -m knowledge.m1`）：M1 报表，Markdown + JSON。
+- `evals/kge-compile/`：`compare_retrieval.py`、合成夹具（金标 12 题、地图、页面快照及其生成脚本）、合成样例报告 `reports/sample-synthetic/`、测试、README（执行手册）。
+- 测试：`tests/test_retrieval.py`（18）、`tests/test_m1.py`（9，其中 1 条库上）；`evals/kge-compile/tests/test_compare.py`（16）。
+  `make knowledge-test` 共 284 条；新目标 `make kge-compile-eval-test` 已加进 `make check`。
+- 变异：`tests/mutations.sh` 新增 28 条（检索 17、M1 5、对照评测 6；共 81 条，约 4.5 分钟），全部被发现。对照评测的变异在副本里复制
+  `evals/kge-compile`（其余 evals 仍软链接），在该目录下跑它自己的测试。
+
+### 实现要点
+- **BM25**：k1 = 1.2、b = 0.75，idf 用 Lucene 的非负写法 ln(1 + (N − df + 0.5)/(df + 0.5))；查询词去重；分数四舍五入到 6 位后按“分数降序、键升序”排，
+  与输入顺序无关（测试有手算）。另有“按 idf 加权的查询词覆盖率”，供解析置信度与页面覆盖判断用。
+- **只切公共层**：`build_chunks` 只收 `PageSnapshot`（manifest 列出、哈希核对过）与 `status = published` 的 `Snapshot`（白名单字段），类型写死，
+  传别的一律 TypeError；页面按段落切，跳过“教材位置”段（只有原句占位）；节点已撤下的页面整页跳过；原子只切节点（名称、包括、不包括）与课标条目。
+  教材原句（投影 quote_text）不切（KGE V1.1 修订 3），地区投影与边不切。
+- **查阅路径**：定位（调用方给节点就用，否则规则 + 全文解析）→ 页面五段（定义、课标要求、讲解要点、易错、高频设问；教材位置与地区权重要按版次、
+  地区渲染，走 `page.get`，不进上下文包）→ 没有页面时查原子 → 兜底条件：没定位到、置信度 < 0.5、没有页面、页面对查询词覆盖率 < 0.5 →
+  BM25 取 3 块（已在包里的来源不重复）→ 预算 4000 字，超出整段丢弃。
+- **补页面信号**：`kge-gap-signal/1`，字段白名单（节点、原因、查询摘要、查询词个数、命中来源、最高分）。查询只记 HMAC-SHA256 摘要（截 16 位），
+  密钥不落盘、缺省每个实例随机——同一进程内同一问法可聚合，但摘要不能用字典反推（短查询的无密钥哈希可以被穷举）；没有任何学生参数。
+- **全文解析置信度**：0.6 × idf 加权覆盖率，覆盖率 < 0.34 不算命中（与规则解析的二元组下限一致）；节点文档 = 名称 + 包括 + 例子，不含“不包括”。
+  合并时每个节点取较高置信度，所以规则解析的分数（名称整体出现 0.6–0.9、ID 直引 1.0）原样保留。
+- **M1 报表放在 services/knowledge**：三项输入（地图快照的 `curriculum_links`、页面快照 manifest、体检 JSON）的解析与校验都在本包；
+  `tools/kge-coverage` 读的是 KGE-01 导入产物与打标报告，拿不到承接关系、页面与体检。百分比用精确分数四舍五入到 0.1%（不经浮点）。
+- **对照评测**：金标 YAML `kge-gold-qa/1`（必须写明 `synthetic`）；两条路径同一份语料、同一分词器；正确率判定可插拔（`all_points` 缺省、`majority`、
+  `register_judge`）；一致性 = 主问题重复 `--runs` 次 + 同义改写各 1 次的来源集合两两 Jaccard 平均；成本 = 字符数与 token 估算。
+  报告只含汇总与题目 ID（测试逐条核对问题、改写、答案要点、切块原文都不在报告里），`synthetic: true` 时头部标“流程样例，不是评测结论”，
+  题量 < 50 时写明不足以支撑结论。测试核对样例报告与夹具是最新的（改检索后要重跑样例，命令见 `evals/kge-compile/README.md`）。
+- 坑：jieba 0.42.1 导入时用 `pkg_resources`（弃用警告），导入处局部屏蔽；它首次分词在系统临时目录写 `jieba.cache`（只有公共词典）。
+  `CombinedResolver` 调子解析器时候选上限要取 max(节点数, 调用方上限)，否则没有节点列表的测试桩被截成空。
+
+### 与 spec / 任务说明的偏差
+1. **兜底检索只做进程内 BM25**，没有做 Postgres tsvector 版本（任务说明：可选，不必做）；spec #5 的默认写的是 tsvector，按任务说明改为 BM25 首选。
+2. **补页面信号没有写进体检报告**：spec 设计要点 6 写“兜底命中记录进体检报告”；体检报告是页面级 CI 产物（`lint_issue` 字段、按页面定位），
+   信号是运行期、跨页面的，所以单独成 `kge-gap-signal/1`（JSON Lines），用 `summarize` 聚合后交教研。是否要合进体检报告由人定。
+3. **信号还没有接进 HTTP 服务**：知识服务只有 `node.resolve`（契约里没有“取上下文包”的工具），查阅路径目前是 Python 接口
+   （`PageFirstRetriever`），给编排层（冲刺 4）与对照评测用；编排层接入时再配 `JsonlSink` 与密钥。
+4. **上下文包不含教材位置与地区权重段**：它们要按学生版次、地区渲染（`page.get`），查阅路径没有学生参数。
+5. **M1 报表的“课标承接率”在库上数据时恒为“不可计算：承接关系未入库”**（承接关系没有表，见 PR ① 待人确认 1）；文件快照的 `curriculum_links` 可算。
+6. **`node.resolve` 的 `model_version` 由 0.1.0 升为 0.2.0**（契约里的示例仍写 0.1.0，只是示例，不改契约）。
+
+### 待人确认
+1. **jieba 依赖**（spec #5）：固定 0.42.1（MIT，已登记 README）；它只有源码包、最后发布于 2020 年，词典随包分发。是否接受由人定；替代方案是自写基于词表的最大匹配。
+2. **检索参数**：停用词表（`STOPWORDS`）、页面覆盖率下限 0.5、兜底取 3 块、切块路径取 5 块、上下文预算 4000 字、全文置信度系数 0.6 与覆盖率下限 0.34——
+   都是工程默认值，**没有用任何金标调过**；真实金标到位后只能用开发集调，不能用金标或留出集调（规则 14）。
+3. **补页面信号的存放与保留期**：摘要密钥的管理（每实例随机 vs 部署级固定密钥以便跨实例聚合）、JSON Lines 的存放位置与保留期，由平台与数据负责人定。
+4. **一致性指标的口径**：现在按“来源集合”（页面段落或原子）算 Jaccard，页面优先路径天然偏高（同一节点总是给同一组段）；是否改按文字重合度（如字符 n-gram）由评测负责人定。
+5. **正确率判定**：缺省“全部要点按子串出现”偏严、不认同义词；教研给同义词表或改用人工判定时经 `register_judge` 接入，名字进报告。
+6. **向量检索**（pgvector + BGE-M3 + bge-reranker）：只留接口，引入属新增扩展与本地模型，需人确认；融合方式与权重进对照评测再定。
+
+### 真实 M1：人的工作交接清单
+| 事项 | 执行人 | 产出 / 去处 | 依赖本仓的什么 |
+|---|---|---|---|
+| 编纂规范 v1 签发 | 教研负责人 | `docs/design/kge/codification-math-v1.md` 第 10 节教学内容要求填写、签发；句长上限、群体统计门槛（PR ① 待人确认 2）定稿 | 结构骨架与机器可检规则已写好 |
+| 页面仓库 | 执行人（平台） | 按 ADR 12 选托管平台、建仓、配主分支保护与 CI（`tools/kge-pages-template/`），配置编译器推送凭据（不进仓库） | 模板、`python -m knowledge.lint`、`knowledge.compiler`、`knowledge.compiler.snapshot` |
+| 数学知识点页撰写与审核 | 教研 | 叙述段编写；高风险页两人审核（ADR 12 #2 的审核类别）；合并后导出页面快照 | 编译器与体检；审核台（release-gate-sprint4） |
+| 高风险页审核 | 教研（两人） | 锁定段、前置关系、教材投影变更与全量重编一律高风险，合并前两人签字 | 合并请求说明（差异、依据原子、体检结果） |
+| 承接关系入库 | 人定方案（迁移属必停项） | 节点—课标承接的表或列（PR ① 待人确认 1），迁移由人执行；入库后 M1 报表的课标承接率才可在库上计算 | `knowledge.m1`（快照带 `curriculum_links` 时已可算） |
+| 金标问答 | 教研 | `evals/kge-compile/gold/<学科>-<地图版本>.yaml`（≥ 50 题、按节点分层、`synthetic: false`），只由教研提交 | `compare_retrieval.py` 与执行手册 |
+| 对照评测结论 | 评测负责人 | 跑 `compare_retrieval.py`，按 KGE 第九章口径判断；未达标则切块检索为主路径进入封测 | 报告只含汇总与题目 ID |
+| 留出集盲测（无处可标率 < 2%） | 教研负责人，在封存环境 | `bash evals/kge-tagging/run_holdout.sh ...`，只打印汇总；结果填入 M1 验收记录（规则 14，构建方不接触） | KGE-02 已交付的脚本 |
+| M1 报表 | 执行人 | `python -m knowledge.m1 --map-snapshot/--database-url ... --page-snapshot ... --lint-report ...`，与留出集结果、对照评测结论一起进 M1 验收记录 | `knowledge.m1` |
+| M1 是否达成 | 人 | 课标承接 100%、无处可标 < 2%、知识点页发布率 100%、体检零阻断、对照评测达标；真实 M1 不在本任务通过条件里（后续验收） | — |

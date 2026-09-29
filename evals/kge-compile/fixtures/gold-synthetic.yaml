@@ -1,0 +1,60 @@
+# 合成金标问答（KGE-03 对照评测夹具）。**合成数据，不是金标**：由工程按合成页面编写，只用来证明
+# compare_retrieval.py 的流程与指标计算；真实金标由教研提供（spec 待人确认 #8，≥ 50 题，按节点分层），见 README。
+# 字段：id（题目 ID）、node_id（金标节点）、question（问题）、paraphrases（同义改写，可省）、answer_points（答案要点）。
+format: kge-gold-qa/1
+synthetic: true
+map_version: 0.9.0
+questions:
+  - id: SYN-Q01
+    node_id: MATH.SYN.EQ.LINEAR
+    question: 解一元一次方程的一般步骤有哪些？
+    paraphrases: [一元一次方程一般按什么步骤来解？]
+    answer_points: [去分母, 去括号, 移项, 合并同类项, 系数化为一]
+  - id: SYN-Q02
+    node_id: MATH.SYN.EQ.LINEAR
+    question: 怎么检验一元一次方程的解对不对？
+    paraphrases: [解出一元一次方程以后如何验证结果？]
+    answer_points: [代入原方程, 左右两边相等]
+  - id: SYN-Q03
+    node_id: MATH.SYN.EQ.LINEAR
+    question: 去括号时括号前面是负号要注意什么？
+    answer_points: [改变符号]
+  - id: SYN-Q04
+    node_id: MATH.SYN.EQ.TRANSPOSE
+    question: 移项的依据是什么？
+    paraphrases: [为什么可以移项？]
+    answer_points: [等式的基本性质, 同一个数]
+  - id: SYN-Q05
+    node_id: MATH.SYN.EQ.TRANSPOSE
+    question: 移项最容易犯什么错误？
+    paraphrases: [移项时常见的错误是什么？]
+    answer_points: [没有改变符号]
+  - id: SYN-Q06
+    node_id: MATH.SYN.EQ.APPLY
+    question: 列方程解应用题的关键是什么？
+    answer_points: [等量关系, 未知数]
+  - id: SYN-Q07
+    node_id: MATH.SYN.EQ.APPLY
+    question: 解出应用题的方程后还要做什么？
+    answer_points: [检验, 实际意义]
+  - id: SYN-Q08
+    node_id: MATH.SYN.EQ.APPLY
+    question: 行程问题一般根据什么列方程？
+    answer_points: [路程相等]
+  - id: SYN-Q09
+    node_id: MATH.SYN.EXPR.SQUARE_DIFF
+    question: 平方差公式说的是什么？
+    paraphrases: [两数和与两数差相乘等于什么？]
+    answer_points: [平方差]
+  - id: SYN-Q10
+    node_id: MATH.SYN.EXPR.SQUARE_DIFF
+    question: 用平方差公式时最常见的混淆是什么？
+    answer_points: [两数差的平方]
+  - id: SYN-Q11
+    node_id: MATH.SYN.EXPR.PERFECT_SQUARE
+    question: 完全平方公式是什么？
+    answer_points: [两数和的平方, 积的两倍]
+  - id: SYN-Q12
+    node_id: MATH.SYN.EXPR.SQUARE_DIFF
+    question: 平方差公式计算前先要认清什么？
+    answer_points: [相同项, 相反项]

@@ -188,7 +188,7 @@ async def test_node_resolve_rule_candidates(kgedb):
         assert r.status_code == 200, body
         ids = [c["node_id"] for c in body["result"]["candidates"]]
         assert ids[:2] == [LINEAR, TRANSPOSE] and body["confidence"] == body["result"]["candidates"][0]["confidence"]
-        assert body["human_review_required"] is False and body["model_version"] == "algo:kge-node-resolve@0.1.0"
+        assert body["human_review_required"] is False and body["model_version"] == "algo:kge-node-resolve@0.2.0"  # PR ③：规则 + 全文
         r = await call(client, "node.resolve", {"context": ctx(data_class="L2"), "subject": "aya", "text": "完全无关的合成文字"})
         body = r.json()
         assert body["result"]["candidates"] == [] and body["human_review_required"] is True

@@ -18,7 +18,8 @@ from .contract import CONTRACT_VERSION, PERSONAL_TOOLS, Contract
 from .errors import ServiceError, forbidden, internal, invalid, not_found
 from .pages import PageSnapshot, render_page
 from .reader import KgeReader, MapVersionRow, jsonb, node_record, projection_record, region_record, subject_of
-from .resolve import LOW_CONFIDENCE, RESOLVER_VERSION, Resolver, RuleResolver
+from ..retrieval.resolver import CombinedResolver
+from .resolve import LOW_CONFIDENCE, RESOLVER_VERSION, Resolver
 
 log = logging.getLogger("starbuddy.knowledge")
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
@@ -46,7 +47,7 @@ class ToolCore:
         self.reader = reader
         self.contract = contract
         self.pages = pages
-        self.resolver = resolver or RuleResolver()
+        self.resolver = resolver or CombinedResolver()  # PR ③：规则 + 全文（jieba + BM25），经 Resolver 接口
         self.handlers: dict[str, Callable[[dict], Awaitable[tuple[dict, dict]]]] = {
             "node.resolve": self.node_resolve, "node.get": self.node_get, "node.path": self.node_path, "page.get": self.page_get,
             "item.search": self.item_search, "item.similar": self.item_similar, "rubric.get": self.rubric_get,
@@ -153,7 +154,8 @@ class ToolCore:
                 item["kind"] = c.kind
             out.append(item)
         top = cands[0].confidence if cands else 0.0
-        meta = {"source_version": graph_source(subject, v), "confidence": top, "model_version": RESOLVER_VERSION}
+        meta = {"source_version": graph_source(subject, v), "confidence": top,
+                "model_version": getattr(self.resolver, "version", RESOLVER_VERSION)}
         if top < LOW_CONFIDENCE:
             meta["review_reasons"] = ["low_confidence"]
         return {"map_version": v.version, "candidates": out}, meta

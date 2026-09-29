@@ -1,6 +1,6 @@
 """node.resolve 的规则解析（PR ②）：节点 ID 直引 + 节点名称 / includes 关键词匹配。
 
-全文检索（jieba 分词 + tsvector 或进程内 BM25）属于 PR ③，接口 `Resolver` 留好：实现同一个 resolve() 即可替换或叠加。
+全文检索（jieba 分词 + 进程内 BM25）在 PR ③ 的 knowledge.retrieval.resolver，经 `Resolver` 接口叠加（CombinedResolver）。
 输入文本可能来自学生（契约：数据级别 L2）：只在内存里用完即弃，不落库、不写日志、不进异常消息（规则 13）。
 置信度是规则分数，不是概率；低于 LOW_CONFIDENCE 时整体要求复核（review_reasons = low_confidence），复核只带候选节点。
 """

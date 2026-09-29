@@ -1,9 +1,10 @@
 # 知识服务（services/knowledge）
 
 KGE-03 编译层（`specs/kge-03-compile-layer/spec.md`）。本目录现在包含 **PR ①**（页面格式、编译器、程序体检含 SymPy）与
-**PR ②**（知识服务读工具 HTTP + MCP、页面快照导出与 `page.get`、编译器的数据库数据源）；
-页面仓库模板在 `tools/kge-pages-template/`，编纂规范骨架在 `docs/design/kge/codification-math-v1.md`。
-兜底检索、对照评测、M1 报表（PR ③）不在这里。实现记录与待人确认见同 spec 目录的 `lessons.md`。
+**PR ②**（知识服务读工具 HTTP + MCP、页面快照导出与 `page.get`、编译器的数据库数据源）与
+**PR ③**（页面优先检索 + 全文兜底、`node.resolve` 接全文检索、补页面信号、M1 报表）；
+页面仓库模板在 `tools/kge-pages-template/`，编纂规范骨架在 `docs/design/kge/codification-math-v1.md`，
+对照评测脚本在 `evals/kge-compile/`。实现记录与待人确认见同 spec 目录的 `lessons.md`。
 
 本包只读公共层（kge.* 的节点、边、课标、投影、题目标签、采分点），不读写任何个人层表（规则 1、2、13）：
 数据库只用迁移 0026 的只读角色 `starbuddy_kge_read`，页面只读编译器导出的只读快照目录，不在线访问 Git。
@@ -20,8 +21,10 @@ KGE-03 编译层（`specs/kge-03-compile-layer/spec.md`）。本目录现在包�
 | `knowledge/service/tools.py` | 工具的唯一实现层（HTTP 与 MCP 共用）：调用方准入 → 个人层 501 → caller 与令牌一致 → 请求校验 → 执行 → 统一信封 → 响应校验（不合契约回 500） |
 | `knowledge/service/reader.py` | 只读 kge.*：`starbuddy_kge_read` 连接与启动时的角色断言；SQL 自带发布、有效、已核对、审核通过、强前置的条件（RLS 之外的第二道防线）；`DbAtomSource`（PR ① `AtomSource` 的数据库实现） |
 | `knowledge/service/pages.py` | 读页面快照（逐页核对哈希与头部，只有 manifest 列出的算已发布）；`page.get` 按版次、地区渲染 |
-| `knowledge/service/resolve.py` | `node.resolve` 的规则解析（节点 ID 直引 + 名称 / includes 关键词）；`Resolver` 接口留给 PR ③ 的全文检索 |
+| `knowledge/service/resolve.py` | `node.resolve` 的规则解析（节点 ID 直引 + 名称 / includes 关键词）与 `Resolver` 接口；缺省解析器是 PR ③ 的 `CombinedResolver`（规则 + 全文） |
 | `knowledge/service/app.py`、`mcp_server.py`、`config.py` | FastAPI 应用（`POST /v0/<工具名>`）、MCP（streamable HTTP 挂在 `/mcp`，工具名 = operationId）、环境变量配置 |
+| `knowledge/retrieval/` | PR ③ 页面优先检索 + 全文兜底：`tokenize`（jieba 独立实例、只用词典、搜索引擎模式、停用词）、`bm25`（进程内 BM25）、`chunks`（只切公共层：已发布页面快照的段落 + 已发布原子）、`pipeline`（查阅路径与带引用的上下文包；对照路径 `ChunkRetriever`）、`resolver`（`node.resolve` 的全文检索与合并）、`signals`（补页面信号）、`vector`（向量检索只留接口） |
+| `knowledge/m1.py` | PR ③ M1 报表：课标承接率、知识点页发布率、体检阻断数；留出集无处可标率只写来源与执行人 |
 
 ## 常用命令
 ```bash
@@ -38,6 +41,13 @@ make knowledge-test knowledge-mutation                                       # �
 ```
 退出码：`knowledge.lint` 0 无阻断、1 有阻断、2 参数或输入错误（快照、词表读不了一律失败，不当作通过）；
 `knowledge.compiler` 0 完成、1 有合并请求体检阻断、2 参数或输入错误。
+
+```bash
+# M1 报表（Markdown + JSON，同样输入逐字节相同）；库上数据用 --database-url 与 --subject，课标承接率会如实报“不可计算：承接关系未入库”
+.venv/bin/python -m knowledge.m1 --map-snapshot tests/fixtures/map-v1.yaml --page-snapshot /srv/kge/snapshots/<提交号> \
+  --lint-report /path/to/lint.json --out /tmp/kge-m1
+# 退出码：0 生成成功；2 参数或输入错误（体检 JSON 的汇总与明细不一致也算输入错误）
+```
 
 ```bash
 # 导出已发布页面快照（合并窗口时对页面仓库主分支的指定提交执行；只读 Git 对象，不改工作区、不访问远程）
@@ -78,7 +88,21 @@ KNOWLEDGE_ENV=dev KNOWLEDGE_DATABASE_URL=... KNOWLEDGE_TOKEN_ORCHESTRATOR=... KN
 | asyncpg | 0.31.0 | Apache-2.0 | 只读数据库连接（psycopg 3 为 LGPL-3.0，不引入） |
 | jsonschema / referencing | 4.26.0 / 0.37.0 | MIT / MIT | 契约严格校验；传递依赖 jsonschema-specifications（MIT）、rpds-py（MIT）、attrs（MIT） |
 | mcp / mcp-types | 2.2.0 / 2.2.0 | MIT / MIT | MCP 官方 Python SDK（spec 待人确认 #4）。传递依赖：httpx2 / httpcore2 2.13.1（BSD-3）、sse-starlette 3.5.0（BSD-3）、python-multipart 0.0.32（Apache-2.0）、PyJWT 2.15.1（MIT）、cryptography 50.0.1（Apache-2.0 或 BSD-3）、cffi 2.1.1（MIT-0）、pycparser 3.0（BSD-3）、opentelemetry-api 1.45.0（Apache-2.0）、truststore 0.10.4（MIT）。SDK 的 OAuth、stdio、客户端网络功能本服务不用；只用低层 Server、streamable HTTP 与测试用的进程内客户端 |
+| jieba | 0.42.1 | MIT | 兜底检索与 `node.resolve` 全文检索的中文分词（spec 待人确认 #5）。只有源码包（纯 Python，安装时本地构建），自带词典；没有运行时依赖（导入时若有 setuptools 会用其 `pkg_resources` 读词典，否则按文件路径读）。首次分词在系统临时目录写一份词典缓存 `jieba.cache`（只含公共词典，不含任何查询） |
 | pytest（开发） | 9.1.1 | MIT | 单测；传递依赖 pluggy（MIT）、iniconfig（MIT）、packaging（Apache-2.0 或 BSD-2）、Pygments（BSD-2） |
 
 LaTeX 解析没有引入 `sympy.parsing.latex`（需要 antlr4 或 lark 运行时，属新增依赖）：体检自带一个 LaTeX 子集转换器
 （`knowledge/lint/mathcheck.py`，分式、根式、乘方、下标变量、四则、括号、π），转换结果先过字符与标识符白名单再交给 SymPy。
+
+## 兜底检索与补页面信号（PR ③）
+- 查阅路径：定位节点 → 读已发布页面 → 按需查原子 → 兜底检索（没定位到、置信度 < 0.5、节点没有页面、页面对查询词的 idf 加权覆盖率 < 0.5）→
+  上下文包（每段带来源：页面 = 页面 ID + `page_version` + 段落；原子 = 原子键 + 原子哈希；包里带页面快照提交号与地图版本）。
+- 全文检索：jieba 分词 + 进程内 BM25（k1 = 1.2、b = 0.75、Lucene 的非负 idf；同分按键排序，结果确定）。没有做 Postgres tsvector 版本。
+- `node.resolve`：`ToolCore` 的缺省解析器改为 `CombinedResolver`（规则 + 全文，每个节点取较高置信度），`model_version` 为
+  `algo:kge-node-resolve@0.2.0`；全文单独给出的置信度 = 0.6 × idf 加权覆盖率（< 0.34 不算命中），低置信仍只标复核。契约不变。
+- 切块只收 `PageSnapshot` 与 `status = published` 的 `Snapshot`，类型写死；教材位置段、教材原句、地区投影不切。
+- 补页面信号（`kge-gap-signal/1`）：节点、原因、查询的 HMAC-SHA256 摘要（截 16 位，密钥不落盘、缺省每个实例随机）、查询词个数、
+  命中来源、最高分；**不记原始查询文本与分词结果，不记任何学生标识**。去处：`MemorySink` 或 `JsonlSink`（部署方放在服务日志目录）；
+  `signals.summarize` 按节点与原因聚合给教研排补页面的优先级。本 PR 没有把信号接进 HTTP 服务（`node.resolve` 只解析节点），
+  编排层调用查阅路径时再接。
+- 向量检索（pgvector + BGE-M3 + bge-reranker）只留接口（`retrieval/vector.py`），引入需人确认（新增扩展与本地模型）。

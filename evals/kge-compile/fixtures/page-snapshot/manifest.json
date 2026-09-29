@@ -1,0 +1,36 @@
+{
+  "commit": "83b8dcf06089443a06cd289e776f7ae597ed3156",
+  "exported_at": "2026-09-29T00:00:00+08:00",
+  "format": "kge-page-snapshot/1",
+  "pages": [
+    {
+      "map_version": "0.9.0",
+      "page_id": "MATH.SYN.EQ.APPLY",
+      "page_version": "1.0.0",
+      "path": "pages/kp/MATH.SYN.EQ.APPLY.md",
+      "sha256": "186355f11e6f324b880113f61f415ae276058ba51759a06ffd87e3ef51e1f292"
+    },
+    {
+      "map_version": "0.9.0",
+      "page_id": "MATH.SYN.EQ.LINEAR",
+      "page_version": "1.0.0",
+      "path": "pages/kp/MATH.SYN.EQ.LINEAR.md",
+      "sha256": "d545333bc6967abc899dbdafd2658b8aa22647a9efbf7ee4c377512e7cd10900"
+    },
+    {
+      "map_version": "0.9.0",
+      "page_id": "MATH.SYN.EQ.TRANSPOSE",
+      "page_version": "1.0.0",
+      "path": "pages/kp/MATH.SYN.EQ.TRANSPOSE.md",
+      "sha256": "6ec4ff79920fcdef6ce720511d40b77ca43c8c1ae1b7f1a32ed6b8adfc5618db"
+    },
+    {
+      "map_version": "0.9.0",
+      "page_id": "MATH.SYN.EXPR.SQUARE_DIFF",
+      "page_version": "1.0.0",
+      "path": "pages/kp/MATH.SYN.EXPR.SQUARE_DIFF.md",
+      "sha256": "56cc7f2f12c63dc95dbb3d89dd77e94f349f15e85b7ea56e93811b6649fec7ac"
+    }
+  ],
+  "synthetic": true
+}
