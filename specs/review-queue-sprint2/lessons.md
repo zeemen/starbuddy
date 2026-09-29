@@ -87,3 +87,9 @@
 
 ## 严格检查
 - 2026-09-29 `make check CONTRACT_STRICT=1` 全绿（含 db-test 1136 项、db-mutation、learning 291 项、三科 conformance、web-test 22 项、pentest-env-test）。
+
+### 审核台签字用例偶发超时的根因与修复（2026-09-29）
+- 现象：负载高时 `e2e/review.spec.ts` 的“签字 → 已签字”偶发 5 秒内没有结果（三次复现）。
+- 根因：页面刷新或导航后立即点击，此时 React 还没接管表单（水合未完成），这次提交丢失或走了无 JS 的整页提交，结果区不显示。
+- 修复：`ActionForm` 水合后加 `data-hydrated="true"`；e2e 在导航或刷新后、点击审核台表单前先等所有 `form.review-form` 都带上这个标记。
+  修复后单独跑与并发跑 DB 变异（高负载）时各通过一次。

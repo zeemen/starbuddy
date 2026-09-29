@@ -8,6 +8,11 @@ import { createHmac } from 'node:crypto';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 
+// 等页面上所有审核台表单水合完成再操作：导航或刷新后立即点击可能在 React 接管前发生，提交丢失（负载高时偶发超时的根因）
+async function hydrated(page: Page): Promise<void> {
+  await expect(page.locator('form.review-form:not([data-hydrated])')).toHaveCount(0);
+}
+
 // 合成凭据：与 db/seeds/dev/review-synthetic.sql 一致（只用于一次性测试库）
 interface Staff { login: string; password: string; secret: Buffer }
 const T1: Staff = { login: 'teacher.t1', password: 'synthetic-teacher-t1', secret: Buffer.from('11'.repeat(20), 'hex') };
@@ -113,6 +118,7 @@ test('教研改“不包含” → 差异与校验 → 签字 → 发布，旧�
 
   // 改节点 A 的“不包含”
   const editor = page.locator('details.node-editor[data-node="CHN.RC.T.A"]');
+  await hydrated(page);
   await editor.locator('summary').click();
   await editor.getByLabel('不包含（一行一条）').fill('整篇主旨\n合成：段落之间的过渡');
   await editor.getByRole('button', { name: '保存修改' }).click();
@@ -142,6 +148,7 @@ test('教研改“不包含” → 差异与校验 → 签字 → 发布，旧�
   await asStaff(p2, T2);
   await p2.goto(`/review/map-versions/${V101}`);
   const e2 = p2.locator('details.node-editor[data-node="CHN.RC.T.B"]');
+  await hydrated(p2);
   await e2.locator('summary').click();
   await e2.getByLabel('典型题例（一行一条）').fill('合成例题 2\n合成例题 3');
   await e2.getByRole('button', { name: '保存修改' }).click();
@@ -155,6 +162,8 @@ test('教研改“不包含” → 差异与校验 → 签字 → 发布，旧�
   // 刷新后看到两条差异，再签字、发布
   await page.reload();
   await expect(page.getByTestId('changes').locator('tbody tr')).toHaveCount(2);
+  // 等表单水合完成再点：刷新后立即点击可能在 React 接管前发生，提交丢失（负载高时偶发超时的根因）
+  await hydrated(page);
   await page.getByTestId('sign').getByRole('button', { name: '批准' }).click();
   await expect(page.getByTestId('sign').getByRole('status')).toHaveText('已签字');
   await expect(page.getByTestId('signoffs').locator('tbody tr[data-current="true"]')).toHaveCount(1);
@@ -259,6 +268,7 @@ test('复核队列：看到合成任务 → 领取 → 他人看到“他人已�
   await expect(page.locator('body')).not.toContainText('synthetic-star-map-answer');
   await axe(page);
 
+  await hydrated(page);
   await page.getByTestId('take').getByRole('button', { name: '领取' }).click();
   await expect(page.getByTestId('assignment')).toHaveText('我已领取');
   await expect(page.getByTestId('task-status')).toHaveText('处理中');
