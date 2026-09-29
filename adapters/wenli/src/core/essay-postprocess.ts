@@ -79,7 +79,8 @@ export function parseModelOutput(output: string): ModelDimension[] | null {
 }
 
 /** 一维为什么不可判（只作适配器内部与测试用，不进响应） */
-export type UndecidedReason = "model_output_invalid" | "dimension_missing" | "evidence_out_of_range" | "uncertainty_inconsistent";
+export type UndecidedReason =
+  | "model_output_invalid" | "dimension_missing" | "evidence_out_of_range" | "uncertainty_inconsistent" | "injection_suspected";
 
 export type DimensionOutcome =
   | {
@@ -103,6 +104,19 @@ export interface EssayPostProcessed {
   modelUncertainty: { low: number; high: number } | null;
   /** 一类卷：各维都判定且都是最高档 → 强制复核 */
   topBand: boolean;
+}
+
+/**
+ * 作文命中指令特征时，模型给的档位一律不采纳：四个模型维都转为不可判、整篇转复核（安全审查 A2）。
+ * 作文没有关键词可比对（知行靠关键词族拦住“照注入指令给满分”），只能整篇不采纳。
+ */
+export function rejectAllModelDimensions(p: EssayPostProcessed, reason: UndecidedReason): EssayPostProcessed {
+  return {
+    dimensions: p.dimensions.map((d) => ({ dimension_id: d.dimension_id, decided: false, max: d.max, reason })),
+    modelTotal: null,
+    modelUncertainty: null,
+    topBand: false,
+  };
 }
 
 const levelIndex = (l: Level) => LEVELS.indexOf(l);

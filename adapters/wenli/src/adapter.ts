@@ -14,7 +14,7 @@ import { CHOICE_CODE, type Admission, type EssayItem, type LoadedPack, type Obje
 import { recommendTargets, type CellState } from "./core/adaptive.ts";
 import { evidenceLevel, LEVEL_WEIGHT, type PriorRecord } from "./core/channel.ts";
 import { buildEssayGradeMessages, hasInjectionSignal, PROMPT_SOURCE_VERSION, PROMPT_TEMPLATE, PROMPT_VERSION } from "./core/essay-prompt.ts";
-import { conventionScore, parseModelOutput, postProcessEssay, type EssayPostProcessed } from "./core/essay-postprocess.ts";
+import { conventionScore, parseModelOutput, postProcessEssay, rejectAllModelDimensions, type EssayPostProcessed } from "./core/essay-postprocess.ts";
 import { gradeObjective } from "./core/objective.ts";
 import { contentUuid, deriveUuid, requestFingerprint, routeIdempotencyKey } from "./ids.ts";
 import { callRoute, RouteError, type FetchLike, type RouteConfig, type RouteFailure } from "./route-client.ts";
@@ -410,8 +410,10 @@ export function createAdapter(deps: AdapterDeps) {
       if (e instanceof RouteError) throw routeProblem(e.failure);
       throw e;
     }
-    const processed = postProcessEssay(content.modelDimensions, parseModelOutput(reply.output), text);
-    return { processed, modelVersion: reply.model_version, modelMismatch: reply.model_mismatch, injectionSuspected: hasInjectionSignal(text) };
+    const injectionSuspected = hasInjectionSignal(text);
+    const judged = postProcessEssay(content.modelDimensions, parseModelOutput(reply.output), text);
+    const processed = injectionSuspected ? rejectAllModelDimensions(judged, "injection_suspected") : judged;
+    return { processed, modelVersion: reply.model_version, modelMismatch: reply.model_mismatch, injectionSuspected };
   };
 
   const gradeResponse = (req: GradeRequest, version: ContractVersion, essay: EssayItem, text: string, fp: string, o: GradeOutcome) => {
@@ -480,7 +482,8 @@ export function createAdapter(deps: AdapterDeps) {
     if (undecided.length > 0) extra.push("verifier_boundary_case");
     // 一类卷（各维最高档）强制复核
     if (o.processed.topBand) extra.push("full_score_second_review");
-    if (o.modelMismatch || o.injectionSuspected) extra.push("low_confidence");
+    // 模型维不可判（模型输出不合格、越界、命中注入等）也加 low_confidence，与卷面维“按设计不可判”区分开（契约审查建议 3）
+    if (o.modelMismatch || o.injectionSuspected || undecided.length > 0) extra.push("low_confidence");
     if (req.appeal) extra.push("student_appeal");
     const evidence = [response, ...spans];
     // 整体置信度：取可判维度（卷面维除外）的最低值；有模型维不可判时为 0

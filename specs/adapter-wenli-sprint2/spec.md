@@ -59,9 +59,10 @@ ADR 15（输入通道与作答证据）；ADP-道法-01（`specs/adapter-zhixing
 - generate_variation、teach、report；模型现场出题（KD-02）；`uncertainty` 落库（迁移，待人确认 #2）；20 格 / 28 点旧编码映射（KGE-00 待核）。
 
 ## 验收标准（可测试）
-- [ ] 一篇合成作文五维结果写入平台：带 evidence_ids、四个主观维 confidence ≤ 0.5 与 uncertainty、真实 model_version、复核标记；卷面维不可判时带 dimension_unavailable。
-- [ ] 判分只来自量表与确定性后处理；无自由文本；注入与越界都转复核。
+- [x] 一篇合成作文五维结果写入平台：带 evidence_ids、四个主观维 confidence ≤ 0.5 与 uncertainty、真实 model_version、复核标记；卷面维不可判时带 dimension_unavailable。
+- [x] 判分只来自量表与确定性后处理；无自由文本；注入与越界都转复核。
 - [ ] diagnose 客观题确定性判分、按通道加权，C 级作答不判分并列入 ocr_confirmation_required；plan 确定性、不含提分。
+  （部分满足：单测成立；经平台端到端时通道标记走不通，见 lessons“审查意见处理”第 1 条，另起任务）
 - [ ] 适配器不持有任何供应商信息；conformance v0.9 / v1.0 通过；严格 `make check` 通过；安全审查、契约审查意见处理完。
 
 ## 涉及的必停项

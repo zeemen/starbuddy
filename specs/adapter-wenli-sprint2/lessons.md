@@ -36,10 +36,31 @@
 - 测试路由表里 T4 路由到 `fake-chat`，T2 路由到 `fake-reasoner`；端到端断言按实际路由写，不能照抄知行。
 
 ## 待人确认（实现中新增）
-1. **拍照通道怎么标记**：契约里没有输入通道或证据等级字段，适配器从 `prior_evidence` 读 `interaction_signal` 的 `evidence_level_a/b/c`，
-   或者读 `ocr_transcription`。只有拍照识别、没有等级标记的按 C 级处理；多个标记取最严。
-   平台要么按这个约定传，要么在契约 `AttemptInput` 上加 `evidence_level`（契约变更，必停项）。
+1. **拍照通道怎么标记**：契约 v1.0 的 GradeRequest 已有 `evidence_level` 与 `answer_evidence_ref`，但 DiagnoseRequest 的作答（AttemptInput）没有
+   （审查后更正：原先写成“契约没有证据等级字段”）。适配器暂从 `prior_evidence` 读 `interaction_signal` 的 `evidence_level_a/b/c` 或 `ocr_transcription`；
+   这个约定在真实链路上走不通，见下方“审查意见处理”第 1 条。
 2. **plan 的掌握映射**：只有 transfer / retain 算已掌握；各状态对应的数值、任务分钟下限（diagnose 5、practice 10）都未经教研确认。
 3. **字数规则**：“不足 50 字也扣 1 分”，向上取整，属于判分逻辑。
 4. **置信度常数**（主观维 0.4、规则维 0.9、客观题 1.0、拍照 0.7）都未校准。
 5. spec 待人确认 #1–#8 都按默认执行。判分 Prompt 与判分逻辑属于必停项，PR 首行写 `[NEEDS-HUMAN]`。
+
+## 审查意见处理（按默认建议，2026-09-29）
+1. **拍照通道约定走不通（契约建议 1、安全 A1）**：学习服务不把 ingest 的证据等级转给适配器；当次拍照的 OCR 证据还没入库，不能作为 prior_evidence 引用；
+   C 级证据被学习服务拒收；也没有任何一方写 evidence_level_* 信号。所以经平台时，拍照作答在适配器看来都是 A 级：观测置信度 1.0 而不是 0.7，
+   `ocr_confirmation_required` 不会输出。
+   - **适配器的通道门禁不是安全边界**。真正的边界是学习服务的 ingest：v1 路径 `ingest.evidence_level` 必填，C 级不写能力观察。
+   - 验收第 3 条（按通道加权、C 级列入 ocr_confirmation_required）改为**部分满足**：单测成立，端到端不可达。
+   - 另起任务（待人确认）二选一：学习服务核对 prior_evidence 的 kind 与 payload，并把 ingest 等级按约定转发；或者契约给 AttemptInput 加
+     `evidence_level`，由学习服务透传（必停项），随后删掉私有约定、澄清 `ocr_confirmation_required` 的描述（契约备注 4）。
+     同一任务里，学习服务在 v0.9 路径上拒收拍照通道（v0.9 没有等级，适配器默认放行）。
+2. **注入防护（安全 A2）**：作文命中指令特征时，四个模型维一律不采纳（score 为 null，原因 `injection_suspected`），
+   整篇 needs_review，带 verifier_boundary_case 与 low_confidence；不采纳的档位不算一类卷。补了“模型照注入给出全 L4”的单测，conformance 夹具同步。
+   这属于判分逻辑，待人确认。
+3. **复核原因分不清失败类型（契约建议 3）**：有模型维不可判时追加 `low_confidence`，与卷面维按设计不可判区分；有单测。
+4. **grade 不读 v1.0 的 evidence_level（契约建议 2、安全 B1）**：维持现状。C 级照常批改（ADR 15），不进学习者模型由平台保证。
+   要不要对 B/C 级拍照作文追加 `ocr_low_confidence`，待人确认。
+5. **路由接口没有按学科限定任务与数据级别（安全 A3，本任务之前就有）**：另起任务，在路由接口上按学科设 (task, data_class) 白名单，
+   例如文砺只允许 {T4: L2}。涉及出境路径，待人确认。
+6. 维持现状、只记录：证据片段只核对范围（安全 B2，加最短长度属于判分逻辑）；注入词表可能误伤正常作文（B3）；
+   Makefile“跳过”分支的已知问题（B4）；detail 带 instancePath（B5）；rule_ref 没有登记处（契约备注 5，平台已有缺口）；
+   uncertainty 不落库（备注 6）；缺口建议不输出（备注 7）；卷面维标 rubric_model（备注 9）。
