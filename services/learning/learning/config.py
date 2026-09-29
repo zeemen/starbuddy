@@ -6,6 +6,7 @@
   LEARNING_SERVICE_TOKEN         BFF → 学习服务的服务间令牌（≥ 32 字符）
   LEARNING_ADAPTER_<SUBJECT>_URL    例如 LEARNING_ADAPTER_AYA_URL=http://127.0.0.1:8787
   LEARNING_ADAPTER_<SUBJECT>_TOKEN  学习服务 → 该科适配器的服务间令牌
+  LEARNING_ROUTE_CLIENT_<SUBJECT>_TOKEN  该科适配器 → 学习服务内部模型路由接口的令牌（≥ 32 字符，令牌绑定学科；不设即该科不能调模型）
 """
 from __future__ import annotations
 
@@ -29,6 +30,8 @@ class Settings:
     database_url: str
     service_credential: str
     adapters: dict[str, AdapterTarget] = field(default_factory=dict)
+    # 学科 → 路由客户端令牌（specs/adapter-zhixing-sprint2 设计要点 5）
+    route_clients: dict[str, str] = field(default_factory=dict)
     # pending 租约（spec 待人确认 #5）：必须长于适配器调用的总预算（2 × 超时 + 1）再加核对与落库的余量
     # （安全审查 S6）。diagnose 总预算 61 秒，所以租约 90 秒。
     lease_seconds: float = 90.0
@@ -57,4 +60,15 @@ class Settings:
                 if not (url.startswith("https://") or re.match(r"http://(127\.0\.0\.1|localhost|\[::1\])(:\d+)?(/|$)", url)):
                     raise RuntimeError(f"LEARNING_ADAPTER_{subject.upper()}_URL 必须是 https，或本机回环地址")
                 adapters[subject] = AdapterTarget(url.rstrip("/"), cred)
-        return Settings(env=env, database_url=database_url, service_credential=credential, adapters=adapters)
+        route_clients = {}
+        for subject in SUBJECTS:
+            tok = e.get(f"LEARNING_ROUTE_CLIENT_{subject.upper()}_TOKEN")
+            if tok is not None:
+                if len(tok) < 32:
+                    raise RuntimeError(f"LEARNING_ROUTE_CLIENT_{subject.upper()}_TOKEN 少于 32 个字符")
+                route_clients[subject] = tok
+        tokens = [credential, *(a.credential for a in adapters.values()), *route_clients.values()]
+        if len(set(tokens)) != len(tokens):
+            raise RuntimeError("服务间令牌、适配器令牌、路由客户端令牌必须各不相同")
+        return Settings(env=env, database_url=database_url, service_credential=credential, adapters=adapters,
+                        route_clients=route_clients)
