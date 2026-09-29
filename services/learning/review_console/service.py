@@ -51,6 +51,8 @@ async def diff_view(kge: KgeStore, version_id: uuid.UUID) -> dict[str, Any]:
         "version": v,
         "base_version_id": base_id,
         "digest": draft.digest,
+        # 草稿的全部节点（改节点表单用；公共层内容）
+        "nodes": [{"id": k, **v} for k, v in sorted(draft.nodes.items())],
         "summary": summary,
         "impact": impact,
         "changes": changes,

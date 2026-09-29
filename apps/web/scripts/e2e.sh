@@ -33,10 +33,31 @@ for _ in $(seq 1 80); do
   sleep 0.25
 done
 
-export STARBUDDY_BFF_URL="http://127.0.0.1:$BFF_PORT" WEB_PORT STARBUDDY_DEV_AUTH=1 NEXT_TELEMETRY_DISABLED=1
+# 审核台后端（services/learning/review_console）：两个登录角色分别只继承 kge、review；合成 staff 与语文合成地图；
+# 开发身份桩打开（只认 loopback 与合成 staff）。需要 services/learning/.venv（同 make learning-test）。
+PY="$ROOT/services/learning/.venv/bin/python"
+if [ ! -x "$PY" ]; then echo "e2e: 缺少 services/learning/.venv（审核台后端）"; exit 3; fi
+psql -X -q -v ON_ERROR_STOP=1 -c "CREATE ROLE review_kge_app LOGIN IN ROLE starbuddy_kge" \
+  -c "CREATE ROLE review_sign_app LOGIN IN ROLE starbuddy_review" >/dev/null
+PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -q -v ON_ERROR_STOP=1 -f "$ROOT/db/seeds/dev/review-synthetic.sql" >/dev/null
+REVIEW_PORT="$(free_port)"
+RLOG="$(mktemp)"
+( cd "$ROOT/services/learning" || exit 1
+  exec env REVIEW_CONSOLE_ENV=test REVIEW_CONSOLE_DEV_AUTH=1 \
+    REVIEW_CONSOLE_KGE_DATABASE_URL="postgresql://review_kge_app@/starbuddy_test?host=$PGHOST" \
+    REVIEW_CONSOLE_REVIEW_DATABASE_URL="postgresql://review_sign_app@/starbuddy_test?host=$PGHOST" \
+    "$PY" -m review_console serve --port "$REVIEW_PORT" ) > "$RLOG" 2>&1 < /dev/null &
+REVIEW_PID=$!
+trap 'kill "$BFF_PID" "$REVIEW_PID" 2>/dev/null || true; rm -f "$LOG" "$RLOG"' EXIT
+for _ in $(seq 1 80); do
+  python3 -c "import socket,sys; s=socket.socket(); sys.exit(0 if s.connect_ex(('127.0.0.1', $REVIEW_PORT)) == 0 else 1)" && break
+  sleep 0.25
+done
+
+export STARBUDDY_BFF_URL="http://127.0.0.1:$BFF_PORT" STARBUDDY_REVIEW_URL="http://127.0.0.1:$REVIEW_PORT" WEB_PORT STARBUDDY_DEV_AUTH=1 NEXT_TELEMETRY_DISABLED=1
 cd "$WEB"
 set +e
 npx --no-install playwright test "$@"
 rc=$?
-if [ $rc -ne 0 ]; then echo "--- BFF 日志（最后 20 行）"; tail -20 "$LOG"; fi
+if [ $rc -ne 0 ]; then echo "--- BFF 日志（最后 20 行）"; tail -20 "$LOG"; echo "--- 审核台后端日志（最后 20 行）"; tail -20 "$RLOG"; fi
 exit $rc

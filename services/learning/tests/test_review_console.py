@@ -243,3 +243,23 @@ def test_db_error_detail_only_for_raised_rules():
     assert db_error(native).status == 409 and db_error(native).detail is None
     denied = asyncpg.exceptions.InsufficientPrivilegeError("permission denied for function publish_map_version")
     assert db_error(denied).status == 403 and db_error(denied).detail is None
+
+
+async def test_dev_staff_auth_only_loopback_synthetic_staff():
+    from starlette.requests import Request
+
+    from review_console.devauth import DEV_STAFF, dev_enabled, dev_staff_auth
+
+    def req(host, headers):
+        scope = {"type": "http", "client": (host, 1234), "headers": [(k.encode(), v.encode()) for k, v in headers.items()]}
+        return Request(scope)
+
+    staff = sorted(DEV_STAFF)[0]
+    assert await dev_staff_auth(req("127.0.0.1", {"x-dev-staff-id": str(staff)})) == staff
+    assert await dev_staff_auth(req("10.0.0.2", {"x-dev-staff-id": str(staff)})) is None
+    assert await dev_staff_auth(req("127.0.0.1", {"x-dev-staff-id": str(staff), "x-forwarded-for": "1.2.3.4"})) is None
+    assert await dev_staff_auth(req("127.0.0.1", {"x-dev-staff-id": str(SF1)})) is None  # 不是合成 staff 名单里的
+    assert await dev_staff_auth(req("127.0.0.1", {"x-dev-staff-id": "not-a-uuid"})) is None
+    assert dev_enabled({"REVIEW_CONSOLE_ENV": "dev", "REVIEW_CONSOLE_DEV_AUTH": "1"})
+    assert not dev_enabled({"REVIEW_CONSOLE_ENV": "prod", "REVIEW_CONSOLE_DEV_AUTH": "1"})
+    assert not dev_enabled({"REVIEW_CONSOLE_ENV": "dev"})

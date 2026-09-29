@@ -1,4 +1,7 @@
-"""命令行：导出版本记录（spec 设计要点 11，Gate 0 证据“版本记录”）。
+"""命令行：导出版本记录（spec 设计要点 11，Gate 0 证据“版本记录”），以及本地起审核台后端。
+
+  python -m review_console serve --port 8790     只监听 127.0.0.1，不记访问日志（路径里有版本 ID 以外的内容时也不留痕）；
+                                                 REVIEW_CONSOLE_DEV_AUTH=1 时用开发身份桩，否则全部 401（PR 4 前）
 
   REVIEW_CONSOLE_ENV=dev REVIEW_CONSOLE_KGE_DATABASE_URL=... python -m review_console record --subject aya [--format csv|json]
 
@@ -45,14 +48,31 @@ async def _record(subject: str, fmt: str) -> None:
         await conn.close()
 
 
+def _serve(port: int) -> None:
+    import uvicorn
+
+    from .app import create_app, deny_all
+    from .config import ReviewSettings
+    from .devauth import dev_enabled, dev_staff_auth
+
+    settings = ReviewSettings.from_env()
+    auth = dev_staff_auth if dev_enabled(dict(os.environ)) else deny_all
+    uvicorn.run(create_app(settings, authenticate=auth), host="127.0.0.1", port=port, access_log=False, log_level="warning")
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="review_console")
     sub = p.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("record", help="导出版本记录")
     r.add_argument("--subject", required=True, choices=SUBJECTS)
     r.add_argument("--format", default="csv", choices=("csv", "json"))
+    s = sub.add_parser("serve", help="本地起审核台后端（只监听 127.0.0.1）")
+    s.add_argument("--port", type=int, required=True)
     a = p.parse_args(argv)
-    asyncio.run(_record(a.subject, a.format))
+    if a.cmd == "serve":
+        _serve(a.port)
+    else:
+        asyncio.run(_record(a.subject, a.format))
     return 0
 
 

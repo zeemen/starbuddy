@@ -15,6 +15,12 @@ const config: NextConfig = {
         headers: [{ key: 'Cache-Control', value: 'no-store' }],
       },
       {
+        // 审核台：草稿内容与签字状态随时在变，不缓存
+        source: '/review/:path*',
+        headers: [{ key: 'Cache-Control', value: 'no-store' }],
+      },
+      { source: '/review', headers: [{ key: 'Cache-Control', value: 'no-store' }] },
+      {
         // 全站安全响应头。CSP 需要给 Next 的内联脚本配 nonce，留给 4-H（lessons 待人确认）
         source: '/:path*',
         headers: [

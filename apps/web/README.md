@@ -5,6 +5,9 @@
 - `/star-map/[studentId]`：星图原型。每个在读学科一片星空，数据经 BFF 读平台 `mastery_estimate`，受 RLS 约束。
 - `/dev/star-glyphs`：星形符号样张。三态加保持，16 / 24 / 32 / 48px，浅色与深色，还有点亮动效。
 - `/dev/login`：开发身份桩，只列合成账号，只在 `STARBUDDY_DEV_AUTH=1` 时存在。4-H 删除。
+- `/review`：审核台 v0（staff 专用，specs/release-gate-sprint4 冲刺 1 · PR 3）。地图版本列表、差异审核、节点边界编辑、签字、发布、撤下、版本记录。
+  服务端组件与 server action 经审核台后端（`STARBUDDY_REVIEW_URL`，只允许 loopback；`services/learning/review_console`）读写；
+  staff 身份在 PR 4 之前用开发身份桩（`/dev/login` 的“合成教研”），与学生、家长的身份分开存。
 
 ## 边界
 - 浏览器只和本前端通信；服务端组件经 BFF 取数据（`STARBUDDY_BFF_URL`，只允许 loopback）。浏览器不直连 BFF、数据库或学习服务。

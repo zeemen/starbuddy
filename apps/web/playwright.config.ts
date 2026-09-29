@@ -30,6 +30,7 @@ export default defineConfig({
     env: {
       STARBUDDY_DEV_AUTH: '1',
       STARBUDDY_BFF_URL: process.env['STARBUDDY_BFF_URL'] ?? 'http://127.0.0.1:8787',
+      STARBUDDY_REVIEW_URL: process.env['STARBUDDY_REVIEW_URL'] ?? 'http://127.0.0.1:8790',
       NEXT_TELEMETRY_DISABLED: '1',
     },
   },

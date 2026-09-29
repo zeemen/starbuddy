@@ -61,3 +61,22 @@ a { color: inherit; }
 
 .login-list { list-style: none; padding: 0; }
 .login-list a { display: flex; align-items: center; min-height: 44px; }
+
+/* 审核台（staff 专用）：表格、风险标签（颜色之外一定有文字）、表单与结果提示 */
+.review-header { max-width: 960px; margin: 0 auto; padding: 8px 16px; border-bottom: 1px solid var(--rule); display: flex; gap: 16px; align-items: center; justify-content: space-between; }
+.review-header nav a, .review-tabs a { display: inline-flex; align-items: center; min-height: 44px; margin-right: 12px; }
+.review-tabs a[aria-current="page"] { font-weight: 700; text-decoration: none; }
+.table-scroll { overflow-x: auto; }
+.review-table { border-collapse: collapse; width: 100%; font-size: 0.875rem; margin: 8px 0; }
+.review-table th, .review-table td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+.review-table caption { text-align: left; color: var(--muted); padding: 4px 0; }
+.risk { display: inline-block; padding: 0 6px; border: 1px solid currentColor; border-radius: 4px; }
+.risk-high { font-weight: 700; }
+.review-form { margin: 12px 0; }
+.review-form textarea { width: 100%; font: inherit; }
+.review-form button, .review-form select, .review-form input { font: inherit; min-height: 44px; }
+.review-result { min-height: 1.5em; }
+.review-result.error { font-weight: 700; }
+.review-list { list-style: none; padding: 0; }
+.payload { font-size: 0.8rem; white-space: pre-wrap; }
+.node-editor summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; }
