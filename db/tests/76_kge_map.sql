@@ -344,8 +344,8 @@ INSERT INTO kge.textbook_projection (map_version_id, node_id, edition, edition_y
 UPDATE kge.current_affair SET review_status = 'retired' WHERE id = 'b6000000-0000-4000-8000-0000000000b6';
 SELECT t.ok(t.kge_issues(:kb, 'error') = '{}', '修好后没有阻断问题（实际：' || array_to_string(t.kge_issues(:kb, 'error'), ',') || '）');
 SELECT t.throws_like($$SELECT t.kge_sign_publish('ca200000-0000-4000-8000-00000000ca02')$$, '23514', '变更单未全部批准', '结构性变更单未签字时拒绝发布');
-SELECT t.ok(t.as_staff('5f000000-0000-4000-8000-00000000005f', $$SELECT kge.sign_map_change('b5000000-0000-4000-8000-0000000000b5', 'approved')$$) = 'proposed'
-            AND t.as_staff('5e000000-0000-4000-8000-00000000005e', $$SELECT kge.sign_map_change('b5000000-0000-4000-8000-0000000000b5', 'approved')$$) = 'approved',
+SELECT t.ok(t.as_staff('5f000000-0000-4000-8000-00000000005f', $$SELECT kge.sign_map_change('b5000000-0000-4000-8000-0000000000b5', 'approved', kge.map_change_digest_of('b5000000-0000-4000-8000-0000000000b5'))$$) = 'proposed'
+            AND t.as_staff('5e000000-0000-4000-8000-00000000005e', $$SELECT kge.sign_map_change('b5000000-0000-4000-8000-0000000000b5', 'approved', kge.map_change_digest_of('b5000000-0000-4000-8000-0000000000b5'))$$) = 'approved',
             '两名不同 staff 签字后变更单转为已批准');
 SELECT t.ok(t.kge_sign_publish(:kb) IS NOT NULL, '修好、变更单批准后可以发布');
 SELECT t.ok((SELECT status FROM kge.map_change WHERE id = 'b5000000-0000-4000-8000-0000000000b5') = 'applied', '发布后变更单转为已应用');

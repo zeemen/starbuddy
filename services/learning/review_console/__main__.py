@@ -1,42 +1,46 @@
 """命令行：导出版本记录（spec 设计要点 11，Gate 0 证据“版本记录”）。
 
-  python -m review_console record --subject aya [--format csv|json]
+  REVIEW_CONSOLE_ENV=dev REVIEW_CONSOLE_KGE_DATABASE_URL=... python -m review_console record --subject aya [--format csv|json]
 
-只用 kge 连接（REVIEW_CONSOLE_KGE_DATABASE_URL），只读 kge.version_record；输出到标准输出。
+只用 kge 连接，连上后先核对登录角色只继承 starbuddy_kge（安全审查 B-4）；只读 kge.version_record 与校验；输出到标准输出。
 """
 from __future__ import annotations
 
 import argparse
 import asyncio
 import csv
+import os
 import sys
 
 import asyncpg
 
 from .app import SUBJECTS
-from .config import ReviewSettings
+from .config import ALLOWED_ENVS
 from .diff import canonical_json
-from .snapshot import norm
-from .store import KgeStore
-
-COLUMNS = ("map_version_id", "version", "action", "decision", "risk_level", "basis_code", "digest", "decided_at", "signer")
+from .service import RECORD_COLUMNS, version_record
+from .store import KgeStore, expect_role, role_facts
 
 
 def write_records(rows: list[dict], fmt: str, out=sys.stdout) -> None:
-    rows = [{c: norm(r[c]) for c in COLUMNS} for r in rows]
+    rows = [{c: r.get(c) for c in RECORD_COLUMNS} for r in rows]
     if fmt == "json":
         out.write(canonical_json(rows) + "\n")
         return
-    w = csv.DictWriter(out, fieldnames=COLUMNS, lineterminator="\n")
+    w = csv.DictWriter(out, fieldnames=RECORD_COLUMNS, lineterminator="\n")
     w.writeheader()
     w.writerows(rows)
 
 
 async def _record(subject: str, fmt: str) -> None:
-    s = ReviewSettings.from_env()
-    conn = await asyncpg.connect(s.kge_database_url)
+    if os.environ.get("REVIEW_CONSOLE_ENV") not in ALLOWED_ENVS:
+        raise SystemExit(f"REVIEW_CONSOLE_ENV 必须是 {ALLOWED_ENVS} 之一")
+    url = os.environ.get("REVIEW_CONSOLE_KGE_DATABASE_URL")
+    if not url:
+        raise SystemExit("缺少 REVIEW_CONSOLE_KGE_DATABASE_URL")
+    conn = await asyncpg.connect(url)
     try:
-        write_records(await KgeStore(conn).records(subject), fmt)  # type: ignore[arg-type]
+        expect_role(await role_facts(conn), "starbuddy_kge")
+        write_records(await version_record(KgeStore(conn), subject), fmt)  # type: ignore[arg-type]
     finally:
         await conn.close()
 

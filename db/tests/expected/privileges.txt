@@ -200,6 +200,9 @@ func|kge.id_parent(text)|starbuddy_authz|EXECUTE|SUPERUSER
 func|kge.id_parent(text)|starbuddy_kge|EXECUTE|SUPERUSER
 func|kge.id_parent(text)|starbuddy_learning|EXECUTE|SUPERUSER
 func|kge.map_change_digest(kge.map_change)|starbuddy_authz|EXECUTE|SUPERUSER
+func|kge.map_change_digest_of(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|kge.map_change_digest_of(uuid)|starbuddy_kge|EXECUTE|starbuddy_authz
+func|kge.map_change_digest_of(uuid)|starbuddy_review|EXECUTE|starbuddy_authz
 func|kge.map_change_required_signers(text)|starbuddy_authz|EXECUTE|SUPERUSER
 func|kge.map_change_required_signers(text)|starbuddy_kge|EXECUTE|SUPERUSER
 func|kge.map_version_digest(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
@@ -214,8 +217,8 @@ func|kge.retire_map_version(uuid,text)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|kge.retire_map_version(uuid,text)|starbuddy_review|EXECUTE|starbuddy_authz
 func|kge.row_digest(jsonb)|starbuddy_authz|EXECUTE|SUPERUSER
 func|kge.row_digest(jsonb)|starbuddy_kge|EXECUTE|SUPERUSER
-func|kge.sign_map_change(uuid,text)|starbuddy_authz|EXECUTE|starbuddy_authz
-func|kge.sign_map_change(uuid,text)|starbuddy_review|EXECUTE|starbuddy_authz
+func|kge.sign_map_change(uuid,text,text)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|kge.sign_map_change(uuid,text,text)|starbuddy_review|EXECUTE|starbuddy_authz
 func|kge.sign_review(text,text,text,text,text)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|kge.sign_review(text,text,text,text,text)|starbuddy_review|EXECUTE|starbuddy_authz
 func|kge.structural_diff(uuid)|starbuddy_authz|EXECUTE|SUPERUSER
@@ -340,10 +343,11 @@ owner|insight.basis_belongs(insight.basis_kind,uuid,uuid)|starbuddy_authz
 owner|insight.claim_history_guard()|starbuddy_authz
 owner|insight.claim_log()|starbuddy_authz
 owner|kge.current_staff()|starbuddy_authz
+owner|kge.map_change_digest_of(uuid)|starbuddy_authz
 owner|kge.map_version_digest(uuid)|starbuddy_authz
 owner|kge.publish_map_version(uuid)|starbuddy_authz
 owner|kge.retire_map_version(uuid,text)|starbuddy_authz
-owner|kge.sign_map_change(uuid,text)|starbuddy_authz
+owner|kge.sign_map_change(uuid,text,text)|starbuddy_authz
 owner|kge.sign_review(text,text,text,text,text)|starbuddy_authz
 owner|kge.version_record(platform.subject)|starbuddy_authz
 owner|platform.can_read_household(uuid)|starbuddy_authz
@@ -656,10 +660,11 @@ secdef|insight.basis_belongs(insight.basis_kind,uuid,uuid)
 secdef|insight.claim_history_guard()
 secdef|insight.claim_log()
 secdef|kge.current_staff()
+secdef|kge.map_change_digest_of(uuid)
 secdef|kge.map_version_digest(uuid)
 secdef|kge.publish_map_version(uuid)
 secdef|kge.retire_map_version(uuid,text)
-secdef|kge.sign_map_change(uuid,text)
+secdef|kge.sign_map_change(uuid,text,text)
 secdef|kge.sign_review(text,text,text,text,text)
 secdef|kge.version_record(platform.subject)
 secdef|platform.can_read_household(uuid)

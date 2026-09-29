@@ -75,4 +75,4 @@ LEARNING_ADAPTER_AYA_URL=http://127.0.0.1:8787 LEARNING_ADAPTER_AYA_TOKEN=... .v
 | `app.py` | `/review/v0/*` 接口；staff 身份由注入的认证器给出，PR 4 之前默认全部拒绝（401） |
 | `__main__.py` | `python -m review_console record --subject aya [--format csv\|json]` 导出版本记录 |
 
-签字、发布、改节点都要带上“看到的摘要”（`expected_digest`），与当前草稿不同就拒绝（409 `DIGEST_CHANGED`）。
+签字（版本与变更单）、发布、改节点都要带上“看到的摘要”（`expected_digest`），与当前内容不同就拒绝（409）。

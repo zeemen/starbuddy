@@ -143,7 +143,8 @@ async def test_edit_boundary_then_single_signer_publish(pg, rc):
     assert d["summary"]["required_signers"] == 1 and not d["summary"]["structural"]
     assert d["impact"] == {"item_tags": 0, "scoring_points": 0}
     # 不允许的字段、未知字段、结构字段
-    for body in ({"status": "deprecated", "expected_digest": dg}, {"expected_digest": dg}, {"parent_id": "CHN.RC", "expected_digest": dg}):
+    for body in ({"status": "deprecated", "expected_digest": dg}, {"expected_digest": dg}, {"parent_id": "CHN.RC", "expected_digest": dg},
+                 {"excludes": ["含\x00控制字符"], "expected_digest": dg}, {"name": "换行\n", "expected_digest": dg}):
         r = await c.patch(f"/review/v0/map-versions/{V2}/nodes/CHN.RC.T.A", json=body, headers=H(SF1))
         assert r.status_code == 422, body
     r = await c.patch(f"/review/v0/map-versions/{V2}/nodes/CHN.RC.T.Z", json={"excludes": ["x"], "expected_digest": dg}, headers=H(SF1))
@@ -182,11 +183,63 @@ async def test_records_export(rc):
         ("1.0.0", "review"), ("1.0.0", "review"), ("1.0.0", "publish"),
         ("1.0.1", "review"), ("1.0.0", "retire"), ("1.0.1", "publish"), ("1.0.1", "retire")]
     assert items[-1]["basis_code"] == "wrong_version" and items[-1]["signer"] == str(SF1)
+    from review_console.service import version_record
     from review_console.store import KgeStore
-    rows = await KgeStore(kp).records("wenli")
+    rows = await version_record(KgeStore(kp), "wenli")
     a, b = io.StringIO(), io.StringIO()
     write_records(rows, "csv", a)
     write_records(rows, "csv", b)
     assert a.getvalue() == b.getvalue()
-    assert a.getvalue().splitlines()[0] == "map_version_id,version,action,decision,risk_level,basis_code,digest,decided_at,signer"
+    assert a.getvalue().splitlines()[0] == ("line,map_version_id,version,action,decision,risk_level,basis_code,digest,decided_at,signer,"
+                                            "rubric_versions,validation_errors,validation_warnings")
     assert len(a.getvalue().splitlines()) == 8
+    assert all(i["line"] == "map" and i["validation_errors"] == 0 and i["validation_warnings"] == 1 for i in items)
+
+
+V3 = uuid.UUID("c0300000-0000-4000-8000-0000000000c3")
+CH = uuid.UUID("c0400000-0000-4000-8000-0000000000c4")
+
+
+async def test_structural_change_request_needs_two_and_digest(pg, rc):
+    c, _, _ = rc
+    pg.psql("SET ROLE starbuddy_kge;" + version_sql(V3, "1.1.0") + f"""
+      INSERT INTO kge.map_change (id, subject, change_type, payload, target_version)
+        VALUES ('{CH}', 'wenli', 'node_add', '{{"node": "CHN.RC.T.A"}}', '{V3}');""")
+    d = (await c.get(f"/review/v0/map-versions/{V3}/diff", headers=H(SF1))).json()
+    # 没有已发布版本（V2 已撤下）：库判为结构性；另有待审的结构性变更单
+    assert d["summary"]["structural"] and d["summary"]["required_signers"] == 2
+    req = d["change_requests"][0]
+    assert req["risk"]["structural"] and req["payload"] == {"node": "CHN.RC.T.A"} and len(req["digest"]) == 64
+    r = await c.post(f"/review/v0/map-changes/{CH}/sign", json={"decision": "approved", "expected_digest": ZERO}, headers=H(SF1))
+    assert r.status_code == 409 and "摘要不符" in r.json()["detail"]
+    r = await c.post(f"/review/v0/map-changes/{CH}/sign", json={"decision": "approved"}, headers=H(SF1))
+    assert r.status_code == 422
+    r = await c.post(f"/review/v0/map-changes/{CH}/sign", json={"decision": "approved", "expected_digest": req["digest"]}, headers=H(SF1))
+    assert r.json() == {"status": "proposed"}
+    r = await c.post(f"/review/v0/map-changes/{CH}/sign", json={"decision": "approved", "expected_digest": req["digest"]}, headers=H(SF2))
+    assert r.json() == {"status": "approved"}
+
+
+async def test_role_check_rejects_extra_app_roles(pg, rc):
+    from review_console.store import expect_role, role_facts
+    _, kp, _ = rc
+    pg.psql("CREATE ROLE rc_multi LOGIN IN ROLE starbuddy_kge, starbuddy_learning; CREATE ROLE rc_bypass LOGIN BYPASSRLS IN ROLE starbuddy_kge;")
+    expect_role(await role_facts(kp), "starbuddy_kge")
+    for user in ("rc_multi", "rc_bypass"):
+        conn = await asyncpg.connect(**pg.dsn(user))
+        try:
+            with pytest.raises(RuntimeError):
+                expect_role(await role_facts(conn), "starbuddy_kge")
+        finally:
+            await conn.close()
+
+
+def test_db_error_detail_only_for_raised_rules():
+    from review_console.store import db_error
+    raised = asyncpg.exceptions.CheckViolationError("结构性变更需要两名不同 staff")
+    assert db_error(raised).detail == "结构性变更需要两名不同 staff"
+    native = asyncpg.exceptions.CheckViolationError('new row for relation "knowledge_node" violates check constraint "x"')
+    native.constraint_name, native.table_name = "x", "knowledge_node"
+    assert db_error(native).status == 409 and db_error(native).detail is None
+    denied = asyncpg.exceptions.InsufficientPrivilegeError("permission denied for function publish_map_version")
+    assert db_error(denied).status == 403 and db_error(denied).detail is None

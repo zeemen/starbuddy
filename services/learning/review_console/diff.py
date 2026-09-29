@@ -11,7 +11,8 @@ from typing import Any
 from .snapshot import NODE_FIELDS, Snapshot
 
 # 对象顺序：骨架在前，原子在后（与审核界面的分组一致）
-OBJECT_ORDER = ("node", "edge", "textbook", "region", "skill_link", "id_migration", "item_tag", "scoring_point", "current_affair")
+OBJECT_ORDER = ("node", "edge", "textbook", "region", "skill_link", "id_migration", "item_family", "item_tag", "scoring_point",
+                "current_affair")
 
 Change = dict[str, Any]
 
@@ -46,10 +47,12 @@ def diff(base: Snapshot | None, draft: Snapshot) -> list[Change]:
     out += _keyed("node", b.nodes, draft.nodes, NODE_FIELDS, "status")
     out += _keyed("edge", b.edges, draft.edges, ("strength", "evidence_ref", "status"), "status")
     out += _keyed("textbook", b.textbook, draft.textbook,
-                  ("edition_year", "printing", "page_from", "page_to", "quote_hash", "verified_by", "verified_at", "mapping_state"))
+                  ("edition_year", "printing", "page_from", "page_to", "quote_text", "quote_hash", "verified_by", "verified_at",
+                   "mapping_state"))
     out += _keyed("region", b.region, draft.region, ("weight", "typical_slots", "style_tags", "source_ref"))
     out += _keyed("skill_link", b.skill_links, draft.skill_links, ("weight",))
-    out += _keyed("id_migration", b.id_migrations, draft.id_migrations, ("rule",))
+    out += _keyed("id_migration", b.id_migrations, draft.id_migrations, ("rule", "change_id"))
+    out += _keyed("item_family", b.item_families, draft.item_families, ("main_node_id",))
     out += _keyed("item_tag", b.item_tags, draft.item_tags,
                   ("main_node_id", "node_ids", "cognitive_level", "prior_difficulty", "family", "source_kind", "license_state",
                    "quality_grade", "tag_review_status"))
@@ -67,14 +70,19 @@ def canonical_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
-def touched_nodes(changes: list[Change]) -> list[str]:
-    """差异涉及的节点 ID（影响分析用）：节点本身的变化，以及投影、挂接等挂在节点上的变化。"""
+def touched_nodes(changes: list[Change]) -> tuple[list[str], list[str]]:
+    """差异涉及的节点 ID（影响分析用）：（草稿里仍在的，只在基准版本里的）。
+    节点本身的变化、边的两端、投影与挂接所在的节点都算（审查 S7）。"""
     ids: set[str] = set()
+    removed: set[str] = set()
     for c in changes:
         if c["object"] == "node":
-            ids.add(c["key"])
+            (removed if c["op"] == "removed" else ids).add(c["key"])
         elif c["object"] == "edge":
-            ids.add(c["key"].split(" ", 1)[0])
+            parts = c["key"].split(" ")
+            ids.add(parts[0])
+            if len(parts) == 3 and "@" not in parts[2]:
+                ids.add(parts[2])
         elif c["object"] in ("textbook", "region", "skill_link"):
             ids.add(c["key"].split("|", 1)[0])
-    return sorted(ids)
+    return sorted(ids - removed), sorted(removed)

@@ -51,7 +51,7 @@ SELECT t.as_account('5f000000-0000-4000-8000-00000000005f');
 SELECT t.throws(format('SELECT kge.sign_review(''map_version'', %L, ''approved'', ''high'', ''t'')', :r1), '42501', '知识服务即使带 staff 账号也不能签字');
 SELECT t.throws(format('SELECT kge.publish_map_version(%L)', :r1), '42501', '知识服务不能发布');
 SELECT t.throws(format('SELECT kge.retire_map_version(%L, ''t'')', :r1), '42501', '知识服务不能撤下');
-SELECT t.throws($$SELECT kge.sign_map_change('b5000000-0000-4000-8000-0000000000b5', 'approved')$$, '42501', '知识服务不能签变更单');
+SELECT t.throws($$SELECT kge.sign_map_change('b5000000-0000-4000-8000-0000000000b5', 'approved', kge.map_change_digest_of('b5000000-0000-4000-8000-0000000000b5'))$$, '42501', '知识服务不能签变更单');
 SELECT t.as_account(NULL);
 RESET ROLE;
 SET ROLE starbuddy_learning;
@@ -107,27 +107,30 @@ INSERT INTO kge.map_change (id, subject, change_type, payload, target_version) V
 RESET ROLE;
 SELECT t.rv_sign(:sf1, :r2);
 SELECT t.throws_like(format('SELECT t.rv_publish(%L, %L)', :sf1, :r2), '23514', '必须大于', '版本号不大于同学科已发布的最大版本：拒绝');
-SELECT t.as_staff(:sf1, $$SELECT kge.sign_map_change('db300000-0000-4000-8000-00000000db03', 'approved')$$);
-SELECT t.as_staff(:sf2, $$SELECT kge.sign_map_change('db300000-0000-4000-8000-00000000db03', 'approved')$$);
+SELECT t.as_staff(:sf1, $$SELECT kge.sign_map_change('db300000-0000-4000-8000-00000000db03', 'approved', kge.map_change_digest_of('db300000-0000-4000-8000-00000000db03'))$$);
+SELECT t.as_staff(:sf2, $$SELECT kge.sign_map_change('db300000-0000-4000-8000-00000000db03', 'approved', kge.map_change_digest_of('db300000-0000-4000-8000-00000000db03'))$$);
 SELECT t.rv_sign(:sf1, :r3);
 SELECT t.throws_like(format('SELECT t.rv_publish(%L, %L)', :sf1, :r3), '23514', '次版本号或主版本号必须增加', '含结构性变更只升修订号：拒绝');
 
 -- 结构性变更单：一人签字不够；同一账号不能签两次；签字后内容改了，旧签字不再计数
-SELECT t.ok(t.as_staff(:sf1, $$SELECT kge.sign_map_change('db400000-0000-4000-8000-00000000db04', 'approved')$$) = 'proposed', '一人签字后仍待审');
+SELECT t.ok(t.as_staff(:sf1, $$SELECT kge.sign_map_change('db400000-0000-4000-8000-00000000db04', 'approved', kge.map_change_digest_of('db400000-0000-4000-8000-00000000db04'))$$) = 'proposed', '一人签字后仍待审');
 SELECT t.rv_sign(:sf1, :r4);
 SELECT t.throws_like(format('SELECT t.rv_publish(%L, %L)', :sf1, :r4), '23514', '变更单未全部批准', '结构性变更单只有一名签字人：拒绝发布');
-SELECT t.throws_like(format('SELECT t.as_staff(%L, %L)', :sf1, $$SELECT kge.sign_map_change('db400000-0000-4000-8000-00000000db04', 'approved')$$),
+SELECT t.throws_like(format('SELECT t.as_staff(%L, %L)', :sf1, $$SELECT kge.sign_map_change('db400000-0000-4000-8000-00000000db04', 'approved', kge.map_change_digest_of('db400000-0000-4000-8000-00000000db04'))$$),
                      '23505', '只能签一次', '同一账号不能对同一变更单签两次');
 SET ROLE starbuddy_kge;
 UPDATE kge.map_change SET payload = '{"node": "CHN.REV.T.A", "note": "改过"}' WHERE id = 'db400000-0000-4000-8000-00000000db04';
 RESET ROLE;
-SELECT t.ok(t.as_staff(:sf2, $$SELECT kge.sign_map_change('db400000-0000-4000-8000-00000000db04', 'approved')$$) = 'proposed',
+SELECT t.ok(t.as_staff(:sf2, $$SELECT kge.sign_map_change('db400000-0000-4000-8000-00000000db04', 'approved', kge.map_change_digest_of('db400000-0000-4000-8000-00000000db04'))$$) = 'proposed',
             '第一个签字后内容改了：旧签字不计数，第二人签字后仍待审');
 SELECT t.throws(format($f$SELECT t.as_account(NULL); UPDATE kge.map_change SET status = 'approved' WHERE id = %L$f$, 'db400000-0000-4000-8000-00000000db04'),
                 '42501', '超级用户直接改变更单状态也被拒（守卫触发器）');
+SELECT t.throws_like(format('SELECT t.as_staff(%L, %L)', :sf1, $$SELECT kge.sign_map_change('db400000-0000-4000-8000-00000000db04', 'approved', repeat('0', 64))$$),
+                     '23514', '摘要不符', '变更单签字带的摘要与当前内容不符：拒绝（看到的就是签的）');
+SELECT t.ok(kge.map_change_digest_of('db400000-0000-4000-8000-00000000db04') ~ '^[0-9a-f]{64}$', '可以取变更单当前内容的摘要');
 SELECT t.throws_like(format($f$SET LOCAL ROLE starbuddy_authz; UPDATE kge.map_change SET status = 'approved' WHERE id = %L$f$, 'db400000-0000-4000-8000-00000000db04'),
                      '23514', '签字人数不够', '以签字函数属主身份直接批准：对当前内容只有一人签字，守卫触发器仍拒绝');
-SELECT t.ok(t.as_staff('5c000000-0000-4000-8000-00000000005c', $$SELECT kge.sign_map_change('db400000-0000-4000-8000-00000000db04', 'approved')$$) = 'approved',
+SELECT t.ok(t.as_staff('5c000000-0000-4000-8000-00000000005c', $$SELECT kge.sign_map_change('db400000-0000-4000-8000-00000000db04', 'approved', kge.map_change_digest_of('db400000-0000-4000-8000-00000000db04'))$$) = 'approved',
             '两名不同 staff 对当前内容签字后转为已批准');
 SET ROLE starbuddy_kge;
 SELECT t.throws_like($$UPDATE kge.map_change SET payload = '{}' WHERE id = 'db400000-0000-4000-8000-00000000db04'$$, '23514', '已有签字', '批准后内容不能再改');
@@ -211,8 +214,8 @@ SELECT t.throws_like(format('SELECT t.rv_publish(%L, %L)', :sf1, 'da500000-0000-
                      '不申报变更单、直接加节点：只升修订号仍被拒');
 SELECT t.as_staff(:sf1, $$SELECT kge.retire_map_version('da500000-0000-4000-8000-00000000da05', 'wrong_version')::text$$);
 -- 非结构性变更单一人即可；被驳回的变更单不阻塞发布
-SELECT t.ok(t.as_staff(:sf1, $$SELECT kge.sign_map_change('db600000-0000-4000-8000-00000000db06', 'approved')$$) = 'approved', '非结构性变更单一人签字即批准');
-SELECT t.ok(t.as_staff(:sf2, $$SELECT kge.sign_map_change('db700000-0000-4000-8000-00000000db07', 'rejected')$$) = 'rejected', '驳回变更单');
+SELECT t.ok(t.as_staff(:sf1, $$SELECT kge.sign_map_change('db600000-0000-4000-8000-00000000db06', 'approved', kge.map_change_digest_of('db600000-0000-4000-8000-00000000db06'))$$) = 'approved', '非结构性变更单一人签字即批准');
+SELECT t.ok(t.as_staff(:sf2, $$SELECT kge.sign_map_change('db700000-0000-4000-8000-00000000db07', 'rejected', kge.map_change_digest_of('db700000-0000-4000-8000-00000000db07'))$$) = 'rejected', '驳回变更单');
 SET TimeZone = 'UTC';
 SELECT t.rv_sign(:sf1, 'da600000-0000-4000-8000-00000000da06');
 SELECT t.throws_like(format('SELECT t.rv_publish(%L, %L)', :sf1, 'da600000-0000-4000-8000-00000000da06'), '23514', '两名不同 staff',
@@ -234,10 +237,10 @@ SELECT t.ok((SELECT status FROM kge.map_change WHERE id = 'db700000-0000-4000-80
 
 -- ================= 权限矩阵补齐、参数与约束 =================
 SELECT t.throws(format('SELECT t.as_staff(%L, %L)', 'a0000000-0000-4000-8000-00000000000a',
-                       $$SELECT kge.sign_map_change('db300000-0000-4000-8000-00000000db03', 'approved')$$), '42501', '家长不能签变更单');
+                       $$SELECT kge.sign_map_change('db300000-0000-4000-8000-00000000db03', 'approved', kge.map_change_digest_of('db300000-0000-4000-8000-00000000db03'))$$), '42501', '家长不能签变更单');
 SELECT t.throws(format('SELECT t.as_staff(%L, %L)', '5d000000-0000-4000-8000-00000000005d',
-                       $$SELECT kge.sign_map_change('db300000-0000-4000-8000-00000000db03', 'approved')$$), '42501', '停用的 staff 不能签变更单');
-SELECT t.throws(format('SELECT t.as_staff(NULL, %L)', $$SELECT kge.sign_map_change('db300000-0000-4000-8000-00000000db03', 'approved')$$),
+                       $$SELECT kge.sign_map_change('db300000-0000-4000-8000-00000000db03', 'approved', kge.map_change_digest_of('db300000-0000-4000-8000-00000000db03'))$$), '42501', '停用的 staff 不能签变更单');
+SELECT t.throws(format('SELECT t.as_staff(NULL, %L)', $$SELECT kge.sign_map_change('db300000-0000-4000-8000-00000000db03', 'approved', kge.map_change_digest_of('db300000-0000-4000-8000-00000000db03'))$$),
                 '42501', '未设账号不能签变更单');
 SELECT t.throws(format('SELECT t.as_staff(NULL, %L)', format('SELECT kge.sign_review(''map_version'', %L, ''approved'', ''high'', ''t'')::text', :r3)),
                 '42501', '未设账号不能签字');
@@ -265,12 +268,12 @@ SELECT t.throws_like($$INSERT INTO kge.content_review (object_type, object_id, r
 SET ROLE starbuddy_kge;
 INSERT INTO kge.map_change (id, subject, change_type, payload) VALUES ('db800000-0000-4000-8000-00000000db08', 'wenli', 'node_add', '{"n": 1}');
 RESET ROLE;
-SELECT t.as_staff(:sf1, $$SELECT kge.sign_map_change('db800000-0000-4000-8000-00000000db08', 'approved')$$);
+SELECT t.as_staff(:sf1, $$SELECT kge.sign_map_change('db800000-0000-4000-8000-00000000db08', 'approved', kge.map_change_digest_of('db800000-0000-4000-8000-00000000db08'))$$);
 SET ROLE starbuddy_kge;
 UPDATE kge.map_change SET payload = '{"n": 2}' WHERE id = 'db800000-0000-4000-8000-00000000db08';
 RESET ROLE;
-SELECT t.ok(t.as_staff(:sf1, $$SELECT kge.sign_map_change('db800000-0000-4000-8000-00000000db08', 'approved')$$) = 'proposed'
-            AND t.as_staff(:sf2, $$SELECT kge.sign_map_change('db800000-0000-4000-8000-00000000db08', 'approved')$$) = 'approved',
+SELECT t.ok(t.as_staff(:sf1, $$SELECT kge.sign_map_change('db800000-0000-4000-8000-00000000db08', 'approved', kge.map_change_digest_of('db800000-0000-4000-8000-00000000db08'))$$) = 'proposed'
+            AND t.as_staff(:sf2, $$SELECT kge.sign_map_change('db800000-0000-4000-8000-00000000db08', 'approved', kge.map_change_digest_of('db800000-0000-4000-8000-00000000db08'))$$) = 'approved',
             '内容改过后原签字人可以对新内容再签；两人对新内容批准后转为已批准');
 -- 版本记录：发布、签字、撤下都有签字人
 SELECT t.ok((SELECT count(*) FROM kge.version_record('wenli') WHERE action = 'publish') = 3

@@ -30,6 +30,9 @@ BASIS = r"^[a-z0-9_]{1,48}$"
 
 
 class StaffAuthenticator(Protocol):
+    """约定（安全审查 B-7）：只能返回已登录会话里、核对过是 active staff 的账号 ID，否则返回 None。
+    读接口与改草稿不经库里的 staff 核对，全靠这一步；PR 4 实现时还要处理 CSRF（cookie 会话校验 Origin 或加令牌）。"""
+
     async def __call__(self, request: Request) -> uuid.UUID | None: ...
 
 
@@ -50,6 +53,7 @@ class SignBody(_Strict):
 
 class ChangeSignBody(_Strict):
     decision: Literal["approved", "rejected"]
+    expected_digest: str = Field(pattern=DIGEST)
 
 
 class PublishBody(_Strict):
@@ -74,9 +78,13 @@ class NodeEdit(_Strict):
         for k in ("includes", "excludes", "examples"):
             if k in d and any(not (1 <= len(x) <= 200) for x in d[k]):
                 raise ReviewError(422, "INVALID_PARAMETER", "每条包含、不包含、题例 1–200 字")
+        texts = [d.get("name") or ""] + [x for k in ("includes", "excludes", "examples") for x in d.get(k, [])]
+        if any(CONTROL.search(t) for t in texts):  # NUL 等控制字符会让库报错并把入参写进日志（安全审查 B-6）
+            raise ReviewError(422, "INVALID_PARAMETER", "不能含控制字符")
         return d
 
 
+CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 NODE_ID = re.compile(r"^[A-Z][A-Z0-9]{1,9}(\.[A-Z0-9][A-Z0-9_]{0,31}){1,4}$")  # 与 kge.node_id 域一致
 
 
@@ -129,6 +137,10 @@ def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthen
         err = db_error(e)
         return JSONResponse(err.problem(), status_code=err.status, media_type="application/problem+json")
 
+    @app.exception_handler(asyncpg.InterfaceError)
+    async def _pg_interface(request: Request, e: asyncpg.InterfaceError):
+        return JSONResponse(ReviewError(500, "INTERNAL").problem(), status_code=500, media_type="application/problem+json")
+
     @app.exception_handler(RequestValidationError)
     async def _invalid(request: Request, e: RequestValidationError):
         # 不回显请求内容
@@ -161,7 +173,7 @@ def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthen
 
     @app.post("/review/v0/map-changes/{change_id}/sign")
     async def sign_change(change_id: uuid.UUID, body: ChangeSignBody, request: Request):
-        return {"status": await state["review"].sign_change(request.state.staff, change_id, body.decision)}
+        return {"status": await state["review"].sign_change(request.state.staff, change_id, body.decision, body.expected_digest)}
 
     @app.post("/review/v0/map-versions/{version_id}/publish")
     async def publish(version_id: uuid.UUID, body: PublishBody, request: Request):
@@ -175,7 +187,6 @@ def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthen
 
     @app.get("/review/v0/records")
     async def records(subject: str):
-        from .snapshot import norm
-        return {"items": norm(await state["kge"].records(_subject(subject)))}
+        return {"items": await service.version_record(state["kge"], _subject(subject))}
 
     return app

@@ -9,7 +9,8 @@ DROP TRIGGER guard_atom_approval ON kge.item_tag;
 DROP TRIGGER guard_atom_approval ON kge.current_affair;
 DROP FUNCTION kge.guard_atom_approval();
 DROP FUNCTION kge.retire_map_version(uuid, text);
-DROP FUNCTION kge.sign_map_change(uuid, text);
+DROP FUNCTION kge.sign_map_change(uuid, text, text);
+DROP FUNCTION kge.map_change_digest_of(uuid);
 DROP FUNCTION kge.sign_review(text, text, text, text, text);
 REVOKE EXECUTE ON FUNCTION kge.publish_map_version(uuid) FROM starbuddy_review;
 CREATE OR REPLACE FUNCTION kge.publish_map_version(p_version uuid) RETURNS timestamptz

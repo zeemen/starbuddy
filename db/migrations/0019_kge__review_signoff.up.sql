@@ -259,7 +259,7 @@ GRANT EXECUTE ON FUNCTION kge.sign_review(text, text, text, text, text) TO starb
 
 -- ---------- 签字：变更单（结构性两名、其余一名不同 staff 对当前内容批准才转为 approved；任何一人驳回即 rejected） ----------
 -- 内容改过后，原签字人可以对新内容再签（签字人表主键含摘要，契约审查建议 1）
-CREATE FUNCTION kge.sign_map_change(p_change uuid, p_decision text) RETURNS text
+CREATE FUNCTION kge.sign_map_change(p_change uuid, p_decision text, p_expected_digest text) RETURNS text
   LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, kge, platform, pg_temp SET TimeZone = 'UTC'
   AS $$
 DECLARE
@@ -275,6 +275,10 @@ BEGIN
     RAISE EXCEPTION '只能对待审的变更单签字' USING ERRCODE = 'check_violation';
   END IF;
   v_digest := kge.map_change_digest(c);
+  -- 看到的就是签的（安全审查 A-1）：签字人看到的内容摘要必须与当前一致，待审期间知识服务改过就要刷新重看
+  IF p_expected_digest IS DISTINCT FROM v_digest THEN
+    RAISE EXCEPTION '你看到的变更单内容与当前不一致（摘要不符），请刷新后再签' USING ERRCODE = 'check_violation';
+  END IF;
   BEGIN
     INSERT INTO platform.map_change_signoff (map_change_id, account_id, decision, digest) VALUES (p_change, v_staff, p_decision, v_digest);
   EXCEPTION WHEN unique_violation THEN
@@ -292,9 +296,17 @@ BEGIN
   END IF;
   RETURN 'proposed';
 END $$;
-ALTER FUNCTION kge.sign_map_change(uuid, text) OWNER TO starbuddy_authz;
-REVOKE EXECUTE ON FUNCTION kge.sign_map_change(uuid, text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION kge.sign_map_change(uuid, text) TO starbuddy_review;
+ALTER FUNCTION kge.sign_map_change(uuid, text, text) OWNER TO starbuddy_authz;
+REVOKE EXECUTE ON FUNCTION kge.sign_map_change(uuid, text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION kge.sign_map_change(uuid, text, text) TO starbuddy_review;
+
+-- 变更单当前内容的摘要：只返回摘要，给审核台展示、签字时回传（签字身份读不到变更单表）
+CREATE FUNCTION kge.map_change_digest_of(p_change uuid) RETURNS text
+  LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, kge, pg_temp SET TimeZone = 'UTC'
+  AS $$ SELECT kge.map_change_digest(c) FROM kge.map_change c WHERE c.id = p_change $$;
+ALTER FUNCTION kge.map_change_digest_of(uuid) OWNER TO starbuddy_authz;
+REVOKE EXECUTE ON FUNCTION kge.map_change_digest_of(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION kge.map_change_digest_of(uuid) TO starbuddy_kge, starbuddy_review;
 
 -- ---------- 结构差异：草稿与同学科当前已发布版本相比，节点集合或前置 / 从属边有增删 ----------
 -- 分级由规则判定，不靠提交方是否申报变更单（spec 第 2 节；安全审查必须改 3、契约审查阻断 1）。没有已发布版本时整张图都是新增

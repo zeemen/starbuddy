@@ -25,6 +25,7 @@ _TABLES = {
     "region_projection": "SELECT * FROM kge.region_projection WHERE map_version_id = $1",
     "skill_link": "SELECT * FROM kge.skill_link WHERE map_version_id = $1",
     "id_migration": "SELECT * FROM kge.id_migration WHERE map_version_id = $1",
+    "item_family": "SELECT * FROM kge.item_family WHERE map_version_id = $1",
     "item_tag": """SELECT t.*, f.code AS family FROM kge.item_tag t
                     LEFT JOIN kge.item_family f ON f.map_version_id = t.map_version_id AND f.id = t.family_id
                    WHERE t.map_version_id = $1""",
@@ -40,24 +41,39 @@ _PG_MAP = {"42501": (403, "FORBIDDEN"), "23514": (409, "RULE_VIOLATION"), "22023
 
 def db_error(e: asyncpg.PostgresError) -> ReviewError:
     status, code = _PG_MAP.get(getattr(e, "sqlstate", "") or "", (500, "INTERNAL"))
-    # 规则类错误的消息是库里写好的中文说明（只含公共层对象），原样给审核台看；其余不回传库的原始消息
-    detail = str(getattr(e, "message", "")) if status in (403, 409) and code != "CONFLICT" else None
+    # 只回传函数里 RAISE 写好的中文规则说明（409 且不是约束、不带表名）；权限错误与库的原生约束消息会带出表名、
+    # 约束名，一律只给错误码（安全审查 B-5）
+    native = getattr(e, "constraint_name", None) is not None or getattr(e, "table_name", None) is not None
+    detail = (getattr(e, "message", None) or str(e)) if code == "RULE_VIOLATION" and not native else None
     return ReviewError(status, code, detail)
+
+
+APP_ROLES = ("starbuddy_kge", "starbuddy_review", "starbuddy_learning", "starbuddy_bff", "starbuddy_insight",
+             "starbuddy_authz", "starbuddy_scheduler")
 
 
 async def check_roles(kge: asyncpg.Pool, review: asyncpg.Pool) -> None:
     """启动检查：两个登录角色分别只继承各自的组角色，且都不是超级用户（与迁移 0019 的角色断言一致）。"""
-    q = """SELECT current_user::text AS u, r.rolsuper,
-                  pg_has_role(current_user, 'starbuddy_kge', 'MEMBER') AS is_kge,
-                  pg_has_role(current_user, 'starbuddy_review', 'MEMBER') AS is_review
-             FROM pg_roles r WHERE r.rolname = current_user"""
-    a, b = await kge.fetchrow(q), await review.fetchrow(q)
-    if a["rolsuper"] or b["rolsuper"] or a["u"] == b["u"]:
-        raise RuntimeError("审核台的两个数据库登录角色必须不同，且都不能是超级用户")
-    if not (a["is_kge"] and not a["is_review"]):
-        raise RuntimeError("kge 连接的登录角色必须只继承 starbuddy_kge")
-    if not (b["is_review"] and not b["is_kge"]):
-        raise RuntimeError("review 连接的登录角色必须只继承 starbuddy_review")
+    a, b = await role_facts(kge), await role_facts(review)
+    if a["u"] == b["u"]:
+        raise RuntimeError("审核台的两个数据库登录角色必须不同")
+    expect_role(a, "starbuddy_kge")
+    expect_role(b, "starbuddy_review")
+
+
+async def role_facts(conn) -> dict[str, Any]:
+    """当前登录角色的危险属性，以及（经中间角色也算）继承了哪些应用角色。"""
+    r = await conn.fetchrow(
+        """SELECT current_user::text AS u, r.rolsuper, r.rolbypassrls,
+                  ARRAY(SELECT a FROM unnest($1::text[]) a WHERE pg_has_role(current_user, a, 'MEMBER') ORDER BY a) AS app_roles
+             FROM pg_roles r WHERE r.rolname = current_user""", list(APP_ROLES))
+    return dict(r)
+
+
+def expect_role(facts: dict[str, Any], role: str) -> None:
+    """启动检查（安全审查 B-3）：不是超级用户、不绕过 RLS，恰好只继承一个应用角色。迁移里的断言只在执行那一刻有效。"""
+    if facts["rolsuper"] or facts["rolbypassrls"] or list(facts["app_roles"]) != [role]:
+        raise RuntimeError(f"登录角色必须只继承 {role}，且不能是超级用户或绕过 RLS")
 
 
 class KgeStore:
@@ -102,8 +118,8 @@ class KgeStore:
 
     async def change_requests(self, version_id: uuid.UUID) -> list[dict[str, Any]]:
         rows = await self.pool.fetch(
-            "SELECT id, change_type, status, payload, evidence_pack, confidence, created_at FROM kge.map_change"
-            " WHERE target_version = $1 ORDER BY created_at, id", version_id)
+            "SELECT id, change_type, status, payload, evidence_pack, confidence, created_at, kge.map_change_digest_of(id) AS digest"
+            " FROM kge.map_change WHERE target_version = $1 ORDER BY created_at, id", version_id)
         return [{**dict(r), "payload": json.loads(r["payload"]), "evidence_pack": json.loads(r["evidence_pack"])} for r in rows]
 
     async def records(self, subject: str, version_id: uuid.UUID | None = None) -> list[dict[str, Any]]:
@@ -111,6 +127,18 @@ class KgeStore:
             "SELECT map_version_id, version, action, decision, risk_level, basis_code, digest, decided_at, signer"
             " FROM kge.version_record($1::platform.subject) WHERE $2::uuid IS NULL OR map_version_id = $2", subject, version_id)
         return [dict(r) for r in rows]
+
+    async def structural(self, version_id: uuid.UUID) -> bool:
+        """整个版本是否结构性，以库的判定为准（与发布时同一个函数）。"""
+        return bool(await self.pool.fetchval("SELECT kge.structural_diff($1)", version_id))
+
+    async def version_facts(self, version_id: uuid.UUID) -> dict[str, Any]:
+        """版本记录附带的内容事实：涉及的评分版本、当前校验的错误与警告数（spec 设计要点 11）。"""
+        r = await self.pool.fetchrow(
+            """SELECT ARRAY(SELECT DISTINCT p.rubric_version::text FROM kge.scoring_point p WHERE p.map_version_id = $1 ORDER BY 1) AS rv,
+                      (SELECT count(*) FROM kge.validate_map_version($1) x WHERE x.severity = 'error') AS errors,
+                      (SELECT count(*) FROM kge.validate_map_version($1) x WHERE x.severity = 'warning') AS warnings""", version_id)
+        return {"rubric_versions": list(r["rv"]), "validation_errors": int(r["errors"]), "validation_warnings": int(r["warnings"])}
 
     async def impact(self, version_id: uuid.UUID, node_ids: list[str]) -> dict[str, int]:
         """发布前影响分析（v0 只给公共层计数，spec 待人确认 #8）：挂在变化节点上的题目标签与采分点。"""
@@ -176,13 +204,17 @@ class ReviewStore:
             return rid
         return await self._as_staff(staff, run)
 
-    async def sign_change(self, staff: uuid.UUID, change_id: uuid.UUID, decision: str) -> str:
-        return await self._as_staff(staff, lambda c: c.fetchval("SELECT kge.sign_map_change($1, $2)", change_id, decision))
+    async def sign_change(self, staff: uuid.UUID, change_id: uuid.UUID, decision: str, expected_digest: str) -> str:
+        # 库里的签字函数在锁住变更单之后比对摘要（安全审查 A-1）
+        return await self._as_staff(staff, lambda c: c.fetchval("SELECT kge.sign_map_change($1, $2, $3)", change_id, decision, expected_digest))
 
     async def publish(self, staff: uuid.UUID, version_id: uuid.UUID, expected_digest: str):
         async def run(c):
             await self._expect_digest(c, version_id, expected_digest)
-            return await c.fetchval("SELECT kge.publish_map_version($1)", version_id)
+            at = await c.fetchval("SELECT kge.publish_map_version($1)", version_id)
+            # 发布函数已锁住版本行；再比一次，间隙里被改过就整笔回滚（安全审查 B-1）
+            await self._expect_digest(c, version_id, expected_digest)
+            return at
         return await self._as_staff(staff, run)
 
     async def retire(self, staff: uuid.UUID, version_id: uuid.UUID, basis_code: str) -> None:
