@@ -52,15 +52,18 @@ paths:
         '401': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
         '405': { $ref: '#/components/responses/Problem' }
+        '409': { description: 同一字段并发提交（稍后重试）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
         '413': { $ref: '#/components/responses/Problem' }
+        '415': { description: Content-Type 不是 application/json, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
         '422': { $ref: '#/components/responses/Problem' }
+        '429': { description: 写入量超上限（考试记录每个录入方 24 小时 50 条；进度每个账号 24 小时 500 条）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
   /bff/v0/students/{student_id}/onboarding/exams:
     parameters:
       - $ref: '#/components/parameters/StudentId'
       - $ref: '#/components/parameters/DevAccount'
     post:
       operationId: postOnboardingExam
-      description: 考试记录；学生与家长各录各的。rank_band（排名区间）学生读不到，前端只在家长版显示这一栏。
+      description: 考试记录；学生与家长各录各的。rank_band（排名区间）与 difficulty_note（难度说明）只收家长录入，学生带上返回 422，学生也读不到。
       requestBody:
         required: true
         content:
@@ -71,26 +74,29 @@ paths:
               properties:
                 subject: { type: string, enum: [aya, wenli, zhixing, echo] }
                 exam_type: { type: string, enum: [monthly, midterm, final, mock1, mock2, other] }
-                exam_date: { type: string, format: date }
-                full_score: { type: number, exclusiveMinimum: 0, maximum: 300 }
-                raw_score: { type: number, minimum: 0 }
-                rank_band: { type: [string, 'null'], enum: [top10, top30, middle, bottom30, unknown, null] }
+                exam_date: { type: string, format: date, description: 2015-01-01 至 2100-01-01 }
+                full_score: { type: number, exclusiveMinimum: 0, maximum: 300, description: 保留 1 位小数 }
+                raw_score: { type: number, minimum: 0, description: 不超过 full_score；保留 1 位小数 }
+                rank_band: { type: [string, 'null'], enum: [top10, top30, middle, bottom30, unknown, null], description: 只收家长录入 }
                 scope_note: { type: [string, 'null'], minLength: 1, maxLength: 200 }
-                difficulty_note: { type: [string, 'null'], minLength: 1, maxLength: 200 }
+                difficulty_note: { type: [string, 'null'], minLength: 1, maxLength: 200, description: 只收家长录入 }
       responses:
         '200': { $ref: '#/components/responses/Ok' }
         '401': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
         '405': { $ref: '#/components/responses/Problem' }
+        '409': { description: 同一字段并发提交（稍后重试）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
         '413': { $ref: '#/components/responses/Problem' }
+        '415': { description: Content-Type 不是 application/json, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
         '422': { $ref: '#/components/responses/Problem' }
+        '429': { description: 写入量超上限（考试记录每个录入方 24 小时 50 条；进度每个账号 24 小时 500 条）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
   /bff/v0/students/{student_id}/onboarding/textbooks:
     parameters:
       - $ref: '#/components/parameters/StudentId'
       - $ref: '#/components/parameters/DevAccount'
     put:
       operationId: putOnboardingTextbook
-      description: 各科教材版本（platform.student_subject_textbook）；null 表示“不清楚”。
+      description: 各科教材版本（platform.student_subject_textbook）；null 表示“不清楚”。按填写账号各存一行，只改自己那一行，对方看不到。
       requestBody:
         required: true
         content:
@@ -106,8 +112,11 @@ paths:
         '401': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
         '405': { $ref: '#/components/responses/Problem' }
+        '409': { description: 同一字段并发提交（稍后重试）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
         '413': { $ref: '#/components/responses/Problem' }
+        '415': { description: Content-Type 不是 application/json, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
         '422': { $ref: '#/components/responses/Problem' }
+        '429': { description: 写入量超上限（考试记录每个录入方 24 小时 50 条；进度每个账号 24 小时 500 条）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
   /bff/v0/students/{student_id}/onboarding/progress:
     parameters:
       - $ref: '#/components/parameters/StudentId'
@@ -123,15 +132,18 @@ paths:
               type: object
               required: [step, status]
               properties:
-                step: { type: string, pattern: '^[a-z_]{1,32}$' }
+                step: { type: string, enum: [onboarding, focus_subject, goal, time, mode, pain_points, textbooks, exam, devices, tutoring, cooperation] }
                 status: { type: string, enum: [started, completed, skipped] }
       responses:
         '200': { $ref: '#/components/responses/Ok' }
         '401': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
         '405': { $ref: '#/components/responses/Problem' }
+        '409': { description: 同一字段并发提交（稍后重试）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
         '413': { $ref: '#/components/responses/Problem' }
+        '415': { description: Content-Type 不是 application/json, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
         '422': { $ref: '#/components/responses/Problem' }
+        '429': { description: 写入量超上限（考试记录每个录入方 24 小时 50 条；进度每个账号 24 小时 500 条）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
 components:
   parameters:
     StudentId:
@@ -168,10 +180,24 @@ components:
           additionalProperties: { type: object }
         exams:
           type: array
-          description: 学生看到自己录的；家长看到全部（含排名区间）
-          items: { type: object }
+          description: 学生看到自己录的；家长看到全部（含排名区间与难度说明，两位家长共享）
+          items:
+            type: object
+            required: [id, subject, exam_type, exam_date, full_score, raw_score, entered_by_role]
+            properties:
+              id: { type: string, format: uuid }
+              subject: { type: string }
+              exam_type: { type: string }
+              exam_date: { type: string, format: date }
+              full_score: { type: number }
+              raw_score: { type: number }
+              scope_note: { type: string }
+              entered_by_role: { type: string, enum: [self, guardian] }
+              rank_band: { type: string, description: 只在家长视图出现 }
+              difficulty_note: { type: string, description: 只在家长视图出现 }
         textbooks:
           type: object
+          description: 调用者自己填的各科教材版本（subject → 编码，null = 不清楚）
           additionalProperties: { type: [string, 'null'] }
         progress:
           type: array
@@ -188,4 +214,4 @@ components:
         type: { type: string }
         title: { type: string }
         status: { type: integer }
-        code: { type: string, enum: [UNAUTHENTICATED, NOT_FOUND, METHOD_NOT_ALLOWED, INTERNAL, INVALID, TOO_LARGE] }
+        code: { type: string, enum: [UNAUTHENTICATED, NOT_FOUND, METHOD_NOT_ALLOWED, INTERNAL, INVALID, TOO_LARGE, UNSUPPORTED_MEDIA_TYPE, CONFLICT, TOO_MANY] }

@@ -122,7 +122,9 @@ export default async function OnboardingPage({ params, searchParams }: {
     return (
       <main data-testid="onboarding" data-role={view.role}>
         <h1>建档 · {who}</h1>
-        <p>大约 5 分钟，共 {steps.length} 页。每一页都可以跳过，也可以返回修改。{view.role === 'self' ? '家长填的内容你看不到，你填的内容家长也看不到。' : '孩子填的内容您看不到，您填的内容孩子也看不到。'}</p>
+        <p>大约 5 分钟，共 {steps.length} 页。每一页都可以跳过，也可以返回修改。{view.role === 'self'
+          ? '你填的答案和教材版本家长看不到，家长填的你也看不到；只有你录的考试成绩家长能看到。'
+          : '孩子填的答案和教材版本您看不到，您填的孩子也看不到；孩子录的考试成绩您能看到，您录的成绩与排名孩子看不到（其他监护人能看到）。'}</p>
         <p className="muted">问题与选项是占位文案，待教研定稿。</p>
         <form action={startAction}>
           <input type="hidden" name="student" value={studentId} />

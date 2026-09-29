@@ -5,7 +5,7 @@ import type { Pool } from 'pg';
 import { withAccount } from '../metering/db.ts';
 import { isUuid } from '../star-map/query.ts';
 
-export type Outcome<T = null> = { kind: 'ok'; value: T } | { kind: 'not_found' } | { kind: 'invalid' };
+export type Outcome<T = null> = { kind: 'ok'; value: T } | { kind: 'not_found' } | { kind: 'invalid' } | { kind: 'conflict' } | { kind: 'too_many' };
 
 export interface OnboardingView {
   role: 'self' | 'guardian';
@@ -37,6 +37,9 @@ async function run<T>(pool: Pool, account: string, student: string, fn: (c: impo
     const code = (e as { code?: string }).code ?? '';
     if (code === '42501') return { kind: 'not_found' };
     if (INVALID_CODES.has(code)) return { kind: 'invalid' };
+    // 23505：同一字段并发提交撞上“当前行唯一”（库里已按字段加锁，这里兜底）→ 409；54000：写入量超上限 → 429
+    if (code === '23505') return { kind: 'conflict' };
+    if (code === '54000') return { kind: 'too_many' };
     throw e;
   }
 }

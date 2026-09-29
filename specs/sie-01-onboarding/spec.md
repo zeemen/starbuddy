@@ -24,8 +24,9 @@
 
 ### 1. 表（两个迁移：platform 一个、insight 一个，ADR 02）
 **`0021_platform__onboarding_facts`**（既有事实扩展，留在 platform）：
-- `platform.student_subject_textbook(student_id, subject, textbook_version, updated_by, updated_at)`：各科教材版本（字典 `outer.g1.textbook_version` 注“按科分开存由 SIE-01 决定”）。
-  `student_profile.textbook_version` 保留为默认值（不删，已有读取方）。学生本人、已绑定家长都能写（两边说法相同的客观事实，后写覆盖，记 `updated_by`）。
+- `platform.student_subject_textbook(student_id, subject, textbook_version, source_type, updated_by, updated_at)`：各科教材版本（字典 `outer.g1.textbook_version`）。
+  `student_profile.textbook_version` 保留为默认值（不删，已有读取方），某科本表有行时以本表为准。学生本人、已绑定家长都能写；
+  **按填写账号各存一行**（契约审查阻断 1：两边说法不同时两边都在，不互相覆盖，规则 6），BFF 只经 `onboarding_view` 读自己填的。
 - 年级、地区、出生年月沿用 `student_profile`（家长建档时已填，`create_student`）；建档表单只展示与更正，更正经已有授权（已绑定家长）。
 
 **`0022_insight__onboarding`**（新增对象）：
@@ -37,7 +38,7 @@
   scope_node_ids text[]（可空；KGE 节点 ID，知识地图发布前为空）, scope_note, difficulty_note, rank_band（top10 / top30 / middle / bottom30 / unknown）, source（manual）, entered_by_role（self / guardian）,
   entered_by_account_id, confirmed_by（null | self | guardian）, created_at, superseded_at`。学生与家长各录各的；同一场考试两边分数不同两边都存。
 - `insight.onboarding_progress(student_id, respondent_role（self / guardian）, respondent_account_id, step, status（started / completed / skipped）, at)`：只追加，用于完成率与时长；不存答案。
-- 所有表：强制 RLS；来源类型由表本身决定（`self_report` = 学生自述，`guardian_report` = 家长观察，`exam_record` 按 `entered_by_role`），另加 `source_type` 生成列便于统一查询（规则 6）。
+- 所有表：强制 RLS；来源类型由表本身决定（`self_report` = 学生自述，`guardian_report` = 家长观察，`exam_record` 按 `entered_by_role`），另加 `source_type` 列便于统一查询（规则 6）；`exam_record.source_type` = 录入方（手填是录入人的说法，`objective` 留给以后上传解析的记录；契约审查阻断 2）。
 
 ### 2. 谁能写、谁能读（RLS 与函数）
 - 写入只经函数（SECURITY DEFINER，属主 authz，`search_path` 固定），授予 `starbuddy_bff`（BFF 以当前账号调用）：
@@ -56,7 +57,7 @@
   存原文，不做任何推断，不进判断。是否在写入时过禁用推断词表做标记，见待人确认 #5。
 
 ### 3. BFF 与页面（3-H 开发身份桩下，4-H 换真实会话）
-- BFF 新增 `/bff/v0/students/{id}/onboarding`（GET 读自己可见的已填内容与进度；PUT 提交一页；POST 录考试成绩），只转发到上述函数，身份用现有开发桩；
+- BFF 新增 `GET /bff/v0/students/{id}/onboarding`（读自己可见的已填内容与进度）与四个写入子路径 `PUT …/answers`、`POST …/exams`、`PUT …/textbooks`、`POST …/progress`，只转发到上述函数，身份用现有开发桩；
   OpenAPI 写进 `services/bff/openapi/onboarding.v0.yaml`（BFF 内部接口，不是插件契约）。
 - 前端 `apps/web`：`/onboarding/[studentId]`，按登录身份显示学生版或家长版；每页 1–3 个问题，“跳过”“上一步”“下一步”都有；
   学生版：最想改善的学科、近期目标、每周可用时间、学习方式偏好、自评痛点（建议）、各科教材版本确认、最近一次大考成绩（建议）；

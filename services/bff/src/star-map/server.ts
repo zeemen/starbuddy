@@ -36,15 +36,20 @@ const METHOD_NOT_ALLOWED = problem(405, 'METHOD_NOT_ALLOWED', 'method not allowe
 const INTERNAL = problem(500, 'INTERNAL', 'internal error');
 const INVALID = problem(422, 'INVALID', 'invalid request');
 const TOO_LARGE = problem(413, 'TOO_LARGE', 'request body too large');
+const UNSUPPORTED = problem(415, 'UNSUPPORTED_MEDIA_TYPE', 'content-type must be application/json');
+const CONFLICT = problem(409, 'CONFLICT', 'concurrent update, retry');
+const TOO_MANY = problem(429, 'TOO_MANY', 'too many writes');
 const OK = JSON.stringify({ status: 'ok' });
 
 class BodyError extends Error {
-  readonly status: 413 | 422;
-  constructor(status: 413 | 422) { super('body'); this.status = status; }
+  readonly status: 413 | 415 | 422;
+  constructor(status: 413 | 415 | 422) { super('body'); this.status = status; }
 }
 
-/** 读 JSON 请求体：超过 16 KB 413，不是 JSON 对象 422（不回显内容） */
+/** 读 JSON 请求体：Content-Type 不是 application/json 415，超过 16 KB 413，不是 JSON 对象 422（不回显内容） */
 async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
+  const type = (req.headers['content-type'] ?? '').split(';')[0]!.trim().toLowerCase();
+  if (type !== 'application/json') throw new BodyError(415);
   const declared = Number(req.headers['content-length'] ?? 0);
   if (declared > MAX_BODY) throw new BodyError(413);
   const chunks: Buffer[] = [];
@@ -64,6 +69,8 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> 
 }
 
 const str = (v: unknown): string | null => (typeof v === 'string' ? v : null);
+/** 可选字符串：缺省或 null 为 null；其他非字符串类型为 undefined（调用方回 422，不静默当成 null） */
+const optStr = (v: unknown): string | null | undefined => (v === undefined || v === null ? null : typeof v === 'string' ? v : undefined);
 
 export interface StarMapServerOptions {
   pool: Pool;
@@ -119,13 +126,21 @@ export function createStarMapServer(opts: StarMapServerOptions): Server {
         const account = devAccount(req, server, opts.devAuth);
         if (!account) return send(401, UNAUTHENTICATED);
         const reply = (o: Outcome<unknown>) =>
-          o.kind === 'not_found' ? send(404, NOT_FOUND) : o.kind === 'invalid' ? send(422, INVALID) : send(200, o.value === null ? OK : JSON.stringify(o.value));
+          o.kind === 'not_found' ? send(404, NOT_FOUND) : o.kind === 'invalid' ? send(422, INVALID)
+            : o.kind === 'conflict' ? send(409, CONFLICT) : o.kind === 'too_many' ? send(429, TOO_MANY)
+              : send(200, o.value === null ? OK : JSON.stringify(o.value));
         if (ob[2] === undefined) return reply(await getOnboarding(opts.pool, account, studentId));
         let body: Record<string, unknown>;
         try {
           body = await readJson(req);
         } catch (e) {
-          if (e instanceof BodyError) return send(e.status, e.status === 413 ? TOO_LARGE : INVALID);
+          if (e instanceof BodyError) {
+            // 超限或类型不对时不再读剩下的请求体：回完就断开连接
+            if (e.status !== 422) res.setHeader('Connection', 'close');
+            send(e.status, e.status === 413 ? TOO_LARGE : e.status === 415 ? UNSUPPORTED : INVALID);
+            if (e.status !== 422) res.once('finish', () => req.destroy());
+            return;
+          }
           throw e;
         }
         if (ob[2] === 'answers') {
@@ -149,8 +164,9 @@ export function createStarMapServer(opts: StarMapServerOptions): Server {
           subject: str(body['subject']) ?? '', exam_type: str(body['exam_type']) ?? '', exam_date: str(body['exam_date']) ?? '',
           full_score: typeof body['full_score'] === 'number' ? body['full_score'] : NaN,
           raw_score: typeof body['raw_score'] === 'number' ? body['raw_score'] : NaN,
-          rank_band: str(body['rank_band']), scope_note: str(body['scope_note']), difficulty_note: str(body['difficulty_note']),
+          rank_band: optStr(body['rank_band']), scope_note: optStr(body['scope_note']), difficulty_note: optStr(body['difficulty_note']),
         };
+        if (e.rank_band === undefined || e.scope_note === undefined || e.difficulty_note === undefined) return send(422, INVALID);
         if (!e.subject || !e.exam_type || !/^\d{4}-\d{2}-\d{2}$/.test(e.exam_date) || !Number.isFinite(e.full_score) || !Number.isFinite(e.raw_score)) {
           return send(422, INVALID);
         }

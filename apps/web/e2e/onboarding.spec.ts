@@ -131,13 +131,14 @@ test('家长版全跳过：S2 的 6 页都跳过也能完成，不写任何答�
   expect(sql(`SELECT count(*) FROM insight.onboarding_progress WHERE student_id = '${STU.S2}' AND status = 'skipped'`)).toBe('6');
 });
 
-test('学生版全跳过（S2）；别家家长看不到；统计给出完成率与时长', async ({ page }) => {
+test('学生版全跳过（S2）；别家家长看不到；统计按最小人数门槛只出开始人数', async ({ page }) => {
   await as(page, ACC.S2, STU.S2);
   await page.getByRole('button', { name: '开始' }).click();
   for (let i = 0; i < 7; i++) await skip(page);
   await expect(page.getByTestId('done')).toBeVisible();
   await page.goto(`/dev/session?account=${ACC.gO}&next=${encodeURIComponent(`/onboarding/${STU.S1}`)}`);
   expect((await page.goto(`/onboarding/${STU.S1}`))?.status()).toBe(404);
-  expect(sql(`SELECT respondent_role || ':' || started || ':' || completed FROM insight.onboarding_stats(now() - interval '1 hour', now() + interval '1 hour') ORDER BY 1`))
-    .toBe('guardian:2:2\nself:2:2');
+  // 不足 5 人：只给开始人数，完成数不出（最小人数门槛）
+  expect(sql(`SELECT respondent_role || ':' || started || ':' || coalesce(completed::text, '-') FROM insight.onboarding_stats(now() - interval '1 day', now() + interval '1 day') ORDER BY 1`))
+    .toBe('guardian:2:-\nself:2:-');
 });

@@ -61,7 +61,7 @@ fields:
     status: live
     teaching_decision: 按教材投影渲染页码与原句，决定节点的教材进度
     guardian_deletable: false
-    note: 现表只有一列；按科分开存由 SIE-01 决定；删除走整档删除流程
+    note: 按科、按填写人各存一行（学生与家长说法不同时两边都在，规则 6）；student_profile.textbook_version 只作建档前的默认值，某科本表有行时以本表为准（规则 2）；删除走整档删除流程
   - id: outer.g1.birth_year_month
     name: 出生年月
     layer: fact
@@ -176,7 +176,7 @@ fields:
     collect: { level: suggested, timing: periodic }
     visibility: [agent, student, guardian]
     storage: insight.exam_record.raw_score
-    source_column: insight.exam_record.confirmed_by
+    source_column: insight.exam_record.entered_by_role
     status: live
     teaching_decision: 外部锚点：校准掌握判断，生成对账卡；七八年级 100 分制与九年级 120 分制分别归一
     guardian_deletable: true
@@ -188,29 +188,30 @@ fields:
     collect: { level: suggested, timing: periodic }
     visibility: [agent, student, guardian]
     storage: insight.exam_record.scope_node_ids
-    source_column: insight.exam_record.confirmed_by
-    status: live
+    source_column: insight.exam_record.entered_by_role
+    status: planned
     teaching_decision: 考前 14 天按“考情权重 × 当前缺口 × 可提升”重排计划，并在考试当天冻结预测
     guardian_deletable: true
+    note: SIE-01 只收考试日期与自由文本范围说明（exam_record.scope_note，建档表单暂不收）；按知识节点记范围随 KGE 上传管道
   - id: inner.g2.exam_rank_band
-    name: 考试排名区间（学生或家长录入）
+    name: 考试排名区间（家长录入）
     layer: fact
-    source_type: [self, guardian]
+    source_type: [guardian]
     collect: { level: suggested, timing: periodic }
     visibility: [agent, guardian]
     storage: insight.exam_record.rank_band
-    source_column: insight.exam_record.confirmed_by
+    source_column: insight.exam_record.entered_by_role
     status: live
     teaching_decision: 只作考试难度与区分度的参考，校准预测区间；不对学生展示，不做同伴比较
     guardian_deletable: true
   - id: inner.g2.exam_difficulty_note
-    name: 试卷难度说明
+    name: 试卷难度说明（家长录入）
     layer: fact
-    source_type: [self, guardian]
+    source_type: [guardian]
     collect: { level: optional, timing: periodic }
     visibility: [agent, guardian]
     storage: insight.exam_record.difficulty_note
-    source_column: insight.exam_record.confirmed_by
+    source_column: insight.exam_record.entered_by_role
     status: live
     teaching_decision: 对账时区分“试卷偏难”与“此前判断偏乐观”
     guardian_deletable: true

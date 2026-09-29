@@ -143,12 +143,16 @@ CREATE TABLE insight.exam_record (
   entered_by_role        text NOT NULL CHECK (entered_by_role IN ('self', 'guardian')),
   entered_by_account_id  uuid NOT NULL REFERENCES platform.account (id),
   confirmed_by           text CHECK (confirmed_by IN ('self', 'guardian')),
-  source_type            insight.source_type NOT NULL DEFAULT 'objective' CHECK (source_type = 'objective'),
+  -- 手填的分数是录入人的说法（规则 6），来源 = 录入方；objective 留给以后上传解析的记录（KGE 上传管道）
+  source_type            insight.source_type NOT NULL CONSTRAINT exam_record_source_is_entrant CHECK (source_type::text = entered_by_role),
   created_at             timestamptz NOT NULL DEFAULT now(),
   superseded_at          timestamptz,
   CONSTRAINT exam_record_score CHECK (raw_score <= full_score),
-  -- 排名区间只收家长录入（学生读不到，也不让学生录；视图里的裁剪是第二道）
-  CONSTRAINT exam_record_rank_guardian CHECK (rank_band IS NULL OR entered_by_role = 'guardian')
+  -- 排名区间与难度说明只收家长录入（学生读不到，也不让学生录；视图里的裁剪是第二道）
+  CONSTRAINT exam_record_rank_guardian CHECK (rank_band IS NULL OR entered_by_role = 'guardian'),
+  CONSTRAINT exam_record_difficulty_guardian CHECK (difficulty_note IS NULL OR entered_by_role = 'guardian'),
+  -- confirmed_by 留给对方核对时写（后续），不能是录入方自己
+  CONSTRAINT exam_record_confirmed_other CHECK (confirmed_by IS NULL OR confirmed_by <> entered_by_role)
 );
 CREATE INDEX exam_record_student_idx ON insight.exam_record (student_id, exam_date);
 COMMENT ON TABLE insight.exam_record IS
@@ -159,7 +163,8 @@ CREATE TABLE insight.onboarding_progress (
   student_id             uuid NOT NULL REFERENCES platform.student_profile (id) ON DELETE CASCADE,
   respondent_role        text NOT NULL CHECK (respondent_role IN ('self', 'guardian')),
   respondent_account_id  uuid NOT NULL REFERENCES platform.account (id),
-  step                   text NOT NULL CHECK (step ~ '^[a-z_]{1,32}$'),
+  step                   text NOT NULL CHECK (step IN ('onboarding', 'focus_subject', 'goal', 'time', 'mode', 'pain_points', 'textbooks',
+                                                   'exam', 'devices', 'tutoring', 'cooperation')),  -- 与 apps/web 的建档步骤一致
   status                 text NOT NULL CHECK (status IN ('started', 'completed', 'skipped')),
   at                     timestamptz NOT NULL DEFAULT now()
 );
@@ -224,6 +229,7 @@ BEGIN
      OR p_value IS NULL OR NOT insight.valid_report_value(p_field, p_value) THEN
     RAISE EXCEPTION '字段或取值不合要求' USING ERRCODE = 'invalid_parameter_value';
   END IF;
+  PERFORM pg_advisory_xact_lock(hashtextextended('insight.self_report:' || p_student::text || ':' || p_field, 0));
   UPDATE insight.self_report SET superseded_at = now() WHERE student_id = p_student AND field_id = p_field AND superseded_at IS NULL;
   INSERT INTO insight.self_report (student_id, field_id, value, respondent_account_id)
   VALUES (p_student, p_field, p_value, platform.current_account_id()) RETURNING id INTO v_id;
@@ -242,6 +248,8 @@ BEGIN
      OR p_value IS NULL OR NOT insight.valid_report_value(p_field, p_value) THEN
     RAISE EXCEPTION '字段或取值不合要求' USING ERRCODE = 'invalid_parameter_value';
   END IF;
+  PERFORM pg_advisory_xact_lock(hashtextextended('insight.guardian_report:' || p_student::text || ':' || platform.current_account_id()::text
+                                                  || ':' || p_field, 0));
   UPDATE insight.guardian_report SET superseded_at = now()
    WHERE student_id = p_student AND guardian_account_id = platform.current_account_id() AND field_id = p_field AND superseded_at IS NULL;
   INSERT INTO insight.guardian_report (student_id, guardian_account_id, field_id, value)
@@ -267,10 +275,16 @@ BEGIN
   IF v_role IS NULL THEN
     RAISE EXCEPTION 'not allowed' USING ERRCODE = 'insufficient_privilege';
   END IF;
+  -- 写入量上限：同一学生、同一录入方 24 小时内最多 50 条（防刷量；按学生加锁，计数与插入不并发）
+  PERFORM pg_advisory_xact_lock(hashtextextended('insight.exam_record:' || p_student::text || ':' || v_role, 0));
+  IF (SELECT count(*) FROM insight.exam_record e WHERE e.student_id = p_student AND e.entered_by_role = v_role
+         AND e.created_at > now() - interval '24 hours') >= 50 THEN
+    RAISE EXCEPTION '考试记录写入过多' USING ERRCODE = 'program_limit_exceeded';
+  END IF;
   INSERT INTO insight.exam_record (student_id, subject, exam_type, exam_date, full_score, raw_score, rank_band, scope_note,
-                                   difficulty_note, entered_by_role, entered_by_account_id, confirmed_by)
+                                   difficulty_note, entered_by_role, entered_by_account_id, source_type)
   VALUES (p_student, p_subject, p_exam_type, p_exam_date, p_full_score, p_raw_score, p_rank_band, p_scope_note,
-          p_difficulty_note, v_role, platform.current_account_id(), v_role)
+          p_difficulty_note, v_role, platform.current_account_id(), v_role::insight.source_type)
   RETURNING id INTO v_id;
   RETURN v_id;
 END $$;
@@ -283,13 +297,19 @@ BEGIN
   IF v_role IS NULL THEN
     RAISE EXCEPTION 'not allowed' USING ERRCODE = 'insufficient_privilege';
   END IF;
+  -- 写入量上限：同一学生、同一账号 24 小时内最多 500 条进度（全部步骤来回改十几遍也够用）
+  PERFORM pg_advisory_xact_lock(hashtextextended('insight.onboarding_progress:' || p_student::text || ':' || platform.current_account_id()::text, 0));
+  IF (SELECT count(*) FROM insight.onboarding_progress p WHERE p.student_id = p_student
+         AND p.respondent_account_id = platform.current_account_id() AND p.at > now() - interval '24 hours') >= 500 THEN
+    RAISE EXCEPTION '建档进度写入过多' USING ERRCODE = 'program_limit_exceeded';
+  END IF;
   INSERT INTO insight.onboarding_progress (student_id, respondent_role, respondent_account_id, step, status)
   VALUES (p_student, v_role, platform.current_account_id(), p_step, p_status);
 END $$;
 
 -- ---------- 读取：按调用者身份裁剪（互不可见） ----------
--- 学生：自己的当前自述、自己录的考试记录（不含排名区间与难度说明）、各科教材版本、自己的进度
--- 家长：自己写的当前家长观察、该孩子全部考试记录（含排名区间与难度说明）、各科教材版本、自己的进度
+-- 学生：自己的当前自述、自己录的考试记录（不含排名区间与难度说明）、自己填的各科教材版本、自己的进度
+-- 家长：自己写的当前家长观察、该孩子全部考试记录（含排名区间与难度说明；spec 设计要点 3，两位家长共享考试记录）、自己填的各科教材版本、自己的进度
 -- 其他：NULL（BFF 按“不存在”处理）
 CREATE FUNCTION insight.onboarding_view(p_student uuid) RETURNS jsonb
   LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, insight, platform, pg_temp
@@ -316,36 +336,49 @@ BEGIN
                FROM insight.exam_record e
               WHERE e.student_id = p_student AND e.superseded_at IS NULL AND (v_role = 'guardian' OR e.entered_by_account_id = v_me)),
     'textbooks', (SELECT coalesce(jsonb_object_agg(t.subject, t.textbook_version), '{}') FROM platform.student_subject_textbook t
-                   WHERE t.student_id = p_student),
+                   WHERE t.student_id = p_student AND t.updated_by = v_me),
     'progress', (SELECT coalesce(jsonb_agg(jsonb_build_object('step', p.step, 'status', p.status) ORDER BY p.at, p.id), '[]')
                    FROM insight.onboarding_progress p WHERE p.student_id = p_student AND p.respondent_account_id = v_me));
 END $$;
 
 -- ---------- 完成率与时长（只出聚合数；授洞察服务与运营报表身份） ----------
--- 每个（学生，填写方）第一次 started 到第一次 completed；completed 之前的跳过次数按步骤汇总
+-- 每个（学生，填写方）第一次 started 到第一次 completed；completed 之前的跳过次数按步骤汇总。
+-- 最小人数门槛（规则 13 的同一思路）：某填写方在窗口内开始的学生不足 5 人时，只给开始人数，其余列为 NULL；
+-- 窗口至少 1 天，不能靠收窄时段逼近单个学生。门槛数值待人确认（lessons）。
 CREATE FUNCTION insight.onboarding_stats(p_from timestamptz, p_to timestamptz)
   RETURNS TABLE (respondent_role text, started bigint, completed bigint, completion_rate numeric, median_seconds numeric, skipped_steps jsonb)
-  LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, insight, pg_temp
+  LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, insight, pg_temp
   AS $$
+BEGIN
+  IF p_from IS NULL OR p_to IS NULL OR p_to - p_from < interval '1 day' THEN
+    RAISE EXCEPTION '统计窗口至少 1 天' USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+  RETURN QUERY
   WITH s AS (
-    SELECT p.student_id, p.respondent_role, min(p.at) FILTER (WHERE p.step = 'onboarding' AND p.status = 'started') AS t0,
+    SELECT p.student_id, p.respondent_role AS role, min(p.at) FILTER (WHERE p.step = 'onboarding' AND p.status = 'started') AS t0,
            min(p.at) FILTER (WHERE p.step = 'onboarding' AND p.status = 'completed') AS t1
       FROM insight.onboarding_progress p
      GROUP BY p.student_id, p.respondent_role
-  ), w AS (SELECT * FROM s WHERE t0 >= p_from AND t0 < p_to),
+  ), w AS (SELECT * FROM s WHERE s.t0 >= p_from AND s.t0 < p_to),
   k AS (
-    SELECT p.respondent_role, p.step, count(*) AS n
-      FROM insight.onboarding_progress p JOIN w ON w.student_id = p.student_id AND w.respondent_role = p.respondent_role
+    SELECT p.respondent_role AS role, p.step, count(*) AS n
+      FROM insight.onboarding_progress p JOIN w ON w.student_id = p.student_id AND w.role = p.respondent_role
      WHERE p.status = 'skipped'
      GROUP BY p.respondent_role, p.step
+  ), g AS (
+    SELECT r.role, count(w.t0) AS n0, count(w.t1) AS n1,
+           percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM w.t1 - w.t0)) FILTER (WHERE w.t1 IS NOT NULL)::numeric AS med
+      FROM unnest(ARRAY['self', 'guardian']) r(role) LEFT JOIN w ON w.role = r.role
+     GROUP BY r.role
   )
-  SELECT r.role, count(w.t0), count(w.t1),
-         CASE WHEN count(w.t0) = 0 THEN NULL ELSE round(count(w.t1)::numeric / count(w.t0), 3) END,
-         percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM w.t1 - w.t0)) FILTER (WHERE w.t1 IS NOT NULL)::numeric,
-         coalesce((SELECT jsonb_object_agg(k.step, k.n) FROM k WHERE k.respondent_role = r.role), '{}')
-    FROM unnest(ARRAY['self', 'guardian']) r(role) LEFT JOIN w ON w.respondent_role = r.role
-   GROUP BY r.role
-   ORDER BY r.role $$;
+  SELECT g.role, g.n0,
+         CASE WHEN g.n0 >= 5 THEN g.n1 END,
+         CASE WHEN g.n0 >= 5 THEN round(g.n1::numeric / g.n0, 3) END,
+         CASE WHEN g.n0 >= 5 THEN g.med END,
+         CASE WHEN g.n0 >= 5 THEN coalesce((SELECT jsonb_object_agg(k.step, k.n) FROM k WHERE k.role = g.role), '{}') END
+    FROM g
+   ORDER BY g.role;
+END $$;
 
 ALTER FUNCTION insight.submit_self_report(uuid, text, jsonb) OWNER TO starbuddy_authz;
 ALTER FUNCTION insight.submit_guardian_report(uuid, text, jsonb) OWNER TO starbuddy_authz;

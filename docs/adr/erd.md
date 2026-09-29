@@ -144,12 +144,12 @@ erDiagram
 
 | 表 | 谁写 | 谁读 | 要点 |
 |---|---|---|---|
-| `platform.student_subject_textbook` | bff 经 `platform.set_subject_textbook`（本人或已绑定家长） | bff 按 `can_read_student` | “不清楚”存 NULL；记来源（self / guardian）与填写人 |
+| `platform.student_subject_textbook` | bff 经 `platform.set_subject_textbook`（本人或已绑定家长） | learning、insight；bff 只经 `onboarding_view` 读自己填的 | 按科、按填写账号各一行，两边说法不同都在；“不清楚”存 NULL；记来源（self / guardian）。`student_profile.textbook_version` 只作默认值，某科本表有行时以本表为准 |
 | `insight.report_field` | 迁移（字段白名单） | 函数 | 与 `docs/design/sie/field-dictionary.v0.9.yaml` 一致（检查脚本） |
 | `insight.self_report` | bff 经 `submit_self_report`（只学生本人） | insight；bff 只经 `onboarding_view`（学生本人） | 改答案：旧行写 `superseded_at`，新增一行；只有这一列可改（触发器） |
 | `insight.guardian_report` | bff 经 `submit_guardian_report`（只已绑定家长） | insight；bff 只经 `onboarding_view`（写它的家长本人） | 学生看不到；另一位家长也看不到 |
-| `insight.exam_record` | bff 经 `submit_exam_record`（本人或家长，记 `entered_by_role`） | insight；bff 只经 `onboarding_view` | 学生只见自己录的，且不含排名区间；家长见全部 |
-| `insight.onboarding_progress` | bff 经 `record_onboarding_step` | insight；统计只经 `onboarding_stats`（insight、report） | 只追加，不存答案 |
+| `insight.exam_record` | bff 经 `submit_exam_record`（本人或家长，记 `entered_by_role`） | insight；bff 只经 `onboarding_view` | 来源 = 录入方（self / guardian，手填不算客观记录）；排名区间与难度说明只收家长录入（表约束）；学生只见自己录的，家长见全部（两位家长共享）；同一录入方 24 小时最多 50 条 |
+| `insight.onboarding_progress` | bff 经 `record_onboarding_step` | insight；统计只经 `onboarding_stats`（insight、report） | 只追加，不存答案；步骤名白名单；统计不足 5 人只给开始人数，窗口至少 1 天 |
 
 新角色 `starbuddy_report`（运营报表只读身份）只能执行 `insight.onboarding_stats`，读不到任何明细（待人确认 #6）。
 

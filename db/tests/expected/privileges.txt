@@ -638,7 +638,6 @@ rel|platform.student_profile|starbuddy_learning|SELECT|SUPERUSER
 rel|platform.student_subject_textbook|starbuddy_authz|INSERT|SUPERUSER
 rel|platform.student_subject_textbook|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.student_subject_textbook|starbuddy_authz|UPDATE|SUPERUSER
-rel|platform.student_subject_textbook|starbuddy_bff|SELECT|SUPERUSER
 rel|platform.student_subject_textbook|starbuddy_insight|SELECT|SUPERUSER
 rel|platform.student_subject_textbook|starbuddy_learning|SELECT|SUPERUSER
 rel|platform.student_time_guard|starbuddy_authz|INSERT|SUPERUSER

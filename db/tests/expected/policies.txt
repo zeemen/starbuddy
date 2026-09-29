@@ -111,7 +111,6 @@ platform.skill_observation|obs_read|SELECT|starbuddy_bff|PERMISSIVE|using=platfo
 platform.skill_observation|obs_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
 platform.student_profile|student_profile_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(id)|check=-
 platform.student_profile|student_profile_service_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
-platform.student_subject_textbook|textbook_read_own|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
 platform.student_subject_textbook|textbook_service_read|SELECT|starbuddy_insight,starbuddy_learning|PERMISSIVE|using=true|check=-
 platform.student_time_guard|student_time_guard_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
 platform.subject_catalog|subject_catalog_read|SELECT|starbuddy_bff|PERMISSIVE|using=true|check=-

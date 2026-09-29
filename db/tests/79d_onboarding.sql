@@ -102,12 +102,18 @@ SELECT t.throws(format('SELECT t.ob(%L, %L)', :gA, 'SELECT count(*)::text FROM i
 -- ================= 考试记录 =================
 SELECT t.throws(format('SELECT t.ob(%L, %L)', :aS1, format($$SELECT insight.submit_exam_record(%L, 'aya', 'midterm', '2026-11-10', 100, 95, 'top10', NULL, NULL)::text$$, :S1)),
                 '23514', '学生不能录排名区间（只收家长录入，表约束）');
-SELECT t.ok(t.ob(:aS1, format($$SELECT insight.submit_exam_record(%L, 'aya', 'midterm', '2026-11-10', 100, 95, NULL, '合成范围', '合成难度说明')::text$$, :S1)) IS NOT NULL
+SELECT t.throws(format('SELECT t.ob(%L, %L)', :aS1, format($$SELECT insight.submit_exam_record(%L, 'aya', 'midterm', '2026-11-10', 100, 95, NULL, NULL, '合成难度说明')::text$$, :S1)),
+                '23514', '学生不能录难度说明（只收家长录入，表约束）');
+SELECT t.ok(t.ob(:aS1, format($$SELECT insight.submit_exam_record(%L, 'aya', 'midterm', '2026-11-10', 100, 95, NULL, '合成范围', NULL)::text$$, :S1)) IS NOT NULL
             AND t.ob(:gA, format($$SELECT insight.submit_exam_record(%L, 'aya', 'midterm', '2026-11-10', 100, 90, 'top30', NULL, NULL)::text$$, :S1)) IS NOT NULL,
             '学生与家长各录各的（同一场考试分数不同）');
 SELECT t.ok((SELECT count(*) FROM insight.exam_record WHERE student_id = :S1 AND exam_date = '2026-11-10') = 2
             AND (SELECT array_agg(entered_by_role ORDER BY entered_by_role) FROM insight.exam_record WHERE student_id = :S1) = '{guardian,self}',
             '两条都在，各带录入方');
+SELECT t.ok((SELECT bool_and(source_type::text = entered_by_role) AND bool_and(confirmed_by IS NULL) FROM insight.exam_record WHERE student_id = :S1),
+            '考试记录的来源 = 录入方（手填是录入人的说法，不是客观记录）；确认人留空待对方核对');
+SELECT t.throws($$UPDATE insight.exam_record SET superseded_at = now(), confirmed_by = 'self' WHERE entered_by_role = 'self'$$,
+                '42501', '考试记录不能改确认人等列（只追加）');
 SELECT t.ok(jsonb_array_length(t.ob(:aS1, format('SELECT insight.onboarding_view(%L)::text', :S1))::jsonb -> 'exams') = 1
             AND position('rank_band' IN t.ob(:aS1, format('SELECT insight.onboarding_view(%L)::text', :S1))) = 0
             AND position('difficulty_note' IN t.ob(:aS1, format('SELECT insight.onboarding_view(%L)::text', :S1))) = 0,
@@ -120,22 +126,40 @@ SELECT t.throws(format('SELECT t.ob(%L, %L)', :gA, format($$SELECT insight.submi
                 '23514', '排名只收五档，不收具体名次');
 SELECT t.throws(format('SELECT t.ob(%L, %L)', :gB, format($$SELECT insight.submit_exam_record(%L, 'aya', 'final', '2026-12-10', 100, 80, NULL, NULL, NULL)::text$$, :S1)),
                 '42501', '别家的家长不能录');
+BEGIN;
+SELECT t.ok(t.ob(:gA, format($$SELECT count(x.id)::text FROM generate_series(1, 49) g,
+                               LATERAL (SELECT insight.submit_exam_record(%L, 'aya', 'other', '2026-12-01', 100, 40 + g, NULL, NULL, NULL) AS id) x$$, :S1)) = '49',
+            '同一录入方 24 小时内可以录到 50 条');
+SELECT t.ok((SELECT count(*) FROM insight.exam_record WHERE student_id = :S1 AND entered_by_role = 'guardian') = 50, '（此时家长已录 50 条）');
+SELECT t.throws(format('SELECT t.ob(%L, %L)', :gA, format($$SELECT insight.submit_exam_record(%L, 'aya', 'other', '2026-12-01', 100, 60, NULL, NULL, NULL)::text$$, :S1)),
+                '54000', '第 51 条被拒（防刷量）');
+SELECT t.ok(t.ob(:aS1, format($$SELECT insight.submit_exam_record(%L, 'aya', 'other', '2026-12-01', 100, 60, NULL, NULL, NULL)::text$$, :S1)) IS NOT NULL,
+            '上限按录入方分开计：家长录满不影响学生');
+ROLLBACK;
 
 -- ================= 各科教材版本（platform） =================
 SELECT t.ob(:aS1, format($$SELECT platform.set_subject_textbook(%L, 'aya', 'suke-2024')::text$$, :S1));
 SELECT t.ob(:gA, format($$SELECT platform.set_subject_textbook(%L, 'zhixing', NULL)::text$$, :S1));
--- 第二户（gB 的孩子 S2）也留一行，供攻击面可见性矩阵逐户检查
+-- 第二户（gB 的孩子 S2）也留一行
 SELECT t.ob(:gB, format($$SELECT platform.set_subject_textbook(%L, 'wenli', 'bubian-2024')::text$$, :S2));
 SELECT t.ok((SELECT textbook_version = 'suke-2024' AND source_type = 'self' FROM platform.student_subject_textbook WHERE student_id = :S1 AND subject = 'aya')
             AND (SELECT textbook_version IS NULL AND source_type = 'guardian' FROM platform.student_subject_textbook WHERE student_id = :S1 AND subject = 'zhixing'),
             '学生与家长都能填各科教材版本；“不清楚”存 NULL；记下由谁填');
+-- 家长对数学填了不同的版本、学生随后改成“不清楚”：两边各存一行，互不覆盖，来源不被改写
+SELECT t.ob(:gA, format($$SELECT platform.set_subject_textbook(%L, 'aya', 'bubian-2024')::text$$, :S1));
+SELECT t.ob(:aS1, format($$SELECT platform.set_subject_textbook(%L, 'aya', NULL)::text$$, :S1));
+SELECT t.ok((SELECT string_agg(source_type || '=' || coalesce(textbook_version, '不清楚'), ',' ORDER BY source_type)
+               FROM platform.student_subject_textbook WHERE student_id = :S1 AND subject = 'aya') = 'guardian=bubian-2024,self=不清楚',
+            '教材版本两边说法不同时两边都在；学生改成“不清楚”不抹掉家长填的');
+SELECT t.ob(:aS1, format($$SELECT platform.set_subject_textbook(%L, 'aya', 'suke-2024')::text$$, :S1));
 SELECT t.throws(format('SELECT t.ob(%L, %L)', :gB, format($$SELECT platform.set_subject_textbook(%L, 'aya', 'suke-2024')::text$$, :S1)),
                 '42501', '别家的家长不能改教材版本');
 SELECT t.throws(format('SELECT t.ob(%L, %L)', :aS1, format($$SELECT platform.set_subject_textbook(%L, 'aya', 'Bad Code')::text$$, :S1)),
                 '22023', '教材版本编码不合格式被拒');
-SELECT t.ok(t.ob(:gA, format('SELECT count(*)::text FROM platform.student_subject_textbook WHERE student_id = %L', :S1)) = '2'
-            AND t.ob(:gB, format('SELECT count(*)::text FROM platform.student_subject_textbook WHERE student_id = %L', :S1)) = '0',
-            'BFF 按档案授权读教材版本：本家看得到，别家看不到');
+SELECT t.throws(format('SELECT t.ob(%L, %L)', :gA, 'SELECT count(*)::text FROM platform.student_subject_textbook'), '42501', 'BFF 不能直接读教材版本表');
+SELECT t.ok((t.ob(:aS1, format('SELECT insight.onboarding_view(%L)::text', :S1))::jsonb -> 'textbooks') = '{"aya": "suke-2024"}'
+            AND (t.ob(:gA, format('SELECT insight.onboarding_view(%L)::text', :S1))::jsonb -> 'textbooks') = '{"aya": "bubian-2024", "zhixing": null}',
+            '建档读取只给自己填的教材版本：学生看不到家长填的，家长看不到学生填的');
 
 -- ================= 建档进度与统计 =================
 SELECT t.ob(:aS1, format($$SELECT insight.record_onboarding_step(%L, 'onboarding', 'started')::text$$, :S1));
@@ -148,15 +172,35 @@ SELECT t.throws($$UPDATE insight.onboarding_progress SET step = 'x'$$, '42501', 
 SELECT t.throws($$TRUNCATE insight.onboarding_progress$$, '42501', '建档进度不能清空');
 SELECT t.throws(format('SELECT t.ob(%L, %L)', :aS1, format($$SELECT insight.record_onboarding_step(%L, 'Bad Step', 'started')::text$$, :S1)),
                 '23514', '步骤名不合格式被拒');
-SELECT t.ok((SELECT started = 1 AND completed = 1 AND completion_rate = 1 AND skipped_steps = '{"pain_points": 1}'
-               FROM insight.onboarding_stats(now() - interval '1 hour', now() + interval '1 hour') WHERE respondent_role = 'self')
-            AND (SELECT started = 1 AND completed = 0 AND median_seconds IS NULL
-               FROM insight.onboarding_stats(now() - interval '1 hour', now() + interval '1 hour') WHERE respondent_role = 'guardian'),
-            '统计：学生开始 1、完成 1，跳过步骤按步骤汇总；家长开始 1、未完成');
+SELECT t.throws(format('SELECT t.ob(%L, %L)', :aS1, format($$SELECT insight.record_onboarding_step(%L, 'made_up_step', 'started')::text$$, :S1)),
+                '23514', '步骤名只收建档页里的步骤（防刷统计）');
+SELECT t.ok((SELECT started = 1 AND completed IS NULL AND completion_rate IS NULL AND median_seconds IS NULL AND skipped_steps IS NULL
+               FROM insight.onboarding_stats(now() - interval '1 day', now() + interval '1 day') WHERE respondent_role = 'self')
+            AND (SELECT started = 1 AND completed IS NULL
+               FROM insight.onboarding_stats(now() - interval '1 day', now() + interval '1 day') WHERE respondent_role = 'guardian'),
+            '统计：不足 5 人时只给开始人数，完成数、完成率、时长、跳过情况都不出');
+SELECT t.throws($$SELECT * FROM insight.onboarding_stats(now() - interval '23 hours', now())$$, '22023', '统计窗口不足 1 天被拒');
+-- 满 5 人：再造 4 个合成学生（事务内，结束后回滚）
+BEGIN;
+INSERT INTO platform.account (id, kind) SELECT ('e9000000-0000-4000-8000-00000000000' || g)::uuid, 'student' FROM generate_series(1, 4) g;
+INSERT INTO platform.student_profile (id, account_id, household_id, grade, region, textbook_version, birth_year_month)
+SELECT ('e8000000-0000-4000-8000-00000000000' || g)::uuid, ('e9000000-0000-4000-8000-00000000000' || g)::uuid,
+       'd1000000-0000-4000-8000-0000000000d1', 8, 'nanjing', 'bubian-2024', '2013-01-01' FROM generate_series(1, 4) g;
+INSERT INTO insight.onboarding_progress (student_id, respondent_role, respondent_account_id, step, status, at)
+SELECT ('e8000000-0000-4000-8000-00000000000' || g)::uuid, 'self', ('e9000000-0000-4000-8000-00000000000' || g)::uuid, x.step, x.status,
+       now() - interval '10 minutes' + x.dt
+  FROM generate_series(1, 4) g,
+       (VALUES ('onboarding', 'started', interval '0'), ('goal', 'skipped', interval '1 minute'), ('onboarding', 'completed', interval '5 minutes')) x(step, status, dt)
+ WHERE g <= 2 OR x.status = 'started';
+SELECT t.ok((SELECT started = 5 AND completed = 3 AND completion_rate = 0.6 AND median_seconds IS NOT NULL
+                    AND skipped_steps = '{"goal": 2, "pain_points": 1}'
+               FROM insight.onboarding_stats(now() - interval '1 day', now() + interval '1 day') WHERE respondent_role = 'self'),
+            '统计：满 5 人给出完成数、完成率、时长中位数与按步骤汇总的跳过次数');
+ROLLBACK;
 SELECT t.throws(format('SELECT t.ob(%L, %L)', :gA, 'SELECT count(*)::text FROM insight.onboarding_stats(now() - interval ''1 day'', now())'),
                 '42501', 'BFF 不能看统计');
 SET ROLE starbuddy_report;
-SELECT t.ok((SELECT count(*) FROM insight.onboarding_stats(now() - interval '1 hour', now() + interval '1 hour')) = 2, '运营报表身份可以看聚合统计');
+SELECT t.ok((SELECT count(*) FROM insight.onboarding_stats(now() - interval '1 day', now() + interval '1 day')) = 2, '运营报表身份可以看聚合统计');
 SELECT t.throws('SELECT count(*) FROM insight.onboarding_progress', '42501', '运营报表身份读不到进度明细');
 SELECT t.throws('SELECT count(*) FROM insight.self_report', '42501', '运营报表身份读不到自述');
 RESET ROLE;
@@ -177,3 +221,22 @@ SELECT t.ok((t.ob(:gA, format('SELECT insight.onboarding_view(%L)::text', :S1)):
             '两位家长互相看不到对方写的观察');
 UPDATE platform.guardian_student_link SET status = 'revoked'
  WHERE guardian_account_id = 'cc000000-0000-4000-8000-0000000000cc' AND student_id = 'c1000000-0000-4000-8000-0000000000c1';
+-- ================= 已解除绑定的家长、已停用的账号 =================
+SELECT t.ok(t.ob(:gC, format('SELECT insight.onboarding_view(%L)::text', :S1)) IS NULL, '解除绑定后家长读不到建档内容');
+SELECT t.throws(format('SELECT t.ob(%L, %L)', :gC, format($$SELECT insight.submit_guardian_report(%L, 'outer.g1.devices', '{"devices": ["phone"]}')::text$$, :S1)),
+                '42501', '解除绑定后家长不能写观察');
+SELECT t.throws(format('SELECT t.ob(%L, %L)', :gC, format($$SELECT insight.submit_exam_record(%L, 'aya', 'final', '2026-12-10', 100, 80, NULL, NULL, NULL)::text$$, :S1)),
+                '42501', '解除绑定后家长不能录考试记录');
+SELECT t.throws(format('SELECT t.ob(%L, %L)', :gC, format($$SELECT platform.set_subject_textbook(%L, 'aya', 'suke-2024')::text$$, :S1)),
+                '42501', '解除绑定后家长不能填教材版本');
+SELECT t.throws(format('SELECT t.ob(%L, %L)', :gC, format($$SELECT insight.record_onboarding_step(%L, 'onboarding', 'started')::text$$, :S1)),
+                '42501', '解除绑定后家长不能记进度');
+BEGIN;
+UPDATE platform.account SET status = 'disabled' WHERE id IN (:aS1, :gA);
+SELECT t.ok(t.ob(:aS1, format('SELECT insight.onboarding_view(%L)::text', :S1)) IS NULL
+            AND t.ob(:gA, format('SELECT insight.onboarding_view(%L)::text', :S1)) IS NULL, '账号停用后学生、家长都读不到');
+SELECT t.throws(format('SELECT t.ob(%L, %L)', :aS1, format($$SELECT insight.submit_self_report(%L, 'through.g9.focus_subject', '{"subject": "aya"}')::text$$, :S1)),
+                '42501', '停用的学生账号不能写自述');
+SELECT t.throws(format('SELECT t.ob(%L, %L)', :gA, format($$SELECT insight.submit_guardian_report(%L, 'outer.g1.devices', '{"devices": ["phone"]}')::text$$, :S1)),
+                '42501', '停用的家长账号不能写观察');
+ROLLBACK;

@@ -107,7 +107,9 @@ test('兄妹、另一户家长、不存在、非法 ID：同一个 404', { skip:
 test('考试记录、教材版本、进度；学生看不到排名区间', { skip: !HAS_DB }, async () => {
   const exam = { subject: 'aya', exam_type: 'midterm', exam_date: '2026-11-10', full_score: 100, raw_score: 92, rank_band: 'top30' };
   assert.equal((await call('POST', url(ID.S1, '/exams'), ID.gS, exam)).status, 200);
-  assert.equal((await call('POST', url(ID.S1, '/exams'), ID.S1acc, { ...exam, raw_score: 95, rank_band: 'top10' })).status, 200);
+  assert.equal((await call('POST', url(ID.S1, '/exams'), ID.S1acc, { ...exam, raw_score: 95, rank_band: 'top10' })).status, 422, '学生不能录排名区间');
+  assert.equal((await call('POST', url(ID.S1, '/exams'), ID.S1acc, { ...exam, raw_score: 95, rank_band: 7 })).status, 422, '非字符串不当成 null');
+  assert.equal((await call('POST', url(ID.S1, '/exams'), ID.S1acc, { ...exam, raw_score: 95, rank_band: null })).status, 200);
   assert.equal((await call('POST', url(ID.S1, '/exams'), ID.S1acc, { ...exam, raw_score: 101 })).status, 422);
   assert.equal((await call('POST', url(ID.S1, '/exams'), ID.S1acc, { ...exam, exam_date: '11/10' })).status, 422);
   const me = await view(ID.S1, ID.S1acc);
@@ -117,10 +119,12 @@ test('考试记录、教材版本、进度；学生看不到排名区间', { ski
   assert.equal((await call('PUT', url(ID.S1, '/textbooks'), ID.S1acc, { subject: 'aya', textbook_version: 'suke-2024' })).status, 200);
   assert.equal((await call('PUT', url(ID.S1, '/textbooks'), ID.gS, { subject: 'zhixing', textbook_version: null })).status, 200);
   assert.equal((await call('PUT', url(ID.S1, '/textbooks'), ID.gS, { subject: 'aya', textbook_version: 'Bad Code' })).status, 422);
-  assert.deepEqual((await view(ID.S1, ID.S1acc)).textbooks, { aya: 'suke-2024', zhixing: null });
+  assert.deepEqual((await view(ID.S1, ID.S1acc)).textbooks, { aya: 'suke-2024' }, '学生只看到自己填的教材版本');
+  assert.deepEqual((await view(ID.S1, ID.gS)).textbooks, { zhixing: null }, '家长只看到自己填的教材版本');
   assert.equal((await call('POST', url(ID.S1, '/progress'), ID.S1acc, { step: 'onboarding', status: 'started' })).status, 200);
   assert.deepEqual((await view(ID.S1, ID.S1acc)).progress, [{ step: 'onboarding', status: 'started' }]);
   assert.deepEqual((await view(ID.S1, ID.gS)).progress, [], '进度按填写人分开');
+  assert.equal((await call('POST', url(ID.S1, '/progress'), ID.S1acc, { step: 'made_up', status: 'started' })).status, 422, '步骤名只收白名单');
 });
 
 test('请求体：不是 JSON 对象 422，超过 16 KB 413；方法不对 405；未登录 401', { skip: !HAS_DB }, async () => {
@@ -130,6 +134,18 @@ test('请求体：不是 JSON 对象 422，超过 16 KB 413；方法不对 405�
   assert.equal((await call('POST', url(ID.S1, '/answers'), ID.S1acc, {})).status, 405);
   assert.equal((await call('GET', url(ID.S1, '/exams'), ID.S1acc)).status, 405);
   assert.equal((await call('GET', url(ID.S1))).status, 401);
+  const plain = await fetch(url(ID.S1, '/answers'), { method: 'PUT', headers: { 'x-dev-account-id': ID.S1acc, 'content-type': 'text/plain' },
+    body: JSON.stringify({ field_id: 'through.g9.near_term_goal', value: { text: '合成' } }) });
+  assert.equal(plain.status, 415, 'Content-Type 必须是 application/json');
+});
+
+test('同一字段并发提交：不出 500，最后只有一条当前答案', { skip: !HAS_DB }, async () => {
+  const body = (i: number) => ({ field_id: 'middle.g6.learning_mode_preference', value: { mode: i % 2 ? 'challenge' : 'independent' } });
+  const statuses = (await Promise.all(Array.from({ length: 8 }, (_, i) => call('PUT', url(ID.S2, '/answers'), ID.S2acc, body(i))))).map((r) => r.status);
+  assert.ok(statuses.every((s) => s === 200 || s === 409), statuses.join(','));
+  const { rows } = await su.query(`SELECT count(*)::int AS n FROM insight.self_report
+    WHERE student_id = $1 AND field_id = 'middle.g6.learning_mode_preference' AND superseded_at IS NULL`, [ID.S2]);
+  assert.equal(rows[0].n, 1);
 });
 
 test('访问日志不含答案、学生 ID 原文', { skip: !HAS_DB }, () => {

@@ -43,10 +43,10 @@
 
 | id | 名称 | 层 | 来源 | 默认可见 | 落库 | 状态 | 改变的教学决策 |
 |---|---|---|---|---|---|---|---|
-| `inner.g2.exam_score` | 学校考试成绩（原始分与满分） | fact | 学生自述、家长观察 | Agent、学生、家长 | `insight.exam_record.raw_score（记录录入人：insight.exam_record.confirmed_by）` | live | 外部锚点：校准掌握判断，生成对账卡；七八年级 100 分制与九年级 120 分制分别归一 |
-| `inner.g2.exam_scope` | 考试范围与日期 | fact | 学生自述、家长观察 | Agent、学生、家长 | `insight.exam_record.scope_node_ids（记录录入人：insight.exam_record.confirmed_by）` | live | 考前 14 天按“考情权重 × 当前缺口 × 可提升”重排计划，并在考试当天冻结预测 |
-| `inner.g2.exam_rank_band` | 考试排名区间（学生或家长录入） | fact | 学生自述、家长观察 | Agent、家长 | `insight.exam_record.rank_band（记录录入人：insight.exam_record.confirmed_by）` | live | 只作考试难度与区分度的参考，校准预测区间；不对学生展示，不做同伴比较 |
-| `inner.g2.exam_difficulty_note` | 试卷难度说明 | fact | 学生自述、家长观察 | Agent、家长 | `insight.exam_record.difficulty_note（记录录入人：insight.exam_record.confirmed_by）` | live | 对账时区分“试卷偏难”与“此前判断偏乐观” |
+| `inner.g2.exam_score` | 学校考试成绩（原始分与满分） | fact | 学生自述、家长观察 | Agent、学生、家长 | `insight.exam_record.raw_score（记录录入人：insight.exam_record.entered_by_role）` | live | 外部锚点：校准掌握判断，生成对账卡；七八年级 100 分制与九年级 120 分制分别归一 |
+| `inner.g2.exam_scope` | 考试范围与日期 | fact | 学生自述、家长观察 | Agent、学生、家长 | `insight.exam_record.scope_node_ids（记录录入人：insight.exam_record.entered_by_role）` | planned | 考前 14 天按“考情权重 × 当前缺口 × 可提升”重排计划，并在考试当天冻结预测 |
+| `inner.g2.exam_rank_band` | 考试排名区间（家长录入） | fact | 家长观察 | Agent、家长 | `insight.exam_record.rank_band（记录录入人：insight.exam_record.entered_by_role）` | live | 只作考试难度与区分度的参考，校准预测区间；不对学生展示，不做同伴比较 |
+| `inner.g2.exam_difficulty_note` | 试卷难度说明（家长录入） | fact | 家长观察 | Agent、家长 | `insight.exam_record.difficulty_note（记录录入人：insight.exam_record.entered_by_role）` | live | 对账时区分“试卷偏难”与“此前判断偏乐观” |
 | `inner.g2.graded_paper_upload` | 带批改痕迹的整卷试卷 | fact | 客观记录 | Agent | `kge.attempt.answer_raw（KGE-05 建）` | planned | 作为先验与外部锚点；C 级识别内容先请学生核对，确认前不生成薄弱结论 |
 | `inner.g2.exam_prediction` | 考试分数预测区间 | inference | 模型推断 | Agent | `insight.exam_prediction.low（SIE-03 建）` | planned | 考前冻结、考后对账，偏差分析修正个体参数与判断 |
 

@@ -103,3 +103,16 @@ ADR 09 建议 pilot 和生产全链路境内。Supabase 托管版没有中国大
 - **一个迁移只改一个 schema**：0013 只建 policy；学生档案的中考届别在 0014（platform）。kge 地图校验对政策库的读取写在 0011 的校验函数里，用动态查询，政策库不存在时跳过。
 - **不含学生数据**：攻击面测试的公共层断言扩到 policy。
 
+
+## 增补：insight schema 的建档事实层（草稿，2026-09-29，specs/sie-01-onboarding，待签字）
+
+- **新增个人层事实表放 `insight.*`**：学生自述 `insight.self_report`、结构化家长观察 `insight.guardian_report`、考试记录 `insight.exam_record`、建档进度 `insight.onboarding_progress`（0022）。
+  理由：这些是 SIE 字段字典里新增的事实，没有既有副本；与判断账本同一 schema，洞察服务按同一套授权读取。
+  既有个人层事实仍留在 `platform.*`（对照文档 #3），按科的教材版本是既有事实的扩展，放 `platform.student_subject_textbook`（0021）。
+- **与 CLAUDE.md 规则 2 的关系**：在本增补签字前，按“ADR 之前 platform.* 是唯一真相源”，这四张表只是新事实的唯一存放处，不复制任何 platform 已有事实：
+  - `insight.guardian_report` 只收字段字典里的结构化字段；0006 的 `platform.guardian_report` 仍存五个自由文本主题，两边字段不重叠；
+  - `platform.student_profile.textbook_version` 只作建档前的默认值，某科在 `platform.student_subject_textbook` 有行时以后者为准。
+  若本增补不被接受，替代方案是把四张表移到 `platform.*`（表结构与函数不变，只改 schema 名），迁移仍是草稿、未执行，改动成本低。
+- **一个迁移只改一个 schema**：0021 只改 platform，0022 只改 insight。
+- **写入方**：BFF 以当前账号调用 SECURITY DEFINER 函数写事实（SIE-01 待人确认 #3），BFF 没有表授权；判断仍只由洞察服务写。新增只读角色 `starbuddy_report`，只能执行聚合统计函数。
+- 待签字：随 SIE-01 的 PR 一起评审（必停项：迁移、RLS 与权限、画像可见范围）。
