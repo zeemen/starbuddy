@@ -110,3 +110,10 @@ LEARNING_ADAPTER_AYA_URL=http://127.0.0.1:8787 LEARNING_ADAPTER_AYA_TOKEN=... .v
 - 供应商地址与 Key 只写环境变量名（例如 `MODEL_FAKE_A_URL`），值由部署环境提供。调用记录只含元数据，默认写结构化日志（logger `starbuddy.model_router`）。
 - `make model-router-mutation`：改坏出境过滤、启动校验、地址核对、熔断令牌、契约格式等 31 处关键检查，断言测试能发现（只有断言失败算发现）。
 - 部署要求：错误上报（例如 Sentry）关闭局部变量采集（`with_locals` 之类），避免把请求内容、Key 带进异常上报。
+
+## 内部模型路由接口（`POST /internal/v1/model/route`，specs/adapter-zhixing-sprint2 设计要点 5）
+- 各科适配器调用模型的唯一入口：适配器只配本接口的地址与令牌（`LEARNING_ROUTE_CLIENT_<SUBJECT>_TOKEN`，按学科发放、绑定学科，与服务间令牌、适配器令牌互不相同），
+  不持有任何供应商信息；请求交给 `model_router`（环境从 `LEARNING_ENV` 读，配置不合规即拒绝启动）。
+- 400 `ROUTE_REJECTED`（任务、数据级别、Prompt 版本不合要求）、403 `SUBJECT_MISMATCH`、503 `ROUTE_UNAVAILABLE`（可重试）；日志只记学科、任务、数据级别、状态与耗时。
+- 本接口不预留、不结算、不按幂等键去重：调用方（适配器）的 usage_id / idempotency_key 由学习服务上游的计量预留覆盖。
+- 端到端：`tests/test_e2e_zhixing.py`（学习服务 → 知行适配器进程 → 本接口 → 假供应商 → 平台库）。

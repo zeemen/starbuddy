@@ -1,6 +1,6 @@
 # ADP-道法-01：知行（道法）适配器 grade（F3 采分点）、diagnose、generate_variation
 
-状态：**草稿，等人确认后才开始实现**。确认人、日期：＿＿＿
+状态：**已确认（2026-09-29，用户“按默认建议，开始实现”）**，待人确认 #1–#6 按默认执行；实现记录见 lessons.md
 任务包：开发计划 v2.0 冲刺 2（W5–W6）D 流“ADP-道法-01：grade（F3 采分点）、diagnose、generate_variation”；
 验收（道法部分）“一道道法主观题逐点判分写入平台，带 evidence_ids 与 confidence”。语文 ADP-语文-01 另起 spec。
 关联：

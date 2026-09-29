@@ -114,7 +114,7 @@ STARBUDDY_CONTRACT_VERSION=1.0.0 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1 python pac
    所以 diagnose 只能按“有无命中片段”给 `partial` / `inconclusive`，移植的 `m3ToDimensionRates` 暂时喂不进去。要按它算，需要契约加字段（必停项）。
 2. **待复核时的复核原因**：契约规定 `verdict = needs_review` 必须带 `verifier_boundary_case`，维度分为 null 必须带 `dimension_unavailable`；
    模型输出不合格时本适配器照此填写，语义上不是“验证器边界”。是否给模型判分增加专门的原因码，由契约评审决定。
-3. **一致性夹具**由实现会话起草，需要独立会话复核、教研抽查；`make conformance` 与 `make adapter-zhixing-test` 尚未并入 Makefile（本任务只改本目录）。
+3. **一致性夹具**由实现会话起草，需要独立会话复核、教研抽查。`make adapter-zhixing-test` 与 `make conformance`（v0.9、v1.0）已并入 `make check`；端到端在学习服务的 `tests/test_e2e_zhixing.py`。
 4. 主观维度置信度取 0.4、错因置信度 0.4、diagnose 观测置信度 0.3 / 0.1，都未经校准。
 
 ## 依赖与许可证（规则 10）
