@@ -33,6 +33,8 @@ export default defineConfig({
       STARBUDDY_BFF_URL: process.env['STARBUDDY_BFF_URL'] ?? 'http://127.0.0.1:8787',
       STARBUDDY_REVIEW_URL: process.env['STARBUDDY_REVIEW_URL'] ?? 'http://127.0.0.1:8790',
       NEXT_TELEMETRY_DISABLED: '1',
+      // scripts/e2e.sh 的测试构建在 .next-e2e（next.config.ts），next start 要读同一个目录
+      STARBUDDY_NEXT_DIST_DIR: process.env['STARBUDDY_NEXT_DIST_DIR'] ?? '.next-e2e',
     },
   },
 });

@@ -4,7 +4,10 @@
 //   - 不注册 Service Worker、不加载境外字体或 CDN（字体用系统字体栈）。
 //   - 开发专用页面（文件名 page.dev.tsx，例如探针演示页 /dev/probe）只在开发、测试构建里是页面：构建时
 //     STARBUDDY_DEV_AUTH=1 且 STARBUDDY_ENV 为 dev / test（与 src/lib/dev-auth.ts 的开关相同）才把 .dev.tsx 算作页面扩展名；
-//     生产构建里这些路由不存在（tests/build-output.test.ts 核对）。端到端测试由 scripts/e2e.sh 重新做一份测试构建（留标记文件）。
+//     生产构建里这些路由不存在（tests/build-output.test.ts 核对）。
+//   - 端到端测试构建（scripts/e2e.sh）输出到单独的目录 .next-e2e（STARBUDDY_NEXT_DIST_DIR=.next-e2e，只认这一个取值），
+//     正式的 .next 永远是生产构建；测试构建用 tsconfig.e2e.json 做类型检查，Next 生成的路由类型写在 .next-e2e/types 下，
+//     不改 tsconfig.json、也不和 .next/types 的路由类型重复。
 import type { NextConfig } from 'next';
 
 type Env = Record<string, string | undefined>;
@@ -17,7 +20,19 @@ export const devPagesEnabled = (env: Env = process.env): boolean =>
 export const pageExtensionsFor = (env: Env = process.env): string[] =>
   devPagesEnabled(env) ? ['dev.tsx', 'tsx', 'ts', 'jsx', 'js'] : ['tsx', 'ts', 'jsx', 'js'];
 
+/** 端到端测试构建的输出目录（scripts/e2e.sh 在构建与 next start 时设置） */
+export const E2E_DIST_DIR = '.next-e2e';
+
+/** 输出目录：只有 STARBUDDY_NEXT_DIST_DIR 恰好是 .next-e2e 时用测试目录，其余一律是默认的 .next */
+export const distDirFor = (env: Env = process.env): string =>
+  env['STARBUDDY_NEXT_DIST_DIR'] === E2E_DIST_DIR ? E2E_DIST_DIR : '.next';
+
+const distDir = distDirFor();
+
 const config: NextConfig = {
+  distDir,
+  // 测试构建换一份 tsconfig：它只包含 .next-e2e 的路由类型；Next 在构建时补写 include 也只会写到这份文件里
+  ...(distDir === E2E_DIST_DIR ? { typescript: { tsconfigPath: 'tsconfig.e2e.json' } } : {}),
   pageExtensions: pageExtensionsFor(),
   images: { unoptimized: true },
   poweredByHeader: false,

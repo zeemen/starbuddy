@@ -38,11 +38,10 @@ test('构建产物里没有外部资源引用', { skip: BUILT ? false : '没有 
 });
 
 // 开发专用页面（冲刺 2-L 探针演示页 /dev/probe，文件名 page.dev.tsx）不在生产构建里：路由表里没有、服务端产物里没有、
-// 任何产物里都没有演示页的文案与标记。scripts/e2e.sh 会把 .next 覆盖成测试构建并留下标记文件，见到标记就跳过。
-const TEST_BUILD = existsSync(join(NEXT, 'STARBUDDY_TEST_BUILD'));
-
+// 任何产物里都没有演示页的文案与标记。端到端的测试构建输出到单独的 .next-e2e（scripts/e2e.sh），.next 永远是生产构建，
+// 这项检查不再有“测试构建就跳过”的出口。
 test('生产构建里没有开发专用页面（探针演示页）', {
-  skip: !BUILT ? '没有 .next 构建产物（先 next build）' : TEST_BUILD ? '.next 是 scripts/e2e.sh 的测试构建，不是生产构建' : false,
+  skip: BUILT ? false : '没有 .next 构建产物（先 next build）',
 }, () => {
   const routes = JSON.parse(readFileSync(join(NEXT, 'app-path-routes-manifest.json'), 'utf8')) as Record<string, string>;
   assert.ok(Object.keys(routes).length > 0, '路由表为空，检查不到东西');

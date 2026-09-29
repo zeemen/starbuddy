@@ -345,7 +345,7 @@ fields:
     visibility: [agent]
     storage: insight.behavior_event.payload
     status: live
-    note: 冲刺 2-L（迁移 0025）落库；学生端只写会话与计划四类，连错后退出与异议由后端与编排层写（未实现）
+    note: 冲刺 2-L（迁移 0025）落库；学生端只写会话与计划四类，连错后退出与异议由后端与编排层写（未实现）；时间戳只用于降负触发，不做作息分析；家长单独删除的入口待 insight.erase 实现，目前随学生档案级联删除
     teaching_decision: 降负触发（连续中断、连错后退出）与计划调整
     guardian_deletable: true
   - id: middle.g5.plan_completion_rate
@@ -432,7 +432,7 @@ fields:
     visibility: [agent]
     storage: insight.confidence_probe.prediction
     status: live
-    note: 冲刺 2-L（迁移 0025）落库；实际对错按关联作答去判分表取，不在探针表另存
+    note: 冲刺 2-L（迁移 0025）落库；实际对错按关联作答去判分表取（未被取代的那条；correct 算对、incorrect 算错，partial、needs_review、not_applicable 不进校准），不在探针表另存；家长单独删除的入口待 insight.erase 实现，目前随学生档案级联删除
     teaching_decision: 自评校准的输入；高估的学生多安排自检
     guardian_deletable: true
   - id: middle.g7.independent_solve_rate

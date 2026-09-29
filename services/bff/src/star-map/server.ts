@@ -12,8 +12,11 @@
 //   POST /bff/v0/students/{student_id}/events                     {kind, payload, occurred_at, idempotency_key}
 //   POST /bff/v0/students/{student_id}/probes                     {subject, item_id, prediction, asked_at, idempotency_key}
 //   POST /bff/v0/students/{student_id}/probes/{probe_id}/attempt  {attempt_id}
-//   201 {"id"}（同一幂等键重放也回 201 与原 ID）；关联作答 200 {"status":"ok"}；401 未登录；403 不是学生本人（家长、其他学生、
-//   学生不存在一律同一个 403）；409 同一幂等键内容不同或探针已关联别的作答；422 未知键、自由文本、取值不合要求（不回显输入）。
+//   首次写入 201 {"id"} 与响应头 idempotent-replayed: false；同一幂等键重放 200 {"id": 原 ID} 与 idempotent-replayed: true
+//   （与 learning-internal 契约同一约定）；关联作答 200 {"status":"ok"}；401 未登录；403 不是学生本人（家长、其他学生、
+//   学生不存在一律同一个 403）；409 IDEMPOTENCY_KEY_REUSED 同一幂等键内容不同（换新键再发，原样重试不会成功）、
+//   409 PROBE_ALREADY_LINKED 探针已关联别的作答；422 未知键、自由文本、取值不合要求（不回显输入）；
+//   429 24 小时写入上限（0025：事件 2000、探针 500）。
 //
 // 身份来源是开发桩（待人确认 #3，4-H 用真实会话替换）：只有同时满足
 //   - 创建服务时 devAuth 为真（main.ts 只在 STARBUDDY_DEV_AUTH=1 时传 true）；
@@ -26,7 +29,7 @@ import type { AddressInfo } from 'node:net';
 import type { Pool } from 'pg';
 import { getStarMap, isUuid } from './query.ts';
 import { getOnboarding, recordStep, setTextbook, submitAnswer, submitExam, type ExamInput, type Outcome } from '../onboarding/query.ts';
-import { linkProbeAttempt, parseAttempt, parseEvent, parseProbe, recordEvent, recordProbe, type WriteOutcome } from '../events/query.ts';
+import { linkProbeAttempt, parseAttempt, parseEvent, parseProbe, recordEvent, recordProbe, type Recorded, type WriteOutcome } from '../events/query.ts';
 
 const ROUTE = /^\/bff\/v0\/students\/([^/]+)\/star-map$/;
 const ONBOARDING = /^\/bff\/v0\/students\/([^/]+)\/onboarding(?:\/(answers|exams|textbooks|progress))?$/;
@@ -48,6 +51,9 @@ const TOO_LARGE = problem(413, 'TOO_LARGE', 'request body too large');
 const UNSUPPORTED = problem(415, 'UNSUPPORTED_MEDIA_TYPE', 'content-type must be application/json');
 const CONFLICT = problem(409, 'CONFLICT', 'concurrent update, retry');
 const TOO_MANY = problem(429, 'TOO_MANY', 'too many writes');
+// 行为事件与探针的 409 各有自己的错误码：不复用 CONFLICT 的“retry”文案，同一请求原样重试永远不会成功
+const KEY_REUSED = problem(409, 'IDEMPOTENCY_KEY_REUSED', 'idempotency key reused with different content');
+const PROBE_LINKED = problem(409, 'PROBE_ALREADY_LINKED', 'probe already linked to a different attempt');
 const FORBIDDEN = problem(403, 'FORBIDDEN', 'not allowed');
 const OK = JSON.stringify({ status: 'ok' });
 
@@ -109,13 +115,14 @@ export function createStarMapServer(opts: StarMapServerOptions): Server {
   const server: Server = createServer(async (req, res) => {
     const started = Date.now();
     const record: Record<string, unknown> = { route: 'unknown' };
-    const send = (status: number, body: string) => {
+    const send = (status: number, body: string, extra: Record<string, string> = {}) => {
       record['status'] = status;
       if (res.headersSent || res.destroyed) return;
       res.writeHead(status, {
         'content-type': status >= 400 ? 'application/problem+json' : 'application/json',
         'cache-control': 'no-store',
         'x-content-type-options': 'nosniff',
+        ...extra,
       });
       res.end(body);
     };
@@ -153,10 +160,13 @@ export function createStarMapServer(opts: StarMapServerOptions): Server {
         if (!account) return send(401, UNAUTHENTICATED);
         const b = await readBody();
         if (!b) return;
-        const reply = <T>(o: WriteOutcome<T>, ok: (v: T) => [number, string]) =>
+        const conflict = sub === 'probes/attempt' ? PROBE_LINKED : KEY_REUSED;
+        const reply = <T>(o: WriteOutcome<T>, ok: (v: T) => [number, string, Record<string, string>?]) =>
           o.kind === 'forbidden' ? send(403, FORBIDDEN) : o.kind === 'invalid' ? send(422, INVALID)
-            : o.kind === 'conflict' ? send(409, CONFLICT) : o.kind === 'too_many' ? send(429, TOO_MANY) : send(...ok(o.value));
-        const created = (id: string): [number, string] => [201, JSON.stringify({ id })];
+            : o.kind === 'conflict' ? send(409, conflict) : o.kind === 'too_many' ? send(429, TOO_MANY) : send(...ok(o.value));
+        // 首次写入 201；同一幂等键重放 200 与原 ID，响应头标明是重放（库里没有新写任何行）
+        const created = (r: Recorded): [number, string, Record<string, string>] =>
+          [r.replayed ? 200 : 201, JSON.stringify({ id: r.id }), { 'idempotent-replayed': r.replayed ? 'true' : 'false' }];
         if (sub === 'events') {
           const e = parseEvent(b);
           if (!e) return send(422, INVALID);

@@ -54,6 +54,11 @@ SM=(
   $'事件日志记原始 student_id\tsrc/star-map/server.ts\trecord[\'student\'] = hashId(studentId); // 行为事件\trecord[\'student\'] = studentId; // 行为事件'
   $'事件请求体放过未知键\tsrc/events/query.ts\treturn got.length === want.length && got.every((k, i) => k === want[i]);\treturn want.every((k) => got.includes(k));'
   $'事件无权当成功\tsrc/events/query.ts\tif (code === \'42501\') return { kind: \'forbidden\' };\tif (code === \'42501\') return { kind: \'ok\', value: null as T };'
+  # 审查处理（契约审查 6、安全审查 B1）：重放回 200 并带响应头；54000 映射 429；幂等键冲突与“已关联别的作答”各有错误码
+  $'事件重放也回 201\tsrc/star-map/server.ts\t[r.replayed ? 200 : 201,\t[201,'
+  $'事件重放不标响应头\tsrc/star-map/server.ts\t{ \'idempotent-replayed\': r.replayed ? \'true\' : \'false\' }\t{ \'idempotent-replayed\': \'false\' }'
+  $'事件写入上限不映射 429\tsrc/events/query.ts\tif (code === \'54000\') return { kind: \'too_many\' };\t'
+  $'幂等键冲突复用 CONFLICT 文案\tsrc/star-map/server.ts\tconst conflict = sub === \'probes/attempt\' ? PROBE_LINKED : KEY_REUSED;\tconst conflict = CONFLICT;'
   # 计量（plugin-api-v1.0-step2）：预留过期后只查询重放接口，不发原请求；这几条跑计量测试
   $'计量：过期后仍发原请求\tsrc/metering/meter.ts\tif (r.state === \'expired\') return replayAfterExpiry(\t if (false) return replayAfterExpiry('
   $'计量：重放没有结果当成功\tsrc/metering/meter.ts\tif (out.kind === \'found\') {\tif (out.kind !== \'busy\') {'

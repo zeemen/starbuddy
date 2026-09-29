@@ -9,7 +9,10 @@ info:
     只写不读：行为事件与探针只给 Agent 用，学生、家长界面都不显示，响应只回记录 ID，不回显 payload（CLAUDE.md 规则 11、12）。
     授权、payload 白名单、时间窗（最近 1 天内、不晚于现在 5 分钟）与幂等全部由迁移 0025 的库函数决定；BFF 先做一遍请求体校验
     （未知键、自由文本、类型不对一律 422）。不消耗额度，不走计量预留。请求体上限 16 KB。
-    家长、其他学生、学生不存在一律同一个 403；同一幂等键重放回 201 与原记录 ID（库函数不区分首次与重放）；内容不同回 409。
+    家长、其他学生、学生不存在一律同一个 403。首次写入回 201 与响应头 `idempotent-replayed: false`；同一幂等键重放（含离线超过 1 天后的重放）
+    回 200、原记录 ID 与响应头 `idempotent-replayed: true`，库里不新写任何行（与 learning-internal 契约同一约定）。
+    同一幂等键内容不同回 409 `IDEMPOTENCY_KEY_REUSED`：原样重试永远不会成功，客户端应换新键重发或丢弃。
+    同一学生 24 小时内最多写 2000 条行为事件、500 条探针（迁移 0025），超出回 429 `TOO_MANY`。
     身份来源是开发桩（x-dev-account-id，只在 STARBUDDY_DEV_AUTH=1 且只监听 loopback 时生效），4-H 用真实会话替换。
 servers:
   - url: http://127.0.0.1:8787
@@ -27,14 +30,16 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/BehaviorEventInput' }
       responses:
+        '200': { $ref: '#/components/responses/Replayed' }
         '201': { $ref: '#/components/responses/Created' }
         '401': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
         '405': { $ref: '#/components/responses/Problem' }
-        '409': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/KeyReused' }
         '413': { $ref: '#/components/responses/Problem' }
         '415': { $ref: '#/components/responses/Problem' }
         '422': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/TooMany' }
   /bff/v0/students/{student_id}/probes:
     parameters:
       - $ref: '#/components/parameters/StudentId'
@@ -48,14 +53,16 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/ConfidenceProbeInput' }
       responses:
+        '200': { $ref: '#/components/responses/Replayed' }
         '201': { $ref: '#/components/responses/Created' }
         '401': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
         '405': { $ref: '#/components/responses/Problem' }
-        '409': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/KeyReused' }
         '413': { $ref: '#/components/responses/Problem' }
         '415': { $ref: '#/components/responses/Problem' }
         '422': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/TooMany' }
   /bff/v0/students/{student_id}/probes/{probe_id}/attempt:
     parameters:
       - $ref: '#/components/parameters/StudentId'
@@ -67,8 +74,9 @@ paths:
     post:
       operationId: linkProbeAttempt
       description: >
-        作答提交后把探针与作答关联（insight.link_probe_attempt）。作答必须是这个学生的、同一道题、在提问之后；
-        同一作答重复关联是幂等的（200），已关联别的作答回 409；探针或作答不存在、与探针不对应回 422。
+        作答提交后把探针与作答关联（insight.link_probe_attempt）。作答必须是这个学生的、同一道题，且发生在库里写入探针之后
+        2 小时内（以库里的写入时间为准，客户端给的 asked_at 不参与）；同一作答重复关联是幂等的（200），
+        已关联别的作答回 409 `PROBE_ALREADY_LINKED`；探针或作答不存在、与探针不对应回 422。
       requestBody:
         required: true
         content:
@@ -84,10 +92,15 @@ paths:
         '401': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
         '405': { $ref: '#/components/responses/Problem' }
-        '409': { $ref: '#/components/responses/Problem' }
+        '409':
+          description: 探针已关联别的作答（code 为 PROBE_ALREADY_LINKED）
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
         '413': { $ref: '#/components/responses/Problem' }
         '415': { $ref: '#/components/responses/Problem' }
         '422': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/TooMany' }
 components:
   parameters:
     StudentId:
@@ -103,17 +116,31 @@ components:
       schema: { type: string, format: uuid }
   responses:
     Created:
-      description: 已写入（同一幂等键重放也回 201 与原记录 ID）；不回显请求内容
+      description: 首次写入；不回显请求内容
       headers:
         Cache-Control: { schema: { type: string, const: no-store } }
+        idempotent-replayed: { schema: { type: string, const: 'false' } }
       content:
         application/json:
-          schema:
-            type: object
-            additionalProperties: false
-            required: [id]
-            properties:
-              id: { type: string, format: uuid }
+          schema: { $ref: '#/components/schemas/RecordId' }
+    Replayed:
+      description: 同一幂等键重放（内容相同）：回原记录 ID，库里不新写任何行；不回显请求内容
+      headers:
+        Cache-Control: { schema: { type: string, const: no-store } }
+        idempotent-replayed: { schema: { type: string, const: 'true' } }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/RecordId' }
+    KeyReused:
+      description: 同一幂等键对应的内容不同（code 为 IDEMPOTENCY_KEY_REUSED）；原样重试不会成功，换新键重发或丢弃
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    TooMany:
+      description: 同一学生 24 小时写入上限（迁移 0025：行为事件 2000 条、探针 500 条；库里 SQLSTATE 54000），code 为 TOO_MANY
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
     Ok:
       description: 已关联
       content:
@@ -125,6 +152,12 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
   schemas:
+    RecordId:
+      type: object
+      additionalProperties: false
+      required: [id]
+      properties:
+        id: { type: string, format: uuid }
     Timestamp:
       type: string
       format: date-time
@@ -184,7 +217,7 @@ components:
       properties:
         subject: { type: string, enum: [aya, wenli, zhixing, echo] }
         item_id: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$', description: 必须是已登记的题目（platform.item） }
-        prediction: { type: string, enum: [yes, no, unsure], description: 能 / 不能 / 不确定 }
+        prediction: { type: string, enum: ['yes', 'no', unsure], description: 能 / 不能 / 不确定（yes、no 加引号：YAML 1.1 解析器会把裸的 yes / no 读成布尔值） }
         asked_at: { $ref: '#/components/schemas/Timestamp' }
         idempotency_key: { $ref: '#/components/schemas/IdempotencyKey' }
     Problem:
@@ -194,4 +227,4 @@ components:
         type: { type: string }
         title: { type: string }
         status: { type: integer }
-        code: { type: string, enum: [UNAUTHENTICATED, FORBIDDEN, NOT_FOUND, METHOD_NOT_ALLOWED, INTERNAL, INVALID, TOO_LARGE, UNSUPPORTED_MEDIA_TYPE, CONFLICT, TOO_MANY] }
+        code: { type: string, enum: [UNAUTHENTICATED, FORBIDDEN, NOT_FOUND, METHOD_NOT_ALLOWED, INTERNAL, INVALID, TOO_LARGE, UNSUPPORTED_MEDIA_TYPE, IDEMPOTENCY_KEY_REUSED, PROBE_ALREADY_LINKED, TOO_MANY] }

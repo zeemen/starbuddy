@@ -1,5 +1,6 @@
-// 行为事件与探针接口集成测试（冲刺 2-L 验收：只有学生本人能写、白名单外键与自由文本拒绝、幂等重放不重复、
-// 内容不同回冲突、探针关联作答、返回体不回显 payload、日志不带 payload 与学生 ID 原文）。
+// 行为事件与探针接口集成测试（冲刺 2-L 验收：只有学生本人能写、白名单外键与自由文本拒绝、幂等重放不重复
+// （首次 201、重放 200 与 idempotent-replayed 响应头）、内容不同回 409 IDEMPOTENCY_KEY_REUSED、24 小时写入上限回 429、
+// 探针关联作答、返回体不回显 payload、日志不带 payload 与学生 ID 原文）。
 // 一次性 Postgres，登录角色 bff_app 只继承 starbuddy_bff；合成家庭来自 db/seeds/dev/star-map-synthetic.sql（规则 8）。
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -100,6 +101,7 @@ test('学生本人写四种事件：201 只回 ID，库里来源类型是客观�
     const r = await post(url(ID.S1, 'events'), ID.S1acc, b);
     assert.equal(r.status, 201, b.kind);
     assert.equal(r.headers.get('cache-control'), 'no-store');
+    assert.equal(r.headers.get('idempotent-replayed'), 'false', '首次写入不是重放');
     const text = await r.text();
     const json = JSON.parse(text) as Record<string, unknown>;
     assert.deepEqual(Object.keys(json), ['id'], '只回记录 ID');
@@ -157,23 +159,53 @@ test('白名单外键、自由文本、类型不对：422，不写入、不回�
   assert.equal(await count(`SELECT count(*) AS n FROM insight.behavior_event WHERE student_id = $1`, [ID.S1]), before);
 });
 
-test('同一幂等键重放：同一个 ID、只有一行；内容不同 409', { skip: !HAS_DB }, async () => {
+/** 409 的错误码与文案：同一幂等键内容不同，不复用会误导重试的 CONFLICT */
+async function assertKeyReused(r: Response, name: string): Promise<void> {
+  assert.equal(r.status, 409, name);
+  const body = (await r.json()) as Record<string, unknown>;
+  assert.equal(body['code'], 'IDEMPOTENCY_KEY_REUSED', name);
+  assert.equal(body['title'], 'idempotency key reused with different content', name);
+  assert.ok(!/retry/i.test(String(body['title'])), `${name}：文案不能暗示原样重试`);
+}
+
+test('同一幂等键重放：首次 201、重放 200 与 idempotent-replayed: true、同一个 ID、只有一行；内容不同 409', { skip: !HAS_DB }, async () => {
   const b = start({ payload: { entry: 'star_map' } });
   const first = await post(url(ID.S2, 'events'), ID.S2acc, b);
   assert.equal(first.status, 201);
+  assert.equal(first.headers.get('idempotent-replayed'), 'false');
   const again = await post(url(ID.S2, 'events'), ID.S2acc, b);
-  assert.equal(again.status, 201);
+  assert.equal(again.status, 200, '重放回 200');
+  assert.equal(again.headers.get('idempotent-replayed'), 'true');
+  assert.equal(again.headers.get('cache-control'), 'no-store');
   assert.deepEqual(await again.json(), await first.json());
   assert.equal(await count(`SELECT count(*) AS n FROM insight.behavior_event WHERE idempotency_key = $1`, [b.idempotency_key]), 1);
-  const changed = await post(url(ID.S2, 'events'), ID.S2acc, { ...b, payload: { entry: 'subject' } });
-  assert.equal(changed.status, 409);
+  await assertKeyReused(await post(url(ID.S2, 'events'), ID.S2acc, { ...b, payload: { entry: 'subject' } }), '事件 payload 不同');
+  await assertKeyReused(await post(url(ID.S2, 'events'), ID.S2acc, { ...b, occurred_at: now() }), '事件时间不同');
   // 探针同理
   const p = probe({ prediction: 'yes' });
   const p1 = await post(url(ID.S2, 'probes'), ID.S2acc, p);
   assert.equal(p1.status, 201);
+  assert.equal(p1.headers.get('idempotent-replayed'), 'false');
   const p2 = await post(url(ID.S2, 'probes'), ID.S2acc, p);
+  assert.equal(p2.status, 200);
+  assert.equal(p2.headers.get('idempotent-replayed'), 'true');
   assert.deepEqual(await p2.json(), await p1.json());
-  assert.equal((await post(url(ID.S2, 'probes'), ID.S2acc, { ...p, prediction: 'no' })).status, 409);
+  assert.equal(await count(`SELECT count(*) AS n FROM insight.confidence_probe WHERE idempotency_key = $1`, [p.idempotency_key]), 1);
+  await assertKeyReused(await post(url(ID.S2, 'probes'), ID.S2acc, { ...p, prediction: 'no' }), '探针预测不同');
+});
+
+test('离线超过 1 天后的重放：仍回 200 与原 ID（先查幂等键再核对时间窗）', { skip: !HAS_DB }, async () => {
+  const b = start({ payload: { entry: 'subject' } });
+  const first = await post(url(ID.S2, 'events'), ID.S2acc, b);
+  assert.equal(first.status, 201);
+  const { id } = (await first.json()) as { id: string };
+  // 合成：把这条事件的发生时间挪到 3 天前，模拟客户端离线很久后才重发同一请求
+  const old = new Date(Date.now() - 3 * 86400_000).toISOString();
+  await su.query(`UPDATE insight.behavior_event SET occurred_at = $2 WHERE id = $1`, [id, old]);
+  const again = await post(url(ID.S2, 'events'), ID.S2acc, { ...b, occurred_at: old });
+  assert.equal(again.status, 200);
+  assert.equal(again.headers.get('idempotent-replayed'), 'true');
+  assert.deepEqual(await again.json(), { id });
 });
 
 test('探针：学生自述入库，不存实际对错；题目未登记、学科不对、多余键 422', { skip: !HAS_DB }, async () => {
@@ -215,9 +247,54 @@ test('探针关联作答：本人同题作答 200、重复关联幂等；别的�
   assert.deepEqual(await ok.json(), { status: 'ok' });
   assert.equal((await link(mine)).status, 200, '同一作答重复关联是幂等的');
   const other = await syntheticAttempt(ID.S1, ID.S1zxEvidence);
-  assert.equal((await link(other)).status, 409, '已关联别的作答');
+  const linked = await link(other);
+  assert.equal(linked.status, 409, '已关联别的作答');
+  const problem = (await linked.json()) as Record<string, unknown>;
+  assert.equal(problem['code'], 'PROBE_ALREADY_LINKED', '与幂等键冲突用不同的错误码');
+  assert.equal(problem['title'], 'probe already linked to a different attempt');
   const { rows } = await su.query(`SELECT attempt_id FROM insight.confidence_probe WHERE id = $1`, [id]);
   assert.equal(rows[0].attempt_id, mine);
+});
+
+test('24 小时写入上限：事件满 2000 条、探针满 500 条后回 429 TOO_MANY，已有记录的重放仍回 200', { skip: !HAS_DB }, async () => {
+  // 先各写一条正常记录（上限前），用来验证满额后重放不受上限影响
+  const ev = start({ payload: { entry: 'other' } });
+  assert.equal((await post(url(ID.S2, 'events'), ID.S2acc, ev)).status, 201);
+  const pr = probe({ prediction: 'unsure' });
+  assert.equal((await post(url(ID.S2, 'probes'), ID.S2acc, pr)).status, 201);
+  // 超级用户直接插满合成记录（绕过写入函数；这些行测试结束时删掉，不影响后面的用例）
+  const evCount = await count(`SELECT count(*) AS n FROM insight.behavior_event WHERE student_id = $1 AND created_at > now() - interval '24 hours'`, [ID.S2]);
+  const prCount = await count(`SELECT count(*) AS n FROM insight.confidence_probe WHERE student_id = $1 AND created_at > now() - interval '24 hours'`, [ID.S2]);
+  const filler = await su.query<{ id: string }>(
+    `INSERT INTO insight.behavior_event (student_id, kind, payload, occurred_at, idempotency_key)
+     SELECT $1, 'session_start', '{"entry":"other"}', now(), gen_random_uuid() FROM generate_series(1, $2::int) RETURNING id`,
+    [ID.S2, Math.max(0, 2000 - evCount)]);
+  const probeFiller = await su.query<{ id: string }>(
+    `INSERT INTO insight.confidence_probe (student_id, subject, item_id, prediction, asked_at, idempotency_key)
+     SELECT $1, 'zhixing', $2, 'unsure', now(), gen_random_uuid() FROM generate_series(1, $3::int) RETURNING id`,
+    [ID.S2, ITEM, Math.max(0, 500 - prCount)]);
+  try {
+    const eventsBefore = await count(`SELECT count(*) AS n FROM insight.behavior_event WHERE student_id = $1`, [ID.S2]);
+    for (const [name, sub, body] of [['事件', 'events', start()], ['探针', 'probes', probe()]] as const) {
+      const r = await post(url(ID.S2, sub), ID.S2acc, body);
+      assert.equal(r.status, 429, name);
+      assert.equal(r.headers.get('content-type'), 'application/problem+json');
+      const problem = (await r.json()) as Record<string, unknown>;
+      assert.deepEqual([problem['code'], problem['status']], ['TOO_MANY', 429], name);
+    }
+    assert.equal(await count(`SELECT count(*) AS n FROM insight.behavior_event WHERE student_id = $1`, [ID.S2]), eventsBefore, '超限的请求没有写入');
+    const replay = await post(url(ID.S2, 'events'), ID.S2acc, ev);
+    assert.equal(replay.status, 200, '满额后已有记录的重放仍回原 ID');
+    assert.equal(replay.headers.get('idempotent-replayed'), 'true');
+    const probeReplay = await post(url(ID.S2, 'probes'), ID.S2acc, pr);
+    assert.equal(probeReplay.status, 200);
+    assert.equal(probeReplay.headers.get('idempotent-replayed'), 'true');
+    // 别的学生不受影响
+    assert.equal((await post(url(ID.S1, 'events'), ID.S1acc, start())).status, 201);
+  } finally {
+    await su.query(`DELETE FROM insight.behavior_event WHERE id = ANY($1::uuid[])`, [filler.rows.map((r) => r.id)]);
+    await su.query(`DELETE FROM insight.confidence_probe WHERE id = ANY($1::uuid[])`, [probeFiller.rows.map((r) => r.id)]);
+  }
 });
 
 test('请求体：不是 JSON 对象 422，超过 16 KB 413，不是 JSON 415；方法不对 405', { skip: !HAS_DB }, async () => {

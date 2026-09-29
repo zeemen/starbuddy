@@ -1,5 +1,5 @@
 // “能做对吗”探针与演示页的全部文案（冲刺 2-L，spec 设计要点 3、待人确认 #7）。
-// 面向学生的话术，属于 CLAUDE.md 必停项：定稿前需人设评审；tests/probe-copy.test.ts 用点点禁语表
+// 面向学生的话术，属于 CLAUDE.md 必停项：定稿前需人设评审；tests/probe.test.ts 用点点禁语表
 // （evals/persona/diandian/lexicon/forbidden.yaml）扫描这里的每一条。只问预测，不打分、不评价、不显示历史。
 export type Prediction = 'yes' | 'no' | 'unsure';
 

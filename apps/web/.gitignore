@@ -1,5 +1,7 @@
 node_modules/
 .next/
+# 端到端测试构建（scripts/e2e.sh，STARBUDDY_NEXT_DIST_DIR=.next-e2e）
+.next-e2e/
 next-env.d.ts
 *.tsbuildinfo
 test-results/

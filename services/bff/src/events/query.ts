@@ -3,7 +3,9 @@
 // 这里的校验是第一道：未知键、自由文本、类型不对一律 422，不送进库。
 //   - 不消耗额度，不走计量预留（spec 设计要点 2）；
 //   - 行为事件、探针只给 Agent 用：本模块只写不读，响应只回记录 ID，不回显 payload（规则 11、12）；
-//   - 42501 无权 → forbidden（403）；22023 等取值不合要求 → invalid（422）；23505 同一幂等键内容不同 → conflict（409）。
+//   - 42501 无权 → forbidden（403）；22023 等取值不合要求 → invalid（422）；23505 同一幂等键内容不同、探针已关联别的作答 → conflict（409，
+//     由 server.ts 按接口给不同的错误码）；54000 24 小时写入上限（事件 2000、探针 500，0025）→ too_many（429）；
+//   - 库函数返回 (id, replayed)：同一幂等键重放返回原记录并标 replayed，server.ts 据此回 200 与响应头 idempotent-replayed: true。
 import type { Pool, PoolClient } from 'pg';
 import { withAccount } from '../metering/db.ts';
 import { isUuid } from '../star-map/query.ts';
@@ -109,23 +111,26 @@ async function run<T>(pool: Pool, account: string, student: string, fn: (c: Pool
   }
 }
 
-/** 写一条行为事件；同一幂等键重放返回原记录 ID */
-export function recordEvent(pool: Pool, account: string, student: string, e: EventInput): Promise<WriteOutcome<string>> {
+/** 写入结果：记录 ID，以及这次是不是同一幂等键的重放（重放时库里没有新写任何行） */
+export interface Recorded { id: string; replayed: boolean }
+
+/** 写一条行为事件；同一幂等键重放返回原记录 ID 与 replayed=true */
+export function recordEvent(pool: Pool, account: string, student: string, e: EventInput): Promise<WriteOutcome<Recorded>> {
   return run(pool, account, student, async (c) => {
-    const { rows } = await c.query<{ id: string }>(
-      'SELECT insight.record_behavior_event($1, $2, $3::jsonb, $4::timestamptz, $5::uuid) AS id',
+    const { rows } = await c.query<Recorded>(
+      'SELECT id, replayed FROM insight.record_behavior_event($1, $2, $3::jsonb, $4::timestamptz, $5::uuid)',
       [student, e.kind, JSON.stringify(e.payload), e.occurred_at, e.idempotency_key]);
-    return rows[0]!.id;
+    return { id: rows[0]!.id, replayed: rows[0]!.replayed === true };
   });
 }
 
-/** 写一条探针（学生自述）；同一幂等键重放返回原记录 ID */
-export function recordProbe(pool: Pool, account: string, student: string, p: ProbeInput): Promise<WriteOutcome<string>> {
+/** 写一条探针（学生自述）；同一幂等键重放返回原记录 ID 与 replayed=true */
+export function recordProbe(pool: Pool, account: string, student: string, p: ProbeInput): Promise<WriteOutcome<Recorded>> {
   return run(pool, account, student, async (c) => {
-    const { rows } = await c.query<{ id: string }>(
-      'SELECT insight.record_confidence_probe($1, $2::platform.subject, $3, $4, $5::timestamptz, $6::uuid) AS id',
+    const { rows } = await c.query<Recorded>(
+      'SELECT id, replayed FROM insight.record_confidence_probe($1, $2::platform.subject, $3, $4, $5::timestamptz, $6::uuid)',
       [student, p.subject, p.item_id, p.prediction, p.asked_at, p.idempotency_key]);
-    return rows[0]!.id;
+    return { id: rows[0]!.id, replayed: rows[0]!.replayed === true };
   });
 }
 

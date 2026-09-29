@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { test } from 'node:test';
-import { devPagesEnabled, pageExtensionsFor } from '../next.config.ts';
+import { devPagesEnabled, distDirFor, E2E_DIST_DIR, pageExtensionsFor } from '../next.config.ts';
 import { DEMO_COPY, PREDICTION_OPTIONS, PROBE_COPY } from '../src/probe/copy.ts';
 
 const WEB = new URL('..', import.meta.url).pathname;
@@ -68,6 +68,22 @@ test('开发专用页面只在开发、测试构建里是页面', () => {
   for (const env of [{ STARBUDDY_DEV_AUTH: '1', STARBUDDY_ENV: 'dev' }, { STARBUDDY_DEV_AUTH: '1', STARBUDDY_ENV: 'test' }]) {
     assert.ok(pageExtensionsFor(env).includes('dev.tsx'), JSON.stringify(env));
   }
+});
+
+test('端到端测试构建输出到 .next-e2e：只认这一个取值，其余一律是正式的 .next；两份 tsconfig 各管各的路由类型', () => {
+  for (const v of [undefined, '', '.next', '../.next', '.next-e2e/', 'out', '/tmp/x']) {
+    assert.equal(distDirFor({ STARBUDDY_NEXT_DIST_DIR: v }), '.next', String(v));
+  }
+  assert.equal(distDirFor({ STARBUDDY_NEXT_DIST_DIR: E2E_DIST_DIR }), '.next-e2e');
+  // tsconfig.json 只含 .next 的路由类型、tsconfig.e2e.json 只含 .next-e2e 的：两边不会重复声明同一批路由类型
+  const read = (name: string) => JSON.parse(readFileSync(join(WEB, name), 'utf8')) as { include: string[]; exclude?: string[] };
+  const main = read('tsconfig.json');
+  const e2e = read('tsconfig.e2e.json');
+  assert.ok(main.include.every((p) => !p.startsWith('.next-e2e')), 'tsconfig.json 不含 .next-e2e');
+  assert.ok(main.include.includes('.next/types/**/*.ts'));
+  assert.ok(e2e.include.every((p) => !p.startsWith('.next/')), 'tsconfig.e2e.json 不含 .next');
+  assert.ok(e2e.include.includes('.next-e2e/types/**/*.ts'));
+  assert.ok(readFileSync(join(WEB, '.gitignore'), 'utf8').split('\n').includes('.next-e2e/'), '.next-e2e 不进仓库');
 });
 
 test('探针演示页是 page.dev.tsx；它的 action 与客户端只被演示页引用', () => {

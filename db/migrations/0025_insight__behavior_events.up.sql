@@ -13,14 +13,20 @@ CREATE TABLE insight.behavior_event (
   payload          jsonb NOT NULL DEFAULT '{}',
   source_type      insight.source_type NOT NULL DEFAULT 'objective' CHECK (source_type = 'objective'),
   occurred_at      timestamptz NOT NULL,
+  -- 写入方（契约审查建议 4）：会话与计划四类只能由学生本人写；申诉由后端写；连错后退出由编排层按规则写
+  recorded_by      text NOT NULL DEFAULT 'student' CHECK (recorded_by IN ('student', 'backend', 'orchestrator')),
   idempotency_key  uuid NOT NULL,
   created_at       timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (student_id, idempotency_key)
+  UNIQUE (student_id, idempotency_key),
+  CONSTRAINT behavior_event_writer CHECK (CASE kind WHEN 'appeal' THEN recorded_by = 'backend'
+                                                    WHEN 'exit_after_errors' THEN recorded_by = 'orchestrator'
+                                                    ELSE recorded_by = 'student' END)
 );
 CREATE INDEX behavior_event_student_idx ON insight.behavior_event (student_id, occurred_at);
 COMMENT ON TABLE insight.behavior_event IS
   '行为事件（0025，冲刺 2-L）：客观记录，只给 Agent 用。session_* 与 plan_* 由学生本人经 insight.record_behavior_event 写入；'
-  'appeal、exit_after_errors 由后端与编排层按规则写（未实现）。不从这些事件推断情绪、性格、专注力（规则 12）';
+  'appeal、exit_after_errors 由后端与编排层按规则写（未实现）。不从这些事件推断情绪、性格、专注力（规则 12）；'
+  '时间戳只用于降负触发（连续中断、连错后退出），不做作息分析（安全审查 H1）';
 
 -- payload 白名单（spec 待人确认 #2）：每种事件只收固定的键，取值有界
 CREATE FUNCTION insight.valid_behavior_payload(p_kind text, p jsonb) RETURNS boolean LANGUAGE sql IMMUTABLE SET search_path = pg_catalog
@@ -72,65 +78,84 @@ CREATE POLICY behavior_event_service_read ON insight.behavior_event FOR SELECT T
 CREATE POLICY confidence_probe_service_read ON insight.confidence_probe FOR SELECT TO starbuddy_insight, starbuddy_learning USING (true);
 
 -- ---------- 写入函数（属主 authz；只授 BFF，只认学生本人） ----------
--- 发生时间只收最近 1 天内、不晚于现在 5 分钟（客户端时钟误差）；同一幂等键重放返回原记录，内容不同回冲突
+-- 返回 (id, replayed)：同一幂等键重放返回原记录并标 replayed（BFF 据此加 idempotent-replayed 响应头，契约审查建议 6）。
+-- 先按幂等键查已有记录，再核对时间窗：离线超过 1 天后的重放也拿到原记录（契约审查建议 9）。
+-- 写入上限（安全审查阻断 B1，沿用 0022 的做法）：同一学生 24 小时内事件最多 2000 条、探针最多 500 条，超限报 54000（BFF 映射 429）。
+-- 发生时间只收最近 1 天内、不晚于现在 5 分钟（客户端时钟误差）；同一幂等键内容不同回冲突
 CREATE FUNCTION insight.record_behavior_event(p_student uuid, p_kind text, p_payload jsonb, p_occurred_at timestamptz, p_key uuid)
-  RETURNS uuid
+  RETURNS TABLE (id uuid, replayed boolean)
   LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, insight, platform, pg_temp
   AS $$
-DECLARE v_id uuid; e insight.behavior_event;
+DECLARE e insight.behavior_event; v_id uuid;
 BEGIN
   IF p_student IS NULL OR NOT platform.is_self_student(p_student) THEN
     RAISE EXCEPTION 'not allowed' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF p_key IS NULL THEN
+    RAISE EXCEPTION '缺少幂等键' USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+  PERFORM pg_advisory_xact_lock(hashtextextended('insight.behavior_event:' || p_student::text, 0));
+  SELECT * INTO e FROM insight.behavior_event b WHERE b.student_id = p_student AND b.idempotency_key = p_key;
+  IF FOUND THEN
+    IF e.kind IS DISTINCT FROM p_kind OR e.payload IS DISTINCT FROM p_payload OR e.occurred_at IS DISTINCT FROM p_occurred_at THEN
+      RAISE EXCEPTION '同一幂等键对应的事件内容不同' USING ERRCODE = 'unique_violation';
+    END IF;
+    RETURN QUERY SELECT e.id, true;
+    RETURN;
   END IF;
   IF p_kind IS NULL OR p_kind NOT IN ('session_start', 'session_end', 'plan_done', 'plan_skip')
      OR p_payload IS NULL OR NOT coalesce(insight.valid_behavior_payload(p_kind, p_payload), false)
-     OR p_occurred_at IS NULL OR p_occurred_at < now() - interval '1 day' OR p_occurred_at > now() + interval '5 minutes'
-     OR p_key IS NULL THEN
+     OR p_occurred_at IS NULL OR p_occurred_at < now() - interval '1 day' OR p_occurred_at > now() + interval '5 minutes' THEN
     RAISE EXCEPTION '事件类型、内容或时间不合要求' USING ERRCODE = 'invalid_parameter_value';
   END IF;
-  INSERT INTO insight.behavior_event (student_id, kind, payload, occurred_at, idempotency_key)
-  VALUES (p_student, p_kind, p_payload, p_occurred_at, p_key)
-  ON CONFLICT (student_id, idempotency_key) DO NOTHING
-  RETURNING id INTO v_id;
-  IF v_id IS NOT NULL THEN
-    RETURN v_id;
+  IF (SELECT count(*) FROM insight.behavior_event b WHERE b.student_id = p_student AND b.created_at > now() - interval '24 hours') >= 2000 THEN
+    RAISE EXCEPTION '行为事件写入过多' USING ERRCODE = 'program_limit_exceeded';
   END IF;
-  SELECT * INTO e FROM insight.behavior_event WHERE student_id = p_student AND idempotency_key = p_key;
-  IF e.kind <> p_kind OR e.payload <> p_payload OR e.occurred_at <> p_occurred_at THEN
-    RAISE EXCEPTION '同一幂等键对应的事件内容不同' USING ERRCODE = 'unique_violation';
-  END IF;
-  RETURN e.id;
+  INSERT INTO insight.behavior_event (student_id, kind, payload, occurred_at, recorded_by, idempotency_key)
+  VALUES (p_student, p_kind, p_payload, p_occurred_at, 'student', p_key)
+  RETURNING behavior_event.id INTO v_id;
+  RETURN QUERY SELECT v_id, false;
 END $$;
 
 CREATE FUNCTION insight.record_confidence_probe(p_student uuid, p_subject platform.subject, p_item_id text, p_prediction text,
-                                                p_asked_at timestamptz, p_key uuid) RETURNS uuid
+                                                p_asked_at timestamptz, p_key uuid) RETURNS TABLE (id uuid, replayed boolean)
   LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, insight, platform, pg_temp
   AS $$
-DECLARE v_id uuid; e insight.confidence_probe;
+DECLARE e insight.confidence_probe; v_id uuid;
 BEGIN
   IF p_student IS NULL OR NOT platform.is_self_student(p_student) THEN
     RAISE EXCEPTION 'not allowed' USING ERRCODE = 'insufficient_privilege';
   END IF;
+  IF p_key IS NULL THEN
+    RAISE EXCEPTION '缺少幂等键' USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+  PERFORM pg_advisory_xact_lock(hashtextextended('insight.confidence_probe:' || p_student::text, 0));
+  SELECT * INTO e FROM insight.confidence_probe c WHERE c.student_id = p_student AND c.idempotency_key = p_key;
+  IF FOUND THEN
+    IF e.subject IS DISTINCT FROM p_subject OR e.item_id IS DISTINCT FROM p_item_id OR e.prediction IS DISTINCT FROM p_prediction
+       OR e.asked_at IS DISTINCT FROM p_asked_at THEN
+      RAISE EXCEPTION '同一幂等键对应的探针内容不同' USING ERRCODE = 'unique_violation';
+    END IF;
+    RETURN QUERY SELECT e.id, true;
+    RETURN;
+  END IF;
   IF p_subject IS NULL OR p_prediction IS NULL OR p_prediction NOT IN ('yes', 'no', 'unsure')
-     OR p_asked_at IS NULL OR p_asked_at < now() - interval '1 day' OR p_asked_at > now() + interval '5 minutes' OR p_key IS NULL
+     OR p_asked_at IS NULL OR p_asked_at < now() - interval '1 day' OR p_asked_at > now() + interval '5 minutes'
      OR NOT EXISTS (SELECT 1 FROM platform.item i WHERE i.subject = p_subject AND i.item_id = p_item_id) THEN
     RAISE EXCEPTION '题目、预测或时间不合要求' USING ERRCODE = 'invalid_parameter_value';
   END IF;
+  IF (SELECT count(*) FROM insight.confidence_probe c WHERE c.student_id = p_student AND c.created_at > now() - interval '24 hours') >= 500 THEN
+    RAISE EXCEPTION '探针写入过多' USING ERRCODE = 'program_limit_exceeded';
+  END IF;
   INSERT INTO insight.confidence_probe (student_id, subject, item_id, prediction, asked_at, idempotency_key)
   VALUES (p_student, p_subject, p_item_id, p_prediction, p_asked_at, p_key)
-  ON CONFLICT (student_id, idempotency_key) DO NOTHING
-  RETURNING id INTO v_id;
-  IF v_id IS NOT NULL THEN
-    RETURN v_id;
-  END IF;
-  SELECT * INTO e FROM insight.confidence_probe WHERE student_id = p_student AND idempotency_key = p_key;
-  IF e.subject <> p_subject OR e.item_id <> p_item_id OR e.prediction <> p_prediction OR e.asked_at <> p_asked_at THEN
-    RAISE EXCEPTION '同一幂等键对应的探针内容不同' USING ERRCODE = 'unique_violation';
-  END IF;
-  RETURN e.id;
+  RETURNING confidence_probe.id INTO v_id;
+  RETURN QUERY SELECT v_id, false;
 END $$;
 
--- 作答提交后把探针与作答关联：作答必须是这个学生的、同一道题、在提问之后；一条探针只关联一次（同一作答重复关联是幂等的）
+-- 作答提交后把探针与作答关联：作答必须是这个学生的、同一道题，时间以库里写入探针的时间为准（客户端给的提问时间不参与，
+-- 防止先做题、知道对错后再补一条“预测”，安全审查 S1），且在探针写入后 2 小时内（防止挂到几天后做对的那次，契约审查建议 1）；
+-- 一条探针只关联一次（同一作答重复关联是幂等的）。做题页接入后改由学习服务在作答落库时自动关联（lessons）。
 CREATE FUNCTION insight.link_probe_attempt(p_student uuid, p_probe uuid, p_attempt uuid) RETURNS void
   LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, insight, platform, pg_temp
   AS $$
@@ -148,7 +173,8 @@ BEGIN
     RAISE EXCEPTION '探针已关联别的作答' USING ERRCODE = 'unique_violation';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM platform.attempt a WHERE a.attempt_id = p_attempt AND a.student_id = p_student
-                   AND a.subject = p.subject AND a.item_id = p.item_id AND a.occurred_at >= p.asked_at - interval '5 minutes') THEN
+                   AND a.subject = p.subject AND a.item_id = p.item_id
+                   AND a.occurred_at >= p.created_at - interval '5 minutes' AND a.occurred_at <= p.created_at + interval '2 hours') THEN
     RAISE EXCEPTION '作答不存在或与探针不对应' USING ERRCODE = 'invalid_parameter_value';
   END IF;
   UPDATE insight.confidence_probe SET attempt_id = p_attempt WHERE id = p_probe;
