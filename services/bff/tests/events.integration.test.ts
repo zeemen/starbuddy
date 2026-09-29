@@ -105,7 +105,9 @@ test('学生本人写四种事件：201 只回 ID，库里来源类型是客观�
     const text = await r.text();
     const json = JSON.parse(text) as Record<string, unknown>;
     assert.deepEqual(Object.keys(json), ['id'], '只回记录 ID');
-    for (const echo of ['today', '600', task, b.kind]) assert.ok(!text.includes(echo), `不回显 ${echo}`);
+    // 随机 UUID 可能碰巧含 600 等片段：先去掉 ID 再查回显
+    const rest = text.replace(String(json['id']), '');
+    for (const echo of ['today', '600', task, b.kind]) assert.ok(!rest.includes(echo), `不回显 ${echo}`);
     const { rows } = await su.query(`SELECT student_id, kind, source_type::text AS s FROM insight.behavior_event WHERE id = $1`, [json['id']]);
     assert.deepEqual(rows[0], { student_id: ID.S1, kind: b.kind, s: 'objective' });
   }
