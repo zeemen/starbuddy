@@ -1,5 +1,5 @@
 # 未实现的目标明确打印“跳过”，不得伪装为通过。
-.PHONY: check-fast check contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test adapter-zhixing-test adapter-wenli-test learning-test model-router-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-visual kge-inventory kge-inventory-test kge-import kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test sie-dictionary-check kge-id-check eval-persona eval-grade
+.PHONY: check-fast check contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test adapter-zhixing-test adapter-wenli-test learning-test model-router-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-visual kge-inventory kge-inventory-test kge-import kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test sie-dictionary-check kge-id-check knowledge-test knowledge-mutation eval-persona eval-grade
 
 # 可指向装了 packages/contracts/requirements-dev.txt 的解释器，例如 make check PYTHON=.venv/bin/python
 PYTHON ?= python3
@@ -16,7 +16,7 @@ endef
 # 契约检查约 1 秒，改动后也跑一遍
 check-fast: contract-test taxonomy-check attack-surface-check sie-dictionary-check kge-id-check
 
-check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-zhixing-test adapter-wenli-test learning-test model-router-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test eval-persona
+check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-zhixing-test adapter-wenli-test learning-test model-router-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test knowledge-test knowledge-mutation eval-persona
 	@echo "check: lint 尚未配置，跳过；其余检查已通过"
 
 # 契约合法性 + 示例 + 反例集
@@ -244,6 +244,21 @@ kge-import-test:
 kge-inventory:
 	@cd tools/kge-inventory && node --no-warnings src/main.ts --out ../../specs/kge-00-asset-inventory/report \
 	  $(foreach d,$(DB_OUTPUT),--db-output $(d))
+
+# KGE-03 编译层 PR ①（specs/kge-03-compile-layer）：页面格式、编译器（编入、渲染重建、全量重编经模型路由假供应商、合并窗口）、
+# 程序体检（含 SymPy 验算、个人信息模式、人设词表）、页面仓库模板；合成地图与合成页面上的端到端（约 15 秒）
+# 依赖需先安装：cd services/knowledge && python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+knowledge-test:
+	@if [ ! -x services/knowledge/.venv/bin/pytest ]; then \
+	  echo "knowledge-test: 跳过（没有安装依赖；见 services/knowledge/README.md）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@cd services/knowledge && .venv/bin/python -m pytest -q && echo "knowledge-test: 通过"
+
+# 编译器与程序体检的变异测试：改坏锁定段比对、缺引用、SymPy 验算、个人信息模式、人设词表、合并窗口、全量重编等关键检查，
+# 断言单测能发现（30 条，约 1.5 分钟）
+knowledge-mutation:
+	@bash services/knowledge/tests/mutations.sh; rc=$$?; \
+	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
 
 # 点点一致性（冲刺 1-I，specs/diandian-cases-v0-sprint1）：用例格式校验、评分器自检、离线全流程（经模型路由 test 环境的假供应商）、
 # 评分器测试与变异。不联网、不需要密钥、不调用任何真实模型，所以并入 make check；真实模型评测（2-I）不进 CI。

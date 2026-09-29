@@ -1,0 +1,7 @@
+# 运行时依赖（许可证已核，见 README.md；规则 10）
+# SymPy 用于程序体检的等式验算；mpmath 是 SymPy 的依赖
+sympy==1.14.0
+mpmath==1.3.0
+pyyaml==6.0.3
+# 全量重编经模型路由（services/learning/learning/model_router）调用，路由的供应商适配器依赖 httpx
+httpx==0.28.1

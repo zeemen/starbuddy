@@ -1,0 +1,19 @@
+# 样例：托管平台选 GitLab 时，改名为仓库根目录的 .gitlab-ci.yml（平台待 ADR 12 #1）。
+# 在“合并请求必须流水线成功”里启用（BRANCH_PROTECTION.md 第 3 条）。
+kge-lint:
+  image: python:3.11-slim
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  variables:
+    GIT_DEPTH: "0"
+  script:
+    - apt-get update -qq && apt-get install -y -qq git > /dev/null
+    # StarBuddy 的检查工具，固定版本；只读凭据由执行人配置成受保护变量 STARBUDDY_READ_URL（不进仓库）
+    - git clone --filter=blob:none --sparse "$STARBUDDY_READ_URL" starbuddy && git -C starbuddy sparse-checkout set services/knowledge
+    - git -C starbuddy checkout "$KNOWLEDGE_TOOLS_REF"
+    - pip install -q -r starbuddy/services/knowledge/requirements.txt
+    - git worktree add baseline "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+    - KNOWLEDGE_DIR="$PWD/starbuddy/services/knowledge" BASELINE_DIR="$PWD/baseline" CI=true bash ci/lint.sh
+  artifacts:
+    when: always
+    paths: [lint-report.json]

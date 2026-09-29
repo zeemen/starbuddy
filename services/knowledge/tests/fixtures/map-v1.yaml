@@ -1,0 +1,65 @@
+# 合成地图快照（KGE-03 测试夹具）：节点 ID、课标条目、教材与地区投影全部是合成数据，不对应任何真实教材或考试。
+# 字段只收 knowledge/atoms.py 的公共层白名单；curriculum_links 是快照格式的补充（kge.* 暂无节点—课标承接表，见 lessons 待人确认）。
+map_version: 0.9.0
+subject: aya
+status: published
+standard_year: 2022
+nodes:
+  - { id: MATH.SYN, level: domain, name: 合成领域 }
+  - { id: MATH.SYN.EQ, level: topic, parent_id: MATH.SYN, name: 合成方程单元 }
+  - { id: MATH.SYN.EXPR, level: topic, parent_id: MATH.SYN, name: 合成整式单元 }
+  - id: MATH.SYN.EQ.TRANSPOSE
+    level: node
+    parent_id: MATH.SYN.EQ
+    kind: kp
+    name: 移项
+    includes: [把等式一边的项改变符号后移到另一边]
+    excludes: [分式方程的去分母]
+    cognitive_levels: [understand, apply]
+  - id: MATH.SYN.EQ.LINEAR
+    level: node
+    parent_id: MATH.SYN.EQ
+    kind: kp
+    name: 一元一次方程
+    includes: [只含一个未知数且未知数的次数是一的整式方程]
+    excludes: [二元一次方程组]
+    cognitive_levels: [understand, apply]
+  - id: MATH.SYN.EQ.APPLY
+    level: node
+    parent_id: MATH.SYN.EQ
+    kind: kp
+    name: 一元一次方程的应用
+    includes: [列一元一次方程解决简单实际问题]
+    cognitive_levels: [apply]
+  - id: MATH.SYN.EXPR.SQUARE_DIFF
+    level: node
+    parent_id: MATH.SYN.EXPR
+    kind: kp
+    name: 平方差公式
+    includes: [两数和与这两数差的积等于它们的平方差]
+    cognitive_levels: [understand, apply]
+  - id: MATH.SYN.EQ.OLD_TOPIC
+    level: node
+    parent_id: MATH.SYN.EQ
+    kind: kp
+    name: 已撤下的合成节点
+    status: deprecated
+edges:
+  - { from_id: MATH.SYN.EQ.TRANSPOSE, to_id: MATH.SYN.EQ.LINEAR, type: prerequisite }
+  - { from_id: MATH.SYN.EQ.LINEAR, to_id: MATH.SYN.EQ.APPLY, type: prerequisite }
+curriculum_items:
+  - { standard_year: 2022, code: SYN-EQ-01, domain: 合成领域, verb_level: understand, text: 合成课标条目：理解一元一次方程的概念。, source_ref: synthetic }
+  - { standard_year: 2022, code: SYN-EQ-02, domain: 合成领域, verb_level: apply, text: 合成课标条目：能用移项解一元一次方程。, source_ref: synthetic }
+  - { standard_year: 2022, code: SYN-EQ-03, domain: 合成领域, verb_level: apply, text: 合成课标条目：能列方程解决简单问题。, source_ref: synthetic }
+  - { standard_year: 2022, code: SYN-EXPR-01, domain: 合成领域, verb_level: apply, text: 合成课标条目：能用平方差公式进行简单计算。, source_ref: synthetic }
+curriculum_links:
+  - { node_id: MATH.SYN.EQ.TRANSPOSE, standard_year: 2022, code: SYN-EQ-02 }
+  - { node_id: MATH.SYN.EQ.LINEAR, standard_year: 2022, code: SYN-EQ-01 }
+  - { node_id: MATH.SYN.EQ.APPLY, standard_year: 2022, code: SYN-EQ-03 }
+  - { node_id: MATH.SYN.EXPR.SQUARE_DIFF, standard_year: 2022, code: SYN-EXPR-01 }
+textbook_projections:
+  - { id: syn-tp-001, node_id: MATH.SYN.EQ.LINEAR, edition: syn-ed, edition_year: 2024, volume: 合成七上, chapter: 合成第三章, page_from: 80, page_to: 82, quote_text: 合成教材原句：只含有一个未知数并且未知数的次数都是一的方程叫作示例方程。, mapping_state: verified }
+  - { id: syn-tp-002, node_id: MATH.SYN.EQ.TRANSPOSE, edition: syn-ed, edition_year: 2024, volume: 合成七上, chapter: 合成第三章, page_from: 86, page_to: 86, quote_text: 合成教材原句：把等式一边的某项变号后移到另一边叫作示例移项。, mapping_state: verified }
+region_projections:
+  - { id: syn-rp-001, node_id: MATH.SYN.EQ.APPLY, region: syn-region, exam_year: 2025, weight: 0.05, typical_slots: [解答题], source_ref: synthetic }
+  - { id: syn-rp-002, node_id: MATH.SYN.EQ.LINEAR, region: syn-region, exam_year: 2025, weight: 0.03, typical_slots: [填空题], source_ref: synthetic }

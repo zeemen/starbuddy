@@ -1,0 +1,34 @@
+# 样例：托管平台选 GitHub 时，改名为 .github/workflows/kge-lint.yml（平台待 ADR 12 #1）。
+# 任务名“kge-lint”要设为分支保护的必须通过检查（BRANCH_PROTECTION.md 第 3 条）。
+name: kge-lint
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  kge-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4          # 合并请求的内容
+        with: { path: pages-repo }
+      - uses: actions/checkout@v4          # 上一审核版（目标分支）
+        with: { ref: main, path: baseline }
+      - uses: actions/checkout@v4          # StarBuddy 的检查工具，固定版本；只读凭据由执行人在仓库变量里配置
+        with:
+          repository: ${{ vars.STARBUDDY_REPO }}
+          ref: ${{ vars.KNOWLEDGE_TOOLS_REF }}
+          token: ${{ secrets.STARBUDDY_READ_TOKEN }}
+          path: starbuddy
+          sparse-checkout: services/knowledge
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install -r starbuddy/services/knowledge/requirements.txt
+      - run: bash pages-repo/ci/lint.sh
+        env:
+          KNOWLEDGE_DIR: ${{ github.workspace }}/starbuddy/services/knowledge
+          BASELINE_DIR: ${{ github.workspace }}/baseline
+          CI: "true"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: lint-report, path: pages-repo/lint-report.json }
