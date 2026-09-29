@@ -1,0 +1,189 @@
+# 知行（道法）一致性测试夹具（合成数据，CLAUDE.md 规则 8）。格式同 adapters/aya/conformance/fixtures.yaml。
+#
+# 注意（与阿鸦不同，待人确认）：本夹具由实现适配器的同一会话起草，**不是独立会话编写**（conformance README“夹具由谁写”）；
+# 需要另一个会话或该科负责人复核期望，并由教研抽查。
+#
+# 运行方式：模型路由用本机桩（conformance/harness.ts → tests/route-stub.ts 的关键词桩判定器），所以 grade 的期望
+# 取决于桩的规则，而不是真实模型：
+#   - 作答里出现某采分点的核心术语 → full（满分，归因 none）；
+#   - 只出现可接受或口语表述 → partial（一半分，归因 guifan_cuo → expression_convention）；
+#   - 都没有 → miss（0 分，归因 dingwei_cuo → locating_information）；
+#   - 合成标记“〔桩:非JSON〕”“〔桩:越界〕”“〔桩:矛盾〕”触发模型输出异常。
+# 期望的推导依据（只读）：specs/adapter-zhixing-sprint2/spec.md、adapters/zhixing/content/pack.json（关键词族）、
+#   docs/mapping/error-taxonomy.v0.9.yaml（知行四类 → 跨科大类，草稿）、packages/contracts/openapi/plugin-api.v0.9.yaml / v1.0。
+#
+# 通用约定：
+#   - 内容包全部是合成题、pending_review，所以每条 grade / diagnose 用例都要求 review_reasons 含 content_not_admitted；
+#   - M3 一律是主观维度（决定 A2）：每条 grade 用例都要求 subjective_dimension；
+#   - 满分要求 full_score_second_review；待复核（needs_review）要求 verifier_boundary_case 与 dimension_unavailable（契约结构规则）。
+subject: zhixing
+authored_by: "实现会话（ADP-道法-01，待独立会话复核与教研抽查）"
+content_version: {region: nanjing, exam_year: 2027, grade: 9, textbook_version: bubian-2024, subject: zhixing, content_version: "0.1.0"}
+rubric_version: zhixing-synthetic@0.1.0
+
+registry:
+  items:
+    synthetic-m3-01: pending_review
+    synthetic-m3-02: pending_review
+    synthetic-m3-03: pending_review
+    synthetic-m3-04: pending_review
+  skill_nodes:
+    - syn-dim-shenti
+    - syn-dim-dingwei
+    - syn-dim-zhuanhua
+    - syn-dim-guifan
+    - syn-dim-shizheng
+
+# 题面、材料、Rubric 说明里的文字（不得出现在响应的非作答字段里）
+secrets:
+  - "青禾小区"
+  - "楼道共享书架管理约定"
+  - "晨光中学"
+  - "旧物修补站"
+  - "云溪村"
+  - "新桥市"
+  - "只写出民主权利而未结合议事过程的"
+  - "停留在叙述材料"
+  - "把居民议事答成人民代表大会制度"
+
+cases:
+  # ---------------- grade · 正常 ----------------
+  - id: grade-full-score
+    method: grade
+    attempt:
+      item_ref: "zhixing:synthetic-m3-01"
+      response: {text: "居民通过议事会参与民主决策，这是基层群众自治的体现，也能增强规则意识。"}   # 三点核心术语全中 → 6/6
+    expect:
+      verdict: correct
+      review_reasons_include: [subjective_dimension, content_not_admitted, full_score_second_review]
+      error_categories: []
+
+  - id: grade-partial-two-categories
+    method: grade
+    attempt:
+      item_ref: "zhixing:synthetic-m3-01"
+      response: {text: "居民参与民主决策，体现了居民自治。"}   # p1 核心；p2 可接受表述；p3 无
+    expect:
+      verdict: partial
+      review_reasons_include: [subjective_dimension, content_not_admitted]
+      error_categories: [expression_convention, locating_information]
+
+  - id: grade-miss-all
+    method: grade
+    attempt:
+      item_ref: "zhixing:synthetic-m3-01"
+      response: {text: "楼道里的书很多，大家都喜欢看书。"}
+      elapsed_sec: 300
+    expect:
+      verdict: incorrect
+      review_reasons_include: [subjective_dimension, content_not_admitted]
+      error_categories: [locating_information]
+
+  - id: grade-item02-partial
+    method: grade
+    attempt:
+      item_ref: "zhixing:synthetic-m3-02"
+      response: {text: "同学们积极参与社会公益，在奉献中实现人生价值。"}   # p1、p2 核心；p3 无
+    expect:
+      verdict: partial
+      review_reasons_include: [subjective_dimension, content_not_admitted]
+      error_categories: [locating_information]
+
+  - id: grade-item03-full
+    method: grade
+    attempt:
+      item_ref: "zhixing:synthetic-m3-03"
+      response: {text: "要坚定文化自信，推动文化创造性转化。"}
+    expect:
+      verdict: correct
+      review_reasons_include: [subjective_dimension, content_not_admitted, full_score_second_review]
+      error_categories: []
+
+  - id: grade-item04-colloquial
+    method: grade
+    attempt:
+      item_ref: "zhixing:synthetic-m3-04"
+      response: {text: "平台上线青少年模式，体现了网络保护；各方共同保护。"}   # p1 核心；p2 可接受表述
+    expect:
+      verdict: partial
+      review_reasons_include: [subjective_dimension, content_not_admitted]
+      error_categories: [expression_convention]
+
+  # ---------------- grade · 模型输出异常 → 待复核 ----------------
+  - id: grade-model-not-json
+    method: grade
+    attempt:
+      item_ref: "zhixing:synthetic-m3-01"
+      response: {text: "居民参与民主决策。〔桩:非JSON〕"}
+    expect:
+      verdict: needs_review
+      review_reasons_include: [subjective_dimension, content_not_admitted, verifier_boundary_case, dimension_unavailable]
+      error_categories: []
+
+  - id: grade-evidence-out-of-range
+    method: grade
+    attempt:
+      item_ref: "zhixing:synthetic-m3-02"
+      response: {text: "同学们奉献社会。〔桩:越界〕"}
+    expect:
+      verdict: needs_review
+      review_reasons_include: [subjective_dimension, content_not_admitted, verifier_boundary_case, dimension_unavailable]
+      error_categories: []
+
+  - id: grade-judgment-conflict
+    method: grade
+    attempt:
+      item_ref: "zhixing:synthetic-m3-01"
+      response: {text: "居民参与民主决策，体现了居民自治。〔桩:矛盾〕"}   # p1 判 full 却 0 分 → 待复核；p2 partial；p3 miss
+    expect:
+      verdict: needs_review
+      review_reasons_include: [subjective_dimension, content_not_admitted, verifier_boundary_case, dimension_unavailable]
+      error_categories: [expression_convention, locating_information]
+
+  # ---------------- grade · 申诉 ----------------
+  - id: grade-appeal
+    method: grade
+    attempt:
+      item_ref: "zhixing:synthetic-m3-03"
+      response: {text: "要传承传统文化，还要创新发展。"}   # 两点都是可接受表述 → partial
+    appeal: true
+    expect:
+      verdict: partial
+      review_reasons_include: [subjective_dimension, content_not_admitted, student_appeal]
+      error_categories: [expression_convention]
+
+  # ---------------- diagnose（process；请求里没有既往判分证据 → 全部 inconclusive） ----------------
+  - id: diagnose-process-single
+    method: diagnose
+    mode: process
+    attempts:
+      - {item_ref: "zhixing:synthetic-m3-01", response: {text: "居民参与民主决策，体现了居民自治。"}}
+    expect:
+      outcomes: [inconclusive]
+      max_confidence: [0.1]
+
+  - id: diagnose-process-two-items
+    method: diagnose
+    mode: process
+    attempts:
+      - {item_ref: "zhixing:synthetic-m3-02", response: {text: "同学们积极参与社会公益。"}}
+      - {item_ref: "zhixing:synthetic-m3-04", response: {text: "体现了网络保护。"}, elapsed_sec: 120}
+    expect:
+      outcomes: [inconclusive, inconclusive]
+
+  # ---------------- generate_variation（内容包全是 pending_review → 空结果与 empty_reason） ----------------
+  - id: variation-by-source-item
+    method: generate_variation
+    body:
+      source_item_ref: "zhixing:synthetic-m3-01"
+      subject_error_category: zhuanhua_cuo
+      count: 3
+      exclude_item_refs: ["zhixing:synthetic-m3-01"]
+    conflict_body: {count: 2}
+
+  - id: variation-by-skill-node
+    method: generate_variation
+    body:
+      skill_node: "zhixing:syn-dim-dingwei"
+      count: 2
+    conflict_body: {count: 1}
