@@ -1,0 +1,191 @@
+# BFF ↔ 统一壳前端的建档接口（SIE-01，specs/sie-01-onboarding/spec.md 设计要点 3）。
+# 服务内部接口，不是学科插件契约，不放 packages/contracts（与 star-map.v0.yaml 同一做法）。
+openapi: 3.1.0
+info:
+  title: StarBuddy BFF · onboarding (v0, prototype)
+  version: 0.1.0
+  description: >
+    学生本人写学生自述，已绑定的有效家长写家长观察；考试记录与各科教材版本两边都能写，按调用者身份记录来源。
+    授权与“互不可见”全部由库函数决定（insight.onboarding_view 按调用者身份裁剪）：学生看不到家长观察与排名区间，
+    家长看不到学生自述原文，各家长只看自己写的。未授权与学生不存在返回同一个 404，响应体逐字节相同；
+    取值不合要求返回 422（不回显输入）；请求体上限 16 KB。本接口不产生任何判断或结论（CLAUDE.md 规则 11）。
+    身份来源是开发桩（x-dev-account-id，只在 STARBUDDY_DEV_AUTH=1 且只监听 loopback 时生效），4-H 用真实会话替换。
+servers:
+  - url: http://127.0.0.1:8787
+paths:
+  /bff/v0/students/{student_id}/onboarding:
+    parameters:
+      - $ref: '#/components/parameters/StudentId'
+      - $ref: '#/components/parameters/DevAccount'
+    get:
+      operationId: getOnboarding
+      responses:
+        '200':
+          description: 按调用者身份裁剪的已填内容与进度
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OnboardingView' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '405': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/onboarding/answers:
+    parameters:
+      - $ref: '#/components/parameters/StudentId'
+      - $ref: '#/components/parameters/DevAccount'
+    put:
+      operationId: putOnboardingAnswer
+      description: 学生本人写学生自述、家长写家长观察（由库判断）；改答案时旧行保留为历史（superseded_at）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [field_id, value]
+              properties:
+                field_id: { type: string, pattern: '^[a-z]+\.g[1-9]\.[a-z0-9_]{2,48}$', description: 须在 insight.report_field 白名单（与字段字典一致） }
+                value: { type: object, description: 形状按字段校验（insight.valid_report_value） }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '405': { $ref: '#/components/responses/Problem' }
+        '413': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/onboarding/exams:
+    parameters:
+      - $ref: '#/components/parameters/StudentId'
+      - $ref: '#/components/parameters/DevAccount'
+    post:
+      operationId: postOnboardingExam
+      description: 考试记录；学生与家长各录各的。rank_band（排名区间）学生读不到，前端只在家长版显示这一栏。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subject, exam_type, exam_date, full_score, raw_score]
+              properties:
+                subject: { type: string, enum: [aya, wenli, zhixing, echo] }
+                exam_type: { type: string, enum: [monthly, midterm, final, mock1, mock2, other] }
+                exam_date: { type: string, format: date }
+                full_score: { type: number, exclusiveMinimum: 0, maximum: 300 }
+                raw_score: { type: number, minimum: 0 }
+                rank_band: { type: [string, 'null'], enum: [top10, top30, middle, bottom30, unknown, null] }
+                scope_note: { type: [string, 'null'], minLength: 1, maxLength: 200 }
+                difficulty_note: { type: [string, 'null'], minLength: 1, maxLength: 200 }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '405': { $ref: '#/components/responses/Problem' }
+        '413': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/onboarding/textbooks:
+    parameters:
+      - $ref: '#/components/parameters/StudentId'
+      - $ref: '#/components/parameters/DevAccount'
+    put:
+      operationId: putOnboardingTextbook
+      description: 各科教材版本（platform.student_subject_textbook）；null 表示“不清楚”。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subject, textbook_version]
+              properties:
+                subject: { type: string, enum: [aya, wenli, zhixing, echo] }
+                textbook_version: { type: [string, 'null'], description: 沿用 curriculum_version.textbook_version 的编码，如 suke-2024 }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '405': { $ref: '#/components/responses/Problem' }
+        '413': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/onboarding/progress:
+    parameters:
+      - $ref: '#/components/parameters/StudentId'
+      - $ref: '#/components/parameters/DevAccount'
+    post:
+      operationId: postOnboardingProgress
+      description: 建档进度，只追加，不存答案。step = onboarding 表示整个建档的开始与完成。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [step, status]
+              properties:
+                step: { type: string, pattern: '^[a-z_]{1,32}$' }
+                status: { type: string, enum: [started, completed, skipped] }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '405': { $ref: '#/components/responses/Problem' }
+        '413': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+components:
+  parameters:
+    StudentId:
+      name: student_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    DevAccount:
+      name: x-dev-account-id
+      in: header
+      required: false
+      description: 开发身份桩（仅开发环境）；4-H 删除
+      schema: { type: string, format: uuid }
+  responses:
+    Ok:
+      description: 已写入
+      content:
+        application/json:
+          schema: { type: object, required: [status], properties: { status: { const: ok } } }
+    Problem:
+      description: 错误（不回显输入）
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+  schemas:
+    OnboardingView:
+      type: object
+      required: [role, reports, exams, textbooks, progress]
+      properties:
+        role: { type: string, enum: [self, guardian] }
+        reports:
+          type: object
+          description: 调用者自己写的有效答案（field_id → value）；学生只见学生自述，家长只见自己写的家长观察
+          additionalProperties: { type: object }
+        exams:
+          type: array
+          description: 学生看到自己录的；家长看到全部（含排名区间）
+          items: { type: object }
+        textbooks:
+          type: object
+          additionalProperties: { type: [string, 'null'] }
+        progress:
+          type: array
+          items:
+            type: object
+            required: [step, status]
+            properties:
+              step: { type: string }
+              status: { type: string, enum: [started, completed, skipped] }
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        code: { type: string, enum: [UNAUTHENTICATED, NOT_FOUND, METHOD_NOT_ALLOWED, INTERNAL, INVALID, TOO_LARGE] }

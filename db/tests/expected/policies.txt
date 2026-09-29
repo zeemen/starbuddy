@@ -8,6 +8,10 @@ insight.claim|claim_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=((status = 
    FROM insight.claim_template t
   WHERE ((t.template_key = claim.template_key) AND (t.version = claim.template_version)))) AND ((platform.is_self_student(student_id) AND ('student'::text = ANY (visibility))) OR (platform.is_linked_guardian(student_id) AND ('guardian'::text = ANY (visibility)))))|check=-
 insight.claim|claim_insight|ALL|starbuddy_insight|PERMISSIVE|using=true|check=true
+insight.exam_record|exam_record_service_read|SELECT|starbuddy_insight,starbuddy_learning|PERMISSIVE|using=true|check=-
+insight.guardian_report|guardian_report_service_read|SELECT|starbuddy_insight,starbuddy_learning|PERMISSIVE|using=true|check=-
+insight.onboarding_progress|onboarding_progress_service_read|SELECT|starbuddy_insight|PERMISSIVE|using=true|check=-
+insight.self_report|self_report_service_read|SELECT|starbuddy_insight,starbuddy_learning|PERMISSIVE|using=true|check=-
 kge.content_review|content_review_kge_read|SELECT|starbuddy_kge|PERMISSIVE|using=true|check=-
 kge.content_review|content_review_kge_submit|INSERT|starbuddy_kge|PERMISSIVE|using=-|check=((decision = 'pending'::text) AND (digest IS NULL) AND (action = 'review'::text))
 kge.content_review|content_review_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
@@ -107,6 +111,8 @@ platform.skill_observation|obs_read|SELECT|starbuddy_bff|PERMISSIVE|using=platfo
 platform.skill_observation|obs_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
 platform.student_profile|student_profile_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(id)|check=-
 platform.student_profile|student_profile_service_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
+platform.student_subject_textbook|textbook_read_own|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
+platform.student_subject_textbook|textbook_service_read|SELECT|starbuddy_insight,starbuddy_learning|PERMISSIVE|using=true|check=-
 platform.student_time_guard|student_time_guard_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
 platform.subject_catalog|subject_catalog_read|SELECT|starbuddy_bff|PERMISSIVE|using=true|check=-
 platform.subject_enrollment|enrollment_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-

@@ -7,6 +7,7 @@
 --   starbuddy_scheduler：定时任务（计量过期、订阅续期），只能调用对应函数，没有任何表权限（冲刺 2-E）
 --   starbuddy_insight  ：洞察服务，判断账本 insight.claim 的唯一写入方（SIE-00；ADR 13 草稿）
 --   starbuddy_kge      ：知识服务与审核台后端，公共知识层 kge.* 的唯一写入方（specs/kge-schema-v0.9）
+--   starbuddy_report   ：运营报表只读身份，只能调用聚合统计函数（如 insight.onboarding_stats），读不到任何明细（SIE-01）
 -- 部署时的登录角色只能继承 bff、learning、review、scheduler、insight、kge 之一，不能同时继承（learning 的策略对所有学生放行）。
 DO $$
 BEGIN
@@ -27,6 +28,9 @@ BEGIN
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'starbuddy_kge') THEN
     CREATE ROLE starbuddy_kge NOLOGIN NOSUPERUSER NOBYPASSRLS;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'starbuddy_report') THEN
+    CREATE ROLE starbuddy_report NOLOGIN NOSUPERUSER NOBYPASSRLS;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'starbuddy_authz') THEN
     CREATE ROLE starbuddy_authz NOLOGIN NOSUPERUSER BYPASSRLS;

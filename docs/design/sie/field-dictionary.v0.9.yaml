@@ -57,7 +57,7 @@ fields:
     source_type: [self, guardian]
     collect: { level: required, timing: onboarding }
     visibility: [agent, guardian]
-    storage: platform.student_profile.textbook_version
+    storage: platform.student_subject_textbook.textbook_version
     status: live
     teaching_decision: 按教材投影渲染页码与原句，决定节点的教材进度
     guardian_deletable: false
@@ -79,8 +79,7 @@ fields:
     collect: { level: required, timing: onboarding }
     visibility: [agent, guardian]
     storage: { self: insight.self_report.value, guardian: insight.guardian_report.value }
-    built_by: SIE-01
-    status: planned
+    status: live
     teaching_decision: 决定每日计划时长与跨科时间预算
     guardian_deletable: true
   - id: outer.g1.devices
@@ -90,8 +89,7 @@ fields:
     collect: { level: optional, timing: onboarding }
     visibility: [agent, guardian]
     storage: { self: insight.self_report.value, guardian: insight.guardian_report.value }
-    built_by: SIE-01
-    status: planned
+    status: live
     teaching_decision: 决定是否安排手写拍照、语音讲述等需要设备支持的任务
     guardian_deletable: true
   - id: outer.g1.tutoring
@@ -101,8 +99,7 @@ fields:
     collect: { level: optional, timing: onboarding }
     visibility: [agent, guardian]
     storage: { self: insight.self_report.value, guardian: insight.guardian_report.value }
-    built_by: SIE-01
-    status: planned
+    status: live
     teaching_decision: 避免与校外进度重复布置同一节点的练习
     guardian_deletable: true
     note: 只用于避免与校外进度重复布置练习，不用于其他任何推断
@@ -156,8 +153,7 @@ fields:
     collect: { level: optional, timing: onboarding }
     visibility: [agent, guardian]
     storage: insight.guardian_report.value
-    built_by: SIE-01
-    status: planned
+    status: live
     teaching_decision: 决定是否给家长布置配合任务以及任务的分量
     guardian_deletable: true
   - id: outer.g8.school_communication
@@ -180,9 +176,8 @@ fields:
     collect: { level: suggested, timing: periodic }
     visibility: [agent, student, guardian]
     storage: insight.exam_record.raw_score
-    built_by: SIE-01
     source_column: insight.exam_record.confirmed_by
-    status: planned
+    status: live
     teaching_decision: 外部锚点：校准掌握判断，生成对账卡；七八年级 100 分制与九年级 120 分制分别归一
     guardian_deletable: true
     legacy_sources: [aya lib/exam.ts ExamAnalysis, wenli 表 semester_score]
@@ -193,9 +188,8 @@ fields:
     collect: { level: suggested, timing: periodic }
     visibility: [agent, student, guardian]
     storage: insight.exam_record.scope_node_ids
-    built_by: SIE-01
     source_column: insight.exam_record.confirmed_by
-    status: planned
+    status: live
     teaching_decision: 考前 14 天按“考情权重 × 当前缺口 × 可提升”重排计划，并在考试当天冻结预测
     guardian_deletable: true
   - id: inner.g2.exam_rank_band
@@ -205,9 +199,8 @@ fields:
     collect: { level: suggested, timing: periodic }
     visibility: [agent, guardian]
     storage: insight.exam_record.rank_band
-    built_by: SIE-01
     source_column: insight.exam_record.confirmed_by
-    status: planned
+    status: live
     teaching_decision: 只作考试难度与区分度的参考，校准预测区间；不对学生展示，不做同伴比较
     guardian_deletable: true
   - id: inner.g2.exam_difficulty_note
@@ -217,9 +210,8 @@ fields:
     collect: { level: optional, timing: periodic }
     visibility: [agent, guardian]
     storage: insight.exam_record.difficulty_note
-    built_by: SIE-01
     source_column: insight.exam_record.confirmed_by
-    status: planned
+    status: live
     teaching_decision: 对账时区分“试卷偏难”与“此前判断偏乐观”
     guardian_deletable: true
   - id: inner.g2.graded_paper_upload
@@ -392,8 +384,7 @@ fields:
     collect: { level: optional, timing: continuous }
     visibility: [agent, student]
     storage: insight.self_report.value
-    built_by: SIE-01
-    status: planned
+    status: live
     teaching_decision: 用于题目的情境包装，可随时删除
     guardian_deletable: true
   - id: middle.g6.self_initiated_sessions
@@ -417,8 +408,7 @@ fields:
     collect: { level: required, timing: onboarding }
     visibility: [agent, student]
     storage: insight.self_report.value
-    built_by: SIE-01
-    status: planned
+    status: live
     teaching_decision: 首次教学的节奏（一步步引导 / 先讲再练 / 多独立尝试 / 闯关），之后以讲法响应为准
     guardian_deletable: true
   - id: middle.g6.self_pain_points
@@ -428,8 +418,7 @@ fields:
     collect: { level: suggested, timing: onboarding }
     visibility: [agent, student]
     storage: insight.self_report.value
-    built_by: SIE-01
-    status: planned
+    status: live
     teaching_decision: 冷启动时优先诊断学生自己说的卡点；与客观证据不同时两边都存
     guardian_deletable: true
 
@@ -551,8 +540,7 @@ fields:
     collect: { level: required, timing: onboarding }
     visibility: [agent, student, guardian]
     storage: insight.self_report.value
-    built_by: SIE-01
-    status: planned
+    status: live
     teaching_decision: 跨科时间预算的优先级
     guardian_deletable: true
   - id: through.g9.near_term_goal
@@ -562,8 +550,7 @@ fields:
     collect: { level: required, timing: onboarding }
     visibility: [agent, student, guardian]
     storage: insight.self_report.value
-    built_by: SIE-01
-    status: planned
+    status: live
     teaching_decision: 两周学习路径的终点与复盘口径；与家长期望不同时两边都存
     guardian_deletable: true
   - id: through.g9.disputes

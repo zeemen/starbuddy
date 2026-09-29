@@ -30,7 +30,7 @@ export function devAccountFromCookie(value: string | undefined, env: Env = proce
   return SYNTHETIC_ACCOUNTS.some((a) => a.account_id === value) ? value : null;
 }
 
-/** 登录后只能跳回星图页，不能被带去任意地址 */
+/** 登录后只能跳回星图页或建档页，不能被带去任意地址 */
 export function safeNext(next: string | null): string {
-  return next && /^\/star-map\/[0-9a-f-]{36}$/.test(next) ? next : '/dev/login';
+  return next && /^\/(star-map|onboarding)\/[0-9a-f-]{36}$/.test(next) ? next : '/dev/login';
 }

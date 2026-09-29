@@ -124,6 +124,35 @@ erDiagram
 状态机：假设 → 成立 → 待验证 → 成立 / 推翻；任何非终态 → 撤回。每次写入都要在行里带原因，原因必须与流转匹配；不改状态的修改只能是 revised 或 visibility_changed；假设不能直接推翻（SIE-00 待人确认 #1）。判断是陈述层，不是第二真相源（规则 2）。
 
 
+## insight schema：建档事实层（0021、0022，SIE-01）
+
+建档写入的是事实（学生自述、家长观察、客观记录），不是判断；分表存放，两边说法不同时各存各的，不取平均（规则 6）。
+写入由 BFF 以当前账号调用 SECURITY DEFINER 函数完成（待人确认 #3），BFF 没有任何表授权，只能经 `insight.onboarding_view` 读按身份裁剪的结果。
+
+```mermaid
+erDiagram
+  student_profile ||--o{ self_report : "student_id（学生本人写）"
+  student_profile ||--o{ guardian_report_insight : "student_id（已绑定家长写，各家长各一份）"
+  student_profile ||--o{ exam_record : "student_id（本人或家长录，记录入方）"
+  student_profile ||--o{ onboarding_progress : "student_id（只追加）"
+  student_profile ||--o{ student_subject_textbook : "student_id + subject（platform，0021）"
+  report_field ||--o{ self_report : "field_id（白名单，与字段字典一致）"
+  report_field ||--o{ guardian_report_insight : "field_id"
+```
+
+（图中 `guardian_report_insight` 即 `insight.guardian_report`，与 0006 的 `platform.guardian_report` 自由文本主题表区分。）
+
+| 表 | 谁写 | 谁读 | 要点 |
+|---|---|---|---|
+| `platform.student_subject_textbook` | bff 经 `platform.set_subject_textbook`（本人或已绑定家长） | bff 按 `can_read_student` | “不清楚”存 NULL；记来源（self / guardian）与填写人 |
+| `insight.report_field` | 迁移（字段白名单） | 函数 | 与 `docs/design/sie/field-dictionary.v0.9.yaml` 一致（检查脚本） |
+| `insight.self_report` | bff 经 `submit_self_report`（只学生本人） | insight；bff 只经 `onboarding_view`（学生本人） | 改答案：旧行写 `superseded_at`，新增一行；只有这一列可改（触发器） |
+| `insight.guardian_report` | bff 经 `submit_guardian_report`（只已绑定家长） | insight；bff 只经 `onboarding_view`（写它的家长本人） | 学生看不到；另一位家长也看不到 |
+| `insight.exam_record` | bff 经 `submit_exam_record`（本人或家长，记 `entered_by_role`） | insight；bff 只经 `onboarding_view` | 学生只见自己录的，且不含排名区间；家长见全部 |
+| `insight.onboarding_progress` | bff 经 `record_onboarding_step` | insight；统计只经 `onboarding_stats`（insight、report） | 只追加，不存答案 |
+
+新角色 `starbuddy_report`（运营报表只读身份）只能执行 `insight.onboarding_stats`，读不到任何明细（待人确认 #6）。
+
 ## kge schema：公共知识层（0011 与 0012，KGE schema v0.9）
 
 公共知识层：地图版本、骨架、投影、原子与成长治理。唯一写入方是知识服务 `starbuddy_kge`；不含任何学生数据，也没有学生键（规则 13，攻击面测试断言）。规范见 `docs/design/kge/id-and-segments.md`，spec 见 `specs/kge-schema-v0.9/spec.md`。

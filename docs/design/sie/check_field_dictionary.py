@@ -12,7 +12,9 @@
    学生与家长都可能提供的字段（g1 必填基础身份除外）按来源分开落库（storage 写成 {self: …, guardian: …}），
    或写 source_column 说明同一张事实表里记录由谁录入（规则 6：说法不同两边都存）；
 7. 字段的 id、名称、说明、备注、教学决策、指标定义不命中禁用推断词表，也不复用 retired 段里的旧字段名与别名；
-8. 人读版 field-dictionary.md 与 YAML 一致（--write 重新生成）。
+8. 人读版 field-dictionary.md 与 YAML 一致（--write 重新生成）；
+9. 迁移里自述与家长观察的字段白名单（insight.report_field，0022）与字典一致：storage 指向 insight.self_report.value 的字段
+   都在白名单的 self 一侧，指向 insight.guardian_report.value 的都在 guardian 一侧，不多不少（SIE-01）。
 同时跑禁用推断词表的正反例自检（sie_lexicon.py）。
 
 用法：python docs/design/sie/check_field_dictionary.py [--write]
@@ -128,6 +130,31 @@ def migration_columns() -> dict[str, set[str]]:
         for m in re.finditer(r"ALTER TABLE (\w+)\.(\w+)\s+ADD COLUMN (?:IF NOT EXISTS )?([a-z_][a-z0-9_]*)", sql):
             tables.setdefault(f"{m.group(1)}.{m.group(2)}", set()).add(m.group(3))
     return tables
+
+
+# ---------------- 自述与家长观察的字段白名单（迁移 0022 的 insight.report_field） ----------------
+REPORT_STORAGE = {"insight.self_report.value": "self", "insight.guardian_report.value": "guardian"}
+
+
+def migration_report_fields() -> set[tuple[str, str]]:
+    pairs: set[tuple[str, str]] = set()
+    for f in sorted(MIGRATIONS.glob("*.up.sql")):
+        sql = f.read_text(encoding="utf-8")
+        for m in re.finditer(r"INSERT INTO insight\.report_field \(field_id, respondent\) VALUES(.*?);", sql, re.S):
+            pairs |= set(re.findall(r"\('([a-z0-9_.]+)', '(self|guardian)'\)", m.group(1)))
+    return pairs
+
+
+def check_report_fields(data: dict, pairs: set[tuple[str, str]]) -> list[str]:
+    expected: set[tuple[str, str]] = set()
+    for f in data["fields"]:
+        st = f.get("storage")
+        for loc in (st.values() if isinstance(st, dict) else [st]):
+            if loc in REPORT_STORAGE:
+                expected.add((f["id"], REPORT_STORAGE[loc]))
+    errors = [f"迁移的字段白名单缺少字典里的 {fid}（{who}）" for fid, who in sorted(expected - pairs)]
+    errors += [f"迁移的字段白名单有字典里没有的 {fid}（{who}）" for fid, who in sorted(pairs - expected)]
+    return errors
 
 
 # ---------------- 检查 ----------------
@@ -344,8 +371,8 @@ def self_test(data: dict, lex: sie_lexicon.Lexicon, tables: dict[str, set[str]],
     def m_inferred_layer(d): field(d, "middle.g7.hint_dependency")["layer"] = "fact"
     def m_exposed(d): field(d, "inner.g3.error_attribution").pop("exposed_via")
     def m_column(d): field(d, "outer.g1.region")["storage"] = "platform.student_profile.school_name"
-    def m_built_by(d): field(d, "outer.g1.devices").pop("built_by")
-    def m_live_planned(d): field(d, "outer.g1.devices")["status"] = "live"
+    def m_built_by(d): field(d, "middle.g7.confidence_probe").pop("built_by")
+    def m_live_planned(d): field(d, "middle.g7.confidence_probe")["status"] = "live"
     def m_lexicon(d): field(d, "middle.g6.stated_interests")["name"] = "学生性格与兴趣"
     def m_retired(d): field(d, "inner.g2.exam_rank_band")["id"] = "inner.g2.rank_range"
     def m_storage_claim(d): field(d, "inner.g3.node_mastery")["storage"] = "insight.claim_history.to_status"
@@ -393,13 +420,20 @@ def main(argv: list[str]) -> int:
     errors += check(data, lex, tables)
     errors += check_generated(md, data)
     errors += self_test(data, lex, tables, md)
+    pairs = migration_report_fields()
+    errors += check_report_fields(data, pairs)
+    # 自检：白名单少一个、多一个都要被拦下
+    if pairs and not check_report_fields(data, pairs - {sorted(pairs)[0]}):
+        errors.append("反例“白名单缺字段”没有被拦下")
+    if not check_report_fields(data, pairs | {("middle.g6.personality", "self")}):
+        errors.append("反例“白名单多字段”没有被拦下")
     for e in errors:
         print(f"sie-dictionary-check: {e}")
     if errors:
         print(f"sie-dictionary-check: 失败（{len(errors)} 处）")
         return 1
     print(f"sie-dictionary-check: 通过（{len(data['fields'])} 个字段、{len(data['retired'])} 个退役旧字段、"
-          f"词表 {len(lex.categories)} 类；20 个反例与人读版篡改全部被拦下）")
+          f"词表 {len(lex.categories)} 类；20 个反例与人读版篡改全部被拦下；字段白名单 {len(pairs)} 项与迁移一致）")
     return 0
 
 

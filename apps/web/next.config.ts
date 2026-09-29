@@ -21,6 +21,11 @@ const config: NextConfig = {
       },
       { source: '/review', headers: [{ key: 'Cache-Control', value: 'no-store' }] },
       {
+        // 建档：个人填写内容，不缓存（SIE-01）
+        source: '/onboarding/:path*',
+        headers: [{ key: 'Cache-Control', value: 'no-store' }],
+      },
+      {
         // 全站安全响应头。CSP 需要给 Next 的内联脚本配 nonce，留给 4-H（lessons 待人确认）
         source: '/:path*',
         headers: [

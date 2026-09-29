@@ -33,20 +33,20 @@
 |---|---|---|---|---|---|---|---|
 | `outer.g1.grade` | 年级 | fact | 学生自述、家长观察 | Agent、家长 | `platform.student_profile.grade` | live | 选择教材进度与年级内的知识节点，决定冷启动先验 |
 | `outer.g1.region` | 地区 | fact | 学生自述、家长观察 | Agent、家长 | `platform.student_profile.region` | live | 选择地区考情投影（题位与权重） |
-| `outer.g1.textbook_version` | 各科教材版本 | fact | 学生自述、家长观察 | Agent、家长 | `platform.student_profile.textbook_version` | live | 按教材投影渲染页码与原句，决定节点的教材进度 |
+| `outer.g1.textbook_version` | 各科教材版本 | fact | 学生自述、家长观察 | Agent、家长 | `platform.student_subject_textbook.textbook_version` | live | 按教材投影渲染页码与原句，决定节点的教材进度 |
 | `outer.g1.birth_year_month` | 出生年月 | fact | 家长观察 | Agent、家长 | `platform.student_profile.birth_year_month` | live | （合规用途）判断是否未满 14 周岁、需要监护人同意；不参与任何推断与教学决策 |
-| `outer.g1.weekly_available_time` | 每周可用时间 | fact | 学生自述、家长观察 | Agent、家长 | `学生自述→insight.self_report.value；家长观察→insight.guardian_report.value（SIE-01 建）` | planned | 决定每日计划时长与跨科时间预算 |
-| `outer.g1.devices` | 学习设备 | fact | 学生自述、家长观察 | Agent、家长 | `学生自述→insight.self_report.value；家长观察→insight.guardian_report.value（SIE-01 建）` | planned | 决定是否安排手写拍照、语音讲述等需要设备支持的任务 |
-| `outer.g1.tutoring` | 校外补习情况（自愿） | fact | 学生自述、家长观察 | Agent、家长 | `学生自述→insight.self_report.value；家长观察→insight.guardian_report.value（SIE-01 建）` | planned | 避免与校外进度重复布置同一节点的练习 |
+| `outer.g1.weekly_available_time` | 每周可用时间 | fact | 学生自述、家长观察 | Agent、家长 | `学生自述→insight.self_report.value；家长观察→insight.guardian_report.value` | live | 决定每日计划时长与跨科时间预算 |
+| `outer.g1.devices` | 学习设备 | fact | 学生自述、家长观察 | Agent、家长 | `学生自述→insight.self_report.value；家长观察→insight.guardian_report.value` | live | 决定是否安排手写拍照、语音讲述等需要设备支持的任务 |
+| `outer.g1.tutoring` | 校外补习情况（自愿） | fact | 学生自述、家长观察 | Agent、家长 | `学生自述→insight.self_report.value；家长观察→insight.guardian_report.value` | live | 避免与校外进度重复布置同一节点的练习 |
 
 ### g2 学业水平与历史成绩（inner）
 
 | id | 名称 | 层 | 来源 | 默认可见 | 落库 | 状态 | 改变的教学决策 |
 |---|---|---|---|---|---|---|---|
-| `inner.g2.exam_score` | 学校考试成绩（原始分与满分） | fact | 学生自述、家长观察 | Agent、学生、家长 | `insight.exam_record.raw_score（记录录入人：insight.exam_record.confirmed_by）（SIE-01 建）` | planned | 外部锚点：校准掌握判断，生成对账卡；七八年级 100 分制与九年级 120 分制分别归一 |
-| `inner.g2.exam_scope` | 考试范围与日期 | fact | 学生自述、家长观察 | Agent、学生、家长 | `insight.exam_record.scope_node_ids（记录录入人：insight.exam_record.confirmed_by）（SIE-01 建）` | planned | 考前 14 天按“考情权重 × 当前缺口 × 可提升”重排计划，并在考试当天冻结预测 |
-| `inner.g2.exam_rank_band` | 考试排名区间（学生或家长录入） | fact | 学生自述、家长观察 | Agent、家长 | `insight.exam_record.rank_band（记录录入人：insight.exam_record.confirmed_by）（SIE-01 建）` | planned | 只作考试难度与区分度的参考，校准预测区间；不对学生展示，不做同伴比较 |
-| `inner.g2.exam_difficulty_note` | 试卷难度说明 | fact | 学生自述、家长观察 | Agent、家长 | `insight.exam_record.difficulty_note（记录录入人：insight.exam_record.confirmed_by）（SIE-01 建）` | planned | 对账时区分“试卷偏难”与“此前判断偏乐观” |
+| `inner.g2.exam_score` | 学校考试成绩（原始分与满分） | fact | 学生自述、家长观察 | Agent、学生、家长 | `insight.exam_record.raw_score（记录录入人：insight.exam_record.confirmed_by）` | live | 外部锚点：校准掌握判断，生成对账卡；七八年级 100 分制与九年级 120 分制分别归一 |
+| `inner.g2.exam_scope` | 考试范围与日期 | fact | 学生自述、家长观察 | Agent、学生、家长 | `insight.exam_record.scope_node_ids（记录录入人：insight.exam_record.confirmed_by）` | live | 考前 14 天按“考情权重 × 当前缺口 × 可提升”重排计划，并在考试当天冻结预测 |
+| `inner.g2.exam_rank_band` | 考试排名区间（学生或家长录入） | fact | 学生自述、家长观察 | Agent、家长 | `insight.exam_record.rank_band（记录录入人：insight.exam_record.confirmed_by）` | live | 只作考试难度与区分度的参考，校准预测区间；不对学生展示，不做同伴比较 |
+| `inner.g2.exam_difficulty_note` | 试卷难度说明 | fact | 学生自述、家长观察 | Agent、家长 | `insight.exam_record.difficulty_note（记录录入人：insight.exam_record.confirmed_by）` | live | 对账时区分“试卷偏难”与“此前判断偏乐观” |
 | `inner.g2.graded_paper_upload` | 带批改痕迹的整卷试卷 | fact | 客观记录 | Agent | `kge.attempt.answer_raw（KGE-05 建）` | planned | 作为先验与外部锚点；C 级识别内容先请学生核对，确认前不生成薄弱结论 |
 | `inner.g2.exam_prediction` | 考试分数预测区间 | inference | 模型推断 | Agent | `insight.exam_prediction.low（SIE-03 建）` | planned | 考前冻结、考后对账，偏差分析修正个体参数与判断 |
 
@@ -79,10 +79,10 @@
 
 | id | 名称 | 层 | 来源 | 默认可见 | 落库 | 状态 | 改变的教学决策 |
 |---|---|---|---|---|---|---|---|
-| `middle.g6.stated_interests` | 学生本人说出的兴趣 | fact | 学生自述 | Agent、学生 | `insight.self_report.value（SIE-01 建）` | planned | 用于题目的情境包装，可随时删除 |
+| `middle.g6.stated_interests` | 学生本人说出的兴趣 | fact | 学生自述 | Agent、学生 | `insight.self_report.value` | live | 用于题目的情境包装，可随时删除 |
 | `middle.g6.self_initiated_sessions` | 主动发起学习 | inference | 模型推断 | Agent | `insight.learner_metric.value（SIE-02 建）` | silent | 主动学习少时把复习放进今日计划而不是单独推送 |
-| `middle.g6.learning_mode_preference` | 学习方式偏好（学生自述） | fact | 学生自述 | Agent、学生 | `insight.self_report.value（SIE-01 建）` | planned | 首次教学的节奏（一步步引导 / 先讲再练 / 多独立尝试 / 闯关），之后以讲法响应为准 |
-| `middle.g6.self_pain_points` | 学生自评痛点 | fact | 学生自述 | Agent、学生 | `insight.self_report.value（SIE-01 建）` | planned | 冷启动时优先诊断学生自己说的卡点；与客观证据不同时两边都存 |
+| `middle.g6.learning_mode_preference` | 学习方式偏好（学生自述） | fact | 学生自述 | Agent、学生 | `insight.self_report.value` | live | 首次教学的节奏（一步步引导 / 先讲再练 / 多独立尝试 / 闯关），之后以讲法响应为准 |
+| `middle.g6.self_pain_points` | 学生自评痛点 | fact | 学生自述 | Agent、学生 | `insight.self_report.value` | live | 冷启动时优先诊断学生自己说的卡点；与客观证据不同时两边都存 |
 
 ### g7 学习策略与认知特点（middle）
 
@@ -105,15 +105,15 @@
 | `outer.g8.sleep_schedule` | 作息时间（家长观察原文） | fact | 家长观察 | Agent、家长 | `platform.guardian_report.content` | live | 夜间不安排任务，按作息给出休息提醒 |
 | `outer.g8.accompany_style` | 陪读方式 | fact | 家长观察 | Agent、家长 | `platform.guardian_report.content` | live | 决定周报里“本周一件事”建议家长怎样配合 |
 | `outer.g8.expectation` | 家长期望 | fact | 家长观察 | Agent、家长 | `platform.guardian_report.content` | live | 周报与对账卡的解释口径；与学生自述目标不同时两边都存，落差作为信号 |
-| `outer.g8.cooperation_capacity` | 家长可配合程度 | fact | 家长观察 | Agent、家长 | `insight.guardian_report.value（SIE-01 建）` | planned | 决定是否给家长布置配合任务以及任务的分量 |
+| `outer.g8.cooperation_capacity` | 家长可配合程度 | fact | 家长观察 | Agent、家长 | `insight.guardian_report.value` | live | 决定是否给家长布置配合任务以及任务的分量 |
 | `outer.g8.school_communication` | 家校沟通情况 | fact | 家长观察 | Agent、家长 | `platform.guardian_report.content` | live | 考前提醒家长录入考试范围与日期，决定对账卡的录入时机 |
 
 ### g9 成长轨迹与目标（through）
 
 | id | 名称 | 层 | 来源 | 默认可见 | 落库 | 状态 | 改变的教学决策 |
 |---|---|---|---|---|---|---|---|
-| `through.g9.focus_subject` | 最想改善的学科 | fact | 学生自述 | Agent、学生、家长 | `insight.self_report.value（SIE-01 建）` | planned | 跨科时间预算的优先级 |
-| `through.g9.near_term_goal` | 近期目标（学生自述） | fact | 学生自述 | Agent、学生、家长 | `insight.self_report.value（SIE-01 建）` | planned | 两周学习路径的终点与复盘口径；与家长期望不同时两边都存 |
+| `through.g9.focus_subject` | 最想改善的学科 | fact | 学生自述 | Agent、学生、家长 | `insight.self_report.value` | live | 跨科时间预算的优先级 |
+| `through.g9.near_term_goal` | 近期目标（学生自述） | fact | 学生自述 | Agent、学生、家长 | `insight.self_report.value` | live | 两周学习路径的终点与复盘口径；与家长期望不同时两边都存 |
 | `through.g9.disputes` | 对判断的异议 | fact | 学生自述、家长观察 | Agent、学生、家长 | `insight.dispute.kind（记录录入人：insight.dispute.raised_by）（SIE-03 建）` | planned | “我其实会”24 小时内推送验证题；“识别错了”打开原始事实供更正 |
 | `through.g9.interventions` | 触发的提醒、处方、鼓励与降负 | fact | 客观记录 | Agent | `insight.intervention_log.action（SIE-03 建）` | planned | 评估触发规则是否奏效，避免同一提醒重复 |
 | `through.g9.weekly_snapshot` | 每周画像快照 | inference | 模型推断 | Agent | `insight.profile_snapshot.payload（SIE-03 建）` | planned | 成长轨迹与“与一个月前的自己相比”的依据 |
