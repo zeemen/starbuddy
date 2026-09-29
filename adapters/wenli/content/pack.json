@@ -1,0 +1,250 @@
+{
+  "format": "wenli-content-pack/1",
+  "pack_name": "wenli-synthetic",
+  "pack_version": "0.1.0",
+  "synthetic": true,
+  "notice": "合成内容、非真题：作文题、五维量表（档位、分值、锚点）、客观题、能力格与 ROI 权重均由工程起草（spec 待人确认 #5、#8），不来自任何真实试卷、真实阅卷细则或真实学生作答；待教研抽查与替换。",
+  "curriculum": {
+    "region": "nanjing",
+    "exam_year": 2027,
+    "grade": 9,
+    "textbook_version": "bubian-2024",
+    "subject": "wenli",
+    "content_version": "0.1.0"
+  },
+  "domains": [
+    { "code": "d1", "label": "基础积累与语言运用（合成）", "roi": 0.1 },
+    { "code": "d2", "label": "古诗文（合成）", "roi": 0.12 },
+    { "code": "d3", "label": "现代文阅读（合成）", "roi": 0.2 },
+    { "code": "d4", "label": "名著阅读（合成）", "roi": 0.07 },
+    { "code": "d5", "label": "写作表达（合成）", "roi": 0.44 }
+  ],
+  "cells": [
+    { "id": "CHN.SYN.D1_L1", "domain": "d1", "level": "L1" },
+    { "id": "CHN.SYN.D1_L2", "domain": "d1", "level": "L2" },
+    { "id": "CHN.SYN.D2_L1", "domain": "d2", "level": "L1" },
+    { "id": "CHN.SYN.D2_L2", "domain": "d2", "level": "L2" },
+    { "id": "CHN.SYN.D3_L1", "domain": "d3", "level": "L1" },
+    { "id": "CHN.SYN.D3_L2", "domain": "d3", "level": "L2" },
+    { "id": "CHN.SYN.D4_L1", "domain": "d4", "level": "L1" },
+    { "id": "CHN.SYN.D4_L2", "domain": "d4", "level": "L2" },
+    { "id": "CHN.SYN.D5_L1", "domain": "d5", "level": "L1" },
+    { "id": "CHN.SYN.D5_L2", "domain": "d5", "level": "L2" }
+  ],
+  "items": [
+    {
+      "id": "synthetic-q01",
+      "type": "choice",
+      "synthetic": true,
+      "admission": "pending_review",
+      "cell": "CHN.SYN.D1_L1",
+      "estimated_minutes": 1,
+      "stem": "（合成题）下列词语书写完全正确的一项是",
+      "options": { "A": "再接再励", "B": "迫不及待", "C": "谈笑风声", "D": "一愁莫展" },
+      "answer": ["B"]
+    },
+    {
+      "id": "synthetic-q02",
+      "type": "choice",
+      "synthetic": true,
+      "admission": "pending_review",
+      "cell": "CHN.SYN.D1_L2",
+      "estimated_minutes": 2,
+      "stem": "（合成题）下列句子没有语病的一项是",
+      "options": {
+        "A": "通过这次读书分享会，使我们增长了见识。",
+        "B": "他的写作水平有了明显的提高。",
+        "C": "能否坚持晨读，是语文进步的关键。",
+        "D": "我们要避免不再犯同样的错误。"
+      },
+      "answer": ["B"]
+    },
+    {
+      "id": "synthetic-q03",
+      "type": "fill",
+      "synthetic": true,
+      "admission": "pending_review",
+      "cell": "CHN.SYN.D1_L1",
+      "estimated_minutes": 1,
+      "stem": "（合成题）成语“守株待兔”中的“株”指的是____。",
+      "answer": "树桩｜露出地面的树桩｜树墩"
+    },
+    {
+      "id": "synthetic-q04",
+      "type": "fill",
+      "synthetic": true,
+      "admission": "pending_review",
+      "cell": "CHN.SYN.D2_L1",
+      "estimated_minutes": 1,
+      "stem": "（合成题）补写句子：学而时习之，____。",
+      "answer": "不亦说乎"
+    },
+    {
+      "id": "synthetic-q05",
+      "type": "choice",
+      "synthetic": true,
+      "admission": "pending_review",
+      "cell": "CHN.SYN.D2_L1",
+      "estimated_minutes": 1,
+      "stem": "（合成题）《论语》主要记录的是哪些人的言行",
+      "options": { "A": "孔子及其弟子", "B": "孟子及其弟子", "C": "老子", "D": "庄子" },
+      "answer": ["A"]
+    },
+    {
+      "id": "synthetic-q06",
+      "type": "fill",
+      "synthetic": true,
+      "admission": "pending_review",
+      "cell": "CHN.SYN.D2_L2",
+      "estimated_minutes": 2,
+      "stem": "（合成题）“温故而知新”中“故”的意思是____。",
+      "answer": "旧的知识｜学过的知识｜旧知识（名词）"
+    },
+    {
+      "id": "synthetic-q07",
+      "type": "choice",
+      "synthetic": true,
+      "admission": "pending_review",
+      "cell": "CHN.SYN.D3_L1",
+      "estimated_minutes": 1,
+      "stem": "（合成题）说明文中“列数字”这种说明方法的作用通常是",
+      "options": { "A": "使说明准确具体", "B": "渲染环境气氛", "C": "抒发作者情感", "D": "设置情节悬念" },
+      "answer": ["A"]
+    },
+    {
+      "id": "synthetic-q08",
+      "type": "choice",
+      "synthetic": true,
+      "admission": "pending_review",
+      "cell": "CHN.SYN.D3_L2",
+      "estimated_minutes": 2,
+      "stem": "（合成题）下列句子中使用了比喻修辞的一项是",
+      "options": {
+        "A": "弯弯的月亮像一只小船挂在天边。",
+        "B": "他跑得比同桌还快一些。",
+        "C": "难道这个道理你还不明白吗？",
+        "D": "操场上的同学们有的跑步，有的跳绳。"
+      },
+      "answer": ["A"]
+    },
+    {
+      "id": "synthetic-q09",
+      "type": "fill",
+      "synthetic": true,
+      "admission": "pending_review",
+      "cell": "CHN.SYN.D4_L1",
+      "estimated_minutes": 1,
+      "stem": "（合成题）长篇小说《西游记》的作者是____。",
+      "answer": "吴承恩"
+    },
+    {
+      "id": "synthetic-q10",
+      "type": "choice",
+      "synthetic": true,
+      "admission": "pending_review",
+      "cell": "CHN.SYN.D4_L2",
+      "estimated_minutes": 2,
+      "stem": "（合成题）下列人物与作品对应正确的一项是",
+      "options": { "A": "林冲——《水浒传》", "B": "贾宝玉——《三国演义》", "C": "孙悟空——《红楼梦》", "D": "诸葛亮——《西游记》" },
+      "answer": ["A"]
+    }
+  ],
+  "essays": [
+    {
+      "id": "synthetic-essay-01",
+      "synthetic": true,
+      "admission": "pending_review",
+      "rubric_version": "wenli-essay-5d@0.1.0",
+      "cell": "CHN.SYN.D5_L2",
+      "genre": "narrative",
+      "min_chars": 600,
+      "title": "（合成题）命题作文：那一次，我读懂了____",
+      "prompt_text": "（合成题）请先把题目补充完整，再写一篇记叙文。要求：写真事、抒真情；不少于 600 字；文中不得出现真实的人名、校名。"
+    },
+    {
+      "id": "synthetic-essay-02",
+      "synthetic": true,
+      "admission": "pending_review",
+      "rubric_version": "wenli-essay-5d@0.1.0",
+      "cell": "CHN.SYN.D5_L1",
+      "genre": "situational",
+      "min_chars": 500,
+      "title": "（合成题）情境写作：旧物新生倡议书",
+      "prompt_text": "（合成题）学校将举办“旧物新生”主题活动。请以学生会成员的身份写一份倡议书，说明活动意义并提出具体做法。要求：身份明确、读者明确；不少于 500 字；文中不得出现真实的人名、校名。"
+    }
+  ],
+  "rubric": {
+    "rubric_version": "wenli-essay-5d@0.1.0",
+    "total_score": 50,
+    "dimensions": [
+      {
+        "dimension_id": "shenti_liyi",
+        "label": "审题立意",
+        "max_score": 10,
+        "requires_image": false,
+        "levels": [
+          { "level": "L1", "score": 3, "anchor": "（合成锚点）偏离题意或中心不明，看不出写作任务。" },
+          { "level": "L2", "score": 6, "anchor": "（合成锚点）基本符合题意，中心较明确但停留在表层。" },
+          { "level": "L3", "score": 8, "anchor": "（合成锚点）符合题意，中心明确，能扣住题眼展开。" },
+          { "level": "L4", "score": 10, "anchor": "（合成锚点）紧扣题意，立意有深度或有新意，贯穿全文。" }
+        ]
+      },
+      {
+        "dimension_id": "neirong_cailiao",
+        "label": "内容材料",
+        "max_score": 12,
+        "requires_image": false,
+        "levels": [
+          { "level": "L1", "score": 4, "anchor": "（合成锚点）内容空泛，材料与中心关系不大。" },
+          { "level": "L2", "score": 7, "anchor": "（合成锚点）有材料但概括叙述多，细节少。" },
+          { "level": "L3", "score": 10, "anchor": "（合成锚点）材料具体，能用细节支撑中心。" },
+          { "level": "L4", "score": 12, "anchor": "（合成锚点）材料充实典型，细节可感，情感真切。" }
+        ]
+      },
+      {
+        "dimension_id": "jiegou_cengci",
+        "label": "结构层次",
+        "max_score": 10,
+        "requires_image": false,
+        "levels": [
+          { "level": "L1", "score": 3, "anchor": "（合成锚点）结构不完整，段落之间缺少联系。" },
+          { "level": "L2", "score": 6, "anchor": "（合成锚点）结构基本完整，层次尚可辨认。" },
+          { "level": "L3", "score": 8, "anchor": "（合成锚点）结构完整，条理清楚，过渡自然。" },
+          { "level": "L4", "score": 10, "anchor": "（合成锚点）结构严谨，详略得当，首尾呼应有安排。" }
+        ]
+      },
+      {
+        "dimension_id": "yuyan_biaoda",
+        "label": "语言表达",
+        "max_score": 12,
+        "requires_image": false,
+        "levels": [
+          { "level": "L1", "score": 4, "anchor": "（合成锚点）语病较多，表达不通顺。" },
+          { "level": "L2", "score": 7, "anchor": "（合成锚点）语言尚通顺，偶有语病。" },
+          { "level": "L3", "score": 10, "anchor": "（合成锚点）语言通顺准确，病句很少。" },
+          { "level": "L4", "score": 12, "anchor": "（合成锚点）语言准确生动，句式有变化，无病句。" }
+        ]
+      },
+      {
+        "dimension_id": "juanmian_shuxie",
+        "label": "卷面书写",
+        "max_score": 4,
+        "requires_image": true,
+        "levels": [
+          { "level": "L1", "score": 1, "anchor": "（合成锚点）涂改多，字迹难以辨认。" },
+          { "level": "L2", "score": 2, "anchor": "（合成锚点）字迹可辨，卷面不够整洁。" },
+          { "level": "L3", "score": 3, "anchor": "（合成锚点）字迹清楚，卷面较整洁。" },
+          { "level": "L4", "score": 4, "anchor": "（合成锚点）字迹工整，卷面整洁。" }
+        ]
+      }
+    ],
+    "convention": {
+      "dimension_id": "zishu_guifan",
+      "label": "字数规范",
+      "max_score": 2,
+      "rule_ref": "wenli-convention-rules@0.1.0",
+      "chars_per_deduction": 50,
+      "max_deduction": 2
+    }
+  }
+}
