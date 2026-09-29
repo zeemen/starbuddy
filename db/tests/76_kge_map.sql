@@ -27,8 +27,11 @@ BEGIN
   RETURN v_out;
 END $$;
 -- 签字批准并发布（审核台 v0 的正常流程）
+-- 两名 staff 各签一次（结构性变更两人确认，0019），再由第一名发布
 CREATE FUNCTION t.kge_sign_publish(p_version uuid) RETURNS text LANGUAGE sql AS $$
-  SELECT t.as_staff('5f000000-0000-4000-8000-00000000005f',
+  SELECT t.as_staff('5e000000-0000-4000-8000-00000000005e',
+                    format('SELECT kge.sign_review(''map_version'', %L, ''approved'', ''high'', ''test'')::text', p_version))
+      || t.as_staff('5f000000-0000-4000-8000-00000000005f',
                     format('SELECT kge.sign_review(''map_version'', %L, ''approved'', ''high'', ''test'')::text || kge.publish_map_version(%L)::text',
                            p_version, p_version)) $$;
 GRANT EXECUTE ON FUNCTION t.as_staff(uuid, text), t.kge_sign_publish(uuid) TO PUBLIC;
@@ -224,7 +227,7 @@ SELECT t.throws($$INSERT INTO kge.content_review (object_type, object_id, risk_l
 SELECT t.ok(t.kge_issues(:k1, 'error') = '{}', '干净的地图版本没有阻断问题');
 SELECT t.ok(t.kge_issues(:k1, 'warning') = '{few_items:MATH.FUNC.QUAD.GRAPH,few_items:MATH.FUNC.QUAD.VERTEX_FORM,policy_scheme_missing:nanjing:2027}',
             '主考点少于 3 道题、政策库缺方案只报警告：' || array_to_string(t.kge_issues(:k1, 'warning'), ','));
-SELECT t.throws($$SELECT kge.publish_map_version('ca100000-0000-4000-8000-00000000ca01')$$, '42501', '知识服务不能发布（0018 改由签字身份发布）');
+SELECT t.throws($$SELECT kge.publish_map_version('ca100000-0000-4000-8000-00000000ca01')$$, '42501', '知识服务不能发布（0019 改由签字身份发布）');
 SELECT t.ok(t.kge_sign_publish(:k1) IS NOT NULL, '没有阻断问题、签字批准后可以发布');
 SELECT t.ok((SELECT status = 'published' AND published_at IS NOT NULL FROM kge.map_version WHERE id = :k1), '发布后状态与发布时间由发布函数写入');
 SELECT t.throws_like($$SELECT t.kge_sign_publish('ca100000-0000-4000-8000-00000000ca01')$$, '23514', '只能对草稿', '已发布的版本不能再签字发布');

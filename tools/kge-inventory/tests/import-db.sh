@@ -22,9 +22,13 @@ apply "${UPS[@]}"
 fail() { echo "kge-import-db: 失败：$*"; exit 1; }
 q() { as_pg "$PGBIN/psql" -h "$WORK" -U postgres -d starbuddy_test -X -At -v ON_ERROR_STOP=1 -c "$1"; }
 # 0019 起发布要先由 active staff 签字，再以 starbuddy_review 身份发布（合成 staff 账号）
-STAFF=5f000000-0000-4000-8000-0000000000aa
-AS_STAFF="SELECT set_config('app.account_id', '$STAFF', false); SET ROLE starbuddy_review;"
-sign_publish() { q "$AS_STAFF SELECT kge.sign_review('map_version', '$1', 'approved', 'high', 'kge01'); SELECT kge.publish_map_version('$1')"; }
+STAFF=5f000000-0000-4000-8000-0000000000aa; STAFF2=5f000000-0000-4000-8000-0000000000ab
+as_staff() { echo "SELECT set_config('app.account_id', '$1', false); SET ROLE starbuddy_review;"; }
+# 首次发布算结构性变更：两名 staff 签字（0019），再发布
+sign_publish() {
+  q "$(as_staff "$STAFF2") SELECT kge.sign_review('map_version', '$1', 'approved', 'high', 'kge01')" >/dev/null
+  q "$(as_staff "$STAFF") SELECT kge.sign_review('map_version', '$1', 'approved', 'high', 'kge01'); SELECT kge.publish_map_version('$1')"
+}
 report() { node -e 'const r=require(process.argv[1]);const v=r[process.argv[2]];console.log(Array.isArray(v)?v.join("\n"):v)' "$1" "$2"; }
 
 # 能力视图：登记阿鸦 fun 专题的 skill_node（与 adapters/aya/scripts/register-content.ts 同一套 local_id；只收合法编码）
@@ -33,7 +37,7 @@ report() { node -e 'const r=require(process.argv[1]);const v=r[process.argv[2]];
   node -e 'const p=require(process.argv[1]);console.log(p.nodes.map(n=>n.id).filter(i=>i.includes("-FUN-")).join("\n"))' "$REPO/adapters/aya/content/pack.json" \
     | grep -E "$LEGACY_ID" \
     | while read -r id; do echo "INSERT INTO platform.skill_node (subject, local_id, curriculum_version_id, label_code) VALUES ('aya', '$id', 'e0000000-0000-4000-8000-0000000000f1', '$id');"; done
-  echo "INSERT INTO platform.account (id, kind) VALUES ('$STAFF', 'staff');"
+  echo "INSERT INTO platform.account (id, kind) VALUES ('$STAFF', 'staff'), ('$STAFF2', 'staff');"
 } | psql_run -1
 
 # ---------- 第一段：仓库里的种子 ----------

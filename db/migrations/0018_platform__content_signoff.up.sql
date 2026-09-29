@@ -17,7 +17,7 @@ CREATE TABLE platform.map_change_signoff (
   decision       text NOT NULL CHECK (decision IN ('approved', 'rejected')),
   digest         text NOT NULL CHECK (digest ~ '^[0-9a-f]{64}$'),  -- 签字时变更单内容的摘要：之后内容改了，这个签字不再计数
   signed_at      timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY (map_change_id, account_id)  -- 同一账号对同一变更单只能签一次
+  PRIMARY KEY (map_change_id, account_id, digest)  -- 同一账号对同一变更单的同一内容只能签一次；内容改过后可以对新内容再签
 );
 COMMENT ON TABLE platform.map_change_signoff IS '变更单（kge.map_change）的签字人：只由 kge.sign_map_change 写入（0019）；两名不同 staff 批准才转为 approved';
 

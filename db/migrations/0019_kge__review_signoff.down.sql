@@ -1,4 +1,10 @@
 -- 0019 回滚：恢复 0011 的发布函数、守卫与授权，删除签字函数与新列
+-- 注意：已有签字数据时，恢复的 0011 约束按 NOT VALID 加回（不校验已有行；经签字函数批准的变更单没有两个自报工号）
+DROP TRIGGER lock_version_share ON kge.item_family;
+DROP TRIGGER lock_version_share ON kge.scoring_point;
+DROP FUNCTION kge.lock_version_share();
+DROP FUNCTION kge.version_record(platform.subject);
+DROP FUNCTION kge.structural_diff(uuid);
 DROP TRIGGER guard_atom_approval ON kge.item_tag;
 DROP TRIGGER guard_atom_approval ON kge.current_affair;
 DROP FUNCTION kge.guard_atom_approval();
@@ -67,8 +73,9 @@ GRANT UPDATE ON kge.map_change TO starbuddy_kge;
 DROP TRIGGER guard_map_change ON kge.map_change;
 DROP FUNCTION kge.guard_map_change();
 DROP FUNCTION kge.map_change_digest(kge.map_change);
+DROP FUNCTION kge.map_change_required_signers(text);
 ALTER TABLE kge.map_change
-  ADD CONSTRAINT map_change_two_reviewers CHECK (status NOT IN ('approved', 'applied') OR kge.distinct_count(reviewers) >= 2);
+  ADD CONSTRAINT map_change_two_reviewers CHECK (status NOT IN ('approved', 'applied') OR kge.distinct_count(reviewers) >= 2) NOT VALID;
 REVOKE INSERT ON kge.content_review FROM starbuddy_authz;
 DROP POLICY content_review_kge_submit ON kge.content_review;
 DROP POLICY content_review_kge_read ON kge.content_review;
@@ -78,7 +85,8 @@ DROP TRIGGER reject_content_review_truncate ON kge.content_review;
 DROP TRIGGER reject_content_review_change ON kge.content_review;
 DROP FUNCTION kge.reject_content_review_change();
 ALTER TABLE kge.content_review DROP CONSTRAINT content_review_decided,
-  ADD CONSTRAINT content_review_decided CHECK ((decision = 'pending') = (reviewer IS NULL AND decided_at IS NULL)),
+  DROP CONSTRAINT content_review_version_risk, DROP CONSTRAINT content_review_retire_basis,
+  ADD CONSTRAINT content_review_decided CHECK ((decision = 'pending') = (reviewer IS NULL AND decided_at IS NULL)) NOT VALID,
   DROP COLUMN action, DROP COLUMN basis_code, DROP COLUMN digest;
 DROP FUNCTION kge.row_digest(jsonb);
 DROP FUNCTION kge.map_version_digest(uuid);

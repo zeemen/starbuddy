@@ -94,6 +94,7 @@ ADR 09 建议 pilot 和生产全链路境内。Supabase 托管版没有中国大
 - **一个迁移只改一个 schema（第 2 条）**：`0011_kge__knowledge_map` 只建 kge；`platform.curriculum_version.map_version_id` 单独放在 `0012_platform__curriculum_map_version`。
 - **写入方**：新增数据库角色 `starbuddy_kge`，是公共层的唯一写入方，与其他应用角色互斥（0011 断言）；没有任何角色能删除公共层的行。
 - 待签字：随 0011 / 0012 的 PR 一起评审（必停项）。
+- **0018 / 0019（审核台签字，specs/release-gate-sprint4）**：签字人是账号，属于平台层，放 `platform.content_signoff` / `platform.map_change_signoff`（0018 只改 platform），kge 不出现账号列（攻击面测试）；签字、发布、撤下函数在 0019（只改 kge），经新角色 `starbuddy_review` 调用，知识服务 `starbuddy_kge` 只能提交待审。
 
 ## 增补：policy schema（草稿，2026-09-28，specs/policy-schema-v0.9）
 

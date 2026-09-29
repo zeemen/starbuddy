@@ -200,6 +200,8 @@ func|kge.id_parent(text)|starbuddy_authz|EXECUTE|SUPERUSER
 func|kge.id_parent(text)|starbuddy_kge|EXECUTE|SUPERUSER
 func|kge.id_parent(text)|starbuddy_learning|EXECUTE|SUPERUSER
 func|kge.map_change_digest(kge.map_change)|starbuddy_authz|EXECUTE|SUPERUSER
+func|kge.map_change_required_signers(text)|starbuddy_authz|EXECUTE|SUPERUSER
+func|kge.map_change_required_signers(text)|starbuddy_kge|EXECUTE|SUPERUSER
 func|kge.map_version_digest(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|kge.map_version_digest(uuid)|starbuddy_kge|EXECUTE|starbuddy_authz
 func|kge.map_version_digest(uuid)|starbuddy_review|EXECUTE|starbuddy_authz
@@ -216,6 +218,8 @@ func|kge.sign_map_change(uuid,text)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|kge.sign_map_change(uuid,text)|starbuddy_review|EXECUTE|starbuddy_authz
 func|kge.sign_review(text,text,text,text,text)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|kge.sign_review(text,text,text,text,text)|starbuddy_review|EXECUTE|starbuddy_authz
+func|kge.structural_diff(uuid)|starbuddy_authz|EXECUTE|SUPERUSER
+func|kge.structural_diff(uuid)|starbuddy_kge|EXECUTE|SUPERUSER
 func|kge.subject_prefix(platform.subject)|starbuddy_authz|EXECUTE|SUPERUSER
 func|kge.subject_prefix(platform.subject)|starbuddy_kge|EXECUTE|SUPERUSER
 func|kge.subject_prefix(platform.subject)|starbuddy_learning|EXECUTE|SUPERUSER
@@ -223,6 +227,9 @@ func|kge.validate_map_version(uuid)|starbuddy_authz|EXECUTE|SUPERUSER
 func|kge.validate_map_version(uuid)|starbuddy_kge|EXECUTE|SUPERUSER
 func|kge.validate_map_version(uuid)|starbuddy_learning|EXECUTE|SUPERUSER
 func|kge.version_parts(text)|starbuddy_authz|EXECUTE|SUPERUSER
+func|kge.version_record(platform.subject)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|kge.version_record(platform.subject)|starbuddy_kge|EXECUTE|starbuddy_authz
+func|kge.version_record(platform.subject)|starbuddy_review|EXECUTE|starbuddy_authz
 func|platform.can_read_household(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.can_read_household(uuid)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|platform.can_read_student(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
@@ -338,6 +345,7 @@ owner|kge.publish_map_version(uuid)|starbuddy_authz
 owner|kge.retire_map_version(uuid,text)|starbuddy_authz
 owner|kge.sign_map_change(uuid,text)|starbuddy_authz
 owner|kge.sign_review(text,text,text,text,text)|starbuddy_authz
+owner|kge.version_record(platform.subject)|starbuddy_authz
 owner|platform.can_read_household(uuid)|starbuddy_authz
 owner|platform.can_read_student(uuid)|starbuddy_authz
 owner|platform.check_supersede_target()|starbuddy_authz
@@ -653,6 +661,7 @@ secdef|kge.publish_map_version(uuid)
 secdef|kge.retire_map_version(uuid,text)
 secdef|kge.sign_map_change(uuid,text)
 secdef|kge.sign_review(text,text,text,text,text)
+secdef|kge.version_record(platform.subject)
 secdef|platform.can_read_household(uuid)
 secdef|platform.can_read_student(uuid)
 secdef|platform.check_supersede_target()

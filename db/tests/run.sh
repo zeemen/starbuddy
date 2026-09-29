@@ -89,8 +89,10 @@ KC=c0000000-0000-4000-8000-00000000c0c0; KD=d0000000-0000-4000-8000-00000000d0d0
 kge_fixture "$KC" 7.0.0 && kge_fixture "$KD" 7.0.1 || { echo "db-test: 失败（并发测试夹具）"; exit 1; }
 # 0019 起发布由 staff 经 starbuddy_review 执行，且要先签字（10 号夹具的 staff 账号）
 AS_STAFF="SELECT set_config('app.account_id', '5f000000-0000-4000-8000-00000000005f', false); SET ROLE starbuddy_review;"
-for v in "$KC" "$KD"; do
-  printf '%s\n' "$AS_STAFF SELECT kge.sign_review('map_version', '$v', 'approved', 'high', 'race');" | psql_run >/dev/null \
+AS_STAFF2="SELECT set_config('app.account_id', '5e000000-0000-4000-8000-00000000005e', false); SET ROLE starbuddy_review;"
+for v in "$KC" "$KD"; do  # 首次发布算结构性变更：两名 staff 签字（0019）
+  printf '%s\n' "$AS_STAFF2 SELECT kge.sign_review('map_version', '$v', 'approved', 'high', 'race'); RESET ROLE;
+                  $AS_STAFF SELECT kge.sign_review('map_version', '$v', 'approved', 'high', 'race');" | psql_run >/dev/null \
     || { echo "db-test: 失败（并发测试签字）"; exit 1; }
 done
 # 场景 1：会话 A 往草稿写入一个孤点并持有事务；会话 B 此时发布。发布必须等 A 提交后再校验，因而拒绝

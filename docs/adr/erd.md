@@ -142,18 +142,18 @@ erDiagram
   knowledge_node ||--o{ item_tag : "main_node_id；node_ids 由触发器核对"
   item ||--o{ scoring_point : "rubric_version 必填"
   map_version ||--o{ current_affair : "有效期必填"
-  map_version ||--o{ map_change : "target_version；批准须两人"
+  map_version ||--o{ map_change : "target_version；结构性须两人"
   curriculum_version }o--o| map_version : "0012：(subject, map_version_id)，可空"
 ```
 
 | 表 | 谁写 | 谁读 | 要点 |
 |---|---|---|---|
-| `kge.map_version` | kge（发布只能经 `kge.publish_map_version`，属主 authz） | learning、insight 全部；bff 只看已发布 | 草稿 → 已发布 → 撤下；同学科只一个已发布；非草稿只能改状态 |
+| `kge.map_version` | kge 建草稿；发布、撤下只能由 staff 经 `kge.publish_map_version` / `kge.retire_map_version`（0019，属主 authz） | learning、insight 全部；bff 只看已发布 | 草稿 → 已发布 → 撤下；同学科只一个已发布；非草稿只能改状态 |
 | `kge.knowledge_node` / `knowledge_edge` | kge | learning、insight 全部；bff 只看已发布版本的有效行 | 七种类型、四个层级、五种范围；易错点必须写错因大类；只有计掌握度的类型带认知层次；细目只能是易错点或考点 |
 | `kge.textbook_projection` / `region_projection` | kge | learning；bff 只看已发布版本里有效节点上的行，教材投影只看已核对的（核对人列不给 bff） | 已核对必须写核对人与时间 |
 | `kge.skill_link` / `id_migration` | kge | learning | 学科与版本一致；撤销的旧编码没有新 ID |
 | `kge.item_tag` / `item_family` / `scoring_point` / `current_affair` | kge | learning | 原子，不随骨架冻结，但在非草稿版本上只能挂有效节点；节点数组由触发器核对；题干、答案、解析不进库；采分点写入后不能修改（改内容发新 rubric_version），`point_id` 与判分维度对应 |
-| `kge.curriculum_item` / `map_change` / `content_review` | kge | learning | 变更单批准须两个不同审核人；审核结论必须写审核人与时间 |
+| `kge.curriculum_item` / `map_change` / `content_review` | kge 只提交待审；结论与状态只经签字函数（0019） | learning | 签字人是 staff 账号，存 `platform.content_signoff` / `map_change_signoff`（只追加）；签字记内容摘要，发布前重算比对；结构性变更（增删拆并节点、增删边）须两名不同 staff；审核记录只追加 |
 
 骨架冻结：地图版本发布或撤下后，节点、边、投影、能力视图挂接、旧编码迁移都不能再新增或修改，改地图走新版本。任何角色都没有公共层的 DELETE，撤下走状态。
 发布前校验 `kge.validate_map_version`：以下几项阻断发布，主考点题目少于 3 道只报警告。
