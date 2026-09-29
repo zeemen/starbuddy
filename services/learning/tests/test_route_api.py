@@ -69,6 +69,11 @@ async def test_only_route_client_tokens_are_accepted(client, header):
     assert internal_contract("1.0.0").validate("Problem", r.json()) == []
 
 
+async def test_uppercase_usage_id_is_accepted(client):
+    r = await client.post("/internal/v1/model/route", json=body(usage_id=str(uuid.uuid4()).upper()), headers=auth(ZX))
+    assert r.status_code == 200, r.text
+
+
 async def test_token_is_bound_to_subject(client):
     r = await client.post("/internal/v1/model/route", json=body(), headers=auth(AYA))
     assert r.status_code == 403 and r.json()["code"] == "SUBJECT_MISMATCH"

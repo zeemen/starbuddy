@@ -159,7 +159,9 @@ def create_app(
         record: dict = {"method": "model_route"}
         try:
             header = request.headers.get("authorization")
-            subject = next((s for s, tok in settings.route_clients.items() if _bearer_ok(header, tok)), None)
+            # 全部比完再取结果：不按命中顺序提前返回（安全审查建议 1）
+            hits = [s for s, tok in sorted(settings.route_clients.items()) if _bearer_ok(header, tok)]
+            subject = hits[0] if len(hits) == 1 else None
             if subject is None:
                 raise RouteApiError(401, "UNAUTHENTICATED", "missing or invalid route client token")
             record["subject"] = subject

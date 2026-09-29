@@ -428,6 +428,16 @@ INTERNAL_V1_COUNTER = [
                 v["request"].__setitem__("rubric_version", "aya-symbolic-ts@0.1.0"))),
     ("诊断摘要的证据等级是 D", "DiagnoseSummary", "DiagnoseSummaryLevelC", lambda v: v.__setitem__("evidence_level", "D")),
     ("摘要的是否写入学习者模型不是布尔", "GradeSummary", "GradeSummaryLevelC", lambda v: v.__setitem__("learner_model_updated", "no")),
+    # 模型路由接口（ADP-道法-01；契约审查建议 4）
+    ("路由请求夹带未知字段", "ModelRouteRequest", "ModelRouteRequestZhixing", lambda v: v.__setitem__("vendor", "fake-a")),
+    ("路由请求的幂等键不是 UUIDv4", "ModelRouteRequest", "ModelRouteRequestZhixing",
+     lambda v: v.__setitem__("idempotency_key", "00000000-0000-1000-8000-00000000c010")),
+    ("路由请求的学科不在枚举里", "ModelRouteRequest", "ModelRouteRequestZhixing", lambda v: v.__setitem__("subject", "daofa")),
+    ("路由请求的任务类型不在枚举里", "ModelRouteRequest", "ModelRouteRequestZhixing", lambda v: v.__setitem__("task", "T0")),
+    ("路由请求的消息角色是 tool", "ModelRouteRequest", "ModelRouteRequestZhixing", lambda v: v["messages"][0].__setitem__("role", "tool")),
+    ("路由请求的 prompt 名带斜杠", "ModelRouteRequest", "ModelRouteRequestZhixing", lambda v: v.__setitem__("prompt_template", "zhixing/m3")),
+    ("路由响应的模型版本写 routed", "ModelRouteResponse", "ModelRouteResponseZhixing", lambda v: v.__setitem__("model_version", "routed")),
+    ("路由响应缺 model_mismatch", "ModelRouteResponse", "ModelRouteResponseZhixing", lambda v: v.pop("model_mismatch")),
 ]
 
 
@@ -438,7 +448,8 @@ def _check_internal_v1_examples(errors: list[str]) -> None:
     c = internal_contract("1.0.0")
     examples = load(INTERNAL_SPECS[1])["components"]["examples"]
     schema_of = {"GradeIngestKeypad": "GradeIngest", "GradeSummaryLevelC": "GradeSummary",
-                 "DiagnoseIngestCanvasC": "DiagnoseIngest", "DiagnoseSummaryLevelC": "DiagnoseSummary"}
+                 "DiagnoseIngestCanvasC": "DiagnoseIngest", "DiagnoseSummaryLevelC": "DiagnoseSummary",
+                 "ModelRouteRequestZhixing": "ModelRouteRequest", "ModelRouteResponseZhixing": "ModelRouteResponse"}
     for name, schema in schema_of.items():
         errs = c.validate(schema, examples[name]["value"])
         if errs:

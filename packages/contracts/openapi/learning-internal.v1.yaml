@@ -133,12 +133,16 @@ paths:
         content:
           application/json:
             schema: { $ref: '#/components/schemas/ModelRouteRequest' }
+            examples:
+              zhixingGrade: { $ref: '#/components/examples/ModelRouteRequestZhixing' }
       responses:
         '200':
           description: 模型输出与可追溯的版本
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ModelRouteResponse' }
+              examples:
+                zhixingGrade: { $ref: '#/components/examples/ModelRouteResponseZhixing' }
         default: { $ref: '#/components/responses/Problem' }
 
 components:
@@ -160,6 +164,27 @@ components:
           schema: { $ref: '#/components/schemas/Problem' }
 
   examples:
+    ModelRouteRequestZhixing:
+      summary: 知行适配器的逐点判分调用（合成作答）
+      value:
+        task: T2
+        data_class: L2
+        subject: zhixing
+        prompt_template: zhixing-m3-grade
+        prompt_version: 0.2.0
+        messages:
+          - { role: system, content: （合成）判分说明与采分点 }
+          - { role: user, content: （合成）居民参与民主决策，体现了居民自治。 }
+        usage_id: 00000000-0000-4000-8000-00000000b010
+        idempotency_key: 00000000-0000-4000-8000-00000000c010
+        deadline_ms: 9000
+    ModelRouteResponseZhixing:
+      summary: 模型输出（调用方按自己的 schema 校验）与可追溯的版本
+      value:
+        output: '{"points": []}'
+        model_version: model:fake-a/fake-reasoner@2026-09-01
+        source_version: prompt:zhixing-m3-grade@0.2.0
+        model_mismatch: false
     GradeIngestKeypad:
       summary: 键盘作答、练习用途：证据记 A 级、独立作答
       value:

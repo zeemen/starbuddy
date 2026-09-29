@@ -49,6 +49,7 @@ def parse_request(body: Any, client_subject: str) -> RouteRequest:
                 or not isinstance(m["content"], str) or len(m["content"]) > MAX_CONTENT):
             raise bad
     usage, key = body.get("usage_id"), body.get("idempotency_key")
+    usage = usage.lower() if isinstance(usage, str) else usage  # 契约是 format: uuid，大小写都收（契约审查建议 1）
     if not isinstance(usage, str) or not UUID_RE.match(usage) or not isinstance(key, str) or not UUID4_RE.match(key):
         raise bad
     deadline = body.get("deadline_ms")
