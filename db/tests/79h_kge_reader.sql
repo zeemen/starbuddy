@@ -137,6 +137,11 @@ SELECT t.ok(NOT EXISTS (
    WHERE n.nspname IN ('kge', 'platform', 'insight', 'policy') AND p.prosecdef
      AND has_function_privilege('starbuddy_kge_read', p.oid, 'EXECUTE')),
   '只读角色不能执行任何 SECURITY DEFINER 函数（发布、签字、打标决定等）');
+SELECT t.ok(NOT EXISTS (
+  SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+   WHERE n.nspname IN ('kge', 'platform', 'insight', 'policy') AND a.privilege_type = 'EXECUTE'
+     AND a.grantee = 'starbuddy_kge_read'::regrole AND p.oid <> 'kge.reader_version_published(uuid)'::regprocedure),
+  '除 RLS 辅助函数外，没有任何函数显式授给只读角色');
 SELECT t.ok((SELECT NOT prosecdef FROM pg_proc WHERE oid = 'kge.reader_version_published(uuid)'::regprocedure),
             'RLS 辅助函数以调用者权限执行（不能借它越过版本可见性）');
 SELECT t.ok(NOT has_function_privilege('starbuddy_bff', 'kge.reader_version_published(uuid)', 'EXECUTE')

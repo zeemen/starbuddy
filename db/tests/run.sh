@@ -182,6 +182,8 @@ kge_read_must_refuse "ALTER ROLE starbuddy_kge_read LOGIN" "ALTER ROLE starbuddy
 kge_read_must_refuse "CREATE ROLE t_kr_login LOGIN IN ROLE starbuddy_kge_read, starbuddy_kge;" "DROP ROLE t_kr_login;" "登录角色同时继承只读角色与写入角色"
 kge_read_must_refuse "CREATE ROLE t_kr_mid IN ROLE starbuddy_kge_read; CREATE ROLE t_kr_login LOGIN IN ROLE t_kr_mid, starbuddy_learning;" \
                      "DROP ROLE t_kr_login; DROP ROLE t_kr_mid;" "登录角色经中间角色同时继承只读角色与 learning"
+kge_read_must_refuse "CREATE ROLE t_kr_login LOGIN IN ROLE starbuddy_kge_read, pg_read_all_data;" "DROP ROLE t_kr_login;" "登录角色同时继承只读角色与 pg_read_all_data"
+kge_read_must_refuse "CREATE ROLE t_kr_login LOGIN CREATEROLE IN ROLE starbuddy_kge_read;" "DROP ROLE t_kr_login;" "继承只读角色的登录角色有 CREATEROLE"
 psql_kge -1 < "$ROOT/db/migrations/0026_kge__knowledge_reader.up.sql" >/dev/null 2>&1 \
   || { echo "db-test: 失败（角色都正常时 0026 反而执行失败）"; exit 1; }
 echo "ok - 角色都正常时 0026 可以执行（上面的拒绝不是别的原因）" >> "$OUT"

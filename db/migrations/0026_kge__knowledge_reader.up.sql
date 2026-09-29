@@ -23,6 +23,17 @@ BEGIN
                      OR pg_has_role(r.oid, 'starbuddy_report', 'MEMBER') OR pg_has_role(r.oid, 'starbuddy_authz', 'MEMBER'))) THEN
     RAISE EXCEPTION '同一个角色不能同时继承 starbuddy_kge_read 与其他应用角色（读服务不能顺带拿到写权限或个人层权限）';
   END IF;
+  -- Postgres 预置角色（pg_read_all_data 等）会绕过表权限；只读角色及继承它的登录角色都不能是它们的成员，也不能有建角色、建库权限
+  IF EXISTS (SELECT 1 FROM pg_roles r
+              WHERE NOT r.rolsuper AND pg_has_role(r.oid, 'starbuddy_kge_read', 'MEMBER')
+                AND (r.rolcreaterole OR r.rolcreatedb OR r.rolbypassrls OR r.rolreplication
+                     OR EXISTS (SELECT 1 FROM pg_roles p
+                                 WHERE p.rolname IN ('pg_read_all_data', 'pg_write_all_data', 'pg_read_server_files',
+                                                     'pg_write_server_files', 'pg_execute_server_program', 'pg_signal_backend',
+                                                     'pg_database_owner', 'pg_checkpoint', 'pg_maintain')
+                                   AND pg_has_role(r.oid, p.oid, 'MEMBER')))) THEN
+    RAISE EXCEPTION '继承 starbuddy_kge_read 的角色不能是 pg_read_all_data 等预置角色的成员，也不能有 CREATEROLE、CREATEDB、BYPASSRLS、REPLICATION';
+  END IF;
 END $$;
 
 GRANT USAGE ON SCHEMA kge TO starbuddy_kge_read;
