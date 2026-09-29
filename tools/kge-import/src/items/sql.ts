@@ -17,6 +17,10 @@ export function num3(x: number | null): string {
   if (!Number.isFinite(x) || x < 0 || x > 1) throw new SqlError(`置信度 ${x} 不在 0–1`);
   return x.toFixed(3);
 }
+/** jsonb 字面量：JSON 文本按普通字符串转义后转成 jsonb */
+export function jsonb(v: unknown): string {
+  return `${q(JSON.stringify(v))}::jsonb`;
+}
 export function nodeArray(xs: string[]): string {
   return xs.length === 0 ? "'{}'::kge.node_id[]" : `ARRAY[${xs.map(q).join(", ")}]::kge.node_id[]`;
 }
@@ -25,10 +29,11 @@ export function nodeArray(xs: string[]): string {
 export const ITEM_FAMILY_COLUMNS = ["id", "map_version_id", "main_node_id", "code"] as const;
 export const ITEM_TAG_COLUMNS = [
   "map_version_id", "subject", "item_id", "main_node_id", "node_ids", "cognitive_level", "family_id", "source_kind", "license_state",
-  "tag_review_status", "tag_confidence", "tag_source", "tagger_version", "tag_model_version",
+  "tag_review_status", "tag_confidence", "tag_source", "tagger_version", "tag_model_version", "tag_basis",
 ] as const;
 export const TAG_CANDIDATE_COLUMNS = [
   "map_version_id", "subject", "item_id", "node_id", "role", "layer", "confidence", "tagger_version", "model_version", "reason_code", "grade",
+  "item_source_kind",
 ] as const;
 
 export function insert(table: string, columns: readonly string[], rows: string[][]): string[] {

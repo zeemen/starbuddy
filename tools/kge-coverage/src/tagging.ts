@@ -6,7 +6,9 @@
 //   - 各层候选：优先 counts.candidates_all_by_layer（已导入主题里三层去重后的全部候选），其次 candidates_by_layer，
 //     都没有时按各题 candidates 数组现算；写进 kge.tag_candidate 的行数（counts.candidate_rows_by_layer）另列；
 //   - 报告没有 cognitive_level 字段时，按导入器写 kge.item_tag 的同一规则推：主考点节点只声明了一个认知层次就用它，否则“未标”
-//     （tools/kge-import/src/items/build.ts；建议打标报告直接带上 cognitive_level，见 lessons 待人确认）。
+//     （tools/kge-import/src/items/build.ts；建议打标报告直接带上 cognitive_level，见 lessons 待人确认）；
+//   - 报告后来追加的字段（items[].tag_basis、run.fake_layers、顶层 warning）不参与统计：tag_basis 只核对形状（数组，元素为 {layer, version}），
+//     其余忽略。报告带 warning（含假实现）时照样出报表，是否采信由人判断。
 import { readFileSync } from "node:fs";
 import { COGNITIVE_LEVELS, type CognitiveLevel } from "./map.ts";
 
@@ -59,6 +61,18 @@ function layerCounts(v: unknown, what: string): Record<string, number> {
   return out;
 }
 
+const BASIS_LAYERS = ["rule", "vector", "model"] as const;
+
+/** items[].tag_basis（A 级结论依据的每一层及其版本，同 kge.item_tag.tag_basis）：只核对形状，不统计 */
+function checkTagBasis(v: unknown, id: string): void {
+  if (!Array.isArray(v)) throw new TaggingError(`题目 ${id} 的 tag_basis 应为数组`);
+  for (const b of v) {
+    if (!isObj(b) || typeof b.version !== "string" || b.version === "") throw new TaggingError(`题目 ${id} 的 tag_basis 元素应为 {layer, version}`);
+    nullableEnum(b.layer, BASIS_LAYERS, "tag_basis.layer", id);
+    if (b.layer === null || b.layer === undefined) throw new TaggingError(`题目 ${id} 的 tag_basis 元素缺 layer`);
+  }
+}
+
 export function checkTaggingReport(raw: unknown): TaggingReport {
   if (!isObj(raw)) throw new TaggingError("打标报告应为 JSON 对象");
   if (raw.format !== undefined && raw.format !== REPORT_FORMAT) throw new TaggingError(`不认识的打标报告格式：${String(raw.format)}（只认 ${REPORT_FORMAT}）`);
@@ -96,6 +110,7 @@ export function checkTaggingReport(raw: unknown): TaggingReport {
     if (!Array.isArray(nodeIds) || !nodeIds.every((x) => typeof x === "string")) throw new TaggingError(`题目 ${id} 的 node_ids 应为字符串数组`);
     const c = it.confidence ?? null;
     if (c !== null && (typeof c !== "number" || !(c >= 0 && c <= 1))) throw new TaggingError(`题目 ${id} 的 confidence 应在 0–1`);
+    if (it.tag_basis !== undefined) checkTagBasis(it.tag_basis, id);
     if (it.candidates !== undefined) {
       if (!Array.isArray(it.candidates)) throw new TaggingError(`题目 ${id} 的 candidates 应为数组`);
       for (const cand of it.candidates) {

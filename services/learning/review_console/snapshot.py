@@ -23,6 +23,7 @@ from typing import Any, Iterable, Mapping
 from uuid import UUID
 
 NODE_FIELDS = ("level", "parent_id", "kind", "name", "includes", "excludes", "examples", "scope", "cognitive_levels", "error_type", "status")
+TAG_SOURCE_FIELDS = ("tag_source", "tag_confidence", "tagger_version", "tag_model_version")
 JSON_FIELDS = ("keyword_family", "partial_credit_rule", "common_errors")
 
 
@@ -126,6 +127,9 @@ class Snapshot:
             s.item_tags[key] = {
                 f: norm(r[f]) for f in ("main_node_id", "node_ids", "cognitive_level", "prior_difficulty", "family", "source_kind",
                                         "license_state", "quality_grade", "tag_review_status")}
+            # 0024 起的打标来源、置信度、版本与依据（审查建议：审核员要看得到来源变化；0024 之前的行没有这些列）
+            s.item_tags[key].update({f: norm(r.get(f)) for f in TAG_SOURCE_FIELDS})
+            s.item_tags[key]["tag_basis"] = _json(r.get("tag_basis", []))
             s._ref(f'item_tag:{r["subject"]}:{r["item_id"]}', "item_tag", key)
         for r in rows.get("scoring_point", ()):
             d = {f: norm(r[f]) for f in ("score", "node_ids", "subject_dimension", "required_logic", "material_linkage")}

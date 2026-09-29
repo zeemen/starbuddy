@@ -56,7 +56,8 @@ def diff(base: Snapshot | None, draft: Snapshot) -> list[Change]:
     out += _keyed("item_family", b.item_families, draft.item_families, ("main_node_id",))
     out += _keyed("item_tag", b.item_tags, draft.item_tags,
                   ("main_node_id", "node_ids", "cognitive_level", "prior_difficulty", "family", "source_kind", "license_state",
-                   "quality_grade", "tag_review_status"))
+                   "quality_grade", "tag_review_status", "tag_source", "tag_confidence", "tagger_version", "tag_model_version",
+                   "tag_basis"))
     out += _keyed("scoring_point", b.scoring_points, draft.scoring_points,
                   ("score", "node_ids", "subject_dimension", "keyword_family", "required_logic", "material_linkage",
                    "partial_credit_rule", "common_errors"))

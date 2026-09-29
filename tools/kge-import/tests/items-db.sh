@@ -2,7 +2,8 @@
 # KGE-02 题库导入种子的库上验证（specs/kge-02-atoms-tagging/spec.md 验收第 1、3 条），只用本机一次性 Postgres（规则 9）。
 # 第一段不需要 legacy：执行全部迁移 → 阿鸦内容登记（adapters/aya/scripts/register-content.ts）→ KGE-01 地图种子 → 本任务的 items.sql；
 #   核对题组、打标、候选的行数与 tagging-report.json 一致，候选全部待处理、以知识服务身份写入。
-# 第二段需要 legacy/aya：以 --rules-only-a 重新生成到临时目录并执行，证明写 item_tag 的路径也能通过 0024 的约束。没有 legacy 时打印“跳过”。
+# 第二段需要 legacy/aya：以 --rules-only-a 重新生成到临时目录并执行，证明写 item_tag 的路径也能通过 0024 的约束（source_kind = legacy、tag_basis）；
+#   再以 --vector --model（假实现）生成并执行，证明含假实现的 SQL 执行即报错、什么都不写。没有 legacy 时打印“跳过”。
 # 退出码 3 = 本机没有 Postgres。
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -37,6 +38,8 @@ tag_db="$(q "SELECT count(*) FROM kge.item_tag WHERE map_version_id = '$mv'")"
 [ "$cand_db" -gt 0 ] || fail "候选没有写入"
 [ "$(q "SELECT count(*) FROM kge.tag_candidate WHERE map_version_id = '$mv' AND status <> 'open'")" = "0" ] || fail "候选必须以待处理写入"
 [ "$(q "SELECT count(*) FROM kge.tag_candidate WHERE map_version_id = '$mv' AND layer <> 'rule'")" = "0" ] || fail "默认种子只含规则层候选"
+[ "$(q "SELECT count(*) FROM kge.tag_candidate WHERE map_version_id = '$mv' AND item_source_kind <> 'legacy'")" = "0" ] || fail "候选的题目来源必须是 legacy"
+grep -q '含假实现' "$SEED/items.sql" && fail "种子目录里不能有含假实现的产物"
 [ "$(q "SELECT count(*) FROM kge.item_family WHERE map_version_id = '$mv'")" -ge 1 ] || fail "题组没有写入"
 echo "ok - 默认种子：候选 $cand_db 行（SQL 里 $cand_sql 行）、打标 $tag_db 题、全部待处理且只含规则层"
 [ "$(q "SELECT count(*) FROM information_schema.columns WHERE table_schema = 'kge' AND table_name IN ('tag_candidate', 'item_tag', 'item_family')
@@ -54,6 +57,29 @@ else
             AND tag_confidence IS NOT NULL AND tag_review_status = 'pending' AND cardinality(node_ids) BETWEEN 1 AND 3")"
   [ "$n" -gt 0 ] || fail "--rules-only-a 应写出带来源、版本、置信度的打标草稿"
   [ "$n" = "$(q "SELECT count(*) FROM kge.item_tag WHERE map_version_id = '$mv'")" ] || fail "每条打标都要带来源、版本、置信度与 1–3 个节点"
-  echo "ok - --rules-only-a：写入 $n 题打标草稿，全部带来源、打标器版本、置信度，节点 1–3 个"
+  [ "$(q "SELECT count(*) FROM kge.item_tag WHERE map_version_id = '$mv' AND (source_kind <> 'legacy'
+            OR tag_basis <> jsonb_build_array(jsonb_build_object('layer', 'rule', 'version', tagger_version)))")" = "0" ] \
+    || fail "--rules-only-a 的打标：来源 legacy，tag_basis 只有规则层一个元素"
+  echo "ok - --rules-only-a：写入 $n 题打标草稿，全部带来源、打标器版本、置信度、依据，节点 1–3 个，来源 legacy"
+
+  # 含假实现的 SQL：执行即报错，事务回滚，库里什么都不多
+  (cd "$TOOL" && node --no-warnings src/main.ts --aya "$AYA" --map "$MAP" --vector --model --out "$TMP/fake" >/dev/null 2>&1)
+  chmod -R a+r "$TMP/fake"
+  before="$(q "SELECT (SELECT count(*) FROM kge.item_tag) || '/' || (SELECT count(*) FROM kge.tag_candidate) || '/' || (SELECT count(*) FROM kge.item_family)")"
+  if psql_run < "$TMP/fake/items.sql" >"$TMP/fake.out" 2>&1; then fail "含假实现的 items.sql 不应执行成功"; fi
+  grep -q '含假实现，不得执行' "$TMP/fake.out" || fail "含假实现的 items.sql 报错信息应说明原因"
+  [ "$(q "SELECT (SELECT count(*) FROM kge.item_tag) || '/' || (SELECT count(*) FROM kge.tag_candidate) || '/' || (SELECT count(*) FROM kge.item_family)")" = "$before" ] \
+    || fail "含假实现的 items.sql 不应写入任何行"
+  echo "ok - 含假实现（--vector --model）的 items.sql 执行即报错，没有写入"
+  # 仅为核对多层依据能过 0024 的约束：去掉挡板后在一次性库里执行（假实现的数字没有质量含义，不代表可以入库）
+  grep -v '^DO \$guard\$' "$TMP/fake/items.sql" > "$TMP/fake/unguarded.sql"
+  q "DELETE FROM kge.item_tag WHERE map_version_id = '$mv'; DELETE FROM kge.tag_candidate WHERE map_version_id = '$mv';
+     DELETE FROM kge.item_family WHERE map_version_id = '$mv'" >/dev/null
+  psql_run < "$TMP/fake/unguarded.sql" >/dev/null
+  [ "$(q "SELECT count(*) FROM kge.item_tag WHERE map_version_id = '$mv' AND jsonb_array_length(tag_basis) >= 2
+            AND tag_basis -> 0 ->> 'layer' = 'rule'")" -gt 0 ] || fail "多层一致的 A 级应在 tag_basis 里记下规则层与另一层"
+  [ "$(q "SELECT count(*) FROM kge.item_tag WHERE map_version_id = '$mv' AND (jsonb_array_length(tag_basis) = 0
+            OR tag_basis -> 0 ->> 'layer' <> 'rule')")" = "0" ] || fail "item_tag 的 tag_basis 必须以规则层开头、不能为空"
+  echo "ok - 多层依据（去掉挡板、仅一次性库）：tag_basis 过得了 0024 的约束"
 fi
 echo "kge-items-db: 通过"

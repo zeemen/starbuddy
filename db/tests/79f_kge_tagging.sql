@@ -38,8 +38,9 @@ INSERT INTO kge.knowledge_node (map_version_id, id, level, parent_id, kind, name
   (:kd, 'MATH.FUNC.QUAD.ROOT', 'node', 'MATH.FUNC.QUAD', 'kp', '合成节点丁', '{a}', '{b}', '{c}', '{apply}');
 
 -- ================= item_tag 的打标来源 =================
-INSERT INTO kge.item_tag (map_version_id, subject, item_id, main_node_id, node_ids, source_kind, tag_confidence, tag_source, tagger_version)
-VALUES (:kd, 'aya', 'synthetic-tag-01', 'MATH.FUNC.QUAD.GRAPH', '{MATH.FUNC.QUAD.GRAPH}', 'original', 0.9, 'rule', 'aya-tagger-rules@0.1.0');
+INSERT INTO kge.item_tag (map_version_id, subject, item_id, main_node_id, node_ids, source_kind, tag_confidence, tag_source, tagger_version, tag_basis)
+VALUES (:kd, 'aya', 'synthetic-tag-01', 'MATH.FUNC.QUAD.GRAPH', '{MATH.FUNC.QUAD.GRAPH}', 'legacy', 0.9, 'rule', 'aya-tagger-rules@0.1.0',
+        '[{"layer": "rule", "version": "aya-tagger-rules@0.1.0"}]');
 SELECT t.ok((SELECT tag_source = 'rule' AND tag_confidence = 0.9 FROM kge.item_tag WHERE map_version_id = :kd AND item_id = 'synthetic-tag-01'),
             '题目标签记下打标来源、置信度与打标器版本');
 SELECT t.throws(format($$INSERT INTO kge.item_tag (map_version_id, subject, item_id, main_node_id, source_kind, tag_confidence, tag_source)
@@ -57,35 +58,35 @@ SELECT t.throws(format($$INSERT INTO kge.item_tag (map_version_id, subject, item
                 '23514', '置信度在 0–1 之间');
 
 -- ================= 候选：只有知识服务能写，只能以待处理写入 =================
-INSERT INTO kge.tag_candidate (id, map_version_id, subject, item_id, node_id, role, layer, confidence, tagger_version, model_version, reason_code, grade)
+INSERT INTO kge.tag_candidate (id, map_version_id, subject, item_id, node_id, role, layer, confidence, tagger_version, model_version, reason_code, grade, item_source_kind)
 VALUES ('cc000001-0000-4000-8000-0000000000c1', :kd, 'aya', 'synthetic-tag-02', 'MATH.FUNC.QUAD.VERTEX_FORM', 'main', 'rule', 0.6,
-        'aya-tagger-rules@0.1.0', NULL, 'rule_chapter_topic', 'B'),
+        'aya-tagger-rules@0.1.0', NULL, 'rule_chapter_topic', 'B', 'legacy'),
        ('cc000002-0000-4000-8000-0000000000c2', :kd, 'aya', 'synthetic-tag-02', 'MATH.FUNC.QUAD.AXIS', 'main', 'model', 0.5,
-        'aya-tagger@0.1.0', 'model:fake-a/fake-tagger@0.0.0', 'model_choice', 'B'),
+        'aya-tagger@0.1.0', 'model:fake-a/fake-tagger@0.0.0', 'model_choice', 'B', 'legacy'),
        ('cc000003-0000-4000-8000-0000000000c3', :kd, 'aya', 'synthetic-tag-01', 'MATH.FUNC.QUAD.AXIS', 'secondary', 'vector', 0.55,
-        'aya-tagger@0.1.0', NULL, 'vector_similarity', 'B'),
+        'aya-tagger@0.1.0', NULL, 'vector_similarity', 'B', 'legacy'),
        ('cc000004-0000-4000-8000-0000000000c4', :k1, 'aya', 'synthetic-tag-03', 'MATH.FUNC.QUAD.GRAPH', 'main', 'rule', 0.6,
-        'aya-tagger-rules@0.1.0', NULL, 'rule_explicit_ref', 'B'),
+        'aya-tagger-rules@0.1.0', NULL, 'rule_explicit_ref', 'B', 'legacy'),
        ('cc000005-0000-4000-8000-0000000000c5', :kd, 'aya', 'synthetic-tag-03', 'MATH.FUNC.QUAD.GRAPH', 'main', 'rule', 0.6,
-        'aya-tagger-rules@0.1.0', NULL, 'rule_explicit_ref', 'B');
+        'aya-tagger-rules@0.1.0', NULL, 'rule_explicit_ref', 'B', 'legacy');
 SELECT t.ok((SELECT count(*) FROM kge.tag_candidate WHERE status = 'open') = 5, '知识服务写入候选，默认待处理');
 SELECT t.throws(format($$INSERT INTO kge.tag_candidate (map_version_id, subject, item_id, node_id, role, layer, confidence, tagger_version, reason_code,
-                         grade, status, decided_at) VALUES (%L, 'aya', 'synthetic-tag-02', 'MATH.FUNC.QUAD.GRAPH', 'main', 'rule', 0.6,
-                         'aya-tagger-rules@0.2.0', 'x', 'B', 'accepted', now())$$, :kd),
+                         grade, status, decided_at, item_source_kind) VALUES (%L, 'aya', 'synthetic-tag-02', 'MATH.FUNC.QUAD.GRAPH', 'main', 'rule', 0.6,
+                         'aya-tagger-rules@0.2.0', 'x', 'B', 'accepted', now(), 'legacy')$$, :kd),
                 '42501', '知识服务不能写已处理的候选');
 SELECT t.throws($$UPDATE kge.tag_candidate SET status = 'accepted' WHERE id = 'cc000001-0000-4000-8000-0000000000c1'$$,
                 '42501', '知识服务不能改候选结论');
-SELECT t.throws(format($$INSERT INTO kge.tag_candidate (map_version_id, subject, item_id, node_id, role, layer, confidence, tagger_version, reason_code, grade)
-                         VALUES (%L, 'aya', 'synthetic-tag-02', 'MATH.FUNC.QUAD.NOPE', 'main', 'rule', 0.6, 'aya-tagger-rules@0.1.0', 'x', 'B')$$, :kd),
+SELECT t.throws(format($$INSERT INTO kge.tag_candidate (map_version_id, subject, item_id, node_id, role, layer, confidence, tagger_version, reason_code, grade, item_source_kind)
+                         VALUES (%L, 'aya', 'synthetic-tag-02', 'MATH.FUNC.QUAD.NOPE', 'main', 'rule', 0.6, 'aya-tagger-rules@0.1.0', 'x', 'B', 'legacy')$$, :kd),
                 '23503', '候选节点必须是本版本已有节点');
-SELECT t.throws(format($$INSERT INTO kge.tag_candidate (map_version_id, subject, item_id, node_id, role, layer, confidence, tagger_version, reason_code, grade)
-                         VALUES (%L, 'aya', 'synthetic-nope', 'MATH.FUNC.QUAD.GRAPH', 'main', 'rule', 0.6, 'aya-tagger-rules@0.1.0', 'x', 'B')$$, :kd),
+SELECT t.throws(format($$INSERT INTO kge.tag_candidate (map_version_id, subject, item_id, node_id, role, layer, confidence, tagger_version, reason_code, grade, item_source_kind)
+                         VALUES (%L, 'aya', 'synthetic-nope', 'MATH.FUNC.QUAD.GRAPH', 'main', 'rule', 0.6, 'aya-tagger-rules@0.1.0', 'x', 'B', 'legacy')$$, :kd),
                 '23503', '候选题目必须是 platform.item 已登记的题目');
-SELECT t.throws(format($$INSERT INTO kge.tag_candidate (map_version_id, subject, item_id, node_id, role, layer, confidence, tagger_version, reason_code, grade)
-                         VALUES (%L, 'aya', 'synthetic-tag-02', 'MATH.FUNC.QUAD.GRAPH', 'main', 'model', 0.6, 'aya-tagger@0.1.0', 'x', 'B')$$, :kd),
+SELECT t.throws(format($$INSERT INTO kge.tag_candidate (map_version_id, subject, item_id, node_id, role, layer, confidence, tagger_version, reason_code, grade, item_source_kind)
+                         VALUES (%L, 'aya', 'synthetic-tag-02', 'MATH.FUNC.QUAD.GRAPH', 'main', 'model', 0.6, 'aya-tagger@0.1.0', 'x', 'B', 'legacy')$$, :kd),
                 '23514', '模型层候选必须带模型版本');
-SELECT t.throws(format($$INSERT INTO kge.tag_candidate (map_version_id, subject, item_id, node_id, role, layer, confidence, tagger_version, reason_code, grade)
-                         VALUES (%L, 'aya', 'synthetic-tag-02', 'MATH.FUNC.QUAD.GRAPH', 'main', 'rule', 0.6, 'aya-tagger-rules@0.1.0', 'Free Text', 'B')$$, :kd),
+SELECT t.throws(format($$INSERT INTO kge.tag_candidate (map_version_id, subject, item_id, node_id, role, layer, confidence, tagger_version, reason_code, grade, item_source_kind)
+                         VALUES (%L, 'aya', 'synthetic-tag-02', 'MATH.FUNC.QUAD.GRAPH', 'main', 'rule', 0.6, 'aya-tagger-rules@0.1.0', 'Free Text', 'B', 'legacy')$$, :kd),
                 '23514', '理由只能是编码，不能是自由文本');
 SELECT t.throws($$DELETE FROM kge.tag_candidate$$, '42501', '候选不能删除');
 RESET ROLE;
@@ -107,19 +108,47 @@ SELECT t.throws(format('SELECT t.decide(%L, gen_random_uuid(), %L)', :sf, 'accep
 -- 草稿版本：接受主考点候选，该题还没有打标 → 写回 item_tag（来源 human、置信度 1）
 SELECT t.ok(t.decide(:sf, 'cc000001-0000-4000-8000-0000000000c1', 'accepted') = 'written', '草稿版本上接受主考点候选写回打标');
 SELECT t.ok((SELECT main_node_id = 'MATH.FUNC.QUAD.VERTEX_FORM' AND tag_source = 'human' AND tag_confidence = 1
-                    AND tagger_version = 'aya-tagger-rules@0.1.0' AND tag_review_status = 'pending'
-               FROM kge.item_tag WHERE map_version_id = :kd AND item_id = 'synthetic-tag-02'), '写回的打标来源是 human、仍待版本审核');
+                    AND tagger_version = 'aya-tagger-rules@0.1.0' AND tag_review_status = 'pending' AND source_kind = 'legacy'
+                    AND tag_basis = '[{"layer": "rule", "version": "aya-tagger-rules@0.1.0"}]'::jsonb
+               FROM kge.item_tag WHERE map_version_id = :kd AND item_id = 'synthetic-tag-02'),
+            '写回的打标来源是 human、沿用题目来源类型 legacy、记下依据的层与版本、仍待版本审核');
+SELECT t.ok((SELECT status = 'rejected' FROM kge.tag_candidate WHERE id = 'cc000002-0000-4000-8000-0000000000c2')
+            AND EXISTS (SELECT 1 FROM platform.tag_candidate_signoff WHERE tag_candidate_id = 'cc000002-0000-4000-8000-0000000000c2'
+                          AND decision = 'rejected' AND account_id = :sf::uuid),
+            '接受主考点时同题其他待处理的主考点候选一并驳回（记签字），不会出现两个已接受的主考点');
 SELECT t.ok((SELECT status = 'accepted' AND decided_at IS NOT NULL FROM kge.tag_candidate WHERE id = 'cc000001-0000-4000-8000-0000000000c1')
             AND (SELECT account_id = :sf::uuid AND decision = 'accepted' FROM platform.tag_candidate_signoff
                   WHERE tag_candidate_id = 'cc000001-0000-4000-8000-0000000000c1'),
             '记下结论与时间；处理人记在平台层签字表（公共层不挂账号 ID）');
 SELECT t.throws($$SELECT t.as_role('starbuddy_review', 'SELECT count(*)::text FROM platform.tag_candidate_signoff')$$, '42501', '审核台读不到签字表');
 SELECT t.throws($$UPDATE platform.tag_candidate_signoff SET decision = 'rejected'$$, '42501', '签字记录只追加，不能改');
+SELECT t.throws($$DELETE FROM platform.tag_candidate_signoff$$, '42501', '签字记录不能删');
+SELECT t.throws($$TRUNCATE platform.tag_candidate_signoff$$, '42501', '签字记录不能清空');
 SELECT t.throws(format('SELECT t.decide(%L, %L, %L)', :sf, 'cc000001-0000-4000-8000-0000000000c1', 'rejected'), '23514', '已处理的候选不能再处理');
--- 同一题的另一个主考点候选：已有打标 → 只记结论，不覆盖
-SELECT t.ok(t.decide(:sf, 'cc000002-0000-4000-8000-0000000000c2', 'accepted') = 'recorded'
-            AND (SELECT main_node_id FROM kge.item_tag WHERE map_version_id = :kd AND item_id = 'synthetic-tag-02') = 'MATH.FUNC.QUAD.VERTEX_FORM',
-            '已有打标时接受另一个主考点候选只记结论，不覆盖');
+SELECT t.throws(format('SELECT t.decide(%L, %L, %L)', :sf, 'cc000002-0000-4000-8000-0000000000c2', 'accepted'), '23514', '已被自动驳回的候选不能再接受');
+-- 已有打标时新的主考点候选：接受直接报错，不留“已接受却没生效”的候选
+SET ROLE starbuddy_kge;
+INSERT INTO kge.tag_candidate (id, map_version_id, subject, item_id, node_id, role, layer, confidence, tagger_version, reason_code, grade, item_source_kind) VALUES
+  ('cc000008-0000-4000-8000-0000000000c8', :kd, 'aya', 'synthetic-tag-02', 'MATH.FUNC.QUAD.GRAPH', 'main', 'rule', 0.6, 'aya-tagger-rules@0.2.0', 'rule_explicit_ref', 'B', 'legacy'),
+  ('cc000009-0000-4000-8000-0000000000c9', :kd, 'aya', 'synthetic-tag-03', 'MATH.FUNC.QUAD', 'main', 'rule', 0.6, 'aya-tagger-rules@0.1.0', 'rule_chapter_topic', 'B', 'legacy'),
+  ('cc00000a-0000-4000-8000-0000000000ca', :kd, 'aya', 'synthetic-tag-03', 'MATH.FUNC.QUAD.AXIS', 'secondary', 'rule', 0.6, 'aya-tagger-rules@0.1.0', 'rule_chapter_topic', 'B', 'legacy');
+RESET ROLE;
+SELECT t.throws(format('SELECT t.decide(%L, %L, %L)', :sf, 'cc000008-0000-4000-8000-0000000000c8', 'accepted'), '23514', '该题已有主考点时不能再接受主考点候选');
+SELECT t.ok((SELECT status = 'open' FROM kge.tag_candidate WHERE id = 'cc000008-0000-4000-8000-0000000000c8'), '报错时候选保持待处理（整笔回滚）');
+SELECT t.throws(format('SELECT t.decide(%L, %L, %L)', :sf, 'cc000009-0000-4000-8000-0000000000c9', 'accepted'), '23514', '主考点不能是主题层节点');
+SELECT t.throws(format('SELECT t.decide(%L, %L, %L)', :sf, 'cc00000a-0000-4000-8000-0000000000ca', 'accepted'), '23514', '该题还没有主考点时次要节点写不回，直接报错');
+-- 知识服务不能写出或改动“人工”打标
+SET ROLE starbuddy_kge;
+SELECT t.throws(format($$INSERT INTO kge.item_tag (map_version_id, subject, item_id, main_node_id, source_kind, tag_confidence, tag_source, tagger_version)
+                         VALUES (%L, 'aya', 'synthetic-tag-03', 'MATH.FUNC.QUAD.GRAPH', 'legacy', 1, 'human', 'aya-tagger@0.1.0')$$, :kd),
+                '42501', '知识服务不能自己写“人工”打标');
+SELECT t.throws(format($$UPDATE kge.item_tag SET main_node_id = 'MATH.FUNC.QUAD.GRAPH' WHERE map_version_id = %L AND item_id = 'synthetic-tag-02'$$, :kd),
+                '42501', '知识服务不能改人工确认过的打标');
+SELECT t.throws(format($$UPDATE kge.item_tag SET tag_source = 'human', tag_confidence = 1 WHERE map_version_id = %L AND item_id = 'synthetic-tag-01'$$, :kd),
+                '42501', '知识服务不能把规则打标改成“人工”');
+UPDATE kge.item_tag SET tag_review_status = 'pending' WHERE map_version_id = :kd AND item_id = 'synthetic-tag-02';
+SELECT t.ok(true, '人工打标的其他列（审核状态）照常可改');
+RESET ROLE;
 -- 次要节点：追加到已有打标的节点数组
 SELECT t.decide(:sf, 'cc000003-0000-4000-8000-0000000000c3', 'accepted') AS dec3 \gset
 SELECT t.ok(:'dec3' = 'written', '接受次要节点候选返回 written（实际 ' || :'dec3' || '）');
@@ -128,15 +157,16 @@ SELECT t.ok((SELECT node_ids::text FROM kge.item_tag WHERE map_version_id = :kd 
             '接受次要节点候选时追加到已有打标（实际 ' || (SELECT node_ids::text FROM kge.item_tag WHERE map_version_id = :kd AND item_id = 'synthetic-tag-01') || '）');
 -- 节点数上限 3（小题 1–3 个节点，KGE V1.1 :745）：第三个追加，第四个只记结论
 SET ROLE starbuddy_kge;
-INSERT INTO kge.tag_candidate (id, map_version_id, subject, item_id, node_id, role, layer, confidence, tagger_version, reason_code, grade) VALUES
-  ('cc000006-0000-4000-8000-0000000000c6', :kd, 'aya', 'synthetic-tag-01', 'MATH.FUNC.QUAD.VERTEX_FORM', 'secondary', 'rule', 0.6, 'aya-tagger-rules@0.1.0', 'rule_chapter_topic', 'B'),
-  ('cc000007-0000-4000-8000-0000000000c7', :kd, 'aya', 'synthetic-tag-01', 'MATH.FUNC.QUAD.ROOT', 'secondary', 'rule', 0.6, 'aya-tagger-rules@0.1.0', 'rule_chapter_topic', 'B');
+INSERT INTO kge.tag_candidate (id, map_version_id, subject, item_id, node_id, role, layer, confidence, tagger_version, reason_code, grade, item_source_kind) VALUES
+  ('cc000006-0000-4000-8000-0000000000c6', :kd, 'aya', 'synthetic-tag-01', 'MATH.FUNC.QUAD.VERTEX_FORM', 'secondary', 'rule', 0.6, 'aya-tagger-rules@0.1.0', 'rule_chapter_topic', 'B', 'legacy'),
+  ('cc000007-0000-4000-8000-0000000000c7', :kd, 'aya', 'synthetic-tag-01', 'MATH.FUNC.QUAD.ROOT', 'secondary', 'rule', 0.6, 'aya-tagger-rules@0.1.0', 'rule_chapter_topic', 'B', 'legacy');
 RESET ROLE;
 -- 分开执行：同一条语句里多次调用的求值顺序不确定
 SELECT t.ok(t.decide(:sf, 'cc000006-0000-4000-8000-0000000000c6', 'accepted') = 'written', '第三个节点追加');
-SELECT t.ok(t.decide(:sf, 'cc000007-0000-4000-8000-0000000000c7', 'accepted') = 'recorded'
-            AND (SELECT cardinality(node_ids) FROM kge.item_tag WHERE map_version_id = :kd AND item_id = 'synthetic-tag-01') = 3,
-            '一道题最多 3 个节点：超出时接受只记结论');
+SELECT t.throws(format('SELECT t.decide(%L, %L, %L)', :sf, 'cc000007-0000-4000-8000-0000000000c7', 'accepted'), '23514', '一道题最多 3 个节点：超出时接受直接报错');
+SELECT t.ok((SELECT cardinality(node_ids) = 3 AND tag_source = 'human' AND tag_confidence = 1 AND jsonb_array_length(tag_basis) = 3
+               FROM kge.item_tag WHERE map_version_id = :kd AND item_id = 'synthetic-tag-01'),
+            '追加次要节点后整行来源改为 human，依据里记下各层');
 -- 已发布版本：只记结论（打标变更走 0019 的审核记录）
 SELECT t.ok(t.decide(:sf, 'cc000004-0000-4000-8000-0000000000c4', 'accepted') = 'recorded'
             AND NOT EXISTS (SELECT 1 FROM kge.item_tag WHERE map_version_id = :k1 AND item_id = 'synthetic-tag-03'),

@@ -77,3 +77,21 @@ test("无处可标：没有任何候选", () => {
 test("候选必须属于同一道题", () => {
   assert.throws(() => mergeAndGrade("Q-OTHER", [c("N.A", "main", "rule", 0.9)], opts([])));
 });
+
+test("A 级依据（tag_basis）：规则层 + 每个一致的非规则层；规则层写打标器版本、向量层写嵌入器版本、模型层写模型版本", () => {
+  const both = mergeAndGrade(ID, [c("N.A", "main", "rule", 0.9), c("N.A", "main", "model", 0.88), c("N.A", "main", "vector", 0.31),
+                                  c("N.A", "main", "vector", 0.2)], opts(["vector", "model"]));
+  assert.equal(both.grade, "A");
+  assert.deepEqual(both.basis, [
+    { layer: "rule", version: "aya-tagger-rules@0.1.0" },
+    { layer: "vector", version: "fake-ngram-embedder@0.0.0" },
+    { layer: "model", version: "model:fake-a/fake-tagger@0.0.0" },
+  ]);
+  const onlyRule = mergeAndGrade(ID, [c("N.A", "main", "rule", 0.9)], opts([], true));
+  assert.deepEqual([onlyRule.grade, onlyRule.basis], ["A", [{ layer: "rule", version: "aya-tagger-rules@0.1.0" }]], "只有一层也写一个元素");
+  // 选了别的节点的层不算依据；B 级没有依据
+  const partial = mergeAndGrade(ID, [c("N.A", "main", "rule", 0.9), c("N.A", "main", "vector", 0.4), c("N.B", "main", "model", 0.88)], opts(["vector", "model"]));
+  assert.deepEqual([partial.grade, partial.basis.map((b) => b.layer)], ["A", ["rule", "vector"]]);
+  assert.deepEqual(mergeAndGrade(ID, [c("N.A", "main", "rule", 0.9)], opts([])).basis, []);
+  assert.deepEqual(mergeAndGrade(ID, [], opts([])).basis, []);
+});

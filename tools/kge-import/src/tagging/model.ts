@@ -4,11 +4,20 @@
 //
 // TODO(KGE-02 待人确认 #4、#5)：真实实现经学习服务的模型路由（T8、L0）调用，只用境内已备案模型，题目文本不含学生数据、不出境；
 // KGE V1.1 :664“离线构建可用 Claude”与 2026-09-28“一律不出境”冲突，口径未定前不接任何真实模型。
-// 真实实现同样只实现 TagModel 接口，本工具不直接持有任何供应商密钥。
-import { MAX_NODES, MODEL_VERSION, REASON_CODE, round3, TaggingError, VERSIONED_NAME, type Candidate } from "./types.ts";
+// 真实实现同样只实现 TagModel 接口，本工具不直接持有任何供应商密钥；RoutedTagModel 只是定下接口形状的桩，调用即抛错。
+// 接口是异步的（真实实现要经模型路由），入参带路由必需字段：task = T8、data_class = L0。
+import { checkRouteConfig, type RouteConfig } from "./route.ts";
+import {
+  MAX_NODES, MODEL_TASK, MODEL_VERSION, REASON_CODE, ROUTE_NOT_CONNECTED, round3, TAGGING_DATA_CLASS, TaggingError, VERSIONED_NAME,
+  type Candidate, type DataClass,
+} from "./types.ts";
 
 export interface ModelCandidate { nodeId: string; name: string; score: number }
 export interface ModelInput {
+  /** 模型路由任务：打标选节点固定 T8 */
+  task: typeof MODEL_TASK;
+  /** 数据等级：只送题目文本与节点名，L0（不含学生数据） */
+  data_class: DataClass;
   itemId: string;
   /** 题目文本（只在内存里传给模型路由；不落盘） */
   text: string;
@@ -28,7 +37,15 @@ export interface TagModel {
   readonly taggerVersion: string;
   /** 模型版本，格式 model:<vendor>/<model>@<ver> */
   readonly modelVersion: string;
-  choose(input: ModelInput): ModelChoice;
+  /** 假实现为 true：流水线据此在产物里标注“含假实现，不得执行”，命令行据此拒绝写进种子目录 */
+  readonly fake: boolean;
+  choose(input: ModelInput): Promise<ModelChoice>;
+}
+
+function checkModelInput(input: ModelInput, who: string): void {
+  if (input?.task !== MODEL_TASK || input.data_class !== TAGGING_DATA_CLASS) {
+    throw new TaggingError(`${who}：请求必须带 task = ${MODEL_TASK}、data_class = ${TAGGING_DATA_CLASS}`);
+  }
 }
 
 /**
@@ -38,7 +55,9 @@ export interface TagModel {
 export class FakeTagModel implements TagModel {
   readonly taggerVersion = "aya-tagger-model@0.1.0";
   readonly modelVersion = "model:fake-a/fake-tagger@0.0.0";
-  choose(input: ModelInput): ModelChoice {
+  readonly fake = true;
+  async choose(input: ModelInput): Promise<ModelChoice> {
+    checkModelInput(input, "假模型");
     const sorted = [...input.candidates].sort((a, b) => b.score - a.score || (a.nodeId < b.nodeId ? -1 : a.nodeId > b.nodeId ? 1 : 0));
     const main = sorted[0];
     if (!main) throw new TaggingError(`${input.itemId}：没有候选，假模型不作选择`);
@@ -46,13 +65,46 @@ export class FakeTagModel implements TagModel {
   }
 }
 
+/**
+ * 打标模型经模型路由 T8 的桩：构造时要求路由地址、令牌、打标器版本与模型版本；**调用时一律抛错**，不回落到假实现。
+ * 命令行（main.ts）不接它，只用来把接口形状定下来；接入要等 spec 待人确认 #4、#5（境内已备案模型、出境口径）。
+ */
+export class RoutedTagModel implements TagModel {
+  readonly taggerVersion: string;
+  readonly modelVersion: string;
+  readonly fake = false;
+  readonly routeUrl: string;
+  readonly #token: string;
+  constructor(cfg: RouteConfig & { taggerVersion: string; modelVersion: string }) {
+    this.routeUrl = checkRouteConfig(cfg, "RoutedTagModel");
+    if (!VERSIONED_NAME.test(cfg.taggerVersion)) throw new TaggingError(`RoutedTagModel：打标器版本 ${String(cfg.taggerVersion)} 不合法`);
+    if (!MODEL_VERSION.test(cfg.modelVersion)) throw new TaggingError(`RoutedTagModel：模型版本 ${String(cfg.modelVersion)} 不合法（应为 model:<vendor>/<model>@<ver>）`);
+    this.taggerVersion = cfg.taggerVersion;
+    this.modelVersion = cfg.modelVersion;
+    this.#token = cfg.token;
+  }
+  /** 令牌已配置（不暴露令牌本身） */
+  get hasToken(): boolean {
+    return this.#token.length > 0;
+  }
+  async choose(input: ModelInput): Promise<ModelChoice> {
+    checkModelInput(input, "RoutedTagModel");
+    throw new TaggingError(`RoutedTagModel：${ROUTE_NOT_CONNECTED}`);
+  }
+}
+
+/** 给模型的请求：补上路由必需字段 */
+export const modelInput = (itemId: string, text: string, candidates: ModelCandidate[]): ModelInput =>
+  ({ task: MODEL_TASK, data_class: TAGGING_DATA_CLASS, itemId, text, candidates });
+
 /** 调用模型并把关；没有候选时不调用模型，返回空 */
-export function modelLayer(model: TagModel, input: ModelInput): Candidate[] {
+export async function modelLayer(model: TagModel, input: ModelInput): Promise<Candidate[]> {
   if (input.candidates.length === 0) return [];
+  checkModelInput(input, "模型层");
   if (!VERSIONED_NAME.test(model.taggerVersion)) throw new TaggingError(`模型层打标器版本 ${model.taggerVersion} 不合法`);
   if (!MODEL_VERSION.test(model.modelVersion)) throw new TaggingError(`模型版本 ${model.modelVersion} 不合法（应为 model:<vendor>/<model>@<ver>）`);
   const allowed = new Set(input.candidates.map((c) => c.nodeId));
-  const out = model.choose(input);
+  const out = await model.choose(input);
   const where = `${input.itemId}：模型输出`;
   if (!allowed.has(out.mainNodeId)) throw new TaggingError(`${where}的主考点 ${out.mainNodeId} 不在 Top-K 候选里`);
   if (!Array.isArray(out.nodeIds) || out.nodeIds.length < 1 || out.nodeIds.length > MAX_NODES) throw new TaggingError(`${where}的节点数必须是 1–${MAX_NODES}`);

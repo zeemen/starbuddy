@@ -119,7 +119,9 @@ def read_tagging_report(path: str | Path) -> tuple[str, dict[str, Prediction]]:
     if not isinstance(raw, dict) or not isinstance(raw.get("items"), list):
         raise InputError("打标报告应有 map_version 与 items")
     if raw.get("format") not in (None, REPORT_FORMAT):
-        raise InputError(f"不认识的打标报告格式：{raw.get('format')}（只认 {REPORT_FORMAT}）")
+        # format 字段的值来自输入文件，留出集模式下不回显（可能被写成任意内容）
+        raise InputError(f"不认识的打标报告格式：{raw.get('format')!r}（只认 {REPORT_FORMAT}）",
+                         f"不认识的打标报告格式（只认 {REPORT_FORMAT}）")
     mv = raw.get("map_version")
     if isinstance(mv, dict) and isinstance(mv.get("version"), str):  # 正式格式：{id, version, imported_chapters}
         mv = mv["version"]

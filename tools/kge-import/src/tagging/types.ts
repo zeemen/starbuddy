@@ -17,6 +17,21 @@ export const MAX_NODES = 3;
 export const DEFAULT_TOP_K = 5;
 
 export const RULE_TAGGER_VERSION = "aya-tagger-rules@0.1.0";
+/** legacy 阿鸦题的来源类型（迁移 0024 给 kge.item_tag.source_kind 新增的取值；kge.tag_candidate.item_source_kind 同一集合） */
+export const LEGACY_SOURCE_KIND = "legacy";
+
+/** 模型路由的必需字段：向量层走 T7、模型层走 T8；打标只送题目文本与节点名，数据等级 L0（不含任何学生数据） */
+export type RouteTask = "T7" | "T8";
+export const VECTOR_TASK = "T7";
+export const MODEL_TASK = "T8";
+export const TAGGING_DATA_CLASS = "L0";
+export type DataClass = typeof TAGGING_DATA_CLASS;
+
+/** 真实路由的桩在调用时一律抛这个错：不回落到假实现 */
+export const ROUTE_NOT_CONNECTED = "真实路由未接入（spec 待人确认 #4、#5）";
+
+/** A 级结论依据的一层（写进 kge.item_tag.tag_basis）：规则层写打标器版本，向量层写嵌入器版本，模型层写模型版本 */
+export interface TagBasis { layer: Layer; version: string }
 export const REASON_CODE = /^[a-z0-9_]{1,48}$/;
 export const VERSIONED_NAME = /^[a-z0-9][a-z0-9-]{0,47}@[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/;
 export const MODEL_VERSION = /^model:[a-z0-9-]+\/[A-Za-z0-9._-]+@[A-Za-z0-9._-]+$/;

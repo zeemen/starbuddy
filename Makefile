@@ -208,7 +208,6 @@ kge-import:
 	@cd tools/kge-inventory && node --no-warnings src/import/main.ts --aya ../../legacy/aya --topic fun --version 0.1.0 \
 	  $(if $(KGE_OVERRIDES),--overrides $(abspath $(KGE_OVERRIDES))) --out ../../db/seeds/kge/aya-fun-0.1.0
 
-# 单测（tests/import.test.ts）随 kge-inventory-test 的 tests/*.test.ts 一起跑；这里只跑库上验证
 # KGE-02 题库导入与打标（specs/kge-02-atoms-tagging）：类型检查（借用 kge-inventory 的 tsc）+ 单测 + 种子的库上验证（一次性 Postgres）
 kge-items-test:
 	@if [ ! -d tools/kge-inventory/node_modules/typescript ]; then \
@@ -232,6 +231,7 @@ kge-coverage-test:
 kge-tagging-eval-test:
 	@cd evals/kge-tagging && PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -m unittest discover -s tests -q && echo "kge-tagging-eval-test: 通过"
 
+# 单测（tests/import.test.ts）随 kge-inventory-test 的 tests/*.test.ts 一起跑；这里只跑库上验证
 kge-import-test:
 	@if [ ! -d tools/kge-inventory/node_modules/typescript ]; then \
 	  echo "kge-import-test: 跳过（没有安装依赖；cd tools/kge-inventory && npm ci）"; \

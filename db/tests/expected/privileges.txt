@@ -11,6 +11,11 @@ col|insight.claim.value|starbuddy_insight|UPDATE|SUPERUSER
 col|insight.claim.visibility|starbuddy_insight|UPDATE|SUPERUSER
 col|insight.confidence_probe.attempt_id|starbuddy_authz|UPDATE|SUPERUSER
 col|kge.item_tag.node_ids|starbuddy_authz|UPDATE|SUPERUSER
+col|kge.item_tag.tag_basis|starbuddy_authz|UPDATE|SUPERUSER
+col|kge.item_tag.tag_confidence|starbuddy_authz|UPDATE|SUPERUSER
+col|kge.item_tag.tag_model_version|starbuddy_authz|UPDATE|SUPERUSER
+col|kge.item_tag.tag_source|starbuddy_authz|UPDATE|SUPERUSER
+col|kge.item_tag.tagger_version|starbuddy_authz|UPDATE|SUPERUSER
 col|kge.map_change.confidence|starbuddy_kge|UPDATE|SUPERUSER
 col|kge.map_change.evidence_pack|starbuddy_kge|UPDATE|SUPERUSER
 col|kge.map_change.payload|starbuddy_kge|UPDATE|SUPERUSER

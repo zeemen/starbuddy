@@ -5,8 +5,10 @@
 //   - A 级：主考点上有规则层“主考点”候选、置信度 ≥ 0.85，且另一层（向量或模型）也把它作主考点；节点数没有超上限。
 //     只跑规则层时一律 B 级；--rules-only-a（默认关）放宽为“只跑规则层时，规则直接命中也算 A”，供教研试用；
 //   - 其余为 B 级，进低置信候选队列；没有任何候选的是“无处可标”，进工作单。
+// A 级的依据（tag_basis）：结论依据的每一层及其版本——规则层写打标器版本，与之一致的向量层写嵌入器版本、模型层写模型版本；
+//   只有一层（--rules-only-a）时也写一个元素；B 级与无处可标为空。
 // A 级也只写成待审草稿（tag_review_status = pending），要经审核才能发布（KGE V1.1 :343）。
-import { A_MIN_CONFIDENCE, cmp, LAYER_ORDER, MAX_NODES, sortCandidates, type Candidate, type Grade, type Layer } from "./types.ts";
+import { A_MIN_CONFIDENCE, cmp, LAYER_ORDER, MAX_NODES, sortCandidates, type Candidate, type Grade, type Layer, type TagBasis } from "./types.ts";
 
 export interface MergeOptions {
   /** 本次运行开启的层（规则层总是开启） */
@@ -31,6 +33,8 @@ export interface TagDecision {
   /** 合并前的不同节点数超过上限 3（截断后的清单在 nodeIds） */
   overCap: boolean;
   bReasons: BReason[];
+  /** A 级结论依据的每一层及其版本（按 rule、vector、model 排）；B 级与无处可标为空 */
+  basis: TagBasis[];
   /** 去重后的全部候选（已排序） */
   candidates: Candidate[];
 }
@@ -51,7 +55,7 @@ export function mergeAndGrade(itemId: string, input: Candidate[], opts: MergeOpt
   const candidates = dedupe(input);
   if (candidates.length === 0) {
     return { itemId, status: "untaggable", grade: null, mainNodeId: null, nodeIds: [], confidence: null, source: null, overCap: false,
-             bReasons: [], candidates };
+             bReasons: [], basis: [], candidates };
   }
   const firstIndex = new Map<string, number>();
   input.forEach((c, i) => { if (!firstIndex.has(c.nodeId)) firstIndex.set(c.nodeId, i); });
@@ -87,5 +91,21 @@ export function mergeAndGrade(itemId: string, input: Candidate[], opts: MergeOpt
     .sort((a, b) => b.confidence - a.confidence || LAYER_ORDER[a.layer] - LAYER_ORDER[b.layer]);
   const source: Layer = grade === "A" ? "rule" : onMain[0]!.layer;
   const confidence = grade === "A" ? ruleMain!.confidence : onMain[0]!.confidence;
-  return { itemId, status: "tagged", grade, mainNodeId: main, nodeIds, confidence, source, overCap, bReasons: [...new Set(bReasons)].sort(), candidates };
+  const basis = grade === "A" ? basisOf(ruleMain!, agreeing) : [];
+  return { itemId, status: "tagged", grade, mainNodeId: main, nodeIds, confidence, source, overCap, bReasons: [...new Set(bReasons)].sort(), basis,
+           candidates };
+}
+
+const BASIS_ORDER: Record<Layer, number> = { rule: 0, vector: 1, model: 2 };
+
+/** A 级依据：规则层 + 每个与之一致的非规则层各一条（同层多条取置信度最高的那条的版本） */
+function basisOf(ruleMain: Candidate, agreeing: Candidate[]): TagBasis[] {
+  const byLayer = new Map<Layer, TagBasis>([["rule", { layer: "rule", version: ruleMain.taggerVersion }]]);
+  for (const c of [...agreeing].sort((a, b) => b.confidence - a.confidence)) {
+    if (byLayer.has(c.layer)) continue;
+    const version = c.layer === "model" ? c.modelVersion : c.taggerVersion;
+    if (version === null) throw new Error(`${c.itemId}：模型层候选缺模型版本`);
+    byLayer.set(c.layer, { layer: c.layer, version });
+  }
+  return [...byLayer.values()].sort((a, b) => BASIS_ORDER[a.layer] - BASIS_ORDER[b.layer]);
 }

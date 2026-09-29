@@ -6,7 +6,10 @@
 //   - 置信度都是 0–1、最多 3 位小数；节点 ID 属于 map_version.id 这个地图版本；
 //   - 与 items.sql 的对应：status = item_tag 的题写了 kge.item_tag；status = candidate 且 registered 不为 false 的题，
 //     candidates 全部写进 kge.tag_candidate（未在内容包登记的题 platform.item 没有，外键过不去，不写库、进工作单）。
+//   - 用了假实现（--vector / --model）时顶层有 warning 字段（“含假实现，不得执行”），run.fake_layers 列出假实现的层；
+//     只跑规则层时没有 warning、fake_layers 为空。
 // 兼容性：只追加字段；改动已有字段的含义要升 format 版本号。
+//   追加记录：items[].tag_basis、run.fake_layers、warning（KGE-02 审查意见，迁移 0024 的 tag_basis 列）。
 
 export type ReportLayer = "rule" | "vector" | "model";
 export type ReportRole = "main" | "secondary";
@@ -32,6 +35,12 @@ export interface ReportCandidate {
   reason_code: string;
   tagger_version: string;
   model_version: string | null;
+}
+
+/** A 级结论依据的一层及其版本（与 kge.item_tag.tag_basis 的元素相同）：规则层写打标器版本，向量层写嵌入器版本，模型层写模型版本 */
+export interface ReportBasis {
+  layer: ReportLayer;
+  version: string;
 }
 
 export interface ReportSixSegments {
@@ -72,6 +81,8 @@ export interface ReportItem {
   /** 在 adapters/aya/content/pack.json 里登记过（platform.item 有这道题）；没给内容包时为 null */
   registered: boolean | null;
   candidates: ReportCandidate[];
+  /** A 级结论依据的每一层及其版本（按 rule、vector、model 排）；B 级、无处可标、未导入主题为空数组。写 item_tag 的题与 SQL 里的 tag_basis 相同 */
+  tag_basis: ReportBasis[];
 }
 
 export interface ReportFamily {
@@ -84,6 +95,8 @@ export interface ReportFamily {
 export interface CountByLayer { rule: number; vector: number; model: number }
 
 export interface TaggingReport {
+  /** 只在用了假实现时出现：“含假实现，不得执行”的醒目标注（序列化时放在最前） */
+  warning?: string;
   /** 固定为 "kge-tagging-report/1" */
   format: "kge-tagging-report/1";
   /** 指向本类型定义，便于读的人找到格式说明 */
@@ -96,6 +109,8 @@ export interface TaggingReport {
     model_version: string | null;
     top_k: number;
     rules_only_a: boolean;
+    /** 用了假实现的层（不是生产模型）；非空时本报告与同目录的 items.sql 都不得用于入库 */
+    fake_layers: ReportLayer[];
   };
   thresholds: { a_min_confidence: number; rule_direct: number; rule_inferred: number; max_nodes: number };
   counts: {

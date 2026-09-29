@@ -1,5 +1,7 @@
 // KGE-02 题库导入：阿鸦题目 → items.sql（kge.item_family、kge.item_tag 草稿、kge.tag_candidate）、worklist.md、tagging-report.json。
-// 纯函数、确定性：同样的输入逐字节同样的输出（没有时间戳，全部排序）。不连库；SQL 由人在演练库执行。
+// 确定性：同样的输入逐字节同样的输出（没有时间戳，全部排序；题目逐道顺序打标）。不连库；SQL 由人在演练库执行。
+// 打标层接口是异步的（真实实现经模型路由），所以 buildItems 返回 Promise；除打标层之外没有副作用。
+// 用了假实现（--vector / --model）时，SQL 头部、报告、工作单都标注“含假实现，不得执行”，SQL 开头还有一条直接报错的语句挡住误执行。
 // 题干、答案、解析不进库也不进报告（迁移 0011；spec 待人确认 #9）；不含任何学生数据（规则 8、13）。
 import { stableUuid } from "../../../kge-inventory/src/import/build.ts";
 import type { LegacyBank, LegacyQuestion } from "../legacy-items.ts";
@@ -8,9 +10,9 @@ import { firstOccurrenceKey, type ChapterSegment, type SegmentConfig } from "../
 import type { TagDecision } from "../tagging/merge.ts";
 import type { Pipeline } from "../tagging/pipeline.ts";
 import { buildRuleContext, routeItem, type RefResult, type Route } from "../tagging/rules.ts";
-import { A_MIN_CONFIDENCE, cmp, MAX_NODES, RULE_DIRECT, RULE_INFERRED, type Candidate, type Layer } from "../tagging/types.ts";
+import { A_MIN_CONFIDENCE, cmp, LEGACY_SOURCE_KIND, MAX_NODES, RULE_DIRECT, RULE_INFERRED, type Candidate, type Layer } from "../tagging/types.ts";
 import type { ReportCandidate, ReportFamily, ReportItem, ReportSixSegments, TaggingReport } from "./report-types.ts";
-import { insert, ITEM_FAMILY_COLUMNS, ITEM_TAG_COLUMNS, nodeArray, num3, q, qn, TAG_CANDIDATE_COLUMNS } from "./sql.ts";
+import { insert, ITEM_FAMILY_COLUMNS, ITEM_TAG_COLUMNS, jsonb, nodeArray, num3, q, qn, TAG_CANDIDATE_COLUMNS } from "./sql.ts";
 
 export interface BuildInput {
   bank: LegacyBank;
@@ -23,6 +25,12 @@ export interface BuildInput {
 export interface BuildOutput { sql: string; worklistMd: string; report: TaggingReport; reportJson: string }
 
 export class ItemsBuildError extends Error {}
+
+/** 用了假实现时写进 SQL 头部、报告与工作单的醒目标注 */
+export function fakeWarning(fakeLayers: readonly Layer[]): string {
+  return `含假实现，不得执行：${fakeLayers.map((l) => (l === "vector" ? "向量层" : l === "model" ? "模型层" : l)).join("、")}用的是假实现`
+    + "（不是生产模型，候选与分级没有任何质量含义），本产物只用于证明流水线打通，不得入库、不得放进 db/seeds/。";
+}
 
 interface ItemState {
   q: LegacyQuestion;
@@ -39,7 +47,7 @@ interface ItemState {
 
 const layerCount = () => ({ rule: 0, vector: 0, model: 0 });
 
-export function buildItems(input: BuildInput): BuildOutput {
+export async function buildItems(input: BuildInput): Promise<BuildOutput> {
   const { bank, map, segments, registeredItems, pipeline } = input;
   const ctx = buildRuleContext(map, bank.topics);
   const labelOf = new Map(bank.topics.map((t) => [t.id, t.chapterLabel]));
@@ -66,7 +74,7 @@ export function buildItems(input: BuildInput): BuildOutput {
     const chosen = withSeg[0]!;
     const route = routeItem(chosen.x, ctx);
     const inScope = route.chapter !== null && ctx.importedChapters.has(route.chapter);
-    const r = pipeline.tag({ id, text: chosen.x.text, mainNodes: chosen.x.mainNodes, auxNodes: chosen.x.auxNodes, preNodes: chosen.x.preNodes }, inScope);
+    const r = await pipeline.tag({ id, text: chosen.x.text, mainNodes: chosen.x.mainNodes, auxNodes: chosen.x.auxNodes, preNodes: chosen.x.preNodes }, inScope);
     states.push({
       q: chosen.x, route, inScope, refs: r.rule.refs, decision: r.decision, segment: chosen.seg, segmentIssue: chosen.issue,
       otherChapters: withSeg.slice(1).map((w) => w.x.topic ?? "sprint"), familyCode: familyOf.get(id) ?? null,
@@ -150,15 +158,15 @@ export function buildItems(input: BuildInput): BuildOutput {
         const family = s.familyCode ? familyByCode.get(s.familyCode) ?? null : null;
         tagRows.push([
           q(mv), "'aya'", q(id), q(d.mainNodeId!), nodeArray(d.nodeIds), qn(levels.length === 1 ? levels[0]! : null),
-          family ? q(family.id) : "NULL", "'original'", "'unverified'", "'pending'", num3(d.confidence), q(d.source!),
-          q(taggerOf(d)), qn(d.source === "model" ? pipeline.modelVersion : null),
+          family ? q(family.id) : "NULL", q(LEGACY_SOURCE_KIND), "'unverified'", "'pending'", num3(d.confidence), q(d.source!),
+          q(taggerOf(d)), qn(d.source === "model" ? pipeline.modelVersion : null), jsonb(d.basis),
         ]);
       } else {
         status = "candidate";
         if (s.registered !== false) {
           for (const c of d.candidates) {
             candRows.push([q(mv), "'aya'", q(id), q(c.nodeId), q(c.role), q(c.layer), num3(c.confidence), q(c.taggerVersion),
-                           qn(c.modelVersion), q(c.reasonCode), q(d.grade!)]);
+                           qn(c.modelVersion), q(c.reasonCode), q(d.grade!), q(LEGACY_SOURCE_KIND)]);
             candRowsByLayer[c.layer]++;
             candRowsByGrade[d.grade!]++;
           }
@@ -170,21 +178,23 @@ export function buildItems(input: BuildInput): BuildOutput {
       grade: d?.grade ?? null, main_node_id: d?.mainNodeId ?? null, node_ids: d?.nodeIds ?? [], confidence: d?.confidence ?? null,
       layer: d?.source ?? null, over_cap: d?.overCap ?? false, b_reasons: d?.bReasons ?? [], six_segments: six,
       family_code: s.familyCode && familyByCode.has(s.familyCode) ? s.familyCode : null, registered: s.registered,
-      candidates: (d?.candidates ?? []).map(reportCandidate),
+      candidates: (d?.candidates ?? []).map(reportCandidate), tag_basis: d?.basis.map((b) => ({ layer: b.layer, version: b.version })) ?? [],
     });
   }
 
   const textRefs = states.flatMap((s) => s.refs.filter((r) => r.text !== null));
   const count = (st: ReportItem["status"]) => items.filter((i) => i.status === st).length;
   const outByChapter = Object.fromEntries([...worklist.outOfScope].sort((a, b) => cmp(a[0], b[0])).map(([k, v]) => [k, v.length]));
+  const fakeLayers = [...pipeline.fakeLayers].sort((a, b) => ORDER[a] - ORDER[b]);
   const report: TaggingReport = {
+    ...(fakeLayers.length > 0 ? { warning: fakeWarning(fakeLayers) } : {}),
     format: "kge-tagging-report/1",
     format_doc: "tools/kge-import/src/items/report-types.ts（TaggingReport）",
     subject: "aya",
     map_version: { id: mv, version: map.version, imported_chapters: [...ctx.importedChapters].sort(cmp) },
     run: {
       layers: [...pipeline.layers].sort((a, b) => ORDER[a] - ORDER[b]), tagger_versions: pipeline.taggerVersions,
-      model_version: pipeline.modelVersion, top_k: pipeline.topK, rules_only_a: pipeline.rulesOnlyA,
+      model_version: pipeline.modelVersion, top_k: pipeline.topK, rules_only_a: pipeline.rulesOnlyA, fake_layers: fakeLayers,
     },
     thresholds: { a_min_confidence: A_MIN_CONFIDENCE, rule_direct: RULE_DIRECT, rule_inferred: RULE_INFERRED, max_nodes: MAX_NODES },
     counts: {
@@ -243,14 +253,25 @@ function describeRefs(refs: RefResult[]): string {
 }
 
 function renderSql(map: MapInput, families: ReportFamily[], tagRows: string[][], candRows: string[][], r: TaggingReport): string {
+  const fake = r.warning === undefined ? [] : [
+    "-- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!",
+    `-- !!! ${r.warning}`,
+    "-- !!! BEGIN 之后的第一条语句会直接报错、整个事务回滚，挡住误执行；不要删掉它去执行本文件。",
+    "-- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!",
+  ];
+  const guard = r.warning === undefined ? []
+    : [`DO $guard$ BEGIN RAISE EXCEPTION '%', ${q(`items.sql ${r.warning}`)}; END $guard$;`];
   return [
+    ...fake,
     `-- KGE-02 阿鸦题库导入（生成文件，勿手改）：地图版本 aya ${map.version}（${map.mapVersionId}）上的题组、打标草稿与低置信候选`,
     "-- 由 tools/kge-import 生成；文件自带事务，在演练库用 psql -X -v ON_ERROR_STOP=1 执行。不含题干、答案、解析，不含任何学生数据。",
     "-- 前置：迁移 0011、0019、0024 已执行；地图版本种子（db/seeds/kge/aya-<专题>-<版本>/import.sql）已执行；",
     "--       题目已由 adapters/aya/scripts/register-content.ts 登记进 platform.item（item_tag / tag_candidate 对它有外键）。",
     "-- 六段标识不在这里写（platform.curriculum_version 由登记脚本负责）；每题推出的六段见同目录 tagging-report.json。",
     `-- 打标层：${r.run.layers.join(" + ")}；A 级 ${r.counts.grade.A} 题写 item_tag（待审草稿），候选 ${r.counts.candidate_rows} 行进低置信队列。`,
+    `-- item_tag 与 tag_candidate 的题目来源一律 '${LEGACY_SOURCE_KIND}'（迁移 0024）；item_tag.tag_basis 记 A 级结论依据的每一层及其版本。`,
     "BEGIN;",
+    ...guard,
     "SET LOCAL standard_conforming_strings = on;  -- 反斜杠按字面处理，转义只靠单引号加倍",
     "SET LOCAL ROLE starbuddy_kge;  -- 以知识服务角色写入：只用它有的权限（最小权限，不是防注入的边界）",
     ...insert("kge.item_family", ITEM_FAMILY_COLUMNS, families.map((f) => [q(f.id), q(map.mapVersionId), q(f.main_node_id), q(f.code)])),
@@ -274,6 +295,7 @@ function renderWorklist(r: TaggingReport, w: {
   return [
     `# KGE-02 教研工作单：阿鸦题库 → 地图版本 ${r.map_version.version}`,
     "",
+    ...(r.warning === undefined ? [] : [`> **${r.warning}**`, ""]),
     "生成文件，勿手改。题干、答案不在这里，按题目 ID 到 legacy 或内容包里查；补充说明只写合成例子或题目 ID，**不得粘贴学生作答**（规则 13）。",
     "",
     `共 ${c.items_total} 题；已导入主题（${r.map_version.imported_chapters.join("、") || "无"}）里 ${c.items_in_scope} 题：`

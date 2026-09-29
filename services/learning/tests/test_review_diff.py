@@ -250,3 +250,19 @@ def test_standard_year_change_is_high():
     assert [(c["object"], c["field"], c["old"], c["new"], classify(c).level) for c in ch] == [("version", "standard_year", 2022, 2025, "high")]
     # 只改版本号不算差异（版本号的递增由发布规则检查）
     assert diff(snap(V1, map_version=mv), snap(V2, map_version=[dict(mv[0], id=V2, version="1.0.1")])) == []
+
+
+def test_tag_source_changes_are_visible():
+    """0024 的打标来源、置信度、版本与依据进差异视图：知识服务改了来源，审核员要看得到（KGE-02 契约审查建议 5）。"""
+    tag = {"subject": "aya", "item_id": "SYN-1", "main_node_id": "MATH.F.T.A", "node_ids": [], "cognitive_level": None,
+           "prior_difficulty": None, "family": None, "source_kind": "legacy", "license_state": "unverified", "quality_grade": None,
+           "tag_review_status": "pending", "tag_source": "rule", "tag_confidence": Decimal("0.900"),
+           "tagger_version": "aya-tagger-rules@0.1.0", "tag_model_version": None,
+           "tag_basis": '[{"layer": "rule", "version": "aya-tagger-rules@0.1.0"}]'}
+    human = dict(tag, tag_source="human", tag_confidence=Decimal("1.000"),
+                 tag_basis='[{"layer": "rule", "version": "aya-tagger-rules@0.1.0"}, {"layer": "vector", "version": "e@1"}]')
+    got = {c["field"] for c in diff(snap(V1, item_tag=[tag]), snap(V2, item_tag=[human]))}
+    assert got == {"tag_source", "tag_confidence", "tag_basis"}
+    # 0024 之前的行没有这些列：照常出差异视图，不报错
+    old = {k: v for k, v in tag.items() if not k.startswith("tag_") or k == "tag_review_status"}
+    assert diff(snap(V1, item_tag=[old]), snap(V2, item_tag=[old])) == []

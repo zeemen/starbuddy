@@ -220,6 +220,20 @@ class Cli(unittest.TestCase):
             with self.assertRaises(InputError):
                 read_tagging_report(write(tmp, "d.json", json.dumps({"map_version": "x", "items": [{"item_id": "S-1"}, {"item_id": "S-1"}]})))
 
+    def test_unknown_format_redacted_in_summary_only(self):
+        # format 字段的值可能夹带留出集内容：普通模式回显便于排查，留出集（--summary-only）模式只说格式不认识
+        with tempfile.TemporaryDirectory() as tmp:
+            raw = json.loads(Path(TAGGING).read_text(encoding="utf-8"))
+            bad = write(tmp, "f.json", json.dumps({**raw, "format": "SECRET-ITEM-9 MATH.SYN.SYN_Z.K_SYN_0999"}))
+            code, _, err = run(["--gold", GOLD, "--tagging", bad])
+            self.assertEqual(code, 2)
+            self.assertIn("SECRET-ITEM-9", err)
+            code, out, err = run(["--gold", GOLD, "--tagging", bad, "--summary-only"])
+            self.assertEqual(code, 2)
+            self.assertIn("不认识的打标报告格式", err)
+            self.assertNotIn("SECRET-ITEM-9", err + out)
+            self.assertNotIn("K_SYN_0999", err + out)
+
 
 class Holdout(unittest.TestCase):
     SCRIPT = str(BASE / "run_holdout.sh")

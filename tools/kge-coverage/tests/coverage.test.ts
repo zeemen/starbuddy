@@ -215,6 +215,14 @@ test("打标器正式格式（kge-tagging-report/1）：未导入主题的题不
   const raw = JSON.parse(readFileSync(join(FIX, "tagging-report-v1.json"), "utf8"));
   assert.throws(() => checkTaggingReport({ ...raw, format: "kge-tagging-report/2" }), TaggingError);
   assert.throws(() => checkTaggingReport({ ...raw, items: [{ ...raw.items[0], status: "maybe" }] }), TaggingError);
+  // 追加字段 tag_basis、warning、run.fake_layers 不影响统计；tag_basis 形状不对才拒绝
+  assert.equal(raw.items[0].tag_basis.length, 2);
+  const { warning: _w, ...noWarning } = raw;
+  const stripped = { ...noWarning, items: raw.items.map(({ tag_basis: _b, ...i }: Record<string, unknown>) => i) };
+  assert.deepEqual(computeCoverage(map, checkTaggingReport({ ...stripped, run: { fake_layers: ["model"] } })), all);
+  for (const bad of ["rule", [{ layer: "human", version: "x@1" }], [{ layer: "rule" }], [{ version: "x@1" }], [null]]) {
+    assert.throws(() => checkTaggingReport({ ...raw, items: [{ ...raw.items[0], tag_basis: bad }] }), TaggingError, JSON.stringify(bad));
+  }
   // 没有 counts 时按各题 candidates 现算
   const { counts: _c, ...noCounts } = raw;
   assert.deepEqual(checkTaggingReport(noCounts).candidates_by_layer, { rule: 1 });
