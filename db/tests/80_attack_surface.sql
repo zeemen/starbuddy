@@ -135,7 +135,8 @@ SELECT t.ok(:'snap_policies' = :'expected_policies',
 -- 会被映射成 NULL 而空转，安全审查阻断 1）；RESET ROLE 之后再以超级用户身份把原始键映射到学生 / 账号 / 家庭（map_expr，%s 是原始键）。
 -- 预期集合由账号状态、guardian_student_link、学生本人关系算出（不手写），再与表里实际有数据的对象取交集。
 -- domain：student（默认）、account、household。mode：equal（默认，看得到 = 能读的学生）、link、author、self、household、
--- claim（判断账本：学生本人看可见范围含 student 的、有效绑定家长看含 guardian 的，且只看非终态）。
+-- claim（判断账本：学生本人看可见范围含 student 的、有效绑定家长看含 guardian 的，且只看非终态）、
+-- student_self（只有学生本人看得到，家长看不到）。
 CREATE TABLE t.visibility_rule (rel text PRIMARY KEY, raw_expr text NOT NULL, map_expr text NOT NULL, domain text NOT NULL,
                                 mode text NOT NULL, reason text NOT NULL);
 INSERT INTO t.visibility_rule VALUES
@@ -148,6 +149,10 @@ INSERT INTO t.visibility_rule VALUES
   ('platform.account', 'id', '%s', 'account', 'self', '只能读自己的账号行，禁用的账号也能读自己（0002 account_self_read）'),
   ('insight.claim', 'student_id', '%s', 'student', 'claim',
    '判断账本按可见范围与状态过滤（0010 claim_front_read）；逐行的可见性断言在 75_claim_ledger'),
+  ('platform.diagnosis_session', 'student_id', '%s', 'student', 'student_self',
+   '诊断会话只给学生本人看进度，家长看不到（0027 diagnosis_session_self）'),
+  ('platform.diagnosis_step', 'session_id', '(SELECT s.student_id FROM platform.diagnosis_session s WHERE s.id = %s)', 'student', 'student_self',
+   '经 diagnosis_session 关联到学生；只给学生本人（0027 diagnosis_step_self）；映射在超级用户身份下做'),
   ('platform.household', 'id', '%s', 'household', 'household',
    '有效家长读自己创建的家庭，或能读家庭内任一学生（0002 can_read_household；解除绑定的创建者仍可读是已登记风险 A4）');
 -- 可以没有两户数据的关系（写明理由；其余的数据不足两户就失败）
@@ -268,6 +273,9 @@ BEGIN
                                    OR (EXISTS (SELECT 1 FROM platform.account a WHERE a.id = acc AND a.kind = 'guardian')
                                        AND 'guardian' = ANY (c.visibility))))
         WHEN 'self' THEN (SELECT coalesce(array_agg(a.id), '{}') FROM platform.account a WHERE a.id = acc)
+        WHEN 'student_self' THEN (SELECT coalesce(array_agg(sp.id), '{}') FROM platform.student_profile sp
+                                    JOIN platform.account a ON a.id = sp.account_id
+                                   WHERE a.id = acc AND a.kind = 'student' AND a.status = 'active')
         WHEN 'household' THEN (SELECT coalesce(array_agg(DISTINCT h.id), '{}') FROM platform.household h
                                 WHERE EXISTS (SELECT 1 FROM platform.account a WHERE a.id = acc AND a.kind = 'guardian'
                                                 AND a.status = 'active' AND h.created_by_account = a.id)

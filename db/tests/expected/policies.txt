@@ -86,6 +86,12 @@ platform.consent_record|consent_read|SELECT|starbuddy_bff|PERMISSIVE|using=platf
 platform.consent_record|consent_write|INSERT|starbuddy_bff|PERMISSIVE|using=-|check=((guardian_account_id = platform.current_account_id()) AND platform.is_linked_guardian(student_id))
 platform.curriculum_version|cv_public_read|SELECT|starbuddy_bff|PERMISSIVE|using=(status = 'published'::text)|check=-
 platform.curriculum_version|cv_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
+platform.diagnosis_session|diagnosis_session_learning|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
+platform.diagnosis_session|diagnosis_session_self|SELECT|starbuddy_bff|PERMISSIVE|using=platform.is_self_student(student_id)|check=-
+platform.diagnosis_step|diagnosis_step_learning|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
+platform.diagnosis_step|diagnosis_step_self|SELECT|starbuddy_bff|PERMISSIVE|using=(EXISTS ( SELECT 1
+   FROM platform.diagnosis_session s
+  WHERE ((s.id = diagnosis_step.session_id) AND platform.is_self_student(s.student_id))))|check=-
 platform.entitlement|entitlement_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
 platform.error_attribution|attr_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
 platform.error_attribution|attr_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
@@ -122,9 +128,12 @@ platform.replay_seal|replay_seal_insert|INSERT|starbuddy_learning|PERMISSIVE|usi
 platform.replay_seal|replay_seal_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
 platform.resource_type|resource_type_read|SELECT|starbuddy_bff|PERMISSIVE|using=true|check=-
 platform.review_resolution_code|resolution_code_read|SELECT|starbuddy_review|PERMISSIVE|using=true|check=-
-platform.review_task|review_service_open|INSERT|starbuddy_learning|PERMISSIVE|using=-|check=((status = 'open'::text) AND (resolved_at IS NULL) AND (resolved_by_account IS NULL) AND (assigned_to IS NULL) AND (assigned_at IS NULL) AND (NOT ('profile_dispute'::text = ANY ((reasons)::text[]))) AND (source_kind = 'grade_result'::text) AND (EXISTS ( SELECT 1
+platform.review_task|review_service_open|INSERT|starbuddy_learning|PERMISSIVE|using=-|check=((status = 'open'::text) AND (resolved_at IS NULL) AND (resolved_by_account IS NULL) AND (assigned_to IS NULL) AND (assigned_at IS NULL) AND (NOT ('profile_dispute'::text = ANY ((reasons)::text[]))) AND (((source_kind = 'grade_result'::text) AND (NOT ('process_observation'::text = ANY ((reasons)::text[]))) AND (EXISTS ( SELECT 1
    FROM platform.grade_result g
-  WHERE ((g.id = review_task.source_id) AND (g.student_id = review_task.student_id) AND (g.subject = review_task.subject) AND ((review_task.reasons)::text[] <@ (g.review_reasons)::text[])))))
+  WHERE ((g.id = review_task.source_id) AND (g.student_id = review_task.student_id) AND (g.subject = review_task.subject) AND ((review_task.reasons)::text[] <@ (g.review_reasons)::text[]))))) OR ((source_kind = 'diagnosis_step'::text) AND ((reasons)::text[] = ARRAY['process_observation'::text]) AND (EXISTS ( SELECT 1
+   FROM (platform.diagnosis_step st
+     JOIN platform.diagnosis_session s ON ((s.id = st.session_id)))
+  WHERE ((st.id = review_task.source_id) AND (st.kind = ANY (ARRAY['process'::text, 'explain'::text])) AND (st.status = 'answered'::text) AND (s.student_id = review_task.student_id) AND (s.subject = review_task.subject)))))))
 platform.review_task|review_service_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
 platform.skill_node|skill_node_read|SELECT|starbuddy_bff|PERMISSIVE|using=true|check=-
 platform.skill_node|skill_node_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true

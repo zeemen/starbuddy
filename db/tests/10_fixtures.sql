@@ -86,3 +86,14 @@ INSERT INTO platform.consent_record (student_id, guardian_account_id, consent_ty
   ('c2000000-0000-4000-8000-0000000000c2', 'b0000000-0000-4000-8000-00000000000b', 'guardian_consent_under14', 'consent-doc@1.0.0', 'granted');
 INSERT INTO platform.subject_enrollment (student_id, subject) VALUES
   ('c1000000-0000-4000-8000-0000000000c1', 'aya'), ('c2000000-0000-4000-8000-0000000000c2', 'aya');
+-- 诊断会话（0027）：每个学生一个已结束的会话、一步，供 80 的可见性矩阵使用（只有学生本人看得到）
+INSERT INTO platform.diagnosis_session (id, student_id, subject, algorithm_version, map_version, usage_id, idempotency_key) VALUES
+  ('d1f00000-0000-4000-8000-0000000000f1', 'c1000000-0000-4000-8000-0000000000c1', 'aya', 'aya-diag-trace@0.1.0', '0.1.0',
+   'e5f00000-0000-4000-8000-0000000000f1', 'e6f00000-0000-4000-8000-0000000000f1'),
+  ('d2f00000-0000-4000-8000-0000000000f2', 'c2000000-0000-4000-8000-0000000000c2', 'aya', 'aya-diag-trace@0.1.0', '0.1.0',
+   'e5f00000-0000-4000-8000-0000000000f2', 'e6f00000-0000-4000-8000-0000000000f2');
+INSERT INTO platform.diagnosis_step (session_id, seq, kind, node_id, item_id, reason_code, status, idempotency_key)
+SELECT id, 1, 'adaptive', 'MATH.FUNC.QUAD.VERTEX_FORM', 'synthetic-0301-07', 'target', 'skipped', gen_random_uuid()
+  FROM platform.diagnosis_session WHERE id IN ('d1f00000-0000-4000-8000-0000000000f1', 'd2f00000-0000-4000-8000-0000000000f2');
+UPDATE platform.diagnosis_session SET status = 'finished', finished_at = now()
+ WHERE id IN ('d1f00000-0000-4000-8000-0000000000f1', 'd2f00000-0000-4000-8000-0000000000f2');

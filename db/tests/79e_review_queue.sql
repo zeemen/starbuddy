@@ -173,7 +173,7 @@ SELECT t.throws(format('SELECT t.rq(%L, %L)', :sf, 'SELECT platform.take_review_
 SELECT t.ok(t.rq(:sf, format($$SELECT (platform.review_task_detail(%L)->>'resolved_by_me')$$, :'t1')) = 'false'
             AND t.rq(:se, format($$SELECT (platform.review_task_detail(%L)->>'resolved_by_me')$$, :'t1')) = 'true',
             '详情标出是否是自己结的案（不给结案人 ID）');
-SELECT t.ok(t.rq(:sf, $$SELECT count(*)::text FROM platform.review_resolution_code$$) = '5', '审核台能读结案码白名单');
+SELECT t.ok(t.rq(:sf, $$SELECT count(*)::text FROM platform.review_resolution_code$$) = '6', '审核台能读结案码白名单（0027 加了过程观察的结案码）');
 SELECT t.throws($$SELECT t.as_role('starbuddy_bff', 'SELECT count(*)::text FROM platform.review_resolution_code')$$, '42501', 'BFF 读不到结案码表');
 SELECT t.throws(format($$SELECT t.as_role('starbuddy_bff', %L)$$, 'SELECT count(*)::text FROM platform.review_queue(NULL, NULL, NULL, 10, NULL, NULL)'),
                 '42501', 'BFF 不能调用审核台读函数');
