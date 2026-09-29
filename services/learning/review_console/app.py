@@ -11,6 +11,7 @@ import logging
 import re
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime
 from typing import Any, Literal, Protocol
 
 import asyncpg
@@ -79,6 +80,16 @@ class PublishBody(_Strict):
 
 class RetireBody(_Strict):
     basis_code: str = Field(pattern=BASIS)
+
+
+class ResolveBody(_Strict):
+    resolution_code: str = Field(pattern=BASIS)
+
+
+QUEUE_STATUSES = ("open", "in_progress", "resolved")
+QUEUE_REASONS = ("subjective_dimension", "low_confidence", "verifier_boundary_case", "content_not_admitted", "ocr_low_confidence",
+                 "dimension_unavailable", "student_appeal", "spot_check", "double_grading_disagreement",
+                 "full_score_second_review", "profile_dispute")
 
 
 class LoginBody(_Strict):
@@ -251,6 +262,41 @@ def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthen
     async def retire(version_id: uuid.UUID, body: RetireBody, request: Request):
         await state["review"].retire(request.state.staff, version_id, body.basis_code)
         return {"status": "retired"}
+
+    # ---------- 统一复核队列（冲刺 2-G） ----------
+    @app.get("/review/v0/queue")
+    async def queue(request: Request, subject: str | None = None, status: str | None = None, reason: str | None = None,
+                    limit: int = 50, before: datetime | None = None):
+        if subject is not None:
+            _subject(subject)
+        if (status is not None and status not in QUEUE_STATUSES) or (reason is not None and reason not in QUEUE_REASONS) \
+                or not 1 <= limit <= 200:
+            raise ReviewError(422, "INVALID_PARAMETER")
+        items = await state["review"].queue(request.state.staff, subject, status, reason, limit, before)
+        return {"items": items, "next_before": items[-1]["created_at"] if len(items) == limit else None}
+
+    @app.get("/review/v0/queue/resolution-codes")
+    async def resolution_codes(request: Request):
+        return {"items": await state["review"].resolution_codes(request.state.staff)}
+
+    @app.get("/review/v0/queue/{task_id}")
+    async def queue_task(task_id: uuid.UUID, request: Request):
+        return await state["review"].task_detail(request.state.staff, task_id)
+
+    @app.post("/review/v0/queue/{task_id}/take")
+    async def take(task_id: uuid.UUID, request: Request):
+        await state["review"].take_task(request.state.staff, task_id)
+        return {"status": "in_progress"}
+
+    @app.post("/review/v0/queue/{task_id}/release")
+    async def release(task_id: uuid.UUID, request: Request):
+        await state["review"].release_task(request.state.staff, task_id)
+        return {"status": "open"}
+
+    @app.post("/review/v0/queue/{task_id}/resolve")
+    async def resolve_task(task_id: uuid.UUID, body: ResolveBody, request: Request):
+        await state["review"].resolve_task(request.state.staff, task_id, body.resolution_code)
+        return {"status": "resolved"}
 
     @app.get("/review/v0/records")
     async def records(subject: str):

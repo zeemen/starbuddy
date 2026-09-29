@@ -21,6 +21,7 @@ from conftest import CREDENTIAL, at, counts, diagnose_body, grade_body
 from conftest import settings as make_settings
 from learning.app import create_app
 from learning.config import AdapterTarget
+from review_loop import close_loop, console
 
 AYA = Path(__file__).resolve().parents[3] / "adapters/aya"
 AYA_CREDENTIAL = "synthetic-learning-to-aya-credential-000001"
@@ -94,7 +95,7 @@ async def test_content_registration_is_complete_and_idempotent(aya_adapter, pool
     assert tuple(got) == (1, 959, 721, 721)
 
 
-async def test_grade_through_real_aya_adapter(e2e_api, pools, student):
+async def test_grade_through_real_aya_adapter(e2e_api, pools, student, pg):
     _, admin = pools
     # (x-2)^2=49 答成 “9”：命中预标注陷阱，产出错因
     body = grade_body(student, item="Q-EQU-U03-D-001", text="9")
@@ -122,6 +123,11 @@ async def test_grade_through_real_aya_adapter(e2e_api, pools, student):
     r2 = await e2e_api.post("/internal/v0/grade", json=retry)
     assert r2.headers["idempotent-replayed"] == "true" and r2.json()["evidence_ids"] == s["evidence_ids"]
     assert (await counts(admin, student))["evidence_event"] == 2
+    # 统一复核队列闭环（冲刺 2-G）：同一事务进队，重放不重复，staff 经审核台领取、结案
+    async with admin.acquire() as c:
+        reasons = set(await c.fetchval("SELECT review_reasons::text[] FROM platform.grade_result WHERE id = $1::uuid", s["grade_result_id"]))
+    async with console(pg) as client:
+        await close_loop(client, source_id=s["grade_result_id"], student_id=student, subject="aya", expect_reasons=reasons)
 
 
 async def test_diagnose_through_real_aya_adapter(e2e_api, pools, student):

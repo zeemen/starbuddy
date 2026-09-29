@@ -25,6 +25,7 @@ from conftest import CREDENTIAL, counts
 from conftest import settings as make_settings
 from learning.app import create_app
 from learning.config import AdapterTarget
+from review_loop import close_loop, console
 from learning.model_router import DEFAULT_PATH, FakeProvider, MemorySink, ModelRouter, ProviderReply, Usage, load
 
 ZX = Path(__file__).resolve().parents[3] / "adapters/zhixing"
@@ -151,7 +152,7 @@ def zx_grade(student: str) -> dict:
         "rubric_version": "zhixing-synthetic@0.1.0"}, "ingest": {"channel": "keypad"}}
 
 
-async def test_zhixing_subjective_item_graded_point_by_point_and_written(e2e_api, pools, student, route_endpoint):
+async def test_zhixing_subjective_item_graded_point_by_point_and_written(e2e_api, pools, student, route_endpoint, pg):
     _, admin = pools
     r = await e2e_api.post("/internal/v1/grade", json=zx_grade(student))
     assert r.status_code == 200, r.text
@@ -172,6 +173,11 @@ async def test_zhixing_subjective_item_graded_point_by_point_and_written(e2e_api
         assert {e["evidence_id"] for e in ev} == set(s["evidence_ids"])
     # 模型调用确实经学习服务的路由接口（T2 判分 Prompt 里带着作答原文），适配器没有别的出口
     assert route_endpoint[1] and ANSWER in route_endpoint[1][-1]["user"]
+    # 统一复核队列闭环（冲刺 2-G）：主观维一律进队，staff 经审核台领取、结案；队列与详情不带作答原文
+    async with console(pg) as client:
+        done = await close_loop(client, source_id=s["grade_result_id"], student_id=student, subject="zhixing",
+                                expect_reasons={"subjective_dimension"}, code="regrade_required")
+        assert ANSWER not in str(done)
 
 
 def test_adapter_env_has_no_vendor_config(zhixing_adapter):

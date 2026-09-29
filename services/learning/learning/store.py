@@ -280,6 +280,10 @@ async def _insert_observation(conn, o: dict, *, student_id, subject, ctx) -> Non
     )
 
 
+# 复核原因里只能由调度角色（抽检）与洞察服务（画像异议）放进队列的两类
+QUEUE_RESERVED_REASONS = frozenset({"spot_check", "profile_dispute"})
+
+
 async def _insert_grade(conn, response: dict, verified, attempt: dict, attempt_id: str, *, student_id, subject, ctx) -> str:
     r = response["result"]
     verifier = r.get("verifier") or {}
@@ -304,6 +308,15 @@ async def _insert_grade(conn, response: dict, verified, attempt: dict, attempt_i
                VALUES ($1::uuid, $2, $3::text::numeric, $4::text::numeric, $5, $6::bool, $7, $8::text::numeric, $9::text[]::uuid[])""",
             grade_id, d["dimension_id"], _num(d["score"]), _num(d["max_score"]), d["judged_by"], d["subjective"],
             d.get("rule_ref"), _num(d["confidence"]), d["evidence_ids"],
+        )
+    # 需要复核的判分在同一事务里进统一复核队列（冲刺 2-G）。抽检由调度角色按比例抽，画像异议只由洞察服务放，
+    # 学习服务不放这两类（0023 策略也拒绝）；适配器自己标的 spot_check 不据此进队。
+    reasons = [x for x in verified.review_reasons if x not in QUEUE_RESERVED_REASONS]
+    if verified.human_review_required and reasons:
+        await conn.execute(
+            """INSERT INTO platform.review_task (subject, student_id, source_kind, source_id, reasons)
+               VALUES ($1::platform.subject, $2::uuid, 'grade_result', $3::uuid, $4::text[]::platform.review_reason[])""",
+            subject, student_id, grade_id, reasons,
         )
     return grade_id
 

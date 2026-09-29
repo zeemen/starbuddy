@@ -2,12 +2,14 @@
 - kge 池：读地图版本、差异所需的行、校验结果、变更单、版本记录；改草稿节点。它不能签字、发布（库层授权保证）。
 - review 池：签字、发布、撤下。每次在一个事务里 `set_config('app.account_id', staff, true)`，staff 由调用方
   （已登录的会话）给出，库里的函数再核对是否为 active staff。
-只读写 kge.* 与这些函数，不碰任何个人层表（规则 13）。
+只读写 kge.* 与这些函数，不直接读写任何个人层表（规则 13）。统一复核队列（冲刺 2-G，迁移 0023）也只经库函数：
+队列与详情只给学生的不透明指针、结构化判分与判断元数据，不给 student_id 与作答原文；领取、放回、结案由库核对领取人与白名单。
 """
 from __future__ import annotations
 
 import json
 import uuid
+from datetime import datetime
 from typing import Any
 
 import asyncpg
@@ -245,3 +247,41 @@ class ReviewStore:
 
     async def retire(self, staff: uuid.UUID, version_id: uuid.UUID, basis_code: str) -> None:
         await self._as_staff(staff, lambda c: c.execute("SELECT kge.retire_map_version($1, $2)", version_id, basis_code))
+
+    # ---------- 统一复核队列（冲刺 2-G，迁移 0023；staff 与领取人都由库函数核对） ----------
+    async def queue(self, staff: uuid.UUID, subject: str | None, status: str | None, reason: str | None, limit: int,
+                    before: datetime | None) -> list[dict[str, Any]]:
+        rows = await self._as_staff(staff, lambda c: c.fetch(
+            "SELECT * FROM platform.review_queue($1::text::platform.subject, $2, $3, $4, $5)", subject, status, reason, limit, before))
+        return [_task_row(dict(r)) for r in rows]
+
+    async def task_detail(self, staff: uuid.UUID, task_id: uuid.UUID) -> dict[str, Any]:
+        raw = await self._as_staff(staff, lambda c: c.fetchval("SELECT platform.review_task_detail($1)::text", task_id))
+        return json.loads(raw)
+
+    async def resolution_codes(self, staff: uuid.UUID) -> list[dict[str, Any]]:
+        rows = await self._as_staff(staff, lambda c: c.fetch(
+            "SELECT code, label, applies_to FROM platform.review_resolution_code ORDER BY code"))
+        return [{"code": r["code"], "label": r["label"], "applies_to": list(r["applies_to"])} for r in rows]
+
+    async def take_task(self, staff: uuid.UUID, task_id: uuid.UUID) -> None:
+        await self._as_staff(staff, lambda c: c.execute("SELECT platform.take_review_task($1)", task_id))
+
+    async def release_task(self, staff: uuid.UUID, task_id: uuid.UUID) -> None:
+        await self._as_staff(staff, lambda c: c.execute("SELECT platform.release_review_task($1)", task_id))
+
+    async def resolve_task(self, staff: uuid.UUID, task_id: uuid.UUID, code: str) -> None:
+        await self._as_staff(staff, lambda c: c.execute("SELECT platform.resolve_review_task($1, $2)", task_id, code))
+
+
+def _task_row(r: dict[str, Any]) -> dict[str, Any]:
+    out = {}
+    for k, v in r.items():
+        if isinstance(v, uuid.UUID):
+            v = str(v)
+        elif isinstance(v, datetime):
+            v = v.isoformat()
+        elif k == "reasons":
+            v = list(v)
+        out[k] = v
+    return out
