@@ -53,6 +53,8 @@ kge.scoring_point|scoring_point_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|chec
 kge.scoring_point|scoring_point_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
 kge.skill_link|skill_link_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
 kge.skill_link|skill_link_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
+kge.tag_candidate|tag_candidate_kge_read|SELECT|starbuddy_kge|PERMISSIVE|using=true|check=-
+kge.tag_candidate|tag_candidate_kge_submit|INSERT|starbuddy_kge|PERMISSIVE|using=-|check=((status = 'open'::text) AND (decided_at IS NULL))
 kge.textbook_projection|textbook_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=((mapping_state = 'verified'::text) AND (EXISTS ( SELECT 1
    FROM kge.map_version v
   WHERE ((v.id = textbook_projection.map_version_id) AND (v.status = 'published'::text)))) AND (EXISTS ( SELECT 1

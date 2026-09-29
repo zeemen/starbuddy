@@ -389,7 +389,7 @@ SELECT t.ok(NOT EXISTS (
           OR (r.role <> 'starbuddy_kge' AND (has_any_column_privilege(r.role, c.oid, 'INSERT') OR has_any_column_privilege(r.role, c.oid, 'UPDATE'))))),
   '公共知识层：只有知识服务能写，任何应用角色都不能删除或清空');
 SELECT t.ok((SELECT count(*) FROM pg_class c WHERE c.relnamespace = 'kge'::regnamespace AND c.relkind = 'r'
-               AND has_table_privilege('starbuddy_kge', c.oid, 'INSERT')) = 14, '知识服务能写全部 14 张 kge 表');
+               AND has_table_privilege('starbuddy_kge', c.oid, 'INSERT')) = 15, '知识服务能写全部 15 张 kge 表（0024 加了打标候选）');
 SET ROLE starbuddy_kge;
 SELECT t.throws($$DELETE FROM kge.knowledge_edge WHERE status = 'deprecated'$$, '42501', '知识服务也不能删除边');
 RESET ROLE;

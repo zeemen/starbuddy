@@ -9,6 +9,7 @@ col|insight.claim.status|starbuddy_insight|UPDATE|SUPERUSER
 col|insight.claim.updated_at|starbuddy_insight|UPDATE|SUPERUSER
 col|insight.claim.value|starbuddy_insight|UPDATE|SUPERUSER
 col|insight.claim.visibility|starbuddy_insight|UPDATE|SUPERUSER
+col|kge.item_tag.node_ids|starbuddy_authz|UPDATE|SUPERUSER
 col|kge.map_change.confidence|starbuddy_kge|UPDATE|SUPERUSER
 col|kge.map_change.evidence_pack|starbuddy_kge|UPDATE|SUPERUSER
 col|kge.map_change.payload|starbuddy_kge|UPDATE|SUPERUSER
@@ -19,6 +20,8 @@ col|kge.map_version.published_at|starbuddy_authz|UPDATE|SUPERUSER
 col|kge.map_version.standard_year|starbuddy_kge|UPDATE|SUPERUSER
 col|kge.map_version.status|starbuddy_authz|UPDATE|SUPERUSER
 col|kge.map_version.version|starbuddy_kge|UPDATE|SUPERUSER
+col|kge.tag_candidate.decided_at|starbuddy_authz|UPDATE|SUPERUSER
+col|kge.tag_candidate.status|starbuddy_authz|UPDATE|SUPERUSER
 col|kge.textbook_projection.chapter|starbuddy_bff|SELECT|SUPERUSER
 col|kge.textbook_projection.edition_year|starbuddy_bff|SELECT|SUPERUSER
 col|kge.textbook_projection.edition|starbuddy_bff|SELECT|SUPERUSER
@@ -211,6 +214,8 @@ func|insight.valid_report_value(text,jsonb)|starbuddy_authz|EXECUTE|SUPERUSER
 func|insight.valid_set(jsonb,text[],integer)|starbuddy_authz|EXECUTE|SUPERUSER
 func|insight.valid_text(jsonb)|starbuddy_authz|EXECUTE|SUPERUSER
 func|kge.current_staff()|starbuddy_authz|EXECUTE|starbuddy_authz
+func|kge.decide_tag_candidate(uuid,text)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|kge.decide_tag_candidate(uuid,text)|starbuddy_review|EXECUTE|starbuddy_authz
 func|kge.distinct_count(text[])|starbuddy_authz|EXECUTE|SUPERUSER
 func|kge.distinct_count(text[])|starbuddy_kge|EXECUTE|SUPERUSER
 func|kge.distinct_count(text[])|starbuddy_learning|EXECUTE|SUPERUSER
@@ -401,6 +406,7 @@ owner|insight.submit_exam_record(uuid,platform.subject,text,date,numeric,numeric
 owner|insight.submit_guardian_report(uuid,text,jsonb)|starbuddy_authz
 owner|insight.submit_self_report(uuid,text,jsonb)|starbuddy_authz
 owner|kge.current_staff()|starbuddy_authz
+owner|kge.decide_tag_candidate(uuid,text)|starbuddy_authz
 owner|kge.map_change_digest_of(uuid)|starbuddy_authz
 owner|kge.map_version_digest(uuid)|starbuddy_authz
 owner|kge.publish_map_version(uuid)|starbuddy_authz
@@ -516,6 +522,7 @@ rel|kge.item_family|starbuddy_kge|INSERT|SUPERUSER
 rel|kge.item_family|starbuddy_kge|SELECT|SUPERUSER
 rel|kge.item_family|starbuddy_kge|UPDATE|SUPERUSER
 rel|kge.item_family|starbuddy_learning|SELECT|SUPERUSER
+rel|kge.item_tag|starbuddy_authz|INSERT|SUPERUSER
 rel|kge.item_tag|starbuddy_authz|SELECT|SUPERUSER
 rel|kge.item_tag|starbuddy_kge|INSERT|SUPERUSER
 rel|kge.item_tag|starbuddy_kge|SELECT|SUPERUSER
@@ -560,6 +567,9 @@ rel|kge.skill_link|starbuddy_kge|INSERT|SUPERUSER
 rel|kge.skill_link|starbuddy_kge|SELECT|SUPERUSER
 rel|kge.skill_link|starbuddy_kge|UPDATE|SUPERUSER
 rel|kge.skill_link|starbuddy_learning|SELECT|SUPERUSER
+rel|kge.tag_candidate|starbuddy_authz|SELECT|SUPERUSER
+rel|kge.tag_candidate|starbuddy_kge|INSERT|SUPERUSER
+rel|kge.tag_candidate|starbuddy_kge|SELECT|SUPERUSER
 rel|kge.textbook_projection|starbuddy_authz|SELECT|SUPERUSER
 rel|kge.textbook_projection|starbuddy_kge|INSERT|SUPERUSER
 rel|kge.textbook_projection|starbuddy_kge|SELECT|SUPERUSER
@@ -680,6 +690,8 @@ rel|platform.subject_enrollment|starbuddy_learning|SELECT|SUPERUSER
 rel|platform.subscription|starbuddy_authz|INSERT|SUPERUSER
 rel|platform.subscription|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.subscription|starbuddy_bff|SELECT|SUPERUSER
+rel|platform.tag_candidate_signoff|starbuddy_authz|INSERT|SUPERUSER
+rel|platform.tag_candidate_signoff|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.trial_claim_phone|starbuddy_authz|INSERT|SUPERUSER
 rel|platform.trial_claim_phone|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.trial_claim|starbuddy_authz|INSERT|SUPERUSER
@@ -767,6 +779,7 @@ secdef|insight.submit_exam_record(uuid,platform.subject,text,date,numeric,numeri
 secdef|insight.submit_guardian_report(uuid,text,jsonb)
 secdef|insight.submit_self_report(uuid,text,jsonb)
 secdef|kge.current_staff()
+secdef|kge.decide_tag_candidate(uuid,text)
 secdef|kge.map_change_digest_of(uuid)
 secdef|kge.map_version_digest(uuid)
 secdef|kge.publish_map_version(uuid)
