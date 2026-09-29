@@ -1,10 +1,15 @@
 """审核台后端（PR 2）在一次性库上的测试：两个登录角色、合成 staff、文砺学科的合成地图（CHN.*）。
 
-身份：测试注入一个只认合成 staff 的认证器；应用本身不接受请求自报账号（默认 deny_all）。
+身份：多数用例注入一个只认合成 staff 的认证器；默认应用走 staff 登录会话（PR 4），不接受请求自报账号。
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import io
+import logging
+import re
+import time
 import uuid
 
 import asyncpg
@@ -12,7 +17,7 @@ import httpx
 import pytest
 
 from review_console.__main__ import write_records
-from review_console.app import create_app, deny_all
+from review_console.app import create_app
 from review_console.store import check_roles
 
 SF1 = uuid.UUID("5f100000-0000-4000-8000-00000000005f")
@@ -66,17 +71,56 @@ def H(account: uuid.UUID) -> dict:
     return {"x-test-account": str(account)}
 
 
-async def test_default_app_denies_everything(pg, rc):
+SECRET = bytes(range(1, 21))  # 合成 TOTP 密钥（20 字节）
+PASSWORD = "synthetic-password-rc1"
+
+
+def totp(secret: bytes, step: int) -> str:
+    """RFC 6238 的 6 位码，测试方独立实现（与库里的 platform.staff_totp 对照）。"""
+    h = hmac.new(secret, step.to_bytes(8, "big"), hashlib.sha1).digest()
+    o = h[19] & 15
+    return f"{(int.from_bytes(h[o:o + 4], 'big') & 0x7FFFFFFF) % 1_000_000:06d}"
+
+
+async def test_session_login_flow(pg, rc, caplog):
     _, kp, rp = rc
-    app = create_app(pools=(kp, rp))
-    assert app is not None and deny_all is not None
+    pg.psql(f"SELECT platform.staff_enroll('{SF1}', 'teacher.rc1', '{PASSWORD}', '\\x{SECRET.hex()}'::bytea);")
+    step = int(time.time()) // 30
+    app = create_app(pools=(kp, rp))  # 默认：staff 登录会话
+    caplog.set_level(logging.DEBUG)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://rc") as c:
             r = await c.get("/review/v0/map-versions", params={"subject": "wenli"})
             assert r.status_code == 401 and r.json()["code"] == "UNAUTHENTICATED"
-            r = await c.post(f"/review/v0/map-versions/{V1}/publish", json={"expected_digest": ZERO},
-                             headers=H(SF1))
-            assert r.status_code == 401  # 自报账号头不被默认应用采信
+            # 自报账号头、伪造令牌都不被采信
+            r = await c.post(f"/review/v0/map-versions/{V1}/publish", json={"expected_digest": ZERO}, headers=H(SF1))
+            assert r.status_code == 401
+            r = await c.get("/review/v0/auth/me", headers={"x-review-session": "a" * 64})
+            assert r.status_code == 401
+            # 登录失败：同一个 401，不回显任何输入
+            for body in ({"login_name": "teacher.rc1", "password": PASSWORD, "code": totp(SECRET, step + 5)},
+                         {"login_name": "teacher.rc1", "password": "wrong-password", "code": totp(SECRET, step)},
+                         {"login_name": "nobody.here", "password": PASSWORD, "code": totp(SECRET, step)}):
+                r = await c.post("/review/v0/auth/login", json=body)
+                assert r.status_code == 401 and r.json() == {"type": "urn:starbuddy:review:login_failed", "status": 401, "code": "LOGIN_FAILED"}
+            r = await c.post("/review/v0/auth/login", json={"login_name": "teacher.rc1", "password": PASSWORD, "code": "12ab56"})
+            assert r.status_code == 422
+            # 成功
+            r = await c.post("/review/v0/auth/login", json={"login_name": "teacher.rc1", "password": PASSWORD, "code": totp(SECRET, step)})
+            assert r.status_code == 200
+            token = r.json()["token"]
+            assert re.fullmatch(r"[0-9a-f]{64}", token)
+            S = {"x-review-session": token}
+            assert (await c.get("/review/v0/auth/me", headers=S)).json() == {"account_id": str(SF1), "login_name": "teacher.rc1"}
+            assert (await c.get("/review/v0/map-versions", params={"subject": "wenli"}, headers=S)).status_code == 200
+            # 同一个码不能再用
+            r = await c.post("/review/v0/auth/login", json={"login_name": "teacher.rc1", "password": PASSWORD, "code": totp(SECRET, step)})
+            assert r.status_code == 401
+            # 退出后令牌失效
+            assert (await c.post("/review/v0/auth/logout", headers=S)).status_code == 200
+            assert (await c.get("/review/v0/auth/me", headers=S)).status_code == 401
+    logs = caplog.text
+    assert token not in logs and PASSWORD not in logs and "teacher.rc1" not in logs
 
 
 async def test_role_check_rejects_shared_or_wrong_roles(pg, rc):
@@ -249,28 +293,3 @@ def test_db_error_detail_only_for_raised_rules():
     assert db_error(native).status == 409 and db_error(native).detail is None
     denied = asyncpg.exceptions.InsufficientPrivilegeError("permission denied for function publish_map_version")
     assert db_error(denied).status == 403 and db_error(denied).detail is None
-
-
-async def test_dev_staff_auth_only_loopback_synthetic_staff():
-    from starlette.requests import Request
-
-    from review_console.devauth import DEV_STAFF, dev_enabled, dev_staff_auth
-
-    def req(host, headers):
-        headers = {"host": "127.0.0.1:8790", **headers}
-        scope = {"type": "http", "client": (host, 1234), "headers": [(k.encode(), v.encode()) for k, v in headers.items()]}
-        return Request(scope)
-
-    staff = sorted(DEV_STAFF)[0]
-    assert await dev_staff_auth(req("127.0.0.1", {"x-dev-staff-id": str(staff)})) == staff
-    assert await dev_staff_auth(req("10.0.0.2", {"x-dev-staff-id": str(staff)})) is None
-    assert await dev_staff_auth(req("127.0.0.1", {"x-dev-staff-id": str(staff), "x-forwarded-for": "1.2.3.4"})) is None
-    assert await dev_staff_auth(req("127.0.0.1", {"x-dev-staff-id": str(SF1)})) is None  # 不是合成 staff 名单里的
-    assert await dev_staff_auth(req("127.0.0.1", {"x-dev-staff-id": "not-a-uuid"})) is None
-    # DNS 重绑定：来源是本机，但 Host 是外部域名
-    assert await dev_staff_auth(req("127.0.0.1", {"x-dev-staff-id": str(staff), "host": "evil.example.test:8790"})) is None
-    assert await dev_staff_auth(req("::1", {"x-dev-staff-id": str(staff), "host": "[::1]:8790"})) == staff
-    assert await dev_staff_auth(req("127.0.0.1", {"x-dev-staff-id": str(staff), "host": "localhost"})) == staff
-    assert dev_enabled({"REVIEW_CONSOLE_ENV": "dev", "REVIEW_CONSOLE_DEV_AUTH": "1"})
-    assert not dev_enabled({"REVIEW_CONSOLE_ENV": "prod", "REVIEW_CONSOLE_DEV_AUTH": "1"})
-    assert not dev_enabled({"REVIEW_CONSOLE_ENV": "dev"})

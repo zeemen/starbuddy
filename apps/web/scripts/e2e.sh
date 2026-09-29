@@ -34,7 +34,7 @@ for _ in $(seq 1 80); do
 done
 
 # 审核台后端（services/learning/review_console）：两个登录角色分别只继承 kge、review；合成 staff 与语文合成地图；
-# 开发身份桩打开（只认 loopback 与合成 staff）。需要 services/learning/.venv（同 make learning-test）。
+# 身份来自 staff 登录（PR 4，合成凭据在种子里）。需要 services/learning/.venv（同 make learning-test）。
 PY="$ROOT/services/learning/.venv/bin/python"
 if [ ! -x "$PY" ]; then echo "e2e: 缺少 services/learning/.venv（审核台后端）"; exit 3; fi
 psql -X -q -v ON_ERROR_STOP=1 -c "CREATE ROLE review_kge_app LOGIN IN ROLE starbuddy_kge" \
@@ -43,7 +43,7 @@ PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -q -v ON_ERROR_STOP=1 -
 REVIEW_PORT="$(free_port)"
 RLOG="$(mktemp)"
 ( cd "$ROOT/services/learning" || exit 1
-  exec env REVIEW_CONSOLE_ENV=test REVIEW_CONSOLE_DEV_AUTH=1 \
+  exec env REVIEW_CONSOLE_ENV=test \
     REVIEW_CONSOLE_KGE_DATABASE_URL="postgresql://review_kge_app@/starbuddy_test?host=$PGHOST" \
     REVIEW_CONSOLE_REVIEW_DATABASE_URL="postgresql://review_sign_app@/starbuddy_test?host=$PGHOST" \
     "$PY" -m review_console serve --port "$REVIEW_PORT" ) > "$RLOG" 2>&1 < /dev/null &

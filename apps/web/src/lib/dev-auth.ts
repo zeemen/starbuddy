@@ -3,12 +3,9 @@
 // /dev/login 只列合成账号，选中后写一个 httpOnly cookie，服务端组件读它，作为 x-dev-account-id 转给 BFF。
 // BFF 那边另有“只认 loopback”的开关，两边都要开才生效。
 import { SYNTHETIC_ACCOUNTS } from '../dev/accounts.ts';
-import { SYNTHETIC_STAFF } from '../dev/staff.ts';
 import { isUuid } from './star-map.ts';
 
 export const DEV_COOKIE = 'sb_dev_account';
-/** 审核台的开发身份与学生、家长分开存：staff 页面只认这个 cookie */
-export const DEV_STAFF_COOKIE = 'sb_dev_staff';
 /** 开发 cookie 的有效期（秒）：8 小时，不做长期登录 */
 export const DEV_COOKIE_MAX_AGE = 8 * 60 * 60;
 
@@ -36,10 +33,4 @@ export function devAccountFromCookie(value: string | undefined, env: Env = proce
 /** 登录后只能跳回星图页，不能被带去任意地址 */
 export function safeNext(next: string | null): string {
   return next && /^\/star-map\/[0-9a-f-]{36}$/.test(next) ? next : '/dev/login';
-}
-
-/** 审核台：cookie 里的 staff 只有在开关打开、Host 是本机、是合法 UUID、并且在合成 staff 列表里时才算数 */
-export function devStaffFromCookie(value: string | undefined, host: string | null | undefined, env: Env = process.env): string | null {
-  if (!devAuthEnabled(env) || !isLoopbackHost(host) || !value || !isUuid(value)) return null;
-  return SYNTHETIC_STAFF.some((a) => a.account_id === value) ? value : null;
 }

@@ -1,6 +1,6 @@
 // 审核台（specs/release-gate-sprint4 冲刺 1 · PR 3）的后端客户端：只在服务端调用（服务端组件与 server action）。
 // 浏览器只和本前端通信，不直连审核台后端（services/learning/review_console）或数据库。
-// 身份：PR 4 之前是开发身份桩（x-dev-staff-id，后端只在 loopback、开关打开时认）；签字、发布、撤下由库里的函数再核对 staff。
+// 身份：staff 登录会话（PR 4）。第一个参数是会话令牌，放在请求头 x-review-session 转交，由后端经库函数解析；签字、发布、撤下由库里的函数再核对 staff。
 export const SUBJECTS = [
   { code: 'aya', name: '数学' },
   { code: 'zhixing', name: '道法' },
@@ -148,8 +148,9 @@ export function problemFrom(status: number, data: unknown): Problem {
   return { status, code, detail };
 }
 
-async function call<T>(staff: string, method: string, path: string, body?: unknown): Promise<Result<T>> {
-  const headers: Record<string, string> = { 'x-dev-staff-id': staff };
+async function call<T>(session: string | null, method: string, path: string, body?: unknown): Promise<Result<T>> {
+  const headers: Record<string, string> = {};
+  if (session) headers['x-review-session'] = session;
   if (body !== undefined) headers['content-type'] = 'application/json';
   let r: Response;
   try {
@@ -169,6 +170,10 @@ async function call<T>(staff: string, method: string, path: string, body?: unkno
   return { ok: true, value: data as T };
 }
 
+export const loginRequest = (login_name: string, password: string, code: string) =>
+  call<{ token: string }>(null, 'POST', '/review/v0/auth/login', { login_name, password, code });
+export const logoutRequest = (session: string) => call<{ status: string }>(session, 'POST', '/review/v0/auth/logout');
+export const whoAmI = (session: string) => call<{ account_id: string; login_name: string | null }>(session, 'GET', '/review/v0/auth/me');
 export const listVersions = (staff: string, subject: SubjectCode) =>
   call<{ items: MapVersion[] }>(staff, 'GET', `/review/v0/map-versions?subject=${subject}`);
 export const getDiff = (staff: string, id: string) => call<DiffView>(staff, 'GET', `/review/v0/map-versions/${id}/diff`);
@@ -213,7 +218,7 @@ export const RESULT_LABEL: Record<string, string> = {
   saved: '已保存', signed: '已签字', published: '已发布', retired: '已撤下', change_signed: '变更单已签字',
   DIGEST_CHANGED: '内容已被改过，请刷新后重新核对', RULE_VIOLATION: '不符合发布规则', FORBIDDEN: '没有权限（需要在职的教研账号）',
   NOT_FOUND: '对象不存在', INVALID_PARAMETER: '填写的内容不合格式', INVALID_REFERENCE: '引用的对象不存在', UNAUTHENTICATED: '请先登录', CONFLICT: '重复操作',
-  INTERNAL: '出错了，请稍后再试',
+  INTERNAL: '出错了，请稍后再试', LOGIN_FAILED: '登录失败：登录名、口令或 6 位码不对，或账号暂时锁定（连错 5 次锁 15 分钟）',
 };
 export const RETIRE_BASIS = [
   { code: 'wrong_version', label: '版本有误' },

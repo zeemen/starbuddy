@@ -90,9 +90,7 @@ test('未登录打开星图：跳到开发登录页，只列合成账号', async
   await page.context().clearCookies();
   await page.goto(`/star-map/${STU.S1}`);
   await expect(page).toHaveURL(/\/dev\/login\?next=/);
-  // 第一组是学生、家长的合成账号；第二组是审核台的合成教研（PR 3），两组分开
-  await expect(page.locator('.login-list').nth(0).locator('li')).toHaveCount(4);
-  await expect(page.locator('.login-list').nth(1).locator('li')).toHaveCount(2);
+  await expect(page.locator('.login-list li')).toHaveCount(4);
   const bad = await page.request.get(`/dev/session?account=5a000000-0000-4000-8000-00000000ffff&next=/star-map/${STU.S1}`,
     { maxRedirects: 0 });
   expect(bad.status()).toBe(400);

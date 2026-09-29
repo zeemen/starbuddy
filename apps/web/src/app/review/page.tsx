@@ -1,25 +1,17 @@
 // 审核台首页：按学科列出地图版本（草稿、已发布、已撤下），链到差异视图与版本记录。
 import { redirect } from 'next/navigation';
-import { devAuthEnabled } from '../../lib/dev-auth.ts';
-import { currentStaff } from '../../lib/review-session.ts';
+import { currentSession } from '../../lib/review-session.ts';
 import { SUBJECTS, STATUS_LABEL, isSubject, listVersions, type SubjectCode } from '../../lib/review.ts';
 
 export const dynamic = 'force-dynamic';
 
 export default async function ReviewHome({ searchParams }: { searchParams: Promise<{ subject?: string }> }) {
-  const staff = await currentStaff();
-  if (!staff) {
-    if (devAuthEnabled()) redirect('/dev/login');
-    return (
-      <main>
-        <h1>审核台</h1>
-        <p>请先以教研账号登录。</p>
-      </main>
-    );
-  }
+  const staff = await currentSession();
+  if (!staff) redirect('/review/login');
   const raw = (await searchParams).subject ?? 'aya';
   const subject: SubjectCode = isSubject(raw) ? raw : 'aya';
   const r = await listVersions(staff, subject);
+  if (!r.ok && r.problem.status === 401) redirect('/review/login');
   return (
     <main>
       <h1>地图版本</h1>

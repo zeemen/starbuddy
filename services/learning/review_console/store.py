@@ -220,5 +220,26 @@ class ReviewStore:
             return at
         return await self._as_staff(staff, run)
 
+    # ---------- staff 登录与会话（迁移 0020；凭据核对全在库里，这里只转交） ----------
+    async def login(self, login_name: str, password: str, code: str) -> str | None:
+        """成功返回会话令牌；任何失败都是 None（库里不区分原因，连错 5 次锁 15 分钟）。"""
+        try:
+            return await self.pool.fetchval("SELECT platform.staff_login($1, $2, $3)", login_name, password, code)
+        except asyncpg.PostgresError as e:
+            raise db_error(e) from None
+
+    async def resolve(self, token: str) -> tuple[uuid.UUID, str] | None:
+        try:
+            r = await self.pool.fetchrow("SELECT account_id, login_name FROM platform.staff_session_resolve($1)", token)
+        except asyncpg.PostgresError as e:
+            raise db_error(e) from None
+        return (r["account_id"], r["login_name"]) if r else None
+
+    async def logout(self, token: str) -> None:
+        try:
+            await self.pool.execute("SELECT platform.staff_logout($1)", token)
+        except asyncpg.PostgresError as e:
+            raise db_error(e) from None
+
     async def retire(self, staff: uuid.UUID, version_id: uuid.UUID, basis_code: str) -> None:
         await self._as_staff(staff, lambda c: c.execute("SELECT kge.retire_map_version($1, $2)", version_id, basis_code))

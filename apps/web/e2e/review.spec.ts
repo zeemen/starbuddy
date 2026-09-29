@@ -1,20 +1,50 @@
-// 审核台端到端（spec 冲刺 1 验收“端到端测试”）：合成教研登录 → 打开草稿 → 改一个节点的“不包含” → 看到差异与校验 →
+// 审核台端到端（spec 冲刺 1 验收“端到端测试”）：合成教研经登录页登录（口令 + 6 位码，PR 4）→ 打开草稿 → 改一个节点的“不包含” → 看到差异与校验 →
 // 签字 → 发布 → 旧版本变为已撤下，版本记录里有这一行。种子见 db/seeds/dev/review-synthetic.sql（语文合成地图）。
-// 另测：看到的内容过期时签字被拒、学生身份进不了审核台、无障碍、不缓存。
+// 另测：登录失败、退出、看到的内容过期时签字被拒、学生身份进不了审核台、无障碍、不缓存。
 // 用例之间有先后（发布后的状态），按顺序执行（test.describe.serial）。
 import { execFileSync } from 'node:child_process';
+import { createHmac } from 'node:crypto';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 
-const T1 = '5f0e0000-0000-4000-8000-0000000000e1';
-const T2 = '5f0e0000-0000-4000-8000-0000000000e2';
+// 合成凭据：与 db/seeds/dev/review-synthetic.sql 一致（只用于一次性测试库）
+interface Staff { login: string; password: string; secret: Buffer }
+const T1: Staff = { login: 'teacher.t1', password: 'synthetic-teacher-t1', secret: Buffer.from('11'.repeat(20), 'hex') };
+const T2: Staff = { login: 'teacher.t2', password: 'synthetic-teacher-t2', secret: Buffer.from('22'.repeat(20), 'hex') };
 const S1 = '5a000000-0000-4000-8000-0000000000b1';
 const V101 = '5f0e0000-0000-4000-8000-0000000001a2';
 
-async function asStaff(page: Page, staff: string) {
-  const res = await page.goto(`/dev/session?staff=${staff}`);
-  expect(res?.status()).toBe(200);
+/** RFC 6238 的 6 位码（测试方独立实现） */
+function totp(secret: Buffer, step: number): string {
+  const msg = Buffer.alloc(8);
+  msg.writeBigUInt64BE(BigInt(step));
+  const h = createHmac('sha1', secret).update(msg).digest();
+  const o = h[19]! & 15;
+  return String((h.readUInt32BE(o) & 0x7fffffff) % 1_000_000).padStart(6, '0');
+}
+
+// 同一个码不能用两次：每个账号记下用过的时间步，下一次用更晚的一步（库里容差 1 步，超了就等到下一步）
+const usedStep = new Map<string, number>();
+async function nextCode(page: Page, who: Staff): Promise<string> {
+  for (;;) {
+    const now = Math.floor(Date.now() / 30_000);
+    const step = Math.max(now, (usedStep.get(who.login) ?? -1) + 1);
+    if (step <= now + 1) {
+      usedStep.set(who.login, step);
+      return totp(who.secret, step);
+    }
+    await page.waitForTimeout(30_000 - (Date.now() % 30_000) + 200);
+  }
+}
+
+async function asStaff(page: Page, who: Staff) {
+  await page.goto('/review/login');
+  await page.getByLabel('登录名').fill(who.login);
+  await page.getByLabel('口令').fill(who.password);
+  await page.getByLabel('6 位码').fill(await nextCode(page, who));
+  await page.getByRole('button', { name: '登录' }).click();
   await expect(page).toHaveURL(/\/review$/);
+  await expect(page.getByTestId('whoami')).toHaveText(who.login);
 }
 
 /** 以 BFF 的数据库身份读已发布的地图版本（BFF 只看得到已发布的），验收“BFF 读到新版本”（契约审查 PR 3 B3） */
@@ -31,11 +61,33 @@ async function axe(page: Page) {
 
 test.describe.configure({ mode: 'serial' });
 
-test('学生身份进不了审核台（去开发登录页）', async ({ page }) => {
+test('学生身份进不了审核台（去审核台登录页）；开发身份桩没有 staff 入口', async ({ page }) => {
   await page.goto(`/dev/session?account=${S1}&next=${encodeURIComponent('/star-map/5a000000-0000-4000-8000-0000000000c1')}`);
   await page.goto('/review?subject=wenli');
-  await expect(page).toHaveURL(/\/dev\/login$/);
+  await expect(page).toHaveURL(/\/review\/login$/);
   expect((await page.goto(`/dev/session?staff=${S1}`))?.status()).toBe(400);
+  await page.goto('/dev/login');
+  await expect(page.getByText('合成教研')).toHaveCount(0);
+});
+
+test('登录失败统一提示；退出后回登录页，旧会话失效', async ({ page }) => {
+  await page.goto('/review/login');
+  await axe(page);
+  await page.getByLabel('登录名').fill(T2.login);
+  await page.getByLabel('口令').fill(T2.password);
+  await page.getByLabel('6 位码').fill(totp(T2.secret, Math.floor(Date.now() / 30_000) + 10));  // 超出容差
+  await page.getByRole('button', { name: '登录' }).click();
+  await expect(page.getByTestId('login').getByRole('status')).toHaveAttribute('data-code', 'LOGIN_FAILED');
+  await expect(page).toHaveURL(/\/review\/login$/);
+  await asStaff(page, T2);
+  const cookie = (await page.context().cookies()).find((c) => c.name === 'sb_staff');
+  expect(cookie?.httpOnly && cookie.sameSite === 'Strict').toBeTruthy();
+  await page.getByRole('button', { name: '退出' }).click();
+  await expect(page).toHaveURL(/\/review\/login$/);
+  // 把旧令牌放回去也没用：库里的会话已撤销
+  await page.context().addCookies([{ ...cookie!, expires: Math.floor(Date.now() / 1000) + 3600 }]);
+  await page.goto('/review?subject=wenli');
+  await expect(page).toHaveURL(/\/review\/login$/);
 });
 
 test('教研改“不包含” → 差异与校验 → 签字 → 发布，旧版本撤下，版本记录有这一行', async ({ page, browser }) => {

@@ -72,7 +72,7 @@ LEARNING_ADAPTER_AYA_URL=http://127.0.0.1:8787 LEARNING_ADAPTER_AYA_TOKEN=... .v
 | `snapshot.py` / `diff.py` | 地图版本快照与差异（纯函数，逐字节确定）；基准为同学科已发布版本，没有时全部按新增 |
 | `risk.py` | 风险分类（KGE 第四章）；判不出的一律高风险；结构性口径与库里 `kge.structural_diff`、`map_change_required_signers` 一致 |
 | `store.py` | 两个连接池：`REVIEW_CONSOLE_KGE_DATABASE_URL`（只继承 `starbuddy_kge`：读、改草稿）、`REVIEW_CONSOLE_REVIEW_DATABASE_URL`（只继承 `starbuddy_review`：签字、发布、撤下）；启动时核对 |
-| `app.py` | `/review/v0/*` 接口；staff 身份由注入的认证器给出，PR 4 之前默认全部拒绝（401） |
+| `app.py` | `/review/v0/*` 接口；`/review/v0/auth/login`（唯一不需要会话的接口）、`/auth/logout`、`/auth/me`；其余接口的 staff 身份由请求头 `x-review-session` 的会话令牌经 `platform.staff_session_resolve` 解析（迁移 0020，PR 4） |
 | `__main__.py` | `python -m review_console record --subject aya [--format csv\|json]` 导出版本记录 |
 
 签字（版本与变更单）、发布、改节点都要带上“看到的摘要”（`expected_digest`），与当前内容不同就拒绝（409）。

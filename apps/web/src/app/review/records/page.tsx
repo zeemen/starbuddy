@@ -1,20 +1,17 @@
 // 版本记录（spec 设计要点 11，Gate 0 证据）：每行一次签字、发布或撤下，带签字人（staff 账号）与内容摘要。
 import { redirect } from 'next/navigation';
-import { devAuthEnabled } from '../../../lib/dev-auth.ts';
-import { currentStaff } from '../../../lib/review-session.ts';
+import { currentSession } from '../../../lib/review-session.ts';
 import { ACTION_LABEL, DECISION_LABEL, SUBJECTS, getRecords, isSubject, signerTail, type SubjectCode } from '../../../lib/review.ts';
 
 export const dynamic = 'force-dynamic';
 
 export default async function RecordsPage({ searchParams }: { searchParams: Promise<{ subject?: string }> }) {
-  const staff = await currentStaff();
-  if (!staff) {
-    if (devAuthEnabled()) redirect('/dev/login');
-    return <main><h1>版本记录</h1><p>请先以教研账号登录。</p></main>;
-  }
+  const staff = await currentSession();
+  if (!staff) redirect('/review/login');
   const raw = (await searchParams).subject ?? 'aya';
   const subject: SubjectCode = isSubject(raw) ? raw : 'aya';
   const r = await getRecords(staff, subject);
+  if (!r.ok && r.problem.status === 401) redirect('/review/login');
   return (
     <main>
       <h1>版本记录 · {SUBJECTS.find((s) => s.code === subject)?.name}</h1>

@@ -1,14 +1,11 @@
-// 审核台前端单测（不需要浏览器）：后端地址只允许 loopback、表单校验、开发 staff 桩只认合成 staff 且与学生身份分开。
+// 审核台前端单测（不需要浏览器）：后端地址只允许 loopback、表单校验、staff 会话 cookie、开发 staff 身份桩已删除。
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { test } from 'node:test';
-import { SYNTHETIC_ACCOUNTS } from '../src/dev/accounts.ts';
-import { SYNTHETIC_STAFF } from '../src/dev/staff.ts';
-import { devAccountFromCookie, devStaffFromCookie, isLoopbackHost } from '../src/lib/dev-auth.ts';
+import { isLoopbackHost } from '../src/lib/dev-auth.ts';
 import { isBasis, isDigest, isNodeId, isSubject, isVersionId, lines, problemFrom, RESULT_LABEL, reviewBaseUrl } from '../src/lib/review.ts';
-
-const on = { STARBUDDY_DEV_AUTH: '1', STARBUDDY_ENV: 'test' };
-const HOST = '127.0.0.1:3100';
+import { isSessionToken, staffCookieName, staffCookieOptions } from '../src/lib/staff-cookie.ts';
 
 test('审核台后端地址只能是 loopback 上的 http', () => {
   assert.equal(reviewBaseUrl({}), 'http://127.0.0.1:8790');
@@ -28,23 +25,20 @@ test('表单字段校验', () => {
   assert.deepEqual(lines(' a \n\n b\r\nc  '), ['a', 'b', 'c']);
 });
 
-test('开发 staff 桩：只认合成 staff，开关关闭时无效；学生、家长与 staff 身份互不通用', () => {
-  const staff = SYNTHETIC_STAFF[0]!.account_id;
-  const student = SYNTHETIC_ACCOUNTS[0]!.account_id;
-  assert.equal(devStaffFromCookie(staff, HOST, on), staff);
-  assert.equal(devStaffFromCookie(staff, HOST, {}), null);
-  assert.equal(devStaffFromCookie(student, HOST, on), null);
-  assert.equal(devAccountFromCookie(staff, on), null);
-  assert.equal(devStaffFromCookie('not-a-uuid', HOST, on), null);
+test('staff 会话 cookie：正式环境用 __Host- 前缀且 Secure；本地开发与测试不带前缀；都是 httpOnly、SameSite=Strict、12 小时', () => {
+  assert.equal(staffCookieName({}), '__Host-sb_staff');
+  assert.equal(staffCookieName({ STARBUDDY_ENV: 'staging' }), '__Host-sb_staff');
+  assert.equal(staffCookieName({ STARBUDDY_ENV: 'test' }), 'sb_staff');
+  assert.deepEqual(staffCookieOptions({}), { httpOnly: true, sameSite: 'strict', path: '/', secure: true, maxAge: 43200 });
+  assert.equal(staffCookieOptions({ STARBUDDY_ENV: 'dev' }).secure, false);
+  assert.ok(isSessionToken('a'.repeat(64)) && !isSessionToken('A'.repeat(64)) && !isSessionToken('x') && !isSessionToken(undefined));
 });
 
-test('Host 必须是本机地址（挡 DNS 重绑定）', () => {
-  const staff = SYNTHETIC_STAFF[0]!.account_id;
+test('Host 必须是本机地址（开发身份桩用，挡 DNS 重绑定）', () => {
   for (const h of ['127.0.0.1', '127.0.0.1:3100', 'localhost:3100', '[::1]:3100']) assert.ok(isLoopbackHost(h), h);
   for (const h of ['evil.example.test:3100', '127.0.0.1.evil.test', 'localhost.evil.test:80', '', null, undefined]) {
     assert.ok(!isLoopbackHost(h), String(h));
   }
-  assert.equal(devStaffFromCookie(staff, 'evil.example.test:3100', on), null);
 });
 
 test('后端错误只对规则类透传说明，并截断', () => {
@@ -54,14 +48,23 @@ test('后端错误只对规则类透传说明，并截断', () => {
   assert.deepEqual(problemFrom(502, null), { status: 502, code: 'INTERNAL', detail: undefined });
 });
 
-test('合成 staff 与后端开发身份桩名单一致', () => {
-  const py = readFileSync(new URL('../../../services/learning/review_console/devauth.py', import.meta.url), 'utf8');
-  const ids = [...py.matchAll(/uuid\.UUID\("([0-9a-f-]{36})"\)/g)].map((m) => m[1]).sort();
-  assert.deepEqual(ids, SYNTHETIC_STAFF.map((s) => s.account_id).sort());
+test('结果提示覆盖后端的全部错误码', () => {
+  for (const code of ['DIGEST_CHANGED', 'RULE_VIOLATION', 'FORBIDDEN', 'NOT_FOUND', 'INVALID_PARAMETER', 'UNAUTHENTICATED', 'CONFLICT',
+    'INVALID_REFERENCE', 'INTERNAL', 'LOGIN_FAILED']) {
+    assert.ok(Object.hasOwn(RESULT_LABEL, code), code);
+  }
 });
 
-test('结果提示覆盖后端的全部错误码', () => {
-  for (const code of ['DIGEST_CHANGED', 'RULE_VIOLATION', 'FORBIDDEN', 'NOT_FOUND', 'INVALID_PARAMETER', 'UNAUTHENTICATED', 'CONFLICT', 'INVALID_REFERENCE', 'INTERNAL']) {
-    assert.ok(Object.hasOwn(RESULT_LABEL, code), code);
+test('开发 staff 身份桩已删除（前后端源码里都找不到）', () => {
+  const root = new URL('../../../', import.meta.url).pathname;
+  assert.ok(!existsSync(join(root, 'apps/web/src/dev/staff.ts')));
+  assert.ok(!existsSync(join(root, 'services/learning/review_console/devauth.py')));
+  const files = (dir: string): string[] => readdirSync(dir).flatMap((n) => {
+    const p = join(dir, n);
+    return n === '__pycache__' ? [] : statSync(p).isDirectory() ? files(p) : [p];
+  });
+  for (const f of [...files(join(root, 'apps/web/src')), ...files(join(root, 'services/learning/review_console'))]) {
+    const text = readFileSync(f, 'utf8');
+    assert.ok(!/x-dev-staff-id|sb_dev_staff|SYNTHETIC_STAFF|REVIEW_CONSOLE_DEV_AUTH/.test(text), f);
   }
 });

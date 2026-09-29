@@ -7,7 +7,8 @@
 - `/dev/login`：开发身份桩，只列合成账号，只在 `STARBUDDY_DEV_AUTH=1` 时存在。4-H 删除。
 - `/review`：审核台 v0（staff 专用，specs/release-gate-sprint4 冲刺 1 · PR 3）。地图版本列表、差异审核、节点边界编辑、签字、发布、撤下、版本记录。
   服务端组件与 server action 经审核台后端（`STARBUDDY_REVIEW_URL`，只允许 loopback；`services/learning/review_console`）读写；
-  staff 身份在 PR 4 之前用开发身份桩（`/dev/login` 的“合成教研”），与学生、家长的身份分开存。
+  staff 用 `/review/login` 登录（登录名 + 口令 + 验证器 App 的 6 位码，PR 4）；会话令牌放在 httpOnly、SameSite=Strict 的 cookie 里
+  （正式环境 `__Host-sb_staff`，本地 dev / test 为 `sb_staff`），前端只转交，身份由库函数解析。凭据由人用 `platform.staff_enroll` 建立。
 
 ## 边界
 - 浏览器只和本前端通信；服务端组件经 BFF 取数据（`STARBUDDY_BFF_URL`，只允许 loopback）。浏览器不直连 BFF、数据库或学习服务。

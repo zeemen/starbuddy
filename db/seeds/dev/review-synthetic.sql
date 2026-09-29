@@ -5,7 +5,7 @@
 --   PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -v ON_ERROR_STOP=1 -f db/seeds/dev/review-synthetic.sql
 --
 -- 内容：
---   合成教研 T1、T2（staff，与 apps/web/src/dev/staff.ts、services/learning/review_console/devauth.py 一致）；
+--   合成教研 T1、T2（staff，带审核台登录凭据：登录名 teacher.t1 / teacher.t2）；
 --   语文（文砺，CHN.RC.*）地图：1.0.0 经 T1、T2 两人签字后由 T1 发布（走签字与发布函数，不直接改状态）；
 --   1.0.1 草稿，内容与 1.0.0 相同（端到端测试在它上面改“不包含”、签字、发布）。
 BEGIN;
@@ -26,6 +26,9 @@ END $$;
 INSERT INTO platform.account (id, kind) VALUES
   ('5f0e0000-0000-4000-8000-0000000000e1', 'staff'),   -- T1
   ('5f0e0000-0000-4000-8000-0000000000e2', 'staff');   -- T2
+-- 审核台登录凭据（迁移 0020，PR 4）：合成口令与合成 TOTP 密钥，只用于开发库与一次性测试库，apps/web/e2e/review.spec.ts 用同样的值登录
+SELECT platform.staff_enroll('5f0e0000-0000-4000-8000-0000000000e1', 'teacher.t1', 'synthetic-teacher-t1', '\x1111111111111111111111111111111111111111'::bytea);
+SELECT platform.staff_enroll('5f0e0000-0000-4000-8000-0000000000e2', 'teacher.t2', 'synthetic-teacher-t2', '\x2222222222222222222222222222222222222222'::bytea);
 
 -- 草稿由知识服务身份写入
 SET LOCAL ROLE starbuddy_kge;

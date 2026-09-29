@@ -1,8 +1,7 @@
 // 地图版本审核页（spec 设计要点 4“审核界面的核心是差异对比”）：风险摘要、差异（附风险与校验问题）、变更单、
 // 节点编辑（草稿）、签字、发布、撤下、签字记录。所有表单都带当前内容摘要：页面显示的就是签的、发布的。
 import { notFound, redirect } from 'next/navigation';
-import { devAuthEnabled } from '../../../../lib/dev-auth.ts';
-import { currentStaff } from '../../../../lib/review-session.ts';
+import { currentSession } from '../../../../lib/review-session.ts';
 import {
   ACTION_LABEL, CHANGE_STATUS_LABEL, DECISION_LABEL, LEVEL_LABEL, OBJECT_LABEL, OP_LABEL, REASON_LABEL, RESULT_LABEL, RETIRE_BASIS,
   STATUS_LABEL, getDiff, isVersionId, signerTail, type Change, type NodeRow,
@@ -67,13 +66,11 @@ function NodeEditor({ versionId, digest, node }: { versionId: string; digest: st
 
 export default async function MapVersionPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const staff = await currentStaff();
-  if (!staff) {
-    if (devAuthEnabled()) redirect('/dev/login');
-    return <main><h1>审核</h1><p>请先以教研账号登录。</p></main>;
-  }
+  const staff = await currentSession();
+  if (!staff) redirect('/review/login');
   if (!isVersionId(id)) notFound();
   const r = await getDiff(staff, id);
+  if (!r.ok && r.problem.status === 401) redirect('/review/login');
   if (!r.ok) {
     if (r.problem.status === 404 || r.problem.status === 422) notFound();
     return <main><h1>审核</h1><p className="review-result error">读取失败（{r.problem.code}）</p></main>;

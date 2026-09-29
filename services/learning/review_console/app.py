@@ -1,7 +1,8 @@
 """审核台 v0 的 HTTP 接口（只供审核台前端，spec 冲刺 1 · PR 2）。
 
-身份：每个请求由注入的 StaffAuthenticator 给出当前 staff 账号。staff 登录是 PR 4（[NEEDS-HUMAN]，spec 待人确认 #3），
-在那之前默认的 DenyAll 拒绝一切请求；测试注入合成 staff。本模块不接受请求里自报的账号。
+身份：staff 登录（PR 4，specs/release-gate-sprint4/pr4-staff-login.md）。前端服务端在请求头 x-review-session 里转交会话令牌，
+这里经库函数 platform.staff_session_resolve 解析出 staff 账号；除登录接口外，没有有效会话一律 401。
+本模块不接受请求里自报的账号；测试可以注入别的认证器。
 接口只返回公共层内容与 staff 账号 ID；日志只记方法、路径模板、状态码与错误码。
 """
 from __future__ import annotations
@@ -31,14 +32,20 @@ BASIS = r"^[a-z0-9_]{1,48}$"
 
 class StaffAuthenticator(Protocol):
     """约定（安全审查 B-7）：只能返回已登录会话里、核对过是 active staff 的账号 ID，否则返回 None。
-    读接口与改草稿不经库里的 staff 核对，全靠这一步；PR 4 实现时还要处理 CSRF（cookie 会话校验 Origin 或加令牌）。"""
+    读接口与改草稿不经库里的 staff 核对，全靠这一步。CSRF 由前端负责（server action 同源校验、SameSite=Strict cookie）。"""
 
     async def __call__(self, request: Request) -> uuid.UUID | None: ...
 
 
-async def deny_all(request: Request) -> uuid.UUID | None:
-    """PR 4 之前的默认：没有 staff 登录，任何请求都拒绝。"""
-    return None
+SESSION_HEADER = "x-review-session"
+TOKEN = re.compile(r"^[0-9a-f]{64}$")
+# 不需要会话的接口：只有登录
+PUBLIC_ROUTES = {("POST", "/review/v0/auth/login")}
+
+
+def session_token(request: Request) -> str | None:
+    t = request.headers.get(SESSION_HEADER, "")
+    return t if TOKEN.match(t) else None
 
 
 class _Strict(BaseModel):
@@ -62,6 +69,12 @@ class PublishBody(_Strict):
 
 class RetireBody(_Strict):
     basis_code: str = Field(pattern=BASIS)
+
+
+class LoginBody(_Strict):
+    login_name: str = Field(pattern=r"^[a-z][a-z0-9_.-]{2,31}$")
+    password: str = Field(min_length=1, max_length=128)
+    code: str = Field(pattern=r"^[0-9]{6}$")
 
 
 class NodeEdit(_Strict):
@@ -88,9 +101,21 @@ CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 NODE_ID = re.compile(r"^[A-Z][A-Z0-9]{1,9}(\.[A-Z0-9][A-Z0-9_]{0,31}){1,4}$")  # 与 kge.node_id 域一致
 
 
-def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthenticator = deny_all,
+def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthenticator | None = None,
                pools: tuple[asyncpg.Pool, asyncpg.Pool] | None = None) -> FastAPI:
     state: dict[str, Any] = {}
+
+    async def session_auth(request: Request) -> uuid.UUID | None:
+        token = session_token(request)
+        if token is None:
+            return None
+        who = await state["review"].resolve(token)
+        if who is None:
+            return None
+        request.state.login_name = who[1]
+        return who[0]
+
+    auth = authenticate or session_auth
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -114,10 +139,11 @@ def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthen
     async def guard(request: Request, call_next):
         status, code = 500, "INTERNAL"
         try:
-            staff = await authenticate(request)
-            if staff is None:
-                raise ReviewError(401, "UNAUTHENTICATED")
-            request.state.staff = staff
+            if (request.method, request.url.path) not in PUBLIC_ROUTES:
+                staff = await auth(request)
+                if staff is None:
+                    raise ReviewError(401, "UNAUTHENTICATED")
+                request.state.staff = staff
             resp = await call_next(request)
             status, code = resp.status_code, "-"
             return resp
@@ -150,6 +176,25 @@ def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthen
         if subject not in SUBJECTS:
             raise ReviewError(422, "INVALID_PARAMETER", "未知学科")
         return subject
+
+    @app.post("/review/v0/auth/login")
+    async def login(body: LoginBody):
+        # 失败一律同一个 401：不区分没有这个人、口令错、码错、已锁定、账号停用（库里就不区分）
+        token = await state["review"].login(body.login_name, body.password, body.code)
+        if token is None:
+            raise ReviewError(401, "LOGIN_FAILED")
+        return {"token": token}
+
+    @app.post("/review/v0/auth/logout")
+    async def logout(request: Request):
+        token = session_token(request)
+        if token is not None:
+            await state["review"].logout(token)
+        return {"status": "logged_out"}
+
+    @app.get("/review/v0/auth/me")
+    async def me(request: Request):
+        return {"account_id": str(request.state.staff), "login_name": getattr(request.state, "login_name", None)}
 
     @app.get("/review/v0/map-versions")
     async def list_versions(subject: str):
