@@ -21,7 +21,7 @@ sys.path.insert(0, str(HERE.parent))
 
 from learning.model_router import (DEFAULT_PATH, DataClass, FakeProvider, MemorySink, ModelRouter, ProviderReply, RouteRequest,  # noqa: E402
                                    Task, Usage, load)
-from scorer.cases import holdout_ids, load_cases  # noqa: E402
+from scorer.cases import load_cases, read_holdout  # noqa: E402
 from scorer.judge import load_lexicon  # noqa: E402
 from scorer.report import score, to_markdown, write  # noqa: E402
 
@@ -43,7 +43,7 @@ async def generate(cases: list[dict], runs: int) -> tuple[list[dict], MemorySink
         subject = (case.get("context") or {}).get("subject")
         for run in range(1, runs + 1):
             messages = [{"role": "system", "content": PLACEHOLDER_SYSTEM}]
-            turns, model_version = [], None
+            turns = []
             for text in case["turns"]:
                 messages.append({"role": "user", "content": text})
                 res = await router.route(RouteRequest(
@@ -51,10 +51,11 @@ async def generate(cases: list[dict], runs: int) -> tuple[list[dict], MemorySink
                     prompt_template=PLACEHOLDER_PROMPT[0], prompt_version=PLACEHOLDER_PROMPT[1], messages=tuple(messages),
                     usage_id=f"eval-{uuid.uuid4()}", idempotency_key=f"eval-{uuid.uuid4()}"))
                 messages.append({"role": "assistant", "content": res.output})
-                turns.append({"text": res.output, "fields": {}})
-                model_version = res.model_version
-            out.append({"case_id": case["case_id"], "run": run, "model_version": model_version,
-                        "prompt_version": f"prompt:{PLACEHOLDER_PROMPT[0]}@{PLACEHOLDER_PROMPT[1]}", "turns": turns})
+                turns.append({"text": res.output, "fields": {}, "model_version": res.model_version})
+            versions = sorted({t["model_version"] for t in turns})
+            # 熔断换备选时各轮可能来自不同模型：model_version 只在各轮一致时填，否则记 mixed，逐轮的值留在 turns 里（契约审查应改 8）
+            out.append({"case_id": case["case_id"], "run": run, "model_version": versions[0] if len(versions) == 1 else "mixed",
+                        "prompt_version": PLACEHOLDER_PROMPT[1], "source_version": res.source_version, "turns": turns})
     return out, sink
 
 
@@ -65,13 +66,17 @@ def main(argv: list[str] | None = None) -> int:
     a = ap.parse_args(argv)
     cases = load_cases(HERE / "cases")
     responses, sink = asyncio.run(generate(cases, a.runs))
-    out_dir = Path(a.out) if a.out else Path(tempfile.mkdtemp(prefix="diandian-eval."))
+    out_dir = (Path(a.out) if a.out else Path(tempfile.mkdtemp(prefix="diandian-eval."))).resolve()
+    # 回复原文不入库（spec 待人确认 #5，安全审查应改 3）：输出目录不能落在仓库里
+    if out_dir == ROOT.resolve() or ROOT.resolve() in out_dir.parents:
+        print("eval-persona: --out 不能指向仓库内的目录（回复原文不入库）")
+        return 2
     out_dir.mkdir(parents=True, exist_ok=True)
     # 回复只写到仓库外的临时目录（spec 待人确认 #5）；报告不含原文
     with open(out_dir / "responses.jsonl", "w", encoding="utf-8") as f:
         for r in responses:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
-    rep = score(cases, responses, load_lexicon(HERE / "lexicon" / "forbidden.yaml"), holdout=set(holdout_ids(cases)),
+    rep = score(cases, responses, load_lexicon(HERE / "lexicon" / "forbidden.yaml"), holdout=set(read_holdout(HERE / "holdout.txt")),
                 gold_present=(HERE / "gold").is_dir())
     write(rep, out_dir)
     calls = len(sink.records)
@@ -79,7 +84,7 @@ def main(argv: list[str] | None = None) -> int:
         and all(r.outcome == "ok" for r in sink.records)
     print(to_markdown(rep).splitlines()[0])
     print(f"eval-persona: 离线全流程{'通过' if ok else '失败'}（{len(cases)} 条用例 × {a.runs} 次，经模型路由 test 环境 {calls} 次调用；"
-          f"假供应商回复，分数无意义；输出在 {out_dir}）")
+          f"假供应商回复，分数无意义；输出在 {out_dir}，含回复原文，用完请删除）")
     return 0 if ok else 1
 
 

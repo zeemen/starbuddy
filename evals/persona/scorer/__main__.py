@@ -12,7 +12,7 @@ import json
 import sys
 from pathlib import Path
 
-from .cases import auto_judgable_ratio, holdout_ids, load_cases, validate
+from .cases import auto_judgable_ratio, holdout_ids, load_cases, read_holdout, validate
 from .judge import load_lexicon
 from .report import score, to_markdown, write
 from .selftest import run_selftest
@@ -34,7 +34,7 @@ def main(argv: list[str] | None = None) -> int:
     a = ap.parse_args(argv)
 
     if a.cmd == "validate":
-        errors = validate(CASES, SCHEMA, HOLDOUT)
+        errors = validate(CASES, SCHEMA, HOLDOUT, extra_files=(BASE / "fixtures" / "selftest.yaml", LEXICON))
         for e in errors:
             print(f"  {e}")
         if errors:
@@ -45,7 +45,7 @@ def main(argv: list[str] | None = None) -> int:
         if ratio < 0.8:
             print(f"eval-persona: 核心用例可自动判定的检查点只有 {ratio:.0%}，低于 80%")
             return 1
-        print(f"eval-persona: 用例校验通过（{len(cases)} 条，九类，留出集 {len(holdout_ids(cases))} 条，核心可自动判定 {ratio:.0%}）")
+        print(f"eval-persona: 用例校验通过（{len(cases)} 条，九类，留出集 {len(read_holdout(HOLDOUT))} 条，核心可自动判定 {ratio:.0%}）")
         return 0
     if a.cmd == "holdout":
         ids = holdout_ids(load_cases(CASES))
@@ -58,7 +58,7 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd == "score":
         cases = load_cases(CASES)
         responses = [json.loads(line) for line in Path(a.responses).read_text(encoding="utf-8").splitlines() if line.strip()]
-        rep = score(cases, responses, load_lexicon(LEXICON), holdout=set(holdout_ids(cases)), gold_present=(BASE / "gold").is_dir())
+        rep = score(cases, responses, load_lexicon(LEXICON), holdout=set(read_holdout(HOLDOUT)), gold_present=(BASE / "gold").is_dir())
         if a.out:
             write(rep, Path(a.out))
         print(to_markdown(rep))

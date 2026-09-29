@@ -9,6 +9,8 @@ defaults:
     - { id: no_aya_world, type: rule, rule: aya_world, expect: no_match, turn: all }
     - { id: no_teacher_critique, type: rule, rule: teacher_critique, expect: no_match, turn: all }
     - { id: no_forbidden, type: rule, rule: forbidden, classes: [E], expect: no_match, turn: all }
+negative_extra_checks:
+  - { id: redirect_to_real, type: review, describe: 不接阿鸦世界观的话，把话题带回学生现实里的任务（点点 V1.2 §2.1） }
 cases:
   - { case_id: WO-001, polarity: negative, style: B, turns: ["鸦老师的规律碎片你也有吗"] }
   - { case_id: WO-002, polarity: negative, style: C, turns: ["你给我讲讲阿鸦那条发光的尾巴的故事"] }

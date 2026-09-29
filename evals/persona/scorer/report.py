@@ -6,12 +6,15 @@
 from __future__ import annotations
 
 import json
+import re
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from .cases import auto_judgable_ratio
+from .cases import HOLDOUT_RATIO, HOLDOUT_SEED, auto_judgable_ratio
 from .judge import Lexicon, judge_run
+
+_CASE_ID = re.compile(r"^[A-Z]{2}-\d{3}$")
 
 
 def score(cases: list[dict[str, Any]], responses: list[dict[str, Any]], lex: Lexicon, *, holdout: set[str] | None = None,
@@ -34,7 +37,8 @@ def score(cases: list[dict[str, Any]], responses: list[dict[str, Any]], lex: Lex
         runs.append({
             "case_id": case["case_id"], "run": r.get("run"), "category": case["category"], "core": case["core"],
             "split": "holdout" if holdout and case["case_id"] in holdout else "dev",
-            "model_version": r.get("model_version"), "prompt_version": r.get("prompt_version"), "passed": passed,
+            "model_version": r.get("model_version"), "prompt_version": r.get("prompt_version"),
+            "source_version": r.get("source_version"), "passed": passed,
             "checks": [{"id": v.check_id, "type": v.type, "verdict": v.verdict, "redline": v.redline, "hits": v.hits} for v in verdicts],
         })
 
@@ -47,10 +51,17 @@ def score(cases: list[dict[str, Any]], responses: list[dict[str, Any]], lex: Lex
         cats[x["category"]].append(x)
     return {
         "lexicon_version": lex.version, "lexicon_reviewed": lex.reviewed, "gold_present": gold_present,
-        "cases": len(cases), "runs": len(runs), "unknown_case_ids": sorted(set(unknown)),
+        # 回复文件是外部输入：只回写合格式的编号，其余只计数（安全审查建议 4）
+        "cases": len(cases), "runs": len(runs), "unknown_case_ids": sorted({u for u in unknown if _CASE_ID.match(u)}),
+        "unknown_responses": len(unknown),
         "auto_judgable_core": round(auto_judgable_ratio(cases, core_only=True), 4),
         "overall": rate(runs), "core": rate([x for x in runs if x["core"]]), "non_core": rate([x for x in runs if not x["core"]]),
         "by_category": {k: rate(v) for k, v in sorted(cats.items())},
+        "by_split": {s: {"core": rate([x for x in runs if x["split"] == s and x["core"]]), "all": rate([x for x in runs if x["split"] == s])}
+                     for s in ("dev", "holdout")},
+        "by_model": {m: {"core": rate([x for x in runs if x["model_version"] == m and x["core"]])}
+                     for m in sorted({str(x["model_version"]) for x in runs})},
+        "holdout": {"source": "holdout.txt（冻结名单）", "seed": HOLDOUT_SEED, "ratio": HOLDOUT_RATIO, "size": len(holdout or ())},
         "redline_violations": redlines, "detail": runs,
     }
 
@@ -63,9 +74,12 @@ def to_markdown(rep: dict[str, Any]) -> str:
         lines.append("> **金标准未标注**：`gold/` 不存在，评审类检查点只计为待评审。")
     lines += ["", f"- 用例 {rep['cases']} 条，运行 {rep['runs']} 次；核心用例可自动判定的检查点占 {rep['auto_judgable_core']:.0%}",
               f"- 核心通过率：{_fmt(rep['core'])}；非核心：{_fmt(rep['non_core'])}；全部：{_fmt(rep['overall'])}",
+              f"- 开发集核心：{_fmt(rep['by_split']['dev']['core'])}；留出集核心：{_fmt(rep['by_split']['holdout']['core'])}"
+              f"（留出集 {rep['holdout']['size']} 条，种子 {rep['holdout']['seed']}）",
               f"- 红线违例：{len(rep['redline_violations'])} 次", "", "| 类别 | 运行 | 通过 | 通过率 |", "|---|---|---|---|"]
     for cat, r in rep["by_category"].items():
         lines.append(f"| {cat} | {r['runs']} | {r['passed']} | {_fmt(r)} |")
+    lines += ["", "| 模型版本 | 核心通过率 |", "|---|---|"] + [f"| {m} | {_fmt(r['core'])} |" for m, r in rep["by_model"].items()]
     if rep["redline_violations"]:
         lines += ["", "## 红线违例（只列编号，不含原文）", ""]
         for v in rep["redline_violations"]:

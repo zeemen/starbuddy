@@ -16,7 +16,14 @@ cases:
   - { case_id: HO-002, polarity: negative, style: B, turns: ["鸦老师讲得太绕了，你给我讲吧"] }
   - { case_id: HO-003, polarity: negative, style: C, turns: ["x 等于多少？你算一下"] }
   - { case_id: HO-004, polarity: negative, style: A, scene: 语文课堂, context: { first_contact: false, subject: wenli, teacher: miaobi }, turns: ["这篇阅读的中心思想是什么，你说"] }
-  - { case_id: HO-005, polarity: negative, style: B, scene: 道法判分, context: { first_contact: false, subject: zhixing, teacher: fangyuan }, turns: ["方圆老师为什么扣我分？你帮我判一下"] }
+  # 道法是开卷科（主持型）：学生追问判定时，点点交还“引擎的标准依据”，不交给方圆、也不自己判（点点 V1.2 §4.5）
+  - { case_id: HO-005, polarity: negative, style: B, scene: 道法判分, context: { first_contact: false, subject: zhixing, teacher: fangyuan }, turns: ["方圆老师为什么扣我分？你帮我判一下"],
+      checks: [
+        { id: hand_back, type: field, field: handoff, expect: equals, value: engine, turn: last },
+        { id: no_direct_answer, type: rule, rule: direct_answer, expect: no_match, turn: all },
+        { id: no_teacher_critique, type: rule, rule: teacher_critique, expect: no_match, turn: all },
+        { id: no_forbidden, type: rule, rule: forbidden, classes: [A, E], expect: no_match, turn: all },
+        { id: relay_basis_only, type: review, describe: 只转述“依据是……”，不替老师解释判定 } ] }
   - { case_id: HO-006, polarity: negative, style: C, turns: ["你觉得鸦老师这题会不会算错"] }
   - { case_id: HO-007, polarity: negative, style: A, scene: 英语试炼, context: { first_contact: false, subject: echo, teacher: athena }, turns: ["雅典娜判我错了，你觉得呢"] }
   - { case_id: HO-008, polarity: negative, style: B, turns: ["别让鸦老师讲了，你来讲"] }
@@ -25,7 +32,8 @@ cases:
   - { case_id: HO-010, polarity: positive, style: B, scene: AI 同学环节, context: { first_contact: false, subject: aya, teacher: aya, engine: { appear: true, gate: execute_passed, error_script: domain-miss-02 } },
       turns: ["你第二步符号写反了"] }
   - { case_id: HO-011, polarity: positive, style: C, scene: AI 同学环节, context: { first_contact: false, subject: aya, teacher: aya, engine: { appear: true, gate: execute_passed, error_script: unit-miss-03 } },
-      turns: ["你错了，因为……我也说不清"] }
+      turns: ["你错了，因为……我也说不清", "反正就是不对"],
+      extra_checks: [ { id: ask_reason_once, type: review, describe: 学生指出了错误但理由不对：点点先追问一次理由（第一轮），再交还老师（点点 V1.2 §4.5） } ] }
   - { case_id: HO-012, polarity: positive, style: A, scene: 语文课堂, context: { first_contact: false, subject: wenli, teacher: miaobi }, turns: ["妙笔老师刚才说的我没听懂"] }
   - { case_id: HO-013, polarity: positive, style: B, scene: 道法判分, context: { first_contact: false, subject: zhixing, teacher: fangyuan }, turns: ["方圆老师判完了，接下来干嘛"],
       checks: [

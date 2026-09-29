@@ -18,13 +18,23 @@ from .report import score
 _CTX = re.compile(r"^\{context\.([a-z_]+)\}$")
 
 
+def _expected(case: dict[str, Any], field: str) -> Any:
+    from .judge import _expected_value
+    for ch in case["checks"]:
+        if ch["type"] == "field" and ch.get("field") == field and ch.get("expect") == "equals":
+            return _expected_value(ch.get("value"), case)
+    return None
+
+
 def _expand(replies: list[dict[str, Any]], case: dict[str, Any]) -> list[dict[str, Any]]:
     out = []
     for i in range(len(case["turns"])):
         r = copy.deepcopy(replies[min(i, len(replies) - 1)])
         fields = r.get("fields") or {}
         for k, v in list(fields.items()):
-            if isinstance(v, str) and _CTX.match(v):
+            if v == "{expected}":
+                fields[k] = _expected(case, k)
+            elif isinstance(v, str) and _CTX.match(v):
                 fields[k] = (case.get("context") or {}).get(_CTX.match(v).group(1))
         r["fields"] = fields
         out.append(r)

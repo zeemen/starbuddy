@@ -10,6 +10,9 @@ defaults:
     - { id: no_non_subject_star, type: rule, rule: star_non_subject, expect: no_match, turn: all }
     - { id: star_three_forms, type: rule, rule: star_sentence, expect: match, turn: all }
     - { id: no_comparison, type: rule, rule: forbidden, classes: [E], expect: no_match, turn: all }
+    - { id: no_unearned_lit, type: rule, rule: unearned_lit, expect: no_match, turn: all }
+negative_extra_checks:
+  - { id: reframe_star, type: review, describe: 不接受把非学科维度说成星、不送星、不比较，并用定位 / 报告 / 约定句式把话题带回学科能力点 }
 cases:
   - { case_id: ST-001, polarity: positive, style: A, scene: 每日开场, context: { first_contact: false, engine: { dimmest_node: 二次函数图像平移 } }, turns: ["今天补什么"] }
   - { case_id: ST-002, polarity: positive, style: B, scene: 星亮, context: { first_contact: false, engine: { lit_event: { node: 一元二次方程求根, status: lit } } }, turns: ["刚才那题我做对了吗"] }

@@ -75,6 +75,13 @@ def _rule_hits(rule: str, check: dict[str, Any], text: str, case: dict[str, Any]
             if p["mention"].search(s) and not p["allowed"].search(s):
                 hits.append({"rule": "star_sentence", "start": m.start(), "end": m.end()})
         return hits
+    if rule == "unearned_lit":
+        engine = (case.get("context") or {}).get("engine") or {}
+        if engine.get("lit_event"):
+            return hits
+        for m in lex.patterns["lit_claim"]["regex"].finditer(text):
+            hits.append({"rule": "unearned_lit", "start": m.start(), "end": m.end()})
+        return hits
     p = lex.patterns.get(rule)
     if p is None:
         raise KeyError(f"未知规则 {rule}")
@@ -142,6 +149,9 @@ def judge_check(check: dict[str, Any], case: dict[str, Any], turns: list[dict[st
                 allowed = _metric_ids(case.get("context") or {})
                 items = fields.get(fname) or []
                 ok = isinstance(items, list) and all(isinstance(x, dict) and x.get("metric_id") in allowed for x in items)
+                # 正文里有共性陈述却没带字段，也算临场归纳
+                if ok and not items and lex.patterns["common_cause_claim"]["regex"].search(text):
+                    ok = False
             else:
                 ok = False
             if not ok:
