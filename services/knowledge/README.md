@@ -1,18 +1,27 @@
 # 知识服务（services/knowledge）
 
-KGE-03 编译层（`specs/kge-03-compile-layer/spec.md`）。本目录目前是 **PR ①**：页面格式、编译器、程序体检（含 SymPy）；
+KGE-03 编译层（`specs/kge-03-compile-layer/spec.md`）。本目录现在包含 **PR ①**（页面格式、编译器、程序体检含 SymPy）与
+**PR ②**（知识服务读工具 HTTP + MCP、页面快照导出与 `page.get`、编译器的数据库数据源）；
 页面仓库模板在 `tools/kge-pages-template/`，编纂规范骨架在 `docs/design/kge/codification-math-v1.md`。
-知识服务读工具、MCP、迁移 0026（PR ②）与兜底检索、对照评测、M1 报表（PR ③）不在本 PR。实现记录与待人确认见同 spec 目录的 `lessons.md`。
+兜底检索、对照评测、M1 报表（PR ③）不在这里。实现记录与待人确认见同 spec 目录的 `lessons.md`。
 
-本包只读公共层（kge.* 的节点、边、课标、投影；本 PR 用合成快照喂入），不读写任何个人层表（规则 1、2、13）。
+本包只读公共层（kge.* 的节点、边、课标、投影、题目标签、采分点），不读写任何个人层表（规则 1、2、13）：
+数据库只用迁移 0026 的只读角色 `starbuddy_kge_read`，页面只读编译器导出的只读快照目录，不在线访问 Git。
 
 | 模块 | 说明 |
 |---|---|
-| `knowledge/atoms.py` | 公共层原子与地图快照：白名单字段、原子键与哈希、快照差异；数据源接口 `AtomSource`（本 PR 为文件快照，PR ② 接库） |
+| `knowledge/atoms.py` | 公共层原子与地图快照：白名单字段、原子键与哈希、快照差异；数据源接口 `AtomSource`（文件快照；数据库实现见 `service/reader.py` 的 `DbAtomSource`） |
 | `knowledge/nodeid.py` | 节点 ID 正则与学科前缀（测试核对与 `docs/design/kge/check_node_id.py`、迁移 0011、知识服务契约一致） |
 | `knowledge/pages/` | 页面格式：YAML 头部 + 三种段落的固定标记；解析与序列化（规范写法往返逐字节稳定） |
 | `knowledge/compiler/` | 编入（受影响页、优先级 = 风险 × 影响）→ 渲染重建（叙述段逐字保留）/ 全量重编（经模型路由，T8 × L0）→ 合并窗口 → 本地输出与合并请求说明 |
 | `knowledge/lint/` | 程序体检：结构、引用、过期、公式（SymPy）、个人信息与群体统计、人设中立与适龄；结果字段对应 KGE 第七章 `lint_issue` |
+| `knowledge/compiler/snapshot.py` | 导出已发布页面快照：页面仓库指定提交 → 只读快照目录（`manifest.json` 带 40 位提交号，每页 `page_version`、`map_version`、`sha256`）；导出前体检，有阻断拒绝导出 |
+| `knowledge/service/contract.py` | 知识服务契约（`packages/contracts/openapi/knowledge-service.v0.9.yaml`）的加载与严格校验；工具清单由契约 paths 生成；MCP 的 inputSchema 由同一 schema 打包 |
+| `knowledge/service/tools.py` | 工具的唯一实现层（HTTP 与 MCP 共用）：调用方准入 → 个人层 501 → caller 与令牌一致 → 请求校验 → 执行 → 统一信封 → 响应校验（不合契约回 500） |
+| `knowledge/service/reader.py` | 只读 kge.*：`starbuddy_kge_read` 连接与启动时的角色断言；SQL 自带发布、有效、已核对、审核通过、强前置的条件（RLS 之外的第二道防线）；`DbAtomSource`（PR ① `AtomSource` 的数据库实现） |
+| `knowledge/service/pages.py` | 读页面快照（逐页核对哈希与头部，只有 manifest 列出的算已发布）；`page.get` 按版次、地区渲染 |
+| `knowledge/service/resolve.py` | `node.resolve` 的规则解析（节点 ID 直引 + 名称 / includes 关键词）；`Resolver` 接口留给 PR ③ 的全文检索 |
+| `knowledge/service/app.py`、`mcp_server.py`、`config.py` | FastAPI 应用（`POST /v0/<工具名>`）、MCP（streamable HTTP 挂在 `/mcp`，工具名 = operationId）、环境变量配置 |
 
 ## 常用命令
 ```bash
@@ -30,6 +39,30 @@ make knowledge-test knowledge-mutation                                       # �
 退出码：`knowledge.lint` 0 无阻断、1 有阻断、2 参数或输入错误（快照、词表读不了一律失败，不当作通过）；
 `knowledge.compiler` 0 完成、1 有合并请求体检阻断、2 参数或输入错误。
 
+```bash
+# 导出已发布页面快照（合并窗口时对页面仓库主分支的指定提交执行；只读 Git 对象，不改工作区、不访问远程）
+.venv/bin/python -m knowledge.compiler.snapshot --repo /path/to/kge-pages --commit main --out /srv/kge/snapshots/<提交号>
+# 退出码：0 完成，1 体检阻断（不产生任何输出目录），2 参数、仓库或页面错误；目标目录已存在即拒绝（快照不可变）
+
+# 知识服务（缺省只监听 127.0.0.1:8790）
+KNOWLEDGE_ENV=dev KNOWLEDGE_DATABASE_URL=... KNOWLEDGE_TOKEN_ORCHESTRATOR=... KNOWLEDGE_PAGE_SNAPSHOT=/srv/kge/snapshots/<提交号> \
+  .venv/bin/python -m knowledge.service
+```
+
+## 知识服务：配置与部署要点
+| 环境变量 | 说明 |
+|---|---|
+| `KNOWLEDGE_ENV` | `dev` 或 `test`；本服务不连接 pilot 或生产（规则 9） |
+| `KNOWLEDGE_DATABASE_URL` | asyncpg 连接串。登录角色**只继承** `starbuddy_kge_read`（例：`CREATE ROLE knowledge_app LOGIN IN ROLE starbuddy_kge_read`，由人按 `db/bootstrap/roles.sql` 的约定创建）。连接建立后服务执行 `SET ROLE starbuddy_kge_read`，会话默认只读事务；启动时断言登录角色不是超级用户、没有 BYPASSRLS、不继承 `starbuddy_kge` 或其他应用角色，不满足即拒绝启动 |
+| `KNOWLEDGE_TOKEN_BFF` / `_ORCHESTRATOR` / `_LEARNING` | 服务间令牌（≥ 32 字符、各不相同、至少配一个）。令牌决定 caller，请求体 `context.caller` 必须一致（否则 403）；`node.resolve` 只给编排层，个人层工具没有 bff。学生与家长没有令牌（401） |
+| `KNOWLEDGE_PAGE_SNAPSHOT` | 页面快照目录。不设：`page.get` 回契约规定的 501；设了但目录不存在或不合格：拒绝启动。换快照 = 导出新目录、改配置、重启（快照在启动时整体核对后载入内存） |
+| `KNOWLEDGE_HOST` / `KNOWLEDGE_PORT` | 缺省 `127.0.0.1:8790`（契约 servers）；不接受 `0.0.0.0`、`::` 等通配地址，需要内网地址时显式配置具体地址。MCP 与 HTTP 同一监听地址，DNS 重绑定防护一律开启 |
+
+- 鉴权照学习服务内部接口：Bearer 令牌 sha256 后常量时间比较、全部比完再取结果；请求体限 64 KB，JSON 拒绝 NaN / Infinity 与重复键。
+- 日志只记 request_id（UUID 形状才记）、caller、工具名、状态码、错误码、耗时；不记请求体（`node.resolve` 的文本可能来自学生，规则 13）。
+- 测试：`tests/pgkge.py` 起一次性 Postgres（做法同 `services/learning/tests/pgharness.py`），执行 bootstrap 角色与全部迁移、灌合成 kge 数据；
+  `make knowledge-test CONTRACT_STRICT=1` 时没有 Postgres 直接失败，非严格模式下库上测试跳过。
+
 全量重编只有 Python 接口（`knowledge.compiler.full.full_recompile`），经 `services/learning/learning/model_router`（接入方式同
 `evals/persona/diandian/compare.py`：把 `services/learning` 加进 `sys.path`）；测试只用路由表 test 环境的进程内假供应商，不联网、不读凭据。
 
@@ -40,6 +73,11 @@ make knowledge-test knowledge-mutation                                       # �
 | mpmath | 1.3.0 | BSD-3-Clause | SymPy 的依赖 |
 | pyyaml | 6.0.3 | MIT | 页面头部与快照 |
 | httpx | 0.28.1 | BSD-3-Clause | 模型路由的供应商适配器（学习服务已登记同版本）；传递依赖 anyio（MIT）、httpcore（BSD-3）、h11（MIT）、idna（BSD-3）、certifi（MPL-2.0，只作 CA 证书数据，不修改）、typing_extensions（PSF-2.0） |
+| fastapi | 0.141.1 | MIT | 知识服务 HTTP（与学习服务同版本）；传递依赖 starlette 1.7.0（BSD-3）、pydantic 2.13.5 / pydantic_core（MIT）、annotated-types（MIT）、annotated-doc（MIT）、typing-inspection（MIT） |
+| uvicorn | 0.54.0 | BSD-3-Clause | 知识服务进程（与学习服务同版本）；传递依赖 click（BSD-3） |
+| asyncpg | 0.31.0 | Apache-2.0 | 只读数据库连接（psycopg 3 为 LGPL-3.0，不引入） |
+| jsonschema / referencing | 4.26.0 / 0.37.0 | MIT / MIT | 契约严格校验；传递依赖 jsonschema-specifications（MIT）、rpds-py（MIT）、attrs（MIT） |
+| mcp / mcp-types | 2.2.0 / 2.2.0 | MIT / MIT | MCP 官方 Python SDK（spec 待人确认 #4）。传递依赖：httpx2 / httpcore2 2.13.1（BSD-3）、sse-starlette 3.5.0（BSD-3）、python-multipart 0.0.32（Apache-2.0）、PyJWT 2.15.1（MIT）、cryptography 50.0.1（Apache-2.0 或 BSD-3）、cffi 2.1.1（MIT-0）、pycparser 3.0（BSD-3）、opentelemetry-api 1.45.0（Apache-2.0）、truststore 0.10.4（MIT）。SDK 的 OAuth、stdio、客户端网络功能本服务不用；只用低层 Server、streamable HTTP 与测试用的进程内客户端 |
 | pytest（开发） | 9.1.1 | MIT | 单测；传递依赖 pluggy（MIT）、iniconfig（MIT）、packaging（Apache-2.0 或 BSD-2）、Pygments（BSD-2） |
 
 LaTeX 解析没有引入 `sympy.parsing.latex`（需要 antlr4 或 lark 运行时，属新增依赖）：体检自带一个 LaTeX 子集转换器

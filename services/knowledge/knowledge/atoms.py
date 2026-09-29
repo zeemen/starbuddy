@@ -122,7 +122,7 @@ class Snapshot:
 
 
 class AtomSource(Protocol):
-    """编译器与体检的数据源接口。本 PR：FileSnapshotSource；PR ②：只读 kge.* 的数据库实现"""
+    """编译器与体检的数据源接口：FileSnapshotSource（文件快照）；knowledge.service.reader.DbAtomSource（只读 kge.* 已发布版本）"""
 
     def load(self) -> Snapshot: ...
 

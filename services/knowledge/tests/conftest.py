@@ -71,3 +71,27 @@ def page_file(pages: Path, node_id: str) -> Path:
 
 def checks_of(report: LintReport, severity: str = "block") -> set[str]:
     return {i.check_type for i in report.issues if i.severity == severity}
+
+
+# ---------- 知识服务（PR ②）：一次性 Postgres 与异步测试 ----------
+@pytest.fixture(scope="session")
+def kgedb():
+    """会话级一次性 Postgres：bootstrap 角色、全部迁移、合成 kge 数据（tests/pgkge.py）。
+    没有 Postgres 时非严格模式跳过；严格模式（make ... CONTRACT_STRICT=1 → KNOWLEDGE_TEST_STRICT=1）直接失败"""
+    import os
+
+    from pgkge import EphemeralPG
+    try:
+        db = EphemeralPG()
+    except FileNotFoundError as e:
+        if os.environ.get("KNOWLEDGE_TEST_STRICT") == "1":
+            raise
+        pytest.skip(str(e))
+    db.start()
+    yield db
+    db.stop()
+
+
+@pytest.fixture
+def anyio_backend() -> str:
+    return "asyncio"

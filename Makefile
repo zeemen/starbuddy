@@ -245,17 +245,22 @@ kge-inventory:
 	@cd tools/kge-inventory && node --no-warnings src/main.ts --out ../../specs/kge-00-asset-inventory/report \
 	  $(foreach d,$(DB_OUTPUT),--db-output $(d))
 
-# KGE-03 编译层 PR ①（specs/kge-03-compile-layer）：页面格式、编译器（编入、渲染重建、全量重编经模型路由假供应商、合并窗口）、
-# 程序体检（含 SymPy 验算、个人信息模式、人设词表）、页面仓库模板；合成地图与合成页面上的端到端（约 15 秒）
+# KGE-03 编译层（specs/kge-03-compile-layer）PR ①：页面格式、编译器（编入、渲染重建、全量重编经模型路由假供应商、合并窗口）、
+# 程序体检（含 SymPy 验算、个人信息模式、人设词表）、页面仓库模板；合成地图与合成页面上的端到端。
+# PR ②：知识服务读工具（HTTP + MCP）、页面快照导出与 page.get；库上测试、契约一致性（knowledge-service.v0.9 严格校验）、
+# 端到端在 tests/pgkge.py 起的一次性 Postgres 上跑（约 25 秒）。没有 Postgres 时库上测试非严格跳过、严格失败
 # 依赖需先安装：cd services/knowledge && python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 knowledge-test:
-	@if [ ! -x services/knowledge/.venv/bin/pytest ]; then \
+	@if [ ! -x services/knowledge/.venv/bin/pytest ] || ! services/knowledge/.venv/bin/python -c "import fastapi, asyncpg, mcp, jsonschema" 2>/dev/null; then \
 	  echo "knowledge-test: 跳过（没有安装依赖；见 services/knowledge/README.md）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
-	@cd services/knowledge && .venv/bin/python -m pytest -q && echo "knowledge-test: 通过"
+	@cd services/knowledge && KNOWLEDGE_TEST_STRICT=$(if $(filter 1,$(CONTRACT_STRICT)),1,0) .venv/bin/python -m pytest -q -rs \
+	  && echo "knowledge-test: 通过"
 
-# 编译器与程序体检的变异测试：改坏锁定段比对、缺引用、SymPy 验算、个人信息模式、人设词表、合并窗口、全量重编等关键检查，
-# 断言单测能发现（30 条，约 1.5 分钟）
+# 变异测试：改坏编译器与程序体检（锁定段比对、缺引用、SymPy 验算、个人信息模式、人设词表、合并窗口、全量重编）和
+# 知识服务读工具（草稿 / 退役版本、未核对投影、待审标签、弱前置边、caller 绑定、请求与响应校验、角色断言、未发布页、
+# 快照导出体检、MCP 鉴权与监听地址）的关键检查，断言测试能发现（53 条，约 3.5 分钟）。没有 Postgres 时知识服务的变异
+# 跳过（退出码 3：非严格算跳过、严格算失败）
 knowledge-mutation:
 	@bash services/knowledge/tests/mutations.sh; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi

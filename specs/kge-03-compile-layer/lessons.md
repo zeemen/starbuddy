@@ -43,3 +43,62 @@
 5. 中风险在阶段 0 按高风险处理（两人），与 release-gate-sprint4 #7 一致；语义体检上线后是否改为抽检，由人定。
 6. 页面仓库托管平台（ADR 12 #1）、审核类别（ADR 12 #2）、CI 取本仓工具的方式与凭据（只读、固定版本），由执行人按模板 README 配置。
 7. 全量重编的 `model_version` 只记在路由调用记录、不写进页面仓库：审计时按合并请求里的编译任务 ID 与调用记录关联，是否足够由人确认。
+
+## PR ②：知识服务读工具（HTTP + MCP）+ 页面快照导出与 page.get + 数据库数据源（子代理）
+范围：spec 设计要点 5，待人确认 #3、#4、#7。迁移 0026（只读角色）已在前一提交合入，本 PR 不改迁移、不改契约、不改人设与金标数据。
+
+### 交付
+- `services/knowledge/knowledge/service/`：
+  - `contract.py`：加载 `knowledge-service.v0.9.yaml`（跨文件引用 plugin-api），工具清单由契约 paths 生成；严格校验；MCP inputSchema 由同一 schema 打包（`$defs`）。
+  - `tools.py`：唯一实现层，HTTP 与 MCP 共用。七个公共层工具；`evidence.write`、`mastery.get`、`mastery.explain` 回 501 `METHOD_NOT_IMPLEMENTED`。
+  - `reader.py`：`starbuddy_kge_read` 连接池（SET ROLE + 会话只读事务）、启动时角色断言、带过滤条件的 SQL、`DbAtomSource`。
+  - `pages.py`：读快照目录、`page.get` 渲染；`resolve.py`：`node.resolve` 规则解析；`app.py`（FastAPI，`/mcp` 挂 MCP）、`mcp_server.py`、`config.py`、`__main__.py`。
+- `knowledge/compiler/snapshot.py`：导出已发布页面快照（`python -m knowledge.compiler.snapshot`）。
+- 测试（`make knowledge-test`，共 257 条，约 25 秒；库上部分用 `tests/pgkge.py` 起一次性 Postgres）：
+  `test_service_unit.py`（契约、配置、鉴权比较、快照反例）、`test_service_db.py`（可见性、角色、不能写、第二道防线、数据源）、
+  `test_service_contract.py`（契约一致性）、`test_service_mcp.py`（进程内 MCP 客户端 + streamable HTTP）、`test_service_e2e.py`（端到端）。
+- 变异：`tests/mutations.sh` 新增 23 条（共 53 条，约 3.5 分钟），全部被发现；没有 Postgres 时知识服务的 19 条跳过并以退出码 3 报告（严格模式判失败）。
+
+### 实现要点
+- **鉴权照学习服务内部接口**：Bearer 令牌 sha256 后常量时间比较、全部比完再取结果（`services/learning/learning/app.py` 的做法）；
+  三类调用方各一个令牌（`KNOWLEDGE_TOKEN_BFF/_ORCHESTRATOR/_LEARNING`），令牌决定 caller；请求体 `context.caller` 不一致 → 403；
+  `node.resolve` 只给 orchestrator，个人层只给 orchestrator / learning（与契约的 ResolveContext、StudentContext 枚举一致，有测试比对）。
+- **数据库两道防线**：RLS（0026）之外，本服务 SQL 自带“已发布、有效、已核对、审核通过、强前置、两端同版本”的条件；
+  测试在不受 RLS 约束的超级用户连接上核对这些 SQL（变异“放过草稿版本 / 未核对投影 / 待审标签”靠它发现——只靠 RLS 时服务代码的过滤写错也看不出来）。
+  库上夹具把草稿、退役版本先于已发布版本插入，漏写发布条件时会先读到它们。
+- **启动断言**：登录角色不是超级用户、没有 BYPASSRLS、继承 `starbuddy_kge_read`、不继承 `starbuddy_kge` 与其他应用角色，SET ROLE 后当前角色是 `starbuddy_kge_read`；注入的连接池同样断言。
+- **响应校验**：每个 200 响应组好信封后按契约校验，不合格回 500 且只在日志记实例路径与关键字（库里有超长 includes 的合成节点证明它在起作用）。
+- **page.get**：只读快照目录（启动时逐页核对 sha256、头部与 manifest 一致，只有 manifest 列出的页面算已发布），节点必须在当前已发布版本里且有效；
+  锁定段、前置与后续、叙述段逐字取页面；教材位置段与地区权重段在读取时按库里当前**已核对**的投影、用编译器同一模板重新生成，
+  给了 edition 才按版次填原句，给了 region 只列该地区。`page_version` 取页面头部；提交号按 ADR 12 映射进 `source_version`（`graph:kge-pages@<提交号前 12 位>`），契约字段不变。
+- **快照导出**：只读 Git 对象（rev-parse / ls-tree / show），导出前对该提交全部页面跑程序体检（带该提交的 `snapshots/current.yaml`），有阻断拒绝导出；
+  先写临时目录再改名，文件 0444、目录 0555，目标已存在即拒绝。
+- **DbAtomSource**：投影、地区投影、时政在页面里的键是 `tp-/rp-/ca-` + UUID 的 sha256 前 16 位（不把 UUID 写进页面，体检会拦 UUID）；只收同版本两端都可见的边。
+- **MCP**：官方 SDK 2.2.0 的低层 Server；工具名 = operationId，inputSchema 由契约打包；成功时 `structured_content` 是契约信封，失败时 `is_error` + Problem。
+  经 HTTP 时挂在知识服务的 `/mcp`（streamable HTTP、无状态、JSON 响应），同一令牌鉴权，DNS 重绑定防护开启；进程内客户端测试。
+- 坑：mcp 2.x 的 streamable HTTP 需要 session manager 在应用 lifespan 里运行（挂载子应用时它自己的 lifespan 不会被调用）；
+  asyncpg 的 `transaction(readonly=False)` 不会显式发 `READ WRITE`，测试“关掉只读事务也写不了”要手写 `BEGIN TRANSACTION READ WRITE`。
+
+### 与 spec / 任务说明的偏差
+1. **服务契约一致性没有现成机制**：`packages/contracts/conformance` 只针对学科插件 API（运行中的适配器），`scripts/check_services.py` 只检查契约文件本身；
+   所以一致性测试放在 `services/knowledge/tests/test_service_contract.py`（正例、反例、错误体全部按 OpenAPI 严格校验，严格模式下不跳过），没有改 packages/contracts。
+2. **page.get 的教材位置段与地区权重段不是逐字取自页面**：按库里当前已核对的投影重新生成（同一模板）。好处是投影在页面编译后被撤销核对时不会再被返回；代价是这两段可能与该 `page_version` 的仓库原文不同。
+3. **快照在启动时整体载入**：换快照要重启（或改配置后滚动重启）；运行中删掉快照目录不影响已载入内容。
+4. **MCP 与 HTTP 同一端口**（`/mcp`），没有另开端口；监听地址同一配置。
+5. **node.resolve 的低置信复核**只在响应里标 `human_review_required` + `low_confidence`，没有写复核队列（知识服务不持有任何写权限）；由调用方（编排层）按契约只带候选节点入队。
+6. **projections / region_weights 超过契约上限（16）时截断**，按版次、年份排序后取前 16。
+
+### 待人确认
+1. **契约缺口（不改契约，登记到 v1.0 评审）**：
+   a. `PageGetResponse.atom_refs` 的类型只有 node、item、scoring_point、current_affair、textbook_projection；页面引用的边、课标条目、地区投影没有对应类型，本 PR 不返回这三类引用（边的键里有 `>`，也不合 pattern）。
+   b. Problem 的 `code` 枚举没有鉴权专用值：401 / 403 用 `INVALID_REQUEST`（与参考假适配器相同），靠 HTTP 状态码区分。
+   c. `PageId` 是小写编码，页面仓库的页面 ID = 节点 ID（大写）：本 PR 用“转小写、下划线换连字符”映射（可逆，节点 ID 里没有连字符）；是否写进契约描述由人定。
+   d. `ScoringPointView.keyword_family`（字符串数组）与 `partial_credit`（枚举）对应的库列是 jsonb：本 PR 约定 keyword_family 为数组原样、对象按键排序展开各数组值；
+      partial_credit_rule 为空对象 = `all_or_nothing`、`{"mode": <枚举值>}` 取该值，其他写法回 500。需要内容侧确认写法。
+   e. 提交号映射进 `source_version` 用了 `graph:kge-pages@<前 12 位>`（SourceVersion 的类别只有 rubric / verifier / prompt / items / algo / graph，版本段 ≤ 32 字符放不下 40 位提交号）；是否新增类别（例如 `pages`）属契约变更。
+2. **item.search / item.similar 不核对题目准入**：`starbuddy_kge_read` 没有 `platform.item` 的权限（0026 按最小权限），只按打标审核通过过滤；调用方用题前仍须按 `platform.item.admission` 核对。是否给只读角色加 `platform.item(admission)` 的列权限属迁移，由人定。
+3. **编译页面里的“前置”包含弱前置边**：PR ① 的模板按 prerequisite 类型取边、不看 strength，而 `node.path` 只走强前置边；页面是否只列强前置由教研定（改模板会改变全部页面，属高风险渲染重建）。
+4. **节点—课标承接**（PR ① 待人确认 1）仍未定：`DbAtomSource` 没有承接关系可读，页面的“课标要求”段在库数据下为“（暂无）”。
+5. **部署**：知识服务的登录角色（只继承 `starbuddy_kge_read`）由人在演练库创建；快照目录的存放位置、换快照的流程（导出新目录 → 改 `KNOWLEDGE_PAGE_SNAPSHOT` → 重启）写进运维手册；MCP 的内网地址由平台侧网关规划。
+6. **MCP SDK 版本**：固定 2.2.0（MIT），它带进来的传递依赖较多（cryptography、PyJWT、opentelemetry-api、httpx2 等，许可证已核，见 README）；本服务不用其 OAuth 与客户端网络功能。是否接受由人定；另一个选择是 MCP 随编排层（冲刺 4）再加。
+7. **没有声明 MCP outputSchema**：错误结果的 `structured_content` 是 Problem，与成功信封形状不同，声明后客户端会按 outputSchema 校验失败；需要时可在 v1.0 把两者合成一个 oneOf。

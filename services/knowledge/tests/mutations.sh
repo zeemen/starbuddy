@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 知识服务（KGE-03 PR ①）的变异测试：逐条把编译器与程序体检的关键检查改坏，断言单测能发现。
+# 知识服务（KGE-03 PR ① + PR ②）的变异测试：逐条把编译器、程序体检、知识服务读工具的关键检查改坏，断言测试能发现。
 # 仿照 services/bff/tests/mutations.sh 的源码变异：把 services/knowledge 复制到临时目录（保持仓库结构，docs、evals、
 # services/learning 等软链接回仓库），改一处源码，跑指定的测试文件。
 # 先跑一次不变异的对照，必须通过；变异后只有“pytest 退出码 1（有断言失败）”才算被发现——
@@ -9,9 +9,13 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 SVC="$(cd "$HERE/.." && pwd)"
 ROOT="$(cd "$SVC/../.." && pwd)"
 PY="$SVC/.venv/bin/python"
-if [ ! -x "$PY" ] || ! "$PY" -c "import pytest, sympy" 2>/dev/null; then
+if [ ! -x "$PY" ] || ! "$PY" -c "import pytest, sympy, fastapi, asyncpg, mcp" 2>/dev/null; then
   echo "knowledge-mutation: 跳过（没有安装依赖；见 services/knowledge/README.md）"; exit 3
 fi
+# 知识服务的变异（M_DB）要一次性 Postgres；没有时只跑其余变异，最后以退出码 3 报“部分跳过”（严格模式下 Makefile 判失败）
+HAVE_PG=0
+if [ -n "${PGBIN:-}" ] && [ -x "$PGBIN/initdb" ]; then HAVE_PG=1; fi
+if ls /usr/lib/postgresql/*/bin/initdb >/dev/null 2>&1; then HAVE_PG=1; fi
 
 # 每条：名字<TAB>文件（相对 services/knowledge）<TAB>原文<TAB>替换为<TAB>测试文件（空格分隔）
 M=(
@@ -45,7 +49,35 @@ M=(
   $'高风险只要 1 人审核\tknowledge/compiler/window.py\tREVIEWERS = {"low": 0, "medium": 2, "high": 2}\tREVIEWERS = {"low": 0, "medium": 2, "high": 1}\ttests/test_compiler.py tests/test_e2e.py'
   $'快照放过未知字段\tknowledge/atoms.py\t    if unknown:\n        raise SnapshotError(f"{where}: 未知字段\t    if False:\n        raise SnapshotError(f"{where}: 未知字段\ttests/test_format_atoms.py'
   $'头部缺字段不查\tknowledge/lint/checks.py\t    if missing:\n        bad(f"头部缺字段\t    if False:\n        bad(f"头部缺字段\ttests/test_lint.py'
+  $'知识服务：快照篡改（哈希不符）不拒绝\tknowledge/service/pages.py\t        if hashlib.sha256(raw).hexdigest() != digest:\t        if False:\ttests/test_service_unit.py'
+  $'知识服务：监听地址缺省为 0.0.0.0\tknowledge/service/config.py\tDEFAULT_HOST = "127.0.0.1"\tDEFAULT_HOST = "0.0.0.0"\ttests/test_service_unit.py'
+  $'知识服务：不拒绝通配监听地址\tknowledge/service/config.py\t    if h.lower() in _WILDCARD:\t    if False:\ttests/test_service_unit.py'
+  $'知识服务：node.resolve 放给编排层以外的调用方\tknowledge/service/tools.py\t    "node.resolve": frozenset({"orchestrator"}),\t    "node.resolve": PUBLIC_CALLERS,\ttests/test_service_unit.py'
 )
+
+# 知识服务读工具（PR ②）：需要一次性 Postgres
+M_DB=(
+  $'知识服务：放过草稿与退役版本\tknowledge/service/reader.py\t WHERE subject::text = $1 AND status = \'published\'"""\t WHERE subject::text = $1"""\ttests/test_service_db.py'
+  $'知识服务：放过未核对与有争议的投影\tknowledge/service/reader.py\t_VERIFIED = "mapping_state = \'verified\' AND quote_text IS NOT NULL"\t_VERIFIED = "quote_text IS NOT NULL"\ttests/test_service_db.py'
+  $'知识服务：放过待审与驳回的标签\tknowledge/service/reader.py\t_APPROVED = "t.tag_review_status = \'approved\'"\t_APPROVED = "true"\ttests/test_service_db.py'
+  $'知识服务：node.path 走弱前置边\tknowledge/service/reader.py\tAND type = \'prerequisite\' AND strength = \'strong\' AND\tAND type = \'prerequisite\' AND\ttests/test_service_db.py'
+  $'知识服务：不核对请求体 caller 与令牌\tknowledge/service/tools.py\t        if ctx.get("caller") != caller:\t        if False:\ttests/test_service_contract.py tests/test_service_mcp.py'
+  $'知识服务：跳过请求校验\tknowledge/service/tools.py\t        errors = self.contract.validate(spec.request_schema, body)\t        errors = []\ttests/test_service_contract.py'
+  $'知识服务：跳过响应校验\tknowledge/service/tools.py\t        bad = self.contract.validate(spec.response_schema, envelope)\t        bad = []\ttests/test_service_db.py'
+  $'知识服务：请求的 map_version 指向非发布版本也放过\tknowledge/service/tools.py\t        if v is None or ("map_version" in ctx and ctx["map_version"] != v.version):\t        if v is None:\ttests/test_service_db.py tests/test_service_e2e.py'
+  $'知识服务：个人层工具不回 501\tknowledge/service/tools.py\t        if tool in PERSONAL_TOOLS:\t        if False:\ttests/test_service_contract.py'
+  $'知识服务：以超级用户连接不报错\tknowledge/service/reader.py\t    if row["rolsuper"]:\t    if False:\ttests/test_service_db.py'
+  $'知识服务：BYPASSRLS 角色不报错\tknowledge/service/reader.py\t    if row["rolbypassrls"]:\t    if False:\ttests/test_service_db.py'
+  $'知识服务：建池不做角色断言\tknowledge/service/reader.py\t            await assert_reader_role(conn)\t            pass\ttests/test_service_db.py'
+  $'知识服务：注入的连接池不做角色断言\tknowledge/service/app.py\t                    await assert_reader_role(c)\t                    pass\ttests/test_service_db.py'
+  $'知识服务：page.get 未发布页回退到其他页面\tknowledge/service/tools.py\t        pp = self.pages.get(body["page_id"])\t        pp = self.pages.get(body["page_id"]) or next(iter(self.pages.pages.values()))\ttests/test_service_e2e.py'
+  $'知识服务：page.get 不查节点是否在已发布版本\tknowledge/service/tools.py\t        if n is None:  # 节点已撤下\t        if False:  # 节点已撤下\ttests/test_service_e2e.py'
+  $'知识服务：page.get 教材投影不按版次取\tknowledge/service/tools.py\tawait self.reader.textbook_projections(v.id, pp.node_id, edition)]\tawait self.reader.textbook_projections(v.id, pp.node_id, None)]\ttests/test_service_e2e.py'
+  $'知识服务：快照导出放过体检阻断\tknowledge/compiler/snapshot.py\t        if report.blocks:\t        if False:\ttests/test_service_e2e.py'
+  $'知识服务：MCP 端点不鉴权\tknowledge/service/app.py\t            if caller_for(headers.get("authorization"), self.tokens) is None:\t            if False:\ttests/test_service_mcp.py'
+  $'知识服务：MCP 关闭 DNS 重绑定防护\tknowledge/service/app.py\thost=settings.host, transport_security=transport_security(settings.host),\thost="0.0.0.0", transport_security=None,\ttests/test_service_mcp.py'
+)
+if [ "$HAVE_PG" = "1" ]; then M+=("${M_DB[@]}"); else echo "knowledge-mutation: 本机没有 Postgres，知识服务的 ${#M_DB[@]} 条变异跳过"; fi
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/kge-mut-XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
@@ -94,3 +126,4 @@ done
 
 if [ $missed -ne 0 ]; then echo "knowledge-mutation: $missed / $total 条没有被测试发现"; exit 1; fi
 echo "knowledge-mutation: $total 条变异全部被测试发现"
+if [ "$HAVE_PG" != "1" ]; then exit 3; fi
