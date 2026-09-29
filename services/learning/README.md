@@ -63,3 +63,16 @@ LEARNING_ADAPTER_AYA_URL=http://127.0.0.1:8787 LEARNING_ADAPTER_AYA_TOKEN=... .v
 传递依赖都是 MIT、BSD、Apache-2.0 或 PSF-2.0，只有一个例外：**certifi 是 MPL-2.0**。它随 httpx 引入，只提供 CA 证书包。MPL 是文件级弱著佐权，不修改它就没有义务；已列入待人确认。
 
 数据库驱动没有用 psycopg 3，因为它是 LGPL-3.0（spec 待人确认 #1）。
+
+## 审核台 v0 后端（`review_console/`，specs/release-gate-sprint4 冲刺 1 · PR 2）
+与学习服务同目录、**不同入口、不同连接角色**（spec 待人确认 #10，KGE 代码位置 ADR 定了再迁）。只读写公共知识层 `kge.*`。
+
+| 模块 | 说明 |
+|---|---|
+| `snapshot.py` / `diff.py` | 地图版本快照与差异（纯函数，逐字节确定）；基准为同学科已发布版本，没有时全部按新增 |
+| `risk.py` | 风险分类（KGE 第四章）；判不出的一律高风险；结构性口径与库里 `kge.structural_diff`、`map_change_required_signers` 一致 |
+| `store.py` | 两个连接池：`REVIEW_CONSOLE_KGE_DATABASE_URL`（只继承 `starbuddy_kge`：读、改草稿）、`REVIEW_CONSOLE_REVIEW_DATABASE_URL`（只继承 `starbuddy_review`：签字、发布、撤下）；启动时核对 |
+| `app.py` | `/review/v0/*` 接口；staff 身份由注入的认证器给出，PR 4 之前默认全部拒绝（401） |
+| `__main__.py` | `python -m review_console record --subject aya [--format csv\|json]` 导出版本记录 |
+
+签字、发布、改节点都要带上“看到的摘要”（`expected_digest`），与当前草稿不同就拒绝（409 `DIGEST_CHANGED`）。
