@@ -1,13 +1,13 @@
 // 版本记录（spec 设计要点 11，Gate 0 证据）：每行一次签字、发布或撤下，带签字人（staff 账号）与内容摘要。
-import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { DEV_STAFF_COOKIE, devAuthEnabled, devStaffFromCookie } from '../../../lib/dev-auth.ts';
-import { ACTION_LABEL, DECISION_LABEL, SUBJECTS, getRecords, isSubject, type SubjectCode } from '../../../lib/review.ts';
+import { devAuthEnabled } from '../../../lib/dev-auth.ts';
+import { currentStaff } from '../../../lib/review-session.ts';
+import { ACTION_LABEL, DECISION_LABEL, SUBJECTS, getRecords, isSubject, signerTail, type SubjectCode } from '../../../lib/review.ts';
 
 export const dynamic = 'force-dynamic';
 
 export default async function RecordsPage({ searchParams }: { searchParams: Promise<{ subject?: string }> }) {
-  const staff = devStaffFromCookie((await cookies()).get(DEV_STAFF_COOKIE)?.value);
+  const staff = await currentStaff();
   if (!staff) {
     if (devAuthEnabled()) redirect('/dev/login');
     return <main><h1>版本记录</h1><p>请先以教研账号登录。</p></main>;
@@ -37,7 +37,7 @@ export default async function RecordsPage({ searchParams }: { searchParams: Prom
                 <td>{DECISION_LABEL[x.decision] ?? x.decision}</td>
                 <td>{x.basis_code ?? '—'}</td>
                 <td>{new Date(x.decided_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}</td>
-                <td><code>{x.signer.slice(0, 8)}</code></td>
+                <td><code>{signerTail(x.signer)}</code></td>
                 <td><code>{x.digest ? x.digest.slice(0, 12) : '—'}</code></td>
                 <td>{x.validation_errors} / {x.validation_warnings}</td>
               </tr>

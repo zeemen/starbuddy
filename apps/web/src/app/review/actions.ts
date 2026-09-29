@@ -2,9 +2,8 @@
 // 审核台的写操作（server action）：在服务端读开发 staff 身份、校验表单，再调审核台后端。
 // Next 的 server action 自带同源校验（Origin 必须与 Host 一致），浏览器不直连后端。
 // 结果只回传提示码与后端给的规则说明，由 ActionForm 显示；成功后重新渲染当前页，拿到新的摘要。
-import { cookies } from 'next/headers';
 import { revalidatePath } from 'next/cache';
-import { DEV_STAFF_COOKIE, devStaffFromCookie } from '../../lib/dev-auth.ts';
+import { currentStaff } from '../../lib/review-session.ts';
 import {
   editNode, isBasis, isDigest, isNodeId, isVersionId, lines, publishVersion, retireVersion, signChange, signVersion,
   type Result,
@@ -21,9 +20,7 @@ const text = (f: FormData, k: string): string => {
   return typeof v === 'string' ? v : '';
 };
 
-async function staff(): Promise<string | null> {
-  return devStaffFromCookie((await cookies()).get(DEV_STAFF_COOKIE)?.value);
-}
+const staff = currentStaff;
 
 function done<T>(r: Result<T>, okCode: string, version: string): ActionState {
   if (!r.ok) return { code: r.problem.code, detail: r.problem.detail };
@@ -86,6 +83,7 @@ export async function retireAction(_: ActionState | null, f: FormData): Promise<
   if (!who) return { code: 'UNAUTHENTICATED' };
   const version = text(f, 'version');
   const basis = text(f, 'basis_code');
-  if (!isVersionId(version) || !isBasis(basis)) return INVALID;
+  // 撤下必须勾选确认（契约审查 PR 3 S8）
+  if (!isVersionId(version) || !isBasis(basis) || text(f, 'confirm') !== 'yes') return INVALID;
   return done(await retireVersion(who, version, { basis_code: basis }), 'retired', version);
 }

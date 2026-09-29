@@ -101,6 +101,7 @@ async def test_first_publish_flow(rc):
     assert d["base_version_id"] is None
     assert {x["op"] for x in d["changes"]} == {"added"}
     assert d["summary"]["structural"] and d["summary"]["required_signers"] == 2
+    assert d["base_version"] is None and d["summary"]["approvals"] == 0
     assert [(i["check_name"], i["severity"]) for i in d["validation"]] == [("few_items", "warning")] and d["signoffs"] == []
     # 校验问题挂到对应节点的差异条目上
     node_a = [x for x in d["changes"] if x["object"] == "node" and x["key"] == "CHN.RC.T.A"][0]
@@ -209,7 +210,12 @@ async def test_structural_change_request_needs_two_and_digest(pg, rc):
     # 没有已发布版本（V2 已撤下）：库判为结构性；另有待审的结构性变更单
     assert d["summary"]["structural"] and d["summary"]["required_signers"] == 2
     req = d["change_requests"][0]
-    assert req["risk"]["structural"] and req["payload"] == {"node": "CHN.RC.T.A"} and len(req["digest"]) == 64
+    assert req["risk"]["structural"] and req["signed_content"]["payload"] == {"node": "CHN.RC.T.A"} and len(req["digest"]) == 64
+    # 页面显示的内容就是签字覆盖的内容：它的摘要等于变更单摘要（契约审查 PR 3 B1）
+    assert set(req["signed_content"]) >= {"payload", "evidence_pack", "confidence", "subject", "target_version", "change_type", "id"}
+    assert pg.psql(f"SELECT kge.row_digest(to_jsonb(m) - 'status' - 'reviewers' - 'created_at') = kge.map_change_digest_of(m.id)"
+                   f" FROM kge.map_change m WHERE m.id = '{CH}'").strip() == "t"
+    assert d["summary"]["approvals"] == 0 and d["summary"]["latest_decision"] is None
     r = await c.post(f"/review/v0/map-changes/{CH}/sign", json={"decision": "approved", "expected_digest": ZERO}, headers=H(SF1))
     assert r.status_code == 409 and "摘要不符" in r.json()["detail"]
     r = await c.post(f"/review/v0/map-changes/{CH}/sign", json={"decision": "approved"}, headers=H(SF1))
@@ -251,6 +257,7 @@ async def test_dev_staff_auth_only_loopback_synthetic_staff():
     from review_console.devauth import DEV_STAFF, dev_enabled, dev_staff_auth
 
     def req(host, headers):
+        headers = {"host": "127.0.0.1:8790", **headers}
         scope = {"type": "http", "client": (host, 1234), "headers": [(k.encode(), v.encode()) for k, v in headers.items()]}
         return Request(scope)
 
@@ -260,6 +267,10 @@ async def test_dev_staff_auth_only_loopback_synthetic_staff():
     assert await dev_staff_auth(req("127.0.0.1", {"x-dev-staff-id": str(staff), "x-forwarded-for": "1.2.3.4"})) is None
     assert await dev_staff_auth(req("127.0.0.1", {"x-dev-staff-id": str(SF1)})) is None  # 不是合成 staff 名单里的
     assert await dev_staff_auth(req("127.0.0.1", {"x-dev-staff-id": "not-a-uuid"})) is None
+    # DNS 重绑定：来源是本机，但 Host 是外部域名
+    assert await dev_staff_auth(req("127.0.0.1", {"x-dev-staff-id": str(staff), "host": "evil.example.test:8790"})) is None
+    assert await dev_staff_auth(req("::1", {"x-dev-staff-id": str(staff), "host": "[::1]:8790"})) == staff
+    assert await dev_staff_auth(req("127.0.0.1", {"x-dev-staff-id": str(staff), "host": "localhost"})) == staff
     assert dev_enabled({"REVIEW_CONSOLE_ENV": "dev", "REVIEW_CONSOLE_DEV_AUTH": "1"})
     assert not dev_enabled({"REVIEW_CONSOLE_ENV": "prod", "REVIEW_CONSOLE_DEV_AUTH": "1"})
     assert not dev_enabled({"REVIEW_CONSOLE_ENV": "dev"})

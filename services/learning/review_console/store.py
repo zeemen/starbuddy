@@ -19,6 +19,7 @@ from .snapshot import Snapshot
 EDITABLE_NODE_FIELDS = ("name", "includes", "excludes", "examples", "cognitive_levels", "scope")
 
 _TABLES = {
+    "map_version": "SELECT * FROM kge.map_version WHERE id = $1",
     "knowledge_node": "SELECT * FROM kge.knowledge_node WHERE map_version_id = $1",
     "knowledge_edge": "SELECT * FROM kge.knowledge_edge WHERE map_version_id = $1",
     "textbook_projection": "SELECT * FROM kge.textbook_projection WHERE map_version_id = $1",
@@ -118,9 +119,11 @@ class KgeStore:
 
     async def change_requests(self, version_id: uuid.UUID) -> list[dict[str, Any]]:
         rows = await self.pool.fetch(
-            "SELECT id, change_type, status, payload, evidence_pack, confidence, created_at, kge.map_change_digest_of(id) AS digest"
-            " FROM kge.map_change WHERE target_version = $1 ORDER BY created_at, id", version_id)
-        return [{**dict(r), "payload": json.loads(r["payload"]), "evidence_pack": json.loads(r["evidence_pack"])} for r in rows]
+            """SELECT m.id, m.change_type, m.status, m.created_at, kge.map_change_digest_of(m.id) AS digest,
+                      -- 签字覆盖的内容：与 kge.map_change_digest 的输入一致（去掉状态、审核人、建立时间），页面原样显示（契约审查 PR 3 B1）
+                      (to_jsonb(m) - 'status' - 'reviewers' - 'created_at')::text AS signed_content
+                 FROM kge.map_change m WHERE m.target_version = $1 ORDER BY m.created_at, m.id""", version_id)
+        return [{**dict(r), "signed_content": json.loads(r["signed_content"])} for r in rows]
 
     async def records(self, subject: str, version_id: uuid.UUID | None = None) -> list[dict[str, Any]]:
         rows = await self.pool.fetch(

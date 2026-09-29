@@ -52,6 +52,8 @@ def _json(v: Any) -> Any:
 class Snapshot:
     version_id: str
     digest: str = ""
+    # 版本元数据：摘要里有学科、版本号、课标年份。学科不会变，版本号本来就要变（发布规则单独检查），差异只比课标年份
+    meta: dict[str, dict] = field(default_factory=dict)
     nodes: dict[str, dict] = field(default_factory=dict)
     edges: dict[str, dict] = field(default_factory=dict)
     textbook: dict[str, dict] = field(default_factory=dict)
@@ -83,6 +85,8 @@ class Snapshot:
     def from_rows(version_id: str, rows: Mapping[str, Iterable[Mapping[str, Any]]]) -> "Snapshot":
         """rows 的键是表名（不带 schema），值是该版本的行。item_tag 行需带 `family`（题目族 code，没有为 None）。"""
         s = Snapshot(version_id=str(version_id))
+        for r in rows.get("map_version", ()):
+            s.meta["map_version"] = {"standard_year": norm(r["standard_year"])}
         for r in rows.get("knowledge_node", ()):
             s.nodes[r["id"]] = {f: norm(r[f]) for f in NODE_FIELDS}
             s._ref(r["id"], "node", r["id"])

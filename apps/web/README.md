@@ -26,5 +26,6 @@ make web-visual    # 视觉回归（与 e2e/__screenshots__ 的基线比较）�
 开发库手动试用：
 1. 跑阿鸦内容登记和 `db/seeds/dev/star-map-synthetic.sql`；
 2. 执行种子时设 `PGOPTIONS='-c starbuddy.allow_synthetic_seed=on'`；起 BFF：`STARBUDDY_DEV_AUTH=1 BFF_DATABASE_URL=… node services/bff/src/star-map/main.ts`；
-3. 起前端：`STARBUDDY_DEV_AUTH=1 npm run build && npm start`；
+3. 起前端：`STARBUDDY_DEV_AUTH=1 STARBUDDY_ENV=dev npm run build && STARBUDDY_DEV_AUTH=1 STARBUDDY_ENV=dev npm start`
+   （开发身份桩要两个条件都满足；用 127.0.0.1 或 localhost 访问，其他 Host 一律当未登录）；
 4. 打开 `/dev/login`。

@@ -1,13 +1,13 @@
 // 审核台首页：按学科列出地图版本（草稿、已发布、已撤下），链到差异视图与版本记录。
-import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { DEV_STAFF_COOKIE, devAuthEnabled, devStaffFromCookie } from '../../lib/dev-auth.ts';
+import { devAuthEnabled } from '../../lib/dev-auth.ts';
+import { currentStaff } from '../../lib/review-session.ts';
 import { SUBJECTS, STATUS_LABEL, isSubject, listVersions, type SubjectCode } from '../../lib/review.ts';
 
 export const dynamic = 'force-dynamic';
 
 export default async function ReviewHome({ searchParams }: { searchParams: Promise<{ subject?: string }> }) {
-  const staff = devStaffFromCookie((await cookies()).get(DEV_STAFF_COOKIE)?.value);
+  const staff = await currentStaff();
   if (!staff) {
     if (devAuthEnabled()) redirect('/dev/login');
     return (

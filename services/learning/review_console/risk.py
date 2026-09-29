@@ -53,6 +53,8 @@ def review_level(level: str) -> str:
 
 def classify(change: dict[str, Any]) -> Risk:
     obj, op, fld = change.get("object"), change.get("op"), change.get("field")
+    if obj == "version":
+        return Risk("high", "curriculum_standard")  # 课标年份
     if obj == "node":
         if op in EXISTENCE_OPS:
             return Risk("high", f"node_{op}", structural=_touches_active(change))

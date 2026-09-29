@@ -220,7 +220,7 @@ def test_snapshot_covers_every_digest_section():
     sql = (Path(__file__).resolve().parents[3] / "db/migrations/0019_kge__review_signoff.up.sql").read_text(encoding="utf-8")
     body = sql[sql.index("CREATE FUNCTION kge.map_version_digest"):sql.index("ALTER FUNCTION kge.map_version_digest")]
     sections = set(re.findall(r"'(\w+)', \(SELECT", body))
-    covered = {"version": None, "nodes": "nodes", "edges": "edges", "textbook": "textbook", "region": "region", "skill_links": "skill_links",
+    covered = {"version": "meta", "nodes": "nodes", "edges": "edges", "textbook": "textbook", "region": "region", "skill_links": "skill_links",
                "id_migrations": "id_migrations", "item_families": "item_families", "item_tags": "item_tags",
                "scoring_points": "scoring_points", "current_affairs": "current_affairs"}
     assert sections == set(covered)
@@ -242,3 +242,11 @@ def test_touched_nodes_include_edge_targets_and_removed():
                                                     "type": "related", "strength": "weak", "evidence_ref": None, "status": "active"}]
     ch = diff(snap(V1), Snapshot.from_rows(V2, r))
     assert touched_nodes(ch) == (["MATH.F.T.A", "MATH.F.T.B"], ["MATH.F.T.C"])
+
+
+def test_standard_year_change_is_high():
+    mv = [{"id": V1, "subject": "aya", "version": "1.0.0", "standard_year": 2022}]
+    ch = diff(snap(V1, map_version=mv), snap(V2, map_version=[dict(mv[0], id=V2, version="1.0.1", standard_year=2025)]))
+    assert [(c["object"], c["field"], c["old"], c["new"], classify(c).level) for c in ch] == [("version", "standard_year", 2022, 2025, "high")]
+    # 只改版本号不算差异（版本号的递增由发布规则检查）
+    assert diff(snap(V1, map_version=mv), snap(V2, map_version=[dict(mv[0], id=V2, version="1.0.1")])) == []

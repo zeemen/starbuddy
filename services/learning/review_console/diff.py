@@ -11,7 +11,7 @@ from typing import Any
 from .snapshot import NODE_FIELDS, Snapshot
 
 # 对象顺序：骨架在前，原子在后（与审核界面的分组一致）
-OBJECT_ORDER = ("node", "edge", "textbook", "region", "skill_link", "id_migration", "item_family", "item_tag", "scoring_point",
+OBJECT_ORDER = ("version", "node", "edge", "textbook", "region", "skill_link", "id_migration", "item_family", "item_tag", "scoring_point",
                 "current_affair")
 
 Change = dict[str, Any]
@@ -44,6 +44,7 @@ def diff(base: Snapshot | None, draft: Snapshot) -> list[Change]:
     empty = Snapshot.empty()
     b = base or empty
     out: list[Change] = []
+    out += _keyed("version", b.meta, draft.meta, ("standard_year",))
     out += _keyed("node", b.nodes, draft.nodes, NODE_FIELDS, "status")
     out += _keyed("edge", b.edges, draft.edges, ("strength", "evidence_ref", "status"), "status")
     out += _keyed("textbook", b.textbook, draft.textbook,

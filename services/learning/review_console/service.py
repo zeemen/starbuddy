@@ -42,6 +42,15 @@ async def diff_view(kge: KgeStore, version_id: uuid.UUID) -> dict[str, Any]:
     structural = await kge.structural(version_id) or any(
         classify_change_type(r["change_type"]).structural and r["status"] != "rejected" for r in requests)
     summary.update(structural=structural, required_signers=2 if structural else 1)
+    # 签字进度与发布函数同一口径（契约审查 PR 3 S1）：最近一条审核结论；最近一次驳回之后、对当前摘要批准的不同签字人
+    signoffs = await kge.records(v["subject"], version_id)
+    reviews = [s for s in signoffs if s["action"] == "review"]
+    last_reject = max((s["decided_at"] for s in reviews if s["decision"] == "rejected"), default=None)
+    approvers = {s["signer"] for s in reviews if s["decision"] == "approved" and s["digest"] == draft.digest
+                 and (last_reject is None or s["decided_at"] > last_reject)}
+    latest = max(reviews, key=lambda s: s["decided_at"], default=None)
+    summary.update(approvals=len(approvers), latest_decision=latest["decision"] if latest else None,
+                   latest_matches=bool(latest and latest["digest"] == draft.digest))
     current, removed = touched_nodes(changes)
     impact = await kge.impact(version_id, current)
     if base_id and removed:
@@ -50,6 +59,7 @@ async def diff_view(kge: KgeStore, version_id: uuid.UUID) -> dict[str, Any]:
     return norm({
         "version": v,
         "base_version_id": base_id,
+        "base_version": (await kge.version(base_id))["version"] if base_id else None,
         "digest": draft.digest,
         # 草稿的全部节点（改节点表单用；公共层内容）
         "nodes": [{"id": k, **v} for k, v in sorted(draft.nodes.items())],
@@ -59,7 +69,7 @@ async def diff_view(kge: KgeStore, version_id: uuid.UUID) -> dict[str, Any]:
         "validation": issues,
         "unattached_issues": loose,
         "change_requests": [{**r, "risk": classify_change_type(r["change_type"]).as_dict()} for r in requests],
-        "signoffs": await kge.records(v["subject"], version_id),
+        "signoffs": signoffs,
     })
 
 

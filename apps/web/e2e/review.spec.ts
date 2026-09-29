@@ -1,6 +1,8 @@
 // 审核台端到端（spec 冲刺 1 验收“端到端测试”）：合成教研登录 → 打开草稿 → 改一个节点的“不包含” → 看到差异与校验 →
 // 签字 → 发布 → 旧版本变为已撤下，版本记录里有这一行。种子见 db/seeds/dev/review-synthetic.sql（语文合成地图）。
 // 另测：看到的内容过期时签字被拒、学生身份进不了审核台、无障碍、不缓存。
+// 用例之间有先后（发布后的状态），按顺序执行（test.describe.serial）。
+import { execFileSync } from 'node:child_process';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 
@@ -15,10 +17,19 @@ async function asStaff(page: Page, staff: string) {
   await expect(page).toHaveURL(/\/review$/);
 }
 
+/** 以 BFF 的数据库身份读已发布的地图版本（BFF 只看得到已发布的），验收“BFF 读到新版本”（契约审查 PR 3 B3） */
+function bffPublishedVersions(subject: string): string[] {
+  const out = execFileSync('psql', ['-X', '-At', '-U', 'bff_app', '-c',
+    `SELECT version FROM kge.map_version WHERE subject = '${subject}' ORDER BY version`], { encoding: 'utf8' });
+  return out.split('\n').filter((x) => x.length > 0);
+}
+
 async function axe(page: Page) {
   const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
   expect(r.violations.map((v) => v.id)).toEqual([]);
 }
+
+test.describe.configure({ mode: 'serial' });
 
 test('学生身份进不了审核台（去开发登录页）', async ({ page }) => {
   await page.goto(`/dev/session?account=${S1}&next=${encodeURIComponent('/star-map/5a000000-0000-4000-8000-0000000000c1')}`);
@@ -55,11 +66,15 @@ test('教研改“不包含” → 差异与校验 → 签字 → 发布，旧�
   await expect(change.first()).toHaveAttribute('data-key', 'CHN.RC.T.A');
   await expect(change.first()).toHaveAttribute('data-field', 'excludes');
   await expect(change.first()).toHaveAttribute('data-level', 'medium');
-  await expect(change.first()).toContainText('整篇主旨、合成：段落之间的过渡');
+  await expect(change.first()).toContainText('["整篇主旨","合成：段落之间的过渡"]');
   await expect(change.first()).toContainText('按高审');
+  await expect(change.first()).toContainText('边界补充');
   await expect(page.getByTestId('summary')).toHaveAttribute('data-structural', 'false');
   await expect(page.getByTestId('summary')).toHaveAttribute('data-signers', '1');
   await expect(page.getByTestId('summary')).toContainText('阻断 0 条');
+  await expect(page.getByTestId('summary')).toHaveAttribute('data-approvals', '0');
+  await expect(page.getByTestId('publish')).toContainText('发布后，当前已发布的 1.0.0 将自动撤下');
+  expect(bffPublishedVersions('wenli')).toEqual(['1.0.0']);
   expect(await page.getByTestId('digest').textContent()).not.toBe(digest0);
   await axe(page);
 
@@ -85,6 +100,7 @@ test('教研改“不包含” → 差异与校验 → 签字 → 发布，旧�
   await page.getByTestId('sign').getByRole('button', { name: '批准' }).click();
   await expect(page.getByTestId('sign').getByRole('status')).toHaveText('已签字');
   await expect(page.getByTestId('signoffs').locator('tbody tr[data-current="true"]')).toHaveCount(1);
+  await expect(page.getByTestId('summary')).toHaveAttribute('data-approvals', '1');
   await page.getByTestId('publish').getByRole('button', { name: '发布这个版本' }).click();
   // 发布后页面按新状态重新渲染：发布表单消失，显示已发布说明
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('地图版本 1.0.1（已发布）');
@@ -93,6 +109,8 @@ test('教研改“不包含” → 差异与校验 → 签字 → 发布，旧�
   await page.goto('/review?subject=wenli');
   await expect(page.locator('tr[data-version="1.0.0"]')).toHaveAttribute('data-status', 'retired');
   await expect(page.locator('tr[data-version="1.0.1"]')).toHaveAttribute('data-status', 'published');
+  // BFF 读到新版本，旧版本对它不可见（已撤下）
+  expect(bffPublishedVersions('wenli')).toEqual(['1.0.1']);
 
   await page.getByRole('link', { name: '版本记录' }).click();
   const rec = page.getByTestId('records').locator('tbody tr');
@@ -101,10 +119,14 @@ test('教研改“不包含” → 差异与校验 → 签字 → 发布，旧�
   await axe(page);
 });
 
-test('已发布版本不能再签字或发布，也没有编辑表单', async ({ page }) => {
+test('已发布版本不能再签字或发布，也没有编辑表单与风险摘要；撤下须勾选确认', async ({ page }) => {
   await asStaff(page, T2);
   await page.goto(`/review/map-versions/${V101}`);
   await expect(page.getByTestId('sign')).toHaveCount(0);
   await expect(page.getByTestId('publish')).toHaveCount(0);
+  await expect(page.getByTestId('summary')).toHaveCount(0);
   await expect(page.locator('details.node-editor')).toHaveCount(0);
+  const retire = page.getByTestId('retire');
+  await expect(retire.getByRole('checkbox')).toHaveAttribute('required', '');
+  await expect(retire).toContainText('本学科将没有已发布的地图版本');
 });

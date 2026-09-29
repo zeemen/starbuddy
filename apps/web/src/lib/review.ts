@@ -56,7 +56,8 @@ export interface ChangeRequest {
   id: string;
   change_type: string;
   status: 'proposed' | 'approved' | 'rejected' | 'applied';
-  payload: unknown;
+  /** 签字覆盖的全部内容（与库里 kge.map_change_digest 的输入一致），页面原样显示 */
+  signed_content: Record<string, unknown>;
   digest: string;
   risk: Risk;
 }
@@ -89,9 +90,20 @@ export interface Signoff {
 export interface DiffView {
   version: MapVersion;
   base_version_id: string | null;
+  base_version: string | null;
   digest: string;
   nodes: NodeRow[];
-  summary: { level: string; review_level: string; structural: boolean; required_signers: number; counts: Record<string, number> };
+  summary: {
+    level: string;
+    review_level: string;
+    structural: boolean;
+    required_signers: number;
+    counts: Record<string, number>;
+    /** 最近一次驳回之后、对当前内容批准的不同教研人数（后端按发布函数的口径算） */
+    approvals: number;
+    latest_decision: 'approved' | 'rejected' | null;
+    latest_matches: boolean;
+  };
   impact: { item_tags: number; scoring_points: number };
   changes: Change[];
   validation: Issue[];
@@ -125,23 +137,35 @@ export function reviewBaseUrl(env: Record<string, string | undefined> = process.
   return u.origin;
 }
 
+/** 只有这几类错误显示后端给的说明（库里写好的规则文字，只含公共层对象），并截到 200 字；其余只显示错误码对应的中文 */
+const DETAIL_CODES = new Set(['RULE_VIOLATION', 'DIGEST_CHANGED', 'INVALID_PARAMETER', 'NOT_FOUND']);
+const CALL_TIMEOUT_MS = 10_000;
+
+export function problemFrom(status: number, data: unknown): Problem {
+  const p = (data ?? {}) as Partial<Problem>;
+  const code = typeof p.code === 'string' && /^[A-Z_]{1,40}$/.test(p.code) ? p.code : 'INTERNAL';
+  const detail = DETAIL_CODES.has(code) && typeof p.detail === 'string' ? p.detail.slice(0, 200) : undefined;
+  return { status, code, detail };
+}
+
 async function call<T>(staff: string, method: string, path: string, body?: unknown): Promise<Result<T>> {
   const headers: Record<string, string> = { 'x-dev-staff-id': staff };
   if (body !== undefined) headers['content-type'] = 'application/json';
-  const r = await fetch(`${reviewBaseUrl()}${path}`, {
-    method,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-    cache: 'no-store',
-  });
-  const data = (await r.json().catch(() => ({}))) as unknown;
-  if (!r.ok) {
-    const p = data as Partial<Problem>;
-    return {
-      ok: false,
-      problem: { status: r.status, code: typeof p.code === 'string' ? p.code : 'INTERNAL', detail: typeof p.detail === 'string' ? p.detail : undefined },
-    };
+  let r: Response;
+  try {
+    r = await fetch(`${reviewBaseUrl()}${path}`, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+      cache: 'no-store',
+      signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
+    });
+  } catch {
+    // 后端连不上或超时：不把地址、堆栈带到页面
+    return { ok: false, problem: { status: 503, code: 'INTERNAL' } };
   }
+  const data = (await r.json().catch(() => ({}))) as unknown;
+  if (!r.ok) return { ok: false, problem: problemFrom(r.status, data) };
   return { ok: true, value: data as T };
 }
 
@@ -171,6 +195,16 @@ export const OBJECT_LABEL: Record<string, string> = {
   node: '节点', edge: '边', textbook: '教材投影', region: '地区投影', skill_link: '能力视图挂接', id_migration: '旧编码迁移',
   item_family: '题目族', item_tag: '题目标签', scoring_point: '采分点', current_affair: '时政',
 };
+/** 风险理由（后端 risk.py 的理由编码） */
+export const REASON_LABEL: Record<string, string> = {
+  curriculum_standard: '课标年份', node_added: '新增节点', node_removed: '删除节点', node_deprecated: '停用节点', node_reactivated: '恢复节点',
+  boundary_supplement: '边界补充', curriculum_requirement: '认知层次（课标要求）', definition: '定义类字段',
+  prerequisite_structure: '前置 / 从属结构', prerequisite_statement: '前置关系表述', weak_edge: '非结构性边',
+  textbook_quote_page: '教材原句与页码', scoring_basis: '评分依据', id_retire_retest: '旧编码撤销（对应掌握度待复测）',
+  id_migration: '旧编码迁移', item_family_ref: '题目族引用', current_affair: '时政', unclassified: '无法归类（按高风险）',
+};
+/** 签字人显示后 12 位：合成教研的前缀相同，前 8 位分不出（PR 4 后显示姓名） */
+export const signerTail = (id: string): string => `…${id.slice(-12)}`;
 export const ACTION_LABEL: Record<string, string> = { review: '审核', publish: '发布', retire: '撤下' };
 export const DECISION_LABEL: Record<string, string> = { approved: '批准', rejected: '驳回' };
 export const CHANGE_STATUS_LABEL: Record<string, string> = { proposed: '待审', approved: '已批准', rejected: '已驳回', applied: '已应用' };

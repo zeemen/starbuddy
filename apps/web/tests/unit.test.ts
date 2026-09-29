@@ -47,10 +47,14 @@ test('描边：按图 2b 比例缩放，下限 1.5px', () => {
 });
 
 test('开发身份桩：开关不开、不是 UUID、不在合成账号列表里，都不算登录', () => {
-  const on = { STARBUDDY_DEV_AUTH: '1' };
+  const on = { STARBUDDY_DEV_AUTH: '1', STARBUDDY_ENV: 'test' };
   const acc = SYNTHETIC_ACCOUNTS[0]!.account_id;
   assert.equal(devAuthEnabled({}), false);
-  assert.equal(devAuthEnabled({ STARBUDDY_DEV_AUTH: 'true' }), false);
+  assert.equal(devAuthEnabled({ STARBUDDY_DEV_AUTH: 'true', STARBUDDY_ENV: 'dev' }), false);
+  // 第二个条件：只在 dev / test 环境（审核台 PR 3 安全审查 #2）
+  assert.equal(devAuthEnabled({ STARBUDDY_DEV_AUTH: '1' }), false);
+  assert.equal(devAuthEnabled({ STARBUDDY_DEV_AUTH: '1', STARBUDDY_ENV: 'production' }), false);
+  assert.equal(devAuthEnabled({ STARBUDDY_DEV_AUTH: '1', STARBUDDY_ENV: 'dev' }), true);
   assert.equal(devAccountFromCookie(acc, {}), null);
   assert.equal(devAccountFromCookie(acc, on), acc);
   assert.equal(devAccountFromCookie('not-a-uuid', on), null);

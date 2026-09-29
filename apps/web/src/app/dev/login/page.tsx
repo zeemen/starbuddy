@@ -2,12 +2,13 @@
 import { notFound } from 'next/navigation';
 import { SYNTHETIC_ACCOUNTS } from '../../../dev/accounts.ts';
 import { SYNTHETIC_STAFF } from '../../../dev/staff.ts';
-import { devAuthEnabled, safeNext } from '../../../lib/dev-auth.ts';
+import { headers } from 'next/headers';
+import { devAuthEnabled, isLoopbackHost, safeNext } from '../../../lib/dev-auth.ts';
 
 export const dynamic = 'force-dynamic';
 
 export default async function DevLoginPage({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
-  if (!devAuthEnabled()) notFound();
+  if (!devAuthEnabled() || !isLoopbackHost((await headers()).get('host'))) notFound();
   const { next } = await searchParams;
   const target = safeNext(next ?? null);
   return (

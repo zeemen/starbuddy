@@ -1,23 +1,21 @@
 // 地图版本审核页（spec 设计要点 4“审核界面的核心是差异对比”）：风险摘要、差异（附风险与校验问题）、变更单、
 // 节点编辑（草稿）、签字、发布、撤下、签字记录。所有表单都带当前内容摘要：页面显示的就是签的、发布的。
-import { cookies } from 'next/headers';
 import { notFound, redirect } from 'next/navigation';
-import { DEV_STAFF_COOKIE, devAuthEnabled, devStaffFromCookie } from '../../../../lib/dev-auth.ts';
+import { devAuthEnabled } from '../../../../lib/dev-auth.ts';
+import { currentStaff } from '../../../../lib/review-session.ts';
 import {
-  ACTION_LABEL, CHANGE_STATUS_LABEL, DECISION_LABEL, LEVEL_LABEL, OBJECT_LABEL, OP_LABEL, RESULT_LABEL, RETIRE_BASIS, STATUS_LABEL,
-  getDiff, isVersionId, type Change, type NodeRow,
+  ACTION_LABEL, CHANGE_STATUS_LABEL, DECISION_LABEL, LEVEL_LABEL, OBJECT_LABEL, OP_LABEL, REASON_LABEL, RESULT_LABEL, RETIRE_BASIS,
+  STATUS_LABEL, getDiff, isVersionId, signerTail, type Change, type NodeRow,
 } from '../../../../lib/review.ts';
 import { ActionForm } from '../../ActionForm.tsx';
 import { editNodeAction, publishAction, retireAction, signChangeAction, signVersionAction } from '../../actions.ts';
 
 export const dynamic = 'force-dynamic';
 
-/** 差异里的值原样显示：数组用顿号连，对象显示为紧凑 JSON，空值显示为破折号 */
+/** 差异里的值原样显示为 JSON（数组条目里的顿号、首尾空白都看得出来，契约审查 PR 3 S5）；空值显示为破折号 */
 function show(v: unknown): string {
   if (v === null || v === undefined) return '—';
-  if (Array.isArray(v)) return v.length === 0 ? '（空）' : v.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join('、');
-  if (typeof v === 'object') return JSON.stringify(v);
-  return String(v);
+  return JSON.stringify(v);
 }
 
 function RiskBadge({ level, structural }: { level: string; structural: boolean }) {
@@ -39,7 +37,7 @@ function ChangeRow({ c }: { c: Change }) {
       <td><code>{c.key}</code>{c.rubric_version ? <span className="muted">（评分版本 {c.rubric_version}）</span> : null}</td>
       <td>{OP_LABEL[c.op] ?? c.op}{c.field ? ` · ${c.field}` : ''}</td>
       {values}
-      <td><RiskBadge level={c.risk.level} structural={c.risk.structural} />
+      <td><RiskBadge level={c.risk.level} structural={c.risk.structural} /> <span className="muted">{REASON_LABEL[c.risk.reason] ?? c.risk.reason}</span>
         {c.risk.level !== c.risk.review_level ? <span className="muted">（阶段 0 按{LEVEL_LABEL[c.risk.review_level]}审）</span> : null}</td>
       <td>{c.issues.length === 0 ? '—' : c.issues.map((i) => `${i.severity === 'error' ? '阻断' : '提示'}：${i.detail}`).join('；')}</td>
     </tr>
@@ -69,7 +67,7 @@ function NodeEditor({ versionId, digest, node }: { versionId: string; digest: st
 
 export default async function MapVersionPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const staff = devStaffFromCookie((await cookies()).get(DEV_STAFF_COOKIE)?.value);
+  const staff = await currentStaff();
   if (!staff) {
     if (devAuthEnabled()) redirect('/dev/login');
     return <main><h1>审核</h1><p>请先以教研账号登录。</p></main>;
@@ -84,24 +82,29 @@ export default async function MapVersionPage({ params }: { params: Promise<{ id:
   const v = d.version;
   const isDraft = v.status === 'draft';
   const errors = d.validation.filter((i) => i.severity === 'error');
-  const approvals = new Set(d.signoffs.filter((s) => s.action === 'review' && s.decision === 'approved' && s.digest === d.digest).map((s) => s.signer));
   return (
     <main>
       <h1>地图版本 {v.version}（{STATUS_LABEL[v.status] ?? v.status}）</h1>
       <p className="muted">
-        学科 {v.subject} · 对比基准：{d.base_version_id ? '当前已发布版本' : '没有已发布版本，全部按新增列出'} · 内容摘要 <code data-testid="digest">{d.digest.slice(0, 12)}</code>
+        学科 {v.subject} · 课标年份 {v.standard_year} · 对比基准：{d.base_version ? `已发布版本 ${d.base_version}` : '没有已发布版本，全部按新增列出'} · 内容摘要 <code data-testid="digest">{d.digest.slice(0, 12)}</code>
       </p>
 
-      <section aria-labelledby="h-summary" data-testid="summary" data-structural={String(d.summary.structural)} data-signers={d.summary.required_signers}>
+      {isDraft ? (
+      <section aria-labelledby="h-summary" data-testid="summary" data-structural={String(d.summary.structural)} data-signers={d.summary.required_signers}
+        data-approvals={d.summary.approvals}>
         <h2 id="h-summary">风险摘要</h2>
         <ul>
-          <li>最高风险：<RiskBadge level={d.summary.level} structural={d.summary.structural} /></li>
-          <li>需要签字：{d.summary.required_signers} 名不同教研（对当前内容批准的已有 {approvals.size} 名）</li>
+          <li>最高风险：<RiskBadge level={d.summary.level} structural={d.summary.structural} />
+            {d.summary.level !== d.summary.review_level ? `（阶段 0 按${LEVEL_LABEL[d.summary.review_level]}风险审）` : ''}</li>
+          <li>需要签字：{d.summary.required_signers} 名不同教研；最近一次驳回之后对当前内容批准的已有 {d.summary.approvals} 名
+            {d.summary.latest_decision === 'rejected' ? '（最近一条结论是驳回，需重新批准）' : ''}
+            {d.summary.latest_decision === 'approved' && !d.summary.latest_matches ? '（最近的批准针对的是修改前的内容）' : ''}</li>
           <li>差异 {d.changes.length} 条：高 {d.summary.counts['high'] ?? 0}，中 {d.summary.counts['medium'] ?? 0}，低 {d.summary.counts['low'] ?? 0}</li>
           <li>影响（公共层）：题目标签 {d.impact.item_tags} 个，采分点 {d.impact.scoring_points} 个</li>
           <li>发布前校验：阻断 {errors.length} 条，提示 {d.validation.length - errors.length} 条</li>
         </ul>
       </section>
+      ) : null}
 
       <section aria-labelledby="h-diff">
         <h2 id="h-diff">差异</h2>
@@ -137,7 +140,7 @@ export default async function MapVersionPage({ params }: { params: Promise<{ id:
               <li key={c.id} data-change={c.id} data-status={c.status}>
                 <p>{c.change_type} · {CHANGE_STATUS_LABEL[c.status] ?? c.status} · <RiskBadge level={c.risk.level} structural={c.risk.structural} />
                   {c.risk.structural ? '（需两名不同教研）' : ''}</p>
-                <pre className="payload">{JSON.stringify(c.payload, null, 2)}</pre>
+                <pre className="payload" data-testid={`signed-content-${c.id}`}>{JSON.stringify(c.signed_content, null, 2)}</pre>
                 {c.status === 'proposed' ? (
                   <ActionForm action={signChangeAction} labels={RESULT_LABEL} testId={`sign-change-${c.id}`}>
                     <input type="hidden" name="version" value={v.id} />
@@ -181,6 +184,7 @@ export default async function MapVersionPage({ params }: { params: Promise<{ id:
             <ActionForm action={publishAction} labels={RESULT_LABEL} testId="publish">
               <input type="hidden" name="version" value={v.id} />
               <input type="hidden" name="expected_digest" value={d.digest} />
+              <p>{d.base_version ? `发布后，当前已发布的 ${d.base_version} 将自动撤下。` : '这是本学科第一个发布的版本。'}</p>
               <button type="submit">发布这个版本</button>
             </ActionForm>
           </>
@@ -196,12 +200,18 @@ export default async function MapVersionPage({ params }: { params: Promise<{ id:
             <input type="hidden" name="version" value={v.id} />
             <p>
               <label htmlFor="retire-basis">撤下依据</label>{' '}
-              <select id="retire-basis" name="basis_code" defaultValue="">
+              <select id="retire-basis" name="basis_code" defaultValue="" required>
                 <option value="" disabled>请选择</option>
                 {RETIRE_BASIS.map((b) => <option key={b.code} value={b.code}>{b.label}</option>)}
-              </select>{' '}
-              <button type="submit">撤下这个版本</button>
+              </select>
             </p>
+            <p>
+              <input type="checkbox" id="retire-confirm" name="confirm" value="yes" required />{' '}
+              <label htmlFor="retire-confirm">
+                {v.status === 'published' ? '我知道撤下后本学科将没有已发布的地图版本（星图、选科会受影响）' : '我确认撤下这个草稿'}
+              </label>
+            </p>
+            <p><button type="submit">撤下这个版本</button></p>
           </ActionForm>
         ) : null}
       </section>
@@ -217,7 +227,7 @@ export default async function MapVersionPage({ params }: { params: Promise<{ id:
                 <tr key={k} data-action={s.action} data-current={String(s.digest === d.digest)}>
                   <td>{ACTION_LABEL[s.action] ?? s.action}</td>
                   <td>{DECISION_LABEL[s.decision] ?? s.decision}</td>
-                  <td><code>{s.signer.slice(0, 8)}</code></td>
+                  <td><code>{signerTail(s.signer)}</code></td>
                   <td><code>{s.digest ? s.digest.slice(0, 12) : '—'}</code></td>
                   <td>{s.digest === d.digest ? '是' : '否（签字后内容改过）'}</td>
                 </tr>
