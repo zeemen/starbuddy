@@ -1,0 +1,115 @@
+// 幂等（ADR 05 第 2 条；规则 4）：同 key 同请求体 → 同一结果与同一批 evidence_id（模型只调一次）；
+// 同 key 不同请求体 → 409；并发的同 key 请求共享一次模型调用。全部是合成数据。
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { ANSWERS, gradeBody, gradeBodyV1, harness, type Json } from "./helpers.ts";
+import { keywordJudge, ok } from "./route-stub.ts";
+import { realPack } from "./helpers.ts";
+
+test("同 key 同请求体重试：同一结果、同一批 evidence_id，模型只调一次；request_id 变化不影响", async () => {
+  const h = await harness();
+  try {
+    const body = gradeBody("synthetic-m3-01", ANSWERS.partial01) as Json;
+    const a = (await h.adapter.handle("POST", "grade", body)).body as Json;
+    const retry = structuredClone(body);
+    retry.context.request_id = "00000000-0000-4000-8000-00000000ffff";
+    const b = (await h.adapter.handle("POST", "grade", retry)).body as Json;
+    assert.deepEqual(b, a);
+    assert.equal(h.stub.calls.length, 1);
+    // appeal 缺省与 appeal: false 视为同一请求体
+    const explicit = { ...structuredClone(body), appeal: false };
+    const c = (await h.adapter.handle("POST", "grade", explicit)).body as Json;
+    assert.deepEqual(c.evidence_ids, a.evidence_ids);
+    assert.equal(h.stub.calls.length, 1);
+  } finally {
+    await h.close();
+  }
+});
+
+test("模型两次回答不同也不影响：重试直接用第一次的判定（缓存只存判定，不存原文）", async () => {
+  let n = 0;
+  const judge = keywordJudge(realPack);
+  const h = await harness({
+    handler: (req) => {
+      n++;
+      return n === 1 ? judge(req) : ok(req, "not json");
+    },
+  });
+  try {
+    const body = gradeBody("synthetic-m3-01", ANSWERS.full01);
+    const a = (await h.adapter.handle("POST", "grade", body)).body as Json;
+    const b = (await h.adapter.handle("POST", "grade", body)).body as Json;
+    assert.equal(a.result.verdict, "correct");
+    assert.deepEqual(b, a);
+  } finally {
+    await h.close();
+  }
+});
+
+test("同 key 换了请求体：409 IDEMPOTENCY_CONFLICT，不调模型，不回显作答", async () => {
+  const h = await harness();
+  try {
+    const body = gradeBody("synthetic-m3-01", ANSWERS.partial01) as Json;
+    assert.equal((await h.adapter.handle("POST", "grade", body)).status, 200);
+    for (const mutate of [(b: Json) => (b.attempt.response.text = ANSWERS.full01), (b: Json) => (b.attempt.elapsed_sec = 30), (b: Json) => (b.appeal = true)]) {
+      const changed = structuredClone(body);
+      mutate(changed);
+      const r = await h.adapter.handle("POST", "grade", changed);
+      assert.equal(r.status, 409);
+      assert.equal((r.body as Json).code, "IDEMPOTENCY_CONFLICT");
+      assert.ok(!JSON.stringify(r.body).includes(ANSWERS.full01));
+    }
+    assert.equal(h.stub.calls.length, 1);
+  } finally {
+    await h.close();
+  }
+});
+
+test("并发的同 key 请求：只调一次模型，结果相同", async () => {
+  const judge = keywordJudge(realPack);
+  const h = await harness({ handler: async (req) => ({ ...(await judge(req)), delayMs: 100 }) });
+  try {
+    const body = gradeBody("synthetic-m3-01", ANSWERS.partial01);
+    const [a, b] = await Promise.all([h.adapter.handle("POST", "grade", body), h.adapter.handle("POST", "grade", body)]);
+    assert.deepEqual(a, b);
+    assert.equal(h.stub.calls.length, 1);
+  } finally {
+    await h.close();
+  }
+});
+
+test("v1.0：进程重启后（新实例）同一作答、同样的模型判定 → 同一批 evidence_id（按作答内容派生）", async () => {
+  const body = gradeBodyV1("synthetic-m3-01", ANSWERS.partial01);
+  const h1 = await harness();
+  const h2 = await harness();
+  try {
+    const a = (await h1.adapter.handle("POST", "grade", body)).body as Json;
+    const b = (await h2.adapter.handle("POST", "grade", body)).body as Json;
+    assert.deepEqual(b.evidence_ids, a.evidence_ids);
+    assert.equal(new Set(a.evidence_ids).size, a.evidence_ids.length);
+  } finally {
+    await h1.close();
+    await h2.close();
+  }
+});
+
+test("不同 key：v0.9 下作答证据 ID 不同；diagnose 与 generate_variation 同 key 不同体也是 409", async () => {
+  const h = await harness();
+  try {
+    const x = (await h.adapter.handle("POST", "grade", gradeBody("synthetic-m3-01", ANSWERS.partial01))).body as Json;
+    const y = (await h.adapter.handle("POST", "grade", gradeBody("synthetic-m3-01", ANSWERS.partial01))).body as Json;
+    assert.notDeepEqual(x.evidence_ids, y.evidence_ids);
+    const d = gradeBody("synthetic-m3-01", ANSWERS.partial01) as Json;
+    const diag = { context: d.context, mode: "process", attempts: [d.attempt] };
+    assert.equal((await h.adapter.handle("POST", "diagnose", diag)).status, 200);
+    const diag2 = structuredClone(diag);
+    diag2.attempts[0].elapsed_sec = 5;
+    assert.equal((await h.adapter.handle("POST", "diagnose", diag2)).status, 409);
+    const v = { context: { ...d.context, idempotency_key: "synthetic-zhixing-var-key-0001" }, source_item_ref: "zhixing:synthetic-m3-01", count: 3 } as Json;
+    delete v.context.usage_id;
+    assert.equal((await h.adapter.handle("POST", "generate_variation", v)).status, 200);
+    assert.equal((await h.adapter.handle("POST", "generate_variation", { ...v, count: 2 })).status, 409);
+  } finally {
+    await h.close();
+  }
+});

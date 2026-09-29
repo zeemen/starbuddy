@@ -1,0 +1,23 @@
+{
+  "name": "@starbuddy/adapter-zhixing",
+  "version": "0.1.0",
+  "private": true,
+  "description": "知行（道法）学科适配器：实现学科插件 API v0.9 与 v1.0 候选版的 capabilities / grade（F3 采分点）/ diagnose（process）/ generate_variation",
+  "type": "module",
+  "engines": { "node": ">=22.18" },
+  "scripts": {
+    "start": "node src/main.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --test --test-reporter=dot tests/*.test.ts",
+    "register:sql": "node scripts/register-content.ts"
+  },
+  "dependencies": {
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "yaml": "2.9.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.4",
+    "typescript": "5.9.3"
+  }
+}
