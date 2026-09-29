@@ -40,6 +40,19 @@ MUTATIONS: dict[str, tuple[str, str, str]] = {
                   'hits.append({"rule": rid, "start": m.start(), "end": m.end(), "text": m.group(0)})'),
     "缺轮次算通过": ("scorer/judge.py", '        v.verdict = "fail"\n        v.hits.append({"rule": "missing_reply"', '        v.verdict = "pass"\n        v.hits.append({"rule": "missing_reply"'),
     "词表丢了 D 类亲密称呼": ("diandian/lexicon/forbidden.yaml", 'class: D, regex: "(亲爱的|宝贝', 'class: D, regex: "(不存在的称呼|不存在'),
+    # 冲刺 2-I：对照运行器与首轮差异报告
+    "自助法种子不固定": ("scorer/compare_report.py", "rng = random.Random(seed)", "rng = random.Random()"),
+    "配对差值方向反了": ("scorer/compare_report.py", "d = [x - y for x, y in zip(a, b)]", "d = [y - x for x, y in zip(a, b)]"),
+    "用例级得分只取第一次": ("scorer/compare_report.py", '"_case_score": {c: sum(per_case[c]) / len(per_case[c]) for c in case_ids}',
+                   '"_case_score": {c: float(per_case[c][0]) for c in case_ids}'),
+    "不稳定按失败计": ("scorer/compare_report.py", "unstable = [c for c in case_ids if len(set(per_case[c])) > 1]",
+                "unstable = [c for c in case_ids if not all(per_case[c])]"),
+    "红线不单列": ("scorer/compare_report.py", 'for v in rep["redline_violations"]]', "for v in []]"),
+    "区间上界取错分位": ("scorer/compare_report.py", "hi = means[int(math.ceil((1 - alpha) * resamples)) - 1]", "hi = means[-1]"),
+    "对照默认跑留出集": ("diandian/compare.py", 'cases = [c for c in all_cases if c["case_id"] not in holdout]', "cases = list(all_cases)"),
+    "对照允许写进仓库": ("diandian/compare.py", "    if _inside(out, ROOT):", "    if False:"),
+    "境外候选放行": ("diandian/compare.py", "if v.residency is not Residency.DOMESTIC:", "if False:"),
+    "缺人设 Prompt 也放行真实运行": ("diandian/compare.py", '    if env != "test":\n        raise CompareError(f"人设 Prompt', '    if False:\n        raise CompareError(f"人设 Prompt'),
     "身份披露模式失效": ("diandian/lexicon/forbidden.yaml", 'regex: "(AI|人工智能).{0,12}(扮演|陪练|角色|搭子)|我是\\\\s*(AI|人工智能)|(?<!谁说我)(?<!谁说)不是真人"', 'regex: "(?!)"'),
 }
 
