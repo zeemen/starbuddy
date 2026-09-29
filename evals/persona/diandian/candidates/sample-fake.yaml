@@ -1,5 +1,6 @@
 # 流程样例的候选清单（冲刺 2-I）：三家都是 test 环境的进程内假供应商，只用来证明运行器与报告的流程，不是模型评测。
-# 真实首轮的清单由执行人按 ADR 04 / 08 签字结果另写：vendor 与 model 必须已在模型路由配置当前环境登记、境内、已批准；
+# 候选只接受该环境 T1（教学对话）路由里登记的模型；test 环境的 T1 只登记了 fake-a、fake-b 的 fake-chat，所以两家假候选共用 fake-a/fake-chat。
+# 真实首轮的清单由执行人按 ADR 04 / 08 签字结果另写：vendor 与 model 必须已在模型路由配置当前环境的 T1 路由登记、境内、已批准；
 # 不写 fake_profile（只在 test 环境有效）。
 version: 1
 candidates:
@@ -15,6 +16,6 @@ candidates:
     fake_profile: fail_category:referral
   - id: fake-random
     vendor: fake-a
-    model: fake-reasoner
-    note: 假候选：按固定种子随机失败（比例 0.2）
+    model: fake-chat
+    note: 假候选：按固定种子随机失败（比例 0.2）；与 fake-compliant 同一假模型，行为由夹具决定
     fake_profile: random:0.2:r1-sample

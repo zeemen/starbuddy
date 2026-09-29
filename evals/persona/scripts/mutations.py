@@ -53,6 +53,20 @@ MUTATIONS: dict[str, tuple[str, str, str]] = {
     "对照允许写进仓库": ("diandian/compare.py", "    if _inside(out, ROOT):", "    if False:"),
     "境外候选放行": ("diandian/compare.py", "if v.residency is not Residency.DOMESTIC:", "if False:"),
     "缺人设 Prompt 也放行真实运行": ("diandian/compare.py", '    if env != "test":\n        raise CompareError(f"人设 Prompt', '    if False:\n        raise CompareError(f"人设 Prompt'),
+    # 冲刺 2-I 安全审查（S1、S3、S5、N1、N2）与契约审查
+    "非 test 不查 allowed_hosts": ("diandian/compare.py", 'if env != "test" and not v.allowed_hosts:', "if False:"),
+    "非 dev 不要求 https": ("diandian/compare.py", 'if env != "dev" and parts.scheme != "https":', "if False:"),
+    "note 不查换行与竖线": ("diandian/compare.py", "    if _NOTE_FORBIDDEN.search(note):", "    if False:"),
+    "留出集条数不核对": ("diandian/compare.py", "if len(ids) != len(set(ids)) or len(ids) != HOLDOUT_FROZEN_COUNT:", "if False:"),
+    "调用上限不查": ("diandian/compare.py", "    if planned > limit:", "    if False:"),
+    "非 test 不要求显式上限": ("diandian/compare.py", 'if env != "test" and max_calls is None:', "if False:"),
+    "候选可匹配非 T1 路由": ("diandian/compare.py",
+                     'targets = [copy.deepcopy(t) for t in (t1.get("primary"), t1.get("backup")) if same(t)]',
+                     'targets = [copy.deepcopy(t) for r in routes.values() if isinstance(r, dict) for t in (r.get("primary"), r.get("backup")) if same(t)]'),
+    "推理参数不取 T1 路由": ("diandian/compare.py", "return dict(self.config.routes[CANDIDATE_TASK].primary.params)", "return {}"),
+    "对照允许 pilot、prod": ("diandian/compare.py", "    if env not in RUN_ENVS:", "    if False:"),
+    "结构字段检查点按全过计": ("scorer/compare_report.py", 'struct_passed += sum(c["verdict"] == "pass" for c in structural)',
+                     "struct_passed += len(structural)"),
     "身份披露模式失效": ("diandian/lexicon/forbidden.yaml", 'regex: "(AI|人工智能).{0,12}(扮演|陪练|角色|搭子)|我是\\\\s*(AI|人工智能)|(?<!谁说我)(?<!谁说)不是真人"', 'regex: "(?!)"'),
 }
 

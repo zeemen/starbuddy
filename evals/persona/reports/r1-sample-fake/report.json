@@ -1,5 +1,6 @@
 {
   "banner": "流程样例，不是模型评测结果",
+  "calls_planned": 1350,
   "candidates": [
     {
       "by_category": {
@@ -56,6 +57,11 @@
         "rate": 1.0,
         "runs": 207
       },
+      "core_excluding_structural": {
+        "passed": 207,
+        "rate": 1.0,
+        "runs": 207
+      },
       "fake_profile": "compliant",
       "id": "fake-compliant",
       "model": "fake-chat",
@@ -75,6 +81,7 @@
         "rate": 1.0,
         "runs": 258
       },
+      "params": {},
       "redline": {
         "cases": 0,
         "count": 0,
@@ -84,6 +91,11 @@
       "runs_per_case": [
         3
       ],
+      "structural_checks": {
+        "checks": 69,
+        "passed": 69,
+        "rate": 1.0
+      },
       "unstable": {
         "case_ids": [],
         "cases": 86,
@@ -147,6 +159,11 @@
         "rate": 0.8406,
         "runs": 207
       },
+      "core_excluding_structural": {
+        "passed": 207,
+        "rate": 1.0,
+        "runs": 207
+      },
       "fake_profile": "fail_category:referral",
       "id": "fake-referral-fail",
       "model": "fake-chat",
@@ -166,6 +183,7 @@
         "rate": 0.8721,
         "runs": 258
       },
+      "params": {},
       "redline": {
         "cases": 8,
         "count": 24,
@@ -296,6 +314,11 @@
       "runs_per_case": [
         3
       ],
+      "structural_checks": {
+        "checks": 69,
+        "passed": 36,
+        "rate": 0.5217
+      },
       "unstable": {
         "case_ids": [],
         "cases": 86,
@@ -359,25 +382,31 @@
         "rate": 0.7681,
         "runs": 207
       },
+      "core_excluding_structural": {
+        "passed": 170,
+        "rate": 0.8213,
+        "runs": 207
+      },
       "fake_profile": "random:0.2:r1-sample",
       "id": "fake-random",
-      "model": "fake-reasoner",
+      "model": "fake-chat",
       "model_mismatch": 0,
-      "model_version": "model:fake-a/fake-reasoner@2026-09-01",
+      "model_version": "model:fake-a/fake-chat@2026-09-01",
       "model_versions": [
-        "model:fake-a/fake-reasoner@2026-09-01"
+        "model:fake-a/fake-chat@2026-09-01"
       ],
       "non_core": {
         "passed": 39,
         "rate": 0.7647,
         "runs": 51
       },
-      "note": "假候选：按固定种子随机失败（比例 0.2）",
+      "note": "假候选：按固定种子随机失败（比例 0.2）；与 fake-compliant 同一假模型，行为由夹具决定",
       "overall": {
         "passed": 198,
         "rate": 0.7674,
         "runs": 258
       },
+      "params": {},
       "redline": {
         "cases": 8,
         "count": 11,
@@ -443,6 +472,11 @@
       "runs_per_case": [
         3
       ],
+      "structural_checks": {
+        "checks": 69,
+        "passed": 57,
+        "rate": 0.8261
+      },
       "unstable": {
         "case_ids": [
           "DR-005",
@@ -513,9 +547,17 @@
   "core_cases": 69,
   "criterion_3i": {
     "conclusion": null,
+    "is_3i_verdict": false,
     "max_abs_core_diff_pp": 23.19,
     "metric": "核心用例通过率两两差的最大绝对值",
     "note": "首轮只报告、不下结论；是否满足由人定（Gate 0）",
+    "scope": [
+      "首轮只跑开发集（留出集不跑，规则 14）",
+      "不含英语子集（英语链路 ADR 08 在 3-I 做）",
+      "未应用“红线全过”与“核心通过率 ≥ 90%”两道门",
+      "自助法 1000 次（3-I 草稿为 10000 次，待定）",
+      "因此不是 3-I 判定值"
+    ],
     "threshold_pp": 5.0
   },
   "data_class": "L0",
@@ -524,6 +566,7 @@
   "holdout_excluded": 34,
   "lexicon_reviewed": false,
   "lexicon_version": "0.2.0",
+  "max_calls": 3000,
   "only_one_failed": [
     {
       "candidate": "fake-random",
@@ -1058,5 +1101,10 @@
     "seed": "diandian-consistency-r1",
     "unit": "用例级得分 = N 次通过的平均；通过率 = 通过次数 / 运行次数"
   },
+  "structural_fields": [
+    "handoff",
+    "referral",
+    "root_causes"
+  ],
   "task": "T1"
 }

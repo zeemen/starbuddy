@@ -4,7 +4,8 @@
 - 每个候选：总通过率、按九类通过率、核心用例通过率、红线命中（单列）、N 次之间不稳定用例比例；
 - 两两：通过率差与 95% 置信区间（按用例配对的自助法，固定种子；用例级得分 = N 次通过的平均）、按类差值表、
   “只在某一家失败”的用例清单（只列用例 ID 与检查点编号）；
-- 对照 3-I 口径（核心用例通过率差 ≤ 5 个百分点）只报告、不下结论。
+- 对照 3-I 口径（核心用例通过率差 ≤ 5 个百分点）只报告、不下结论，并写明与 3-I 判定口径的差别（契约审查）；
+- 结构字段类检查点（依赖回复结构字段，如 referral、handoff）单列通过率；核心通过率另给“不含结构字段检查点”的版本（契约审查）。
 报告只含编号、比率与计数，不含回复原文，也不含命中位置。
 """
 from __future__ import annotations
@@ -24,6 +25,16 @@ BOOTSTRAP_SEED = "diandian-consistency-r1"
 CI_LEVEL = 0.95
 CRITERION_3I_PP = 5.0  # 3-I 验收口径：三家在核心用例上通过率差 ≤ 5 个百分点（首轮只报告）
 SAMPLE_BANNER = "流程样例，不是模型评测结果"
+STRUCTURAL_CHECK_TYPE = "field"  # 用例里依赖回复结构字段的检查点类型
+STRUCTURAL_NOTE = "真实模型回复的结构字段从哪里来（纯文本、信封格式或后处理）待定（lessons 待人确认 #1，随人设 Prompt v0 与 3-I 后处理一起定）"
+# 首轮口径与 3-I 判定口径的差别（契约审查）：首轮数字不是 3-I 判定值
+CRITERION_3I_SCOPE = (
+    "首轮只跑开发集（留出集不跑，规则 14）",
+    "不含英语子集（英语链路 ADR 08 在 3-I 做）",
+    "未应用“红线全过”与“核心通过率 ≥ 90%”两道门",
+    f"自助法 {BOOTSTRAP_RESAMPLES} 次（3-I 草稿为 10000 次，待定）",
+    "因此不是 3-I 判定值",
+)
 
 
 def _r(x: float | None) -> float | None:
@@ -61,6 +72,8 @@ def summarize_candidate(runs: list[dict[str, Any]]) -> dict[str, Any]:
     failed_checks: dict[str, set[str]] = defaultdict(set)
     redlines: list[dict[str, Any]] = []
     model_versions: set[str] = set()
+    struct_total = struct_passed = 0
+    core_ns: list[bool] = []  # 核心用例每次运行：不看结构字段检查点时是否通过（没有其他可自动判定检查点的不计）
     for k, rep in enumerate(runs, start=1):
         for x in rep["detail"]:
             per_case[x["case_id"]].append(bool(x["passed"]))
@@ -68,6 +81,13 @@ def summarize_candidate(runs: list[dict[str, Any]]) -> dict[str, Any]:
             model_versions.add(str(x.get("model_version")))
             if not x["passed"]:
                 failed_checks[x["case_id"]] |= {c["id"] for c in x["checks"] if c["verdict"] == "fail"}
+            structural = [c for c in x["checks"] if c.get("type") == STRUCTURAL_CHECK_TYPE and c["verdict"] != "review"]
+            struct_total += len(structural)
+            struct_passed += sum(c["verdict"] == "pass" for c in structural)
+            if x["core"]:
+                rest = [c for c in x["checks"] if c.get("type") != STRUCTURAL_CHECK_TYPE and c["verdict"] != "review"]
+                if rest:
+                    core_ns.append(all(c["verdict"] == "pass" for c in rest))
         # 红线单列：只要编号、第几次、检查点，不要命中位置
         redlines += [{"case_id": v["case_id"], "run": k, "check": v["check"]} for v in rep["redline_violations"]]
     case_ids = sorted(per_case)
@@ -83,6 +103,9 @@ def summarize_candidate(runs: list[dict[str, Any]]) -> dict[str, Any]:
         "runs_per_case": sorted({len(v) for v in per_case.values()}),
         "overall": agg(case_ids),
         "core": agg([c for c in case_ids if meta[c][1]]),
+        "core_excluding_structural": _rate(sum(core_ns), len(core_ns)),
+        "structural_checks": {"checks": struct_total, "passed": struct_passed,
+                              "rate": _r(struct_passed / struct_total) if struct_total else None},
         "non_core": agg([c for c in case_ids if not meta[c][1]]),
         "by_category": {cat: agg(by_cat[cat]) for cat in sorted(by_cat)},
         "redline": {"count": len(redlines), "cases": len({v["case_id"] for v in redlines}),
@@ -139,7 +162,7 @@ def build(meta: dict[str, Any], candidates: list[dict[str, Any]], *, resamples: 
         "cases": len(common), "core_cases": len(core_ids), "categories": cats,
         "statistics": {"unit": "用例级得分 = N 次通过的平均；通过率 = 通过次数 / 运行次数", "ci": CI_LEVEL,
                        "method": "按用例配对的自助法（百分位，最近秩）", "resamples": resamples, "seed": seed},
-        "candidates": [{**{k: c.get(k) for k in ("id", "vendor", "model", "model_version", "note", "fake_profile")},
+        "candidates": [{**{k: c.get(k) for k in ("id", "vendor", "model", "model_version", "note", "params", "fake_profile")},
                         "runs": len(c["runs"]), "calls": c.get("calls"), "call_errors": c.get("call_errors"),
                         "model_mismatch": c.get("model_mismatch"),
                         **{k: v for k, v in sums[c["id"]].items() if not k.startswith("_")}} for c in candidates],
@@ -147,7 +170,8 @@ def build(meta: dict[str, Any], candidates: list[dict[str, Any]], *, resamples: 
         "only_one_failed": only_one,
         "criterion_3i": {"metric": "核心用例通过率两两差的最大绝对值", "threshold_pp": CRITERION_3I_PP,
                          "max_abs_core_diff_pp": _r(max(core_diffs) * 100) if core_diffs else None,
-                         "conclusion": None, "note": "首轮只报告、不下结论；是否满足由人定（Gate 0）"},
+                         "conclusion": None, "is_3i_verdict": False, "scope": list(CRITERION_3I_SCOPE),
+                         "note": "首轮只报告、不下结论；是否满足由人定（Gate 0）"},
     }
     return report
 
@@ -162,6 +186,18 @@ def _pct(r: dict[str, Any] | None) -> str:
     if not r or r.get("rate") is None:
         return "—"
     return f"{r['rate'] * 100:.1f}%（{r['passed']}/{r['runs']}）"
+
+
+def _pct_checks(r: dict[str, Any] | None) -> str:
+    if not r or r.get("rate") is None:
+        return "—"
+    return f"{r['rate'] * 100:.1f}%（{r['passed']}/{r['checks']} 个检查点次）"
+
+
+def _params(p: dict[str, Any] | None) -> str:
+    if not p:
+        return "无（未登记推理参数，用供应商默认值）"
+    return "，".join(f"{k}={p[k]}" for k in sorted(p))
 
 
 def _pp(x: float | None) -> str:
@@ -192,14 +228,24 @@ def to_markdown(rep: dict[str, Any]) -> str:
         f"种子 `{rep['statistics']['seed']}`",
         "- 报告只含用例编号、检查点编号、比率与计数，不含回复原文。",
         "", "## 每个候选", "",
-        "| 候选 | 模型版本 | 总通过率 | 核心通过率 | 红线命中（次 / 用例） | 不稳定用例 | 调用失败 |",
-        "|---|---|---|---|---|---|---|",
+        "| 候选 | 模型版本 | 总通过率 | 核心通过率 | 核心通过率（不含结构字段检查点） | 红线命中（次 / 用例） | 不稳定用例 | 调用失败 |",
+        "|---|---|---|---|---|---|---|---|",
     ]
     for c in rep["candidates"]:
         u = c["unstable"]
         lines.append(f"| {c['id']} | {c.get('model_version')} | {_pct(c['overall'])} | {_pct(c['core'])} | "
+                     f"{_pct(c.get('core_excluding_structural'))} | "
                      f"{c['redline']['count']} / {c['redline']['cases']} | {u['ratio'] * 100:.1f}%（{u['unstable']}/{u['cases']}） | "
                      f"{c.get('call_errors')} |")
+    fields = "、".join(rep.get("structural_fields") or []) or "—"
+    lines += ["", f"### 结构字段类检查点（{fields}）", "",
+              f"> 这些检查点依赖回复里的结构字段，不看正文。{STRUCTURAL_NOTE}。", "",
+              "| 候选 | 结构字段检查点通过率 |", "|---|---|"]
+    for c in rep["candidates"]:
+        lines.append(f"| {c['id']} | {_pct_checks(c.get('structural_checks'))} |")
+    lines += ["", "### 推理参数（取自该候选在 T1 路由里登记的目标）", ""]
+    for c in rep["candidates"]:
+        lines.append(f"- {c['id']}：{_params(c.get('params'))}")
     cats = rep["categories"]
     lines += ["", "### 按类通过率", "", "| 类别 | 核心 | " + " | ".join(c["id"] for c in rep["candidates"]) + " |",
               "|---|---|" + "---|" * len(rep["candidates"])]
@@ -233,6 +279,7 @@ def to_markdown(rep: dict[str, Any]) -> str:
               f"- 口径：三家在核心用例上通过率两两差 ≤ {crit['threshold_pp']:g} 个百分点。",
               f"- 本轮核心通过率两两差的最大绝对值：{max_pp} 个百分点"
               "（置信区间见上表）。",
+              "- 与 3-I 判定口径的差别：" + "；".join(crit.get("scope") or []) + "。",
               f"- {crit['note']}。"]
     return "\n".join(lines) + "\n"
 
@@ -243,4 +290,5 @@ def write(rep: dict[str, Any], out_dir: Path) -> None:
     (out_dir / "report.md").write_text(to_markdown(rep), encoding="utf-8")
 
 
-__all__ = ["BOOTSTRAP_RESAMPLES", "BOOTSTRAP_SEED", "CRITERION_3I_PP", "SAMPLE_BANNER", "build", "paired_bootstrap", "summarize_candidate", "to_markdown", "write"]
+__all__ = ["BOOTSTRAP_RESAMPLES", "BOOTSTRAP_SEED", "CRITERION_3I_PP", "CRITERION_3I_SCOPE", "SAMPLE_BANNER", "STRUCTURAL_CHECK_TYPE",
+           "STRUCTURAL_NOTE", "build", "paired_bootstrap", "summarize_candidate", "to_markdown", "write"]
