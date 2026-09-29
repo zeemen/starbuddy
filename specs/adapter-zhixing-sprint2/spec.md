@@ -82,11 +82,11 @@
 - 上线门禁类的阻断项（A6：命题接口门禁、错误透传等随上线处理；本适配器不移植那些接口）。
 
 ## 验收标准（可测试）
-- [ ] 一道合成道法主观题逐点判分并写入平台：带 evidence_ids、confidence（主观维 ≤ 0.5）、source_version、真实 model_version、human_review_required = true 与 reasons。
-- [ ] 判分结果只来自 Rubric 与确定性后处理：模型输出不合 schema、证据句找不到、满分等情况都转复核；结果里没有自由文本。
-- [ ] 适配器不持有任何供应商地址或 Key，模型调用只经学习服务内部路由接口（测试断言）。
-- [ ] diagnose 只输出观测；generate_variation 只选已准入题，没有候选时给 empty_reason。
-- [ ] conformance（v0.9、v1.0）与变异通过；严格 `make check` 通过；安全审查、契约审查意见处理完。
+- [x] 一道合成道法主观题逐点判分并写入平台：带 evidence_ids、confidence（主观维 ≤ 0.5）、source_version、真实 model_version、human_review_required = true 与 reasons。
+- [x] 判分结果只来自 Rubric 与确定性后处理：模型输出不合 schema、证据句找不到、满分等情况都转复核；结果里没有自由文本。
+- [x] 适配器不持有任何供应商地址或 Key，模型调用只经学习服务内部路由接口（测试断言）。
+- [x] diagnose 只输出观测；generate_variation 只选已准入题，没有候选时给 empty_reason。
+- [x] conformance（v0.9、v1.0）与变异通过；严格 `make check` 通过；安全审查、契约审查意见处理完。
 
 ## 涉及的必停项（见 CLAUDE.md）
 - **packages/contracts**：学习服务内部路由接口的 OpenAPI 路径（待人确认 #1）。PR 首行 `[NEEDS-HUMAN]`。
