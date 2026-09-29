@@ -1,0 +1,13 @@
+{
+  "name": "@starbuddy/kge-import",
+  "version": "0.1.0",
+  "private": true,
+  "description": "KGE-02：阿鸦题库导入与打标三层（规则 / 向量 / 模型），只生成 SQL，不连库。复用 tools/kge-inventory 的 legacy 只读加载器与其开发依赖（不另装依赖）",
+  "type": "module",
+  "engines": { "node": ">=22.18" },
+  "scripts": {
+    "typecheck": "../kge-inventory/node_modules/.bin/tsc -p tsconfig.json",
+    "test": "node --no-warnings --test --test-reporter=dot tests/*.test.ts",
+    "items": "node --no-warnings src/main.ts --aya ../../legacy/aya --map ../../db/seeds/kge/aya-fun-0.1.0 --out ../../db/seeds/kge/aya-items-0.1.0"
+  }
+}

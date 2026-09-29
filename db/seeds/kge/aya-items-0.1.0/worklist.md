@@ -1,0 +1,213 @@
+# KGE-02 教研工作单：阿鸦题库 → 地图版本 0.1.0
+
+生成文件，勿手改。题干、答案不在这里，按题目 ID 到 legacy 或内容包里查；补充说明只写合成例子或题目 ID，**不得粘贴学生作答**（规则 13）。
+
+共 721 题；已导入主题（fun）里 35 题：A 级 0、B 级 34、无处可标 1；写 item_tag 0 题，候选 69 行。
+打标层：rule。只跑规则层时按 spec 默认一律 B 级，全部进候选队列。
+
+## 推不出六段标识的题（28）
+
+按 config/aya-chapter-segments.yaml（待教研核对）推年级、册次、教材；推不出的题请教研给出年级与教材。
+
+- Q-SPR-DP-C1：压轴专项题没有章节，推不出年级与教材
+- Q-SPR-DP-S1：压轴专项题没有章节，推不出年级与教材
+- Q-SPR-DP-S2：压轴专项题没有章节，推不出年级与教材
+- Q-SPR-DP-S3：压轴专项题没有章节，推不出年级与教材
+- Q-SPR-DP-S4：压轴专项题没有章节，推不出年级与教材
+- Q-SPR-DP-V1：压轴专项题没有章节，推不出年级与教材
+- Q-SPR-GP-C1：压轴专项题没有章节，推不出年级与教材
+- Q-SPR-GP-S1：压轴专项题没有章节，推不出年级与教材
+- Q-SPR-GP-S2：压轴专项题没有章节，推不出年级与教材
+- Q-SPR-GP-S3：压轴专项题没有章节，推不出年级与教材
+- Q-SPR-GP-S4：压轴专项题没有章节，推不出年级与教材
+- Q-SPR-GP-V1：压轴专项题没有章节，推不出年级与教材
+- Q-SPR-IL-C1：压轴专项题没有章节，推不出年级与教材
+- Q-SPR-IL-S1：压轴专项题没有章节，推不出年级与教材
+- Q-SPR-IL-S2：压轴专项题没有章节，推不出年级与教材
+- Q-SPR-IL-S3：压轴专项题没有章节，推不出年级与教材
+- Q-SPR-IL-S4：压轴专项题没有章节，推不出年级与教材
+- Q-SPR-IL-V1：压轴专项题没有章节，推不出年级与教材
+- Q-SPR-ND-C1：压轴专项题没有章节，推不出年级与教材
+- Q-SPR-ND-S1：压轴专项题没有章节，推不出年级与教材
+- Q-SPR-ND-S2：压轴专项题没有章节，推不出年级与教材
+- Q-SPR-ND-S3：压轴专项题没有章节，推不出年级与教材
+- Q-SPR-ND-V1：压轴专项题没有章节，推不出年级与教材
+- Q-SPR-QF-C1：压轴专项题没有章节，推不出年级与教材
+- Q-SPR-QF-S1：压轴专项题没有章节，推不出年级与教材
+- Q-SPR-QF-S2：压轴专项题没有章节，推不出年级与教材
+- Q-SPR-QF-S3：压轴专项题没有章节，推不出年级与教材
+- Q-SPR-QF-V1：压轴专项题没有章节，推不出年级与教材
+
+## 落在未导入主题上的题（不打标）（31）
+
+这些章节的地图骨架还没有导入（spec 设计要点 6），题目只计数、列 ID，不虚构节点。
+
+- alg（22 题）：Q-ALG-U01-D-001、Q-ALG-U01-D-002、Q-ALG-U01-R-001、Q-ALG-U02-D-001、Q-ALG-U02-D-002、Q-ALG-U02-R-001、Q-ALG-U02-T-001、Q-ALG-U03-D-001、Q-ALG-U03-D-002、Q-ALG-U03-T-001、Q-ALG-U04-D-001、Q-ALG-U04-D-002、Q-ALG-U04-D-003、Q-ALG-U04-R-001、Q-ALG-U05-D-001、Q-ALG-U05-D-002、Q-ALG-U05-R-001、Q-ALG-U05-T-001、Q-ALG-U05-T-002、Q-ALG-U06-D-001、Q-ALG-U06-R-001、Q-ALG-U06-T-001
+- app（21 题）：Q-APP-U01-D-001、Q-APP-U01-D-002、Q-APP-U01-D-003、Q-APP-U01-P-001、Q-APP-U01-R-001、Q-APP-U01-T-001、Q-APP-U02-D-001、Q-APP-U02-D-002、Q-APP-U02-D-003、Q-APP-U02-R-001、Q-APP-U03-D-001、Q-APP-U03-P-001、Q-APP-U03-R-001、Q-APP-U04-D-001、Q-APP-U04-P-001、Q-APP-U04-R-001、Q-APP-U05-D-001、Q-APP-U05-D-002、Q-APP-U05-T-001、Q-APP-U06-D-001、Q-APP-U06-D-002
+- axs（21 题）：Q-AXS-U01-D-001、Q-AXS-U01-D-002、Q-AXS-U01-D-003、Q-AXS-U01-R-001、Q-AXS-U01-T-001、Q-AXS-U02-D-001、Q-AXS-U02-D-002、Q-AXS-U02-D-003、Q-AXS-U02-R-001、Q-AXS-U02-T-001、Q-AXS-U03-D-001、Q-AXS-U03-D-002、Q-AXS-U03-D-003、Q-AXS-U03-D-004、Q-AXS-U03-D-005、Q-AXS-U03-R-001、Q-AXS-U03-T-001、Q-AXS-U04-D-001、Q-AXS-U04-D-002、Q-AXS-U04-D-003、Q-AXS-U04-R-001
+- cgt（20 题）：Q-CGT-U01-D-001、Q-CGT-U01-D-002、Q-CGT-U01-D-003、Q-CGT-U01-R-001、Q-CGT-U01-T-001、Q-CGT-U02-D-001、Q-CGT-U02-D-002、Q-CGT-U02-D-003、Q-CGT-U02-D-004、Q-CGT-U02-R-001、Q-CGT-U02-T-001、Q-CGT-U03-D-001、Q-CGT-U03-D-002、Q-CGT-U03-D-003、Q-CGT-U03-R-001、Q-CGT-U03-T-001、Q-CGT-U04-D-001、Q-CGT-U04-D-002、Q-CGT-U04-D-003、Q-CGT-U04-R-001
+- cir（21 题）：Q-CIR-U01-D-001、Q-CIR-U01-D-002、Q-CIR-U02-D-001、Q-CIR-U02-P-001、Q-CIR-U02-R-001、Q-CIR-U03-D-001、Q-CIR-U04-D-001、Q-CIR-U04-D-002、Q-CIR-U04-R-001、Q-CIR-U05-D-001、Q-CIR-U05-D-002、Q-CIR-U05-D-003、Q-CIR-U05-T-001、Q-CIR-U06-D-001、Q-CIR-U06-D-002、Q-CIR-U07-D-001、Q-CIR-U07-D-002、Q-CIR-U07-R-001、Q-CIR-U08-D-001、Q-CIR-U08-D-002、Q-CIR-U08-T-001
+- crd（20 题）：Q-CRD-U01-D-001、Q-CRD-U01-D-002、Q-CRD-U01-D-003、Q-CRD-U01-R-001、Q-CRD-U01-T-001、Q-CRD-U02-D-001、Q-CRD-U02-D-002、Q-CRD-U02-D-003、Q-CRD-U02-R-001、Q-CRD-U02-T-001、Q-CRD-U03-D-001、Q-CRD-U03-D-002、Q-CRD-U03-D-003、Q-CRD-U03-D-004、Q-CRD-U03-R-001、Q-CRD-U03-T-001、Q-CRD-U04-D-001、Q-CRD-U04-D-002、Q-CRD-U04-D-003、Q-CRD-U04-R-001
+- dce（21 题）：Q-DCE-U01-D-001、Q-DCE-U01-D-002、Q-DCE-U01-D-003、Q-DCE-U01-D-004、Q-DCE-U01-R-001、Q-DCE-U01-T-001、Q-DCE-U02-D-001、Q-DCE-U02-D-002、Q-DCE-U02-D-003、Q-DCE-U02-R-001、Q-DCE-U02-T-001、Q-DCE-U03-D-001、Q-DCE-U03-D-002、Q-DCE-U03-D-003、Q-DCE-U03-R-001、Q-DCE-U03-T-001、Q-DCE-U04-D-001、Q-DCE-U04-D-002、Q-DCE-U04-D-003、Q-DCE-U04-R-001、Q-DCE-U04-T-001
+- equ（36 题）：Q-EQU-U01-D-001、Q-EQU-U01-P-002、Q-EQU-U02-D-001、Q-EQU-U02-P-002、Q-EQU-U03-D-001、Q-EQU-U03-R-004A、Q-EQU-U04-D-001、Q-EQU-U04-L-002、Q-EQU-U04-R-005A、Q-EQU-U05-D-001、Q-EQU-U06-D-001、Q-EQU-U06-P-003、Q-EQU-U06-R-005A、Q-EQU-U06-T-002、Q-EQU-U06-T-004、Q-EQU-U07-D-001、Q-EQU-U07-P-002、Q-EQU-U08-D-001、Q-EQU-U08-D-002、Q-EQU-U09-D-001、Q-EQU-U09-T-002、Q-EQU-U10-D-001、Q-EQU-U10-L-002、Q-EQU-U10-R-005、Q-EQU-U10-T-004、Q-SPR-IL-C1、Q-SPR-IL-S1、Q-SPR-IL-S2、Q-SPR-IL-S3、Q-SPR-IL-S4、Q-SPR-IL-V1、Q-SPR-ND-C1、Q-SPR-ND-S1、Q-SPR-ND-S2、Q-SPR-ND-S3、Q-SPR-ND-V1
+- fig（20 题）：Q-FIG-U01-D-001、Q-FIG-U01-D-002、Q-FIG-U01-D-003、Q-FIG-U01-T-001、Q-FIG-U02-D-001、Q-FIG-U02-T-001、Q-FIG-U03-D-001、Q-FIG-U03-D-002、Q-FIG-U03-D-003、Q-FIG-U03-R-001、Q-FIG-U04-D-001、Q-FIG-U04-D-002、Q-FIG-U04-D-003、Q-FIG-U04-R-001、Q-FIG-U05-D-001、Q-FIG-U05-R-001、Q-FIG-U06-D-001、Q-FIG-U06-D-002、Q-FIG-U06-R-001、Q-FIG-U06-T-001
+- frac（24 题）：Q-FRAC-U01-D-001、Q-FRAC-U01-D-002、Q-FRAC-U01-D-003、Q-FRAC-U01-R-001、Q-FRAC-U01-T-001、Q-FRAC-U02-D-001、Q-FRAC-U02-D-002、Q-FRAC-U02-D-003、Q-FRAC-U02-R-001、Q-FRAC-U02-T-001、Q-FRAC-U03-D-001、Q-FRAC-U03-D-002、Q-FRAC-U03-D-003、Q-FRAC-U03-R-001、Q-FRAC-U04-D-001、Q-FRAC-U04-D-002、Q-FRAC-U04-R-001、Q-FRAC-U04-T-001、Q-FRAC-U05-D-001、Q-FRAC-U05-D-002、Q-FRAC-U05-D-003、Q-FRAC-U05-D-004、Q-FRAC-U05-R-001、Q-FRAC-U05-T-001
+- ineq（24 题）：Q-INEQ-U01-D-001、Q-INEQ-U01-D-002、Q-INEQ-U01-D-003、Q-INEQ-U01-R-001、Q-INEQ-U01-T-001、Q-INEQ-U02-D-001、Q-INEQ-U02-D-002、Q-INEQ-U02-D-003、Q-INEQ-U02-R-001、Q-INEQ-U02-T-001、Q-INEQ-U03-D-001、Q-INEQ-U03-D-002、Q-INEQ-U03-D-003、Q-INEQ-U03-R-001、Q-INEQ-U03-T-001、Q-INEQ-U04-D-001、Q-INEQ-U04-D-002、Q-INEQ-U04-D-003、Q-INEQ-U04-R-001、Q-INEQ-U04-T-001、Q-INEQ-U05-D-001、Q-INEQ-U05-D-002、Q-INEQ-U05-D-003、Q-INEQ-U05-R-001
+- inv（20 题）：Q-INV-U01-D-001、Q-INV-U01-D-002、Q-INV-U01-D-003、Q-INV-U01-R-001、Q-INV-U01-T-001、Q-INV-U02-D-001、Q-INV-U02-D-002、Q-INV-U02-R-001、Q-INV-U02-T-001、Q-INV-U03-D-001、Q-INV-U03-D-002、Q-INV-U03-D-003、Q-INV-U03-D-004、Q-INV-U03-R-001、Q-INV-U03-T-001、Q-INV-U04-D-001、Q-INV-U04-R-001、Q-INV-U04-T-001、Q-INV-U05-D-001、Q-INV-U05-D-002
+- leq（22 题）：Q-LEQ-U01-D-001、Q-LEQ-U01-D-002、Q-LEQ-U01-R-001、Q-LEQ-U02-D-001、Q-LEQ-U02-D-002、Q-LEQ-U02-R-001、Q-LEQ-U03-D-001、Q-LEQ-U03-T-001、Q-LEQ-U04-D-001、Q-LEQ-U04-D-002、Q-LEQ-U04-R-001、Q-LEQ-U04-T-001、Q-LEQ-U05-D-001、Q-LEQ-U05-D-002、Q-LEQ-U05-D-003、Q-LEQ-U05-T-001、Q-LEQ-U05-T-002、Q-LEQ-U06-D-001、Q-LEQ-U06-D-002、Q-LEQ-U06-D-003、Q-LEQ-U06-D-004、Q-LEQ-U06-R-001
+- lin（19 题）：Q-LIN-U01-D-001、Q-LIN-U01-R-001、Q-LIN-U02-D-001、Q-LIN-U02-D-002、Q-LIN-U02-R-001、Q-LIN-U02-T-001、Q-LIN-U03-D-001、Q-LIN-U03-D-002、Q-LIN-U03-T-001、Q-LIN-U04-D-001、Q-LIN-U04-D-002、Q-LIN-U04-R-001、Q-LIN-U04-T-001、Q-LIN-U05-D-001、Q-LIN-U05-R-001、Q-LIN-U05-T-001、Q-LIN-U06-D-001、Q-LIN-U06-D-002、Q-LIN-U06-T-001
+- mul（23 题）：Q-MUL-U01-D-001、Q-MUL-U01-D-002、Q-MUL-U01-D-003、Q-MUL-U01-R-001、Q-MUL-U01-T-001、Q-MUL-U02-D-001、Q-MUL-U02-D-002、Q-MUL-U02-T-001、Q-MUL-U03-D-001、Q-MUL-U03-D-002、Q-MUL-U03-D-003、Q-MUL-U03-D-004、Q-MUL-U03-R-001、Q-MUL-U04-D-001、Q-MUL-U04-D-002、Q-MUL-U04-D-003、Q-MUL-U04-D-004、Q-MUL-U04-D-005、Q-MUL-U04-D-006、Q-MUL-U04-R-001、Q-MUL-U04-R-002、Q-MUL-U04-T-001、Q-MUL-U04-T-002
+- mus（21 题）：Q-MUS-U01-D-001、Q-MUS-U01-D-002、Q-MUS-U01-R-001、Q-MUS-U02-D-001、Q-MUS-U02-D-002、Q-MUS-U02-D-003、Q-MUS-U02-D-004、Q-MUS-U02-R-001、Q-MUS-U02-T-001、Q-MUS-U03-D-001、Q-MUS-U03-D-002、Q-MUS-U04-D-001、Q-MUS-U04-D-002、Q-MUS-U04-R-001、Q-MUS-U04-T-001、Q-MUS-U05-D-001、Q-MUS-U05-D-002、Q-MUS-U05-D-003、Q-MUS-U05-D-004、Q-MUS-U05-R-001、Q-MUS-U05-T-001
+- par（18 题）：Q-PAR-U01-D-001、Q-PAR-U01-R-001、Q-PAR-U01-T-001、Q-PAR-U02-D-001、Q-PAR-U02-D-002、Q-PAR-U02-R-001、Q-PAR-U02-T-001、Q-PAR-U03-D-001、Q-PAR-U03-R-001、Q-PAR-U03-T-001、Q-PAR-U04-D-001、Q-PAR-U04-D-002、Q-PAR-U04-D-003、Q-PAR-U05-D-001、Q-PAR-U05-R-001、Q-PAR-U05-T-001、Q-PAR-U06-D-001、Q-PAR-U06-T-001
+- pln（26 题）：Q-PLN-U01-D-001、Q-PLN-U01-D-002、Q-PLN-U01-D-003、Q-PLN-U01-D-004、Q-PLN-U01-R-001、Q-PLN-U02-D-001、Q-PLN-U02-D-002、Q-PLN-U02-D-003、Q-PLN-U02-T-001、Q-PLN-U03-D-001、Q-PLN-U03-D-002、Q-PLN-U03-T-001、Q-PLN-U04-D-001、Q-PLN-U04-D-002、Q-PLN-U04-R-001、Q-PLN-U04-T-001、Q-PLN-U05-D-001、Q-PLN-U05-D-002、Q-PLN-U05-R-001、Q-PLN-U06-D-001、Q-PLN-U06-D-002、Q-PLN-U06-D-003、Q-PLN-U06-D-004、Q-PLN-U06-R-001、Q-PLN-U06-R-002、Q-PLN-U06-T-001
+- pow（22 题）：Q-POW-U01-D-001、Q-POW-U01-D-002、Q-POW-U01-D-003、Q-POW-U01-R-001、Q-POW-U01-R-002、Q-POW-U02-D-001、Q-POW-U02-D-002、Q-POW-U02-D-003、Q-POW-U02-T-001、Q-POW-U02-T-002、Q-POW-U03-D-001、Q-POW-U03-D-002、Q-POW-U04-D-001、Q-POW-U04-D-002、Q-POW-U04-D-003、Q-POW-U04-R-001、Q-POW-U05-D-001、Q-POW-U05-D-002、Q-POW-U05-D-003、Q-POW-U05-R-001、Q-POW-U05-T-001、Q-POW-U05-T-002
+- prb（20 题）：Q-PRB-U01-D-001、Q-PRB-U01-D-002、Q-PRB-U01-P-001、Q-PRB-U01-R-001、Q-PRB-U02-D-001、Q-PRB-U02-D-002、Q-PRB-U02-D-003、Q-PRB-U02-D-004、Q-PRB-U02-R-001、Q-PRB-U02-T-001、Q-PRB-U02-T-002、Q-PRB-U03-D-001、Q-PRB-U03-D-002、Q-PRB-U03-P-001、Q-PRB-U03-R-001、Q-PRB-U03-T-001、Q-PRB-U04-D-001、Q-PRB-U04-P-001、Q-PRB-U04-R-001、Q-PRB-U04-T-001
+- prc（20 题）：Q-PRC-U01-D-001、Q-PRC-U01-D-002、Q-PRC-U01-D-003、Q-PRC-U01-R-001、Q-PRC-U01-T-001、Q-PRC-U02-D-001、Q-PRC-U02-D-002、Q-PRC-U02-D-003、Q-PRC-U02-R-001、Q-PRC-U02-T-001、Q-PRC-U03-D-001、Q-PRC-U03-D-002、Q-PRC-U03-D-003、Q-PRC-U03-D-004、Q-PRC-U03-R-001、Q-PRC-U03-T-001、Q-PRC-U04-D-001、Q-PRC-U04-D-002、Q-PRC-U04-D-003、Q-PRC-U04-R-001
+- prf（22 题）：Q-PRF-U01-D-001、Q-PRF-U01-D-002、Q-PRF-U01-R-001、Q-PRF-U01-T-001、Q-PRF-U02-D-001、Q-PRF-U02-D-002、Q-PRF-U02-D-003、Q-PRF-U02-D-004、Q-PRF-U02-R-001、Q-PRF-U02-T-001、Q-PRF-U03-D-001、Q-PRF-U03-D-002、Q-PRF-U03-D-003、Q-PRF-U03-D-004、Q-PRF-U03-D-005、Q-PRF-U03-R-001、Q-PRF-U03-T-001、Q-PRF-U04-D-001、Q-PRF-U04-D-002、Q-PRF-U04-D-003、Q-PRF-U04-D-004、Q-PRF-U04-T-001
+- pyt（18 题）：Q-PYT-U01-D-001、Q-PYT-U01-D-002、Q-PYT-U01-D-003、Q-PYT-U01-D-004、Q-PYT-U01-R-001、Q-PYT-U01-T-001、Q-PYT-U02-D-001、Q-PYT-U02-D-002、Q-PYT-U02-D-003、Q-PYT-U02-D-004、Q-PYT-U02-R-001、Q-PYT-U02-R-002、Q-PYT-U02-T-001、Q-PYT-U03-D-001、Q-PYT-U03-D-002、Q-PYT-U03-D-003、Q-PYT-U03-R-001、Q-PYT-U03-T-001
+- rad（20 题）：Q-RAD-U01-D-001、Q-RAD-U01-D-002、Q-RAD-U01-D-003、Q-RAD-U01-D-004、Q-RAD-U01-R-001、Q-RAD-U01-T-001、Q-RAD-U02-D-001、Q-RAD-U02-D-002、Q-RAD-U02-D-003、Q-RAD-U02-D-004、Q-RAD-U02-D-005、Q-RAD-U02-R-001、Q-RAD-U02-T-001、Q-RAD-U03-D-001、Q-RAD-U03-D-002、Q-RAD-U03-D-003、Q-RAD-U03-D-004、Q-RAD-U03-R-001、Q-RAD-U03-T-001、Q-RAD-U03-T-002
+- rat（24 题）：Q-RAT-U01-D-001、Q-RAT-U01-D-002、Q-RAT-U01-R-001、Q-RAT-U02-D-001、Q-RAT-U02-D-002、Q-RAT-U02-T-001、Q-RAT-U03-D-001、Q-RAT-U03-D-002、Q-RAT-U03-T-001、Q-RAT-U04-D-001、Q-RAT-U04-R-001、Q-RAT-U05-D-001、Q-RAT-U05-D-002、Q-RAT-U05-R-001、Q-RAT-U06-D-001、Q-RAT-U06-D-002、Q-RAT-U06-D-003、Q-RAT-U06-T-001、Q-RAT-U07-D-001、Q-RAT-U07-D-002、Q-RAT-U07-D-003、Q-RAT-U07-D-004、Q-RAT-U07-R-001、Q-RAT-U07-T-001
+- real（21 题）：Q-REAL-U01-D-001、Q-REAL-U01-D-002、Q-REAL-U01-D-003、Q-REAL-U01-R-001、Q-REAL-U01-T-001、Q-REAL-U02-D-001、Q-REAL-U02-D-002、Q-REAL-U02-D-003、Q-REAL-U02-R-001、Q-REAL-U02-T-001、Q-REAL-U03-D-001、Q-REAL-U03-D-002、Q-REAL-U03-D-003、Q-REAL-U03-D-004、Q-REAL-U03-R-001、Q-REAL-U03-T-001、Q-REAL-U04-D-001、Q-REAL-U04-D-002、Q-REAL-U04-D-003、Q-REAL-U04-R-001、Q-REAL-U04-T-001
+- sim（29 题）：Q-SIM-U01-D-001、Q-SIM-U01-P-003、Q-SIM-U01-R-004、Q-SIM-U02-D-001、Q-SIM-U03-D-001、Q-SIM-U03-T-003、Q-SIM-U04-P-002、Q-SIM-U05-D-001、Q-SIM-U06-D-001、Q-SIM-U06-P-002、Q-SIM-U07-D-001、Q-SIM-U07-P-002、Q-SIM-U08-D-001、Q-SIM-U09-D-001、Q-SIM-U10-D-001、Q-SIM-U10-P-003、Q-SIM-U11-D-001、Q-SIM-U11-R-001、Q-SIM-U12-D-001、Q-SIM-U13-D-001、Q-SIM-U13-P-003、Q-SIM-U14-D-001、Q-SIM-U15-D-001、Q-SPR-GP-C1、Q-SPR-GP-S1、Q-SPR-GP-S2、Q-SPR-GP-S3、Q-SPR-GP-S4、Q-SPR-GP-V1
+- sle（26 题）：Q-SLE-U01-D-001、Q-SLE-U01-D-002、Q-SLE-U01-D-003、Q-SLE-U01-D-004、Q-SLE-U01-R-001、Q-SLE-U01-T-001、Q-SLE-U02-D-001、Q-SLE-U02-D-002、Q-SLE-U02-R-001、Q-SLE-U02-T-001、Q-SLE-U03-D-001、Q-SLE-U03-D-002、Q-SLE-U03-D-003、Q-SLE-U03-R-001、Q-SLE-U03-T-001、Q-SLE-U04-D-001、Q-SLE-U04-D-002、Q-SLE-U05-D-001、Q-SLE-U05-D-002、Q-SLE-U05-D-003、Q-SLE-U05-D-004、Q-SLE-U05-D-005、Q-SLE-U05-D-006、Q-SLE-U05-R-001、Q-SLE-U05-R-002、Q-SLE-U05-T-001
+- sta（22 题）：Q-STA-U01-D-001、Q-STA-U01-D-002、Q-STA-U01-D-003、Q-STA-U01-D-004、Q-STA-U01-R-001、Q-STA-U01-T-001、Q-STA-U02-D-001、Q-STA-U02-D-002、Q-STA-U02-D-003、Q-STA-U02-D-004、Q-STA-U02-P-001、Q-STA-U02-R-001、Q-STA-U03-D-001、Q-STA-U04-D-001、Q-STA-U04-D-002、Q-STA-U04-D-003、Q-STA-U04-D-004、Q-STA-U04-P-001、Q-STA-U04-R-001、Q-STA-U04-T-001、Q-STA-U05-R-001、Q-STA-U05-T-001
+- trf（24 题）：Q-TRF-U01-D-001、Q-TRF-U01-D-002、Q-TRF-U01-D-003、Q-TRF-U01-D-004、Q-TRF-U01-R-001、Q-TRF-U01-T-001、Q-TRF-U02-D-001、Q-TRF-U02-D-002、Q-TRF-U02-D-003、Q-TRF-U02-D-004、Q-TRF-U02-D-005、Q-TRF-U02-R-001、Q-TRF-U02-T-001、Q-TRF-U03-D-001、Q-TRF-U03-D-002、Q-TRF-U03-D-003、Q-TRF-U03-D-004、Q-TRF-U03-D-005、Q-TRF-U03-R-001、Q-TRF-U03-T-001、Q-TRF-U04-D-001、Q-TRF-U04-D-002、Q-TRF-U04-R-001、Q-TRF-U04-T-001
+- trg（19 题）：Q-TRG-U01-D-001、Q-TRG-U01-P-002、Q-TRG-U02-D-001、Q-TRG-U02-R-001、Q-TRG-U03-D-001、Q-TRG-U03-P-002、Q-TRG-U04-D-001、Q-TRG-U06-D-001、Q-TRG-U06-R-001、Q-TRG-U07-D-001、Q-TRG-U09-D-001、Q-TRG-U09-P-002、Q-TRG-U10-D-001、Q-TRG-U11-D-001、Q-TRG-U11-P-002、Q-TRG-U12-D-001、Q-TRG-U13-D-001、Q-TRG-U13-P-003、Q-TRG-U14-T-002
+
+## 归不到任何章节的题（0）
+
+无
+
+## 自然语言引用对不上节点（97）
+
+legacy 用名称而不是节点编码引用节点（KGE-00：97 处）。请映射到节点编码；“同名”“相近”只是建议，不自动采用。
+
+- Q-APP-U01-D-001 · 前置节点“数据的收集与整理”：对不上任何节点
+- Q-APP-U01-D-003 · 前置节点“频率与频数”：对不上地图节点；legacy 名称相近 K-PRC-0808（仅供参考）
+- Q-APP-U02-D-001 · 前置节点“数据的集中趋势（平均数、中位数、众数）”：对不上任何节点
+- Q-APP-U02-D-002 · 前置节点“加权平均数”：对不上地图节点；legacy 同名节点 K-APP-0813（app，章节未导入）、K-STA-0302（sta，章节未导入）
+- Q-APP-U04-D-001 · 前置节点“等可能条件下的概率”：对不上地图节点；legacy 名称相近 P-PRB-0413（仅供参考）
+- Q-APP-U05-D-001 · 前置节点“用频率估计概率”：对不上地图节点；legacy 同名节点 K-APP-0830（app，章节未导入）、K-PRC-0814（prc，章节未导入）
+- Q-APP-U06-D-001 · 前置节点“等可能条件下的概率”：对不上地图节点；legacy 名称相近 P-PRB-0413（仅供参考）
+- Q-APP-U06-D-002 · 前置节点“对照实验思想”：对不上任何节点
+- Q-CIR-U02-D-001 · 前置节点“勾股定理”：对不上地图节点；legacy 同名节点 P-PYT-0302（pyt，章节未导入）
+- Q-CIR-U02-R-001 · 前置节点“勾股定理”：对不上地图节点；legacy 同名节点 P-PYT-0302（pyt，章节未导入）
+- Q-CIR-U05-D-001 · 前置节点“点到直线的距离”：对不上地图节点；legacy 同名节点 K-PLN-0617（pln，章节未导入）
+- Q-CIR-U06-D-002 · 前置节点“勾股定理”：对不上地图节点；legacy 同名节点 P-PYT-0302（pyt，章节未导入）
+- Q-CIR-U07-D-001 · 前置节点“圆的周长公式”：对不上任何节点
+- Q-CIR-U07-D-002 · 前置节点“圆的面积公式”：对不上任何节点
+- Q-CIR-U07-R-001 · 前置节点“圆的周长公式”：对不上任何节点
+- Q-EQU-U01-D-001 · 前置节点“整式与分式”：对不上任何节点
+- Q-EQU-U01-D-001 · 前置节点“整式展开”：对不上任何节点
+- Q-EQU-U02-D-001 · 前置节点“整式运算”：对不上任何节点
+- Q-EQU-U02-D-001 · 前置节点“移项”：对不上地图节点；legacy 名称相近 P-LEQ-0409、S-INEQ-1113、S-LEQ-0410（仅供参考）
+- Q-EQU-U02-P-002 · 前置节点“单项式与系数”：对不上地图节点；legacy 名称相近 K-ALG-0317（仅供参考）
+- Q-EQU-U03-D-001 · 前置节点“平方根”：对不上地图节点；legacy 同名节点 K-REAL-0401（real，章节未导入）
+- Q-EQU-U03-D-001 · 前置节点“一元一次方程”：对不上地图节点；legacy 同名节点 K-LEQ-0402（leq，章节未导入）
+- Q-EQU-U03-R-004A · 前置节点“一元一次方程”：对不上地图节点；legacy 同名节点 K-LEQ-0402（leq，章节未导入）
+- Q-EQU-U04-D-001 · 前置节点“完全平方公式”：对不上地图节点；legacy 同名节点 P-MUL-0819（mul，章节未导入）
+- Q-EQU-U04-L-002 · 前置节点“等式性质”：对不上地图节点；legacy 名称相近 M-INEQ-1112、M-LEQ-0408、S-INEQ-1111（仅供参考）
+- Q-EQU-U05-D-001 · 前置节点“二次根式”：对不上地图节点；legacy 名称相近 K-RAD-1201、K-RAD-1209、K-RAD-1214（仅供参考）
+- Q-EQU-U05-D-001 · 前置节点“有理数符号运算”：对不上任何节点
+- Q-EQU-U06-D-001 · 前置节点“一元一次方程”：对不上地图节点；legacy 同名节点 K-LEQ-0402（leq，章节未导入）
+- Q-EQU-U06-P-003 · 前置节点“不等式”：对不上地图节点；legacy 同名节点 K-INEQ-1101（ineq，章节未导入）
+- Q-EQU-U06-R-005A · 前置节点“一元一次方程”：对不上地图节点；legacy 同名节点 K-LEQ-0402（leq，章节未导入）
+- Q-EQU-U06-T-002 · 前置节点“平方差公式”：对不上地图节点；legacy 同名节点 P-MUL-0818（mul，章节未导入）
+- Q-EQU-U06-T-004 · 前置节点“函数图像与坐标轴交点”：对不上任何节点
+- Q-EQU-U07-D-001 · 前置节点“因式分解”：对不上地图节点；legacy 名称相近 S-EQU-0934（仅供参考）
+- Q-EQU-U07-P-002 · 前置节点“提公因式”：对不上地图节点；legacy 名称相近 S-EQU-0931（仅供参考）
+- Q-EQU-U08-D-002 · 前置节点“提公因式”：对不上地图节点；legacy 名称相近 S-EQU-0931（仅供参考）
+- Q-EQU-U09-D-001 · 前置节点“分数运算”：对不上任何节点
+- Q-EQU-U09-T-002 · 前置节点“完全平方公式”：对不上地图节点；legacy 同名节点 P-MUL-0819（mul，章节未导入）
+- Q-EQU-U09-T-002 · 前置节点“代数恒等变形”：对不上任何节点
+- Q-EQU-U10-D-001 · 前置节点“矩形面积”：对不上地图节点；legacy 名称相近 MD-FUN-0980、P-INV-1142（仅供参考）
+- Q-EQU-U10-L-002 · 前置节点“百分数”：对不上任何节点
+- Q-EQU-U10-T-004 · 前置节点“乘方意义”：对不上地图节点；legacy 同名节点 K-RAT-0228（rat，章节未导入）
+- Q-FRAC-U05-D-004 · 前置节点“行程问题的等量关系（七上一元一次方程经验）”：对不上地图节点；legacy 名称相近 K-LEQ-0425、K-SLE-1022（仅供参考）
+- Q-FUN-U01-D-001 · 前置节点“整式化简”：对不上任何节点
+- Q-FUN-U01-T-002 · 前置节点“矩形周长与面积”：对不上任何节点
+- Q-FUN-U07-P-004 · 前置节点“完全平方公式”：对不上地图节点；legacy 同名节点 P-MUL-0819（mul，章节未导入）
+- Q-FUN-U09-P-002 · 前置节点“点的坐标”：对不上地图节点；legacy 名称相近 P-CRD-0510、P-CRD-0514（仅供参考）
+- Q-FUN-U11-P-002 · 前置节点“坐标轴上点的特征”：对不上任何节点
+- Q-FUN-U12-T-002 · 前置节点“一元二次不等式”：对不上地图节点；legacy 名称相近 K-INEQ-1101（仅供参考）
+- Q-FUN-U14-D-001 · 前置节点“三角形面积”：对不上任何节点
+- Q-INV-U01-D-001 · 前置节点“正比例函数与一次函数”：对不上地图节点；legacy 名称相近 K-LIN-0621（仅供参考）
+- Q-LIN-U01-D-001 · 前置节点“平方根的概念”：对不上地图节点；legacy 名称相近 K-REAL-0401（仅供参考）
+- Q-LIN-U01-R-001 · 前置节点“平方根的概念”：对不上地图节点；legacy 名称相近 K-REAL-0401（仅供参考）
+- Q-SIM-U01-D-001 · 前置节点“单位换算”：对不上任何节点
+- Q-SIM-U01-D-001 · 前置节点“比例”：对不上地图节点；legacy 名称相近 K-APP-0831、K-INV-1101、K-INV-1102（仅供参考）
+- Q-SIM-U01-P-003 · 前置节点“比”：对不上任何节点
+- Q-SIM-U01-R-004 · 前置节点“比”：对不上任何节点
+- Q-SIM-U02-D-001 · 前置节点“比例”：对不上地图节点；legacy 名称相近 K-APP-0831、K-INV-1101、K-INV-1102（仅供参考）
+- Q-SIM-U03-D-001 · 前置节点“矩形”：对不上地图节点；legacy 名称相近 K-PAR-0918、MD-FUN-0980、P-INV-1142（仅供参考）
+- Q-SIM-U03-D-001 · 前置节点“比”：对不上任何节点
+- Q-SIM-U03-T-003 · 前置节点“比”：对不上任何节点
+- Q-SIM-U04-P-002 · 前置节点“比例性质”：对不上任何节点
+- Q-SIM-U05-D-001 · 前置节点“平行线角关系”：对不上地图节点；legacy 名称相近 K-PLN-0613（仅供参考）
+- Q-SIM-U05-D-001 · 前置节点“比例方程”：对不上地图节点；legacy 名称相近 K-LEQ-0401（仅供参考）
+- Q-SIM-U06-D-001 · 前置节点“对顶角”：对不上地图节点；legacy 同名节点 K-PLN-0612（pln，章节未导入）
+- Q-SIM-U06-D-001 · 前置节点“平行线角关系”：对不上地图节点；legacy 名称相近 K-PLN-0613（仅供参考）
+- Q-SIM-U06-P-002 · 前置节点“三角形内角和”：对不上任何节点
+- Q-SIM-U07-D-001 · 前置节点“比例”：对不上地图节点；legacy 名称相近 K-APP-0831、K-INV-1101、K-INV-1102（仅供参考）
+- Q-SIM-U07-P-002 · 前置节点“全等判定经验”：对不上任何节点
+- Q-SIM-U08-D-001 · 前置节点“比的化简”：对不上任何节点
+- Q-SIM-U10-D-001 · 前置节点“比例方程”：对不上地图节点；legacy 名称相近 K-LEQ-0401（仅供参考）
+- Q-SIM-U11-D-001 · 前置节点“一元一次方程”：对不上地图节点；legacy 同名节点 K-LEQ-0402（leq，章节未导入）
+- Q-SIM-U11-R-001 · 前置节点“算术平方根”：对不上地图节点；legacy 同名节点 K-REAL-0402（real，章节未导入）
+- Q-SIM-U12-D-001 · 前置节点“坐标系”：对不上地图节点；legacy 名称相近 K-CRD-0505、M-CRD-0508、S-CRD-0507（仅供参考）
+- Q-SIM-U13-D-001 · 前置节点“比例方程”：对不上地图节点；legacy 名称相近 K-LEQ-0401（仅供参考）
+- Q-SIM-U14-D-001 · 前置节点“比例方程”：对不上地图节点；legacy 名称相近 K-LEQ-0401（仅供参考）
+- Q-SIM-U15-D-001 · 前置节点“二次根式”：对不上地图节点；legacy 名称相近 K-RAD-1201、K-RAD-1209、K-RAD-1214（仅供参考）
+- Q-SPR-DP-S3 · 前置节点“三角形面积公式”：对不上任何节点
+- Q-SPR-GP-C1 · 前置节点“三角形面积公式”：对不上任何节点
+- Q-SPR-GP-S1 · 前置节点“互余关系”：对不上地图节点；legacy 同名节点 P-TRG-0910（trg，章节未导入）
+- Q-SPR-GP-S4 · 前置节点“勾股定理”：对不上地图节点；legacy 同名节点 P-PYT-0302（pyt，章节未导入）
+- Q-SPR-IL-C1 · 前置节点“完全平方公式”：对不上地图节点；legacy 同名节点 P-MUL-0819（mul，章节未导入）
+- Q-SPR-IL-S1 · 前置节点“实数平方非负”：对不上任何节点
+- Q-SPR-IL-S2 · 前置节点“完全平方公式”：对不上地图节点；legacy 同名节点 P-MUL-0819（mul，章节未导入）
+- Q-SPR-IL-S4 · 前置节点“完全平方公式”：对不上地图节点；legacy 同名节点 P-MUL-0819（mul，章节未导入）
+- Q-SPR-IL-V1 · 前置节点“完全平方公式”：对不上地图节点；legacy 同名节点 P-MUL-0819（mul，章节未导入）
+- Q-STA-U01-D-001 · 前置节点“数据的整理”：对不上任何节点
+- Q-STA-U02-D-001 · 前置节点“数据的排序”：对不上任何节点
+- Q-STA-U02-D-002 · 前置节点“数据的排序”：对不上任何节点
+- Q-STA-U02-R-001 · 前置节点“数据的排序”：对不上任何节点
+- Q-TRG-U01-D-001 · 前置节点“直角三角形”：对不上地图节点；legacy 名称相近 K-PYT-0301、P-CGT-0113、P-PYT-0311（仅供参考）
+- Q-TRG-U02-D-001 · 前置节点“分数化简”：对不上任何节点
+- Q-TRG-U06-D-001 · 前置节点“等边三角形”：对不上任何节点
+- Q-TRG-U06-D-001 · 前置节点“二次根式”：对不上地图节点；legacy 名称相近 K-RAD-1201、K-RAD-1209、K-RAD-1214（仅供参考）
+- Q-TRG-U07-D-001 · 前置节点“有理数运算”：对不上任何节点
+- Q-TRG-U11-D-001 · 前置节点“勾股定理”：对不上地图节点；legacy 同名节点 P-PYT-0302（pyt，章节未导入）
+- Q-TRG-U13-D-001 · 前置节点“百分数”：对不上任何节点
+- Q-TRG-U14-T-002 · 前置节点“二元一次方程组”：对不上地图节点；legacy 同名节点 K-SLE-1004（sle，章节未导入）
+
+## 无处可标的题（已导入主题里，三层都没有候选）（1）
+
+- Q-FUN-U07-P-004：K-EQU-0913（在未导入章节）、S-EQU-0915（在未导入章节）
+
+## A 级但不能写 item_tag 的题（0）
+
+无
+
+## 节点数超过上限的题（1）
+
+小题 1–3 个节点（KGE V1.1 :745）；超出的已截断，一律 B 级。
+
+- Q-SPR-DP-C1：合并后超过 3 个节点，已截断为 MATH.FUNC.FUN_MOD.MD_FUN_0983、MATH.FUNC.FUN_EQU.S_FUN_0964、MATH.FUNC.FUN_CON.S_FUN_0908
+
+## 未在内容包登记的题（platform.item 没有，不写库）（0）
+
+无
+
+## 题目 ID 前缀与专题不一致（0）
+
+无
+
+## 一题多章节（只登记首次出现的年级）（0）
+
+无
+
+## 未生成的题组（3）
+
+- aya-sprint-gp（几何证明与计算）：组内题目没有落在已导入节点上的主测节点，未生成题组
+- aya-sprint-il（即时学习题）：组内题目没有落在已导入节点上的主测节点，未生成题组
+- aya-sprint-nd（新定义题）：组内题目没有落在已导入节点上的主测节点，未生成题组

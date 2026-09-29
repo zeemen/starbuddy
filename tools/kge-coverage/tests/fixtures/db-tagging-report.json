@@ -1,0 +1,12 @@
+{
+  "map_version": "0.1.0",
+  "items": [
+    { "item_id": "SYN-DB-001", "main_node_id": "MATH.FUNC.FUN_CON.K_FUN_0902", "node_ids": [], "confidence": 0.9, "layer": "rule", "grade": "A", "cognitive_level": "know" },
+    { "item_id": "SYN-DB-002", "main_node_id": "MATH.FUNC.FUN_CON.K_FUN_0902", "node_ids": ["MATH.FUNC.FUN_CON.K_FUN_0903"], "confidence": 0.9, "layer": "rule", "grade": "A", "cognitive_level": "understand" },
+    { "item_id": "SYN-DB-003", "main_node_id": "MATH.FUNC.FUN_DET.S_FUN_0951", "node_ids": ["MATH.FUNC.FUN_DET.M_FUN_0950"], "confidence": 0.7, "layer": "vector", "grade": "B", "cognitive_level": "apply" },
+    { "item_id": "SYN-DB-004", "main_node_id": "MATH.FUNC.FUN_DET.S_FUN_0951", "node_ids": [], "confidence": 0.6, "layer": "model", "grade": "B", "cognitive_level": null },
+    { "item_id": "SYN-DB-005", "main_node_id": "MATH.FUNC.FUN_MOD.MD_FUN_0980", "node_ids": ["MATH.FUNC.FUN_GEN.S_FUN_0941", "MATH.FUNC.FUN_VTX.K_FUN_0930", "MATH.FUNC.FUN_GRA.K_FUN_0910"], "confidence": 0.6, "layer": "model", "grade": "B", "cognitive_level": "synthesize" },
+    { "item_id": "SYN-DB-006", "main_node_id": "MATH.FUNC.FUN_VTX.K_FUN_0930", "node_ids": ["MATH.FUNC.FUN_VTX.K_FUN_0930", "MATH.FUNC.FUN_VTX.K_FUN_0920"], "confidence": 0.9, "layer": "rule", "grade": "A", "cognitive_level": "apply" }
+  ],
+  "candidates_by_layer": { "rule": 3, "vector": 1, "model": 2 }
+}

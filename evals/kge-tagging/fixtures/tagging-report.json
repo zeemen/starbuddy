@@ -1,0 +1,18 @@
+{
+  "map_version": "9.9.9-syn",
+  "items": [
+    { "item_id": "SYN-G-01", "main_node_id": "MATH.SYN.SYN_A.K_SYN_0001", "node_ids": [], "confidence": 0.9, "layer": "rule", "grade": "A", "cognitive_level": null },
+    { "item_id": "SYN-G-02", "main_node_id": "MATH.SYN.SYN_A.K_SYN_0001", "node_ids": ["MATH.SYN.SYN_A.K_SYN_0002"], "confidence": 0.9, "layer": "rule", "grade": "A", "cognitive_level": null },
+    { "item_id": "SYN-G-03", "main_node_id": "MATH.SYN.SYN_A.K_SYN_0001", "node_ids": [], "confidence": 0.8, "layer": "vector", "grade": "B", "cognitive_level": null,
+      "candidates": [{ "node_id": "MATH.SYN.SYN_A.K_SYN_0001", "confidence": 0.8, "layer": "vector" }, { "node_id": "MATH.SYN.SYN_A.K_SYN_0002", "confidence": 0.7, "layer": "rule" }] },
+    { "item_id": "SYN-G-04", "main_node_id": "MATH.SYN.SYN_A.K_SYN_0002", "node_ids": ["MATH.SYN.SYN_B.S_SYN_0003"], "confidence": 0.9, "layer": "rule", "grade": "A", "cognitive_level": null },
+    { "item_id": "SYN-G-05", "main_node_id": "MATH.SYN.SYN_A.K_SYN_0002", "node_ids": [], "confidence": 0.7, "layer": "model", "grade": "B", "cognitive_level": null },
+    { "item_id": "SYN-G-06", "main_node_id": "MATH.SYN.SYN_B.S_SYN_0003", "node_ids": [], "confidence": 0.9, "layer": "rule", "grade": "A", "cognitive_level": null },
+    { "item_id": "SYN-G-07", "main_node_id": null, "node_ids": [], "confidence": null, "layer": null, "grade": null, "cognitive_level": null,
+      "candidates": [{ "node_id": "MATH.SYN.SYN_B.M_SYN_0004", "confidence": 0.4 }, { "node_id": "MATH.SYN.SYN_A.K_SYN_0001", "confidence": 0.3 }, { "node_id": "MATH.SYN.SYN_A.K_SYN_0002", "confidence": 0.2 }, { "node_id": "MATH.SYN.SYN_B.S_SYN_0003", "confidence": 0.1 }] },
+    { "item_id": "SYN-G-08", "main_node_id": "MATH.SYN.SYN_B.M_SYN_0004", "node_ids": ["MATH.SYN.SYN_A.K_SYN_0001"], "confidence": 0.9, "layer": "rule", "grade": "A", "cognitive_level": null },
+    { "item_id": "SYN-G-10", "main_node_id": "MATH.SYN.SYN_A.K_SYN_0001", "node_ids": [], "confidence": 0.5, "layer": "vector", "grade": "B", "cognitive_level": null },
+    { "item_id": "SYN-G-99", "main_node_id": "MATH.SYN.SYN_A.K_SYN_0001", "node_ids": [], "confidence": 0.5, "layer": "vector", "grade": "B", "cognitive_level": null }
+  ],
+  "candidates_by_layer": { "rule": 6, "vector": 3, "model": 1 }
+}

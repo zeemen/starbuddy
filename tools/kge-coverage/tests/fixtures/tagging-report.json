@@ -1,0 +1,14 @@
+{
+  "map_version": "9.9.9-syn",
+  "items": [
+    { "item_id": "SYN-Q-005", "main_node_id": "MATH.SYN.SYN_B.S_SYN_0003", "node_ids": ["MATH.SYN.SYN_A.K_SYN_0001", "MATH.SYN.SYN_A.K_SYN_0002", "MATH.SYN.SYN_B.M_SYN_0004"], "confidence": 0.6, "layer": "model", "grade": "B", "cognitive_level": "synthesize" },
+    { "item_id": "SYN-Q-001", "main_node_id": "MATH.SYN.SYN_A.K_SYN_0001", "node_ids": ["MATH.SYN.SYN_A.K_SYN_0001"], "confidence": 0.95, "layer": "rule", "grade": "A", "cognitive_level": "know" },
+    { "item_id": "SYN-Q-002", "main_node_id": "MATH.SYN.SYN_A.K_SYN_0001", "node_ids": ["MATH.SYN.SYN_A.K_SYN_0001", "MATH.SYN.SYN_A.K_SYN_0002"], "confidence": 0.9, "layer": "rule", "grade": "A", "cognitive_level": "understand" },
+    { "item_id": "SYN-Q-003", "main_node_id": "MATH.SYN.SYN_A.K_SYN_0001", "node_ids": [], "confidence": 0.7, "layer": "vector", "grade": "B", "cognitive_level": null },
+    { "item_id": "SYN-Q-004", "main_node_id": "MATH.SYN.SYN_A.K_SYN_0002", "node_ids": ["MATH.SYN.SYN_B.S_SYN_0003"], "confidence": 0.8, "layer": "model", "grade": "B", "cognitive_level": "apply" },
+    { "item_id": "SYN-Q-006", "main_node_id": null, "node_ids": [], "confidence": null, "layer": null, "grade": null, "cognitive_level": null },
+    { "item_id": "SYN-Q-007", "main_node_id": "MATH.SYN.SYN_A", "node_ids": [], "confidence": 0.6, "layer": "rule", "grade": "B", "cognitive_level": null },
+    { "item_id": "SYN-Q-008", "main_node_id": "MATH.SYN.SYN_C.K_SYN_0099", "node_ids": ["MATH.SYN.SYN_C.K_SYN_0098"], "confidence": 0.5, "layer": "vector", "grade": "B", "cognitive_level": null }
+  ],
+  "candidates_by_layer": { "rule": 5, "vector": [{}, {}, {}], "model": { "count": 2 } }
+}
