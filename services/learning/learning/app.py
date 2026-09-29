@@ -23,6 +23,10 @@ from .adapter_client import strict_json
 from .config import Settings
 from .contract import internal_contract, plugin_contract
 from .errors import IngestError
+from .model_router import ModelRouter
+from .model_router.config import load_for_deployment
+from .route_api import MAX_ROUTE_BODY, RouteApiError, parse_request
+from .route_api import route as route_call
 from .service import IngestService
 
 log = logging.getLogger("starbuddy.learning")
@@ -65,9 +69,10 @@ def create_app(
     *,
     pool: asyncpg.Pool | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
+    model_router: ModelRouter | None = None,
 ) -> FastAPI:
-    """pool、transport 供测试注入；不传时按配置创建。"""
-    state: dict = {}
+    """pool、transport、model_router 供测试注入；不传时按配置创建。"""
+    state: dict = {"router": model_router}
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -85,9 +90,15 @@ def create_app(
         # trust_env=False：不读 HTTP(S)_PROXY 等环境变量，含学生作答的请求体不会被悄悄送进代理（安全审查 S1）
         client = httpx.AsyncClient(transport=transport, trust_env=False, follow_redirects=False)
         state["service"] = IngestService(settings, p, client)
+        # 有路由客户端时才建模型路由：环境从 LEARNING_ENV 读，配置不合规（出境、未批准供应商等）即拒绝启动
+        own_router = state["router"] is None and bool(settings.route_clients)
+        if own_router:
+            state["router"] = ModelRouter.from_config(load_for_deployment())
         try:
             yield
         finally:
+            if own_router:
+                await state["router"].aclose()
             await client.aclose()
             if own_pool:
                 await p.close()
@@ -140,6 +151,47 @@ def create_app(
     @app.post("/internal/v1/diagnose")
     async def diagnose_v1(request: Request) -> JSONResponse:
         return await handle("diagnose", request, "1.0.0")
+
+    @app.post("/internal/v1/model/route")
+    async def model_route(request: Request) -> JSONResponse:
+        """各科适配器调模型的唯一入口（learning-internal.v1）：令牌绑定学科；日志不记 messages 与 output。"""
+        started = time.monotonic()
+        record: dict = {"method": "model_route"}
+        try:
+            header = request.headers.get("authorization")
+            subject = next((s for s, tok in settings.route_clients.items() if _bearer_ok(header, tok)), None)
+            if subject is None:
+                raise RouteApiError(401, "UNAUTHENTICATED", "missing or invalid route client token")
+            record["subject"] = subject
+            if state["router"] is None:
+                raise RouteApiError(503, "ROUTE_UNAVAILABLE", "model router is not configured", retryable=True)
+            declared = request.headers.get("content-length")
+            if declared and declared.isdigit() and int(declared) > MAX_ROUTE_BODY:
+                raise RouteApiError(413, "INVALID_REQUEST", "request body too large")
+            raw = b""
+            async for chunk in request.stream():
+                raw += chunk
+                if len(raw) > MAX_ROUTE_BODY:
+                    raise RouteApiError(413, "INVALID_REQUEST", "request body too large")
+            try:
+                body = strict_json(raw)
+            except ValueError:
+                raise RouteApiError(400, "INVALID_REQUEST", "request body is not valid JSON") from None
+            req = parse_request(body, subject)
+            record.update(task=req.task.value, data_class=req.data_class.value)
+            out = await route_call(state["router"], req)
+            record["status"] = 200
+            return JSONResponse(out)
+        except RouteApiError as e:
+            record.update(status=e.status, code=e.code)
+            return JSONResponse(e.problem(), status_code=e.status, media_type="application/problem+json")
+        except Exception as e:  # noqa: BLE001 不记异常消息：可能带出请求内容
+            record.update(status=500, code="INTERNAL", error_class=type(e).__name__[:48])
+            return JSONResponse(RouteApiError(500, "INTERNAL", "internal error", retryable=True).problem(), status_code=500,
+                                media_type="application/problem+json")
+        finally:
+            record["duration_ms"] = round((time.monotonic() - started) * 1000)
+            log.info(json.dumps(record, ensure_ascii=False))
 
     @app.get("/internal/v1/replay/{method}/{key}")
     async def replay(method: str, key: str, request: Request) -> JSONResponse:
