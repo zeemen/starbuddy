@@ -36,3 +36,21 @@ test('构建产物里没有外部资源引用', { skip: BUILT ? false : '没有 
   }
   assert.deepEqual(offenders, []);
 });
+
+// 开发专用页面（冲刺 2-L 探针演示页 /dev/probe，文件名 page.dev.tsx）不在生产构建里：路由表里没有、服务端产物里没有、
+// 任何产物里都没有演示页的文案与标记。scripts/e2e.sh 会把 .next 覆盖成测试构建并留下标记文件，见到标记就跳过。
+const TEST_BUILD = existsSync(join(NEXT, 'STARBUDDY_TEST_BUILD'));
+
+test('生产构建里没有开发专用页面（探针演示页）', {
+  skip: !BUILT ? '没有 .next 构建产物（先 next build）' : TEST_BUILD ? '.next 是 scripts/e2e.sh 的测试构建，不是生产构建' : false,
+}, () => {
+  const routes = JSON.parse(readFileSync(join(NEXT, 'app-path-routes-manifest.json'), 'utf8')) as Record<string, string>;
+  assert.ok(Object.keys(routes).length > 0, '路由表为空，检查不到东西');
+  assert.deepEqual(Object.values(routes).filter((r) => r.startsWith('/dev/probe')), []);
+  assert.ok(!existsSync(join(NEXT, 'server', 'app', 'dev', 'probe')));
+  const markers = ['探针演示', '\\u63a2\\u9488\\u6f14\\u793a', 'probe-demo', 'page.dev'];
+  const hits = files(NEXT).filter((p) => /\.(css|html|js|json|rsc|txt)$/.test(p))  // 不查 .map：源码映射里带注释原文
+    .filter((p) => { const t = readFileSync(p, 'utf8'); return markers.some((m) => t.includes(m)); })
+    .map((p) => relative(NEXT, p));
+  assert.deepEqual(hits, []);
+});

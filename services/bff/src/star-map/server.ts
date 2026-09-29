@@ -8,6 +8,12 @@
 //   POST /bff/v0/students/{student_id}/onboarding/progress    {step, status}
 //   写入 200 {"status":"ok"}；取值不合要求 422；未授权与不存在同样 404；请求体上限 16 KB。
 //   200 成功；401 未登录；404 未授权与不存在（响应体逐字节相同）；Cache-Control: no-store。
+// 行为事件与探针（冲刺 2-L，specs/behavior-events-sprint2/spec.md）同一个服务、同一套身份；只写不读，不消耗额度：
+//   POST /bff/v0/students/{student_id}/events                     {kind, payload, occurred_at, idempotency_key}
+//   POST /bff/v0/students/{student_id}/probes                     {subject, item_id, prediction, asked_at, idempotency_key}
+//   POST /bff/v0/students/{student_id}/probes/{probe_id}/attempt  {attempt_id}
+//   201 {"id"}（同一幂等键重放也回 201 与原 ID）；关联作答 200 {"status":"ok"}；401 未登录；403 不是学生本人（家长、其他学生、
+//   学生不存在一律同一个 403）；409 同一幂等键内容不同或探针已关联别的作答；422 未知键、自由文本、取值不合要求（不回显输入）。
 //
 // 身份来源是开发桩（待人确认 #3，4-H 用真实会话替换）：只有同时满足
 //   - 创建服务时 devAuth 为真（main.ts 只在 STARBUDDY_DEV_AUTH=1 时传 true）；
@@ -20,9 +26,12 @@ import type { AddressInfo } from 'node:net';
 import type { Pool } from 'pg';
 import { getStarMap, isUuid } from './query.ts';
 import { getOnboarding, recordStep, setTextbook, submitAnswer, submitExam, type ExamInput, type Outcome } from '../onboarding/query.ts';
+import { linkProbeAttempt, parseAttempt, parseEvent, parseProbe, recordEvent, recordProbe, type WriteOutcome } from '../events/query.ts';
 
 const ROUTE = /^\/bff\/v0\/students\/([^/]+)\/star-map$/;
 const ONBOARDING = /^\/bff\/v0\/students\/([^/]+)\/onboarding(?:\/(answers|exams|textbooks|progress))?$/;
+// 行为事件与探针：events、probes、probes/{id}/attempt
+const EVENTS = /^\/bff\/v0\/students\/([^/]+)\/(events|probes)(?:\/([^/]+)\/(attempt))?$/;
 const MAX_BODY = 16 * 1024;
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 const FORWARDED_HEADERS = ['forwarded', 'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'x-real-ip'];
@@ -39,6 +48,7 @@ const TOO_LARGE = problem(413, 'TOO_LARGE', 'request body too large');
 const UNSUPPORTED = problem(415, 'UNSUPPORTED_MEDIA_TYPE', 'content-type must be application/json');
 const CONFLICT = problem(409, 'CONFLICT', 'concurrent update, retry');
 const TOO_MANY = problem(429, 'TOO_MANY', 'too many writes');
+const FORBIDDEN = problem(403, 'FORBIDDEN', 'not allowed');
 const OK = JSON.stringify({ status: 'ok' });
 
 class BodyError extends Error {
@@ -111,6 +121,56 @@ export function createStarMapServer(opts: StarMapServerOptions): Server {
     };
     try {
       const url = new URL(req.url ?? '/', 'http://bff.invalid');
+      /** 读请求体；出错时已回好错误码，返回 null */
+      const readBody = async (): Promise<Record<string, unknown> | null> => {
+        try {
+          return await readJson(req);
+        } catch (e) {
+          if (!(e instanceof BodyError)) throw e;
+          // 超限或类型不对时不再读剩下的请求体：回完就断开连接
+          if (e.status !== 422) res.setHeader('Connection', 'close');
+          send(e.status, e.status === 413 ? TOO_LARGE : e.status === 415 ? UNSUPPORTED : INVALID);
+          if (e.status !== 422) res.once('finish', () => req.destroy());
+          return null;
+        }
+      };
+      const ev = EVENTS.exec(url.pathname);
+      if (ev) {
+        const sub = ev[2] === 'events' ? 'events' : ev[4] ? 'probes/attempt' : 'probes';
+        record['route'] = sub;
+        if (req.method !== 'POST') return send(405, METHOD_NOT_ALLOWED);
+        let studentId: string;
+        let probeId: string | null;
+        try {
+          studentId = decodeURIComponent(ev[1]!);
+          probeId = ev[3] === undefined ? null : decodeURIComponent(ev[3]);
+        } catch {
+          return send(403, FORBIDDEN);
+        }
+        if (ev[2] === 'events' && probeId !== null) return send(404, NOT_FOUND);
+        record['student'] = hashId(studentId); // 行为事件与探针：日志只记哈希，不记 payload
+        const account = devAccount(req, server, opts.devAuth);
+        if (!account) return send(401, UNAUTHENTICATED);
+        const b = await readBody();
+        if (!b) return;
+        const reply = <T>(o: WriteOutcome<T>, ok: (v: T) => [number, string]) =>
+          o.kind === 'forbidden' ? send(403, FORBIDDEN) : o.kind === 'invalid' ? send(422, INVALID)
+            : o.kind === 'conflict' ? send(409, CONFLICT) : o.kind === 'too_many' ? send(429, TOO_MANY) : send(...ok(o.value));
+        const created = (id: string): [number, string] => [201, JSON.stringify({ id })];
+        if (sub === 'events') {
+          const e = parseEvent(b);
+          if (!e) return send(422, INVALID);
+          return reply(await recordEvent(opts.pool, account, studentId, e), created);
+        }
+        if (sub === 'probes') {
+          const p = parseProbe(b);
+          if (!p) return send(422, INVALID);
+          return reply(await recordProbe(opts.pool, account, studentId, p), created);
+        }
+        const attempt = parseAttempt(b);
+        if (!attempt) return send(422, INVALID);
+        return reply(await linkProbeAttempt(opts.pool, account, studentId, probeId!, attempt), () => [200, OK]);
+      }
       const ob = ONBOARDING.exec(url.pathname);
       if (ob) {
         record['route'] = `onboarding${ob[2] ? `/${ob[2]}` : ''}`;
@@ -130,19 +190,8 @@ export function createStarMapServer(opts: StarMapServerOptions): Server {
             : o.kind === 'conflict' ? send(409, CONFLICT) : o.kind === 'too_many' ? send(429, TOO_MANY)
               : send(200, o.value === null ? OK : JSON.stringify(o.value));
         if (ob[2] === undefined) return reply(await getOnboarding(opts.pool, account, studentId));
-        let body: Record<string, unknown>;
-        try {
-          body = await readJson(req);
-        } catch (e) {
-          if (e instanceof BodyError) {
-            // 超限或类型不对时不再读剩下的请求体：回完就断开连接
-            if (e.status !== 422) res.setHeader('Connection', 'close');
-            send(e.status, e.status === 413 ? TOO_LARGE : e.status === 415 ? UNSUPPORTED : INVALID);
-            if (e.status !== 422) res.once('finish', () => req.destroy());
-            return;
-          }
-          throw e;
-        }
+        const body = await readBody();
+        if (!body) return;
         if (ob[2] === 'answers') {
           const field = str(body['field_id']);
           if (!field) return send(422, INVALID);

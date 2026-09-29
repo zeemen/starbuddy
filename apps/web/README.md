@@ -5,6 +5,9 @@
 - `/star-map/[studentId]`：星图原型。每个在读学科一片星空，数据经 BFF 读平台 `mastery_estimate`，受 RLS 约束。
 - `/dev/star-glyphs`：星形符号样张。三态加保持，16 / 24 / 32 / 48px，浅色与深色，还有点亮动效。
 - `/dev/login`：开发身份桩，只列合成账号，只在 `STARBUDDY_DEV_AUTH=1` 时存在。4-H 删除。
+- `/dev/probe/[studentId]`：“能做对吗”探针演示页（冲刺 2-L）。文件名 `page.dev.tsx`：只有构建时 `STARBUDDY_DEV_AUTH=1` 且
+  `STARBUDDY_ENV` 为 dev / test 才是页面（`next.config.ts` 的 `pageExtensions`），生产构建里没有这个路由（`tests/build-output.test.ts`）。
+  组件 `src/probe/ConfidenceProbe.tsx`，文案在 `src/probe/copy.ts`（过点点禁语表，待人设评审）。`scripts/e2e.sh` 会把 `.next` 重建成测试构建。
 - `/review`：审核台 v0（staff 专用，specs/release-gate-sprint4 冲刺 1 · PR 3）。地图版本列表、差异审核、节点边界编辑、签字、发布、撤下、版本记录。
   服务端组件与 server action 经审核台后端（`STARBUDDY_REVIEW_URL`，只允许 loopback；`services/learning/review_console`）读写；
   staff 用 `/review/login` 登录（登录名 + 口令 + 验证器 App 的 6 位码，PR 4）；会话令牌放在 httpOnly、SameSite=Strict 的 cookie 里

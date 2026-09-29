@@ -1,0 +1,197 @@
+# BFF ↔ 统一壳前端的行为事件与“能做对吗”探针接口（冲刺 2-L，specs/behavior-events-sprint2/spec.md 设计要点 2）。
+# 服务内部接口，不是学科插件契约，不放 packages/contracts（与 onboarding.v0.yaml、star-map.v0.yaml 同一做法）。
+openapi: 3.1.0
+info:
+  title: StarBuddy BFF · behavior events & confidence probes (v0, prototype)
+  version: 0.1.0
+  description: >
+    学生本人写自己的行为事件（来源类型固定为客观记录 objective）与“能做对吗”探针（来源类型固定为学生自述 self）。
+    只写不读：行为事件与探针只给 Agent 用，学生、家长界面都不显示，响应只回记录 ID，不回显 payload（CLAUDE.md 规则 11、12）。
+    授权、payload 白名单、时间窗（最近 1 天内、不晚于现在 5 分钟）与幂等全部由迁移 0025 的库函数决定；BFF 先做一遍请求体校验
+    （未知键、自由文本、类型不对一律 422）。不消耗额度，不走计量预留。请求体上限 16 KB。
+    家长、其他学生、学生不存在一律同一个 403；同一幂等键重放回 201 与原记录 ID（库函数不区分首次与重放）；内容不同回 409。
+    身份来源是开发桩（x-dev-account-id，只在 STARBUDDY_DEV_AUTH=1 且只监听 loopback 时生效），4-H 用真实会话替换。
+servers:
+  - url: http://127.0.0.1:8787
+paths:
+  /bff/v0/students/{student_id}/events:
+    parameters:
+      - $ref: '#/components/parameters/StudentId'
+      - $ref: '#/components/parameters/DevAccount'
+    post:
+      operationId: postBehaviorEvent
+      description: 写一条行为事件（insight.record_behavior_event）。学生端只收 session_start、session_end、plan_done、plan_skip。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BehaviorEventInput' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '405': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '413': { $ref: '#/components/responses/Problem' }
+        '415': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/probes:
+    parameters:
+      - $ref: '#/components/parameters/StudentId'
+      - $ref: '#/components/parameters/DevAccount'
+    post:
+      operationId: postConfidenceProbe
+      description: 题目展示前“这道题你觉得能做对吗？”的回答（insight.record_confidence_probe）。跳过不调用。实际对错不在这里存。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConfidenceProbeInput' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '405': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '413': { $ref: '#/components/responses/Problem' }
+        '415': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/probes/{probe_id}/attempt:
+    parameters:
+      - $ref: '#/components/parameters/StudentId'
+      - name: probe_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - $ref: '#/components/parameters/DevAccount'
+    post:
+      operationId: linkProbeAttempt
+      description: >
+        作答提交后把探针与作答关联（insight.link_probe_attempt）。作答必须是这个学生的、同一道题、在提问之后；
+        同一作答重复关联是幂等的（200），已关联别的作答回 409；探针或作答不存在、与探针不对应回 422。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [attempt_id]
+              properties:
+                attempt_id: { type: string, format: uuid }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '405': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '413': { $ref: '#/components/responses/Problem' }
+        '415': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+components:
+  parameters:
+    StudentId:
+      name: student_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    DevAccount:
+      name: x-dev-account-id
+      in: header
+      required: false
+      description: 开发身份桩（仅开发环境）；4-H 删除
+      schema: { type: string, format: uuid }
+  responses:
+    Created:
+      description: 已写入（同一幂等键重放也回 201 与原记录 ID）；不回显请求内容
+      headers:
+        Cache-Control: { schema: { type: string, const: no-store } }
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [id]
+            properties:
+              id: { type: string, format: uuid }
+    Ok:
+      description: 已关联
+      content:
+        application/json:
+          schema: { type: object, required: [status], properties: { status: { const: ok } } }
+    Problem:
+      description: 错误（不回显输入）
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+  schemas:
+    Timestamp:
+      type: string
+      format: date-time
+      pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}:\d{2})$'
+      description: RFC 3339，必须带时区；库里只收最近 1 天内、不晚于现在 5 分钟
+    IdempotencyKey:
+      type: string
+      format: uuid
+      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+      description: UUIDv4（小写）；同一学生内唯一
+    BehaviorEventInput:
+      description: payload 按事件类型只收白名单键（与迁移 0025 的 insight.valid_behavior_payload 一致），不收自由文本
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [kind, payload, occurred_at, idempotency_key]
+          properties:
+            kind: { const: session_start }
+            payload:
+              type: object
+              additionalProperties: false
+              required: [entry]
+              properties:
+                entry: { type: string, enum: [today, star_map, subject, onboarding, other] }
+            occurred_at: { $ref: '#/components/schemas/Timestamp' }
+            idempotency_key: { $ref: '#/components/schemas/IdempotencyKey' }
+        - type: object
+          additionalProperties: false
+          required: [kind, payload, occurred_at, idempotency_key]
+          properties:
+            kind: { const: session_end }
+            payload:
+              type: object
+              additionalProperties: false
+              required: [duration_sec]
+              properties:
+                duration_sec: { type: integer, minimum: 0, maximum: 86400 }
+            occurred_at: { $ref: '#/components/schemas/Timestamp' }
+            idempotency_key: { $ref: '#/components/schemas/IdempotencyKey' }
+        - type: object
+          additionalProperties: false
+          required: [kind, payload, occurred_at, idempotency_key]
+          properties:
+            kind: { type: string, enum: [plan_done, plan_skip] }
+            payload:
+              type: object
+              additionalProperties: false
+              required: [plan_task_id]
+              properties:
+                plan_task_id: { type: string, format: uuid, pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' }
+            occurred_at: { $ref: '#/components/schemas/Timestamp' }
+            idempotency_key: { $ref: '#/components/schemas/IdempotencyKey' }
+    ConfidenceProbeInput:
+      type: object
+      additionalProperties: false
+      required: [subject, item_id, prediction, asked_at, idempotency_key]
+      properties:
+        subject: { type: string, enum: [aya, wenli, zhixing, echo] }
+        item_id: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$', description: 必须是已登记的题目（platform.item） }
+        prediction: { type: string, enum: [yes, no, unsure], description: 能 / 不能 / 不确定 }
+        asked_at: { $ref: '#/components/schemas/Timestamp' }
+        idempotency_key: { $ref: '#/components/schemas/IdempotencyKey' }
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        code: { type: string, enum: [UNAUTHENTICATED, FORBIDDEN, NOT_FOUND, METHOD_NOT_ALLOWED, INTERNAL, INVALID, TOO_LARGE, UNSUPPORTED_MEDIA_TYPE, CONFLICT, TOO_MANY] }

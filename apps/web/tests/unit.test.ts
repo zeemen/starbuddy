@@ -62,10 +62,12 @@ test('开发身份桩：开关不开、不是 UUID、不在合成账号列表里
   assert.equal(devAccountFromCookie(undefined, on), null);
 });
 
-test('登录后只能跳回星图页或建档页', () => {
+test('登录后只能跳回星图页、建档页或探针演示页', () => {
   assert.equal(safeNext('/star-map/5a000000-0000-4000-8000-0000000000c1'), '/star-map/5a000000-0000-4000-8000-0000000000c1');
   assert.equal(safeNext('/onboarding/5a000000-0000-4000-8000-0000000000c1'), '/onboarding/5a000000-0000-4000-8000-0000000000c1');
+  assert.equal(safeNext('/dev/probe/5a000000-0000-4000-8000-0000000000c1'), '/dev/probe/5a000000-0000-4000-8000-0000000000c1');
   for (const bad of ['https://evil.example/', '//evil.example', '/star-map/x/../../admin', '/dev/session?x', null, '',
+    '/dev/probe/x', '/dev/probex/5a000000-0000-4000-8000-0000000000c1', '/dev/login/5a000000-0000-4000-8000-0000000000c1',
     '/onboarding/5a000000-0000-4000-8000-0000000000c1?step=1', '/onboardingx/5a000000-0000-4000-8000-0000000000c1', '/review']) {
     assert.equal(safeNext(bad), '/dev/login', String(bad));
   }

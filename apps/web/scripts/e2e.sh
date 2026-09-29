@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # 前端端到端测试的环境（spec 验收）：一次性 Postgres（db/tests/pg-ephemeral.sh）→ 阿鸦内容登记 → 星图合成种子 →
-# BFF 星图服务（只监听 127.0.0.1，开发身份桩打开）→ Playwright（webServer 起 next start）。全部合成数据，不连共享库。
+# BFF 星图服务（只监听 127.0.0.1，开发身份桩打开）→ 测试构建（含开发专用页面，覆盖 .next）→ Playwright（webServer 起 next start）。
+# 全部合成数据，不连共享库。
 # 用法：bash apps/web/scripts/e2e.sh [playwright 参数…]        例如 --grep-invert @visual、--grep @visual
 # 退出码：Playwright 的退出码；3 表示本机没有 Postgres。
 set -uo pipefail
@@ -56,6 +57,14 @@ done
 
 export STARBUDDY_BFF_URL="http://127.0.0.1:$BFF_PORT" STARBUDDY_REVIEW_URL="http://127.0.0.1:$REVIEW_PORT" WEB_PORT STARBUDDY_DEV_AUTH=1 STARBUDDY_ENV=test NEXT_TELEMETRY_DISABLED=1
 cd "$WEB"
+# 端到端用测试构建（冲刺 2-L）：开发专用页面（page.dev.tsx，如探针演示页）只在 STARBUDDY_DEV_AUTH=1 且 STARBUDDY_ENV=dev/test
+# 构建时才是页面（next.config.ts）。make web-test 先做生产构建并跑完构建产物检查，这里再覆盖成测试构建，
+# 留下标记文件 .next/STARBUDDY_TEST_BUILD（tests/build-output.test.ts 见到它就知道这不是生产构建）。
+BLOG="$(mktemp)"
+rm -f .next/STARBUDDY_TEST_BUILD
+npx --no-install next build > "$BLOG" 2>&1 || { tail -30 "$BLOG"; rm -f "$BLOG"; exit 1; }
+rm -f "$BLOG"
+echo "test build: STARBUDDY_DEV_AUTH=1 STARBUDDY_ENV=test (scripts/e2e.sh)" > .next/STARBUDDY_TEST_BUILD
 set +e
 npx --no-install playwright test "$@"
 rc=$?

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # BFF 集成测试的变异测试：逐条去掉计量函数里的加锁或并发判断，断言 Gate 0 集成测试能发现；
-# 另有星图读模块的源码变异（见下方 SM），断言星图集成测试能发现。
+# 另有星图读模块、建档与行为事件接口的源码变异（见下方 SM），断言对应的集成测试能发现。
 # 这几条只有在多连接并发下才会出错，所以放在这里而不是 db/tests/mutations.sh。
 # 并发相关的失败依赖时序：每个变异最多跑 3 次，任何一次失败就算“被发现”。
 set -uo pipefail
@@ -50,6 +50,10 @@ SM=(
   $'星图响应可以缓存\tsrc/star-map/server.ts\t\'cache-control\': \'no-store\',\t'
   $'日志记原始 student_id\tsrc/star-map/server.ts\trecord[\'student\'] = hashId(studentId); // 星图\trecord[\'student\'] = studentId; // 星图'
   $'建档日志记原始 student_id\tsrc/star-map/server.ts\trecord[\'student\'] = hashId(studentId); // 建档\trecord[\'student\'] = studentId; // 建档'
+  # 行为事件与探针（冲刺 2-L）：日志不记学生 ID 原文；BFF 拒收未知键；无权回 403
+  $'事件日志记原始 student_id\tsrc/star-map/server.ts\trecord[\'student\'] = hashId(studentId); // 行为事件\trecord[\'student\'] = studentId; // 行为事件'
+  $'事件请求体放过未知键\tsrc/events/query.ts\treturn got.length === want.length && got.every((k, i) => k === want[i]);\treturn want.every((k) => got.includes(k));'
+  $'事件无权当成功\tsrc/events/query.ts\tif (code === \'42501\') return { kind: \'forbidden\' };\tif (code === \'42501\') return { kind: \'ok\', value: null as T };'
   # 计量（plugin-api-v1.0-step2）：预留过期后只查询重放接口，不发原请求；这几条跑计量测试
   $'计量：过期后仍发原请求\tsrc/metering/meter.ts\tif (r.state === \'expired\') return replayAfterExpiry(\t if (false) return replayAfterExpiry('
   $'计量：重放没有结果当成功\tsrc/metering/meter.ts\tif (out.kind === \'found\') {\tif (out.kind !== \'busy\') {'
@@ -61,7 +65,7 @@ SM=(
 # 所以：先跑一次不变异的对照，必须通过；每条变异限时（挂起算漏检）；只有“至少一项测试通过、另有失败”才算被发现，
 # 保证失败来自断言而不是环境没起来。
 star_run() {  # $1 副本根目录，$2 变异名（“计量：”开头的跑计量测试）；输出 rc 与通过数
-  local out rc pass tests="tests/star-map.test.ts tests/star-map.integration.test.ts tests/onboarding.integration.test.ts"
+  local out rc pass tests="tests/star-map.test.ts tests/star-map.integration.test.ts tests/onboarding.integration.test.ts tests/events.integration.test.ts"
   [[ "${2:-}" == 计量：* ]] && tests="tests/learning-client.test.ts tests/gate0.integration.test.ts"
   out=$( cd "$1/services/bff" && timeout 240 bash "$ROOT/db/tests/pg-ephemeral.sh" -- \
       node --no-warnings --test --test-concurrency=1 --test-timeout=60000 $tests 2>&1 ); rc=$?

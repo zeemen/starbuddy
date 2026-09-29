@@ -21,7 +21,13 @@ async function as(page: Page, account: string, student: string) {
 }
 
 const next = (page: Page) => page.getByRole('button', { name: /下一步|完成/ }).click();
-const skip = (page: Page) => page.getByRole('button', { name: '跳过' }).click();
+// 等到页面换到下一步再返回：连续跳过时，不等跳转就再点，会点到旧页面上的“跳过”，同一步重复提交（偶发失败）
+const skip = async (page: Page) => {
+  await expect(page.getByTestId('onboarding')).toHaveAttribute('data-step', /.+/);  // “开始”之后的跳转也要先等完
+  const step = (await page.getByTestId('onboarding').getAttribute('data-step')) ?? '';
+  await page.getByRole('button', { name: '跳过' }).click();
+  await expect(page.getByTestId('onboarding')).not.toHaveAttribute('data-step', step);
+};
 
 test.describe.configure({ mode: 'serial' });
 

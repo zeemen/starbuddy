@@ -81,3 +81,8 @@ a { color: inherit; }
 .payload { font-size: 0.8rem; white-space: pre-wrap; }
 .node-editor summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; }
 .inline-form { display: inline; }
+
+/* “能做对吗”探针（冲刺 2-L）：按钮至少 44px 高，便于触屏；不用颜色区分选项（不暗示对错） */
+.probe-question { font-size: 1.125rem; }
+.probe-options { display: flex; flex-wrap: wrap; gap: 8px; }
+.probe-options button { font: inherit; min-height: 44px; min-width: 88px; }
