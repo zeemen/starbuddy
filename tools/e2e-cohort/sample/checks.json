@@ -1,0 +1,178 @@
+{
+ "checks": [
+  {
+   "detail": {
+    "by_subject_method_purpose": {
+     "aya/diagnose/practice": 20,
+     "aya/grade/practice": 36,
+     "aya/grade/retest": 16,
+     "wenli/diagnose/practice": 20,
+     "wenli/grade/practice": 16,
+     "zhixing/grade/practice": 20,
+     "zhixing/grade/retest": 16
+    },
+    "calls": 144,
+    "failed": []
+   },
+   "name": "all_calls_succeeded",
+   "passed": true
+  },
+  {
+   "detail": {
+    "adapters": [
+     "aya",
+     "wenli",
+     "zhixing"
+    ],
+    "db_drivers_in_package_json": {},
+    "env_leaks": []
+   },
+   "name": "adapters_have_no_db_or_vendor_config",
+   "passed": true
+  },
+  {
+   "detail": {
+    "evidence_lost": [],
+    "evidence_unexpected": [],
+    "missing_subjects": [],
+    "students": 20,
+    "students_with_all_core_subjects": 20,
+    "unexpected_subjects": []
+   },
+   "name": "coexistence",
+   "passed": true
+  },
+  {
+   "detail": {
+    "needles": 830,
+    "personal_tables_not_in_registry": [],
+    "registry": "checked",
+    "schemas": [
+     "insight",
+     "kge",
+     "platform",
+     "policy"
+    ],
+    "student_key_columns_outside_personal_layer": [],
+    "student_values_outside_personal_layer": [],
+    "subject_named_tables_in_personal_layer": [],
+    "tables_outside_personal_layer": 26
+   },
+   "name": "no_private_copies",
+   "passed": true
+  },
+  {
+   "detail": {
+    "unbacked_active_links": 0
+   },
+   "name": "guardian_links_backed",
+   "passed": true
+  },
+  {
+   "detail": {
+    "grade_responses": 104,
+    "incomplete": []
+   },
+   "name": "grade_envelope_provenance",
+   "passed": true
+  },
+  {
+   "detail": {
+    "by_subject": {
+     "aya": 52,
+     "wenli": 16,
+     "zhixing": 36
+    },
+    "evidence_not_same_student_subject": 0,
+    "grade_results": 104,
+    "incomplete": 0
+   },
+   "name": "grade_rows_provenance",
+   "passed": true
+  },
+  {
+   "detail": {
+    "note": "KGE-04 第二步（retest_task 与复测调度）前的接口桩；执行经同一 grade 契约接口，ingest.purpose = retest",
+    "retest_calls": 32,
+    "scheduler": "stub",
+    "students_with_retest_evidence": 16,
+    "students_wrong": [],
+    "unmarked_or_failed": 0
+   },
+   "name": "retest_via_stub",
+   "passed": true
+  },
+  {
+   "detail": {
+    "anonymous_variants": [
+     "empty_account",
+     "unset_account"
+    ],
+    "guardians_checked": 16,
+    "guardians_with_multiple_children": 4,
+    "students_checked": 20,
+    "table_source": "registry",
+    "tables_bff_cannot_read": 27,
+    "tables_compared": 25,
+    "tables_not_comparable_column_privilege": [],
+    "tables_skipped_no_privilege": [],
+    "unlinked_guardians_checked": 1,
+    "violations": []
+   },
+   "name": "isolation_rls",
+   "passed": true
+  },
+  {
+   "detail": {
+    "adapter_calls_during_rerun": 0,
+    "counts": {
+     "attempt": 244,
+     "error_attribution": 63,
+     "evidence_event": 514,
+     "evidence_registry": 514,
+     "grade_dimension": 239,
+     "grade_result": 104,
+     "ingest_request": 144,
+     "practice_log": 0,
+     "skill_observation": 140,
+     "usage_ledger": 0,
+     "usage_reservation": 0
+    },
+    "delta": {},
+    "every_request_has_usage_id_and_idempotency_key": true,
+    "replayed": 144,
+    "rerun_requests": 144
+   },
+   "name": "rerun_zero_new_rows",
+   "passed": true
+  },
+  {
+   "detail": {
+    "compared": 144
+   },
+   "name": "rerun_same_result",
+   "passed": true
+  },
+  {
+   "detail": {
+    "active_users": [
+     "learning_app",
+     "postgres"
+    ],
+    "allowed": [
+     "learning_app",
+     "postgres"
+    ],
+    "logged_users": [
+     "learning_app",
+     "postgres"
+    ],
+    "unexpected": []
+   },
+   "name": "db_clients_only_learning_and_admin",
+   "passed": true
+  }
+ ],
+ "notice": "合成联调，不是内测结论",
+ "passed": true
+}

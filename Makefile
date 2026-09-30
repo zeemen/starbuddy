@@ -426,3 +426,22 @@ voice-blind-eval-test:
 	  (cd evals/voice-blind && PYTHONDONTWRITEBYTECODE=1 $(if $(findstring /,$(PYTHON)),$(abspath $(PYTHON)),$(PYTHON)) -m pytest -q) && \
 	  PYTHONDONTWRITEBYTECODE=1 $(PYTHON) evals/voice-blind/scripts/mutations.py && echo "voice-blind-eval-test: 通过"; \
 	fi
+
+# 冲刺 5-C+D 端到端联调（specs/e2e-integration-sprint5）：20 名合成学生在一次性 Postgres + 学习服务 + 三科适配器上走诊断、批改、复测（桩），
+# 断言三科事件并存不覆盖、私有表无学生事实副本、grade 溯源五字段、整轮重跑零新增、RLS 隔离，证据包与合成样例一致，另有反例与 verify 护栏测试（约 1 分钟）。
+# 同一测试也随 learning-test 运行；这里单独跑。依赖同 learning-test 与三科适配器（adapters/{aya,zhixing,wenli} 下 npm ci）
+.PHONY: e2e-cohort gate0-evidence
+e2e-cohort:
+	@if [ ! -x services/learning/.venv/bin/pytest ]; then \
+	  echo "e2e-cohort: 跳过（没有安装依赖；见 services/learning/README.md）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@cd services/learning && LEARNING_TEST_STRICT=$(if $(filter 1,$(CONTRACT_STRICT)),1,0) .venv/bin/python -m pytest -q tests/test_e2e_cohort.py
+
+# Gate 0 证据包（合成联调，不是内测结论）：跑一遍完整合成联调，把事件计数、节点查询摘要、断言结果与运行元数据写到执行人指定目录
+# （确定性输出，只含合成数据与 ID；仓库只收一份合成样例 tools/e2e-cohort/sample/）。星图截图可选：GATE0_STARMAP=1（依赖 4-H 壳页面，未就绪时跳过并记录）。
+# 用法：make gate0-evidence GATE0_OUT=<输出目录>（路径不含空格与单引号）
+GATE0_BAD = $(or $(filter-out 1,$(words $(GATE0_OUT))),$(findstring ',$(GATE0_OUT)))
+gate0-evidence:
+	@$(if $(GATE0_BAD),echo "用法：make gate0-evidence GATE0_OUT=<输出目录>（路径不含空格与单引号）"; exit 2)
+	@if [ ! -x services/learning/.venv/bin/python ]; then echo "gate0-evidence: 没有安装依赖（见 services/learning/README.md）"; exit 2; fi
+	@cd services/learning && PYTHONPATH='$(abspath tools/e2e-cohort)' .venv/bin/python -m e2e_cohort evidence --out '$(abspath $(GATE0_OUT))' $(if $(filter 1,$(GATE0_STARMAP)),--starmap,)

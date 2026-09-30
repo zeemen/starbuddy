@@ -1,0 +1,40 @@
+{
+ "adapters": {
+  "aya": {
+   "adapter_version": "0.2.0",
+   "capabilities_contract_version": "1.0.0",
+   "content_pack": "aya-pack@0.3.0-0ed2fe4"
+  },
+  "wenli": {
+   "adapter_version": "0.1.0",
+   "capabilities_contract_version": "1.0.0",
+   "content_pack": "wenli-synthetic@0.1.0"
+  },
+  "zhixing": {
+   "adapter_version": "0.1.0",
+   "capabilities_contract_version": "1.0.0",
+   "content_pack": "zhixing-synthetic@0.1.0"
+  }
+ },
+ "cohort": {
+  "digest": "a5fb4f31fb52a42fa924e94cc998359c0e137b11d79033e52ad46792fc97ab37",
+  "generator": "e2e-cohort@0.1.0",
+  "seed": 20260930,
+  "students": 20
+ },
+ "commit": "ea08c75ff1e57943c18387597fbcfc691fa7f464",
+ "contracts": {
+  "learning-internal": "1.0.0",
+  "plugin-api": "1.0.0",
+  "request_contract_version": "1.0.0"
+ },
+ "english": "未纳入（开口成章适配器已搁置，specs/adapter-echo-sprint3/lessons.md）",
+ "model_route": "test 环境假供应商（合成判定），不是任何真实模型",
+ "notice": "合成联调，不是内测结论",
+ "retest_scheduler": "stub（桩：KGE-04 第二步前）",
+ "starmap_screenshot": {
+  "reason": "可选步骤；依赖 4-H 壳页面合入，见 specs/e2e-integration-sprint5/lessons.md",
+  "status": "skipped"
+ },
+ "worktree_dirty": true
+}
