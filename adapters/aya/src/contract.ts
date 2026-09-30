@@ -35,6 +35,14 @@ export type SchemaName =
   | "GradeResponse"
   | "DiagnoseRequest"
   | "DiagnoseResponse"
+  | "PlanRequest"
+  | "PlanResponse"
+  | "TeachRequest"
+  | "TeachResponse"
+  | "GenerateVariationRequest"
+  | "GenerateVariationResponse"
+  | "ReportRequest"
+  | "ReportResponse"
   | "Problem";
 
 export type ValidationResult = { ok: true } | { ok: false; errors: string[] };

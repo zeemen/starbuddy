@@ -78,8 +78,25 @@ export function gradeBody(item: string, response: Response, extra: Record<string
   };
 }
 
+/** 默认契约版本为 1.0.0 的适配器（冲刺 4-D 的四个方法只按 v1.0 实现；能力声明报 1.0.0） */
+export const contractV1 = loadContract({ defaultVersion: "1.0.0" });
+export function makeAdapterV1(content: LoadedPack = realPack, logs?: LogRecord[]) {
+  return createAdapter({ content, taxonomy, contract: contractV1, allowCandidate: true, ...(logs ? { log: (r) => logs.push(r) } : {}) });
+}
+
+let seqV1 = 0;
+/** v1.0 请求上下文：幂等键是小写 UUIDv4；消耗类方法（teach）带 usage_id */
+export function contextV1(overrides: Record<string, unknown> = {}) {
+  seqV1++;
+  const n = String(seqV1).padStart(12, "0");
+  return context({ contract_version: "1.0.0", idempotency_key: `4d000000-0000-4000-8000-${n}`, ...overrides });
+}
+
 /** 合成题目，用于内容包里没有的边界情况 */
-export function syntheticPack(items: Partial<PackItem>[], opts: { sourceVerified?: boolean; traps?: ContentPack["traps"] } = {}): LoadedPack {
+export function syntheticPack(
+  items: Partial<PackItem>[],
+  opts: { sourceVerified?: boolean; traps?: ContentPack["traps"]; skillLinks?: ContentPack["skill_links"] } = {},
+): LoadedPack {
   const base = realPack.pack;
   const verified = opts.sourceVerified ?? false;
   const full = items.map((it, i): PackItem => {
@@ -90,11 +107,14 @@ export function syntheticPack(items: Partial<PackItem>[], opts: { sourceVerified
       answer: [],
       mainNodes: [base.nodes[0]!.id],
       reviewStatus,
+      usage: "D",
+      estMinutes: 2,
+      hintPath: ["（合成）0 级提示", "（合成）1 级提示", "（合成）2 级提示", "（合成）3 级提示", "（合成）4 级提示", "（合成）5 级提示"],
       ...it,
       admission: verified && ["Q2", "Q3", "Q4", "Q5"].includes(reviewStatus) ? "admitted" : verified ? "pending_review" : "source_unverified",
     };
   });
-  return indexPack({ ...base, source_verified: verified, items: full, traps: opts.traps ?? base.traps });
+  return indexPack({ ...base, source_verified: verified, items: full, traps: opts.traps ?? base.traps, skill_links: opts.skillLinks ?? base.skill_links });
 }
 
 /** 深度遍历 JSON，返回全部 [路径, 值] */

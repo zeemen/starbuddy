@@ -1,6 +1,8 @@
-// 阿鸦适配器的三个接口：capabilities、grade（客观题）、diagnose（intake / gap_test）。
-// 规格：specs/adapter-aya-sprint1/spec.md“映射规则”。契约：packages/contracts/openapi/plugin-api.v0.9.yaml 与
-// v1.0 候选版 plugin-api.v1.0.yaml：迁移期按请求的 context.contract_version 选版本校验与应答，能力声明报默认版本
+// 阿鸦适配器：capabilities、grade（客观题）、diagnose（intake / gap_test），以及冲刺 4-D 补齐的
+// plan、teach（提示阶梯与知识页面直出）、generate_variation（选题）、report（字段与证据引用）。
+// 规格：specs/adapter-aya-sprint1/spec.md“映射规则”；specs/adapter-aya-methods-sprint4/spec.md（四个新方法只按 v1.0 候选版实现，
+// 0.9.0 请求返回 501；它们都是确定性的：不调模型、不写话术与关于学生的陈述、不产生证据、不读系统时钟）。
+// 契约：packages/contracts/openapi/plugin-api.v0.9.yaml 与 v1.0 候选版 plugin-api.v1.0.yaml：迁移期按请求的 context.contract_version 选版本校验与应答，能力声明报默认版本
 // （specs/plugin-api-v1.0-step2/spec.md 第 3 条、待人确认 #2）。
 //
 // 适配器不读写任何平台表（CLAUDE.md 规则 1）：证据与推断放在响应里，由学习服务落库。
@@ -8,6 +10,11 @@
 import { CANDIDATE_CONTRACT_VERSIONS, type ContractValidator, type ContractVersion, type SchemaName } from "./contract.ts";
 import type { Admission, LoadedPack, PackItem } from "./content.ts";
 import { deriveUuid, requestFingerprint } from "./ids.ts";
+import { ProblemError, type ProblemCode } from "./problem.ts";
+import { planTasks, PLAN_ALGORITHM, type PlanInput } from "./methods/plan.ts";
+import { buildReport, REPORT_ALGORITHM, type ReportInput } from "./methods/report.ts";
+import { HINT_ALGORITHM, PAGE_LESSON_ALGORITHM, teachHint, teachLesson } from "./methods/teach.ts";
+import { selectVariants, VARIANT_ALGORITHM, type VariationInput } from "./methods/variation.ts";
 import type { AyaTaxonomy } from "./taxonomy.ts";
 import {
   BOUNDARY_MAX_CONFIDENCE,
@@ -19,7 +26,11 @@ import {
   type Verification,
 } from "./verifier.ts";
 
-export const ADAPTER_VERSION = "0.1.0";
+export const ADAPTER_VERSION = "0.2.0";
+/** plan、teach(hint) 引用了未准入的题时的置信度（spec 待人确认 #5 默认）；其余新方法为 1.0 */
+export const UNADMITTED_CONTENT_CONFIDENCE = 0.5;
+/** 冲刺 4-D 的四个方法：只按 v1.0 候选版实现 */
+export const V1_ONLY_METHODS = ["plan", "teach", "generate_variation", "report"] as const;
 export const TRAP_ATTRIBUTION_ALGORITHM_BASE = "aya-trap-attr@0.1.0";
 /** 错因的算法版本同时带映射表版本（规则 6）：映射表签字后改动，已落库的错因仍能分清按哪一版映射 */
 export const trapAttributionAlgorithm = (taxonomyVersion: string) => `${TRAP_ATTRIBUTION_ALGORITHM_BASE}-tax${taxonomyVersion}`;
@@ -82,18 +93,6 @@ interface ErrorAttribution {
   algorithm_version: string;
 }
 
-type ProblemCode =
-  | "INVALID_REQUEST"
-  | "MODE_NOT_SUPPORTED"  // v1.0 起（评审 N9）；0.9.0 请求仍报 INVALID_REQUEST
-  | "CONTRACT_VERSION_UNSUPPORTED"
-  | "SUBJECT_MISMATCH"
-  | "METHOD_NOT_IMPLEMENTED"
-  | "CONTENT_VERSION_NOT_FOUND"
-  | "ITEM_NOT_FOUND"
-  | "IDEMPOTENCY_CONFLICT"
-  | "JOB_NOT_FOUND"
-  | "INTERNAL";
-
 export interface HandlerResult {
   status: number;
   body: unknown;
@@ -119,18 +118,6 @@ export interface AdapterDeps {
   idempotencyCacheSize?: number;
   /** 候选版（CANDIDATE_CONTRACT_VERSIONS）签字前只在测试与演练里接受：未开时声明候选版的请求返回 CONTRACT_VERSION_UNSUPPORTED */
   allowCandidate?: boolean;
-}
-
-class ProblemError extends Error {
-  status: number;
-  code: ProblemCode;
-  detail: string | undefined;
-  constructor(status: number, code: ProblemCode, title: string, detail?: string) {
-    super(title);
-    this.status = status;
-    this.code = code;
-    this.detail = detail;
-  }
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -321,6 +308,8 @@ export function createAdapter(deps: AdapterDeps) {
   const sourceVersion = (...parts: string[]) => [...parts, content.itemsSourceVersion].join(";");
 
   // ---------- 方法 ----------
+  // 能力声明按默认版本报：0.9.0 下四个新方法未实现（请求返回 501），1.0.0 下六个方法都已实现（阿鸦 6/6）
+  const v1Methods = contract.version !== "0.9.0";
   const capabilities = (): HandlerResult =>
     selfCheck("Capabilities", {
       subject: "aya",
@@ -328,11 +317,11 @@ export function createAdapter(deps: AdapterDeps) {
       contract_version: contract.version,
       methods: {
         diagnose: { implemented: true, async: false },
-        plan: { implemented: false },
-        teach: { implemented: false },
+        plan: v1Methods ? { implemented: true, async: false } : { implemented: false },
+        teach: v1Methods ? { implemented: true, async: false, notes_code: "deterministic_no_model" } : { implemented: false },
         grade: { implemented: true, async: false },
-        generate_variation: { implemented: false },
-        report: { implemented: false },
+        generate_variation: v1Methods ? { implemented: true, async: false } : { implemented: false },
+        report: v1Methods ? { implemented: true, async: false } : { implemented: false },
       },
       verifiers: [{ verifier_id: VERIFIER_ID, version: VERIFIER_VERSION }],
     }, contract.version);
@@ -446,8 +435,123 @@ export function createAdapter(deps: AdapterDeps) {
     });
   };
 
-  const NOT_IMPLEMENTED = new Set(["plan", "teach", "generate_variation", "report"]);
-  const KNOWN_ROUTES = new Set(["capabilities", "grade", "diagnose", ...NOT_IMPLEMENTED]);
+  // ---------- 冲刺 4-D：四个确定性方法（只按 v1.0） ----------
+  /** 共同入口：选版本（0.9.0 → 501）、按契约校验、查学科与内容版本、按请求体指纹做幂等 */
+  const v1Method = (method: (typeof V1_ONLY_METHODS)[number], schema: SchemaName, body: unknown, run: (req: Record<string, unknown> & { context: RequestContext }, fp: string, version: ContractVersion) => HandlerResult): HandlerResult => {
+    const version = requestVersion(body);
+    if (version === "0.9.0") {
+      throw new ProblemError(501, "METHOD_NOT_IMPLEMENTED", `${method} is implemented for contract 1.0.0 only`);
+    }
+    validateOrThrow(schema, body, version);
+    const req = body as Record<string, unknown> & { context: RequestContext };
+    checkContext(req.context, false);
+    const fp = requestFingerprint(req as unknown as Parameters<typeof requestFingerprint>[0]);
+    return idempotent(method, req.context.idempotency_key, fp, () => run(req, fp, version));
+  };
+  /** 结果的效力与置信度：引用了未准入的题 → practice（不置 human_review_required：四个方法不判分，spec 设计要点第 0 节） */
+  const contentEnvelope = (items: PackItem[], lowerConfidence: boolean) => {
+    const admitted = items.every((it) => it.admission === "admitted");
+    return {
+      confidence: admitted || !lowerConfidence ? 1 : UNADMITTED_CONTENT_CONFIDENCE,
+      semantics: admitted ? "formal" : "practice",
+      human_review_required: false,
+    };
+  };
+
+  const plan = (body: unknown): HandlerResult =>
+    v1Method("plan", "PlanRequest", body, (req, fp, version) => {
+      const out = planTasks(content, req as unknown as PlanInput);
+      const ids = out.tasks.map((t) => deriveUuid("plan", req.context.idempotency_key, fp, `task:${t.kind}:${t.skill}`));
+      const tasks = out.tasks.map((t, i) => ({
+        task_id: ids[i]!,
+        kind: t.kind,
+        skill_nodes: [`aya:${t.skill}`],
+        item_refs: t.items.map((it) => `aya:${it.id}`),
+        priority: t.priority,
+        estimated_minutes: t.estimatedMinutes,
+        ...(t.prerequisites.length > 0 ? { prerequisite_task_ids: t.prerequisites.map((j) => ids[j]!) } : {}),
+        rationale_code: t.rationale,
+      }));
+      const graph = out.usedGraph && content.pack.skill_links.map_ref ? [`graph:${content.pack.skill_links.map_ref}`] : [];
+      return selfCheck("PlanResponse", {
+        contract_version: version,
+        result: { tasks },
+        evidence_ids: [],
+        source_version: sourceVersion(`algo:${PLAN_ALGORITHM}`, ...graph),
+        model_version: `algo:${PLAN_ALGORITHM}`,
+        ...contentEnvelope(out.tasks.flatMap((t) => t.items), true),
+      }, version);
+    });
+
+  const teach = (body: unknown): HandlerResult =>
+    v1Method("teach", "TeachRequest", body, (req, _fp, version) => {
+      const r = req as unknown as { mode: "hint" | "lesson"; skill_node: string; item_ref?: string; allowed_hint_level: number; knowledge_page?: { body_md: string } };
+      const hint = r.mode === "hint";
+      const out = hint ? teachHint(content, r) : teachLesson(content, r);
+      const algorithm = hint ? HINT_ALGORITHM : PAGE_LESSON_ALGORITHM;
+      return selfCheck("TeachResponse", {
+        contract_version: version,
+        result: {
+          segments: out.segments,
+          hint_level_used: out.hintLevelUsed,
+          // v0 不写任何人设话术：身份披露与转介由平台人设层负责（待人确认 #1 附带项）
+          ai_disclosure_shown: false,
+          referral_triggered: false,
+        },
+        evidence_ids: [],
+        source_version: sourceVersion(`algo:${algorithm}`),
+        model_version: `algo:${algorithm}`,
+        ...contentEnvelope(out.item ? [out.item] : [], true),
+      }, version);
+    });
+
+  const generateVariation = (body: unknown): HandlerResult =>
+    v1Method("generate_variation", "GenerateVariationRequest", body, (req, _fp, version) => {
+      const out = selectVariants(content, taxonomy, req as unknown as VariationInput);
+      const candidates = out.picks.map((p) => ({
+        item_ref: `aya:${p.item.id}`,
+        admission: p.item.admission,
+        content_version: { ...content.pack.curriculum },
+        match: { same_skill_node: p.sameSkillNode, same_error_category: p.sameErrorCategory },
+        ...(p.difficulty !== undefined ? { difficulty: p.difficulty } : {}),
+      }));
+      return selfCheck("GenerateVariationResponse", {
+        contract_version: version,
+        result: { candidates, ...(out.emptyReason ? { empty_reason: out.emptyReason } : {}) },
+        evidence_ids: [],
+        source_version: sourceVersion(`algo:${VARIANT_ALGORITHM}`),
+        model_version: `algo:${VARIANT_ALGORITHM}`,
+        // 候选一律已准入（空结果同契约示例）：formal、1.0
+        ...contentEnvelope(out.picks.map((p) => p.item), false),
+      }, version);
+    });
+
+  const report = (body: unknown): HandlerResult =>
+    v1Method("report", "ReportRequest", body, (req, _fp, version) => {
+      const out = buildReport(taxonomy, req as unknown as ReportInput);
+      return selfCheck("ReportResponse", {
+        contract_version: version,
+        result: {
+          skill_summary: out.skillSummary,
+          error_distribution: out.errorDistribution,
+          highlight_codes: out.highlightCodes,
+        },
+        evidence_ids: out.evidenceIds,
+        confidence: out.confidence,
+        source_version: sourceVersion(`algo:${REPORT_ALGORITHM}`),
+        model_version: `algo:${REPORT_ALGORITHM}`,
+        human_review_required: false,
+        semantics: out.anyUnadmitted ? "practice" : "formal",
+      }, version);
+    });
+
+  const V1_ROUTES: Record<(typeof V1_ONLY_METHODS)[number], (body: unknown) => HandlerResult> = {
+    plan,
+    teach,
+    generate_variation: generateVariation,
+    report,
+  };
+  const KNOWN_ROUTES = new Set<string>(["capabilities", "grade", "diagnose", ...V1_ONLY_METHODS]);
 
   /** 路由（路径不含 /plugin/v0 前缀）。所有错误都转成契约 Problem。 */
   const handle = (method: string, path: string, body: unknown): HandlerResult => {
@@ -463,9 +567,8 @@ export function createAdapter(deps: AdapterDeps) {
       if (method === "GET" && name === "capabilities") result = capabilities();
       else if (method === "POST" && name === "grade") result = grade(body);
       else if (method === "POST" && name === "diagnose") result = diagnose(body);
-      else if (method === "POST" && NOT_IMPLEMENTED.has(name)) {
-        throw new ProblemError(501, "METHOD_NOT_IMPLEMENTED", `${name} is not implemented by the aya adapter yet`);
-      } else if (method === "GET" && name.startsWith("jobs/")) {
+      else if (method === "POST" && Object.hasOwn(V1_ROUTES, name)) result = V1_ROUTES[name as keyof typeof V1_ROUTES](body);
+      else if (method === "GET" && name.startsWith("jobs/")) {
         throw new ProblemError(404, "JOB_NOT_FOUND", "the aya adapter runs synchronously and has no jobs");
       } else throw new ProblemError(404, "INVALID_REQUEST", "unknown route");
     } catch (e) {
