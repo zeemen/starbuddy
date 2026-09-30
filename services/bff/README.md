@@ -1,6 +1,6 @@
 # services/bff · TS BFF
 
-模块：计量 `src/metering/`（2-E，`specs/metering-impl-sprint2/spec.md`）、星图读模块 `src/star-map/`（3-H，`specs/star-map-sprint3/spec.md`）、建档 `src/onboarding/`（SIE-01）、行为事件与探针 `src/events/`（2-L）。登录、会话、支付都不在这里。
+模块：计量 `src/metering/`（2-E，`specs/metering-impl-sprint2/spec.md`）、星图读模块 `src/star-map/`（3-H，`specs/star-map-sprint3/spec.md`）、建档 `src/onboarding/`（SIE-01）、行为事件与探针 `src/events/`（2-L）、统一壳路由表与家庭登录 `src/http/`（4-H H1）。支付不在这里。
 
 - 运行时：Node 22（原生运行 TS，与阿鸦适配器同一工具链）；数据库客户端 `pg`（MIT）。
 - 计量流程：`meteredCall()`——以当前账号预留 → 用同一个 key 调学习服务 → 结算或释放；结果未知时同 key 退避重试。
@@ -21,6 +21,18 @@
     宵禁时段（按 `platform.student_time_guard` 与缺省 22:00–06:00）续做、取题、探针、作答回 402 `curfew` 并暂停会话。
     探针经 2-L 库函数写入（幂等键由会话与步骤派生）并在作答后关联。
   - 学习服务地址与令牌：`BFF_LEARNING_URL`、`BFF_LEARNING_TOKEN`（不设时诊断接口 503）。
+
+- 统一壳路由表与家庭登录（冲刺 4-H H1，`specs/unified-shell-sprint4/spec.md` 第 2、3、16、17 节）：`src/http/`，接口定义 `openapi/shell.v0.yaml`。
+  - 路由表 `src/http/routes.ts`：每条路由声明方法、路径模板、auth（public / session / guardian / student）、CSRF、限流；分发只查这张表。
+    H2 之前挂在星图服务同一个端口上（`createStarMapServer({ shell })`），表外路径才走旧路由；`createShellServer` 是独立入口（表外一律 404）。
+  - 中间件链：请求 ID → 匹配 → 请求体 → 按 IP 限流 → 解析会话（`x-sb-session` → `platform.auth_session_resolve`）→ 按 auth 拦截
+    → CSRF（Origin 等于 `BFF_SHELL_ORIGIN`；有会话的另核对与会话绑定的 `x-csrf-token`）→ 按号码 / 账号限流 → `withAccount` → handler。
+  - 登录、会话、限流全部在迁移 0029 的库函数里（表不给任何应用角色策略）；验证码由 BFF 生成、经 `SmsSender` 发出，库里只存 HMAC。
+  - 短信：只有捕获桩 `CaptureSmsSender`（dev / test，只收 +999 合成号码）；staging、pilot、生产没有供应商，启动即失败。
+  - 配置：阈值 `config/auth.json`；`STARBUDDY_ENV`（必填）、`BFF_SHELL_ORIGIN`、`BFF_LOG_HMAC_KEY`、`BFF_AUTH_SECRET`（十六进制 ≥ 32 字节，
+    dev / test 缺省随机）、`BFF_TRUST_CLIENT_IP`、`BFF_SMS_CAPTURE_FILE`（dev / test）。见 `src/star-map/main.ts` 开头的注释。
+  - 部署要求：`platform.auth_otp_login` 的参数有手机号原文，BFF 的登录角色要关掉语句与参数日志（同 0020：`log_statement = 'none'`、
+    `log_parameter_max_length = 0`、`log_parameter_max_length_on_error = 0`）。
 
 ## 测试
 ```bash

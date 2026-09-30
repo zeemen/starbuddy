@@ -96,3 +96,11 @@ a { color: inherit; }
 .diagnosis-options { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--rule); padding: 8px 12px; }
 .diagnosis-options label { min-height: 44px; display: flex; align-items: center; gap: 8px; }
 .diagnosis-actions button { font: inherit; min-height: 44px; min-width: 88px; }
+
+/* 统一壳登录与学生模式入口（4-H H1） */
+.shell-form { margin: 12px 0; }
+.shell-form label { display: block; margin-bottom: 4px; }
+.shell-form input { font: inherit; min-height: 44px; display: block; margin-bottom: 4px; }
+.shell-form button { font: inherit; min-height: 44px; min-width: 44px; }
+.shell-result { min-height: 1.5em; }
+.shell-list { list-style: none; padding: 0; }

@@ -32,8 +32,8 @@
 //   - 服务实际监听的地址是 loopback；
 //   - 请求来自 loopback，并且没有转发头（经过代理的请求也来自 loopback）；
 // 才读请求头 x-dev-account-id。任一条件不满足，这个头一律忽略，请求按未登录处理（401）。
-import { createHash } from 'node:crypto';
-import { createServer, type IncomingMessage, type Server } from 'node:http';
+import { createHmac, randomBytes } from 'node:crypto';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { Pool } from 'pg';
 import { getStarMap, isUuid } from './query.ts';
@@ -112,10 +112,15 @@ export interface StarMapServerOptions {
   now?: () => Date;
   /** 数学自适应诊断：学习服务客户端等（不配时诊断接口一律 503） */
   diagnosis?: Omit<DiagnosisDeps, 'pool'>;
+  /** 统一壳路由表（4-H H1，src/http/）：先交给它，路径不在表里才走下面的旧路由（H2 迁移后删掉这层） */
+  shell?: (req: IncomingMessage, res: ServerResponse) => Promise<boolean>;
 }
 
-/** 日志里的 student_id 只记哈希前 16 位 */
-export const hashId = (id: string): string => createHash('sha256').update(id).digest('hex').slice(0, 16);
+// 日志里的 student_id 只记带密钥 HMAC 的前 16 位（4-H H1：原来是不加密钥的 sha256，student_id 可被穷举还原）。
+// 密钥由 main.ts 从 BFF_LOG_HMAC_KEY 设置（与统一壳路由同一把）；没设时每个进程随机一把。
+let logKey: Buffer = randomBytes(32);
+export const setLogKey = (key: Buffer): void => { logKey = key; };
+export const hashId = (id: string): string => createHmac('sha256', logKey).update(`student\n${id}`).digest('hex').slice(0, 16);
 
 function devAccount(req: IncomingMessage, server: Server, devAuth: boolean): string | null {
   if (!devAuth) return null;
@@ -131,6 +136,7 @@ function devAccount(req: IncomingMessage, server: Server, devAuth: boolean): str
 export function createStarMapServer(opts: StarMapServerOptions): Server {
   const log = opts.log ?? ((line) => console.log(JSON.stringify(line)));
   const server: Server = createServer(async (req, res) => {
+    if (opts.shell && (await opts.shell(req, res))) return;
     const started = Date.now();
     const record: Record<string, unknown> = { route: 'unknown' };
     const send = (status: number, body: string, extra: Record<string, string> = {}) => {

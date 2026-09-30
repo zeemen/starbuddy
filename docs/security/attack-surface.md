@@ -42,8 +42,8 @@
 | 编号 | 攻击面 | 攻击者 / 前提 | 现有防护 | 已有自动化断言 | 渗透测试要做的 | 已知遗留 |
 |---|---|---|---|---|---|---|
 | C1 | S2 与 gA 同号：授权判断不能读手机号 | 层 1；gA | 授权只看 `guardian_student_link` | `ref:db/tests/20_rls_household.sql#同手机号不能跨档案：S2 的账号与 gA 同号，gA 仍看不到 S2`；`ref:db/tests/60_metering.sql#同手机号不能跨档案看计量数据`；`ref:db/tests/70_metering_functions.sql#别的学生不能扣这个学生的额度（同手机号也不行）`；`mut:授权改成按手机号关联` | 人工：复测 | — |
-| C2 | 同一手机号可注册多个家长账号，同号的第二账号可以绕过“签发人不能兑换自己的邀请” | 层 1；gB2（与 gB 同号） | 只防同一账号 | `ref:db/tests/20_rls_household.sql#签发人不能兑换自己签的邀请` | 人工：用 gB2 兑换 gB 签发的邀请，记录结果 | schema spec 待人确认 #15 |
-| C3 | `lookup_accounts_by_phone` 在未登录时可被调用，成为“号码是否注册过”的查询通道 | 层 3 | 数据库层只返回账号 ID | `ref:db/tests/20_rls_household.sql#登录按手机号只能查到账号 ID` | 第二轮：BFF 限流与未登录调用 | schema spec 待人确认 #18 |
+| C2 | 同一手机号可注册多个家长账号，同号的第二账号可以绕过“签发人不能兑换自己的邀请” | 层 1；gB2（与 gB 同号） | 只防同一账号 | `ref:db/tests/20_rls_household.sql#签发人不能兑换自己签的邀请`；4-H 起登录拒绝同号多个家长账号：`ref:db/tests/79k_auth_session.sql#同号多个家长账号：拒绝登录，不建会话`；`mut:认证：同号多家长账号不拒绝` | 人工：用 gB2 兑换 gB 签发的邀请，记录结果 | schema spec 待人确认 #15 |
+| C3 | `lookup_accounts_by_phone` 在未登录时可被调用，成为“号码是否注册过”的查询通道 | 层 3 | 数据库层只返回账号 ID | `ref:db/tests/20_rls_household.sql#登录按手机号只能查到账号 ID`；4-H 登录入口（0029）不再区分号码是否注册：`ref:db/tests/79k_auth_session.sql#已注册与未注册号码：申请结果相同`；`ref:services/bff/tests/auth.integration.test.ts#发验证码：已注册与未注册号码返回逐字节相同的 202` | 第二轮：BFF 限流与未登录调用 | schema spec 待人确认 #18 |
 
 ## D. 邀请兑换
 

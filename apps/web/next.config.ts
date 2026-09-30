@@ -55,6 +55,11 @@ const config: NextConfig = {
         headers: [{ key: 'Cache-Control', value: 'no-store' }],
       },
       {
+        // 统一壳登录、家长首页、学生模式（4-H H1）：带会话的页面一律不缓存（spec 第 15 节）
+        source: '/(login|family|student)',
+        headers: [{ key: 'Cache-Control', value: 'no-store' }],
+      },
+      {
         // 建档：个人填写内容，不缓存（SIE-01）
         source: '/onboarding/:path*',
         headers: [{ key: 'Cache-Control', value: 'no-store' }],

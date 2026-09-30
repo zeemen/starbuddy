@@ -1,0 +1,258 @@
+# BFF ↔ 统一壳前端（apps/web 服务端）的接口：家庭登录与会话（specs/unified-shell-sprint4/spec.md 第 2、3、16、17 节，H1）。
+# 服务内部接口，不是学科插件契约，不放 packages/contracts（与 star-map.v0.yaml 同一做法）。
+# H1 只有认证、会话、/me、建档、同意、打开学生模式；选科、今日计划、额度、时长设置随 H4 加进本文件与路由表
+# （services/bff/src/http/routes.ts，tests/shell-openapi.test.ts 断言两边一致）。
+openapi: 3.1.0
+info:
+  title: StarBuddy BFF · shell (v0)
+  version: 0.1.0
+  description: >
+    浏览器不直连 BFF：apps/web 的服务端把 HttpOnly cookie 里的会话令牌放进请求头 x-sb-session 转交，
+    BFF 经 platform.auth_session_resolve 解析出账号，身份只来自会话；请求参数、请求体、请求头里的 account_id 一律不读。
+    授权在数据库（RLS 与迁移 0029 的 SECURITY DEFINER 函数）：路径里的 student_id 只作查询条件，未授权与不存在返回同一个 404，
+    响应体与响应头逐字节相同。改变状态的请求：Origin 必须恰好是壳的来源；有会话的另带与会话绑定的 x-csrf-token（登录与打开学生模式时下发）。
+    超过限流阈值一律同一个 429（不区分原因）；阈值在 services/bff/config/auth.json。响应一律 Cache-Control: no-store、
+    X-Content-Type-Options: nosniff，不发任何 CORS 头。错误体只有错误码。
+servers:
+  - url: http://127.0.0.1:8787
+paths:
+  /bff/v0/auth/otp/request:
+    post:
+      operationId: requestLoginCode
+      description: >
+        发登录验证码（6 位，5 分钟有效，错 5 次作废）。无论号码是否注册都返回同一个 202 与同一个响应体。
+        限流：每号每分钟 1 次、每号每天 10 次、每 IP 每小时 30 次。4-H 只有短信捕获桩（dev / test），不给真实号码发短信。
+      parameters: [{ $ref: '#/components/parameters/Origin' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [phone]
+              properties:
+                phone: { $ref: '#/components/schemas/Phone' }
+      responses:
+        '202':
+          description: 已受理（与号码是否注册无关）
+          content:
+            application/json:
+              schema: { type: object, required: [status], properties: { status: { const: accepted } } }
+        '403': { $ref: '#/components/responses/Problem' }
+        '413': { $ref: '#/components/responses/Problem' }
+        '415': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+  /bff/v0/auth/otp/verify:
+    post:
+      operationId: verifyLoginCode
+      description: >
+        核对验证码并登录家长账号（没有就注册）。码错、过期、用过、换号、格式不对、账号停用一律同一个 401 LOGIN_FAILED；
+        码对了但同一号码有多个家长账号（历史数据）时 409 CONTACT_SUPPORT，不登录。请求头带着本设备旧会话令牌时，登录成功后旧令牌作废。
+        限流：每号每 15 分钟 10 次、每 IP 每小时 60 次。
+      parameters:
+        - $ref: '#/components/parameters/Origin'
+        - $ref: '#/components/parameters/OptionalSession'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [phone, code]
+              properties:
+                phone: { $ref: '#/components/schemas/Phone' }
+                code: { type: string, pattern: '^[0-9]{6}$' }
+      responses:
+        '200':
+          description: 家长会话（apps/web 写进 HttpOnly cookie，不交给浏览器脚本）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IssuedSession' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+  /bff/v0/auth/logout:
+    post:
+      operationId: logout
+      description: 作废本会话。
+      parameters: [{ $ref: '#/components/parameters/Session' }, { $ref: '#/components/parameters/Origin' }, { $ref: '#/components/parameters/Csrf' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /bff/v0/auth/logout-all:
+    post:
+      operationId: logoutAll
+      description: 退出所有设备：作废本账号的全部会话。
+      parameters: [{ $ref: '#/components/parameters/Session' }, { $ref: '#/components/parameters/Origin' }, { $ref: '#/components/parameters/Csrf' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /bff/v0/me:
+    get:
+      operationId: me
+      description: 账号类型；家长返回已绑定孩子（档案 ID 与年级，没有姓名）；学生返回自己的 student_id。
+      parameters: [{ $ref: '#/components/parameters/Session' }]
+      responses:
+        '200':
+          description: 当前账号
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    additionalProperties: false
+                    required: [account_kind, children]
+                    properties:
+                      account_kind: { const: guardian }
+                      children:
+                        type: array
+                        items:
+                          type: object
+                          additionalProperties: false
+                          required: [student_id, grade]
+                          properties:
+                            student_id: { type: string, format: uuid }
+                            grade: { type: integer, minimum: 7, maximum: 9 }
+                  - type: object
+                    additionalProperties: false
+                    required: [account_kind, student_id]
+                    properties:
+                      account_kind: { const: student }
+                      student_id: { type: [string, 'null'], format: uuid }
+        '401': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students:
+    post:
+      operationId: createStudent
+      description: 家长建档（platform.create_student）：建在自己创建的家庭里，没有就新建。只收年级、地区、教材版本、出生年月。限流：每家长账号每天 5 次。
+      parameters: [{ $ref: '#/components/parameters/Session' }, { $ref: '#/components/parameters/Origin' }, { $ref: '#/components/parameters/Csrf' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [grade, region]
+              properties:
+                grade: { type: integer, minimum: 7, maximum: 9 }
+                region: { type: string, pattern: '^[a-z][a-z0-9-]{1,31}$' }
+                textbook_version: { type: [string, 'null'], pattern: '^[a-z0-9][a-z0-9-]{1,31}$' }
+                birth_year_month: { type: [string, 'null'], pattern: '^(19|20)[0-9]{2}-(0[1-9]|1[0-2])$' }
+      responses:
+        '201':
+          description: 已建档
+          content:
+            application/json:
+              schema: { type: object, required: [student_id], properties: { student_id: { type: string, format: uuid } } }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/consents:
+    post:
+      operationId: recordConsent
+      description: >
+        已绑定的家长写同意记录（只追加，撤回也是一条新记录）。合成版本号（…@synthetic-*）只在 dev / test / staging 可用，
+        pilot 与生产在合规交付前记不了同意，也就打不开学生模式（待人确认 #13）。
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/Session'
+        - $ref: '#/components/parameters/Origin'
+        - $ref: '#/components/parameters/Csrf'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [consent_type, document_version, decision]
+              properties:
+                consent_type: { enum: [privacy_policy, guardian_consent_under14, voice_processing, pilot_participation] }
+                document_version: { type: string, pattern: '^[a-z0-9][a-z0-9-]{0,47}@[A-Za-z0-9][A-Za-z0-9._-]{0,31}$' }
+                decision: { enum: [granted, revoked] }
+      responses:
+        '201':
+          description: 已记录
+          content:
+            application/json:
+              schema: { type: object, required: [status], properties: { status: { const: recorded } } }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/student-session:
+    post:
+      operationId: openStudentMode
+      description: >
+        家长在本设备打开学生模式（PLT-01 之前的过渡入口，待人确认 #1）：要求家长对该学生有有效绑定，否则与“学生不存在”同一个 404；
+        缺同意（隐私政策；不满 14 周岁或出生年月为空另需监护人同意）409 CONSENT_REQUIRED。成功时家长的会话作废，返回学生会话；
+        回家长模式要重新短信验证。限流：每家长账号每小时 20 次。
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/Session'
+        - $ref: '#/components/parameters/Origin'
+        - $ref: '#/components/parameters/Csrf'
+      responses:
+        '200':
+          description: 学生会话（apps/web 用它替换本设备的家长会话 cookie）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/IssuedSession'
+                  - type: object
+                    required: [student_id]
+                    properties:
+                      account_kind: { const: student }
+                      student_id: { type: string, format: uuid }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+components:
+  parameters:
+    StudentId: { name: student_id, in: path, required: true, schema: { type: string, format: uuid } }
+    Session: { name: x-sb-session, in: header, required: true, description: 会话令牌（64 位十六进制），不进 URL 与日志, schema: { type: string, pattern: '^[0-9a-f]{64}$' } }
+    OptionalSession: { name: x-sb-session, in: header, required: false, description: 本设备原来的会话令牌（登录成功后作废）, schema: { type: string, pattern: '^[0-9a-f]{64}$' } }
+    Csrf: { name: x-csrf-token, in: header, required: true, description: 与会话绑定的 CSRF 令牌（双重提交：apps/web 核对表单与 cookie 一致后转交）, schema: { type: string, pattern: '^[0-9a-f]{64}$' } }
+    Origin: { name: origin, in: header, required: true, description: 浏览器请求的 Origin，由 apps/web 原样转交；必须恰好等于壳的来源, schema: { type: string } }
+  schemas:
+    Phone: { type: string, pattern: '^\+[1-9][0-9]{6,14}$', description: E.164；只用于登录家长账号（规则 5） }
+    IssuedSession:
+      type: object
+      required: [account_kind, session_token, csrf_token]
+      properties:
+        account_kind: { enum: [guardian, student] }
+        session_token: { type: string, pattern: '^[0-9a-f]{64}$' }
+        csrf_token: { type: string, pattern: '^[0-9a-f]{64}$' }
+    Problem:
+      type: object
+      additionalProperties: false
+      required: [type, title, status, code]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        code:
+          enum: [UNAUTHENTICATED, LOGIN_FAILED, FORBIDDEN, CSRF, NOT_FOUND, METHOD_NOT_ALLOWED, CONTACT_SUPPORT, CONSENT_REQUIRED,
+                 TOO_LARGE, UNSUPPORTED_MEDIA_TYPE, INVALID, TOO_MANY_REQUESTS, INTERNAL]
+  responses:
+    Ok:
+      description: 完成
+      content:
+        application/json:
+          schema: { type: object, required: [status], properties: { status: { const: ok } } }
+    Problem:
+      description: 错误（只有错误码，不回显输入、堆栈、SQL）
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

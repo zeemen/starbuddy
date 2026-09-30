@@ -25,6 +25,8 @@ node --no-warnings "$ROOT/adapters/aya/scripts/register-content.ts" | psql -X -q
 PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -q -v ON_ERROR_STOP=1 -f "$ROOT/db/seeds/dev/star-map-synthetic.sql" >/dev/null
 # 数学诊断演示（SIE-02a）：九年级合成学生 D1 与家长 gD，试点会员（完整诊断额度）
 PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -q -v ON_ERROR_STOP=1 -f "$ROOT/db/seeds/dev/diagnosis-synthetic.sql" >/dev/null
+# 家庭登录与学生模式（4-H H1）：gS 的合成号码 +99900000101、S1 的合成同意
+PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -q -v ON_ERROR_STOP=1 -f "$ROOT/db/seeds/dev/auth-synthetic.sql" >/dev/null
 AYA_COUNT="$(psql -X -At -c "SELECT count(*) FROM platform.skill_node WHERE subject = 'aya'")"
 export AYA_COUNT
 
@@ -32,6 +34,10 @@ free_port() { python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",
 BFF_PORT="$(free_port)"
 WEB_PORT="$(free_port)"
 LOG="$(mktemp)"
+# 短信捕获桩的收件箱（4-H H1）：BFF 把捕获的验证码追加到这个文件，端到端测试从这里读码登录；只有本用户可读，结束时删除
+SMS_INBOX="$(mktemp)"
+chmod 600 "$SMS_INBOX"
+export SB_SMS_INBOX="$SMS_INBOX"
 # 数学诊断（SIE-02a）：阿鸦适配器（验证器）+ 学习服务（合成题面只在 LEARNING_ENV=test）。服务间凭据每次随机生成，不落仓库。
 # 需要 services/learning/.venv（同 make learning-test）。
 PY="$ROOT/services/learning/.venv/bin/python"
@@ -58,7 +64,7 @@ AYA_PID=$!
     LEARNING_ADAPTER_AYA_URL="http://127.0.0.1:$AYA_PORT" LEARNING_ADAPTER_AYA_TOKEN="$AYA_CRED"
   exec "$PY" -m learning ) > "$LLOG" 2>&1 < /dev/null &
 LEARNING_PID=$!
-trap 'kill "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true; rm -f "$LLOG"' EXIT
+trap 'kill "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true; rm -f "$LLOG" "$SMS_INBOX"' EXIT
 for _ in $(seq 1 80); do
   python3 -c "import socket,sys; ok=all(socket.socket().connect_ex(('127.0.0.1', p)) == 0 for p in ($LEARNING_PORT, $AYA_PORT)); sys.exit(0 if ok else 1)" && break
   sleep 0.25
@@ -66,10 +72,11 @@ done
 # STARBUDDY_DEV_METER_CLOCK=daytime：诊断的宵禁判断与上面挪到白天的计量时钟同一时间轴（只在开发身份桩打开时认）
 ( cd "$ROOT/services/bff" || exit 1
   export BFF_DATABASE_URL="postgresql://bff_app@/starbuddy_test?host=$PGHOST" PORT="$BFF_PORT" STARBUDDY_DEV_AUTH=1 \
-    BFF_LEARNING_URL="http://127.0.0.1:$LEARNING_PORT" BFF_LEARNING_TOKEN="$SVC_CRED" STARBUDDY_DEV_METER_CLOCK=daytime
+    BFF_LEARNING_URL="http://127.0.0.1:$LEARNING_PORT" BFF_LEARNING_TOKEN="$SVC_CRED" STARBUDDY_DEV_METER_CLOCK=daytime \
+    STARBUDDY_ENV=test BFF_SHELL_ORIGIN="http://127.0.0.1:$WEB_PORT" BFF_SMS_CAPTURE_FILE="$SMS_INBOX"
   exec node --no-warnings src/star-map/main.ts ) > "$LOG" 2>&1 < /dev/null &
 BFF_PID=$!
-trap 'kill "$BFF_PID" "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true; rm -f "$LOG" "$LLOG"' EXIT
+trap 'kill "$BFF_PID" "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true; rm -f "$LOG" "$LLOG" "$SMS_INBOX"' EXIT
 for _ in $(seq 1 80); do
   python3 -c "import socket,sys; s=socket.socket(); sys.exit(0 if s.connect_ex(('127.0.0.1', $BFF_PORT)) == 0 else 1)" && break
   sleep 0.25
@@ -93,7 +100,7 @@ ENVDTS="$(mktemp)"
 if [ -f "$WEB/next-env.d.ts" ]; then cp "$WEB/next-env.d.ts" "$ENVDTS"; else rm -f "$ENVDTS"; fi
 cleanup() {
   kill "$BFF_PID" "$REVIEW_PID" "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true
-  rm -f "$LOG" "$RLOG" "$LLOG"
+  rm -f "$LOG" "$RLOG" "$LLOG" "$SMS_INBOX"
   if [ -f "$ENVDTS" ]; then cp "$ENVDTS" "$WEB/next-env.d.ts"; rm -f "$ENVDTS"; else rm -f "$WEB/next-env.d.ts"; fi
   rm -rf "${WEB:?}/.next-e2e"
 }

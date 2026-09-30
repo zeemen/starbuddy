@@ -596,6 +596,46 @@ declare -A M=(
   ["复核队列：BFF 可读结案码"]="GRANT SELECT ON platform.review_resolution_code TO starbuddy_bff; CREATE POLICY rc ON platform.review_resolution_code FOR SELECT TO starbuddy_bff USING (true);"
 )
 
+# 家庭登录与会话（0029，specs/unified-shell-sprint4 H1）：由 79k_auth_session 发现
+afr() {  # 函数定义里的文本替换（与 services/bff/tests/mutations.sh 的 fr 相同）；找不到模式时让变异本身失败
+  printf "DO \$\$ DECLARE d text := pg_get_functiondef('%s'::regprocedure); BEGIN IF position(%s IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, %s, %s); END \$\$;" "$1" "$2" "$2" "$3"
+}
+AI='platform.auth_otp_issue(text, bytea, integer, integer)'
+AL='platform.auth_otp_login(text, bytea, integer, integer, text)'
+AR='platform.auth_session_resolve(text)'
+AS='platform.auth_issue_student_session(uuid, text, integer, integer)'
+M+=(
+  ["认证：验证码不检查过期"]="$(afr "$AL" "'IF NOT FOUND OR c.expires_at <= v_now THEN'" "'IF NOT FOUND THEN'")"
+  ["认证：错码不计次"]="$(afr "$AL" "'SET failed_attempts = c.failed_attempts + 1,'" "'SET failed_attempts = c.failed_attempts,'")"
+  ["认证：错满不作废"]="$(afr "$AL" "'>= c.max_attempts'" "'>= c.max_attempts + 100'")"
+  ["认证：验证码可重用"]="$(afr "$AL" "'UPDATE platform.auth_otp_challenge SET closed_at = v_now, closed_reason = ''used'' WHERE id = c.id;'" "''")"
+  ["认证：同号多家长账号不拒绝"]="$(afr "$AL" "'IF v_n > 1 THEN'" "'IF false THEN'")"
+  ["认证：手机号也匹配学生账号"]="$(afr "$AL" "'WHERE ct.phone_e164 = p_phone AND a.kind = ''guardian'';'" "'WHERE ct.phone_e164 = p_phone;'")"
+  ["认证：停用家长可登录"]="$(afr "$AL" "'ELSIF v_status <> ''active'' THEN'" "'ELSIF false THEN'")"
+  ["认证：登录不废本设备旧令牌"]="$(afr "$AL" "'WHERE token_hash = platform.auth_token_hash(p_prev_token) AND revoked_at IS NULL;'" "'WHERE false;'")"
+  ["认证：新申请不作废旧码"]="$(afr "$AI" "'SET closed_at = v_now, closed_reason = ''superseded'''" "'SET closed_at = closed_at, closed_reason = closed_reason'")"
+  ["认证：同号可有两个未关闭挑战"]="DROP INDEX platform.auth_otp_open_uq;"
+  ["认证：会话不查空闲"]="$(afr "$AR" "' AND s.last_seen_at + s.idle_timeout > v_now'" "''")"
+  ["认证：会话不查绝对期限"]="$(afr "$AR" "' AND s.expires_at > v_now AND s.last_seen_at'" "' AND s.last_seen_at'")"
+  ["认证：会话不查账号状态"]="$(afr "$AR" "'WHERE a.id = s.account_id AND a.status = ''active'''" "'WHERE a.id = s.account_id'")"
+  ["认证：会话不核对来源与账号类型"]="$(afr "$AR" "'AND ((s.origin = ''otp'' AND a.kind = ''guardian'') OR (s.origin = ''guardian_handoff'' AND a.kind = ''student'')))'" "')'")"
+  ["认证：登出不废会话"]="$(afr 'platform.auth_session_revoke(text)' "'WHERE token_hash = platform.auth_token_hash(p_token) AND revoked_at IS NULL;'" "'WHERE false;'")"
+  ["认证：退出所有设备只废本会话"]="$(afr 'platform.auth_session_revoke_all(text)' "'WHERE account_id = v_acct AND revoked_at IS NULL;'" "'WHERE token_hash = platform.auth_token_hash(p_token) AND revoked_at IS NULL;'")"
+  ["认证：学生模式不核对是哪位家长的绑定"]="$(afr "$AS" "'AND l.guardian_account_id = s.account_id AND l.status'" "'AND l.status'")"
+  ["认证：学生模式认已解除的绑定"]="$(afr "$AS" "'AND l.status = ''active'') THEN'" "') THEN'")"
+  ["认证：学生模式不核对当前账号"]="$(afr "$AS" "'OR platform.current_account_id() IS DISTINCT FROM s.account_id'" "''")"
+  ["认证：学生模式不查隐私政策同意"]="$(afr "$AS" "'IF coalesce((SELECT cr.decision'" "'IF false AND coalesce((SELECT cr.decision'")"
+  ["认证：不满 14 不要求监护人同意"]="$(afr "$AS" "'(v_birth IS NULL OR (v_birth + interval ''1 month'' - interval ''1 day'' + interval ''14 years'')::date > v_today)'" "'false'")"
+  ["认证：出生年月为空按已满 14"]="$(afr "$AS" "'v_birth IS NULL OR '" "''")"
+  ["认证：按出生月第一天算年龄"]="$(afr "$AS" "'v_birth + interval ''1 month'' - interval ''1 day'' + interval ''14 years'''" "'v_birth + interval ''14 years'''")"
+  ["认证：学生模式不废家长会话"]="$(afr "$AS" "'UPDATE platform.auth_session SET revoked_at = v_now, revoked_reason = ''student_mode'' WHERE id = s.id;'" "''")"
+  ["认证：限流不设上限"]="$(afr 'platform.auth_rate_hit(text, bytea, integer, integer)' "'RETURN v_hits <= p_limit;'" "'RETURN true;'")"
+  ["认证：限流不清旧窗口"]="$(afr 'platform.auth_rate_hit(text, bytea, integer, integer)' "'DELETE FROM platform.auth_rate_counter WHERE bucket = p_bucket AND key_digest = p_key AND window_start < v_start;'" "''")"
+  ["认证：BFF 可直接读会话表"]="GRANT SELECT ON platform.auth_session TO starbuddy_bff; CREATE POLICY m ON platform.auth_session FOR SELECT TO starbuddy_bff USING (true);"
+  ["认证：学习服务可解析会话"]="GRANT EXECUTE ON FUNCTION platform.auth_session_resolve(text) TO starbuddy_learning;"
+  ["认证：BFF 可直接建会话"]="GRANT EXECUTE ON FUNCTION platform.auth_new_session(uuid, text, uuid, timestamptz, integer, integer) TO starbuddy_bff;"
+)
+
 # 并行执行（每个变异各起一个一次性 Postgres，互不影响）；DBMUT_JOBS 控制并发数，默认等于 CPU 核数
 JOBS="${DBMUT_JOBS:-$(nproc 2>/dev/null || echo 2)}"
 RES="$(mktemp -d "${TMPDIR:-/tmp}/starbuddy-dbmut.XXXXXX")"

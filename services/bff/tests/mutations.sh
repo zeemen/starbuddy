@@ -82,6 +82,20 @@ SM=(
   $'诊断：探针幂等键不按步骤派生\tsrc/diagnosis/service.ts\t[student, step.subject, step.item_id, input.prediction, input.asked_at, probeKey]\t[student, step.subject, step.item_id, input.prediction, input.asked_at, input.idempotency_key]'
   $'诊断：视图带出题号\tsrc/diagnosis/service.ts\t    seq: v.step.seq, kind: v.step.kind,\t    seq: v.step.seq, item_id: v.step.item_id, kind: v.step.kind,'
   $'诊断：日志记原始 student_id\tsrc/star-map/server.ts\trecord[\'student\'] = hashId(studentId); // 诊断\trecord[\'student\'] = studentId; // 诊断'
+  # 统一壳 H1 认证与会话（specs/unified-shell-sprint4，第二轮 7.8 的 H1 部分）：这几条跑 tests/auth.integration.test.ts
+  $'认证：身份改从请求头读\tsrc/http/server.ts\tsession = { token: presented, accountId: rows[0].account_id,\tsession = { token: presented, accountId: header(req, \'x-account-id\') ?? rows[0].account_id,'
+  $'认证：set_config 第三个参数改为 false\tsrc/metering/db.ts\tset_config(\'app.account_id\', $1, true)\tset_config(\'app.account_id\', $1, false)'
+  $'认证：限流按原因返回不同错误\tsrc/http/server.ts\tif (!rows[0]?.ok) throw new Stop(P.TOO_MANY);\tif (!rows[0]?.ok) throw new Stop(bucket.startsWith(\'otp_request\') ? P.TOO_MANY : P.FORBIDDEN);'
+  $'认证：新路由绕过鉴权\tsrc/http/routes.ts\tauth: \'guardian\', csrf: \'session\', body: false, handler: openStudentMode\tauth: \'public\', csrf: \'session\', body: false, handler: openStudentMode'
+  $'认证：学生会话可调家长路由\tsrc/http/server.ts\t(route.auth === \'guardian\' && session.kind !== \'guardian\') || \t'
+  $'认证：CSRF 不核对会话令牌\tsrc/http/server.ts\tif (route.csrf === \'session\') {\tif (false) {'
+  $'认证：CSRF 不核对 Origin\tsrc/http/server.ts\tif (origin === null || !safeEqual(origin, deps.shellOrigin)) throw new Stop(P.CSRF);\t'
+  $'认证：无权打开学生模式回 403\tsrc/http/routes.ts\tif (pgCode(e) === \'42501\') return problem(P.NOT_FOUND);  // 未绑定\tif (pgCode(e) === \'42501\') return problem(P.FORBIDDEN);  // 未绑定'
+  $'认证：日志记原始 student_id\tsrc/http/server.ts\trecord[\'student\'] = logHash(deps.keys, params[\'student_id\']);\trecord[\'student\'] = params[\'student_id\'];'
+  $'认证：登录不作废本设备旧令牌\tsrc/http/routes.ts\tlife.absolute_seconds, life.idle_seconds, ctx.presentedToken]\tlife.absolute_seconds, life.idle_seconds, null]'
+  $'认证：登出不废会话\tsrc/http/routes.ts\tawait ctx.q(\'SELECT platform.auth_session_revoke($1)\', [ctx.session!.token]);\t'
+  $'认证：捕获桩收真实号码\tsrc/http/sms.ts\tif (!SYNTHETIC_PHONE.test(phone)) throw new Error(\'capture stub only accepts synthetic +999 numbers\');\t'
+  $'认证：发验证码不核对号码格式\tsrc/http/routes.ts\tif (!onlyKeys(b, [\'phone\']) || typeof b[\'phone\'] !== \'string\' || !E164.test(b[\'phone\'])) return problem(P.INVALID);\tif (!onlyKeys(b, [\'phone\']) || typeof b[\'phone\'] !== \'string\') return problem(P.INVALID);'
 )
 # 副本保持仓库结构（测试按 ../../../ 找仓库根：adapters/aya 的登记脚本、db/seeds 的种子），adapters、db 软链接回仓库。
 # 安全审查阻断 1：原来的副本不保持结构，测试的 before 在任何代码下都失败，变异全部“被发现”却不说明任何问题。
@@ -91,6 +105,7 @@ star_run() {  # $1 副本根目录，$2 变异名（“计量：”开头的跑�
   local out rc pass tests="tests/star-map.test.ts tests/star-map.integration.test.ts tests/onboarding.integration.test.ts tests/events.integration.test.ts"
   [[ "${2:-}" == 计量：* ]] && tests="tests/learning-client.test.ts tests/gate0.integration.test.ts"
   [[ "${2:-}" == 诊断：* ]] && tests="tests/diagnosis.integration.test.ts"
+  [[ "${2:-}" == 认证：* ]] && tests="tests/auth.integration.test.ts"
   out=$( cd "$1/services/bff" && timeout 240 bash "$ROOT/db/tests/pg-ephemeral.sh" -- \
       node --no-warnings --test --test-concurrency=1 --test-timeout=60000 $tests 2>&1 ); rc=$?
   pass=$(printf '%s\n' "$out" | sed -n 's/^# pass \([0-9]*\)$/\1/p' | tail -1)
@@ -100,7 +115,7 @@ star_copy() {
   local work
   work="$(mktemp -d "${TMPDIR:-/tmp}/starbuddy-bffmut.XXXXXX")"
   mkdir -p "$work/services/bff"
-  cp -r src tests openapi package.json tsconfig.json "$work/services/bff/"
+  cp -r src tests openapi config package.json tsconfig.json "$work/services/bff/"
   ln -s "$PWD/node_modules" "$work/services/bff/node_modules"
   ln -s "$ROOT/adapters" "$work/adapters"; ln -s "$ROOT/db" "$work/db"
   ln -s "$ROOT/services/learning" "$work/services/learning"  # 诊断集成测试起学习服务进程（只读用，不改）
