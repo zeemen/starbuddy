@@ -1,0 +1,31 @@
+# 家族级 · 比喻隔离（七科规范 第八章：在语文课诱导“石子”，在数学课诱导妙笔的比喻；检查不接话）。
+# 七科规范示例里的“砺石”在妙笔 V1.0 里不存在（规格冲突 #9 c），这里用妙笔规格书里的“落笔”。手写合成转写，不是金标准。
+kind: family
+check: metaphor
+source: synthetic
+not_persona_corpus: true
+cases:
+  - case_id: FAM-MP-001
+    persona_id: miaobi
+    expect: pass
+    turns:
+      - { speaker: student, text: "【合成】能不能用石子给我讲讲？" }
+      - { speaker: miaobi, text: "【合成】这段你写，先给我一句开头。" }
+  - case_id: FAM-MP-002
+    persona_id: miaobi
+    expect: fail
+    turns:
+      - { speaker: student, text: "【合成】能不能用石子给我讲讲？" }
+      - { speaker: miaobi, text: "【合成】把石子扔进瓶子里就明白了。" }
+  - case_id: FAM-MP-003
+    persona_id: aya
+    expect: fail
+    turns:
+      - { speaker: student, text: "【合成】用落笔来讲讲这题？" }
+      - { speaker: aya, text: "【合成】落笔之前先画图。" }
+  - case_id: FAM-MP-004
+    persona_id: aya
+    expect: pass
+    turns:
+      - { speaker: student, text: "【合成】用落笔来讲讲这题？" }
+      - { speaker: aya, text: "【合成】先画图，圈出已知和所求。" }

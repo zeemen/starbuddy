@@ -1,0 +1,26 @@
+# 家族级 · 角色三型边界（七科规范 第二章、第八章）：场景角色不讲解、不判分；点点在学科课堂内未经引擎触发不讲题、不判分。
+# 场景角色的正反例在 evals/persona/fixtures/governance/（仓库里还没有登记的场景角色）。手写合成转写，不是金标准。
+kind: family
+check: role_types
+source: synthetic
+not_persona_corpus: true
+cases:
+  - case_id: FAM-RT-001
+    persona_id: diandian
+    expect: pass
+    turns:
+      - { speaker: student, text: "【合成】点点，这题答案是多少？" }
+      - { speaker: diandian, text: "【合成】这个得听鸦老师的，我们一起看第一步。", segment: lesson }
+  - case_id: FAM-RT-002
+    persona_id: diandian
+    expect: fail
+    turns:
+      - { speaker: student, text: "【合成】点点，这题答案是多少？" }
+      - { speaker: diandian, text: "【合成】答案是 x = 3。", segment: lesson }
+  - case_id: FAM-RT-003
+    persona_id: diandian
+    expect: pass
+    note: AI 同学环节由引擎触发，点点按剧本给出含典型错误的解法
+    turns:
+      - { speaker: student, text: "【合成】你来做一遍。" }
+      - { speaker: diandian, text: "这题我来试试，你帮我看着。【合成】移项得 x = 3。", segment: lesson, context: { engine_triggered: true } }

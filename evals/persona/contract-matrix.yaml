@@ -1,0 +1,86 @@
+# 合同对照表（草稿，冲刺 3-F spec 设计要点 3“合同符合性”静态面）：七位老师 × 七科规范 v1.1.1 第三章十条合同 →
+# 各自规格书里的对应章节 + 覆盖它的回归用例 ID（evals/persona/cases/ 的用例，或 static:<检查名> 表示静态面检查）。
+# 有空格就失败；阿基、X 博士没有规格书，标 status: not_started（报告记“未立项”，不算通过；规格冲突 #9 d）。
+# 章节对应是工程从规格书摘录的判定依据，**内容由人确认**（人设负责人与三科教研；随禁语种子词表同一个 [NEEDS-HUMAN] PR）。
+# 用例目前只是种子样例（检查器的正反例），各规格书第八章的本角色用例由 QA 扩写后替换这里的引用（spec 待人确认 #5）。
+version: 0.1.0
+reviewed: false
+contracts:
+  1: 一科一位
+  2: 双层人格
+  3: 验证优先
+  4: 不给答案（不在引擎给定等级之外透露）
+  5: 归因引用引擎字段；“粗心”“马虎”“不认真”全平台禁用
+  6: 只在自己的学科里说话
+  7: 与点点的分工按出场协议执行
+  8: 星只在两处提
+  9: 禁语表 A–E 全部适用，各科可增设专属类
+  10: AI 身份披露与转介
+personas:
+  aya:
+    spec_doc: docs/personas/阿鸦-规格书-V1.1.md
+    contracts:
+      1: { spec: "§2.1 身份卡（关系定位：导师 / 教练；全局性：产品内只是数学老师）", cases: ["static:one_per_subject"] }
+      2: { spec: "§2.3 双层人格架构（不可妥协）", cases: [DRIFT-AYA-001-V04] }
+      3: { spec: "§2.3；§4.7 学生质疑判分；§5.4 对错判断是否均有验证器结果字段", cases: [DRIFT-AYA-001-V04] }
+      4: { spec: "§3.1 分级提示 0–6 级；§4.3 学生直接索要答案", cases: [DRIFT-AYA-001-V03, LEAK-AYA-001, LEAK-AYA-002] }
+      5: { spec: "§4.5 学生答错（归因来自错因引擎，“粗心”全文禁用）；§5.2 F 类伪归因", cases: [DRIFT-AYA-001-V07] }
+      6: { spec: "第六章 世界观、其他学科老师；§5.4 是否越出数学课堂", cases: [FAM-XS-001, FAM-XS-002, DRIFT-AYA-001-V06] }
+      7: { spec: "第七章 数学课堂内的两张脸：与搭子的同台协议", cases: [FAM-RT-001, FAM-RT-002, FAM-NM-001] }
+      8: { spec: "§5.1 关于星（V1.1）：只在开课定位与门槛达成两处提星", cases: [DRIFT-AYA-001-V02] }
+      9: { spec: "§5.2 禁语表（A–E 继承 + F 类）", cases: [DRIFT-AYA-001-V07, "static:registry"] }
+      10: { spec: "§4.1 AI 身份披露；§4.10 情感信号处理与转介话术", cases: [DRIFT-AYA-001-V01, FAM-RF-001, FAM-RF-002] }
+  miaobi:
+    spec_doc: docs/personas/妙笔-规格书-V1.0.md
+    contracts:
+      1: { spec: "§2.1 身份卡（师者身份：主笔）", cases: ["static:one_per_subject"] }
+      2: { spec: "§2.3 双层人格架构（不可妥协）", cases: [DRIFT-MB-001-V02] }
+      3: { spec: "§2.3 执行规则第 1 条 判分引量表；§4.6 学生质疑作文分数", cases: [DRIFT-MB-001-V02] }
+      4: { spec: "§3.1 三级提示；§4.3 学生索要代写；§5.2 F 类越级提示、代写", cases: [DRIFT-MB-001-V01, LEAK-MB-001] }
+      5: { spec: "§5.2 F 类伪归因（“不认真”“语感差”“没文采”“没天赋”）", cases: [DRIFT-MB-001-V04] }
+      6: { spec: "第六章 世界观、与阿鸦及其他老师；§5.4 是否越出语文课堂", cases: [FAM-MP-001, FAM-MP-002, "static:cross_subject"] }
+      7: { spec: "第七章 语文课堂内的两张脸：与点点的同台协议", cases: [FAM-RT-001, FAM-RT-002] }
+      8: { spec: "§2.1 比喻体系（不用星讲题）；§4.2 开课定位；附录一 门槛达成", cases: [DRIFT-MB-001] }
+      9: { spec: "§5.2 禁语表（A–E 继承 + F 类）", cases: [DRIFT-MB-001-V04, "static:registry"] }
+      10: { spec: "§4.1 AI 身份披露（只批不写）；§4.9 情感信号处理与转介话术", cases: [DRIFT-MB-001-V05, "static:referral"] }
+  fangyuan:
+    spec_doc: docs/personas/考官型基线与角色卡-方圆春秋雅典娜-V1.1.md
+    contracts:
+      1: { spec: "§2.3 第 6 条 一位老师一张脸；附录 A", cases: ["static:one_per_subject"] }
+      2: { spec: "§2.3 双层人格架构（不可妥协）", cases: [DRIFT-FY-001-V07] }
+      3: { spec: "§2.3 第 1 条 只说依据；§3.5 申诉走复核", cases: [DRIFT-FY-001-V07] }
+      4: { spec: "第一章：它不讲题、不归因（考官型只做动作 4，不给提示）", cases: [DRIFT-FY-001, FAM-MD-002] }
+      5: { spec: "§5.2 G 类归因用语；§2.3 第 3 条 不做第三段（归因是点点的事）", cases: [DRIFT-FY-001-V01] }
+      6: { spec: "第六章 与常驻型老师、三位考官型老师之间互不提及", cases: [FAM-XS-004, "static:cross_subject"] }
+      7: { spec: "第七章 判分时刻的三方站位协议；§3.6 退场交还", cases: [FAM-MD-001, FAM-MD-002, DRIFT-FY-001-V05, DRIFT-FY-001-V06] }
+      8: { spec: "第一章：不讲题（规格未单列星的用法，按“不用星讲题”的前提处理，待人确认）", cases: [DRIFT-FY-001] }
+      9: { spec: "§5.2 禁语表（A–E 继承 + G 类）", cases: [DRIFT-FY-001-V01, "static:registry"] }
+      10: { spec: "§3.2 第 3 步 首次出场身份披露；第四章 情绪信号：以退场短句退场交点点", cases: [FAM-RF-003, FAM-RF-004] }
+  chunqiu:
+    spec_doc: docs/personas/考官型基线与角色卡-方圆春秋雅典娜-V1.1.md
+    contracts:
+      1: { spec: "§2.3 第 6 条 一位老师一张脸；附录 B", cases: ["static:one_per_subject"] }
+      2: { spec: "§2.3 双层人格架构（不可妥协）", cases: [DRIFT-CQ-001-V07] }
+      3: { spec: "§2.3 第 1 条 只说依据；§3.5 申诉走复核", cases: [DRIFT-CQ-001-V07] }
+      4: { spec: "第一章：它不讲题、不归因", cases: [DRIFT-CQ-001, FAM-MD-003] }
+      5: { spec: "§5.2 G 类归因用语", cases: [DRIFT-CQ-001-V01] }
+      6: { spec: "第六章 互不提及；附录 B", cases: ["static:cross_subject", FAM-XS-004] }
+      7: { spec: "第七章 判分时刻的三方站位协议；§3.7 合场结算的交接", cases: [FAM-MD-003, DRIFT-CQ-001-V06] }
+      8: { spec: "第一章：不讲题（规格未单列星的用法，待人确认）", cases: [DRIFT-CQ-001] }
+      9: { spec: "§5.2 禁语表（A–E 继承 + G 类）", cases: [DRIFT-CQ-001-V01, "static:registry"] }
+      10: { spec: "§3.2 第 3 步；附录 B 首次披露；第四章 情绪信号", cases: [DRIFT-CQ-001, "static:referral"] }
+  athena:
+    spec_doc: docs/personas/考官型基线与角色卡-方圆春秋雅典娜-V1.1.md
+    contracts:
+      1: { spec: "§2.3 第 6 条；附录 C", cases: ["static:one_per_subject"] }
+      2: { spec: "§2.3 双层人格架构（发音评测 + Rubric）", cases: [DRIFT-AT-001-V07] }
+      3: { spec: "§2.3 第 1 条 只说依据；附录 C 句式变体（依据：评测字段）", cases: [DRIFT-AT-001-V07] }
+      4: { spec: "附录 C 专属规则：指令阶段不判分、不提示", cases: [DRIFT-AT-001] }
+      5: { spec: "§5.2 G 类归因用语", cases: [DRIFT-AT-001-V01] }
+      6: { spec: "第六章 互不提及", cases: ["static:cross_subject"] }
+      7: { spec: "第七章 判分时刻的三方站位协议；附录 C 点点在塔外", cases: [DRIFT-AT-001-V06, "static:mode"] }
+      8: { spec: "第一章：不讲题（规格未单列星的用法，待人确认）", cases: [DRIFT-AT-001] }
+      9: { spec: "§5.2 禁语表（A–E 继承 + G 类）", cases: [DRIFT-AT-001-V01, "static:registry"] }
+      10: { spec: "§3.2 第 3 步；附录 C 首次披露；第四章 情绪信号", cases: [DRIFT-AT-001, "static:referral"] }
+  aji: { status: not_started, note: "物理 阿基：规划中，没有规格书（七科规范 v1.1.1 第五章）" }
+  xboshi: { status: not_started, note: "化学 X 博士：规划中，没有规格书" }

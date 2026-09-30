@@ -6,7 +6,7 @@
 |---|---|---|
 | `diandian/cases/*.yaml` | 120 条用例：学生侧合成输入 + 可判定的检查点，九类一类一个文件 | 工程起草，人设负责人 / 教研抽查 |
 | `diandian/schema/case.schema.json` | 用例格式（合并文件级 defaults 之后） | 工程 |
-| `diandian/lexicon/forbidden.yaml` | 禁语 A–E 与规则模式的机器可读转写，逐条注明出处；`reviewed: false` 直到人设负责人核对 | 工程转写，**人核对**（必停项） |
+| `diandian/lexicon/forbidden.yaml` | **已迁移**（冲刺 3-F 词表收拢）：禁语 A–E 与规则模式的唯一真相源移到 `packages/personas/forbidden/` 与 `packages/personas/patterns/diandian.yaml`；本文件只是给前端文案单测留的只读镜像，保留一个版本周期，内容必须与新位置逐条一致（`persona-registry-check` 核对） | 不要在这里改 |
 | `diandian/holdout.txt` | 留出集冻结名单（首次按类别分层、固定种子抽 30%）；修订 Prompt 时不看；正式评测前由教研负责人重新封存（规则 14，lessons 待人确认 #6） | `python -m scorer holdout --write` 首次生成 |
 | `diandian/fixtures/selftest.yaml` | 评分器自检用的合成回复：中性“【测试】”口吻，带 `not_persona_corpus: true`，**不是人设语料、不是金标准**，只有评分器读 | 工程 |
 | `diandian/gold/` | 期望答案与判定要点（本任务不建；hook 拦截写入） | **只能教研写** |
@@ -19,7 +19,7 @@
 - `python -m scorer score --responses X.jsonl --out DIR`：对一批回复评分（回复格式见 spec 设计要点 1）；
 - `python diandian/run.py [--runs N] [--out DIR]`：离线全流程；回复只能写到仓库外（`--out` 指向仓库内会被拒绝），用完请删除。
 
-`make eval-persona` 跑上面的校验、自检、测试与变异（不联网、不需要密钥），已并入 `make check`。
+`make eval-persona` 跑上面的校验、自检、测试与变异，再跑人设治理回归并写报告（见下节；不联网、不需要密钥），已并入 `make check`。
 真实模型评测（2-I、3-I）等 ADR 04 / 08 签字后另做，不进 CI；真实回复不入库，只把不含原文的报告入库。
 
 ## 点点跨模型一致性对照 · 首轮（冲刺 2-I，`specs/diandian-consistency-r1-sprint2/`）
@@ -84,3 +84,53 @@ python diandian/compare.py --candidates <签字后的清单>.yaml --env <staging
 
    提交 `reports/r1-<日期>/report.{md,json}`；`--out` 下的回复原文、逐次评分与 `calls.jsonl` 核对后删除，不入库、不外传。
    报告里 3-I 口径（核心通过率两两差 ≤ 5 个百分点）只报告，结论由人定（Gate 0）。
+
+## 人设治理组件（冲刺 3-F，`specs/persona-governance-sprint3/`）
+
+目标：仓库里每一份老师或点点的 Prompt 都登记在册、带版本与指纹；改了 Prompt、禁语表或人设规格，CI 必然跑人设回归，拿不到“跳过”的绿灯；
+禁语分类器按角色判定；七类家族级回归与长对话漂移都能在**不持有任何模型密钥**的 CI 上运行，并产出 Gate 0 证据用的运行报告。
+
+| 位置 | 内容 | 谁能改 |
+|---|---|---|
+| `packages/personas/registry.yaml` | 登记表：角色（点点、阿鸦、妙笔、方圆、春秋、雅典娜；阿基、X 博士未立项）的类型、学科、规格书与版本、适用禁语类、Prompt、称谓、比喻与设定元素、转介话术、出场时刻；`tasks` 登记非人设的模型 Prompt（知行、文砺判分，KGE-03 编纂；代码常量按“文件 + 符号名”登记，只做版本与指纹锁） | 工程登记；判定依据（从规格书摘录的字段）**人设负责人与教研确认**（必停项） |
+| `packages/personas/prompts.lock` | 指纹锁（规范化后的 SHA-256）；只能由 `make persona-lock` 改写，PR 里由人审 diff | 命令生成 |
+| `packages/personas/forbidden/` | 禁语词表唯一真相源：A–E（点点词表原样迁入）、`F-math`（阿鸦 V1.1 §5.2）、`F-chinese`（妙笔 V1.0 §5.2）、`G`（考官型基线 §5.2，另含 §5.1 句式与 §2.1 出场）、`platform`（七科规范合同第 3、5、8 条）；每条注明出处与 verbatim / inferred，不能落成词面的条目标 context 或 model；`manifest.yaml` 的 version 是 lexicon_version | **禁语表是必停项**：首个 PR 首行 `[NEEDS-HUMAN]`，教研签字前 `reviewed: false` |
+| `packages/personas/guard/` | 禁语分类器：规则层 + 结构上下文层（模型判定层只登记、不执行）；`python -m personas.guard scan --persona platform --text … / --stdin-json / 文件` 输出 JSON（给前端文案单测等非 Python 调用方） | 工程 |
+| `evals/persona/governance/` | 七类家族级检查器（静态面 + 转写面）、漂移检查器（窗口 5 轮）、N16 泄露探针、录制回放、报告与运行器 | 工程 |
+| `evals/persona/cases/{family,drift,leak}/` | 种子用例：手写合成转写，每类检查至少一正一反；每个已立项角色一条 20–40 轮漂移脚本 + 反例变体。**不是金标准**（`source: spec-derived / synthetic`，待教研确认） | 工程起草，QA 按各规格书第八章扩写 |
+| `evals/persona/contract-matrix.yaml` | 合同对照表草稿：老师 × 十条合同 → 规格书章节 + 用例；空格即失败，未立项记“未运行” | 工程起草，**人确认** |
+| `evals/persona/recordings/<persona_id>/<case_id>.json` | 录制回放（格式 `schema/recording.schema.json`）；本冲刺没有真实录音 | **持有 dev 密钥的人**录制并提交 |
+| `evals/persona/schema/` | `report.schema.json`（报告）、`recording.schema.json`（录音）、`gold.schema.json`（金标准格式说明） | 工程 |
+| `evals/persona/gold/` | 金标准（本冲刺不写任何 gold 数据；hook 拦截写入） | **只能教研写** |
+| `evals/persona/fixtures/governance/` | 合成登记表、合成 Prompt 与合成录音：只用来证明“改 Prompt 不升版本 → 失败；升版本不重录 → 严格失败‘需要重新录制’；补录音 → 通过” | 工程 |
+
+命令（仓库根目录）：
+
+- `make persona-registry-check`（进 `make check`）：登记的文件与符号存在、版本合法、`prompt_id` 不重复、代码里的版本常量与登记一致；
+  Prompt 或禁语词表内容变了而版本没升 → 失败“Prompt 变更必须升版本”；指纹与锁文件不一致 → 失败“运行 make persona-lock 并跑回归”；
+  扫描 `adapters/ services/ packages/ apps/` 里未登记的 Prompt（`*.prompt.*`、`prompts/` 目录、以“你是 / 你扮演”开头的长字符串、
+  内容不是短字面量的 system 消息），可在同一行或上一行写 `persona-registry: ignore <原因>` 豁免（豁免列进输出与报告）；
+  另核对禁语词表旧位置镜像与新位置一致。
+- `make persona-lock`：重算锁文件（内容变了而版本没升时拒绝）。改 Prompt 的流程：改内容 → 升 `prompt_version` → `make persona-lock` → 重新录制 → `make eval-persona` → PR 附前后对比。
+- `make persona-guard-test`（进 `make check`）：分类器与登记表单测。
+- `make eval-persona [ROLE=角色] [BASE=提交]`：在点点评测之后跑 `python -m governance run`，写 `$(PERSONA_REPORT_DIR)/persona-report.{json,md}`
+  （默认 `$TMPDIR/persona-report`）。每次都跑：检查器自检（合成正反例判错即失败）→ 静态面 → 录制回放 → 基线（`BASE`，默认 PR 目标分支或上一个提交；
+  用基线提交自己的运行器在临时目录再跑一遍）→ 影响集（`git diff <merge-base>`，命中 Prompt、登记表、锁文件、禁语表、`docs/personas/`、`evals/persona/` 标“人设变更”）。
+  录音缺失或过期：严格模式（`CONTRACT_STRICT=1`，CI）失败并提示“需要重新录制”；非严格打印“跳过（缺录音）”、报告记“未运行”（退出码 3）。
+  `ROLE` 只跑一个角色并跳过变异测试（persona-evaluator 子代理用）。
+- 报告：md 第一屏是前后对比表，列与 persona-evaluator 的七项一致（身份披露、禁语 A–G、转介话术、出场协议、星图话术、跨科静默、比喻隔离），
+  可以直接贴进 PR 描述；“未运行”不记为通过；另列家族级七类、漂移、泄露、禁语命中（只列编号与位置）、判定来源占比、录音状态、规格冲突与扫描豁免。
+  CI 把报告作为 artifact `persona-report` 上传，保留 90 天（Gate 0 取最近一次 `main` 运行）。
+
+### 录制回放（第 2 层；本冲刺不执行录制）
+
+录制由持有 dev 密钥的人在本地执行（Claude Code 不持有密钥、不执行录制；CI 永不持有密钥，只回放）：
+
+1. 前置：ADR 04 签字后的境内供应商登记进模型路由；人设负责人提交并登记 Prompt（`registry.yaml` 的 `prompts`，升版本并 `make persona-lock`）；
+   在 `evals/persona/cases/` 写 `kind: recorded` 用例（只写学生轮与要跑的检查，输入全是合成数据）。
+2. 录制：`make persona-record ROLE=<角色>`（目前是占位，录制脚本随第一份真实 Prompt 一起写）——对每条 recorded 用例调用一次模型，
+   用 `governance.replay.make_recording` 组装录音：该角色全部登记 Prompt 的指纹与版本、用例指纹、`model_version`、生成参数、录制人、日期、`data_level: L0`、`synthetic: false`。
+3. 提交 `evals/persona/recordings/<角色>/<用例>.json`，由人审 diff；录音里只有合成输入与模型对合成输入的回复，不含任何真实学生数据。
+4. 之后 Prompt 或用例一改，指纹就不匹配，严格模式失败“需要重新录制”——Prompt 变更因此一定会触发一次真实回归，只是由持有密钥的人来执行。
+
+带密钥的手动工作流（第 3 层，`persona-record.yml`）本冲刺不做，要等 ADR 04 / 09 签字与人确认（spec 待人确认 #2、#3）。

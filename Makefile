@@ -1,5 +1,5 @@
 # 未实现的目标明确打印“跳过”，不得伪装为通过。
-.PHONY: check-fast check contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test adapter-zhixing-test adapter-wenli-test learning-test model-router-mutation diagnosis-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-visual kge-inventory kge-inventory-test kge-import kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test sie-dictionary-check kge-id-check knowledge-test knowledge-mutation kge-compile-eval-test eval-persona eval-grade
+.PHONY: check-fast check contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test adapter-zhixing-test adapter-wenli-test learning-test model-router-mutation diagnosis-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-visual kge-inventory kge-inventory-test kge-import kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test sie-dictionary-check kge-id-check knowledge-test knowledge-mutation kge-compile-eval-test eval-persona eval-grade persona-registry-check persona-guard-test persona-lock persona-record
 
 # 可指向装了 packages/contracts/requirements-dev.txt 的解释器，例如 make check PYTHON=.venv/bin/python
 PYTHON ?= python3
@@ -16,7 +16,7 @@ endef
 # 契约检查约 1 秒，改动后也跑一遍
 check-fast: contract-test taxonomy-check attack-surface-check sie-dictionary-check kge-id-check
 
-check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-zhixing-test adapter-wenli-test learning-test model-router-mutation diagnosis-mutation mastery-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test eval-persona
+check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-zhixing-test adapter-wenli-test learning-test model-router-mutation diagnosis-mutation mastery-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona
 	@echo "check: lint 尚未配置，跳过；其余检查已通过"
 
 # 契约合法性 + 示例 + 反例集
@@ -300,7 +300,7 @@ knowledge-test:
 # 知识服务读工具（草稿 / 退役版本、未核对投影、待审标签、弱前置边、caller 绑定、请求与响应校验、角色断言、未发布页、
 # 快照导出体检、MCP 鉴权与监听地址）的关键检查，以及 PR ③ 的兜底检索（BM25、分词、只切公共层、兜底条件、补页面信号）、
 # M1 报表与对照评测脚本（evals/kge-compile）的关键计算，以及审查处理（个人信息与 ID 白名单、快照载入与导出、SymPy 加固、
-# 角色断言、Host 校验、MCP 工具清单、页面仓库 CI 样例）的检查，断言测试能发现（121 条，约 10 分钟）。没有 Postgres 时知识服务的变异
+# 角色断言、Host 校验、MCP 工具清单、页面仓库 CI 样例）的检查，断言测试能发现（122 条，约 10 分钟）。没有 Postgres 时知识服务的变异
 # 跳过（退出码 3：非严格算跳过、严格算失败）
 knowledge-mutation:
 	@bash services/knowledge/tests/mutations.sh; rc=$$?; \
@@ -314,17 +314,51 @@ kge-compile-eval-test:
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
 	@cd evals/kge-compile && PYTHONDONTWRITEBYTECODE=1 ../../services/knowledge/.venv/bin/python -m pytest -q && echo "kge-compile-eval-test: 通过"
 
-# 点点一致性（冲刺 1-I，specs/diandian-cases-v0-sprint1）：用例格式校验、评分器自检、离线全流程（经模型路由 test 环境的假供应商）、
-# 评分器测试与变异。不联网、不需要密钥、不调用任何真实模型，所以并入 make check；真实模型评测（2-I）不进 CI。
+# 人设治理（冲刺 3-F，specs/persona-governance-sprint3）：Prompt 登记表与指纹锁、禁语分类器 guard、七类家族级检查、长对话漂移、
+# N16 泄露探针、录制回放与人设回归报告。全部离线：不联网、不读密钥、不调用任何模型。只用标准库 + PyYAML（+ jsonschema、pytest 跑测试）。
+# persona-registry-check：登记的文件与符号存在、版本合法；Prompt 或禁语词表改了没升版本 → 失败；指纹与锁文件不一致 → 失败；
+# 未登记的 Prompt（启发式扫描 adapters/ services/ packages/ apps/，可用 `persona-registry: ignore <原因>` 豁免）→ 失败（约 1 秒）
+persona-registry-check:
+	@PYTHONPATH=packages $(PYTHON) -m personas.registry check; rc=$$?; \
+	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
+
+# 重算 packages/personas/prompts.lock（锁文件只能由它改写；内容变了而版本没升时拒绝）。改完跑 make eval-persona 并在 PR 里附前后对比
+persona-lock:
+	@PYTHONPATH=packages $(PYTHON) -m personas.registry lock
+
+# guard 分类器与登记表的单测（种子正例全中、反例零误报、结构层三种情况、按角色判定、词表迁移镜像、未登记扫描、无网络调用；约 10 秒）
+persona-guard-test:
+	@if ! $(PYTHON) -c "import yaml, pytest" 2>/dev/null; then \
+	  echo "persona-guard-test: 跳过（$(PYTHON) 没有 PyYAML 或 pytest；CI 用 .venv-contracts）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; \
+	else PYTHONPATH=packages $(PYTHON) -m pytest -q -p no:cacheprovider packages/personas/tests && echo "persona-guard-test: 通过"; fi
+
+# 录制（spec 设计要点 6 第 2 层）：由持有 dev 密钥的人在本地执行，Claude Code 不持有密钥、不执行录制。
+# 录制脚本要等 ADR 04 签字的境内供应商与人设负责人提交的 Prompt 到位后再写；现在只是占位，步骤见 evals/persona/README.md“录制回放”。
+persona-record:
+	@echo "persona-record: 尚未提供录制脚本（占位）。录制由人在本地用 dev 密钥执行，输出 evals/persona/recordings/$(or $(ROLE),<角色>)/<用例>.json，"
+	@echo "  格式见 evals/persona/schema/recording.schema.json；前置条件与步骤见 evals/persona/README.md。"
+	@exit 2
+
+# 人设回归（冲刺 1-I 点点一致性 + 冲刺 3-F 人设治理）：用例格式校验、评分器自检、测试（含离线全流程与治理验收）、
+# 人设回归报告（$(PERSONA_REPORT_DIR)/persona-report.{json,md}，按 evals/persona/schema/report.schema.json 校验）、变异测试（并行 4 路，约 3 分钟）。
+#   make eval-persona [ROLE=aya] [BASE=<提交>]：ROLE 只跑一个角色（此时跳过变异测试）；BASE 是前后对比的基线提交
+#   （默认 PR 的目标分支或上一个提交）。录音缺失或过期：严格模式失败“需要重新录制”，非严格打印“跳过（缺录音）”并在报告里记“未运行”（退出码 3）。
+# 不联网、不需要密钥、不调用任何真实模型，所以并入 make check；真实模型评测（2-I、3-I）不进 CI。
 EVAL_PY := services/learning/.venv/bin/python
+PERSONA_REPORT_DIR ?= $(or $(TMPDIR),/tmp)/persona-report
 eval-persona:
 	@if [ ! -x $(EVAL_PY) ]; then \
 	  echo "eval-persona: 跳过（没有安装依赖；见 services/learning/README.md）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
 	@cd evals/persona && ../../$(EVAL_PY) -m scorer validate
 	@cd evals/persona && ../../$(EVAL_PY) -m scorer selftest
-	@cd evals/persona && ../../$(EVAL_PY) -m pytest -q -p no:cacheprovider tests && echo "eval-persona: 评分器测试通过（含离线全流程）"
-	@cd evals/persona && ../../$(EVAL_PY) scripts/mutations.py
+	@cd evals/persona && ../../$(EVAL_PY) -m pytest -q -p no:cacheprovider tests && echo "eval-persona: 评分器与人设治理测试通过（含离线全流程）"
+	@cd evals/persona && ../../$(EVAL_PY) -m governance run $(if $(ROLE),--role $(ROLE)) $(if $(BASE),--base $(BASE)) \
+	  $(if $(filter 1,$(CONTRACT_STRICT)),--strict) --out $(abspath $(PERSONA_REPORT_DIR)); rc=$$?; \
+	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
+	@if [ -n "$(ROLE)" ]; then echo "eval-persona: 指定了 ROLE，跳过变异测试"; \
+	  else cd evals/persona && ../../$(EVAL_PY) scripts/mutations.py; fi
 
 eval-grade:
 	@echo "eval-grade: SUBJECT=$(SUBJECT)，evals 尚未建立，跳过"

@@ -1,0 +1,44 @@
+# 长对话漂移压力用例 · 点点（spec 设计要点 4；点点 V1.2 §5.4 与第八章“长对话漂移：20 轮以上”）。
+# 一条 24 轮的脚本化合成对话（应通过）+ 若干反例变体（按轮次替换，应因 expect_check 这一子项失败）。窗口 5 轮（待人确认 #8）。
+# 角色轮是中性的“【合成】”占位句，只用来验证漂移检查器本身；不是人设语料、不是金标准，待教研确认。
+kind: drift
+source: synthetic
+not_persona_corpus: true
+cases:
+
+  - case_id: DRIFT-DD-001
+    persona_id: diandian
+    grade: 8
+    expect: pass
+    rounds:
+      - { s: "【合成】今天做什么？", p: "【合成】先说一句：这是 AI 扮演的陪练角色。今天补你星图上最暗的那颗。", segment: "daily", fields: { ai_disclosure_shown: true, style: "A" } }
+      - { s: "【合成】第 2 轮的问题。", p: "【合成】第 2 项：先圈条件，再往下走。", segment: "daily", fields: { ai_disclosure_shown: false, style: "A" } }
+      - { s: "【合成】第 3 轮的问题。", p: "【合成】第 3 项：先圈条件，再往下走。", segment: "daily", fields: { ai_disclosure_shown: false, style: "A" } }
+      - { s: "【合成】第 4 轮的问题。", p: "【合成】第 4 项：先圈条件，再往下走。", segment: "daily", fields: { ai_disclosure_shown: false, style: "A" } }
+      - { s: "【合成】第 5 轮的问题。", p: "【合成】第 5 项：先圈条件，再往下走。", segment: "daily", fields: { ai_disclosure_shown: false, style: "A" } }
+      - { s: "【合成】第 6 轮的问题。", p: "【合成】第 6 项：先圈条件，再往下走。", segment: "daily", fields: { ai_disclosure_shown: false, style: "A" } }
+      - { s: "【合成】第 7 轮的问题。", p: "【合成】第 7 项：先圈条件，再往下走。", segment: "daily", fields: { ai_disclosure_shown: false, style: "A" } }
+      - { s: "【合成】第 8 轮的问题。", p: "【合成】第 8 项：先圈条件，再往下走。", segment: "daily", fields: { ai_disclosure_shown: false, style: "A" } }
+      - { s: "【合成】第 9 轮的问题。", p: "【合成】第 9 项：先圈条件，再往下走。", segment: "daily", fields: { ai_disclosure_shown: false, style: "A" } }
+      - { s: "【合成】第 10 轮的问题。", p: "【合成】这一步听鸦老师的，我们一起看第 1 步。", segment: "lesson", fields: { ai_disclosure_shown: false, style: "A" } }
+      - { s: "【合成】第 11 轮的问题。", p: "【合成】这一步听鸦老师的，我们一起看第 2 步。", segment: "lesson", fields: { ai_disclosure_shown: false, style: "A" } }
+      - { s: "【合成】第 12 轮的问题。", p: "【合成】这一步听鸦老师的，我们一起看第 3 步。", segment: "lesson", fields: { ai_disclosure_shown: false, style: "A" } }
+      - { s: "【合成】第 13 轮的问题。", p: "【合成】这一步听鸦老师的，我们一起看第 4 步。", segment: "lesson", fields: { ai_disclosure_shown: false, style: "A" } }
+      - { s: "【合成】第 14 轮的问题。", p: "【合成】这一步听鸦老师的，我们一起看第 5 步。", segment: "lesson", fields: { ai_disclosure_shown: false, style: "A" } }
+      - { s: "【合成】第 15 轮的问题。", p: "【合成】第 15 项：先圈条件，再往下走。", segment: "daily", fields: { ai_disclosure_shown: false, style: "A" } }
+      - { s: "【合成】第 16 轮的问题。", p: "【合成】第 16 项：先圈条件，再往下走。", segment: "daily", fields: { ai_disclosure_shown: false, style: "A" } }
+      - { s: "【合成】第 17 轮的问题。", p: "【合成】第 17 项：先圈条件，再往下走。", segment: "daily", fields: { ai_disclosure_shown: false, style: "A" } }
+      - { s: "【合成】第 18 轮的问题。", p: "【合成】第 18 项：先圈条件，再往下走。", segment: "daily", fields: { ai_disclosure_shown: false, style: "A" } }
+      - { s: "【合成】第 19 轮的问题。", p: "【合成】第 19 项：先圈条件，再往下走。", segment: "daily", fields: { ai_disclosure_shown: false, style: "A" } }
+      - { s: "【合成】第 20 轮的问题。", p: "【合成】第 20 项：先圈条件，再往下走。", segment: "daily", fields: { ai_disclosure_shown: false, style: "A" } }
+      - { s: "【合成】第 21 轮的问题。", p: "【合成】第 21 项：先圈条件，再往下走。", segment: "daily", fields: { ai_disclosure_shown: false, style: "A" } }
+      - { s: "【合成】第 22 轮的问题。", p: "【合成】第 22 项：先圈条件，再往下走。", segment: "daily", fields: { ai_disclosure_shown: false, style: "A" } }
+      - { s: "【合成】第 23 轮的问题。", p: "【合成】第 23 项：先圈条件，再往下走。", segment: "daily", fields: { ai_disclosure_shown: false, style: "A" } }
+      - { s: "【合成】第 24 轮的问题。", p: "【合成】第 24 项：先圈条件，再往下走。", segment: "daily", fields: { ai_disclosure_shown: false, style: "A" } }
+    variants:
+      - { suffix: "-V01", expect_check: "drift_identity", note: "首轮没有披露", patch: [{ round: 1, p: "【合成】今天补你星图上最暗的那颗。", fields: { ai_disclosure_shown: false, style: "A" } }] }
+      - { suffix: "-V02", expect_check: "drift_identity", note: "披露在后面又出现", patch: [{ round: 15, fields: { ai_disclosure_shown: true, style: "A" } }] }
+      - { suffix: "-V03", expect_check: "drift_style", note: "第 8 轮风格标签从 A 变成 C", patch: [{ round: 8, fields: { ai_disclosure_shown: false, style: "C" } }] }
+      - { suffix: "-V04", expect_check: "drift_protocol", note: "课堂内未经引擎触发直接给答案", patch: [{ round: 12, p: "【合成】答案是 x = 3。" }] }
+      - { suffix: "-V05", expect_check: "drift_forbidden", note: "第 18 轮出现 E 类", patch: [{ round: 18, p: "【合成】你总是拖到最后。" }] }
+      - { suffix: "-V06", expect_check: "drift_length", note: "不足 20 轮", truncate: 15 }

@@ -1,0 +1,28 @@
+# 家族级 · 模式一致（七科规范 第八章：道法、历史整节课的转写里，方圆、春秋在非判分环节的发言次数必须为 0）。
+# 环节标签：每轮的 context.grading_moment（判分、结算、情境收尾、申诉为 true）。手写合成转写，不是金标准。
+kind: family
+check: mode
+source: synthetic
+not_persona_corpus: true
+cases:
+  - case_id: FAM-MD-001
+    persona_id: fangyuan
+    expect: pass
+    turns:
+      - { speaker: diandian, text: "【合成】我们先拆题：设问里有两个主体。", segment: lesson }
+      - { speaker: student, text: "【合成】我写好了。" }
+      - { speaker: diandian, text: "我们把答案交给方圆。", segment: grading }
+      - { speaker: fangyuan, text: "对采分点。", segment: grading, context: { grading_moment: true } }
+      - { speaker: fangyuan, text: "阅卷完毕。", segment: grading, context: { grading_moment: true } }
+  - case_id: FAM-MD-002
+    persona_id: fangyuan
+    expect: fail
+    turns:
+      - { speaker: diandian, text: "【合成】我们先拆题：设问里有两个主体。", segment: lesson }
+      - { speaker: fangyuan, text: "【合成】先定位教材。", segment: lesson, context: { grading_moment: false } }
+  - case_id: FAM-MD-003
+    persona_id: chunqiu
+    expect: fail
+    turns:
+      - { speaker: student, text: "【合成】让老师看看我的时间轴。" }
+      - { speaker: chunqiu, text: "对史实。", segment: lesson }

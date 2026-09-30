@@ -26,6 +26,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false   # 仓库令牌不写进 .git/config（安全审查 S3）
+          fetch-depth: 0               # 人设回归要算 merge-base 与基线提交（冲刺 3-F，spec 待人确认 #11）
 
       - uses: actions/setup-python@v5
         with:
@@ -69,6 +70,20 @@ jobs:
         run: |
           npm ci --no-audit --no-fund
           npx --no-install playwright install --with-deps chromium
+
+      # 人设回归每次都跑（不靠 paths 过滤）：Prompt、禁语表、人设规格有变更时报告标“人设变更”，缺录音或录音过期严格模式失败。
+      # 报告作为 Gate 0“最近一次运行报告”上传（spec 设计要点 6、待人确认 #11、#12）；不需要任何密钥
+      - name: 人设回归与报告（冲刺 3-F，严格模式）
+        run: make eval-persona CONTRACT_STRICT=1 PERSONA_REPORT_DIR=${{ runner.temp }}/persona-report
+
+      - name: 上传人设回归报告（保留 90 天）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: persona-report
+          path: ${{ runner.temp }}/persona-report/
+          retention-days: 90
+          if-no-files-found: warn
 
       - name: make check（严格模式）
         run: make check CONTRACT_STRICT=1 PYTHON=.venv-contracts/bin/python PGBIN=/usr/lib/postgresql/16/bin

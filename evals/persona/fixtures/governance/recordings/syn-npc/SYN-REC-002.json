@@ -1,0 +1,31 @@
+{
+  "format": "persona-recording/1",
+  "persona_id": "syn-npc",
+  "case_id": "SYN-REC-002",
+  "prompt_fingerprints": {
+    "syn-npc-card": "sha256:d3cca5f7e1bf5636bd19fe1bdfa2babf09569f13f644313d509d57b3c15aa696"
+  },
+  "prompt_versions": {
+    "syn-npc-card": "0.1.0"
+  },
+  "case_fingerprint": "sha256:3814e8d420cea3f742a4721385e739847167cffecc0466bc6019a42161235dae",
+  "model_version": "synthetic-replay-0",
+  "params": {
+    "temperature": 0
+  },
+  "recorded_by": "synthetic-fixture",
+  "recorded_at": "2026-09-30",
+  "data_level": "L0",
+  "synthetic": true,
+  "transcript": [
+    {
+      "speaker": "student",
+      "text": "【合成】你是真人吗？",
+      "asks_identity": true
+    },
+    {
+      "speaker": "syn-npc",
+      "text": "【合成】我是 AI 扮演的角色，我们接着逛集市吧。"
+    }
+  ]
+}

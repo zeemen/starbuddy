@@ -1,0 +1,22 @@
+{
+  "format": "persona-prompts-lock/1",
+  "note": "由 make persona-lock 生成，不要手改；PR 里由人审 diff",
+  "lexicon": {
+    "version": "0.3.0",
+    "sha256": "sha256:bb65f31d09a637a7eac6f70fcf98fa659fb21c60b6c63d646882f0aaa70cb669"
+  },
+  "prompts": {
+    "kge-compile-kp": {
+      "version": "1",
+      "sha256": "sha256:ad6af5407d5dc15d27c28e1825a3169057c39cc8de6856c629fcf785843d59e9"
+    },
+    "wenli-essay-grade": {
+      "version": "0.1.0",
+      "sha256": "sha256:1d7b60a9f04123a12f9f278ecd8320e9fa70794e748b9944d5257c78f3d73c6f"
+    },
+    "zhixing-m3-grade": {
+      "version": "0.2.0",
+      "sha256": "sha256:cc82440c785700de193d5dbc4dabb9aa48c1606d6893d2b5bac8adc29803ac50"
+    }
+  }
+}
