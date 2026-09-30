@@ -1,0 +1,224 @@
+# 合成清单：只用于证明评测流程与指标计算（流程样例，不是评测结论）。
+# 没有任何真实音频：audio.ref 是 synthetic:// 键，只代表程序生成的静音或合成波形的元数据（时长、采样率、声道），不对应任何文件。
+# 参考文本是工程手写的通用句子，不含任何个人信息；专家音素标注也是合成的（音素标签只作占位，不代表真实标注规范）。
+format: voice-blind-manifest/1
+synthetic: true
+samples:
+  # ---------- 中文：普通话 ----------
+  - id: ZH-001
+    audio: {ref: "synthetic://silence/ZH-001", duration_s: 3.2, sample_rate_hz: 16000}
+    reference: "今天天气很好，我们去公园散步。"
+    lang: zh
+    accent: standard
+    noise: quiet
+    task: read
+    expert:
+      phones: [j, in, t, ian, t, ian, q, i, h, en, h, ao]
+      errors: [9]
+      sentence_score: 88
+  - id: ZH-002
+    audio: {ref: "synthetic://silence/ZH-002", duration_s: 4.1, sample_rate_hz: 16000}
+    reference: "一元一次方程的解只有一个。"
+    lang: zh
+    accent: standard
+    noise: classroom
+    task: read
+    expert:
+      phones: [y, i, y, uan, y, i, c, i, f, ang, ch, eng]
+      errors: []
+      sentence_score: 95
+  - id: ZH-003
+    audio: {ref: "synthetic://tone/ZH-003", duration_s: 2.6, sample_rate_hz: 16000}
+    reference: "请把第三题再读一遍。"
+    lang: zh
+    accent: standard
+    noise: quiet
+    task: dialogue
+  - id: ZH-004
+    audio: {ref: "synthetic://silence/ZH-004", duration_s: 3.8, sample_rate_hz: 16000}
+    reference: "我们用 AI 学习英语，每天练习十五分钟。"
+    lang: zh
+    accent: standard
+    noise: outdoor
+    task: dialogue
+  - id: ZH-005
+    audio: {ref: "synthetic://silence/ZH-005", duration_s: 2.0, sample_rate_hz: 16000}
+    reference: ""
+    lang: zh
+    accent: standard
+    noise: classroom
+    task: dialogue
+  - id: ZH-006
+    audio: {ref: "synthetic://silence/ZH-006", duration_s: 5.0, sample_rate_hz: 16000}
+    reference: "光在同种均匀介质中沿直线传播。"
+    lang: zh
+    accent: standard
+    noise: quiet
+    task: read
+  # ---------- 中文：带南京口音的普通话 ----------
+  - id: ZH-101
+    audio: {ref: "synthetic://silence/ZH-101", duration_s: 3.5, sample_rate_hz: 16000}
+    reference: "老师，这道题我还是不太懂。"
+    lang: zh
+    accent: nanjing
+    noise: quiet
+    task: dialogue
+  - id: ZH-102
+    audio: {ref: "synthetic://silence/ZH-102", duration_s: 4.4, sample_rate_hz: 16000}
+    reference: "春天来了，河边的柳树发芽了。"
+    lang: zh
+    accent: nanjing
+    noise: classroom
+    task: read
+    expert:
+      phones: [ch, un, t, ian, l, ai, l, e, h, e, b, ian]
+      errors: [4, 6]
+      sentence_score: 72
+  - id: ZH-103
+    audio: {ref: "synthetic://tone/ZH-103", duration_s: 3.0, sample_rate_hz: 16000}
+    reference: "我想先复习上次错的那几道题。"
+    lang: zh
+    accent: nanjing
+    noise: outdoor
+    task: dialogue
+  - id: ZH-104
+    audio: {ref: "synthetic://silence/ZH-104", duration_s: 4.8, sample_rate_hz: 16000}
+    reference: "牛奶和面包都放在冰箱里了。"
+    lang: zh
+    accent: nanjing
+    noise: quiet
+    task: read
+    expert:
+      phones: [n, iu, n, ai, h, e, m, ian, b, ao]
+      errors: [0, 2]
+      sentence_score: 70
+  - id: ZH-105
+    audio: {ref: "synthetic://silence/ZH-105", duration_s: 3.1, sample_rate_hz: 16000}
+    reference: "这个实验要测量三次再取平均值。"
+    lang: zh
+    accent: nanjing
+    noise: classroom
+    task: read
+  - id: ZH-106
+    audio: {ref: "synthetic://silence/ZH-106", duration_s: 2.7, sample_rate_hz: 16000}
+    reference: "能不能再讲一遍刚才的例子？"
+    lang: zh
+    accent: nanjing
+    noise: quiet
+    task: dialogue
+  # ---------- 中文：其他口音 ----------
+  - id: ZH-201
+    audio: {ref: "synthetic://silence/ZH-201", duration_s: 3.3, sample_rate_hz: 16000}
+    reference: "三角形的内角和是一百八十度。"
+    lang: zh
+    accent: other
+    noise: quiet
+    task: read
+  - id: ZH-202
+    audio: {ref: "synthetic://silence/ZH-202", duration_s: 2.9, sample_rate_hz: 16000}
+    reference: "我觉得第二种方法更简单。"
+    lang: zh
+    accent: other
+    noise: outdoor
+    task: dialogue
+  # ---------- 英文：标准口音 ----------
+  - id: EN-001
+    audio: {ref: "synthetic://silence/EN-001", duration_s: 2.4, sample_rate_hz: 16000}
+    reference: "I like reading books after school."
+    lang: en
+    accent: standard
+    noise: quiet
+    task: read
+    expert:
+      phones: [AY, L, AY, K, R, IY, D, IH, NG, B, UH, K, S]
+      errors: []
+      sentence_score: 93
+  - id: EN-002
+    audio: {ref: "synthetic://silence/EN-002", duration_s: 3.0, sample_rate_hz: 16000}
+    reference: "The weather is nice today, isn't it?"
+    lang: en
+    accent: standard
+    noise: classroom
+    task: dialogue
+    expert:
+      phones: [DH, AH, W, EH, DH, ER, IH, Z, N, AY, S]
+      errors: [4]
+      sentence_score: 84
+  - id: EN-003
+    audio: {ref: "synthetic://tone/EN-003", duration_s: 2.2, sample_rate_hz: 16000}
+    reference: "Could you say that again, please?"
+    lang: en
+    accent: standard
+    noise: outdoor
+    task: dialogue
+  - id: EN-004
+    audio: {ref: "synthetic://silence/EN-004", duration_s: 3.6, sample_rate_hz: 16000}
+    reference: "My favourite subject is science because experiments are fun."
+    lang: en
+    accent: standard
+    noise: quiet
+    task: read
+    expert:
+      phones: [M, AY, F, EY, V, R, IH, T, S, AH, B, JH, EH, K, T]
+      errors: [2, 4]
+      sentence_score: 79
+  # ---------- 英文：带南京口音 ----------
+  - id: EN-101
+    audio: {ref: "synthetic://silence/EN-101", duration_s: 2.8, sample_rate_hz: 16000}
+    reference: "We are going to the library this afternoon."
+    lang: en
+    accent: nanjing
+    noise: quiet
+    task: read
+    expert:
+      phones: [W, IY, AA, R, G, OW, IH, NG, L, AY, B, R, EH, R, IY]
+      errors: [3, 8, 11]
+      sentence_score: 66
+  - id: EN-102
+    audio: {ref: "synthetic://silence/EN-102", duration_s: 2.5, sample_rate_hz: 16000}
+    reference: "There are three apples on the table."
+    lang: en
+    accent: nanjing
+    noise: classroom
+    task: read
+    expert:
+      phones: [DH, EH, R, AA, R, TH, R, IY, AE, P, AH, L, Z]
+      errors: [0, 5]
+      sentence_score: 68
+  - id: EN-103
+    audio: {ref: "synthetic://tone/EN-103", duration_s: 2.1, sample_rate_hz: 16000}
+    reference: "I don't know the answer yet."
+    lang: en
+    accent: nanjing
+    noise: outdoor
+    task: dialogue
+  - id: EN-104
+    audio: {ref: "synthetic://silence/EN-104", duration_s: 3.4, sample_rate_hz: 16000}
+    reference: "She usually rides a bike to school."
+    lang: en
+    accent: nanjing
+    noise: quiet
+    task: read
+    expert:
+      phones: [SH, IY, Y, UW, ZH, UW, AH, L, IY, R, AY, D, Z]
+      errors: [4, 9]
+      sentence_score: 71
+  # ---------- 英文：其他口音 ----------
+  - id: EN-201
+    audio: {ref: "synthetic://silence/EN-201", duration_s: 2.9, sample_rate_hz: 16000}
+    reference: "Can you help me with this well-known problem?"
+    lang: en
+    accent: other
+    noise: classroom
+    task: dialogue
+  - id: EN-202
+    audio: {ref: "synthetic://silence/EN-202", duration_s: 3.1, sample_rate_hz: 16000}
+    reference: "Thank you very much for your help."
+    lang: en
+    accent: other
+    noise: quiet
+    task: read
+    expert:
+      phones: [TH, AE, NG, K, Y, UW, V, EH, R, IY, M, AH, CH]
+      errors: [0, 6]
+      sentence_score: 74

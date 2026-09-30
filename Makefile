@@ -16,7 +16,7 @@ endef
 # 契约检查约 1 秒，改动后也跑一遍
 check-fast: contract-test taxonomy-check attack-surface-check sie-dictionary-check kge-id-check
 
-check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test model-router-mutation diagnosis-mutation mastery-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona insight-test insight-mutation
+check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test model-router-mutation diagnosis-mutation mastery-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona insight-test insight-mutation voice-blind-eval-test
 	@echo "check: lint 尚未配置，跳过；其余检查已通过"
 
 # 契约合法性 + 示例 + 反例集
@@ -186,7 +186,7 @@ attack-surface-check:
 	$(call run_contract,docs/security/check_attack_surface.py)
 
 # 统一壳前端（冲刺 3-H，specs/star-map-sprint3/spec.md）：许可证清单 → next build → 单测与静态检查（含构建产物不外链）→
-# 端到端（一次性 Postgres + 阿鸦登记 + 星图合成种子 + BFF 星图服务 + Playwright：计数、授权、16px 像素、axe、不外链、不存储）
+# 端到端（一次性 Postgres + 阿鸦登记 + 合成种子 + BFF（真实会话、短信捕获桩）+ Playwright：计数、授权、安全头、16px 像素、axe、不外链、不存储）
 # 依赖：apps/web 与 services/bff 已 npm ci，Playwright 的 chromium 已安装；没装时非严格模式打印“跳过”
 WEB_DEPS_OK = [ -d apps/web/node_modules/next ] && [ -d services/bff/node_modules/pg ]
 web-test:
@@ -198,6 +198,8 @@ web-test:
 	  rm -f .next-build.log; echo "web-test: next build 通过（含类型检查）"
 	@if grep -rlE 'x-dev-staff-id|sb_dev_staff|SYNTHETIC_STAFF|5f0e0000-0000-4000-8000-0000000000e[12]' apps/web/.next --exclude-dir=cache >/dev/null 2>&1; then \
 	  echo "web-test: 构建产物里还有开发 staff 身份桩"; exit 1; fi; echo "web-test: 构建产物里没有开发 staff 身份桩"
+	@if grep -rlE 'x-dev-account-id|sb_dev_account|STARBUDDY_DEV_AUTH|/dev/login|/dev/session|/dev/star-glyphs|SYNTHETIC_ACCOUNTS' apps/web/.next --exclude-dir=cache >/dev/null 2>&1; then \
+	  echo "web-test: 生产构建产物里还有开发身份桩或开发专用页面（4-H H2）"; exit 1; fi; echo "web-test: 生产构建产物里没有开发身份桩与开发专用页面"
 	@cd apps/web && node --no-warnings --test --test-reporter=dot tests/*.test.ts && echo "web-test: 单测与静态检查通过"
 	@bash apps/web/scripts/e2e.sh --grep-invert @visual --reporter=dot; rc=$$?; \
 	  if [ $$rc -eq 0 ]; then echo "web-test: 端到端通过"; fi; \
@@ -399,3 +401,17 @@ insight-test:
 insight-mutation:
 	@bash services/insight/tests/mutations.sh; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
+
+# 冲刺 4-I 第一部分（specs/voice-blind-test-sprint4）：语音盲测评测框架 evals/voice-blind——CER / WER、延迟分位数、音素一致性、
+# 自助法区间与手算一致；报告确定性、只含汇总与编号、拒绝写 gold/；合成样例报告是最新的；不联网、不持有密钥（测试断言）；
+# 再跑变异测试（27 条，约 30 秒）。只用标准库 + PyYAML + pytest；缺依赖时非严格跳过、严格失败。
+# 系统 python 缺 pytest 时可传 PYTHON=services/learning/.venv/bin/python
+.PHONY: voice-blind-eval-test
+voice-blind-eval-test:
+	@if ! $(PYTHON) -c "import yaml, pytest" 2>/dev/null; then \
+	  echo "voice-blind-eval-test: 跳过（$(PYTHON) 缺 PyYAML 或 pytest；可传 PYTHON=services/learning/.venv/bin/python）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; \
+	else \
+	  (cd evals/voice-blind && PYTHONDONTWRITEBYTECODE=1 $(if $(findstring /,$(PYTHON)),$(abspath $(PYTHON)),$(PYTHON)) -m pytest -q) && \
+	  PYTHONDONTWRITEBYTECODE=1 $(PYTHON) evals/voice-blind/scripts/mutations.py && echo "voice-blind-eval-test: 通过"; \
+	fi
