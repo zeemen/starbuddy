@@ -22,8 +22,9 @@ OPENAPI = Path(os.environ.get("INSIGHT_CONTRACT_DIR") or ROOT / "packages" / "co
 CONTRACT_FILE = "insight-service.v0.9.yaml"
 REFERENCED = ("plugin-api.v0.9.yaml", "knowledge-service.v0.9.yaml")
 CONTRACT_VERSION = "0.9.0"
-IMPLEMENTED = ("insight.claims", "insight.context", "insight.explain", "insight.record")
-NOT_IMPLEMENTED = ("insight.dispute", "insight.predict", "insight.reconcile", "insight.export", "insight.erase")
+IMPLEMENTED = ("insight.claims", "insight.context", "insight.explain", "insight.record", "insight.dispute", "insight.predict",
+               "insight.reconcile", "insight.export", "insight.erase")
+NOT_IMPLEMENTED: tuple[str, ...] = ()  # SIE-03 PR② 起九个工具都有实现（insight.record 仍在校验后回 501；export / erase 缺省不接线回 501）
 
 
 @dataclass(frozen=True)

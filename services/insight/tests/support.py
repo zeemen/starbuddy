@@ -103,12 +103,14 @@ def settings(**kw: Any):
 
 
 @asynccontextmanager
-async def running_app(db, *, role: str = "insight_app", policy: Policy | None = None, verifier: Any = None,
+async def running_app(db, *, role: str = "insight_app", policy: Policy | None = None, verifier: Any = None, sie03: Any = None,
+                      scheduler: Any = None, mastery: Any = None, guardian: Any = None,
                       **settings_kw: Any) -> AsyncIterator[httpx.AsyncClient]:
     from insight.service.app import create_app
     from insight.store import create_pool
     pool = await create_pool(**db.connect_kwargs(role))
-    app = create_app(settings(**settings_kw), pool=pool, policy=policy, verifier=verifier)
+    app = create_app(settings(**settings_kw), pool=pool, policy=policy, verifier=verifier, sie03=sie03, scheduler=scheduler,
+                     mastery=mastery, guardian=guardian)
     try:
         async with app.router.lifespan_context(app):
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=BASE) as client:

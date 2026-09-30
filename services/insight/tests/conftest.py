@@ -25,3 +25,11 @@ def insightdb():
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"
+
+
+@pytest.fixture(scope="session")
+def sie03db(insightdb):
+    """SIE-03 的合成夹具（tests/sie03_seed.py）：在同一个一次性库上补一次"""
+    from sie03_seed import SEED_SQL
+    insightdb.psql(SEED_SQL)
+    return insightdb

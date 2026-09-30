@@ -10,6 +10,7 @@
                                  学生与家长没有令牌，只能经 BFF 按档案授权后间接访问（规则 5）
   INSIGHT_POLICY                 判断策略配置（JSON；缺省 config/claims.synthetic.json，合成占位只允许 test 环境）
   INSIGHT_REPORT_CHECK           首份报告一致性检查词表（缺省 config/report-check.synthetic.json，合成占位只允许 test 环境）
+  INSIGHT_SIE03                  SIE-03 配置：异议、预测与对账、触发规则参数与占位文案（缺省 config/sie03.synthetic.json，合成占位只允许 test）
   INSIGHT_HOST                   监听地址，缺省 127.0.0.1；不接受 0.0.0.0、:: 等通配地址（只在服务内网监听，由平台侧网关转发）
   INSIGHT_PORT                   缺省 8791（契约 servers）
 """
@@ -66,6 +67,7 @@ class Settings:
     tokens: dict[str, str] = field(default_factory=dict)  # caller → 令牌
     policy_path: Path = CONFIG_DIR / "claims.synthetic.json"
     report_check_path: Path = CONFIG_DIR / "report-check.synthetic.json"
+    sie03_path: Path = CONFIG_DIR / "sie03.synthetic.json"
     host: str = DEFAULT_HOST
     port: int = DEFAULT_PORT
 
@@ -96,4 +98,5 @@ class Settings:
         return Settings(env=env, database_url=database_url, tokens=tokens,
                         policy_path=Path(e.get("INSIGHT_POLICY") or CONFIG_DIR / "claims.synthetic.json"),
                         report_check_path=Path(e.get("INSIGHT_REPORT_CHECK") or CONFIG_DIR / "report-check.synthetic.json"),
+                        sie03_path=Path(e.get("INSIGHT_SIE03") or CONFIG_DIR / "sie03.synthetic.json"),
                         host=check_host(e.get("INSIGHT_HOST", DEFAULT_HOST)), port=int(port_raw))

@@ -1,8 +1,19 @@
 """洞察服务工具的唯一实现层（HTTP 只调 ToolCore.call）。
 
-处理顺序：调用方准入（令牌决定 caller，按工具限定为契约允许的调用方）→ 未实现的五个工具回 501 → 契约版本 →
-请求体 caller 与令牌一致 → 按契约严格校验请求 → insight.record 回 501（见下）→ 执行 → 组统一信封 →
+处理顺序：调用方准入（令牌决定 caller，按工具限定为契约允许的调用方）→ 契约版本 → 请求体 caller 与令牌一致 →
+按契约严格校验请求 → insight.record 回 501（见下）→ 写入类工具查幂等缓存 → 执行 → 组统一信封 →
 按契约校验响应，不合格回 500（不把不合契约的数据交出去）。
+
+SIE-03（specs/sie-03-dispute-reconcile，PR②）：
+- insight.dispute（只给 BFF，代表学生本人或家长）：三路异议经 Sie03Store.raise_dispute；授权不走 ActorVerifier，而是由
+  insight.raise_dispute（0032，属主 authz）按库里关系核对 actor_ref，洞察服务再核对库里记下的身份与请求 actor 一致；
+  判断不属于 student_ref、不可见、不存在、身份不符一律同一个 404。验证任务经 VerificationScheduler（KGE-04 第二步前是接口桩）。
+- insight.predict（只给编排层）：合成掌握行（MasterySource，KGE-04 第二步前由调用方注入；缺省没有掌握行 → 证据不足 409）。
+- insight.reconcile（只给编排层，只读）：读对账卡，陈述只由判断渲染（每句带 claim_id，只取 agent 可见的判断）。
+- insight.export / insight.erase（只给家长）：经 GuardianRequests；0035 的库函数只授 BFF 会话，缺省实现不通（501，lessons）。
+- 幂等：契约要求同 key 同体返回原结果、同 key 异体 409。本步用进程内缓存（作用域 调用方 + 工具 + 学生 + key，24 小时，
+  最多 10000 条）；跨进程与重启后的保证靠库里的天然幂等（同一人同一判断同一类的未结束异议返回原异议、每场考试一条预测、
+  导出与删除请求的库函数），持久的幂等表需要迁移（lessons 待人确认）。
 
 - insight.claims、insight.context 只给编排层（受众 agent）；insight.explain 给 BFF（学生本人 / 家长）与编排层。
 - 前端受众（student / guardian）只看到可见范围含该受众的非终态、未到期、模板已审核的判断；看不到的判断与“不存在”
@@ -16,21 +27,29 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
 import time
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Mapping, Protocol
 
 import yaml
 
 from ..claims import NODE_ID
+from ..dispute import UnavailableVerificationScheduler, VerificationScheduler
+from ..guardian_requests import GuardianRequests, NotWired, UnwiredGuardianRequests, erase_result, export_result
 from ..metrics import METRIC_DEFS
 from ..policy import Policy
+from ..predict import MODEL_VERSION as PREDICT_MODEL_VERSION
+from ..predict import RECONCILE_MODEL_VERSION, MasterySource, NoMasterySource
 from ..render import render_statement
 from ..shared import ROOT, Forbidden
+from ..sie03_policy import Sie03Policy
 from ..store import VisibleClaim
+from ..store_sie03 import Sie03Store, StoreError
 from .contract import CONTRACT_VERSION, NOT_IMPLEMENTED, Contract
 from .errors import ServiceError, forbidden, internal, invalid, not_found, not_implemented
 
@@ -40,7 +59,7 @@ ALGO_VERSION = "0.1.0"
 ALLOWED_CALLERS: dict[str, frozenset[str]] = {
     "insight.context": frozenset({"orchestrator"}), "insight.claims": frozenset({"orchestrator"}),
     "insight.explain": frozenset({"bff", "orchestrator"}), "insight.record": frozenset({"bff", "orchestrator"}),
-    "insight.dispute": frozenset({"bff", "orchestrator"}), "insight.predict": frozenset({"orchestrator"}),
+    "insight.dispute": frozenset({"bff"}), "insight.predict": frozenset({"orchestrator"}),
     "insight.reconcile": frozenset({"orchestrator"}), "insight.export": frozenset({"bff"}), "insight.erase": frozenset({"bff"}),
 }
 FIELD_DICTIONARY = ROOT / "docs" / "design" / "sie" / "field-dictionary.v0.9.yaml"
@@ -48,6 +67,23 @@ NODE_FIELD = "inner.g3.node_mastery"
 VERSIONED_ALGO = re.compile(r"^algo:([a-z0-9][a-z0-9\-]{0,47})@([A-Za-z0-9][A-Za-z0-9._\-]{0,31})$")
 EVIDENCE_SOURCE = {"objective": "objective", "model_inference": "inferred"}  # platform.evidence_source_type → 契约 SourceType
 MAX_CONTEXT_EVIDENCE = 50
+WRITE_TOOLS = ("insight.dispute", "insight.predict", "insight.record", "insight.export", "insight.erase")
+SIE03_VERSION = "0.1.0"
+
+
+SIE03_TOOLS = ("insight.dispute", "insight.predict", "insight.reconcile")
+
+
+def _store_error(e: StoreError) -> ServiceError:
+    """库层业务错误 → Problem：不存在与无权同一个 404；标题只用固定的英文短语（不带数据）"""
+    title = str(e.args[0]) if e.args and isinstance(e.args[0], str) else e.kind.replace("_", " ")
+    if e.kind == "not_found":
+        return not_found()
+    if e.kind == "rate_limited":
+        return ServiceError(429, "RATE_LIMITED", "too many requests for this student", retryable=True)
+    if e.kind in ("conflict", "unavailable"):
+        return ServiceError(409, "INVALID_REQUEST", title)
+    return invalid(title)
 
 
 class ClaimReader(Protocol):
@@ -74,17 +110,57 @@ def load_field_dictionary(path: Path = FIELD_DICTIONARY) -> dict[str, dict[str, 
             for f in doc["fields"]}
 
 
+class IdempotencyCache:
+    """进程内幂等缓存：键 = (调用方, 工具, 学生, idempotency_key)，值 = (请求摘要, 响应)。摘要不含 request_id（重试会换）"""
+
+    def __init__(self, max_entries: int = 10_000, ttl_seconds: float = 24 * 3600) -> None:
+        self.max_entries = max_entries
+        self.ttl = ttl_seconds
+        self._d: OrderedDict[tuple[str, ...], tuple[str, dict, float]] = OrderedDict()
+
+    @staticmethod
+    def digest(body: Mapping[str, Any]) -> str:
+        b = dict(body)
+        b["context"] = {k: v for k, v in dict(body["context"]).items() if k != "request_id"}
+        return hashlib.sha256(json.dumps(b, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+
+    def get(self, key: tuple[str, ...], digest: str) -> dict | None:
+        hit = self._d.get(key)
+        if hit is None or time.monotonic() - hit[2] > self.ttl:
+            self._d.pop(key, None)
+            return None
+        if hit[0] != digest:
+            raise ServiceError(409, "IDEMPOTENCY_CONFLICT", "idempotency key was used with a different request")
+        return hit[1]
+
+    def put(self, key: tuple[str, ...], digest: str, response: dict) -> None:
+        self._d[key] = (digest, response, time.monotonic())
+        self._d.move_to_end(key)
+        while len(self._d) > self.max_entries:
+            self._d.popitem(last=False)
+
+
 class ToolCore:
     def __init__(self, store: ClaimReader, contract: Contract, policy: Policy, forbidden: Forbidden,
-                 verifier: ActorVerifier | None = None, fields: Mapping[str, Mapping[str, Any]] | None = None) -> None:
+                 verifier: ActorVerifier | None = None, fields: Mapping[str, Mapping[str, Any]] | None = None, *,
+                 sie03: Sie03Policy | None = None, ops: Sie03Store | None = None, scheduler: VerificationScheduler | None = None,
+                 mastery: MasterySource | None = None, guardian: GuardianRequests | None = None) -> None:
         self.store = store
         self.contract = contract
         self.policy = policy
         self.forbidden = forbidden
         self.verifier = verifier or UnavailableVerifier()
         self.fields = fields if fields is not None else load_field_dictionary()
+        self.sie03 = sie03
+        self.ops = ops
+        self.scheduler = scheduler or UnavailableVerificationScheduler()  # 接口桩只由 create_app 在 test 环境注入（F2）
+        self.mastery = mastery or NoMasterySource()
+        self.guardian = guardian or UnwiredGuardianRequests()
+        self.idempotency = IdempotencyCache()
         self.handlers: dict[str, Callable[[dict, str], Awaitable[tuple[dict, dict]]]] = {
             "insight.claims": self.claims, "insight.context": self.context, "insight.explain": self.explain,
+            "insight.dispute": self.dispute, "insight.predict": self.predict, "insight.reconcile": self.reconcile,
+            "insight.export": self.export, "insight.erase": self.erase,
         }
 
     async def call(self, tool: str, body: Any, caller: str | None) -> tuple[int, dict]:
@@ -118,6 +194,8 @@ class ToolCore:
             raise forbidden("caller is not allowed to use this tool")
         if tool in NOT_IMPLEMENTED:
             raise not_implemented("tool is not implemented in this version")
+        if tool in SIE03_TOOLS and (self.ops is None or self.sie03 is None):
+            raise not_implemented("SIE-03 tools are not configured")
         if not isinstance(body, dict) or not isinstance(body.get("context"), dict):
             raise invalid("request body must be an object with context")
         ctx = body["context"]
@@ -130,7 +208,21 @@ class ToolCore:
             raise invalid("request does not conform to the contract", "; ".join(errors)[:500])
         if tool == "insight.record":
             raise not_implemented("no write path for this event in the insight service yet")
-        result, meta = await self.handlers[tool](body, caller)
+        # BFF 代表学生 / 家长的写入：先核对 actor（家长含 link_id；缺省一律不通过，与 explain 同一口径），
+        # 再查幂等缓存——命中缓存也要先过这一道（安全审查 F4、F6）
+        if caller == "bff" and tool in WRITE_TOOLS and not await self.verifier.verify(ctx.get("actor") or {}, ctx["audience"],
+                                                                                    ctx["student_ref"]):
+            raise not_found()
+        idem = None
+        if tool in WRITE_TOOLS and ctx.get("idempotency_key"):
+            idem = ((caller, tool, ctx["student_ref"], ctx["idempotency_key"]), IdempotencyCache.digest(body))
+            cached = self.idempotency.get(*idem)
+            if cached is not None:
+                return cached
+        try:
+            result, meta = await self.handlers[tool](body, caller)
+        except StoreError as e:
+            raise _store_error(e) from None
         envelope: dict[str, Any] = {"contract_version": CONTRACT_VERSION, "result": result,
                                     "evidence_ids": list(meta.get("evidence_ids", [])), "confidence": meta.get("confidence", 1.0),
                                     "source_version": meta["source_version"], "model_version": meta["model_version"],
@@ -139,6 +231,8 @@ class ToolCore:
         if bad:
             log.error(json.dumps({"tool": tool, "response_contract_errors": bad[:20]}, ensure_ascii=False))
             raise internal()
+        if idem is not None:
+            self.idempotency.put(idem[0], idem[1], envelope)
         return envelope
 
     # ---------- 公共 ----------
@@ -249,3 +343,92 @@ class ToolCore:
         meta = {"evidence_ids": list(dict.fromkeys(c.evidence_ids)), "confidence": c.confidence, "source_version": source,
                 "model_version": c.model_version or f"algo:sie-explain@{ALGO_VERSION}"}
         return result, meta
+
+    # ---------- SIE-03：insight.dispute ----------
+    def _sie03_source(self, tool: str) -> str:
+        assert self.sie03 is not None
+        return f"algo:sie-{tool}@{SIE03_VERSION};algo:sie03-policy@{self.sie03.config_version}"
+
+    async def dispute(self, body: dict, caller: str) -> tuple[dict, dict]:  # noqa: ARG002
+        assert self.ops is not None and self.sie03 is not None
+        ctx = body["context"]
+        actor = ctx["actor"]
+        if body["kind"] == "i_know" and not getattr(self.scheduler, "available", True):
+            raise not_implemented("verification tasks are not available in this environment")
+        out = await self.ops.raise_dispute(ctx["student_ref"], body["claim_id"], body["kind"], actor["role"], actor["actor_ref"],
+                                           self.scheduler, self.sie03)
+        result: dict[str, Any] = {"dispute_id": out.dispute_id, "next_step": out.next_step}
+        if out.verification_item_refs:
+            result["verification_item_refs"] = list(out.verification_item_refs)
+        if out.verify_by is not None:
+            result["verify_by"] = out.verify_by.isoformat()
+        if out.fact_ref is not None:
+            result["fact_ref"] = out.fact_ref
+        meta = {"evidence_ids": list(out.evidence_ids), "confidence": 1.0, "source_version": self._sie03_source("dispute"),
+                "model_version": f"algo:sie-dispute@{SIE03_VERSION}"}
+        return result, meta
+
+    # ---------- SIE-03：insight.predict ----------
+    async def predict(self, body: dict, caller: str) -> tuple[dict, dict]:  # noqa: ARG002
+        assert self.ops is not None and self.sie03 is not None
+        student, exam = body["context"]["student_ref"], body["exam"]
+        rows = await self.mastery.rows(student, exam["subject"], list(exam["scope_node_ids"]))
+        out = await self.ops.predict(student, exam, rows, self.sie03)
+        result = {"prediction_id": out.prediction_id, "claim_id": out.claim_id, "low": out.low, "high": out.high,
+                  "interval_level": 0.8, "frozen_at": (out.frozen_at or out.freeze_at).isoformat(),
+                  "basis": {"node_count": out.node_count, "evidence_count": out.evidence_count}}
+        meta = {"evidence_ids": list(dict.fromkeys(out.evidence_ids)), "confidence": out.confidence,
+                "source_version": self._sie03_source("predict") + f";algo:{out.algorithm_version}", "model_version": PREDICT_MODEL_VERSION}
+        return result, meta
+
+    # ---------- SIE-03：insight.reconcile ----------
+    async def reconcile(self, body: dict, caller: str) -> tuple[dict, dict]:  # noqa: ARG002
+        assert self.ops is not None
+        student = body["context"]["student_ref"]
+        card = await self.ops.read_reconciliation(student, body["exam_record_id"])
+        if card is None:
+            raise not_found()
+        statements = []
+        for cid in dict.fromkeys(str(s["claim_id"]) for s in card["sentences"]):
+            rows = await self.store.visible_claims(student, "agent", claim_id=cid, limit=1)
+            if not rows:
+                continue  # 判断已不可见（转待验证之外的终态、过期）：不出陈述
+            st = render_statement(rows[0].for_render(), self.policy.confidence_band(rows[0].row.confidence), self.forbidden)
+            if st is not None:
+                statements.append(st)
+        result = {"prediction_id": str(card["prediction_id"]), "actual_score": float(card["raw_score"]),
+                  "within_interval": bool(card["in_interval"]), "deviation_nodes": list(card["deviation_nodes"]),
+                  "deviation_directions": list(card["deviation_directions"]), "adjustments": list(card["adjustments"]),
+                  "statements": statements}
+        meta = {"evidence_ids": list(dict.fromkeys(str(e) for e in card["evidence_ids"])), "confidence": 1.0,
+                "source_version": self._sie03_source("reconcile") + f";algo:{card['algorithm_version']}",
+                "model_version": RECONCILE_MODEL_VERSION}
+        return result, meta
+
+    # ---------- SIE-03：insight.export / insight.erase ----------
+    def _guardian_meta(self, tool: str) -> dict:
+        version = self.sie03.config_version if self.sie03 is not None else "none"
+        return {"evidence_ids": [], "confidence": 1.0, "source_version": f"algo:sie-{tool}@{SIE03_VERSION};algo:sie03-policy@{version}",
+                "model_version": f"algo:sie-{tool}@{SIE03_VERSION}"}
+
+    async def export(self, body: dict, caller: str) -> tuple[dict, dict]:  # noqa: ARG002
+        ctx = body["context"]
+        actor = ctx["actor"]
+        try:
+            ticket = await self.guardian.export(actor["actor_ref"], actor["link_id"], ctx["student_ref"])
+        except NotWired:
+            raise not_implemented("export is not wired to the insight service (library functions are granted to the BFF)") from None
+        except PermissionError:
+            raise not_found() from None
+        return export_result(ticket), self._guardian_meta("export")
+
+    async def erase(self, body: dict, caller: str) -> tuple[dict, dict]:  # noqa: ARG002
+        ctx = body["context"]
+        actor = ctx["actor"]
+        try:
+            ticket = await self.guardian.erase(actor["actor_ref"], actor["link_id"], ctx["student_ref"], body["confirmation_code"])
+        except NotWired:
+            raise not_implemented("erase is not wired to the insight service (library functions are granted to the BFF)") from None
+        except PermissionError:
+            raise not_found() from None
+        return erase_result(ticket), self._guardian_meta("erase")

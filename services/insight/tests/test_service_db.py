@@ -2,6 +2,7 @@
 前端受众只看到可见范围内的判断，其他判断与“不存在”同一个 404（不暴露存在性）；中圈指标对前端不存在；首份报告（服务内接口）。"""
 from __future__ import annotations
 
+import copy
 import dataclasses
 import uuid
 
@@ -19,7 +20,8 @@ from test_db import db_now, reset, row
 pytestmark = pytest.mark.anyio
 P = make_policy()
 C = contract()
-VERIFIER = StaticVerifier({(SA1, "student", S1), (GA, "guardian", S1), (SA3, "student", S3), (SA1, "student", S2)})
+VERIFIER = StaticVerifier({(SA1, "student", S1), (GA, "guardian", S1), (SA3, "student", S3), (SA1, "student", S2),
+                           ("00000000-0000-4000-8000-00000000a201", "guardian", "00000000-0000-4000-8000-00000000a001")})  # 最后一条：契约示例里的家长（导出与删除 501 用）
 TAGS = {("aya", f"syn-item-{i:03d}"): ("MATH.SYN.EQ.LINEAR", "apply") for i in range(1, 27)}
 
 
@@ -155,10 +157,14 @@ async def test_http_layer_guards(insightdb):
         r = await client.post("/v0/insight.claims", json={"context": agent_ctx(S1)}, headers={"host": "evil.example",
                               "authorization": "Bearer synthetic-orchestrator-to-insight-cred-01"})
         assert r.status_code == 400
-        for tool in ("insight.dispute", "insight.predict", "insight.reconcile", "insight.export", "insight.erase"):
-            caller = "bff" if tool in ("insight.dispute", "insight.export", "insight.erase") else "orchestrator"
-            r = await call(client, tool, {"context": agent_ctx(S1)}, caller)
-            assert r.status_code == 501 and C.problem_errors(r.json()) == []
+        # 导出与删除：0035 的库函数只授 BFF 会话，缺省不接线 → 501（fail closed）；编排层调不了（准入 403）
+        for tool in ("insight.export", "insight.erase"):
+            name = C.tools[tool].request_schema.removesuffix("Request")
+            body = copy.deepcopy(C.doc["components"]["examples"][f"{name}Request"]["value"])
+            r = await call(client, tool, body, "bff")
+            assert r.status_code == 501 and r.json()["code"] == "METHOD_NOT_IMPLEMENTED" and C.problem_errors(r.json()) == []
+            r = await call(client, tool, {"context": agent_ctx(S1)}, "orchestrator")
+            assert r.status_code == 403
 
 
 async def test_response_contract_violation_is_500(insightdb):

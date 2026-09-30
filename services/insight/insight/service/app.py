@@ -20,9 +20,14 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from ..dispute import VerificationScheduler, default_scheduler
+from ..guardian_requests import GuardianRequests
 from ..policy import Policy, load_check_config, load_policy
+from ..predict import MasterySource
 from ..shared import forbidden_matcher
+from ..sie03_policy import Sie03Policy, load_sie03
 from ..store import InsightStore, assert_insight_role, create_pool
+from ..store_sie03 import Sie03Store
 from .config import Settings
 from .contract import Contract, contract as default_contract
 from .errors import ServiceError, invalid, unauthenticated
@@ -128,12 +133,16 @@ class HostGuard:
 
 
 def create_app(settings: Settings, *, pool: asyncpg.Pool | None = None, contract: Contract | None = None,
-               policy: Policy | None = None, verifier: ActorVerifier | None = None) -> FastAPI:
-    """pool、contract、policy、verifier 供测试注入；不传时按配置创建。注入的池同样要过角色断言"""
+               policy: Policy | None = None, verifier: ActorVerifier | None = None, sie03: Sie03Policy | None = None,
+               scheduler: VerificationScheduler | None = None, mastery: MasterySource | None = None,
+               guardian: GuardianRequests | None = None) -> FastAPI:
+    """pool、contract、policy、verifier 与 SIE-03 的 sie03（配置）、scheduler（验证任务，缺省接口桩）、mastery（掌握行来源，
+    缺省没有）、guardian（导出与删除，缺省不接线）供测试注入；不传时按配置创建。注入的池同样要过角色断言"""
     state: dict[str, Any] = {}
     the_contract = contract or default_contract()
     the_policy = policy or load_policy(settings.policy_path, env=settings.env)
     check_cfg = load_check_config(settings.report_check_path, env=settings.env)  # 启动即校验；报告由 insight.jobs 使用
+    the_sie03 = sie03 or load_sie03(settings.sie03_path, env=settings.env)  # 启动即校验（含占位文案的禁用推断检查）
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -144,8 +153,11 @@ def create_app(settings: Settings, *, pool: asyncpg.Pool | None = None, contract
                 async with p.acquire() as c:
                     await assert_insight_role(c)
             store = InsightStore(p)
-            state.update(store=store, policy=the_policy, check_cfg=check_cfg,
-                         core=ToolCore(store, the_contract, the_policy, forbidden_matcher(), verifier))
+            ops = Sie03Store(p)
+            state.update(store=store, ops=ops, policy=the_policy, sie03=the_sie03, check_cfg=check_cfg,
+                         core=ToolCore(store, the_contract, the_policy, forbidden_matcher(), verifier, sie03=the_sie03, ops=ops,
+                                       scheduler=scheduler or default_scheduler(settings.env), mastery=mastery,
+                                       guardian=guardian))
             yield
         finally:
             state.clear()

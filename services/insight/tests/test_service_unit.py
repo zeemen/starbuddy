@@ -93,12 +93,46 @@ def body_for(tool: str, caller: str = "orchestrator") -> dict:
     return b
 
 
+def test_all_contract_tools_are_implemented():
+    assert NOT_IMPLEMENTED == () and set(IMPLEMENTED) == set(contract().tools)
+
+
 @pytest.mark.anyio
-@pytest.mark.parametrize("tool", NOT_IMPLEMENTED)
-async def test_five_tools_return_501(tool):
+@pytest.mark.parametrize("tool", ["insight.dispute", "insight.predict", "insight.reconcile"])
+async def test_sie03_tools_without_store_return_501(tool):
+    """没有配置 SIE-03 的库层（ops / sie03）时回 501，不碰数据库"""
     caller = sorted(ALLOWED_CALLERS[tool])[0]
     status, out = await core().call(tool, body_for(tool), caller)
     assert status == 501 and out["code"] == "METHOD_NOT_IMPLEMENTED" and contract().problem_errors(out) == []
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("tool", ["insight.export", "insight.erase"])
+async def test_export_erase_unwired_return_501(tool):
+    """0035 的导出与删除库函数只授 BFF 会话：缺省实现不接线，一律 501（fail closed）；缺省授权核对不放行时先 404"""
+    status, out = await core().call(tool, body_for(tool), "bff")
+    assert status == 404 and "detail" not in out
+    from support import StaticVerifier
+    c = ToolCore(NoStore(), contract(), synthetic_policy(), forbidden_matcher(),
+                 StaticVerifier({("00000000-0000-4000-8000-00000000a201", "guardian", "00000000-0000-4000-8000-00000000a001")}))
+    status, out = await c.call(tool, body_for(tool), "bff")
+    assert status == 501 and out["code"] == "METHOD_NOT_IMPLEMENTED" and contract().problem_errors(out) == []
+
+
+def test_default_scheduler_is_stub_only_in_test():
+    """接口桩只给 test 环境；其他环境缺省不可用（安全审查 F2）"""
+    from insight.dispute import StubVerificationScheduler, UnavailableVerificationScheduler, default_scheduler
+    assert isinstance(default_scheduler("test"), StubVerificationScheduler)
+    assert isinstance(default_scheduler("dev"), UnavailableVerificationScheduler) and not default_scheduler("dev").available
+    assert isinstance(core().scheduler, UnavailableVerificationScheduler)  # ToolCore 自己不带接口桩
+
+
+def test_non_test_env_refuses_synthetic_sie03_config():
+    """非 test 环境不设 INSIGHT_SIE03（缺省是合成占位）→ 加载即拒绝，服务不启动（安全审查 F10）"""
+    from insight.policy import CONFIG_DIR, PolicyError
+    from insight.sie03_policy import load_sie03
+    with pytest.raises(PolicyError):
+        load_sie03(CONFIG_DIR / "sie03.synthetic.json", env="dev")
 
 
 @pytest.mark.anyio
@@ -110,6 +144,8 @@ async def test_caller_admission_and_binding():
     assert status == 403
     status, _ = await c.call("insight.export", body_for("insight.export"), "orchestrator")
     assert status == 403
+    status, _ = await c.call("insight.dispute", {"context": agent_ctx()}, "orchestrator")
+    assert status == 403  # 异议只能代表学生本人或家长提出（v0.9 只给 BFF）
     b = body_for("insight.explain")  # 例子是 bff 的请求体；以编排层令牌调用 → 请求体 caller 与令牌不一致
     status, out = await c.call("insight.explain", b, "orchestrator")
     assert status == 403 and "detail" not in out

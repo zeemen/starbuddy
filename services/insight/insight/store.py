@@ -21,17 +21,18 @@ from typing import Any, Mapping, Sequence
 
 import asyncpg
 
-from .claims import ClaimRow, MasteryRow, Op, TemplateInfo, plan_node_claims
+from .claims import ClaimRow, MasteryRow, Op, TemplateInfo, _expiry, _fields_from, plan_node_claims, unit_of
+from .dispute import i_know_outcome
 from .metrics import (ActivityFact, AttemptFact, ErrorFact, MetricInputs, MetricResult, PlanFact, ProbeFact, compute_metrics,
                       plan_metric_claims)
-from .policy import Policy
+from .policy import NODE_CATEGORIES, Policy
 from .report import ReportClaim
 from .render import ClaimForRender
 from .shared import Forbidden
 
 ROLE = "starbuddy_insight"
 OTHER_APP_ROLES = ("starbuddy_bff", "starbuddy_learning", "starbuddy_review", "starbuddy_scheduler", "starbuddy_kge",
-                   "starbuddy_kge_read", "starbuddy_report", "starbuddy_authz")
+                   "starbuddy_kge_read", "starbuddy_report", "starbuddy_authz", "starbuddy_eraser")
 SERVER_SETTINGS = {"application_name": "starbuddy-insight", "TimeZone": "Asia/Shanghai"}
 LIVE = ("hypothesis", "established", "to_verify")
 FRONT = ("student", "guardian")
@@ -129,6 +130,7 @@ class SyncResult:
     ops: tuple[Op, ...]
     skipped_rows: int = 0
     missing_templates: tuple[str, ...] = ()
+    settled: tuple[tuple[str, str], ...] = ()  # （异议 ID, 结论）：同一事务里按新掌握行结案的“我其实会”异议（SIE-03）
 
 
 def _visible_where(audience: str) -> str:
@@ -250,7 +252,8 @@ class InsightStore:
                 raise RuntimeError("claim update did not hit exactly one row")
         return created
 
-    async def current_basis(self, conn: asyncpg.Connection, student: str, ids: Sequence[str]) -> set[str]:
+    @staticmethod
+    async def current_basis(conn: asyncpg.Connection, student: str, ids: Sequence[str]) -> set[str]:
         rows = await conn.fetch("""SELECT id FROM platform.mastery_estimate
                                     WHERE student_id = $1::uuid AND id = ANY ($2::uuid[]) AND is_current""", student, list(ids))
         return {str(r["id"]) for r in rows}
@@ -258,19 +261,75 @@ class InsightStore:
     async def sync_mastery_claims(self, student: str, rows: Sequence[MasteryRow], policy: Policy) -> SyncResult:
         """按当前掌握行生成与流转节点判断（一个事务）。rows 应是该学生的全部当前掌握行：不在其中的单元视为依据已撤下。
         掌握行的 basis_id 必须是库里该学生的当前 mastery_estimate 行，否则按“没有依据”处理（不写、并会撤回引用它的判断）"""
-        if any(r.student_id != student for r in rows):
-            raise ValueError("rows must belong to the student")
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 now = await self._lock(conn, student)
-                templates, missing = await self._templates(conn, policy, ("node_mastery", "node_transfer"))
-                current = await self.current_basis(conn, student, [r.basis_id for r in rows])
-                usable = [r for r in rows if r.basis_id in current]
-                keys = [policy.templates[c].key for c in ("node_mastery", "node_transfer")]
-                existing = await self._live(conn, student, keys)
-                ops = plan_node_claims(existing, usable, policy, now, templates)
-                await self._apply(conn, ops)
-        return SyncResult(tuple(ops), len(rows) - len(usable), tuple(missing))
+                return await self.sync_in(conn, student, rows, policy, now)
+
+    @classmethod
+    async def sync_in(cls, conn: asyncpg.Connection, student: str, rows: Sequence[MasteryRow], policy: Policy,
+                      now: datetime) -> SyncResult:
+        """sync_mastery_claims 的事务内部分（调用方已取学生锁）：SIE-03 的事实更正重算也走这里（同一套判断生成）。
+        先按新掌握行结案“我其实会”异议（验证结果就是 KGE 的掌握行，dispute.i_know_outcome），再读现有判断、生成操作、逐条写"""
+        if any(r.student_id != student for r in rows):
+            raise ValueError("rows must belong to the student")
+        for r in rows:
+            r.check()
+        templates, missing = await cls._templates(conn, policy, ("node_mastery", "node_transfer"))
+        current = await cls.current_basis(conn, student, [r.basis_id for r in rows])
+        usable = [r for r in rows if r.basis_id in current]
+        settled = await cls._settle_i_know(conn, student, usable, policy, now, templates)
+        keys = [policy.templates[c].key for c in ("node_mastery", "node_transfer")]
+        existing = await cls._live(conn, student, keys)
+        ops = plan_node_claims(existing, usable, policy, now, templates)
+        await cls._apply(conn, ops)
+        return SyncResult(tuple(ops), len(rows) - len(usable), tuple(missing), tuple(settled))
+
+    @classmethod
+    async def _settle_i_know(cls, conn: asyncpg.Connection, student: str, rows: Sequence[MasteryRow], policy: Policy,
+                             now: datetime, templates: Mapping[str, TemplateInfo]) -> list[tuple[str, str]]:
+        """验证中的“我其实会”异议：按同一单元（学科、节点、认知层次）的新掌握行结案（0032 的流转表 + 0010 的状态机，同一事务）。
+        - supported：原判断推翻（verification_refuted），异议 resolved_supported；随后的判断生成按新行重算出新判断（上调）；
+        - not_supported：原判断回到成立（verification_supported，数值与证据按新行，需策略已签字），异议 resolved_unsupported；
+        - conflict / pending / pending_signoff：不写（冲突的处理待人确认，见 lessons）"""
+        ds = await conn.fetch("""SELECT id, claim_id, created_at FROM insight.dispute
+                                  WHERE student_id = $1::uuid AND kind = 'i_know' AND status = 'verifying'
+                                  ORDER BY created_at, id FOR UPDATE""", student)
+        by_unit = {(r.subject, r.node_id, r.cognitive_level): r for r in rows}
+        out: list[tuple[str, str]] = []
+        for d in ds:
+            c = await conn.fetchrow(f"SELECT {_CLAIM_COLS} FROM insight.claim c WHERE c.id = $1 FOR UPDATE", d["claim_id"])
+            claim = claim_row(c)
+            unit = unit_of(claim, policy)
+            if claim.status != "to_verify" or unit is None:
+                out.append((str(d["id"]), "stuck" if claim.status in ("refuted", "withdrawn") else "pending"))
+                continue
+            # 判断所述与证据取异议时的历史快照（其间的常规修改可能已把验证证据并进判断，不能拿当前行比）
+            snap = await conn.fetchrow("""SELECT value, evidence_ids FROM insight.claim_history WHERE claim_id = $1 AND reason = 'dispute'
+                                           ORDER BY at DESC LIMIT 1""", claim.id)
+            said = dict(snap["value"]) if snap else dict(claim.value)
+            said_ev = tuple(str(e) for e in snap["evidence_ids"]) if snap else claim.evidence_ids
+            level, gate = said.get("level"), said.get("gate")
+            row = by_unit.get((claim.subject, claim.target_id, level))
+            outcome = i_know_outcome(gate if isinstance(gate, str) else None, said_ev, d["created_at"], row)
+            if outcome == "supported":
+                await cls._apply(conn, [Op(claim.id, unit, "to_verify", "refuted", "verification_refuted")])
+                await conn.execute("""UPDATE insight.dispute SET status = 'resolved_supported', result_note_code = 'verification_supported'
+                                       WHERE id = $1""", d["id"])
+            elif outcome == "not_supported":
+                cat = unit[0]
+                tpl = templates.get(cat)
+                if not policy.signed or tpl is None or cat not in NODE_CATEGORIES:
+                    outcome = "pending_signoff"
+                else:
+                    assert row is not None
+                    fields = _fields_from(row)
+                    fields["expires_at"] = _expiry(now, policy.ttl_days[cat], tpl, row.next_retest_at)
+                    await cls._apply(conn, [Op(claim.id, unit, "to_verify", "established", "verification_supported", fields)])
+                    await conn.execute("""UPDATE insight.dispute SET status = 'resolved_unsupported',
+                                                 result_note_code = 'verification_not_supported' WHERE id = $1""", d["id"])
+            out.append((str(d["id"]), outcome))
+        return out
 
     async def recompute_metrics(self, student: str, policy: Policy, forbidden: Forbidden,
                                 tags: Mapping[tuple[str, str], tuple[str, str]] | None = None) -> tuple[list[MetricResult], SyncResult]:
