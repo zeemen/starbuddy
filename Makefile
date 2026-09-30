@@ -1,5 +1,5 @@
 # 未实现的目标明确打印“跳过”，不得伪装为通过。
-.PHONY: check-fast check contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test adapter-zhixing-test adapter-wenli-test learning-test model-router-mutation diagnosis-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-visual kge-inventory kge-inventory-test kge-import kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test sie-dictionary-check kge-id-check knowledge-test knowledge-mutation kge-compile-eval-test eval-persona eval-grade persona-registry-check persona-guard-test persona-lock persona-record
+.PHONY: check-fast check contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test adapter-zhixing-test adapter-wenli-test learning-test model-router-mutation diagnosis-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-visual kge-inventory kge-inventory-test kge-import kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test sie-dictionary-check kge-id-check knowledge-test knowledge-mutation kge-compile-eval-test eval-persona eval-grade persona-registry-check persona-guard-test persona-lock persona-record insight-test insight-mutation
 
 # 可指向装了 packages/contracts/requirements-dev.txt 的解释器，例如 make check PYTHON=.venv/bin/python
 PYTHON ?= python3
@@ -16,7 +16,7 @@ endef
 # 契约检查约 1 秒，改动后也跑一遍
 check-fast: contract-test taxonomy-check attack-surface-check sie-dictionary-check kge-id-check
 
-check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-zhixing-test adapter-wenli-test learning-test model-router-mutation diagnosis-mutation mastery-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona
+check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-zhixing-test adapter-wenli-test learning-test model-router-mutation diagnosis-mutation mastery-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona insight-test insight-mutation
 	@echo "check: lint 尚未配置，跳过；其余检查已通过"
 
 # 契约合法性 + 示例 + 反例集
@@ -371,3 +371,21 @@ mastery-mutation:
 	  echo "mastery-mutation: 跳过（没有安装学习服务依赖；见 services/learning/README.md）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
 	@services/learning/.venv/bin/python services/learning/scripts/mastery_mutations.py
+
+# SIE-02b 第一步（specs/sie-02b-claims-first-report）：洞察服务 services/insight——判断生成与生命周期（合成掌握行驱动）、
+# insight.claims / explain / context（契约严格校验）、首份报告结构化生成与两道检查、中圈指标静默计算，以及影子评审比对脚本
+# （evals/sie-shadow，用洞察服务的 venv）。库上测试在 tests/pginsight.py 起的一次性 Postgres 上跑（执行 bootstrap 角色与全部迁移）。
+# 没有 Postgres 时库上测试非严格跳过、严格失败。依赖需先安装（带哈希的锁文件）：
+#   cd services/insight && python3 -m venv .venv && .venv/bin/pip install --require-hashes -r requirements-dev.lock
+insight-test:
+	@if [ ! -x services/insight/.venv/bin/python ] || ! services/insight/.venv/bin/python -c "import fastapi, asyncpg, jsonschema, yaml, httpx, pytest" 2>/dev/null; then \
+	  echo "insight-test: 跳过（没有安装依赖；见 services/insight/README.md）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@cd services/insight && INSIGHT_TEST_STRICT=$(if $(filter 1,$(CONTRACT_STRICT)),1,0) PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -rs
+	@cd evals/sie-shadow && PYTHONDONTWRITEBYTECODE=1 ../../services/insight/.venv/bin/python -m pytest -q && echo "insight-test: 通过"
+
+# 变异测试：改坏判断生命周期、首份报告的一致性与禁用推断检查、渲染、中圈指标、可见范围过滤、契约校验、调用方准入与授权核对、
+# 角色断言、监听地址与影子评审脚本的关键检查，断言测试能发现（50 条以上，约 1–2 分钟）。没有依赖或 Postgres 时退出码 3（非严格跳过、严格失败）
+insight-mutation:
+	@bash services/insight/tests/mutations.sh; rc=$$?; \
+	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi

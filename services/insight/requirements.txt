@@ -1,0 +1,11 @@
+# 洞察服务运行依赖（许可证已核，见 README.md；规则 10）。版本与知识服务、学习服务一致，不引入新包。
+# HTTP（FastAPI）、数据库（asyncpg；psycopg 3 为 LGPL-3.0，按规则 10 不引入）、契约严格校验（jsonschema + referencing）、
+# 契约与字段字典 YAML 读取、禁用推断词表（docs/design/sie/sie_lexicon.py 需要 PyYAML）
+fastapi==0.141.1
+starlette==1.7.0
+pydantic==2.13.5
+uvicorn==0.54.0
+asyncpg==0.31.0
+jsonschema==4.26.0
+referencing==0.37.0
+pyyaml==6.0.3

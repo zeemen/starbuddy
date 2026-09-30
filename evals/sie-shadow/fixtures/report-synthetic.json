@@ -1,0 +1,16 @@
+{
+  "$comment": "合成、非金标：首份画像报告的判断（学生 × 节点 × 认知层次 → 门槛状态），只用来证明比对流程。学生 ID、节点 ID 都是占位编码。",
+  "format": "sie-shadow-report/0.1",
+  "synthetic": true,
+  "students": [
+    {"student_ref": "00000000-0000-4000-8000-00000000a001", "judgments": [
+      {"node_id": "MATH.SYN.EQ.LINEAR", "level": "apply", "state": "execute"},
+      {"node_id": "MATH.SYN.EQ.APPLY", "level": "apply", "state": "stable"},
+      {"node_id": "MATH.SYN.EQ.TRANSPOSE", "level": "understand", "state": "transfer"}]},
+    {"student_ref": "00000000-0000-4000-8000-00000000a002", "judgments": [
+      {"node_id": "MATH.SYN.EQ.LINEAR", "level": "apply", "state": "stable"},
+      {"node_id": "MATH.SYN.EQ.APPLY", "level": "understand", "state": "understand"}]},
+    {"student_ref": "00000000-0000-4000-8000-00000000a003", "judgments": [
+      {"node_id": "MATH.SYN.EQ.LINEAR", "level": "apply", "state": "execute"}]}
+  ]
+}

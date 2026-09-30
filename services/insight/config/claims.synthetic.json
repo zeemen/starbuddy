@@ -1,0 +1,47 @@
+{
+  "$comment": "合成占位，非签字值，只允许 INSIGHT_ENV=test 加载。判断状态阈值（establish.*）与置信度分档由 SIE 负责人与数学教研签字（spec 待人确认 #2）；有效期按待人确认 #5 默认（掌握类、迁移类 30 天）但仍待产品与教研确认；模板键与报告文案全部是占位（必停项，待人确认 #3：模板与衔接短语由人写人审后登记）；中圈指标最低样本取 SIE V1.1 第五章表格，窗口、阶梯长度、探针概率映射、偏差阈值是合成占位。未签字（signed_by / signed_at 为空）时判断最高只到“假设”。",
+  "schema_version": "sie-claims-policy/0.1",
+  "config_version": "syn-0.1.0",
+  "synthetic": true,
+  "signed_by": "",
+  "signed_at": "",
+  "visible_subjects": ["aya"],
+  "templates": {
+    "node_mastery": {"key": "syn.math.node_mastery", "version": 1},
+    "node_transfer": {"key": "syn.math.node_transfer", "version": 1},
+    "metric": {"key": "syn.metric.middle_circle", "version": 1}
+  },
+  "mastery_gates": ["understand", "execute", "stable", "transfer", "retain"],
+  "establish": {"min_gate": "stable", "confidence_min": 0.7, "evidence_min": 5},
+  "ttl_days": {"node_mastery": 30, "node_transfer": 30, "metric": 14},
+  "confidence_bands": {"moderate_min": 0.4, "strong_min": 0.75},
+  "metrics": {
+    "window_days": 14,
+    "min_samples": {
+      "independent_solve_rate": 10,
+      "hint_dependency": 15,
+      "transfer_gap": 10,
+      "self_assessment_calibration": 20,
+      "retention_rate": 8,
+      "plan_completion_rate_days": 14,
+      "reading_question_error_share_per_subject": 5,
+      "reading_question_error_share_subjects": 2,
+      "persistence_weeks": 4
+    },
+    "hint_ladder_length": {"aya": 6, "wenli": 6, "zhixing": 6, "echo": 6},
+    "probe_probability": {"yes": 1.0, "no": 0.0, "unsure": 0.5},
+    "calibration_bias_epsilon": 0.05,
+    "persistence": {"break_days": 3, "recover_days": 7}
+  },
+  "report": {
+    "notice": "【占位·待人审】首份报告顶部提示语",
+    "title": {
+      "student": "【占位·待人审】首份报告标题（学生版）",
+      "guardian": "【占位·待人审】首份报告标题（家长版）"
+    },
+    "connectives": {
+      "node_mastery": "【占位衔接·甲】",
+      "node_transfer": "【占位衔接·乙】"
+    }
+  }
+}
