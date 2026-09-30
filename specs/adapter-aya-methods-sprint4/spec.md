@@ -1,6 +1,6 @@
 # 冲刺 4-D（阿鸦部分）：阿鸦补齐 plan、teach、generate_variation、report
 
-状态：**草稿，等人确认后才开始实现**（CLAUDE.md：先 spec，确认后再动手）。确认人、日期：＿＿＿
+状态：**已确认（2026-09-30，用户“按默认建议，开始实现”）**，待人确认全部按默认执行。
 
 > **2026-09-28：按开发计划 v2.0 改写**（方案见 `specs/sprint4-v2-rewrite/spec.md`，待人确认 #1 按默认：按插件 API v1.0 候选版写）。
 > - 本 spec 按 `packages/contracts/openapi/plugin-api.v1.0.yaml`（**候选版，待评审签字**）写。评审会推翻其中任何一项结论时，本 spec 随之修改，修改后再确认。

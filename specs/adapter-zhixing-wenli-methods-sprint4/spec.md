@@ -1,6 +1,6 @@
 # 冲刺 4-D（知行、文砺部分）：各补两个方法到 5/6
 
-状态：**草稿，等人确认后才开始实现**。确认人、日期：＿＿＿。PR 首行 `[NEEDS-HUMAN]`（契约行为按 v1.0 候选版）。
+状态：**已确认（2026-09-30，用户“按默认建议，开始实现”）**，待人确认全部按默认执行。PR 首行 `[NEEDS-HUMAN]`（契约行为按 v1.0 候选版）。
 任务包：开发计划 v2.0 冲刺 4（W9–W10）D 流“四科补齐剩余方法”，验收“阿鸦 6/6、知行与文砺 ≥ 5/6、开口成章 ≥ 4/6”（英语搁置不计，对照文档决定 #1）。阿鸦部分见 `specs/adapter-aya-methods-sprint4/`。
 关联：`packages/contracts/openapi/plugin-api.v1.0.yaml`（候选版）、`specs/plugin-api-v1.0-step2/`（已实现）、`specs/adapter-zhixing-sprint2/`、`specs/adapter-wenli-sprint2/`（现有方法与内容包）、知行与文砺盘点的 adapter-design、KGE-03 知识服务（`node.path`、`item.search`、`item.similar`、`rubric.get`）、4-K 道法切片（采分点入原子层）、CLAUDE.md 规则 1、3、11、12。
 
