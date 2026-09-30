@@ -18,7 +18,7 @@ from scorer.report import score, to_markdown  # noqa: E402
 from scorer.selftest import run_selftest  # noqa: E402
 
 BASE = HERE / "diandian"
-LEX = load_lexicon(BASE / "lexicon" / "forbidden.yaml")
+LEX = load_lexicon()
 CASES = load_cases(BASE / "cases")
 BY_ID = {c["case_id"]: c for c in CASES}
 SECRET = "回复原文不应出现在报告里-3e7a"
@@ -26,7 +26,7 @@ SECRET = "回复原文不应出现在报告里-3e7a"
 
 def test_repo_cases_validate_and_selftest_passes():
     assert validate(BASE / "cases", BASE / "schema" / "case.schema.json", BASE / "holdout.txt") == []
-    assert run_selftest(BASE / "cases", BASE / "lexicon" / "forbidden.yaml", BASE / "fixtures" / "selftest.yaml") == 0
+    assert run_selftest(BASE / "cases", None, BASE / "fixtures" / "selftest.yaml") == 0
 
 
 def test_holdout_is_reproducible_and_stratified():
@@ -175,12 +175,18 @@ def test_review_checks_do_not_count_as_pass():
     assert verdicts["cite_source"] == "review" and rep["detail"][0]["passed"]
 
 
+def _persona_lexicon_docs():
+    """词表收拢后的新位置（冲刺 3-F）：A–E 类各一个文件，规则模式另一个文件"""
+    base = HERE.parents[1] / "packages" / "personas"
+    return ([yaml.safe_load((base / "forbidden" / f"{c}.yaml").read_text(encoding="utf-8")) for c in "ABCDE"],
+            yaml.safe_load((base / "patterns" / "diandian.yaml").read_text(encoding="utf-8")))
+
+
 def test_lexicon_entries_cite_sources_and_compile():
-    doc = yaml.safe_load((BASE / "lexicon" / "forbidden.yaml").read_text(encoding="utf-8"))
-    assert doc["reviewed"] is False, "核对前保持 false（spec 待人确认 #2）"
-    classes = {e["class"] for e in doc["forbidden"]}
-    assert classes == {"A", "B", "C", "D", "E"}
-    assert all(e.get("source") for e in doc["forbidden"]) and all(p.get("source") for p in doc["patterns"].values())
+    docs, pats = _persona_lexicon_docs()
+    assert all(d["reviewed"] is False for d in docs) and pats["reviewed"] is False, "核对前保持 false（spec 待人确认 #2）"
+    assert {d["class"] for d in docs} == {"A", "B", "C", "D", "E"} and LEX.reviewed is False
+    assert all(e.get("source") for d in docs for e in d["rules"]) and all(p.get("source") for p in pats["patterns"].values())
 
 
 def test_offline_pipeline(tmp_path):
@@ -270,9 +276,11 @@ def test_fixtures_are_marked_not_persona_corpus_and_only_scorer_reads_them():
             continue
         if "selftest.yaml" in p.read_text(encoding="utf-8", errors="ignore"):
             readers.append(p.relative_to(repo).as_posix())
-    assert set(readers) <= {"evals/persona/scorer/__main__.py", "evals/persona/scorer/selftest.py", "evals/persona/tests/test_scorer.py"}, readers
+    # test_lexicon_migration.py 只把夹具字符串当“迁移前后命中一致”的比对输入（冲刺 3-F）
+    assert set(readers) <= {"evals/persona/scorer/__main__.py", "evals/persona/scorer/selftest.py", "evals/persona/tests/test_scorer.py",
+                            "evals/persona/tests/test_lexicon_migration.py"}, readers
 
 
 def test_lexicon_entries_label_origin():
-    doc = yaml.safe_load((BASE / "lexicon" / "forbidden.yaml").read_text(encoding="utf-8"))
-    assert all(e.get("origin") in ("verbatim", "inferred") and e.get("styles") == "all" for e in doc["forbidden"])
+    docs, _ = _persona_lexicon_docs()
+    assert all(e.get("origin") in ("verbatim", "inferred") and e.get("styles") == "all" for d in docs for e in d["rules"])

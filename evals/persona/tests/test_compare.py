@@ -31,7 +31,7 @@ from scorer.judge import judge_run, load_lexicon  # noqa: E402
 
 SAMPLE = BASE / "candidates" / "sample-fake.yaml"
 COMMITTED = HERE / "reports" / "r1-sample-fake"
-LEX = load_lexicon(BASE / "lexicon" / "forbidden.yaml")
+LEX = load_lexicon()
 HOLDOUT = set(read_holdout(BASE / "holdout.txt"))
 DEV = [c for c in load_cases(BASE / "cases") if c["case_id"] not in HOLDOUT]
 BY_ID = {c["case_id"]: c for c in DEV}

@@ -1,3 +1,9 @@
+# 【已迁移】禁语词表的唯一真相源已移到 packages/personas/forbidden/（A–E 类）与 packages/personas/patterns/diandian.yaml（规则模式），
+# 冲刺 3-F（specs/persona-governance-sprint3/spec.md 设计要点 2“词表收拢”、待人确认 #14）。点点评分器、guard、KGE-03 都改读新位置。
+# 本文件只为前端文案单测（apps/web/tests/probe.test.ts、diagnosis.test.ts 的行解析）保留一个版本周期，前端改为调用 guard 后删除；
+# 内容是新位置的只读镜像，必须与之逐条一致（persona-registry-check 与 packages/personas/tests 核对）。不要在这里改词表。
+moved_to: packages/personas/forbidden/
+#
 # 点点禁语表与规则模式的机器可读转写（冲刺 1-I，specs/diandian-cases-v0-sprint1/spec.md 设计要点 3）。
 #
 # 这是转写，不改内容：A–D 类原文在《备考搭子规格书 V1.0》§5.2（docs/subjects/zhixing-备考搭子规格书-V1.0（已被点点替代）.md），

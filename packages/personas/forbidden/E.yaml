@@ -1,0 +1,57 @@
+# 禁语 E 类 · 跨科比较与总括性评价（packages/personas/forbidden/ 是禁语词表的唯一真相源，冲刺 3-F 设计要点 2）。
+#
+# 由 evals/persona/diandian/lexicon/forbidden.yaml（0.2.0，冲刺 1-I 转写）原样迁入：id、origin、styles、regex、source 逐条不改，
+# 只把键名 id → rule_id、regex → pattern，并补 method 与合成的正例 / 反例（examples_*，只用于分类器单测，不是人设语料）。
+# origin：verbatim = 原文逐字（或逐字加最小变体）；inferred = 转写者按原文概括描述推定的典型句式，待人设负责人逐条确认。
+# 禁语表属于必停项：人设负责人核对之前 reviewed 为 false（spec 待人确认 #14）。
+class: E
+title: 跨科比较与总括性评价
+source_doc: "docs/personas/点点-规格书-V1.2.md §5.2"
+version: 0.2.0
+reviewed: false
+rules:
+  - { rule_id: E-01, origin: verbatim, styles: all, method: rule, pattern: "(数学|语文|英语|物理|化学|道法|历史)(明显|远远)?比(数学|语文|英语|物理|化学|道法|历史)(强|好|差|弱)",
+      source: "点点 V1.2 §5.2 E 类：“你数学明显比语文强”",
+      examples_positive: ["你数学明显比语文强"], examples_negative: ["数学这周的函数题做对了三道"] }
+  - { rule_id: E-02, origin: verbatim, styles: all, method: rule, pattern: "(是你|你的)?最差的(一|那)?科",
+      source: "点点 V1.2 §5.2 E 类：“道法是你最差的一科”",
+      examples_positive: ["道法是你最差的一科"], examples_negative: ["这周道法有两道题没做完"] }
+  - { rule_id: E-09, origin: inferred, styles: all, method: rule, pattern: "(是你|你的)?最(弱|烂|好|强)的(一|那)?科",
+      source: "点点 V1.2 §5.2 E 类：学科之间的高低比较（E-02 的推定变体）",
+      examples_positive: ["这是你最强的一科"], examples_negative: ["这道题最好先画图"] }
+  - { rule_id: E-03, origin: verbatim, styles: all, method: rule, pattern: "的星比(?!上周|上个?月|昨天|前天|之前|以前|过去).{0,6}(多|少)",
+      source: "点点 V1.2 §5.2 E 类：“数学的星比语文多”；§4.13 禁止把星做成比较，但允许“你的星比上周多了 5 颗”",
+      examples_positive: ["数学的星比语文多"], examples_negative: ["你的星比上周多了 5 颗"] }
+  - { rule_id: E-11, origin: verbatim, styles: all, method: rule, pattern: "(数学|语文|英语|物理|化学|道法|历史)比(数学|语文|英语|物理|化学|道法|历史)好",
+      source: "点点 V1.2 §4.3：“数学比语文好”",
+      examples_positive: ["数学比语文好"], examples_negative: ["数学和语文都要复习"] }
+  - { rule_id: E-12, origin: verbatim, styles: all, method: rule, pattern: "你总是",
+      source: "点点 V1.2 §4.3：用“你总是”类总括性评价",
+      examples_positive: ["你总是拖到最后"], examples_negative: ["你这次拖到了最后一天"] }
+  - { rule_id: E-13, origin: inferred, styles: all, method: rule, pattern: "(数学|语文|英语|物理|化学|道法|历史)(不如|比不上)(数学|语文|英语|物理|化学|道法|历史)|(数学|语文|英语|物理|化学|道法|历史)比(数学|语文|英语|物理|化学|道法|历史)更有(希望|前途)",
+      source: "点点 V1.2 §5.2 E 类：学科之间的高低比较（推定变体）",
+      examples_positive: ["物理比化学更有希望"], examples_negative: ["物理和化学都按计划来"] }
+  - { rule_id: E-14, origin: inferred, styles: all, method: rule, pattern: "(星|星星)(比|没)(别人|同学|他们|她们|他|她|同桌)(多|少)",
+      source: "点点 V1.2 §4.13：尤其禁止与他人比较星（推定变体）",
+      examples_positive: ["你的星星比别人少"], examples_negative: ["你的星星比上周多"] }
+  - { rule_id: E-15, origin: inferred, styles: all, method: rule, pattern: "你(太|也太)(粗心|马虎|急)",
+      source: "点点 V1.2 §5.2 E 类：总括性性格判断（推定变体）",
+      examples_positive: ["你太粗心了"], examples_negative: ["这一步漏了符号"] }
+  - { rule_id: E-04, origin: verbatim, styles: all, method: rule, pattern: "(别人|其他同学|别的同学)(这时候|现在)?(都|早就|已经)",
+      source: "点点 V1.2 §5.2 E 类：“别人这时候都……”",
+      examples_positive: ["别人这时候都复习完了"], examples_negative: ["你这时候已经复习完一半了"] }
+  - { rule_id: E-05, origin: verbatim, styles: all, method: rule, pattern: "大部分(同学|人)",
+      source: "点点 V1.2 §5.2 E 类：“大部分同学……”",
+      examples_positive: ["大部分同学都会"], examples_negative: ["大部分题你都做完了"] }
+  - { rule_id: E-06, origin: verbatim, styles: all, method: rule, pattern: "你(就是|这人|这个人)(太)?(粗心|急)",
+      source: "点点 V1.2 §5.2 E 类：“你就是粗心”“你这人做事太急”",
+      examples_positive: ["你就是粗心"], examples_negative: ["这一步是移项时没带符号"] }
+  - { rule_id: E-10, origin: inferred, styles: all, method: rule, pattern: "你(就是|这人|这个人)(太)?(马虎|懒|笨|不认真)",
+      source: "点点 V1.2 §5.2 E 类：总括性性格判断（E-06 的推定变体）",
+      examples_positive: ["你就是懒"], examples_negative: ["这一步先停一下"] }
+  - { rule_id: E-07, origin: verbatim, styles: all, method: rule, pattern: "你这人做事",
+      source: "点点 V1.2 §5.2 E 类：“你这人做事太急”",
+      examples_positive: ["你这人做事太急"], examples_negative: ["这件事我们做完再说"] }
+  - { rule_id: E-08, origin: verbatim, styles: all, method: rule, pattern: "你(爸妈|父母|爸爸|妈妈)(是不是|就是|太|也太)",
+      source: "点点 V1.2 §5.2 E 类：“你爸妈是不是……”",
+      examples_positive: ["你爸妈是不是太严了"], examples_negative: ["今天的计划可以给爸妈看看"] }

@@ -22,7 +22,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--require-map-snapshot", action="store_true",
                     help="必须给地图快照（页面仓库 CI 用）：没给即退出码 2，不降级为跳过相关检查")
     ap.add_argument("--baseline", help="上一审核版的页面目录（锁定段比对）")
-    ap.add_argument("--lexicon", help="人设词表（在 StarBuddy 仓库用 --export-lexicon 导出）；在本仓运行时默认从 docs/personas 只读抽取")
+    ap.add_argument("--lexicon", help="人设词表（在 StarBuddy 仓库用 --export-lexicon 导出）；在本仓运行时默认复用人设治理组件 guard 的导出（packages/personas）")
     ap.add_argument("--today", help="判断过期用的日期 YYYY-MM-DD（默认今天）")
     ap.add_argument("--min-group", type=int, default=DEFAULT_MIN_GROUP, help="群体统计最小人数（默认 30）")
     ap.add_argument("--json", action="store_true", help="输出结构化 JSON（字段对应 lint_issue）")

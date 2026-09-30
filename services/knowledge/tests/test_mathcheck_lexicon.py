@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import shutil
+from pathlib import Path
 
 import pytest
 
 from conftest import ROOT
 from knowledge.lint import mathcheck
-from knowledge.lint.lexicon import (AYA, EXAMINER, FORBIDDEN_YAML, MIAOBI, PERSONA_FILES, Lexicon, LexiconError, load_from_repo)
+from knowledge.lint.lexicon import REGISTRY, Lexicon, LexiconError, load_from_repo
 
 
 @pytest.mark.parametrize("formula,assign", [
@@ -83,7 +84,24 @@ def test_lexicon_extracts_from_persona_docs(lexicon):
     classes = {r.cls for r in lexicon.forbidden}
     assert classes == {"A", "B", "C", "D", "E", "F", "G"}
     assert any(r.regex == "粗心" and r.subjects == ("aya",) for r in lexicon.forbidden)
-    assert set(lexicon.sources) == {FORBIDDEN_YAML, *PERSONA_FILES}
+    assert REGISTRY in lexicon.sources and "packages/personas/forbidden/manifest.yaml" in lexicon.sources
+
+
+# 冲刺 3-F 词表收拢：改为复用 guard 的导出之后，与迁移前（从 docs/personas 只读抽取）的词表逐条比对。
+# 只允许两处有意的差异（lessons 记录）：考官型的称谓（点点直呼老师名）进了称呼表；阿鸦规格书里被当成口头禅抽出的反例句式
+# “你为什么不……”（原文是“而不是‘你为什么不……’”）不再算口头禅。禁语与设定元素逐条不变。
+BEFORE = Path(__file__).resolve().parent / "fixtures" / "lexicon-before-persona-guard.json"
+
+
+def test_lexicon_same_as_before_persona_guard(lexicon):
+    old = Lexicon.from_json(BEFORE.read_text(encoding="utf-8"))
+    key = lambda r: (r.id, r.cls, r.regex, r.subjects)  # noqa: E731
+    assert [key(r) for r in lexicon.forbidden] == [key(r) for r in old.forbidden]
+    assert [key(r) for r in lexicon.setting_patterns] == [key(r) for r in old.setting_patterns]
+    assert set(lexicon.role_names) == set(old.role_names)
+    assert set(lexicon.address_terms) - set(old.address_terms) == {"方圆", "春秋", "雅典娜"} and set(old.address_terms) <= set(lexicon.address_terms)
+    assert set(old.catchphrases) - set(lexicon.catchphrases) == {"你为什么不……"} and set(lexicon.catchphrases) <= set(old.catchphrases)
+    assert lexicon.max_sentence_chars == old.max_sentence_chars
 
 
 def test_lexicon_json_round_trip(lexicon):
@@ -98,16 +116,27 @@ def test_lexicon_json_rejects_wrong_format(lexicon):
         Lexicon.from_json(broken)
 
 
-@pytest.mark.parametrize("rel,anchor", [(AYA, "**F 类 · 数学教学禁语**"), (EXAMINER, "考官型专属 **G 类**"),
-                                        (MIAOBI, "**F 类 · 语文教学禁语**")])
-def test_lexicon_fails_closed_when_anchor_missing(tmp_path, rel, anchor):
-    for f in (FORBIDDEN_YAML, *PERSONA_FILES):
-        (tmp_path / f).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(ROOT / f, tmp_path / f)
-    load_from_repo(tmp_path)  # 完整副本能抽取
+def _copy_personas(dst: Path) -> None:
+    shutil.copytree(ROOT / "packages" / "personas", dst / "packages" / "personas", ignore=shutil.ignore_patterns("__pycache__", "tests"))
+    shutil.copytree(ROOT / "docs" / "personas", dst / "docs" / "personas")
+
+
+@pytest.mark.parametrize("rel,old,new", [
+    ("packages/personas/forbidden/G.yaml", "  - { rule_id: G-01,", "  - { rule_id: G-01, pattern_broken: ["),   # YAML 坏了
+    ("packages/personas/forbidden/manifest.yaml", "G.yaml, ", ""),                                            # G 类整类缺失
+    ("packages/personas/forbidden/F-math.yaml", 'pattern: "粗心"', 'pattern: "(("'),                           # 正则不合法（literal 仍能编译，改成非 literal）
+])
+def test_lexicon_fails_closed_when_guard_lexicon_broken(tmp_path, rel, old, new):
+    _copy_personas(tmp_path)
+    load_from_repo(tmp_path)  # 完整副本能加载
     p = tmp_path / rel
-    p.write_text(p.read_text(encoding="utf-8").replace(anchor, "（锚点被改掉）"), encoding="utf-8")
-    with pytest.raises(LexiconError, match="锚点"):
+    text = p.read_text(encoding="utf-8")
+    assert old in text
+    if rel.endswith("F-math.yaml"):
+        new = new + ", literal: false"
+        text = text.replace('literal: true, pattern: "粗心"', 'pattern: "粗心"')
+    p.write_text(text.replace(old, new, 1), encoding="utf-8")
+    with pytest.raises(LexiconError):
         load_from_repo(tmp_path)
 
 

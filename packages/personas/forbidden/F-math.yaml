@@ -1,0 +1,52 @@
+# 禁语 F:math 类 · 数学教学禁语（阿鸦规格书 V1.1 §5.2“F 类 · 数学教学禁语”）。种子词表，冲刺 3-F 设计要点 2。
+#
+# 只从规格书原文逐条摘录，不自行扩写：原文每个加引号的表述是一条词面规则（method: rule，literal: true 按字面匹配，origin: verbatim）；
+# 原文没有给出具体说法、不能落成词面的条目标 context（结构上下文层，guard 用引擎字段判定）或 model（模型判定层，本冲刺不执行、不阻断）。
+# rule_id 沿用 KGE-03 人设词表抽取时的编号（F-aya-01…11），页面体检的命中结果不变。
+# F 类被数学、语文重复定义，这里按 F:math / F:chinese 命名空间处理（规格冲突 #9 b，待规格负责人裁决）。
+# 禁语表属于必停项：人设负责人与数学教研核对之前 reviewed 为 false。examples_* 是合成句子，只用于分类器单测，不是人设语料。
+class: "F:math"
+title: 数学教学禁语
+source_doc: "docs/personas/阿鸦-规格书-V1.1.md §5.2"
+version: 0.1.0
+reviewed: false
+rules:
+  # 伪归因："粗心""马虎""不认真"
+  - { rule_id: F-aya-01, origin: verbatim, method: rule, literal: true, pattern: "粗心", source: "阿鸦 V1.1 §5.2 F 类 伪归因：“粗心”",
+      examples_positive: ["这题你粗心了"], examples_negative: ["这一步移项时没带符号"] }
+  - { rule_id: F-aya-02, origin: verbatim, method: rule, literal: true, pattern: "马虎", source: "阿鸦 V1.1 §5.2 F 类 伪归因：“马虎”",
+      examples_positive: ["别马虎"], examples_negative: ["第三步的依据写全了"] }
+  - { rule_id: F-aya-03, origin: verbatim, method: rule, literal: true, pattern: "不认真", source: "阿鸦 V1.1 §5.2 F 类 伪归因：“不认真”",
+      examples_positive: ["你做题不认真"], examples_negative: ["这一步写得认真"] }
+  # 难度贬低："这题很简单""这种题不应该错"
+  - { rule_id: F-aya-04, origin: verbatim, method: rule, literal: true, pattern: "这题很简单", source: "阿鸦 V1.1 §5.2 F 类 难度贬低：“这题很简单”",
+      examples_positive: ["这题很简单，你看"], examples_negative: ["这题有三步，我们一步一步来"] }
+  - { rule_id: F-aya-05, origin: verbatim, method: rule, literal: true, pattern: "这种题不应该错", source: "阿鸦 V1.1 §5.2 F 类 难度贬低：“这种题不应该错”",
+      examples_positive: ["这种题不应该错"], examples_negative: ["这种题常在第三步出错"] }
+  # 未经验证的对错判断："应该是对的""大概没问题"
+  - { rule_id: F-aya-06, origin: verbatim, method: rule, literal: true, pattern: "应该是对的", source: "阿鸦 V1.1 §5.2 F 类 未经验证的对错判断：“应该是对的”",
+      examples_positive: ["你这个应该是对的"], examples_negative: ["我们把答案代回去验一下"] }
+  - { rule_id: F-aya-07, origin: verbatim, method: rule, literal: true, pattern: "大概没问题", source: "阿鸦 V1.1 §5.2 F 类 未经验证的对错判断：“大概没问题”",
+      examples_positive: ["大概没问题"], examples_negative: ["我们先检验第三步"] }
+  # 分数承诺与区间外预测："你能上 110""再练练肯定满分"
+  - { rule_id: F-aya-08, origin: verbatim, method: rule, literal: true, pattern: "你能上 110", source: "阿鸦 V1.1 §5.2 F 类 分数承诺与区间外预测：“你能上 110”",
+      examples_positive: ["照这样你能上 110"], examples_negative: ["这次练习做了 10 道"] }
+  - { rule_id: F-aya-09, origin: verbatim, method: rule, literal: true, pattern: "再练练肯定满分", source: "阿鸦 V1.1 §5.2 F 类 分数承诺与区间外预测：“再练练肯定满分”",
+      examples_positive: ["再练练肯定满分"], examples_negative: ["再练三道同类题"] }
+  # 能力评价："你逻辑不行""你不适合学几何"
+  - { rule_id: F-aya-10, origin: verbatim, method: rule, literal: true, pattern: "你逻辑不行", source: "阿鸦 V1.1 §5.2 F 类 能力评价：“你逻辑不行”",
+      examples_positive: ["你逻辑不行"], examples_negative: ["这一步的推理缺了依据"] }
+  - { rule_id: F-aya-11, origin: verbatim, method: rule, literal: true, pattern: "你不适合学几何", source: "阿鸦 V1.1 §5.2 F 类 能力评价：“你不适合学几何”",
+      examples_positive: ["你不适合学几何"], examples_negative: ["这道几何题先画图"] }
+  # 不能落成词面规则的条目
+  - { rule_id: F-aya-CTX-01, origin: verbatim, method: context, check: hint_overreach,
+      source: "阿鸦 V1.1 §5.2 F 类：越级提示——在引擎给定等级之外透露下一级内容（结构层：hint_level_used > allowed_hint_level）",
+      examples_positive: [{ text: "【合成】先看第二级的提示", context: { allowed_hint_level: 2, hint_level_used: 3 } }],
+      examples_negative: [{ text: "【合成】先看第二级的提示", context: { allowed_hint_level: 2, hint_level_used: 2 } }] }
+  - { rule_id: F-aya-CTX-02, origin: verbatim, method: context, check: unverified_claim,
+      source: "阿鸦 V1.1 §5.2 F 类：未经验证的对错判断（结构层：有对错陈述而本轮没有 verified 的判定）",
+      examples_positive: [{ text: "【合成】这一步是对的", context: { verified_claims: [] } }],
+      examples_negative: [{ text: "【合成】这一步是对的", context: { verified_claims: [{ claim_id: syn-1, verified: true }] } }] }
+  - { rule_id: F-aya-M-01, origin: verbatim, method: model, source: "阿鸦 V1.1 §5.2 F 类：分数承诺与区间外预测（原文两例以外的说法，语义判定）" }
+  - { rule_id: F-aya-M-02, origin: verbatim, method: model, source: "阿鸦 V1.1 §5.2 F 类：能力评价（不评价聪明或笨；原文两例以外的说法，语义判定）" }
+  - { rule_id: F-aya-M-03, origin: verbatim, method: model, source: "阿鸦 V1.1 §5.2 F 类：为鼓励而发碎片、点亮尾巴（需判定意图与引擎事件，语义判定）" }

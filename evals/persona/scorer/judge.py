@@ -5,11 +5,19 @@
 from __future__ import annotations
 
 import re
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import yaml
+# 禁语词表的唯一真相源是 packages/personas/forbidden/（冲刺 3-F 词表收拢）；这里只读 A–E 类与点点的规则模式
+ROOT = Path(__file__).resolve().parents[3]
+if str(ROOT / "packages") not in sys.path:
+    sys.path.insert(0, str(ROOT / "packages"))
+
+from personas.lexicon import load_lexicon as _load_persona_lexicon  # noqa: E402
+
+DIANDIAN_CLASSES = ("A", "B", "C", "D", "E")
 
 _SENTENCE = re.compile(r"[^。！？!?；;\n]+")
 _CTX = re.compile(r"^\{context\.([a-z_]+)\}$")
@@ -23,13 +31,21 @@ class Lexicon:
     patterns: dict[str, dict[str, Any]]
 
 
-def load_lexicon(path: Path) -> Lexicon:
-    doc = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
-    forb = tuple((e["id"], e["class"], re.compile(e["regex"])) for e in doc["forbidden"])
+def load_lexicon(root: Path | None = None) -> Lexicon:
+    """从 packages/personas/ 读点点适用的 A–E 类（规则层，原顺序）与规则模式。
+
+    版本号报 A–E 类文件的版本（迁移时原样保留 0.2.0，与迁移前的报告口径一致）；整套词表的版本见 guard 的 lexicon_version。
+    """
+    lex = _load_persona_lexicon(root or ROOT)
+    rules = [r for r in lex.rules if r.cls in DIANDIAN_CLASSES and r.method == "rule"]
+    forb = tuple((r.rule_id, r.cls, re.compile(r.regex or "")) for r in rules)
+    versions = {lex.class_versions[c] for c in DIANDIAN_CLASSES}
+    if len(versions) != 1 or not forb:
+        raise ValueError(f"点点禁语 A–E 类的版本不一致或为空：{sorted(versions)}")
     pats: dict[str, dict[str, Any]] = {}
-    for name, p in doc["patterns"].items():
+    for name, p in lex.patterns.items():
         pats[name] = {k: re.compile(v) for k, v in p.items() if k in ("regex", "mention", "allowed")}
-    return Lexicon(version=str(doc["version"]), reviewed=bool(doc["reviewed"]), forbidden=forb, patterns=pats)
+    return Lexicon(version=versions.pop(), reviewed=lex.reviewed, forbidden=forb, patterns=pats)
 
 
 @dataclass

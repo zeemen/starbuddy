@@ -17,7 +17,7 @@
 1. 在选定的托管平台建空仓库（私有），默认分支 `main`。
 2. 拷贝 `repo/` 下全部文件（含隐藏目录 `.github/`）到仓库根目录；按平台启用一份 CI 样例（去掉 `.example` 后缀放到平台要求的位置）。
 3. 在本仓导出人设词表：`cd services/knowledge && .venv/bin/python -m knowledge.lint --export-lexicon ../../<页面仓库>/lexicon/lexicon.json`
-   （词表只读抽取自 `docs/personas` 与 `evals/persona/diandian/lexicon/forbidden.yaml`；人设负责人更新后重新导出）。
+   （词表来自人设治理组件 guard 的导出：`packages/personas/registry.yaml` 与 `packages/personas/forbidden/`；人设负责人更新后重新导出）。
 4. 放入已发布地图版本的快照 `snapshots/current.yaml`（格式见 `services/knowledge/knowledge/atoms.py`；PR ② 起由知识服务从 `kge.*` 导出）。
    快照是体检与快照导出的必需输入：缺失时 CI 与 `knowledge.compiler.snapshot` 都以退出码 2 失败。
 5. 由平台在本仓的发布流程里产出 `services/knowledge` 的只读制品（tar.gz，含 `requirements.lock`），放到内网匿名只读可取的 https 地址，

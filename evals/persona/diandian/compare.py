@@ -461,7 +461,7 @@ def compare(candidates_path: Path, *, runs: int = 3, env: str = "test", out_dir:
           f"失败重试另计，每次调用最多重试 {retries} 次，最坏 {worst} 次供应商请求")
     limit = check_max_calls(planned, env, max_calls)
     fmt = reply_format or ("envelope" if env == "test" else "text")
-    lex = load_lexicon(HERE / "lexicon" / "forbidden.yaml")
+    lex = load_lexicon()
     gold_present = (HERE / "gold").is_dir()
     nonce = uuid.uuid4().hex[:8]
 

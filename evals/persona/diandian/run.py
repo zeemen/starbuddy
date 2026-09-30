@@ -76,7 +76,7 @@ def main(argv: list[str] | None = None) -> int:
     with open(out_dir / "responses.jsonl", "w", encoding="utf-8") as f:
         for r in responses:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
-    rep = score(cases, responses, load_lexicon(HERE / "lexicon" / "forbidden.yaml"), holdout=set(read_holdout(HERE / "holdout.txt")),
+    rep = score(cases, responses, load_lexicon(), holdout=set(read_holdout(HERE / "holdout.txt")),
                 gold_present=(HERE / "gold").is_dir())
     write(rep, out_dir)
     calls = len(sink.records)

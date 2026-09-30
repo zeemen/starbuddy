@@ -47,9 +47,9 @@ def fixture_for(fx: dict[str, Any], case: dict[str, Any], kind: str) -> list[dic
     return cat.get(key) or cat.get(kind)
 
 
-def run_selftest(case_dir: Path, lexicon_path: Path, fixture_path: Path) -> int:
+def run_selftest(case_dir: Path, lexicon_root: Path | None, fixture_path: Path) -> int:
     cases = load_cases(case_dir)
-    lex = load_lexicon(lexicon_path)
+    lex = load_lexicon(lexicon_root)
     fx = yaml.safe_load(Path(fixture_path).read_text(encoding="utf-8"))
     problems: list[str] = []
     for case in cases:
