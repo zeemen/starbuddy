@@ -333,7 +333,7 @@ test('学生模式：缺同意不能开；不满 14 另需监护人同意；打�
   let first: Res | null = null;
   for (const r of guardianRoutes) {
     for (const target of [ID.S2, ID.S1, ID.T1, ID.missing]) {
-      const path = r.path.replace('{student_id}', target);
+      const path = r.path.replace('{student_id}', target).replace('{subject}', 'math');  // 学科码参数（H4）不是 UUID
       const x = await call(r.method, path, { token: st.token, csrf: st.csrf, body: r.body ? {} : undefined });
       assert.equal(x.status, 403, `${r.method} ${path}`);
       if (first) same(x, first, `${r.method} ${path}`); else first = x;
@@ -464,7 +464,7 @@ test('限流：发验证码、验证验证码、建档、打开学生模式超�
 
 test('路由表：未登录一律 401；表外路径 404；非 UUID 参数与不存在同一个 404', { skip: !HAS_DB }, async () => {
   for (const r of ROUTES.filter((x) => x.auth !== 'public')) {
-    const path = r.path.replace('{student_id}', ID.S1).replace(/\{[a-z_]+\}/g, ID.missing);
+    const path = r.path.replace('{student_id}', ID.S1).replace('{subject}', 'math').replace(/\{[a-z_]+\}/g, ID.missing);
     const x = await call(r.method, path, { body: r.body ? {} : undefined });
     assert.equal(x.status, 401, `${r.method} ${path}`);
     assert.equal(x.body, P.UNAUTHENTICATED);

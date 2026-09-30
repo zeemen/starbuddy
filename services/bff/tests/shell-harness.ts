@@ -20,6 +20,8 @@ export interface ShellHarness {
   base: string;
   server: Server;
   keys: Keys;
+  /** 这个服务用的阈值配置（同一个对象：测试可以临时改某个桶的阈值来测限流） */
+  config: AuthConfig;
   sms: CaptureSmsSender;
   /** 某个账号的真实会话（同一账号复用；学生会话每次都经家长打开学生模式） */
   sessionFor: (accountId: string) => Promise<Sess>;
@@ -52,7 +54,7 @@ export async function callAs(base: string, method: string, path: string, sess: S
 
 let phoneSeq = 0;
 
-export async function startShell(pool: pg.Pool, su: pg.Pool, extra: Partial<Pick<ShellDeps, 'log' | 'diagnosis' | 'now'>> = {})
+export async function startShell(pool: pg.Pool, su: pg.Pool, extra: Partial<Pick<ShellDeps, 'log' | 'diagnosis' | 'now' | 'shell'>> = {})
   : Promise<ShellHarness> {
   const base0 = loadAuthConfig();
   const config: AuthConfig = { ...base0, rate_limits: Object.fromEntries(Object.entries(base0.rate_limits)
@@ -114,7 +116,7 @@ export async function startShell(pool: pg.Pool, su: pg.Pool, extra: Partial<Pick
   };
 
   return {
-    base, server, keys, sms, sessionFor,
+    base, server, keys, config, sms, sessionFor,
     forget: (a) => { cache.delete(a); },
     close: async () => {
       server.closeAllConnections();

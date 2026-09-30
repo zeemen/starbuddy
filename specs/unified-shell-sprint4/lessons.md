@@ -154,3 +154,137 @@ PR 首行应写 `[NEEDS-HUMAN]`：含迁移 0031（草稿，收回授权）、�
 ### 文案自查（禁语 A–G）
 新增文案只有“星图”与“孩子 N · 某年级的星图”（`src/auth/copy.ts`，过了 `apps/web/tests/auth.test.ts` 的禁语扫描与比较 / 评价 / 营销词表检查）：
 系统口吻、只是导航，没有评价、比较、推断、催促。人设负责人复核待做。
+
+## H4 壳页面与读路由（2026-09-30）
+
+PR 首行应写 `[NEEDS-HUMAN]`：含契约变更（`learning-internal.v1.yaml` 新增 `POST /internal/v1/plan`，候选版待签字）、画像可见范围（对外模板白名单、
+推荐理由编码分类与编码—模板映射）、计量域（只读）、`db/seeds/dev/` 新增合成种子（请人审）。**没有迁移**（需要的库改动见下面“需要的 db 变更”）。
+
+### 交付
+- **契约**（必停）：`packages/contracts/openapi/learning-internal.v1.yaml` 新增 `POST /internal/v1/plan`（`PlanQuery` → `PlanDigest`）：请求只有
+  `request_id`、`student_ref`、`subjects`（`aya` / `wenli` / `zhixing`，英语不在枚举里）、可选 `time_budget_minutes`；响应每科 `ok` / `unavailable`，
+  任务只有 `kind`、`target_node_ids`（知识节点 ID，引用知识服务的 `NodeId`）、`priority`、`estimated_minutes`、`rationale_code`，全部
+  `additionalProperties: false`（没有 `p_mastery`、`confidence`、`evidence_ids`、`learner_context`）；`unavailable` 时 `tasks` 必须为空。
+  示例 2 个；`check_contract.py` 的 v1 反例 +13 条（夹带掌握概率 / 置信度 / 证据 ID / 画像上下文 / 叙述文字、理由写成句子、目标写成能力点、
+  不可用还带任务、英语、调用方自带掌握快照等），全部被拒绝。
+- **学习服务**：`learning/plan.py` + `app.py` 路由（服务间令牌、请求体上限、日志只记学科数与各科状态）。读 `platform.mastery_estimate` 当前行组装
+  v1.0 `PlanRequest`（非消耗类，不带 `usage_id`），调适配器 `/plan`（单次超时 `plan_timeout` 2 秒，含一次重试总预算 5 秒），结果按插件契约校验、
+  `contract_version` 必须 1.0.0；能力点经**已发布**地图版本的 `kge.skill_link`（有效节点、按权重）换成知识节点；摘要显式挑字段、按优先级排序、
+  返回前按 `PlanDigest` 校验。不写任何表。候选契约没开时该科 `unavailable`。测试 `tests/test_plan.py`（13 项）。
+- **BFF**（`src/http/shell-routes.ts`、`src/shell/`、`config/shell.json`、`openapi/shell.v0.yaml`）：路由表 +9 条——
+  `GET enrollments`（session）、`POST enrollments/{subject}` 与 `/pause`（guardian）、`GET today`（session）、`GET balance`（session）、
+  `GET/PUT time-guard`（session / guardian，PUT 限流每账号每小时 20）、`GET rest-reminder` 与 `POST rest-reminder/ack`（student）。
+  - 选科只经 `enroll_subject` / `pause_subject`，outcome 原样回（只挑 `outcome`、`slot`、`limit`、`max_active_subjects`）；英语与 planned 学科码 404；
+  - 今日计划：学习服务客户端 `src/shell/plan-client.ts`（只挑契约字段，任何一条不合格整科按不可用）；HTTP 调用在事务外，前后两段 `withAccount`；
+    推荐理由按 `config/shell.json` 分两类（下面待人确认 Q），关于学生类只在目标节点上有该受众可见、成立或假设、未到期、模板在白名单里的判断时，
+    调洞察服务 `insight.explain`（`src/shell/insight-client.ts`，caller = bff，带 actor；家长带 `link_id`）取 `RenderedStatement.text`，
+    核对陈述确实属于这条判断、是实线的成立或假设；每页最多 10 条、每会话每分钟 30 次（`config/auth.json` 新桶 `insight_explain.session.minute`），
+    超时或限频就不显示；
+  - 额度与时长：`meter_guard_status`（0030）+ `entitlement_balance`；学生端同一资源合并一行，家长端带分来源明细；`trial_days_left` 按上海自然日；
+    `curfew_near`（原名 curfew_soon）阈值（30 分钟）与 `daily_cap_reached` 是显示规则，数值全部来自库；
+  - 时长设置只经 `set_time_guard`；GET 不返回设置人；
+  - 连续使用提醒 `src/shell/rest.ts`（纯函数 + 进程内存储，键是会话令牌的带密钥 HMAC）；
+  - `main.ts`：`BFF_LEARNING_URL` 同时给今日计划用；新增 `BFF_INSIGHT_URL` / `BFF_INSIGHT_TOKEN`、`BFF_SHELL_CONFIG`（只在 dev / test）。
+  - 测试：`tests/shell-pages.integration.test.ts`（13 项，真实会话 + 真实 RLS + 可注入计量时钟 + 按契约的假学习服务与假洞察服务）、
+    `tests/shell-units.test.ts`（7 项）、`tests/denial-copy.test.ts`（拒绝提示的类型穷举）；`tests/mutations.sh` 新增 7 条 `页面：` 变异，全部被发现。
+    `tests/auth.integration.test.ts` 两处按路由表生成路径的夹具补了 `{subject}` 参数的替换（断言不变）。
+- **前端**（`apps/web`）：
+  - 学生壳 `/s/{id}/…` 的布局（`src/app/s/[studentId]/layout.tsx` + `src/shell/StudentShell.tsx`）：顶栏“今日”“星图”“科目”、额度与时长状态条、
+    连续使用提醒条（“知道了”回到原页面，路径经 `proxy.ts` 的 `x-sb-path` 请求头）、点点入口占位（`<details>`，系统口吻，无形象）、退出学生模式；
+    只有学生本人的会话才套壳、才取状态。页面：`today`、`learn`、`learn/{subject}`；星图沿用 3-H（7.1），套进壳。`/student` 改为转到 `/s/{id}/today`。
+  - 科目清单 `src/subjects/registry.ts`（数学 live、道法与语文 coming、英语 hidden）+ 每科目录的入口组件；科目页一步回到星图。
+  - 家长端：首页加孩子页入口、记录同意、建档表单；孩子页 `/family/{id}`（额度与分来源、选科开通 / 暂停、今日计划带置信度说明、星图、时长设置、
+    完善学习档案入口）；时长设置页 `/family/{id}/time`。家长端没有点点入口、没有角色图片。
+  - 信任界面预留：`src/shell/features.ts`（why / dispute / reconcile / weekly / data_rights，默认全关，只在 dev / test 可用 `STARBUDDY_TRUST_UI` 打开）+
+    `src/shell/TrustSlot.tsx`（关时 `return null`，开时也只是不可操作的占位，不发请求）；位置：今日计划理由旁、星的详情位、家长孩子页。
+  - 拒绝提示文案 `src/shell/denials.ts`（BFF 的 `tests/denial-copy.test.ts` 用 `meter.ts` 的类型做穷举，漏写时 BFF 类型检查失败）。
+  - 文案全部在 `src/shell/copy.ts`；BFF 客户端 `src/lib/shell-api.ts`；server action `src/app/family/shell-actions.ts`、`src/app/s/[studentId]/actions.ts`。
+  - 测试：`tests/shell.test.ts`（10 项：禁语扫描、禁用推断词表、比较 / 营销 / 白名单外维度词、`{{TODO_COPY}}` 占位、壳 .tsx 里没有中文文案、
+    只有 TaskList 渲染 `data-claim-id`、开关默认关且 staging 以上一律关、预留位不发请求、科目清单、家长端无点点与角色资产、不写浏览器存储）；
+    端到端 `e2e/shell.spec.ts`（5 项，含开发计划验收）；`e2e/headers.spec.ts` 爬取加上今日、科目与三个科目页；`e2e/session.ts`、`auth.spec.ts`
+    的学生落地页改为 `/s/{id}/today`。
+- **合成种子**：`db/seeds/dev/shell-synthetic.sql`（审查后从 `services/bff/scripts/` 挪来，库名与开关双重保护保留，**请人审**）——额度配置 `dev-shell-plan@1`（照抄 0015 草稿 v12-pilot@1，只在开发 / 测试库发布）、
+  数学与语文的合成已发布课程版本、家庭 HG（家长 gH +99900000106；GT 试用、GR 留存、GP 试点在读数学，都有合成同意）；`apps/web/scripts/e2e.sh` 执行它。
+
+### 与 spec 的偏差（实现时的选择）
+1. **推荐理由映射表外的编码不显示理由**：spec 第 6 节写“按关于学生类处理（宁可不显示）”，验收写“映射表外的编码不显示理由”。取更严的一种：
+   `config/shell.json` 列出内容类与关于学生类两张表，两张都没有的编码一律不显示（即使目标节点上有判断）。
+2. **对外模板白名单初值为空**：spec 的初值是数学“知识掌握”“知识迁移”两维的模板，但它们还没有登记（洞察服务只有 `syn.math.*` 合成占位），
+   所以仓库里的白名单为空——壳内目前不显示任何判断陈述；测试注入合成模板。登记后由人改 `config/shell.json`（必停）。
+3. **连续使用提醒存在 BFF 进程内**，不在会话表（需要迁移，见下）。两次壳内请求之间停了 ≥ 10 分钟视为休息过、从头计。
+4. **选科等业务结果一律 200 + outcome**（与数据库函数一一对应），只有无权 / 不存在 404、学生会话 403、格式不对 422。
+5. **路径参数 `{subject}`** 只匹配小写字母（其余参数仍是 UUID）；不认识的学科码与英语、planned 学科同一个 404。
+6. **学科目录的 `open`**（“暂未开放”）由 BFF 按展示规则给：beta 且非试点订阅、或没有已发布课程版本。能不能开通仍只由 `enroll_subject` 判断。
+7. **科目状态是静态清单**：道法、语文现在固定 `coming`（spec 写“适配器与已发布内容版本都到位时 live”）；到位后改清单一行。
+8. **家长端今日计划**：家长孩子页也显示今日计划（判断陈述只取 guardian 可见范围、带置信度说明）；spec 第 13 节的最小范围没写这一项。
+9. **同意表单**一次记隐私政策与监护人同意两条；文本版本号取 `STARBUDDY_CONSENT_VERSION`，缺省 `synthetic-0`（BFF 在 pilot / 生产拒收，待人确认 #13）。
+10. **`/student` 转到壳的“今日”**，原“学生模式”页的退出按钮移到壳顶栏（测试 ID 不变）。
+11. **星图仍是 3-H 的 7.1 版本**（H5 的前提未满足），套进壳后数据源、三态、水印不动，没有新增关于学生的文字。
+
+### 需要的 db 变更（H4 没有写；需人另起必停 PR）
+- **连续使用提醒的计时落库（pilot 前必须完成，必停）**：`platform.auth_session` 加“连续使用起点”与“最近确认休息”两列，函数 `auth_session_touch(token)`（返回两个时间，
+  只授 BFF）与 `auth_session_ack_rest(token)`；落地后 `src/shell/rest.ts` 换成库实现，多实例、重启都一致。
+- **洞察服务核对 BFF 代表的身份**：SIE-02b lessons C 的授权再核对库函数；在它之前真实洞察服务对 BFF 的 `insight.explain` 一律拒绝（壳里只是不显示陈述）。
+- （可选）把 `services/bff/scripts/shell-synthetic.sql` 挪进 `db/seeds/dev/`，并按 4-G 发布闸门改成经发布函数产生已发布课程版本（协调第 4 条）。
+
+### 待人确认（新增）
+- P. **H4 契约**：`POST /internal/v1/plan` 的请求与响应形状（尤其 `target_node_ids` 可为空、`unavailable` 不带原因码、每科最多 50 条）。
+- Q. **推荐理由编码分类**：内容类 `high_exam_weight`、`prerequisite_of_many`；关于学生类 `retest_scheduled`、`retest_due`、`weak_mastery`（阿鸦的四个编码 +
+  spec 例子）。道法、语文适配器的编码登记后补进来；分类需产品确认。
+- R. **对外模板白名单**：登记数学两维模板后写入 `config/shell.json` 的 `external_claim_templates`（`模板键@版本`）。
+- S. **`{{TODO_COPY}}` 占位**：家长端置信度说明（三档）、同意正文、信任界面入口文字，需人写人审。
+- T. **试用到期当天**（H3 待人确认 K）：剩余 0 天显示“试用今天到期”；续期任务没跑到、周期已过时同样显示这一句。
+- U. **每会话每分钟 30 次 `insight.explain`**、每页最多 10 条、单次 1.5 秒：阈值在配置里，需产品确认。
+- V. **今日计划超时**：学习服务单科 2 秒（含重试最多 5 秒）、BFF 整体 8 秒；超时的科“今天暂无安排”。
+- W. **陈述—判断一致性的全站爬取**：现在由静态检查保证只有 TaskList 渲染 `data-claim-id`，BFF 集成测试覆盖“文字 = 判断陈述、带 claim_id”；
+  端到端环境没有洞察服务（合成白名单也为空），全站爬取带判断的页面随 H6 / 冲刺 5 接上假洞察服务后做。
+
+### 测试结果（本机）
+- `make contract-test`（用装了 `packages/contracts/requirements-dev.txt` 的临时 venv）：通过，learning-internal v1 反例 36 条全部被拒绝。
+- `make learning-test`：2441 passed（含 `tests/test_plan.py` 13 项）。
+- `make bff-test`：通过（类型检查 + 全部单测与集成测试，含 H4 的 13 + 7 + 1 项）；H4 的 7 条 `页面：` 变异单独跑，全部被发现（完整 `make bff-mutation` 未跑）。
+- `apps/web`：`tsc` 通过；`node --test tests/*.test.ts` 59 项通过。
+- `make web-test`：许可证、`next build`、构建产物扫描、单测通过；端到端（`scripts/e2e.sh`，含新增 `e2e/shell.spec.ts` 5 项）最后一次全量 40 passed。
+  中间一次全量里 `diagnosis.spec.ts` 的长流程在“提交后换到下一步”的 15 秒轮询上超时一次，单独重跑与再次全量都通过（判断为时序抖动，未改该用例）。
+- `make check-fast`：通过（contract-test、taxonomy-check、attack-surface-check、sie-dictionary-check、kge-id-check）；`persona-registry-check` 通过。
+
+### 文案自查（禁语 A–G）
+`src/shell/copy.ts` 与 `src/shell/denials.ts` 的全部文案过了 `personas.guard`（platform 口径，0 命中）、`docs/design/sie/sie_lexicon.py`（0 命中，探针命中）、
+比较 / 评价 / 营销与白名单外维度词表（`apps/web/tests/shell.test.ts`）。人工按 A–G 类读过：系统口吻，只陈述状态、边界与操作结果；没有评价、比较、
+推断、催促，没有以连续打卡制造焦虑；休息提醒是“可以起来活动 M 分钟”（建议，不锁定）；学生端没有购买、升级、营销；关于孩子只有“孩子 N · 某年级”。
+点点入口只有“点点正在准备中。”（系统口吻，不是点点的台词）。人设负责人复核待做。
+
+### 审查处理（2026-09-30，两份审查按默认建议）
+1. **今日计划限流与陈述并行**：`GET today` 加每会话每分钟限流（`today.session.minute`，`config/auth.json`，20 次；路由表新增 `session` 维度，
+   键是会话令牌的带密钥 HMAC）。`insight.explain` 改为并行（`explain.concurrency` 4），整页总时限 `explain.page_deadline_ms` 3 秒，时限内没回来的
+   句子不显示（`src/shell/statements.ts` 的 `resolveStatements`）。测试：并发上限与超时句子不显示、限流 429；变异“整页不设总时限”“今日计划不限流”。
+   `页面：` 变异现为 11 条（新增映射、时限、限流、默认宵禁、选科周期 5 条；删掉被第 6 条编码—模板映射取代、已无法区分的“映射表外的编码也按判断显示”），
+   全部被发现。
+2. **休息提醒的进程内计时**：`rest_reminder.single_instance`（缺省 false）；dev / test 以外没声明单实例部署时不启用（响应 `enabled: false`）并在启动时告警
+   （`rest_reminder_disabled`）。**pilot 前须完成 `auth_session` 加列迁移（必停）**，见“需要的 db 变更”。
+3. **计量缺省值单处取值**：`platform.meter_guard_status` 不返回默认宵禁与留存态每天自练次数（写在 0015 / 0030 的函数体里），BFF 暂从
+   `config/shell.json` 的 `meter_defaults` 单处读取并下发（`time-guard.default_curfew`、`balance.practice_daily_limit`），前端文案改为参数；
+   单测核对与迁移里的值一致，静态检查 BFF 路由与壳前端不写死 22:00 / 06:00 / 5 次。**待人确认 X**：让 `meter_guard_status` 返回这些值（改函数，必停）。
+4. **家长孩子页**：只有 404 走“没有找到”，401 回登录，其他错误对应区块显示“暂时无法获取。”（`copy.ts` 的 `BALANCE.unavailable`）。
+5. **选科（M1）**：取主订阅时补上 `meter_main_subscription` 的时间窗（计量时钟取 `meter_guard_status` 的 `as_of`，BFF 没有 `meter_now` 的执行权）；
+   `open` 只用于“暂未开放”标签，不再隐藏开通按钮，结果以 `enroll_subject` 的 outcome 为准。**长期**：由库函数预判可选状态（新增只读函数，必停），
+   BFF 不再自己组合展示口径。
+6. **理由编码 → 可用模板映射（M3）**：`config/shell.json` 的 `rationale_templates`（缺省空），关于学生类编码只显示登记给它的模板（且在白名单里）的判断；
+   加载时核对编码属于关于学生类、模板在白名单里。**属画像可见范围，改动是必停项**。变异“理由不看编码的模板映射”。
+7. **L2**：额度响应与文档里的 `curfew_soon` 改名 `curfew_near`（与计量拒绝原因 `curfew_soon` 区分）。
+8. **L3**：学习服务里 `estimated_minutes` 超过 600 时该科按 `unavailable` 处理，不截断（`tests/test_plan.py` 新用例）；契约描述同步。
+9. **合成种子**挪到 `db/seeds/dev/shell-synthetic.sql`，`apps/web/scripts/e2e.sh` 路径随之更新；请人审。
+10. **L4**：学习服务的 plan 直读 `kge.skill_link` / `kge.map_version` / `kge.knowledge_node`（0011 已授予 `starbuddy_learning`），与“知识服务是 kge.* 的读口”
+    的分工是否一致，**待 ADR**（KGE 代码位置与读写边界）。**L5**：`packages/contracts/README.md` 文件表补了 `learning-internal.v1.yaml`；plan 的契约描述
+    写明候选开关关闭时返回 200 + 各科 `unavailable`。
+11. **不改、登记待人确认**：
+    - Y. 家长孩子页的今日计划：任务标题（知识节点名）与任务类型（如“复测”）本身不是判断陈述，但对家长可能暗示孩子的掌握情况，是否越过规则 11 的边界需人定；
+    - Z. 同意表单一次记隐私政策与监护人同意两条，不按孩子年龄区分（满 14 周岁不需要监护人同意那一条），需合规轨确认。
+
+### 审查处理后的测试结果（本机）
+- `CONTRACT_STRICT=1 make contract-test`（临时 venv）：通过。`make learning-test`：2442 passed。`make bff-test`：通过；`页面：` 变异 11 条全部被发现。
+- `make web-test`：许可证、`next build`、构建产物扫描、单测（61 项）、端到端 40 passed。
+- `make check-fast`：contract-test、taxonomy-check、sie-dictionary-check、kge-id-check 通过；`attack-surface-check` 在工作区里失败 6 处，
+  全部是另一个代理进行中的 SIE-03 改动（`insight.raise_dispute`、`insight.submit_exam_score`、`platform.execute_due_erasures` 的 scope.md 与授权快照不一致），
+  换回 HEAD 版本的 scope.md / 授权快照后通过；与 H4 无关。审查处理期间 0032 草稿一度无法执行（另一个代理在改），当时的测试在排除 0032–0035 的临时副本里跑，
+  最后一轮全部在工作区里重跑。

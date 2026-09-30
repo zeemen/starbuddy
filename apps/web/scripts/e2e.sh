@@ -27,6 +27,8 @@ PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -q -v ON_ERROR_STOP=1 -
 PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -q -v ON_ERROR_STOP=1 -f "$ROOT/db/seeds/dev/diagnosis-synthetic.sql" >/dev/null
 # 家庭登录与学生模式（4-H H1）：gS 的合成号码 +99900000101、S1 的合成同意
 PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -q -v ON_ERROR_STOP=1 -f "$ROOT/db/seeds/dev/auth-synthetic.sql" >/dev/null
+# 统一壳 H4（今日、科目、额度与时长、选科、时长设置）：家庭 HG（家长 gH +99900000106；孩子试用、留存、试点各一名）。
+PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -q -v ON_ERROR_STOP=1 -f "$ROOT/db/seeds/dev/shell-synthetic.sql" >/dev/null
 AYA_COUNT="$(psql -X -At -c "SELECT count(*) FROM platform.skill_node WHERE subject = 'aya'")"
 export AYA_COUNT
 

@@ -174,3 +174,22 @@ a { color: inherit; }
 .shell-form button { font: inherit; min-height: 44px; min-width: 44px; }
 .shell-result { min-height: 1.5em; }
 .shell-list { list-style: none; padding: 0; }
+
+/* 统一壳（4-H H4）：顶栏、状态条、休息提醒条、今日任务、点点入口占位。点点入口只是文字按钮，不配任何角色形象 */
+.shell-top { max-width: 960px; margin: 0 auto; padding: 8px 16px; border-bottom: 1px solid var(--rule); display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; }
+.shell-nav a { display: inline-flex; align-items: center; min-height: 44px; margin-right: 16px; }
+.shell-exit { margin: 0; }
+.shell-exit .shell-result:empty { display: none; }
+.status-bar, .rest-bar { max-width: 960px; margin: 8px auto 0; padding: 0 16px; }
+.status-bar { list-style: none; display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--muted); }
+.rest-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; border: 1px solid var(--rule); border-radius: 4px; padding: 8px 16px; }
+.inline-form { display: inline-flex; align-items: center; gap: 8px; margin: 0; }
+.task-list { padding-left: 1.25em; }
+.task { margin: 8px 0; }
+.task-kind { font-weight: 700; }
+.task-reason { margin: 4px 0 0; }
+.diandian { position: fixed; right: 16px; bottom: 16px; background: var(--bg); border: 1px solid var(--rule); border-radius: 8px; padding: 4px 12px; max-width: 240px; }
+.diandian summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.child-row { margin: 8px 0; }
+.shell-form select { font: inherit; min-height: 44px; display: block; margin-bottom: 4px; }

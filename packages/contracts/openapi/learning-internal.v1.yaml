@@ -8,6 +8,7 @@ info:
 
     相对 v0：请求体改为信封（插件 API v1.0 的 `GradeRequest` / `DiagnoseRequest` 加平台侧的 `IngestContext`）；
     新增只查询、不执行的重放接口（N17）；写明 5xx 一律是结果未知（N18）；摘要带证据等级与是否写入学习者模型。
+    冲刺 4-H 另加非消耗类的今日计划 `POST /internal/v1/plan`（specs/unified-shell-sprint4/spec.md 第 6 节；契约变更，待签字）。
 
     请求体是信封 `{ request, ingest }`：`request` 是学科插件 API v1.0 的 `GradeRequest` / `DiagnoseRequest`
     （`plugin-api.v1.0.yaml`），原样转发给适配器；`ingest` 是平台侧的作答上下文（输入通道、用途），只由学习服务使用，
@@ -117,6 +118,42 @@ paths:
                   - $ref: '#/components/schemas/GradeSummary'
                   - $ref: '#/components/schemas/DiagnoseSummary'
         default: { $ref: '#/components/responses/Problem' }
+  /internal/v1/plan:
+    post:
+      operationId: planToday
+      summary: 今日计划（按科并列；冲刺 4-H 统一壳，specs/unified-shell-sprint4/spec.md 第 6 节）
+      description: |
+        **契约变更，待评审签字（必停项）。** 非消耗类：不计量、不写任何表、计划不落库，每次现算。
+
+        BFF 已按会话与档案授权确定学生，并从已选科目里给出要排的学科（`subjects`）。学习服务对每一科：
+        读该生当前的掌握快照（平台掌握状态，规则 2；`next_retest_at` 按 KGE-04 的复测调度），组装插件 API v1.0 的
+        `PlanRequest` 调该科适配器的 `/plan`，按契约校验结果，再把能力点（`skill_nodes`）经已发布地图版本的
+        `kge.skill_link` 换算成知识节点 ID（BFF 读不到 `skill_link`）。
+
+        响应只含学科、任务类型、目标知识节点、优先级、预计分钟与 `rationale_code`；**不含** `p_mastery`、`confidence`、
+        `evidence_ids`、`learner_context` 的任何条目（schema 用 `additionalProperties: false` 保证）。推荐理由的文字由平台按判断生成
+        （规则 11），不在本接口。
+
+        某一科没有配置适配器、适配器 501、超时、结果不合契约（含 `estimated_minutes` 超过 600，不截断）时，这一科
+        `status = unavailable` 且 `tasks` 为空，不影响其他科；整个请求仍是 200。
+        `plan` 只按插件 API v1.0 候选版实现：候选版开关关闭（签字前，学习服务进程没有 `STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1`）时，
+        不调任何适配器，返回 200 且每一科都是 `unavailable`（不是 4xx / 5xx）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PlanQuery' }
+            examples:
+              today: { $ref: '#/components/examples/PlanQueryToday' }
+      responses:
+        '200':
+          description: 各科的候选任务（按优先级从高到低）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlanDigest' }
+              examples:
+                today: { $ref: '#/components/examples/PlanDigestToday' }
+        default: { $ref: '#/components/responses/Problem' }
   /internal/v1/model/route:
     post:
       operationId: routeModelCall
@@ -164,6 +201,32 @@ components:
           schema: { $ref: '#/components/schemas/Problem' }
 
   examples:
+    PlanQueryToday:
+      summary: 统一壳“今日”页：数学与语文两科（合成学生）
+      value:
+        request_id: 00000000-0000-4000-8000-000000000501
+        student_ref: 00000000-0000-4000-8000-00000000a002
+        subjects: [aya, wenli]
+    PlanDigestToday:
+      summary: 数学两条任务（一条复测、一条练习）；语文适配器不可用
+      value:
+        subjects:
+          - subject: aya
+            status: ok
+            tasks:
+              - kind: retest
+                target_node_ids: [MATH.SYN.FUNC.VERTEX]
+                priority: 0.9
+                estimated_minutes: 10
+                rationale_code: retest_scheduled
+              - kind: practice
+                target_node_ids: []
+                priority: 0.7
+                estimated_minutes: 20
+                rationale_code: high_exam_weight
+          - subject: wenli
+            status: unavailable
+            tasks: []
     ModelRouteRequestZhixing:
       summary: 知行适配器的逐点判分调用（合成作答）
       value:
@@ -350,6 +413,70 @@ components:
           properties:
             method: { const: diagnose }
             observation_count: { type: integer, minimum: 0 }
+    PlanQuery:
+      type: object
+      description: BFF → 学习服务：今日计划要排的学生与学科。只有平台学生 ID，不带任何个人信息，也不带掌握快照（由学习服务自己读）。
+      required: [request_id, student_ref, subjects]
+      additionalProperties: false
+      properties:
+        request_id: { $ref: '#/components/schemas/Uuid' }
+        student_ref:
+          type: string
+          format: uuid
+          pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        subjects:
+          type: array
+          description: 已选且在读的学科（产品命名空间）。英语搁置，不在枚举里（对照文档决定 #1）。
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items: { type: string, enum: [wenli, aya, zhixing] }
+        time_budget_minutes: { type: integer, minimum: 1, maximum: 600 }
+    PlanDigestTask:
+      type: object
+      description: 平台摘要里的一条任务。没有掌握概率、置信度、证据 ID、画像上下文（规则 11：关于学生的推断不经本接口外露）。
+      required: [kind, target_node_ids, priority, estimated_minutes, rationale_code]
+      additionalProperties: false
+      properties:
+        kind: { type: string, enum: [diagnose, practice, review, lesson, retest, mock_exam] }
+        target_node_ids:
+          type: array
+          description: 目标知识节点（已发布地图版本）；能力点在地图里没有对应时为空，由前端显示中性标题。
+          maxItems: 16
+          uniqueItems: true
+          items: { $ref: './knowledge-service.v0.9.yaml#/components/schemas/NodeId' }
+        priority: { type: number, minimum: 0, maximum: 1 }
+        estimated_minutes: { type: integer, minimum: 1, maximum: 600 }
+        rationale_code: { type: string, pattern: '^[a-z0-9_]{1,48}$' }
+    PlanDigestSubject:
+      type: object
+      required: [subject, status, tasks]
+      additionalProperties: false
+      properties:
+        subject: { type: string, enum: [wenli, aya, zhixing] }
+        status:
+          type: string
+          enum: [ok, unavailable]
+          description: unavailable：没有配置适配器、适配器 501、超时或结果不合契约（这一科显示“今天暂无安排”）。
+        tasks:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/PlanDigestTask' }
+      allOf:
+        - description: 不可用的学科没有任务
+          if: { properties: { status: { const: unavailable } }, required: [status] }
+          then: { properties: { tasks: { maxItems: 0 } } }
+    PlanDigest:
+      type: object
+      required: [subjects]
+      additionalProperties: false
+      properties:
+        subjects:
+          type: array
+          description: 与请求的 subjects 同序，每科一项。
+          minItems: 1
+          maxItems: 3
+          items: { $ref: '#/components/schemas/PlanDigestSubject' }
     ModelRouteRequest:
       type: object
       additionalProperties: false

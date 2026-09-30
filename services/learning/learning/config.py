@@ -43,6 +43,8 @@ class Settings:
     lease_seconds: float = 90.0
     grade_timeout: float = 10.0
     diagnose_timeout: float = 30.0
+    # 今日计划（冲刺 4-H）：非消耗类，单科适配器调用的单次超时；超时的学科显示“今天暂无安排”，不拖住其他科
+    plan_timeout: float = 2.0
     # 自适应诊断（SIE-02a）
     diagnosis_presenter: str | None = None
     diagnosis_source: str = "fixture"

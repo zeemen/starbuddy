@@ -113,7 +113,7 @@ test('学生模式：缺同意时提示先完成同意；有同意的孩子打�
   expect(await meStatus(guardianToken)).toBe(200);
   const first = page.getByTestId('open-student-1');
   await first.getByRole('button').click();
-  await expect(page).toHaveURL(/\/student$/);
+  await expect(page).toHaveURL(/\/s\/[0-9a-f-]{36}\/today$/);  // H4：学生模式落在壳的“今日”
   await expect(page.getByTestId('student-mode')).toBeVisible();
   const c = await sessionCookie(context);
   expect(c!.value).not.toBe(guardianToken);
@@ -121,7 +121,7 @@ test('学生模式：缺同意时提示先完成同意；有同意的孩子打�
   expect(await meStatus(c!.value)).toBe(200);
   // 学生会话访问家长首页：回学生页
   await page.goto('/family');
-  await expect(page).toHaveURL(/\/student$/);
+  await expect(page).toHaveURL(/\/s\/[0-9a-f-]{36}\/today$/);
   await axe(page);
 });
 

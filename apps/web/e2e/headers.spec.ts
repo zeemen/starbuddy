@@ -52,7 +52,9 @@ test('未登录：登录页、404、符号样张页的安全头与 nonce', async
 
 test('学生模式：学生页、星图、建档的安全头与 nonce；页面脚本在 CSP 下照常运行（表单水合）', async ({ page }) => {
   await loginStudent(page, S1);
-  await crawl(page, ['/student', `/s/${S1}/star-map`, `/onboarding/${S1}`]);
+  await crawl(page, ['/student', `/s/${S1}/star-map`, `/onboarding/${S1}`,
+                    // H4 壳页面：今日、科目、三个科目页
+                    `/s/${S1}/today`, `/s/${S1}/learn`, `/s/${S1}/learn/math`, `/s/${S1}/learn/politics`, `/s/${S1}/learn/chinese`]);
   await page.goto('/student');
   await expect(page.getByTestId('exit-student-mode')).toHaveAttribute('data-hydrated', 'true');
 });

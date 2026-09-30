@@ -438,6 +438,24 @@ INTERNAL_V1_COUNTER = [
     ("路由请求的 prompt 名带斜杠", "ModelRouteRequest", "ModelRouteRequestZhixing", lambda v: v.__setitem__("prompt_template", "zhixing/m3")),
     ("路由响应的模型版本写 routed", "ModelRouteResponse", "ModelRouteResponseZhixing", lambda v: v.__setitem__("model_version", "routed")),
     ("路由响应缺 model_mismatch", "ModelRouteResponse", "ModelRouteResponseZhixing", lambda v: v.pop("model_mismatch")),
+    # 今日计划（冲刺 4-H，specs/unified-shell-sprint4 第 6 节；契约变更待签字）：响应里不能有关于学生的推断
+    ("计划任务夹带掌握概率", "PlanDigest", "PlanDigestToday", lambda v: v["subjects"][0]["tasks"][0].__setitem__("p_mastery", 0.4)),
+    ("计划任务夹带置信度", "PlanDigest", "PlanDigestToday", lambda v: v["subjects"][0]["tasks"][0].__setitem__("confidence", 0.8)),
+    ("计划任务夹带证据 ID", "PlanDigest", "PlanDigestToday",
+     lambda v: v["subjects"][0]["tasks"][0].__setitem__("evidence_ids", ["00000000-0000-4000-8000-00000000e401"])),
+    ("计划学科夹带画像上下文", "PlanDigest", "PlanDigestToday", lambda v: v["subjects"][0].__setitem__("learner_context", [])),
+    ("计划响应顶层夹带叙述文字", "PlanDigest", "PlanDigestToday", lambda v: v.__setitem__("narrative", "（合成）")),
+    ("计划任务的理由写成句子", "PlanDigest", "PlanDigestToday",
+     lambda v: v["subjects"][0]["tasks"][0].__setitem__("rationale_code", "该复习了")),
+    ("计划任务的目标写成能力点", "PlanDigest", "PlanDigestToday",
+     lambda v: v["subjects"][0]["tasks"][0].__setitem__("target_node_ids", ["aya:K-QE-0102"])),
+    ("不可用的学科还带任务", "PlanDigest", "PlanDigestToday",
+     lambda v: v["subjects"][1]["tasks"].append(dict(v["subjects"][0]["tasks"][0]))),
+    ("计划任务类型不在枚举里", "PlanDigest", "PlanDigestToday", lambda v: v["subjects"][0]["tasks"][0].__setitem__("kind", "homework")),
+    ("计划请求带英语（搁置）", "PlanQuery", "PlanQueryToday", lambda v: v["subjects"].append("echo")),
+    ("计划请求自带掌握快照", "PlanQuery", "PlanQueryToday", lambda v: v.__setitem__("mastery", [])),
+    ("计划请求的学科为空", "PlanQuery", "PlanQueryToday", lambda v: v.__setitem__("subjects", [])),
+    ("计划请求的学生 ID 大写", "PlanQuery", "PlanQueryToday", lambda v: v.__setitem__("student_ref", v["student_ref"].upper())),
 ]
 
 
@@ -449,7 +467,8 @@ def _check_internal_v1_examples(errors: list[str]) -> None:
     examples = load(INTERNAL_SPECS[1])["components"]["examples"]
     schema_of = {"GradeIngestKeypad": "GradeIngest", "GradeSummaryLevelC": "GradeSummary",
                  "DiagnoseIngestCanvasC": "DiagnoseIngest", "DiagnoseSummaryLevelC": "DiagnoseSummary",
-                 "ModelRouteRequestZhixing": "ModelRouteRequest", "ModelRouteResponseZhixing": "ModelRouteResponse"}
+                 "ModelRouteRequestZhixing": "ModelRouteRequest", "ModelRouteResponseZhixing": "ModelRouteResponse",
+                 "PlanQueryToday": "PlanQuery", "PlanDigestToday": "PlanDigest"}
     for name, schema in schema_of.items():
         errs = c.validate(schema, examples[name]["value"])
         if errs:

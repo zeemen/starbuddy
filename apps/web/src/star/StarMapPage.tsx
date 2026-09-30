@@ -5,6 +5,8 @@
 import { notFound, redirect } from 'next/navigation';
 import { pageSession } from '../lib/session.ts';
 import { fetchStarMap, isUuid } from '../lib/star-map.ts';
+import { trustEnabled } from '../shell/features.ts';
+import { TrustSlot } from '../shell/TrustSlot.tsx';
 import { StarDefs } from './Star.tsx';
 import { StarSky } from './StarSky.tsx';
 
@@ -31,6 +33,8 @@ export async function StarMapPage({ studentId, audience }: { studentId: string; 
       ) : (
         map.skies.map((sky) => <StarSky key={sky.subject} sky={sky} />)
       )}
+      {/* 星的详情位：预留“为什么”“我不同意”（冲刺 5；开关默认关，关时不渲染、不发请求） */}
+      {audience === 'student' && (trustEnabled('why') || trustEnabled('dispute')) ? <p className="star-detail-slot"><TrustSlot feature="why" /> <TrustSlot feature="dispute" /></p> : null}
     </main>
   );
 }

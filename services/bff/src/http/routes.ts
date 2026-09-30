@@ -6,8 +6,13 @@
 // 路径里的 student_id 只作查询条件，授权交给数据库（RLS 与 SECURITY DEFINER 函数）；无权与不存在同一个 404。
 import type { Pool, PoolClient, QueryResultRow } from 'pg';
 import type { DiagnosisDeps } from '../diagnosis/service.ts';
+import type { ShellConfig } from '../shell/config.ts';
+import type { InsightClient } from '../shell/insight-client.ts';
+import type { PlanClient } from '../shell/plan-client.ts';
+import type { RestStore } from '../shell/rest.ts';
 import type { AuthConfig, Keys, RunEnv } from './config.ts';
 import { FEATURE_ROUTES } from './feature-routes.ts';
+import { SHELL_ROUTES } from './shell-routes.ts';
 import { P } from './problems.ts';
 import { codeMac, csrfFor, E164, newCode } from './secrets.ts';
 import type { SmsSender } from './sms.ts';
@@ -15,7 +20,7 @@ import type { SmsSender } from './sms.ts';
 export type AuthLevel = 'public' | 'session' | 'guardian' | 'student';
 /** none：不改变状态；origin：只核对 Origin（登录前没有会话）；session：Origin + 与会话绑定的 CSRF 令牌 */
 export type CsrfMode = 'none' | 'origin' | 'session';
-export type RateDim = 'ip' | 'phone' | 'account';
+export type RateDim = 'ip' | 'phone' | 'account' | 'session';
 export interface RateLimit { bucket: string; dim: RateDim }
 
 export interface Session { token: string; accountId: string; kind: 'guardian' | 'student'; origin: string }
@@ -34,8 +39,11 @@ export interface ShellDeps {
   log?: (line: Record<string, unknown>) => void;
   /** 数学自适应诊断：学习服务客户端等（不配时诊断路由一律 503） */
   diagnosis?: Omit<DiagnosisDeps, 'pool'>;
-  /** 星图的生成时间（测试注入） */
+  /** 星图的生成时间、连续使用提醒的时钟（测试注入） */
   now?: () => Date;
+  /** 统一壳 H4（shell-routes.ts）：显示规则（缺省读 config/shell.json）、学习服务的今日计划、洞察服务的 insight.explain、
+   *  连续使用提醒的存储（缺省进程内）。不配 plan 时每一科“今天暂无安排”；不配 insight 时不显示任何判断陈述 */
+  shell?: { config?: ShellConfig; plan?: PlanClient; insight?: InsightClient; rest?: RestStore };
 }
 
 export type Query = <R extends QueryResultRow = QueryResultRow>(sql: string, params?: unknown[]) => Promise<{ rows: R[] }>;
@@ -234,11 +242,13 @@ export const ROUTES: readonly Route[] = [
   { method: 'POST', path: '/students/{student_id}/student-session', auth: 'guardian', csrf: 'session', body: false, handler: openStudentMode,
     rateLimits: [{ bucket: 'student_session.account.hour', dim: 'account' }] },
   ...FEATURE_ROUTES,
+  ...SHELL_ROUTES,
 ];
 
-/** 路由模板编译成正则：路径参数（student_id、session_id、probe_id）一律只匹配小写 UUID */
+/** 路由模板编译成正则：路径参数（student_id、session_id、probe_id）一律只匹配小写 UUID；学科码 {subject} 只匹配小写字母（H4） */
 export interface Compiled { route: Route; re: RegExp; names: string[] }
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+const PARAM: Record<string, string> = { subject: '[a-z]{2,16}' };
 
 export function compile(routes: readonly Route[] = ROUTES): Compiled[] {
   return routes.map((route) => {
@@ -247,7 +257,7 @@ export function compile(routes: readonly Route[] = ROUTES): Compiled[] {
       const m = /^\{([a-z_]+)\}$/.exec(seg);
       if (!m) return seg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       names.push(m[1]!);
-      return `(${UUID})`;
+      return `(${PARAM[m[1]!] ?? UUID})`;
     }).join('/');
     return { route, re: new RegExp(`^${src}$`), names };
   });

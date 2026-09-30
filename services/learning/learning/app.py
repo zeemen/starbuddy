@@ -27,6 +27,7 @@ from .diagnosis.engine import Params as DiagnosisParams
 from .errors import IngestError
 from .model_router import ModelRouter
 from .model_router.config import load_for_deployment
+from .plan import plan_today
 from .route_api import MAX_ROUTE_BODY, RouteApiError, parse_request
 from .route_api import route as route_call
 from .service import IngestService
@@ -131,6 +132,7 @@ def create_app(
         # trust_env=False：不读 HTTP(S)_PROXY 等环境变量，含学生作答的请求体不会被悄悄送进代理（安全审查 S1）
         client = httpx.AsyncClient(transport=transport, trust_env=False, follow_redirects=False)
         state["service"] = IngestService(settings, p, client)
+        state["plan"] = (p, client)
         if settings.diagnosis_presenter == "synthetic":
             try:
                 await _check_diagnosis_env(p)
@@ -203,6 +205,38 @@ def create_app(
     @app.post("/internal/v1/diagnose")
     async def diagnose_v1(request: Request) -> JSONResponse:
         return await handle("diagnose", request, "1.0.0")
+
+    @app.post("/internal/v1/plan")
+    async def plan(request: Request) -> JSONResponse:
+        """今日计划（learning-internal.v1，冲刺 4-H；非消耗类，不写任何表）。日志只记学科数与各科状态，不记学生 ID 与任务。"""
+        started = time.monotonic()
+        rid: str | None = None
+        record: dict = {"method": "plan"}
+        try:
+            if not _bearer_ok(request.headers.get("authorization"), settings.service_credential):
+                raise IngestError(401, "UNAUTHENTICATED", "missing or invalid service token")
+            raw = await _read_limited(request)
+            try:
+                body = strict_json(raw)
+            except ValueError:
+                raise IngestError(400, "INVALID_REQUEST", "request body is not valid JSON") from None
+            candidate = body.get("request_id") if isinstance(body, dict) else None
+            rid = candidate if isinstance(candidate, str) and UUID_RE.fullmatch(candidate) else None
+            pool_, client_ = state["plan"]
+            digest, fields = await plan_today(settings, pool_, client_, body)
+            record.update(status=200, **fields)
+            return JSONResponse(digest)
+        except IngestError as e:
+            record.update(status=e.status, code=e.code)
+            return _problem(e, rid)
+        except Exception as e:  # noqa: BLE001 不记异常消息：可能带出数据
+            record.update(status=500, code="INTERNAL", error_class=type(e).__name__[:48])
+            return _problem(IngestError(500, "INTERNAL", "internal error", retryable=True), rid)
+        finally:
+            if rid:
+                record["request_id"] = rid
+            record["duration_ms"] = round((time.monotonic() - started) * 1000)
+            log.info(json.dumps(record, ensure_ascii=False))
 
     @app.post("/internal/v1/model/route")
     async def model_route(request: Request) -> JSONResponse:

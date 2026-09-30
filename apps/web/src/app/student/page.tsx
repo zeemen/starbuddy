@@ -1,10 +1,7 @@
-// 学生模式的落地页（H1 的过渡页；今日计划、星图等壳页面随 H4）：只确认本设备是学生会话，并给出退出入口。
-// 退出后回登录页，家长要重新短信验证（孩子拿不到家长会话）。
+// 学生模式的入口（H1 的过渡页，H4 起转到壳的“今日”）：只确认本设备是学生会话。家长会话回家长首页，没登录回登录页。
+// 退出学生模式在壳的顶栏（src/shell/StudentShell.tsx）。
 import { redirect } from 'next/navigation';
-import { FAMILY_RESULT, STUDENT_COPY } from '../../auth/copy.ts';
-import { ResultForm } from '../../auth/ResultForm.tsx';
 import { currentSession, whoAmI } from '../../lib/shell-auth.ts';
-import { logoutAction } from '../family/actions.ts';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,16 +11,6 @@ export default async function StudentPage() {
   const me = await whoAmI(s.token);
   if (!me.ok) redirect('/login');
   if (me.value.account_kind !== 'student') redirect('/family');
-  return (
-    <main data-testid="student-mode">
-      <h1>{STUDENT_COPY.title}</h1>
-      <p>{STUDENT_COPY.intro}</p>
-      {me.value.student_id ? <p><a href={`/s/${me.value.student_id}/star-map`} data-testid="my-star-map">{STUDENT_COPY.starMap}</a></p> : null}
-      <ResultForm action={logoutAction} labels={FAMILY_RESULT} testId="exit-student-mode">
-        <input type="hidden" name="csrf" value={s.csrf ?? ''} />
-        <p className="muted" id="exit-note">{STUDENT_COPY.exitNote}</p>
-        <button type="submit" aria-describedby="exit-note">{STUDENT_COPY.exit}</button>
-      </ResultForm>
-    </main>
-  );
+  if (!me.value.student_id) redirect('/login');
+  redirect(`/s/${me.value.student_id}/today`);
 }

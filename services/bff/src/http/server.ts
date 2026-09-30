@@ -153,6 +153,8 @@ export function createShellHandler(deps: ShellDeps): (req: IncomingMessage, res:
           if (typeof phone === 'string' && E164.test(phone)) await limit(r.bucket, 'phone', phone);
         } else if (r.dim === 'account') {
           await limit(r.bucket, 'account', session!.accountId);
+        } else if (r.dim === 'session') {
+          await limit(r.bucket, 'session', session!.token);  // 键是令牌的带密钥 HMAC（rateKey），不存令牌本身
         }
       }
 

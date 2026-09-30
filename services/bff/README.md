@@ -24,6 +24,10 @@
     探针经 2-L 库函数写入（幂等键由会话与步骤派生）并在作答后关联。
   - 学习服务地址与令牌：`BFF_LEARNING_URL`、`BFF_LEARNING_TOKEN`（不设时诊断接口 503）。
 
+- 统一壳 H4 读路由（`src/http/shell-routes.ts`、`src/shell/`；`config/shell.json`）：选科（目录读取、家长开通 / 暂停，只经 `enroll_subject` / `pause_subject`）、
+  今日计划（经学习服务 `POST /internal/v1/plan`；推荐理由只取洞察服务 `insight.explain` 的 `RenderedStatement.text`，对外模板白名单为空时不显示）、
+  额度与时长（`meter_guard_status` 与 `entitlement_balance`）、时长设置（`set_time_guard`）、连续使用提醒（进程内计时，见 lessons H4）。
+  环境变量 `BFF_INSIGHT_URL` / `BFF_INSIGHT_TOKEN`（洞察服务）、`BFF_SHELL_CONFIG`（dev / test 换显示规则）。没有任何消耗类入口，也没有信任界面（冲刺 5）的路由。
 - 统一壳路由表与家庭登录（冲刺 4-H H1，`specs/unified-shell-sprint4/spec.md` 第 2、3、16、17 节）：`src/http/`，接口定义 `openapi/shell.v0.yaml`。
   - 路由表 `src/http/routes.ts`：每条路由声明方法、路径模板、auth（public / session / guardian / student）、CSRF、限流；分发只查这张表。
     表外一律 404（H2 起没有旧路由）；路由表与 `openapi/*.v0.yaml` 一一对应（`tests/shell-openapi.test.ts`）。

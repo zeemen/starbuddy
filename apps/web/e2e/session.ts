@@ -9,12 +9,15 @@ export const BFF = process.env['STARBUDDY_BFF_URL'] ?? 'http://127.0.0.1:8787';
 export const BASE = `http://127.0.0.1:${Number(process.env['WEB_PORT'] ?? 3100)}`;  // 与 playwright.config.ts 同一个端口
 
 /** 合成家长的登录号码（未分配的国家码 +999） */
-export const PHONE = { gS: '+99900000101', gO: '+99900000102', gD: '+99900000105' } as const;
+export const PHONE = { gS: '+99900000101', gO: '+99900000102', gD: '+99900000105', gH: '+99900000106' } as const;
 /** 学生档案 → 打开学生模式的家长 */
 export const GUARDIAN_OF: Record<string, keyof typeof PHONE> = {
   '5a000000-0000-4000-8000-0000000000c1': 'gS',  // S1
   '5a000000-0000-4000-8000-0000000000c2': 'gS',  // S2（S1 的妹妹）
   '5a000000-0000-4000-8000-0000000000c5': 'gD',  // D1（数学诊断演示）
+  '5d000000-0000-4000-8000-0000000000c1': 'gH',  // GT（统一壳：试用中）
+  '5d000000-0000-4000-8000-0000000000c2': 'gH',  // GR（留存态）
+  '5d000000-0000-4000-8000-0000000000c3': 'gH',  // GP（试点，在读数学）
 };
 
 /** 捕获收件箱里这个号码在 after 之后最近一条验证码（等 BFF 写完） */
@@ -66,16 +69,17 @@ async function grantConsents(page: Page, student: string): Promise<void> {
   }
 }
 
-/** 以学生身份进入：家长登录 → 补同意 → 在家长首页为这个孩子打开学生模式，停在学生页 */
+/** 以学生身份进入：家长登录 → 补同意 → 在家长首页为这个孩子打开学生模式，停在壳的“今日”（H4：/student 转到 /s/{id}/today） */
 export async function loginStudent(page: Page, student: string): Promise<void> {
   const guardian = GUARDIAN_OF[student];
   if (!guardian) throw new Error(`没有登记 ${student} 的合成家长`);
   await loginGuardian(page, guardian);
   await grantConsents(page, student);
-  const form = page.locator('form', { has: page.locator(`input[name="student"][value="${student}"]`) });
+  // 家长首页每个孩子有两张带学生 ID 的表单（记录同意、打开学生模式，H4）：只取打开学生模式那张
+  const form = page.locator('form[data-testid^="open-student-"]', { has: page.locator(`input[name="student"][value="${student}"]`) });
   await expect(form).toHaveAttribute('data-hydrated', 'true');
   await form.getByRole('button', { name: /打开学生模式/ }).click();
-  await expect(page).toHaveURL(/\/student$/);
+  await expect(page).toHaveURL(new RegExp(`/s/${student}/today$`));
 }
 
 /** 以某个身份打开一个页面（家长用号码代号，学生用档案 ID） */

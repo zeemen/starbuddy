@@ -95,6 +95,18 @@ SM=(
   $'认证：登录不作废本设备旧令牌\tsrc/http/routes.ts\tlife.absolute_seconds, life.idle_seconds, ctx.presentedToken]\tlife.absolute_seconds, life.idle_seconds, null]'
   $'认证：登出不废会话\tsrc/http/routes.ts\tawait ctx.q(\'SELECT platform.auth_session_revoke($1)\', [ctx.session!.token]);\t'
   $'认证：捕获桩收真实号码\tsrc/http/sms.ts\tif (!SYNTHETIC_PHONE.test(phone)) throw new Error(\'capture stub only accepts synthetic +999 numbers\');\t'
+  # 统一壳 H4 页面与读路由（第二轮 7.8 的 H4 部分）：这几条跑 tests/shell-pages.integration.test.ts
+  $'页面：无判断也显示推荐理由\tsrc/http/shell-routes.ts\tlet rationale: Rationale = null;\tlet rationale: Rationale = { kind: \'content\', code: t.rationale_code };'
+  $'页面：白名单检查去掉\tsrc/shell/statements.ts\tif (!cfg.externalTemplates.has(templateRef(r.template_key, r.template_version))) continue;\t'
+  $'页面：学生会话可以选科\tsrc/http/shell-routes.ts\tauth: \'guardian\', csrf: \'session\', body: false, handler: subjectOp(\'enroll_subject\')\tauth: \'session\', csrf: \'session\', body: false, handler: subjectOp(\'enroll_subject\')'
+  $'页面：学生端也给分来源明细\tsrc/http/shell-routes.ts\t(guardian ? b : {\t(true ? b : {'
+  $'页面：宵禁临近不看配置阈值\tsrc/http/shell-routes.ts\tg.minutes_until_curfew <= cfg.curfewNearMinutes\tg.minutes_until_curfew <= 0'
+  $'页面：今日计划不按优先级排序\tsrc/http/shell-routes.ts\tconst sorted = [...sec.tasks].sort((a, b) => b.priority - a.priority || KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind));\tconst sorted = [...sec.tasks];'
+  $'页面：理由不看编码的模板映射\tsrc/http/shell-routes.ts\t.filter((c) => allowed?.has(templateRef(c.template_key, c.template_version)))\t.filter(() => true)'
+  $'页面：整页不设总时限\tsrc/shell/statements.ts\tawait Promise.race([Promise.all(\tawait Promise.all([Promise.all('
+  $'页面：今日计划不限流\tsrc/http/shell-routes.ts\trateLimits: [{ bucket: \'today.session.minute\', dim: \'session\' }]\trateLimits: []'
+  $'页面：默认宵禁不取单处配置\tsrc/http/shell-routes.ts\tdefault_curfew: { start: shellConfig(ctx.deps).meterDefaults.curfewStart,\tdefault_curfew: { start: \'22:30\','
+  $'页面：选科口径不看周期\tsrc/http/shell-routes.ts\tAND $2::timestamptz >= s.period_start AND $2::timestamptz < s.period_end\tAND $2::timestamptz IS NOT NULL'
   $'认证：发验证码不核对号码格式\tsrc/http/routes.ts\tif (!onlyKeys(b, [\'phone\']) || typeof b[\'phone\'] !== \'string\' || !E164.test(b[\'phone\'])) return problem(P.INVALID);\tif (!onlyKeys(b, [\'phone\']) || typeof b[\'phone\'] !== \'string\') return problem(P.INVALID);'
 )
 # 副本保持仓库结构（测试按 ../../../ 找仓库根：adapters/aya 的登记脚本、db/seeds 的种子），adapters、db 软链接回仓库。
@@ -106,6 +118,7 @@ star_run() {  # $1 副本根目录，$2 变异名（“计量：”开头的跑�
   [[ "${2:-}" == 计量：* ]] && tests="tests/learning-client.test.ts tests/gate0.integration.test.ts"
   [[ "${2:-}" == 诊断：* ]] && tests="tests/diagnosis.integration.test.ts"
   [[ "${2:-}" == 认证：* ]] && tests="tests/auth.integration.test.ts"
+  [[ "${2:-}" == 页面：* ]] && tests="tests/shell-pages.integration.test.ts"
   out=$( cd "$1/services/bff" && timeout 240 bash "$ROOT/db/tests/pg-ephemeral.sh" -- \
       node --no-warnings --test --test-concurrency=1 --test-timeout=60000 $tests 2>&1 ); rc=$?
   pass=$(printf '%s\n' "$out" | sed -n 's/^# pass \([0-9]*\)$/\1/p' | tail -1)

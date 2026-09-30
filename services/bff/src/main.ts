@@ -10,7 +10,10 @@
 //   BFF_SMS_CAPTURE_FILE   dev / test：捕获的验证码另写到这个文件（端到端测试读）
 //   BFF_AUTH_CONFIG        dev / test：换一份阈值配置（端到端一次要登录很多次，放宽限流）；其余环境设了就拒绝启动，
 //                          一律用 config/auth.json
-//   BFF_LEARNING_URL / BFF_LEARNING_TOKEN  学习服务地址（https 或本机回环）与服务间令牌（≥ 32 字符）；不设时诊断接口 503
+//   BFF_LEARNING_URL / BFF_LEARNING_TOKEN  学习服务地址（https 或本机回环）与服务间令牌（≥ 32 字符）；不设时诊断接口 503、
+//                          今日计划每一科“今天暂无安排”
+//   BFF_INSIGHT_URL / BFF_INSIGHT_TOKEN    洞察服务地址（https 或本机回环）与 caller=bff 的令牌（≥ 32 字符）；不设时壳内不显示任何判断陈述
+//   BFF_SHELL_CONFIG       dev / test：换一份壳的显示规则（config/shell.json 的格式）；其余环境设了就拒绝启动
 // 诊断的宵禁判断用数据库的计量时钟（platform.meter_guard_status，迁移 0030），BFF 没有自己的时钟开关。
 import pg from 'pg';
 import { httpDiagnosisLearning } from './diagnosis/learning-client.ts';
@@ -18,6 +21,9 @@ import { isLocalEnv, loadAuthConfig, loadKeys, parseRunEnv } from './http/config
 import type { ShellDeps } from './http/routes.ts';
 import { createShellServer } from './http/server.ts';
 import { createSmsSender } from './http/sms.ts';
+import { loadShellConfig } from './shell/config.ts';
+import { httpInsightClient } from './shell/insight-client.ts';
+import { httpPlanClient } from './shell/plan-client.ts';
 import { assertBffRole } from './star-map/query.ts';
 
 // 配置不全、环境不认识、非 dev / test 却没有短信供应商：一律拒绝启动（在连数据库之前）
@@ -31,8 +37,15 @@ try {
   if (!/^https?:\/\/[^/]+$/.test(shellOrigin) || (!isLocalEnv(env) && !shellOrigin.startsWith('https://'))) {
     throw new Error('BFF_SHELL_ORIGIN 必须是壳的来源（scheme://host[:port]，dev / test 以外必须是 https）');
   }
+  const shellConfigPath = process.env['BFF_SHELL_CONFIG'];
+  if (shellConfigPath !== undefined && !isLocalEnv(env)) throw new Error('BFF_SHELL_CONFIG 只在 dev / test 可用');
   shellDeps = { config: configPath === undefined ? loadAuthConfig() : loadAuthConfig(configPath), keys, env, sms: createSmsSender(env), shellOrigin,
-                trustClientIpHeader: process.env['BFF_TRUST_CLIENT_IP'] === '1' };
+                trustClientIpHeader: process.env['BFF_TRUST_CLIENT_IP'] === '1',
+                shell: { config: shellConfigPath === undefined ? loadShellConfig() : loadShellConfig(shellConfigPath) } };
+  // 连续使用提醒的计时在进程内（src/shell/rest.ts）：dev / test 以外没声明单实例部署就不启用，并在启动时告警（pilot 前须完成会话表加列迁移）
+  if (!isLocalEnv(env) && !shellDeps.shell!.config!.rest.singleInstance) {
+    console.warn(JSON.stringify({ event: 'rest_reminder_disabled', reason: 'in_process_timer_requires_single_instance' }));
+  }
 } catch (e) {
   console.error(`bff: ${(e as Error).message}`);
   process.exit(2);
@@ -61,6 +74,18 @@ if (learningUrl) {
     process.exit(2);
   }
   shellDeps.diagnosis = { learning: httpDiagnosisLearning({ baseUrl: learningUrl, token: learningCredential }) };
+  shellDeps.shell!.plan = httpPlanClient({ baseUrl: learningUrl, token: learningCredential, timeoutMs: shellDeps.shell!.config!.plan.timeoutMs });
+}
+const insightUrl = process.env['BFF_INSIGHT_URL'];
+const insightCredential = process.env['BFF_INSIGHT_TOKEN'] ?? '';
+if (insightUrl) {
+  if (insightCredential.length < 32 || insightCredential === learningCredential
+      || !/^(https:\/\/|http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?(\/|$))/.test(insightUrl)) {
+    console.error('bff: BFF_INSIGHT_URL 必须是 https 或本机回环地址，令牌至少 32 个字符且与学习服务令牌不同');
+    await pool.end();
+    process.exit(2);
+  }
+  shellDeps.shell!.insight = httpInsightClient({ baseUrl: insightUrl, token: insightCredential });
 }
 const server = createShellServer({ ...shellDeps, pool });
 server.listen(port, '127.0.0.1', () => {

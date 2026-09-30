@@ -11,6 +11,8 @@ export function proxy(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set('x-nonce', nonce);
   requestHeaders.set('Content-Security-Policy', csp);
+  // 壳的布局要知道当前页面（连续使用提醒“知道了”之后回到原页面；H4）：只放路径，不放查询串；覆盖客户端自带的同名头
+  requestHeaders.set('x-sb-path', request.nextUrl.pathname);
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set('Content-Security-Policy', csp);
   if (hstsEnabled()) response.headers.set('Strict-Transport-Security', HSTS);
