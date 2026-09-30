@@ -5,6 +5,7 @@
 > **2026-09-28：按开发计划 v2.0 改写**（方案见 `specs/sprint4-v2-rewrite/spec.md`，待人确认 #1 按默认：按插件 API v1.0 候选版写）。
 > - 本 spec 按 `packages/contracts/openapi/plugin-api.v1.0.yaml`（**候选版，待评审签字**）写。评审会推翻其中任何一项结论时，本 spec 随之修改，修改后再确认。
 > - 本 spec 在插件 API v1.0 第二步完成之前不能开始实现（见“前置依赖”）。
+> - **2026-09-30 复核**：插件 API v1.0 第二步已实现（`specs/plugin-api-v1.0-step2/`：阿鸦支持 1.0.0 候选版、学习服务 `/internal/v1` 写入与封存表 0016），前置依赖第 1 条已满足（仍是候选版，签字前以 `--allow-candidate-contract` 运行）。KGE-03 知识服务已实现 `node.path`、`page.get`、`item.search`、`item.similar`（本 spec 的 teach(lesson) 与 generate_variation 可由编排层按契约把结果放进请求）；SIE-02a 诊断已合并，plan 的 `mastery[]` 仍按 `aya:` 能力点（KGE-04 第二步前）。
 > - 按 v1.0 口径起草的上一版在 git 历史里（提交 `ff9d3f3` 及以前），逐项差异见“相对 v1.0 版本的变化”。
 
 关联（现行依据）：
