@@ -1,4 +1,6 @@
 -- 0027 回滚：删除诊断会话与步骤（数据一并删除；诊断不产生对外结论，没有依赖它的展示）。
+-- 注意：回滚会删除诊断步骤上已结案的过程观察复核记录（审计痕迹），请先导出 platform.review_task 中 source_kind = 'diagnosis_step' 的行；
+-- 过程原文证据（platform.evidence_event 里的学生原文）不随回滚删除，按证据的保留规则处理（安全审查 S9）。
 -- review_reason 的新值 process_observation 无法从枚举里删除（Postgres 不支持），保留不用；约束会禁止再写入它。
 DELETE FROM platform.review_task WHERE source_kind = 'diagnosis_step';
 CREATE OR REPLACE FUNCTION platform.review_task_detail(p_task uuid) RETURNS jsonb

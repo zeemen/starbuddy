@@ -26,6 +26,7 @@ CREATE TABLE platform.diagnosis_session (
   created_at         timestamptz NOT NULL DEFAULT now(),
   updated_at         timestamptz NOT NULL DEFAULT now(),
   finished_at        timestamptz,
+  resumed_at         timestamptz NOT NULL DEFAULT now(),         -- 最近一次开始或续做的时间：服务端按墙钟给用时封顶（安全审查 S1）
   UNIQUE (student_id, idempotency_key),
   UNIQUE (usage_id),
   CONSTRAINT diagnosis_session_item_limit CHECK (item_count <= item_limit),
@@ -48,6 +49,8 @@ CREATE TABLE platform.diagnosis_step (
   status             text NOT NULL DEFAULT 'presented' CHECK (status IN ('presented', 'answered', 'skipped', 'no_item')),
   probe_id           uuid,                                           -- insight.confidence_probe（跨 schema 不设外键，由学习服务核对）
   grade_result_id    uuid REFERENCES platform.grade_result (id),      -- 对错只以判分为准，这里只存引用
+  work_evidence_id   uuid,                                           -- 过程题的书写原文证据（platform.evidence_event，分区表不设外键；只存引用，契约审查 B1）
+  answer_key         uuid,                                           -- 作答请求的幂等键：同一步换了内容再提交时据此报冲突（安全审查 S5）
   elapsed_sec        integer CHECK (elapsed_sec BETWEEN 0 AND 7200),
   idempotency_key    uuid NOT NULL,
   created_at         timestamptz NOT NULL DEFAULT now(),
@@ -57,6 +60,7 @@ CREATE TABLE platform.diagnosis_step (
   CONSTRAINT diagnosis_step_no_item CHECK ((reason_code = 'no_item') = (status = 'no_item') AND (status <> 'no_item' OR item_id IS NULL)),
   CONSTRAINT diagnosis_step_has_item CHECK (status = 'no_item' OR item_id IS NOT NULL),
   CONSTRAINT diagnosis_step_answered CHECK ((status = 'answered') = (answered_at IS NOT NULL AND grade_result_id IS NOT NULL)),
+  CONSTRAINT diagnosis_step_work CHECK (work_evidence_id IS NULL OR kind IN ('process', 'explain')),
   CONSTRAINT diagnosis_step_kind_reason CHECK ((kind = 'adaptive' AND reason_code IN ('target', 'prereq_trace', 'confirm', 'no_item'))
                                                OR (kind = 'process' AND reason_code = 'process_near_gap')
                                                OR (kind = 'explain' AND reason_code = 'explain'))
@@ -73,9 +77,21 @@ BEGIN
   IF TG_OP = 'INSERT' AND s.status <> 'active' THEN
     RAISE EXCEPTION '会话不在进行中，不能新增步骤' USING ERRCODE = '22023';
   END IF;
+  IF TG_OP = 'UPDATE' AND s.status NOT IN ('active', 'paused') THEN
+    RAISE EXCEPTION '会话已结束，步骤不能再改' USING ERRCODE = '22023';
+  END IF;
+  -- 判分必须属于同一学生、同一学科，且判的正是这一步出的题（安全审查 S4）
   IF NEW.grade_result_id IS NOT NULL AND NOT EXISTS (
-       SELECT 1 FROM platform.grade_result g WHERE g.id = NEW.grade_result_id AND g.student_id = s.student_id AND g.subject = s.subject) THEN
-    RAISE EXCEPTION '判分不属于该会话的学生与学科' USING ERRCODE = '22023';
+       SELECT 1 FROM platform.grade_result g JOIN platform.attempt a ON a.attempt_id = g.attempt_id AND a.occurred_at = g.attempt_occurred_at
+        WHERE g.id = NEW.grade_result_id AND g.student_id = s.student_id AND g.subject = s.subject AND a.item_id = NEW.item_id) THEN
+    RAISE EXCEPTION '判分不属于该会话的学生、学科或本步的题目' USING ERRCODE = '22023';
+  END IF;
+  -- 过程原文证据必须是本人、本学科、本题的学生原文
+  IF NEW.work_evidence_id IS NOT NULL AND NOT EXISTS (
+       SELECT 1 FROM platform.evidence_event e
+        WHERE e.evidence_id = NEW.work_evidence_id AND e.student_id = s.student_id AND e.subject = s.subject
+          AND e.kind = 'response_text' AND e.item_id = NEW.item_id) THEN
+    RAISE EXCEPTION '过程原文证据不属于该会话的学生、学科或本步的题目' USING ERRCODE = '22023';
   END IF;
   IF TG_OP = 'UPDATE' AND OLD.status IN ('answered', 'skipped', 'no_item') AND NEW IS DISTINCT FROM OLD THEN
     RAISE EXCEPTION '已结束的步骤不能再改' USING ERRCODE = '22023';
@@ -92,7 +108,7 @@ BEGIN
   IF OLD.status IN ('finished', 'abandoned') AND NEW IS DISTINCT FROM OLD THEN
     RAISE EXCEPTION '已结束的会话不能再改' USING ERRCODE = '22023';
   END IF;
-  IF NEW.elapsed_sec < OLD.elapsed_sec OR NEW.item_count < OLD.item_count THEN
+  IF NEW.elapsed_sec < OLD.elapsed_sec OR NEW.item_count < OLD.item_count OR NEW.resumed_at < OLD.resumed_at THEN
     RAISE EXCEPTION '用时与题数只能增加' USING ERRCODE = '22023';
   END IF;
   IF (NEW.student_id, NEW.subject, NEW.algorithm_version, NEW.map_version, NEW.usage_id, NEW.idempotency_key, NEW.created_at,
@@ -110,8 +126,8 @@ CREATE TRIGGER diagnosis_session_guard BEFORE UPDATE ON platform.diagnosis_sessi
 -- ---------- 权限：学习服务写；BFF 只读学生本人进度列；没有任何角色能 DELETE（随学生档案级联删除） ----------
 REVOKE ALL ON platform.diagnosis_session, platform.diagnosis_step FROM PUBLIC;
 GRANT SELECT, INSERT ON platform.diagnosis_session, platform.diagnosis_step TO starbuddy_learning;
-GRANT UPDATE (status, elapsed_sec, item_count, finished_at) ON platform.diagnosis_session TO starbuddy_learning;
-GRANT UPDATE (status, probe_id, grade_result_id, elapsed_sec, answered_at) ON platform.diagnosis_step TO starbuddy_learning;
+GRANT UPDATE (status, elapsed_sec, item_count, finished_at, resumed_at) ON platform.diagnosis_session TO starbuddy_learning;
+GRANT UPDATE (status, probe_id, grade_result_id, work_evidence_id, answer_key, elapsed_sec, answered_at) ON platform.diagnosis_step TO starbuddy_learning;
 GRANT SELECT (id, student_id, subject, status, time_budget_sec, item_limit, elapsed_sec, item_count, created_at, finished_at)
   ON platform.diagnosis_session TO starbuddy_bff;
 GRANT SELECT (id, session_id, seq, kind, item_id, status) ON platform.diagnosis_step TO starbuddy_bff;
@@ -180,9 +196,10 @@ BEGIN
                  ORDER BY d.dimension_id) FROM platform.grade_dimension d WHERE d.grade_result_id = g.id), '[]'::jsonb))
       INTO v_source FROM platform.grade_result g WHERE g.id = r.source_id;
   ELSIF r.source_kind = 'diagnosis_step' THEN
-    -- 过程观察（0027）：只给选题引用与判分引用，作答原文由审核台按判分的 evidence_ids 另取；不给选题理由以外的推断
+    -- 过程观察（0027）：给选题引用、判分引用与过程原文证据的引用（审核台按 ID 另取原文）；不给选题理由
     SELECT jsonb_build_object(
              'kind', st.kind, 'node_id', st.node_id, 'item_id', st.item_id, 'grade_result_id', st.grade_result_id,
+             'work_evidence_id', st.work_evidence_id,
              'evidence_ids', g.evidence_ids, 'verdict', g.verdict, 'answered_at', st.answered_at)
       INTO v_source FROM platform.diagnosis_step st LEFT JOIN platform.grade_result g ON g.id = st.grade_result_id
      WHERE st.id = r.source_id;

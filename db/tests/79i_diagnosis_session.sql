@@ -29,8 +29,18 @@ GRANT EXECUTE ON FUNCTION t.as_role(text, text) TO PUBLIC;
 -- 合成作答（判分要指向真实作答）
 INSERT INTO platform.attempt (attempt_id, occurred_at, student_id, subject, item_id, response_evidence_id, request_idempotency_key) VALUES
   ('a8d00000-0000-4000-8000-0000000000d1', '2026-10-10 09:00:00+00', :S1, 'aya', 'synthetic-0301-07', 'e1000000-0000-4000-8000-000000000001', 'synthetic-diag-0001'),
-  ('a8d00000-0000-4000-8000-0000000000d2', '2026-10-10 09:00:00+00', :S2, 'aya', 'synthetic-0301-07', 'e2000000-0000-4000-8000-000000000002', 'synthetic-diag-0002'),
+  ('a8d00000-0000-4000-8000-0000000000d2', '2026-10-10 09:00:00+00', :S2, 'aya', 'synthetic-0301-08', 'e2000000-0000-4000-8000-000000000002', 'synthetic-diag-0002'),
   ('a8d00000-0000-4000-8000-0000000000d3', '2026-10-10 09:05:00+00', :S1, 'aya', 'synthetic-0301-08', 'e1000000-0000-4000-8000-000000000001', 'synthetic-diag-0003');
+
+-- S1 的一条 0301-08 学生原文（复制 e1 改题号），用作过程原文证据
+INSERT INTO platform.evidence_event
+SELECT (jsonb_populate_record(NULL::platform.evidence_event,
+          to_jsonb(e) || '{"evidence_id": "e1d80000-0000-4000-8000-0000000000e8", "item_id": "synthetic-0301-08"}'::jsonb)).*
+  FROM platform.evidence_event e WHERE e.evidence_id = 'e1000000-0000-4000-8000-000000000001';
+INSERT INTO platform.evidence_event
+SELECT (jsonb_populate_record(NULL::platform.evidence_event,
+          to_jsonb(e) || '{"evidence_id": "e2d80000-0000-4000-8000-0000000000e8", "item_id": "synthetic-0301-08"}'::jsonb)).*
+  FROM platform.evidence_event e WHERE e.evidence_id = 'e2000000-0000-4000-8000-000000000002';
 
 -- ================= 一、学习服务建会话、写步骤 =================
 SET ROLE starbuddy_learning;
@@ -59,7 +69,12 @@ SELECT t.throws(format($$UPDATE platform.diagnosis_step SET elapsed_sec = 5 WHER
 INSERT INTO platform.diagnosis_step (id, session_id, seq, kind, node_id, item_id, reason_code, idempotency_key)
 VALUES (:st2, :d1, 2, 'adaptive', 'MATH.FUNC.QUAD.GRAPH', 'synthetic-0301-08', 'prereq_trace', gen_random_uuid());
 SELECT t.throws(format($$UPDATE platform.diagnosis_step SET status = 'answered', grade_result_id = %L, answered_at = now() WHERE id = %L$$, :gd2, :st2),
-                '22023', '步骤不能关联别的学生的判分');
+                '22023', '步骤不能关联别的学生的判分（同一道题）');
+-- 判分判的必须是这一步出的题（安全审查 S4）：gd1 判的是 0301-07，st2 出的是 0301-08
+SELECT t.throws(format($$UPDATE platform.diagnosis_step SET status = 'answered', grade_result_id = %L, answered_at = now() WHERE id = %L$$, :gd1, :st2),
+                '22023', '步骤不能关联判的是别的题的判分');
+SELECT t.throws(format($$UPDATE platform.diagnosis_step SET work_evidence_id = 'e1d80000-0000-4000-8000-0000000000e8' WHERE id = %L$$, :st2),
+                '23514', '自适应题不能挂过程原文');
 SELECT t.throws(format($$INSERT INTO platform.diagnosis_step (session_id, seq, kind, node_id, item_id, reason_code, idempotency_key)
                          VALUES (%L, 3, 'adaptive', 'MATH.FUNC.QUAD.AXIS', NULL, 'target', gen_random_uuid())$$, :d1),
                 '23514', '有题的步骤必须带题目');
@@ -79,6 +94,7 @@ SELECT t.throws(format($$INSERT INTO platform.diagnosis_step (session_id, seq, k
 -- 会话：用时与题数只增不减；配置不能改；结束后不能再改、不能再加步骤
 UPDATE platform.diagnosis_session SET elapsed_sec = 90, item_count = 1 WHERE id = :d1;
 SELECT t.throws(format($$UPDATE platform.diagnosis_session SET elapsed_sec = 10 WHERE id = %L$$, :d1), '22023', '用时不能倒退');
+SELECT t.throws(format($$UPDATE platform.diagnosis_session SET resumed_at = resumed_at - interval '1 hour' WHERE id = %L$$, :d1), '22023', '续做时间不能倒退');
 SELECT t.throws(format($$UPDATE platform.diagnosis_session SET item_count = 21 WHERE id = %L$$, :d1), '23514', '题数不能超过上限');
 SELECT t.throws(format($$UPDATE platform.diagnosis_session SET time_budget_sec = 7200 WHERE id = %L$$, :d1), '42501', '学习服务不能改时长上限（列权限）');
 UPDATE platform.diagnosis_session SET status = 'paused' WHERE id = :d1;
@@ -100,6 +116,12 @@ INSERT INTO platform.grade_result (id, student_id, subject, attempt_id, attempt_
 VALUES ('9d300000-0000-4000-8000-0000000009d3', :S1, 'aya', 'a8d00000-0000-4000-8000-0000000000d3', '2026-10-10 09:05:00+00', 'correct', 'aya-symbolic-ts@0.1.0', 1, 1, true, 0.95,
         'rubric:aya-symbolic-ts@0.1.0', 'algo:aya-symbolic-ts@0.1.0', false, '{}', 'formal', '{e1000000-0000-4000-8000-000000000001}', gen_random_uuid());
 SET ROLE starbuddy_learning;
+SELECT t.throws(format($$UPDATE platform.diagnosis_step SET work_evidence_id = 'e1000000-0000-4000-8000-000000000001' WHERE id = %L$$, :st3),
+                '22023', '过程原文证据必须是本步题目的学生原文（e1 是 0301-07 的，st3 出的是 0301-08）');
+SELECT t.throws(format($$UPDATE platform.diagnosis_step SET work_evidence_id = 'e2d80000-0000-4000-8000-0000000000e8' WHERE id = %L$$, :st3),
+                '22023', '过程原文证据不能是别的学生的');
+UPDATE platform.diagnosis_step SET work_evidence_id = 'e1d80000-0000-4000-8000-0000000000e8' WHERE id = :st3;
+SELECT t.ok((SELECT work_evidence_id FROM platform.diagnosis_step WHERE id = :st3) = 'e1d80000-0000-4000-8000-0000000000e8', '过程题记下本人本题的原文证据引用');
 UPDATE platform.diagnosis_step SET status = 'answered', grade_result_id = '9d300000-0000-4000-8000-0000000009d3', answered_at = now() WHERE id = :st3;
 INSERT INTO platform.review_task (subject, student_id, source_kind, source_id, reasons)
 VALUES ('aya', :S1, 'diagnosis_step', :st3, '{process_observation}');
@@ -130,6 +152,8 @@ SELECT t.throws(format($$INSERT INTO platform.review_task (subject, student_id, 
 -- 审核台详情给出步骤引用与判分的证据 ID，不含选题理由
 SELECT id AS rt FROM platform.review_task WHERE source_id = :st3 \gset
 SELECT t.as_staff(:sf, format('SELECT platform.take_review_task(%L)::text', :'rt')) AS taken \gset
+SELECT t.ok(t.as_staff(:sf, format('SELECT platform.review_task_detail(%L) -> ''source'' ->> ''work_evidence_id''', :'rt')) = 'e1d80000-0000-4000-8000-0000000000e8',
+            '审核台详情给出过程原文证据的引用（契约审查 B1）');
 SELECT t.ok(t.as_staff(:sf, format('SELECT platform.review_task_detail(%L) -> ''source'' ->> ''kind''', :'rt')) = 'process'
             AND t.as_staff(:sf, format('SELECT ((platform.review_task_detail(%L) -> ''source'') ? ''reason_code'')::text', :'rt')) = 'false',
             '审核台详情给出过程题的节点、题目与判分引用，不给选题理由');
@@ -146,6 +170,7 @@ SELECT t.ok(t.ob(:aS1, format($$SELECT count(*)::text FROM platform.diagnosis_st
 SELECT t.throws(format($$SELECT t.ob(%L, 'SELECT reason_code FROM platform.diagnosis_step LIMIT 1')$$, :aS1), '42501', '学生读不到选题理由');
 SELECT t.throws(format($$SELECT t.ob(%L, 'SELECT algorithm_version FROM platform.diagnosis_session LIMIT 1')$$, :aS1), '42501', '学生读不到算法版本');
 SELECT t.throws(format($$SELECT t.ob(%L, 'SELECT grade_result_id::text FROM platform.diagnosis_step LIMIT 1')$$, :aS1), '42501', '学生经这张表读不到判分引用');
+SELECT t.throws(format($$SELECT t.ob(%L, 'SELECT work_evidence_id::text FROM platform.diagnosis_step LIMIT 1')$$, :aS1), '42501', '学生经这张表读不到过程原文引用');
 SELECT t.ok(t.ob(:gA, 'SELECT count(*)::text FROM platform.diagnosis_session') = '0', '家长读不到孩子的诊断会话');
 SELECT t.ok(t.ob(:gA, 'SELECT count(*)::text FROM platform.diagnosis_step') = '0', '家长读不到孩子的诊断步骤');
 SELECT t.ok(t.ob(:aS2, format($$SELECT count(*)::text FROM platform.diagnosis_session WHERE student_id = %L$$, :S1)) = '0'
@@ -162,6 +187,8 @@ SELECT t.throws($$SELECT t.as_role('starbuddy_review', 'SELECT count(*)::text FR
 SET ROLE starbuddy_learning;
 UPDATE platform.diagnosis_session SET status = 'finished', finished_at = now() WHERE id = :d1;
 SELECT t.throws(format($$UPDATE platform.diagnosis_session SET status = 'active', finished_at = NULL WHERE id = %L$$, :d1), '22023', '结束的会话不能再打开');
+SELECT t.throws(format($$UPDATE platform.diagnosis_step SET status = 'skipped' WHERE session_id = %L AND status = 'presented'$$, :d1),
+                '22023', '会话结束后，未作答的步骤也不能再改');
 SELECT t.throws(format($$INSERT INTO platform.diagnosis_step (session_id, seq, kind, node_id, item_id, reason_code, idempotency_key)
                          VALUES (%L, 9, 'adaptive', 'MATH.FUNC.QUAD.AXIS', 'synthetic-0301-07', 'target', gen_random_uuid())$$, :d1),
                 '22023', '结束的会话不能再加步骤');

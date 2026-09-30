@@ -63,11 +63,13 @@ col|platform.diagnosis_session.id|starbuddy_bff|SELECT|SUPERUSER
 col|platform.diagnosis_session.item_count|starbuddy_bff|SELECT|SUPERUSER
 col|platform.diagnosis_session.item_count|starbuddy_learning|UPDATE|SUPERUSER
 col|platform.diagnosis_session.item_limit|starbuddy_bff|SELECT|SUPERUSER
+col|platform.diagnosis_session.resumed_at|starbuddy_learning|UPDATE|SUPERUSER
 col|platform.diagnosis_session.status|starbuddy_bff|SELECT|SUPERUSER
 col|platform.diagnosis_session.status|starbuddy_learning|UPDATE|SUPERUSER
 col|platform.diagnosis_session.student_id|starbuddy_bff|SELECT|SUPERUSER
 col|platform.diagnosis_session.subject|starbuddy_bff|SELECT|SUPERUSER
 col|platform.diagnosis_session.time_budget_sec|starbuddy_bff|SELECT|SUPERUSER
+col|platform.diagnosis_step.answer_key|starbuddy_learning|UPDATE|SUPERUSER
 col|platform.diagnosis_step.answered_at|starbuddy_learning|UPDATE|SUPERUSER
 col|platform.diagnosis_step.elapsed_sec|starbuddy_learning|UPDATE|SUPERUSER
 col|platform.diagnosis_step.grade_result_id|starbuddy_learning|UPDATE|SUPERUSER
@@ -79,6 +81,7 @@ col|platform.diagnosis_step.seq|starbuddy_bff|SELECT|SUPERUSER
 col|platform.diagnosis_step.session_id|starbuddy_bff|SELECT|SUPERUSER
 col|platform.diagnosis_step.status|starbuddy_bff|SELECT|SUPERUSER
 col|platform.diagnosis_step.status|starbuddy_learning|UPDATE|SUPERUSER
+col|platform.diagnosis_step.work_evidence_id|starbuddy_learning|UPDATE|SUPERUSER
 col|platform.entitlement.granted|starbuddy_authz|UPDATE|SUPERUSER
 col|platform.entitlement.reserved|starbuddy_authz|UPDATE|SUPERUSER
 col|platform.entitlement.settled|starbuddy_authz|UPDATE|SUPERUSER
