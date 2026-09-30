@@ -10,8 +10,16 @@ insight.claim|claim_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=((status = 
   WHERE ((t.template_key = claim.template_key) AND (t.version = claim.template_version)))) AND ((platform.is_self_student(student_id) AND ('student'::text = ANY (visibility))) OR (platform.is_linked_guardian(student_id) AND ('guardian'::text = ANY (visibility)))))|check=-
 insight.claim|claim_insight|ALL|starbuddy_insight|PERMISSIVE|using=true|check=true
 insight.confidence_probe|confidence_probe_service_read|SELECT|starbuddy_insight,starbuddy_learning|PERMISSIVE|using=true|check=-
+insight.dispute|dispute_insight_read|SELECT|starbuddy_insight|PERMISSIVE|using=true|check=-
+insight.dispute|dispute_insight_update|UPDATE|starbuddy_insight|PERMISSIVE|using=true|check=true
+insight.dispute|dispute_raiser_read|SELECT|starbuddy_bff|PERMISSIVE|using=((raised_by = platform.current_account_id()) AND platform.can_read_student(student_id))|check=-
+insight.exam_prediction|exam_prediction_insight|ALL|starbuddy_insight|PERMISSIVE|using=true|check=true
+insight.exam_reconciliation|exam_reconciliation_insight|ALL|starbuddy_insight|PERMISSIVE|using=true|check=true
 insight.exam_record|exam_record_service_read|SELECT|starbuddy_insight,starbuddy_learning|PERMISSIVE|using=true|check=-
 insight.guardian_report|guardian_report_service_read|SELECT|starbuddy_insight,starbuddy_learning|PERMISSIVE|using=true|check=-
+insight.intervention_log|intervention_insight|ALL|starbuddy_insight|PERMISSIVE|using=true|check=true
+insight.intervention_log|intervention_learning_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
+insight.intervention_rule_signoff|rule_signoff_insight_read|SELECT|starbuddy_insight|PERMISSIVE|using=true|check=-
 insight.onboarding_progress|onboarding_progress_service_read|SELECT|starbuddy_insight|PERMISSIVE|using=true|check=-
 insight.self_report|self_report_service_read|SELECT|starbuddy_insight,starbuddy_learning|PERMISSIVE|using=true|check=-
 kge.content_review|content_review_kge_read|SELECT|starbuddy_kge|PERMISSIVE|using=true|check=-
@@ -94,6 +102,7 @@ platform.diagnosis_step|diagnosis_step_self|SELECT|starbuddy_bff|PERMISSIVE|usin
    FROM platform.diagnosis_session s
   WHERE ((s.id = diagnosis_step.session_id) AND platform.is_self_student(s.student_id))))|check=-
 platform.entitlement|entitlement_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
+platform.erasure_request|erasure_request_guardian_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.is_linked_guardian(student_id)|check=-
 platform.error_attribution|attr_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
 platform.error_attribution|attr_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
 platform.error_attribution|attribution_insight_read|SELECT|starbuddy_insight|PERMISSIVE|using=true|check=-

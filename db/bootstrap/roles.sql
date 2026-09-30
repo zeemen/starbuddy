@@ -9,6 +9,8 @@
 --   starbuddy_kge      ：知识服务与审核台后端，公共知识层 kge.* 的唯一写入方（specs/kge-schema-v0.9）
 --   starbuddy_kge_read ：知识服务的对外只读工具，只能读已发布地图版本里的公共知识，不能写任何表（specs/kge-03-compile-layer，迁移 0026）
 --   starbuddy_report   ：运营报表只读身份，只能调用聚合统计函数（如 insight.onboarding_stats），读不到任何明细（SIE-01）
+--   starbuddy_eraser   ：删除请求执行函数 platform.execute_due_erasures 的属主，BYPASSRLS；NOLOGIN，不授予任何登录角色；
+--                        只有它能删个人层表（SIE-03，迁移 0035）
 -- 部署时的登录角色只能继承 bff、learning、review、scheduler、insight、kge 之一，不能同时继承（kge_read 也一样；learning 的策略对所有学生放行）。
 DO $$
 BEGIN
@@ -35,6 +37,9 @@ BEGIN
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'starbuddy_report') THEN
     CREATE ROLE starbuddy_report NOLOGIN NOSUPERUSER NOBYPASSRLS;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'starbuddy_eraser') THEN
+    CREATE ROLE starbuddy_eraser NOLOGIN NOSUPERUSER BYPASSRLS;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'starbuddy_authz') THEN
     CREATE ROLE starbuddy_authz NOLOGIN NOSUPERUSER BYPASSRLS;

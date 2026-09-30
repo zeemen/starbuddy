@@ -10,7 +10,7 @@ CREATE FUNCTION t.app_schemas() RETURNS SETOF oid LANGUAGE sql STABLE AS $$
      AND nspname NOT LIKE 'pg_temp%' AND nspname NOT LIKE 'pg_toast_temp%' $$;
 CREATE FUNCTION t.app_roles() RETURNS SETOF text LANGUAGE sql IMMUTABLE AS $$
   SELECT unnest(ARRAY['starbuddy_bff', 'starbuddy_learning', 'starbuddy_review', 'starbuddy_scheduler', 'starbuddy_insight',
-                       'starbuddy_kge', 'starbuddy_kge_read', 'starbuddy_report', 'starbuddy_authz']) $$;
+                       'starbuddy_kge', 'starbuddy_kge_read', 'starbuddy_report', 'starbuddy_authz', 'starbuddy_eraser']) $$;
 
 -- ================= 一、每张表都 ENABLE + FORCE RLS；子分区对应用角色没有任何权限（I1、J1） =================
 SELECT t.ok(NOT EXISTS (
@@ -75,10 +75,22 @@ END $$;
 SELECT t.ok(NOT EXISTS (
   SELECT 1 FROM pg_proc p
    WHERE p.pronamespace IN (SELECT t.app_schemas()) AND p.prosecdef
-     AND (pg_get_userbyid(p.proowner) <> 'starbuddy_authz'
+     AND (NOT (pg_get_userbyid(p.proowner) = 'starbuddy_authz'
+               OR (pg_get_userbyid(p.proowner) = 'starbuddy_eraser' AND p.oid = 'platform.execute_due_erasures(timestamptz)'::regprocedure))
           OR NOT coalesce((SELECT bool_or(cfg ~ '^search_path=.*pg_temp$') FROM unnest(p.proconfig) cfg), false)
           OR has_function_privilege('public', p.oid, 'EXECUTE'))),
-  '攻击面：每个 SECURITY DEFINER 函数属主是 authz、search_path 固定且以 pg_temp 结尾、PUBLIC 不能执行');
+  '攻击面：每个 SECURITY DEFINER 函数属主是 authz（删除执行函数属主是 eraser）、search_path 固定且以 pg_temp 结尾、PUBLIC 不能执行');
+SELECT t.ok((SELECT count(*) FROM pg_proc p WHERE p.proowner = 'starbuddy_eraser'::regrole) = 1
+            AND NOT EXISTS (SELECT 1 FROM pg_class c WHERE c.relowner = 'starbuddy_eraser'::regrole),
+            '攻击面：删除执行身份 eraser 只拥有删除执行函数一个对象');
+-- 只有删除执行函数能删个人层清单里的表：其他函数体里不能出现对清单表的 DELETE，也不能有拼表名的动态 DELETE（SIE-03 安全审查）
+SELECT t.ok(NOT EXISTS (
+  SELECT 1 FROM pg_proc p, platform.personal_table_registry g
+   WHERE p.pronamespace IN (SELECT t.app_schemas()) AND p.oid <> 'platform.execute_due_erasures(timestamptz)'::regprocedure
+     AND g.strategy = 'delete'
+     AND (p.prosrc ~* ('delete\s+from\s+(only\s+)?"?' || g.nspname || '"?\s*\.\s*"?' || g.relname || '"?(\s|;|$)')
+          OR p.prosrc ~* 'delete\s+from\s+%[is]')),
+  '攻击面：除删除执行函数外，没有函数删除个人层清单里的表');
 
 -- ================= 三、应用角色（I2、I5） =================
 SELECT t.ok(NOT EXISTS (
@@ -96,9 +108,11 @@ SELECT t.ok(NOT EXISTS (
 SELECT t.ok(NOT EXISTS (
   SELECT 1 FROM pg_roles r
    WHERE r.rolname IN (SELECT t.app_roles())
-     AND (r.rolsuper OR (r.rolbypassrls AND r.rolname <> 'starbuddy_authz') OR r.rolcreaterole OR r.rolcreatedb
+     AND (r.rolsuper OR (r.rolbypassrls AND r.rolname NOT IN ('starbuddy_authz', 'starbuddy_eraser')) OR r.rolcreaterole OR r.rolcreatedb
           OR r.rolreplication OR r.rolcanlogin)),
-  '攻击面：应用角色没有危险属性（SUPERUSER、BYPASSRLS、CREATEROLE、CREATEDB、REPLICATION、LOGIN；只有 authz 按设计带 BYPASSRLS）');
+  '攻击面：应用角色没有危险属性（SUPERUSER、BYPASSRLS、CREATEROLE、CREATEDB、REPLICATION、LOGIN；只有 authz 与 eraser 按设计带 BYPASSRLS）');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM pg_auth_members WHERE roleid = 'starbuddy_eraser'::regrole),
+  '攻击面：starbuddy_eraser 没有任何成员（删除守卫的 current_user 判断依赖这一点）');
 SELECT t.ok(NOT EXISTS (SELECT 1 FROM pg_auth_members WHERE roleid = 'starbuddy_authz'::regrole),
   '攻击面：starbuddy_authz 没有任何成员（发布函数的 current_user 信任判断依赖这一点）');
 -- H2：任何非超级用户角色（含经多层中间角色）都不能同时是两个应用角色的成员
@@ -136,7 +150,7 @@ SELECT t.ok(:'snap_policies' = :'expected_policies',
 -- 预期集合由账号状态、guardian_student_link、学生本人关系算出（不手写），再与表里实际有数据的对象取交集。
 -- domain：student（默认）、account、household。mode：equal（默认，看得到 = 能读的学生）、link、author、self、household、
 -- claim（判断账本：学生本人看可见范围含 student 的、有效绑定家长看含 guardian 的，且只看非终态）、
--- student_self（只有学生本人看得到，家长看不到）。
+-- student_self（只有学生本人看得到，家长看不到）、raiser（只看自己提出的异议）、guardian_link（只有有效绑定家长看得到，学生本人看不到）。
 CREATE TABLE t.visibility_rule (rel text PRIMARY KEY, raw_expr text NOT NULL, map_expr text NOT NULL, domain text NOT NULL,
                                 mode text NOT NULL, reason text NOT NULL);
 INSERT INTO t.visibility_rule VALUES
@@ -153,6 +167,11 @@ INSERT INTO t.visibility_rule VALUES
    '诊断会话只给学生本人看进度，家长看不到（0027 diagnosis_session_self）'),
   ('platform.diagnosis_step', 'session_id', '(SELECT s.student_id FROM platform.diagnosis_session s WHERE s.id = %s)', 'student', 'student_self',
    '经 diagnosis_session 关联到学生；只给学生本人（0027 diagnosis_step_self）；映射在超级用户身份下做'),
+  ('insight.dispute', 'student_id', '%s', 'student', 'raiser',
+   '判断异议只给提出人自己看（学生本人提的只给学生，家长提的只给该家长；0032 dispute_raiser_read）。预期集合与策略同构（按 raised_by 推），'
+   '这里只防跨户越权；“看不到家长替自己提的”等逐行断言在 79m_dispute'),
+  ('platform.erasure_request', 'student_id', '%s', 'student', 'guardian_link',
+   '删除请求与回执只给有效绑定家长看，学生本人看不到（0035 erasure_request_guardian_read）；逐行断言在 79p_erasure'),
   ('platform.household', 'id', '%s', 'household', 'household',
    '有效家长读自己创建的家庭，或能读家庭内任一学生（0002 can_read_household；解除绑定的创建者仍可读是已登记风险 A4）');
 -- 可以没有两户数据的关系（写明理由；其余的数据不足两户就失败）
@@ -190,6 +209,12 @@ INSERT INTO t.function_matrix_exempt VALUES
    '第二个 uuid 是幂等键（按学生隔离）；只认学生本人：79g_behavior_events 的“学生不能给别的学生写事件”“家长不能冒充学生写事件”'),
   ('insight.record_confidence_probe(uuid,platform.subject,text,text,timestamp with time zone,uuid)',
    '第二个 uuid 是幂等键（按学生隔离）；只认学生本人：79g_behavior_events 的“学生不能给别的学生写探针”'),
+  ('platform.confirm_erasure(uuid)',
+   '参数是删除请求 ID：只有发起人本人且仍是有效绑定家长能确认，别人的请求与不存在的请求同样 42501：79p_erasure'),
+  ('insight.submit_exam_score(uuid,uuid,numeric)',
+   '第二个 uuid 是考试安排 ID（须属于该学生）：另一户与不存在的学生同样 42501：79o_exam_prediction'),
+  ('platform.cancel_erasure(uuid)',
+   '参数是删除请求 ID：只有该学生的有效绑定家长能撤回，别户与不存在的请求同样 42501：79p_erasure'),
   ('insight.link_probe_attempt(uuid,uuid,uuid)',
    '探针与作答都按学生本人核对，别人的探针与“不存在”同样报错：79g_behavior_events 的“不能关联别人的探针”');
 
@@ -278,6 +303,10 @@ BEGIN
                                    OR (EXISTS (SELECT 1 FROM platform.account a WHERE a.id = acc AND a.kind = 'guardian')
                                        AND 'guardian' = ANY (c.visibility))))
         WHEN 'self' THEN (SELECT coalesce(array_agg(a.id), '{}') FROM platform.account a WHERE a.id = acc)
+        WHEN 'raiser' THEN (SELECT coalesce(array_agg(DISTINCT d.student_id), '{}') FROM insight.dispute d
+                             WHERE d.raised_by = acc AND d.student_id = ANY (t.readable_students(acc)))
+        WHEN 'guardian_link' THEN (SELECT coalesce(array_agg(x), '{}') FROM unnest(t.readable_students(acc)) x
+                                    WHERE EXISTS (SELECT 1 FROM platform.account a WHERE a.id = acc AND a.kind = 'guardian'))
         WHEN 'student_self' THEN (SELECT coalesce(array_agg(sp.id), '{}') FROM platform.student_profile sp
                                     JOIN platform.account a ON a.id = sp.account_id
                                    WHERE a.id = acc AND a.kind = 'student' AND a.status = 'active')

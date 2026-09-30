@@ -188,5 +188,28 @@ psql_kge -1 < "$ROOT/db/migrations/0026_kge__knowledge_reader.up.sql" >/dev/null
   || { echo "db-test: 失败（角色都正常时 0026 反而执行失败）"; exit 1; }
 echo "ok - 角色都正常时 0026 可以执行（上面的拒绝不是别的原因）" >> "$OUT"
 
+# 0035 的角色断言（specs/sie-03-dispute-reconcile 安全审查）：删除执行身份 starbuddy_eraser 属性不安全、有成员或是别的角色的成员时，0035 必须拒绝执行
+as_pg "$PGBIN/createdb" -h "$WORK" -U postgres eraser_role_check
+psql_era() { as_pg "$PGBIN/psql" -h "$WORK" -U postgres -d eraser_role_check -X -q -v ON_ERROR_STOP=1 "$@"; }
+for f in "${UPS[@]}"; do
+  case "$(basename "$f")" in 0035_*) continue ;; esac
+  psql_era -1 < "$f" >/dev/null 2>&1 || { echo "db-test: 失败（角色断言测试库执行 $(basename "$f") 出错）"; exit 1; }
+done
+E35="$(ls "$ROOT"/db/migrations/0035_*.up.sql)"
+eraser_must_refuse() {  # $1 = 布置 SQL，$2 = 撤销 SQL，$3 = 说明
+  psql_run -c "$1" </dev/null
+  if psql_era -1 < "$E35" >/dev/null 2>&1; then
+    psql_run -c "$2" </dev/null; echo "db-test: 失败（$3 时 0035 仍然执行成功）"; exit 1
+  fi
+  psql_run -c "$2" </dev/null
+  echo "ok - $3 时 0035 拒绝执行" >> "$OUT"
+}
+eraser_must_refuse "ALTER ROLE starbuddy_eraser LOGIN" "ALTER ROLE starbuddy_eraser NOLOGIN" "starbuddy_eraser 可以登录"
+eraser_must_refuse "ALTER ROLE starbuddy_eraser CREATEROLE" "ALTER ROLE starbuddy_eraser NOCREATEROLE" "starbuddy_eraser 能建角色"
+eraser_must_refuse "CREATE ROLE t_era_member IN ROLE starbuddy_eraser;" "DROP ROLE t_era_member;" "starbuddy_eraser 有成员"
+eraser_must_refuse "GRANT starbuddy_bff TO starbuddy_eraser;" "REVOKE starbuddy_bff FROM starbuddy_eraser;" "starbuddy_eraser 继承别的应用角色"
+psql_era -1 < "$E35" >/dev/null 2>&1 || { echo "db-test: 失败（角色都正常时 0035 反而执行失败）"; exit 1; }
+echo "ok - 角色都正常时 0035 可以执行（上面的拒绝不是别的原因）" >> "$OUT"
+
 n=$(grep -c 'ok - ' "$OUT" || true)
 echo "db-test: 通过（${n} 项断言）"

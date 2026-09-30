@@ -233,13 +233,12 @@ fields:
     source_type: [inferred]
     collect: { level: automatic, timing: periodic }
     visibility: [agent]
-    storage: insight.exam_prediction.low
-    built_by: SIE-03
+    storage: insight.exam_prediction.interval_low
     exposed_via: insight.claim
     status: planned
     teaching_decision: 考前冻结、考后对账，偏差分析修正个体参数与判断
     guardian_deletable: true
-    note: 对学生与家长的可见范围在对账卡上线时（SIE-03）由人确认后放开；契约 v0.9 report 的 forecast 已登记到 v1.0 评审
+    note: 迁移 0034 落库（草稿，区间上下界 interval_low / interval_high，考试当天零点冻结，对账卡在 insight.exam_reconciliation）；对学生与家长的可见范围在对账卡上线时（SIE-03）由人确认后放开；契约 v0.9 report 的 forecast 已登记到 v1.0 评审
     legacy_sources: [aya lib/exam.ts ExamAnalysis.scoreLow/scoreHigh, aya lib/consultation.ts Consultation.estLow/estHigh, wenli GradeResultSchema.score_range, 契约 v0.9 ReportFields.forecast]
 
   # ================= 内圈 · ③ 学科知识掌握 =================
@@ -561,23 +560,23 @@ fields:
     collect: { level: optional, timing: continuous }
     visibility: [agent, student, guardian]
     storage: insight.dispute.kind
-    built_by: SIE-03
     source_column: insight.dispute.raised_by
     status: planned
     teaching_decision: “我其实会”24 小时内推送验证题；“识别错了”打开原始事实供更正
     guardian_deletable: true
-    note: 默认按提出人可见：学生提的异议只给学生本人，家长提的只给家长（SIE-03 实现，可见范围需人确认）
+    note: 迁移 0032 落库（草稿）；按提出人可见：学生提的异议只给学生本人，家长提的只给家长（RLS，可见范围需人确认）；学生说“那次只是失误”（one_off_slip）记在异议行上（来源 self，可带那次作答），不另建表、不设标签；洞察服务接口随 SIE-03 PR②
   - id: through.g9.interventions
     name: 触发的提醒、处方、鼓励与降负
-    layer: fact
-    source_type: [objective]
+    layer: inference
+    source_type: [inferred]
     collect: { level: automatic, timing: continuous }
     visibility: [agent]
     storage: insight.intervention_log.action
-    built_by: SIE-03
     status: planned
     teaching_decision: 评估触发规则是否奏效，避免同一提醒重复
     guardian_deletable: true
+    exposed_via: insight.claim
+    note: 迁移 0033 落库（草稿）；是规则按判断推出的动作建议（推断），每条引用成立或假设的判断、记规则参数版本；规则签字前只能是建议（suggested），不下发；评估任务随 SIE-03 PR②
   - id: through.g9.weekly_snapshot
     name: 每周画像快照
     layer: inference

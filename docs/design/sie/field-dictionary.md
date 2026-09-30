@@ -48,7 +48,7 @@
 | `inner.g2.exam_rank_band` | 考试排名区间（家长录入） | fact | 家长观察 | Agent、家长 | `insight.exam_record.rank_band（记录录入人：insight.exam_record.entered_by_role）` | live | 只作考试难度与区分度的参考，校准预测区间；不对学生展示，不做同伴比较 |
 | `inner.g2.exam_difficulty_note` | 试卷难度说明（家长录入） | fact | 家长观察 | Agent、家长 | `insight.exam_record.difficulty_note（记录录入人：insight.exam_record.entered_by_role）` | live | 对账时区分“试卷偏难”与“此前判断偏乐观” |
 | `inner.g2.graded_paper_upload` | 带批改痕迹的整卷试卷 | fact | 客观记录 | Agent | `kge.attempt.answer_raw（KGE-05 建）` | planned | 作为先验与外部锚点；C 级识别内容先请学生核对，确认前不生成薄弱结论 |
-| `inner.g2.exam_prediction` | 考试分数预测区间 | inference | 模型推断 | Agent | `insight.exam_prediction.low（SIE-03 建）` | planned | 考前冻结、考后对账，偏差分析修正个体参数与判断 |
+| `inner.g2.exam_prediction` | 考试分数预测区间 | inference | 模型推断 | Agent | `insight.exam_prediction.interval_low` | planned | 考前冻结、考后对账，偏差分析修正个体参数与判断 |
 
 ### g3 学科知识掌握（inner）
 
@@ -114,8 +114,8 @@
 |---|---|---|---|---|---|---|---|
 | `through.g9.focus_subject` | 最想改善的学科 | fact | 学生自述 | Agent、学生、家长 | `insight.self_report.value` | live | 跨科时间预算的优先级 |
 | `through.g9.near_term_goal` | 近期目标（学生自述） | fact | 学生自述 | Agent、学生、家长 | `insight.self_report.value` | live | 两周学习路径的终点与复盘口径；与家长期望不同时两边都存 |
-| `through.g9.disputes` | 对判断的异议 | fact | 学生自述、家长观察 | Agent、学生、家长 | `insight.dispute.kind（记录录入人：insight.dispute.raised_by）（SIE-03 建）` | planned | “我其实会”24 小时内推送验证题；“识别错了”打开原始事实供更正 |
-| `through.g9.interventions` | 触发的提醒、处方、鼓励与降负 | fact | 客观记录 | Agent | `insight.intervention_log.action（SIE-03 建）` | planned | 评估触发规则是否奏效，避免同一提醒重复 |
+| `through.g9.disputes` | 对判断的异议 | fact | 学生自述、家长观察 | Agent、学生、家长 | `insight.dispute.kind（记录录入人：insight.dispute.raised_by）` | planned | “我其实会”24 小时内推送验证题；“识别错了”打开原始事实供更正 |
+| `through.g9.interventions` | 触发的提醒、处方、鼓励与降负 | inference | 模型推断 | Agent | `insight.intervention_log.action` | planned | 评估触发规则是否奏效，避免同一提醒重复 |
 | `through.g9.weekly_snapshot` | 每周画像快照 | inference | 模型推断 | Agent | `insight.profile_snapshot.payload（SIE-03 建）` | planned | 成长轨迹与“与一个月前的自己相比”的依据 |
 | `through.g9.star_lit_history` | 星的点亮记录 | inference | 模型推断 | Agent、学生、家长 | `platform.mastery_estimate.state` | live | 证据化鼓励（具体到哪颗星何时点亮、依据是什么） |
 

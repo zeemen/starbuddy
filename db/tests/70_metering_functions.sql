@@ -56,13 +56,15 @@ SELECT t.ok(
                    WHERE n.nspname IN ('platform', 'insight', 'kge', 'policy') AND p.prosecdef
                      AND has_function_privilege('starbuddy_scheduler', p.oid, 'EXECUTE')
                      AND p.oid NOT IN ('platform.meter_expire_due(integer)'::regprocedure, 'platform.meter_renew_due(integer)'::regprocedure,
-                                       'platform.review_sample_spot_checks(platform.subject, timestamptz, numeric)'::regprocedure))
+                                       'platform.review_sample_spot_checks(platform.subject, timestamptz, numeric)'::regprocedure,
+                                       'insight.freeze_due_predictions(timestamptz)'::regprocedure,
+                                       'platform.execute_due_erasures(timestamptz)'::regprocedure))
   AND NOT (SELECT bool_or(has_function_privilege('starbuddy_scheduler', f, 'EXECUTE')) FROM unnest(ARRAY[
      'platform.meter_reserve(uuid, text, text, text, numeric, text, text)', 'platform.meter_settle(uuid, numeric)',
      'platform.meter_release(uuid, text)', 'platform.meter_open_subscription(uuid, text)',
      'platform.enroll_subject(uuid, platform.subject)', 'platform.pause_subject(uuid, platform.subject)',
      'platform.meter_check_entitlement(uuid)', 'platform.meter_grant_period(uuid)']::regprocedure[]) f),
-  '定时任务角色只能调用过期、续期与抽检（0023）');
+  '定时任务角色只能调用过期、续期与抽检（0023），以及冻结预测（0034）与执行删除请求（0035）');
 SELECT t.ok(NOT EXISTS (
   SELECT 1 FROM unnest(ARRAY['starbuddy_learning', 'starbuddy_review']) r(role)
    CROSS JOIN (SELECT p.oid FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace

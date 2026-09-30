@@ -661,6 +661,91 @@ M+=(
   ["旧入口：BFF 可按号码查账号"]="GRANT EXECUTE ON FUNCTION platform.lookup_accounts_by_phone(text) TO starbuddy_bff;"
 )
 
+# SIE-03（0032–0035，specs/sie-03-dispute-reconcile PR①）：由 79m–79p 与 80 发现。DBMUT_FILTER=SIE-03 只跑这一组
+RD='insight.raise_dispute(uuid, text, uuid, uuid, text, uuid)'
+DG='insight.dispute_guard()'
+IG='insight.intervention_guard()'
+IC='insight.intervention_claims_ok(uuid, uuid[])'
+PG='insight.exam_prediction_guard()'
+RG='insight.exam_reconciliation_guard()'
+FD='insight.freeze_due_predictions(timestamptz)'
+EP='insight.submit_exam_plan(uuid, platform.subject, text, date, numeric, text[])'
+ES='insight.submit_exam_score(uuid, uuid, numeric)'
+EX='platform.execute_due_erasures(timestamptz)'
+EC='platform.confirm_erasure(uuid)'
+EK='platform.cancel_erasure(uuid)'
+ER='platform.request_erasure(uuid)'
+EE='platform.export_student_data(uuid)'
+EI='platform.erasure_in_progress(uuid)'
+M+=(
+  ["SIE-03 异议：认已解除的绑定"]="$(afr "$RD" "'WHERE l.student_id = c.student_id AND l.status = ''active'' AND a.id = p_raised_by'" "'WHERE l.student_id = c.student_id AND a.id = p_raised_by'")"
+  ["SIE-03 异议：不核对可见范围"]="$(afr "$RD" "'OR NOT (CASE v_role WHEN ''student'' THEN ''student'' ELSE ''guardian'' END = ANY (c.visibility))'" "''")"
+  ["SIE-03 异议：终态判断可提异议"]="$(afr "$RD" "'IF c.status NOT IN (''hypothesis'', ''established'', ''to_verify'') OR c.expires_at <= now()'" "'IF c.expires_at <= now()'")"
+  ["SIE-03 异议：我其实会提交时不核对判断已转待验证"]="DROP TRIGGER dispute_i_know_moved ON insight.dispute;"
+  ["SIE-03 异议：家长可提那次只是失误"]="$(afr "$RD" "'IF p_kind = ''one_off_slip'' AND v_role <> ''student'' THEN'" "'IF false THEN'")"
+  ["SIE-03 异议：失误不核对作答属于该学生"]="$(afr "$RD" "'OR NOT EXISTS (SELECT 1 FROM platform.attempt a WHERE a.attempt_id = p_attempt AND a.student_id = c.student_id)'" "''")"
+  ["SIE-03 异议：数据有误不核对事实属于该学生"]="$(afr "$RD" "'WHEN ''attempt'' THEN EXISTS (SELECT 1 FROM platform.attempt a WHERE a.attempt_id = p_fact_id AND a.student_id = c.student_id)'" "'WHEN ''attempt'' THEN true'")"
+  ["SIE-03 异议：数据有误不进复核队列"]="$(afr "$RD" "'v_task := platform.enqueue_claim_dispute(p_claim);'" "'v_task := NULL;'")"
+  ["SIE-03 异议：学生与家长合并限额"]="$(afr "$RD" "' AND d.raised_by_role = v_role'" "''")"
+  ["SIE-03 异议：结案不核对判断状态"]="$(afr "$DG" "'IF (NEW.kind = ''i_know'' AND NEW.status = ''resolved_supported'' AND v_claim IS DISTINCT FROM ''refuted'')'" "'IF (false)'")"
+  ["SIE-03 异议：事实更正不查更正行"]="$(afr "$DG" "'IF NEW.status = ''fact_corrected'' AND NOT (CASE NEW.fact_kind'" "'IF false AND NOT (CASE NEW.fact_kind'")"
+  ["SIE-03 异议：验证题不限数量"]="ALTER TABLE insight.dispute DROP CONSTRAINT dispute_refs_count;"
+  ["SIE-03 异议：可单独删除"]="$(afr "$DG" "'RAISE EXCEPTION ''异议只随删除请求删除'' USING ERRCODE = ''insufficient_privilege'';'" "'RETURN OLD;'")"
+  ["SIE-03 异议：BFF 可读别人提的"]="DROP POLICY dispute_raiser_read ON insight.dispute; CREATE POLICY dispute_raiser_read ON insight.dispute FOR SELECT TO starbuddy_bff USING (platform.can_read_student(student_id));"
+  ["SIE-03 异议：BFF 可读验证任务引用"]="GRANT SELECT (verification_task_refs) ON insight.dispute TO starbuddy_bff;"
+  ["SIE-03 动作：可引用待验证或过期的判断"]="$(afr "$IC" "' AND c.status IN (''hypothesis'', ''established'') AND c.expires_at > now())'" "')'")"
+  ["SIE-03 动作：下发不再核判断"]="$(afr "$IG" "'RAISE EXCEPTION ''引用的判断已终结、过期或转为待验证，不能下发'' USING ERRCODE = ''check_violation'';'" "'NULL;'")"
+  ["SIE-03 动作：未签字可下发"]="$(afr "$IG" "'IF NOT EXISTS (SELECT 1 FROM insight.intervention_rule_signoff s WHERE s.rule_key = NEW.rule_key AND s.params_version = NEW.params_version) THEN'" "'IF false THEN'")"
+  ["SIE-03 动作：签字不核参数版本"]="$(afr "$IG" "' AND s.params_version = NEW.params_version'" "''")"
+  ["SIE-03 动作：新建可直接下发"]="$(afr "$IG" "'IF NEW.status <> ''suggested'' OR NEW.dispatched_at IS NOT NULL THEN'" "'IF false THEN'")"
+  ["SIE-03 动作：学生家长可读"]="GRANT SELECT ON insight.intervention_log TO starbuddy_bff; CREATE POLICY m ON insight.intervention_log FOR SELECT TO starbuddy_bff USING (platform.can_read_student(student_id));"
+  ["SIE-03 预测：冻结后可改"]="$(afr "$PG" "'IF TG_OP = ''UPDATE'' AND OLD.frozen_at IS NOT NULL THEN'" "'IF false THEN'")"
+  ["SIE-03 预测：零点后可改"]="$(afr "$PG" "'RAISE EXCEPTION ''考试当天零点起预测不能再修改'' USING ERRCODE = ''check_violation'';'" "'NULL;'")"
+  ["SIE-03 预测：冻结后可删"]="$(afr "$PG" "'RAISE EXCEPTION ''预测只随删除请求删除'' USING ERRCODE = ''insufficient_privilege'';'" "'RETURN OLD;'")"
+  ["SIE-03 预测：不核对对应判断"]="$(afr "$PG" "'IF NOT EXISTS (SELECT 1 FROM insight.claim c WHERE c.id = NEW.claim_id AND c.student_id = NEW.student_id AND c.target_type = ''exam'') THEN'" "'IF false THEN'")"
+  ["SIE-03 预测：区间级别可改"]="ALTER TABLE insight.exam_prediction DROP CONSTRAINT exam_prediction_level_check;"
+  ["SIE-03 预测：按 UTC 零点冻结"]="$(afr 'insight.exam_freeze_at(date)' "'AT TIME ZONE ''Asia/Shanghai'''" "'AT TIME ZONE ''UTC'''")"
+  ["SIE-03 预测：可提前冻结"]="$(afr "$FD" "'p_now > now() OR '" "''")"
+  ["SIE-03 预测：冻结不看考试日期"]="$(afr "$FD" "' AND insight.exam_freeze_at(e.exam_date) <= p_now'" "''")"
+  ["SIE-03 考试安排：不核对录入人"]="$(afr "$EP" "'IF v_role IS NULL THEN'" "'IF false THEN'")"
+  ["SIE-03 考试安排：满分不限"]="$(afr "$EP" "'OR p_full_score IS NULL OR p_full_score NOT BETWEEN 1 AND 300 OR p_full_score % 1 <> 0'" "'OR p_full_score IS NULL'")"
+  ["SIE-03 考试安排：同一场考试不复用"]="$(afr "$EP" "'AND e.raw_score IS NULL AND e.superseded_at IS NULL;'" "'AND false;'")"
+  ["SIE-03 成绩：不核对安排属于该学生"]="$(afr "$ES" "'WHERE e.id = p_plan AND e.student_id = p_student AND e.raw_score IS NULL'" "'WHERE e.id = p_plan AND e.raw_score IS NULL'")"
+  ["SIE-03 对账：偏差方向不限四值"]="ALTER TABLE insight.exam_reconciliation DROP CONSTRAINT exam_reconciliation_deviation_directions_check;"
+  ["SIE-03 对账：不按安排匹配成绩"]="$(afr "$RG" "' OR e.plan_record_id IS DISTINCT FROM p.exam_record_id THEN'" "' THEN'")"
+  ["SIE-03 对账：句子不核对读者可见"]="$(afr "$RG" "' AND NEW.audience <@ c.visibility'" "''")"
+  ["SIE-03 对账：句子不核对模板审核"]="$(afr "$RG" "' AND t.status = ''approved'''" "''")"
+  ["SIE-03 对账：句子不查过期"]="$(afr "$RG" "' AND c.expires_at > now()'" "''")"
+  ["SIE-03 对账：区间内外信调用方"]="$(afr "$RG" "'NEW.in_interval := e.raw_score BETWEEN p.interval_low AND p.interval_high;'" "'NULL;'")"
+  ["SIE-03 删除：清单漏登记一张表"]="DELETE FROM platform.personal_table_registry WHERE nspname = 'insight' AND relname = 'behavior_event';"
+  ["SIE-03 删除：某表谓词失效"]="UPDATE platform.personal_table_registry SET student_predicate = 'student_id = \$1 AND false' WHERE nspname = 'insight' AND relname = 'behavior_event';"
+  ["SIE-03 删除：冷静期可提前"]="$(afr "$EX" "' AND x.cooling_off_until <= p_now'" "''")"
+  ["SIE-03 删除：可传将来时间"]="$(afr "$EX" "'p_now > now() OR '" "''")"
+  ["SIE-03 删除：不核对发起人绑定"]="$(afr "$EX" "'IF NOT EXISTS (SELECT 1 FROM platform.guardian_student_link l JOIN platform.account a ON a.id = l.guardian_account_id'" "'IF false AND NOT EXISTS (SELECT 1 FROM platform.guardian_student_link l JOIN platform.account a ON a.id = l.guardian_account_id'")"
+  ["SIE-03 删除：不停用学生账号"]="$(afr "$EX" "'UPDATE platform.account SET status = ''disabled'' WHERE id = v_account;'" "''")"
+  ["SIE-03 删除：函数属主 authz 可删个人层表"]="GRANT DELETE ON insight.claim TO starbuddy_authz;"
+  ["SIE-03 删除：守卫不核对角色"]="$(afr "$EI" "'current_user = ''starbuddy_eraser'' AND '" "''")"
+  ["SIE-03 删除：守卫认函数属主 authz"]="$(afr "$EI" "'current_user = ''starbuddy_eraser'''" "'current_user IN (''starbuddy_eraser'', ''starbuddy_authz'')'")"
+  ["SIE-03 删除：守卫不核对学生"]="$(afr "$EI" "' AND coalesce(current_setting(''starbuddy.erasure_student'', true), '''') = p_student::text'" "''")"
+  ["SIE-03 删除：建档事实守卫不放行"]="$(afr 'insight.guard_fact_update()' "'IF platform.erasure_in_progress(OLD.student_id) THEN'" "'IF false THEN'")"
+  ["SIE-03 删除：确认不限发起人"]="$(afr "$EC" "' OR r.requested_by IS DISTINCT FROM platform.current_account_id()'" "''")"
+  ["SIE-03 删除：确认不限时"]="$(afr "$EC" "'IF r.requested_at < now() - interval ''24 hours'' THEN'" "'IF false THEN'")"
+  ["SIE-03 删除：冷静期 1 天"]="$(afr "$EC" "'cooling_off_until = now() + interval ''7 days'''" "'cooling_off_until = now() + interval ''1 days'''")"
+  ["SIE-03 删除：已执行可撤回"]="$(afr "$EK" "'IF r.status = ''executed'' THEN'" "'IF false THEN'")"
+  ["SIE-03 删除：撤回不限绑定"]="$(afr "$EK" "'IF NOT FOUND OR NOT platform.is_linked_guardian(r.student_id) THEN'" "'IF NOT FOUND THEN'")"
+  ["SIE-03 删除：学生本人可发起"]="$(afr "$ER" "'NOT platform.is_linked_guardian(p_student)'" "'NOT platform.can_read_student(p_student)'")"
+  ["SIE-03 删除：已删除的档案可再发起"]="$(afr "$ER" "'IF EXISTS (SELECT 1 FROM platform.student_profile s WHERE s.id = p_student AND s.erased_at IS NOT NULL) THEN'" "'IF false THEN'")"
+  ["SIE-03 删除：学生可读删除请求"]="DROP POLICY erasure_request_guardian_read ON platform.erasure_request; CREATE POLICY erasure_request_guardian_read ON platform.erasure_request FOR SELECT TO starbuddy_bff USING (platform.can_read_student(student_id));"
+  ["SIE-03 导出：学生自述可导出"]="UPDATE platform.personal_table_registry SET export_topic = 'self_reports', export_columns = ARRAY['field_id', 'value'] WHERE nspname = 'insight' AND relname = 'self_report';"
+  ["SIE-03 导出：异议不按提出人过滤"]="UPDATE platform.personal_table_registry SET export_filter = NULL WHERE nspname = 'insight' AND relname = 'dispute';"
+  ["SIE-03 导出：导出字典外的推断参数"]="UPDATE platform.personal_table_registry SET export_columns = export_columns || ARRAY['p_mastery'] WHERE nspname = 'platform' AND relname = 'mastery_estimate';"
+  ["SIE-03 导出：导出预测区间"]="UPDATE platform.personal_table_registry SET export_topic = 'predictions', export_columns = ARRAY['interval_low', 'interval_high'] WHERE nspname = 'insight' AND relname = 'exam_prediction';"
+  ["SIE-03 导出：学生本人可导出"]="$(afr "$EE" "'NOT platform.is_linked_guardian(p_student)'" "'NOT platform.can_read_student(p_student)'")"
+  ["SIE-03 导出：下载凭据原文入库"]="$(afr "$EE" "'sha256(convert_to(v_ref, ''UTF8''))'" "'sha256(convert_to(''fixed'', ''UTF8''))'")"
+  ["攻击面：新函数删除个人层表"]="CREATE FUNCTION platform.t_evil_purge(p uuid) RETURNS void LANGUAGE sql SET search_path = pg_catalog AS \$f\$ DELETE FROM insight.claim WHERE student_id = p \$f\$; REVOKE EXECUTE ON FUNCTION platform.t_evil_purge(uuid) FROM PUBLIC;"
+  ["攻击面：删除执行身份有成员"]="CREATE ROLE t_eraser_member IN ROLE starbuddy_eraser;"
+)
+
 # 并行执行（每个变异各起一个一次性 Postgres，互不影响）；DBMUT_JOBS 控制并发数，默认等于 CPU 核数
 JOBS="${DBMUT_JOBS:-$(nproc 2>/dev/null || echo 2)}"
 RES="$(mktemp -d "${TMPDIR:-/tmp}/starbuddy-dbmut.XXXXXX")"
@@ -691,6 +776,8 @@ declare -A EXPECT=(
   ["攻击面：函数经 DETAIL 泄露学生是否存在"]="攻击面：函数越权矩阵——"
   ["攻击面：物化视图授权给 BFF"]="攻击面：物化视图与外部表"
   ["攻击面：新函数的学生参数换个名字躲过越权矩阵"]="攻击面：BFF 可执行的 SECURITY DEFINER 函数要么在函数越权矩阵里"
+  ["攻击面：新函数删除个人层表"]="攻击面：除删除执行函数外，没有函数删除个人层清单里的表"
+  ["攻击面：删除执行身份有成员"]="攻击面：starbuddy_eraser 没有任何成员"
 )
 declare -A KEEP_SNAPSHOT=(["攻击面：可转授的授权"]=1)
 for name in "${!EXPECT[@]}"; do [ -n "${M[$name]+x}" ] || { echo "db-mutation: EXPECT 里的 $name 不是变异"; exit 1; }; done
