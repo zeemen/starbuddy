@@ -178,8 +178,6 @@ INSERT INTO t.visibility_exempt VALUES
 CREATE TABLE t.function_matrix_exempt (sig text PRIMARY KEY, reason text NOT NULL);
 INSERT INTO t.function_matrix_exempt VALUES
   ('platform.is_active_guardian()', '没有参数，只看当前账号自身状态'),
-  ('platform.signup_guardian(text)', '参数是手机号，只给当前身份注册；20_rls_household 的注册与账号接管断言'),
-  ('platform.lookup_accounts_by_phone(text)', '登录查号，只返回账号 ID；攻击面 C3（第二轮）'),
   ('platform.redeem_guardian_invite(text)', '参数是邀请码；20_rls_household 的兑换断言（攻击面 D1、D2、D4）'),
   ('platform.auth_otp_issue(text,bytea,integer,integer)', '家庭登录（0029）：参数是手机号与验证码 MAC，不涉及学生；79k_auth_session 的“申请结果相同”'),
   ('platform.auth_otp_login(text,bytea,integer,integer,text)',

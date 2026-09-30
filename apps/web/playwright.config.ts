@@ -28,7 +28,7 @@ export default defineConfig({
     reuseExistingServer: false,
     timeout: 60_000,
     env: {
-      STARBUDDY_DEV_AUTH: '1',
+      STARBUDDY_DEV_PAGES: '1',
       STARBUDDY_ENV: 'test',
       STARBUDDY_BFF_URL: process.env['STARBUDDY_BFF_URL'] ?? 'http://127.0.0.1:8787',
       STARBUDDY_REVIEW_URL: process.env['STARBUDDY_REVIEW_URL'] ?? 'http://127.0.0.1:8790',

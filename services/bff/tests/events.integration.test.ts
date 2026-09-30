@@ -2,15 +2,14 @@
 // （首次 201、重放 200 与 idempotent-replayed 响应头）、内容不同回 409 IDEMPOTENCY_KEY_REUSED、24 小时写入上限回 429、
 // 探针关联作答、返回体不回显 payload、日志不带 payload 与学生 ID 原文）。
 // 一次性 Postgres，登录角色 bff_app 只继承 starbuddy_bff；合成家庭来自 db/seeds/dev/star-map-synthetic.sql（规则 8）。
+// 4-H H2：挂在统一壳路由表上（auth = student），身份只来自真实会话（tests/shell-harness.ts），写入另带 Origin 与 CSRF 令牌。
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import type { Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import { after, before, test } from 'node:test';
 import pg from 'pg';
-import { createStarMapServer } from '../src/star-map/server.ts';
+import { fetchAs, startShell, type ShellHarness } from './shell-harness.ts';
 
 const HAS_DB = Boolean(process.env['PGHOST']);
 const ROOT = new URL('../../../', import.meta.url);
@@ -29,7 +28,7 @@ const ITEM = 'SYN-ZX-ITEM-01';  // 种子里的合成道法题
 
 let su: pg.Pool;
 let bff: pg.Pool;
-let server: Server;
+let shell: ShellHarness;
 let base = '';
 const logs: Record<string, unknown>[] = [];
 
@@ -55,25 +54,20 @@ before(async () => {
     }
   }
   bff = new pg.Pool({ user: 'bff_app', max: 5 });
-  server = createStarMapServer({ pool: bff, devAuth: true, log: (l) => logs.push(l) });
-  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
-  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  shell = await startShell(bff, su, { log: (l) => logs.push(l) });
+  base = shell.base;
 });
 
 after(async () => {
   if (!HAS_DB) return;
-  await new Promise<void>((r) => server.close(() => r()));
+  await shell.close();
   await bff.end();
   await su.end();
 });
 
 const url = (student: string, sub: string) => `${base}/bff/v0/students/${student}/${sub}`;
 const post = (u: string, account?: string, body?: unknown, type = 'application/json') =>
-  fetch(u, {
-    method: 'POST',
-    headers: { ...(account ? { 'x-dev-account-id': account } : {}), ...(body !== undefined ? { 'content-type': type } : {}) },
-    body: body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body),
-  });
+  fetchAs(shell, 'POST', u, account, body, body !== undefined ? { 'content-type': type } : {});
 const now = () => new Date().toISOString();
 const start = (over: Record<string, unknown> = {}) =>
   ({ kind: 'session_start', payload: { entry: 'today' }, occurred_at: now(), idempotency_key: randomUUID(), ...over });
@@ -113,18 +107,20 @@ test('学生本人写四种事件：201 只回 ID，库里来源类型是客观�
   }
 });
 
-test('家长、其他学生、别家家长、学生不存在：同一个 403；未登录 401', { skip: !HAS_DB }, async () => {
+test('家长、其他学生、别家家长、学生不存在：同一个 403；非法 ID 404；未登录 401', { skip: !HAS_DB }, async () => {
   const before = await count(`SELECT count(*) AS n FROM insight.behavior_event`, []);
   const ref = await post(url(ID.missing, 'events'), ID.S1acc, start());
   assert.equal(ref.status, 403);
   const refBody = await ref.text();
-  for (const [student, account] of [[ID.S1, ID.gS], [ID.S1, ID.S2acc], [ID.S1, ID.gO], [ID.S2, ID.S1acc], ['not-a-uuid', ID.S1acc]] as const) {
+  for (const [student, account] of [[ID.S1, ID.gS], [ID.S1, ID.S2acc], [ID.S1, ID.gO], [ID.S2, ID.S1acc]] as const) {
     const r = await post(url(student, 'events'), account, start());
     assert.equal(r.status, 403, `${student} ${account}`);
     assert.equal(await r.text(), refBody);
     const p = await post(url(student, 'probes'), account, probe());
     assert.equal(p.status, 403, `probe ${student} ${account}`);
   }
+  // 路径参数不是 UUID：路由表按“不存在”处理（统一壳：表内形状、参数不合法一律 404）
+  assert.equal((await post(url('not-a-uuid', 'events'), ID.S1acc, start())).status, 404);
   assert.equal((await post(url(ID.S1, 'events'), undefined, start())).status, 401);
   assert.equal((await post(url(ID.S1, 'probes'), undefined, probe())).status, 401);
   assert.equal(await count(`SELECT count(*) AS n FROM insight.behavior_event`, []), before, '被拒的请求一条都没写进去');
@@ -304,13 +300,15 @@ test('请求体：不是 JSON 对象 422，超过 16 KB 413，不是 JSON 415；
   assert.equal((await post(url(ID.S1, 'events'), ID.S1acc, '[1,2]')).status, 422);
   assert.equal((await post(url(ID.S1, 'events'), ID.S1acc, start({ payload: { entry: 'x'.repeat(20000) } }))).status, 413);
   assert.equal((await post(url(ID.S1, 'events'), ID.S1acc, start(), 'text/plain')).status, 415);
-  assert.equal((await fetch(url(ID.S1, 'events'), { headers: { 'x-dev-account-id': ID.S1acc } })).status, 405, '只写不读');
-  assert.equal((await fetch(url(ID.S1, 'probes'), { headers: { 'x-dev-account-id': ID.S1acc } })).status, 405, '只写不读');
+  assert.equal((await fetchAs(shell, 'GET', url(ID.S1, 'events'), ID.S1acc)).status, 405, '只写不读');
+  assert.equal((await fetchAs(shell, 'GET', url(ID.S1, 'probes'), ID.S1acc)).status, 405, '只写不读');
   assert.equal((await post(url(ID.S1, `events/${randomUUID()}/attempt`), ID.S1acc, {})).status, 404);
 });
 
 test('访问日志不含 payload、预测与学生 ID 原文', { skip: !HAS_DB }, () => {
   const text = JSON.stringify(logs);
   for (const s of [ID.S1, ID.S2, 'today', 'star_map', 'unsure', 'tired', '今天好累', ITEM]) assert.ok(!text.includes(s), s);
-  for (const route of ['events', 'probes', 'probes/attempt']) assert.ok(logs.some((l) => l['route'] === route), route);
+  for (const route of ['events', 'probes', 'probes/{probe_id}/attempt']) {
+    assert.ok(logs.some((l) => l['route'] === `POST /students/{student_id}/${route}`), route);
+  }
 });

@@ -16,7 +16,7 @@ export interface StarProps {
 /** 半亮的右半裁剪区：objectBoundingBox 单位，任何尺寸都裁出星的右半。每页放一次 */
 export function StarDefs() {
   return (
-    <svg width="0" height="0" aria-hidden="true" focusable="false" style={{ position: 'absolute' }}>
+    <svg width="0" height="0" aria-hidden="true" focusable="false" className="star-defs">
       <defs>
         <clipPath id="star-right-half" clipPathUnits="objectBoundingBox">
           <rect x="0.5" y="0" width="0.5" height="1" />

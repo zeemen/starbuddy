@@ -18,6 +18,7 @@ export default async function StudentPage() {
     <main data-testid="student-mode">
       <h1>{STUDENT_COPY.title}</h1>
       <p>{STUDENT_COPY.intro}</p>
+      {me.value.student_id ? <p><a href={`/s/${me.value.student_id}/star-map`} data-testid="my-star-map">{STUDENT_COPY.starMap}</a></p> : null}
       <ResultForm action={logoutAction} labels={FAMILY_RESULT} testId="exit-student-mode">
         <input type="hidden" name="csrf" value={s.csrf ?? ''} />
         <p className="muted" id="exit-note">{STUDENT_COPY.exitNote}</p>

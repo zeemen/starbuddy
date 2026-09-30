@@ -13,14 +13,14 @@ info:
     回 200、原记录 ID 与响应头 `idempotent-replayed: true`，库里不新写任何行（与 learning-internal 契约同一约定）。
     同一幂等键内容不同回 409 `IDEMPOTENCY_KEY_REUSED`：原样重试永远不会成功，客户端应换新键重发或丢弃。
     同一学生 24 小时内最多写 2000 条行为事件、500 条探针（迁移 0025），超出回 429 `TOO_MANY`。
-    身份来源是开发桩（x-dev-account-id，只在 STARBUDDY_DEV_AUTH=1 且只监听 loopback 时生效），4-H 用真实会话替换。
+    身份只来自会话（请求头 x-sb-session，由 apps/web 从 HttpOnly cookie 转交；4-H H2 起挂在统一壳路由表上，开发身份桩已删除）；改变状态的请求另要 Origin 等于壳的来源、带与会话绑定的 x-csrf-token（见 shell.v0.yaml）。
 servers:
   - url: http://127.0.0.1:8787
 paths:
   /bff/v0/students/{student_id}/events:
     parameters:
       - $ref: '#/components/parameters/StudentId'
-      - $ref: '#/components/parameters/DevAccount'
+      - $ref: '#/components/parameters/Session'
     post:
       operationId: postBehaviorEvent
       description: 写一条行为事件（insight.record_behavior_event）。学生端只收 session_start、session_end、plan_done、plan_skip。
@@ -43,7 +43,7 @@ paths:
   /bff/v0/students/{student_id}/probes:
     parameters:
       - $ref: '#/components/parameters/StudentId'
-      - $ref: '#/components/parameters/DevAccount'
+      - $ref: '#/components/parameters/Session'
     post:
       operationId: postConfidenceProbe
       description: 题目展示前“这道题你觉得能做对吗？”的回答（insight.record_confidence_probe）。跳过不调用。实际对错不在这里存。
@@ -70,7 +70,7 @@ paths:
         in: path
         required: true
         schema: { type: string, format: uuid }
-      - $ref: '#/components/parameters/DevAccount'
+      - $ref: '#/components/parameters/Session'
     post:
       operationId: linkProbeAttempt
       description: >
@@ -108,12 +108,12 @@ components:
       in: path
       required: true
       schema: { type: string, format: uuid }
-    DevAccount:
-      name: x-dev-account-id
+    Session:
+      name: x-sb-session
       in: header
-      required: false
-      description: 开发身份桩（仅开发环境）；4-H 删除
-      schema: { type: string, format: uuid }
+      required: true
+      description: 会话令牌（64 位十六进制），不进 URL 与日志
+      schema: { type: string, pattern: '^[0-9a-f]{64}$' }
   responses:
     Created:
       description: 首次写入；不回显请求内容

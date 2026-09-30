@@ -20,14 +20,14 @@ info:
     暂停、放弃以（会话、步骤序号）为幂等锚点；同一步重放不重复判分、不重复写证据，响应头 `idempotent-replayed: true`。
     过程题、讲解题的作答中断后重试，须带同一段原文重放（服务端不缓存原文）。
     题面在契约 present_item 签字前只有测试环境的合成题面（学习服务 LEARNING_ENV=test）。
-    身份来源是开发桩（x-dev-account-id，只在 STARBUDDY_DEV_AUTH=1 且只监听 loopback 时生效），4-H 用真实会话替换。请求体上限 16 KB。
+    身份只来自会话（请求头 x-sb-session，由 apps/web 从 HttpOnly cookie 转交；4-H H2 起挂在统一壳路由表上，开发身份桩已删除）；改变状态的请求另要 Origin 等于壳的来源、带与会话绑定的 x-csrf-token（见 shell.v0.yaml）。请求体上限 16 KB。
 servers:
   - url: http://127.0.0.1:8787
 paths:
   /bff/v0/students/{student_id}/diagnosis/sessions:
     parameters:
       - $ref: '#/components/parameters/StudentId'
-      - $ref: '#/components/parameters/DevAccount'
+      - $ref: '#/components/parameters/Session'
     post:
       operationId: startDiagnosis
       description: 开始诊断；已有未结束（进行中或暂停）的会话时续做它。
@@ -55,7 +55,7 @@ paths:
     parameters:
       - $ref: '#/components/parameters/StudentId'
       - $ref: '#/components/parameters/SessionId'
-      - $ref: '#/components/parameters/DevAccount'
+      - $ref: '#/components/parameters/Session'
     get:
       operationId: getDiagnosisCurrent
       description: >
@@ -80,7 +80,7 @@ paths:
     parameters:
       - $ref: '#/components/parameters/StudentId'
       - $ref: '#/components/parameters/SessionId'
-      - $ref: '#/components/parameters/DevAccount'
+      - $ref: '#/components/parameters/Session'
     post:
       operationId: postDiagnosisProbe
       description: 当前题出题前的“这道题你觉得能做对吗？”（跳过不调用）。写 insight.confidence_probe（学生自述），作答后自动关联作答。
@@ -106,7 +106,7 @@ paths:
     parameters:
       - $ref: '#/components/parameters/StudentId'
       - $ref: '#/components/parameters/SessionId'
-      - $ref: '#/components/parameters/DevAccount'
+      - $ref: '#/components/parameters/Session'
     post:
       operationId: postDiagnosisAnswer
       description: >
@@ -133,7 +133,7 @@ paths:
     parameters:
       - $ref: '#/components/parameters/StudentId'
       - $ref: '#/components/parameters/SessionId'
-      - $ref: '#/components/parameters/DevAccount'
+      - $ref: '#/components/parameters/Session'
     post:
       operationId: pauseDiagnosis
       description: 暂停（可跨天续做）。带上当前题已用秒数，续做时接着算；暂停期间不计时。
@@ -153,7 +153,7 @@ paths:
     parameters:
       - $ref: '#/components/parameters/StudentId'
       - $ref: '#/components/parameters/SessionId'
-      - $ref: '#/components/parameters/DevAccount'
+      - $ref: '#/components/parameters/Session'
     post:
       operationId: abandonDiagnosis
       description: 放弃本次诊断：还没答过题时释放开始时的额度预留，答过题不退；之后可以重新开始。
@@ -181,12 +181,12 @@ components:
       in: path
       required: true
       schema: { type: string, format: uuid }
-    DevAccount:
-      name: x-dev-account-id
+    Session:
+      name: x-sb-session
       in: header
-      required: false
-      description: 开发身份桩（4-H 替换）。
-      schema: { type: string, format: uuid }
+      required: true
+      description: 会话令牌（64 位十六进制），不进 URL 与日志
+      schema: { type: string, pattern: '^[0-9a-f]{64}$' }
   schemas:
     Key: { type: string, pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' }
     Seq: { type: integer, minimum: 1, maximum: 100 }

@@ -1,7 +1,7 @@
 // “能做对吗”探针（冲刺 2-L）的单测与静态检查：
 //   - 文案过点点禁语表（evals/persona/diandian/lexicon/forbidden.yaml，只读；词表本身 reviewed: false，待人设负责人核对），
 //     另查一遍不打分、不评价、不提历史的用词；
-//   - 构建开关：只有 STARBUDDY_DEV_AUTH=1 且 STARBUDDY_ENV 为 dev / test 时，page.dev.tsx 才算页面；
+//   - 构建开关（构建期常量，4-H H2）：只有 STARBUDDY_DEV_PAGES=1 且 STARBUDDY_ENV 为 dev / test 时，page.dev.tsx 才算页面；
 //   - 开发专用页面的文件名都是 page.dev.tsx，演示页的 server action 与客户端只被演示页引用。
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -60,12 +60,13 @@ test('探针只问预测：不打分、不评价、不提历史或别人', () =>
 });
 
 test('开发专用页面只在开发、测试构建里是页面', () => {
-  for (const env of [{}, { STARBUDDY_DEV_AUTH: '1' }, { STARBUDDY_ENV: 'test' }, { STARBUDDY_DEV_AUTH: '1', STARBUDDY_ENV: 'production' },
-    { STARBUDDY_DEV_AUTH: 'true', STARBUDDY_ENV: 'dev' }]) {
+  for (const env of [{}, { STARBUDDY_DEV_PAGES: '1' }, { STARBUDDY_ENV: 'test' }, { STARBUDDY_DEV_PAGES: '1', STARBUDDY_ENV: 'production' },
+    { STARBUDDY_DEV_PAGES: '1', STARBUDDY_ENV: 'staging' }, { STARBUDDY_DEV_PAGES: '1', STARBUDDY_ENV: 'pilot' },
+    { STARBUDDY_DEV_PAGES: 'true', STARBUDDY_ENV: 'dev' }]) {
     assert.equal(devPagesEnabled(env), false, JSON.stringify(env));
     assert.ok(!pageExtensionsFor(env).includes('dev.tsx'), JSON.stringify(env));
   }
-  for (const env of [{ STARBUDDY_DEV_AUTH: '1', STARBUDDY_ENV: 'dev' }, { STARBUDDY_DEV_AUTH: '1', STARBUDDY_ENV: 'test' }]) {
+  for (const env of [{ STARBUDDY_DEV_PAGES: '1', STARBUDDY_ENV: 'dev' }, { STARBUDDY_DEV_PAGES: '1', STARBUDDY_ENV: 'test' }]) {
     assert.ok(pageExtensionsFor(env).includes('dev.tsx'), JSON.stringify(env));
   }
 });

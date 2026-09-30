@@ -2,7 +2,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { toDisplay, VERIFY_BELOW, type MasteryState } from '../src/star-map/display-state.ts';
-import { hashId } from '../src/star-map/server.ts';
+import { randomKeys } from '../src/http/config.ts';
+import { logHash } from '../src/http/secrets.ts';
 import { isUuid } from '../src/star-map/query.ts';
 
 test('七种输入各自的显示', () => {
@@ -36,8 +37,10 @@ test('未知的 state 直接报错，不静默当成未亮', () => {
 
 test('日志里的 student_id 只记哈希；UUID 校验', () => {
   const id = '5a000000-0000-4000-8000-0000000000c1';
-  assert.equal(hashId(id).length, 16);
-  assert.ok(!hashId(id).includes('5a000000'));
+  const keys = randomKeys();
+  assert.equal(logHash(keys, id).length, 16);
+  assert.ok(!logHash(keys, id).includes('5a000000'));
+  assert.notEqual(logHash(keys, id), logHash(randomKeys(), id), '带密钥：换密钥值变化');
   assert.ok(isUuid(id));
   assert.ok(!isUuid(id.toUpperCase()));  // 只认小写（与库里输出一致）
   assert.ok(!isUuid("5a000000-0000-4000-8000-0000000000c1' OR 1=1"));

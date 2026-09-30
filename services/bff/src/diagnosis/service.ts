@@ -10,9 +10,9 @@
 //   - 已有未结束的会话（暂停后续做）：不预留，直接续做同一个会话（不另占额度）；续做当场到上限结束也结算（S10）；
 //   - 放弃：只有还没有任何已作答的题时才释放；答过题的放弃按已结算处理（再结算一次，幂等）。
 //   - 第一道题在预留过期（开始后 10 分钟）之后才交：按现有规则“宁可少扣”不结算（lessons 待人确认 #3：有效期调长或按段计量）。
-// 宵禁（安全审查 B2）：续做、取题、探针、作答入口以学生本人读 platform.student_time_guard（0015 已授 BFF 按 RLS 读），
-//   按 platform.meter_in_curfew 的同一口径（北京时间，缺省 22:00–06:00，跨午夜）判断；宵禁中先请学习服务把会话置为暂停，
-//   再回 402 reason = curfew。时钟与计量函数同一时间轴（deps.now，测试里注入；0015 没给 BFF 只读的宵禁函数，lessons 待人确认）。
+// 宵禁（安全审查 B2）：续做、取题、探针、作答入口以学生本人调计量只读函数 platform.meter_guard_status（迁移 0030，
+//   4-H H3），取它的 in_curfew：与 meter_reserve 同一个函数、同一个计量时钟（meter_now），BFF 不再自算宵禁（SIE-02a lessons #15）；
+//   宵禁中先请学习服务把会话置为暂停，再回 402 reason = curfew。
 // 探针：BFF 以学生身份调 2-L 的 insight.record_confidence_probe，幂等键由（会话、序号）派生（安全审查 S3：并发提交只写一行，
 //   后到的内容不同时 23505，按派生键请学习服务找回同一条），把探针记到步骤；
 // 作答落库后按 2-L 的 insight.link_probe_attempt 关联（尽力而为：时间窗外、已关联时不影响作答）。
@@ -31,8 +31,6 @@ export interface DiagnosisDeps {
   retryDelaysMs?: number[];
   /** 计量与关联的旁路记录（测试断言用）；只收事件名 */
   note?: (event: string) => void;
-  /** 与数据库计量时钟同一时间轴（宵禁判断用；测试里注入） */
-  now?: () => number;
 }
 
 export interface Reply { status: number; body: unknown; headers?: Record<string, string> }
@@ -138,24 +136,26 @@ async function openSessionId(pool: Pool, account: string, student: string): Prom
 }
 
 // ---------- 宵禁（安全审查 B2） ----------
-/** 与 platform.meter_in_curfew 同一口径：北京时间；家长设定的时段或缺省 22:00–06:00；start > end 表示跨午夜 */
-export async function inCurfew(pool: Pool, account: string, student: string, atMs: number): Promise<boolean> {
-  return withAccount(pool, account, async (c) => {
-    const { rows } = await c.query<{ curfew: boolean }>(
-      `SELECT CASE WHEN s < e THEN t >= s AND t < e ELSE t >= s OR t < e END AS curfew
-         FROM (SELECT ($2::timestamptz AT TIME ZONE 'Asia/Shanghai')::time AS t,
-                      coalesce(g.curfew_start, time '22:00') AS s, coalesce(g.curfew_end, time '06:00') AS e
-                 FROM (SELECT 1) one LEFT JOIN platform.student_time_guard g ON g.student_id = $1::uuid) x`,
-      [student, new Date(atMs).toISOString()]);
-    return rows[0]!.curfew === true;
-  });
+/** 宵禁：计量只读函数 meter_guard_status 的 in_curfew（0030；授权与 0015 相同：本人或已绑定家长，否则 42501） */
+export async function inCurfew(pool: Pool, account: string, student: string): Promise<boolean | 'forbidden'> {
+  try {
+    return await withAccount(pool, account, async (c) => {
+      const { rows } = await c.query<{ s: { in_curfew: boolean } }>('SELECT platform.meter_guard_status($1::uuid) AS s', [student]);
+      return rows[0]!.s.in_curfew === true;
+    });
+  } catch (e) {
+    if ((e as { code?: string }).code === '42501') return 'forbidden';  // 调用前已核对过本人；绑定或账号状态刚变时同一个 403
+    throw e;
+  }
 }
 
 export const CURFEW = problem(402, 'QUOTA_UNAVAILABLE', 'not available during curfew hours', { reason: 'curfew' });
 
 /** 宵禁中：先请学习服务把会话置为暂停（尽力而为），再回 402 curfew；不在宵禁回 null */
 async function curfewGate(deps: DiagnosisDeps, account: string, student: string, session: string | null): Promise<Reply | null> {
-  if (!(await inCurfew(deps.pool, account, student, (deps.now ?? Date.now)()))) return null;
+  const curfew = await inCurfew(deps.pool, account, student);
+  if (curfew === 'forbidden') return FORBIDDEN;
+  if (!curfew) return null;
   if (session !== null) {
     const p = await withRetry(deps, () => deps.learning.pause(student, session, null, null));
     deps.note?.(p.kind === 'ok' ? 'curfew_paused' : `curfew_pause_${p.kind}`);

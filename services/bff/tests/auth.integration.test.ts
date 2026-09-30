@@ -464,7 +464,7 @@ test('限流：发验证码、验证验证码、建档、打开学生模式超�
 
 test('路由表：未登录一律 401；表外路径 404；非 UUID 参数与不存在同一个 404', { skip: !HAS_DB }, async () => {
   for (const r of ROUTES.filter((x) => x.auth !== 'public')) {
-    const path = r.path.replace('{student_id}', ID.S1);
+    const path = r.path.replace('{student_id}', ID.S1).replace(/\{[a-z_]+\}/g, ID.missing);
     const x = await call(r.method, path, { body: r.body ? {} : undefined });
     assert.equal(x.status, 401, `${r.method} ${path}`);
     assert.equal(x.body, P.UNAUTHENTICATED);

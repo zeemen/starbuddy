@@ -10,7 +10,7 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --test --test-concurrency=1 --test-reporter=dot tests/*.test.ts",
-    "star-map": "node --no-warnings src/star-map/main.ts"
+    "start": "node --no-warnings src/main.ts"
   },
   "dependencies": {
     "pg": "8.23.0"

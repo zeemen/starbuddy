@@ -3,15 +3,16 @@
 // 覆盖：只认学生本人（家长、其他学生、未登录一律拒绝，错误码同 2-L）；开始预留、结束结算、放弃释放；幂等重放不重复写证据、
 // 不重复扣额度；暂停续做（不另占额度）；探针写入并在作答后关联；前端拿到的视图不含答案、题号、节点、对错。
 // 全部合成数据（规则 8）。合成学生的答案取自阿鸦内容包（验证器自己的数据）。
+// 4-H H2：挂在统一壳路由表上（auth = student），身份只来自真实会话（tests/shell-harness.ts）；
+// H3：宵禁判断改由计量只读函数 meter_guard_status（0030）给出，测试只推进数据库的计量时钟，断言不变。
 import assert from 'node:assert/strict';
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
-import type { Server } from 'node:http';
 import { createServer as netServer, type AddressInfo } from 'node:net';
 import { after, before, describe, test } from 'node:test';
 import { httpDiagnosisLearning, type DiagnosisLearning } from '../src/diagnosis/learning-client.ts';
-import { createStarMapServer } from '../src/star-map/server.ts';
+import { fetchAs, startShell, type ShellHarness } from './shell-harness.ts';
 import { counters, createFamily, HAS_DB, ledgerConsistent, reservationsByStudent, setupHarness, type Harness } from './harness.ts';
 
 const ROOT = new URL('../../../', import.meta.url);
@@ -59,7 +60,7 @@ async function waitFor(url: string, headers: Record<string, string>, ok: (s: num
 
 describe('数学自适应诊断（BFF 学生端）', { skip: READY ? false : '没有 PGHOST、学习服务 .venv 或阿鸦依赖' }, () => {
   let h: Harness;
-  let server: Server;
+  let shell: ShellHarness;
   let base = '';
   let learningUrl = '';
   const procs: ChildProcess[] = [];
@@ -100,23 +101,20 @@ describe('数学自适应诊断（BFF 学生端）', { skip: READY ? false : '�
       pause: (...a) => (learning.override ?? learning.real!).pause(...a),
       abandon: (...a) => (learning.override ?? learning.real!).abandon(...a),
     };
-    server = createStarMapServer({ pool: h.bff, devAuth: true, log: (l) => logs.push(l),
-      diagnosis: { learning: proxy, retryDelaysMs: [20, 50], note: (e) => notes.push(e), now: () => h.clockMs() } });
-    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
-    base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    shell = await startShell(h.bff, h.su, { log: (l) => logs.push(l),
+      diagnosis: { learning: proxy, retryDelaysMs: [20, 50], note: (e) => notes.push(e) } });
+    base = shell.base;
   });
 
   after(async () => {
-    await new Promise<void>((r) => server?.close(() => r()));
+    await shell?.close();
     for (const p of procs) p.kill('SIGTERM');
     await h?.close();
   });
 
   const url = (student: string, rest = '') => `${base}/bff/v0/students/${student}/diagnosis/sessions${rest}`;
   const call = async (method: 'GET' | 'POST', u: string, account?: string, body?: unknown) => {
-    const r = await fetch(u, { method, headers: { ...(account ? { 'x-dev-account-id': account } : {}),
-                                                  ...(body !== undefined ? { 'content-type': 'application/json' } : {}) },
-                               body: body === undefined ? undefined : JSON.stringify(body) });
+    const r = await fetchAs(shell, method, u, account, body);
     const text = await r.text();
     return { status: r.status, body: text ? JSON.parse(text) as Record<string, any> : {}, replayed: r.headers.get('idempotent-replayed'),
              raw: text };
@@ -218,6 +216,8 @@ describe('数学自适应诊断（BFF 学生端）', { skip: READY ? false : '�
     }
     const abandoned = await call('POST', url(s1.id, `/${sid}/abandon`), s1.account, { idempotency_key: randomUUID() });
     assert.equal(abandoned.status, 200);
+    // 会话已结束（取题不再经过宵禁关卡，H3 的 meter_guard_status 也不再替它挡）：其他学生仍然 403，守住的是会话归属核对本身
+    assert.equal((await call('GET', url(s1.id, `/${sid}`), s2.account)).status, 403);
     // 日志只记学生 ID 的哈希，不记作答
     assert.ok(logs.every((l) => l['student'] === undefined || !String(l['student']).includes('-')));
   });
@@ -418,6 +418,52 @@ describe('数学自适应诊断（BFF 学生端）', { skip: READY ? false : '�
     assert.deepEqual((await reservationsByStudent(h, b.id)).map((x) => x.state), ['released']);
     assert.deepEqual(await counters(h, b.id, 'diagnosis_full'), baseB);
     assert.ok(await ledgerConsistent(h));
+  });
+
+  test('宵禁判断来自 meter_guard_status（H3）：家长把宵禁提前到 21:00 后，20:59 能开始、21:30 拒绝；与函数返回一致', async () => {
+    const fam = await createFamily(h, { source: 'pilot_virtual' });
+    const stu = fam.students[0]!;
+    const asAccount = async <T>(acct: string, sql: string, args: unknown[]): Promise<T> => {
+      const c = await h.bff.connect();
+      try {
+        await c.query('BEGIN');
+        await c.query("SELECT set_config('app.account_id', $1, true)", [acct]);
+        const { rows } = await c.query(sql, args);
+        await c.query('COMMIT');
+        return rows[0].r as T;
+      } finally {
+        c.release();
+      }
+    };
+    const set = await asAccount<{ outcome: string }>(fam.guardian, 'SELECT platform.set_time_guard($1, NULL, $2::time, $3::time) AS r',
+                                                   [stu.id, '21:00', '07:00']);
+    assert.equal(set.outcome, 'saved');
+    const guard = () => asAccount<{ in_curfew: boolean; curfew_start: string }>(stu.account, 'SELECT platform.meter_guard_status($1) AS r', [stu.id]);
+    const day = h.clockMs();
+    try {
+      await h.setClock(Date.parse('2026-10-15T12:59:00Z'));  // 北京时间 20:59：缺省与家长设定都不在宵禁
+      assert.equal((await guard()).in_curfew, false);
+      const ok = await call('POST', url(stu.id), stu.account, startBody());
+      assert.equal(ok.status, 201);
+      const sid = ok.body['session_id'] as string;
+      await h.setClock(Date.parse('2026-10-15T13:30:00Z'));  // 北京时间 21:30：只在家长收紧后的宵禁里（缺省 22:00 才开始）
+      const g = await guard();
+      assert.deepEqual([g.in_curfew, g.curfew_start], [true, '21:00']);
+      const blocked = await call('GET', url(stu.id, `/${sid}`), stu.account);
+      assert.equal(blocked.status, 402);
+      assert.equal(blocked.body['reason'], 'curfew');
+      await call('POST', url(stu.id, `/${sid}/abandon`), stu.account, { idempotency_key: randomUUID() });
+    } finally {
+      await h.setClock(day);
+    }
+  });
+
+  test('BFF 源码里没有宵禁、单日上限、已用分钟的计算（只调 meter_guard_status，H3）', () => {
+    const src = readFileSync(new URL('../src/diagnosis/service.ts', import.meta.url), 'utf8');
+    assert.ok(src.includes('platform.meter_guard_status'));
+    for (const banned of ['AT TIME ZONE', 'student_time_guard', 'curfew_start', "time '22:00'", 'Asia/Shanghai']) {
+      assert.ok(!src.includes(banned), banned);
+    }
   });
 
   test('宵禁：续做、取题、探针、作答一律 402 curfew，并把进行中的会话置为暂停；白天续做同一个会话，不另占额度', async () => {

@@ -636,6 +636,31 @@ M+=(
   ["认证：BFF 可直接建会话"]="GRANT EXECUTE ON FUNCTION platform.auth_new_session(uuid, text, uuid, timestamptz, integer, integer) TO starbuddy_bff;"
 )
 
+# 计量只读函数（0030，specs/unified-shell-sprint4 H3）：由 79l_meter_guard 发现（去掉授权检查也被 80 的函数越权矩阵发现）
+MG='platform.meter_guard_status(uuid)'
+M+=(
+  ["计量只读：去掉授权检查"]="$(afr "$MG" "'IF p_student IS NULL OR NOT platform.can_read_student(p_student) THEN'" "'IF p_student IS NULL THEN'")"
+  ["计量只读：只认学生本人"]="$(afr "$MG" "'NOT platform.can_read_student(p_student)'" "'NOT platform.is_self_student(p_student)'")"
+  ["计量只读：只认家长"]="$(afr "$MG" "'NOT platform.can_read_student(p_student)'" "'NOT platform.is_linked_guardian(p_student)'")"
+  ["计量只读：用档位上限代替生效上限"]="$(afr "$MG" "'v_cap := platform.meter_daily_cap(p_student);'" "'v_cap := platform.meter_plan_daily_cap(p_student);'")"
+  ["计量只读：剩余分钟可为负"]="$(afr "$MG" "'greatest(v_cap - v_used, 0)'" "'v_cap - v_used'")"
+  ["计量只读：时钟用系统时间"]="$(afr "$MG" "'v_now timestamptz := platform.meter_now();'" "'v_now timestamptz := now();'")"
+  ["计量只读：宵禁起止不取家长设置"]="$(afr "$MG" "'coalesce(g.curfew_start, time ''22:00''), coalesce(g.curfew_end, time ''06:00'')'" "'time ''22:00'', time ''06:00'''")"
+  ["计量只读：自练按 UTC 换日"]="$(afr "$MG" "'v_day_start := (v_now AT TIME ZONE ''Asia/Shanghai'')::date::timestamp AT TIME ZONE ''Asia/Shanghai'';'" "'v_day_start := date_trunc(''day'', v_now);'")"
+  ["计量只读：留存每天 6 次自练"]="$(afr "$MG" "'greatest(5 - v_practice, 0)'" "'greatest(6 - v_practice, 0)'")"
+  ["计量只读：非留存态也给自练次数"]="$(afr "$MG" "'CASE WHEN v_state = ''retained'' THEN greatest(5 - v_practice, 0) END'" "'greatest(5 - coalesce(v_practice, 0), 0)'")"
+  ["计量只读：试用结束时间取开始时间"]="$(afr "$MG" "'SELECT x.period_end INTO v_trial_end'" "'SELECT x.period_start INTO v_trial_end'")"
+  ["计量只读：返回设置人"]="$(afr "$MG" "'''as_of'', v_now);'" "'''as_of'', v_now, ''updated_by'', (SELECT g.updated_by FROM platform.student_time_guard g WHERE g.student_id = p_student));'")"
+  ["计量只读：学习服务可调用"]="GRANT EXECUTE ON FUNCTION $MG TO starbuddy_learning;"
+  ["计量只读：对 PUBLIC 开放"]="GRANT EXECUTE ON FUNCTION $MG TO PUBLIC;"
+)
+
+# 收回 0002 旧登录入口对 BFF 的授权（0031，specs/unified-shell-sprint4 H2）：由 20_rls_household 与授权快照发现
+M+=(
+  ["旧入口：BFF 可调旧注册"]="GRANT EXECUTE ON FUNCTION platform.signup_guardian(text) TO starbuddy_bff;"
+  ["旧入口：BFF 可按号码查账号"]="GRANT EXECUTE ON FUNCTION platform.lookup_accounts_by_phone(text) TO starbuddy_bff;"
+)
+
 # 并行执行（每个变异各起一个一次性 Postgres，互不影响）；DBMUT_JOBS 控制并发数，默认等于 CPU 核数
 JOBS="${DBMUT_JOBS:-$(nproc 2>/dev/null || echo 2)}"
 RES="$(mktemp -d "${TMPDIR:-/tmp}/starbuddy-dbmut.XXXXXX")"

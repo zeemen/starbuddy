@@ -1,12 +1,15 @@
 // 建档端到端（SIE-01 验收）：学生版、家长版各走三条路径（全答、全跳过、返回改答案）；两方互不可见；别家看不到；
-// 进度表记录齐全、统计函数给出完成率与时长。合成家庭来自 db/seeds/dev/star-map-synthetic.sql（S1、S2 与家长 gS，无关家长 gO）。
+// 进度表记录齐全、统计函数给出完成率与时长。合成家庭来自 db/seeds/dev/star-map-synthetic.sql（S1、S2 与家长 gS，无关家长 gO）；
+// 4-H H2 起全程真实会话（e2e/session.ts：短信捕获桩登录家长、家长打开学生模式）。
 // 用例之间有先后（答案与进度累积），按顺序执行。
 import { execFileSync } from 'node:child_process';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 
-const ACC = { S1: '5a000000-0000-4000-8000-0000000000b1', S2: '5a000000-0000-4000-8000-0000000000b2',
-  gS: '5a000000-0000-4000-8000-0000000000a1', gO: '5a000000-0000-4000-8000-0000000000a2' };
+import { loginGuardian, openAs } from './session.ts';
+
+// 身份：学生用档案 ID（家长为其打开学生模式），家长用号码代号（4-H H2 起全程真实会话）
+const ACC = { S1: '5a000000-0000-4000-8000-0000000000c1', S2: '5a000000-0000-4000-8000-0000000000c2', gS: 'gS', gO: 'gO' } as const;
 const STU = { S1: '5a000000-0000-4000-8000-0000000000c1', S2: '5a000000-0000-4000-8000-0000000000c2' };
 
 /** 以迁移执行者身份核对库里的结果（只读查询；一次性测试库） */
@@ -14,8 +17,8 @@ function sql(q: string): string {
   return execFileSync('psql', ['-X', '-At', '-c', q], { encoding: 'utf8' }).trim();
 }
 
-async function as(page: Page, account: string, student: string) {
-  const res = await page.goto(`/dev/session?account=${account}&next=${encodeURIComponent(`/onboarding/${student}`)}`);
+async function as(page: Page, who: string, student: string) {
+  const res = await openAs(page, who, `/onboarding/${student}`);
   expect(res?.status()).toBe(200);
   await expect(page.getByTestId('onboarding')).toBeVisible();
 }
@@ -142,7 +145,7 @@ test('学生版全跳过（S2）；别家家长看不到；统计按最小人数
   await page.getByRole('button', { name: '开始' }).click();
   for (let i = 0; i < 7; i++) await skip(page);
   await expect(page.getByTestId('done')).toBeVisible();
-  await page.goto(`/dev/session?account=${ACC.gO}&next=${encodeURIComponent(`/onboarding/${STU.S1}`)}`);
+  await loginGuardian(page, 'gO');
   expect((await page.goto(`/onboarding/${STU.S1}`))?.status()).toBe(404);
   // 不足 5 人：只给开始人数，完成数不出（最小人数门槛）
   expect(sql(`SELECT respondent_role || ':' || started || ':' || coalesce(completed::text, '-') FROM insight.onboarding_stats(now() - interval '1 day', now() + interval '1 day') ORDER BY 1`))

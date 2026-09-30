@@ -52,8 +52,8 @@ const header = (req: IncomingMessage, name: string): string | null => {
 };
 
 /**
- * 统一壳路由的请求处理：路径在路由表里（含“形状”对上、参数不合法的）就处理并返回 true；否则返回 false，由调用方决定
- * （独立服务回 404；H2 之前 main.ts 交给旧的星图服务）。
+ * 统一壳路由的请求处理：路径在路由表里（含“形状”对上、参数不合法的）就处理并返回 true；否则返回 false，
+ * 由 createShellServer 回 404（表外一律 404）。
  */
 export function createShellHandler(deps: ShellDeps): (req: IncomingMessage, res: ServerResponse) => Promise<boolean> {
   const table = compile();
@@ -158,7 +158,11 @@ export function createShellHandler(deps: ShellDeps): (req: IncomingMessage, res:
 
       const note = (k: string, v: string) => { record[k] = v; };
       let reply: Reply;
-      if (session) {
+      if (session && route.ownTx) {
+        // handler 自己按会话账号开事务（feature-routes.ts）；这里不给查询入口，防止在事务外查询
+        const q: Query = () => Promise.reject(new Error('route manages its own transaction'));
+        reply = await route.handler({ deps, params, body, session, q, presentedToken: presented, note });
+      } else if (session) {
         const s = session;
         // 会话账号只在本事务内生效（set_config 第三个参数 true），连接池复用不串号（第二轮 N4）
         reply = await withAccount(deps.pool, s.accountId, (client) => {
@@ -186,7 +190,7 @@ export function createShellHandler(deps: ShellDeps): (req: IncomingMessage, res:
   };
 }
 
-/** 独立的统一壳服务：表外路径一律 404（测试与 H2 之后的入口） */
+/** BFF 唯一的 HTTP 入口（src/main.ts）：表外路径一律 404 */
 export function createShellServer(deps: ShellDeps): Server {
   const handle = createShellHandler(deps);
   const server = createServer((req, res) => {

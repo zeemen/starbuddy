@@ -17,6 +17,12 @@ export const P = {
   INVALID: problem(422, 'INVALID', 'invalid request'),
   TOO_MANY: problem(429, 'TOO_MANY_REQUESTS', 'too many requests'),
   INTERNAL: problem(500, 'INTERNAL', 'internal error'),
+  // 星图、建档、事件、诊断迁进路由表前就有的错误码（H2，接口形状不变）
+  CONFLICT: problem(409, 'CONFLICT', 'concurrent update, retry'),
+  KEY_REUSED: problem(409, 'IDEMPOTENCY_KEY_REUSED', 'idempotency key reused with different content'),
+  PROBE_LINKED: problem(409, 'PROBE_ALREADY_LINKED', 'probe already linked to a different attempt'),
+  WRITE_CAP: problem(429, 'TOO_MANY', 'too many writes'),  // 库里的 24 小时写入上限（0025），不是限流
+  DIAGNOSIS_UNAVAILABLE: problem(503, 'DIAGNOSIS_UNAVAILABLE', 'diagnosis is not available'),
 } as const;
 
 export type ProblemBody = (typeof P)[keyof typeof P];

@@ -31,12 +31,14 @@ export const FAMILY_COPY = {
   studentModeHeading: '在这台设备上打开学生模式',
   studentModeNote: '打开后，这台设备会切换成孩子的账号，家长登录随之退出；回到家长模式需要重新用短信验证码登录。',
   openStudentMode: '打开学生模式',
+  starMap: '星图',
   logout: '退出登录',
 } as const;
 
 export const GRADE_LABEL: Record<number, string> = { 7: '七年级', 8: '八年级', 9: '九年级' };
 export const childLabel = (ordinal: number, grade: number): string => `孩子 ${ordinal} · ${GRADE_LABEL[grade] ?? `${grade} 年级`}`;
 export const openStudentModeFor = (label: string): string => `为${label}打开学生模式`;
+export const starMapFor = (label: string): string => `${label}的星图`;
 
 export const FAMILY_RESULT: Record<string, string> = {
   CONSENT_REQUIRED: '需要先完成隐私政策与监护人同意，才能打开学生模式。',
@@ -50,6 +52,7 @@ export const FAMILY_RESULT: Record<string, string> = {
 export const STUDENT_COPY = {
   title: '学生模式',
   intro: '这台设备现在是学生模式。',
+  starMap: '星图',
   exit: '退出学生模式',
   exitNote: '退出后回到登录页；家长需要重新用短信验证码登录。',
 } as const;
@@ -58,4 +61,5 @@ export const STUDENT_COPY = {
 export const ALL_AUTH_COPY: string[] = [
   ...Object.values(LOGIN_COPY), ...Object.values(LOGIN_RESULT), ...Object.values(FAMILY_COPY), ...Object.values(FAMILY_RESULT),
   ...Object.values(STUDENT_COPY), ...Object.values(GRADE_LABEL), childLabel(1, 8), openStudentModeFor(childLabel(2, 9)),
+  starMapFor(childLabel(1, 8)),
 ];

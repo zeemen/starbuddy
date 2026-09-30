@@ -6,7 +6,7 @@ import { ConfidenceProbe } from '../../../../probe/ConfidenceProbe.tsx';
 import { DEMO_COPY, type Prediction } from '../../../../probe/copy.ts';
 import { probeAction, sessionEndAction, sessionStartAction } from '../actions.ts';
 
-export function ProbeDemo({ student, itemId }: { student: string; itemId: string }) {
+export function ProbeDemo({ csrf, student, itemId }: { csrf: string; student: string; itemId: string }) {
   // 每次打开页面一组幂等键：重试、React 严格模式重复执行副作用都不会重复记录
   const [keys] = useState(() => ({ start: crypto.randomUUID(), end: crypto.randomUUID(), probe: crypto.randomUUID() }));
   const openedAt = useRef(Date.now());
@@ -20,13 +20,13 @@ export function ProbeDemo({ student, itemId }: { student: string; itemId: string
     if (ended.current) return;
     ended.current = true;
     const duration = Math.min(86400, Math.max(0, Math.round((Date.now() - openedAt.current) / 1000)));
-    return sessionEndAction(student, duration, keys.end);
+    return sessionEndAction(csrf, student, duration, keys.end);
   };
 
   useEffect(() => {
     if (!started.current) {
       started.current = true;
-      void sessionStartAction(student, keys.start);
+      void sessionStartAction(csrf, student, keys.start);
     }
     const onHide = () => void end();
     window.addEventListener('pagehide', onHide);
@@ -39,7 +39,7 @@ export function ProbeDemo({ student, itemId }: { student: string; itemId: string
   }, [phase]);
 
   const answer = async (p: Prediction) => {
-    const r = await probeAction(student, p, keys.probe);
+    const r = await probeAction(csrf, student, p, keys.probe);
     setNotSaved(!r.ok);
     setPhase('item');
   };

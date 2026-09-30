@@ -99,7 +99,7 @@ LEARNING_ADAPTER_AYA_URL=http://127.0.0.1:8787 LEARNING_ADAPTER_AYA_TOKEN=... .v
   `SET log_parameter_max_length_on_error = 0;`。人工执行 `platform.staff_enroll` / `staff_reset` 时，先在本会话关掉语句日志，
   并用不写历史文件的 psql（`HISTFILE=/dev/null`），见迁移 0020 的用法注释。执行者须是超级用户或 BYPASSRLS 角色。
 - **staging 库名不能以 `starbuddy_dev` 或 `starbuddy_test` 开头**：合成种子只认这两类库名，里面的合成凭据很好猜。
-- 走 https；前端设 `STARBUDDY_ENV=staging`（会话 cookie 用 `__Host-sb_staff`、Secure）；不设 `STARBUDDY_DEV_AUTH`。
+- 走 https；前端设 `STARBUDDY_ENV=staging`（会话 cookie 用 `__Host-sb_staff`、Secure）；不设 `STARBUDDY_DEV_PAGES`（开发专用页面只在开发与测试构建里）。
   `STARBUDDY_ENV` 误设成 dev / test 会让会话 cookie 失去 Secure 与 `__Host-` 前缀，上线检查要核对。
 - 上线前验证：同一来源连续提交超过上限得到 429；向其他 /review 路径提交登录 action 同样 429；已登录用户的正常浏览不受影响（建议 GET 不限或放宽）。
 

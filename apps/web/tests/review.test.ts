@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { isLoopbackHost } from '../src/lib/dev-auth.ts';
+import { isLoopbackHost } from '../src/lib/dev-pages.ts';
 import {
   assignmentLabel, isBasis, isCursor, isDigest, isNodeId, isQueueReason, isQueueStatus, isResolutionCode, isSubject, isTaskId, isVersionId, lines,
   problemFrom, QUEUE_REASON_LABEL, QUEUE_REASONS, QUEUE_RESULT_LABEL, QUEUE_STATUS_LABEL, QUEUE_STATUSES, queueQuery, reasonLabel, RESULT_LABEL,
@@ -38,7 +38,7 @@ test('staff 会话 cookie：正式环境用 __Host- 前缀且 Secure；本地开
   assert.ok(isSessionToken('a'.repeat(64)) && !isSessionToken('A'.repeat(64)) && !isSessionToken('x') && !isSessionToken(undefined));
 });
 
-test('Host 必须是本机地址（开发身份桩用，挡 DNS 重绑定）', () => {
+test('Host 必须是本机地址（开发专用页面用，挡 DNS 重绑定）', () => {
   for (const h of ['127.0.0.1', '127.0.0.1:3100', 'localhost:3100', '[::1]:3100']) assert.ok(isLoopbackHost(h), h);
   for (const h of ['evil.example.test:3100', '127.0.0.1.evil.test', 'localhost.evil.test:80', '', null, undefined]) {
     assert.ok(!isLoopbackHost(h), String(h));

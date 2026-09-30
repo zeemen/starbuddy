@@ -423,7 +423,6 @@ func|platform.is_linked_guardian(uuid)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|platform.is_self_student(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.is_self_student(uuid)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|platform.lookup_accounts_by_phone(text)|starbuddy_authz|EXECUTE|starbuddy_authz
-func|platform.lookup_accounts_by_phone(text)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|platform.meter_apply_subject_limits(uuid,text,platform.plan_tier)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.meter_authorize_usage(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.meter_check_entitlement(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
@@ -432,6 +431,8 @@ func|platform.meter_daily_cap(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.meter_expire_due(integer)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.meter_expire_due(integer)|starbuddy_scheduler|EXECUTE|starbuddy_authz
 func|platform.meter_grant_period(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.meter_guard_status(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.meter_guard_status(uuid)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|platform.meter_in_curfew(uuid,timestamp with time zone)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.meter_in_window(time without time zone,time without time zone,time without time zone)|starbuddy_authz|EXECUTE|SUPERUSER
 func|platform.meter_lock_reservation(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
@@ -493,7 +494,6 @@ func|platform.set_subject_textbook(uuid,platform.subject,text)|starbuddy_bff|EXE
 func|platform.set_time_guard(uuid,integer,time without time zone,time without time zone)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.set_time_guard(uuid,integer,time without time zone,time without time zone)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|platform.signup_guardian(text)|starbuddy_authz|EXECUTE|starbuddy_authz
-func|platform.signup_guardian(text)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|platform.staff_bf_salt()|starbuddy_authz|EXECUTE|SUPERUSER
 func|platform.staff_crypt(text,text)|starbuddy_authz|EXECUTE|SUPERUSER
 func|platform.staff_hmac_sha1(bytea,bytea)|starbuddy_authz|EXECUTE|SUPERUSER
@@ -570,6 +570,7 @@ owner|platform.meter_current_config()|starbuddy_authz
 owner|platform.meter_daily_cap(uuid)|starbuddy_authz
 owner|platform.meter_expire_due(integer)|starbuddy_authz
 owner|platform.meter_grant_period(uuid)|starbuddy_authz
+owner|platform.meter_guard_status(uuid)|starbuddy_authz
 owner|platform.meter_in_curfew(uuid,timestamp with time zone)|starbuddy_authz
 owner|platform.meter_lock_reservation(uuid)|starbuddy_authz
 owner|platform.meter_main_subscription(uuid)|starbuddy_authz
@@ -993,6 +994,7 @@ secdef|platform.meter_current_config()
 secdef|platform.meter_daily_cap(uuid)
 secdef|platform.meter_expire_due(integer)
 secdef|platform.meter_grant_period(uuid)
+secdef|platform.meter_guard_status(uuid)
 secdef|platform.meter_in_curfew(uuid,timestamp with time zone)
 secdef|platform.meter_lock_reservation(uuid)
 secdef|platform.meter_main_subscription(uuid)

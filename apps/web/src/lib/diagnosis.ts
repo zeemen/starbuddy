@@ -1,6 +1,7 @@
 // 数学自适应诊断的 BFF 客户端（SIE-02a；只在服务端调用，浏览器不直连 BFF）。接口见 services/bff/openapi/diagnosis.v0.yaml。
 // BFF 只回题面、步骤序号、题型与进度，不回答案、题号、节点、对错；这里再按白名单取一遍字段再交给页面。
-import { bffBaseUrl, isUuid } from './star-map.ts';
+import { bffBaseUrl, bffHeaders, type BffSession } from './bff.ts';
+import { isUuid } from './star-map.ts';
 
 export type StepKind = 'adaptive' | 'process' | 'explain';
 export interface ItemView { format: 'single' | 'multi' | 'fill'; stem: string; options?: { key: string; text: string }[] }
@@ -24,13 +25,13 @@ export const isKey = (s: unknown): s is string => typeof s === 'string' && UUID_
 /** reason：402 时 BFF 给的原因编码（例如 curfew = 宵禁时段） */
 export type Result<T> = { ok: true; value: T } | { ok: false; status: number; code: string | null; reason?: string | null };
 
-async function call<T>(account: string, student: string, method: 'GET' | 'POST', path: string, body?: unknown): Promise<Result<T>> {
+async function call<T>(account: BffSession, student: string, method: 'GET' | 'POST', path: string, body?: unknown): Promise<Result<T>> {
   if (!isUuid(student)) return { ok: false, status: 403, code: 'FORBIDDEN' };
   let r: Response;
   try {
     r = await fetch(`${bffBaseUrl()}/bff/v0/students/${student}/diagnosis/sessions${path}`, {
       method,
-      headers: { 'x-dev-account-id': account, ...(body !== undefined ? { 'content-type': 'application/json' } : {}) },
+      headers: { ...(await bffHeaders(account, method !== 'GET')), ...(body !== undefined ? { 'content-type': 'application/json' } : {}) },
       body: body === undefined ? undefined : JSON.stringify(body),
       cache: 'no-store',
       signal: AbortSignal.timeout(60_000),
@@ -68,24 +69,24 @@ export function pickView(v: DiagnosisView): DiagnosisView {
 /** 宵禁时段（BFF 402 reason = curfew）：前端提示“今天先到这里” */
 export const isCurfew = (r: Result<unknown>): boolean => !r.ok && r.status === 402 && r.reason === 'curfew';
 
-export const startDiagnosis = (account: string, student: string, key: string) =>
+export const startDiagnosis = (account: BffSession, student: string, key: string) =>
   call<{ session_id: string; status: string }>(account, student, 'POST', '', { subject: 'aya', idempotency_key: key });
 
-export async function currentDiagnosis(account: string, student: string, session: string): Promise<Result<DiagnosisView>> {
+export async function currentDiagnosis(account: BffSession, student: string, session: string): Promise<Result<DiagnosisView>> {
   if (!isUuid(session)) return { ok: false, status: 403, code: 'FORBIDDEN' };
   const r = await call<DiagnosisView>(account, student, 'GET', `/${session}`);
   return r.ok ? { ok: true, value: pickView(r.value) } : r;
 }
 
-export const probeDiagnosis = (account: string, student: string, session: string, seq: number, prediction: string, key: string,
+export const probeDiagnosis = (account: BffSession, student: string, session: string, seq: number, prediction: string, key: string,
   askedAt = new Date()) =>
   call<{ status: string }>(account, student, 'POST', `/${session}/probe`, { seq, prediction, asked_at: askedAt.toISOString(), idempotency_key: key });
 
-export const answerDiagnosis = (account: string, student: string, session: string, seq: number, answer: Answer, work: string | null,
+export const answerDiagnosis = (account: BffSession, student: string, session: string, seq: number, answer: Answer, work: string | null,
   elapsedSec: number, key: string) =>
   call<{ status: string }>(account, student, 'POST', `/${session}/answer`,
     { seq, answer, elapsed_sec: elapsedSec, idempotency_key: key, ...(work !== null ? { work } : {}) });
 
-export const pauseDiagnosis = (account: string, student: string, session: string, seq: number | null, stepElapsedSec: number, key: string) =>
+export const pauseDiagnosis = (account: BffSession, student: string, session: string, seq: number | null, stepElapsedSec: number, key: string) =>
   call<{ status: string }>(account, student, 'POST', `/${session}/pause`,
     { ...(seq !== null ? { seq, step_elapsed_sec: stepElapsedSec } : {}), idempotency_key: key });

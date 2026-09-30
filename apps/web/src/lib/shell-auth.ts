@@ -1,9 +1,9 @@
 // 家庭登录与会话的 BFF 客户端（接口 services/bff/openapi/shell.v0.yaml）：只在服务端调用（服务端组件与 server action）。
 // 浏览器只和本前端通信，不直连 BFF。前端不判断身份与授权：只把 HttpOnly cookie 里的会话令牌放进 x-sb-session 转交，
 // 改变状态的请求再带上浏览器请求的 Origin 与（核对过“表单 = cookie”的）CSRF 令牌。
-import { cookies, headers } from 'next/headers';
+import { cookies } from 'next/headers';
+import { bffBaseUrl, requestMeta } from './bff.ts';
 import { csrfCookieName, isHex64, sessionCookieName } from './session-cookie.ts';
-import { bffBaseUrl } from './star-map.ts';
 
 export interface Problem { status: number; code: string }
 export type Result<T> = { ok: true; value: T } | { ok: false; problem: Problem };
@@ -17,17 +17,6 @@ export async function currentSession(): Promise<{ token: string; csrf: string | 
   const token = jar.get(sessionCookieName())?.value;
   const csrf = jar.get(csrfCookieName())?.value;
   return isHex64(token) ? { token, csrf: isHex64(csrf) ? csrf : null } : null;
-}
-
-/** 浏览器请求的 Origin 与客户端地址（按原样转交 BFF 核对；这里不做判断） */
-async function requestMeta(): Promise<Record<string, string>> {
-  const h = await headers();
-  const out: Record<string, string> = {};
-  const origin = h.get('origin');
-  if (origin) out['origin'] = origin;
-  const ip = h.get('x-forwarded-for')?.split(',')[0]?.trim() || h.get('x-real-ip') || '';
-  if (ip && ip.length <= 64) out['x-sb-client-ip'] = ip;
-  return out;
 }
 
 async function call<T>(method: 'GET' | 'POST', path: string, o: { token?: string; csrf?: string; body?: unknown } = {}): Promise<Result<T>> {

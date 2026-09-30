@@ -6,6 +6,7 @@
 import { execFileSync } from 'node:child_process';
 import { createHmac } from 'node:crypto';
 import AxeBuilder from '@axe-core/playwright';
+import { openAs } from './session.ts';
 import { expect, test, type Page } from '@playwright/test';
 
 // 等页面上所有审核台表单水合完成再操作：导航或刷新后立即点击可能在 React 接管前发生，提交丢失（负载高时偶发超时的根因）
@@ -67,12 +68,12 @@ async function axe(page: Page) {
 
 test.describe.configure({ mode: 'serial' });
 
-test('学生身份进不了审核台（去审核台登录页）；开发身份桩没有 staff 入口', async ({ page }) => {
-  await page.goto(`/dev/session?account=${S1}&next=${encodeURIComponent('/star-map/5a000000-0000-4000-8000-0000000000c1')}`);
+test('学生身份进不了审核台（去审核台登录页）；开发身份桩已删除', async ({ page }) => {
+  await openAs(page, '5a000000-0000-4000-8000-0000000000c1', '/student');  // S1 的学生会话（4-H H2：真实会话）
   await page.goto('/review?subject=wenli');
   await expect(page).toHaveURL(/\/review\/login$/);
-  expect((await page.goto(`/dev/session?staff=${S1}`))?.status()).toBe(400);
-  await page.goto('/dev/login');
+  expect((await page.goto(`/dev/session?staff=${S1}`))?.status()).toBe(404);
+  expect((await page.goto('/dev/login'))?.status()).toBe(404);
   await expect(page.getByText('合成教研')).toHaveCount(0);
 });
 

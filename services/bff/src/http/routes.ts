@@ -1,10 +1,13 @@
-// 统一壳 v0 路由表（specs/unified-shell-sprint4/spec.md 第 3 节；H1 只有认证、会话、/me、建档、同意、打开学生模式）。
-// 分发只查这张表；表外路径一律 404（H2 把星图等既有路由迁进来之前，main.ts 把表外路径交给旧的星图服务处理）。
+// 统一壳 v0 路由表（specs/unified-shell-sprint4/spec.md 第 3 节）：H1 的认证、会话、/me、建档、同意、打开学生模式，
+// 加 H2 迁进来的星图、建档问卷、行为事件与探针、数学诊断（feature-routes.ts）。
+// 分发只查这张表；表外路径一律 404（BFF 只有 server.ts 的 createShellServer 一个入口）。
 // 每条路由声明：方法、路径模板、auth（public / session / guardian / student）、csrf（改变状态的一律开）、限流、是否读请求体、handler。
 // handler 拿到的账号只来自会话（ctx.session），请求参数、请求体、请求头里的 account_id 一律不读（第二轮 N3）。
 // 路径里的 student_id 只作查询条件，授权交给数据库（RLS 与 SECURITY DEFINER 函数）；无权与不存在同一个 404。
 import type { Pool, PoolClient, QueryResultRow } from 'pg';
+import type { DiagnosisDeps } from '../diagnosis/service.ts';
 import type { AuthConfig, Keys, RunEnv } from './config.ts';
+import { FEATURE_ROUTES } from './feature-routes.ts';
 import { P } from './problems.ts';
 import { codeMac, csrfFor, E164, newCode } from './secrets.ts';
 import type { SmsSender } from './sms.ts';
@@ -29,6 +32,10 @@ export interface ShellDeps {
   trustClientIpHeader?: boolean;
   /** 访问日志；只收到请求 ID、路由模板、状态码、耗时、账号类型、student_id 的 HMAC */
   log?: (line: Record<string, unknown>) => void;
+  /** 数学自适应诊断：学习服务客户端等（不配时诊断路由一律 503） */
+  diagnosis?: Omit<DiagnosisDeps, 'pool'>;
+  /** 星图的生成时间（测试注入） */
+  now?: () => Date;
 }
 
 export type Query = <R extends QueryResultRow = QueryResultRow>(sql: string, params?: unknown[]) => Promise<{ rows: R[] }>;
@@ -56,6 +63,8 @@ export interface Route {
   csrf: CsrfMode;
   rateLimits: readonly RateLimit[];
   body: boolean;
+  /** handler 自己按会话账号开事务（复用的查询模块都在 withAccount 里执行）；中间件不另开事务，ctx.q 不可用 */
+  ownTx?: boolean;
   handler: Handler;
 }
 
@@ -224,9 +233,10 @@ export const ROUTES: readonly Route[] = [
   { method: 'POST', path: '/students/{student_id}/consents', auth: 'guardian', csrf: 'session', body: true, handler: recordConsent, rateLimits: [] },
   { method: 'POST', path: '/students/{student_id}/student-session', auth: 'guardian', csrf: 'session', body: false, handler: openStudentMode,
     rateLimits: [{ bucket: 'student_session.account.hour', dim: 'account' }] },
+  ...FEATURE_ROUTES,
 ];
 
-/** 路由模板编译成正则：{student_id} 只匹配 UUID，其余参数不存在（H1） */
+/** 路由模板编译成正则：路径参数（student_id、session_id、probe_id）一律只匹配小写 UUID */
 export interface Compiled { route: Route; re: RegExp; names: string[] }
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 

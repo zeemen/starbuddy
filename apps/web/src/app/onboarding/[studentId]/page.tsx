@@ -1,10 +1,9 @@
-// 建档页（SIE-01）：学生版与家长版由登录身份决定（BFF 经库判断），每页一题，可跳过、可返回。
+// 建档页（SIE-01）：学生版与家长版由登录身份决定（BFF 经库判断；4-H H2 起身份只来自真实会话），每页一题，可跳过、可返回。
 // 只显示当前登录人自己填过的内容（互不可见由库保证）。不缓存，不用浏览器存储，进度只存服务端。文案是占位，待教研定稿。
-import { cookies } from 'next/headers';
 import { notFound, redirect } from 'next/navigation';
-import { DEV_COOKIE, devAccountFromCookie, devAuthEnabled } from '../../../lib/dev-auth.ts';
 import { EXAM_TYPES, getOnboarding, RANK_BANDS, STEPS, SUBJECT_OPTIONS, TEXTBOOK_OPTIONS, TEXTBOOK_SUBJECTS,
   type OnboardingView, type Step } from '../../../lib/onboarding.ts';
+import { pageSession } from '../../../lib/session.ts';
 import { isUuid } from '../../../lib/star-map.ts';
 import { startAction, stepAction } from '../actions.ts';
 
@@ -94,13 +93,11 @@ export default async function OnboardingPage({ params, searchParams }: {
   searchParams: Promise<{ step?: string; error?: string }>;
 }) {
   const { studentId } = await params;
-  const account = devAccountFromCookie((await cookies()).get(DEV_COOKIE)?.value);
-  if (!account) {
-    if (devAuthEnabled()) redirect(`/dev/login?next=${encodeURIComponent(`/onboarding/${studentId}`)}`);
-    return <main><h1>建档</h1><p>请先登录。</p></main>;
-  }
+  // 身份只来自真实会话（4-H H2）：没有或失效去登录页；学生版、家长版由 BFF 按会话身份判断
+  const ps = await pageSession();
+  if (!ps) redirect('/login');
   if (!isUuid(studentId)) notFound();
-  const r = await getOnboarding(account, studentId);
+  const r = await getOnboarding(ps.session, studentId);
   if (!r.ok) notFound();
   const view = r.value;
   const steps = STEPS[view.role];
@@ -128,6 +125,7 @@ export default async function OnboardingPage({ params, searchParams }: {
         <p className="muted">问题与选项是占位文案，待教研定稿。</p>
         <form action={startAction}>
           <input type="hidden" name="student" value={studentId} />
+          <input type="hidden" name="csrf" value={ps.session.csrf} />
           <button type="submit">{started ? '继续填写' : '开始'}</button>
         </form>
       </main>
@@ -141,6 +139,7 @@ export default async function OnboardingPage({ params, searchParams }: {
       {sp.error === '1' ? <p role="alert" data-testid="error">这一页的填写不完整或格式不对，请再看一下，或者直接跳过。</p> : null}
       <form action={stepAction}>
         <input type="hidden" name="student" value={studentId} />
+        <input type="hidden" name="csrf" value={ps.session.csrf} />
         <input type="hidden" name="step" value={n} />
         <Fields step={step} view={view} />
         <p>

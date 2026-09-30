@@ -6,16 +6,19 @@ import { execFileSync } from 'node:child_process';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 
-const ACC = { D1: '5a000000-0000-4000-8000-0000000000b5', gD: '5a000000-0000-4000-8000-0000000000a5' };
+import { openAs } from './session.ts';
+
 const D1 = '5a000000-0000-4000-8000-0000000000c5';
+// 身份：学生用档案 ID（家长 gD 为其打开学生模式），家长用号码代号（4-H H2 起全程真实会话）
+const ACC = { D1, gD: 'gD' } as const;
 
 function sql(q: string): string {
   return execFileSync('psql', ['-X', '-At', '-c', q], { encoding: 'utf8' }).trim();
 }
 const sessions = () => Number(sql(`SELECT count(*) FROM platform.diagnosis_session WHERE student_id = '${D1}'`));
 
-async function open(page: Page, account: string) {
-  const res = await page.goto(`/dev/session?account=${account}&next=${encodeURIComponent(`/dev/diagnosis/${D1}`)}`);
+async function open(page: Page, who: string) {
+  const res = await openAs(page, who, `/dev/diagnosis/${D1}`);
   expect(res?.status()).toBe(200);
   expect(res?.headers()['cache-control'] ?? '').toContain('no-store');
   await expect(page.getByTestId('diagnosis-page')).toBeVisible();

@@ -1,13 +1,12 @@
 // 建档接口集成测试（SIE-01 验收：写入授权、互不可见、取值校验、404 不泄露、日志不带答案）。
 // 一次性 Postgres，登录角色 bff_app 只继承 starbuddy_bff；合成家庭来自 db/seeds/dev/star-map-synthetic.sql（规则 8）。
+// 4-H H2：挂在统一壳路由表上，身份只来自真实会话（tests/shell-harness.ts），写入另带 Origin 与 CSRF 令牌。
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import type { Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import { after, before, test } from 'node:test';
 import pg from 'pg';
-import { createStarMapServer } from '../src/star-map/server.ts';
+import { fetchAs, startShell, type ShellHarness } from './shell-harness.ts';
 
 const HAS_DB = Boolean(process.env['PGHOST']);
 const ROOT = new URL('../../../', import.meta.url);
@@ -23,7 +22,7 @@ const ID = {
 
 let su: pg.Pool;
 let bff: pg.Pool;
-let server: Server;
+let shell: ShellHarness;
 let base = '';
 const logs: Record<string, unknown>[] = [];
 
@@ -49,25 +48,19 @@ before(async () => {
     }
   }
   bff = new pg.Pool({ user: 'bff_app', max: 5 });
-  server = createStarMapServer({ pool: bff, devAuth: true, log: (l) => logs.push(l) });
-  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
-  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  shell = await startShell(bff, su, { log: (l) => logs.push(l) });
+  base = shell.base;
 });
 
 after(async () => {
   if (!HAS_DB) return;
-  await new Promise<void>((r) => server.close(() => r()));
+  await shell.close();
   await bff.end();
   await su.end();
 });
 
 const url = (student: string, sub = '') => `${base}/bff/v0/students/${student}/onboarding${sub}`;
-const call = (method: string, u: string, account?: string, body?: unknown) =>
-  fetch(u, {
-    method,
-    headers: { ...(account ? { 'x-dev-account-id': account } : {}), ...(body !== undefined ? { 'content-type': 'application/json' } : {}) },
-    body: body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body),
-  });
+const call = (method: string, u: string, account?: string, body?: unknown) => fetchAs(shell, method, u, account, body);
 const view = async (student: string, account: string) => (await (await call('GET', url(student), account)).json()) as any;
 
 test('学生写自述、家长写家长观察；互不可见', { skip: !HAS_DB }, async () => {
@@ -134,9 +127,22 @@ test('请求体：不是 JSON 对象 422，超过 16 KB 413；方法不对 405�
   assert.equal((await call('POST', url(ID.S1, '/answers'), ID.S1acc, {})).status, 405);
   assert.equal((await call('GET', url(ID.S1, '/exams'), ID.S1acc)).status, 405);
   assert.equal((await call('GET', url(ID.S1))).status, 401);
-  const plain = await fetch(url(ID.S1, '/answers'), { method: 'PUT', headers: { 'x-dev-account-id': ID.S1acc, 'content-type': 'text/plain' },
-    body: JSON.stringify({ field_id: 'through.g9.near_term_goal', value: { text: '合成' } }) });
+  const plain = await fetchAs(shell, 'PUT', url(ID.S1, '/answers'), ID.S1acc,
+    JSON.stringify({ field_id: 'through.g9.near_term_goal', value: { text: '合成' } }), { 'content-type': 'text/plain' });
   assert.equal(plain.status, 415, 'Content-Type 必须是 application/json');
+});
+
+test('写入要 CSRF：缺令牌、令牌属于别的会话、Origin 不符都 403 CSRF，库里不变（H2 挂到路由表后与认证路由同一套）', { skip: !HAS_DB }, async () => {
+  const body = { field_id: 'through.g9.near_term_goal', value: { text: '合成：CSRF 探测' } };
+  const other = await shell.sessionFor(ID.S2acc);
+  for (const extra of [{ 'x-csrf-token': '' }, { 'x-csrf-token': other.csrf }, { origin: 'http://evil.test' }] as Record<string, string>[]) {
+    const r = await fetchAs(shell, 'PUT', url(ID.S1, '/answers'), ID.S1acc, body, extra);
+    assert.equal(r.status, 403, JSON.stringify(extra));
+    assert.equal(((await r.json()) as any).code, 'CSRF');
+    assert.equal(r.headers.get('access-control-allow-origin'), null);
+  }
+  const { rows } = await su.query(`SELECT count(*)::int AS n FROM insight.self_report WHERE student_id = $1 AND value::text LIKE '%CSRF%'`, [ID.S1]);
+  assert.equal(rows[0].n, 0);
 });
 
 test('同一字段并发提交：不出 500，最后只有一条当前答案', { skip: !HAS_DB }, async () => {
@@ -151,5 +157,5 @@ test('同一字段并发提交：不出 500，最后只有一条当前答案', {
 test('访问日志不含答案、学生 ID 原文', { skip: !HAS_DB }, () => {
   const text = JSON.stringify(logs);
   for (const s of ['期末数学', 'suke-2024', ID.S1]) assert.ok(!text.includes(s), s);
-  assert.ok(logs.some((l) => l['route'] === 'onboarding/answers'));
+  assert.ok(logs.some((l) => l['route'] === 'PUT /students/{student_id}/onboarding/answers'));
 });

@@ -5,13 +5,13 @@ import { useMemo } from 'react';
 import { Diagnosis, type DiagnosisApi } from '../../../../diagnosis/Diagnosis.tsx';
 import { answerAction, currentAction, pauseAction, probeAction, startAction } from '../actions.ts';
 
-export function DiagnosisDemo({ student }: { student: string }) {
+export function DiagnosisDemo({ csrf, student }: { csrf: string; student: string }) {
   const api = useMemo<DiagnosisApi>(() => ({
-    start: () => startAction(student, crypto.randomUUID()),
-    current: (session) => currentAction(student, session),
-    probe: (session, seq, prediction) => probeAction(student, session, seq, prediction, crypto.randomUUID()),
-    answer: (session, seq, answer, work, elapsed) => answerAction(student, session, seq, answer, work, elapsed, crypto.randomUUID()),
-    pause: (session, seq, elapsed) => pauseAction(student, session, seq, elapsed, crypto.randomUUID()),
-  }), [student]);
+    start: () => startAction(csrf, student, crypto.randomUUID()),
+    current: (session) => currentAction(csrf, student, session),
+    probe: (session, seq, prediction) => probeAction(csrf, student, session, seq, prediction, crypto.randomUUID()),
+    answer: (session, seq, answer, work, elapsed) => answerAction(csrf, student, session, seq, answer, work, elapsed, crypto.randomUUID()),
+    pause: (session, seq, elapsed) => pauseAction(csrf, student, session, seq, elapsed, crypto.randomUUID()),
+  }), [csrf, student]);
   return <Diagnosis api={api} />;
 }

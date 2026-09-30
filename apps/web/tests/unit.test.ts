@@ -1,11 +1,14 @@
-// 前端单测（不需要浏览器）：布局纯函数、文案与摘要、开发身份桩、BFF 地址限制。
+// 前端单测（不需要浏览器）：布局纯函数、文案与摘要、开发专用页面的关卡、BFF 地址白名单、安全响应头。
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { SYNTHETIC_ACCOUNTS } from '../src/dev/accounts.ts';
-import { devAccountFromCookie, devAuthEnabled, safeNext } from '../src/lib/dev-auth.ts';
+import { existsSync, readFileSync } from 'node:fs';
+import { bffBaseUrl } from '../src/lib/bff.ts';
+import { contentSecurityPolicy, HSTS, hstsEnabled, newNonce } from '../src/lib/csp.ts';
+import { devRuntimeAllowed } from '../src/lib/dev-pages.ts';
 import { skySummaryLabel, statusText, subjectName } from '../src/lib/labels.ts';
-import { bffBaseUrl, fetchStarMap, isUuid } from '../src/lib/star-map.ts';
-import { columnsForWidth, orderStars, placeStars, squareColumns, STAR_PITCH } from '../src/star/layout.ts';
+import { fetchStarMap, isUuid } from '../src/lib/star-map.ts';
+import { THEME_CSS } from '../src/lib/theme.ts';
+import { columnsForWidth, orderStars, placeStars, skyColumnsCss, squareColumns, STAR_PITCH } from '../src/star/layout.ts';
 import { strokePx } from '../src/star/tokens.ts';
 
 const stars = (ids: string[]) => ids.map((id) => ({ skill: `aya:${id}` }));
@@ -46,40 +49,57 @@ test('描边：按图 2b 比例缩放，下限 1.5px', () => {
   assert.ok(strokePx(84) === 2);
 });
 
-test('开发身份桩：开关不开、不是 UUID、不在合成账号列表里，都不算登录', () => {
-  const on = { STARBUDDY_DEV_AUTH: '1', STARBUDDY_ENV: 'test' };
-  const acc = SYNTHETIC_ACCOUNTS[0]!.account_id;
-  assert.equal(devAuthEnabled({}), false);
-  assert.equal(devAuthEnabled({ STARBUDDY_DEV_AUTH: 'true', STARBUDDY_ENV: 'dev' }), false);
-  // 第二个条件：只在 dev / test 环境（审核台 PR 3 安全审查 #2）
-  assert.equal(devAuthEnabled({ STARBUDDY_DEV_AUTH: '1' }), false);
-  assert.equal(devAuthEnabled({ STARBUDDY_DEV_AUTH: '1', STARBUDDY_ENV: 'production' }), false);
-  assert.equal(devAuthEnabled({ STARBUDDY_DEV_AUTH: '1', STARBUDDY_ENV: 'dev' }), true);
-  assert.equal(devAccountFromCookie(acc, {}), null);
-  assert.equal(devAccountFromCookie(acc, on), acc);
-  assert.equal(devAccountFromCookie('not-a-uuid', on), null);
-  assert.equal(devAccountFromCookie('5a000000-0000-4000-8000-00000000ffff', on), null);
-  assert.equal(devAccountFromCookie(undefined, on), null);
-});
-
-test('登录后只能跳回星图页、建档页或探针演示页', () => {
-  assert.equal(safeNext('/star-map/5a000000-0000-4000-8000-0000000000c1'), '/star-map/5a000000-0000-4000-8000-0000000000c1');
-  assert.equal(safeNext('/onboarding/5a000000-0000-4000-8000-0000000000c1'), '/onboarding/5a000000-0000-4000-8000-0000000000c1');
-  assert.equal(safeNext('/dev/probe/5a000000-0000-4000-8000-0000000000c1'), '/dev/probe/5a000000-0000-4000-8000-0000000000c1');
-  assert.equal(safeNext('/dev/diagnosis/5a000000-0000-4000-8000-0000000000c5'), '/dev/diagnosis/5a000000-0000-4000-8000-0000000000c5');
-  for (const bad of ['https://evil.example/', '//evil.example', '/star-map/x/../../admin', '/dev/session?x', null, '',
-    '/dev/probe/x', '/dev/probex/5a000000-0000-4000-8000-0000000000c1', '/dev/login/5a000000-0000-4000-8000-0000000000c1',
-    '/onboarding/5a000000-0000-4000-8000-0000000000c1?step=1', '/onboardingx/5a000000-0000-4000-8000-0000000000c1', '/review']) {
-    assert.equal(safeNext(bad), '/dev/login', String(bad));
+test('开发身份桩已删除：文件不在了；开发专用页面运行时只认 dev / test 与本机 Host', () => {
+  for (const f of ['src/lib/dev-auth.ts', 'src/dev/accounts.ts', 'src/app/dev/login/page.tsx', 'src/app/dev/session/route.ts',
+    'src/app/star-map/[studentId]/page.tsx']) {
+    assert.ok(!existsSync(new URL(`../${f}`, import.meta.url)), f);
   }
+  assert.equal(devRuntimeAllowed('127.0.0.1:3000', { STARBUDDY_ENV: 'test' }), true);
+  assert.equal(devRuntimeAllowed('127.0.0.1:3000', {}), false);
+  assert.equal(devRuntimeAllowed('127.0.0.1:3000', { STARBUDDY_ENV: 'staging' }), false);
+  assert.equal(devRuntimeAllowed('evil.example.test', { STARBUDDY_ENV: 'dev' }), false);
 });
 
-test('BFF 地址只能是本机 loopback 的 http', () => {
+test('BFF 地址白名单：开发与测试只允许本机 loopback 的 http；staging、pilot、生产只允许内网地址', () => {
   assert.equal(bffBaseUrl({}), 'http://127.0.0.1:8787');
-  assert.equal(bffBaseUrl({ STARBUDDY_BFF_URL: 'http://localhost:9000/x' }), 'http://localhost:9000');
-  for (const bad of ['https://127.0.0.1:8787', 'http://10.0.0.5:8787', 'http://bff.example.com']) {
-    assert.throws(() => bffBaseUrl({ STARBUDDY_BFF_URL: bad }), bad);
+  assert.equal(bffBaseUrl({ STARBUDDY_ENV: 'test', STARBUDDY_BFF_URL: 'http://localhost:9000' }), 'http://localhost:9000');
+  for (const bad of ['https://127.0.0.1:8787', 'http://10.0.0.5:8787', 'http://bff.example.com', 'http://127.0.0.1:8787/x', 'http://u:p@127.0.0.1:8787']) {
+    assert.throws(() => bffBaseUrl({ STARBUDDY_ENV: 'dev', STARBUDDY_BFF_URL: bad }), bad);
   }
+  for (const env of ['staging', 'pilot', 'production']) {
+    assert.equal(bffBaseUrl({ STARBUDDY_ENV: env, STARBUDDY_BFF_URL: 'http://10.0.0.5:8787' }), 'http://10.0.0.5:8787');
+    assert.equal(bffBaseUrl({ STARBUDDY_ENV: env, STARBUDDY_BFF_URL: 'https://172.20.1.2' }), 'https://172.20.1.2');
+    for (const bad of ['http://127.0.0.1:8787', 'https://bff.example.com', 'http://8.8.8.8', 'http://172.32.0.1', 'http://192.169.0.1']) {
+      assert.throws(() => bffBaseUrl({ STARBUDDY_ENV: env, STARBUDDY_BFF_URL: bad }), `${env} ${bad}`);
+    }
+  }
+  assert.throws(() => bffBaseUrl({ STARBUDDY_ENV: 'prod', STARBUDDY_BFF_URL: 'http://10.0.0.5' }));
+});
+
+test('CSP：带本次的 nonce，没有 unsafe-inline；生产不带 unsafe-eval；不许 iframe 与外部来源；HSTS 只在 staging、pilot、生产', () => {
+  const n = newNonce();
+  assert.notEqual(n, newNonce());
+  const csp = contentSecurityPolicy(n);
+  assert.match(csp, new RegExp(`script-src 'self' 'nonce-${n.replace(/[+/=]/g, '\\$&')}' 'strict-dynamic'`));
+  assert.ok(csp.includes(`style-src 'self' 'nonce-${n}'`));
+  for (const d of ["frame-ancestors 'none'", "frame-src 'none'", "object-src 'none'", "base-uri 'none'", "form-action 'self'", "connect-src 'self'"]) {
+    assert.ok(csp.includes(d), d);
+  }
+  assert.ok(!/unsafe-inline|unsafe-eval|https?:|\*/.test(csp), csp);
+  assert.ok(contentSecurityPolicy(n, { dev: true }).includes("'unsafe-eval'"));
+  assert.throws(() => contentSecurityPolicy("x' 'unsafe-inline"));
+  assert.match(HSTS, /max-age=(\d+)/);
+  assert.ok(Number(/max-age=(\d+)/.exec(HSTS)![1]) >= 180 * 86400);
+  for (const env of ['staging', 'pilot', 'production']) assert.equal(hstsEnabled({ STARBUDDY_ENV: env }), true, env);
+  for (const env of ['dev', 'test', '']) assert.equal(hstsEnabled({ STARBUDDY_ENV: env }), false, env);
+});
+
+test('内联样式二选一取静态文件：theme.css 与 THEME_CSS 一致；星空列宽规则与生成器一致；源码里没有 style 属性与内联 <style>', () => {
+  const norm = (t: string) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ').trim();
+  assert.equal(norm(readFileSync(new URL('../src/app/theme.css', import.meta.url), 'utf8')), norm(THEME_CSS));
+  const css = readFileSync(new URL('../src/app/globals.css', import.meta.url), 'utf8');
+  const block = css.slice(css.indexOf('/* sky-cols:start */') + 20, css.indexOf('/* sky-cols:end */'));
+  assert.equal(block.trim(), skyColumnsCss().trim());
 });
 
 test('没有登录或学生 ID 不是 UUID 时不请求 BFF', async () => {
@@ -88,7 +108,7 @@ test('没有登录或学生 ID 不是 UUID 时不请求 BFF', async () => {
   globalThis.fetch = (async () => { called += 1; throw new Error('should not fetch'); }) as typeof fetch;
   try {
     assert.deepEqual(await fetchStarMap('5a000000-0000-4000-8000-0000000000c1', null), { kind: 'unauthenticated' });
-    assert.deepEqual(await fetchStarMap('../../admin', SYNTHETIC_ACCOUNTS[0]!.account_id), { kind: 'not-found' });
+    assert.deepEqual(await fetchStarMap('../../admin', { token: 'a'.repeat(64), csrf: 'b'.repeat(64) }), { kind: 'not-found' });
     assert.equal(called, 0);
     assert.ok(isUuid('5a000000-0000-4000-8000-0000000000c1'));
   } finally {

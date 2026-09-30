@@ -1,7 +1,8 @@
 // 符号样张页（spec 范围第 1 条）：三态加保持，16 / 24 / 32 / 48px，浅色与深色并排，以及点亮动效演示。
 // 16px 像素测试与视觉回归都用这一页（数据是固定的，不连 BFF）。
+import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
-import { devAuthEnabled } from '../../../lib/dev-auth.ts';
+import { devRuntimeAllowed } from '../../../lib/dev-pages.ts';
 import type { Display } from '../../../lib/star-map.ts';
 import { Star, StarDefs } from '../../../star/Star.tsx';
 
@@ -41,11 +42,11 @@ function Panel({ theme }: { theme: 'light' | 'dark' }) {
   );
 }
 
-// 开发页：只在 STARBUDDY_DEV_AUTH=1 时存在（安全审查 S6）
+// 开发页（安全审查 S6）：文件名 page.dev.tsx，只在开发、测试构建里存在（构建期常量，4-H H2）；运行时再核对环境与本机 Host
 export const dynamic = 'force-dynamic';
 
-export default function StarGlyphsPage() {
-  if (!devAuthEnabled()) notFound();
+export default async function StarGlyphsPage() {
+  if (!devRuntimeAllowed((await headers()).get('host'))) notFound();
   return (
     <main>
       <StarDefs />

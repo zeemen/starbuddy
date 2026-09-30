@@ -79,7 +79,7 @@ test('会话令牌只在服务端：浏览器组件不引用会话读写；cooki
   }
 });
 
-test('带会话的页面不缓存（next.config.ts）', () => {
+test('带会话的页面不缓存（next.config.ts：H2 起除带哈希的静态资源外一律 no-store）', () => {
   const cfg = readFileSync(join(WEB, 'next.config.ts'), 'utf8');
-  assert.ok(cfg.includes("source: '/(login|family|student)'"));
+  assert.ok(cfg.includes("source: '/((?!_next/static|_next/image).*)',\n        headers: [{ key: 'Cache-Control', value: 'no-store' }]"));
 });

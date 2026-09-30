@@ -9,14 +9,14 @@ info:
     授权与“互不可见”全部由库函数决定（insight.onboarding_view 按调用者身份裁剪）：学生看不到家长观察与排名区间，
     家长看不到学生自述原文，各家长只看自己写的。未授权与学生不存在返回同一个 404，响应体逐字节相同；
     取值不合要求返回 422（不回显输入）；请求体上限 16 KB。本接口不产生任何判断或结论（CLAUDE.md 规则 11）。
-    身份来源是开发桩（x-dev-account-id，只在 STARBUDDY_DEV_AUTH=1 且只监听 loopback 时生效），4-H 用真实会话替换。
+    身份只来自会话（请求头 x-sb-session，由 apps/web 从 HttpOnly cookie 转交；4-H H2 起挂在统一壳路由表上，开发身份桩已删除）；改变状态的请求另要 Origin 等于壳的来源、带与会话绑定的 x-csrf-token（见 shell.v0.yaml）。
 servers:
   - url: http://127.0.0.1:8787
 paths:
   /bff/v0/students/{student_id}/onboarding:
     parameters:
       - $ref: '#/components/parameters/StudentId'
-      - $ref: '#/components/parameters/DevAccount'
+      - $ref: '#/components/parameters/Session'
     get:
       operationId: getOnboarding
       responses:
@@ -33,7 +33,7 @@ paths:
   /bff/v0/students/{student_id}/onboarding/answers:
     parameters:
       - $ref: '#/components/parameters/StudentId'
-      - $ref: '#/components/parameters/DevAccount'
+      - $ref: '#/components/parameters/Session'
     put:
       operationId: putOnboardingAnswer
       description: 学生本人写学生自述、家长写家长观察（由库判断）；改答案时旧行保留为历史（superseded_at）。
@@ -60,7 +60,7 @@ paths:
   /bff/v0/students/{student_id}/onboarding/exams:
     parameters:
       - $ref: '#/components/parameters/StudentId'
-      - $ref: '#/components/parameters/DevAccount'
+      - $ref: '#/components/parameters/Session'
     post:
       operationId: postOnboardingExam
       description: 考试记录；学生与家长各录各的。rank_band（排名区间）与 difficulty_note（难度说明）只收家长录入，学生带上返回 422，学生也读不到。
@@ -93,7 +93,7 @@ paths:
   /bff/v0/students/{student_id}/onboarding/textbooks:
     parameters:
       - $ref: '#/components/parameters/StudentId'
-      - $ref: '#/components/parameters/DevAccount'
+      - $ref: '#/components/parameters/Session'
     put:
       operationId: putOnboardingTextbook
       description: 各科教材版本（platform.student_subject_textbook）；null 表示“不清楚”。按填写账号各存一行，只改自己那一行，对方看不到。
@@ -120,7 +120,7 @@ paths:
   /bff/v0/students/{student_id}/onboarding/progress:
     parameters:
       - $ref: '#/components/parameters/StudentId'
-      - $ref: '#/components/parameters/DevAccount'
+      - $ref: '#/components/parameters/Session'
     post:
       operationId: postOnboardingProgress
       description: 建档进度，只追加，不存答案。step = onboarding 表示整个建档的开始与完成。
@@ -151,12 +151,12 @@ components:
       in: path
       required: true
       schema: { type: string, format: uuid }
-    DevAccount:
-      name: x-dev-account-id
+    Session:
+      name: x-sb-session
       in: header
-      required: false
-      description: 开发身份桩（仅开发环境）；4-H 删除
-      schema: { type: string, format: uuid }
+      required: true
+      description: 会话令牌（64 位十六进制），不进 URL 与日志
+      schema: { type: string, pattern: '^[0-9a-f]{64}$' }
   responses:
     Ok:
       description: 已写入

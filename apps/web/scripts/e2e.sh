@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 前端端到端测试的环境（spec 验收）：一次性 Postgres（db/tests/pg-ephemeral.sh）→ 阿鸦内容登记 → 星图合成种子 →
-# BFF 星图服务（只监听 127.0.0.1，开发身份桩打开）→ 测试构建（含开发专用页面，输出到单独的 .next-e2e，不碰正式的 .next）
+# BFF（只监听 127.0.0.1；身份只来自真实会话，端到端经短信捕获桩的收件箱读验证码登录）→ 测试构建（含开发专用页面，输出到单独的 .next-e2e，不碰正式的 .next）
 # → Playwright（webServer 起 next start，同样读 .next-e2e）。
 # 全部合成数据，不连共享库。
 # 用法：bash apps/web/scripts/e2e.sh [playwright 参数…]        例如 --grep-invert @visual、--grep @visual
@@ -69,14 +69,26 @@ for _ in $(seq 1 80); do
   python3 -c "import socket,sys; ok=all(socket.socket().connect_ex(('127.0.0.1', p)) == 0 for p in ($LEARNING_PORT, $AYA_PORT)); sys.exit(0 if ok else 1)" && break
   sleep 0.25
 done
-# STARBUDDY_DEV_METER_CLOCK=daytime：诊断的宵禁判断与上面挪到白天的计量时钟同一时间轴（只在开发身份桩打开时认）
+# BFF（4-H H2：只有统一壳路由表一个入口，身份只来自真实会话；诊断的宵禁判断用上面挪到白天的计量时钟，
+# 经 platform.meter_guard_status，BFF 没有自己的时钟开关）
+# 限流阈值放宽的一份配置（端到端一次要让同一个合成家长登录很多次；每号每分钟 1 次的原值会让后面的用例 429）。
+# 只在这个一次性环境、只在 STARBUDDY_ENV=test 时 BFF 才认（BFF_AUTH_CONFIG，services/bff/src/main.ts）；
+# 限流本身由 services/bff/tests/auth.integration.test.ts 按原配置测。
+AUTH_CFG="$(mktemp --suffix=.json)"
+python3 - "$ROOT/services/bff/config/auth.json" "$AUTH_CFG" <<'PY'
+import json, sys
+c = json.load(open(sys.argv[1]))
+for v in c['rate_limits'].values():
+    v['limit'] = min(v['limit'] * 1000, 1000000)
+json.dump(c, open(sys.argv[2], 'w'))
+PY
 ( cd "$ROOT/services/bff" || exit 1
-  export BFF_DATABASE_URL="postgresql://bff_app@/starbuddy_test?host=$PGHOST" PORT="$BFF_PORT" STARBUDDY_DEV_AUTH=1 \
-    BFF_LEARNING_URL="http://127.0.0.1:$LEARNING_PORT" BFF_LEARNING_TOKEN="$SVC_CRED" STARBUDDY_DEV_METER_CLOCK=daytime \
+  export BFF_DATABASE_URL="postgresql://bff_app@/starbuddy_test?host=$PGHOST" PORT="$BFF_PORT" BFF_AUTH_CONFIG="$AUTH_CFG" \
+    BFF_LEARNING_URL="http://127.0.0.1:$LEARNING_PORT" BFF_LEARNING_TOKEN="$SVC_CRED" \
     STARBUDDY_ENV=test BFF_SHELL_ORIGIN="http://127.0.0.1:$WEB_PORT" BFF_SMS_CAPTURE_FILE="$SMS_INBOX"
-  exec node --no-warnings src/star-map/main.ts ) > "$LOG" 2>&1 < /dev/null &
+  exec node --no-warnings src/main.ts ) > "$LOG" 2>&1 < /dev/null &
 BFF_PID=$!
-trap 'kill "$BFF_PID" "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true; rm -f "$LOG" "$LLOG" "$SMS_INBOX"' EXIT
+trap 'kill "$BFF_PID" "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true; rm -f "$LOG" "$LLOG" "$SMS_INBOX" "$AUTH_CFG"' EXIT
 for _ in $(seq 1 80); do
   python3 -c "import socket,sys; s=socket.socket(); sys.exit(0 if s.connect_ex(('127.0.0.1', $BFF_PORT)) == 0 else 1)" && break
   sleep 0.25
@@ -100,7 +112,7 @@ ENVDTS="$(mktemp)"
 if [ -f "$WEB/next-env.d.ts" ]; then cp "$WEB/next-env.d.ts" "$ENVDTS"; else rm -f "$ENVDTS"; fi
 cleanup() {
   kill "$BFF_PID" "$REVIEW_PID" "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true
-  rm -f "$LOG" "$RLOG" "$LLOG" "$SMS_INBOX"
+  rm -f "$LOG" "$RLOG" "$LLOG" "$SMS_INBOX" "$AUTH_CFG"
   if [ -f "$ENVDTS" ]; then cp "$ENVDTS" "$WEB/next-env.d.ts"; rm -f "$ENVDTS"; else rm -f "$WEB/next-env.d.ts"; fi
   rm -rf "${WEB:?}/.next-e2e"
 }
@@ -111,11 +123,11 @@ for _ in $(seq 1 80); do
 done
 
 # STARBUDDY_NEXT_DIST_DIR：构建与 next start（playwright.config.ts 的 webServer）都读 .next-e2e
-export STARBUDDY_BFF_URL="http://127.0.0.1:$BFF_PORT" STARBUDDY_REVIEW_URL="http://127.0.0.1:$REVIEW_PORT" WEB_PORT STARBUDDY_DEV_AUTH=1 STARBUDDY_ENV=test NEXT_TELEMETRY_DISABLED=1 \
+export STARBUDDY_BFF_URL="http://127.0.0.1:$BFF_PORT" STARBUDDY_REVIEW_URL="http://127.0.0.1:$REVIEW_PORT" WEB_PORT STARBUDDY_DEV_PAGES=1 STARBUDDY_ENV=test NEXT_TELEMETRY_DISABLED=1 \
   STARBUDDY_NEXT_DIST_DIR=.next-e2e
 cd "$WEB"
-# 端到端用测试构建（冲刺 2-L）：开发专用页面（page.dev.tsx，如探针演示页）只在 STARBUDDY_DEV_AUTH=1 且 STARBUDDY_ENV=dev/test
-# 构建时才是页面（next.config.ts）。测试构建输出到 .next-e2e、类型检查用 tsconfig.e2e.json，正式的 .next 保持生产构建，
+# 端到端用测试构建（冲刺 2-L）：开发专用页面（page.dev.tsx：探针、诊断演示页与符号样张页）只在 STARBUDDY_DEV_PAGES=1 且
+# STARBUDDY_ENV=dev/test 构建时才是页面（next.config.ts，构建期常量）。测试构建输出到 .next-e2e、类型检查用 tsconfig.e2e.json，正式的 .next 保持生产构建，
 # tests/build-output.test.ts 的检查不再跳过；tsconfig.json 不被改写（next-env.d.ts 结束时还原）。
 BLOG="$(mktemp)"
 npx --no-install next build > "$BLOG" 2>&1 || { tail -30 "$BLOG"; rm -f "$BLOG"; exit 1; }

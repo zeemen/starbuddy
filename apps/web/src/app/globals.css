@@ -34,6 +34,76 @@ a { color: inherit; }
   width: 100%;
 }
 .sky-field > .star { justify-self: center; align-self: center; }
+/* 星空接近正方形：列数 = ceil(√星数)，宽度 = 列数 × 24px。CSP 不允许内联样式（H2），按 data-cols 预先写好
+   （src/star/layout.ts 的 skyColumnsCss 生成，tests/unit.test.ts 核对） */
+/* sky-cols:start */
+.sky-field[data-cols="1"] { max-width: 24px; }
+.sky-field[data-cols="2"] { max-width: 48px; }
+.sky-field[data-cols="3"] { max-width: 72px; }
+.sky-field[data-cols="4"] { max-width: 96px; }
+.sky-field[data-cols="5"] { max-width: 120px; }
+.sky-field[data-cols="6"] { max-width: 144px; }
+.sky-field[data-cols="7"] { max-width: 168px; }
+.sky-field[data-cols="8"] { max-width: 192px; }
+.sky-field[data-cols="9"] { max-width: 216px; }
+.sky-field[data-cols="10"] { max-width: 240px; }
+.sky-field[data-cols="11"] { max-width: 264px; }
+.sky-field[data-cols="12"] { max-width: 288px; }
+.sky-field[data-cols="13"] { max-width: 312px; }
+.sky-field[data-cols="14"] { max-width: 336px; }
+.sky-field[data-cols="15"] { max-width: 360px; }
+.sky-field[data-cols="16"] { max-width: 384px; }
+.sky-field[data-cols="17"] { max-width: 408px; }
+.sky-field[data-cols="18"] { max-width: 432px; }
+.sky-field[data-cols="19"] { max-width: 456px; }
+.sky-field[data-cols="20"] { max-width: 480px; }
+.sky-field[data-cols="21"] { max-width: 504px; }
+.sky-field[data-cols="22"] { max-width: 528px; }
+.sky-field[data-cols="23"] { max-width: 552px; }
+.sky-field[data-cols="24"] { max-width: 576px; }
+.sky-field[data-cols="25"] { max-width: 600px; }
+.sky-field[data-cols="26"] { max-width: 624px; }
+.sky-field[data-cols="27"] { max-width: 648px; }
+.sky-field[data-cols="28"] { max-width: 672px; }
+.sky-field[data-cols="29"] { max-width: 696px; }
+.sky-field[data-cols="30"] { max-width: 720px; }
+.sky-field[data-cols="31"] { max-width: 744px; }
+.sky-field[data-cols="32"] { max-width: 768px; }
+.sky-field[data-cols="33"] { max-width: 792px; }
+.sky-field[data-cols="34"] { max-width: 816px; }
+.sky-field[data-cols="35"] { max-width: 840px; }
+.sky-field[data-cols="36"] { max-width: 864px; }
+.sky-field[data-cols="37"] { max-width: 888px; }
+.sky-field[data-cols="38"] { max-width: 912px; }
+.sky-field[data-cols="39"] { max-width: 936px; }
+.sky-field[data-cols="40"] { max-width: 960px; }
+.sky-field[data-cols="41"] { max-width: 984px; }
+.sky-field[data-cols="42"] { max-width: 1008px; }
+.sky-field[data-cols="43"] { max-width: 1032px; }
+.sky-field[data-cols="44"] { max-width: 1056px; }
+.sky-field[data-cols="45"] { max-width: 1080px; }
+.sky-field[data-cols="46"] { max-width: 1104px; }
+.sky-field[data-cols="47"] { max-width: 1128px; }
+.sky-field[data-cols="48"] { max-width: 1152px; }
+.sky-field[data-cols="49"] { max-width: 1176px; }
+.sky-field[data-cols="50"] { max-width: 1200px; }
+.sky-field[data-cols="51"] { max-width: 1224px; }
+.sky-field[data-cols="52"] { max-width: 1248px; }
+.sky-field[data-cols="53"] { max-width: 1272px; }
+.sky-field[data-cols="54"] { max-width: 1296px; }
+.sky-field[data-cols="55"] { max-width: 1320px; }
+.sky-field[data-cols="56"] { max-width: 1344px; }
+.sky-field[data-cols="57"] { max-width: 1368px; }
+.sky-field[data-cols="58"] { max-width: 1392px; }
+.sky-field[data-cols="59"] { max-width: 1416px; }
+.sky-field[data-cols="60"] { max-width: 1440px; }
+.sky-field[data-cols="61"] { max-width: 1464px; }
+.sky-field[data-cols="62"] { max-width: 1488px; }
+.sky-field[data-cols="63"] { max-width: 1512px; }
+.sky-field[data-cols="64"] { max-width: 1536px; }
+/* sky-cols:end */
+/* 半亮裁剪区的 <svg> 不占位置（原来是内联样式） */
+.star-defs { position: absolute; }
 
 .sky-list { margin-top: 12px; }
 .sky-list summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; }

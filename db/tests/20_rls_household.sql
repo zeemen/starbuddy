@@ -15,10 +15,17 @@ SELECT t.throws($$INSERT INTO platform.account_contact (account_id, phone_e164, 
                   VALUES ('a1000000-0000-4000-8000-0000000000a1', '+99900000099', now())$$,
                 '42501', '不能把手机号挂到别人的账号上（账号接管）');
 SELECT t.throws($$INSERT INTO platform.account (kind) VALUES ('student')$$, '42501', 'BFF 不能直接建账号');
+-- 0031 起 BFF 不能再调 0002 的旧登录入口（家长登录只经 0029 的 auth_otp_login；统一壳 H1 待人确认 B）
+SELECT t.throws($$SELECT platform.signup_guardian('+99900000010')$$, '42501', 'BFF 不能调旧注册入口 signup_guardian（不经验证码注册）');
+SELECT t.throws($$SELECT * FROM platform.lookup_accounts_by_phone('+99900000001')$$, '42501',
+                'BFF 不能调旧查号入口 lookup_accounts_by_phone（号码是否注册的查询通道）');
+-- 函数本身的行为不变（属主仍可执行；回滚 0031 即恢复授权）
+RESET ROLE;
 SELECT t.ok(platform.signup_guardian('+99900000010') IS NOT NULL, '家长注册只能经 signup_guardian');
 SELECT t.ok((SELECT count(*) FROM platform.lookup_accounts_by_phone('+99900000010')) = 1, '登录按手机号只能查到账号 ID');
 SELECT t.ok((SELECT count(*) FROM platform.lookup_accounts_by_phone('+99900000001')) = 2,
             '同一手机号可以对应多个账号（学生可能用家长的号）');
+SET ROLE starbuddy_bff;
 
 -- ================= 家长 gA：只看到自己绑定的学生 =================
 SELECT t.as_account('a0000000-0000-4000-8000-00000000000a');

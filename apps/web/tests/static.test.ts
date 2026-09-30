@@ -63,3 +63,19 @@ test('所有调用 next 的脚本都关掉遥测（Next 默认向境外发匿名
   assert.match(readFileSync(join(root, '.github/workflows/check.yml'), 'utf8'), /NEXT_TELEMETRY_DISABLED: "1"/);
   assert.match(readFileSync(join(WEB, 'playwright.config.ts'), 'utf8'), /NEXT_TELEMETRY_DISABLED: '1'/);
 });
+
+test('CSP 下不能有内联样式：组件里没有 style 属性与内联 <style>（H2，主题变量改为静态 theme.css）', () => {
+  for (const f of sources.filter((s) => /\.tsx$/.test(s.path))) {
+    assert.ok(!/\bstyle=\{/.test(f.text), `${f.path} 有 style 属性`);
+    assert.ok(!/<style[\s>]/.test(code(f.text)), `${f.path} 有内联 <style>`);
+    assert.ok(!/dangerouslySetInnerHTML/.test(f.text), `${f.path} 有 dangerouslySetInnerHTML`);
+  }
+});
+
+test('开发身份桩已删除：源码、配置、端到端启动脚本里都没有它的痕迹（e2e 用例里只在“已删除”的负向断言中出现）', () => {
+  const extra = ['next.config.ts', 'playwright.config.ts', 'scripts/e2e.sh', 'README.md', 'e2e/session.ts']
+    .map((p) => ({ path: p, text: readFileSync(join(WEB, p), 'utf8') }));
+  for (const f of [...sources, ...extra]) {
+    assert.ok(!/x-dev-account-id|sb_dev_account|STARBUDDY_DEV_AUTH|\/dev\/login|\/dev\/session|dev-auth|SYNTHETIC_ACCOUNTS/.test(f.text), f.path);
+  }
+});

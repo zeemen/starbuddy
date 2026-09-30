@@ -5,7 +5,10 @@ import { execFileSync } from 'node:child_process';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 
-const ACC = { S1: '5a000000-0000-4000-8000-0000000000b1', S2: '5a000000-0000-4000-8000-0000000000b2', gS: '5a000000-0000-4000-8000-0000000000a1' };
+import { openAs } from './session.ts';
+
+// 身份：学生用档案 ID（家长为其打开学生模式），家长用号码代号（4-H H2 起全程真实会话）
+const ACC = { S1: '5a000000-0000-4000-8000-0000000000c1', S2: '5a000000-0000-4000-8000-0000000000c2', gS: 'gS' } as const;
 const STU = { S1: '5a000000-0000-4000-8000-0000000000c1', S2: '5a000000-0000-4000-8000-0000000000c2' };
 
 /** 以迁移执行者身份核对库里的结果（只读查询；一次性测试库） */
@@ -16,8 +19,8 @@ const events = (student: string, kind: string) =>
   Number(sql(`SELECT count(*) FROM insight.behavior_event WHERE student_id = '${student}' AND kind = '${kind}' AND source_type = 'objective'`));
 const probes = (student: string) => Number(sql(`SELECT count(*) FROM insight.confidence_probe WHERE student_id = '${student}'`));
 
-async function open(page: Page, account: string, student: string) {
-  const res = await page.goto(`/dev/session?account=${account}&next=${encodeURIComponent(`/dev/probe/${student}`)}`);
+async function open(page: Page, who: string, student: string) {
+  const res = await openAs(page, who, `/dev/probe/${student}`);
   expect(res?.status()).toBe(200);
   expect(res?.headers()['cache-control'] ?? '').toContain('no-store');
   await expect(page.getByTestId('probe-page')).toBeVisible();

@@ -40,18 +40,32 @@ test('构建产物里没有外部资源引用', { skip: BUILT ? false : '没有 
 // 开发专用页面（冲刺 2-L 探针演示页 /dev/probe，文件名 page.dev.tsx）不在生产构建里：路由表里没有、服务端产物里没有、
 // 任何产物里都没有演示页的文案与标记。端到端的测试构建输出到单独的 .next-e2e（scripts/e2e.sh），.next 永远是生产构建，
 // 这项检查不再有“测试构建就跳过”的出口。
-test('生产构建里没有开发专用页面（探针演示页、数学诊断演示页）', {
+test('生产构建里没有开发专用页面（探针演示页、数学诊断演示页、符号样张页）', {
   skip: BUILT ? false : '没有 .next 构建产物（先 next build）',
 }, () => {
   const routes = JSON.parse(readFileSync(join(NEXT, 'app-path-routes-manifest.json'), 'utf8')) as Record<string, string>;
   assert.ok(Object.keys(routes).length > 0, '路由表为空，检查不到东西');
-  assert.deepEqual(Object.values(routes).filter((r) => r.startsWith('/dev/probe') || r.startsWith('/dev/diagnosis')), []);
+  assert.deepEqual(Object.values(routes).filter((r) => r.startsWith('/dev/')), []);
   assert.ok(!existsSync(join(NEXT, 'server', 'app', 'dev', 'probe')));
   assert.ok(!existsSync(join(NEXT, 'server', 'app', 'dev', 'diagnosis')));  // 数学诊断演示页（SIE-02a）
+  assert.ok(!existsSync(join(NEXT, 'server', 'app', 'dev', 'star-glyphs')));  // 符号样张页（4-H H2 起只在开发构建里）
   const markers = ['探针演示', '\\u63a2\\u9488\\u6f14\\u793a', 'probe-demo', 'page.dev',
-    '数学诊断演示', '\\u6570\\u5b66\\u8bca\\u65ad\\u6f14\\u793a', 'diagnosis-page', '老师会看你的过程',
+    '数学诊断演示', '\\u6570\\u5b66\\u8bca\\u65ad\\u6f14\\u793a', 'diagnosis-page', '老师会看你的过程', '星形符号样张',
     '\\u8001\\u5e08\\u4f1a\\u770b\\u4f60\\u7684\\u8fc7\\u7a0b'];
   const hits = files(NEXT).filter((p) => /\.(css|html|js|json|rsc|txt)$/.test(p))  // 不查 .map：源码映射里带注释原文
+    .filter((p) => { const t = readFileSync(p, 'utf8'); return markers.some((m) => t.includes(m)); })
+    .map((p) => relative(NEXT, p));
+  assert.deepEqual(hits, []);
+});
+
+// 开发身份桩（4-H H2 删除）：生产构建里找不到它的任何痕迹——请求头名、cookie 名、开关名、开发登录与写 cookie 的路由、
+// 合成账号列表里的账号 ID。
+test('生产构建里没有开发身份桩的痕迹', { skip: BUILT ? false : '没有 .next 构建产物（先 next build）' }, () => {
+  const routes = JSON.parse(readFileSync(join(NEXT, 'app-path-routes-manifest.json'), 'utf8')) as Record<string, string>;
+  assert.deepEqual(Object.values(routes).filter((r) => r.startsWith('/dev') || r.startsWith('/star-map')), []);
+  const markers = ['x-dev-account-id', 'sb_dev_account', 'STARBUDDY_DEV_AUTH', '/dev/login', '/dev/session', 'SYNTHETIC_ACCOUNTS',
+    '5a000000-0000-4000-8000-0000000000b1', '5a000000-0000-4000-8000-0000000000a1', 'devAccountFromCookie'];
+  const hits = files(NEXT).filter((p) => !p.endsWith('.map'))
     .filter((p) => { const t = readFileSync(p, 'utf8'); return markers.some((m) => t.includes(m)); })
     .map((p) => relative(NEXT, p));
   assert.deepEqual(hits, []);

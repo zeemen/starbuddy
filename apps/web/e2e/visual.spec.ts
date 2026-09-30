@@ -2,8 +2,8 @@
 // 与已提交的基线比较，差异像素比例 ≤ 0.1%（playwright.config.ts）。只由 make web-visual 运行（待人确认 #11）；
 // 基线首次提交要有视觉负责人签字（lessons 记录），并且要在固定版本的容器与浏览器里生成。
 import { expect, test } from '@playwright/test';
+import { openAs } from './session.ts';
 
-const S1_ACCOUNT = '5a000000-0000-4000-8000-0000000000b1';
 const S1 = '5a000000-0000-4000-8000-0000000000c1';
 
 const ENVS = [
@@ -22,7 +22,7 @@ for (const env of ENVS) {
     });
 
     test(`@visual 星图页 S1（${env.name}）`, async ({ page }) => {
-      await page.goto(`/dev/session?account=${S1_ACCOUNT}&next=${encodeURIComponent(`/star-map/${S1}`)}`);
+      await openAs(page, S1, `/s/${S1}/star-map`);  // 4-H H2：学生模式下的真实会话
       await expect(page).toHaveScreenshot(`star-map-s1-${env.name}.png`, { fullPage: true });
     });
   });

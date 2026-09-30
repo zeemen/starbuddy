@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { test } from 'node:test';
 
-const MAIN = new URL('../src/star-map/main.ts', import.meta.url).pathname;
+const MAIN = new URL('../src/main.ts', import.meta.url).pathname;
 const hex = () => randomBytes(32).toString('hex');
 
 function start(vars: Record<string, string>): { status: number | null; stderr: string } {
@@ -40,4 +40,13 @@ test('生产：密钥缺失或太短、来源不是 https 都拒绝启动；环�
   r = start({});
   assert.equal(r.status, 2);
   assert.match(r.stderr, /STARBUDDY_ENV/);
+});
+
+test('阈值配置只能在 dev / test 换：staging、pilot、生产设了 BFF_AUTH_CONFIG 就拒绝启动', () => {
+  for (const env of ['production', 'pilot', 'staging']) {
+    const r = start({ STARBUDDY_ENV: env, BFF_AUTH_CONFIG: '/nonexistent/auth.json', BFF_LOG_HMAC_KEY: hex(), BFF_AUTH_SECRET: hex(),
+                      BFF_SHELL_ORIGIN: 'https://shell.example.invalid' });
+    assert.equal(r.status, 2, env);
+    assert.match(r.stderr, /BFF_AUTH_CONFIG/, env);
+  }
 });

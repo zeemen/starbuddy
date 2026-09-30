@@ -21,6 +21,11 @@ export function orderStars<T extends { skill: string }>(stars: readonly T[]): T[
 
 /** 宽屏时的列数：接近正方形 */
 export const squareColumns = (n: number): number => Math.max(1, Math.ceil(Math.sqrt(n)));
+/** 星空最宽的列数：CSP 不允许内联样式，宽度靠 globals.css 里按 data-cols 写好的规则（1–64 列，星数上限 4096） */
+export const MAX_COLS = 64;
+/** globals.css 里 [data-cols] 规则的生成器（tests/unit.test.ts 核对 CSS 与它一致） */
+export const skyColumnsCss = (): string =>
+  Array.from({ length: MAX_COLS }, (_, i) => `.sky-field[data-cols="${i + 1}"] { max-width: ${(i + 1) * STAR_PITCH}px; }`).join('\n');
 
 /** 给定列数时每颗星的网格坐标与像素中心（相对星空左上角） */
 export function placeStars<T extends { skill: string }>(stars: readonly T[], columns: number): Placed<T>[] {

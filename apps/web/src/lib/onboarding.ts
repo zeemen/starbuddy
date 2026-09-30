@@ -1,7 +1,8 @@
 // 建档（SIE-01，specs/sie-01-onboarding/spec.md 设计要点 3）：步骤定义与 BFF 客户端（只在服务端调用）。
 // 学生版与家长版分开；每页一题，都能跳过、返回。选项编码与库里 insight.valid_report_value 一致；文案是占位，待教研定稿。
 // 前端不判断身份与授权：BFF 经库函数按当前账号核对，并按身份裁剪返回内容（互不可见）。
-import { bffBaseUrl, isUuid } from './star-map.ts';
+import { bffBaseUrl, bffHeaders, type BffSession } from './bff.ts';
+import { isUuid } from './star-map.ts';
 
 export type Role = 'self' | 'guardian';
 
@@ -68,11 +69,11 @@ export interface OnboardingView {
 
 type Result<T> = { ok: true; value: T } | { ok: false; status: number };
 
-async function call<T>(account: string, method: string, student: string, sub: string, body?: unknown): Promise<Result<T>> {
+async function call<T>(account: BffSession, method: string, student: string, sub: string, body?: unknown): Promise<Result<T>> {
   if (!isUuid(student)) return { ok: false, status: 404 };
   const r = await fetch(`${bffBaseUrl()}/bff/v0/students/${student}/onboarding${sub}`, {
     method,
-    headers: { 'x-dev-account-id': account, ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
+    headers: { ...(await bffHeaders(account, method !== 'GET')), ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
     body: body === undefined ? undefined : JSON.stringify(body),
     cache: 'no-store',
     signal: AbortSignal.timeout(10_000),
@@ -81,13 +82,13 @@ async function call<T>(account: string, method: string, student: string, sub: st
   return { ok: true, value: (await r.json()) as T };
 }
 
-export const getOnboarding = (account: string, student: string) => call<OnboardingView>(account, 'GET', student, '');
-export const putAnswer = (account: string, student: string, field: string, value: unknown) =>
+export const getOnboarding = (account: BffSession, student: string) => call<OnboardingView>(account, 'GET', student, '');
+export const putAnswer = (account: BffSession, student: string, field: string, value: unknown) =>
   call<unknown>(account, 'PUT', student, '/answers', { field_id: field, value });
-export const putTextbook = (account: string, student: string, subject: string, version: string | null) =>
+export const putTextbook = (account: BffSession, student: string, subject: string, version: string | null) =>
   call<unknown>(account, 'PUT', student, '/textbooks', { subject, textbook_version: version });
-export const postExam = (account: string, student: string, exam: Record<string, unknown>) => call<unknown>(account, 'POST', student, '/exams', exam);
-export const postProgress = (account: string, student: string, step: string, status: 'started' | 'completed' | 'skipped') =>
+export const postExam = (account: BffSession, student: string, exam: Record<string, unknown>) => call<unknown>(account, 'POST', student, '/exams', exam);
+export const postProgress = (account: BffSession, student: string, step: string, status: 'started' | 'completed' | 'skipped') =>
   call<unknown>(account, 'POST', student, '/progress', { step, status });
 
 /** 按步骤把表单转成库里要的取值形状（选项之外的输入一律丢掉，由库再校验一次） */

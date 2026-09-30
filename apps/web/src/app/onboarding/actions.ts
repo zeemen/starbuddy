@@ -1,18 +1,19 @@
 'use server';
-// 建档的写操作（server action）：服务端读开发身份（4-H 换真实会话），经 BFF 写入；每一步都能提交、跳过，写完跳到下一步。
+// 建档的写操作（server action）：身份只来自真实会话（4-H H2），表单里的 CSRF 令牌必须等于 CSRF cookie，再连同 Origin 经 BFF 写入；
+// 每一步都能提交、跳过，写完跳到下一步。
 // 表单只收步骤定义里的选项（valueFor），库里再按字段形状校验一次。出错只带一个固定的提示标记回到本步，不回显输入。
-import { cookies } from 'next/headers';
 import { notFound, redirect } from 'next/navigation';
-import { DEV_COOKIE, devAccountFromCookie } from '../../lib/dev-auth.ts';
+import type { BffSession } from '../../lib/bff.ts';
 import { EXAM_TYPES, getOnboarding, postExam, postProgress, putAnswer, putTextbook, RANK_BANDS, STEPS, SUBJECT_OPTIONS,
   TEXTBOOK_OPTIONS, TEXTBOOK_SUBJECTS, valueFor } from '../../lib/onboarding.ts';
+import { actionSession } from '../../lib/session.ts';
 import { isUuid } from '../../lib/star-map.ts';
 
 const text = (f: FormData, k: string): string => (typeof f.get(k) === 'string' ? (f.get(k) as string) : '');
 
-async function who(student: string): Promise<{ account: string; role: 'self' | 'guardian' }> {
-  const account = devAccountFromCookie((await cookies()).get(DEV_COOKIE)?.value);
-  if (!account) redirect('/dev/login');
+async function who(f: FormData, student: string): Promise<{ account: BffSession; role: 'self' | 'guardian' }> {
+  const account = await actionSession(f.get('csrf'));
+  if (!account) redirect('/login');
   if (!isUuid(student)) notFound();
   const v = await getOnboarding(account, student);
   if (!v.ok) notFound();
@@ -21,14 +22,14 @@ async function who(student: string): Promise<{ account: string; role: 'self' | '
 
 export async function startAction(f: FormData): Promise<void> {
   const student = text(f, 'student');
-  const { account } = await who(student);
+  const { account } = await who(f, student);
   await postProgress(account, student, 'onboarding', 'started');
   redirect(`/onboarding/${student}?step=1`);
 }
 
 export async function stepAction(f: FormData): Promise<void> {
   const student = text(f, 'student');
-  const { account, role } = await who(student);
+  const { account, role } = await who(f, student);
   const steps = STEPS[role];
   const n = Number(text(f, 'step'));
   const step = Number.isInteger(n) && n >= 1 && n <= steps.length ? steps[n - 1]! : null;

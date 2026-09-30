@@ -2,25 +2,18 @@
 // 家长首页的写操作（H1）：在本设备打开学生模式、退出登录。
 // 双重提交：表单隐藏字段里的 CSRF 令牌必须等于 CSRF cookie（常量时间比较），再连同浏览器的 Origin 转交 BFF，
 // BFF 还要核对它与会话绑定。打开学生模式成功后，本设备的会话 cookie 换成学生会话（家长会话在库里同时作废）。
-import { timingSafeEqual } from 'node:crypto';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import type { FormResult } from '../../auth/ResultForm.tsx';
 import { csrfCookieName, sessionCookieName, sessionCookieOptions } from '../../lib/session-cookie.ts';
-import { currentSession, logout, openStudentMode } from '../../lib/shell-auth.ts';
+import { actionSession } from '../../lib/session.ts';
+import { logout, openStudentMode } from '../../lib/shell-auth.ts';
 import { isUuid } from '../../lib/star-map.ts';
 
 const text = (f: FormData, k: string): string => (typeof f.get(k) === 'string' ? (f.get(k) as string) : '');
 
-/** 表单里的 CSRF 令牌与 cookie 一致才返回会话 */
-async function sessionFor(f: FormData): Promise<{ token: string; csrf: string } | null> {
-  const s = await currentSession();
-  const posted = Buffer.from(text(f, 'csrf'), 'utf8');
-  if (!s || !s.csrf) return null;
-  const expected = Buffer.from(s.csrf, 'utf8');
-  if (posted.length !== expected.length || !timingSafeEqual(posted, expected)) return null;
-  return { token: s.token, csrf: s.csrf };
-}
+/** 表单里的 CSRF 令牌与 cookie 一致才返回会话（src/lib/session.ts） */
+const sessionFor = (f: FormData) => actionSession(f.get('csrf'));
 
 async function clearCookies(): Promise<void> {
   const jar = await cookies();

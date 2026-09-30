@@ -115,6 +115,12 @@
 15. **宵禁的只读接口**：0015 只把 `meter_student_state`（订阅状态）授给 BFF，没有只读的宵禁函数；BFF 现按 `student_time_guard` 与
     `meter_in_curfew` 同一口径自算，时钟用 BFF 注入的计量时钟（生产即系统时间）。建议新增 `platform.meter_student_curfew(p_student)`
     （SECURITY DEFINER、用 `meter_now()`、只认本人或已绑定家长）授给 BFF，BFF 改调它（迁移，必停项）。
+    **状态（2026-09-30，统一壳 H3）：已实现，迁移待人执行。** 函数合并进统一壳的 `platform.meter_guard_status(p_student)`（迁移 0030 草稿，
+    `specs/unified-shell-sprint4/lessons.md` H3 节）；`services/bff/src/diagnosis/service.ts` 的 `inCurfew` 改为调它、取 `in_curfew`，
+    BFF 不再读 `student_time_guard`、不再自算，也不再需要 `deps.now` 与 `STARBUDDY_DEV_METER_CLOCK`（端到端只挪库里的 `meter_now()`）。
+    行为不变：宵禁用例原样通过，另加“家长把宵禁提前到 21:00 后 20:59 能开始、21:30 拒绝，与函数返回一致”与“源码里没有宵禁计算”两条集成测试；
+    变异“宵禁口径不跨午夜”（BFF 里的 SQL 已不存在）改为 DB 侧的 `计量只读：` 变异，BFF 侧换成“宵禁不看计量只读函数的结果”。
+    0030 执行前 BFF 这几个入口会因函数不存在而 500，须与 0030 同时上线。
 16. **`make contract-test` 缺依赖静默通过**：非严格模式下缺 Python 依赖或 Postgres 时打印“跳过”并以 0 退出；建议默认 `CONTRACT_STRICT=1`，
     本地想跳过时显式设 0（改 Makefile 默认值，属于流程变更，请人定）。
 17. **知识服务 item.search 没有翻页**：每个节点最多取 50 道（契约上限）；超过时只用前 50 道（按题号排序后）。节点题量接近上限前需在契约里加翻页。
@@ -154,7 +160,7 @@
   续做 / 取题 / 探针不查宵禁、宵禁不暂停、宵禁口径不跨午夜、探针键不派生）。“答过题放弃也退额度”是等价变异（第一道题后已结算，
   再释放只会得到 conflict，额度不会退），不列入；`item_count > 0` 的分支只兜“判分成功但结算前进程中断”的情况。
 ### 未采纳 / 偏差
-- 宵禁没有用计量函数判断（没有授给 BFF 的只读函数），改为 BFF 按同一口径自算（#15）。
+- 宵禁没有用计量函数判断（没有授给 BFF 的只读函数），改为 BFF 按同一口径自算（#15）。（2026-09-30 统一壳 H3 起改调 `meter_guard_status`，不再自算）
 - 会话已暂停时取题不挡宵禁（前端显示暂停页，续做时再挡）；宵禁时段仍可放弃。
 - “讲给老师听”与过程题的原文仍用 V0 属性（没有通道与等级）：原文不评分、不进学习者模型。
 
