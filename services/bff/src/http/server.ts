@@ -10,7 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { withAccount } from '../metering/db.ts';
 import { P } from './problems.ts';
-import { compile, templateShapes, type Ctx, type Query, type Reply, type Route, type Session, type ShellDeps } from './routes.ts';
+import { activeRoutes, compile, templateShapes, type Ctx, type Query, type Reply, type Route, type Session, type ShellDeps } from './routes.ts';
 import { csrfFor, E164, logHash, rateKey, safeEqual, SESSION_TOKEN } from './secrets.ts';
 
 const MAX_BODY = 16 * 1024;
@@ -56,8 +56,9 @@ const header = (req: IncomingMessage, name: string): string | null => {
  * 由 createShellServer 回 404（表外一律 404）。
  */
 export function createShellHandler(deps: ShellDeps): (req: IncomingMessage, res: ServerResponse) => Promise<boolean> {
-  const table = compile();
-  const shapes = templateShapes();
+  const routes = activeRoutes(deps.trust?.features);  // 信任界面开关关闭的路由不注册（表外 404）
+  const table = compile(routes);
+  const shapes = templateShapes(routes);
   const log = deps.log ?? ((line) => console.log(JSON.stringify(line)));
 
   const limit = async (bucket: string, dim: string, value: string): Promise<void> => {

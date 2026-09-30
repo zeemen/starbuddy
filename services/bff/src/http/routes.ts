@@ -13,6 +13,11 @@ import type { RestStore } from '../shell/rest.ts';
 import type { AuthConfig, Keys, RunEnv } from './config.ts';
 import { FEATURE_ROUTES } from './feature-routes.ts';
 import { SHELL_ROUTES } from './shell-routes.ts';
+import { TRUST_ROUTES } from './trust-routes.ts';
+import type { TrustFeature } from '../trust/features.ts';
+import type { DisputeClient, ExamViewClient } from '../trust/clients.ts';
+import type { ExportStore } from '../trust/exports.ts';
+import { recentLogins } from '../trust/proof.ts';
 import { P } from './problems.ts';
 import { codeMac, csrfFor, E164, newCode } from './secrets.ts';
 import type { SmsSender } from './sms.ts';
@@ -44,6 +49,9 @@ export interface ShellDeps {
   /** 统一壳 H4（shell-routes.ts）：显示规则（缺省读 config/shell.json）、学习服务的今日计划、洞察服务的 insight.explain、
    *  连续使用提醒的存储（缺省进程内）。不配 plan 时每一科“今天暂无安排”；不配 insight 时不显示任何判断陈述 */
   shell?: { config?: ShellConfig; plan?: PlanClient; insight?: InsightClient; rest?: RestStore };
+  /** SIE-03 PR③ 信任界面（trust-routes.ts）：打开的开关（缺省全关，路由不注册）、洞察服务的异议工具、预测与对账卡的读取
+   *  （契约没有 BFF 可用的工具，缺省不配，路由 503）、导出包暂存（缺省进程内） */
+  trust?: { features?: ReadonlySet<TrustFeature>; dispute?: DisputeClient; exams?: ExamViewClient; exports?: ExportStore };
 }
 
 export type Query = <R extends QueryResultRow = QueryResultRow>(sql: string, params?: unknown[]) => Promise<{ rows: R[] }>;
@@ -73,6 +81,8 @@ export interface Route {
   body: boolean;
   /** handler 自己按会话账号开事务（复用的查询模块都在 withAccount 里执行）；中间件不另开事务，ctx.q 不可用 */
   ownTx?: boolean;
+  /** 挂在哪个信任界面开关上（SIE-03 PR③）：开关关闭时不注册，与表外路径同一个 404 */
+  feature?: TrustFeature;
   handler: Handler;
 }
 
@@ -116,6 +126,8 @@ const otpVerify: Handler = async (ctx) => {
   const r = rows[0];
   ctx.note('outcome', r?.outcome ?? 'none');
   if (r?.outcome === 'ok' && r.session_token) {
+    // 信任界面：删除的二次确认要求本会话近期登录过（src/trust/proof.ts，进程内）
+    recentLogins(ctx.deps).record(ctx.deps.keys, r.session_token, (ctx.deps.now ? ctx.deps.now() : new Date()).getTime());
     return json(200, { account_kind: 'guardian', session_token: r.session_token, csrf_token: csrfFor(ctx.deps.keys, r.session_token) });
   }
   if (r?.outcome === 'contact_support') return problem(P.CONTACT_SUPPORT);
@@ -245,7 +257,12 @@ export const ROUTES: readonly Route[] = [
   ...SHELL_ROUTES,
 ];
 
-/** 路由模板编译成正则：路径参数（student_id、session_id、probe_id）一律只匹配小写 UUID；学科码 {subject} 只匹配小写字母（H4） */
+/** 本次部署实际注册的路由：固定路由表 + 已打开开关的信任界面路由（开关缺省全关） */
+export function activeRoutes(features: ReadonlySet<TrustFeature> = new Set()): readonly Route[] {
+  return [...ROUTES, ...TRUST_ROUTES.filter((r) => r.feature !== undefined && features.has(r.feature))];
+}
+
+/** 路由模板编译成正则：路径参数（student_id、session_id、probe_id、claim_id、exam_id、export_job_id、request_id）一律只匹配小写 UUID；学科码 {subject} 只匹配小写字母（H4） */
 export interface Compiled { route: Route; re: RegExp; names: string[] }
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 const PARAM: Record<string, string> = { subject: '[a-z]{2,16}' };

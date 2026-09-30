@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { after, before, test } from 'node:test';
 import type pg from 'pg';
-import { ROUTES } from '../src/http/routes.ts';
+import { activeRoutes, ROUTES } from '../src/http/routes.ts';
 import { loadShellConfig, type ShellConfig } from '../src/shell/config.ts';
 import type { ExplainRequest, InsightClient, RenderedStatement } from '../src/shell/insight-client.ts';
 import type { PlanClient, PlanSection, PlanSubject } from '../src/shell/plan-client.ts';
@@ -522,11 +522,18 @@ const srcFiles = (dir: URL): string[] => readdirSync(dir).flatMap((n) => {
   return statSync(u).isDirectory() ? srcFiles(new URL(`${n}/`, dir)) : [u.pathname];
 });
 
-test('信任界面预留：路由表没有“为什么”“我不同意”、对账卡、周报、导出删除的路由；源码不调 insight.dispute / reconcile / export / erase', () => {
-  for (const r of ROUTES) assert.ok(!/why|explain|dispute|reconcile|weekly|export|erase|data-rights/.test(r.path), r.path);
+// SIE-03 PR③ 起，异议、考试、导出删除的路由挂在信任界面开关上（src/http/trust-routes.ts），开关缺省全关：
+// 缺省注册的路由表（activeRoutes()）仍然没有这些路由；只有 src/trust/clients.ts 调 insight.dispute，其余工具源码里一律不调。
+test('信任界面预留：开关关（缺省）时注册的路由没有“为什么”“我不同意”、对账卡、周报、导出删除；源码只在 trust/clients.ts 调 insight.dispute（trust-routes.ts 只读异议表）', () => {
+  for (const r of activeRoutes()) assert.ok(!/why|explain|dispute|reconcile|prediction|weekly|export|erase|data-rights/.test(r.path), r.path);
+  for (const r of ROUTES) assert.equal(r.feature, undefined, r.path);
   for (const f of srcFiles(new URL('../src/', import.meta.url))) {
-    const text = readFileSync(f, 'utf8');
-    assert.ok(!/insight\.(dispute|reconcile|export|erase|record|predict)\b/.test(text.replace(/\/\/.*$/gm, '')), f);
+    const text = readFileSync(f, 'utf8').replace(/\/\/.*$/gm, '');
+    // trust/clients.ts 调异议工具；trust-routes.ts 按 0032 RLS 读异议表（FROM insight.dispute），不是调工具
+    const banned = f.endsWith('/src/trust/clients.ts') ? /insight\.(reconcile|export|erase|record|predict)\b/
+      : f.endsWith('/src/http/trust-routes.ts') ? /insight\.(reconcile|export|erase|record|predict)\b|(?<!FROM )insight\.dispute\b/
+        : /insight\.(dispute|reconcile|export|erase|record|predict)\b/;
+    assert.ok(!banned.test(text), f);
   }
 });
 

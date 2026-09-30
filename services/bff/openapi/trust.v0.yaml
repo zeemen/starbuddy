@@ -1,0 +1,522 @@
+# BFF ↔ 统一壳前端：信任界面的读写接口（SIE-03 PR③，specs/sie-03-dispute-reconcile/spec.md 范围 3；页面随冲刺 5-H）。
+# 服务内部接口，不是学科插件契约，不放 packages/contracts（与 shell.v0.yaml 同一做法）；路由在 services/bff/src/http/trust-routes.ts。
+# 每条路由挂在一个功能开关上（STARBUDDY_TRUST_UI：dispute / reconcile / data_rights，只在 dev / test 可开），默认全关：
+# 关闭时这些路径不注册，与表外路径同一个 404（4-H“信任界面预留”验收继续成立）。
+# 会话、CSRF、Origin、限流、no-store、错误体与 shell.v0.yaml 相同；限流阈值在 services/bff/config/auth.json。
+# 禁用推断：BFF 不生成任何关于学生的文字；异议类型、结论、偏差方向、调整只传编码（显示文案属 5-H 模板，必停）；
+# 前端能看到的句子只来自判断（每句带 claim_id）。
+openapi: 3.1.0
+info:
+  title: StarBuddy BFF · trust UI (v0)
+  version: 0.1.0
+  description: >
+    授权在数据库：路径里的 student_id 只作查询条件，未授权与不存在返回同一个 404。家长只能对有效绑定的孩子操作（规则 5）。
+servers:
+  - url: http://127.0.0.1:8787
+paths:
+  /bff/v0/students/{student_id}/claims/{claim_id}/disputes:
+    post:
+      operationId: raiseDispute
+      description: >
+        开关 dispute。学生本人或有效绑定家长对自己可见的判断提出异议（洞察服务 insight.dispute）。kind：i_know（我其实会）、
+        one_off_slip（那次只是失误，只有学生本人；家长会话 403）、data_error（数据有误）。判断对当前受众不可见、已终结、已过期、
+        不属于这个学生：与不存在同一个 404。幂等键按账号派生后转给洞察服务，同一个键重试返回同一张异议单。
+        响应只有编码与时间：不含原始事实引用（fact_ref）与验证题引用。限流：每账号每小时 30 次。
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - { name: claim_id, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/Session'
+        - $ref: '#/components/parameters/Origin'
+        - $ref: '#/components/parameters/Csrf'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [kind, idempotency_key]
+              properties:
+                kind: { $ref: '#/components/schemas/DisputeKind' }
+                idempotency_key: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.:\-]{15,127}$' }
+      responses:
+        '200':
+          description: 异议单与下一步（编码）
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [dispute_id, kind, next_step, verify_by]
+                properties:
+                  dispute_id: { type: string, format: uuid }
+                  kind: { $ref: '#/components/schemas/DisputeKind' }
+                  next_step: { enum: [verification_scheduled, observe_followups, open_fact_for_correction] }
+                  verify_by: { type: [string, 'null'], format: date-time }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/disputes:
+    get:
+      operationId: listMyDisputes
+      description: >
+        开关 dispute。自己提出的异议与状态（0032 RLS：只读自己提出的；家长须有效绑定）。只有编码：类型、状态、结论码；
+        不含验证任务、复核任务、事实与作答引用。最近 100 条。
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/Session'
+      responses:
+        '200':
+          description: 自己提出的异议
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [student_id, disputes]
+                properties:
+                  student_id: { type: string, format: uuid }
+                  disputes:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [dispute_id, claim_id, kind, status, result_code, created_at, resolved_at]
+                      properties:
+                        dispute_id: { type: string, format: uuid }
+                        claim_id: { type: string, format: uuid }
+                        kind: { $ref: '#/components/schemas/DisputeKind' }
+                        status: { enum: [open, verifying, resolved_supported, resolved_unsupported, fact_corrected, rejected, withdrawn] }
+                        result_code: { type: [string, 'null'], pattern: '^[a-z_]{1,48}$' }
+                        created_at: { type: string, format: date-time }
+                        resolved_at: { type: [string, 'null'], format: date-time }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/exams:
+    post:
+      operationId: submitExamPlan
+      description: >
+        开关 reconcile。学生本人或有效绑定家长录入考试安排（insight.submit_exam_plan）：日期从今天（上海）起一年内、满分 1–300 的整数、
+        范围节点 1–64 个；同一场考试（学科、类型、日期）已有安排时返回原安排。限流：每账号每小时 30 次（与成绩共用）；库里另有每录入方 24 小时 50 条（429 TOO_MANY）；并发录入撞上唯一约束 409 CONFLICT（成绩同此）。
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/Session'
+        - $ref: '#/components/parameters/Origin'
+        - $ref: '#/components/parameters/Csrf'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [subject, exam_type, exam_date, full_score, scope_node_ids]
+              properties:
+                subject: { type: string, enum: [aya, wenli, zhixing, echo] }
+                exam_type: { type: string, enum: [monthly, midterm, final, mock1, mock2, other] }
+                exam_date: { type: string, format: date }
+                full_score: { type: integer, minimum: 1, maximum: 300 }
+                scope_node_ids:
+                  type: array
+                  minItems: 1
+                  maxItems: 64
+                  uniqueItems: true
+                  items: { type: string, pattern: '^[A-Z][A-Z0-9]{1,9}(\.[A-Z0-9][A-Z0-9_]{0,31}){1,4}$' }
+      responses:
+        '201':
+          description: 考试安排
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: false, required: [exam_id], properties: { exam_id: { type: string, format: uuid } } }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/exams/{exam_id}/score:
+    post:
+      operationId: submitExamScore
+      description: >
+        开关 reconcile。按考试安排录成绩（insight.submit_exam_score）：学生与家长各录各的（规则 6）；安排不存在或成绩超出满分 422。
+        对账卡由洞察服务在成绩录入后生成（jobs.reconcile_exam，编排层触发），本接口不生成任何对账内容。
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/ExamId'
+        - $ref: '#/components/parameters/Session'
+        - $ref: '#/components/parameters/Origin'
+        - $ref: '#/components/parameters/Csrf'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [raw_score]
+              properties:
+                raw_score: { type: number, minimum: 0, maximum: 300 }
+      responses:
+        '201':
+          description: 成绩记录
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: false, required: [score_id], properties: { score_id: { type: string, format: uuid } } }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/exams/{exam_id}/prediction:
+    get:
+      operationId: getExamPrediction
+      description: >
+        开关 reconcile。考试的分数区间（80%）。只有预测对应的考试类判断对当前受众可见、成立或假设、未过期、模板在对外白名单里时才显示区间，
+        否则 prediction 为 null（字段字典里预测目前只给 Agent）。frozen：考试当天零点（上海）起冻结、只读；BFF 没有改预测的入口。
+        读取通道：契约 v0.9 没有 BFF 可用的工具，缺省 503（待人确认）。限流：每会话每分钟 30 次（与对账卡共用）。
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/ExamId'
+        - $ref: '#/components/parameters/Session'
+      responses:
+        '200':
+          description: 预测（或 null）
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [student_id, exam_id, prediction]
+                properties:
+                  student_id: { type: string, format: uuid }
+                  exam_id: { type: string, format: uuid }
+                  prediction:
+                    oneOf:
+                      - type: 'null'
+                      - type: object
+                        additionalProperties: false
+                        required: [prediction_id, claim_id, low, high, interval_level, frozen_at, frozen]
+                        properties:
+                          prediction_id: { type: string, format: uuid }
+                          claim_id: { type: string, format: uuid }
+                          low: { type: number, minimum: 0, maximum: 150 }
+                          high: { type: number, minimum: 0, maximum: 150 }
+                          interval_level: { const: 0.8 }
+                          frozen_at: { type: string, format: date-time }
+                          frozen: { type: boolean }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/exams/{exam_id}/reconciliation:
+    get:
+      operationId: getExamReconciliation
+      description: >
+        开关 reconcile。对账卡：区间内外、偏差节点、偏差方向（四值编码）、平台调整（编码）与句子。每句带 claim_id，只保留对当前受众可见、
+        成立或假设、未过期、模板在对外白名单里且模板对得上的判断的实线陈述；其余句子（含没有 claim_id 的）丢弃并在访问日志记数。
+        方向或调整出现契约外的编码时整张卡不显示（reconciliation 为 null）。读取通道同预测（缺省 503）。
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/ExamId'
+        - $ref: '#/components/parameters/Session'
+      responses:
+        '200':
+          description: 对账卡（或 null）
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [student_id, exam_id, reconciliation]
+                properties:
+                  student_id: { type: string, format: uuid }
+                  exam_id: { type: string, format: uuid }
+                  reconciliation:
+                    oneOf:
+                      - type: 'null'
+                      - type: object
+                        additionalProperties: false
+                        required: [prediction_id, actual_score, within_interval, deviation_nodes, deviation_directions, adjustments, statements]
+                        properties:
+                          prediction_id: { type: string, format: uuid }
+                          actual_score: { type: number, minimum: 0, maximum: 150 }
+                          within_interval: { type: boolean }
+                          deviation_nodes: { type: array, maxItems: 100, items: { type: string } }
+                          deviation_directions:
+                            type: array
+                            uniqueItems: true
+                            items: { enum: [item_type_transfer, time_shortage, calculation_slip, diagnosis_optimistic] }
+                          adjustments:
+                            type: array
+                            uniqueItems: true
+                            items: { enum: [claims_to_verify, retest_scheduled, interval_widened, model_parameter_adjusted, none] }
+                          statements:
+                            type: array
+                            maxItems: 20
+                            items:
+                              type: object
+                              additionalProperties: false
+                              required: [claim_id, text, confidence_band]
+                              properties:
+                                claim_id: { type: string, format: uuid }
+                                text: { type: string, minLength: 1, maxLength: 300 }
+                                confidence_band: { enum: [few_evidence, moderate, strong] }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/exports:
+    post:
+      operationId: createExport
+      description: >
+        开关 data_rights，只给家长（学生会话 403）。按当前授权由 BFF 直连 0035 platform.export_student_data：只认有效绑定家长（规则 5），
+        建导出任务（审计）、返回一次性下载凭据（库里 24 小时失效、只存摘要）。导出包暂存在 BFF（进程内，最长 1 小时，待人确认），
+        经下载接口兑换一次；暂存放不下 503。删除请求已确认（冷静期中）或已执行、学生已删除：409。
+        限流：每账号每小时 5 次；库里另有每个学生 24 小时 10 次（429 TOO_MANY）。
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/Session'
+        - $ref: '#/components/parameters/Origin'
+        - $ref: '#/components/parameters/Csrf'
+      responses:
+        '201':
+          description: 导出任务与一次性下载凭据
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [export_job_id, status, expires_at, download_ref]
+                properties:
+                  export_job_id: { type: string, format: uuid }
+                  status: { const: ready }
+                  expires_at: { type: string, format: date-time }
+                  download_ref: { type: string, pattern: '^dl_[0-9a-f]{64}$' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/exports/{export_job_id}/download:
+    post:
+      operationId: downloadExport
+      description: >
+        开关 data_rights，只给家长。兑换一次性下载凭据：凭据、导出任务、学生、发起导出的家长账号都要对上，且仍是有效绑定家长；
+        兑换后作废。凭据不对、已用过、过期、不是本人发起、已解除绑定、学生已删除或删除请求已确认：同一个 404（后三种同时清掉暂存）。响应 no-store，按附件下载；内容是 0035 的导出包
+        （starbuddy-export@1：按主题键组织、列白名单），不含下载凭据本身。
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - { name: export_job_id, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/Session'
+        - $ref: '#/components/parameters/Origin'
+        - $ref: '#/components/parameters/Csrf'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [download_ref]
+              properties:
+                download_ref: { type: string, pattern: '^dl_[0-9a-f]{64}$' }
+      responses:
+        '200':
+          description: 导出包（JSON 附件）
+          headers:
+            content-disposition: { schema: { type: string } }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [format, export_job_id, student_id, generated_at, topics]
+                properties:
+                  format: { const: starbuddy-export@1 }
+                  export_job_id: { type: string, format: uuid }
+                  student_id: { type: string, format: uuid }
+                  generated_at: { type: string, format: date-time }
+                  topics: { type: object }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/erasure:
+    get:
+      operationId: listErasureRequests
+      description: >
+        开关 data_rights，只给家长。该孩子的删除请求与状态（0035 RLS：有效绑定家长；不含发起人、撤回人）。回执只在执行后给出：
+        表名 → 行数与范围编码，不含被删内容。最近 20 条。
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/Session'
+      responses:
+        '200':
+          description: 删除请求
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [student_id, requests]
+                properties:
+                  student_id: { type: string, format: uuid }
+                  requests:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [request_id, status, requested_at, confirmed_at, cooling_off_until, cancelled_at, cancel_reason, executed_at, receipt]
+                      properties:
+                        request_id: { type: string, format: uuid }
+                        status: { enum: [pending, cancelled, executed] }
+                        requested_at: { type: string, format: date-time }
+                        confirmed_at: { type: [string, 'null'], format: date-time }
+                        cooling_off_until: { type: [string, 'null'], format: date-time }
+                        cancelled_at: { type: [string, 'null'], format: date-time }
+                        cancel_reason: { enum: [guardian, link_revoked, confirm_expired, null] }
+                        executed_at: { type: [string, 'null'], format: date-time }
+                        receipt:
+                          oneOf:
+                            - type: 'null'
+                            - type: object
+                              additionalProperties: false
+                              required: [tables, scopes]
+                              properties:
+                                tables: { type: object, additionalProperties: { type: integer, minimum: 0 } }
+                                scopes: { type: array, items: { enum: [claim_ledger, facts, evidence, inference, reports, uploads] } }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+    post:
+      operationId: requestErasure
+      description: >
+        开关 data_rights，只给家长。发起删除（0035 platform.request_erasure：只认有效绑定家长；已有未结束的请求时返回它；已删除过 409）。
+        返回会话内二次确认凭据：只有在本会话内、对这条请求提交它才能确认（短信验证码复核现有接口不支持，待人确认）。
+        发起后 24 小时内须确认，确认后冷静期 7 天，冷静期内可撤回。限流：每账号每小时 10 次（与确认、撤回共用）；库里另有每个学生 24 小时 5 次。
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/Session'
+        - $ref: '#/components/parameters/Origin'
+        - $ref: '#/components/parameters/Csrf'
+      responses:
+        '201':
+          description: 删除请求与会话内确认凭据
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [request_id, confirm_token]
+                properties:
+                  request_id: { type: string, format: uuid }
+                  confirm_token: { type: string, pattern: '^[0-9a-f]{64}$' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/erasure/{request_id}/confirm:
+    post:
+      operationId: confirmErasure
+      description: >
+        开关 data_rights，只给家长。二次确认（0035 platform.confirm_erasure：只有发起人本人、仍有效绑定、发起后 24 小时内）。
+        本会话须在 10 分钟内经验证码登录过（否则 403 REAUTH_REQUIRED，重新登录后再发起）；确认凭据必须来自本会话发起时的响应
+        （换了会话、换了请求都 403 CONFIRMATION_REQUIRED）。已结束或确认超时 409。确认后该学生未兑换的导出包作废。
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/Session'
+        - $ref: '#/components/parameters/Origin'
+        - $ref: '#/components/parameters/Csrf'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [confirm_token]
+              properties:
+                confirm_token: { type: string, pattern: '^[0-9a-f]{64}$' }
+      responses:
+        '200':
+          description: 已确认，冷静期截止时间
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [request_id, cooling_off_until]
+                properties:
+                  request_id: { type: string, format: uuid }
+                  cooling_off_until: { type: string, format: date-time }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/erasure/{request_id}/cancel:
+    post:
+      operationId: cancelErasure
+      description: >
+        开关 data_rights，只给家长。撤回（0035 platform.cancel_erasure：该孩子任一有效绑定家长，执行前都能撤回；已撤回再撤回幂等；已执行 409）。
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/Session'
+        - $ref: '#/components/parameters/Origin'
+        - $ref: '#/components/parameters/Csrf'
+      responses:
+        '200':
+          description: 已撤回
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [request_id, status]
+                properties:
+                  request_id: { type: string, format: uuid }
+                  status: { const: cancelled }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+components:
+  parameters:
+    StudentId: { name: student_id, in: path, required: true, schema: { type: string, format: uuid } }
+    ExamId: { name: exam_id, in: path, required: true, description: 考试安排的 ID（录成绩、读预测）；对账卡也接受成绩记录的 ID, schema: { type: string, format: uuid } }
+    RequestId: { name: request_id, in: path, required: true, schema: { type: string, format: uuid } }
+    Session: { name: x-sb-session, in: header, required: true, description: 会话令牌（64 位十六进制），不进 URL 与日志, schema: { type: string, pattern: '^[0-9a-f]{64}$' } }
+    Csrf: { name: x-csrf-token, in: header, required: true, description: 与会话绑定的 CSRF 令牌, schema: { type: string, pattern: '^[0-9a-f]{64}$' } }
+    Origin: { name: origin, in: header, required: true, description: 必须恰好等于壳的来源, schema: { type: string } }
+  schemas:
+    DisputeKind: { enum: [i_know, one_off_slip, data_error], description: 异议类型编码（显示文案属 5-H 模板） }
+    Problem:
+      type: object
+      additionalProperties: false
+      required: [type, title, status, code]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        code:
+          enum: [UNAUTHENTICATED, FORBIDDEN, CSRF, NOT_FOUND, METHOD_NOT_ALLOWED, CONFLICT, STATE_CONFLICT, CONFIRMATION_REQUIRED, REAUTH_REQUIRED,
+                 TOO_LARGE, UNSUPPORTED_MEDIA_TYPE, INVALID, TOO_MANY_REQUESTS, TOO_MANY, UNAVAILABLE, INTERNAL]
+  responses:
+    Problem:
+      description: 统一错误体（只有错误码）
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

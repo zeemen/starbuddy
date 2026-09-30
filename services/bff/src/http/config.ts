@@ -1,7 +1,8 @@
 // 统一壳 HTTP 层的配置（specs/unified-shell-sprint4/spec.md 第 2、17 节）。
 //   - 阈值与时长：config/auth.json（测试读同一份）；
 //   - 运行环境：STARBUDDY_ENV（dev / test / staging / pilot / production），不认识的取值拒绝启动；
-//   - 密钥：BFF_LOG_HMAC_KEY（日志里 student_id 的带密钥 HMAC）与 BFF_AUTH_SECRET（验证码 MAC、限流键、CSRF 令牌的派生根）
+//   - 密钥：BFF_LOG_HMAC_KEY（日志里 student_id 的带密钥 HMAC）与 BFF_AUTH_SECRET（验证码 MAC、限流键、CSRF 令牌的派生根），
+//     BFF_TRUST_SECRET（信任界面：删除确认凭据、异议幂等键；SIE-03 PR③）
 //     从环境变量读，十六进制、至少 32 字节，不进仓库；dev / test 不设时启动随机生成（3-H 待人确认 #15），其余环境不设或太短拒绝启动。
 import { createHmac, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -55,6 +56,9 @@ export interface Keys {
   otp: Buffer;
   rate: Buffer;
   csrf: Buffer;
+  /** 信任界面专用（SIE-03 PR③）：删除的会话内确认凭据、转给洞察服务的异议幂等键；独立配置项 BFF_TRUST_SECRET，
+   *  轮换它只让未确认的删除凭据失效（重新发起即可）、让异议重试换一个幂等键（库里同一人同一判断同一类的未结束异议仍只有一条） */
+  trust: Buffer;
 }
 
 function readKey(name: string, env: RunEnv, vars: Record<string, string | undefined>): Buffer {
@@ -71,8 +75,9 @@ export function loadKeys(env: RunEnv, vars: Record<string, string | undefined> =
   const log = readKey('BFF_LOG_HMAC_KEY', env, vars);
   const root = readKey('BFF_AUTH_SECRET', env, vars);
   const derive = (label: string) => createHmac('sha256', root).update(`starbuddy-bff:${label}`).digest();
-  return { log, otp: derive('otp'), rate: derive('rate'), csrf: derive('csrf') };
+  const trust = readKey('BFF_TRUST_SECRET', env, vars);
+  return { log, otp: derive('otp'), rate: derive('rate'), csrf: derive('csrf'), trust };
 }
 
 /** 测试用：随机密钥 */
-export const randomKeys = (): Keys => ({ log: randomBytes(32), otp: randomBytes(32), rate: randomBytes(32), csrf: randomBytes(32) });
+export const randomKeys = (): Keys => ({ log: randomBytes(32), otp: randomBytes(32), rate: randomBytes(32), csrf: randomBytes(32), trust: randomBytes(32) });

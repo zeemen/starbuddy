@@ -28,6 +28,10 @@
   今日计划（经学习服务 `POST /internal/v1/plan`；推荐理由只取洞察服务 `insight.explain` 的 `RenderedStatement.text`，对外模板白名单为空时不显示）、
   额度与时长（`meter_guard_status` 与 `entitlement_balance`）、时长设置（`set_time_guard`）、连续使用提醒（进程内计时，见 lessons H4）。
   环境变量 `BFF_INSIGHT_URL` / `BFF_INSIGHT_TOKEN`（洞察服务）、`BFF_SHELL_CONFIG`（dev / test 换显示规则）。没有任何消耗类入口，也没有信任界面（冲刺 5）的路由。
+- 信任界面接口（SIE-03 PR③，`src/http/trust-routes.ts`、`src/trust/`；接口定义 `openapi/trust.v0.yaml`）：异议（→ `insight.dispute`，不转发 `fact_ref`）、
+  考试安排与成绩（`insight.submit_exam_plan` / `submit_exam_score`）、预测与对账卡读取（句子只来自可见判断，契约没有 BFF 读取通道，缺省 503）、
+  家长导出（直连 0035 `export_student_data`，BFF 暂存、一次性兑换）与删除（申请、会话内二次确认、撤回、状态与回执）。每块挂在功能开关上
+  （`STARBUDDY_TRUST_UI=dispute,reconcile,data_rights`，只在 dev / test），缺省全关、路由不注册；见 `specs/sie-03-dispute-reconcile/lessons.md` PR③。
 - 统一壳路由表与家庭登录（冲刺 4-H H1，`specs/unified-shell-sprint4/spec.md` 第 2、3、16、17 节）：`src/http/`，接口定义 `openapi/shell.v0.yaml`。
   - 路由表 `src/http/routes.ts`：每条路由声明方法、路径模板、auth（public / session / guardian / student）、CSRF、限流；分发只查这张表。
     表外一律 404（H2 起没有旧路由）；路由表与 `openapi/*.v0.yaml` 一一对应（`tests/shell-openapi.test.ts`）。

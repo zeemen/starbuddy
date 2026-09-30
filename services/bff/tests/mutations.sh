@@ -22,8 +22,11 @@ declare -A M=(
   ["选科不按学生加锁"]="$(fr 'platform.enroll_subject(uuid, platform.subject)' "'PERFORM pg_advisory_xact_lock(hashtextextended'" "'PERFORM pg_advisory_xact_lock_shared(hashtextextended'")"
 )
 
+# BFFMUT_FILTER=信任：只跑名字里含这段文字的变异（对照组照跑）；缺省全跑
+FILTER="${BFFMUT_FILTER:-}"
 missed=0; total=0
 for name in "${!M[@]}"; do
+  if [ -n "$FILTER" ] && [[ "$name" != *"$FILTER"* ]]; then continue; fi
   total=$((total + 1)); caught=0
   for attempt in 1 2 3; do
     out=$(PGEPHEMERAL_EXTRA_SQL="${M[$name]}" bash "$ROOT/db/tests/pg-ephemeral.sh" -- \
@@ -108,6 +111,37 @@ SM=(
   $'页面：默认宵禁不取单处配置\tsrc/http/shell-routes.ts\tdefault_curfew: { start: shellConfig(ctx.deps).meterDefaults.curfewStart,\tdefault_curfew: { start: \'22:30\','
   $'页面：选科口径不看周期\tsrc/http/shell-routes.ts\tAND $2::timestamptz >= s.period_start AND $2::timestamptz < s.period_end\tAND $2::timestamptz IS NOT NULL'
   $'认证：发验证码不核对号码格式\tsrc/http/routes.ts\tif (!onlyKeys(b, [\'phone\']) || typeof b[\'phone\'] !== \'string\' || !E164.test(b[\'phone\'])) return problem(P.INVALID);\tif (!onlyKeys(b, [\'phone\']) || typeof b[\'phone\'] !== \'string\') return problem(P.INVALID);'
+  # SIE-03 PR③ 信任界面（异议、考试、预测与对账卡、导出、删除；开关与授权矩阵）：这几条跑 tests/trust-units.test.ts 与 tests/trust.integration.test.ts
+  $'信任：开关关闭也注册路由\tsrc/http/routes.ts\t...TRUST_ROUTES.filter((r) => r.feature !== undefined && features.has(r.feature))\t...TRUST_ROUTES'
+  $'信任：导出路由学生会话可用\tsrc/http/trust-routes.ts\t`${S}/exports`, \'guardian\', false, exportCreate\t`${S}/exports`, \'session\', false, exportCreate'
+  $'信任：写路由不开 CSRF\tsrc/http/trust-routes.ts\t({ feature, method: \'POST\', path, auth, csrf: \'session\',\t({ feature, method: \'POST\', path, auth, csrf: \'none\','
+  $'信任：家长可提“那次只是失误”\tsrc/http/trust-routes.ts\tif (kind === \'one_off_slip\' && s.kind !== \'student\') return problem(P.FORBIDDEN);\t'
+  $'信任：异议不核对判断可见\tsrc/http/trust-routes.ts\tif (!(await visibleClaims(q, id, audience, [claimId], DISPUTABLE)).has(claimId)) return null;\t'
+  $'信任：异议幂等键原样转发\tsrc/http/trust-routes.ts\tidempotencyKey: idem }\tidempotencyKey: key }'
+  $'信任：异议结果转发 fact_ref\tsrc/trust/clients.ts\treturn { dispute_id: r[\'dispute_id\'], next_step: step as NextStep,\treturn { ...r, dispute_id: r[\'dispute_id\'], next_step: step as NextStep,'
+  $'信任：考试录入无权回 403\tsrc/http/trust-routes.ts\tif (code === \'42501\') return problem(P.NOT_FOUND);\tif (code === \'42501\') return problem(P.FORBIDDEN);'
+  $'信任：预测不核对判断可见\tsrc/http/trust-routes.ts\tconst view = p && shown.has(p.claim_id) ? p : null;\tconst view = p;'
+  $'信任：对账句子不核对判断可见\tsrc/http/trust-routes.ts\tconst statements = card.statements.filter((s) => shown.get(s.claim_id) === templateRef(s.template_key, s.template_version) && s.display === \'solid\');\tconst statements = card.statements;'
+  $'信任：对账卡保留没有 claim_id 的句子\tsrc/trust/clients.ts\tif (st) statements.push(st); else dropped += 1;\tstatements.push((st ?? s) as RenderedStatement);'
+  $'信任：导出凭据可重复兑换\tsrc/trust/exports.ts\tthis.#drop(k);  // 一次性：兑换即删\t'
+  $'信任：导出兑换不核对发起账号\tsrc/trust/exports.ts\t || e.accountId !== match.accountId) return null;\t) return null;'
+  $'信任：导出兑换不再核绑定\tsrc/http/trust-routes.ts\tif (rows[0]?.linked !== true) {\tif (false) {'
+  $'信任：删除确认不核对会话内凭据\tsrc/http/trust-routes.ts\tif (!safeEqual(b[\'confirm_token\'], confirmTokenFor(ctx, requestId))) return problem(P.CONFIRM_REQUIRED);\t'
+  $'信任：删除凭据不绑定会话\tsrc/http/trust-routes.ts\t`${ctx.session!.token}:${requestId}`\t`${ctx.session!.accountId}:${requestId}`'
+  # 审查处理（安全审查 M1–M3、H1、H2、L4b；契约审查 L1）
+  $'信任：导出下载不查删除状态\tsrc/http/trust-routes.ts\t  if (await erasureBlocked(ctx.q, id)) {\t  if (false) {'
+  $'信任：已确认删除仍可导出\tsrc/http/trust-routes.ts\tif (await erasureBlocked(q, id)) return \'blocked\' as const;\t'
+  $'信任：删除确认不清暂存\tsrc/http/trust-routes.ts\t    exportStore(ctx.deps).purgeStudent(student(ctx));\t'
+  $'信任：解除绑定兑换不清暂存\tsrc/http/trust-routes.ts\t    exportStore(ctx.deps).purgeStudent(id, account);\t'
+  $'信任：导出下载日志不记账号摘要\tsrc/http/trust-routes.ts\t  ctx.note(\'account\', logHash(ctx.deps.keys, account));\t'
+  $'信任：暂存不限 1 小时\tsrc/trust/exports.ts\texpiresAt: Math.min(entry.expiresAt, now + MAX_HOLD_MS)\texpiresAt: entry.expiresAt'
+  $'信任：暂存总量不设上限\tsrc/trust/exports.ts\t || this.#total + size > this.maxTotalBytes) return false;\t) return false;'
+  $'信任：删除确认不要求近期登录\tsrc/http/trust-routes.ts\tif (!recentLogins(ctx.deps).fresh(ctx.deps.keys, ctx.session!.token, nowMs(ctx.deps))) return problem(P.REAUTH_REQUIRED);\t'
+  $'信任：对账卡不核对预测判断\tsrc/http/trust-routes.ts\tif (!pred || pred.prediction_id !== card.prediction_id || !shown.has(pred.claim_id)) {\tif (false) {'
+  $'信任：异议结果不要求 fact_ref\tsrc/trust/clients.ts\tif (step === \'open_fact_for_correction\' && (typeof r[\'fact_ref\'] !== \'string\' || !FACT_REF.test(r[\'fact_ref\']))) return null;\t'
+  $'信任：不核对统一信封\tsrc/trust/clients.ts\tconst value = envelopeOk(body) ? pickDispute(body.result) : null;\tconst value = pickDispute(body.result);'
+  $'信任：异议列表不限流\tsrc/http/trust-routes.ts\tdisputeList, [{ bucket: \'trust_read.session.minute\', dim: \'session\' }]\tdisputeList, []'
+  $'信任：近期登录不看时间\tsrc/trust/proof.ts\treturn t !== undefined && now - t < REAUTH_WINDOW_MS && now >= t;\treturn t !== undefined;'
 )
 # 副本保持仓库结构（测试按 ../../../ 找仓库根：adapters/aya 的登记脚本、db/seeds 的种子），adapters、db 软链接回仓库。
 # 安全审查阻断 1：原来的副本不保持结构，测试的 before 在任何代码下都失败，变异全部“被发现”却不说明任何问题。
@@ -119,6 +153,7 @@ star_run() {  # $1 副本根目录，$2 变异名（“计量：”开头的跑�
   [[ "${2:-}" == 诊断：* ]] && tests="tests/diagnosis.integration.test.ts"
   [[ "${2:-}" == 认证：* ]] && tests="tests/auth.integration.test.ts"
   [[ "${2:-}" == 页面：* ]] && tests="tests/shell-pages.integration.test.ts"
+  [[ "${2:-}" == 信任：* ]] && tests="tests/trust-units.test.ts tests/trust.integration.test.ts"
   out=$( cd "$1/services/bff" && timeout 240 bash "$ROOT/db/tests/pg-ephemeral.sh" -- \
       node --no-warnings --test --test-concurrency=1 --test-timeout=60000 $tests 2>&1 ); rc=$?
   pass=$(printf '%s\n' "$out" | sed -n 's/^# pass \([0-9]*\)$/\1/p' | tail -1)
@@ -139,6 +174,7 @@ if [ "$rc" = "3" ]; then echo "bff-mutation: 跳过（本机没有 Postgres）";
 if [ "$rc" != "0" ]; then echo "bff-mutation: 失败（星图变异的对照组没有通过，rc=$rc）"; exit 1; fi
 for spec in "${SM[@]}"; do
   IFS=$'\t' read -r name file from to <<< "$spec"
+  if [ -n "$FILTER" ] && [[ "$name" != *"$FILTER"* ]]; then continue; fi
   total=$((total + 1))
   work="$(star_copy)"
   if ! MUT_FILE="$work/services/bff/$file" MUT_FROM="$from" MUT_TO="$to" python3 - <<'PYM'

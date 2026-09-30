@@ -6,7 +6,7 @@
 //   连续使用提醒：GET / POST 确认休息（student）。
 // 身份只来自会话；路径里的 student_id 只作查询条件，授权交给 RLS 与 SECURITY DEFINER 函数：无权与不存在同一个 404。
 // 这里没有任何消耗类入口（不调 reserve / settle / meteredCall / meter_practice），也没有调用 insight.dispute / reconcile /
-// export / erase 的路由（冲刺 5；tests/shell-pages.integration.test.ts 断言）。
+// export / erase 的路由（冲刺 5 的信任界面在 trust-routes.ts，挂在功能开关上、默认不注册；tests/shell-pages.integration.test.ts 断言）。
 import type { Pool } from 'pg';
 import { withAccount } from '../metering/db.ts';
 import { loadShellConfig, type ShellConfig } from '../shell/config.ts';

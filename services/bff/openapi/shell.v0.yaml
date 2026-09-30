@@ -2,7 +2,8 @@
 # 服务内部接口，不是学科插件契约，不放 packages/contracts（与 star-map.v0.yaml 同一做法）。
 # H1：认证、会话、/me、建档、同意、打开学生模式；H4：选科、今日计划、额度与时长、时长设置、连续使用提醒
 # （services/bff/src/http/routes.ts 与 shell-routes.ts，tests/shell-openapi.test.ts 断言两边一致）。
-# 路由表里没有调用 insight.dispute / reconcile / export / erase 的路由（冲刺 5 的信任界面，功能开关默认关）。
+# 路由表里没有调用 insight.dispute / reconcile / export / erase 的路由；冲刺 5 信任界面的异议、考试、导出删除接口在 trust.v0.yaml，
+# 挂在功能开关上（默认关，关闭时不注册）。
 openapi: 3.1.0
 info:
   title: StarBuddy BFF · shell (v0)

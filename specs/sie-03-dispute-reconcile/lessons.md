@@ -187,3 +187,90 @@
 - `make insight-mutation CONTRACT_STRICT=1`：审查修改前 83 / 83（首轮漏检两条，补断言后全过）；审查修改后 94 / 94。
 - `make check-fast`：通过（contract-test 因本机各解释器都缺 openapi_spec_validator / jsonschema 跳过，既有情况；本 PR 未改契约）。
 - 未跑全量 `make check`。
+
+## PR③ BFF 读写接口（services/bff）
+
+### 做了什么
+- 新路由（`src/http/trust-routes.ts`，接口定义 `openapi/trust.v0.yaml`），全部挂在 4-H 信任界面开关上（`src/trust/features.ts`，
+  `STARBUDDY_TRUST_UI=dispute,reconcile,data_rights`，只在 dev / test 可开，其余环境设了就拒绝启动）。开关缺省全关：路由不注册，
+  与表外路径逐字节相同的 404，4-H“信任界面预留”验收继续成立（`shell-pages` 的预留测试改为断言缺省注册表 `activeRoutes()`）。
+  - 异议（dispute）：`POST /students/{id}/claims/{claim_id}/disputes`（学生本人、有效绑定家长；`one_off_slip` 家长会话 403，不到洞察服务）
+    → 先在库里按 0032 同条件核对判断对当前受众可见（不可见与不存在同一个 404）→ `insight.dispute`（caller bff、actor、家长带 link_id；
+    幂等键按账号 HMAC 派生后转发，原键不出 BFF）；响应只有 `dispute_id`、`kind`、`next_step`、`verify_by`，**不转发 `fact_ref` 与验证题引用**。
+    `GET /students/{id}/disputes`：按 0032 RLS 只读自己提出的，只给编码列。
+  - 考试（reconcile）：`POST …/exams`（`insight.submit_exam_plan`）、`POST …/exams/{exam_id}/score`（`insight.submit_exam_score`）；
+    `GET …/exams/{exam_id}/prediction`、`GET …/exams/{exam_id}/reconciliation`：经 `ExamViewClient` 取契约形状，按契约核对；
+    预测所引判断、对账卡每句所引判断都在库里再核一次（可见、成立或假设、未过期、模板已审核、在对外白名单里、模板对得上、实线），
+    其余句子（含没有 `claim_id` 的）丢弃，丢弃数记访问日志 `dropped_statements`；方向或调整出现契约外编码整张卡不显示。
+  - 数据权利（data_rights，只给家长）：`POST …/exports` 直连 0035 `platform.export_student_data`（按当前授权：有效绑定家长，规则 5），
+    导出包暂存在 BFF（键是凭据 sha256，绑定任务、学生、发起账号，24 小时失效），`POST …/exports/{export_job_id}/download` 兑换一次
+    （兑换前再核绑定；no-store、附件；内容不含凭据）；`POST …/erasure` 发起、`POST …/erasure/{request_id}/confirm` 会话内二次确认、
+    `POST …/erasure/{request_id}/cancel` 撤回、`GET …/erasure` 状态与回执（回执只在执行后给“表名 → 行数”与范围编码）。
+    监护操作留痕：库里 `erasure_request`（发起人、撤回人）与 `export_job` 即审计；访问日志另记 `guardian_op` 编码（不记凭据）。
+  - 限流桶（`config/auth.json`）：`dispute.account.hour` 30、`exam_write.account.hour` 30、`exam_view.session.minute` 30、
+    `export.account.hour` 5、`export_download.account.hour` 20、`erasure.account.hour` 10；错误码新增 `STATE_CONFLICT`（409）、
+    `CONFIRMATION_REQUIRED`（403）、`UNAVAILABLE`（503）。
+- 测试：`tests/trust-units.test.ts`（7 项）、`tests/trust.integration.test.ts`（14 项：开关关 404、从路由表生成的授权矩阵——未登录 401 /
+  学生调家长路由 403 / 缺 CSRF、错 Origin、别的会话 CSRF 403 / 另一户、未绑定、不存在、非 UUID 同一个 404，另写死“导出删除只给家长”；
+  异议、考试、预测、对账、导出、删除、限流、源码无中文显示文案）；`shell-openapi` 把 trust.v0.yaml 纳入一一对应与不变量；
+  `tests/mutations.sh` 新增 16 条 `信任：` 变异（开关、授权、CSRF、异议三条、考试、预测、对账两条、导出三条、删除两条），
+  另加 `BFFMUT_FILTER`（只跑名字含该文字的变异）。
+
+### 偏离（请确认）
+1. **导出 / 删除接线：默认 BFF 直连 0035（与现授权一致），洞察服务的 export / erase 工具保持 501，待人定**（PR② 契约差异 7）。
+2. **删除的二次确认没有用短信验证码**：现有接口不支持“本会话内重新验证”——只有 `auth_otp_issue` / `auth_otp_login`（后者登录并签发新会话），
+   BFF 也读不到家长手机号。改用会话内二次确认：发起时返回一张绑定“本会话令牌 + 这条请求”的确认凭据（带密钥 HMAC），确认时必须在同一会话
+   提交它（换会话、换请求 403）；库函数另核“发起人本人、仍有效绑定、24 小时内”。短信复核需要新的库函数（例如只核对不登录的
+   `auth_otp_step_up`，并能按会话账号找号码），属迁移与权限，必停。
+3. **预测与对账卡没有读取通道**：契约 v0.9 的 `insight.predict` / `insight.reconcile` 只给编排层（且 predict 是写入），0034 也没给 BFF 这两张表
+   的权限。BFF 只定义了 `ExamViewClient` 接口与按契约的核对，缺省不配，两个 GET 回 503。需要人定：契约新增 BFF 可用的只读工具
+   （例如 `insight.exam_view`，按 0034 `audience` 取学生版 / 家长版），或给 BFF 读授权（迁移）。另外预测判断目前只给 agent（PR② 偏离 6），
+   即使接上，BFF 的判断核对也会让学生、家长看不到区间，直到可见范围签字。
+4. **导出包暂存在 BFF 进程内**：库函数一次返回整包，没有别处可再取；多实例部署时只有发起的实例能兑换，重启即失效（用户重新导出，
+   库里每学生 24 小时 10 次）。pilot 前须换成对象存储（新增存储服务，必停）。暂存上限 200 包、单包 8 MB，超了整笔回滚、回 503。
+5. **考试录入的学科用产品命名空间**（aya / wenli / zhixing / echo，与建档的考试录入同一口径），不是学科目录码（math 等）；`exam_type` 用 0022 的
+   mock1 / mock2（契约是 mock，映射在洞察服务，PR② 契约差异 3）。
+6. **异议对判断的可见核对在 BFF 与库里各一次**（与 `insight.raise_dispute` 同条件），不要求判断在对外白名单里：学生、家长只能对界面上
+   看得到的判断提异议，白名单外的判断界面上不出现；是否要求白名单待 5-H 定。
+7. **预测 `frozen`**：BFF 只标记冻结时间是否已过，冻结前也显示区间（5-H“考前显示已冻结的预测区间”的时点由人定）；BFF 没有改预测的入口。
+8. **对账卡的读取**接受考试安排或成绩记录的 ID（与 PR② 契约差异 4 一致），由读取通道解释。
+
+### 待人确认
+1. 上面偏离 1（导出 / 删除接线）、2（短信复核需新库函数）、3（预测与对账卡的读取通道与可见范围）、4（导出包存储）。
+2. 限流阈值（上面六个桶）与错误码是否合适；删除冷静期、确认窗口沿用 0035（24 小时、7 天）。
+3. 异议的幂等：BFF 把前端给的键按账号派生后转发，洞察服务的幂等是进程内缓存（PR② 契约差异 6）；持久幂等表需迁移。
+4. 删除执行后的回执展示（表名 → 行数）是否要按范围（`scopes`）合并成人能读的条目：属 5-H 文案，必停。
+5. 学生本人的导出与删除入口（14 周岁以上）未做（PR① 待人确认 7、9）。
+6. 异议撤回（`withdrawn_by_raiser`）没有契约工具，BFF 也没有撤回路由（PR② 契约差异 8）。
+7. “数据有误”之后原始事实在原录入通道更正（考试记录替换等）：BFF 没有新增更正入口（PR① 待人确认 3）。
+
+### 按安全审查与契约审查的修改（用户授权按默认建议）
+- M1：兑换前核对 `platform.is_linked_guardian`、`student_profile.erased_at IS NULL`、没有已确认（冷静期中）或已执行的删除请求，否则 404 并清掉暂存
+  （解除绑定只清这位家长发起的，删除相关清该学生全部）；删除请求已确认后拒绝新导出（409 `STATE_CONFLICT`）；删除确认成功时清掉该学生的暂存
+  （`ExportStore.purgeStudent`）。家长解除绑定不经 BFF，靠兑换时的核对清掉。测试 + 5 条变异。
+- M2：**兑换前查 `platform.export_job` 做不到**——0035 只把它授给 authz，BFF 没有任何列的读权限；兑换也没有库内留痕列 / 函数。
+  现做法：访问日志记账号摘要（`logHash`）与 `export_job`；库内兑换留痕（例如 `platform.redeem_export(job, digest)`：核对摘要、过期、状态并记兑换时间，
+  只授 BFF）需要迁移，必停，待人确认。测试 + 变异（日志不记账号摘要）。
+- M3：对账卡按 `prediction_id` 找预测所引的判断（经同一读取通道取预测），经 `shownClaims` 核对；不可见、预测对不上或取不到时整卡为 null。测试 + 变异。
+- H1：删除确认要求本会话 10 分钟内经验证码登录过（否则 403 `REAUTH_REQUIRED`）。0029 的 `auth_session_resolve` 不返回签发时间、BFF 读不到会话表，
+  所以登录时刻记在进程内（`src/trust/proof.ts`，键是会话令牌的带密钥摘要）：重启、换实例后一律要求重新登录（从严）；落库需会话表加列或新函数（必停）。
+  **冷静期内通知其他绑定家长：没有通知通道**（4-H 只有短信捕获桩、没有推送），登记待人确认；短信复核仍是必停（见偏离 2）。测试 + 2 条变异。
+- H2 + L4：暂存时长取 min(1 小时, 库里的 expires_at)；总字节上限 64 MB（另有 200 包、单包 8 MB），超了 503。单测 + 2 条变异。
+- L1：删除确认凭据与异议幂等键改用专用密钥 `BFF_TRUST_SECRET`（`Keys.trust`，规则与 `BFF_AUTH_SECRET` 相同：dev / test 缺省随机，其余环境不设或太短拒绝启动）。
+  **部署影响**：staging 以上要新配这个密钥，否则 BFF 起不来。轮换影响：未确认的删除凭据失效（重新发起即可）；异议重试会换一个派生幂等键
+  （洞察服务进程内缓存认不出，但库里同一人同一判断同一类的未结束异议仍只有一条）。启动测试 + 单测。
+- L2：兑换改用 `platform.is_linked_guardian($1)`。L3：暂存移到事务提交之后，放不进回 503（导出任务照样留作审计）。
+- L4b：`GET …/disputes` 与 `GET …/erasure` 挂 `trust_read.session.minute`（每会话每分钟 60 次）。测试 + 变异。
+- 契约 L1：`open_fact_for_correction` 必须带合格式的 `fact_ref`（仍不转发）；核对统一信封（contract_version、evidence_ids、confidence、两个版本、
+  human_review_required），不合按不可用（503）。单测 + 2 条变异。契约 L2：`interval_level` 注释写明与契约、0034 三处同步。
+  契约 L3：trust.v0.yaml 的考试安排与成绩补 409（导出补 409、两个 GET 补 429、问题码补 `REAUTH_REQUIRED`）；`shell-openapi` 新增测试：
+  handler 用到的问题码都在枚举里且状态码出现在接口里，每条路由按路由表列出 401 / 403 / 404 / 422 / 429（逐条 handler 的状态码对照没做）。
+- 契约 L5（补记）：**异议列表是 BFF 直读 `insight.dispute`**（0032 列授权 + RLS），契约没有列表工具；判断可见性的核对实际是三次——
+  BFF（库里同条件）、洞察服务（预检）、`insight.raise_dispute`。
+- 契约 M2：维持现状（开关关闭），已登记。
+
+### 验证
+- `make bff-test`：通过（含 trust-units 9 项、trust.integration 16 项、shell-openapi 新增 1 项、启动测试新增信任密钥断言）。
+- `BFFMUT_FILTER=信任：`：29 / 29 被发现（审查后新增 13 条；首轮漏检“导出下载不查删除状态”——确认时已清暂存，补了“另一实例确认、本实例暂存未清”的用例后被发现）。
+  `make bff-mutation` 全量：97 / 97 被发现。
+- `make check-fast`：通过（contract-test 因本机缺 jsonschema 跳过，既有情况）。未跑 `make check`（另有进程在别的工作树跑严格检查）。

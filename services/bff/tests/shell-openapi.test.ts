@@ -8,8 +8,12 @@ import { readFileSync } from 'node:fs';
 const require_fs = () => fs;
 import { test } from 'node:test';
 import { compile, PREFIX, ROUTES } from '../src/http/routes.ts';
+import { TRUST_ROUTES } from '../src/http/trust-routes.ts';
 
-const SPECS = ['shell', 'star-map', 'onboarding', 'events', 'diagnosis']
+// 路由表 + 信任界面路由（SIE-03 PR③，按开关注册；接口定义在 openapi/trust.v0.yaml）
+const ALL = [...ROUTES, ...TRUST_ROUTES];
+
+const SPECS = ['shell', 'star-map', 'onboarding', 'events', 'diagnosis', 'trust']
   .map((n) => readFileSync(new URL(`../openapi/${n}.v0.yaml`, import.meta.url), 'utf8'));
 
 function specOperations(): string[] {
@@ -31,18 +35,19 @@ function operationsOf(SPEC: string): string[] {
 }
 
 test('路由表与 openapi/*.v0.yaml 一一对应（没有表外的接口，也没有没写进接口定义的路由）', () => {
-  const table = ROUTES.map((r) => `${r.method} ${PREFIX}${r.path}`).sort();
+  const table = ALL.map((r) => `${r.method} ${PREFIX}${r.path}`).sort();
   assert.deepEqual(specOperations(), table);
 });
 
 test('路由表不变量：改变状态的都开 CSRF；公开的只有登录两条；带学生参数的都要会话', () => {
-  for (const r of ROUTES) {
+  for (const r of ALL) {
     if (r.method !== 'GET') assert.notEqual(r.csrf, 'none', `${r.method} ${r.path}`);
     if (r.auth !== 'public' && r.method !== 'GET') assert.equal(r.csrf, 'session', `${r.method} ${r.path}`);
     if (r.path.includes('{student_id}')) assert.notEqual(r.auth, 'public', r.path);
   }
-  assert.deepEqual(ROUTES.filter((r) => r.auth === 'public').map((r) => r.path).sort(), ['/auth/otp/request', '/auth/otp/verify']);
-  const keys = ROUTES.map((r) => `${r.method} ${r.path}`);
+  assert.deepEqual(ALL.filter((r) => r.auth === 'public').map((r) => r.path).sort(), ['/auth/otp/request', '/auth/otp/verify']);
+  for (const r of TRUST_ROUTES) assert.ok(r.feature === 'dispute' || r.feature === 'reconcile' || r.feature === 'data_rights', `${r.method} ${r.path} 挂在开关上`);
+  const keys = ALL.map((r) => `${r.method} ${r.path}`);
   assert.equal(new Set(keys).size, keys.length, '没有重复路由');
 });
 
@@ -65,5 +70,49 @@ test('开发身份桩已删除：源码与接口定义里没有 x-dev-account-id
     for (const banned of ['x-dev-account-id', 'STARBUDDY_DEV_AUTH', 'devAccount', 'STARBUDDY_DEV_METER_CLOCK']) {
       assert.ok(!text.includes(banned), `${f} 含 ${banned}`);
     }
+  }
+});
+
+// 信任界面（SIE-03 PR③，契约审查 L3）：接口定义里的状态码与问题码对得上路由表与 handler
+const TRUST_SPEC = readFileSync(new URL('../openapi/trust.v0.yaml', import.meta.url), 'utf8');
+
+function statusesOf(spec: string): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>();
+  const end = spec.indexOf('\ncomponents:');
+  let path = '';
+  let op = '';
+  for (const line of spec.slice(spec.indexOf('\npaths:'), end).split('\n')) {
+    const p = /^ {2}(\/\S+):\s*$/.exec(line);
+    if (p) { path = p[1]!; continue; }
+    const m = /^ {4}(get|post|put):\s*$/.exec(line);
+    if (m) { op = `${m[1]!.toUpperCase()} ${path}`; out.set(op, new Set()); continue; }
+    const s = /^ {8}'([0-9]{3})':/.exec(line);
+    if (s && op) out.get(op)!.add(s[1]!);
+  }
+  return out;
+}
+
+test('信任界面接口定义：handler 用到的问题码都在枚举里；每条路由列出会话 401、CSRF 403、账号类型 403、限流 429', async () => {
+  const { P } = await import('../src/http/problems.ts');
+  const src = readFileSync(new URL('../src/http/trust-routes.ts', import.meta.url), 'utf8');
+  const used = new Set([...src.matchAll(/\bP\.([A-Z_]+)/g)].map((m) => m[1]!));
+  const enumText = /code:\s*\n\s*enum: \[([^\]]+)\]/.exec(TRUST_SPEC)![1]!;
+  const statuses = statusesOf(TRUST_SPEC);
+  const all = new Set([...statuses.values()].flatMap((x) => [...x]));
+  for (const k of used) {
+    const body = JSON.parse((P as Record<string, string>)[k]!) as { code: string; status: number };
+    assert.ok(enumText.includes(body.code), `${k} → ${body.code} 不在 trust.v0.yaml 的问题码枚举里`);
+    assert.ok(all.has(String(body.status)), `${k} 的状态码 ${body.status} 没有出现在任何接口里`);
+  }
+  for (const r of TRUST_ROUTES) {
+    const s = statuses.get(`${r.method} ${PREFIX}${r.path}`)!;
+    assert.ok(s.has('401') && s.has('404'), `${r.method} ${r.path}`);
+    if (r.auth === 'guardian' || r.method !== 'GET') assert.ok(s.has('403'), `${r.method} ${r.path} 403`);
+    if (r.rateLimits.length > 0) assert.ok(s.has('429'), `${r.method} ${r.path} 429`);
+    if (r.body) assert.ok(s.has('422'), `${r.method} ${r.path} 422`);
+  }
+  // 考试录入与成绩：库里的唯一约束冲突映射 409
+  for (const p of ['/students/{student_id}/exams', '/students/{student_id}/exams/{exam_id}/score']) {
+    assert.ok(statuses.get(`POST ${PREFIX}${p}`)!.has('409'), p);
   }
 });

@@ -23,6 +23,11 @@ export const P = {
   PROBE_LINKED: problem(409, 'PROBE_ALREADY_LINKED', 'probe already linked to a different attempt'),
   WRITE_CAP: problem(429, 'TOO_MANY', 'too many writes'),  // 库里的 24 小时写入上限（0025），不是限流
   DIAGNOSIS_UNAVAILABLE: problem(503, 'DIAGNOSIS_UNAVAILABLE', 'diagnosis is not available'),
+  // SIE-03 PR③ 信任界面：状态不允许（已结束、确认超时、已删除等）、会话内二次确认未通过、洞察服务或读取通道不可用
+  STATE_CONFLICT: problem(409, 'STATE_CONFLICT', 'request conflicts with current state'),
+  CONFIRM_REQUIRED: problem(403, 'CONFIRMATION_REQUIRED', 'confirmation not accepted'),
+  REAUTH_REQUIRED: problem(403, 'REAUTH_REQUIRED', 'sign in again to confirm'),
+  TRUST_UNAVAILABLE: problem(503, 'UNAVAILABLE', 'not available right now'),
 } as const;
 
 export type ProblemBody = (typeof P)[keyof typeof P];
