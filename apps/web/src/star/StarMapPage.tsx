@@ -5,8 +5,6 @@
 import { notFound, redirect } from 'next/navigation';
 import { pageSession } from '../lib/session.ts';
 import { fetchStarMap, isUuid } from '../lib/star-map.ts';
-import { trustEnabled } from '../shell/features.ts';
-import { TrustSlot } from '../shell/TrustSlot.tsx';
 import { StarDefs } from './Star.tsx';
 import { StarSky } from './StarSky.tsx';
 
@@ -33,8 +31,9 @@ export async function StarMapPage({ studentId, audience }: { studentId: string; 
       ) : (
         map.skies.map((sky) => <StarSky key={sky.subject} sky={sky} />)
       )}
-      {/* 星的详情位：预留“为什么”“我不同意”（冲刺 5；开关默认关，关时不渲染、不发请求） */}
-      {audience === 'student' && (trustEnabled('why') || trustEnabled('dispute')) ? <p className="star-detail-slot"><TrustSlot feature="why" /> <TrustSlot feature="dispute" /></p> : null}
+      {/* 星的详情位的“为什么”（冲刺 5-H）：入口挂在判断上（src/trust/links.tsx 的 ClaimLinks，“我不同意”在“为什么”页里）。
+          现在的星图仍是 3-H 的 v0 形状，星上没有 claim_id（7.2 的 v1 才带），按规则 11 这里不渲染任何入口；
+          v1 切换时每颗非中性的星旁放 <ClaimLinks claimId={star.claim_id} />。 */}
     </main>
   );
 }

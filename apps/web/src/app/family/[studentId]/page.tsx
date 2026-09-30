@@ -1,5 +1,5 @@
 // 家长端孩子页（spec 第 9、13、14 节）：额度与时长（分来源明细）、选科、今日计划（判断陈述带置信度说明）、星图、时长设置、
-// 完善学习档案入口（SIE-01）、信任界面预留位（对账卡、数据查看 / 导出 / 删除；冲刺 5，开关默认关，关时不渲染、不发请求）。
+// 完善学习档案入口（SIE-01）、信任界面入口（考试与对账卡、异议、数据查看 / 导出 / 删除；冲刺 5-H，开关默认关，关时不渲染、不发请求）。
 // 不显示对话内容、同伴比较、排名、无置信度的推断；没有点点入口，没有角色形象。
 import { notFound, redirect } from 'next/navigation';
 import { childLabel, FAMILY_COPY } from '../../../auth/copy.ts';
@@ -10,6 +10,7 @@ import { requireGuardian } from '../../../shell/guard.ts';
 import { StatusBar } from '../../../shell/StatusBar.tsx';
 import { TaskList } from '../../../shell/TaskList.tsx';
 import { TrustSlot } from '../../../shell/TrustSlot.tsx';
+import { TrustNav } from '../../../trust/links.tsx';
 import { enrollAction, pauseAction } from '../shell-actions.ts';
 
 export const dynamic = 'force-dynamic';
@@ -105,14 +106,14 @@ export default async function ChildPage({ params }: { params: Promise<{ studentI
         {(t?.subjects ?? []).map((s) => (
           <section key={s.subject} data-subject={s.subject} aria-labelledby={`g-today-${s.subject}`}>
             <h3 id={`g-today-${s.subject}`}>{subjectLabel(s.subject)}</h3>
-            {s.status !== 'ok' || s.tasks.length === 0 ? <p className="muted">{TODAY.nothingToday}</p> : <TaskList section={s} audience="guardian" />}
+            {s.status !== 'ok' || s.tasks.length === 0 ? <p className="muted">{TODAY.nothingToday}</p> : <TaskList section={s} audience="guardian" studentId={studentId} />}
           </section>
         ))}
       </section>
 
-      <TrustSlot feature="reconcile" />
+      {/* 信任界面入口（冲刺 5-H：考试与对账卡、我提出的异议、数据查看导出与删除；开关关时不渲染）；周报本次不做，仍是预留位 */}
+      <TrustNav studentId={studentId} audience="guardian" />
       <TrustSlot feature="weekly" />
-      <TrustSlot feature="data_rights" />
     </main>
   );
 }

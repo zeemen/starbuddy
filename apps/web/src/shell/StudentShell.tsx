@@ -9,6 +9,7 @@ import { ackRestAction } from '../app/s/[studentId]/actions.ts';
 import type { Balance, RestView } from '../lib/shell-api.ts';
 import { DIANDIAN, NAV, REST } from './copy.ts';
 import { StatusBar } from './StatusBar.tsx';
+import { TrustNav } from '../trust/links.tsx';
 
 export type ShellTab = 'today' | 'star-map' | 'learn';
 
@@ -30,6 +31,7 @@ export function StudentShell({ studentId, csrf, balance, rest, path, children }:
           <button type="submit" aria-describedby="exit-note">{NAV.exit}</button>
         </ResultForm>
       </header>
+      <TrustNav studentId={studentId} audience="student" />
       {balance ? <StatusBar balance={balance} audience="student" /> : null}
       {rest?.show ? (
         <div className="rest-bar" role="status" data-testid="rest-reminder">

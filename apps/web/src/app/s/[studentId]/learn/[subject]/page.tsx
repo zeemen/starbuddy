@@ -23,7 +23,7 @@ export default async function SubjectPage({ params }: { params: Promise<{ studen
       if (r.status === 401) redirect('/login');
       notFound();
     }
-    body = <MathEntry section={r.value.subjects.find((s) => s.subject === 'math') ?? null} audience="student" />;
+    body = <MathEntry section={r.value.subjects.find((s) => s.subject === 'math') ?? null} audience="student" studentId={studentId} />;
   } else {
     body = m.code === 'politics' ? <PoliticsEntry /> : <ChineseEntry />;
   }

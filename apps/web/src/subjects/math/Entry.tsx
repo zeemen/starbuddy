@@ -4,13 +4,13 @@ import type { TodaySection } from '../../lib/shell-api.ts';
 import { SUBJECTS, TODAY } from '../../shell/copy.ts';
 import { TaskList } from '../../shell/TaskList.tsx';
 
-export function MathEntry({ section, audience }: { section: TodaySection | null; audience: 'student' | 'guardian' }) {
+export function MathEntry({ section, audience, studentId }: { section: TodaySection | null; audience: 'student' | 'guardian'; studentId?: string }) {
   return (
     <section aria-labelledby="subject-today">
       <h2 id="subject-today">{SUBJECTS.todayTasks}</h2>
       {!section ? <p className="muted">{SUBJECTS.notEnrolled}</p>
         : section.status !== 'ok' || section.tasks.length === 0 ? <p className="muted" data-testid="nothing-today">{TODAY.nothingToday}</p>
-          : <TaskList section={section} audience={audience} />}
+          : <TaskList section={section} audience={audience} studentId={studentId} />}
     </section>
   );
 }

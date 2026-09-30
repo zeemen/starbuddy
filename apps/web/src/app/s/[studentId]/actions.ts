@@ -7,7 +7,7 @@ import { actionSession } from '../../../lib/session.ts';
 import { ackRest } from '../../../lib/shell-api.ts';
 import { isUuid } from '../../../lib/star-map.ts';
 
-const BACK = /^\/s\/[0-9a-f-]{36}\/(today|star-map|learn(\/(math|chinese|politics))?)$/;
+const BACK = /^\/s\/[0-9a-f-]{36}\/(today|star-map|learn(\/(math|chinese|politics))?|disputes|exams(\/[0-9a-f-]{36})?|why\/[0-9a-f-]{36})$/;
 
 export async function ackRestAction(_: FormResult | null, f: FormData): Promise<FormResult> {
   const s = await actionSession(f.get('csrf'));

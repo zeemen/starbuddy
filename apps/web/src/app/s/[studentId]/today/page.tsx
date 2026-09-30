@@ -26,7 +26,7 @@ export default async function TodayPage({ params }: { params: Promise<{ studentI
           <h2 id={`today-${s.subject}`}>{subjectLabel(s.subject)}</h2>
           {s.status !== 'ok' || s.tasks.length === 0
             ? <p className="muted" data-testid="nothing-today">{TODAY.nothingToday}</p>
-            : <TaskList section={s} audience="student" />}
+            : <TaskList section={s} audience="student" studentId={studentId} />}
         </section>
       ))}
     </main>

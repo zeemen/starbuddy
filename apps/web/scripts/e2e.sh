@@ -90,9 +90,22 @@ PY
     STARBUDDY_ENV=test BFF_SHELL_ORIGIN="http://127.0.0.1:$WEB_PORT" BFF_SMS_CAPTURE_FILE="$SMS_INBOX"
   exec node --no-warnings src/main.ts ) > "$LOG" 2>&1 < /dev/null &
 BFF_PID=$!
-trap 'kill "$BFF_PID" "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true; rm -f "$LOG" "$LLOG" "$SMS_INBOX" "$AUTH_CFG"' EXIT
+# 信任界面开关打开的第二套（冲刺 5-H，e2e/trust-on.spec.ts）：同一个一次性库上另起一个 BFF（STARBUDDY_TRUST_UI 打开 dispute / reconcile /
+# data_rights，只在 STARBUDDY_ENV=test 生效）与一个前端（playwright.config.ts 的第二个 webServer，STARBUDDY_TRUST_UI 另含 why）。
+# 原来这一套开关全关，4-H“信任界面预留”验收与 e2e/trust-off.spec.ts 在它上面跑。没有洞察服务：异议提交 503，预测与对账卡读取 503。
+TRUST_BFF_PORT="$(free_port)"
+WEB_TRUST_PORT="$(free_port)"
+TLOG="$(mktemp)"
+( cd "$ROOT/services/bff" || exit 1
+  export BFF_DATABASE_URL="postgresql://bff_app@/starbuddy_test?host=$PGHOST" PORT="$TRUST_BFF_PORT" BFF_AUTH_CONFIG="$AUTH_CFG" \
+    BFF_LEARNING_URL="http://127.0.0.1:$LEARNING_PORT" BFF_LEARNING_TOKEN="$SVC_CRED" \
+    STARBUDDY_ENV=test BFF_SHELL_ORIGIN="http://127.0.0.1:$WEB_TRUST_PORT" BFF_SMS_CAPTURE_FILE="$SMS_INBOX" \
+    STARBUDDY_TRUST_UI=dispute,reconcile,data_rights
+  exec node --no-warnings src/main.ts ) > "$TLOG" 2>&1 < /dev/null &
+TRUST_BFF_PID=$!
+trap 'kill "$BFF_PID" "$TRUST_BFF_PID" "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true; rm -f "$LOG" "$TLOG" "$LLOG" "$SMS_INBOX" "$AUTH_CFG"' EXIT
 for _ in $(seq 1 80); do
-  python3 -c "import socket,sys; s=socket.socket(); sys.exit(0 if s.connect_ex(('127.0.0.1', $BFF_PORT)) == 0 else 1)" && break
+  python3 -c "import socket,sys; ok=all(socket.socket().connect_ex(('127.0.0.1', p)) == 0 for p in ($BFF_PORT, $TRUST_BFF_PORT)); sys.exit(0 if ok else 1)" && break
   sleep 0.25
 done
 
@@ -113,8 +126,8 @@ REVIEW_PID=$!
 ENVDTS="$(mktemp)"
 if [ -f "$WEB/next-env.d.ts" ]; then cp "$WEB/next-env.d.ts" "$ENVDTS"; else rm -f "$ENVDTS"; fi
 cleanup() {
-  kill "$BFF_PID" "$REVIEW_PID" "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true
-  rm -f "$LOG" "$RLOG" "$LLOG" "$SMS_INBOX" "$AUTH_CFG"
+  kill "$BFF_PID" "$TRUST_BFF_PID" "$REVIEW_PID" "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true
+  rm -f "$LOG" "$TLOG" "$RLOG" "$LLOG" "$SMS_INBOX" "$AUTH_CFG"
   if [ -f "$ENVDTS" ]; then cp "$ENVDTS" "$WEB/next-env.d.ts"; rm -f "$ENVDTS"; else rm -f "$WEB/next-env.d.ts"; fi
   rm -rf "${WEB:?}/.next-e2e"
 }
@@ -126,7 +139,7 @@ done
 
 # STARBUDDY_NEXT_DIST_DIR：构建与 next start（playwright.config.ts 的 webServer）都读 .next-e2e
 export STARBUDDY_BFF_URL="http://127.0.0.1:$BFF_PORT" STARBUDDY_REVIEW_URL="http://127.0.0.1:$REVIEW_PORT" WEB_PORT STARBUDDY_DEV_PAGES=1 STARBUDDY_ENV=test NEXT_TELEMETRY_DISABLED=1 \
-  STARBUDDY_NEXT_DIST_DIR=.next-e2e
+  STARBUDDY_NEXT_DIST_DIR=.next-e2e STARBUDDY_TRUST_BFF_URL="http://127.0.0.1:$TRUST_BFF_PORT" WEB_TRUST_PORT
 cd "$WEB"
 # 端到端用测试构建（冲刺 2-L）：开发专用页面（page.dev.tsx：探针、诊断演示页与符号样张页）只在 STARBUDDY_DEV_PAGES=1 且
 # STARBUDDY_ENV=dev/test 构建时才是页面（next.config.ts，构建期常量）。测试构建输出到 .next-e2e、类型检查用 tsconfig.e2e.json，正式的 .next 保持生产构建，
@@ -137,5 +150,5 @@ rm -f "$BLOG"
 set +e
 npx --no-install playwright test "$@"
 rc=$?
-if [ $rc -ne 0 ]; then echo "--- BFF 日志（最后 20 行）"; tail -20 "$LOG"; echo "--- 审核台后端日志（最后 20 行）"; tail -20 "$RLOG"; echo "--- 学习服务日志（最后 20 行）"; tail -20 "$LLOG"; fi
+if [ $rc -ne 0 ]; then echo "--- BFF 日志（最后 20 行）"; tail -20 "$LOG"; echo "--- 信任界面 BFF 日志（最后 20 行）"; tail -20 "$TLOG"; echo "--- 审核台后端日志（最后 20 行）"; tail -20 "$RLOG"; echo "--- 学习服务日志（最后 20 行）"; tail -20 "$LLOG"; fi
 exit $rc

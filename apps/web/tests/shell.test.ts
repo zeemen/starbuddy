@@ -55,14 +55,15 @@ test('人写人审的正文是明显占位：置信度说明、同意正文、�
 });
 
 test('壳页面与组件里没有中文文案：文字只从文案文件取；关于学生的句子只在 TaskList 以 data-claim-id 渲染', () => {
-  const shellTsx = src.filter((f) => /^src\/(shell|subjects|app\/s|app\/family|app\/student)\/.*\.tsx$/.test(f.path));
+  const shellTsx = src.filter((f) => /^src\/(shell|subjects|trust|app\/s|app\/family|app\/student)\/.*\.tsx$/.test(f.path));
   assert.ok(shellTsx.length >= 10);
   for (const f of shellTsx) {
     const cjk = code(f.text).match(/[一-鿿]+/g) ?? [];
     assert.deepEqual(cjk, [], f.path);
   }
   const claimRenderers = src.filter((f) => /data-claim-id/.test(code(f.text))).map((f) => f.path);
-  assert.deepEqual(claimRenderers, ['src/shell/TaskList.tsx']);
+  // 冲刺 5-H 起另有“为什么”页与考试页（对账卡）渲染判断句（tests/trust.test.ts 逐个核对）
+  assert.deepEqual(claimRenderers.sort(), ['src/shell/TaskList.tsx', 'src/trust/ExamPages.tsx', 'src/trust/WhyPage.tsx']);
   assert.match(readFileSync(join(WEB, 'src/shell/TaskList.tsx'), 'utf8'), /data-claim-id=\{r\.claim_id\}>\{r\.text\}/);
 });
 
@@ -77,7 +78,7 @@ test('信任界面开关：默认全关；只在 dev / test 可开；staging、p
   assert.deepEqual([...TRUST_FEATURES].sort(), ['data_rights', 'dispute', 'reconcile', 'weekly', 'why']);
 });
 
-test('预留位组件：关时返回 null；不发任何请求；只经开关判断', () => {
+test('预留位组件：关时返回 null；不发任何请求；只经开关判断（冲刺 5-H 的真实入口与请求见 tests/trust.test.ts）', () => {
   const slot = readFileSync(join(WEB, 'src/shell/TrustSlot.tsx'), 'utf8');
   assert.match(slot, /if \(!trustEnabled\(feature\)\) return null;/);
   assert.ok(!/fetch|shell-api|bff|use client|action/.test(code(slot)));

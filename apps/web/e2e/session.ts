@@ -7,6 +7,12 @@ import { expect, type Page } from '@playwright/test';
 
 export const BFF = process.env['STARBUDDY_BFF_URL'] ?? 'http://127.0.0.1:8787';
 export const BASE = `http://127.0.0.1:${Number(process.env['WEB_PORT'] ?? 3100)}`;  // 与 playwright.config.ts 同一个端口
+/** 信任界面开关打开的第二套（冲刺 5-H，playwright.config.ts 的 trust-on 项目）：前端与它连的 BFF */
+export const TRUST_BFF = process.env['STARBUDDY_TRUST_BFF_URL'] ?? 'http://127.0.0.1:8788';
+export const TRUST_BASE = `http://127.0.0.1:${Number(process.env['WEB_TRUST_PORT'] ?? 3101)}`;
+/** 当前页面所在的那一套：前端来源与它连的 BFF（CSRF 令牌由各自的 BFF 签，不能混用） */
+export const endpointsOf = (page: Page): { base: string; bff: string } =>
+  new URL(page.url()).origin === TRUST_BASE ? { base: TRUST_BASE, bff: TRUST_BFF } : { base: BASE, bff: BFF };
 
 /** 合成家长的登录号码（未分配的国家码 +999） */
 export const PHONE = { gS: '+99900000101', gO: '+99900000102', gD: '+99900000105', gH: '+99900000106' } as const;
@@ -59,10 +65,11 @@ export async function cookieSession(page: Page): Promise<{ token: string; csrf: 
 /** 家长经 BFF 的同意接口补上打开学生模式需要的合成同意（与家长在界面上操作是同一条路由、同一套 CSRF） */
 async function grantConsents(page: Page, student: string): Promise<void> {
   const s = await cookieSession(page);
+  const { base, bff } = endpointsOf(page);
   for (const [type, doc] of [['privacy_policy', 'privacy-policy@synthetic-0'], ['guardian_consent_under14', 'guardian-consent@synthetic-0']]) {
-    const r = await fetch(`${BFF}/bff/v0/students/${student}/consents`, {
+    const r = await fetch(`${bff}/bff/v0/students/${student}/consents`, {
       method: 'POST',
-      headers: { 'x-sb-session': s.token, 'x-csrf-token': s.csrf, origin: BASE, 'content-type': 'application/json' },
+      headers: { 'x-sb-session': s.token, 'x-csrf-token': s.csrf, origin: base, 'content-type': 'application/json' },
       body: JSON.stringify({ consent_type: type, document_version: doc, decision: 'granted' }),
     });
     expect(r.status, `consent ${type}`).toBe(201);
