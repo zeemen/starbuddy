@@ -80,6 +80,7 @@ kge.textbook_projection|textbook_reader|SELECT|starbuddy_kge_read|PERMISSIVE|usi
   WHERE ((n.map_version_id = textbook_projection.map_version_id) AND ((n.id)::text = (textbook_projection.node_id)::text) AND (n.status = 'active'::text)))))|check=-
 kge.textbook_projection|textbook_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
 platform.account|account_self_read|SELECT|starbuddy_bff|PERMISSIVE|using=(id = platform.current_account_id())|check=-
+platform.attempt|attempt_insight_read|SELECT|starbuddy_insight|PERMISSIVE|using=true|check=-
 platform.attempt|attempt_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
 platform.attempt|attempt_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
 platform.consent_record|consent_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
@@ -95,6 +96,8 @@ platform.diagnosis_step|diagnosis_step_self|SELECT|starbuddy_bff|PERMISSIVE|usin
 platform.entitlement|entitlement_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
 platform.error_attribution|attr_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
 platform.error_attribution|attr_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
+platform.error_attribution|attribution_insight_read|SELECT|starbuddy_insight|PERMISSIVE|using=true|check=-
+platform.evidence_event|evidence_insight_read|SELECT|starbuddy_insight|PERMISSIVE|using=true|check=-
 platform.evidence_event|evidence_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
 platform.evidence_event|evidence_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
 platform.evidence_registry|evidence_registry_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
@@ -102,6 +105,7 @@ platform.grade_dimension|dim_read|SELECT|starbuddy_bff|PERMISSIVE|using=(EXISTS 
    FROM platform.grade_result g
   WHERE ((g.id = grade_dimension.grade_result_id) AND platform.can_read_student(g.student_id))))|check=-
 platform.grade_dimension|dim_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
+platform.grade_result|grade_insight_read|SELECT|starbuddy_insight|PERMISSIVE|using=true|check=-
 platform.grade_result|grade_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
 platform.grade_result|grade_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
 platform.guardian_report|greport_delete|DELETE|starbuddy_bff|PERMISSIVE|using=(guardian_account_id = platform.current_account_id())|check=-
@@ -114,6 +118,7 @@ platform.household|household_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform
 platform.ingest_request|ingest_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
 platform.item|item_read|SELECT|starbuddy_bff|PERMISSIVE|using=(admission = 'admitted'::platform.admission)|check=-
 platform.item|item_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
+platform.mastery_estimate|mastery_insight_read|SELECT|starbuddy_insight|PERMISSIVE|using=true|check=-
 platform.mastery_estimate|mastery_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
 platform.mastery_estimate|mastery_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
 platform.plan_allowance|plan_allowance_read|SELECT|starbuddy_bff|PERMISSIVE|using=(EXISTS ( SELECT 1
@@ -139,6 +144,7 @@ platform.skill_node|skill_node_read|SELECT|starbuddy_bff|PERMISSIVE|using=true|c
 platform.skill_node|skill_node_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
 platform.skill_observation|obs_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
 platform.skill_observation|obs_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
+platform.skill_observation|observation_insight_read|SELECT|starbuddy_insight|PERMISSIVE|using=true|check=-
 platform.student_profile|student_profile_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(id)|check=-
 platform.student_profile|student_profile_service_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
 platform.student_subject_textbook|textbook_service_read|SELECT|starbuddy_insight,starbuddy_learning|PERMISSIVE|using=true|check=-

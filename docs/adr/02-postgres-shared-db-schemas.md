@@ -118,3 +118,4 @@ ADR 09 建议 pilot 和生产全链路境内。Supabase 托管版没有中国大
 - **写入方**：BFF 以当前账号调用 SECURITY DEFINER 函数写事实（SIE-01 待人确认 #3），BFF 没有表授权；判断仍只由洞察服务写。新增只读角色 `starbuddy_report`，只能执行聚合统计函数。
 - 待签字：随 SIE-01 的 PR 一起评审（必停项：迁移、RLS 与权限、画像可见范围）。
 - **0027（数学自适应诊断，specs/sie-02a-math-diagnosis）**：`platform.diagnosis_session` / `diagnosis_step` 只由学习服务写；学生经 BFF 只读自己的进度列，家长读不到；步骤只存选题决策与引用，对错以 `grade_result` 为准；过程观察以新原因 `process_observation` 挂诊断步骤进统一复核队列。只改 platform。
+- **0028（洞察服务只读授权，specs/sie-02b-claims-first-report #4）**：`starbuddy_insight` 列级只读 platform 的掌握估计、观测、错因、判分结论、作答与证据的属性列，不给任何原文、维度、账号与家庭表，不给写权限（79j）。只改 platform。

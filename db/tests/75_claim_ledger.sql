@@ -225,7 +225,8 @@ SELECT t.throws($$UPDATE insight.claim_history SET reason = 'revised'$$, '42501'
 SELECT t.throws($$DELETE FROM insight.claim_history$$, '42501', '洞察服务不能删历史');
 SELECT t.throws($$INSERT INTO insight.claim_template (template_key, version, target_type, max_visibility, max_ttl) VALUES ('test.x.y', 1, 'node', '{agent}', '1 day')$$,
                 '42501', '洞察服务不能登记模板');
-SELECT t.throws($$SELECT count(*) FROM platform.mastery_estimate$$, '42501', '洞察服务读不到 platform 推断表（依据只经 authz 函数核对）');
+-- 0028 起洞察服务只读掌握估计等推断行（SIE-02b 待人确认 #4）；原文与维度仍读不到（79j）。依据归属仍由 authz 函数核对
+SELECT t.throws($$SELECT count(*) FROM platform.grade_dimension$$, '42501', '洞察服务读不到判分维度（0028 只授最小列集）');
 RESET ROLE;
 
 -- 不可变列即使由表属主改也被触发器拦下；历史表的检查约束拦住非白名单原因
