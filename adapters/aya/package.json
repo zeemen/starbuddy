@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --test --test-reporter=dot tests/*.test.ts",
     "build:pack": "node --import ./scripts/legacy-loader.ts scripts/build-content-pack.ts",
+    "rebuild:pack": "node scripts/rebuild-content-pack.ts",
     "register:sql": "node scripts/register-content.ts",
     "mutation": "node --no-warnings scripts/mutations.ts"
   },

@@ -2,6 +2,7 @@
 import { createAdapter, type LogRecord } from "../src/adapter.ts";
 import { gradeAnswer } from "../src/core/grading.ts";
 import { indexPack, loadPack, type ContentPack, type LoadedPack, type PackItem } from "../src/content.ts";
+import { ADMISSION_DECISIONS_FORMAT, applyAdmissionDecisions, DEFAULT_SOURCE, parseAdmissionDecisions, type AdmissionDecision } from "../src/pack/admission.ts";
 import { loadContract } from "../src/contract.ts";
 import { loadTaxonomy } from "../src/taxonomy.ts";
 
@@ -92,29 +93,53 @@ export function contextV1(overrides: Record<string, unknown> = {}) {
   return context({ contract_version: "1.0.0", idempotency_key: `4d000000-0000-4000-8000-${n}`, ...overrides });
 }
 
-/** 合成题目，用于内容包里没有的边界情况 */
+/** 合成审核记录编号（UUIDv4 格式） */
+export const synReviewId = (n: number) => `4a000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+
+/** 合成准入决定（格式 aya-admission-decisions/1）：来源已核的题按审核等级定为 admitted（≥ Q2）或 pending_review */
+export function syntheticDecisionFile(items: Pick<PackItem, "id" | "reviewStatus">[], overrides: Partial<AdmissionDecision>[] = []) {
+  return {
+    format: ADMISSION_DECISIONS_FORMAT,
+    export_ref: "SYN-EXPORT-0001",
+    exported_at: "2026-10-01T00:00:00Z",
+    curriculum: { ...realPack.pack.curriculum },
+    decisions: items.map((it, i): AdmissionDecision => ({
+      item_id: it.id,
+      admission: ["Q2", "Q3", "Q4", "Q5"].includes(it.reviewStatus) ? "admitted" : "pending_review",
+      source_ref: `SYN-SRC-${String(i).padStart(4, "0")}`,
+      source_type: "self_authored",
+      license_status: "cleared",
+      review_level: it.reviewStatus,
+      review_ids: [synReviewId(i + 1)],
+      ...overrides[i],
+    })),
+  };
+}
+
+/** 合成题目，用于内容包里没有的边界情况。sourceVerified = true 时经准入决定文件重建（与构建脚本同一条路径） */
 export function syntheticPack(
   items: Partial<PackItem>[],
   opts: { sourceVerified?: boolean; traps?: ContentPack["traps"]; skillLinks?: ContentPack["skill_links"] } = {},
 ): LoadedPack {
   const base = realPack.pack;
-  const verified = opts.sourceVerified ?? false;
-  const full = items.map((it, i): PackItem => {
-    const reviewStatus = it.reviewStatus ?? "Q2";
-    return {
-      id: `SYN-${i}`,
-      format: "fill",
-      answer: [],
-      mainNodes: [base.nodes[0]!.id],
-      reviewStatus,
-      usage: "D",
-      estMinutes: 2,
-      hintPath: ["（合成）0 级提示", "（合成）1 级提示", "（合成）2 级提示", "（合成）3 级提示", "（合成）4 级提示", "（合成）5 级提示"],
-      ...it,
-      admission: verified && ["Q2", "Q3", "Q4", "Q5"].includes(reviewStatus) ? "admitted" : verified ? "pending_review" : "source_unverified",
-    };
-  });
-  return indexPack({ ...base, source_verified: verified, items: full, traps: opts.traps ?? base.traps, skill_links: opts.skillLinks ?? base.skill_links });
+  const full = items.map((it, i): PackItem => ({
+    id: `SYN-${i}`,
+    format: "fill",
+    answer: [],
+    mainNodes: [base.nodes[0]!.id],
+    reviewStatus: "Q2",
+    usage: "D",
+    estMinutes: 2,
+    hintPath: ["（合成）0 级提示", "（合成）1 级提示", "（合成）2 级提示", "（合成）3 级提示", "（合成）4 级提示", "（合成）5 级提示"],
+    ...it,
+    admission: "source_unverified",
+    source: { ...DEFAULT_SOURCE },
+  }));
+  const pack: ContentPack = { ...base, items: full, traps: opts.traps ?? base.traps, skill_links: opts.skillLinks ?? base.skill_links };
+  const decisions = opts.sourceVerified
+    ? parseAdmissionDecisions(syntheticDecisionFile(full), pack.curriculum, new Set(full.map((i) => i.id)))
+    : null;
+  return indexPack(applyAdmissionDecisions(pack, decisions));
 }
 
 /** 深度遍历 JSON，返回全部 [路径, 值] */

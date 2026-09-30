@@ -167,7 +167,8 @@ test("plan 前置：有 node_path 与对应表时前置边与 prerequisite_task_
     [ST_K2, "MA.STA.SYN_0002"],
     [PR_K, "MA.PRB.SYN_0003"],
   ];
-  const adapter = makeAdapterV1(packFor([ST_K, ST_K2, PR_K], { links }));
+  const pk = packFor([ST_K, ST_K2, PR_K], { links });
+  const adapter = makeAdapterV1(pk);
   const mastery = [
     { skill_node: `aya:${ST_K}`, state: "execute", p_mastery: 0.5 },
     { skill_node: `aya:${ST_K2}`, state: "execute", p_mastery: 0.5 },
@@ -187,7 +188,7 @@ test("plan 前置：有 node_path 与对应表时前置边与 prerequisite_task_
   assert.ok(!("prerequisite_task_ids" in root));
   // 后续节点数让前置节点排在最前
   assert.equal(b.result.tasks[0].skill_nodes[0], `aya:${ST_K}`);
-  assert.equal(b.source_version, `algo:aya-plan@0.1.0;graph:aya-map@1.0.0;${realPack.itemsSourceVersion}`);
+  assert.equal(b.source_version, `algo:aya-plan@0.1.0;graph:aya-map@1.0.0;${pk.itemsSourceVersion}`);
 
   const noPath = run(adapter, planBody(mastery));
   for (const t of noPath.result.tasks) {

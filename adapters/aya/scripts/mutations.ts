@@ -1,4 +1,5 @@
-// 阿鸦适配器冲刺 4-D 四个方法的变异测试：把 plan、teach、generate_variation、report 的关键规则逐条改坏，断言单测能发现。
+// 阿鸦适配器的变异测试：把冲刺 4-D 四个方法（plan、teach、generate_variation、report）与冲刺 4-G 内容包格式 3
+// （逐题来源与准入决定、提示原文的 C9 词表检查）的关键规则逐条改坏，断言单测能发现。
 // 做法同仓库里其他变异脚本（services/learning/scripts/diagnosis_mutations.py、services/knowledge/tests/mutations.sh）：
 // 把 adapters/aya 的 src、tests 复制到临时目录（保持仓库结构：content、conformance、scripts、node_modules 与仓库根的
 // packages、docs 用软链接指回原件），每个变异改一处（或几处）源码，先过类型检查（不过 = 变异本身写错），再跑新方法的单测；
@@ -13,7 +14,16 @@ import { join, resolve } from "node:path";
 
 const HERE = resolve(new URL(".", import.meta.url).pathname, "..");
 const REPO = resolve(HERE, "../..");
-const TESTS = ["tests/plan.test.ts", "tests/variation.test.ts", "tests/report.test.ts", "tests/teach.test.ts", "tests/methods-v1.test.ts", "tests/pack.test.ts"];
+const TESTS = [
+  "tests/plan.test.ts",
+  "tests/variation.test.ts",
+  "tests/report.test.ts",
+  "tests/teach.test.ts",
+  "tests/methods-v1.test.ts",
+  "tests/pack.test.ts",
+  "tests/pack-format3.test.ts",
+  "tests/hint-scan.test.ts",
+];
 const P = "src/methods/plan.ts";
 const V = "src/methods/variation.ts";
 const R = "src/methods/report.ts";
@@ -21,6 +31,8 @@ const T = "src/methods/teach.ts";
 const S = "src/methods/shared.ts";
 const A = "src/adapter.ts";
 const C = "src/content.ts";
+const AD = "src/pack/admission.ts";
+const HS = "src/pack/hint-scan.ts";
 
 type Edit = [file: string, from: string, to: string];
 // 名字 → 改动（原文必须恰好出现，替换第一处）
@@ -84,6 +96,24 @@ const MUTATIONS: Record<string, Edit[]> = {
   "能力声明 teach 未实现": [[A, 'teach: v1Methods ? { implemented: true, async: false, notes_code: "deterministic_no_model" } : { implemented: false },', "teach: { implemented: false },"]],
   "新方法不做幂等冲突检测": [[A, "return idempotent(method, req.context.idempotency_key, fp, () => run(req, fp, version));", "return run(req, fp, version);"]],
   "内容包不检查提示阶梯": [[C, "problems.push(`题目 ${it.id} 的提示阶梯不合格`);", "void 0;"]],
+  // ---------- 内容包格式 3：逐题来源与准入决定（冲刺 4-G） ----------
+  "admitted 不要求授权已核": [[AD, 'source.source_type !== "unknown" && source.license_status === "cleared";', 'source.source_type !== "unknown" && source.license_status !== "denied";']],
+  "admitted 的审核等级门槛降到 Q1": [[AD, 'export const MIN_ADMITTED_REVIEW_LEVEL: ReviewLevel = "Q2";', 'export const MIN_ADMITTED_REVIEW_LEVEL: ReviewLevel = "Q1";']],
+  "pending_review 不要求来源已核": [[AD, "      if (!verifiedSource) out.push(`题目 ${id} 准入为 pending_review", "      if (!verifiedSource && id === \"\") out.push(`题目 ${id} 准入为 pending_review"]],
+  "决定里内容包没有的题被静默接受": [[AD, 'if (typeof id !== "string" || !itemIds.has(id)) {', 'if (typeof id !== "string") {']],
+  "决定里的重复题不拒绝": [[AD, "if (seen.has(id)) problems.push(", "if (seen.has(id) && id === \"\") problems.push("]],
+  "六段只核对学科": [[AD, "if (c[k] !== curriculum[k]) problems.push(", 'if (c[k] !== curriculum[k] && k === "subject") problems.push(']],
+  "重建不重置：旧决定残留": [[AD, 'if (!d) return { ...rest, source: { ...DEFAULT_SOURCE }, admission: "source_unverified" };', "if (!d) return it;"]],
+  "版本号不带决定摘要": [[AD, "return digest === null ? base : `${base}.d", "return digest !== base ? base : `${base}.d"]],
+  "决定摘要依赖排列顺序": [[AD, "    .sort((a, b) => (a.item_id < b.item_id ? -1 : a.item_id > b.item_id ? 1 : 0))\n    .map((d) => [d.item_id", "    .map((d) => [d.item_id"]],
+  "序列化不排序键（构造顺序影响字节）": [[AD, "Object.fromEntries(Object.keys(v).sort().map(", "Object.fromEntries(Object.keys(v).map("]],
+  "加载时不核对准入与来源": [[C, "else problems.push(...admissionProblems(it.id, it.admission, it.source, it.admission_review));", "else void 0;"]],
+  // ---------- C9 词表检查（提示原文） ----------
+  "C9 严格模式有命中也放行": [[HS, 'if (report.mode === "strict" && report.hits.length > 0) {', 'if (report.mode === "strict" && report.hits.length < 0) {']],
+  "C9 命中映射到错的等级": [[HS, "({ item_id: it.id, level, text })", "({ item_id: it.id, level: level + 1, text })"]],
+  "C9 不核对结果条数": [[HS, "if (!Array.isArray(out.results) || out.results.length !== entries.length) throw", "if (!Array.isArray(out.results)) throw"]],
+  "C9 不核对结果顺序": [[HS, "if (r.source !== `stdin[${i}]`) throw", "if (r.source === \"\") throw"]],
+  "C9 记录严格模式带标记也能加载": [[C, 'if (scan.mode === "strict" && scan.flagged_items.length > 0) problems.push(', 'if (scan.mode === "strict" && scan.flagged_items.length < 0) problems.push(']],
 };
 
 function sh(cmd: string, args: string[], cwd: string, timeoutMs = 240_000): Promise<number> {

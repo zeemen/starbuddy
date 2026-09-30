@@ -4,12 +4,16 @@
 // 格式 2（specs/adapter-aya-methods-sprint4 设计要点第 0 节）：题目加 usage、estMinutes、hintPath，节点加 board，
 // 另加板块中考占比（Q1 推导值，待教研校准）与“阿鸦节点 → KGE 知识节点”对应表（KGE-01 导入阿鸦图谱前为空）。
 // 仍然没有题干、解析与前置关系（前置关系由请求里的 node_path 提供，知识结构以 KGE 为准）。
-// 与 4-G 发布闸门的格式变更（逐题来源、准入决定文件）的合并顺序见 lessons.md 待人确认。
+// 格式 3（specs/release-gate-sprint4 设计要点第 7 节、待人确认 #9）：去掉整包的 source_verified，改为逐题来源
+// （source：来源编号、来源类型、授权状态）与准入依据（admission_review），准入按平台导出的准入决定文件重建
+// （src/pack/admission.ts）；另加 admission_decisions（所用决定文件的摘要）与 hint_scan（提示原文的 C9 词表检查记录）。
 import { readFileSync } from "node:fs";
 import type { Question, RootCause } from "./core/types.ts";
 import { ROOT_CAUSES } from "./core/types.ts";
+import { admissionProblems, type AdmissionDecisionsRecord, type AdmissionReview, type ItemSource } from "./pack/admission.ts";
+import type { HintScanRecord } from "./pack/hint-scan.ts";
 
-export const PACK_FORMAT = "aya-content-pack/2";
+export const PACK_FORMAT = "aya-content-pack/3";
 
 export type Admission = "admitted" | "pending_review" | "source_unverified" | "rejected";
 
@@ -21,7 +25,12 @@ export type ItemUsage = (typeof ITEM_USAGES)[number];
 export const MAX_HINT_PATH = 7;
 
 export interface PackItem extends Question {
+  /** 准入副本：平台题目表准入列的快照，由准入决定文件重建；没有决定时为 source_unverified */
   admission: Admission;
+  /** 逐题来源（只有编号与枚举，材料本身不进仓库，spec 待人确认 #15） */
+  source: ItemSource;
+  /** 准入依据（学科审核等级、审核记录编号）；只在准入决定文件里有这道题时出现 */
+  admission_review?: AdmissionReview;
   usage: ItemUsage;
   /** 预估用时（分钟，legacy estMinutes） */
   estMinutes: number;
@@ -66,12 +75,15 @@ export interface ContentPack {
     subject: "aya";
     content_version: string;
   };
-  source_verified: boolean;
+  /** 所用准入决定文件（格式、导出批次、导出时刻、摘要、条数）；没有决定文件时为 null */
+  admission_decisions: AdmissionDecisionsRecord | null;
   nodes: PackNode[];
   items: PackItem[];
   traps: { code: string; rootCause: RootCause }[];
   board_exam_share: BoardExamShare;
   skill_links: SkillLinks;
+  /** 提示原文的 C9 词表检查记录（src/pack/hint-scan.ts） */
+  hint_scan: HintScanRecord;
 }
 
 export interface LoadedPack {
@@ -85,14 +97,6 @@ export interface LoadedPack {
   knowledgeNodesOf: Map<string, string[]>;
   /** SourceVersion 里的 items 段，例如 `items:aya-pack@0.1.0-0ed2fe4` */
   itemsSourceVersion: string;
-}
-
-const REVIEW_ORDER = ["Q0", "Q1", "Q2", "Q3", "Q4", "Q5"] as const;
-
-/** 准入规则（aya adapter-design §3.1）：审核等级 ≥ Q2 且来源已核才算 admitted。 */
-export function admissionOf(reviewStatus: Question["reviewStatus"], sourceVerified: boolean): Admission {
-  if (!sourceVerified) return "source_unverified";
-  return REVIEW_ORDER.indexOf(reviewStatus) >= 2 ? "admitted" : "pending_review";
 }
 
 const LOCAL_ID = /^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$/;
@@ -140,6 +144,7 @@ export function indexPack(pack: ContentPack): LoadedPack {
     trapByCode.set(t.code, t.rootCause);
   }
   const itemById = new Map<string, PackItem>();
+  let reviewed = 0;
   for (const it of pack.items) {
     if (!LOCAL_ID.test(it.id)) problems.push(`题目 ID ${it.id} 不符合平台格式`);
     if (itemById.has(it.id)) problems.push(`题目 ${it.id} 重复`);
@@ -147,7 +152,9 @@ export function indexPack(pack: ContentPack): LoadedPack {
     for (const n of it.mainNodes) if (!nodeIds.has(n)) problems.push(`题目 ${it.id} 的主测节点 ${n} 未登记`);
     const traps = [...(it.options ?? []).flatMap((o) => o.traps ?? []), ...(it.wrongAnswerTraps ?? []).flatMap((w) => w.traps)];
     for (const c of traps) if (!trapByCode.has(c)) problems.push(`题目 ${it.id} 引用了未知陷阱 ${c}`);
-    if (it.admission !== admissionOf(it.reviewStatus, pack.source_verified)) problems.push(`题目 ${it.id} 的准入状态与规则不符`);
+    if (!it.source || typeof it.source !== "object") problems.push(`题目 ${it.id} 没有来源记录`);
+    else problems.push(...admissionProblems(it.id, it.admission, it.source, it.admission_review));
+    if (it.admission_review) reviewed++;
     if (!(ITEM_USAGES as readonly string[]).includes(it.usage)) problems.push(`题目 ${it.id} 的用途未知`);
     if (!(Number.isInteger(it.estMinutes) && it.estMinutes >= 1 && it.estMinutes <= 120)) problems.push(`题目 ${it.id} 的预估用时不是 1–120 的整数`);
     if (!Array.isArray(it.hintPath) || it.hintPath.length === 0 || it.hintPath.length > MAX_HINT_PATH || !it.hintPath.every((h) => typeof h === "string" && h.trim() !== "" && h.length <= 4000)) {
@@ -164,6 +171,19 @@ export function indexPack(pack: ContentPack): LoadedPack {
     }
   }
   for (const n of pack.nodes) if (!LOCAL_ID.test(n.id)) problems.push(`节点 ID ${n.id} 不符合平台格式`);
+  // 准入依据只能来自决定文件：没有决定文件时不应有任何依据；有时条数必须一致
+  const dec = pack.admission_decisions;
+  if (dec === undefined) problems.push("缺少 admission_decisions（没有决定文件时为 null）");
+  else if (dec === null ? reviewed > 0 : dec.decisions !== reviewed || !/^sha256:[0-9a-f]{64}$/.test(dec.digest)) {
+    problems.push("题目的准入依据与 admission_decisions 不一致");
+  }
+  const scan = pack.hint_scan;
+  if (!scan || scan.check !== "C9" || (scan.mode !== "strict" && scan.mode !== "flag") || !Array.isArray(scan.flagged_items)) {
+    problems.push("缺少提示原文的 C9 词表检查记录（hint_scan）");
+  } else {
+    for (const id of scan.flagged_items) if (!itemById.has(id)) problems.push(`hint_scan 标记的题目 ${id} 不在内容包里`);
+    if (scan.mode === "strict" && scan.flagged_items.length > 0) problems.push("hint_scan 为严格模式却有标记的题目");
+  }
   if (problems.length) throw new Error(`内容包不合格：\n  ${problems.slice(0, 20).join("\n  ")}`);
   return {
     pack,

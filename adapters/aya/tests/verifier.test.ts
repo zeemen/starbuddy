@@ -17,6 +17,7 @@ const fill = (answer: string[], extra: Partial<PackItem> = {}): PackItem => ({
   hintPath: ["（合成）提示"],
   reviewStatus: "Q1",
   admission: "source_unverified",
+  source: { source_ref: null, source_type: "unknown", license_status: "unverified" },
   ...extra,
 });
 

@@ -14,9 +14,9 @@ test("内容包：721 道题、959 个节点、429 个陷阱码，可追溯到 l
   assert.ok(p.pack_version.endsWith(p.legacy_commit.slice(0, 7)));
 });
 
-test("内容包格式 2：题目带用途、预估用时、提示阶梯；仍然没有题干、解析、前置关系（spec 设计要点第 0 节）", () => {
+test("内容包格式 3（在格式 2 之上）：题目带用途、预估用时、提示阶梯；仍然没有题干、解析、前置关系（spec 设计要点第 0 节）", () => {
   const p = realPack.pack;
-  assert.equal(p.format, "aya-content-pack/2");
+  assert.equal(p.format, "aya-content-pack/3");
   const keys = new Set(keysOf(p.items));
   for (const k of ["stem", "analysis", "figure", "text", "prerequisites", "preNodes", "auxNodes", "abilities", "difficulty"]) assert.ok(!keys.has(k), k);
   for (const k of ["stem", "prerequisites", "name", "core", "evidence"]) assert.ok(!new Set(keysOf(p.nodes)).has(k), `节点 ${k}`);

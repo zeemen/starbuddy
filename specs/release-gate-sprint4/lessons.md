@@ -156,3 +156,84 @@
 
 ## 冲刺 1 · 其余
 - 走查（需要真实教研在 staging 操作）：staging 部署、凭据发放与走查记录由人完成。
+
+## 冲刺 4 · 第一部分：阿鸦内容包格式 3 与提示原文 C9 检查（不碰迁移）
+2026-09-30。按 spec 冲刺 4 段（已确认，待人确认全部按默认）先做不碰迁移的部分；迁移与审核台部分在统一壳 H3 / H2 合入后接着编号。
+只改 `adapters/aya`，不改 db、packages/contracts、docs/personas、evals、services、apps；不调模型、不联网；测试全部合成数据。
+
+### 交付
+- **内容包格式 3**（`aya-content-pack/3`，`pack_version 0.3.0-0ed2fe4`，从同一 legacy 提交重新生成；题目、答案、提示与格式 2 逐字段相同）：
+  - 逐题 `source`（`source_ref` 来源编号或 null、`source_type`、`license_status`）；决定文件里有的题另有 `admission_review`（学科审核等级、审核记录编号）；
+  - 整包 `admission_decisions`（所用决定文件的格式、批次、导出时刻、SHA-256 摘要、条数；没有时为 null）与 `hint_scan`（C9 记录）；
+  - 去掉整包 `source_verified`（来源改为逐题）；六段标识的 `content_version` 仍是 0.1.0。
+  - `pack.json` 的 diff 很大（约 3.5 万行）：主要是序列化改为按键名排序，字段位置变了，内容没变。评审时按字段比对，不要逐行看。
+- **准入决定文件**（`aya-admission-decisions/1`）：由平台导出、人执行。格式、校验与自洽规则见 `adapters/aya/README.md`“内容包格式 3”。
+  - 决定文件是完整快照：重建时先把全部题重置为默认，再逐条套用；
+  - 只收编号与枚举，多出的字段、网址或中文编号一律拒绝（#15：材料不进仓库，只记编号）。
+- **按准入决定重建**：`npm run rebuild:pack -- --decisions <文件>` 不需要 legacy，只改准入与来源、重做 C9；`build:pack` 从 legacy 生成时走同一收尾（`scripts/pack-cli.ts`）。
+  - 规范化序列化（键排序、不读时钟），两次构建逐字节相同；
+  - 已核实：`build:pack` 两次、`rebuild:pack` 一次，三份 sha256 相同；
+  - 带决定时 `pack_version` 加 `.d<摘要前 8 位>`，准入变化会体现在 `source_version` 的 items 段。
+- **适配器行为不变**：只有 `admitted` 的题给 formal 与满置信度，其余按现有 `content_not_admitted` 规则；判分没改。单测用真实题 + 合成决定验证：
+  - admitted → formal、不复核；
+  - pending_review / rejected → practice + `content_not_admitted`；
+  - generate_variation 只选已准入的题。
+- **C9 词表检查**：构建时把全部提示阶梯原文（4447 条，含 4–6 级）过禁语扫描。报告只列题号、等级、规则编号，不含原文。
+  - 严格模式（默认）有命中即失败、不写文件；
+  - 非严格（`--c9 flag`）放行并记在 `hint_scan.flagged_items`；
+  - 加载时拒绝“严格却有标记”的记录；
+  - 失败即关闭：解释器不可用、guard 报错、结果条数或顺序不符都算失败。
+  - 当前 4447 条提示零命中。
+- 测试：新增 `tests/pack-format3.test.ts`（9 条）、`tests/hint-scan.test.ts`（7 条），改 `helpers.ts`（合成已准入题改走决定文件路径）、`pack.test.ts`、`plan.test.ts`、`verifier.test.ts`。
+  - 单测 117 → 133 条；
+  - 变异 49 → 65 条（新增 16：准入自洽 3、决定校验 3、重建与版本 2、确定性 2、加载 1、C9 5）。
+
+### 与 spec 或任务说明的偏差
+1. **“G 冲刺 1 段的 C9 检查”没有实现可复用**。
+   - C1–C11 只出现在 v1.0 口径的原稿（提交 4f72e67，C9 = “敏感词：对有文字的内容按词表扫描”，词表来源是原稿待人确认 #10），v2.0 改写时删掉，冲刺 1 没有实现。
+   - 原稿 #10 的默认是另建内容审核词表（`services/learning/learning/release/wordlist/`，从未建立），并写明“不使用 docs/personas 的禁语表”。
+   - 现在的做法：只读复用冲刺 3-F 收拢后的单一真相源 `packages/personas`，调用方式与 `apps/web/tests/auth.test.ts` 相同（`python -m personas.guard scan --persona aya --stdin-json`）。KGE-03 页面体检也用这份词表（经 `export_kge`）。
+   - 不改词表，不涉及人设必停项。见待人确认 1。
+2. **扫描口径是角色 aya**：A–F 类（F 取数学）加全平台禁语，不含 G 类（decisions #7：G 属于考官型基线）。页面体检对所有页面都查 G，两者口径不同。
+   - guard 的模型层规则不执行（本冲刺不阻断，同 3-F）；结构上下文层规则需要引擎字段，提示原文没有，不适用。
+3. **准入依据的审核等级来自决定文件，不看 legacy 的 `reviewStatus`**。
+   - legacy 721 道都是 Q1；
+   - `admitted` 要求决定里的 `review_level ≥ Q2`（平台的学科审核结论）；
+   - 题目上的 `reviewStatus` 保留 legacy 原值，只作记录。见待人确认 3。
+4. **决定文件目前没有**：平台导出依赖本流程冲刺 4 的 platform 迁移（题目来源编号列、`change_admission`、审核记录），在第二部分做。
+   - 缺省路径 `content/admission-decisions.json` 暂不建立；
+   - 登记脚本 `register-content.ts` 不变（平台表还没有来源编号列，准入仍最高登记为 pending_review）。
+5. **一致性测试没有新建 venv**：环境不联网。用的是已有的 `services/learning/.venv`（只读使用，含 pytest、jsonschema、PyYAML；缺 openapi-spec-validator，一致性测试用不到）。
+   - 仓库的 guard 钩子拦截直接写出适配器令牌变量名的命令，所以经 `make conformance PYTHON=…` 跑（全部学科一起跑，全部通过）。
+6. **变异测试变慢**：新测试里有 Python 子进程与命令行重建，`make adapter-aya-mutation` 从约 3.5 分钟变为约 9 分钟（4 核）。
+7. legacy 生成的逐字节确定性只手工核实。legacy 是本机软链接，不在 CI 里；单测覆盖的是“已提交内容包按空决定重建逐字节不变”和“命令行重建两次相同”。
+
+### 待人确认
+1. **C9 词表来源**（原稿 #10 的延续）：
+   - 默认：复用 `packages/personas` 的阿鸦口径（只读）；
+   - 另一个选择：合规与教研另给一份内容审核词表（题面、提示通用，与人设禁语分开）；
+   - 题面进包之后（目前没有题干）是否同样扫描，也一起定。
+2. **提示命中是否要按 G 类或页面体检口径再查一遍**：默认按角色 aya（提示经 teach 以阿鸦身份给出）。
+3. **admitted 的等级门槛看平台审核等级还是 legacy 等级**：默认看平台决定里的 `review_level`，legacy `reviewStatus` 只作记录。
+4. **`rejected`、授权 `denied` 的题在运行时怎么处理**：
+   - 现在仍留在内容包里；grade 按 practice + 复核；plan、teach 仍可能用到；generate_variation 不选。
+   - 默认先不改方法行为。另一个选择：plan、teach 跳过 rejected 的题（方法行为变更，要改 4-D 的单测与夹具）。
+5. **非严格模式带标记的题**：teach 仍会返回其提示原文。默认只允许在本地迭代时用非严格，发布闸门（第二部分）拒绝 `flagged_items` 非空的内容包。
+   另一个选择：teach 对被标记的题只返回题目引用（同“含答案”的做法）。
+6. **来源类型与授权状态的枚举**请法务、教研确认：
+   - 来源类型：`unknown`、`self_authored`、`adapted`、`textbook`、`exam_paper`、`reference_book`；
+   - 授权状态：`unverified`、`cleared`、`denied`。
+   平台迁移（第二部分）按同一枚举建列。
+7. **决定文件进仓库**：文件里只有题号、来源编号、枚举和审核记录 UUID，默认与内容包一起提交到 `content/admission-decisions.json`。
+   审核记录 UUID 指向 staff 签字记录，不是学生数据。
+8. **`pack_version` 带决定摘要**（`.d<8 位>`）：准入变化会改变 `source_version` 的 items 段；六段 `content_version` 不变。
+   是否改为准入变化也升 `content_version`（等于发一个新内容版本），由第二部分的发布函数一起定。
+
+### 测试（最后一次）
+- `make adapter-aya-test CONTRACT_STRICT=1`：类型检查通过，133 条单测全过。
+- `make adapter-aya-mutation`：65/65 个变异都被单测发现（约 9 分钟）。
+- `make conformance PYTHON=services/learning/.venv/bin/python`：通过。阿鸦两遍：
+  - 0.9.0：32 passed、2 skipped；
+  - 1.0.0：46 passed、6 skipped，报告 `contract_version 1.0.0`、`implemented 6`、`passed 6`，`global_failures` 为空。
+- 另跑读阿鸦内容包的学习服务测试：`test_diagnosis_session`、`test_diagnosis_engine`、`test_e2e_aya` 共 104 passed（只运行，未改 services）。
+- 没有跑全量 `make check`：同一工作区里其他会话正在改 zhixing、wenli、db、bff、web。
