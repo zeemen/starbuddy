@@ -9,10 +9,37 @@ import { localId } from "./shared.ts";
 
 export const HINT_ALGORITHM = "aya-hint-ladder@0.1.0";
 export const PAGE_LESSON_ALGORITHM = "aya-page-lesson@0.1.0";
-/** 适配器最多给到第 5 级；第 6 级（变式题）交给 generate_variation（规格书 §3.1） */
+/** 作答提交之后最多给到第 5 级；第 6 级（变式题）交给 generate_variation（规格书 §3.1） */
 export const MAX_HINT_LEVEL = 5;
+/**
+ * 作答提交之前最多给到第几级（配置项 max_hint_level_before_submit，默认 3）。legacy 的 4–5 级是“参考结论”或完整示范，
+ * 338 道填空题里 273 道含标准答案（decisions #4：答案不下发到客户端）。
+ * v1.0 候选版的 TeachRequest 没有表示“作答已提交”的字段，所以目前一律按“未提交”处理：4 级及以上都不给
+ * （放开方式需契约支持，lessons 待人确认）。配置只能往下调，不能超过 3。
+ */
+export const DEFAULT_MAX_HINT_LEVEL_BEFORE_SUBMIT = 3;
 /** 0–3 级提示不得出现标准答案原文（spec：防止提前露答案） */
 export const ANSWER_GUARD_MAX_LEVEL = 3;
+/**
+ * 不给提示原文、只指回题目时的原因编码。契约 TeachResult 与信封都不允许附加字段，ReviewReason 里也没有对应的值，
+ * 所以这个编码目前**写不进响应**，只在适配器内部用于测试与说明（lessons 待人确认：需契约给出位置）。
+ */
+export const HINT_WITHHELD_REASONS = ["hint_reveals_answer"] as const;
+export type HintWithheldReason = (typeof HINT_WITHHELD_REASONS)[number];
+
+export interface TeachConfig {
+  max_hint_level_before_submit: number;
+}
+export const DEFAULT_TEACH_CONFIG: TeachConfig = { max_hint_level_before_submit: DEFAULT_MAX_HINT_LEVEL_BEFORE_SUBMIT };
+
+/** 配置只能在 0–3 之间：超过 3 就等于在作答提交前放出含答案的示范级 */
+export function checkTeachConfig(c: TeachConfig): TeachConfig {
+  const m = c.max_hint_level_before_submit;
+  if (!Number.isInteger(m) || m < 0 || m > DEFAULT_MAX_HINT_LEVEL_BEFORE_SUBMIT) {
+    throw new Error(`max_hint_level_before_submit 必须是 0–${DEFAULT_MAX_HINT_LEVEL_BEFORE_SUBMIT} 的整数`);
+  }
+  return c;
+}
 /** 契约 TeachSegment.text 的上限 */
 export const SEGMENT_MAX_CHARS = 4000;
 
@@ -20,6 +47,8 @@ export type TeachSegment = { type: "text"; text: string } | { type: "item_ref"; 
 export interface TeachOutcome {
   segments: TeachSegment[];
   hintLevelUsed: number;
+  /** 不给提示原文、只指回题目时的原因（写不进响应，见 HINT_WITHHELD_REASONS） */
+  withheld?: HintWithheldReason;
   /** 提示引用的题（lesson 没有） */
   item?: PackItem;
 }
@@ -43,26 +72,32 @@ export function hintRevealsAnswer(hint: string, answers: string[]): boolean {
 }
 
 /**
- * 实际输出的等级：min(allowed, 5, 最高一级)；0–3 级含标准答案原文时逐级往下降，直到不含答案的最高一级。
- * 返回 -1 表示没有可用的等级（连 0 级都含答案）。
+ * 实际输出的等级：min(allowed, 封顶, 最高一级)。封顶 = 作答提交前的上限（默认 3）；v1.0 没有“已提交”的信号，
+ * 所以不存在提交后的分支。返回 -1 表示这一级含标准答案原文：不降级找别的等级，而是整条不给，只指回题目。
  */
-export function hintLevelFor(item: PackItem, allowed: number): number {
-  let level = Math.min(allowed, MAX_HINT_LEVEL, item.hintPath.length - 1);
-  if (item.format !== "fill") return level; // 选择题的答案是选项 key，提示原文里的 A/B/C/D 不构成泄露
-  while (level >= 0 && level <= ANSWER_GUARD_MAX_LEVEL && hintRevealsAnswer(item.hintPath[level]!, item.answer)) level--;
+export function hintLevelFor(item: PackItem, allowed: number, maxBeforeSubmit = DEFAULT_MAX_HINT_LEVEL_BEFORE_SUBMIT): number {
+  const level = Math.min(allowed, maxBeforeSubmit, MAX_HINT_LEVEL, item.hintPath.length - 1);
+  // 选择题的答案是选项 key，提示原文里的 A/B/C/D 不构成泄露
+  if (item.format === "fill" && level <= ANSWER_GUARD_MAX_LEVEL && hintRevealsAnswer(item.hintPath[level]!, item.answer)) return -1;
   return level;
 }
 
-export function teachHint(content: LoadedPack, req: { skill_node: string; item_ref?: string; allowed_hint_level: number }): TeachOutcome {
+export function teachHint(
+  content: LoadedPack,
+  req: { skill_node: string; item_ref?: string; allowed_hint_level: number },
+  config: TeachConfig = DEFAULT_TEACH_CONFIG,
+): TeachOutcome {
   if (req.item_ref === undefined) throw new ProblemError(422, "INVALID_REQUEST", "hint mode needs item_ref");
   const item = content.itemById.get(localId(req.item_ref));
   if (!item) throw new ProblemError(404, "ITEM_NOT_FOUND", "item_ref is not in the content pack");
   if (!item.mainNodes.includes(localId(req.skill_node))) {
     throw new ProblemError(422, "INVALID_REQUEST", "skill_node is not a main node of item_ref");
   }
-  const level = hintLevelFor(item, req.allowed_hint_level);
-  // 连 0 级都含答案：不给提示文字，只指回题目本身（待教研改题，清单见 lessons.md）
-  if (level < 0) return { segments: [{ type: "item_ref", item_ref: `aya:${item.id}` }], hintLevelUsed: 0, item };
+  const level = hintLevelFor(item, req.allowed_hint_level, config.max_hint_level_before_submit);
+  // 这一级含答案：不返回原文，只指回题目本身（74 道题，清单见 lessons.md，待教研改题）
+  if (level < 0) {
+    return { segments: [{ type: "item_ref", item_ref: `aya:${item.id}` }], hintLevelUsed: 0, item, withheld: "hint_reveals_answer" };
+  }
   // 不越级：只返回这一级的那一条，不附带更高等级（规格书 §2.3、§5.2 F 类“越级提示”）
   return { segments: [{ type: "text", text: item.hintPath[level]! }], hintLevelUsed: level, item };
 }

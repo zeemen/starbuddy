@@ -14,7 +14,7 @@
 | `POST /plugin/v0/grade` | 客观题（单选、多选、填空）。过程题（拍照）在后续冲刺 |
 | `POST /plugin/v0/diagnose` | `mode = intake / gap_test` |
 | `POST /plugin/v0/plan` | 只按 v1.0：学科内候选任务（复测按 `next_retest_at` 时刻排序、练习按 legacy 优先级公式），输出只有 ID、编码、数字 |
-| `POST /plugin/v0/teach` | 只按 v1.0：`hint` 为确定性提示阶梯（最高 5 级，0–3 级含标准答案时降级），`lesson` 只直出请求里的已发布知识页面；不调模型、不写话术 |
+| `POST /plugin/v0/teach` | 只按 v1.0：`hint` 为确定性提示阶梯（作答提交前最多 3 级，配置 `max_hint_level_before_submit`；v1.0 没有“已提交”信号，4 级及以上一律不给；含标准答案的那一级只返回题目引用），`lesson` 只直出请求里的已发布知识页面；不调模型、不写话术 |
 | `POST /plugin/v0/generate_variation` | 只按 v1.0：从 `item_family` 或内容包**选**已准入的题（目前 721 道全部未准入，一律返回空结果 `no_admitted_candidate`） |
 | `POST /plugin/v0/report` | 只按 v1.0：时间窗内的能力点趋势与作答数、错因分布、亮点编码；不写结论句、没有预测 |
 

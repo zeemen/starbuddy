@@ -64,12 +64,19 @@ const MUTATIONS: Record<string, Edit[]> = {
   "置信度不取错因最小值": [[R, "confidence = Math.min(confidence, a.confidence);", "confidence = Math.max(confidence, a.confidence);"]],
   "no_activity 不看作答": [[R, 'if (![...windowed.values()].some((e) => RESPONSE_KINDS.has(e.kind))) highlightCodes.push("no_activity");', 'if (windowed.size === 0) highlightCodes.push("no_activity");']],
   // ---------- teach ----------
-  "提示越过 5 级上限": [[T, "let level = Math.min(allowed, MAX_HINT_LEVEL, item.hintPath.length - 1);", "let level = Math.min(allowed, item.hintPath.length - 1);"]],
-  "含答案的提示不降级": [[T, "while (level >= 0 && level <= ANSWER_GUARD_MAX_LEVEL && hintRevealsAnswer(item.hintPath[level]!, item.answer)) level--;", "while (level < -1) level--;"]],
+  // 封顶被绕过（作答提交前最多 3 级）
+  "封顶被绕过：不看提交前上限": [[T, "Math.min(allowed, maxBeforeSubmit, MAX_HINT_LEVEL, item.hintPath.length - 1)", "Math.min(allowed, MAX_HINT_LEVEL, item.hintPath.length - 1)"]],
+  "封顶被绕过：适配器不把配置传给 teach": [[A, "hint ? teachHint(content, r, teachConfig)", "hint ? teachHint(content, r, { max_hint_level_before_submit: 5 })"]],
+  "封顶被绕过：配置允许超过 3": [[T, "m > DEFAULT_MAX_HINT_LEVEL_BEFORE_SUBMIT) {", "m > MAX_HINT_LEVEL) {"]],
+  "封顶被绕过：默认上限改成 5": [[T, "export const DEFAULT_MAX_HINT_LEVEL_BEFORE_SUBMIT = 3;", "export const DEFAULT_MAX_HINT_LEVEL_BEFORE_SUBMIT = 5;"]],
+  // 含答案的那一级被返回
+  "含答案的级照样返回原文": [[T, '  if (item.format === "fill" && level <= ANSWER_GUARD_MAX_LEVEL && hintRevealsAnswer(item.hintPath[level]!, item.answer)) return -1;\n', ""]],
   "答案检查只看 0 级": [[T, "export const ANSWER_GUARD_MAX_LEVEL = 3;", "export const ANSWER_GUARD_MAX_LEVEL = 0;"]],
+  "单字符答案不查": [[T, "${escapeRe(c)}(?![A-Za-z0-9.^_])`).test(h);", "${escapeRe(c)}(?![A-Za-z0-9.^_])`).test(h) && false;"]],
+  "含答案时降级到低一级（旧做法）而不是只指回题目": [[T, "hintRevealsAnswer(item.hintPath[level]!, item.answer)) return -1;", "hintRevealsAnswer(item.hintPath[level]!, item.answer)) return level > 0 ? hintLevelFor(item, level - 1, maxBeforeSubmit) : -1;"]],
   "越级：连同低等级提示一起返回": [[T, 'return { segments: [{ type: "text", text: item.hintPath[level]! }], hintLevelUsed: level, item };', 'return { segments: item.hintPath.slice(0, level + 2).map((text) => ({ type: "text" as const, text })), hintLevelUsed: level, item };']],
   "页面直出加了话术": [[T, 'return { segments: parts.map((text) => ({ type: "text", text })), hintLevelUsed: 0 };', 'return { segments: [{ type: "text", text: "（合成话术）" }, ...parts.map((text) => ({ type: "text" as const, text }))], hintLevelUsed: 0 };']],
-  "lesson 没有页面时改走提示阶梯": [[A, "const out = hint ? teachHint(content, r) : teachLesson(content, r);", "const out = hint || !r.knowledge_page ? teachHint(content, r) : teachLesson(content, r);"]],
+  "lesson 没有页面时改走提示阶梯": [[A, "const out = hint ? teachHint(content, r, teachConfig) : teachLesson(content, r);", "const out = hint || !r.knowledge_page ? teachHint(content, r, teachConfig) : teachLesson(content, r);"]],
   "skill_node 与题目不符不拒绝": [[T, "if (!item.mainNodes.includes(localId(req.skill_node))) {", "if (item.mainNodes.includes(\"\" + localId(req.skill_node).slice(99))) {"]],
   "身份披露置真（写了话术却不经人设层）": [[A, "          ai_disclosure_shown: false,", "          ai_disclosure_shown: true,"]],
   // ---------- 共同 ----------

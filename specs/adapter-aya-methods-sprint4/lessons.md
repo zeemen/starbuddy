@@ -52,11 +52,24 @@
      `item_family` 里别的学科的题返回 400 `SUBJECT_MISMATCH`，因为 schema 不约束这一字段的前缀。
    - report：`skill_summary` 只列窗内有作答或窗内有掌握记录的能力点。
      错因记录引用的证据全在窗外时不计入。`evidence_ids` 是窗内的作答证据，加上计入的错因引用的窗内证据。
-   - teach(hint)：连 0 级都含答案时不给提示文字，只返回一条 `item_ref` 段，`hint_level_used = 0`。
-     目前有 3 道题这样，见下面“提示含答案”。
+   - teach(hint)：做法见下面“保守修正”一节（已取代最初的“逐级降级”）。
    - teach(lesson)：`skill_node` 不在内容包里返回 422；页面正文为空返回 422；超过 4000 字的段按代码点再切。
    - 答案检查：去掉空白与 `$` 后比较。两个字符以上的答案按子串查；单个字符的答案按独立记号查，避免把 `x^2` 里的 2 当成答案。
      只检查填空题，选择题的答案是选项 key。
+
+## 保守修正（提交 34c8e30 之后，按协调方指示）
+1. **作答提交前最多给到 3 级**。
+   - 配置项 `max_hint_level_before_submit`，默认 3，只能是 0–3；超过 3 时构造适配器就报错。
+   - 4–5 级只应在“作答已提交”时给。但 v1.0 候选版的 TeachRequest **没有表示“已提交”的字段**，所以目前一律不给 4 级及以上。
+   - `allowed_hint_level` 为 4–6 时，按 3 级处理。
+2. **0–3 级里含标准答案的那一级不返回原文**，也不再降到更低一级；整条只返回一个指回题目的 `item_ref` 段，`hint_level_used = 0`。
+   - 涉及下面清单里的 74 道题；其中 3 道连 0 级都含答案，这 3 道在任何等级都只返回题目引用。
+   - 同一道题里不含答案的等级照常返回原文。
+3. **原因编码写不进响应**。适配器内部有编码 `hint_reveals_answer`，单测里核对它，但响应里没有放它的位置：
+   - `TeachResult` 不允许附加字段，信封也不允许；
+   - `ReviewReason` 枚举里也没有合适的值。
+   - 见待人确认 #11。
+4. 新增单测 2 条、改写 3 条。新增变异 8 条：封顶被绕过 4 条，含答案的级被返回 4 条。
 
 ## 提示含答案（交教研改题，适配器不改题）
 0–3 级提示含标准答案原文的填空题有 **74 道**，括号里是含答案的等级。
@@ -68,12 +81,12 @@ Q-ALG-U02-D-001(3)、Q-APP-U03-D-001(3)、Q-APP-U05-D-001(3)、Q-APP-U06-D-001(3
 这 3 道的答案词本来就出现在题目里，是否算泄露请教研判断。
 
 ## 待人确认
-1. **4–5 级提示几乎都含答案**。338 道填空题里有 273 道，4 或 5 级提示里有标准答案原文。legacy 的 4–5 级就是“参考结论”或完整示范。
-   - spec 只要求 0–3 级不露答案。
-   - 这与 decisions #4“答案永不下发到客户端”有张力。
-   - 建议平台只在作答提交之后才放开 ≥ 4 级；或者由人决定 teach 最高给到 3 级。
-2. **“第 5 级”的内容**。600 道只有 0–5 级的题里，529 道的第 5 级以“变式：”开头。
-   规格书 §3.1 把“提供变式题”定为第 6 级，legacy 的等级与规格书差一级。按 spec 仍输出 `hintPath[5]`。
+1. **作答提交后放开 4–5 级需要契约支持**。338 道填空题里有 273 道的 4 或 5 级提示含标准答案，与 decisions #4 冲突。
+   - 现在的做法（保守修正 1）：一律不给 4 级及以上。
+   - 要放开，需要在 TeachRequest 里加“作答已提交”的信号，例如作答 ID 或 `attempt_submitted`。这是契约变更，属必停项。
+   - 目前 `allowed_hint_level` 4–6 实际只得到 3 级，平台侧应知道这一点。
+2. **“第 5 级”的内容**。600 道只有 0–5 级的题里，529 道的第 5 级以“变式：”开头；规格书 §3.1 把“变式题”定为第 6 级。
+   目前 4 级及以上都不给，这个问题暂不影响输出，放开前需要定。
 3. **Makefile 的改动**（偏差 1），以及 Gate 0 覆盖率报告从 0.9.0 那一遍改取 1.0.0 那一遍。
 4. **一致性测试对新方法的深度**（spec 待人确认 #4，按默认）：只靠通用测试加适配器单测，不改 `packages/contracts` 的共享核对库。
    平台侧核对与泄露检查仍只覆盖 grade、diagnose。
@@ -95,11 +108,16 @@ Q-ALG-U02-D-001(3)、Q-APP-U03-D-001(3)、Q-APP-U05-D-001(3)、Q-APP-U06-D-001(3
     平台不能把学生自由输入送进 teach，接入对话前由平台人设层先做披露与转介。
     页面版本写不进 `source_version`，由编排层记录。
 
+11. **原因编码的位置**（保守修正 3）：`hint_reveals_answer` 要进响应，需要契约给出位置。
+    - 可以给 `TeachResult` 加 `withheld_reason_code`，或者在 `ReviewReason` 里加一个值。两者都是契约变更。
+    - 在此之前，平台只能从“只有 `item_ref` 段、没有文字段”推断提示被扣下了。
+
 ## 测试
-- `make adapter-aya-test CONTRACT_STRICT=1`：类型检查通过，115 条单测全过（新增 5 个文件）。
-- `make adapter-aya-mutation`：44 条变异全部被发现，约 3.5 分钟（4 核）。
-- `make conformance CONTRACT_STRICT=1`：全过。
-  - 阿鸦 1.0.0 那一遍：46 passed、6 skipped，报告为 `contract_version 1.0.0`、`implemented 6`、`passed 6`，`global_failures` 为空；
-  - 阿鸦 0.9.0 那一遍（`fixtures.v0.9.yaml`）：32 passed、2 skipped。
-- `make learning-test CONTRACT_STRICT=1`：2428 passed（它会启动阿鸦适配器，也会读 `pack.json`）。
+保守修正之后重跑：
+- `make adapter-aya-test CONTRACT_STRICT=1`：类型检查通过，117 条单测全过。
+- `make adapter-aya-mutation`：49/49 个变异都被发现，约 3.5 分钟（4 核）。
+- 一致性测试，阿鸦两遍都过：
+  - 1.0.0：46 passed、6 skipped，报告为 `contract_version 1.0.0`、`implemented 6`、`passed 6`，`global_failures` 为空；
+  - 0.9.0（`fixtures.v0.9.yaml`）：32 passed、2 skipped。
+- 首次提交时另跑过 `make learning-test CONTRACT_STRICT=1`：2428 passed。
 - 没有跑全量 `make check`：同一工作区里其他会话正在改 adapters/zhixing、adapters/wenli、evals/persona。

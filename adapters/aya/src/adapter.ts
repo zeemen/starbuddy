@@ -13,7 +13,7 @@ import { deriveUuid, requestFingerprint } from "./ids.ts";
 import { ProblemError, type ProblemCode } from "./problem.ts";
 import { planTasks, PLAN_ALGORITHM, type PlanInput } from "./methods/plan.ts";
 import { buildReport, REPORT_ALGORITHM, type ReportInput } from "./methods/report.ts";
-import { HINT_ALGORITHM, PAGE_LESSON_ALGORITHM, teachHint, teachLesson } from "./methods/teach.ts";
+import { checkTeachConfig, DEFAULT_TEACH_CONFIG, HINT_ALGORITHM, PAGE_LESSON_ALGORITHM, teachHint, teachLesson, type TeachConfig } from "./methods/teach.ts";
 import { selectVariants, VARIANT_ALGORITHM, type VariationInput } from "./methods/variation.ts";
 import type { AyaTaxonomy } from "./taxonomy.ts";
 import {
@@ -116,6 +116,8 @@ export interface AdapterDeps {
   log?: (record: LogRecord) => void;
   /** 幂等缓存条数上限（只存指纹，用于同 key 不同请求体的冲突检测；ID 本身是确定性派生的） */
   idempotencyCacheSize?: number;
+  /** teach 配置：max_hint_level_before_submit（默认 3，只能 0–3；v1.0 没有“作答已提交”的信号，4 级及以上一律不给） */
+  teach?: Partial<TeachConfig>;
   /** 候选版（CANDIDATE_CONTRACT_VERSIONS）签字前只在测试与演练里接受：未开时声明候选版的请求返回 CONTRACT_VERSION_UNSUPPORTED */
   allowCandidate?: boolean;
 }
@@ -125,6 +127,7 @@ const round3 = (x: number) => Math.round(x * 1000) / 1000;
 
 export function createAdapter(deps: AdapterDeps) {
   const { content, taxonomy, contract } = deps;
+  const teachConfig = checkTeachConfig({ ...DEFAULT_TEACH_CONFIG, ...deps.teach });
   const log = deps.log ?? (() => {});
   const cacheSize = deps.idempotencyCacheSize ?? 10_000;
   const idempotency = new Map<string, { fingerprint: string; at: number }>();
@@ -487,7 +490,7 @@ export function createAdapter(deps: AdapterDeps) {
     v1Method("teach", "TeachRequest", body, (req, _fp, version) => {
       const r = req as unknown as { mode: "hint" | "lesson"; skill_node: string; item_ref?: string; allowed_hint_level: number; knowledge_page?: { body_md: string } };
       const hint = r.mode === "hint";
-      const out = hint ? teachHint(content, r) : teachLesson(content, r);
+      const out = hint ? teachHint(content, r, teachConfig) : teachLesson(content, r);
       const algorithm = hint ? HINT_ALGORITHM : PAGE_LESSON_ALGORITHM;
       return selfCheck("TeachResponse", {
         contract_version: version,

@@ -3,8 +3,19 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { LogRecord } from "../src/adapter.ts";
-import { HINT_ALGORITHM, hintLevelFor, hintRevealsAnswer, MAX_HINT_LEVEL, PAGE_LESSON_ALGORITHM, splitPage } from "../src/methods/teach.ts";
-import { contextV1, contractV1, keysOf, makeAdapterV1, realPack, syntheticPack, type Json } from "./helpers.ts";
+import { createAdapter } from "../src/adapter.ts";
+import {
+  DEFAULT_MAX_HINT_LEVEL_BEFORE_SUBMIT,
+  HINT_ALGORITHM,
+  hintLevelFor,
+  hintRevealsAnswer,
+  PAGE_LESSON_ALGORITHM,
+  splitPage,
+  teachHint,
+} from "../src/methods/teach.ts";
+import { contextV1, contractV1, keysOf, makeAdapterV1, realPack, syntheticPack, taxonomy, type Json } from "./helpers.ts";
+
+const CAP = DEFAULT_MAX_HINT_LEVEL_BEFORE_SUBMIT;
 
 const adapter = makeAdapterV1();
 const PERSONA = { persona_id: "aya", prompt_version: "1.1.0" };
@@ -42,27 +53,55 @@ function ok(body: unknown, a = adapter) {
 }
 
 // ---------- hint：正常 ----------
-test("hint：对每个 allowed_hint_level（0–6），hint_level_used ≤ min(allowed, 5)，输出就是该级提示原文，不含更高等级的内容", () => {
+test("hint：对每个 allowed_hint_level（0–6），hint_level_used ≤ min(allowed, 3)，输出就是该级提示原文，不含更高等级的内容", () => {
+  assert.equal(CAP, 3);
   const items = realPack.pack.items.filter((_, i) => i % 5 === 0);
   for (const it of items) {
     for (let allowed = 0; allowed <= 6; allowed++) {
       const b = ok(hintBody(it.id, allowed));
       const used = b.result.hint_level_used;
-      assert.ok(used <= Math.min(allowed, MAX_HINT_LEVEL), `${it.id} allowed=${allowed} used=${used}`);
+      assert.ok(used <= Math.min(allowed, CAP), `${it.id} allowed=${allowed} used=${used}`);
       assert.equal(b.result.segments.length, 1);
       const seg = b.result.segments[0];
       if (seg.type === "item_ref") {
-        assert.equal(seg.item_ref, `aya:${it.id}`); // 连 0 级都含答案：只指回题目
+        assert.equal(seg.item_ref, `aya:${it.id}`); // 该级含答案：只指回题目
+        assert.equal(used, 0);
         continue;
       }
+      assert.equal(used, Math.min(allowed, CAP, it.hintPath.length - 1));
       assert.equal(seg.text, it.hintPath[used]);
       for (let higher = used + 1; higher < it.hintPath.length; higher++) {
         if (it.hintPath[higher] !== it.hintPath[used]) assert.ok(!seg.text.includes(it.hintPath[higher]!), `${it.id} 带出了 ${higher} 级`);
       }
-      // 没有降级时正好等于 min(allowed, 5)
-      if (it.format !== "fill") assert.equal(used, Math.min(allowed, MAX_HINT_LEVEL));
     }
   }
+});
+
+test("封顶：作答提交前（v1.0 没有“已提交”的信号，所以一律如此）全部 721 道题都不返回 4 级及以上的提示原文", () => {
+  for (const it of realPack.pack.items) {
+    const low = new Set(it.hintPath.slice(0, CAP + 1));
+    for (const allowed of [4, 5, 6]) {
+      const b = ok(hintBody(it.id, allowed));
+      assert.ok(b.result.hint_level_used <= CAP, `${it.id} allowed=${allowed}`);
+      const seg = b.result.segments[0];
+      if (seg.type !== "text") continue;
+      for (const l of [4, 5, 6]) {
+        const h = it.hintPath[l];
+        if (h !== undefined && !low.has(h)) assert.notEqual(seg.text, h, `${it.id} allowed=${allowed} 返回了 ${l} 级`);
+      }
+    }
+  }
+});
+
+test("封顶配置 max_hint_level_before_submit：可以往下调（1 → 最多 1 级），不能超过 3（构造时拒绝）", () => {
+  const low = createAdapter({ content: realPack, taxonomy, contract: contractV1, allowCandidate: true, teach: { max_hint_level_before_submit: 1 } });
+  const it = realPack.pack.items.find((i) => i.format === "single")!;
+  for (const allowed of [1, 3, 6]) assert.equal(ok(hintBody(it.id, allowed), low).result.hint_level_used, 1);
+  for (const bad of [4, 5, 6, -1, 2.5]) {
+    assert.throws(() => createAdapter({ content: realPack, taxonomy, contract: contractV1, teach: { max_hint_level_before_submit: bad } }), /max_hint_level_before_submit/, String(bad));
+  }
+  // 纯函数的缺省值同样是 3
+  assert.equal(teachHint(realPack, { skill_node: `aya:${it.mainNodes[0]}`, item_ref: `aya:${it.id}`, allowed_hint_level: 6 }).hintLevelUsed, 3);
 });
 
 test("hint 的信封：不调模型、不写话术（不披露、不转介、没有 verified_statements / verified_claims），不产生证据", () => {
@@ -81,25 +120,33 @@ test("hint 的信封：不调模型、不写话术（不披露、不转介、没
   assert.equal(b.human_review_required, false);
 });
 
-test("对内容包里每一道填空题逐题断言：0–3 级输出里没有标准答案原文（含答案的逐级降到不含答案的最高一级）", () => {
+test("对内容包里每一道填空题逐题断言：任何 allowed 下输出里都没有标准答案原文；含答案的那一级不返回原文，只指回题目", () => {
   const fills = realPack.pack.items.filter((i) => i.format === "fill");
   assert.equal(fills.length, 338);
-  let downgraded = 0;
+  const withheldItems = new Set<string>();
+  const withheldAtZero = new Set<string>();
   for (const it of fills) {
-    for (let allowed = 0; allowed <= 3; allowed++) {
+    for (let allowed = 0; allowed <= 6; allowed++) {
       const b = ok(hintBody(it.id, allowed));
       const seg = b.result.segments[0];
-      const text = seg.type === "text" ? seg.text : "";
-      assert.ok(!hintRevealsAnswer(text, it.answer), `${it.id} allowed=${allowed}`);
+      const level = Math.min(allowed, CAP, it.hintPath.length - 1);
+      if (hintRevealsAnswer(it.hintPath[level]!, it.answer)) {
+        // 含答案的那一级：不降级到别的等级，整条不给
+        assert.deepEqual(b.result.segments, [{ type: "item_ref", item_ref: `aya:${it.id}` }], `${it.id} allowed=${allowed}`);
+        withheldItems.add(it.id);
+        if (level === 0) withheldAtZero.add(it.id);
+        continue;
+      }
+      assert.equal(seg.type, "text");
+      assert.equal(seg.text, it.hintPath[level]);
+      assert.ok(!hintRevealsAnswer(seg.text, it.answer), `${it.id} allowed=${allowed}`);
       // 独立的朴素核对：两个字符以上的答案原文不是输出的子串
-      for (const a of it.answer) if (a.trim().length >= 2) assert.ok(!text.includes(a), `${it.id} allowed=${allowed} 含答案`);
-      // 降级只降到不含答案的最高一级：更高但仍 ≤ allowed 的等级都含答案
-      const used = b.result.hint_level_used;
-      if (seg.type === "text") for (let l = used + 1; l <= allowed; l++) assert.ok(hintRevealsAnswer(it.hintPath[l]!, it.answer), `${it.id} 多降了`);
-      if (used < allowed) downgraded++;
+      for (const a of it.answer) if (a.trim().length >= 2) assert.ok(!seg.text.includes(a), `${it.id} allowed=${allowed} 含答案`);
     }
   }
-  assert.ok(downgraded > 0);
+  // lessons.md 里交教研改题的清单：74 道，其中 3 道 0 级就含答案
+  assert.equal(withheldItems.size, 74);
+  assert.deepEqual([...withheldAtZero].sort(), ["Q-PRC-U02-D-003", "Q-PRC-U02-R-001", "Q-PRF-U01-T-001"]);
 });
 
 test("答案检查：两个字符以上按子串（忽略空白与 $），单个字符按独立记号（x^2 里的 2 不算）", () => {
@@ -111,15 +158,29 @@ test("答案检查：两个字符以上按子串（忽略空白与 $），单个
   assert.equal(hintRevealsAnswer("再读一遍题目", ["5"]), false);
 });
 
-test("连 0 级提示都含答案时：不给提示文字，只返回题目引用段（hint_level_used = 0）", () => {
-  const pack = syntheticPack([{ answer: ["蓝球"], hintPath: ["（合成）数一数蓝球。", "（合成）1 级", "（合成）2 级"] }]);
+test("含答案的那一级：不返回原文、不降级，只返回题目引用段（hint_level_used = 0）；不含答案的级照常返回", () => {
+  const pack = syntheticPack([{ answer: ["蓝球"], hintPath: ["（合成）数一数蓝球。", "（合成）1 级", "（合成）2 级", "（合成）3 级：是蓝球", "（合成）4 级"] }]);
   const a = makeAdapterV1(pack);
-  const b = ok({ ...hintBody("SYN-0", 3), skill_node: `aya:${pack.pack.items[0]!.mainNodes[0]}` }, a);
-  assert.equal(b.result.hint_level_used, 2); // 2 级不含答案：用 2 级
-  const zero = ok({ ...hintBody("SYN-0", 0), skill_node: `aya:${pack.pack.items[0]!.mainNodes[0]}` }, a);
-  assert.deepEqual(zero.result.segments, [{ type: "item_ref", item_ref: "aya:SYN-0" }]);
-  assert.equal(zero.result.hint_level_used, 0);
+  const node = `aya:${pack.pack.items[0]!.mainNodes[0]}`;
+  const withheld = [{ type: "item_ref", item_ref: "aya:SYN-0" }];
+  for (const allowed of [0, 3, 4, 6]) {
+    const b = ok({ ...hintBody("SYN-0", allowed), skill_node: node }, a);
+    assert.deepEqual(b.result.segments, withheld, `allowed=${allowed}`);
+    assert.equal(b.result.hint_level_used, 0);
+    assert.ok(!JSON.stringify(b).includes("蓝球"));
+  }
+  for (const allowed of [1, 2]) {
+    const b = ok({ ...hintBody("SYN-0", allowed), skill_node: node }, a);
+    assert.deepEqual(b.result.segments, [{ type: "text", text: `（合成）${allowed} 级` }]);
+    assert.equal(b.result.hint_level_used, allowed);
+  }
   assert.equal(hintLevelFor(pack.pack.items[0]!, 0), -1);
+  assert.equal(hintLevelFor(pack.pack.items[0]!, 3), -1);
+  assert.equal(hintLevelFor(pack.pack.items[0]!, 2), 2);
+  // 原因编码：契约里没有位置，只在内部结果里（lessons 待人确认）
+  const out = teachHint(pack, { skill_node: node, item_ref: "aya:SYN-0", allowed_hint_level: 3 });
+  assert.equal(out.withheld, "hint_reveals_answer");
+  assert.equal(teachHint(pack, { skill_node: node, item_ref: "aya:SYN-0", allowed_hint_level: 2 }).withheld, undefined);
 });
 
 // ---------- lesson：正常 ----------
