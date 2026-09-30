@@ -16,7 +16,7 @@ endef
 # 契约检查约 1 秒，改动后也跑一遍
 check-fast: contract-test taxonomy-check attack-surface-check sie-dictionary-check kge-id-check
 
-check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-zhixing-test adapter-wenli-test learning-test model-router-mutation diagnosis-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test knowledge-test knowledge-mutation kge-compile-eval-test eval-persona
+check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-zhixing-test adapter-wenli-test learning-test model-router-mutation diagnosis-mutation mastery-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test knowledge-test knowledge-mutation kge-compile-eval-test eval-persona
 	@echo "check: lint 尚未配置，跳过；其余检查已通过"
 
 # 契约合法性 + 示例 + 反例集
@@ -299,3 +299,12 @@ eval-persona:
 
 eval-grade:
 	@echo "eval-grade: SUBJECT=$(SUBJECT)，evals 尚未建立，跳过"
+
+# 掌握 v0 纯函数部分（KGE-04 第一步，specs/mastery-estimate-sprint4）：单测与性质测试在 learning-test 里；
+# 这里把配置校验、证据分类、门槛状态机、衰减、写入判定、一致性检查的关键判定逐条改坏，断言掌握测试能发现（不连库，约 20 秒）
+.PHONY: mastery-mutation
+mastery-mutation:
+	@if [ ! -x services/learning/.venv/bin/pytest ]; then \
+	  echo "mastery-mutation: 跳过（没有安装学习服务依赖；见 services/learning/README.md）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@services/learning/.venv/bin/python services/learning/scripts/mastery_mutations.py
