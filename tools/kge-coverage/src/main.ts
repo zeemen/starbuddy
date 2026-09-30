@@ -1,12 +1,15 @@
 // KGE-02 覆盖矩阵报表入口（specs/kge-02-atoms-tagging/spec.md 设计要点 4）。
 // 用法：node src/main.ts --map <db/seeds/kge/aya-<主题>-<版本>> [--map <同一地图版本的另一专题> ...] --tagging <tagging-report.json>
 //        [--scope all|item_tag] [--out report]
+//        道法（冲刺 4-K）：node src/main.ts --subject zhixing --snapshot <kge-daofa-snapshot/1 JSON> [--focus-domain MORAL.LAW] [--out report]
+//        → <out>/coverage-zhixing-<版本>.md 与 .csv（快照由 tools/kge-import 的 daofa snapshot 离线组装，或 sql/daofa-snapshot.sql 在演练库导出）
 // 只读输入、不连库；输出 <out>/coverage-<版本>.md 与 <out>/coverage-<版本>.csv。退出码：0 生成成功（门槛未达标也是 0，只标注）；
 // 1 输入不一致或格式不对；2 参数不对。
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { computeCoverage, CoverageError, type Scope } from "./coverage.ts";
+import { checkSnapshot, computeDaofaCoverage, DaofaCoverageError, DEFAULT_FOCUS_DOMAIN, toDaofaCsv, toDaofaMarkdown } from "./daofa.ts";
 import { loadMapDir, MapError, mergeMaps } from "./map.ts";
 import { toCsv, toMarkdown } from "./render.ts";
 import { loadTaggingReport, TaggingError } from "./tagging.ts";
@@ -19,10 +22,16 @@ export function main(argv = process.argv.slice(2)): number {
       options: {
         map: { type: "string", multiple: true }, tagging: { type: "string" },
         scope: { type: "string", default: "all" }, out: { type: "string", default: "report" },
+        subject: { type: "string", default: "aya" }, snapshot: { type: "string" }, "focus-domain": { type: "string", default: DEFAULT_FOCUS_DOMAIN },
       },
     }));
   } catch (e) {
     console.error(`kge-coverage: ${(e as Error).message}`);
+    return 2;
+  }
+  if (values.subject === "zhixing") return daofaMain(values.snapshot, values["focus-domain"]!, values.out!);
+  if (values.subject !== "aya") {
+    console.error("kge-coverage: --subject 只能是 aya（默认）或 zhixing");
     return 2;
   }
   if (!values.map?.length || !values.tagging || !["all", "item_tag"].includes(values.scope!)) {
@@ -42,6 +51,30 @@ export function main(argv = process.argv.slice(2)): number {
   } catch (e) {
     if (e instanceof MapError || e instanceof TaggingError || e instanceof CoverageError || e instanceof SyntaxError) {
       console.error(`kge-coverage: ${e.message}`);
+      return 1;
+    }
+    throw e;
+  }
+}
+
+function daofaMain(snapshot: string | undefined, focus: string, outDir: string): number {
+  if (!snapshot || !/^MORAL\.[A-Z0-9][A-Z0-9_]{0,31}$/.test(focus)) {
+    console.error("kge-coverage: 道法需要 --snapshot（kge-daofa-snapshot/1 JSON）；--focus-domain 是道法领域 ID（如 MORAL.LAW）");
+    return 2;
+  }
+  try {
+    const r = computeDaofaCoverage(checkSnapshot(JSON.parse(readFileSync(snapshot, "utf8"))), focus);
+    if (!/^[0-9A-Za-z][0-9A-Za-z._-]{0,31}$/.test(r.version)) throw new DaofaCoverageError(`地图版本号不能用作文件名：${r.version}`);
+    const out = resolve(outDir);
+    mkdirSync(out, { recursive: true });
+    writeFileSync(join(out, `coverage-zhixing-${r.version}.md`), toDaofaMarkdown(r));
+    writeFileSync(join(out, `coverage-zhixing-${r.version}.csv`), toDaofaCsv(r));
+    console.log(`kge-coverage: 道法 ${String(r.totals.viewpoints)} 个观点，投影已核对 ${String(r.totals.verified)} / ${String(r.totals.projections)}，`
+      + `采分点 ${String(r.totals.scoringPoints)}，${focus} 缺口 ${String(r.gaps.length)} 条 → ${out}`);
+    return 0;
+  } catch (e) {
+    if (e instanceof DaofaCoverageError || e instanceof SyntaxError || (e as NodeJS.ErrnoException).code === "ENOENT") {
+      console.error(`kge-coverage: ${(e as Error).message}`);
       return 1;
     }
     throw e;

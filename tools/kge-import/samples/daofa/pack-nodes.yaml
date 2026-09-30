@@ -1,0 +1,193 @@
+# 合成样例（合成、非教材内容）：合成内容包 adapters/zhixing/content/pack.json 的采分点挂接的节点（MORAL.SYN.*）。
+# 只为让合成的 4 题采分点能按同一路径导入 kge.scoring_point；名称是占位，不代表任何教材观点。
+format: kge-daofa-domain/1
+synthetic: true
+notice: 合成、非教材内容：合成内容包采分点的挂接节点占位，待真实观点下钻后替换
+subject: zhixing
+domain:
+  id: MORAL.SYN
+  name: （合成）内容包挂接节点
+big_concepts:
+  - id: MORAL.SYN.CIVIC
+    name: （合成）主题 CIVIC
+    viewpoints:
+      - id: MORAL.SYN.CIVIC.DEMOCRATIC_PARTICIPATION
+        name: （合成占位）DEMOCRATIC_PARTICIPATION，非教材内容
+        cognitive_levels: [understand]
+        includes:
+          - （合成）包含：占位
+        excludes:
+          - （合成）不包含：占位
+        examples:
+          - （合成）synthetic-m3 题目
+        projections:
+          - edition: syn-ed-2024
+            edition_year: 2024
+            volume: （合成）册乙
+            chapter: （合成）章 CIVIC
+            page_from: 101
+            page_to: 101
+      - id: MORAL.SYN.CIVIC.GRASSROOTS_AUTONOMY
+        name: （合成占位）GRASSROOTS_AUTONOMY，非教材内容
+        cognitive_levels: [understand]
+        includes:
+          - （合成）包含：占位
+        excludes:
+          - （合成）不包含：占位
+        examples:
+          - （合成）synthetic-m3 题目
+        projections:
+          - edition: syn-ed-2024
+            edition_year: 2024
+            volume: （合成）册乙
+            chapter: （合成）章 CIVIC
+            page_from: 103
+            page_to: 103
+  - id: MORAL.SYN.CULTURE
+    name: （合成）主题 CULTURE
+    viewpoints:
+      - id: MORAL.SYN.CULTURE.CULTURAL_CONFIDENCE
+        name: （合成占位）CULTURAL_CONFIDENCE，非教材内容
+        cognitive_levels: [understand]
+        includes:
+          - （合成）包含：占位
+        excludes:
+          - （合成）不包含：占位
+        examples:
+          - （合成）synthetic-m3 题目
+        projections:
+          - edition: syn-ed-2024
+            edition_year: 2024
+            volume: （合成）册乙
+            chapter: （合成）章 CULTURE
+            page_from: 105
+            page_to: 105
+      - id: MORAL.SYN.CULTURE.CREATIVE_TRANSFORMATION
+        name: （合成占位）CREATIVE_TRANSFORMATION，非教材内容
+        cognitive_levels: [understand]
+        includes:
+          - （合成）包含：占位
+        excludes:
+          - （合成）不包含：占位
+        examples:
+          - （合成）synthetic-m3 题目
+        projections:
+          - edition: syn-ed-2024
+            edition_year: 2024
+            volume: （合成）册乙
+            chapter: （合成）章 CULTURE
+            page_from: 107
+            page_to: 107
+  - id: MORAL.SYN.LAW
+    name: （合成）主题 LAW
+    viewpoints:
+      - id: MORAL.SYN.LAW.MINOR_ONLINE_PROTECTION
+        name: （合成占位）MINOR_ONLINE_PROTECTION，非教材内容
+        cognitive_levels: [understand]
+        includes:
+          - （合成）包含：占位
+        excludes:
+          - （合成）不包含：占位
+        examples:
+          - （合成）synthetic-m3 题目
+        projections:
+          - edition: syn-ed-2024
+            edition_year: 2024
+            volume: （合成）册乙
+            chapter: （合成）章 LAW
+            page_from: 109
+            page_to: 109
+      - id: MORAL.SYN.LAW.MINOR_PROTECTION_PARTIES
+        name: （合成占位）MINOR_PROTECTION_PARTIES，非教材内容
+        cognitive_levels: [understand]
+        includes:
+          - （合成）包含：占位
+        excludes:
+          - （合成）不包含：占位
+        examples:
+          - （合成）synthetic-m3 题目
+        projections:
+          - edition: syn-ed-2024
+            edition_year: 2024
+            volume: （合成）册乙
+            chapter: （合成）章 LAW
+            page_from: 111
+            page_to: 111
+  - id: MORAL.SYN.LIFE
+    name: （合成）主题 LIFE
+    viewpoints:
+      - id: MORAL.SYN.LIFE.VALUE_DEDICATION
+        name: （合成占位）VALUE_DEDICATION，非教材内容
+        cognitive_levels: [understand]
+        includes:
+          - （合成）包含：占位
+        excludes:
+          - （合成）不包含：占位
+        examples:
+          - （合成）synthetic-m3 题目
+        projections:
+          - edition: syn-ed-2024
+            edition_year: 2024
+            volume: （合成）册乙
+            chapter: （合成）章 LIFE
+            page_from: 113
+            page_to: 113
+  - id: MORAL.SYN.NATION
+    name: （合成）主题 NATION
+    viewpoints:
+      - id: MORAL.SYN.NATION.RESOURCE_CONSERVATION
+        name: （合成占位）RESOURCE_CONSERVATION，非教材内容
+        cognitive_levels: [understand]
+        includes:
+          - （合成）包含：占位
+        excludes:
+          - （合成）不包含：占位
+        examples:
+          - （合成）synthetic-m3 题目
+        projections:
+          - edition: syn-ed-2024
+            edition_year: 2024
+            volume: （合成）册乙
+            chapter: （合成）章 NATION
+            page_from: 115
+            page_to: 115
+  - id: MORAL.SYN.SOCIETY
+    name: （合成）主题 SOCIETY
+    viewpoints:
+      - id: MORAL.SYN.SOCIETY.RULE_AWARENESS
+        name: （合成占位）RULE_AWARENESS，非教材内容
+        cognitive_levels: [understand]
+        includes:
+          - （合成）包含：占位
+        excludes:
+          - （合成）不包含：占位
+        examples:
+          - （合成）synthetic-m3 题目
+        projections:
+          - edition: syn-ed-2024
+            edition_year: 2024
+            volume: （合成）册乙
+            chapter: （合成）章 SOCIETY
+            page_from: 117
+            page_to: 117
+      - id: MORAL.SYN.SOCIETY.SOCIAL_RESPONSIBILITY
+        name: （合成占位）SOCIAL_RESPONSIBILITY，非教材内容
+        cognitive_levels: [understand]
+        includes:
+          - （合成）包含：占位
+        excludes:
+          - （合成）不包含：占位
+        examples:
+          - （合成）synthetic-m3 题目
+        projections:
+          - edition: syn-ed-2024
+            edition_year: 2024
+            volume: （合成）册乙
+            chapter: （合成）章 SOCIETY
+            page_from: 119
+            page_to: 119
+relations:
+  - from: MORAL.SYN.CIVIC.DEMOCRATIC_PARTICIPATION
+    to: MORAL.SYN.CIVIC.GRASSROOTS_AUTONOMY
+  - from: MORAL.SYN.LAW.MINOR_ONLINE_PROTECTION
+    to: MORAL.SYN.LAW.MINOR_PROTECTION_PARTIES

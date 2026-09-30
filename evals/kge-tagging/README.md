@@ -77,6 +77,14 @@ kge-tagging-eval-test:
 
 教研标注到位后的验收（不进 `make check`）：`python3 top1.py --gold gold/<文件>.csv --tagging <打标报告> --annotations gold/<两人标注>.csv --enforce`。
 
+## 学科参数化（冲刺 4-K：道法）
+
+`kappa.py`、`top1.py`、`run_holdout.sh` 都接受 `--subject aya|zhixing|wenli`：给了学科，标注、金标、打标报告、候选里的每个节点 ID 都必须是
+该学科的前缀（`MATH.` / `MORAL.` / `CHN.`，与 `kge.subject_prefix` 一致），否则按输入错误退出 2；JSON 汇总多一个 `subject` 字段。
+不给时不核对（KGE-02 的数学用法与输出不变，`tests/test_daofa.py` 核对数学夹具加不加 `--subject aya` 结果相同）。
+道法合成夹具：`fixtures/daofa-annotations.csv`、`daofa-gold.csv`、`daofa-tagging-report.json`（合成，不是金标；手算见 `tests/test_daofa.py`）。
+道法试标注（约 100 题，kappa ≥ 0.7）由教研完成后：`python3 kappa.py --subject zhixing --annotations gold/<文件>.csv --enforce`。
+
 ## 留出集（规则 14）
 
 教研负责人在封存环境里执行，构建方不接触：

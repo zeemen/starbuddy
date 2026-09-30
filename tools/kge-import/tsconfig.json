@@ -12,5 +12,5 @@
     "typeRoots": ["../kge-inventory/node_modules/@types"],
     "types": ["node"]
   },
-  "include": ["src", "tests/*.ts"]
+  "include": ["src", "tests/*.ts", "tests/daofa/*.ts"]
 }

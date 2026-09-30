@@ -8,7 +8,8 @@
 - 分歧清单：主考点不同的题（题目 ID、两人的主考点与节点集合），供教研“分歧转为节点描述”。
 
 用法（在 evals/kge-tagging 下）：
-  python3 kappa.py --annotations 标注.csv [--annotators T1,T2] [--disagreements 分歧.csv] [--json] [--enforce]
+  python3 kappa.py --annotations 标注.csv [--subject aya|zhixing|wenli] [--annotators T1,T2] [--disagreements 分歧.csv] [--json] [--enforce]
+--subject：学科参数化（冲刺 4-K，道法用 zhixing）：核对每个节点 ID 都是该学科前缀（MATH / MORAL / CHN）；不给时不核对（KGE-02 数学用法不变）。
 退出码：0 算完（未达标也是 0）；--enforce 时 kappa 未达标为 1；输入错误为 2。
 标注只由教研提交（gold/ 只读）；本脚本不写 gold/，分歧清单写到 --disagreements 指定的位置（默认打印）。
 """
@@ -23,7 +24,7 @@ from collections import Counter
 from dataclasses import dataclass
 from fractions import Fraction
 
-from common import KAPPA_MIN, Annotation, InputError, as_float, fmt, read_annotations
+from common import KAPPA_MIN, SUBJECT_PREFIX, Annotation, InputError, as_float, fmt, read_annotations
 
 NONE = "（无处可标）"  # 主考点为空时的类别名
 
@@ -116,21 +117,27 @@ def summary(r: KappaResult) -> dict:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="kappa.py", description="两名标注者主考点 Cohen's kappa 与节点集合 Jaccard")
     ap.add_argument("--annotations", required=True, help="标注 CSV：item_id,annotator,main_node_id,node_ids")
+    ap.add_argument("--subject", choices=sorted(SUBJECT_PREFIX), help="学科（核对节点 ID 前缀）；不给时不核对")
     ap.add_argument("--annotators", help="两名标注者代号，逗号分隔；不给时取文件里除 final 外的两名")
     ap.add_argument("--disagreements", help="分歧清单 CSV 的输出路径（不给则打印到标准输出）")
     ap.add_argument("--json", action="store_true", help="汇总以 JSON 打印")
     ap.add_argument("--enforce", action="store_true", help="kappa 未达标时退出码为 1（教研标注到位前不进 make check）")
     args = ap.parse_args(argv)
     try:
-        data = read_annotations(args.annotations)
+        data = read_annotations(args.annotations, args.subject)
         a, b = pick_annotators(data, args.annotators)
         r = compare(data, a, b)
     except (InputError, OSError) as e:
         print(f"kappa: {e}", file=sys.stderr)
         return 2
     if args.json:
-        print(json.dumps(summary(r), ensure_ascii=False, sort_keys=True))
+        out = summary(r)
+        if args.subject:
+            out["subject"] = args.subject
+        print(json.dumps(out, ensure_ascii=False, sort_keys=True))
     else:
+        if args.subject:
+            print(f"kappa: 学科 {args.subject}（节点前缀 {SUBJECT_PREFIX[args.subject]}.）")
         print(f"kappa: 标注者 {a} 与 {b}，共同标注 {r.items} 题（只有 {a}：{r.only_a}，只有 {b}：{r.only_b}）")
         print(f"kappa: 主考点 Cohen's kappa = {fmt(r.kappa)}（观察一致率 {fmt(r.observed, pct=True)}）；节点集合平均 Jaccard = {fmt(r.mean_jaccard)}")
         print(f"kappa: 门槛 kappa ≥ {float(KAPPA_MIN)}：{'通过' if r.passed else '未通过'}；主考点分歧 {len(r.disagreements)} 题")

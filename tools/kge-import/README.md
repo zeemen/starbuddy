@@ -90,3 +90,45 @@ node --no-warnings src/main.ts --aya ../../legacy/aya --map ../../db/seeds/kge/a
   导入前拿掉全局网络接口；输出按不可信数据逐项核对（`checkBank`）。沿用 KGE-01 的做法，Node 权限模型不管网络（KGE-01 待人确认 #7）。
 - 题目文本只在内存里给向量层 / 模型层用，不写进任何产物；产物里只有 ID、节点、置信度、理由码与计数。
 - 测试夹具全部合成；不含任何学生数据。
+
+## 道法切片（冲刺 4-K，`src/daofa/`）
+
+对应 `specs/kge-daofa-slice-sprint4/spec.md` 设计要点 1–5。只读输入、只生成文件，不连库、不联网、不调用任何模型；全部命令见 `src/daofa/main.ts` 开头。
+**本仓只放模板、校验器与合成样例**；真实观点、页码、Rubric、时政由教研在内容仓填写（真实内容的交接清单见 lessons）。
+
+| 位置 | 内容 |
+|---|---|
+| `templates/daofa-domain.yaml` | 观点地图模板：领域 → 大概念（主题层）→ 观点（`kind = viewpoint`），关联边、教材投影（只有版次、册、章、页码） |
+| `templates/daofa-current-affairs.yaml` | 时政录入模板 |
+| `samples/daofa/` | 合成样例（合成、非教材内容）：`law.yaml`（法律领域 2 个大概念、6 个观点、关联边、1 条显式前置边）、`pack-nodes.yaml`（合成内容包采分点挂接的 `MORAL.SYN.*` 节点）、`current-affairs.yaml`、`source-domains.txt`（虚构的 `.example` 主机） |
+| `sql/export-scoring-points.sql` | 原子层导出（只读），`make zhixing-rubric-check` 的比对输入 |
+| `tests/daofa/` | 单测与一次性库上的测试（`daofa-db.sh`、`page-backfill-demo.sh`、`rubric-check.sh`） |
+
+```bash
+cd tools/kge-import
+node src/daofa/main.ts map --domain samples/daofa/law.yaml --domain samples/daofa/pack-nodes.yaml --version 0.0.1 --out /tmp/daofa-map
+node src/daofa/main.ts rubric --pack ../../adapters/zhixing/content/pack.json --map /tmp/daofa-map --out /tmp/daofa-map
+node src/daofa/main.ts affairs --entries samples/daofa/current-affairs.yaml --source-domains samples/daofa/source-domains.txt --map /tmp/daofa-map --out /tmp/daofa-map
+node src/daofa/main.ts affairs-expiring ... --today 2026-09-30            # 即将到期（默认提前 30 天）与已过期，只列 ID
+node src/daofa/main.ts page-sample --map /tmp/daofa-map --out checklist.csv  # 固定种子抽样，核验单不含原文
+node src/daofa/main.ts page-backfill --map /tmp/daofa-map --checklist checklist.csv --backfill filled.csv \
+  --approver <工号> --approved-on 2026-09-30 --out /tmp/daofa-backfill        # 低于 95% 的版次不生成标 verified 的语句，退出 1
+node src/daofa/main.ts snapshot --map /tmp/daofa-map --pack ... --entries ... --source-domains ... --out snapshot.json  # 覆盖报表输入
+```
+
+- **观点地图**（`map`）：校验 ID（`MORAL.` 前缀，领域 2 段、大概念 3 段、观点 4 段）、观点必须挂在大概念下、任何层级不得出现原句类字段
+  （`quote`、`original`、`phrases`、原句、原文……，decisions #5）、观点间只用 `related`（前置边须 `explicit_prerequisite: true` + `basis`，
+  不能成环、不能是传递边）、合成样例须标明“合成、非教材内容”且不能与真实内容进同一版本。产物 `import.sql`（草稿地图版本，以 `starbuddy_kge` 写入，
+  投影 `quote_text` 为空、`unverified`；大概念旧短编码进 `kge.id_migration`）、`import-report.json`、`snapshot.json`，同一输入逐字节相同。
+  发布走已有的签字与 `kge.publish_map_version`（0019），本工具不发布。
+- **合成挡板**：合成样例生成的 SQL 开头有 `DO $synthetic$` 挡板，只有会话里先 `SET starbuddy.allow_synthetic = on`（一次性测试库）才能执行。
+- **采分点**（`rubric`、`rubric-check`）：内容包（`zhixing-content-pack/1`，用适配器同一套校验 `indexPack`）→ `kge.scoring_point`，带 `rubric_version`；
+  只新增（`ON CONFLICT DO NOTHING` + 逐字段核对已有行，内容不同则整个事务失败）；一致性检查逐字段比对内容包与原子层导出，只报 ID 与字段名。
+  `skill_node` 是适配器侧的能力视图挂接，不在原子层、不比对。
+- **时政**（`affairs`）：来源须是白名单主机（离线按 `--source-domains`，执行时库里按 `policy.source_domain` 再核一次）、有效期必填且 ≤ 12 个月、
+  只收自写摘要（摘要不入库，`kge.current_affair` 没有摘要列）；一律 `pending`。
+- **页码核验**（`page-sample`、`page-backfill`）：每版次 20%、至少 20 条（不足全抽），`sha256(种子, 投影 ID)` 排序取前 k 条；回填文件在核验单上填
+  `result,checker,checked_on,note`，核验单的列不许改；通过率 ≥ 95%（等于算过）的版次才能整体标 verified。
+  已知限制：0011 的 `projection_verified_by` 要求 verified 必须有 `quote_text`，原句不入库时写不进 verified（`page-backfill-demo.sh` 演示；lessons 待人确认）。
+
+`make kge-daofa-import-test`（并入 `kge-import-test` 与 `check`）、`make zhixing-rubric-check`。

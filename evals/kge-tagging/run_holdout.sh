@@ -6,20 +6,23 @@
 #   - 只打印汇总指标（Top-1、Top-3 召回、无处可标率、门槛判定），不打印逐题结果，不写任何文件；
 #     输入格式出错时也只报行号或字段名，不带题目 ID 与节点。
 # 用法：
-#   bash evals/kge-tagging/run_holdout.sh --gold <留出集金标.csv> --tagging <对留出集的打标报告.json> [--candidates <候选.csv|.json>] [--enforce]
+#   bash evals/kge-tagging/run_holdout.sh --gold <留出集金标.csv> --tagging <对留出集的打标报告.json> [--candidates <候选.csv|.json>]
+#        [--subject aya|zhixing|wenli] [--enforce]
+#   --subject：学科参数化（冲刺 4-K，道法用 zhixing），传给 top1.py 核对节点 ID 前缀。
 # 退出码：同 top1.py（0 算完；--enforce 且未达标为 1；输入错误为 2）。
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd -P)"
 PY="${PYTHON:-python3}"
 
-usage() { echo "用法：bash run_holdout.sh --gold <路径> --tagging <路径> [--candidates <路径>] [--enforce]" >&2; exit 2; }
-gold="" tagging="" candidates="" enforce=""
+usage() { echo "用法：bash run_holdout.sh --gold <路径> --tagging <路径> [--candidates <路径>] [--subject <学科>] [--enforce]" >&2; exit 2; }
+gold="" tagging="" candidates="" enforce="" subject=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --gold) [ $# -ge 2 ] || usage; gold="$2"; shift 2 ;;
     --tagging) [ $# -ge 2 ] || usage; tagging="$2"; shift 2 ;;
     --candidates) [ $# -ge 2 ] || usage; candidates="$2"; shift 2 ;;
+    --subject) [ $# -ge 2 ] || usage; case "$2" in aya|zhixing|wenli) subject="$2" ;; *) usage ;; esac; shift 2 ;;
     --enforce) enforce="--enforce"; shift ;;
     *) usage ;;
   esac
@@ -36,6 +39,7 @@ gold="$(resolve_outside_repo "$gold" --gold)"
 tagging="$(resolve_outside_repo "$tagging" --tagging)"
 args=(--gold "$gold" --tagging "$tagging" --summary-only)
 if [ -n "$candidates" ]; then candidates="$(resolve_outside_repo "$candidates" --candidates)"; args+=(--candidates "$candidates"); fi
+[ -n "$subject" ] && args+=(--subject "$subject")
 [ -n "$enforce" ] && args+=("$enforce")
 
 echo "run_holdout: 留出集盲测，只输出汇总指标（规则 14：构建方不接触留出集）"

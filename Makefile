@@ -1,5 +1,5 @@
 # 未实现的目标明确打印“跳过”，不得伪装为通过。
-.PHONY: check-fast check contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test adapter-zhixing-test adapter-wenli-test learning-test model-router-mutation diagnosis-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-visual kge-inventory kge-inventory-test kge-import kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test sie-dictionary-check kge-id-check knowledge-test knowledge-mutation kge-compile-eval-test eval-persona eval-grade
+.PHONY: check-fast check contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test adapter-zhixing-test adapter-wenli-test learning-test model-router-mutation diagnosis-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-visual kge-inventory kge-inventory-test kge-import kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test sie-dictionary-check kge-id-check knowledge-test knowledge-mutation kge-compile-eval-test eval-persona eval-grade
 
 # 可指向装了 packages/contracts/requirements-dev.txt 的解释器，例如 make check PYTHON=.venv/bin/python
 PYTHON ?= python3
@@ -16,7 +16,7 @@ endef
 # 契约检查约 1 秒，改动后也跑一遍
 check-fast: contract-test taxonomy-check attack-surface-check sie-dictionary-check kge-id-check
 
-check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-zhixing-test adapter-wenli-test learning-test model-router-mutation diagnosis-mutation mastery-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test knowledge-test knowledge-mutation kge-compile-eval-test eval-persona
+check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-zhixing-test adapter-wenli-test learning-test model-router-mutation diagnosis-mutation mastery-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test eval-persona
 	@echo "check: lint 尚未配置，跳过；其余检查已通过"
 
 # 契约合法性 + 示例 + 反例集
@@ -240,13 +240,42 @@ kge-coverage-test:
 kge-tagging-eval-test:
 	@cd evals/kge-tagging && PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -m unittest discover -s tests -q && echo "kge-tagging-eval-test: 通过"
 
-# 单测（tests/import.test.ts）随 kge-inventory-test 的 tests/*.test.ts 一起跑；这里只跑库上验证
-kge-import-test:
+# 单测（tests/import.test.ts）随 kge-inventory-test 的 tests/*.test.ts 一起跑；这里只跑库上验证。
+# 道法部分（冲刺 4-K）作为前置目标一起跑（同一次 make 里不重复执行）
+kge-import-test: kge-daofa-import-test
 	@if [ ! -d tools/kge-inventory/node_modules/typescript ]; then \
 	  echo "kge-import-test: 跳过（没有安装依赖；cd tools/kge-inventory && npm ci）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
 	@bash tools/kge-inventory/tests/import-db.sh; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
+
+# 冲刺 4-K 道法切片（specs/kge-daofa-slice-sprint4）：观点地图导入器、页码抽样核验、采分点入原子层、时政（tools/kge-import/src/daofa）。
+# 类型检查（借用 kge-inventory 的 tsc）+ 单测（tests/daofa/*.test.ts）+ 一次性 Postgres 上的端到端（daofa-db.sh：种子两次逐字节相同、
+# 合成挡板、草稿版本、采分点只新增、时政白名单与 pending、库上快照 = 离线快照、发布后只读角色看不到过期时政）+ 页码回填演示
+# （page-backfill-demo.sh：低于阈值不能标 verified；达标时现有表因 projection_verified_by 写不进 verified，见 lessons 待人确认）。
+# 缺 tsc 或 Postgres 时非严格跳过、严格失败
+kge-daofa-import-test:
+	@if [ ! -d tools/kge-inventory/node_modules/typescript ]; then \
+	  echo "kge-daofa-import-test: 跳过（没有安装依赖；cd tools/kge-inventory && npm ci）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@cd tools/kge-import && ../kge-inventory/node_modules/.bin/tsc -p tsconfig.json && echo "kge-daofa-import-test: 类型检查通过"
+	@cd tools/kge-import && node --no-warnings --test --test-reporter=dot tests/daofa/*.test.ts && echo "kge-daofa-import-test: 单测通过"
+	@bash tools/kge-import/tests/daofa/daofa-db.sh; rc=$$?; \
+	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
+	@bash tools/kge-import/tests/daofa/page-backfill-demo.sh; rc=$$?; \
+	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
+
+# 采分点单一真相源（冲刺 4-K 设计要点 3）：adapters/zhixing/content/pack.json 与原子层 kge.scoring_point 按同一 rubric_version 逐字段一致，
+# 不一致即失败。默认在一次性 Postgres 上走“内容包 → kge.scoring_point → export-scoring-points.sql 导出”再比对（合成 4 题）；
+# 人在演练库导出后可直接比对：make zhixing-rubric-check ZHIXING_RUBRIC_EXPORT=path/to/export.json（不起库）
+zhixing-rubric-check:
+	@ZHIXING_RUBRIC_EXPORT="$(if $(ZHIXING_RUBRIC_EXPORT),$(abspath $(ZHIXING_RUBRIC_EXPORT)))" bash tools/kge-import/tests/daofa/rubric-check.sh; rc=$$?; \
+	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
+
+# 道法采分点判分一致率（冲刺 4-K 设计要点 6）：逐点一致率、逐题总分一致率、失分归因混淆表在合成夹具上与手算一致（只用标准库）。
+# 教研金标到位后另用 --enforce 验收（evals/daofa-grading/README.md），不进 make check
+daofa-grading-eval-test:
+	@cd evals/daofa-grading && PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -m unittest discover -s tests -q && echo "daofa-grading-eval-test: 通过"
 
 # 对本机 legacy 只读副本生成真实报告，写到 specs/kge-00-asset-inventory/report/（不进 make check；只读 legacy，不连库）。
 # 并入库模式输出：make kge-inventory DB_OUTPUT="wenli=path/to/db-output-wenli.txt aya=..."

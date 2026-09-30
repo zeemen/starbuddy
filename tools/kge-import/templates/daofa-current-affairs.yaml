@@ -1,0 +1,23 @@
+# 道法时政条目模板（冲刺 4-K，spec 设计要点 4；inventory-zhixing decisions #6）。
+# 教研按本模板录入（放内容仓或执行人目录）；校验与生成：
+#   node src/daofa/main.ts affairs --entries <文件> --source-domains <白名单.txt> --map <地图版本种子目录> --out <目录>
+# 规则（校验器会拦）：
+#   - source：https 链接，主机名必须在 policy.source_domain 白名单里（白名单由人维护；--source-domains 是从库里导出的主机名清单，
+#     种子执行时库里还会再核一次）。不接受白名单以外的来源，不自动抓取。
+#   - summary：只写自写摘要（≤ 200 字），不转载原文；不得出现原文、全文、转载一类的字段或字样。
+#     核心政治判断内容不由模型生成（decisions #6）。摘要不入库（kge.current_affair 没有摘要列），留在内容仓。
+#   - valid_from / valid_until：必填，YYYY-MM-DD；valid_until 晚于 valid_from，且不超过 valid_from 起 12 个月（spec 待人确认 #6）。
+#     到期后只读角色自动看不到（current_date < valid_until 才可见）；提前 30 天出现在 affairs-expiring 报表里。
+#   - node_ids：挂接的观点（目标地图版本里已有的观点 ID，1–16 个）。
+#   - 导入一律 pending，经审核台签字（kge.sign_review('current_affair', ...)）后才发布；录入文件里不写审核状态。
+format: kge-daofa-current-affairs/1
+synthetic: false
+notice: 由道法教研录入；摘要为自写，不含转载原文
+subject: zhixing
+entries:
+  - key: ca-2027-001          # 条目编码：小写字母、数字、连字符，文件内唯一
+    source: https://白名单主机名/路径
+    node_ids: [MORAL.LAW.XXX.YYY]
+    summary: 自写摘要（不转载原文）
+    valid_from: 2027-01-01
+    valid_until: 2027-06-30

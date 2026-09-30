@@ -19,6 +19,9 @@ UNPLACEABLE_MAX = Fraction(2, 100)  # 严格小于
 
 # 与 db/migrations/0011 的 kge.node_id 域一致
 NODE_ID = re.compile(r"^[A-Z][A-Z0-9]{1,9}(\.[A-Z0-9][A-Z0-9_]{0,31}){1,4}$")
+# 学科参数化（冲刺 4-K：道法也用同一套脚本）：platform.subject → 节点 ID 前缀（与 kge.subject_prefix 一致）。
+# 不给学科时不核对前缀（保持 KGE-02 数学用法不变）；给了学科，每个节点 ID 的首段都必须是该学科的前缀。
+SUBJECT_PREFIX = {"aya": "MATH", "wenli": "CHN", "zhixing": "MORAL"}
 # 与 platform.skill_local_id 域一致
 ITEM_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$")
 ANNOTATOR = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_\-]{0,31}$")
@@ -54,14 +57,24 @@ class Prediction:
     candidates: tuple[tuple[str, Fraction], ...] | None  # 报告里自带的主考点候选（node_id, 置信度），没有为 None
 
 
-def _node(v: str, where: str) -> str:
+def check_subject(subject: str | None) -> str | None:
+    if subject is not None and subject not in SUBJECT_PREFIX:
+        raise InputError(f"学科只能是 {'、'.join(sorted(SUBJECT_PREFIX))}")
+    return subject
+
+
+def _node(v: str, where: str, subject: str | None = None) -> str:
     if not NODE_ID.match(v):
         raise InputError(f"{where}：节点 ID 不合法：{v!r}", f"{where}：节点 ID 不合法")
+    if subject is not None and v.split(".")[0] != SUBJECT_PREFIX[subject]:
+        raise InputError(f"{where}：节点 {v} 不是 {subject}（{SUBJECT_PREFIX[subject]}.）的节点",
+                         f"{where}：节点不属于指定学科")
     return v
 
 
-def read_annotations(path: str | Path) -> dict[str, dict[str, Annotation]]:
-    """读标注 CSV（格式见 README）：返回 {标注者: {题目 ID: 标注}}。"""
+def read_annotations(path: str | Path, subject: str | None = None) -> dict[str, dict[str, Annotation]]:
+    """读标注 CSV（格式见 README）：返回 {标注者: {题目 ID: 标注}}。给了 subject 时核对节点 ID 的学科前缀。"""
+    check_subject(subject)
     out: dict[str, dict[str, Annotation]] = {}
     with open(path, encoding="utf-8", newline="") as f:
         reader = csv.DictReader(f)
@@ -80,8 +93,8 @@ def read_annotations(path: str | Path) -> dict[str, dict[str, Annotation]]:
                 raise InputError(f"{where}：标注者代号不合法：{ann!r}", f"{where}：标注者代号不合法")
             main = row["main_node_id"].strip() or None
             if main is not None:
-                _node(main, where)
-            nodes = frozenset(_node(x.strip(), where) for x in row["node_ids"].split(";") if x.strip())
+                _node(main, where, subject)
+            nodes = frozenset(_node(x.strip(), where, subject) for x in row["node_ids"].split(";") if x.strip())
             if item in out.setdefault(ann, {}):
                 raise InputError(f"{where}：{ann} 对 {item} 重复标注", f"{where}：同一标注者重复标注同一题")
             out[ann][item] = Annotation(item, ann, main, nodes - ({main} if main else set()))
@@ -94,7 +107,7 @@ def _conf(v: object, where: str) -> Fraction:
     return Fraction(str(v))
 
 
-def _cand_list(raw: object, where: str) -> tuple[tuple[str, Fraction], ...]:
+def _cand_list(raw: object, where: str, subject: str | None = None) -> tuple[tuple[str, Fraction], ...]:
     if not isinstance(raw, list):
         raise InputError(f"{where}：candidates 应为数组")
     out = []
@@ -104,14 +117,16 @@ def _cand_list(raw: object, where: str) -> tuple[tuple[str, Fraction], ...]:
             raise InputError(f"{w}：缺 node_id")
         if c.get("role", "main") != "main":  # 只取主考点候选（迁移 0024 的 role）
             continue
-        out.append((_node(c["node_id"], w), _conf(c.get("confidence"), w)))
+        out.append((_node(c["node_id"], w, subject), _conf(c.get("confidence"), w)))
     return tuple(out)
 
 
-def read_tagging_report(path: str | Path) -> tuple[str, dict[str, Prediction]]:
+def read_tagging_report(path: str | Path, subject: str | None = None) -> tuple[str, dict[str, Prediction]]:
     """读打标报告 tagging-report.json：返回 (地图版本号, {题目 ID: 预测})。
     格式以打标器的类型为准（tools/kge-import/src/items/report-types.ts，format = kge-tagging-report/1）；也接受没有 format 的简化格式
-    （map_version 为字符串）。未导入主题的题（status = out_of_scope）主考点为空，在金标里出现时按“无处可标”计。"""
+    （map_version 为字符串）。未导入主题的题（status = out_of_scope）主考点为空，在金标里出现时按“无处可标”计。
+    给了 subject 时核对节点 ID 的学科前缀。"""
+    check_subject(subject)
     try:
         raw = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as e:
@@ -139,18 +154,19 @@ def read_tagging_report(path: str | Path) -> tuple[str, dict[str, Prediction]]:
         if main is not None:
             if not isinstance(main, str):
                 raise InputError(f"{where}：main_node_id 应为字符串或 null")
-            _node(main, where)
+            _node(main, where, subject)
         nodes = it.get("node_ids", [])
         if not isinstance(nodes, list) or not all(isinstance(x, str) for x in nodes):
             raise InputError(f"{where}：node_ids 应为字符串数组")
-        cands = _cand_list(it["candidates"], where) if "candidates" in it else None
-        preds[item] = Prediction(item, main, tuple(_node(x, where) for x in nodes), cands)
+        cands = _cand_list(it["candidates"], where, subject) if "candidates" in it else None
+        preds[item] = Prediction(item, main, tuple(_node(x, where, subject) for x in nodes), cands)
     return mv, preds
 
 
-def read_candidates(path: str | Path) -> dict[str, tuple[tuple[str, Fraction], ...]]:
+def read_candidates(path: str | Path, subject: str | None = None) -> dict[str, tuple[tuple[str, Fraction], ...]]:
     """读 kge.tag_candidate 格式的候选（迁移 0024）：CSV（表头含 item_id,node_id,confidence，可选 role、layer 等）或 JSON 数组。
-    只取 role = main（没有 role 列时全部当主考点候选）。"""
+    只取 role = main（没有 role 列时全部当主考点候选）。给了 subject 时核对节点 ID 的学科前缀。"""
+    check_subject(subject)
     p = Path(path)
     rows: list[tuple[str, dict]] = []
     if p.suffix.lower() == ".json":
@@ -183,7 +199,7 @@ def read_candidates(path: str | Path) -> dict[str, tuple[tuple[str, Fraction], .
             continue
         if r.get("layer") not in (None, "", *LAYERS):
             raise InputError(f"{where}：layer 不合法")
-        out.setdefault(r["item_id"], []).append((_node(r["node_id"], where), _conf(r.get("confidence"), where)))
+        out.setdefault(r["item_id"], []).append((_node(r["node_id"], where, subject), _conf(r.get("confidence"), where)))
     return {k: tuple(v) for k, v in out.items()}
 
 

@@ -1,0 +1,24 @@
+# 合成样例（合成、非真实时政）：来源为虚构的 .example 主机，摘要为占位，不含任何真实时政内容。
+format: kge-daofa-current-affairs/1
+synthetic: true
+notice: 合成、非真实时政：来源与摘要均为工程起草的占位，只用于证明录入、校验与导入流程
+subject: zhixing
+entries:
+  - key: syn-ca-001
+    source: https://news.synthetic-source.example/syn/001
+    node_ids: [MORAL.LAW.SYN_BC_A.VP_A1, MORAL.LAW.SYN_BC_A.VP_A2]
+    summary: （合成占位）某虚构社区开展普法活动的自写摘要，非真实事件
+    valid_from: 2026-09-01
+    valid_until: 2027-06-30
+  - key: syn-ca-002
+    source: https://gov.synthetic-source.example/syn/002
+    node_ids: [MORAL.LAW.SYN_BC_B.VP_B2]
+    summary: （合成占位）某虚构城市发布示例规定的自写摘要，非真实事件
+    valid_from: 2026-03-01
+    valid_until: 2026-10-15
+  - key: syn-ca-003
+    source: https://news.synthetic-source.example/syn/003
+    node_ids: [MORAL.SYN.LAW.MINOR_ONLINE_PROTECTION]
+    summary: （合成占位）某虚构学校开展网络安全课的自写摘要，非真实事件
+    valid_from: 2025-10-01
+    valid_until: 2026-09-01

@@ -11,8 +11,9 @@
 （教研标注到位、真实模型接入前不作为 make check 的通过条件）。
 
 用法（在 evals/kge-tagging 下）：
-  python3 top1.py --gold 金标.csv --tagging tagging-report.json [--candidates 候选.csv|.json] [--gold-annotator final]
+  python3 top1.py --gold 金标.csv --tagging tagging-report.json [--subject aya|zhixing|wenli] [--candidates 候选.csv|.json] [--gold-annotator final]
                   [--annotations 两人标注.csv [--annotators T1,T2]] [--json] [--summary-only] [--enforce]
+--subject：学科参数化（冲刺 4-K，道法用 zhixing）：金标、打标报告、候选、两人标注里的节点 ID 都必须是该学科前缀；不给时不核对。
 --summary-only：只打印汇总指标，不打印逐题结果（留出集用，见 run_holdout.sh）。
 退出码：0 算完；--enforce 且有门槛未通过为 1；输入错误为 2。
 """
@@ -24,7 +25,7 @@ import sys
 from dataclasses import dataclass, field
 from fractions import Fraction
 
-from common import (KAPPA_MIN, TOP1_MIN, UNPLACEABLE_MAX, Annotation, InputError, Prediction, as_float, fmt, rank, read_annotations,
+from common import (KAPPA_MIN, SUBJECT_PREFIX, TOP1_MIN, UNPLACEABLE_MAX, Annotation, InputError, Prediction, as_float, fmt, rank, read_annotations,
                     read_candidates, read_tagging_report)
 
 TOPK = 3
@@ -133,6 +134,7 @@ def thresholds(r: Top1Result, kappa: Fraction | None, kappa_measured: bool) -> d
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="top1.py", description="打标结果对金标集：Top-1、Top-3 召回、无处可标率")
     ap.add_argument("--gold", required=True, help="金标 CSV：item_id,annotator,main_node_id,node_ids")
+    ap.add_argument("--subject", choices=sorted(SUBJECT_PREFIX), help="学科（核对节点 ID 前缀）；不给时不核对")
     ap.add_argument("--gold-annotator", help="定稿的标注者代号（默认 final；文件里只有一名时直接用）")
     ap.add_argument("--tagging", required=True, help="打标报告 tagging-report.json（或同格式）")
     ap.add_argument("--candidates", help="主考点候选：kge.tag_candidate 格式的 CSV 或 JSON")
@@ -144,13 +146,13 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     redact = args.summary_only
     try:
-        gold = pick_gold(read_annotations(args.gold), args.gold_annotator)
-        map_version, preds = read_tagging_report(args.tagging)
-        cands = read_candidates(args.candidates) if args.candidates else None
+        gold = pick_gold(read_annotations(args.gold, args.subject), args.gold_annotator)
+        map_version, preds = read_tagging_report(args.tagging, args.subject)
+        cands = read_candidates(args.candidates, args.subject) if args.candidates else None
         kappa = None
         if args.annotations:
             from kappa import compare, pick_annotators
-            data = read_annotations(args.annotations)
+            data = read_annotations(args.annotations, args.subject)
             kappa = compare(data, *pick_annotators(data, args.annotators)).kappa
     except InputError as e:
         print(f"top1: {e.redacted if redact else e}", file=sys.stderr)
@@ -168,11 +170,15 @@ def main(argv: list[str] | None = None) -> int:
             "missing": r.missing, "extra": r.extra, "candidate_source": r.candidate_source,
             "thresholds": th, "passed": all_passed,
         }
+        if args.subject:
+            out["subject"] = args.subject
         if not args.summary_only:
             out["mismatches"] = [{"item_id": x.item_id, "gold": x.gold, "predicted": x.predicted, "in_top3": x.in_top3}
                                  for x in r.items if x.gold is not None and not x.top1]
         print(json.dumps(out, ensure_ascii=False, sort_keys=True))
     else:
+        if args.subject:
+            print(f"top1: 学科 {args.subject}（节点前缀 {SUBJECT_PREFIX[args.subject]}.）")
         print(f"top1: 地图版本 {map_version}；金标 {r.gold_items} 题（金标无处可标 {r.gold_unplaceable}，计分 {r.scored}）；"
               f"缺预测 {r.missing}，报告多出 {r.extra}")
         print(f"top1: Top-1 准确率 = {fmt(r.top1, pct=True)}（{r.top1_hits}/{r.scored}）；Top-3 召回 = {fmt(r.top3, pct=True)}"

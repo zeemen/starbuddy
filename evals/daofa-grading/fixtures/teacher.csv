@@ -1,0 +1,13 @@
+# 合成、非金标：教师逐点判分的格式样例（流程样例）。回应 ID、分数、失分归因全部由工程编造，不是任何真实学生作答或真实教师标注。
+# 题目与采分点取自合成内容包 adapters/zhixing/content/pack.json（合成题、非真题）。
+response_id,item_id,point_id,score,attribution
+SYN-R-01,synthetic-m3-01,p1,2,
+SYN-R-01,synthetic-m3-01,p2,1,dingwei_cuo
+SYN-R-01,synthetic-m3-01,p3,2,
+SYN-R-02,synthetic-m3-01,p1,0,zhuanhua_cuo
+SYN-R-02,synthetic-m3-01,p2,2,
+SYN-R-02,synthetic-m3-01,p3,1,guifan_cuo
+SYN-R-03,synthetic-m3-03,p1,2,
+SYN-R-03,synthetic-m3-03,p2,1,shenti_cuo
+SYN-R-04,synthetic-m3-04,p1,1,guifan_cuo
+SYN-R-04,synthetic-m3-04,p2,2,

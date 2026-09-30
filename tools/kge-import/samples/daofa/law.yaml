@@ -1,0 +1,132 @@
+# 合成样例（合成、非教材内容）：法律领域 2 个大概念、6 个观点、关联边与一条显式前置边。
+# 观点名称、包含 / 不包含、题例、版次、页码全部由工程起草，只用于在一次性测试库证明导入流程；不代表任何教材观点。
+format: kge-daofa-domain/1
+synthetic: true
+notice: 合成、非教材内容：观点与页码均为工程起草的占位，待道法教研下钻真实观点后替换
+subject: zhixing
+domain:
+  id: MORAL.LAW
+  name: 法律（合成样例领域）
+big_concepts:
+  - id: MORAL.LAW.SYN_BC_A
+    name: （合成）大概念甲
+    legacy_code: syn1
+    viewpoints:
+      - id: MORAL.LAW.SYN_BC_A.VP_A1
+        name: （合成）观点甲一，非教材内容
+        cognitive_levels: [know, understand]
+        includes:
+          - （合成）包含：观点甲一的示例范围
+        excludes:
+          - （合成）不包含：同一大概念下其他合成观点的范围
+        examples:
+          - （合成）典型题例占位 SYN-VP_A1
+        projections:
+          - edition: syn-ed-2024
+            edition_year: 2024
+            volume: （合成）册甲
+            chapter: （合成）章A
+            page_from: 11
+            page_to: 12
+      - id: MORAL.LAW.SYN_BC_A.VP_A2
+        name: （合成）观点甲二，非教材内容
+        cognitive_levels: [understand]
+        includes:
+          - （合成）包含：观点甲二的示例范围
+        excludes:
+          - （合成）不包含：同一大概念下其他合成观点的范围
+        examples:
+          - （合成）典型题例占位 SYN-VP_A2
+        projections:
+          - edition: syn-ed-2024
+            edition_year: 2024
+            volume: （合成）册甲
+            chapter: （合成）章A
+            page_from: 14
+            page_to: 15
+      - id: MORAL.LAW.SYN_BC_A.VP_A3
+        name: （合成）观点甲三，非教材内容
+        cognitive_levels: [understand, apply]
+        includes:
+          - （合成）包含：观点甲三的示例范围
+        excludes:
+          - （合成）不包含：同一大概念下其他合成观点的范围
+        examples:
+          - （合成）典型题例占位 SYN-VP_A3
+        projections:
+          - edition: syn-ed-2024
+            edition_year: 2024
+            volume: （合成）册甲
+            chapter: （合成）章A
+            page_from: 17
+            page_to: 18
+  - id: MORAL.LAW.SYN_BC_B
+    name: （合成）大概念乙
+    legacy_code: syn2
+    viewpoints:
+      - id: MORAL.LAW.SYN_BC_B.VP_B1
+        name: （合成）观点乙一，非教材内容
+        cognitive_levels: [know]
+        includes:
+          - （合成）包含：观点乙一的示例范围
+        excludes:
+          - （合成）不包含：同一大概念下其他合成观点的范围
+        examples:
+          - （合成）典型题例占位 SYN-VP_B1
+        projections:
+          - edition: syn-ed-2024
+            edition_year: 2024
+            volume: （合成）册甲
+            chapter: （合成）章B
+            page_from: 31
+            page_to: 32
+      - id: MORAL.LAW.SYN_BC_B.VP_B2
+        name: （合成）观点乙二，非教材内容
+        cognitive_levels: [understand, apply]
+        includes:
+          - （合成）包含：观点乙二的示例范围
+        excludes:
+          - （合成）不包含：同一大概念下其他合成观点的范围
+        examples:
+          - （合成）典型题例占位 SYN-VP_B2
+        projections:
+          - edition: syn-ed-2024
+            edition_year: 2024
+            volume: （合成）册甲
+            chapter: （合成）章B
+            page_from: 34
+            page_to: 35
+      - id: MORAL.LAW.SYN_BC_B.VP_B3
+        name: （合成）观点乙三，非教材内容
+        cognitive_levels: [apply, synthesize]
+        includes:
+          - （合成）包含：观点乙三的示例范围
+        excludes:
+          - （合成）不包含：同一大概念下其他合成观点的范围
+        examples:
+          - （合成）典型题例占位 SYN-VP_B3
+        projections:
+          - edition: syn-ed-2024
+            edition_year: 2024
+            volume: （合成）册甲
+            chapter: （合成）章B
+            page_from: 37
+            page_to: 38
+relations:
+  - from: MORAL.LAW.SYN_BC_A.VP_A1
+    to: MORAL.LAW.SYN_BC_A.VP_A2
+  - from: MORAL.LAW.SYN_BC_A.VP_A2
+    to: MORAL.LAW.SYN_BC_A.VP_A3
+    type: related
+  - from: MORAL.LAW.SYN_BC_A.VP_A3
+    to: MORAL.LAW.SYN_BC_B.VP_B3
+    type: related
+  - from: MORAL.LAW.SYN_BC_B.VP_B1
+    to: MORAL.LAW.SYN_BC_B.VP_B2
+    type: related
+  # 合成的显式前置边：演示“确需前置由教研显式标注”的写法
+  - from: MORAL.LAW.SYN_BC_B.VP_B2
+    to: MORAL.LAW.SYN_BC_B.VP_B3
+    type: prerequisite
+    explicit_prerequisite: true
+    basis: （合成）演示用依据：显式标注的前置，非教研结论

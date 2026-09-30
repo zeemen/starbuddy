@@ -44,3 +44,19 @@ bash tools/kge-coverage/tests/coverage-db.sh   # 本机一次性 Postgres；退�
 
 `tests/coverage-db.sh` 在一次性库上执行全部迁移与二次函数种子（`db/seeds/kge/aya-fun-0.1.0`），写入合成题目的打标
 （`tests/fixtures/db-tagging-report.json`），再核对 `coverage.sql` 的输出与报表计算逐字节一致、且只读。
+
+## 道法（冲刺 4-K）
+
+```bash
+node --no-warnings src/main.ts --subject zhixing --snapshot <snapshot.json> [--focus-domain MORAL.LAW] --out report
+```
+
+输入是道法快照（`format = kge-daofa-snapshot/1`）：离线由 `tools/kge-import` 的 `daofa snapshot` 组装，或在演练库上只读导出
+（`psql -X -q -At -v map_version_id=<uuid> -f sql/daofa-snapshot.sql`），两边格式与排序相同（`tools/kge-import/tests/daofa/daofa-db.sh` 核对）。
+输出 `coverage-zhixing-<版本>.md` 与 `.csv`（同一输入逐字节相同，只含汇总与 ID）：
+
+- 单列“读本内容：已排除”（《学生读本》封测范围明确排除，spec 待人确认 #1；入口范围说明文案由人提供）；
+- 观点 × 认知层次（声明了打 1）、每个观点的投影 已核对 / 未核对 / 有争议、采分点数、题目数（这些采分点所属的不同题目）、时政数（未下架的）；
+- `--focus-domain`（默认法律 `MORAL.LAW`）的缺口清单：没有观点的大概念；观点缺认知层次、没有已核对投影、没有采分点、没有题目。
+
+单测 `tests/daofa.test.ts`（夹具 `tests/fixtures/daofa-snapshot.json` 全部合成，手算写在注释里）。
