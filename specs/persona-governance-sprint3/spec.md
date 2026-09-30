@@ -1,6 +1,6 @@
 # 冲刺 3-F：人设治理组件（禁语分类器、长对话漂移抽检、家族级回归接入 CI）
 
-状态：**草稿，等人确认后才开始实现**（CLAUDE.md：先 spec，确认后再动手）。确认人、日期：＿＿＿
+状态：**草稿，等人确认后才开始实现**（CLAUDE.md：先 spec，确认后再动手）。2026-09-30 按冲刺 1-I、1-F、2-I、KGE-03 合并后的现状复核并修订（现状、设计要点 2 词表收拢、范围 10–12、待人确认 #5、#13、#14）。确认人、日期：＿＿＿
 
 关联：
 - **开发计划 冲刺 3-F**（W7–W8）：“人设治理组件：禁语分类器（A–G 类）、长对话漂移抽检、家族级回归测试接入 CI（合同符合性、角色三型边界、跨科静默、命名、比喻隔离、模式一致、转介一致）”。负责人是 QA + 模型工程，验收是“任一老师或点点的 Prompt 变更自动触发回归”。
@@ -36,53 +36,31 @@
 
 完成后，`make eval-persona` 从打印“尚未建立”变成真正的回归入口，persona-evaluator 子代理也可以按它的定义工作。
 
-## 现状（起草时核实）
-- **`evals/` 不存在。** `Makefile` 的 `eval-persona` 目标只打印“evals/persona 尚未建立，跳过”，也不接受 `ROLE` 参数，persona-evaluator 定义里的调用方式跑不起来。`.claude/hooks/guard.py` 已经拦截对 `evals/**/gold/` 的写入，别的 `evals/` 路径不拦。
-- **前置冲刺的产物都不在仓库里**：
-  - 1-I“点点一致性测试集 v0（120 条用例）”：没有；
-  - 2-I“点点一致性首轮”：没有；
-  - 1-F“模型路由骨架”：没有 spec，也没有代码。`services`、`packages`、`adapters` 里没有任何模型调用或路由代码。
-  - `docs/compliance/vendors.md` 还没建（ADR 09 §4 第 6 条）。
-- **平台仓库里没有一份人设 Prompt。**
-  - 阿鸦适配器只实现了 capabilities、`grade`、`diagnose`，都是确定性算法（`model_version` 是 `algo:…`），没有 `teach`，也没有 LLM 调用。
-  - 四科现有 Prompt 都在 `legacy/` 里，而 `legacy/` 已写进 `.gitignore`（`git ls-files legacy` 为 0 行），CI 看不到。具体位置见各科盘点 §4 与 §7：
-    - 阿鸦：`lib/prompts.ts`、`lib/process-grade-prompt.ts`；
-    - 文砺：`packages/shared/lib/prompts/*.ts`；
-    - 知行：`build-*.ts`、`daofa-persona.ts`，以及 `daofa-persona-guard.ts` 里的 5 条探针和正则守护；
-    - 开口成章：`server/promptAssembler.mjs`。
-  - 四科 Prompt 都**没有版本号**。
-  - 所以“Prompt 变更自动触发回归”需要先定义 Prompt 在平台里的登记方式，登记方式也决定了触发机制怎么实现。
-- **禁语 A–G 不是一张表，而是散在五份文档里**：
+## 现状（2026-09-30 复核，替换起草时的现状）
+起草时 `evals/` 还不存在；冲刺 1-I、1-F、2-I、KGE-03、2-L、SIE-02a 合并后，现状变成：
+- **`evals/persona/` 已有点点的一套**（1-I、2-I）：
+  - `diandian/cases/` 九类 120 条用例、`holdout.txt`、`lexicon/forbidden.yaml`（A–E 类转写，`version: 0.2.0`，`reviewed: false`，每条注明出处与 verbatim / inferred）；
+  - `scorer/`（规则判定 + 评审判定接口、自检、报告）、`run.py` 离线全流程、`compare.py` 跨候选对照、`scripts/mutations.py`；
+  - `make eval-persona` 已是真实入口：校验用例、评分器自检、pytest、44 条变异；**但不接受 `ROLE` / `BASE` 参数**，没有登记表、指纹锁，也没有“Prompt 变更必触发”的机制。
+- **模型路由已有**（1-F，`services/learning/learning/model_router`）：按任务 × 数据级别路由，test 环境是假供应商；评审判定层可以经它调用（L0），不需要本冲刺另接供应商。
+- **禁语词表已有三份独立副本**，需要收拢成一个真相源：
+  1. `evals/persona/diandian/lexicon/forbidden.yaml`（点点 A–E）；
+  2. `services/knowledge/knowledge/lint/lexicon.py`（KGE-03 页面人设中立检查：从 `docs/personas/` 与上面那份 yaml 只读抽取角色名、称呼、口头禅、A–G 类）；
+  3. `apps/web` 的探针与诊断文案单测、`services/bff` 的事件词表检查各自读取或内嵌词表（后者是禁用推断词表，不同领域，不在本冲刺收拢范围）。
+- **仓库里仍没有任何老师或点点的真实人设 Prompt**：
+  - 点点人设层 Prompt v0 尚未由人设负责人提交（2-I 待人确认 #2，默认路径 `docs/personas/prompts/diandian-v0.md`，目前不存在）；
+  - 三个适配器（阿鸦、知行、文砺）没有 `teach`；知行、文砺的判分 Prompt 在适配器里（经学习服务模型路由，test 用假供应商），它们是**判分 Prompt，不是人设 Prompt**，但同样需要登记与版本；
+  - 其他带 system 文本的只有 KGE-03 全量重编（`services/knowledge/knowledge/compiler/full.py`，人设中立的编纂 Prompt）；
+  - `legacy/` 的 Prompt 仍不在 CI 范围内。
+- **学生可见的平台文案**（`apps/web/src/probe/copy.ts`、`src/diagnosis/copy.ts`）已集中成常量，并有禁语扫描单测，但扫描逻辑与词表各写一份。
+- 其余起草时的判断仍成立：禁语 A–G 分散在五份文档（下表）；`evals/**/gold/` 由 hook 拦截写入；CI 不持有任何模型密钥。
 
   | 类 | 定义位置 | 适用角色 |
   |---|---|---|
-  | A 居高临下、B 消解课程价值、C 制造情感依赖、D 恋爱暧昧 | 备考搭子 V1.0 §5.2（点点 V1.2 原样继承） | 全部角色 |
-  | E 跨科比较与总括评价 | 点点 V1.2 §5.2 | 全部角色（七科规范合同第 9 条：A–E 全部适用） |
-  | F 数学教学禁语 | 阿鸦 V1.1 §5.2 | 阿鸦 |
-  | F 语文教学禁语 | 妙笔 V1.0 §5.2 | 妙笔 |
-  | G 考官型禁语 | 考官型基线 V1.1 §5.2 | 方圆、春秋、雅典娜 |
-
-  补充几点：
-  - “F 类”被两科各自定义，内容不同。七科规范合同第 9 条说“各科可增设专属类（数学已设 F 类）”，所以 F 实际上是按学科划分的命名空间。
-  - 阿鸦盘点 decisions #7 已确认阿鸦适用 A–F，G 不适用。
-  - 阿基（物理）、X 博士（化学）没有规格书。
-  - 很多禁语不是词面问题，而是要结合引擎字段才能判断。例如“越级提示”“未经验证的对错判断”“未经语料库命中的引用”“标准之外的判断”，只看文本判不了。
-- **转介话术在现有规格里并不同源**：
-  - 七科规范合同第 10 条：转介对象是“学校心理老师、班主任与家长”；
-  - 备考搭子 §4.9：“学校心理老师、班主任，或者家里人”；
-  - 阿鸦 §4.10：“你们数学老师或者班主任”；
-  - 妙笔 §4.9：“你们语文老师或者班主任”；
-  - 考官型：不处理，立即退场，交给点点。
-
-  按七科规范第八章“转介一致”的方法去比对，现有规格本身就会不通过（见待人确认 #9）。
-- **七科规范第八章的“比喻隔离”示例**是“在数学课诱导‘砺石’”。“砺石”在 v1.1 的妙笔规格里没有出现，妙笔的设定元素是笔锋、五色、笔帽，可能是 v1.0 的遗留。
-- **CI**（`.github/workflows/check.yml`）：
-  - 只有一个 `make-check` job，`permissions: contents: read`，超时 20 分钟；
-  - 严格模式 `CONTRACT_STRICT=1`，缺依赖直接失败；
-  - 注释写明“不需要、也不配置任何密钥”；
-  - 触发条件是 `pull_request` 和推送到 `main`；
-  - `checkout` 使用默认深度，没有基线提交可比较。
-  - `.venv-contracts` 里已有 PyYAML、pytest、jsonschema，本冲刺可以不引入新依赖。
+  | A–D | 备考搭子 V1.0 §5.2（点点 V1.2 原样继承） | 全部角色 |
+  | E 跨科比较与总括评价 | 点点 V1.2 §5.2 | 全部角色（七科规范合同第 9 条） |
+  | F:math / F:chinese | 阿鸦 V1.1、妙笔 V1.0 各自的禁语节 | 对应学科老师 |
+  | G 考官型禁语 | 考官型基线 V1.1 | 方圆、春秋、雅典娜 |
 
 ## 设计要点
 
@@ -148,6 +126,8 @@
 | 规则层（词表 + 正则） | 词面可判的条目 | A“你必须”、C“只有我懂你”、E“你数学比语文强”、F:math“粗心”“这题很简单”、G“可惜”“我觉得”、考官型句长 > 25 字 | 能 |
 | 结构上下文层 | 需要引擎字段的条目 | 越级提示（`hint_level_used` > `allowed_hint_level`）、未经验证的对错判断（有对错陈述却没有 `verified` 的 claim）、考官型在非判分时刻开口、星在两处以外出现 | 能 |
 | 模型判定层 | 语义类条目 | B 类消解课程价值、D 类暧昧语气、C 类“暗示替代真实人际关系”、F:chinese 空泛评语、观点评价 | 本冲刺不能：只作参考，达到校准标准后再改为阻断（第 5 节） |
+
+**词表收拢（本版新增）**：`packages/personas/forbidden/` 是唯一真相源。点点现有的 `evals/persona/diandian/lexicon/forbidden.yaml` 迁入（逐条保留 id、origin、source、`reviewed: false`，内容不改），原位置改为引用；KGE-03 的 `knowledge/lint/lexicon.py` 与前端文案单测改为读取 `guard` 的导出，不再各自抽取。迁移前后同一批输入的命中结果必须逐条一致（有测试）。
 
 **禁语词表** `packages/personas/forbidden/{A..G}.yaml`：
 - 每条记录包含 `rule_id`、`class`、`pattern`、`source`（规格书路径 + 章节）、`examples_positive`、`examples_negative`（相近但允许的说法，用来防误报）。
@@ -294,6 +274,9 @@
 7. `Makefile` 与 `check.yml` 的改动（第 6 节），纳入严格模式。
 8. `evals/persona/README.md`：说明目录结构、谁能改什么、怎么录制。
 9. `lessons.md`：记录实现过程中发现的规格冲突，例如转介不同源、F 类重名、“砺石”。
+10. 词表收拢：点点词表迁入 `packages/personas/forbidden/`，KGE-03 页面检查与前端文案单测改为复用 `guard`；迁移前后命中一致性测试。
+11. 登记表同时收录**非人设的模型 Prompt**（知行、文砺判分 Prompt，KGE-03 编纂 Prompt），`type: task`：只做版本与指纹锁，不跑人设家族级回归。
+12. `make eval-persona` 在现有点点评测之上增加 `ROLE` / `BASE` 参数与登记表驱动，现有 120 条用例、评分器、44 条变异保持通过。
 
 ### 不做
 - 编写或修改任何角色的真实 Prompt、禁语表正文、转介话术（必停，属于各科迁移冲刺，并需要教研签字）。
@@ -355,7 +338,7 @@
 4. **`persona_id` 枚举是否要与契约统一**：默认不改契约。登记表的 6 个 ID 是它的超集，考官型只出现在 `grade` 结果的呈现层，不进入 `teach`。
 5. **家族级与各角色用例的规模、谁来写**：
    - 默认：本冲刺每类检查只提供样例，QA 按规格书第八章扩写，教研在 `gold/` 标注期望答案；
-   - 1-I 的 120 条点点用例另行补做。它是 3-I 二轮的前提，开发计划原本排在冲刺 1。
+   - 1-I 的 120 条点点用例已合并（`evals/persona/diandian/cases/`），本冲刺把它接入登记表与报告，不重写。
 6. **模型判定何时可以阻断**：默认每类禁语在金标准上召回率 ≥ 95%、精确率 ≥ 90% 之后，由人决定改为阻断。D 类（未成年人红线）是否要求召回率 100%，或者始终加人工复核？
 7. **中文分词**：默认不引入分词库。误报率超过阈值再评估 jieba（MIT），引入前按规则 10 检查许可证。
 8. **漂移抽检的参数**：默认窗口 5 轮，压力用例 20–40 轮，每角色至少 1 条。线上采样率留给 pilot 环境建成后再定。
@@ -373,3 +356,5 @@
 
     默认两项都做，是否同意？
 12. **报告放在哪里作为 Gate 0 证据**：默认用 CI artifact（最近一次 `main` 运行）。另一个选择是每次 `main` 运行后把报告提交到 `docs/gate0/`，但这需要 CI 有写权限，与现在的 `contents: read` 冲突。
+13. **判分 Prompt 与编纂 Prompt 是否登记**（本版新增）：默认登记为 `type: task`，只做版本与指纹锁（改了不升版本就失败），不跑人设回归；判分 Prompt 的回归仍由各科 `make eval-grade` 负责。
+14. **词表收拢的方式**（本版新增）：默认点点现有词表原样迁入 `packages/personas/forbidden/`，旧路径保留一个只含引用的文件一个版本周期后删除；迁移本身属于禁语表变更，随种子词表同一个 `[NEEDS-HUMAN]` PR 由人设负责人确认。
