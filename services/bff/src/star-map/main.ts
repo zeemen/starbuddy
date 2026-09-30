@@ -3,6 +3,8 @@
 //   PORT              默认 8787
 //   STARBUDDY_DEV_AUTH=1  启用开发身份桩（x-dev-account-id）；不设时所有请求都是 401
 //   BFF_LEARNING_URL / BFF_LEARNING_TOKEN  学习服务地址（https 或本机回环）与服务间令牌（≥ 32 字符）；不设时诊断接口 503
+//   STARBUDDY_DEV_METER_CLOCK=daytime  只在开发身份桩打开时认：诊断的宵禁判断用“当天北京时间 10 点 + 本小时已过的时间”，
+//                    与端到端测试替换的 platform.meter_now() 同一时间轴（apps/web/scripts/e2e.sh），夜里跑端到端也不撞宵禁
 import pg from 'pg';
 import { httpDiagnosisLearning } from '../diagnosis/learning-client.ts';
 import { assertBffRole } from './query.ts';
@@ -32,7 +34,20 @@ if (learningUrl) {
     await pool.end();
     process.exit(2);
   }
-  diagnosis = { learning: httpDiagnosisLearning({ baseUrl: learningUrl, token: learningCredential }) };
+  const devClock = process.env['STARBUDDY_DEV_METER_CLOCK'];
+  if (devClock !== undefined && (!devAuth || devClock !== 'daytime')) {
+    console.error('star-map: STARBUDDY_DEV_METER_CLOCK 只能是 daytime，且只在 STARBUDDY_DEV_AUTH=1 时可用');
+    await pool.end();
+    process.exit(2);
+  }
+  // 当天北京时间 10:00 + 本小时已过的时间（与 e2e.sh 里替换的 platform.meter_now() 同一公式）
+  const daytime = () => {
+    const n = Date.now();
+    const shanghaiDay = Math.floor((n + 8 * 3600_000) / 86_400_000) * 86_400_000 - 8 * 3600_000;
+    return shanghaiDay + 10 * 3600_000 + (n % 3600_000);
+  };
+  diagnosis = { learning: httpDiagnosisLearning({ baseUrl: learningUrl, token: learningCredential }),
+                ...(devClock === 'daytime' ? { now: daytime } : {}) };
 }
 const server = createStarMapServer({ pool, devAuth, ...(diagnosis ? { diagnosis } : {}) });
 server.listen(port, '127.0.0.1', () => {

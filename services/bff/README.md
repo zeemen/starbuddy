@@ -17,7 +17,9 @@
   - 不消耗额度，不走计量预留；日志只记路由、状态码、耗时与学生 ID 的哈希，不记 payload。
 - 数学自适应诊断（SIE-02a，`specs/sie-02a-math-diagnosis/spec.md`）：`src/diagnosis/`，同一个服务、同一套身份，只认学生本人。
   - `…/diagnosis/sessions`（开始 / 续做）、`…/sessions/{id}`（当前题）、`…/{id}/probe|answer|pause|abandon`；接口定义在 `openapi/diagnosis.v0.yaml`。
-  - 开始预留 `diagnosis_full`、结束结算、放弃与确定失败释放、结果未知不释放；续做不另占额度。探针经 2-L 库函数写入并在作答后关联。
+  - 开始预留 `diagnosis_full`、第一道题判分成功即结算、没答题就放弃或确定失败才释放、结果未知不释放；续做不另占额度。
+    宵禁时段（按 `platform.student_time_guard` 与缺省 22:00–06:00）续做、取题、探针、作答回 402 `curfew` 并暂停会话。
+    探针经 2-L 库函数写入（幂等键由会话与步骤派生）并在作答后关联。
   - 学习服务地址与令牌：`BFF_LEARNING_URL`、`BFF_LEARNING_TOKEN`（不设时诊断接口 503）。
 
 ## 测试

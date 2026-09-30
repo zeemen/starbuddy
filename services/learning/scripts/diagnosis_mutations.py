@@ -18,8 +18,9 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parents[1]          # services/learning
 REPO = HERE.parents[1]
 TESTS = ["tests/test_diagnosis_engine.py", "tests/test_diagnosis_session.py"]
-E, SV, SRC, ST, PR = ("learning/diagnosis/engine.py", "learning/diagnosis/service.py", "learning/diagnosis/source.py",
-                      "learning/diagnosis/store.py", "learning/diagnosis/presenter.py")
+E, SV, SRC, ST, PR, API, APP = ("learning/diagnosis/engine.py", "learning/diagnosis/service.py", "learning/diagnosis/source.py",
+                                "learning/diagnosis/store.py", "learning/diagnosis/presenter.py", "learning/diagnosis/api.py",
+                                "learning/app.py")
 
 # 名字 → [(文件, 原文, 替换为), …]
 MUTATIONS: dict[str, list[tuple[str, str, str]]] = {
@@ -36,11 +37,12 @@ MUTATIONS: dict[str, list[tuple[str, str, str]]] = {
     "中断后重放换了判分键（重复判分、重复写证据）": [
         (SV, 'if r["status"] == "succeeded":\n                    recorded = json.loads(r["summary"])\n                    break',
          'if False:\n                    break'),
-        (SV, 'f"{self._prefix(s, seq)}{n}"', 'f"{self._prefix(s, seq)}{uuid.uuid4().hex[:6]}"')],
+        (SV, "body = self._grade_body(s, cur, answer, occurred_at, elapsed, keys[n])",
+         "body = self._grade_body(s, cur, answer, occurred_at, elapsed, str(uuid.uuid4()))")],
     "续做时新开会话（另占一份额度）": [(SV, "s = await store.open_session(conn, student, subject, lock=True)", "s = None")],
     "过程题不进复核队列": [(SV, "await store.enqueue_process_observation(conn, subject=s.subject, student=s.student_id, step_id=step.id)",
                    "pass")],
-    "过程题的书写原文不入库": [(SV, "await self._record_work(conn, s, step, work, occurred_at, summary)", "pass")],
+    "过程题的书写原文不入库": [(SV, "await self._record_work(conn, s, step, work, occurred_at)", "pass")],
     "作答返回对错": [(SV, '"usage_id": s.usage_id,\n                    "replayed": replayed}',
                   '"usage_id": s.usage_id,\n                    "replayed": replayed, "verdict": recorded.get("verdict")}')],
     "题面带出夹具字段（节点、答案等）": [(PR, "return _clean(view)", "return dict(it)")],
@@ -48,6 +50,22 @@ MUTATIONS: dict[str, list[tuple[str, str, str]]] = {
     "别的学生能读写这个会话": [(ST, "WHERE id = $1::uuid AND student_id = $2::uuid FOR UPDATE", "WHERE id = $1::uuid AND $2::text IS NOT NULL FOR UPDATE")],
     "暂停中仍可作答": [(E, '    if session_status == "paused":\n        return State.PAUSED\n', "")],
     "合成题面在非 test 环境可用": [(SRC, 'if env != "test":\n        raise RuntimeError', 'if False:\n        raise RuntimeError')],
+    # 审查处理（安全审查 S1、S3、S5、S6，契约审查 B1、建议 1–4、9）
+    "用时不按墙钟封顶": [(SV, "return max(0, min(reported, before + wall, 7200))", "return reported")],
+    "续做不更新续做时间": [(SV, "await store.resume(conn, s.id)", 'await store.set_status(conn, s.id, "active")')],
+    "同一步换内容作答不报冲突": [(SV, 'raise err(409, "ANSWER_CONFLICT", "this step was already answered with different content")',
+                         "return self._replay(s, step)")],
+    "过程原文证据不记到步骤上": [(SV, "await store.set_work_evidence(conn, step.id, evidence_id)", "pass")],
+    "过程原文的准入跟题目走": [(SV, '"payload": {"text": work}, "admission": "pending_review"}',
+                        '"payload": {"text": work}, "admission": (await store.item_admission(conn, s.subject, step.item_id or "")) or "pending_review"}')],
+    "作答不标键盘通道（走 v0 写入路径）": [(SV, 'GRADE_VERSION = "1.0.0"', 'GRADE_VERSION = "0.9.0"')],
+    "合成题面不核对库名": [(APP, 'if not SYNTHETIC_DB.fullmatch(db or ""):', "if False:")],
+    "知识服务响应不按契约校验": [(SRC, "if knowledge_contract().validate(schema, out):", "if False:")],
+    "前置链到最大深度当作没有更下层": [(SRC, 'if s.get("depth", 0) >= MAX_DEPTH:', "if False:")],
+    "版权受限的题也出": [(SRC, '\n                              and i.get("license_state") != "restricted")', ")")],
+    "学生 ID 可以放在 URL 里": [(API, 'if "student_ref" in request.query_params:', "if False:")],
+    "探针不能按派生键找回": [(SV, 'probe_id = await store.probe_by_key(conn, student, probe_key or "")', "probe_id = None")],
+    "放弃时不报已答题数": [(SV, '"item_count": s.item_count, "replayed": False}', '"item_count": 0, "replayed": False}')],
 }
 
 

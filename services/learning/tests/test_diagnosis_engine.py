@@ -19,8 +19,8 @@ from learning.diagnosis.engine import (ALGORITHM_VERSION, Done, Event, InvalidTr
 from learning.diagnosis.presenter import SyntheticPresenter
 from learning.diagnosis.source import FixtureSource, KnowledgeServiceSource, _Graph, load_fixture
 
-Q = "MATH.FUNC.QUAD."
-BASE = {"MATH.FUNC.BASIC.COORD", "MATH.ALG.EXPR.COMPLETE_SQ", "MATH.ALG.EQ.QUAD_SOLVE"}
+Q = "MATH.SYN.QUAD."
+BASE = {"MATH.SYN.BASIC.COORD", "MATH.SYN.EXPR.COMPLETE_SQ", "MATH.SYN.EQ.QUAD_SOLVE"}
 
 
 def closure(src, nodes: set[str]) -> set[str]:
@@ -130,7 +130,7 @@ def test_break_point_examples(src):
     # 卡在顶点式：图象会、顶点式不会 → 断点在顶点式；配方无题可测
     _, t = simulate(src, closure(src, {Q + "GRAPH_BASIC"}) | BASE)
     assert Q + "VERTEX_FORM" in t.break_points
-    assert t.status["MATH.ALG.EXPR.COMPLETE_SQ"] in ("no_item", "skipped")
+    assert t.status["MATH.SYN.EXPR.COMPLETE_SQ"] in ("no_item", "skipped")
     assert t.status[Q + "INEQ"] == "no_item"  # 目标节点无题：记无题可测，不往下追
     # 全会：没有断点，目标的前置全部跳过
     everything = {n["node_id"] for n in load_fixture()["nodes"]}
@@ -390,7 +390,7 @@ async def test_knowledge_source_matches_fixture_source(src):
         await ks.load(9)
         assert len(calls) == n_calls  # 同一会话只取一次
     assert {c[0] for c in calls} == {"node.path", "item.search"} and all(c[2] == "Bearer " + "k" * 40 for c in calls)
-    for n in {x["node_id"] for x in doc["nodes"]} - {"MATH.FUNC.QUAD.INEQ"} | set(src.targets(9)):
+    for n in {x["node_id"] for x in doc["nodes"]} - {"MATH.SYN.QUAD.INEQ"} | set(src.targets(9)):
         if n in ks._items or n in src.targets(9):
             assert ks.prereqs(n) == src.prereqs(n), n
             assert ks.ancestors(n) == src.ancestors(n), n
@@ -406,16 +406,62 @@ async def test_knowledge_source_matches_fixture_source(src):
 async def test_knowledge_source_rejects_bad_answers():
     from learning.diagnosis.source import SourceError
 
-    def bad(request):
-        return httpx.Response(200, json={"result": {"root": "MATH.X.Y", "direction": "down", "steps": []}})
+    env = {"contract_version": "0.9.0", "evidence_ids": [], "confidence": 1, "source_version": "graph:math-map@0.1.0",
+           "model_version": "algo:kge-node-path@0.1.0", "human_review_required": False}
+
+    def bad(request):  # 形状合乎契约，但 node.path 答的是另一个问题（别的根节点、向下）；item.search 正常
+        if request.url.path.endswith("item.search"):
+            return httpx.Response(200, json={**env, "result": {"items": []}})
+        return httpx.Response(200, json={**env, "result": {"root": "MATH.SYN.OTHER", "direction": "down", "steps": []}})
     async with httpx.AsyncClient(transport=httpx.MockTransport(bad)) as client:
-        ks = KnowledgeServiceSource(client, "http://knowledge.test", "k" * 40, "aya", {9: ["MATH.FUNC.QUAD.APPLY"]}, "0.1.0")
+        ks = KnowledgeServiceSource(client, "http://knowledge.test", "k" * 40, "aya", {9: ["MATH.SYN.QUAD.APPLY"]}, "0.1.0")
         with pytest.raises(SourceError):
             await ks.load(9)
 
     def down(request):
         return httpx.Response(503, json={})
     async with httpx.AsyncClient(transport=httpx.MockTransport(down)) as client:
-        ks = KnowledgeServiceSource(client, "http://knowledge.test", "k" * 40, "aya", {9: ["MATH.FUNC.QUAD.APPLY"]}, "0.1.0")
+        ks = KnowledgeServiceSource(client, "http://knowledge.test", "k" * 40, "aya", {9: ["MATH.SYN.QUAD.APPLY"]}, "0.1.0")
         with pytest.raises(SourceError):
             await ks.load(9)
+
+
+async def test_knowledge_source_contract_depth_and_license():
+    """契约审查建议 3：响应按契约校验（多一个键也拒）；前置链到了 max_depth 报错而不当作“没有前置”；restricted 的题不出。"""
+    from learning.diagnosis.source import MAX_DEPTH, SourceError
+    doc = load_fixture()
+    env = {"contract_version": "0.9.0", "evidence_ids": [], "confidence": 1, "source_version": "graph:math-map@0.1.0",
+           "model_version": "algo:kge-node-path@0.1.0", "human_review_required": False}
+    root = "MATH.SYN.QUAD.APPLY"
+
+    def make(steps, items, extra=None):
+        def handler(request):
+            tool = request.url.path.rsplit("/", 1)[-1]
+            if tool == "node.path":
+                res = {"root": root, "direction": "up", "steps": steps}
+                return httpx.Response(200, json={**env, "result": res, **(extra or {})})
+            body = json.loads(request.content)
+            return httpx.Response(200, json={**env, "result": {"items": [i for i in items if i["main_node_id"] == body["node_id"]]}})
+        return httpx.MockTransport(handler)
+
+    step = {"from_id": "MATH.SYN.QUAD.ROOTS", "to_id": root, "depth": 1}
+    items = [{"item_ref": "aya:Q-A", "main_node_id": root, "license_state": "original"},
+             {"item_ref": "aya:Q-B", "main_node_id": root, "license_state": "restricted"},
+             {"item_ref": "aya:Q-C", "main_node_id": "MATH.SYN.QUAD.ROOTS", "license_state": "unverified"}]
+    async with httpx.AsyncClient(transport=make([step], items)) as client:
+        ks = KnowledgeServiceSource(client, "http://knowledge.test", "k" * 40, "aya", {9: [root]}, doc["map_version"])
+        await ks.load(9)
+        assert ks.items(root) == ["Q-A"] and ks.items("MATH.SYN.QUAD.ROOTS") == ["Q-C"]
+    deep = [{"from_id": f"MATH.SYN.D{i + 1}", "to_id": root if i == 0 else f"MATH.SYN.D{i}", "depth": i + 1} for i in range(MAX_DEPTH)]
+    for bad in (make(deep, items), make([step], items, {"extra": 1}),
+                make([{**step, "note": "x"}], items), make([{**step, "depth": 0}], items)):
+        async with httpx.AsyncClient(transport=bad) as client:
+            ks = KnowledgeServiceSource(client, "http://knowledge.test", "k" * 40, "aya", {9: [root]}, doc["map_version"])
+            with pytest.raises(SourceError):
+                await ks.load(9)
+
+
+def test_fixture_uses_synthetic_namespace():
+    doc = load_fixture()
+    nodes = {n["node_id"] if isinstance(n, dict) else n for n in doc["nodes"]} | {i["node_id"] for i in doc["items"]}
+    assert nodes and all(n.startswith("MATH.SYN.") for n in nodes)

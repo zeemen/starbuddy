@@ -1,6 +1,6 @@
 'use client';
 // 数学自适应诊断组件（SIE-02a，spec 设计要点 5）：计时、暂停与续做、每题前复用“能做对吗”探针（ConfidenceProbe，可跳过）、
-// 过程题与讲解题的多行输入、结束页只说“完成了，老师会看你的过程”。
+// 过程题与讲解题的多行输入、结束页不给结论（作答过过程题才说“老师会看你的过程”，否则中性文案）；宵禁时段只说“今天先到这里”。
 //   - 数据全部经 api（服务端 action → BFF）；组件不直连 BFF，不知道题号、节点、答案；
 //   - 诊断中不显示任何评价，连对错也不显示；结束页不给结论（规则 11）；
 //   - 计时只算看题作答的时间：探针、暂停都不计；暂停时把这道题已用的秒数交给服务端，续做时接着算；
@@ -12,15 +12,16 @@ import { ConfidenceProbe } from '../probe/ConfidenceProbe.tsx';
 import type { Prediction } from '../probe/copy.ts';
 import { DIAGNOSIS_COPY as C, formatDuration } from './copy.ts';
 
+/** curfew：宵禁时段（服务端已把会话置为暂停），组件停在“今天先到这里” */
 export interface DiagnosisApi {
-  start(): Promise<{ ok: boolean; sessionId?: string }>;
-  current(sessionId: string): Promise<{ ok: boolean; view?: DiagnosisView }>;
-  probe(sessionId: string, seq: number, prediction: Prediction): Promise<{ ok: boolean }>;
-  answer(sessionId: string, seq: number, answer: Answer, work: string | null, elapsedSec: number): Promise<{ ok: boolean }>;
+  start(): Promise<{ ok: boolean; sessionId?: string; curfew?: boolean }>;
+  current(sessionId: string): Promise<{ ok: boolean; view?: DiagnosisView; curfew?: boolean }>;
+  probe(sessionId: string, seq: number, prediction: Prediction): Promise<{ ok: boolean; curfew?: boolean }>;
+  answer(sessionId: string, seq: number, answer: Answer, work: string | null, elapsedSec: number): Promise<{ ok: boolean; curfew?: boolean }>;
   pause(sessionId: string, seq: number | null, stepElapsedSec: number): Promise<{ ok: boolean }>;
 }
 
-type Phase = 'loading' | 'probe' | 'item' | 'paused' | 'finished' | 'unavailable';
+type Phase = 'loading' | 'probe' | 'item' | 'paused' | 'finished' | 'curfew' | 'unavailable';
 
 export function Diagnosis({ api }: { api: DiagnosisApi }) {
   const ids = { stem: useId(), work: useId(), answer: useId(), timer: useId() };
@@ -55,23 +56,31 @@ export function Diagnosis({ api }: { api: DiagnosisApi }) {
     setPhase('item');
   }, []);
 
+  const toCurfew = useCallback(() => {
+    stepStartedAt.current = null;
+    setMessage('');
+    setPhase('curfew');
+  }, []);
+
   const load = useCallback(async (sid: string) => {
     const r = await api.current(sid);
+    if (r.curfew) return toCurfew();
     if (!r.ok || !r.view) {
       setMessage(C.notSaved);
       return;
     }
     setMessage('');
     show(r.view);
-  }, [api, show]);
+  }, [api, show, toCurfew]);
 
   const begin = useCallback(async () => {
     setPhase('loading');
     const s = await api.start();
+    if (s.curfew) return toCurfew();
     if (!s.ok || !s.sessionId) return setPhase('unavailable');
     setSession(s.sessionId);
     await load(s.sessionId);
-  }, [api, load]);
+  }, [api, load, toCurfew]);
 
   useEffect(() => {
     if (started.current) return;
@@ -87,12 +96,13 @@ export function Diagnosis({ api }: { api: DiagnosisApi }) {
   }, [phase]);
 
   useEffect(() => {
-    if (phase === 'item' || phase === 'finished' || phase === 'paused') heading.current?.focus();
+    if (phase === 'item' || phase === 'finished' || phase === 'paused' || phase === 'curfew') heading.current?.focus();
   }, [phase, view?.step?.seq]);
 
   const onPredict = async (p: Prediction) => {
     if (!session || !view?.step) return;
     const r = await api.probe(session, view.step.seq, p);
+    if (r.curfew) return toCurfew();
     if (!r.ok) skippedProbe.current = view.step.seq;  // 没记下也不挡做题
     await load(session);
   };
@@ -115,6 +125,7 @@ export function Diagnosis({ api }: { api: DiagnosisApi }) {
     setMessage(C.submitting);
     try {
       const r = await api.answer(session, step.seq, answer, needsWork ? work : null, Math.min(7200, stepElapsed()));
+      if (r.curfew) return toCurfew();
       if (!r.ok) return setMessage(C.notSaved);
       setMessage('');
       await load(session);
@@ -147,7 +158,7 @@ export function Diagnosis({ api }: { api: DiagnosisApi }) {
     <section className="diagnosis" data-testid="diagnosis" data-phase={phase} aria-labelledby={ids.stem + '-h'}>
       <h2 id={ids.stem + '-h'}>{C.heading}</h2>
       {phase === 'loading' || phase === 'probe' ? <p className="muted">{C.intro}</p> : null}
-      {view && phase !== 'finished' && phase !== 'unavailable' ? (
+      {view && phase !== 'finished' && phase !== 'unavailable' && phase !== 'curfew' ? (
         <p className="diagnosis-timer">
           <span id={ids.timer}>{C.timerLabel}</span>{' '}
           <span role="timer" aria-labelledby={ids.timer} data-testid="diagnosis-timer">
@@ -203,7 +214,12 @@ export function Diagnosis({ api }: { api: DiagnosisApi }) {
           <p className="diagnosis-actions"><button type="button" onClick={() => void begin()}>{C.resume}</button></p>
         </>
       ) : null}
-      {phase === 'finished' ? <h3 ref={heading} tabIndex={-1} data-testid="diagnosis-finished">{C.finished}</h3> : null}
+      {phase === 'finished' ? (
+        <h3 ref={heading} tabIndex={-1} data-testid="diagnosis-finished">
+          {view?.status === 'finished' && view.process_tasks ? C.finished : C.endedNeutral}
+        </h3>
+      ) : null}
+      {phase === 'curfew' ? <h3 ref={heading} tabIndex={-1} data-testid="diagnosis-curfew">{C.curfew}</h3> : null}
       {phase === 'unavailable' ? <p>{C.unavailable}</p> : null}
       {phase === 'probe' || phase === 'item' ? (
         <p className="diagnosis-actions"><button type="button" className="diagnosis-pause" disabled={busy} onClick={() => void pause()}>{C.pause}</button></p>

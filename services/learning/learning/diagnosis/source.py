@@ -3,10 +3,14 @@
 - KnowledgeServiceSource：经知识服务（packages/contracts/openapi/knowledge-service.v0.9.yaml）取：
   node.path（direction = up，前置链；知识服务只走强前置边）与 item.search（题目标签）。调用方身份 learning，
   服务间令牌与学习服务其他出站调用同一做法（Bearer，不跟随重定向、不读代理环境变量）。
+  响应按契约严格校验（NodePathResponse / ItemSearchResponse，契约审查建议 3）；前置链有一步的深度到了 max_depth，
+  说明链可能被截断，报 SourceError（不当作“没有更下层前置”）；版权状态 restricted 的题不出；
+  item.search 没有翻页，每个节点最多取 50 道（契约上限，lessons 已写明）。
   目标节点（建档年级与教材进度对应的 kp 节点）知识服务没有按主题列节点的工具：由配置给出（待人确认 #1、#3）。
-- FixtureSource：测试环境的合成夹具（fixtures/quad-synthetic.json），按知识服务的口径只取强前置边；非 test 环境拒绝构造。
+- FixtureSource：测试环境的合成夹具（fixtures/quad-synthetic.json，节点在 MATH.SYN.* 命名空间，不与真实地图重名），
+  按知识服务的口径只取强前置边；非 test 环境拒绝构造。
 
-两者对同一张图给出相同的前置、闭包、层高与题目顺序（tests/test_diagnosis_source.py 核对）。
+两者对同一张图给出相同的前置、闭包、层高与题目顺序（tests/test_diagnosis_engine.py 的知识服务来源用例核对）。
 """
 from __future__ import annotations
 
@@ -18,10 +22,13 @@ from pathlib import Path
 
 import httpx
 
+from ..contract import knowledge_contract
+
 FIXTURE = Path(__file__).with_name("fixtures") / "quad-synthetic.json"
 NODE_RE = re.compile(r"^[A-Z][A-Z0-9]{1,9}(\.[A-Z0-9][A-Z0-9_]{0,31}){1,4}$")
 ITEM_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$")
 MAX_DEPTH = 10
+ITEM_LIMIT = 50  # item.search 的契约上限（没有翻页）
 
 
 class SourceError(Exception):
@@ -125,9 +132,13 @@ class KnowledgeServiceSource(_Graph):
             raise SourceError(f"{tool} unavailable") from None
         if r.status_code != 200:
             raise SourceError(f"{tool} status {r.status_code}")
-        out = r.json()
-        if not isinstance(out, dict) or not isinstance(out.get("result"), dict):
-            raise SourceError(f"{tool} malformed")
+        try:
+            out = r.json()
+        except ValueError:
+            raise SourceError(f"{tool} malformed") from None
+        schema = {"node.path": "NodePathResponse", "item.search": "ItemSearchResponse"}[tool]
+        if knowledge_contract().validate(schema, out):
+            raise SourceError(f"{tool} response does not match the contract")
         return out["result"]
 
     async def load(self, grade: int) -> None:
@@ -143,15 +154,19 @@ class KnowledgeServiceSource(_Graph):
                 f, t = s.get("from_id"), s.get("to_id")
                 if not (isinstance(f, str) and isinstance(t, str) and NODE_RE.fullmatch(f) and NODE_RE.fullmatch(t)):
                     raise SourceError("node.path step malformed")
+                if s.get("depth", 0) >= MAX_DEPTH:
+                    # 到了最大深度：更下层可能还有前置，只是没返回；不能当作“没有前置”去判断点
+                    raise SourceError("node.path reached max_depth; the prerequisite chain may be truncated")
                 self._prereqs.setdefault(t, [])
                 if f not in self._prereqs[t]:
                     self._prereqs[t].append(f)
                     self._prereqs[t].sort()
                 nodes |= {f, t}
             for n in sorted(nodes - self._loaded):
-                found = await self._call("item.search", {"subject": self._subject, "node_id": n, "limit": 50})
+                found = await self._call("item.search", {"subject": self._subject, "node_id": n, "limit": ITEM_LIMIT})
                 refs = sorted(i["item_ref"].split(":", 1)[1] for i in found.get("items", [])
-                              if i.get("main_node_id") == n and i.get("item_ref", "").startswith(f"{self._subject}:"))
+                              if i.get("main_node_id") == n and i.get("item_ref", "").startswith(f"{self._subject}:")
+                              and i.get("license_state") != "restricted")
                 self._items[n] = refs
                 self._loaded.add(n)
             self._loaded.add(root)

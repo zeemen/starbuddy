@@ -27,9 +27,9 @@ const FIXTURE = JSON.parse(readFileSync(new URL('services/learning/learning/diag
 const PACK = new Map((JSON.parse(readFileSync(`${AYA}content/pack.json`, 'utf8')) as {
   items: { id: string; format: string; answer: string[]; options?: { key: string }[] }[] }).items.map((i) => [i.id, i]));
 const BY_STEM = new Map(FIXTURE.items.map((i) => [i.stem, i]));
-const Q = 'MATH.FUNC.QUAD.';
+const Q = 'MATH.SYN.QUAD.';
 // 合成学生：会到“图象”为止（卡在顶点式）
-const MASTERY = new Set(['MATH.FUNC.BASIC.COORD', 'MATH.ALG.EXPR.COMPLETE_SQ', 'MATH.ALG.EQ.QUAD_SOLVE', `${Q}CONCEPT`, `${Q}GRAPH_BASIC`]);
+const MASTERY = new Set(['MATH.SYN.BASIC.COORD', 'MATH.SYN.EXPR.COMPLETE_SQ', 'MATH.SYN.EQ.QUAD_SOLVE', `${Q}CONCEPT`, `${Q}GRAPH_BASIC`]);
 
 function answerFor(stem: string): { answer: unknown; itemId: string } {
   const f = BY_STEM.get(stem);
@@ -79,7 +79,7 @@ describe('数学自适应诊断（BFF 学生端）', { skip: READY ? false : '�
     }
     const ayaPort = await freePort();
     procs.push(spawn(process.execPath, ['--no-warnings', 'src/main.ts'], { cwd: AYA, stdio: 'ignore',
-      env: { ...process.env, AYA_ADAPTER_SERVICE_TOKEN: AYA_CRED, PORT: String(ayaPort) } }));
+      env: { ...process.env, AYA_ADAPTER_SERVICE_TOKEN: AYA_CRED, PORT: String(ayaPort), STARBUDDY_ALLOW_CANDIDATE_CONTRACT: '1' } }));
     await waitFor(`http://127.0.0.1:${ayaPort}/plugin/v0/capabilities`, { authorization: `Bearer ${AYA_CRED}` }, (s) => s === 200);
     const lPort = await freePort();
     learningUrl = `http://127.0.0.1:${lPort}`;
@@ -87,9 +87,9 @@ describe('数学自适应诊断（BFF 学生端）', { skip: READY ? false : '�
       PATH: process.env['PATH'] ?? '/usr/bin:/bin', PORT: String(lPort), LEARNING_ENV: 'test',
       LEARNING_DATABASE_URL: `postgresql://learning_app@/${process.env['PGDATABASE'] ?? 'starbuddy_test'}?host=${process.env['PGHOST']}`,
       LEARNING_SERVICE_TOKEN: SERVICE_CRED, LEARNING_ADAPTER_AYA_URL: `http://127.0.0.1:${ayaPort}`, LEARNING_ADAPTER_AYA_TOKEN: AYA_CRED,
-      LEARNING_DIAGNOSIS_PRESENTER: 'synthetic' } }));
-    await waitFor(`${learningUrl}/internal/v1/diagnosis/sessions/${randomUUID()}?student_ref=${randomUUID()}`,
-                  { authorization: `Bearer ${SERVICE_CRED}` }, (s) => s === 404);
+      LEARNING_DIAGNOSIS_PRESENTER: 'synthetic', STARBUDDY_ALLOW_CANDIDATE_CONTRACT: '1' } }));
+    await waitFor(`${learningUrl}/internal/v1/diagnosis/sessions/${randomUUID()}`,
+                  { authorization: `Bearer ${SERVICE_CRED}`, 'x-student-ref': randomUUID() }, (s) => s === 404);
     learning.real = httpDiagnosisLearning({ baseUrl: learningUrl, token: SERVICE_CRED });
     // 学习服务客户端可被单个测试临时换掉（模拟不可用），其余时候走真实进程
     const proxy: DiagnosisLearning = {
@@ -101,7 +101,7 @@ describe('数学自适应诊断（BFF 学生端）', { skip: READY ? false : '�
       abandon: (...a) => (learning.override ?? learning.real!).abandon(...a),
     };
     server = createStarMapServer({ pool: h.bff, devAuth: true, log: (l) => logs.push(l),
-      diagnosis: { learning: proxy, retryDelaysMs: [20, 50], note: (e) => notes.push(e) } });
+      diagnosis: { learning: proxy, retryDelaysMs: [20, 50], note: (e) => notes.push(e), now: () => h.clockMs() } });
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
     base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   });
@@ -122,6 +122,20 @@ describe('数学自适应诊断（BFF 学生端）', { skip: READY ? false : '�
              raw: text };
   };
   const startBody = (key = randomUUID()) => ({ subject: 'aya', idempotency_key: key });
+  /** 把这一步的出题时间（与会话的续做时间）往前挪：模拟学生确实在这道题上花了这么久（学习服务按墙钟给用时封顶，S1）。只在测试库 */
+  const backdate = async (sid: string, seq: number, seconds: number) => {
+    const c = await h.su.connect();
+    try {
+      await c.query('BEGIN');
+      await c.query('SET LOCAL session_replication_role = replica');
+      const { rows } = await c.query(`UPDATE platform.diagnosis_step SET created_at = created_at - make_interval(secs => $3)
+                                       WHERE session_id = $1 AND seq = $2 AND status = 'presented' RETURNING created_at`, [sid, seq, seconds]);
+      if (rows[0]) await c.query('UPDATE platform.diagnosis_session SET resumed_at = least(resumed_at, $2) WHERE id = $1', [sid, rows[0].created_at]);
+      await c.query('COMMIT');
+    } finally {
+      c.release();
+    }
+  };
   const evidenceCount = async (student: string) =>
     Number((await h.su.query('SELECT count(*) FROM platform.evidence_event WHERE student_id = $1', [student])).rows[0].count);
 
@@ -132,13 +146,15 @@ describe('数学自适应诊断（BFF 学生端）', { skip: READY ? false : '�
       const v = await call('GET', url(stu.id, `/${sid}`), stu.account);
       assert.equal(v.status, 200, v.raw);
       // 前端视图只有题面、序号、题型与进度：没有题号、节点、答案、选题理由、对错、额度占用
-      assert.deepEqual(Object.keys(v.body).sort(), ['elapsed_sec', 'item_count', 'item_limit', 'session_id', 'status', 'step', 'time_budget_sec']);
+      assert.deepEqual(Object.keys(v.body).sort(), ['elapsed_sec', 'item_count', 'item_limit', 'process_tasks', 'session_id', 'status', 'step',
+                                                   'time_budget_sec']);
       assert.ok(!/item_id|node|answer|reason|verdict|usage|Q-FUN|Q-SPR|MATH\./.test(v.raw), v.raw);
       if (v.body['status'] === 'finished') return v.body;
       const step = v.body['step'];
       assert.deepEqual(Object.keys(step).sort(), ['item', 'kind', 'probe_recorded', 'seq', 'step_elapsed_sec']);
       if (opts.pauseAt === step.seq) {
         pausedAt.push(step.seq);
+        await backdate(sid, step.seq, 60);
         const p = await call('POST', url(stu.id, `/${sid}/pause`), stu.account, { seq: step.seq, step_elapsed_sec: 9, idempotency_key: randomUUID() });
         assert.equal(p.status, 200);
         const blocked = await call('POST', url(stu.id, `/${sid}/answer`), stu.account,
@@ -340,6 +356,153 @@ describe('数学自适应诊断（BFF 学生端）', { skip: READY ? false : '�
       assert.equal((await call('POST', url(stu.id, `/${sid}/answer`), stu.account, b)).status, 422);
     }
     assert.equal(await evidenceCount(stu.id), 0);
+    await call('POST', url(stu.id, `/${sid}/abandon`), stu.account, { idempotency_key: randomUUID() });
+  });
+
+  // ---------- 审查处理：计量结算（安全审查 B1、S10）、宵禁（B2） ----------
+  /** 取当前题并作答一道（每题前跳过探针）；返回作答后的会话状态 */
+  async function answerOne(stu: { id: string; account: string }, sid: string, key = randomUUID()) {
+    const v = await call('GET', url(stu.id, `/${sid}`), stu.account);
+    assert.equal(v.status, 200, v.raw);
+    const step = v.body['step'];
+    const body: Record<string, unknown> = { seq: step.seq, answer: answerFor(step.item.stem).answer, elapsed_sec: 30, idempotency_key: key };
+    if (step.kind !== 'adaptive') body['work'] = '合成过程：先列式再求解。';
+    const a = await call('POST', url(stu.id, `/${sid}/answer`), stu.account, body);
+    assert.equal(a.status, 200, a.raw);
+    return a.body['status'] as string;
+  }
+  const expireDue = async () => { await h.scheduler.query('SELECT platform.meter_expire_due(50)'); };
+
+  test('计量：第一道题判分成功即结算；之后预留过期（计量时钟推进超过 10 分钟）照样扣一次，做完不重复扣', async () => {
+    const fam = await createFamily(h, { source: 'pilot_virtual' });
+    const stu = fam.students[0]!;
+    const before = await counters(h, stu.id, 'diagnosis_full');
+    const sid = (await call('POST', url(stu.id), stu.account, startBody())).body['session_id'] as string;
+    assert.deepEqual((await reservationsByStudent(h, stu.id)).map((x) => x.state), ['reserved']);
+    await answerOne(stu, sid);
+    assert.deepEqual((await reservationsByStudent(h, stu.id)).map((x) => x.state), ['settled']);
+    await h.advance(15 * 60_000);  // 预留有效期 10 分钟（0008）：已结算的不受影响
+    await expireDue();
+    try {
+      let status = 'active';
+      for (let i = 0; i < 40 && status !== 'finished'; i++) status = await answerOne(stu, sid);
+      assert.equal(status, 'finished');
+    } finally {
+      await h.setClock(h.clockMs() - 15 * 60_000);
+    }
+    const end = await counters(h, stu.id, 'diagnosis_full');
+    assert.equal(end.settled, before.settled + 1);
+    assert.equal(end.reserved, before.reserved);
+    assert.deepEqual((await reservationsByStudent(h, stu.id)).map((x) => x.state), ['settled']);
+    assert.ok(await ledgerConsistent(h));
+  });
+
+  test('计量：答过题再放弃不退额度；没答题就放弃退额度', async () => {
+    const fam = await createFamily(h, { source: 'pilot_virtual', children: 2 });
+    const [a, b] = fam.students as [{ id: string; account: string }, { id: string; account: string }];
+    const baseA = await counters(h, a.id, 'diagnosis_full');
+    const sidA = (await call('POST', url(a.id), a.account, startBody())).body['session_id'] as string;
+    await answerOne(a, sidA);
+    for (const replay of ['false', 'true']) {
+      const x = await call('POST', url(a.id, `/${sidA}/abandon`), a.account, { idempotency_key: randomUUID() });
+      assert.equal(x.status, 200);
+      assert.equal(x.replayed, replay);
+    }
+    // 放弃后再取当前题（前端刷新）：仍按已结算处理，不释放
+    assert.equal((await call('GET', url(a.id, `/${sidA}`), a.account)).body['status'], 'abandoned');
+    assert.deepEqual((await reservationsByStudent(h, a.id)).map((x) => x.state), ['settled']);
+    assert.equal((await counters(h, a.id, 'diagnosis_full')).settled, baseA.settled + 1);
+    const baseB = await counters(h, b.id, 'diagnosis_full');
+    const sidB = (await call('POST', url(b.id), b.account, startBody())).body['session_id'] as string;
+    assert.equal((await call('POST', url(b.id, `/${sidB}/abandon`), b.account, { idempotency_key: randomUUID() })).status, 200);
+    assert.deepEqual((await reservationsByStudent(h, b.id)).map((x) => x.state), ['released']);
+    assert.deepEqual(await counters(h, b.id, 'diagnosis_full'), baseB);
+    assert.ok(await ledgerConsistent(h));
+  });
+
+  test('宵禁：续做、取题、探针、作答一律 402 curfew，并把进行中的会话置为暂停；白天续做同一个会话，不另占额度', async () => {
+    const fam = await createFamily(h, { source: 'pilot_virtual' });
+    const stu = fam.students[0]!;
+    const sid = (await call('POST', url(stu.id), stu.account, startBody())).body['session_id'] as string;
+    const v = await call('GET', url(stu.id, `/${sid}`), stu.account);
+    const seq = v.body['step'].seq as number;
+    const day = h.clockMs();
+    const status = async () => (await h.su.query('SELECT status FROM platform.diagnosis_session WHERE id = $1', [sid])).rows[0].status;
+    await h.setClock(Date.parse('2026-10-15T15:30:00Z'));  // 北京时间 23:30
+    try {
+      const probe = await call('POST', url(stu.id, `/${sid}/probe`), stu.account,
+                               { seq, prediction: 'yes', asked_at: new Date().toISOString(), idempotency_key: randomUUID() });
+      assert.equal(probe.status, 402);
+      assert.equal(probe.body['reason'], 'curfew');
+      assert.equal(await status(), 'paused');
+      // 暂停中：取题不挡（前端显示暂停页），作答、续做挡
+      assert.equal((await call('GET', url(stu.id, `/${sid}`), stu.account)).body['status'], 'paused');
+      const ans = await call('POST', url(stu.id, `/${sid}/answer`), stu.account,
+                             { seq, answer: answerFor(v.body['step'].item.stem).answer, elapsed_sec: 30, idempotency_key: randomUUID() });
+      assert.equal(ans.status, 402);
+      const resume = await call('POST', url(stu.id), stu.account, startBody());
+      assert.equal(resume.status, 402);
+      assert.equal(resume.body['reason'], 'curfew');
+      assert.equal(await status(), 'paused');
+      assert.equal(Number((await h.su.query('SELECT count(*) FROM insight.confidence_probe WHERE student_id = $1', [stu.id])).rows[0].count), 0);
+      assert.equal(Number((await h.su.query('SELECT count(*) FROM platform.attempt WHERE student_id = $1', [stu.id])).rows[0].count), 0);
+    } finally {
+      await h.setClock(day);
+    }
+    // 白天：续做同一个会话；然后在进行中遇到宵禁，取题即暂停
+    const resumed = await call('POST', url(stu.id), stu.account, startBody());
+    assert.equal(resumed.status, 200);
+    assert.equal(resumed.body['session_id'], sid);
+    assert.equal(await status(), 'active');
+    await h.setClock(Date.parse('2026-10-15T21:00:00Z'));  // 北京时间 05:00（次日），仍在缺省宵禁里
+    try {
+      const g = await call('GET', url(stu.id, `/${sid}`), stu.account);
+      assert.equal(g.status, 402);
+      assert.equal(g.body['reason'], 'curfew');
+      assert.equal(await status(), 'paused');
+    } finally {
+      await h.setClock(day);
+    }
+    assert.equal((await reservationsByStudent(h, stu.id)).length, 1);
+    assert.ok(notes.includes('curfew_paused'));
+    await call('POST', url(stu.id, `/${sid}/abandon`), stu.account, { idempotency_key: randomUUID() });
+  });
+
+  test('探针：同一步并发提交只写一条探针（派生键），后到的也记到同一条上', async () => {
+    const fam = await createFamily(h, { source: 'pilot_virtual' });
+    const stu = fam.students[0]!;
+    const sid = (await call('POST', url(stu.id), stu.account, startBody())).body['session_id'] as string;
+    const seq = (await call('GET', url(stu.id, `/${sid}`), stu.account)).body['step'].seq as number;
+    const rs = await Promise.all(['yes', 'no', 'unsure'].map((prediction) => call('POST', url(stu.id, `/${sid}/probe`), stu.account,
+      { seq, prediction, asked_at: new Date().toISOString(), idempotency_key: randomUUID() })));
+    assert.deepEqual(rs.map((r) => r.status), [200, 200, 200]);
+    const probes = await h.su.query('SELECT id FROM insight.confidence_probe WHERE student_id = $1', [stu.id]);
+    assert.equal(probes.rowCount, 1);
+    const step = await h.su.query('SELECT probe_id FROM platform.diagnosis_step WHERE session_id = $1 AND seq = $2', [sid, seq]);
+    assert.equal(step.rows[0].probe_id, probes.rows[0].id);
+    await call('POST', url(stu.id, `/${sid}/abandon`), stu.account, { idempotency_key: randomUUID() });
+  });
+
+  test('探针：写好探针后没记到步骤上（学习服务不可用），重新提交（新的请求键、别的预测）不留孤儿行，记的是第一条', async () => {
+    const fam = await createFamily(h, { source: 'pilot_virtual' });
+    const stu = fam.students[0]!;
+    const sid = (await call('POST', url(stu.id), stu.account, startBody())).body['session_id'] as string;
+    const seq = (await call('GET', url(stu.id, `/${sid}`), stu.account)).body['step'].seq as number;
+    learning.override = { ...learning.real!, probe: async () => ({ kind: 'unknown', reason: '503 BUSY' }) };
+    try {
+      const r1 = await call('POST', url(stu.id, `/${sid}/probe`), stu.account,
+                            { seq, prediction: 'yes', asked_at: new Date().toISOString(), idempotency_key: randomUUID() });
+      assert.equal(r1.status, 503);
+    } finally {
+      learning.override = null;
+    }
+    const r2 = await call('POST', url(stu.id, `/${sid}/probe`), stu.account,
+                          { seq, prediction: 'no', asked_at: new Date().toISOString(), idempotency_key: randomUUID() });
+    assert.equal(r2.status, 200, r2.raw);
+    const probes = await h.su.query('SELECT id, prediction FROM insight.confidence_probe WHERE student_id = $1', [stu.id]);
+    assert.deepEqual(probes.rows.map((r) => r.prediction), ['yes']);
+    const step = await h.su.query('SELECT probe_id FROM platform.diagnosis_step WHERE session_id = $1 AND seq = $2', [sid, seq]);
+    assert.equal(step.rows[0].probe_id, probes.rows[0].id);
     await call('POST', url(stu.id, `/${sid}/abandon`), stu.account, { idempotency_key: randomUUID() });
   });
 });

@@ -71,8 +71,15 @@ SM=(
   $'诊断：学习服务确定拒绝时不释放\tsrc/diagnosis/service.ts\t    if (holding) await releaseQuietly(deps, account, usage, \'upstream_rejected\');\t'
   $'诊断：结果未知就释放\tsrc/diagnosis/service.ts\t  if (r.kind === \'unknown\') return UNAVAILABLE;  // 不释放\t  if (r.kind === \'unknown\') { await releaseQuietly(deps, account, usage, \'unknown\'); return UNAVAILABLE; }  // 不释放'
   $'诊断：续做也另占一笔额度\tsrc/diagnosis/service.ts\t  if (open !== null) {\t  if (open === \'never\') {'
-  $'诊断：会话结束不结算\tsrc/diagnosis/service.ts\t  if (v.status === \'finished\') await settleQuietly(deps, account, v.usage_id);\t'
-  $'诊断：放弃不释放\tsrc/diagnosis/service.ts\tawait releaseQuietly(deps, account, r.body.usage_id, \'abandoned\');\t'
+  # 审查处理（安全审查 B1、B2、S3）：第一道题判分即结算、答过题放弃不退、没答题放弃才退；宵禁挡续做 / 探针 / 作答并暂停会话；探针键派生
+  $'诊断：第一道题判分后不结算（等会话结束）\tsrc/diagnosis/service.ts\t  await settleQuietly(deps, account, r.body.usage_id);\t  if (r.body.status === \'finished\') await settleQuietly(deps, account, r.body.usage_id);'
+  $'诊断：没答题放弃不释放\tsrc/diagnosis/service.ts\t    else await releaseQuietly(deps, account, v.usage_id, \'abandoned\');\t'
+  $'诊断：续做不查宵禁\tsrc/diagnosis/service.ts\tawait curfewGate(deps, account, student, open);  // 宵禁：续做\tnull;'
+  $'诊断：取当前题不查宵禁\tsrc/diagnosis/service.ts\tawait curfewGate(deps, account, student, session);  // 宵禁：取题\tnull;'
+  $'诊断：探针不查宵禁\tsrc/diagnosis/service.ts\tawait curfewGate(deps, account, student, session);  // 宵禁：探针\tnull;'
+  $'诊断：宵禁不把会话置为暂停\tsrc/diagnosis/service.ts\t  if (session !== null) {\t  if (session === \'never\') {'
+  $'诊断：宵禁口径不跨午夜\tsrc/diagnosis/service.ts\tCASE WHEN s < e THEN t >= s AND t < e ELSE t >= s OR t < e END\tt >= s AND t < e'
+  $'诊断：探针幂等键不按步骤派生\tsrc/diagnosis/service.ts\t[student, step.subject, step.item_id, input.prediction, input.asked_at, probeKey]\t[student, step.subject, step.item_id, input.prediction, input.asked_at, input.idempotency_key]'
   $'诊断：视图带出题号\tsrc/diagnosis/service.ts\t    seq: v.step.seq, kind: v.step.kind,\t    seq: v.step.seq, item_id: v.step.item_id, kind: v.step.kind,'
   $'诊断：日志记原始 student_id\tsrc/star-map/server.ts\trecord[\'student\'] = hashId(studentId); // 诊断\trecord[\'student\'] = studentId; // 诊断'
 )

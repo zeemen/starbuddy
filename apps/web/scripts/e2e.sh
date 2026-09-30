@@ -42,23 +42,32 @@ LEARNING_PORT="$(free_port)"
 AYA_CRED="$(python3 -c 'import secrets; print(secrets.token_hex(24))')"
 SVC_CRED="$(python3 -c 'import secrets; print(secrets.token_hex(24))')"
 LLOG="$(mktemp)"
+# 服务间凭据只经环境变量传：在子 shell 里 export 再 exec，不出现在任何进程的命令行（argv）里（安全审查 S8）。
+# 诊断作答走 v1 写入路径（候选契约 1.0.0）：学习服务与阿鸦适配器都开候选版（只在这个一次性测试环境）。
 ( cd "$ROOT/adapters/aya" || exit 1
-  exec env AYA_ADAPTER_SERVICE_TOKEN="$AYA_CRED" PORT="$AYA_PORT" node --no-warnings src/main.ts ) > /dev/null 2>&1 < /dev/null &
+  export AYA_ADAPTER_SERVICE_TOKEN="$AYA_CRED" PORT="$AYA_PORT" STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1
+  exec node --no-warnings src/main.ts ) > /dev/null 2>&1 < /dev/null &
 AYA_PID=$!
 ( cd "$ROOT/services/learning" || exit 1
-  exec env -i PATH="$PATH" LEARNING_ENV=test PORT="$LEARNING_PORT" LEARNING_DIAGNOSIS_PRESENTER=synthetic \
-    LEARNING_DATABASE_URL="postgresql://learning_app@/starbuddy_test?host=$PGHOST" LEARNING_SERVICE_TOKEN="$SVC_CRED" \
-    LEARNING_ADAPTER_AYA_URL="http://127.0.0.1:$AYA_PORT" LEARNING_ADAPTER_AYA_TOKEN="$AYA_CRED" "$PY" -m learning ) > "$LLOG" 2>&1 < /dev/null &
+  # 同 env -i：先清掉子 shell 继承的全部导出变量，只导出学习服务要的几项
+  keep_path="$PATH"
+  db_url="postgresql://learning_app@/starbuddy_test?host=$PGHOST"
+  while read -r v; do unset "$v" 2>/dev/null || true; done < <(compgen -e)
+  export PATH="$keep_path" LEARNING_ENV=test PORT="$LEARNING_PORT" LEARNING_DIAGNOSIS_PRESENTER=synthetic \
+    STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1 LEARNING_DATABASE_URL="$db_url" LEARNING_SERVICE_TOKEN="$SVC_CRED" \
+    LEARNING_ADAPTER_AYA_URL="http://127.0.0.1:$AYA_PORT" LEARNING_ADAPTER_AYA_TOKEN="$AYA_CRED"
+  exec "$PY" -m learning ) > "$LLOG" 2>&1 < /dev/null &
 LEARNING_PID=$!
 trap 'kill "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true; rm -f "$LLOG"' EXIT
 for _ in $(seq 1 80); do
   python3 -c "import socket,sys; ok=all(socket.socket().connect_ex(('127.0.0.1', p)) == 0 for p in ($LEARNING_PORT, $AYA_PORT)); sys.exit(0 if ok else 1)" && break
   sleep 0.25
 done
+# STARBUDDY_DEV_METER_CLOCK=daytime：诊断的宵禁判断与上面挪到白天的计量时钟同一时间轴（只在开发身份桩打开时认）
 ( cd "$ROOT/services/bff" || exit 1
-  exec env BFF_DATABASE_URL="postgresql://bff_app@/starbuddy_test?host=$PGHOST" PORT="$BFF_PORT" STARBUDDY_DEV_AUTH=1 \
-    BFF_LEARNING_URL="http://127.0.0.1:$LEARNING_PORT" BFF_LEARNING_TOKEN="$SVC_CRED" \
-    node --no-warnings src/star-map/main.ts ) > "$LOG" 2>&1 < /dev/null &
+  export BFF_DATABASE_URL="postgresql://bff_app@/starbuddy_test?host=$PGHOST" PORT="$BFF_PORT" STARBUDDY_DEV_AUTH=1 \
+    BFF_LEARNING_URL="http://127.0.0.1:$LEARNING_PORT" BFF_LEARNING_TOKEN="$SVC_CRED" STARBUDDY_DEV_METER_CLOCK=daytime
+  exec node --no-warnings src/star-map/main.ts ) > "$LOG" 2>&1 < /dev/null &
 BFF_PID=$!
 trap 'kill "$BFF_PID" "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true; rm -f "$LOG" "$LLOG"' EXIT
 for _ in $(seq 1 80); do

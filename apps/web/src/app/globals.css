@@ -79,6 +79,7 @@ a { color: inherit; }
 .review-result.error { font-weight: 700; }
 .review-list { list-style: none; padding: 0; }
 .payload { font-size: 0.8rem; white-space: pre-wrap; }
+.review-work { font-size: 0.9rem; white-space: pre-wrap; }
 .node-editor summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; }
 .inline-form { display: inline; }
 

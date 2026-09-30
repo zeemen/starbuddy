@@ -102,18 +102,30 @@ class IngestService:
             raise IngestError(400, "INVALID_REQUEST", "ingest does not match the contract", detail="; ".join(errors[:10]))
         return body["request"], body["ingest"]
 
-    async def ingest(self, method: str, body: object, version: str = "0.9.0") -> tuple[dict, bool]:
-        """返回 (摘要, 是否为重放)。"""
-        inner, ingest = self._unwrap(method, body, version)
-        request = self._validate_request(method, inner, version)
-        ctx = request["context"]
-        key = ctx["idempotency_key"]
+    @staticmethod
+    def _fingerprint(method: str, request: dict, ingest: dict | None) -> tuple[str, Attributes]:
         fp = request_fingerprint(method, request)
         attrs: Attributes = v0_attributes(method, request)
         if ingest is not None:
             attrs = derive(method, request, ingest)
             # 指纹含推导后的平台上下文：同 key 换输入通道、用途或等级算冲突；语义相同的不同写法得到同一指纹（契约审查建议 7）
             fp = sha256_hex({"request": fp, "ingest": {"channel": attrs.channel, "purpose": attrs.purpose, "level": attrs.evidence_level}})
+        return fp, attrs
+
+    def envelope_fingerprint(self, method: str, body: object, version: str) -> str:
+        """与 ingest 落库的请求指纹同一算法（供诊断会话比对“同一步是不是同一内容”，不调适配器、不落库）。"""
+        inner, ingest = self._unwrap(method, body, version)
+        assert isinstance(inner, dict)
+        return self._fingerprint(method, inner, ingest)[0]
+
+    async def ingest(self, method: str, body: object, version: str = "0.9.0") -> tuple[dict, bool]:
+        """返回 (摘要, 是否为重放)。"""
+        inner, ingest = self._unwrap(method, body, version)
+        request = self._validate_request(method, inner, version)
+        ctx = request["context"]
+        key = ctx["idempotency_key"]
+        fp, attrs = self._fingerprint(method, request, ingest)
+        if ingest is not None:
             attrs = Attributes(attrs.channel, attrs.evidence_level, attrs.purpose,
                                await store.map_version_for(self.pool, ctx["subject"], ctx.get("content_version")))
         attempts = [request["attempt"]] if method == "grade" else request["attempts"]

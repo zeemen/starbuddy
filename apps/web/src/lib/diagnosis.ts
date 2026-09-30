@@ -12,6 +12,8 @@ export interface DiagnosisView {
   time_budget_sec: number;
   item_count: number;
   item_limit: number;
+  /** 本次是否作答过过程题或讲解题：结束页据此决定说不说“老师会看你的过程”（不是对学生的结论） */
+  process_tasks: boolean;
   step: DiagnosisStep | null;
 }
 export type Answer = { text: string } | { choice: string[] };
@@ -19,7 +21,8 @@ export type Answer = { text: string } | { choice: string[] };
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 export const isKey = (s: unknown): s is string => typeof s === 'string' && UUID_V4.test(s);
 
-export type Result<T> = { ok: true; value: T } | { ok: false; status: number; code: string | null };
+/** reason：402 时 BFF 给的原因编码（例如 curfew = 宵禁时段） */
+export type Result<T> = { ok: true; value: T } | { ok: false; status: number; code: string | null; reason?: string | null };
 
 async function call<T>(account: string, student: string, method: 'GET' | 'POST', path: string, body?: unknown): Promise<Result<T>> {
   if (!isUuid(student)) return { ok: false, status: 403, code: 'FORBIDDEN' };
@@ -42,9 +45,9 @@ async function call<T>(account: string, student: string, method: 'GET' | 'POST',
     /* 非 JSON：按失败处理 */
   }
   if (!r.ok) {
-    const code = parsed && typeof parsed === 'object' && typeof (parsed as { code?: unknown }).code === 'string'
-      ? (parsed as { code: string }).code : null;
-    return { ok: false, status: r.status, code };
+    const field = (k: string): string | null => parsed && typeof parsed === 'object' && typeof (parsed as Record<string, unknown>)[k] === 'string'
+      ? (parsed as Record<string, string>)[k]! : null;
+    return { ok: false, status: r.status, code: field('code'), reason: field('reason') };
   }
   return { ok: true, value: parsed as T };
 }
@@ -54,13 +57,16 @@ export function pickView(v: DiagnosisView): DiagnosisView {
   const s = v.step;
   return {
     session_id: v.session_id, status: v.status, elapsed_sec: v.elapsed_sec, time_budget_sec: v.time_budget_sec,
-    item_count: v.item_count, item_limit: v.item_limit,
+    item_count: v.item_count, item_limit: v.item_limit, process_tasks: v.process_tasks === true,
     step: s === null ? null : {
       seq: s.seq, kind: s.kind, probe_recorded: s.probe_recorded, step_elapsed_sec: s.step_elapsed_sec,
       item: { format: s.item.format, stem: s.item.stem, ...(s.item.options ? { options: s.item.options.map((o) => ({ key: o.key, text: o.text })) } : {}) },
     },
   };
 }
+
+/** 宵禁时段（BFF 402 reason = curfew）：前端提示“今天先到这里” */
+export const isCurfew = (r: Result<unknown>): boolean => !r.ok && r.status === 402 && r.reason === 'curfew';
 
 export const startDiagnosis = (account: string, student: string, key: string) =>
   call<{ session_id: string; status: string }>(account, student, 'POST', '', { subject: 'aya', idempotency_key: key });

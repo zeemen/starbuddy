@@ -120,7 +120,9 @@ LEARNING_ADAPTER_AYA_URL=http://127.0.0.1:8787 LEARNING_ADAPTER_AYA_TOKEN=... .v
 
 ## 数学自适应诊断（`learning/diagnosis/`，specs/sie-02a-math-diagnosis，冲刺 3-L）
 - 内部接口 `/internal/v1/diagnosis/sessions[...]`（开始 / 续做、当前题、探针、作答、暂停、放弃），文档 `openapi/diagnosis-internal.v0.yaml`；只供 BFF 调用，服务间令牌鉴权。
-- 显式状态机与选题规则 `aya-diag-trace@0.1.0` 在 `engine.py`（纯函数，按步骤历史复算）；判分只经既有 grade 写入流程调阿鸦验证器；只写迁移 0027 两张表、证据与复核队列。
-- 题面：契约 `present_item` 签字前只有测试环境的合成题面（`LEARNING_DIAGNOSIS_PRESENTER=synthetic`，只允许 `LEARNING_ENV=test`）；不配时诊断接口 501。
+- 显式状态机与选题规则 `aya-diag-trace@0.1.0` 在 `engine.py`（纯函数，按步骤历史复算）；判分只经既有 v1 grade 写入流程（信封 `{request, ingest}`，键盘通道）调阿鸦验证器；只写迁移 0027 两张表、证据与复核队列。
+- 用时按墙钟封顶（`resumed_at`），作答幂等键记在步骤上（同键或同内容重放回原结果，否则 409 `ANSWER_CONFLICT`）；过程原文证据 ID 记在 `work_evidence_id`。
+- 题面：契约 `present_item` 签字前只有测试环境的合成题面（`LEARNING_DIAGNOSIS_PRESENTER=synthetic`，只允许 `LEARNING_ENV=test`、库名 `starbuddy_dev*` / `starbuddy_test*`，
+  并需 `STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1`：作答走候选契约 1.0.0）；不配时诊断接口 501。
   选题信息来自合成夹具（缺省）或知识服务（`LEARNING_DIAGNOSIS_SOURCE=knowledge`，见 `config.py`）。
-- `make diagnosis-mutation`：18 个变异，断言诊断测试能发现。
+- `make diagnosis-mutation`：31 个变异，断言诊断测试能发现。

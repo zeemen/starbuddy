@@ -297,12 +297,16 @@ export interface ClaimSource {
   created_at: string;
 }
 
-/** 诊断步骤（0027 过程观察）：只有步骤引用与判分引用；书写原文按证据 ID 另取（lessons 待人确认） */
+/** 诊断步骤（0027 过程观察）：步骤引用、判分引用与过程原文证据的引用（work_evidence_id）。
+ *  审核台后端的库角色目前读不到证据表，原文显示“待授权”（specs/sie-02a-math-diagnosis/lessons.md 待人确认） */
 export interface DiagnosisStepSource {
   kind: 'process' | 'explain';
   node_id: string;
   item_id: string | null;
   grade_result_id: string | null;
+  work_evidence_id: string | null;
+  /** 过程原文（审核台后端取到时才有；授权前恒为空） */
+  work_text?: string | null;
   evidence_ids: string[] | null;
   verdict: string | null;
   answered_at: string | null;

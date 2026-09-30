@@ -1,5 +1,7 @@
 // 复核任务详情（specs/review-queue-sprint2 设计要点 2）：任务字段、来源（判分的逐维分表，或判断的模板与状态），按状态给出领取、放回、结案。
-// 可见范围：只有不透明学生指针（student_ref）与结构化判分、证据 ID 数；不显示作答原文（后端也不给）与任何可识别信息。
+// 可见范围：只有不透明学生指针（student_ref）与结构化判分、证据 ID 数；不显示任何可识别信息。
+// 诊断过程观察（SIE-02a）：显示过程原文证据的引用；原文只给 staff，经审核台后端取——审核台的库角色目前读不到证据表，
+// 显示“原文待授权”（lessons 待人确认），不另开家长 / 学生可见的途径。
 // 结案只写码，不改分、不改掌握、不改判断（设计要点 3）；是否本人领取、结案码是否适用都由库函数核对，前端只按状态显示操作。
 import { notFound, redirect } from 'next/navigation';
 import { currentSession } from '../../../../lib/review-session.ts';
@@ -74,7 +76,12 @@ function DiagnosisStepView({ d }: { d: DiagnosisStepSource }) {
         <li>任务 {d.kind === 'process' ? '写出全过程' : '讲给老师听'} · 知识节点 <code>{d.node_id}</code> · 题目 <code>{d.item_id ?? '—'}</code></li>
         <li>最终答案的判分：{d.verdict ? VERDICT_LABEL[d.verdict] ?? d.verdict : '—'} · 证据 ID {d.evidence_ids?.length ?? 0} 个
           · 作答时间 {formatTime(d.answered_at)}</li>
+        <li>过程原文证据 {d.work_evidence_id ? <code data-testid="work-evidence-id">{d.work_evidence_id}</code> : '—'}</li>
       </ul>
+      <h3>{d.kind === 'process' ? '学生写的过程' : '学生讲给老师听的内容'}</h3>
+      {typeof d.work_text === 'string'
+        ? <pre className="review-work" data-testid="work-text">{d.work_text}</pre>
+        : <p className="muted" data-testid="work-text-pending">原文待授权：审核台暂时读不到过程原文（需人确认授权方式后开放），可先按证据 ID 记录。</p>}
       <p className="muted">过程部分不自动评分；结案只记“已看过程并记录”或“无需处理”，不改分、不改掌握。</p>
     </section>
   );

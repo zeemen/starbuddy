@@ -1,7 +1,9 @@
 // 数学自适应诊断组件与演示页的全部文案（SIE-02a，spec 设计要点 5、待人确认 #8）。
 // 面向学生的话术，属于 CLAUDE.md 必停项：定稿前需人设评审；tests/diagnosis.test.ts 用点点禁语表
 // （evals/persona/diandian/lexicon/forbidden.yaml）扫描这里的每一条，另查一遍不评价、不给结论的用词。
-// 诊断中不显示对错之外的任何评价（本组件连对错也不显示），结束页只说“完成了，老师会看你的过程”，不给结论（规则 11）。
+// 诊断中不显示对错之外的任何评价（本组件连对错也不显示），结束页不给结论（规则 11）：作答过过程题时说“完成了，老师会看你的过程”；
+// 放弃了、或本次没有选出过程题时用中性文案（不许诺“老师会看”，契约审查 B1；需人设评审）。
+// 宵禁时段（BFF 402 curfew）只说“今天先到这里”（安全审查 B2；需人设评审）。
 
 export const DIAGNOSIS_COPY = {
   heading: '数学：二次函数',
@@ -24,6 +26,8 @@ export const DIAGNOSIS_COPY = {
   paused: '已暂停，暂停期间不计时。',
   resume: '继续',
   finished: '完成了，老师会看你的过程。',
+  endedNeutral: '这一组题到这里结束了。',
+  curfew: '今天先到这里，下次接着做。',
   notSaved: '这次没有提交上，请再点一次。',
   unavailable: '现在还不能开始，请稍后再来。',
   needAnswer: '先写好答案再提交。',
@@ -42,7 +46,7 @@ export function allDiagnosisCopy(): string[] {
   return [
     c.heading, c.intro, c.starting, c.timerLabel, c.timerOf('03:20', '35:00'), c.stepLabel(3), c.stemHeading, c.choiceLegend,
     c.choiceLegendMulti, c.answerLabel, c.processHint, c.processLabel, c.explainHint, c.explainLabel, c.submit, c.submitting, c.pause,
-    c.paused, c.resume, c.finished, c.notSaved, c.unavailable, c.needAnswer, c.needWork,
+    c.paused, c.resume, c.finished, c.endedNeutral, c.curfew, c.notSaved, c.unavailable, c.needAnswer, c.needWork,
     DIAGNOSIS_DEMO_COPY.title, DIAGNOSIS_DEMO_COPY.note,
   ];
 }

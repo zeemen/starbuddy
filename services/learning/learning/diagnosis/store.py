@@ -28,6 +28,7 @@ class SessionRow:
     elapsed_sec: int
     item_count: int
     idempotency_key: str
+    resumed_at: datetime
 
 
 @dataclass
@@ -45,6 +46,8 @@ class StepRow:
     created_at: datetime
     verdict: str | None
     attempt_id: str | None
+    work_evidence_id: str | None = None
+    answer_key: str | None = None
 
     def done(self) -> Done:
         return Done(self.kind, self.node_id, self.item_id, self.reason_code, self.status,
@@ -52,7 +55,7 @@ class StepRow:
 
 
 SESSION_COLS = """id::text, student_id::text, subject::text, status, algorithm_version::text, map_version, usage_id::text,
-                  time_budget_sec, item_limit, elapsed_sec, item_count, idempotency_key::text"""
+                  time_budget_sec, item_limit, elapsed_sec, item_count, idempotency_key::text, resumed_at"""
 
 
 def _session(r) -> SessionRow | None:
@@ -95,6 +98,20 @@ async def set_status(conn, session_id: str, status: str) -> None:
             WHERE id = $1::uuid""", session_id, status)
 
 
+async def resume(conn, session_id: str) -> None:
+    """续做：恢复为进行中，并把 resumed_at 记为现在（服务端按墙钟给用时封顶，安全审查 S1；只增不减由 0027 守卫保证）。"""
+    await conn.execute(
+        "UPDATE platform.diagnosis_session SET status = 'active', resumed_at = greatest(resumed_at, now()) WHERE id = $1::uuid", session_id)
+
+
+async def wall_clock(conn, step_id: str) -> tuple[int, bool]:
+    """这一步从“出题或最近一次续做（取较晚者）”到现在的秒数（向上取整），以及续做是否晚于出题（是则暂停前的用时另计）。"""
+    r = await conn.fetchrow(
+        """SELECT ceil(extract(epoch FROM now() - greatest(st.created_at, s.resumed_at)))::int AS sec, s.resumed_at > st.created_at AS resumed
+             FROM platform.diagnosis_step st JOIN platform.diagnosis_session s ON s.id = st.session_id WHERE st.id = $1::uuid""", step_id)
+    return max(int(r["sec"] or 0), 0), bool(r["resumed"])
+
+
 async def add_progress(conn, session_id: str, elapsed: int) -> None:
     await conn.execute(
         "UPDATE platform.diagnosis_session SET elapsed_sec = elapsed_sec + $2, item_count = item_count + 1 WHERE id = $1::uuid",
@@ -104,7 +121,8 @@ async def add_progress(conn, session_id: str, elapsed: int) -> None:
 async def steps(conn, session_id: str) -> list[StepRow]:
     rows = await conn.fetch(
         """SELECT st.id::text, st.seq, st.kind, st.node_id, st.item_id::text, st.reason_code, st.status, st.probe_id::text,
-                  st.grade_result_id::text, st.elapsed_sec, st.created_at, g.verdict, g.attempt_id::text
+                  st.grade_result_id::text, st.elapsed_sec, st.created_at, g.verdict, g.attempt_id::text, st.work_evidence_id::text,
+                  st.answer_key::text
              FROM platform.diagnosis_step st LEFT JOIN platform.grade_result g ON g.id = st.grade_result_id
             WHERE st.session_id = $1::uuid ORDER BY st.seq""", session_id)
     return [StepRow(*r) for r in rows]
@@ -132,6 +150,23 @@ async def set_partial_elapsed(conn, step_id: str, elapsed: int) -> None:
         step_id, elapsed)
 
 
+async def set_answer_key(conn, step_id: str, key: str, elapsed: int) -> None:
+    """记下这一步作答请求的幂等键与封顶后的用时（判分前定下，重试时判分请求的指纹不变；安全审查 S1、S5）。"""
+    await conn.execute(
+        """UPDATE platform.diagnosis_step SET answer_key = $2::uuid, elapsed_sec = greatest(coalesce(elapsed_sec, 0), $3)
+            WHERE id = $1::uuid AND status = 'presented'""", step_id, key, elapsed)
+
+
+async def set_work_evidence(conn, step_id: str, evidence_id: str) -> None:
+    """过程题的书写原文证据引用（审核台按它取原文，契约审查 B1）。须在步骤记为已作答之前写（0027：已作答的步骤不能再改）。"""
+    await conn.execute(
+        "UPDATE platform.diagnosis_step SET work_evidence_id = $2::uuid WHERE id = $1::uuid AND status = 'presented'", step_id, evidence_id)
+
+
+async def work_text(conn, evidence_id: str) -> str | None:
+    return await conn.fetchval("SELECT payload ->> 'text' FROM platform.evidence_event WHERE evidence_id = $1::uuid", evidence_id)
+
+
 async def answer_step(conn, step_id: str, grade_result_id: str, elapsed: int) -> None:
     await conn.execute(
         """UPDATE platform.diagnosis_step SET status = 'answered', grade_result_id = $2::uuid, answered_at = now(), elapsed_sec = $3
@@ -144,6 +179,11 @@ async def probe(conn, probe_id: str):
              FROM insight.confidence_probe WHERE id = $1::uuid""", probe_id)
 
 
+async def probe_by_key(conn, student: str, key: str) -> str | None:
+    return await conn.fetchval(
+        "SELECT id::text FROM insight.confidence_probe WHERE student_id = $1::uuid AND idempotency_key = $2::uuid", student, key)
+
+
 async def student_grade(conn, student: str) -> int | None:
     return await conn.fetchval("SELECT grade FROM platform.student_profile WHERE id = $1::uuid", student)
 
@@ -153,12 +193,13 @@ async def item_admission(conn, subject: str, item_id: str) -> str | None:
                                subject, item_id)
 
 
-async def grade_requests(conn, prefix: str):
-    """这一步已经发过的判分请求（学习服务的幂等表，0007）。前缀里没有 LIKE 的通配符（会话 ID 与序号）。"""
-    return await conn.fetch(
+async def grade_requests(conn, keys: list[str]):
+    """这一步已经发过的判分请求（学习服务的幂等表，0007），按候选键的先后排序（keys 是这一步第 0、1、2… 次判分的键）。"""
+    rows = await conn.fetch(
         """SELECT idempotency_key, status, request_fingerprint, summary, (lease_until > now()) AS leased
-             FROM platform.ingest_request WHERE method = 'grade' AND idempotency_key LIKE $1 || '%'
-            ORDER BY length(idempotency_key), idempotency_key""", prefix)
+             FROM platform.ingest_request WHERE method = 'grade' AND idempotency_key = ANY($1::text[])""", keys)
+    order = {k: i for i, k in enumerate(keys)}
+    return sorted(rows, key=lambda r: order[r["idempotency_key"]])
 
 
 async def enqueue_process_observation(conn, *, subject: str, student: str, step_id: str) -> None:

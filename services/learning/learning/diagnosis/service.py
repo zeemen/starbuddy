@@ -5,11 +5,17 @@
 - 每一步：出题 → 探针（可跳过；由 BFF 以学生身份写 insight.confidence_probe，把 probe_id 交给这里记到步骤）→
   作答（经学习服务既有的 grade 写入流程调阿鸦验证器，证据、作答、判分在那里落库并幂等）→ 按规则选下一步。
 - 判分只来自验证器（规则 3）：这里只把 grade_result 的 ID 记到步骤上，对错只在复算选题时读 grade_result.verdict。
-- 一步的判分请求键 = diag-<会话>-<序号>-<n>：同一内容重放得到同一结果；上一次确定失败（例如验证器拒收）后换 n 重来；
+- 作答走 v1 写入路径（learning-internal v1 的 {request, ingest} 信封，与 /internal/v1/grade 同一流程）：channel = keypad，
+  证据等级按 attributes 的默认推导（键盘 A），purpose 取缺省 practice（契约里还没有“诊断”这个用途，lessons 待人确认）。
+- 一步的判分请求键 = 由（会话、序号、n）派生的 UUIDv4 形态的键：同一内容重放得到同一结果；上一次确定失败（例如验证器拒收）后换 n 重来；
   已成功过就不再判第二次（重放任一步不重复写证据）。
+- 作答的幂等键记到步骤的 answer_key（安全审查 S5）：同键重放回原结果；键不同而内容相同也回原结果；键不同且内容不同 → 409 ANSWER_CONFLICT。
+- 用时封顶（安全审查 S1）：记入的用时 = min(上报值, 暂停前已记的用时 + 现在 − max(出题时间, 最近一次续做时间))；
+  判分前把封顶后的用时与作答键一起记到步骤上，重试时判分请求的指纹不变。作答表里的用时也是封顶值。
 - 过程题、讲解题（process / explain）：最终答案同样由验证器判；书写原文由本服务记为一条 response_text 证据
-  （学生原文，不评分），步骤作答后以 process_observation 进统一复核队列（0027）。
-- 计量在 BFF（ADR 06）：会话记 usage_id；结束时 BFF 结算，放弃时 BFF 释放。本服务不预留、不结算。
+  （学生原文，不评分，准入固定 pending_review），证据 ID 记到步骤的 work_evidence_id（审核台按它取原文，契约审查 B1），
+  步骤作答后以 process_observation 进统一复核队列（0027）。
+- 计量在 BFF（ADR 06）：会话记 usage_id；BFF 在第一道题判分成功后结算，放弃时只有还没答过题才释放。本服务不预留、不结算。
 - 不算掌握度、不产生对学生 / 家长可见的结论（规则 11）：返回给 BFF 的只有题面、序号、进度与状态。
 """
 from __future__ import annotations
@@ -25,7 +31,6 @@ import asyncpg
 from .. import store as ingest_store
 from ..attributes import V0
 from ..errors import IngestError
-from ..fingerprint import request_fingerprint
 from ..service import IngestService
 from . import store
 from .engine import (ALGORITHM_VERSION, Event, HistoryMismatch, InvalidTransition, Params, State, derive_state, trace,
@@ -41,6 +46,17 @@ CONTENT_VERSION = {"region": "nanjing", "exam_year": 2027, "grade": 9, "textbook
                    "content_version": "0.1.0"}
 MAX_FILL = 200
 MAX_WORK = 20000
+GRADE_VERSION = "1.0.0"           # 作答走 v1 写入路径（信封 {request, ingest}）
+MAX_GRADE_TRIES = 8               # 同一步最多换几次判分键（每次都是上一次确定失败）
+INGEST = {"channel": "keypad"}    # 诊断作答是键盘输入；证据等级按默认推导（A）
+
+
+def v4_shaped(name: str) -> str:
+    """由名字确定地派生一个 UUIDv4 形态的键（v1 契约要求幂等键与 attempt_id 是小写 UUIDv4）。"""
+    b = bytearray(uuid.uuid5(store.STEP_NS, name).bytes)
+    b[6] = (b[6] & 0x0F) | 0x40
+    b[8] = (b[8] & 0x3F) | 0x80
+    return str(uuid.UUID(bytes=bytes(b)))
 
 
 def err(status: int, code: str, title: str, *, retryable: bool = False) -> IngestError:
@@ -153,8 +169,9 @@ class DiagnosisService:
                     if s is not None:
                         if s.status == "paused":
                             self._check(State.PAUSED, Event.RESUME)
-                            await store.set_status(conn, s.id, "active")
-                            s.status = "active"
+                        # 续做（暂停后，或进行中但隔了一段时间再来）：resumed_at 记为现在，之后的用时按墙钟封顶（S1）
+                        await store.resume(conn, s.id)
+                        s.status = "active"
                         await self._advance(conn, s)
                         return StartResult(s.id, s.usage_id, s.status, created=False, replayed=False)
                     grade = await store.student_grade(conn, student)
@@ -190,13 +207,15 @@ class DiagnosisService:
                 await self._advance(conn, s)
                 rows = await store.steps(conn, s.id)
                 cur = self._current(rows)
-            return self._view(s, cur)
+            return self._view(s, cur, rows)
 
-    def _view(self, s: store.SessionRow, cur: store.StepRow | None) -> dict:
+    def _view(self, s: store.SessionRow, cur: store.StepRow | None, rows: list[store.StepRow]) -> dict:
         state = derive_state(s.status, cur.done() if cur else None, bool(cur and cur.probe_id))
+        # process_tasks：本次是否出过过程题或讲解题（前端据此决定结束页说不说“老师会看你的过程”）；不是对学生的结论
         view: dict = {"session_id": s.id, "status": s.status, "state": state.value, "usage_id": s.usage_id,
                       "elapsed_sec": s.elapsed_sec, "time_budget_sec": s.time_budget_sec,
-                      "item_count": s.item_count, "item_limit": s.item_limit, "step": None}
+                      "item_count": s.item_count, "item_limit": s.item_limit,
+                      "process_tasks": any(r.kind in ("process", "explain") and r.status == "answered" for r in rows), "step": None}
         if cur is not None and s.status in ("active", "paused"):
             item = self.presenter.present(s.subject, cur.item_id or "")
             if item is None:
@@ -206,11 +225,15 @@ class DiagnosisService:
         return view
 
     # ---------- 探针 ----------
-    async def probe(self, student: str, session_id: str, seq: int, probe_id: str) -> dict:
-        if not UUID_RE.fullmatch(probe_id):
-            raise err(400, "INVALID_REQUEST", "probe_id must be a UUID")
+    async def probe(self, student: str, session_id: str, seq: int, probe_id: str | None, probe_key: str | None = None) -> dict:
+        if not UUID_RE.fullmatch(probe_id or probe_key or ""):
+            raise err(400, "INVALID_REQUEST", "probe_id or probe_key must be a UUID")
         async with ingest_store.learning_tx(self.pool) as conn:
             s = await self._locked(conn, student, session_id)
+            if probe_id is None:
+                probe_id = await store.probe_by_key(conn, student, probe_key or "")
+                if probe_id is None:
+                    raise err(422, "PROBE_MISMATCH", "no probe with this key for this student")
             rows = await store.steps(conn, s.id)
             step = next((r for r in rows if r.seq == seq), None)
             if step is None:
@@ -254,80 +277,134 @@ class DiagnosisService:
         return answer
 
     def _grade_body(self, s: store.SessionRow, step: store.StepRow, answer: dict, occurred_at: str, elapsed: int, key: str) -> dict:
-        return {
-            "context": {"request_id": str(uuid.uuid4()), "contract_version": "0.9.0", "subject": s.subject, "student_ref": s.student_id,
+        """v1 信封：插件的 GradeRequest（契约 1.0.0）+ 平台侧作答上下文（键盘作答）。attempt_id 由判分键确定地派生，重试不变。"""
+        request = {
+            "context": {"request_id": str(uuid.uuid4()), "contract_version": GRADE_VERSION, "subject": s.subject, "student_ref": s.student_id,
                         "data_class": "L2", "usage_id": s.usage_id, "idempotency_key": key, "content_version": dict(CONTENT_VERSION)},
-            "attempt": {"item_ref": f"{s.subject}:{step.item_id}", "occurred_at": occurred_at, "response": answer,
-                        "elapsed_sec": elapsed, "hint_level_used": 0},
+            "attempt": {"attempt_id": v4_shaped(f"{key}|attempt"), "item_ref": f"{s.subject}:{step.item_id}", "occurred_at": occurred_at,
+                        "response": answer, "elapsed_sec": elapsed, "hint_level_used": 0},
             "rubric_version": RUBRIC_VERSION,
         }
+        return {"request": request, "ingest": dict(INGEST)}
 
     @staticmethod
-    def _prefix(s: store.SessionRow, seq: int) -> str:
-        return f"diag-{s.id}-{seq:03d}-"
+    def _grade_keys(s: store.SessionRow, seq: int) -> list[str]:
+        """这一步第 0、1、2… 次判分请求的键（确定性：同一步在任何进程里都算出同一组键）。"""
+        return [v4_shaped(f"diag|{s.id}|{seq}|grade|{n}") for n in range(MAX_GRADE_TRIES)]
+
+    async def _occurred_at(self, conn, step: store.StepRow) -> str:
+        # 作答发生时间：有探针取探针写入时间（2-L 关联作答的时间窗以它为准），否则取出题时间；重试时不变，请求指纹也就不变
+        started = step.created_at
+        if step.probe_id:
+            p = await store.probe(conn, step.probe_id)
+            started = p["created_at"] if p is not None else started
+        return started.astimezone(timezone.utc).isoformat()
+
+    async def _capped(self, conn, step: store.StepRow, reported: int) -> int:
+        """用时封顶（安全审查 S1）：min(上报值, 暂停前已记的用时 + 现在 − max(出题时间, 最近一次续做时间))。"""
+        wall, resumed = await store.wall_clock(conn, step.id)
+        before = (step.elapsed_sec or 0) if resumed else 0
+        return max(0, min(reported, before + wall, 7200))
+
+    async def _same_content(self, conn, s: store.SessionRow, step: store.StepRow, answer: object, work: object) -> bool:
+        """键不同的请求是不是同一内容：按已成功的判分请求的指纹比（用时取步骤上已定的值），过程题另比书写原文。"""
+        if not isinstance(answer, dict):
+            return False
+        occurred_at = await self._occurred_at(conn, step)
+        for r in await store.grade_requests(conn, self._grade_keys(s, step.seq)):
+            if r["status"] != "succeeded":
+                continue
+            try:
+                fp = self.ingest.envelope_fingerprint(
+                    "grade", self._grade_body(s, step, answer, occurred_at, step.elapsed_sec or 0, r["idempotency_key"]), GRADE_VERSION)
+            except IngestError:
+                return False
+            if fp != r["request_fingerprint"]:
+                return False
+            if step.kind in ("process", "explain") and step.work_evidence_id is not None:
+                return work == await store.work_text(conn, step.work_evidence_id)
+            return True
+        return False
 
     async def _recover(self, conn, s: store.SessionRow, step: store.StepRow) -> bool:
-        for r in await store.grade_requests(conn, self._prefix(s, step.seq)):
+        for r in await store.grade_requests(conn, self._grade_keys(s, step.seq)):
             if r["status"] == "succeeded":
                 summary = json.loads(r["summary"])
-                # 用时以已落库的作答为准（作答表记了这次上报的用时）
+                # 用时以已落库的作答为准（作答表记的是封顶后的用时）
                 elapsed = await conn.fetchval("SELECT elapsed_sec FROM platform.attempt WHERE attempt_id = $1::uuid",
                                               summary["attempt_ids"][0])
                 await self._finish_step(conn, s, step, summary, max(elapsed or 0, step.elapsed_sec or 0), None, None)
                 return True
         return False
 
-    async def answer(self, student: str, session_id: str, seq: int, answer: object, work: object, elapsed_sec: object) -> dict:
+    def _replay(self, s: store.SessionRow, step: store.StepRow) -> dict:
+        return {"attempt_id": step.attempt_id, "probe_id": step.probe_id, "status": s.status, "usage_id": s.usage_id, "replayed": True}
+
+    async def answer(self, student: str, session_id: str, seq: int, answer: object, work: object, elapsed_sec: object,
+                     key: object) -> dict:
         if not isinstance(elapsed_sec, int) or isinstance(elapsed_sec, bool) or not 0 <= elapsed_sec <= 7200:
             raise err(422, "INVALID_ANSWER", "elapsed_sec must be an integer between 0 and 7200")
+        if not isinstance(key, str) or not UUID4_RE.fullmatch(key):
+            raise err(400, "INVALID_REQUEST", "idempotency_key must be a lowercase UUIDv4")
         # ---- 第一段（事务内）：核对状态，定判分请求 ----
         async with ingest_store.learning_tx(self.pool) as conn:
             s = await self._locked(conn, student, session_id)
             rows = await store.steps(conn, s.id)
             step = next((r for r in rows if r.seq == seq), None)
             if step is not None and step.status == "answered":
-                return {"attempt_id": step.attempt_id, "probe_id": step.probe_id, "status": s.status, "usage_id": s.usage_id, "replayed": True}
+                # 同键重放，或键不同而内容相同：回原结果；键不同且内容不同：冲突（S5）
+                if step.answer_key == key or await self._same_content(conn, s, step, answer, work):
+                    return self._replay(s, step)
+                raise err(409, "ANSWER_CONFLICT", "this step was already answered with different content")
             cur = self._current(rows)
             if step is None or cur is None or cur.seq != seq:
                 raise err(409, "STEP_NOT_CURRENT", "step is not the current one")
             self._check(derive_state(s.status, cur.done(), cur.probe_id is not None), Event.ANSWER)
             answer = self._validate_answer(s.subject, cur.item_id or "", cur.kind, answer, work)
-            elapsed = max(elapsed_sec, cur.elapsed_sec or 0)
-            # 作答发生时间：有探针取探针写入时间（2-L 关联作答的时间窗以它为准），否则取出题时间；重试时不变，请求指纹也就不变
-            started = cur.created_at
-            if cur.probe_id:
-                p = await store.probe(conn, cur.probe_id)
-                started = p["created_at"] if p is not None else started
-            occurred_at = started.astimezone(timezone.utc).isoformat()
-            prior = await store.grade_requests(conn, self._prefix(s, seq))
-            body = None
+            occurred_at = await self._occurred_at(conn, cur)
+            keys = self._grade_keys(s, seq)
+            prior = await store.grade_requests(conn, keys)
             recorded = None
             for r in prior:
                 if r["status"] == "succeeded":
                     recorded = json.loads(r["summary"])
                     break
-            if recorded is None:
+            body = None
+            if recorded is not None:
+                # 判分已成功、步骤没推进（上一次在两段之间中断）：同键或同内容才沿用已记录的结果
+                elapsed = cur.elapsed_sec or 0
+                if cur.answer_key != key and not await self._same_content(conn, s, cur, answer, work):
+                    raise err(409, "ANSWER_CONFLICT", "this step was already graded with different content")
+            else:
                 if any(r["status"] == "pending" and r["leased"] for r in prior):
                     raise err(503, "BUSY", "the answer to this step is being graded", retryable=True)
+                if cur.answer_key == key and cur.elapsed_sec is not None:
+                    elapsed = cur.elapsed_sec  # 同一请求重试：用第一次定下的封顶用时（判分请求的指纹不变）
+                else:
+                    # 与库里写入的一致（只增不减）：暂停前已记的用时不会因为这次上报得少而变少
+                    elapsed = max(await self._capped(conn, cur, elapsed_sec), cur.elapsed_sec or 0)
+                    await store.set_answer_key(conn, cur.id, key, elapsed)
                 n = len(prior)
                 for i, r in enumerate(prior):
                     cand = self._grade_body(s, cur, answer, occurred_at, elapsed, r["idempotency_key"])
-                    if request_fingerprint("grade", cand) == r["request_fingerprint"]:
+                    if self.ingest.envelope_fingerprint("grade", cand, GRADE_VERSION) == r["request_fingerprint"]:
                         n = i  # 同一内容上次没完成：沿用原键（学习服务幂等表接管或返回原结果）
                         break
-                body = self._grade_body(s, cur, answer, occurred_at, elapsed, f"{self._prefix(s, seq)}{n}")
-        # ---- grading（事务外）：经既有写入流程调阿鸦验证器；证据、作答、判分在那里落库并幂等 ----
+                if n >= MAX_GRADE_TRIES:
+                    raise err(422, "ANSWER_RETRIES_EXHAUSTED", "too many failed attempts to grade this step")
+                body = self._grade_body(s, cur, answer, occurred_at, elapsed, keys[n])
+        # ---- grading（事务外）：经既有 v1 写入流程调阿鸦验证器；证据、作答、判分在那里落库并幂等 ----
         replayed = recorded is not None  # 这一步已判过（上一次在两段之间中断）：沿用已记录的结果，不再判第二次
         if recorded is None:
             assert body is not None
-            recorded, _ = await self.ingest.ingest("grade", body, "0.9.0")
+            recorded, _ = await self.ingest.ingest("grade", body, GRADE_VERSION)
         # ---- 第二段（事务内）：记到步骤上，按规则选下一步 ----
         async with ingest_store.learning_tx(self.pool) as conn:
             s = await self._locked(conn, student, session_id)
             rows = await store.steps(conn, s.id)
             step = next(r for r in rows if r.seq == seq)
             if step.status == "answered":
-                return {"attempt_id": step.attempt_id, "probe_id": step.probe_id, "status": s.status, "usage_id": s.usage_id, "replayed": True}
+                return self._replay(s, step)
             await self._finish_step(conn, s, step, recorded, elapsed, work if isinstance(work, str) else None, occurred_at)
             return {"attempt_id": recorded["attempt_ids"][0], "probe_id": step.probe_id, "status": s.status, "usage_id": s.usage_id,
                     "replayed": replayed}
@@ -335,30 +412,34 @@ class DiagnosisService:
     async def _finish_step(self, conn, s: store.SessionRow, step: store.StepRow, summary: dict, elapsed: int, work: str | None,
                            occurred_at: str | None) -> None:
         grade_id = summary["grade_result_id"]
+        process = step.kind in ("process", "explain")
+        if process and work is not None and occurred_at is not None:
+            # 书写原文证据与它的引用要在步骤记为已作答之前写（0027：已作答的步骤不能再改）
+            await self._record_work(conn, s, step, work, occurred_at)
         await store.answer_step(conn, step.id, grade_id, elapsed)
         await store.add_progress(conn, s.id, elapsed)
         s.elapsed_sec += elapsed
         s.item_count += 1
-        if step.kind in ("process", "explain"):
-            if work is not None and occurred_at is not None:
-                await self._record_work(conn, s, step, work, occurred_at, summary)
+        if process:
             await store.enqueue_process_observation(conn, subject=s.subject, student=s.student_id, step_id=step.id)
         transition(State.GRADING, Event.GRADED)
         await self._advance(conn, s)
 
-    async def _record_work(self, conn, s: store.SessionRow, step: store.StepRow, work: str, occurred_at: str, summary: dict) -> None:
-        """过程题的书写原文：学生原文，客观记录，不评分；与这道题的作答同一时间、同一判分请求键，供复核按键找到。"""
-        admission = await store.item_admission(conn, s.subject, step.item_id or "")
+    async def _record_work(self, conn, s: store.SessionRow, step: store.StepRow, work: str, occurred_at: str) -> None:
+        """过程题的书写原文：学生原文，客观记录，不评分；准入固定 pending_review（等复核看过，契约审查建议 1）。
+        证据 ID 记到步骤的 work_evidence_id，审核台按它取原文（契约审查 B1）。"""
         key = None
-        for r in await store.grade_requests(conn, self._prefix(s, step.seq)):
+        for r in await store.grade_requests(conn, self._grade_keys(s, step.seq)):
             if r["status"] == "succeeded":
                 key = r["idempotency_key"]
-        e = {"evidence_id": str(uuid.uuid5(store.STEP_NS, f"{step.id}|work")), "occurred_at": occurred_at, "kind": "response_text",
-             "item_ref": f"{s.subject}:{step.item_id}", "payload": {"text": work}, "admission": admission or "pending_review"}
-        ctx = {"idempotency_key": key or f"{self._prefix(s, step.seq)}work",
+        evidence_id = str(uuid.uuid5(store.STEP_NS, f"{step.id}|work"))
+        e = {"evidence_id": evidence_id, "occurred_at": occurred_at, "kind": "response_text",
+             "item_ref": f"{s.subject}:{step.item_id}", "payload": {"text": work}, "admission": "pending_review"}
+        ctx = {"idempotency_key": key or v4_shaped(f"diag|{s.id}|{step.seq}|work"),
                "request_id": str(uuid.uuid5(store.STEP_NS, f"{step.id}|work-request"))}
         await ingest_store._insert_evidence(conn, e, student_id=s.student_id, subject=s.subject, method="grade", ctx=ctx, attrs=V0,
                                             evidence_kind=None)
+        await store.set_work_evidence(conn, step.id, evidence_id)
 
     # ---------- 暂停 / 放弃 ----------
     async def pause(self, student: str, session_id: str, seq: int | None, step_elapsed_sec: object) -> dict:
@@ -373,20 +454,22 @@ class DiagnosisService:
             cur = self._current(rows)
             self._check(derive_state(s.status, cur.done() if cur else None, bool(cur and cur.probe_id)), Event.PAUSE)
             if cur is not None and seq == cur.seq and step_elapsed_sec is not None:
-                await store.set_partial_elapsed(conn, cur.id, step_elapsed_sec)  # 这道题已用的时间：续做时接着算
+                # 这道题已用的时间（按墙钟封顶，S1）：续做时接着算
+                await store.set_partial_elapsed(conn, cur.id, await self._capped(conn, cur, step_elapsed_sec))
             await store.set_status(conn, s.id, "paused")
             return {"status": "paused", "replayed": False}
 
     async def abandon(self, student: str, session_id: str) -> dict:
         async with ingest_store.learning_tx(self.pool) as conn:
             s = await self._locked(conn, student, session_id)
+            # item_count：已作答的题数。BFF 据此决定放弃时退不退额度（答过题就不退，安全审查 B1）
             if s.status == "abandoned":
-                return {"status": "abandoned", "usage_id": s.usage_id, "replayed": True}
+                return {"status": "abandoned", "usage_id": s.usage_id, "item_count": s.item_count, "replayed": True}
             rows = await store.steps(conn, s.id)
             cur = self._current(rows)
             self._check(derive_state(s.status, cur.done() if cur else None, bool(cur and cur.probe_id)), Event.ABANDON)
             await store.set_status(conn, s.id, "abandoned")
-            return {"status": "abandoned", "usage_id": s.usage_id, "replayed": False}
+            return {"status": "abandoned", "usage_id": s.usage_id, "item_count": s.item_count, "replayed": False}
 
     # ---------- 内部：断点候选（给 KGE-04 / SIE-02b；不经 BFF，不对学生、家长展示） ----------
     async def break_points(self, session_id: str) -> dict:

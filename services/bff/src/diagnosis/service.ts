@@ -3,18 +3,24 @@
 // 只认学生本人：家长、其他学生、学生不存在一律 403（与 2-L 事件接口同一套错误码）；未登录 401 在 server.ts。
 // 返回给前端的只有题面、步骤序号、题型、进度与会话状态：不含答案、题号、节点、选题理由、对错（规则 3、11）。
 //
-// 计量（规则 4，沿用 0009 / 0015 的计量函数，不改规则）：
+// 计量（规则 4，沿用 0009 / 0015 的计量函数，不改规则；安全审查 B1）：
 //   - 开始：以学生身份预留 diagnosis_full（method = diagnose，幂等键 = 请求的幂等键，usage_id 由键派生），再请学习服务建会话；
 //     学习服务确定拒绝 → 释放；结果未知 → 同一请求重试，仍不确定就不结算、不释放（留给过期任务）；
-//   - 已有未结束的会话（暂停后续做）：不预留，直接续做同一个会话（不另占额度）；
-//   - 会话结束 → 结算（同一 usage_id 重复结算是幂等的）；放弃 → 释放。预留已过期时不结算（宁可少扣，同 meteredCall）。
-// 探针：BFF 以学生身份调 2-L 的 insight.record_confidence_probe（幂等键 = 请求的键），把 probe_id 交给学习服务记到步骤；
+//   - 第一道题判分成功 → 立即结算（预留有效期 10 分钟，远短于一次诊断；之后放弃也不退）；之后每次作答再结算一次是幂等的；
+//   - 已有未结束的会话（暂停后续做）：不预留，直接续做同一个会话（不另占额度）；续做当场到上限结束也结算（S10）；
+//   - 放弃：只有还没有任何已作答的题时才释放；答过题的放弃按已结算处理（再结算一次，幂等）。
+//   - 第一道题在预留过期（开始后 10 分钟）之后才交：按现有规则“宁可少扣”不结算（lessons 待人确认 #3：有效期调长或按段计量）。
+// 宵禁（安全审查 B2）：续做、取题、探针、作答入口以学生本人读 platform.student_time_guard（0015 已授 BFF 按 RLS 读），
+//   按 platform.meter_in_curfew 的同一口径（北京时间，缺省 22:00–06:00，跨午夜）判断；宵禁中先请学习服务把会话置为暂停，
+//   再回 402 reason = curfew。时钟与计量函数同一时间轴（deps.now，测试里注入；0015 没给 BFF 只读的宵禁函数，lessons 待人确认）。
+// 探针：BFF 以学生身份调 2-L 的 insight.record_confidence_probe，幂等键由（会话、序号）派生（安全审查 S3：并发提交只写一行，
+//   后到的内容不同时 23505，按派生键请学习服务找回同一条），把探针记到步骤；
 // 作答落库后按 2-L 的 insight.link_probe_attempt 关联（尽力而为：时间窗外、已关联时不影响作答）。
 import type { Pool } from 'pg';
 import { withAccount } from '../metering/db.ts';
 import { meteringFingerprint } from '../metering/fingerprint.ts';
 import { release, reserve, settle } from '../metering/meter.ts';
-import { usageIdFor } from '../metering/uuid.ts';
+import { usageIdFor, uuidv5 } from '../metering/uuid.ts';
 import { isUuid } from '../star-map/query.ts';
 import type { DiagnosisLearning, DiagOutcome, SessionView } from './learning-client.ts';
 
@@ -25,6 +31,8 @@ export interface DiagnosisDeps {
   retryDelaysMs?: number[];
   /** 计量与关联的旁路记录（测试断言用）；只收事件名 */
   note?: (event: string) => void;
+  /** 与数据库计量时钟同一时间轴（宵禁判断用；测试里注入） */
+  now?: () => number;
 }
 
 export interface Reply { status: number; body: unknown; headers?: Record<string, string> }
@@ -129,6 +137,32 @@ async function openSessionId(pool: Pool, account: string, student: string): Prom
   });
 }
 
+// ---------- 宵禁（安全审查 B2） ----------
+/** 与 platform.meter_in_curfew 同一口径：北京时间；家长设定的时段或缺省 22:00–06:00；start > end 表示跨午夜 */
+export async function inCurfew(pool: Pool, account: string, student: string, atMs: number): Promise<boolean> {
+  return withAccount(pool, account, async (c) => {
+    const { rows } = await c.query<{ curfew: boolean }>(
+      `SELECT CASE WHEN s < e THEN t >= s AND t < e ELSE t >= s OR t < e END AS curfew
+         FROM (SELECT ($2::timestamptz AT TIME ZONE 'Asia/Shanghai')::time AS t,
+                      coalesce(g.curfew_start, time '22:00') AS s, coalesce(g.curfew_end, time '06:00') AS e
+                 FROM (SELECT 1) one LEFT JOIN platform.student_time_guard g ON g.student_id = $1::uuid) x`,
+      [student, new Date(atMs).toISOString()]);
+    return rows[0]!.curfew === true;
+  });
+}
+
+export const CURFEW = problem(402, 'QUOTA_UNAVAILABLE', 'not available during curfew hours', { reason: 'curfew' });
+
+/** 宵禁中：先请学习服务把会话置为暂停（尽力而为），再回 402 curfew；不在宵禁回 null */
+async function curfewGate(deps: DiagnosisDeps, account: string, student: string, session: string | null): Promise<Reply | null> {
+  if (!(await inCurfew(deps.pool, account, student, (deps.now ?? Date.now)()))) return null;
+  if (session !== null) {
+    const p = await withRetry(deps, () => deps.learning.pause(student, session, null, null));
+    deps.note?.(p.kind === 'ok' ? 'curfew_paused' : `curfew_pause_${p.kind}`);
+  }
+  return CURFEW;
+}
+
 // ---------- 学习服务调用：结果未知时同一请求重试 ----------
 const DEFAULT_DELAYS = [300, 1000, 2000];
 async function withRetry<T>(deps: DiagnosisDeps, fn: () => Promise<DiagOutcome<T>>): Promise<DiagOutcome<T>> {
@@ -150,6 +184,7 @@ function fromFailure(p: { status: number; problem: { code?: string } }): Reply {
   if (p.status === 409 && ['STEP_NOT_CURRENT', 'INVALID_STATE', 'SESSION_INCONSISTENT'].includes(code)) {
     return problem(409, code, 'the session has moved on; fetch the current step');
   }
+  if (p.status === 409 && code === 'ANSWER_CONFLICT') return problem(409, code, 'this step was already answered with a different answer');
   if (p.status === 409) return KEY_REUSED;
   if (code === 'NO_TARGETS') return problem(422, 'NO_TARGETS', 'no diagnosis available for this grade yet');
   return INVALID;
@@ -175,10 +210,13 @@ export async function startDiagnosis(deps: DiagnosisDeps, account: string, stude
   const usage = usageIdFor(key);
   const open = await openSessionId(deps.pool, account, student);
   if (open !== null) {
-    // 续做：同一个会话，不预留（之前开始时已占过额度）
+    // 续做：宵禁中不续做（会话置为暂停）；同一个会话，不预留（之前开始时已占过额度）
+    const blocked = await curfewGate(deps, account, student, open);  // 宵禁：续做
+    if (blocked) return blocked;
     const r = await withRetry(deps, () => deps.learning.start(student, input.subject, usage, key));
     if (r.kind === 'unknown') return UNAVAILABLE;
     if (r.kind === 'failure') return fromFailure(r);
+    if (r.body.status === 'finished') await settleQuietly(deps, account, r.body.usage_id);  // 续做当场到上限结束也结算（S10）
     return { status: 200, body: { session_id: r.body.session_id, status: r.body.status }, headers: replayHeader(r.replayed) };
   }
   const fingerprint = meteringFingerprint('diagnose', { context: { subject: input.subject, student_ref: student }, mode: 'adaptive_session' });
@@ -218,12 +256,16 @@ export function publicView(v: SessionView): Record<string, unknown> {
             ...(v.step.item.options ? { options: v.step.item.options.map((o) => ({ key: o.key, text: o.text })) } : {}) },
   };
   return { session_id: v.session_id, status: v.status, elapsed_sec: v.elapsed_sec, time_budget_sec: v.time_budget_sec,
-           item_count: v.item_count, item_limit: v.item_limit, step };
+           item_count: v.item_count, item_limit: v.item_limit, process_tasks: v.process_tasks === true, step };
 }
 
-async function settleIfDone(deps: DiagnosisDeps, account: string, v: { status: string; usage_id: string }): Promise<void> {
+/** 会话结束的计量：结束 → 结算；放弃 → 没答过题才释放，答过题按已结算处理（再结算一次是幂等的） */
+async function settleIfDone(deps: DiagnosisDeps, account: string, v: { status: string; usage_id: string; item_count: number }): Promise<void> {
   if (v.status === 'finished') await settleQuietly(deps, account, v.usage_id);
-  if (v.status === 'abandoned') await releaseQuietly(deps, account, v.usage_id, 'abandoned');
+  if (v.status === 'abandoned') {
+    if (v.item_count > 0) await settleQuietly(deps, account, v.usage_id);
+    else await releaseQuietly(deps, account, v.usage_id, 'abandoned');
+  }
 }
 
 export async function currentStep(deps: DiagnosisDeps, account: string, student: string, session: string): Promise<Reply> {
@@ -231,13 +273,23 @@ export async function currentStep(deps: DiagnosisDeps, account: string, student:
   const r = await withRetry(deps, () => deps.learning.current(student, session));
   if (r.kind === 'unknown') return UNAVAILABLE;
   if (r.kind === 'failure') return fromFailure(r);
+  if (r.body.status === 'active') {
+    const blocked = await curfewGate(deps, account, student, session);  // 宵禁：取题
+    if (blocked) return blocked;
+  }
   await settleIfDone(deps, account, r.body);
   return { status: 200, body: publicView(r.body) };
 }
 
 // ---------- 探针 ----------
+/** 探针的幂等键由（会话、序号）派生：同一步只可能有一条探针（安全审查 S3） */
+export const DIAG_PROBE_NAMESPACE = '6c2f9d4e-1b7a-4e53-8f0c-2a9d5e7b3c61';
+export const probeKeyFor = (session: string, seq: number): string => uuidv5(DIAG_PROBE_NAMESPACE, `${session}|${seq}`);
+
 export async function submitProbe(deps: DiagnosisDeps, account: string, student: string, session: string, input: ProbeInput): Promise<Reply> {
   if (!(await ownsSession(deps.pool, account, student, session))) return FORBIDDEN;
+  const blocked = await curfewGate(deps, account, student, session);  // 宵禁：探针
+  if (blocked) return blocked;
   const cur = await withRetry(deps, () => deps.learning.current(student, session));
   if (cur.kind === 'unknown') return UNAVAILABLE;
   if (cur.kind === 'failure') return fromFailure(cur);
@@ -247,20 +299,22 @@ export async function submitProbe(deps: DiagnosisDeps, account: string, student:
   }
   // 这一步已经记过探针：只认第一次的预测（不再写新的探针行）
   if (step.probe_recorded) return { status: 200, body: { status: 'ok' }, headers: replayHeader(true) };
-  let probeId: string;
+  const probeKey = probeKeyFor(session, input.seq);
+  let ref: { probe_id: string } | { probe_key: string };
   try {
-    probeId = await withAccount(deps.pool, account, async (c) => (await c.query<{ id: string }>(
+    ref = { probe_id: await withAccount(deps.pool, account, async (c) => (await c.query<{ id: string }>(
       'SELECT id FROM insight.record_confidence_probe($1, $2::platform.subject, $3, $4, $5::timestamptz, $6::uuid)',
-      [student, step.subject, step.item_id, input.prediction, input.asked_at, input.idempotency_key])).rows[0]!.id);
+      [student, step.subject, step.item_id, input.prediction, input.asked_at, probeKey])).rows[0]!.id) };
   } catch (e) {
     const code = (e as { code?: string }).code ?? '';
     if (code === '42501') return FORBIDDEN;
-    if (code === '23505') return KEY_REUSED;
-    if (code === '54000') return problem(429, 'TOO_MANY', 'too many writes');
-    if (['22023', '23514', '22P02', '22007', '22008'].includes(code)) return INVALID;
-    throw e;
+    // 同一步已有一条探针（并发提交或上一次没记到步骤上）：不另写，按派生键请学习服务记那一条（只认第一次的预测）
+    if (code === '23505') ref = { probe_key: probeKey };
+    else if (code === '54000') return problem(429, 'TOO_MANY', 'too many writes');
+    else if (['22023', '23514', '22P02', '22007', '22008'].includes(code)) return INVALID;
+    else throw e;
   }
-  const r = await withRetry(deps, () => deps.learning.probe(student, session, input.seq, probeId));
+  const r = await withRetry(deps, () => deps.learning.probe(student, session, input.seq, ref));
   if (r.kind === 'unknown') return UNAVAILABLE;
   if (r.kind === 'failure') return fromFailure(r);
   return { status: 200, body: { status: 'ok' }, headers: replayHeader(r.replayed) };
@@ -269,8 +323,11 @@ export async function submitProbe(deps: DiagnosisDeps, account: string, student:
 // ---------- 作答 ----------
 export async function submitAnswer(deps: DiagnosisDeps, account: string, student: string, session: string, input: AnswerInput): Promise<Reply> {
   if (!(await ownsSession(deps.pool, account, student, session))) return FORBIDDEN;
+  const blocked = await curfewGate(deps, account, student, session);  // 宵禁：作答
+  if (blocked) return blocked;
   const r = await withRetry(deps, () => deps.learning.answer(student, session, {
-    seq: input.seq, answer: input.answer, elapsed_sec: input.elapsed_sec, ...(input.work !== undefined ? { work: input.work } : {}) }));
+    seq: input.seq, answer: input.answer, elapsed_sec: input.elapsed_sec, idempotency_key: input.idempotency_key,
+    ...(input.work !== undefined ? { work: input.work } : {}) }));
   if (r.kind === 'unknown') return UNAVAILABLE;
   if (r.kind === 'failure') return fromFailure(r);
   if (r.body.probe_id) {
@@ -283,7 +340,8 @@ export async function submitAnswer(deps: DiagnosisDeps, account: string, student
       deps.note?.(`probe_link_failed_${(e as { code?: string }).code ?? 'unknown'}`);
     }
   }
-  await settleIfDone(deps, account, r.body);
+  // 第一道题判分成功即结算（之后放弃不退；再结算是幂等的）：不等会话结束，免得预留先过期（安全审查 B1）
+  await settleQuietly(deps, account, r.body.usage_id);
   return { status: 200, body: { status: r.body.status }, headers: replayHeader(r.replayed) };
 }
 
@@ -301,6 +359,6 @@ export async function abandonSession(deps: DiagnosisDeps, account: string, stude
   const r = await withRetry(deps, () => deps.learning.abandon(student, session));
   if (r.kind === 'unknown') return UNAVAILABLE;
   if (r.kind === 'failure') return fromFailure(r);
-  await releaseQuietly(deps, account, r.body.usage_id, 'abandoned');
+  await settleIfDone(deps, account, r.body);  // 没答过题才释放；答过题不退
   return { status: 200, body: { status: r.body.status }, headers: replayHeader(r.replayed) };
 }

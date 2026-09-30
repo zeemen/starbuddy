@@ -9,7 +9,11 @@ info:
     （grading 只存在于一次请求之内）。会话与步骤存迁移 0027 的两张表；证据、作答、判分经既有 grade 写入流程落库（阿鸦验证器，规则 3）。
     选题规则 aya-diag-trace@0.1.0（确定性、算法版本入库）。学习服务不认学生身份：BFF 负责只认学生本人，这里只核对会话属于 student_ref
     （不属于与不存在同样 404 SESSION_NOT_FOUND）。计量在 BFF：会话只记 usage_id。
-    幂等：开始按 (student_ref, idempotency_key)；探针、作答、暂停、放弃以（会话、序号）为锚点，重放回原结果与响应头 idempotent-replayed: true。
+    幂等：开始按 (student_ref, idempotency_key)；探针、暂停、放弃以（会话、序号）为锚点，重放回原结果与响应头 idempotent-replayed: true；
+    作答另记幂等键（diagnosis_step.answer_key）：同键或同内容重放回原结果，键不同且内容不同 409 ANSWER_CONFLICT。
+    用时按墙钟封顶：min(上报值, 暂停前已记 + 现在 − max(出题时间, 最近一次续做时间))。
+    作答走 v1 写入路径（learning-internal v1 信封，channel = keypad），签字前需 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1；
+    合成题面只允许 LEARNING_ENV=test 且库名为 starbuddy_dev* / starbuddy_test*。
     鉴权：Bearer 服务间令牌（与 learning-internal 契约同一做法）。请求体上限 64 KB，拒绝未知键、NaN、重复键。
     没配合成题面（LEARNING_DIAGNOSIS_PRESENTER=synthetic，只允许 LEARNING_ENV=test）时一律 501 DIAGNOSIS_UNAVAILABLE。
 servers:
@@ -49,7 +53,8 @@ paths:
       operationId: getDiagnosisSession
       parameters:
         - { name: session_id, in: path, required: true, schema: { type: string, format: uuid } }
-        - { name: student_ref, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: x-student-ref, in: header, required: true, schema: { type: string, format: uuid },
+            description: 学生 ID 走请求头，不进 URL（访问日志里不留学生 ID）；放在 query 里 400 }
       description: 当前状态与当前题（题面来自题面提供者，不含答案）。判分成功而步骤未推进（上一请求中断）时按已记录的判分推进。
       responses:
         '200':
@@ -64,7 +69,9 @@ paths:
     post:
       operationId: recordDiagnosisProbe
       parameters: [{ name: session_id, in: path, required: true, schema: { type: string, format: uuid } }]
-      description: 把 BFF 以学生身份写好的 2-L 探针记到当前步骤（核对：同一学生、同一学科、同一道题、尚未关联作答）。
+      description: >
+        把 BFF 以学生身份写好的 2-L 探针记到当前步骤（核对：同一学生、同一学科、同一道题、尚未关联作答）。
+        probe_id 与 probe_key 二选一：BFF 写探针用（会话、序号）派生的幂等键，并发提交时后到的那次按键找回同一条（不留孤儿行）。
       requestBody:
         required: true
         content:
@@ -72,11 +79,12 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [student_ref, seq, probe_id]
+              required: [student_ref, seq]
               properties:
                 student_ref: { type: string, format: uuid }
                 seq: { type: integer }
                 probe_id: { type: string, format: uuid }
+                probe_key: { type: string, format: uuid }
       responses:
         '200': { $ref: '#/components/responses/Ok' }
         '404': { $ref: '#/components/responses/Problem' }
@@ -87,8 +95,9 @@ paths:
       operationId: answerDiagnosisStep
       parameters: [{ name: session_id, in: path, required: true, schema: { type: string, format: uuid } }]
       description: >
-        作答：经 grade 写入流程调阿鸦验证器（请求键 diag-<会话>-<序号>-<n>，同一内容重放不再判）；步骤记下判分引用，会话累计用时与题数，
-        按规则选下一步。过程题、讲解题的书写原文另记一条学生原文证据（不评分），步骤以 process_observation 进统一复核队列。不回对错。
+        作答：经 v1 grade 写入流程调阿鸦验证器（请求键由（会话、序号、n）派生，同一内容重放不再判）；步骤记下判分引用与作答幂等键，
+        会话累计用时（封顶后）与题数，按规则选下一步。过程题、讲解题的书写原文另记一条学生原文证据（不评分，准入 pending_review），
+        证据 ID 记到步骤的 work_evidence_id，步骤以 process_observation 进统一复核队列。不回对错。
       requestBody:
         required: true
         content:
@@ -96,13 +105,14 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [student_ref, seq, answer, elapsed_sec]
+              required: [student_ref, seq, answer, elapsed_sec, idempotency_key]
               properties:
                 student_ref: { type: string, format: uuid }
                 seq: { type: integer }
                 answer: { type: object, description: '{text} 或 {choice}，按题型核对' }
-                work: { type: string, maxLength: 20000 }
+                work: { type: string, maxLength: 20000, description: 过程题、讲解题必填。中断后重放须带同一段原文（学习服务不缓存原文）。 }
                 elapsed_sec: { type: integer, minimum: 0, maximum: 7200 }
+                idempotency_key: { type: string, description: 小写 UUIDv4（BFF 转来的前端作答键） }
       responses:
         '200':
           description: 作答已记录
@@ -117,8 +127,8 @@ paths:
                   probe_id: { type: [string, 'null'], format: uuid }
                   status: { enum: [active, paused, finished, abandoned] }
                   usage_id: { type: string, format: uuid, description: 会话结束时 BFF 据此结算 }
-        '409': { description: STEP_NOT_CURRENT、INVALID_STATE、IDEMPOTENCY_CONFLICT、SESSION_INCONSISTENT }
-        '422': { description: INVALID_ANSWER（不送验证器） }
+        '409': { description: STEP_NOT_CURRENT、INVALID_STATE、ANSWER_CONFLICT（同一步已用别的内容作答）、IDEMPOTENCY_CONFLICT、SESSION_INCONSISTENT }
+        '422': { description: INVALID_ANSWER（不送验证器）、ANSWER_RETRIES_EXHAUSTED }
         '502': { description: ADAPTER_RESULT_REJECTED（验证器结果没通过平台核对；换内容可再答） }
         '503': { description: BUSY（同一步正在判分）、KNOWLEDGE_UNAVAILABLE，可重试 }
   /internal/v1/diagnosis/sessions/{session_id}/pause:
@@ -156,13 +166,14 @@ paths:
                 student_ref: { type: string, format: uuid }
       responses:
         '200':
-          description: 已放弃（返回 usage_id 供 BFF 释放预留）
+          description: 已放弃（返回 usage_id 与已作答题数：没答过题 BFF 才释放预留，答过题不退）
           content:
             application/json:
               schema:
                 type: object
-                required: [status, usage_id]
-                properties: { status: { const: abandoned }, usage_id: { type: string, format: uuid } }
+                additionalProperties: false
+                required: [status, usage_id, item_count]
+                properties: { status: { const: abandoned }, usage_id: { type: string, format: uuid }, item_count: { type: integer } }
         '409': { description: INVALID_STATE（已结束） }
 components:
   securitySchemes:
@@ -171,7 +182,7 @@ components:
     SessionView:
       type: object
       additionalProperties: false
-      required: [session_id, status, state, usage_id, elapsed_sec, time_budget_sec, item_count, item_limit, step]
+      required: [session_id, status, state, usage_id, elapsed_sec, time_budget_sec, item_count, item_limit, process_tasks, step]
       properties:
         session_id: { type: string, format: uuid }
         status: { enum: [active, paused, finished, abandoned] }
@@ -181,6 +192,7 @@ components:
         time_budget_sec: { type: integer }
         item_count: { type: integer }
         item_limit: { type: integer }
+        process_tasks: { type: boolean, description: 本次是否已作答过过程题或讲解题（结束页据此决定文案；不是对学生的结论） }
         step:
           oneOf:
             - type: 'null'

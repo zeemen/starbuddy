@@ -39,10 +39,21 @@ def synthetic_answer(item_id: str, correct: bool) -> dict:
     return {"choice": [next(o["key"] for o in it["options"] if o["key"] not in it["answer"])]}
 
 
+@pytest.fixture(scope="module")
+def aya_v1(request):
+    """诊断作答走 v1 写入路径（候选契约 1.0.0）：本模块内学习服务与阿鸦适配器都开候选版（只在测试里）。"""
+    mp = pytest.MonkeyPatch()
+    mp.setenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", "1")
+    try:
+        yield request.getfixturevalue("aya_adapter")
+    finally:
+        mp.undo()
+
+
 @pytest.fixture
-async def dapi(pools, aya_adapter):  # noqa: F811
+async def dapi(pools, aya_v1):
     app_pool, _ = pools
-    s = make_settings(adapters={"aya": AdapterTarget(aya_adapter, AYA_CREDENTIAL)}, diagnosis_presenter="synthetic")
+    s = make_settings(adapters={"aya": AdapterTarget(aya_v1, AYA_CREDENTIAL)}, diagnosis_presenter="synthetic")
     app = create_app(s, pool=app_pool)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://learning.test", timeout=60) as c:
@@ -73,16 +84,30 @@ async def start(api, student: str, key: str | None = None, usage: str | None = N
         "student_ref": student, "subject": "aya", "usage_id": usage or str(uuid.uuid4()), "idempotency_key": key or str(uuid.uuid4())})
 
 
+async def backdate(admin, sid: str, seq: int, seconds: int) -> None:
+    """把这一步的出题时间往前挪（模拟学生确实在这道题上花了这么久；服务端按墙钟给用时封顶，S1）。"""
+    async with admin.acquire() as c, c.transaction():
+        # 只在测试库：绕过 0027 的“续做时间只增不减”守卫，把会话的续做时间一起挪到出题时间之前（墙钟起点取两者较晚者）
+        await c.execute("SET LOCAL session_replication_role = replica")
+        at = await c.fetchval("""UPDATE platform.diagnosis_step SET created_at = created_at - make_interval(secs => $3)
+                                  WHERE session_id = $1::uuid AND seq = $2 AND status = 'presented' RETURNING created_at""", sid, seq, seconds)
+        await c.execute("UPDATE platform.diagnosis_session SET resumed_at = least(resumed_at, $2) WHERE id = $1::uuid", sid, at)
+
+
+def cur_view(api, sid: str, student: str):
+    return api.get(f"/internal/v1/diagnosis/sessions/{sid}", headers={"x-student-ref": student})
+
+
 async def play(api, admin, student: str, mastery: set[str], *, seed: int = 11, probe: bool = True, pause_at: int | None = None,
                replay_each: bool = False, stop_at: int | None = None) -> dict:
-    """合成学生做完一次会话。pause_at：在这一步作答前暂停、再续做；replay_each：每步作答后原样重放一次。"""
+    """合成学生做完一次会话。pause_at：在这一步作答前暂停、再续做；replay_each：每步作答后原样重放一次，再换键同内容重放一次。"""
     rng = random.Random(seed)
     r = await start(api, student)
     assert r.status_code == 201, r.text
     sid = r.json()["session_id"]
     seen: list[dict] = []
     for _ in range(80):
-        v = (await api.get(f"/internal/v1/diagnosis/sessions/{sid}", params={"student_ref": student})).json()
+        v = (await api.get(f"/internal/v1/diagnosis/sessions/{sid}", headers={"x-student-ref": student})).json()
         assert "answer" not in json.dumps(v) and "reason" not in json.dumps(v) and "node" not in json.dumps(v)
         if v["status"] == "finished":
             return {"session_id": sid, "view": v, "seen": seen}
@@ -91,15 +116,17 @@ async def play(api, admin, student: str, mastery: set[str], *, seed: int = 11, p
             return {"session_id": sid, "view": v, "seen": seen}
         seen.append(step)
         if pause_at is not None and step["seq"] == pause_at:
+            await backdate(admin, sid, step["seq"], 60)  # 看题 60 秒后暂停：上报的 12 秒在墙钟之内，照记
             p = await api.post(f"/internal/v1/diagnosis/sessions/{sid}/pause", json={"student_ref": student, "seq": step["seq"],
                                                                                     "step_elapsed_sec": 12})
             assert p.status_code == 200 and p.json()["status"] == "paused"
             blocked = await api.post(f"/internal/v1/diagnosis/sessions/{sid}/answer", json={
-                "student_ref": student, "seq": step["seq"], "answer": synthetic_answer(step["item_id"], True), "elapsed_sec": 30})
+                "student_ref": student, "seq": step["seq"], "answer": synthetic_answer(step["item_id"], True), "elapsed_sec": 30,
+                "idempotency_key": str(uuid.uuid4())})
             assert blocked.status_code == 409 and blocked.json()["code"] == "INVALID_STATE"
             again = await start(api, student)  # 跨天续做：新的“开始”请求续做同一个会话，不新建、不另占额度
             assert again.status_code == 200 and again.json()["session_id"] == sid and again.json()["created"] is False
-            v2 = (await api.get(f"/internal/v1/diagnosis/sessions/{sid}", params={"student_ref": student})).json()
+            v2 = (await api.get(f"/internal/v1/diagnosis/sessions/{sid}", headers={"x-student-ref": student})).json()
             assert v2["step"]["seq"] == step["seq"] and v2["step"]["step_elapsed_sec"] == 12
         if probe:
             pid = await add_probe(admin, student, step["item_id"])
@@ -108,7 +135,9 @@ async def play(api, admin, student: str, mastery: set[str], *, seed: int = 11, p
             assert pr.status_code == 200, pr.text
         node = NODE_OF[step["item_id"]]
         sec = rng.randint(15, 90) if step["kind"] == "adaptive" else rng.randint(60, 180)
-        body = {"student_ref": student, "seq": step["seq"], "answer": synthetic_answer(step["item_id"], node in mastery), "elapsed_sec": sec}
+        await backdate(admin, sid, step["seq"], sec)  # 合成用时在墙钟之内：记入的就是上报值
+        body = {"student_ref": student, "seq": step["seq"], "answer": synthetic_answer(step["item_id"], node in mastery), "elapsed_sec": sec,
+                "idempotency_key": str(uuid.uuid4())}
         if step["kind"] != "adaptive":
             body["work"] = f"合成过程第 {step['seq']} 步：先写已知，再列式，最后求解。"
         a = await api.post(f"/internal/v1/diagnosis/sessions/{sid}/answer", json=body)
@@ -118,6 +147,13 @@ async def play(api, admin, student: str, mastery: set[str], *, seed: int = 11, p
             before = await counts(admin, student)
             a2 = await api.post(f"/internal/v1/diagnosis/sessions/{sid}/answer", json=body)
             assert a2.status_code == 200 and a2.headers["idempotent-replayed"] == "true" and a2.json()["attempt_id"] == a.json()["attempt_id"]
+            assert await counts(admin, student) == before
+            # 换一个键、内容相同：仍回原结果（BFF 与前端重试时会换键）；换键且内容不同：冲突（S5）
+            a3 = await api.post(f"/internal/v1/diagnosis/sessions/{sid}/answer", json=dict(body, idempotency_key=str(uuid.uuid4())))
+            assert a3.status_code == 200 and a3.headers["idempotent-replayed"] == "true" and a3.json()["attempt_id"] == a.json()["attempt_id"]
+            other = synthetic_answer(step["item_id"], node not in mastery)
+            a4 = await api.post(f"/internal/v1/diagnosis/sessions/{sid}/answer", json=dict(body, answer=other, idempotency_key=str(uuid.uuid4())))
+            assert a4.status_code == 409 and a4.json()["code"] == "ANSWER_CONFLICT", a4.text
             assert await counts(admin, student) == before
     raise AssertionError("session did not finish")
 
@@ -177,7 +213,20 @@ async def test_synthetic_student_full_session(dapi, pools, student, pg):
     assert [(x.kind, x.node_id, x.item_id, x.reason) for x in sim] == [(x.kind, x.node_id, x.item_id, x.reason) for x in steps]
     # 结束后：再答、再暂停都拒绝；诊断不产生对学生可见的结论（视图里没有对错与断点）
     assert out["view"]["step"] is None and set(out["view"]) == {"session_id", "status", "state", "usage_id", "elapsed_sec",
-                                                                 "time_budget_sec", "item_count", "item_limit", "step"}
+                                                                 "time_budget_sec", "item_count", "item_limit", "process_tasks", "step"}
+    assert out["view"]["process_tasks"] is True
+    # 作答走 v1 写入路径：键盘通道、证据等级按默认推导（A）；过程原文证据准入固定 pending_review，引用记在步骤上（契约 B1）
+    async with admin.acquire() as c:
+        ev = await c.fetch("""SELECT e.kind, e.channel, e.evidence_level, e.admission::text, e.evidence_id::text,
+                                     e.evidence_id IN (SELECT work_evidence_id FROM platform.diagnosis_step WHERE session_id = $2::uuid) AS work
+                                FROM platform.evidence_event e WHERE e.student_id = $1::uuid""", student, sid)
+        work_rows = await c.fetch("""SELECT kind, work_evidence_id::text FROM platform.diagnosis_step
+                                      WHERE session_id = $1::uuid AND status = 'answered' ORDER BY seq""", sid)
+    graded = [e for e in ev if not e["work"]]
+    assert graded and all(e["channel"] == "keypad" and e["evidence_level"] == "A" for e in graded)
+    works = [e for e in ev if e["work"]]
+    assert len(works) == len(proc) and all(e["kind"] == "response_text" and e["admission"] == "pending_review" for e in works)
+    assert all((r["work_evidence_id"] is not None) == (r["kind"] != "adaptive") for r in work_rows)
     r = await dapi.post(f"/internal/v1/diagnosis/sessions/{sid}/pause", json={"student_ref": student})
     assert r.status_code == 409
     # 过程观察在审核台走完“进队 → 领取 → 结案”（只能用“已看过程并记录”或“无需处理”，不能用判分的结案码）
@@ -188,6 +237,10 @@ async def test_synthetic_student_full_session(dapi, pools, student, pg):
         done = await close_loop(client, source_id=step_id, student_id=student, subject="aya", expect_reasons={"process_observation"},
                                 code="process_noted", wrong_code="upheld")
     assert done["source"]["kind"] == "process" and "reason_code" not in done["source"] and done["source"]["evidence_ids"]
+    # 审核台详情给出过程原文证据的引用（审核台角色读不到证据表，原文显示“待授权”，lessons 待人确认）
+    async with admin.acquire() as c:
+        wid = await c.fetchval("SELECT work_evidence_id::text FROM platform.diagnosis_step WHERE id = $1::uuid", step_id)
+    assert wid and done["source"]["work_evidence_id"] == wid
 
 
 async def test_same_input_twice_same_sequence_and_pause_resume(dapi, pools):
@@ -223,7 +276,7 @@ async def test_idempotent_start_probe_and_answer(dapi, pools, student):
     # 同一键换 usage_id：冲突
     assert (await start(dapi, student, key, str(uuid.uuid4()))).status_code == 409
     sid = r1.json()["session_id"]
-    v = (await dapi.get(f"/internal/v1/diagnosis/sessions/{sid}", params={"student_ref": student})).json()
+    v = (await dapi.get(f"/internal/v1/diagnosis/sessions/{sid}", headers={"x-student-ref": student})).json()
     step = v["step"]
     assert step["seq"] == 1 and step["kind"] == "adaptive" and v["state"] == "probing"
     # 探针：别的题的探针拒绝；同一探针重放 ok；换一条探针冲突
@@ -238,15 +291,15 @@ async def test_idempotent_start_probe_and_answer(dapi, pools, student):
     pid2 = await add_probe(admin, student, step["item_id"])
     r = await dapi.post(f"/internal/v1/diagnosis/sessions/{sid}/probe", json={"student_ref": student, "seq": 1, "probe_id": pid2})
     assert r.status_code == 409
-    v = (await dapi.get(f"/internal/v1/diagnosis/sessions/{sid}", params={"student_ref": student})).json()
+    v = (await dapi.get(f"/internal/v1/diagnosis/sessions/{sid}", headers={"x-student-ref": student})).json()
     assert v["state"] == "awaiting_answer"
     # 作答：格式不对 422（不送验证器）；过程说明只给过程题
-    bad_body = {"student_ref": student, "seq": 1, "answer": {"choice": ["Z"]}, "elapsed_sec": 20}
+    bad_body = {"student_ref": student, "seq": 1, "answer": {"choice": ["Z"]}, "elapsed_sec": 20, "idempotency_key": str(uuid.uuid4())}
     assert (await dapi.post(f"/internal/v1/diagnosis/sessions/{sid}/answer", json=bad_body)).status_code == 422
-    work_body = {"student_ref": student, "seq": 1, "answer": synthetic_answer(step["item_id"], True), "elapsed_sec": 20, "work": "x"}
+    work_body = {"student_ref": student, "seq": 1, "answer": synthetic_answer(step["item_id"], True), "elapsed_sec": 20, "work": "x", "idempotency_key": str(uuid.uuid4())}
     assert (await dapi.post(f"/internal/v1/diagnosis/sessions/{sid}/answer", json=work_body)).status_code == 422
     assert (await counts(admin, student))["attempts"] == 0
-    body = {"student_ref": student, "seq": 1, "answer": synthetic_answer(step["item_id"], True), "elapsed_sec": 20}
+    body = {"student_ref": student, "seq": 1, "answer": synthetic_answer(step["item_id"], True), "elapsed_sec": 20, "idempotency_key": str(uuid.uuid4())}
     a1 = await dapi.post(f"/internal/v1/diagnosis/sessions/{sid}/answer", json=body)
     before = await counts(admin, student)
     a2 = await dapi.post(f"/internal/v1/diagnosis/sessions/{sid}/answer", json=body)
@@ -269,8 +322,10 @@ async def test_recovery_between_grading_and_step_update(dapi, pools, student, mo
     _, admin = pools
     from learning.diagnosis import store as dstore
     sid = (await start(dapi, student)).json()["session_id"]
-    step = (await dapi.get(f"/internal/v1/diagnosis/sessions/{sid}", params={"student_ref": student})).json()["step"]
-    body = {"student_ref": student, "seq": 1, "answer": synthetic_answer(step["item_id"], False), "elapsed_sec": 33}
+    step = (await dapi.get(f"/internal/v1/diagnosis/sessions/{sid}", headers={"x-student-ref": student})).json()["step"]
+    body = {"student_ref": student, "seq": 1, "answer": synthetic_answer(step["item_id"], False), "elapsed_sec": 33,
+            "idempotency_key": str(uuid.uuid4())}
+    await backdate(admin, sid, 1, 40)
     real = dstore.answer_step
 
     async def boom(*a, **k):
@@ -282,14 +337,14 @@ async def test_recovery_between_grading_and_step_update(dapi, pools, student, mo
     mid = await counts(admin, student)
     assert mid["grades"] == 1 and mid["steps"] == 1  # 判分已落库，步骤没推进
     if resume_by == "current":
-        v = (await dapi.get(f"/internal/v1/diagnosis/sessions/{sid}", params={"student_ref": student})).json()
+        v = (await dapi.get(f"/internal/v1/diagnosis/sessions/{sid}", headers={"x-student-ref": student})).json()
         assert v["step"]["seq"] == 2 and v["item_count"] == 1
         assert (await counts(admin, student))["evidence"] == mid["evidence"]
     r = await dapi.post(f"/internal/v1/diagnosis/sessions/{sid}/answer", json=body)
     assert r.status_code == 200 and r.headers["idempotent-replayed"] == "true"
     after = await counts(admin, student)
     assert after["grades"] == 1 and after["evidence"] == mid["evidence"] and after["attempts"] == 1
-    v = (await dapi.get(f"/internal/v1/diagnosis/sessions/{sid}", params={"student_ref": student})).json()
+    v = (await dapi.get(f"/internal/v1/diagnosis/sessions/{sid}", headers={"x-student-ref": student})).json()
     assert v["step"]["seq"] == 2 and v["item_count"] == 1 and v["elapsed_sec"] == 33
 
 
@@ -298,12 +353,12 @@ async def test_auth_isolation_abandon_and_config(dapi, pools, student):
     sid = (await start(dapi, student)).json()["session_id"]
     other = await new_student(admin)
     # 没有令牌 401；别的学生读不到（与不存在同样 404）
-    r = await dapi.get(f"/internal/v1/diagnosis/sessions/{sid}", params={"student_ref": student}, headers={"authorization": "Bearer nope"})
+    r = await dapi.get(f"/internal/v1/diagnosis/sessions/{sid}", headers={"x-student-ref": student, "authorization": "Bearer nope"})
     assert r.status_code == 401
     for who in (other, "not-a-uuid"):
-        r = await dapi.get(f"/internal/v1/diagnosis/sessions/{sid}", params={"student_ref": who})
+        r = await dapi.get(f"/internal/v1/diagnosis/sessions/{sid}", headers={"x-student-ref": who})
         assert r.status_code == 404 and r.json()["code"] == "SESSION_NOT_FOUND"
-    r = await dapi.get(f"/internal/v1/diagnosis/sessions/{uuid.uuid4()}", params={"student_ref": student})
+    r = await dapi.get(f"/internal/v1/diagnosis/sessions/{uuid.uuid4()}", headers={"x-student-ref": student})
     assert r.status_code == 404
     # 未知键 400；非阿鸦学科 400
     r = await dapi.post("/internal/v1/diagnosis/sessions", json={"student_ref": student, "subject": "aya", "usage_id": str(uuid.uuid4()),
@@ -332,8 +387,8 @@ def test_synthetic_presenter_refused_outside_test_env():
         Settings.from_env({**base, "LEARNING_ENV": "test", "LEARNING_DIAGNOSIS_SOURCE": "knowledge"})
     s = Settings.from_env({**base, "LEARNING_ENV": "test", "LEARNING_DIAGNOSIS_SOURCE": "knowledge",
                            "LEARNING_KNOWLEDGE_URL": "http://127.0.0.1:8790", "LEARNING_KNOWLEDGE_TOKEN": "k" * 40,
-                           "LEARNING_DIAGNOSIS_TARGETS": '{"9": ["MATH.FUNC.QUAD.APPLY"]}', "LEARNING_DIAGNOSIS_MAP_VERSION": "0.1.0"})
-    assert s.knowledge is not None and s.diagnosis_targets == {9: ["MATH.FUNC.QUAD.APPLY"]}
+                           "LEARNING_DIAGNOSIS_TARGETS": '{"9": ["MATH.SYN.QUAD.APPLY"]}', "LEARNING_DIAGNOSIS_MAP_VERSION": "0.1.0"})
+    assert s.knowledge is not None and s.diagnosis_targets == {9: ["MATH.SYN.QUAD.APPLY"]}
     with pytest.raises(RuntimeError):
         Settings.from_env({**base, "LEARNING_ENV": "test", "LEARNING_DIAGNOSIS_SOURCE": "knowledge",
                            "LEARNING_KNOWLEDGE_URL": "http://10.0.0.8:8790", "LEARNING_KNOWLEDGE_TOKEN": "k" * 40,
@@ -350,3 +405,177 @@ async def test_diagnosis_unavailable_without_presenter(api, student):
 def test_params_default_match_migration():
     p = Params()
     assert (p.item_limit, p.time_budget_sec) == (20, 2100)  # 0027 的缺省值
+
+
+# ---------- 审查处理（安全审查 S1、S3、S5、S6，契约审查 B1、建议 4） ----------
+async def answer_step(api, sid: str, student: str, step: dict, elapsed: int, *, correct: bool = True, key: str | None = None):
+    body = {"student_ref": student, "seq": step["seq"], "answer": synthetic_answer(step["item_id"], correct), "elapsed_sec": elapsed,
+            "idempotency_key": key or str(uuid.uuid4())}
+    if step["kind"] != "adaptive":
+        body["work"] = "合成过程：先列式，再求解。"
+    return await api.post(f"/internal/v1/diagnosis/sessions/{sid}/answer", json=body)
+
+
+async def step_elapsed(admin, sid: str, seq: int) -> tuple[int, int]:
+    async with admin.acquire() as c:
+        r = await c.fetchrow("""SELECT st.elapsed_sec, a.elapsed_sec AS attempt_sec FROM platform.diagnosis_step st
+                                  JOIN platform.grade_result g ON g.id = st.grade_result_id
+                                  JOIN platform.attempt a ON a.attempt_id = g.attempt_id
+                                 WHERE st.session_id = $1::uuid AND st.seq = $2""", sid, seq)
+    return r["elapsed_sec"], r["attempt_sec"]
+
+
+async def test_elapsed_is_capped_by_wall_clock(dapi, pools, student):
+    """用时按墙钟封顶（S1）：上报 7200 秒只记墙钟；上报 0 秒记 0；暂停前的用时续做后接着算；作答表里也是封顶值。"""
+    _, admin = pools
+    sid = (await start(dapi, student)).json()["session_id"]
+    step = (await cur_view(dapi, sid, student)).json()["step"]
+    assert (await answer_step(dapi, sid, student, step, 7200)).status_code == 200
+    got, at = await step_elapsed(admin, sid, 1)
+    assert got == at and got <= 5  # 刚出题就交：只记墙钟上的几秒
+    step = (await cur_view(dapi, sid, student)).json()["step"]
+    await backdate(admin, sid, step["seq"], 300)
+    assert (await answer_step(dapi, sid, student, step, 0)).status_code == 200
+    assert await step_elapsed(admin, sid, step["seq"]) == (0, 0)  # 上报 0 秒：记 0（不往上补）
+    step = (await cur_view(dapi, sid, student)).json()["step"]
+    await backdate(admin, sid, step["seq"], 100)
+    assert (await answer_step(dapi, sid, student, step, 7200)).status_code == 200
+    got, at = await step_elapsed(admin, sid, step["seq"])
+    assert got == at and 100 <= got <= 105
+    # 暂停：看题 50 秒后暂停、上报 3000 秒 → 记 50 左右；续做把 resumed_at 记为现在；续做后马上交 7200 → 50 左右 + 几秒
+    step = (await cur_view(dapi, sid, student)).json()["step"]
+    await backdate(admin, sid, step["seq"], 50)
+    r = await dapi.post(f"/internal/v1/diagnosis/sessions/{sid}/pause", json={"student_ref": student, "seq": step["seq"], "step_elapsed_sec": 3000})
+    assert r.status_code == 200
+    v = (await cur_view(dapi, sid, student)).json()
+    assert 50 <= v["step"]["step_elapsed_sec"] <= 55
+    async with admin.acquire() as c:
+        before = await c.fetchval("SELECT resumed_at FROM platform.diagnosis_session WHERE id = $1::uuid", sid)
+    assert (await start(dapi, student)).json()["session_id"] == sid
+    async with admin.acquire() as c:
+        after = await c.fetchval("SELECT resumed_at FROM platform.diagnosis_session WHERE id = $1::uuid", sid)
+    assert after > before
+    assert (await answer_step(dapi, sid, student, step, 7200)).status_code == 200
+    got, at = await step_elapsed(admin, sid, step["seq"])
+    assert got == at and 50 <= got <= 60
+    async with admin.acquire() as c:
+        total = await c.fetchval("SELECT elapsed_sec FROM platform.diagnosis_session WHERE id = $1::uuid", sid)
+    assert total <= 5 + 0 + 105 + 60
+
+
+async def test_answer_key_conflict_and_retry(dapi, pools, student):
+    """作答冲突（S5）：同键重放回原结果；键不同、内容相同回原结果；键不同、内容不同 409；判分请求键是 UUIDv4 形态。"""
+    _, admin = pools
+    sid = (await start(dapi, student)).json()["session_id"]
+    step = (await cur_view(dapi, sid, student)).json()["step"]
+    key = str(uuid.uuid4())
+    a1 = await answer_step(dapi, sid, student, step, 20, key=key)
+    assert a1.status_code == 200 and a1.headers["idempotent-replayed"] == "false"
+    a2 = await answer_step(dapi, sid, student, step, 20, key=key)
+    assert a2.status_code == 200 and a2.headers["idempotent-replayed"] == "true" and a2.json() == a1.json()
+    a3 = await answer_step(dapi, sid, student, step, 45)  # 新键、同一答案（用时不同不算内容不同：用时取步骤上已定的值）
+    assert a3.status_code == 200 and a3.headers["idempotent-replayed"] == "true"
+    a4 = await answer_step(dapi, sid, student, step, 20, correct=False)
+    assert a4.status_code == 409 and a4.json()["code"] == "ANSWER_CONFLICT"
+    async with admin.acquire() as c:
+        ak = await c.fetchval("SELECT answer_key::text FROM platform.diagnosis_step WHERE session_id = $1::uuid AND seq = 1", sid)
+        gk = await c.fetch("""SELECT r.idempotency_key FROM platform.ingest_request r JOIN platform.attempt a ON a.request_idempotency_key = r.idempotency_key
+                               WHERE a.student_id = $1::uuid""", student)
+        grades = await c.fetchval("SELECT count(*) FROM platform.grade_result WHERE student_id = $1::uuid", student)
+    assert ak == key and grades == 1
+    from learning.diagnosis.service import UUID4_RE
+    assert gk and all(UUID4_RE.fullmatch(r["idempotency_key"]) for r in gk)
+
+
+async def test_probe_by_derived_key(dapi, pools, student):
+    """探针幂等（S3）：BFF 用（会话、序号）派生的键写探针；并发提交的后到者按键找回同一条探针记到步骤上。"""
+    _, admin = pools
+    sid = (await start(dapi, student)).json()["session_id"]
+    step = (await cur_view(dapi, sid, student)).json()["step"]
+    key = str(uuid.uuid4())
+    async with admin.acquire() as c:
+        pid = await c.fetchval("""INSERT INTO insight.confidence_probe (student_id, subject, item_id, prediction, asked_at, idempotency_key)
+                                  VALUES ($1::uuid, 'aya', $2, 'yes', now(), $3::uuid) RETURNING id::text""", student, step["item_id"], key)
+    url = f"/internal/v1/diagnosis/sessions/{sid}/probe"
+    r = await dapi.post(url, json={"student_ref": student, "seq": 1, "probe_key": key})
+    assert r.status_code == 200 and r.headers["idempotent-replayed"] == "false"
+    r = await dapi.post(url, json={"student_ref": student, "seq": 1, "probe_id": pid})
+    assert r.status_code == 200 and r.headers["idempotent-replayed"] == "true"
+    for bad in ({"student_ref": student, "seq": 1}, {"student_ref": student, "seq": 1, "probe_id": pid, "probe_key": key}):
+        assert (await dapi.post(url, json=bad)).status_code == 400
+    r = await dapi.post(url, json={"student_ref": student, "seq": 1, "probe_key": str(uuid.uuid4())})
+    assert r.status_code == 422 and r.json()["code"] == "PROBE_MISMATCH"
+
+
+async def test_student_ref_not_in_url_and_abandon_reports_answers(dapi, pools, student):
+    sid = (await start(dapi, student)).json()["session_id"]
+    r = await dapi.get(f"/internal/v1/diagnosis/sessions/{sid}", params={"student_ref": student})
+    assert r.status_code == 400
+    step = (await cur_view(dapi, sid, student)).json()["step"]
+    assert (await answer_step(dapi, sid, student, step, 10)).status_code == 200
+    r = await dapi.post(f"/internal/v1/diagnosis/sessions/{sid}/abandon", json={"student_ref": student})
+    assert r.status_code == 200 and r.json() == {"status": "abandoned", "usage_id": r.json()["usage_id"], "item_count": 1}
+    v = (await cur_view(dapi, sid, student)).json()
+    assert v["status"] == "abandoned" and v["process_tasks"] is False
+
+
+async def test_synthetic_presenter_needs_test_database_and_candidate(monkeypatch):
+    """合成题面除 LEARNING_ENV=test 外还要求库名 starbuddy_(dev|test)*（S6），并要求开候选契约（作答走 v1 写入路径）。"""
+    from learning.app import _check_diagnosis_env
+
+    class FakePool:
+        def __init__(self, name):
+            self.name = name
+
+        async def fetchval(self, _sql):
+            return self.name
+    monkeypatch.setenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", "1")
+    for ok in ("starbuddy_test", "starbuddy_dev", "starbuddy_test_ci"):
+        await _check_diagnosis_env(FakePool(ok))
+    for bad in ("learning_test", "starbuddy", "starbuddy_pilot", "prod_starbuddy_test", "starbuddy_testx"):
+        with pytest.raises(RuntimeError):
+            await _check_diagnosis_env(FakePool(bad))
+    monkeypatch.delenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT")
+    with pytest.raises(RuntimeError):
+        await _check_diagnosis_env(FakePool("starbuddy_test"))
+
+
+def test_internal_openapi_matches_api_keys():
+    """内部接口文档与 api.py 的请求键一致（契约审查建议 4）：每个 POST 的必填 / 可选键与 _keys(...) 的两个集合相同。"""
+    import re as _re
+
+    import yaml
+    doc = yaml.safe_load((Path(__file__).resolve().parents[1] / "openapi/diagnosis-internal.v0.yaml").read_text(encoding="utf-8"))
+    src = (Path(__file__).resolve().parents[1] / "learning/diagnosis/api.py").read_text(encoding="utf-8")
+    routes = _re.findall(r'@app\.post\("([^"]+)"\)(.*?)(?=@app\.|\Z)', src, _re.S)
+    assert len(routes) == 5
+    for path, body in routes:
+        m = _re.search(r"_keys\(b, (\{[^}]*\})(?:, (\{[^}]*\}))?\)", body)
+        assert m, path
+        req = set(eval(m.group(1)))  # noqa: S307 源码里的集合字面量
+        opt = set(eval(m.group(2))) if m.group(2) else set()
+        schema = doc["paths"][path]["post"]["requestBody"]["content"]["application/json"]["schema"]
+        assert set(schema["required"]) == req, path
+        assert set(schema["properties"]) == req | opt, path
+        assert schema["additionalProperties"] is False, path
+    # GET：学生 ID 在请求头
+    params = doc["paths"]["/internal/v1/diagnosis/sessions/{session_id}"]["get"]["parameters"]
+    assert {(p["name"], p["in"]) for p in params} == {("session_id", "path"), ("x-student-ref", "header")}
+    assert 'request.headers.get("x-student-ref"' in src
+
+
+async def test_internal_openapi_matches_responses(dapi, student):
+    import yaml
+    doc = yaml.safe_load((Path(__file__).resolve().parents[1] / "openapi/diagnosis-internal.v0.yaml").read_text(encoding="utf-8"))
+    view_schema = doc["components"]["schemas"]["SessionView"]
+    sid = (await start(dapi, student)).json()["session_id"]
+    v = (await cur_view(dapi, sid, student)).json()
+    assert set(v) == set(view_schema["properties"]) == set(view_schema["required"])
+    step_schema = view_schema["properties"]["step"]["oneOf"][1]
+    assert set(v["step"]) == set(step_schema["properties"]) == set(step_schema["required"])
+    a = await answer_step(dapi, sid, student, v["step"], 5)
+    ans = doc["paths"]["/internal/v1/diagnosis/sessions/{session_id}/answer"]["post"]["responses"]["200"]["content"]["application/json"]["schema"]
+    assert set(a.json()) == set(ans["required"]) == set(ans["properties"])
+    r = await dapi.post(f"/internal/v1/diagnosis/sessions/{sid}/abandon", json={"student_ref": student})
+    ab = doc["paths"]["/internal/v1/diagnosis/sessions/{session_id}/abandon"]["post"]["responses"]["200"]["content"]["application/json"]["schema"]
+    assert set(r.json()) == set(ab["required"]) == set(ab["properties"])

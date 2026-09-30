@@ -104,7 +104,10 @@ def register(app: FastAPI, authorized: Callable[[Request], bool], state: dict) -
     @app.get("/internal/v1/diagnosis/sessions/{session_id}")
     async def current(session_id: str, request: Request) -> JSONResponse:
         async def fn():
-            student = request.query_params.get("student_ref", "").lower()
+            # 学生 ID 走请求头，不进 URL（访问日志、代理日志里不留学生 ID；契约审查建议 9）
+            if "student_ref" in request.query_params:
+                raise IngestError(400, "INVALID_REQUEST", "student_ref goes in the x-student-ref header, not the URL")
+            student = request.headers.get("x-student-ref", "").lower()
             return 200, await svc().current(student, session_id.lower()), None
         return await run("current", request, fn)
 
@@ -112,10 +115,13 @@ def register(app: FastAPI, authorized: Callable[[Request], bool], state: dict) -
     async def probe(session_id: str, request: Request) -> JSONResponse:
         async def fn():
             b = await _body(request)
-            _keys(b, {"student_ref", "seq", "probe_id"})
-            if not (isinstance(b["student_ref"], str) and _int(b["seq"]) and isinstance(b["probe_id"], str)):
+            # probe_id 与 probe_key 二选一：BFF 写探针时遇到“同一步已有探针”（同一派生幂等键、内容不同）就按键找回那一条（S3）
+            _keys(b, {"student_ref", "seq"}, {"probe_id", "probe_key"})
+            ref = [k for k in ("probe_id", "probe_key") if k in b]
+            if not (isinstance(b["student_ref"], str) and _int(b["seq"]) and len(ref) == 1 and isinstance(b[ref[0]], str)):
                 raise IngestError(400, "INVALID_REQUEST", "bad field types")
-            out = await svc().probe(b["student_ref"].lower(), session_id.lower(), b["seq"], b["probe_id"].lower())
+            out = await svc().probe(b["student_ref"].lower(), session_id.lower(), b["seq"], b.get("probe_id", "").lower() or None,
+                                    b.get("probe_key", "").lower() or None)
             return 200, out, {"idempotent-replayed": "true" if out.pop("replayed") else "false"}
         return await run("probe", request, fn)
 
@@ -123,11 +129,11 @@ def register(app: FastAPI, authorized: Callable[[Request], bool], state: dict) -
     async def answer(session_id: str, request: Request) -> JSONResponse:
         async def fn():
             b = await _body(request)
-            _keys(b, {"student_ref", "seq", "answer", "elapsed_sec"}, {"work"})
+            _keys(b, {"student_ref", "seq", "answer", "elapsed_sec", "idempotency_key"}, {"work"})
             if not (isinstance(b["student_ref"], str) and _int(b["seq"])):
                 raise IngestError(400, "INVALID_REQUEST", "bad field types")
             out = await svc().answer(b["student_ref"].lower(), session_id.lower(), b["seq"], b["answer"], b.get("work"),
-                                     b["elapsed_sec"])
+                                     b["elapsed_sec"], b["idempotency_key"])
             return 200, out, {"idempotent-replayed": "true" if out.pop("replayed") else "false"}
         return await run("answer", request, fn)
 

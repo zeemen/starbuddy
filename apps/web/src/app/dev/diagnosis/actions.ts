@@ -5,7 +5,7 @@
 import { cookies, headers } from 'next/headers';
 import { DEV_COOKIE, devAccountFromCookie, devAuthEnabled, isLoopbackHost } from '../../../lib/dev-auth.ts';
 import {
-  answerDiagnosis, currentDiagnosis, isKey, pauseDiagnosis, probeDiagnosis, startDiagnosis, type Answer, type DiagnosisView,
+  answerDiagnosis, currentDiagnosis, isCurfew, isKey, pauseDiagnosis, probeDiagnosis, startDiagnosis, type Answer, type DiagnosisView,
 } from '../../../lib/diagnosis.ts';
 import { isUuid } from '../../../lib/star-map.ts';
 import { PREDICTION_OPTIONS, type Prediction } from '../../../probe/copy.ts';
@@ -27,36 +27,39 @@ function isAnswer(a: unknown): a is Answer {
     && o['choice'].every((k) => typeof k === 'string' && /^[A-Z]$/.test(k));
 }
 
-export async function startAction(student: string, key: string): Promise<{ ok: boolean; sessionId?: string }> {
+// curfew：宵禁时段（BFF 402 reason = curfew，会话已置为暂停），组件显示“今天先到这里”
+export async function startAction(student: string, key: string): Promise<{ ok: boolean; sessionId?: string; curfew?: boolean }> {
   const who = await account();
   if (!who || !isUuid(student) || !isKey(key)) return { ok: false };
   const r = await startDiagnosis(who, student, key);
-  return r.ok ? { ok: true, sessionId: r.value.session_id } : { ok: false };
+  return r.ok ? { ok: true, sessionId: r.value.session_id } : { ok: false, curfew: isCurfew(r) };
 }
 
-export async function currentAction(student: string, session: string): Promise<{ ok: boolean; view?: DiagnosisView }> {
+export async function currentAction(student: string, session: string): Promise<{ ok: boolean; view?: DiagnosisView; curfew?: boolean }> {
   const who = await account();
   if (!who || !isUuid(student) || !isUuid(session)) return { ok: false };
   const r = await currentDiagnosis(who, student, session);
-  return r.ok ? { ok: true, view: r.value } : { ok: false };
+  return r.ok ? { ok: true, view: r.value } : { ok: false, curfew: isCurfew(r) };
 }
 
-export async function probeAction(student: string, session: string, seq: number, prediction: Prediction, key: string): Promise<{ ok: boolean }> {
+export async function probeAction(student: string, session: string, seq: number, prediction: Prediction, key: string): Promise<{ ok: boolean; curfew?: boolean }> {
   const who = await account();
   if (!who || !isUuid(student) || !isUuid(session) || !isSeq(seq) || !isKey(key) || !PREDICTION_OPTIONS.some((o) => o.code === prediction)) {
     return { ok: false };
   }
-  return { ok: (await probeDiagnosis(who, student, session, seq, prediction, key)).ok };
+  const r = await probeDiagnosis(who, student, session, seq, prediction, key);
+  return r.ok ? { ok: true } : { ok: false, curfew: isCurfew(r) };
 }
 
 export async function answerAction(student: string, session: string, seq: number, answer: Answer, work: string | null, elapsedSec: number,
-  key: string): Promise<{ ok: boolean }> {
+  key: string): Promise<{ ok: boolean; curfew?: boolean }> {
   const who = await account();
   if (!who || !isUuid(student) || !isUuid(session) || !isSeq(seq) || !isKey(key) || !isAnswer(answer) || !isSec(elapsedSec)
       || (work !== null && (typeof work !== 'string' || work.length === 0 || work.length > 20000))) {
     return { ok: false };
   }
-  return { ok: (await answerDiagnosis(who, student, session, seq, answer, work, elapsedSec, key)).ok };
+  const r = await answerDiagnosis(who, student, session, seq, answer, work, elapsedSec, key);
+  return r.ok ? { ok: true } : { ok: false, curfew: isCurfew(r) };
 }
 
 export async function pauseAction(student: string, session: string, seq: number | null, stepElapsedSec: number, key: string): Promise<{ ok: boolean }> {

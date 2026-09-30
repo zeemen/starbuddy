@@ -10,10 +10,15 @@ info:
     返回给前端的只有题面、步骤序号、题型与进度（已用秒数、上限、题数），不含答案、题号、知识节点、选题理由与对错；
     诊断不产生任何对学生、家长可见的结论（CLAUDE.md 规则 3、11）。判分只来自阿鸦验证器，经学习服务落库。
     计量（规则 4）：开始时以学生身份预留一次 diagnosis_full（幂等键即请求的 idempotency_key，usage_id 由键派生，迁移 0009），
-    会话结束结算、放弃或学习服务确定拒绝时释放；已有暂停的会话时“开始”即续做同一个会话，不另占额度；
+    第一道题判分成功即结算（之后放弃不退）；放弃时只有还没答过题才释放；学习服务确定拒绝时释放；
+    已有未结束的会话时“开始”即续做同一个会话，不另占额度（续做当场结束也结算）；
     学习服务结果未知时回 503 且不释放，同一请求重试会找回同一笔预留与同一个会话。
-    幂等：开始按 idempotency_key；探针按 idempotency_key 写 2-L 探针，同一步只认第一次；作答、暂停、放弃以（会话、步骤序号）为幂等锚点
-    （请求里的 idempotency_key 只做格式核对），同一步重放不重复判分、不重复写证据，响应头 `idempotent-replayed: true`。
+    宵禁（北京时间，家长设定或缺省 22:00–06:00）：开始、续做、取当前题（进行中时）、探针、作答都回 402 reason = curfew，
+    并把进行中的会话置为暂停。
+    幂等：开始按 idempotency_key；探针的写入键由（会话、步骤序号）派生，同一步只认第一次（请求里的 idempotency_key 只做格式核对）；
+    作答按 idempotency_key（记到步骤上）：同键或同内容重放回原结果，键不同且内容不同 409 ANSWER_CONFLICT；
+    暂停、放弃以（会话、步骤序号）为幂等锚点；同一步重放不重复判分、不重复写证据，响应头 `idempotent-replayed: true`。
+    过程题、讲解题的作答中断后重试，须带同一段原文重放（服务端不缓存原文）。
     题面在契约 present_item 签字前只有测试环境的合成题面（学习服务 LEARNING_ENV=test）。
     身份来源是开发桩（x-dev-account-id，只在 STARBUDDY_DEV_AUTH=1 且只监听 loopback 时生效），4-H 用真实会话替换。请求体上限 16 KB。
 servers:
@@ -53,7 +58,9 @@ paths:
       - $ref: '#/components/parameters/DevAccount'
     get:
       operationId: getDiagnosisCurrent
-      description: 当前题与进度。会话结束时 step 为空（结束页只说“完成了，老师会看你的过程”，不给结论）。
+      description: >
+        当前题与进度。会话结束时 step 为空；结束页不给结论：作答过过程题（process_tasks 为真）时说“完成了，老师会看你的过程”，
+        否则（例如放弃、没有选出过程题）用中性文案。
       responses:
         '200':
           description: 当前状态
@@ -62,6 +69,11 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/SessionView' }
         '401': { $ref: '#/components/responses/Problem' }
+        '402':
+          description: 宵禁时段（reason = curfew），进行中的会话已置为暂停
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/QuotaProblem' }
         '403': { $ref: '#/components/responses/Problem' }
         '503': { $ref: '#/components/responses/Problem' }
   /bff/v0/students/{student_id}/diagnosis/sessions/{session_id}/probe:
@@ -80,6 +92,11 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Ok' }
         '401': { $ref: '#/components/responses/Problem' }
+        '402':
+          description: 宵禁时段（reason = curfew），进行中的会话已置为暂停
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/QuotaProblem' }
         '403': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
         '422': { $ref: '#/components/responses/Problem' }
@@ -103,6 +120,11 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Status' }
         '401': { $ref: '#/components/responses/Problem' }
+        '402':
+          description: 宵禁时段（reason = curfew），进行中的会话已置为暂停
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/QuotaProblem' }
         '403': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
         '422': { $ref: '#/components/responses/Problem' }
@@ -134,7 +156,7 @@ paths:
       - $ref: '#/components/parameters/DevAccount'
     post:
       operationId: abandonDiagnosis
-      description: 放弃本次诊断：释放开始时的额度预留；之后可以重新开始。
+      description: 放弃本次诊断：还没答过题时释放开始时的额度预留，答过题不退；之后可以重新开始。
       requestBody:
         required: true
         content:
@@ -221,7 +243,7 @@ components:
     SessionView:
       type: object
       additionalProperties: false
-      required: [session_id, status, elapsed_sec, time_budget_sec, item_count, item_limit, step]
+      required: [session_id, status, elapsed_sec, time_budget_sec, item_count, item_limit, process_tasks, step]
       properties:
         session_id: { type: string, format: uuid }
         status: { enum: [active, paused, finished, abandoned] }
@@ -229,6 +251,7 @@ components:
         time_budget_sec: { type: integer, description: 缺省 2100（35 分钟，待人确认 #4）。 }
         item_count: { type: integer, minimum: 0 }
         item_limit: { type: integer, description: 缺省 20。 }
+        process_tasks: { type: boolean, description: 本次是否作答过过程题或讲解题（结束页选文案用；不是对学生的结论）。 }
         step:
           oneOf:
             - type: 'null'
@@ -265,7 +288,7 @@ components:
           type: string
           description: >
             UNAUTHENTICATED、FORBIDDEN、INVALID、IDEMPOTENCY_KEY_REUSED、STEP_NOT_CURRENT（会话已推进，重新取当前题）、
-            INVALID_STATE（例如暂停中作答）、SESSION_INCONSISTENT、KEY_EXPIRED / KEY_FAILED_PREVIOUSLY（换新键重新开始）、
+            INVALID_STATE（例如暂停中作答）、ANSWER_CONFLICT（同一步已用别的答案作答）、SESSION_INCONSISTENT、KEY_EXPIRED / KEY_FAILED_PREVIOUSLY（换新键重新开始）、
             NO_TARGETS、TOO_MANY、UPSTREAM_UNAVAILABLE（同一请求重试）、DIAGNOSIS_UNAVAILABLE。
     QuotaProblem:
       allOf:

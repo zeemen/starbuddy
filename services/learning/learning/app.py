@@ -21,7 +21,7 @@ from fastapi.responses import JSONResponse
 
 from .adapter_client import strict_json
 from .config import Settings
-from .contract import internal_contract, plugin_contract
+from .contract import UnsupportedContractVersion, internal_contract, plugin_contract
 from .diagnosis import api as diagnosis_api
 from .diagnosis.engine import Params as DiagnosisParams
 from .errors import IngestError
@@ -89,6 +89,21 @@ def _diagnosis(settings: Settings, pool, client: httpx.AsyncClient, ingest: Inge
     return DiagnosisService(pool, ingest, factory, presenter, params or DiagnosisParams())
 
 
+SYNTHETIC_DB = re.compile(r"^starbuddy_(dev|test)(_[a-z0-9_]+)?$")  # 与合成种子（db/seeds/dev/*.sql）的库名核对一致
+
+
+async def _check_diagnosis_env(pool) -> None:
+    """合成题面除 LEARNING_ENV=test 外再核对库名（安全审查 S6）：只能连一次性开发 / 测试库；
+    诊断作答走 v1 写入路径（候选契约 1.0.0），签字前只在测试里开（STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1）。"""
+    db = await pool.fetchval("SELECT current_database()")
+    if not SYNTHETIC_DB.fullmatch(db or ""):
+        raise RuntimeError("合成诊断题面只能连开发库或测试库（库名 starbuddy_dev* 或 starbuddy_test*）")
+    try:
+        plugin_contract("1.0.0")
+    except UnsupportedContractVersion:
+        raise RuntimeError("诊断作答走 v1 写入路径：签字前需 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1（只在测试里）") from None
+
+
 def create_app(
     settings: Settings,
     *,
@@ -117,6 +132,13 @@ def create_app(
         client = httpx.AsyncClient(transport=transport, trust_env=False, follow_redirects=False)
         state["service"] = IngestService(settings, p, client)
         if settings.diagnosis_presenter == "synthetic":
+            try:
+                await _check_diagnosis_env(p)
+            except RuntimeError:
+                await client.aclose()
+                if own_pool:
+                    await p.close()
+                raise
             state["diagnosis"] = _diagnosis(settings, p, client, state["service"], diagnosis_params)
         # 有路由客户端时才建模型路由：环境从 LEARNING_ENV 读，配置不合规（出境、未批准供应商等）即拒绝启动
         own_router = state["router"] is None and bool(settings.route_clients)
