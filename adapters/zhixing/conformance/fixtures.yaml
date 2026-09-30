@@ -201,3 +201,62 @@ cases:
       skill_node: "zhixing:syn-dim-dingwei"
       count: 2
     conflict_body: {count: 1}
+
+  # ---------------- plan（领域权重 × 失分 × 可提升；spec 4-D。不在平台侧核对范围内，只做 schema、坏请求、幂等） ----------------
+  # 同一份夹具在 v0.9 与 v1.0 下都跑，所以不带 v1.0 才有的 node_path、exam_config、learner_context（前置边与不造前置由单测覆盖）
+  - id: plan-blank-start
+    method: plan
+    body:
+      mastery: []
+    conflict_body: {constraints: {time_budget_minutes: 10}}
+
+  - id: plan-with-mastery-and-budget
+    method: plan
+    body:
+      mastery:
+        - {skill_node: "zhixing:syn-dim-guifan", state: understand}
+        - {skill_node: "zhixing:syn-dim-dingwei", state: execute, p_mastery: 0.2}
+        - {skill_node: "zhixing:syn-dim-zhuanhua", state: transfer}
+      constraints: {time_budget_minutes: 30, focus_skill_nodes: ["zhixing:syn-dim-guifan", "zhixing:syn-dim-dingwei"]}
+    conflict_body: {constraints: {time_budget_minutes: 20}}
+
+  # ---------------- report（只给逐维作答计数、四类失分计数与证据 ID；不写结论句） ----------------
+  # 作答证据用 ocr_transcription：v1.0 要求 response_text 带 attempt_id，而 v0.9 不允许该字段，同一份夹具两版都要能过
+  - id: report-parent-window
+    method: report
+    body:
+      window: {from: "2026-10-05T00:00:00+08:00", to: "2026-10-12T00:00:00+08:00"}
+      audience: parent
+      evidence:
+        - evidence_id: "e2000000-0000-4000-8000-000000000001"
+          kind: ocr_transcription
+          occurred_at: "2026-10-08T10:00:00+08:00"
+          item_ref: "zhixing:synthetic-m3-01"
+          skill_node: "zhixing:syn-dim-zhuanhua"
+          admission: pending_review
+          payload: {text: "（合成示例）居民参与民主决策，体现了居民自治。"}
+        - evidence_id: "e2000000-0000-4000-8000-000000000002"
+          kind: scoring_point_span
+          occurred_at: "2026-10-08T10:00:00+08:00"
+          item_ref: "zhixing:synthetic-m3-01"
+          skill_node: "zhixing:syn-dim-zhuanhua"
+          admission: pending_review
+          payload: {source_evidence_id: "e2000000-0000-4000-8000-000000000001", span_start: 7, span_end: 11}
+      error_attributions:
+        - skill_node: "zhixing:syn-dim-dingwei"
+          subject_category: dingwei_cuo
+          cross_subject_category: locating_information
+          confidence: 0.4
+          evidence_ids: ["e2000000-0000-4000-8000-000000000001"]
+          algorithm_version: zhixing-m3-attr@0.1.0
+      mastery_history:
+        - {skill_node: "zhixing:syn-dim-zhuanhua", state: understand, at: "2026-10-01T00:00:00+08:00"}
+        - {skill_node: "zhixing:syn-dim-zhuanhua", state: execute, at: "2026-10-09T00:00:00+08:00"}
+    conflict_body: {audience: teacher}
+
+  - id: report-empty-window
+    method: report
+    body:
+      window: {from: "2026-10-05T00:00:00+08:00", to: "2026-10-12T00:00:00+08:00"}
+      audience: student
+    conflict_body: {audience: parent}

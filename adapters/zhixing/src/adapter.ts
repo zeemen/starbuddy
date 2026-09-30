@@ -1,5 +1,6 @@
-// 知行（道法）适配器的方法：capabilities、grade（F3 采分点逐点判分）、diagnose（process）、generate_variation。
-// 规格：specs/adapter-zhixing-sprint2/spec.md（待人确认 #1–#6 按默认执行）。模板：adapters/aya/src/adapter.ts。
+// 知行（道法）适配器的方法：capabilities、grade（F3 采分点逐点判分）、diagnose（process）、generate_variation、plan、report。
+// 规格：specs/adapter-zhixing-sprint2/spec.md（待人确认 #1–#6 按默认执行）；plan、report 见 specs/adapter-zhixing-wenli-methods-sprint4/spec.md
+// （待人确认 #1–#4 按默认：确定性、不调模型；teach 不做）。模板：adapters/aya/src/adapter.ts。
 // 契约：packages/contracts/openapi/plugin-api.v0.9.yaml 与 v1.0 候选版；按请求的 context.contract_version 校验与应答。
 //
 // 边界：
@@ -7,6 +8,7 @@
 // - 判分只来自 Rubric（规则 3）：模型逐点判定 → 确定性后处理（core/m3-postprocess.ts）。结果里没有自由文本。
 // - 模型调用只经学习服务内部路由接口（route-client.ts），适配器不持有供应商信息（ADR 04 第 1 条）。
 // - M3 一律低置信并复核（决定 A2）；不输出掌握度（规则 2）；diagnose 只输出观测，不写关于学生的陈述（规则 11）。
+// - plan、report 不产分、不调模型：plan 只输出任务 ID、编码、数字；report 只输出逐维 / 逐类计数与证据 ID，没有结论句与评价（规则 11）。
 // - 响应、日志、错误详情里不出现题面、Rubric、模型原文；学生原文只出现在作答证据的 payload 里。
 import { CANDIDATE_CONTRACT_VERSIONS, type ContractValidator, type ContractVersion, type SchemaName } from "./contract.ts";
 import {
@@ -20,7 +22,10 @@ import {
 } from "./content.ts";
 import { parseModelOutput, postProcess, type PointOutcome } from "./core/m3-postprocess.ts";
 import { buildM3GradeMessages, hasInjectionSignal, PROMPT_SOURCE_VERSION, PROMPT_TEMPLATE, PROMPT_VERSION } from "./core/m3-prompt.ts";
+import { prerequisiteEdges, planUnits, rankUnits, MAX_ITEMS_PER_TASK, MAX_TASKS_WITHOUT_BUDGET, MINUTES_PER_ITEM, type MasteryInput, type PathStep } from "./core/plan.ts";
+import { ATTEMPT_KINDS, inWindow, instant, trendOf, type HistoryRecord } from "./core/report.ts";
 import { contentUuid, deriveUuid, requestFingerprint, routeIdempotencyKey } from "./ids.ts";
+import { loadPlanWeights, type PlanWeights } from "./plan-weights.ts";
 import { callRoute, RouteError, type FetchLike, type RouteConfig, type RouteFailure } from "./route-client.ts";
 import type { ZhixingTaxonomy } from "./taxonomy.ts";
 
@@ -35,6 +40,8 @@ export const PROCESS_HIT_CONFIDENCE = 0.3;
 /** 没有可用的既往判分证据：观测为 inconclusive */
 export const PROCESS_INCONCLUSIVE_CONFIDENCE = 0.1;
 export const SELECT_ALGORITHM = "zhixing-item-select@0.1.0";
+export const PLAN_ALGORITHM = "zhixing-plan@0.1.0";
+export const REPORT_ALGORITHM = "zhixing-report@0.1.0";
 export const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 /** 作答长度上限（码点）。legacy M3GradeRequestSchema 为 4000 */
 export const MAX_ANSWER_CHARS = 4000;
@@ -90,6 +97,27 @@ interface GenerateVariationRequest {
   exclude_item_refs?: string[];
   item_family?: { item_ref: string }[];
 }
+interface PlanRequest {
+  context: RequestContext;
+  mastery: { skill_node: string; state: string; p_mastery?: number }[];
+  constraints?: { time_budget_minutes?: number; exam_date?: string; focus_skill_nodes?: string[] };
+  node_path?: PathStep[];
+}
+interface ErrorAttributionInput {
+  skill_node?: string;
+  subject_category: string;
+  cross_subject_category: string;
+  confidence: number;
+  evidence_ids: string[];
+}
+interface ReportRequest {
+  context: RequestContext;
+  window: { from: string; to: string };
+  audience: "student" | "parent" | "teacher";
+  evidence?: EvidenceRecord[];
+  error_attributions?: ErrorAttributionInput[];
+  mastery_history?: (HistoryRecord & { p_mastery?: number })[];
+}
 type EvidenceDraft = EvidenceRecord;
 
 type ProblemCode =
@@ -139,6 +167,8 @@ export interface AdapterDeps {
   idempotencyCacheSize?: number;
   /** 候选版（CANDIDATE_CONTRACT_VERSIONS）签字前只在测试与演练里接受 */
   allowCandidate?: boolean;
+  /** plan 的领域权重（合成值，待教研校准）；缺省读 content/plan-weights.json 并与内容包核对 */
+  planWeights?: PlanWeights;
 }
 
 class ProblemError extends Error {
@@ -193,6 +223,7 @@ export function createAdapter(deps: AdapterDeps) {
   const log = deps.log ?? (() => {});
   const cacheSize = deps.idempotencyCacheSize ?? 10_000;
   const fetchImpl = deps.fetchImpl ?? fetch;
+  const planWeights = deps.planWeights ?? loadPlanWeights(content);
   /** 同 key：只存请求体指纹与判定结果（不含原文）；进行中的请求共享同一个 Promise，避免重复调用模型 */
   const idempotency = new Map<string, { fingerprint: string; at: number; value?: unknown; pending?: Promise<unknown> }>();
 
@@ -352,11 +383,11 @@ export function createAdapter(deps: AdapterDeps) {
       contract_version: contract.version,
       methods: {
         diagnose: { implemented: true, async: false, notes_code: "process_mode_only" },
-        plan: { implemented: false },
+        plan: { implemented: true, async: false, notes_code: "domain_weights_uncalibrated" },
         teach: { implemented: false },
         grade: { implemented: true, async: false, notes_code: "history_grading_excluded" },
         generate_variation: { implemented: true },
-        report: { implemented: false },
+        report: { implemented: true, async: false, notes_code: "counts_only" },
       },
     }, contract.version);
 
@@ -641,8 +672,148 @@ export function createAdapter(deps: AdapterDeps) {
     }, version);
   };
 
-  const NOT_IMPLEMENTED = new Set(["plan", "teach", "report"]);
-  const KNOWN_ROUTES = new Set(["capabilities", "grade", "diagnose", "generate_variation", ...NOT_IMPLEMENTED]);
+  // ---------- plan（领域权重 × 失分 × 可提升） ----------
+  /** 引用必须是知行的（v1.0 schema 没有给 zhixing 的 plan、report 加前缀约束，适配器自查；评审 N7） */
+  const zhixingLocal = (ref: string, what: string): string => {
+    const [subject, local] = ref.split(":", 2) as [string, string];
+    if (subject !== "zhixing") throw new ProblemError(400, "SUBJECT_MISMATCH", `${what} is not a zhixing reference`);
+    return local;
+  };
+  const nodeOrder = content.pack.nodes.map((n) => n.id);
+  const units = planUnits(content.pack.items, nodeOrder, planWeights.domainOfPoint, (d) => planWeights.domainByCode.get(d)!.weight);
+
+  const plan = async (body: unknown): Promise<HandlerResult> => {
+    const version = requestVersion(body);
+    validateOrThrow("PlanRequest", body, version);
+    const req = body as PlanRequest;
+    checkContext(req.context, false);
+    // 平台掌握快照：不认识的节点跳过；同一节点出现多次取最后一条（与文砺 plan 一致）
+    const mastery = new Map<string, MasteryInput>();
+    for (const m of req.mastery) {
+      const local = zhixingLocal(m.skill_node, "skill_node");
+      if (content.nodeIds.has(local)) mastery.set(local, { state: m.state, ...(m.p_mastery === undefined ? {} : { p_mastery: m.p_mastery }) });
+    }
+    const focus = new Set((req.constraints?.focus_skill_nodes ?? []).map((r) => zhixingLocal(r, "focus_skill_nodes")));
+    const fp = requestFingerprint(req as unknown as Parameters<typeof requestFingerprint>[0]);
+    const key = req.context.idempotency_key;
+
+    const ranked = rankUnits(focus.size > 0 ? units.filter((u) => focus.has(u.skillNode)) : units, mastery, nodeOrder);
+    const budget = req.constraints?.time_budget_minutes;
+    const selected: (typeof ranked)[number][] = [];
+    const picks: { refs: string[]; minutes: number }[] = [];
+    let used = 0;
+    for (const u of ranked) {
+      if (budget === undefined && selected.length >= MAX_TASKS_WITHOUT_BUDGET) break;
+      // 学生只拿到已准入的题（与 generate_variation 同一口径）；没有已准入题时不给 item_refs，由编排层另行选题
+      const refs = u.items.filter((it) => it.admission === "admitted").slice(0, MAX_ITEMS_PER_TASK).map((it) => `zhixing:${it.id}`);
+      const minutes = MINUTES_PER_ITEM * Math.max(1, refs.length);
+      // 时间预算内按优先级截断：放不下的任务及其后的都不要（与文砺 plan 一致）
+      if (budget !== undefined && used + minutes > budget) break;
+      used += minutes;
+      selected.push(u);
+      picks.push({ refs, minutes });
+    }
+    const taskIds = selected.map((u) => deriveUuid("plan", key, fp, `task:${u.skillNode}`));
+    const prereq = prerequisiteEdges(selected, req.node_path ?? []);
+    const tasks = selected.map((u, i) => ({
+      task_id: taskIds[i]!,
+      kind: u.kind,
+      skill_nodes: [`zhixing:${u.skillNode}`],
+      ...(picks[i]!.refs.length > 0 ? { item_refs: picks[i]!.refs } : {}),
+      priority: round3(u.raw),
+      estimated_minutes: picks[i]!.minutes,
+      ...(prereq.has(i) ? { prerequisite_task_ids: prereq.get(i)!.map((j) => taskIds[j]!) } : {}),
+      rationale_code: u.rationale,
+    }));
+    await idempotent("plan", key, fp, async () => true);
+    return selfCheck("PlanResponse", {
+      contract_version: version,
+      result: { tasks },
+      evidence_ids: [],
+      confidence: 1,
+      source_version: `algo:${PLAN_ALGORITHM};${planWeights.sourceVersion};${content.itemsSourceVersion}`,
+      model_version: `algo:${PLAN_ALGORITHM}`,
+      human_review_required: false,
+      semantics: "formal",
+    }, version);
+  };
+
+  // ---------- report（逐维作答计数、四类失分归因计数、证据 ID；不写结论句） ----------
+  const report = async (body: unknown): Promise<HandlerResult> => {
+    const version = requestVersion(body);
+    validateOrThrow("ReportRequest", body, version);
+    const req = body as ReportRequest;
+    checkContext(req.context, false);
+    const evidence = req.evidence ?? [];
+    const attributions = req.error_attributions ?? [];
+    const history = req.mastery_history ?? [];
+    for (const e of evidence) {
+      if (e.item_ref) zhixingLocal(e.item_ref, "evidence item_ref");
+      if (e.skill_node) zhixingLocal(e.skill_node, "evidence skill_node");
+    }
+    for (const a of attributions) if (a.skill_node) zhixingLocal(a.skill_node, "error_attributions skill_node");
+    for (const h of history) zhixingLocal(h.skill_node, "mastery_history skill_node");
+    const from = instant(req.window.from);
+    const to = instant(req.window.to);
+    if (!(Number.isFinite(from) && Number.isFinite(to) && to > from)) throw new ProblemError(422, "INVALID_REQUEST", "window.to must be later than window.from");
+    // 失分归因只收知行四类，且跨科大类必须与映射表一致（MORAL 口径，不与语文 CHN 同名编码混算）
+    for (const a of attributions) {
+      const code = a.subject_category as AttributionCode;
+      if (!(ATTRIBUTION_CODES as readonly string[]).includes(code) || taxonomy.crossSubjectOf.get(code) !== a.cross_subject_category) {
+        throw new ProblemError(422, "INVALID_REQUEST", "error_attributions do not match the zhixing error taxonomy");
+      }
+    }
+    const fp = requestFingerprint(req as unknown as Parameters<typeof requestFingerprint>[0]);
+
+    // 逐维作答计数：作答证据挂到题目涉及的全部维度节点（内容包里的道法题），不在内容包里的按证据自带的 skill_node
+    const attemptsByNode = new Map<string, Set<string>>();
+    const counted: EvidenceRecord[] = [];
+    for (const e of evidence) {
+      if (!inWindow(e.occurred_at, from, to)) continue;
+      if (ATTEMPT_KINDS.has(e.kind)) {
+        const item = e.item_ref ? content.itemById.get(zhixingLocal(e.item_ref, "evidence item_ref")) : undefined;
+        const nodes = item && item.discipline === "daofa" ? itemNodes(item) : e.skill_node ? [zhixingLocal(e.skill_node, "evidence skill_node")] : [];
+        if (nodes.length === 0) continue;
+        const attemptKey = e.attempt_id ?? e.evidence_id;
+        for (const n of nodes) attemptsByNode.set(n, (attemptsByNode.get(n) ?? new Set()).add(attemptKey));
+        counted.push(e);
+      } else if (e.kind === "scoring_point_span") {
+        counted.push(e);
+      }
+    }
+    const nodes = new Set<string>(attemptsByNode.keys());
+    for (const h of history) if (instant(h.at) < to) nodes.add(zhixingLocal(h.skill_node, "mastery_history skill_node"));
+    const order = (n: string) => (nodeOrder.includes(n) ? nodeOrder.indexOf(n) : nodeOrder.length);
+    const skillSummary = [...nodes]
+      .sort((a, b) => order(a) - order(b) || (a < b ? -1 : a > b ? 1 : 0))
+      .map((n) => ({
+        skill_node: `zhixing:${n}`,
+        trend: trendOf(history.filter((h) => h.skill_node === `zhixing:${n}`), from, to),
+        attempts: attemptsByNode.get(n)?.size ?? 0,
+      }));
+    // 四类失分归因逐类计数（四类都列出，没有的记 0）
+    const errorDistribution = ATTRIBUTION_CODES.map((c) => ({
+      cross_subject_category: taxonomy.crossSubjectOf.get(c)!,
+      subject_category: c,
+      count: attributions.filter((a) => a.subject_category === c).length,
+    }));
+    const evidenceIds = uniq([...counted.map((e) => e.evidence_id), ...attributions.flatMap((a) => a.evidence_ids)]);
+    await idempotent("report", req.context.idempotency_key, fp, async () => true);
+    return selfCheck("ReportResponse", {
+      contract_version: version,
+      result: { skill_summary: skillSummary, error_distribution: errorDistribution },
+      evidence_ids: evidenceIds,
+      confidence: attributions.length > 0 ? round3(Math.min(...attributions.map((a) => a.confidence))) : 1,
+      source_version: `algo:${REPORT_ALGORITHM};${content.itemsSourceVersion}`,
+      model_version: `algo:${REPORT_ALGORITHM}`,
+      // 不判分：不置复核；计入的证据有未准入的 → 只作练习效力
+      human_review_required: false,
+      semantics: counted.every((e) => e.admission === "admitted") ? "formal" : "practice",
+    }, version);
+  };
+
+  const NOT_IMPLEMENTED = new Set(["teach"]);
+  const KNOWN_ROUTES = new Set(["capabilities", "grade", "diagnose", "generate_variation", "plan", "report", ...NOT_IMPLEMENTED]);
 
   /** 路由（路径不含 /plugin/v0 前缀）。所有错误都转成契约 Problem。 */
   const handle = async (method: string, path: string, body: unknown): Promise<HandlerResult> => {
@@ -659,6 +830,8 @@ export function createAdapter(deps: AdapterDeps) {
       else if (method === "POST" && name === "grade") result = await grade(body);
       else if (method === "POST" && name === "diagnose") result = await diagnose(body);
       else if (method === "POST" && name === "generate_variation") result = await generateVariation(body);
+      else if (method === "POST" && name === "plan") result = await plan(body);
+      else if (method === "POST" && name === "report") result = await report(body);
       else if (method === "POST" && NOT_IMPLEMENTED.has(name)) {
         throw new ProblemError(501, "METHOD_NOT_IMPLEMENTED", `${name} is not implemented by the zhixing adapter yet`);
       } else if (method === "GET" && name.startsWith("jobs/")) {

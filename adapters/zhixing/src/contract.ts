@@ -38,6 +38,10 @@ export type SchemaName =
   | "DiagnoseResponse"
   | "GenerateVariationRequest"
   | "GenerateVariationResponse"
+  | "PlanRequest"
+  | "PlanResponse"
+  | "ReportRequest"
+  | "ReportResponse"
   | "Problem";
 
 export type ValidationResult = { ok: true } | { ok: false; errors: string[] };

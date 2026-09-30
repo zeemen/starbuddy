@@ -12,7 +12,11 @@ ADP-语文-01。实现学科插件 API v0.9（`packages/contracts/openapi/plugin
 | `POST /plugin/v0/grade` | 作文五维（两段式，见下）。只接 `wenli:synthetic-essay-0N` 与文字作答；客观题送 grade 回 422 |
 | `POST /plugin/v0/diagnose` | `mode = gap_test / intake`：客观题确定性判分 → 能力格观测；不调模型、不出题。`paper` / `process` 回 422 |
 | `POST /plugin/v0/plan` | 确定性学科处方（移植 `recommendTargets`），不调模型、不写文字、不含提分 |
-| `teach` `generate_variation` `report` | 返回 501 `METHOD_NOT_IMPLEMENTED` |
+| `POST /plugin/v0/generate_variation` | 选题，不生成：只从已准入的题里选同能力格、同题型的题；没有候选时返回空与 `empty_reason` |
+| `POST /plugin/v0/report` | 只给逐能力格作答计数、错因逐类计数与证据 ID；不写结论句与评价；不调模型 |
+| `teach` | 返回 501 `METHOD_NOT_IMPLEMENTED`（等人设 Prompt 与 3-F 治理，另起任务） |
+
+generate_variation、report 的规格见 `specs/adapter-zhixing-wenli-methods-sprint4/spec.md`（待人确认 #1–#4 按默认）。
 
 ## grade：作文五维（两段式）
 1. **模型逐维定档**（`judged_by: rubric_model`）：Prompt `prompt:wenli-essay-grade@0.1.0` 移植自 legacy `buildGradePrompt` 与 `essay-rubric.ts`，
@@ -65,6 +69,26 @@ v1.0 请求带 `scoring_points` 时，`point_id` 与满分必须与量表六维�
 - 没有时间预算时取 3 个目标（legacy 默认）；有预算时按优先级累加，放不下的任务及其后的都不要。`exam_date` 目前不参与计算
   （需要“今天”才能算倒计时，会破坏确定性）。今日计划编排由平台做（A7）。
 - 信封：`evidence_ids: []`、confidence 1、`model_version: algo:wenli-plan@0.1.0`、`human_review_required: false`。
+
+## generate_variation：只从已准入题库选（`algo:wenli-item-select@0.1.0`）
+- 候选必须同时满足：**同能力格**（源题的格，或请求的 `skill_node`；两者都给且不同 → 422）、**同题型**（题型编码严格相等：
+  客观题取内容包 `type`，作文取 `essay_<genre>`；只给 `skill_node` 时没有参照题型，只按格选）、**已准入**、不是源题、
+  不在 `exclude_item_refs`；编排层给了 `item_family` 时只在其中选（`difficulty` 取 `prior_difficulty`）。按题号排序、取前 `count` 道。
+- `match`：`same_skill_node: true`；内容包没有错因标注，`same_error_category` 一律 false（`subject_error_category` 目前不参与筛选）。
+- 空结果：未知能力格 → `skill_node_unknown`；有合格题但全被排除 → `all_excluded`；其他 → `no_admitted_candidate`。
+  当前内容包全是 pending_review，所以线上一定返回空；选题逻辑由单测的合成“已准入”夹具覆盖。不调模型、不生成新题。
+- 信封：`evidence_ids: []`、confidence 1、`human_review_required: false`、`semantics: formal`。
+
+## report：只给计数与证据 ID（`algo:wenli-report@0.1.0`）
+- 时间窗 `[from, to)`，按带时区的时刻比较；`to` 不晚于 `from` → 422。请求里出现别科引用 → 400 `SUBJECT_MISMATCH`。
+- `skill_summary`：窗内作答类证据按 `attempt_id` 去重（没有时按 `evidence_id`），按题目所在能力格计数；`trend` 只比较平台给的
+  `mastery_history` 状态序（窗前最后一条为基线：没有 → `new`，窗内没有记录 → `flat`），不重算掌握度。
+- `error_distribution`：只列出现过的语文编码（平台层六类与阅读错因大类、标签，`docs/mapping/error-taxonomy.v0.9.yaml`），按映射表顺序；
+  编码不是语文的（例如道法 `dingwei_cuo`）或跨科大类与映射表不符 → 422。
+- **五维量表逐维统计做不了**：契约 `ReportFields` 没有量表维度的字段，`ReportRequest` 也不带判分维度得分；主观维的不确定度同样无处可放。
+  本版只按能力格给作答计数（见 spec lessons 待人确认）。
+- 没有 `highlight_codes`、等级、趋势描述或任何文本；三种受众输出相同字段。`evidence_ids` = 计入统计的窗内证据 + 错因记录引用的证据。
+- 信封：confidence 取错因记录置信度的最小值（没有时 1）；计入的证据有未准入的 → `practice`；`human_review_required: false`。
 
 ## 与学习服务模型路由接口的关系
 适配器**不持有任何模型供应商的地址或 Key**（ADR 04 第 1 条）。只有 grade 调模型，经学习服务的内部接口（约定同知行）：

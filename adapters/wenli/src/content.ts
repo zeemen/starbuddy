@@ -271,6 +271,12 @@ export function indexPack(pack: ContentPack): LoadedPack {
   };
 }
 
+/**
+ * 题型编码（generate_variation 的“同题型”按它严格相等，spec 4-D 待人确认 #4）：客观题取内容包的 type（choice / fill），
+ * 作文取 `essay_<genre>`（记叙文与情境写作不互为变式）。只在适配器内部使用，不出现在任何响应里。
+ */
+export const questionTypeOf = (x: ObjectiveItem | EssayItem): string => ("type" in x ? x.type : `essay_${x.genre}`);
+
 export const DEFAULT_PACK_PATH = new URL("../content/pack.json", import.meta.url);
 
 export function loadPack(path: string | URL = DEFAULT_PACK_PATH): LoadedPack {

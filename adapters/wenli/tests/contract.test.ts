@@ -10,14 +10,17 @@ test("两个契约版本的全部 components.schemas 都能编译（v1.0 的跨�
   for (const v of SUPPORTED_CONTRACT_VERSIONS) assert.deepEqual(contract.compileAll(v), [], v);
 });
 
-test("capabilities：默认报 0.9.0；默认版本 1.0.0 时报 1.0.0；grade、diagnose、plan 已实现，其余未实现", async () => {
+test("capabilities：默认报 0.9.0；默认版本 1.0.0 时报 1.0.0；5/6 已实现（teach 未实现，等人设 Prompt 与 3-F）", async () => {
   const a = createAdapter({ content: realPack, contract, route: null });
   const r = await a.handle("GET", "capabilities", undefined);
   assert.equal(r.status, 200);
   assert.deepEqual(contract.validate("Capabilities", r.body), { ok: true });
   const m = (r.body as Json).methods;
-  for (const k of ["grade", "diagnose", "plan"]) assert.equal(m[k].implemented, true, k);
-  for (const k of ["generate_variation", "teach", "report"]) assert.equal(m[k].implemented, false, k);
+  for (const k of ["grade", "diagnose", "plan", "generate_variation", "report"]) assert.equal(m[k].implemented, true, k);
+  assert.equal(m.teach.implemented, false);
+  assert.equal(Object.values(m).filter((x: Json) => x.implemented).length, 5);
+  assert.equal(m.generate_variation.notes_code, "admitted_items_only");
+  assert.equal(m.report.notes_code, "counts_only");
   assert.equal(m.grade.notes_code, "handwriting_dimension_null");
   assert.equal(m.diagnose.notes_code, "objective_gap_test_intake_only");
   const a1 = createAdapter({ content: realPack, contract: loadContract({ defaultVersion: "1.0.0" }), route: null, allowCandidate: true });
@@ -26,9 +29,9 @@ test("capabilities：默认报 0.9.0；默认版本 1.0.0 时报 1.0.0；grade�
   assert.deepEqual(contract.validate("Capabilities", r1.body, "1.0.0"), { ok: true });
 });
 
-test("teach、generate_variation、report：501 METHOD_NOT_IMPLEMENTED，不伪造结果；jobs：404 JOB_NOT_FOUND；未知路由 404", async () => {
+test("teach：501 METHOD_NOT_IMPLEMENTED，不伪造结果；jobs：404 JOB_NOT_FOUND；未知路由 404", async () => {
   const a = createAdapter({ content: realPack, contract, route: null });
-  for (const m of ["teach", "generate_variation", "report"]) {
+  for (const m of ["teach"]) {
     const r = await a.handle("POST", m, { context: context() });
     assert.equal(r.status, 501, m);
     assert.equal((r.body as Json).code, "METHOD_NOT_IMPLEMENTED");

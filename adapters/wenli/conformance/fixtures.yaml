@@ -220,3 +220,53 @@ cases:
         - {skill_node: "wenli:CHN.SYN.D3_L1", state: understand}
       constraints: {time_budget_minutes: 30, focus_skill_nodes: ["wenli:CHN.SYN.D5_L2"]}
     conflict_body: {constraints: {time_budget_minutes: 20}}
+
+  # ---------------- generate_variation（只从已准入题库选：同能力格、同题型、已准入；spec 4-D） ----------------
+  # 内容包全是 pending_review → 空结果与 empty_reason（选题逻辑由单测的合成“已准入”夹具覆盖）。只做 schema、坏请求、幂等
+  - id: variation-by-source-item
+    method: generate_variation
+    body:
+      source_item_ref: "wenli:synthetic-q01"
+      count: 3
+      exclude_item_refs: ["wenli:synthetic-q01"]
+    conflict_body: {count: 2}
+
+  - id: variation-by-skill-node
+    method: generate_variation
+    body:
+      skill_node: "wenli:CHN.SYN.D5_L2"
+      count: 2
+    conflict_body: {count: 1}
+
+  # ---------------- report（只给逐能力格作答计数、错因逐类计数与证据 ID；不写结论句） ----------------
+  # 作答证据用 ocr_transcription：v1.0 要求 response_* 带 attempt_id，而 v0.9 不允许该字段，同一份夹具两版都要能过
+  - id: report-parent-window
+    method: report
+    body:
+      window: {from: "2026-10-05T00:00:00+08:00", to: "2026-10-12T00:00:00+08:00"}
+      audience: parent
+      evidence:
+        - evidence_id: "e4000000-0000-4000-8000-000000000001"
+          kind: ocr_transcription
+          occurred_at: "2026-10-08T10:00:00+08:00"
+          item_ref: "wenli:synthetic-q05"
+          skill_node: "wenli:CHN.SYN.D2_L1"
+          admission: pending_review
+          payload: {text: "（合成示例）作答转写文本"}
+      error_attributions:
+        - skill_node: "wenli:CHN.SYN.D2_L1"
+          subject_category: shenti
+          cross_subject_category: reading_the_question
+          confidence: 0.4
+          evidence_ids: ["e4000000-0000-4000-8000-000000000001"]
+          algorithm_version: wenli-attr@0.1.0
+      mastery_history:
+        - {skill_node: "wenli:CHN.SYN.D2_L1", state: understand, at: "2026-10-09T00:00:00+08:00"}
+    conflict_body: {audience: teacher}
+
+  - id: report-empty-window
+    method: report
+    body:
+      window: {from: "2026-10-05T00:00:00+08:00", to: "2026-10-12T00:00:00+08:00"}
+      audience: student
+    conflict_body: {audience: parent}

@@ -1,0 +1,16 @@
+{
+  "format": "zhixing-plan-weights/1",
+  "name": "zhixing-plan-weights",
+  "version": "0.1.0",
+  "synthetic": true,
+  "calibration": "pending_research_calibration",
+  "notice": "合成值、待教研校准：领域权重由工程按合成内容包的六个合成领域拟定，不来自任何真实考情、真实试卷或真实学生数据；4-K 道法教研给出真实领域权重之前只用于测试与演练。",
+  "domains": [
+    { "code": "law", "node_prefix": "MORAL.SYN.LAW", "weight": 0.3 },
+    { "code": "civic", "node_prefix": "MORAL.SYN.CIVIC", "weight": 0.2 },
+    { "code": "nation", "node_prefix": "MORAL.SYN.NATION", "weight": 0.15 },
+    { "code": "society", "node_prefix": "MORAL.SYN.SOCIETY", "weight": 0.15 },
+    { "code": "culture", "node_prefix": "MORAL.SYN.CULTURE", "weight": 0.1 },
+    { "code": "life", "node_prefix": "MORAL.SYN.LIFE", "weight": 0.1 }
+  ]
+}

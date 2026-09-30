@@ -1,5 +1,7 @@
-// 文砺（语文）适配器的方法：capabilities、grade（作文五维）、diagnose（原生自适应测评：客观题确定性判分）、plan（确定性学科处方）。
-// 规格：specs/adapter-wenli-sprint2/spec.md（待人确认 #1–#8 按默认执行）。模板：adapters/zhixing/src/adapter.ts。
+// 文砺（语文）适配器的方法：capabilities、grade（作文五维）、diagnose（原生自适应测评：客观题确定性判分）、plan（确定性学科处方）、
+// generate_variation（只从已准入题库选题）、report（逐维计数与证据 ID）。
+// 规格：specs/adapter-wenli-sprint2/spec.md（待人确认 #1–#8 按默认执行）；generate_variation、report 见
+// specs/adapter-zhixing-wenli-methods-sprint4/spec.md（待人确认 #1–#4 按默认：确定性、不调模型；teach 不做）。模板：adapters/zhixing/src/adapter.ts。
 // 契约：packages/contracts/openapi/plugin-api.v0.9.yaml 与 v1.0 候选版；按请求的 context.contract_version 校验与应答。
 //
 // 边界：
@@ -7,17 +9,19 @@
 // - 判分只来自量表与确定性规则（规则 3）：模型逐维定档 → 确定性后处理（core/essay-postprocess.ts）；客观题是确定性匹配。结果里没有自由文本。
 // - 模型调用只经学习服务内部路由接口（route-client.ts），适配器不持有供应商信息（ADR 04 第 1 条）；diagnose、plan 不调模型。
 // - 作文一律低置信并复核（待人确认 #1）；不输出掌握度（规则 2）；diagnose 只输出观测、plan 只输出编码，不写关于学生的陈述（规则 11）；
-//   没有位次、没有预计提分。
+//   没有位次、没有预计提分。generate_variation 不生成新题；report 不写结论句与评价（规则 11）。
 // - 响应、日志、错误详情里不出现题面、选项、标准答案、量表锚点、模型原文；学生原文只出现在作答证据的 payload 里。
 import { CANDIDATE_CONTRACT_VERSIONS, type ContractValidator, type ContractVersion, type SchemaName } from "./contract.ts";
-import { CHOICE_CODE, type Admission, type EssayItem, type LoadedPack, type ObjectiveItem } from "./content.ts";
+import { CHOICE_CODE, questionTypeOf, type Admission, type EssayItem, type LoadedPack, type ObjectiveItem } from "./content.ts";
 import { recommendTargets, type CellState } from "./core/adaptive.ts";
 import { evidenceLevel, LEVEL_WEIGHT, type PriorRecord } from "./core/channel.ts";
 import { buildEssayGradeMessages, hasInjectionSignal, PROMPT_SOURCE_VERSION, PROMPT_TEMPLATE, PROMPT_VERSION } from "./core/essay-prompt.ts";
 import { conventionScore, parseModelOutput, postProcessEssay, rejectAllModelDimensions, type EssayPostProcessed } from "./core/essay-postprocess.ts";
 import { gradeObjective } from "./core/objective.ts";
+import { ATTEMPT_KINDS, inWindow, instant, trendOf, type HistoryRecord } from "./core/report.ts";
 import { contentUuid, deriveUuid, requestFingerprint, routeIdempotencyKey } from "./ids.ts";
 import { callRoute, RouteError, type FetchLike, type RouteConfig, type RouteFailure } from "./route-client.ts";
+import { loadTaxonomy, type WenliTaxonomy } from "./taxonomy.ts";
 
 export const ADAPTER_VERSION = "0.1.0";
 /** 模型定档的主观维度置信度（契约与 0005 的 CHECK：≤ 0.5；未经金标准校准） */
@@ -26,6 +30,8 @@ export const RUBRIC_MODEL_CONFIDENCE = 0.4;
 export const CONVENTION_CONFIDENCE = 0.9;
 export const DIAGNOSE_ALGORITHM = "wenli-objective-diag@0.1.0";
 export const PLAN_ALGORITHM = "wenli-plan@0.1.0";
+export const SELECT_ALGORITHM = "wenli-item-select@0.1.0";
+export const REPORT_ALGORITHM = "wenli-report@0.1.0";
 export const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 /** 作文长度上限（码点） */
 export const MAX_ESSAY_CHARS = 5000;
@@ -84,6 +90,30 @@ interface PlanRequest {
   mastery: { skill_node: string; state: string; p_mastery?: number }[];
   constraints?: { time_budget_minutes?: number; exam_date?: string; focus_skill_nodes?: string[] };
 }
+interface GenerateVariationRequest {
+  context: RequestContext;
+  source_item_ref?: string;
+  skill_node?: string;
+  subject_error_category?: string;
+  count: number;
+  exclude_item_refs?: string[];
+  item_family?: { item_ref: string; prior_difficulty?: number }[];
+}
+interface ErrorAttributionInput {
+  skill_node?: string;
+  subject_category: string;
+  cross_subject_category: string;
+  confidence: number;
+  evidence_ids: string[];
+}
+interface ReportRequest {
+  context: RequestContext;
+  window: { from: string; to: string };
+  audience: "student" | "parent" | "teacher";
+  evidence?: (EvidenceRecord & { kind: string; occurred_at: string; item_ref?: string; attempt_id?: string })[];
+  error_attributions?: ErrorAttributionInput[];
+  mastery_history?: (HistoryRecord & { p_mastery?: number })[];
+}
 type EvidenceDraft = Omit<EvidenceRecord, "payload"> & { payload: Record<string, unknown> };
 
 type ProblemCode =
@@ -131,6 +161,8 @@ export interface AdapterDeps {
   idempotencyCacheSize?: number;
   /** 候选版（CANDIDATE_CONTRACT_VERSIONS）签字前只在测试与演练里接受 */
   allowCandidate?: boolean;
+  /** 错因映射表（report 核对错因记录用）；缺省读 docs/mapping/error-taxonomy.v0.9.yaml */
+  taxonomy?: WenliTaxonomy;
 }
 
 class ProblemError extends Error {
@@ -184,6 +216,7 @@ export function createAdapter(deps: AdapterDeps) {
   const cacheSize = deps.idempotencyCacheSize ?? 10_000;
   const fetchImpl = deps.fetchImpl ?? fetch;
   const rubric = content.pack.rubric;
+  const taxonomy = deps.taxonomy ?? loadTaxonomy();
   /** 同 key：只存请求体指纹与判定结果（不含原文）；进行中的请求共享同一个 Promise，避免重复调用模型 */
   const idempotency = new Map<string, { fingerprint: string; at: number; value?: unknown; pending?: Promise<unknown> }>();
 
@@ -385,8 +418,8 @@ export function createAdapter(deps: AdapterDeps) {
         plan: { implemented: true },
         teach: { implemented: false },
         grade: { implemented: true, async: false, notes_code: "handwriting_dimension_null" },
-        generate_variation: { implemented: false },
-        report: { implemented: false },
+        generate_variation: { implemented: true, async: false, notes_code: "admitted_items_only" },
+        report: { implemented: true, async: false, notes_code: "counts_only" },
       },
     }, contract.version);
 
@@ -658,8 +691,153 @@ export function createAdapter(deps: AdapterDeps) {
     }, version);
   };
 
-  const NOT_IMPLEMENTED = new Set(["teach", "generate_variation", "report"]);
-  const KNOWN_ROUTES = new Set(["capabilities", "grade", "diagnose", "plan", ...NOT_IMPLEMENTED]);
+  // ---------- generate_variation（选题，不生成） ----------
+  /** 内容包里的任意一道题（客观题或作文） */
+  const findAny = (itemRef: string): ObjectiveItem | EssayItem => {
+    const local = localRef(itemRef, "item_ref");
+    const it = content.itemById.get(local) ?? content.essayById.get(local);
+    if (!it) throw new ProblemError(404, "ITEM_NOT_FOUND", "item_ref is not in the content pack");
+    return it;
+  };
+  const allItems: (ObjectiveItem | EssayItem)[] = [...content.pack.items, ...content.pack.essays].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+
+  const generateVariation = async (body: unknown): Promise<HandlerResult> => {
+    const version = requestVersion(body);
+    validateOrThrow("GenerateVariationRequest", body, version);
+    const req = body as GenerateVariationRequest;
+    checkContext(req.context, false);
+    const fp = requestFingerprint(req as unknown as Parameters<typeof requestFingerprint>[0]);
+    const source = req.source_item_ref ? findAny(req.source_item_ref) : undefined;
+    // 同能力点：目标能力格 = 源题的格，或请求给的 skill_node；两者都给了却不同 → 请求自相矛盾
+    let target = source?.cell;
+    let emptyReason: string | undefined;
+    if (req.skill_node) {
+      const local = localRef(req.skill_node, "skill_node");
+      if (!content.cellById.has(local)) emptyReason = "skill_node_unknown";
+      else if (source && local !== source.cell) throw new ProblemError(422, "INVALID_REQUEST", "skill_node differs from the skill node of source_item_ref");
+      else target = local;
+    }
+    for (const r of req.exclude_item_refs ?? []) localRef(r, "exclude_item_refs");
+    // 同题型：题型编码严格相等（待人确认 #4）；只给 skill_node 时没有参照题型，只按能力格选
+    const type = source ? questionTypeOf(source) : undefined;
+    const excluded = new Set([...(req.exclude_item_refs ?? []), ...(req.source_item_ref ? [req.source_item_ref] : [])]);
+    const family = req.item_family ? new Map(req.item_family.map((f) => [f.item_ref, f])) : undefined;
+    let candidates: Record<string, unknown>[] = [];
+    if (!emptyReason) {
+      // 只从已准入的题里选（契约 v1；盘点决定：审核门禁）；编排层给了同族候选时只在其中选
+      const matched = allItems.filter(
+        (it) =>
+          it.id !== source?.id &&
+          it.cell === target &&
+          (type === undefined || questionTypeOf(it) === type) &&
+          it.admission === "admitted" &&
+          (!family || family.has(`wenli:${it.id}`)),
+      );
+      candidates = matched
+        .filter((it) => !excluded.has(`wenli:${it.id}`))
+        .slice(0, req.count)
+        .map((it) => {
+          const d = family?.get(`wenli:${it.id}`)?.prior_difficulty;
+          return {
+            item_ref: `wenli:${it.id}`,
+            admission: "admitted",
+            content_version: { ...content.pack.curriculum },
+            // 内容包没有错因标注：同错因无从判断，一律 false（候选都满足同能力点）
+            match: { same_skill_node: true, same_error_category: false },
+            ...(d === undefined ? {} : { difficulty: d }),
+          };
+        });
+      if (candidates.length === 0) emptyReason = matched.length > 0 ? "all_excluded" : "no_admitted_candidate";
+    }
+    await idempotent("generate_variation", req.context.idempotency_key, fp, async () => true);
+    return selfCheck("GenerateVariationResponse", {
+      contract_version: version,
+      result: { candidates, ...(candidates.length === 0 ? { empty_reason: emptyReason } : {}) },
+      evidence_ids: [],
+      confidence: 1,
+      source_version: `algo:${SELECT_ALGORITHM};${content.itemsSourceVersion}`,
+      model_version: `algo:${SELECT_ALGORITHM}`,
+      human_review_required: false,
+      semantics: "formal",
+    }, version);
+  };
+
+  // ---------- report（逐能力格作答计数、错因逐类计数、证据 ID；不写结论句） ----------
+  const cellOrder = content.pack.cells.map((c) => c.id);
+  const report = async (body: unknown): Promise<HandlerResult> => {
+    const version = requestVersion(body);
+    validateOrThrow("ReportRequest", body, version);
+    const req = body as ReportRequest;
+    checkContext(req.context, false);
+    const evidence = req.evidence ?? [];
+    const attributions = req.error_attributions ?? [];
+    const history = req.mastery_history ?? [];
+    // report 的请求 schema 不按学科约束前缀（评审 N7），适配器自查
+    for (const e of evidence) {
+      if (e.item_ref) localRef(e.item_ref, "evidence item_ref");
+      if (e.skill_node) localRef(e.skill_node, "evidence skill_node");
+    }
+    for (const a of attributions) if (a.skill_node) localRef(a.skill_node, "error_attributions skill_node");
+    for (const h of history) localRef(h.skill_node, "mastery_history skill_node");
+    const from = instant(req.window.from);
+    const to = instant(req.window.to);
+    if (!(Number.isFinite(from) && Number.isFinite(to) && to > from)) throw new ProblemError(422, "INVALID_REQUEST", "window.to must be later than window.from");
+    // 错因只收语文编码（CHN 口径；道法的 *_cuo 等其他学科编码不混算），跨科大类必须与映射表一致
+    for (const a of attributions) {
+      if (taxonomy.crossSubjectOf.get(a.subject_category) !== a.cross_subject_category) {
+        throw new ProblemError(422, "INVALID_REQUEST", "error_attributions do not match the wenli error taxonomy");
+      }
+    }
+    const fp = requestFingerprint(req as unknown as Parameters<typeof requestFingerprint>[0]);
+
+    // 逐能力格作答计数：题目在内容包里按题目的格，否则按证据自带的 skill_node
+    const attemptsByCell = new Map<string, Set<string>>();
+    const counted: typeof evidence = [];
+    for (const e of evidence) {
+      if (!inWindow(e.occurred_at, from, to)) continue;
+      if (ATTEMPT_KINDS.has(e.kind)) {
+        const local = e.item_ref ? localRef(e.item_ref, "evidence item_ref") : undefined;
+        const it = local ? (content.itemById.get(local) ?? content.essayById.get(local)) : undefined;
+        const cell = it ? it.cell : e.skill_node ? localRef(e.skill_node, "evidence skill_node") : undefined;
+        if (!cell) continue;
+        const attemptKey = e.attempt_id ?? e.evidence_id;
+        attemptsByCell.set(cell, (attemptsByCell.get(cell) ?? new Set()).add(attemptKey));
+        counted.push(e);
+      } else if (e.kind === "scoring_point_span") {
+        counted.push(e);
+      }
+    }
+    const cells = new Set<string>(attemptsByCell.keys());
+    for (const h of history) if (instant(h.at) < to) cells.add(localRef(h.skill_node, "mastery_history skill_node"));
+    const order = (c: string) => (cellOrder.includes(c) ? cellOrder.indexOf(c) : cellOrder.length);
+    const skillSummary = [...cells]
+      .sort((a, b) => order(a) - order(b) || (a < b ? -1 : a > b ? 1 : 0))
+      .map((c) => ({
+        skill_node: `wenli:${c}`,
+        trend: trendOf(history.filter((h) => h.skill_node === `wenli:${c}`), from, to),
+        attempts: attemptsByCell.get(c)?.size ?? 0,
+      }));
+    // 错因逐类计数：只列出现过的编码，按映射表顺序
+    const errorDistribution = taxonomy.order
+      .map((code) => ({ cross_subject_category: taxonomy.crossSubjectOf.get(code)!, subject_category: code, count: attributions.filter((a) => a.subject_category === code).length }))
+      .filter((d) => d.count > 0);
+    const evidenceIds = uniq([...counted.map((e) => e.evidence_id), ...attributions.flatMap((a) => a.evidence_ids)]);
+    await idempotent("report", req.context.idempotency_key, fp, async () => true);
+    return selfCheck("ReportResponse", {
+      contract_version: version,
+      result: { skill_summary: skillSummary, error_distribution: errorDistribution },
+      evidence_ids: evidenceIds,
+      confidence: attributions.length > 0 ? round3(Math.min(...attributions.map((a) => a.confidence))) : 1,
+      source_version: `algo:${REPORT_ALGORITHM};${content.itemsSourceVersion}`,
+      model_version: `algo:${REPORT_ALGORITHM}`,
+      // 不判分：不置复核；计入的证据有未准入的 → 只作练习效力
+      human_review_required: false,
+      semantics: counted.every((e) => e.admission === "admitted") ? "formal" : "practice",
+    }, version);
+  };
+
+  const NOT_IMPLEMENTED = new Set(["teach"]);
+  const KNOWN_ROUTES = new Set(["capabilities", "grade", "diagnose", "plan", "generate_variation", "report", ...NOT_IMPLEMENTED]);
 
   /** 路由（路径不含 /plugin/v0 前缀）。所有错误都转成契约 Problem。 */
   const handle = async (method: string, path: string, body: unknown): Promise<HandlerResult> => {
@@ -676,6 +854,8 @@ export function createAdapter(deps: AdapterDeps) {
       else if (method === "POST" && name === "grade") result = await grade(body);
       else if (method === "POST" && name === "diagnose") result = await diagnose(body);
       else if (method === "POST" && name === "plan") result = await plan(body);
+      else if (method === "POST" && name === "generate_variation") result = await generateVariation(body);
+      else if (method === "POST" && name === "report") result = await report(body);
       else if (method === "POST" && NOT_IMPLEMENTED.has(name)) {
         throw new ProblemError(501, "METHOD_NOT_IMPLEMENTED", `${name} is not implemented by the wenli adapter yet`);
       } else if (method === "GET" && name.startsWith("jobs/")) {

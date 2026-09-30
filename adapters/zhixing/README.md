@@ -12,7 +12,38 @@ ADP-道法-01。实现学科插件 API v0.9（`packages/contracts/openapi/plugin
 | `POST /plugin/v0/grade` | 道法 M3 主观题，F3 采分点逐点判分（两段式，见下）。只接 `zhixing:` 题与文字作答；历史不在契约 v1 范围 |
 | `POST /plugin/v0/diagnose` | 只支持 `mode = process`：把请求里已有的判分证据汇总成能力点观测，不调模型 |
 | `POST /plugin/v0/generate_variation` | 选题，不生成：只从 `admission = admitted` 的题里按同节点或同错因选；没有候选时返回空与 `empty_reason` |
-| `plan` `teach` `report` | 返回 501 `METHOD_NOT_IMPLEMENTED` |
+| `POST /plugin/v0/plan` | 按“领域权重 × 失分 × 可提升”排序的任务列表（KGE 第八章）；领域权重是合成值、待教研校准；不调模型 |
+| `POST /plugin/v0/report` | 只给逐维作答计数、四类失分归因计数与证据 ID；不写结论句与评价；不调模型 |
+| `teach` | 返回 501 `METHOD_NOT_IMPLEMENTED`（等人设 Prompt 与 3-F 治理，另起任务） |
+
+plan、report 的规格见 `specs/adapter-zhixing-wenli-methods-sprint4/spec.md`（待人确认 #1–#4 按默认）。
+
+## plan：领域权重 × 失分 × 可提升（`algo:zhixing-plan@0.1.0`）
+- 规划单元是能力视图节点（`zhixing:syn-dim-*`），只有挂了道法采分点的节点才有单元（`syn-dim-shenti` 目前没有题，不排）。
+- **领域权重**：`content/plan-weights.json`（合成值，`calibration: pending_research_calibration`，notice 标“待教研校准”；
+  `source_version` 带 `algo:zhixing-plan-weights@0.1.0-uncalibrated`）。采分点按第一个 `node_ids` 的前缀归到领域；
+  节点的领域权重 = 该节点全部道法采分点的领域权重按分值加权平均。加载时要求每个道法采分点恰好落在一个领域，否则拒绝启动。
+  **不改 `content/pack.json`**（采分点须与原子层一致，`make zhixing-rubric-check`）。
+- **失分**：有 `p_mastery` 用 `1 − p_mastery`，没有按状态取默认值（unseen 0.5、understand 0.7、execute 0.5、stable 0.25）；
+  **可提升**：unseen 1、understand 1、execute 0.8、stable 0.5、transfer / retain 0（已星亮，不排）。常数都待教研校准（`src/core/plan.ts`）。
+- `priority` = 三者乘积（取 3 位小数）；同分按内容包节点顺序。没有掌握记录或 unseen → `kind: diagnose`、`not_yet_assessed`；
+  其余 `practice`，领域权重 ≥ 0.2 → `high_exam_weight`，否则 `weak_mastery`。
+- `item_refs` 只取已准入的道法题（至多 3 道），`estimated_minutes = 8 × max(1, 题数)`；当前内容包全是 pending_review，所以没有 `item_refs`。
+- 约束：`focus_skill_nodes` 非空时只在其中排；有 `time_budget_minutes` 时按优先级累加，放不下的及其后的都不要；没有预算最多 8 个任务。
+- **前置**：只认编排层给的 `node_path`（知识服务 `node.path` 只走强前置边）。观点之间只有 related 边时 `node_path` 为空，
+  不产生任何 `prerequisite_task_ids`；有强前置边时，边的两端落在两个不同任务的知识节点上才连，成环的边跳过；前置不改变排序。
+- `exam_config`、`learner_context`、`exam_date` 目前不参与计算，只参与请求体指纹。
+- 信封：`evidence_ids: []`、confidence 1、`human_review_required: false`、`semantics: formal`。
+
+## report：只给计数与证据 ID（`algo:zhixing-report@0.1.0`）
+- 时间窗 `[from, to)`，按带时区的时刻比较；`to` 不晚于 `from` → 422。请求里出现别科引用 → 400 `SUBJECT_MISMATCH`。
+- `skill_summary`：窗内作答类证据（`response_text` / `response_choice` / `ocr_transcription` / `asr_transcription`）按 `attempt_id`
+  去重（没有时按 `evidence_id`），挂到题目涉及的全部维度节点；`trend` 是契约必填编码，只比较平台给的 `mastery_history` 状态序
+  （窗前最后一条为基线：没有基线 → `new`，窗内没有记录 → `flat`，否则 up / down / flat），不重算掌握度。
+- `error_distribution`：知行四类（`shenti_cuo`、`dingwei_cuo`、`zhuanhua_cuo`、`guifan_cuo`）逐类计数，四类都列出；
+  错因编码不是这四类（例如语文的 `dingwei`）或跨科大类与映射表不符 → 422，不与语文口径混算。
+- 没有 `highlight_codes`、等级、趋势描述或任何文本；三种受众输出相同字段。`evidence_ids` = 计入统计的窗内证据 + 错因记录引用的证据。
+- 信封：confidence 取错因记录置信度的最小值（没有时 1）；计入的证据有未准入的 → `practice`；不判分，`human_review_required: false`。
 
 ## grade：两段式
 1. **模型逐点判定**（`judged_by: rubric_model`）：Prompt `prompt:zhixing-m3-grade@0.2.0` 移植自 legacy `buildM3GradePrompt`，
