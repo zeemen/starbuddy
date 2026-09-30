@@ -1,0 +1,18 @@
+{
+  "annotators": [
+    "T1",
+    "T2"
+  ],
+  "disagreements": 2,
+  "items": 20,
+  "kappa": 0.61,
+  "mean_jaccard": 0.9,
+  "observed_agreement": 0.9,
+  "only_a": 0,
+  "only_b": 0,
+  "subject": "aya",
+  "threshold": {
+    "kappa_min": 0.7,
+    "passed": false
+  }
+}

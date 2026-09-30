@@ -1,0 +1,5 @@
+# 合成核心节点清单（冲刺 5-K M2 夹具）：3 个观点；MORAL.SYN.LAW.EXTRA 不是核心节点。
+format: kge-m2-core-nodes/1
+subject: zhixing
+map_version: 0.3.0
+node_ids: [MORAL.SYN.LAW.RIGHTS, MORAL.SYN.LAW.DUTIES, MORAL.SYN.LAW.RULE]

@@ -25,6 +25,7 @@ KGE-03 编译层（`specs/kge-03-compile-layer/spec.md`）。本目录现在包�
 | `knowledge/service/app.py`、`mcp_server.py`、`config.py` | FastAPI 应用（`POST /v0/<工具名>`）、MCP（streamable HTTP 挂在 `/mcp`，工具名 = operationId）、环境变量配置 |
 | `knowledge/retrieval/` | PR ③ 页面优先检索 + 全文兜底：`tokenize`（jieba 独立实例、只用词典、搜索引擎模式、停用词）、`bm25`（进程内 BM25）、`chunks`（只切公共层：已发布页面快照的段落 + 已发布原子）、`pipeline`（查阅路径与带引用的上下文包；对照路径 `ChunkRetriever`）、`resolver`（`node.resolve` 的全文检索与合并）、`signals`（补页面信号）、`vector`（向量检索只留接口） |
 | `knowledge/m1.py` | PR ③ M1 报表：课标承接率、知识点页发布率、体检阻断数；留出集无处可标率只写来源与执行人 |
+| `knowledge/m2.py` | 冲刺 5-K M2 报表：核心节点内容完整率（本模块计算）+ 数学、道法准入汇总（汇总已有报告与执行人填的准入记录，不重算） |
 
 ## 常用命令
 ```bash
@@ -123,3 +124,47 @@ SymPy 加固：`.` 只允许在两个数字之间；`parse_expr` 的全局名字
   `signals.summarize` 按节点与原因聚合给教研排补页面的优先级。本 PR 没有把信号接进 HTTP 服务（`node.resolve` 只解析节点），
   编排层调用查阅路径时再接。
 - 向量检索（pgvector + BGE-M3 + bge-reranker）只留接口（`retrieval/vector.py`），引入需人确认（新增扩展与本地模型）。
+
+## M2 报表（冲刺 5-K，`specs/kge-m2-gate-sprint5`）
+每科一页（数学 `aya`、道法 `zhixing`），Markdown + JSON，同样输入逐字节相同；不含时间、本机路径与学生数据。**不下总结论**：
+每项给数值、门槛、判定（达到 / 未达到 / 不可计算 / 待填）与来源文件 sha256，末尾列出全部未达到、不可计算与待填项，过门由人定。
+缺输入一律“待填”，不当作 0；输入格式错误退出码 2。
+
+```bash
+make kge-m2 M2_SUBJECT=aya M2_INPUTS=/path/to/inputs M2_OUT=/path/to/out     # 在仓库根目录；学科只收 aya / zhixing，路径不含空格与单引号
+.venv/bin/python -m knowledge.m2 --subject zhixing --inputs <目录> [--kappa-report <文件> ...] --out <目录>   # 单独参数优先于输入目录
+```
+
+| 输入目录里的文件 | 来源 | 进报表的项 |
+|---|---|---|
+| `map-snapshot.yaml` / `.json` | 已发布地图快照，与 M1 用的是同一个文件：`knowledge.atoms` 的快照白名单格式，**不加任何字段**（核心节点另给清单） | 核心节点内容完整率、核心节点页面发布率 |
+| `core-nodes.yaml` / `.json` | `kge-m2-core-nodes/1`：`subject`、`map_version`（必须与快照一致）、`node_ids`（必须都在快照里，不重复）；教研签字。没有这个文件报“不可计算：核心节点未标注” | 同上 |
+| `items.json` / `.yaml` | `kge-m2-items/1`：`kge.item_tag` 与 `platform.item.admission` 的只读导出，每题只有 `item_id, main_node_id, cognitive_level, admission, tag_review_status`（多一个字段即拒收） | 同上 |
+| `page-snapshot/` | 已发布页面快照目录（`knowledge.compiler.snapshot` 导出，按 `page.get` 同一套逐页核对） | 同上 |
+| `m1-report.json` | `python -m knowledge.m1` 的 JSON | 课标承接率、知识点页发布率、体检阻断数 |
+| `kappa-report.json` | `evals/kge-tagging/kappa.py --subject <学科> --json` | kappa ≥ 0.7 |
+| `top1-report.json` | `evals/kge-tagging/top1.py --subject <学科> --json --summary-only`（金标集，不是留出集） | Top-1 ≥ 90%（`map_version` 须合 主.次.修订；与本地图版本不一致报不可计算） |
+| `daofa-grading-report.json` | `evals/daofa-grading/grading.py --json --summary-only`（仅道法） | 逐点一致率 ≥ 90%（`label = 流程样例` 报不可计算） |
+| `shadow-compare.json` | `evals/sie-shadow/compare_shadow.py` 的 `compare-shadow.json`（只取汇总数字，分歧清单里的学生编码不进报表） | 影子评审比对流程可用（`sample: true` 报不可计算） |
+| `attestation.yaml` / `.json` | 执行人填的 `kge-m2-attestation/1`（下例） | 留出集无处可标率、影子评审就位、C 级、监护人同意与删除、安全测试 |
+
+- 完整：核心节点声明的每个认知层次都有 ≥ 1 道已发布题目（主考点是该节点、该层次，`admitted` 且标签 `approved`），且页面快照里有
+  map_version 与本地图版本一致的页面；完整率门槛 ≥ 95%（精确分数），核心节点页面发布率门槛 100%。缺口清单按节点 × 层次列出，只含节点 ID。
+  未标认知层次、或层次不在节点声明里的已发布题不计入任何层次，只在说明里计数。
+- M1 报告：`met` 必须与数值一致（比率 = 分子等于分母，阻断 = 0），否则退出 2；“不可计算：没有给……”改判待填；其他说明只转引 `knowledge.m1`
+  的固定文案，不回显输入。M1 的页面快照提交号与本报表读的不一致时，知识点页发布率与核心节点页面发布率报不可计算。
+- kappa、Top-1 的判定沿用来源脚本（按精确分数算）；报告里的门槛与本报表不一致、或数值与判定矛盾，按输入错误处理。
+
+准入记录（只收汇总数字与状态，不收名册；未知字段一律拒收）：
+```yaml
+format: kge-m2-attestation/1
+subject: aya
+shadow_review: {reviewers: 2, weeks_covered: 5, weeks_required: 5}       # 教研负责人填；门槛每科 ≥ 2 人、覆盖封测全周期
+holdout: {untaggable: 1, total: 100, executor_role: 教研负责人, signed: true}   # run_holdout.sh 的汇总数字（规则 14）；角色只收“教研负责人”；未签字报待填
+c_level: {status: passed, evidence: [evidence/c-level-tests.txt]}          # passed / failed；缺这一节报待填
+guardian: {deletion_e2e: passed, consent_flow: live, evidence: [evidence/sie03-deletion-e2e.txt]}   # 同意流程 not_live → 未达到
+security: {pentest_round2: passed, evidence: [evidence/pentest-round2.txt]}                          # 未填 → 待填
+```
+- 填了“通过”但没有证据文件的项报“待填”。证据文件写相对准入记录所在目录的路径：每段 `^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`、
+  任何一段是符号链接即拒、解析后必须仍在该目录内、单个文件 ≤ 10 MB；报表只记路径写法与 sha256。
+- 合成样例：`tests/fixtures/m2/`（数学、道法各一个全部达标、一个多项未达标或缺输入的场景；数学地图直接用 `tests/fixtures/map-v1.yaml`）。

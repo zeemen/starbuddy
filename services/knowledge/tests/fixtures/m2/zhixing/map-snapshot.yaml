@@ -1,0 +1,50 @@
+# 合成道法地图快照（冲刺 5-K M2 夹具）：节点 ID、观点概括、课标条目全部是合成数据，不对应任何真实教材或课标原文。
+# 核心节点清单在同目录 core-nodes.yaml（RIGHTS、DUTIES、RULE）；MORAL.SYN.LAW.EXTRA 不是核心节点。
+# kind 写 kp 而不是道法导入器的 viewpoint：首期页面层只有知识点页，viewpoint 节点的页面体检报孤立页（lessons 待人确认 A1）；
+# kind = viewpoint 的情形由 tests/test_m2.py::test_viewpoint_core_nodes_flagged 覆盖。
+map_version: 0.3.0
+subject: zhixing
+status: published
+standard_year: 2022
+nodes:
+  - { id: MORAL.SYN, level: domain, name: 合成道法领域 }
+  - { id: MORAL.SYN.LAW, level: topic, parent_id: MORAL.SYN, name: 合成大概念 }
+  - id: MORAL.SYN.LAW.RIGHTS
+    level: node
+    parent_id: MORAL.SYN.LAW
+    kind: kp
+    name: 合成观点甲
+    includes: [合成观点甲的范围说明]
+    excludes: [属于合成观点乙的内容]
+    cognitive_levels: [understand, apply]
+  - id: MORAL.SYN.LAW.DUTIES
+    level: node
+    parent_id: MORAL.SYN.LAW
+    kind: kp
+    name: 合成观点乙
+    includes: [合成观点乙的范围说明]
+    cognitive_levels: [understand]
+  - id: MORAL.SYN.LAW.RULE
+    level: node
+    parent_id: MORAL.SYN.LAW
+    kind: kp
+    name: 合成观点丙
+    includes: [合成观点丙的范围说明]
+    cognitive_levels: [know, apply]
+  - id: MORAL.SYN.LAW.EXTRA
+    level: node
+    parent_id: MORAL.SYN.LAW
+    kind: kp
+    name: 合成观点丁
+    includes: [合成观点丁的范围说明]
+    cognitive_levels: [understand]
+edges:
+  - { from_id: MORAL.SYN.LAW.RIGHTS, to_id: MORAL.SYN.LAW.DUTIES, type: related }
+curriculum_items:
+  - { standard_year: 2022, code: SYN-LAW-01, domain: 合成道法领域, verb_level: understand, text: 合成课标条目：理解合成观点甲。, source_ref: synthetic }
+  - { standard_year: 2022, code: SYN-LAW-02, domain: 合成道法领域, verb_level: understand, text: 合成课标条目：理解合成观点乙。, source_ref: synthetic }
+  - { standard_year: 2022, code: SYN-LAW-03, domain: 合成道法领域, verb_level: apply, text: 合成课标条目：运用合成观点丙。, source_ref: synthetic }
+curriculum_links:
+  - { node_id: MORAL.SYN.LAW.RIGHTS, standard_year: 2022, code: SYN-LAW-01 }
+  - { node_id: MORAL.SYN.LAW.DUTIES, standard_year: 2022, code: SYN-LAW-02 }
+  - { node_id: MORAL.SYN.LAW.RULE, standard_year: 2022, code: SYN-LAW-03 }

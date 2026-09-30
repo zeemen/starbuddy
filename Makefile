@@ -318,6 +318,17 @@ knowledge-mutation:
 	@bash services/knowledge/tests/mutations.sh; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
 
+# 冲刺 5-K KGE M2 报表（specs/kge-m2-gate-sprint5）：核心节点内容完整率 + 数学、道法准入汇总（Markdown + JSON，同样输入逐字节相同）。
+# 由执行人对真实输入运行（不进 make check；测试 tests/test_m2.py 随 knowledge-test 运行）。输入目录的约定文件名见 services/knowledge/README.md；
+# 缺的文件报“待填”。用法：make kge-m2 M2_SUBJECT=aya|zhixing M2_INPUTS=<输入目录> M2_OUT=<输出目录>
+# 参数在 make 层先过白名单：学科只收 aya / zhixing（各一个词）；两个路径各恰好一个词（不含空格）、不含单引号，传给 shell 时单引号包裹
+.PHONY: kge-m2
+KGE_M2_BAD = $(or $(filter-out 1,$(words $(M2_SUBJECT))),$(if $(filter aya zhixing,$(M2_SUBJECT)),,bad),$(filter-out 1,$(words $(M2_INPUTS))),$(filter-out 1,$(words $(M2_OUT))),$(findstring ',$(M2_INPUTS)$(M2_OUT)))
+kge-m2:
+	@$(if $(KGE_M2_BAD),echo "用法：make kge-m2 M2_SUBJECT=aya|zhixing M2_INPUTS=<输入目录> M2_OUT=<输出目录>（路径不含空格与单引号）"; exit 2)
+	@if [ ! -x services/knowledge/.venv/bin/python ]; then echo "kge-m2: 没有安装依赖（见 services/knowledge/README.md）"; exit 2; fi
+	@cd services/knowledge && .venv/bin/python -m knowledge.m2 --subject '$(M2_SUBJECT)' --inputs '$(abspath $(M2_INPUTS))' --out '$(abspath $(M2_OUT))'
+
 # KGE-03 PR ③ 对照评测（evals/kge-compile）：页面优先 vs 切块检索的指标与手算一致、确定性输出、报告只含汇总与题目 ID、
 # 合成样例报告与夹具是最新的。用知识服务的 venv（需要 jieba 与 knowledge 包）；缺依赖时非严格跳过、严格失败
 kge-compile-eval-test:

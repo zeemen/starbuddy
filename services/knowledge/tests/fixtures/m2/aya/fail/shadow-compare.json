@@ -1,0 +1,20 @@
+{
+  "agree": 0,
+  "agreement": null,
+  "agreement_pct": null,
+  "by_kind": {
+    "not_in_report": 0,
+    "not_judged": 0,
+    "state_mismatch": 0
+  },
+  "comparable": 0,
+  "coverage": null,
+  "coverage_pct": null,
+  "disagreements": [],
+  "format": "sie-shadow-compare/0.1",
+  "report_items": 0,
+  "reviewers": 2,
+  "sample": false,
+  "students": 3,
+  "teacher_items": 0
+}
