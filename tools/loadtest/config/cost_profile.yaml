@@ -1,0 +1,50 @@
+# 成本模型的使用画像（spec 设计要点 3）。除标“回放”的 token 数外，全部是**假设**，报告逐项标注来源；试点数据到位后替换。
+#
+# 单次会话成本 = Σ（调用次数 × (输入 token × 输入单价 + 输出 token × 输出单价)）+ 语音分钟 × 单价
+# 单月成本（科目 × 会员档 × 使用率 u）= Σ_活动 额度(档, 资源) × u × 每单位调用次数 × 单次调用成本  + 语音分钟 × u × 单价
+# 额度取迁移 0015 的草稿配置 v12-pilot@1（只读解析；与 0015 不一致时测试失败）。存储、计算摊销本版不计（spec 标“可选”）。
+quota_config: v12-pilot@1
+
+# 使用分布（spec 待人确认 #5 默认）：按额度上限的 30% / 60% / 100% 三档，默认三档人数相同；
+# P50 / P90 = 按人数加权的最近秩分位（三档等权时 P50 落在 60% 档、P90 落在 100% 档）
+utilization:
+  levels: [0.3, 0.6, 1.0]
+  weights: [1, 1, 1]
+
+# 没有调用记录时的 token 分布（可配置分布，报告标“假设”）：每次调用的平均输入 / 输出 token
+fallback_tokens:
+  T1: { input: 1800, output: 250, note: 教学对话一轮（含人设与上下文），假设 }
+  T2: { input: 1500, output: 400, note: 道法主观题逐点判分，假设 }
+  T4: { input: 2500, output: 600, note: 作文五维批改，假设 }
+  T9: { input: 600, output: 20, note: 内容安全与人设守卫，假设 }
+
+# 各科的活动：资源（计量资源类型）× 每单位的模型调用次数（per_minute 为语音分钟，按分钟计价）
+subjects:
+  aya:
+    label: 数学（阿鸦）
+    activities:
+      - { resource: mistake_analysis, task: null, calls_per_unit: 0, note: 验证器判分，不调模型（adapters/aya） }
+      - { resource: diagnosis_full, task: null, calls_per_unit: 0, note: 自适应诊断由学习服务的诊断引擎与验证器完成，不调模型 }
+      - { resource: ai_active_time, task: T1, calls_per_unit: 1.0, note: 每分钟 1 轮教学对话（假设；讲解尚无适配器实现） }
+      - { resource: ai_active_time, task: T9, calls_per_unit: 1.0, note: 每轮对话 1 次守卫（假设） }
+      - { resource: voice_realtime, task: voice, calls_per_unit: 1.0, note: 语音分钟全部计入本科（假设） }
+  wenli:
+    label: 语文（文砺）
+    activities:
+      - { resource: mistake_analysis, task: T4, calls_per_unit: 0.3, note: 批改中作文占 30%（假设），客观题不调模型 }
+      - { resource: diagnosis_full, task: null, calls_per_unit: 0, note: 诊断为客观题，不调模型 }
+      - { resource: ai_active_time, task: T1, calls_per_unit: 1.0, note: 每分钟 1 轮教学对话（假设） }
+      - { resource: ai_active_time, task: T9, calls_per_unit: 1.0, note: 每轮对话 1 次守卫（假设） }
+      - { resource: voice_realtime, task: voice, calls_per_unit: 1.0, note: 语音分钟全部计入本科（假设） }
+  zhixing:
+    label: 道法（知行）
+    activities:
+      - { resource: mistake_analysis, task: T2, calls_per_unit: 0.5, note: 批改中主观题占 50%（假设），客观题不调模型 }
+      - { resource: diagnosis_full, task: null, calls_per_unit: 0, note: 诊断只收过程模式，不调模型 }
+      - { resource: ai_active_time, task: T1, calls_per_unit: 1.0, note: 每分钟 1 轮教学对话（假设） }
+      - { resource: ai_active_time, task: T9, calls_per_unit: 1.0, note: 每轮对话 1 次守卫（假设） }
+      - { resource: voice_realtime, task: voice, calls_per_unit: 1.0, note: 语音分钟全部计入本科（假设） }
+  echo:
+    label: 英语（回声）
+    shelved: true   # 适配器已搁置（specs/adapter-echo-sprint3/lessons.md）：成本表保留一行，标“搁置，无数据”（spec 待人确认 #6）
+    activities: []

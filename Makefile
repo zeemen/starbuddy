@@ -445,3 +445,49 @@ gate0-evidence:
 	@$(if $(GATE0_BAD),echo "用法：make gate0-evidence GATE0_OUT=<输出目录>（路径不含空格与单引号）"; exit 2)
 	@if [ ! -x services/learning/.venv/bin/python ]; then echo "gate0-evidence: 没有安装依赖（见 services/learning/README.md）"; exit 2; fi
 	@cd services/learning && PYTHONPATH='$(abspath tools/e2e-cohort)' .venv/bin/python -m e2e_cohort evidence --out '$(abspath $(GATE0_OUT))' $(if $(filter 1,$(GATE0_STARMAP)),--starmap,)
+
+# 冲刺 5 压测基线、单模型失效降级、成本测算（specs/load-cost-baseline-sprint5；工具与手册见 tools/loadtest/README.md、RUNBOOK.md）。
+# 只在本机一次性栈上跑（规则 9），只用合成数据（规则 8）；依赖同 learning-test、三科适配器与 BFF 的 npm ci。
+#   make loadtest-baseline [LOADTEST_STAGES=small|full|10:120,50:120] [LOADTEST_OUT=<目录>] [LOADTEST_ARGS='--fault fake-a=unavailable']
+#     默认 small（5 → 10 并发 × 10 s）；完整分阶段 10 → 50 → 100 → 200 用 LOADTEST_STAGES=full LOADTEST_ARGS=--i-know（约 8 分钟，占满本机）
+#   make degradation-test   故障注入与降级断言（路由层 + 端到端，约 40 秒）
+#   make cost-report [COST_RECORDS=<调用记录 jsonl>] [COST_OUT=<目录>]   成本测试 + 科目 × 会员档 P50 / P90 报表（合成估算、示例价）
+# 不给输出目录时写到新建的临时目录（mkdtemp）；给了则不能是符号链接、须属于当前用户。
+# 护栏（同 GATE0_BAD）：路径不含空格与单引号；LOADTEST_STAGES 只收 small、full 或“数字:数字,…”；LOADTEST_ARGS 只收白名单选项。
+# 变量一律经环境变量传给命令（不在命令行里展开），shell 不会把它们当代码执行。
+.PHONY: loadtest-baseline degradation-test cost-report
+LOADTEST_PY := services/learning/.venv/bin/python
+LOADTEST_STAGES ?= small
+LOADTEST_OUT ?=
+LOADTEST_ARGS ?=
+COST_RECORDS ?= tools/loadtest/sample/call-records.jsonl
+COST_OUT ?=
+LOADTEST_PATH_BAD = $(or $(filter-out 0 1,$(words $(LOADTEST_OUT))),$(findstring ',$(LOADTEST_OUT)),$(filter-out 0 1,$(words $(COST_OUT))),$(findstring ',$(COST_OUT)),$(filter-out 1,$(words $(COST_RECORDS))),$(findstring ',$(COST_RECORDS)))
+loadtest-baseline degradation-test cost-report: export LT_STAGES = $(LOADTEST_STAGES)
+loadtest-baseline degradation-test cost-report: export LT_ARGS = $(LOADTEST_ARGS)
+loadtest-baseline degradation-test cost-report: export LT_OUT = $(if $(LOADTEST_OUT),$(abspath $(LOADTEST_OUT)),)
+loadtest-baseline degradation-test cost-report: export LT_COST_OUT = $(if $(COST_OUT),$(abspath $(COST_OUT)),)
+loadtest-baseline degradation-test cost-report: export LT_COST_RECORDS = $(abspath $(COST_RECORDS))
+loadtest-baseline:
+	@$(if $(LOADTEST_PATH_BAD),echo "loadtest-baseline: 路径不能含空格或单引号"; exit 2)
+	@case "$$LT_STAGES" in small|full) ;; ""|*[!0-9:,.]*) echo "loadtest-baseline: LOADTEST_STAGES 只收 small、full 或 并发:秒,…"; exit 2;; esac
+	@case "$$LT_ARGS" in *[!A-Za-z0-9=:._\ -]*) echo "loadtest-baseline: LOADTEST_ARGS 含不允许的字符"; exit 2;; esac; \
+	  for a in $$LT_ARGS; do case "$$a" in --i-know|--fault|--retry-scale|--median-ms|--p90-ms|--seed|fake-[abx]=unavailable|fake-[abx]=timeout|fake-[abx]=rate_limited|fake-[abx]=error_ratio:[0-9.]*|fake-[abx]=slow:[0-9]*|[0-9]*) ;; *) echo "loadtest-baseline: LOADTEST_ARGS 里的 $$a 不在白名单"; exit 2;; esac; done
+	@if [ ! -x $(LOADTEST_PY) ]; then echo "loadtest-baseline: 跳过（没有 services/learning/.venv）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@cd tools/loadtest && PYTHONDONTWRITEBYTECODE=1 ../../$(LOADTEST_PY) -m pytest -q tests/test_arrivals.py tests/test_guards.py
+	@cd tools/loadtest && ../../$(LOADTEST_PY) -m loadtest baseline --stages "$$LT_STAGES" $${LT_OUT:+--out "$$LT_OUT"} $$LT_ARGS \
+	  && echo "loadtest-baseline: 报告见上面 out 目录的 baseline.md（本机基线，不代表生产容量）"
+degradation-test:
+	@if [ ! -x services/learning/.venv/bin/pytest ]; then echo "degradation-test: 跳过（没有 services/learning/.venv）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@cd tools/loadtest && PYTHONDONTWRITEBYTECODE=1 ../../$(LOADTEST_PY) -m pytest -q tests/test_metrics_faults.py
+	@cd services/learning && LEARNING_TEST_STRICT=$(if $(filter 1,$(CONTRACT_STRICT)),1,0) .venv/bin/python -m pytest -q -rs tests/test_degradation.py \
+	  && echo "degradation-test: 通过"
+cost-report:
+	@$(if $(LOADTEST_PATH_BAD),echo "cost-report: 路径不能含空格或单引号"; exit 2)
+	@if [ ! -x $(LOADTEST_PY) ]; then echo "cost-report: 跳过（没有 services/learning/.venv）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@cd tools/loadtest && PYTHONDONTWRITEBYTECODE=1 ../../$(LOADTEST_PY) -m pytest -q tests/test_cost.py
+	@cd tools/loadtest && ../../$(LOADTEST_PY) -m loadtest cost --records "$$LT_COST_RECORDS" $${LT_COST_OUT:+--out "$$LT_COST_OUT"} \
+	  && echo "cost-report: 报告见上面 out 目录的 cost-report.md（合成估算、示例价）"

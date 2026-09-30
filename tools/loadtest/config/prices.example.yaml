@@ -1,0 +1,14 @@
+# 价格表（示例价）——**不是任何真实供应商的价格**，只为跑通成本模型（spec 待人确认 #4 默认）。
+# 候选模型名单与供应商登记未签字（ADR 04 / 08，docs/compliance/vendors.md 为空）；签字后由人把本文件复制为
+# prices.yaml（不改名也可以，用 --prices 指定），填入签字价格，并把 example 改为 false，再用同一工具重算。
+# 供应商与模型一律写合成代号，不写模型标识（报告同样只出现代号）。
+example: true
+currency: CNY
+# 按任务类型（ADR 04 增补的九类任务）给价：每百万 token 的输入 / 输出单价
+per_million_tokens:
+  T1: { vendor: 供应商代号甲, model: 模型代号甲-对话, input: 2.0, output: 8.0 }
+  T2: { vendor: 供应商代号甲, model: 模型代号甲-推理, input: 4.0, output: 16.0 }
+  T4: { vendor: 供应商代号甲, model: 模型代号甲-对话, input: 2.0, output: 8.0 }
+  T9: { vendor: 供应商代号乙, model: 模型代号乙-守卫, input: 0.8, output: 2.0 }
+# 实时语音（T5 / T6）按分钟计价（示例价）
+voice_per_minute: { vendor: 供应商代号丙, model: 模型代号丙-语音, price: 0.06 }

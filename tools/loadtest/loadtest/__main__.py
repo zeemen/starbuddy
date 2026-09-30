@@ -1,0 +1,91 @@
+"""命令行（在 services/learning/.venv 下，PYTHONPATH 含 tools/loadtest）：
+
+  python -m loadtest plan     --stages small|full|'10:120,50:120' [--seed N]        只打印计划摘要与请求序列 digest（不起栈）
+  python -m loadtest baseline --stages small [--out DIR] [--seed N] [--fault fake-a=unavailable] [--median-ms 300 --p90-ms 900]
+  python -m loadtest cost     --records FILE [--out DIR] [--prices FILE] [--profile FILE]
+
+baseline 只在本机一次性栈上跑（规则 9）；预发压测见 RUNBOOK.md，需人批准。
+"""
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import sys
+from pathlib import Path
+
+from .arrivals import PROFILES, Profile, describe, digest, parse_stages, plan, requests, slot_counts
+from .cost import CONFIG
+from .cost import run as run_cost
+from .faults import MODES
+
+MAX_SAFE = 20  # 开发期规模上限：超过需显式 --i-know（完整分阶段只在人手动传参时跑）
+
+
+def _fault(text: str) -> tuple[str, dict]:
+    vendor, _, mode = text.partition("=")
+    mode, _, ratio = mode.partition(":")
+    if mode not in MODES:
+        raise argparse.ArgumentTypeError(f"fault mode must be one of {MODES}")
+    spec: dict = {"mode": mode}
+    if ratio:
+        spec["error_ratio" if mode == "error_ratio" else "extra_latency_ms"] = float(ratio)
+    return vendor, spec
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(prog="loadtest")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    for name in ("plan", "baseline"):
+        p = sub.add_parser(name)
+        p.add_argument("--stages", default="small", help=f"预置档 {sorted(PROFILES)} 或 '并发:秒,…'")
+        p.add_argument("--seed", type=int, default=20260930)
+        p.add_argument("--mean-session-s", type=float, default=6.0)
+        p.add_argument("--think-s", type=float, default=0.2)
+    b = sub.choices["baseline"]
+    b.add_argument("--out", default=None, help="不给则写到新建的临时目录（mkdtemp）；给了则不能是符号链接、须属于当前用户")
+    b.add_argument("--fault", action="append", type=_fault, default=[], help="例如 fake-a=unavailable、fake-a=error_ratio:0.3")
+    b.add_argument("--median-ms", type=float, default=300.0)
+    b.add_argument("--p90-ms", type=float, default=900.0)
+    b.add_argument("--i-know", action="store_true", help="允许并发超过 20（完整分阶段）；只在本机")
+    b.add_argument("--scale-note", default=None)
+    b.add_argument("--retry-scale", type=float, default=1.0, help="BFF meteredCall 退避时长的比例（1 = 1/2/4/8 s）")
+    c = sub.add_parser("cost")
+    c.add_argument("--records", required=True)
+    c.add_argument("--out", default=None, help="同 baseline --out")
+    c.add_argument("--prices", default=str(CONFIG / "prices.example.yaml"))
+    c.add_argument("--profile", default=str(CONFIG / "cost_profile.yaml"))
+    args = ap.parse_args(argv)
+
+    if args.cmd == "cost":
+        r = run_cost(Path(args.records), Path(args.prices), Path(args.profile), Path(args.out) if args.out else None)
+        print(json.dumps({"out": r["out"], "rows": len(r["table"]), "example_prices": r["example_prices"]}, ensure_ascii=False))
+        return 0
+
+    profile = Profile(seed=args.seed, stages=parse_stages(args.stages), mean_session_s=args.mean_session_s, think_mean_s=args.think_s)
+    if args.cmd == "plan":
+        arr = plan(profile)
+        print(json.dumps({"profile": describe(profile), "arrivals": len(arr), "slots": slot_counts(arr),
+                          "digest": digest(requests(profile, arr))}, ensure_ascii=False, indent=1))
+        return 0
+    if max(s.concurrency for s in profile.stages) > MAX_SAFE and not args.i_know:
+        print(f"并发超过 {MAX_SAFE}：完整分阶段请显式加 --i-know（只在本机一次性栈）", file=sys.stderr)
+        return 2
+    from .baseline import run_baseline
+    from .stack import missing_prerequisites
+
+    why = missing_prerequisites()
+    if why:
+        print(f"loadtest: {why}", file=sys.stderr)
+        return 3
+    r = asyncio.run(run_baseline(profile, Path(args.out) if args.out else None, provider_median_ms=args.median_ms, provider_p90_ms=args.p90_ms,
+                                 faults=dict(args.fault), scale_note=args.scale_note,
+                                 retry_scale=args.retry_scale))
+    ok = r["metering"]["zero_leak"] and r["plan_digest"] == r["executed_digest"]
+    print(json.dumps({"out": r["out"], "zero_leak": r["metering"]["zero_leak"], "sequence_match": r["plan_digest"] == r["executed_digest"],
+                      "requests": sum(d["count"] for d in r["endpoints"].values())}, ensure_ascii=False))
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
