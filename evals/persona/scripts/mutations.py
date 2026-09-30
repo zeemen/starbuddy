@@ -1,4 +1,5 @@
-"""点点评分器与人设治理组件的变异测试（specs/diandian-cases-v0-sprint1/spec.md 设计要点 4；specs/persona-governance-sprint3 验收）。
+"""点点评分器与人设治理组件的变异测试（specs/diandian-cases-v0-sprint1/spec.md 设计要点 4；specs/persona-governance-sprint3 验收；
+specs/diandian-consistency-r2-sprint3 后处理、两组数字、修订与验收判定）。
 
 每个变异把评分器、词表、guard 分类器、登记表检查、七类家族级检查器、漂移 / 泄露检查器或回放框架的一处关键判定改坏，
 复制到临时目录里跑指定的测试，断言测试能发现。只有测试断言失败（退出码 1）算发现；收集或导入错误不算。
@@ -138,6 +139,43 @@ GOVERNANCE: dict[str, tuple[str, str, str, str]] = {
     "回放：严格模式不报“需要重新录制”": (RUN, 'if strict or r["status"] == "invalid":', 'if r["status"] == "invalid":', GOV_T),
     "回放：禁语命中不算失败": (RUN, "    if forbidden_items:\n        reasons.append(", "    if False:\n        reasons.append(", GOV_T),
 }
+# 冲刺 3-I 点点一致性二轮：后处理 v0、两组数字、修订流程、验收判定、二轮报告（只跑 test_r2.py，约 12 秒）
+PP = "evals/persona/diandian/postproc/__init__.py"
+R2R = "evals/persona/diandian/r2report.py"
+CMP = "evals/persona/diandian/compare.py"
+R2_T = "evals/persona/tests/test_r2.py"
+R2: dict[str, tuple[str, str, str, str]] = {
+    "后处理：禁语命中漏拦": (PP, "            if hits:\n                text = self.replacements[\"safe_reply\"].text",
+                    "            if False:\n                text = self.replacements[\"safe_reply\"].text", R2_T),
+    "后处理：拦截后造新句": (PP, 'text = self.replacements["safe_reply"].text', 'text = "我们先换个话题吧。"', R2_T),
+    "后处理：替代句不核对规格原文": (PP, 'if text not in src.read_text(encoding="utf-8"):', "if False:", R2_T),
+    "后处理：占位不查格式": (PP, "if not PLACEHOLDER.match(text):", "if False:", R2_T),
+    "后处理：首轮缺披露不注入": (PP, "if first_contact and turn_index == 0 and not self._disclosure_rx.search(text):", "if False:", R2_T),
+    "后处理：非首轮也注入披露": (PP, "if first_contact and turn_index == 0 and not self._disclosure_rx.search(text):",
+                        "if first_contact and not self._disclosure_rx.search(text):", R2_T),
+    "后处理：情感信号不转介": (PP, "        if signals:\n            text = self.replacements[\"referral\"].text",
+                      "        if False:\n            text = self.replacements[\"referral\"].text", R2_T),
+    "后处理：转介不置 referral 字段": (PP, 'out_fields["referral"] = True', "pass", R2_T),
+    "两组数字混算（后处理组用原始回复评分）": (CMP, '"runs": _score_write(p_runs,', '"runs": _score_write(per_run,', R2_T),
+    "两组数字混算（只 Prompt 组用后处理结果）": (CMP, 'sets = {"prompt_only": compare_report.build(meta, side.raw)',
+                                'sets = {"prompt_only": compare_report.build(meta, side.post)', R2_T),
+    "修订：某项下降仍采纳": (R2R, "if b is not None and a is not None and a < b:", "if False:", R2_T),
+    "修订：禁语触发率 > 0 仍采纳": (R2R, 'if fa["triggered"] > 0:', "if False:", R2_T),
+    "修订：次数上限不查": (R2R, "if not 1 <= n <= criteria.max_revisions:", "if n < 1:", R2_T),
+    "修订：前后两个版本用同一套行为": (CMP, "_with_profiles(cands, rev.fake_profiles.get(name), categories)",
+                           '_with_profiles(cands, rev.fake_profiles.get("after"), categories)', R2_T),
+    "修订：修订链不核对": (R2R, 'if side_from(res["before"]).key() != base.key():', "if False:", R2_T),
+    "修订：记录签字后被改不核对": (R2R, 'if not src.is_file() or _sha(src) != res.get("yaml_sha256"):', "if not src.is_file():", R2_T),
+    "修订：Prompt 指纹不核对": (CMP, "if side.prompt_sha256 and sha != side.prompt_sha256:", "if False:", R2_T),
+    "判定：差值阈值错": (R2R, "diff_ok = max_diff <= criteria.max_core_diff_pp", "diff_ok = max_diff <= criteria.max_core_diff_pp * 2", R2_T),
+    "判定：核心下限不查": (R2R, "floor_ok = all(r is not None and r >= criteria.core_floor for r in rates.values())", "floor_ok = True", R2_T),
+    "判定：红线不进判定": (R2R, "red_ok = all(v <= criteria.redline_max for v in red.values())", "red_ok = True", R2_T),
+    "判定：按只 Prompt 一组": (R2R, 'v = per_set[basis]["verdict"]', 'v = per_set["prompt_only"]["verdict"]', R2_T),
+    "报告：红线未单列（只 Prompt 一组不列）": (R2R, '    for s in SETS:\n        lines += ["", f"### 红线命中',
+                                 '    for s in SETS[1:]:\n        lines += ["", f"### 红线命中', R2_T),
+    "报告：占位未标“待人设负责人提供”": (R2R, 'if post and post.get("pending"):', "if False:", R2_T),
+    "留出集汇总收用例级字段": (R2R, 'set(v) != {"core_rate", "redline"}', 'not {"core_rate", "redline"} <= set(v)', R2_T),
+}
 WORKERS = int(os.environ.get("PERSONA_MUTATION_WORKERS", "4"))
 TEST_ENV = {"PATH": "/usr/bin:/bin", "PYTHONDONTWRITEBYTECODE": "1"}
 
@@ -185,6 +223,7 @@ def _one(name: str, rel: str, pattern: str, replacement: str, tests: str) -> tup
 def main() -> int:
     jobs = [(n, rel, pat, rep, "tests") for n, (rel, pat, rep) in MUTATIONS.items()]
     jobs += [(n, rel, pat, rep, tests) for n, (rel, pat, rep, tests) in GOVERNANCE.items()]
+    jobs += [(n, rel, pat, rep, tests) for n, (rel, pat, rep, tests) in R2.items()]
     with tempfile.TemporaryDirectory(prefix="persona-mut-control.") as t:
         _sandbox(Path(t))
         for tests in ("tests", f"{GUARD_T} {REG_T}"):
@@ -200,7 +239,8 @@ def main() -> int:
     if missed:
         print(f"eval-persona-mutation: 失败，{len(missed)}/{len(jobs)} 个变异没有被发现")
         return 1
-    print(f"eval-persona-mutation: 通过（{len(jobs)} 个变异全部被发现：点点评分器 {len(MUTATIONS)} 个，人设治理组件 {len(GOVERNANCE)} 个）")
+    print(f"eval-persona-mutation: 通过（{len(jobs)} 个变异全部被发现：点点评分器 {len(MUTATIONS)} 个，人设治理组件 {len(GOVERNANCE)} 个，"
+          f"一致性二轮 {len(R2)} 个）")
     return 0
 
 

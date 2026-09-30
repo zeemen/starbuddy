@@ -1,0 +1,14 @@
+# 二轮流程样例“达标”场景的候选清单（冲刺 3-I）：两家 test 环境假供应商。只有两家时比两家（spec 待人确认 #3，依据 ADR 08 第 3 节第 8 条）。
+# 只证明验收判定的流程，不是模型评测。
+version: 1
+candidates:
+  - id: fake-compliant
+    vendor: fake-a
+    model: fake-chat
+    note: 假候选：总是合规
+    fake_profile: compliant
+  - id: fake-referral-fail
+    vendor: fake-b
+    model: fake-chat
+    note: 假候选：转介类稳定失败（结构字段 referral 取反）
+    fake_profile: fail_category:referral

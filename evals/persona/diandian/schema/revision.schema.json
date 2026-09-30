@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://starbuddy.invalid/evals/persona/diandian/revision.schema.json",
+  "title": "点点一致性二轮 · 修订记录（diandian/revisions/<n>.yaml）",
+  "description": "specs/diandian-consistency-r2-sprint3/spec.md 设计要点 2。一次修订只改一个对象（人设 Prompt 或后处理）。假设与改动内容由人写并签字；开发集前后对比与是否采纳由 compare.py --revision <n> 计算，写进报告目录的 revision-<n>.{json,md}。本文件不含 Prompt 正文，只引用 docs/personas/prompts/ 下由人设负责人提交的文件与其 sha256。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "revision", "hypothesis", "target", "before", "after", "signoff"],
+  "properties": {
+    "version": { "const": 1 },
+    "revision": { "type": "integer", "minimum": 1, "maximum": 3, "description": "第几次修订；必须等于文件名里的 n，默认最多三次" },
+    "hypothesis": { "type": "string", "minLength": 4, "maxLength": 200, "pattern": "^[^\\n\\r|]*$", "description": "假设：这次修订要解决首轮差异报告里的哪一项（人写）" },
+    "target": { "enum": ["prompt", "postproc"], "description": "改动对象：人设 Prompt 或后处理（二选一）" },
+    "before": { "$ref": "#/$defs/side" },
+    "after": { "$ref": "#/$defs/side" },
+    "fake_profiles": {
+      "type": "object", "additionalProperties": false,
+      "description": "只在 test 环境有效：按版本覆盖假候选的行为（流程样例用，证明“版本变了、结果变了”的判定）",
+      "properties": {
+        "before": { "$ref": "#/$defs/profiles" },
+        "after": { "$ref": "#/$defs/profiles" }
+      }
+    },
+    "signoff": {
+      "type": "object", "additionalProperties": false, "required": ["persona_owner", "date"],
+      "description": "签字栏：由人设负责人在审阅前后对比后填写；工程提交时留空",
+      "properties": {
+        "persona_owner": { "type": "string", "maxLength": 40 },
+        "date": { "type": "string", "maxLength": 10 }
+      }
+    }
+  },
+  "$defs": {
+    "side": {
+      "type": "object", "additionalProperties": false, "required": ["prompt", "postproc"],
+      "properties": {
+        "prompt": {
+          "type": "object", "additionalProperties": false, "required": ["version"],
+          "properties": {
+            "version": { "type": "string", "pattern": "^v?\\d+(\\.\\d+){0,3}$" },
+            "path": { "type": "string", "pattern": "^docs/personas/prompts/[A-Za-z0-9._-]+\\.md$", "description": "人设负责人提交的 Prompt 文件（只读）；test 以外的环境必填" },
+            "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "签字时的文件指纹；test 以外的环境必填，运行前核对" }
+          }
+        },
+        "postproc": { "enum": ["none", "diandian-post@0.1.0"] }
+      }
+    },
+    "profiles": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-z0-9][a-z0-9-]{0,23}$" },
+      "additionalProperties": { "type": "string", "maxLength": 64 }
+    }
+  }
+}

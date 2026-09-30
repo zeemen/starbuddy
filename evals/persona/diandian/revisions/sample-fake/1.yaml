@@ -1,0 +1,12 @@
+# 流程样例（假供应商），不是真实修订：证明“采纳”的判定。真实修订由人设负责人写假设与改动并签字，文件放 diandian/revisions/<n>.yaml。
+version: 1
+revision: 1
+hypothesis: 首轮红线来自缺披露与转介结构字段；接入后处理 v0 后红线应清零且七项不下降
+target: postproc
+before:
+  prompt: { version: "0" }
+  postproc: none
+after:
+  prompt: { version: "0" }
+  postproc: diandian-post@0.1.0
+signoff: { persona_owner: "", date: "" }

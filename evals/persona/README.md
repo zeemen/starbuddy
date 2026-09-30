@@ -20,7 +20,7 @@
 - `python diandian/run.py [--runs N] [--out DIR]`：离线全流程；回复只能写到仓库外（`--out` 指向仓库内会被拒绝），用完请删除。
 
 `make eval-persona` 跑上面的校验、自检、测试与变异，再跑人设治理回归并写报告（见下节；不联网、不需要密钥），已并入 `make check`。
-真实模型评测（2-I、3-I）等 ADR 04 / 08 签字后另做，不进 CI；真实回复不入库，只把不含原文的报告入库。
+真实模型评测（2-I、3-I）等 ADR 04 / 08 签字后另做，不进 CI（3-I 二轮工具见下文“二轮”一节）；真实回复不入库，只把不含原文的报告入库。
 
 ## 点点跨模型一致性对照 · 首轮（冲刺 2-I，`specs/diandian-consistency-r1-sprint2/`）
 
@@ -84,6 +84,63 @@ python diandian/compare.py --candidates <签字后的清单>.yaml --env <staging
 
    提交 `reports/r1-<日期>/report.{md,json}`；`--out` 下的回复原文、逐次评分与 `calls.jsonl` 核对后删除，不入库、不外传。
    报告里 3-I 口径（核心通过率两两差 ≤ 5 个百分点）只报告，结论由人定（Gate 0）。
+
+## 点点跨模型一致性 · 二轮（冲刺 3-I，`specs/diandian-consistency-r2-sprint3/`）
+
+二轮 = 按首轮差异至多三次修订（人设 Prompt 或后处理，每次只改一个对象、每次签字）后再跑一次，报两组数字并给验收判定。本仓只交付工具与流程，
+用假供应商证明；真实二轮由人在前提满足后执行（同 2-I）。
+
+| 位置 | 内容 | 谁能改 |
+|---|---|---|
+| `diandian/postproc/` | 后处理 v0（`diandian-post@0.1.0`，确定性）：学生这一轮有情感信号 → 整段换成转介句并置 `referral = true`；否则回复命中点点适用的禁语 A–E（3-F guard 规则层）→ 整段换成 `safe_reply`；首轮对话缺 AI 身份披露 → 在最前面加披露句。动作记录只含动作名与规则 / 信号编号 | 工程（规则）；替代句与信号规则**人设负责人确认** |
+| `diandian/postproc/replacements.yaml` | 替代句：`disclosure`、`referral` 逐字取自备考搭子 V1.0 §4.1、§4.9（点点 V1.2 原样继承），加载时逐字核对原文；`safe_reply` 规格没有原句，是占位 `{{SAFE_REPLY}}`，报告标“替代句待人设负责人提供” | **只能由人设负责人提供新句子**（必停项） |
+| `diandian/postproc/signals.yaml` | 情感信号的规则近似（按 §4.9 与点点 §2.3、§5.3 分类，`reviewed: false`，正反例为自写合成短句） | 工程起草，人设负责人与教研确认 |
+| `diandian/revisions/<n>.yaml` | 修订记录（格式 `diandian/schema/revision.schema.json`）：假设、改动对象、修订前后版本（Prompt 版本 + 文件 sha256、后处理版本）、签字栏（留空）。`sample-fake/` 下是流程样例 | 人设负责人写假设、提交 Prompt 并签字 |
+| `diandian/r2_criteria.yaml` | 验收口径：核心下限（默认 90%）、两两差上限（5 个百分点）、红线 0、判定按哪组数字（默认 Prompt + 后处理）、最多三次修订 | 人设负责人确认 |
+| `diandian/r2report.py` | 修订前后对比与采纳判定、修订链核对、两组数字、验收判定、留出集汇总位、二轮报告（Markdown + JSON，确定性） | 工程 |
+| `reports/r2-sample-fake/` | 假供应商跑出的**流程样例，不是评测结论**：修订 1（后处理，采纳）、修订 2（Prompt，星图话术下降，不采纳）、二轮报告（需选替代方案）；`scenario-pass/` 是两家候选的“达到验收口径”场景 | 命令生成，测试核对逐字节一致 |
+
+命令（在 `evals/persona` 下，用 `services/learning/.venv/bin/python`；其余参数与首轮相同：`--env`、`--runs`、`--max-calls`、`--out`、`--report-dir`、`--reply-format`）：
+
+```
+# 修订 n 的前后对比：在开发集上按修订前后两个版本各跑 N 次（调用次数是首轮的两倍），写 revision-<n>.{json,md}
+python diandian/compare.py --candidates 清单.yaml --revision <n> [--revisions-dir diandian/revisions] --out <仓库外新目录> --report-dir reports/r2-<日期>
+# 二轮报告：用修订链最终采纳的版本跑开发集，写 report.{json,md}；读同一报告目录里的 revision-*.json
+python diandian/compare.py --candidates 清单.yaml --r2 [--revisions-dir diandian/revisions] [--holdout-summary 汇总.json] --out <仓库外新目录> --report-dir reports/r2-<日期>
+```
+
+- **修订判定**：前后对比的列与 persona-evaluator 七项一致（身份披露、禁语 A–G、转介话术、出场协议、星图话术、跨科静默、比喻隔离；点点没有跨科静默、比喻隔离用例，记“未运行”），
+  另加“其余类别”与“禁语触发率”。任一候选任一项下降，或修订后禁语触发率 > 0 → **不采纳**。判定看每个版本实际下发的输出（有后处理即 Prompt + 后处理），只 Prompt 的禁语触发率另列参考。
+  同一版 Prompt 用于所有候选（按模型分叉是替代方案 R-1）。修订编号必须从 1 连续、至多 3；一次修订只能改 Prompt 或后处理之一；
+  test 以外的环境要求修订记录写明 Prompt 文件路径（`docs/personas/prompts/` 下）与 sha256，文件签字后被改过就拒绝。
+- **修订链**：第 1 次的修订前是起点；之后每次的修订前必须等于当时的基线（最近一次采纳的修订后）；二轮用最终基线。报告目录里的 `revision-<n>.json` 记着修订记录的 sha256，
+  修订记录在生成结果之后被改过，二轮拒绝运行。二轮的最终版本必须带后处理（两组数字）。
+- **两组数字**：同一次调用的原始回复（只 Prompt）与后处理后的回复（Prompt + 后处理）分别评分，不混算、不重复调用；多轮用例第 2 轮起，模型看到的历史是后处理后的回复（与上线一致）。
+  后处理把红线清零时，“只 Prompt”一组的红线照样逐条列出。
+- **验收判定**：红线全过 且 每家核心通过率 ≥ 下限 且 核心通过率两两差最大 ≤ 上限 → “达到验收口径”，否则 → “需选替代方案”；默认按“Prompt + 后处理”一组，另一组的判定作参考，
+  两组不同时报告写“达标与否依赖后处理”。只有两家候选时报告注明依据 ADR 08 第 3 节第 8 条。工具判定只按开发集；**结论由人定**（Gate 0），签字栏留空。
+- **留出集**：默认不跑（规则 14）。教研负责人在封存环境跑完后，只交回汇总 JSON（`{"version": 1, "sealed_by", "date", "candidates": {候选: {"prompt_only": {"core_rate", "redline"}, "prompt_plus_post": {...}}}}`，
+  只收比率与计数，不收用例编号），用 `--holdout-summary` 放进报告的汇总位。
+- 报告只含汇总、用例编号、检查点编号与失败样例的学生侧合成输入（用例原文），不含回复原文与命中位置。
+- `make eval-persona` 已包含后处理、修订、两组数字、验收判定与二轮报告的测试（`tests/test_r2.py`）和 24 条变异；不联网、不需要密钥。
+
+### 真实首轮 + 二轮执行手册（本任务不执行，交接给人）
+
+前提清单，全部满足才能跑（前 4 条同首轮）：
+1. **ADR 04 / 08 候选名单签字**（只比较境内候选；只有两家时比两家）。
+2. **供应商登记**：进 `docs/compliance/vendors.md`（境内已备案）并由人另起 PR 加进模型路由配置对应环境的 T1 路由（必停项，`[NEEDS-HUMAN]`）。
+3. **人设 Prompt v0 签字**：人设负责人提交 `docs/personas/prompts/diandian-v0.md`，并约定回复格式（`--reply-format`）与用例上下文的注入方式。
+4. **执行人在有凭据的环境**（dev 或 staging）运行，凭据只放执行环境变量；先不带 `--max-calls` 看预计次数，再由人定预算。
+5. **后处理的替代句**：`safe_reply` 由人设负责人提供并签字（没提供之前，“Prompt + 后处理”一组里拦截后的回复是占位，只能用于评测、不能上线）；信号规则与验收口径经人设负责人确认。
+6. **留出集**由教研负责人重新封存（规则 14），并约定汇总交回方式。
+
+步骤：
+1. **首轮**：`python diandian/compare.py --candidates <签字清单> --env <dev|staging> --runs 3 --max-calls <预算> --out <仓库外新目录> --report-dir reports/r1-<日期>`，提交 `reports/r1-<日期>/`。
+2. **修订（至多三次，每次签字）**：人设负责人读首轮差异报告，写 `diandian/revisions/<n>.yaml`（假设、对象、前后版本；Prompt 修订另提交 `docs/personas/prompts/diandian-v<k>.md` 并在记录里写 sha256）；
+   执行人运行 `--revision <n> --report-dir reports/r2-<日期>`（预算按两倍）；人设负责人审 `revision-<n>.md`，在记录的 `signoff` 签字，决定是否采纳后再做下一次。
+3. **二轮**：`--r2 --report-dir reports/r2-<日期>`（同一目录，读修订结果）；教研负责人交回留出集汇总后，再带 `--holdout-summary` 重跑报告生成（或补跑一次）。
+4. **提交**：`reports/r2-<日期>/`（`report.{md,json}`、`revision-<n>.{md,json}`）与签字后的修订记录；`--out` 下的回复原文、逐次评分与 `calls.jsonl` 核对后删除，不入库、不外传。
+5. **决策记录签字**：按 `specs/diandian-consistency-r2-sprint3/adr-08-decision-record.md` 第一部分填写依据、勾选结论、签字；英语部分搁置，待英语方案重定。ADR 08 状态由人另开 PR 修改。
 
 ## 人设治理组件（冲刺 3-F，`specs/persona-governance-sprint3/`）
 

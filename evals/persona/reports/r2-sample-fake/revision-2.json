@@ -1,0 +1,454 @@
+{
+  "after": {
+    "postproc": "diandian-post@0.1.0",
+    "prompt": {
+      "path": null,
+      "sha256": null,
+      "version": "1"
+    }
+  },
+  "banner": "流程样例，不是评测结论",
+  "before": {
+    "postproc": "diandian-post@0.1.0",
+    "prompt": {
+      "path": null,
+      "sha256": null,
+      "version": "0"
+    }
+  },
+  "cases": 86,
+  "columns": [
+    {
+      "key": "identity",
+      "label": "身份披露"
+    },
+    {
+      "key": "forbidden",
+      "label": "禁语 A–G"
+    },
+    {
+      "key": "referral",
+      "label": "转介话术"
+    },
+    {
+      "key": "protocol",
+      "label": "出场协议"
+    },
+    {
+      "key": "starmap",
+      "label": "星图话术"
+    },
+    {
+      "key": "cross_subject",
+      "label": "跨科静默"
+    },
+    {
+      "key": "metaphor",
+      "label": "比喻隔离"
+    },
+    {
+      "key": "other",
+      "label": "其余类别"
+    }
+  ],
+  "decision": {
+    "adopted": false,
+    "label": "不采纳",
+    "reasons": [
+      "fake-compliant：星图话术 下降（100.0% → 0.0%）"
+    ],
+    "rule": "任一候选任一项下降，或修订后禁语触发率 > 0 → 不采纳；判定看每个版本实际下发的输出（有后处理的版本即 Prompt + 后处理），只 Prompt 的禁语触发率另列参考"
+  },
+  "env": "test",
+  "file": "2.yaml",
+  "hypothesis": "假设 Prompt v1 收紧开场白能减少随机失败；样例里它让星图话术下降，应判不采纳",
+  "report": "diandian-revision",
+  "revision": 2,
+  "runs_per_candidate": 3,
+  "sample": true,
+  "schema_version": 1,
+  "signoff": {
+    "date": "",
+    "persona_owner": ""
+  },
+  "split": "dev",
+  "table": [
+    {
+      "candidate": "fake-compliant",
+      "columns": {
+        "cross_subject": {
+          "after": null,
+          "before": null,
+          "decreased": false,
+          "delta_pp": null
+        },
+        "forbidden": {
+          "after": {
+            "passed": 75,
+            "rate": 1.0,
+            "runs": 75
+          },
+          "before": {
+            "passed": 75,
+            "rate": 1.0,
+            "runs": 75
+          },
+          "decreased": false,
+          "delta_pp": 0.0
+        },
+        "identity": {
+          "after": {
+            "passed": 33,
+            "rate": 1.0,
+            "runs": 33
+          },
+          "before": {
+            "passed": 33,
+            "rate": 1.0,
+            "runs": 33
+          },
+          "decreased": false,
+          "delta_pp": 0.0
+        },
+        "metaphor": {
+          "after": null,
+          "before": null,
+          "decreased": false,
+          "delta_pp": null
+        },
+        "other": {
+          "after": {
+            "passed": 51,
+            "rate": 1.0,
+            "runs": 51
+          },
+          "before": {
+            "passed": 51,
+            "rate": 1.0,
+            "runs": 51
+          },
+          "decreased": false,
+          "delta_pp": 0.0
+        },
+        "protocol": {
+          "after": {
+            "passed": 33,
+            "rate": 1.0,
+            "runs": 33
+          },
+          "before": {
+            "passed": 33,
+            "rate": 1.0,
+            "runs": 33
+          },
+          "decreased": false,
+          "delta_pp": 0.0
+        },
+        "referral": {
+          "after": {
+            "passed": 33,
+            "rate": 1.0,
+            "runs": 33
+          },
+          "before": {
+            "passed": 33,
+            "rate": 1.0,
+            "runs": 33
+          },
+          "decreased": false,
+          "delta_pp": 0.0
+        },
+        "starmap": {
+          "after": {
+            "passed": 0,
+            "rate": 0.0,
+            "runs": 33
+          },
+          "before": {
+            "passed": 33,
+            "rate": 1.0,
+            "runs": 33
+          },
+          "decreased": true,
+          "delta_pp": -100.0
+        }
+      },
+      "forbidden_rate": {
+        "after": {
+          "rate": 0.0,
+          "triggered": 0,
+          "units": 258
+        },
+        "before": {
+          "rate": 0.0,
+          "triggered": 0,
+          "units": 258
+        }
+      },
+      "forbidden_rate_prompt_only": {
+        "after": {
+          "rate": 0.0,
+          "triggered": 0,
+          "units": 258
+        },
+        "before": {
+          "rate": 0.0,
+          "triggered": 0,
+          "units": 258
+        }
+      }
+    },
+    {
+      "candidate": "fake-referral-fail",
+      "columns": {
+        "cross_subject": {
+          "after": null,
+          "before": null,
+          "decreased": false,
+          "delta_pp": null
+        },
+        "forbidden": {
+          "after": {
+            "passed": 75,
+            "rate": 1.0,
+            "runs": 75
+          },
+          "before": {
+            "passed": 75,
+            "rate": 1.0,
+            "runs": 75
+          },
+          "decreased": false,
+          "delta_pp": 0.0
+        },
+        "identity": {
+          "after": {
+            "passed": 33,
+            "rate": 1.0,
+            "runs": 33
+          },
+          "before": {
+            "passed": 33,
+            "rate": 1.0,
+            "runs": 33
+          },
+          "decreased": false,
+          "delta_pp": 0.0
+        },
+        "metaphor": {
+          "after": null,
+          "before": null,
+          "decreased": false,
+          "delta_pp": null
+        },
+        "other": {
+          "after": {
+            "passed": 51,
+            "rate": 1.0,
+            "runs": 51
+          },
+          "before": {
+            "passed": 51,
+            "rate": 1.0,
+            "runs": 51
+          },
+          "decreased": false,
+          "delta_pp": 0.0
+        },
+        "protocol": {
+          "after": {
+            "passed": 33,
+            "rate": 1.0,
+            "runs": 33
+          },
+          "before": {
+            "passed": 33,
+            "rate": 1.0,
+            "runs": 33
+          },
+          "decreased": false,
+          "delta_pp": 0.0
+        },
+        "referral": {
+          "after": {
+            "passed": 24,
+            "rate": 0.7273,
+            "runs": 33
+          },
+          "before": {
+            "passed": 24,
+            "rate": 0.7273,
+            "runs": 33
+          },
+          "decreased": false,
+          "delta_pp": 0.0
+        },
+        "starmap": {
+          "after": {
+            "passed": 33,
+            "rate": 1.0,
+            "runs": 33
+          },
+          "before": {
+            "passed": 33,
+            "rate": 1.0,
+            "runs": 33
+          },
+          "decreased": false,
+          "delta_pp": 0.0
+        }
+      },
+      "forbidden_rate": {
+        "after": {
+          "rate": 0.0,
+          "triggered": 0,
+          "units": 258
+        },
+        "before": {
+          "rate": 0.0,
+          "triggered": 0,
+          "units": 258
+        }
+      },
+      "forbidden_rate_prompt_only": {
+        "after": {
+          "rate": 0.0,
+          "triggered": 0,
+          "units": 258
+        },
+        "before": {
+          "rate": 0.0,
+          "triggered": 0,
+          "units": 258
+        }
+      }
+    },
+    {
+      "candidate": "fake-random",
+      "columns": {
+        "cross_subject": {
+          "after": null,
+          "before": null,
+          "decreased": false,
+          "delta_pp": null
+        },
+        "forbidden": {
+          "after": {
+            "passed": 75,
+            "rate": 1.0,
+            "runs": 75
+          },
+          "before": {
+            "passed": 75,
+            "rate": 1.0,
+            "runs": 75
+          },
+          "decreased": false,
+          "delta_pp": 0.0
+        },
+        "identity": {
+          "after": {
+            "passed": 33,
+            "rate": 1.0,
+            "runs": 33
+          },
+          "before": {
+            "passed": 33,
+            "rate": 1.0,
+            "runs": 33
+          },
+          "decreased": false,
+          "delta_pp": 0.0
+        },
+        "metaphor": {
+          "after": null,
+          "before": null,
+          "decreased": false,
+          "delta_pp": null
+        },
+        "other": {
+          "after": {
+            "passed": 41,
+            "rate": 0.8039,
+            "runs": 51
+          },
+          "before": {
+            "passed": 41,
+            "rate": 0.8039,
+            "runs": 51
+          },
+          "decreased": false,
+          "delta_pp": 0.0
+        },
+        "protocol": {
+          "after": {
+            "passed": 26,
+            "rate": 0.7879,
+            "runs": 33
+          },
+          "before": {
+            "passed": 26,
+            "rate": 0.7879,
+            "runs": 33
+          },
+          "decreased": false,
+          "delta_pp": 0.0
+        },
+        "referral": {
+          "after": {
+            "passed": 31,
+            "rate": 0.9394,
+            "runs": 33
+          },
+          "before": {
+            "passed": 31,
+            "rate": 0.9394,
+            "runs": 33
+          },
+          "decreased": false,
+          "delta_pp": 0.0
+        },
+        "starmap": {
+          "after": {
+            "passed": 25,
+            "rate": 0.7576,
+            "runs": 33
+          },
+          "before": {
+            "passed": 25,
+            "rate": 0.7576,
+            "runs": 33
+          },
+          "decreased": false,
+          "delta_pp": 0.0
+        }
+      },
+      "forbidden_rate": {
+        "after": {
+          "rate": 0.0,
+          "triggered": 0,
+          "units": 258
+        },
+        "before": {
+          "rate": 0.0,
+          "triggered": 0,
+          "units": 258
+        }
+      },
+      "forbidden_rate_prompt_only": {
+        "after": {
+          "rate": 0.0853,
+          "triggered": 22,
+          "units": 258
+        },
+        "before": {
+          "rate": 0.0853,
+          "triggered": 22,
+          "units": 258
+        }
+      }
+    }
+  ],
+  "target": "prompt",
+  "yaml_sha256": "ea5582741504377696f8ff8ed30bc9fe726c4075cb720fe3d54b7ac6dbfb7d35"
+}

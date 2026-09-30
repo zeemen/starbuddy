@@ -14,8 +14,14 @@
 - 默认不跑留出集（规则 14）：留出集由教研负责人在封存环境单独跑；运行前核对留出集名单非空且条数等于冻结数（安全审查 S5）。
 - 运行前打印预计调用次数，超过 --max-calls 拒绝；非 test 环境必须显式传 --max-calls（安全审查 N1）。
 
+冲刺 3-I（specs/diandian-consistency-r2-sprint3/spec.md 设计要点 1–3）：
+- --revision <n>：按修订记录 diandian/revisions/<n>.yaml 的修订前后两个版本（Prompt 版本 × 后处理版本）各跑 N 次，输出前后对比与是否采纳（r2report）；
+- --r2：用修订链最终采纳的版本跑开发集；每轮回复经后处理 postproc，原始回复与后处理后回复分别评分（两组数字，同一次调用），给出验收判定。
+
 用法（在 evals/persona 目录下）：
   python diandian/compare.py --candidates 清单.yaml [--runs 3] [--env test] [--max-calls N] [--out 仓库外目录] [--report-dir 报告目录]
+  python diandian/compare.py --candidates 清单.yaml --revision <n> [--revisions-dir 目录] --out 仓库外目录 --report-dir reports/r2-<日期>
+  python diandian/compare.py --candidates 清单.yaml --r2 [--revisions-dir 目录] [--holdout-summary 汇总.json] --out 仓库外目录 --report-dir reports/r2-<日期>
 """
 from __future__ import annotations
 
@@ -30,7 +36,7 @@ import sys
 import tempfile
 import uuid
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -42,6 +48,7 @@ PERSONA = HERE.parent
 ROOT = HERE.parents[2]
 sys.path.insert(0, str(ROOT / "services" / "learning"))
 sys.path.insert(0, str(PERSONA))
+sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE / "fixtures"))
 
 from learning.config import SUBJECTS  # noqa: E402  平台学科编码（与路由的 subject 校验同源）
@@ -55,6 +62,8 @@ from scorer.judge import load_lexicon  # noqa: E402
 from scorer.report import score, write as write_run  # noqa: E402
 
 import fake_candidates as fakes  # noqa: E402  测试夹具：只在 test 环境使用
+import postproc  # noqa: E402  冲刺 3-I 后处理 v0
+import r2report  # noqa: E402  冲刺 3-I 修订记录、两组数字与二轮报告
 
 PROMPT_PATH = ROOT / "docs" / "personas" / "prompts" / "diandian-v0.md"
 REPORTS_DIR = PERSONA / "reports"
@@ -383,18 +392,33 @@ def _context_message(case: dict[str, Any]) -> list[dict[str, str]]:
     return [{"role": "system", "content": "用例上下文（合成数据，JSON）：" + json.dumps(ctx, ensure_ascii=False, sort_keys=True)}]
 
 
+def _assistant_message(text: str, fields: dict[str, Any], reply_format: str) -> str:
+    """后处理后的回复按原格式写回对话历史（与上线一致：模型下一轮看到的是学生实际看到的回复）"""
+    if reply_format == "envelope":
+        return json.dumps({"text": text, "fields": fields}, ensure_ascii=False, sort_keys=True)
+    return text
+
+
 async def run_candidate(cand: Candidate, router: ModelRouter, cases: list[dict[str, Any]], runs: int, system: str,
-                        reply_format: str, nonce: str, log: CallLog) -> tuple[list[list[dict[str, Any]]], int]:
-    """返回（第 k 次的回复列表，调用失败的运行数）。用例之间顺序执行，便于供应商限流与断点排查"""
+                        reply_format: str, nonce: str, log: CallLog, *, post: "postproc.PostProcessor | None" = None,
+                        prompt_version: str = PROMPT_VERSION, post_runs: list | None = None) -> tuple[list[list[dict[str, Any]]], int]:
+    """返回（第 k 次的回复列表，调用失败的运行数）。用例之间顺序执行，便于供应商限流与断点排查。
+
+    post（冲刺 3-I）：每轮回复经后处理；原始回复进返回值（“只 Prompt”一组），后处理后的回复进 post_runs（“Prompt + 后处理”一组），
+    两组来自同一次调用；对话历史里写后处理后的回复。
+    """
     per_run: list[list[dict[str, Any]]] = []
     errors = 0
     for run in range(1, runs + 1):
         out: list[dict[str, Any]] = []
+        post_out: list[dict[str, Any]] = []
         for case in cases:
             subject = (case.get("context") or {}).get("subject")
             messages: list[dict[str, Any]] = [{"role": "system", "content": system}, *_context_message(case)]
             turns: list[dict[str, Any]] = []
-            source_version = f"prompt:{PROMPT_TEMPLATE}@{PROMPT_VERSION}"
+            post_turns: list[dict[str, Any]] = []
+            first_contact = bool((case.get("context") or {}).get("first_contact"))
+            source_version = f"prompt:{PROMPT_TEMPLATE}@{prompt_version}"
             error = None
             for t, text in enumerate(case["turns"]):
                 messages.append({"role": "user", "content": text})
@@ -402,7 +426,7 @@ async def run_candidate(cand: Candidate, router: ModelRouter, cases: list[dict[s
                 try:
                     res = await router.route(RouteRequest(
                         task=Task.T1, data_class=DataClass.L0, subject=subject if subject in SUBJECT_CODES else None,
-                        prompt_template=PROMPT_TEMPLATE, prompt_version=PROMPT_VERSION, messages=tuple(messages),
+                        prompt_template=PROMPT_TEMPLATE, prompt_version=prompt_version, messages=tuple(messages),
                         usage_id=f"u-{key}", idempotency_key=key))
                 except (RouteRejected, RouteUnavailable) as e:
                     error = e.code  # 只记错误类别；缺的轮次由评分器判为 missing_reply（不通过）
@@ -410,15 +434,25 @@ async def run_candidate(cand: Candidate, router: ModelRouter, cases: list[dict[s
                     break
                 log.emit(candidate=cand.id, case_id=case["case_id"], run=run, turn=t, error=None)
                 reply_text, fields = parse_reply(res.output, reply_format)
-                messages.append({"role": "assistant", "content": res.output})
                 turns.append({"text": reply_text, "fields": fields, "model_version": res.model_version})
+                if post is None:
+                    messages.append({"role": "assistant", "content": res.output})
+                else:
+                    p_text, p_fields, actions = post.process(reply_text, fields, student_text=text, turn_index=t, first_contact=first_contact)
+                    post_turns.append({"text": p_text, "fields": p_fields, "model_version": res.model_version, "postproc": actions})
+                    messages.append({"role": "assistant", "content": _assistant_message(p_text, p_fields, reply_format)})
                 source_version = res.source_version
             errors += error is not None
             versions = sorted({x["model_version"] for x in turns})
-            out.append({"case_id": case["case_id"], "run": run, "candidate": cand.id,
-                        "model_version": versions[0] if len(versions) == 1 else ("mixed" if versions else None),
-                        "prompt_version": PROMPT_VERSION, "source_version": source_version, "error": error, "turns": turns})
+            row = {"case_id": case["case_id"], "run": run, "candidate": cand.id,
+                   "model_version": versions[0] if len(versions) == 1 else ("mixed" if versions else None),
+                   "prompt_version": prompt_version, "source_version": source_version, "error": error, "turns": turns}
+            out.append(row)
+            if post is not None:
+                post_out.append({**row, "turns": post_turns, "postproc_version": post.version})
         per_run.append(out)
+        if post_runs is not None:
+            post_runs.append(post_out)
     return per_run, errors
 
 
@@ -435,81 +469,278 @@ def build_router(cand: Candidate, cases: list[dict[str, Any]], sink: CallLog, se
         raise CompareError(f"{cand.id}: 供应商连接未就绪（地址或凭据由执行环境提供）：{e}") from None
 
 
-def compare(candidates_path: Path, *, runs: int = 3, env: str = "test", out_dir: Path, report_dir: Path | None,
-            reply_format: str | None = None, seen: list | None = None, max_calls: int | None = None) -> dict[str, Any]:
+def _check_env_runs(env: str, runs: int) -> None:
     if env not in ENVIRONMENTS:
         raise CompareError(f"未知环境 {env!r}")
     if env not in RUN_ENVS:
         raise CompareError(f"{env} 环境不跑对照评测：只收 {'、'.join(RUN_ENVS)}（真实首轮只在 staging 或 dev；pilot、prod 拒绝）")
     if not 1 <= runs <= MAX_RUNS:
         raise CompareError(f"--runs 应在 1–{MAX_RUNS} 之间")
-    check_out_dir(out_dir)
-    if report_dir is not None:
-        check_report_dir(report_dir)
-    system, prompt_meta = load_prompt(env)
+
+
+def _load_inputs(candidates_path: Path, env: str) -> tuple[list[dict[str, Any]], set[str], list[Candidate]]:
+    """（开发集用例，留出集编号，候选）。默认不跑留出集（规则 14）"""
     all_cases = load_cases(HERE / "cases")
     holdout_ids = read_holdout(HOLDOUT_PATH)
     check_holdout(holdout_ids, {c["case_id"] for c in all_cases})
     holdout = set(holdout_ids)
-    # 默认不跑留出集（规则 14）
     cases = [c for c in all_cases if c["case_id"] not in holdout]
     cands = load_candidates(candidates_path, env, {c["category"] for c in all_cases})
-    check_endpoints(cands, env)
-    planned, retries, worst = estimate_calls(cands, cases, runs)
-    turns = sum(len(c["turns"]) for c in cases)
-    print(f"eval-persona compare: 预计调用 {planned} 次（{len(cands)} 个候选 × {runs} 次 × {len(cases)} 条用例共 {turns} 轮）；"
-          f"失败重试另计，每次调用最多重试 {retries} 次，最坏 {worst} 次供应商请求")
-    limit = check_max_calls(planned, env, max_calls)
-    fmt = reply_format or ("envelope" if env == "test" else "text")
-    lex = load_lexicon()
-    gold_present = (HERE / "gold").is_dir()
-    nonce = uuid.uuid4().hex[:8]
+    return cases, holdout, cands
 
-    results = []
-    prepare_out_dir(out_dir)
+
+def _budget(cands: list[Candidate], cases: list[dict[str, Any]], runs: int, env: str, max_calls: int | None, sides: int = 1) -> tuple[int, int]:
+    planned, retries, worst = estimate_calls(cands, cases, runs)
+    planned, worst = planned * sides, worst * sides
+    turns = sum(len(c["turns"]) for c in cases)
+    side_note = f" × {sides} 个版本" if sides > 1 else ""
+    print(f"eval-persona compare: 预计调用 {planned} 次（{len(cands)} 个候选 × {runs} 次 × {len(cases)} 条用例共 {turns} 轮{side_note}）；"
+          f"失败重试另计，每次调用最多重试 {retries} 次，最坏 {worst} 次供应商请求")
+    return planned, check_max_calls(planned, env, max_calls)
+
+
+def _score_write(per_run: list[list[dict[str, Any]]], cases: list[dict[str, Any]], lex: Any, holdout: set[str], gold_present: bool,
+                 cand_dir: Path, suffix: str = "") -> list[dict[str, Any]]:
+    scored = []
+    for k, responses in enumerate(per_run, start=1):
+        rep = score(cases, responses, lex, holdout=holdout, gold_present=gold_present)
+        d = cand_dir / f"run-{k}{suffix}"
+        d.mkdir(parents=True, mode=0o700)
+        # 回复原文只写到仓库外（spec 设计要点 1）；用完请删除
+        with _open_private(d / "responses.jsonl") as f:
+            for r in responses:
+                f.write(json.dumps(r, ensure_ascii=False) + "\n")
+        write_run(rep, d)
+        scored.append(rep)
+    return scored
+
+
+@dataclass
+class SideRun:
+    """一个版本（Prompt × 后处理）下全部候选的结果：raw = 只 Prompt，post = Prompt + 后处理（没用后处理时为 None）"""
+    raw: list[dict[str, Any]]
+    post: list[dict[str, Any]] | None
+    raw_runs: dict[str, list[list[dict[str, Any]]]]
+    post_runs: dict[str, list[list[dict[str, Any]]]] | None
+
+
+def _run_side(cands: list[Candidate], cases: list[dict[str, Any]], runs: int, system: str, fmt: str, out_dir: Path, *, lex: Any,
+              holdout: set[str], gold_present: bool, nonce: str, seen: list | None, post: "postproc.PostProcessor | None" = None,
+              prompt_version: str = PROMPT_VERSION) -> SideRun:
+    raw_results: list[dict[str, Any]] = []
+    post_results: list[dict[str, Any]] = []
+    raw_runs: dict[str, list] = {}
+    post_by: dict[str, list] = {}
     with private_umask():
         log = CallLog(out_dir / "calls.jsonl")
         try:
             for cand in cands:
                 router = build_router(cand, cases, log, seen)
+                p_runs: list | None = [] if post is not None else None
 
-                async def go(c=cand, r=router):
+                async def go(c=cand, r=router, pr=p_runs):
                     try:
-                        return await run_candidate(c, r, cases, runs, system, fmt, nonce, log)
+                        return await run_candidate(c, r, cases, runs, system, fmt, nonce, log, post=post,
+                                                   prompt_version=prompt_version, post_runs=pr)
                     finally:
                         await r.aclose()
 
                 per_run, errors = asyncio.run(go())
-                scored = []
-                for k, responses in enumerate(per_run, start=1):
-                    rep = score(cases, responses, lex, holdout=holdout, gold_present=gold_present)
-                    d = out_dir / cand.id / f"run-{k}"
-                    d.mkdir(parents=True, mode=0o700)
-                    # 回复原文只写到仓库外（spec 设计要点 1）；用完请删除
-                    with _open_private(d / "responses.jsonl") as f:
-                        for r in responses:
-                            f.write(json.dumps(r, ensure_ascii=False) + "\n")
-                    write_run(rep, d)
-                    scored.append(rep)
-                results.append({"id": cand.id, "vendor": cand.vendor, "model": cand.model, "model_version": cand.model_version,
-                                "note": cand.note, "params": cand.params,
-                                "fake_profile": None if cand.fake_profile is None else _profile_str(cand.fake_profile),
-                                "calls": log.calls.get(cand.id, 0), "call_errors": errors,
-                                "model_mismatch": log.mismatch.get(cand.id, 0), "runs": scored})
+                base = {"id": cand.id, "vendor": cand.vendor, "model": cand.model, "model_version": cand.model_version,
+                        "note": cand.note, "params": cand.params,
+                        "fake_profile": None if cand.fake_profile is None else _profile_str(cand.fake_profile),
+                        "calls": log.calls.get(cand.id, 0), "call_errors": errors, "model_mismatch": log.mismatch.get(cand.id, 0)}
+                raw_results.append({**base, "runs": _score_write(per_run, cases, lex, holdout, gold_present, out_dir / cand.id)})
+                raw_runs[cand.id] = per_run
+                if post is not None:
+                    # “Prompt + 后处理”一组：同一次调用的后处理后回复，单独评分（不与原始回复混算）
+                    post_results.append({**base, "runs": _score_write(p_runs, cases, lex, holdout, gold_present, out_dir / cand.id, "-post")})
+                    post_by[cand.id] = p_runs
         finally:
             log.close()
             lock_down(out_dir)
+    return SideRun(raw_results, post_results if post is not None else None, raw_runs, post_by if post is not None else None)
 
+
+def _meta(env: str, runs: int, fmt: str, prompt_meta: dict[str, Any], holdout: set[str], lex: Any, gold_present: bool, planned: int,
+          limit: int, cases: list[dict[str, Any]]) -> dict[str, Any]:
     # 结构字段类检查点（依赖回复结构字段，如 referral、handoff）：报告单列（契约审查）；真实模型的结构字段来源待定
     structural = sorted({ch["field"] for c in cases for ch in c["checks"] if ch["type"] == "field"})
-    meta = {"sample": env == "test", "env": env, "runs_per_candidate": runs, "reply_format": fmt, "prompt": prompt_meta,
+    return {"sample": env == "test", "env": env, "runs_per_candidate": runs, "reply_format": fmt, "prompt": prompt_meta,
             "holdout_excluded": len(holdout), "lexicon_version": lex.version, "lexicon_reviewed": lex.reviewed,
             "gold_present": gold_present, "data_class": "L0", "task": CANDIDATE_TASK.value,
             "calls_planned": planned, "max_calls": limit, "structural_fields": structural}
-    report = compare_report.build(meta, results)
+
+
+def compare(candidates_path: Path, *, runs: int = 3, env: str = "test", out_dir: Path, report_dir: Path | None,
+            reply_format: str | None = None, seen: list | None = None, max_calls: int | None = None) -> dict[str, Any]:
+    _check_env_runs(env, runs)
+    check_out_dir(out_dir)
+    if report_dir is not None:
+        check_report_dir(report_dir)
+    system, prompt_meta = load_prompt(env)
+    cases, holdout, cands = _load_inputs(candidates_path, env)
+    check_endpoints(cands, env)
+    planned, limit = _budget(cands, cases, runs, env, max_calls)
+    fmt = reply_format or ("envelope" if env == "test" else "text")
+    lex = load_lexicon()
+    gold_present = (HERE / "gold").is_dir()
+    nonce = uuid.uuid4().hex[:8]
+    prepare_out_dir(out_dir)
+    side = _run_side(cands, cases, runs, system, fmt, out_dir, lex=lex, holdout=holdout, gold_present=gold_present, nonce=nonce, seen=seen)
+    report = compare_report.build(_meta(env, runs, fmt, prompt_meta, holdout, lex, gold_present, planned, limit, cases), side.raw)
     if report_dir is not None:
         compare_report.write(report, report_dir)
     return report
+
+
+# ================================================================ 冲刺 3-I：修订前后对比与二轮报告
+
+PROMPTS_DIR = ROOT / "docs" / "personas" / "prompts"
+PROMPT_REL = "docs/personas/prompts/diandian-v0.md"  # 与 PROMPT_PATH 同一个文件（相对仓库根，写进报告与修订链）
+
+
+def load_prompt_side(side: "r2report.Side", env: str) -> tuple[str, dict[str, Any]]:
+    """按修订记录里的 Prompt 版本取人设 Prompt（只读，docs/personas/prompts/ 下由人设负责人提交）。
+    写了 sha256 就核对（签字后被改过就拒绝）；文件不存在时只有 test 环境可以用测试占位"""
+    source_version = f"prompt:{PROMPT_TEMPLATE}@{side.prompt_version}"
+    if side.prompt_path:
+        path = ROOT / side.prompt_path
+        if not _inside(path, PROMPTS_DIR):
+            raise CompareError("人设 Prompt 只能来自 docs/personas/prompts/")
+        if path.is_file():
+            text = path.read_text(encoding="utf-8")
+            sha = hashlib.sha256(text.encode("utf-8")).hexdigest()
+            if side.prompt_sha256 and sha != side.prompt_sha256:
+                raise CompareError(f"{_display(path)} 的指纹与修订记录不一致（签字后被改过）：拒绝运行")
+            return text, {"source": _display(path), "source_version": source_version, "sha256": sha}
+    if env != "test":
+        raise CompareError(f"{source_version} 的人设 Prompt 文件不存在：{env} 环境拒绝运行（Prompt 由人设负责人提交）")
+    text = f"{fakes.PLACEHOLDER_SYSTEM}（{source_version}）"
+    return text, {"source": "测试占位（不是人设 Prompt）", "source_version": source_version,
+                  "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest()}
+
+
+def _with_profiles(cands: list[Candidate], overrides: dict[str, str] | None, categories: set[str]) -> list[Candidate]:
+    """test 环境：按修订记录的 fake_profiles 覆盖假候选的行为（证明“版本变了、结果变了”）"""
+    if not overrides:
+        return cands
+    ids = {c.id for c in cands}
+    unknown = sorted(set(overrides) - ids)
+    if unknown:
+        raise CompareError(f"fake_profiles 里有不在候选清单里的候选：{unknown}")
+    out = []
+    for c in cands:
+        if c.id in overrides:
+            try:
+                c = replace(c, fake_profile=fakes.parse_profile(overrides[c.id], categories))
+            except ValueError as e:
+                raise CompareError(f"{c.id}: {e}") from None
+        out.append(c)
+    return out
+
+
+def _side_stats(side: SideRun, cand_ids: list[str]) -> dict[str, dict[str, Any]]:
+    """修订对比用：每个候选这个版本“实际下发的输出”（有后处理即后处理后）的七项与禁语触发率，另附只 Prompt 的禁语触发率"""
+    final, final_runs = (side.post, side.post_runs) if side.post is not None else (side.raw, side.raw_runs)
+    by_id = {r["id"]: r for r in final}
+    return {cid: {"columns": r2report.columns(by_id[cid]["runs"]),
+                  "forbidden_rate": r2report.forbidden_rate(final_runs[cid], postproc.forbidden_hits),
+                  "forbidden_rate_prompt_only": r2report.forbidden_rate(side.raw_runs[cid], postproc.forbidden_hits)}
+            for cid in cand_ids}
+
+
+def _r2_errors(fn):
+    """把二轮模块的拒绝统一成 CompareError（退出码 2）"""
+    def wrapped(*a, **kw):
+        try:
+            return fn(*a, **kw)
+        except (r2report.R2Error, postproc.PostprocConfigError) as e:
+            raise CompareError(str(e)) from None
+    wrapped.__name__, wrapped.__doc__ = fn.__name__, fn.__doc__
+    return wrapped
+
+
+@_r2_errors
+def compare_revision(candidates_path: Path, n: int, *, revisions_dir: Path = r2report.REVISIONS_DIR, runs: int = 3, env: str = "test",
+                     out_dir: Path, report_dir: Path | None, reply_format: str | None = None, seen: list | None = None,
+                     max_calls: int | None = None, criteria_path: Path = r2report.CRITERIA_PATH) -> dict[str, Any]:
+    """修订 n：在开发集上按修订前后两个版本各跑 N 次，输出前后对比（列对齐 persona-evaluator 七项）与是否采纳"""
+    criteria = r2report.load_criteria(criteria_path)
+    _check_env_runs(env, runs)
+    check_out_dir(out_dir)
+    if report_dir is not None:
+        check_report_dir(report_dir)
+    rev = r2report.load_revision(revisions_dir, n, env, criteria)
+    cases, holdout, cands = _load_inputs(candidates_path, env)
+    categories = {c["category"] for c in load_cases(HERE / "cases")}
+    prompts = {name: load_prompt_side(getattr(rev, name), env) for name in ("before", "after")}
+    posts = {name: postproc.get(getattr(rev, name).postproc) for name in ("before", "after")}
+    side_cands = {name: _with_profiles(cands, rev.fake_profiles.get(name), categories) for name in ("before", "after")}
+    check_endpoints(cands, env)
+    _planned, _limit = _budget(cands, cases, runs, env, max_calls, sides=2)
+    fmt = reply_format or ("envelope" if env == "test" else "text")
+    lex = load_lexicon()
+    gold_present = (HERE / "gold").is_dir()
+    nonce = uuid.uuid4().hex[:8]
+    prepare_out_dir(out_dir)
+    ids = [c.id for c in cands]
+    stats = {}
+    for name in ("before", "after"):
+        d = out_dir / name
+        d.mkdir(mode=0o700)
+        side = _run_side(side_cands[name], cases, runs, prompts[name][0], fmt, d, lex=lex, holdout=holdout, gold_present=gold_present,
+                         nonce=nonce, seen=seen, post=posts[name], prompt_version=getattr(rev, name).prompt_version)
+        stats[name] = _side_stats(side, ids)
+    lock_down(out_dir)
+    res = r2report.revision_result(rev, env=env, runs=runs, cases=len(cases), sides=stats, cand_ids=ids)
+    if report_dir is not None:
+        r2report.write_revision(res, report_dir)
+    return res
+
+
+@_r2_errors
+def compare_r2(candidates_path: Path, *, revisions_dir: Path = r2report.REVISIONS_DIR, runs: int = 3, env: str = "test", out_dir: Path,
+               report_dir: Path | None, reply_format: str | None = None, seen: list | None = None, max_calls: int | None = None,
+               holdout_summary: Path | None = None, criteria_path: Path = r2report.CRITERIA_PATH) -> dict[str, Any]:
+    """二轮：用修订链最终采纳的版本（没有修订时为 Prompt v0 + 后处理 v0）跑开发集，同一批输出分别统计两组数字，给出验收判定"""
+    criteria = r2report.load_criteria(criteria_path)
+    _check_env_runs(env, runs)
+    check_out_dir(out_dir)
+    if report_dir is not None:
+        check_report_dir(report_dir)
+    revisions = r2report.load_revision_results(report_dir, revisions_dir, criteria)
+    default = r2report.Side(prompt_version=PROMPT_VERSION, postproc=postproc.VERSION, prompt_path=PROMPT_REL)
+    base = r2report.baseline(revisions, default)
+    post = postproc.get(base.postproc)
+    if post is None:
+        raise CompareError("二轮版本没有后处理：两组数字要求“Prompt + 后处理”一组存在（修订链最终版本的 postproc 不能是 none）")
+    system, prompt_meta = load_prompt_side(base, env)
+    cases, holdout, cands = _load_inputs(candidates_path, env)
+    ids = [c.id for c in cands]
+    holdout_doc = r2report.load_holdout_summary(holdout_summary, ids)
+    check_endpoints(cands, env)
+    planned, limit = _budget(cands, cases, runs, env, max_calls)
+    fmt = reply_format or ("envelope" if env == "test" else "text")
+    lex = load_lexicon()
+    gold_present = (HERE / "gold").is_dir()
+    nonce = uuid.uuid4().hex[:8]
+    prepare_out_dir(out_dir)
+    side = _run_side(cands, cases, runs, system, fmt, out_dir, lex=lex, holdout=holdout, gold_present=gold_present, nonce=nonce,
+                     seen=seen, post=post, prompt_version=base.prompt_version)
+    meta = {**_meta(env, runs, fmt, prompt_meta, holdout, lex, gold_present, planned, limit, cases), "baseline": base.to_dict()}
+    sets = {"prompt_only": compare_report.build(meta, side.raw), "prompt_plus_post": compare_report.build(meta, side.post)}
+    runs_of = {"prompt_only": side.raw_runs, "prompt_plus_post": side.post_runs}
+    results_of = {"prompt_only": {r["id"]: r for r in side.raw}, "prompt_plus_post": {r["id"]: r for r in side.post}}
+    extras = {s: {cid: {"columns": r2report.columns(results_of[s][cid]["runs"]),
+                        "forbidden_rate": r2report.forbidden_rate(runs_of[s][cid], postproc.forbidden_hits)} for cid in ids}
+              for s in r2report.SETS}
+    post_desc = {**post.describe(), "actions": {cid: r2report.action_counts(side.post_runs[cid]) for cid in ids}}
+    samples = {cid: r2report.failure_samples(cases, results_of[criteria.verdict_basis][cid]["runs"]) for cid in ids}
+    rep = r2report.build(meta, sets, extras, revisions=revisions, holdout=holdout_doc, criteria=criteria, post=post_desc, samples=samples)
+    if report_dir is not None:
+        r2report.write(rep, report_dir)
+    return rep
 
 
 def _profile_str(p: tuple[str, Any]) -> str:
@@ -522,7 +753,7 @@ def _profile_str(p: tuple[str, Any]) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="compare.py", description="点点跨模型一致性对照运行器（首轮）")
+    ap = argparse.ArgumentParser(prog="compare.py", description="点点跨模型一致性对照运行器（首轮；--revision 修订前后对比；--r2 二轮报告）")
     ap.add_argument("--candidates", required=True, help="候选清单 YAML")
     ap.add_argument("--runs", type=int, default=3)
     ap.add_argument("--env", default="test", choices=ENVIRONMENTS)
@@ -531,11 +762,39 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--reply-format", choices=("text", "envelope"), help="回复解析方式；默认 test 环境 envelope，其他 text")
     ap.add_argument("--max-calls", type=int, default=None,
                     help=f"调用次数上限（预计超过就拒绝）；test 环境默认 {DEFAULT_MAX_CALLS}，其他环境必须显式给出")
+    mode = ap.add_mutually_exclusive_group()
+    mode.add_argument("--revision", type=int, help="冲刺 3-I：修订 n 的前后对比（读 --revisions-dir/<n>.yaml，写 revision-<n>.{json,md}）")
+    mode.add_argument("--r2", action="store_true", help="冲刺 3-I：二轮报告（两组数字、修订记录、留出集汇总位、验收判定）")
+    ap.add_argument("--revisions-dir", help="修订记录目录（默认 diandian/revisions）")
+    ap.add_argument("--holdout-summary", help="--r2：教研负责人交回的留出集汇总 JSON（可选；本仓不跑留出集）")
+    ap.add_argument("--criteria", help="验收口径 YAML（默认 diandian/r2_criteria.yaml）")
     a = ap.parse_args(argv)
     out_dir = (Path(a.out) if a.out else Path(tempfile.mkdtemp(prefix="diandian-compare."))).resolve()
+    report_dir = Path(a.report_dir).resolve() if a.report_dir else None
+    extra: dict[str, Any] = {}
+    if a.revisions_dir:
+        extra["revisions_dir"] = Path(a.revisions_dir).resolve()
+    if a.criteria:
+        extra["criteria_path"] = Path(a.criteria).resolve()
+    run_env = getattr(a, "env")
     try:
-        rep = compare(Path(a.candidates), runs=a.runs, env=a.env, out_dir=out_dir,
-                      report_dir=Path(a.report_dir).resolve() if a.report_dir else None, reply_format=a.reply_format,
+        if a.revision is not None:
+            res = compare_revision(Path(a.candidates), a.revision, runs=a.runs, env=run_env, out_dir=out_dir, report_dir=report_dir,
+                                   reply_format=a.reply_format, max_calls=a.max_calls, **extra)
+            print(f"eval-persona compare: 修订 {res['revision']} 判定：{res['decision']['label']}"
+                  + ("（" + "；".join(res["decision"]["reasons"]) + "）" if res["decision"]["reasons"] else ""))
+            print(f"eval-persona compare: 回复原文在 {out_dir}（仓库外，用完请删除）" + (f"；前后对比在 {a.report_dir}" if a.report_dir else ""))
+            return 0
+        if a.r2:
+            rep = compare_r2(Path(a.candidates), runs=a.runs, env=run_env, out_dir=out_dir, report_dir=report_dir, reply_format=a.reply_format,
+                             max_calls=a.max_calls, holdout_summary=Path(a.holdout_summary).resolve() if a.holdout_summary else None, **extra)
+            print(f"eval-persona compare: 二轮验收判定（{rep['verdict']['basis_label']}）：{rep['verdict']['result']}；"
+                  f"参考（{r2report.SET_LABELS[rep['verdict']['reference']['basis']]}）：{rep['verdict']['reference']['result']}；结论由人定")
+            print(f"eval-persona compare: 回复原文在 {out_dir}（仓库外，用完请删除）" + (f"；报告在 {a.report_dir}" if a.report_dir else ""))
+            return 0
+        if extra or a.holdout_summary:
+            raise CompareError("--revisions-dir、--criteria、--holdout-summary 只和 --revision 或 --r2 一起用")
+        rep = compare(Path(a.candidates), runs=a.runs, env=run_env, out_dir=out_dir, report_dir=report_dir, reply_format=a.reply_format,
                       max_calls=a.max_calls)
     except CompareError as e:
         print(f"eval-persona compare: 拒绝运行：{e}")
