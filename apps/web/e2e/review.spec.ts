@@ -103,6 +103,9 @@ test('登录失败统一提示；退出后回登录页，旧会话失效', async
 });
 
 test('教研改“不包含” → 差异与校验 → 签字 → 发布，旧版本撤下，版本记录有这一行', async ({ page, browser }) => {
+  // 多步流程（两名教研各自会话、十余次导航、三次 axe 扫描），默认 30 秒只够空载本机；
+  // 严格检查满载时两次超时在最后一次 axe 扫描上（断言本身都已通过），与复核队列用例同样放宽总时限，断言不变
+  test.setTimeout(90_000);
   await asStaff(page, T1);
   const home = await page.goto('/review?subject=wenli');
   expect(home?.headers()['cache-control'] ?? '').toContain('no-store');
