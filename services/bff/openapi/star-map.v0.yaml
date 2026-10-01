@@ -14,6 +14,8 @@ servers:
 paths:
   /bff/v0/students/{student_id}/star-map:
     get:
+      x-sb-auth: session
+      x-sb-rate-buckets: []
       operationId: getStarMap
       parameters:
         - name: student_id

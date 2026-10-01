@@ -16,6 +16,8 @@ servers:
 paths:
   /bff/v0/students/{student_id}/claims/{claim_id}/disputes:
     post:
+      x-sb-auth: session
+      x-sb-rate-buckets: [dispute.account.hour]
       operationId: raiseDispute
       description: >
         开关 dispute。学生本人或有效绑定家长对自己可见的判断提出异议（洞察服务 insight.dispute）。kind：i_know（我其实会）、
@@ -62,6 +64,8 @@ paths:
         '503': { $ref: '#/components/responses/Problem' }
   /bff/v0/students/{student_id}/disputes:
     get:
+      x-sb-auth: session
+      x-sb-rate-buckets: [trust_read.session.minute]
       operationId: listMyDisputes
       description: >
         开关 dispute。自己提出的异议与状态（0032 RLS：只读自己提出的；家长须有效绑定）。只有编码：类型、状态、结论码；
@@ -99,6 +103,8 @@ paths:
         '429': { $ref: '#/components/responses/Problem' }
   /bff/v0/students/{student_id}/weekly-report:
     get:
+      x-sb-auth: session
+      x-sb-rate-buckets: [trust_read.session.minute]
       operationId: getWeeklyReport
       description: >
         开关 weekly（冲刺 5-H 跨科周报 v0）。最近一周（只有已结束的周）已生成的周报：学生会话读学生版“成长手记”、有效绑定家长读家长版（0036 RLS，按受众只读；
@@ -185,6 +191,8 @@ paths:
         '429': { $ref: '#/components/responses/Problem' }
   /bff/v0/students/{student_id}/exams:
     post:
+      x-sb-auth: session
+      x-sb-rate-buckets: [exam_write.account.hour]
       operationId: submitExamPlan
       description: >
         开关 reconcile。学生本人或有效绑定家长录入考试安排（insight.submit_exam_plan）：日期从今天（上海）起一年内、满分 1–300 的整数、
@@ -227,6 +235,8 @@ paths:
         '429': { $ref: '#/components/responses/Problem' }
   /bff/v0/students/{student_id}/exams/{exam_id}/score:
     post:
+      x-sb-auth: session
+      x-sb-rate-buckets: [exam_write.account.hour]
       operationId: submitExamScore
       description: >
         开关 reconcile。按考试安排录成绩（insight.submit_exam_score）：学生与家长各录各的（规则 6）；安排不存在或成绩超出满分 422。
@@ -261,6 +271,8 @@ paths:
         '429': { $ref: '#/components/responses/Problem' }
   /bff/v0/students/{student_id}/exams/{exam_id}/prediction:
     get:
+      x-sb-auth: session
+      x-sb-rate-buckets: [exam_view.session.minute]
       operationId: getExamPrediction
       description: >
         开关 reconcile。考试的分数区间（80%）。只有预测对应的考试类判断对当前受众可见、成立或假设、未过期、模板在对外白名单里时才显示区间，
@@ -302,6 +314,8 @@ paths:
         '503': { $ref: '#/components/responses/Problem' }
   /bff/v0/students/{student_id}/exams/{exam_id}/reconciliation:
     get:
+      x-sb-auth: session
+      x-sb-rate-buckets: [exam_view.session.minute]
       operationId: getExamReconciliation
       description: >
         开关 reconcile。对账卡：区间内外、偏差节点、偏差方向（四值编码）、平台调整（编码）与句子。每句带 claim_id，只保留对当前受众可见、
@@ -359,6 +373,8 @@ paths:
         '503': { $ref: '#/components/responses/Problem' }
   /bff/v0/students/{student_id}/exports:
     post:
+      x-sb-auth: guardian
+      x-sb-rate-buckets: [export.account.hour]
       operationId: createExport
       description: >
         开关 data_rights，只给家长（学生会话 403）。按当前授权由 BFF 直连 0035 platform.export_student_data：只认有效绑定家长（规则 5），
@@ -392,6 +408,8 @@ paths:
         '503': { $ref: '#/components/responses/Problem' }
   /bff/v0/students/{student_id}/exports/{export_job_id}/download:
     post:
+      x-sb-auth: guardian
+      x-sb-rate-buckets: [export_download.account.hour]
       operationId: downloadExport
       description: >
         开关 data_rights，只给家长。兑换一次性下载凭据：凭据、导出任务、学生、发起导出的家长账号都要对上，且仍是有效绑定家长；
@@ -436,6 +454,8 @@ paths:
         '429': { $ref: '#/components/responses/Problem' }
   /bff/v0/students/{student_id}/erasure:
     get:
+      x-sb-auth: guardian
+      x-sb-rate-buckets: [trust_read.session.minute]
       operationId: listErasureRequests
       description: >
         开关 data_rights，只给家长。该孩子的删除请求与状态（0035 RLS：有效绑定家长；不含发起人、撤回人）。回执只在执行后给出：
@@ -483,6 +503,8 @@ paths:
         '404': { $ref: '#/components/responses/Problem' }
         '429': { $ref: '#/components/responses/Problem' }
     post:
+      x-sb-auth: guardian
+      x-sb-rate-buckets: [erasure.account.hour]
       operationId: requestErasure
       description: >
         开关 data_rights，只给家长。发起删除（0035 platform.request_erasure：只认有效绑定家长；已有未结束的请求时返回它；已删除过 409）。
@@ -512,6 +534,8 @@ paths:
         '429': { $ref: '#/components/responses/Problem' }
   /bff/v0/students/{student_id}/erasure/{request_id}/confirm:
     post:
+      x-sb-auth: guardian
+      x-sb-rate-buckets: [erasure.account.hour]
       operationId: confirmErasure
       description: >
         开关 data_rights，只给家长。二次确认（0035 platform.confirm_erasure：只有发起人本人、仍有效绑定、发起后 24 小时内）。
@@ -553,6 +577,8 @@ paths:
         '429': { $ref: '#/components/responses/Problem' }
   /bff/v0/students/{student_id}/erasure/{request_id}/cancel:
     post:
+      x-sb-auth: guardian
+      x-sb-rate-buckets: [erasure.account.hour]
       operationId: cancelErasure
       description: >
         开关 data_rights，只给家长。撤回（0035 platform.cancel_erasure：该孩子任一有效绑定家长，执行前都能撤回；已撤回再撤回幂等；已执行 409）。

@@ -10,6 +10,8 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { ALL_SHELL_COPY } from '../src/shell/copy.ts';
+import { targets } from './crawl-pages.ts';
+import { crawl } from './headers-check.ts';
 import { loginGuardian, loginStudent, TRUST_BASE } from './session.ts';
 
 const GT = '5d000000-0000-4000-8000-0000000000c1';
@@ -183,6 +185,7 @@ test('家长数据权利：导出（一次性下载、no-store、附件）→ �
   ]);
   expect(response.status()).toBe(200);
   expect(response.headers()['cache-control']).toBe('no-store');
+  expect(response.headers()['x-content-type-options']).toBe('nosniff');  // 附件下载也不让浏览器嗅探类型（H6 安全审查 L3）
   expect(response.headers()['content-disposition']).toMatch(/^attachment; filename="starbuddy-export-[0-9a-f-]{36}\.json"$/);
   const body = await (await download.createReadStream()).toArray();
   const pkg = JSON.parse(Buffer.concat(body).toString('utf8')) as Record<string, unknown>;
@@ -306,4 +309,11 @@ test('周报：学生“成长手记”与家长周报——每句带 data-claim
   // 另一户（gS）打开 HG 的孩子：与不存在同一个 404
   await loginGuardian(page, 'gS');
   expect((await page.goto(`/family/${GT}/weekly`))?.status()).toBe(404);
+});
+
+test('安全头（第二轮 7.6，H6）：开关打开时信任界面的全部页面（学生与家长）都带本次 nonce 的 CSP、no-store、nosniff', async ({ page }) => {
+  await loginStudent(page, GT);
+  await crawl(page, targets('student', GT, true, true));
+  await loginGuardian(page, 'gH');
+  await crawl(page, targets('guardian', GT, true, true));
 });

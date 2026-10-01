@@ -20,6 +20,8 @@ servers:
 paths:
   /bff/v0/auth/otp/request:
     post:
+      x-sb-auth: public
+      x-sb-rate-buckets: [otp_request.ip.hour, otp_request.phone.minute, otp_request.phone.day]
       operationId: requestLoginCode
       description: >
         发登录验证码（6 位，5 分钟有效，错 5 次作废）。无论号码是否注册都返回同一个 202 与同一个响应体。
@@ -48,6 +50,8 @@ paths:
         '429': { $ref: '#/components/responses/Problem' }
   /bff/v0/auth/otp/verify:
     post:
+      x-sb-auth: public
+      x-sb-rate-buckets: [otp_verify.ip.hour, otp_verify.phone.quarter]
       operationId: verifyLoginCode
       description: >
         核对验证码并登录家长账号（没有就注册）。码错、过期、用过、换号、格式不对、账号停用一律同一个 401 LOGIN_FAILED；
@@ -80,6 +84,8 @@ paths:
         '429': { $ref: '#/components/responses/Problem' }
   /bff/v0/auth/logout:
     post:
+      x-sb-auth: session
+      x-sb-rate-buckets: []
       operationId: logout
       description: 作废本会话。
       parameters: [{ $ref: '#/components/parameters/Session' }, { $ref: '#/components/parameters/Origin' }, { $ref: '#/components/parameters/Csrf' }]
@@ -89,6 +95,8 @@ paths:
         '403': { $ref: '#/components/responses/Problem' }
   /bff/v0/auth/logout-all:
     post:
+      x-sb-auth: session
+      x-sb-rate-buckets: []
       operationId: logoutAll
       description: 退出所有设备：作废本账号的全部会话。
       parameters: [{ $ref: '#/components/parameters/Session' }, { $ref: '#/components/parameters/Origin' }, { $ref: '#/components/parameters/Csrf' }]
@@ -98,6 +106,8 @@ paths:
         '403': { $ref: '#/components/responses/Problem' }
   /bff/v0/me:
     get:
+      x-sb-auth: session
+      x-sb-rate-buckets: []
       operationId: me
       description: 账号类型；家长返回已绑定孩子（档案 ID 与年级，没有姓名）；学生返回自己的 student_id。
       parameters: [{ $ref: '#/components/parameters/Session' }]
@@ -131,6 +141,8 @@ paths:
         '401': { $ref: '#/components/responses/Problem' }
   /bff/v0/students:
     post:
+      x-sb-auth: guardian
+      x-sb-rate-buckets: [student_create.account.day]
       operationId: createStudent
       description: 家长建档（platform.create_student）：建在自己创建的家庭里，没有就新建。只收年级、地区、教材版本、出生年月。限流：每家长账号每天 5 次。
       parameters: [{ $ref: '#/components/parameters/Session' }, { $ref: '#/components/parameters/Origin' }, { $ref: '#/components/parameters/Csrf' }]
@@ -159,6 +171,8 @@ paths:
         '429': { $ref: '#/components/responses/Problem' }
   /bff/v0/students/{student_id}/consents:
     post:
+      x-sb-auth: guardian
+      x-sb-rate-buckets: []
       operationId: recordConsent
       description: >
         已绑定的家长写同意记录（只追加，撤回也是一条新记录）。合成版本号（…@synthetic-*）只在 dev / test / staging 可用，
@@ -192,6 +206,8 @@ paths:
         '422': { $ref: '#/components/responses/Problem' }
   /bff/v0/students/{student_id}/student-session:
     post:
+      x-sb-auth: guardian
+      x-sb-rate-buckets: [student_session.account.hour]
       operationId: openStudentMode
       description: >
         家长在本设备打开学生模式（PLT-01 之前的过渡入口，待人确认 #1）：要求家长对该学生有有效绑定，否则与“学生不存在”同一个 404；
@@ -223,6 +239,8 @@ paths:
   # ---------------------------------------------------------------- H4：选科、今日计划、额度与时长、时长设置、连续使用提醒
   /bff/v0/students/{student_id}/enrollments:
     get:
+      x-sb-auth: session
+      x-sb-rate-buckets: []
       operationId: listEnrollments
       description: >
         学科目录（只列适用于该生年级、非 planned 的学科；英语搁置期间不出现）与选科状态；学生与已绑定家长都能读（学生端只读）。
@@ -263,6 +281,8 @@ paths:
         '404': { $ref: '#/components/responses/Problem' }
   /bff/v0/students/{student_id}/enrollments/{subject}:
     post:
+      x-sb-auth: guardian
+      x-sb-rate-buckets: []
       operationId: enrollSubject
       description: >
         家长开通一科（platform.enroll_subject；默认只有家长能选科，待人确认 #7）。outcome 与数据库函数一一对应：
@@ -281,6 +301,8 @@ paths:
         '404': { $ref: '#/components/responses/Problem' }
   /bff/v0/students/{student_id}/enrollments/{subject}/pause:
     post:
+      x-sb-auth: guardian
+      x-sb-rate-buckets: []
       operationId: pauseSubject
       description: 家长暂停（换下）一科（platform.pause_subject）：paused、not_active、change_limit_reached。
       parameters:
@@ -296,6 +318,8 @@ paths:
         '404': { $ref: '#/components/responses/Problem' }
   /bff/v0/students/{student_id}/today:
     get:
+      x-sb-auth: session
+      x-sb-rate-buckets: [today.session.minute]
       operationId: today
       description: >
         今日计划（spec 第 6 节）：按在读学科并列（不是跨科编排），每科按 priority 从高到低。BFF 调学习服务 POST /internal/v1/plan
@@ -346,8 +370,11 @@ paths:
                                   - $ref: '#/components/schemas/ClaimStatement'
         '401': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
+        '429': { description: 超过限流（同一个 429，不分原因）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
   /bff/v0/students/{student_id}/balance:
     get:
+      x-sb-auth: session
+      x-sb-rate-buckets: []
       operationId: balance
       description: >
         额度与时长状态（spec 第 9 节）：时长数值全部来自 platform.meter_guard_status（迁移 0030），BFF 不重算单日上限、宵禁、已用分钟；
@@ -412,6 +439,8 @@ paths:
         '404': { $ref: '#/components/responses/Problem' }
   /bff/v0/students/{student_id}/time-guard:
     get:
+      x-sb-auth: session
+      x-sb-rate-buckets: []
       operationId: getTimeGuard
       description: 单日上限与宵禁的当前设置（学生只读）。不返回设置人。档位上限与默认宵禁（config/shell.json 的 meter_defaults，单处）作为界面上的边界。
       parameters: [{ $ref: '#/components/parameters/StudentId' }, { $ref: '#/components/parameters/Session' }]
@@ -440,6 +469,8 @@ paths:
         '401': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
     put:
+      x-sb-auth: guardian
+      x-sb-rate-buckets: [time_guard.account.hour]
       operationId: setTimeGuard
       description: >
         家长调单日上限与宵禁（platform.set_time_guard）：上限只能在 0 到档位上限之间；宵禁只能收紧（必须覆盖默认时段）。
@@ -482,6 +513,9 @@ paths:
         '429': { $ref: '#/components/responses/Problem' }
   /bff/v0/students/{student_id}/rest-reminder:
     get:
+      x-sb-auth: student
+      x-sb-rate-buckets: []
+      x-sb-not-self: 404
       operationId: restReminder
       description: >
         连续使用提醒（spec 第 10 节）：学生会话连续使用达到阈值（config/shell.json，默认 40 分钟）时 show 为真，建议休息 10 分钟；
@@ -494,6 +528,9 @@ paths:
         '404': { $ref: '#/components/responses/Problem' }
   /bff/v0/students/{student_id}/rest-reminder/ack:
     post:
+      x-sb-auth: student
+      x-sb-rate-buckets: []
+      x-sb-not-self: 404
       operationId: ackRestReminder
       description: 学生确认休息：连续使用从现在起重新计。
       parameters:

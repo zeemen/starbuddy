@@ -2,7 +2,8 @@
 """攻击面清单与测试的对应检查（specs/household-pentest-sprint3/spec.md 第 7 节“清单与测试的对应”）。
 
 make check-fast / make attack-surface-check 调用。只用标准库，约 0.1 秒。核对：
-1. docs/security/attack-surface.md 的条目编号与 spec 第 2 节一一对应（不多、不少、不重复）；
+1. docs/security/attack-surface.md 的条目编号与两份 spec 第 2 节一一对应（不多、不少、不重复）：第一轮
+   specs/household-pentest-sprint3/spec.md 的 A–M 类，第二轮 specs/household-pentest-round2/spec.md 的 N–S 类（第二轮 7.9，4-H H6）；
 2. “已有自动化断言”一列里的每条引用都真实存在：
    - `ref:路径#片段`：文件存在且含这段文字（表格里的 \\| 还原成 |）；
    - `mut:名称`：db/tests/mutations.sh 里有这个变异；`mut-bff:名称`：services/bff/tests/mutations.sh 里有；
@@ -19,7 +20,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-SPEC = ROOT / "specs/household-pentest-sprint3/spec.md"
+SPECS = [ROOT / "specs/household-pentest-sprint3/spec.md", ROOT / "specs/household-pentest-round2/spec.md"]
 SURFACE = ROOT / "docs/security/attack-surface.md"
 SCOPE = ROOT / "docs/security/pentest/scope.md"
 PRIVILEGES = ROOT / "db/tests/expected/privileges.txt"
@@ -70,7 +71,9 @@ def check_refs(cell: str, muts: dict[str, set[str]], errors: list[str], sid: str
 
 def main() -> int:
     errors: list[str] = []
-    expected = spec_ids(SPEC.read_text(encoding="utf-8"))
+    expected = [sid for spec in SPECS for sid in spec_ids(spec.read_text(encoding="utf-8"))]
+    if len(expected) != len(set(expected)):
+        errors.append("两份 spec 的条目编号有重复")
     muts = {k: mutation_names(p) for k, p in MUTATION_FILES.items()}
 
     rows: dict[str, list[str]] = {}

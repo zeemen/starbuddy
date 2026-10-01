@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # BFF 集成测试的变异测试：逐条去掉计量函数里的加锁或并发判断，断言 Gate 0 集成测试能发现；
-# 另有星图读模块、建档与行为事件接口的源码变异（见下方 SM），断言对应的集成测试能发现。
+# 另有星图读模块、建档与行为事件接口的源码变异（见下方 SM），断言对应的集成测试能发现；
+# 冲刺 4-H H6 起每类第二轮第 7 节回归（授权矩阵、身份注入、连接池、会话、限流、安全头、计量入口）至少一条（“H6：”）。
 # 这几条只有在多连接并发下才会出错，所以放在这里而不是 db/tests/mutations.sh。
 # 并发相关的失败依赖时序：每个变异最多跑 3 次，任何一次失败就算“被发现”。
 set -uo pipefail
@@ -156,11 +157,72 @@ SM=(
   $'信任：周报客观栏不核来源\tsrc/trust/weekly.ts\t  if (o[\'source_type\'] !== \'objective\' || \t  if ('
   $'信任：周报只给家长\tsrc/http/trust-routes.ts\t`${S}/weekly-report`, \'session\', weeklyReport\t`${S}/weekly-report`, \'guardian\', weeklyReport'
   $'信任：周报不限流\tsrc/http/trust-routes.ts\tweeklyReport, [{ bucket: \'trust_read.session.minute\', dim: \'session\' }]\tweeklyReport, []'
+  # 冲刺 4-H H6 第二轮第 7 节回归（每类至少一条）：这几条跑 tests/route-matrix.integration.test.ts
+  # 7.1 授权矩阵与路由表覆盖
+  $'H6：新路由不登记样例\tsrc/http/shell-routes.ts\t  read(`${S}/balance`, \'session\', balance),\t  read(`${S}/balance`, \'session\', balance), read(`${S}/balance-copy`, \'session\', balance),'
+  $'H6：学生会话可改时长设置\tsrc/http/shell-routes.ts\tauth: \'guardian\', csrf: \'session\', body: true, handler: timeGuardPut\tauth: \'session\', csrf: \'session\', body: true, handler: timeGuardPut'
+  $'H6：选科越权回 403\tsrc/http/shell-routes.ts\t    return json(200, Object.fromEntries(ENROLL_KEYS.filter((k) => k in r).map((k) => [k, r[k]])));\\n  } catch (e) {\\n    if (pgCode(e) === \'42501\') return problem(P.NOT_FOUND);\t    return json(200, Object.fromEntries(ENROLL_KEYS.filter((k) => k in r).map((k) => [k, r[k]])));\\n  } catch (e) {\\n    if (pgCode(e) === \'42501\') return problem(P.FORBIDDEN);'
+  # 安全审查 M1：跨对象（自己孩子的路径带兄妹的导出任务与凭据）
+  $'H6：导出兑换不核对学生\tsrc/trust/exports.ts\t || e.studentId !== match.studentId || \t || '
+  # 契约审查 M3：只认本人路由的拒绝码按接口定义（x-sb-not-self）
+  $'H6：事件与探针的“不是本人”改回 404\tsrc/http/feature-routes.ts\to.kind === \'forbidden\' ? problem(P.FORBIDDEN)\to.kind === \'forbidden\' ? problem(P.NOT_FOUND)'
+  $'H6：方法不对回 404\tsrc/http/server.ts\tif (!found) throw new Stop(P.METHOD_NOT_ALLOWED);\tif (!found) throw new Stop(P.NOT_FOUND);'
+  # 7.2 身份注入
+  $'H6：身份改从查询参数读\tsrc/http/server.ts\tsession = { token: presented, accountId: rows[0].account_id,\tsession = { token: presented, accountId: url.searchParams.get(\'account_id\') ?? rows[0].account_id,'
+  $'H6：路径参数可被查询参数覆盖\tsrc/http/server.ts\tparams[n] = found.m![i + 1]!;\tparams[n] = url.searchParams.get(n) ?? found.m![i + 1]!;'
+  # 7.3 连接池串号
+  $'H6：set_config 第三个参数改为 false\tsrc/metering/db.ts\tset_config(\'app.account_id\', $1, true)\tset_config(\'app.account_id\', $1, false)'
+  # 7.4 会话
+  $'H6：退出所有设备不废会话\tsrc/http/routes.ts\tawait ctx.q(\'SELECT platform.auth_session_revoke_all($1)\', [ctx.session!.token]);\t'
+  $'H6：登出不废会话\tsrc/http/routes.ts\tawait ctx.q(\'SELECT platform.auth_session_revoke($1)\', [ctx.session!.token]);\t'
+  # 7.5 限流
+  $'H6：导出不挂限流桶\tsrc/http/trust-routes.ts\texportCreate, [{ bucket: \'export.account.hour\', dim: \'account\' }]\texportCreate, []'
+  $'H6：按账号限流的键每次不同\tsrc/http/server.ts\tawait limit(r.bucket, \'account\', session!.accountId);\tawait limit(r.bucket, \'account\', randomUUID());'
+  $'H6：限流按原因返回不同错误\tsrc/http/server.ts\tif (!rows[0]?.ok) throw new Stop(P.TOO_MANY);\tif (!rows[0]?.ok) throw new Stop(dim === \'ip\' ? P.TOO_MANY : P.FORBIDDEN);'
+  # 7.6 安全头与缓存
+  $'H6：响应可以缓存\tsrc/http/server.ts\t        \'cache-control\': \'no-store\',\t        \'cache-control\': \'private, max-age=60\','
+  $'H6：响应带 CORS 放行头\tsrc/http/server.ts\t        \'x-content-type-options\': \'nosniff\',\t        \'x-content-type-options\': \'nosniff\', \'access-control-allow-origin\': \'*\','
+  # 7.7 计量入口
+  $'H6：诊断开始收前端带来的字段\tsrc/diagnosis/service.ts\tif (!exactKeys(b, [\'subject\', \'idempotency_key\']) || b[\'subject\']\tif (b[\'subject\']'
+  $'H6：诊断失败不释放预留\tsrc/diagnosis/service.ts\t    if (holding) await releaseQuietly(deps, account, usage, \'upstream_rejected\');\t'
 )
 # 副本保持仓库结构（测试按 ../../../ 找仓库根：adapters/aya 的登记脚本、db/seeds 的种子），adapters、db 软链接回仓库。
 # 安全审查阻断 1：原来的副本不保持结构，测试的 before 在任何代码下都失败，变异全部“被发现”却不说明任何问题。
 # 所以：先跑一次不变异的对照，必须通过；每条变异限时（挂起算漏检）；只有“至少一项测试通过、另有失败”才算被发现，
 # 保证失败来自断言而不是环境没起来。
+# H6 变异的预期（安全审查 M2，参照 db/tests/mutations.sh 的 EXPECT）：第一条失败的测试名与断言消息必须是这里登记的，
+# 证明是指定的断言发现了变异，而不是别的测试先失败。值 = “测试名片段|断言消息片段”。
+declare -A EXPECT_H6=(
+  ["H6：新路由不登记样例"]="H6 路由表覆盖|新增路由必须在 SAMPLES 里登记"
+  ["H6：学生会话可改时长设置"]="H6 路由表覆盖|与接口定义的 x-sb-auth"
+  ["H6：选科越权回 403"]="H6 授权矩阵|不存在 POST /students/{student_id}/enrollments/{subject}"
+  ["H6：方法不对回 404"]="H6 表外|"
+  ["H6：身份改从查询参数读"]="H6 身份注入|查询参数 + 请求头注入"
+  ["H6：路径参数可被查询参数覆盖"]="H6 身份注入|"
+  ["H6：set_config 第三个参数改为 false"]="H6 连接池串号|成功的请求之后：连接上没有残留账号"
+  ["H6：退出所有设备不废会话"]="H6 会话：登出后重放|退出所有设备"
+  ["H6：登出不废会话"]="H6 会话：登出后重放|登出后重放"
+  ["H6：导出不挂限流桶"]="H6 路由表覆盖|挂了限流桶与登记豁免必须恰好其一"
+  ["H6：按账号限流的键每次不同"]="H6 限流|"
+  ["H6：限流按原因返回不同错误"]="H6 限流|POST /auth/otp/request otp_request.phone.minute："
+  ["H6：响应可以缓存"]="H6 授权矩阵|no-store"
+  ["H6：响应带 CORS 放行头"]="H6 授权矩阵|没有 CORS 头"
+  ["H6：诊断开始收前端带来的字段"]="H6 计量入口（静态）|诊断开始拒收"
+  ["H6：诊断失败不释放预留"]="H6 计量入口（集成）|学习服务确定失败时预留被释放"
+  ["H6：导出兑换不核对学生"]="H6 跨对象|跨对象（兄妹 S2 的二级 ID）POST /students/{student_id}/exports/{export_job_id}/download"
+  ["H6：事件与探针的“不是本人”改回 404"]="H6 授权矩阵|x-sb-not-self 403"
+  ["H6：考试成绩不核对考试属于这个学生"]="H6 跨对象|跨对象（另一户 T 的二级 ID）POST /students/{student_id}/exams/{exam_id}/score"
+)
+h6_first() {  # $1 测试输出文件，$2 变异名：第一条 not ok 的测试名与它的错误块要含登记的片段
+  local want="${EXPECT_H6[$2]:-}" first block
+  if [ -z "$want" ]; then echo "  H6 变异没有登记预期断言：$2"; return 1; fi
+  first="$(grep -m1 '^not ok' "$1" || true)"
+  block="$(awk 'f && /^(ok |not ok |# Subtest)/ {exit} /^not ok/ {f=1} f' "$1")"
+  if [[ "$first" != *"${want%%|*}"* ]] || [[ "$block" != *"${want#*|}"* ]]; then
+    echo "  第一条失败不是登记的断言：$2（期望 ${want}；实际 ${first:0:80} / $(printf '%s' "$block" | grep -m1 'error:' | cut -c1-120)）"
+    return 1
+  fi
+}
 star_run() {  # $1 副本根目录，$2 变异名（“计量：”开头的跑计量测试）；输出 rc 与通过数
   local out rc pass tests="tests/star-map.test.ts tests/star-map.integration.test.ts tests/onboarding.integration.test.ts tests/events.integration.test.ts"
   [[ "${2:-}" == 计量：* ]] && tests="tests/learning-client.test.ts tests/gate0.integration.test.ts"
@@ -168,8 +230,10 @@ star_run() {  # $1 副本根目录，$2 变异名（“计量：”开头的跑�
   [[ "${2:-}" == 认证：* ]] && tests="tests/auth.integration.test.ts"
   [[ "${2:-}" == 页面：* ]] && tests="tests/shell-pages.integration.test.ts"
   [[ "${2:-}" == 信任：* ]] && tests="tests/trust-units.test.ts tests/trust.integration.test.ts"
+  [[ "${2:-}" == H6：* ]] && tests="tests/route-matrix.integration.test.ts"
   out=$( cd "$1/services/bff" && timeout 240 bash "$ROOT/db/tests/pg-ephemeral.sh" -- \
       node --no-warnings --test --test-concurrency=1 --test-timeout=60000 $tests 2>&1 ); rc=$?
+  printf '%s\n' "$out" > "$1/run.out"  # H6 的“第一条失败必须是登记的断言”从这里读
   pass=$(printf '%s\n' "$out" | sed -n 's/^# pass \([0-9]*\)$/\1/p' | tail -1)
   echo "$rc ${pass:-0}"
 }
@@ -191,20 +255,42 @@ for spec in "${SM[@]}"; do
   if [ -n "$FILTER" ] && [[ "$name" != *"$FILTER"* ]]; then continue; fi
   total=$((total + 1))
   work="$(star_copy)"
-  if ! MUT_FILE="$work/services/bff/$file" MUT_FROM="$from" MUT_TO="$to" python3 - <<'PYM'
+  unique=0; [[ "$name" == H6：* ]] && unique=1
+  if ! MUT_UNIQUE=$unique MUT_FILE="$work/services/bff/$file" MUT_FROM="$from" MUT_TO="$to" python3 - <<'PYM'
 import os, sys
 p, a, b = os.environ['MUT_FILE'], os.environ['MUT_FROM'], os.environ['MUT_TO']
+a, b = a.replace('\\n', '\n'), b.replace('\\n', '\n')  # 原文与替换里的 \n 表示换行（多行锚点）
 s = open(p, encoding='utf-8').read()
+if s.count(a) != 1 and os.environ.get('MUT_UNIQUE') == '1': sys.exit(1)  # H6：锚点必须唯一
 if a not in s: sys.exit(1)
 open(p, 'w', encoding='utf-8').write(s.replace(a, b, 1))
 PYM
   then echo "  变异本身写错：$name"; missed=$((missed + 1)); rm -rf "$work"; continue; fi
   read -r rc pass <<< "$(star_run "$work" "$name")"
+  first_ok=1; [[ "$name" == H6：* ]] && [ "$rc" != "0" ] && { h6_first "$work/run.out" "$name" || first_ok=0; }
   rm -rf "$work"
   if [ "$rc" = "0" ]; then echo "  漏检：$name"; missed=$((missed + 1))
   elif [ "$rc" = "124" ]; then echo "  超时（测试挂起，不算发现）：$name"; missed=$((missed + 1))
   elif [ "${pass:-0}" -lt 1 ]; then echo "  测试没有跑起来（不算发现）：$name"; missed=$((missed + 1))
+  elif [ $first_ok -eq 0 ]; then missed=$((missed + 1))
   fi
+done
+
+# H6 的库函数变异（安全审查 M1：跨对象）：改测试库里的函数，跑 tests/route-matrix.integration.test.ts，同样要求第一条失败是登记的断言
+declare -A HM=(
+  ["H6：考试成绩不核对考试属于这个学生"]="$(fr 'insight.submit_exam_score(uuid, uuid, numeric)' "'WHERE e.id = p_plan AND e.student_id = p_student AND'" "'WHERE e.id = p_plan AND'")"
+)
+for name in "${!HM[@]}"; do
+  if [ -n "$FILTER" ] && [[ "$name" != *"$FILTER"* ]]; then continue; fi
+  total=$((total + 1))
+  out=$(PGEPHEMERAL_EXTRA_SQL="${HM[$name]}" timeout 240 bash "$ROOT/db/tests/pg-ephemeral.sh" -- \
+        node --no-warnings --test --test-concurrency=1 --test-timeout=60000 tests/route-matrix.integration.test.ts 2>&1); rc=$?
+  tmp="$(mktemp "${TMPDIR:-/tmp}/starbuddy-h6mut.XXXXXX")"; printf '%s\n' "$out" > "$tmp"
+  if echo "$out" | grep -q '附加 SQL 执行失败'; then echo "  变异本身写错：$name"; missed=$((missed + 1))
+  elif [ "$rc" = "0" ]; then echo "  漏检：$name"; missed=$((missed + 1))
+  elif ! h6_first "$tmp" "$name"; then missed=$((missed + 1))
+  fi
+  rm -f "$tmp"
 done
 if [ $missed -gt 0 ]; then echo "bff-mutation: 失败，$missed/$total 个变异没有被发现"; exit 1; fi
 echo "bff-mutation: 通过（$total 个变异全部被发现）"

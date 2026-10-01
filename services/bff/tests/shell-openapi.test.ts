@@ -9,6 +9,7 @@ const require_fs = () => fs;
 import { test } from 'node:test';
 import { compile, PREFIX, ROUTES } from '../src/http/routes.ts';
 import { TRUST_ROUTES } from '../src/http/trust-routes.ts';
+import { operations } from './openapi-ops.ts';
 
 // 路由表 + 信任界面路由（SIE-03 PR③，按开关注册；接口定义在 openapi/trust.v0.yaml）
 const ALL = [...ROUTES, ...TRUST_ROUTES];
@@ -124,5 +125,35 @@ test('信任界面接口定义：handler 用到的问题码都在枚举里；每
   // 考试录入与成绩：库里的唯一约束冲突映射 409
   for (const p of ['/students/{student_id}/exams', '/students/{student_id}/exams/{exam_id}/score']) {
     assert.ok(statuses.get(`POST ${PREFIX}${p}`)!.has('409'), p);
+  }
+});
+
+// 4-H H6（契约审查 M1–M3）：每个操作在接口定义里写明鉴权口径（x-sb-auth）与限流桶（x-sb-rate-buckets），与路由表一致；
+// 只认学生本人的路由写明“不是本人”的状态码（x-sb-not-self，授权矩阵按它断言）；状态码从路由表推出，六份接口定义都要列全。
+// x-sb-auth 改动是鉴权口径变更，属必停项（lessons H6）。
+test('接口定义的 x-sb-auth、x-sb-rate-buckets、x-sb-not-self 与路由表一致（六份 yaml 每个操作都写）', () => {
+  const ops = operations();
+  for (const r of ALL) {
+    const k = `${r.method} ${PREFIX}${r.path}`;
+    const op = ops.get(k);
+    assert.ok(op, `${k} 不在接口定义里`);
+    assert.equal(op.auth, r.auth, `${k} x-sb-auth（${op.file}）`);
+    assert.deepEqual(op.buckets, r.rateLimits.map((l) => l.bucket), `${k} x-sb-rate-buckets（${op.file}）`);
+    const studentOnly = r.auth === 'student' && r.path.includes('{student_id}');
+    assert.equal(op.notSelf !== null, studentOnly, `${k} x-sb-not-self 只在只认学生本人的路由上写`);
+    if (op.notSelf !== null) assert.ok(op.notSelf === 403 || op.notSelf === 404, k);
+  }
+});
+
+test('接口定义的状态码从路由表推出（六份 yaml）：要会话 401；账号类型限定或改变状态 403；带路径参数 404；挂限流桶 429；读请求体 422', () => {
+  const ops = operations();
+  for (const r of ALL) {
+    const k = `${r.method} ${PREFIX}${r.path}`;
+    const s = ops.get(k)!.statuses;
+    if (r.auth !== 'public') assert.ok(s.has('401'), `${k} 401`);
+    if (r.auth === 'guardian' || r.auth === 'student' || r.csrf !== 'none') assert.ok(s.has('403'), `${k} 403`);
+    if (r.path.includes('{')) assert.ok(s.has('404'), `${k} 404`);
+    if (r.rateLimits.length > 0) assert.ok(s.has('429'), `${k} 429`);
+    if (r.body) assert.ok(s.has('422'), `${k} 422`);
   }
 });

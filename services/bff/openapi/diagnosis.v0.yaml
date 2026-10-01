@@ -29,6 +29,9 @@ paths:
       - $ref: '#/components/parameters/StudentId'
       - $ref: '#/components/parameters/Session'
     post:
+      x-sb-auth: student
+      x-sb-rate-buckets: []
+      x-sb-not-self: 403
       operationId: startDiagnosis
       description: 开始诊断；已有未结束（进行中或暂停）的会话时续做它。
       requestBody:
@@ -51,12 +54,16 @@ paths:
         '415': { $ref: '#/components/responses/Problem' }
         '422': { $ref: '#/components/responses/Problem' }
         '503': { $ref: '#/components/responses/Problem' }
+        '404': { description: 无权、不存在或路径参数不合法（同一个 404）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
   /bff/v0/students/{student_id}/diagnosis/sessions/{session_id}:
     parameters:
       - $ref: '#/components/parameters/StudentId'
       - $ref: '#/components/parameters/SessionId'
       - $ref: '#/components/parameters/Session'
     get:
+      x-sb-auth: student
+      x-sb-rate-buckets: []
+      x-sb-not-self: 403
       operationId: getDiagnosisCurrent
       description: >
         当前题与进度。会话结束时 step 为空；结束页不给结论：作答过过程题（process_tasks 为真）时说“完成了，老师会看你的过程”，
@@ -76,12 +83,16 @@ paths:
               schema: { $ref: '#/components/schemas/QuotaProblem' }
         '403': { $ref: '#/components/responses/Problem' }
         '503': { $ref: '#/components/responses/Problem' }
+        '404': { description: 无权、不存在或路径参数不合法（同一个 404）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
   /bff/v0/students/{student_id}/diagnosis/sessions/{session_id}/probe:
     parameters:
       - $ref: '#/components/parameters/StudentId'
       - $ref: '#/components/parameters/SessionId'
       - $ref: '#/components/parameters/Session'
     post:
+      x-sb-auth: student
+      x-sb-rate-buckets: []
+      x-sb-not-self: 403
       operationId: postDiagnosisProbe
       description: 当前题出题前的“这道题你觉得能做对吗？”（跳过不调用）。写 insight.confidence_probe（学生自述），作答后自动关联作答。
       requestBody:
@@ -102,12 +113,16 @@ paths:
         '422': { $ref: '#/components/responses/Problem' }
         '429': { $ref: '#/components/responses/Problem' }
         '503': { $ref: '#/components/responses/Problem' }
+        '404': { description: 无权、不存在或路径参数不合法（同一个 404）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
   /bff/v0/students/{student_id}/diagnosis/sessions/{session_id}/answer:
     parameters:
       - $ref: '#/components/parameters/StudentId'
       - $ref: '#/components/parameters/SessionId'
       - $ref: '#/components/parameters/Session'
     post:
+      x-sb-auth: student
+      x-sb-rate-buckets: []
+      x-sb-not-self: 403
       operationId: postDiagnosisAnswer
       description: >
         提交当前题的作答。判分只来自验证器，结果不返回（只回会话状态）。过程题（process）与讲解题（explain）另带 work（写出的全过程 /
@@ -129,12 +144,16 @@ paths:
         '409': { $ref: '#/components/responses/Problem' }
         '422': { $ref: '#/components/responses/Problem' }
         '503': { $ref: '#/components/responses/Problem' }
+        '404': { description: 无权、不存在或路径参数不合法（同一个 404）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
   /bff/v0/students/{student_id}/diagnosis/sessions/{session_id}/pause:
     parameters:
       - $ref: '#/components/parameters/StudentId'
       - $ref: '#/components/parameters/SessionId'
       - $ref: '#/components/parameters/Session'
     post:
+      x-sb-auth: student
+      x-sb-rate-buckets: []
+      x-sb-not-self: 403
       operationId: pauseDiagnosis
       description: 暂停（可跨天续做）。带上当前题已用秒数，续做时接着算；暂停期间不计时。
       requestBody:
@@ -149,12 +168,16 @@ paths:
         '409': { $ref: '#/components/responses/Problem' }
         '422': { $ref: '#/components/responses/Problem' }
         '503': { $ref: '#/components/responses/Problem' }
+        '404': { description: 无权、不存在或路径参数不合法（同一个 404）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
   /bff/v0/students/{student_id}/diagnosis/sessions/{session_id}/abandon:
     parameters:
       - $ref: '#/components/parameters/StudentId'
       - $ref: '#/components/parameters/SessionId'
       - $ref: '#/components/parameters/Session'
     post:
+      x-sb-auth: student
+      x-sb-rate-buckets: []
+      x-sb-not-self: 403
       operationId: abandonDiagnosis
       description: 放弃本次诊断：还没答过题时释放开始时的额度预留，答过题不退；之后可以重新开始。
       requestBody:
@@ -169,6 +192,7 @@ paths:
         '409': { $ref: '#/components/responses/Problem' }
         '422': { $ref: '#/components/responses/Problem' }
         '503': { $ref: '#/components/responses/Problem' }
+        '404': { description: 无权、不存在或路径参数不合法（同一个 404）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
 components:
   parameters:
     StudentId:
