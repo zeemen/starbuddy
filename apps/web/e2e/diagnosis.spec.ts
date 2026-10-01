@@ -37,12 +37,12 @@ async function answerCurrent(page: Page) {
   const options = form.locator('input[type=radio], input[type=checkbox]');
   if (await options.count()) await options.first().check();
   else await page.getByLabel('答案').fill('1');
-  const heading = page.locator('form.diagnosis-item h3');
-  const seq = await heading.innerText();
+  const seq = await form.locator('h3').innerText();
   await form.getByRole('button', { name: '提交' }).click();
-  // 提交后换到下一步（探针、下一题或结束页）
-  await expect.poll(async () => (await page.getByTestId('diagnosis').getAttribute('data-phase')) !== 'item'
-    || (await heading.count() === 0) || (await heading.innerText()) !== seq, { timeout: 15_000 }).toBe(true);
+  // 提交后换到下一步（探针、下一题或结束页）。阶段与题号在页面里一次读完：分几次往返读（先 count 再 innerText）时，
+  // React 恰好在两次之间换到探针，题目标题已不在，innerText 会一直等它出现，回调挂住直到 poll 超时（间歇失败的根因）。
+  await expect.poll(() => page.getByTestId('diagnosis').evaluate((el, s) => el.getAttribute('data-phase') !== 'item'
+    || (el.querySelector<HTMLElement>('form.diagnosis-item h3')?.innerText ?? null) !== s, seq), { timeout: 15_000 }).toBe(true);
   return kind;
 }
 
