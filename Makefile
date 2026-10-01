@@ -438,12 +438,16 @@ e2e-cohort:
 	@cd services/learning && LEARNING_TEST_STRICT=$(if $(filter 1,$(CONTRACT_STRICT)),1,0) .venv/bin/python -m pytest -q tests/test_e2e_cohort.py
 
 # Gate 0 证据包（合成联调，不是内测结论）：跑一遍完整合成联调，把事件计数、节点查询摘要、断言结果与运行元数据写到执行人指定目录
-# （确定性输出，只含合成数据与 ID；仓库只收一份合成样例 tools/e2e-cohort/sample/）。星图截图可选：GATE0_STARMAP=1（依赖 4-H 壳页面，未就绪时跳过并记录）。
-# 用法：make gate0-evidence GATE0_OUT=<输出目录>（路径不含空格与单引号）
+# （确定性输出，只含合成数据与 ID；仓库只收一份合成样例 tools/e2e-cohort/sample/）。
+# 星图截图：GATE0_STARMAP=1（同一一次性库上起 BFF 与前端测试构建，本机 Chromium 经真实会话截壳内星图页，写到 <目录>/starmap/；
+# 先跑对账单测 tools/e2e-cohort/tests；失败即 starmap.status = failed、删本轮截图并非零退出；与 make web-test 共用 apps/web/.next-e2e，不能同时跑）。
+# 不带 GATE0_STARMAP=1 时不截图、不删已有 starmap/（starmap/provenance.md 标“截图沿用”）；星图页面改版（如 H5）时才重截样例。
+# 用法：make gate0-evidence GATE0_OUT=<输出目录> [GATE0_STARMAP=1]（路径不含空格与单引号）
 GATE0_BAD = $(or $(filter-out 1,$(words $(GATE0_OUT))),$(findstring ',$(GATE0_OUT)))
 gate0-evidence:
 	@$(if $(GATE0_BAD),echo "用法：make gate0-evidence GATE0_OUT=<输出目录>（路径不含空格与单引号）"; exit 2)
 	@if [ ! -x services/learning/.venv/bin/python ]; then echo "gate0-evidence: 没有安装依赖（见 services/learning/README.md）"; exit 2; fi
+	@$(if $(filter 1,$(GATE0_STARMAP)),cd services/learning && .venv/bin/python -m pytest -q -p no:cacheprovider --rootdir '$(abspath tools/e2e-cohort)' '$(abspath tools/e2e-cohort/tests)',true)
 	@cd services/learning && PYTHONPATH='$(abspath tools/e2e-cohort)' .venv/bin/python -m e2e_cohort evidence --out '$(abspath $(GATE0_OUT))' $(if $(filter 1,$(GATE0_STARMAP)),--starmap,)
 
 # 冲刺 5 压测基线、单模型失效降级、成本测算（specs/load-cost-baseline-sprint5；工具与手册见 tools/loadtest/README.md、RUNBOOK.md）。

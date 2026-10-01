@@ -7,8 +7,13 @@
   nodes.csv          节点查询摘要：节点 ID、证据数、观察计数、状态（KGE-04 第二步前为 evidence_only）
   retests.csv        复测（桩）：调度方一律 stub
   checks.json        断言与计数
-  run_metadata.json  提交号、契约版本、适配器与内容包版本、队列种子与摘要、星图截图状态（唯一随提交变化的文件）
-星图截图是可选步骤：依赖 4-H 壳页面合入，接口见 capture_starmap；未提供时在 run_metadata.json 里记“skipped”。
+  run_metadata.json  提交号、契约版本、适配器与内容包版本、队列种子与摘要、星图截图记录的位置（唯一随提交变化的文件）
+  starmap/           GATE0_STARMAP=1 时生成（starmap.py）：starmap.json（status = captured / failed、页面路径、选取规则、视口、
+                     星数统计与对账、截取提交号、截图哈希）、截图（失败时删除）与 provenance.md（截图来历）。上面几个文件的内容与
+                     是否截图无关（test_e2e_cohort 与样例逐字节比对）；截图失败时 run_metadata.json 与 summary.md 另加 failed 标记与原因。
+                     不带 GATE0_STARMAP=1 时不截图、也不删已有的 starmap/，只重写 provenance.md（截取提交号与本次不同则标“截图沿用”）。
+                     v0 截图只证明真实会话 + RLS 能打开该学生页、星空等于在读科目；硬1 的同一学生模型主要由 events.csv、nodes.csv、
+                     checks.json 证明。
 """
 from __future__ import annotations
 
@@ -17,13 +22,12 @@ import hashlib
 import io
 import json
 from pathlib import Path
-from typing import Callable
 
 from . import SYNTHETIC_NOTICE
 from .cohort import PATTERN_LABELS
+from .starmap import PAGE_VERSION, WHAT_IT_PROVES
 
 DATA_FILES = ("students.csv", "events.csv", "nodes.csv", "retests.csv", "checks.json")
-StarmapCapture = Callable[[Path, list[str]], list[dict]]
 
 
 def _csv(rows: list[dict], columns: list[str]) -> str:
@@ -89,24 +93,43 @@ def _summary(report, files: dict[str, str]) -> str:
     lines += [f"| {c.name} | {'通过' if c.passed else '失败'} |" for c in report.checks]
     lines += ["", "## 数据文件 SHA-256", ""]
     lines += [f"- `{name}` {hashlib.sha256(files[name].encode()).hexdigest()}" for name in DATA_FILES]
-    lines += ["", "运行元数据（提交号、契约与适配器版本、星图截图状态）见 `run_metadata.json`。", ""]
+    lines += ["", "## 星图截图", "",
+              f"- **{PAGE_VERSION}。** 页面状态只有 evidence_only / 中性底星（KGE-04 第二步前不写掌握），截图不是掌握结论。",
+              f"- {WHAT_IT_PROVES}。",
+              "- `make gate0-evidence GATE0_STARMAP=1` 时生成 `starmap/`：合成学生经真实会话打开壳内星图页的截图（学生视角若干张、家长视角 1 张），"
+              "`starmap/starmap.json` 记录 status（captured / failed）、页面路径、学生选取规则、视口、截取提交号、截图哈希与对账"
+              "（每条规则在 v0 下的效力也写在里面）；对账不一致即 failed。",
+              "- 截图对应的页面版本与截取提交号见 `starmap/provenance.md`；与本证据包提交号不同时标“截图沿用”（只在星图页面改版时重截）。"]
+    sm = report.metadata.get("starmap_screenshot", {})
+    if sm.get("status") == "failed":
+        lines += [f"- **星图截图失败**：{sm.get('reason', '原因见 starmap/starmap.json')}"]
+    lines += ["", "运行元数据（提交号、契约与适配器版本、星图截图记录位置）见 `run_metadata.json`。", ""]
     return "\n".join(lines)
 
 
-def write_pack(report, out_dir: Path, starmap: StarmapCapture | None = None) -> list[Path]:
+def write_pack(report, out_dir: Path, starmap_record: dict | None = None) -> list[Path]:
+    """写证据包。starmap_record 是 starmap.capture 的结果（None = 没有要求截图：已有的 starmap/ 保留不删）：写成 starmap/starmap.json；
+    status ≠ captured 时删掉本轮截图，并在 run_metadata.json 与 summary.md 标 failed 与原因（成功时这两个文件与不截图时逐字节相同）。
+    有 starmap/starmap.json 时都重写 starmap/provenance.md（截取提交号与本证据包提交号不同则标“截图沿用”）。"""
+    from .starmap import drop_images, write_provenance
     out_dir.mkdir(parents=True, exist_ok=True)
-    if starmap is not None:
-        shots = starmap(out_dir / "starmap", [s.student_id for s in report.cohort.students])
-        report.metadata["starmap_screenshot"] = {"status": "captured", "files": shots}
     written = []
+    if starmap_record is not None:
+        if starmap_record.get("status") != "captured":
+            removed = drop_images(out_dir)
+            if removed:
+                starmap_record = {**starmap_record, "images_removed": removed}
+            report.metadata["starmap_screenshot"] = {**report.metadata["starmap_screenshot"], "status": "failed",
+                                                     "reason": starmap_record.get("reason", "未知")}
+        p = out_dir / "starmap" / "starmap.json"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(starmap_record, ensure_ascii=False, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+        written.append(p)
+    prov = write_provenance(out_dir, str(report.metadata.get("commit", "unknown")))
+    if prov is not None:
+        written.append(prov)
     for name, content in render(report).items():
         p = out_dir / name
         p.write_text(content, encoding="utf-8")
         written.append(p)
     return written
-
-
-def capture_starmap_unavailable(out_dir: Path, student_ids: list[str]) -> list[dict]:
-    """星图截图的接口（可选）。4-H 壳页面合入后实现：Playwright 以合成家庭登录壳内星图页，每名学生一张截图，
-    返回 [{"student_id", "file", "pixel_sha256"}]（截图不确定，附像素哈希）。现在直接说明未就绪。"""
-    raise NotImplementedError("星图截图依赖 4-H 壳页面合入（specs/e2e-integration-sprint5/lessons.md），本次不生成")

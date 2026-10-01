@@ -8,12 +8,16 @@
 ```bash
 make e2e-cohort                                   # 联调 + 断言 + 反例 + 证据包与样例一致（约 1 分钟；同一测试也随 make learning-test 运行）
 make gate0-evidence GATE0_OUT=<目录>              # 在新的一次性 Postgres 上跑一轮并把证据包写到 <目录>（约 30 秒）
-make gate0-evidence GATE0_OUT=<目录> GATE0_STARMAP=1   # 同上并尝试星图截图（4-H 壳页面合入前会跳过并记录）
-make gate0-evidence GATE0_OUT=tools/e2e-cohort/sample  # 代码或内容变更后重生仓库里的合成样例
+make gate0-evidence GATE0_OUT=<目录> GATE0_STARMAP=1   # 同上并在同一一次性库上截星图（约 1 分钟；失败即 starmap.status = failed、非零退出）
+make gate0-evidence GATE0_OUT=tools/e2e-cohort/sample  # 代码或内容变更后重生仓库里的合成样例（保留已有截图，标“截图沿用”）
+make gate0-evidence GATE0_OUT=tools/e2e-cohort/sample GATE0_STARMAP=1  # 星图页面改版（如 H5）时重截样例
 ```
 
 依赖：`services/learning/.venv`（同 `learning-test`）、本机 Postgres 16 服务端、`node`，以及三个适配器的 `npm ci`。
 缺依赖时 `e2e-cohort` 跳过（`CONTRACT_STRICT=1` 时失败）。
+星图截图另需 `apps/web` 与 `services/bff` 的 `npm ci`、本机 Playwright Chromium（`PLAYWRIGHT_BROWSERS_PATH`，不在这里下载）；
+它与 `make web-test` 共用测试构建目录 `apps/web/.next-e2e`，不能同时跑（开头原子占位，目录已存在时直接记 failed，且不删别人的目录）；
+`apps/web` 下有任何 `.env*` 文件时拒绝运行（next 会自动加载它们；只看文件名不读内容）。前端与 BFF 进程按进程组清理。
 
 ## 组成（`e2e_cohort/`）
 
@@ -26,13 +30,17 @@ make gate0-evidence GATE0_OUT=tools/e2e-cohort/sample  # 代码或内容变更�
 | `checks.py` | 断言（只读事务）：三科事件并存不覆盖；私有副本扫描（个人层 = `platform.*` 与 `insight.*` 白名单；个人层以外无学生键列、列值里无本批学生相关 ID（学生、账号、家庭、家长、证据、作答）；个人层无学科名开头的表；带 `student_id` 的表都在个人表清单里，清单未建时标“待 0035”）；家长绑定有来历；grade 五个溯源字段（契约边界 + 落库）；重跑零新增；RLS 隔离（按个人表清单逐表比对，学生、家长、未绑定家长、两种未登录）；节点查询与事件计数 |
 | `verify.py` | 真实内测只读核对：库名比对、拒绝超级用户与非只读会话、拒绝写进仓库、名单不全返回 1、只输出汇总 |
 | `runner.py` | 串起一整轮，另加：全部调用成功、适配器无数据库驱动与连接信息、联调期间连库的只有学习服务登录角色与管理员；返回只含 ID 与计数的 Report |
-| `evidence.py` | 证据包渲染（纯函数、确定性）与星图截图接口 `capture_starmap` |
+| `evidence.py` | 证据包渲染（纯函数、确定性）与写盘（含星图记录 `starmap/starmap.json`） |
+| `starmap.py` | 星图截图（`GATE0_STARMAP=1`）：只在 `EphemeralPG` 一次性库上登记合成家长的 +999 号码与 `bff_app` 角色、起 BFF（短信捕获桩）与前端测试构建，调 `apps/web/scripts/gate0-starmap.ts`（本机 Chromium、真实会话登录）截壳内星图页，并用同一会话取 BFF 星图 JSON、试开另一户学生的页与接口（应 404）；学生按作答模式顺序取前 3 种各 1 名，家长视角另 1 张；节点身份取 JSON 的 `skill`，与库里 active 选科、已登记能力点、`nodes.csv` 对账。**v0 截图只证明真实会话 + RLS 能打开该学生页、星空等于在读科目；硬1 主要由 events / nodes / checks 证明**（纯函数 `reconcile`，单测与反例在 `tests/test_starmap.py`，`gate0-evidence` 带 `GATE0_STARMAP=1` 时先跑） |
 | `__main__.py` | 命令行：`cohort` / `evidence` / `verify`（真实内测只读核对，见 `RUNBOOK.md`） |
 
 ## 证据包
 
 `summary.md`、`students.csv`、`events.csv`（事件计数 × 科目 × 事件类型 = 来源方法/作答情境；复测带“（桩）”后缀）、`nodes.csv`（节点 ID、证据数、观察计数、状态）、
-`retests.csv`（全部标“桩”）、`checks.json`、`run_metadata.json`（提交号、契约版本、适配器与内容包版本、队列种子与摘要、星图截图状态）。
+`retests.csv`（全部标“桩”）、`checks.json`、`run_metadata.json`（提交号、契约版本、适配器与内容包版本、队列种子与摘要、星图记录的位置），
+以及 `GATE0_STARMAP=1` 时的 `starmap/`（截图、`starmap.json`：status = captured / failed、页面路径、选取规则、视口、截取提交号、星数统计与对账、截图哈希；
+`provenance.md`：截图的页面版本与截取提交号，与本次提交不同标“截图沿用”）。失败时删掉本轮截图。不带 `GATE0_STARMAP=1` 时不截图也不删已有的 `starmap/`。
+星图截图失败时 `run_metadata.json` 与 `summary.md` 另标 failed 与原因；成功时这两个文件与不截图时逐字节相同（样例比对不受截图影响）。
 除 `run_metadata.json` 的提交号与工作区状态外，同一代码逐字节相同；`test_e2e_cohort.py` 与 `sample/` 逐字节比对。
 节点状态在 KGE-04 第二步（掌握写库）前一律是 `evidence_only`，不是掌握结论。
 

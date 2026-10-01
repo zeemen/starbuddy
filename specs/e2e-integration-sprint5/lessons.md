@@ -39,8 +39,33 @@
 1. **道法没有“诊断”**：知行适配器的 diagnose 只支持 `mode = process`，学习服务 1 期只接受 `intake / gap_test`（`service.py` 的同步诊断限制），
    所以道法只走批改与复测；“三科诊断”实际为数学、语文两科诊断 + 道法批改。三科事件并存的断言不受影响。
 2. **诊断走单次 `/internal/v1/diagnose`（intake）**，没有走 SIE-02a 的自适应诊断会话接口（会话只覆盖数学、需要合成题面呈现器）。
-3. **星图截图未做**（spec #4 可选）：`evidence.capture_starmap` 留了接口（Playwright 登录壳内星图页、每名学生一张、附像素哈希），
-   `GATE0_STARMAP=1` 目前跳过并在 `run_metadata.json` 记 `skipped`。**后续**：4-H H4 壳页面合入后实现；H5 星图 v1 合入后重截。
+3. **星图截图已接上（2026-10-01，用户确认“接上星图截图”；spec #4 默认用 3-H / 4-H 现有星图）**：`make gate0-evidence GATE0_STARMAP=1`
+   在联调完成后的同一一次性库上起 BFF 与前端测试构建，本机 Chromium 经真实会话（+999 合成号码、短信捕获桩）截学生视角 3 张 + 家长视角 1 张，
+   写到 `starmap/`（`tools/e2e-cohort/e2e_cohort/starmap.py`、`apps/web/scripts/gate0-starmap.ts`）。页面是**星图 v0（3-H），掌握未写库，无点亮星**。
+   - **v0 截图证明什么（如实）**：只证明真实会话 + RLS 能打开该学生页（同一会话打开另一户学生的星图页与 BFF 星图接口都是 404，页面与接口各一）、
+     星空等于库里 `subject_enrollment.status = 'active'` 的在读科目（有已登记能力点的科目，严格相等）。v0 每片星空画该科全部已登记能力点、
+     全部中性底星，页面上没有只属于某名学生的星，三名学生的学生视角截图逐字节相同；对账规则 3–6（节点 = 登记表、证据节点 ⊆ 页面、
+     带状态的星 ⊆ 证据节点、带状态的星 = 0）在 v0 下**与学生无关或空真**，`starmap.json` 的 `reconciliation_rule` 逐条写明。
+     Gate 0 硬1“同一学生模型”主要由 `events.csv`、`nodes.csv`、`checks.json` 证明。
+   - **H5 星图 v1 合入或掌握写库（KGE-04 第二步）后**：规则 5“带状态的星 ⊆ 该学生证据节点”才真正生效，规则 6 要改成按掌握状态核对；
+     **样例必须重截**（`make gate0-evidence GATE0_OUT=tools/e2e-cohort/sample GATE0_STARMAP=1`）。
+   - **重截规则（2026-10-01 用户确认默认）**：只在星图页面改版时重截；不带 `GATE0_STARMAP=1` 重生样例时保留 `sample/starmap/` 不删，
+     `starmap/provenance.md` 写截图的页面版本与截取提交号，与本证据包提交号不同时标“截图沿用”，页面版本变了标“须重截”。
+   - **节点身份**：截图脚本用同一会话 cookie 取 BFF 星图 JSON，以其中 `skill`（科目:local_id）为节点身份；页面 DOM 只核对行数、三态、保持计数与 JSON 一致；
+     登记表另取 `label_code` 建 local_id → label_code 映射核对，不假设二者相等。`registered_nodes` 注明来源（公共登记表 `platform.skill_node`，
+     一次性库管理员连接只读查询）并附各科 `content_version`。
+   - **截图前置在临时库里写数据**：给选中学生的合成家长写 `platform.account_contact`（+999 号码）、建 `bff_app` 登录角色（只继承 starbuddy_bff）；
+     `seed_logins` 断言库是 `pgharness.EphemeralPG` 的 `starbuddy_test`，否则拒绝。这些写入发生在联调断言与证据导出之后，不影响证据包数据。
+   - **星图记录放 `starmap/starmap.json`，`run_metadata.json` 只放固定的指针**：`test_e2e_cohort.py` 把 `run_metadata.json`、`summary.md` 与样例逐字节比对
+     （只豁免提交号与工作区状态），该测试不在本次可改范围；所以截取提交号与“截图沿用”写在 `starmap/provenance.md`，`summary.md` 只写固定的说明与指向。
+     截图**失败**时删掉本轮已写的截图，`run_metadata.json` 与 `summary.md` 另标 `status = failed` 与原因，并非零退出；不写 skipped。
+   - **安全**：BFF、next start、next build 都以新进程组启动，结束时 `killpg` SIGTERM、超时 SIGKILL；`apps/web/.next-e2e` 开头 `os.mkdir` 原子占位，
+     已存在即 failed，只删自己建的目录；`apps/web/.env*` 存在时拒绝运行（只看文件名）。与 `make web-test` 不能同时跑。
+   - **文案定位依赖**：截图脚本靠界面文案与 data-testid 定位（登录页“手机号”“获取验证码”“登录”、家长首页“打开学生模式”、
+     `data-testid="login" / open-student-* / watermark`、`section.sky`、`.sky-field svg.star`、`tbody tr`），与 `apps/web/e2e/session.ts` 同源；
+     这些文案或结构改版时截图会失败（记 failed），需同步改 `apps/web/scripts/gate0-starmap.ts`。
+   - 对账与护栏单测（`tools/e2e-cohort/tests/test_starmap.py`）不在 `learning-test` / `e2e-cohort` 的收集范围（两个目标不在本次可改范围），
+     由 `gate0-evidence` 带 `GATE0_STARMAP=1` 时先跑；**后续**：并入 `e2e-cohort` 目标。
 4. **节点查询的“状态”**：KGE-04 第二步（掌握写库）前一律 `evidence_only`（有 `mastery_estimate` 当前行时显示其 state），
    不调用掌握纯函数算状态，避免证据包被读成掌握结论。
 5. **计量零新增是“没有经过 BFF 的零”**：学习服务内部接口不做预留、结算，回放直接调学习服务，所以计量三表（`usage_reservation`、
@@ -80,10 +105,13 @@
    适配器没有数据库（package.json 无驱动、进程环境无连接信息、联调期间没有别的角色连库），进程内只有幂等缓存（指纹与判定结果，不落盘）——
    是否还要扫适配器侧的其他持久化（目前没有），请确认。
 6. **样例随内容变化**：内容包、适配器版本、契约版本、个人表清单变更会让 `sample/` 不一致而使 `learning-test` 失败；这是有意的确定性守护，
-   变更方需在 PR 里重生样例（`make gate0-evidence GATE0_OUT=tools/e2e-cohort/sample`）并说明差异。
+   变更方需在 PR 里重生样例（`make gate0-evidence GATE0_OUT=tools/e2e-cohort/sample`；截图保留并标“截图沿用”，星图页面改版时才带 `GATE0_STARMAP=1` 重截）并说明差异。
+7. **星图截图能否作为 Gate 0 硬1 的证据**：v0 截图不含任何只属于某名学生的星，只能证明会话、授权与在读科目；
+   默认**只作辅证**，硬1“同一学生模型”以 `events.csv`、`nodes.csv`、`checks.json` 为准。H5 v1（星上带掌握状态与判断）合入重截后是否升格，请确认。
 
 ## 运行备注
-- `make e2e-cohort` 约 1 分钟（一轮联调约 30 秒，其余是反例与 verify 护栏测试）；`make gate0-evidence` 约 30 秒（含新建一次性 Postgres 与三科适配器）；
+- `make e2e-cohort` 约 1 分钟（一轮联调约 30 秒，其余是反例与 verify 护栏测试）；`make gate0-evidence` 约 30 秒（含新建一次性 Postgres 与三科适配器），
+  带 `GATE0_STARMAP=1` 约 1 分钟（另含前端测试构建与 4 张截图）；样例截图 4 张共约 450 KB（JPEG 质量 60，单张 ≤ 120 KB）；
   它们也随 `make learning-test` 运行，使其多约 1 分钟。
 - 隔离断言每个查看者约 0.35 秒（RLS 函数逐行求值），20 名学生一轮约 15 秒；反例测试用整户子集。
 - 联调期间临时设置 `STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1`（插件契约 1.0.0 仍是候选版），结束后恢复，不影响同一 pytest 会话里的其他测试；

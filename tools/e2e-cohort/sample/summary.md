@@ -31,4 +31,11 @@
 - `retests.csv` 786912772649f744e7464412b72ebdeac74b39e43c9b7595e522e3171bd0975e
 - `checks.json` e7718429b975d2a6a83d00677ea1227d58d502b9195b7517967def1ffc28a0f5
 
-运行元数据（提交号、契约与适配器版本、星图截图状态）见 `run_metadata.json`。
+## 星图截图
+
+- **星图 v0（3-H），掌握未写库，无点亮星；H5 合入后重截。** 页面状态只有 evidence_only / 中性底星（KGE-04 第二步前不写掌握），截图不是掌握结论。
+- v0 截图只证明真实会话 + RLS 能打开该学生页（打不开未绑定学生的页）、星空等于在读科目；硬1 的同一学生模型主要由 events.csv、nodes.csv、checks.json 证明，截图只作辅证。
+- `make gate0-evidence GATE0_STARMAP=1` 时生成 `starmap/`：合成学生经真实会话打开壳内星图页的截图（学生视角若干张、家长视角 1 张），`starmap/starmap.json` 记录 status（captured / failed）、页面路径、学生选取规则、视口、截取提交号、截图哈希与对账（每条规则在 v0 下的效力也写在里面）；对账不一致即 failed。
+- 截图对应的页面版本与截取提交号见 `starmap/provenance.md`；与本证据包提交号不同时标“截图沿用”（只在星图页面改版时重截）。
+
+运行元数据（提交号、契约与适配器版本、星图截图记录位置）见 `run_metadata.json`。

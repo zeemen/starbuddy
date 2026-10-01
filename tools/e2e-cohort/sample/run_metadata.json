@@ -22,7 +22,7 @@
   "seed": 20260930,
   "students": 20
  },
- "commit": "dadc5b718a30587219248dc964b1a39fd12cdbd9",
+ "commit": "5d758a7b216bfcd84a814ef07a6bf10d6105c5fd",
  "contracts": {
   "learning-internal": "1.0.0",
   "plugin-api": "1.0.0",
@@ -33,8 +33,10 @@
  "notice": "合成联调，不是内测结论",
  "retest_scheduler": "stub（桩：KGE-04 第二步前）",
  "starmap_screenshot": {
-  "reason": "可选步骤；依赖 4-H 壳页面合入，见 specs/e2e-integration-sprint5/lessons.md",
-  "status": "skipped"
+  "how": "make gate0-evidence GATE0_STARMAP=1 时生成（status = captured / failed）；未带时不截图、不删已有截图",
+  "page_version": "星图 v0（3-H），掌握未写库，无点亮星；H5 合入后重截",
+  "provenance": "starmap/provenance.md",
+  "record": "starmap/starmap.json"
  },
  "worktree_dirty": true
 }

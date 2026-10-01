@@ -17,6 +17,7 @@ from .replay import CallRecord, RunLog, load_zhixing_items, replay_cohort, rerun
 from .scripted import ScriptedModel
 from pgharness import LOGIN_ROLE
 
+from .starmap import PAGE_VERSION as STARMAP_PAGE_VERSION
 from .stack import ADAPTERS, ConnectionLog, adapter_db_drivers, running_stack
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -136,7 +137,10 @@ def metadata(cohort: Cohort, procs) -> dict:
         "retest_scheduler": "stub（桩：KGE-04 第二步前）",
         "model_route": "test 环境假供应商（合成判定），不是任何真实模型",
         "english": "未纳入（开口成章适配器已搁置，specs/adapter-echo-sprint3/lessons.md）",
-        "starmap_screenshot": {"status": "skipped", "reason": "可选步骤；依赖 4-H 壳页面合入，见 specs/e2e-integration-sprint5/lessons.md"},
+        # 与是否截图无关的固定内容（样例逐字节比对）；截图的状态与对账在 starmap/starmap.json，失败时 write_pack 另加 status = failed
+        "starmap_screenshot": {"record": "starmap/starmap.json", "page_version": STARMAP_PAGE_VERSION,
+                               "provenance": "starmap/provenance.md",
+                               "how": "make gate0-evidence GATE0_STARMAP=1 时生成（status = captured / failed）；未带时不截图、不删已有截图"},
     }
 
 
