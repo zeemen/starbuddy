@@ -134,7 +134,9 @@ copy_tree() {  # $1 目标根目录：services/insight 复制一份，其余软�
   mkdir -p "$dst/services"
   (cd "$SVC" && tar --exclude=.venv --exclude=__pycache__ -cf - .) | (mkdir -p "$dst/services/insight" && cd "$dst/services/insight" && tar -xf -)
   ln -s "$ROOT/services/learning" "$dst/services/learning"
-  for d in docs db packages; do ln -s "$ROOT/$d" "$dst/$d"; done
+  # 禁用推断扫描（tests/test_forbidden_inference_sie03.py）还要读 BFF 与前端的源码：只读引用
+  ln -s "$ROOT/services/bff" "$dst/services/bff"
+  for d in docs db packages apps; do ln -s "$ROOT/$d" "$dst/$d"; done
   mkdir -p "$dst/evals"
   for e in "$ROOT"/evals/*; do
     [ "$(basename "$e")" = "sie-shadow" ] || ln -s "$e" "$dst/evals/$(basename "$e")"

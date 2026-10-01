@@ -274,3 +274,76 @@
 - `BFFMUT_FILTER=信任：`：29 / 29 被发现（审查后新增 13 条；首轮漏检“导出下载不查删除状态”——确认时已清暂存，补了“另一实例确认、本实例暂存未清”的用例后被发现）。
   `make bff-mutation` 全量：97 / 97 被发现。
 - `make check-fast`：通过（contract-test 因本机缺 jsonschema 跳过，既有情况）。未跑 `make check`（另有进程在别的工作树跑严格检查）。
+
+## PR④ 删除覆盖测试（全库扫描）与禁用推断测试
+
+**验收第 3 条未全部完成**：“删除覆盖……档案页”的档案页部分没做——档案页（KGE-04 第二步）还没有表，79q 只做了按表名启发的现状检查（未验证）。
+PR 描述须写明这一点。
+
+### 做了什么（只新增测试文件，没改实现、迁移、run.sh、mutations.sh、Makefile）
+- `db/tests/79q_erasure_coverage.sql`：run.sh 按 `[0-9]*.sql` 自动发现，排在 79p 之后、80 之前。整段一个事务、结束回滚，不给 80 留数据。
+  - 构造：一户两名合成学生（同一家长、同一家庭）。
+    - 清单里每张表给两人各写入行：delete 32 张全写；exempt 里能写的全写；家庭级三张一户一行。
+    - 有真实入口的一律经函数写：验证码登录注册两位家长、`create_student`、同意（BFF 策略写入）、`meter_open_subscription`（一人试用、一人试点）、
+      `enroll_subject`、`set_time_guard`、`create_guardian_invite` → 另一位家长 `redeem_guardian_invite`、`auth_issue_student_session`、
+      `meter_reserve` → `meter_settle`、`meter_practice`、异议（`raise_dispute`）→ 复核 `take_review_task` / `resolve_review_task`、
+      建档事实、行为事件、信心探针、考试录入、`export_student_data`。
+    - 学习服务的表以 `starbuddy_learning` 写，洞察层以 `starbuddy_insight` 写。
+    - 只有这些用超级用户写（逐处注明）：模板与试点名单（人工维护）；学生登录手机号（没有入口）；试用学生的选科（学科都是 beta、只对试点开放）。
+  - 流程：申请 → 二次确认 → 冷静期内不执行 → 冷静期满（时钟沿用 79p）→ 执行。
+  - 按值全库扫描，两类标记：
+    - ID 标记：档案与账号 ID，加 delete 表各行里的全部 uuid 值，去掉兄弟姐妹也有的、别的账号与家庭；
+    - 内容标记：每名学生唯一的文本标记，写进 12 张表的文本列与键；另加 delete 表的幂等键、令牌与摘要 hex、学生手机号。
+  - 断言：
+    - 执行前两类标记只出现在清单表里，公共层没有；
+    - 执行后内容标记全库零处，ID 标记只剩理由已确认的 11 张豁免表；`trial_claim` 单列为“现状，待人确认”；
+    - 全库逐表行数的减少量恰好等于回执；清单外全部表（含 kge、policy）整表摘要不变；
+    - 豁免表行数与整行内容不变（只许档案删除标记、账号停用与回执变化）；
+    - 兄弟姐妹与另两户学生逐行不变；两位家长的账号、联系方式与家庭行整行不变；
+    - 回执只有表名 → 行数与范围编码。
+  - 反例：未登记、没有 `student_id` 列与外键、在 jsonb 里存了学生 ID 或内容的表，按列名扫描漏掉，按值扫描能发现。
+  - 与 79p 分工：“新表未登记即失败”在 79p 第一段，未重复。
+- `services/insight/tests/test_forbidden_inference_sie03.py`（43 项，在 `make insight-test` 里，不需要新的 make 目标）：
+  - 先断言匹配函数就是 SIE-00 词表：每类禁止示例都命中，允许示例都不命中。
+  - 来源按 glob 发现，另有显式排除（写明理由），并断言发现的文件数不少于下限。五类来源都零命中，每类都有注入反例：
+    - 洞察服务：配置的全部键值、SIE-03 模块的字符串字面量；
+    - 迁移 0032 起的全部字符串字面量（枚举、COMMENT、异常消息，含中文）与回执表名；
+    - BFF：`trust.v0.yaml` 的 enum / description / example，`src/trust/**` 与 trust-routes 的字面量，问题码；
+    - 契约：`insight-service.v0.9.yaml` 的全部 enum 与 const；
+    - 前端：`copy.ts`、`apps/web/src/trust/**`（.ts 与 .tsx）、`lib/trust-api.ts`。
+  - 渲染路径静态扫描：编码集合从契约与 BFF 枚举派生。覆盖 JSX 文本、字符串与模板字符串、title / aria-* / alt / placeholder 属性，
+    以及 `{x.kind}`、`${x.kind}`、`String()`、字符串方法、映射缺省回退；非渲染的 .ts 只许编码作为完整字面量出现。
+  - 每个前端拿到的编码都有占位映射。
+
+### 发现的覆盖缺口与待人确认（只登记，未改实现；涉及迁移、词表的都是必停项）
+1. **staff 四表只靠函数路径保证“学生账号不会出现”**：
+   - 清单把 `staff_session`、`content_signoff`、`map_change_signoff`、`tag_candidate_signoff` 以“只含教研账号”豁免；
+   - 但只有 `staff_credential` 有库层守卫，另外四张只靠属主 authz 的函数核对；
+   - 误写入的学生账号行在删除时会按豁免保留。建议加守卫触发器或改为 delete 策略（迁移）。
+2. **`trial_claim` 的豁免理由与实际不符**：理由写“档案删除时学生键置空”，但删除执行不删档案，所以执行后 `student_id` 仍是被删学生
+   （79q 单列断言“现状”）。改删除函数置空（迁移）还是改写理由，待人确认。
+3. **验证码与限流表留存手机号摘要**：`auth_otp_challenge`（家长手机号 sha256）、`auth_rate_counter`（限流键摘要）不在清单里，删除不动。
+   - 它们是家长 / 设备侧的数据，但摘要可被枚举还原成号码；
+   - 是否登记进清单、留存多久，待人确认（迁移、合规）。
+4. **词表漏拦“粗心 / 马虎 / 粗心大意”**：单独出现与“这次粗心了”“你很马虎”都不命中，只拦“是 / 总是 / 太…粗心”等特质句式。
+   七科合同第 5 条要求“粗心”全平台禁用于对学生的评价，是否把这几个词整体列入词表，待人确认（词表必停）。
+   目前前端文案另有 `trust.test.ts` 的专门正则兜底。
+5. **库外存储不在覆盖范围**：BFF 导出包的进程内暂存（PR③ 偏离 4）、将来的对象存储、备份与日志，79q 覆盖不到。
+   BFF 在删除确认时清暂存（PR③ M1），pilot 前换对象存储时要一起登记。
+6. **79p 漏检**：把清单里 `insight.confidence_probe` 的谓词改坏（`AND false`）时 79p 全部通过，79q 的前置断言能发现。未改 79p。
+7. **档案页**（KGE-04 第二步）仍无表：建表时须登记清单，并在 79q 的 `t.q_seed` 里给两名学生各写一页。
+8. **新增个人层表的维护约定**：79q 要求清单里每张表两名学生都有行（staff 五表、删除请求、X2 的试用领取除外）。
+   - 新迁移登记新表后，须在 `t.q_seed` 的“周报等后续新增”处补写入，否则 79q 失败（有意为之）；
+   - 工作树里另一会话进行中的 0036（`insight.weekly_report`）合入前需要这一步。
+9. **契约审查补记**：
+   - M1：原扫描没有覆盖契约 `insight-service.v0.9.yaml`，已加入；
+   - L3：原扫描只收编码样式字面量，漏了中文、COMMENT、异常消息和 yaml 的 description / example，已改为全部字符串。
+10. **运行时渲染**：本测试只做静态扫描；真实 DOM 文本节点的核对（含 `data-*` 属性是否该留编码，如 `DisputesPage` 的 `data-dispute-status`）
+    由 apps/web 的 web-test 负责，登记为后续，未改 apps/web。
+11. **更正**：0035 头注释说“33 张表的 DELETE 只授 eraser”，实际清单是 32 张 delete 表（GRANT 也是 32 张），注释有误，本 PR 不改迁移。
+
+### 验证
+- `bash db/tests/run.sh`：在“HEAD + 79q”的干净副本上通过（35 个迁移，1895 项断言）。
+  - 工作树里有另一会话未完成的 0036、79r 与改过的 79e，直接在工作树跑会在 79e 失败，与本 PR 无关。
+- `test_forbidden_inference_sie03.py` 43 项通过；`make insight-test` 与 `make check-fast` 通过（contract-test 因本机缺 jsonschema 跳过，原本就这样）。
+- 没有跑 `make check`。
