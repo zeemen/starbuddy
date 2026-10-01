@@ -783,6 +783,66 @@ M+=(
   ["周报：抽检可用判分结案码"]="UPDATE platform.review_resolution_code SET applies_to = applies_to || ARRAY['weekly_report'] WHERE code = 'upheld';"
 )
 
+# KGE-04 第二步 PR 1：掌握节点键、复测任务、学情档案页与阻断记录（0037，specs/kge-04-mastery-step2）：由 79s 与 79p / 79q / 80 发现。
+# DBMUT_FILTER=掌握第二步 只跑这一组
+KS='platform.check_supersede_target()'
+KT='platform.retest_task_guard()'
+KP='platform.profile_page_guard()'
+KV='platform.valid_profile_sections(jsonb, text)'
+KC='platform.valid_profile_violations(jsonb)'
+kview() {  # 改写档案页陈述视图：$1 展开哪些项，$2 判断状态条件，$3 可见范围条件（其余与 0037 相同）
+  printf "CREATE OR REPLACE VIEW platform.profile_page_statement_v WITH (security_barrier = true) AS SELECT p.id AS profile_page_id, p.student_id, p.subject, s.sec ->> 'key' AS section, s.ord AS section_ord, i.ord AS item_ord, c.id AS claim_id, c.template_key, c.template_version, c.status::text AS claim_status FROM platform.profile_page p CROSS JOIN LATERAL jsonb_array_elements(p.sections) WITH ORDINALITY s(sec, ord) CROSS JOIN LATERAL %s WITH ORDINALITY i(item, ord) JOIN insight.claim c ON c.id = (i.item ->> 'claim_id')::uuid AND c.student_id = p.student_id AND c.template_key = i.item ->> 'template_key' AND c.template_version = (i.item ->> 'template_version')::integer WHERE platform.can_read_student(p.student_id) AND %s AND c.expires_at > now() AND EXISTS (SELECT 1 FROM insight.claim_template t WHERE t.template_key = c.template_key AND t.version = c.template_version) AND %s;" "$1" "$2" "$3"
+}
+M+=(
+  ["掌握第二步：复测任务不强制 RLS"]="ALTER TABLE platform.retest_task NO FORCE ROW LEVEL SECURITY;"
+  ["掌握第二步：档案页不强制 RLS"]="ALTER TABLE platform.profile_page NO FORCE ROW LEVEL SECURITY;"
+  ["掌握第二步：阻断记录不强制 RLS"]="ALTER TABLE platform.profile_page_check NO FORCE ROW LEVEL SECURITY;"
+  ["掌握第二步：两种键可同时给"]="ALTER TABLE platform.mastery_estimate DROP CONSTRAINT mastery_estimate_one_key;"
+  ["掌握第二步：节点键三列可不齐"]="ALTER TABLE platform.mastery_estimate DROP CONSTRAINT mastery_estimate_node_key_complete;"
+  ["掌握第二步：节点键不限格式"]="ALTER TABLE platform.mastery_estimate DROP CONSTRAINT mastery_estimate_node_id_format;"
+  ["掌握第二步：同一单元可有两条当前记录"]="DROP INDEX platform.mastery_estimate_node_current_uq;"
+  ["掌握第二步：更正链不比节点"]="$(afr "$KS" "'AND n.node_id IS NOT DISTINCT FROM OLD.node_id'" "''")"
+  ["掌握第二步：更正链不比认知层次"]="$(afr "$KS" "'AND n.cognitive_level IS NOT DISTINCT FROM OLD.cognitive_level'" "''")"
+  ["掌握第二步：更正链不比能力点键"]="$(afr "$KS" "'AND n.skill_local_id IS NOT DISTINCT FROM OLD.skill_local_id
+                     AND n.node_id'" "'AND n.node_id'")"
+  ["掌握第二步：同一单元同一原因可有两条开着的任务"]="DROP INDEX platform.retest_task_open_uq;"
+  ["掌握第二步：复测轮可不带轮次"]="ALTER TABLE platform.retest_task DROP CONSTRAINT retest_task_rung_reason;"
+  ["掌握第二步：通过可不记作答"]="ALTER TABLE platform.retest_task DROP CONSTRAINT retest_task_closing_attempt;"
+  ["掌握第二步：复测任务可引用别人的掌握记录"]="ALTER TABLE platform.retest_task DROP CONSTRAINT retest_task_estimate_fk; ALTER TABLE platform.retest_task ADD CONSTRAINT retest_task_estimate_fk FOREIGN KEY (scheduled_by_estimate_id) REFERENCES platform.mastery_estimate (id);"
+  ["掌握第二步：新任务可直接关闭"]="$(afr "$KT" "'IF NEW.status <> ''open'' OR NEW.closed_at IS NOT NULL OR NEW.closing_attempt_id IS NOT NULL THEN'" "'IF false THEN'")"
+  ["掌握第二步：关闭的任务可再改"]="$(afr "$KT" "'IF OLD.status <> ''open'' THEN'" "'IF false THEN'")"
+  ["掌握第二步：档案页陈述可引用待验证判断"]="$(afr "$KP" "'THEN c.status IN (''hypothesis'', ''established'')'" "'THEN true'")"
+  ["掌握第二步：档案页不核对判断属于该学生"]="$(afr "$KP" "' AND c.student_id = NEW.student_id'" "''")"
+  ["掌握第二步：档案页项可带文字"]="$(afr "$KV" "'k NOT IN (''claim_id'', ''template_key'', ''template_version'')'" "'k NOT IN (''claim_id'', ''template_key'', ''template_version'', ''text'')'")"
+  ["掌握第二步：档案页可有任意节"]="$(afr "$KV" "'OR (s ->> ''key'') NOT IN (''current_stage'''" "'OR false AND (s ->> ''key'') NOT IN (''current_stage'''")"
+  ["掌握第二步：衔接语可含数字"]="$(afr "$KV" "'OR (s ->> ''connective'') ~ ''[0-9０-９]'''" "''")"
+  ["掌握第二步：降级页可有衔接语"]="$(afr "$KV" "'OR (p_check_status = ''blocked_fallback'' AND (s ->> ''connective'') <> '''')'" "''")"
+  ["掌握第二步：禁用推断命中可存片段"]="$(afr "$KC" "'OR ((v ->> ''code'') = ''forbidden_inference'' AND (v ->> ''fragment'') <> '''')'" "''")"
+  ["掌握第二步：阻断记录可挂别人的页"]="ALTER TABLE platform.profile_page_check DROP CONSTRAINT profile_page_check_page_fk; ALTER TABLE platform.profile_page_check ADD CONSTRAINT profile_page_check_page_fk FOREIGN KEY (profile_page_id) REFERENCES platform.profile_page (id) ON DELETE CASCADE;"
+  ["掌握第二步：档案页不随档案级联删除"]="ALTER TABLE platform.profile_page DROP CONSTRAINT profile_page_student_id_fkey; ALTER TABLE platform.profile_page ADD CONSTRAINT profile_page_student_id_fkey FOREIGN KEY (student_id) REFERENCES platform.student_profile (id);"
+  ["掌握第二步：复测任务不随档案级联删除"]="ALTER TABLE platform.retest_task DROP CONSTRAINT retest_task_student_id_fkey; ALTER TABLE platform.retest_task ADD CONSTRAINT retest_task_student_id_fkey FOREIGN KEY (student_id) REFERENCES platform.student_profile (id);"
+  ["掌握第二步：BFF 可写复测任务"]="GRANT INSERT, UPDATE ON platform.retest_task TO starbuddy_bff; CREATE POLICY t_bff_write ON platform.retest_task FOR ALL TO starbuddy_bff USING (platform.can_read_student(student_id)) WITH CHECK (platform.can_read_student(student_id));"
+  ["掌握第二步：BFF 可删档案页"]="GRANT DELETE ON platform.profile_page TO starbuddy_bff; CREATE POLICY t_bff_delete ON platform.profile_page FOR DELETE TO starbuddy_bff USING (platform.can_read_student(student_id));"
+  ["掌握第二步：BFF 读全部复测任务"]="DROP POLICY retest_task_read ON platform.retest_task; CREATE POLICY retest_task_read ON platform.retest_task FOR SELECT TO starbuddy_bff USING (true);"
+  ["掌握第二步：撤销绑定的家长仍能读档案页"]="DROP POLICY profile_page_read ON platform.profile_page; CREATE POLICY profile_page_read ON platform.profile_page FOR SELECT TO starbuddy_bff USING (platform.is_self_student(student_id) OR EXISTS (SELECT 1 FROM platform.guardian_student_link l WHERE l.student_id = profile_page.student_id AND l.guardian_account_id = platform.current_account_id()));"
+  ["掌握第二步：BFF 可读阻断记录"]="GRANT SELECT ON platform.profile_page_check TO starbuddy_bff; CREATE POLICY profile_page_check_read ON platform.profile_page_check FOR SELECT TO starbuddy_bff USING (platform.can_read_student(student_id));"
+  ["掌握第二步：BFF 可读档案页 sections"]="GRANT SELECT (sections) ON platform.profile_page TO starbuddy_bff;"
+  ["掌握第二步：陈述视图含待办与待验证"]="$(kview "jsonb_array_elements((s.sec -> 'statements') || (s.sec -> 'todo'))" "c.status IN ('hypothesis', 'established', 'to_verify')" "((platform.is_self_student(c.student_id) AND 'student' = ANY (c.visibility)) OR (platform.is_linked_guardian(c.student_id) AND 'guardian' = ANY (c.visibility)))")"
+  ["掌握第二步：陈述视图不看判断可见范围"]="$(kview "jsonb_array_elements(s.sec -> 'statements')" "c.status IN ('hypothesis', 'established')" "true")"
+  ["掌握第二步：复测轮到期时间不核对"]="$(afr "$KT" "'IF m.next_retest_at IS DISTINCT FROM NEW.due_at THEN'" "'IF false THEN'")"
+  ["掌握第二步：复测轮轮次不核对门槛"]="$(afr "$KT" "'IF NEW.rung IS NOT NULL AND NEW.rung IS DISTINCT FROM'" "'IF false AND NEW.rung IS DISTINCT FROM'")"
+  ["掌握第二步：档案页不核对学科"]="$(afr "$KP" "'AND (c.subject = NEW.subject OR c.subject IS NULL)'" "'AND true'")"
+  ["掌握第二步：阻断记录不核对判断属于该学生"]="$(afr 'platform.profile_page_check_guard()' "'ELSE NOT EXISTS ('" "'ELSE false AND NOT EXISTS ('")"
+  ["掌握第二步：阻断记录读不到的判断可冒充"]="$(afr 'platform.profile_page_check_guard()' "'THEN EXISTS (SELECT 1 FROM insight.claim c WHERE c.id = x.claim_id::uuid AND c.student_id <> NEW.student_id)'" "'THEN false'")"
+  ["掌握第二步：阻断片段可含数字"]="$(afr "$KC" "'OR (v ->> ''fragment'') ~ ''[0-9０-９]'''" "''")"
+  ["掌握第二步：学习服务可删档案页"]="GRANT DELETE ON platform.profile_page TO starbuddy_learning;"
+  ["掌握第二步：学习服务可改到期时间"]="GRANT UPDATE (due_at) ON platform.retest_task TO starbuddy_learning;"
+  ["掌握第二步：洞察服务可读档案页"]="GRANT SELECT ON platform.profile_page TO starbuddy_insight; CREATE POLICY t_insight_read ON platform.profile_page FOR SELECT TO starbuddy_insight USING (true);"
+  ["掌握第二步：清单漏登记档案页"]="DELETE FROM platform.personal_table_registry WHERE nspname = 'platform' AND relname = 'profile_page';"
+  ["掌握第二步：删除执行身份删不了复测任务"]="REVOKE DELETE ON platform.retest_task FROM starbuddy_eraser;"
+  ["掌握第二步：导出档案页引用"]="GRANT SELECT (sections) ON platform.profile_page TO starbuddy_authz; UPDATE platform.personal_table_registry SET export_columns = export_columns || ARRAY['sections'] WHERE nspname = 'platform' AND relname = 'profile_page';"
+)
+
 # 并行执行（每个变异各起一个一次性 Postgres，互不影响）；DBMUT_JOBS 控制并发数，默认等于 CPU 核数
 JOBS="${DBMUT_JOBS:-$(nproc 2>/dev/null || echo 2)}"
 RES="$(mktemp -d "${TMPDIR:-/tmp}/starbuddy-dbmut.XXXXXX")"

@@ -12,7 +12,7 @@
 --      - 内容标记：每名学生唯一的文本标记（写进每处能写文本的列与键）、delete 表里的幂等键、令牌与内容摘要的 hex、学生手机号；
 --      执行前两类标记只出现在清单表里（出现在未登记的表 = 覆盖缺口）；执行后内容标记全库零处，ID 标记只剩按理由保留的豁免表；
 --      全库每张表的行数变化恰好等于回执；清单外全部表（含 kge、policy）整表摘要不变；兄弟姐妹、另两户、家长与家庭的行逐行不变。
--- 档案页（KGE-04 第二步的编译层个人档案页）尚无表：本 PR 没有完成验收第 3 条的“档案页”部分，见第六段（按表名启发，未验证）。
+-- 档案页：KGE-04 第二步（0037）已建学情档案页、阻断记录与复测任务表并登记进清单，t.q_seed 给两名学生各写一套，第六段逐表点名确认。
 -- 依赖：79m 的 t.m_as / t.m_raise，79p 的 t.p_bff / t.p_counts / t.p_public_counts / t.p_unregistered / t.app_schemas_p。
 -- 整段在一个事务里，结束回滚，不给 80 的可见性矩阵留任何数据。
 \set S1 '''c1000000-0000-4000-8000-0000000000c1'''
@@ -264,6 +264,27 @@ BEGIN
       RETURNING id::text$f$, s, date_trunc('week', v_today)::date - 7, date_trunc('week', v_today)::date - 1,
       jsonb_build_array(jsonb_build_object('claim_id', v_node, 'template_key', 'test.coverage.node', 'template_version', 1,
                                            'section', 'working_on', 'text', '合成周报句-' || p_token))));
+  -- 掌握节点键、复测任务、学情档案页与阻断记录（0037，KGE-04 第二步）：经 starbuddy_learning 写；档案页引用本学生的节点判断，
+  -- 档案页与阻断记录都不存自由文本（衔接语与片段不许含数字，内容标记带数字，放不进去）；它们的覆盖靠 ID 标记与逐表计数
+  PERFORM t.m_as('starbuddy_learning', NULL, format($f$INSERT INTO platform.mastery_estimate (id, student_id, subject, node_id, cognitive_level,
+      map_version_id, state, p_mastery, confidence, algorithm_version, evidence_ids, next_retest_at)
+      VALUES (%L, %L, 'aya', 'MATH.FUNC.QUAD.GRAPH', 'apply', '7a000000-0000-4000-8000-000000000037', 'execute', 0.6, 0.6, 'kge-mastery@0.1.0', %L,
+              now() + interval '1 day') RETURNING 'ok'$f$, t.q_id(s, 'mastery.node'), s, ARRAY[v_ev]));
+  PERFORM t.m_as('starbuddy_learning', NULL, format($f$INSERT INTO platform.retest_task (id, student_id, subject, node_id, cognitive_level, rung,
+      reason, due_at, scheduled_by_estimate_id) VALUES (%L, %L, 'aya', 'MATH.FUNC.QUAD.GRAPH', 'apply', 'rung0', 'scheduled', now() + interval '1 day', %L)
+      RETURNING 'ok'$f$, t.q_id(s, 'retest'), s, t.q_id(s, 'mastery.node')));
+  PERFORM t.m_as('starbuddy_learning', NULL, format($f$INSERT INTO platform.profile_page (id, student_id, subject, map_version_id, sections,
+      claims_digest, compiler_version, check_status) VALUES (%L, %L, 'aya', '7a000000-0000-4000-8000-000000000037', %L, %L, 'kge-profile@0.1.0', 'blocked_fallback')
+      RETURNING 'ok'$f$, t.q_id(s, 'profile.page'), s,
+      jsonb_build_array(jsonb_build_object('key', 'working_on', 'connective', '', 'todo', '[]'::jsonb,
+                                           'statements', jsonb_build_array(jsonb_build_object('claim_id', v_node, 'template_key', 'test.coverage.node',
+                                                                                              'template_version', 1)))),
+      encode(sha256(convert_to('digest-' || p_token, 'UTF8')), 'hex')));
+  PERFORM t.m_as('starbuddy_learning', NULL, format($f$INSERT INTO platform.profile_page_check (id, student_id, subject, profile_page_id,
+      compiler_version, violations) VALUES (%L, %L, 'aya', %L, 'kge-profile@0.1.0', %L) RETURNING 'ok'$f$,
+      t.q_id(s, 'profile.check'), s, t.q_id(s, 'profile.page'),
+      jsonb_build_array(jsonb_build_object('code', 'connective_unapproved', 'section', 'working_on', 'claim_ids', jsonb_build_array(v_node),
+                                           'fragment', '合成衔接'))));
   -- ---- 导出（家长，0035）：导出任务是豁免表
   PERFORM t.p_bff(g, format('SELECT platform.export_student_data(%L)::text', s));
 END $$;
@@ -418,11 +439,15 @@ SELECT t.ok((SELECT jsonb_object_keys(to_jsonb(r) - ARRAY['id', 'student_id', 'r
                FROM platform.erasure_request r WHERE r.id = :'req') IS NULL,
             '删除请求行没有回执、范围之外的内容列');
 
--- ================= 六、档案页（KGE-04 第二步）：本 PR 未完成 =================
--- 个人档案页（编译层按学生编译的学情档案页）尚未建表：待 KGE-04 第二步建表并登记进 platform.personal_table_registry（0035 注释同此）。
--- 验收第 3 条“删除覆盖……档案页”的档案页部分本 PR 没有完成。下面只是按表名启发的现状检查，未验证（表名不含这些词时查不到）；
--- 真正的保障是：档案页表一旦带 student_id 或存了学生 ID / 内容，79p 的按列名发现与本文件的按值扫描都会要求登记，届时须在 t.q_seed 里写一页
-SELECT t.ok(NOT EXISTS (SELECT 1 FROM pg_class c WHERE c.relnamespace IN (SELECT t.app_schemas_p()) AND c.relkind IN ('r', 'p')
-                         AND c.relname ~ '(dossier|profile_page|learner_page|student_page|archive_page)'),
-            '档案页：按表名启发，未发现档案页类的表（未验证；验收第 3 条的档案页部分待 KGE-04 第二步）');
+-- ================= 六、档案页（KGE-04 第二步，0037） =================
+-- 学情档案页与阻断记录、复测任务已建表并登记（delete）；t.q_seed 给两名学生各写了一页、一条阻断记录、一条复测任务，
+-- 上面第四段的“清单 delete 表零行”“内容标记全库零处”“行数变化恰好等于回执”已覆盖它们；这里再逐表点名确认
+SELECT t.ok((:'receipt'::jsonb ->> 'platform.profile_page')::int = 1 AND (:'receipt'::jsonb ->> 'platform.profile_page_check')::int = 1
+            AND (:'receipt'::jsonb ->> 'platform.retest_task')::int = 1
+            AND NOT EXISTS (SELECT 1 FROM platform.profile_page WHERE student_id = :X1::uuid)
+            AND NOT EXISTS (SELECT 1 FROM platform.profile_page_check WHERE student_id = :X1::uuid)
+            AND NOT EXISTS (SELECT 1 FROM platform.retest_task WHERE student_id = :X1::uuid)
+            AND (SELECT count(*) FROM platform.profile_page WHERE student_id = :X2::uuid) = 1
+            AND (SELECT count(*) FROM platform.retest_task WHERE student_id = :X2::uuid) = 1,
+            '档案页、阻断记录与复测任务：删除执行后学生 X1 零行（回执各 1 行），兄弟姐妹 X2 的不受影响');
 ROLLBACK;

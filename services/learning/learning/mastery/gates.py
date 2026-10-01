@@ -55,7 +55,7 @@ class Transition:
 
 @dataclass(frozen=True)
 class Task:
-    reason: str  # scheduled / early / decay / hint_followup / verify_in_platform
+    reason: str  # scheduled / early / decay / hint_followup / verify_in_platform（verify_self_report 不经重放，由 schedule_verification 建）
     rung: str | None
     due_at: datetime
 

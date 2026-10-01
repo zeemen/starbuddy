@@ -55,6 +55,12 @@ async def seed_mastery(admin, student: str) -> None:
                        '2026-10-11T08:00:00+08:00'),
                       ($1::uuid, 'aya', 'K-SYN-0002', 'execute', 0.55, 0.6, 'mastery-v0@0.1.0', ARRAY[gen_random_uuid()], NULL)""",
             student)
+        # 迁移 0037 的节点键行（skill_local_id 为空）：PR 2 之前 plan 不读它，快照里不能出现“aya:None”
+        await c.execute(
+            """INSERT INTO platform.mastery_estimate (student_id, subject, node_id, cognitive_level, map_version_id, state, p_mastery,
+                                                      confidence, algorithm_version, evidence_ids)
+               VALUES ($1::uuid, 'aya', $2, 'apply', $3::uuid, 'execute', 0.5, 0.5, 'kge-mastery@0.1.0', ARRAY[gen_random_uuid()])""",
+            student, NODE, MAP)
 
 
 class PlanAdapter:
@@ -148,6 +154,7 @@ async def test_plan_groups_by_subject_sorts_and_maps_nodes(plan_api, pools, stud
     assert sent["context"]["contract_version"] == "1.0.0" and "usage_id" not in sent["context"]
     assert sent["context"]["student_ref"] == student and sent["context"]["subject"] == "aya"
     snap = {m["skill_node"]: m for m in sent["mastery"]}
+    assert set(snap) == {"aya:K-SYN-0001", "aya:K-SYN-0002"}  # 节点键行不进旧快照（PR 2 改读节点键）
     assert snap["aya:K-SYN-0001"]["state"] == "stable" and "next_retest_at" in snap["aya:K-SYN-0001"]
     assert snap["aya:K-SYN-0002"]["state"] == "execute" and "next_retest_at" not in snap["aya:K-SYN-0002"]
     assert "learner_context" not in sent

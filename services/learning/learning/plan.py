@@ -37,10 +37,13 @@ def validate_query(body: object) -> dict:
 
 
 async def _mastery(pool: asyncpg.Pool, student: str, subject: str) -> list[dict]:
+    """当前掌握记录按能力点键组 MasterySnapshot。迁移 0037 起表里还有节点键行（skill_local_id 为空），这里只读能力点键行；
+    KGE-04 第二步 PR 2 改为读节点键行、经 kge.skill_link 读时汇总成 skill_node。"""
     rows = await pool.fetch(
         """SELECT skill_local_id::text AS local_id, state::text AS state, p_mastery, next_retest_at
              FROM platform.mastery_estimate
             WHERE student_id = $1::uuid AND subject = $2::platform.subject AND is_current
+              AND skill_local_id IS NOT NULL
             ORDER BY skill_local_id""", student, subject)
     out = []
     for r in rows:

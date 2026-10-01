@@ -211,5 +211,18 @@ eraser_must_refuse "GRANT starbuddy_bff TO starbuddy_eraser;" "REVOKE starbuddy_
 psql_era -1 < "$E35" >/dev/null 2>&1 || { echo "db-test: 失败（角色都正常时 0035 反而执行失败）"; exit 1; }
 echo "ok - 角色都正常时 0035 可以执行（上面的拒绝不是别的原因）" >> "$OUT"
 
+# 0037 的回滚（KGE-04 第二步）：库里有节点键掌握记录时，回滚必须以明确错误中止（不能静默删除，也不能补假的能力点键），且什么都不改
+D37="$(ls "$ROOT"/db/migrations/0037_*.down.sql)"
+if { printf '%s\n' "INSERT INTO platform.mastery_estimate (student_id, subject, node_id, cognitive_level, map_version_id, state, confidence,
+                     algorithm_version, evidence_ids) VALUES ('c1000000-0000-4000-8000-0000000000c1', 'aya', 'MATH.FUNC.QUAD.ROOT', 'know',
+                     '7a000000-0000-4000-8000-000000000037', 'understand', 0.5, 'kge-mastery@0.1.0', '{e1000000-0000-4000-8000-000000000001}');"
+     cat "$D37"; } | psql_run -1 >/dev/null 2>"$WORK/down37.err"; then
+  echo "db-test: 失败（有节点键掌握记录时 0037 回滚仍然执行成功）"; exit 1
+fi
+grep -q '0037 回滚中止' "$WORK/down37.err" || { echo "db-test: 失败（0037 回滚不是被节点键检查中止：$(cat "$WORK/down37.err")）"; exit 1; }
+[ "$(psql_run -tAc "SELECT count(*) FROM pg_attribute WHERE attrelid = 'platform.mastery_estimate'::regclass AND attname = 'node_id' AND NOT attisdropped" </dev/null)" = "1" ] \
+  || { echo "db-test: 失败（0037 回滚中止后节点键列不在了）"; exit 1; }
+echo "ok - 有节点键掌握记录时 0037 回滚以明确错误中止，库不变" >> "$OUT"
+
 n=$(grep -c 'ok - ' "$OUT" || true)
 echo "db-test: 通过（${n} 项断言）"

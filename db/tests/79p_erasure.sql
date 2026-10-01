@@ -80,7 +80,10 @@ INSERT INTO t.export_col_ok VALUES
   ('computed_at', '元数据：时间'), ('resolved_at', '元数据：时间'), ('expires_at', '元数据：时间'), ('decided_at', '元数据：时间'),
   ('subject', '元数据：学科'), ('exam_type', '元数据：考试类型'), ('exam_date', '元数据：考试日期'), ('full_score', '元数据：满分'),
   ('field_id', '元数据：字段编码'), ('topic', '元数据：主题编码'), ('source_type', '元数据：来源'), ('skill_local_id', '元数据：对象键'),
-  ('status', '元数据：处理状态'), ('result_note_code', '元数据：结论码（枚举）');
+  ('status', '元数据：处理状态'), ('result_note_code', '元数据：结论码（枚举）'),
+  -- 0037（KGE-04 第二步）：掌握记录的节点键与复测任务、档案页的状态与时间（只导 ID、状态与时间，不导引用、文字与推断参数）
+  ('node_id', '元数据：对象键（知识节点）'), ('cognitive_level', '元数据：对象键（认知层次）'), ('due_at', '元数据：时间'),
+  ('closed_at', '元数据：时间'), ('compiled_at', '元数据：时间'), ('check_status', '元数据：处理状态');
 SELECT t.ok(NOT EXISTS (
   SELECT 1 FROM platform.personal_table_registry g, unnest(g.export_columns) c
    WHERE g.export_columns IS NOT NULL

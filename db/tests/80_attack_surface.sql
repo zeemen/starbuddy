@@ -177,6 +177,17 @@ INSERT INTO t.visibility_rule VALUES
    '这里只防跨户越权；“学生看不到家长版”“家长看不到学生版”“不出的周报不可见”等逐行断言在 79r_weekly_report'),
   ('platform.household', 'id', '%s', 'household', 'household',
    '有效家长读自己创建的家庭，或能读家庭内任一学生（0002 can_read_household；解除绑定的创建者仍可读是已登记风险 A4）');
+-- 视图自己按调用者身份过滤（属主视图，超级用户读出来是空的）：“表里实际有数据的对象”改由这里的 SQL 按底表算（返回 uuid[]）。
+-- 其余关系仍按超级用户直读。预期集合与可见集合的算法不变
+CREATE TABLE t.visibility_present_override (rel text PRIMARY KEY, present_sql text NOT NULL, reason text NOT NULL);
+INSERT INTO t.visibility_present_override VALUES
+  ('platform.profile_page_statement_v',
+   $q$SELECT coalesce(array_agg(DISTINCT p.student_id ORDER BY p.student_id), '{}') FROM platform.profile_page p,
+        jsonb_array_elements(p.sections) s, jsonb_array_elements(s -> 'statements') i, insight.claim c
+       WHERE c.id = (i ->> 'claim_id')::uuid AND c.student_id = p.student_id AND c.status IN ('hypothesis', 'established')
+         AND c.expires_at > now()$q$,
+   '档案页陈述视图（0037）属主是 authz，按 can_read_student 与判断前端可见范围过滤，超级用户直读为空；按底表算有陈述的学生。'
+   '矩阵按 equal 比较，要求夹具里的陈述判断对学生与家长都可见；按可见范围逐行的断言在 79s_mastery_step2');
 -- 可以没有两户数据的关系（写明理由；其余的数据不足两户就失败）
 CREATE TABLE t.visibility_thin_ok (rel text PRIMARY KEY, reason text NOT NULL);
 INSERT INTO t.visibility_thin_ok VALUES
@@ -275,6 +286,9 @@ BEGIN
     EXECUTE format('SELECT coalesce(array_agg(DISTINCT k), ''{}'') FROM (SELECT (%s)::uuid AS k FROM %s) x WHERE k IS NOT NULL',
                    r.raw_expr, rel.oid::regclass) INTO v_raw;
     v_present := t.map_keys(v_raw, r.map_expr);
+    IF EXISTS (SELECT 1 FROM t.visibility_present_override o WHERE o.rel = rel.qname) THEN
+      EXECUTE (SELECT o.present_sql FROM t.visibility_present_override o WHERE o.rel = rel.qname) INTO v_present;
+    END IF;
     -- 数据要来自至少两户，否则“看不到别人的”会空转（1-E lessons）
     IF r.domain <> 'account' AND (CASE r.domain
          WHEN 'student' THEN (SELECT count(DISTINCT s.household_id) FROM platform.student_profile s WHERE s.id = ANY (v_present))
