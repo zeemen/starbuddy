@@ -8,7 +8,7 @@ const GT = '5d000000-0000-4000-8000-0000000000c1';
 const GP = '5d000000-0000-4000-8000-0000000000c3';
 const CLAIM = '00000000-0000-4000-8000-00000000f001';
 const EXAM = '00000000-0000-4000-8000-00000000b001';
-const TRUST_PATH = /\/(why|disputes|exams|data)(\/|$)|explain|reconcil|export|erasure/;
+const TRUST_PATH = /\/(why|disputes|exams|data|weekly)(\/|$)|explain|reconcil|export|erasure|weekly-report/;
 const TRUST_ELEMENTS = '[data-trust-slot], [data-trust-link], [data-trust-nav], [data-trust-root]';
 
 function watch(page: Page): string[] {
@@ -25,7 +25,7 @@ test('开关关：学生壳各页没有信任界面元素、不发信任界面�
     await expect(page.locator(TRUST_ELEMENTS), p).toHaveCount(0);
   }
   expect(paths.filter((p) => TRUST_PATH.test(p))).toEqual([]);
-  for (const p of [`/s/${GT}/why/${CLAIM}`, `/s/${GT}/disputes`, `/s/${GT}/exams`, `/s/${GT}/exams/${EXAM}`]) {
+  for (const p of [`/s/${GT}/why/${CLAIM}`, `/s/${GT}/disputes`, `/s/${GT}/exams`, `/s/${GT}/exams/${EXAM}`, `/s/${GT}/weekly`]) {
     expect((await page.goto(p))?.status(), p).toBe(404);
     await expect(page.locator(TRUST_ELEMENTS), p).toHaveCount(0);
   }
@@ -38,7 +38,8 @@ test('开关关：家长孩子页没有信任界面入口；信任界面页面�
   await expect(page.getByTestId('child-page')).toBeVisible();
   await expect(page.locator(TRUST_ELEMENTS)).toHaveCount(0);
   expect(paths.filter((p) => TRUST_PATH.test(p))).toEqual([]);
-  for (const p of [`/family/${GP}/why/${CLAIM}`, `/family/${GP}/disputes`, `/family/${GP}/exams`, `/family/${GP}/exams/${EXAM}`, `/family/${GP}/data`]) {
+  for (const p of [`/family/${GP}/why/${CLAIM}`, `/family/${GP}/disputes`, `/family/${GP}/exams`, `/family/${GP}/exams/${EXAM}`, `/family/${GP}/data`,
+                   `/family/${GP}/weekly`, `/family/${GT}/weekly`]) {
     expect((await page.goto(p))?.status(), p).toBe(404);
   }
   const s = await cookieSession(page);
@@ -48,7 +49,8 @@ test('开关关：家长孩子页没有信任界面入口；信任界面页面�
   expect(get.status()).toBe(404);
   expect(get.headers()['cache-control']).toBe('no-store');
   // BFF（开关关）：信任界面路由没注册，与表外路径同一个 404
-  for (const [method, p] of [['GET', `/students/${GP}/disputes`], ['GET', `/students/${GP}/erasure`], ['POST', `/students/${GP}/exports`]] as const) {
+  for (const [method, p] of [['GET', `/students/${GP}/disputes`], ['GET', `/students/${GP}/erasure`], ['POST', `/students/${GP}/exports`],
+                             ['GET', `/students/${GT}/weekly-report`]] as const) {
     const r = await fetch(`${BFF}/bff/v0${p}`, { method, headers: { 'x-sb-session': s.token, 'x-csrf-token': s.csrf, origin: BASE } });
     expect(r.status, p).toBe(404);
   }

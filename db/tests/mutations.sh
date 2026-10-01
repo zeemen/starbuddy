@@ -746,6 +746,43 @@ M+=(
   ["攻击面：删除执行身份有成员"]="CREATE ROLE t_eraser_member IN ROLE starbuddy_eraser;"
 )
 
+# 冲刺 5-H 跨科周报 v0（0036，specs/trust-ui-sprint5）：由 79r 与 79p / 79e 发现。DBMUT_FILTER=周报 只跑这一组
+WG='insight.weekly_report_guard()'
+WS='insight.valid_weekly_sentences(jsonb, text)'
+WO='insight.valid_weekly_objective(jsonb)'
+WR='platform.review_sample_weekly_reports(date, numeric, integer)'
+M+=(
+  ["周报：学生可读家长版"]="DROP POLICY weekly_report_front_read ON insight.weekly_report; CREATE POLICY weekly_report_front_read ON insight.weekly_report FOR SELECT TO starbuddy_bff USING (status = 'generated' AND platform.can_read_student(student_id));"
+  ["周报：不出的周报可见"]="DROP POLICY weekly_report_front_read ON insight.weekly_report; CREATE POLICY weekly_report_front_read ON insight.weekly_report FOR SELECT TO starbuddy_bff USING ((audience = 'student' AND platform.is_self_student(student_id)) OR (audience = 'guardian' AND platform.is_linked_guardian(student_id)));"
+  ["周报：BFF 可读阻断编码"]="GRANT SELECT (withheld_reasons) ON insight.weekly_report TO starbuddy_bff;"
+  ["周报：句子不核对读者可见"]="$(afr "$WG" "' AND NEW.audience = ANY (c.visibility)'" "''")"
+  ["周报：句子不核对判断状态"]="$(afr "$WG" "' AND c.status IN (''hypothesis'', ''established'')'" "''")"
+  ["周报：句子不查过期"]="$(afr "$WG" "' AND c.expires_at > now()'" "''")"
+  ["周报：句子不核对模板审核"]="$(afr "$WG" "' AND t.status = ''approved'''" "''")"
+  ["周报：句子不核对学生"]="$(afr "$WG" "' AND c.student_id = NEW.student_id'" "''")"
+  ["周报：学生版收家长观察"]="$(afr "$WG" "'AND (NEW.audience <> ''student'' OR c.source_type <> ''guardian'')'" "'AND true'")"
+  ["周报：内容写入后可改"]="$(afr "$WG" "'OR (to_jsonb(NEW) - ''spot_check_task_id'') IS DISTINCT FROM (to_jsonb(OLD) - ''spot_check_task_id'')'" "''")"
+  ["周报：可单独删除"]="$(afr "$WG" "'RAISE EXCEPTION ''周报只随删除请求删除'' USING ERRCODE = ''insufficient_privilege'';'" "'RETURN OLD;'")"
+  ["周报：学生版可带置信度"]="$(afr "$WS" "'OR (p_audience = ''student'' AND s ? ''confidence_band'')'" "''")"
+  ["周报：句子可带别的键"]="$(afr "$WS" "'WHERE k NOT IN (''claim_id'''" "'WHERE false AND k NOT IN (''claim_id'''")"
+  ["周报：客观栏来源不限"]="$(afr "$WO" "'AND p -> ''source_type'' = ''\"objective\"''::jsonb'" "''")"
+  ["周报：客观栏含英语"]="$(afr "$WO" "'NOT IN (''aya'', ''zhixing'', ''wenli'')'" "'NOT IN (''aya'', ''zhixing'', ''wenli'', ''echo'')'")"
+  ["周报：清单漏登记"]="DELETE FROM platform.personal_table_registry WHERE nspname = 'insight' AND relname = 'weekly_report';"
+  ["周报：抽检不设最少份数"]="$(afr "$WR" "'greatest(ceil(v_total * p_ratio)::integer, p_min, 5)'" "'ceil(v_total * p_ratio)::integer'")"
+  ["周报：最少份数不在库里兜底 5 份"]="$(afr "$WR" "'p_min, 5)) - v_done'" "'p_min)) - v_done'")"
+  ["周报：取不到学科时静默跳过"]="$(afr "$WR" "'IF w.subject IS NULL THEN'" "'IF w.subject IS NULL AND false THEN'")"
+  ["周报：审核台详情给客观栏"]="$(afr 'platform.review_task_detail(uuid)' "'''sentences'', w.sentences, ''algorithm_version'''" "'''sentences'', w.sentences, ''objective'', w.objective, ''algorithm_version'''")"
+  ["周报：标注不核对判断状态"]="$(afr "$WG" "'AND (s ? ''label'') = (c.status = ''hypothesis'')'" "'AND true'")"
+  ["周报：修订标记不核对"]="$(afr "$WG" "'AND (NOT s ? ''claim_revision'' OR c.updated_at = (s ->> ''claim_revision'')::timestamptz)'" "'AND true'")"
+  ["周报：不盖修订标记"]="$(afr "$WG" "'x.s || jsonb_build_object(''claim_revision'', c.updated_at)'" "'x.s'")"
+  ["周报：收没结束的周"]="$(afr "$WG" "'IF NEW.week_start + 7 > '" "'IF false AND NEW.week_start + 7 > '")"
+  ["周报：已抽的不计入份数"]="$(afr "$WR" "' - v_done;'" "';'")"
+  ["周报：抽样不限比例"]="$(afr "$WR" "'OR p_ratio > 0.5 '" "''")"
+  ["周报：BFF 可调抽样"]="GRANT EXECUTE ON FUNCTION platform.review_sample_weekly_reports(date, numeric, integer) TO starbuddy_bff;"
+  ["周报：可用任意原因进队"]="ALTER TABLE platform.review_task DROP CONSTRAINT review_task_weekly_report;"
+  ["周报：抽检可用判分结案码"]="UPDATE platform.review_resolution_code SET applies_to = applies_to || ARRAY['weekly_report'] WHERE code = 'upheld';"
+)
+
 # 并行执行（每个变异各起一个一次性 Postgres，互不影响）；DBMUT_JOBS 控制并发数，默认等于 CPU 核数
 JOBS="${DBMUT_JOBS:-$(nproc 2>/dev/null || echo 2)}"
 RES="$(mktemp -d "${TMPDIR:-/tmp}/starbuddy-dbmut.XXXXXX")"

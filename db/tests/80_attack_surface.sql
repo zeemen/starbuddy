@@ -172,6 +172,9 @@ INSERT INTO t.visibility_rule VALUES
    '这里只防跨户越权；“看不到家长替自己提的”等逐行断言在 79m_dispute'),
   ('platform.erasure_request', 'student_id', '%s', 'student', 'guardian_link',
    '删除请求与回执只给有效绑定家长看，学生本人看不到（0035 erasure_request_guardian_read）；逐行断言在 79p_erasure'),
+  ('insight.weekly_report', 'student_id', '%s', 'student', 'equal',
+   '周报按受众读：学生本人读自己的学生版、有效绑定家长读家长版（0036 weekly_report_front_read）；两个受众的周报都有，所以按学生看与 equal 同构，'
+   '这里只防跨户越权；“学生看不到家长版”“家长看不到学生版”“不出的周报不可见”等逐行断言在 79r_weekly_report'),
   ('platform.household', 'id', '%s', 'household', 'household',
    '有效家长读自己创建的家庭，或能读家庭内任一学生（0002 can_read_household；解除绑定的创建者仍可读是已登记风险 A4）');
 -- 可以没有两户数据的关系（写明理由；其余的数据不足两户就失败）

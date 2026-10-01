@@ -86,7 +86,7 @@ async def test_console_closed_loop_aya(api, pools, pg, student):
         assert r.status_code == 401
         codes = (await client.get("/review/v0/queue/resolution-codes", headers=as_staff(STAFF_A))).json()["items"]
         assert {c["code"] for c in codes} == {"upheld", "regrade_required", "content_issue", "dispute_forwarded", "not_actionable",
-                                                  "process_noted"}
+                                                  "process_noted", "weekly_report_ok", "weekly_report_issue"}  # 0036 周报抽检
         r = await client.get(f"/review/v0/queue/{uuid.uuid4()}", headers=as_staff(STAFF_A))
         assert r.status_code == 404
         # 翻页：游标是 (创建时间, id)；不带时区的时间与单独的 before_id 都拒绝

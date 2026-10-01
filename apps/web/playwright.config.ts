@@ -61,7 +61,7 @@ export default defineConfig({
       env: {
         ...serverEnv,
         STARBUDDY_BFF_URL: process.env['STARBUDDY_TRUST_BFF_URL'] ?? 'http://127.0.0.1:8788',
-        STARBUDDY_TRUST_UI: 'why,dispute,reconcile,data_rights',
+        STARBUDDY_TRUST_UI: 'why,dispute,reconcile,weekly,data_rights',
       },
     },
   ],

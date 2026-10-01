@@ -8,6 +8,9 @@ import { randomKeys } from '../src/http/config.ts';
 import { MAX_HOLD_MS, MemoryExportStore } from '../src/trust/exports.ts';
 import { REAUTH_WINDOW_MS, RecentLogins, trustMac } from '../src/trust/proof.ts';
 import { parseTrustFeatures } from '../src/trust/features.ts';
+import { pickObjective, pickWeeklySentence } from '../src/trust/weekly.ts';
+import { forbiddenHits, lexicon, normalize, parseLexicon, parseT2S } from '../src/trust/lexicon.ts';
+import { readFileSync } from 'node:fs';
 
 const U = (n: string) => `5e000000-0000-4000-8000-0000000000${n}`;
 
@@ -154,4 +157,50 @@ test('近期登录：10 分钟内算；按会话；专用密钥（换密钥即�
   assert.ok(!r.fresh({ ...k, trust: randomKeys().trust }, 'a'.repeat(64), 1001), '换了信任界面密钥');
   assert.notEqual(trustMac(k, 'erasure-confirm', 'x'), trustMac({ ...k, trust: k.rate }, 'erasure-confirm', 'x'));
   assert.notEqual(trustMac(k, 'erasure-confirm', 'x'), trustMac(k, 'dispute-idem', 'x'), '按用途分开');
+});
+
+test('周报（冲刺 5-H）：句子只收带合法 claim_id、段落属于该受众的；家长版必带置信度分档、学生版不能带；只转前端要的字段', () => {
+  const base = { claim_id: U('30'), template_key: 'syn.math.node_mastery', template_version: 1, section: 'lit', text: '合成渲染句',
+                 claim_revision: '2026-09-30T13:59:23.070887+00:00' };
+  assert.deepEqual(pickWeeklySentence({ ...base, label: 'preliminary', dialogue: '逐句对话', rank: 3 }, 'student'),
+                   base, '别的字段（对话、排名）不转；快照里的“初步判断”标注也不转（按判断当前状态推导）');
+  assert.equal(pickWeeklySentence({ ...base, claim_revision: undefined }, 'student'), null, '没有修订标记的句子丢弃');
+  assert.equal(pickWeeklySentence({ ...base, claim_revision: 'yesterday' }, 'student'), null);
+  for (const bad of [{ ...base, claim_id: undefined }, { ...base, claim_id: 'x' }, { ...base, section: 'progress' }, { ...base, text: ' ' },
+                     { ...base, text: 'x'.repeat(301) }, { ...base, confidence_band: 'strong' }, { ...base, template_version: 0 },
+                     { ...base, template_key: 'Bad Key' }, null, [base], 'text']) {
+    assert.equal(pickWeeklySentence(bad, 'student'), null, JSON.stringify(bad));
+  }
+  const g = { ...base, section: 'stuck', confidence_band: 'moderate' };
+  assert.deepEqual(pickWeeklySentence(g, 'guardian'), g);
+  assert.equal(pickWeeklySentence({ ...g, confidence_band: undefined }, 'guardian'), null, '家长版必带置信度分档');
+  assert.equal(pickWeeklySentence({ ...g, confidence_band: 'high' }, 'guardian'), null);
+  assert.equal(pickWeeklySentence({ ...g, section: 'lit' }, 'guardian'), null, '学生的段落不进家长版');
+});
+
+test('周报客观栏：固定来源 objective、有界整数、英语不出现；形状不对为 null', () => {
+  const o = { source_type: 'objective', usage_minutes: 95, plan_done: 4, plan_skipped: 1, subjects: [{ subject: 'aya', practice_minutes: 60, attempts: 18 }] };
+  assert.deepEqual(pickObjective({ ...o, extra: 'x' }), o);
+  for (const bad of [{ ...o, source_type: 'inferred' }, { ...o, usage_minutes: -1 }, { ...o, usage_minutes: 1.5 }, { ...o, usage_minutes: 20000 },
+                     { ...o, subjects: [{ subject: 'echo', practice_minutes: 1, attempts: 1 }] }, { ...o, subjects: 'x' }, null]) {
+    assert.equal(pickObjective(bad), null, JSON.stringify(bad));
+  }
+});
+
+test('禁用推断词表（BFF 端最小匹配）：以 SIE-00 词表为源，每类的反例都命中、允许例句都不命中；规范化与 Python 端一致', () => {
+  const lex = lexicon();
+  assert.equal(lex.categories.length >= 10, true);
+  for (const c of lex.categories) {
+    assert.ok(c.forbiddenExamples.length > 0, c.id);
+    for (const e of c.forbiddenExamples) assert.ok(forbiddenHits(e, lex).includes(c.id), `${c.id}：${e}`);
+  }
+  assert.ok(lex.allowedExamples.length >= 5);
+  for (const e of lex.allowedExamples) assert.deepEqual(forbiddenHits(e, lex), [], e);
+  assert.deepEqual(forbiddenHits('这孩子有点懶惰', lex), ['personality'], '繁体也拦');
+  assert.deepEqual(forbiddenHits('智 商', lex), ['intelligence'], '空白隔开也拦');
+  assert.equal(normalize('ＡＢ\u200b c'), 'ABc');
+  const py = readFileSync(new URL('../../../docs/design/sie/sie_lexicon.py', import.meta.url), 'utf8');
+  assert.ok(parseT2S(py).size >= 20, '繁简对照直接取 sie_lexicon.py');
+  assert.throws(() => parseT2S('no table here'), /繁简对照/);
+  assert.throws(() => parseLexicon('version: 0.1.0\ncategories:\n  - id: intelligence\n    patterns:\n      - "x"\n'), /不完整/);
 });

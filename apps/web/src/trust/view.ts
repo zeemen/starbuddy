@@ -168,6 +168,75 @@ export function pickReconciliation(raw: unknown, prediction: PredictionView | nu
   };
 }
 
+// ---------------------------------------------------------------- 周报
+
+export const WEEKLY_SECTIONS: Record<Audience, readonly string[]> = {
+  student: ['lit', 'working_on', 'next'], guardian: ['progress', 'stuck', 'suggestion', 'prediction'],
+};
+export const OBJECTIVE_SUBJECTS = ['aya', 'zhixing', 'wenli'] as const;
+export interface WeeklySentence { claim_id: string; text: string; preliminary: boolean; confidence_band: Band | null;
+                                  source_type: 'inferred' | 'objective' | 'self' | 'guardian' | null }
+export interface WeeklyObjective { usage_minutes: number; plan_done: number; plan_skipped: number;
+                                   subjects: { subject: (typeof OBJECTIVE_SUBJECTS)[number]; practice_minutes: number; attempts: number }[] }
+export interface WeeklyView { week_start: string; week_end: string; sections: { key: string; sentences: WeeklySentence[] }[];
+                              objective: WeeklyObjective | null; dropped: number }
+
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const nat = (v: unknown, hi: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= hi;
+
+function pickObjectiveColumn(raw: unknown): WeeklyObjective | null {
+  if (!obj(raw) || raw['source_type'] !== 'objective' || !nat(raw['usage_minutes'], 10080) || !nat(raw['plan_done'], 9999)
+      || !nat(raw['plan_skipped'], 9999) || !Array.isArray(raw['subjects'])) {
+    return null;
+  }
+  const subjects: WeeklyObjective['subjects'] = [];
+  for (const x of raw['subjects'].slice(0, 3)) {
+    if (!obj(x) || !(OBJECTIVE_SUBJECTS as readonly unknown[]).includes(x['subject']) || !nat(x['practice_minutes'], 10080) || !nat(x['attempts'], 99999)) {
+      return null;
+    }
+    subjects.push({ subject: x['subject'] as WeeklyObjective['subjects'][number]['subject'], practice_minutes: x['practice_minutes'], attempts: x['attempts'] });
+  }
+  return { usage_minutes: raw['usage_minutes'], plan_done: raw['plan_done'], plan_skipped: raw['plan_skipped'], subjects };
+}
+
+/**
+ * 周报的前端再断言（规则 11）：段落只认该受众的固定编码；句子只保留带合法 claim_id、非空文字的（dropped 计数）；
+ * 置信度分档只在家长版出现；一句不剩时整份不显示（null）。客观栏形状不对就不显示。
+ */
+export function pickWeekly(raw: unknown, audience: Audience): WeeklyView | null {
+  if (!obj(raw) || !obj(raw['report'])) return null;
+  const r = raw['report'];
+  if (typeof r['week_start'] !== 'string' || !DATE.test(r['week_start']) || typeof r['week_end'] !== 'string' || !DATE.test(r['week_end'])
+      || !Array.isArray(r['sections'])) {
+    return null;
+  }
+  let dropped = 0;
+  const sections: WeeklyView['sections'] = [];
+  for (const sec of r['sections'].slice(0, 4)) {
+    if (!obj(sec) || typeof sec['key'] !== 'string' || !WEEKLY_SECTIONS[audience].includes(sec['key']) || !Array.isArray(sec['sentences'])
+        || sections.some((x) => x.key === sec['key'])) {
+      dropped += obj(sec) && Array.isArray(sec['sentences']) ? sec['sentences'].length : 1;
+      continue;
+    }
+    const sentences: WeeklySentence[] = [];
+    for (const s of sec['sentences'].slice(0, 10)) {
+      const band = obj(s) ? s['confidence_band'] : undefined;
+      if (obj(s) && typeof s['claim_id'] === 'string' && UUID.test(s['claim_id']) && typeof s['text'] === 'string' && s['text'].trim() !== ''
+          && s['text'].length <= 300 && (audience === 'guardian' ? typeof band === 'string' && BANDS.includes(band) : band === undefined)) {
+        sentences.push({ claim_id: s['claim_id'], text: s['text'], preliminary: s['label'] === 'preliminary',
+                         confidence_band: audience === 'guardian' ? band as Band : null,
+                         source_type: SOURCES.includes(s['source_type'] as string) ? s['source_type'] as WeeklySentence['source_type'] : null });
+      } else {
+        dropped += 1;
+      }
+    }
+    if (sentences.length > 0) sections.push({ key: sec['key'], sentences });
+  }
+  if (sections.length === 0) return null;
+  sections.sort((a, b) => WEEKLY_SECTIONS[audience].indexOf(a.key) - WEEKLY_SECTIONS[audience].indexOf(b.key));
+  return { week_start: r['week_start'], week_end: r['week_end'], sections, objective: pickObjectiveColumn(r['objective']), dropped };
+}
+
 // ---------------------------------------------------------------- 家长数据权利
 
 export interface ErasureRow {

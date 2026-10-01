@@ -1,5 +1,6 @@
-// 冲刺 5-H 信任界面：开关打开的一套（playwright.config.ts 的 trust-on 项目；前端 why / dispute / reconcile / data_rights，
-// 第二个 BFF dispute / reconcile / data_rights；没有洞察服务，预测与对账卡读取 503、“为什么”的 BFF 读取路由还没有）。
+// 冲刺 5-H 信任界面：开关打开的一套（playwright.config.ts 的 trust-on 项目；前端 why / dispute / reconcile / weekly / data_rights，
+// 第二个 BFF dispute / reconcile / weekly / data_rights；没有洞察服务，预测与对账卡读取 503、“为什么”的 BFF 读取路由还没有）。
+// 周报：GT 本周的学生版与家长版来自 db/seeds/dev/weekly-synthetic.sql（两条合成判断），第二个 BFF 的对外白名单只列这个合成模板。
 // 全程真实会话（短信捕获桩读码），合成家庭 HG（db/seeds/dev/shell-synthetic.sql）：家长 gH，孩子 GT 试用、GR 留存、GP 试点。
 // 每页都核对：
 //   - axe（wcag2a / wcag2aa）无违规；浏览器只请求本前端；
@@ -57,7 +58,7 @@ test('学生：入口行、异议状态页、“为什么”（读取通道未�
   const off = watchOrigin(page);
   await loginStudent(page, GT);
   const nav = page.locator('[data-trust-nav="student"]');
-  await expect(nav.locator('[data-trust-link]')).toHaveCount(2);
+  await expect(nav.locator('[data-trust-link]')).toHaveCount(3);  // 考试、我提出的异议、成长手记
   await expect(nav.locator('[data-trust-link="data_rights"]')).toHaveCount(0);  // 数据权利只给家长
   await onlyCopyOrClaims(page);
   await axe(page);
@@ -133,7 +134,7 @@ test('家长：孩子页入口行；“为什么”、异议状态页、考试�
   await loginGuardian(page, 'gH');
   await page.goto(`/family/${GP}`);
   const nav = page.locator('[data-trust-nav="guardian"]');
-  await expect(nav.locator('[data-trust-link]')).toHaveCount(3);
+  await expect(nav.locator('[data-trust-link]')).toHaveCount(4);  // 考试、我提出的异议、本周周报、数据权利
   await onlyCopyOrClaims(page);
   await axe(page);
   await nav.locator('[data-trust-link="dispute"]').click();
@@ -258,4 +259,51 @@ test('没有 JS 时：导出与删除按钮不可用、不整页提交，页面 
   } finally {
     await ctx.close();
   }
+});
+
+const WEEKLY_CLAIMS = ['5d000000-0000-4000-8000-0000000000f1', '5d000000-0000-4000-8000-0000000000f2'];
+
+test('周报：学生“成长手记”与家长周报——每句带 data-claim-id、客观栏标来源；学生端不附置信度说明；另一户与别的孩子 404；没有周报的孩子显示“还没有”', async ({ page }) => {
+  const off = watchOrigin(page);
+  await loginStudent(page, GT);
+  await page.locator('[data-trust-nav="student"] [data-trust-link="weekly"]').click();
+  await expect(page).toHaveURL(`/s/${GT}/weekly`);
+  const root = page.locator('[data-trust-root="weekly"]');
+  await expect(root).toHaveAttribute('data-audience', 'student');
+  await expect(root.locator('[data-weekly-section]')).toHaveCount(2);
+  await expect(root.locator('[data-weekly-section="lit"] [data-claim-id]')).toHaveAttribute('data-claim-id', WEEKLY_CLAIMS[0]!);
+  await expect(root.locator('[data-weekly-section="working_on"] [data-claim-id]')).toHaveAttribute('data-claim-id', WEEKLY_CLAIMS[1]!);
+  const ids = await root.locator('[data-claim-id]').evaluateAll((els) => els.map((e) => e.getAttribute('data-claim-id')));
+  expect(ids).toEqual(WEEKLY_CLAIMS);
+  await expect(root.locator('[data-weekly-objective][data-source-type="objective"]')).toBeVisible();
+  await expect(root.locator('[data-trust-link="why"]')).toHaveCount(2);  // 每句旁一个“为什么”入口（开关 why）
+  expect(await root.innerText()).not.toMatch(/置信度说明/);  // 学生端不附置信度说明
+  await onlyCopyOrClaims(page);
+  await axe(page);
+  // 学生侧只给本人：同一户的别的孩子也是 404
+  expect((await page.goto(`/s/${GP}/weekly`))?.status()).toBe(404);
+  expect(off).toEqual([]);
+
+  await loginGuardian(page, 'gH');
+  await page.goto(`/family/${GT}`);
+  await page.locator('[data-trust-nav="guardian"] [data-trust-link="weekly"]').click();
+  await expect(page).toHaveURL(`/family/${GT}/weekly`);
+  const g = page.locator('[data-trust-root="weekly"]');
+  await expect(g).toHaveAttribute('data-audience', 'guardian');
+  await expect(g.locator('[data-weekly-section]')).toHaveCount(2);
+  expect(await g.locator('[data-weekly-section]').evaluateAll((els) => els.map((e) => e.getAttribute('data-weekly-section')))).toEqual(['progress', 'stuck']);
+  expect(await g.locator('[data-claim-id]').evaluateAll((els) => els.map((e) => e.getAttribute('data-claim-id')))).toEqual(WEEKLY_CLAIMS);
+  expect(await g.innerText()).toMatch(/置信度说明/);  // 家长端附置信度说明（占位）
+  await onlyCopyOrClaims(page);
+  await axe(page);
+  // 没有周报的孩子：显示“还没有”，不出现任何判断句
+  await page.goto(`/family/${GP}/weekly`);
+  await expect(page.getByTestId('weekly-empty')).toBeVisible();
+  await expect(page.locator('[data-claim-id]')).toHaveCount(0);
+  await onlyCopyOrClaims(page);
+  await axe(page);
+  expect(off).toEqual([]);
+  // 另一户（gS）打开 HG 的孩子：与不存在同一个 404
+  await loginGuardian(page, 'gS');
+  expect((await page.goto(`/family/${GT}/weekly`))?.status()).toBe(404);
 });

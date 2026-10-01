@@ -9,7 +9,6 @@ import { BALANCE, ENROLL_RESULT, ENROLLMENT, FAMILY_SHELL, resourceLabel, slotTe
 import { requireGuardian } from '../../../shell/guard.ts';
 import { StatusBar } from '../../../shell/StatusBar.tsx';
 import { TaskList } from '../../../shell/TaskList.tsx';
-import { TrustSlot } from '../../../shell/TrustSlot.tsx';
 import { TrustNav } from '../../../trust/links.tsx';
 import { enrollAction, pauseAction } from '../shell-actions.ts';
 
@@ -111,9 +110,8 @@ export default async function ChildPage({ params }: { params: Promise<{ studentI
         ))}
       </section>
 
-      {/* 信任界面入口（冲刺 5-H：考试与对账卡、我提出的异议、数据查看导出与删除；开关关时不渲染）；周报本次不做，仍是预留位 */}
+      {/* 信任界面入口（冲刺 5-H：考试与对账卡、我提出的异议、本周周报、数据查看导出与删除；开关关时不渲染） */}
       <TrustNav studentId={studentId} audience="guardian" />
-      <TrustSlot feature="weekly" />
     </main>
   );
 }

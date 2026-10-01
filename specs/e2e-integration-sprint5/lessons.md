@@ -88,3 +88,9 @@
 - 隔离断言每个查看者约 0.35 秒（RLS 函数逐行求值），20 名学生一轮约 15 秒；反例测试用整户子集。
 - 联调期间临时设置 `STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1`（插件契约 1.0.0 仍是候选版），结束后恢复，不影响同一 pytest 会话里的其他测试；
   一次性库上开启 `log_connections` 只影响该临时实例。
+
+## 补记（冲刺 5-H 跨科周报 v0，迁移 0036）
+- `insight.weekly_report`（周报快照，判断的派生视图，登记在 0035 个人层表清单）加入 `tools/e2e-cohort/e2e_cohort/checks.py` 的
+  `INSIGHT_PERSONAL_TABLES`；否则“没有私有副本”检查把它当成个人层以外的表（它有 student_id 列）而失败。
+- 合成样例 `tools/e2e-cohort/sample/` 按 `make gate0-evidence GATE0_OUT=tools/e2e-cohort/sample` 重生：只有隔离断言比对的表数
+  25 → 26（多了周报表）、提交号与 `checks.json` 摘要变化，其余逐字节不变。

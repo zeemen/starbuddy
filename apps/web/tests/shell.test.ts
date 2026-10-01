@@ -62,8 +62,8 @@ test('壳页面与组件里没有中文文案：文字只从文案文件取；�
     assert.deepEqual(cjk, [], f.path);
   }
   const claimRenderers = src.filter((f) => /data-claim-id/.test(code(f.text))).map((f) => f.path);
-  // 冲刺 5-H 起另有“为什么”页与考试页（对账卡）渲染判断句（tests/trust.test.ts 逐个核对）
-  assert.deepEqual(claimRenderers.sort(), ['src/shell/TaskList.tsx', 'src/trust/ExamPages.tsx', 'src/trust/WhyPage.tsx']);
+  // 冲刺 5-H 起另有“为什么”页、考试页（对账卡）与周报页渲染判断句（tests/trust.test.ts 逐个核对）
+  assert.deepEqual(claimRenderers.sort(), ['src/shell/TaskList.tsx', 'src/trust/ExamPages.tsx', 'src/trust/WeeklyPage.tsx', 'src/trust/WhyPage.tsx']);
   assert.match(readFileSync(join(WEB, 'src/shell/TaskList.tsx'), 'utf8'), /data-claim-id=\{r\.claim_id\}>\{r\.text\}/);
 });
 

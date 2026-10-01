@@ -39,6 +39,14 @@ test('路由表与 openapi/*.v0.yaml 一一对应（没有表外的接口，也�
   assert.deepEqual(specOperations(), table);
 });
 
+test('信任界面：trust.v0.yaml 的操作集合恰好等于信任界面路由表（反向也成立：文档里没有表外操作，路由没有漏写文档；契约审查 L5）', () => {
+  const doc = operationsOf(TRUST_SPEC).sort();
+  const table = TRUST_ROUTES.map((r) => `${r.method} ${PREFIX}${r.path}`).sort();
+  assert.deepEqual(doc, table);
+  for (const op of doc) assert.ok(table.includes(op), `文档里的 ${op} 没有路由`);
+  for (const op of table) assert.ok(doc.includes(op), `路由 ${op} 没有写进文档`);
+});
+
 test('路由表不变量：改变状态的都开 CSRF；公开的只有登录两条；带学生参数的都要会话', () => {
   for (const r of ALL) {
     if (r.method !== 'GET') assert.notEqual(r.csrf, 'none', `${r.method} ${r.path}`);
@@ -46,7 +54,9 @@ test('路由表不变量：改变状态的都开 CSRF；公开的只有登录两
     if (r.path.includes('{student_id}')) assert.notEqual(r.auth, 'public', r.path);
   }
   assert.deepEqual(ALL.filter((r) => r.auth === 'public').map((r) => r.path).sort(), ['/auth/otp/request', '/auth/otp/verify']);
-  for (const r of TRUST_ROUTES) assert.ok(r.feature === 'dispute' || r.feature === 'reconcile' || r.feature === 'data_rights', `${r.method} ${r.path} 挂在开关上`);
+  for (const r of TRUST_ROUTES) {
+    assert.ok(r.feature === 'dispute' || r.feature === 'reconcile' || r.feature === 'weekly' || r.feature === 'data_rights', `${r.method} ${r.path} 挂在开关上`);
+  }
   const keys = ALL.map((r) => `${r.method} ${r.path}`);
   assert.equal(new Set(keys).size, keys.length, '没有重复路由');
 });

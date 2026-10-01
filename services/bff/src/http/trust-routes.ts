@@ -1,8 +1,9 @@
 // SIE-03 PR③：信任界面的 BFF 读写接口（specs/sie-03-dispute-reconcile/spec.md 范围 3；页面随冲刺 5-H）。
-// 每条路由挂在一个功能开关上（src/trust/features.ts：dispute / reconcile / data_rights），默认关闭：关闭时不注册，
+// 每条路由挂在一个功能开关上（src/trust/features.ts：dispute / reconcile / weekly / data_rights），默认关闭：关闭时不注册，
 // 与表外路径同一个 404（4-H“信任界面预留”验收继续成立）。
 //   异议（dispute）：提出 → 洞察服务 insight.dispute；查看自己提出的异议与状态（0032 RLS：只读自己提出的，家长须有效绑定）。
 //   考试（reconcile）：录入考试安排（insight.submit_exam_plan）、按安排录成绩（insight.submit_exam_score）；读预测与对账卡。
+//   周报（weekly，冲刺 5-H）：读最近一周已生成的周报（0036 insight.weekly_report，按受众只读），每句在库里再核判断。
 //   数据权利（data_rights，只给家长）：导出（0035 platform.export_student_data，BFF 暂存、一次性兑换下载）；
 //     删除申请 → 会话内二次确认 → 冷静期内撤回；查看状态与回执（回执只有表名与行数）。
 // 与其他路由同一套规矩：身份只来自会话；路径里的 student_id 只作查询条件，授权在库里（RLS、SECURITY DEFINER 函数），
@@ -15,6 +16,8 @@ import type { Audience } from '../shell/insight-client.ts';
 import { linkIdFor, templateRef } from '../shell/statements.ts';
 import { DISPUTE_KINDS, IDEMPOTENCY_KEY, pickPrediction, pickReconciliation, type DisputeKind, type Who } from '../trust/clients.ts';
 import { MemoryExportStore, type ExportStore } from '../trust/exports.ts';
+import { forbiddenHits, lexicon } from '../trust/lexicon.ts';
+import { pickObjective, pickWeeklySentence, WEEKLY_SECTIONS, type WeeklySentence } from '../trust/weekly.ts';
 import { recentLogins, trustMac } from '../trust/proof.ts';
 import { P } from './problems.ts';
 import type { Ctx, Handler, Query, Reply, Route, ShellDeps } from './routes.ts';
@@ -242,6 +245,76 @@ const reconciliation: Handler = async (ctx) => {
   });
 };
 
+// ---------------------------------------------------------------- 周报（weekly，冲刺 5-H 跨科周报 v0）
+
+/**
+ * 周报句子引用的判断：属于该学生、对当前受众可见、成立或假设、未过期、知识节点、模板已审核、学生版不收来源为家长观察的，
+ * 而且判断的 updated_at 等于句子的修订标记（生成之后被修订过的判断，它的句子丢弃，安全审查 F1）。返回当前状态与来源，
+ * “初步判断”标注按当前状态推导；置信度分档沿用快照里的（修订标记对得上 = 置信度没变；分档阈值在洞察服务的策略里，BFF 不另存一份）
+ */
+interface WeeklyClaim { ref: string; status: string; source_type: string }
+async function weeklyClaims(q: Query, id: string, audience: Audience, sentences: WeeklySentence[]): Promise<Map<string, WeeklyClaim>> {
+  if (sentences.length === 0) return new Map();
+  const { rows } = await q<{ id: string; template_key: string; template_version: number; status: string; source_type: string }>(
+    `SELECT c.id, c.template_key, c.template_version, c.status::text AS status, c.source_type::text AS source_type
+       FROM unnest($1::uuid[], $2::timestamptz[]) AS x(id, rev)
+       JOIN insight.claim c ON c.id = x.id AND c.updated_at = x.rev
+       JOIN insight.claim_template t ON t.template_key = c.template_key AND t.version = c.template_version AND t.status = 'approved'
+      WHERE c.student_id = $3 AND $4 = ANY (c.visibility) AND c.expires_at > now()
+        AND c.status IN ('hypothesis', 'established') AND c.target_type = 'node'
+        AND ($4 <> 'student' OR c.source_type <> 'guardian')`,
+    [sentences.map((s) => s.claim_id), sentences.map((s) => s.claim_revision), id, audience]);
+  return new Map(rows.map((r) => [r.id, { ref: templateRef(r.template_key, r.template_version), status: r.status, source_type: r.source_type }]));
+}
+
+const weeklyReport: Handler = async (ctx) => {
+  const id = student(ctx);
+  if (!(await readable(ctx.q, id))) return problem(P.NOT_FOUND);
+  const audience = audienceOf(ctx);
+  // 0036 RLS：学生本人只读学生版、有效绑定家长只读家长版，只读已生成的；这里再显式按受众与状态过滤
+  const { rows } = await ctx.q<{ week_start: string; week_end: string; sentences: unknown; objective: unknown; generated_at: Date }>(
+    `SELECT to_char(w.week_start, 'YYYY-MM-DD') AS week_start, to_char(w.week_end, 'YYYY-MM-DD') AS week_end, w.sentences, w.objective,
+            w.generated_at
+       FROM insight.weekly_report w
+      WHERE w.student_id = $1 AND w.audience = $2 AND w.status = 'generated'
+      ORDER BY w.week_start DESC LIMIT 1`, [id, audience]);
+  const none = json(200, { student_id: id, report: null });
+  const w = rows[0];
+  if (!w) return none;
+  const raws = Array.isArray(w.sentences) ? w.sentences.slice(0, 40) : [];
+  const picked = raws.map((r) => pickWeeklySentence(r, audience)).filter((x): x is WeeklySentence => x !== null);
+  // 判断先于展示（规则 11）：每句在库里再核判断（含修订标记），再过对外模板白名单，模板键与版本也要对得上；文字再过禁用推断词表
+  const cfg = shellConfig(ctx.deps);
+  let clean: (text: string) => boolean;
+  try {
+    const lex = lexicon();
+    clean = (text) => forbiddenHits(text, lex).length === 0;
+  } catch {
+    ctx.note('weekly', 'lexicon_unavailable');  // 词表读不到：一句都不显示（fail closed）
+    return none;
+  }
+  const shown = await weeklyClaims(ctx.q, id, audience, picked);
+  const kept = picked.filter((s) => {
+    const c = shown.get(s.claim_id);
+    const ref = templateRef(s.template_key, s.template_version);
+    return c !== undefined && c.ref === ref && cfg.externalTemplates.has(ref) && clean(s.text);
+  });
+  const dropped = raws.length - kept.length;
+  if (dropped > 0) ctx.note('dropped_statements', String(dropped));
+  if (kept.length === 0) return none;
+  const sections = WEEKLY_SECTIONS[audience]
+    .map((key) => ({ key, sentences: kept.filter((s) => s.section === key).slice(0, 10).map((s) => {
+      const c = shown.get(s.claim_id)!;
+      return { claim_id: s.claim_id, text: s.text, source_type: c.source_type, ...(c.status === 'hypothesis' ? { label: 'preliminary' } : {}),
+               ...(s.confidence_band ? { confidence_band: s.confidence_band } : {}) };
+    }) }))
+    .filter((sec) => sec.sentences.length > 0);
+  return json(200, {
+    student_id: id,
+    report: { week_start: w.week_start, week_end: w.week_end, generated_at: w.generated_at.toISOString(), sections, objective: pickObjective(w.objective) },
+  });
+};
+
 // ---------------------------------------------------------------- 导出与删除（data_rights，只给家长）
 
 const exportStores = new WeakMap<ShellDeps, ExportStore>();
@@ -421,6 +494,7 @@ export const TRUST_ROUTES: readonly Route[] = [
   write('reconcile', `${S}/exams/{exam_id}/score`, 'session', true, examScore, [{ bucket: 'exam_write.account.hour', dim: 'account' }]),
   read('reconcile', `${S}/exams/{exam_id}/prediction`, 'session', prediction, [{ bucket: 'exam_view.session.minute', dim: 'session' }], true),
   read('reconcile', `${S}/exams/{exam_id}/reconciliation`, 'session', reconciliation, [{ bucket: 'exam_view.session.minute', dim: 'session' }], true),
+  read('weekly', `${S}/weekly-report`, 'session', weeklyReport, [{ bucket: 'trust_read.session.minute', dim: 'session' }]),
   write('data_rights', `${S}/exports`, 'guardian', false, exportCreate, [{ bucket: 'export.account.hour', dim: 'account' }], true),
   write('data_rights', `${S}/exports/{export_job_id}/download`, 'guardian', true, exportDownload, [{ bucket: 'export_download.account.hour', dim: 'account' }]),
   read('data_rights', `${S}/erasure`, 'guardian', erasureList, [{ bucket: 'trust_read.session.minute', dim: 'session' }]),

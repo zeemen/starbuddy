@@ -142,6 +142,20 @@ SM=(
   $'信任：不核对统一信封\tsrc/trust/clients.ts\tconst value = envelopeOk(body) ? pickDispute(body.result) : null;\tconst value = pickDispute(body.result);'
   $'信任：异议列表不限流\tsrc/http/trust-routes.ts\tdisputeList, [{ bucket: \'trust_read.session.minute\', dim: \'session\' }]\tdisputeList, []'
   $'信任：近期登录不看时间\tsrc/trust/proof.ts\treturn t !== undefined && now - t < REAUTH_WINDOW_MS && now >= t;\treturn t !== undefined;'
+  # 冲刺 5-H 跨科周报 v0（weekly，0036）：每句库内再核判断、白名单、学生版不收家长观察、形状再挑、按会话限流
+  $'信任：周报不在库内再核判断\tsrc/http/trust-routes.ts\t    return c !== undefined && c.ref === ref && cfg.externalTemplates.has(ref) && clean(s.text);\t    return clean(s.text);'
+  $'信任：周报不看对外模板白名单\tsrc/http/trust-routes.ts\t && c.ref === ref && cfg.externalTemplates.has(ref) && clean(s.text);\t && c.ref === ref && clean(s.text);'
+  $'信任：周报学生版收家长观察\tsrc/http/trust-routes.ts\t        AND ($4 <> \'student\' OR c.source_type <> \'guardian\')`,\t`,'
+  $'信任：周报不核对修订标记\tsrc/http/trust-routes.ts\tJOIN insight.claim c ON c.id = x.id AND c.updated_at = x.rev\tJOIN insight.claim c ON c.id = x.id'
+  $'信任：周报不过禁用推断词表\tsrc/http/trust-routes.ts\t && cfg.externalTemplates.has(ref) && clean(s.text);\t && cfg.externalTemplates.has(ref);'
+  $'信任：周报不按判断当前状态标初步判断\tsrc/http/trust-routes.ts\t...(c.status === \'hypothesis\' ? { label: \'preliminary\' } : {})\t...{}'
+  $'信任：周报没有修订标记也收\tsrc/trust/weekly.ts\t      || typeof s[\'claim_revision\'] !== \'string\' || !REVISION.test(s[\'claim_revision\'])) {\t      ) {'
+  $'信任：周报收已撤回的判断\tsrc/http/trust-routes.ts\tAND c.status IN (\'hypothesis\', \'established\') AND c.target_type = \'node\'\tAND c.target_type = \'node\''
+  $'信任：周报句子不核对 claim_id\tsrc/trust/weekly.ts\t  if (typeof s[\'claim_id\'] !== \'string\' || !UUID.test(s[\'claim_id\']) || typeof s[\'template_key\']\t  if (typeof s[\'template_key\']'
+  $'信任：周报学生版可带置信度\tsrc/trust/weekly.ts\t  if (audience === \'guardian\' ? typeof band !== \'string\' || !BANDS.includes(band) : band !== undefined) return null;\t'
+  $'信任：周报客观栏不核来源\tsrc/trust/weekly.ts\t  if (o[\'source_type\'] !== \'objective\' || \t  if ('
+  $'信任：周报只给家长\tsrc/http/trust-routes.ts\t`${S}/weekly-report`, \'session\', weeklyReport\t`${S}/weekly-report`, \'guardian\', weeklyReport'
+  $'信任：周报不限流\tsrc/http/trust-routes.ts\tweeklyReport, [{ bucket: \'trust_read.session.minute\', dim: \'session\' }]\tweeklyReport, []'
 )
 # 副本保持仓库结构（测试按 ../../../ 找仓库根：adapters/aya 的登记脚本、db/seeds 的种子），adapters、db 软链接回仓库。
 # 安全审查阻断 1：原来的副本不保持结构，测试的 before 在任何代码下都失败，变异全部“被发现”却不说明任何问题。

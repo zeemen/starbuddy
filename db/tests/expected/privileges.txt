@@ -70,6 +70,27 @@ col|insight.intervention_log.student_id|starbuddy_eraser|SELECT|SUPERUSER
 col|insight.intervention_log.student_id|starbuddy_insight|INSERT|SUPERUSER
 col|insight.onboarding_progress.student_id|starbuddy_eraser|SELECT|SUPERUSER
 col|insight.self_report.student_id|starbuddy_eraser|SELECT|SUPERUSER
+col|insight.weekly_report.algorithm_version|starbuddy_insight|INSERT|SUPERUSER
+col|insight.weekly_report.audience|starbuddy_bff|SELECT|SUPERUSER
+col|insight.weekly_report.audience|starbuddy_insight|INSERT|SUPERUSER
+col|insight.weekly_report.generated_at|starbuddy_bff|SELECT|SUPERUSER
+col|insight.weekly_report.id|starbuddy_bff|SELECT|SUPERUSER
+col|insight.weekly_report.objective|starbuddy_bff|SELECT|SUPERUSER
+col|insight.weekly_report.objective|starbuddy_insight|INSERT|SUPERUSER
+col|insight.weekly_report.policy_version|starbuddy_insight|INSERT|SUPERUSER
+col|insight.weekly_report.sentences|starbuddy_bff|SELECT|SUPERUSER
+col|insight.weekly_report.sentences|starbuddy_insight|INSERT|SUPERUSER
+col|insight.weekly_report.spot_check_task_id|starbuddy_authz|UPDATE|SUPERUSER
+col|insight.weekly_report.status|starbuddy_bff|SELECT|SUPERUSER
+col|insight.weekly_report.status|starbuddy_insight|INSERT|SUPERUSER
+col|insight.weekly_report.student_id|starbuddy_bff|SELECT|SUPERUSER
+col|insight.weekly_report.student_id|starbuddy_eraser|SELECT|SUPERUSER
+col|insight.weekly_report.student_id|starbuddy_insight|INSERT|SUPERUSER
+col|insight.weekly_report.week_end|starbuddy_bff|SELECT|SUPERUSER
+col|insight.weekly_report.week_end|starbuddy_insight|INSERT|SUPERUSER
+col|insight.weekly_report.week_start|starbuddy_bff|SELECT|SUPERUSER
+col|insight.weekly_report.week_start|starbuddy_insight|INSERT|SUPERUSER
+col|insight.weekly_report.withheld_reasons|starbuddy_insight|INSERT|SUPERUSER
 col|kge.item_tag.node_ids|starbuddy_authz|UPDATE|SUPERUSER
 col|kge.item_tag.tag_basis|starbuddy_authz|UPDATE|SUPERUSER
 col|kge.item_tag.tag_confidence|starbuddy_authz|UPDATE|SUPERUSER
@@ -447,6 +468,10 @@ func|insight.valid_reconciliation_sentences(jsonb)|starbuddy_insight|EXECUTE|SUP
 func|insight.valid_report_value(text,jsonb)|starbuddy_authz|EXECUTE|SUPERUSER
 func|insight.valid_set(jsonb,text[],integer)|starbuddy_authz|EXECUTE|SUPERUSER
 func|insight.valid_text(jsonb)|starbuddy_authz|EXECUTE|SUPERUSER
+func|insight.valid_weekly_objective(jsonb)|starbuddy_authz|EXECUTE|SUPERUSER
+func|insight.valid_weekly_objective(jsonb)|starbuddy_insight|EXECUTE|SUPERUSER
+func|insight.valid_weekly_sentences(jsonb,text)|starbuddy_authz|EXECUTE|SUPERUSER
+func|insight.valid_weekly_sentences(jsonb,text)|starbuddy_insight|EXECUTE|SUPERUSER
 func|kge.current_staff()|starbuddy_authz|EXECUTE|starbuddy_authz
 func|kge.decide_tag_candidate(uuid,text)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|kge.decide_tag_candidate(uuid,text)|starbuddy_review|EXECUTE|starbuddy_authz
@@ -626,6 +651,8 @@ func|platform.review_queue(platform.subject,text,text,integer,timestamp with tim
 func|platform.review_queue(platform.subject,text,text,integer,timestamp with time zone,uuid)|starbuddy_review|EXECUTE|starbuddy_authz
 func|platform.review_sample_spot_checks(platform.subject,timestamp with time zone,numeric)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.review_sample_spot_checks(platform.subject,timestamp with time zone,numeric)|starbuddy_scheduler|EXECUTE|starbuddy_authz
+func|platform.review_sample_weekly_reports(date,numeric,integer)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.review_sample_weekly_reports(date,numeric,integer)|starbuddy_insight|EXECUTE|starbuddy_authz
 func|platform.review_student_ref(uuid)|starbuddy_authz|EXECUTE|SUPERUSER
 func|platform.review_task_detail(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.review_task_detail(uuid)|starbuddy_review|EXECUTE|starbuddy_authz
@@ -747,6 +774,7 @@ owner|platform.request_erasure(uuid)|starbuddy_authz
 owner|platform.resolve_review_task(uuid,text)|starbuddy_authz
 owner|platform.review_queue(platform.subject,text,text,integer,timestamp with time zone,uuid)|starbuddy_authz
 owner|platform.review_sample_spot_checks(platform.subject,timestamp with time zone,numeric)|starbuddy_authz
+owner|platform.review_sample_weekly_reports(date,numeric,integer)|starbuddy_authz
 owner|platform.review_task_detail(uuid)|starbuddy_authz
 owner|platform.set_subject_textbook(uuid,platform.subject,text)|starbuddy_authz
 owner|platform.set_time_guard(uuid,integer,time without time zone,time without time zone)|starbuddy_authz
@@ -815,6 +843,9 @@ rel|insight.self_report|starbuddy_authz|UPDATE|SUPERUSER
 rel|insight.self_report|starbuddy_eraser|DELETE|SUPERUSER
 rel|insight.self_report|starbuddy_insight|SELECT|SUPERUSER
 rel|insight.self_report|starbuddy_learning|SELECT|SUPERUSER
+rel|insight.weekly_report|starbuddy_authz|SELECT|SUPERUSER
+rel|insight.weekly_report|starbuddy_eraser|DELETE|SUPERUSER
+rel|insight.weekly_report|starbuddy_insight|SELECT|SUPERUSER
 rel|kge.content_review|starbuddy_authz|INSERT|SUPERUSER
 rel|kge.content_review|starbuddy_authz|SELECT|SUPERUSER
 rel|kge.content_review|starbuddy_kge|INSERT|SUPERUSER
@@ -1235,6 +1266,7 @@ secdef|platform.request_erasure(uuid)
 secdef|platform.resolve_review_task(uuid,text)
 secdef|platform.review_queue(platform.subject,text,text,integer,timestamp with time zone,uuid)
 secdef|platform.review_sample_spot_checks(platform.subject,timestamp with time zone,numeric)
+secdef|platform.review_sample_weekly_reports(date,numeric,integer)
 secdef|platform.review_task_detail(uuid)
 secdef|platform.set_subject_textbook(uuid,platform.subject,text)
 secdef|platform.set_time_guard(uuid,integer,time without time zone,time without time zone)

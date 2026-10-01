@@ -4,7 +4,8 @@
 // 覆盖：开关关闭时路由不注册（与表外同一个 404）；从路由表生成的授权矩阵（未登录 401、账号类型 403、缺 CSRF / 错 Origin 403、
 // 另一户与不存在同一个 404）；异议（one_off_slip 只学生、判断不可见 404、fact_ref 不外传、幂等键按账号派生、只看自己提出的）；
 // 考试录入；预测与对账卡只显示可见判断的句子（无 claim_id 的丢弃并记数）；导出（只绑定家长、一次性兑换、no-store 附件）；
-// 删除（会话内二次确认、冷静期、撤回、状态与回执、监护操作留痕）；限流桶都在配置里。
+// 删除（会话内二次确认、冷静期、撤回、状态与回执、监护操作留痕）；限流桶都在配置里；
+// 周报（冲刺 5-H，0036）：学生读学生版、家长读家长版，每句库内再核判断，删掉或降为不可见的判断对应句子消失。
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { after, before, test } from 'node:test';
@@ -615,20 +616,159 @@ test('删除已确认：未兑换的导出包作废、下载 404、不能新导�
   assert.equal((await post(O.guardian, `/students/${kid}/exports`)).status, 201, '撤回后可以导出');
 });
 
-test('读路由限流：GET 异议列表与删除状态按会话每分钟（trust_read.session.minute）', { skip: !HAS_DB }, async () => {
+test('读路由限流：GET 异议列表、删除状态与周报按会话每分钟（trust_read.session.minute）', { skip: !HAS_DB }, async () => {
   const bucket = 'trust_read.session.minute';
   const saved = shell.config.rate_limits[bucket]!;
   shell.forget(F.guardian);
   shell.forget(F.kid.account);
+  shell.forget(coGuardian);
   const g = await sess(F.guardian);
   const st = await sess(F.kid.account);
+  const co = await sess(coGuardian);
   shell.config.rate_limits[bucket] = { window_seconds: 60, limit: 1 };
   try {
-    for (const [who, path] of [[st, `/students/${F.kid.id}/disputes`], [g, `/students/${F.kid.id}/erasure`]] as const) {
+    for (const [who, path] of [[st, `/students/${F.kid.id}/disputes`], [g, `/students/${F.kid.id}/erasure`], [co, `/students/${F.kid.id}/weekly-report`]] as const) {
       assert.equal((await callAs(shell.base, 'GET', path, who)).status, 200, path);
       assert.equal((await callAs(shell.base, 'GET', path, who)).text, P.TOO_MANY, path);
     }
   } finally {
     shell.config.rate_limits[bucket] = saved;
   }
+});
+
+// ---------------------------------------------------------------- 周报（weekly，冲刺 5-H 跨科周报 v0）
+
+/** 合成判断（周报用；可指定来源）：复制模式直接写行，只在一次性测试库里造数据 */
+async function claimW(kid: Kid, o: { source?: string; template?: string; visibility?: string[]; status?: string } = {}): Promise<string> {
+  const id = randomUUID();
+  const c = await h.su.connect();
+  try {
+    await c.query('BEGIN');
+    await c.query('SET LOCAL session_replication_role = replica');
+    await c.query(
+      `INSERT INTO insight.claim (id, student_id, subject, target_type, target_id, template_key, template_version, confidence, source_type,
+                                  status, change_reason, visibility, expires_at, evidence_ids)
+       VALUES ($1, $2, 'aya', 'node', 'MATH.TRU.W1.A', $3, 1, 0.7, $4::insight.source_type, $6::insight.claim_status, 'created', $5,
+               now() + interval '30 days', ARRAY[gen_random_uuid()])`,
+      [id, kid.id, o.template ?? TPL, o.source ?? 'objective', o.visibility ?? ['agent', 'student', 'guardian'], o.status ?? 'established']);
+    await c.query('COMMIT');
+  } finally {
+    c.release(true);
+  }
+  return id;
+}
+const wsent = (claimId: string, section: string, audience: 'student' | 'guardian', tpl = TPL) =>
+  ({ claim_id: claimId, template_key: tpl, template_version: 1, section, text: `合成渲染句 ${section}`, ...(audience === 'guardian' ? { confidence_band: 'moderate' } : {}) });
+const OBJECTIVE = { source_type: 'objective', usage_minutes: 95, plan_done: 4, plan_skipped: 1, subjects: [{ subject: 'aya', practice_minutes: 60, attempts: 18 }] };
+/** 写一份周报（超级用户；replica = 绕过写入守卫，模拟“库里已有的不合规快照”，验证 BFF 的库内再核）。
+ *  每句按库里判断当前的 updated_at 盖修订标记（与 0036 守卫同一做法；replica 下守卫不跑，这里照样盖上）；默认上一周（只收已结束的周） */
+async function weeklyRow(kid: Kid, audience: 'student' | 'guardian', sentences: object[], o: { weeksAgo?: number; withheld?: boolean; replica?: boolean } = {}) {
+  const c = await h.su.connect();
+  try {
+    await c.query('BEGIN');
+    if (o.replica) await c.query('SET LOCAL session_replication_role = replica');
+    await c.query(
+      `INSERT INTO insight.weekly_report (student_id, week_start, week_end, audience, status, sentences, objective, withheld_reasons, algorithm_version, policy_version)
+       SELECT $1, w, w + 6, $2, $3,
+              (SELECT coalesce(jsonb_agg(x.s || jsonb_build_object('claim_revision', c.updated_at) ORDER BY x.o), '[]')
+                 FROM jsonb_array_elements($4::jsonb) WITH ORDINALITY x(s, o) JOIN insight.claim c ON c.id = (x.s ->> 'claim_id')::uuid),
+              $5::jsonb, $6::text[], 'sie-weekly@0.1.0', 'syn'
+         FROM (SELECT date_trunc('week', (now() AT TIME ZONE 'Asia/Shanghai')::date)::date - 7 * $7::int AS w) x`,
+      [kid.id, audience, o.withheld ? 'withheld' : 'generated', JSON.stringify(o.withheld ? [] : sentences), o.withheld ? null : JSON.stringify(OBJECTIVE),
+       o.withheld ? ['forbidden_inference'] : [], o.weeksAgo ?? 1]);
+    await c.query('COMMIT');
+  } finally {
+    c.release(true);
+  }
+}
+const weeklyOf = (account: string, kid: Kid) => get(account, `/students/${kid.id}/weekly-report`);
+
+test('周报：学生读学生版“成长手记”、家长读家长版；每句带 claim_id；客观栏来源 objective；no-store；只取最近一周', { skip: !HAS_DB }, async () => {
+  const W = await family();
+  const c1 = await claimW(W.kid);
+  const c2 = await claimW(W.kid, { status: 'hypothesis' });
+  await weeklyRow(W.kid, 'student', [wsent(c1, 'lit', 'student'), { ...wsent(c2, 'working_on', 'student'), label: 'preliminary' }]);
+  await weeklyRow(W.kid, 'guardian', [wsent(c1, 'progress', 'guardian'), { ...wsent(c2, 'stuck', 'guardian'), label: 'preliminary' }]);
+  await weeklyRow(W.kid, 'student', [wsent(c1, 'working_on', 'student')], { weeksAgo: 2 });
+  const s = await weeklyOf(W.kid.account, W.kid);
+  assert.equal(s.status, 200, s.text);
+  assert.equal(s.headers.get('cache-control'), 'no-store');
+  const r = s.body.report;
+  assert.deepEqual(Object.keys(r).sort(), ['generated_at', 'objective', 'sections', 'week_end', 'week_start']);
+  assert.deepEqual(r.sections.map((x: any) => x.key), ['lit', 'working_on'], '最近一周（本周）的学生版');
+  assert.deepEqual(r.sections.flatMap((x: any) => x.sentences.map((y: any) => y.claim_id)), [c1, c2]);
+  assert.deepEqual(r.sections[1].sentences[0], { claim_id: c2, text: '合成渲染句 working_on', source_type: 'objective', label: 'preliminary' },
+                   '学生版不带置信度分档，不转模板键与修订标记；“初步判断”按判断当前状态推导，随句带来源');
+  assert.equal(r.sections[0].sentences[0].label, undefined, '成立的判断不标“初步判断”');
+  assert.deepEqual(r.objective, OBJECTIVE);
+  const g = await weeklyOf(W.guardian, W.kid);
+  assert.deepEqual(g.body.report.sections.map((x: any) => x.key), ['progress', 'stuck']);
+  assert.ok(g.body.report.sections.every((x: any) => x.sentences.every((y: any) => y.confidence_band === 'moderate')));
+  // 另一户、没有绑定的家长：与不存在同一个 404（授权矩阵另有全表覆盖）
+  assert.equal((await weeklyOf(O.guardian, W.kid)).status, 404);
+  assert.equal((await weeklyOf(unlinked, W.kid)).status, 404);
+  // 还没有周报的孩子：report 为 null
+  assert.deepEqual((await weeklyOf(O.kid.account, O.kid)).body, { student_id: O.kid.id, report: null });
+});
+
+test('周报：删掉或降为不可见任一判断、过期、白名单外、模板对不上，对应句子消失并记数；一句不剩时 report 为 null', { skip: !HAS_DB }, async () => {
+  const W = await family();
+  const [a, b, c, d, e] = [await claimW(W.kid), await claimW(W.kid), await claimW(W.kid), await claimW(W.kid, { template: TPL_HIDDEN }), await claimW(W.kid)];
+  await weeklyRow(W.kid, 'student', [wsent(a, 'lit', 'student'), wsent(b, 'working_on', 'student'), wsent(c, 'working_on', 'student'),
+                                     wsent(d, 'working_on', 'student', TPL_HIDDEN), wsent(e, 'working_on', 'student')]);
+  const ids = async () => ((await weeklyOf(W.kid.account, W.kid)).body.report?.sections ?? [])
+    .flatMap((x: any) => x.sentences.map((y: any) => y.claim_id)).sort();
+  assert.deepEqual(await ids(), [a, b, c, e].sort(), '白名单外的判断即使可见也不展示');
+  const su = async (sql: string, p: unknown[]) => {
+    const k = await h.su.connect();
+    try {
+      await k.query('BEGIN');
+      await k.query('SET LOCAL session_replication_role = replica');
+      await k.query(sql, p);
+      await k.query('COMMIT');
+    } finally {
+      k.release(true);
+    }
+  };
+  await su(`UPDATE insight.claim SET visibility = '{agent,guardian}' WHERE id = $1`, [b]);          // 降为学生不可见
+  await su(`UPDATE insight.claim SET status = 'withdrawn' WHERE id = $1`, [c]);                     // 撤回
+  await su(`UPDATE insight.claim SET created_at = now() - interval '2 days', expires_at = now() - interval '1 minute' WHERE id = $1`, [e]); // 过期
+  logs.length = 0;
+  assert.deepEqual(await ids(), [a]);
+  assert.ok(logs.some((l) => l['dropped_statements'] === '4'), JSON.stringify(logs.slice(-3)));
+  await su(`UPDATE insight.claim SET template_version = 2 WHERE id = $1`, [a]);                    // 模板对不上
+  assert.deepEqual((await weeklyOf(W.kid.account, W.kid)).body, { student_id: W.kid.id, report: null });
+});
+
+test('周报：学生版不显示家长观察来源的判断（库内再核，即使快照里有）；不出的周报谁都读不到', { skip: !HAS_DB }, async () => {
+  const W = await family();
+  const own = await claimW(W.kid);
+  const fromGuardian = await claimW(W.kid, { source: 'guardian' });
+  await weeklyRow(W.kid, 'student', [wsent(own, 'working_on', 'student'), wsent(fromGuardian, 'working_on', 'student')], { replica: true });
+  await weeklyRow(W.kid, 'guardian', [wsent(fromGuardian, 'stuck', 'guardian')]);
+  const s = await weeklyOf(W.kid.account, W.kid);
+  assert.deepEqual(s.body.report.sections.flatMap((x: any) => x.sentences.map((y: any) => y.claim_id)), [own]);
+  assert.deepEqual((await weeklyOf(W.guardian, W.kid)).body.report.sections[0].sentences.map((y: any) => [y.claim_id, y.source_type]),
+                   [[fromGuardian, 'guardian']], '家长版可以有家长观察来源的判断，随句标来源');
+  const V = await family();
+  const v1 = await claimW(V.kid);
+  await weeklyRow(V.kid, 'student', [], { withheld: true });
+  await weeklyRow(V.kid, 'guardian', [wsent(v1, 'stuck', 'guardian')], { withheld: true });
+  assert.deepEqual((await weeklyOf(V.kid.account, V.kid)).body, { student_id: V.kid.id, report: null });
+  assert.deepEqual((await weeklyOf(V.guardian, V.kid)).body, { student_id: V.kid.id, report: null });
+});
+
+test('周报：生成之后被修订过的判断（修订标记对不上）句子丢弃；命中禁用推断词表的句子丢弃（安全审查 F1）', { skip: !HAS_DB }, async () => {
+  const W = await family();
+  const [a, b, c] = [await claimW(W.kid), await claimW(W.kid), await claimW(W.kid)];
+  await weeklyRow(W.kid, 'student', [wsent(a, 'lit', 'student'), wsent(b, 'working_on', 'student'),
+                                     { ...wsent(c, 'working_on', 'student'), text: '合成渲染句：这孩子有点懒惰' }]);
+  const ids = async () => ((await weeklyOf(W.kid.account, W.kid)).body.report?.sections ?? [])
+    .flatMap((x: any) => x.sentences.map((y: any) => y.claim_id)).sort();
+  logs.length = 0;
+  assert.deepEqual(await ids(), [a, b].sort(), '命中禁用推断词表的句子不显示');
+  assert.ok(logs.some((l) => l['dropped_statements'] === '1'));
+  // 正常修订（守卫照常写 updated_at 与历史）：判断在生成之后变了，快照里的句子不再显示
+  await h.su.query(`UPDATE insight.claim SET confidence = 0.9, change_reason = 'revised' WHERE id = $1`, [b]);
+  assert.deepEqual(await ids(), [a]);
 });

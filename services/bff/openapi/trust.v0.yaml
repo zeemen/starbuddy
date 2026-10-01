@@ -1,6 +1,6 @@
 # BFF ↔ 统一壳前端：信任界面的读写接口（SIE-03 PR③，specs/sie-03-dispute-reconcile/spec.md 范围 3；页面随冲刺 5-H）。
 # 服务内部接口，不是学科插件契约，不放 packages/contracts（与 shell.v0.yaml 同一做法）；路由在 services/bff/src/http/trust-routes.ts。
-# 每条路由挂在一个功能开关上（STARBUDDY_TRUST_UI：dispute / reconcile / data_rights，只在 dev / test 可开），默认全关：
+# 每条路由挂在一个功能开关上（STARBUDDY_TRUST_UI：dispute / reconcile / weekly / data_rights，只在 dev / test 可开），默认全关：
 # 关闭时这些路径不注册，与表外路径同一个 404（4-H“信任界面预留”验收继续成立）。
 # 会话、CSRF、Origin、限流、no-store、错误体与 shell.v0.yaml 相同；限流阈值在 services/bff/config/auth.json。
 # 禁用推断：BFF 不生成任何关于学生的文字；异议类型、结论、偏差方向、调整只传编码（显示文案属 5-H 模板，必停）；
@@ -94,6 +94,92 @@ paths:
                         result_code: { type: [string, 'null'], pattern: '^[a-z_]{1,48}$' }
                         created_at: { type: string, format: date-time }
                         resolved_at: { type: [string, 'null'], format: date-time }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/weekly-report:
+    get:
+      operationId: getWeeklyReport
+      description: >
+        开关 weekly（冲刺 5-H 跨科周报 v0）。最近一周（只有已结束的周）已生成的周报：学生会话读学生版“成长手记”、有效绑定家长读家长版（0036 RLS，按受众只读；
+        不出的周报读不到）。周报是判断的视图：每句带 claim_id，BFF 在库里再核这条判断属于该学生、对当前受众可见、成立或假设、未过期、
+        目标是知识节点、模板已审核且在对外白名单里、模板键与版本对得上，而且判断的修订标记（生成时的 updated_at，0036 每句 claim_revision）
+        没变——生成之后被修订过的判断，它的句子丢弃；学生版再排除来源为家长观察的判断；文字再过禁用推断词表（SIE-00 词表）。
+        对不上的句子（含没有 claim_id、没有修订标记的）丢弃并在访问日志记数；一句都不剩时 report 为 null。“初步判断”标注按判断当前状态推导；
+        每句带判断的来源（source_type），前端对非推断来源另加占位标注。段落只有编码（学生：lit / working_on / next；家长：progress / stuck / suggestion /
+        prediction），段落标题与衔接文字由前端文案（人写人审）提供，BFF 不传任何非判断文字。客观栏（使用时长、计划完成、各科练习）是客观记录，
+        固定标来源 objective，不是判断。家长版不含逐句对话、同伴比较、排名与层级标签（洞察服务生成时已查，这里只转判断句与客观栏）。
+        只在壳内展示，不发短信、推送（待人确认 #5）。
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/Session'
+      responses:
+        '200':
+          description: 周报（或 null）
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [student_id, report]
+                properties:
+                  student_id: { type: string, format: uuid }
+                  report:
+                    oneOf:
+                      - type: 'null'
+                      - type: object
+                        additionalProperties: false
+                        required: [week_start, week_end, generated_at, sections, objective]
+                        properties:
+                          week_start: { type: string, format: date }
+                          week_end: { type: string, format: date }
+                          generated_at: { type: string, format: date-time }
+                          sections:
+                            type: array
+                            minItems: 1
+                            maxItems: 4
+                            items:
+                              type: object
+                              additionalProperties: false
+                              required: [key, sentences]
+                              properties:
+                                key: { enum: [lit, working_on, next, progress, stuck, suggestion, prediction] }
+                                sentences:
+                                  type: array
+                                  minItems: 1
+                                  maxItems: 10
+                                  items:
+                                    type: object
+                                    additionalProperties: false
+                                    required: [claim_id, text]
+                                    properties:
+                                      claim_id: { type: string, format: uuid }
+                                      text: { type: string, minLength: 1, maxLength: 300 }
+                                      label: { enum: [preliminary], description: 判断当前是假设（学生看“初步判断”，文案属模板） }
+                                      source_type: { enum: [inferred, objective, self, guardian], description: 判断的来源（规则 6） }
+                                      confidence_band: { enum: [few_evidence, moderate, strong], description: 只在家长版 }
+                          objective:
+                            oneOf:
+                              - type: 'null'
+                              - type: object
+                                additionalProperties: false
+                                required: [source_type, usage_minutes, plan_done, plan_skipped, subjects]
+                                properties:
+                                  source_type: { const: objective }
+                                  usage_minutes: { type: integer, minimum: 0, maximum: 10080 }
+                                  plan_done: { type: integer, minimum: 0, maximum: 9999 }
+                                  plan_skipped: { type: integer, minimum: 0, maximum: 9999 }
+                                  subjects:
+                                    type: array
+                                    maxItems: 3
+                                    items:
+                                      type: object
+                                      additionalProperties: false
+                                      required: [subject, practice_minutes, attempts]
+                                      properties:
+                                        subject: { enum: [aya, zhixing, wenli] }
+                                        practice_minutes: { type: integer, minimum: 0, maximum: 10080 }
+                                        attempts: { type: integer, minimum: 0, maximum: 99999 }
         '401': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
         '429': { $ref: '#/components/responses/Problem' }

@@ -57,6 +57,11 @@ export const fetchPrediction = (s: BffSession, student: string, exam: string) =>
 export const fetchReconciliation = (s: BffSession, student: string, exam: string) =>
   call<unknown>('reconcile', s, 'GET', `${S(student)}/exams/${exam}/reconciliation`);
 
+// ---------------------------------------------------------------- 周报（开关 weekly）
+
+/** 最近一周已生成的周报：学生会话得学生版“成长手记”，家长会话得家长版（BFF 按受众只读、每句在库里再核判断） */
+export const fetchWeekly = (s: BffSession, student: string) => call<unknown>('weekly', s, 'GET', `${S(student)}/weekly-report`);
+
 // ---------------------------------------------------------------- 家长数据权利（开关 data_rights，只给家长）
 
 export const createExport = (s: BffSession, student: string) =>

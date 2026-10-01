@@ -22,6 +22,8 @@ insight.intervention_log|intervention_learning_read|SELECT|starbuddy_learning|PE
 insight.intervention_rule_signoff|rule_signoff_insight_read|SELECT|starbuddy_insight|PERMISSIVE|using=true|check=-
 insight.onboarding_progress|onboarding_progress_service_read|SELECT|starbuddy_insight|PERMISSIVE|using=true|check=-
 insight.self_report|self_report_service_read|SELECT|starbuddy_insight,starbuddy_learning|PERMISSIVE|using=true|check=-
+insight.weekly_report|weekly_report_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=((status = 'generated'::text) AND (((audience = 'student'::text) AND platform.is_self_student(student_id)) OR ((audience = 'guardian'::text) AND platform.is_linked_guardian(student_id))))|check=-
+insight.weekly_report|weekly_report_insight|ALL|starbuddy_insight|PERMISSIVE|using=true|check=true
 kge.content_review|content_review_kge_read|SELECT|starbuddy_kge|PERMISSIVE|using=true|check=-
 kge.content_review|content_review_kge_submit|INSERT|starbuddy_kge|PERMISSIVE|using=-|check=((decision = 'pending'::text) AND (digest IS NULL) AND (action = 'review'::text))
 kge.content_review|content_review_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-

@@ -29,6 +29,8 @@ PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -q -v ON_ERROR_STOP=1 -
 PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -q -v ON_ERROR_STOP=1 -f "$ROOT/db/seeds/dev/auth-synthetic.sql" >/dev/null
 # 统一壳 H4（今日、科目、额度与时长、选科、时长设置）：家庭 HG（家长 gH +99900000106；孩子试用、留存、试点各一名）。
 PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -q -v ON_ERROR_STOP=1 -f "$ROOT/db/seeds/dev/shell-synthetic.sql" >/dev/null
+# 跨科周报 v0（冲刺 5-H）：GT 本周的学生版成长手记与家长版周报（引用两条合成判断，模板 syn.weekly.node_mastery@1）
+PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -q -v ON_ERROR_STOP=1 -f "$ROOT/db/seeds/dev/weekly-synthetic.sql" >/dev/null
 AYA_COUNT="$(psql -X -At -c "SELECT count(*) FROM platform.skill_node WHERE subject = 'aya'")"
 export AYA_COUNT
 
@@ -91,19 +93,28 @@ PY
   exec node --no-warnings src/main.ts ) > "$LOG" 2>&1 < /dev/null &
 BFF_PID=$!
 # 信任界面开关打开的第二套（冲刺 5-H，e2e/trust-on.spec.ts）：同一个一次性库上另起一个 BFF（STARBUDDY_TRUST_UI 打开 dispute / reconcile /
-# data_rights，只在 STARBUDDY_ENV=test 生效）与一个前端（playwright.config.ts 的第二个 webServer，STARBUDDY_TRUST_UI 另含 why）。
+# weekly / data_rights，只在 STARBUDDY_ENV=test 生效）与一个前端（playwright.config.ts 的第二个 webServer，STARBUDDY_TRUST_UI 另含 why）。
 # 原来这一套开关全关，4-H“信任界面预留”验收与 e2e/trust-off.spec.ts 在它上面跑。没有洞察服务：异议提交 503，预测与对账卡读取 503。
 TRUST_BFF_PORT="$(free_port)"
 WEB_TRUST_PORT="$(free_port)"
 TLOG="$(mktemp)"
+# 周报页要显示判断句：第二个 BFF 用一份把周报合成模板列进对外白名单的显示规则（BFF_SHELL_CONFIG 只在 STARBUDDY_ENV=test 认；画像可见范围
+# 的正式白名单仍是 config/shell.json 的空表，必停项）
+TRUST_SHELL_CFG="$(mktemp --suffix=.json)"
+python3 - "$ROOT/services/bff/config/shell.json" "$TRUST_SHELL_CFG" <<'PY'
+import json, sys
+c = json.load(open(sys.argv[1]))
+c['external_claim_templates'] = ['syn.weekly.node_mastery@1']
+json.dump(c, open(sys.argv[2], 'w'))
+PY
 ( cd "$ROOT/services/bff" || exit 1
   export BFF_DATABASE_URL="postgresql://bff_app@/starbuddy_test?host=$PGHOST" PORT="$TRUST_BFF_PORT" BFF_AUTH_CONFIG="$AUTH_CFG" \
     BFF_LEARNING_URL="http://127.0.0.1:$LEARNING_PORT" BFF_LEARNING_TOKEN="$SVC_CRED" \
     STARBUDDY_ENV=test BFF_SHELL_ORIGIN="http://127.0.0.1:$WEB_TRUST_PORT" BFF_SMS_CAPTURE_FILE="$SMS_INBOX" \
-    STARBUDDY_TRUST_UI=dispute,reconcile,data_rights
+    STARBUDDY_TRUST_UI=dispute,reconcile,weekly,data_rights BFF_SHELL_CONFIG="$TRUST_SHELL_CFG"
   exec node --no-warnings src/main.ts ) > "$TLOG" 2>&1 < /dev/null &
 TRUST_BFF_PID=$!
-trap 'kill "$BFF_PID" "$TRUST_BFF_PID" "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true; rm -f "$LOG" "$TLOG" "$LLOG" "$SMS_INBOX" "$AUTH_CFG"' EXIT
+trap 'kill "$BFF_PID" "$TRUST_BFF_PID" "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true; rm -f "$LOG" "$TLOG" "$LLOG" "$SMS_INBOX" "$AUTH_CFG" "$TRUST_SHELL_CFG"' EXIT
 for _ in $(seq 1 80); do
   python3 -c "import socket,sys; ok=all(socket.socket().connect_ex(('127.0.0.1', p)) == 0 for p in ($BFF_PORT, $TRUST_BFF_PORT)); sys.exit(0 if ok else 1)" && break
   sleep 0.25
@@ -127,7 +138,7 @@ ENVDTS="$(mktemp)"
 if [ -f "$WEB/next-env.d.ts" ]; then cp "$WEB/next-env.d.ts" "$ENVDTS"; else rm -f "$ENVDTS"; fi
 cleanup() {
   kill "$BFF_PID" "$TRUST_BFF_PID" "$REVIEW_PID" "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true
-  rm -f "$LOG" "$TLOG" "$RLOG" "$LLOG" "$SMS_INBOX" "$AUTH_CFG"
+  rm -f "$LOG" "$TLOG" "$RLOG" "$LLOG" "$SMS_INBOX" "$AUTH_CFG" "$TRUST_SHELL_CFG"
   if [ -f "$ENVDTS" ]; then cp "$ENVDTS" "$WEB/next-env.d.ts"; rm -f "$ENVDTS"; else rm -f "$WEB/next-env.d.ts"; fi
   rm -rf "${WEB:?}/.next-e2e"
 }

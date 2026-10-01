@@ -1,5 +1,5 @@
 """服务内接口（不对外开放，不在契约里）：判断生成、中圈指标重算、到期扫描、首份报告；SIE-03 的异议结案、对账卡生成、
-触发规则评估与下发，以及调度器的预测冻结与删除执行（scheduled.py，用调度器自己的连接）。
+触发规则评估与下发，以及调度器的预测冻结与删除执行（scheduled.py，用调度器自己的连接）；冲刺 5-H 的每周周报（weekly_reports）。
 
 第二步的 BFF 读接口经这里取首份报告的结构化内容（怎么接入——服务内 HTTP 路由还是契约新增工具——是契约变更，
 登记在 lessons 的第二步计划里，由人决定）。触发时机（每次掌握重算后、每周、每天）由编排层与定时任务决定，
@@ -7,7 +7,7 @@
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Mapping, Sequence
 
 from .claims import MasteryRow
@@ -19,6 +19,8 @@ from .sie03_policy import Sie03Policy
 from .store import InsightStore, SyncResult
 from .store_sie03 import ReconcileOutcome, SettleResult, Sie03Store
 from .triggers import Suggestion
+from .store_weekly import WeeklyRun, run_week
+from .weekly import WeeklyPolicy
 
 
 async def sync_mastery(store: InsightStore, student: str, rows: Sequence[MasteryRow], policy: Policy) -> SyncResult:
@@ -78,3 +80,14 @@ async def evaluate_triggers(ops: Sie03Store, student: str, sie03: Sie03Policy) -
 async def dispatch_triggers(ops: Sie03Store, student: str, sie03: Sie03Policy, result_refs: Mapping[str, str] | None = None) -> int:
     """下发建议：配置未签字一律拒绝（store_sie03.Unavailable），库里再核签字登记"""
     return await ops.dispatch_triggers(student, sie03, result_refs)
+
+
+# ---------- 冲刺 5-H 跨科周报 v0（specs/trust-ui-sprint5 设计要点 4；迁移 0036） ----------
+async def weekly_reports(store: InsightStore, week_start: date, policy: Policy, weekly: WeeklyPolicy, check_cfg: "consistency.CheckConfig",
+                         forbidden: Forbidden | None = None, students: Sequence[str] | None = None, env: str | None = None) -> WeeklyRun:
+    """每周定时任务（建议每周一凌晨跑上一周）：按学生生成学生版成长手记与家长版周报（固定结构 + 衔接短语占位 + 判断渲染句，
+    每句带 claim_id；客观栏标来源 objective），两道检查（陈述—判断一致性、禁用推断）任一不过即 withheld；没有可见判断的不写；
+    同一周重复运行不重写。生成完按配置抽检（默认 10%、至少 5 份）进统一复核队列，抽检不阻断。
+    students 缺省为“有对学生或家长可见的节点判断的全部学生”。只接受已结束的周。env 是服务的运行环境：周报配置未签字时 test 以外
+    抛 Unavailable（没传按非 test）。某个学生某个受众被库里守卫拒收时记 failed 并继续。只在壳内展示（待人确认 #5），不发短信、推送"""
+    return await run_week(store, week_start, policy, weekly, check_cfg, forbidden or forbidden_matcher(), students, env)

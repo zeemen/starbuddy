@@ -14,11 +14,13 @@ import asyncpg
 CORE_SUBJECTS = ("aya", "wenli", "zhixing")
 SUBJECT_TABLE_PREFIX = r"^(aya|wenli|zhixing|echo)_"
 # 个人层：过渡期 platform.* 整体是个人层真相源（ADR 之前，CLAUDE.md 规则 2）；insight.* 只豁免白名单里的表
-# （判断账本 0010/0032/0033/0034 与学生自述、家长观察等分表事实 0022/0025）。insight 里新增的表不在白名单时按“个人层以外”扫描。
+# （判断账本 0010/0032/0033/0034 与学生自述、家长观察等分表事实 0022/0025；跨科周报快照 0036 是判断的派生视图，登记在 0035 清单）。
+# insight 里新增的表不在白名单时按“个人层以外”扫描。
 PERSONAL_SCHEMA = "platform"
 INSIGHT_PERSONAL_TABLES = (
     "claim", "claim_history", "dispute", "intervention_log", "exam_prediction", "exam_reconciliation",
     "self_report", "guardian_report", "exam_record", "onboarding_progress", "behavior_event", "confidence_probe",
+    "weekly_report",
 )
 SYSTEM_SCHEMAS = ("pg_catalog", "information_schema", "pg_toast")
 # 标识学生、其作答或家庭的列名：出现在个人层以外的表上即为“第二份学生事实”的结构信号

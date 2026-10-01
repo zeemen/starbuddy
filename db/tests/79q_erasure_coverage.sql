@@ -257,6 +257,13 @@ BEGIN
     VALUES (%L, %L, %L, false, '{item_type_transfer}', '{none}', '{student,guardian}', %L, 'sie-reconcile@0.1.0') RETURNING id::text$f$,
     s, v_pred, v_scored, jsonb_build_array(jsonb_build_object('claim_id', v_node, 'template_key', 'test.coverage.node'))));
   -- ---- 周报等后续新增的个人层表：在这里给该学生补写入（79q 要求清单每张表两名学生都有行）
+  -- 周报（0036）：经 starbuddy_insight 写入，句子带该学生的内容标记
+  PERFORM t.m_as('starbuddy_insight', NULL, format($f$INSERT INTO insight.weekly_report (student_id, week_start, week_end, audience, status,
+      sentences, objective, algorithm_version, policy_version) VALUES (%L, %L, %L, 'student', 'generated', %L,
+      '{"source_type": "objective", "usage_minutes": 30, "plan_done": 1, "plan_skipped": 0, "subjects": []}', 'sie-weekly@0.1.0', 'syn-coverage')
+      RETURNING id::text$f$, s, date_trunc('week', v_today)::date - 7, date_trunc('week', v_today)::date - 1,
+      jsonb_build_array(jsonb_build_object('claim_id', v_node, 'template_key', 'test.coverage.node', 'template_version', 1,
+                                           'section', 'working_on', 'text', '合成周报句-' || p_token))));
   -- ---- 导出（家长，0035）：导出任务是豁免表
   PERFORM t.p_bff(g, format('SELECT platform.export_student_data(%L)::text', s));
 END $$;

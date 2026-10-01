@@ -192,7 +192,7 @@ echo "ok - 角色都正常时 0026 可以执行（上面的拒绝不是别的原
 as_pg "$PGBIN/createdb" -h "$WORK" -U postgres eraser_role_check
 psql_era() { as_pg "$PGBIN/psql" -h "$WORK" -U postgres -d eraser_role_check -X -q -v ON_ERROR_STOP=1 "$@"; }
 for f in "${UPS[@]}"; do
-  case "$(basename "$f")" in 0035_*) continue ;; esac
+  case "$(basename "$f")" in 0035_*) break ;; esac  # 只执行 0035 之前的（0036 起依赖 0035 的清单）
   psql_era -1 < "$f" >/dev/null 2>&1 || { echo "db-test: 失败（角色断言测试库执行 $(basename "$f") 出错）"; exit 1; }
 done
 E35="$(ls "$ROOT"/db/migrations/0035_*.up.sql)"

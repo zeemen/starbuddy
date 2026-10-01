@@ -10,11 +10,11 @@ import { join, relative } from 'node:path';
 import { test } from 'node:test';
 import {
   ADJUSTMENT, ALL_SHELL_COPY, ALL_TRUST_COPY, DATA_RIGHTS, DEVIATION_DIRECTION, DISPUTE_KIND, DISPUTE_RESULT, DISPUTE_STATUS, ERASURE_SCOPE,
-  ERASURE_STATUS, EVIDENCE_LEVEL, EVIDENCE_SOURCE, WHY_STATUS,
+  ERASURE_STATUS, EVIDENCE_LEVEL, EVIDENCE_SOURCE, WEEKLY_SECTION, WEEKLY_SOURCE, WHY_STATUS,
 } from '../src/shell/copy.ts';
 import {
   ADJUSTMENTS, coolingLeft, DEVIATION_DIRECTIONS, DISPUTE_KINDS, disputeKindsFor, IDEMPOTENCY_KEY, newIdempotencyKey, NEXT_STEPS, parseExamPlan,
-  parseScore, pickDisputes, pickErasures, pickPrediction, pickReconciliation, pickWhy, defaultFullScore,
+  parseScore, pickDisputes, pickErasures, pickPrediction, pickReconciliation, pickWeekly, pickWhy, defaultFullScore,
 } from '../src/trust/view.ts';
 
 const WEB = new URL('..', import.meta.url).pathname;
@@ -164,6 +164,37 @@ test('删除申请：待确认 / 冷静期中 / 已撤回 / 已删除；回执�
   assert.deepEqual(coolingLeft('2026-10-01T00:00:00Z', Date.parse('2026-10-02T00:00:00Z')), { days: 0, hours: 0 });
 });
 
+// ---------------------------------------------------------------- 周报
+
+test('周报：段落只认该受众的编码；无 claim_id 或空文字的句子丢弃；置信度只在家长版；一句不剩整份不显示；客观栏形状不对不显示', () => {
+  const obj = { source_type: 'objective', usage_minutes: 95, plan_done: 4, plan_skipped: 1, subjects: [{ subject: 'aya', practice_minutes: 60, attempts: 18 }] };
+  const raw = (sections: unknown[], objective: unknown = obj) => ({ student_id: C2, report: { week_start: '2026-09-28', week_end: '2026-10-04',
+                                                                                          generated_at: '2026-10-05T00:00:00Z', sections, objective } });
+  const v = pickWeekly(raw([
+    { key: 'working_on', sentences: [{ claim_id: C1, text: '判断句甲', source_type: 'guardian' }, { text: '没有 claim_id' }, { claim_id: 'x', text: '坏 ID' },
+                                     { claim_id: C2, text: ' ' }] },
+    { key: 'lit', sentences: [{ claim_id: C2, text: '判断句乙', label: 'preliminary' }] },
+    { key: 'stuck', sentences: [{ claim_id: C1, text: '家长的段落' }] },
+  ]), 'student')!;
+  assert.deepEqual(v.sections.map((x) => x.key), ['lit', 'working_on'], '按固定顺序；家长的段落不进学生版');
+  assert.deepEqual(v.sections[1]!.sentences, [{ claim_id: C1, text: '判断句甲', preliminary: false, confidence_band: null, source_type: 'guardian' }]);
+  assert.equal(v.sections[0]!.sentences[0]!.source_type, null, '来源缺失或不认识：不标注');
+  assert.equal(v.sections[0]!.sentences[0]!.preliminary, true);
+  assert.equal(v.dropped, 4);
+  assert.deepEqual(v.objective, { usage_minutes: 95, plan_done: 4, plan_skipped: 1, subjects: [{ subject: 'aya', practice_minutes: 60, attempts: 18 }] });
+  assert.equal(pickWeekly(raw([{ key: 'lit', sentences: [{ claim_id: C1, text: '学生版带了置信度', confidence_band: 'strong' }] }]), 'student'), null);
+  const g = pickWeekly(raw([{ key: 'stuck', sentences: [{ claim_id: C1, text: '家长版', confidence_band: 'moderate' }, { claim_id: C2, text: '缺分档' }] }]), 'guardian')!;
+  assert.deepEqual(g.sections[0]!.sentences.map((x) => x.confidence_band), ['moderate']);
+  assert.equal(pickWeekly(raw([{ key: 'lit', sentences: [{ text: '没有 claim_id' }] }]), 'student'), null, '一句不剩整份不显示');
+  assert.equal(pickWeekly({ student_id: C2, report: null }, 'student'), null);
+  for (const bad of [{ ...obj, source_type: 'inferred' }, { ...obj, usage_minutes: -1 }, { ...obj, subjects: [{ subject: 'echo', practice_minutes: 1, attempts: 1 }] }]) {
+    assert.equal(pickWeekly(raw([{ key: 'lit', sentences: [{ claim_id: C1, text: '句' }] }], bad), 'student')!.objective, null, JSON.stringify(bad));
+  }
+  // 段落编码只映射到占位键，不附提示、不含编码原文
+  for (const v2 of Object.values(WEEKLY_SECTION)) assert.match(v2, /^\{\{TODO_COPY:weekly\.section\.\d\}\}$/);
+  for (const v2 of Object.values(WEEKLY_SOURCE)) assert.match(v2, /^\{\{TODO_COPY:weekly\.source\.\d\}\}$/);
+});
+
 // ---------------------------------------------------------------- 开关：关时不发任何请求
 
 test('开关关时 BFF 客户端不发任何请求（按 404 返回）；打开后才请求', async () => {
@@ -176,7 +207,7 @@ test('开关关时 BFF 客户端不发任何请求（按 404 返回）；打开�
     process.env['STARBUDDY_ENV'] = 'test';
     delete process.env['STARBUDDY_TRUST_UI'];
     for (const r of [await api.fetchWhy(s, C2, C1), await api.fetchDisputes(s, C2), await api.fetchPrediction(s, C2, P1),
-                     await api.fetchReconciliation(s, C2, P1), await api.fetchErasures(s, C2)]) {
+                     await api.fetchReconciliation(s, C2, P1), await api.fetchErasures(s, C2), await api.fetchWeekly(s, C2)]) {
       assert.deepEqual(r, { ok: false, status: 404, code: 'NOT_FOUND' });
     }
     assert.deepEqual(await api.downloadExport(s, C2, P1, `dl_${'0'.repeat(64)}`), { ok: false, status: 404 });
@@ -198,6 +229,7 @@ test('开关关时 BFF 客户端不发任何请求（按 404 返回）；打开�
 test('每个信任界面页面先过开关闸门（读会话之前）；下载路由先判断开关；BFF 调用只在 trust-api 里、每个都经开关', () => {
   const pages: [string, string][] = [
     ['src/trust/WhyPage.tsx', 'why'], ['src/trust/DisputesPage.tsx', 'dispute'], ['src/trust/DataRightsPage.tsx', 'data_rights'],
+    ['src/trust/WeeklyPage.tsx', 'weekly'],
   ];
   for (const [p, f] of pages) {
     const body = code(read(p));
@@ -215,13 +247,13 @@ test('每个信任界面页面先过开关闸门（读会话之前）；下载�
   assert.equal(api.match(/fetch\(/g)?.length, 2, '只有 call 与 downloadExport 两处请求');
   // 其余源码不直连信任界面的 BFF 路由（只经 trust-api）
   for (const f of src.filter((x) => /\.(tsx?)$/.test(x.path) && x.path !== 'src/lib/trust-api.ts')) {
-    assert.ok(!/\/(claims\/[^'"`]*\/(explain|disputes)|exports|erasure)\b|\/exams\/[^'"`]*\/(score|prediction|reconciliation)/.test(code(f.text)), f.path);
+    assert.ok(!/\/(claims\/[^'"`]*\/(explain|disputes)|exports|erasure|weekly-report)\b|\/exams\/[^'"`]*\/(score|prediction|reconciliation)/.test(code(f.text)), f.path);
   }
   // 路由页面只挂组件（组件里过闸门）
   for (const p of ['s/[studentId]/why/[claimId]', 'family/[studentId]/why/[claimId]', 's/[studentId]/disputes', 'family/[studentId]/disputes',
                    's/[studentId]/exams', 'family/[studentId]/exams', 's/[studentId]/exams/[examId]', 'family/[studentId]/exams/[examId]',
-                   'family/[studentId]/data']) {
-    assert.match(read(`src/app/${p}/page.tsx`), /return <(WhyPage|DisputesPage|ExamPlanPage|ExamPage|DataRightsPage) /, p);
+                   'family/[studentId]/data', 's/[studentId]/weekly', 'family/[studentId]/weekly']) {
+    assert.match(read(`src/app/${p}/page.tsx`), /return <(WhyPage|DisputesPage|ExamPlanPage|ExamPage|DataRightsPage|WeeklyPage) /, p);
   }
   // server action 先判断开关
   const actions = code(read('src/trust/actions.ts'));
@@ -261,11 +293,12 @@ test('信任界面组件里没有中文文案；data-claim-id 只在登记的组
   const tsx = src.filter((f) => /^src\/(trust|app\/s|app\/family)\/.*\.tsx$/.test(f.path));
   for (const f of tsx) assert.deepEqual(code(f.text).match(/[一-鿿]+/g) ?? [], [], f.path);
   const renderers = src.filter((f) => /data-claim-id/.test(code(f.text))).map((f) => f.path).sort();
-  assert.deepEqual(renderers, ['src/shell/TaskList.tsx', 'src/trust/ExamPages.tsx', 'src/trust/WhyPage.tsx']);
+  assert.deepEqual(renderers, ['src/shell/TaskList.tsx', 'src/trust/ExamPages.tsx', 'src/trust/WeeklyPage.tsx', 'src/trust/WhyPage.tsx']);
   assert.match(read('src/trust/WhyPage.tsx'), /<span data-claim-id=\{st\.claim_id\}>\{st\.text\}<\/span>/);
   assert.match(read('src/trust/ExamPages.tsx'), /s\.claim_id \? \(\n\s+<li key=\{i\}>\n\s+<span data-claim-id=\{s\.claim_id\}>\{s\.text\}<\/span>/);
   // 学生端不附置信度说明；家长端附（SIE 第八章）
-  for (const p of ['src/trust/WhyPage.tsx', 'src/trust/ExamPages.tsx']) {
+  assert.match(read('src/trust/WeeklyPage.tsx'), /\{sec\.sentences\.map\(\(s\) => s\.claim_id \? \(\n\s+<li key=\{s\.claim_id\}>\n\s+<span data-claim-id=\{s\.claim_id\}>\{s\.text\}<\/span>/);
+  for (const p of ['src/trust/WhyPage.tsx', 'src/trust/ExamPages.tsx', 'src/trust/WeeklyPage.tsx']) {
     for (const m of code(read(p)).matchAll(/CONFIDENCE_BAND\[/g)) {
       const before = code(read(p)).slice(Math.max(0, m.index! - 200), m.index);
       assert.match(before, /audience === 'guardian'/, p);
@@ -313,6 +346,6 @@ test('异议出错码补 CONFLICT；偏差方向序号取 DEVIATION_DIRECTIONS�
   assert.match(read('src/trust/ExamPages.tsx'), /data-direction-index=\{DEVIATION_DIRECTIONS\.indexOf\(d\) \+ 1\}/);
   const m = /const BACK = (\/.*\/);/.exec(read('src/app/s/[studentId]/actions.ts'))!;
   const back = new Function(`return ${m[1]}`)() as RegExp;
-  for (const ok of [`/s/${C2}/why/${C1}`, `/s/${C2}/exams/${P1}`, `/s/${C2}/exams`, `/s/${C2}/disputes`, `/s/${C2}/today`]) assert.ok(back.test(ok), ok);
+  for (const ok of [`/s/${C2}/why/${C1}`, `/s/${C2}/exams/${P1}`, `/s/${C2}/exams`, `/s/${C2}/disputes`, `/s/${C2}/weekly`, `/s/${C2}/today`]) assert.ok(back.test(ok), ok);
   for (const bad of [`/s/${C2}/why`, `/s/${C2}/exams/x`, `/s/${C2}/data`, `//evil/${C1}`]) assert.ok(!back.test(bad), bad);
 });

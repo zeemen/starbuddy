@@ -370,6 +370,38 @@ export const DATA_RESULT: Record<string, string> = {
   UNAVAILABLE: DISPUTE_RESULT['UNAVAILABLE']!, INTERNAL: DISPUTE_RESULT['INTERNAL']!,
 };
 
+/**
+ * 跨科周报 v0（冲刺 5-H 设计要点 4）：学生版“成长手记”、家长版周报。段落标题与衔接文字人写人审（必停），这里全是占位；
+ * 关于学生的句子只来自判断（BFF 转来的判断渲染句，带 data-claim-id）；客观栏的数字放在 data-value 里，只配中性的栏目标签。
+ */
+export const WEEKLY = {
+  studentHeading: T('weekly.student.heading', '成长手记'),
+  guardianHeading: T('weekly.guardian.heading', '本周周报'),
+  entryStudent: T('weekly.entry.student', '成长手记'),
+  entryGuardian: T('weekly.entry.guardian', '本周周报'),
+  empty: T('weekly.empty', '这一周还没有周报'),
+  weekStart: T('weekly.week_start', '起'),
+  weekEnd: T('weekly.week_end', '止'),
+  preliminary: T('weekly.preliminary', '初步判断'),
+  objectiveHeading: T('weekly.objective.heading', '使用记录'),
+  objectiveSource: T('weekly.objective.source', '来自使用记录，不是判断'),
+  usage: T('weekly.objective.usage', '使用时长（分钟）'),
+  planDone: T('weekly.objective.plan_done', '完成的计划任务'),
+  planSkipped: T('weekly.objective.plan_skipped', '跳过的计划任务'),
+  colSubject: T('weekly.objective.col.subject', '学科'),
+  colPractice: T('weekly.objective.col.practice', '练习时长（分钟）'),
+  colAttempts: T('weekly.objective.col.attempts', '作答题数'),
+} as const;
+/** 周报段落（编码 → 占位键）：学生 lit / working_on / next；家长 progress / stuck / suggestion / prediction。只有占位键，不附提示 */
+/** 周报句子的判断来源不是模型推断时的标注（客观记录、学生自述、家长观察；规则 6）：只有占位键 */
+export const WEEKLY_SOURCE: Record<string, string> = {
+  objective: T('weekly.source.1'), self: T('weekly.source.2'), guardian: T('weekly.source.3'),
+};
+export const WEEKLY_SECTION: Record<string, string> = {
+  lit: T('weekly.section.1'), working_on: T('weekly.section.2'), next: T('weekly.section.3'),
+  progress: T('weekly.section.4'), stuck: T('weekly.section.5'), suggestion: T('weekly.section.6'), prediction: T('weekly.section.7'),
+};
+
 /** 信任界面的全部文案（静态检查逐条扫描；端到端的“每个文本节点”核对也用它） */
 export const ALL_TRUST_COPY: string[] = [
   ...Object.values(TRUST), ...Object.values(WHY), ...Object.values(WHY_STATUS), ...Object.values(EVIDENCE_SOURCE),
@@ -378,6 +410,7 @@ export const ALL_TRUST_COPY: string[] = [
   ...Object.values(EXAM_RESULT), ...Object.values(PREDICTION), ...Object.values(RECONCILE), ...Object.values(DEVIATION_DIRECTION),
   ...Object.values(ADJUSTMENT), ...Object.values(DATA_RIGHTS), ...Object.values(ERASURE_STATUS), ...Object.values(ERASURE_CANCEL_REASON),
   ...Object.values(ERASURE_SCOPE), ...Object.values(DATA_RESULT), ...Object.values(CONFIDENCE_BAND), ...Object.values(TRUST_SLOT),
+  ...Object.values(WEEKLY), ...Object.values(WEEKLY_SECTION), ...Object.values(WEEKLY_SOURCE),
 ];
 
 /** 全部文案（静态检查逐条扫描） */

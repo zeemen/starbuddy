@@ -93,3 +93,81 @@ PR 首行应写 `[NEEDS-HUMAN]`：涉及画像可见范围（学生 / 家长各�
 ### 文案自查（禁语 A–G）
 新增文案全部是 `{{TODO_COPY:…}}` 占位；附带的提示只有中性的界面标签（“考试日期”“满分”“申请删除”等），过了 `personas.guard`（platform 口径）、
 `sie_lexicon`、壳的比较 / 评价 / 营销词表与 `tests/trust.test.ts` 的禁用词（粗心、马虎、失误等）；异议类型、偏差方向没有提示文字，页面上不出现编码原文。
+
+## 周报：跨科周报 v0（spec 范围 3）与可用性走查脚本
+
+PR 首行应写 `[NEEDS-HUMAN]`：新迁移草稿 0036（新表、RLS、复核队列约束与结案码、个人层表清单登记）、画像可见范围（周报内容、学生 / 家长各看到什么）、
+周报标题 / 段落衔接短语 / 排除词表 / 页面文案（全部占位，人写人审）、复核抽检口径（#4）。按已确认的 #2、#3、#4、#5、#7 默认执行。
+
+### 做了什么
+- **迁移草稿** `db/migrations/0036_insight__weekly_report.{up,down}.sql`：`insight.weekly_report`（学生、周一到周日、受众 student / guardian、
+  句子数组每句带 `claim_id` 与段落、客观栏标 `source_type = objective`、算法与策略版本、状态 generated / withheld、抽检标记 `spot_check_task_id`）。
+  只由 `starbuddy_insight` 写（列级 INSERT，没有 UPDATE / DELETE）；守卫逐句核对判断（同一学生、成立或假设、未过期、知识节点、模板已审核且键与版本对得上、
+  可见范围含受众；学生版不收来源为家长观察的判断）、只追加（抽检标记只能由抽样函数写一次）、删除只随删除请求；RLS：学生本人读学生版、有效绑定家长读家长版，
+  只读 generated，BFF 读不到阻断编码 / 版本 / 抽检标记。登记进 0035 个人层表清单（delete，回执范围 reports，不进导出包）。
+  复核队列：`source_kind` 加 `weekly_report`（只以已有原因 `spot_check` 进队，不新增枚举值）、结案码 `weekly_report_ok` / `weekly_report_issue`、
+  `review_task_detail` 加周报分支（受众、周、渲染句、客观栏，不给学生 ID）；抽样函数 `platform.review_sample_weekly_reports(周, 比例, 最少份数)`（属主 authz，只授洞察服务）。
+- **DB 测试** `db/tests/79r_weekly_report.sql`（写入守卫、形状、只追加、删除分支、按受众读、抽检份数与幂等、审核台详情与结案码）；
+  `80_attack_surface.sql` 可见性矩阵登记周报；渗透夹具每个学生两份周报；快照更新；`db/tests/mutations.sh` 加 22 条“周报：”变异；
+  `79e` 结案码条数 6 → 8；`run.sh` 的 0035 角色断言测试库改为只执行 0035 之前的迁移（0036 依赖 0035 的清单）；`docs/security/pentest/scope.md` 登记新函数（94 个）。
+- **洞察服务** `insight/weekly.py`（纯函数：固定段落 + 衔接短语占位 + 判断渲染句；复用首份报告的 `render_text`、排序与
+  `learning.mastery.consistency.check_page`，另查标题禁用推断与按受众的排除词；任一不过 → withheld）、`insight/store_weekly.py`（读可见判断与客观记录、
+  写快照 ON CONFLICT DO NOTHING、生成后抽样）、`jobs.weekly_reports`；配置 `config/weekly.synthetic.json`、`config/weekly-check.synthetic.json`（合成占位，只 test）。
+  测试 `tests/test_weekly.py`、`tests/test_weekly_db.py`；变异 +20 条。
+- **BFF** `GET /bff/v0/students/{student_id}/weekly-report`（开关 weekly，`src/http/trust-routes.ts` + 纯函数 `src/trust/weekly.ts`）：按受众读最近一周已生成的，
+  每句先挑形状（无 `claim_id` 丢弃）、再在库里核判断（可见、成立或假设、未过期、节点、模板已审核、学生版排除家长观察来源），再过对外模板白名单，丢弃数记日志；
+  一句不剩 `report: null`。`openapi/trust.v0.yaml`、授权矩阵（从路由表生成，自动覆盖）、限流、变异 +9 条。
+- **前端** `/s/{id}/weekly`（成长手记）、`/family/{id}/weekly`（周报）：`src/trust/WeeklyPage.tsx`，开关 weekly 关时 404、不发请求；每句 `data-claim-id`、
+  旁边“为什么”入口（开关 why）；家长端附置信度说明，学生端不附；客观栏标“来自使用记录，不是判断”，数字在 `data-value`；入口行加“成长手记 / 本周周报”，
+  家长孩子页原来的周报预留位去掉。文案全部 `{{TODO_COPY:weekly.*}}`。端到端：trust-on 新增周报用例（合成种子 `db/seeds/dev/weekly-synthetic.sql`，
+  第二个 BFF 用把合成模板列进白名单的显示规则），trust-off 加周报页与 BFF 路由 404。
+- **可用性走查脚本** `specs/trust-ui-sprint5/walkthrough.md`：学生、家长各 5 个任务、成功标准、建议通过线、记录表与问题登记；结果由产品执行后填。
+
+### 偏离（请确认）
+1. **复核任务的学科**：`platform.review_task.subject` 必填，周报是跨科的——抽检任务的学科取周报第一句所引判断的学科（路由快照，首发只有数学）。
+   另一种做法是放开 `subject` 可空（改 0006 约束，审核台按学科筛选时周报会消失），默认前者。
+2. **抽检原因复用 `spot_check`**，没有新增 `review_reason` 值（避免 ALTER TYPE ADD VALUE 回滚不掉）；约束限定周报只能以 `spot_check` 进队。
+   `weekly_report_issue` 结案后由谁、怎么处理（改模板、撤回判断）是人工流程，本次没有自动联动。
+3. **段落规则**（v0）：点亮 / 本周进展 = 本周（上海时区周一 00:00 起）新建的“知识迁移”判断；攻克 / 当前卡点 = 门槛低于“迁移”的“知识掌握”判断；每段最多 5 句。
+   “下一步”“一条具体配合建议”“预测与对账摘要”没有对应的判断模板，**v0 不出**（这三段需要新模板，必停项）。
+4. **句子是生成时的快照，判断修订后句子消失**（审查后改，安全审查 F1 / 契约审查 M1）：每句存判断修订标记 `claim_revision`
+   （写入时判断的 `updated_at`，由 0036 守卫盖上，调用方给了就必须一致）；BFF 读取时判断被修订过（`updated_at` 变了）的句子丢弃并记数。
+   代价：判断常规重算（revised）也会让上周周报的对应句子消失，周报可能很快变短；请定是否可接受。
+5. **客观栏口径**（快照口径以生成时刻为准：判断的筛选按生成时的数据库时间，客观栏按那一周的上海时区窗口）：使用时长 = 本周 `session_end` 事件时长之和（不分学科）；计划完成 / 跳过 = 本周计划事件按任务去重（先跳过后完成算完成，不分学科——
+   计划事件没有学科）；各科练习 = 本周作答用时之和与题数（`platform.attempt.elapsed_sec`，英语不出现）。spec 写“各科使用时长与计划完成”，
+   按学科的计划完成要等计划任务带学科。
+6. **没有可见判断的学生不写周报**（记 empty，不算 withheld）；检查不过才写 withheld 行（只存阻断编码，便于审计）。
+7. **周报不进导出包**（清单 `export_topic` 为空，与预测、对账卡一致），可见范围待人定。
+8. **BFF 只给最近一周**（没有历史列表接口）。
+9. **每周任务只提供入口** `jobs.weekly_reports(store, 周一, …, env=…)`，没有接调度（每周一凌晨跑上一周）；只接受已结束的周
+   （周一 + 7 天 ≤ 今天，生成端与 0036 守卫两处，契约审查 L3）、35 天内。周报配置未签字时 test 以外抛 `Unavailable`（env 由调用方传，没传按非 test；安全审查 F2）；
+   某个学生某个受众被库里守卫拒收时记 `failed` 继续（契约审查 L4）。
+10. **对外模板白名单**：周报句子要在 `services/bff/config/shell.json` 的 `external_claim_templates` 里才显示（正式配置为空 → 生产不显示任何周报句）；
+    端到端用一份测试专用的显示规则。登记白名单属画像可见范围，必停。
+11. 洞察服务变异脚本的副本目录另外软链接了 `services/bff` 与 `apps`（`tests/test_forbidden_inference_sie03.py` 要扫它们的源码，否则对照组不通过）。
+
+### 待人确认
+1. ~~79q 补周报行~~：已由另一代理（经用户批准）补上；本次只按 L3 把那段写入改为上一周。
+2. 上面偏离 1–10。
+3. 周报标题、七个段落的衔接短语、页面文案（`WEEKLY*`）、排除词表（家长版：同伴比较、排名、层级标签；学生版：家长问卷与评价的说法）：人写人审。
+4. 抽检比例与最少份数（默认 10%、至少 5 份、不阻断，#4）由产品与教研最终确认；可用性走查通过线（`walkthrough.md` 第四节是建议默认值，#7）由产品定。
+
+### 审查修改（安全审查 F1–F6、契约审查 M1、M2、L1–L5，按默认建议）
+- F1 / M1：句子加 `claim_revision`（0036 句子键、`trust.v0.yaml` 描述更新）；BFF 按 `unnest(ids, revisions)` 连判断，修订过的丢弃；“初步判断”按判断当前状态推导；
+  **置信度分档沿用快照**（修订标记对得上 = 置信度没变；分档阈值在洞察服务策略里，BFF 不另存一份——偏离，请确认）；
+  BFF 对句子文字再过禁用推断词表：`src/trust/lexicon.ts` 直接读 `docs/design/sie/forbidden-inference.v0.yaml` 与 `sie_lexicon.py` 的繁简对照（不抄一份），
+  读不到即一句不显示；**部署时 BFF 制品要带上这两个文件**（待人确认）。
+- F2：未签字周报配置在 test 以外不生成。F3：守卫要求 `label = preliminary` 当且仅当判断是假设。
+- F4：抽样函数在库里兜底至少 5 份（`greatest(…, p_min, 5)`，不超过总数）；取不到学科（所引判断不在）时报错，不静默跳过。
+- F5：审核台详情去掉客观栏；**待人确认**：抽检是否需要看客观栏。F6：周报仍不进导出包（偏离 7）。
+- M2 **契约差异（待人确认）**：周报读取经 BFF 直读 0036，SIE 第九章接口没有周报工具；是否新增 `insight.weekly` 或扩展 `insight.claims`，由人定（契约变更，必停）。
+- L1：BFF 随句返回判断的 `source_type`（可选字段），前端对客观记录、学生自述、家长观察来源加占位标注（`WEEKLY_SOURCE`）。
+- L2：偏离 5 补“快照口径以生成时刻为准”。L3：见偏离 9；79r、渗透夹具、种子、79q 那段写入都改为上一周。L4：见偏离 9。
+- L5：`shell-openapi.test.ts` 加反向断言：`trust.v0.yaml` 的操作集合恰好等于信任界面路由表。
+- 每项配了测试或变异（DB“周报：”变异 29 条、洞察服务周报变异 +4、BFF 周报变异 13 条）。
+
+### 测试结果（本机）
+见本次回报。
+
+### 可用性走查结果
+（待产品按 `walkthrough.md` 执行后填写：参与者数、各任务成功率、平均用时、SEQ 中位数、问题清单与结论签字。）

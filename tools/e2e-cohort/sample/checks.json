@@ -113,7 +113,7 @@
     "students_checked": 20,
     "table_source": "registry",
     "tables_bff_cannot_read": 27,
-    "tables_compared": 25,
+    "tables_compared": 26,
     "tables_not_comparable_column_privilege": [],
     "tables_skipped_no_privilege": [],
     "unlinked_guardians_checked": 1,
