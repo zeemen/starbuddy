@@ -14,7 +14,7 @@
 
 | 类别 | 条数 |
 |---|---|
-| 一、阻断级 | 24 |
+| 一、阻断级 | 24（其中 B02 已于 2026-10-01 关闭，未结 23） |
 | 二、必停项待签字（七类合计；另有 2.8 节 ADR 与流程项 4 条单列） | 166 |
 | 三、技术债（非阻断） | 52 |
 | 四、环境与部署前置（八小节合计） | 67 |
@@ -30,7 +30,7 @@
 | 编号 | 事项 | 来源 | 影响的 Gate 条件 | 建议处理人 | 默认建议 |
 |---|---|---|---|---|---|
 | B01 | **插件 API v1.0 仍是候选版**：61 项评审未签字；1.0.0 只能在 `STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1` 下使用（测试开关），学习服务 v1 写入、诊断会话、今日计划 `/internal/v1/plan` 都依赖它；三科能力声明默认仍报 0.9.0，联调时临时打开候选开关 | `specs/plugin-api-v1.0/lessons.md:3,23,48`；`specs/e2e-integration-sprint5/lessons.md:64-66,89`；`specs/sie-02a-math-diagnosis/lessons.md:30`；`specs/unified-shell-sprint4/lessons.md:172-173`；`specs/contract-conformance-sprint1/lessons.md:50`；`specs/adapter-aya-methods-sprint4/lessons.md:35,90`（覆盖率报告改取 1.0.0 那一遍，已取代 `specs/plugin-api-v1.0-step2/lessons.md:40` 的“1.0.0 那条不写报告”） | 硬1（证据在候选版下取得）；软·契约覆盖率（阿鸦报告取 1.0.0 那一遍）；上线前（候选开关不得在 pilot 打开） | 技术负责人 | 召开评审会逐项签字；签字后收口默认版本与候选开关，并按 e2e lessons 第 66 行重生 Gate 0 样例 |
-| B02 | **英语搁置后的 Gate 0 口径未定**：硬1 写“四科”，证据按三科出；软条件“开口成章 ≥ 4/6”不准备证据 | `specs/adapter-echo-sprint3/lessons.md:27,32,50`；`specs/plan-v2-alignment/spec.md:61-62`；`specs/e2e-integration-sprint5/lessons.md:76-77` | 硬1；软·契约覆盖率 | 产品 | 证据按三科出，“四科→三科”是否改写条款由 Gate 0 评审定 |
+| B02 | **【已关闭（2026-10-01 用户决定：Gate 0 “四科”改为“三科”，英语搁置不计）】** 英语搁置后的 Gate 0 口径未定：硬1 写“四科”，证据按三科出；软条件“开口成章 ≥ 4/6”不准备证据 | `specs/adapter-echo-sprint3/lessons.md:27,32,50`；`specs/plan-v2-alignment/spec.md:61-62`；`specs/e2e-integration-sprint5/lessons.md:76-77` | 硬1；软·契约覆盖率 | 产品 | 证据按三科出，“四科→三科”是否改写条款由 Gate 0 评审定 |
 | B03 | **硬1 证据的结构性缺口**：道法没有诊断入口（适配器只支持 process，学习服务不接受）；复测由桩调度；节点状态一律 `evidence_only`（掌握未写库）；星图截图未做；真实内测的只读核对登录需要不受 RLS 的角色（RLS 变更）；合成证据包与真实内测汇总取哪一份未定 | `specs/e2e-integration-sprint5/lessons.md:35-36,39-45,59-62,71-73,76` | 硬1 | 技术负责人 | 道法入口交契约评审；复测与状态随 B04；截图在 4-H 壳页面与星图 v1 后补；核对角色按 RUNBOOK 第 1 节二选一另起必停 PR |
 | B04 | **KGE-04 第二步未实现，掌握数值未签字**：`aya.draft.json` 数值全空、签字栏“未签字”，签字前最高到“稳定”；`mastery_estimate` 节点键、`retest_task`、`profile_page` 三张表的迁移未写；“我其实会”的验证任务是接口桩 | `specs/mastery-estimate-sprint4/lessons.md:49,57-68`；`specs/sie-03-dispute-reconcile/lessons.md:85-86,182,280`；`specs/e2e-integration-sprint5/lessons.md:35-36` | 硬1（节点状态、复测）；硬5（删除覆盖缺档案页）；星亮 | 教研（数值签字）、技术负责人（迁移与接入） | 数学教研填写并签字配置；第二步迁移从下一个空编号起，先副本演练 |
 | B05 | **家长隔离渗透测试两轮都没有执行**：第一轮只有仓库侧交付物；执行方、时间窗、授权人未指定；第二轮 spec 仍是草稿；`coverage.md` 是空模板 | `specs/household-pentest-sprint3/lessons.md:4,6,85`；`specs/household-pentest-round2/spec.md:3,29,229-246`；`docs/security/pentest/coverage.md:1-5` | 硬2 | 技术负责人、合规 | 第二轮按其待人确认 #1 默认（ADR 10 未签时第 3 层在本地扩展环境执行，R 类登记为 pilot 前补测）；Gate 0 只认两轮都完成的版本（同 spec #9） |
