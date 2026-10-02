@@ -14,7 +14,10 @@ import type { AuthConfig, Keys, RunEnv } from './config.ts';
 import { FEATURE_ROUTES } from './feature-routes.ts';
 import { SHELL_ROUTES } from './shell-routes.ts';
 import { TRUST_ROUTES } from './trust-routes.ts';
+import { STAR_MAP_V1_ROUTES } from './star-map-v1-routes.ts';
 import type { TrustFeature } from '../trust/features.ts';
+import type { StarMapFeature } from '../star-map/features.ts';
+import type { StarMapNodesClient } from '../star-map/nodes-client.ts';
 import type { DisputeClient, ExamViewClient } from '../trust/clients.ts';
 import type { ExportStore } from '../trust/exports.ts';
 import { recentLogins } from '../trust/proof.ts';
@@ -52,6 +55,9 @@ export interface ShellDeps {
   /** SIE-03 PR③ 信任界面（trust-routes.ts）：打开的开关（缺省全关，路由不注册）、洞察服务的异议工具、预测与对账卡的读取
    *  （契约没有 BFF 可用的工具，缺省不配，路由 503）、导出包暂存（缺省进程内） */
   trust?: { features?: ReadonlySet<TrustFeature>; dispute?: DisputeClient; exams?: ExamViewClient; exports?: ExportStore };
+  /** H5 星图 v1（star-map-v1-routes.ts）：打开的开关（缺省全关，v1 路由不注册）、学习服务 star-map/nodes 客户端
+   *  （不配时打开开关也只画中性底星） */
+  starMap?: { features?: ReadonlySet<StarMapFeature>; nodes?: StarMapNodesClient };
 }
 
 export type Query = <R extends QueryResultRow = QueryResultRow>(sql: string, params?: unknown[]) => Promise<{ rows: R[] }>;
@@ -257,9 +263,10 @@ export const ROUTES: readonly Route[] = [
   ...SHELL_ROUTES,
 ];
 
-/** 本次部署实际注册的路由：固定路由表 + 已打开开关的信任界面路由（开关缺省全关） */
-export function activeRoutes(features: ReadonlySet<TrustFeature> = new Set()): readonly Route[] {
-  return [...ROUTES, ...TRUST_ROUTES.filter((r) => r.feature !== undefined && features.has(r.feature))];
+/** 本次部署实际注册的路由：固定路由表 + 已打开开关的信任界面路由 + 星图 v1（starmap_v1）（开关缺省全关） */
+export function activeRoutes(features: ReadonlySet<TrustFeature> = new Set(), starMap: ReadonlySet<StarMapFeature> = new Set()): readonly Route[] {
+  return [...ROUTES, ...TRUST_ROUTES.filter((r) => r.feature !== undefined && features.has(r.feature)),
+          ...(starMap.has('starmap_v1') ? STAR_MAP_V1_ROUTES : [])];
 }
 
 /** 路由模板编译成正则：路径参数（student_id、session_id、probe_id、claim_id、exam_id、export_job_id、request_id）一律只匹配小写 UUID；学科码 {subject} 只匹配小写字母（H4） */

@@ -58,3 +58,15 @@ test('阈值配置只能在 dev / test 换：staging、pilot、生产设了 BFF_
     assert.match(r.stderr, /BFF_AUTH_CONFIG/, env);
   }
 });
+
+test('H5 星图 v1 开关只在 dev / test：staging、pilot、生产设了 STARBUDDY_STARMAP 就拒绝启动；test 下不认识的值也拒绝', () => {
+  for (const env of ['production', 'pilot', 'staging']) {
+    const r = start({ STARBUDDY_ENV: env, STARBUDDY_STARMAP: 'starmap_v1', BFF_LOG_HMAC_KEY: hex(), BFF_AUTH_SECRET: hex(), BFF_TRUST_SECRET: hex(),
+                      BFF_SHELL_ORIGIN: 'https://shell.example.invalid' });
+    assert.equal(r.status, 2, env);
+    assert.match(r.stderr, /STARBUDDY_STARMAP/, env);
+  }
+  const r = start({ STARBUDDY_ENV: 'test', STARBUDDY_STARMAP: 'starmap_v2' });
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /STARBUDDY_STARMAP/);
+});

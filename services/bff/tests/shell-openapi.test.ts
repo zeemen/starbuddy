@@ -9,13 +9,13 @@ const require_fs = () => fs;
 import { test } from 'node:test';
 import { compile, PREFIX, ROUTES } from '../src/http/routes.ts';
 import { TRUST_ROUTES } from '../src/http/trust-routes.ts';
-import { operations } from './openapi-ops.ts';
+import { STAR_MAP_V1_ROUTES } from '../src/http/star-map-v1-routes.ts';
+import { operations, SPEC_FILES } from './openapi-ops.ts';
 
-// 路由表 + 信任界面路由（SIE-03 PR③，按开关注册；接口定义在 openapi/trust.v0.yaml）
-const ALL = [...ROUTES, ...TRUST_ROUTES];
+// 路由表 + 信任界面路由（SIE-03 PR③，按开关注册；接口定义在 openapi/trust.v0.yaml）+ 星图 v1（H5，开关 starmap_v1；openapi/star-map.v1.yaml）
+const ALL = [...ROUTES, ...TRUST_ROUTES, ...STAR_MAP_V1_ROUTES];
 
-const SPECS = ['shell', 'star-map', 'onboarding', 'events', 'diagnosis', 'trust']
-  .map((n) => readFileSync(new URL(`../openapi/${n}.v0.yaml`, import.meta.url), 'utf8'));
+const SPECS = SPEC_FILES.map((n) => readFileSync(new URL(`../openapi/${n}.yaml`, import.meta.url), 'utf8'));
 
 function specOperations(): string[] {
   return SPECS.flatMap(operationsOf).sort();
@@ -61,6 +61,12 @@ test('路由表不变量：改变状态的都开 CSRF；公开的只有登录两
   }
   const keys = ALL.map((r) => `${r.method} ${r.path}`);
   assert.equal(new Set(keys).size, keys.length, '没有重复路由');
+});
+
+test('星图 v1：star-map.v1.yaml 的操作集合恰好等于 v1 路由；v1 路由不在固定路由表里（只随开关 starmap_v1 注册）', () => {
+  const doc = operationsOf(readFileSync(new URL('../openapi/star-map.v1.yaml', import.meta.url), 'utf8')).sort();
+  assert.deepEqual(doc, STAR_MAP_V1_ROUTES.map((r) => `${r.method} ${PREFIX}${r.path}`).sort());
+  for (const r of STAR_MAP_V1_ROUTES) assert.ok(!ROUTES.includes(r), r.path);
 });
 
 test('路径参数只匹配 UUID', () => {

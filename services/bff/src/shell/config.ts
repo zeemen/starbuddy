@@ -15,6 +15,9 @@ export interface ShellConfig {
   /** 每页最多取几条陈述、单条超时、并发上限、整页总时限 */
   explain: { maxPerPage: number; timeoutMs: number; concurrency: number; pageDeadlineMs: number };
   plan: { timeoutMs: number };
+  /** H5 星图 v1：调学习服务 star-map/nodes 的单次时限；白名单里哪些模板算“知识掌握”（画星、星数说明）、哪些算“知识迁移”（只用于摘要位）。
+   *  两张表都是 externalTemplates 的子集、互不相交（画像可见范围，必停） */
+  starMap: { timeoutMs: number; masteryTemplates: ReadonlySet<string>; transferTemplates: ReadonlySet<string> };
   /** singleInstance：提醒计时在进程内（见 rest.ts）；dev / test 以外只有明确声明单实例部署才启用 */
   rest: { continuousMinutes: number; breakMinutes: number; singleInstance: boolean };
   curfewNearMinutes: number;
@@ -62,6 +65,17 @@ export function loadShellConfig(path: URL | string = SHELL_CONFIG_PATH): ShellCo
     throw new Error('shell.json：meter_defaults 的宵禁应为 HH:MM');
   }
   if (typeof raw['rest_reminder']?.single_instance !== 'boolean') throw new Error('shell.json：rest_reminder.single_instance 应为布尔');
+  const sm = raw['star_map'];
+  const smList = (k: string): string[] => {
+    const v = sm?.[k];
+    if (!Array.isArray(v) || !v.every((t) => typeof t === 'string' && TEMPLATE.test(t) && (templates as string[]).includes(t))) {
+      throw new Error(`shell.json：star_map.${k} 应为白名单里的“模板键@版本”数组`);
+    }
+    return v as string[];
+  };
+  const masteryTemplates = smList('mastery_templates');
+  const transferTemplates = smList('transfer_templates');
+  if (masteryTemplates.some((t) => transferTemplates.includes(t))) throw new Error('shell.json：同一个模板不能既算知识掌握又算知识迁移');
   return {
     contentRationale: new Set(content),
     studentRationale: new Set(student),
@@ -72,6 +86,8 @@ export function loadShellConfig(path: URL | string = SHELL_CONFIG_PATH): ShellCo
                concurrency: int(raw['explain']?.concurrency, 1, 10, 'explain.concurrency'),
                pageDeadlineMs: int(raw['explain']?.page_deadline_ms, 100, 10_000, 'explain.page_deadline_ms') },
     plan: { timeoutMs: int(raw['plan']?.timeout_ms, 100, 30_000, 'plan.timeout_ms') },
+    starMap: { timeoutMs: int(sm?.timeout_ms, 100, 10_000, 'star_map.timeout_ms'),
+               masteryTemplates: new Set(masteryTemplates), transferTemplates: new Set(transferTemplates) },
     rest: { continuousMinutes: cont, breakMinutes: int(raw['rest_reminder']?.break_minutes, 1, cont, 'rest_reminder.break_minutes'),
             singleInstance: raw['rest_reminder'].single_instance as boolean },
     curfewNearMinutes: int(raw['curfew_near_minutes'], 1, 120, 'curfew_near_minutes'),

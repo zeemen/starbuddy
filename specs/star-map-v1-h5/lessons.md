@@ -47,3 +47,57 @@
 - **C**：all_levels 模式下 BFF 匹配的是门槛最低层次上的判断（偏差与边界见上）。
 - **D**：BFF 如何呈现 409 与 `no_map`（PR 2 定）。
 - **E**：纵深防御（请求另带账号 ID，学习服务再查一次授权）要改契约，现在不做，留给 ADR。
+
+## PR 2 实现记录：BFF 星图 v1 读模块（2026-10-02）
+
+### 产物（均在 `services/bff/`）
+- `src/star-map/features.ts`：开关 `starmap_v1`、`starmap_dashed`（环境变量 `STARBUDDY_STARMAP`），默认都关；只在 dev / test 能开，其他环境设了就拒绝启动；只开虚线不开 v1 也拒绝。
+- `src/star-map/nodes-client.ts`：调学习服务 `star-map/nodes`。`caller=bff`、不跟随重定向、超时 3000 ms、不重试、不缓存、不记响应体；响应先限体积（正常 2 MiB、409 为 64 KiB），再按契约逐字段核对（多字段、`star_lit` 与 state 不一致、basis 为空却不是 unseen、学科不对、节点重复，任一项不合格整科按不可用）。
+- `src/star-map/v1.ts`：`paintSky`（画星纯函数）与 `getStarMapV1`（读取流程）；`src/http/star-map-v1-routes.ts`；`openapi/star-map.v1.yaml`。
+- `config/shell.json` 新增 `star_map`：`timeout_ms`、`mastery_templates`、`transfer_templates`（两张表加载时必须是对外白名单的子集且互不相交；仓库里为空）。
+- 测试：`tests/star-map-v1.test.ts`、`tests/star-map-v1.integration.test.ts`（所有 200 响应按 `star-map.v1.yaml` 校验 schema，借用 adapters/aya 已锁版本的 ajv）；route-matrix、openapi-ops、shell-openapi、shell-units、shell-startup 相应更新；`tests/mutations.sh` 新增“星图v1：”类 12 条。
+
+### 读取流程
+1. 第一个只读事务：`platform.can_read_student` 确认可读，不可读统一 404、不调任何下游；取在读学科（`active`，不含英语与 planned）、BFF 能读到的已发布地图版本与节点，家长另取有效绑定。
+2. 事务外：只为“在读且 BFF 看得到已发布地图”的学科调学习服务；`student_ref` 只来自已校验的路径参数。
+3. 一致性核对：学习服务返回的地图版本与节点集合必须与 BFF 读到的完全一致，否则该科全部中性。
+4. 第二个只读事务：再确认一次可读；读判断（受众可见、成立或假设，开虚线时另含待验证；未过期、模板已审核、依据是掌握记录）；开虚线时另读该节点最早一条未关闭复测任务的日期。
+5. 事务外：画星；星数说明与迁移摘要经 `insight.explain` 取文字（沿用每页 10 条、整页时限与每会话限频），再过禁用推断词表。
+
+### 画星规则（规则 11）
+- 三条件都满足才画：模板在白名单且属于“知识掌握”维；受众可见、成立或假设；判断 `basis_id` 等于学习服务给的当前掌握记录。满足时下发 `display`（unlit / half / lit）、`retained`（“保持”外圈）与 `claim_id`。
+- 中性星只有 `node_id`、`name`、`display: neutral`；响应里从不出现 `state`、`star_lit`、`basis_id`。
+- “知识迁移”判断不画星，只用于该科迁移摘要。
+- 星数说明与迁移摘要的文字过禁用推断词表（规则 12，与周报同做法）：命中就不显示该字段，星照常画；词表读不到时一句都不显示。
+
+### 409 与 `no_map` 的呈现（PR 1 待确认 D 的答复）
+- `no_map`，或 BFF 读不到已发布地图：显示“地图建设中”，不调学习服务。
+- 409 `MASTERY_UNAVAILABLE`、学习服务不可用、地图版本或节点集合不一致：按 BFF 读到的节点画全中性星，不下发星态、`claim_id` 与说明文字。理由：地图确实已发布，只是掌握口径不可用，显示“建设中”会误导。
+
+### 偏差
+1. **v1 路径**：独立路径 `GET /bff/v0/students/{id}/star-map/v1`，没用 `?v=1`（路由表与接口定义按“方法 + 路径”一一对应，身份注入测试把查询参数当噪声）。开关关时不注册，与表外路径同一个 404；v0 响应在开关开、关两种部署下逐字节相同。
+2. **学生端也带 `confidence_band`**：spec 只要求家长端；为与今日计划、档案页一致，学生端也带。
+3. **“下一次验证任务”的来源**：契约没有现成字段，取 `platform.retest_task` 该节点最早一条未关闭任务的上海日期（0037 已授权 BFF 读），不带原因编码。
+4. **虚线按库里 `status = to_verify` 画**，没核对 `RenderedStatement.display = dashed`；挂在默认关闭的开关后，ADR 13 #2 签字后改为按后者画。
+5. **星数说明取节点级判断**：取该科最近更新的那条匹配“知识掌握”判断的陈述（最多试 3 条候选），是节点句放在学科摘要位；spec 7.2 的例子是学科级的“已点亮 N 颗”。
+6. **成立优先于待验证**：同一节点、同一依据下若同时有较旧的“成立”与较新的“待验证”（不同模板），按“成立”画星。
+
+### 测试结果（审查修订后）
+`make bff-test` 通过；`make bff-mutation` 148 个变异全部被发现（星图 v1 类 12 条）。契约审查另以 `CONTRACT_STRICT=1` 跑过 `make contract-test`（通过；它不检查 `star-map.v1.yaml`，该文件由集成测试的 schema 校验覆盖）。过程中没有命令被 guard hook 或权限拦截，改文件只用 Read / Edit / Write。
+
+### 审查意见处理
+安全审查无阻断；契约审查 1 条阻断（规则 12：星图文字没有过禁用推断词表）。按用户“按默认建议处理审查意见”：星数说明与迁移摘要过词表（夹具与变异）；补节点集合多一个、少一个两种不一致的测试与变异；变异脚本里被拼接的注释拆回单独一行；补 `transfer_templates` 含白名单外模板被拒；集成测试用 schema 校验实际响应；学习服务响应设体积上限。
+
+### 纵深防御与写不出的变异
+- 授权有两层：去掉 `can_read_student` 后，RLS 仍让越权方读不到在读学科，学习服务依然不会被调到；该变异靠 404 断言发现。
+- 去掉判断查询里的受众过滤写不出可被发现的变异：RLS `claim_front_read` 仍按受众过滤，结果不变。
+- 集成测试在库里已有的已发布数学地图上追加合成节点，依赖测试文件按字母序执行（shell-pages 先建图）。
+
+### 待人确认
+- **F**：`config/shell.json` 的 `star_map.mastery_templates` / `transfer_templates` 由人登记（画像可见范围，必停）；现在为空，所以星全部中性。
+- **G**：“下一次验证任务”的口径（偏差 3）。
+- **H**：v1 路由没挂限流桶。每次请求最多为每个在读学科调一次学习服务，外加两个数据库事务，只有陈述文字有每会话限频。开放到预发环境之前，必须在限流配置里加按会话计的桶（`config/auth.json`，必停，阈值由人定）。
+- **I**：学生端是否也带 `confidence_band`（偏差 2）。
+- **J**：星数说明用节点句还是等学科级模板（偏差 5）。
+- **K**：成立优先于待验证是否符合判断账本语义（偏差 6），请 SIE 负责人确认。
+- **L**：虚线改为按 `RenderedStatement.display = dashed` 画的时机（偏差 4，随 ADR 13 #2 签字）。

@@ -165,6 +165,19 @@ SM=(
   $'信任：档案页只给家长\tsrc/http/trust-routes.ts\t`${S}/profile-pages/{subject}`, \'session\', profilePage\t`${S}/profile-pages/{subject}`, \'guardian\', profilePage'
   $'信任：档案页不限流\tsrc/http/trust-routes.ts\tprofilePage, [{ bucket: \'trust_read.session.minute\', dim: \'session\' }], true)\tprofilePage, [], true)'
   $'信任：档案页不核对学科码（英语也读）\tsrc/http/shell-routes.ts\tWHERE code = $1 AND status <> \'planned\' AND product IS NOT NULL`\tWHERE code = $1 AND product IS NOT NULL`'
+  # H5 星图 v1（specs/star-map-v1-h5，统一壳 7.2 节；验收“星图不核对 basis_id”“白名单检查去掉”等）：这几条跑 tests/star-map-v1*.test.ts
+  $'星图v1：basis 不比对\tsrc/star-map/v1.ts\tnode.basis_id !== null && c.basis_id === node.basis_id\ttrue'
+  $'星图v1：中性星泄露 state\tsrc/star-map/v1.ts\tif (s.display === \'neutral\') return { node_id: s.node_id, name, display: \'neutral\' };\tif (s.display === \'neutral\') return { node_id: s.node_id, name, display: \'neutral\', state: nodes.find((n) => n.node_id === s.node_id)!.state } as OutStar;'
+  $'星图v1：跳过授权直接调用\tsrc/star-map/v1.ts\treturn rows[0]?.ok === true;\treturn true;'
+  $'星图v1：用迁移判断画星\tsrc/star-map/v1.ts\tconst mastery = matching.filter((c) => rules.mastery.has(templateRef(c.template_key, c.template_version)));\tconst mastery = matching.filter((c) => rules.mastery.has(templateRef(c.template_key, c.template_version)) || rules.transfer.has(templateRef(c.template_key, c.template_version)));'
+  $'星图v1：白名单不检查\tsrc/star-map/v1.ts\t\\n      && rules.external.has(templateRef(c.template_key, c.template_version))\t'
+  $'星图v1：暂停学科也取\tsrc/star-map/v1.ts\tWHERE e.student_id = $1 AND e.status = \'active\' AND c.status\tWHERE e.student_id = $1 AND c.status'
+  $'星图v1：虚线开关关也画虚线\tsrc/star-map/v1.ts\tconst pending = rules.dashed ? mastery.find(\tconst pending = true ? mastery.find('
+  $'星图v1：开关关闭也注册 v1\tsrc/http/routes.ts\t...(starMap.has(\'starmap_v1\') ? STAR_MAP_V1_ROUTES : [])\t...STAR_MAP_V1_ROUTES'
+  $'星图v1：学习服务响应多字段也收\tsrc/star-map/nodes-client.ts\tif (Object.keys(n).sort().join(\',\') !== NODE_KEYS || \tif ('
+  $'星图v1：不核对学习服务的地图版本\tsrc/star-map/v1.ts\tif (o.mapVersion !== first.versions.get(e.product) || \tif ('
+  $'星图v1：不核对节点集合\tsrc/star-map/v1.ts\t || ours.length !== theirs.length || ours.some((id, i) => id !== theirs[i])\t'
+  $'星图v1：去掉禁用推断词表过滤\tsrc/star-map/v1.ts\tif (st && !clean(st.text)) {\tif (false) {'
   # 冲刺 4-H H6 第二轮第 7 节回归（每类至少一条）：这几条跑 tests/route-matrix.integration.test.ts
   # 7.1 授权矩阵与路由表覆盖
   $'H6：新路由不登记样例\tsrc/http/shell-routes.ts\t  read(`${S}/balance`, \'session\', balance),\t  read(`${S}/balance`, \'session\', balance), read(`${S}/balance-copy`, \'session\', balance),'
@@ -239,6 +252,7 @@ star_run() {  # $1 副本根目录，$2 变异名（“计量：”开头的跑�
   [[ "${2:-}" == 页面：* ]] && tests="tests/shell-pages.integration.test.ts"
   [[ "${2:-}" == 信任：* ]] && tests="tests/trust-units.test.ts tests/trust.integration.test.ts"
   [[ "${2:-}" == H6：* ]] && tests="tests/route-matrix.integration.test.ts"
+  [[ "${2:-}" == 星图v1：* ]] && tests="tests/star-map-v1.test.ts tests/star-map-v1.integration.test.ts"
   out=$( cd "$1/services/bff" && timeout 240 bash "$ROOT/db/tests/pg-ephemeral.sh" -- \
       node --no-warnings --test --test-concurrency=1 --test-timeout=60000 $tests 2>&1 ); rc=$?
   printf '%s\n' "$out" > "$1/run.out"  # H6 的“第一条失败必须是登记的断言”从这里读

@@ -17,6 +17,9 @@
 //   STARBUDDY_TRUST_UI     dev / test：打开信任界面的 BFF 路由（dispute / reconcile / data_rights，逗号分隔；SIE-03 PR③）；
 //                          缺省全关、路由不注册；其余环境设了就拒绝启动。异议经 BFF_INSIGHT_URL 调 insight.dispute；
 //                          预测与对账卡的读取没有契约通道（缺省 503，lessons PR③ 待人确认）
+//   STARBUDDY_STARMAP      dev / test：H5 星图 v1 的开关（starmap_v1[,starmap_dashed]；src/star-map/features.ts）；缺省全关、
+//                          v1 路由不注册、v0 不变；其余环境设了就拒绝启动。星态经 BFF_LEARNING_URL 调学习服务 star-map/nodes（同一个服务间令牌），
+//                          不配学习服务时 v1 的星全部是中性底星
 //   BFF_TRUST_SECRET       信任界面专用密钥（删除确认凭据、异议幂等键）：十六进制 ≥ 32 字节，规则同 BFF_AUTH_SECRET
 // 诊断的宵禁判断用数据库的计量时钟（platform.meter_guard_status，迁移 0030），BFF 没有自己的时钟开关。
 import pg from 'pg';
@@ -31,11 +34,14 @@ import { httpPlanClient } from './shell/plan-client.ts';
 import { httpDisputeClient } from './trust/clients.ts';
 import { parseTrustFeatures } from './trust/features.ts';
 import { assertBffRole } from './star-map/query.ts';
+import { parseStarMapFeatures } from './star-map/features.ts';
+import { httpStarMapClient } from './star-map/nodes-client.ts';
 
 // 配置不全、环境不认识、非 dev / test 却没有短信供应商：一律拒绝启动（在连数据库之前）
 let shellDeps: Omit<ShellDeps, 'pool'>;
 try {
   const env = parseRunEnv(process.env['STARBUDDY_ENV']);
+  const starMapFeatures = parseStarMapFeatures(env, process.env['STARBUDDY_STARMAP']);  // 非 dev / test 设了就拒绝启动
   const configPath = process.env['BFF_AUTH_CONFIG'];
   if (configPath !== undefined && !isLocalEnv(env)) throw new Error('BFF_AUTH_CONFIG 只在 dev / test 可用');
   const keys = loadKeys(env);
@@ -48,7 +54,8 @@ try {
   shellDeps = { config: configPath === undefined ? loadAuthConfig() : loadAuthConfig(configPath), keys, env, sms: createSmsSender(env), shellOrigin,
                 trustClientIpHeader: process.env['BFF_TRUST_CLIENT_IP'] === '1',
                 shell: { config: shellConfigPath === undefined ? loadShellConfig() : loadShellConfig(shellConfigPath) },
-                trust: { features: parseTrustFeatures(env, process.env['STARBUDDY_TRUST_UI']) } };
+                trust: { features: parseTrustFeatures(env, process.env['STARBUDDY_TRUST_UI']) },
+                starMap: { features: starMapFeatures } };
   // 连续使用提醒的计时在进程内（src/shell/rest.ts）：dev / test 以外没声明单实例部署就不启用，并在启动时告警（pilot 前须完成会话表加列迁移）
   if (!isLocalEnv(env) && !shellDeps.shell!.config!.rest.singleInstance) {
     console.warn(JSON.stringify({ event: 'rest_reminder_disabled', reason: 'in_process_timer_requires_single_instance' }));
@@ -82,6 +89,9 @@ if (learningUrl) {
   }
   shellDeps.diagnosis = { learning: httpDiagnosisLearning({ baseUrl: learningUrl, token: learningCredential }) };
   shellDeps.shell!.plan = httpPlanClient({ baseUrl: learningUrl, token: learningCredential, timeoutMs: shellDeps.shell!.config!.plan.timeoutMs });
+  if (shellDeps.starMap!.features!.has('starmap_v1')) {
+    shellDeps.starMap!.nodes = httpStarMapClient({ baseUrl: learningUrl, token: learningCredential, timeoutMs: shellDeps.shell!.config!.starMap.timeoutMs });
+  }
 }
 const insightUrl = process.env['BFF_INSIGHT_URL'];
 const insightCredential = process.env['BFF_INSIGHT_TOKEN'] ?? '';

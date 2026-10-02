@@ -7,6 +7,8 @@
   },
   "external_claim_templates": [],
   "rationale_templates": {},
+  "_doc_star_map": "H5 星图 v1（specs/star-map-v1-h5，挂在开关 starmap_v1 后，默认关）：timeout_ms 是 BFF 调学习服务 star-map/nodes 的单次时限；mastery_templates / transfer_templates 把白名单里的模板分到“知识掌握”（画星、星数说明）与“知识迁移”（只用于迁移摘要位）两维，必须是 external_claim_templates 的子集且互不相交。两张表属画像可见范围（必停，由人登记；空表示星全部是中性底星、不显示星数说明与迁移摘要）。",
+  "star_map": { "timeout_ms": 3000, "mastery_templates": [], "transfer_templates": [] },
   "explain": { "max_per_page": 10, "timeout_ms": 1500, "concurrency": 4, "page_deadline_ms": 3000 },
   "plan": { "timeout_ms": 8000 },
   "rest_reminder": { "continuous_minutes": 40, "break_minutes": 10, "single_instance": false },

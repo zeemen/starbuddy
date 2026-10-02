@@ -12,6 +12,9 @@
 - 星图：`GET /bff/v0/students/{id}/star-map`（auth = session）。
   - 接口定义在 `openapi/star-map.v0.yaml`；三态映射只在 `src/star-map/display-state.ts` 一处。
   - 授权完全交给 RLS；未授权与不存在返回同一个 404。
+- 星图 v1（H5，`specs/star-map-v1-h5/spec.md`）：`GET /bff/v0/students/{id}/star-map/v1`，挂在开关 `starmap_v1` 上
+  （`STARBUDDY_STARMAP=starmap_v1[,starmap_dashed]`，只在 dev / test），缺省全关、路由不注册、v0 不变。
+  - 接口定义在 `openapi/star-map.v1.yaml`；读模块 `src/star-map/v1.ts`（判断先于展示），学习服务客户端 `src/star-map/nodes-client.ts`。
 - 行为事件与“能做对吗”探针（冲刺 2-L，`specs/behavior-events-sprint2/spec.md`）：`src/events/`，同一个服务、同一套身份（auth = student）。
   - `POST /bff/v0/students/{id}/events`、`POST …/probes`、`POST …/probes/{probe_id}/attempt`；接口定义在 `openapi/events.v0.yaml`。
   - 只写不读，只回记录 ID；BFF 先校验请求体（未知键、自由文本一律 422），再调迁移 0025 的库函数（只认学生本人，家长、其他学生 403）。

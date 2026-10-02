@@ -89,7 +89,7 @@ test('显示规则配置：仓库里的白名单为空（人登记前不显示�
   assert.equal(c.rest.continuousMinutes, 40);
   const dir = tmpdir();
   const base = JSON.parse(JSON.stringify({ rationale_codes: { content: ['a'], about_student: ['b'] }, external_claim_templates: ['x.y@1'],
-    rationale_templates: { b: ['x.y@1'] },
+    rationale_templates: { b: ['x.y@1'] }, star_map: { timeout_ms: 3000, mastery_templates: ['x.y@1'], transfer_templates: [] },
     explain: { max_per_page: 10, timeout_ms: 1500, concurrency: 4, page_deadline_ms: 3000 }, plan: { timeout_ms: 8000 },
     rest_reminder: { continuous_minutes: 40, break_minutes: 10, single_instance: false }, curfew_near_minutes: 30,
     meter_defaults: { curfew_start: '22:00', curfew_end: '06:00', retained_daily_practice: 5 } }));
@@ -109,6 +109,13 @@ test('显示规则配置：仓库里的白名单为空（人登记前不显示�
   assert.throws(bad((x) => { x.rationale_templates = { b: ['z.w@1'] }; }), '登记的模板必须在白名单里');
   assert.throws(bad((x) => { x.meter_defaults.curfew_start = '22'; }));
   assert.throws(bad((x) => { delete x.rest_reminder.single_instance; }));
+  // H5 星图 v1：两维模板表必须是白名单子集、互不相交；仓库里两张表为空（画像可见范围，由人登记）
+  assert.throws(bad((x) => { delete x.star_map; }));
+  assert.throws(bad((x) => { x.star_map.mastery_templates = ['z.w@1']; }), '知识掌握模板必须在白名单里');
+  assert.throws(bad((x) => { x.star_map.transfer_templates = ['x.y@1']; }), '同一模板不能两维都算');
+  assert.throws(bad((x) => { x.star_map.transfer_templates = ['z.w@1']; }), '知识迁移模板必须在白名单里');
+  assert.throws(bad((x) => { x.star_map.timeout_ms = 60_000; }));
+  assert.equal(c.starMap.masteryTemplates.size + c.starMap.transferTemplates.size, 0);
   assert.equal(c.rationaleTemplates.size, 0, '仓库里的编码—模板映射为空（画像可见范围，由人登记）');
   assert.equal(c.explain.concurrency, 4);
   assert.equal(c.explain.pageDeadlineMs, 3000);

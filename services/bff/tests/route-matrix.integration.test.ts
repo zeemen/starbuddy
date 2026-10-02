@@ -33,12 +33,14 @@ import type { PlanClient, PlanSection, PlanSubject } from '../src/shell/plan-cli
 import type { DisputeClient, DisputeOutcome, ExamViewClient } from '../src/trust/clients.ts';
 import { MemoryExportStore } from '../src/trust/exports.ts';
 import { TRUST_FEATURES } from '../src/trust/features.ts';
+import { STAR_MAP_FEATURES } from '../src/star-map/features.ts';
+import type { StarMapNodesClient } from '../src/star-map/nodes-client.ts';
 import { createFamily, HAS_DB, setupHarness, type Harness } from './harness.ts';
 import { operations } from './openapi-ops.ts';
 import { callAs, ORIGIN, startShell, type Sess, type ShellHarness } from './shell-harness.ts';
 
-/** 本次部署可能注册的全部路由（信任界面开关全开） */
-const ALL: readonly Route[] = activeRoutes(new Set(TRUST_FEATURES));
+/** 本次部署可能注册的全部路由（信任界面开关全开，H5 星图 v1 开关全开） */
+const ALL: readonly Route[] = activeRoutes(new Set(TRUST_FEATURES), new Set(STAR_MAP_FEATURES));
 const keyOf = (r: Route) => `${r.method} ${r.path}`;
 const OPS = operations();
 const opOf = (r: Route) => OPS.get(`${r.method} ${PREFIX}${r.path}`)!;
@@ -68,6 +70,7 @@ export const SAMPLES: Record<string, Sample> = {
   'POST /students/{student_id}/student-session': none,
   // 星图、建档（SIE-01）、行为事件与探针（2-L）、数学诊断（SIE-02a）
   'GET /students/{student_id}/star-map': none,
+  'GET /students/{student_id}/star-map/v1': none,  // H5，开关 starmap_v1
   'GET /students/{student_id}/onboarding': none,
   'PUT /students/{student_id}/onboarding/answers': b(() => ({ field_id: 'outer.g1.weekly_available_time', value: { minutes: 300 } })),
   'POST /students/{student_id}/onboarding/exams': b(() => ({ subject: 'aya', exam_type: 'midterm', exam_date: '2026-11-10', full_score: 100, raw_score: 92 })),
@@ -120,6 +123,7 @@ export const RATE_EXEMPT: Record<string, string> = {
   'GET /me': '只读；会话解析本身每次请求都发生（AA：建议每会话缺省桶）',
   'POST /students/{student_id}/consents': '只追加同意记录，库里没有条数上限（AA）',
   'GET /students/{student_id}/star-map': '只读（AA）',
+  'GET /students/{student_id}/star-map/v1': '只读，开关 starmap_v1 只在 dev / test；每个在读且有已发布地图的学科调一次学习服务，陈述受 insight_explain.session.minute 限频（AA：建议加每会话桶，必停）',
   'GET /students/{student_id}/onboarding': '只读（AA）',
   'PUT /students/{student_id}/onboarding/answers': '库里没有 24 小时写入上限，改答案只追加历史行（AA-1：建议加桶，必停）',
   'POST /students/{student_id}/onboarding/exams': '库里 24 小时写入上限（0022：每个录入方 50 条）',
@@ -179,7 +183,10 @@ const exams: ExamViewClient = {
   async prediction() { calls.exams++; return null; },
   async reconciliation() { calls.exams++; return null; },
 };
-const callCount = () => calls.plan.length + calls.diagnosis.length + calls.dispute + calls.exams;
+/** H5 星图 v1 的学习服务 star-map/nodes：越权请求一次也不能到达（本文件的库里没有已发布地图时一次也不调） */
+const starCalls: string[] = [];
+const starNodes: StarMapNodesClient = { async nodes(student) { starCalls.push(student); return { kind: 'unavailable' }; } };
+const callCount = () => calls.plan.length + calls.diagnosis.length + calls.dispute + calls.exams + starCalls.length;
 
 // ---------------------------------------------------------------- 合成家庭、账号与二级资源
 
@@ -325,6 +332,7 @@ before(async () => {
     log: () => undefined, now: () => new Date(FIXED_NOW),
     shell: { plan }, diagnosis: { learning, retryDelaysMs: [1] },
     trust: { features: new Set(TRUST_FEATURES), dispute, exams, exports: new MemoryExportStore() },
+    starMap: { features: new Set(STAR_MAP_FEATURES), nodes: starNodes },
   });
   // 会话都在改状态之前拿到（学生会话经 gF 打开学生模式）
   for (const a of [A.gF, A.gO, A.gU, A.gR, A.gD2, A.gX, A.aS, A.aS2, A.aT]) await sess(a);
