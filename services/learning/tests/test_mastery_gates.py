@@ -362,6 +362,34 @@ def test_star_lit_rules():
     assert not star_lit(NODE, [], {}, S)
 
 
+def test_star_basis_level():
+    """决定星态的层次（星图 v1 的 state 与 basis_id 取这一层；star_lit 与它同一份口径）。"""
+    from learning.mastery.gates import star_basis_level
+    levels = ["know", "understand", "apply"]
+    # star_level：缺省取最高层次，与记录无关
+    assert star_basis_level(NODE, levels, {}, S) == "apply"
+    assert star_basis_level(NODE, levels, {"know": "retain"}, S) == "apply"
+    d = signed_doc()
+    d["star_level_rule"]["node_levels"] = {NODE: "understand"}
+    assert star_basis_level(NODE, levels, {}, parse_config(d, env="test")) == "understand"
+    # 配置的层次不在节点层次里：没有决定层次（星不亮、星态 unseen）
+    d["star_level_rule"]["node_levels"] = {NODE: "synthesize"}
+    assert star_basis_level(NODE, levels, {"apply": "retain"}, parse_config(d, env="test")) is None
+    assert star_basis_level(NODE, [], {}, S) is None
+    # all_levels：门槛最低的层次；同门槛取低层次；全亮时取最低的那一个亮着的层次
+    d["star_level_rule"] = {"mode": "all_levels", "node_levels": {}}
+    al = parse_config(d, env="test")
+    assert star_basis_level(NODE, levels, {"know": "retain", "understand": "stable", "apply": "transfer"}, al) == "understand"
+    assert star_basis_level(NODE, levels, {"know": "transfer", "understand": "transfer", "apply": "retain"}, al) == "know"
+    assert star_basis_level(NODE, levels, {"know": "retain", "understand": "transfer", "apply": "transfer"}, al) == "understand"
+    assert star_basis_level(NODE, levels, {"know": "retain", "apply": "retain"}, al) == "understand"   # 没有记录 = unseen，最低
+    assert star_basis_level(NODE, levels, {"know": "execute", "understand": "execute", "apply": "execute"}, al) == "know"
+    # star_lit 与它一致：决定层次的门槛到迁移及以上
+    for gates in ({"know": "retain", "understand": "transfer", "apply": "transfer"}, {"know": "retain", "apply": "retain"}):
+        lv = star_basis_level(NODE, levels, gates, al)
+        assert star_lit(NODE, levels, gates, al) == (gates.get(lv) in ("transfer", "retain"))
+
+
 # ---- 解释 ----
 
 _SENTENCE = re.compile(r"[一-鿿]")

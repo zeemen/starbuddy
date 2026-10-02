@@ -27,6 +27,10 @@ info:
       `POST /internal/v1/profile-page/read`：学情档案页的惰性编译与 Agent 版读取（第一步 spec 第 14 节）。ensure 接受编排层令牌
       （`trigger = session_start`）或洞察服务令牌（`trigger = weekly`，周报生成前），令牌与触发点不符 403 `CALLER_MISMATCH`；
       read 只接受编排层令牌。新增 Problem 码 `PROFILE_UNAVAILABLE`。不调模型；BFF 令牌一律 401。
+    - （冲刺 4-H H5 星图 v1 PR 1，specs/star-map-v1-h5/spec.md 第 2 节；仍在未发布的 1.1.0 草稿内追加，非破坏性）
+      `POST /internal/v1/star-map/nodes`：当前已发布地图里每颗星（知识节点）的星态，只认 BFF 服务令牌（`bffServiceToken`；
+      编排层、洞察服务令牌一律 401）。只有 `node_id`、`state`、`star_lit`、`basis_id`，**不含** `p_mastery`、`confidence`、证据 ID
+      与各层次明细（schema 用 `additionalProperties: false` 保证）。地图未发布为 200 `status = no_map`；`MASTERY_UNAVAILABLE` 的用途扩大到本接口。
 
     请求体是信封 `{ request, ingest }`：`request` 是学科插件 API v1.0 的 `GradeRequest` / `DiagnoseRequest`
     （`plugin-api.v1.0.yaml`），原样转发给适配器；`ingest` 是平台侧的作答上下文（输入通道、用途），只由学习服务使用，
@@ -382,12 +386,53 @@ paths:
                 compiled: { $ref: '#/components/examples/ProfilePageCompiled' }
         default: { $ref: '#/components/responses/Problem' }
 
+  /internal/v1/star-map/nodes:
+    post:
+      operationId: starMapNodes
+      summary: 星图 v1 的节点星态（BFF 读；1.1.0 草稿内追加，冲刺 4-H H5 PR 1）
+      description: |
+        **契约变更，待签字（必停项）。** 只读，不计量、不写任何表。只接受 BFF 服务令牌（`bffServiceToken`），编排层与洞察服务令牌一律 401；
+        请求体 `caller` 必须是 `bff`（与令牌身份一致），否则 403 `CALLER_MISMATCH`。BFF 已按会话与档案授权确定学生（规则 5）。
+        **星** = 该科当前已发布地图版本中**全部** `status = active`、`level = node` 的知识节点（统一壳 spec 待人确认 #9 默认；
+        领域、主题、细目不成星，撤下的节点与旧版本节点不出现）。按 `node_id` 排序。
+        其中只有 `kind` 参与掌握计算（`kp`、`ability_kp`、`viewpoint`）且带认知层次的节点有星态；其余节点（`material`、`method`、`pitfall`、
+        `exam_point` 等，或没有认知层次）一律 `state = unseen`、`star_lit = false`、`basis_id = null`。每颗星：
+        - `state`：决定星亮的那个认知层次上的门槛（platform.mastery_state）。层次按该科掌握配置的 `star_level_rule`：
+          `star_level` 取配置给该节点的层次，未配置取节点最高层次（配置的层次不在节点层次里则没有决定层次，记 `unseen`）；
+          `all_levels` 取门槛最低的层次（同级取低层次）。该层次没有当前记录为 `unseen`；
+        - `star_lit`：与 `mastery/get` 的同名字段同一实现（星亮层次的门槛到“迁移”及以上），与 `state ∈ {transfer, retain}` 恒等；
+        - `basis_id`：决定 `state` 的那条当前掌握记录（`platform.mastery_estimate.id`，`is_current`）；没有记录为 null。
+          BFF 用它核对判断的 `basis_id`（统一壳 spec 7.2 节条件 3），不一致即画中性底星。
+        **不返回** `p_mastery`、`confidence`、证据 ID、各层次明细与下次复测时间（关于学生的陈述须经判断，规则 11）。
+        该科没有已发布地图：200、`status = no_map`、`map_version = null`、`nodes` 为空（BFF 显示“地图建设中”）。
+        地图已发布但该科没有可用（已加载）的掌握配置：409 `MASTERY_UNAVAILABLE`（不重试；同验证任务的惯例）。
+        不存在的学生与没有记录的学生回同样的结果（全部 unseen），不暴露存在性。
+      security:
+        - bffServiceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StarMapNodesRequest' }
+            examples:
+              basic: { $ref: '#/components/examples/StarMapNodesRequestBff' }
+      responses:
+        '200':
+          description: 节点星态（或“无地图”）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StarMapNodes' }
+              examples:
+                ok: { $ref: '#/components/examples/StarMapNodesOk' }
+                noMap: { $ref: '#/components/examples/StarMapNodesNoMap' }
+        default: { $ref: '#/components/responses/Problem' }
+
 components:
   securitySchemes:
     bffServiceToken:
       type: http
       scheme: bearer
-      description: BFF 到学习服务的服务间令牌。
+      description: BFF 到学习服务的服务间令牌（顶层缺省；`/internal/v1/star-map/nodes` 显式只认它）。
     routeClientToken:
       type: http
       scheme: bearer
@@ -556,6 +601,31 @@ components:
           - { key: root_cause, connective: '', statements: [], todo: [] }
           - { key: recent_progress, connective: '', statements: [], todo: [] }
           - { key: next_step, connective: '', statements: [], todo: [] }
+    StarMapNodesRequestBff:
+      summary: BFF 读合成学生的数学星图星态
+      value:
+        request_id: 00000000-0000-4000-8000-000000000801
+        caller: bff
+        student_ref: 00000000-0000-4000-8000-00000000a002
+        subject: aya
+    StarMapNodesOk:
+      summary: 四颗星：一颗亮（星亮层次到“迁移”）、一颗“执行”、一颗没有记录、一颗方法节点（不参与掌握计算，恒为 unseen）
+      value:
+        subject: aya
+        status: ok
+        map_version: 1.0.0
+        nodes:
+          - { node_id: MATH.SYN.FUNC.AXIS, state: unseen, star_lit: false, basis_id: null }
+          - { node_id: MATH.SYN.FUNC.METHOD, state: unseen, star_lit: false, basis_id: null }
+          - { node_id: MATH.SYN.FUNC.ROOTS, state: execute, star_lit: false, basis_id: 00000000-0000-4000-8000-00000000d801 }
+          - { node_id: MATH.SYN.FUNC.VERTEX, state: transfer, star_lit: true, basis_id: 00000000-0000-4000-8000-00000000d802 }
+    StarMapNodesNoMap:
+      summary: 该科还没有已发布地图（BFF 显示“地图建设中”）
+      value:
+        subject: wenli
+        status: no_map
+        map_version: null
+        nodes: []
     PlanQueryToday:
       summary: 统一壳“今日”页：数学与语文两科（合成学生）
       value:
@@ -1039,6 +1109,77 @@ components:
         - description: 已编译版本必须有页 ID、检查状态与编译时间
           if: { properties: { variant: { const: compiled } }, required: [variant] }
           then: { properties: { profile_page_id: { type: string }, check_status: { type: string }, compiled_at: { type: string } } }
+    StarMapSubject:
+      type: string
+      description: 有星图的学科（英语搁置，不在枚举里）。
+      enum: [wenli, aya, zhixing]
+    StarMapNodesRequest:
+      type: object
+      description: BFF → 学习服务：某学生某科的星态。只有平台学生 ID，不带任何个人信息与掌握快照。
+      required: [request_id, caller, student_ref, subject]
+      additionalProperties: false
+      properties:
+        request_id: { $ref: '#/components/schemas/Uuid' }
+        caller:
+          type: string
+          enum: [bff, orchestrator, insight]
+          description: 服务身份；必须与令牌一致（本接口只认 bff，不符 403 `CALLER_MISMATCH`）。
+        student_ref:
+          type: string
+          format: uuid
+          pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        subject: { $ref: '#/components/schemas/StarMapSubject' }
+    StarMapNode:
+      type: object
+      description: 一颗星的星态。没有掌握概率、置信度、证据 ID 与各层次明细（规则 11）。
+      required: [node_id, state, star_lit, basis_id]
+      additionalProperties: false
+      properties:
+        node_id: { $ref: './knowledge-service.v0.9.yaml#/components/schemas/NodeId' }
+        state:
+          type: string
+          description: 决定星亮的那个认知层次上的门槛（platform.mastery_state）；没有当前记录为 unseen。
+          enum: [unseen, understand, execute, stable, transfer, retain]
+        star_lit: { type: boolean, description: 星亮（与 mastery/get 同一实现）；当且仅当 state 是 transfer 或 retain。 }
+        basis_id:
+          type: [string, 'null']
+          format: uuid
+          description: 决定 state 的当前掌握记录（platform.mastery_estimate.id）；没有记录为 null。
+      allOf:
+        - description: 没有掌握记录的星是 unseen
+          if: { properties: { basis_id: { type: 'null' } }, required: [basis_id] }
+          then: { properties: { state: { const: unseen } } }
+        - description: 星亮当且仅当星态到迁移及以上
+          if: { properties: { state: { enum: [transfer, retain] } }, required: [state] }
+          then: { properties: { star_lit: { const: true } } }
+          else: { properties: { star_lit: { const: false } } }
+    StarMapNodes:
+      type: object
+      description: 当前已发布地图版本里每颗星的星态（按 node_id 排序）；没有已发布地图时 status = no_map。
+      required: [subject, status, map_version, nodes]
+      additionalProperties: false
+      properties:
+        subject: { $ref: '#/components/schemas/StarMapSubject' }
+        status:
+          type: string
+          enum: [ok, no_map]
+          description: ok = 有已发布地图；no_map = 该科没有已发布地图（BFF 显示“地图建设中”）。
+        map_version:
+          description: 当前已发布地图版本号（kge.map_version.version）；no_map 时为 null。
+          oneOf:
+            - $ref: './knowledge-service.v0.9.yaml#/components/schemas/MapVersion'
+            - type: 'null'
+        nodes:
+          type: array
+          maxItems: 5000
+          items: { $ref: '#/components/schemas/StarMapNode' }
+      allOf:
+        - description: 没有地图就没有版本号与星
+          if: { properties: { status: { const: no_map } }, required: [status] }
+          then: { properties: { map_version: { type: 'null' }, nodes: { maxItems: 0 } } }
+        - description: 有地图必须给版本号
+          if: { properties: { status: { const: ok } }, required: [status] }
+          then: { properties: { map_version: { type: string } } }
     Problem:
       type: object
       required: [type, title, status, code, retryable]
@@ -1073,7 +1214,7 @@ components:
             - ROUTE_REJECTED  # 模型路由接口：任务、数据级别或计量字段不合要求（不重试）
             - ROUTE_UNAVAILABLE  # 模型路由接口：没有数据级别允许的可用供应商（可稍后重试）
             - CALLER_MISMATCH  # 1.1.0 掌握读取：请求体 context.caller 与令牌不一致（403）
-            - MASTERY_UNAVAILABLE  # 1.1.0 验证任务：学科没有可用掌握配置或单元不在当前已发布地图里（409，不重试）
+            - MASTERY_UNAVAILABLE  # 1.1.0 验证任务：学科没有可用掌握配置或单元不在当前已发布地图里；星图节点：地图已发布但没有可用掌握配置（409，不重试）
             - TASK_NOT_FOUND  # 1.1.0 撤销验证任务：任务不存在、不属于该学生或不是自述验证任务（404）
             - PROFILE_UNAVAILABLE  # 1.1.0（PR 4）档案页：没有档案页配置、该科不在配置里或没有已发布地图（409，不重试）
             - INTERNAL

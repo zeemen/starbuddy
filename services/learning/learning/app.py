@@ -218,12 +218,14 @@ def create_app(
 
     diagnosis_api.register(app, lambda r: _bearer_ok(r.headers.get("authorization"), settings.service_credential), state)
     # learning-internal 1.1.0（KGE-04 第二步 PR 3）：掌握读取只认编排层令牌；验证任务与撤销只认洞察服务令牌（未配置即一律 401）；
-    # BFF 服务令牌对这四个接口一律 401；档案页 ensure 认编排层（会话开始）与洞察服务（周报），read 只认编排层（PR 4）
+    # BFF 服务令牌对这四个接口一律 401；档案页 ensure 认编排层（会话开始）与洞察服务（周报），read 只认编排层（PR 4）；
+    # 星图节点星态只认 BFF 服务令牌（H5 星图 v1 PR 1）
     insight_token = settings.insight_client_credential
     orchestrator_token = settings.orchestrator_client_credential
     mastery_routes.register(
         app, orchestrator_ok=lambda r: orchestrator_token is not None and _bearer_ok(r.headers.get("authorization"), orchestrator_token),
-        insight_ok=lambda r: insight_token is not None and _bearer_ok(r.headers.get("authorization"), insight_token), state=state)
+        insight_ok=lambda r: insight_token is not None and _bearer_ok(r.headers.get("authorization"), insight_token),
+        bff_ok=lambda r: _bearer_ok(r.headers.get("authorization"), settings.service_credential), state=state)
 
     @app.post("/internal/v0/grade")
     async def grade(request: Request) -> JSONResponse:

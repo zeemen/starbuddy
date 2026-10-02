@@ -27,8 +27,9 @@ CFG, EV, G, BKT, W, CON = ("learning/mastery/config.py", "learning/mastery/evide
 ST, R, SV, JB = "learning/mastery/store.py", "learning/mastery/recompute.py", "learning/service.py", "learning/jobs.py"
 API, ROUTES, APP = "learning/mastery/api.py", "learning/mastery_routes.py", "learning/app.py"
 PF, RD = "learning/mastery/profile.py", "learning/mastery/render.py"
-DB_TESTS = ["tests/test_mastery_store.py", "tests/test_mastery_db.py", "tests/test_mastery_api.py", "tests/test_mastery_profile_db.py"]
-PURE_EXCLUDE = {"test_mastery_db.py", "test_mastery_api.py", "test_mastery_profile_db.py"}  # 库上测试在第二组跑
+DB_TESTS = ["tests/test_mastery_store.py", "tests/test_mastery_db.py", "tests/test_mastery_api.py", "tests/test_mastery_profile_db.py",
+            "tests/test_mastery_star_map.py"]
+PURE_EXCLUDE = {"test_mastery_db.py", "test_mastery_api.py", "test_mastery_profile_db.py", "test_mastery_star_map.py"}  # 库上测试在第二组跑
 
 # 名字 → [(文件, 原文, 替换为), …]
 MUTATIONS: dict[str, list[tuple[str, str, str]]] = {
@@ -94,6 +95,12 @@ MUTATIONS: dict[str, list[tuple[str, str, str]]] = {
     "复测间隔递增校验放过": [(CFG, 'r["rung0_min_gap_seconds"] < r["rung1_interval_seconds"] < r["rung2_interval_seconds"]', "True")],
     "一族题可到执行（families_min 下限放过）": [(CFG, '_need(g["execute"]["families_min"] >= 2,', "_need(True,")],
     "星亮看最低层次": [(G, 'level = rule["node_levels"].get(node_id) or levels[-1]', 'level = rule["node_levels"].get(node_id) or levels[0]')],
+    # H5 星图 v1：决定星态的层次（star_basis_level，星图 state / basis_id 与 star_lit 共用）
+    "all_levels 星亮层次取最高门槛": [(G, 'return min(levels, key=lambda lv: RANK.get(gates.get(lv) or "unseen", -1))',
+                                   'return max(levels, key=lambda lv: RANK.get(gates.get(lv) or "unseen", -1))')],
+    "all_levels 同门槛取高层次": [(G, 'return min(levels, key=lambda lv: RANK.get(gates.get(lv) or "unseen", -1))',
+                                'return min(reversed(levels), key=lambda lv: RANK.get(gates.get(lv) or "unseen", -1))')],
+    "配置的星亮层次不在节点里仍返回它": [(G, "return level if level in levels else None", "return level")],
     # 一致性检查（开发计划验收：拦截程度升级）
     "一致性检查放过程度升级": [(CON, "elif cfg.degree_words[w] > group_degree:", "elif False:")],
     "一致性检查放过新增结论": [(CON, "            if w not in allowed:", "            if False:")],
@@ -212,6 +219,36 @@ DB_MUTATIONS: dict[str, list[tuple[str, str, str]]] = {
                                   "                WHERE id = $1::uuid AND is_current AND student_id = $3::uuid",
                                "SET is_current = is_current\n"
                                "                WHERE id = $1::uuid AND $2::text IS NOT NULL AND student_id = $3::uuid")],
+    # H5 星图 v1 PR 1：星图节点星态（只给 BFF、只有星态、按学生、当前记录、当前已发布地图）
+    "星图泄露 p_mastery": [(API, '"basis_id": basis["id"] if basis is not None else None})',
+                           '"basis_id": basis["id"] if basis is not None else None, '
+                           '"p_mastery": 0.5})')],
+    "星图泄露证据 ID": [(API, '"basis_id": basis["id"] if basis is not None else None})',
+                        '"basis_id": basis["id"] if basis is not None else None, '
+                        '"evidence_ids": []})')],
+    "星图 basis_id 取旧记录": [(API, "WHERE student_id = $1::uuid AND subject = $2::platform.subject AND is_current AND",
+                               "WHERE student_id = $1::uuid AND subject = $2::platform.subject AND NOT is_current AND")],
+    "星图不按学生过滤": [(API, "WHERE student_id = $1::uuid AND subject = $2::platform.subject AND is_current AND",
+                         "WHERE $1::text IS NOT NULL AND subject = $2::platform.subject AND is_current AND")],
+    "星图丢掉不参与掌握计算的节点（统一壳 #9）": [(API, "            stars.append((node_id, lv))\n",
+                                          "            if lv:\n                stars.append((node_id, lv))\n")],
+    "星图细目也成星（不按 level = node）": [(API, "WHERE map_version_id = $1::uuid AND status = 'active' AND level = 'node'\n",
+                                       "WHERE map_version_id = $1::uuid AND status = 'active' AND level IN ('node', 'detail')\n")],
+    "星图接受编排层令牌": [(ROUTES, 'return await run("star_map_nodes", request, bff_ok, star_nodes,',
+                           'return await run("star_map_nodes", request, lambda r: bff_ok(r) or orchestrator_ok(r), star_nodes,')],
+    "星图接受洞察服务令牌": [(ROUTES, 'return await run("star_map_nodes", request, bff_ok, star_nodes,',
+                            'return await run("star_map_nodes", request, lambda r: bff_ok(r) or insight_ok(r), star_nodes,')],
+    "星图只认编排层令牌（BFF 调不了）": [(APP, 'bff_ok=lambda r: _bearer_ok(r.headers.get("authorization"), settings.service_credential), state=state)',
+                                   'bff_ok=lambda r: orchestrator_token is not None and _bearer_ok(r.headers.get("authorization"), orchestrator_token), state=state)')],
+    "星图不核对调用方": [(ROUTES, 'if body["caller"] != "bff":', "if False:")],
+    "星图星态不取星亮层次（取最低层次）": [(API, "level = star_basis_level(node_id, levels, gates, cfg)", "level = levels[0]")],
+    "星图星亮不复用 star_lit（按最高层次另算）": [(API, '"star_lit": bool(star_lit(node_id, levels, gates, cfg))',
+                                         '"star_lit": gates[levels[-1]] in ("transfer", "retain")')],
+    "星图用撤下的地图（未发布也给星）": [(API, "FROM kge.map_version WHERE subject = $1::platform.subject AND status = 'published'\", subject)",
+                                  "FROM kge.map_version WHERE subject = $1::platform.subject AND status IN ('published', 'retired')\", subject)")],
+    "星图撤下的节点也成星": [(API, "WHERE map_version_id = $1::uuid AND status = 'active' AND level = 'node'\n",
+                            "WHERE map_version_id = $1::uuid AND level = 'node'\n")],
+    "星图没有配置也给星态": [(API, "            raise MasteryUnavailable(subject)\n", "            cfg = next(iter(configs.values()))\n")],
 }
 
 

@@ -8,6 +8,11 @@ model_version、human_review_required、contract_version）。
 - star_lit 是节点的星亮：按该科掌握配置的 star_level_rule（gates.star_lit），同一节点各行取值相同；没有可用配置的学科为 false；
 - explain 的证据链 = 各层次当前记录引用的证据；weight 是重放时的更新强度（gates.Replay.strengths），当前已不计入的为 0；
   门槛条件的编码与数值不外露（第一步 #17），只在 explain_gates（服务内）里。
+
+另有星图 v1 的节点星态（learning-internal 1.1.0 草稿内追加的 `POST /internal/v1/star-map/nodes`，H5 星图 v1 PR 1，
+specs/star-map-v1-h5/spec.md 第 2 节）：只给 BFF；星 = 当前已发布地图里全部有效的 level = node 节点（统一壳 #9 默认），
+其中可计算类型且带认知层次的节点星态取 gates.star_basis_level 那一层（与 star_lit 同一份口径），其余节点一律 unseen、不亮、无依据；
+只回 node_id、state、star_lit、basis_id。
 """
 from __future__ import annotations
 
@@ -18,8 +23,8 @@ from ..store import learning_tx
 from . import store as S
 from .config import ALGORITHM, ALGORITHM_VERSION, COGNITIVE_LEVELS, MasteryConfig
 from .evidence import Unit
-from .gates import replay, star_lit
-from .recompute import norm_student
+from .gates import replay, star_basis_level, star_lit
+from .recompute import MasteryUnavailable, norm_student
 
 KS_CONTRACT_VERSION = "0.9.0"   # 知识服务形状的版本（信封 contract_version 是 const）
 MODEL_VERSION = f"algo:{ALGORITHM}@{ALGORITHM_VERSION}"
@@ -30,7 +35,9 @@ _MAX_SEGMENTS = 4               # source_version 每类最多 4 段（契约一�
 
 
 async def _nodes(conn, node_ids: Sequence[str]) -> dict[str, tuple[str, str, tuple[str, ...]]]:
-    """请求节点在当前已发布地图里的 (学科, 地图版本号, 认知层次)；不在任何当前地图里的节点不出现。"""
+    """请求节点在当前已发布地图里的 (学科, 地图版本号, 认知层次)；不在任何当前地图里的节点不出现。
+    不另加 level = 'node'：迁移 0011 的 node_detail_kind（细目只能是 pitfall / exam_point）与 node_kind_by_level（领域、主题没有 kind）
+    保证可计算类型（kp、ability_kp、viewpoint）只出现在 level = 'node'，按 kind 过滤已经足够。"""
     rows = await conn.fetch(
         """SELECT n.id::text, v.subject::text, v.version, n.cognitive_levels
              FROM kge.knowledge_node n JOIN kge.map_version v ON v.id = n.map_version_id
@@ -103,6 +110,47 @@ async def mastery_get(pool, configs: Mapping[str, MasteryConfig], body: Mapping[
                 confs.append(float(r["confidence"]))
                 algos.append(r["algorithm_version"])
     return _envelope({"states": states}, evidence, confs, algos, graphs)
+
+
+async def star_map_nodes(pool, configs: Mapping[str, MasteryConfig], student_ref: str, subject: str) -> dict:
+    """星图 v1 的节点星态。该科没有已发布地图：status = no_map；地图已发布但没有可用掌握配置：MasteryUnavailable（接口回 409）。
+    每颗星只有 node_id、state（星亮层次上的门槛，没有当前记录为 unseen）、star_lit、basis_id（决定 state 的当前记录 ID）。"""
+    student = norm_student(student_ref)
+    async with learning_tx(pool) as conn:
+        cur = await conn.fetchrow(
+            "SELECT id::text, version FROM kge.map_version WHERE subject = $1::platform.subject AND status = 'published'", subject)
+        if cur is None:
+            return {"subject": subject, "status": "no_map", "map_version": None, "nodes": []}
+        cfg = configs.get(subject)
+        if cfg is None or cfg.subject != subject:
+            raise MasteryUnavailable(subject)
+        # 星 = 当前已发布地图里全部有效的 level = 'node' 节点（统一壳 #9 默认）；领域、主题、细目不成星
+        rows = await conn.fetch(
+            """SELECT id::text, kind, cognitive_levels FROM kge.knowledge_node
+                WHERE map_version_id = $1::uuid AND status = 'active' AND level = 'node'
+                ORDER BY id""", cur["id"])
+        stars: list[tuple[str, tuple[str, ...]]] = []
+        for node_id, kind, levels in rows:
+            # 只有可计算类型且带认知层次的节点参与掌握计算（与 mastery_get 同口径）；其余节点层次为空 → unseen、不亮、无依据
+            lv = tuple(x for x in COGNITIVE_LEVELS if x in (levels or ())) if kind in S.COMPUTABLE_KINDS else ()
+            stars.append((node_id, lv))
+        computable = [n for n, lv in stars if lv]
+        recs: dict[tuple[str, str], Mapping[str, Any]] = {}
+        if computable:
+            # 只读决定星态所需的列（不读 p_mastery、confidence、证据）
+            for r in await conn.fetch(
+                    """SELECT id::text AS id, node_id, cognitive_level, state::text AS state FROM platform.mastery_estimate
+                        WHERE student_id = $1::uuid AND subject = $2::platform.subject AND is_current AND node_id = ANY($3::text[])""",
+                    student, subject, computable):
+                recs[(r["node_id"], r["cognitive_level"])] = r
+    out = []
+    for node_id, levels in stars:
+        gates = {lv: (recs[(node_id, lv)]["state"] if (node_id, lv) in recs else "unseen") for lv in levels}
+        level = star_basis_level(node_id, levels, gates, cfg)
+        basis = recs.get((node_id, level)) if level is not None else None
+        out.append({"node_id": node_id, "state": basis["state"] if basis is not None else "unseen",
+                    "star_lit": bool(star_lit(node_id, levels, gates, cfg)), "basis_id": basis["id"] if basis is not None else None})
+    return {"subject": subject, "status": "ok", "map_version": cur["version"], "nodes": out}
 
 
 async def mastery_explain(pool, configs: Mapping[str, MasteryConfig], body: Mapping[str, Any], now: datetime,

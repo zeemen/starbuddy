@@ -14,6 +14,10 @@
   学生、家长视图不走这里（BFF 经 platform.profile_page_statement_v 读引用、经洞察服务 insight.explain 取文字）。
   没有档案页配置或该科不在配置里：409 PROFILE_UNAVAILABLE。
 
+- POST /internal/v1/star-map/nodes（H5 星图 v1 PR 1，1.1.0 草稿内追加）：星图节点星态，只认 BFF 服务令牌（LEARNING_SERVICE_TOKEN，
+  与 grade、plan 同一方案）；编排层、洞察服务令牌一律 401；请求体 caller 必须是 bff，否则 403 CALLER_MISMATCH。
+  星 = 当前已发布地图里全部有效的 level = node 节点，不参与掌握计算的节点为 unseen；只回 node_id、state、star_lit、basis_id；没有已发布地图 200 no_map；地图已发布但没有掌握配置 409 MASTERY_UNAVAILABLE。
+
 鉴权同既有内部接口（Bearer，sha256 后常量时间比较）；请求体限 64 KB，JSON 拒绝 NaN / Infinity 与重复键。
 日志只记接口名、状态码、错误码、耗时与 request_id（UUID 形状才记）；不记学生 ID、节点、证据与请求体。
 """
@@ -46,8 +50,8 @@ def _problem(e: IngestError, rid: str | None) -> JSONResponse:
     return JSONResponse(e.problem(rid), status_code=e.status, media_type="application/problem+json")
 
 
-def register(app: FastAPI, *, orchestrator_ok: Callable[[Request], bool], insight_ok: Callable[[Request], bool], state: dict,
-             clock: Callable[[], datetime] | None = None) -> None:
+def register(app: FastAPI, *, orchestrator_ok: Callable[[Request], bool], insight_ok: Callable[[Request], bool],
+             bff_ok: Callable[[Request], bool], state: dict, clock: Callable[[], datetime] | None = None) -> None:
     """state["plan"] = (pool, client)；state["mastery_configs"]：已校验的掌握配置（学科 → MasteryConfig）；
     state["mastery"]：MasteryEngine 或 None（没有配置任何学科）。"""
     now = clock or (lambda: datetime.now(timezone.utc))
@@ -174,6 +178,26 @@ def register(app: FastAPI, *, orchestrator_ok: Callable[[Request], bool], insigh
         if c.validate("ProfilePage", out):
             raise RuntimeError("profile page response does not match the contract")
         return out
+
+    # ---------- 星图节点星态（H5 星图 v1 PR 1）----------
+    async def star_nodes(body: dict) -> dict:
+        c = internal_contract(INTERNAL)
+        if c.validate("StarMapNodesRequest", body):
+            raise IngestError(400, "INVALID_REQUEST", "request does not match the contract")
+        if body["caller"] != "bff":
+            raise IngestError(403, "CALLER_MISMATCH", "caller does not match the service token")
+        pool, _ = state["plan"]
+        try:
+            out = await M.star_map_nodes(pool, state["mastery_configs"], body["student_ref"], body["subject"])
+        except MasteryUnavailable:
+            raise IngestError(409, "MASTERY_UNAVAILABLE", "no mastery configuration for this subject") from None
+        if c.validate("StarMapNodes", out):
+            raise RuntimeError("star map response does not match the contract")
+        return out
+
+    @app.post("/internal/v1/star-map/nodes")
+    async def star_map_nodes(request: Request) -> JSONResponse:
+        return await run("star_map_nodes", request, bff_ok, star_nodes, lambda b: b.get("request_id"))
 
     @app.post("/internal/v1/profile-page/ensure")
     async def profile_ensure(request: Request) -> JSONResponse:

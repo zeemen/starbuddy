@@ -401,13 +401,21 @@ def explain_gates(rep: Replay) -> dict[str, Any]:
     }
 
 
-def star_lit(node_id: str, node_levels: Sequence[str], gates: Mapping[str, str | None], cfg: MasteryConfig) -> bool:
-    """星亮（ADR 11；#3 默认 star_level）：星亮层次由教研按节点配置，未配置时取该节点最高的认知层次。"""
+def star_basis_level(node_id: str, node_levels: Sequence[str], gates: Mapping[str, str | None], cfg: MasteryConfig) -> str | None:
+    """决定星亮的那个认知层次（star_lit 与星图节点星态共用，H5 星图 v1 PR 1；只此一份口径）：
+    star_level 模式取教研给该节点配置的层次，未配置取该节点最高的认知层次，配置的层次不在节点层次里为 None；
+    all_levels 模式取门槛最低的层次（同级取低层次）——“全部层次都亮”等价于“最低的那个亮”。节点没有层次为 None。"""
     levels = [lv for lv in COGNITIVE_LEVELS if lv in node_levels]
     if not levels:
-        return False
+        return None
     rule = cfg["star_level_rule"]
     if rule["mode"] == "all_levels":
-        return all(gates.get(lv) in LIT for lv in levels)
+        return min(levels, key=lambda lv: RANK.get(gates.get(lv) or "unseen", -1))
     level = rule["node_levels"].get(node_id) or levels[-1]
-    return level in levels and gates.get(level) in LIT
+    return level if level in levels else None
+
+
+def star_lit(node_id: str, node_levels: Sequence[str], gates: Mapping[str, str | None], cfg: MasteryConfig) -> bool:
+    """星亮（ADR 11；#3 默认 star_level）：星亮层次（star_basis_level）的门槛到“迁移”及以上。"""
+    level = star_basis_level(node_id, node_levels, gates, cfg)
+    return level is not None and gates.get(level) in LIT

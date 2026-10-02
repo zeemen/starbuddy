@@ -346,6 +346,30 @@ INTERNAL_MUTATIONS = {
     "档案页 ensure 结果放开多余字段（可夹带文字）": assign(f"{S}.ProfilePageEnsureResult.additionalProperties", True),
     "档案页放开多余字段（可夹带模型版本）": assign(f"{S}.ProfilePage.additionalProperties", True),
     "删掉档案页读取接口": delete(f"{P}./internal/v1/profile-page/read"),
+    # H5 星图 v1 PR 1（1.1.0 草稿内追加）：只给 BFF、只有星态
+    "星图节点夹带掌握概率": assign(f"{S}.StarMapNode.properties.p_mastery", {"type": "number", "minimum": 0, "maximum": 1}),
+    "星图节点夹带置信度（且不在 required 里，示例照样通过）": assign(f"{S}.StarMapNode.properties.confidence", {"type": "number"}),
+    "星图节点夹带证据 ID": assign(f"{S}.StarMapNode.properties.evidence_ids", {"type": "array", "items": {"type": "string"}}),
+    "星图节点夹带各层次明细": assign(f"{S}.StarMapNode.properties.levels", {"type": "array", "maxItems": 4, "items": {"type": "object", "additionalProperties": False}}),
+    "星图响应顶层夹带置信度": assign(f"{S}.StarMapNodes.properties.confidence", {"type": "number"}),
+    "星图节点放开多余字段": assign(f"{S}.StarMapNode.additionalProperties", True),
+    "星图响应放开多余字段": delete(f"{S}.StarMapNodes.additionalProperties"),
+    "星图节点改引用掌握状态（带 p_mastery）": assign(f"{S}.StarMapNodes.properties.nodes.items",
+                                           {"$ref": "./knowledge-service.v0.9.yaml#/components/schemas/MasteryState"}),
+    "星图节点不要求 basis_id": assign(f"{S}.StarMapNode.required", ["node_id", "state", "star_lit"]),
+    "星图去掉“无记录即 unseen”": lambda d: d["components"]["schemas"]["StarMapNode"]["allOf"].pop(0),
+    "星图去掉“星亮当且仅当迁移及以上”": lambda d: d["components"]["schemas"]["StarMapNode"]["allOf"].pop(1),
+    "星图无地图也可带星": lambda d: d["components"]["schemas"]["StarMapNodes"]["allOf"].pop(0),
+    "星图请求不要求调用方": assign(f"{S}.StarMapNodesRequest.required", ["request_id", "student_ref", "subject"]),
+    "星图请求放开多余字段": assign(f"{S}.StarMapNodesRequest.additionalProperties", True),
+    "星图请求学生 ID 不限小写": delete(f"{S}.StarMapNodesRequest.properties.student_ref.pattern"),
+    "星图学科放开英语": assign(f"{S}.StarMapSubject.enum", ["wenli", "aya", "zhixing", "echo"]),
+    "星图接口接受编排层令牌": assign(f"{P}./internal/v1/star-map/nodes.post.security", [{"bffServiceToken": []}, {"orchestratorServiceToken": []}]),
+    "星图接口改用洞察服务令牌": assign(f"{P}./internal/v1/star-map/nodes.post.security", [{"insightServiceToken": []}]),
+    "星图接口去掉显式鉴权（回落到顶层）": delete(f"{P}./internal/v1/star-map/nodes.post.security"),
+    "星图响应另写一份开放对象": lambda d: d["paths"]["/internal/v1/star-map/nodes"]["post"]["responses"]["200"]["content"][
+        "application/json"].__setitem__("schema", {"type": "object"}),
+    "删掉星图节点接口": delete(f"{P}./internal/v1/star-map/nodes"),
 }
 
 

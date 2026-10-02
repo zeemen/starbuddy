@@ -539,6 +539,32 @@ INTERNAL_V1_COUNTER = [
     ("档案页夹带模型版本", "ProfilePage", "ProfilePageCompiled", lambda v: v.__setitem__("model_version", "model:fake-a/x@1")),
     ("纯模板版本却带页 ID", "ProfilePage", "ProfilePageCompiled", lambda v: v.__setitem__("variant", "template_only")),
     ("已编译版本缺编译时间", "ProfilePage", "ProfilePageCompiled", lambda v: v.__setitem__("compiled_at", None)),
+    # 1.1.0 草稿内追加（H5 星图 v1 PR 1）：星图节点星态只有四个字段，不含推断数值与各层次明细
+    ("星图请求缺调用方", "StarMapNodesRequest", "StarMapNodesRequestBff", lambda v: v.pop("caller")),
+    ("星图请求的调用方不是服务身份", "StarMapNodesRequest", "StarMapNodesRequestBff", lambda v: v.__setitem__("caller", "student")),
+    ("星图请求的学生 ID 大写", "StarMapNodesRequest", "StarMapNodesRequestBff", lambda v: v.__setitem__("student_ref", v["student_ref"].upper())),
+    ("星图请求的学科是英语（搁置）", "StarMapNodesRequest", "StarMapNodesRequestBff", lambda v: v.__setitem__("subject", "echo")),
+    ("星图请求自带节点列表", "StarMapNodesRequest", "StarMapNodesRequestBff", lambda v: v.__setitem__("node_ids", ["MATH.SYN.FUNC.AXIS"])),
+    ("星图节点夹带掌握概率", "StarMapNodes", "StarMapNodesOk", lambda v: v["nodes"][-1].__setitem__("p_mastery", 0.9)),
+    ("星图节点夹带置信度", "StarMapNodes", "StarMapNodesOk", lambda v: v["nodes"][-1].__setitem__("confidence", 0.8)),
+    ("星图节点夹带证据 ID", "StarMapNodes", "StarMapNodesOk",
+     lambda v: v["nodes"][-1].__setitem__("evidence_ids", ["00000000-0000-4000-8000-00000000e801"])),
+    ("星图节点夹带各层次明细", "StarMapNodes", "StarMapNodesOk",
+     lambda v: v["nodes"][-1].__setitem__("levels", [{"cognitive_level": "apply", "gate": "transfer"}])),
+    ("星图节点夹带层次", "StarMapNodes", "StarMapNodesOk", lambda v: v["nodes"][-1].__setitem__("cognitive_level", "apply")),
+    ("星图响应顶层夹带置信度", "StarMapNodes", "StarMapNodesOk", lambda v: v.__setitem__("confidence", 0.8)),
+    ("星图响应顶层夹带证据 ID", "StarMapNodes", "StarMapNodesOk", lambda v: v.__setitem__("evidence_ids", [])),
+    ("星图节点缺 basis_id", "StarMapNodes", "StarMapNodesOk", lambda v: v["nodes"][-2].pop("basis_id")),
+    ("星图节点状态写 lit", "StarMapNodes", "StarMapNodesOk", lambda v: v["nodes"][-1].__setitem__("state", "lit")),
+    ("没有掌握记录的星不是 unseen", "StarMapNodes", "StarMapNodesOk", lambda v: v["nodes"][-2].__setitem__("basis_id", None)),
+    ("星态到迁移却没亮", "StarMapNodes", "StarMapNodesOk", lambda v: v["nodes"][-1].__setitem__("star_lit", False)),
+    ("星态只到执行却亮了", "StarMapNodes", "StarMapNodesOk", lambda v: v["nodes"][-2].__setitem__("star_lit", True)),
+    ("星图节点写成能力点", "StarMapNodes", "StarMapNodesOk", lambda v: v["nodes"][0].__setitem__("node_id", "aya:K-QE-0102")),
+    ("无地图却带星", "StarMapNodes", "StarMapNodesNoMap",
+     lambda v: v["nodes"].append({"node_id": "CHN.SYN.T1.N1", "state": "unseen", "star_lit": False, "basis_id": None})),
+    ("无地图却带版本号", "StarMapNodes", "StarMapNodesNoMap", lambda v: v.__setitem__("map_version", "1.0.0")),
+    ("有地图却没有版本号", "StarMapNodes", "StarMapNodesOk", lambda v: v.__setitem__("map_version", None)),
+    ("星图状态写 unavailable（不可用走 409）", "StarMapNodes", "StarMapNodesNoMap", lambda v: v.__setitem__("status", "unavailable")),
 ]
 
 # 1.1.0 路径与引用的结构要求（KGE-04 第二步 PR 3）：掌握读取的请求与响应必须直接引用知识服务 v0.9 的 schema（形状照搬，不另写一份）；
@@ -552,6 +578,8 @@ INTERNAL_V1_REFS = {
     # PR 4：学情档案页（仍在未发布的 1.1.0 草稿内追加）
     "/internal/v1/profile-page/ensure": ("#/components/schemas/ProfilePageEnsureRequest", "#/components/schemas/ProfilePageEnsureResult"),
     "/internal/v1/profile-page/read": ("#/components/schemas/ProfilePageReadRequest", "#/components/schemas/ProfilePage"),
+    # H5 星图 v1 PR 1（仍在未发布的 1.1.0 草稿内追加）
+    "/internal/v1/star-map/nodes": ("#/components/schemas/StarMapNodesRequest", "#/components/schemas/StarMapNodes"),
 }
 INTERNAL_V1_SECURITY = {"/internal/v1/verification": [{"insightServiceToken": []}],
                         "/internal/v1/verification/cancel": [{"insightServiceToken": []}],
@@ -559,7 +587,12 @@ INTERNAL_V1_SECURITY = {"/internal/v1/verification": [{"insightServiceToken": []
                         "/internal/v1/mastery/explain": [{"orchestratorServiceToken": []}],
                         # ensure：编排层（会话开始）或洞察服务（周报）二选一；read：只给编排层（Agent 完整版含待办）
                         "/internal/v1/profile-page/ensure": [{"orchestratorServiceToken": []}, {"insightServiceToken": []}],
-                        "/internal/v1/profile-page/read": [{"orchestratorServiceToken": []}]}
+                        "/internal/v1/profile-page/read": [{"orchestratorServiceToken": []}],
+                        # 星图节点：只给 BFF（显式写出，不靠顶层缺省）
+                        "/internal/v1/star-map/nodes": [{"bffServiceToken": []}]}
+# 星图节点响应里不得出现的字段（H5 spec 第 2 节）：推断数值、证据与各层次明细只给编排层（mastery/get、explain）
+STAR_MAP_FORBIDDEN = frozenset({"p_mastery", "confidence", "evidence_ids", "cognitive_level", "levels", "gates", "states",
+                                "next_review_at", "next_retest_at", "conditions", "chain"})
 # 注意：升 learning-internal.v1 的版本时同步改这里（以及 _check_internal_v1_structure 里写死的版本号）
 INTERNAL_V1_VERSION = "1.1.0"
 
@@ -609,6 +642,50 @@ def _check_internal_v1_structure(doc: dict, errors: list[str]) -> None:
             for name, paths in owned.items():
                 if path not in paths and any(name in sec for sec in op.get("security", []) or []):
                     errors.append(f"learning-internal.v1 {path} 不得接受 {name}")
+    _check_star_map_schema(sch, errors)
+
+
+def _check_star_map_schema(sch: dict, errors: list[str]) -> None:
+    """星图节点（H5 PR 1）：响应 schema 里（含引用到的本文件 schema）不得出现推断数值、证据与各层次明细的字段，
+    每个对象都必须 additionalProperties: false；请求必须带调用方。"""
+    seen: set[str] = set()
+
+    def visit(node, trail: str) -> None:
+        if isinstance(node, list):
+            for i, x in enumerate(node):
+                visit(x, f"{trail}[{i}]")
+            return
+        if not isinstance(node, dict):
+            return
+        ref = node.get("$ref")
+        if isinstance(ref, str) and ref.startswith("#/components/schemas/"):
+            name = ref.rsplit("/", 1)[1]
+            if name not in seen:
+                seen.add(name)
+                visit(sch.get(name, {}), name)
+        props = node.get("properties")
+        if isinstance(props, dict):
+            for k in props:
+                if k in STAR_MAP_FORBIDDEN:
+                    errors.append(f"learning-internal.v1 {trail} 不得含 {k}（星图只给星态）")
+        if node.get("type") == "object" and node.get("additionalProperties") is not False:
+            errors.append(f"learning-internal.v1 {trail} 必须 additionalProperties: false（星图不得夹带推断）")
+        if "patternProperties" in node or "unevaluatedProperties" in node and node["unevaluatedProperties"] is not False:
+            errors.append(f"learning-internal.v1 {trail} 不得放开属性")
+        for k, v in node.items():
+            if k != "$ref":
+                visit(v, f"{trail}.{k}")
+
+    if "StarMapNodes" not in sch or "StarMapNode" not in sch:
+        errors.append("learning-internal.v1 缺少 StarMapNodes / StarMapNode")
+        return
+    seen.add("StarMapNodes")
+    visit(sch["StarMapNodes"], "StarMapNodes")
+    if "StarMapNode" not in seen:
+        errors.append("learning-internal.v1 StarMapNodes.nodes 必须引用 StarMapNode")
+    req = sch.get("StarMapNodesRequest", {})
+    if "caller" not in req.get("required", []) or req.get("additionalProperties") is not False:
+        errors.append("learning-internal.v1 StarMapNodesRequest 必须要求 caller 且不放开多余字段")
 
 
 def _check_internal_v1_examples(errors: list[str], doc: dict | None = None) -> None:
@@ -634,7 +711,8 @@ def _check_internal_v1_examples(errors: list[str], doc: dict | None = None) -> N
                  "VerificationCancelRequestRollback": "VerificationCancelRequest",
                  "VerificationCancelResultCancelled": "VerificationCancelResult",
                  "ProfilePageEnsureSessionStart": "ProfilePageEnsureRequest", "ProfilePageEnsureCompiled": "ProfilePageEnsureResult",
-                 "ProfilePageReadBasic": "ProfilePageReadRequest", "ProfilePageCompiled": "ProfilePage"}
+                 "ProfilePageReadBasic": "ProfilePageReadRequest", "ProfilePageCompiled": "ProfilePage",
+                 "StarMapNodesRequestBff": "StarMapNodesRequest", "StarMapNodesOk": "StarMapNodes", "StarMapNodesNoMap": "StarMapNodes"}
     for name, schema in schema_of.items():
         if name not in examples:
             errors.append(f"learning-internal.v1 缺少示例 {name}")
