@@ -1,6 +1,6 @@
 # 冲刺 4-H · H5 星图 v1：星 = 知识节点，判断先于展示
 
-状态：**草稿（2026-10-02），待人确认**。确认后按 #1–#10 的默认执行。实现 PR 首行 `[NEEDS-HUMAN]`（契约变更、星图数据来源与画像展示）。
+状态：**已确认（2026-10-02，用户“按默认建议，开始实现”）**，待人确认 #1–#10 按默认执行。实现 PR 首行 `[NEEDS-HUMAN]`（契约变更、星图数据来源与画像展示）。
 任务包：4-H 统一壳 H5（`specs/unified-shell-sprint4/spec.md` 第 7.2 节，已确认）；冲刺 4 顺延。设计以 7.2 节与第 8 节为准，本文只写调研后的落地方式与新增决定。
 关联：ADR 11（草稿）、ADR 13（草稿）；KGE-04 第二步（已提交 3bd282c…927251a）；SIE-02b 判断生成（`insight.jobs.sync_mastery` / `sync_mastery_from_db`）；3-H 星图（`services/bff/src/star-map/`、`apps/web/src/star/`）；Gate 0 星图截图（5-C+D）。
 
