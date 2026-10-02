@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import json
+import logging
 import random
 import time
 import uuid
@@ -22,6 +24,9 @@ from .attributes import Attributes, derive, v0_attributes
 from .contract import UnsupportedContractVersion, internal_contract, plugin_contract
 from .errors import IngestError
 from .fingerprint import request_fingerprint, sha256_hex
+from .mastery.recompute import MasteryEngine, after_ingest
+
+log = logging.getLogger("starbuddy.learning.mastery")
 
 METHODS = ("grade", "diagnose")
 BUSY_POLL_SECONDS = 0.1
@@ -29,10 +34,31 @@ BUSY_MAX_POLL_SECONDS = 2.0
 
 
 class IngestService:
-    def __init__(self, settings: Settings, pool: asyncpg.Pool, client: httpx.AsyncClient) -> None:
+    def __init__(self, settings: Settings, pool: asyncpg.Pool, client: httpx.AsyncClient,
+                 mastery: MasteryEngine | None = None) -> None:
         self.settings = settings
         self.pool = pool
         self.client = client
+        self.mastery = mastery  # 掌握重算（KGE-04 第二步）；None = 不写掌握记录
+
+    async def _recompute_mastery(self, ctx: dict, summary: dict) -> None:
+        """落库事务已提交：另起事务同步重算这次作答涉及的单元（第一步待人确认 #6）。
+        失败只记计数与单元 ID（不记学生与证据内容，第二步待人确认 #8），不影响已落库的证据与接口返回；之后由对账补上。"""
+        if self.mastery is None:
+            return
+        try:
+            # 时间预算（审查意见 1）：同步重算不能拖住接口；超时取消（未提交的单元事务回滚），记 failed，交给对账
+            await asyncio.wait_for(
+                after_ingest(self.mastery, ctx["student_ref"], ctx["subject"], list(summary.get("attempt_ids") or [])),
+                self.settings.mastery_sync_budget_seconds)
+        except asyncio.TimeoutError:
+            self.mastery.stats["failed"] += 1
+            self.mastery.stats["sync_timeout"] += 1
+            log.warning(json.dumps({"event": "mastery_after_ingest_timeout", "subject": ctx["subject"]}, ensure_ascii=False))
+        except Exception as e:  # noqa: BLE001
+            self.mastery.stats["failed"] += 1
+            log.warning(json.dumps({"event": "mastery_after_ingest_failed", "subject": ctx["subject"],
+                                    "error_class": type(e).__name__[:48]}, ensure_ascii=False))
 
     # ---------- 请求校验（调适配器之前） ----------
     def _validate_request(self, method: str, body: object, version: str) -> dict:
@@ -172,7 +198,6 @@ class IngestService:
                 continue
             try:
                 summary = await self._run(method, request, key, c, prior, attrs, versioned=ingest is not None)
-                return summary, False
             except store.LeaseLost:
                 continue  # 别人接管并可能已完成：回到幂等检查拿它的结果
             except IngestError as e:
@@ -181,6 +206,9 @@ class IngestService:
             except Exception:
                 await store.mark_failed(self.pool, method=method, key=key, lease_token=c.lease_token, error_code="INTERNAL")
                 raise
+            # 只有这次真正落库才重算；幂等重放（上面 done 分支）不触发，漏掉的由对账补
+            await self._recompute_mastery(ctx, summary)
+            return summary, False
 
     async def _run(self, method: str, request: dict, key: str, c: store.Claim, prior: dict[str, str], attrs: Attributes,
                    *, versioned: bool) -> dict:

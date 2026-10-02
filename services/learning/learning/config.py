@@ -12,6 +12,10 @@
   LEARNING_DIAGNOSIS_SOURCE      fixture（缺省，合成夹具，只允许 test）| knowledge（经知识服务 node.path / item.search）
   LEARNING_KNOWLEDGE_URL / LEARNING_KNOWLEDGE_TOKEN   知识服务地址（https 或本机回环）与 caller=learning 的令牌（≥ 32 字符）
   LEARNING_DIAGNOSIS_TARGETS     knowledge 模式下的目标节点：JSON {"年级": [节点 ID…]}；LEARNING_DIAGNOSIS_MAP_VERSION 地图版本号
+  掌握重算（KGE-04 第二步，specs/kge-04-mastery-step2）：
+  LEARNING_MASTERY_CONFIG_<SUBJECT>  该科掌握配置文件（services/learning/config/mastery/）。不设 = 该科不写掌握记录；
+                                     未签字或合成配置只允许 LEARNING_ENV=test 加载，不合法拒绝启动
+  LEARNING_MASTERY_SYNC_BUDGET_SECONDS  落库后同步重算的时间预算，默认 2（0 < 值 ≤ 10）；超时交给对账
 """
 from __future__ import annotations
 
@@ -22,6 +26,23 @@ from dataclasses import dataclass, field
 
 SUBJECTS = ("wenli", "aya", "zhixing", "echo")
 ALLOWED_ENVS = ("dev", "test")
+
+
+def _budget(raw: str | None) -> float:
+    if not raw:
+        return 2.0
+    try:
+        v = float(raw)
+    except ValueError:
+        raise RuntimeError("LEARNING_MASTERY_SYNC_BUDGET_SECONDS 必须是数") from None
+    if not 0 < v <= 10:
+        raise RuntimeError("LEARNING_MASTERY_SYNC_BUDGET_SECONDS 必须在 (0, 10]")
+    return v
+
+
+def mastery_config_paths(e: dict[str, str]) -> dict[str, str]:
+    """学科 → 掌握配置文件路径（LEARNING_MASTERY_CONFIG_<SUBJECT>）；没设的学科不在里面（不写掌握记录）。"""
+    return {s: e[f"LEARNING_MASTERY_CONFIG_{s.upper()}"] for s in SUBJECTS if e.get(f"LEARNING_MASTERY_CONFIG_{s.upper()}")}
 
 
 @dataclass(frozen=True)
@@ -51,6 +72,10 @@ class Settings:
     knowledge: AdapterTarget | None = None
     diagnosis_targets: dict[int, list[str]] = field(default_factory=dict)
     diagnosis_map_version: str | None = None
+    # 掌握重算（KGE-04 第二步）：学科 → 配置文件路径；启动时加载并校验
+    mastery_configs: dict[str, str] = field(default_factory=dict)
+    # grade / diagnose 落库后同步重算的时间预算（秒）；超时记 failed、交给对账，接口照常返回
+    mastery_sync_budget_seconds: float = 2.0
 
     @staticmethod
     def from_env(environ: dict[str, str] | None = None) -> "Settings":
@@ -115,4 +140,5 @@ class Settings:
             raise RuntimeError("服务间令牌、适配器令牌、路由客户端令牌、知识服务令牌必须各不相同")
         return Settings(env=env, database_url=database_url, service_credential=credential, adapters=adapters,
                         route_clients=route_clients, diagnosis_presenter=presenter, diagnosis_source=source, knowledge=knowledge,
-                        diagnosis_targets=targets, diagnosis_map_version=map_version)
+                        diagnosis_targets=targets, diagnosis_map_version=map_version, mastery_configs=mastery_config_paths(e),
+                        mastery_sync_budget_seconds=_budget(e.get("LEARNING_MASTERY_SYNC_BUDGET_SECONDS")))

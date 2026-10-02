@@ -4,6 +4,11 @@
 做法同 scripts/diagnosis_mutations.py：每个变异在临时目录里改一处（或几处）源码再跑测试；只有“测试失败”（退出码 1）算发现，
 收集错误、导入错误不算。临时目录保持仓库结构（services/learning 的 learning、config、掌握测试复制，docs 软链接回仓库，
 一致性检查要用 docs/design/sie 的禁用推断词表）。先跑一次不变异的对照组，必须通过。不连库、不联网，约 30 秒。
+
+第二组（KGE-04 第二步 PR 2，库上）：把读取层、写入层、复测任务、grade 接入的关键判定逐条改坏（去掉 advisory lock、间隔按 occurred_at、
+复测任务不在同一事务、重放触发重算等），断言 tests/test_mastery_store.py 与 tests/test_mastery_db.py 能发现。做法同
+scripts/diagnosis_mutations.py：services/learning 整体复制，db、docs 等软链接回仓库，每个变异起一个一次性 Postgres（需要本机 Postgres；
+没有时第二组以退出码 3 跳过，Makefile 决定是否算失败）。
 """
 from __future__ import annotations
 
@@ -19,6 +24,9 @@ HERE = Path(__file__).resolve().parents[1]          # services/learning
 REPO = HERE.parents[1]
 CFG, EV, G, BKT, W, CON = ("learning/mastery/config.py", "learning/mastery/evidence.py", "learning/mastery/gates.py",
                            "learning/mastery/bkt.py", "learning/mastery/write.py", "learning/mastery/consistency.py")
+ST, R, SV, JB = "learning/mastery/store.py", "learning/mastery/recompute.py", "learning/service.py", "learning/jobs.py"
+DB_TESTS = ["tests/test_mastery_store.py", "tests/test_mastery_db.py"]
+PURE_EXCLUDE = {"test_mastery_db.py"}  # 库上测试在第二组跑
 
 # 名字 → [(文件, 原文, 替换为), …]
 MUTATIONS: dict[str, list[tuple[str, str, str]]] = {
@@ -97,6 +105,52 @@ MUTATIONS: dict[str, list[tuple[str, str, str]]] = {
 }
 
 
+# 第二组（库上）：名字 → [(文件, 原文, 替换为), …]
+DB_MUTATIONS: dict[str, list[tuple[str, str, str]]] = {
+    "去掉 advisory lock": [(R, 'await conn.execute("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",',
+                          'await conn.execute("SELECT $1::text",')],
+    "间隔改按 occurred_at（读取层取客户端时间）": [(ST, 'recorded_at=r["recorded_at"], hint_level', 'recorded_at=r["occurred_at"], hint_level')],
+    "复测任务不在同一事务": [(R, "                                                None if pre is None else pre[1])\n"
+                          "                if work.plan is not None:",
+                          "                                                None if pre is None else pre[1])\n"
+                          "            async with learning_tx(engine.pool) as conn:\n"
+                          "                if work.plan is not None:")],
+    # 审查意见修订
+    "锁键不规范化学生 ID": [(R, "    unit = Unit(node_id, cognitive_level)\n    student = norm_student(student)\n    cfg",
+                         "    unit = Unit(node_id, cognitive_level)\n    cfg")],
+    "同步重算没有时间预算": [(SV, "                self.settings.mastery_sync_budget_seconds)", "                None)")],
+    "能力视图不按当前地图过滤": [(ST, "        if r.cognitive_level in node_levels.get(r.node_id, ()):",
+                           "        if r.node_id in node_levels or True:")],
+    "能力视图缺的层次不按 unseen": [(ST, 'gate = "unseen"  # 该节点还有层次没有任何记录', "pass")],
+    "manual 迁移按改名延续": [(ST, '"split" in rules or "manual" in rules or len(news) != 1', '"split" in rules or len(news) != 1')],
+    "stale_estimate 不进对账输出": [(R, 'outcome.tasks["stale_estimate"] += 1', "pass")],
+    "对账 --now 不限 test 环境": [(JB, 'if mode != "test":\n            raise JobError("--now', 'if False:\n            raise JobError("--now')],
+    "幂等重放触发重算": [(SV, "            if c.kind == \"done\":\n                return c.summary or {}, True",
+                   "            if c.kind == \"done\":\n                await self._recompute_mastery(ctx, c.summary or {})\n"
+                   "                return c.summary or {}, True")],
+    "准入不取更严者（只看证据自身）": [(ST, 'admission=stricter(r["ev_adm"], r["item_adm"])', 'admission=r["ev_adm"]')],
+    "打标按当前版本解析（不按证据自身版本）": [(ST, "tag = tags.get((row.map_version_id, row.item_id)) if row.map_version_id else None",
+                                "tag = tags.get((ctx.current_id, row.item_id))")],
+    "不看 id_migration（改名、合并不延续）": [(ST, "for v in ctx.chain[start + 1:end + 1]:", "for v in ():")],
+    "撤销的单元不置待复测": [(R, 'if st == "retired":', "if False:")],
+    "没有配置的学科也写": [(R, '    cfg = engine.config(subject)\n    if cfg is None:\n        engine.stats["skipped_no_config"] += 1\n'
+                         '        return UnitOutcome("skipped_no_config")\n    now = now or engine.clock()',
+                         "    cfg = engine.config(subject) or next(iter(engine.configs.values()))\n    now = now or engine.clock()")],
+    "复测任务只撤销不关闭（不记作答）": [(R, 'if o is not None and reason in ("scheduled", "early"):', "if False:")],
+    "重算撤销自述验证任务": [(R, 'REPLAY_REASONS = ("scheduled", "early", "decay", "hint_followup", "verify_in_platform")',
+                       'REPLAY_REASONS = ("scheduled", "early", "decay", "hint_followup", "verify_in_platform", "verify_self_report")')],
+    "同一异议重复调用另建任务": [(R, 'task_id = str(uuid.uuid5(VERIFY_NS, f"{dispute_ref}|{student}|{subject}|{node_id}|{cognitive_level}"))',
+                          "task_id = str(uuid.uuid4())")],
+    "重算失败不记单元（异常往外抛）": [(R, "        except Exception as e:  # noqa: BLE001 — 重算失败不影响已落库的证据与接口返回（第一步 #6）",
+                              "        except InterruptedError as e:  # 变异")],
+    "能力视图取最高门槛（会把能力点“点亮”）": [(ST, "if RANK[r.state] < RANK[gate]:", "if RANK[r.state] > RANK[gate] or True:")],
+    "旧记录不指向新记录（更正链断开）": [(R, "SET is_current = false, superseded_by = $2::uuid\n"
+                                  "                WHERE id = $1::uuid AND is_current AND student_id = $3::uuid",
+                               "SET is_current = is_current\n"
+                               "                WHERE id = $1::uuid AND $2::text IS NOT NULL AND student_id = $3::uuid")],
+}
+
+
 def _copy(tmp: Path) -> Path:
     root = tmp / "repo"
     dst = root / "services" / "learning"
@@ -105,7 +159,8 @@ def _copy(tmp: Path) -> Path:
     shutil.copytree(HERE / "config", dst / "config")
     (dst / "tests").mkdir()
     for t in sorted((HERE / "tests").glob("test_mastery_*.py")):
-        shutil.copy(t, dst / "tests" / t.name)
+        if t.name not in PURE_EXCLUDE:
+            shutil.copy(t, dst / "tests" / t.name)
     (dst / "pytest.ini").write_text("[pytest]\ntestpaths = tests\npythonpath = . tests\naddopts = -p no:cacheprovider\n",
                                     encoding="utf-8")
     (root / "docs").symlink_to(REPO / "docs")
@@ -119,16 +174,33 @@ def _run(dst: Path) -> tuple[int, str]:
     return r.returncode, r.stdout[-2000:]
 
 
-def one(name: str, edits: list[tuple[str, str, str]]) -> str | None:
+def _copy_db(tmp: Path) -> Path:
+    root = tmp / "repo"
+    dst = root / "services" / "learning"
+    shutil.copytree(HERE, dst, ignore=shutil.ignore_patterns("__pycache__", ".venv", ".cache", "*.pyc"))
+    for name in ("db", "adapters", "packages", "evals", "docs"):
+        (root / name).symlink_to(REPO / name)
+    return dst
+
+
+def _run_db(dst: Path) -> tuple[int, str]:
+    env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "PYTHONDONTWRITEBYTECODE": "1", "LEARNING_TEST_STRICT": "1",
+           "HOME": os.environ.get("HOME", "/tmp")}
+    r = subprocess.run([sys.executable, "-m", "pytest", "-q", "-x", "-p", "no:cacheprovider", *DB_TESTS],
+                       cwd=dst, capture_output=True, text=True, env=env, timeout=900)
+    return r.returncode, r.stdout[-2000:]
+
+
+def one(name: str, edits: list[tuple[str, str, str]], db: bool = False) -> str | None:
     with tempfile.TemporaryDirectory(prefix="mastery-mut.") as t:
-        dst = _copy(Path(t))
+        dst = _copy_db(Path(t)) if db else _copy(Path(t))
         for fname, pattern, replacement in edits:
             f = dst / fname
             text = f.read_text(encoding="utf-8")
             if pattern not in text:
                 return f"变异本身写错（找不到原文）：{name}"
             f.write_text(text.replace(pattern, replacement, 1), encoding="utf-8")
-        rc, _ = _run(dst)
+        rc, _ = _run_db(dst) if db else _run(dst)
         if rc != 1:
             return f"{'漏检' if rc == 0 else f'不是被断言发现（退出码 {rc}）'}：{name}"
     return None
@@ -149,7 +221,31 @@ def main() -> int:
     if missed:
         print(f"mastery-mutation: 失败，{len(missed)}/{len(MUTATIONS)} 个变异没有被发现")
         return 1
-    print(f"mastery-mutation: 通过（{len(MUTATIONS)} 个变异全部被发现）")
+    print(f"mastery-mutation: 纯函数组通过（{len(MUTATIONS)} 个变异全部被发现）")
+    return main_db()
+
+
+def main_db() -> int:
+    from shutil import which
+    pgbin = os.environ.get("PGBIN") or next(iter(sorted(Path("/usr/lib/postgresql").glob("*/bin"))), None)
+    if not pgbin or not Path(pgbin, "initdb").exists() or which("runuser") is None and os.geteuid() == 0:
+        print("mastery-mutation: 库上组跳过（本机没有 Postgres 服务端）")
+        return 3
+    with tempfile.TemporaryDirectory(prefix="mastery-mut.") as t:
+        rc, out = _run_db(_copy_db(Path(t)))
+    if rc != 0:
+        print(out)
+        print(f"mastery-mutation: 失败（库上组对照组没有通过，rc={rc}）")
+        return 1
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(lambda kv: one(*kv, db=True), DB_MUTATIONS.items()))
+    missed = [r for r in results if r]
+    for m in missed:
+        print(f"  {m}")
+    if missed:
+        print(f"mastery-mutation: 失败，库上组 {len(missed)}/{len(DB_MUTATIONS)} 个变异没有被发现")
+        return 1
+    print(f"mastery-mutation: 库上组通过（{len(DB_MUTATIONS)} 个变异全部被发现）")
     return 0
 
 

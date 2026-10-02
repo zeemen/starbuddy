@@ -1,7 +1,8 @@
 """今日计划（冲刺 4-H 统一壳，specs/unified-shell-sprint4/spec.md 第 6 节；契约 learning-internal.v1 `POST /internal/v1/plan`，待签字）。
 
 非消耗类：不计量、不写任何表、计划不落库。对每一科：
-  1. 读该生当前的掌握快照（platform.mastery_estimate 的当前行；next_retest_at 来自 KGE-04 的复测调度，规则 2）；
+  1. 读该生当前的掌握快照（platform.mastery_estimate 的当前行：节点键行经 skill_link 读时汇总为能力视图，旧能力点键行并读；
+     next_retest_at 来自 KGE-04 的复测调度，规则 2）；
   2. 组装插件 API v1.0 的 PlanRequest，调该科适配器 /plan，按契约校验结果；
   3. 能力点经已发布地图版本的 kge.skill_link 换算成知识节点 ID（BFF 读不到 skill_link）；
   4. 只回平台摘要：任务类型、目标节点、优先级、预计分钟、rationale_code——不回 p_mastery、confidence、evidence_ids、learner_context。
@@ -21,6 +22,7 @@ from .adapter_client import call_adapter
 from .config import Settings
 from .contract import UnsupportedContractVersion, internal_contract, plugin_contract
 from .errors import IngestError
+from .mastery.store import skill_view
 
 PLAN_CONTRACT = "1.0.0"
 MAX_TASKS = 50
@@ -37,21 +39,35 @@ def validate_query(body: object) -> dict:
 
 
 async def _mastery(pool: asyncpg.Pool, student: str, subject: str) -> list[dict]:
-    """当前掌握记录按能力点键组 MasterySnapshot。迁移 0037 起表里还有节点键行（skill_local_id 为空），这里只读能力点键行；
-    KGE-04 第二步 PR 2 改为读节点键行、经 kge.skill_link 读时汇总成 skill_node。"""
-    rows = await pool.fetch(
-        """SELECT skill_local_id::text AS local_id, state::text AS state, p_mastery, next_retest_at
-             FROM platform.mastery_estimate
-            WHERE student_id = $1::uuid AND subject = $2::platform.subject AND is_current
-              AND skill_local_id IS NOT NULL
-            ORDER BY skill_local_id""", student, subject)
-    out = []
-    for r in rows:
-        m: dict[str, Any] = {"skill_node": f"{subject}:{r['local_id']}", "state": r["state"]}
+    """掌握快照（插件 API 形状不变：仍按 skill_node 给，KGE-04 第二步待人确认 #4）：
+    - 节点键的当前记录经当前已发布地图的 kge.skill_link 读时汇总成能力视图（mastery/store.py aggregate_skill_view；不写库、不点亮）；
+    - 旧的 skill_local_id 行（只剩 3-H 合成种子，第二步待人确认 #10）继续读；
+    - 同一能力点两种来源都有时以节点汇总为准（节点键行是唯一真相源，规则 2）。"""
+    async with pool.acquire() as conn:
+        legacy = await conn.fetch(
+            """SELECT skill_local_id::text AS local_id, state::text AS state, p_mastery, next_retest_at
+                 FROM platform.mastery_estimate
+                WHERE student_id = $1::uuid AND subject = $2::platform.subject AND is_current
+                  AND skill_local_id IS NOT NULL
+                ORDER BY skill_local_id""", student, subject)
+        view = await skill_view(conn, student, subject)
+    merged: dict[str, dict[str, Any]] = {}
+    for r in legacy:
+        v: dict[str, Any] = {"state": r["state"]}
         if r["p_mastery"] is not None:
-            m["p_mastery"] = float(r["p_mastery"])
+            v["p_mastery"] = float(r["p_mastery"])
         if r["next_retest_at"] is not None:
-            m["next_retest_at"] = r["next_retest_at"].isoformat()
+            v["next_retest_at"] = r["next_retest_at"]
+        merged[r["local_id"]] = v
+    merged.update(view)
+    out = []
+    for local_id in sorted(merged):
+        v = merged[local_id]
+        m: dict[str, Any] = {"skill_node": f"{subject}:{local_id}", "state": v["state"]}
+        if v.get("p_mastery") is not None:
+            m["p_mastery"] = float(v["p_mastery"])
+        if v.get("next_retest_at") is not None:
+            m["next_retest_at"] = v["next_retest_at"].isoformat()
         out.append(m)
     return out
 

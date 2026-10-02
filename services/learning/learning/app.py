@@ -25,6 +25,8 @@ from .contract import UnsupportedContractVersion, internal_contract, plugin_cont
 from .diagnosis import api as diagnosis_api
 from .diagnosis.engine import Params as DiagnosisParams
 from .errors import IngestError
+from .mastery import load_config
+from .mastery.recompute import MasteryEngine
 from .model_router import ModelRouter
 from .model_router.config import load_for_deployment
 from .plan import plan_today
@@ -112,9 +114,17 @@ def create_app(
     transport: httpx.AsyncBaseTransport | None = None,
     model_router: ModelRouter | None = None,
     diagnosis_params: DiagnosisParams | None = None,
+    mastery: MasteryEngine | None = None,
 ) -> FastAPI:
-    """pool、transport、model_router、diagnosis_params 供测试注入；不传时按配置创建。"""
+    """pool、transport、model_router、diagnosis_params、mastery 供测试注入；不传时按配置创建。"""
     state: dict = {"router": model_router}
+    # 掌握配置启动即加载与校验（KGE-04 第二步）：不合法、学科对不上、未签字或合成配置出现在非 test 环境，一律拒绝启动
+    configs = {}
+    for subject, path in sorted(settings.mastery_configs.items()):
+        cfg = load_config(path, env=settings.env)
+        if cfg.subject != subject:
+            raise RuntimeError(f"LEARNING_MASTERY_CONFIG_{subject.upper()} 指向的是另一科的配置")
+        configs[subject] = cfg
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -131,7 +141,17 @@ def create_app(
             raise RuntimeError("platform.replay_seal is missing: run migration 0016 before starting this version")
         # trust_env=False：不读 HTTP(S)_PROXY 等环境变量，含学生作答的请求体不会被悄悄送进代理（安全审查 S1）
         client = httpx.AsyncClient(transport=transport, trust_env=False, follow_redirects=False)
-        state["service"] = IngestService(settings, p, client)
+        engine = mastery
+        if engine is None and configs:
+            # 掌握写入依赖迁移 0037（节点键、复测任务表）
+            if not await p.fetchval("SELECT to_regclass('platform.retest_task') IS NOT NULL"):
+                await client.aclose()
+                if own_pool:
+                    await p.close()
+                raise RuntimeError("platform.retest_task is missing: run migration 0037 before enabling mastery")
+            engine = MasteryEngine(p, configs)
+        state["mastery"] = engine
+        state["service"] = IngestService(settings, p, client, mastery=engine)
         state["plan"] = (p, client)
         if settings.diagnosis_presenter == "synthetic":
             try:

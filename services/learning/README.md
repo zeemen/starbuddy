@@ -36,6 +36,9 @@
    - 证据 ID 先登记到 `platform.evidence_registry`：同 ID 同内容就跳过，不同内容就拒绝。
    - 事务最后把幂等记录推进为 `succeeded`。
 6. 返回平台摘要：只有 ID 与编码，不含作答、答案、维度分。
+7. **掌握重算**（KGE-04 第二步，`learning/mastery/`；只在配了 `LEARNING_MASTERY_CONFIG_<SUBJECT>` 的学科）：落库事务提交后另起事务，
+   同步重算这次作答涉及的“节点 × 认知层次”单元，写节点键的 `mastery_estimate` 与 `retest_task`（迁移 0037）。失败只记计数与单元 ID，
+   接口照常返回；幂等重放不触发。对账入口：`python -m learning.jobs mastery-sweep [--subject aya] [--now <ISO>]`（重算、衰减、任务缺补多撤、输出计数）。
 
 ## 不做（冲刺 1）
 计量（BFF 做，ADR 06）、复核任务入队（冲刺 2-G）、掌握估计（冲刺 4-C）、异步任务、查询接口。

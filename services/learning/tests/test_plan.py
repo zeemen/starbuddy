@@ -38,10 +38,11 @@ async def synthetic_map(pools):
             await c.execute("SET LOCAL session_replication_role = replica")
             await c.execute("""INSERT INTO kge.map_version (id, subject, standard_year, version, status, published_at)
                                VALUES ($1::uuid, 'aya', 2022, '0.0.9', 'published', now())""", MAP)
-            await c.execute("""INSERT INTO kge.knowledge_node (map_version_id, id, level, parent_id, kind, name) VALUES
-                                 ($1::uuid, 'MATH.SYN', 'domain', NULL, NULL, '（合成）领域'),
-                                 ($1::uuid, 'MATH.SYN.T1', 'topic', 'MATH.SYN', NULL, '（合成）主题'),
-                                 ($1::uuid, $2, 'node', 'MATH.SYN.T1', 'kp', '（合成）知识节点')""", MAP, NODE)
+            # 知识节点带认知层次 apply：能力视图只认当前地图里有效的单元（KGE-04 第二步审查意见 7）
+            await c.execute("""INSERT INTO kge.knowledge_node (map_version_id, id, level, parent_id, kind, name, cognitive_levels) VALUES
+                                 ($1::uuid, 'MATH.SYN', 'domain', NULL, NULL, '（合成）领域', '{}'),
+                                 ($1::uuid, 'MATH.SYN.T1', 'topic', 'MATH.SYN', NULL, '（合成）主题', '{}'),
+                                 ($1::uuid, $2, 'node', 'MATH.SYN.T1', 'kp', '（合成）知识节点', '{apply}')""", MAP, NODE)
             await c.execute("""INSERT INTO kge.skill_link (map_version_id, node_id, subject, local_id, weight)
                                VALUES ($1::uuid, $2, 'aya', 'K-SYN-0001', 1)""", MAP, NODE)
 
@@ -55,7 +56,8 @@ async def seed_mastery(admin, student: str) -> None:
                        '2026-10-11T08:00:00+08:00'),
                       ($1::uuid, 'aya', 'K-SYN-0002', 'execute', 0.55, 0.6, 'mastery-v0@0.1.0', ARRAY[gen_random_uuid()], NULL)""",
             student)
-        # 迁移 0037 的节点键行（skill_local_id 为空）：PR 2 之前 plan 不读它，快照里不能出现“aya:None”
+        # 迁移 0037 的节点键行（skill_local_id 为空）：经 skill_link（NODE → K-SYN-0001，权重 1）读时汇总成能力视图，
+        # 与旧能力点键行并读；同一能力点两种来源都有时以节点汇总为准（KGE-04 第二步待人确认 #4）。快照里不能出现“aya:None”
         await c.execute(
             """INSERT INTO platform.mastery_estimate (student_id, subject, node_id, cognitive_level, map_version_id, state, p_mastery,
                                                       confidence, algorithm_version, evidence_ids)
@@ -154,9 +156,12 @@ async def test_plan_groups_by_subject_sorts_and_maps_nodes(plan_api, pools, stud
     assert sent["context"]["contract_version"] == "1.0.0" and "usage_id" not in sent["context"]
     assert sent["context"]["student_ref"] == student and sent["context"]["subject"] == "aya"
     snap = {m["skill_node"]: m for m in sent["mastery"]}
-    assert set(snap) == {"aya:K-SYN-0001", "aya:K-SYN-0002"}  # 节点键行不进旧快照（PR 2 改读节点键）
-    assert snap["aya:K-SYN-0001"]["state"] == "stable" and "next_retest_at" in snap["aya:K-SYN-0001"]
+    assert set(snap) == {"aya:K-SYN-0001", "aya:K-SYN-0002"}  # 形状不变：仍按能力点给，没有“aya:None”
+    # K-SYN-0001：节点键行汇总（execute、0.5、没有复测时间）取代旧种子行（stable、0.81、有复测时间）
+    assert snap["aya:K-SYN-0001"] == {"skill_node": "aya:K-SYN-0001", "state": "execute", "p_mastery": 0.5}
+    # K-SYN-0002：没有挂接的节点键行，继续读旧能力点键行
     assert snap["aya:K-SYN-0002"]["state"] == "execute" and "next_retest_at" not in snap["aya:K-SYN-0002"]
+    assert not any("star_lit" in m for m in sent["mastery"])  # 能力视图不点亮
     assert "learner_context" not in sent
     assert await table_counts(admin) == before  # 不写任何表
 

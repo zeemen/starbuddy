@@ -84,3 +84,82 @@
 - H. **claim_unreadable 的引用无法在库里核对存在**：只能保证不是别的学生的可读判断。
 - I. **已删除学生仍可写入**：删除执行后（`erased_at` 已置位），学习服务仍能给该学生写复测任务、档案页等；这是所有个人层表的共性问题（0035 只在执行事务内锁档案行），建议统一处理（例如写入守卫拒绝 `erased_at IS NOT NULL` 的学生），不在本 PR 单独补。
 - J. **陈述视图复制了 `claim_front_read` 的条件**：将来改 0010 策略时须同步改视图；79s 的一致性断言会提示，但要人记得改。
+
+## PR 2 实现记录（学习服务读、算、写）
+
+状态：文件已写，未提交。不改迁移、不改契约。PR 首行须写 `[NEEDS-HUMAN]`（掌握计算的接线：证据读取口径、写入与更正、复测任务、地图版本迁移规则；算法与数值沿用第一步，未签字）。
+
+### 产物
+| 文件 | 内容 |
+|---|---|
+| `services/learning/learning/mastery/store.py` | 读取层：作答 + 作答证据 + 当前判分（未被取代的那条）+ 错因 + 题目准入（取更严者）+ `kge.item_tag`（按证据自身地图版本，经 `kge.id_migration` 映射到当前已发布版本）组装第一步 `Evidence`；`resolve_node`（rename / merge 延续，split 重新判定，retire 撤销，只走证据版本之后、到当前版本为止的迁移）；当前记录与开着的任务读取；`due_tasks`；能力视图读时汇总 `aggregate_skill_view` / `skill_view`（不写库、不点亮） |
+| `services/learning/learning/mastery/recompute.py` | `MasteryEngine`；`recompute`（advisory lock → 重读 → replay → write_decision → precommit_check → 新 ID、旧记录指向新 ID、插入 → 同一事务开 / 关 / 撤 `retest_task`；撞唯一索引或更正守卫重试一次，再失败记计数与单元 ID）；`diff_tasks`（纯函数）；`after_ingest`、`recompute_student`、`recompute_item`、`recompute_map`、`schedule_verification` |
+| `services/learning/learning/mastery/jobs.py` | `mastery_sweep`：lookback 内有作答 / 判分的学生 + 有当前节点键记录或开着重放任务的学生，逐单元重算（含衰减、任务缺补多撤），输出计数；时钟可注入 |
+| `services/learning/learning/jobs.py` | `python -m learning.jobs mastery-sweep [--subject …] [--now …]`：读 `LEARNING_ENV`、`LEARNING_DATABASE_URL`、`LEARNING_MASTERY_CONFIG_<SUBJECT>`，输出一行 JSON 计数；有失败单元时退出码 1。仓库原来没有 `learning.jobs`，按 argparse 子命令新建 |
+| `services/learning/learning/config.py`、`app.py` | `LEARNING_MASTERY_CONFIG_<SUBJECT>` → `Settings.mastery_configs`；启动即加载校验（学科对不上、未签字或合成配置在非 test 环境拒绝启动）；配了掌握又没有 0037 的 `retest_task` 拒绝启动；`create_app(mastery=…)` 供测试注入 |
+| `services/learning/learning/service.py` | `ingest` 落库成功后另起事务同步重算（`_recompute_mastery`）；失败只记计数（日志只有学科、单元 ID、错误类名），接口照常返回；幂等重放（done 分支）不触发 |
+| `services/learning/learning/plan.py`、`tests/test_plan.py` | `_mastery`：节点键行经当前已发布地图的 `skill_link` 读时汇总成 `skill_node` 快照，与旧 `skill_local_id` 行并读（同一能力点两边都有时以节点汇总为准）；插件 API 形状不变。测试改为断言 K-SYN-0001 取节点汇总、K-SYN-0002 取旧行、快照里没有 `star_lit` |
+| `services/learning/tests/test_mastery_store.py` | 纯函数单测：准入取更严者、版本解析（含当前版本回退）、按证据版本打标、Evidence 组装、任务对账、能力视图汇总、单元选择 |
+| `services/learning/tests/test_mastery_db.py` | 集成测试（本模块独占一次性 Postgres，执行全部迁移；合成数学 V1、道法 Z1 → Z2、语文 W1 地图；合成题目族；合成配置，“签字”只在内存里构造）；每个测试结束跑全库不变量（9 条） |
+| `services/learning/scripts/mastery_mutations.py`、`Makefile` | 新增“库上组”15 条变异（每条起一个一次性库）；纯函数组排除 `test_mastery_db.py`；没有本机 Postgres 时退出码 3（非严格跳过、严格失败） |
+| `services/learning/README.md` | “一次请求怎么走”补第 7 步（掌握重算与对账入口） |
+
+### 集成测试覆盖（第一步 spec 验收标准中依赖库表的各条）
+正常路径（执行 → 稳定 → 迁移 → 保持，每步一条新记录、更正链完整、三轮复测任务按时生成且 `due_at` = `next_retest_at` = 到达时刻 + 间隔，到期前查不到、到期后查得到，通过后 `passed` 并记作答，保持后不再排，重算两次第二次不写，规则 6，`star_lit`、能力视图）；复测任务对账（删一条 → 对账补回且只有一条，连跑三次不变）；刷同题（同题多天、同族多题、单一题型组、高级提示只建 `hint_followup`、复测过早与客户端时间、复测失败后换题）；B 级（最高稳定 + `verify_in_platform`）；旧证据（`legacy_no_kind`）；未签字；未准入 + `recompute_item`（题被 rejected 后亮星退回稳定、旧记录被取代）；待复核（不推动，更正判分后对账计入）；自述（`schedule_verification` 不写掌握、按异议幂等、重算不碰；作答自评 confident 与无自评结果相同）；衰减（置信度单调不增、p 与门槛不变、星不熄灭、只有一条 `decay`）；退级（第三轮失败 → 稳定、重排第二轮、任务 `failed` 记作答）；并发（6 个并发重算：一条写入、零重试）；任务写入失败整单元回滚；地图版本（改名、合并延续，拆分重新判定，撤销置待复测，旧单元任务撤销，幂等）；没有配置的学科不写；grade 接入（接口返回时记录已在、重放不触发、注入重算异常仍 200 且之后对账补上）；对账命令行。
+
+### 设计落点与偏差（spec 未写死、按最保守处理的）
+1. **证据没有地图版本**（v0 路径、内容版本未绑定地图）：不猜，按未打标（`untagged`）处理，不回落到当前版本的打标。
+2. **拆分、版本不认识的证据**沿用 `untagged` 编码，没有新增解释编码。
+3. **题型**：读取层留注入口 `item_type_of`，生产默认没有题型（第一步 #4 未决）；所以真实数据仍到不了“稳定”（第一步偏差 8）。测试用合成题型。
+4. **撤销（retire）**：只对门槛在执行及以上的当前记录置待复测（复测轮守卫要求轮次与门槛对应，未到执行没有轮次可排），写一条同门槛、同证据、`next_retest_at = 当下` 的新记录并建对应轮次的任务；`map_version_id` 沿用旧记录（节点在当前版本里已不存在）；已到期（`next_retest_at ≤ 当下`）的不再改写。
+5. **改名、合并、拆分的旧单元**：更正链不能跨键（0037 守卫），旧记录原样保留为历史，开着的重放任务撤销。全库不变量“带 `next_retest_at` 的当前记录恰有一条任务”因此只对当前地图里有效或已撤销的单元成立（见待人确认 K）。
+6. **重放没有任何计入证据、但已有记录**（例如判分被改回待复核）：记录写不出新行（`evidence_ids` 至少一条），原样保留，它的复测轮任务也保留，计数 `stale_estimate`（见待人确认 L）。
+7. **任务对账口径**：同原因、同轮次、同到期的开着任务保留，不因掌握记录更正而重建（`scheduled_by_estimate_id` 仍指向同一条更正链上较早的记录，与 0037 列注释一致）；复测轮按重放里的复测结果关闭为 `passed / failed` 并记作答；`hint_followup`、`decay`、`verify_in_platform` 不再需要时撤销（不记 `passed`）。
+8. **自述验证幂等**：`retest_task` 没有 `dispute_ref` 列，任务 ID 取 `uuid5(dispute_ref | 学生 | 学科 | 节点 | 层次)`；同一单元已有开着的自述验证任务时，不同异议返回同一条（每单元每种原因最多一条 open）。要求学科有可用配置、单元在当前已发布地图里。返回任务 ID、节点、层次、状态、到期时间，不含题目。
+9. **能力视图汇总口径**（`weighted_mean`）：p = 挂接节点各层次 p 的均值按 weight 加权；门槛取挂接节点里最低的；复测时间取最早的；没有 `star_lit`。最低门槛可能是 `transfer / retain`（`MasterySnapshot.state` 枚举允许），见待人确认 M。
+10. **诊断来源**：SIE-02a 诊断作答走 grade 写入路径（`source_method = grade`），读取层按 `diagnosis_step.grade_result_id` 认作“平台诊断”来源；插件 `diagnose` 方法不写 `grade_result`，按第一步 #23 不计入。
+11. **证据时间**取作答证据 `evidence_event.recorded_at`（服务器时间）；`occurred_at` 只带进解释，不参与计算（第一步 #8）。
+12. **接入开关**：只有配了 `LEARNING_MASTERY_CONFIG_<SUBJECT>` 的学科写掌握；不配则不写（知行、文砺）。联调栈（`tools/e2e-cohort`）没配，所以本 PR **联调样例没有变化**（`make e2e-cohort` 通过，样例比对一致，没有重生、没有拷文件）；“桩”切换与样例重生按计划留给 PR 3。
+13. **可观测性**：失败计数在 `MasteryEngine.stats`，失败单元（学科、节点、层次，不含学生）保留最近 1000 条；仓库没有指标设施，没接指标系统。
+14. **对账范围**：v0 对“有当前记录或开着任务的学生”逐单元全量重算（合成规模足够）；规模上来后需按到期时间与 lookback 收窄、分批（随 ADR 03 / 10 的调度器一起定）。
+15. **测试库**：本模块独占一个一次性库（同一学科只能有一个已发布地图，与 `test_plan.py` 的会话库互不干扰）；改版场景用道法与“学科改成 zhixing 的合成配置”，结束后恢复原版本并对账，保证不变量对后续测试成立。
+
+### 迁移
+没有发现 0037 的缺陷，未改迁移。两点供 PR 1 的人复核参考：`retest_task` 没有 `dispute_ref` 列（本 PR 用确定性任务 ID 实现按异议幂等，见上第 8 条）；改名 / 合并后的旧单元记录无法被更正链“关闭”（见待人确认 K）。
+
+### 测试结果（本地一次性 Postgres）
+- `make learning-test`：2562 passed（新增 `test_mastery_store.py` 18 条、`test_mastery_db.py` 23 条；`test_plan.py` 更新后通过）。
+- `make mastery-mutation`：纯函数组 52 条、库上组 15 条全部被发现（去掉 advisory lock → 并发测试；间隔按 `occurred_at` → 服务器时间测试；复测任务不在同一事务 → 任务失败回滚测试等；逐条核对过是被预期的测试发现）。
+- `make diagnosis-mutation`：31 条全部被发现。`make db-test`：通过（2179 项断言，未改）。`make e2e-cohort`：16 passed（样例无变化）。`make check-fast`：通过（contract-test 因系统 python 缺 jsonschema 跳过；本 PR 不改契约）。未跑全量 `make check`。
+
+### 待人确认
+- K. **改名、合并、拆分后的旧单元记录**：现在原样保留（仍是 `is_current`、可能带 `next_retest_at` 而没有任务）。读者（PR 3 的 `mastery.get`、洞察服务 MasterySource）须只认当前地图里的节点。是否要给旧记录补一条“已迁移”标记（迁移改列，必停）由人定。
+- L. **【优先】已有记录的全部证据都不再计入**（判分改回待复核、证据被撤销到零）：记录原样保留并计数 `stale_estimate`；若是迁移 / 保持记录，就与“迁移及以上只引用合格证据”的不变量冲突。可选：写一条 `unseen` 记录（需要允许空 `evidence_ids`，改约束）或保留现状由对账报警。默认保留现状；审查修订后 `stale_estimate` 进对账 JSON 输出，有就退出码 1，由调度器报警。
+- M. **能力视图的门槛口径**：取挂接节点最低门槛（可为 transfer / retain）；有记录的节点里**没有记录的层次按 unseen 计入**门槛（审查修订），p 只由有记录的层次算；没有任何记录的挂接节点不参与；只认当前地图里有效的单元。另一选择是封顶为“稳定”（更贴“能力视图不点亮”的字面）。数值与口径属 `skill_view_aggregation` 配置位，待教研。
+- N. **证据没有地图版本时不归属**：v0 路径与未绑定地图的内容版本上的作答都不进掌握计算；另一选择是回落到当前版本的打标（会把旧版本的题按新版本打标归属）。
+- O. **对账失败的退出码**：有失败单元时 `mastery-sweep` 退出码 1，便于调度器报警；接入调度器时确认。
+- 第一步 #4（题型列）仍是到达“稳定”的前置；第一步 #1 数值签字不变。
+
+### 审查意见修订（用户决定“按默认建议处理审查意见”，同一 PR 2）
+| # | 意见 | 处理 |
+|---|---|---|
+| 1 | 同步重算读一次证据、加时间预算 | `_student_units` 在一个只读事务里读一次地图与该生该科全部证据，同批单元共用（`preloaded`，只用于第一次尝试，重试时在锁内重读）。`service._recompute_mastery` 加 `asyncio.wait_for`，预算 `Settings.mastery_sync_budget_seconds`（`LEARNING_MASTERY_SYNC_BUDGET_SECONDS`，默认 2 秒，取值 (0, 10]）；超时取消（未提交的单元事务回滚），记 `failed`、`sync_timeout`，接口照常 200，交给对账。测试 `test_sync_recompute_time_budget` |
+| 2 | 学生 ID 规范化 | `norm_student`（`str(uuid.UUID(...))`）用于 `recompute`、`_student_units`、`schedule_verification`；advisory lock 键与自述验证任务 ID 的输入都用规范化后的学生 ID，`dispute_ref` 同样规范化。测试 `test_uppercase_student_id_same_lock_and_task`（大小写混合并发：一次写入、零重试；大写异议 ID 得到同一条任务） |
+| 3 | 验证接口不信请求体学生 | `schedule_verification` 文档串与第二步 spec 第 2 节补注：接 HTTP 或洞察服务时服务端须由异议记录反查学生（**PR 3 落实**） |
+| 4 | UPDATE 带学生条件 | 更正链 UPDATE 与复测任务的关闭、撤销 UPDATE 都加 `AND student_id = $n::uuid` |
+| 5 | 对账命令行 | 配置文件学科与变量名不符、`--now` 不在 test 环境、没配任何学科 → `JobError`，退出码 2；`main` 捕获其他异常只输出错误类名（退出码 2）；输出新增 `stale_estimate`，有失败单元或 stale 时退出码 1（`exit_code`） |
+| 6 | 失败日志不含学生与证据 ID | `test_failure_log_has_no_student_or_evidence_ids`（caplog：有事件名、学科、节点、错误类名；没有学生 ID（含大写）、证据 ID、作答 ID、异常消息） |
+| 7 | 能力视图只认当前地图有效单元 | `skill_view` 读当前地图，`aggregate_skill_view(rows, links, node_levels)` 丢掉节点不在当前地图（撤下、类型变为不参与计算）或层次已删的记录。`test_skill_view_only_current_map_units` 覆盖 `skill_view` 与 `plan._mastery`；`test_plan.py` 的合成节点补 `cognitive_levels = {apply}` |
+| 8 | `manual` 迁移 | 按拆分处理（新节点重新判定、不延续）。单测 + 地图改版集成用例（道法 N8 → N8M manual，N8M 没有记录） |
+| 9 | stale_estimate | 计入单元计数（随对账 JSON 输出），有则命令行退出码 1；L 标为优先。测试 `test_stale_estimate_counted_and_nonzero_exit` |
+| 10 | 缺层次按 unseen | 见待人确认 M；单测 + 正常路径集成用例（N1 只有 apply 有记录 → K-SYN-0001 为 unseen） |
+| 可选 | RETRYABLE 注释 | 注明 23505（并发首写撞部分唯一索引）、23514（只为提交时的更正守卫；其他 CHECK 重试一次仍失败，随后记 failed） |
+
+**新增偏差**
+- 同步重算共用的证据在锁外读出：两次重算之间新落库的证据不在这批里，由下一次作答或对账补上（重试时在锁内重读）。
+- 时间预算超时的取消发生在单元事务中间时，已提交的单元保留，未提交的回滚；计数只记一次 `failed`，不列具体单元（对账会全量补）。
+- 能力视图口径变化后，`plan` 发给适配器的快照更保守：节点有任何层次没有记录时，相应能力点为 unseen。
+
+**变异**：库上组从 15 条增到 22 条（新增：锁键不规范化学生 ID、同步重算没有时间预算、能力视图不按当前地图过滤、缺的层次不按 unseen、manual 按改名延续、stale_estimate 不进对账输出、`--now` 不限 test）；两条原有变异的原文随代码调整。
+
+**修订后测试结果**：`make learning-test` 2570 passed；`make mastery-mutation` 纯函数组 52 条、库上组 22 条全部被发现；`make diagnosis-mutation` 31 条全部被发现；`make e2e-cohort` 16 passed（联调样例无变化）。过程中没有命令被 guard hook 或权限拦截。

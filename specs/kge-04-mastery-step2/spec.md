@@ -62,6 +62,7 @@
   - `recompute_map(subject, from, to)`，供地图版本切换时调用；
   - 对账入口 `python -m learning.jobs mastery-sweep`：重算、衰减、任务缺的补多的撤、输出计数；时钟可注入。
 - **`schedule_verification(student, subject, node_id, level, reason, dispute_ref)`**：只建 `verify_self_report` 任务，不改掌握；同一异议重复调用返回同一组任务（幂等）。
+  - （PR 2 审查补注）函数本身信任调用方给的 `student`；接 HTTP（`/internal/v1/verification`）或洞察服务时，服务端必须由异议记录（`dispute_ref`）反查学生，不信请求体里的学生 ID（PR 3 落实）。
 - **能力视图汇总**（`skill_view_aggregation`）：读时计算，不写库。
 - **没有签字配置的学科**（知行、文砺）不写；测试环境用合成配置。
 
