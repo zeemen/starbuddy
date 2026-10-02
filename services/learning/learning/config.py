@@ -16,6 +16,10 @@
   LEARNING_MASTERY_CONFIG_<SUBJECT>  该科掌握配置文件（services/learning/config/mastery/）。不设 = 该科不写掌握记录；
                                      未签字或合成配置只允许 LEARNING_ENV=test 加载，不合法拒绝启动
   LEARNING_MASTERY_SYNC_BUDGET_SECONDS  落库后同步重算的时间预算，默认 2（0 < 值 ≤ 10）；超时交给对账
+  LEARNING_INSIGHT_CLIENT_TOKEN  洞察服务 → 学习服务验证任务接口（/internal/v1/verification 与 /verification/cancel）的令牌（≥ 32 字符，
+                                 learning-internal 1.1.0 insightServiceToken）；只对这两个接口有效，与其他令牌各不相同。不设 = 这两个接口一律 401
+  LEARNING_ORCHESTRATOR_CLIENT_TOKEN  编排层 → 学习服务掌握读取（/internal/v1/mastery/get、/explain）的令牌（≥ 32 字符，
+                                 orchestratorServiceToken）；只对这两个接口有效，与其他令牌各不相同。不设 = 掌握读取一律 401
 """
 from __future__ import annotations
 
@@ -76,6 +80,10 @@ class Settings:
     mastery_configs: dict[str, str] = field(default_factory=dict)
     # grade / diagnose 落库后同步重算的时间预算（秒）；超时记 failed、交给对账，接口照常返回
     mastery_sync_budget_seconds: float = 2.0
+    # 洞察服务 → 验证任务接口的令牌（只对 /internal/v1/verification 有效）；None = 该接口不接受任何调用
+    insight_client_credential: str | None = None
+    # 编排层 → 掌握读取的令牌（只对 /internal/v1/mastery/*）；None = 掌握读取不接受任何调用
+    orchestrator_client_credential: str | None = None
 
     @staticmethod
     def from_env(environ: dict[str, str] | None = None) -> "Settings":
@@ -134,11 +142,19 @@ class Settings:
             map_version = e.get("LEARNING_DIAGNOSIS_MAP_VERSION", "")
             if not re.fullmatch(r"\d{1,3}\.\d{1,3}\.\d{1,4}", map_version):
                 raise RuntimeError("LEARNING_DIAGNOSIS_MAP_VERSION 必须是 主.次.修订")
+        insight_tok = e.get("LEARNING_INSIGHT_CLIENT_TOKEN") or None
+        if insight_tok is not None and len(insight_tok) < 32:
+            raise RuntimeError("LEARNING_INSIGHT_CLIENT_TOKEN 少于 32 个字符")
+        orch_tok = e.get("LEARNING_ORCHESTRATOR_CLIENT_TOKEN") or None
+        if orch_tok is not None and len(orch_tok) < 32:
+            raise RuntimeError("LEARNING_ORCHESTRATOR_CLIENT_TOKEN 少于 32 个字符")
         tokens = [credential, *(a.credential for a in adapters.values()), *route_clients.values(),
-                  *([knowledge.credential] if knowledge else [])]
+                  *([knowledge.credential] if knowledge else []), *([insight_tok] if insight_tok else []),
+                  *([orch_tok] if orch_tok else [])]
         if len(set(tokens)) != len(tokens):
-            raise RuntimeError("服务间令牌、适配器令牌、路由客户端令牌、知识服务令牌必须各不相同")
+            raise RuntimeError("服务间令牌、适配器令牌、路由客户端令牌、知识服务令牌、洞察服务与编排层客户端令牌必须各不相同")
         return Settings(env=env, database_url=database_url, service_credential=credential, adapters=adapters,
                         route_clients=route_clients, diagnosis_presenter=presenter, diagnosis_source=source, knowledge=knowledge,
                         diagnosis_targets=targets, diagnosis_map_version=map_version, mastery_configs=mastery_config_paths(e),
-                        mastery_sync_budget_seconds=_budget(e.get("LEARNING_MASTERY_SYNC_BUDGET_SECONDS")))
+                        mastery_sync_budget_seconds=_budget(e.get("LEARNING_MASTERY_SYNC_BUDGET_SECONDS")),
+                        insight_client_credential=insight_tok, orchestrator_client_credential=orch_tok)

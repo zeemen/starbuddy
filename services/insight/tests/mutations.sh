@@ -69,7 +69,7 @@ M=(
   # SIE-03 PR②：异议、预测与对账、触发规则、禁用推断、调度器、幂等、导出与删除（specs/sie-03-dispute-reconcile）
   $'提出人身份不核对\tinsight/store_sie03.py\t                if d["raised_by_role"] != actor_role or str(d["raised_by"]) != actor_ref or d["kind"] != kind:\t                if False:\ttests/test_sie03_db.py'
   $'我其实会不转待验证\tinsight/store_sie03.py\t            if claim.status in ("hypothesis", "established"):\n                n = await conn.execute("UPDATE insight.claim SET status = \'to_verify\'\t            if False:\n                n = await conn.execute("UPDATE insight.claim SET status = \'to_verify\'\ttests/test_sie03_db.py'
-  $'验证任务数不按配置\tinsight/store_sie03.py\tclaim.target_id, str(d["id"]), params.dispute.verification_items)\tclaim.target_id, str(d["id"]), 1)\ttests/test_sie03_db.py'
+  $'验证任务数不按配置\tinsight/store_sie03.py\t                                                 params.dispute.verification_items,\t                                                 1,\ttests/test_sie03_db.py'
   $'验证期限不是 24 小时\tinsight/dispute.py\t    return created_at + timedelta(hours=hours)\t    return created_at + timedelta(hours=hours * 2)\ttests/test_sie03_units.py tests/test_sie03_db.py'
   $'验证结论方向写反\tinsight/dispute.py\t    if got > said:\n        return "supported"\t    if got < said:\n        return "supported"\ttests/test_sie03_units.py'
   $'未签字也能回到成立\tinsight/store.py\t                if not policy.signed or tpl is None or cat not in NODE_CATEGORIES:\t                if tpl is None or cat not in NODE_CATEGORIES:\ttests/test_sie03_db.py'
@@ -105,7 +105,7 @@ M=(
   $'异议不先做可见性预检\tinsight/store_sie03.py\t                   AND c.expires_at > now() AND $3 = ANY (c.visibility) AND t.status = \'approved\'\t                   AND $3 IS NOT NULL\ttests/test_sie03_db.py'
   $'写入工具不先核对 actor\tinsight/service/tools.py\t        if caller == "bff" and tool in WRITE_TOOLS and not await self.verifier.verify(\t        if False and caller == "bff" and tool in WRITE_TOOLS and not await self.verifier.verify(\ttests/test_service_unit.py tests/test_sie03_db.py'
   $'没有验证任务接口时 i_know 不先回 501\tinsight/service/tools.py\t        if body["kind"] == "i_know" and not getattr(self.scheduler, "available", True):\t        if False:\ttests/test_sie03_db.py'
-  $'接口桩在非 test 环境也缺省启用\tinsight/dispute.py\t    return StubVerificationScheduler() if env == "test" else UnavailableVerificationScheduler()\t    return StubVerificationScheduler()\ttests/test_service_unit.py'
+  $'接口桩在非 test 环境也缺省启用\tinsight/dispute.py\t    if env == "test":\n        return StubVerificationScheduler()\t    if True:\n        return StubVerificationScheduler()\ttests/test_service_unit.py tests/test_kge04_db.py'
   $'预测判断已终结仍更新或另建\tinsight/store_sie03.py\t            if r is None or r["status"] in TERMINAL:\n                raise Conflict("prediction claim is final")\t            if False:\n                raise Conflict("prediction claim is final")\ttests/test_sie03_db.py'
   $'预测不按当前掌握行过滤\tinsight/store_sie03.py\t                rows = [r for r in rows if r.student_id == student and r.basis_id in current]\t                rows = list(rows)\ttests/test_sie03_db.py'
   $'接口桩期间比率仍算有效\tinsight/store_sie03.py\t        valid = total > 0 and stub == 0\t        valid = total > 0\ttests/test_sie03_db.py'
@@ -149,6 +149,17 @@ M=(
   $'周报配置未签字也生成\tinsight/store_weekly.py\t    if env != TEST_ENV and not weekly.signed:\t    if False:\ttests/test_weekly_db.py'
   $'守卫拒收时整批中断\tinsight/store_weekly.py\t        except asyncpg.CheckViolationError:\t        except asyncpg.UniqueViolationError:\ttests/test_weekly_db.py'
   $'周报对没有判断的学生写不出记录\tinsight/store_weekly.py\t        if res.empty:\t        if False:\ttests/test_weekly_db.py'
+  # KGE-04 第二步 PR 3：真实验证任务调度与真实掌握行来源
+  $'配置了学习服务也不用真实调度器\tinsight/dispute.py\t    if learning is not None:\n        return LearningVerificationScheduler(*learning)\t    if False:\n        return LearningVerificationScheduler(*learning)\ttests/test_kge04_db.py'
+  $'掌握行来源读到已被取代的行\tinsight/predict.py\t AND m.node_id IS NOT NULL AND m.is_current\t AND m.node_id IS NOT NULL\ttests/test_kge04_db.py'
+  $'掌握行来源不核对节点的认知层次\tinsight/predict.py\t                           AND m.cognitive_level = ANY (n.cognitive_levels)\t                           AND true\ttests/test_kge04_db.py'
+  $'缺省掌握行来源仍是“没有”\tinsight/service/app.py\t                                       mastery=mastery or DbMasterySource(p),\t                                       mastery=mastery,\ttests/test_kge04_db.py'
+  $'学习服务 409 不按不可用处理\tinsight/store_sie03.py\t            except VerificationUnavailable:\t            except ZeroDivisionError:\ttests/test_kge04_db.py'
+  $'验证任务不带判断的层次\tinsight/store_sie03.py\t                                                 cognitive_level=level if isinstance(level, str) else None)\t                                                 cognitive_level=None)\ttests/test_kge04_db.py'
+  $'事务回滚后不撤销已建任务\tinsight/store_sie03.py\t                failed = await scheduler.cancel(stu, ids)\t                failed = 0\ttests/test_kge04_db.py'
+  $'调学习服务没有总时长上限\tinsight/dispute.py\t            return await asyncio.wait_for(go(), self.total_timeout)\t            return await go()\ttests/test_kge04_db.py'
+  $'结案不读真实掌握行\tinsight/jobs.py\t    rows = await DbMasterySource(store.pool).all_rows(student)\t    rows = ()\ttests/test_kge04_db.py'
+  $'学习服务回的单元不核对\tinsight/dispute.py\tt.get("node_id") != node_id or t.get("cognitive_level") != cognitive_level\tFalse\ttests/test_kge04_db.py'
 )
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/starbuddy-insight-mut.XXXXXX")"

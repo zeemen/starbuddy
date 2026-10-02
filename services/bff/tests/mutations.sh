@@ -140,6 +140,7 @@ SM=(
   $'信任：删除确认不要求近期登录\tsrc/http/trust-routes.ts\tif (!recentLogins(ctx.deps).fresh(ctx.deps.keys, ctx.session!.token, nowMs(ctx.deps))) return problem(P.REAUTH_REQUIRED);\t'
   $'信任：对账卡不核对预测判断\tsrc/http/trust-routes.ts\tif (!pred || pred.prediction_id !== card.prediction_id || !shown.has(pred.claim_id)) {\tif (false) {'
   $'信任：异议结果不要求 fact_ref\tsrc/trust/clients.ts\tif (step === \'open_fact_for_correction\' && (typeof r[\'fact_ref\'] !== \'string\' || !FACT_REF.test(r[\'fact_ref\']))) return null;\t'
+  $'信任：验证任务引用当题目展示\tsrc/trust/clients.ts\tconst NOT_ITEM_PREFIXES = [\'verify-task-\', \'stub-verify-\'] as const;\tconst NOT_ITEM_PREFIXES = [\'stub-verify-\'] as const;'
   $'信任：不核对统一信封\tsrc/trust/clients.ts\tconst value = envelopeOk(body) ? pickDispute(body.result) : null;\tconst value = pickDispute(body.result);'
   $'信任：异议列表不限流\tsrc/http/trust-routes.ts\tdisputeList, [{ bucket: \'trust_read.session.minute\', dim: \'session\' }]\tdisputeList, []'
   $'信任：近期登录不看时间\tsrc/trust/proof.ts\treturn t !== undefined && now - t < REAUTH_WINDOW_MS && now >= t;\treturn t !== undefined;'

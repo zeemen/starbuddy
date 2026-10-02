@@ -163,3 +163,49 @@
 **变异**：库上组从 15 条增到 22 条（新增：锁键不规范化学生 ID、同步重算没有时间预算、能力视图不按当前地图过滤、缺的层次不按 unseen、manual 按改名延续、stale_estimate 不进对账输出、`--now` 不限 test）；两条原有变异的原文随代码调整。
 
 **修订后测试结果**：`make learning-test` 2570 passed；`make mastery-mutation` 纯函数组 52 条、库上组 22 条全部被发现；`make diagnosis-mutation` 31 条全部被发现；`make e2e-cohort` 16 passed（联调样例无变化）。过程中没有命令被 guard hook 或权限拦截。
+
+## PR 3 实现记录：接口与去桩（2026-10-02）
+
+### 产物
+- **契约** `packages/contracts/openapi/learning-internal.v1.yaml` 升到 1.1.0（未发布草稿，非破坏性），新增四个内部接口：
+  - `POST /internal/v1/mastery/get`、`/mastery/explain`：请求与响应直接引用知识服务 v0.9 两个工具的 schema，信封五字段齐全；只认编排层专用凭据，`caller` 必须是 `orchestrator`（不符 403 `CALLER_MISMATCH`）；
+  - `POST /internal/v1/verification`、`/verification/cancel`：只认洞察服务专用凭据；不返回题目；
+  - 新增两个服务间凭据方案（编排层、洞察服务各一），检查脚本要求它们只出现在各自路径上；Problem 新增 `CALLER_MISMATCH`、`MASTERY_UNAVAILABLE`、`TASK_NOT_FOUND`；
+  - 检查脚本 `check_contract.py` 把版本号收成常量并注明“升版同步”，变异补齐；知识服务的 `/v0/mastery.*` 仍回 501。
+- **学习服务**：`learning/mastery/api.py`、`learning/mastery_routes.py`、`recompute.cancel_verification`；`gates.Replay.strengths` 是只读字段，只用作证据链 weight，不参与判定；新配置两项服务间凭据（≥32 字符、互不相同）；测试 `test_mastery_api.py` 11 条，库上变异增到 30 条。
+- **洞察服务**：
+  - `LearningVerificationScheduler`：真实实现，非 test 环境配置了学习服务地址就用它，接口桩仍只给 test；超时为连接 2 秒、整次调用 5 秒封顶；
+  - i_know 的学生取异议记录里的学生，层次取判断 `value.level`；学习服务回 409 时异议整笔回滚；建任务后事务没提交就尽力调 `verification/cancel` 撤销，撤销失败只记计数；
+  - `DbMasterySource`：直接读 `platform.mastery_estimate` 节点键当前行（0028 授权），只认当前已发布地图的节点和层次；`create_app` 缺省用它；`all_rows` 供结案用；
+  - `jobs.sync_mastery_from_db`：用真实掌握行触发“我其实会”结案；
+  - httpx 转为运行依赖（与学习服务同版本）；`test_kge04_db.py` 10 条（进程内起真实学习服务），变异增 10 条。
+- **BFF**：`trust/clients.ts` 的 `displayableItemRefs` 丢掉 `verify-task-`、`stub-verify-` 前缀的引用，不当题目展示；单测与 1 条变异。
+- **联调**（`tools/e2e-cohort`）：`e2e_cohort/mastery.py` 建合成数学地图、打标与内容版本绑定，掌握配置用 `synthetic-test.json`（当日复测间隔 0），结束时撤下并解除绑定；复测改由 `RetestTaskScheduler` 读 `retest_task`、时钟推进到 `due_at` 后执行，断言改名 `retest_via_retest_task`（0 次时显示“通过（0 次，未走到）”），有反例测试；`retests.csv` 去掉每次不同的到期时间，改列节点、层次、轮次、原因；样例在干净副本重生，逐字节比对后只拷变化文件；`docs/gates/gate-0-evidence.md` 记一笔，判定不改。
+
+### 偏差
+1. **学生不是由学习服务反查**：spec 第 2 节补注写“服务端由异议记录反查学生”。`starbuddy_learning` 读不了 `insight.dispute`（0032 未授权），不改迁移就做不到。现做法：洞察服务从异议记录取学生，凭只对验证接口有效的专用凭据附带；BFF 凭据一律 401；请求体伪造学生返回 404 且不调学习服务。没有另做签名（签名密钥与凭据在同一信任边界）。见待人确认 P。
+2. **get / explain 口径**：只认当前地图里的节点和层次；没有记录的层次记 `unseen`；`star_lit` 是节点属性，同一节点各行相同；`confidence` 取各行最小值，无记录为 0；证据链 `weight` 是重放时的更新强度（当前已不计入的记 0），`hint_level` 遇到 6 级记 5（契约上限）；最多 200 条。
+3. **每个异议 1 条任务**：`retest_task` 每单元每种原因只能开一条，SIE 默认“2 道”落成 1 条任务加 `item_count`（原样回显，不落库，选题时由编排层从洞察配置取）。`verification_item_refs` 实际是任务引用 `<学科>:verify-task-<ID>`，不是题目。见待人确认 Q。
+4. **联调复测从 32 次（桩）变为 0 次**：这是真实结果。重放里不计入的原因：`no_grade` 80 条（诊断证据没有判分结果，按第一步 #23 不计入）、`pending_review` 36 条（阿鸦合成题未准入，判分待复核，按第一步 #11 不推动门槛）；计入 0 条，所以没有掌握记录，也没有复测任务。没有改准入，也没有伪造任务。Gate 0 H1 的“复测”分项仍不满足，理由从“复测为桩”变为“真实调度到不了复测”。
+5. `starmap/` 里还有“短信捕获桩”字样，是星图截图登录用的，不是复测桩；截图没重截。
+6. `internal_contract("1.0.0")` 这个键代表 `/internal/v1` 这一组路径，契约文件本身已是 1.1.0。
+7. 补偿撤销是尽力而为：撤销请求本身也失败时仍会留下孤儿任务，只有计数。
+8. 洞察服务在持有学生锁与判断行锁的写事务里同步调学习服务，持锁时长上限约等于调用总时长上限（5 秒）。
+
+### 测试结果（审查修订后，均为 `CONTRACT_STRICT=1`）
+contract-test 通过（learning-internal v1 反例 82 个）；contract-mutation 181 个全部被发现（learning-internal v1 23 个）；learning-test 2582 passed；mastery-mutation 纯函数组 52 个、库上组 30 个全部被发现；insight-test 通过；insight-mutation 128 个全部被发现；e2e-cohort 17 passed（样例逐字节一致）；bff-test 通过；bff-mutation 130 个全部被发现。
+
+### 审查意见处理
+安全审查与契约审查都没有代码层面的阻断；共同的阻断是本节缺失（原因：子代理追加本节时被仓库 guard hook 按“读取密钥”误拦，未绕过，由主会话在用户同意后补写）。按用户“按默认建议处理审查意见”：编排层专用凭据；调用超时；孤儿任务补偿撤销；BFF 不把任务引用当题目；“我其实会”结案接真实掌握；证据包写全 0 次复测原因；旧注释改正；版本常量加升版提醒。
+
+### 待人确认
+- **P**：是否用迁移给学习服务授 `insight.dispute` 的列级只读，改为学习服务自己反查学生（迁移、契约都要再变）。
+- **Q**：`verification_item_refs` 的语义：改洞察契约为任务引用字段，还是提异议时同步调 `item.similar` 回填真实题目。
+- **R**：补偿撤销也失败时留下的孤儿任务如何兜底对账（`retest_task` 没有异议引用列，学习服务又读不到异议表）。
+- **S**：是否在联调里登记一组已准入的合成题并给诊断题补判分口径，走通“复测写入同一学生模型”。
+- **T**：PR 3 合入后在干净工作树重生样例，更新 Gate 0 锁定的提交号（当前样例生成于未提交工作区）。
+- **U**：`mastery.*` 的 `caller` 枚举只有 `orchestrator|learning`，以后 BFF 或洞察服务要经接口读需扩枚举。
+- **V**：编排层凭据已就位，但编排层（调用方）尚未实现；部署时三种服务间凭据（BFF、洞察、编排层）的分发与轮换由人定。
+- **W**：`sync_mastery_from_db` 的触发时机（学习服务重算后立即，还是每天兜底）待编排层与调度器定（ADR 03 / 10）。
+- **许可证**：certifi（MPL-2.0）随 httpx 进入洞察服务运行依赖，与 `specs/learning-ingest-sprint1/lessons.md` 那条未签项一并签。
+- **可选记录**：explain 的 `weight` 可被用来反推未签字配置的数值，只给编排层可以接受，对外开放前再评估。

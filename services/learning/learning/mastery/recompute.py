@@ -401,8 +401,9 @@ async def schedule_verification(engine: MasteryEngine, student: str, subject: st
         raise ValueError("dispute_ref must be a UUID") from None
     if engine.config(subject) is None:
         raise MasteryUnavailable("no mastery configuration for this subject")
-    # 学生 ID 规范化后再参与锁键与任务 ID（审查意见 2）。注意：本函数信任调用方给的 student；接 HTTP 或洞察服务时（PR 3），
-    # 服务端必须由异议记录（dispute_ref）反查学生，不信请求体里的 student（审查意见 3）
+    # 学生 ID 规范化后再参与锁键与任务 ID（审查意见 2）。本函数信任调用方给的 student：HTTP 入口
+    # （/internal/v1/verification，mastery_routes.py）只接受洞察服务专用令牌，学生由洞察服务从异议记录（insight.dispute.student_id）
+    # 取出后附带；学习服务没有 insight.dispute 的读权限，不能自己反查（KGE-04 第二步 PR 3，lessons 待人确认 P）
     student = norm_student(student)
     unit = Unit(node_id, cognitive_level)
     task_id = str(uuid.uuid5(VERIFY_NS, f"{dispute_ref}|{student}|{subject}|{node_id}|{cognitive_level}"))
@@ -429,3 +430,23 @@ async def schedule_verification(engine: MasteryEngine, student: str, subject: st
     engine.stats["verification_created" if created else "verification_reused"] += 1
     return {"task_id": row[0], "node_id": node_id, "cognitive_level": cognitive_level, "status": row[1],
             "due_at": row[2], "created": created}
+
+
+async def cancel_verification(engine: MasteryEngine, student: str, task_id: str) -> dict[str, Any] | None:
+    """撤销一条自述验证任务（洞察服务写异议的事务回滚时的补偿，learning-internal 1.1.0 /verification/cancel）。
+    只撤 open 的 verify_self_report、且属于该学生的任务；幂等：已撤销 / 已关闭的返回现状、cancelled = False；
+    不存在或不属于该学生返回 None（调用方按 404 处理，不区分两者）。不改掌握记录。"""
+    student = norm_student(student)
+    task_id = str(uuid.UUID(task_id))
+    async with learning_tx(engine.pool) as conn:
+        row = await conn.fetchrow(
+            """UPDATE platform.retest_task SET status = 'cancelled'
+                WHERE id = $1::uuid AND student_id = $2::uuid AND reason = 'verify_self_report' AND status = 'open'
+                RETURNING id::text, status""", task_id, student)
+        if row is not None:
+            engine.stats["verification_cancelled"] += 1
+            return {"task_id": row[0], "status": row[1], "cancelled": True}
+        row = await conn.fetchrow(
+            """SELECT id::text, status FROM platform.retest_task
+                WHERE id = $1::uuid AND student_id = $2::uuid AND reason = 'verify_self_report'""", task_id, student)
+    return None if row is None else {"task_id": row[0], "status": row[1], "cancelled": False}

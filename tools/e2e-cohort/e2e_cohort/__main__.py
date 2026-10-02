@@ -50,7 +50,7 @@ async def _evidence(out: Path, starmap: bool, starmap_students: int = 3) -> int:
         pg.stop()
     write_pack(report, out, starmap_record=record)
     for c in report.checks:
-        print(f"  {'通过' if c.passed else '失败'}  {c.name}")
+        print(f"  {c.label}  {c.name}")
     if record is not None:
         shots = record.get("shots", [])
         print(f"  {'通过' if record['status'] == 'captured' else '失败'}  starmap（{len(shots)} 张；"

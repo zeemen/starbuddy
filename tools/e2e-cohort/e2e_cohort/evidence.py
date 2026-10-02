@@ -3,9 +3,9 @@
 目录内容：
   summary.md         说明、断言结果一览、数据文件的 SHA-256（不含提交号，保证同一输入逐字节相同）
   students.csv       合成学生：标签、student_id、年级、作答模式、选科、家庭 ID
-  events.csv         每名学生 事件计数 × 科目 × 事件类型（来源方法/作答情境；复测 = grade/delayed_retest（桩））
-  nodes.csv          节点查询摘要：节点 ID、证据数、观察计数、状态（KGE-04 第二步前为 evidence_only）
-  retests.csv        复测（桩）：调度方一律 stub
+  events.csv         每名学生 事件计数 × 科目 × 事件类型（来源方法/作答情境；复测 = grade/delayed_retest）
+  nodes.csv          节点查询摘要：节点 ID、证据数、观察计数、状态（能力点视图，evidence_only）
+  retests.csv        复测：由 platform.retest_task 驱动（KGE-04 第二步），每行对应一条到期的复测轮任务；合成配置下没有任务时只有表头
   checks.json        断言与计数
   run_metadata.json  提交号、契约版本、适配器与内容包版本、队列种子与摘要、星图截图记录的位置（唯一随提交变化的文件）
   starmap/           GATE0_STARMAP=1 时生成（starmap.py）：starmap.json（status = captured / failed、页面路径、选取规则、视口、
@@ -46,21 +46,21 @@ def render(report) -> dict[str, str]:
     students = [{"label": s.label, "student_id": s.student_id, "grade": s.grade, "pattern": s.pattern,
                  "pattern_zh": PATTERN_LABELS[s.pattern], "enrollment": "+".join(s.enrollment), "household_id": s.household_id}
                 for s in cohort.students]
-    # 复测证据（ingest.purpose = retest → delayed_retest）由调度桩产生：事件类型加“（桩）”后缀；KGE-04 第二步合入后去掉并重生样例
-    events = sorted(({"label": label[e["student_id"]], **e,
-                      "event_type": e["event_type"] + ("（桩）" if e["event_type"].endswith("/delayed_retest") else "")}
-                     for e in report.events),
+    # 复测证据（ingest.purpose = retest → delayed_retest）由 retest_task 驱动（KGE-04 第二步），不再标“桩”
+    events = sorted(({"label": label[e["student_id"]], **e} for e in report.events),
                     key=lambda r: (r["label"], r["subject"], r["event_type"]))
     nodes = sorted(({"label": label[n["student_id"]], **n} for n in report.nodes),
                    key=lambda r: (r["label"], r["subject"], r["node_id"]))
-    retests = [{**r, "scheduler": f"{r['scheduler']}（桩）"} for r in sorted(report.retests, key=lambda r: (r["label"], r["subject"]))]
+    retests = sorted(report.retests, key=lambda r: (r["label"], r["subject"], r["node_id"], r["rung"]))
     checks = {"notice": SYNTHETIC_NOTICE, "passed": report.passed, "checks": [c.as_dict() for c in report.checks]}
     files = {
         "students.csv": _csv(students, ["label", "student_id", "grade", "pattern", "pattern_zh", "enrollment", "household_id"]),
         "events.csv": _csv(events, ["label", "student_id", "subject", "event_type", "count"]),
         "nodes.csv": _csv(nodes, ["label", "student_id", "subject", "node_id", "evidence_count", "observations_demonstrated",
                                   "observations_not_demonstrated", "observations_other", "status"]),
-        "retests.csv": _csv(retests, ["label", "student_id", "subject", "item", "due_at", "source_step", "scheduler", "status"]),
+        # 到期时间是服务器时间（每次运行不同），不进样例；轮次与原因足以说明是哪条任务
+        "retests.csv": _csv(retests, ["label", "student_id", "subject", "node_id", "cognitive_level", "rung", "reason", "item",
+                                      "scheduler", "status"]),
         "checks.json": json.dumps(checks, ensure_ascii=False, indent=1, sort_keys=True) + "\n",
     }
     files["summary.md"] = _summary(report, files)
@@ -80,17 +80,18 @@ def _summary(report, files: dict[str, str]) -> str:
         "",
         f"> **{SYNTHETIC_NOTICE}。** 全部学生、家庭、作答均为固定种子生成的合成数据（仓库总则规则 8）；"
         "判分经 test 环境假供应商与各科 Rubric / 验证器得出，不代表任何真实学生或真实模型表现。",
-        "> 复测调度为接口桩（KGE-04 第二步前），证据包里所有复测都标“桩”。英语未纳入（适配器搁置）。",
+        "> 复测由 KGE-04 第二步的真实调度驱动（platform.retest_task；联调用合成、未签字的数学掌握配置，知行与文砺不配置）。"
+        "合成配置下到不了复测时如实为 0 次，原因见 checks.json 的 retest_via_retest_task。英语未纳入（适配器搁置）。",
         "",
         f"- 合成学生：{len(report.cohort.students)} 名；三科（数学 aya、语文 wenli、道法 zhixing）都有事件的：{students_all3} 名",
         f"- 证据事件：" + "，".join(f"{k} {v}" for k, v in sorted(by_subject.items())),
-        f"- 节点查询行：{len(report.nodes)}；复测（桩）：{len(report.retests)} 次",
+        f"- 节点查询行：{len(report.nodes)}；复测（retest_task 驱动）：{len(report.retests)} 次",
         f"- 断言：{'全部通过' if report.passed else '有失败'}",
         "",
         "| 断言 | 结果 |",
         "|---|---|",
     ]
-    lines += [f"| {c.name} | {'通过' if c.passed else '失败'} |" for c in report.checks]
+    lines += [f"| {c.name} | {c.label} |" for c in report.checks]
     lines += ["", "## 数据文件 SHA-256", ""]
     lines += [f"- `{name}` {hashlib.sha256(files[name].encode()).hexdigest()}" for name in DATA_FILES]
     lines += ["", "## 星图截图", "",

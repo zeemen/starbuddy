@@ -23,7 +23,6 @@ SIZE = 20
 NS = uuid.UUID("5b8e1c52-e2e0-4c0f-8a5d-000000000520")
 TZ = timezone(timedelta(hours=8))
 BASE_DAY = datetime(2026, 10, 12, 19, 0, tzinfo=TZ)  # 合成时间：2026-10 分区内
-RETEST_AFTER = timedelta(days=7)
 
 PATTERNS = ("all_correct", "systematic_gap", "same_item_repeat", "hint_dependent", "interrupted")
 PATTERN_LABELS = {
@@ -104,7 +103,7 @@ class Student:
     pattern: str
     enrollment: tuple[str, ...]
     steps: tuple[Step, ...]
-    # 复测时这名学生怎么答（按科）：复测“做什么、什么时候”由调度决定（KGE-04 第二步前是桩），“答什么”由队列脚本决定
+    # 复测时这名学生怎么答（按科）：复测“做什么、什么时候”由调度决定（KGE-04 第二步：retest_task），“答什么”由队列脚本决定
     retest_answers: dict = field(default_factory=dict)
     interrupted_after: str | None = None
 
@@ -221,7 +220,3 @@ def _script(label: str, pattern: str, rng: random.Random, zx_points: dict[str, l
         "zhixing_quality": "accepted" if pattern == "systematic_gap" else quality,
     }
     return steps, retest
-
-
-def retest_time(original_at: str) -> str:
-    return (datetime.fromisoformat(original_at) + RETEST_AFTER).isoformat()

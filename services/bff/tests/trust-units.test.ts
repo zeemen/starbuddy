@@ -3,7 +3,7 @@
 // 全部合成数据（规则 8）。
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { disputeBody, httpDisputeClient, pickDispute, pickPrediction, pickReconciliation } from '../src/trust/clients.ts';
+import { disputeBody, displayableItemRefs, httpDisputeClient, pickDispute, pickPrediction, pickReconciliation } from '../src/trust/clients.ts';
 import { randomKeys } from '../src/http/config.ts';
 import { MAX_HOLD_MS, MemoryExportStore } from '../src/trust/exports.ts';
 import { REAUTH_WINDOW_MS, RecentLogins, trustMac } from '../src/trust/proof.ts';
@@ -35,6 +35,18 @@ test('异议结果：只留 dispute_id、next_step、verify_by；fact_ref 与验
   // 契约：open_fact_for_correction 必带 fact_ref（BFF 核对它在，但不转发）
   assert.equal(pickDispute({ dispute_id: U('05'), next_step: 'open_fact_for_correction' }), null);
   assert.equal(pickDispute({ dispute_id: U('05'), next_step: 'open_fact_for_correction', fact_ref: 'phone:+99900000001' }), null);
+});
+
+test('验证题引用：任务引用（verify-task-）与接口桩占位（stub-verify-）不当题目；异议结果里一律不转发', () => {
+  const task = 'aya:verify-task-0000000000004000800000000000d601';
+  assert.deepEqual(displayableItemRefs([task, 'aya:stub-verify-0123456789ab', 'aya:synthetic-0301-08', 'zhixing:verify-task-x', 'bad ref', 7]),
+                   ['aya:synthetic-0301-08']);
+  assert.deepEqual(displayableItemRefs(undefined), []);
+  assert.deepEqual(displayableItemRefs('aya:synthetic-0301-08'), []);
+  const w = pickDispute({ dispute_id: U('06'), next_step: 'verification_scheduled', verification_item_refs: [task],
+                          verify_by: '2026-10-10T08:00:00Z' });
+  assert.deepEqual(w, { dispute_id: U('06'), next_step: 'verification_scheduled', verify_by: '2026-10-10T08:00:00.000Z' });
+  assert.equal(JSON.stringify(w).includes('verify-task'), false);
 });
 
 test('异议请求：caller = bff，带 actor（家长带 link_id）与幂等键；受众与 actor 一致', () => {

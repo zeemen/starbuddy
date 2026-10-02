@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -22,7 +23,7 @@ from typing import Any, Awaitable, Callable, Mapping, Sequence
 import asyncpg
 
 from .claims import MAX_EVIDENCE, ClaimRow, MasteryRow
-from .dispute import KINDS, NEXT_STEP, VerificationScheduler, fact_ref, stub_task_refs, verify_by
+from .dispute import KINDS, NEXT_STEP, VerificationScheduler, VerificationUnavailable, fact_ref, stub_task_refs, verify_by
 from .policy import Policy
 from .predict import (EXAM_TYPES, MODEL_VERSION, RECONCILE_MODEL_VERSION, PredictInputError, SentenceClaim, check_sentences,
                       predict_interval, reconcile_plan)
@@ -140,6 +141,8 @@ def _pg_error(e: asyncpg.PostgresError) -> StoreError:
 class Sie03Store:
     def __init__(self, pool: asyncpg.Pool) -> None:
         self.pool = pool
+        # 验证任务补偿的计数（KGE-04 第二步 PR 3）：事务回滚后撤销已建任务的成功 / 失败条数（失败只计数，不影响返回）
+        self.stats: Counter = Counter()
 
     # ---------- 公共 ----------
     @staticmethod
@@ -169,37 +172,46 @@ class Sie03Store:
         """提出异议。actor_role / actor_ref 是请求里代表的人（学生本人或家长）；库里按关系再核，记下的身份必须与 actor_role 一致"""
         if kind not in KINDS or actor_role not in ("student", "guardian"):
             raise Invalid("kind or actor")
-        async with self.pool.acquire() as conn:
-            async with conn.transaction():
-                await InsightStore._lock(conn, student)
-                # 预检（安全审查 F3、契约审查 M1）：与 insight.raise_dispute 同一组判断条件——属于该学生、非终态、未过期、
-                # 模板已审核、可见范围含请求受众；不满足一律 404，且在这之前不读任何 platform 表（身份由 ActorVerifier 在工具层先核）
-                claim = await self._visible_claim(conn, student, claim_id, actor_role)
-                if claim is None:
-                    raise NotFound()
-                if kind == "i_know" and (claim.target_type != "node" or claim.subject is None):
-                    raise Invalid("verification is only available for node claims")
-                fk, fid = (None, None)
-                if kind == "data_error":
-                    fk, fid = fact or await self._locate_fact(conn, student, claim)
-                try:
-                    async with conn.transaction():  # 保存点：库函数报错不污染外层事务的错误码判断
-                        did = await conn.fetchval("SELECT insight.raise_dispute($1::uuid, $2, $3::uuid, NULL, $4, $5::uuid)",
-                                                  claim_id, kind, actor_ref, fk, fid)
-                except asyncpg.PostgresError as e:
-                    raise _pg_error(e) from None
-                d = await conn.fetchrow("""SELECT id, kind, status, raised_by, raised_by_role, verification_task_refs, created_at,
-                                                  fact_kind, fact_id FROM insight.dispute WHERE id = $1""", did)
-                # 提出人核对（lessons 待人确认 #10）：库里按关系认定的身份必须与请求的 actor 一致，否则整笔回滚、按“不存在”处理
-                if d["raised_by_role"] != actor_role or str(d["raised_by"]) != actor_ref or d["kind"] != kind:
-                    raise NotFound()
-                ev = tuple(dict.fromkeys(claim.evidence_ids))
-                if kind == "i_know":
-                    out = await self._i_know(conn, student, claim, d, scheduler, params)
-                    return DisputeOutcome(out.dispute_id, out.next_step, out.verification_item_refs, out.verify_by, evidence_ids=ev)
-                if kind == "data_error":
-                    return DisputeOutcome(str(did), NEXT_STEP[kind], fact_ref=fact_ref(d["fact_kind"], str(d["fact_id"])), evidence_ids=ev)
-                return DisputeOutcome(str(did), NEXT_STEP[kind], evidence_ids=ev)
+        scheduled: list[tuple[str, list[str]]] = []  # (学生, 已建任务)：事务回滚时补偿撤销
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.transaction():
+                    await InsightStore._lock(conn, student)
+                    # 预检（安全审查 F3、契约审查 M1）：与 insight.raise_dispute 同一组判断条件——属于该学生、非终态、未过期、
+                    # 模板已审核、可见范围含请求受众；不满足一律 404，且在这之前不读任何 platform 表（身份由 ActorVerifier 在工具层先核）
+                    claim = await self._visible_claim(conn, student, claim_id, actor_role)
+                    if claim is None:
+                        raise NotFound()
+                    if kind == "i_know" and (claim.target_type != "node" or claim.subject is None):
+                        raise Invalid("verification is only available for node claims")
+                    fk, fid = (None, None)
+                    if kind == "data_error":
+                        fk, fid = fact or await self._locate_fact(conn, student, claim)
+                    try:
+                        async with conn.transaction():  # 保存点：库函数报错不污染外层事务的错误码判断
+                            did = await conn.fetchval("SELECT insight.raise_dispute($1::uuid, $2, $3::uuid, NULL, $4, $5::uuid)",
+                                                      claim_id, kind, actor_ref, fk, fid)
+                    except asyncpg.PostgresError as e:
+                        raise _pg_error(e) from None
+                    d = await conn.fetchrow("""SELECT id, student_id, kind, status, raised_by, raised_by_role, verification_task_refs,
+                                                      created_at, fact_kind, fact_id FROM insight.dispute WHERE id = $1""", did)
+                    # 提出人核对（lessons 待人确认 #10）：库里按关系认定的身份必须与请求的 actor 一致，否则整笔回滚、按“不存在”处理
+                    if d["raised_by_role"] != actor_role or str(d["raised_by"]) != actor_ref or d["kind"] != kind:
+                        raise NotFound()
+                    ev = tuple(dict.fromkeys(claim.evidence_ids))
+                    if kind == "i_know":
+                        out = await self._i_know(conn, student, claim, d, scheduler, params, scheduled)
+                        return DisputeOutcome(out.dispute_id, out.next_step, out.verification_item_refs, out.verify_by, evidence_ids=ev)
+                    if kind == "data_error":
+                        return DisputeOutcome(str(did), NEXT_STEP[kind], fact_ref=fact_ref(d["fact_kind"], str(d["fact_id"])), evidence_ids=ev)
+                    return DisputeOutcome(str(did), NEXT_STEP[kind], evidence_ids=ev)
+        except BaseException:
+            # 学习服务已建任务、本事务没提交（库层报错、核对失败、提交失败、取消）：尽力撤销，失败只计数（lessons PR 3 待人确认 R）
+            for stu, ids in scheduled:
+                failed = await scheduler.cancel(stu, ids)
+                self.stats["verification_cancel_failed"] += failed
+                self.stats["verification_cancelled"] += len(ids) - failed
+            raise
 
     @staticmethod
     async def _visible_claim(conn: asyncpg.Connection, student: str, claim_id: str, audience: str) -> ClaimRow | None:
@@ -213,7 +225,8 @@ class Sie03Store:
 
     @staticmethod
     async def _i_know(conn: asyncpg.Connection, student: str, claim: ClaimRow, d: Mapping[str, Any],
-                      scheduler: VerificationScheduler, params: Sie03Policy) -> DisputeOutcome:
+                      scheduler: VerificationScheduler, params: Sie03Policy,
+                      scheduled: list[tuple[str, list[str]]] | None = None) -> DisputeOutcome:
         assert claim.subject is not None
         if d["status"] == "open":
             if claim.status in ("hypothesis", "established"):
@@ -221,7 +234,16 @@ class Sie03Store:
                                        claim.id)
                 if n != "UPDATE 1":
                     raise RuntimeError("claim update did not hit exactly one row")
-            tasks = await scheduler.schedule(student, claim.subject, claim.target_id, str(d["id"]), params.dispute.verification_items)
+            # 学生取异议记录里的（由 insight.raise_dispute 按判断写入），不取请求体（KGE-04 第二步 PR 3）；层次取判断 value 里的
+            level = claim.value.get("level") if isinstance(claim.value, Mapping) else None
+            try:
+                tasks = await scheduler.schedule(str(d["student_id"]), claim.subject, claim.target_id, str(d["id"]),
+                                                 params.dispute.verification_items,
+                                                 cognitive_level=level if isinstance(level, str) else None)
+            except VerificationUnavailable:
+                raise Unavailable("verification is not available for this unit") from None
+            if scheduled is not None:
+                scheduled.append((str(d["student_id"]), [t.task_id for t in tasks]))
             if not 1 <= len(tasks) <= 5:
                 raise RuntimeError("verification scheduler returned an unexpected number of tasks")
             await conn.execute("""UPDATE insight.dispute SET status = 'verifying', verification_task_refs = $2::uuid[]

@@ -5,7 +5,7 @@
 收集错误、导入错误不算。临时目录保持仓库结构（services/learning 的 learning、config、掌握测试复制，docs 软链接回仓库，
 一致性检查要用 docs/design/sie 的禁用推断词表）。先跑一次不变异的对照组，必须通过。不连库、不联网，约 30 秒。
 
-第二组（KGE-04 第二步 PR 2，库上）：把读取层、写入层、复测任务、grade 接入的关键判定逐条改坏（去掉 advisory lock、间隔按 occurred_at、
+第二组（KGE-04 第二步 PR 2、PR 3，库上）：把读取层、写入层、复测任务、grade 接入的关键判定逐条改坏（去掉 advisory lock、间隔按 occurred_at、
 复测任务不在同一事务、重放触发重算等），断言 tests/test_mastery_store.py 与 tests/test_mastery_db.py 能发现。做法同
 scripts/diagnosis_mutations.py：services/learning 整体复制，db、docs 等软链接回仓库，每个变异起一个一次性 Postgres（需要本机 Postgres；
 没有时第二组以退出码 3 跳过，Makefile 决定是否算失败）。
@@ -25,8 +25,9 @@ REPO = HERE.parents[1]
 CFG, EV, G, BKT, W, CON = ("learning/mastery/config.py", "learning/mastery/evidence.py", "learning/mastery/gates.py",
                            "learning/mastery/bkt.py", "learning/mastery/write.py", "learning/mastery/consistency.py")
 ST, R, SV, JB = "learning/mastery/store.py", "learning/mastery/recompute.py", "learning/service.py", "learning/jobs.py"
-DB_TESTS = ["tests/test_mastery_store.py", "tests/test_mastery_db.py"]
-PURE_EXCLUDE = {"test_mastery_db.py"}  # 库上测试在第二组跑
+API, ROUTES, APP = "learning/mastery/api.py", "learning/mastery_routes.py", "learning/app.py"
+DB_TESTS = ["tests/test_mastery_store.py", "tests/test_mastery_db.py", "tests/test_mastery_api.py"]
+PURE_EXCLUDE = {"test_mastery_db.py", "test_mastery_api.py"}  # 库上测试在第二组跑
 
 # 名字 → [(文件, 原文, 替换为), …]
 MUTATIONS: dict[str, list[tuple[str, str, str]]] = {
@@ -144,6 +145,22 @@ DB_MUTATIONS: dict[str, list[tuple[str, str, str]]] = {
     "重算失败不记单元（异常往外抛）": [(R, "        except Exception as e:  # noqa: BLE001 — 重算失败不影响已落库的证据与接口返回（第一步 #6）",
                               "        except InterruptedError as e:  # 变异")],
     "能力视图取最高门槛（会把能力点“点亮”）": [(ST, "if RANK[r.state] < RANK[gate]:", "if RANK[r.state] > RANK[gate] or True:")],
+    # PR 3：learning-internal 1.1.0 的三个接口
+    "验证接口接受 BFF 服务令牌": [(APP, "insight_ok=lambda r: insight_token is not None and _bearer_ok(r.headers.get(\"authorization\"), insight_token)",
+                             "insight_ok=lambda r: _bearer_ok(r.headers.get(\"authorization\"), settings.service_credential)")],
+    "掌握读取接受 BFF 服务令牌": [(APP, "orchestrator_ok=lambda r: orchestrator_token is not None and _bearer_ok(r.headers.get(\"authorization\"), orchestrator_token)",
+                             "orchestrator_ok=lambda r: _bearer_ok(r.headers.get(\"authorization\"), settings.service_credential)")],
+    "撤销验证任务不核对学生": [(R, "WHERE id = $1::uuid AND student_id = $2::uuid AND reason = 'verify_self_report' AND status = 'open'",
+                            "WHERE id = $1::uuid AND $2::text IS NOT NULL AND reason = 'verify_self_report' AND status = 'open'")],
+    "撤销验证任务也撤复测轮": [(R, "WHERE id = $1::uuid AND student_id = $2::uuid AND reason = 'verify_self_report' AND status = 'open'",
+                            "WHERE id = $1::uuid AND student_id = $2::uuid AND status = 'open'")],
+    "掌握读取不核对调用方": [(ROUTES, 'if body["context"]["caller"] != "orchestrator":', "if False:")],
+    "证据链提示等级不按契约封顶": [(API, 'link["hint_level"] = min(HINT_MAX, max(0, int(row.hint_level)))',
+                              'link["hint_level"] = int(row.hint_level)')],
+    "星亮不按 star_level_rule": [(API, "lit = bool(cfg is not None and cfg.subject == subject and star_lit(node_id, levels, gates, cfg))",
+                                 "lit = False")],
+    "证据链权重不按重放强度": [(API, "for eid, c in rep.counted:\n                        cls[eid] = c\n                    strength.update(rep.strengths)",
+                            "for eid, c in rep.counted:\n                        cls[eid] = c")],
     "旧记录不指向新记录（更正链断开）": [(R, "SET is_current = false, superseded_by = $2::uuid\n"
                                   "                WHERE id = $1::uuid AND is_current AND student_id = $3::uuid",
                                "SET is_current = is_current\n"

@@ -106,6 +106,8 @@ class Replay:
     confidence_raw: float = 0.0
     calibrated: bool = False
     config_signed: bool = False
+    # 每条计入证据的更新强度 a ∈ [0, 1]（bkt_step 里实际用的那个值，只读记录，不参与任何判定）：mastery.explain 证据链的 weight
+    strengths: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -157,6 +159,7 @@ class _Machine:
         self.excluded: list[tuple[str, tuple[str, ...]]] = []
         self.annotations: list[tuple[str, str]] = []
         self.counted: list[tuple[str, Classification]] = []
+        self.strengths: dict[str, float] = {}
 
     # ---- 条件 ----
     def stable_counts_ok(self, c: _Counts) -> bool:
@@ -222,6 +225,7 @@ class _Machine:
         src_w = self.cfg["source_weights"]["diagnose" if ev.source == "diagnose" else "practice"]
         strength = abs(self.cfg.weights[weight_key]) * level_w * src_w * c.penalty
         self.p = bkt_step(self.p, c.correct, strength, self.cfg, ev.item_type)
+        self.strengths[ev.evidence_id] = min(1.0, strength)  # 与 bkt_step 的插值系数同一口径（只记录）
         if weight_key != "hinted_wrong":  # 提示后做错：置信度不变（第 3 节）
             self.mass += strength * float(ev.grade_confidence or 0.0)
         self.counted.append((ev.evidence_id, c))
@@ -305,7 +309,7 @@ class _Machine:
         return Replay(result=result, transitions=self.rep_trans, retests=self.rep_retests, excluded=self.excluded,
                       annotations=self.annotations, counted=self.counted, tasks=tasks,
                       conditions=self.conditions(), confidence_raw=conf_raw,
-                      calibrated=bool(cfg["calibrated"]), config_signed=cfg.signed)
+                      calibrated=bool(cfg["calibrated"]), config_signed=cfg.signed, strengths=dict(self.strengths))
 
     def conditions(self) -> list[Condition]:
         g, a, s = self.g, self.all, self.strict

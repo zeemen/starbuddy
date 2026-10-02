@@ -23,7 +23,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from ..dispute import VerificationScheduler, default_scheduler
 from ..guardian_requests import GuardianRequests
 from ..policy import Policy, load_check_config, load_policy
-from ..predict import MasterySource
+from ..predict import DbMasterySource, MasterySource
 from ..shared import forbidden_matcher
 from ..sie03_policy import Sie03Policy, load_sie03
 from ..store import InsightStore, assert_insight_role, create_pool
@@ -136,8 +136,9 @@ def create_app(settings: Settings, *, pool: asyncpg.Pool | None = None, contract
                policy: Policy | None = None, verifier: ActorVerifier | None = None, sie03: Sie03Policy | None = None,
                scheduler: VerificationScheduler | None = None, mastery: MasterySource | None = None,
                guardian: GuardianRequests | None = None) -> FastAPI:
-    """pool、contract、policy、verifier 与 SIE-03 的 sie03（配置）、scheduler（验证任务，缺省接口桩）、mastery（掌握行来源，
-    缺省没有）、guardian（导出与删除，缺省不接线）供测试注入；不传时按配置创建。注入的池同样要过角色断言"""
+    """pool、contract、policy、verifier 与 SIE-03 的 sie03（配置）、scheduler（验证任务：test 环境缺省接口桩，其他环境配置了
+    INSIGHT_LEARNING_URL / _TOKEN 就调学习服务，否则不可用）、mastery（掌握行来源，缺省直接读 platform.mastery_estimate 的节点键当前行）、
+    guardian（导出与删除，缺省不接线）供测试注入；不传时按配置创建。注入的池同样要过角色断言"""
     state: dict[str, Any] = {}
     the_contract = contract or default_contract()
     the_policy = policy or load_policy(settings.policy_path, env=settings.env)
@@ -156,7 +157,8 @@ def create_app(settings: Settings, *, pool: asyncpg.Pool | None = None, contract
             ops = Sie03Store(p)
             state.update(store=store, ops=ops, policy=the_policy, sie03=the_sie03, check_cfg=check_cfg,
                          core=ToolCore(store, the_contract, the_policy, forbidden_matcher(), verifier, sie03=the_sie03, ops=ops,
-                                       scheduler=scheduler or default_scheduler(settings.env), mastery=mastery,
+                                       scheduler=scheduler or default_scheduler(settings.env, settings.learning),
+                                       mastery=mastery or DbMasterySource(p),
                                        guardian=guardian))
             yield
         finally:

@@ -49,6 +49,19 @@
 
 自动化守护：`services/learning/tests/test_e2e_cohort.py` 把每次联调渲染出的证据包与 `sample/` 逐字节比对（`run_metadata.json` 忽略提交号与工作区状态），随 `learning-test` 进入 `make check`。
 
+**记录（2026-10-02，KGE-04 第二步 PR 3，`specs/kge-04-mastery-step2/lessons.md`“PR 3 实现记录”；不改上面的判定与证据锁定）**：
+联调复测改由 `platform.retest_task` 驱动（去掉“桩”），合成样例已重生（在 scratchpad 的工作树副本里跑 `make gate0-evidence`，与仓库内样例逐字节比对，
+只拷了变化的 `events.csv`、`nodes.csv`、`retests.csv`、`checks.json`、`summary.md`、`run_metadata.json`；`students.csv` 与 `starmap/` 未变）。变化：
+- 复测断言 `retest_via_stub` → `retest_via_retest_task`，摘要显示“**通过（0 次，未走到）**”；**复测 32 次（桩）→ 0 次**。联调用合成、未签字的数学掌握配置，
+  数学证据在重放里全部不计入（`checks.json` 的 `excluded_reasons`，共 116 条）：
+  - `no_grade` 80：插件诊断（`diagnose`）的作答证据没有判分结果（`grade_result`），按第一步 #23“只计有判分且有作答引用的证据”不计入；
+  - `pending_review` 36：批改（`grade`）的证据——阿鸦合成内容包题目全部未准入（`source_unverified`），判分一律带 `content_not_admitted`、待复核，
+    待复核不推动门槛（第一步 #11）。
+  计入 0 条 → 没有节点键掌握记录 → 没有复测轮任务 → 不执行复测；知行、文砺没有掌握配置，不写掌握、不建任务。没有编造复测。
+- 证据事件 aya 264 → 232、zhixing 110 → 54（少了桩复测的作答）；节点查询行 207 → 201；`run_metadata.json` 的 `learning-internal` 1.0.0 → 1.1.0、`retest_scheduler` 改为 retest_task。
+- **样例生成于未提交的工作区**（`commit = 8c91e30…`、`worktree_dirty: true`）；本节锁定的证据提交号（`d0ba0f7`）与 H1 各行的“最后修改”提交号**待 PR 3 合入后由人更新**。
+- H1“复测”分项仍是**不满足**，理由由“复测为桩”变为“真实调度在合成内容下到不了复测（内容未准入）”；是否在联调里登记已准入的合成题以走通复测，见上述 lessons 待人确认。
+
 ---
 
 ## H2 · 家长隔离与扣次幂等通过（硬）　判定：**不满足**

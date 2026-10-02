@@ -2,9 +2,11 @@
 
 - 建档（账号、家庭、学生档案、家长绑定、选科）是平台账号侧的准备工作，以超级用户写入测试库，做法同
   services/learning/tests/conftest.py 的 student 夹具；学习数据（证据、作答、判分、观察、错因）只经 /internal/v1/{diagnose,grade} 写入；
-- 复测：KGE-04 第二步（retest_task 与复测调度）未做，用 StubRetestScheduler 这个接口桩决定“复测哪道、何时”，
-  执行仍经同一个 grade 契约接口（ingest.purpose = retest）。桩产出的每一条复测都标 scheduler = "stub"，证据包里原样标“桩”；
-  第二步合入后换成真实调度（实现 RetestScheduler 协议即可），这里的执行与断言不变。
+- 复测：由 KGE-04 第二步的真实调度驱动（RetestTaskScheduler）：学习服务在 grade 落库后同步重算掌握、同一事务里建
+  platform.retest_task；这里以学习服务身份读该生开着的复测轮任务（reason = scheduled / early），把时钟推进到任务的 due_at
+  确认到期（learning.mastery.store.due_tasks），按任务的节点与层次选一道该生没做过的题，执行仍经同一个 grade 契约接口
+  （ingest.purpose = retest）。每条复测标 scheduler = "retest_task"。合成配置下到不了复测（没有任务）时不执行任何复测，
+  原因由 runner 的 retest_via_retest_task 断言给出（不编造复测）。
 """
 from __future__ import annotations
 
@@ -13,7 +15,11 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Protocol
 
-from .cohort import CONTENT_VERSION, RUBRIC, Attempt, Cohort, Step, Student, retest_time, sid, zhixing_answer
+from learning.mastery import store as MS
+from learning.store import learning_tx
+
+from .cohort import CONTENT_VERSION, RUBRIC, Attempt, Cohort, Step, Student, sid, zhixing_answer
+from .mastery import ITEMS_OF_NODE
 from .scripted import ScriptedModel
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -85,44 +91,61 @@ class CallRecord:
     status: int
     replayed: bool
     summary: dict
-    scheduler: str | None = None  # 复测：stub（KGE-04 第二步前）
+    scheduler: str | None = None  # 复测：retest_task（KGE-04 第二步真实调度）
 
 
-# ---------------- 复测调度（接口 + 桩） ----------------
+# ---------------- 复测调度（KGE-04 第二步：platform.retest_task） ----------------
 @dataclass(frozen=True)
 class RetestTask:
     subject: str
     item: str
     due_at: str
-    source_step: str
+    source_step: str          # retest_task:<轮次>（复测由哪条任务驱动）
     scheduler: str
+    node_id: str = ""
+    cognitive_level: str = ""
+    rung: str = ""
+    reason: str = ""
 
 
 class RetestScheduler(Protocol):
-    """复测调度的接口：给定学生与其批改结果摘要（只有 ID 与编码），返回到期的复测任务。KGE-04 第二步的真实调度实现同一协议。"""
+    """复测调度：给定学生与其批改结果摘要，返回到期的复测任务（只有 ID 与编码）。"""
 
     name: str
 
-    def due(self, student: Student, graded: list[CallRecord]) -> list[RetestTask]: ...
+    async def due(self, student: Student, graded: list[CallRecord]) -> list[RetestTask]: ...
 
 
-class StubRetestScheduler:
-    """接口桩（不是掌握计算）：每名学生每科取第一道“没有答对”的批改题，没有则取第一道批改题，7 天后复测一次。
-    只看摘要里的 verdict，不读、不写掌握度；不做任何间隔优化。"""
+class RetestTaskScheduler:
+    """真实调度（KGE-04 第二步）：以学习服务身份读该生开着的复测轮任务，把注入时钟推进到 due_at 确认到期，
+    按任务的节点选一道该生在本轮脚本里没做过的题（同节点另一题族；没有可选的题就不执行，计入 no_item）。
+    不读、不写掌握度；任务的关闭由学习服务在复测作答落库后的重算里完成。"""
 
-    name = "stub"
+    name = "retest_task"
 
-    def due(self, student: Student, graded: list[CallRecord]) -> list[RetestTask]:
-        tasks = []
-        for subject in ("aya", "zhixing"):
-            recs = [r for r in graded if r.subject == subject and r.method == "grade" and r.purpose == "practice" and r.status == 200]
-            if not recs:
-                continue
-            pick = next((r for r in recs if r.summary.get("verdict") != "correct"), recs[0])
-            step = next(s for s in student.steps if s.step_id == pick.step_id)
-            a = step.attempts[0]
-            tasks.append(RetestTask(subject, a.item, retest_time(a.at), pick.step_id, self.name))
-        return tasks
+    def __init__(self, pool) -> None:
+        self.pool = pool
+        self.no_item = 0
+
+    async def due(self, student: Student, graded: list[CallRecord]) -> list[RetestTask]:  # noqa: ARG002
+        done = {a.item for st in student.steps for a in st.attempts}
+        out: list[RetestTask] = []
+        async with learning_tx(self.pool) as conn:
+            rows = await conn.fetch(
+                """SELECT id::text, subject::text, node_id, cognitive_level, rung, reason, due_at FROM platform.retest_task
+                    WHERE student_id = $1::uuid AND status = 'open' AND reason IN ('scheduled', 'early') ORDER BY due_at, id""",
+                student.student_id)
+            for task_id, subject, node, level, rung, reason, due_at in rows:
+                clock = due_at  # 注入时钟推进到 due_at：以它为“当下”，任务应当到期
+                if task_id not in {t["id"] for t in await MS.due_tasks(conn, student.student_id, subject, clock)}:
+                    continue
+                pick = next((i for i in ITEMS_OF_NODE.get(node, []) if i not in done), None)
+                if pick is None:
+                    self.no_item += 1
+                    continue
+                done.add(pick)
+                out.append(RetestTask(subject, pick, due_at.isoformat(), f"retest_task:{rung}", self.name, node, level, rung, reason))
+        return out
 
 
 def retest_step(student: Student, task: RetestTask, model: ScriptedModel, zx_items: dict[str, dict]) -> Step:
@@ -133,7 +156,8 @@ def retest_step(student: Student, task: RetestTask, model: ScriptedModel, zx_ite
         text = zhixing_answer(f"{student.label}复测", task.item, quality, zx_items[task.item]["points"])
         model.register("zhixing", task.item, text, student.pattern)
         response = {"text": text}
-    return Step(f"retest-{task.source_step}", "grade", task.subject, (Attempt(task.item, response, task.due_at, 0),))
+    # 步骤 ID 进幂等键派生：按任务的节点与轮次区分（同一学生可有多条复测）
+    return Step(f"retest-{task.node_id}-{task.rung}", "grade", task.subject, (Attempt(task.item, response, task.due_at, 0),))
 
 
 # ---------------- 回放 ----------------
@@ -164,9 +188,8 @@ def register_texts(cohort: Cohort, model: ScriptedModel) -> None:
                 model.register(step.subject, a.item, a.response["text"], s.pattern)
 
 
-async def replay_cohort(api, cohort: Cohort, model: ScriptedModel, scheduler: RetestScheduler | None = None) -> RunLog:
-    """第一轮：诊断 → 批改（按学生脚本顺序）→ 复测（调度桩）。"""
-    scheduler = scheduler or StubRetestScheduler()
+async def replay_cohort(api, cohort: Cohort, model: ScriptedModel, scheduler: RetestScheduler) -> RunLog:
+    """第一轮：诊断 → 批改（按学生脚本顺序）→ 复测（retest_task 驱动）。"""
     zx_items = load_zhixing_items()
     register_texts(cohort, model)
     log = RunLog()
@@ -179,14 +202,14 @@ async def replay_cohort(api, cohort: Cohort, model: ScriptedModel, scheduler: Re
             mine.append(rec)
         if s.pattern == "interrupted":
             continue  # 中断：离开后没有复测
-        for task in scheduler.due(s, mine):
+        for task in await scheduler.due(s, mine):
             step = retest_step(s, task, model, zx_items)
             rec = await _post(api, s, step, run=1, purpose="retest", scheduler=task.scheduler)
             log.calls.append(rec)
             log.requests.append((s, step, "retest", task.scheduler))
-            log.retests.append({"label": s.label, "student_id": s.student_id, "subject": task.subject, "item": task.item,
-                                "due_at": task.due_at, "source_step": task.source_step, "scheduler": task.scheduler,
-                                "status": rec.status})
+            log.retests.append({"label": s.label, "student_id": s.student_id, "subject": task.subject, "node_id": task.node_id,
+                                "cognitive_level": task.cognitive_level, "rung": task.rung, "reason": task.reason, "item": task.item,
+                                "source_step": task.source_step, "scheduler": task.scheduler, "status": rec.status})
     return log
 
 

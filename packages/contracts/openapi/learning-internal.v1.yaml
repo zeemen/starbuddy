@@ -1,14 +1,28 @@
 openapi: 3.1.0
 info:
   title: StarBuddy 学习服务内部 API（BFF → 学习服务）
-  version: 1.0.0
-  summary: 冲刺 1-C 写入接口。只供 BFF 调用，学生与家长不能直接访问。
+  version: 1.1.0
+  summary: 冲刺 1-C 写入接口；1.1.0 加掌握读取与验证任务（KGE-04 第二步）。只供平台内部服务调用，学生与家长不能直接访问。
   description: |
     状态：**v1 候选版，待评审签字**（`specs/plugin-api-v1.0/spec.md`；评审清单 N17、N18）。v0 保留到迁移期结束。
 
     相对 v0：请求体改为信封（插件 API v1.0 的 `GradeRequest` / `DiagnoseRequest` 加平台侧的 `IngestContext`）；
     新增只查询、不执行的重放接口（N17）；写明 5xx 一律是结果未知（N18）；摘要带证据等级与是否写入学习者模型。
     冲刺 4-H 另加非消耗类的今日计划 `POST /internal/v1/plan`（specs/unified-shell-sprint4/spec.md 第 6 节；契约变更，待签字）。
+
+    ## 1.1.0（KGE-04 第二步 PR 3，specs/kge-04-mastery-step2/spec.md 第 3 节；契约变更，待签字）
+    非破坏性：只新增四个接口、两个令牌方案与 Problem 的三个错误码，已有接口与 schema 不变。
+    - `POST /internal/v1/mastery/get`、`POST /internal/v1/mastery/explain`：请求与响应**直接引用** `knowledge-service.v0.9.yaml` 的
+      `MasteryGetRequest / MasteryGetResponse`、`MasteryExplainRequest / MasteryExplainResponse`（形状逐字照搬，信封五字段齐全，
+      `contract_version` 仍是知识服务形状的 0.9.0）。知识服务的 `/v0/mastery.*` 继续回 501（第二步待人确认 #2）。
+      只给编排层（编排层专用令牌 `orchestratorServiceToken`；BFF 服务令牌与洞察服务令牌一律 401；`context.caller` 必须与令牌身份一致，
+      即 `orchestrator`，否则 403 `CALLER_MISMATCH`）。结果是推断：
+      对学生、家长的任何陈述仍须经洞察服务的判断（规则 11），本接口不对前端开放。
+    - `POST /internal/v1/verification`：SIE-03“我其实会”建平台内验证任务（`retest_task.reason = verify_self_report`），
+      只建任务、不改掌握；同一异议重复调用返回同一条任务。只接受洞察服务令牌（`insightServiceToken`），BFF 令牌一律 401。
+      返回任务 ID 与 `item.similar` 选题入口所需的节点与层次，**不返回题目内容**（第二步待人确认 #3）。
+    - `POST /internal/v1/verification/cancel`：洞察服务写异议的事务在建任务之后回滚时的补偿，按任务 ID + 学生撤销 open 的自述验证任务；
+      幂等、不改掌握；只接受洞察服务令牌。
 
     请求体是信封 `{ request, ingest }`：`request` 是学科插件 API v1.0 的 `GradeRequest` / `DiagnoseRequest`
     （`plugin-api.v1.0.yaml`），原样转发给适配器；`ingest` 是平台侧的作答上下文（输入通道、用途），只由学习服务使用，
@@ -182,6 +196,127 @@ paths:
                 zhixingGrade: { $ref: '#/components/examples/ModelRouteResponseZhixing' }
         default: { $ref: '#/components/responses/Problem' }
 
+  /internal/v1/mastery/get:
+    post:
+      operationId: masteryGet
+      summary: 节点 × 层次的掌握状态（形状照搬 knowledge-service v0.9 的 mastery.get；1.1.0）
+      description: |
+        **契约变更，待签字（必停项）。** 只读，不计量、不写任何表。只接受编排层令牌（`orchestratorServiceToken`），`context.caller`
+        必须是 `orchestrator`。读 `platform.mastery_estimate` 的节点键当前记录，
+        只认当前已发布地图里有效的节点与层次（改名、合并、拆分、撤下的旧单元不出现）。每个请求节点按其在当前地图里的
+        全部认知层次各回一行：没有记录的层次 `gate = unseen`、不带 `p_mastery` 与 `next_review_at`；不在任何当前地图里的节点不回。
+        `star_lit` 是节点的星亮，按该科掌握配置的 `star_level_rule` 计算（星亮层次的门槛到“迁移”及以上），同一节点各行取值相同；
+        没有可用配置的学科一律 false。
+        信封：`evidence_ids` = 各行引用证据的并集；`confidence` = 各行置信度的最小值（没有记录时为 0）；
+        `source_version` 带算法版本与地图版本段；`model_version` 为 `algo:kge-mastery@<算法版本>`；`human_review_required = false`。
+        不存在的学生与没有记录的学生回同样的结果（全部 unseen），不暴露存在性。
+      security:
+        - orchestratorServiceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: './knowledge-service.v0.9.yaml#/components/schemas/MasteryGetRequest' }
+            examples:
+              basic: { $ref: '#/components/examples/MasteryGetRequestOrchestrator' }
+      responses:
+        '200':
+          description: 掌握状态、门槛与下次复测时间
+          content:
+            application/json:
+              schema: { $ref: './knowledge-service.v0.9.yaml#/components/schemas/MasteryGetResponse' }
+              examples:
+                basic: { $ref: '#/components/examples/MasteryGetResponseExecute' }
+        default: { $ref: '#/components/responses/Problem' }
+  /internal/v1/mastery/explain:
+    post:
+      operationId: masteryExplain
+      summary: 某节点掌握状态的证据链（形状照搬 knowledge-service v0.9 的 mastery.explain；1.1.0）
+      description: |
+        **契约变更，待签字（必停项）。** 只读。证据链 = 该节点各层次当前记录引用的证据（按服务器记录时间排序，去重），每条带
+        `evidence_kind`（作答情境）、`evidence_level`（生效等级：旧证据与未准入内容上的证据按 B）、`weight`（这条证据对掌握的更新强度，
+        ∈ [0, 1]；按读取时的配置与证据重放得出，当前已不计入的记 0）、`hint_level`（提示等级，契约上限 5，平台阶梯 6 级记 5）。
+        门槛条件的编码与数值只在服务内（第一步 #17），不经本接口外露。
+        信封同 `mastery/get`；节点没有记录时 `chain` 为空、`confidence` 为 0。只接受编排层令牌。
+      security:
+        - orchestratorServiceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: './knowledge-service.v0.9.yaml#/components/schemas/MasteryExplainRequest' }
+            examples:
+              basic: { $ref: '#/components/examples/MasteryExplainRequestOrchestrator' }
+      responses:
+        '200':
+          description: 证据链
+          content:
+            application/json:
+              schema: { $ref: './knowledge-service.v0.9.yaml#/components/schemas/MasteryExplainResponse' }
+              examples:
+                basic: { $ref: '#/components/examples/MasteryExplainResponseExecute' }
+        default: { $ref: '#/components/responses/Problem' }
+  /internal/v1/verification:
+    post:
+      operationId: scheduleVerification
+      summary: “我其实会”的平台内验证任务（SIE-03 → KGE-04；1.1.0）
+      description: |
+        **契约变更，待签字（必停项）。** 建一条 `platform.retest_task`（`reason = verify_self_report`），不改掌握记录
+        （只有之后做题产生的证据会改）。幂等：同一 `dispute_ref` 与单元重复调用返回同一条任务；该单元已有开着的自述验证任务时返回那一条
+        （每单元每种原因最多一条 open）。
+        **学生由谁定**：学习服务没有读 `insight.dispute` 的权限（迁移 0032 未授），不能由异议记录反查学生；
+        改为只接受洞察服务令牌（`insightServiceToken`，与 BFF 服务令牌不同、不能互换），`student_ref` 由洞察服务从异议记录
+        （`insight.dispute.student_id`）取出后附带——BFF 与客户端没有途径指定学生（第二步 lessons PR 3 待人确认）。
+        `item_count` 是 `item.similar` 要选的验证题道数（不落库，原样回显）；题目由编排层经知识服务选，本接口不返回题目内容。
+        学科没有可用掌握配置、单元不在当前已发布地图里：409 `MASTERY_UNAVAILABLE`（不重试）。
+      security:
+        - insightServiceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VerificationRequest' }
+            examples:
+              iKnow: { $ref: '#/components/examples/VerificationRequestIKnow' }
+      responses:
+        '200':
+          description: 验证任务（新建或已有的那一条）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerificationTask' }
+              examples:
+                created: { $ref: '#/components/examples/VerificationTaskCreated' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /internal/v1/verification/cancel:
+    post:
+      operationId: cancelVerification
+      summary: 撤销一条自述验证任务（洞察服务事务回滚时的补偿；1.1.0）
+      description: |
+        **契约变更，待签字（必停项）。** 洞察服务在写异议的事务里调 `/internal/v1/verification` 建任务；该事务随后回滚时，任务会留在
+        open、没有异议引用。洞察服务回滚后尽力调本接口撤销（失败只记计数，不影响异议的返回）。
+        按 `task_id` + `student_ref` 撤销 `status = open` 且 `reason = verify_self_report` 的任务（置 cancelled），不改掌握记录。
+        幂等：已撤销或已关闭的任务返回现状、`cancelled = false`。任务不存在、不属于该学生或不是自述验证任务：同一个 404 `TASK_NOT_FOUND`。
+        只接受洞察服务令牌（`insightServiceToken`）。
+      security:
+        - insightServiceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VerificationCancelRequest' }
+            examples:
+              rollback: { $ref: '#/components/examples/VerificationCancelRequestRollback' }
+      responses:
+        '200':
+          description: 撤销结果（本次撤销，或已有的现状）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerificationCancelResult' }
+              examples:
+                cancelled: { $ref: '#/components/examples/VerificationCancelResultCancelled' }
+        default: { $ref: '#/components/responses/Problem' }
+
 components:
   securitySchemes:
     bffServiceToken:
@@ -192,6 +327,14 @@ components:
       type: http
       scheme: bearer
       description: 各科适配器到学习服务模型路由接口的令牌（LEARNING_ROUTE_CLIENT_<SUBJECT>_TOKEN），按学科发放、绑定学科，与服务间令牌不同。
+    insightServiceToken:
+      type: http
+      scheme: bearer
+      description: 洞察服务到学习服务的令牌（LEARNING_INSIGHT_CLIENT_TOKEN），只对 `/internal/v1/verification` 与 `/verification/cancel` 有效；与其他令牌各不相同。
+    orchestratorServiceToken:
+      type: http
+      scheme: bearer
+      description: 编排层到学习服务的令牌（LEARNING_ORCHESTRATOR_CLIENT_TOKEN），只对 `/internal/v1/mastery/get` 与 `/mastery/explain` 有效；与其他令牌各不相同。
 
   responses:
     Problem:
@@ -201,6 +344,104 @@ components:
           schema: { $ref: '#/components/schemas/Problem' }
 
   examples:
+    MasteryGetRequestOrchestrator:
+      summary: 编排层读一个节点的掌握状态（合成学生）
+      value:
+        context:
+          request_id: 00000000-0000-4000-8000-000000000601
+          contract_version: 0.9.0
+          caller: orchestrator
+          data_class: L2
+          student_ref: 00000000-0000-4000-8000-00000000a002
+        node_ids: [MATH.SYN.FUNC.VERTEX]
+    MasteryGetResponseExecute:
+      summary: 两个层次：apply 到“执行”、understand 没有记录；星未亮
+      value:
+        contract_version: 0.9.0
+        result:
+          states:
+            - node_id: MATH.SYN.FUNC.VERTEX
+              cognitive_level: understand
+              gate: unseen
+              star_lit: false
+            - node_id: MATH.SYN.FUNC.VERTEX
+              cognitive_level: apply
+              gate: execute
+              p_mastery: 0.64
+              star_lit: false
+              next_review_at: '2026-10-16T08:00:00Z'
+        evidence_ids: [00000000-0000-4000-8000-00000000e601, 00000000-0000-4000-8000-00000000e602]
+        confidence: 0.42
+        source_version: 'algo:kge-mastery@0.1.0.syn-0.1.0.0a1b2c3d;graph:aya-map@0.1.0'
+        model_version: 'algo:kge-mastery@0.1.0'
+        human_review_required: false
+    MasteryExplainRequestOrchestrator:
+      summary: 编排层读一个节点的证据链（合成学生）
+      value:
+        context:
+          request_id: 00000000-0000-4000-8000-000000000602
+          contract_version: 0.9.0
+          caller: orchestrator
+          data_class: L2
+          student_ref: 00000000-0000-4000-8000-00000000a002
+        node_id: MATH.SYN.FUNC.VERTEX
+    MasteryExplainResponseExecute:
+      summary: 两条独立做对的证据（A 级）
+      value:
+        contract_version: 0.9.0
+        result:
+          node_id: MATH.SYN.FUNC.VERTEX
+          chain:
+            - evidence_id: 00000000-0000-4000-8000-00000000e601
+              occurred_at: '2026-10-09T08:00:00Z'
+              evidence_kind: independent
+              evidence_level: A
+              weight: 0.72
+              hint_level: 0
+            - evidence_id: 00000000-0000-4000-8000-00000000e602
+              occurred_at: '2026-10-09T08:10:00Z'
+              evidence_kind: independent
+              evidence_level: A
+              weight: 0.72
+              hint_level: 0
+        evidence_ids: [00000000-0000-4000-8000-00000000e601, 00000000-0000-4000-8000-00000000e602]
+        confidence: 0.42
+        source_version: 'algo:kge-mastery@0.1.0.syn-0.1.0.0a1b2c3d;graph:aya-map@0.1.0'
+        model_version: 'algo:kge-mastery@0.1.0'
+        human_review_required: false
+    VerificationRequestIKnow:
+      summary: 洞察服务为一条“我其实会”异议建验证任务（学生取自异议记录）
+      value:
+        request_id: 00000000-0000-4000-8000-000000000603
+        dispute_ref: 00000000-0000-4000-8000-00000000f101
+        student_ref: 00000000-0000-4000-8000-00000000a002
+        subject: aya
+        node_id: MATH.SYN.FUNC.VERTEX
+        cognitive_level: apply
+        reason: verify_self_report
+        item_count: 2
+    VerificationTaskCreated:
+      summary: 新建的验证任务：只有任务 ID、节点、层次、状态与时间，没有题目
+      value:
+        task_id: 00000000-0000-4000-8000-00000000d601
+        node_id: MATH.SYN.FUNC.VERTEX
+        cognitive_level: apply
+        status: open
+        due_at: '2026-10-09T08:00:00Z'
+        item_count: 2
+        created: true
+    VerificationCancelRequestRollback:
+      summary: 洞察服务写异议的事务回滚后撤销刚建的验证任务
+      value:
+        request_id: 00000000-0000-4000-8000-000000000604
+        task_id: 00000000-0000-4000-8000-00000000d601
+        student_ref: 00000000-0000-4000-8000-00000000a002
+    VerificationCancelResultCancelled:
+      summary: 本次撤销
+      value:
+        task_id: 00000000-0000-4000-8000-00000000d601
+        status: cancelled
+        cancelled: true
     PlanQueryToday:
       summary: 统一壳“今日”页：数学与语文两科（合成学生）
       value:
@@ -510,6 +751,67 @@ components:
         model_version: { type: string, pattern: '^model:[a-z0-9\-]+/[A-Za-z0-9._\-]+@[A-Za-z0-9._\-]+$' }
         source_version: { type: string, pattern: '^prompt:[a-z0-9][a-z0-9\-]{0,47}@[A-Za-z0-9][A-Za-z0-9._\-]{0,31}$' }
         model_mismatch: { type: boolean, description: 供应商报告的模型名与配置的快照名不一致；判分类调用方应转人工复核 }
+    VerificationRequest:
+      type: object
+      description: |
+        洞察服务 → 学习服务：为一条“我其实会”异议建验证任务。`student_ref` 由洞察服务从异议记录取出（见路径说明），
+        只经洞察服务令牌接受。不带题目、作答或任何个人信息。
+      required: [request_id, dispute_ref, student_ref, subject, node_id, cognitive_level, reason, item_count]
+      additionalProperties: false
+      properties:
+        request_id: { $ref: '#/components/schemas/Uuid' }
+        dispute_ref:
+          description: insight.dispute.id（迁移 0032）；幂等键的一部分。
+          type: string
+          format: uuid
+        student_ref:
+          type: string
+          format: uuid
+          pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        subject:
+          type: string
+          description: 有掌握计算的学科（英语搁置，不在枚举里）。
+          enum: [wenli, aya, zhixing]
+        node_id: { $ref: './knowledge-service.v0.9.yaml#/components/schemas/NodeId' }
+        cognitive_level: { $ref: './knowledge-service.v0.9.yaml#/components/schemas/CognitiveLevel' }
+        reason:
+          type: string
+          const: verify_self_report
+          description: 只建自述验证任务；复测轮等其他原因只由掌握重算产生。
+        item_count: { type: integer, minimum: 1, maximum: 5, description: 要选的验证题道数（0032 与 SIE 第八章：1–5 道）。 }
+    VerificationTask:
+      type: object
+      description: 验证任务（platform.retest_task 的一条）。没有题目、答案或任何作答内容。
+      required: [task_id, node_id, cognitive_level, status, due_at, item_count, created]
+      additionalProperties: false
+      properties:
+        task_id: { $ref: '#/components/schemas/Uuid' }
+        node_id: { $ref: './knowledge-service.v0.9.yaml#/components/schemas/NodeId' }
+        cognitive_level: { $ref: './knowledge-service.v0.9.yaml#/components/schemas/CognitiveLevel' }
+        status: { type: string, enum: [open, passed, failed, cancelled] }
+        due_at: { type: string, format: date-time }
+        item_count: { type: integer, minimum: 1, maximum: 5 }
+        created: { type: boolean, description: 本次新建为 true；返回已有任务为 false。 }
+    VerificationCancelRequest:
+      type: object
+      description: 洞察服务 → 学习服务：撤销一条自述验证任务。学生与建任务时附带的一致（取自异议记录）。
+      required: [request_id, task_id, student_ref]
+      additionalProperties: false
+      properties:
+        request_id: { $ref: '#/components/schemas/Uuid' }
+        task_id: { $ref: '#/components/schemas/Uuid' }
+        student_ref:
+          type: string
+          format: uuid
+          pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    VerificationCancelResult:
+      type: object
+      required: [task_id, status, cancelled]
+      additionalProperties: false
+      properties:
+        task_id: { $ref: '#/components/schemas/Uuid' }
+        status: { type: string, enum: [open, passed, failed, cancelled] }
+        cancelled: { type: boolean, description: 本次撤销为 true；已撤销或已关闭的任务为 false（幂等）。 }
     Problem:
       type: object
       required: [type, title, status, code, retryable]
@@ -543,6 +845,9 @@ components:
             - SUBJECT_MISMATCH  # 模型路由接口：请求的学科与路由客户端令牌绑定的学科不一致
             - ROUTE_REJECTED  # 模型路由接口：任务、数据级别或计量字段不合要求（不重试）
             - ROUTE_UNAVAILABLE  # 模型路由接口：没有数据级别允许的可用供应商（可稍后重试）
+            - CALLER_MISMATCH  # 1.1.0 掌握读取：请求体 context.caller 与令牌不一致（403）
+            - MASTERY_UNAVAILABLE  # 1.1.0 验证任务：学科没有可用掌握配置或单元不在当前已发布地图里（409，不重试）
+            - TASK_NOT_FOUND  # 1.1.0 撤销验证任务：任务不存在、不属于该学生或不是自述验证任务（404）
             - INTERNAL
         upstream_code:
           type: string

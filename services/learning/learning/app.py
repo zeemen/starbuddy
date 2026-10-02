@@ -1,4 +1,4 @@
-"""FastAPI 应用：内部接口，只供 BFF 调用（spec 范围第 2 条）。
+"""FastAPI 应用：内部接口，只供平台内部服务调用（spec 范围第 2 条；1.1.0 的掌握读取与验证任务见 mastery_routes.py）。
 
 接口定义：packages/contracts/openapi/learning-internal.v0.yaml（插件契约 0.9.0）与 learning-internal.v1.yaml
 （插件契约 1.0.0 候选版，另有只查询的重放接口；specs/plugin-api-v1.0-step2/spec.md）。迁移期两套路径并存。
@@ -19,6 +19,7 @@ import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from . import mastery_routes
 from .adapter_client import strict_json
 from .config import Settings
 from .contract import UnsupportedContractVersion, internal_contract, plugin_contract
@@ -151,6 +152,7 @@ def create_app(
                 raise RuntimeError("platform.retest_task is missing: run migration 0037 before enabling mastery")
             engine = MasteryEngine(p, configs)
         state["mastery"] = engine
+        state["mastery_configs"] = dict(engine.configs) if engine is not None else configs
         state["service"] = IngestService(settings, p, client, mastery=engine)
         state["plan"] = (p, client)
         if settings.diagnosis_presenter == "synthetic":
@@ -209,6 +211,13 @@ def create_app(
             log.info(json.dumps(record, ensure_ascii=False))
 
     diagnosis_api.register(app, lambda r: _bearer_ok(r.headers.get("authorization"), settings.service_credential), state)
+    # learning-internal 1.1.0（KGE-04 第二步 PR 3）：掌握读取只认编排层令牌；验证任务与撤销只认洞察服务令牌（未配置即一律 401）；
+    # BFF 服务令牌对这四个接口一律 401
+    insight_token = settings.insight_client_credential
+    orchestrator_token = settings.orchestrator_client_credential
+    mastery_routes.register(
+        app, orchestrator_ok=lambda r: orchestrator_token is not None and _bearer_ok(r.headers.get("authorization"), orchestrator_token),
+        insight_ok=lambda r: insight_token is not None and _bearer_ok(r.headers.get("authorization"), insight_token), state=state)
 
     @app.post("/internal/v0/grade")
     async def grade(request: Request) -> JSONResponse:

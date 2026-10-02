@@ -40,6 +40,14 @@
    同步重算这次作答涉及的“节点 × 认知层次”单元，写节点键的 `mastery_estimate` 与 `retest_task`（迁移 0037）。失败只记计数与单元 ID，
    接口照常返回；幂等重放不触发。对账入口：`python -m learning.jobs mastery-sweep [--subject aya] [--now <ISO>]`（重算、衰减、任务缺补多撤、输出计数）。
 
+**掌握读取与验证任务**（learning-internal 1.1.0，KGE-04 第二步 PR 3，`learning/mastery_routes.py`、`learning/mastery/api.py`）：
+- `POST /internal/v1/mastery/get`、`/mastery/explain`：只认编排层令牌 `LEARNING_ORCHESTRATOR_CLIENT_TOKEN`（BFF、洞察令牌 401），`context.caller` 必须是 `orchestrator`；形状照搬知识服务 v0.9（响应按知识服务契约校验，
+  不合格回 500）；只认当前已发布地图里的节点与层次；`star_lit` 按配置的 `star_level_rule`；证据链 `weight` 是重放时的更新强度，`hint_level` 封顶 5；
+  门槛条件编码不外露。
+- `POST /internal/v1/verification`：只接受 `LEARNING_INSIGHT_CLIENT_TOKEN`（洞察服务）；学生由洞察服务从异议记录取出后附带（学习服务读不到
+  `insight.dispute`）；只建 `verify_self_report` 任务、不改掌握，按异议幂等，不返回题目；学科没有配置或单元不在当前地图里回 409 `MASTERY_UNAVAILABLE`。
+- `POST /internal/v1/verification/cancel`：只认洞察服务令牌；洞察服务事务回滚后的补偿，按任务 ID + 学生撤销 open 的自述验证任务，幂等、不改掌握；不存在或不属于该学生 404 `TASK_NOT_FOUND`。
+
 ## 不做（冲刺 1）
 计量（BFF 做，ADR 06）、复核任务入队（冲刺 2-G）、掌握估计（冲刺 4-C）、异步任务、查询接口。
 

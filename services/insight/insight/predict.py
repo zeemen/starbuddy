@@ -1,7 +1,7 @@
 """考前预测与考后对账（SIE V1.1 第五章；spec 设计要点 2；迁移 0034）：纯函数，不连库、不读系统时钟。
 
 预测：范围节点 × 掌握 × 地区考情权重 × 题型 → 得分率均值与不确定度 → 80% 区间（z 取配置），换算成分数。
-- 掌握：每个范围节点取 KGE 掌握行（KGE-04 第二步前是合成掌握行）；p 用 p_mastery，缺省按门槛映射（配置 gate_p）；
+- 掌握：每个范围节点取 KGE 掌握行（KGE-04 第二步 PR 3 起由 DbMasterySource 直接读节点键当前行）；p 用 p_mastery，缺省按门槛映射（配置 gate_p）；
   向先验收缩：p̂ = (n·p + k·p₀) / (n + k)，方差 p̂(1−p̂) / (n + k + 1)（n = 该节点的去重证据数，k = prior_strength）。
   没有掌握行的节点按先验、n = 0 计入：证据越少区间越宽（有性质测试）。
 - 地区考情权重：policy.* 洞察服务没有读权限（lessons），由调用方注入，缺省等权；题型系数缺省 1（KGE-04 #4 题型来源待定）。
@@ -43,10 +43,61 @@ class MasterySource(Protocol):
 
 
 class NoMasterySource:
-    """缺省：还没有节点键的掌握行（KGE-04 第二步未落地）→ 没有证据，insight.predict 回“证据不足”（不编造区间）"""
+    """没有掌握行来源（测试注入用）→ 没有证据，insight.predict 回“证据不足”（不编造区间）"""
 
     async def rows(self, student: str, subject: str, node_ids: Sequence[str]) -> Sequence[MasteryRow]:  # noqa: ARG002
         return ()
+
+
+# KGE-04 第二步 PR 3：platform.mastery_estimate 的节点键当前行（0028 授洞察服务只读整表）。只认当前已发布地图里有效的节点与层次
+# （第二步 lessons 待人确认 K：改名、合并、拆分、撤下的旧单元记录仍是 is_current，但不是当前地图里的单元，读者须过滤；
+#  kge.map_version / knowledge_node 的只读授权见 0011）。只读 ID、编码、数字与时间，不读证据原文
+_MASTERY_SQL = """
+SELECT m.id::text AS id, m.student_id::text AS student_id, m.subject::text AS subject, m.node_id, m.cognitive_level,
+       m.state::text AS state, m.p_mastery::float8 AS p_mastery, m.confidence::float8 AS confidence,
+       m.evidence_ids::text[] AS evidence_ids, m.algorithm_version::text AS algorithm_version, m.computed_at, m.next_retest_at
+  FROM platform.mastery_estimate m
+  JOIN kge.map_version v ON v.subject = m.subject AND v.status = 'published'
+  JOIN kge.knowledge_node n ON n.map_version_id = v.id AND n.id = m.node_id AND n.status = 'active'
+                           AND m.cognitive_level = ANY (n.cognitive_levels)
+ WHERE m.student_id = $1::uuid AND m.node_id IS NOT NULL AND m.is_current {filter}
+ ORDER BY m.subject, m.node_id, m.cognitive_level, m.id
+"""
+
+
+class DbMasterySource:
+    """真实实现：直接读 platform.mastery_estimate 的节点键当前行（第二步待人确认 #5 默认：用 0028 已有的只读授权，不经 mastery.get），
+    映射到 claims.MasteryRow。insight.predict 有节点行时给出区间；没有时仍是“证据不足”"""
+
+    def __init__(self, pool: Any) -> None:
+        self.pool = pool
+
+    async def rows(self, student: str, subject: str, node_ids: Sequence[str]) -> Sequence[MasteryRow]:
+        ids = [n for n in dict.fromkeys(node_ids) if NODE_ID.fullmatch(n)]
+        if not ids:
+            return ()
+        async with self.pool.acquire() as conn:
+            recs = await conn.fetch(_MASTERY_SQL.format(filter="AND m.subject::text = $2 AND m.node_id = ANY ($3::text[])"),
+                                    student, subject, ids)
+        return self._map(recs)
+
+    async def all_rows(self, student: str) -> Sequence[MasteryRow]:
+        """该学生全部当前节点键掌握行（各科，只认当前地图里的单元）：判断生成 sync_mastery 要的是“全部当前行”"""
+        async with self.pool.acquire() as conn:
+            recs = await conn.fetch(_MASTERY_SQL.format(filter=""), student)
+        return self._map(recs)
+
+    @staticmethod
+    def _map(recs: Sequence[Any]) -> Sequence[MasteryRow]:
+        out = []
+        for r in recs:
+            row = MasteryRow(basis_id=r["id"], student_id=r["student_id"], subject=r["subject"], node_id=r["node_id"],
+                             cognitive_level=r["cognitive_level"], gate=r["state"], p_mastery=r["p_mastery"],
+                             confidence=float(r["confidence"]), evidence_ids=tuple(r["evidence_ids"] or ()),
+                             algorithm_version=r["algorithm_version"], computed_at=r["computed_at"], next_retest_at=r["next_retest_at"])
+            row.check()  # 形状不对整批拒绝（不带内容）
+            out.append(row)
+        return tuple(out)
 
 
 @dataclass(frozen=True)

@@ -1,7 +1,9 @@
 // SIE-03 PR③：BFF → 洞察服务的异议写入，与预测、对账卡的读取接口（packages/contracts/openapi/insight-service.v0.9.yaml）。
 //   - insight.dispute：caller = bff，带 actor（学生本人，或家长 + guardian_student_link），洞察服务再核对一次授权（规则 5）。
 //     BFF 只把 dispute_id、next_step、verify_by 交给前端：fact_ref 是原始事实的内部引用（PR② 安全审查 F5），
-//     verification_item_refs 在 KGE-04 第二步前是接口桩的占位引用（PR② 待人确认 5），两者都不转发。
+//     verification_item_refs 两者都不转发：test 环境是接口桩的占位引用（`<学科>:stub-verify-…`），KGE-04 第二步 PR 3 起真实实现给的是
+//     验证任务引用（`<学科>:verify-task-<任务 ID>`，题目由编排层经 item.similar 选，KGE-04 第二步 lessons 待人确认 Q），都不是题目。
+//     将来要展示验证题时只能用 displayableItemRefs 过滤后的真实题目引用。
 //   - 预测与对账卡：契约 v0.9 的 insight.predict / insight.reconcile 只给编排层（PR② 契约差异 4），BFF 没有可用的契约工具，
 //     0034 也没给 BFF 这两张表的权限。这里只定义 BFF 需要的读取接口（ExamViewClient）与按契约形状的核对；
 //     缺省没有实现（路由回 503），通道由人定（lessons PR③ 待人确认）。
@@ -13,6 +15,16 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const NODE = /^[A-Z][A-Z0-9]{1,9}(\.[A-Z0-9][A-Z0-9_]{0,31}){1,4}$/;
 export const IDEMPOTENCY_KEY = /^[A-Za-z0-9][A-Za-z0-9_.:-]{15,127}$/;
 const FACT_REF = /^(attempt|exam_record|upload):[A-Za-z0-9][A-Za-z0-9_-]{7,63}$/;
+// 契约 ItemRef（plugin-api v0.9）；任务引用与接口桩占位的本地 ID 前缀（不是题目，不能当题目展示）
+const ITEM_REF = /^(wenli|aya|zhixing|echo):[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
+const NOT_ITEM_PREFIXES = ['verify-task-', 'stub-verify-'] as const;
+
+/** 验证题引用里能当题目展示的部分：形状合法、且不是任务引用或接口桩占位；其余一律丢弃（不报错、不转发） */
+export function displayableItemRefs(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  return v.filter((r): r is string => typeof r === 'string' && ITEM_REF.test(r)
+    && !NOT_ITEM_PREFIXES.some((p) => r.slice(r.indexOf(':') + 1).startsWith(p)));
+}
 
 /** 契约统一信封（ServiceResultBase）：contract_version、证据 ID、置信度、版本、是否人工复核；不合就当不可用 */
 export function envelopeOk(v: unknown): boolean {

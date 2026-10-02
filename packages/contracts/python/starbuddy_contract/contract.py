@@ -63,7 +63,12 @@ class ContractDoc:
 
 
 def _load(path: Path, uri: str) -> ContractDoc:
-    doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return contract_from_doc(yaml.safe_load(path.read_text(encoding="utf-8")), path, uri)
+
+
+def contract_from_doc(doc: dict, path: Path, uri: str) -> ContractDoc:
+    """由已解析的契约文档建校验器（path 是它在 openapi/ 下的位置，用于解析同目录的相对引用）。
+    契约检查的变异测试用它校验改坏后的文档，不落盘。"""
     resource = Resource.from_contents({"components": doc["components"]}, default_specification=DRAFT202012)
     registry = Registry().with_resource(uri, resource)
     # v1.0 用相对路径引用两份服务契约（衔接字段）：按文件 URI 登记同目录的契约，相对引用才能解析
@@ -106,6 +111,8 @@ def _plugin_contract_cached(version: str) -> ContractDoc:
     return c
 
 
+# 键是插件契约版本（/internal/v0 对 0.9.0、/internal/v1 对 1.0.0），不是内部契约文件自己的 info.version：
+# learning-internal.v1.yaml 在 1.1.0 加了掌握读取与验证任务（KGE-04 第二步），仍按 "1.0.0" 取（同一组 /internal/v1 路径）
 INTERNAL_CONTRACTS = {"0.9.0": INTERNAL_CONTRACT, "1.0.0": OPENAPI / "learning-internal.v1.yaml"}
 
 

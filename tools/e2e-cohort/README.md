@@ -26,7 +26,8 @@ make gate0-evidence GATE0_OUT=tools/e2e-cohort/sample GATE0_STARMAP=1  # 星图�
 | `cohort.py` | 合成队列生成器：固定种子 `20260930`，20 名；年级七八九；选科三科（部分另选英语，适配器搁置，断言英语零事件）；作答模式全对 / 系统性缺口 / 刷同题 / 提示依赖 / 中断各 4 名；4 户两个孩子 |
 | `scripted.py` | test 环境模型路由的假供应商：认出已登记的合成作答，给出结构化判定（道法按采分点关键词族，语文按锚点片段）；判分仍由适配器后处理与 Rubric 决定 |
 | `stack.py` | 一次性 Postgres 上的学习服务（进程内）+ 三科适配器（真实 HTTP 子进程，三科都按契约 1.0.0 启动）+ 内部模型路由接口；适配器进程拿不到数据库或供应商配置；学习服务到适配器的 HTTP 经 `RecordingTransport` 原样转发，grade 响应只留在内存里供断言；内容登记 SQL 以 `SET ROLE starbuddy_learning` 执行；开启临时实例的连接日志，核对连库角色 |
-| `replay.py` | 建档（平台账号侧准备）→ `/internal/v1/diagnose` → `/internal/v1/grade` → 复测。复测调度是接口桩 `StubRetestScheduler`（KGE-04 第二步前），执行经同一 grade 接口（`ingest.purpose = retest`），每条标 `stub`；整轮重跑用同一幂等键 |
+| `replay.py` | 建档（平台账号侧准备）→ `/internal/v1/diagnose` → `/internal/v1/grade` → 复测。复测由 KGE-04 第二步的真实调度驱动（`RetestTaskScheduler`）：以学习服务身份读该生开着的复测轮任务（`platform.retest_task`，reason = scheduled / early），把时钟推进到 `due_at` 确认到期，按任务节点选一道没做过的题，执行经同一 grade 接口（`ingest.purpose = retest`），每条标 `retest_task`；没有任务就不执行（不编造）；整轮重跑用同一幂等键 |
+| `mastery.py` | 联调栈的合成掌握配置（只在一次性库）：合成数学地图（2 个节点）、队列用题的打标、阿鸦内容版本绑定地图；掌握配置取 `synthetic-test.json`（未签字）并把当日复测间隔设为 0；知行、文砺不配置。`explanation` 汇总重放里的不计入原因、记录与任务数（`retest_via_retest_task` 断言的说明） |
 | `checks.py` | 断言（只读事务）：三科事件并存不覆盖；私有副本扫描（个人层 = `platform.*` 与 `insight.*` 白名单；个人层以外无学生键列、列值里无本批学生相关 ID（学生、账号、家庭、家长、证据、作答）；个人层无学科名开头的表；带 `student_id` 的表都在个人表清单里，清单未建时标“待 0035”）；家长绑定有来历；grade 五个溯源字段（契约边界 + 落库）；重跑零新增；RLS 隔离（按个人表清单逐表比对，学生、家长、未绑定家长、两种未登录）；节点查询与事件计数 |
 | `verify.py` | 真实内测只读核对：库名比对、拒绝超级用户与非只读会话、拒绝写进仓库、名单不全返回 1、只输出汇总 |
 | `runner.py` | 串起一整轮，另加：全部调用成功、适配器无数据库驱动与连接信息、联调期间连库的只有学习服务登录角色与管理员；返回只含 ID 与计数的 Report |
@@ -36,8 +37,8 @@ make gate0-evidence GATE0_OUT=tools/e2e-cohort/sample GATE0_STARMAP=1  # 星图�
 
 ## 证据包
 
-`summary.md`、`students.csv`、`events.csv`（事件计数 × 科目 × 事件类型 = 来源方法/作答情境；复测带“（桩）”后缀）、`nodes.csv`（节点 ID、证据数、观察计数、状态）、
-`retests.csv`（全部标“桩”）、`checks.json`、`run_metadata.json`（提交号、契约版本、适配器与内容包版本、队列种子与摘要、星图记录的位置），
+`summary.md`、`students.csv`、`events.csv`（事件计数 × 科目 × 事件类型 = 来源方法/作答情境；复测 = grade/delayed_retest）、`nodes.csv`（节点 ID、证据数、观察计数、状态）、
+`retests.csv`（每行一条 retest_task 驱动的复测；没有任务时只有表头）、`checks.json`、`run_metadata.json`（提交号、契约版本、适配器与内容包版本、队列种子与摘要、星图记录的位置），
 以及 `GATE0_STARMAP=1` 时的 `starmap/`（截图、`starmap.json`：status = captured / failed、页面路径、选取规则、视口、截取提交号、星数统计与对账、截图哈希；
 `provenance.md`：截图的页面版本与截取提交号，与本次提交不同标“截图沿用”）。失败时删掉本轮截图。不带 `GATE0_STARMAP=1` 时不截图也不删已有的 `starmap/`。
 星图截图失败时 `run_metadata.json` 与 `summary.md` 另标 failed 与原因；成功时这两个文件与不截图时逐字节相同（样例比对不受截图影响）。

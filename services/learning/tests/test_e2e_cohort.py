@@ -1,8 +1,9 @@
-"""跨科联调（冲刺 5-C+D，specs/e2e-integration-sprint5）：20 名合成学生在同一学习服务上走三科诊断、批改、复测（桩）。
+"""跨科联调（冲刺 5-C+D，specs/e2e-integration-sprint5）：20 名合成学生在同一学习服务上走三科诊断、批改、复测（KGE-04 第二步起由
+platform.retest_task 驱动，联调栈带合成掌握配置）。
 
 栈：会话级一次性 Postgres（conftest.pg）+ 学习服务（进程内）+ 阿鸦、知行、文砺三个适配器（真实 HTTP 进程）+ 内部模型路由接口（假供应商）。
 生成器、回放、断言与证据包在 tools/e2e-cohort/e2e_cohort；这里负责：
-- 断言全部通过（并存不覆盖、私有表无副本、家长绑定有来历、grade 溯源五字段、整轮重跑零新增、RLS 隔离、复测桩、连库角色）；
+- 断言全部通过（并存不覆盖、私有表无副本、家长绑定有来历、grade 溯源五字段、整轮重跑零新增、RLS 隔离、复测由 retest_task 驱动、连库角色）；
 - 证据包确定性：与仓库里的合成样例 tools/e2e-cohort/sample/ 逐字节一致（run_metadata.json 去掉提交号后一致）；
 - 断言本身会失败：人为制造私有副本（学生键、证据键、学科名表、insight 白名单外、值藏在 jsonb、怪异标识符）、跨家庭绑定、
   放行一切的 RLS 策略、缺溯源字段、重跑新增、陌生连库角色、适配器依赖数据库驱动，断言都能发现；
@@ -97,13 +98,21 @@ async def test_cohort_assertions_all_pass(report):
     assert not failed, json.dumps(failed, ensure_ascii=False)[:4000]
     names = {c.name for c in report.checks}
     assert {"all_calls_succeeded", "adapters_have_no_db_or_vendor_config", "coexistence", "no_private_copies",
-            "guardian_links_backed", "grade_envelope_provenance", "grade_rows_provenance", "retest_via_stub", "isolation_rls",
+            "guardian_links_backed", "grade_envelope_provenance", "grade_rows_provenance", "retest_via_retest_task", "isolation_rls",
             "rerun_zero_new_rows", "rerun_same_result", "db_clients_only_learning_and_admin"} == names
     d = {c.name: c.detail for c in report.checks}
     assert d["coexistence"]["students_with_all_core_subjects"] == 20
     assert d["grade_envelope_provenance"]["grade_responses"] == d["grade_rows_provenance"]["grade_results"]
     assert d["rerun_zero_new_rows"]["replayed"] == d["all_calls_succeeded"]["calls"]
-    assert all(r["scheduler"] == "stub" for r in report.retests)
+    # 复测只由 retest_task 驱动：每条复测都对应一条复测轮任务；没有任务时一条也不执行（不编造），原因可解释
+    assert all(r["scheduler"] == "retest_task" and r["source_step"].startswith("retest_task:") for r in report.retests)
+    rt = d["retest_via_retest_task"]
+    assert rt["retest_calls"] == len(report.retests) and rt["evidence_without_task"] == []
+    assert rt["mastery"]["units"] > 0                                     # 掌握重算确实走到了（证据已归属到合成地图的单元）
+    if not report.retests:
+        assert rt["retest_round_tasks"] == 0 and rt["not_reached"]["top_excluded_reason"] is not None
+        assert rt["reached"] is False and next(c for c in report.checks if c.name == "retest_via_retest_task").label == "通过（0 次，未走到）"
+        assert d["all_calls_succeeded"]["by_subject_method_purpose"].get("aya/grade/retest") is None
     # 隔离逐表比对来自个人表清单（多于回退的 6 张），两种未登录都查了
     assert d["isolation_rls"]["table_source"] == "registry" and d["isolation_rls"]["tables_compared"] > 6
     assert d["isolation_rls"]["anonymous_variants"] == ["empty_account", "unset_account"]
@@ -130,10 +139,12 @@ async def test_evidence_pack_matches_committed_sample(report):
         else:
             assert content == want, f"{name} 与样例不同（样例过期或输出不确定）"
     text = "".join(files.values())
-    assert "合成联调，不是内测结论" in files["summary.md"] and "桩" in files["retests.csv"]
-    # 复测事件在事件计数里带“（桩）”后缀，且没有不带后缀的复测
-    assert "grade/delayed_retest（桩）" in files["events.csv"]
-    assert all(line.endswith("（桩）," + line.rsplit(",", 1)[1]) for line in files["events.csv"].splitlines() if "delayed_retest" in line)
+    assert "合成联调，不是内测结论" in files["summary.md"]
+    # 复测调度不再是接口桩：数据文件与摘要里没有“桩”（starmap/ 的“短信捕获桩”是星图截图登录用的，另说）
+    assert all("桩" not in files[n] for n in ("summary.md", "events.csv", "nodes.csv", "retests.csv", "checks.json", "run_metadata.json"))
+    assert "retest_task" in files["summary.md"] and files["retests.csv"].startswith("label,student_id,subject,node_id,")
+    if not report.retests:
+        assert "| retest_via_retest_task | 通过（0 次，未走到） |" in files["summary.md"]
     # 证据包只含 ID 与计数：没有作答原文、作文、模型输出
     for s in report.cohort.students:
         for st in s.steps:
@@ -279,6 +290,22 @@ async def test_guardian_expected_set_includes_children_outside_list(report, pool
         finally:
             await c.execute("DELETE FROM platform.student_profile WHERE id = $1::uuid", sid)
             await c.execute("DELETE FROM platform.account WHERE id = $1::uuid", acct)
+
+
+async def test_retest_without_task_is_detected(report, pools):
+    """复测断言会失败：标成接口桩的复测、执行了但没有对应任务的复测、有复测证据却没有执行记录的学生，都不能通过"""
+    from e2e_cohort.replay import RetestTaskScheduler, RunLog
+    from e2e_cohort.runner import check_retest
+    app_pool, admin = pools
+    s0 = report.cohort.students[0]
+    fake = {"label": s0.label, "student_id": s0.student_id, "subject": "aya", "node_id": "MATH.E2E.T1.ALG", "cognitive_level": "apply",
+            "rung": "rung0", "reason": "scheduled", "item": "Q-ALG-U02-D-001", "status": 200}
+    async with admin.acquire() as c:
+        for bad in ({**fake, "scheduler": "stub", "source_step": "aya-grade-1"},
+                    {**fake, "scheduler": "retest_task", "source_step": "retest_task:rung0"}):   # 库里没有这名学生的复测证据
+            log = RunLog(retests=[bad])
+            got = await check_retest(c, report.cohort, log, RetestTaskScheduler(app_pool), {})
+            assert not got.passed, bad["scheduler"]
 
 
 async def test_unexpected_db_client_is_detected(report, pools):

@@ -22,16 +22,16 @@
   "seed": 20260930,
   "students": 20
  },
- "commit": "5d758a7b216bfcd84a814ef07a6bf10d6105c5fd",
+ "commit": "8c91e30cbc0301f55ef347d7a3ce732bd804c9ec",
  "contracts": {
-  "learning-internal": "1.0.0",
+  "learning-internal": "1.1.0",
   "plugin-api": "1.0.0",
   "request_contract_version": "1.0.0"
  },
  "english": "未纳入（开口成章适配器已搁置，specs/adapter-echo-sprint3/lessons.md）",
  "model_route": "test 环境假供应商（合成判定），不是任何真实模型",
  "notice": "合成联调，不是内测结论",
- "retest_scheduler": "stub（桩：KGE-04 第二步前）",
+ "retest_scheduler": "retest_task（KGE-04 第二步真实调度；联调合成掌握配置：数学 synthetic-test 未签字、rung0 间隔 0，知行与文砺不配置）",
  "starmap_screenshot": {
   "how": "make gate0-evidence GATE0_STARMAP=1 时生成（status = captured / failed）；未带时不截图、不删已有截图",
   "page_version": "星图 v0（3-H），掌握未写库，无点亮星；H5 合入后重截",

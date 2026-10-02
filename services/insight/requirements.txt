@@ -9,3 +9,5 @@ asyncpg==0.31.0
 jsonschema==4.26.0
 referencing==0.37.0
 pyyaml==6.0.3
+# 调学习服务的验证任务接口（KGE-04 第二步 PR 3，learning-internal 1.1.0）；与学习服务同版本，原为开发依赖
+httpx==0.28.1

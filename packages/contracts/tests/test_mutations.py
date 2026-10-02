@@ -301,6 +301,38 @@ V1_MUTATIONS = {
 }
 
 
+# ---------- 学习服务内部 API v1（1.1.0：掌握读取与验证任务，KGE-04 第二步 PR 3） ----------
+P = "paths"
+INTERNAL_MUTATIONS = {
+    "验证请求放开多余字段": assign(f"{S}.VerificationRequest.additionalProperties", True),
+    "验证请求不要求学生": assign(f"{S}.VerificationRequest.required",
+                                ["request_id", "dispute_ref", "subject", "node_id", "cognitive_level", "reason", "item_count"]),
+    "验证请求去掉原因常量": delete(f"{S}.VerificationRequest.properties.reason.const"),
+    "验证请求题数不设上限": delete(f"{S}.VerificationRequest.properties.item_count.maximum"),
+    "验证请求学生 ID 不限小写": delete(f"{S}.VerificationRequest.properties.student_ref.pattern"),
+    "验证请求学科放开英语": assign(f"{S}.VerificationRequest.properties.subject.enum", ["wenli", "aya", "zhixing", "echo"]),
+    "验证任务放开多余字段（可夹带题目）": assign(f"{S}.VerificationTask.additionalProperties", True),
+    "验证任务状态放开": assign(f"{S}.VerificationTask.properties.status", {"type": "string", "maxLength": 16}),
+    "验证接口改用 BFF 服务令牌": assign(f"{P}./internal/v1/verification.post.security", [{"bffServiceToken": []}]),
+    "验证接口去掉专用鉴权（回落到顶层服务令牌）": delete(f"{P}./internal/v1/verification.post.security"),
+    "掌握读取也接受洞察服务令牌": assign(f"{P}./internal/v1/mastery/get.post.security", [{"insightServiceToken": []}]),
+    "掌握读取改用 BFF 服务令牌": assign(f"{P}./internal/v1/mastery/explain.post.security", [{"bffServiceToken": []}]),
+    "掌握读取去掉专用鉴权（回落到顶层服务令牌）": delete(f"{P}./internal/v1/mastery/get.post.security"),
+    "计划接口接受编排层令牌": assign(f"{P}./internal/v1/plan.post.security", [{"orchestratorServiceToken": []}]),
+    "撤销接口改用 BFF 服务令牌": assign(f"{P}./internal/v1/verification/cancel.post.security", [{"bffServiceToken": []}]),
+    "撤销请求放开多余字段": assign(f"{S}.VerificationCancelRequest.additionalProperties", True),
+    "撤销请求不要求学生": assign(f"{S}.VerificationCancelRequest.required", ["request_id", "task_id"]),
+    "撤销结果状态放开": assign(f"{S}.VerificationCancelResult.properties.status", {"type": "string", "maxLength": 16}),
+    "删掉撤销接口": delete(f"{P}./internal/v1/verification/cancel"),
+    "掌握读取的响应另写一份开放对象": lambda d: d["paths"]["/internal/v1/mastery/get"]["post"]["responses"]["200"]["content"][
+        "application/json"].__setitem__("schema", {"type": "object"}),
+    "掌握解释的请求改成内部自定义": assign(
+        f"{P}./internal/v1/mastery/explain.post.requestBody.content.application/json.schema", {"$ref": "#/components/schemas/PlanQuery"}),
+    "删掉验证任务接口": delete(f"{P}./internal/v1/verification"),
+    "版本号没有升到 1.1.0": assign("info.version", "1.0.0"),
+}
+
+
 def main() -> int:
     base = cc.load(cc.DEFAULT_SPEC)
     baseline = cc.run_checks(base)
@@ -349,13 +381,33 @@ def main() -> int:
         if not [e for e in errs if "OpenAPI 3.1 校验失败" not in e and "无法完成" not in e]:
             missed.append(f"v1.0：{name}")
 
-    total = len(MUTATIONS) + len(SERVICE_MUTATIONS) + len(V1_MUTATIONS)
+    internal_base = cc.load(cc.INTERNAL_SPECS[1])
+    internal_baseline: list[str] = []
+    cc._check_internal_v1_examples(internal_baseline, copy.deepcopy(internal_base))
+    if internal_baseline:
+        print("mutation-test: learning-internal v1 基线本身就不通过，先修契约：")
+        for e in internal_baseline:
+            print(f"  - {e}")
+        return 1
+    for name, mutate in INTERNAL_MUTATIONS.items():
+        doc = copy.deepcopy(internal_base)
+        mutate(doc)
+        errs: list[str] = []
+        try:
+            cc._check_internal_v1_examples(errs, doc)
+        except Exception as exc:  # noqa: BLE001 - 结构被改坏导致检查崩溃不算“发现”
+            errs = [f"无法完成：{type(exc).__name__}"]
+        if not [e for e in errs if "无法完成" not in e]:
+            missed.append(f"learning-internal v1：{name}")
+
+    total = len(MUTATIONS) + len(SERVICE_MUTATIONS) + len(V1_MUTATIONS) + len(INTERNAL_MUTATIONS)
     if missed:
         print(f"mutation-test: 失败，{len(missed)}/{total} 个变异没有被发现：")
         for m in missed:
             print(f"  - {m}")
         return 1
-    print(f"mutation-test: 通过（{total} 个变异全部被发现，其中服务契约 {len(SERVICE_MUTATIONS)} 个、v1.0 候选版 {len(V1_MUTATIONS)} 个）")
+    print(f"mutation-test: 通过（{total} 个变异全部被发现，其中服务契约 {len(SERVICE_MUTATIONS)} 个、v1.0 候选版 {len(V1_MUTATIONS)} 个、"
+          f"learning-internal v1 {len(INTERNAL_MUTATIONS)} 个）")
     return 0
 
 

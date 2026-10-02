@@ -1,4 +1,4 @@
-"""合成联调的完整一轮：生成队列 → 起栈 → 建档 → 回放（诊断、批改、复测桩）→ 断言 → 整轮重跑 → 断言零新增。
+"""合成联调的完整一轮：生成队列 → 起栈 → 建档 → 回放（诊断、批改、retest_task 驱动的复测）→ 断言 → 整轮重跑 → 断言零新增。
 
 pytest（services/learning/tests/test_e2e_cohort.py）与命令行（python -m e2e_cohort）共用这里；返回的 Report 只含 ID、计数与编码。
 """
@@ -13,7 +13,8 @@ from pathlib import Path
 from . import GENERATOR_VERSION
 from . import checks as C
 from .cohort import Cohort, generate
-from .replay import CallRecord, RunLog, load_zhixing_items, replay_cohort, rerun, seed_accounts
+from . import mastery as mastery_setup
+from .replay import CallRecord, RetestTaskScheduler, RunLog, load_zhixing_items, replay_cohort, rerun, seed_accounts
 from .scripted import ScriptedModel
 from pgharness import LOGIN_ROLE
 
@@ -86,20 +87,36 @@ async def check_db_clients(conn, connlog: ConnectionLog, allowed: tuple[str, ...
         "allowed": sorted(allowed), "logged_users": sorted(logged), "active_users": sorted(active), "unexpected": extra})
 
 
-async def check_retest(conn, cohort: Cohort, log: RunLog) -> C.Check:
-    """复测（桩）：非中断学生都有复测事件（delayed_retest），中断学生没有；每条复测都标 scheduler = stub。"""
+async def check_retest(conn, cohort: Cohort, log: RunLog, scheduler: RetestTaskScheduler, explained: dict) -> C.Check:
+    """复测由 platform.retest_task 驱动（KGE-04 第二步）：每条执行的复测都对应一条到期的复测轮任务、经 grade 契约接口 200；
+    到期的复测轮任务全部执行（或因没有可选的题计入 no_item）；有复测证据（delayed_retest）的学生恰是执行过复测的学生。
+    合成配置下到不了复测（没有任务）时 0 次复测也是通过，explained 给出原因（不编造复测）。"""
     async with conn.transaction(readonly=True):
         rows = await conn.fetch(
             """SELECT student_id::text AS sid, count(DISTINCT evidence_id) AS n FROM platform.evidence_event
                 WHERE student_id = ANY($1::uuid[]) AND evidence_kind = 'delayed_retest' GROUP BY 1""",
             [s.student_id for s in cohort.students])
-    got = {r["sid"]: r["n"] for r in rows}
-    wrong = [s.label for s in cohort.students if (s.pattern == "interrupted") == bool(got.get(s.student_id))]
-    unmarked = [r for r in log.retests if r["scheduler"] != "stub" or r["status"] != 200]
-    return C.Check("retest_via_stub", not wrong and not unmarked and bool(log.retests), {
-        "scheduler": "stub", "note": "KGE-04 第二步（retest_task 与复测调度）前的接口桩；执行经同一 grade 契约接口，ingest.purpose = retest",
-        "retest_calls": len(log.retests), "students_with_retest_evidence": len(got),
-        "students_wrong": wrong, "unmarked_or_failed": len(unmarked)})
+        open_rounds = await conn.fetchval(
+            """SELECT count(*) FROM platform.retest_task WHERE student_id = ANY($1::uuid[]) AND reason IN ('scheduled', 'early')""",
+            [s.student_id for s in cohort.students])
+    got = {r["sid"] for r in rows}
+    ran = {r["student_id"] for r in log.retests}
+    bad = [r for r in log.retests if r["scheduler"] != "retest_task" or r["status"] != 200 or not r["source_step"].startswith("retest_task:")]
+    interrupted = [s.label for s in cohort.students if s.pattern == "interrupted" and s.student_id in got]
+    passed = not bad and got == ran and not interrupted and (bool(log.retests) or open_rounds == 0)
+    detail = {"scheduler": "retest_task", "reached": bool(log.retests), "reached_count": len(log.retests),
+              "note": "KGE-04 第二步真实调度：grade 落库后同步重算掌握、同一事务建复测轮任务；联调把时钟推进到 due_at 后执行，"
+                      "执行经同一 grade 契约接口，ingest.purpose = retest",
+              "retest_calls": len(log.retests), "retest_round_tasks": int(open_rounds), "no_item": scheduler.no_item,
+              "students_with_retest_evidence": len(got), "evidence_without_task": sorted(got - ran), "failed_or_unmarked": len(bad),
+              "interrupted_with_retest": interrupted, "mastery": explained}
+    if not log.retests:
+        ex = explained.get("excluded_reasons", {})
+        detail["not_reached"] = {
+            "retest_round_tasks": int(open_rounds), "node_key_records": explained.get("node_key_records"),
+            "evidence_counted": explained.get("evidence_counted"), "top_excluded_reason": max(ex, key=ex.get) if ex else None,
+            "note": "没有复测轮任务就不执行复测（不编造）；原因见 mastery.excluded_reasons（例如内容未准入 → 判分待复核 → pending_review 不计入）"}
+    return C.Check("retest_via_retest_task", passed, detail)
 
 
 def _git(*args: str) -> str:
@@ -134,7 +151,7 @@ def metadata(cohort: Cohort, procs) -> dict:
                          "content_pack": _pack_version(s)} for s, p in sorted(procs.items())},
         "cohort": {"generator": GENERATOR_VERSION, "seed": cohort.seed, "students": len(cohort.students),
                    "digest": hashlib.sha256(cohort.to_json().encode()).hexdigest()},
-        "retest_scheduler": "stub（桩：KGE-04 第二步前）",
+        "retest_scheduler": "retest_task（KGE-04 第二步真实调度；联调合成掌握配置：数学 synthetic-test 未签字、rung0 间隔 0，知行与文砺不配置）",
         "model_route": "test 环境假供应商（合成判定），不是任何真实模型",
         "english": "未纳入（开口成章适配器已搁置，specs/adapter-echo-sprint3/lessons.md）",
         # 与是否截图无关的固定内容（样例逐字节比对）；截图的状态与对账在 starmap/starmap.json，失败时 write_pack 另加 status = failed
@@ -151,7 +168,9 @@ async def run_synthetic(pg, *, register: bool = True) -> Report:
     pop = population(cohort)
     async with running_stack(pg, model, register=register) as st:
         await seed_accounts(st.admin, cohort)
-        log = await replay_cohort(st.api, cohort, model)
+        scheduler = RetestTaskScheduler(st.app_pool)
+        log = await replay_cohort(st.api, cohort, model, scheduler)
+        explained = await mastery_setup.explanation(st.app_pool, [s.student_id for s in cohort.students], mastery_setup.config())
         results = [check_calls(log), check_adapters_isolated(st.adapters)]
         async with st.admin.acquire() as conn:
             results.append(await C.check_coexistence(conn, pop, expected_evidence(log)))
@@ -159,7 +178,7 @@ async def run_synthetic(pg, *, register: bool = True) -> Report:
             results.append(await C.check_guardian_links_backed(conn, pop))
             results.append(C.check_grade_envelopes(st.transport.records))
             results.append(await C.check_grade_rows(conn, pop))
-            results.append(await check_retest(conn, cohort, log))
+            results.append(await check_retest(conn, cohort, log, scheduler, explained))
             results.append(await C.check_isolation(conn, pop))
             before = await C.snapshot_counts(conn, pop)
             calls_before = st.transport.calls

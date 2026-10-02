@@ -456,27 +456,157 @@ INTERNAL_V1_COUNTER = [
     ("计划请求自带掌握快照", "PlanQuery", "PlanQueryToday", lambda v: v.__setitem__("mastery", [])),
     ("计划请求的学科为空", "PlanQuery", "PlanQueryToday", lambda v: v.__setitem__("subjects", [])),
     ("计划请求的学生 ID 大写", "PlanQuery", "PlanQueryToday", lambda v: v.__setitem__("student_ref", v["student_ref"].upper())),
+    # 1.1.0 掌握读取（KGE-04 第二步 PR 3）：形状照搬知识服务 v0.9（schema 名带 ks: 的按知识服务契约校验）
+    ("掌握读取的调用方是 bff", "ks:MasteryGetRequest", "MasteryGetRequestOrchestrator", lambda v: v["context"].__setitem__("caller", "bff")),
+    ("掌握读取缺学生", "ks:MasteryGetRequest", "MasteryGetRequestOrchestrator", lambda v: v["context"].pop("student_ref")),
+    ("掌握读取的节点为空", "ks:MasteryGetRequest", "MasteryGetRequestOrchestrator", lambda v: v.__setitem__("node_ids", [])),
+    ("掌握读取夹带多余字段", "ks:MasteryGetRequest", "MasteryGetRequestOrchestrator", lambda v: v.__setitem__("include_claims", True)),
+    ("掌握响应缺 confidence", "ks:MasteryGetResponse", "MasteryGetResponseExecute", lambda v: v.pop("confidence")),
+    ("掌握响应缺 evidence_ids", "ks:MasteryGetResponse", "MasteryGetResponseExecute", lambda v: v.pop("evidence_ids")),
+    ("掌握响应缺 source_version", "ks:MasteryGetResponse", "MasteryGetResponseExecute", lambda v: v.pop("source_version")),
+    ("掌握响应缺 model_version", "ks:MasteryGetResponse", "MasteryGetResponseExecute", lambda v: v.pop("model_version")),
+    ("掌握响应缺 human_review_required", "ks:MasteryGetResponse", "MasteryGetResponseExecute", lambda v: v.pop("human_review_required")),
+    ("掌握响应要复核却没有原因", "ks:MasteryGetResponse", "MasteryGetResponseExecute", lambda v: v.__setitem__("human_review_required", True)),
+    ("掌握响应的模型版本写 routed", "ks:MasteryGetResponse", "MasteryGetResponseExecute", lambda v: v.__setitem__("model_version", "routed")),
+    ("掌握状态缺 star_lit", "ks:MasteryGetResponse", "MasteryGetResponseExecute", lambda v: v["result"]["states"][1].pop("star_lit")),
+    ("掌握门槛写 lit", "ks:MasteryGetResponse", "MasteryGetResponseExecute", lambda v: v["result"]["states"][1].__setitem__("gate", "lit")),
+    ("掌握状态夹带门槛条件", "ks:MasteryGetResponse", "MasteryGetResponseExecute",
+     lambda v: v["result"]["states"][1].__setitem__("conditions", [{"code": "execute.families_min"}])),
+    ("掌握响应信封外夹带叙述", "ks:MasteryGetResponse", "MasteryGetResponseExecute", lambda v: v.__setitem__("narrative", "（合成）")),
+    ("证据链的提示等级是 6", "ks:MasteryExplainResponse", "MasteryExplainResponseExecute",
+     lambda v: v["result"]["chain"][0].__setitem__("hint_level", 6)),
+    ("证据链的权重大于 1", "ks:MasteryExplainResponse", "MasteryExplainResponseExecute",
+     lambda v: v["result"]["chain"][0].__setitem__("weight", 1.2)),
+    ("证据链的权重为负", "ks:MasteryExplainResponse", "MasteryExplainResponseExecute",
+     lambda v: v["result"]["chain"][0].__setitem__("weight", -0.7)),
+    ("证据链有 C 级", "ks:MasteryExplainResponse", "MasteryExplainResponseExecute",
+     lambda v: v["result"]["chain"][0].__setitem__("evidence_level", "C")),
+    ("证据链缺权重", "ks:MasteryExplainResponse", "MasteryExplainResponseExecute", lambda v: v["result"]["chain"][0].pop("weight")),
+    ("证据链夹带不计入原因", "ks:MasteryExplainResponse", "MasteryExplainResponseExecute",
+     lambda v: v["result"]["chain"][0].__setitem__("reasons", ["pending_review"])),
+    ("证据链结果夹带门槛条件", "ks:MasteryExplainResponse", "MasteryExplainResponseExecute",
+     lambda v: v["result"].__setitem__("conditions", [])),
+    ("证据链缺 confidence", "ks:MasteryExplainResponse", "MasteryExplainResponseExecute", lambda v: v.pop("confidence")),
+    # 1.1.0 验证任务：学生只由洞察服务从异议记录取出；不返回题目
+    ("验证请求缺异议引用", "VerificationRequest", "VerificationRequestIKnow", lambda v: v.pop("dispute_ref")),
+    ("验证请求缺学生", "VerificationRequest", "VerificationRequestIKnow", lambda v: v.pop("student_ref")),
+    ("验证请求的学生 ID 大写", "VerificationRequest", "VerificationRequestIKnow", lambda v: v.__setitem__("student_ref", v["student_ref"].upper())),
+    ("验证请求的原因是复测轮", "VerificationRequest", "VerificationRequestIKnow", lambda v: v.__setitem__("reason", "scheduled")),
+    ("验证请求要 6 道题", "VerificationRequest", "VerificationRequestIKnow", lambda v: v.__setitem__("item_count", 6)),
+    ("验证请求要 0 道题", "VerificationRequest", "VerificationRequestIKnow", lambda v: v.__setitem__("item_count", 0)),
+    ("验证请求的学科是英语（搁置）", "VerificationRequest", "VerificationRequestIKnow", lambda v: v.__setitem__("subject", "echo")),
+    ("验证请求的节点写成能力点", "VerificationRequest", "VerificationRequestIKnow", lambda v: v.__setitem__("node_id", "aya:K-QE-0102")),
+    ("验证请求的层次不在课标四级", "VerificationRequest", "VerificationRequestIKnow", lambda v: v.__setitem__("cognitive_level", "master")),
+    ("验证请求夹带学生姓名", "VerificationRequest", "VerificationRequestIKnow", lambda v: v.__setitem__("student_name", "（合成）")),
+    ("验证请求自带掌握门槛", "VerificationRequest", "VerificationRequestIKnow", lambda v: v.__setitem__("gate", "transfer")),
+    ("验证任务带题目引用", "VerificationTask", "VerificationTaskCreated", lambda v: v.__setitem__("item_ref", "aya:synthetic-0301-08")),
+    ("验证任务带题干", "VerificationTask", "VerificationTaskCreated", lambda v: v.__setitem__("stem", "（合成）")),
+    ("验证任务状态不在枚举里", "VerificationTask", "VerificationTaskCreated", lambda v: v.__setitem__("status", "done")),
+    ("验证任务缺任务 ID", "VerificationTask", "VerificationTaskCreated", lambda v: v.pop("task_id")),
+    ("验证任务缺到期时间", "VerificationTask", "VerificationTaskCreated", lambda v: v.pop("due_at")),
+    # 1.1.0 撤销验证任务（洞察服务事务回滚时的补偿）
+    ("撤销请求缺学生", "VerificationCancelRequest", "VerificationCancelRequestRollback", lambda v: v.pop("student_ref")),
+    ("撤销请求缺任务 ID", "VerificationCancelRequest", "VerificationCancelRequestRollback", lambda v: v.pop("task_id")),
+    ("撤销请求的学生 ID 大写", "VerificationCancelRequest", "VerificationCancelRequestRollback",
+     lambda v: v.__setitem__("student_ref", v["student_ref"].upper())),
+    ("撤销请求夹带原因（只撤自述验证任务）", "VerificationCancelRequest", "VerificationCancelRequestRollback",
+     lambda v: v.__setitem__("reason", "scheduled")),
+    ("撤销结果状态不在枚举里", "VerificationCancelResult", "VerificationCancelResultCancelled", lambda v: v.__setitem__("status", "deleted")),
+    ("撤销结果缺 cancelled", "VerificationCancelResult", "VerificationCancelResultCancelled", lambda v: v.pop("cancelled")),
+    ("撤销结果夹带掌握门槛", "VerificationCancelResult", "VerificationCancelResultCancelled", lambda v: v.__setitem__("gate", "stable")),
 ]
 
+# 1.1.0 路径与引用的结构要求（KGE-04 第二步 PR 3）：掌握读取的请求与响应必须直接引用知识服务 v0.9 的 schema（形状照搬，不另写一份）；
+# 掌握读取只接受编排层令牌；验证任务与撤销只接受洞察服务令牌；这两种令牌不得出现在别的路径上
+KS = "./knowledge-service.v0.9.yaml#/components/schemas/"
+INTERNAL_V1_REFS = {
+    "/internal/v1/mastery/get": (KS + "MasteryGetRequest", KS + "MasteryGetResponse"),
+    "/internal/v1/mastery/explain": (KS + "MasteryExplainRequest", KS + "MasteryExplainResponse"),
+    "/internal/v1/verification": ("#/components/schemas/VerificationRequest", "#/components/schemas/VerificationTask"),
+    "/internal/v1/verification/cancel": ("#/components/schemas/VerificationCancelRequest", "#/components/schemas/VerificationCancelResult"),
+}
+INTERNAL_V1_SECURITY = {"/internal/v1/verification": [{"insightServiceToken": []}],
+                        "/internal/v1/verification/cancel": [{"insightServiceToken": []}],
+                        "/internal/v1/mastery/get": [{"orchestratorServiceToken": []}],
+                        "/internal/v1/mastery/explain": [{"orchestratorServiceToken": []}]}
+# 注意：升 learning-internal.v1 的版本时同步改这里（以及 _check_internal_v1_structure 里写死的版本号）
+INTERNAL_V1_VERSION = "1.1.0"
 
-def _check_internal_v1_examples(errors: list[str]) -> None:
+
+def _validate_internal(c, schema: str, value) -> list[str]:
+    """schema 名带 ks: 的按知识服务契约里的同名 schema 校验（1.1.0 掌握读取照搬它）；其余按内部契约。"""
+    if not schema.startswith("ks:"):
+        return c.validate(schema, value)
+    from jsonschema import Draft202012Validator, FormatChecker  # noqa: PLC0415
+    target = (HERE.parent / "openapi" / "knowledge-service.v0.9.yaml").resolve().as_uri()
+    v = Draft202012Validator({"$ref": f"{target}#/components/schemas/{schema[3:]}"}, registry=c.registry, format_checker=FormatChecker())
+    return sorted({"/" + "/".join(str(p) for p in e.absolute_path) + f" {e.validator}" for e in v.iter_errors(value)})
+
+
+def _check_internal_v1_structure(doc: dict, errors: list[str]) -> None:
+    if doc["info"]["version"] != INTERNAL_V1_VERSION:  # 升版时同步改 INTERNAL_V1_VERSION
+        errors.append(f"learning-internal.v1 版本应为 {INTERNAL_V1_VERSION}（KGE-04 第二步 PR 3），实为 {doc['info']['version']}")
+    for path, (req, resp) in INTERNAL_V1_REFS.items():
+        op = doc.get("paths", {}).get(path, {}).get("post")
+        if op is None:
+            errors.append(f"learning-internal.v1 缺少 POST {path}")
+            continue
+        got_req = op.get("requestBody", {}).get("content", {}).get("application/json", {}).get("schema", {}).get("$ref")
+        got_resp = op.get("responses", {}).get("200", {}).get("content", {}).get("application/json", {}).get("schema", {}).get("$ref")
+        if got_req != req or got_resp != resp:
+            errors.append(f"learning-internal.v1 {path} 的请求 / 响应必须是 {req} / {resp}（实为 {got_req} / {got_resp}）")
+        want_sec = INTERNAL_V1_SECURITY.get(path)
+        if op.get("security") != want_sec:
+            errors.append(f"learning-internal.v1 {path} 的鉴权应为 {want_sec or '服务令牌（顶层 security）'}，实为 {op.get('security')}")
+    schemes = doc.get("components", {}).get("securitySchemes", {})
+    for name in ("insightServiceToken", "orchestratorServiceToken"):
+        if name not in schemes:
+            errors.append(f"learning-internal.v1 缺少 {name}")
+    # 专用令牌只用于各自的路径：其他路径不得接受它们
+    owned = {"insightServiceToken": {"/internal/v1/verification", "/internal/v1/verification/cancel"},
+             "orchestratorServiceToken": {"/internal/v1/mastery/get", "/internal/v1/mastery/explain"}}
+    for path, ops in doc.get("paths", {}).items():
+        for op in ops.values():
+            for name, paths in owned.items():
+                if path not in paths and any(name in sec for sec in op.get("security", []) or []):
+                    errors.append(f"learning-internal.v1 {path} 不得接受 {name}")
+
+
+def _check_internal_v1_examples(errors: list[str], doc: dict | None = None) -> None:
+    """doc 为空时读仓库里的 learning-internal.v1.yaml；变异测试传入改坏后的文档。"""
     import copy  # noqa: PLC0415
     sys.path.insert(0, str(HERE.parent / "python"))
-    from starbuddy_contract.contract import internal_contract  # noqa: PLC0415
-    c = internal_contract("1.0.0")
-    examples = load(INTERNAL_SPECS[1])["components"]["examples"]
+    from starbuddy_contract.contract import contract_from_doc, internal_contract  # noqa: PLC0415
+    if doc is None:
+        doc = load(INTERNAL_SPECS[1])
+        c = internal_contract("1.0.0")
+    else:
+        c = contract_from_doc(doc, INTERNAL_SPECS[1], "urn:starbuddy:learning-internal:mutated")
+    _check_internal_v1_structure(doc, errors)
+    examples = doc["components"]["examples"]
     schema_of = {"GradeIngestKeypad": "GradeIngest", "GradeSummaryLevelC": "GradeSummary",
                  "DiagnoseIngestCanvasC": "DiagnoseIngest", "DiagnoseSummaryLevelC": "DiagnoseSummary",
                  "ModelRouteRequestZhixing": "ModelRouteRequest", "ModelRouteResponseZhixing": "ModelRouteResponse",
-                 "PlanQueryToday": "PlanQuery", "PlanDigestToday": "PlanDigest"}
+                 "PlanQueryToday": "PlanQuery", "PlanDigestToday": "PlanDigest",
+                 "MasteryGetRequestOrchestrator": "ks:MasteryGetRequest", "MasteryGetResponseExecute": "ks:MasteryGetResponse",
+                 "MasteryExplainRequestOrchestrator": "ks:MasteryExplainRequest",
+                 "MasteryExplainResponseExecute": "ks:MasteryExplainResponse",
+                 "VerificationRequestIKnow": "VerificationRequest", "VerificationTaskCreated": "VerificationTask",
+                 "VerificationCancelRequestRollback": "VerificationCancelRequest",
+                 "VerificationCancelResultCancelled": "VerificationCancelResult"}
     for name, schema in schema_of.items():
-        errs = c.validate(schema, examples[name]["value"])
+        if name not in examples:
+            errors.append(f"learning-internal.v1 缺少示例 {name}")
+            continue
+        errs = _validate_internal(c, schema, examples[name]["value"])
         if errs:
             errors.append(f"learning-internal.v1 示例 {name} 不符合 {schema}：{errs[:3]}")
     for label, schema, base, mutate in INTERNAL_V1_COUNTER:
+        if base not in examples:
+            continue  # 缺示例已在上面报错
         value = copy.deepcopy(examples[base]["value"])
         mutate(value)
-        if not c.validate(schema, value):
+        if not _validate_internal(c, schema, value):
             errors.append(f"learning-internal.v1 反例没有被拒绝：{label}")
 
 

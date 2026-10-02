@@ -11,6 +11,9 @@
   INSIGHT_POLICY                 判断策略配置（JSON；缺省 config/claims.synthetic.json，合成占位只允许 test 环境）
   INSIGHT_REPORT_CHECK           首份报告一致性检查词表（缺省 config/report-check.synthetic.json，合成占位只允许 test 环境）
   INSIGHT_SIE03                  SIE-03 配置：异议、预测与对账、触发规则参数与占位文案（缺省 config/sie03.synthetic.json，合成占位只允许 test）
+  INSIGHT_LEARNING_URL           学习服务地址（https 或本机回环）：“我其实会”的验证任务经学习服务 POST /internal/v1/verification 建
+  INSIGHT_LEARNING_TOKEN         洞察服务 → 学习服务验证任务接口的令牌（≥ 32 字符；学习服务侧 LEARNING_INSIGHT_CLIENT_TOKEN），与调用方令牌各不相同。
+                                 两个都设才启用真实验证任务；只设一个拒绝启动。非 test 环境不设 = i_know 回 501；test 环境用接口桩
   INSIGHT_HOST                   监听地址，缺省 127.0.0.1；不接受 0.0.0.0、:: 等通配地址（只在服务内网监听，由平台侧网关转发）
   INSIGHT_PORT                   缺省 8791（契约 servers）
 """
@@ -18,6 +21,7 @@ from __future__ import annotations
 
 import ipaddress
 import os
+import re
 import socket
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -70,6 +74,7 @@ class Settings:
     sie03_path: Path = CONFIG_DIR / "sie03.synthetic.json"
     host: str = DEFAULT_HOST
     port: int = DEFAULT_PORT
+    learning: tuple[str, str] | None = None  # (学习服务地址, 验证任务接口令牌)；KGE-04 第二步 PR 3
 
     @staticmethod
     def from_env(environ: dict[str, str] | None = None) -> "Settings":
@@ -92,6 +97,18 @@ class Settings:
             raise RuntimeError("至少要配置一个调用方令牌（INSIGHT_TOKEN_BFF / _ORCHESTRATOR）")
         if len(set(tokens.values())) != len(tokens):
             raise RuntimeError("各调用方的令牌必须各不相同")
+        learning = None
+        l_url, l_tok = e.get("INSIGHT_LEARNING_URL") or "", e.get("INSIGHT_LEARNING_TOKEN") or ""
+        if bool(l_url) != bool(l_tok):
+            raise RuntimeError("INSIGHT_LEARNING_URL 与 INSIGHT_LEARNING_TOKEN 必须同时设置或同时不设")
+        if l_url:
+            if len(l_tok) < 32:
+                raise RuntimeError("INSIGHT_LEARNING_TOKEN 少于 32 个字符")
+            if l_tok in tokens.values():
+                raise RuntimeError("INSIGHT_LEARNING_TOKEN 不能与调用方令牌相同")
+            if not (l_url.startswith("https://") or re.match(r"http://(127\.0\.0\.1|localhost|\[::1\])(:\d+)?/?$", l_url)):
+                raise RuntimeError("INSIGHT_LEARNING_URL 必须是 https，或本机回环地址")
+            learning = (l_url.rstrip("/"), l_tok)
         port_raw = e.get("INSIGHT_PORT", str(DEFAULT_PORT))
         if not port_raw.isdigit() or not 0 < int(port_raw) < 65536:
             raise RuntimeError("INSIGHT_PORT 不合法")
@@ -99,4 +116,4 @@ class Settings:
                         policy_path=Path(e.get("INSIGHT_POLICY") or CONFIG_DIR / "claims.synthetic.json"),
                         report_check_path=Path(e.get("INSIGHT_REPORT_CHECK") or CONFIG_DIR / "report-check.synthetic.json"),
                         sie03_path=Path(e.get("INSIGHT_SIE03") or CONFIG_DIR / "sie03.synthetic.json"),
-                        host=check_host(e.get("INSIGHT_HOST", DEFAULT_HOST)), port=int(port_raw))
+                        host=check_host(e.get("INSIGHT_HOST", DEFAULT_HOST)), port=int(port_raw), learning=learning)

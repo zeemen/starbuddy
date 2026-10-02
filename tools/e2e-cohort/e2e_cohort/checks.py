@@ -84,6 +84,15 @@ class Check:
     def as_dict(self) -> dict:
         return {"name": self.name, "passed": self.passed, "detail": self.detail}
 
+    @property
+    def label(self) -> str:
+        """摘要与命令行里的结果：通过但没有走到被检查的路径（detail.reached 为假，例如 0 次复测）时写明，不与真正走通混在一起"""
+        if not self.passed:
+            return "失败"
+        if self.detail.get("reached") is False:
+            return f"通过（{self.detail.get('reached_count', 0)} 次，未走到）"
+        return "通过"
+
 
 async def registry_available(conn) -> bool:
     return bool(await conn.fetchval("SELECT to_regclass($1) IS NOT NULL", REGISTRY))

@@ -12,6 +12,7 @@ from typing import Any, Mapping, Sequence
 
 from .claims import MasteryRow
 from .policy import Policy
+from .predict import DbMasterySource
 from .report import ReportResult, build_first_report
 from .scheduled import execute_due_erasures, freeze_due_predictions  # noqa: F401  调度器入口（starbuddy_scheduler 的连接）
 from .shared import Forbidden, consistency, forbidden_matcher
@@ -24,6 +25,15 @@ from .weekly import WeeklyPolicy
 
 
 async def sync_mastery(store: InsightStore, student: str, rows: Sequence[MasteryRow], policy: Policy) -> SyncResult:
+    return await store.sync_mastery_claims(student, rows, policy)
+
+
+async def sync_mastery_from_db(store: InsightStore, student: str, policy: Policy) -> SyncResult:
+    """判断生成接真实掌握（KGE-04 第二步 PR 3）：读该学生全部当前节点键掌握行（DbMasterySource，只认当前地图里的单元）后
+    走同一个 sync_mastery——判断的生成、流转与“我其实会”的结案（i_know_outcome）都在这里发生。
+    触发时机（学习服务重算之后、每天兜底）由编排层与定时任务决定；读掌握行与写判断不在同一事务里，读到的行若在写之前被更正，
+    current_basis 核对会按“没有依据”处理（不写），下一次触发补上"""
+    rows = await DbMasterySource(store.pool).all_rows(student)
     return await store.sync_mastery_claims(student, rows, policy)
 
 

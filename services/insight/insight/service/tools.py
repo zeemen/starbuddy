@@ -7,8 +7,10 @@
 SIE-03（specs/sie-03-dispute-reconcile，PR②）：
 - insight.dispute（只给 BFF，代表学生本人或家长）：三路异议经 Sie03Store.raise_dispute；授权不走 ActorVerifier，而是由
   insight.raise_dispute（0032，属主 authz）按库里关系核对 actor_ref，洞察服务再核对库里记下的身份与请求 actor 一致；
-  判断不属于 student_ref、不可见、不存在、身份不符一律同一个 404。验证任务经 VerificationScheduler（KGE-04 第二步前是接口桩）。
-- insight.predict（只给编排层）：合成掌握行（MasterySource，KGE-04 第二步前由调用方注入；缺省没有掌握行 → 证据不足 409）。
+  判断不属于 student_ref、不可见、不存在、身份不符一律同一个 404。验证任务经 VerificationScheduler（KGE-04 第二步 PR 3 起
+  非 test 环境调学习服务 /internal/v1/verification，学生取异议记录里的；接口桩只给 test）。
+- insight.predict（只给编排层）：掌握行来源 MasterySource（create_app 缺省直接读 platform.mastery_estimate 的节点键当前行；
+  ToolCore 单独构造时缺省没有掌握行 → 证据不足 409）。
 - insight.reconcile（只给编排层，只读）：读对账卡，陈述只由判断渲染（每句带 claim_id，只取 agent 可见的判断）。
 - insight.export / insight.erase（只给家长）：经 GuardianRequests；0035 的库函数只授 BFF 会话，缺省实现不通（501，lessons）。
 - 幂等：契约要求同 key 同体返回原结果、同 key 异体 409。本步用进程内缓存（作用域 调用方 + 工具 + 学生 + key，24 小时，

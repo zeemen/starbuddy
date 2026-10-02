@@ -1,4 +1,4 @@
-"""联调栈：一次性 Postgres 上的学习服务（进程内）+ 三科适配器（真实 HTTP 子进程）+ 学习服务内部模型路由接口（本机回环）。
+"""联调栈：一次性 Postgres 上的学习服务（进程内，带合成掌握配置）+ 三科适配器（真实 HTTP 子进程）+ 学习服务内部模型路由接口（本机回环）。
 
 做法沿用 services/learning/tests/test_e2e_{aya,zhixing,wenli}.py，只是三科同时启动、共用一个学习服务实例：
 - 适配器进程只拿到自己的服务令牌、端口、路由接口地址与令牌；不拿任何数据库连接串或供应商配置（规则 1、ADR 04），
@@ -28,9 +28,11 @@ import uvicorn
 
 from learning.app import create_app
 from learning.config import AdapterTarget, Settings
+from learning.mastery.recompute import MasteryEngine
 from learning.model_router import DEFAULT_PATH, FakeProvider, MemorySink, ModelRouter, ProviderReply, Usage, load
 from pgharness import LOGIN_ROLE
 
+from . import mastery as mastery_setup
 from .scripted import ScriptedModel
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -215,6 +217,7 @@ class Stack:
     adapters: dict[str, AdapterProc]
     model: ScriptedModel
     connlog: ConnectionLog
+    mastery: MasteryEngine
 
 
 @asynccontextmanager
@@ -238,6 +241,8 @@ async def _stack(pg, model: ScriptedModel, *, register: bool):
     connlog = ConnectionLog(pg)
     if register:
         register_content(pg)
+    # 合成掌握配置（KGE-04 第二步 PR 3）：合成数学地图、打标与内容版本绑定；复测由 platform.retest_task 驱动（mastery.py）
+    pg.psql(mastery_setup.seed_sql())
     app_pool = await asyncpg.create_pool(**pg.dsn(LOGIN_ROLE), min_size=1, max_size=20)
     admin = await asyncpg.create_pool(**pg.dsn("postgres"), min_size=1, max_size=4)
     try:
@@ -245,12 +250,14 @@ async def _stack(pg, model: ScriptedModel, *, register: bool):
             transport = RecordingTransport()
             settings = Settings(env="test", database_url="unused", service_credential=LEARNING_CREDENTIAL,
                                 adapters={s: AdapterTarget(p.url, ADAPTER_TOKENS[s]) for s, p in procs.items()})
-            app = create_app(settings, pool=app_pool, transport=transport)
+            engine = MasteryEngine(app_pool, {"aya": mastery_setup.config()})
+            app = create_app(settings, pool=app_pool, transport=transport, mastery=engine)
             async with app.router.lifespan_context(app):
                 async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://learning.test",
                                              timeout=60) as client:
                     client.headers["authorization"] = f"Bearer {LEARNING_CREDENTIAL}"
-                    yield Stack(client, admin, app_pool, transport, procs, model, connlog)
+                    yield Stack(client, admin, app_pool, transport, procs, model, connlog, engine)
     finally:
         await app_pool.close()
         await admin.close()
+        pg.psql(mastery_setup.retire_sql())

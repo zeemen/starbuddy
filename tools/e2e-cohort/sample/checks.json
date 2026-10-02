@@ -5,13 +5,11 @@
     "by_subject_method_purpose": {
      "aya/diagnose/practice": 20,
      "aya/grade/practice": 36,
-     "aya/grade/retest": 16,
      "wenli/diagnose/practice": 20,
      "wenli/grade/practice": 16,
-     "zhixing/grade/practice": 20,
-     "zhixing/grade/retest": 16
+     "zhixing/grade/practice": 20
     },
-    "calls": 144,
+    "calls": 112,
     "failed": []
    },
    "name": "all_calls_succeeded",
@@ -44,7 +42,7 @@
   },
   {
    "detail": {
-    "needles": 830,
+    "needles": 710,
     "personal_tables_not_in_registry": [],
     "registry": "checked",
     "schemas": [
@@ -70,7 +68,7 @@
   },
   {
    "detail": {
-    "grade_responses": 104,
+    "grade_responses": 72,
     "incomplete": []
    },
    "name": "grade_envelope_provenance",
@@ -79,12 +77,12 @@
   {
    "detail": {
     "by_subject": {
-     "aya": 52,
+     "aya": 36,
      "wenli": 16,
-     "zhixing": 36
+     "zhixing": 20
     },
     "evidence_not_same_student_subject": 0,
-    "grade_results": 104,
+    "grade_results": 72,
     "incomplete": 0
    },
    "name": "grade_rows_provenance",
@@ -92,14 +90,46 @@
   },
   {
    "detail": {
-    "note": "KGE-04 第二步（retest_task 与复测调度）前的接口桩；执行经同一 grade 契约接口，ingest.purpose = retest",
-    "retest_calls": 32,
-    "scheduler": "stub",
-    "students_with_retest_evidence": 16,
-    "students_wrong": [],
-    "unmarked_or_failed": 0
+    "evidence_without_task": [],
+    "failed_or_unmarked": 0,
+    "interrupted_with_retest": [],
+    "mastery": {
+     "config": "synthetic-test（未签字）+ rung0_min_gap_seconds = 0",
+     "evidence_counted": 0,
+     "excluded_reasons": {
+      "no_grade": 80,
+      "pending_review": 36
+     },
+     "map": "合成联调地图（2 个节点，层次 apply）",
+     "node_key_records": 0,
+     "replay_gates": {
+      "none": 40
+     },
+     "retest_tasks": {},
+     "subject": "aya",
+     "subjects_without_config": [
+      "wenli",
+      "zhixing"
+     ],
+     "units": 40
+    },
+    "no_item": 0,
+    "not_reached": {
+     "evidence_counted": 0,
+     "node_key_records": 0,
+     "note": "没有复测轮任务就不执行复测（不编造）；原因见 mastery.excluded_reasons（例如内容未准入 → 判分待复核 → pending_review 不计入）",
+     "retest_round_tasks": 0,
+     "top_excluded_reason": "no_grade"
+    },
+    "note": "KGE-04 第二步真实调度：grade 落库后同步重算掌握、同一事务建复测轮任务；联调把时钟推进到 due_at 后执行，执行经同一 grade 契约接口，ingest.purpose = retest",
+    "reached": false,
+    "reached_count": 0,
+    "retest_calls": 0,
+    "retest_round_tasks": 0,
+    "scheduler": "retest_task",
+    "students_with_retest_evidence": 0
    },
-   "name": "retest_via_stub",
+   "name": "retest_via_retest_task",
    "passed": true
   },
   {
@@ -126,13 +156,13 @@
    "detail": {
     "adapter_calls_during_rerun": 0,
     "counts": {
-     "attempt": 244,
-     "error_attribution": 63,
-     "evidence_event": 514,
-     "evidence_registry": 514,
-     "grade_dimension": 239,
-     "grade_result": 104,
-     "ingest_request": 144,
+     "attempt": 212,
+     "error_attribution": 43,
+     "evidence_event": 426,
+     "evidence_registry": 426,
+     "grade_dimension": 183,
+     "grade_result": 72,
+     "ingest_request": 112,
      "practice_log": 0,
      "skill_observation": 140,
      "usage_ledger": 0,
@@ -140,15 +170,15 @@
     },
     "delta": {},
     "every_request_has_usage_id_and_idempotency_key": true,
-    "replayed": 144,
-    "rerun_requests": 144
+    "replayed": 112,
+    "rerun_requests": 112
    },
    "name": "rerun_zero_new_rows",
    "passed": true
   },
   {
    "detail": {
-    "compared": 144
+    "compared": 112
    },
    "name": "rerun_same_result",
    "passed": true
