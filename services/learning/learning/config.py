@@ -17,9 +17,14 @@
                                      未签字或合成配置只允许 LEARNING_ENV=test 加载，不合法拒绝启动
   LEARNING_MASTERY_SYNC_BUDGET_SECONDS  落库后同步重算的时间预算，默认 2（0 < 值 ≤ 10）；超时交给对账
   LEARNING_INSIGHT_CLIENT_TOKEN  洞察服务 → 学习服务验证任务接口（/internal/v1/verification 与 /verification/cancel）的令牌（≥ 32 字符，
-                                 learning-internal 1.1.0 insightServiceToken）；只对这两个接口有效，与其他令牌各不相同。不设 = 这两个接口一律 401
+                                 learning-internal 1.1.0 insightServiceToken）；只对三个接口有效：/verification、/verification/cancel 与
+                                 /profile-page/ensure（只能 trigger = weekly，KGE-04 第二步 PR 4），与其他令牌各不相同。不设 = 这三个接口一律不认洞察服务
+                                 按令牌区分调用方（编排层 / 洞察服务 / BFF）依赖下面“令牌互不相同”的启动校验
   LEARNING_ORCHESTRATOR_CLIENT_TOKEN  编排层 → 学习服务掌握读取（/internal/v1/mastery/get、/explain）的令牌（≥ 32 字符，
                                  orchestratorServiceToken）；只对这两个接口有效，与其他令牌各不相同。不设 = 掌握读取一律 401
+                                 （KGE-04 第二步 PR 4 起也用于档案页 /internal/v1/profile-page/ensure 与 /read；洞察服务令牌另可调 ensure，只能是周报触发）
+  LEARNING_PROFILE_PAGE_CONFIG   学情档案页配置文件（归节与固定衔接短语表，services/learning/config/mastery/profile-page*.json）。
+                                 不设 = 档案页接口回 409 PROFILE_UNAVAILABLE；未签字或合成配置只允许 LEARNING_ENV=test 加载，不合法拒绝启动
 """
 from __future__ import annotations
 
@@ -84,6 +89,8 @@ class Settings:
     insight_client_credential: str | None = None
     # 编排层 → 掌握读取的令牌（只对 /internal/v1/mastery/*）；None = 掌握读取不接受任何调用
     orchestrator_client_credential: str | None = None
+    # 学情档案页配置文件路径（KGE-04 第二步 PR 4）；None = 档案页接口不可用
+    profile_page_config: str | None = None
 
     @staticmethod
     def from_env(environ: dict[str, str] | None = None) -> "Settings":
@@ -157,4 +164,5 @@ class Settings:
                         route_clients=route_clients, diagnosis_presenter=presenter, diagnosis_source=source, knowledge=knowledge,
                         diagnosis_targets=targets, diagnosis_map_version=map_version, mastery_configs=mastery_config_paths(e),
                         mastery_sync_budget_seconds=_budget(e.get("LEARNING_MASTERY_SYNC_BUDGET_SECONDS")),
-                        insight_client_credential=insight_tok, orchestrator_client_credential=orch_tok)
+                        insight_client_credential=insight_tok, orchestrator_client_credential=orch_tok,
+                        profile_page_config=e.get("LEARNING_PROFILE_PAGE_CONFIG") or None)

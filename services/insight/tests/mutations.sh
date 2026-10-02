@@ -40,7 +40,8 @@ M=(
   $'报告不跑一致性检查\tinsight/report.py\t    result = consistency.check_page(check_sections, views, check_cfg, forbidden)\t    result = consistency.CheckResult()\ttests/test_report.py'
   $'报告提示语与标题不查禁用词\tinsight/report.py\t    if forbidden(fixed):\t    if False:\ttests/test_report.py'
   $'家长版不附置信度说明\tinsight/report.py\t            if audience == "guardian":\t            if False:\ttests/test_report.py tests/test_service_db.py'
-  $'渲染不查禁用推断词表\tinsight/render.py\t    if not text or len(text) > MAX_TEXT or forbidden(text):\t    if not text or len(text) > MAX_TEXT:\ttests/test_report.py'
+  # 渲染规则只有一份（learning/mastery/render.py，规则本身的变异在 services/learning/scripts/mastery_mutations.py）；这里改调用点
+  $'渲染调用点不传禁用推断匹配\tinsight/render.py\t    text = render_text(c.text_template, c.target_id, c.value, forbidden)\t    text = render_text(c.text_template, c.target_id, c.value, lambda t: [])\ttests/test_report.py'
   $'待验证不画虚线\tinsight/render.py\t"display": "dashed" if c.status == "to_verify" else "solid"\t"display": "solid"\ttests/test_report.py tests/test_service_db.py'
   # 中圈指标（设计要点 5）
   $'独立解题率样本不足也写\tinsight/metrics.py\t        if len(xs) >= k:\n            correct = sum(1 for a in xs if a.verdict == "correct")\t        if len(xs) >= 1:\n            correct = sum(1 for a in xs if a.verdict == "correct")\ttests/test_metrics.py'
@@ -144,6 +145,11 @@ M=(
   $'周报重复运行重写\tinsight/store_weekly.py\t           ON CONFLICT (student_id, week_start, audience) DO NOTHING RETURNING id\t           RETURNING id\ttests/test_weekly_db.py'
   $'周报生成后不抽检\tinsight/store_weekly.py\t    sampled = await sample_week(store, week_start, weekly)\t    sampled = 0\ttests/test_weekly_db.py'
   $'周报不限周的范围\tinsight/store_weekly.py\t    if week_start + timedelta(days=7) > today or (today - week_start).days > LOOKBACK_DAYS:\t    if False:\ttests/test_weekly_db.py'
+  $'周报前不触发档案页编译（KGE-04 第二步 PR 4）\tinsight/store_weekly.py\t        o, f = await ensure_profile_pages(profile_pages, s, policy)\t        o, f = 0, 0\ttests/test_weekly_db.py'
+  $'档案页触发失败阻塞周报\tinsight/store_weekly.py\t        except Exception:  # noqa: BLE001 — 触发失败不影响周报\n            done = False\t        except ZeroDivisionError:\n            done = False\ttests/test_weekly_db.py'
+  $'档案页触发不按周报可见学科（全科都调）\tinsight/store_weekly.py\tfor subject in sorted(s for s in policy.visible_subjects if s in PROFILE_SUBJECTS):\tfor subject in PROFILE_SUBJECTS:\ttests/test_weekly_db.py'
+  $'档案页触发客户端失败往外抛\tinsight/profile_pages.py\t        except Exception:  # noqa: BLE001 — 失败不阻塞周报，只计数\t        except ZeroDivisionError:\ttests/test_weekly_db.py'
+  $'档案页触发用会话开始的触发点\tinsight/profile_pages.py\tTRIGGER = "weekly"\tTRIGGER = "session_start"\ttests/test_weekly_db.py tests/test_kge04_db.py'
   $'周报收没结束的周\tinsight/store_weekly.py\t    if week_start + timedelta(days=7) > today or\t    if week_start > today or\ttests/test_weekly_db.py'
   $'周报句子不记修订标记\tinsight/weekly.py\t            if wc.updated_at is not None:\t            if False:\ttests/test_weekly.py'
   $'周报配置未签字也生成\tinsight/store_weekly.py\t    if env != TEST_ENV and not weekly.signed:\t    if False:\ttests/test_weekly_db.py'

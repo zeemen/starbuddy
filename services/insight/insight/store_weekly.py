@@ -18,6 +18,8 @@ from typing import Sequence
 import asyncpg
 
 from .policy import TEST_ENV, Policy
+from .profile_pages import SUBJECTS as PROFILE_SUBJECTS
+from .profile_pages import ProfilePageTrigger
 from .shared import Forbidden, consistency
 from .store import InsightStore
 from .store_sie03 import Unavailable
@@ -41,6 +43,8 @@ class WeeklyRun:
     week_start: date
     outcomes: tuple[WeeklyOutcome, ...]
     sampled: int
+    # 周报前触发学情档案页编译的结果计数（KGE-04 第二步 PR 4）：ok / failed；没配学习服务时两者都是 0
+    profile_pages: tuple[tuple[str, int], ...] = (("ok", 0), ("failed", 0))
 
     def count(self, status: str) -> int:
         return sum(1 for o in self.outcomes if o.status == status)
@@ -139,18 +143,37 @@ async def check_week(store: InsightStore, week_start: date) -> None:
         raise ValueError("week_start must be a finished week within the last 35 days")
 
 
+async def ensure_profile_pages(profile_pages: "ProfilePageTrigger | None", student: str, policy: Policy) -> tuple[int, int]:
+    """周报生成前按周报可见学科触发学习服务编译档案页（第二步待人确认 #6 默认）；失败不阻塞周报，只计数。返回 (成功, 失败)"""
+    if profile_pages is None:
+        return 0, 0
+    ok = failed = 0
+    for subject in sorted(s for s in policy.visible_subjects if s in PROFILE_SUBJECTS):
+        try:
+            done = await profile_pages.ensure(student, subject)
+        except Exception:  # noqa: BLE001 — 触发失败不影响周报
+            done = False
+        ok, failed = (ok + 1, failed) if done else (ok, failed + 1)
+    return ok, failed
+
+
 async def run_week(store: InsightStore, week_start: date, policy: Policy, weekly: WeeklyPolicy, check_cfg: "consistency.CheckConfig",
-                   forbidden: Forbidden, students: Sequence[str] | None = None, env: str | None = None) -> WeeklyRun:
+                   forbidden: Forbidden, students: Sequence[str] | None = None, env: str | None = None,
+                   profile_pages: "ProfilePageTrigger | None" = None) -> WeeklyRun:
     """env：服务的运行环境（INSIGHT_ENV，由调用方传入）。周报配置（标题、衔接短语、排除词、抽检比例）未签字时，
-    test 以外一律不生成（安全审查 F2）；没传 env 按非 test 处理（fail closed）"""
+    test 以外一律不生成（安全审查 F2）；没传 env 按非 test 处理（fail closed）。
+    profile_pages：每个学生生成周报前先触发学情档案页编译（KGE-04 第二步 PR 4），失败不阻塞周报"""
     if env != TEST_ENV and not weekly.signed:
         raise Unavailable("weekly policy is not signed")
     await check_week(store, week_start)
     targets = list(students) if students is not None else await students_with_claims(store)
     outcomes: list[WeeklyOutcome] = []
+    ok = failed = 0
     for s in targets:
+        o, f = await ensure_profile_pages(profile_pages, s, policy)
+        ok, failed = ok + o, failed + f
         outcomes.extend(await generate_for_student(store, s, week_start, policy, weekly, check_cfg, forbidden))
     sampled = await sample_week(store, week_start, weekly)
-    return WeeklyRun(week_start, tuple(outcomes), sampled)
+    return WeeklyRun(week_start, tuple(outcomes), sampled, (("ok", ok), ("failed", failed)))
 
 

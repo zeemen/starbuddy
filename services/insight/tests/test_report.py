@@ -149,6 +149,8 @@ def test_render_rules():
     assert s["display"] == "dashed" and s["status"] == "to_verify" and s["confidence_band"] == "few_evidence"
     assert render_statement(dataclasses.replace(c, status="hypothesis"), "moderate", FORBID)["display"] == "solid"
     assert render_statement(dataclasses.replace(c, status="withdrawn"), "moderate", FORBID) is None
+    # 调用点也把禁用推断匹配传给共用的渲染规则（learning/mastery/render.py）：命中即不出陈述
+    assert render_statement(dataclasses.replace(c, text_template="【占位】这孩子智商高"), "moderate", FORBID) is None
 
 
 def test_report_reuses_learning_consistency_engine():

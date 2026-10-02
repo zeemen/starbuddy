@@ -326,7 +326,10 @@ CREATE VIEW platform.profile_page_statement_v WITH (security_barrier = true) AS
                         AND c.template_key = i.item ->> 'template_key' AND c.template_version = (i.item ->> 'template_version')::integer
    WHERE platform.can_read_student(p.student_id)
      AND c.status IN ('hypothesis', 'established') AND c.expires_at > now()
-     AND EXISTS (SELECT 1 FROM insight.claim_template t WHERE t.template_key = c.template_key AND t.version = c.template_version)
+     -- 模板仍是已审核（approved）：claim_front_read 靠模板表自身的 RLS（BFF 只看 approved）挡掉退役模板，
+     -- 本视图属主 authz 绕过 RLS，所以要显式写出（KGE-04 第二步 PR 4 修订：模板退役后陈述不再返回）
+     AND EXISTS (SELECT 1 FROM insight.claim_template t WHERE t.template_key = c.template_key AND t.version = c.template_version
+                                                         AND t.status = 'approved')
      AND ((platform.is_self_student(c.student_id) AND 'student' = ANY (c.visibility))
           OR (platform.is_linked_guardian(c.student_id) AND 'guardian' = ANY (c.visibility)));
 ALTER VIEW platform.profile_page_statement_v OWNER TO starbuddy_authz;

@@ -366,3 +366,44 @@ async def test_sync_from_db_settles_i_know(kge04db):
         db.psql(f"""SET session_replication_role = replica;
           DELETE FROM platform.mastery_estimate WHERE id = '{M_A2}';
           UPDATE platform.mastery_estimate SET is_current = true, superseded_by = NULL, superseded_at = NULL WHERE id = '{M_A}';""")
+
+
+# ---------- 周报触发学情档案页编译（KGE-04 第二步 PR 4，待人确认 #6 默认）----------
+def _profile_config():
+    """学习服务的合成档案页配置，归节改用洞察服务合成策略的模板键（衔接短语取周报一致性检查的占位短语表，只在测试里）"""
+    from learning.mastery.profile import parse_profile_config  # noqa: PLC0415
+    doc = json.loads((CONFIG_DIR / "profile-page.synthetic.json").read_text(encoding="utf-8"))
+    check = json.loads((ROOT / "services" / "insight" / "config" / "weekly-check.synthetic.json").read_text(encoding="utf-8"))
+    doc["sections"] = {P.templates["node_mastery"].key: {"by_gate": {"transfer": "mastered", "retain": "mastered"}, "default": "working_on"},
+                       P.templates["node_transfer"].key: {"section": "mastered"}}
+    doc["connectives"] = {k: check["connective_phrases"][0] for k in doc["connectives"]}
+    return parse_profile_config(doc, check, env="test")
+
+
+async def test_weekly_trigger_compiles_profile_page_once_via_real_learning(kge04db):
+    from insight import store_weekly  # noqa: PLC0415
+    from insight.profile_pages import LearningProfilePages  # noqa: PLC0415
+    from learning.mastery.profile import ProfilePages  # noqa: PLC0415
+    db = kge04db
+    reset(db)
+    db.psql(f"SET session_replication_role = replica; DELETE FROM platform.profile_page WHERE student_id = '{S4}';")
+    await sync(db, await _rows(db))
+    lpool = await asyncpg.create_pool(**db.connect_kwargs(LEARNING_ROLE), min_size=1, max_size=4)
+    pages = ProfilePages(lpool, _profile_config())
+    lapp = learning_app(LearningSettings(env="test", database_url="unused", service_credential=LEARNING_BFF_TOKEN,
+                                         insight_client_credential=INSIGHT_TOKEN), pool=lpool, profile=pages)
+    try:
+        async with lapp.router.lifespan_context(lapp):
+            trigger = LearningProfilePages("http://learning.test", INSIGHT_TOKEN, transport=httpx.ASGITransport(app=lapp))
+            assert await store_weekly.ensure_profile_pages(trigger, S4, P) == (1, 0)
+            assert pages.stats["compiled"] == 1                                               # 周报调用：编一次
+            assert await store_weekly.ensure_profile_pages(trigger, S4, P) == (1, 0)
+            assert pages.stats["compiled"] == 1 and pages.stats["unchanged"] == 1             # 判断没变：不重编
+            refs = q(db, f"""SELECT string_agg(i ->> 'claim_id', ',') FROM platform.profile_page p, jsonb_array_elements(p.sections) s,
+                               jsonb_array_elements(s -> 'statements') i WHERE p.student_id = '{S4}'""")
+            assert refs == claim_of(db, NODE_A)                                               # 陈述引用洞察服务写的判断
+            wrong = LearningProfilePages("http://learning.test", LEARNING_BFF_TOKEN, transport=httpx.ASGITransport(app=lapp))
+            assert await store_weekly.ensure_profile_pages(wrong, S4, P) == (0, 1)            # BFF 令牌 401：只计数，不抛出
+    finally:
+        await lpool.close()
+        db.psql(f"SET session_replication_role = replica; DELETE FROM platform.profile_page WHERE student_id = '{S4}';")

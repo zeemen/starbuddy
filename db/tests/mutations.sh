@@ -790,8 +790,8 @@ KT='platform.retest_task_guard()'
 KP='platform.profile_page_guard()'
 KV='platform.valid_profile_sections(jsonb, text)'
 KC='platform.valid_profile_violations(jsonb)'
-kview() {  # 改写档案页陈述视图：$1 展开哪些项，$2 判断状态条件，$3 可见范围条件（其余与 0037 相同）
-  printf "CREATE OR REPLACE VIEW platform.profile_page_statement_v WITH (security_barrier = true) AS SELECT p.id AS profile_page_id, p.student_id, p.subject, s.sec ->> 'key' AS section, s.ord AS section_ord, i.ord AS item_ord, c.id AS claim_id, c.template_key, c.template_version, c.status::text AS claim_status FROM platform.profile_page p CROSS JOIN LATERAL jsonb_array_elements(p.sections) WITH ORDINALITY s(sec, ord) CROSS JOIN LATERAL %s WITH ORDINALITY i(item, ord) JOIN insight.claim c ON c.id = (i.item ->> 'claim_id')::uuid AND c.student_id = p.student_id AND c.template_key = i.item ->> 'template_key' AND c.template_version = (i.item ->> 'template_version')::integer WHERE platform.can_read_student(p.student_id) AND %s AND c.expires_at > now() AND EXISTS (SELECT 1 FROM insight.claim_template t WHERE t.template_key = c.template_key AND t.version = c.template_version) AND %s;" "$1" "$2" "$3"
+kview() {  # 改写档案页陈述视图：$1 展开哪些项，$2 判断状态条件，$3 可见范围条件，$4 模板状态条件（缺省与 0037 相同：已审核）
+  printf "CREATE OR REPLACE VIEW platform.profile_page_statement_v WITH (security_barrier = true) AS SELECT p.id AS profile_page_id, p.student_id, p.subject, s.sec ->> 'key' AS section, s.ord AS section_ord, i.ord AS item_ord, c.id AS claim_id, c.template_key, c.template_version, c.status::text AS claim_status FROM platform.profile_page p CROSS JOIN LATERAL jsonb_array_elements(p.sections) WITH ORDINALITY s(sec, ord) CROSS JOIN LATERAL %s WITH ORDINALITY i(item, ord) JOIN insight.claim c ON c.id = (i.item ->> 'claim_id')::uuid AND c.student_id = p.student_id AND c.template_key = i.item ->> 'template_key' AND c.template_version = (i.item ->> 'template_version')::integer WHERE platform.can_read_student(p.student_id) AND %s AND c.expires_at > now() AND EXISTS (SELECT 1 FROM insight.claim_template t WHERE t.template_key = c.template_key AND t.version = c.template_version AND %s) AND %s;" "$1" "$2" "${4:-t.status = 'approved'}" "$3"
 }
 M+=(
   ["掌握第二步：复测任务不强制 RLS"]="ALTER TABLE platform.retest_task NO FORCE ROW LEVEL SECURITY;"
@@ -829,6 +829,7 @@ M+=(
   ["掌握第二步：BFF 可读档案页 sections"]="GRANT SELECT (sections) ON platform.profile_page TO starbuddy_bff;"
   ["掌握第二步：陈述视图含待办与待验证"]="$(kview "jsonb_array_elements((s.sec -> 'statements') || (s.sec -> 'todo'))" "c.status IN ('hypothesis', 'established', 'to_verify')" "((platform.is_self_student(c.student_id) AND 'student' = ANY (c.visibility)) OR (platform.is_linked_guardian(c.student_id) AND 'guardian' = ANY (c.visibility)))")"
   ["掌握第二步：陈述视图不看判断可见范围"]="$(kview "jsonb_array_elements(s.sec -> 'statements')" "c.status IN ('hypothesis', 'established')" "true")"
+  ["掌握第二步：陈述视图不看模板是否仍已审核（退役模板的陈述仍返回）"]="$(kview "jsonb_array_elements(s.sec -> 'statements')" "c.status IN ('hypothesis', 'established')" "((platform.is_self_student(c.student_id) AND 'student' = ANY (c.visibility)) OR (platform.is_linked_guardian(c.student_id) AND 'guardian' = ANY (c.visibility)))" "true")"
   ["掌握第二步：复测轮到期时间不核对"]="$(afr "$KT" "'IF m.next_retest_at IS DISTINCT FROM NEW.due_at THEN'" "'IF false THEN'")"
   ["掌握第二步：复测轮轮次不核对门槛"]="$(afr "$KT" "'IF NEW.rung IS NOT NULL AND NEW.rung IS DISTINCT FROM'" "'IF false AND NEW.rung IS DISTINCT FROM'")"
   ["掌握第二步：档案页不核对学科"]="$(afr "$KP" "'AND (c.subject = NEW.subject OR c.subject IS NULL)'" "'AND true'")"

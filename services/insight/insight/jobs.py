@@ -20,6 +20,7 @@ from .sie03_policy import Sie03Policy
 from .store import InsightStore, SyncResult
 from .store_sie03 import ReconcileOutcome, SettleResult, Sie03Store
 from .triggers import Suggestion
+from .profile_pages import ProfilePageTrigger
 from .store_weekly import WeeklyRun, run_week
 from .weekly import WeeklyPolicy
 
@@ -94,10 +95,13 @@ async def dispatch_triggers(ops: Sie03Store, student: str, sie03: Sie03Policy, r
 
 # ---------- 冲刺 5-H 跨科周报 v0（specs/trust-ui-sprint5 设计要点 4；迁移 0036） ----------
 async def weekly_reports(store: InsightStore, week_start: date, policy: Policy, weekly: WeeklyPolicy, check_cfg: "consistency.CheckConfig",
-                         forbidden: Forbidden | None = None, students: Sequence[str] | None = None, env: str | None = None) -> WeeklyRun:
+                         forbidden: Forbidden | None = None, students: Sequence[str] | None = None, env: str | None = None,
+                         profile_pages: "ProfilePageTrigger | None" = None) -> WeeklyRun:
     """每周定时任务（建议每周一凌晨跑上一周）：按学生生成学生版成长手记与家长版周报（固定结构 + 衔接短语占位 + 判断渲染句，
     每句带 claim_id；客观栏标来源 objective），两道检查（陈述—判断一致性、禁用推断）任一不过即 withheld；没有可见判断的不写；
     同一周重复运行不重写。生成完按配置抽检（默认 10%、至少 5 份）进统一复核队列，抽检不阻断。
     students 缺省为“有对学生或家长可见的节点判断的全部学生”。只接受已结束的周。env 是服务的运行环境：周报配置未签字时 test 以外
-    抛 Unavailable（没传按非 test）。某个学生某个受众被库里守卫拒收时记 failed 并继续。只在壳内展示（待人确认 #5），不发短信、推送"""
-    return await run_week(store, week_start, policy, weekly, check_cfg, forbidden or forbidden_matcher(), students, env)
+    抛 Unavailable（没传按非 test）。某个学生某个受众被库里守卫拒收时记 failed 并继续。只在壳内展示（待人确认 #5），不发短信、推送。
+    profile_pages（KGE-04 第二步 PR 4，待人确认 #6 默认）：每个学生生成前先调学习服务 ensure 编译学情档案页（trigger = weekly，
+    insight 令牌）；由 profile_pages.learning_profile_pages(settings.learning) 构造，没配学习服务时为 None。失败不阻塞周报，只计数（WeeklyRun.profile_pages）"""
+    return await run_week(store, week_start, policy, weekly, check_cfg, forbidden or forbidden_matcher(), students, env, profile_pages)

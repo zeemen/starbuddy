@@ -158,6 +158,13 @@ SM=(
   $'信任：周报客观栏不核来源\tsrc/trust/weekly.ts\t  if (o[\'source_type\'] !== \'objective\' || \t  if ('
   $'信任：周报只给家长\tsrc/http/trust-routes.ts\t`${S}/weekly-report`, \'session\', weeklyReport\t`${S}/weekly-report`, \'guardian\', weeklyReport'
   $'信任：周报不限流\tsrc/http/trust-routes.ts\tweeklyReport, [{ bucket: \'trust_read.session.minute\', dim: \'session\' }]\tweeklyReport, []'
+  # KGE-04 第二步 PR 4 学情档案页（profile）：白名单、实线核对、初步判断标注、谁能读、限流
+  $'信任：档案页不看对外模板白名单\tsrc/http/trust-routes.ts\t && pre.shown.get(r.claim_id) === ref && cfg.externalTemplates.has(ref);\t && pre.shown.get(r.claim_id) === ref;'
+  $'信任：档案页收洞察服务给的虚线陈述\tsrc/shell/statements.ts\tst.display !== \'solid\' || (st.status !== \'hypothesis\' && st.status !== \'established\')\tfalse'
+  $'信任：档案页不按判断当前状态标初步判断\tsrc/http/trust-routes.ts\t              ...(r.claim_status === \'hypothesis\' ? { label: \'preliminary\' } : {}) }];\t }];'
+  $'信任：档案页只给家长\tsrc/http/trust-routes.ts\t`${S}/profile-pages/{subject}`, \'session\', profilePage\t`${S}/profile-pages/{subject}`, \'guardian\', profilePage'
+  $'信任：档案页不限流\tsrc/http/trust-routes.ts\tprofilePage, [{ bucket: \'trust_read.session.minute\', dim: \'session\' }], true)\tprofilePage, [], true)'
+  $'信任：档案页不核对学科码（英语也读）\tsrc/http/shell-routes.ts\tWHERE code = $1 AND status <> \'planned\' AND product IS NOT NULL`\tWHERE code = $1 AND product IS NOT NULL`'
   # 冲刺 4-H H6 第二轮第 7 节回归（每类至少一条）：这几条跑 tests/route-matrix.integration.test.ts
   # 7.1 授权矩阵与路由表覆盖
   $'H6：新路由不登记样例\tsrc/http/shell-routes.ts\t  read(`${S}/balance`, \'session\', balance),\t  read(`${S}/balance`, \'session\', balance), read(`${S}/balance-copy`, \'session\', balance),'

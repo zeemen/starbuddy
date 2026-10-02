@@ -8,6 +8,12 @@
 - POST /internal/v1/verification/cancel：只接受洞察服务令牌；洞察服务写异议的事务在建任务之后回滚时的补偿：按任务 ID + 学生撤销
   open 的 verify_self_report 任务，幂等，不改掌握；不存在或不属于该学生同一个 404。
 
+- POST /internal/v1/profile-page/ensure（PR 4）：惰性编译学情档案页。编排层令牌（trigger 必须是 session_start）或洞察服务令牌
+  （trigger 必须是 weekly，周报生成前调），不符 403 CALLER_MISMATCH；BFF 令牌 401。响应只有结果编码、检查状态与时间，没有判断与文字。
+- POST /internal/v1/profile-page/read（PR 4）：Agent 完整版（读取时按判断现状重核后渲染，含待办引用）；只认编排层令牌。
+  学生、家长视图不走这里（BFF 经 platform.profile_page_statement_v 读引用、经洞察服务 insight.explain 取文字）。
+  没有档案页配置或该科不在配置里：409 PROFILE_UNAVAILABLE。
+
 鉴权同既有内部接口（Bearer，sha256 后常量时间比较）；请求体限 64 KB，JSON 拒绝 NaN / Infinity 与重复键。
 日志只记接口名、状态码、错误码、耗时与 request_id（UUID 形状才记）；不记学生 ID、节点、证据与请求体。
 """
@@ -27,11 +33,13 @@ from .contract import internal_contract, knowledge_contract
 from .diagnosis.api import _body
 from .errors import IngestError
 from .mastery import api as M
+from .mastery.profile import COMPILER_VERSION, ProfileUnavailable
 from .mastery.recompute import MasteryUnavailable, cancel_verification, schedule_verification
 
 log = logging.getLogger("starbuddy.learning")
 UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
-INTERNAL = "1.0.0"  # internal_contract 的键：/internal/v1 这一组路径（文件 info.version 已是 1.1.0）
+INTERNAL = "1.0.0"  # internal_contract 的键：/internal/v1 这一组路径（文件 info.version 已是 1.1.0）；键名是插件契约版本，不随本文件升版，
+                    # 改名牵涉 learning.contract 与各服务测试里的 internal_contract("1.0.0")，影响面不小，只加注释
 
 
 def _problem(e: IngestError, rid: str | None) -> JSONResponse:
@@ -130,6 +138,53 @@ def register(app: FastAPI, *, orchestrator_ok: Callable[[Request], bool], insigh
         if c.validate("VerificationCancelResult", out):
             raise RuntimeError("cancel response does not match the contract")
         return out
+
+    # ---------- 学情档案页（PR 4）----------
+    def profile_pages():
+        pages = state.get("profile")
+        if pages is None:
+            raise IngestError(409, "PROFILE_UNAVAILABLE", "profile page is not configured")
+        return pages
+
+    async def ensure(body: dict, caller: str) -> dict:
+        c = internal_contract(INTERNAL)
+        if c.validate("ProfilePageEnsureRequest", body):
+            raise IngestError(400, "INVALID_REQUEST", "request does not match the contract")
+        # 触发点由令牌决定：编排层只能是会话开始，洞察服务只能是周报
+        if body["trigger"] != {"orchestrator": "session_start", "insight": "weekly"}[caller]:
+            raise IngestError(403, "CALLER_MISMATCH", "trigger does not match the service token")
+        try:
+            r = await profile_pages().ensure(body["student_ref"], body["subject"], body["trigger"])
+        except ProfileUnavailable:
+            raise IngestError(409, "PROFILE_UNAVAILABLE", "profile page is not available for this subject") from None
+        out = {"subject": body["subject"], "outcome": r.outcome, "check_status": r.check_status,
+               "compiled_at": None if r.compiled_at is None else r.compiled_at.isoformat(), "compiler_version": COMPILER_VERSION}
+        if c.validate("ProfilePageEnsureResult", out):
+            raise RuntimeError("profile ensure response does not match the contract")
+        return out
+
+    async def read(body: dict) -> dict:
+        c = internal_contract(INTERNAL)
+        if c.validate("ProfilePageReadRequest", body):
+            raise IngestError(400, "INVALID_REQUEST", "request does not match the contract")
+        try:
+            out = await profile_pages().read(body["student_ref"], body["subject"])
+        except ProfileUnavailable:
+            raise IngestError(409, "PROFILE_UNAVAILABLE", "profile page is not available for this subject") from None
+        if c.validate("ProfilePage", out):
+            raise RuntimeError("profile page response does not match the contract")
+        return out
+
+    @app.post("/internal/v1/profile-page/ensure")
+    async def profile_ensure(request: Request) -> JSONResponse:
+        # 按令牌区分调用方：依赖 Settings.from_env 启动时“各令牌互不相同”的校验（同一令牌不会同时匹配两种身份）
+        caller = "orchestrator" if orchestrator_ok(request) else ("insight" if insight_ok(request) else None)
+        return await run("profile_page_ensure", request, lambda r: caller is not None,
+                         lambda b: ensure(b, caller or ""), lambda b: b.get("request_id"))
+
+    @app.post("/internal/v1/profile-page/read")
+    async def profile_read(request: Request) -> JSONResponse:
+        return await run("profile_page_read", request, orchestrator_ok, read, lambda b: b.get("request_id"))
 
     @app.post("/internal/v1/mastery/get")
     async def mastery_get(request: Request) -> JSONResponse:

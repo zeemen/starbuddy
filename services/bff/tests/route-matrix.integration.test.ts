@@ -100,6 +100,7 @@ export const SAMPLES: Record<string, Sample> = {
   'GET /students/{student_id}/exams/{exam_id}/prediction': none,
   'GET /students/{student_id}/exams/{exam_id}/reconciliation': none,
   'GET /students/{student_id}/weekly-report': none,
+  'GET /students/{student_id}/profile-pages/{subject}': none,
   'POST /students/{student_id}/exports': none,
   'POST /students/{student_id}/exports/{export_job_id}/download': b((ids) => ({ download_ref: ids.download_ref ?? `dl_${'0'.repeat(64)}` })),
   'GET /students/{student_id}/erasure': none,

@@ -4,6 +4,7 @@
 //   异议（dispute）：提出 → 洞察服务 insight.dispute；查看自己提出的异议与状态（0032 RLS：只读自己提出的，家长须有效绑定）。
 //   考试（reconcile）：录入考试安排（insight.submit_exam_plan）、按安排录成绩（insight.submit_exam_score）；读预测与对账卡。
 //   周报（weekly，冲刺 5-H）：读最近一周已生成的周报（0036 insight.weekly_report，按受众只读），每句在库里再核判断。
+//   学情档案页（profile，KGE-04 第二步 PR 4）：经 0037 陈述视图读引用（不含待办），按调用者身份再核判断，文字经 insight.explain。
 //   数据权利（data_rights，只给家长）：导出（0035 platform.export_student_data，BFF 暂存、一次性兑换下载）；
 //     删除申请 → 会话内二次确认 → 冷静期内撤回；查看状态与回执（回执只有表名与行数）。
 // 与其他路由同一套规矩：身份只来自会话；路径里的 student_id 只作查询条件，授权在库里（RLS、SECURITY DEFINER 函数），
@@ -13,7 +14,8 @@
 import { withAccount } from '../metering/db.ts';
 import { loadShellConfig, type ShellConfig } from '../shell/config.ts';
 import type { Audience } from '../shell/insight-client.ts';
-import { linkIdFor, templateRef } from '../shell/statements.ts';
+import { linkIdFor, resolveStatements, templateRef, type StatementJob } from '../shell/statements.ts';
+import { productOf } from './shell-routes.ts';
 import { DISPUTE_KINDS, IDEMPOTENCY_KEY, pickPrediction, pickReconciliation, type DisputeKind, type Who } from '../trust/clients.ts';
 import { MemoryExportStore, type ExportStore } from '../trust/exports.ts';
 import { forbiddenHits, lexicon } from '../trust/lexicon.ts';
@@ -315,6 +317,65 @@ const weeklyReport: Handler = async (ctx) => {
   });
 };
 
+// ---------------------------------------------------------------- 学情档案页（profile，KGE-04 第二步 PR 4）
+
+/** 0037 固定六节（与学习服务编译器、platform.valid_profile_sections 同一套编码） */
+export const PROFILE_SECTIONS = ['current_stage', 'mastered', 'working_on', 'root_cause', 'recent_progress', 'next_step'] as const;
+interface ProfileStatementRow { section: string; claim_id: string; template_key: string; template_version: number; claim_status: string }
+
+/**
+ * 学生、家长视图（第一步待人确认 #18 默认）：
+ *   1. 只经 platform.profile_page_statement_v 读陈述引用（BFF 读不到 sections：Agent 版待办与对本人不可见的引用都在里面）；
+ *      视图已按 can_read_student 与 claim_front_read 同一条件过滤，只给成立或假设、不含待办；
+ *   2. 再按调用者身份在 insight.claim 上重核一次（属于该学生、对当前受众可见、成立或假设、未过期、模板已审核），再过对外模板白名单，
+ *      模板键与版本也要对得上（视图属主绕过 RLS，这里兜底；模板退役的陈述因此不显示）；
+ *   3. 文字只取洞察服务 insight.explain 的 RenderedStatement（与壳的今日计划同一条路径：并发、整页时限、每会话限频），核对属于这条判断、实线。
+ * 不返回衔接语（视图里没有这一列，第二步 lessons 待人确认）、不返回待办、不返回检查状态；一句都不剩时 page 为 null。
+ */
+const profilePage: Handler = async (ctx) => {
+  const { deps } = ctx;
+  const s = ctx.session!;
+  const id = student(ctx);
+  const audience = audienceOf(ctx);
+  const cfg = shellConfig(deps);
+  const pre = await withAccount(deps.pool, s.accountId, async (c) => {
+    const q: Query = (sql, p) => c.query(sql, p);
+    if (!(await readable(q, id))) return null;
+    const product = await productOf(q, ctx.params['subject']!);
+    if (!product) return null;
+    const { rows: pages } = await q<{ compiled_at: Date }>(
+      'SELECT p.compiled_at FROM platform.profile_page p WHERE p.student_id = $1 AND p.subject = $2::platform.subject', [id, product]);
+    const { rows } = await q<ProfileStatementRow>(
+      `SELECT v.section, v.claim_id, v.template_key, v.template_version, v.claim_status FROM platform.profile_page_statement_v v
+        WHERE v.student_id = $1 AND v.subject = $2::platform.subject AND v.claim_status IN ('hypothesis', 'established')
+        ORDER BY v.section_ord, v.item_ord LIMIT 180`, [id, product]);
+    const shown = await visibleClaims(q, id, audience, rows.map((r) => r.claim_id), ['hypothesis', 'established']);
+    return { page: pages[0] ?? null, rows, shown, linkId: audience === 'guardian' ? await linkIdFor(q, id) : undefined };
+  });
+  if (!pre || (audience === 'guardian' && !pre.linkId)) return problem(P.NOT_FOUND);
+  const subject = ctx.params['subject']!;
+  const none = json(200, { student_id: id, subject, page: null });
+  if (!pre.page) return none;
+  const kept = pre.rows.filter((r) => {
+    const ref = templateRef(r.template_key, r.template_version);
+    return (PROFILE_SECTIONS as readonly string[]).includes(r.section) && pre.shown.get(r.claim_id) === ref && cfg.externalTemplates.has(ref);
+  });
+  const jobs: StatementJob[] = kept.map((r, i) => ({ key: i, claims: [{ id: r.claim_id, target_id: '', template_key: r.template_key,
+    template_version: r.template_version, status: r.claim_status as 'hypothesis' | 'established', basis_id: null }] }));
+  const texts = await resolveStatements(deps, cfg, deps.shell?.insight, s.token,
+    { student: id, audience, actor: s.accountId, ...(pre.linkId ? { linkId: pre.linkId } : {}) }, jobs);
+  const dropped = pre.rows.length - texts.size;
+  if (dropped > 0) ctx.note('dropped_statements', String(dropped));
+  const sections = PROFILE_SECTIONS.map((key) => ({ key, statements: kept.flatMap((r, i) => {
+    const st = texts.get(i);
+    if (r.section !== key || !st) return [];
+    return [{ claim_id: st.claim_id, text: st.text, confidence_band: st.confidence_band,
+              ...(r.claim_status === 'hypothesis' ? { label: 'preliminary' } : {}) }];
+  }) })).filter((x) => x.statements.length > 0);
+  if (sections.length === 0) return none;
+  return json(200, { student_id: id, subject, page: { compiled_at: pre.page.compiled_at.toISOString(), sections } });
+};
+
 // ---------------------------------------------------------------- 导出与删除（data_rights，只给家长）
 
 const exportStores = new WeakMap<ShellDeps, ExportStore>();
@@ -495,6 +556,7 @@ export const TRUST_ROUTES: readonly Route[] = [
   read('reconcile', `${S}/exams/{exam_id}/prediction`, 'session', prediction, [{ bucket: 'exam_view.session.minute', dim: 'session' }], true),
   read('reconcile', `${S}/exams/{exam_id}/reconciliation`, 'session', reconciliation, [{ bucket: 'exam_view.session.minute', dim: 'session' }], true),
   read('weekly', `${S}/weekly-report`, 'session', weeklyReport, [{ bucket: 'trust_read.session.minute', dim: 'session' }]),
+  read('profile', `${S}/profile-pages/{subject}`, 'session', profilePage, [{ bucket: 'trust_read.session.minute', dim: 'session' }], true),
   write('data_rights', `${S}/exports`, 'guardian', false, exportCreate, [{ bucket: 'export.account.hour', dim: 'account' }], true),
   write('data_rights', `${S}/exports/{export_job_id}/download`, 'guardian', true, exportDownload, [{ bucket: 'export_download.account.hour', dim: 'account' }]),
   read('data_rights', `${S}/erasure`, 'guardian', erasureList, [{ bucket: 'trust_read.session.minute', dim: 'session' }]),

@@ -56,7 +56,8 @@ test('路由表不变量：改变状态的都开 CSRF；公开的只有登录两
   }
   assert.deepEqual(ALL.filter((r) => r.auth === 'public').map((r) => r.path).sort(), ['/auth/otp/request', '/auth/otp/verify']);
   for (const r of TRUST_ROUTES) {
-    assert.ok(r.feature === 'dispute' || r.feature === 'reconcile' || r.feature === 'weekly' || r.feature === 'data_rights', `${r.method} ${r.path} 挂在开关上`);
+    assert.ok(r.feature === 'dispute' || r.feature === 'reconcile' || r.feature === 'weekly' || r.feature === 'data_rights' || r.feature === 'profile',
+              `${r.method} ${r.path} 挂在开关上`);
   }
   const keys = ALL.map((r) => `${r.method} ${r.path}`);
   assert.equal(new Set(keys).size, keys.length, '没有重复路由');

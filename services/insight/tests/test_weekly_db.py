@@ -225,3 +225,74 @@ async def test_guard_rejection_is_recorded_and_the_run_continues(insightdb, monk
                                                                             ("guardian", "generated", ())]
     finally:
         await pool.close()
+
+
+class FakeProfilePages:
+    """记录周报前的档案页触发（学生、学科、触发时周报是否已写）；fail = True 时每次抛出（模拟学习服务不可用）"""
+
+    def __init__(self, db, fail: bool = False) -> None:
+        self.db, self.fail, self.calls = db, fail, []
+
+    async def ensure(self, student: str, subject: str) -> bool:
+        written = self.db.psql(f"SELECT count(*) FROM insight.weekly_report WHERE student_id = '{student}'").strip()
+        self.calls.append((student, subject, written))
+        if self.fail:
+            raise RuntimeError("learning service unavailable")
+        return True
+
+
+async def test_weekly_triggers_profile_page_before_generation_and_failure_does_not_block(insightdb):
+    """KGE-04 第二步 PR 4（待人确认 #6 默认）：周报生成前按周报可见学科调 ensure 编译学情档案页；触发失败不阻塞周报"""
+    for fail in (False, True):
+        reset(insightdb)
+        pool = await create_pool(**insightdb.connect_kwargs(APP_ROLE))
+        store = InsightStore(pool)
+        try:
+            c = await su(insightdb)
+            try:
+                now = await c.fetchval("SELECT now()")
+                today = await c.fetchval("SELECT (now() AT TIME ZONE 'Asia/Shanghai')::date")
+            finally:
+                await c.close()
+            week = week_of(today)[0] - timedelta(days=7)
+            await store.sync_mastery_claims(S1, [row(0, NODE_A, "execute", (0, 1), now)], POLICY)
+            pages = FakeProfilePages(insightdb, fail=fail)
+            run = await jobs.weekly_reports(store, week, POLICY, WEEKLY, CFG, students=[S1], env="test", profile_pages=pages)
+            assert pages.calls == [(S1, s, "0") for s in sorted(POLICY.visible_subjects) if s != "echo"]   # 先编档案页，再写周报
+            assert [(o.audience, o.status) for o in run.outcomes] == [("student", "generated"), ("guardian", "generated")]
+            n = len(pages.calls)
+            assert dict(run.profile_pages) == ({"ok": 0, "failed": n} if fail else {"ok": n, "failed": 0})
+        finally:
+            await pool.close()
+
+
+async def test_learning_profile_pages_client_failures_are_counted_not_raised():
+    import asyncio
+
+    import httpx
+
+    from insight.profile_pages import LearningProfilePages, learning_profile_pages
+
+    seen = []
+
+    def ok(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        seen.append((request.url.path, request.headers["authorization"], body["trigger"], body["subject"]))
+        return httpx.Response(200, json={"subject": body["subject"], "outcome": "compiled", "check_status": "passed",
+                                         "compiled_at": "2026-10-02T08:00:00+00:00", "compiler_version": "kge-profile@0.1.0"})
+
+    c = LearningProfilePages("http://learning.test", "t" * 40, transport=httpx.MockTransport(ok))
+    assert await c.ensure(S1, "aya") is True
+    assert seen == [("/internal/v1/profile-page/ensure", "Bearer " + "t" * 40, "weekly", "aya")]
+    assert await c.ensure(S1, "echo") is False and len(seen) == 1                       # 英语搁置：不调
+    bad = LearningProfilePages("http://learning.test", "t" * 40, transport=httpx.MockTransport(lambda r: httpx.Response(409)))
+    assert await bad.ensure(S1, "aya") is False and bad.counts == {"ok": 0, "failed": 1}
+
+    async def slow(request: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(5)
+        return httpx.Response(200, json={})
+
+    timeout = LearningProfilePages("http://learning.test", "t" * 40, transport=httpx.MockTransport(slow), total_timeout=0.2)
+    assert await timeout.ensure(S1, "aya") is False and timeout.counts["failed"] == 1
+    assert learning_profile_pages(None) is None
+    assert learning_profile_pages(("http://learning.test", "t" * 40)).base_url == "http://learning.test"

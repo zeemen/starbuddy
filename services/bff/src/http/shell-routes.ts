@@ -94,7 +94,7 @@ const enrollments: Handler = async (ctx) => {
   });
 };
 
-async function productOf(q: Query, code: string): Promise<string | null> {
+export async function productOf(q: Query, code: string): Promise<string | null> {
   const { rows } = await q<{ product: string }>(
     `SELECT product::text AS product FROM platform.subject_catalog WHERE code = $1 AND status <> 'planned' AND product IS NOT NULL`, [code]);
   return rows[0]?.product ?? null;

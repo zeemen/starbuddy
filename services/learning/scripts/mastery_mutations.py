@@ -26,8 +26,9 @@ CFG, EV, G, BKT, W, CON = ("learning/mastery/config.py", "learning/mastery/evide
                            "learning/mastery/bkt.py", "learning/mastery/write.py", "learning/mastery/consistency.py")
 ST, R, SV, JB = "learning/mastery/store.py", "learning/mastery/recompute.py", "learning/service.py", "learning/jobs.py"
 API, ROUTES, APP = "learning/mastery/api.py", "learning/mastery_routes.py", "learning/app.py"
-DB_TESTS = ["tests/test_mastery_store.py", "tests/test_mastery_db.py", "tests/test_mastery_api.py"]
-PURE_EXCLUDE = {"test_mastery_db.py", "test_mastery_api.py"}  # 库上测试在第二组跑
+PF, RD = "learning/mastery/profile.py", "learning/mastery/render.py"
+DB_TESTS = ["tests/test_mastery_store.py", "tests/test_mastery_db.py", "tests/test_mastery_api.py", "tests/test_mastery_profile_db.py"]
+PURE_EXCLUDE = {"test_mastery_db.py", "test_mastery_api.py", "test_mastery_profile_db.py"}  # 库上测试在第二组跑
 
 # 名字 → [(文件, 原文, 替换为), …]
 MUTATIONS: dict[str, list[tuple[str, str, str]]] = {
@@ -103,6 +104,37 @@ MUTATIONS: dict[str, list[tuple[str, str, str]]] = {
     "待验证判断可作陈述": [(CON, 'VISIBLE_STATUSES = ("established", "hypothesis")', 'VISIBLE_STATUSES = ("established", "hypothesis", "to_verify")')],
     "程度词不遮掉（尚不稳定误判为结论）": [(CON, 'text = text.replace(w, "\\u0000" * len(w))', "pass")],
     "阻断后仍发布衔接语": [(CON, 'Section(s.key, "", tuple(', "Section(s.key, s.connective, tuple(")],
+    # 学情档案页编译器（KGE-04 第二步 PR 4）
+    "档案页把待验证判断作陈述": [(PF, "        if r.status == TODO_STATUS:\n            if len(todo[sec])", "        if False:\n            if len(todo[sec])")],
+    "档案页编译不跑一致性检查": [(PF, "page = consistency.finalize(check_secs, views, cfg.check, forbidden)",
+                         'page = consistency.CompiledPage(tuple(check_secs), "passed")')],
+    "档案页读取不重核状态": [(PF, "if (r is not None and r.status in STATEMENT_STATUSES and r.template_key == ref.get(\"template_key\")",
+                       "if (r is not None and r.template_key == ref.get(\"template_key\")")],
+    "档案页读取不核对模板版本": [(PF, "                    and r.template_version == ref.get(\"template_version\") and r.template_key in cfg.sections):",
+                         "                    and r.template_key in cfg.sections):")],
+    "档案页陈述消失仍留衔接语": [(PF, '"connective": conn if kept and not dropped else ""', '"connective": conn if kept else ""')],
+    "档案页待办不重核待验证": [(PF, "if (r is not None and r.status == TODO_STATUS and r.template_key",
+                        "if (r is not None and r.template_key")],
+    "档案页摘要不含修订时间": [(PF, 'f"{r.claim_id}|{r.updated_at.isoformat()}|{r.status}', 'f"{r.claim_id}|{r.status}')],
+    "档案页摘要不含状态": [(PF, '|{r.status}|{r.template_key}@', '|{r.template_key}@')],
+    "阻断片段存禁用推断命中词": [(PF, 'if v.code == "forbidden_inference" or _FRAGMENT_DIGITS', "if _FRAGMENT_DIGITS")],
+    "阻断片段存数字": [(PF, 'if v.code == "forbidden_inference" or _FRAGMENT_DIGITS.search(v.fragment):',
+                  'if v.code == "forbidden_inference":')],
+    "衔接语不核对人审短语表": [(PF, "_need(consistency.normalize(phrase) in check.connective_phrases,", "_need(True,")],
+    "合成档案页配置可在非 test 环境加载": [(PF, "if env != TEST_ENV and not signed:", "if False:")],
+    "配置外模板也进页": [(PF, "keep = [r for r in rows if r.template_key in cfg.sections and", "keep = [r for r in rows if r.template_key and")],
+    "渲染不过禁用推断": [(RD, "if not text or len(text) > MAX_TEXT or forbidden(text):", "if not text or len(text) > MAX_TEXT:")],
+    "渲染收布尔值": [(RD, "    if isinstance(v, bool):\n        return None\n", "")],
+    # 审查修订：渲染规则只剩学习侧一份（洞察服务复用），规则的变异都在这里
+    "渲染值不限编码": [(RD, "if isinstance(v, str) and CODE.fullmatch(v):", "if isinstance(v, str):")],
+    "渲染缺变量也出": [(RD, 'if missing or "{" in text or "}" in text:', 'if "{" in text or "}" in text:')],
+    "渲染不限长度": [(RD, "if not text or len(text) > MAX_TEXT or forbidden(text):", "if not text or forbidden(text):")],
+    "渲染不过滤非有限浮点数": [(RD, 'return f"{v:.2f}" if math.isfinite(v) else None', 'return f"{v:.2f}"')],
+    "衔接短语不过禁用推断词表": [(PF, "_need(not forbidden(phrase),", "_need(True,")],
+    "档案页配置指纹含注释字段": [(PF, 'if not (isinstance(k, str) and k.startswith("$"))}', "if True}")],
+    "重算路径引用档案页编译（作答触发编译）": [(R, "from .write import InvariantViolation, precommit_check, write_decision\n",
+                                  "from .write import InvariantViolation, precommit_check, write_decision\n"
+                                  "from .profile import ProfilePages  # noqa: F401 变异\n")],
 }
 
 
@@ -161,6 +193,21 @@ DB_MUTATIONS: dict[str, list[tuple[str, str, str]]] = {
                                  "lit = False")],
     "证据链权重不按重放强度": [(API, "for eid, c in rep.counted:\n                        cls[eid] = c\n                    strength.update(rep.strengths)",
                             "for eid, c in rep.counted:\n                        cls[eid] = c")],
+    # PR 4：学情档案页（惰性编译、读取重核、阻断记录、接口鉴权）
+    "档案页去掉摘要比较（每次 ensure 都重编）": [(PF, 'if page is not None and page["claims_digest"] == digest:', "if False:")],
+    "档案页读取不按现状判断是否过时（过时页仍当已编译版本）": [
+        (PF, 'if page is not None and page["claims_digest"] == claims_digest(cands, self.cfg):', "if page is not None:")],
+    "档案页阻断不写阻断记录": [(PF, "            if compiled.violations:\n                await conn.execute(",
+                         "            if False:\n                await conn.execute(")],
+    "档案页去掉 advisory lock": [(PF, 'await conn.execute("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", f"platform.profile_page:',
+                              'await conn.execute("SELECT $1::text", f"platform.profile_page:')],
+    "档案页没有判断也写空页": [(PF, "if page is None and not cands:", "if False:")],
+    "已执行删除的学生也写档案页": [(PF, 'if await conn.fetchval("SELECT erased_at IS NOT NULL FROM platform.student_profile WHERE id = $1::uuid", student):',
+                             "if False:")],
+    "档案页 ensure 不核对触发点与令牌": [(ROUTES, 'if body["trigger"] != {"orchestrator": "session_start", "insight": "weekly"}[caller]:', "if False:")],
+    "档案页 Agent 版（含待办）也给洞察服务": [(ROUTES, 'return await run("profile_page_read", request, orchestrator_ok, read,',
+                                   'return await run("profile_page_read", request, lambda r: orchestrator_ok(r) or insight_ok(r), read,')],
+    "档案页读判断不限本学科": [(PF, "AND (c.subject = $2::platform.subject OR c.subject IS NULL)", "AND $2::text IS NOT NULL")],
     "旧记录不指向新记录（更正链断开）": [(R, "SET is_current = false, superseded_by = $2::uuid\n"
                                   "                WHERE id = $1::uuid AND is_current AND student_id = $3::uuid",
                                "SET is_current = is_current\n"

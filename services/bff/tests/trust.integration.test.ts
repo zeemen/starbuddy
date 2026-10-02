@@ -14,6 +14,7 @@ import { P } from '../src/http/problems.ts';
 import type { Route } from '../src/http/routes.ts';
 import { TRUST_ROUTES } from '../src/http/trust-routes.ts';
 import { loadShellConfig, type ShellConfig } from '../src/shell/config.ts';
+import type { ExplainRequest, InsightClient, RenderedStatement } from '../src/shell/insight-client.ts';
 import type { DisputeClient, DisputeOutcome, DisputeRequest, ExamViewClient, ExamViewRequest } from '../src/trust/clients.ts';
 import { MemoryExportStore } from '../src/trust/exports.ts';
 import { TRUST_FEATURES } from '../src/trust/features.ts';
@@ -50,8 +51,25 @@ class FakeExams implements ExamViewClient {
   async prediction(req: ExamViewRequest) { this.calls.push(req); return this.prediction_; }
   async reconciliation(req: ExamViewRequest) { this.calls.push(req); return this.card; }
 }
+/** 假 insight.explain（学情档案页取文字用）：按判断 ID 给实线陈述；dashed 中的判断给虚线（BFF 应丢弃） */
+class FakeInsight implements InsightClient {
+  calls: ExplainRequest[] = [];
+  dashed = new Set<string>();
+  async explain(req: ExplainRequest): Promise<RenderedStatement | null> {
+    this.calls.push(req);
+    const { rows } = await h.su.query<{ template_key: string; template_version: number; status: string }>(
+      'SELECT template_key, template_version, status::text AS status FROM insight.claim WHERE id = $1', [req.claimId]);
+    const r = rows[0];
+    if (!r) return null;
+    const dashed = this.dashed.has(req.claimId);
+    return { claim_id: req.claimId, template_key: r.template_key, template_version: r.template_version,
+             status: (dashed ? 'to_verify' : r.status) as RenderedStatement['status'], display: dashed ? 'dashed' : 'solid',
+             text: `synthetic statement ${req.claimId.slice(0, 8)}`, confidence_band: 'moderate' };
+  }
+}
 const disputes = new FakeDispute();
 const exams = new FakeExams();
+const insight = new FakeInsight();
 const cfg: ShellConfig = { ...loadShellConfig(), externalTemplates: new Set([`${TPL}@1`]) };
 
 // ---------------------------------------------------------------- 合成家庭
@@ -143,7 +161,7 @@ before(async () => {
   await h.su.query(`INSERT INTO platform.account (id, kind) VALUES ($1, 'guardian'), ($2, 'guardian')`, [coGuardian, unlinked]);
   await h.su.query(`INSERT INTO platform.guardian_student_link (guardian_account_id, student_id, granted_via) VALUES ($1, $2, 'household_creator')`,
                    [coGuardian, F.kid.id]);
-  shell = await startShell(h.bff, h.su, { log: (l) => logs.push(l), shell: { config: cfg }, now: () => new Date(Date.now() + offset),
+  shell = await startShell(h.bff, h.su, { log: (l) => logs.push(l), shell: { config: cfg, insight }, now: () => new Date(Date.now() + offset),
                                           trust: { features: new Set(TRUST_FEATURES), dispute: disputes, exams, exports: store } });
   off = await startShell(h.bff, h.su, { log: () => undefined, shell: { config: cfg } });
 });
@@ -158,7 +176,7 @@ after(async () => {
 // ---------------------------------------------------------------- 开关与路由表
 
 /** 按路由模板生成路径：student_id 取给定学生，其他参数取不存在的 UUID */
-const pathFor = (r: Route, studentId: string) => r.path.replace('{student_id}', studentId).replace(/\{[a-z_]+\}/g, MISSING);
+const pathFor = (r: Route, studentId: string) => r.path.replace('{student_id}', studentId).replace('{subject}', 'math').replace(/\{[a-z_]+\}/g, MISSING);
 /** 能通过请求体校验的合成请求体（授权矩阵要测到库里的授权，而不是停在 422） */
 const bodyFor = (r: Route): unknown => {
   if (!r.body) return undefined;
@@ -229,6 +247,7 @@ test('授权矩阵（从路由表生成）：未登录 401；学生会话调家�
          `非 UUID ${r.method} ${r.path}`);
   }
   assert.equal(disputes.calls.length, 0, '没有一次越权请求到达洞察服务');
+  assert.equal(insight.calls.length, 0, '档案页：越权请求不调 insight.explain');
   assert.equal(exams.calls.length, 0);
   // 矩阵从路由表生成，所以另外写死“谁能用”：导出与删除只给家长，其余学生本人与家长都能用
   for (const r of TRUST_ROUTES) assert.equal(r.auth, r.feature === 'data_rights' ? 'guardian' : 'session', `${r.method} ${r.path}`);
@@ -622,12 +641,15 @@ test('读路由限流：GET 异议列表、删除状态与周报按会话每分�
   shell.forget(F.guardian);
   shell.forget(F.kid.account);
   shell.forget(coGuardian);
+  shell.forget(O.kid.account);
   const g = await sess(F.guardian);
   const st = await sess(F.kid.account);
   const co = await sess(coGuardian);
+  const ost = await sess(O.kid.account);
   shell.config.rate_limits[bucket] = { window_seconds: 60, limit: 1 };
   try {
-    for (const [who, path] of [[st, `/students/${F.kid.id}/disputes`], [g, `/students/${F.kid.id}/erasure`], [co, `/students/${F.kid.id}/weekly-report`]] as const) {
+    for (const [who, path] of [[st, `/students/${F.kid.id}/disputes`], [g, `/students/${F.kid.id}/erasure`], [co, `/students/${F.kid.id}/weekly-report`],
+                               [ost, `/students/${O.kid.id}/profile-pages/math`]] as const) {
       assert.equal((await callAs(shell.base, 'GET', path, who)).status, 200, path);
       assert.equal((await callAs(shell.base, 'GET', path, who)).text, P.TOO_MANY, path);
     }
@@ -771,4 +793,94 @@ test('周报：生成之后被修订过的判断（修订标记对不上）句�
   // 正常修订（守卫照常写 updated_at 与历史）：判断在生成之后变了，快照里的句子不再显示
   await h.su.query(`UPDATE insight.claim SET confidence = 0.9, change_reason = 'revised' WHERE id = $1`, [b]);
   assert.deepEqual(await ids(), [a]);
+});
+
+// ---------------------------------------------------------------- 学情档案页（profile，KGE-04 第二步 PR 4）
+
+const ref = (claimId: string, tpl = TPL) => ({ claim_id: claimId, template_key: tpl, template_version: 1 });
+/** 档案页（复制模式直接写行，模拟学习服务编译的结果；只在一次性测试库里造数据）：sections = { 节: [陈述, 待办] } */
+async function profileRow(kid: Kid, sections: Record<string, [object[], object[]]>): Promise<void> {
+  const c = await h.su.connect();
+  try {
+    await c.query('BEGIN');
+    await c.query('SET LOCAL session_replication_role = replica');
+    await c.query(
+      `INSERT INTO platform.profile_page (student_id, subject, map_version_id, sections, claims_digest, compiler_version, check_status)
+       VALUES ($1, 'aya', gen_random_uuid(), $2::jsonb, repeat('a', 64), 'kge-profile@0.1.0', 'passed')
+       ON CONFLICT (student_id, subject) DO UPDATE SET sections = EXCLUDED.sections`,
+      [kid.id, JSON.stringify(Object.entries(sections).map(([key, [statements, todo]]) => ({ key, connective: '另外', statements, todo })))]);
+    await c.query('COMMIT');
+  } finally {
+    c.release(true);
+  }
+}
+const profileOf = (account: string, kid: Kid, code = 'math') => get(account, `/students/${kid.id}/profile-pages/${code}`);
+const shownIds = (body: any) => Object.fromEntries((body.page?.sections ?? []).map((s: any) => [s.key, s.statements.map((x: any) => x.claim_id)]));
+
+test('档案页：学生、家长各看对自己可见的成立或假设陈述；待验证（Agent 待办）从不出现；文字来自 insight.explain；不返回衔接语与待办', { skip: !HAS_DB }, async () => {
+  const W = await family();
+  const a = await claimW(W.kid);
+  const b = await claimW(W.kid, { status: 'hypothesis' });
+  const onlyStudent = await claimW(W.kid, { visibility: ['agent', 'student'] });
+  const onlyGuardian = await claimW(W.kid, { visibility: ['agent', 'guardian'] });
+  const hidden = await claimW(W.kid, { template: TPL_HIDDEN });
+  const todo = await claimW(W.kid, { status: 'to_verify' });
+  await profileRow(W.kid, { mastered: [[ref(a), ref(onlyStudent), ref(onlyGuardian), ref(hidden, TPL_HIDDEN)], []],
+                            working_on: [[ref(b)], [ref(todo)]] });
+  const s = await profileOf(W.kid.account, W.kid);
+  assert.equal(s.status, 200, s.text);
+  assert.equal(s.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(shownIds(s.body), { mastered: [a, onlyStudent], working_on: [b] }, '学生：可见范围含 student、白名单内');
+  assert.deepEqual(s.body.page.sections[1].statements[0], { claim_id: b, text: `synthetic statement ${b.slice(0, 8)}`, confidence_band: 'moderate',
+                                                            label: 'preliminary' }, '假设标“初步判断”；文字来自洞察服务');
+  assert.deepEqual(Object.keys(s.body.page).sort(), ['compiled_at', 'sections']);
+  assert.ok(!s.text.includes(todo) && !s.text.includes('connective') && !s.text.includes('todo') && !s.text.includes(TPL), '不含待办、衔接语与模板键');
+  const g = await profileOf(W.guardian, W.kid);
+  assert.deepEqual(shownIds(g.body), { mastered: [a, onlyGuardian], working_on: [b] }, '家长：可见范围含 guardian');
+  assert.ok(!g.text.includes(todo));
+  assert.ok(insight.calls.every((x) => x.claimId !== todo && x.claimId !== hidden), '待办与白名单外的判断不调 insight.explain');
+  // 另一户、未绑定、英语与不认识的学科码：同一个 404；没有页：page 为 null
+  for (const x of [await profileOf(O.guardian, W.kid), await profileOf(unlinked, W.kid), await profileOf(W.kid.account, W.kid, 'english'),
+                   await profileOf(W.kid.account, W.kid, 'xyz')]) {
+    assert.equal(x.status, 404);
+    assert.equal(x.text, P.NOT_FOUND);
+  }
+  assert.deepEqual((await profileOf(O.kid.account, O.kid)).body, { student_id: O.kid.id, subject: 'math', page: null });
+  // 兄妹（同一家庭的另一个孩子）读不到；撤销绑定后的家长读不到：与不存在同一个 404（规则 5）
+  const sib = { id: randomUUID(), account: randomUUID() };
+  const exGuardian = randomUUID();
+  await h.su.query(`INSERT INTO platform.account (id, kind) VALUES ($1, 'student'), ($2, 'guardian')`, [sib.account, exGuardian]);
+  await h.su.query(`INSERT INTO platform.student_profile (id, account_id, household_id, grade, region) VALUES ($1, $2, $3, 7, 'nanjing')`,
+                   [sib.id, sib.account, W.household]);
+  await relink(W.guardian, sib.id);  // 兄妹也绑定同一位家长（学生模式要求有有效绑定家长）
+  await relink(exGuardian, W.kid.id);
+  assert.equal((await profileOf(exGuardian, W.kid)).status, 200, '绑定有效时第二位家长读得到');
+  await h.su.query(`UPDATE platform.guardian_student_link SET status = 'revoked', revoked_at = now() WHERE guardian_account_id = $1 AND student_id = $2`,
+                   [exGuardian, W.kid.id]);
+  for (const x of [await profileOf(sib.account, W.kid), await profileOf(exGuardian, W.kid)]) {
+    assert.equal(x.status, 404);
+    assert.equal(x.text, P.NOT_FOUND);
+  }
+});
+
+test('档案页：所引判断被推翻、撤回、过期、转待验证，或洞察服务给的不是实线陈述，读取时消失；一句不剩时 page 为 null', { skip: !HAS_DB }, async () => {
+  const W = await family();
+  const [a, b, c, d, e] = [await claimW(W.kid), await claimW(W.kid), await claimW(W.kid), await claimW(W.kid), await claimW(W.kid)];
+  await profileRow(W.kid, { mastered: [[ref(a), ref(b), ref(c), ref(d), ref(e)], []] });
+  const ids = async () => shownIds((await profileOf(W.kid.account, W.kid)).body)['mastered'] ?? [];
+  assert.deepEqual(await ids(), [a, b, c, d, e]);
+  await h.su.query(`UPDATE insight.claim SET status = 'to_verify', change_reason = 'dispute' WHERE id = $1`, [a]);
+  assert.deepEqual(await ids(), [b, c, d, e], '转待验证：不再作陈述');
+  await h.su.query(`UPDATE insight.claim SET status = 'refuted', change_reason = 'verification_refuted' WHERE id = $1`, [a]);
+  await h.su.query(`UPDATE insight.claim SET status = 'withdrawn', change_reason = 'fact_corrected' WHERE id = $1`, [b]);
+  assert.deepEqual(await ids(), [c, d, e], '推翻、撤回：消失');
+  await h.su.query(`UPDATE insight.claim SET expires_at = now() + interval '1 second', change_reason = 'revised' WHERE id = $1`, [c]);
+  await new Promise((r) => setTimeout(r, 1100));
+  assert.deepEqual(await ids(), [d, e], '过期：消失');
+  insight.dashed.add(d);
+  logs.length = 0;
+  assert.deepEqual(await ids(), [e], '洞察服务给的是虚线（待验证）：不显示');
+  assert.ok(logs.some((l) => l['dropped_statements'] === '1'));
+  await h.su.query(`UPDATE insight.claim SET status = 'withdrawn', change_reason = 'fact_corrected' WHERE id = $1`, [e]);
+  assert.deepEqual((await profileOf(W.kid.account, W.kid)).body.page, null);
 });

@@ -1,6 +1,6 @@
 # BFF ↔ 统一壳前端：信任界面的读写接口（SIE-03 PR③，specs/sie-03-dispute-reconcile/spec.md 范围 3；页面随冲刺 5-H）。
 # 服务内部接口，不是学科插件契约，不放 packages/contracts（与 shell.v0.yaml 同一做法）；路由在 services/bff/src/http/trust-routes.ts。
-# 每条路由挂在一个功能开关上（STARBUDDY_TRUST_UI：dispute / reconcile / weekly / data_rights，只在 dev / test 可开），默认全关：
+# 每条路由挂在一个功能开关上（STARBUDDY_TRUST_UI：dispute / reconcile / weekly / data_rights / profile，只在 dev / test 可开），默认全关：
 # 关闭时这些路径不注册，与表外路径同一个 404（4-H“信任界面预留”验收继续成立）。
 # 会话、CSRF、Origin、限流、no-store、错误体与 shell.v0.yaml 相同；限流阈值在 services/bff/config/auth.json。
 # 禁用推断：BFF 不生成任何关于学生的文字；异议类型、结论、偏差方向、调整只传编码（显示文案属 5-H 模板，必停）；
@@ -186,6 +186,68 @@ paths:
                                         subject: { enum: [aya, zhixing, wenli] }
                                         practice_minutes: { type: integer, minimum: 0, maximum: 10080 }
                                         attempts: { type: integer, minimum: 0, maximum: 99999 }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/profile-pages/{subject}:
+    get:
+      x-sb-auth: session
+      x-sb-rate-buckets: [trust_read.session.minute]
+      operationId: getProfilePage
+      description: >
+        开关 profile（KGE-04 第二步 PR 4，第一步待人确认 #18 默认）。学情档案页的学生 / 家长视图：只经 0037 的 platform.profile_page_statement_v
+        读陈述引用（已按 can_read_student 与 claim_front_read 同一条件过滤，只有成立或假设、不含 Agent 版待办），BFF 再按调用者身份在
+        insight.claim 上重核（属于该学生、对当前受众可见、成立或假设、未过期、模板已审核且在对外白名单里、模板键与版本对得上），
+        文字只取洞察服务 insight.explain 的 RenderedStatement（实线、属于这条判断；整页时限与每会话限频同今日计划）。
+        学生本人看可见范围含 student 的判断，有效绑定家长看含 guardian 的。不返回衔接语（视图里没有这一列，待人确认）、待办、检查状态与模板键；
+        节只有编码（固定六节），节标题由前端文案（人写人审）提供。没有页或一句都不剩时 page 为 null。学科是学科码（如 math），英语与不认识的码 404。
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - { name: subject, in: path, required: true, description: 学科码（platform.subject_catalog.code）, schema: { type: string, pattern: '^[a-z]{2,16}$' } }
+        - $ref: '#/components/parameters/Session'
+      responses:
+        '200':
+          description: 学情档案页的陈述（或 null）
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [student_id, subject, page]
+                properties:
+                  student_id: { type: string, format: uuid }
+                  subject: { type: string, pattern: '^[a-z]{2,16}$' }
+                  page:
+                    oneOf:
+                      - type: 'null'
+                      - type: object
+                        additionalProperties: false
+                        required: [compiled_at, sections]
+                        properties:
+                          compiled_at: { type: string, format: date-time }
+                          sections:
+                            type: array
+                            minItems: 1
+                            maxItems: 6
+                            items:
+                              type: object
+                              additionalProperties: false
+                              required: [key, statements]
+                              properties:
+                                key: { enum: [current_stage, mastered, working_on, root_cause, recent_progress, next_step] }
+                                statements:
+                                  type: array
+                                  minItems: 1
+                                  maxItems: 30
+                                  items:
+                                    type: object
+                                    additionalProperties: false
+                                    required: [claim_id, text, confidence_band]
+                                    properties:
+                                      claim_id: { type: string, format: uuid }
+                                      text: { type: string, minLength: 1, maxLength: 300 }
+                                      confidence_band: { enum: [few_evidence, moderate, strong] }
+                                      label: { enum: [preliminary], description: 判断当前是假设（文案属模板） }
         '401': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
         '429': { $ref: '#/components/responses/Problem' }

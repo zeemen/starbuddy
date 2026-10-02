@@ -27,6 +27,7 @@ from .diagnosis import api as diagnosis_api
 from .diagnosis.engine import Params as DiagnosisParams
 from .errors import IngestError
 from .mastery import load_config
+from .mastery.profile import ProfilePages, load_profile_config
 from .mastery.recompute import MasteryEngine
 from .model_router import ModelRouter
 from .model_router.config import load_for_deployment
@@ -116,9 +117,12 @@ def create_app(
     model_router: ModelRouter | None = None,
     diagnosis_params: DiagnosisParams | None = None,
     mastery: MasteryEngine | None = None,
+    profile: ProfilePages | None = None,
 ) -> FastAPI:
-    """pool、transport、model_router、diagnosis_params、mastery 供测试注入；不传时按配置创建。"""
+    """pool、transport、model_router、diagnosis_params、mastery、profile 供测试注入；不传时按配置创建。"""
     state: dict = {"router": model_router}
+    # 学情档案页配置（KGE-04 第二步 PR 4）启动即加载与校验：未签字或合成配置出现在非 test 环境、短语不在衔接短语表里，一律拒绝启动
+    profile_cfg = load_profile_config(settings.profile_page_config, env=settings.env) if settings.profile_page_config else None
     # 掌握配置启动即加载与校验（KGE-04 第二步）：不合法、学科对不上、未签字或合成配置出现在非 test 环境，一律拒绝启动
     configs = {}
     for subject, path in sorted(settings.mastery_configs.items()):
@@ -152,6 +156,8 @@ def create_app(
                 raise RuntimeError("platform.retest_task is missing: run migration 0037 before enabling mastery")
             engine = MasteryEngine(p, configs)
         state["mastery"] = engine
+        # 档案页：不调模型（第一步 #19）；只由会话开始（编排层）与周报（洞察服务）经 ensure 触发，作答与重算不触发
+        state["profile"] = profile if profile is not None else (ProfilePages(p, profile_cfg) if profile_cfg is not None else None)
         state["mastery_configs"] = dict(engine.configs) if engine is not None else configs
         state["service"] = IngestService(settings, p, client, mastery=engine)
         state["plan"] = (p, client)
@@ -212,7 +218,7 @@ def create_app(
 
     diagnosis_api.register(app, lambda r: _bearer_ok(r.headers.get("authorization"), settings.service_credential), state)
     # learning-internal 1.1.0（KGE-04 第二步 PR 3）：掌握读取只认编排层令牌；验证任务与撤销只认洞察服务令牌（未配置即一律 401）；
-    # BFF 服务令牌对这四个接口一律 401
+    # BFF 服务令牌对这四个接口一律 401；档案页 ensure 认编排层（会话开始）与洞察服务（周报），read 只认编排层（PR 4）
     insight_token = settings.insight_client_credential
     orchestrator_token = settings.orchestrator_client_credential
     mastery_routes.register(

@@ -514,6 +514,31 @@ INTERNAL_V1_COUNTER = [
     ("撤销结果状态不在枚举里", "VerificationCancelResult", "VerificationCancelResultCancelled", lambda v: v.__setitem__("status", "deleted")),
     ("撤销结果缺 cancelled", "VerificationCancelResult", "VerificationCancelResultCancelled", lambda v: v.pop("cancelled")),
     ("撤销结果夹带掌握门槛", "VerificationCancelResult", "VerificationCancelResultCancelled", lambda v: v.__setitem__("gate", "stable")),
+    # 1.1.0 草稿内追加（PR 4）：学情档案页
+    ("档案页 ensure 的触发点不在两个之内（作答触发编译）", "ProfilePageEnsureRequest", "ProfilePageEnsureSessionStart",
+     lambda v: v.__setitem__("trigger", "attempt")),
+    ("档案页 ensure 缺触发点", "ProfilePageEnsureRequest", "ProfilePageEnsureSessionStart", lambda v: v.pop("trigger")),
+    ("档案页 ensure 的学生 ID 大写", "ProfilePageEnsureRequest", "ProfilePageEnsureSessionStart",
+     lambda v: v.__setitem__("student_ref", v["student_ref"].upper())),
+    ("档案页 ensure 的学科是英语（搁置）", "ProfilePageEnsureRequest", "ProfilePageEnsureSessionStart", lambda v: v.__setitem__("subject", "echo")),
+    ("档案页 ensure 夹带模型（衔接语接模型）", "ProfilePageEnsureRequest", "ProfilePageEnsureSessionStart",
+     lambda v: v.__setitem__("model", "fake-a/fake-reasoner")),
+    ("档案页 ensure 结果夹带页面文字", "ProfilePageEnsureResult", "ProfilePageEnsureCompiled", lambda v: v.__setitem__("sections", [])),
+    ("档案页 ensure 结果的编码不在枚举里", "ProfilePageEnsureResult", "ProfilePageEnsureCompiled", lambda v: v.__setitem__("outcome", "queued")),
+    ("档案页读取请求夹带受众（学生、家长视图不走这里）", "ProfilePageReadRequest", "ProfilePageReadBasic",
+     lambda v: v.__setitem__("audience", "student")),
+    ("档案页陈述引用待验证判断（规则 11）", "ProfilePage", "ProfilePageCompiled",
+     lambda v: v["sections"][1]["statements"][0].__setitem__("status", "to_verify")),
+    ("档案页陈述没有 claim_id", "ProfilePage", "ProfilePageCompiled", lambda v: v["sections"][1]["statements"][0].pop("claim_id")),
+    ("档案页待办带文字", "ProfilePage", "ProfilePageCompiled", lambda v: v["sections"][2]["todo"][0].__setitem__("text", "（合成）")),
+    ("档案页衔接语含数字", "ProfilePage", "ProfilePageCompiled", lambda v: v["sections"][1].__setitem__("connective", "这周做对了3题")),
+    ("档案页衔接语超过 60 字", "ProfilePage", "ProfilePageCompiled", lambda v: v["sections"][1].__setitem__("connective", "长" * 61)),
+    ("档案页节不在固定六节里", "ProfilePage", "ProfilePageCompiled", lambda v: v["sections"][0].__setitem__("key", "personality")),
+    ("档案页少一节", "ProfilePage", "ProfilePageCompiled", lambda v: v["sections"].pop()),
+    ("档案页节里夹带总结", "ProfilePage", "ProfilePageCompiled", lambda v: v["sections"][1].__setitem__("summary", "（合成）")),
+    ("档案页夹带模型版本", "ProfilePage", "ProfilePageCompiled", lambda v: v.__setitem__("model_version", "model:fake-a/x@1")),
+    ("纯模板版本却带页 ID", "ProfilePage", "ProfilePageCompiled", lambda v: v.__setitem__("variant", "template_only")),
+    ("已编译版本缺编译时间", "ProfilePage", "ProfilePageCompiled", lambda v: v.__setitem__("compiled_at", None)),
 ]
 
 # 1.1.0 路径与引用的结构要求（KGE-04 第二步 PR 3）：掌握读取的请求与响应必须直接引用知识服务 v0.9 的 schema（形状照搬，不另写一份）；
@@ -524,11 +549,17 @@ INTERNAL_V1_REFS = {
     "/internal/v1/mastery/explain": (KS + "MasteryExplainRequest", KS + "MasteryExplainResponse"),
     "/internal/v1/verification": ("#/components/schemas/VerificationRequest", "#/components/schemas/VerificationTask"),
     "/internal/v1/verification/cancel": ("#/components/schemas/VerificationCancelRequest", "#/components/schemas/VerificationCancelResult"),
+    # PR 4：学情档案页（仍在未发布的 1.1.0 草稿内追加）
+    "/internal/v1/profile-page/ensure": ("#/components/schemas/ProfilePageEnsureRequest", "#/components/schemas/ProfilePageEnsureResult"),
+    "/internal/v1/profile-page/read": ("#/components/schemas/ProfilePageReadRequest", "#/components/schemas/ProfilePage"),
 }
 INTERNAL_V1_SECURITY = {"/internal/v1/verification": [{"insightServiceToken": []}],
                         "/internal/v1/verification/cancel": [{"insightServiceToken": []}],
                         "/internal/v1/mastery/get": [{"orchestratorServiceToken": []}],
-                        "/internal/v1/mastery/explain": [{"orchestratorServiceToken": []}]}
+                        "/internal/v1/mastery/explain": [{"orchestratorServiceToken": []}],
+                        # ensure：编排层（会话开始）或洞察服务（周报）二选一；read：只给编排层（Agent 完整版含待办）
+                        "/internal/v1/profile-page/ensure": [{"orchestratorServiceToken": []}, {"insightServiceToken": []}],
+                        "/internal/v1/profile-page/read": [{"orchestratorServiceToken": []}]}
 # 注意：升 learning-internal.v1 的版本时同步改这里（以及 _check_internal_v1_structure 里写死的版本号）
 INTERNAL_V1_VERSION = "1.1.0"
 
@@ -563,8 +594,16 @@ def _check_internal_v1_structure(doc: dict, errors: list[str]) -> None:
         if name not in schemes:
             errors.append(f"learning-internal.v1 缺少 {name}")
     # 专用令牌只用于各自的路径：其他路径不得接受它们
-    owned = {"insightServiceToken": {"/internal/v1/verification", "/internal/v1/verification/cancel"},
-             "orchestratorServiceToken": {"/internal/v1/mastery/get", "/internal/v1/mastery/explain"}}
+    owned = {"insightServiceToken": {"/internal/v1/verification", "/internal/v1/verification/cancel", "/internal/v1/profile-page/ensure"},
+             "orchestratorServiceToken": {"/internal/v1/mastery/get", "/internal/v1/mastery/explain", "/internal/v1/profile-page/ensure",
+                                          "/internal/v1/profile-page/read"}}
+    # 档案页结构要求（PR 4）：陈述只能是成立或假设、待办只有引用（没有文字）、正好六节、衔接语不含数字
+    sch = doc.get("components", {}).get("schemas", {})
+    st = sch.get("ProfileStatement", {}).get("properties", {}).get("status", {}).get("enum")
+    if st != ["hypothesis", "established"]:
+        errors.append(f"learning-internal.v1 ProfileStatement.status 只能是 hypothesis / established（规则 11），实为 {st}")
+    if sch.get("ClaimRef", {}).get("additionalProperties") is not False or "text" in sch.get("ClaimRef", {}).get("properties", {}):
+        errors.append("learning-internal.v1 ClaimRef（待办）不得带文字或放开多余字段")
     for path, ops in doc.get("paths", {}).items():
         for op in ops.values():
             for name, paths in owned.items():
@@ -593,7 +632,9 @@ def _check_internal_v1_examples(errors: list[str], doc: dict | None = None) -> N
                  "MasteryExplainResponseExecute": "ks:MasteryExplainResponse",
                  "VerificationRequestIKnow": "VerificationRequest", "VerificationTaskCreated": "VerificationTask",
                  "VerificationCancelRequestRollback": "VerificationCancelRequest",
-                 "VerificationCancelResultCancelled": "VerificationCancelResult"}
+                 "VerificationCancelResultCancelled": "VerificationCancelResult",
+                 "ProfilePageEnsureSessionStart": "ProfilePageEnsureRequest", "ProfilePageEnsureCompiled": "ProfilePageEnsureResult",
+                 "ProfilePageReadBasic": "ProfilePageReadRequest", "ProfilePageCompiled": "ProfilePage"}
     for name, schema in schema_of.items():
         if name not in examples:
             errors.append(f"learning-internal.v1 缺少示例 {name}")

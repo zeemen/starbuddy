@@ -406,6 +406,24 @@ UPDATE platform.guardian_student_link SET status = 'revoked', revoked_at = now()
 SELECT t.ok(t.s_seen(:gR, r) = '', format('%s：撤销绑定后读不到', r))
   FROM unnest(ARRAY['platform.retest_task', 'platform.profile_page']) r;
 SELECT t.ok(t.s_view(:gR) = '', '陈述视图：撤销绑定的家长读不到陈述');
+-- 模板退役（KGE-04 第二步 PR 4 修订）：claim_front_read 经模板表 RLS 挡掉退役模板，陈述视图（属主绕过 RLS）须显式要求已审核
+INSERT INTO insight.claim_template (template_key, version, target_type, max_visibility, max_ttl, text_template, status, reviewed_by, reviewed_at)
+VALUES ('test.profile.retire', 1, 'node', '{agent,student,guardian}', '60 days', '合成模板：将退役', 'approved', 'test-reviewer', now());
+SELECT t.m_as('starbuddy_insight', NULL, format($f$INSERT INTO insight.claim (id, student_id, subject, target_type, target_id, template_key,
+         template_version, confidence, source_type, status, change_reason, visibility, expires_at) VALUES (%L, %L, 'aya', 'node', 'MATH.FUNC.QUAD.VERTEX',
+         'test.profile.retire', 1, 0.8, 'objective', 'established', 'created', '{agent,student,guardian}', now() + interval '30 days') RETURNING id::text$f$,
+         '3e720000-0000-4000-8000-000000000009', :S1));
+SELECT t.m_as('starbuddy_learning', NULL, format($f$UPDATE platform.profile_page SET sections = jsonb_build_array(
+         jsonb_build_object('key', 'working_on', 'connective', '先看正在攻克的部分',
+                            'statements', jsonb_build_array(%s, %s), 'todo', '[]'::jsonb)) WHERE id = %L RETURNING id::text$f$,
+         quote_literal(t.s_item(:C1)) || '::jsonb', quote_literal(t.s_item('3e720000-0000-4000-8000-000000000009', 1, 'test.profile.retire')) || '::jsonb', :P1));
+SELECT t.ok(t.s_view(:aS1) = t.s_ids(:C1::uuid, '3e720000-0000-4000-8000-000000000009'::uuid) AND t.s_view(:aS1) = t.s_front(:aS1),
+            '陈述视图：模板已审核时返回该陈述');
+UPDATE insight.claim_template SET status = 'retired' WHERE template_key = 'test.profile.retire' AND version = 1;
+SELECT t.ok(t.s_view(:aS1) = t.s_ids(:C1::uuid) AND t.s_view(:gA) = t.s_ids(:C1::uuid),
+            '陈述视图：模板退役后该陈述对学生与家长都不再返回');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM unnest(ARRAY[:aS1, :gA]::uuid[]) a WHERE t.s_view(a) <> t.s_front(a)),
+            '陈述视图与 claim_front_read 在模板退役后仍一致');
 -- BFF 不能写；其他服务角色读不到
 SELECT t.throws(format('SELECT t.m_as(''starbuddy_bff'', %L, %L)', :gA, sql), '42501', format('BFF 不能写：%s', left(sql, 40)))
   FROM unnest(ARRAY[t.s_task(:S1, 'know', NULL, 'decay', NULL) || ' RETURNING id::text',

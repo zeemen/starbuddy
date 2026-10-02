@@ -330,6 +330,22 @@ INTERNAL_MUTATIONS = {
         f"{P}./internal/v1/mastery/explain.post.requestBody.content.application/json.schema", {"$ref": "#/components/schemas/PlanQuery"}),
     "删掉验证任务接口": delete(f"{P}./internal/v1/verification"),
     "版本号没有升到 1.1.0": assign("info.version", "1.0.0"),
+    # PR 4：学情档案页（1.1.0 草稿内追加）
+    "档案页读取也接受洞察服务令牌": assign(f"{P}./internal/v1/profile-page/read.post.security",
+                                      [{"orchestratorServiceToken": []}, {"insightServiceToken": []}]),
+    "档案页 ensure 改用 BFF 服务令牌": assign(f"{P}./internal/v1/profile-page/ensure.post.security", [{"bffServiceToken": []}]),
+    "档案页 ensure 去掉专用鉴权（回落到顶层服务令牌）": delete(f"{P}./internal/v1/profile-page/ensure.post.security"),
+    "档案页读取去掉专用鉴权（BFF 能读到 Agent 版待办）": delete(f"{P}./internal/v1/profile-page/read.post.security"),
+    "档案页陈述可以是待验证": assign(f"{S}.ProfileStatement.properties.status.enum", ["hypothesis", "established", "to_verify"]),
+    "档案页陈述不要求 claim_id": assign(f"{S}.ProfileStatement.required", ["template_key", "template_version", "status", "text"]),
+    "档案页待办可以带文字": assign(f"{S}.ClaimRef.additionalProperties", True),
+    "档案页衔接语可含数字": delete(f"{S}.ProfileSection.properties.connective.pattern"),
+    "档案页节不限六节": assign(f"{S}.ProfileSectionKey.enum", ["current_stage", "mastered", "working_on", "root_cause", "recent_progress",
+                                                       "next_step", "personality"]),
+    "档案页 ensure 触发点放开": assign(f"{S}.ProfilePageEnsureRequest.properties.trigger.enum", ["session_start", "weekly", "attempt"]),
+    "档案页 ensure 结果放开多余字段（可夹带文字）": assign(f"{S}.ProfilePageEnsureResult.additionalProperties", True),
+    "档案页放开多余字段（可夹带模型版本）": assign(f"{S}.ProfilePage.additionalProperties", True),
+    "删掉档案页读取接口": delete(f"{P}./internal/v1/profile-page/read"),
 }
 
 

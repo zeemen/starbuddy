@@ -23,6 +23,10 @@ info:
       返回任务 ID 与 `item.similar` 选题入口所需的节点与层次，**不返回题目内容**（第二步待人确认 #3）。
     - `POST /internal/v1/verification/cancel`：洞察服务写异议的事务在建任务之后回滚时的补偿，按任务 ID + 学生撤销 open 的自述验证任务；
       幂等、不改掌握；只接受洞察服务令牌。
+    - （KGE-04 第二步 PR 4，仍在未发布的 1.1.0 草稿内追加，非破坏性）`POST /internal/v1/profile-page/ensure` 与
+      `POST /internal/v1/profile-page/read`：学情档案页的惰性编译与 Agent 版读取（第一步 spec 第 14 节）。ensure 接受编排层令牌
+      （`trigger = session_start`）或洞察服务令牌（`trigger = weekly`，周报生成前），令牌与触发点不符 403 `CALLER_MISMATCH`；
+      read 只接受编排层令牌。新增 Problem 码 `PROFILE_UNAVAILABLE`。不调模型；BFF 令牌一律 401。
 
     请求体是信封 `{ request, ingest }`：`request` 是学科插件 API v1.0 的 `GradeRequest` / `DiagnoseRequest`
     （`plugin-api.v1.0.yaml`），原样转发给适配器；`ingest` 是平台侧的作答上下文（输入通道、用途），只由学习服务使用，
@@ -317,6 +321,67 @@ paths:
                 cancelled: { $ref: '#/components/examples/VerificationCancelResultCancelled' }
         default: { $ref: '#/components/responses/Problem' }
 
+  /internal/v1/profile-page/ensure:
+    post:
+      operationId: ensureProfilePage
+      summary: 学情档案页的惰性编译（会话开始、周报；1.1.0 草稿内追加，KGE-04 第二步 PR 4）
+      description: |
+        **契约变更，待签字（必停项）。** 判断没变（`claims_digest` 与该生该科的全部候选判断一致）就不重编（`unchanged`）；变了就按判断模板渲染、
+        加固定衔接短语、跑陈述—判断一致性检查，通过为 `compiled`，不通过降级为纯模板版本并记一条阻断记录（`blocked_fallback`）；
+        没有候选判断也没有页时不写（`empty`）；超出时间预算或编译失败不写库、不报错（`template_only`：read 此时返回纯模板版本），不阻塞会话与周报。
+        作答与掌握重算不触发编译。不调任何模型。
+        鉴权：编排层令牌（`orchestratorServiceToken`）只能以 `trigger = session_start` 调用；洞察服务令牌（`insightServiceToken`）只能以
+        `trigger = weekly` 调用；不符 403 `CALLER_MISMATCH`。学科没有档案页配置：409 `PROFILE_UNAVAILABLE`。
+        响应没有判断、文字与学生 ID。不存在的学生与没有判断的学生同为 `empty`。
+      security:
+        - orchestratorServiceToken: []
+        - insightServiceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProfilePageEnsureRequest' }
+            examples:
+              session: { $ref: '#/components/examples/ProfilePageEnsureSessionStart' }
+      responses:
+        '200':
+          description: 编译结果（只有编码、检查状态与时间）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProfilePageEnsureResult' }
+              examples:
+                compiled: { $ref: '#/components/examples/ProfilePageEnsureCompiled' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /internal/v1/profile-page/read:
+    post:
+      operationId: readProfilePage
+      summary: 学情档案页 Agent 完整版（读取时按判断现状重核后渲染；1.1.0 草稿内追加，KGE-04 第二步 PR 4）
+      description: |
+        **契约变更，待签字（必停项）。** 只读，不编译、不写库。每次读取都按判断现状重核（Agent 可见、状态、模板键与版本、模板仍已审核）后
+        按判断模板渲染：被推翻、撤回、过期、转待验证的陈述消失，消失了陈述的那一节不显示衔接语。页的摘要与现状不一致（判断变了还没重编）或没有页时，
+        由现有判断直接渲染纯模板版本（`variant = template_only`，没有衔接语）。
+        陈述只来自成立或假设的判断（规则 11），每条带 `claim_id`；待验证判断只作为待办引用（`todo`，没有文字）。
+        结果是 Agent 版，只接受编排层令牌；学生与家长视图由 BFF 经 `platform.profile_page_statement_v` 读（不含待办）。
+      security:
+        - orchestratorServiceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProfilePageReadRequest' }
+            examples:
+              basic: { $ref: '#/components/examples/ProfilePageReadBasic' }
+      responses:
+        '200':
+          description: 档案页（六节）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProfilePage' }
+              examples:
+                compiled: { $ref: '#/components/examples/ProfilePageCompiled' }
+        default: { $ref: '#/components/responses/Problem' }
+
 components:
   securitySchemes:
     bffServiceToken:
@@ -330,11 +395,11 @@ components:
     insightServiceToken:
       type: http
       scheme: bearer
-      description: 洞察服务到学习服务的令牌（LEARNING_INSIGHT_CLIENT_TOKEN），只对 `/internal/v1/verification` 与 `/verification/cancel` 有效；与其他令牌各不相同。
+      description: 洞察服务到学习服务的令牌（LEARNING_INSIGHT_CLIENT_TOKEN），只对 `/internal/v1/verification`、`/verification/cancel` 与 `/profile-page/ensure`（只能周报触发）有效；与其他令牌各不相同。
     orchestratorServiceToken:
       type: http
       scheme: bearer
-      description: 编排层到学习服务的令牌（LEARNING_ORCHESTRATOR_CLIENT_TOKEN），只对 `/internal/v1/mastery/get` 与 `/mastery/explain` 有效；与其他令牌各不相同。
+      description: 编排层到学习服务的令牌（LEARNING_ORCHESTRATOR_CLIENT_TOKEN），只对 `/internal/v1/mastery/get`、`/mastery/explain`、`/profile-page/ensure`（只能会话开始触发）与 `/profile-page/read` 有效；与其他令牌各不相同。
 
   responses:
     Problem:
@@ -442,6 +507,55 @@ components:
         task_id: 00000000-0000-4000-8000-00000000d601
         status: cancelled
         cancelled: true
+    ProfilePageEnsureSessionStart:
+      summary: 编排层在会话开始时确保档案页是最新的
+      value:
+        request_id: 00000000-0000-4000-8000-000000000701
+        student_ref: 00000000-0000-4000-8000-00000000a002
+        subject: aya
+        trigger: session_start
+    ProfilePageEnsureCompiled:
+      summary: 判断变了，重编一次并通过一致性检查
+      value:
+        subject: aya
+        outcome: compiled
+        check_status: passed
+        compiled_at: '2026-10-02T08:00:00Z'
+        compiler_version: kge-profile@0.1.0
+    ProfilePageReadBasic:
+      summary: 编排层读 Agent 完整版
+      value:
+        request_id: 00000000-0000-4000-8000-000000000702
+        student_ref: 00000000-0000-4000-8000-00000000a002
+        subject: aya
+    ProfilePageCompiled:
+      summary: 已编译版本：陈述按判断模板渲染（合成占位文字），待办只有引用
+      value:
+        subject: aya
+        variant: compiled
+        profile_page_id: 00000000-0000-4000-8000-00000000b701
+        check_status: passed
+        compiled_at: '2026-10-02T08:00:00Z'
+        compiler_version: kge-profile@0.1.0
+        sections:
+          - { key: current_stage, connective: '', statements: [], todo: [] }
+          - key: mastered
+            connective: 另外
+            statements:
+              - claim_id: 00000000-0000-4000-8000-00000000c701
+                template_key: syn.mastery.stable
+                template_version: 1
+                status: established
+                text: （合成模板）MATH.SYN.FUNC.VERTEX
+            todo: []
+          - key: working_on
+            connective: ''
+            statements: []
+            todo:
+              - { claim_id: 00000000-0000-4000-8000-00000000c702, template_key: syn.mastery.unstable, template_version: 1 }
+          - { key: root_cause, connective: '', statements: [], todo: [] }
+          - { key: recent_progress, connective: '', statements: [], todo: [] }
+          - { key: next_step, connective: '', statements: [], todo: [] }
     PlanQueryToday:
       summary: 统一壳“今日”页：数学与语文两科（合成学生）
       value:
@@ -812,6 +926,119 @@ components:
         task_id: { $ref: '#/components/schemas/Uuid' }
         status: { type: string, enum: [open, passed, failed, cancelled] }
         cancelled: { type: boolean, description: 本次撤销为 true；已撤销或已关闭的任务为 false（幂等）。 }
+    ProfileSubject:
+      type: string
+      description: 有档案页的学科（英语搁置，不在枚举里）。
+      enum: [wenli, aya, zhixing]
+    ProfileSectionKey:
+      type: string
+      description: 档案页固定六节（迁移 0037 的编码）：当前阶段、已稳定掌握、正在攻克、根因线索、最近进步、下一步。
+      enum: [current_stage, mastered, working_on, root_cause, recent_progress, next_step]
+    ClaimRef:
+      type: object
+      description: 判断引用（判断再引用证据）；没有文字。
+      required: [claim_id, template_key, template_version]
+      additionalProperties: false
+      properties:
+        claim_id: { $ref: '#/components/schemas/Uuid' }
+        template_key: { type: string, pattern: '^[a-z][a-z0-9_]*(\.[a-z0-9_]+){1,4}$', maxLength: 64 }
+        template_version: { type: integer, minimum: 1, maximum: 999999 }
+    ProfileStatement:
+      type: object
+      description: 一条陈述：由成立或假设的判断按其模板渲染（与洞察服务 RenderedStatement 同一套规则），必须带 claim_id（规则 11）。
+      required: [claim_id, template_key, template_version, status, text]
+      additionalProperties: false
+      properties:
+        claim_id: { $ref: '#/components/schemas/Uuid' }
+        template_key: { type: string, pattern: '^[a-z][a-z0-9_]*(\.[a-z0-9_]+){1,4}$', maxLength: 64 }
+        template_version: { type: integer, minimum: 1, maximum: 999999 }
+        status: { type: string, enum: [hypothesis, established], description: 待验证的判断不作陈述，只进 todo。 }
+        text: { type: string, minLength: 1, maxLength: 300 }
+    ProfileSection:
+      type: object
+      required: [key, connective, statements, todo]
+      additionalProperties: false
+      properties:
+        key: { $ref: '#/components/schemas/ProfileSectionKey' }
+        connective:
+          type: string
+          maxLength: 60
+          pattern: '^[^0-9０-９]*$'
+          description: 固定衔接短语表里的一条（人审）；没有陈述、有陈述消失、降级或纯模板版本时为空串。不含数字。
+        statements: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/ProfileStatement' } }
+        todo:
+          type: array
+          maxItems: 30
+          description: Agent 版待办：待验证的判断（只有引用，不作陈述）。
+          items: { $ref: '#/components/schemas/ClaimRef' }
+    ProfilePageEnsureRequest:
+      type: object
+      required: [request_id, student_ref, subject, trigger]
+      additionalProperties: false
+      properties:
+        request_id: { $ref: '#/components/schemas/Uuid' }
+        student_ref:
+          type: string
+          format: uuid
+          pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        subject: { $ref: '#/components/schemas/ProfileSubject' }
+        trigger:
+          type: string
+          enum: [session_start, weekly]
+          description: 只有两个触发点（第一步 spec 第 14 节）；必须与令牌身份一致（编排层 = session_start，洞察服务 = weekly）。
+    ProfilePageEnsureResult:
+      type: object
+      description: 编译结果。没有判断、文字与学生 ID。
+      required: [subject, outcome, check_status, compiled_at, compiler_version]
+      additionalProperties: false
+      properties:
+        subject: { $ref: '#/components/schemas/ProfileSubject' }
+        outcome:
+          type: string
+          enum: [unchanged, compiled, blocked_fallback, empty, template_only]
+          description: unchanged 判断没变不重编；compiled 重编并通过检查；blocked_fallback 检查不过、降级为纯模板版本并记阻断；
+            empty 没有可用判断、不写；template_only 超出时间预算或失败、不写库（read 返回纯模板版本）。
+        check_status: { type: [string, 'null'], enum: [passed, blocked_fallback, null] }
+        compiled_at: { type: [string, 'null'], format: date-time }
+        compiler_version: { type: string, pattern: '^[a-z0-9][a-z0-9\-]{0,47}@[A-Za-z0-9][A-Za-z0-9._\-]{0,31}$' }
+    ProfilePageReadRequest:
+      type: object
+      required: [request_id, student_ref, subject]
+      additionalProperties: false
+      properties:
+        request_id: { $ref: '#/components/schemas/Uuid' }
+        student_ref:
+          type: string
+          format: uuid
+          pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        subject: { $ref: '#/components/schemas/ProfileSubject' }
+    ProfilePage:
+      type: object
+      description: 学情档案页 Agent 完整版（固定六节，按 key 顺序）。除陈述的 text（判断模板渲染）与衔接短语外没有自由文本；没有模型版本（不调模型）。
+      required: [subject, variant, profile_page_id, check_status, compiled_at, compiler_version, sections]
+      additionalProperties: false
+      properties:
+        subject: { $ref: '#/components/schemas/ProfileSubject' }
+        variant:
+          type: string
+          enum: [compiled, template_only]
+          description: compiled = 已编译版本（读取时已重核）；template_only = 没有页或页已过时，由现有判断直接渲染（没有衔接语）。
+        profile_page_id: { type: [string, 'null'], format: uuid }
+        check_status: { type: [string, 'null'], enum: [passed, blocked_fallback, null] }
+        compiled_at: { type: [string, 'null'], format: date-time }
+        compiler_version: { type: string, pattern: '^[a-z0-9][a-z0-9\-]{0,47}@[A-Za-z0-9][A-Za-z0-9._\-]{0,31}$' }
+        sections:
+          type: array
+          minItems: 6
+          maxItems: 6
+          items: { $ref: '#/components/schemas/ProfileSection' }
+      allOf:
+        - description: 纯模板版本没有页 ID、检查状态与编译时间
+          if: { properties: { variant: { const: template_only } }, required: [variant] }
+          then: { properties: { profile_page_id: { type: 'null' }, check_status: { type: 'null' }, compiled_at: { type: 'null' } } }
+        - description: 已编译版本必须有页 ID、检查状态与编译时间
+          if: { properties: { variant: { const: compiled } }, required: [variant] }
+          then: { properties: { profile_page_id: { type: string }, check_status: { type: string }, compiled_at: { type: string } } }
     Problem:
       type: object
       required: [type, title, status, code, retryable]
@@ -848,6 +1075,7 @@ components:
             - CALLER_MISMATCH  # 1.1.0 掌握读取：请求体 context.caller 与令牌不一致（403）
             - MASTERY_UNAVAILABLE  # 1.1.0 验证任务：学科没有可用掌握配置或单元不在当前已发布地图里（409，不重试）
             - TASK_NOT_FOUND  # 1.1.0 撤销验证任务：任务不存在、不属于该学生或不是自述验证任务（404）
+            - PROFILE_UNAVAILABLE  # 1.1.0（PR 4）档案页：没有档案页配置、该科不在配置里或没有已发布地图（409，不重试）
             - INTERNAL
         upstream_code:
           type: string
