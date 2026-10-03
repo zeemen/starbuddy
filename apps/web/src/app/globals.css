@@ -204,3 +204,25 @@ a { color: inherit; }
 .checkbox-row input { width: 24px; height: 24px; min-height: 0; margin: 0; }
 .reconcile-card { border: 1px solid var(--rule); border-radius: 4px; padding: 8px 16px; }
 .erasure-item { border-bottom: 1px solid var(--rule); padding: 8px 0; }
+
+/* H5 星图 v1（开关 starmap_v1，默认关；只用 v1 自己的类名，v0 的 .sky / .sky-field 不受影响）：
+   左边是各科星空（领域为星座、主题为子群），右边是能力视图侧栏占位；窄屏时侧栏排到下面。16px 的星放在 24px 的格子里，按容器宽度折行 */
+.starmap-v1 { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+@media (min-width: 768px) { .starmap-v1 { grid-template-columns: minmax(0, 1fr) 200px; } }
+.starmap-v1-skies { min-width: 0; }
+.sky-v1 h3 { font-size: 1.0625rem; margin: 16px 0 4px; }
+.sky-v1 h4 { font-size: 0.9375rem; font-weight: 400; margin: 8px 0 2px; color: var(--muted); }
+.sky-statement { margin: 4px 0; }
+.constellation { border-left: 1px solid var(--rule); padding-left: 12px; margin: 8px 0; }
+details.constellation > summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; }
+details.constellation > summary > h3 { margin: 0; display: inline; }
+/* 收起 / 展开的标记（display: flex 的 summary 没有默认三角）；替代文字为空，读屏不读符号，展开状态由 details 自己报告 */
+details.constellation > summary::before { content: "▸" / ""; margin-right: 6px; color: var(--muted); }
+details.constellation[open] > summary::before { content: "▾" / ""; }
+.star-count { font-size: 0.875rem; font-weight: 400; color: var(--muted); }
+.topic-field { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; }
+.star-slot { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; }
+.next-checks { list-style: none; margin: 2px 0 0; padding: 0; font-size: 0.875rem; color: var(--muted); }
+.skill-view { border: 1px solid var(--rule); border-radius: 4px; padding: 8px 12px; align-self: start; }
+.skill-view h2 { font-size: 1rem; margin: 0 0 4px; }
+.skill-view p { margin: 0; }

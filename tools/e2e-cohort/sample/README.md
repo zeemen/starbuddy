@@ -14,5 +14,9 @@ v0 页面画的是各科全部已登记能力点、全部是中性底星，页�
 “证据节点 ⊆ 页面节点”“带状态的星 ⊆ 证据节点”在 v0 下与学生无关或空真。Gate 0 硬1“同一学生模型”主要由 `events.csv`、`nodes.csv`、
 `checks.json` 证明，截图只作辅证。
 
+`starmap-v1/`：H5 星图 v1 的截图（**未启用**，spec `specs/star-map-v1-h5` 待人确认 #7）。不由 `make gate0-evidence` 生成，也不参与样例比对；
+由 `make gate0-starmap-v1` 在 test 环境、开关打开、合成数据（`db/seeds/dev/star-map-v1-synthetic.sql`）下截学生端与家长端各 1 张（PNG），
+`starmap-v1.json` 记文件与像素 SHA-256，`provenance.md` 写来历。它不替换上面的 v0 截图。
+
 **何时重截**：只在星图页面改版时（如 H5 星图 v1、掌握写库后）用 `make gate0-evidence GATE0_OUT=tools/e2e-cohort/sample GATE0_STARMAP=1` 重截；
 其余变更用不带 `GATE0_STARMAP=1` 的命令重生样例，`starmap/` 保留不删，`provenance.md` 会标“截图沿用”。

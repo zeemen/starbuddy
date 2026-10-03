@@ -21,6 +21,8 @@ test('安全头爬取：src/app 下每个 page.tsx / route.ts 都在 e2e/crawl-p
   // 爬取在两个端到端文件里真的用到了登记表
   assert.match(readFileSync(new URL('../e2e/headers.spec.ts', import.meta.url), 'utf8'), /from '\.\/crawl-pages\.ts'/);
   assert.match(readFileSync(new URL('../e2e/trust-on.spec.ts', import.meta.url), 'utf8'), /from '\.\/crawl-pages\.ts'/);
+  // H5 星图 v1 开关打开的一套（starmap-on）按同一张登记表爬星图页（学生与家长）
+  assert.match(readFileSync(new URL('../e2e/star-map-v1.spec.ts', import.meta.url), 'utf8'), /from '\.\/crawl-pages\.ts'/);
 });
 
 test('安全头的来源：proxy 对静态资源以外的全部路径生成 CSP；next.config.ts 对全部路径加 nosniff、DENY、no-referrer，对页面加 no-store', () => {

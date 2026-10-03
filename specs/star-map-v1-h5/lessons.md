@@ -101,3 +101,44 @@
 - **J**：星数说明用节点句还是等学科级模板（偏差 5）。
 - **K**：成立优先于待验证是否符合判断账本语义（偏差 6），请 SIE 负责人确认。
 - **L**：虚线改为按 `RenderedStatement.display = dashed` 画的时机（偏差 4，随 ADR 13 #2 签字）。
+
+## PR 3 实现记录：前端星图 v1（2026-10-03）
+
+### 产物
+- **开关**：`apps/web/src/star/features.ts`，`starmap_v1`、`starmap_dashed`（环境变量 `STARBUDDY_STARMAP`），默认关，只在 dev / test 生效；只开虚线不开 v1 一律算关；只在服务端读，没有 `NEXT_PUBLIC`。开关关时 `StarMapPage.tsx` 提前返回，v0 代码路径一字未动，不发任何 v1 请求。
+- **渲染**：`src/lib/star-map-v1.ts`（类型与 BFF 客户端，类型与 `star-map.v1.yaml` 一致）、`src/star/v1-view.ts`（纯函数：只显示数学、语文、道法；虚线开关关时按中性画；没有 `claim_id` 的星一律中性；一页超过 120 颗按领域折叠）、`src/star/StarMapV1.tsx`（领域为星座、主题为子群）；`Star.tsx` 新增 `neutral`（与 v0 未亮同一绘制）与 `dashed`；`tokens.ts` 新增虚线线段与间隔；`copy.ts` 新增 `STAR_MAP_V1`、`STAR_DISPLAY_V1`；`globals.css` 只追加 v1 类名。
+- **测试**：单测 `tests/star-v1.test.ts`、组件级渲染测试 `tests/star-v1-render.test.ts`（`tests/tsx-loader.mjs` 只供单测）；E2E `e2e/star-map-v1.spec.ts`（第三套环境 `starmap-on`）、`e2e/star-map-v1-off.spec.ts`、`e2e/visual-v1.spec.ts`（5 张 v1 新基线）；`scripts/e2e.sh` 新增第二个学习服务（合成掌握配置）与第三个 BFF（两个开关都开，测试专用显示规则写进 mktemp 生成的配置）。
+- **合成种子**：`db/seeds/dev/star-map-v1-synthetic.sql`（合成数学地图 0.9.0，119 个节点；家庭 HV：V1 在读数学、道法、英语，V2 在读数学、语文；掌握行以 `starbuddy_learning`、判断以 `starbuddy_insight` 身份写入，0010 守卫照常生效）。挡板三道：`starbuddy.allow_synthetic_seed=on`、库名限 `starbuddy_(dev|test)…`、只能执行一次且已有已发布数学地图就拒绝。
+- **Gate 0**：`make gate0-starmap-v1`；`tools/e2e-cohort/sample/starmap-v1/`（学生端、家长端 PNG，`starmap-v1.json` 含文件与像素 SHA-256，`provenance.md`），都标“未启用”；`docs/gates/gate-0-evidence.md` 只在 H1 下追加一条记录，判定与 v0 截图不变。两次运行像素哈希一致：学生端 `136221d5ccf32ac0b16f83a5b9f6d3ecb3bff7b7d0fc81ba0fc21eb5a026358c`，家长端 `ccab0f3c7b54692bc5b5cb0bd305ba6951ec2901f2d4855fa7150f1a6860b064`。截图生成于未提交工作区，合入后更新提交号。
+
+### 判断先于展示在前端的落点（规则 11）
+- 画了的星的 `<li>`、虚线日期行、陈述 `<span>` 都带 `data-claim-id`；节点、领域、主题名放 `data-node-name`，数字与日期放 `data-value`。
+- 状态词（未亮、半亮、亮、亮·保持）不算壳文案，不进全量文案表，只能出现在 `data-claim-id` 元素内；单测、组件渲染测试与 E2E 文本节点核对都在守。
+- 中性底星不带 `claim_id`，没有可见文字，读屏读“节点名：暂无可展示的结论”。
+- E2E 核对页面上的 `data-claim-id` 集合与同一会话 BFF 响应一致。
+
+### 审查意见处理
+两项审查都没有阻断。按用户“按默认建议处理审查意见”：
+- 置信度说明前端只在家长端显示（BFF 仍两端下发），与周报、今日计划一致——PR 2 待确认 I 在前端侧关闭；组件级渲染测试断言家长端有、学生端没有。
+- 状态词移出全量文案表，单独断言只在 `data-claim-id` 内。
+- E2E 的前端与前两套 BFF 显式清空 `STARBUDDY_STARMAP`，不从调用方环境继承。
+- 正式 `services/bff/config/shell.json` 永不含 `syn.*` 合成模板，有单测守护；种子模板处注明“合成占位，永不进正式白名单”。
+- 补学生会话访问另一户孩子的页面与 BFF v1 均 404。
+- 可选项：前端开、BFF 关时显示“没有找到”的单测；截图输出目录限定在仓库内；前端类型收紧；种子 `evidence_ids` 注明不对应任何证据。
+
+### 测试结果
+`make web-test`：55 passed、1 skipped（`@gate0`）；`e2e.sh star-map-v1`（含开关关）5 passed；v1 视觉回归 5 passed；`make gate0-starmap-v1` 两次哈希一致；`make bff-test` 通过。过程中没有命令被拦截；第一轮生成基线时子代理用 `rm` 删过一张自己刚生成的 PNG 后重生，修订轮没有删除仓库内文件。
+
+### 已知问题
+- **v0 视觉基线早已过期**：`make web-visual` 中 v0 星图页 S1 的 3 张失败。v0 基线在 3-H（51dfea1）提交后没更新，之后统一壳 H4 给学生页套了顶栏（实际截图比基线高 94px）；统一壳 lessons 待确认 M 记录过当时没重跑视觉回归。本 PR 对 v0 输出没有改动（符号样张页基线通过）。`web-visual` 不在 `make check` 里。
+- **诊断 E2E 偶发失败**：3 次完整 `make web-test` 中出现 1 次“现在还不能开始”，单独重跑通过，原因未查明，与本 PR 无关，建议另开任务查。
+
+### 待人确认
+- **M**：“120 颗”按整页累计（现做法），还是按每片星空分别计。
+- **N**：合成种子把数学地图直接写成已发布，用复制模式（`session_replication_role=replica`，只包住地图三条 INSERT）绕过发布守卫；审核台里会出现没有签字记录的已发布地图。只限种子的例外。
+- **O**：合成判断模板在种子里是 `approved`（模拟人工登记），测试环境把它们列进对外白名单（必停：判断模板、画像可见范围）。
+- **P**：“为什么”入口只挂在星数说明与迁移摘要旁，没有挂在每颗星旁（16px 星格放不下），星的详情位待设计。
+- **Q**：v1 五张视觉基线与虚线比例（线段 2px、间隔 1.5px，占位值）待视觉负责人签字。
+- **R**：E2E 借用学习服务单测的合成掌握配置 `synthetic-test.json`（只在 test 环境的第二个学习服务实例里）；折叠用例的 121 颗依赖审核台种子发布的语文地图（2 颗）。
+- **S**：v0 视觉基线是否重生（见“已知问题”）。
+- **T**：E2E 环境没有洞察服务，星数说明的文字与置信度只由组件级渲染测试覆盖。

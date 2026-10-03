@@ -46,6 +46,32 @@ export const SUBJECTS = {
   notEnrolled: '这一科还没有开通。',
 } as const;
 
+/**
+ * H5 星图 v1（开关 starmap_v1，默认关；specs/star-map-v1-h5）的界面文案。系统口吻，不描述学生：
+ * 星的状态词（未亮、半亮、亮）只渲染在带 data-claim-id 的元素里（BFF 给了匹配判断的星）；中性底星的读屏文字是 neutral；
+ * 数字与日期不拼进文案，由组件放在 data-value 元素里；知识节点、领域、主题的名字来自已发布地图（公共层），放在 data-node-name 元素里。
+ * 星数说明、迁移摘要不在这里：只来自洞察服务的 RenderedStatement.text。
+ */
+export const STAR_MAP_V1 = {
+  title: '星图',
+  watermark: '原型 · 合成数据',
+  noSubjects: '还没有选科',
+  building: '地图建设中',
+  neutral: '暂无可展示的结论',
+  sep: '：',
+  nextCheck: '下一次验证',
+  nextCheckPending: '下一次验证时间待安排',
+  starUnit: '颗星',
+  folded: '星比较多，已按领域收起；点开一个领域查看其中的星。',
+  unnamedDomain: '领域',
+  unnamedTopic: '主题',
+  skillViewTitle: '能力视图',
+  skillViewComing: '能力视图即将开放',
+} as const;
+
+/** 星图 v1 上画了的星的状态词（只在带 data-claim-id 的元素里出现） */
+export const STAR_DISPLAY_V1: Record<'unlit' | 'half' | 'lit' | 'retained', string> = { unlit: '未亮', half: '半亮', lit: '亮', retained: '亮·保持' };
+
 export const BALANCE = {
   heading: '额度与时长',
   trialDaysLeft: (n: number) => (n > 0 ? `试用还剩 ${n} 天` : '试用今天到期'),
@@ -419,6 +445,7 @@ export const ALL_SHELL_COPY: string[] = [
   ...Object.values(CONFIDENCE_BAND), TODAY.title, TODAY.noSubjects, TODAY.nothingToday, TODAY.minutes(10), TODAY.neutralTitle('math'),
   TODAY.rationaleLabel, SUBJECTS.title, SUBJECTS.enter('数学'), SUBJECTS.comingTitle, SUBJECTS.comingBody, SUBJECTS.backToStarMap,
   SUBJECTS.starSky('数学'), SUBJECTS.todayTasks, SUBJECTS.notEnrolled,
+  ...Object.values(STAR_MAP_V1),  // STAR_DISPLAY_V1 不在这里：状态词只能出现在 data-claim-id 内（禁语等扫描在 tests/shell.test.ts 另列）
   BALANCE.heading, BALANCE.trialDaysLeft(14), BALANCE.trialDaysLeft(0), BALANCE.trialAfter(3), BALANCE.retained(3), BALANCE.aiUnavailable,
   BALANCE.needGuardianStudent, BALANCE.notOpenedGuardian, BALANCE.openPlaceholder, BALANCE.minutesLeft(30), BALANCE.capReached,
   BALANCE.curfew('21:30', '06:30'), BALANCE.curfewNear(20), BALANCE.unavailable, BALANCE.adjustCap, BALANCE.adjustCurfew,

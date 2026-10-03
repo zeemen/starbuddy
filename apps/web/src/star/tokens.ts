@@ -9,3 +9,6 @@ export const strokePx = (size: number): number => Math.max(1.5, (size * 2) / 84)
 /** 保持层外圈：1px 细描边圆，与星的间距 2px（待人确认 #6） */
 export const RETAIN_RING_GAP_PX = 2;
 export const RETAIN_RING_PX = 1;
+/** H5 星图 v1 的待验证虚线（开关 starmap_dashed，默认关）：描边的线段与间隔（CSS px，按尺寸换算到 viewBox）。具体比例待视觉负责人确认 */
+export const DASH_PX = 2;
+export const DASH_GAP_PX = 1.5;

@@ -62,6 +62,13 @@
 - **样例生成于未提交的工作区**（`commit = 8c91e30…`、`worktree_dirty: true`）；本节锁定的证据提交号（`d0ba0f7`）与 H1 各行的“最后修改”提交号**待 PR 3 合入后由人更新**。
 - H1“复测”分项仍是**不满足**，理由由“复测为桩”变为“真实调度在合成内容下到不了复测（内容未准入）”；是否在联调里登记已准入的合成题以走通复测，见上述 lessons 待人确认。
 
+**记录（2026-10-02，H5 星图 v1 PR 3，`specs/star-map-v1-h5/spec.md` 待人确认 #7；不改上面的判定与证据锁定）**：
+另附一份星图 v1 截图 `tools/e2e-cohort/sample/starmap-v1/`（`V1-student.png`、`V1-guardian.png`、`starmap-v1.json`、`provenance.md`），标“**未启用**”：
+开关 `starmap_v1` / `starmap_dashed` 默认关，只在 test 环境、合成数据（`db/seeds/dev/star-map-v1-synthetic.sql`：合成数学地图 0.9.0、合成掌握配置与合成判断，均未经教研签字）下截取；
+由 `make gate0-starmap-v1` 生成（视口 1024×768、DPR 1、浅色、整页 PNG），`starmap-v1.json` 记文件与像素 SHA-256，同一环境重跑两次像素哈希一致。
+- **v0 截图不替换**：`tools/e2e-cohort/sample/starmap/` 与它的 `starmap.json`、`provenance.md` 未动；“星图截图”分项的判定与依据不变（仍以 v0 为准）。
+- v1 截图只说明 v1 页面在开关打开时的样子（三态、“保持”外圈、中性底星、虚线、地图建设中、能力视图占位），**不是**同一学生模型的证据；样例生成于未提交的工作区（`worktree_dirty: true`）。
+
 ---
 
 ## H2 · 家长隔离与扣次幂等通过（硬）　判定：**不满足**

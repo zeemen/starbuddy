@@ -10,7 +10,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { test } from 'node:test';
-import { ALL_SHELL_COPY, CONFIDENCE_BAND, TRUST_SLOT } from '../src/shell/copy.ts';
+import { ALL_SHELL_COPY, CONFIDENCE_BAND, STAR_DISPLAY_V1, TRUST_SLOT } from '../src/shell/copy.ts';
 import { DENIAL_COPY } from '../src/shell/denials.ts';
 import { TRUST_FEATURES, trustEnabled, trustFeatures } from '../src/shell/features.ts';
 import { SUBJECT_MODULES, subjectModule, visibleSubjects } from '../src/subjects/registry.ts';
@@ -23,7 +23,8 @@ const files = (dir: string): string[] => readdirSync(dir).flatMap((n) => {
 });
 const src = files(join(WEB, 'src')).map((p) => ({ path: relative(WEB, p), text: readFileSync(p, 'utf8') }));
 const code = (t: string) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\{\/\*[\s\S]*?\*\/\}/g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
-const ALL = [...ALL_SHELL_COPY, ...Object.values(DENIAL_COPY)];
+// 星图 v1 的状态词（STAR_DISPLAY_V1）不在全量文案表里（只能出现在 data-claim-id 内），这里另列，照样过禁语与词表扫描
+const ALL = [...ALL_SHELL_COPY, ...Object.values(DENIAL_COPY), ...Object.values(STAR_DISPLAY_V1)];
 
 test('壳文案过禁语扫描（personas.guard，platform 口径）', () => {
   const r = spawnSync('python3', ['-m', 'personas.guard', 'scan', '--persona', 'platform', '--stdin-json'], {
@@ -62,8 +63,10 @@ test('壳页面与组件里没有中文文案：文字只从文案文件取；�
     assert.deepEqual(cjk, [], f.path);
   }
   const claimRenderers = src.filter((f) => /data-claim-id/.test(code(f.text))).map((f) => f.path);
-  // 冲刺 5-H 起另有“为什么”页、考试页（对账卡）与周报页渲染判断句（tests/trust.test.ts 逐个核对）
-  assert.deepEqual(claimRenderers.sort(), ['src/shell/TaskList.tsx', 'src/trust/ExamPages.tsx', 'src/trust/WeeklyPage.tsx', 'src/trust/WhyPage.tsx']);
+  // 冲刺 5-H 起另有“为什么”页、考试页（对账卡）与周报页渲染判断句（tests/trust.test.ts 逐个核对）；
+  // H5 星图 v1（开关 starmap_v1，默认关）的星位与星数说明（tests/star-v1.test.ts 核对）
+  assert.deepEqual(claimRenderers.sort(), ['src/shell/TaskList.tsx', 'src/star/StarMapV1.tsx', 'src/trust/ExamPages.tsx', 'src/trust/WeeklyPage.tsx',
+                                          'src/trust/WhyPage.tsx']);
   assert.match(readFileSync(join(WEB, 'src/shell/TaskList.tsx'), 'utf8'), /data-claim-id=\{r\.claim_id\}>\{r\.text\}/);
 });
 

@@ -453,6 +453,16 @@ gate0-evidence:
 	@$(if $(filter 1,$(GATE0_STARMAP)),cd services/learning && .venv/bin/python -m pytest -q -p no:cacheprovider --rootdir '$(abspath tools/e2e-cohort)' '$(abspath tools/e2e-cohort/tests)',true)
 	@cd services/learning && PYTHONPATH='$(abspath tools/e2e-cohort)' .venv/bin/python -m e2e_cohort evidence --out '$(abspath $(GATE0_OUT))' $(if $(filter 1,$(GATE0_STARMAP)),--starmap,)
 
+# H5 星图 v1 的 Gate 0 截图（specs/star-map-v1-h5 待人确认 #7）：v0 截图（<证据包>/starmap/）不替换；另在 test 环境、开关打开、
+# 合成数据（db/seeds/dev/star-map-v1-synthetic.sql）下截 v1 学生端与家长端各一张，标“未启用”，附文件与像素 SHA-256
+# （apps/web/e2e/visual-v1.spec.ts 的 @gate0 用例，走 apps/web/scripts/e2e.sh 的一次性环境；与 make web-test 共用 .next-e2e，不能同时跑）。
+# 用法：make gate0-starmap-v1 [GATE0_V1_OUT=<仓库内的输出目录>]（缺省写到合成样例旁的 tools/e2e-cohort/sample/starmap-v1/；仓库外的目录被拒绝）
+GATE0_V1_OUT ?= tools/e2e-cohort/sample/starmap-v1
+.PHONY: gate0-starmap-v1
+gate0-starmap-v1:
+	@if ! $(WEB_DEPS_OK); then echo "gate0-starmap-v1: 没有安装依赖（cd apps/web && npm ci，cd services/bff && npm ci）"; exit 2; fi
+	@STARBUDDY_GATE0_V1_OUT='$(abspath $(GATE0_V1_OUT))' bash apps/web/scripts/e2e.sh --grep @gate0 --project starmap-on --reporter=line
+
 # 冲刺 5 压测基线、单模型失效降级、成本测算（specs/load-cost-baseline-sprint5；工具与手册见 tools/loadtest/README.md、RUNBOOK.md）。
 # 只在本机一次性栈上跑（规则 9），只用合成数据（规则 8）；依赖同 learning-test、三科适配器与 BFF 的 npm ci。
 #   make loadtest-baseline [LOADTEST_STAGES=small|full|10:120,50:120] [LOADTEST_OUT=<目录>] [LOADTEST_ARGS='--fault fake-a=unavailable']

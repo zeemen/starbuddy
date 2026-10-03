@@ -293,7 +293,9 @@ test('信任界面组件里没有中文文案；data-claim-id 只在登记的组
   const tsx = src.filter((f) => /^src\/(trust|app\/s|app\/family)\/.*\.tsx$/.test(f.path));
   for (const f of tsx) assert.deepEqual(code(f.text).match(/[一-鿿]+/g) ?? [], [], f.path);
   const renderers = src.filter((f) => /data-claim-id/.test(code(f.text))).map((f) => f.path).sort();
-  assert.deepEqual(renderers, ['src/shell/TaskList.tsx', 'src/trust/ExamPages.tsx', 'src/trust/WeeklyPage.tsx', 'src/trust/WhyPage.tsx']);
+  // src/star/StarMapV1.tsx：H5 星图 v1（开关 starmap_v1，默认关），由 tests/star-v1.test.ts 核对
+  assert.deepEqual(renderers, ['src/shell/TaskList.tsx', 'src/star/StarMapV1.tsx', 'src/trust/ExamPages.tsx', 'src/trust/WeeklyPage.tsx',
+                               'src/trust/WhyPage.tsx']);
   assert.match(read('src/trust/WhyPage.tsx'), /<span data-claim-id=\{st\.claim_id\}>\{st\.text\}<\/span>/);
   assert.match(read('src/trust/ExamPages.tsx'), /s\.claim_id \? \(\n\s+<li key=\{i\}>\n\s+<span data-claim-id=\{s\.claim_id\}>\{s\.text\}<\/span>/);
   // 学生端不附置信度说明；家长端附（SIE 第八章）
