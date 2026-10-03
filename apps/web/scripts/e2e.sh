@@ -18,9 +18,12 @@ set -e
 psql -X -q -v ON_ERROR_STOP=1 -c "CREATE ROLE bff_app LOGIN IN ROLE starbuddy_bff" >/dev/null
 # 计量时钟（只在这个一次性测试库里，做法同 services/bff/tests/harness.ts）：把北京时间挪到当天白天，
 # 否则夜里跑端到端会撞上 22:00–06:00 的宵禁（数学诊断开始时要预留额度，SIE-02a）。时间照常往前走。
-psql -X -q -v ON_ERROR_STOP=1 -c "CREATE OR REPLACE FUNCTION platform.meter_now() RETURNS timestamptz LANGUAGE sql STABLE
-  SET search_path = pg_catalog AS \$f\$ SELECT ((date_trunc('day', now() AT TIME ZONE 'Asia/Shanghai') + interval '10 hours')
-  AT TIME ZONE 'Asia/Shanghai') + (now() - date_trunc('hour', now())) \$f\$" >/dev/null
+# 偏移量在建环境时算一次、写成常量（计量时钟 = now() + 偏移，从当天北京时间 10:00 起单调连续走，12 小时内不进宵禁）。
+# 原来按“当天 10 点 + 当前小时内的分秒”算，每逢整点倒退约 59 分钟：种子在整点前开通的订阅与额度（period_start = 计量时钟）
+# 在整点后“还没开始”，诊断开始预留得到 no_entitlement → 402 → 演示页“现在还不能开始”（specs/diagnosis-e2e-flake）。
+psql -X -q -v ON_ERROR_STOP=1 -c "DO \$do\$ BEGIN EXECUTE format(\$f\$CREATE OR REPLACE FUNCTION platform.meter_now() RETURNS timestamptz
+  LANGUAGE sql STABLE SET search_path = pg_catalog AS \$b\$ SELECT now() + %L::interval \$b\$\$f\$,
+  ((date_trunc('day', now() AT TIME ZONE 'Asia/Shanghai') + interval '10 hours') AT TIME ZONE 'Asia/Shanghai') - now()); END \$do\$" >/dev/null
 node --no-warnings "$ROOT/adapters/aya/scripts/register-content.ts" | psql -X -q -v ON_ERROR_STOP=1 >/dev/null
 PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -q -v ON_ERROR_STOP=1 -f "$ROOT/db/seeds/dev/star-map-synthetic.sql" >/dev/null
 # 数学诊断演示（SIE-02a）：九年级合成学生 D1 与家长 gD，试点会员（完整诊断额度）
