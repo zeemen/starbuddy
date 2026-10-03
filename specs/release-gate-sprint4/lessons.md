@@ -237,3 +237,11 @@
   - 1.0.0：46 passed、6 skipped，报告 `contract_version 1.0.0`、`implemented 6`、`passed 6`，`global_failures` 为空。
 - 另跑读阿鸦内容包的学习服务测试：`test_diagnosis_session`、`test_diagnosis_engine`、`test_e2e_aya` 共 104 passed（只运行，未改 services）。
 - 没有跑全量 `make check`：同一工作区里其他会话正在改 zhixing、wenli、db、bff、web。
+
+## 冲刺 3、4 · 第二部分：迁移与审核台（2026-10-03 开工计划）
+spec 冲刺 3、4 段已确认（待人确认全部按默认）。迁移从 0038 起按合并顺序编号。分 PR：
+- **A**：kge 迁移（`content_review.object_type` 加 `page`、`page_commit` 列与唯一约束）；页面合并记录与审核记录的对账脚本与 Makefile 目标（合成导出文件，不连托管平台），纳入 `make check`；审核台“页面”入口（列待审与对账状态）。
+- **B**：platform 迁移（内容版本状态机与保护、`publish_content_version` / `retire_content_version` / `change_admission`、`retired_at`、题目来源编号列、收回学习服务 UPDATE、BFF 可见性）；同 PR 改 `10_fixtures.sql` 与星图种子写法。
+- **C**：policy 迁移（签字函数、复核人改账号引用、发布改授权、来源文件与招录行收口）。
+- **D**：审核台：内容版本与考情差异视图、风险分类器补全、低风险窗口与抽检、版本记录导出补页面与内容版本行；时政过期下架任务。
+- **E**：阿鸦准入决定文件的平台导出与内容包重建；数学“内容版本 + 地图版本”合成发布走查与版本记录。
