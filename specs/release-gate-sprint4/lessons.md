@@ -286,3 +286,49 @@ spec 冲刺 3、4 段已确认（待人确认全部按默认）。迁移从 0038
 3. 托管平台须设为“合并前必须基于最新主分支”，保证合并后的页面内容与头提交相同；托管平台在境内开通（ADR 12 待人确认 #1），staff 用户名对应表由人维护。
 4. 是否需要专门的“人工处置”审核记录来解除扣页（现做法：对最新头提交重新签字）。
 5. 上面“与 spec 的差异”第 1–3 条的口径。
+
+## 冲刺 4 · PR B：platform 内容版本与准入（迁移 0039）（2026-10-05）
+
+### 交付
+- **迁移 0039**（草稿，由人在 0038 之后演练；开头有数据预检：库里已有 retired 内容版本或已有 admitted 题时以“0039 中止：…”明确中止）：
+  - 内容版本状态机：新增 `retired_at` 与一致性 CHECK；触发器 `guard_curriculum_version`：只能以草稿登记，已发布只能撤下且其他字段不能改，已撤下只读，非草稿不能删。
+  - 登记保护（`guard_content_registration`）：能力视图与题目只能追加到草稿版本、不能挪版本；题目 INSERT 时 `admission = 'admitted'` 被拒，`license_status` 一律存为 `unverified`（`source_ref` / `source_type` 留作登记元数据）；准入与来源只经 `change_admission` 改；已撤下版本下的题只允许降为 rejected。
+  - 题目新增来源三列（枚举与编号格式同阿鸦格式 3）；`item_admitted_source`：已准入的题必须来源已核。
+  - 新表 `platform.release_record`（审核、发布、撤下、准入执行记录；只追加；签字人是 staff 账号；开启并强制 RLS、无策略、只 authz 读写；复合外键保证学科与内容版本一致；个人层表清单按豁免登记）。
+  - 函数（SECURITY DEFINER，属主 authz）：`sign_content_version`、`publish_content_version`、`retire_content_version`、`sign_admission`、`change_admission` 只授 review、要求 active staff（复用 0023 `review_current_staff()`）；两个摘要函数授 learning 与 review；`admission_change_log` 授 learning（不含签字人，给 KGE-04 读准入变化）。签字时回传看到的摘要，发布与执行前重算比对。
+  - 发布：数学、道法 `map_version_id` 必填且所指地图在发布时刻已发布，语文可空；同前五段下版本号须大于“已发布过”的最大值（按数字比较）；最近一条审核须为批准且摘要一致；并发发布由咨询锁串行。
+  - 准入：方向只允许 source_unverified → pending_review → admitted 与任意 → rejected；升 admitted 须来源已核、签字人显式写授权状态（不沿用题目上的值）、审核等级 ≥ Q2；执行时这条审核须是该题最近一条、没执行过、题目摘要未变；一批有一条不合格整批回滚；自 admitted 降级时在执行记录上留 rubric_version 清单（取自 `kge.scoring_point`）。
+  - 收回 learning 对状态、发布 / 撤下时间、准入、来源列的 UPDATE，其余改为列级授权，登记草稿的 INSERT 保留；BFF：`skill_node_read` 要求所属版本已发布，`item_read` 要求已准入且所属版本已发布。
+  - down：有审核与发布记录时以明确错误中止（run.sh 有测试），否则完整回滚。
+- **测试**：`db/tests/79u_content_release.sql` 覆盖 spec 冲刺 4“内容版本与准入”全部条目，另含签字权限、摘要、整批原子、降级清单、`admission_change_log`、数学缺地图被拒、语文空地图发布成功；run.sh 并发测试（同前五段两个草稿同时发布、登记进行中时发布）、up 预检、down 中止；变异“内容发布：”30 条、“准入：”20 条；授权快照、pentest scope（SECURITY DEFINER 104 个）、攻击面 E3 同步。
+- **夹具与种子**：
+  - `db/tests/10_fixtures.sql`：先插草稿，再以两名合成 staff 发布合成占位地图与内容版本、经准入审核升 admitted（DO 块，因渗透测试环境单独加载此文件）。
+  - 新增 `db/seeds/dev/syn-publish-content.sql`：定义 `pg_temp.syn_publish_content(cv)`（只认开发 / 测试库名；占位地图 ID 由内容版本 ID 定出；签完把两名合成 staff 置为 disabled）。star-map 种子只发布自己的合成知行版本，shell 种子只发布自己的两份，种子头部写明“该学科在库里已上线”的副作用。
+  - 登记的真实阿鸦 0.1.0 不由种子发布，改由一次性测试环境自己发布（`apps/web/scripts/e2e.sh`、BFF 星图集成测试 `publishRegisteredContent`）。
+  - 三科 `adapters/*/scripts/register-content.ts`：登记 SQL 只往草稿版本追加（BEFORE 触发器先于 ON CONFLICT 生效，版本发布后重跑登记会报错）。
+  - 洞察、知识服务、掌握测试与压测种子用 `session_replication_role = replica` 直接写已发布版本与已准入题（只在 initdb 起的一次性实例或有库名挡板的测试库）。
+  - Gate 0 证据包：联调栈三科登记后经签字函数发布（`tools/e2e-cohort/e2e_cohort/stack.py` `publish_content`），在干净副本实跑 `make gate0-evidence GATE0_STARMAP=1` 重生，星图对账一致；样例变化：`tables_bff_cannot_read` 28→29、对应哈希、提交号、`starmap.json` 道法 `evidence_nodes` 2→1（旧样例本身过时：星图截于 ee3f9f5，`nodes.csv` 之后在 a84a76d 改过）；4 张截图字节不变。
+
+### 测试
+`make db-test` 2340 项断言通过；db-mutation 内容发布 30/30、准入 20/20、受影响组全部被发现（全量 801 条没跑）；`attack-surface-check`、`pentest-env-test` 通过；`learning-test` 2691 passed；`e2e-cohort` 17 passed；`bff-test` 通过；`web-test` 56 passed、1 skipped；zhixing / wenli 适配器测试通过；`insight-test` 通过（15 项，看起来不连库）。
+
+### 审查意见处理（按用户“按默认建议处理审查意见”）
+- 安全、契约各 1 条阻断：登记可自报来源已核（改为登记一律 unverified、升 admitted 须显式写授权、pending_review 不要求来源已核）；Gate 0 星图对账在 0039 后跑不通（联调栈经签字函数发布并实跑重生）。
+- 其余：迁移数据预检；种子只发布自己的合成版本、签完停用合成 staff；down 中止测试；已撤下版本的题允许降为 rejected；攻击面与 scope 写明“超级用户 + replica 可绕过保护触发器，约束仍然生效；生产不发超级用户凭据，执行迁移的身份不是超级用户”；可选项（并发测试、补变异、复合外键、等级门槛写成常量）。“去掉 FOR SHARE”的变异测不出（外键自带 KEY SHARE 锁已让登记与发布串行），已删，触发器里的 FOR SHARE 保留以表明意图。
+
+### 与 spec 的差异
+1. 审核与执行记录放在 `platform.release_record`，没有放进 `kge.content_review`：对象归 platform 所有，一个迁移只改一个 schema（ADR 02）；准入的唯一真相源仍是 `platform.item.admission`，release_record 是只追加的签字快照，不构成第二份事实。
+2. 撤下只要求 active staff 与依据，不要求事前批准记录，草稿也能撤下（止损动作，与 `kge.retire_map_version` 一致）。
+3. 版本号比较的是“已发布过”的最大值（含之后撤下的）；发布新版本不自动撤下同前五段的旧版本。
+4. pending_review 不要求来源已核（与三科登记一致）；阿鸦格式 3 的 `admissionProblems` 在 pending_review 分支仍要求来源已核，适配器未改，两者口径不同。
+5. 除数学外的学科审核等级门槛暂定 Q2。
+6. 受影响的 rubric_version 只取 `kge.scoring_point`，未取 `grade_result` 中的版本。
+7. 学习服务没接 `recompute_item`，只提供 `admission_change_log` 读口；在审核台（PR D）于 `change_admission` 之后调用重算，或 mastery-sweep 接调度之前，准入降级不会立即反映到掌握与星图（`specs/mastery-estimate-sprint4/spec.md` 写的是“4-G 准入变化调 recompute_item”）。
+8. 部分测试夹具用复制模式（spec 待人确认 #12 的另一做法）。
+
+### 待人确认
+1. 道法“已上线”副作用：执行过 star-map 或 shell 种子的库里道法不再返回 not_launched（撤下是终态，不能回退）；BFF shell-pages 因此不再断言“没有已发布版本 → not_launched”，该路径只由库层 79u 覆盖。
+2. 上面“与 spec 的差异”第 2–7 条的口径。
+3. 同一名 staff 可以签字、发布、执行准入走完全程；审核等级由签字人自报，没有和人员资质挂钩。
+4. 学生端探针（`insight.record_confidence_probe`，0025）检查题目存在时，草稿题与未准入题也算存在，与新的 BFF 可见性不一致；收紧会断数学诊断演示（演示题未准入未发布），且需改 insight schema，留待人决定。
+5. 签字人身份取自审核台后端设置的账号，只核对是 active staff，未绑定 0020 的 staff 会话（与 0019、0038 同一残余风险）。

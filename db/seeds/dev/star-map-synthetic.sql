@@ -4,7 +4,7 @@
 -- 前提：已执行全部迁移，并已跑过阿鸦内容登记（959 个能力点）：
 --   node adapters/aya/scripts/register-content.ts > /tmp/aya-register.sql && psql -f /tmp/aya-register.sql
 -- 用法（以迁移执行者身份；只能执行一次；文件自带事务，不要再加 -1）：
---   PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -v ON_ERROR_STOP=1 -f db/seeds/dev/star-map-synthetic.sql
+--   PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -v ON_ERROR_STOP=1 -f db/seeds/dev/syn-publish-content.sql -f db/seeds/dev/star-map-synthetic.sql
 --   不设 starbuddy.allow_synthetic_seed=on、或库名不是 starbuddy_dev* / starbuddy_test* 时直接报错：防止误跑到开发库以外
 --   （合成的知行能力点会出现在该库每个知行学生的星空里）
 --
@@ -13,6 +13,10 @@
 --   家庭 HO（无关）：家长 gO，学生 S3，选了阿鸦。
 --   知行：一个合成课程版本与 4 个合成能力点 SYN-ZX-01..04（模拟“过程四步”，不是教研坐标，spec 待人确认 #9）。
 --   掌握记录以 starbuddy_learning 身份写入（模拟学习服务）；阿鸦取已登记能力点按 local_id 排序的前 8 个。
+--   知行合成内容版本最后经 pg_temp.syn_publish_content（db/seeds/dev/syn-publish-content.sql，同一会话里先执行）以合成 staff 签字发布
+--   （迁移 0039 起 BFF 只看已发布版本的能力视图）。阿鸦登记的内容版本不由本种子发布：要让 BFF 看到阿鸦能力点，执行方在登记后自己调用
+--   该函数（一次性测试环境 e2e.sh 与 BFF 集成测试就是这样做的）。题目准入不变（都不是 admitted）。
+--   副作用：执行过本种子的库里，道法“已上线”（有已发布内容版本，选科不再返回 not_launched）。
 --   期望的星图计数写在文件末尾的注释里，BFF 与前端测试都按它断言。
 --
 -- 与真实学习服务的差异（只为原型演示，不能当作溯源或准入示例）：
@@ -33,6 +37,9 @@ BEGIN
   END IF;
   IF EXISTS (SELECT 1 FROM platform.household WHERE id = '5a000000-0000-4000-8000-0000000000d1') THEN
     RAISE EXCEPTION '星图合成种子已经执行过（只能执行一次）';
+  END IF;
+  IF to_regprocedure('pg_temp.syn_publish_content(uuid)') IS NULL THEN
+    RAISE EXCEPTION '先在同一会话里执行 db/seeds/dev/syn-publish-content.sql（定义合成发布函数）';
   END IF;
   IF (SELECT count(*) FROM platform.skill_node WHERE subject = 'aya') < 8 THEN
     RAISE EXCEPTION '没有登记阿鸦能力点：先执行 adapters/aya/scripts/register-content.ts 生成的 SQL';
@@ -153,6 +160,13 @@ INSERT INTO platform.mastery_estimate (id, student_id, subject, skill_local_id, 
 SELECT '5a000000-0000-4000-8000-0000000000e7', '5a000000-0000-4000-8000-0000000000c1', 'aya', local_id, 'stable', NULL, 0.9,
        'synthetic-star-map@0.1.0', '{5a000000-0000-4000-8000-0000000000f1}', '2026-10-16 10:05:00+00'
   FROM syn_aya_node WHERE n = 7;
+
+-- ---------- 发布本种子自己的合成知行内容版本（4-G 迁移 0039 起：先登记草稿，再经签字函数发布；BFF 只看已发布版本的能力视图） ----------
+-- 只发布本种子登记的合成版本；adapters/aya/scripts/register-content.ts 登记的阿鸦内容版本不由种子发布（真实内容的发布是人的决定），
+-- 一次性测试环境（apps/web/scripts/e2e.sh、BFF 集成测试）在登记后另行调用 pg_temp.syn_publish_content 发布。
+-- 函数由 db/seeds/dev/syn-publish-content.sql 定义（同一会话里先执行）。
+RESET ROLE;
+SELECT pg_temp.syn_publish_content('5a000000-0000-4000-8000-0000000000e1');
 
 COMMIT;
 

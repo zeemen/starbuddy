@@ -396,7 +396,8 @@ RESET ROLE;
 SET ROLE starbuddy_learning;
 SELECT t.throws($$SELECT t.kge_node('MATH.GEOM', 'domain', NULL, NULL, '{}', NULL, 'ca400000-0000-4000-8000-00000000ca04')$$, '42501', '学科服务不能写节点');
 SELECT t.throws($$SELECT kge.publish_map_version('ca400000-0000-4000-8000-00000000ca04')$$, '42501', '学科服务不能发布地图');
-SELECT t.ok((SELECT count(*) FROM kge.map_version) = 4 AND (SELECT count(*) FROM kge.map_change) = 2 AND (SELECT count(*) FROM kge.scoring_point) = 1,
+-- 5 个版本 = 本文件 4 个 + 10 号夹具的合成数学地图 0.0.1（0039 起内容版本发布须指向已发布地图，已被 0.1.0 自动撤下）
+SELECT t.ok((SELECT count(*) FROM kge.map_version) = 5 AND (SELECT count(*) FROM kge.map_change) = 2 AND (SELECT count(*) FROM kge.scoring_point) = 1,
             '学科服务读得到全部版本（含草稿与已撤下）、变更单与采分点');
 SELECT t.ok((SELECT count(*) FROM kge.validate_map_version('ca400000-0000-4000-8000-00000000ca04')) = 0, '学科服务可以跑发布前校验');
 RESET ROLE;
@@ -430,11 +431,12 @@ SELECT t.throws($$SELECT kge.validate_map_version('ca400000-0000-4000-8000-00000
 RESET ROLE;
 
 -- ================= 对 platform 的最小改动 =================
+-- 0039 起已发布的内容版本不能再改，这里用 10 号夹具里的数学草稿 0.2.0（ed）
 SET ROLE starbuddy_learning;
-UPDATE platform.curriculum_version SET map_version_id = :kb WHERE id = 'e0000000-0000-4000-8000-0000000000e0';
-SELECT t.ok((SELECT map_version_id FROM platform.curriculum_version WHERE id = 'e0000000-0000-4000-8000-0000000000e0') = :kb,
+UPDATE platform.curriculum_version SET map_version_id = :kb WHERE id = 'ed000000-0000-4000-8000-0000000000ed';
+SELECT t.ok((SELECT map_version_id FROM platform.curriculum_version WHERE id = 'ed000000-0000-4000-8000-0000000000ed') = :kb,
             '内容版本可以引用同学科的地图版本');
-SELECT t.throws($$UPDATE platform.curriculum_version SET map_version_id = 'ca200000-0000-4000-8000-00000000ca02' WHERE id = 'e9000000-0000-4000-8000-0000000000e9'$$,
+SELECT t.throws($$UPDATE platform.curriculum_version SET map_version_id = 'ca300000-0000-4000-8000-00000000ca03' WHERE id = 'ed000000-0000-4000-8000-0000000000ed'$$,
                 '23503', '内容版本不能引用别的学科的地图版本');
 SELECT t.ok((SELECT count(*) FROM platform.curriculum_version WHERE map_version_id IS NULL) >= 1, '地图版本引用可空（现有内容版本不受影响）');
 RESET ROLE;

@@ -866,6 +866,70 @@ M+=(
   ["页面审核：签字不加咨询锁"]="$(afr "$PS" "'PERFORM pg_advisory_xact_lock(hashtext(''kge.sign_page_review''), hashtext(p_page_id || ''@'' || p_page_commit));'" "''")"
 )
 
+# G 流第二部分 PR B：内容版本与题目准入（0039，specs/release-gate-sprint4 第 7 节、冲刺 4 段）：由 79u 发现（授权类的同时由 80 的快照发现）。
+# DBMUT_FILTER=内容发布 与 DBMUT_FILTER=准入 只跑这两组
+GCV='platform.guard_curriculum_version()'
+GCR='platform.guard_content_registration()'
+PCV='platform.publish_content_version(uuid)'
+SCV='platform.sign_content_version(uuid, text, text, text)'
+RCV='platform.retire_content_version(uuid, text)'
+DCV='platform.content_version_digest(uuid)'
+ATO='platform.admission_transition_ok(platform.admission, platform.admission)'
+CAT='platform.check_admission_target(platform.subject, platform.admission, text, text, text, text)'
+SAD='platform.sign_admission(platform.subject, text, platform.admission, text, text, text, text, text, text, text)'
+CAD='platform.change_admission(uuid[])'
+M+=(
+  ["内容发布：可直接以已发布登记"]="$(afr "$GCV" "'IF NEW.status <> ''draft'' OR NEW.published_at IS NOT NULL OR NEW.retired_at IS NOT NULL THEN'" "'IF false THEN'")"
+  ["内容发布：状态可不经函数改"]="$(afr "$GCV" "'IF current_user <> ''starbuddy_authz'' THEN'" "'IF false THEN'")"
+  ["内容发布：已发布可改其他字段"]="$(afr "$GCV" "'IF OLD.status = ''published'' AND (to_jsonb(NEW)'" "'IF false AND (to_jsonb(NEW)'")"
+  ["内容发布：已撤下可改"]="$(afr "$GCV" "'IF OLD.status = ''retired'' THEN'" "'IF false THEN'")"
+  ["内容发布：已发布可删"]="$(afr "$GCV" "'IF OLD.status <> ''draft'' THEN'" "'IF false THEN'")"
+  ["内容发布：已发布版本可追加登记"]="$(afr "$GCR" "'ELSIF v_status IS DISTINCT FROM ''draft'' THEN'" "'ELSIF false THEN'")"
+  ["内容发布：登记可挪版本"]="$(afr "$GCR" "'IF TG_OP = ''UPDATE'' AND NEW.curriculum_version_id IS DISTINCT FROM OLD.curriculum_version_id THEN'" "'IF false THEN'")"
+  ["内容发布：题目可以 admitted 登记"]="$(afr "$GCR" "'IF TG_OP = ''INSERT'' AND NEW.admission = ''admitted'' THEN'" "'IF false THEN'")"
+  ["内容发布：准入可不经函数改"]="$(afr "$GCR" "'IF current_user <> ''starbuddy_authz'' THEN'" "'IF false THEN'")"
+  ["内容发布：骨架学科可不填地图"]="$(afr "$PCV" "'IF platform.content_requires_map(c.subject) THEN'" "'IF false THEN'")"
+  ["内容发布：地图版本可不是已发布"]="$(afr "$PCV" "'IF v_map_status IS DISTINCT FROM ''published'' THEN'" "'IF false THEN'")"
+  ["内容发布：版本号可不递增"]="$(afr "$PCV" "'IF v_max IS NOT NULL AND string_to_array'" "'IF false AND string_to_array'")"
+  ["内容发布：版本号只比已发布中的"]="$(afr "$PCV" "'AND o.subject = c.subject AND o.id <> c.id AND o.published_at IS NOT NULL;'" "'AND o.subject = c.subject AND o.id <> c.id AND o.status = ''published'';'")"
+  ["内容发布：发布不查批准记录"]="$(afr "$PCV" "'IF NOT FOUND OR r.decision <> ''approved'' THEN'" "'IF NOT FOUND THEN'")"
+  ["内容发布：发布不比摘要"]="$(afr "$PCV" "'IF r.digest IS DISTINCT FROM v_digest THEN'" "'IF false THEN'")"
+  ["内容发布：摘要不含题目登记"]="$(afr "$DCV" "'FROM platform.item i WHERE i.curriculum_version_id = v.id)'" "'FROM platform.item i WHERE false)'")"
+  ["内容发布：摘要不含地图版本"]="$(afr "$DCV" "'''map_version_id'', v.map_version_id'" "'''map_version_id'', NULL'")"
+  ["内容发布：签字不核对 staff"]="$(afr "$SCV" "'v_staff uuid := platform.review_current_staff();'" "'v_staff uuid := platform.current_account_id();'")"
+  ["内容发布：签字不比看到的摘要"]="$(afr "$SCV" "'IF p_expected_digest IS DISTINCT FROM v_digest THEN'" "'IF false THEN'")"
+  ["内容发布：撤下可不写依据"]="$(afr "$RCV" "'IF p_basis_code IS NULL THEN'" "'IF false THEN'")"
+  ["内容发布：BFF 可看草稿能力视图"]="DROP POLICY skill_node_read ON platform.skill_node; CREATE POLICY skill_node_read ON platform.skill_node FOR SELECT TO starbuddy_bff USING (true);"
+  ["内容发布：BFF 可看草稿版本下已准入题"]="DROP POLICY item_read ON platform.item; CREATE POLICY item_read ON platform.item FOR SELECT TO starbuddy_bff USING (admission = 'admitted');"
+  ["内容发布：BFF 可读审核记录"]="GRANT SELECT ON platform.release_record TO starbuddy_bff; CREATE POLICY t_rr ON platform.release_record FOR SELECT TO starbuddy_bff USING (true);"
+  ["内容发布：学习服务可改状态"]="GRANT UPDATE (status, published_at) ON platform.curriculum_version TO starbuddy_learning;"
+  ["内容发布：学习服务可改准入"]="GRANT UPDATE (admission, admitted_at) ON platform.item TO starbuddy_learning;"
+  ["内容发布：学习服务可发布"]="GRANT EXECUTE ON FUNCTION $PCV TO starbuddy_learning;"
+  ["内容发布：记录可改"]="DROP TRIGGER reject_release_record_change ON platform.release_record;"
+  ["内容发布：记录可清空"]="DROP TRIGGER reject_release_record_truncate ON platform.release_record;"
+  ["准入：方向不限"]="$(afr "$ATO" "'SELECT (p_from = ''source_unverified'' AND p_to = ''pending_review'')'" "'SELECT true OR (p_from = ''source_unverified'' AND p_to = ''pending_review'')'")"
+  ["准入：rejected 可再准入"]="$(afr "$ATO" "'OR (p_from = ''pending_review'' AND p_to = ''admitted'')'" "'OR (p_from IN (''pending_review'', ''rejected'') AND p_to = ''admitted'')'")"
+  ["准入：admitted 可回退"]="$(afr "$ATO" "'SELECT (p_from = ''source_unverified'' AND p_to = ''pending_review'')'" "'SELECT (p_to IN (''pending_review'', ''source_unverified''))'")"
+  ["准入：可跳级到 admitted"]="$(afr "$ATO" "'OR (p_from = ''pending_review'' AND p_to = ''admitted'')'" "'OR (p_from IN (''pending_review'', ''source_unverified'') AND p_to = ''admitted'')'")"
+  ["准入：admitted 不查审核等级"]="$(afr "$CAT" "'AND (p_review_level IS NULL OR'" "'AND false AND (p_review_level IS NULL OR'")"
+  ["准入：审核等级门槛 Q1"]="$(afr "platform.admission_min_review_rank(platform.subject)" "' SELECT 2 '" "' SELECT 1 '")"
+  ["准入：升级不查来源"]="$(afr "$CAT" "'AND NOT (p_source_ref IS NOT NULL'" "'AND false AND NOT (p_source_ref IS NOT NULL'")"
+  ["准入：登记可自报授权"]="$(afr "$GCR" "'NEW.license_status := ''unverified'';'" "'NULL;'")"
+  ["准入：升 admitted 沿用题目上的授权"]="$(afr "$SAD" "'IF p_decision = ''approved'' AND p_to = ''admitted'' AND p_license_status IS NULL THEN'" "'IF false THEN'")"
+  ["准入：已撤下版本不能降为 rejected"]="$(afr "$GCR" "'AND NEW.admission IS DISTINCT FROM ''rejected'' THEN'" "' THEN'")"
+  ["准入：变化记录带回签字人"]="DROP FUNCTION platform.admission_change_log(timestamptz); CREATE FUNCTION platform.admission_change_log(p_since timestamptz) RETURNS TABLE (applied_at timestamptz, subject platform.subject, item_id text, from_admission platform.admission, to_admission platform.admission, affected_rubric_versions text[], signer uuid) LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, platform, pg_temp AS \$f\$ SELECT x.decided_at, x.subject, x.item_id::text, x.from_admission, x.to_admission, x.affected_rubric_versions, x.signer FROM platform.release_record x WHERE x.line = 'admission' AND x.action = 'apply' \$f\$; ALTER FUNCTION platform.admission_change_log(timestamptz) OWNER TO starbuddy_authz; REVOKE EXECUTE ON FUNCTION platform.admission_change_log(timestamptz) FROM PUBLIC; GRANT EXECUTE ON FUNCTION platform.admission_change_log(timestamptz) TO starbuddy_learning;"
+  ["内容发布：记录学科可与版本不一致"]="ALTER TABLE platform.release_record DROP CONSTRAINT release_record_cv_subject;"
+  ["内容发布：发布不加咨询锁"]="$(afr "$PCV" "'PERFORM pg_advisory_xact_lock(hashtext(''platform.publish_content_version''),'" "'PERFORM pg_advisory_xact_lock_shared(hashtext(''platform.publish_content_version''),'")"  ["准入：签字不比看到的摘要"]="$(afr "$SAD" "'IF p_expected_digest IS DISTINCT FROM v_digest THEN'" "'IF false THEN'")"
+  ["准入：已撤下版本题目可变"]="$(afr "$SAD" "'IF v_cv_status = ''retired'' AND p_to <> ''rejected'' THEN'" "'IF false THEN'")"
+  ["准入：执行不查结论"]="$(afr "$CAD" "'IF r.decision <> ''approved'' THEN'" "'IF false THEN'")"
+  ["准入：执行不认最近一条"]="$(afr "$CAD" "'AND (x.decided_at, x.id) > (r.decided_at, r.id)) THEN'" "'AND false) THEN'")"
+  ["准入：同一审核可执行两次"]="$(afr "$CAD" "'WHERE x.applies_review_id = r.id) THEN'" "'WHERE false) THEN'")"
+  ["准入：执行不比摘要"]="$(afr "$CAD" "'IF platform.item_admission_digest(r.subject, r.item_id) IS DISTINCT FROM r.digest THEN'" "'IF false THEN'")"
+  ["准入：降级不留清单"]="$(afr "$CAD" "'IF i.admission = ''admitted'' THEN'" "'IF false THEN'")"
+  ["准入：来源不按审核记录写"]="$(afr "$CAD" "'source_ref = r.source_ref, source_type = r.source_type, license_status = r.license_status'" "'source_ref = source_ref'")"
+  ["准入：已准入可缺来源"]="ALTER TABLE platform.item DROP CONSTRAINT item_admitted_source;"
+)
+
 # 并行执行（每个变异各起一个一次性 Postgres，互不影响）；DBMUT_JOBS 控制并发数，默认等于 CPU 核数
 JOBS="${DBMUT_JOBS:-$(nproc 2>/dev/null || echo 2)}"
 RES="$(mktemp -d "${TMPDIR:-/tmp}/starbuddy-dbmut.XXXXXX")"

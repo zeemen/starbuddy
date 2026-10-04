@@ -25,13 +25,20 @@ psql -X -q -v ON_ERROR_STOP=1 -c "DO \$do\$ BEGIN EXECUTE format(\$f\$CREATE OR 
   LANGUAGE sql STABLE SET search_path = pg_catalog AS \$b\$ SELECT now() + %L::interval \$b\$\$f\$,
   ((date_trunc('day', now() AT TIME ZONE 'Asia/Shanghai') + interval '10 hours') AT TIME ZONE 'Asia/Shanghai') - now()); END \$do\$" >/dev/null
 node --no-warnings "$ROOT/adapters/aya/scripts/register-content.ts" | psql -X -q -v ON_ERROR_STOP=1 >/dev/null
-PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -q -v ON_ERROR_STOP=1 -f "$ROOT/db/seeds/dev/star-map-synthetic.sql" >/dev/null
+# 4-G 迁移 0039 起 BFF 只看已发布内容版本的能力视图：在这个一次性测试库里把登记的阿鸦内容版本以合成 staff 经签字函数发布
+# （种子不发布真实登记的内容；发布函数见 db/seeds/dev/syn-publish-content.sql）
+PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -q -v ON_ERROR_STOP=1 -f "$ROOT/db/seeds/dev/syn-publish-content.sql" \
+  -c "SELECT pg_temp.syn_publish_content(v.id) FROM platform.curriculum_version v
+       WHERE v.status = 'draft' AND v.id IN (SELECT n.curriculum_version_id FROM platform.skill_node n WHERE n.subject = 'aya')" >/dev/null
+PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -q -v ON_ERROR_STOP=1 -f "$ROOT/db/seeds/dev/syn-publish-content.sql" \
+  -f "$ROOT/db/seeds/dev/star-map-synthetic.sql" >/dev/null
 # 数学诊断演示（SIE-02a）：九年级合成学生 D1 与家长 gD，试点会员（完整诊断额度）
 PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -q -v ON_ERROR_STOP=1 -f "$ROOT/db/seeds/dev/diagnosis-synthetic.sql" >/dev/null
 # 家庭登录与学生模式（4-H H1）：gS 的合成号码 +99900000101、S1 的合成同意
 PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -q -v ON_ERROR_STOP=1 -f "$ROOT/db/seeds/dev/auth-synthetic.sql" >/dev/null
 # 统一壳 H4（今日、科目、额度与时长、选科、时长设置）：家庭 HG（家长 gH +99900000106；孩子试用、留存、试点各一名）。
-PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -q -v ON_ERROR_STOP=1 -f "$ROOT/db/seeds/dev/shell-synthetic.sql" >/dev/null
+PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -q -v ON_ERROR_STOP=1 -f "$ROOT/db/seeds/dev/syn-publish-content.sql" \
+  -f "$ROOT/db/seeds/dev/shell-synthetic.sql" >/dev/null
 # 跨科周报 v0（冲刺 5-H）：GT 本周的学生版成长手记与家长版周报（引用两条合成判断，模板 syn.weekly.node_mastery@1）
 PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -q -v ON_ERROR_STOP=1 -f "$ROOT/db/seeds/dev/weekly-synthetic.sql" >/dev/null
 AYA_COUNT="$(psql -X -At -c "SELECT count(*) FROM platform.skill_node WHERE subject = 'aya'")"

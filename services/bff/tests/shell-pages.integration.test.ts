@@ -11,7 +11,7 @@ import { activeRoutes, ROUTES } from '../src/http/routes.ts';
 import { loadShellConfig, type ShellConfig } from '../src/shell/config.ts';
 import type { ExplainRequest, InsightClient, RenderedStatement } from '../src/shell/insight-client.ts';
 import type { PlanClient, PlanSection, PlanSubject } from '../src/shell/plan-client.ts';
-import { HAS_DB, setupHarness, type Harness } from './harness.ts';
+import { HAS_DB, publishSyntheticContent, setupHarness, type Harness } from './harness.ts';
 import { callAs, startShell, type ShellHarness } from './shell-harness.ts';
 
 const CONFIG = 'shelltest-plan@1';
@@ -70,6 +70,8 @@ interface Fam { guardian: string; household: string; kids: Record<string, Kid> }
 let F: Fam;      // 主家庭：T 试用、P 试点基本档、Q 试点专业档、R 留存、X 没有订阅
 let O: Fam;      // 另一户
 let period: { start: number; end: number };
+// 迁移 0039 起星图合成种子（events / onboarding / star-map 集成测试与本文件共用一个库）会发布道法的合成内容版本，
+// 道法是否“已上线”原本取决于执行顺序。before 里固定为“已上线”：没有已发布的道法版本就发布一份本文件的合成版本（撤下是终态，反向固定不了）
 
 async function family(kids: string[]): Promise<Fam> {
   const guardian = randomUUID();
@@ -168,6 +170,7 @@ before(async () => {
                            ('syn.math.not_listed', 1, 'node', ARRAY['agent', 'student', 'guardian'], interval '60 days', '（合成模板）', 'approved', 'synthetic', now())
                     ON CONFLICT DO NOTHING`, [TPL]);
   period = { start: clock - 86400_000, end: clock - 86400_000 + 14 * 86400_000 };
+  await publishSyntheticContent(h.su, ['zhixing']);
   F = await family(['T', 'P', 'Q', 'R', 'X']);
   O = await family(['Y']);
   await subscribe(F, F.kids['T']!, 'trial', 'basic');
@@ -195,7 +198,7 @@ test('学科目录：只列适用年级、非 planned 的学科（英语不出�
   assert.ok(t.body.subjects.every((s: any) => s.open === false), '试用（非试点）下 beta 学科都不开放');
   const p = await get(F.guardian, `/students/${F.kids['P']!.id}/enrollments`);
   const open = Object.fromEntries(p.body.subjects.map((s: any) => [s.subject, s.open]));
-  assert.deepEqual(open, { math: true, chinese: true, politics: false });  // 道法没有已发布内容版本
+  assert.deepEqual(open, { math: true, chinese: true, politics: true });  // 三科都有已发布内容版本（before 里固定）
   assert.ok(!JSON.stringify(p.body).includes('english'));
 });
 
@@ -222,7 +225,8 @@ test('选科 outcome：change_limit_reached、no_subscription、not_launched；�
   assert.deepEqual((await post(g, `/students/${Q}/enrollments/chinese/pause`)).body, { outcome: 'change_limit_reached' });
   assert.deepEqual((await post(g, `/students/${F.kids['X']!.id}/enrollments/math`)).body, { outcome: 'no_subscription' });
   assert.deepEqual((await post(g, `/students/${F.kids['T']!.id}/enrollments/math`)).body, { outcome: 'not_launched' });
-  assert.deepEqual((await post(g, `/students/${Q}/enrollments/politics`)).body, { outcome: 'not_launched' });
+  // 道法已上线（before 里固定）：试点基本档没有选修槽（不改任何选科）。“没有已发布版本 → not_launched”在库层由 79u 断言
+  assert.deepEqual((await post(g, `/students/${F.kids['P']!.id}/enrollments/politics`)).body, { outcome: 'limit_reached', slot: 'elective', limit: 0 });
   const ref = await post(g, `/students/${randomUUID()}/enrollments/math`);
   assert.equal(ref.status, 404);
   for (const path of [`/students/${Q}/enrollments/english`, `/students/${Q}/enrollments/history`, `/students/${Q}/enrollments/klingon`,

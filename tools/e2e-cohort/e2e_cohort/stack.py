@@ -68,6 +68,15 @@ def register_content(pg) -> None:
         pg.psql("SET ROLE starbuddy_learning;\n" + sql.decode())
 
 
+def publish_content(pg) -> None:
+    """4-G 迁移 0039 起内容版本只能经签字函数发布（BFF 才看得到能力视图，星图截图要用）：在这个一次性库里把三科登记的草稿版本
+    以合成 staff 签字发布。发布函数见 db/seeds/dev/syn-publish-content.sql（同一 psql 会话里先定义再调用）；
+    数学在合成掌握配置绑定合成地图之后发布（指向已发布的合成地图），道法没有地图时建确定 ID 的占位地图、发布后即撤下。"""
+    helper = (ROOT / "db/seeds/dev/syn-publish-content.sql").read_text(encoding="utf-8")
+    pg.psql(helper + "\nSELECT pg_temp.syn_publish_content(v.id) FROM platform.curriculum_version v"
+                     " WHERE v.status = 'draft' ORDER BY v.subject, v.id;")
+
+
 DRIVER_PACKAGES = ("pg", "postgres", "pg-promise", "pg-pool", "knex", "sequelize", "typeorm", "prisma", "@prisma/client",
                    "kysely", "drizzle-orm", "slonik", "mysql", "mysql2", "sqlite3", "better-sqlite3", "@neondatabase/serverless")
 
@@ -243,6 +252,8 @@ async def _stack(pg, model: ScriptedModel, *, register: bool):
         register_content(pg)
     # 合成掌握配置（KGE-04 第二步 PR 3）：合成数学地图、打标与内容版本绑定；复测由 platform.retest_task 驱动（mastery.py）
     pg.psql(mastery_setup.seed_sql())
+    if register:
+        publish_content(pg)
     app_pool = await asyncpg.create_pool(**pg.dsn(LOGIN_ROLE), min_size=1, max_size=20)
     admin = await asyncpg.create_pool(**pg.dsn("postgres"), min_size=1, max_size=4)
     try:

@@ -49,15 +49,15 @@ FORBIDDEN_TEXT = (UNVERIFIED_QUOTE, DISPUTED_QUOTE, DRAFT_QUOTE, DRAFT_NAME, DRA
                   "syn-rubric@0.2.0", "合成退役版本名称", "0.99")
 
 SEED_SQL = f"""
+-- 迁移 0039 起已发布的内容版本与已准入的题只能经发布闸门产生；知识服务测试只要它们存在，以复制模式直接写入（同下面的地图），
+-- 已准入的题仍须来源已核（约束不随复制模式跳过）
+SET session_replication_role = replica;
 INSERT INTO platform.curriculum_version (id, region, exam_year, grade, textbook_version, subject, content_version, status, published_at)
 VALUES ('{CV}', 'syn-region', 2027, 7, 'syn-ed-a', 'aya', '0.9.0', 'published', now());
 INSERT INTO platform.skill_node (subject, local_id, curriculum_version_id, label_code) VALUES ('aya', 'K-SYN-EQ', '{CV}', 'K-SYN-EQ');
-INSERT INTO platform.item (subject, item_id, curriculum_version_id, skill_local_id, admission, admitted_at) VALUES
-  ('aya', 'SYN-I1', '{CV}', 'K-SYN-EQ', 'admitted', now()), ('aya', 'SYN-I2', '{CV}', 'K-SYN-EQ', 'admitted', now()),
-  ('aya', 'SYN-I3', '{CV}', 'K-SYN-EQ', 'admitted', now()), ('aya', 'SYN-I4', '{CV}', 'K-SYN-EQ', 'admitted', now()),
-  ('aya', 'SYN-I5', '{CV}', 'K-SYN-EQ', 'admitted', now()), ('aya', 'SYN-I6', '{CV}', 'K-SYN-EQ', 'admitted', now());
+INSERT INTO platform.item (subject, item_id, curriculum_version_id, skill_local_id, admission, admitted_at, source_ref, source_type, license_status)
+SELECT 'aya', 'SYN-I' || i, '{CV}', 'K-SYN-EQ', 'admitted', now(), 'SYN-SRC-KGE', 'self_authored', 'cleared' FROM generate_series(1, 6) i;
 
-SET session_replication_role = replica;
 INSERT INTO kge.map_version (id, subject, standard_year, version, status, published_at) VALUES
   ('{VR}', 'aya', 2022, '0.8.0', 'retired', now() - interval '30 days'),
   ('{VD}', 'aya', 2022, '0.10.0', 'draft', NULL),

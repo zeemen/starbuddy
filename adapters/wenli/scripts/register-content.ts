@@ -35,14 +35,14 @@ ON CONFLICT (region, exam_year, grade, textbook_version, subject, content_versio
 
 INSERT INTO platform.skill_node (subject, local_id, curriculum_version_id, label_code)
 SELECT 'wenli', v.local_id, cv.id, v.local_id
-  FROM (SELECT id FROM platform.curriculum_version WHERE ${cvWhere}) cv,
+  FROM (SELECT id FROM platform.curriculum_version WHERE ${cvWhere} AND status = 'draft') cv,
        (VALUES
   ${nodes}) AS v(local_id)
 ON CONFLICT (subject, local_id) DO NOTHING;
 
 INSERT INTO platform.item (subject, item_id, curriculum_version_id, skill_local_id, admission, admitted_at)
 SELECT 'wenli', v.item_id, cv.id, v.skill_local_id, v.admission, NULL
-  FROM (SELECT id FROM platform.curriculum_version WHERE ${cvWhere}) cv,
+  FROM (SELECT id FROM platform.curriculum_version WHERE ${cvWhere} AND status = 'draft') cv,
        (VALUES
   ${items}) AS v(item_id, skill_local_id, admission)
 ON CONFLICT (subject, item_id) DO NOTHING;

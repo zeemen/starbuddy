@@ -216,10 +216,17 @@ async def item(admin, subject: str, version: str, node: str, *, family: str | No
     cv = cv or {"aya": CV_AYA, "zhixing": CV_ZX, "wenli": CV_WL}[subject]
     async with admin.acquire() as c:
         if not await c.fetchval("SELECT 1 FROM platform.item WHERE subject = $1::platform.subject AND item_id = $2", subject, iid):
-            await c.execute(
-                """INSERT INTO platform.item (subject, item_id, curriculum_version_id, admission, admitted_at)
-                   VALUES ($1::platform.subject, $2, $3::uuid, $4::platform.admission, CASE WHEN $4 = 'admitted' THEN now() END)""",
-                subject, iid, cv, admission)
+            # 0039 起题目不能以 admitted 登记（准入只经发布闸门）；本文件的合成题与下面的打标一样以复制模式直接写入，
+            # 已准入的题仍须满足“来源已核”约束（约束不随复制模式跳过）
+            async with c.transaction():
+                await c.execute("SET LOCAL session_replication_role = replica")
+                await c.execute(
+                    """INSERT INTO platform.item (subject, item_id, curriculum_version_id, admission, admitted_at, source_ref, source_type, license_status)
+                       VALUES ($1::platform.subject, $2, $3::uuid, $4::platform.admission, CASE WHEN $4 = 'admitted' THEN now() END,
+                               CASE WHEN $4 = 'admitted' THEN 'SYN-SRC-MASTERY' END,
+                               CASE WHEN $4 = 'admitted' THEN 'self_authored' ELSE 'unknown' END,
+                               CASE WHEN $4 = 'admitted' THEN 'cleared' ELSE 'unverified' END)""",
+                    subject, iid, cv, admission)
         fid = None
         if family:
             fid = await c.fetchval("SELECT id::text FROM kge.item_family WHERE map_version_id = $1::uuid AND code = $2", version, family)

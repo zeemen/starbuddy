@@ -155,7 +155,7 @@ echo "ok - 登录角色间接同时继承 bff 与 learning 时迁移拒绝执行
 as_pg "$PGBIN/createdb" -h "$WORK" -U postgres kge_role_check
 psql_kge() { as_pg "$PGBIN/psql" -h "$WORK" -U postgres -d kge_role_check -X -q -v ON_ERROR_STOP=1 "$@"; }
 for f in "${UPS[@]}"; do
-  case "$(basename "$f")" in 0011_*|0012_*|0017_*|0018_*|0019_*|0024_*|0026_*|0028_*|0038_*) continue ;; esac  # 0012、0017–0019、0024、0026、0028、0038 依赖 0011 的 kge 表
+  case "$(basename "$f")" in 0011_*|0012_*|0017_*|0018_*|0019_*|0024_*|0026_*|0028_*|0038_*|0039_*) continue ;; esac  # 0012、0017–0019、0024、0026、0028、0038 依赖 0011 的 kge 表；0039 依赖 0012、0018
   psql_kge -1 < "$f" >/dev/null 2>&1 || { echo "db-test: 失败（角色断言测试库执行 $(basename "$f") 出错）"; exit 1; }
 done
 kge_must_refuse() {  # $1 = 布置 SQL，$2 = 撤销 SQL，$3 = 说明
@@ -247,6 +247,53 @@ grep -q '0038 回滚中止' "$WORK/down38.err" || { echo "db-test: 失败（0038
 [ "$(psql_run -tAc "SELECT count(*) FROM pg_attribute WHERE attrelid = 'kge.content_review'::regclass AND attname = 'page_commit' AND NOT attisdropped" </dev/null)" = "1" ] \
   || { echo "db-test: 失败（0038 回滚中止后提交号列不在了）"; exit 1; }
 echo "ok - 有页面审核记录时 0038 回滚以明确错误中止，库不变" >> "$OUT"
+
+# 0039（G 流第二部分 PR B）的并发：内容版本发布与登记、两个草稿并发发布。语文没有地图骨架，用合成语文版本（前五段 syn-race）
+CVX=e7b00000-0000-4000-8000-0000000000f1; CVY=e7b00000-0000-4000-8000-0000000000f2; CVZ=e7b00000-0000-4000-8000-0000000000f3
+printf '%s\n' "INSERT INTO platform.curriculum_version (id, region, exam_year, grade, textbook_version, subject, content_version) VALUES
+    ('$CVX', 'nanjing', 2027, 9, 'syn-race', 'wenli', '0.2.0'), ('$CVY', 'nanjing', 2027, 9, 'syn-race', 'wenli', '0.1.0'),
+    ('$CVZ', 'nanjing', 2027, 8, 'syn-race', 'wenli', '0.1.0');
+  $AS_STAFF SELECT platform.sign_content_version(v, 'approved', platform.content_version_digest(v), 'race')
+    FROM unnest(ARRAY['$CVX', '$CVY', '$CVZ']::uuid[]) v;" | psql_run >/dev/null || { echo "db-test: 失败（0039 并发测试夹具）"; exit 1; }
+# 场景 4：会话 A 发布 0.2.0 后事务未提交；会话 B 此时发布同前五段的 0.1.0。咨询锁让 B 等 A 提交，再按版本号递增拒绝
+printf '%s\n' "BEGIN; $AS_STAFF SELECT platform.publish_content_version('$CVX'); SELECT pg_sleep(1.5); COMMIT;" \
+  | psql_run >/dev/null 2>"$WORK/race_g.err" &
+sleep 0.5
+if printf '%s\n' "$AS_STAFF SELECT platform.publish_content_version('$CVY');" | psql_run >/dev/null 2>"$WORK/race_h.err"; then
+  wait; echo "db-test: 失败（两个草稿并发发布时，较小的版本号没有等前一个提交后被拒绝）"; exit 1
+fi
+wait || { echo "db-test: 失败（并发场景 4 的先发布失败：$(cat "$WORK/race_g.err")）"; exit 1; }
+grep -q '必须大于' "$WORK/race_h.err" || { echo "db-test: 失败（并发场景 4 不是被版本号检查拒绝：$(cat "$WORK/race_h.err")）"; exit 1; }
+echo "ok - 并发：同前五段两个草稿并发发布，后一个等前一个提交后按版本号递增拒绝" >> "$OUT"
+# 场景 5：学习服务往已签字的草稿追加题目登记并持有事务；此时发布。登记对版本行的共享锁让发布等登记提交，再按摘要不符拒绝
+printf '%s\n' "BEGIN; SET ROLE starbuddy_learning;
+  INSERT INTO platform.item (subject, item_id, curriculum_version_id) VALUES ('wenli', 'SYN-RACE-I1', '$CVZ');
+  SELECT pg_sleep(1.5); COMMIT;" | psql_run >/dev/null 2>"$WORK/race_i.err" &
+sleep 0.5
+if printf '%s\n' "$AS_STAFF SELECT platform.publish_content_version('$CVZ');" | psql_run >/dev/null 2>"$WORK/race_j.err"; then
+  wait; echo "db-test: 失败（发布没有等待进行中的题目登记，签字后追加的登记进了已发布版本）"; exit 1
+fi
+wait || { echo "db-test: 失败（并发场景 5 的登记失败：$(cat "$WORK/race_i.err")）"; exit 1; }
+grep -q '摘要不符' "$WORK/race_j.err" || { echo "db-test: 失败（并发场景 5 不是被摘要检查拒绝：$(cat "$WORK/race_j.err")）"; exit 1; }
+echo "ok - 并发：发布等待进行中的题目登记提交后按摘要不符拒绝" >> "$OUT"
+
+# 0039 的数据前提：库里已有 retired 的内容版本（79u 撤下的）时，0039 up 以明确信息中止（不会在补不出撤下时间的数据上加约束）
+if psql_run -1 < "$(ls "$ROOT"/db/migrations/0039_*.up.sql)" >/dev/null 2>"$WORK/up39.err"; then
+  echo "db-test: 失败（库里已有 retired 内容版本时 0039 up 仍然执行成功）"; exit 1
+fi
+grep -q '0039 中止：已有' "$WORK/up39.err" || { echo "db-test: 失败（0039 up 不是被数据前提检查中止：$(cat "$WORK/up39.err")）"; exit 1; }
+echo "ok - 已有 retired 内容版本时 0039 up 以明确信息中止" >> "$OUT"
+# 0039 的回滚：库里有审核与发布记录（只追加不能删）时，回滚必须以明确错误中止，且什么都不改
+D39="$(ls "$ROOT"/db/migrations/0039_*.down.sql)"
+[ "$(psql_run -tAc "SELECT count(*) > 0 FROM platform.release_record" </dev/null)" = "t" ] \
+  || { echo "db-test: 失败（0039 回滚测试的前提不成立：库里没有审核与发布记录）"; exit 1; }
+if psql_run -1 < "$D39" >/dev/null 2>"$WORK/down39.err"; then
+  echo "db-test: 失败（有审核与发布记录时 0039 回滚仍然执行成功）"; exit 1
+fi
+grep -q '0039 回滚中止' "$WORK/down39.err" || { echo "db-test: 失败（0039 回滚不是被记录检查中止：$(cat "$WORK/down39.err")）"; exit 1; }
+[ "$(psql_run -tAc "SELECT count(*) FROM pg_attribute WHERE attrelid = 'platform.curriculum_version'::regclass AND attname = 'retired_at' AND NOT attisdropped" </dev/null)" = "1" ] \
+  || { echo "db-test: 失败（0039 回滚中止后撤下时间列不在了）"; exit 1; }
+echo "ok - 有审核与发布记录时 0039 回滚以明确错误中止，库不变" >> "$OUT"
 
 n=$(grep -c 'ok - ' "$OUT" || true)
 echo "db-test: 通过（${n} 项断言）"

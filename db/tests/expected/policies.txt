@@ -127,7 +127,9 @@ platform.guardian_student_link|link_read|SELECT|starbuddy_bff|PERMISSIVE|using=(
 platform.guardian_student_link|link_revoke|UPDATE|starbuddy_bff|PERMISSIVE|using=((status = 'active'::text) AND (((guardian_account_id = platform.current_account_id()) AND platform.is_active_guardian()) OR platform.is_self_student(student_id)))|check=(status = 'revoked'::text)
 platform.household|household_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_household(id)|check=-
 platform.ingest_request|ingest_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
-platform.item|item_read|SELECT|starbuddy_bff|PERMISSIVE|using=(admission = 'admitted'::platform.admission)|check=-
+platform.item|item_read|SELECT|starbuddy_bff|PERMISSIVE|using=((admission = 'admitted'::platform.admission) AND (EXISTS ( SELECT 1
+   FROM platform.curriculum_version v
+  WHERE ((v.id = item.curriculum_version_id) AND (v.status = 'published'::text)))))|check=-
 platform.item|item_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
 platform.mastery_estimate|mastery_insight_read|SELECT|starbuddy_insight|PERMISSIVE|using=true|check=-
 platform.mastery_estimate|mastery_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
@@ -156,7 +158,9 @@ platform.review_task|review_service_open|INSERT|starbuddy_learning|PERMISSIVE|us
      JOIN platform.diagnosis_session s ON ((s.id = st.session_id)))
   WHERE ((st.id = review_task.source_id) AND (st.kind = ANY (ARRAY['process'::text, 'explain'::text])) AND (st.status = 'answered'::text) AND (s.student_id = review_task.student_id) AND (s.subject = review_task.subject)))))))
 platform.review_task|review_service_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
-platform.skill_node|skill_node_read|SELECT|starbuddy_bff|PERMISSIVE|using=true|check=-
+platform.skill_node|skill_node_read|SELECT|starbuddy_bff|PERMISSIVE|using=(EXISTS ( SELECT 1
+   FROM platform.curriculum_version v
+  WHERE ((v.id = skill_node.curriculum_version_id) AND (v.status = 'published'::text))))|check=-
 platform.skill_node|skill_node_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
 platform.skill_observation|obs_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
 platform.skill_observation|obs_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true

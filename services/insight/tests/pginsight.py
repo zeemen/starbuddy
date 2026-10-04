@@ -43,8 +43,9 @@ TPL_DRAFT, TPL_RETIRED = "syn.math.draft", "syn.math.retired"
 TEXT_MASTERY = "【占位模板·未审核】{node_id}｜{level}｜{gate}"
 TEXT_TRANSFER = "【占位模板·未审核】迁移｜{node_id}｜{level}"
 
-_items = ",\n".join(f"('aya', 'syn-item-{i:03d}', 'e0000000-0000-4000-8000-0000000000e0', 'admitted', now())" for i in range(1, 41))
-_witems = ",\n".join(f"('wenli', 'syn-w-item-{i:02d}', 'e9000000-0000-4000-8000-0000000000e9', 'admitted', now())" for i in range(1, 11))
+_SRC = "'SYN-SRC-INSIGHT', 'self_authored', 'cleared'"  # 已准入的题须来源已核（迁移 0039 的约束）
+_items = ",\n".join(f"('aya', 'syn-item-{i:03d}', 'e0000000-0000-4000-8000-0000000000e0', 'admitted', now(), {_SRC})" for i in range(1, 41))
+_witems = ",\n".join(f"('wenli', 'syn-w-item-{i:02d}', 'e9000000-0000-4000-8000-0000000000e9', 'admitted', now(), {_SRC})" for i in range(1, 11))
 _evidence = ",\n".join(
     f"('{E[i]}', now() - interval '{20 - i} days', '{S1}', 'aya', 'response_text', 'syn-item-{i + 1:03d}', 'admitted', "
     f"'{{\"text\": \"syn\"}}', 'grade', gen_random_uuid(), 'synthetic-insight-{i:04d}', 'independent', 'A', 'keypad', 'objective')"
@@ -63,12 +64,15 @@ INSERT INTO platform.student_profile (id, account_id, household_id, grade, regio
 INSERT INTO platform.guardian_student_link (id, guardian_account_id, student_id, granted_via) VALUES
   ('{LINK_A}', '{GA}', '{S1}', 'household_creator');
 INSERT INTO platform.guardian_student_link (guardian_account_id, student_id, granted_via) VALUES ('{GB}', '{S2}', 'household_creator');
+-- 迁移 0039 起已发布的内容版本与已准入的题只能经发布闸门产生；洞察服务测试只要它们存在，以复制模式直接写入（同下面的证据）
+SET session_replication_role = replica;
 INSERT INTO platform.curriculum_version (id, region, exam_year, grade, textbook_version, subject, content_version, status, published_at)
 VALUES ('e0000000-0000-4000-8000-0000000000e0', 'nanjing', 2027, 8, 'bubian-2024', 'aya', '0.1.0', 'published', now()),
        ('e9000000-0000-4000-8000-0000000000e9', 'nanjing', 2027, 8, 'bubian-2024', 'wenli', '0.1.0', 'published', now());
-INSERT INTO platform.item (subject, item_id, curriculum_version_id, admission, admitted_at) VALUES
+INSERT INTO platform.item (subject, item_id, curriculum_version_id, admission, admitted_at, source_ref, source_type, license_status) VALUES
 {_items},
 {_witems};
+SET session_replication_role = origin;
 SELECT platform.ensure_monthly_partitions('platform.evidence_event'::regclass, (now() - interval '200 days')::date, 9);
 SELECT platform.ensure_monthly_partitions('platform.attempt'::regclass, (now() - interval '200 days')::date, 9);
 SET session_replication_role = replica;

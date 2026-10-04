@@ -142,7 +142,7 @@
     "guardians_with_multiple_children": 4,
     "students_checked": 20,
     "table_source": "registry",
-    "tables_bff_cannot_read": 28,
+    "tables_bff_cannot_read": 29,
     "tables_compared": 28,
     "tables_not_comparable_column_privilege": [],
     "tables_skipped_no_privilege": [],

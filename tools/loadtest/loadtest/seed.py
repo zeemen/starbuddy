@@ -61,10 +61,14 @@ INSERT INTO platform.plan_feature (config_version, tier, feature_code, value_cod
    WHERE config_version = '{SOURCE_PLAN}'
      AND NOT EXISTS (SELECT 1 FROM platform.plan_feature b WHERE b.config_version = '{PLAN}');
 UPDATE platform.plan_config SET status = 'published', published_at = now() WHERE version = '{PLAN}' AND status = 'draft';
+-- 迁移 0039 起已发布的内容版本只能经发布闸门产生（且数学、道法要指向已发布地图）；压测只需要选科门控放行，
+-- 在这个一次性测试库里以复制模式直接写入合成的已发布版本（只有超级用户能这样做）
+SET session_replication_role = replica;
 INSERT INTO platform.curriculum_version (region, exam_year, grade, textbook_version, subject, content_version, status, published_at)
   SELECT 'nanjing', 2027, 9, 'loadtest-2024', s::platform.subject, '0.1.0', 'published', now()
     FROM unnest(ARRAY['aya', 'wenli', 'zhixing']) s
    WHERE NOT EXISTS (SELECT 1 FROM platform.curriculum_version c WHERE c.subject = s::platform.subject AND c.status = 'published');
+SET session_replication_role = origin;
 """
 
 

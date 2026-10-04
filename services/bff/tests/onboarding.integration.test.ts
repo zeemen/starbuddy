@@ -42,6 +42,7 @@ before(async () => {
     const seeder = await su.connect();
     try {
       await seeder.query(`SET starbuddy.allow_synthetic_seed = 'on'`);
+      await seeder.query(readFileSync(new URL('db/seeds/dev/syn-publish-content.sql', ROOT), 'utf8'));  // 种子要用的合成发布函数（迁移 0039）
       await seeder.query(readFileSync(new URL('db/seeds/dev/star-map-synthetic.sql', ROOT), 'utf8'));
     } finally {
       seeder.release(true);

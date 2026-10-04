@@ -26,17 +26,46 @@ INSERT INTO platform.guardian_student_link (guardian_account_id, student_id, gra
   ('a0000000-0000-4000-8000-00000000000a', 'c1000000-0000-4000-8000-0000000000c1', 'household_creator'),
   ('b0000000-0000-4000-8000-00000000000b', 'c2000000-0000-4000-8000-0000000000c2', 'household_creator');
 
-INSERT INTO platform.curriculum_version (id, region, exam_year, grade, textbook_version, subject, content_version, status, published_at)
-VALUES ('e0000000-0000-4000-8000-0000000000e0', 'nanjing', 2027, 9, 'bubian-2024', 'aya', '0.1.0', 'published', now());
+-- 内容登记（0039 起）：先插草稿，再以合成 staff 经签字函数发布（spec 待人确认 #12 默认：保护触发器连超级用户也拦）。
+--   数学有知识地图骨架，发布内容版本须指向已发布的地图版本：这里先发布一个空的合成数学地图 0.0.1（首次发布算结构性，两名 staff 签字），
+--   76_kge_map 发布 0.1.0 时它被自动撤下；语文没有骨架，map_version_id 可空。
+--   已准入的两道题先以 pending_review 登记（带合成来源编号；登记时自报的授权一律记为 unverified），
+--   再经准入审核（签字人显式写明授权 cleared、学科审核等级 Q2）与 change_admission 升为 admitted。
+--   本文件也被渗透测试环境单独加载（db/pentest/up.sh，不带 00_helpers），所以这里只用 DO 块，不用 t.* 辅助函数。
+INSERT INTO platform.account (id, kind) VALUES ('f5000000-0000-4000-8000-0000000000f5', 'staff');  -- 第二名合成教研（结构性发布两人签字）
+INSERT INTO platform.curriculum_version (id, region, exam_year, grade, textbook_version, subject, content_version)
+VALUES ('e0000000-0000-4000-8000-0000000000e0', 'nanjing', 2027, 9, 'bubian-2024', 'aya', '0.1.0');
 INSERT INTO platform.skill_node (subject, local_id, curriculum_version_id, label_code) VALUES
   ('aya', 'K-QF-0301', 'e0000000-0000-4000-8000-0000000000e0', 'quadratic-completing-square');
-INSERT INTO platform.curriculum_version (id, region, exam_year, grade, textbook_version, subject, content_version, status, published_at)
-VALUES ('e9000000-0000-4000-8000-0000000000e9', 'nanjing', 2027, 9, 'bubian-2024', 'wenli', '0.1.0', 'published', now()),
-       ('ed000000-0000-4000-8000-0000000000ed', 'nanjing', 2027, 9, 'bubian-2024', 'aya', '0.2.0', 'draft', NULL);
-INSERT INTO platform.item (subject, item_id, curriculum_version_id, skill_local_id, admission, admitted_at) VALUES
-  ('aya', 'synthetic-0301-07', 'e0000000-0000-4000-8000-0000000000e0', 'K-QF-0301', 'admitted', now()),
-  ('aya', 'synthetic-0301-08', 'e0000000-0000-4000-8000-0000000000e0', 'K-QF-0301', 'pending_review', NULL),
-  ('wenli', 'synthetic-essay-01', 'e9000000-0000-4000-8000-0000000000e9', NULL, 'admitted', now());
+INSERT INTO platform.curriculum_version (id, region, exam_year, grade, textbook_version, subject, content_version)
+VALUES ('e9000000-0000-4000-8000-0000000000e9', 'nanjing', 2027, 9, 'bubian-2024', 'wenli', '0.1.0'),
+       ('ed000000-0000-4000-8000-0000000000ed', 'nanjing', 2027, 9, 'bubian-2024', 'aya', '0.2.0');
+INSERT INTO platform.item (subject, item_id, curriculum_version_id, skill_local_id, admission, source_ref, source_type, license_status) VALUES
+  ('aya', 'synthetic-0301-07', 'e0000000-0000-4000-8000-0000000000e0', 'K-QF-0301', 'pending_review', 'SYN-SRC-0001', 'self_authored', 'cleared'),
+  ('aya', 'synthetic-0301-08', 'e0000000-0000-4000-8000-0000000000e0', 'K-QF-0301', 'pending_review', NULL, 'unknown', 'unverified'),
+  ('wenli', 'synthetic-essay-01', 'e9000000-0000-4000-8000-0000000000e9', NULL, 'pending_review', 'SYN-SRC-0002', 'self_authored', 'cleared');
+INSERT INTO kge.map_version (id, subject, standard_year, version) VALUES ('cf000000-0000-4000-8000-0000000000cf', 'aya', 2022, '0.0.1');
+UPDATE platform.curriculum_version SET map_version_id = 'cf000000-0000-4000-8000-0000000000cf' WHERE id = 'e0000000-0000-4000-8000-0000000000e0';
+DO $fx$
+BEGIN
+  SET LOCAL ROLE starbuddy_review;
+  PERFORM set_config('app.account_id', 'f5000000-0000-4000-8000-0000000000f5', true);
+  PERFORM kge.sign_review('map_version', 'cf000000-0000-4000-8000-0000000000cf', 'approved', 'high', 'fixture');
+  PERFORM set_config('app.account_id', '5f000000-0000-4000-8000-00000000005f', true);
+  PERFORM kge.sign_review('map_version', 'cf000000-0000-4000-8000-0000000000cf', 'approved', 'high', 'fixture');
+  PERFORM kge.publish_map_version('cf000000-0000-4000-8000-0000000000cf');
+  PERFORM platform.sign_content_version(v, 'approved', platform.content_version_digest(v), 'fixture')
+     FROM unnest(ARRAY['e0000000-0000-4000-8000-0000000000e0', 'e9000000-0000-4000-8000-0000000000e9']::uuid[]) v;
+  PERFORM platform.publish_content_version('e0000000-0000-4000-8000-0000000000e0');
+  PERFORM platform.publish_content_version('e9000000-0000-4000-8000-0000000000e9');
+  PERFORM platform.change_admission(ARRAY[
+    platform.sign_admission('aya', 'synthetic-0301-07', 'admitted', 'approved', 'Q2', NULL, NULL, 'cleared',
+                            platform.item_admission_digest('aya', 'synthetic-0301-07'), 'fixture'),
+    platform.sign_admission('wenli', 'synthetic-essay-01', 'admitted', 'approved', 'Q2', NULL, NULL, 'cleared',
+                            platform.item_admission_digest('wenli', 'synthetic-essay-01'), 'fixture')]);
+  PERFORM set_config('app.account_id', '', true);
+  RESET ROLE;
+END $fx$;
 
 -- 两个学生各一条证据（2026-10，UTC）
 INSERT INTO platform.evidence_event (evidence_id, occurred_at, student_id, subject, kind, item_id, skill_local_id,

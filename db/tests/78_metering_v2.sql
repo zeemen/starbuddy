@@ -333,9 +333,24 @@ SELECT t.ok(t.call('a0000000-0000-4000-8000-00000000000a', $$platform.pause_subj
             AND t.call('a0000000-0000-4000-8000-00000000000a', $$platform.enroll_subject('c1000000-0000-4000-8000-0000000000c1', 'aya')$$)
                 @> '{"outcome": "enrolled"}',
             '换下的科目本周期仍占槽，新科目下个周期才能开；换回原科目可以');
--- 选修槽：道法（选修、beta）补一个已发布课程版本
-INSERT INTO platform.curriculum_version (region, exam_year, grade, textbook_version, subject, content_version, status, published_at)
-VALUES ('nanjing', 2027, 9, 'bubian-2024', 'zhixing', '0.1.0', 'published', now());
+-- 选修槽：道法（选修、beta）补一个已发布课程版本（0039 起先登记草稿、再经签字函数发布；道法有骨架，先发布一个空的合成道法地图）
+DO $fx$
+BEGIN
+  INSERT INTO kge.map_version (id, subject, standard_year, version) VALUES ('cf700000-0000-4000-8000-0000000000c7', 'zhixing', 2022, '0.0.1');
+  INSERT INTO platform.curriculum_version (id, region, exam_year, grade, textbook_version, subject, content_version, map_version_id)
+  VALUES ('e7000000-0000-4000-8000-0000000000e7', 'nanjing', 2027, 9, 'bubian-2024', 'zhixing', '0.1.0', 'cf700000-0000-4000-8000-0000000000c7');
+  SET LOCAL ROLE starbuddy_review;
+  PERFORM set_config('app.account_id', 'f5000000-0000-4000-8000-0000000000f5', true);
+  PERFORM kge.sign_review('map_version', 'cf700000-0000-4000-8000-0000000000c7', 'approved', 'high', 'fixture');
+  PERFORM set_config('app.account_id', '5f000000-0000-4000-8000-00000000005f', true);
+  PERFORM kge.sign_review('map_version', 'cf700000-0000-4000-8000-0000000000c7', 'approved', 'high', 'fixture');
+  PERFORM kge.publish_map_version('cf700000-0000-4000-8000-0000000000c7');
+  PERFORM platform.sign_content_version('e7000000-0000-4000-8000-0000000000e7', 'approved',
+                                        platform.content_version_digest('e7000000-0000-4000-8000-0000000000e7'), 'fixture');
+  PERFORM platform.publish_content_version('e7000000-0000-4000-8000-0000000000e7');
+  PERFORM set_config('app.account_id', '', true);
+  RESET ROLE;
+END $fx$;
 SELECT t.ok(t.call('a0000000-0000-4000-8000-00000000000a', $$platform.enroll_subject('c1000000-0000-4000-8000-0000000000c1', 'zhixing')$$)
             = '{"slot": "elective", "limit": 0, "outcome": "limit_reached"}', '基本档没有选修槽');
 UPDATE platform.subscription SET tier = 'plus' WHERE student_id = 'c1000000-0000-4000-8000-0000000000c1' AND status = 'active';

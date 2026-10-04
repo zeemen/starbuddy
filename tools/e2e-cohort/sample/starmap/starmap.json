@@ -1,7 +1,7 @@
 {
  "browser": "本机 Chromium（PLAYWRIGHT_BROWSERS_PATH，不下载）",
  "captured_at_commit": {
-  "commit": "5d758a7b216bfcd84a814ef07a6bf10d6105c5fd",
+  "commit": "aa7373259271d63df7de69a1f527610997729c9d",
   "worktree_dirty": true
  },
  "device_scale_factor": 1,
@@ -190,8 +190,8 @@
      "unlit": 10
     },
     {
-     "evidence_nodes": 2,
-     "evidence_nodes_on_page": 2,
+     "evidence_nodes": 1,
+     "evidence_nodes_on_page": 1,
      "half": 0,
      "lit": 0,
      "needs_verification": 0,

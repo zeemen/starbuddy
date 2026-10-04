@@ -152,6 +152,15 @@ col|platform.attempt.student_id|starbuddy_eraser|SELECT|SUPERUSER
 col|platform.attempt.student_id|starbuddy_insight|SELECT|SUPERUSER
 col|platform.attempt.subject|starbuddy_insight|SELECT|SUPERUSER
 col|platform.auth_session.account_id|starbuddy_eraser|SELECT|SUPERUSER
+col|platform.curriculum_version.content_version|starbuddy_learning|UPDATE|SUPERUSER
+col|platform.curriculum_version.exam_year|starbuddy_learning|UPDATE|SUPERUSER
+col|platform.curriculum_version.grade|starbuddy_learning|UPDATE|SUPERUSER
+col|platform.curriculum_version.map_version_id|starbuddy_learning|UPDATE|SUPERUSER
+col|platform.curriculum_version.published_at|starbuddy_authz|UPDATE|SUPERUSER
+col|platform.curriculum_version.region|starbuddy_learning|UPDATE|SUPERUSER
+col|platform.curriculum_version.retired_at|starbuddy_authz|UPDATE|SUPERUSER
+col|platform.curriculum_version.status|starbuddy_authz|UPDATE|SUPERUSER
+col|platform.curriculum_version.textbook_version|starbuddy_learning|UPDATE|SUPERUSER
 col|platform.diagnosis_session.created_at|starbuddy_bff|SELECT|SUPERUSER
 col|platform.diagnosis_session.elapsed_sec|starbuddy_bff|SELECT|SUPERUSER
 col|platform.diagnosis_session.elapsed_sec|starbuddy_learning|UPDATE|SUPERUSER
@@ -262,6 +271,12 @@ col|platform.ingest_request.status|starbuddy_learning|UPDATE|SUPERUSER
 col|platform.ingest_request.student_id|starbuddy_eraser|SELECT|SUPERUSER
 col|platform.ingest_request.summary|starbuddy_learning|UPDATE|SUPERUSER
 col|platform.ingest_request.updated_at|starbuddy_learning|UPDATE|SUPERUSER
+col|platform.item.admission|starbuddy_authz|UPDATE|SUPERUSER
+col|platform.item.admitted_at|starbuddy_authz|UPDATE|SUPERUSER
+col|platform.item.license_status|starbuddy_authz|UPDATE|SUPERUSER
+col|platform.item.skill_local_id|starbuddy_learning|UPDATE|SUPERUSER
+col|platform.item.source_ref|starbuddy_authz|UPDATE|SUPERUSER
+col|platform.item.source_type|starbuddy_authz|UPDATE|SUPERUSER
 col|platform.mastery_estimate.id|starbuddy_authz|SELECT|SUPERUSER
 col|platform.mastery_estimate.is_current|starbuddy_learning|UPDATE|SUPERUSER
 col|platform.mastery_estimate.student_id|starbuddy_authz|SELECT|SUPERUSER
@@ -312,6 +327,8 @@ col|platform.review_task.status|starbuddy_authz|UPDATE|SUPERUSER
 col|platform.review_task.student_id|starbuddy_eraser|SELECT|SUPERUSER
 col|platform.review_task.student_id|starbuddy_learning|INSERT|SUPERUSER
 col|platform.review_task.subject|starbuddy_learning|INSERT|SUPERUSER
+col|platform.skill_node.label_code|starbuddy_learning|UPDATE|SUPERUSER
+col|platform.skill_node.parent_local_id|starbuddy_learning|UPDATE|SUPERUSER
 col|platform.skill_observation.algorithm_version|starbuddy_insight|SELECT|SUPERUSER
 col|platform.skill_observation.confidence|starbuddy_insight|SELECT|SUPERUSER
 col|platform.skill_observation.created_at|starbuddy_insight|SELECT|SUPERUSER
@@ -558,6 +575,14 @@ func|kge.version_parts(text)|starbuddy_authz|EXECUTE|SUPERUSER
 func|kge.version_record(platform.subject)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|kge.version_record(platform.subject)|starbuddy_kge|EXECUTE|starbuddy_authz
 func|kge.version_record(platform.subject)|starbuddy_review|EXECUTE|starbuddy_authz
+func|platform.admission_change_log(timestamp with time zone)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.admission_change_log(timestamp with time zone)|starbuddy_learning|EXECUTE|starbuddy_authz
+func|platform.admission_min_review_rank(platform.subject)|starbuddy_authz|EXECUTE|SUPERUSER
+func|platform.admission_min_review_rank(platform.subject)|starbuddy_learning|EXECUTE|SUPERUSER
+func|platform.admission_min_review_rank(platform.subject)|starbuddy_review|EXECUTE|SUPERUSER
+func|platform.admission_transition_ok(platform.admission,platform.admission)|starbuddy_authz|EXECUTE|SUPERUSER
+func|platform.admission_transition_ok(platform.admission,platform.admission)|starbuddy_learning|EXECUTE|SUPERUSER
+func|platform.admission_transition_ok(platform.admission,platform.admission)|starbuddy_review|EXECUTE|SUPERUSER
 func|platform.auth_issue_student_session(uuid,text,integer,integer)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.auth_issue_student_session(uuid,text,integer,integer)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|platform.auth_new_session(uuid,text,uuid,timestamp with time zone,integer,integer)|starbuddy_authz|EXECUTE|SUPERUSER
@@ -583,9 +608,18 @@ func|platform.can_read_student(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.can_read_student(uuid)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|platform.cancel_erasure(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.cancel_erasure(uuid)|starbuddy_bff|EXECUTE|starbuddy_authz
+func|platform.change_admission(uuid[])|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.change_admission(uuid[])|starbuddy_review|EXECUTE|starbuddy_authz
+func|platform.check_admission_target(platform.subject,platform.admission,text,text,text,text)|starbuddy_authz|EXECUTE|SUPERUSER
 func|platform.check_supersede_target()|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.confirm_erasure(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.confirm_erasure(uuid)|starbuddy_bff|EXECUTE|starbuddy_authz
+func|platform.content_requires_map(platform.subject)|starbuddy_authz|EXECUTE|SUPERUSER
+func|platform.content_requires_map(platform.subject)|starbuddy_learning|EXECUTE|SUPERUSER
+func|platform.content_requires_map(platform.subject)|starbuddy_review|EXECUTE|SUPERUSER
+func|platform.content_version_digest(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.content_version_digest(uuid)|starbuddy_learning|EXECUTE|starbuddy_authz
+func|platform.content_version_digest(uuid)|starbuddy_review|EXECUTE|starbuddy_authz
 func|platform.create_guardian_invite(uuid,interval)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.create_guardian_invite(uuid,interval)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|platform.create_student(uuid,smallint,text,text,date)|starbuddy_authz|EXECUTE|starbuddy_authz
@@ -621,6 +655,9 @@ func|platform.is_linked_guardian(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.is_linked_guardian(uuid)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|platform.is_self_student(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.is_self_student(uuid)|starbuddy_bff|EXECUTE|starbuddy_authz
+func|platform.item_admission_digest(platform.subject,text)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.item_admission_digest(platform.subject,text)|starbuddy_learning|EXECUTE|starbuddy_authz
+func|platform.item_admission_digest(platform.subject,text)|starbuddy_review|EXECUTE|starbuddy_authz
 func|platform.lookup_accounts_by_phone(text)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.meter_apply_subject_limits(uuid,text,platform.plan_tier)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.meter_authorize_usage(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
@@ -674,6 +711,8 @@ func|platform.meter_uuidv5(uuid,text)|starbuddy_bff|EXECUTE|SUPERUSER
 func|platform.pause_subject(uuid,platform.subject)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.pause_subject(uuid,platform.subject)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|platform.plan_config_lock_key(text)|starbuddy_authz|EXECUTE|SUPERUSER
+func|platform.publish_content_version(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.publish_content_version(uuid)|starbuddy_review|EXECUTE|starbuddy_authz
 func|platform.redeem_guardian_invite(text)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.redeem_guardian_invite(text)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|platform.release_review_task(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
@@ -682,6 +721,8 @@ func|platform.request_erasure(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.request_erasure(uuid)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|platform.resolve_review_task(uuid,text)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.resolve_review_task(uuid,text)|starbuddy_review|EXECUTE|starbuddy_authz
+func|platform.retire_content_version(uuid,text)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.retire_content_version(uuid,text)|starbuddy_review|EXECUTE|starbuddy_authz
 func|platform.review_current_staff()|starbuddy_authz|EXECUTE|SUPERUSER
 func|platform.review_queue(platform.subject,text,text,integer,timestamp with time zone,uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.review_queue(platform.subject,text,text,integer,timestamp with time zone,uuid)|starbuddy_review|EXECUTE|starbuddy_authz
@@ -696,6 +737,10 @@ func|platform.set_subject_textbook(uuid,platform.subject,text)|starbuddy_authz|E
 func|platform.set_subject_textbook(uuid,platform.subject,text)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|platform.set_time_guard(uuid,integer,time without time zone,time without time zone)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.set_time_guard(uuid,integer,time without time zone,time without time zone)|starbuddy_bff|EXECUTE|starbuddy_authz
+func|platform.sign_admission(platform.subject,text,platform.admission,text,text,text,text,text,text,text)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.sign_admission(platform.subject,text,platform.admission,text,text,text,text,text,text,text)|starbuddy_review|EXECUTE|starbuddy_authz
+func|platform.sign_content_version(uuid,text,text,text)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.sign_content_version(uuid,text,text,text)|starbuddy_review|EXECUTE|starbuddy_authz
 func|platform.signup_guardian(text)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.staff_bf_salt()|starbuddy_authz|EXECUTE|SUPERUSER
 func|platform.staff_crypt(text,text)|starbuddy_authz|EXECUTE|SUPERUSER
@@ -755,6 +800,7 @@ owner|kge.sign_map_change(uuid,text,text)|starbuddy_authz
 owner|kge.sign_page_review(text,text,text,text,text)|starbuddy_authz
 owner|kge.sign_review(text,text,text,text,text)|starbuddy_authz
 owner|kge.version_record(platform.subject)|starbuddy_authz
+owner|platform.admission_change_log(timestamp with time zone)|starbuddy_authz
 owner|platform.auth_issue_student_session(uuid,text,integer,integer)|starbuddy_authz
 owner|platform.auth_otp_issue(text,bytea,integer,integer)|starbuddy_authz
 owner|platform.auth_otp_login(text,bytea,integer,integer,text)|starbuddy_authz
@@ -765,8 +811,10 @@ owner|platform.auth_session_revoke_all(text)|starbuddy_authz
 owner|platform.can_read_household(uuid)|starbuddy_authz
 owner|platform.can_read_student(uuid)|starbuddy_authz
 owner|platform.cancel_erasure(uuid)|starbuddy_authz
+owner|platform.change_admission(uuid[])|starbuddy_authz
 owner|platform.check_supersede_target()|starbuddy_authz
 owner|platform.confirm_erasure(uuid)|starbuddy_authz
+owner|platform.content_version_digest(uuid)|starbuddy_authz
 owner|platform.create_guardian_invite(uuid,interval)|starbuddy_authz
 owner|platform.create_student(uuid,smallint,text,text,date)|starbuddy_authz
 owner|platform.enqueue_claim_dispute(uuid)|starbuddy_authz
@@ -777,6 +825,7 @@ owner|platform.guard_link_update()|starbuddy_authz
 owner|platform.is_active_guardian()|starbuddy_authz
 owner|platform.is_linked_guardian(uuid)|starbuddy_authz
 owner|platform.is_self_student(uuid)|starbuddy_authz
+owner|platform.item_admission_digest(platform.subject,text)|starbuddy_authz
 owner|platform.lookup_accounts_by_phone(text)|starbuddy_authz
 owner|platform.meter_apply_subject_limits(uuid,text,platform.plan_tier)|starbuddy_authz
 owner|platform.meter_authorize_usage(uuid)|starbuddy_authz
@@ -809,16 +858,20 @@ owner|platform.meter_upgrade(uuid,platform.plan_tier)|starbuddy_authz
 owner|platform.meter_uses_slots(text,platform.plan_tier)|starbuddy_authz
 owner|platform.pause_subject(uuid,platform.subject)|starbuddy_authz
 owner|platform.profile_page_statement_v|starbuddy_authz
+owner|platform.publish_content_version(uuid)|starbuddy_authz
 owner|platform.redeem_guardian_invite(text)|starbuddy_authz
 owner|platform.release_review_task(uuid)|starbuddy_authz
 owner|platform.request_erasure(uuid)|starbuddy_authz
 owner|platform.resolve_review_task(uuid,text)|starbuddy_authz
+owner|platform.retire_content_version(uuid,text)|starbuddy_authz
 owner|platform.review_queue(platform.subject,text,text,integer,timestamp with time zone,uuid)|starbuddy_authz
 owner|platform.review_sample_spot_checks(platform.subject,timestamp with time zone,numeric)|starbuddy_authz
 owner|platform.review_sample_weekly_reports(date,numeric,integer)|starbuddy_authz
 owner|platform.review_task_detail(uuid)|starbuddy_authz
 owner|platform.set_subject_textbook(uuid,platform.subject,text)|starbuddy_authz
 owner|platform.set_time_guard(uuid,integer,time without time zone,time without time zone)|starbuddy_authz
+owner|platform.sign_admission(platform.subject,text,platform.admission,text,text,text,text,text,text,text)|starbuddy_authz
+owner|platform.sign_content_version(uuid,text,text,text)|starbuddy_authz
 owner|platform.signup_guardian(text)|starbuddy_authz
 owner|platform.staff_login(text,text,text)|starbuddy_authz
 owner|platform.staff_logout(text)|starbuddy_authz
@@ -1005,7 +1058,6 @@ rel|platform.curriculum_version|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.curriculum_version|starbuddy_bff|SELECT|SUPERUSER
 rel|platform.curriculum_version|starbuddy_learning|INSERT|SUPERUSER
 rel|platform.curriculum_version|starbuddy_learning|SELECT|SUPERUSER
-rel|platform.curriculum_version|starbuddy_learning|UPDATE|SUPERUSER
 rel|platform.diagnosis_session|starbuddy_eraser|DELETE|SUPERUSER
 rel|platform.diagnosis_session|starbuddy_learning|INSERT|SUPERUSER
 rel|platform.diagnosis_session|starbuddy_learning|SELECT|SUPERUSER
@@ -1067,7 +1119,6 @@ rel|platform.item|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.item|starbuddy_bff|SELECT|SUPERUSER
 rel|platform.item|starbuddy_learning|INSERT|SUPERUSER
 rel|platform.item|starbuddy_learning|SELECT|SUPERUSER
-rel|platform.item|starbuddy_learning|UPDATE|SUPERUSER
 rel|platform.map_change_signoff|starbuddy_authz|INSERT|SUPERUSER
 rel|platform.map_change_signoff|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.mastery_estimate|starbuddy_authz|SELECT|SUPERUSER
@@ -1103,6 +1154,8 @@ rel|platform.profile_page_statement_v|starbuddy_bff|SELECT|starbuddy_authz
 rel|platform.profile_page|starbuddy_eraser|DELETE|SUPERUSER
 rel|platform.profile_page|starbuddy_learning|INSERT|SUPERUSER
 rel|platform.profile_page|starbuddy_learning|SELECT|SUPERUSER
+rel|platform.release_record|starbuddy_authz|INSERT|SUPERUSER
+rel|platform.release_record|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.replay_seal|starbuddy_eraser|DELETE|SUPERUSER
 rel|platform.replay_seal|starbuddy_learning|INSERT|SUPERUSER
 rel|platform.replay_seal|starbuddy_learning|SELECT|SUPERUSER
@@ -1118,10 +1171,10 @@ rel|platform.review_task|starbuddy_authz|INSERT|SUPERUSER
 rel|platform.review_task|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.review_task|starbuddy_eraser|DELETE|SUPERUSER
 rel|platform.review_task|starbuddy_learning|SELECT|SUPERUSER
+rel|platform.skill_node|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.skill_node|starbuddy_bff|SELECT|SUPERUSER
 rel|platform.skill_node|starbuddy_learning|INSERT|SUPERUSER
 rel|platform.skill_node|starbuddy_learning|SELECT|SUPERUSER
-rel|platform.skill_node|starbuddy_learning|UPDATE|SUPERUSER
 rel|platform.skill_observation|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.skill_observation|starbuddy_bff|SELECT|SUPERUSER
 rel|platform.skill_observation|starbuddy_eraser|DELETE|SUPERUSER
@@ -1268,6 +1321,7 @@ secdef|kge.sign_map_change(uuid,text,text)
 secdef|kge.sign_page_review(text,text,text,text,text)
 secdef|kge.sign_review(text,text,text,text,text)
 secdef|kge.version_record(platform.subject)
+secdef|platform.admission_change_log(timestamp with time zone)
 secdef|platform.auth_issue_student_session(uuid,text,integer,integer)
 secdef|platform.auth_otp_issue(text,bytea,integer,integer)
 secdef|platform.auth_otp_login(text,bytea,integer,integer,text)
@@ -1278,8 +1332,10 @@ secdef|platform.auth_session_revoke_all(text)
 secdef|platform.can_read_household(uuid)
 secdef|platform.can_read_student(uuid)
 secdef|platform.cancel_erasure(uuid)
+secdef|platform.change_admission(uuid[])
 secdef|platform.check_supersede_target()
 secdef|platform.confirm_erasure(uuid)
+secdef|platform.content_version_digest(uuid)
 secdef|platform.create_guardian_invite(uuid,interval)
 secdef|platform.create_student(uuid,smallint,text,text,date)
 secdef|platform.enqueue_claim_dispute(uuid)
@@ -1290,6 +1346,7 @@ secdef|platform.guard_link_update()
 secdef|platform.is_active_guardian()
 secdef|platform.is_linked_guardian(uuid)
 secdef|platform.is_self_student(uuid)
+secdef|platform.item_admission_digest(platform.subject,text)
 secdef|platform.lookup_accounts_by_phone(text)
 secdef|platform.meter_apply_subject_limits(uuid,text,platform.plan_tier)
 secdef|platform.meter_authorize_usage(uuid)
@@ -1321,16 +1378,20 @@ secdef|platform.meter_subject_limit(text)
 secdef|platform.meter_upgrade(uuid,platform.plan_tier)
 secdef|platform.meter_uses_slots(text,platform.plan_tier)
 secdef|platform.pause_subject(uuid,platform.subject)
+secdef|platform.publish_content_version(uuid)
 secdef|platform.redeem_guardian_invite(text)
 secdef|platform.release_review_task(uuid)
 secdef|platform.request_erasure(uuid)
 secdef|platform.resolve_review_task(uuid,text)
+secdef|platform.retire_content_version(uuid,text)
 secdef|platform.review_queue(platform.subject,text,text,integer,timestamp with time zone,uuid)
 secdef|platform.review_sample_spot_checks(platform.subject,timestamp with time zone,numeric)
 secdef|platform.review_sample_weekly_reports(date,numeric,integer)
 secdef|platform.review_task_detail(uuid)
 secdef|platform.set_subject_textbook(uuid,platform.subject,text)
 secdef|platform.set_time_guard(uuid,integer,time without time zone,time without time zone)
+secdef|platform.sign_admission(platform.subject,text,platform.admission,text,text,text,text,text,text,text)
+secdef|platform.sign_content_version(uuid,text,text,text)
 secdef|platform.signup_guardian(text)
 secdef|platform.staff_login(text,text,text)
 secdef|platform.staff_logout(text)

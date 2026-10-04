@@ -32,10 +32,18 @@ VALUES ('e0000000-0000-4000-8000-0000000000e0', 'nanjing', 2027, 9, 'syn-2024', 
 INSERT INTO platform.skill_node (subject, local_id, curriculum_version_id, label_code) VALUES
   ('aya', 'K-SYN-0001', 'e0000000-0000-4000-8000-0000000000e0', 'K-SYN-0001'),
   ('aya', 'K-SYN-0002', 'e0000000-0000-4000-8000-0000000000e0', 'K-SYN-0002');
-INSERT INTO platform.item (subject, item_id, curriculum_version_id, skill_local_id, admission, admitted_at) VALUES
-  ('aya', 'SYN-UNV', 'e0000000-0000-4000-8000-0000000000e0', 'K-SYN-0001', 'source_unverified', NULL),
-  ('aya', 'SYN-ADM', 'e0000000-0000-4000-8000-0000000000e0', 'K-SYN-0001', 'admitted', now()),
-  ('aya', 'SYN-UNV2', 'e0000000-0000-4000-8000-0000000000e0', 'K-SYN-0002', 'source_unverified', NULL);
+INSERT INTO platform.item (subject, item_id, curriculum_version_id, skill_local_id, admission, source_ref, source_type, license_status) VALUES
+  ('aya', 'SYN-UNV', 'e0000000-0000-4000-8000-0000000000e0', 'K-SYN-0001', 'source_unverified', NULL, 'unknown', 'unverified'),
+  ('aya', 'SYN-ADM', 'e0000000-0000-4000-8000-0000000000e0', 'K-SYN-0001', 'pending_review', 'SYN-SRC-0001', 'self_authored', 'cleared'),
+  ('aya', 'SYN-UNV2', 'e0000000-0000-4000-8000-0000000000e0', 'K-SYN-0002', 'source_unverified', NULL, 'unknown', 'unverified');
+-- 准入只能经发布闸门（迁移 0039）：合成 staff 签准入审核并执行，SYN-ADM 升为 admitted
+INSERT INTO platform.account (id, kind) VALUES ('5b8e1c52-0000-4000-8000-0000000005f1', 'staff');
+SET ROLE starbuddy_review;
+SELECT set_config('app.account_id', '5b8e1c52-0000-4000-8000-0000000005f1', false);
+SELECT platform.change_admission(ARRAY[platform.sign_admission('aya', 'SYN-ADM', 'admitted', 'approved', 'Q2', NULL, NULL, 'cleared',
+                                                               platform.item_admission_digest('aya', 'SYN-ADM'), 'test_fixture')]);
+SELECT set_config('app.account_id', '', false);
+RESET ROLE;
 """
 
 

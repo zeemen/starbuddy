@@ -22,8 +22,9 @@ CREATE FUNCTION t.decide(p_staff uuid, p_candidate uuid, p_decision text) RETURN
   SELECT t.as_staff(p_staff, format('SELECT kge.decide_tag_candidate(%L, %L)', p_candidate, p_decision)) $$;
 GRANT EXECUTE ON FUNCTION t.decide(uuid, uuid, text) TO PUBLIC;
 -- 为测试新增的合成题目（题目身份只在 platform.item）
+-- 0039 起题目只能登记到草稿内容版本：挂在 10 号夹具的数学草稿 0.2.0（ed）
 INSERT INTO platform.item (subject, item_id, curriculum_version_id, skill_local_id, admission)
-SELECT 'aya', x, i.curriculum_version_id, i.skill_local_id, 'source_unverified'
+SELECT 'aya', x, 'ed000000-0000-4000-8000-0000000000ed', i.skill_local_id, 'source_unverified'
   FROM platform.item i, unnest(ARRAY['synthetic-tag-01', 'synthetic-tag-02', 'synthetic-tag-03']) x
  WHERE i.subject = 'aya' AND i.item_id = 'synthetic-0301-07';
 

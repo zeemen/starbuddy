@@ -22,7 +22,7 @@
   "seed": 20260930,
   "students": 20
  },
- "commit": "8c91e30cbc0301f55ef347d7a3ce732bd804c9ec",
+ "commit": "aa7373259271d63df7de69a1f527610997729c9d",
  "contracts": {
   "learning-internal": "1.1.0",
   "plugin-api": "1.0.0",

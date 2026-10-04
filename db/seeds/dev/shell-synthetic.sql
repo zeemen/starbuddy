@@ -2,11 +2,11 @@
 -- apps/web/scripts/e2e.sh 在一次性测试库里执行它（审查后从 services/bff/scripts/ 挪到这里，请人审）。
 -- 前提：已执行全部迁移、阿鸦内容登记（adapters/aya/scripts/register-content.ts 的 SQL）。
 -- 用法（以迁移执行者身份；只能执行一次；文件自带事务）：
---   PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -v ON_ERROR_STOP=1 -f db/seeds/dev/shell-synthetic.sql
+--   PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -v ON_ERROR_STOP=1 -f db/seeds/dev/syn-publish-content.sql -f db/seeds/dev/shell-synthetic.sql
 --
 -- 内容（全部合成：没有姓名、学校；号码用未分配的国家码 +999）：
 --   - 额度配置 dev-shell-plan@1：照抄迁移 0015 的草稿 v12-pilot@1（基本档核心任选 1 科、选修 0；专业档核心全开、选修 4），只在开发、测试库发布；
---   - 数学、语文各一份合成的已发布课程版本（4-G 发布闸门上线前的测试数据，spec“与同期 spec 的协调”第 4 条）；
+--   - 数学、语文各一份合成的已发布课程版本（先登记草稿，再以合成 staff 经 4-G 发布闸门的签字函数发布，迁移 0039）；
 --   - 家庭 HG：家长 gH（+99900000106），孩子 GT 八年级（试用中）、GR 九年级（留存态：试用已结束）、GP 九年级（试点、基本档，在读数学）；
 --     三个孩子都有隐私政策与监护人同意（合成文本版本 synthetic-0，待人确认 #13）。
 -- 订阅直接写行（不经 meter_open_subscription：试用一次性领取、试点名单都绑在家庭与号码上，合成家庭不走那条路），额度经 meter_grant_period 发放。
@@ -19,6 +19,9 @@ BEGIN
   END IF;
   IF current_database() !~ '^starbuddy_(dev|test)(_[a-z0-9_]+)?$' THEN
     RAISE EXCEPTION '合成种子只能用于开发库与测试库（库名 starbuddy_dev* 或 starbuddy_test*），当前库：%', current_database();
+  END IF;
+  IF to_regprocedure('pg_temp.syn_publish_content(uuid)') IS NULL THEN
+    RAISE EXCEPTION '先在同一会话里执行 db/seeds/dev/syn-publish-content.sql（定义合成发布函数）';
   END IF;
   IF EXISTS (SELECT 1 FROM platform.household WHERE id = '5d000000-0000-4000-8000-0000000000d1') THEN
     RAISE EXCEPTION '统一壳合成种子已经执行过（只能执行一次）';
@@ -33,10 +36,14 @@ INSERT INTO platform.plan_feature (config_version, tier, feature_code, value_cod
 SELECT 'dev-shell-plan@1', tier, feature_code, value_code FROM platform.plan_feature WHERE config_version = 'v12-pilot@1';
 UPDATE platform.plan_config SET status = 'published', published_at = now() WHERE version = 'dev-shell-plan@1';
 
--- 合成的已发布课程版本（没有已发布版本的学科一科也选不了）
-INSERT INTO platform.curriculum_version (id, region, exam_year, grade, textbook_version, subject, content_version, status, published_at) VALUES
-  ('5d000000-0000-4000-8000-0000000000e1', 'nanjing', 2027, 9, 'syn-shell', 'aya', '0.0.1', 'published', now()),
-  ('5d000000-0000-4000-8000-0000000000e2', 'nanjing', 2027, 9, 'syn-shell', 'wenli', '0.0.1', 'published', now());
+-- 合成的已发布课程版本（没有已发布版本的学科一科也选不了）。4-G 迁移 0039 起：先登记草稿，再以合成 staff 经签字函数发布；
+-- 数学有知识地图骨架，须指向已发布的地图版本：库里没有就建空的合成占位地图（两名合成 staff 签字发布），内容版本发布后即撤下占位地图
+INSERT INTO platform.curriculum_version (id, region, exam_year, grade, textbook_version, subject, content_version) VALUES
+  ('5d000000-0000-4000-8000-0000000000e1', 'nanjing', 2027, 9, 'syn-shell', 'aya', '0.0.1'),
+  ('5d000000-0000-4000-8000-0000000000e2', 'nanjing', 2027, 9, 'syn-shell', 'wenli', '0.0.1');
+-- 函数由 db/seeds/dev/syn-publish-content.sql 定义（同一会话里先执行）；副作用：数学、语文在该库里“已上线”
+SELECT pg_temp.syn_publish_content(v)
+  FROM unnest(ARRAY['5d000000-0000-4000-8000-0000000000e1', '5d000000-0000-4000-8000-0000000000e2']::uuid[]) v;
 
 -- 家庭、账号、档案、绑定
 INSERT INTO platform.account (id, kind) VALUES

@@ -9,6 +9,7 @@ import { readFileSync } from 'node:fs';
 import { after, before, test } from 'node:test';
 import pg from 'pg';
 import { assertBffRole } from '../src/star-map/query.ts';
+import { publishRegisteredContent } from './harness.ts';
 import { callAs, startShell, type ShellHarness } from './shell-harness.ts';
 
 const HAS_DB = Boolean(process.env['PGHOST']);
@@ -57,11 +58,14 @@ before(async () => {
     const seeder = await su.connect();
     try {
       await seeder.query(`SET starbuddy.allow_synthetic_seed = 'on'`);
+      await seeder.query(readFileSync(new URL('db/seeds/dev/syn-publish-content.sql', ROOT), 'utf8'));  // 种子要用的合成发布函数（迁移 0039）
       await seeder.query(readFileSync(new URL('db/seeds/dev/star-map-synthetic.sql', ROOT), 'utf8'));
     } finally {
       seeder.release(true);  // 会话级设置不带回连接池
     }
   }
+  // 迁移 0039 起 BFF 只看已发布内容版本的能力视图；种子不发布登记的阿鸦内容，这里在一次性测试库里发布（已发布则跳过）
+  await publishRegisteredContent(su, 'aya');
   ayaCount = Number((await su.query(`SELECT count(*) FROM platform.skill_node WHERE subject = 'aya'`)).rows[0].count);
   bff = new pg.Pool({ user: 'bff_app', max: 5 });
   shell = await startShell(bff, su, { log: (l) => logs.push(l), now: () => NOW });
