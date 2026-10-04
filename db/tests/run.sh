@@ -155,7 +155,7 @@ echo "ok - 登录角色间接同时继承 bff 与 learning 时迁移拒绝执行
 as_pg "$PGBIN/createdb" -h "$WORK" -U postgres kge_role_check
 psql_kge() { as_pg "$PGBIN/psql" -h "$WORK" -U postgres -d kge_role_check -X -q -v ON_ERROR_STOP=1 "$@"; }
 for f in "${UPS[@]}"; do
-  case "$(basename "$f")" in 0011_*|0012_*|0017_*|0018_*|0019_*|0024_*|0026_*|0028_*|0038_*|0039_*) continue ;; esac  # 0012、0017–0019、0024、0026、0028、0038 依赖 0011 的 kge 表；0039 依赖 0012、0018
+  case "$(basename "$f")" in 0011_*|0012_*|0017_*|0018_*|0019_*|0024_*|0026_*|0028_*|0038_*|0039_*|0040_*|0041_*) continue ;; esac  # 0012、0017–0019、0024、0026、0028、0038 依赖 0011 的 kge 表；0039、0040 依赖 0018（0039 还依赖 0012）；0041 依赖 0040
   psql_kge -1 < "$f" >/dev/null 2>&1 || { echo "db-test: 失败（角色断言测试库执行 $(basename "$f") 出错）"; exit 1; }
 done
 kge_must_refuse() {  # $1 = 布置 SQL，$2 = 撤销 SQL，$3 = 说明
@@ -222,6 +222,35 @@ eraser_must_refuse "CREATE ROLE t_era_member IN ROLE starbuddy_eraser;" "DROP RO
 eraser_must_refuse "GRANT starbuddy_bff TO starbuddy_eraser;" "REVOKE starbuddy_bff FROM starbuddy_eraser;" "starbuddy_eraser 继承别的应用角色"
 psql_era -1 < "$E35" >/dev/null 2>&1 || { echo "db-test: 失败（角色都正常时 0035 反而执行失败）"; exit 1; }
 echo "ok - 角色都正常时 0035 可以执行（上面的拒绝不是别的原因）" >> "$OUT"
+
+# 0041 的角色断言（G 流第二部分 PR C）：在执行到 0040 的空库上（没有考情数据，数据前提检查必然通过），签字身份 review 与写入方 kge、
+# 学习服务 learning、BFF 共存，或 authz 有成员时，0041 都必须拒绝执行；每次都核对报错是角色检查本身（不是别的原因让它失败）
+as_pg "$PGBIN/createdb" -h "$WORK" -U postgres policy_role_check
+psql_pol() { as_pg "$PGBIN/psql" -h "$WORK" -U postgres -d policy_role_check -X -q -v ON_ERROR_STOP=1 "$@"; }
+U41="$(ls "$ROOT"/db/migrations/0041_*.up.sql)"
+for f in "${UPS[@]}"; do
+  [ "$f" = "$U41" ] && break  # 只执行 0041 之前的
+  psql_pol -1 < "$f" >/dev/null 2>&1 || { echo "db-test: 失败（0041 角色断言测试库执行 $(basename "$f") 出错）"; exit 1; }
+done
+policy_must_refuse() {  # $1 = 布置 SQL，$2 = 撤销 SQL，$3 = 说明，$4 = 报错里必须出现的文字
+  psql_run -c "$1" </dev/null
+  if psql_pol -1 < "$U41" >/dev/null 2>"$WORK/role41.err"; then
+    psql_run -c "$2" </dev/null; echo "db-test: 失败（$3 时 0041 仍然执行成功）"; exit 1
+  fi
+  psql_run -c "$2" </dev/null
+  grep -qF "$4" "$WORK/role41.err" || { echo "db-test: 失败（$3 时 0041 不是被角色检查拒绝：$(cat "$WORK/role41.err")）"; exit 1; }
+  echo "ok - $3 时 0041 拒绝执行" >> "$OUT"
+}
+policy_must_refuse "CREATE ROLE t_pol_login LOGIN IN ROLE starbuddy_kge, starbuddy_review;" "DROP ROLE t_pol_login;" \
+                   "登录角色同时继承 kge 与 review" "不能同时继承 starbuddy_kge"
+policy_must_refuse "CREATE ROLE t_pol_mid IN ROLE starbuddy_review; CREATE ROLE t_pol_login LOGIN IN ROLE t_pol_mid, starbuddy_learning;" \
+                   "DROP ROLE t_pol_login; DROP ROLE t_pol_mid;" "登录角色经中间角色同时继承 learning 与 review" "不能同时继承 starbuddy_learning"
+policy_must_refuse "CREATE ROLE t_pol_login LOGIN IN ROLE starbuddy_bff, starbuddy_review;" "DROP ROLE t_pol_login;" \
+                   "登录角色同时继承 bff 与 review" "不能同时继承 starbuddy_bff"
+policy_must_refuse "CREATE ROLE t_pol_member IN ROLE starbuddy_authz;" "DROP ROLE t_pol_member;" "starbuddy_authz 有成员" "starbuddy_authz 必须 NOLOGIN"
+psql_pol -1 < "$U41" >/dev/null 2>"$WORK/role41.err" \
+  || { echo "db-test: 失败（角色都正常时 0041 反而执行失败：$(cat "$WORK/role41.err")）"; exit 1; }
+echo "ok - 角色都正常时 0041 可以执行（上面的拒绝不是别的原因）" >> "$OUT"
 
 # 0037 的回滚（KGE-04 第二步）：库里有节点键掌握记录时，回滚必须以明确错误中止（不能静默删除，也不能补假的能力点键），且什么都不改
 D37="$(ls "$ROOT"/db/migrations/0037_*.down.sql)"
@@ -294,6 +323,41 @@ grep -q '0039 回滚中止' "$WORK/down39.err" || { echo "db-test: 失败（0039
 [ "$(psql_run -tAc "SELECT count(*) FROM pg_attribute WHERE attrelid = 'platform.curriculum_version'::regclass AND attname = 'retired_at' AND NOT attisdropped" </dev/null)" = "1" ] \
   || { echo "db-test: 失败（0039 回滚中止后撤下时间列不在了）"; exit 1; }
 echo "ok - 有审核与发布记录时 0039 回滚以明确错误中止，库不变" >> "$OUT"
+
+# 0041（G 流第二部分 PR C）的并发：两名 staff 同时对同一所合成学校签字。签字函数锁住对象行，后一个等前一个提交后再计数，
+# 第二名批准时发布；去掉锁时两人各只看到自己的一条签字，学校一直停在草稿（来源文件用 77 号已发布的合成文件）
+PH=d7500000-0000-4000-8000-0000000000f9
+printf '%s\n' "SET ROLE starbuddy_kge; INSERT INTO policy.school (id, city, code, public_name, level_code, source_document_id)
+  VALUES ('$PH', 'synthcity', 'synth-hs-race', '合成高中（并发，非真实）', 'level_a', 'a2000000-0000-4000-8000-0000000000d2');" \
+  | psql_run >/dev/null || { echo "db-test: 失败（0041 并发测试夹具）"; exit 1; }
+SIGN_PH="SELECT policy.sign_record('school', '$PH', 'approved', policy.object_digest('school', '$PH'));"
+printf '%s\n' "BEGIN; $AS_STAFF $SIGN_PH SELECT pg_sleep(1.5); COMMIT;" | psql_run >/dev/null 2>"$WORK/race_k.err" &
+sleep 0.5
+printf '%s\n' "SELECT set_config('app.account_id', 'f5000000-0000-4000-8000-0000000000f5', false); SET ROLE starbuddy_review; $SIGN_PH" \
+  | psql_run >/dev/null 2>"$WORK/race_l.err" || { wait; echo "db-test: 失败（并发考情签字：后一名 staff 的签字失败：$(cat "$WORK/race_l.err")）"; exit 1; }
+wait || { echo "db-test: 失败（并发考情签字：前一名 staff 的签字失败：$(cat "$WORK/race_k.err")）"; exit 1; }
+[ "$(psql_run -tAc "SELECT review_status FROM policy.school WHERE id = '$PH'" </dev/null)" = "published" ] \
+  || { echo "db-test: 失败（两名 staff 同时签同一所学校后没有发布：签字没有串行计数）"; exit 1; }
+echo "ok - 并发：两名 staff 同时签同一考情对象，签字按对象行锁串行，第二名批准时发布" >> "$OUT"
+
+# 0041 的数据前提：库里已有已发布的考情数据（77、79v 经签字发布的）时，0041 up 以明确信息中止（自报工号的发布补不出签字记录）
+if psql_run -1 < "$(ls "$ROOT"/db/migrations/0041_*.up.sql)" >/dev/null 2>"$WORK/up41.err"; then
+  echo "db-test: 失败（库里已有已发布考情数据时 0041 up 仍然执行成功）"; exit 1
+fi
+grep -q '0041 中止：已有已发布或已撤下的考情数据' "$WORK/up41.err" || { echo "db-test: 失败（0041 up 不是被数据前提检查中止：$(cat "$WORK/up41.err")）"; exit 1; }
+echo "ok - 已有已发布考情数据时 0041 up 以明确信息中止" >> "$OUT"
+# 0041、0040 的回滚：签字人表有记录（只追加不能删）时，回滚必须以明确错误中止，且什么都不改
+[ "$(psql_run -tAc "SELECT count(*) > 0 FROM platform.policy_signoff" </dev/null)" = "t" ] \
+  || { echo "db-test: 失败（0041 回滚测试的前提不成立：库里没有考情签字记录）"; exit 1; }
+for n in 0041 0040; do
+  if psql_run -1 < "$(ls "$ROOT"/db/migrations/${n}_*.down.sql)" >/dev/null 2>"$WORK/down$n.err"; then
+    echo "db-test: 失败（有考情签字记录时 $n 回滚仍然执行成功）"; exit 1
+  fi
+  grep -q "$n 回滚中止" "$WORK/down$n.err" || { echo "db-test: 失败（$n 回滚不是被签字记录检查中止：$(cat "$WORK/down$n.err")）"; exit 1; }
+done
+[ "$(psql_run -tAc "SELECT count(*) FROM pg_proc WHERE oid = 'policy.sign_record(text, uuid, text, text)'::regprocedure" </dev/null)" = "1" ] \
+  || { echo "db-test: 失败（0041 回滚中止后签字函数不在了）"; exit 1; }
+echo "ok - 有考情签字记录时 0041、0040 回滚以明确错误中止，库不变" >> "$OUT"
 
 n=$(grep -c 'ok - ' "$OUT" || true)
 echo "db-test: 通过（${n} 项断言）"

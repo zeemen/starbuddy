@@ -243,7 +243,8 @@ async def test_records_export(rc):
     write_records(rows, "csv", b)
     assert a.getvalue() == b.getvalue()
     assert a.getvalue().splitlines()[0] == ("line,map_version_id,version,action,decision,risk_level,basis_code,digest,decided_at,signer,"
-                                            "rubric_versions,validation_errors,validation_warnings,page_id,page_commit")
+                                            "rubric_versions,validation_errors,validation_warnings,page_id,page_commit,"
+                                            "policy_object,policy_object_id,city,cohort,policy_version")
     assert len(a.getvalue().splitlines()) == 8
     assert all(i["line"] == "map" and i["validation_errors"] == 0 and i["validation_warnings"] == 1 for i in items)
 
@@ -376,3 +377,68 @@ def test_db_error_detail_only_for_raised_rules():
     assert db_error(native).status == 409 and db_error(native).detail is None
     denied = asyncpg.exceptions.InsufficientPrivilegeError("permission denied for function publish_map_version")
     assert db_error(denied).status == 403 and db_error(denied).detail is None
+
+
+# 考情政策线（冲刺 4，迁移 0041）：合成城市 synthcity 的 2030 届合成方案（非真实数据，docs/design/policy/data-entry-rules.md 第 6 节）
+PDOC = uuid.UUID("c0500000-0000-4000-8000-0000000000d5")
+PSCH = uuid.UUID("c0600000-0000-4000-8000-0000000000e6")
+
+
+async def test_records_merge_policy_signoffs(pg, rc):
+    """版本记录导出从两处合并（spec 第 8 节）：地图与页面行来自 kge，考情行来自 platform.policy_signoff_record（签字人表在 platform，
+    复核人不在 kge.content_review 里另记）。两名 staff 经签字身份签来源文件（第二名批准时发布）与方案，再由签字身份发布方案。"""
+    c, kp, rp = rc
+    pg.psql(f"""
+      INSERT INTO policy.source_domain (host, issuer, added_by) VALUES ('jyj.synthcity.example', '合成教育局', 'staff-001') ON CONFLICT DO NOTHING;
+      SET ROLE starbuddy_kge;
+      INSERT INTO policy.source_document (id, city, issuer, doc_number, title, published_on, url, applies_from_cohort, last_verified_on)
+        VALUES ('{PDOC}', 'synthcity', '合成教育局', '合成〔2029〕7号', '合成 2030 届方案（非真实数据）', '2029-03-01',
+                'https://jyj.synthcity.example/doc/rc', 2030, '2029-09-01');
+      INSERT INTO policy.exam_scheme (id, city, cohort, version, source_document_id) VALUES ('{PSCH}', 'synthcity', 2030, '1.0.0', '{PDOC}');
+      INSERT INTO policy.subject_config (scheme_id, subject, scored, full_score, proposition, exam_form, taken_in_grade)
+        VALUES ('{PSCH}', 'chinese', true, 100, 'city', 'closed_book', 9);
+      INSERT INTO policy.admission_rule (scheme_id, batch_code, batch_order, track) VALUES ('{PSCH}', 'batch_1', 1, 'unified');""")
+
+    async def as_staff(staff: uuid.UUID, sql: str, *args):
+        async with rp.acquire() as conn, conn.transaction():
+            await conn.execute("SELECT set_config('app.account_id', $1, true)", str(staff))
+            return await conn.fetchval(sql, *args)
+
+    sign_doc = "SELECT policy.sign_record('source_document', $1, 'approved', policy.object_digest('source_document', $1))"
+    sign_scheme = "SELECT policy.sign_scheme($1, 'approved', policy.object_digest('exam_scheme', $1))"
+    assert await as_staff(SF1, sign_doc, PDOC) == "draft"
+    assert await as_staff(SF2, sign_doc, PDOC) == "published"
+    assert await as_staff(SF1, sign_scheme, PSCH) == 1
+    assert await as_staff(SF2, sign_scheme, PSCH) == 2
+    # 知识服务（kge 连接）不能发布方案，只有签字身份能
+    with pytest.raises(asyncpg.exceptions.InsufficientPrivilegeError):
+        await kp.fetchval("SELECT policy.publish_scheme($1)", PSCH)
+    assert await as_staff(SF1, "SELECT policy.publish_scheme($1)", PSCH) is not None
+
+    items = (await c.get("/review/v0/records", params={"subject": "wenli"}, headers=H(SF1))).json()["items"]
+    pol = [i for i in items if i["line"] == "policy"]
+    assert [(i["policy_object"], i["action"], i["signer"]) for i in pol] == [
+        ("source_document", "review", str(SF1)), ("source_document", "review", str(SF2)), ("source_document", "publish", str(SF2)),
+        ("exam_scheme", "review", str(SF1)), ("exam_scheme", "review", str(SF2)), ("exam_scheme", "publish", str(SF1))]
+    last = pol[-1]
+    assert last["policy_object_id"] == str(PSCH) and last["city"] == "synthcity" and last["policy_version"] == "1.0.0" and last["cohort"] == 2030
+    # 考情行的 version 一律为空（只给地图版本号），方案版本号在末尾的 policy_version；来源文件行没有方案版本
+    assert all(i["version"] is None for i in pol) and pol[0]["policy_version"] is None
+    assert all(i["policy_version"] is None for i in items if i["line"] != "policy")
+    assert all(i["risk_level"] == "high" and i["decision"] == "approved" and len(i["digest"]) == 64 and i["map_version_id"] is None for i in pol)
+    # 已有的地图行不变，考情行排在后面（按时间）；考情不按学科，每个学科的导出都带
+    assert [i["line"] for i in items[:7]] == ["map"] * 7 and all(i["policy_object"] is None for i in items if i["line"] == "map")
+    aya = (await c.get("/review/v0/records", params={"subject": "aya"}, headers=H(SF1))).json()["items"]
+    assert [i for i in aya if i["line"] == "policy"] == pol
+    # CSV：新列只追加在末尾，已有列顺序不变；两次导出逐字节相同
+    from review_console.service import version_record
+    from review_console.store import KgeStore
+    rows = await version_record(KgeStore(kp), "wenli")
+    a, b = io.StringIO(), io.StringIO()
+    write_records(rows, "csv", a)
+    write_records(rows, "csv", b)
+    assert a.getvalue() == b.getvalue()
+    assert a.getvalue().splitlines()[0] == ("line,map_version_id,version,action,decision,risk_level,basis_code,digest,decided_at,signer,"
+                                            "rubric_versions,validation_errors,validation_warnings,page_id,page_commit,"
+                                            "policy_object,policy_object_id,city,cohort,policy_version")
+    assert sum(1 for line in a.getvalue().splitlines() if line.startswith("policy,")) == 6

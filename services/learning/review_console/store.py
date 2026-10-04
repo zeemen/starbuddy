@@ -141,6 +141,14 @@ class KgeStore:
             " FROM kge.page_review_record($1::text::platform.subject)", subject)
         return [dict(r) for r in rows]
 
+    async def policy_records(self) -> list[dict[str, Any]]:
+        """考情政策线的签字与发布记录（迁移 0040 platform.policy_signoff_record：对象类型与 ID、城市、方案版本、届别、动作、结论、摘要、签字人）。
+        考情的复核人留在签字人表 platform.policy_signoff，不在 kge.content_review 里另记（spec 第 8 节，规则 2）。"""
+        rows = await self.pool.fetch(
+            "SELECT object_type, object_id, city, version, cohort, action, decision, digest, signed_at, signer"
+            " FROM platform.policy_signoff_record()")
+        return [dict(r) for r in rows]
+
     async def structural(self, version_id: uuid.UUID) -> bool:
         """整个版本是否结构性，以库的判定为准（与发布时同一个函数）。"""
         return bool(await self.pool.fetchval("SELECT kge.structural_diff($1)", version_id))

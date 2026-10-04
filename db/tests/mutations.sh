@@ -451,10 +451,10 @@ declare -A M=(
   ["攻击面：公共层文本里写学生 ID"]="INSERT INTO kge.map_change (subject, change_type, payload, evidence_pack) VALUES ('aya', 'other', '{}', '{\"note\": \"c1000000-0000-4000-8000-0000000000c1\"}');"
   ["考情：来源主机名不校验"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.guard_source_document()'::regprocedure); BEGIN IF position('AND NOT EXISTS (SELECT 1 FROM policy.source_domain d WHERE d.host = policy.url_host(NEW.url) AND d.status = ''active'') THEN' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'AND NOT EXISTS (SELECT 1 FROM policy.source_domain d WHERE d.host = policy.url_host(NEW.url) AND d.status = ''active'') THEN', 'AND false THEN'); END \$\$;"
   ["考情：已发布来源文件可改内容"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.guard_source_document()'::regprocedure); BEGIN IF position('IF OLD.status = ''published'' AND (NEW.city,' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'IF OLD.status = ''published'' AND (NEW.city,', 'IF false AND (NEW.city,'); END \$\$;"
-  ["考情：来源文件一人即可发布"]="ALTER TABLE policy.source_document DROP CONSTRAINT source_document_two_reviewers;"
+  ["考情：来源文件可不经签字发布"]="DROP TRIGGER guard_signoff_publish ON policy.source_document;"
   ["考情：适用届别起止不校验"]="ALTER TABLE policy.source_document DROP CONSTRAINT source_document_cohort_range;"
   ["考情：应用角色可登记来源主机名"]="GRANT INSERT ON policy.source_domain TO starbuddy_kge; CREATE POLICY k ON policy.source_domain FOR INSERT TO starbuddy_kge WITH CHECK (true);"
-  ["考情：方案可直接以已发布新建"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.guard_scheme()'::regprocedure); BEGIN IF position('IF NEW.status <> ''draft'' OR NEW.published_at IS NOT NULL THEN' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'IF NEW.status <> ''draft'' OR NEW.published_at IS NOT NULL THEN', 'IF false THEN'); END \$\$;"
+  ["考情：方案可直接以已发布新建"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.guard_scheme()'::regprocedure); BEGIN IF position('IF NEW.status <> ''draft'' OR NEW.published_at IS NOT NULL THEN' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'IF NEW.status <> ''draft'' OR NEW.published_at IS NOT NULL THEN', 'IF false THEN'); END \$\$; DROP TRIGGER guard_signoff_publish ON policy.exam_scheme;"
   ["考情：方案可不经发布函数发布"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.guard_scheme()'::regprocedure); BEGIN IF position('IF NEW.status = ''published'' AND current_user <> ''starbuddy_authz'' THEN' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'IF NEW.status = ''published'' AND current_user <> ''starbuddy_authz'' THEN', 'IF false THEN'); END \$\$;"
   ["考情：已发布方案可改版本号"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.guard_scheme()'::regprocedure); BEGIN IF position('IF OLD.status <> ''draft'' AND (NEW.version,' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'IF OLD.status <> ''draft'' AND (NEW.version,', 'IF false AND (NEW.version,'); END \$\$;"
   ["考情：已撤下方案可复活"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.guard_scheme()'::regprocedure); BEGIN IF position('OR (OLD.status = ''published'' AND NEW.status = ''retired'')) THEN' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'OR (OLD.status = ''published'' AND NEW.status = ''retired'')) THEN', 'OR true) THEN'); END \$\$;"
@@ -466,14 +466,14 @@ declare -A M=(
   ["考情：统招可写控制线（规则）"]="ALTER TABLE policy.admission_rule DROP CONSTRAINT admission_rule_control_line;"
   ["考情：发布不跑校验"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.publish_scheme(uuid)'::regprocedure); BEGIN IF position('IF v_errors > 0 THEN' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'IF v_errors > 0 THEN', 'IF false THEN'); END \$\$;"
   ["考情：发布不撤下旧方案"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.publish_scheme(uuid)'::regprocedure); BEGIN IF position('UPDATE policy.exam_scheme SET status = ''retired'' WHERE city = s.city AND cohort = s.cohort AND status = ''published'';' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'UPDATE policy.exam_scheme SET status = ''retired'' WHERE city = s.city AND cohort = s.cohort AND status = ''published'';', 'NULL;'); END \$\$;"
-  ["考情：校验不查复核人"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.validate_scheme(uuid)'::regprocedure); BEGIN IF position('WHERE policy.distinct_count(s.reviewers) < 2 OR s.reviewed_at IS NULL;' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'WHERE policy.distinct_count(s.reviewers) < 2 OR s.reviewed_at IS NULL;', 'WHERE false;'); END \$\$;"
+  ["考情：校验不查复核人"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.validate_scheme(uuid)'::regprocedure); BEGIN IF position('WHERE policy.approval_count(''exam_scheme'', p_scheme) < policy.signers_required();' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'WHERE policy.approval_count(''exam_scheme'', p_scheme) < policy.signers_required();', 'WHERE false;'); END \$\$;"
   ["考情：校验不查合场分组"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.validate_scheme(uuid)'::regprocedure); BEGIN IF position('HAVING count(*) < 2;' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'HAVING count(*) < 2;', 'HAVING false;'); END \$\$;"
   ["考情：校验不查过渡规则"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.validate_scheme(uuid)'::regprocedure); BEGIN IF position('AND NOT EXISTS (SELECT 1 FROM policy.transition_rule t WHERE t.scheme_id = p_scheme);' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'AND NOT EXISTS (SELECT 1 FROM policy.transition_rule t WHERE t.scheme_id = p_scheme);', 'AND false;'); END \$\$;"
   ["招录：分数可超过总分"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.guard_admission_line()'::regprocedure); BEGIN IF position('IF NEW.line_score > v_total OR NEW.control_line > v_total THEN' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'IF NEW.line_score > v_total OR NEW.control_line > v_total THEN', 'IF false THEN'); END \$\$;"
   ["招录：来源文件不必覆盖该年"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.guard_admission_line()'::regprocedure); BEGIN IF position('AND NEW.year BETWEEN d.applies_from_cohort AND coalesce(d.applies_to_cohort, NEW.year)) THEN' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'AND NEW.year BETWEEN d.applies_from_cohort AND coalesce(d.applies_to_cohort, NEW.year)) THEN', ') THEN'); END \$\$;"
   ["招录：没有方案也能录"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.guard_admission_line()'::regprocedure); BEGIN IF position('IF v_total IS NULL THEN' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'IF v_total IS NULL THEN', 'IF false THEN'); END \$\$;"
   ["招录：已发布行可改数值"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.guard_admission_line()'::regprocedure); BEGIN IF position('IF OLD.status = ''published'' AND (NEW.status <> ''retired'' OR' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'IF OLD.status = ''published'' AND (NEW.status <> ''retired'' OR', 'IF false AND (NEW.status <> ''retired'' OR'); END \$\$;"
-  ["招录：一人即可发布"]="ALTER TABLE policy.admission_line DROP CONSTRAINT admission_line_two_reviewers;"
+  ["招录：招录行可不经签字发布"]="DROP TRIGGER guard_signoff_publish ON policy.admission_line;"
   ["招录：同一行可有两条已发布"]="DROP INDEX policy.admission_line_one_published;"
   ["招录：统招可写控制线"]="ALTER TABLE policy.admission_line DROP CONSTRAINT admission_line_control_line;"
   ["考情：写入方可以删除"]="GRANT DELETE ON policy.admission_line TO starbuddy_kge;"
@@ -488,7 +488,7 @@ declare -A M=(
   ["考情：主机名下线后来源文件改不动"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.guard_source_document()'::regprocedure); BEGIN IF position('IF (TG_OP = ''INSERT'' OR NEW.url IS DISTINCT FROM OLD.url)' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'IF (TG_OP = ''INSERT'' OR NEW.url IS DISTINCT FROM OLD.url)', 'IF true'); END \$\$;"
   ["招录：批次类别不对照招录规则"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.guard_admission_line()'::regprocedure); BEGIN IF position('AND r.batch_code = NEW.batch_code AND r.track = NEW.track) THEN' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'AND r.batch_code = NEW.batch_code AND r.track = NEW.track) THEN', 'AND false) THEN'); END \$\$;"
   ["招录：学校未复核也能录"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.guard_admission_line()'::regprocedure); BEGIN IF position('SELECT s.city INTO v_city FROM policy.school s WHERE s.id = NEW.school_id AND s.review_status = ''published'';' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'SELECT s.city INTO v_city FROM policy.school s WHERE s.id = NEW.school_id AND s.review_status = ''published'';', 'SELECT s.city INTO v_city FROM policy.school s WHERE s.id = NEW.school_id;'); END \$\$;"
-  ["招录：学校一人即可发布"]="ALTER TABLE policy.school DROP CONSTRAINT school_two_reviewers;"
+  ["招录：学校可不经签字发布"]="DROP TRIGGER guard_signoff_publish ON policy.school;"
   ["招录：已发布学校可改名"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.guard_school()'::regprocedure); BEGIN IF position('IF TG_OP = ''UPDATE'' AND OLD.review_status = ''published''' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'IF TG_OP = ''UPDATE'' AND OLD.review_status = ''published''', 'IF false'); END \$\$;"
   ["招录：BFF 能看未复核学校"]="DROP POLICY school_front_read ON policy.school; CREATE POLICY school_front_read ON policy.school FOR SELECT TO starbuddy_bff USING (true);"
   ["复核队列：结案不核对领取人"]="DO \$\$ DECLARE d text := pg_get_functiondef('platform.resolve_review_task(uuid, text)'::regprocedure); BEGIN IF position('OR r.assigned_to IS DISTINCT FROM v_staff THEN' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'OR r.assigned_to IS DISTINCT FROM v_staff THEN', 'THEN'); END \$\$;"
@@ -928,6 +928,46 @@ M+=(
   ["准入：降级不留清单"]="$(afr "$CAD" "'IF i.admission = ''admitted'' THEN'" "'IF false THEN'")"
   ["准入：来源不按审核记录写"]="$(afr "$CAD" "'source_ref = r.source_ref, source_type = r.source_type, license_status = r.license_status'" "'source_ref = source_ref'")"
   ["准入：已准入可缺来源"]="ALTER TABLE platform.item DROP CONSTRAINT item_admitted_source;"
+)
+
+# G 流第二部分 PR C：考情政策线签字收口（0040–0041，specs/release-gate-sprint4 第 8 节、冲刺 4“考情”）：由 77、79v 与 run.sh 的并发测试发现
+# （授权类的同时由 80 的快照发现）。DBMUT_FILTER=考情签字 只跑这一组；相关的旧组用 DBMUT_FILTER=考情 / DBMUT_FILTER=招录
+QSS='policy.sign_scheme(uuid, text, text)'
+QSR='policy.sign_record(text, uuid, text, text)'
+QPS='policy.publish_scheme(uuid)'
+QAC='policy.approval_count(text, uuid)'
+QGS='policy.guard_signoff_publish()'
+QOD='policy.object_digest(text, uuid)'
+M+=(
+  ["考情签字：方案签字不查 staff"]="$(afr "$QSS" "'v_staff uuid := platform.review_current_staff();'" "'v_staff uuid := platform.current_account_id();'")"
+  ["考情签字：记录签字不查 staff"]="$(afr "$QSR" "'v_staff uuid := platform.review_current_staff();'" "'v_staff uuid := platform.current_account_id();'")"
+  ["考情签字：发布不查 staff"]="$(afr "$QPS" "'v_staff uuid := platform.review_current_staff();'" "'v_staff uuid := platform.current_account_id();'")"
+  ["考情签字：方案签字不比看到的摘要"]="$(afr "$QSS" "'IF p_expected_digest IS DISTINCT FROM v_digest THEN'" "'IF false THEN'")"
+  ["考情签字：记录签字不比看到的摘要"]="$(afr "$QSR" "'IF p_expected_digest IS DISTINCT FROM v_digest THEN'" "'IF false THEN'")"
+  ["考情签字：一人即可发布"]="$(afr "policy.signers_required()" "' SELECT 2 '" "' SELECT 1 '")"
+  ["考情签字：驳回不清零"]="$(afr "$QAC" "'AND s.decision = ''rejected'' AND s.digest = v_digest) THEN'" "'AND false) THEN'")"
+  ["考情签字：旧内容的签字也计数"]="$(afr "$QAC" "'AND s.decision = ''approved'' AND s.digest = v_digest);'" "'AND s.decision = ''approved'');'")"
+  ["考情签字：方案摘要不含科目配置"]="$(afr "$QOD" "'FROM policy.subject_config c WHERE c.scheme_id = s.id)'" "'FROM policy.subject_config c WHERE false)'")"
+  ["考情签字：同一账号可签两次"]="ALTER TABLE platform.policy_signoff DROP CONSTRAINT policy_signoff_once;"
+  ["考情签字：计数不按账号去重"]="ALTER TABLE platform.policy_signoff DROP CONSTRAINT policy_signoff_once; $(afr "$QAC" "'count(DISTINCT s.account_id)'" "'count(s.account_id)'")"
+  ["考情签字：可直接以已发布新建"]="$(afr "$QGS" "'IF v_new <> ''draft'' OR NEW.reviewed_at IS NOT NULL THEN'" "'IF false THEN'")"
+  ["考情签字：新建可自带复核时间"]="$(afr "$QGS" "' OR NEW.reviewed_at IS NOT NULL THEN'" "' THEN'")"
+  ["考情签字：写入方可直接改为已发布"]="$(afr "$QGS" "'(to_jsonb(OLD) ->> v_col) IS DISTINCT FROM ''published'' AND current_user <> ''starbuddy_authz'' THEN'" "'false THEN'")"
+  ["考情签字：复核时间可不经函数写"]="$(afr "$QGS" "'IF NEW.reviewed_at IS DISTINCT FROM OLD.reviewed_at AND current_user <> ''starbuddy_authz'' THEN'" "'IF false THEN'")"
+  ["考情签字：方案可自带复核时间新建"]="DROP TRIGGER guard_signoff_publish ON policy.exam_scheme;"
+  ["考情签字：写入方可写复核时间"]="GRANT UPDATE (reviewed_at) ON policy.exam_scheme TO starbuddy_kge;"
+  ["考情签字：写入方可改自报复核人"]="GRANT UPDATE (reviewers) ON policy.exam_scheme TO starbuddy_kge;"
+  ["考情签字：写入方可调发布"]="GRANT EXECUTE ON FUNCTION $QPS TO starbuddy_kge;"
+  ["考情签字：写入方可签字"]="GRANT EXECUTE ON FUNCTION $QSR TO starbuddy_kge;"
+  ["考情签字：已发布的记录还能签"]="$(afr "$QSR" "'IF v_status <> ''draft'' THEN'" "'IF false THEN'")"
+  ["考情签字：已发布的方案还能签"]="$(afr "$QSS" "'IF v_status <> ''draft'' THEN'" "'IF false THEN'")"
+  ["考情签字：签字不锁对象"]="$(afr "$QSR" "'FROM policy.school h WHERE h.id = p_id FOR UPDATE;'" "'FROM policy.school h WHERE h.id = p_id;'")"
+  ["考情签字：签字记录可改"]="DROP TRIGGER reject_policy_signoff_change ON platform.policy_signoff;"
+  ["考情签字：签字记录可清空"]="DROP TRIGGER reject_policy_signoff_truncate ON platform.policy_signoff;"
+  ["考情签字：BFF 可读签字人"]="GRANT SELECT ON platform.policy_signoff TO starbuddy_bff; CREATE POLICY t_ps ON platform.policy_signoff FOR SELECT TO starbuddy_bff USING (true);"
+  ["考情签字：学习服务可读签字导出"]="GRANT EXECUTE ON FUNCTION platform.policy_signoff_record() TO starbuddy_learning;"
+  ["考情签字：导出函数对 PUBLIC 开放"]="GRANT EXECUTE ON FUNCTION platform.policy_signoff_record() TO PUBLIC;"
+  ["考情签字：写入方可签字（kge 签方案）"]="GRANT EXECUTE ON FUNCTION $QSS TO starbuddy_kge;"
 )
 
 # 并行执行（每个变异各起一个一次性 Postgres，互不影响）；DBMUT_JOBS 控制并发数，默认等于 CPU 核数

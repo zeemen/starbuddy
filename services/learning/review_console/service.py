@@ -96,13 +96,18 @@ async def pages_view(kge: KgeStore, settings: Any) -> dict[str, Any]:
 
 
 RECORD_COLUMNS = ("line", "map_version_id", "version", "action", "decision", "risk_level", "basis_code", "digest", "decided_at",
-                  "signer", "rubric_versions", "validation_errors", "validation_warnings", "page_id", "page_commit")
+                  "signer", "rubric_versions", "validation_errors", "validation_warnings", "page_id", "page_commit",
+                  "policy_object", "policy_object_id", "city", "cohort", "policy_version")
 
 
 async def version_record(kge: KgeStore, subject: str) -> list[dict[str, Any]]:
     """版本记录（spec 设计要点 11）：每行一次签字、发布或撤下；附该版本涉及的评分版本与当前校验计数。
     冲刺 3 起加页面行（line = page）：页面 ID、提交号、签字人、时间（每行一次页面签字，kge.page_review_record）。
-    六段标识（冲刺 4）到时补列。行按时间排序，同一时刻地图行在前。"""
+    冲刺 4 起加考情行（line = policy）：从 policy 一侧合并（spec 第 8 节“版本记录导出时从两处合并”，platform.policy_signoff_record）；
+    考情按城市与届别、不按学科，每个学科的导出都带全部考情行（跨学科汇总时须按 line = policy 去重）。
+    考情行的 version 一律为空（version 只给地图版本号，免得与地图版本混读），方案版本号放在末尾的 policy_version；
+    cohort 是届别（招录行是年份）；risk_level 固定为 high（考情政策线一律两名不同 staff，spec 第 1、2 节），不是逐行判出来的。
+    六段标识（冲刺 4）到时补列。行按时间排序，同一时刻地图行在前、页面行次之、考情行最后。新列只追加在末尾，已有列顺序不变。"""
     rows = await kge.records(subject)
     facts: dict[Any, dict[str, Any]] = {}
     for r in rows:
@@ -118,6 +123,14 @@ async def version_record(kge: KgeStore, subject: str) -> list[dict[str, Any]]:
             "risk_level": p["risk_level"], "basis_code": p["basis_code"], "digest": p["digest"], "decided_at": p["decided_at"],
             "signer": p["signer"], "rubric_versions": "", "validation_errors": None, "validation_warnings": None,
             "page_id": p["page_id"], "page_commit": p["page_commit"]}))
+    for q in await kge.policy_records():
+        out.append((q["signed_at"], 2, {
+            # 考情政策线一律按高风险、两名不同 staff（spec 第 1、2 节）：risk_level 固定为 high
+            "line": "policy", "map_version_id": None, "version": None, "action": q["action"], "decision": q["decision"],
+            "risk_level": "high", "basis_code": None, "digest": q["digest"], "decided_at": q["signed_at"], "signer": q["signer"],
+            "rubric_versions": "", "validation_errors": None, "validation_warnings": None, "page_id": None, "page_commit": None,
+            "policy_object": q["object_type"], "policy_object_id": q["object_id"], "city": q["city"], "cohort": q["cohort"],
+            "policy_version": q["version"]}))
     out.sort(key=lambda x: (x[0], x[1]))
     return [norm({c: row.get(c) for c in RECORD_COLUMNS}) for _, _, row in out]
 

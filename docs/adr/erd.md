@@ -222,4 +222,5 @@ erDiagram
 | `policy.exam_scheme` | kge（发布只能经 `policy.publish_scheme`，属主 authz） | learning；bff 只看已发布 | 同城市同届别只一个已发布；非草稿只能改状态 |
 | `policy.subject_config` / `transition_rule` / `admission_rule` | kge | learning；bff 只看已发布方案的 | 方案发布后冻结；计分科目必须有满分；总分由库计算 |
 | `policy.school` / `policy.admission_line` | kge | learning、bff（招录行只看已发布） | 分数不超过该年方案总分；来源覆盖该年；已发布行只能撤下，更正走新行 |
+| `platform.policy_signoff`（0040 草稿） | 只经 `policy.sign_scheme` / `sign_record` / `publish_scheme`（属主 authz，只授 review，0041 草稿） | 任何应用角色都不能直接读；kge、review 经 `platform.policy_signoff_record()`（0040）导出 | 考情签字人是 staff 账号（policy 不存账号引用，规则 13）；签字记内容摘要，两名不同 staff 对当前内容批准才发布，同一账号对同一内容只签一次；只追加。0041 起来源文件、招录行、学校在第二名批准时发布，方案由签字身份发布，kge 不能直接改为已发布 |
 

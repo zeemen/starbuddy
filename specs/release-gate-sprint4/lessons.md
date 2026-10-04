@@ -332,3 +332,45 @@ spec 冲刺 3、4 段已确认（待人确认全部按默认）。迁移从 0038
 3. 同一名 staff 可以签字、发布、执行准入走完全程；审核等级由签字人自报，没有和人员资质挂钩。
 4. 学生端探针（`insight.record_confidence_probe`，0025）检查题目存在时，草稿题与未准入题也算存在，与新的 BFF 可见性不一致；收紧会断数学诊断演示（演示题未准入未发布），且需改 insight schema，留待人决定。
 5. 签字人身份取自审核台后端设置的账号，只核对是 active staff，未绑定 0020 的 staff 会话（与 0019、0038 同一残余风险）。
+
+## 第二部分 PR C：考情签字收口（迁移 0040、0041）
+
+### 做了什么
+- 拆成两个迁移（同 0018/0019 先例）：0040 只建 `platform.policy_signoff`（只追加、强制 RLS 无策略、只 authz 读写、同一账号对同一对象同一摘要只签一次、个人层表清单登记为豁免）与导出函数 `platform.policy_signoff_record()`；0041 只改 policy schema：`policy.sign_scheme` / `policy.sign_record`（只授 review、要求 active staff、签字人取当前账号、调用方回传摘要）、两人规则（只数对当前摘要批准的不同账号，当前摘要被驳回即清零）、`publish_scheme` 改为只授 review、四表共用守卫（只能以草稿新建，改为已发布、写复核时间只能经函数）、`validate_scheme` 第 5 项改数签字人表、数据预检与角色预检、down 遇签字记录中止。
+- 签字人不能放进 policy 表：80 号攻击面测试禁止 policy 存账号 ID（规则 13），所以放在 platform；指向学校的列名为 `institution_id`（渗透夹具禁止 platform 出现含 school 的列名）。
+- 测试：新增 79v（四类对象逐一测非 staff 拒签、同人两签算一人、kge 直接发布被拒、摘要不符、改内容旧签作废、驳回清零、导出与 BFF 可见性）；77 改走签字函数；run.sh 加两人并发签字、0041 数据预检、角色预检（`policy_must_refuse`，四种组合）、0040/0041 down 中止；mutations “考情签字”组；快照重生。
+- 审核台版本记录导出合并 `line = policy` 行，末尾追加 `policy_object, policy_object_id, city, cohort, policy_version`；考情行 `version` 为空。
+- Gate 0 样例 `tables_bff_cannot_read` 29→30 与对应哈希，经 `make gate0-evidence` 重生。
+
+### 测试
+`make db-test` 2446 项断言；db-mutation 考情 56/56、攻击面 24/24（全量没跑，留给严格检查）；`attack-surface-check`、`pentest-env-test` 通过；`learning-test` 2692 passed；`web-test` 56 passed、1 skipped；tsc 通过。
+
+### 经验
+- 保护触发器里的 `EXISTS` 子查询即使走不到也做权限检查，authz 需要 `source_domain` 的 SELECT。
+- 同一条语句里函数刚做的修改对子查询不可见，“签字后查状态”的断言要拆成两条语句。
+- 对象行加 `FOR UPDATE` 两人同时签字才能正确计数（并发测试与“签字不锁对象”变异守着）。
+- 新增 platform 表会改变 Gate 0 样例的 `tables_bff_cannot_read`，样例要重生。
+- 表级 INSERT 授权不能单独收回一列；要收得改逐列授权。
+- 流程：实现子代理用过一次 `sed -i` 改 `docs/security/pentest/scope.md` 标题（104→109），结果已核对，已向用户披露。
+
+### 审查意见处理（按用户“按默认建议处理审查意见”）
+- 安全、契约均无阻断。已改：角色预检加 learning×review、bff×review 并补拒绝测试；收回 kge 对 `reviewed_at, reviewers` 的 UPDATE（INSERT 保留）；导出函数挪到 platform；攻击面引用改完整测试名；导出考情行 `version` 置空、追加 `policy_version`；records 页 `data-version` 只给地图行，考情行用 `data-policy-object` / `data-policy-id`；README 写明跨学科汇总按 `line = policy` 去重、考情行 `risk_level` 固定 high；录入规则写明驳回与发布回滚语义。
+- 第二名批准时发布失败，签字一并回滚不留痕：PR D 审核台给出明确提示。
+
+### 与 spec 的差异
+1. 签字人在 platform，拆成两个迁移；考情复核人不记在 `kge.content_review`。
+2. `reviewers` 自报工号列保留作展示、不计数，只能在新建草稿时填；复核时间只在发布时写入。
+3. 撤下不收口：kge 仍可直接改为 retired，不留签字记录。
+4. 驳回后同一内容不能改签；发布人可以是签字人之一或第三人。
+5. 0041 遇已有已发布 / 已撤下考情数据直接中止，不回填。
+6. 导出函数在 0040，但它读 policy 表的权限由 0041 授予；两个迁移须一起执行。
+
+### 待人确认
+1. 撤下是否也要两人签字收口、留签字记录。
+2. 签字人之后被停用，已签的批准仍计数（同 0019、0039）；是否计数时要求仍为 active staff。
+3. 签字身份取自会话变量 `app.account_id`，两人规则依赖审核台进程可信；可选加固为签字函数直接校验 staff 会话令牌。同一自然人持两个 staff 账号需靠组织流程。
+4. `platform.policy_signoff_record()` 授给 starbuddy_kge，可读全部 staff UUID（同 0038）；请确认 kge 角色只给审核台后端，或改用 review 连接后收回。
+5. `reviewers` 的 INSERT 是否也收回（需改逐列授权）。
+6. 导出列 `policy_version` 与 `insight.weekly_report.policy_version` 同名异义，是否改名 `scheme_version`（改导出格式）。
+7. 内容改回原样后旧驳回、旧批准重新生效，是否需要按时间先后的语义，由教研定。
+8. 考情行不分学科，每个学科导出都带全部考情行。

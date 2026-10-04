@@ -113,8 +113,8 @@ export interface DiffView {
 }
 
 export interface RecordRow extends Omit<Signoff, 'map_version_id' | 'version'> {
-  /** map：地图版本的签字、发布、撤下；page：编译页面的签字（冲刺 3） */
-  line: 'map' | 'page';
+  /** map：地图版本的签字、发布、撤下；page：编译页面的签字（冲刺 3）；policy：考情政策线的签字与发布（冲刺 4，按城市与届别，不分学科） */
+  line: 'map' | 'page' | 'policy';
   map_version_id: string | null;
   version: string | null;
   rubric_versions: string;
@@ -122,6 +122,13 @@ export interface RecordRow extends Omit<Signoff, 'map_version_id' | 'version'> {
   validation_warnings: number | null;
   page_id: string | null;
   page_commit: string | null;
+  /** 考情行：source_document / exam_scheme / admission_line / school */
+  policy_object: string | null;
+  policy_object_id: string | null;
+  city: string | null;
+  cohort: number | null;
+  /** 考情方案行的方案版本号（考情行的 version 一律为空，version 只给地图版本号） */
+  policy_version: string | null;
 }
 
 // ---------- 编译页面（冲刺 3，spec 第 6 节）：待审合并请求与对账状态；审核在托管平台网页上做，这里只读、只给链接 ----------

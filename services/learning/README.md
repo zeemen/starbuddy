@@ -85,7 +85,7 @@ LEARNING_ADAPTER_AYA_URL=http://127.0.0.1:8787 LEARNING_ADAPTER_AYA_TOKEN=... .v
 | `risk.py` | 风险分类（KGE 第四章）；判不出的一律高风险；结构性口径与库里 `kge.structural_diff`、`map_change_required_signers` 一致 |
 | `store.py` | 两个连接池：`REVIEW_CONSOLE_KGE_DATABASE_URL`（只继承 `starbuddy_kge`：读、改草稿）、`REVIEW_CONSOLE_REVIEW_DATABASE_URL`（只继承 `starbuddy_review`：签字、发布、撤下）；启动时核对 |
 | `app.py` | `/review/v0/*` 接口；`/review/v0/auth/login`（唯一不需要会话的接口）、`/auth/logout`、`/auth/me`；其余接口的 staff 身份由请求头 `x-review-session` 的会话令牌经 `platform.staff_session_resolve` 解析（迁移 0020，PR 4） |
-| `__main__.py` | `python -m review_console record --subject aya [--format csv\|json]` 导出版本记录（冲刺 3 起含页面行：`line = page`、`page_id`、`page_commit`）；`reconcile-pages` 编译页面对账（见下） |
+| `__main__.py` | `python -m review_console record --subject aya [--format csv\|json]` 导出版本记录（冲刺 3 起含页面行：`line = page`、`page_id`、`page_commit`；冲刺 4 起含考情行：`line = policy`、`policy_object`、`policy_object_id`、`city`、`cohort`、`policy_version`，来自 `platform.policy_signoff_record()`（迁移 0040）；考情行的 `version` 为空（只给地图版本号），方案版本号在 `policy_version`；`risk_level` 固定为 `high`；考情行不分学科，每个学科的导出都带同一批，跨学科汇总须按 `line = policy` 去重；新列只追加在末尾）；`reconcile-pages` 编译页面对账（见下） |
 | `pages.py` | 编译页面对账（纯函数）：托管平台合并记录 × `kge.content_review` 页面审核记录（迁移 0038）× staff 对应表；`GET /review/v0/pages` 与命令行共用 |
 
 签字（版本与变更单）、发布、改节点都要带上“看到的摘要”（`expected_digest`），与当前内容不同就拒绝（409）。
