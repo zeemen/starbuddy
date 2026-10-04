@@ -243,7 +243,7 @@ async def test_records_export(rc):
     write_records(rows, "csv", b)
     assert a.getvalue() == b.getvalue()
     assert a.getvalue().splitlines()[0] == ("line,map_version_id,version,action,decision,risk_level,basis_code,digest,decided_at,signer,"
-                                            "rubric_versions,validation_errors,validation_warnings")
+                                            "rubric_versions,validation_errors,validation_warnings,page_id,page_commit")
     assert len(a.getvalue().splitlines()) == 8
     assert all(i["line"] == "map" and i["validation_errors"] == 0 and i["validation_warnings"] == 1 for i in items)
 
@@ -289,6 +289,82 @@ async def test_role_check_rejects_extra_app_roles(pg, rc):
                 expect_role(await role_facts(conn), "starbuddy_kge")
         finally:
             await conn.close()
+
+
+PAGES_FIX = __import__("pathlib").Path(__file__).parent / "fixtures" / "pages-reconcile"
+T1 = "5f0e0000-0000-4000-8000-0000000000e1"
+T2 = "5f0e0000-0000-4000-8000-0000000000e2"
+
+
+async def test_pages_entry_and_page_records(pg, rc):
+    """冲刺 3：库里的页面审核记录（0038，签字身份经 kge.sign_page_review）+ 合成合并记录 → 页面入口的对账状态与链接；版本记录有页面行。"""
+    from review_console.config import PagesSettings
+    c, kp, rp = rc
+    pg.psql(f"INSERT INTO platform.account (id, kind) VALUES ('{T1}', 'staff'), ('{T2}', 'staff') ON CONFLICT DO NOTHING;")
+    recs = __import__("json").loads((PAGES_FIX / "records.json").read_text(encoding="utf-8"))["records"]
+    for r in recs:
+        async with rp.acquire() as conn, conn.transaction():
+            await conn.execute("SELECT set_config('app.account_id', $1, true)", r["signer"])
+            await conn.fetchval("SELECT kge.sign_page_review($1, $2, $3, $4, 'mr_approved')",
+                                r["page_id"], r["page_commit"], r["decision"], r["risk_level"])
+    # 未配置时页面入口只说“未配置”
+    assert (await c.get("/review/v0/pages", headers=H(SF1))).json() == {"configured": False}
+    settings = PagesSettings(str(PAGES_FIX / "export.json"), str(PAGES_FIX / "staff-map.json"),
+                             "https://git.example.cn/kge/pages/-/merge_requests/{mr_id}")
+    app = create_app(authenticate=staff_auth(None), pools=(kp, rp), pages_settings=settings)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1") as client:
+            assert (await client.get("/review/v0/pages")).status_code == 401
+            v = (await client.get("/review/v0/pages", headers=H(SF1))).json()
+            assert v["configured"] and v["ok"] and v["held_pages"] == []
+            assert [(e["page_id"], e["status"]) for e in v["merged"]] == [
+                ("MATH.SYN.T.A", "ok"), ("MATH.SYN.T.B", "ok"), ("MATH.SYN.T.C", "ok"), ("MATH.SYN.T.D", "ok")]
+            [p] = v["pending"]
+            assert p["mr_id"] == "104" and p["state"] == "open" and p["approvals_review"] == 1
+            assert p["url"] == "https://git.example.cn/kge/pages/-/merge_requests/104"
+            # 删不了审核记录（只追加），用“签一个合并记录里没有的提交”模拟一方有一方没有：
+            # 低风险页 D 的最新头提交上没有签字，这条孤儿扣页
+            async with rp.acquire() as conn, conn.transaction():
+                await conn.execute("SELECT set_config('app.account_id', $1, true)", T2)
+                await conn.fetchval("SELECT kge.sign_page_review('MATH.SYN.T.D', $1, 'approved', 'low', 'mr_approved')", "c3" * 20)
+            v = (await client.get("/review/v0/pages", headers=H(SF1))).json()
+            assert not v["ok"] and v["held_pages"] == ["MATH.SYN.T.D"]
+            assert v["orphans"] == [{"page_id": "MATH.SYN.T.D", "page_commit": "c3" * 20, "records": 1, "problems": ["no_merge"],
+                                     "blocking": True}]
+    # 文件坏了：503，不回显内容
+    bad = PagesSettings(str(PAGES_FIX / "missing.json"), str(PAGES_FIX / "staff-map.json"), settings.mr_url_template)
+    app = create_app(authenticate=staff_auth(None), pools=(kp, rp), pages_settings=bad)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1") as client:
+            r = await client.get("/review/v0/pages", headers=H(SF1))
+            assert r.status_code == 503 and r.json()["code"] == "PAGES_EXPORT_UNAVAILABLE"
+    # 版本记录（spec 第 11 节）：数学有页面行（页面 ID、提交号、签字人、时间），语文没有
+    items = (await c.get("/review/v0/records", params={"subject": "aya"}, headers=H(SF1))).json()["items"]
+    page_rows = [i for i in items if i["line"] == "page"]
+    assert len(page_rows) == 8 and all(i["page_id"].startswith("MATH.") and i["decided_at"] for i in page_rows)
+    assert {(i["page_id"], i["page_commit"], i["signer"]) for i in page_rows if i["page_id"] == "MATH.SYN.T.A"} == {
+        ("MATH.SYN.T.A", "a1" * 20, T1), ("MATH.SYN.T.A", "a1" * 20, T2)}
+    items = (await c.get("/review/v0/records", params={"subject": "wenli"}, headers=H(SF1))).json()["items"]
+    assert all(i["line"] == "map" for i in items)
+
+
+async def test_reconcile_cli_reads_db(pg, rc, tmp_path):
+    """命令行 --db：只用 kge 连接（先核对只继承 starbuddy_kge），读 kge.page_review_record 与文件对账。"""
+    import os
+    import subprocess
+    import sys
+    dsn = pg.dsn("review_kge_app")
+    url = f"postgresql://{dsn['user']}@/{dsn['database']}?host={dsn['host']}"
+    out = tmp_path / "report.json"
+    p = subprocess.run([sys.executable, "-m", "review_console", "reconcile-pages", "--export", str(PAGES_FIX / "export.json"),
+                        "--staff-map", str(PAGES_FIX / "staff-map.json"), "--db", "--out", str(out)],
+                       cwd=__import__("pathlib").Path(__file__).resolve().parents[1], capture_output=True, text=True,
+                       env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "REVIEW_CONSOLE_ENV": "test",
+                            "REVIEW_CONSOLE_KGE_DATABASE_URL": url, "PYTHONDONTWRITEBYTECODE": "1"})
+    report = __import__("json").loads(out.read_text(encoding="utf-8"))
+    # 上一个用例多签了一个合并记录里没有的提交：对账失败，退出码 1
+    assert p.returncode == 1, p.stderr
+    assert report["held_pages"] == ["MATH.SYN.T.D"]
 
 
 def test_db_error_detail_only_for_raised_rules():

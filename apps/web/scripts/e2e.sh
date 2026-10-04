@@ -168,6 +168,9 @@ done
 psql -X -q -v ON_ERROR_STOP=1 -c "CREATE ROLE review_kge_app LOGIN IN ROLE starbuddy_kge" \
   -c "CREATE ROLE review_sign_app LOGIN IN ROLE starbuddy_review" >/dev/null
 PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -q -v ON_ERROR_STOP=1 -f "$ROOT/db/seeds/dev/review-synthetic.sql" >/dev/null
+# 编译页面入口（G 流冲刺 3）：合成页面审核记录；审核台后端配上同一组合成的托管平台合并记录与 staff 对应表（对账通过的那一份）
+PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -q -v ON_ERROR_STOP=1 -f "$ROOT/db/seeds/dev/review-pages-synthetic.sql" >/dev/null
+PAGES_FIX="$ROOT/services/learning/tests/fixtures/pages-reconcile"
 # H5 星图 v1：合成数学地图（已发布）、家庭 HV（家长 gV +99900000107，孩子 V1、V2）、V1 的节点键掌握行与判断（语文地图由上面的审核台种子发布）
 PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -q -v ON_ERROR_STOP=1 -f "$ROOT/db/seeds/dev/star-map-v1-synthetic.sql" >/dev/null
 REVIEW_PORT="$(free_port)"
@@ -176,6 +179,8 @@ RLOG="$(mktemp)"
   exec env REVIEW_CONSOLE_ENV=test \
     REVIEW_CONSOLE_KGE_DATABASE_URL="postgresql://review_kge_app@/starbuddy_test?host=$PGHOST" \
     REVIEW_CONSOLE_REVIEW_DATABASE_URL="postgresql://review_sign_app@/starbuddy_test?host=$PGHOST" \
+    REVIEW_CONSOLE_PAGES_EXPORT="$PAGES_FIX/export.json" REVIEW_CONSOLE_PAGES_STAFF_MAP="$PAGES_FIX/staff-map.json" \
+    REVIEW_CONSOLE_PAGES_MR_URL='https://git.example.cn/synthetic/kge-pages/-/merge_requests/{mr_id}' \
     "$PY" -m review_console serve --port "$REVIEW_PORT" ) > "$RLOG" 2>&1 < /dev/null &
 REVIEW_PID=$!
 # 测试构建会改写 next-env.d.ts（指向 .next-e2e/types）：先备份，结束时还原，并删掉测试构建目录

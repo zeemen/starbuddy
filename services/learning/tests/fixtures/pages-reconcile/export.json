@@ -1,0 +1,46 @@
+{
+  "format": "kge-pages-merge-export/1",
+  "repository": "synthetic/kge-pages",
+  "branch": "main",
+  "exported_at": "2026-10-03T08:00:00+08:00",
+  "merge_requests": [
+    {
+      "mr_id": "101",
+      "state": "merged",
+      "risk": "high",
+      "approvers": ["syn-teacher-1", "syn-teacher-2"],
+      "pages": ["MATH.SYN.T.A"],
+      "head_commit": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+      "merge_commit": "b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+      "merged_at": "2026-10-02T10:00:00+08:00"
+    },
+    {
+      "mr_id": "102",
+      "state": "merged",
+      "risk": "medium",
+      "approvers": ["syn-teacher-2", "syn-teacher-1"],
+      "pages": ["MATH.SYN.T.B", "MATH.SYN.T.C"],
+      "head_commit": "a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2",
+      "merge_commit": "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2",
+      "merged_at": "2026-10-02T11:00:00+08:00"
+    },
+    {
+      "mr_id": "103",
+      "state": "merged",
+      "risk": "low",
+      "approvers": [],
+      "pages": ["MATH.SYN.T.D"],
+      "head_commit": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3",
+      "merge_commit": "b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3",
+      "merged_at": "2026-10-02T21:00:00+08:00"
+    },
+    {
+      "mr_id": "104",
+      "state": "open",
+      "risk": "high",
+      "approvers": ["syn-teacher-1"],
+      "pages": ["MATH.SYN.T.E"],
+      "head_commit": "a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4"
+    }
+  ]
+}

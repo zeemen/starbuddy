@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { isLoopbackHost } from '../src/lib/dev-pages.ts';
 import {
-  assignmentLabel, isBasis, isCursor, isDigest, isNodeId, isQueueReason, isQueueStatus, isResolutionCode, isSubject, isTaskId, isVersionId, lines,
+  assignmentLabel, isBasis, PAGE_PROBLEM_LABEL, pageProblemLabel, safeHttpsUrl, isCursor, isDigest, isNodeId, isQueueReason, isQueueStatus, isResolutionCode, isSubject, isTaskId, isVersionId, lines,
   problemFrom, QUEUE_REASON_LABEL, QUEUE_REASONS, QUEUE_RESULT_LABEL, QUEUE_STATUS_LABEL, QUEUE_STATUSES, queueQuery, reasonLabel, RESULT_LABEL,
   reviewBaseUrl, SOURCE_KIND_LABEL,
 } from '../src/lib/review.ts';
@@ -91,6 +91,20 @@ test('复核队列：原因码、状态、来源类型都有中文标签，与�
   assert.ok(!isQueueReason('toString') && !isQueueStatus('closed'));
   assert.equal(reasonLabel('student_appeal'), '学生申诉');
   assert.equal(reasonLabel('unknown_reason'), 'unknown_reason');
+});
+
+test('编译页面：对账问题码都有中文说明（与后端 pages.py 一致）；托管平台链接只认 https', () => {
+  const root = new URL('../../../', import.meta.url).pathname;
+  const src = readFileSync(join(root, 'services/learning/review_console/pages.py'), 'utf8');
+  const codes = new Set([...src.matchAll(/(?:problems\.append\(|"problems": \[)"([a-z_]+)"/g)].map((m) => m[1]!));
+  assert.ok(codes.size >= 6, [...codes].join(','));
+  assert.deepEqual([...codes].sort(), Object.keys(PAGE_PROBLEM_LABEL).sort());
+  assert.equal(pageProblemLabel('no_merge'), PAGE_PROBLEM_LABEL['no_merge']);
+  assert.equal(pageProblemLabel('toString'), 'toString');
+  assert.equal(safeHttpsUrl('https://git.example.cn/kge/-/merge_requests/1'), 'https://git.example.cn/kge/-/merge_requests/1');
+  for (const bad of ['http://git.example.cn/1', 'javascript:alert(1)', 'https://u:p@git.example.cn/1', 'not a url']) {
+    assert.equal(safeHttpsUrl(bad), null, bad);
+  }
 });
 
 test('复核队列：领取情况三种文字', () => {

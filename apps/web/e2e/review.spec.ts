@@ -318,3 +318,41 @@ test('复核队列：看到合成任务 → 领取 → 他人看到“他人已�
   await page.goto('/review/queue?subject=zhixing');
   await expect(page.locator(`tr[data-task="${QT}"]`)).toHaveCount(0);
 });
+
+// ---------- 编译页面（specs/release-gate-sprint4 冲刺 3 段：审核台加“页面”入口，列待审合并请求与对账状态，链到托管平台网页） ----------
+// 合成数据：页面审核记录来自 db/seeds/dev/review-pages-synthetic.sql；审核台后端配的合并记录与对应表是
+// services/learning/tests/fixtures/pages-reconcile/{export,staff-map}.json（e2e.sh）。
+test('编译页面：待审合并请求与对账状态、链到托管平台；对账失败时列出跳过的页面；版本记录有页面行', async ({ page }) => {
+  test.setTimeout(90_000);
+  await asStaff(page, T1);
+  await page.getByRole('link', { name: '编译页面' }).click();
+  await expect(page).toHaveURL(/\/review\/pages$/);
+  expect((await page.goto('/review/pages'))?.headers()['cache-control'] ?? '').toContain('no-store');
+  const summary = page.getByTestId('pages-summary');
+  await expect(summary).toHaveAttribute('data-ok', 'true');
+  const pending = page.getByTestId('pages-pending').locator('tr[data-page="MATH.SYN.T.E"]');
+  await expect(pending).toHaveCount(1);
+  await expect(pending.getByRole('link')).toHaveAttribute('href', 'https://git.example.cn/synthetic/kge-pages/-/merge_requests/104');
+  await expect(page.getByTestId('pages-merged').locator('tbody tr')).toHaveCount(4);
+  await expect(page.getByTestId('pages-merged').locator('tr[data-status="ok"]')).toHaveCount(4);
+  await expect(page.getByTestId('pages-orphans')).toHaveCount(0);
+  await expect(page.locator('main')).not.toContainText('syn-teacher');  // 不显示托管平台用户名
+  await axe(page);
+
+  // 一方有一方没有：T2 对一个合并记录里没有的提交签字（审核记录只追加，删不掉，用多出来的一条模拟）→ 对账失败，合并窗口跳过该页
+  execFileSync('psql', ['-X', '-q', '-v', 'ON_ERROR_STOP=1', '-c', `BEGIN; SET LOCAL ROLE starbuddy_review;
+SELECT set_config('app.account_id', '5f0e0000-0000-4000-8000-0000000000e2', true);
+SELECT kge.sign_page_review('MATH.SYN.T.D', '${'c3'.repeat(20)}', 'approved', 'low', 'mr_approved'); COMMIT;`], { encoding: 'utf8' });
+  await page.reload();
+  await expect(summary).toHaveAttribute('data-ok', 'false');
+  await expect(summary).toContainText('合并窗口跳过 1 页：MATH.SYN.T.D');
+  await expect(page.getByTestId('pages-orphans').locator('tr[data-page="MATH.SYN.T.D"]')).toContainText('提交号不符');
+  await expect(page.getByTestId('pages-orphans').locator('tr[data-page="MATH.SYN.T.D"]')).toContainText('扣页');
+  await axe(page);
+
+  // 版本记录（spec 第 11 节）：数学的页面行，含页面 ID 与提交号
+  await page.goto('/review/records?subject=aya');
+  await expect(page.locator('tr[data-line="page"][data-page="MATH.SYN.T.A"]')).toHaveCount(2);
+  await expect(page.locator('tr[data-line="page"][data-page="MATH.SYN.T.A"]').first()).toContainText('a1a1a1a1a1a1');
+  await axe(page);
+});

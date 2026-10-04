@@ -120,6 +120,18 @@ fi
 wait || { echo "db-test: 失败（并发场景 2 的发布本身失败：$(cat "$WORK/race_c.err")）"; exit 1; }
 grep -q '已发布或已撤下' "$WORK/race_d.err" || { echo "db-test: 失败（并发场景 2 的写入不是被冻结拒绝：$(cat "$WORK/race_d.err")）"; exit 1; }
 echo "ok - 并发：发布进行中的骨架写入等发布提交后按已发布状态拒绝" >> "$OUT"
+# 场景 3（0038）：两名 staff 同时对同一页面同一提交签字。签字函数的咨询锁让后一个等前一个提交，再分到第 2 号签字位；
+# 去掉锁时两人都算出第 1 号，后一个撞唯一约束失败
+PC="3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a"
+printf '%s\n' "BEGIN; $AS_STAFF SELECT kge.sign_page_review('MATH.RACE.T.PG', '$PC', 'approved', 'high', 'race'); SELECT pg_sleep(1.5); COMMIT;" \
+  | psql_run >/dev/null 2>"$WORK/race_e.err" &
+sleep 0.5
+printf '%s\n' "$AS_STAFF2 SELECT kge.sign_page_review('MATH.RACE.T.PG', '$PC', 'approved', 'high', 'race');" \
+  | psql_run >/dev/null 2>"$WORK/race_f.err" || { wait; echo "db-test: 失败（并发页面签字：后一名 staff 的签字失败：$(cat "$WORK/race_f.err")）"; exit 1; }
+wait || { echo "db-test: 失败（并发页面签字：前一名 staff 的签字失败：$(cat "$WORK/race_e.err")）"; exit 1; }
+[ "$(psql_run -tAc "SELECT string_agg(page_signer_no::text, ',' ORDER BY page_signer_no) FROM kge.content_review WHERE object_type = 'page' AND page_commit = '$PC'" </dev/null)" = "1,2" ] \
+  || { echo "db-test: 失败（并发页面签字的签字序号不是 1、2）"; exit 1; }
+echo "ok - 并发：两名 staff 同时签同一页面同一提交，按咨询锁串行分到签字位 1、2" >> "$OUT"
 
 # 角色属性断言（安全审查阻断 5）：BFF 角色带 BYPASSRLS 时，0001 必须拒绝执行
 as_pg "$PGBIN/createdb" -h "$WORK" -U postgres role_check
@@ -143,7 +155,7 @@ echo "ok - 登录角色间接同时继承 bff 与 learning 时迁移拒绝执行
 as_pg "$PGBIN/createdb" -h "$WORK" -U postgres kge_role_check
 psql_kge() { as_pg "$PGBIN/psql" -h "$WORK" -U postgres -d kge_role_check -X -q -v ON_ERROR_STOP=1 "$@"; }
 for f in "${UPS[@]}"; do
-  case "$(basename "$f")" in 0011_*|0012_*|0017_*|0018_*|0019_*|0024_*|0026_*|0028_*) continue ;; esac  # 0012、0017–0019、0024、0026、0028 依赖 0011 的 kge 表
+  case "$(basename "$f")" in 0011_*|0012_*|0017_*|0018_*|0019_*|0024_*|0026_*|0028_*|0038_*) continue ;; esac  # 0012、0017–0019、0024、0026、0028、0038 依赖 0011 的 kge 表
   psql_kge -1 < "$f" >/dev/null 2>&1 || { echo "db-test: 失败（角色断言测试库执行 $(basename "$f") 出错）"; exit 1; }
 done
 kge_must_refuse() {  # $1 = 布置 SQL，$2 = 撤销 SQL，$3 = 说明
@@ -223,6 +235,18 @@ grep -q '0037 回滚中止' "$WORK/down37.err" || { echo "db-test: 失败（0037
 [ "$(psql_run -tAc "SELECT count(*) FROM pg_attribute WHERE attrelid = 'platform.mastery_estimate'::regclass AND attname = 'node_id' AND NOT attisdropped" </dev/null)" = "1" ] \
   || { echo "db-test: 失败（0037 回滚中止后节点键列不在了）"; exit 1; }
 echo "ok - 有节点键掌握记录时 0037 回滚以明确错误中止，库不变" >> "$OUT"
+
+# 0038 的回滚（G 流第二部分 PR A）：库里有页面审核记录（79t 写入，只追加不能删）时，回滚必须以明确错误中止，且什么都不改
+D38="$(ls "$ROOT"/db/migrations/0038_*.down.sql)"
+[ "$(psql_run -tAc "SELECT count(*) > 0 FROM kge.content_review WHERE object_type = 'page'" </dev/null)" = "t" ] \
+  || { echo "db-test: 失败（0038 回滚测试的前提不成立：库里没有页面审核记录）"; exit 1; }
+if psql_run -1 < "$D38" >/dev/null 2>"$WORK/down38.err"; then
+  echo "db-test: 失败（有页面审核记录时 0038 回滚仍然执行成功）"; exit 1
+fi
+grep -q '0038 回滚中止' "$WORK/down38.err" || { echo "db-test: 失败（0038 回滚不是被页面记录检查中止：$(cat "$WORK/down38.err")）"; exit 1; }
+[ "$(psql_run -tAc "SELECT count(*) FROM pg_attribute WHERE attrelid = 'kge.content_review'::regclass AND attname = 'page_commit' AND NOT attisdropped" </dev/null)" = "1" ] \
+  || { echo "db-test: 失败（0038 回滚中止后提交号列不在了）"; exit 1; }
+echo "ok - 有页面审核记录时 0038 回滚以明确错误中止，库不变" >> "$OUT"
 
 n=$(grep -c 'ok - ' "$OUT" || true)
 echo "db-test: 通过（${n} 项断言）"

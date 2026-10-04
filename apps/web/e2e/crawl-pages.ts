@@ -42,6 +42,7 @@ export const CRAWL: Record<string, CrawlPage | Excluded> = {
   'review/login/page.tsx': { who: 'anon', path: () => '/review/login' },
   'review/queue/page.tsx': { excluded: '审核台（staff 登录，迁移 0020，不在壳内）：与壳同一个 proxy（CSP）与 next.config（安全头），但需要 staff 会话，本爬取不覆盖；e2e/review.spec.ts 只核对 no-store（CSP 逐页爬取登记为 lessons H6 待人确认）' },
   'review/queue/[id]/page.tsx': { excluded: '审核台（staff 登录，迁移 0020，不在壳内）：与壳同一个 proxy（CSP）与 next.config（安全头），但需要 staff 会话，本爬取不覆盖；e2e/review.spec.ts 只核对 no-store（CSP 逐页爬取登记为 lessons H6 待人确认）' },
+  'review/pages/page.tsx': { excluded: '审核台（staff 登录，迁移 0020，不在壳内）：与壳同一个 proxy（CSP）与 next.config（安全头），但需要 staff 会话，本爬取不覆盖；e2e/review.spec.ts 只核对 no-store（CSP 逐页爬取登记为 lessons H6 待人确认）' },
   'review/records/page.tsx': { excluded: '审核台（staff 登录，迁移 0020，不在壳内）：与壳同一个 proxy（CSP）与 next.config（安全头），但需要 staff 会话，本爬取不覆盖；e2e/review.spec.ts 只核对 no-store（CSP 逐页爬取登记为 lessons H6 待人确认）' },
   'review/map-versions/[id]/page.tsx': { excluded: '审核台（staff 登录，迁移 0020，不在壳内）：与壳同一个 proxy（CSP）与 next.config（安全头），但需要 staff 会话，本爬取不覆盖；e2e/review.spec.ts 只核对 no-store（CSP 逐页爬取登记为 lessons H6 待人确认）' },
 };

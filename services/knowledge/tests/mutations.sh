@@ -50,6 +50,10 @@ M=(
   $'合并窗口每页每天可发布多次\tknowledge/compiler/window.py\t        slot[r.page_id] = combine(slot[r.page_id], r) if r.page_id in slot else r\t        slot[f"{r.page_id}#{len(slot)}"] = r\ttests/test_compiler.py'
   $'当天已发布的页面不顺延\tknowledge/compiler/window.py\t        while day in done.get(r.page_id, set()):\t        while False:\ttests/test_compiler.py tests/test_e2e.py'
   $'高风险只要 1 人审核\tknowledge/compiler/window.py\tREVIEWERS = {"low": 0, "medium": 2, "high": 2}\tREVIEWERS = {"low": 0, "medium": 2, "high": 1}\ttests/test_compiler.py tests/test_e2e.py'
+  $'合并窗口不跳过对账失败的页面\tknowledge/compiler/window.py\tif not r.unchanged and r.page_id not in hold)\tif not r.unchanged)\ttests/test_compiler.py tests/test_e2e.py'
+  $'对账报告自相矛盾不拒\tknowledge/compiler/window.py\t    if ok != (not held):\t    if False:\ttests/test_compiler.py tests/test_e2e.py'
+  $'对账报告不查过期\tknowledge/compiler/window.py\t    if exported < now - max_age:\t    if False:\ttests/test_compiler.py tests/test_e2e.py'
+  $'编译器对账报告不必填\tknowledge/compiler/__main__.py\t    hold = ap.add_mutually_exclusive_group(required=True)\t    hold = ap.add_mutually_exclusive_group(required=False)\ttests/test_e2e.py'
   $'快照放过未知字段\tknowledge/atoms.py\t    if unknown:\n        raise SnapshotError(f"{where}: 未知字段\t    if False:\n        raise SnapshotError(f"{where}: 未知字段\ttests/test_format_atoms.py'
   $'头部缺字段不查\tknowledge/lint/checks.py\t    if missing:\n        bad(f"头部缺字段\t    if False:\n        bad(f"头部缺字段\ttests/test_lint.py'
   $'知识服务：快照篡改（哈希不符）不拒绝\tknowledge/service/pages.py\t        if hashlib.sha256(raw).hexdigest() != digest:\t        if False:\ttests/test_service_unit.py'
@@ -135,7 +139,7 @@ M_DB=(
   $'知识服务：page.get 未发布页回退到其他页面\tknowledge/service/tools.py\t        pp = self.pages.get(body["page_id"])\t        pp = self.pages.get(body["page_id"]) or next(iter(self.pages.pages.values()))\ttests/test_service_e2e.py'
   $'知识服务：page.get 不查节点是否在已发布版本\tknowledge/service/tools.py\t        if n is None:  # 节点已撤下\t        if False:  # 节点已撤下\ttests/test_service_e2e.py'
   $'知识服务：page.get 教材投影不按版次取\tknowledge/service/tools.py\tawait self.reader.textbook_projections(v.id, pp.node_id, edition)]\tawait self.reader.textbook_projections(v.id, pp.node_id, None)]\ttests/test_service_e2e.py'
-  $'知识服务：快照导出放过体检阻断\tknowledge/compiler/snapshot.py\t        if report.blocks:\t        if False:\ttests/test_service_e2e.py'
+  $'知识服务：快照导出放过体检阻断\tknowledge/compiler/snapshot.py\t        blocks = [i for i in report.blocks if i.page_id not in held]\t        blocks = []\ttests/test_service_e2e.py'
   $'知识服务：MCP 端点不鉴权\tknowledge/service/app.py\t            if scope["type"] != "http" or caller_for(_headers(scope).get("authorization"), self.tokens) is None:\t            if False:\ttests/test_service_mcp.py'
   $'知识服务：MCP 关闭 DNS 重绑定防护\tknowledge/service/mcp_server.py\treturn TransportSecuritySettings(enable_dns_rebinding_protection=True,\treturn TransportSecuritySettings(enable_dns_rebinding_protection=False,\ttests/test_service_unit.py'
   # 审查处理
@@ -152,6 +156,12 @@ M_DB=(
   $'审查：MCP 列出个人层工具\tknowledge/service/mcp_server.py\t    public = {name: t for name, t in contract.tools.items() if name in PUBLIC_TOOLS}\t    public = dict(contract.tools)\ttests/test_service_mcp.py'
   $'审查：整个应用不校验 Host\tknowledge/service/app.py\t    app.add_middleware(HostGuard, allowed=allowed_hosts(settings.host))\n\t\ttests/test_service_mcp.py'
   $'审查：node.resolve 不带分词器版本\tknowledge/service/tools.py\t"source_version": f"{graph_source(subject, v)};{tokenizer_source()}"\t"source_version": graph_source(subject, v)\ttests/test_service_db.py'
+  $'页面对账：快照导出照发被扣页面的新内容\tknowledge/compiler/snapshot.py\t            if PurePosixPath(name).stem in held:\t            if False:\ttests/test_service_e2e.py'
+  $'页面对账：被扣页面不沿用上一份快照\tknowledge/compiler/snapshot.py\t        for pid, (raw, entry) in sorted(carried.items()):\t        for pid, (raw, entry) in sorted({}.items()):\ttests/test_service_e2e.py'
+  $'页面对账：沿用的页面不记来源提交\tknowledge/compiler/snapshot.py\t            entry["source_commit"] = e.get("source_commit") or snap.commit\t            pass\ttests/test_service_e2e.py'
+  $'页面对账：快照导出不读对账报告\tknowledge/compiler/snapshot.py\t        m = export_snapshot(a.repo, a.commit, a.out, today=today, branch=a.branch, hold=held, previous=a.previous)\t        m = export_snapshot(a.repo, a.commit, a.out, today=today, branch=a.branch, previous=a.previous)\ttests/test_service_e2e.py'
+  $'页面对账：page.get 不用被扣页的来源提交\tknowledge/service/tools.py\t        commit = (pp.source_commit or self.pages.commit)[:12]\t        commit = self.pages.commit[:12]\ttests/test_service_e2e.py'
+  $'页面对账：载入不核对来源提交写法\tknowledge/service/pages.py\t        if source_commit is not None and (\t        if False and (\ttests/test_service_e2e.py'
 )
 if [ "$HAVE_PG" = "1" ]; then M+=("${M_DB[@]}"); else echo "knowledge-mutation: 本机没有 Postgres，知识服务的 ${#M_DB[@]} 条变异跳过"; fi
 

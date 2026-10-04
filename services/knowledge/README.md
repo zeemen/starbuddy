@@ -40,8 +40,19 @@ make knowledge-test knowledge-mutation                                       # �
 
 # 编译（渲染重建 + 合并窗口），只写本地目录，不推送任何远程仓库
 .venv/bin/python -m knowledge.compiler --pages tests/fixtures/pages --old-snapshot tests/fixtures/map-v1.yaml \
-  --new-snapshot /path/to/map-v2.yaml --out /tmp/kge-out --now 2026-09-29T10:00:00+08:00
+  --new-snapshot /path/to/map-v2.yaml --out /tmp/kge-out --now 2026-09-29T10:00:00+08:00 --no-hold-report
+#   对账报告必填：--hold-report <审核台 reconcile-pages 的报告> 或（只用于开发与测试）--no-hold-report；上例是开发用法，正式窗口必须给报告
 ```
+
+**页面对账（G 流冲刺 3，`specs/release-gate-sprint4` 第 6 节）**：编译器与快照导出都必须给对账报告（`kge-pages-reconcile/1`，
+审核台 `python -m review_console reconcile-pages` 产出），开发与测试时显式 `--no-hold-report`。
+- 报告的 `held_pages`：编译器的合并窗口跳过这些页面；快照导出不发布这些页面在本提交的内容，沿用 `--previous`（上一份已发布快照）
+  里的原文与清单条目（条目加 `source_commit`，`page.get` 的 `source_version` 用它，`page_version` 仍能对回原来的提交）；上一份里没有就不导出该页。
+  有被扣页面时，体检按该提交在主分支上的完整页面集合做，被扣页面自己的阻断不算；manifest 记下 `held_pages`。
+- **有效期**：报告的 `exported_at`（所依据的托管平台合并记录导出时刻）早于“当前时刻减有效期”即拒绝（退出码 2），在将来超过 5 分钟也拒绝。
+  有效期缺省 24 小时（一个合并窗口周期），用 `--hold-max-age-hours` 改；编译器按 `--now` 计，快照导出按当前时刻计。
+- 报告格式不对、`ok` 与 `held_pages` 矛盾、超过 10 MB：退出码 2，不当作没有失败。
+- 已知限制：沿用的旧页带旧的 `map_version`，地图升版后 `page.get` 对它回 404，直到对账通过、重新导出。
 退出码：`knowledge.lint` 0 无阻断、1 有阻断、2 参数或输入错误（快照、词表读不了一律失败，不当作通过；带 `--require-map-snapshot` 时没给快照也是 2）；
 `knowledge.compiler` 0 完成、1 有合并请求体检阻断、2 参数或输入错误。
 
@@ -54,7 +65,8 @@ make knowledge-test knowledge-mutation                                       # �
 
 ```bash
 # 导出已发布页面快照（合并窗口时对页面仓库主分支的指定提交执行；只读 Git 对象，不改工作区、不访问远程）
-.venv/bin/python -m knowledge.compiler.snapshot --repo /path/to/kge-pages --commit main --out /srv/kge/snapshots/<提交号> [--branch main]
+.venv/bin/python -m knowledge.compiler.snapshot --repo /path/to/kge-pages --commit main --out /srv/kge/snapshots/<提交号> [--branch main] \
+  --hold-report /path/to/reconcile.json --previous /srv/kge/snapshots/<上一份>   # 开发时可用 --no-hold-report（见上“页面对账”）
 # 退出码：0 完成，1 体检阻断（不产生任何输出目录），2 参数、仓库或页面错误——含提交不在受保护分支上
 #   （git merge-base --is-ancestor <提交> refs/heads/<分支>）、提交里没有地图快照 snapshots/current.yaml；目标目录已存在即拒绝（快照不可变）。
 # 调 git 一律带 -c core.hooksPath=/dev/null -c core.fsmonitor=false，读文件用 git cat-file blob；manifest 记下分支名

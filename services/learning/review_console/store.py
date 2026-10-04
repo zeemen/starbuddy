@@ -133,6 +133,14 @@ class KgeStore:
             " FROM kge.version_record($1::platform.subject) WHERE $2::uuid IS NULL OR map_version_id = $2", subject, version_id)
         return [dict(r) for r in rows]
 
+    async def page_records(self, subject: str | None = None) -> list[dict[str, Any]]:
+        """编译页面审核记录（迁移 0038 kge.page_review_record：页面 ID、提交号、签字序号、风险、结论、摘要、签字人）；
+        subject 为空时全部，否则库里按页面 ID 的学科前缀过滤。"""
+        rows = await self.pool.fetch(
+            "SELECT page_id, page_commit, signer_no, risk_level, decision, basis_code, digest, decided_at, signer"
+            " FROM kge.page_review_record($1::text::platform.subject)", subject)
+        return [dict(r) for r in rows]
+
     async def structural(self, version_id: uuid.UUID) -> bool:
         """整个版本是否结构性，以库的判定为准（与发布时同一个函数）。"""
         return bool(await self.pool.fetchval("SELECT kge.structural_diff($1)", version_id))

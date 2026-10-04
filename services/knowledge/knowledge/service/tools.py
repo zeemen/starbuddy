@@ -240,7 +240,9 @@ class ToolCore:
         body_md, refs = render_page(pp, subject=subject, map_version=v.version, standard_year=v.standard_year,
                                     node=node_record(n), projections=projections, regions=regions, edition=edition)
         result = {"page_id": pp.page_id, "page_version": pp.page_version, "body_md": body_md, "atom_refs": refs}
-        return result, {"source_version": f"{graph_source(subject, v)};graph:kge-pages@{self.pages.short_commit}"}
+        # 对账失败被扣、沿用上一份快照的页面带它自己的来源提交（manifest 的 source_commit），page_version 仍能对回提交号
+        commit = (pp.source_commit or self.pages.commit)[:12]
+        return result, {"source_version": f"{graph_source(subject, v)};graph:kge-pages@{commit}"}
 
     async def item_search(self, body: dict) -> tuple[dict, dict]:
         subject = body["subject"]

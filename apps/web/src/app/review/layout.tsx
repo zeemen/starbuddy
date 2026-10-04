@@ -27,6 +27,7 @@ export default async function ReviewLayout({ children }: { children: ReactNode }
           <nav aria-label="审核台">
             <a href="/review">地图版本</a>
             <a href="/review/queue">复核队列</a>
+            <a href="/review/pages">编译页面</a>
             <span data-testid="whoami">{login}</span>{' '}
             <form action={logoutAction} className="inline-form">
               <button type="submit">退出</button>

@@ -112,12 +112,78 @@ export interface DiffView {
   signoffs: Signoff[];
 }
 
-export interface RecordRow extends Signoff {
-  line: string;
+export interface RecordRow extends Omit<Signoff, 'map_version_id' | 'version'> {
+  /** map：地图版本的签字、发布、撤下；page：编译页面的签字（冲刺 3） */
+  line: 'map' | 'page';
+  map_version_id: string | null;
+  version: string | null;
   rubric_versions: string;
-  validation_errors: number;
-  validation_warnings: number;
+  validation_errors: number | null;
+  validation_warnings: number | null;
+  page_id: string | null;
+  page_commit: string | null;
 }
+
+// ---------- 编译页面（冲刺 3，spec 第 6 节）：待审合并请求与对账状态；审核在托管平台网页上做，这里只读、只给链接 ----------
+export interface PageEntry {
+  page_id: string;
+  mr_id: string;
+  state: 'merged' | 'open';
+  head_commit: string;
+  merge_commit?: string | null;
+  risk: 'low' | 'medium' | 'high';
+  required: number;
+  approvals_platform: number;
+  approvals_review: number;
+  url: string;
+  status?: 'ok' | 'failed';
+  problems?: string[];
+}
+
+export interface PageOrphan {
+  page_id: string;
+  page_commit: string;
+  records: number;
+  problems: string[];
+  /** 是否扣页：页面仍在本次导出范围内，且最新头提交上还没有批准记录 */
+  blocking: boolean;
+}
+
+export interface PagesView {
+  configured: boolean;
+  repository?: string;
+  branch?: string;
+  exported_at?: string;
+  ok?: boolean;
+  pending?: PageEntry[];
+  merged?: PageEntry[];
+  /** 同一页面更早的合并（只按最近一次合并判定） */
+  superseded?: { page_id: string; mr_id: string; head_commit: string; merge_commit: string }[];
+  orphans?: PageOrphan[];
+  held_pages?: string[];
+}
+
+export const getPages = (staff: string) => call<PagesView>(staff, 'GET', '/review/v0/pages');
+
+/** 托管平台链接只认 https（地址模板在后端配置里核对过，这里再挡一次） */
+export const safeHttpsUrl = (s: string): string | null => {
+  try {
+    const u = new URL(s);
+    return u.protocol === 'https:' && !u.username && !u.password ? u.toString() : null;
+  } catch {
+    return null;
+  }
+};
+
+export const PAGE_PROBLEM_LABEL: Record<string, string> = {
+  missing_review: '合并了但没有审核记录',
+  no_merge: '审核记录对不上任何合并请求（提交号不符）',
+  approver_mismatch: '托管平台的批准人与审核记录不一致',
+  approver_unmapped: '批准人不在 staff 对应表里',
+  insufficient_approvals: '批准人数不够',
+  rejected_in_review: '审核记录里有驳回',
+};
+export const pageProblemLabel = (p: string): string => (Object.hasOwn(PAGE_PROBLEM_LABEL, p) ? PAGE_PROBLEM_LABEL[p]! : p);
 
 export interface Problem {
   status: number;

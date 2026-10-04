@@ -10,7 +10,7 @@ from knowledge.atoms import parse_snapshot
 from knowledge.compiler.jobs import RISK_WEIGHT, full_job, plan_jobs
 from knowledge.compiler.output import compile_render, load_repo
 from knowledge.compiler.rebuild import CST, CompileError, bump, render_rebuild
-from knowledge.compiler.window import REVIEWERS, plan_window
+from knowledge.compiler.window import REVIEWERS, load_hold, plan_window
 from knowledge.pages.format import parse, serialize
 
 NOW = dt.datetime(2026, 9, 29, 10, 0, tzinfo=CST)
@@ -212,3 +212,48 @@ def test_window_medium_is_treated_as_high():
 def test_window_skips_unchanged():
     _, results, _ = compile_with(lambda d: None)
     assert plan_window(results.values()) == []
+
+
+# ---------- 页面对账失败时跳过（specs/release-gate-sprint4 冲刺 3 验收“对账失败时合并窗口跳过受影响页面”） ----------
+
+def _mixed():
+    def mutate(d):
+        d["region_projections"][0]["weight"] = 0.06        # APPLY 低
+        d["region_projections"][1]["weight"] = 0.04        # LINEAR 低
+        node_rec(d, SQUARE)["includes"] = ["合成改写的范围"]  # SQUARE 高
+    return compile_with(mutate)[1]
+
+
+def test_window_skips_held_pages_of_any_risk():
+    results = _mixed()
+    mrs = plan_window(results.values(), held={LINEAR, SQUARE})
+    assert [(m.kind, m.page_ids) for m in mrs] == [("daily_low", [APPLY])]
+    assert plan_window(results.values(), held={APPLY, LINEAR, SQUARE}) == []
+    # 没有对账失败时照常
+    assert [m.page_ids for m in plan_window(results.values(), held=())] == [[APPLY, LINEAR], [SQUARE]]
+
+
+def _report(held, ok=None, exported_at="2026-09-29T08:00:00+08:00"):
+    return {"format": "kge-pages-reconcile/1", "ok": (not held) if ok is None else ok, "held_pages": held,
+            "exported_at": exported_at, "merged": [], "pending": [], "orphans": []}
+
+
+def test_load_hold_reads_reconcile_report():
+    assert load_hold(_report([LINEAR]), now=NOW) == {LINEAR}
+    assert load_hold(_report([]), now=NOW) == frozenset()
+    for bad in (_report([LINEAR], ok=True), _report([], ok=False), {**_report([]), "format": "other/1"},
+                _report(["not a node"]), {"format": "kge-pages-reconcile/1", "held_pages": []}, [], None,
+                _report([], exported_at="not a time"), _report([], exported_at="2026-09-29T08:00:00")):
+        with pytest.raises(ValueError):
+            load_hold(bad, now=NOW)
+
+
+def test_load_hold_rejects_stale_or_future_report():
+    """报告有效期缺省一个合并窗口周期（24 小时，可配置）；所依据的导出早于此或在将来都拒绝"""
+    stale = _report([], exported_at="2026-09-28T09:59:00+08:00")  # NOW 前 24 小时 1 分钟
+    with pytest.raises(ValueError, match="过期"):
+        load_hold(stale, now=NOW)
+    assert load_hold(stale, now=NOW, max_age=dt.timedelta(hours=48)) == frozenset()
+    assert load_hold(_report([], exported_at="2026-09-28T10:01:00+08:00"), now=NOW) == frozenset()
+    with pytest.raises(ValueError, match="将来"):
+        load_hold(_report([], exported_at="2026-09-29T10:30:00+08:00"), now=NOW)

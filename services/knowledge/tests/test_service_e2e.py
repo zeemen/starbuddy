@@ -105,12 +105,92 @@ def test_export_refuses_blocking_lint(page_repo, tmp_path):
         export_snapshot(work, bad, out, today=TODAY)
     assert not out.exists() and [x.name for x in tmp_path.iterdir() if x.name.startswith(".blocked")] == []
     r = subprocess.run([sys.executable, "-m", "knowledge.compiler.snapshot", "--repo", str(work), "--commit", bad, "--out", str(out),
-                        "--today", TODAY.isoformat()], capture_output=True, text=True, cwd=str(SERVICE))
+                        "--today", TODAY.isoformat(), "--no-hold-report"], capture_output=True, text=True, cwd=str(SERVICE))
     assert r.returncode == 1 and not out.exists()
     r = subprocess.run([sys.executable, "-m", "knowledge.compiler.snapshot", "--repo", str(work), "--commit", c1, "--out", str(out),
-                        "--today", TODAY.isoformat()], capture_output=True, text=True, cwd=str(SERVICE))
+                        "--today", TODAY.isoformat(), "--no-hold-report"], capture_output=True, text=True, cwd=str(SERVICE))
     assert r.returncode == 0, r.stdout + r.stderr
     assert load_snapshot_dir(out).commit == c1
+
+
+@pytest.mark.anyio
+async def test_export_holds_reconcile_failed_pages(kgedb, page_repo, tmp_path):
+    """页面对账失败被扣的页面（specs/release-gate-sprint4 第 6 节）：不发布本提交的内容，沿用上一份快照的原文与清单条目
+    （带 source_commit，page.get 的 source_version 对回它原来的提交）；上一份没有就不导出"""
+    repo, c1, c2, _ = page_repo
+    prev = tmp_path / "prev"
+    export_snapshot(repo, c1, prev, today=TODAY)
+    out = tmp_path / "held"
+    m = export_snapshot(repo, c2, out, today=TODAY, hold={LINEAR}, previous=prev)
+    assert m["commit"] == c2 and m["held_pages"] == [LINEAR]
+    by_id = {p["page_id"]: p for p in m["pages"]}
+    assert set(by_id) == {LINEAR, TRANSPOSE, APPLY}
+    assert by_id[LINEAR]["source_commit"] == c1 and "source_commit" not in by_id[TRANSPOSE]
+    assert (out / by_id[LINEAR]["path"]).read_bytes() == (prev / by_id[LINEAR]["path"]).read_bytes()  # 原文是上一份的
+    assert (out / by_id[TRANSPOSE]["path"]).read_text(encoding="utf-8") == git(repo, "show", f"{c2}:{by_id[TRANSPOSE]['path']}") + "\n"
+    pages = load_snapshot_dir(out)
+    assert pages.get("math.syn.eq.linear").source_commit == c1
+    async with running_app(kgedb, pages=pages) as client:
+        r = await call(client, "page.get", {"context": ctx(), "page_id": "math.syn.eq.linear"})
+        assert r.status_code == 200 and r.json()["source_version"].endswith(f"graph:kge-pages@{c1[:12]}")
+        r = await call(client, "page.get", {"context": ctx(), "page_id": "math.syn.eq.transpose"})
+        assert r.status_code == 200 and r.json()["source_version"].endswith(f"graph:kge-pages@{c2[:12]}")
+    # 上一份快照里没有的被扣页面（APPLY 是 c2 新增的）：不导出该页；相邻页按主分支的完整页面集合体检，照常导出
+    m = export_snapshot(repo, c2, tmp_path / "noprev", today=TODAY, hold={APPLY}, previous=prev)
+    assert sorted(p["page_id"] for p in m["pages"]) == sorted([LINEAR, TRANSPOSE]) and m["held_pages"] == [APPLY]
+    assert all("source_commit" not in p for p in m["pages"])
+    m = export_snapshot(repo, c2, tmp_path / "noprev2", today=TODAY, hold={APPLY})  # 不给上一份快照：同样只是不导出被扣页
+    assert sorted(p["page_id"] for p in m["pages"]) == sorted([LINEAR, TRANSPOSE])
+    assert [x.name for x in tmp_path.iterdir() if ".lint." in x.name] == []  # 体检用的临时目录已清理
+    # 上一份快照被改过：拒绝沿用
+    bad = tmp_path / "bad-prev"
+    export_snapshot(repo, c1, bad, today=TODAY)
+    os.chmod(bad, 0o755)
+    os.chmod(bad / "manifest.json", 0o644)
+    man = json.loads((bad / "manifest.json").read_text(encoding="utf-8"))
+    man["pages"][0]["sha256"] = "0" * 64
+    (bad / "manifest.json").write_text(json.dumps(man), encoding="utf-8")
+    os.chmod(bad / "manifest.json", 0o444)
+    os.chmod(bad, 0o555)
+    with pytest.raises(ExportError, match="上一份快照不合格"):
+        export_snapshot(repo, c2, tmp_path / "x", today=TODAY, hold={LINEAR}, previous=bad)
+    # 载入时核对 source_commit 写法
+    from knowledge.service.pages import SnapshotLoadError
+    os.chmod(out, 0o755)
+    os.chmod(out / "manifest.json", 0o644)
+    man = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
+    next(p for p in man["pages"] if p["page_id"] == LINEAR)["source_commit"] = "C1" * 20
+    (out / "manifest.json").write_text(json.dumps(man), encoding="utf-8")
+    os.chmod(out / "manifest.json", 0o444)
+    os.chmod(out, 0o555)
+    with pytest.raises(SnapshotLoadError, match="source_commit"):
+        load_snapshot_dir(out)
+
+
+def test_snapshot_cli_requires_fresh_hold_report(page_repo, tmp_path):
+    repo, c1, c2, _ = page_repo
+    prev = tmp_path / "prev"
+    export_snapshot(repo, c1, prev, today=TODAY)
+    report = tmp_path / "reconcile.json"
+    now = dt.datetime.now(dt.timezone.utc)
+
+    def run(out: str, *extra: str):
+        return subprocess.run([sys.executable, "-m", "knowledge.compiler.snapshot", "--repo", str(repo), "--commit", c2,
+                               "--out", str(tmp_path / out), "--today", TODAY.isoformat(), *extra],
+                              capture_output=True, text=True, cwd=str(SERVICE))
+    r = run("none")
+    assert r.returncode == 2 and "--hold-report" in r.stderr and not (tmp_path / "none").exists()
+    report.write_text(json.dumps({"format": "kge-pages-reconcile/1", "ok": False, "held_pages": [LINEAR],
+                                  "exported_at": (now - dt.timedelta(hours=1)).isoformat()}), encoding="utf-8")
+    r = run("held", "--hold-report", str(report), "--previous", str(prev))
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "被扣 1 页" in r.stdout and json.loads((tmp_path / "held" / "manifest.json").read_text())["held_pages"] == [LINEAR]
+    report.write_text(json.dumps({"format": "kge-pages-reconcile/1", "ok": False, "held_pages": [LINEAR],
+                                  "exported_at": (now - dt.timedelta(hours=25)).isoformat()}), encoding="utf-8")
+    r = run("stale", "--hold-report", str(report), "--previous", str(prev))
+    assert r.returncode == 2 and "过期" in r.stdout and not (tmp_path / "stale").exists()
+    r = run("stale48", "--hold-report", str(report), "--previous", str(prev), "--hold-max-age-hours", "48")
+    assert r.returncode == 0, r.stdout + r.stderr
 
 
 @pytest.mark.anyio
@@ -242,7 +322,8 @@ def test_export_only_from_protected_branch(page_repo, tmp_path):
     with pytest.raises(ExportError, match="不在受保护分支"):
         export_snapshot(work, "feature", tmp_path / "f2", today=TODAY)
     r = subprocess.run([sys.executable, "-m", "knowledge.compiler.snapshot", "--repo", str(work), "--commit", feature,
-                        "--out", str(tmp_path / "f3"), "--today", TODAY.isoformat()], capture_output=True, text=True, cwd=str(SERVICE))
+                        "--out", str(tmp_path / "f3"), "--today", TODAY.isoformat(), "--no-hold-report"],
+                       capture_output=True, text=True, cwd=str(SERVICE))
     assert r.returncode == 2 and not (tmp_path / "f3").exists()
     m = export_snapshot(work, feature, tmp_path / "f4", today=TODAY, branch="feature")
     assert m["branch"] == "feature" and m["commit"] == git(work, "rev-parse", "feature")
@@ -263,7 +344,7 @@ def test_export_requires_map_snapshot(page_repo, tmp_path):
     with pytest.raises(ExportError, match="没有地图快照"):
         export_snapshot(work, "main", out, today=TODAY)
     r = subprocess.run([sys.executable, "-m", "knowledge.compiler.snapshot", "--repo", str(work), "--commit", "main", "--out", str(out),
-                        "--today", TODAY.isoformat()], capture_output=True, text=True, cwd=str(SERVICE))
+                        "--today", TODAY.isoformat(), "--no-hold-report"], capture_output=True, text=True, cwd=str(SERVICE))
     assert r.returncode == 2 and not out.exists()
 
 

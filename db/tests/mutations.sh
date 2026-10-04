@@ -844,6 +844,28 @@ M+=(
   ["掌握第二步：导出档案页引用"]="GRANT SELECT (sections) ON platform.profile_page TO starbuddy_authz; UPDATE platform.personal_table_registry SET export_columns = export_columns || ARRAY['sections'] WHERE nspname = 'platform' AND relname = 'profile_page';"
 )
 
+# G 流第二部分 PR A：编译页面审核记录（0038，specs/release-gate-sprint4 冲刺 3 段）：由 79t 发现。DBMUT_FILTER=页面审核 只跑这一组
+PS='kge.sign_page_review(text, text, text, text, text)'
+PR='kge.page_review_record(platform.subject)'
+M+=(
+  ["页面审核：提交号不限格式"]="ALTER TABLE kge.content_review DROP CONSTRAINT content_review_page_commit; ALTER TABLE kge.content_review ADD CONSTRAINT content_review_page_commit CHECK (CASE WHEN object_type = 'page' THEN page_commit IS NOT NULL AND page_signer_no IS NOT NULL AND page_signer_no BETWEEN 1 AND 16 AND decision <> 'pending' AND action = 'review' AND object_id ~ '^[A-Z][A-Z0-9]{1,9}(\.[A-Z0-9][A-Z0-9_]{0,31}){1,4}\$' ELSE page_commit IS NULL AND page_signer_no IS NULL END);"
+  ["页面审核：页面记录可缺提交号"]="ALTER TABLE kge.content_review DROP CONSTRAINT content_review_page_commit; ALTER TABLE kge.content_review ADD CONSTRAINT content_review_page_commit CHECK (CASE WHEN object_type = 'page' THEN (page_commit IS NULL OR page_commit ~ '^[0-9a-f]{40}\$') AND page_signer_no IS NOT NULL AND page_signer_no BETWEEN 1 AND 16 AND decision <> 'pending' AND action = 'review' AND object_id ~ '^[A-Z][A-Z0-9]{1,9}(\.[A-Z0-9][A-Z0-9_]{0,31}){1,4}\$' ELSE page_commit IS NULL AND page_signer_no IS NULL END);"
+  ["页面审核：页面记录可待审"]="ALTER TABLE kge.content_review DROP CONSTRAINT content_review_page_commit; ALTER TABLE kge.content_review ADD CONSTRAINT content_review_page_commit CHECK (CASE WHEN object_type = 'page' THEN page_commit IS NOT NULL AND page_commit ~ '^[0-9a-f]{40}\$' AND page_signer_no IS NOT NULL AND page_signer_no BETWEEN 1 AND 16 AND action = 'review' AND object_id ~ '^[A-Z][A-Z0-9]{1,9}(\.[A-Z0-9][A-Z0-9_]{0,31}){1,4}\$' ELSE page_commit IS NULL AND page_signer_no IS NULL END);"
+  ["页面审核：非页面记录可带提交号"]="ALTER TABLE kge.content_review DROP CONSTRAINT content_review_page_commit; ALTER TABLE kge.content_review ADD CONSTRAINT content_review_page_commit CHECK (CASE WHEN object_type = 'page' THEN page_commit IS NOT NULL AND page_commit ~ '^[0-9a-f]{40}\$' AND page_signer_no IS NOT NULL AND page_signer_no BETWEEN 1 AND 16 AND decision <> 'pending' AND action = 'review' AND object_id ~ '^[A-Z][A-Z0-9]{1,9}(\.[A-Z0-9][A-Z0-9_]{0,31}){1,4}\$' ELSE true END);"
+  ["页面审核：同一提交同一签字位可记两次"]="DROP INDEX kge.content_review_page_uq;"
+  ["页面审核：同一账号可签两次"]="$(afr "$PS" "' AND s.account_id = v_staff) THEN'" "' AND false) THEN'")"
+  ["页面审核：签字不核对 staff"]="$(afr "$PS" "'v_staff uuid := kge.current_staff();'" "'v_staff uuid := platform.current_account_id();'")"
+  ["页面审核：签字函数不核对提交号"]="$(afr "$PS" "'IF p_page_commit IS NULL OR p_page_commit !~ ''^[0-9a-f]{40}\$'' THEN'" "'IF false THEN'")"
+  ["页面审核：签字函数不核对页面 ID"]="$(afr "$PS" "'IF p_page_id IS NULL OR p_page_id !~'" "'IF false AND p_page_id !~'")"
+  ["页面审核：签字序号不递增"]="$(afr "$PS" "'SELECT coalesce(max(r.page_signer_no), 0) + 1 INTO v_no'" "'SELECT 1 INTO v_no'")"
+  ["页面审核：知识服务可签页面"]="GRANT EXECUTE ON FUNCTION $PS TO starbuddy_kge;"
+  ["页面审核：学习服务可读页面记录"]="GRANT EXECUTE ON FUNCTION $PR TO starbuddy_learning;"
+  ["页面审核：导出混入非页面记录"]="$(afr "$PR" "'WHERE r.object_type = ''page'''" "'WHERE true'")"
+  ["页面审核：导出不按学科过滤"]="$(afr "$PR" "'AND (p_subject IS NULL OR '" "'AND (true OR '")"
+  ["页面审核：后续签字风险可与第一条不同"]="$(afr "$PS" "'IF v_first_risk IS NOT NULL AND v_first_risk <> p_risk_level THEN'" "'IF false THEN'")"
+  ["页面审核：签字不加咨询锁"]="$(afr "$PS" "'PERFORM pg_advisory_xact_lock(hashtext(''kge.sign_page_review''), hashtext(p_page_id || ''@'' || p_page_commit));'" "''")"
+)
+
 # 并行执行（每个变异各起一个一次性 Postgres，互不影响）；DBMUT_JOBS 控制并发数，默认等于 CPU 核数
 JOBS="${DBMUT_JOBS:-$(nproc 2>/dev/null || echo 2)}"
 RES="$(mktemp -d "${TMPDIR:-/tmp}/starbuddy-dbmut.XXXXXX")"

@@ -3,7 +3,8 @@
 快照目录（knowledge.compiler.snapshot 导出，只读）：
     manifest.json              {"format": "kge-page-snapshot/1", "commit": <40 位提交号>, "exported_at": ..., "pages": [...]}
     pages/kp/<节点 ID>.md       页面原文（与页面仓库该提交逐字节相同）
-manifest 的每页：page_id（页面仓库里的页面 ID = 节点 ID）、path、page_version、map_version、sha256。
+manifest 的每页：page_id（页面仓库里的页面 ID = 节点 ID）、path、page_version、map_version、sha256；
+页面对账失败被扣、沿用上一份快照的页面另有 source_commit（它原来的 40 位提交号，page.get 的 source_version 用它）。
 启动时逐页核对哈希、头部与 manifest 一致，任何一处不符就拒绝加载（fail closed）；只有 manifest 列出的页面算“已发布”。
 载入时还要：
 - 快照目录、pages/、pages/kp/、manifest.json 与每个页面文件都不能是符号链接（lstat），也不能对属组或其他用户可写；
@@ -79,6 +80,7 @@ class PublishedPage:
     page_version: str
     map_version: str
     page: Page
+    source_commit: str | None = None  # 对账失败被扣、沿用上一份快照的页面：它原来的提交号（其余页面为空，用快照的 commit）
 
 
 @dataclass(frozen=True)
@@ -125,8 +127,11 @@ def load_snapshot_dir(root: str | Path, lexicon: Any = None) -> PageSnapshot:
         raise SnapshotLoadError("人设词表无法载入，不能核对页面") from None
     pages: dict[str, PublishedPage] = {}
     for i, e in enumerate(entries):
-        if not isinstance(e, dict) or set(e) != {"page_id", "path", "page_version", "map_version", "sha256"}:
+        if not isinstance(e, dict) or set(e) - {"source_commit"} != {"page_id", "path", "page_version", "map_version", "sha256"}:
             raise SnapshotLoadError(f"manifest.pages[{i}] 字段不对")
+        source_commit = e.get("source_commit")
+        if source_commit is not None and (not isinstance(source_commit, str) or not COMMIT.fullmatch(source_commit)):
+            raise SnapshotLoadError(f"manifest.pages[{i}] 的 source_commit 不是 40 位提交号")
         nid, rel, ver, digest = e["page_id"], e["path"], e["page_version"], e["sha256"]
         if not is_node_id(nid) or rel != f"pages/kp/{nid}.md" or not SEMVER.fullmatch(str(ver)) or not SHA256.fullmatch(str(digest)):
             raise SnapshotLoadError(f"manifest.pages[{i}] 取值不合规范")
@@ -153,7 +158,7 @@ def load_snapshot_dir(root: str | Path, lexicon: Any = None) -> PageSnapshot:
         pid = contract_page_id(nid)
         if not CONTRACT_PAGE_ID.fullmatch(pid) or pid in pages:
             raise SnapshotLoadError(f"manifest.pages[{i}] 的页面 ID 重复或不合契约")
-        pages[pid] = PublishedPage(pid, nid, ver, str(e["map_version"]), page)
+        pages[pid] = PublishedPage(pid, nid, ver, str(e["map_version"]), page, source_commit)
     return PageSnapshot(commit, pages)
 
 

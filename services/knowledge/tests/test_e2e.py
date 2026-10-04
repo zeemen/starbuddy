@@ -40,7 +40,7 @@ def test_end_to_end_atom_change_to_merge_window(tmp_path):
     v2 = _write_map(tmp_path / "map-v2.yaml", doc)
     out = tmp_path / "out"
     r = _run("knowledge.compiler", "--pages", str(PAGES), "--old-snapshot", str(MAP_V1), "--new-snapshot", str(v2),
-             "--out", str(out), "--now", "2026-09-29T10:00:00+08:00")
+             "--out", str(out), "--now", "2026-09-29T10:00:00+08:00", "--no-hold-report")
     assert r.returncode == 0, r.stdout + r.stderr
     assert "编入：3 个编译任务" in r.stdout
 
@@ -96,10 +96,44 @@ def test_end_to_end_same_day_low_risk_published_once(tmp_path):
     log.write_text(json.dumps({APPLY: ["2026-09-29"]}), encoding="utf-8")
     out = tmp_path / "out"
     r = _run("knowledge.compiler", "--pages", str(PAGES), "--old-snapshot", str(MAP_V1), "--new-snapshot", str(v2), "--out", str(out),
-             "--now", "2026-09-29T15:00:00+08:00", "--published-log", str(log))
+             "--now", "2026-09-29T15:00:00+08:00", "--published-log", str(log), "--no-hold-report")
     assert r.returncode == 0, r.stderr
     assert sorted(p.name for p in out.iterdir()) == ["mr-2026-09-30-low"]
     assert "顺延" in (out / "mr-2026-09-30-low" / "MERGE_REQUEST.md").read_text(encoding="utf-8")
+
+
+def test_end_to_end_reconcile_failure_holds_pages(tmp_path):
+    """页面对账失败（审核台 reconcile-pages 的报告）：合并窗口跳过 held_pages 里的页面，其余照常；报告不合格式拒绝运行"""
+    doc = map_doc()
+    node_rec(doc, LINEAR)["excludes"] = ["二元一次方程组", "分式方程"]      # 高风险
+    doc["region_projections"][0]["weight"] = 0.06                         # APPLY 低风险
+    v2 = _write_map(tmp_path / "map-v2.yaml", doc)
+    report = tmp_path / "reconcile.json"
+    report.write_text(json.dumps({"format": "kge-pages-reconcile/1", "ok": False, "held_pages": [LINEAR], "merged": [],
+                                  "exported_at": "2026-09-29T08:00:00+08:00", "pending": [], "orphans": []}), encoding="utf-8")
+    out = tmp_path / "out"
+    r = _run("knowledge.compiler", "--pages", str(PAGES), "--old-snapshot", str(MAP_V1), "--new-snapshot", str(v2), "--out", str(out),
+             "--now", "2026-09-29T10:00:00+08:00", "--hold-report", str(report))
+    assert r.returncode == 0, r.stderr
+    assert sorted(p.name for p in out.iterdir()) == ["mr-2026-09-29-low"]
+    assert f"本窗口跳过 1 页（对账报告共列 1 页）：{LINEAR}" in r.stdout
+    # 报告过期（所依据的导出早于有效期）：拒绝运行；放宽有效期后可用
+    r = _run("knowledge.compiler", "--pages", str(PAGES), "--old-snapshot", str(MAP_V1), "--new-snapshot", str(v2),
+             "--out", str(tmp_path / "out-stale"), "--now", "2026-09-30T09:00:00+08:00", "--hold-report", str(report))
+    assert r.returncode == 2 and "过期" in r.stderr
+    r = _run("knowledge.compiler", "--pages", str(PAGES), "--old-snapshot", str(MAP_V1), "--new-snapshot", str(v2),
+             "--out", str(tmp_path / "out-48h"), "--now", "2026-09-30T09:00:00+08:00", "--hold-report", str(report),
+             "--hold-max-age-hours", "48")
+    assert r.returncode == 0, r.stderr
+    report.write_text(json.dumps({"format": "kge-pages-reconcile/1", "ok": True, "held_pages": [LINEAR],
+                                  "exported_at": "2026-09-29T08:00:00+08:00"}), encoding="utf-8")
+    r = _run("knowledge.compiler", "--pages", str(PAGES), "--old-snapshot", str(MAP_V1), "--new-snapshot", str(v2),
+             "--out", str(tmp_path / "out2"), "--now", "2026-09-29T10:00:00+08:00", "--hold-report", str(report))
+    assert r.returncode == 2 and "自相矛盾" in r.stderr
+    # 对账报告必填：既不给报告也不显式 --no-hold-report 就拒绝运行
+    r = _run("knowledge.compiler", "--pages", str(PAGES), "--old-snapshot", str(MAP_V1), "--new-snapshot", str(v2),
+             "--out", str(tmp_path / "out3"), "--now", "2026-09-29T10:00:00+08:00")
+    assert r.returncode == 2 and "--hold-report" in r.stderr and not (tmp_path / "out3").exists()
 
 
 def test_compiler_cli_reports_lint_blocks_and_refuses_bad_input(tmp_path):
@@ -109,15 +143,16 @@ def test_compiler_cli_reports_lint_blocks_and_refuses_bad_input(tmp_path):
     doc["region_projections"][0]["weight"] = 0.06
     v2 = _write_map(tmp_path / "map-v2.yaml", doc)
     r = _run("knowledge.compiler", "--pages", str(PAGES), "--old-snapshot", str(MAP_V1), "--new-snapshot", str(v2),
-             "--out", str(tmp_path / "out"), "--now", "2026-09-29T10:00:00+08:00")
+             "--out", str(tmp_path / "out"), "--now", "2026-09-29T10:00:00+08:00", "--no-hold-report")
     assert r.returncode == 1 and "体检阻断 1" in r.stdout  # 过期的时政原子
     busy = tmp_path / "busy"
     busy.mkdir()
     (busy / "x").write_text("x", encoding="utf-8")
-    r = _run("knowledge.compiler", "--pages", str(PAGES), "--old-snapshot", str(MAP_V1), "--new-snapshot", str(v2), "--out", str(busy))
+    r = _run("knowledge.compiler", "--pages", str(PAGES), "--old-snapshot", str(MAP_V1), "--new-snapshot", str(v2), "--out", str(busy),
+             "--no-hold-report")
     assert r.returncode == 2 and "不是空目录" in r.stderr
     r = _run("knowledge.compiler", "--pages", str(PAGES), "--old-snapshot", str(MAP_V1), "--new-snapshot", str(v2),
-             "--out", str(PAGES / "out"))
+             "--out", str(PAGES / "out"), "--no-hold-report")
     assert r.returncode == 2 and "页面目录里" in r.stderr
 
 
@@ -127,7 +162,7 @@ def test_outputs_contain_no_model_identifiers_or_real_data(tmp_path):
     v2 = _write_map(tmp_path / "map-v2.yaml", doc)
     out = tmp_path / "out"
     assert _run("knowledge.compiler", "--pages", str(PAGES), "--old-snapshot", str(MAP_V1), "--new-snapshot", str(v2), "--out", str(out),
-                "--now", "2026-09-29T10:00:00+08:00").returncode == 0
+                "--now", "2026-09-29T10:00:00+08:00", "--no-hold-report").returncode == 0
     for f in out.rglob("*"):
         if f.is_file():
             text = f.read_text(encoding="utf-8").lower()

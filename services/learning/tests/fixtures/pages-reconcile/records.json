@@ -1,0 +1,12 @@
+{
+  "format": "kge-page-review-records/1",
+  "records": [
+    {"page_id": "MATH.SYN.T.A", "page_commit": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1", "risk_level": "high", "decision": "approved", "signer": "5f0e0000-0000-4000-8000-0000000000e1"},
+    {"page_id": "MATH.SYN.T.A", "page_commit": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1", "risk_level": "high", "decision": "approved", "signer": "5f0e0000-0000-4000-8000-0000000000e2"},
+    {"page_id": "MATH.SYN.T.B", "page_commit": "a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2", "risk_level": "medium", "decision": "approved", "signer": "5f0e0000-0000-4000-8000-0000000000e1"},
+    {"page_id": "MATH.SYN.T.B", "page_commit": "a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2", "risk_level": "medium", "decision": "approved", "signer": "5f0e0000-0000-4000-8000-0000000000e2"},
+    {"page_id": "MATH.SYN.T.C", "page_commit": "a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2", "risk_level": "medium", "decision": "approved", "signer": "5f0e0000-0000-4000-8000-0000000000e1"},
+    {"page_id": "MATH.SYN.T.C", "page_commit": "a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2", "risk_level": "medium", "decision": "approved", "signer": "5f0e0000-0000-4000-8000-0000000000e2"},
+    {"page_id": "MATH.SYN.T.E", "page_commit": "a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4", "risk_level": "high", "decision": "approved", "signer": "5f0e0000-0000-4000-8000-0000000000e1"}
+  ]
+}

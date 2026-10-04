@@ -1,5 +1,5 @@
 # 未实现的目标明确打印“跳过”，不得伪装为通过。
-.PHONY: check-fast check contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test model-router-mutation diagnosis-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-visual kge-inventory kge-inventory-test kge-import kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test sie-dictionary-check kge-id-check knowledge-test knowledge-mutation kge-compile-eval-test eval-persona eval-grade persona-registry-check persona-guard-test persona-lock persona-record insight-test insight-mutation
+.PHONY: check-fast check contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test model-router-mutation diagnosis-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-visual kge-inventory kge-inventory-test kge-import kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test sie-dictionary-check kge-id-check knowledge-test knowledge-mutation kge-compile-eval-test eval-persona eval-grade persona-registry-check persona-guard-test persona-lock persona-record insight-test insight-mutation
 
 # 可指向装了 packages/contracts/requirements-dev.txt 的解释器，例如 make check PYTHON=.venv/bin/python
 PYTHON ?= python3
@@ -16,7 +16,7 @@ endef
 # 契约检查约 1 秒，改动后也跑一遍
 check-fast: contract-test taxonomy-check attack-surface-check sie-dictionary-check kge-id-check
 
-check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test model-router-mutation diagnosis-mutation mastery-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona insight-test insight-mutation voice-blind-eval-test
+check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona insight-test insight-mutation voice-blind-eval-test
 	@echo "check: lint 尚未配置，跳过；其余检查已通过"
 
 # 契约合法性 + 示例 + 反例集
@@ -92,6 +92,15 @@ learning-test:
 	  echo "learning-test: 跳过（没有安装依赖；见 services/learning/README.md）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
 	@cd services/learning && LEARNING_TEST_STRICT=$(if $(filter 1,$(CONTRACT_STRICT)),1,0) .venv/bin/python -m pytest -q
+
+# 编译页面对账（specs/release-gate-sprint4 冲刺 3 段，第 6 节）：托管平台合并记录导出 × kge.content_review 页面审核记录 × staff 对应表。
+# 只用合成文件（services/learning/tests/fixtures/pages-reconcile），不连托管平台、不连库：一致通过；删一条审核记录、改一个提交号、
+# 高风险只剩一名批准人各报失败；命令行退出码与“受影响页面清单”（held_pages，合并窗口据此跳过）。约 3 秒；也随 learning-test 运行
+page-reconcile-test:
+	@if [ ! -x services/learning/.venv/bin/pytest ]; then \
+	  echo "page-reconcile-test: 跳过（没有安装依赖；见 services/learning/README.md）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@cd services/learning && .venv/bin/python -m pytest -q -p no:cacheprovider tests/test_review_pages.py && echo "page-reconcile-test: 通过"
 
 # 模型路由（冲刺 1-F，specs/model-router-sprint1）：单测与性质测试在 learning-test 里；这里改坏出境过滤、启动校验、熔断等关键检查，断言测试能发现（约 15 秒）
 model-router-mutation:
@@ -312,7 +321,7 @@ knowledge-test:
 # 知识服务读工具（草稿 / 退役版本、未核对投影、待审标签、弱前置边、caller 绑定、请求与响应校验、角色断言、未发布页、
 # 快照导出体检、MCP 鉴权与监听地址）的关键检查，以及 PR ③ 的兜底检索（BM25、分词、只切公共层、兜底条件、补页面信号）、
 # M1 报表与对照评测脚本（evals/kge-compile）的关键计算，以及审查处理（个人信息与 ID 白名单、快照载入与导出、SymPy 加固、
-# 角色断言、Host 校验、MCP 工具清单、页面仓库 CI 样例）的检查，断言测试能发现（122 条，约 10 分钟）。没有 Postgres 时知识服务的变异
+# 角色断言、Host 校验、MCP 工具清单、页面仓库 CI 样例）的检查，以及页面对账（G 流冲刺 3：合并窗口与快照导出跳过被扣页面、对账报告必填且不过期），断言测试能发现（132 条，约 10 分钟）。没有 Postgres 时知识服务的变异
 # 跳过（退出码 3：非严格算跳过、严格算失败）
 knowledge-mutation:
 	@bash services/knowledge/tests/mutations.sh; rc=$$?; \

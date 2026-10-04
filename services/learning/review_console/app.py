@@ -21,7 +21,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from . import service
-from .config import ReviewSettings
+from .config import PagesSettings, ReviewSettings
 from .errors import ReviewError
 from .store import KgeStore, ReviewStore, check_roles, db_error
 
@@ -122,8 +122,12 @@ CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 NODE_ID = re.compile(r"^[A-Z][A-Z0-9]{1,9}(\.[A-Z0-9][A-Z0-9_]{0,31}){1,4}$")  # 与 kge.node_id 域一致
 
 
+_UNSET: Any = object()
+
+
 def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthenticator | None = None,
-               pools: tuple[asyncpg.Pool, asyncpg.Pool] | None = None) -> FastAPI:
+               pools: tuple[asyncpg.Pool, asyncpg.Pool] | None = None, pages_settings: PagesSettings | None = _UNSET) -> FastAPI:
+    """pages_settings：编译页面入口的配置；缺省取 settings.pages（测试可直接注入）。"""
     state: dict[str, Any] = {}
 
     async def session_auth(request: Request) -> uuid.UUID | None:
@@ -153,6 +157,8 @@ def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthen
             own = True
         await check_roles(kp, rp)
         state["kge"], state["review"] = KgeStore(kp), ReviewStore(rp, lp)
+        state["pages"] = pages_settings if pages_settings is not _UNSET else (
+            settings.pages if settings is not None else (ReviewSettings.from_env().pages if pools is None else None))
         yield
         if own:
             await kp.close()
@@ -301,6 +307,11 @@ def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthen
     async def resolve_task(task_id: uuid.UUID, body: ResolveBody, request: Request):
         await state["review"].resolve_task(request.state.staff, task_id, body.resolution_code)
         return {"status": "resolved"}
+
+    # ---------- 编译页面（冲刺 3）：只读，列待审合并请求与对账状态，链接到托管平台网页 ----------
+    @app.get("/review/v0/pages")
+    async def pages_list():
+        return await service.pages_view(state["kge"], state["pages"])
 
     @app.get("/review/v0/records")
     async def records(subject: str):

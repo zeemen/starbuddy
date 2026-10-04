@@ -19,24 +19,24 @@ export default async function RecordsPage({ searchParams }: { searchParams: Prom
         <p className="review-result error">读取失败（{r.problem.code}）</p>
       ) : (
         <table className="review-table" data-testid="records">
-          <caption>每行一次签字、发布或撤下；签字人是 staff 账号</caption>
+          <caption>每行一次签字、发布或撤下（地图版本），或一次编译页面签字（页面 ID 与提交号）；签字人是 staff 账号</caption>
           <thead>
             <tr>
-              <th scope="col">版本号</th><th scope="col">动作</th><th scope="col">结论</th><th scope="col">依据</th>
-              <th scope="col">时间</th><th scope="col">签字人</th><th scope="col">摘要</th><th scope="col">校验（错 / 警）</th>
+              <th scope="col">版本号 / 页面</th><th scope="col">动作</th><th scope="col">结论</th><th scope="col">依据</th>
+              <th scope="col">时间</th><th scope="col">签字人</th><th scope="col">摘要 / 提交号</th><th scope="col">校验（错 / 警）</th>
             </tr>
           </thead>
           <tbody>
             {r.value.items.map((x, i) => (
-              <tr key={i} data-action={x.action} data-version={x.version}>
-                <td>{x.version}</td>
+              <tr key={i} data-line={x.line} data-action={x.action} data-version={x.version ?? undefined} data-page={x.page_id ?? undefined}>
+                <td>{x.line === 'page' ? <>页面 <code>{x.page_id}</code></> : x.version}</td>
                 <td>{ACTION_LABEL[x.action] ?? x.action}</td>
                 <td>{DECISION_LABEL[x.decision] ?? x.decision}</td>
                 <td>{x.basis_code ?? '—'}</td>
                 <td>{new Date(x.decided_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}</td>
                 <td><code>{signerTail(x.signer)}</code></td>
-                <td><code>{x.digest ? x.digest.slice(0, 12) : '—'}</code></td>
-                <td>{x.validation_errors} / {x.validation_warnings}</td>
+                <td><code>{x.line === 'page' ? (x.page_commit ?? '').slice(0, 12) : x.digest ? x.digest.slice(0, 12) : '—'}</code></td>
+                <td>{x.line === 'page' ? '—' : `${x.validation_errors} / ${x.validation_warnings}`}</td>
               </tr>
             ))}
           </tbody>

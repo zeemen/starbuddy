@@ -527,6 +527,9 @@ func|kge.map_change_required_signers(text)|starbuddy_kge|EXECUTE|SUPERUSER
 func|kge.map_version_digest(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|kge.map_version_digest(uuid)|starbuddy_kge|EXECUTE|starbuddy_authz
 func|kge.map_version_digest(uuid)|starbuddy_review|EXECUTE|starbuddy_authz
+func|kge.page_review_record(platform.subject)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|kge.page_review_record(platform.subject)|starbuddy_kge|EXECUTE|starbuddy_authz
+func|kge.page_review_record(platform.subject)|starbuddy_review|EXECUTE|starbuddy_authz
 func|kge.publish_map_version(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|kge.publish_map_version(uuid)|starbuddy_review|EXECUTE|starbuddy_authz
 func|kge.quote_sha256(text)|starbuddy_authz|EXECUTE|SUPERUSER
@@ -539,6 +542,8 @@ func|kge.row_digest(jsonb)|starbuddy_authz|EXECUTE|SUPERUSER
 func|kge.row_digest(jsonb)|starbuddy_kge|EXECUTE|SUPERUSER
 func|kge.sign_map_change(uuid,text,text)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|kge.sign_map_change(uuid,text,text)|starbuddy_review|EXECUTE|starbuddy_authz
+func|kge.sign_page_review(text,text,text,text,text)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|kge.sign_page_review(text,text,text,text,text)|starbuddy_review|EXECUTE|starbuddy_authz
 func|kge.sign_review(text,text,text,text,text)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|kge.sign_review(text,text,text,text,text)|starbuddy_review|EXECUTE|starbuddy_authz
 func|kge.structural_diff(uuid)|starbuddy_authz|EXECUTE|SUPERUSER
@@ -743,9 +748,11 @@ owner|kge.current_staff()|starbuddy_authz
 owner|kge.decide_tag_candidate(uuid,text)|starbuddy_authz
 owner|kge.map_change_digest_of(uuid)|starbuddy_authz
 owner|kge.map_version_digest(uuid)|starbuddy_authz
+owner|kge.page_review_record(platform.subject)|starbuddy_authz
 owner|kge.publish_map_version(uuid)|starbuddy_authz
 owner|kge.retire_map_version(uuid,text)|starbuddy_authz
 owner|kge.sign_map_change(uuid,text,text)|starbuddy_authz
+owner|kge.sign_page_review(text,text,text,text,text)|starbuddy_authz
 owner|kge.sign_review(text,text,text,text,text)|starbuddy_authz
 owner|kge.version_record(platform.subject)|starbuddy_authz
 owner|platform.auth_issue_student_session(uuid,text,integer,integer)|starbuddy_authz
@@ -1254,9 +1261,11 @@ secdef|kge.current_staff()
 secdef|kge.decide_tag_candidate(uuid,text)
 secdef|kge.map_change_digest_of(uuid)
 secdef|kge.map_version_digest(uuid)
+secdef|kge.page_review_record(platform.subject)
 secdef|kge.publish_map_version(uuid)
 secdef|kge.retire_map_version(uuid,text)
 secdef|kge.sign_map_change(uuid,text,text)
+secdef|kge.sign_page_review(text,text,text,text,text)
 secdef|kge.sign_review(text,text,text,text,text)
 secdef|kge.version_record(platform.subject)
 secdef|platform.auth_issue_student_session(uuid,text,integer,integer)

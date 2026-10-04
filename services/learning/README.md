@@ -85,9 +85,54 @@ LEARNING_ADAPTER_AYA_URL=http://127.0.0.1:8787 LEARNING_ADAPTER_AYA_TOKEN=... .v
 | `risk.py` | 风险分类（KGE 第四章）；判不出的一律高风险；结构性口径与库里 `kge.structural_diff`、`map_change_required_signers` 一致 |
 | `store.py` | 两个连接池：`REVIEW_CONSOLE_KGE_DATABASE_URL`（只继承 `starbuddy_kge`：读、改草稿）、`REVIEW_CONSOLE_REVIEW_DATABASE_URL`（只继承 `starbuddy_review`：签字、发布、撤下）；启动时核对 |
 | `app.py` | `/review/v0/*` 接口；`/review/v0/auth/login`（唯一不需要会话的接口）、`/auth/logout`、`/auth/me`；其余接口的 staff 身份由请求头 `x-review-session` 的会话令牌经 `platform.staff_session_resolve` 解析（迁移 0020，PR 4） |
-| `__main__.py` | `python -m review_console record --subject aya [--format csv\|json]` 导出版本记录 |
+| `__main__.py` | `python -m review_console record --subject aya [--format csv\|json]` 导出版本记录（冲刺 3 起含页面行：`line = page`、`page_id`、`page_commit`）；`reconcile-pages` 编译页面对账（见下） |
+| `pages.py` | 编译页面对账（纯函数）：托管平台合并记录 × `kge.content_review` 页面审核记录（迁移 0038）× staff 对应表；`GET /review/v0/pages` 与命令行共用 |
 
 签字（版本与变更单）、发布、改节点都要带上“看到的摘要”（`expected_digest`），与当前内容不同就拒绝（409）。
+
+### 编译页面对账（specs/release-gate-sprint4 冲刺 3 段，第 6 节）
+页面在页面仓库托管平台的合并请求里审核（ADR 12）；本仓不连托管平台。审核台这一侧做三件事：
+1. **页面审核记录**：每名审核人对“页面 × 合并请求的头提交”签一次（`kge.sign_page_review`，签字身份，迁移 0038），记页面 ID、40 位提交号、风险与签字人；
+   `page_commit` 的口径统一为**合并请求的头提交**（审核人批准时看到的提交），合并进主分支的合并提交由合并记录给出，对账报告逐页对照列出两者；
+   同一账号对同一页面同一提交只能签一次；同一页面同一提交的后续签字风险级别必须与第一条一致。签字入口（界面）不在本 PR，目前经库函数（种子与测试）；
+2. **对账**：`make page-reconcile-test` 用合成文件跑验收；实际执行：
+   ```bash
+   .venv/bin/python -m review_console reconcile-pages --export <合并记录.json> --staff-map <对应表.json> --db --out <报告.json>
+   # 或 --records <审核记录.json>（离线）；退出码 0 通过、1 有失败（报告照常写出）、2 输入不对
+   ```
+   规则（每个页面只按它在主分支上**最近一次合并**判定，更早的合并列在 `superseded`、不再判定）：
+   - 需要批准（中、高风险两人；与编译器 `window.REVIEWERS` 相等，测试核对）的页面在审核记录里没有 → `missing_review`；
+   - 批准人（按对应表映射到 staff）与审核记录里批准的 staff 不是同一组 → `approver_mismatch`；批准人不在对应表 → `approver_unmapped`；
+     人数不够（风险取两边较高的）→ `insufficient_approvals`；审核记录有驳回 → `rejected_in_review`；
+   - **低风险**不需要事前签字：没有审核记录、或托管平台有批准人而审核台没有记录，都不算失败；审核台有记录时才比对批准人；
+   - 孤儿审核记录（页面提交不是导出里任何合并请求的头提交）→ `no_merge`，只有该页面仍在本次导出范围内、且它最新的合并请求
+     （有待审的取待审的，否则取最近一次合并）的头提交上还没有批准记录时才扣页（`blocking: true`）；对最新头提交重新签字即解除。
+     导出范围外的旧孤儿只列出，不扣页。
+   报告只含页面 ID、合并请求编号、头提交与合并提交、计数，不含用户名与账号。`held_pages` 交给编译器与快照导出
+   （`python -m knowledge.compiler ... --hold-report <报告.json>`、`python -m knowledge.compiler.snapshot ... --hold-report <报告.json> --previous <上一份快照>`；
+   两者都必填，报告有效期缺省 24 小时，见 services/knowledge/README.md“页面对账”）：合并窗口跳过这些页面，快照导出沿用上一份快照里的旧版本，直到人处理、对账重新通过；
+3. **“页面”入口**：`GET /review/v0/pages`（只读）列待审合并请求与已合并页面的对账状态，链到托管平台网页；配置见 `review_console/config.py`
+   （`REVIEW_CONSOLE_PAGES_EXPORT`、`REVIEW_CONSOLE_PAGES_STAFF_MAP`、`REVIEW_CONSOLE_PAGES_MR_URL`，三项都设或都不设）。
+   地址模板必须是 https，`{mr_id}` 只能出现一次且只能在路径里（前面是“/”，不能拼进主机名、顶级域或端口），不带查询串与片段。
+   所有输入文件最大 10 MB，拒绝重复键与 NaN。
+
+合并记录导出（`kge-pages-merge-export/1`，由人或同步任务从托管平台导出成这个格式；多出的字段一律拒收，不收标题、描述等自由文本）：
+```json
+{"format": "kge-pages-merge-export/1", "repository": "org/kge-pages", "branch": "main", "exported_at": "2026-10-03T08:00:00+08:00",
+ "merge_requests": [
+   {"mr_id": "101", "state": "merged", "risk": "high", "approvers": ["托管平台用户名"], "pages": ["MATH.FUNC.QUAD.VERTEX_FORM"],
+    "head_commit": "<40 位小写十六进制>", "merge_commit": "<40 位>", "merged_at": "2026-10-02T10:00:00+08:00"},
+   {"mr_id": "104", "state": "open", "risk": "medium", "approvers": [], "pages": ["…"], "head_commit": "<40 位>"}]}
+```
+- `risk` 取合并请求上的风险标注（编译器的合并请求说明、CI 体检给出）；`pages` 是这次合并改到的页面 ID（节点 ID 写法）；
+- `head_commit` 是审核人批准时看到的提交（审核记录按它签），`merge_commit` 是进主分支的提交；托管平台应设为“合并前必须基于最新主分支”，
+  使合并后的页面内容与头提交相同（ADR 12 待人确认 #1 开通时一并核对）。
+
+staff 对应表（`kge-pages-staff-map/1`，审核台配置，由人维护，不含学生数据；两个用户名不能对应同一 staff）：
+`{"format": "kge-pages-staff-map/1", "users": {"托管平台用户名": "<staff 账号 UUID，小写>"}}`。
+审核记录文件（`kge-page-review-records/1`，离线对账用；每条**只允许**这 5 个字段，`signer` 只收小写规范 UUID；`--db` 直接读库时多出的列忽略）：
+`{"format": "kge-page-review-records/1", "records": [{"page_id", "page_commit", "risk_level", "decision", "signer"}]}`。
+合成样例：`tests/fixtures/pages-reconcile/`（对账通过的一组；测试在其上删记录、改提交号、减批准人）。
 
 ### 审核台部署要求（staging；由人配置，仓库里没有部署配置）
 - 审核台后端只监听 127.0.0.1，只接受同机前端（apps/web 服务端）的请求；浏览器不直连。
