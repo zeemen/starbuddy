@@ -970,6 +970,39 @@ M+=(
   ["考情签字：写入方可签字（kge 签方案）"]="GRANT EXECUTE ON FUNCTION $QSS TO starbuddy_kge;"
 )
 
+# G 流第二部分 PR D：审核台读内容版本与发布记录（0042）、时政过期下架（0043）：由 79w 发现（授权类的同时由 80 的快照发现）。
+# DBMUT_FILTER=审核台读 与 DBMUT_FILTER=时政下架 只跑这两组
+RCL='platform.content_version_list(platform.subject)'
+RCS='platform.content_version_snapshot(uuid)'
+RRE='platform.release_record_export(platform.subject)'
+CEX='kge.expire_current_affairs(date)'
+M+=(
+  ["审核台读：学习服务可读发布记录导出"]="GRANT EXECUTE ON FUNCTION $RRE TO starbuddy_learning;"
+  ["审核台读：BFF 可读内容版本快照"]="GRANT EXECUTE ON FUNCTION $RCS TO starbuddy_bff;"
+  ["审核台读：BFF 可列内容版本"]="GRANT EXECUTE ON FUNCTION $RCL TO starbuddy_bff;"
+  ["审核台读：导出函数对 PUBLIC 开放"]="GRANT EXECUTE ON FUNCTION $RRE TO PUBLIC;"
+  ["审核台读：签字身份可读发布记录导出"]="GRANT EXECUTE ON FUNCTION $RRE TO starbuddy_review;"
+  ["审核台读：签字身份可列内容版本"]="GRANT EXECUTE ON FUNCTION $RCL TO starbuddy_review;"
+  ["审核台读：签字身份可读内容版本快照"]="GRANT EXECUTE ON FUNCTION $RCS TO starbuddy_review;"
+  ["审核台读：列表不按学科过滤"]="$(afr "$RCL" "' WHERE v.subject = p_subject'" "' WHERE true'")"
+  ["审核台读：导出不按学科过滤"]="$(afr "$RRE" "' WHERE r.subject = p_subject'" "' WHERE true'")"
+  ["审核台读：快照摘要不是签字摘要"]="$(afr "$RCS" "'''digest'', platform.content_version_digest(v.id)'" "'''digest'', md5(v.id::text)'")"
+  ["审核台读：知识服务可直接读内容版本表"]="GRANT SELECT ON platform.curriculum_version TO starbuddy_kge; CREATE POLICY t_cv_kge ON platform.curriculum_version FOR SELECT TO starbuddy_kge USING (true);"
+  ["时政下架：签字身份可调下架"]="GRANT EXECUTE ON FUNCTION $CEX TO starbuddy_review;"
+  ["时政下架：学习服务可调下架"]="GRANT EXECUTE ON FUNCTION $CEX TO starbuddy_learning;"
+  ["时政下架：可提前下架"]="$(afr "$CEX" "'IF p_today > (now() AT TIME ZONE ''Asia/Shanghai'')::date THEN'" "'IF false THEN'")"
+  ["时政下架：当天到期也下架"]="$(afr "$CEX" "'AND x.valid_until < p_today'" "'AND x.valid_until <= p_today'")"
+  ["时政下架：待审的也下架"]="$(afr "$CEX" "'WHERE x.review_status = ''published'' AND'" "'WHERE x.review_status <> ''retired'' AND'")"
+  ["时政下架：不写审核记录"]="$(afr "$CEX" "'    INSERT INTO kge.content_review (object_type, object_id, risk_level, decision, decided_at, digest, basis_code, action)
+    VALUES (''current_affair'', c.id::text, ''low'', ''approved'', clock_timestamp(), kge.row_digest(to_jsonb(c) - ''review_status''),
+            ''expired_auto'', ''retire'');'" "''")"
+  ["时政下架：依据不是 expired_auto"]="$(afr "$CEX" "'''expired_auto'', ''retire'');'" "'''content_error'', ''retire'');'")"
+  ["时政下架：已下架可改回上线"]="DROP TRIGGER guard_affair_retired ON kge.current_affair;"
+  ["时政下架：已下架可退回待审"]="$(afr 'kge.guard_affair_retired()' "'AND NEW.review_status IS DISTINCT FROM ''retired'' THEN'" "'AND NEW.review_status = ''published'' THEN'")"
+  ["时政下架：下架守卫也放过已发布版本"]="$(afr 'kge.guard_affair_retired()' "'IF v_status IS DISTINCT FROM ''draft'' THEN'" "'IF v_status NOT IN (''draft'', ''published'') THEN'")"
+  ["时政下架：知识服务可直接写下架记录"]="DROP POLICY content_review_kge_submit ON kge.content_review; CREATE POLICY content_review_kge_submit ON kge.content_review FOR INSERT TO starbuddy_kge WITH CHECK (decision = 'pending' OR basis_code = 'expired_auto');"
+)
+
 # 并行执行（每个变异各起一个一次性 Postgres，互不影响）；DBMUT_JOBS 控制并发数，默认等于 CPU 核数
 JOBS="${DBMUT_JOBS:-$(nproc 2>/dev/null || echo 2)}"
 RES="$(mktemp -d "${TMPDIR:-/tmp}/starbuddy-dbmut.XXXXXX")"

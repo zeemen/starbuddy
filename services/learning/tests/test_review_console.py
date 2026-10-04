@@ -228,23 +228,33 @@ async def test_non_staff_and_retire(rc):
     assert r.status_code == 422
 
 
+CONTENT_LINES = ("content_version", "admission")
+
+
+def no_content(rows: list[dict]) -> list[dict]:
+    """去掉内容版本与准入行（冲刺 4 起版本记录含这两类行；会话共用的库里别的模块的端到端测试会经签字函数发布登记的内容版本）。"""
+    return [r for r in rows if r["line"] not in CONTENT_LINES]
+
+
 async def test_records_export(rc):
     c, kp, _ = rc
-    items = (await c.get("/review/v0/records", params={"subject": "wenli"}, headers=H(SF1))).json()["items"]
+    items = no_content((await c.get("/review/v0/records", params={"subject": "wenli"}, headers=H(SF1))).json()["items"])
     assert [(i["version"], i["action"]) for i in items] == [
         ("1.0.0", "review"), ("1.0.0", "review"), ("1.0.0", "publish"),
         ("1.0.1", "review"), ("1.0.0", "retire"), ("1.0.1", "publish"), ("1.0.1", "retire")]
     assert items[-1]["basis_code"] == "wrong_version" and items[-1]["signer"] == str(SF1)
     from review_console.service import version_record
     from review_console.store import KgeStore
-    rows = await version_record(KgeStore(kp), "wenli")
+    rows = no_content(await version_record(KgeStore(kp), "wenli"))
     a, b = io.StringIO(), io.StringIO()
     write_records(rows, "csv", a)
     write_records(rows, "csv", b)
     assert a.getvalue() == b.getvalue()
     assert a.getvalue().splitlines()[0] == ("line,map_version_id,version,action,decision,risk_level,basis_code,digest,decided_at,signer,"
                                             "rubric_versions,validation_errors,validation_warnings,page_id,page_commit,"
-                                            "policy_object,policy_object_id,city,cohort,policy_version")
+                                            "policy_object,policy_object_id,city,cohort,policy_version,"
+                                            "content_version_id,six_segment,content_map_version_id,item_id,from_admission,to_admission,"
+                                            "admission_review_level")
     assert len(a.getvalue().splitlines()) == 8
     assert all(i["line"] == "map" and i["validation_errors"] == 0 and i["validation_warnings"] == 1 for i in items)
 
@@ -345,7 +355,7 @@ async def test_pages_entry_and_page_records(pg, rc):
     assert len(page_rows) == 8 and all(i["page_id"].startswith("MATH.") and i["decided_at"] for i in page_rows)
     assert {(i["page_id"], i["page_commit"], i["signer"]) for i in page_rows if i["page_id"] == "MATH.SYN.T.A"} == {
         ("MATH.SYN.T.A", "a1" * 20, T1), ("MATH.SYN.T.A", "a1" * 20, T2)}
-    items = (await c.get("/review/v0/records", params={"subject": "wenli"}, headers=H(SF1))).json()["items"]
+    items = no_content((await c.get("/review/v0/records", params={"subject": "wenli"}, headers=H(SF1))).json()["items"])
     assert all(i["line"] == "map" for i in items)
 
 
@@ -415,7 +425,7 @@ async def test_records_merge_policy_signoffs(pg, rc):
         await kp.fetchval("SELECT policy.publish_scheme($1)", PSCH)
     assert await as_staff(SF1, "SELECT policy.publish_scheme($1)", PSCH) is not None
 
-    items = (await c.get("/review/v0/records", params={"subject": "wenli"}, headers=H(SF1))).json()["items"]
+    items = no_content((await c.get("/review/v0/records", params={"subject": "wenli"}, headers=H(SF1))).json()["items"])
     pol = [i for i in items if i["line"] == "policy"]
     assert [(i["policy_object"], i["action"], i["signer"]) for i in pol] == [
         ("source_document", "review", str(SF1)), ("source_document", "review", str(SF2)), ("source_document", "publish", str(SF2)),
@@ -433,12 +443,348 @@ async def test_records_merge_policy_signoffs(pg, rc):
     # CSV：新列只追加在末尾，已有列顺序不变；两次导出逐字节相同
     from review_console.service import version_record
     from review_console.store import KgeStore
-    rows = await version_record(KgeStore(kp), "wenli")
+    rows = no_content(await version_record(KgeStore(kp), "wenli"))
     a, b = io.StringIO(), io.StringIO()
     write_records(rows, "csv", a)
     write_records(rows, "csv", b)
     assert a.getvalue() == b.getvalue()
     assert a.getvalue().splitlines()[0] == ("line,map_version_id,version,action,decision,risk_level,basis_code,digest,decided_at,signer,"
                                             "rubric_versions,validation_errors,validation_warnings,page_id,page_commit,"
-                                            "policy_object,policy_object_id,city,cohort,policy_version")
+                                            "policy_object,policy_object_id,city,cohort,policy_version,"
+                                            "content_version_id,six_segment,content_map_version_id,item_id,from_admission,to_admission,"
+                                            "admission_review_level")
     assert sum(1 for line in a.getvalue().splitlines() if line.startswith("policy,")) == 6
+
+
+# ---------- 冲刺 4 · PR D：内容版本、准入、考情差异与签字、页面签字与事后抽检、时政下架、版本记录 ----------
+# 合成语文内容版本（地区 synth-rc、教材 syn-rc；语文没有地图骨架，map_version_id 可空）与合成数学草稿（检查“缺地图”的提示与拒绝）
+CV1 = uuid.UUID("c0700000-0000-4000-8000-0000000000f1")
+CV2 = uuid.UUID("c0700000-0000-4000-8000-0000000000f2")
+CVA = uuid.UUID("c0700000-0000-4000-8000-0000000000f3")
+
+
+async def test_content_version_review_flow(pg, rc):
+    c, kp, _ = rc
+    pg.psql(f"""SET ROLE starbuddy_learning;
+      INSERT INTO platform.curriculum_version (id, region, exam_year, grade, textbook_version, subject, content_version)
+        VALUES ('{CV1}', 'synth-rc', 2031, 8, 'syn-rc', 'wenli', '1.0.0'), ('{CV2}', 'synth-rc', 2031, 8, 'syn-rc', 'wenli', '1.1.0'),
+               ('{CVA}', 'synth-rc', 2031, 8, 'syn-rc', 'aya', '0.1.0');
+      INSERT INTO platform.skill_node (subject, local_id, curriculum_version_id, label_code) VALUES
+        ('wenli', 'SYN-RC-01', '{CV1}', 'syn-rc-01'), ('wenli', 'SYN-RC-11', '{CV2}', 'syn-rc-11');
+      INSERT INTO platform.item (subject, item_id, curriculum_version_id, skill_local_id, admission, source_ref, source_type) VALUES
+        ('wenli', 'SYN-RC-I1', '{CV1}', 'SYN-RC-01', 'pending_review', 'SYN-SRC-RC-1', 'textbook'),
+        ('wenli', 'SYN-RC-I11', '{CV2}', 'SYN-RC-11', 'source_unverified', NULL, 'unknown');""")
+    lst = (await c.get("/review/v0/content-versions", params={"subject": "wenli"}, headers=H(SF1))).json()["items"]
+    lst = [i for i in lst if i["region"] == "synth-rc"]  # 会话共用的库里还有端到端测试登记的语文内容版本
+    assert [(i["content_version"], i["status"], i["six_segment"]) for i in lst] == [
+        ("1.0.0", "draft", "synth-rc/2031/8/syn-rc/wenli/1.0.0"), ("1.1.0", "draft", "synth-rc/2031/8/syn-rc/wenli/1.1.0")]
+    d = (await c.get(f"/review/v0/content-versions/{CV1}/diff", headers=H(SF1))).json()
+    assert d["base_version"] is None and {ch["op"] for ch in d["changes"]} == {"added"}
+    assert d["summary"]["required_signers"] == 1 and d["summary"]["latest_decision"] is None and not d["summary"]["ready"]
+    # 政策库里没有 synth-rc 2031 届的已发布方案：只记警告（spec 第 7 节）
+    assert [x["check_name"] for x in d["checks"]] == ["no_published_scheme"] and d["checks"][0]["severity"] == "warning"
+    # 看到的就是签的：摘要不符被拒；正确摘要签字、发布
+    r = await c.post(f"/review/v0/content-versions/{CV1}/sign", json={"decision": "approved", "expected_digest": ZERO}, headers=H(SF1))
+    assert r.status_code == 409 and "摘要不符" in r.json()["detail"]
+    r = await c.post(f"/review/v0/content-versions/{CV1}/publish", json={"expected_digest": d["digest"]}, headers=H(SF1))
+    assert r.status_code == 409 and "没有批准" in r.json()["detail"]
+    assert (await c.post(f"/review/v0/content-versions/{CV1}/sign", json={"decision": "approved", "expected_digest": d["digest"]},
+                         headers=H(SF1))).status_code == 200
+    d = (await c.get(f"/review/v0/content-versions/{CV1}/diff", headers=H(SF1))).json()
+    assert d["summary"]["ready"] and d["summary"]["latest_decision"] == "approved"
+    r = await c.post(f"/review/v0/content-versions/{CV1}/publish", json={"expected_digest": d["digest"]}, headers=H(PARENT))
+    assert r.status_code == 403
+    assert (await c.post(f"/review/v0/content-versions/{CV1}/publish", json={"expected_digest": d["digest"]}, headers=H(SF1))).status_code == 200
+    # 准入：签字（看到的题目登记摘要）→ 待执行 → 执行，返回学习服务按题重算的起点
+    item = next(i for i in d["items"] if i["item_id"] == "SYN-RC-I1")
+    body = {"subject": "wenli", "item_id": "SYN-RC-I1", "to_admission": "admitted", "decision": "approved", "review_level": "Q3",
+            "source_ref": "SYN-SRC-RC-1", "source_type": "textbook", "license_status": "cleared", "expected_digest": item["admission_digest"]}
+    r = await c.post("/review/v0/admission/sign", json={**body, "review_level": "Q1"}, headers=H(SF2))
+    assert r.status_code == 409 and "Q2" in r.json()["detail"]
+    rid = (await c.post("/review/v0/admission/sign", json=body, headers=H(SF2))).json()["review_id"]
+    d = (await c.get(f"/review/v0/content-versions/{CV1}/diff", headers=H(SF1))).json()
+    assert [p["id"] for p in d["pending_admissions"]] == [rid]
+    r = (await c.post("/review/v0/admission/apply", json={"review_ids": [rid]}, headers=H(SF1))).json()
+    assert r["applied"] == 1 and r["recompute"].startswith("python -m learning.jobs admission-recompute --since ")
+    log = pg.psql(f"SELECT count(*) FROM platform.admission_change_log('{r['recompute_since']}') WHERE item_id = 'SYN-RC-I1'").strip()
+    assert log == "1"  # 学习服务从 recompute_since 起能读到这次执行
+    assert (await c.post("/review/v0/admission/apply", json={"review_ids": [rid]}, headers=H(SF1))).status_code == 409  # 执行过了
+    d = (await c.get(f"/review/v0/content-versions/{CV1}/diff", headers=H(SF1))).json()
+    assert d["pending_admissions"] == [] and next(i for i in d["items"] if i["item_id"] == "SYN-RC-I1")["admission"] == "admitted"
+    # 1.1.0：基准是 1.0.0（已发布）；能力点与题目主键全局唯一，新版本登记表现为新增、旧版本登记表现为删除
+    d2 = (await c.get(f"/review/v0/content-versions/{CV2}/diff", headers=H(SF1))).json()
+    assert d2["base_version"]["content_version"] == "1.0.0"
+    got = {(ch["object"], ch["key"], ch["op"]) for ch in d2["changes"]}
+    assert {("item", "SYN-RC-I1", "removed"), ("item", "SYN-RC-I11", "added"), ("skill_node", "SYN-RC-11", "added")} <= got
+    assert all(ch["risk"]["level"] == "high" for ch in d2["changes"])
+    await c.post(f"/review/v0/content-versions/{CV2}/sign", json={"decision": "approved", "expected_digest": d2["digest"]}, headers=H(SF2))
+    assert (await c.post(f"/review/v0/content-versions/{CV2}/publish", json={"expected_digest": d2["digest"]}, headers=H(SF2))).status_code == 200
+    r = await c.post(f"/review/v0/content-versions/{CV1}/retire", json={"basis_code": "withdrawn"}, headers=H(SF1))
+    assert r.json() == {"status": "retired"}
+    # 数学没有地图版本：差异视图提前提示，发布被库拒绝
+    da = (await c.get(f"/review/v0/content-versions/{CVA}/diff", headers=H(SF1))).json()
+    assert "map_version_missing" in [x["check_name"] for x in da["checks"]]
+    await c.post(f"/review/v0/content-versions/{CVA}/sign", json={"decision": "approved", "expected_digest": da["digest"]}, headers=H(SF1))
+    r = await c.post(f"/review/v0/content-versions/{CVA}/publish", json={"expected_digest": da["digest"]}, headers=H(SF1))
+    assert r.status_code == 409 and "地图版本" in r.json()["detail"]
+    # 版本记录：内容版本行与准入行（六段标识、签字人、摘要；执行行带审核等级与准入变化），已有的地图行不变
+    items = (await c.get("/review/v0/records", params={"subject": "wenli"}, headers=H(SF1))).json()["items"]
+    cv_rows = [i for i in items if i["line"] in CONTENT_LINES and i["six_segment"].startswith("synth-rc/")]
+    assert [(i["line"], i["action"], i["six_segment"].rsplit("/", 1)[1]) for i in cv_rows] == [
+        ("content_version", "review", "1.0.0"), ("content_version", "publish", "1.0.0"), ("admission", "review", "1.0.0"),
+        ("admission", "apply", "1.0.0"), ("content_version", "review", "1.1.0"), ("content_version", "publish", "1.1.0"),
+        ("content_version", "retire", "1.0.0")]
+    apply_row = cv_rows[3]
+    assert (apply_row["item_id"], apply_row["from_admission"], apply_row["to_admission"], apply_row["admission_review_level"], apply_row["signer"]) == \
+        ("SYN-RC-I1", "pending_review", "admitted", "Q3", str(SF1))
+    assert all(i["map_version_id"] is None and i["version"] is None and i["risk_level"] == "high" for i in cv_rows)
+    assert cv_rows[1]["six_segment"] == "synth-rc/2031/8/syn-rc/wenli/1.0.0" and len(cv_rows[1]["digest"]) == 64
+    assert all(i["line"] in ("map", "policy", "content_version", "admission") for i in items)
+
+
+PSCH2 = uuid.UUID("c0600000-0000-4000-8000-0000000000e7")
+PSCH3 = uuid.UUID("c0600000-0000-4000-8000-0000000000e8")
+PDOC2 = uuid.UUID("c0500000-0000-4000-8000-0000000000d6")
+PSCHOOL = uuid.UUID("c0800000-0000-4000-8000-0000000000a8")
+
+
+async def test_policy_scheme_diff_sign_publish(pg, rc):
+    """考情差异（spec 第 8 节）：与同城同届上一版本（1.0.0，前一个用例发布）、与上一届已发布方案比较；validate_scheme 逐条；两名 staff 签字后发布。"""
+    c, _, _ = rc
+    pg.psql(f"""SET ROLE starbuddy_kge;
+      INSERT INTO policy.exam_scheme (id, city, cohort, version, source_document_id) VALUES
+        ('{PSCH2}', 'synthcity', 2030, '1.1.0', '{PDOC}'), ('{PSCH3}', 'synthcity', 2031, '1.0.0', '{PDOC}');
+      INSERT INTO policy.subject_config (scheme_id, subject, scored, full_score, proposition, exam_form, taken_in_grade) VALUES
+        ('{PSCH2}', 'chinese', true, 120, 'city', 'closed_book', 9), ('{PSCH2}', 'math', true, 120, 'city', 'closed_book', 9),
+        ('{PSCH3}', 'chinese', true, 120, 'city', 'closed_book', 9);
+      INSERT INTO policy.admission_rule (scheme_id, batch_code, batch_order, track) VALUES
+        ('{PSCH2}', 'batch_1', 1, 'unified'), ('{PSCH2}', 'batch_2', 2, 'unified'), ('{PSCH3}', 'batch_1', 1, 'unified');""")
+    lst = (await c.get("/review/v0/policy", params={"city": "synthcity"}, headers=H(SF1))).json()
+    assert [(s["cohort"], s["version"], s["status"]) for s in lst["schemes"]] == [
+        (2030, "1.0.0", "published"), (2030, "1.1.0", "draft"), (2031, "1.0.0", "draft")]
+    assert (await c.get("/review/v0/policy", params={"city": "Bad City"}, headers=H(SF1))).status_code == 422
+    v = (await c.get(f"/review/v0/policy/schemes/{PSCH2}", headers=H(SF1))).json()
+    assert v["previous_version"]["version"] == "1.0.0" and v["previous_cohort"] is None
+    got = {(x["object"], x["key"], x["field"], x["op"]) for x in v["diff_previous_version"]}
+    assert {("subject", "chinese", "full_score", "changed"), ("subject", "math", None, "added"), ("batch", "batch_2|unified", None, "added"),
+            ("total", "total", "total", "changed")} <= got
+    assert all(x["risk"]["level"] == "high" for x in v["diff_previous_version"])
+    assert v["summary"]["required_signers"] == 2 and v["summary"]["approvals"] == 0
+    assert [x["check_name"] for x in v["validation"] if x["severity"] == "error"] == ["reviewers"]
+    assert any(x["check_name"] == "missing_transition" for x in v["validation"]) is False  # 上一届（2029）没有已发布方案
+    r = await c.post(f"/review/v0/policy/schemes/{PSCH2}/publish", json={"expected_digest": v["digest"]}, headers=H(SF1))
+    assert r.status_code == 409  # 签字不足两人
+    assert (await c.post(f"/review/v0/policy/schemes/{PSCH2}/sign", json={"decision": "approved", "expected_digest": v["digest"]},
+                         headers=H(SF1))).json() == {"approvals": 1}
+    r = await c.post(f"/review/v0/policy/schemes/{PSCH2}/sign", json={"decision": "approved", "expected_digest": v["digest"]}, headers=H(SF1))
+    assert r.status_code == 409 and r.json()["code"] == "CONFLICT"  # 同一账号同一内容只能签一次
+    assert (await c.post(f"/review/v0/policy/schemes/{PSCH2}/sign", json={"decision": "approved", "expected_digest": v["digest"]},
+                         headers=H(SF2))).json() == {"approvals": 2}
+    assert (await c.post(f"/review/v0/policy/schemes/{PSCH2}/publish", json={"expected_digest": v["digest"]}, headers=H(SF2))).status_code == 200
+    # 2031 届：与上一届（2030）已发布方案（现在是 1.1.0）比较
+    v3 = (await c.get(f"/review/v0/policy/schemes/{PSCH3}", headers=H(SF1))).json()
+    assert v3["previous_version"] is None and v3["previous_cohort"]["version"] == "1.1.0"
+    got3 = {(x["object"], x["key"], x["op"]) for x in v3["diff_previous_cohort"]}
+    assert ("subject", "math", "removed") in got3 and ("batch", "batch_2|unified", "removed") in got3
+    assert any(x["check_name"] == "missing_transition" for x in v3["validation"])  # 计分科目变了却没有过渡规则（警告）
+
+
+async def test_policy_record_second_signer_publish_failure_is_explained(pg, rc):
+    """来源文件、招录行、学校在第二名批准时发布；发布被表上的保护触发器拒绝时整笔回滚、签字不留痕——审核台给出明确提示（PR C 待处理）。"""
+    c, _, _ = rc
+    pg.psql(f"""SET ROLE starbuddy_kge;
+      INSERT INTO policy.source_document (id, city, issuer, doc_number, title, published_on, url, applies_from_cohort, last_verified_on)
+        VALUES ('{PDOC2}', 'synthcity', '合成教育局', '合成〔2029〕8号', '合成学校名录（非真实数据）', '2029-03-01',
+                'https://jyj.synthcity.example/doc/rc2', 2030, '2029-09-01');""")
+    drafts = (await c.get("/review/v0/policy", params={"city": "synthcity"}, headers=H(SF1))).json()["drafts"]
+    doc = next(x for x in drafts if x["id"] == str(PDOC2))
+    for staff, status in ((SF1, "draft"), (SF2, "published")):
+        r = await c.post(f"/review/v0/policy/records/{PDOC2}/sign",
+                         json={"object_type": "source_document", "decision": "approved", "expected_digest": doc["digest"]}, headers=H(staff))
+        assert r.json() == {"status": status}
+    pg.psql(f"""SET ROLE starbuddy_kge;
+      INSERT INTO policy.school (id, city, code, public_name, level_code, source_document_id)
+        VALUES ('{PSCHOOL}', 'synthcity', 'synth-hs-rc', '合成高中（非真实）', 'level_a', '{PDOC2}');""")
+    drafts = (await c.get("/review/v0/policy", params={"city": "synthcity"}, headers=H(SF1))).json()["drafts"]
+    school = next(x for x in drafts if x["id"] == str(PSCHOOL))
+    assert school["object_type"] == "school" and school["approvals"] == 0
+    sign = {"object_type": "school", "decision": "approved", "expected_digest": school["digest"]}
+    assert (await c.post(f"/review/v0/policy/records/{PSCHOOL}/sign", json=sign, headers=H(SF1))).json() == {"status": "draft"}
+    # 来源文件被写入方撤下（撤下不收口，PR C 差异 #3）：第二名批准时发布被学校的保护触发器拒绝
+    pg.psql(f"SET ROLE starbuddy_kge; UPDATE policy.source_document SET status = 'retired' WHERE id = '{PDOC2}';")
+    r = await c.post(f"/review/v0/policy/records/{PSCHOOL}/sign", json=sign, headers=H(SF2))
+    assert r.status_code == 409 and r.json()["code"] == "PUBLISH_FAILED_UNSIGNED"
+    assert "签字没有保存" in r.json()["detail"] and "来源文件" in r.json()["detail"]
+    # 确实没留痕：有效批准人数仍是 1，第二名的签字不在导出里
+    drafts = (await c.get("/review/v0/policy", params={"city": "synthcity"}, headers=H(SF1))).json()["drafts"]
+    assert next(x for x in drafts if x["id"] == str(PSCHOOL))["approvals"] == 1
+    # 同一账号对同一内容再签（重复签字）照常报原错误，不套这个提示
+    r = await c.post(f"/review/v0/policy/records/{PSCHOOL}/sign", json=sign, headers=H(SF1))
+    assert r.status_code == 409 and r.json()["code"] == "CONFLICT"
+
+
+async def test_page_sign_and_spot_check(pg, rc):
+    """页面签字入口（PR A 待人确认 1 默认：审核人在审核台逐个签）与低风险事后抽检（固定种子，结果记审核记录，依据 spot_check）。"""
+    import datetime as dt
+    from review_console.config import PagesSettings
+    from review_console.spot_check import SpotCheckSettings
+    _, kp, rp = rc
+    settings = PagesSettings(str(PAGES_FIX / "export.json"), str(PAGES_FIX / "staff-map.json"),
+                             "https://git.example.cn/kge/pages/-/merge_requests/{mr_id}")
+    app = create_app(authenticate=staff_auth(None), pools=(kp, rp), pages_settings=settings,
+                     spot_settings=SpotCheckSettings(ratio=1.0, seed="syn-seed"))
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1") as client:
+            # 页面签字：只能签导出里某个合并请求的头提交，风险取合并请求标注
+            r = await client.post("/review/v0/pages/sign", json={"page_id": "MATH.SYN.T.E", "page_commit": "a4" * 20, "decision": "approved"},
+                                  headers=H(SF1))
+            assert r.status_code == 200 and r.json()["risk_level"] == "high"
+            r = await client.post("/review/v0/pages/sign", json={"page_id": "MATH.SYN.T.E", "page_commit": "a4" * 20, "decision": "approved"},
+                                  headers=H(SF1))
+            assert r.status_code == 409  # 同一账号同一页面同一提交只签一次
+            r = await client.post("/review/v0/pages/sign", json={"page_id": "MATH.SYN.T.E", "page_commit": "d0" * 20, "decision": "approved"},
+                                  headers=H(SF1))
+            assert r.status_code == 404
+            v = (await client.get("/review/v0/pages", headers=H(SF1))).json()
+            assert next(e for e in v["pending"] if e["page_id"] == "MATH.SYN.T.E")["approvals_review"] == 2
+            # 抽检：2026-10-02（北京时间）低风险合并只有页面 D；比例 1.0 全抽
+            s = (await client.get("/review/v0/spot-checks", params={"day": "2026-10-02"}, headers=H(SF1))).json()
+            assert s["configured"] and s["candidates"] == 1 and [x["page_id"] for x in s["sampled"]] == ["MATH.SYN.T.D"]
+            assert s["sampled"][0]["checks"] == [] and s["basis_code"] == "spot_check"
+            future = (dt.datetime.now(dt.timezone(dt.timedelta(hours=8))).date() + dt.timedelta(days=2)).isoformat()
+            assert (await client.get("/review/v0/spot-checks", params={"day": future}, headers=H(SF1))).status_code == 422
+            # 不能借抽检给高风险页面补签
+            r = await client.post("/review/v0/spot-checks/sign", json={"page_id": "MATH.SYN.T.A", "page_commit": "a1" * 20,
+                                                                      "decision": "approved"}, headers=H(SF2))
+            assert r.status_code == 409
+            r = await client.post("/review/v0/spot-checks/sign", json={"page_id": "MATH.SYN.T.D", "page_commit": "a3" * 20,
+                                                                      "decision": "rejected"}, headers=H(SF2))
+            assert r.status_code == 200
+            s = (await client.get("/review/v0/spot-checks", params={"day": "2026-10-02"}, headers=H(SF1))).json()
+            assert [(x["decision"], x["signer"]) for x in s["sampled"][0]["checks"]] == [("rejected", str(SF2))]
+            # 抽检驳回 → 对账扣页（spot_check_rejected）
+            v = (await client.get("/review/v0/pages", headers=H(SF1))).json()
+            d = next(e for e in v["merged"] if e["page_id"] == "MATH.SYN.T.D")
+            assert "spot_check_rejected" in d["problems"] and "MATH.SYN.T.D" in v["held_pages"]
+    rows = await kp.fetch("SELECT basis_code, risk_level, decision FROM kge.page_review_record('aya') WHERE page_id = 'MATH.SYN.T.D'"
+                          " AND page_commit = $1", "a3" * 20)
+    assert [tuple(r) for r in rows] == [("spot_check", "low", "rejected")]
+
+
+async def test_page_sign_rejects_author_and_unknown_author(pg, rc, tmp_path):
+    """提交方不能自签（spec 设计要点 3）：合并请求作者经 staff 对应表映射，等于签字人 → 409 SELF_SIGN（页面签字与抽检都是）；
+    导出里没有作者、或作者不在对应表 → 409 AUTHOR_UNKNOWN（判不出从严）。抽检种子没配置 → 503。全部被拒的请求都不留审核记录。"""
+    import json
+    from review_console.config import PagesSettings
+    from review_console.spot_check import SpotCheckSettings
+    _, kp, rp = rc
+    staff = json.loads((PAGES_FIX / "staff-map.json").read_text(encoding="utf-8"))
+    staff["users"]["syn-author-2"] = str(SF1)  # MR 103（页面 D，低风险已合并）与 104（页面 E，待审）的作者是 SF1
+    (tmp_path / "staff-map.json").write_text(json.dumps(staff), encoding="utf-8")
+    export = json.loads((PAGES_FIX / "export.json").read_text(encoding="utf-8"))
+    for m in export["merge_requests"]:
+        if m["mr_id"] == "102":  # MR 102（页面 B、C）没有作者
+            del m["author"]
+    (tmp_path / "export.json").write_text(json.dumps(export), encoding="utf-8")
+    settings = PagesSettings(str(tmp_path / "export.json"), str(tmp_path / "staff-map.json"),
+                             "https://git.example.cn/kge/pages/-/merge_requests/{mr_id}")
+    before = await kp.fetchval("SELECT count(*) FROM kge.page_review_record(NULL)")
+
+    async def post(app, path, page, commit, who):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1") as client:
+            return await client.post(path, json={"page_id": page, "page_commit": commit, "decision": "approved"}, headers=H(who))
+
+    app = create_app(authenticate=staff_auth(None), pools=(kp, rp), pages_settings=settings,
+                     spot_settings=SpotCheckSettings(ratio=1.0, seed="syn-seed"))
+    async with app.router.lifespan_context(app):
+        r = await post(app, "/review/v0/pages/sign", "MATH.SYN.T.E", "a4" * 20, SF1)
+        assert (r.status_code, r.json()["code"]) == (409, "SELF_SIGN")
+        r = await post(app, "/review/v0/spot-checks/sign", "MATH.SYN.T.D", "a3" * 20, SF1)
+        assert (r.status_code, r.json()["code"]) == (409, "SELF_SIGN")
+        r = await post(app, "/review/v0/pages/sign", "MATH.SYN.T.B", "a2" * 20, SF2)
+        assert (r.status_code, r.json()["code"]) == (409, "AUTHOR_UNKNOWN")
+        staff["users"].pop("syn-author-1")  # MR 101 的作者不在对应表里
+        (tmp_path / "staff-map.json").write_text(json.dumps(staff), encoding="utf-8")
+        r = await post(app, "/review/v0/pages/sign", "MATH.SYN.T.A", "a1" * 20, SF2)
+        assert (r.status_code, r.json()["code"]) == (409, "AUTHOR_UNKNOWN")
+    assert await kp.fetchval("SELECT count(*) FROM kge.page_review_record(NULL)") == before
+    # 抽检种子没配置：接口报错，不用任何缺省种子
+    app = create_app(authenticate=staff_auth(None), pools=(kp, rp), pages_settings=settings)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1") as client:
+            r = await client.get("/review/v0/spot-checks", params={"day": "2026-10-02"}, headers=H(SF1))
+            assert (r.status_code, r.json()["code"]) == (503, "SPOT_CHECK_UNCONFIGURED")
+
+
+CA_MAP = uuid.UUID("c0900000-0000-4000-8000-0000000000b1")
+CA_OLD = uuid.UUID("c0900000-0000-4000-8000-0000000000b2")
+CA_NEW = uuid.UUID("c0900000-0000-4000-8000-0000000000b3")
+
+
+async def test_expire_affairs_cli(pg, rc):
+    """时政过期下架（spec 第 9 节，迁移 0043）：命令行只用 kge 连接、只连本机；过期且已上线的改为 retired 并有一条系统动作审核记录。"""
+    import os
+    import subprocess
+    import sys
+    from review_console.__main__ import local_only
+    pg.psql(version_sql(CA_MAP, "9.0.0").replace("'wenli', 2022", "'wenli', 2022") + f"""
+      INSERT INTO kge.current_affair (id, map_version_id, node_ids, source, valid_from, valid_until, review_status) VALUES
+        ('{CA_OLD}', '{CA_MAP}', '{{CHN.RC.T.A}}', '合成来源：已过期', '2019-01-01', '2019-03-01', 'published'),
+        ('{CA_NEW}', '{CA_MAP}', '{{CHN.RC.T.A}}', '合成来源：仍有效', '2019-01-01', '2100-01-01', 'published');""")
+    dsn = pg.dsn("review_kge_app")
+    url = f"postgresql://{dsn['user']}@/{dsn['database']}?host={dsn['host']}"
+    env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "REVIEW_CONSOLE_ENV": "test", "REVIEW_CONSOLE_KGE_DATABASE_URL": url,
+           "PYTHONDONTWRITEBYTECODE": "1"}
+    cwd = __import__("pathlib").Path(__file__).resolve().parents[1]
+    run = lambda *a: subprocess.run([sys.executable, "-m", "review_console", "expire-affairs", *a], cwd=cwd, capture_output=True, text=True,
+                                    env=env)
+    p = run("--today", "2019-06-01")
+    assert p.returncode == 0, p.stderr
+    assert __import__("json").loads(p.stdout) == {"job": "expire-affairs", "retired": 1, "today": "2019-06-01"}
+    assert pg.psql(f"SELECT review_status FROM kge.current_affair WHERE id IN ('{CA_OLD}', '{CA_NEW}') ORDER BY id").split() == [
+        "retired", "published"]
+    assert pg.psql(f"SELECT basis_code || ',' || action || ',' || risk_level FROM kge.content_review WHERE object_id = '{CA_OLD}'").strip() == \
+        "expired_auto,retire,low"
+    assert run("--today", "2999-01-01").returncode == 2           # 不能提前下架（库函数拒绝）
+    assert run("--today", "not-a-date").returncode == 2
+    # 只连本机：连接串里出现的全部主机都要是本机（多主机写法、host 查询参数、能改道的参数都算）
+    for bad in ("postgresql://u@db.example.cn/x", "postgresql://u@10.0.0.5/x", "mysql://u@localhost/x",
+                "postgresql://u@/x?host=db.example.cn",
+                "postgresql://u@127.0.0.1:5432,db.example.cn:5432/x",       # 多主机：第二个不是本机
+                "postgresql://u@localhost,10.0.0.5/x",
+                "postgresql://u@db.example.cn:5432,localhost:5432/x",       # 多主机：第一个不是本机
+                "postgresql://u@localhost/x?host=db.example.cn",            # asyncpg 会忽略 host 参数，但照样拒
+                "postgresql://u@/x?host=/tmp,db.example.cn",                # host 参数里的多主机
+                "postgresql://u@/x?host=/tmp&host=db.example.cn",           # host 参数出现两次
+                "postgresql://u@/x?host=%2Ftmp%2Cdb.example.cn",            # 编码过的逗号
+                "postgresql://u@localhost/x?hostaddr=10.0.0.5",             # hostaddr 可以绕开主机名
+                "postgresql://u@localhost/x?service=synthetic-remote",      # 服务文件里可以写别的主机
+                "postgresql://u@[2001:db8::1]:5432/x",
+                "postgresql://u@127.0.0.1.db.example.cn/x",
+                "postgresql://u@localhost.db.example.cn/x"):
+        with pytest.raises(SystemExit):
+            local_only(bad)
+    assert local_only(url) == url and local_only("postgresql://u@localhost:5432/x")
+    assert local_only("postgresql://u@[::1]:5432/x") and local_only("postgresql://u@127.0.0.2/x")
+    assert local_only("postgresql://u@localhost:5432,127.0.0.1:5433/x")
+    # 连上之后再核对服务端地址：Unix socket（空）与回环地址放行，别的中止
+    from review_console.__main__ import check_server_local
+
+    class FakeConn:
+        def __init__(self, addr):
+            self.addr = addr
+
+        async def fetchval(self, sql):
+            assert "inet_server_addr()" in sql
+            return self.addr
+    await check_server_local(FakeConn(None))
+    await check_server_local(FakeConn("127.0.0.1"))
+    await check_server_local(FakeConn("::1"))
+    for addr in ("10.0.0.5", "192.0.2.7", "2001:db8::1"):
+        with pytest.raises(SystemExit):
+            await check_server_local(FakeConn(addr))
+    async with rc[1].acquire() as conn:  # 真实的本机测试库（Unix socket）：服务端地址为空，放行
+        await check_server_local(conn)
+    env2 = {**env, "REVIEW_CONSOLE_KGE_DATABASE_URL": "postgresql://u@db.example.cn/x"}
+    p = subprocess.run([sys.executable, "-m", "review_console", "expire-affairs"], cwd=cwd, capture_output=True, text=True, env=env2)
+    assert p.returncode != 0 and "只连本机" in p.stderr

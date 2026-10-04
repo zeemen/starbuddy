@@ -1,6 +1,7 @@
 """库访问。两个连接池、两个身份（spec 设计要点 3）：
 - kge 池：读地图版本、差异所需的行、校验结果、变更单、版本记录；改草稿节点。它不能签字、发布（库层授权保证）。
-- review 池：签字、发布、撤下。每次在一个事务里 `set_config('app.account_id', staff, true)`，staff 由调用方
+  冲刺 4 起另经只读函数读内容版本与发布记录（0042），直接读考情表（kge 是考情写入方），调时政过期下架（0043）。
+- review 池：签字、发布、撤下（地图、内容版本与准入 0039、考情 0041、编译页面 0038）。每次在一个事务里 `set_config('app.account_id', staff, true)`，staff 由调用方
   （已登录的会话）给出，库里的函数再核对是否为 active staff。
 只读写 kge.* 与这些函数，不直接读写任何个人层表（规则 13）。统一复核队列（冲刺 2-G，迁移 0023）也只经库函数：
 队列与详情只给学生的不透明指针、结构化判分与判断元数据，不给 student_id 与作答原文；领取、放回、结案由库核对领取人与白名单。
@@ -170,6 +171,104 @@ class KgeStore:
             version_id, node_ids)
         return {"item_tags": int(r["item_tags"]), "scoring_points": int(r["scoring_points"])}
 
+    # ---------- 内容版本（冲刺 4，迁移 0039 / 0042：经只读函数读，表本身读不到） ----------
+    async def content_versions(self, subject: str) -> list[dict[str, Any]]:
+        rows = await self.pool.fetch("SELECT * FROM platform.content_version_list($1::platform.subject)", subject)
+        return [{**dict(r), "subject": str(r["subject"])} for r in rows]
+
+    async def content_snapshot(self, cv: uuid.UUID) -> dict[str, Any]:
+        raw = await self.pool.fetchval("SELECT platform.content_version_snapshot($1)::text", cv)
+        if raw is None:
+            raise ReviewError(404, "NOT_FOUND", "内容版本不存在")
+        return json.loads(raw)
+
+    async def release_records(self, subject: str) -> list[dict[str, Any]]:
+        rows = await self.pool.fetch("SELECT * FROM platform.release_record_export($1::platform.subject)", subject)
+        return [{**dict(r), "from_admission": _s(r["from_admission"]), "to_admission": _s(r["to_admission"]),
+                 "affected_rubric_versions": list(r["affected_rubric_versions"]) if r["affected_rubric_versions"] is not None else None}
+                for r in rows]
+
+    async def map_version_brief(self, version_id: uuid.UUID | None) -> dict[str, Any] | None:
+        if version_id is None:
+            return None
+        r = await self.pool.fetchrow("SELECT id, subject::text, version, status FROM kge.map_version WHERE id = $1", version_id)
+        return dict(r) if r else None
+
+    async def has_published_scheme(self, city: str, cohort: int) -> bool:
+        """内容版本的（地区, 届别）在政策库里有没有已发布方案（spec 第 7 节：没有就在报告里记警告，不阻断）。"""
+        return bool(await self.pool.fetchval(
+            "SELECT EXISTS (SELECT 1 FROM policy.exam_scheme WHERE city::text = $1 AND cohort = $2 AND status = 'published')", city, cohort))
+
+    # ---------- 考情政策（冲刺 4，迁移 0013 / 0041：写入方 kge 能读 policy 全部表） ----------
+    async def schemes(self, city: str | None = None) -> list[dict[str, Any]]:
+        rows = await self.pool.fetch(
+            """SELECT id, city::text, cohort::integer, version, status::text, source_document_id, published_at, created_at
+                 FROM policy.exam_scheme WHERE $1::text IS NULL OR city::text = $1
+                ORDER BY city, cohort, string_to_array(version, '.')::int[], id""", city)
+        return [dict(r) for r in rows]
+
+    async def scheme_snapshot(self, scheme_id: uuid.UUID) -> dict[str, Any]:
+        async with self.pool.acquire() as c, c.transaction(isolation="repeatable_read", readonly=True):
+            s = await c.fetchrow(
+                """SELECT id, city::text, cohort::integer, version, status::text, source_document_id, published_at
+                     FROM policy.exam_scheme WHERE id = $1""", scheme_id)
+            if s is None:
+                raise ReviewError(404, "NOT_FOUND", "方案不存在")
+            subjects = await c.fetch("SELECT subject::text, scored, full_score, proposition, exam_form, duration_minutes, "
+                                     "combined_group::text, taken_in_grade, exam_month, eligibility_effect "
+                                     "FROM policy.subject_config WHERE scheme_id = $1 ORDER BY subject", scheme_id)
+            batches = await c.fetch("SELECT batch_code::text, batch_order, track, control_line_basis FROM policy.admission_rule "
+                                    "WHERE scheme_id = $1 ORDER BY batch_code, track", scheme_id)
+            transitions = await c.fetch("SELECT change_kind, replaces_scheme_id FROM policy.transition_rule WHERE scheme_id = $1 "
+                                        "ORDER BY change_kind", scheme_id)
+            total = await c.fetchval("SELECT policy.scheme_total($1)", scheme_id)
+            digest = await c.fetchval("SELECT policy.object_digest('exam_scheme', $1)", scheme_id)
+            approvals = await c.fetchval("SELECT policy.approval_count('exam_scheme', $1)", scheme_id)
+        return {"scheme": dict(s), "subjects": [dict(r) for r in subjects], "batches": [dict(r) for r in batches],
+                "transitions": [dict(r) for r in transitions], "total": total, "digest": digest, "approvals": approvals}
+
+    async def scheme_bases(self, s: dict[str, Any]) -> tuple[uuid.UUID | None, uuid.UUID | None]:
+        """（同城市同届别的上一版本：已发布或已撤下、版本号更小的最大者；同城市上一届的已发布方案）"""
+        prev = await self.pool.fetchval(
+            """SELECT id FROM policy.exam_scheme WHERE city::text = $1 AND cohort = $2 AND id <> $3 AND status <> 'draft'
+                  AND string_to_array(version, '.')::int[] < string_to_array($4, '.')::int[]
+                ORDER BY string_to_array(version, '.')::int[] DESC LIMIT 1""", s["city"], s["cohort"], s["id"], s["version"])
+        last = await self.pool.fetchval(
+            "SELECT id FROM policy.exam_scheme WHERE city::text = $1 AND cohort = $2 AND status = 'published'", s["city"], s["cohort"] - 1)
+        return prev, last
+
+    async def validate_scheme(self, scheme_id: uuid.UUID) -> list[dict[str, Any]]:
+        rows = await self.pool.fetch("SELECT check_name, severity, object_id, detail FROM policy.validate_scheme($1)"
+                                     " ORDER BY severity, check_name, object_id, detail", scheme_id)
+        return [dict(r) for r in rows]
+
+    async def policy_drafts(self, city: str | None = None) -> list[dict[str, Any]]:
+        """待签的来源文件、招录行、学校（草稿），带当前摘要与有效批准人数（第二名不同 staff 批准时由 policy.sign_record 发布）。"""
+        rows = await self.pool.fetch(
+            """SELECT 'source_document' AS object_type, d.id, d.city::text AS city, d.applies_from_cohort::integer AS cohort,
+                      d.doc_number || ' · ' || d.title AS label
+                 FROM policy.source_document d WHERE d.status = 'draft' AND ($1::text IS NULL OR d.city::text = $1)
+               UNION ALL
+               SELECT 'school', h.id, h.city::text, NULL, h.code::text || ' · ' || h.public_name
+                 FROM policy.school h WHERE h.review_status = 'draft' AND ($1::text IS NULL OR h.city::text = $1)
+               UNION ALL
+               SELECT 'admission_line', l.id, h.city::text, l.year::integer,
+                      h.code::text || ' · ' || l.batch_code::text || ' · ' || l.track
+                 FROM policy.admission_line l JOIN policy.school h ON h.id = l.school_id
+                WHERE l.status = 'draft' AND ($1::text IS NULL OR h.city::text = $1)
+               ORDER BY 1, 3, 5, 2""", city)
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["digest"] = await self.pool.fetchval("SELECT policy.object_digest($1, $2)", d["object_type"], d["id"])
+            d["approvals"] = await self.pool.fetchval("SELECT policy.approval_count($1, $2)", d["object_type"], d["id"])
+            out.append(d)
+        return out
+
+    async def expire_current_affairs(self, today) -> int:
+        """时政过期下架（迁移 0043）：知识服务身份调库函数，函数写系统审核记录。"""
+        return int(await self.pool.fetchval("SELECT kge.expire_current_affairs($1)", today))
+
     async def edit_node(self, version_id: uuid.UUID, node_id: str, fields: dict[str, Any], expected_digest: str) -> str:
         """改草稿节点。带上编辑时看到的摘要，与当前不同就拒绝（别人先改过）。返回改后的摘要。"""
         unknown = set(fields) - set(EDITABLE_NODE_FIELDS)
@@ -264,6 +363,83 @@ class ReviewStore:
     async def retire(self, staff: uuid.UUID, version_id: uuid.UUID, basis_code: str) -> None:
         await self._as_staff(staff, lambda c: c.execute("SELECT kge.retire_map_version($1, $2)", version_id, basis_code))
 
+    # ---------- 内容版本与题目准入（迁移 0039：签字、发布、撤下、准入执行都在库函数里核对 active staff 与摘要） ----------
+    @staticmethod
+    async def _expect(c, sql: str, args: tuple, expected: str, what: str) -> None:
+        if await c.fetchval(sql, *args) != expected:
+            raise ReviewError(409, "DIGEST_CHANGED", f"你看到的{what}与当前不一致，请刷新后重新审核")
+
+    async def sign_content_version(self, staff: uuid.UUID, cv: uuid.UUID, decision: str, basis_code: str | None, expected: str) -> uuid.UUID:
+        # 库函数在锁住版本行之后比对摘要（看到的就是签的）
+        return await self._as_staff(staff, lambda c: c.fetchval(
+            "SELECT platform.sign_content_version($1, $2, $3, $4)", cv, decision, expected, basis_code))
+
+    async def publish_content_version(self, staff: uuid.UUID, cv: uuid.UUID, expected: str):
+        async def run(c):
+            q = ("SELECT platform.content_version_digest($1)", (cv,))
+            await self._expect(c, *q, expected, "内容版本")
+            at = await c.fetchval("SELECT platform.publish_content_version($1)", cv)
+            await self._expect(c, *q, expected, "内容版本")  # 发布函数已锁住版本行；间隙里被改过就整笔回滚
+            return at
+        return await self._as_staff(staff, run)
+
+    async def retire_content_version(self, staff: uuid.UUID, cv: uuid.UUID, basis_code: str) -> None:
+        await self._as_staff(staff, lambda c: c.execute("SELECT platform.retire_content_version($1, $2)", cv, basis_code))
+
+    async def sign_admission(self, staff: uuid.UUID, b: dict[str, Any]) -> uuid.UUID:
+        return await self._as_staff(staff, lambda c: c.fetchval(
+            "SELECT platform.sign_admission($1::platform.subject, $2, $3::platform.admission, $4, $5, $6, $7, $8, $9, $10)",
+            b["subject"], b["item_id"], b["to_admission"], b["decision"], b.get("review_level"), b.get("source_ref"), b.get("source_type"),
+            b.get("license_status"), b["expected_digest"], b.get("basis_code")))
+
+    async def change_admission(self, staff: uuid.UUID, review_ids: list[uuid.UUID]) -> tuple[int, Any]:
+        """执行一批批准的准入审核（一条不合格整批回滚）；返回（条数，执行前的时刻）——执行记录的时间都不早于它，
+        供学习服务按题重算的起点（python -m learning.jobs admission-recompute --since）。"""
+        async def run(c):
+            start = await c.fetchval("SELECT clock_timestamp()")
+            n = await c.fetchval("SELECT platform.change_admission($1::uuid[])", review_ids)
+            return int(n), start
+        return await self._as_staff(staff, run)
+
+    # ---------- 考情政策（迁移 0041：两名不同 staff 对当前内容批准；签字人取当前账号） ----------
+    async def sign_scheme(self, staff: uuid.UUID, scheme: uuid.UUID, decision: str, expected: str) -> int:
+        return int(await self._as_staff(staff, lambda c: c.fetchval("SELECT policy.sign_scheme($1, $2, $3)", scheme, decision, expected)))
+
+    async def publish_scheme(self, staff: uuid.UUID, scheme: uuid.UUID, expected: str):
+        async def run(c):
+            q = ("SELECT policy.object_digest('exam_scheme', $1)", (scheme,))
+            await self._expect(c, *q, expected, "方案")
+            at = await c.fetchval("SELECT policy.publish_scheme($1)", scheme)
+            await self._expect(c, *q, expected, "方案")
+            return at
+        return await self._as_staff(staff, run)
+
+    async def sign_record(self, staff: uuid.UUID, object_type: str, object_id: uuid.UUID, decision: str, expected: str) -> str:
+        """来源文件、招录行、学校：第二名不同 staff 对当前内容批准时，库函数在同一事务里发布。发布被表上的保护触发器拒绝时，
+        整笔回滚，签字也不留痕（PR C“第二名批准时发布失败，签字一并回滚”）——这里识别这种情况，给明确提示（PUBLISH_FAILED_UNSIGNED）。"""
+        async def run(c):
+            q = ("SELECT policy.object_digest($1, $2)", (object_type, object_id))
+            await self._expect(c, *q, expected, "内容")
+            before = int(await c.fetchval("SELECT policy.approval_count($1, $2)", object_type, object_id))
+            required = int(await c.fetchval("SELECT policy.signers_required()"))
+            would_publish = decision == "approved" and before + 1 >= required
+            try:
+                async with c.transaction():  # 保存点：失败时能区分原因，外层事务照样整笔回滚
+                    return await c.fetchval("SELECT policy.sign_record($1, $2, $3, $4)", object_type, object_id, decision, expected)
+            except asyncpg.PostgresError as e:
+                if would_publish and getattr(e, "sqlstate", "") != "23505":
+                    err = db_error(e)
+                    raise ReviewError(409, "PUBLISH_FAILED_UNSIGNED",
+                                      "这是第二名批准，签字时发布被拒，整笔已回滚：你的签字没有保存。请先按下面的原因处理，再重新签字"
+                                      + (f"（{err.detail}）" if err.detail else f"（{err.code}）")) from None
+                raise
+        return await self._as_staff(staff, run)
+
+    # ---------- 编译页面签字（迁移 0038；PR A 待人确认 1 的默认：审核人在审核台逐个签） ----------
+    async def sign_page(self, staff: uuid.UUID, page_id: str, page_commit: str, decision: str, risk: str, basis_code: str) -> uuid.UUID:
+        return await self._as_staff(staff, lambda c: c.fetchval(
+            "SELECT kge.sign_page_review($1, $2, $3, $4, $5)", page_id, page_commit, decision, risk, basis_code))
+
     # ---------- 统一复核队列（冲刺 2-G，迁移 0023；staff 与领取人都由库函数核对） ----------
     async def queue(self, staff: uuid.UUID, subject: str | None, status: str | None, reason: str | None, limit: int,
                     before: datetime | None, before_id: uuid.UUID | None) -> list[dict[str, Any]]:
@@ -289,6 +465,10 @@ class ReviewStore:
 
     async def resolve_task(self, staff: uuid.UUID, task_id: uuid.UUID, code: str) -> None:
         await self._as_staff(staff, lambda c: c.execute("SELECT platform.resolve_review_task($1, $2)", task_id, code))
+
+
+def _s(v: Any) -> str | None:
+    return None if v is None else str(v)
 
 
 def _task_row(r: dict[str, Any]) -> dict[str, Any]:

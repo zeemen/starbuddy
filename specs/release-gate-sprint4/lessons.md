@@ -374,3 +374,47 @@ spec 冲刺 3、4 段已确认（待人确认全部按默认）。迁移从 0038
 6. 导出列 `policy_version` 与 `insight.weekly_report.policy_version` 同名异义，是否改名 `scheme_version`（改导出格式）。
 7. 内容改回原样后旧驳回、旧批准重新生效，是否需要按时间先后的语义，由教研定。
 8. 考情行不分学科，每个学科导出都带全部考情行。
+
+## 第二部分 PR D：审核台（迁移 0042、0043）
+
+### 做了什么
+- 迁移 0042（platform）：`content_version_list` / `content_version_snapshot` / `release_record_export` 三个只读 SECURITY DEFINER 函数（属主 authz，只授 kge），不放宽任何表授权或 RLS。审核台两个库身份原本读不到内容版本、能力点、题目与发布记录。
+- 迁移 0043（kge）：`kge.expire_current_affairs(p_today)`（只授 kge；`valid_until < 当天` 且已上线的时政改 retired，逐条追加系统审核记录 `expired_auto`、无签字人；日期不能晚于北京时间今天；同日重跑幂等）与守卫 `kge.guard_affair_retired`（已发布 / 已撤下地图版本上 retired 的时政不能改回 published 或 pending）。
+- 审核台后端与前端：内容版本视图（差异、发布前提、签字 / 发布 / 撤下 / 准入）、考情视图（同城同届上一版本与上一届已发布方案差异、`validate_scheme` 逐条）、页面签字入口（PR A 待人确认 1 按默认）、低风险事后抽检、风险分类器补全（`classify_page` / `classify_atom` / `classify_policy` / `classify_content`，判不出一律高）。
+- 第二名批准时发布失败、签字整笔回滚：返回 409 `PUBLISH_FAILED_UNSIGNED`，界面写明“签字没有保存”（PR C 待处理项）。
+- 版本记录导出新增 `content_version`、`admission` 行，末尾追加 7 列（`content_version_id, six_segment, content_map_version_id, item_id, from_admission, to_admission, admission_review_level`）；`action` 新增 `apply`。
+- 时政下架命令 `python -m review_console expire-affairs`、`make current-affair-expire`（只连本机，连接后再核对服务端地址）。
+- 准入变化后的重算：`python -m learning.jobs admission-recompute --since` 读 `platform.admission_change_log` 逐题调已有的 `recompute_item`（PR B 差异 #7）；没有改掌握计算逻辑。
+
+### 测试
+`make db-test` 2489 项断言；db-mutation 审核台读 11/11、时政下架 11/11、页面审核 16/16（全量留给严格检查）；`attack-surface-check`（113 个函数）、`pentest-env-test`、`page-reconcile-test` 通过；`learning-test` 2770 passed；`web-test` 56 passed、1 skipped；tsc 通过；Gate 0 样例重生比对无变化。
+
+### 审查意见处理（按用户“按默认建议处理审查意见”）
+- 阻断 B1：`local_only` 只看 DSN 第一个主机，多主机写法可绕过（规则 9）。已改为自己的解析与 asyncpg 实际解析结果取并集逐个核对，拒绝 `hostaddr`、`service`，连上后查 `inet_server_addr()` 必须为空或回环。
+- 其余：提交方不能自签（导出加 `author`，签字人等于作者 409 `SELF_SIGN`，作者缺失或不在对应表 409 `AUTHOR_UNKNOWN`，对账加 `self_approval`）；抽检种子必须配置（删缺省值，未配置 503）、抽样改用 `merge_commit`、比例为 0 告警；已下架时政不可逆；0042 收回 review 授权；准入重算加不 mock 的重跑幂等测试；`classify_page` 缺字段判高；离线审核记录格式升 `/1.1`；导出列改名 `admission_review_level`；0043 COMMENT 写明 `expired_auto` 不是人工批准。
+
+### 经验
+- 判断 DSN 只连本机要取自己解析与驱动实际解析的并集：asyncpg 在 netloc 已有主机时忽略 `host=` 参数，但不能因此放行。
+- 0019 的原子守卫只认最近一条 `action = review` 的结论，时政下架记录的 action 是 retire，下架前那条批准会“复活”；按状态机设防要按状态转移逐条设。
+- 抽样哈希输入只能用提交方事后改不了的量（合并提交），种子不能公开。
+- 共用测试库里其他模块的端到端测试也会发布内容版本，版本记录类测试要按行类型或地区过滤。
+- 授权快照先生成到 scratchpad，比对后用 Edit 同步。
+
+### 与 spec 的差异
+1. 抽检与页面签字都记在 `kge.content_review` 的页面记录里（依据 `spot_check` / `mr_review`），不另加表。
+2. 抽检只覆盖编译页面；原子低风险项（题目族引用）没有抽检入口（`kge.sign_review` 不支持 `item_family`，要改迁移）。
+3. 审核台页面风险仍取合并请求上的标注（编译器生成）；spec 把叙述段改写定为中，编译器定为高，两边都按高审，口径不同。
+4. 能力点和题目编号全局唯一不带版本，新内容版本的登记在差异里显示为“新增”、上一版本的显示为“删除”（界面有说明）。
+5. 时政系统下架记录不进版本记录导出。
+6. 作者不在 staff 对应表也拒签（比审查意见更严）；“下架不可逆”守卫不管草稿地图版本。
+
+### 待人确认
+1. 迁移 0042、0043 依赖 0011、0019、0038、0039，按顺序在副本演练后执行。
+2. 抽检种子由谁、在哪里配置（部署配置，不进仓库）；比例默认 0.1、合并窗口默认 02:00，待教研负责人定（ADR 12 #3）。
+3. `admission-recompute` 接调度（ADR 03 / 10）；之前准入降级不会立即反映到掌握与星图（替代 PR B 差异 #7 的说明）。
+4. 编译器机器人账号作合并请求作者时不在 staff 对应表，按从严规则无法在线签字；是否另设“非 staff 作者”名单。合并请求上的风险标注由谁生成、提交方能否改写也需明确。
+5. 已下架时政不可逆、重新使用须新建一行，草稿版本例外是否合适。
+6. 编译器与审核台对叙述段风险（中 / 高）的口径是否统一。
+7. 时政过期判定 `valid_until < 当天`，而 0026 只读角色 RLS 在 `valid_until` 当天已不可见，两者差一天。
+8. 内容版本页每道题一个准入表单，阿鸦 721 题页面很长，是否分页。
+9. 契约审查顺带提出：三科 `adapters/*/scripts/register-content.ts` 生成直接插入 `platform.*` 的 SQL（离线、不连库，PR B 之前即有），是否算违反规则 1。

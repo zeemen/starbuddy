@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import datetime as dt
 import logging
 import re
 import uuid
@@ -23,6 +24,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from . import service
 from .config import PagesSettings, ReviewSettings
 from .errors import ReviewError
+from .pages import MR_REVIEW_BASIS
+from .spot_check import SPOT_CHECK_BASIS, SpotCheckSettings
 from .store import KgeStore, ReviewStore, check_roles, db_error
 
 log = logging.getLogger("starbuddy.review_console")
@@ -86,6 +89,42 @@ class ResolveBody(_Strict):
     resolution_code: str = Field(pattern=BASIS)
 
 
+ADMISSIONS = Literal["source_unverified", "pending_review", "admitted", "rejected"]
+SOURCE_REF = r"^[A-Za-z0-9][A-Za-z0-9._:\-]{0,63}$"  # 与迁移 0039 platform.item.source_ref 一致
+ITEM_ID = r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$"  # 与 platform.skill_local_id 域一致
+COMMIT = r"^[0-9a-f]{40}$"
+CITY = r"^[a-z][a-z0-9\-]{1,31}$"
+
+
+class AdmissionSignBody(_Strict):
+    subject: Literal["wenli", "aya", "zhixing", "echo"]
+    item_id: str = Field(pattern=ITEM_ID)
+    to_admission: ADMISSIONS
+    decision: Literal["approved", "rejected"]
+    review_level: str | None = Field(default=None, pattern=r"^Q[0-5]$")
+    source_ref: str | None = Field(default=None, pattern=SOURCE_REF)
+    source_type: Literal["unknown", "self_authored", "adapted", "textbook", "exam_paper", "reference_book"] | None = None
+    license_status: Literal["unverified", "cleared", "denied"] | None = None
+    expected_digest: str = Field(pattern=DIGEST)
+    basis_code: str | None = Field(default=None, pattern=BASIS)
+
+
+class AdmissionApplyBody(_Strict):
+    review_ids: list[uuid.UUID] = Field(min_length=1, max_length=200)
+
+
+class RecordSignBody(_Strict):
+    object_type: Literal["source_document", "admission_line", "school"]
+    decision: Literal["approved", "rejected"]
+    expected_digest: str = Field(pattern=DIGEST)
+
+
+class PageSignBody(_Strict):
+    page_id: str = Field(pattern=r"^[A-Z][A-Z0-9]{1,9}(\.[A-Z0-9][A-Z0-9_]{0,31}){1,4}$")
+    page_commit: str = Field(pattern=COMMIT)
+    decision: Literal["approved", "rejected"]
+
+
 QUEUE_STATUSES = ("open", "in_progress", "resolved")
 QUEUE_REASONS = ("subjective_dimension", "low_confidence", "verifier_boundary_case", "content_not_admitted", "ocr_low_confidence",
                  "dimension_unavailable", "student_appeal", "spot_check", "double_grading_disagreement",
@@ -126,8 +165,10 @@ _UNSET: Any = object()
 
 
 def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthenticator | None = None,
-               pools: tuple[asyncpg.Pool, asyncpg.Pool] | None = None, pages_settings: PagesSettings | None = _UNSET) -> FastAPI:
-    """pages_settings：编译页面入口的配置；缺省取 settings.pages（测试可直接注入）。"""
+               pools: tuple[asyncpg.Pool, asyncpg.Pool] | None = None, pages_settings: PagesSettings | None = _UNSET,
+               spot_settings: SpotCheckSettings | None = None) -> FastAPI:
+    """pages_settings：编译页面入口的配置；缺省取 settings.pages（测试可直接注入）。spot_settings：事后抽检配置，缺省取 settings.spot_check；
+    都没有时抽检接口回 503 SPOT_CHECK_UNCONFIGURED（种子必须由配置给出，仓库里没有缺省种子）。"""
     state: dict[str, Any] = {}
 
     async def session_auth(request: Request) -> uuid.UUID | None:
@@ -159,6 +200,8 @@ def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthen
         state["kge"], state["review"] = KgeStore(kp), ReviewStore(rp, lp)
         state["pages"] = pages_settings if pages_settings is not _UNSET else (
             settings.pages if settings is not None else (ReviewSettings.from_env().pages if pools is None else None))
+        state["spot"] = spot_settings or (settings.spot_check if settings is not None else (
+            ReviewSettings.from_env().spot_check if pools is None else None))
         yield
         if own:
             await kp.close()
@@ -312,6 +355,94 @@ def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthen
     @app.get("/review/v0/pages")
     async def pages_list():
         return await service.pages_view(state["kge"], state["pages"])
+
+    @app.post("/review/v0/pages/sign")
+    async def sign_page(body: PageSignBody, request: Request):
+        """页面签字入口（PR A 待人确认 1 的默认：审核人在审核台逐个签）：只能签托管平台导出里某个合并请求的头提交，
+        风险取合并请求上的标注；同一账号对同一页面同一提交只能签一次（库函数核对）。"""
+        mr = service.page_head(state["pages"], body.page_id, body.page_commit)
+        service.check_not_author(state["pages"], mr, request.state.staff)  # 提交方不能自签；作者判不出时从严拒绝
+        rid = await state["review"].sign_page(request.state.staff, body.page_id, body.page_commit, body.decision, mr.risk, MR_REVIEW_BASIS)
+        return {"review_id": str(rid), "risk_level": mr.risk}
+
+    # ---------- 低风险合并窗口的事后抽检（冲刺 4，spec 第 2 节）：固定种子抽样，结果记页面审核记录（依据 spot_check） ----------
+    @app.get("/review/v0/spot-checks")
+    async def spot_checks(day: dt.date | None = None):
+        today = dt.datetime.now(dt.timezone(dt.timedelta(hours=8))).date()
+        d = day or today
+        if d > today:
+            raise ReviewError(422, "INVALID_PARAMETER", "不能抽检将来的日期")
+        return await service.spot_check_view(state["kge"], state["pages"], state["spot"], d)
+
+    @app.post("/review/v0/spot-checks/sign")
+    async def spot_check_sign(body: PageSignBody, request: Request):
+        mr = service.spot_check_target(state["pages"], body.page_id, body.page_commit)
+        service.check_not_author(state["pages"], mr, request.state.staff)  # 提交方不能抽检自己的合并
+        rid = await state["review"].sign_page(request.state.staff, body.page_id, body.page_commit, body.decision, "low", SPOT_CHECK_BASIS)
+        return {"review_id": str(rid)}
+
+    # ---------- 内容版本与题目准入（冲刺 4，spec 第 7 节；迁移 0039、0042） ----------
+    @app.get("/review/v0/content-versions")
+    async def content_versions(subject: str):
+        return await service.content_versions_view(state["kge"], _subject(subject))
+
+    @app.get("/review/v0/content-versions/{cv}/diff")
+    async def content_diff(cv: uuid.UUID):
+        return await service.content_view(state["kge"], cv)
+
+    @app.post("/review/v0/content-versions/{cv}/sign")
+    async def content_sign(cv: uuid.UUID, body: SignBody, request: Request):
+        rid = await state["review"].sign_content_version(request.state.staff, cv, body.decision, body.basis_code, body.expected_digest)
+        return {"review_id": str(rid)}
+
+    @app.post("/review/v0/content-versions/{cv}/publish")
+    async def content_publish(cv: uuid.UUID, body: PublishBody, request: Request):
+        at = await state["review"].publish_content_version(request.state.staff, cv, body.expected_digest)
+        return {"published_at": at.isoformat()}
+
+    @app.post("/review/v0/content-versions/{cv}/retire")
+    async def content_retire(cv: uuid.UUID, body: RetireBody, request: Request):
+        await state["review"].retire_content_version(request.state.staff, cv, body.basis_code)
+        return {"status": "retired"}
+
+    @app.post("/review/v0/admission/sign")
+    async def admission_sign(body: AdmissionSignBody, request: Request):
+        rid = await state["review"].sign_admission(request.state.staff, body.model_dump())
+        return {"review_id": str(rid)}
+
+    @app.post("/review/v0/admission/apply")
+    async def admission_apply(body: AdmissionApplyBody, request: Request):
+        """执行准入变化（platform.change_admission）。之后的掌握重算由学习服务按执行记录做（KGE-04 learning.mastery.recompute.recompute_item）：
+        审核台的两个库身份都不能写个人层，所以这里不直接重算，只返回重算的起点；学习服务以
+        `python -m learning.jobs admission-recompute --since <recompute_since>` 读 platform.admission_change_log 逐题重算。"""
+        n, since = await state["review"].change_admission(request.state.staff, list(body.review_ids))
+        return {"applied": n, "recompute_since": since.isoformat(),
+                "recompute": "python -m learning.jobs admission-recompute --since " + since.isoformat()}
+
+    # ---------- 考情政策线（冲刺 4，spec 第 8 节；迁移 0041） ----------
+    @app.get("/review/v0/policy")
+    async def policy_list(city: str | None = None):
+        if city is not None and not re.fullmatch(CITY, city):
+            raise ReviewError(422, "INVALID_PARAMETER", "城市编码格式不对")
+        return await service.policy_list_view(state["kge"], city)
+
+    @app.get("/review/v0/policy/schemes/{scheme}")
+    async def policy_scheme(scheme: uuid.UUID):
+        return await service.policy_view(state["kge"], scheme)
+
+    @app.post("/review/v0/policy/schemes/{scheme}/sign")
+    async def policy_scheme_sign(scheme: uuid.UUID, body: ChangeSignBody, request: Request):
+        return {"approvals": await state["review"].sign_scheme(request.state.staff, scheme, body.decision, body.expected_digest)}
+
+    @app.post("/review/v0/policy/schemes/{scheme}/publish")
+    async def policy_scheme_publish(scheme: uuid.UUID, body: PublishBody, request: Request):
+        at = await state["review"].publish_scheme(request.state.staff, scheme, body.expected_digest)
+        return {"published_at": at.isoformat()}
+
+    @app.post("/review/v0/policy/records/{object_id}/sign")
+    async def policy_record_sign(object_id: uuid.UUID, body: RecordSignBody, request: Request):
+        st = await state["review"].sign_record(request.state.staff, body.object_type, object_id, body.decision, body.expected_digest)
+        return {"status": st}
 
     @app.get("/review/v0/records")
     async def records(subject: str):

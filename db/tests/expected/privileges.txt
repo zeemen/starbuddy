@@ -91,6 +91,7 @@ col|insight.weekly_report.week_end|starbuddy_insight|INSERT|SUPERUSER
 col|insight.weekly_report.week_start|starbuddy_bff|SELECT|SUPERUSER
 col|insight.weekly_report.week_start|starbuddy_insight|INSERT|SUPERUSER
 col|insight.weekly_report.withheld_reasons|starbuddy_insight|INSERT|SUPERUSER
+col|kge.current_affair.review_status|starbuddy_authz|UPDATE|SUPERUSER
 col|kge.item_tag.node_ids|starbuddy_authz|UPDATE|SUPERUSER
 col|kge.item_tag.tag_basis|starbuddy_authz|UPDATE|SUPERUSER
 col|kge.item_tag.tag_confidence|starbuddy_authz|UPDATE|SUPERUSER
@@ -525,6 +526,8 @@ func|kge.decide_tag_candidate(uuid,text)|starbuddy_review|EXECUTE|starbuddy_auth
 func|kge.distinct_count(text[])|starbuddy_authz|EXECUTE|SUPERUSER
 func|kge.distinct_count(text[])|starbuddy_kge|EXECUTE|SUPERUSER
 func|kge.distinct_count(text[])|starbuddy_learning|EXECUTE|SUPERUSER
+func|kge.expire_current_affairs(date)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|kge.expire_current_affairs(date)|starbuddy_kge|EXECUTE|starbuddy_authz
 func|kge.has_personal_key(jsonb)|starbuddy_authz|EXECUTE|SUPERUSER
 func|kge.has_personal_key(jsonb)|starbuddy_kge|EXECUTE|SUPERUSER
 func|kge.has_personal_key(jsonb)|starbuddy_learning|EXECUTE|SUPERUSER
@@ -619,6 +622,10 @@ func|platform.content_requires_map(platform.subject)|starbuddy_review|EXECUTE|SU
 func|platform.content_version_digest(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.content_version_digest(uuid)|starbuddy_learning|EXECUTE|starbuddy_authz
 func|platform.content_version_digest(uuid)|starbuddy_review|EXECUTE|starbuddy_authz
+func|platform.content_version_list(platform.subject)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.content_version_list(platform.subject)|starbuddy_kge|EXECUTE|starbuddy_authz
+func|platform.content_version_snapshot(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.content_version_snapshot(uuid)|starbuddy_kge|EXECUTE|starbuddy_authz
 func|platform.create_guardian_invite(uuid,interval)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.create_guardian_invite(uuid,interval)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|platform.create_student(uuid,smallint,text,text,date)|starbuddy_authz|EXECUTE|starbuddy_authz
@@ -717,6 +724,8 @@ func|platform.publish_content_version(uuid)|starbuddy_authz|EXECUTE|starbuddy_au
 func|platform.publish_content_version(uuid)|starbuddy_review|EXECUTE|starbuddy_authz
 func|platform.redeem_guardian_invite(text)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.redeem_guardian_invite(text)|starbuddy_bff|EXECUTE|starbuddy_authz
+func|platform.release_record_export(platform.subject)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.release_record_export(platform.subject)|starbuddy_kge|EXECUTE|starbuddy_authz
 func|platform.release_review_task(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.release_review_task(uuid)|starbuddy_review|EXECUTE|starbuddy_authz
 func|platform.request_erasure(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
@@ -808,6 +817,7 @@ owner|insight.submit_guardian_report(uuid,text,jsonb)|starbuddy_authz
 owner|insight.submit_self_report(uuid,text,jsonb)|starbuddy_authz
 owner|kge.current_staff()|starbuddy_authz
 owner|kge.decide_tag_candidate(uuid,text)|starbuddy_authz
+owner|kge.expire_current_affairs(date)|starbuddy_authz
 owner|kge.map_change_digest_of(uuid)|starbuddy_authz
 owner|kge.map_version_digest(uuid)|starbuddy_authz
 owner|kge.page_review_record(platform.subject)|starbuddy_authz
@@ -832,6 +842,8 @@ owner|platform.change_admission(uuid[])|starbuddy_authz
 owner|platform.check_supersede_target()|starbuddy_authz
 owner|platform.confirm_erasure(uuid)|starbuddy_authz
 owner|platform.content_version_digest(uuid)|starbuddy_authz
+owner|platform.content_version_list(platform.subject)|starbuddy_authz
+owner|platform.content_version_snapshot(uuid)|starbuddy_authz
 owner|platform.create_guardian_invite(uuid,interval)|starbuddy_authz
 owner|platform.create_student(uuid,smallint,text,text,date)|starbuddy_authz
 owner|platform.enqueue_claim_dispute(uuid)|starbuddy_authz
@@ -878,6 +890,7 @@ owner|platform.policy_signoff_record()|starbuddy_authz
 owner|platform.profile_page_statement_v|starbuddy_authz
 owner|platform.publish_content_version(uuid)|starbuddy_authz
 owner|platform.redeem_guardian_invite(text)|starbuddy_authz
+owner|platform.release_record_export(platform.subject)|starbuddy_authz
 owner|platform.release_review_task(uuid)|starbuddy_authz
 owner|platform.request_erasure(uuid)|starbuddy_authz
 owner|platform.resolve_review_task(uuid,text)|starbuddy_authz
@@ -1340,6 +1353,7 @@ secdef|insight.submit_guardian_report(uuid,text,jsonb)
 secdef|insight.submit_self_report(uuid,text,jsonb)
 secdef|kge.current_staff()
 secdef|kge.decide_tag_candidate(uuid,text)
+secdef|kge.expire_current_affairs(date)
 secdef|kge.map_change_digest_of(uuid)
 secdef|kge.map_version_digest(uuid)
 secdef|kge.page_review_record(platform.subject)
@@ -1364,6 +1378,8 @@ secdef|platform.change_admission(uuid[])
 secdef|platform.check_supersede_target()
 secdef|platform.confirm_erasure(uuid)
 secdef|platform.content_version_digest(uuid)
+secdef|platform.content_version_list(platform.subject)
+secdef|platform.content_version_snapshot(uuid)
 secdef|platform.create_guardian_invite(uuid,interval)
 secdef|platform.create_student(uuid,smallint,text,text,date)
 secdef|platform.enqueue_claim_dispute(uuid)
@@ -1409,6 +1425,7 @@ secdef|platform.pause_subject(uuid,platform.subject)
 secdef|platform.policy_signoff_record()
 secdef|platform.publish_content_version(uuid)
 secdef|platform.redeem_guardian_invite(text)
+secdef|platform.release_record_export(platform.subject)
 secdef|platform.release_review_task(uuid)
 secdef|platform.request_erasure(uuid)
 secdef|platform.resolve_review_task(uuid,text)

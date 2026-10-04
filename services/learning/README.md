@@ -94,7 +94,7 @@ LEARNING_ADAPTER_AYA_URL=http://127.0.0.1:8787 LEARNING_ADAPTER_AYA_TOKEN=... .v
 页面在页面仓库托管平台的合并请求里审核（ADR 12）；本仓不连托管平台。审核台这一侧做三件事：
 1. **页面审核记录**：每名审核人对“页面 × 合并请求的头提交”签一次（`kge.sign_page_review`，签字身份，迁移 0038），记页面 ID、40 位提交号、风险与签字人；
    `page_commit` 的口径统一为**合并请求的头提交**（审核人批准时看到的提交），合并进主分支的合并提交由合并记录给出，对账报告逐页对照列出两者；
-   同一账号对同一页面同一提交只能签一次；同一页面同一提交的后续签字风险级别必须与第一条一致。签字入口（界面）不在本 PR，目前经库函数（种子与测试）；
+   同一账号对同一页面同一提交只能签一次；同一页面同一提交的后续签字风险级别必须与第一条一致。签字入口见下文“冲刺 4 补全”；
 2. **对账**：`make page-reconcile-test` 用合成文件跑验收；实际执行：
    ```bash
    .venv/bin/python -m review_console reconcile-pages --export <合并记录.json> --staff-map <对应表.json> --db --out <报告.json>
@@ -120,19 +120,55 @@ LEARNING_ADAPTER_AYA_URL=http://127.0.0.1:8787 LEARNING_ADAPTER_AYA_TOKEN=... .v
 ```json
 {"format": "kge-pages-merge-export/1", "repository": "org/kge-pages", "branch": "main", "exported_at": "2026-10-03T08:00:00+08:00",
  "merge_requests": [
-   {"mr_id": "101", "state": "merged", "risk": "high", "approvers": ["托管平台用户名"], "pages": ["MATH.FUNC.QUAD.VERTEX_FORM"],
-    "head_commit": "<40 位小写十六进制>", "merge_commit": "<40 位>", "merged_at": "2026-10-02T10:00:00+08:00"},
-   {"mr_id": "104", "state": "open", "risk": "medium", "approvers": [], "pages": ["…"], "head_commit": "<40 位>"}]}
+   {"mr_id": "101", "state": "merged", "risk": "high", "author": "托管平台用户名", "approvers": ["托管平台用户名"],
+    "pages": ["MATH.FUNC.QUAD.VERTEX_FORM"], "head_commit": "<40 位小写十六进制>", "merge_commit": "<40 位>", "merged_at": "2026-10-02T10:00:00+08:00"},
+   {"mr_id": "104", "state": "open", "risk": "medium", "author": "托管平台用户名", "approvers": [], "pages": ["…"], "head_commit": "<40 位>"}]}
 ```
+- `author`（可选，冲刺 4 起）是合并请求的作者（提交方）的托管平台用户名，经下面的 staff 对应表映射到 staff 账号。**提交方不能自签**：
+  审核台页面签字（`POST /review/v0/pages/sign`）与抽检记录（`POST /review/v0/spot-checks/sign`）在签字人等于作者时返回 409 `SELF_SIGN`；
+  **判不出从严**：导出里没有 `author`、或作者不在对应表里，都判不出签字人是不是提交方，一律 409 `AUTHOR_UNKNOWN`、不让签
+  （所以要在线签字，导出必须带作者，且作者要在对应表里；编译器机器人账号当作者时如何登记，待人确认）。
+  对账里作者本人在托管平台批准、或作者映射到的 staff 在审核记录里批准 → `self_approval`、扣页；作者缺失时对账判不出，不因此扣页（旧导出照常对账）；
 - `risk` 取合并请求上的风险标注（编译器的合并请求说明、CI 体检给出）；`pages` 是这次合并改到的页面 ID（节点 ID 写法）；
 - `head_commit` 是审核人批准时看到的提交（审核记录按它签），`merge_commit` 是进主分支的提交；托管平台应设为“合并前必须基于最新主分支”，
   使合并后的页面内容与头提交相同（ADR 12 待人确认 #1 开通时一并核对）。
 
 staff 对应表（`kge-pages-staff-map/1`，审核台配置，由人维护，不含学生数据；两个用户名不能对应同一 staff）：
 `{"format": "kge-pages-staff-map/1", "users": {"托管平台用户名": "<staff 账号 UUID，小写>"}}`。
-审核记录文件（`kge-page-review-records/1`，离线对账用；每条**只允许**这 5 个字段，`signer` 只收小写规范 UUID；`--db` 直接读库时多出的列忽略）：
-`{"format": "kge-page-review-records/1", "records": [{"page_id", "page_commit", "risk_level", "decision", "signer"}]}`。
+审核记录文件（离线对账用；`signer` 只收小写规范 UUID；`--db` 直接读库时多出的列忽略）。两个格式号都接受：
+- `kge-page-review-records/1`：每条**只允许**这 5 个字段，不许出现 `basis_code`；
+- `kge-page-review-records/1.1`（冲刺 4 起）：5 个字段外加可选的 `basis_code`，只收 `mr_review`（审核台在线签字，即事前签字）与 `spot_check`（低风险事后抽检）；省略即事前签字。
+
+`{"format": "kge-page-review-records/1.1", "records": [{"page_id", "page_commit", "risk_level", "decision", "signer", "basis_code"?}]}`。
 合成样例：`tests/fixtures/pages-reconcile/`（对账通过的一组；测试在其上删记录、改提交号、减批准人）。
+
+### 冲刺 4 补全（specs/release-gate-sprint4 第 2、7、8、9、11 节；G 流第二部分 PR D）
+- **页面签字入口**（PR A 待人确认 1 的默认）：`POST /review/v0/pages/sign`，只能签合并记录导出里某个合并请求的头提交，风险取合并请求标注，依据 `mr_review`；
+  签字人等于合并请求作者 → 409 `SELF_SIGN`，作者缺失或不在对应表 → 409 `AUTHOR_UNKNOWN`（见上文 `author`）。
+- **低风险事后抽检**（`spot_check.py`）：`GET /review/v0/spot-checks?day=YYYY-MM-DD` 按固定种子（SHA-256 排序，不依赖随机数实现）抽当天（北京时间）低风险合并的页面；
+  哈希输入是种子、日期、页面与**合并提交**（合并后才确定；不用头提交，免得提交方反复改头提交挑一个抽不中的）。
+  `POST /review/v0/spot-checks/sign` 只对已合并的低风险页面记结果（`kge.sign_page_review`，风险 low、依据 `spot_check`），提交方不能抽检自己的合并（`SELF_SIGN`）。
+  对账把抽检记录与事前签字分开，抽检驳回 → `spot_check_rejected`、扣页。配置位：`REVIEW_CONSOLE_SPOT_CHECK_SEED`（**必须由人配置，仓库里没有缺省种子**；
+  不设则抽检接口回 503 `SPOT_CHECK_UNCONFIGURED`）、`REVIEW_CONSOLE_SPOT_CHECK_RATIO`（默认 0.1；为 0 时照常返回、一页不抽，响应带告警 `warnings: ["ratio_zero"]`）、
+  `REVIEW_CONSOLE_MERGE_WINDOW`（默认 02:00，只用于界面说明），**比例与窗口的默认值待教研负责人定**（ADR 12 待人确认 #3）。
+- **风险分类器补全**（`risk.py`，纯函数，判不出一律高）：`classify_page`（锁定段、前置表述、教材投影、全量重编高；叙述段中；地区权重与其他渲染段、只更新原子哈希低；模型草稿至少中）、
+  `classify_atom`（采分点高、题目族引用低、时政中、题目标签高）、`classify_policy`（一律高、两人）、`classify_content`（一律高）。中风险在阶段 0 按高审（spec 待人确认 #7）。
+- **内容版本**（`content.py` 差异；迁移 0042 的只读函数读登记与发布记录）：`GET /review/v0/content-versions?subject=`、`GET …/{id}/diff`（与同前五段上一已发布版本比：能力视图、题目登记、准入；
+  发布前提：所指地图版本已发布、（地区, 届别）有已发布考情方案——后者只警告）、`POST …/{id}/sign|publish|retire`、`POST /review/v0/admission/sign`、`POST /review/v0/admission/apply`。
+  执行准入后返回 `recompute_since`：掌握重算由学习服务身份执行 `python -m learning.jobs admission-recompute --since <recompute_since>`（读 `platform.admission_change_log`，逐题调 KGE-04 的 `recompute_item`）；
+  审核台的两个库身份都不能写个人层，所以不在审核台进程里重算。
+- **考情**：`GET /review/v0/policy?city=`（方案与待签的来源文件、招录行、学校）、`GET /review/v0/policy/schemes/{id}`（与同城同届上一版本、与上一届已发布方案的差异；`validate_scheme` 逐条）、
+  `POST …/schemes/{id}/sign|publish`、`POST /review/v0/policy/records/{id}/sign`。第二名批准时发布被表上的保护触发器拒绝，整笔回滚、签字不留痕：返回 409 `PUBLISH_FAILED_UNSIGNED` 并写明“签字没有保存”。
+- **版本记录**新增 `line = content_version`（审核、发布、撤下）与 `line = admission`（审核、执行）行，末尾追加列 `content_version_id, six_segment, content_map_version_id, item_id, from_admission, to_admission, admission_review_level`；
+  `admission_review_level` 是准入的学科审核等级（Q0–Q5，只在准入行有值），列名带前缀，免得与风险分级的 `review_level`（low/medium/high）混读。
+  `action` 列新增取值 `apply`（准入执行行；原有取值 review、publish、retire 不变）。
+  这两类行的 `map_version_id`、`version` 为空（只给地图行），所指地图版本在 `content_map_version_id`；`rubric_versions` 对内容版本行取所指地图版本的评分版本，对准入执行行取降级时受影响的清单；`risk_level` 固定 `high`。
+- **时政过期下架**：`python -m review_console expire-affairs [--today YYYY-MM-DD]` / `make current-affair-expire [TODAY=…]`，调迁移 0043 的 `kge.expire_current_affairs`：
+  `valid_until` 早于当天且已上线的改为 retired，每条追加系统动作审核记录（`basis_code = expired_auto`、无签字人）。**expired_auto 记录不是人工批准**：
+  `decision = approved` 只为满足审核记录的结论约束，不能当作任何人审核过该时政的证据。下架不可逆（0043 触发器）：已发布、已撤下版本上 retired 的时政不能改回
+  published 或 pending，要重新使用须新建一条走审核。
+  只连本机数据库：连接串里全部主机（多主机写法逐个、每个 `host` 查询参数、asyncpg 实际解析出的地址）都必须是 localhost、回环地址或 Unix socket，
+  不接受 `hostaddr`、`service`、`servicefile` 参数；连上之后再核对 `inet_server_addr()` 为空（Unix socket）或回环地址，否则中止。只用 kge 连接，不接生产调度。
 
 ### 审核台部署要求（staging；由人配置，仓库里没有部署配置）
 - 审核台后端只监听 127.0.0.1，只接受同机前端（apps/web 服务端）的请求；浏览器不直连。

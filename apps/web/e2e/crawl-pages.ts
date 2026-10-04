@@ -45,6 +45,12 @@ export const CRAWL: Record<string, CrawlPage | Excluded> = {
   'review/pages/page.tsx': { excluded: '审核台（staff 登录，迁移 0020，不在壳内）：与壳同一个 proxy（CSP）与 next.config（安全头），但需要 staff 会话，本爬取不覆盖；e2e/review.spec.ts 只核对 no-store（CSP 逐页爬取登记为 lessons H6 待人确认）' },
   'review/records/page.tsx': { excluded: '审核台（staff 登录，迁移 0020，不在壳内）：与壳同一个 proxy（CSP）与 next.config（安全头），但需要 staff 会话，本爬取不覆盖；e2e/review.spec.ts 只核对 no-store（CSP 逐页爬取登记为 lessons H6 待人确认）' },
   'review/map-versions/[id]/page.tsx': { excluded: '审核台（staff 登录，迁移 0020，不在壳内）：与壳同一个 proxy（CSP）与 next.config（安全头），但需要 staff 会话，本爬取不覆盖；e2e/review.spec.ts 只核对 no-store（CSP 逐页爬取登记为 lessons H6 待人确认）' },
+  // 冲刺 4 · G 流第二部分 PR D 新增的审核台页面：同上，staff 会话，本爬取不覆盖
+  'review/content/page.tsx': { excluded: '审核台（staff 登录，迁移 0020，不在壳内）：与壳同一个 proxy（CSP）与 next.config（安全头），但需要 staff 会话，本爬取不覆盖（PR D 新增；CSP 逐页爬取登记为 lessons H6 待人确认）' },
+  'review/content/[id]/page.tsx': { excluded: '审核台（staff 登录，迁移 0020，不在壳内）：与壳同一个 proxy（CSP）与 next.config（安全头），但需要 staff 会话，本爬取不覆盖（PR D 新增；CSP 逐页爬取登记为 lessons H6 待人确认）' },
+  'review/policy/page.tsx': { excluded: '审核台（staff 登录，迁移 0020，不在壳内）：与壳同一个 proxy（CSP）与 next.config（安全头），但需要 staff 会话，本爬取不覆盖（PR D 新增；CSP 逐页爬取登记为 lessons H6 待人确认）' },
+  'review/policy/[id]/page.tsx': { excluded: '审核台（staff 登录，迁移 0020，不在壳内）：与壳同一个 proxy（CSP）与 next.config（安全头），但需要 staff 会话，本爬取不覆盖（PR D 新增；CSP 逐页爬取登记为 lessons H6 待人确认）' },
+  'review/spot-checks/page.tsx': { excluded: '审核台（staff 登录，迁移 0020，不在壳内）：与壳同一个 proxy（CSP）与 next.config（安全头），但需要 staff 会话，本爬取不覆盖（PR D 新增；CSP 逐页爬取登记为 lessons H6 待人确认）' },
 };
 
 /** 不对应 src/app 文件、但也要核对的地址：404 页、开发构建里的符号样张页 */

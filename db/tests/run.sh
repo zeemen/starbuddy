@@ -155,7 +155,7 @@ echo "ok - 登录角色间接同时继承 bff 与 learning 时迁移拒绝执行
 as_pg "$PGBIN/createdb" -h "$WORK" -U postgres kge_role_check
 psql_kge() { as_pg "$PGBIN/psql" -h "$WORK" -U postgres -d kge_role_check -X -q -v ON_ERROR_STOP=1 "$@"; }
 for f in "${UPS[@]}"; do
-  case "$(basename "$f")" in 0011_*|0012_*|0017_*|0018_*|0019_*|0024_*|0026_*|0028_*|0038_*|0039_*|0040_*|0041_*) continue ;; esac  # 0012、0017–0019、0024、0026、0028、0038 依赖 0011 的 kge 表；0039、0040 依赖 0018（0039 还依赖 0012）；0041 依赖 0040
+  case "$(basename "$f")" in 0011_*|0012_*|0017_*|0018_*|0019_*|0024_*|0026_*|0028_*|0038_*|0039_*|0040_*|0041_*|0042_*|0043_*) continue ;; esac  # 0012、0017–0019、0024、0026、0028、0038、0043 依赖 0011 的 kge 表；0039、0040 依赖 0018（0039 还依赖 0012）；0041 依赖 0040；0042 依赖 0039
   psql_kge -1 < "$f" >/dev/null 2>&1 || { echo "db-test: 失败（角色断言测试库执行 $(basename "$f") 出错）"; exit 1; }
 done
 kge_must_refuse() {  # $1 = 布置 SQL，$2 = 撤销 SQL，$3 = 说明

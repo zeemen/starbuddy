@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 from typing import Iterable
 
 from ..store import learning_tx
+from . import recompute as R
 from .recompute import MasteryEngine, recompute_student
 
 
@@ -37,6 +38,25 @@ async def sweep_students(engine: MasteryEngine, subject: str, now: datetime) -> 
                 WHERE subject = $1::platform.subject AND status = 'open' AND reason <> 'verify_self_report'
                ORDER BY 1""", subject, since)
     return [r[0] for r in rows]
+
+
+async def admission_recompute(engine: MasteryEngine, since: datetime, *, subjects: Iterable[str] | None = None,
+                              now: datetime | None = None) -> dict[str, dict[str, int]]:
+    """4-G 准入变化之后的按题重算（specs/release-gate-sprint4 第二部分 PR D；spec 0039 差异 #7）：
+    读 platform.admission_change_log(since)（审核台执行 platform.change_admission 的记录，不含签字人），对每道变化的题
+    调 recompute_item（KGE-04 已有的按题重算，算法不在这里）。同一道题多次变化只算一次；没有可用配置的学科只记 skipped_no_config。
+    审核台的库身份不能写个人层，所以重算由学习服务身份在这里做；since 由审核台执行准入后返回（recompute_since）。"""
+    allowed = set(subjects) if subjects is not None else None
+    async with learning_tx(engine.pool) as conn:
+        rows = await conn.fetch("SELECT DISTINCT subject::text, item_id FROM platform.admission_change_log($1) ORDER BY 1, 2", since)
+    out: dict[str, Counter] = {}
+    for subject, item_id in rows:
+        if allowed is not None and subject not in allowed:
+            continue
+        c = out.setdefault(subject, Counter())
+        c.update(await R.recompute_item(engine, subject, item_id, now=now))
+        c["items"] += 1
+    return {s: dict(sorted(c.items())) for s, c in sorted(out.items())}
 
 
 async def mastery_sweep(engine: MasteryEngine, *, subjects: Iterable[str] | None = None,

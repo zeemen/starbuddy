@@ -1,9 +1,12 @@
-// 编译页面（specs/release-gate-sprint4 冲刺 3 段，第 6 节）：页面审核在页面仓库托管平台的合并请求网页里做，这里只读——
-// 列出待审合并请求、已合并页面与审核记录的对账状态，链到托管平台网页（地址模板由审核台后端配置给出）。
+// 编译页面（specs/release-gate-sprint4 冲刺 3 段，第 6 节）：页面改动在页面仓库托管平台的合并请求网页里看，这里
+// 列出待审合并请求、已合并页面与审核记录的对账状态，链到托管平台网页（地址模板由审核台后端配置给出）；
+// 冲刺 4 起审核人在这里对合并请求的头提交逐个签字（PR A 待人确认 1 的默认）。
 // 只显示公共层内容（页面 ID、合并请求编号、提交号、风险、人数），不显示托管平台用户名与 staff 账号。
 import { redirect } from 'next/navigation';
 import { currentSession } from '../../../lib/review-session.ts';
-import { LEVEL_LABEL, formatTime, getPages, pageProblemLabel, safeHttpsUrl, type PageEntry } from '../../../lib/review.ts';
+import { LEVEL_LABEL, RESULT_LABEL, formatTime, getPages, pageProblemLabel, safeHttpsUrl, type PageEntry } from '../../../lib/review.ts';
+import { ActionForm } from '../ActionForm.tsx';
+import { signPageAction } from '../actions.ts';
 
 export const dynamic = 'force-dynamic';
 
@@ -66,6 +69,30 @@ export default async function PagesPage() {
             </table>
           )}
 
+          {(() => {
+            // 页面签字入口（PR A 待人确认 1 的默认：审核人在审核台逐个签）：只能签导出里合并请求的头提交，风险取合并请求标注
+            const signable = [...(r.value.pending ?? []), ...(r.value.merged ?? []).filter((e) => e.status === 'failed' && e.risk !== 'low')];
+            return signable.length === 0 ? null : (
+              <section aria-labelledby="h-page-sign">
+                <h2 id="h-page-sign">在审核台签字</h2>
+                <p className="muted">先在托管平台网页上核对改了哪几句，再在这里签字；签的是合并请求的头提交（看到的就是签的）。同一账号对同一页面同一提交只能签一次。</p>
+                <ul className="review-list" data-testid="page-sign">
+                  {signable.map((e) => (
+                    <li key={`sign:${e.mr_id}:${e.page_id}`} data-page={e.page_id}>
+                      <p><code>{e.page_id}</code> · 头提交 <code>{e.head_commit.slice(0, 12)}</code> · {LEVEL_LABEL[e.risk] ?? e.risk}风险 · 需 {e.required} 人，已签 {e.approvals_review}</p>
+                      <ActionForm action={signPageAction} labels={RESULT_LABEL} testId={`page-sign-${e.page_id}`}>
+                        <input type="hidden" name="page_id" value={e.page_id} />
+                        <input type="hidden" name="page_commit" value={e.head_commit} />
+                        <button type="submit" name="decision" value="approved">批准这个提交</button>{' '}
+                        <button type="submit" name="decision" value="rejected">驳回</button>
+                      </ActionForm>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            );
+          })()}
+
           <h2>已合并页面的对账</h2>
           {(r.value.merged ?? []).length === 0 ? (
             <p>没有已合并的页面改动</p>
@@ -121,7 +148,7 @@ export default async function PagesPage() {
           ) : null}
         </>
       )}
-      <p><a href="/review/records?subject=aya">版本记录（含页面行）</a></p>
+      <p><a href="/review/spot-checks">低风险事后抽检</a> · <a href="/review/records?subject=aya">版本记录（含页面行）</a></p>
     </main>
   );
 }

@@ -9,6 +9,10 @@
   REVIEW_CONSOLE_PAGES_EXPORT        托管平台合并记录导出文件（kge-pages-merge-export/1，由人或同步任务定期写入；本服务不连托管平台）
   REVIEW_CONSOLE_PAGES_STAFF_MAP     托管平台用户名 → staff 账号对应表（kge-pages-staff-map/1，由人维护，不含学生数据）
   REVIEW_CONSOLE_PAGES_MR_URL        合并请求网页地址模板，https，含且仅含一个 {mr_id}
+
+低风险事后抽检（冲刺 4，可选；比例与窗口的默认值待教研负责人定，见 spot_check.py）：
+  REVIEW_CONSOLE_SPOT_CHECK_SEED（必须由人配置，仓库里没有缺省种子；不设则抽检接口回 503 SPOT_CHECK_UNCONFIGURED）
+  REVIEW_CONSOLE_SPOT_CHECK_RATIO / REVIEW_CONSOLE_MERGE_WINDOW
 """
 from __future__ import annotations
 
@@ -16,6 +20,7 @@ import os
 from dataclasses import dataclass
 
 from .pages import check_mr_url_template
+from .spot_check import SpotCheckSettings
 
 ALLOWED_ENVS = ("dev", "test")
 
@@ -42,6 +47,7 @@ class ReviewSettings:
     kge_database_url: str
     review_database_url: str
     pages: PagesSettings | None = None
+    spot_check: SpotCheckSettings | None = None  # 没设种子时为空：抽检接口报错，不用缺省种子
 
     @staticmethod
     def from_env(environ: dict[str, str] | None = None) -> "ReviewSettings":
@@ -54,4 +60,5 @@ class ReviewSettings:
             raise RuntimeError("缺少 REVIEW_CONSOLE_KGE_DATABASE_URL 或 REVIEW_CONSOLE_REVIEW_DATABASE_URL")
         if kge == review:
             raise RuntimeError("提交与签字必须用两个不同的数据库登录角色")
-        return ReviewSettings(env=env, kge_database_url=kge, review_database_url=review, pages=PagesSettings.from_env(e))
+        return ReviewSettings(env=env, kge_database_url=kge, review_database_url=review, pages=PagesSettings.from_env(e),
+                              spot_check=SpotCheckSettings.from_env(e))

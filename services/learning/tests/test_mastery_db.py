@@ -1009,3 +1009,114 @@ async def test_stale_estimate_counted_and_nonzero_exit(mpools, student):
     assert out["stale_estimate"] >= 1 and out["subjects"]["aya"]["stale_estimate"] >= 1
     assert jobs_cli.exit_code(out) == 1
     assert (await current(admin, student))["id"] == before["id"]       # 记录原样保留
+
+
+async def test_admission_recompute_job_reads_change_log(mpools, monkeypatch):
+    """4-G 第二部分 PR D：审核台执行准入变化后，学习服务按 platform.admission_change_log(since) 逐题调 recompute_item（只是接线，
+    重算算法不在这里）。同一道题多次变化只算一次；since 之前的不算；没有配置的学科只记 skipped_no_config。"""
+    app_pool, admin = mpools
+    staff = str(uuid.uuid4())
+    i1 = await item(admin, "aya", V1, N1, admission="pending_review")
+    i2 = await item(admin, "aya", V1, N1, admission="pending_review")
+    i0 = await item(admin, "aya", V1, N1, admission="pending_review")
+    since = datetime.now(timezone.utc)
+
+    async def applied(iid: str, at: datetime) -> None:
+        # 合成的审核与执行记录（复制模式直接写，约束照常；真实流程经 platform.sign_admission / change_admission，见 db/tests/79u）
+        async with admin.acquire() as c, c.transaction():
+            await c.execute("SET LOCAL session_replication_role = replica")
+            rid = await c.fetchval(
+                """INSERT INTO platform.release_record (line, action, curriculum_version_id, subject, item_id, decision, digest, from_admission,
+                     to_admission, source_type, license_status, signer, decided_at)
+                   VALUES ('admission', 'review', $1::uuid, 'aya', $2, 'approved', repeat('a', 64), 'pending_review', 'rejected', 'unknown',
+                           'unverified', $3::uuid, $4) RETURNING id""", CV_AYA, iid, staff, at)
+            await c.execute(
+                """INSERT INTO platform.release_record (line, action, curriculum_version_id, subject, item_id, decision, digest, from_admission,
+                     to_admission, source_type, license_status, applies_review_id, signer, decided_at)
+                   VALUES ('admission', 'apply', $1::uuid, 'aya', $2, 'approved', repeat('a', 64), 'pending_review', 'rejected', 'unknown',
+                           'unverified', $3, $4::uuid, $5)""", CV_AYA, iid, rid, staff, at)
+
+    async with admin.acquire() as c:
+        await c.execute("INSERT INTO platform.account (id, kind) VALUES ($1::uuid, 'staff')", staff)
+    await applied(i0, since - timedelta(hours=1))      # since 之前：不算
+    await applied(i1, since + timedelta(seconds=1))
+    await applied(i1, since + timedelta(seconds=2))    # 同一道题第二次变化：只重算一次
+    await applied(i2, since + timedelta(seconds=3))
+    calls: list[tuple[str, str]] = []
+
+    async def fake_recompute_item(engine, subject, item_id, *, now=None):
+        calls.append((subject, item_id))
+        return __import__("collections").Counter(written=0)
+
+    monkeypatch.setattr(R, "recompute_item", fake_recompute_item)
+    from learning.mastery.jobs import admission_recompute
+    out = await admission_recompute(engine(app_pool), since)
+    assert calls == sorted([("aya", i1), ("aya", i2)]) and out == {"aya": {"items": 2, "written": 0}}
+    environ = {"LEARNING_ENV": "test", "LEARNING_MASTERY_CONFIG_AYA": str(CONFIG_DIR / "synthetic-test.json")}
+    calls.clear()
+    out = await jobs_cli.run(["admission-recompute", "--since", since.isoformat()], environ, pool=app_pool)
+    assert out["job"] == "admission-recompute" and out["subjects"]["aya"]["items"] == 2 and jobs_cli.exit_code(out) == 0
+    calls.clear()
+    out = await jobs_cli.run(["admission-recompute", "--since", since.isoformat(), "--subject", "zhixing"], environ, pool=app_pool)
+    assert calls == [] and out["subjects"] == {}
+    for bad in ("2026-11-02T08:00:00", "yesterday"):                    # 不带时区、写法不对
+        with pytest.raises(jobs_cli.JobError):
+            await jobs_cli.run(["admission-recompute", "--since", bad], environ, pool=app_pool)
+
+
+async def test_admission_recompute_twice_same_since_writes_once(mpools, student):
+    """4-G 第二部分 PR D（审查意见 5）：不 mock recompute_item，库上真跑。一名学生走正常路径到“迁移”后，其中一道题被撤销准入
+    （合成的审核与执行记录）；同一个 since 跑两次 admission-recompute：第一次写一条新的掌握记录（亮星退回“稳定”），
+    第二次不产生任何新写入（掌握记录、复测任务的行数与内容都不变；重跑是幂等的，可以放心重试）。"""
+    app_pool, admin = mpools
+    eng = engine(app_pool)
+    staff = str(uuid.uuid4())
+    answers = await normal_path(admin, eng, student, upto=4)
+    assert (await current(admin, student))["state"] == "transfer"
+    async with admin.acquire() as c:
+        await c.execute("INSERT INTO platform.account (id, kind) VALUES ($1::uuid, 'staff')", staff)
+        iid = await c.fetchval("SELECT item_id::text FROM platform.attempt WHERE attempt_id = $1::uuid", answers[3][0])
+    # since 取在之前所有用例写的执行记录之后（同一个库），只读到本用例这一条
+    since = datetime.now(timezone.utc) + DAY
+    async with admin.acquire() as c, c.transaction():
+        await c.execute("SET LOCAL session_replication_role = replica")
+        await c.execute("UPDATE platform.item SET admission = 'rejected', admitted_at = NULL WHERE subject = 'aya' AND item_id = $1", iid)
+        rid = await c.fetchval(
+            """INSERT INTO platform.release_record (line, action, curriculum_version_id, subject, item_id, decision, digest, from_admission,
+                 to_admission, source_type, license_status, signer, decided_at)
+               VALUES ('admission', 'review', $1::uuid, 'aya', $2, 'approved', repeat('a', 64), 'admitted', 'rejected', 'unknown',
+                       'unverified', $3::uuid, $4) RETURNING id""", CV_AYA, iid, staff, since)
+        await c.execute(
+            """INSERT INTO platform.release_record (line, action, curriculum_version_id, subject, item_id, decision, digest, from_admission,
+                 to_admission, source_type, license_status, applies_review_id, signer, decided_at)
+               VALUES ('admission', 'apply', $1::uuid, 'aya', $2, 'approved', repeat('a', 64), 'admitted', 'rejected', 'unknown',
+                       'unverified', $3, $4::uuid, $5)""", CV_AYA, iid, rid, staff, since + timedelta(seconds=1))
+
+    async def written() -> tuple:
+        async with admin.acquire() as c:
+            est = await c.fetch("""SELECT id::text, state::text, is_current, superseded_by::text, confidence::float8, next_retest_at
+                                     FROM platform.mastery_estimate WHERE student_id = $1::uuid ORDER BY id""", student)
+            tk = await c.fetch("""SELECT id::text, status, due_at, closing_attempt_id::text FROM platform.retest_task
+                                   WHERE student_id = $1::uuid ORDER BY id""", student)
+        return [tuple(r) for r in est], [tuple(r) for r in tk]
+
+    from learning.mastery.jobs import admission_recompute
+    now = T0 + 4 * DAY
+    before = await written()
+    first = await admission_recompute(eng, since, now=now)
+    assert first["aya"]["items"] == 1 and first["aya"]["students"] == 1 and first["aya"]["written"] == 1
+    assert (await current(admin, student))["state"] == "stable"         # 亮星退回“稳定”：确实写了
+    after_first = await written()
+    assert len(after_first[0]) == len(before[0]) + 1
+    second = await admission_recompute(eng, since, now=now)
+    assert second["aya"]["items"] == 1 and second["aya"].get("written", 0) == 0
+    assert await written() == after_first                                # 第二次没有任何新写入
+    # 命令行入口同样幂等：它从文件读的是未签字的合成配置（与上面内存里“签字”的不同，第一次可能按新配置再写一条），
+    # 同一个 since、同一个注入时钟再跑一次就不再写
+    environ = {"LEARNING_ENV": "test", "LEARNING_MASTERY_CONFIG_AYA": str(CONFIG_DIR / "synthetic-test.json")}
+    argv = ["admission-recompute", "--since", since.isoformat(), "--now", now.isoformat()]
+    await jobs_cli.run(argv, environ, pool=app_pool)
+    settled = await written()
+    out = await jobs_cli.run(argv, environ, pool=app_pool)
+    assert out["subjects"]["aya"].get("written", 0) == 0 and jobs_cli.exit_code(out) == 0
+    assert await written() == settled

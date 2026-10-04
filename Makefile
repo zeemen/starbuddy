@@ -1,5 +1,5 @@
 # 未实现的目标明确打印“跳过”，不得伪装为通过。
-.PHONY: check-fast check contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test model-router-mutation diagnosis-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-visual kge-inventory kge-inventory-test kge-import kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test sie-dictionary-check kge-id-check knowledge-test knowledge-mutation kge-compile-eval-test eval-persona eval-grade persona-registry-check persona-guard-test persona-lock persona-record insight-test insight-mutation
+.PHONY: check-fast check contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test current-affair-expire model-router-mutation diagnosis-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-visual kge-inventory kge-inventory-test kge-import kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test sie-dictionary-check kge-id-check knowledge-test knowledge-mutation kge-compile-eval-test eval-persona eval-grade persona-registry-check persona-guard-test persona-lock persona-record insight-test insight-mutation
 
 # 可指向装了 packages/contracts/requirements-dev.txt 的解释器，例如 make check PYTHON=.venv/bin/python
 PYTHON ?= python3
@@ -101,6 +101,13 @@ page-reconcile-test:
 	  echo "page-reconcile-test: 跳过（没有安装依赖；见 services/learning/README.md）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
 	@cd services/learning && .venv/bin/python -m pytest -q -p no:cacheprovider tests/test_review_pages.py && echo "page-reconcile-test: 通过"
+
+# 时政过期下架（specs/release-gate-sprint4 第 9 节，迁移 0043）：每日任务的命令行入口，手动或本机调度执行；不接生产调度（规则 9）。
+# 需要 REVIEW_CONSOLE_ENV=dev|test 与 REVIEW_CONSOLE_KGE_DATABASE_URL（只继承 starbuddy_kge 的登录角色，主机只能是本机或 Unix socket，命令里核对）。
+# 可选 TODAY=YYYY-MM-DD（缺省北京时间今天）。测试随 learning-test（tests/test_review_console.py）
+current-affair-expire:
+	@if [ ! -x services/learning/.venv/bin/python ]; then echo "current-affair-expire: 没有安装学习服务依赖（见 services/learning/README.md）"; exit 2; fi
+	@cd services/learning && .venv/bin/python -m review_console expire-affairs $(if $(TODAY),--today $(TODAY),)
 
 # 模型路由（冲刺 1-F，specs/model-router-sprint1）：单测与性质测试在 learning-test 里；这里改坏出境过滤、启动校验、熔断等关键检查，断言测试能发现（约 15 秒）
 model-router-mutation:

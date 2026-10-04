@@ -8,6 +8,8 @@ import {
   assignmentLabel, isBasis, PAGE_PROBLEM_LABEL, pageProblemLabel, safeHttpsUrl, isCursor, isDigest, isNodeId, isQueueReason, isQueueStatus, isResolutionCode, isSubject, isTaskId, isVersionId, lines,
   problemFrom, QUEUE_REASON_LABEL, QUEUE_REASONS, QUEUE_RESULT_LABEL, QUEUE_STATUS_LABEL, QUEUE_STATUSES, queueQuery, reasonLabel, RESULT_LABEL,
   reviewBaseUrl, SOURCE_KIND_LABEL,
+  ADMISSION_LABEL, ADMISSIONS, isCity, isCommit, isDay, isItemId, isReviewLevel, isSourceRef, LICENSE_STATUSES, POLICY_OBJECT_LABEL, REASON_LABEL,
+  SOURCE_TYPES,
 } from '../src/lib/review.ts';
 import { isSessionToken, staffCookieName, staffCookieOptions } from '../src/lib/staff-cookie.ts';
 
@@ -135,6 +137,47 @@ test('复核队列：结案码格式、任务 id；成功与错误提示齐全�
   }
   const form = readFileSync(new URL('../src/app/review/ActionForm.tsx', import.meta.url), 'utf8');
   for (const code of ['taken', 'released', 'resolved']) assert.ok(form.includes(`'${code}'`), code);
+});
+
+// ---------- 冲刺 4 · G 流第二部分 PR D：内容版本、考情、页面签字与事后抽检 ----------
+test('PR D：风险理由码都有中文说明（与后端 risk.py 一致），新错误码有提示、发布失败回滚的说明透传', () => {
+  const root = new URL('../../../', import.meta.url).pathname;
+  const risk = readFileSync(join(root, 'services/learning/review_console/risk.py'), 'utf8');
+  const reasons = new Set([...risk.matchAll(/Risk\("(?:low|medium|high)", "([a-z_]+)"/g)].map((m) => m[1]!));
+  for (const m of risk.matchAll(/: "(policy_[a-z_]+|content_[a-z_]+)"/g)) reasons.add(m[1]!);
+  for (const r of reasons) {
+    if (r.startsWith('node_') || r.startsWith('change_')) continue;  // 地图版本的节点与变更单理由由类型名拼出，界面显示原码
+    assert.ok(Object.hasOwn(REASON_LABEL, r), r);
+  }
+  for (const code of ['PUBLISH_FAILED_UNSIGNED', 'PAGES_EXPORT_UNAVAILABLE', 'applied', 'recorded', 'SELF_SIGN', 'AUTHOR_UNKNOWN',
+    'SPOT_CHECK_UNCONFIGURED']) assert.ok(Object.hasOwn(RESULT_LABEL, code), code);
+  // 后端 service.py 抛出的每个错误码都有中文提示（提交方不能自签、作者判不出、抽检没配种子）
+  const svc = readFileSync(join(root, 'services/learning/review_console/service.py'), 'utf8');
+  for (const m of svc.matchAll(/ReviewError\(\d{3}, "([A-Z_]+)"/g)) assert.ok(Object.hasOwn(RESULT_LABEL, m[1]!), m[1]!);
+  // 对账问题码都有中文说明（含 self_approval）
+  const pagesPy = readFileSync(join(root, 'services/learning/review_console/pages.py'), 'utf8');
+  for (const m of pagesPy.matchAll(/problems\.append\("([a-z_]+)"\)/g)) assert.ok(Object.hasOwn(PAGE_PROBLEM_LABEL, m[1]!), m[1]!);
+  assert.equal(problemFrom(409, { code: 'PUBLISH_FAILED_UNSIGNED', detail: '签字没有保存（来源文件未发布）' }).detail, '签字没有保存（来源文件未发布）');
+  const form = readFileSync(new URL('../src/app/review/ActionForm.tsx', import.meta.url), 'utf8');
+  assert.ok(form.includes("'applied'") && form.includes("'recorded'"));
+});
+
+test('PR D：准入、考情、抽检表单字段校验与后端一致', () => {
+  assert.ok(isSourceRef('SYN-SRC-RC-1') && isSourceRef('a:b.c_d-1') && !isSourceRef('-x') && !isSourceRef('a b') && !isSourceRef('x'.repeat(65)));
+  assert.ok(isItemId('SYN-RC-I1') && !isItemId('SYN:RC') && !isItemId(''));
+  assert.ok(isReviewLevel('Q2') && !isReviewLevel('Q6') && !isReviewLevel('q2'));
+  assert.ok(isCity('synthcity') && isCity('synth-rc') && !isCity('Bad City') && !isCity('x'));
+  assert.ok(isCommit('a'.repeat(40)) && !isCommit('A'.repeat(40)) && !isCommit('a'.repeat(39)));
+  assert.ok(isDay('2026-10-02') && !isDay('2026-13-40') && !isDay('yesterday'));
+  for (const a of ADMISSIONS) assert.ok(Object.hasOwn(ADMISSION_LABEL, a), a);
+  for (const k of ['source_document', 'exam_scheme', 'admission_line', 'school', 'subject', 'batch', 'total']) {
+    assert.ok(Object.hasOwn(POLICY_OBJECT_LABEL, k), k);
+  }
+  // 与迁移 0039 的来源类型、授权状态枚举一致
+  const root = new URL('../../../', import.meta.url).pathname;
+  const mig = readFileSync(join(root, 'db/migrations/0039_platform__content_release.up.sql'), 'utf8');
+  for (const t of SOURCE_TYPES) assert.ok(mig.includes(`'${t}'`), t);
+  for (const t of LICENSE_STATUSES) assert.ok(mig.includes(`'${t}'`), t);
 });
 
 test('复核队列页面不取、不显示学生 id 与作答原文（只用 student_ref）', () => {

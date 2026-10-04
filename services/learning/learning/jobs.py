@@ -1,6 +1,10 @@
 """学习服务的一次性任务入口（不对外开放，不监听端口）。
 
   python -m learning.jobs mastery-sweep [--subject aya ...] [--now 2026-11-02T08:00:00+00:00]
+  python -m learning.jobs admission-recompute --since 2026-11-02T08:00:00+00:00 [--subject aya ...]
+
+admission-recompute（4-G 第二部分 PR D）：审核台执行题目准入变化（platform.change_admission）后，读 platform.admission_change_log(since)
+逐题调 recompute_item（KGE-04 已有的按题重算，不改算法）；since 取审核台返回的 recompute_since。
 
 掌握对账（KGE-04 第二步，specs/kge-04-mastery-step2/spec.md 第 2 节；learning/mastery/jobs.py）。以只继承 starbuddy_learning 的登录角色运行
 （第一步待人确认 #7）；接入调度器等 ADR 03 / 10。环境变量：
@@ -26,7 +30,7 @@ import asyncpg
 
 from .config import ALLOWED_ENVS, mastery_config_paths
 from .mastery import load_config
-from .mastery.jobs import mastery_sweep
+from .mastery.jobs import admission_recompute, mastery_sweep
 from .mastery.recompute import MasteryEngine
 
 
@@ -40,6 +44,10 @@ def _parse(argv: list[str]) -> argparse.Namespace:
     s = sub.add_parser("mastery-sweep", help="掌握对账：重算、衰减、复测任务缺补多撤、输出计数")
     s.add_argument("--subject", action="append", choices=("aya", "zhixing", "wenli", "echo"))
     s.add_argument("--now", help="注入时钟（带时区的 ISO 8601；只允许 LEARNING_ENV=test）")
+    a = sub.add_parser("admission-recompute", help="准入变化后的按题重算：读 platform.admission_change_log，逐题调 recompute_item")
+    a.add_argument("--since", required=True, help="起点（带时区的 ISO 8601；审核台执行准入后返回的 recompute_since）")
+    a.add_argument("--subject", action="append", choices=("aya", "zhixing", "wenli", "echo"))
+    a.add_argument("--now", help="注入时钟（带时区的 ISO 8601；只允许 LEARNING_ENV=test）")
     return p.parse_args(argv)
 
 
@@ -56,6 +64,14 @@ async def run(argv: list[str], environ: Mapping[str, str] | None = None, *, pool
         now = datetime.fromisoformat(args.now)
         if now.tzinfo is None:
             raise JobError("--now 必须带时区")
+    since = None
+    if args.job == "admission-recompute":
+        try:
+            since = datetime.fromisoformat(args.since)
+        except ValueError:
+            raise JobError("--since 必须是带时区的 ISO 8601 时间") from None
+        if since.tzinfo is None:
+            raise JobError("--since 必须带时区")
     configs = {}
     for subject, path in sorted(mastery_config_paths(e).items()):
         cfg = load_config(path, env=mode)
@@ -72,6 +88,9 @@ async def run(argv: list[str], environ: Mapping[str, str] | None = None, *, pool
     assert pool is not None
     try:
         engine = MasteryEngine(pool, configs)
+        if args.job == "admission-recompute":
+            counts = await admission_recompute(engine, since, subjects=args.subject, now=now)
+            return {"job": "admission-recompute", "subjects": counts, "failed_units": len(engine.failed_units)}
         counts = await mastery_sweep(engine, subjects=args.subject, now=now)
         stale = sum(c.get("stale_estimate", 0) for c in counts.values())
         return {"job": "mastery-sweep", "subjects": counts, "failed_units": len(engine.failed_units), "stale_estimate": stale}
@@ -81,7 +100,7 @@ async def run(argv: list[str], environ: Mapping[str, str] | None = None, *, pool
 
 
 def exit_code(out: dict) -> int:
-    return 1 if out["failed_units"] or out["stale_estimate"] else 0
+    return 1 if out["failed_units"] or out.get("stale_estimate") else 0
 
 
 def main(argv: list[str] | None = None) -> int:

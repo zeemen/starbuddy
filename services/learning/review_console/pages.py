@@ -2,7 +2,7 @@
 
 纯函数，不连托管平台、不连库：输入是三份数据——
 - 托管平台导出的合并记录（`kge-pages-merge-export/1`，格式见 services/learning/README.md“编译页面对账”）；
-- 页面审核记录（库函数 kge.page_review_record() 的行，或同格式的 JSON 文件 `kge-page-review-records/1`）；
+- 页面审核记录（库函数 kge.page_review_record() 的行，或同格式的 JSON 文件 `kge-page-review-records/1` 或 `/1.1`）；
 - 托管平台用户名 → staff 账号的对应表（`kge-pages-staff-map/1`，审核台配置，由人维护，不含学生数据）。
 
 键：页面 ID + 合并请求的头提交（page_commit 的口径：审核人批准时看到的那个提交；合并进主分支的合并提交在报告里对照给出）。
@@ -12,9 +12,11 @@
 - 批准人数不符 → 失败：合并请求的批准人（映射到 staff）与审核记录里批准的 staff 不是同一组（approver_mismatch）；
   批准人在对应表里找不到（approver_unmapped）；所需人数不够（insufficient_approvals：中、高风险两人，与 KGE-03 合并窗口
   services/knowledge/knowledge/compiler/window.py 的 REVIEWERS 一致，有测试核对；风险取合并记录与审核记录中较高的一方）；
-  审核记录里有驳回（rejected_in_review）；
+  审核记录里有驳回（rejected_in_review）；合并请求作者（可选字段 author，映射到 staff）自己批准或签字（self_approval）；
 - 低风险页面不需要事前签字（spec 第 2 节）：没有审核记录不算失败，托管平台上有批准人而审核台没有记录也不算；
   审核台有记录时才比对批准人；
+- 低风险事后抽检（冲刺 4，spot_check.py）：依据为 spot_check 的低风险记录不是事前签字，不参与批准人比对、人数与孤儿判定；
+  最近一次合并的头提交上有抽检驳回 → 失败（spot_check_rejected），扣页；
 - 孤儿审核记录（页面提交不是导出里任何合并请求的头提交，no_merge）：只有该页面仍在本次导出范围内（导出里有改到它的合并请求）、
   且它最新的合并请求（有待审的取待审的，否则取最近一次合并）的头提交上还没有批准记录时才扣页面（blocking）；
   对最新头提交重新签字即解除；导出范围外的旧孤儿只列出，不扣页面。
@@ -33,7 +35,9 @@ from typing import Any
 
 EXPORT_FORMAT = "kge-pages-merge-export/1"
 STAFF_MAP_FORMAT = "kge-pages-staff-map/1"
-RECORDS_FORMAT = "kge-page-review-records/1"
+RECORDS_FORMAT = "kge-page-review-records/1.1"  # 冲刺 4 起：每条可带 basis_code
+RECORDS_FORMAT_V1 = "kge-page-review-records/1"  # 仍然接受，但不许出现 basis_code
+RECORDS_FORMATS = (RECORDS_FORMAT_V1, RECORDS_FORMAT)
 REPORT_FORMAT = "kge-pages-reconcile/1"
 
 COMMIT = re.compile(r"^[0-9a-f]{40}$")
@@ -52,6 +56,11 @@ MAX_PAGES_PER_MR = 500
 MAX_RECORDS = 50000
 MAX_FILE_BYTES = 10 * 1024 * 1024
 RECORD_FIELDS = {"page_id", "page_commit", "risk_level", "decision", "signer"}
+# 页面审核记录的依据：审核台在线签字记 mr_review，低风险事后抽检（spot_check.py）记 spot_check。
+# 离线记录文件 /1.1 可选带 basis_code（只收这两个值）；/1 不许带
+MR_REVIEW_BASIS = "mr_review"
+SPOT_CHECK_BASIS = "spot_check"
+RECORD_BASES = (MR_REVIEW_BASIS, SPOT_CHECK_BASIS)
 
 
 class ReconcileInputError(ValueError):
@@ -91,6 +100,7 @@ class MergeRequest:
     head_commit: str
     merge_commit: str | None
     merged_at: dt.datetime | None
+    author: str | None = None  # 提交方（合并请求作者）的托管平台用户名；可选字段，缺失时审核台拒绝在线签字（判不出从严）
 
 
 @dataclass(frozen=True)
@@ -108,6 +118,7 @@ class ReviewRecord:
     risk_level: str
     decision: str
     signer: str  # staff 账号 UUID（小写字符串）
+    spot_check: bool = False  # 低风险事后抽检的记录（依据 spot_check）：不是事前签字，不计入批准人比对
 
 
 def parse_export(raw: Any) -> MergeExport:
@@ -123,7 +134,8 @@ def parse_export(raw: Any) -> MergeExport:
     mrs, seen_ids, seen_keys = [], set(), set()
     for i, m in enumerate(items):
         where = f"merge_requests[{i}]"
-        m = _keys(m, where, {"mr_id", "state", "risk", "approvers", "pages", "head_commit"}, {"merge_commit", "merged_at"})
+        m = _keys(m, where, {"mr_id", "state", "risk", "approvers", "pages", "head_commit"}, {"merge_commit", "merged_at", "author"})
+        author = _match(USERNAME, m["author"], f"{where}.author") if "author" in m else None
         mr_id = _match(MR_ID, m["mr_id"], f"{where}.mr_id")
         if mr_id in seen_ids:
             raise ReconcileInputError(f"{where}.mr_id 重复")
@@ -156,7 +168,7 @@ def parse_export(raw: Any) -> MergeExport:
             if (p, head) in seen_keys:
                 raise ReconcileInputError(f"{where}：同一页面同一提交出现在两个合并请求里")
             seen_keys.add((p, head))
-        mrs.append(MergeRequest(mr_id, state, m["risk"], tuple(approvers), tuple(pages), head, merge_commit, merged_at))
+        mrs.append(MergeRequest(mr_id, state, m["risk"], tuple(approvers), tuple(pages), head, merge_commit, merged_at, author))
     return MergeExport(repo, branch, d["exported_at"], tuple(mrs))
 
 
@@ -178,15 +190,19 @@ def parse_staff_map(raw: Any) -> dict[str, str]:
 
 
 def parse_records(raw: Any) -> list[ReviewRecord]:
-    """离线审核记录文件：严格——每条只允许 5 个字段，signer 只收小写规范 UUID。"""
+    """离线审核记录文件：严格——/1 每条只允许 5 个字段；/1.1 另可带 basis_code（mr_review 或 spot_check，省略即事前签字）；
+    signer 只收小写规范 UUID。"""
     d = _keys(raw, "审核记录", {"format", "records"})
-    if d["format"] != RECORDS_FORMAT:
-        raise ReconcileInputError(f"审核记录的 format 必须是 {RECORDS_FORMAT}")
+    if d["format"] not in RECORDS_FORMATS:
+        raise ReconcileInputError(f"审核记录的 format 必须是 {' 或 '.join(RECORDS_FORMATS)}")
+    optional = {"basis_code"} if d["format"] == RECORDS_FORMAT else set()
     if not isinstance(d["records"], list) or len(d["records"]) > MAX_RECORDS:
         raise ReconcileInputError("records 必须是数组")
     for i, r in enumerate(d["records"]):
-        _keys(r, f"records[{i}]", RECORD_FIELDS)
+        _keys(r, f"records[{i}]", RECORD_FIELDS, optional)
         _match(UUID_CANON, r["signer"], f"records[{i}].signer")
+        if "basis_code" in r and r["basis_code"] not in RECORD_BASES:
+            raise ReconcileInputError(f"records[{i}].basis_code 只能是 {'、'.join(RECORD_BASES)}（省略即事前签字）")
     return records_from_rows(d["records"])
 
 
@@ -205,7 +221,9 @@ def records_from_rows(rows: Iterable[Mapping[str, Any]]) -> list[ReviewRecord]:
             signer = str(uuid.UUID(str(r["signer"])))
         except ValueError:
             raise ReconcileInputError(f"{where}.signer 不是账号 UUID") from None
-        out.append(ReviewRecord(page, commit, r["risk_level"], r["decision"], signer))
+        # 只有低风险的才按抽检对待（审核台只对低风险合并发起抽检；别的风险级别即使写了这个依据，也按事前签字比对，偏严）
+        spot = r.get("basis_code") == SPOT_CHECK_BASIS and r["risk_level"] == "low"
+        out.append(ReviewRecord(page, commit, r["risk_level"], r["decision"], signer, spot))
     return out
 
 
@@ -220,8 +238,10 @@ def _merge_order(mr: MergeRequest) -> tuple:
 def reconcile(export: MergeExport, records: Iterable[ReviewRecord], staff_map: Mapping[str, str]) -> dict[str, Any]:
     """返回对账报告（确定性：键与列表都排序；exported_at 原样带上，下游据此判断报告是否过期）。"""
     by_key: dict[tuple[str, str], list[ReviewRecord]] = {}
+    spot_by_key: dict[tuple[str, str], list[ReviewRecord]] = {}
     for r in records:
-        by_key.setdefault((r.page_id, r.page_commit), []).append(r)
+        # 抽检记录（低风险事后抽检）不是事前签字：单独放，不参与批准人比对与人数（冲刺 4，spot_check.py）
+        (spot_by_key if r.spot_check else by_key).setdefault((r.page_id, r.page_commit), []).append(r)
     merged_by_page: dict[str, list[MergeRequest]] = {}
     open_by_page: dict[str, list[MergeRequest]] = {}
     known: set[tuple[str, str]] = set()
@@ -260,6 +280,14 @@ def reconcile(export: MergeExport, records: Iterable[ReviewRecord], staff_map: M
             problems.append("approver_mismatch")
         if min(len(platform_staff), len(approved)) < required:
             problems.append("insufficient_approvals")
+        # 提交方不能自签（spec 设计要点 3）：作者（映射到 staff）出现在托管平台批准人或审核记录的批准人里 → 失败。
+        # 作者缺失或不在对应表里时对账判不出，不在这里扣页；审核台在线签字处另行拒绝（service.check_not_author）
+        author_staff = staff_map.get(latest.author) if latest.author else None
+        if latest.author is not None and (latest.author in latest.approvers or (author_staff is not None and author_staff in approved)):
+            problems.append("self_approval")
+        # 事后抽检驳回：合并窗口跳过该页，直到人处理（改好后的新合并按新的头提交重新判定）
+        if any(s.decision == "rejected" for s in spot_by_key.get((page, latest.head_commit), [])):
+            problems.append("spot_check_rejected")
         merged.append({**e, "status": "failed" if problems else "ok", "problems": sorted(problems)})
     pending = [entry(mr, page) for page, mrs in open_by_page.items() for mr in mrs]
 

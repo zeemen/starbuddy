@@ -112,9 +112,11 @@ export interface DiffView {
   signoffs: Signoff[];
 }
 
-export interface RecordRow extends Omit<Signoff, 'map_version_id' | 'version'> {
-  /** map：地图版本的签字、发布、撤下；page：编译页面的签字（冲刺 3）；policy：考情政策线的签字与发布（冲刺 4，按城市与届别，不分学科） */
-  line: 'map' | 'page' | 'policy';
+export interface RecordRow extends Omit<Signoff, 'map_version_id' | 'version' | 'action'> {
+  /** map：地图版本的签字、发布、撤下；page：编译页面的签字（冲刺 3）；policy：考情政策线的签字与发布（冲刺 4，按城市与届别，不分学科）；
+   *  content_version：内容版本的签字、发布、撤下；admission：题目准入的签字与执行（冲刺 4） */
+  line: 'map' | 'page' | 'policy' | 'content_version' | 'admission';
+  action: 'review' | 'publish' | 'retire' | 'apply';
   map_version_id: string | null;
   version: string | null;
   rubric_versions: string;
@@ -129,7 +131,195 @@ export interface RecordRow extends Omit<Signoff, 'map_version_id' | 'version'> {
   cohort: number | null;
   /** 考情方案行的方案版本号（考情行的 version 一律为空，version 只给地图版本号） */
   policy_version: string | null;
+  /** 内容版本与准入行（冲刺 4）：内容版本 ID、六段标识、所指地图版本、题目与准入变化、准入的学科审核等级（Q0–Q5；
+   *  列名带 admission_ 前缀，免得与风险分级的 review_level 混读） */
+  content_version_id: string | null;
+  six_segment: string | null;
+  content_map_version_id: string | null;
+  item_id: string | null;
+  from_admission: string | null;
+  to_admission: string | null;
+  admission_review_level: string | null;
 }
+
+// ---------- 内容版本与题目准入（冲刺 4，spec 第 7 节）：差异、签字、发布、撤下、准入签字与执行 ----------
+export interface ContentVersionRow {
+  id: string;
+  region: string;
+  exam_year: number;
+  grade: number;
+  textbook_version: string;
+  subject: string;
+  content_version: string;
+  status: 'draft' | 'published' | 'retired';
+  map_version_id: string | null;
+  published_at: string | null;
+  retired_at: string | null;
+  skill_nodes: number;
+  items: number;
+  six_segment: string;
+}
+
+export interface ContentItem {
+  item_id: string;
+  skill_local_id: string | null;
+  admission: string;
+  source_ref: string | null;
+  source_type: string;
+  license_status: string;
+  /** 签字时回传的题目登记摘要（platform.item_admission_digest） */
+  admission_digest: string;
+}
+
+export interface ReleaseRecord {
+  id: string;
+  line: 'content_version' | 'admission';
+  action: 'review' | 'publish' | 'retire' | 'apply';
+  item_id: string | null;
+  decision: 'approved' | 'rejected';
+  digest: string | null;
+  basis_code: string | null;
+  from_admission: string | null;
+  to_admission: string | null;
+  review_level: string | null;
+  decided_at: string;
+  signer: string;
+}
+
+export interface Check {
+  check_name: string;
+  severity: 'error' | 'warning';
+  detail: string;
+}
+
+export interface ContentView {
+  version: ContentVersionRow;
+  base_version: { id: string; content_version: string; status: string } | null;
+  digest: string;
+  map_version: { id: string; version: string; status: string } | null;
+  summary: {
+    level: string;
+    review_level: string;
+    required_signers: number;
+    counts: Record<string, number>;
+    admission_changes: number;
+    latest_decision: 'approved' | 'rejected' | null;
+    latest_matches: boolean;
+    ready: boolean;
+  };
+  changes: Change[];
+  checks: Check[];
+  items: ContentItem[];
+  records: ReleaseRecord[];
+  /** 最近一条是批准、还没执行的准入审核 */
+  pending_admissions: ReleaseRecord[];
+}
+
+export const listContentVersions = (staff: string, subject: SubjectCode) =>
+  call<{ items: ContentVersionRow[] }>(staff, 'GET', `/review/v0/content-versions?subject=${subject}`);
+export const getContentView = (staff: string, id: string) => call<ContentView>(staff, 'GET', `/review/v0/content-versions/${id}/diff`);
+export const signContentVersion = (staff: string, id: string, body: { decision: string; basis_code?: string; expected_digest: string }) =>
+  call<{ review_id: string }>(staff, 'POST', `/review/v0/content-versions/${id}/sign`, body);
+export const publishContentVersion = (staff: string, id: string, body: { expected_digest: string }) =>
+  call<{ published_at: string }>(staff, 'POST', `/review/v0/content-versions/${id}/publish`, body);
+export const retireContentVersion = (staff: string, id: string, body: { basis_code: string }) =>
+  call<{ status: string }>(staff, 'POST', `/review/v0/content-versions/${id}/retire`, body);
+export interface AdmissionSign {
+  subject: SubjectCode;
+  item_id: string;
+  to_admission: string;
+  decision: string;
+  review_level?: string;
+  source_ref?: string;
+  source_type?: string;
+  license_status?: string;
+  expected_digest: string;
+  basis_code?: string;
+}
+export const signAdmission = (staff: string, body: AdmissionSign) => call<{ review_id: string }>(staff, 'POST', '/review/v0/admission/sign', body);
+export const applyAdmission = (staff: string, review_ids: string[]) =>
+  call<{ applied: number; recompute_since: string; recompute: string }>(staff, 'POST', '/review/v0/admission/apply', { review_ids });
+
+export const ADMISSIONS = ['source_unverified', 'pending_review', 'admitted', 'rejected'] as const;
+export const ADMISSION_LABEL: Record<string, string> = {
+  source_unverified: '来源待核', pending_review: '待学科审核', admitted: '已准入', rejected: '已拒绝',
+};
+export const SOURCE_TYPES = ['unknown', 'self_authored', 'adapted', 'textbook', 'exam_paper', 'reference_book'] as const;
+export const LICENSE_STATUSES = ['unverified', 'cleared', 'denied'] as const;
+/** 与迁移 0039 platform.item.source_ref、platform.skill_local_id 一致 */
+export const isSourceRef = (s: string): boolean => /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/.test(s);
+export const isItemId = (s: string): boolean => /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(s);
+export const isReviewLevel = (s: string): boolean => /^Q[0-5]$/.test(s);
+
+// ---------- 考情政策线（冲刺 4，spec 第 8 节）：方案差异、validate_scheme、两人签字、发布；来源文件、招录行、学校第二名批准时发布 ----------
+export interface SchemeRow {
+  id: string;
+  city: string;
+  cohort: number;
+  version: string;
+  status: 'draft' | 'published' | 'retired';
+  published_at: string | null;
+}
+
+export interface PolicyDraft {
+  object_type: 'source_document' | 'admission_line' | 'school';
+  id: string;
+  city: string;
+  cohort: number | null;
+  label: string;
+  digest: string;
+  approvals: number;
+}
+
+export interface PolicyView {
+  scheme: SchemeRow;
+  digest: string;
+  total: string | null;
+  previous_version: SchemeRow | null;
+  previous_cohort: SchemeRow | null;
+  diff_previous_version: Change[];
+  diff_previous_cohort: Change[];
+  validation: Issue[];
+  summary: { level: string; required_signers: number; approvals: number; counts: Record<string, number> };
+  records: { action: string; decision: string; signer: string; signed_at: string; digest: string }[];
+}
+
+export const isCity = (s: string): boolean => /^[a-z][a-z0-9-]{1,31}$/.test(s);
+export const listPolicy = (staff: string, city?: string) =>
+  call<{ schemes: SchemeRow[]; drafts: PolicyDraft[] }>(staff, 'GET', `/review/v0/policy${city ? `?city=${city}` : ''}`);
+export const getPolicyView = (staff: string, id: string) => call<PolicyView>(staff, 'GET', `/review/v0/policy/schemes/${id}`);
+export const signScheme = (staff: string, id: string, body: { decision: string; expected_digest: string }) =>
+  call<{ approvals: number }>(staff, 'POST', `/review/v0/policy/schemes/${id}/sign`, body);
+export const publishScheme = (staff: string, id: string, body: { expected_digest: string }) =>
+  call<{ published_at: string }>(staff, 'POST', `/review/v0/policy/schemes/${id}/publish`, body);
+export const signPolicyRecord = (staff: string, id: string, body: { object_type: string; decision: string; expected_digest: string }) =>
+  call<{ status: string }>(staff, 'POST', `/review/v0/policy/records/${id}/sign`, body);
+export const POLICY_OBJECT_LABEL: Record<string, string> = {
+  source_document: '来源文件', exam_scheme: '方案', admission_line: '招录行', school: '学校',
+  scheme: '方案', total: '计分总分', subject: '科目', batch: '批次', transition: '过渡规则',
+};
+
+// ---------- 编译页面签字与低风险事后抽检（冲刺 4，spec 第 2、6 节） ----------
+export const isCommit = (s: string): boolean => /^[0-9a-f]{40}$/.test(s);
+export const signPage = (staff: string, body: { page_id: string; page_commit: string; decision: string }) =>
+  call<{ review_id: string; risk_level: string }>(staff, 'POST', '/review/v0/pages/sign', body);
+
+export interface SpotCheckView {
+  configured: boolean;
+  ratio: number;
+  window: string;
+  day: string;
+  basis_code: string;
+  /** 告警：ratio_zero（抽检比例配置为 0，一页不抽） */
+  warnings: string[];
+  candidates?: number;
+  sampled?: { page_id: string; mr_id: string; head_commit: string; url: string; checks: { decision: string; signer: string; decided_at: string }[] }[];
+}
+export const isDay = (s: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(`${s}T00:00:00Z`));
+export const getSpotChecks = (staff: string, day?: string) =>
+  call<SpotCheckView>(staff, 'GET', `/review/v0/spot-checks${day ? `?day=${day}` : ''}`);
+export const signSpotCheck = (staff: string, body: { page_id: string; page_commit: string; decision: string }) =>
+  call<{ review_id: string }>(staff, 'POST', '/review/v0/spot-checks/sign', body);
 
 // ---------- 编译页面（冲刺 3，spec 第 6 节）：待审合并请求与对账状态；审核在托管平台网页上做，这里只读、只给链接 ----------
 export interface PageEntry {
@@ -189,6 +379,8 @@ export const PAGE_PROBLEM_LABEL: Record<string, string> = {
   approver_unmapped: '批准人不在 staff 对应表里',
   insufficient_approvals: '批准人数不够',
   rejected_in_review: '审核记录里有驳回',
+  spot_check_rejected: '事后抽检驳回',
+  self_approval: '提交方自己批准或签字',
 };
 export const pageProblemLabel = (p: string): string => (Object.hasOwn(PAGE_PROBLEM_LABEL, p) ? PAGE_PROBLEM_LABEL[p]! : p);
 
@@ -211,7 +403,7 @@ export function reviewBaseUrl(env: Record<string, string | undefined> = process.
 }
 
 /** 只有这几类错误显示后端给的说明（库里写好的规则文字，只含公共层对象），并截到 200 字；其余只显示错误码对应的中文 */
-const DETAIL_CODES = new Set(['RULE_VIOLATION', 'DIGEST_CHANGED', 'INVALID_PARAMETER', 'NOT_FOUND']);
+const DETAIL_CODES = new Set(['RULE_VIOLATION', 'DIGEST_CHANGED', 'INVALID_PARAMETER', 'NOT_FOUND', 'PUBLISH_FAILED_UNSIGNED']);
 const CALL_TIMEOUT_MS = 10_000;
 
 export function problemFrom(status: number, data: unknown): Problem {
@@ -272,6 +464,7 @@ export const OP_LABEL: Record<string, string> = { added: '新增', removed: '删
 export const OBJECT_LABEL: Record<string, string> = {
   node: '节点', edge: '边', textbook: '教材投影', region: '地区投影', skill_link: '能力视图挂接', id_migration: '旧编码迁移',
   item_family: '题目族', item_tag: '题目标签', scoring_point: '采分点', current_affair: '时政',
+  version: '版本', skill_node: '能力视图', item: '题目登记',
 };
 /** 风险理由（后端 risk.py 的理由编码） */
 export const REASON_LABEL: Record<string, string> = {
@@ -280,10 +473,18 @@ export const REASON_LABEL: Record<string, string> = {
   prerequisite_structure: '前置 / 从属结构', prerequisite_statement: '前置关系表述', weak_edge: '非结构性边',
   textbook_quote_page: '教材原句与页码', scoring_basis: '评分依据', id_retire_retest: '旧编码撤销（对应掌握度待复测）',
   id_migration: '旧编码迁移', item_family_ref: '题目族引用', current_affair: '时政', unclassified: '无法归类（按高风险）',
+  // 冲刺 4：编译页面与原子
+  full_rebuild: '全量重编', definition_curriculum: '定义与课标要求', render_segment: '渲染段', narrative_rewrite: '叙述段改写',
+  exam_stats_update: '考情数值更新', atom_hash_only: '只更新所引原子', model_draft: '模型草稿（不能按低风险）', item_tag: '题目标签',
+  // 冲刺 4：内容版本与考情
+  content_six_segment: '六段标识', content_map_version: '所指地图版本', skill_view_registry: '能力视图登记', item_registry: '题目登记',
+  admission_change: '准入变化', item_source: '题目来源与授权', policy_subjects: '科目增减', policy_full_score: '满分与总分',
+  policy_scoring: '是否计分', policy_combined: '合场', policy_exam_form: '考试形式', policy_schedule: '考查年级与月份',
+  policy_batches: '批次', policy_transition: '过渡规则', policy_source: '来源文件', policy_version: '方案版本号',
 };
 /** 签字人显示后 12 位：合成教研的前缀相同，前 8 位分不出（PR 4 后显示姓名） */
 export const signerTail = (id: string): string => `…${id.slice(-12)}`;
-export const ACTION_LABEL: Record<string, string> = { review: '审核', publish: '发布', retire: '撤下' };
+export const ACTION_LABEL: Record<string, string> = { review: '审核', publish: '发布', retire: '撤下', apply: '执行' };
 export const DECISION_LABEL: Record<string, string> = { approved: '批准', rejected: '驳回' };
 export const CHANGE_STATUS_LABEL: Record<string, string> = { proposed: '待审', approved: '已批准', rejected: '已驳回', applied: '已应用' };
 /** 结果提示：成功或错误码对应的中文；规则类错误另显示后端给的说明（库里写好的，只含公共层对象） */
@@ -292,6 +493,11 @@ export const RESULT_LABEL: Record<string, string> = {
   DIGEST_CHANGED: '内容已被改过，请刷新后重新核对', RULE_VIOLATION: '不符合发布规则', FORBIDDEN: '没有权限（需要在职的教研账号）',
   NOT_FOUND: '对象不存在', INVALID_PARAMETER: '填写的内容不合格式', INVALID_REFERENCE: '引用的对象不存在', UNAUTHENTICATED: '请先登录', CONFLICT: '重复操作',
   INTERNAL: '出错了，请稍后再试', LOGIN_FAILED: '登录失败：登录名、口令或 6 位码不对，或账号暂时锁定（连错 5 次锁 15 分钟）',
+  // 冲刺 4
+  applied: '已执行准入变化（掌握重算由学习服务按执行记录做）', recorded: '已记录',
+  PUBLISH_FAILED_UNSIGNED: '第二名批准时发布失败，整笔回滚，你的签字没有保存', PAGES_EXPORT_UNAVAILABLE: '合并记录导出读不了',
+  SELF_SIGN: '提交方不能给自己的合并请求签字或记抽检', AUTHOR_UNKNOWN: '合并记录里没有作者或作者不在 staff 对应表里，判不出是不是提交方，不能签',
+  SPOT_CHECK_UNCONFIGURED: '审核台没有配置抽检种子，不能抽检',
 };
 export const RETIRE_BASIS = [
   { code: 'wrong_version', label: '版本有误' },
