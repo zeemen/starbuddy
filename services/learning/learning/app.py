@@ -32,6 +32,8 @@ from .mastery.recompute import MasteryEngine
 from .model_router import ModelRouter
 from .model_router.config import load_for_deployment
 from .plan import plan_today
+from .practice import api as practice_api
+from .practice import config as practice_config
 from .route_api import MAX_ROUTE_BODY, RouteApiError, parse_request
 from .route_api import route as route_call
 from .service import IngestService
@@ -109,6 +111,36 @@ async def _check_diagnosis_env(pool) -> None:
         raise RuntimeError("诊断作答走 v1 写入路径：签字前需 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1（只在测试里）") from None
 
 
+async def _check_practice_env(pool, synthetic_presenter: bool) -> None:
+    """再练出题与作答走 generate_variation 与 v1 写入路径（候选契约 1.0.0）：签字前只在测试里开（STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1）；
+    合成题面另核对库名（与诊断合成题面同一做法，安全审查 S6）。"""
+    if synthetic_presenter:
+        db = await pool.fetchval("SELECT current_database()")
+        if not SYNTHETIC_DB.fullmatch(db or ""):
+            raise RuntimeError("再练合成题面只能连开发库或测试库（库名 starbuddy_dev* 或 starbuddy_test*）")
+    try:
+        plugin_contract("1.0.0")
+    except UnsupportedContractVersion:
+        raise RuntimeError("错题再练走 generate_variation 与 v1 写入路径：签字前需 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1（只在测试里）") from None
+
+
+PRACTICE_LOCK_POOL_SIZE = 8   # 再练作答串行锁的连接数上限：同时在判分的再练作答最多这么多，再多的取锁连接超时回 503 BUSY
+
+
+def _practice(settings: Settings, cfg, pool, client: httpx.AsyncClient, ingest: IngestService, clock, lock_pool):
+    from .practice.presenter import SyntheticPracticePresenter
+    from .practice.service import PracticeService, utcnow
+    from .practice.sources import KnowledgeCandidates
+
+    assert settings.practice_ticket_secret is not None
+    presenter = SyntheticPracticePresenter(settings.env) if settings.practice_presenter == "synthetic" else None
+    knowledge = (KnowledgeCandidates(client, settings.knowledge.base_url, settings.knowledge.credential)
+                 if settings.knowledge is not None else None)
+    return PracticeService(pool=pool, ingest=ingest, client=client, cfg=cfg, adapters=dict(settings.adapters),
+                           ticket_secret=settings.practice_ticket_secret, presenter=presenter, knowledge=knowledge,
+                           clock=clock or utcnow, lock_pool=lock_pool)
+
+
 def create_app(
     settings: Settings,
     *,
@@ -118,9 +150,19 @@ def create_app(
     diagnosis_params: DiagnosisParams | None = None,
     mastery: MasteryEngine | None = None,
     profile: ProfilePages | None = None,
+    practice_clock=None,
+    practice_lock_pool: asyncpg.Pool | None = None,
 ) -> FastAPI:
-    """pool、transport、model_router、diagnosis_params、mastery、profile 供测试注入；不传时按配置创建。"""
+    """pool、transport、model_router、diagnosis_params、mastery、profile、practice_clock、practice_lock_pool 供测试注入；
+    不传时按配置创建。注入业务池又开了再练时必须一并注入再练锁池（锁连接不能取自业务池，审查 B2）。"""
     state: dict = {"router": model_router}
+    # 错题再练配置（specs/practice-loop-stage1 第 7 节）：不合法拒绝启动；未签字配置出现在 test / dev 以外只是这一模块不启动（接口 501）
+    practice_cfg = None
+    if settings.practice_config:
+        try:
+            practice_cfg = practice_config.load(settings.practice_config, env=settings.env)
+        except practice_config.PracticeConfigUnsigned:
+            log.warning(json.dumps({"event": "practice_disabled", "reason": "unsigned_config"}, ensure_ascii=False))
     # 学情档案页配置（KGE-04 第二步 PR 4）启动即加载与校验：未签字或合成配置出现在非 test 环境、短语不在衔接短语表里，一律拒绝启动
     profile_cfg = load_profile_config(settings.profile_page_config, env=settings.env) if settings.profile_page_config else None
     # 掌握配置启动即加载与校验（KGE-04 第二步）：不合法、学科对不上、未签字或合成配置出现在非 test 环境，一律拒绝启动
@@ -170,6 +212,22 @@ def create_app(
                     await p.close()
                 raise
             state["diagnosis"] = _diagnosis(settings, p, client, state["service"], diagnosis_params)
+        lock_pool, own_lock_pool = practice_lock_pool, False
+        if practice_cfg is not None:
+            try:
+                await _check_practice_env(p, settings.practice_presenter == "synthetic")
+                if lock_pool is None and not own_pool:
+                    raise RuntimeError("注入业务池时需同时注入再练锁池（practice_lock_pool）")
+            except RuntimeError:
+                await client.aclose()
+                if own_pool:
+                    await p.close()
+                raise
+            if lock_pool is None:
+                # 作答串行锁的独立小连接池（审查 B2）：会话级咨询锁要握到判分结束，放在业务池里会与 ingest 争连接而互相等死
+                lock_pool = await asyncpg.create_pool(settings.database_url, min_size=0, max_size=PRACTICE_LOCK_POOL_SIZE)
+                own_lock_pool = True
+            state["practice"] = _practice(settings, practice_cfg, p, client, state["service"], practice_clock, lock_pool)
         # 有路由客户端时才建模型路由：环境从 LEARNING_ENV 读，配置不合规（出境、未批准供应商等）即拒绝启动
         own_router = state["router"] is None and bool(settings.route_clients)
         if own_router:
@@ -180,6 +238,8 @@ def create_app(
             if own_router:
                 await state["router"].aclose()
             await client.aclose()
+            if own_lock_pool and lock_pool is not None:
+                await lock_pool.close()
             if own_pool:
                 await p.close()
 
@@ -217,6 +277,8 @@ def create_app(
             log.info(json.dumps(record, ensure_ascii=False))
 
     diagnosis_api.register(app, lambda r: _bearer_ok(r.headers.get("authorization"), settings.service_credential), state)
+    # 错题再练（specs/practice-loop-stage1 第 4 节）：只认 BFF 服务令牌；编排层、洞察服务、路由客户端令牌一律 401
+    practice_api.register(app, lambda r: _bearer_ok(r.headers.get("authorization"), settings.service_credential), state)
     # learning-internal 1.1.0（KGE-04 第二步 PR 3）：掌握读取只认编排层令牌；验证任务与撤销只认洞察服务令牌（未配置即一律 401）；
     # BFF 服务令牌对这四个接口一律 401；档案页 ensure 认编排层（会话开始）与洞察服务（周报），read 只认编排层（PR 4）；
     # 星图节点星态只认 BFF 服务令牌（H5 星图 v1 PR 1）

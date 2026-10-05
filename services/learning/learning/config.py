@@ -25,6 +25,12 @@
                                  （KGE-04 第二步 PR 4 起也用于档案页 /internal/v1/profile-page/ensure 与 /read；洞察服务令牌另可调 ensure，只能是周报触发）
   LEARNING_PROFILE_PAGE_CONFIG   学情档案页配置文件（归节与固定衔接短语表，services/learning/config/mastery/profile-page*.json）。
                                  不设 = 档案页接口回 409 PROFILE_UNAVAILABLE；未签字或合成配置只允许 LEARNING_ENV=test 加载，不合法拒绝启动
+  错题再练（specs/practice-loop-stage1）：
+  LEARNING_PRACTICE_CONFIG       synthetic（合成占位，只允许 test / dev）或配置文件路径。不设 = 再练接口一律 501 PRACTICE_UNAVAILABLE；
+                                 未签字的配置在 test / dev 以外不启动这一模块（接口 501），不合法拒绝启动
+  LEARNING_PRACTICE_PRESENTER    不设 = next / answer 回 501；synthetic = 合成题面（只允许 LEARNING_ENV=test，present_item 签字前不接真实题库）
+  LEARNING_PRACTICE_TICKET_SECRET  再练票据的 HMAC 密钥（≥ 32 字符，与所有令牌各不相同）；设了 LEARNING_PRACTICE_CONFIG 就必须设
+  选题经知识服务（LEARNING_KNOWLEDGE_URL / LEARNING_KNOWLEDGE_TOKEN，同上）；不设 = next 回 501
 """
 from __future__ import annotations
 
@@ -57,17 +63,18 @@ def mastery_config_paths(e: dict[str, str]) -> dict[str, str]:
 @dataclass(frozen=True)
 class AdapterTarget:
     base_url: str
-    credential: str
+    credential: str = field(repr=False)   # 令牌不进 repr（错题再练审查 S3；只改 repr，不改行为）
 
 
+# 令牌、密钥与可能带口令的连接串不进 repr（错题再练审查 S3）：日志或异常里打印 Settings 时不会带出；比较与哈希照旧
 @dataclass(frozen=True)
 class Settings:
     env: str
-    database_url: str
-    service_credential: str
+    database_url: str = field(repr=False)
+    service_credential: str = field(repr=False)
     adapters: dict[str, AdapterTarget] = field(default_factory=dict)
     # 学科 → 路由客户端令牌（specs/adapter-zhixing-sprint2 设计要点 5）
-    route_clients: dict[str, str] = field(default_factory=dict)
+    route_clients: dict[str, str] = field(default_factory=dict, repr=False)
     # pending 租约（spec 待人确认 #5）：必须长于适配器调用的总预算（2 × 超时 + 1）再加核对与落库的余量
     # （安全审查 S6）。diagnose 总预算 61 秒，所以租约 90 秒。
     lease_seconds: float = 90.0
@@ -86,11 +93,15 @@ class Settings:
     # grade / diagnose 落库后同步重算的时间预算（秒）；超时记 failed、交给对账，接口照常返回
     mastery_sync_budget_seconds: float = 2.0
     # 洞察服务 → 验证任务接口的令牌（只对 /internal/v1/verification 有效）；None = 该接口不接受任何调用
-    insight_client_credential: str | None = None
+    insight_client_credential: str | None = field(default=None, repr=False)
     # 编排层 → 掌握读取的令牌（只对 /internal/v1/mastery/*）；None = 掌握读取不接受任何调用
-    orchestrator_client_credential: str | None = None
+    orchestrator_client_credential: str | None = field(default=None, repr=False)
     # 学情档案页配置文件路径（KGE-04 第二步 PR 4）；None = 档案页接口不可用
     profile_page_config: str | None = None
+    # 错题再练（specs/practice-loop-stage1）：配置（synthetic 或路径；None = 接口 501）、题面提供者、票据密钥
+    practice_config: str | None = None
+    practice_presenter: str | None = None
+    practice_ticket_secret: str | None = field(default=None, repr=False)
 
     @staticmethod
     def from_env(environ: dict[str, str] | None = None) -> "Settings":
@@ -134,13 +145,23 @@ class Settings:
         knowledge = None
         targets: dict[int, list[str]] = {}
         map_version = None
-        if presenter and source == "knowledge":
+        practice_cfg = e.get("LEARNING_PRACTICE_CONFIG") or None
+        practice_presenter = e.get("LEARNING_PRACTICE_PRESENTER") or None
+        if practice_presenter not in (None, "synthetic"):
+            raise RuntimeError("LEARNING_PRACTICE_PRESENTER 只能不设或为 synthetic")
+        if practice_presenter == "synthetic" and env != "test":
+            raise RuntimeError("再练合成题面只允许 LEARNING_ENV=test（契约 present_item 签字前不接真实题库）")
+        practice_secret = e.get("LEARNING_PRACTICE_TICKET_SECRET") or None
+        if practice_cfg and (practice_secret is None or len(practice_secret) < 32):
+            raise RuntimeError("设了 LEARNING_PRACTICE_CONFIG 就必须设 LEARNING_PRACTICE_TICKET_SECRET（≥ 32 字符）")
+        if (presenter and source == "knowledge") or (practice_cfg and e.get("LEARNING_KNOWLEDGE_URL")):
             url, tok = e.get("LEARNING_KNOWLEDGE_URL", ""), e.get("LEARNING_KNOWLEDGE_TOKEN", "")
             if len(tok) < 32:
                 raise RuntimeError("LEARNING_KNOWLEDGE_TOKEN 缺失或少于 32 个字符")
             if not (url.startswith("https://") or re.match(r"http://(127\.0\.0\.1|localhost|\[::1\])(:\d+)?(/|$)", url)):
                 raise RuntimeError("LEARNING_KNOWLEDGE_URL 必须是 https，或本机回环地址")
             knowledge = AdapterTarget(url.rstrip("/"), tok)
+        if presenter and source == "knowledge":
             try:
                 raw = json.loads(e.get("LEARNING_DIAGNOSIS_TARGETS", ""))
                 targets = {int(g): [str(n) for n in v] for g, v in raw.items()}
@@ -157,12 +178,13 @@ class Settings:
             raise RuntimeError("LEARNING_ORCHESTRATOR_CLIENT_TOKEN 少于 32 个字符")
         tokens = [credential, *(a.credential for a in adapters.values()), *route_clients.values(),
                   *([knowledge.credential] if knowledge else []), *([insight_tok] if insight_tok else []),
-                  *([orch_tok] if orch_tok else [])]
+                  *([orch_tok] if orch_tok else []), *([practice_secret] if practice_secret else [])]
         if len(set(tokens)) != len(tokens):
-            raise RuntimeError("服务间令牌、适配器令牌、路由客户端令牌、知识服务令牌、洞察服务与编排层客户端令牌必须各不相同")
+            raise RuntimeError("服务间令牌、适配器令牌、路由客户端令牌、知识服务令牌、洞察服务与编排层客户端令牌、再练票据密钥必须各不相同")
         return Settings(env=env, database_url=database_url, service_credential=credential, adapters=adapters,
                         route_clients=route_clients, diagnosis_presenter=presenter, diagnosis_source=source, knowledge=knowledge,
                         diagnosis_targets=targets, diagnosis_map_version=map_version, mastery_configs=mastery_config_paths(e),
                         mastery_sync_budget_seconds=_budget(e.get("LEARNING_MASTERY_SYNC_BUDGET_SECONDS")),
                         insight_client_credential=insight_tok, orchestrator_client_credential=orch_tok,
-                        profile_page_config=e.get("LEARNING_PROFILE_PAGE_CONFIG") or None)
+                        profile_page_config=e.get("LEARNING_PROFILE_PAGE_CONFIG") or None, practice_config=practice_cfg,
+                        practice_presenter=practice_presenter, practice_ticket_secret=practice_secret)
