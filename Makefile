@@ -1,5 +1,5 @@
 # 未实现的目标明确打印“跳过”，不得伪装为通过。
-.PHONY: check-fast check contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test current-affair-expire model-router-mutation diagnosis-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-visual kge-inventory kge-inventory-test kge-import kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test sie-dictionary-check kge-id-check knowledge-test knowledge-mutation kge-compile-eval-test eval-persona eval-grade persona-registry-check persona-guard-test persona-lock persona-record insight-test insight-mutation
+.PHONY: check-fast check contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test current-affair-expire model-router-mutation diagnosis-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-visual kge-inventory kge-inventory-test kge-import kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test sie-dictionary-check kge-id-check knowledge-test knowledge-mutation kge-compile-eval-test eval-persona eval-grade persona-registry-check persona-guard-test persona-lock persona-record insight-test insight-mutation release-walkthrough
 
 # 可指向装了 packages/contracts/requirements-dev.txt 的解释器，例如 make check PYTHON=.venv/bin/python
 PYTHON ?= python3
@@ -16,7 +16,7 @@ endef
 # 契约检查约 1 秒，改动后也跑一遍
 check-fast: contract-test taxonomy-check attack-surface-check sie-dictionary-check kge-id-check
 
-check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona insight-test insight-mutation voice-blind-eval-test
+check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona insight-test insight-mutation voice-blind-eval-test release-walkthrough
 	@echo "check: lint 尚未配置，跳过；其余检查已通过"
 
 # 契约合法性 + 示例 + 反例集
@@ -108,6 +108,25 @@ page-reconcile-test:
 current-affair-expire:
 	@if [ ! -x services/learning/.venv/bin/python ]; then echo "current-affair-expire: 没有安装学习服务依赖（见 services/learning/README.md）"; exit 2; fi
 	@cd services/learning && .venv/bin/python -m review_console expire-affairs $(if $(TODAY),--today $(TODAY),)
+
+# 数学“内容版本 + 地图版本”合成发布走查（specs/release-gate-sprint4 冲刺 4 段；第二部分 PR E），约 1 分钟：一次性本地 Postgres 上两名合成教研
+# 走完地图版本与内容版本签字发布、准入变更、版本记录导出、阿鸦准入决定导出（review_console.admission_export）、离线重建内容包与 verify，
+# 规范化产物与 tools/release-walkthrough/sample 逐字节比对。调用 tools/release-walkthrough 的 walkthrough 目标。
+# 产物目录：RELEASE_WALK_OUT=<新目录或空目录>；不给时用 mktemp -d 在 $TMPDIR（缺省 /tmp）下新建 release-walkthrough.XXXXXX。
+# 产物目录跑完保留、不自动删除（路径打印在输出里；约 1 MB，主要是重建后的内容包），由人或系统的临时目录清理处理。
+# 缺学习服务依赖、node、adapters/aya 的 npm ci 或本机 Postgres 服务端（PGBIN 或 /usr/lib/postgresql/*/bin/initdb）时非严格跳过、严格失败。
+RELEASE_WALK_BAD = $(or $(filter-out 0 1,$(words $(RELEASE_WALK_OUT))),$(findstring ',$(RELEASE_WALK_OUT)))
+.PHONY: release-walkthrough
+release-walkthrough:
+	@$(if $(RELEASE_WALK_BAD),echo "用法：make release-walkthrough [RELEASE_WALK_OUT=<新目录或空目录>]（路径不含空格与单引号）"; exit 2)
+	@if [ ! -x services/learning/.venv/bin/python ] || ! command -v node >/dev/null 2>&1 || [ ! -d adapters/aya/node_modules/ajv ] || \
+	  { [ ! -x "$${PGBIN:-/nonexistent}/initdb" ] && ! ls /usr/lib/postgresql/*/bin/initdb >/dev/null 2>&1; }; then \
+	  echo "release-walkthrough: 跳过（缺学习服务依赖、node、adapters/aya 的 npm ci 或本机 Postgres 服务端）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@out='$(RELEASE_WALK_OUT)'; \
+	  if [ -z "$$out" ]; then out=$$(mktemp -d "$${TMPDIR:-/tmp}/release-walkthrough.XXXXXX") || exit 1; fi; \
+	  echo "release-walkthrough: 产物目录 $$out（跑完保留，不自动删除）"; \
+	  $(MAKE) --no-print-directory -C tools/release-walkthrough walkthrough OUT="$$out" && echo "release-walkthrough: 通过"
 
 # 模型路由（冲刺 1-F，specs/model-router-sprint1）：单测与性质测试在 learning-test 里；这里改坏出境过滤、启动校验、熔断等关键检查，断言测试能发现（约 15 秒）
 model-router-mutation:

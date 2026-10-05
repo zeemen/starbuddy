@@ -94,6 +94,17 @@ npm run register:sql > aya-register.sql  # 生成登记 SQL；目标库由执行
     - `pending_review` 须来源已核、有审核记录；`rejected` 须有审核记录；`source_unverified` 的授权只能是 `unverified`。
   - 准入升降的方向由平台的准入函数保证，这里不重复。
   - 缺省读 `content/admission-decisions.json`（存在时），与内容包一起提交；`--no-decisions` 明确不套用。
+  - **平台导出**（4-G 第二部分 PR E）：`services/learning/review_console/admission_export.py`，用审核台的读身份（只继承 `starbuddy_kge`）
+    与迁移 0042 的只读函数读 `platform.item` 的准入与 `platform.release_record` 的执行记录，本适配器不连库（规则 1）：
+    `python -m review_console.admission_export export --pack <本目录>/content/pack.json --out <决定文件>`，
+    重建后用 `... verify --pack <重建后的内容包>` 逐题核对不比平台宽。导出只比平台更严：内容版本未发布不导出；
+    来源未核或没有执行记录的 pending_review 不写（重建后回到 source_unverified）；admitted、rejected 缺执行记录或依据时整份拒绝；
+    同一道题有两条执行时间相同的执行记录时分不出先后，也整份拒绝。导出与核对都只连本机数据库（连接串全部主机与连上的服务端地址都核对）。
+  - **发布门禁：重建内容包后未跑 verify 不得发布。** 每次用平台导出的决定文件重建内容包（`npm run rebuild:pack -- --decisions …`）之后，
+    必须对重建后的内容包跑 `python -m review_console.admission_export verify --pack <重建后的内容包>` 且退出码为 0，才能提交、合入或部署
+    这份内容包；退出码 1（有比平台宽的题）或 2（输入不对、连不上本机库、角色不对）都不得发布。平台内容版本不是已发布（草稿、已撤下）时，
+    内容包里 pending_review、admitted 的题一律算不合格。
+    合成走查与样例：`make release-walkthrough`（根目录，已纳入 `make check`）或 `make -C tools/release-walkthrough walkthrough`。
 - **适配器行为不变**：只有 `admitted` 的题给 `semantics = formal` 与满置信度，其余按现有 `content_not_admitted` 规则
   （grade 复核 + practice；四个新方法 practice）。判分逻辑没有改。
 - **确定性**：规范化序列化（键按名称排序），不读时钟。同一 legacy 提交、同一决定文件、同一词表，两次构建逐字节相同；

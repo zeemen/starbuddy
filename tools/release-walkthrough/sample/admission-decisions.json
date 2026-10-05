@@ -1,0 +1,59 @@
+{
+ "curriculum": {
+  "content_version": "0.1.0",
+  "exam_year": 2027,
+  "grade": 9,
+  "region": "nanjing",
+  "subject": "aya",
+  "textbook_version": "suke-2024"
+ },
+ "decisions": [
+  {
+   "admission": "admitted",
+   "item_id": "Q-ALG-U01-D-001",
+   "license_status": "cleared",
+   "review_ids": [
+    "<uuid-2>"
+   ],
+   "review_level": "Q2",
+   "source_ref": "SYN-SRC-WALK-0001",
+   "source_type": "self_authored"
+  },
+  {
+   "admission": "pending_review",
+   "item_id": "Q-ALG-U01-D-002",
+   "license_status": "cleared",
+   "review_ids": [
+    "<uuid-3>"
+   ],
+   "review_level": "Q1",
+   "source_ref": "SYN-SRC-WALK-0002",
+   "source_type": "self_authored"
+  },
+  {
+   "admission": "rejected",
+   "item_id": "Q-ALG-U01-R-001",
+   "license_status": "denied",
+   "review_ids": [
+    "<uuid-4>"
+   ],
+   "review_level": null,
+   "source_ref": null,
+   "source_type": "unknown"
+  },
+  {
+   "admission": "rejected",
+   "item_id": "Q-ALG-U02-D-002",
+   "license_status": "cleared",
+   "review_ids": [
+    "<uuid-5>"
+   ],
+   "review_level": null,
+   "source_ref": "SYN-SRC-WALK-0005",
+   "source_type": "self_authored"
+  }
+ ],
+ "export_ref": "<export-ref-1>",
+ "exported_at": "<time>",
+ "format": "aya-admission-decisions/1"
+}

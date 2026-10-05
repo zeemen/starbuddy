@@ -418,3 +418,43 @@ spec 冲刺 3、4 段已确认（待人确认全部按默认）。迁移从 0038
 7. 时政过期判定 `valid_until < 当天`，而 0026 只读角色 RLS 在 `valid_until` 当天已不可见，两者差一天。
 8. 内容版本页每道题一个准入表单，阿鸦 721 题页面很长，是否分页。
 9. 契约审查顺带提出：三科 `adapters/*/scripts/register-content.ts` 生成直接插入 `platform.*` 的 SQL（离线、不连库，PR B 之前即有），是否算违反规则 1。
+
+## 第二部分 PR E：阿鸦准入决定导出与数学合成发布走查（不加迁移）
+
+### 做了什么
+- `services/learning/review_console/admission_export.py`：`export` 从平台（唯一真相源 `platform.item.admission` 与 0039 发布记录）导出 `aya-admission-decisions/1`；`verify` 核对重建后的内容包逐题不比平台宽。只用 kge 读身份调 0042 三个只读函数，只读、可重复读事务；连接前用 PR D 的 `local_only` 核对全部主机，连上后核对服务端地址。
+- 导出从严：内容版本须已发布；admitted 须有最近执行记录、来源已核、等级 ≥ Q2，rejected 须有执行记录，缺即整份拒绝；表达不了的 pending_review 退回缺省 source_unverified；同一道题执行时间相同即拒绝；决定文件不写签字人。
+- `verify`：平台版本未发布（草稿 / 已撤下）时，内容包里比 source_unverified 宽的题一律不合格（`version_not_published`）。重建内容包后未跑 verify 不得发布（README 写明）。
+- 离线重建沿用阿鸦已有的 `rebuild-content-pack.ts`，适配器代码未改。
+- `tools/release-walkthrough/`：一次性本地库（只走 Unix socket）、两名合成教研真实登录，走完 地图签字发布 → 阿鸦 0.1.0 登记 → 内容版本签字发布 → 5 题 8 次准入变更 → 版本记录导出 → 决定文件导出 → 离线重建 → verify（720 题相同、1 题更严）。规范化样例在 `sample/`，两次运行逐字节一致；根 Makefile 新增 `release-walkthrough` 并纳入 `make check`。
+
+### 测试
+release-walkthrough 子目录测试 69 + 6 passed；`make release-walkthrough` 与样例一致；`learning-test` 2839 passed（首轮 1 例 `test_mastery_profile_db` degree_escalation 负载下超时，单独与全量重跑通过）；`adapter-aya-test` 通过。
+
+### 审查意见处理（按用户“按默认建议处理审查意见”）
+- 阻断（安全）：verify 不看平台内容版本状态，撤下后宽松副本仍判合格。已改为未发布时比 source_unverified 宽即不合格，补 retired / draft 单测。
+- 其余：导出与核对只连本机；输入校验（未知枚举、缺 curriculum、缺题号或准入）退出码 2 不打堆栈；先检查输出路径、先写报告再写决定文件、`--replace` 原子替换并清理临时文件；走查产物目录非空即拒；走查并入根 Makefile 与 `make check`；同时刻执行记录拒绝导出。
+
+### 经验
+- 判断“副本不比平台宽”要同时核对平台内容版本状态：未发布版本的准入对学生不可见，上限是 source_unverified。
+- 执行记录 ID 是随机 UUID，不表示先后；时间相同只能拒绝。
+- 准入摘要含内容版本 ID，每次运行不同，样例必须规范化；时间戳不编号（两次签字可能同一微秒）。
+- PR D 的 `local_only` / `check_server_local` 用 SystemExit 报错且口吻是时政下架，复用时要换说明；以后可加“用途”参数。
+- 审查代理跑走查时误用了已有的 scratchpad `walk1/`，覆盖了其中两份文件，该目录不能再当证据。
+
+### 与 spec 的差异
+1. 走查用真实阿鸦题号（公共内容 ID），地图、staff、来源编号都是合成的，以便六段标识与内容包对上。
+2. 退出码：输入不对为 2；平台数据不能安全导出（含草稿、执行时间相同）为 1。
+3. `--replace` 同时作用于报告；替换后文件权限为 0600。
+4. 根目标不给 `RELEASE_WALK_OUT` 时在 `$TMPDIR`（缺省 /tmp）建目录且不删除（约 1 MB）。
+
+### 待人确认
+1. 平台允许“来源未核的 pending_review”，阿鸦格式 3 不允许；导出时降回缺省（更严），是否统一口径（改适配器或迁移）。
+2. admitted / rejected 缺执行记录时整份拒绝，而不是略过该题，是否合适。
+3. 未发布内容版本拒绝导出；发布前预览准入需另加选项。
+4. 决定文件随内容包进仓库，含审核记录 ID（不含签字人），能否公开。
+5. 决定文件只记导出时刻、没有平台水位；导出后平台降级，已提交文件不会知道。是否把 verify 设为发布门禁（CI 或发布脚本必跑）。
+6. `release-walkthrough` 进 `make check` 后全量检查多约 1 分钟，需要 node、阿鸦 npm ci、本机 Postgres；严格模式缺一即失败。
+7. 发布闸门是否拒绝 `hint_scan.flagged_items` 非空的内容包（第一部分待人确认 #5），本 PR 未做。
+8. `test_mastery_profile_db` degree_escalation 用例负载下偶发超时，是否单独跟进。
+9. 子代理清理系统临时目录 `/tmp/release-walkthrough.4shnrf3q` 时被守护钩子拦下，目录仍在（只有合成产物），由人决定是否删除。

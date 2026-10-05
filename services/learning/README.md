@@ -170,6 +170,16 @@ staff 对应表（`kge-pages-staff-map/1`，审核台配置，由人维护，不
   只连本机数据库：连接串里全部主机（多主机写法逐个、每个 `host` 查询参数、asyncpg 实际解析出的地址）都必须是 localhost、回环地址或 Unix socket，
   不接受 `hostaddr`、`service`、`servicefile` 参数；连上之后再核对 `inet_server_addr()` 为空（Unix socket）或回环地址，否则中止。只用 kge 连接，不接生产调度。
 
+### 阿鸦准入决定导出（`review_console/admission_export.py`，G 流第二部分 PR E）
+- `python -m review_console.admission_export export --pack <阿鸦内容包> --out <决定文件> [--report <报告>] [--replace]` 从平台导出
+  `aya-admission-decisions/1`（规则与格式见模块说明与 adapters/aya/README.md“内容包格式 3”）；`… verify --pack <重建后的内容包>` 逐题核对不比平台宽。
+- **发布门禁：重建内容包后未跑 verify 不得发布**（verify 退出码 0 才能提交、合入或部署重建后的内容包）。平台内容版本不是已发布时，
+  内容包里 pending_review、admitted 的题一律不合格（`reason = version_not_published`）。
+- 与 `expire-affairs` 同样只连本机数据库（`local_only` + `check_server_local`），只用审核台读身份（只继承 `starbuddy_kge`）。
+- 读库之前先校验：内容包格式、六段标识、题号与准入枚举，输出路径（已存在且没加 `--replace` 即拒，`--replace` 时决定文件与报告各自原子替换，失败不留临时文件）。
+- 退出码：0 成功；1 平台数据不能安全导出或 verify 不合格；2 输入不对、不是本机库、角色不对或库拒绝（只给简短说明，不打堆栈）。
+- 合成走查：`make release-walkthrough [RELEASE_WALK_OUT=<新目录或空目录>]`（已纳入 `make check`）。
+
 ### 审核台部署要求（staging；由人配置，仓库里没有部署配置）
 - 审核台后端只监听 127.0.0.1，只接受同机前端（apps/web 服务端）的请求；浏览器不直连。
 - **登录限流放在部署层**（2026-09-29 用户决定）：库里只按账号锁定（连错 5 次锁 15 分钟），后端看不到用户来源，
