@@ -34,9 +34,9 @@ const S = (student: string) => `/students/${student}`;
 // ---------------------------------------------------------------- “为什么”（开关 why）
 
 /**
- * 判断的“为什么”：陈述 + 证据链（不含逐句对话）+ 依据版本。**BFF 还没有这条读取路由**（PR③ 只做了 dispute / reconcile /
- * data_rights；4-H 的 insight.explain 读取只留陈述、丢弃证据链）：路径按 shell.v0 的风格预留，在 BFF 补上之前一律 404，
- * 页面显示“暂时无法获取”（不可见与不存在同一个结果，不暴露判断是否存在）。见 specs/trust-ui-sprint5/lessons.md。
+ * 判断的“为什么”：陈述 + 证据链（不含逐句对话）。SIE-02b 第二步 PR 2 起 BFF 有这条读取路由（挂在 BFF 的 why 开关上，经
+ * insight.explain，只转发 result 的子集：证据链没有证据 ID，也没有依据版本——信封外层不给前端，页面的“依据版本”一栏因此不显示）；
+ * BFF 开关关或没配洞察服务时 404 / 503，页面显示“暂时无法获取”（不可见与不存在同一个结果，不暴露判断是否存在）。
  */
 export const fetchWhy = (s: BffSession, student: string, claim: string) => call<unknown>('why', s, 'GET', `${S(student)}/claims/${claim}/explain`);
 
@@ -61,6 +61,14 @@ export const fetchReconciliation = (s: BffSession, student: string, exam: string
 
 /** 最近一周已生成的周报：学生会话得学生版“成长手记”，家长会话得家长版（BFF 按受众只读、每句在库里再核判断） */
 export const fetchWeekly = (s: BffSession, student: string) => call<unknown>('weekly', s, 'GET', `${S(student)}/weekly-report`);
+
+// ---------------------------------------------------------------- 首份报告开发演示页（开关 report，SIE-02b 第二步 PR 2）
+
+/** 首份报告：学生会话得学生版、家长会话得家长版；BFF 只转发洞察服务 insight.report 的 result（或 null） */
+export const fetchFirstReport = (s: BffSession, student: string) => call<unknown>('report', s, 'GET', `${S(student)}/first-report`);
+/** 演示页的待验证虚线：同一条单条解释读取（BFF 开关 why），前端按演示页的开关 report 放行 */
+export const fetchReportExplain = (s: BffSession, student: string, claim: string) =>
+  call<unknown>('report', s, 'GET', `${S(student)}/claims/${claim}/explain`);
 
 // ---------------------------------------------------------------- 家长数据权利（开关 data_rights，只给家长）
 

@@ -1,7 +1,7 @@
 // 端到端的真实会话（4-H H2：开发身份桩删除后，所有端到端都走真实登录）：
 //   家长：登录页填 +999 合成号码 → 从短信捕获桩的收件箱（SB_SMS_INBOX，BFF 写入）读验证码 → 登录，进家长首页；
 //   学生：家长登录后，在家长首页点“打开学生模式”（打开前经 BFF 的同意接口补上合成同意，与家长在界面上操作走同一条路由）。
-// 合成家庭与号码见 db/seeds/dev/star-map-synthetic.sql、diagnosis-synthetic.sql、auth-synthetic.sql、shell-synthetic.sql、star-map-v1-synthetic.sql。
+// 合成家庭与号码见 db/seeds/dev/star-map-synthetic.sql、diagnosis-synthetic.sql、auth-synthetic.sql、shell-synthetic.sql、star-map-v1-synthetic.sql、first-report-synthetic.sql。
 import { readFileSync } from 'node:fs';
 import { expect, type Page } from '@playwright/test';
 
@@ -13,16 +13,20 @@ export const TRUST_BASE = `http://127.0.0.1:${Number(process.env['WEB_TRUST_PORT
 /** H5 星图 v1 开关打开的第三套（playwright.config.ts 的 starmap-on 项目）：前端与它连的 BFF */
 export const STARMAP_BFF = process.env['STARBUDDY_STARMAP_BFF_URL'] ?? 'http://127.0.0.1:8789';
 export const STARMAP_BASE = `http://127.0.0.1:${Number(process.env['WEB_STARMAP_PORT'] ?? 3102)}`;
+/** 首份报告开发演示页的第四套（SIE-02b 第二步 PR 2，playwright.config.ts 的 report-on 项目）：前端与它连的 BFF */
+export const REPORT_BFF = process.env['STARBUDDY_REPORT_BFF_URL'] ?? 'http://127.0.0.1:8793';
+export const REPORT_BASE = `http://127.0.0.1:${Number(process.env['WEB_REPORT_PORT'] ?? 3103)}`;
 /** 当前页面所在的那一套：前端来源与它连的 BFF（CSRF 令牌由各自的 BFF 签，不能混用） */
 export const endpointsOf = (page: Page): { base: string; bff: string } => {
   const origin = new URL(page.url()).origin;
   if (origin === TRUST_BASE) return { base: TRUST_BASE, bff: TRUST_BFF };
   if (origin === STARMAP_BASE) return { base: STARMAP_BASE, bff: STARMAP_BFF };
+  if (origin === REPORT_BASE) return { base: REPORT_BASE, bff: REPORT_BFF };
   return { base: BASE, bff: BFF };
 };
 
 /** 合成家长的登录号码（未分配的国家码 +999） */
-export const PHONE = { gS: '+99900000101', gO: '+99900000102', gD: '+99900000105', gH: '+99900000106', gV: '+99900000107' } as const;
+export const PHONE = { gS: '+99900000101', gO: '+99900000102', gD: '+99900000105', gH: '+99900000106', gV: '+99900000107', gR: '+99900000108' } as const;
 /** 学生档案 → 打开学生模式的家长 */
 export const GUARDIAN_OF: Record<string, keyof typeof PHONE> = {
   '5a000000-0000-4000-8000-0000000000c1': 'gS',  // S1
@@ -33,6 +37,8 @@ export const GUARDIAN_OF: Record<string, keyof typeof PHONE> = {
   '5d000000-0000-4000-8000-0000000000c3': 'gH',  // GP（试点，在读数学）
   '5e000000-0000-4000-8000-0000000000c1': 'gV',  // V1（星图 v1：数学、道法、英语）
   '5e000000-0000-4000-8000-0000000000c2': 'gV',  // V2（星图 v1：数学、语文，折叠）
+  '5c000000-0000-4000-8000-0000000000c1': 'gR',  // R1（首份报告演示：四条合成判断）
+  '5c000000-0000-4000-8000-0000000000c2': 'gR',  // R2（R1 的兄妹，没有判断）
 };
 
 /** 捕获收件箱里这个号码在 after 之后最近一条验证码（等 BFF 写完） */

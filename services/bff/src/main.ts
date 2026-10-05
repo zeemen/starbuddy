@@ -14,9 +14,12 @@
 //                          今日计划每一科“今天暂无安排”
 //   BFF_INSIGHT_URL / BFF_INSIGHT_TOKEN    洞察服务地址（https 或本机回环）与 caller=bff 的令牌（≥ 32 字符）；不设时壳内不显示任何判断陈述
 //   BFF_SHELL_CONFIG       dev / test：换一份壳的显示规则（config/shell.json 的格式）；其余环境设了就拒绝启动
-//   STARBUDDY_TRUST_UI     dev / test：打开信任界面的 BFF 路由（dispute / reconcile / data_rights，逗号分隔；SIE-03 PR③）；
+//   STARBUDDY_TRUST_UI     dev / test：打开信任界面的 BFF 路由，逗号分隔（完整清单见 src/trust/features.ts）：
+//                          dispute / reconcile / data_rights（SIE-03 PR③）、weekly（周报，冲刺 5-H）、profile（学情档案页，KGE-04 第二步 PR 4）、
+//                          report（首份报告）、why（单条解释）（SIE-02b 第二步 PR 2）；
 //                          缺省全关、路由不注册；其余环境设了就拒绝启动。异议经 BFF_INSIGHT_URL 调 insight.dispute；
-//                          预测与对账卡的读取没有契约通道（缺省 503，lessons PR③ 待人确认）
+//                          预测与对账卡的读取没有契约通道（缺省 503，lessons PR③ 待人确认）；
+//                          profile、why 经 insight.explain，report 经 insight.report（同一个 BFF_INSIGHT_URL；不配时 report / why 503）
 //   STARBUDDY_STARMAP      dev / test：H5 星图 v1 的开关（starmap_v1[,starmap_dashed]；src/star-map/features.ts）；缺省全关、
 //                          v1 路由不注册、v0 不变；其余环境设了就拒绝启动。星态经 BFF_LEARNING_URL 调学习服务 star-map/nodes（同一个服务间令牌），
 //                          不配学习服务时 v1 的星全部是中性底星
@@ -33,6 +36,7 @@ import { httpInsightClient } from './shell/insight-client.ts';
 import { httpPlanClient } from './shell/plan-client.ts';
 import { httpDisputeClient } from './trust/clients.ts';
 import { parseTrustFeatures } from './trust/features.ts';
+import { httpInsightReadClient } from './trust/report.ts';
 import { assertBffRole } from './star-map/query.ts';
 import { parseStarMapFeatures } from './star-map/features.ts';
 import { httpStarMapClient } from './star-map/nodes-client.ts';
@@ -104,6 +108,7 @@ if (insightUrl) {
   }
   shellDeps.shell!.insight = httpInsightClient({ baseUrl: insightUrl, token: insightCredential });
   shellDeps.trust!.dispute = httpDisputeClient({ baseUrl: insightUrl, token: insightCredential });
+  shellDeps.trust!.read = httpInsightReadClient({ baseUrl: insightUrl, token: insightCredential });  // 首份报告与单条解释（开关 report / why）
 }
 const server = createShellServer({ ...shellDeps, pool });
 server.listen(port, '127.0.0.1', () => {

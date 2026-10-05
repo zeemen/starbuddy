@@ -55,3 +55,18 @@ test('开关关：家长孩子页没有信任界面入口；信任界面页面�
     expect(r.status, p).toBe(404);
   }
 });
+
+test('开关关：首份报告开发演示页（SIE-02b 第二步 PR 2）404、没有演示页元素；BFF 的首份报告与单条解释路由不注册', async ({ page }) => {
+  const paths = watch(page);
+  await loginGuardian(page, 'gH');
+  expect((await page.goto(`/dev/first-report/${GT}`))?.status()).toBe(404);
+  await expect(page.locator('[data-trust-root], [data-claim-id]')).toHaveCount(0);
+  expect(paths.filter((p) => /first-report|explain/.test(p) && !p.startsWith('/dev/first-report/'))).toEqual([]);
+  const s = await cookieSession(page);
+  for (const p of [`/students/${GT}/first-report`, `/students/${GT}/claims/${CLAIM}/explain`]) {
+    const r = await fetch(`${BFF}/bff/v0${p}`, { headers: { 'x-sb-session': s.token } });
+    expect(r.status, p).toBe(404);
+  }
+  await loginStudent(page, GT);
+  expect((await page.goto(`/dev/first-report/${GT}`))?.status()).toBe(404);
+});

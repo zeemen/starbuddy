@@ -2,7 +2,7 @@
 // 学生看状态（初步判断 / 待验证）；家长另附置信度说明（SIE 第八章：家长看不到无置信度的推断）。
 // 证据链只有时间、证据种类、证据等级、知识点编号：不展示逐句对话与作答原文（view.ts 只挑这四个字段）。
 // 看不到的判断连存在都不暴露：读不到、不可见、不存在一律同一个“暂时无法获取”，也不显示异议按钮。
-// 待验证的判断是虚线，不作为陈述：只显示状态，不显示结论文字。
+// 待验证的判断是虚线，不作为陈述：只显示状态，不显示结论文字（BFF 已去掉待验证的文字，学生受众另去掉置信度分档；view.ts 再断言）。
 import { randomUUID } from 'node:crypto';
 import { notFound, redirect } from 'next/navigation';
 import { ResultForm } from '../auth/ResultForm.tsx';
@@ -20,7 +20,7 @@ export async function WhyPage({ studentId, claimId, audience }: { studentId: str
   const ps = audience === 'student' ? await requireOwnStudent(studentId) : await requireGuardian(studentId);
   const r = await fetchWhy(ps.session, studentId, claimId);
   if (!r.ok && r.status === 401) redirect('/login');
-  const view = r.ok ? pickWhy(r.value, claimId) : null;
+  const view = r.ok ? pickWhy(r.value, claimId, audience) : null;
   const base = sideBase(audience, studentId);
   return (
     <main data-testid="why-page" data-trust-root="why">
@@ -37,13 +37,14 @@ function ClaimExplain({ view, audience }: { view: WhyView; audience: Audience })
   const st = view.statement;
   return (
     <section className="why" data-claim-id={view.claim_id} data-status={st.status} aria-labelledby="why-evidence">
-      {st.display === 'solid'
+      {st.display === 'solid' && st.text !== null
         ? <p className="claim-text"><span data-claim-id={st.claim_id}>{st.text}</span></p>
         : <p className="muted">{WHY.dashedNote}</p>}
       <p>
         <span className="muted">{WHY.statusLabel}</span>{' '}
         <span data-testid="why-status">{WHY_STATUS[st.status]}</span>
-        {audience === 'guardian' ? <>{' '}<span className="muted confidence" data-confidence={st.confidence_band}>{CONFIDENCE_BAND[st.confidence_band]}</span></> : null}
+        {audience === 'guardian' && st.confidence_band
+          ? <>{' '}<span className="muted confidence" data-confidence={st.confidence_band}>{CONFIDENCE_BAND[st.confidence_band]}</span></> : null}
       </p>
       <h2 id="why-evidence">{WHY.evidenceHeading}</h2>
       {view.evidence.length === 0 ? <p className="muted">{WHY.evidenceEmpty}</p> : (

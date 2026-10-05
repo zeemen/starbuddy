@@ -4,10 +4,13 @@
 // 开关关时 BFF 不注册对应路由（与表外路径同一个 404）；why、weekly 在 BFF 没有新路由（“为什么”的证据链读取接口待补，
 // specs/trust-ui-sprint5/lessons.md）。前后端的开关由部署环境各自设置，两边都关时 4-H“预留验收”成立。
 // 那条 BFF 读取路由上线之前，dev 环境也不要打开 why（打开只会得到“暂时无法获取”）；端到端的 trust-on 项目打开它只为核对这一点。
+// SIE-02b 第二步 PR 2 起 BFF 有了这条读取路由（GET …/claims/{claim_id}/explain，挂在 BFF 的 why 开关上，经 insight.explain），
+// 另加 report：首份报告的开发演示页（/dev/first-report/{studentId}，page.dev.tsx，只在开发、测试构建里存在），BFF 侧同名开关
+// report（GET …/first-report）；演示页的待验证虚线取单条解释，所以 BFF 要同时开 report 与 why。report 不进壳导航、没有入口元素。
 // 打开方式：STARBUDDY_TRUST_UI=why,dispute（逗号分隔）；只在 dev / test 生效，staging、pilot、生产一律关闭，
 // 直到冲刺 5 的实现与文案签字后由人改这里的规则。只在服务端（服务端组件、server action、路由处理器）读，不进浏览器。
 
-export const TRUST_FEATURES = ['why', 'dispute', 'reconcile', 'weekly', 'data_rights'] as const;
+export const TRUST_FEATURES = ['why', 'dispute', 'reconcile', 'weekly', 'data_rights', 'report'] as const;
 export type TrustFeature = (typeof TRUST_FEATURES)[number];
 
 type Env = Record<string, string | undefined>;

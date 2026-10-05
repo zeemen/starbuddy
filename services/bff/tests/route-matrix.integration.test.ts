@@ -30,6 +30,8 @@ import { activeRoutes, compile, PREFIX, ROUTES, type Route } from '../src/http/r
 import { withAccount } from '../src/metering/db.ts';
 import { usageIdFor } from '../src/metering/uuid.ts';
 import type { PlanClient, PlanSection, PlanSubject } from '../src/shell/plan-client.ts';
+import type { InsightReadClient } from '../src/trust/report.ts';
+import { loadShellConfig } from '../src/shell/config.ts';
 import type { DisputeClient, DisputeOutcome, ExamViewClient } from '../src/trust/clients.ts';
 import { MemoryExportStore } from '../src/trust/exports.ts';
 import { TRUST_FEATURES } from '../src/trust/features.ts';
@@ -104,6 +106,9 @@ export const SAMPLES: Record<string, Sample> = {
   'GET /students/{student_id}/exams/{exam_id}/reconciliation': none,
   'GET /students/{student_id}/weekly-report': none,
   'GET /students/{student_id}/profile-pages/{subject}': none,
+  // SIE-02b 第二步 PR 2：首份报告（开关 report）与单条解释（开关 why）
+  'GET /students/{student_id}/first-report': none,
+  'GET /students/{student_id}/claims/{claim_id}/explain': none,
   'POST /students/{student_id}/exports': none,
   'POST /students/{student_id}/exports/{export_job_id}/download': b((ids) => ({ download_ref: ids.download_ref ?? `dl_${'0'.repeat(64)}` })),
   'GET /students/{student_id}/erasure': none,
@@ -186,7 +191,13 @@ const exams: ExamViewClient = {
 /** H5 星图 v1 的学习服务 star-map/nodes：越权请求一次也不能到达（本文件的库里没有已发布地图时一次也不调） */
 const starCalls: string[] = [];
 const starNodes: StarMapNodesClient = { async nodes(student) { starCalls.push(student); return { kind: 'unavailable' }; } };
-const callCount = () => calls.plan.length + calls.diagnosis.length + calls.dispute + calls.exams + starCalls.length;
+/** SIE-02b 第二步 PR 2：洞察服务的首份报告与单条解释读取（越权请求一次也不能到达；阳性对照得到 503） */
+let readCalls = 0;
+const insightRead: InsightReadClient = {
+  async report() { readCalls++; return { kind: 'unavailable' }; },
+  async explain() { readCalls++; return { kind: 'unavailable' }; },
+};
+const callCount = () => calls.plan.length + calls.diagnosis.length + calls.dispute + calls.exams + starCalls.length + readCalls;
 
 // ---------------------------------------------------------------- 合成家庭、账号与二级资源
 
@@ -330,8 +341,9 @@ before(async () => {
   await link(A.gX, A.S);
   shell = await startShell(h.bff, h.su, {
     log: () => undefined, now: () => new Date(FIXED_NOW),
-    shell: { plan }, diagnosis: { learning, retryDelaysMs: [1] },
-    trust: { features: new Set(TRUST_FEATURES), dispute, exams, exports: new MemoryExportStore() },
+    // 对外白名单只列合成模板 TPL：单条解释先在库里核对判断（白名单外 404），阳性对照要能走到洞察服务（假实现回 503）
+    shell: { plan, config: { ...loadShellConfig(), externalTemplates: new Set([`${TPL}@1`]) } }, diagnosis: { learning, retryDelaysMs: [1] },
+    trust: { features: new Set(TRUST_FEATURES), dispute, exams, exports: new MemoryExportStore(), read: insightRead },
     starMap: { features: new Set(STAR_MAP_FEATURES), nodes: starNodes },
   });
   // 会话都在改状态之前拿到（学生会话经 gF 打开学生模式）

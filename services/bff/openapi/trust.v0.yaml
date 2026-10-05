@@ -1,6 +1,6 @@
 # BFF ↔ 统一壳前端：信任界面的读写接口（SIE-03 PR③，specs/sie-03-dispute-reconcile/spec.md 范围 3；页面随冲刺 5-H）。
 # 服务内部接口，不是学科插件契约，不放 packages/contracts（与 shell.v0.yaml 同一做法）；路由在 services/bff/src/http/trust-routes.ts。
-# 每条路由挂在一个功能开关上（STARBUDDY_TRUST_UI：dispute / reconcile / weekly / data_rights / profile，只在 dev / test 可开），默认全关：
+# 每条路由挂在一个功能开关上（STARBUDDY_TRUST_UI：dispute / reconcile / weekly / data_rights / profile / report / why，只在 dev / test 可开），默认全关：
 # 关闭时这些路径不注册，与表外路径同一个 404（4-H“信任界面预留”验收继续成立）。
 # 会话、CSRF、Origin、限流、no-store、错误体与 shell.v0.yaml 相同；限流阈值在 services/bff/config/auth.json。
 # 禁用推断：BFF 不生成任何关于学生的文字；异议类型、结论、偏差方向、调整只传编码（显示文案属 5-H 模板，必停）；
@@ -251,6 +251,169 @@ paths:
         '401': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
         '429': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/first-report:
+    get:
+      x-sb-auth: session
+      x-sb-rate-buckets: [trust_read.session.minute]
+      operationId: getFirstReport
+      description: >
+        开关 report（SIE-02b 第二步 PR 2；前端只有开发演示页）。首份画像报告：学生会话得学生版、有效绑定家长得家长版（受众只由会话决定）。
+        BFF 先按档案授权（RLS 读档案，家长另需有效 guardian_student_link；规则 5，不按手机号），再调洞察服务 insight.report
+        （packages/contracts/openapi/insight-service.v0.9.yaml），洞察服务按 0044 insight.verify_actor 再核对一次。
+        只转发洞察服务的 result（report 字段就是它）：信封外层的 confidence、evidence_ids、source_version、model_version、
+        human_review_required 不给前端（依据版本与是否要人工复核只记访问日志）。BFF 按契约逐字段核对 result（受众必须等于会话受众），
+        notice、title、connective 与每句文字再过禁用推断词表，每个判断在库里再核（属于该学生、对当前受众可见、假设或成立、未过期、
+        知识节点、模板已审核且在对外白名单里、模板键与版本和状态对得上），节键与句子模板的类别对应（node_mastery 节只收
+        *.node_mastery 模板的句子，node_transfer 同理）；任何一处不合整份不出（不挑句子、不截断），
+        与洞察服务 404（无权、没有报告、检查不过）一样 report 为 null；信封要求人工复核时同样为 null。洞察服务未配置或不可用 503；
+        洞察服务响应体超过约 1 MB 按不可用处理。policy_version 另记访问日志。
+        notice、title、connective 是洞察服务按 policy_version 登记的固定文字（占位，人写人审），不是关于学生的陈述；
+        关于学生的句子只有 sentences[].text（每句带 claim_id）。学生版不带置信度分档，家长版每句带；假设标 label: preliminary。
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/Session'
+      responses:
+        '200':
+          description: 首份报告（或 null）
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [student_id, report]
+                properties:
+                  student_id: { type: string, format: uuid }
+                  report:
+                    oneOf:
+                      - type: 'null'
+                      - type: object
+                        description: 洞察服务 InsightReportResponse.result 原样（核对后）
+                        additionalProperties: false
+                        required: [format, audience, policy_version, notice, title, sections, claim_ids]
+                        properties:
+                          format: { const: sie-first-report/0.1 }
+                          audience: { enum: [student, guardian] }
+                          policy_version: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._\-]{0,31}$' }
+                          notice: { type: string, minLength: 1, maxLength: 200 }
+                          title: { type: string, minLength: 1, maxLength: 80 }
+                          sections:
+                            type: array
+                            minItems: 1
+                            maxItems: 2
+                            items:
+                              type: object
+                              additionalProperties: false
+                              required: [key, connective, sentences]
+                              properties:
+                                key: { enum: [node_mastery, node_transfer] }
+                                connective: { type: string, minLength: 1, maxLength: 60 }
+                                sentences:
+                                  type: array
+                                  minItems: 1
+                                  maxItems: 200
+                                  items:
+                                    type: object
+                                    additionalProperties: false
+                                    required: [claim_id, template_key, template_version, status, display, text]
+                                    properties:
+                                      claim_id: { type: string, format: uuid }
+                                      template_key: { type: string }
+                                      template_version: { type: integer, minimum: 1 }
+                                      status: { enum: [hypothesis, established] }
+                                      display: { const: solid }
+                                      text: { type: string, minLength: 1, maxLength: 300 }
+                                      label: { enum: [preliminary], description: 只在假设上（文案属模板） }
+                                      confidence_band: { enum: [few_evidence, moderate, strong], description: 只在家长版 }
+                          claim_ids:
+                            type: array
+                            minItems: 1
+                            maxItems: 400
+                            items: { type: string, format: uuid }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/claims/{claim_id}/explain:
+    get:
+      x-sb-auth: session
+      x-sb-rate-buckets: [trust_read.session.minute]
+      operationId: getClaimExplain
+      description: >
+        开关 why（SIE-02b 第二步 PR 2；前端“为什么”页与首份报告演示页的待验证虚线）。一条判断的解释：BFF 先按档案授权，并在库里核对
+        这条判断属于该学生、对当前受众可见、假设 / 成立 / 待验证、未过期、模板已审核且在对外白名单里（不属于、不可见、不存在同一个 404，
+        越权请求不到洞察服务），再调洞察服务 insight.explain。只转发 result 的子集：statement（模板键、版本、状态须与库里一致；待验证
+        只能虚线，前端不作为陈述）、evidence_chain（只有时间、来源、等级、节点，不含证据 ID）、confidence_band、expires_at；
+        信封外层的 confidence、evidence_ids、source_version、model_version 不给前端。洞察服务 404 → 404；未配置、不可用、
+        形状不合、要人工复核、陈述命中禁用推断词表 → 503。
+        返回前按受众与状态裁剪（audience 是会话受众）：学生受众没有 confidence_band（顶层与 statement 内都没有；SIE 第八章置信度说明
+        只给家长），家长受众两处都有；status 为 to_verify（display dashed）时没有 statement.text（虚线不作为陈述，结论文字不出 BFF），
+        假设与成立（display solid）必有 text。洞察服务响应体超过约 1 MB 按不可用处理（503）。
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - { name: claim_id, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/Session'
+      responses:
+        '200':
+          description: 解释（按受众与状态裁剪）
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [student_id, audience, statement, evidence_chain]
+                properties:
+                  student_id: { type: string, format: uuid }
+                  audience: { enum: [student, guardian], description: 会话受众（不由请求决定） }
+                  statement:
+                    type: object
+                    additionalProperties: false
+                    required: [claim_id, template_key, template_version, status, display]
+                    properties:
+                      claim_id: { type: string, format: uuid }
+                      template_key: { type: string }
+                      template_version: { type: integer, minimum: 1 }
+                      status: { enum: [hypothesis, established, to_verify] }
+                      display: { enum: [solid, dashed], description: 待验证只能虚线 }
+                      text: { type: string, minLength: 1, maxLength: 300, description: 只在假设与成立（实线）上 }
+                      confidence_band: { enum: [few_evidence, moderate, strong], description: 只在家长受众 }
+                    if:
+                      properties: { status: { const: to_verify } }
+                      required: [status]
+                    then:
+                      properties: { display: { const: dashed } }
+                      not: { required: [text] }
+                    else:
+                      properties: { display: { const: solid } }
+                      required: [text]
+                  evidence_chain:
+                    type: array
+                    maxItems: 200
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [occurred_at, source_type]
+                      properties:
+                        occurred_at: { type: string, format: date-time }
+                        source_type: { enum: [objective, self, guardian, inferred] }
+                        evidence_level: { enum: [A, B] }
+                        node_id: { type: string }
+                  confidence_band: { enum: [few_evidence, moderate, strong], description: 只在家长受众 }
+                  expires_at: { type: string, format: date-time }
+                if:
+                  properties: { audience: { const: student } }
+                  required: [audience]
+                then:
+                  not: { required: [confidence_band] }
+                  properties:
+                    statement: { not: { required: [confidence_band] } }
+                else:
+                  required: [confidence_band]
+                  properties:
+                    statement: { required: [confidence_band] }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
   /bff/v0/students/{student_id}/exams:
     post:
       x-sb-auth: session

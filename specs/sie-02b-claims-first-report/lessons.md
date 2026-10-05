@@ -120,3 +120,47 @@ I. 中圈指标判断多数时间处于“待验证”（偏差 8）是否可接
 7. `--all` 的学生范围是“有当前节点键掌握行的学生”，metrics 是否需要另一口径。
 8. `jobs_cli` 跨服务 import `services/learning/review_console`，部署制品需带上该目录。
 9. 契约草稿签字范围扩大到第十个工具；0044 须先在副本演练后由人执行。
+
+## 第二步 PR 2：BFF 读接口与开发演示页（2026-10-05）
+按 spec“第二步补充（已确认）”第 3、4 条。依赖 PR 1（af8427e）的 `insight.report` 与 0044。
+
+### 做了什么
+- BFF 两条读接口（开关 report、why，默认不注册）：`GET /bff/v0/students/{id}/first-report`（调 insight.report）、`GET /bff/v0/students/{id}/claims/{claim_id}/explain`（调 insight.explain）。同一路径给学生与家长，受众由会话决定（沿用周报、档案页）。
+- 授权：先按档案授权（RLS 读档案，家长另需有效 guardian_student_link，不按手机号），解释接口还先在库里核对判断属于该学生、对当前受众可见、未过期、模板已审核且在对外白名单；越权请求到不了洞察服务（路由矩阵计数断言）。兄妹、另一户、未绑定、撤销绑定、不存在、非 UUID 同一个 404。
+- 只转发 result：报告按契约逐字段核对，受众须等于会话受众，固定文字与每句过禁用推断词表，每个 claim_id 在库里再核（可见、状态、模板、白名单、只收知识节点），节键与模板类别对应；任何一处不合整份不出（`report: null`）。信封外层不给前端，只把依据版本、是否复核、`policy_version` 记访问日志。解释按受众裁剪：学生去掉两处置信度分档，待验证去掉结论文字；响应带 `audience`，`trust.v0.yaml` 用 if/then 锁定。
+- 洞察服务响应体上限 1 MB（先看 content-length，再流式累计，超限 cancel，按不可用处理）。
+- 开发演示页 `/dev/first-report/{studentId}`：只在 dev / test 构建存在、前端开关默认关；每句带 `data-claim-id`，假设标“初步判断”，家长版带置信度分档，待验证只画虚线与占位标签；文案全是 `{{TODO_COPY:report.*}}` 占位。
+- 合成种子 `db/seeds/dev/first-report-synthetic.sql`、本机合成洞察服务桩 `apps/web/scripts/fake-insight.ts`（不模拟 0044）、e2e 第四套环境 report-on。
+- 攻击面：两条新路由并入 S1（编号受 spec 约束）。
+
+### 测试
+`make bff-test` 通过；变异“报告：”28/28；`make web-test` 61 passed、1 skipped；前端与 BFF tsc 通过；`attack-surface-check` 通过；两张新视觉基线（家长版、学生版）。
+
+### 审查意见处理（按用户“按默认建议处理审查意见”）
+- 安全、契约均无阻断。已改：解释按受众裁剪；policy_version 记日志；节键与模板类别对应；响应体上限；桩要求家长 link_id 与 student_ref 为 UUID；两个事务处注释写明依赖 0010 `claim_front_read`、中间撤销则整份不出；main.ts 开关清单；攻击面登记。
+
+### 经验
+- 学生受众的置信度分档与待验证文字必须在 BFF 去掉，前端只做第二道断言。
+- 只在 OpenAPI description 里写受众差异测试不会验，要显式字段加 if/then。
+- 节键与模板类别核对放在库内再核之后，原有用例的失败原因保持可区分。
+- 读上游响应要 content-length 与流式两条路径都 cancel，变异分别覆盖。
+- 前端 `trust-api.ts` 只允许两处 fetch，新请求经 `call(feature)`；新开关加进 `TRUST_FEATURES` 并同步测试里写死的列表。
+- 变异的多行锚点在 `$'…'` 里写 `\\n`。
+
+### 与 spec 的差异
+1. 两条路由按会话区分受众，不是学生端、家长端各两条路径。
+2. 解释证据链去掉 evidence_id（比“只转发 result”更严），“为什么”页不再显示依据版本。
+3. 报告有一处不合整份不出；信封要求人工复核时报告为 null、解释回 503。
+4. BFF 开关两个（report、why）；演示页的待验证虚线需两个都开。打开 why 现在会注册路由并真正调用 insight.explain（原来只是前端开关）。
+5. 端到端接合成桩，不是真实洞察服务。
+6. 解释响应新增 `audience` 字段；模板类别取模板键最后一段（库里没有类别列）。
+
+### 待人确认
+1. 演示页这个新的展示面（只在 dev、开关默认关）是否接受（S2-3）。
+2. 合成种子以迁移执行者身份登记 status=approved 的合成判断模板，并以 starbuddy_insight 直接写 insight.claim（只在 dev / test 库，有库名与 GUC 闸）。
+3. 正式对外白名单 `config/shell.json` 仍为空，真实环境报告一律为 null；登记哪些模板属于画像可见范围（必停）。
+4. BFF 不能逐字核对固定文字与 policy_version 登记文字（BFF 没有登记表），只做禁用推断检查并记日志。
+5. 模板类别靠键名约定；是否在 claim_template 加类别列或另做登记（迁移，必停）。
+6. 端到端以后是否改接真实洞察服务（需先在副本执行 0044）。
+7. 演示页提示语、标签（含“这一条还在验证中”）为占位，需人写人审；两张新视觉基线需视觉负责人签字。
+8. 学生端“为什么”页不再显示置信度分档（与 SIE 第八章一致），请确认。

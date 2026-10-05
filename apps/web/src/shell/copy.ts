@@ -428,6 +428,22 @@ export const WEEKLY_SECTION: Record<string, string> = {
   progress: T('weekly.section.4'), stuck: T('weekly.section.5'), suggestion: T('weekly.section.6'), prediction: T('weekly.section.7'),
 };
 
+/**
+ * 首份报告开发演示页（SIE-02b 第二步 PR 2，开关 report，只在开发、测试构建里）：页面标签全是占位。
+ * 报告的顶部提示语、标题与各节衔接短语是洞察服务按策略版本登记的固定文字（同样是占位，人写人审），关于学生的句子只来自判断
+ * （BFF 转来的 sentences[].text，带 data-claim-id），都不在这里。待验证的判断画虚线、不显示结论文字，只配下面的中性标签。
+ */
+export const FIRST_REPORT = {
+  heading: T('report.heading', '首份报告（开发演示）'),
+  devNote: T('report.dev_note', '开发演示：合成数据'),
+  preliminary: T('report.preliminary', '初步判断'),
+  verifyHeading: T('report.verify.heading', '待验证'),
+  verifyNote: T('report.verify.note', '这一条还在验证中'),
+  empty: T('report.empty', '还没有可展示的报告'),
+} as const;
+/** 报告的节（判断类别编码 → 占位键）：只有占位键，不附提示 */
+export const FIRST_REPORT_SECTION: Record<string, string> = { node_mastery: T('report.section.1'), node_transfer: T('report.section.2') };
+
 /** 信任界面的全部文案（静态检查逐条扫描；端到端的“每个文本节点”核对也用它） */
 export const ALL_TRUST_COPY: string[] = [
   ...Object.values(TRUST), ...Object.values(WHY), ...Object.values(WHY_STATUS), ...Object.values(EVIDENCE_SOURCE),
@@ -437,6 +453,7 @@ export const ALL_TRUST_COPY: string[] = [
   ...Object.values(ADJUSTMENT), ...Object.values(DATA_RIGHTS), ...Object.values(ERASURE_STATUS), ...Object.values(ERASURE_CANCEL_REASON),
   ...Object.values(ERASURE_SCOPE), ...Object.values(DATA_RESULT), ...Object.values(CONFIDENCE_BAND), ...Object.values(TRUST_SLOT),
   ...Object.values(WEEKLY), ...Object.values(WEEKLY_SECTION), ...Object.values(WEEKLY_SOURCE),
+  ...Object.values(FIRST_REPORT), ...Object.values(FIRST_REPORT_SECTION),
 ];
 
 /** 全部文案（静态检查逐条扫描） */

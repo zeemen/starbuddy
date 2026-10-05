@@ -64,9 +64,10 @@ test('壳页面与组件里没有中文文案：文字只从文案文件取；�
   }
   const claimRenderers = src.filter((f) => /data-claim-id/.test(code(f.text))).map((f) => f.path);
   // 冲刺 5-H 起另有“为什么”页、考试页（对账卡）与周报页渲染判断句（tests/trust.test.ts 逐个核对）；
-  // H5 星图 v1（开关 starmap_v1，默认关）的星位与星数说明（tests/star-v1.test.ts 核对）
-  assert.deepEqual(claimRenderers.sort(), ['src/shell/TaskList.tsx', 'src/star/StarMapV1.tsx', 'src/trust/ExamPages.tsx', 'src/trust/WeeklyPage.tsx',
-                                          'src/trust/WhyPage.tsx']);
+  // H5 星图 v1（开关 starmap_v1，默认关）的星位与星数说明（tests/star-v1.test.ts 核对）；
+  // 首份报告开发演示页（SIE-02b 第二步 PR 2，开关 report，默认关）的报告句与待验证虚线（tests/first-report.test.ts 核对）
+  assert.deepEqual(claimRenderers.sort(), ['src/shell/TaskList.tsx', 'src/star/StarMapV1.tsx', 'src/trust/ExamPages.tsx',
+                                          'src/trust/FirstReportDemo.tsx', 'src/trust/WeeklyPage.tsx', 'src/trust/WhyPage.tsx']);
   assert.match(readFileSync(join(WEB, 'src/shell/TaskList.tsx'), 'utf8'), /data-claim-id=\{r\.claim_id\}>\{r\.text\}/);
 });
 
@@ -78,7 +79,7 @@ test('信任界面开关：默认全关；只在 dev / test 可开；staging、p
     assert.deepEqual([...trustFeatures({ STARBUDDY_ENV: env, STARBUDDY_TRUST_UI: TRUST_FEATURES.join(',') })], [], env);
   }
   assert.equal(trustEnabled('reconcile', {}), false);
-  assert.deepEqual([...TRUST_FEATURES].sort(), ['data_rights', 'dispute', 'reconcile', 'weekly', 'why']);
+  assert.deepEqual([...TRUST_FEATURES].sort(), ['data_rights', 'dispute', 'reconcile', 'report', 'weekly', 'why']);
 });
 
 test('预留位组件：关时返回 null；不发任何请求；只经开关判断（冲刺 5-H 的真实入口与请求见 tests/trust.test.ts）', () => {

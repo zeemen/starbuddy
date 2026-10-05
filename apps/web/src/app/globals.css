@@ -226,3 +226,10 @@ details.constellation[open] > summary::before { content: "▾" / ""; }
 .skill-view { border: 1px solid var(--rule); border-radius: 4px; padding: 8px 12px; align-self: start; }
 .skill-view h2 { font-size: 1rem; margin: 0 0 4px; }
 .skill-view p { margin: 0; }
+
+/* 首份报告开发演示页（SIE-02b 第二步 PR 2，开关 report）：顶部提示语框、“初步判断”标签、待验证虚线；类名只在演示页使用 */
+.report-notice { border: 1px solid var(--rule); border-radius: 4px; padding: 8px 16px; }
+.report-sentences { padding-left: 20px; }
+.report-sentences li { margin: 4px 0; }
+.report-label { font-size: 0.875rem; border: 1px solid var(--rule); border-radius: 4px; padding: 0 4px; }
+.report-sentences li.claim-dashed { list-style: none; margin-left: -20px; border: 1px dashed var(--fg); border-radius: 4px; padding: 4px 8px; }

@@ -34,6 +34,8 @@ const form = (o: Record<string, string>) => ({ get: (k: string) => (k in o ? o[k
 // ---------------------------------------------------------------- “为什么”
 
 const explain = (over: Record<string, unknown> = {}) => ({
+  audience: 'guardian',
+  confidence_band: 'moderate',
   statement: { claim_id: C1, template_key: 'syn.math.mastery', template_version: 1, status: 'hypothesis', display: 'solid',
                text: '（合成）模板句', confidence_band: 'moderate' },
   evidence_chain: [
@@ -48,26 +50,52 @@ const explain = (over: Record<string, unknown> = {}) => ({
 });
 
 test('“为什么”：陈述属于所问的判断；证据链只挑时间、种类、等级、节点四个字段，不带对话与作答原文', () => {
-  const v = pickWhy(explain(), C1)!;
+  const v = pickWhy(explain(), C1, 'guardian')!;
   assert.equal(v.statement.text, '（合成）模板句');
+  assert.equal(v.statement.confidence_band, 'moderate');
   assert.equal(v.evidence.length, 2);
   for (const e of v.evidence) assert.deepEqual(Object.keys(e).sort(), ['evidence_level', 'node_id', 'occurred_at', 'source_type']);
   assert.ok(!JSON.stringify(v).includes('原文'));
   assert.equal(v.evidence[1]!.node_id, null);
   assert.equal(v.source_version, 'algo:sie-explain@0.1.0');
-  assert.equal(pickWhy(explain(), C2), null, '别的判断的陈述不显示');
-  assert.equal(pickWhy(explain({ statement: { ...explain().statement, claim_id: C2 } }), C1), null);
+  assert.equal(pickWhy(explain(), C2, 'guardian'), null, '别的判断的陈述不显示');
+  assert.equal(pickWhy(explain({ statement: { ...explain().statement, claim_id: C2 } }), C1, 'guardian'), null);
 });
 
-test('“为什么”：待验证只能虚线、成立与假设只能实线；缺文字、置信度不认识都不显示', () => {
+test('“为什么”：待验证只能虚线且不带文字、成立与假设只能实线且带文字；缺文字、置信度不认识都不显示', () => {
   const st = explain().statement;
-  assert.equal(pickWhy(explain({ statement: { ...st, status: 'to_verify', display: 'solid' } }), C1), null);
-  assert.equal(pickWhy(explain({ statement: { ...st, status: 'established', display: 'dashed' } }), C1), null);
-  assert.equal(pickWhy(explain({ statement: { ...st, status: 'to_verify', display: 'dashed' } }), C1)!.statement.display, 'dashed');
-  assert.equal(pickWhy(explain({ statement: { ...st, status: 'refuted' } }), C1), null);
-  assert.equal(pickWhy(explain({ statement: { ...st, text: '  ' } }), C1), null);
-  assert.equal(pickWhy(explain({ statement: { ...st, confidence_band: 'high' } }), C1), null);
-  assert.equal(pickWhy(null, C1), null);
+  const { text: _t, ...noText } = st;
+  assert.equal(pickWhy(explain({ statement: { ...noText, status: 'to_verify', display: 'solid' } }), C1, 'guardian'), null);
+  assert.equal(pickWhy(explain({ statement: { ...st, status: 'established', display: 'dashed' } }), C1, 'guardian'), null);
+  const dashed = pickWhy(explain({ statement: { ...noText, status: 'to_verify', display: 'dashed' } }), C1, 'guardian')!;
+  assert.equal(dashed.statement.display, 'dashed');
+  assert.equal(dashed.statement.text, null);
+  assert.equal(pickWhy(explain({ statement: { ...st, status: 'to_verify', display: 'dashed' } }), C1, 'guardian'), null, '待验证带了文字整份不显示');
+  assert.equal(pickWhy(explain({ statement: { ...noText } }), C1, 'guardian'), null, '实线缺文字');
+  assert.equal(pickWhy(explain({ statement: { ...st, status: 'refuted' } }), C1, 'guardian'), null);
+  assert.equal(pickWhy(explain({ statement: { ...st, text: '  ' } }), C1, 'guardian'), null);
+  assert.equal(pickWhy(explain({ statement: { ...st, confidence_band: 'high' } }), C1, 'guardian'), null);
+  assert.equal(pickWhy(null, C1, 'guardian'), null);
+});
+
+test('“为什么”：按受众再断言 BFF 的裁剪——受众对不上不显示；学生受众顶层或陈述内带置信度分档不显示，家长两处缺一不显示', () => {
+  const { confidence_band: _b, ...stNoBand } = explain().statement;
+  const student = explain({ audience: 'student', confidence_band: undefined, statement: stNoBand });
+  delete (student as Record<string, unknown>)['confidence_band'];
+  const s = pickWhy(student, C1, 'student')!;
+  assert.equal(s.statement.confidence_band, null);
+  assert.equal(s.statement.text, '（合成）模板句');
+  assert.equal(pickWhy(student, C1, 'guardian'), null, '受众对不上');
+  assert.equal(pickWhy(explain(), C1, 'student'), null, '家长形状当学生');
+  assert.equal(pickWhy({ ...student, confidence_band: 'moderate' }, C1, 'student'), null, '学生顶层带置信度');
+  assert.equal(pickWhy({ ...student, statement: { ...stNoBand, confidence_band: 'moderate' } }, C1, 'student'), null, '学生陈述内带置信度');
+  assert.equal(pickWhy(explain({ statement: stNoBand }), C1, 'guardian'), null, '家长陈述内缺置信度');
+  const noTop = explain();
+  delete (noTop as Record<string, unknown>)['confidence_band'];
+  assert.equal(pickWhy(noTop, C1, 'guardian'), null, '家长顶层缺置信度');
+  const noAud = explain();
+  delete (noAud as Record<string, unknown>)['audience'];
+  assert.equal(pickWhy(noAud, C1, 'guardian'), null, '没有受众');
 });
 
 // ---------------------------------------------------------------- 异议
@@ -293,14 +321,15 @@ test('信任界面组件里没有中文文案；data-claim-id 只在登记的组
   const tsx = src.filter((f) => /^src\/(trust|app\/s|app\/family)\/.*\.tsx$/.test(f.path));
   for (const f of tsx) assert.deepEqual(code(f.text).match(/[一-鿿]+/g) ?? [], [], f.path);
   const renderers = src.filter((f) => /data-claim-id/.test(code(f.text))).map((f) => f.path).sort();
-  // src/star/StarMapV1.tsx：H5 星图 v1（开关 starmap_v1，默认关），由 tests/star-v1.test.ts 核对
-  assert.deepEqual(renderers, ['src/shell/TaskList.tsx', 'src/star/StarMapV1.tsx', 'src/trust/ExamPages.tsx', 'src/trust/WeeklyPage.tsx',
-                               'src/trust/WhyPage.tsx']);
+  // src/star/StarMapV1.tsx：H5 星图 v1（开关 starmap_v1，默认关），由 tests/star-v1.test.ts 核对；
+  // src/trust/FirstReportDemo.tsx：首份报告开发演示页（开关 report，默认关），由 tests/first-report.test.ts 核对
+  assert.deepEqual(renderers, ['src/shell/TaskList.tsx', 'src/star/StarMapV1.tsx', 'src/trust/ExamPages.tsx', 'src/trust/FirstReportDemo.tsx',
+                               'src/trust/WeeklyPage.tsx', 'src/trust/WhyPage.tsx']);
   assert.match(read('src/trust/WhyPage.tsx'), /<span data-claim-id=\{st\.claim_id\}>\{st\.text\}<\/span>/);
   assert.match(read('src/trust/ExamPages.tsx'), /s\.claim_id \? \(\n\s+<li key=\{i\}>\n\s+<span data-claim-id=\{s\.claim_id\}>\{s\.text\}<\/span>/);
   // 学生端不附置信度说明；家长端附（SIE 第八章）
   assert.match(read('src/trust/WeeklyPage.tsx'), /\{sec\.sentences\.map\(\(s\) => s\.claim_id \? \(\n\s+<li key=\{s\.claim_id\}>\n\s+<span data-claim-id=\{s\.claim_id\}>\{s\.text\}<\/span>/);
-  for (const p of ['src/trust/WhyPage.tsx', 'src/trust/ExamPages.tsx', 'src/trust/WeeklyPage.tsx']) {
+  for (const p of ['src/trust/WhyPage.tsx', 'src/trust/ExamPages.tsx', 'src/trust/WeeklyPage.tsx', 'src/trust/FirstReportDemo.tsx']) {
     for (const m of code(read(p)).matchAll(/CONFIDENCE_BAND\[/g)) {
       const before = code(read(p)).slice(Math.max(0, m.index! - 200), m.index);
       assert.match(before, /audience === 'guardian'/, p);

@@ -20,6 +20,7 @@ import type { StarMapFeature } from '../star-map/features.ts';
 import type { StarMapNodesClient } from '../star-map/nodes-client.ts';
 import type { DisputeClient, ExamViewClient } from '../trust/clients.ts';
 import type { ExportStore } from '../trust/exports.ts';
+import type { InsightReadClient } from '../trust/report.ts';
 import { recentLogins } from '../trust/proof.ts';
 import { P } from './problems.ts';
 import { codeMac, csrfFor, E164, newCode } from './secrets.ts';
@@ -54,7 +55,9 @@ export interface ShellDeps {
   shell?: { config?: ShellConfig; plan?: PlanClient; insight?: InsightClient; rest?: RestStore };
   /** SIE-03 PR③ 信任界面（trust-routes.ts）：打开的开关（缺省全关，路由不注册）、洞察服务的异议工具、预测与对账卡的读取
    *  （契约没有 BFF 可用的工具，缺省不配，路由 503）、导出包暂存（缺省进程内） */
-  trust?: { features?: ReadonlySet<TrustFeature>; dispute?: DisputeClient; exams?: ExamViewClient; exports?: ExportStore };
+  trust?: { features?: ReadonlySet<TrustFeature>; dispute?: DisputeClient; exams?: ExamViewClient; exports?: ExportStore;
+            /** SIE-02b 第二步 PR 2：insight.report 与 insight.explain 的读取（开关 report / why；不配时这两条路由 503） */
+            read?: InsightReadClient };
   /** H5 星图 v1（star-map-v1-routes.ts）：打开的开关（缺省全关，v1 路由不注册）、学习服务 star-map/nodes 客户端
    *  （不配时打开开关也只画中性底星） */
   starMap?: { features?: ReadonlySet<StarMapFeature>; nodes?: StarMapNodesClient };

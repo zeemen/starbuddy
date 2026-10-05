@@ -165,8 +165,39 @@ PY
   exec node --no-warnings src/main.ts ) > "$SMLOG" 2>&1 < /dev/null &
 SM_BFF_PID=$!
 trap 'kill "$BFF_PID" "$TRUST_BFF_PID" "$SM_BFF_PID" "$SM_LEARNING_PID" "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true; rm -f "$LOG" "$TLOG" "$SMLOG" "$LLOG" "$SMLLOG" "$SMS_INBOX" "$AUTH_CFG" "$TRUST_SHELL_CFG" "$SM_SHELL_CFG"' EXIT
+# SIE-02b 第二步 PR 2 首份报告开发演示页（e2e/first-report.spec.ts，playwright.config.ts 的 report-on 项目）：
+#   - 合成家庭 HR 与 R1 的四条合成判断（db/seeds/dev/first-report-synthetic.sql）；
+#   - 合成洞察服务桩（scripts/fake-insight.ts，只实现 insight.report / insight.explain，按契约信封返回 R1 的合成报告与解释；令牌每次随机生成，
+#     只经环境变量传）。真实洞察服务的报告生成与 0044 授权再核对由 services/insight 的测试覆盖（lessons 待人确认：端到端接真实洞察服务）；
+#   - 第四个 BFF：STARBUDDY_TRUST_UI=report,why（只在 STARBUDDY_ENV=test 生效），BFF_INSIGHT_URL 指向桩，显示规则把两个合成报告模板列进
+#     对外白名单（BFF_SHELL_CONFIG 只在 test 认；正式的 config/shell.json 仍是空表，必停项）。
+PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -q -v ON_ERROR_STOP=1 -f "$ROOT/db/seeds/dev/first-report-synthetic.sql" >/dev/null
+FI_PORT="$(free_port)"
+RP_BFF_PORT="$(free_port)"
+WEB_REPORT_PORT="$(free_port)"
+FI_CRED="$(python3 -c 'import secrets; print(secrets.token_hex(24))')"
+FILOG="$(mktemp)"
+RPLOG="$(mktemp)"
+( export FAKE_INSIGHT_PORT="$FI_PORT" FAKE_INSIGHT_TOKEN="$FI_CRED"
+  exec node --no-warnings "$WEB/scripts/fake-insight.ts" ) > "$FILOG" 2>&1 < /dev/null &
+FI_PID=$!
+RP_SHELL_CFG="$(mktemp --suffix=.json)"
+python3 - "$ROOT/services/bff/config/shell.json" "$RP_SHELL_CFG" <<'PY'
+import json, sys
+c = json.load(open(sys.argv[1]))
+c['external_claim_templates'] = ['syn.report.node_mastery@1', 'syn.report.node_transfer@1']
+json.dump(c, open(sys.argv[2], 'w'))
+PY
+( cd "$ROOT/services/bff" || exit 1
+  unset STARBUDDY_STARMAP  # 星图开关全关（v0）：不从调用方环境继承
+  export BFF_DATABASE_URL="postgresql://bff_app@/starbuddy_test?host=$PGHOST" PORT="$RP_BFF_PORT" BFF_AUTH_CONFIG="$AUTH_CFG" \
+    STARBUDDY_ENV=test BFF_SHELL_ORIGIN="http://127.0.0.1:$WEB_REPORT_PORT" BFF_SMS_CAPTURE_FILE="$SMS_INBOX" \
+    STARBUDDY_TRUST_UI=report,why BFF_SHELL_CONFIG="$RP_SHELL_CFG" BFF_INSIGHT_URL="http://127.0.0.1:$FI_PORT" BFF_INSIGHT_TOKEN="$FI_CRED"
+  exec node --no-warnings src/main.ts ) > "$RPLOG" 2>&1 < /dev/null &
+RP_BFF_PID=$!
+trap 'kill "$BFF_PID" "$TRUST_BFF_PID" "$SM_BFF_PID" "$SM_LEARNING_PID" "$RP_BFF_PID" "$FI_PID" "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true; rm -f "$LOG" "$TLOG" "$SMLOG" "$RPLOG" "$FILOG" "$LLOG" "$SMLLOG" "$SMS_INBOX" "$AUTH_CFG" "$TRUST_SHELL_CFG" "$SM_SHELL_CFG" "$RP_SHELL_CFG"' EXIT
 for _ in $(seq 1 80); do
-  python3 -c "import socket,sys; ok=all(socket.socket().connect_ex(('127.0.0.1', p)) == 0 for p in ($BFF_PORT, $TRUST_BFF_PORT, $SM_BFF_PORT, $SM_LEARNING_PORT)); sys.exit(0 if ok else 1)" && break
+  python3 -c "import socket,sys; ok=all(socket.socket().connect_ex(('127.0.0.1', p)) == 0 for p in ($BFF_PORT, $TRUST_BFF_PORT, $SM_BFF_PORT, $SM_LEARNING_PORT, $RP_BFF_PORT, $FI_PORT)); sys.exit(0 if ok else 1)" && break
   sleep 0.25
 done
 
@@ -194,8 +225,8 @@ REVIEW_PID=$!
 ENVDTS="$(mktemp)"
 if [ -f "$WEB/next-env.d.ts" ]; then cp "$WEB/next-env.d.ts" "$ENVDTS"; else rm -f "$ENVDTS"; fi
 cleanup() {
-  kill "$BFF_PID" "$TRUST_BFF_PID" "$SM_BFF_PID" "$SM_LEARNING_PID" "$REVIEW_PID" "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true
-  rm -f "$LOG" "$TLOG" "$SMLOG" "$RLOG" "$LLOG" "$SMLLOG" "$SMS_INBOX" "$AUTH_CFG" "$TRUST_SHELL_CFG" "$SM_SHELL_CFG"
+  kill "$BFF_PID" "$TRUST_BFF_PID" "$SM_BFF_PID" "$SM_LEARNING_PID" "$RP_BFF_PID" "$FI_PID" "$REVIEW_PID" "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true
+  rm -f "$LOG" "$TLOG" "$SMLOG" "$RPLOG" "$FILOG" "$RLOG" "$LLOG" "$SMLLOG" "$SMS_INBOX" "$AUTH_CFG" "$TRUST_SHELL_CFG" "$SM_SHELL_CFG" "$RP_SHELL_CFG"
   if [ -f "$ENVDTS" ]; then cp "$ENVDTS" "$WEB/next-env.d.ts"; rm -f "$ENVDTS"; else rm -f "$WEB/next-env.d.ts"; fi
   rm -rf "${WEB:?}/.next-e2e"
 }
@@ -208,7 +239,8 @@ done
 # STARBUDDY_NEXT_DIST_DIR：构建与 next start（playwright.config.ts 的 webServer）都读 .next-e2e
 export STARBUDDY_BFF_URL="http://127.0.0.1:$BFF_PORT" STARBUDDY_REVIEW_URL="http://127.0.0.1:$REVIEW_PORT" WEB_PORT STARBUDDY_DEV_PAGES=1 STARBUDDY_ENV=test NEXT_TELEMETRY_DISABLED=1 \
   STARBUDDY_NEXT_DIST_DIR=.next-e2e STARBUDDY_TRUST_BFF_URL="http://127.0.0.1:$TRUST_BFF_PORT" WEB_TRUST_PORT \
-  STARBUDDY_STARMAP_BFF_URL="http://127.0.0.1:$SM_BFF_PORT" WEB_STARMAP_PORT
+  STARBUDDY_STARMAP_BFF_URL="http://127.0.0.1:$SM_BFF_PORT" WEB_STARMAP_PORT \
+  STARBUDDY_REPORT_BFF_URL="http://127.0.0.1:$RP_BFF_PORT" WEB_REPORT_PORT
 cd "$WEB"
 # 端到端用测试构建（冲刺 2-L）：开发专用页面（page.dev.tsx：探针、诊断演示页与符号样张页）只在 STARBUDDY_DEV_PAGES=1 且
 # STARBUDDY_ENV=dev/test 构建时才是页面（next.config.ts，构建期常量）。测试构建输出到 .next-e2e、类型检查用 tsconfig.e2e.json，正式的 .next 保持生产构建，
@@ -220,5 +252,6 @@ set +e
 npx --no-install playwright test "$@"
 rc=$?
 if [ $rc -ne 0 ]; then echo "--- BFF 日志（最后 20 行）"; tail -20 "$LOG"; echo "--- 信任界面 BFF 日志（最后 20 行）"; tail -20 "$TLOG"; echo "--- 审核台后端日志（最后 20 行）"; tail -20 "$RLOG"; echo "--- 学习服务日志（最后 20 行）"; tail -20 "$LLOG"
-  echo "--- 星图 v1 BFF 日志（最后 20 行）"; tail -20 "$SMLOG"; echo "--- 星图 v1 学习服务日志（最后 20 行）"; tail -20 "$SMLLOG"; fi
+  echo "--- 星图 v1 BFF 日志（最后 20 行）"; tail -20 "$SMLOG"; echo "--- 星图 v1 学习服务日志（最后 20 行）"; tail -20 "$SMLLOG"
+  echo "--- 首份报告 BFF 日志（最后 20 行）"; tail -20 "$RPLOG"; echo "--- 合成洞察服务桩日志（最后 20 行）"; tail -20 "$FILOG"; fi
 exit $rc

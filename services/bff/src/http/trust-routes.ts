@@ -5,6 +5,8 @@
 //   考试（reconcile）：录入考试安排（insight.submit_exam_plan）、按安排录成绩（insight.submit_exam_score）；读预测与对账卡。
 //   周报（weekly，冲刺 5-H）：读最近一周已生成的周报（0036 insight.weekly_report，按受众只读），每句在库里再核判断。
 //   学情档案页（profile，KGE-04 第二步 PR 4）：经 0037 陈述视图读引用（不含待办），按调用者身份再核判断，文字经 insight.explain。
+//   首份报告（report）与单条解释（why）（SIE-02b 第二步 PR 2）：经 insight.report / insight.explain，只转发 result（信封外层不给前端），
+//     每个判断在库里再核。
 //   数据权利（data_rights，只给家长）：导出（0035 platform.export_student_data，BFF 暂存、一次性兑换下载）；
 //     删除申请 → 会话内二次确认 → 冷静期内撤回；查看状态与回执（回执只有表名与行数）。
 // 与其他路由同一套规矩：身份只来自会话；路径里的 student_id 只作查询条件，授权在库里（RLS、SECURITY DEFINER 函数），
@@ -20,6 +22,9 @@ import { DISPUTE_KINDS, IDEMPOTENCY_KEY, pickPrediction, pickReconciliation, typ
 import { MemoryExportStore, type ExportStore } from '../trust/exports.ts';
 import { forbiddenHits, lexicon } from '../trust/lexicon.ts';
 import { pickObjective, pickWeeklySentence, WEEKLY_SECTIONS, type WeeklySentence } from '../trust/weekly.ts';
+import {
+  explainForAudience, pickExplain, pickReport, POLICY_VERSION, reportTexts, sectionMismatches, type EnvelopeNote, type ReadOutcome,
+} from '../trust/report.ts';
 import { recentLogins, trustMac } from '../trust/proof.ts';
 import { P } from './problems.ts';
 import type { Ctx, Handler, Query, Reply, Route, ShellDeps } from './routes.ts';
@@ -376,6 +381,143 @@ const profilePage: Handler = async (ctx) => {
   return json(200, { student_id: id, subject, page: { compiled_at: pre.page.compiled_at.toISOString(), sections } });
 };
 
+// ---------------------------------------------------------------- 首份报告与单条解释（report / why，SIE-02b 第二步 PR 2）
+
+/** 能取解释的判断状态（与异议同一组：待验证也能看“为什么”，前端画虚线、不作为陈述） */
+const EXPLAINABLE = ['hypothesis', 'established', 'to_verify'];
+
+interface ClaimState { ref: string; status: string }
+
+/**
+ * 判断在当前会话、受众下的状态：属于该学生、对当前受众可见、未过期、模板已审核、状态在 statuses 里（nodeOnly：目标是知识节点）。
+ * RLS（0010 claim_front_read）之外再显式写一遍条件，与 visibleClaims 同一口径，另带状态（报告与解释要核对状态与“初步判断”标注）
+ */
+async function claimStates(q: Query, id: string, audience: Audience, claimIds: string[], statuses: string[], nodeOnly: boolean)
+  : Promise<Map<string, ClaimState>> {
+  if (claimIds.length === 0) return new Map();
+  const { rows } = await q<{ id: string; template_key: string; template_version: number; status: string }>(
+    `SELECT c.id, c.template_key, c.template_version, c.status::text AS status FROM insight.claim c
+       JOIN insight.claim_template t ON t.template_key = c.template_key AND t.version = c.template_version AND t.status = 'approved'
+      WHERE c.id = ANY ($1::uuid[]) AND c.student_id = $2 AND $3 = ANY (c.visibility) AND c.expires_at > now()
+        AND c.status::text = ANY ($4::text[]) AND ($5::boolean IS FALSE OR c.target_type = 'node')`,
+    [[...new Set(claimIds)], id, audience, statuses, nodeOnly]);
+  return new Map(rows.map((r) => [r.id, { ref: templateRef(r.template_key, r.template_version), status: r.status }]));
+}
+
+/** 信封外层只记这两项进访问日志（不给前端）：依据版本只收版本串的字符集，是否要人工复核 */
+function noteEnvelope(ctx: Ctx, env: EnvelopeNote): void {
+  if (/^[A-Za-z0-9:@._;-]{1,160}$/.test(env.source_version)) ctx.note('source_version', env.source_version);
+  if (env.human_review_required) ctx.note('human_review_required', 'true');
+}
+
+/** 文字过禁用推断词表（SIE-00）；词表读不到当作命中（fail closed） */
+function inferenceFree(ctx: Ctx, texts: string[]): boolean {
+  try {
+    const lex = lexicon();
+    return texts.every((t) => forbiddenHits(t, lex).length === 0);
+  } catch {
+    ctx.note('lexicon', 'unavailable');
+    return false;
+  }
+}
+
+/**
+ * 首份报告（开关 report）：先按档案授权（学生本人或有效绑定家长，RLS 读档案 + 家长的绑定关系；规则 5），再调 insight.report。
+ * 只转发 result：按契约逐字段核对（受众必须等于会话受众），文字再过禁用推断词表，每个判断在库里再核（属于该学生、对当前受众可见、
+ * 假设或成立、未过期、知识节点、模板已审核且在对外白名单里、模板键与版本和状态都对得上），节键与句子模板类别对应。任何一处不合整份不出
+ * （不挑句子、不截断），与洞察服务 404（无权、没有报告、检查不过）一样回 report: null；洞察服务不可用 503。信封要求人工复核时同样不出。
+ * 访问日志另记 policy_version（只在字符集合格时）。
+ */
+const firstReport: Handler = async (ctx) => {
+  // 事务一（examWho → withAccount）：按会话账号读档案（RLS）与家长的有效绑定，撤销绑定的家长在这里就 404。
+  // 本事务与下面的库内再核（事务二）不是同一个快照：两者之间绑定被撤销时，依赖 0010 claim_front_read（platform.is_linked_guardian）
+  // 对撤销绑定生效，事务二读不到任何判断 → 整份不出（失败即关闭）；洞察服务那一侧另由 0044 insight.verify_actor 再核。
+  const who = await examWho(ctx);
+  if (!who) return problem(P.NOT_FOUND);
+  const client = ctx.deps.trust?.read;
+  if (!client) return problem(P.TRUST_UNAVAILABLE);
+  const out = await client.report(who, timeoutOf(ctx.deps)).catch((): ReadOutcome => ({ kind: 'unavailable' }));
+  ctx.note('outcome', out.kind);
+  const none = json(200, { student_id: who.studentRef, report: null });
+  if (out.kind === 'not_found') return none;
+  if (out.kind !== 'ok') return problem(P.TRUST_UNAVAILABLE);
+  noteEnvelope(ctx, out.envelope);
+  if (out.envelope.human_review_required) return none;
+  const report = pickReport(out.result, who.audience);
+  if (!report) {
+    ctx.note('report', 'invalid_shape');
+    return none;
+  }
+  if (POLICY_VERSION.test(report.policy_version)) ctx.note('policy_version', report.policy_version);
+  if (!inferenceFree(ctx, reportTexts(report))) {
+    ctx.note('report', 'forbidden_inference');
+    return none;
+  }
+  const cfg = shellConfig(ctx.deps);
+  // 事务二（库内再核）：依赖 0010 claim_front_read 对撤销绑定生效——事务一之后绑定被撤销，这里读不到任何判断，
+  // bad 等于句数，整份不出（失败即关闭，不会出半份）。
+  const states = await withAccount(ctx.deps.pool, ctx.session!.accountId, (c) =>
+    claimStates((sql, p) => c.query(sql, p), who.studentRef, who.audience, report.claim_ids, ['hypothesis', 'established'], true));
+  const bad = report.sections.flatMap((sec) => sec.sentences).filter((x) => {
+    const c = states.get(x.claim_id);
+    const ref = templateRef(x.template_key, x.template_version);
+    return !c || c.ref !== ref || c.status !== x.status || !cfg.externalTemplates.has(ref);
+  }).length;
+  if (bad > 0) {
+    ctx.note('report', 'claim_not_shown');
+    ctx.note('dropped_statements', String(bad));
+    return none;
+  }
+  if (sectionMismatches(report) > 0) {
+    ctx.note('report', 'section_template_mismatch');
+    return none;
+  }
+  return json(200, { student_id: who.studentRef, report });
+};
+
+/**
+ * 单条解释（开关 why）：先按档案授权，并在库里核对这条判断属于该学生、对当前受众可见、假设 / 成立 / 待验证、未过期、模板已审核且在
+ * 对外白名单里（判断不属于、不可见、不存在同一个 404，越权请求到不了洞察服务），再调 insight.explain。只转发 result 的子集：
+ * 陈述（模板键、版本、状态须与库里一致；待验证只能虚线）、证据链（时间、来源、等级、节点）、置信度分档、到期时间，另带会话受众；
+ * 返回前按受众裁剪：学生受众没有置信度分档（顶层与陈述内都去掉），待验证没有陈述文字。
+ * 洞察服务 404 → 404；不可用、形状不合、要人工复核、陈述命中禁用推断词表 → 503。
+ */
+const claimExplain: Handler = async (ctx) => {
+  const s = ctx.session!;
+  const id = student(ctx);
+  const audience = audienceOf(ctx);
+  const claimId = ctx.params['claim_id']!;
+  const cfg = shellConfig(ctx.deps);
+  const pre = await withAccount(ctx.deps.pool, s.accountId, async (c) => {
+    const q: Query = (sql, p) => c.query(sql, p);
+    if (!(await readable(q, id))) return null;
+    const st = (await claimStates(q, id, audience, [claimId], EXPLAINABLE, false)).get(claimId);
+    if (!st || !cfg.externalTemplates.has(st.ref)) return null;
+    return { st, linkId: audience === 'guardian' ? await linkIdFor(q, id) : undefined };
+  });
+  if (!pre || (audience === 'guardian' && !pre.linkId)) return problem(P.NOT_FOUND);
+  const client = ctx.deps.trust?.read;
+  if (!client) return problem(P.TRUST_UNAVAILABLE);
+  const out = await client.explain({ studentRef: id, audience, actorRef: s.accountId, ...(pre.linkId ? { linkId: pre.linkId } : {}), claimId },
+                                   timeoutOf(ctx.deps)).catch((): ReadOutcome => ({ kind: 'unavailable' }));
+  ctx.note('outcome', out.kind);
+  if (out.kind === 'not_found') return problem(P.NOT_FOUND);
+  if (out.kind !== 'ok') return problem(P.TRUST_UNAVAILABLE);
+  noteEnvelope(ctx, out.envelope);
+  if (out.envelope.human_review_required) return problem(P.TRUST_UNAVAILABLE);
+  const view = pickExplain(out.result, claimId);
+  if (!view || templateRef(view.statement.template_key, view.statement.template_version) !== pre.st.ref || view.statement.status !== pre.st.status) {
+    ctx.note('explain', 'invalid_shape');
+    return problem(P.TRUST_UNAVAILABLE);
+  }
+  if (!inferenceFree(ctx, [view.statement.text])) {
+    ctx.note('explain', 'forbidden_inference');
+    return problem(P.TRUST_UNAVAILABLE);
+  }
+  // 返回前按受众与状态裁剪：学生不带置信度分档（顶层与陈述内），待验证（虚线）不带陈述文字
+  return json(200, { student_id: id, ...explainForAudience(view, audience) });
+};
+
 // ---------------------------------------------------------------- 导出与删除（data_rights，只给家长）
 
 const exportStores = new WeakMap<ShellDeps, ExportStore>();
@@ -557,6 +699,8 @@ export const TRUST_ROUTES: readonly Route[] = [
   read('reconcile', `${S}/exams/{exam_id}/reconciliation`, 'session', reconciliation, [{ bucket: 'exam_view.session.minute', dim: 'session' }], true),
   read('weekly', `${S}/weekly-report`, 'session', weeklyReport, [{ bucket: 'trust_read.session.minute', dim: 'session' }]),
   read('profile', `${S}/profile-pages/{subject}`, 'session', profilePage, [{ bucket: 'trust_read.session.minute', dim: 'session' }], true),
+  read('report', `${S}/first-report`, 'session', firstReport, [{ bucket: 'trust_read.session.minute', dim: 'session' }], true),
+  read('why', `${S}/claims/{claim_id}/explain`, 'session', claimExplain, [{ bucket: 'trust_read.session.minute', dim: 'session' }], true),
   write('data_rights', `${S}/exports`, 'guardian', false, exportCreate, [{ bucket: 'export.account.hour', dim: 'account' }], true),
   write('data_rights', `${S}/exports/{export_job_id}/download`, 'guardian', true, exportDownload, [{ bucket: 'export_download.account.hour', dim: 'account' }]),
   read('data_rights', `${S}/erasure`, 'guardian', erasureList, [{ bucket: 'trust_read.session.minute', dim: 'session' }]),

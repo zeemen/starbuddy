@@ -6,13 +6,16 @@
 //   data_rights  家长的导出与删除（申请、二次确认、撤回、状态与回执）
 //   profile      学情档案页的学生 / 家长视图读取（KGE-04 第二步 PR 4：经 0037 陈述视图读引用、经 insight.explain 取文字；
 //                前端展示随 H5 / 信任界面另做，apps/web 的开关表暂未加 profile，见 lessons）
-// why 只在前端（BFF 没有对应的新路由），这里也认，免得同一个环境变量两边解析不一致。
+//   why          单条判断的解释读取（SIE-02b 第二步 PR 2：GET …/claims/{claim_id}/explain，经 insight.explain；前端“为什么”页与
+//                首份报告演示页的待验证虚线用它）
+//   report       首份画像报告读取（SIE-02b 第二步 PR 2：GET …/first-report，经 insight.report；前端只有开发演示页，同名开关）
+// 两条都只转发洞察服务的 result（信封外层的置信度、证据 ID、版本不给前端）。
 // 默认全部关闭：关闭时这些路由不注册（表外路径，统一的 404），4-H 的“信任界面预留”验收继续成立。
 // 打开方式：STARBUDDY_TRUST_UI=dispute,reconcile（逗号分隔），只在 dev / test 生效；其余环境设了就拒绝启动（main.ts），
 // 直到实现与文案签字后由人改这里的规则。
 import { isLocalEnv, type RunEnv } from '../http/config.ts';
 
-export const TRUST_FEATURES = ['why', 'dispute', 'reconcile', 'weekly', 'data_rights', 'profile'] as const;
+export const TRUST_FEATURES = ['why', 'dispute', 'reconcile', 'weekly', 'data_rights', 'profile', 'report'] as const;
 export type TrustFeature = (typeof TRUST_FEATURES)[number];
 
 /** 解析开关；非 dev / test 设了开关直接抛错（调用方拒绝启动），没设则一律关闭 */

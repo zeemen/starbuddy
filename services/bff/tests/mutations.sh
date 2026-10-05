@@ -165,6 +165,37 @@ SM=(
   $'信任：档案页只给家长\tsrc/http/trust-routes.ts\t`${S}/profile-pages/{subject}`, \'session\', profilePage\t`${S}/profile-pages/{subject}`, \'guardian\', profilePage'
   $'信任：档案页不限流\tsrc/http/trust-routes.ts\tprofilePage, [{ bucket: \'trust_read.session.minute\', dim: \'session\' }], true)\tprofilePage, [], true)'
   $'信任：档案页不核对学科码（英语也读）\tsrc/http/shell-routes.ts\tWHERE code = $1 AND status <> \'planned\' AND product IS NOT NULL`\tWHERE code = $1 AND product IS NOT NULL`'
+  # SIE-02b 第二步 PR 2 首份报告（report）与单条解释（why）：先按档案授权、只转发 result、契约逐字段核对、库内再核、禁用推断、限流；
+  # 这几条跑 tests/report-units.test.ts 与 tests/report.integration.test.ts（BFFMUT_FILTER=报告：）
+  $'报告：转发信封外层字段\tsrc/http/trust-routes.ts\treturn json(200, { student_id: who.studentRef, report });\treturn json(200, { student_id: who.studentRef, report, ...out.envelope });'
+  $'报告：不按档案授权就调洞察服务\tsrc/http/trust-routes.ts\tconst who = await examWho(ctx);\\n  if (!who) return problem(P.NOT_FOUND);\\n  const client = ctx.deps.trust?.read;\tconst who = { studentRef: student(ctx), audience: audienceOf(ctx), actorRef: ctx.session!.accountId };\\n  const client = ctx.deps.trust?.read;'
+  $'报告：不在库内再核判断\tsrc/http/trust-routes.ts\t  if (bad > 0) {\t  if (false) {'
+  $'报告：不过对外白名单\tsrc/http/trust-routes.ts\treturn !c || c.ref !== ref || c.status !== x.status || !cfg.externalTemplates.has(ref);\treturn !c || c.ref !== ref || c.status !== x.status;'
+  $'报告：不核对判断状态（初步判断标注可能错）\tsrc/http/trust-routes.ts\treturn !c || c.ref !== ref || c.status !== x.status || !cfg.externalTemplates.has(ref);\treturn !c || c.ref !== ref || !cfg.externalTemplates.has(ref);'
+  $'报告：库内再核不看可见范围\tsrc/http/trust-routes.ts\tAND $3 = ANY (c.visibility) AND c.expires_at > now()\\n        AND c.status::text = ANY ($4::text[]) AND ($5::boolean\tAND c.expires_at > now()\\n        AND c.status::text = ANY ($4::text[]) AND ($5::boolean'
+  $'报告：收非知识节点的判断\tsrc/http/trust-routes.ts\tAND ($5::boolean IS FALSE OR c.target_type = \'node\')\tAND ($5::boolean IS FALSE OR true)'
+  $'报告：不过禁用推断词表\tsrc/http/trust-routes.ts\tif (!inferenceFree(ctx, reportTexts(report))) {\tif (false) {'
+  $'报告：要人工复核也照出\tsrc/http/trust-routes.ts\t  if (out.envelope.human_review_required) return none;\t'
+  $'报告：不核对受众\tsrc/trust/report.ts\tformat !== \'sie-first-report/0.1\' || v[\'audience\'] !== audience ||\tformat !== \'sie-first-report/0.1\' ||'
+  $'报告：claim_ids 不核对顺序\tsrc/trust/report.ts\t!ids.every((id, i) => id === order[i])\tfalse'
+  $'报告：学生版放过置信度\tsrc/trust/report.ts\tif (audience === \'guardian\' ? typeof band !== \'string\' || !BANDS.includes(band) : band !== undefined) return null;\tif (audience === \'guardian\' && (typeof band !== \'string\' || !BANDS.includes(band))) return null;'
+  $'报告：信封不合也当成功\tsrc/trust/report.ts\tif (!envelopeOk(env) || !(\'result\' in env)) return { kind: \'unavailable\' };\tif (!(\'result\' in env)) return { kind: \'unavailable\' };'
+  $'报告：不限流\tsrc/http/trust-routes.ts\tfirstReport, [{ bucket: \'trust_read.session.minute\', dim: \'session\' }], true)\tfirstReport, [], true)'
+  $'报告：解释不过对外白名单\tsrc/http/trust-routes.ts\tif (!st || !cfg.externalTemplates.has(st.ref)) return null;\tif (!st) return null;'
+  $'报告：解释转发证据 ID\tsrc/trust/report.ts\tevidence.push({ occurred_at:\tevidence.push({ evidence_id: eid as string, occurred_at:'
+  $'报告：解释不核对陈述状态\tsrc/http/trust-routes.ts\t || view.statement.status !== pre.st.status) {\t) {'
+  $'报告：解释的洞察服务 404 改回 503\tsrc/http/trust-routes.ts\t  if (out.kind === \'not_found\') return problem(P.NOT_FOUND);\t  if (out.kind === \'not_found\') return problem(P.TRUST_UNAVAILABLE);'
+  # 审查意见：解释按受众裁剪、节键与模板类别、策略版本记日志、响应体上限
+  $'报告：解释不按受众裁剪\tsrc/http/trust-routes.ts\t...explainForAudience(view, audience) });\t...view });'
+  $'报告：解释学生版放过顶层置信度\tsrc/trust/report.ts\t...(audience === \'guardian\' ? { confidence_band: v.confidence_band } : {}),\tconfidence_band: v.confidence_band,'
+  $'报告：解释学生版放过陈述内置信度\tsrc/trust/report.ts\t...(audience === \'guardian\' ? { confidence_band: s.confidence_band } : {}) },\tconfidence_band: s.confidence_band },'
+  $'报告：待验证解释带文字\tsrc/trust/report.ts\t...(solid ? { text: s.text } : {}),\ttext: s.text,'
+  $'报告：不核对节键与模板类别\tsrc/http/trust-routes.ts\tif (sectionMismatches(report) > 0) {\tif (false) {'
+  $'报告：类别按前缀而非整段比较\tsrc/trust/report.ts\treturn SECTION_KEYS.includes(last) ? last as ReportSection[\'key\'] : null;\treturn SECTION_KEYS.find((k) => last.startsWith(k)) as ReportSection[\'key\'] ?? null;'
+  $'报告：不记策略版本\tsrc/http/trust-routes.ts\t  if (POLICY_VERSION.test(report.policy_version)) ctx.note(\'policy_version\', report.policy_version);\t'
+  $'报告：响应体不设上限\tsrc/trust/report.ts\tconst max = opts.maxBytes ?? MAX_READ_BYTES;\tconst max = Number.MAX_SAFE_INTEGER;'
+  $'报告：不看 content-length\tsrc/trust/report.ts\tif (len !== null && (!/^\\d{1,15}$/.test(len.trim()) || Number(len.trim()) > max)) {\tif (false) {'
+  $'报告：流式超限不 cancel\tsrc/trust/report.ts\t      await reader.cancel().catch(() => undefined);\\n      return null;\t      return null;'
   # H5 星图 v1（specs/star-map-v1-h5，统一壳 7.2 节；验收“星图不核对 basis_id”“白名单检查去掉”等）：这几条跑 tests/star-map-v1*.test.ts
   $'星图v1：basis 不比对\tsrc/star-map/v1.ts\tnode.basis_id !== null && c.basis_id === node.basis_id\ttrue'
   $'星图v1：中性星泄露 state\tsrc/star-map/v1.ts\tif (s.display === \'neutral\') return { node_id: s.node_id, name, display: \'neutral\' };\tif (s.display === \'neutral\') return { node_id: s.node_id, name, display: \'neutral\', state: nodes.find((n) => n.node_id === s.node_id)!.state } as OutStar;'
@@ -272,6 +303,7 @@ star_run() {  # $1 副本根目录，$2 变异名（“计量：”开头的跑�
   [[ "${2:-}" == H6：* ]] && tests="tests/route-matrix.integration.test.ts"
   [[ "${2:-}" == 星图v1：* ]] && tests="tests/star-map-v1.test.ts tests/star-map-v1.integration.test.ts"
   [[ "${2:-}" == 语音：* ]] && tests="tests/voice-minutes.test.ts tests/voice-minutes.integration.test.ts"
+  [[ "${2:-}" == 报告：* ]] && tests="tests/report-units.test.ts tests/report.integration.test.ts"
   out=$( cd "$1/services/bff" && timeout 240 bash "$ROOT/db/tests/pg-ephemeral.sh" -- \
       node --no-warnings --test --test-concurrency=1 --test-timeout=60000 $tests 2>&1 ); rc=$?
   printf '%s\n' "$out" > "$1/run.out"  # H6 的“第一条失败必须是登记的断言”从这里读

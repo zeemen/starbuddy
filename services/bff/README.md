@@ -37,6 +37,12 @@
   （`STARBUDDY_TRUST_UI=dispute,reconcile,data_rights`，只在 dev / test），缺省全关、路由不注册；见 `specs/sie-03-dispute-reconcile/lessons.md` PR③。
   冲刺 5-H 加周报读取（开关 `weekly`，`GET …/weekly-report`）：直读 0036 `insight.weekly_report`（按受众 RLS），每句在库里再核判断并过对外模板白名单，
   纯函数在 `src/trust/weekly.ts`；见 `specs/trust-ui-sprint5/lessons.md` 周报小节。
+  SIE-02b 第二步 PR 2 加首份报告（开关 `report`，`GET …/first-report` → `insight.report`）与单条解释（开关 `why`，
+  `GET …/claims/{claim_id}/explain` → `insight.explain`）：先按档案授权（学生本人 / 有效绑定家长），只转发洞察服务的 `result`
+  （信封外层的置信度、证据 ID、版本不给前端，证据链也不带证据 ID），按契约逐字段核对、过禁用推断词表、每个判断在库里再核，
+  报告另核节键与句子模板类别对应，任何一处不合整份不出；解释按受众裁剪（学生无置信度分档、待验证无文字）；洞察服务响应体约 1 MB 上限；
+  客户端与核对在 `src/trust/report.ts`，测试 `tests/report-units.test.ts`、`tests/report.integration.test.ts`，
+  变异组 `BFFMUT_FILTER=报告：`。
 - 统一壳路由表与家庭登录（冲刺 4-H H1，`specs/unified-shell-sprint4/spec.md` 第 2、3、16、17 节）：`src/http/`，接口定义 `openapi/shell.v0.yaml`。
   - 路由表 `src/http/routes.ts`：每条路由声明方法、路径模板、auth（public / session / guardian / student）、CSRF、限流；分发只查这张表。
     表外一律 404（H2 起没有旧路由）；路由表与 `openapi/*.v0.yaml` 一一对应（`tests/shell-openapi.test.ts`）。

@@ -17,18 +17,23 @@ const BANDS: readonly string[] = ['few_evidence', 'moderate', 'strong'];
 
 // ---------------------------------------------------------------- “为什么”
 
-export interface WhyStatement { claim_id: string; status: 'hypothesis' | 'established' | 'to_verify'; display: 'solid' | 'dashed'; text: string; confidence_band: Band }
+/** text 只在实线（假设、成立）上，待验证为 null；confidence_band 只在家长受众，学生为 null（BFF 已按受众与状态裁剪） */
+export interface WhyStatement {
+  claim_id: string; status: 'hypothesis' | 'established' | 'to_verify'; display: 'solid' | 'dashed'; text: string | null; confidence_band: Band | null;
+}
 export interface WhyEvidence { occurred_at: string; source_type: 'objective' | 'self' | 'guardian' | 'inferred'; evidence_level: 'A' | 'B' | null; node_id: string | null }
 export interface WhyView { claim_id: string; statement: WhyStatement; evidence: WhyEvidence[]; source_version: string | null }
 
 const SOURCES: readonly string[] = ['objective', 'self', 'guardian', 'inferred'];
 
 /**
- * “为什么”的响应（BFF 读取接口待补，形状按契约 InsightExplainResponse 取子集，lessons）：
- * 陈述必须属于所问的判断、状态可展示、待验证只能虚线、成立与假设只能实线；证据链逐条只挑四个字段，不合格的条目丢弃。
+ * “为什么”的响应（BFF GET …/claims/{claim_id}/explain，openapi/trust.v0.yaml getClaimExplain；按契约 InsightExplainResponse 取子集）：
+ * 受众必须等于本页受众；陈述必须属于所问的判断、状态可展示、待验证只能虚线、成立与假设只能实线；
+ * 按受众与状态再断言 BFF 的裁剪——学生受众顶层与陈述内都不能有置信度分档，家长两处都必须有；待验证不能带文字，实线必须带。
+ * 任何一处不合整份不显示；证据链逐条只挑四个字段，不合格的条目丢弃。
  */
-export function pickWhy(raw: unknown, claimId: string): WhyView | null {
-  if (!obj(raw) || !obj(raw['statement'])) return null;
+export function pickWhy(raw: unknown, claimId: string, audience: Audience): WhyView | null {
+  if (!obj(raw) || !obj(raw['statement']) || raw['audience'] !== audience) return null;
   const s = raw['statement'];
   const status = s['status'];
   const display = s['display'];
@@ -37,7 +42,12 @@ export function pickWhy(raw: unknown, claimId: string): WhyView | null {
   if (s['claim_id'] !== claimId || !UUID.test(claimId)) return null;
   if (status !== 'hypothesis' && status !== 'established' && status !== 'to_verify') return null;
   if ((status === 'to_verify') !== (display === 'dashed') || (display !== 'solid' && display !== 'dashed')) return null;
-  if (typeof text !== 'string' || text.trim() === '' || text.length > 300 || typeof band !== 'string' || !BANDS.includes(band)) return null;
+  if (status === 'to_verify' ? 'text' in s : typeof text !== 'string' || text.trim() === '' || text.length > 300) return null;
+  if (audience === 'student'
+    ? 'confidence_band' in s || 'confidence_band' in raw
+    : typeof band !== 'string' || !BANDS.includes(band) || typeof raw['confidence_band'] !== 'string' || !BANDS.includes(raw['confidence_band'])) {
+    return null;
+  }
   const chain = Array.isArray(raw['evidence_chain']) ? raw['evidence_chain'].slice(0, 200) : [];
   const evidence: WhyEvidence[] = [];
   for (const e of chain) {
@@ -49,7 +59,8 @@ export function pickWhy(raw: unknown, claimId: string): WhyView | null {
   const version = typeof raw['source_version'] === 'string' && /^[A-Za-z0-9:@._-]{1,64}$/.test(raw['source_version']) ? raw['source_version'] : null;
   return {
     claim_id: claimId,
-    statement: { claim_id: claimId, status, display, text, confidence_band: band as Band },
+    statement: { claim_id: claimId, status, display, text: status === 'to_verify' ? null : text as string,
+                 confidence_band: audience === 'guardian' ? band as Band : null },
     evidence, source_version: version,
   };
 }

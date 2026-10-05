@@ -11,6 +11,11 @@ const port = Number(process.env['WEB_PORT'] ?? 3100);
 const trustPort = Number(process.env['WEB_TRUST_PORT'] ?? 3101);
 const starmapPort = Number(process.env['WEB_STARMAP_PORT'] ?? 3102);
 const STARMAP_SPECS = /(star-map-v1|visual-v1)\.spec\.ts$/;
+// 第四套（SIE-02b 第二步 PR 2 首份报告开发演示页）：report-on 连 scripts/e2e.sh 起的第四个 BFF（STARBUDDY_TRUST_UI=report,why，
+// 洞察服务是合成桩 scripts/fake-insight.ts），前端只开 report；只跑 first-report.spec.ts（含 @visual）。另三套前端的 report 都关
+// （trust-off 里另核对演示页 404、BFF 路由不注册）。
+const reportPort = Number(process.env['WEB_REPORT_PORT'] ?? 3103);
+const REPORT_SPECS = /first-report\.spec\.ts$/;
 // 数据权利用例（导出下载、删除二次确认，标 @data-rights）另在 WebKit 与 Firefox 上跑（安全审查 2）：本机只装了 Chromium，
 // 所以按需打开——STARBUDDY_E2E_BROWSERS=webkit,firefox（需要对应的 Playwright 浏览器二进制；lessons 登记）。
 const extraBrowsers = (process.env['STARBUDDY_E2E_BROWSERS'] ?? '').split(',').map((s) => s.trim())
@@ -45,9 +50,10 @@ export default defineConfig({
   },
   expect: { toHaveScreenshot: { maxDiffPixelRatio: 0.001, animations: 'disabled' } },
   projects: [
-    { name: 'trust-off', testIgnore: [/trust-on\.spec\.ts$/, STARMAP_SPECS] },
+    { name: 'trust-off', testIgnore: [/trust-on\.spec\.ts$/, STARMAP_SPECS, REPORT_SPECS] },
     { name: 'trust-on', testMatch: /trust-on\.spec\.ts$/, use: { baseURL: `http://127.0.0.1:${trustPort}` } },
     { name: 'starmap-on', testMatch: STARMAP_SPECS, use: { baseURL: `http://127.0.0.1:${starmapPort}` } },
+    { name: 'report-on', testMatch: REPORT_SPECS, use: { baseURL: `http://127.0.0.1:${reportPort}` } },
     ...extraBrowsers.map((b) => ({
       name: `trust-on-${b}`, testMatch: /trust-on\.spec\.ts$/, grep: /@data-rights/,
       use: { baseURL: `http://127.0.0.1:${trustPort}`, browserName: b },
@@ -81,6 +87,17 @@ export default defineConfig({
         ...serverEnv,
         STARBUDDY_BFF_URL: process.env['STARBUDDY_STARMAP_BFF_URL'] ?? 'http://127.0.0.1:8789',
         STARBUDDY_STARMAP: 'starmap_v1,starmap_dashed',
+      },
+    },
+    {
+      command: `npx --no-install next start -p ${reportPort} -H 127.0.0.1`,
+      url: `http://127.0.0.1:${reportPort}/dev/star-glyphs`,
+      reuseExistingServer: false,
+      timeout: 60_000,
+      env: {
+        ...serverEnv,
+        STARBUDDY_BFF_URL: process.env['STARBUDDY_REPORT_BFF_URL'] ?? 'http://127.0.0.1:8793',
+        STARBUDDY_TRUST_UI: 'report',
       },
     },
   ],
