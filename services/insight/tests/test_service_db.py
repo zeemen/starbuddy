@@ -136,9 +136,11 @@ async def test_explain_visibility_and_existence_hiding(insightdb):
         assert C.validate("InsightExplainResponse", r.json()) == []
 
 
-async def test_default_verifier_fails_closed(insightdb):
+async def test_unavailable_verifier_fails_closed(insightdb):
+    """授权核对不可用时一律不通过；create_app 的缺省 DbActorVerifier（0044）见 test_verify_actor_db.py"""
+    from insight.service.tools import UnavailableVerifier
     ids = await seed(insightdb)
-    async with running_app(insightdb) as client:
+    async with running_app(insightdb, verifier=UnavailableVerifier()) as client:
         r = await call(client, "insight.explain", explain_body(front_ctx("student", SA1, S1), ids["aya:MATH.SYN.EQ.LINEAR:node_mastery"]), "bff")
         assert r.status_code == 404
 

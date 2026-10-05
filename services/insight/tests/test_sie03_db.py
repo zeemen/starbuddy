@@ -713,7 +713,9 @@ async def test_dispute_actor_checks_default_verifier_and_cache(sie03db):
     await sync(db, [mr(0, NODE_A, "execute", (0, 1), now)])
     cid = claim_of(db, NODE_A)
     body = dispute_body(stu("syn-dispute-cache-0001"), cid, "one_off_slip")
-    async with running_app(db, sie03=P3) as client:  # 缺省授权核对：一律不通过
+    from insight.service.tools import UnavailableVerifier
+    # 授权核对不可用（ToolCore 的缺省）：一律不通过。create_app 的缺省 DbActorVerifier（0044）见 test_verify_actor_db.py
+    async with running_app(db, sie03=P3, verifier=UnavailableVerifier()) as client:
         r = await call(client, "insight.dispute", body, "bff")
         assert r.status_code == 404
     v = StaticVerifier({(SA4, "student", S4)})

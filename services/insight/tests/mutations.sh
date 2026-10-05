@@ -65,7 +65,7 @@ M=(
   $'SIE-03 未配置不回 501\tinsight/service/tools.py\t        if tool in SIE03_TOOLS and (self.ops is None or self.sie03 is None):\t        if False:\ttests/test_service_unit.py'
   $'insight.record 不回 501\tinsight/service/tools.py\t        if tool == "insight.record":\t        if False:\ttests/test_service_unit.py'
   $'claims 放给 BFF\tinsight/service/tools.py\t    "insight.context": frozenset({"orchestrator"}), "insight.claims": frozenset({"orchestrator"}),\t    "insight.context": frozenset({"orchestrator"}), "insight.claims": frozenset({"orchestrator", "bff"}),\ttests/test_service_unit.py'
-  $'缺省授权核对放行\tinsight/service/tools.py\t        return False\n\n\ndef load_field_dictionary\t        return True\n\n\ndef load_field_dictionary\ttests/test_service_unit.py tests/test_service_db.py'
+  $'缺省授权核对放行\tinsight/service/tools.py\t        return False\n\n\nclass DbActorVerifier\t        return True\n\n\nclass DbActorVerifier\ttests/test_service_unit.py tests/test_service_db.py'
   $'上下文不按字段字典核对来源与可见范围\tinsight/service/tools.py\t        return f is not None and source_type in f["source_type"] and audience in f["visibility"]\t        return True\ttests/test_service_db.py tests/test_service_unit.py'
   # SIE-03 PR②：异议、预测与对账、触发规则、禁用推断、调度器、幂等、导出与删除（specs/sie-03-dispute-reconcile）
   $'提出人身份不核对\tinsight/store_sie03.py\t                if d["raised_by_role"] != actor_role or str(d["raised_by"]) != actor_ref or d["kind"] != kind:\t                if False:\ttests/test_sie03_db.py'
@@ -166,6 +166,24 @@ M=(
   $'调学习服务没有总时长上限\tinsight/dispute.py\t            return await asyncio.wait_for(go(), self.total_timeout)\t            return await go()\ttests/test_kge04_db.py'
   $'结案不读真实掌握行\tinsight/jobs.py\t    rows = await DbMasterySource(store.pool).all_rows(student)\t    rows = ()\ttests/test_kge04_db.py'
   $'学习服务回的单元不核对\tinsight/dispute.py\tt.get("node_id") != node_id or t.get("cognitive_level") != cognitive_level\tFalse\ttests/test_kge04_db.py'
+  # SIE-02b 第二步 PR 1：授权再核对（0044 insight.verify_actor）、契约工具 insight.report、命令行 python -m insight.jobs
+  $'授权再核对不看函数返回值\tinsight/service/tools.py\t        return ok is True\t        return True\ttests/test_verify_actor_db.py'
+  $'授权再核对不核对身份与受众一致\tinsight/service/tools.py\t or actor.get("role") != audience\t\ttests/test_verify_actor_db.py'
+  $'授权函数不可用时放行\tinsight/service/tools.py\t"error_class": type(e).__name__[:48]}, ensure_ascii=False))\n            return False\t"error_class": type(e).__name__[:48]}, ensure_ascii=False))\n            return True\ttests/test_verify_actor_db.py'
+  $'缺省授权核对不调库函数\tinsight/service/app.py\tverifier or DbActorVerifier(p),\tverifier,\ttests/test_verify_actor_db.py'
+  $'首份报告不先核对 actor\tinsight/service/tools.py\t        if not await self.verifier.verify(ctx.get("actor") or {}, audience, student):\n            raise not_found()  # 无权与没有报告同一个 404\t        if False:\n            raise not_found()  # 无权与没有报告同一个 404\ttests/test_verify_actor_db.py'
+  $'首份报告不跑禁用推断\tinsight/service/tools.py\t        out = build_first_report(claims, audience, self.policy, self.check_cfg, self.forbidden, now)\t        out = build_first_report(claims, audience, self.policy, self.check_cfg, lambda t: [], now)\ttests/test_verify_actor_db.py'
+  $'首份报告对编排层开放\tinsight/service/tools.py\t    "insight.report": frozenset({"bff"}),\t    "insight.report": frozenset({"bff", "orchestrator"}),\ttests/test_verify_actor_db.py'
+  $'首份报告信封不带判断证据\tinsight/service/tools.py\t        meta = {"evidence_ids": self._union(rc.evidence_ids for rc in used),\t        meta = {"evidence_ids": [],\ttests/test_verify_actor_db.py'
+  $'命令行不限运行环境\tinsight/jobs_cli.py\t    if env not in ALLOWED_ENVS:\t    if False:\ttests/test_jobs_cli.py'
+  $'命令行连接前不核对本机\tinsight/jobs_cli.py\t    return env, check_local_url(url)\t    return env, url\ttests/test_jobs_cli.py'
+  $'命令行不核对服务端地址\tinsight/jobs_cli.py\t        await check_server_local(conn)\t        pass\ttests/test_jobs_cli.py'
+  # 审查意见：报告单独上限（不沿用 200 条静默截断，超出整份阻断）与固定文字按策略版本可核对
+  $'报告读取沿用 200 条截断\tinsight/store.py\t                                           limit=MAX_REPORT_CLAIMS + 1):\t                                           limit=200):\ttests/test_report.py'
+  $'报告读取超上限不阻断\tinsight/report.py\t    if len(claims) > MAX_REPORT_CLAIMS:\t    if False:\ttests/test_report.py tests/test_verify_actor_db.py'
+  $'报告一节超 200 句不阻断\tinsight/report.py\t    if any(len(g) > MAX_SECTION_SENTENCES for g in groups.values()):\t    if False:\ttests/test_report.py'
+  $'报告固定文字超长不阻断\tinsight/report.py\t        blocked.append("over_length")\t        pass\ttests/test_report.py'
+  $'报告不带策略版本\tinsight/service/tools.py\t("format", "audience", "policy_version", "notice",\t("format", "audience", "notice",\ttests/test_verify_actor_db.py'
 )
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/starbuddy-insight-mut.XXXXXX")"

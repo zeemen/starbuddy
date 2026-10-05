@@ -9,6 +9,11 @@
   程度不升级、不新增结论、衔接语无数字、无人设语言、全文禁用推断）与禁用推断词表（提示语与标题另查一次）。任一不过不出报告，
   返回阻断编码（不降级为半份报告）。
 - 同样的判断、同样的配置，输出逐字节相同（to_json）。
+- 报告单独上限，与契约 insight.report 对齐（每节至多 200 句、全报告至多 400 个判断 ID、句子 300 字、提示语 200 字、标题 80 字、
+  衔接短语 60 字）：超出不截断，返回阻断编码 too_many_claims / over_length（句子超长在渲染时即为 render_failed；
+  服务按统一 404 处理），不产出超契约上限的报告。
+  store.report_claims 多取一条（MAX_REPORT_CLAIMS + 1）用来发现超限，输入超过 MAX_REPORT_CLAIMS 条即阻断。
+- policy_version 是所用策略配置的版本：提示语、标题、衔接短语须与该版本登记的固定文字逐字一致。
 """
 from __future__ import annotations
 
@@ -24,6 +29,13 @@ from .shared import COGNITIVE_LEVELS, Forbidden, consistency
 FORMAT = "sie-first-report/0.1"
 AUDIENCES = ("student", "guardian")
 REPORT_STATUSES = ("hypothesis", "established")
+# 与契约 insight-service.v0.9.yaml 的 InsightReportResponse / ReportSection / ReportSentence 上限一致
+MAX_SECTION_SENTENCES = 200
+MAX_REPORT_CLAIMS = 400
+# 句子 300 字的上限由共用渲染规则保证（learning.mastery.render.MAX_TEXT：超长不渲染，阻断编码 render_failed）
+MAX_NOTICE_LEN = 200
+MAX_TITLE_LEN = 80
+MAX_CONNECTIVE_LEN = 60
 
 
 @dataclass(frozen=True)
@@ -35,6 +47,7 @@ class ReportClaim:
     visibility: tuple[str, ...]
     expires_at: datetime
     template_approved: bool = True
+    evidence_ids: tuple[str, ...] = ()  # 判断引用的证据（insight.report 的信封 evidence_ids 用；不进报告正文）
 
 
 @dataclass(frozen=True)
@@ -66,6 +79,8 @@ def build_first_report(claims: Sequence[ReportClaim], audience: str, policy: Pol
                        forbidden: Forbidden, now: datetime) -> ReportResult:
     if audience not in AUDIENCES:
         raise ValueError("audience must be student or guardian")
+    if len(claims) > MAX_REPORT_CLAIMS:  # 读取已超上限（store 多取一条）：不截断，整份阻断
+        return ReportResult(None, ("too_many_claims",))
     groups: dict[str, list[ReportClaim]] = {c: [] for c in NODE_CATEGORIES}
     for rc in claims:
         cat = _eligible(rc, audience, policy, now)
@@ -73,7 +88,12 @@ def build_first_report(claims: Sequence[ReportClaim], audience: str, policy: Pol
             groups[cat].append(rc)
     if not any(groups.values()):
         return ReportResult(None, ("no_visible_claims",))
+    if any(len(g) > MAX_SECTION_SENTENCES for g in groups.values()):
+        return ReportResult(None, ("too_many_claims",))
     blocked: list[str] = []
+    if (len(policy.report.notice) > MAX_NOTICE_LEN or len(policy.report.titles[audience]) > MAX_TITLE_LEN
+            or any(len(policy.report.connectives[c]) > MAX_CONNECTIVE_LEN for c in NODE_CATEGORIES if groups[c])):
+        blocked.append("over_length")
     sections: list[dict[str, Any]] = []
     check_sections: list[consistency.Section] = []
     views: dict[str, consistency.ClaimView] = {}

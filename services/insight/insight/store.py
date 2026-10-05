@@ -26,7 +26,7 @@ from .dispute import i_know_outcome
 from .metrics import (ActivityFact, AttemptFact, ErrorFact, MetricInputs, MetricResult, PlanFact, ProbeFact, compute_metrics,
                       plan_metric_claims)
 from .policy import NODE_CATEGORIES, Policy
-from .report import ReportClaim
+from .report import MAX_REPORT_CLAIMS, ReportClaim
 from .render import ClaimForRender
 from .shared import Forbidden
 
@@ -177,8 +177,11 @@ class InsightStore:
         if audience not in FRONT:
             raise ValueError("report audience must be student or guardian")
         out = []
-        for v in await self.visible_claims(student, audience, target_type="node", statuses=("hypothesis", "established")):
-            out.append(ReportClaim(v.for_render(), v.row.subject, v.row.target_type, v.row.visibility, v.row.expires_at))
+        # 报告单独上限（不沿用 visible_claims 缺省 200 条静默截断）：多取一条，超过 MAX_REPORT_CLAIMS 由 build_first_report 整份阻断
+        for v in await self.visible_claims(student, audience, target_type="node", statuses=("hypothesis", "established"),
+                                           limit=MAX_REPORT_CLAIMS + 1):
+            out.append(ReportClaim(v.for_render(), v.row.subject, v.row.target_type, v.row.visibility, v.row.expires_at,
+                                   evidence_ids=tuple(str(e) for e in v.row.evidence_ids)))
         return out
 
     # ---------- 写：判断生成 ----------

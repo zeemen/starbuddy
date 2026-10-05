@@ -20,9 +20,13 @@ SIE-03（specs/sie-03-dispute-reconcile，PR②）：
 - insight.claims、insight.context 只给编排层（受众 agent）；insight.explain 给 BFF（学生本人 / 家长）与编排层。
 - 前端受众（student / guardian）只看到可见范围含该受众的非终态、未到期、模板已审核的判断；看不到的判断与“不存在”
   同一个 404（不暴露存在性）；中圈指标（metric）对前端一律不存在。
-- caller = bff 时按 actor 与 student_ref 再核对一次授权（契约“调用方、受众与代表谁”）。洞察服务没有读绑定关系的权限
-  （0010 / 0028 都没有授），核对由注入的 ActorVerifier 完成；缺省实现一律不通过（fail closed，按 404 处理），
-  需要人确认授权函数的迁移草稿（lessons 待人确认）。
+- caller = bff 时按 actor 与 student_ref 再核对一次授权（契约“调用方、受众与代表谁”）。洞察服务没有读绑定关系的表权限
+  （0010 / 0028 都没有授），核对由 ActorVerifier 完成：create_app 缺省用 DbActorVerifier，调迁移 0044（草稿）的
+  insight.verify_actor（属主 authz，只授洞察服务，只返回真假）；函数不存在或没有执行权限时一律不通过（fail closed）。
+  ToolCore 单独构造时缺省仍是 UnavailableVerifier（一律不通过）。BFF 自己的按档案授权（规则 5）照旧，两道都过才放行。
+- insight.report（SIE-02b 第二步，契约草稿追加）：只给 BFF；先核对 actor，再复用第一步的首份报告生成与两道检查
+  （jobs.report_inputs + report.build_first_report：一致性、禁用推断），任一不过不出报告；学生 / 家长只看可见范围内的判断。
+  无权、没有可出的报告、检查不过一律同一个 404（不暴露存在性），阻断编码只记日志（编码，不带数据）。
 - insight.record：契约校验后回 501——洞察服务没有可用的写入路径（0022 / 0025 的写入函数只授 BFF，且只认学生本人会话），
   不新增来源（spec 设计要点 1；lessons）。
 - 日志只记 request_id（UUID 形状才记）、caller、工具名、状态码、错误码、耗时；不记请求体里的 student_ref、actor、value。
@@ -38,6 +42,7 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Mapping, Protocol
 
+import asyncpg
 import yaml
 
 from ..claims import NODE_ID
@@ -48,7 +53,9 @@ from ..policy import Policy
 from ..predict import MODEL_VERSION as PREDICT_MODEL_VERSION
 from ..predict import RECONCILE_MODEL_VERSION, MasterySource, NoMasterySource
 from ..render import render_statement
-from ..shared import ROOT, Forbidden
+from ..jobs import report_inputs
+from ..report import build_first_report
+from ..shared import ROOT, Forbidden, consistency
 from ..sie03_policy import Sie03Policy
 from ..store import VisibleClaim
 from ..store_sie03 import Sie03Store, StoreError
@@ -63,6 +70,7 @@ ALLOWED_CALLERS: dict[str, frozenset[str]] = {
     "insight.explain": frozenset({"bff", "orchestrator"}), "insight.record": frozenset({"bff", "orchestrator"}),
     "insight.dispute": frozenset({"bff"}), "insight.predict": frozenset({"orchestrator"}),
     "insight.reconcile": frozenset({"orchestrator"}), "insight.export": frozenset({"bff"}), "insight.erase": frozenset({"bff"}),
+    "insight.report": frozenset({"bff"}),
 }
 FIELD_DICTIONARY = ROOT / "docs" / "design" / "sie" / "field-dictionary.v0.9.yaml"
 NODE_FIELD = "inner.g3.node_mastery"
@@ -100,10 +108,35 @@ class ActorVerifier(Protocol):
 
 
 class UnavailableVerifier:
-    """缺省：洞察服务没有核对绑定关系的数据库权限，一律不通过（BFF 代表学生 / 家长的请求按 404 处理）"""
+    """ToolCore 单独构造时的缺省：一律不通过（BFF 代表学生 / 家长的请求按 404 处理）"""
 
     async def verify(self, actor: Mapping[str, Any], audience: str, student: str) -> bool:  # noqa: ARG002
         return False
+
+
+class DbActorVerifier:
+    """create_app 的缺省实现（迁移 0044 草稿）：经 insight.verify_actor 按库里的档案与有效绑定再核对 BFF 代表的学生本人或家长。
+    - 受众只收 student / guardian，actor.role 必须与受众一致（契约已强制，这里再核一遍），actor_ref 与学生必须是 UUID；
+    - 函数只返回真假；返回值不是 True 一律不通过；
+    - 迁移 0044 未执行（函数不存在）或没有执行权限：一律不通过（fail closed，按 404 处理），只记错误类别；
+    - 其他数据库错误照常抛出（500，同样不放行）。
+    link_id 不进核对：同一家长对同一学生的有效绑定至多一条，按（家长, 学生）核对即可（lessons 待人确认）"""
+
+    def __init__(self, pool: Any) -> None:
+        self.pool = pool
+
+    async def verify(self, actor: Mapping[str, Any], audience: str, student: str) -> bool:
+        ref = actor.get("actor_ref") if isinstance(actor, Mapping) else None
+        if (not isinstance(ref, str) or audience not in ("student", "guardian") or actor.get("role") != audience
+                or not UUID_RE.fullmatch(ref) or not isinstance(student, str) or not UUID_RE.fullmatch(student)):
+            return False
+        try:
+            async with self.pool.acquire() as conn:
+                ok = await conn.fetchval("SELECT insight.verify_actor($1::uuid, $2::text, $3::uuid)", ref, audience, student)
+        except (asyncpg.UndefinedFunctionError, asyncpg.InsufficientPrivilegeError) as e:
+            log.error(json.dumps({"actor_verifier": "unavailable", "error_class": type(e).__name__[:48]}, ensure_ascii=False))
+            return False
+        return ok is True
 
 
 def load_field_dictionary(path: Path = FIELD_DICTIONARY) -> dict[str, dict[str, Any]]:
@@ -146,8 +179,10 @@ class ToolCore:
     def __init__(self, store: ClaimReader, contract: Contract, policy: Policy, forbidden: Forbidden,
                  verifier: ActorVerifier | None = None, fields: Mapping[str, Mapping[str, Any]] | None = None, *,
                  sie03: Sie03Policy | None = None, ops: Sie03Store | None = None, scheduler: VerificationScheduler | None = None,
-                 mastery: MasterySource | None = None, guardian: GuardianRequests | None = None) -> None:
+                 mastery: MasterySource | None = None, guardian: GuardianRequests | None = None,
+                 check_cfg: "consistency.CheckConfig | None" = None) -> None:
         self.store = store
+        self.check_cfg = check_cfg  # 首份报告一致性检查词表（insight.report；不配置时 501）
         self.contract = contract
         self.policy = policy
         self.forbidden = forbidden
@@ -162,7 +197,7 @@ class ToolCore:
         self.handlers: dict[str, Callable[[dict, str], Awaitable[tuple[dict, dict]]]] = {
             "insight.claims": self.claims, "insight.context": self.context, "insight.explain": self.explain,
             "insight.dispute": self.dispute, "insight.predict": self.predict, "insight.reconcile": self.reconcile,
-            "insight.export": self.export, "insight.erase": self.erase,
+            "insight.export": self.export, "insight.erase": self.erase, "insight.report": self.report,
         }
 
     async def call(self, tool: str, body: Any, caller: str | None) -> tuple[int, dict]:
@@ -198,6 +233,8 @@ class ToolCore:
             raise not_implemented("tool is not implemented in this version")
         if tool in SIE03_TOOLS and (self.ops is None or self.sie03 is None):
             raise not_implemented("SIE-03 tools are not configured")
+        if tool == "insight.report" and self.check_cfg is None:
+            raise not_implemented("first report is not configured")
         if not isinstance(body, dict) or not isinstance(body.get("context"), dict):
             raise invalid("request body must be an object with context")
         ctx = body["context"]
@@ -210,7 +247,8 @@ class ToolCore:
             raise invalid("request does not conform to the contract", "; ".join(errors)[:500])
         if tool == "insight.record":
             raise not_implemented("no write path for this event in the insight service yet")
-        # BFF 代表学生 / 家长的写入：先核对 actor（家长含 link_id；缺省一律不通过，与 explain 同一口径），
+        # BFF 代表学生 / 家长的写入：先核对 actor（按账号、受众与学生在库里再核；link_id 只经契约校验存在，不进核对；
+        # 核对不可用时一律不通过，与 explain 同一口径），
         # 再查幂等缓存——命中缓存也要先过这一道（安全审查 F4、F6）
         if caller == "bff" and tool in WRITE_TOOLS and not await self.verifier.verify(ctx.get("actor") or {}, ctx["audience"],
                                                                                     ctx["student_ref"]):
@@ -434,3 +472,26 @@ class ToolCore:
         except PermissionError:
             raise not_found() from None
         return erase_result(ticket), self._guardian_meta("erase")
+
+    # ---------- insight.report（SIE-02b 第二步：首份画像报告） ----------
+    async def report(self, body: dict, caller: str) -> tuple[dict, dict]:  # noqa: ARG002
+        assert self.check_cfg is not None
+        ctx = body["context"]
+        audience, student = ctx["audience"], ctx["student_ref"]
+        if not await self.verifier.verify(ctx.get("actor") or {}, audience, student):
+            raise not_found()  # 无权与没有报告同一个 404
+        claims, now = await report_inputs(self.store, student, audience)  # type: ignore[arg-type]
+        out = build_first_report(claims, audience, self.policy, self.check_cfg, self.forbidden, now)
+        if out.report is None:
+            # 没有可出的报告或两道检查任一不过：不出报告；阻断编码只记日志（固定编码，不带学生、判断 ID 或文字）
+            log.info(json.dumps({"tool": "insight.report", "report_blocked": list(out.blocked)}, ensure_ascii=False))
+            raise not_found()
+        rep = out.report
+        # policy_version：固定文字（提示语、标题、衔接短语）须与该版本登记文字逐字一致，供 BFF 与审计核对
+        result = {k: rep[k] for k in ("format", "audience", "policy_version", "notice", "title", "sections", "claim_ids")}
+        included = set(rep["claim_ids"])
+        used = [rc for rc in claims if rc.claim.claim_id in included]
+        meta = {"evidence_ids": self._union(rc.evidence_ids for rc in used),
+                "confidence": min((rc.claim.confidence for rc in used), default=1.0),
+                "source_version": self._source("report"), "model_version": f"algo:sie-report@{ALGO_VERSION}"}
+        return result, meta

@@ -42,6 +42,15 @@ def _chain(*fns):
 
 _DELETE = object()
 
+
+def _too_many_sentences(v, n: int) -> None:
+    """首份报告第一节放 n 句（复制第一句、换成互不相同的合成 claim_id），claim_ids 同步，只违反“每节至多 200 句”这一条"""
+    sec = v["result"]["sections"][0]
+    ids = [f"00000000-0000-4000-8000-{0xf100 + i:012x}" for i in range(n)]
+    sec["sentences"] = [{**sec["sentences"][0], "claim_id": i} for i in ids]
+    v["result"]["sections"] = [sec]
+    v["result"]["claim_ids"] = ids
+
 CASES = [
     # ---------- 洞察服务：判断先于展示 ----------
     Case("陈述不带 claim_id", "规则 11：面向学生家长的文字必须引用判断", "insight",
@@ -205,4 +214,52 @@ CASES = [
          "EvidenceWriteRequest", "EvidenceWriteRequest", _set("evidences.0.draft.admission", "pending_review")),
     Case("采分点结果不带地图版本", "规则 3：判分可按版本复算", "knowledge",
          "RubricGetResponse", "RubricGetResponse", _set("result.map_version", _DELETE)),
+    # ---------- 首份画像报告 insight.report（SIE-02b 第二步） ----------
+    Case("报告句子不带 claim_id", "规则 11：报告每句都引用判断", "insight",
+         "InsightReportResponse", "InsightReportResponse", _set("result.sections.0.sentences.0.claim_id", _DELETE)),
+    Case("报告收了待验证的判断", "规则 11：待验证不作陈述，报告只收假设与成立", "insight",
+         "InsightReportResponse", "InsightReportResponse", _set("result.sections.0.sentences.0.status", "to_verify")),
+    Case("报告句子画虚线", "报告只有假设与成立，只画实线", "insight",
+         "InsightReportResponse", "InsightReportResponse", _set("result.sections.0.sentences.0.display", "dashed")),
+    Case("假设不标初步判断", "SIE-02b：假设显示为“初步判断”", "insight",
+         "InsightReportResponse", "InsightReportResponse", _set("result.sections.0.sentences.1.label", _DELETE)),
+    Case("成立的判断标初步判断", "SIE-02b：只有假设标“初步判断”", "insight",
+         "InsightReportResponse", "InsightReportResponse", _set("result.sections.0.sentences.0.label", "preliminary")),
+    Case("家长版句子不带置信度说明", "SIE 第八章：家长看不到无置信度的推断", "insight",
+         "InsightReportResponse", "InsightReportResponse", _set("result.sections.0.sentences.0.confidence_band", _DELETE)),
+    Case("学生版句子带置信度说明", "SIE-02b：学生版不带置信度", "insight",
+         "InsightReportResponse", "InsightReportResponse", _set("result.audience", "student")),
+    Case("报告句子超过 300 字", "模板渲染的陈述限长", "insight",
+         "InsightReportResponse", "InsightReportResponse", _set("result.sections.0.sentences.0.text", "合" * 301)),
+    Case("报告提示语超过 200 字", "固定文字限长", "insight",
+         "InsightReportResponse", "InsightReportResponse", _set("result.notice", "合" * 201)),
+    Case("报告标题超过 80 字", "固定文字限长", "insight",
+         "InsightReportResponse", "InsightReportResponse", _set("result.title", "合" * 81)),
+    Case("报告衔接短语超过 60 字", "固定文字限长", "insight",
+         "InsightReportResponse", "InsightReportResponse", _set("result.sections.0.connective", "合" * 61)),
+    Case("报告不带策略版本", "固定文字须能按登记版本逐字核对", "insight",
+         "InsightReportResponse", "InsightReportResponse", _set("result.policy_version", _DELETE)),
+    Case("策略版本夹带自由文字", "策略版本只能是版本编码", "insight",
+         "InsightReportResponse", "InsightReportResponse", _set("result.policy_version", "合成 自由 文本")),
+    Case("报告一节超过 200 句", "报告单独上限：每节至多 200 句", "insight",
+         "InsightReportResponse", "InsightReportResponse", lambda d: _too_many_sentences(d, 201)),
+    Case("报告夹带额外的评语字段", "信封外不允许额外字段", "insight",
+         "InsightReportResponse", "InsightReportResponse", _set("result.comment", "合成评语")),
+    Case("报告句子夹带名次", "平台规划 v1.3 §3：不显示个人名次", "insight",
+         "InsightReportResponse", "InsightReportResponse", _set("result.sections.0.sentences.0.class_rank", 3)),
+    Case("报告的节不是判断类别", "分节只按判断类别", "insight",
+         "InsightReportResponse", "InsightReportResponse", _set("result.sections.0.key", "personality")),
+    Case("空报告", "没有可出的报告时回 404，不出空报告", "insight",
+         "InsightReportResponse", "InsightReportResponse", _set("result.sections", [])),
+    Case("编排层取首份报告", "SIE-02b：首份报告只给 BFF（学生本人或已绑定家长）", "insight",
+         "InsightReportRequest", "InsightReportRequest",
+         _chain(_set("context.caller", "orchestrator"), _set("context.audience", "agent"), _set("context.actor", _DELETE))),
+    Case("BFF 取报告不带代表的身份", "规则 5：洞察服务按 actor 再核对", "insight",
+         "InsightReportRequest", "InsightReportRequest", _set("context.actor", _DELETE)),
+    Case("家长取报告不带绑定关系", "规则 5：家长访问按档案授权", "insight",
+         "InsightReportRequest", "InsightReportRequest", _set("context.actor.link_id", _DELETE)),
+    Case("家长身份以学生受众取报告", "受众与身份一致", "insight",
+         "InsightReportRequest", "InsightReportRequest", _set("context.audience", "student")),
+    Case("取报告时夹带筛选条件", "请求只有上下文", "insight",
+         "InsightReportRequest", "InsightReportRequest", _set("subject", "aya")),
 ]

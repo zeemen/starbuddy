@@ -76,3 +76,27 @@
 5. **判断默认有效期**（ADR 13 #5）：默认掌握类 30 天、迁移类 30 天，到期进入待验证；由产品与教研确认。
 6. **中圈指标的存放**：默认写 `visibility = {agent}` 的 metric 判断（可审计、可到期）；另一个选择是只存计算快照表（需迁移，且不在判断账本里）。
 7. **影子评审**：默认每位测试学生由一名数学教师独立判断首份报告覆盖的节点，至少 10 名合成 / 内测学生；标注放 `evals/sie-shadow/gold/`。
+
+## 第二步补充（已确认，2026-10-05，用户“按默认建议，开始实现”；S2-1–S2-4 按默认）
+第一步已提交（f60d9f4、5dc3add）。SIE-02a 审查修复、SIE-03（0032 `insight.raise_dispute`）、KGE-04 第二步（节点键掌握行、`sync_mastery_from_db`）、统一壳 H2/H4 均已合入。第二步卡在 lessons 待人确认 C、H，本节给出默认方案，确认后实现。PR 首行 `[NEEDS-HUMAN]`（迁移、权限、契约、画像展示）。
+
+### 现状
+- 洞察服务 `insight.explain` / `claims` / `context` 对 BFF 代表的学生、家长身份由注入的 `ActorVerifier` 核对，缺省实现一律拒绝（fail closed）；统一壳里因此不显示任何陈述（`specs/unified-shell-sprint4/lessons.md` 第 227 行）。
+- 首份报告的生成与两道检查在洞察服务内，契约 `insight-service.v0.9.yaml` 九个工具里没有取报告的工具。
+- 判断生成没有调度入口（KGE-04 lessons W）。
+
+### 默认方案
+1. **C 授权再核对（迁移 0044 草稿，insight schema）**：新增 `insight.verify_actor(p_actor uuid, p_audience text, p_student uuid) returns boolean`，SECURITY DEFINER、属主 `starbuddy_authz`、只授 `starbuddy_insight`，做法同 0032 `raise_dispute`：学生本人（active 学生账号且 = p_student）或有效 `guardian_student_link`（未撤销、档案授权）才为真；不返回任何其他信息。洞察服务的 `ActorVerifier` 默认实现改调它（BFF 已核对的仍保留，两道都过才放行）。DB 测试（兄妹、另一户、撤销绑定、停用账号、非 insight 角色调用）、变异、快照、攻击面同步。
+   另一个选择：信任 BFF 令牌、改契约描述（不加迁移，但洞察服务失去独立核对，不推荐）。
+2. **H 首份报告接口（契约追加）**：在未签字的 `insight-service.v0.9.yaml` 里追加工具 `insight.report`（入参 student、audience、actor；返回结构化报告：每句带 `claim_id`、家长版带 `confidence_band`，顶部提示语与模板走占位）；与 SIE-03 等同样在草稿内追加，签字范围扩大。
+   另一个选择：BFF 用 `claims` + `explain` 自己拼报告（不改契约，但报告的一致性与禁用推断检查要在 BFF 再做一份，不推荐）。
+3. **BFF 读接口**：学生端、家长端各两条（首份报告、单条解释），先按档案授权（规则 5），再调洞察服务；进路由矩阵与 H6 用例；兄妹、另一户、撤销后 404。
+4. **开发演示页**：只在 dev、合成数据，开关默认关；报告顶部占位提示语、假设标“初步判断”、家长版置信度分档、待验证虚线；视觉回归、E2E、axe。
+5. **调度入口**：学习服务掌握重算完成后不直接调洞察服务；洞察服务提供命令 `python -m insight.jobs sync|sweep|metrics`（只连本机），由人接调度（同 4-G admission-recompute 的做法）。
+6. **不做**：模板文案（G，人写人审）、阈值签字（F）、0028 补授（D、E）、影子评审真跑（人标注后）。
+
+### 待人确认（括号内为默认）
+- S2-1 C 的做法（迁移 0044 授权函数，两道核对）。
+- S2-2 H 的做法（契约草稿追加 `insight.report`）。
+- S2-3 演示页开关默认关、只在 dev（是）。
+- S2-4 调度只提供命令、不接生产调度（是）。

@@ -131,6 +131,75 @@ def test_no_visible_claims_gives_no_report():
         build(audience="agent")
 
 
+def _many(n: int, key: str = "syn.math.node_mastery", start: int = 1000) -> list[ReportClaim]:
+    return [rc(cid(start + i), key=key) for i in range(n)]
+
+
+def _envelope(report: dict) -> dict:
+    result = {k: report[k] for k in ("format", "audience", "policy_version", "notice", "title", "sections", "claim_ids")}
+    return {"contract_version": "0.9.0", "result": result, "evidence_ids": [], "confidence": 0.5,
+            "source_version": "algo:sie-report@0.1.0", "model_version": "algo:sie-report@0.1.0", "human_review_required": False}
+
+
+def test_report_carries_policy_version():
+    """固定文字可核对：报告带所用策略配置版本（提示语、标题、衔接短语须与该版本登记文字逐字一致）"""
+    r = build().report
+    assert r["policy_version"] == POLICY.config_version
+    assert r["notice"] == POLICY.report.notice and [s["connective"] for s in r["sections"]] == [
+        POLICY.report.connectives[s["key"]] for s in r["sections"]]
+
+
+def test_report_limits_match_contract_and_never_truncate():
+    """报告单独上限（每节 200 句、全报告 400 个判断 ID）：到上限照常出且符合契约；超出整份阻断，不截断、不产出超契约的报告"""
+    from insight.service.contract import contract
+    C = contract()
+    full = _many(report_mod.MAX_SECTION_SENTENCES) + _many(report_mod.MAX_SECTION_SENTENCES, "syn.math.node_transfer", 5000)
+    for aud in ("student", "guardian"):
+        res = build(full, audience=aud)
+        assert res.ok, res.blocked
+        assert len(res.report["claim_ids"]) == report_mod.MAX_REPORT_CLAIMS
+        assert C.validate("InsightReportResponse", _envelope(res.report)) == []
+    # 一节多一句：阻断（不是截到 200 句）
+    assert build(_many(report_mod.MAX_SECTION_SENTENCES + 1)).blocked == ("too_many_claims",)
+    # 读取多出一条（store 多取一条用来发现超限）：阻断，即便其中有不合格的判断
+    over = full + [rc(cid(9999), status="to_verify")]
+    assert len(over) == report_mod.MAX_REPORT_CLAIMS + 1 and build(over).blocked == ("too_many_claims",)
+
+
+@pytest.mark.parametrize("change", [
+    lambda p: dataclasses.replace(p, report=dataclasses.replace(p.report, titles={**p.report.titles, "student": "【占位】" + "合" * 80})),
+    lambda p: dataclasses.replace(p, report=dataclasses.replace(p.report, notice="【占位】" + "合" * 200)),
+    lambda p: dataclasses.replace(p, report=dataclasses.replace(
+        p.report, connectives={**p.report.connectives, "node_mastery": "【占位衔接·甲】" + "合" * 60})),
+])
+def test_fixed_text_over_contract_limit_blocks(change):
+    res = build(policy=change(POLICY))
+    assert not res.ok and "over_length" in res.blocked
+
+
+def test_sentence_over_contract_limit_blocks():
+    """句子 300 字上限由共用渲染规则保证（与契约 ReportSentence.text 一致）：超长不渲染，整份阻断"""
+    from insight.render import MAX_TEXT
+    assert MAX_TEXT == 300
+    res = build([rc(cid(9), text="【占位模板·未审核】{node_id}" + "合" * 300)] + CLAIMS[1:])
+    assert not res.ok and "render_failed" in res.blocked
+
+
+@pytest.mark.anyio
+async def test_store_report_claims_reads_one_over_the_report_limit():
+    """store.report_claims 不沿用 visible_claims 缺省 200 条：按报告上限多取一条"""
+    from insight.store import InsightStore
+    seen = {}
+
+    class Probe(InsightStore):
+        async def visible_claims(self, student, audience, **kw):
+            seen.update(kw)
+            return []
+
+    assert await Probe(None).report_claims("00000000-0000-4000-8000-00000000a001", "student") == []  # type: ignore[arg-type]
+    assert seen["limit"] == report_mod.MAX_REPORT_CLAIMS + 1
+
+
 def test_same_input_same_bytes():
     a, b = build(), build(list(reversed(CLAIMS)))
     assert to_json(a.report) == to_json(b.report)

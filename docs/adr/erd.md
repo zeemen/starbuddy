@@ -123,6 +123,10 @@ erDiagram
 
 状态机：假设 → 成立 → 待验证 → 成立 / 推翻；任何非终态 → 撤回。每次写入都要在行里带原因，原因必须与流转匹配；不改状态的修改只能是 revised 或 visibility_changed；假设不能直接推翻（SIE-00 待人确认 #1）。判断是陈述层，不是第二真相源（规则 2）。
 
+洞察服务的授权再核对（0044 草稿，SIE-02b 第二步）：BFF 代表学生本人或家长调用洞察服务时，洞察服务经 `insight.verify_actor(账号, 受众, 学生)`
+（属主 `starbuddy_authz`，只授 `starbuddy_insight`，不新增任何表与表授权）按 `account`、`student_profile`、`guardian_student_link` 再核一次：
+学生本人（active 学生账号且就是该档案的账号）或有效绑定的 active 家长才为真；档案已执行删除（0035 `erased_at`）、其他受众一律为假；只返回真假。
+
 
 ## insight schema：建档事实层（0021、0022，SIE-01）
 

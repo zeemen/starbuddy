@@ -80,3 +80,43 @@ I. 中圈指标判断多数时间处于“待验证”（偏差 8）是否可接
 ### 验证
 - `make insight-test insight-mutation CONTRACT_STRICT=1`：单测、性质测试、库上测试、契约严格校验、影子评审脚本测试全部通过；变异 50 条全部被发现
   （最后几行见本次 PR 描述）。
+
+## 第二步 PR 1：洞察服务侧（迁移 0044、契约 insight.report、命令行）（2026-10-05）
+按 spec“第二步补充（已确认）”第 1、2、5 条。
+
+### 做了什么
+- 迁移 0044 草稿：`insight.verify_actor(p_actor, p_audience, p_student) returns boolean`（SQL、STABLE、SECURITY DEFINER，属主 authz，只授 starbuddy_insight）。学生本人（active 学生账号且为该档案）或有效绑定家长（status active、未撤销、家长账号 active）才为真；档案已删除（erased_at）一律为假；只返回真假，不区分不存在与无权。没有新表、没有新表授权。DB 测试 79x、变异组“授权再核对”18 条、权限快照、攻击面与 scope（114 个函数）、ERD 同步。
+- 洞察服务 `DbActorVerifier`：受众与 actor.role 一致、ID 为 UUID 才查库；函数不存在或无权限时不通过（fail closed），其他库错误回 500 不放行。`create_app` 缺省改用它；BFF 自己的按档案授权保留，两道都过才放行。
+- 契约 `insight-service.v0.9.yaml`（未签字草稿）追加第十个工具 `insight.report`：每句带 claim_id，只收假设与成立、只画实线；假设标“初步判断”；家长版每句带置信度分档、学生版不带；`result.policy_version` 必填，固定文字须与该版本登记文字逐字一致；BFF 只转发 result，外层 confidence / evidence_ids 等不转给前端。服务实现复用第一步首份报告生成与两道检查；无权、没有报告、检查不过、超上限一律同一个 404，阻断编码只记日志。
+- 报告上限与契约对齐：每节 200 句、claim_ids 400 条、标题 80 / 衔接短语 60 / 提示语 200 字；超出整份阻断（`too_many_claims`、`over_length`），不截断；store 多取一条来发现超限。
+- 契约“无自由文本”原则的例外收窄为 4 个字段（`ReportSentence.text`、`connective`、`notice`、`title`），检查脚本断言洞察服务允许清单正好 5 项。
+- 命令行 `python -m insight.jobs sync|sweep|metrics`：复用审核台 `local_only` / `check_server_local` 只连本机，登录角色只继承 starbuddy_insight，`INSIGHT_ENV` 只收 dev / test；输出只有计数。
+
+### 测试
+`make db-test` 2516 项断言；db 变异“授权再核对”18/18（全量留给严格检查）；`attack-surface-check`、`pentest-env-test` 通过；`insight-test` 419 + 15；`contract-test` 90 个服务反例全部被拒；`contract-mutation` 240/240；`insight-mutation` 149/149。
+
+### 审查意见处理（按用户“按默认建议处理审查意见”）
+- 安全、契约均无阻断。已改：BFF 只转发 result（契约写明，PR 2 加断言）；报告单独上限、超限整份阻断统一 404；policy_version 放回 result；自由文本例外收窄并断言清单；标题、衔接短语超长反例与变异；link_id 描述与注释；79x 固定“学生账号停用、档案未删时家长仍为真”；命令行提示学生 ID 会留在 shell 历史；scope.md 改为“除下列例外”。
+
+### 经验
+- plpgsql 里调用函数要用动态 SQL（EXECUTE）测权限：简单表达式在事务里缓存执行状态，换角色后不重查权限，第一版测试因此误判“BFF 能调用”。
+- 改 `tools.py` 结构时，insight 变异里按原文锚点定位的旧变异会失效，要一起更新。
+- 允许清单这类模块常量的变异，在 test_mutations 里临时替换常量、跑完恢复。
+- 契约测试缺依赖时非严格模式会“跳过并成功”，CI 必须带 `CONTRACT_STRICT=1`。
+
+### 与 spec 的差异
+1. `link_id` 不进核对：按（家长账号, 学生）查库，依赖 0002 唯一索引（一对家长与学生至多一条有效绑定）；契约 `Actor.link_id` 写明洞察服务不据此核对或取数。
+2. `verify_actor` 额外把已删除档案判为假（spec 未写）。
+3. 学生版句子单独定义 `ReportSentence`（`RenderedStatement` 要求必带置信度）。
+4. 检查不过、超上限与“没有报告”合并为同一个 404。
+
+### 待人确认
+1. 上面差异 1–4 是否接受。
+2. 迁移 0044 执行后，BFF 现有 `insight.explain` 调用从“一律 404”变为按库放行，统一壳会开始显示陈述（仍只限对外白名单模板与可见范围）。
+3. 学生账号停用但档案未删时家长仍可看（与 BFF `is_linked_guardian` 一致），是否为预期。
+4. 读取阶段按含不合格行的总数（401 条）阻断，合格判断不足 400 时也可能不出报告，是否接受。
+5. 策略加载对固定文字的上限是 120 字，契约是标题 80、衔接短语 60：收紧策略加载校验还是放宽契约。
+6. 阻断编码 `too_many_claims`、`over_length` 是否登记进 spec。
+7. `--all` 的学生范围是“有当前节点键掌握行的学生”，metrics 是否需要另一口径。
+8. `jobs_cli` 跨服务 import `services/learning/review_console`，部署制品需带上该目录。
+9. 契约草稿签字范围扩大到第十个工具；0044 须先在副本演练后由人执行。

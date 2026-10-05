@@ -7,13 +7,19 @@ info:
     状态：**草稿 v0.9，待评审**（specs/service-openapi-v0.9/spec.md；W2 评审，W4 与学科插件 API 一起冻结 v1.0）。
 
     九个工具与 SIE V1.1 第九章“接口”一一对应，`operationId` 即工具名（点换成下划线）。
+    另有第十个工具 `insight.report`（首份画像报告，SIE-02b 第二步在本草稿内追加，签字范围随之扩大；
+    specs/sie-02b-claims-first-report/spec.md“第二步补充”默认方案第 2 条）。
     洞察服务是判断账本（insight.claim）的唯一写入方（ADR 13 草稿）。学科插件的 diagnose、plan、report 经编排层
     调用本接口读画像；grade、teach 只经知识服务的 `evidence.write` 写证据，不调用本接口的写入工具。
 
     ## 判断先于展示（CLAUDE.md 规则 11）
     面向学生或家长的文字只以 `RenderedStatement` 出现：它必须带 `claim_id`，由判断模板渲染，
     状态只能是 `hypothesis`、`established` 或 `to_verify`。`to_verify` 带 `display: dashed`，
-    前端画虚线、不作为陈述（ADR 13 待人确认 #2）。除 `RenderedStatement.text` 外，响应里没有其他自由文本。
+    前端画虚线、不作为陈述（ADR 13 待人确认 #2）。除 `RenderedStatement.text` 外，响应里没有其他自由文本；
+    唯一例外是首份报告（`insight.report`），且只有这 4 个字段：`ReportSentence.text`（同样由判断模板渲染、带 `claim_id`），
+    以及 `InsightReportResponse.result` 的 `notice`、`title` 与 `ReportSection.connective`（人写人审登记的固定文字，
+    不是关于学生的陈述，当前为占位，服务对它们另跑禁用推断检查，并须与 `result.policy_version` 所指版本的登记文字逐字一致）。
+    新增任何自由文本字段须走契约变更（`check_services.py` 断言洞察服务的自由文本允许清单正好是这 5 项）。
 
     ## 边界
     - 只写学习事实，不写 CLAUDE.md 规则 12 列出的推断；模板键、指标键、字段键都用编码约束。
@@ -26,7 +32,8 @@ info:
     - `caller = bff` 时受众只能是 `student` 或 `guardian`，并且必须带 `actor`（当前登录的学生本人或家长、以及授权依据的
       `guardian_student_link`）；洞察服务按 `actor` 与 `student_ref` 再核对一次授权（与 BFF 的检查重叠是有意的，规则 5）。
     - `caller = orchestrator` 时受众只能是 `agent`。`insight.context`、`insight.claims` 只给编排层；
-      `insight.export`、`insight.erase` 只给家长（`caller = bff`、`audience = guardian`）。
+      `insight.export`、`insight.erase` 只给家长（`caller = bff`、`audience = guardian`）；`insight.report` 只给 BFF（学生本人或已绑定家长）。
+    - 洞察服务的再核对经迁移 0044（草稿）`insight.verify_actor` 按库里的档案与有效绑定完成；核对不通过与“没有可出的报告”“对象不存在”是同一个 404。
       v0.9 的 `insight.predict`、`insight.reconcile` 只给编排层：考试预测在字段字典里只给 Agent，对学生家长展示要等对账卡上线（SIE-03）由人确认。
     - 按对象 ID 取数的工具（`insight.explain`、`insight.dispute`、`insight.reconcile`）必须核对对象属于 `student_ref`；
       不属于时的响应与“对象不存在”完全相同（同一 status、code、title，不带 detail）。
@@ -215,6 +222,32 @@ paths:
               schema: { $ref: '#/components/schemas/InsightEraseResponse' }
               examples: { basic: { $ref: '#/components/examples/InsightEraseResponse' } }
         default: { $ref: '#/components/responses/Problem' }
+  /v0/insight.report:
+    post:
+      operationId: insight_report
+      summary: 首份画像报告（学生版 / 家长版）
+      description: |
+        只给 BFF，代表学生本人或已绑定家长（受众 student / guardian）；洞察服务先按 actor 与 student_ref 再核对授权（迁移 0044 草稿）。
+        报告只收对该受众可见、未到期、模板已审核的“假设 / 成立”节点判断（待验证与中圈指标不进报告），每句带 `claim_id`；
+        学生版假设标“初步判断”、不带置信度，家长版每句附置信度说明。生成后跑陈述—判断一致性与禁用推断两道检查，任一不过不出报告。
+        无权、没有可出的报告、检查不过一律返回同一个 404（不暴露存在性）。只读，不写判断账本。
+        报告有单独上限：每节至多 200 句、全报告至多 400 个判断 ID，超出不截断、按阻断处理（同一个 404）。
+        BFF 只把 `result` 转给学生端 / 家长端；信封外层的 `confidence`、`evidence_ids`（以及 `source_version`、`model_version`）
+        只供 BFF 留痕与复核，不得转发给前端（SIE-02b 第二步 PR 2 的 BFF 接线时加断言）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InsightReportRequest' }
+            examples: { basic: { $ref: '#/components/examples/InsightReportRequest' } }
+      responses:
+        '200':
+          description: 结构化首份报告
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InsightReportResponse' }
+              examples: { basic: { $ref: '#/components/examples/InsightReportResponse' } }
+        default: { $ref: '#/components/responses/Problem' }
 
 components:
   securitySchemes:
@@ -274,7 +307,13 @@ components:
       properties:
         role: { type: string, enum: [student, guardian] }
         actor_ref: { type: string, format: uuid, description: 当前登录账号的平台 ID。 }
-        link_id: { type: string, format: uuid, description: 家长访问时的 guardian_student_link ID。 }
+        link_id:
+          type: string
+          format: uuid
+          description: |
+            家长访问时的 guardian_student_link ID（BFF 授权依据的留痕）。洞察服务不据此核对授权、也不据此取数：
+            再核对按（家长账号, 学生）在库里查有效绑定（迁移 0044 草稿 `insight.verify_actor`），不看 link_id 是否与之对应；
+            导出与删除的服务内接口虽保留该参数，当前不接线（回 501）。
       allOf:
         - description: 家长访问必须带绑定关系
           if: { properties: { role: { const: guardian } }, required: [role] }
@@ -332,6 +371,12 @@ components:
       allOf:
         - $ref: '#/components/schemas/InsightWriteContext'
         - properties: { caller: { const: bff }, audience: { const: guardian } }
+    InsightFrontContext:
+      description: 只给 BFF 的读取工具（insight.report）：代表学生本人或已绑定家长，受众与身份一致、必须带 actor（由 InsightContext 强制）。
+      allOf:
+        - $ref: '#/components/schemas/InsightContext'
+        - properties: { caller: { const: bff } }
+          required: [actor]
 
     # ---------- 统一信封 ----------
     ServiceResultBase:
@@ -739,6 +784,100 @@ components:
                   items: { type: string, enum: [claim_ledger, facts, evidence, inference, reports, uploads] }
       unevaluatedProperties: false
 
+    # ---------- insight.report（SIE-02b 第二步） ----------
+    InsightReportRequest:
+      type: object
+      required: [context]
+      additionalProperties: false
+      properties:
+        context: { $ref: '#/components/schemas/InsightFrontContext' }
+    ReportSentence:
+      type: object
+      description: |
+        首份报告里的一句：由一条判断按已审核模板渲染，必须带 `claim_id`（规则 11）。只收假设与成立（待验证不进报告，所以只画实线）；
+        假设标 `label: preliminary`（前端显示“初步判断”），成立不标。家长版每句带置信度说明，学生版不带（由 InsightReportResponse 按受众强制）。
+      required: [claim_id, template_key, template_version, status, display, text]
+      additionalProperties: false
+      properties:
+        claim_id: { type: string, format: uuid }
+        template_key: { $ref: '#/components/schemas/TemplateKey' }
+        template_version: { type: integer, minimum: 1 }
+        status: { type: string, enum: [hypothesis, established] }
+        display: { type: string, const: solid }
+        text: { type: string, minLength: 1, maxLength: 300 }
+        label: { type: string, const: preliminary }
+        confidence_band:
+          type: string
+          description: 置信度说明的编码（与 RenderedStatement 相同的分档）。
+          enum: [few_evidence, moderate, strong]
+      allOf:
+        - description: 假设必须标“初步判断”
+          if: { properties: { status: { const: hypothesis } }, required: [status] }
+          then: { required: [label] }
+        - description: 成立的判断不标“初步判断”
+          if: { properties: { status: { const: established } }, required: [status] }
+          then: { not: { required: [label] } }
+    ReportSection:
+      type: object
+      description: 报告的一节：固定衔接短语加若干判断渲染句。节的键是判断类别（知识掌握、知识迁移）。
+      required: [key, connective, sentences]
+      additionalProperties: false
+      properties:
+        key: { type: string, enum: [node_mastery, node_transfer] }
+        connective:
+          type: string
+          description: 固定衔接短语（人写人审登记，不是关于学生的陈述；当前为占位）。
+          minLength: 1
+          maxLength: 60
+        sentences: { type: array, minItems: 1, maxItems: 200, items: { $ref: '#/components/schemas/ReportSentence' } }
+    InsightReportResponse:
+      allOf:
+        - $ref: '#/components/schemas/ServiceResultBase'
+        - properties:
+            result:
+              type: object
+              required: [format, audience, policy_version, notice, title, sections, claim_ids]
+              additionalProperties: false
+              properties:
+                format: { type: string, const: sie-first-report/0.1 }
+                audience: { type: string, enum: [student, guardian] }
+                policy_version:
+                  type: string
+                  description: |
+                    生成报告所用判断策略配置的版本（config_version）。`notice`、`title` 与各节 `connective` 是该版本登记的固定文字，
+                    须与该版本登记文字逐字一致（BFF 与审计可按此版本核对；不一致视为报告不可信，不得展示）。
+                  pattern: '^[A-Za-z0-9][A-Za-z0-9._\-]{0,31}$'
+                notice:
+                  type: string
+                  description: 顶部提示语（人写人审登记的固定文字，不是关于学生的陈述；模板登记前为占位）。
+                  minLength: 1
+                  maxLength: 200
+                title:
+                  type: string
+                  description: 报告标题（按受众各一条固定文字；模板登记前为占位）。
+                  minLength: 1
+                  maxLength: 80
+                sections: { type: array, minItems: 1, maxItems: 2, items: { $ref: '#/components/schemas/ReportSection' } }
+                claim_ids:
+                  type: array
+                  description: 报告里出现的全部判断 ID（按出现顺序）。
+                  minItems: 1
+                  maxItems: 400
+                  uniqueItems: true
+                  items: { type: string, format: uuid }
+              allOf:
+                - description: 家长版每句都带置信度说明（SIE 第八章：家长看不到无置信度的推断）
+                  if: { properties: { audience: { const: guardian } }, required: [audience] }
+                  then:
+                    properties:
+                      sections: { items: { properties: { sentences: { items: { required: [confidence_band] } } } } }
+                - description: 学生版不带置信度说明
+                  if: { properties: { audience: { const: student } }, required: [audience] }
+                  then:
+                    properties:
+                      sections: { items: { properties: { sentences: { items: { not: { required: [confidence_band] } } } } } }
+      unevaluatedProperties: false
+
   examples:
     InsightContextRequest:
       value:
@@ -991,4 +1130,48 @@ components:
         confidence: 1
         source_version: 'algo:sie-erase@0.1.0'
         model_version: 'algo:sie-erase@0.1.0'
+        human_review_required: false
+    InsightReportRequest:
+      value:
+        context:
+          request_id: 00000000-0000-4000-8000-00000000d010
+          contract_version: 0.9.0
+          caller: bff
+          data_class: L2
+          student_ref: 00000000-0000-4000-8000-00000000a001
+          audience: guardian
+          actor: { role: guardian, actor_ref: 00000000-0000-4000-8000-00000000a201, link_id: 00000000-0000-4000-8000-00000000a301 }
+    InsightReportResponse:
+      value:
+        contract_version: 0.9.0
+        result:
+          format: sie-first-report/0.1
+          audience: guardian
+          policy_version: syn-0.1.0
+          notice: 【占位·待人审】首份报告顶部提示语
+          title: 【占位·待人审】首份报告标题（家长版）
+          sections:
+            - key: node_mastery
+              connective: 【占位衔接·甲】
+              sentences:
+                - claim_id: 00000000-0000-4000-8000-00000000f001
+                  template_key: math.node.mastery
+                  template_version: 1
+                  status: established
+                  display: solid
+                  text: 合成模板句：这个知识点已经能独立做对
+                  confidence_band: moderate
+                - claim_id: 00000000-0000-4000-8000-00000000f002
+                  template_key: math.node.mastery
+                  template_version: 1
+                  status: hypothesis
+                  display: solid
+                  text: 合成模板句：这个知识点正在练习中
+                  label: preliminary
+                  confidence_band: few_evidence
+          claim_ids: [00000000-0000-4000-8000-00000000f001, 00000000-0000-4000-8000-00000000f002]
+        evidence_ids: [00000000-0000-4000-8000-00000000e101, 00000000-0000-4000-8000-00000000e102]
+        confidence: 0.4
+        source_version: 'algo:sie-report@0.1.0'
+        model_version: 'algo:sie-report@0.1.0'
         human_review_required: false

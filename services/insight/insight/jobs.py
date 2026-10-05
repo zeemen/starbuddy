@@ -1,9 +1,10 @@
 """服务内接口（不对外开放，不在契约里）：判断生成、中圈指标重算、到期扫描、首份报告；SIE-03 的异议结案、对账卡生成、
 触发规则评估与下发，以及调度器的预测冻结与删除执行（scheduled.py，用调度器自己的连接）；冲刺 5-H 的每周周报（weekly_reports）。
 
-第二步的 BFF 读接口经这里取首份报告的结构化内容（怎么接入——服务内 HTTP 路由还是契约新增工具——是契约变更，
-登记在 lessons 的第二步计划里，由人决定）。触发时机（每次掌握重算后、每周、每天）由编排层与定时任务决定，
-本步只提供函数。
+首份报告的对外形态（SIE-02b 第二步，lessons 待人确认 H 按默认）：契约草稿追加的工具 insight.report（service/tools.py）
+经 report_inputs + build_first_report 取同一份结构化报告与两道检查；first_report 保留给服务内调用与测试。
+触发时机（每次掌握重算后、每周、每天）由编排层与定时任务决定；命令行入口 `python -m insight.jobs sync|sweep|metrics`
+（jobs_cli.py，只连本机数据库，不接生产调度，由人接调度）。
 """
 from __future__ import annotations
 
@@ -13,7 +14,7 @@ from typing import Any, Mapping, Sequence
 from .claims import MasteryRow
 from .policy import Policy
 from .predict import DbMasterySource
-from .report import ReportResult, build_first_report
+from .report import ReportClaim, ReportResult, build_first_report
 from .scheduled import execute_due_erasures, freeze_due_predictions  # noqa: F401  调度器入口（starbuddy_scheduler 的连接）
 from .shared import Forbidden, consistency, forbidden_matcher
 from .sie03_policy import Sie03Policy
@@ -46,13 +47,19 @@ async def sweep(store: InsightStore, limit: int = 1000) -> int:
     return await store.sweep_expired(limit)
 
 
+async def report_inputs(store: InsightStore, student: str, audience: str) -> tuple[list[ReportClaim], datetime]:
+    """首份报告的输入：数据库当前时间与该受众可见的节点判断（store.report_claims，与 0010 前端读取同一组条件）"""
+    async with store.pool.acquire() as conn:
+        now = await conn.fetchval("SELECT now()")
+    return await store.report_claims(student, audience), now
+
+
 async def first_report(store: InsightStore, student: str, audience: str, policy: Policy,
                        check_cfg: "consistency.CheckConfig", forbidden: Forbidden | None = None) -> ReportResult:
     """首份画像报告（学生版 / 家长版）。调用方（BFF）必须先按档案授权确认当前登录者是学生本人或有效绑定家长（规则 5）；
-    这里按判断可见范围过滤，并跑一致性与禁用推断检查，任一不过返回阻断编码、不出报告"""
-    async with store.pool.acquire() as conn:
-        now = await conn.fetchval("SELECT now()")
-    claims = await store.report_claims(student, audience)
+    这里按判断可见范围过滤，并跑一致性与禁用推断检查，任一不过返回阻断编码、不出报告。
+    对外经契约工具 insight.report（洞察服务另按 actor 再核对授权，0044）"""
+    claims, now = await report_inputs(store, student, audience)
     return build_first_report(claims, audience, policy, check_cfg, forbidden or forbidden_matcher(), now)
 
 
@@ -105,3 +112,10 @@ async def weekly_reports(store: InsightStore, week_start: date, policy: Policy, 
     profile_pages（KGE-04 第二步 PR 4，待人确认 #6 默认）：每个学生生成前先调学习服务 ensure 编译学情档案页（trigger = weekly，
     insight 令牌）；由 profile_pages.learning_profile_pages(settings.learning) 构造，没配学习服务时为 None。失败不阻塞周报，只计数（WeeklyRun.profile_pages）"""
     return await run_week(store, week_start, policy, weekly, check_cfg, forbidden or forbidden_matcher(), students, env, profile_pages)
+
+
+if __name__ == "__main__":  # python -m insight.jobs sync|sweep|metrics（只连本机数据库；见 jobs_cli.py）
+    import sys
+
+    from .jobs_cli import main
+    sys.exit(main())

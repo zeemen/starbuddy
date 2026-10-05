@@ -520,6 +520,8 @@ func|insight.valid_weekly_objective(jsonb)|starbuddy_authz|EXECUTE|SUPERUSER
 func|insight.valid_weekly_objective(jsonb)|starbuddy_insight|EXECUTE|SUPERUSER
 func|insight.valid_weekly_sentences(jsonb,text)|starbuddy_authz|EXECUTE|SUPERUSER
 func|insight.valid_weekly_sentences(jsonb,text)|starbuddy_insight|EXECUTE|SUPERUSER
+func|insight.verify_actor(uuid,text,uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|insight.verify_actor(uuid,text,uuid)|starbuddy_insight|EXECUTE|starbuddy_authz
 func|kge.current_staff()|starbuddy_authz|EXECUTE|starbuddy_authz
 func|kge.decide_tag_candidate(uuid,text)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|kge.decide_tag_candidate(uuid,text)|starbuddy_review|EXECUTE|starbuddy_authz
@@ -815,6 +817,7 @@ owner|insight.submit_exam_record(uuid,platform.subject,text,date,numeric,numeric
 owner|insight.submit_exam_score(uuid,uuid,numeric)|starbuddy_authz
 owner|insight.submit_guardian_report(uuid,text,jsonb)|starbuddy_authz
 owner|insight.submit_self_report(uuid,text,jsonb)|starbuddy_authz
+owner|insight.verify_actor(uuid,text,uuid)|starbuddy_authz
 owner|kge.current_staff()|starbuddy_authz
 owner|kge.decide_tag_candidate(uuid,text)|starbuddy_authz
 owner|kge.expire_current_affairs(date)|starbuddy_authz
@@ -1351,6 +1354,7 @@ secdef|insight.submit_exam_record(uuid,platform.subject,text,date,numeric,numeri
 secdef|insight.submit_exam_score(uuid,uuid,numeric)
 secdef|insight.submit_guardian_report(uuid,text,jsonb)
 secdef|insight.submit_self_report(uuid,text,jsonb)
+secdef|insight.verify_actor(uuid,text,uuid)
 secdef|kge.current_staff()
 secdef|kge.decide_tag_candidate(uuid,text)
 secdef|kge.expire_current_affairs(date)

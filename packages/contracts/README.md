@@ -12,7 +12,7 @@
 | `openapi/learning-internal.v0.yaml` | 学习服务内部 API（BFF → 学习服务），草稿 |
 | `openapi/learning-internal.v1.yaml` | 学习服务内部 API v1 候选版（信封写入、重放接口、模型路由、冲刺 4-H 的今日计划 `POST /internal/v1/plan`），待签字；plan 在候选开关关闭时返回 200 + 各科 `unavailable`。**1.1.0**（KGE-04 第二步 PR 3，待签字）加 `POST /internal/v1/mastery/get`、`/mastery/explain`（请求与响应直接引用知识服务 v0.9 的 schema）与 `POST /internal/v1/verification`（只接受洞察服务令牌，不返回题目）；检查在 `check_contract.py` 的 `INTERNAL_V1_COUNTER` / `INTERNAL_V1_REFS`，变异在 `test_mutations.py` 的 `INTERNAL_MUTATIONS` |
 | `openapi/knowledge-service.v0.9.yaml` | 知识服务 API（KGE 第八章十个工具），草稿 v0.9。公共层读知识、题目、采分点；个人层写证据、读掌握 |
-| `openapi/insight-service.v0.9.yaml` | 洞察服务 API（SIE 第九章九个工具），草稿 v0.9。画像视图、判断解释、异议、预测与对账、事实记录、导出与删除 |
+| `openapi/insight-service.v0.9.yaml` | 洞察服务 API（SIE 第九章九个工具，另加 SIE-02b 第二步追加的首份报告 `insight.report`），草稿 v0.9。画像视图、判断解释、异议、预测与对账、事实记录、导出与删除 |
 | `scripts/check_services.py` | 两份服务契约的检查（`check_contract.py` 默认运行时一起调用）；反例在 `tests/service_counterexamples.py`，变异在 `tests/test_mutations.py` 的 `SERVICE_MUTATIONS` |
 | `python/starbuddy_contract/` | 共享库：契约加载与校验、平台侧核对规则。学习服务与一致性测试共用（冲刺 1-A） |
 | `conformance/` | 与学科无关的一致性测试：对运行中的适配器跑同一套测试，输出 Gate 0 覆盖率。见 `conformance/README.md` |

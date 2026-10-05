@@ -4,10 +4,10 @@
 由 check_contract.py 在默认运行时一起调用；变异测试见 tests/test_mutations.py 的 SERVICE_MUTATIONS。
 检查项：
 1. OpenAPI 3.1 合法，跨文件 $ref 可解析；
-2. KGE 第八章 10 个工具、SIE 第九章 9 个工具各有路径，operationId 与工具名对应；
+2. KGE 第八章 10 个工具、SIE 第九章 9 个工具加首份报告 insight.report（SIE-02b 第二步）各有路径，operationId 与工具名对应；
 3. 每个 200 响应基于统一信封 ServiceResultBase，信封外不允许额外字段；版本号三处一致；
 4. 写入类工具的上下文要求 idempotency_key；公共层工具的上下文不带学生标识；两份契约都没有 usage_id；
-5. 响应树没有无约束文本（允许清单之外）；公共层工具的请求与响应没有个人层字段名；
+5. 响应树没有无约束文本（允许清单之外；洞察服务的允许清单正好 5 项、含 RenderedStatement.text、每项在契约里真实存在）；公共层工具的请求与响应没有个人层字段名；
    洞察服务没有名次、百分位、概率类字段；面向学生家长的文字只有 RenderedStatement；
 6. evidence.write 的证据等级只有 A、B；
 7. 示例符合 schema、证据引用闭合、字段 ID 在字段字典里、无 PII；描述、枚举、示例零命中禁用推断词表；
@@ -64,6 +64,7 @@ TOOLS = {
         "insight.record": ("InsightRecordRequest", "InsightRecordResponse"),
         "insight.export": ("InsightExportRequest", "InsightExportResponse"),
         "insight.erase": ("InsightEraseRequest", "InsightEraseResponse"),
+        "insight.report": ("InsightReportRequest", "InsightReportResponse"),  # SIE-02b 第二步追加（首份画像报告）
     },
 }
 WRITE_TOOLS = {
@@ -79,7 +80,11 @@ FREE_TEXT_ALLOW = {
         ("RegionWeight", "typical_slots"), ("ScoringPointView", "keyword_family"),
         ("PageGetResponse.result", "body_md"),
     },
-    "insight": {("RenderedStatement", "text")},
+    # 首份报告（SIE-02b 第二步）：句子同样由判断模板渲染、带 claim_id；提示语、标题、衔接短语是人写人审登记的固定文字（服务另查禁用推断）。
+    # 契约原则的例外只有报告这 4 个字段；清单必须正好 5 项（含 RenderedStatement.text），且每项都是契约里真实存在的字符串字段
+    # （check_insight_free_text_allowlist 断言），新增须走契约变更
+    "insight": {("RenderedStatement", "text"), ("ReportSentence", "text"), ("ReportSection", "connective"),
+                ("InsightReportResponse.result", "notice"), ("InsightReportResponse.result", "title")},
 }
 PERSONAL_NAMES = re.compile(r"(student|attempt|evidence_event|account|guardian|household|learner|user|child|pupil|parent"
                             r"|phone|mobile|email|school|id_card|uid\b|wechat|openid|device|actor)", re.I)
@@ -160,6 +165,31 @@ def walk(docs: dict, cur: str, root: str, visit_fn) -> None:
             visit(sub, doc_key, owner if prop is None else f"{owner}.{prop}", name, f"{trail}.{name}")
 
     visit(docs[cur]["components"]["schemas"][root], cur, root, None, root)
+
+
+INSIGHT_FREE_TEXT_COUNT = 5
+
+
+def check_insight_free_text_allowlist(docs: dict, errors: list[str]) -> None:
+    """洞察服务的自由文本允许清单正好 5 项、含 RenderedStatement.text，且每项都对应某个工具响应里真实存在的字符串字段
+    （契约原则“除 RenderedStatement.text 外没有其他自由文本”的例外只有首份报告这 4 个字段，新增须走契约变更）"""
+    allow = FREE_TEXT_ALLOW["insight"]
+    if len(allow) != INSIGHT_FREE_TEXT_COUNT or ("RenderedStatement", "text") not in allow:
+        errors.append(f"insight：自由文本允许清单必须正好 {INSIGHT_FREE_TEXT_COUNT} 项且含 RenderedStatement.text，"
+                      f"实际 {sorted(allow)}（新增自由文本须走契约变更）")
+    found: set[tuple[str, str]] = set()
+
+    def fn(node, owner, prop, _trail, _k):
+        types = node.get("type")
+        types = types if isinstance(types, list) else [types]
+        if prop is not None and (owner, prop) in allow and "string" in types:
+            found.add((owner, prop))
+
+    for _req, resp in TOOLS["insight"].values():
+        if resp in docs["insight"]["components"]["schemas"]:
+            walk(docs, "insight", resp, fn)
+    for owner, prop in sorted(allow - found):
+        errors.append(f"insight：自由文本允许清单里的 {owner}.{prop} 在任何工具响应里都不是字符串字段（清单与契约脱节）")
 
 
 def free_text_leaks(docs: dict, svc: str, root: str, allow: set | None = None) -> list[str]:
@@ -325,6 +355,7 @@ def check_structure(docs: dict, errors: list[str]) -> None:
         if callers is not None and set(node.get("properties", {}).get("caller", {}).get("enum", [])) != callers:
             errors.append(f"{svc_key}：{name}.caller 的调用方类别与快照不一致（应为 {sorted(callers)}）")
 
+    check_insight_free_text_allowlist(docs, errors)
     ins = docs["insight"]["components"]["schemas"]
     rs = ins.get("RenderedStatement", {})
     for f in ("claim_id", "text", "status", "display", "template_key", "template_version", "confidence_band"):

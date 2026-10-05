@@ -1003,6 +1003,30 @@ M+=(
   ["时政下架：知识服务可直接写下架记录"]="DROP POLICY content_review_kge_submit ON kge.content_review; CREATE POLICY content_review_kge_submit ON kge.content_review FOR INSERT TO starbuddy_kge WITH CHECK (decision = 'pending' OR basis_code = 'expired_auto');"
 )
 
+# SIE-02b 第二步 PR 1：洞察服务的授权再核对（0044 insight.verify_actor，specs/sie-02b-claims-first-report“第二步补充”第 1 条）：
+# 由 79x 发现（授权类的同时由 80 的快照发现）。DBMUT_FILTER=授权再核对 只跑这一组
+VA='insight.verify_actor(uuid, text, uuid)'
+M+=(
+  ["授权再核对：认已撤销的绑定"]="$(afr "$VA" "'l.status = ''active'' AND l.revoked_at IS NULL AND '" "''")"
+  ["授权再核对：家长不核对学生"]="$(afr "$VA" "'WHERE l.student_id = p_student AND '" "'WHERE '")"
+  ["授权再核对：学生不核对档案"]="$(afr "$VA" "'WHERE s.id = p_student AND '" "'WHERE '")"
+  ["授权再核对：停用的学生账号仍通过"]="$(afr "$VA" "'a.kind = ''student'' AND a.status = ''active'''" "'a.kind = ''student'''")"
+  ["授权再核对：停用的家长账号仍通过"]="$(afr "$VA" "'a.kind = ''guardian'' AND a.status = ''active'''" "'a.kind = ''guardian'''")"
+  ["授权再核对：家长分支不查账号类型"]="$(afr "$VA" "'a.kind = ''guardian'' AND '" "''")"
+  ["授权再核对：学生分支不查账号类型"]="$(afr "$VA" "'a.kind = ''student'' AND '" "''")"
+  ["授权再核对：不查档案已删除"]="$(afr "$VA" "'s.erased_at IS NULL'" "'true'")"
+  ["授权再核对：家长不查档案已删除"]="$(afr "$VA" "'g.erased_at IS NULL'" "'true'")"
+  ["授权再核对：家长分支要求学生账号有效（与 BFF 不一致）"]="$(afr "$VA" "'g.erased_at IS NULL'" "'g.erased_at IS NULL AND EXISTS (SELECT 1 FROM platform.account sa WHERE sa.id = g.account_id AND sa.status = ''active'')'")"
+  ["授权再核对：不分受众"]="$(afr "$VA" "'WHEN p_audience = ''guardian'' THEN'" "'WHEN true THEN'")"
+  ["授权再核对：未知受众返回 NULL"]="$(afr "$VA" "'ELSE false END'" "'END'")"
+  ["授权再核对：空参数返回 NULL"]="$(afr "$VA" "'WHEN p_actor IS NULL OR p_student IS NULL THEN false'" "'WHEN p_actor IS NULL OR p_student IS NULL THEN NULL'")"
+  ["授权再核对：改为调用者权限"]="ALTER FUNCTION $VA SECURITY INVOKER;"
+  ["授权再核对：BFF 可调用"]="GRANT EXECUTE ON FUNCTION $VA TO starbuddy_bff;"
+  ["授权再核对：学习服务可调用"]="GRANT EXECUTE ON FUNCTION $VA TO starbuddy_learning;"
+  ["授权再核对：调度器可调用"]="GRANT EXECUTE ON FUNCTION $VA TO starbuddy_scheduler;"
+  ["授权再核对：对 PUBLIC 开放"]="GRANT EXECUTE ON FUNCTION $VA TO PUBLIC;"
+)
+
 # 并行执行（每个变异各起一个一次性 Postgres，互不影响）；DBMUT_JOBS 控制并发数，默认等于 CPU 核数
 JOBS="${DBMUT_JOBS:-$(nproc 2>/dev/null || echo 2)}"
 RES="$(mktemp -d "${TMPDIR:-/tmp}/starbuddy-dbmut.XXXXXX")"

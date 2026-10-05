@@ -257,6 +257,46 @@ SERVICE_MUTATIONS = {
     "删除“未准入不能是 A 级”": svc_drop_allof("knowledge", "EvidenceWriteItem", "未准入内容上的作答不能是 A 级"),
     "采分点结果的地图版本改为可选": svc("knowledge", assign(
         f"{S}.RubricGetResponse.allOf.1.properties.result.required", ["item_ref", "rubric_version", "points"])),
+    # 首份画像报告 insight.report（SIE-02b 第二步）
+    "删除 insight.report 路径": svc("insight", lambda d: d["paths"].pop("/v0/insight.report")),
+    "报告句子的 claim_id 改为可选": svc("insight", assign(f"{S}.ReportSentence.required",
+                                                     ["template_key", "template_version", "status", "display", "text"])),
+    "报告句子状态加入 to_verify": svc("insight", assign(f"{S}.ReportSentence.properties.status.enum", ["hypothesis", "established", "to_verify"])),
+    "报告句子可画虚线": svc("insight", assign(f"{S}.ReportSentence.properties.display", {"type": "string", "enum": ["solid", "dashed"]})),
+    "删除“假设必须标初步判断”": svc_drop_allof("insight", "ReportSentence", "假设必须标"),
+    "删除“成立不标初步判断”": svc_drop_allof("insight", "ReportSentence", "成立的判断不标"),
+    "删除“家长版每句带置信度”": svc("insight", delete(f"{S}.InsightReportResponse.allOf.1.properties.result.allOf.0")),
+    "删除“学生版不带置信度”": svc("insight", delete(f"{S}.InsightReportResponse.allOf.1.properties.result.allOf.1")),
+    "报告对编排层开放": svc("insight", assign(f"{S}.InsightReportRequest.properties.context",
+                                            {"$ref": "#/components/schemas/InsightContext"})),
+    "报告提示语去掉限长": svc("insight", delete(f"{S}.InsightReportResponse.allOf.1.properties.result.properties.notice.maxLength")),
+    "报告句子加自由文本 note": svc("insight", assign(f"{S}.ReportSentence.properties.note", {"type": "string", "maxLength": 200})),
+    "报告加 percentile": svc("insight", assign(f"{S}.InsightReportResponse.allOf.1.properties.result.properties.percentile", {"type": "number"})),
+    "报告允许空节": svc("insight", delete(f"{S}.InsightReportResponse.allOf.1.properties.result.properties.sections.minItems")),
+    "报告标题限长放宽到 1000": svc("insight", assign(
+        f"{S}.InsightReportResponse.allOf.1.properties.result.properties.title.maxLength", 1000)),
+    "报告标题去掉限长": svc("insight", delete(f"{S}.InsightReportResponse.allOf.1.properties.result.properties.title.maxLength")),
+    "衔接短语限长放宽到 1000": svc("insight", assign(f"{S}.ReportSection.properties.connective.maxLength", 1000)),
+    "衔接短语去掉限长": svc("insight", delete(f"{S}.ReportSection.properties.connective.maxLength")),
+    "每节句数上限放宽到 1000": svc("insight", assign(f"{S}.ReportSection.properties.sentences.maxItems", 1000)),
+    "报告的策略版本改为可选": svc("insight", assign(f"{S}.InsightReportResponse.allOf.1.properties.result.required",
+                                                ["format", "audience", "notice", "title", "sections", "claim_ids"])),
+    "报告的策略版本去掉 pattern": svc("insight", delete(
+        f"{S}.InsightReportResponse.allOf.1.properties.result.properties.policy_version.pattern")),
+    "报告的策略版本接受任意文字": svc("insight", assign(
+        f"{S}.InsightReportResponse.allOf.1.properties.result.properties.policy_version.pattern", "^.{1,200}$")),
+    # 允许清单与契约脱节：字段改名后清单里的旧项失效
+    "衔接短语改名（允许清单里的旧项失效）": svc("insight", lambda d: d["components"]["schemas"]["ReportSection"]["properties"].__setitem__(
+        "connective_text", d["components"]["schemas"]["ReportSection"]["properties"].pop("connective"))),
+}
+
+# 洞察服务自由文本允许清单本身的变异（check_services.FREE_TEXT_ALLOW["insight"] 必须正好是 5 项且含 RenderedStatement.text）：
+# 每个变异拿到清单的副本，改完后临时替换模块常量跑一遍服务契约检查，跑完恢复
+ALLOWLIST_MUTATIONS = {
+    "洞察服务允许清单多一项自由文本": lambda a: a.add(("ReportSentence", "note")),
+    "洞察服务允许清单去掉 RenderedStatement.text 换成别的": lambda a: (a.discard(("RenderedStatement", "text")),
+                                                              a.add(("ReportSection", "key"))),
+    "洞察服务允许清单少一项": lambda a: a.discard(("InsightReportResponse.result", "title")),
 }
 
 
@@ -403,6 +443,17 @@ def main() -> int:
         # 只被 OpenAPI 合法性或“无法完成”拦下，不能证明对应规则有效（契约审查建议 9）
         if not [e for e in errs if "OpenAPI 3.1 校验失败" not in e and "无法完成" not in e]:
             missed.append(name)
+    original_allow = cs.FREE_TEXT_ALLOW
+    for name, mutate in ALLOWLIST_MUTATIONS.items():
+        allow = set(original_allow["insight"])
+        mutate(allow)
+        cs.FREE_TEXT_ALLOW = {**original_allow, "insight": allow}
+        try:
+            errs = cs.run_service_checks(copy.deepcopy(service_base))
+        finally:
+            cs.FREE_TEXT_ALLOW = original_allow
+        if not [e for e in errs if "OpenAPI 3.1 校验失败" not in e and "无法完成" not in e]:
+            missed.append(f"允许清单：{name}")
 
     v09 = cc.load(cc.DEFAULT_SPEC)
     v1_base = cc.load(cc.V1_SPEC)
@@ -440,13 +491,13 @@ def main() -> int:
         if not [e for e in errs if "无法完成" not in e]:
             missed.append(f"learning-internal v1：{name}")
 
-    total = len(MUTATIONS) + len(SERVICE_MUTATIONS) + len(V1_MUTATIONS) + len(INTERNAL_MUTATIONS)
+    total = len(MUTATIONS) + len(SERVICE_MUTATIONS) + len(ALLOWLIST_MUTATIONS) + len(V1_MUTATIONS) + len(INTERNAL_MUTATIONS)
     if missed:
         print(f"mutation-test: 失败，{len(missed)}/{total} 个变异没有被发现：")
         for m in missed:
             print(f"  - {m}")
         return 1
-    print(f"mutation-test: 通过（{total} 个变异全部被发现，其中服务契约 {len(SERVICE_MUTATIONS)} 个、v1.0 候选版 {len(V1_MUTATIONS)} 个、"
+    print(f"mutation-test: 通过（{total} 个变异全部被发现，其中服务契约 {len(SERVICE_MUTATIONS)} 个、允许清单 {len(ALLOWLIST_MUTATIONS)} 个、v1.0 候选版 {len(V1_MUTATIONS)} 个、"
           f"learning-internal v1 {len(INTERNAL_MUTATIONS)} 个）")
     return 0
 

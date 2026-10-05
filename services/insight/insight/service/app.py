@@ -4,7 +4,8 @@
 令牌决定 caller（bff / orchestrator），请求体里的 context.caller 必须与之一致，否则 403。学生与家长没有令牌（401）。
 请求体限 64 KB，JSON 拒绝 NaN / Infinity 与重复键；整个应用按 Host 允许列表校验（不在列表回 400）。
 启动时：加载契约、判断策略与报告检查词表（合成占位只允许 test 环境）、字段字典；以 starbuddy_insight 建连接池并断言角色安全
-（注入的池同样断言），不满足即拒绝启动。不提供 MCP（本任务不需要）。首份报告只有服务内接口（insight.jobs），不对外开放。
+（注入的池同样断言），不满足即拒绝启动。不提供 MCP（本任务不需要）。首份报告经契约工具 insight.report（SIE-02b 第二步）给 BFF；
+BFF 代表学生 / 家长时的授权再核对缺省用 DbActorVerifier（迁移 0044 草稿 insight.verify_actor；函数不可用时一律不通过）。
 """
 from __future__ import annotations
 
@@ -31,7 +32,7 @@ from ..store_sie03 import Sie03Store
 from .config import Settings
 from .contract import Contract, contract as default_contract
 from .errors import ServiceError, invalid, unauthenticated
-from .tools import ActorVerifier, ToolCore
+from .tools import ActorVerifier, DbActorVerifier, ToolCore
 
 MAX_BODY_BYTES = 64 * 1024
 LOOPBACK = ("127.0.0.1", "localhost", "::1")
@@ -136,13 +137,13 @@ def create_app(settings: Settings, *, pool: asyncpg.Pool | None = None, contract
                policy: Policy | None = None, verifier: ActorVerifier | None = None, sie03: Sie03Policy | None = None,
                scheduler: VerificationScheduler | None = None, mastery: MasterySource | None = None,
                guardian: GuardianRequests | None = None) -> FastAPI:
-    """pool、contract、policy、verifier 与 SIE-03 的 sie03（配置）、scheduler（验证任务：test 环境缺省接口桩，其他环境配置了
+    """pool、contract、policy、verifier（缺省 DbActorVerifier，调 0044 insight.verify_actor）与 SIE-03 的 sie03（配置）、scheduler（验证任务：test 环境缺省接口桩，其他环境配置了
     INSIGHT_LEARNING_URL / _TOKEN 就调学习服务，否则不可用）、mastery（掌握行来源，缺省直接读 platform.mastery_estimate 的节点键当前行）、
     guardian（导出与删除，缺省不接线）供测试注入；不传时按配置创建。注入的池同样要过角色断言"""
     state: dict[str, Any] = {}
     the_contract = contract or default_contract()
     the_policy = policy or load_policy(settings.policy_path, env=settings.env)
-    check_cfg = load_check_config(settings.report_check_path, env=settings.env)  # 启动即校验；报告由 insight.jobs 使用
+    check_cfg = load_check_config(settings.report_check_path, env=settings.env)  # 启动即校验；insight.report 与 insight.jobs 使用
     the_sie03 = sie03 or load_sie03(settings.sie03_path, env=settings.env)  # 启动即校验（含占位文案的禁用推断检查）
 
     @asynccontextmanager
@@ -156,10 +157,11 @@ def create_app(settings: Settings, *, pool: asyncpg.Pool | None = None, contract
             store = InsightStore(p)
             ops = Sie03Store(p)
             state.update(store=store, ops=ops, policy=the_policy, sie03=the_sie03, check_cfg=check_cfg,
-                         core=ToolCore(store, the_contract, the_policy, forbidden_matcher(), verifier, sie03=the_sie03, ops=ops,
+                         core=ToolCore(store, the_contract, the_policy, forbidden_matcher(), verifier or DbActorVerifier(p),
+                                       sie03=the_sie03, ops=ops,
                                        scheduler=scheduler or default_scheduler(settings.env, settings.learning),
                                        mastery=mastery or DbMasterySource(p),
-                                       guardian=guardian))
+                                       guardian=guardian, check_cfg=check_cfg))
             yield
         finally:
             state.clear()
