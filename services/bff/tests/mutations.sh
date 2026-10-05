@@ -206,6 +206,24 @@ SM=(
   # 7.7 计量入口
   $'H6：诊断开始收前端带来的字段\tsrc/diagnosis/service.ts\tif (!exactKeys(b, [\'subject\', \'idempotency_key\']) || b[\'subject\']\tif (b[\'subject\']'
   $'H6：诊断失败不释放预留\tsrc/diagnosis/service.ts\t    if (holding) await releaseQuietly(deps, account, usage, \'upstream_rejected\');\t'
+  # 冲刺 4-I 第二部分 语音分钟计量辅助（src/voice/minutes.ts）：取整、封顶、只扣 voice_realtime、失败回滚、未知不释放、同 key 重放、结算余量；
+  # 这几条跑 tests/voice-minutes*.test.ts
+  $'语音：向下取整\tsrc/voice/minutes.ts\treturn Math.ceil(durationMs / MS_PER_MINUTE);\treturn Math.floor(durationMs / MS_PER_MINUTE);'
+  $'语音：四舍五入\tsrc/voice/minutes.ts\treturn Math.ceil(durationMs / MS_PER_MINUTE);\treturn Math.round(durationMs / MS_PER_MINUTE);'
+  $'语音：超出预留不按预留封顶\tsrc/voice/minutes.ts\tconst charged = Math.min(billable, reservation.reservedMinutes);\tconst charged = billable;'
+  $'语音：调用方可指定别的资源\tsrc/voice/minutes.ts\tif (input.resourceType !== undefined && input.resourceType !== VOICE_RESOURCE) {\tif (false) {'
+  $'语音：预留改扣 ai_active_time\tsrc/voice/minutes.ts\t[input.studentId, VOICE_RESOURCE, input.idempotencyKey,\t[input.studentId, \'ai_active_time\', input.idempotencyKey,'
+  $'语音：会话失败不释放\tsrc/voice/minutes.ts\t    await releaseVoiceMinutes(deps.pool, input.accountId, res, \'voice_session_failed\');\t'
+  $'语音：结果未知就释放\tsrc/voice/minutes.ts\t    emit(\'session_result_unknown\');\t    emit(\'session_result_unknown\'); await releaseVoiceMinutes(deps.pool, input.accountId, res, \'unknown\');'
+  $'语音：已结算的 key 重放再开会话\tsrc/voice/minutes.ts\tif (state === \'settled\') return\tif (false) return'
+  $'语音：已释放的 key 重放再开会话\tsrc/voice/minutes.ts\tif (state === \'released\') return\tif (false) return'
+  $'语音：会话时长不留结算余量\tsrc/voice/minutes.ts\tDate.parse(res.expiresAt) - now() - SETTLE_MARGIN_MS\tDate.parse(res.expiresAt) - now()'
+  $'语音：结算不核对 usage_id 属于这个 key\tsrc/voice/minutes.ts\tif (checkKey(r.idempotencyKey) !== r.usageId) throw\tif (false) throw'
+  $'语音：指纹不含预计分钟\tsrc/voice/minutes.ts\tresource: VOICE_RESOURCE, estimated_minutes: estimatedMinutes }\tresource: VOICE_RESOURCE }'
+  # 审查处理（B1、5）：同 key 找回仍在预留中的那笔不开新会话；核对库返回的 usage_id；no_time_left 时释放
+  $'语音：resumed 时照样开会话\tsrc/voice/minutes.ts\t  if (r.resumed) return { status: \'in_progress\', usageId: r.reservation.usageId };\t'
+  $'语音：不核对库返回 usage_id\tsrc/voice/minutes.ts\tif (r[\'usage_id\'] !== usageId) throw\tif (false) throw'
+  $'语音：no_time_left 时不释放\tsrc/voice/minutes.ts\t    await releaseVoiceMinutes(deps.pool, input.accountId, res, \'voice_no_time_left\');\t'
 )
 # 副本保持仓库结构（测试按 ../../../ 找仓库根：adapters/aya 的登记脚本、db/seeds 的种子），adapters、db 软链接回仓库。
 # 安全审查阻断 1：原来的副本不保持结构，测试的 before 在任何代码下都失败，变异全部“被发现”却不说明任何问题。
@@ -253,6 +271,7 @@ star_run() {  # $1 副本根目录，$2 变异名（“计量：”开头的跑�
   [[ "${2:-}" == 信任：* ]] && tests="tests/trust-units.test.ts tests/trust.integration.test.ts"
   [[ "${2:-}" == H6：* ]] && tests="tests/route-matrix.integration.test.ts"
   [[ "${2:-}" == 星图v1：* ]] && tests="tests/star-map-v1.test.ts tests/star-map-v1.integration.test.ts"
+  [[ "${2:-}" == 语音：* ]] && tests="tests/voice-minutes.test.ts tests/voice-minutes.integration.test.ts"
   out=$( cd "$1/services/bff" && timeout 240 bash "$ROOT/db/tests/pg-ephemeral.sh" -- \
       node --no-warnings --test --test-concurrency=1 --test-timeout=60000 $tests 2>&1 ); rc=$?
   printf '%s\n' "$out" > "$1/run.out"  # H6 的“第一条失败必须是登记的断言”从这里读

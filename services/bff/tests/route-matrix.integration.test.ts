@@ -694,7 +694,8 @@ const srcFiles = (dir: URL): string[] => readdirSync(dir).flatMap((n) => {
 });
 
 /** 允许调用消耗类计量函数的文件（第二轮 7.7）：新增消耗类入口要在这里登记，并补 H6 的计量用例 */
-const METER_CALLERS = ['src/diagnosis/service.ts'];
+// src/voice/minutes.ts：语音分钟计量辅助（冲刺 4-I 第二部分），还没有挂到任何路由；接路由前须先补 H6 的集成用例锁住（见下方静态断言）
+const METER_CALLERS = ['src/diagnosis/service.ts', 'src/voice/minutes.ts'];
 
 test('H6 计量入口（静态）：只有登记的文件导入消耗类计量函数；诊断开始的资源类型、数量、usage_id 由 BFF 决定，请求体不收这些字段', () => {
   const METER_FNS = /\b(reserve|settle|release|meteredCall)\b/;
@@ -709,6 +710,14 @@ test('H6 计量入口（静态）：只有登记的文件导入消耗类计量�
     if (dynamic || sql || imports.some((clause) => /\*\s+as\s+\w+/.test(clause) || METER_FNS.test(clause))) hits.push(rel);
   }
   assert.deepEqual(hits.sort(), [...METER_CALLERS].sort(), '新增消耗类入口要在 METER_CALLERS 登记并补 H6 的计量用例（第二轮 7.7）');
+  // 语音分钟：资源与来源方法是常量（调用方不能另选），预留分钟是封顶后的值；还没有任何源码导入它。
+  // 接 HTTP 路由（或任何调用方）之前须先补 H6 用例锁住：请求体不收 resourceType、usage_id、reservedMinutes、expiresAt
+  // 与时长（VoiceReservation / VoiceGrant 只能留在服务端），同 key 并发与重放只开一次会话，宵禁与单日上限照样生效；
+  // 补好之后再改下面这条“没有源码导入”的断言。
+  const voice = readFileSync(new URL('../src/voice/minutes.ts', import.meta.url), 'utf8');
+  assert.match(voice, /\[input\.studentId, VOICE_RESOURCE, input\.idempotencyKey, voiceFingerprint\(minutes\), minutes,\s*null, VOICE_SOURCE_METHOD\]/);
+  assert.ok(srcFiles(new URL('../src/', import.meta.url)).every((f) => !readFileSync(f, 'utf8').includes('voice/minutes')),
+            '语音计量辅助接入调用方前要补 H6 的计量用例');
   const svc = readFileSync(new URL('../src/diagnosis/service.ts', import.meta.url), 'utf8');
   // 预留：资源类型、数量、来源方法是常量，usage_id 由幂等键派生（前端传不进来）；结算数量固定为 1（G4）
   assert.match(svc, /reserve\(deps\.pool, account, \{ studentId: student, resourceType: 'diagnosis_full', idempotencyKey: key,\s*requestFingerprint: fingerprint, quantity: 1, sourceMethod: 'diagnose' \}\)/);
