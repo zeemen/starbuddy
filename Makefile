@@ -468,11 +468,13 @@ voice-blind-eval-test:
 # 冲刺 5-C+D 端到端联调（specs/e2e-integration-sprint5）：20 名合成学生在一次性 Postgres + 学习服务 + 三科适配器上走诊断、批改、复测（桩），
 # 断言三科事件并存不覆盖、私有表无学生事实副本、grade 溯源五字段、整轮重跑零新增、RLS 隔离，证据包与合成样例一致，另有反例与 verify 护栏测试（约 1 分钟）。
 # 同一测试也随 learning-test 运行；这里单独跑。依赖同 learning-test 与三科适配器（adapters/{aya,zhixing,wenli} 下 npm ci）
+# 先跑星图截图的对账与护栏单测 tools/e2e-cohort/tests（不需要数据库与浏览器，几秒；specs/e2e-integration-sprint5/lessons.md 的后续项）。
 .PHONY: e2e-cohort gate0-evidence
 e2e-cohort:
 	@if [ ! -x services/learning/.venv/bin/pytest ]; then \
 	  echo "e2e-cohort: 跳过（没有安装依赖；见 services/learning/README.md）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@cd services/learning && PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider --rootdir '$(abspath tools/e2e-cohort)' '$(abspath tools/e2e-cohort/tests)'
 	@cd services/learning && LEARNING_TEST_STRICT=$(if $(filter 1,$(CONTRACT_STRICT)),1,0) .venv/bin/python -m pytest -q tests/test_e2e_cohort.py
 
 # Gate 0 证据包（合成联调，不是内测结论）：跑一遍完整合成联调，把事件计数、节点查询摘要、断言结果与运行元数据写到执行人指定目录

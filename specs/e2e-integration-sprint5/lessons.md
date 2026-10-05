@@ -65,7 +65,7 @@
      `data-testid="login" / open-student-* / watermark`、`section.sky`、`.sky-field svg.star`、`tbody tr`），与 `apps/web/e2e/session.ts` 同源；
      这些文案或结构改版时截图会失败（记 failed），需同步改 `apps/web/scripts/gate0-starmap.ts`。
    - 对账与护栏单测（`tools/e2e-cohort/tests/test_starmap.py`）不在 `learning-test` / `e2e-cohort` 的收集范围（两个目标不在本次可改范围），
-     由 `gate0-evidence` 带 `GATE0_STARMAP=1` 时先跑；**后续**：并入 `e2e-cohort` 目标。
+     由 `gate0-evidence` 带 `GATE0_STARMAP=1` 时先跑；**后续**：并入 `e2e-cohort` 目标（2026-10-05 已并入，`e2e-cohort` 先跑这组单测）。
 4. **节点查询的“状态”**：KGE-04 第二步（掌握写库）前一律 `evidence_only`（有 `mastery_estimate` 当前行时显示其 state），
    不调用掌握纯函数算状态，避免证据包被读成掌握结论。
 5. **计量零新增是“没有经过 BFF 的零”**：学习服务内部接口不做预留、结算，回放直接调学习服务，所以计量三表（`usage_reservation`、
