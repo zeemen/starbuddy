@@ -6,11 +6,13 @@
 //   - axe（wcag2a / wcag2aa）无违规；浏览器只请求本前端；
 //   - 再练区域里的每个文本节点，要么是 copy.ts 的文案（全是 {{TODO_COPY:practice.*}} 占位），要么在 data-value（数字、日期、节点编号）、
 //     data-item-text（BFF 转来的合成题面）里；
-//   - 页面上没有桩故意带上的内部字段（题目引用、空原因编码、复测与同族标记）与票据，也没有“粗心”等评价词。
+//   - 页面上没有桩故意带上的内部字段（题目引用、空原因编码、复测与同族标记）与票据，也没有“粗心”等评价词；
+//     整页过 dom-leak.ts 的内部编码核对（文本节点与 data-* 属性）。
 // 视觉回归（@visual，只由 make web-visual 运行）：列表与作答页各一张，基线在 __screenshots__/practice.spec.ts/（首次提交要有视觉负责人签字）。
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { ALL_SHELL_COPY, PRACTICE, PRACTICE_ERROR, PRACTICE_SOURCE, PRACTICE_VERDICT } from '../src/shell/copy.ts';
+import { expectNoDomLeak } from './dom-leak.ts';
 import { checkHeaders, checkHtml } from './headers-check.ts';
 import { targets } from './crawl-pages.ts';
 import { cookieSession, fakeLearningRequests, loginGuardian, loginStudent, PRACTICE_BASE, PRACTICE_BFF } from './session.ts';
@@ -50,6 +52,7 @@ async function onlyCopy(page: Page): Promise<void> {
   for (const leak of INTERNAL) expect(html, leak).not.toContain(leak);
   expect(html).not.toMatch(/粗心|马虎|薄弱|不认真|掌握度/);
   expect(html, '票据不进 DOM').not.toMatch(/\b(sbp1|pt1)\.[A-Za-z0-9_-]{16,}/);
+  await expectNoDomLeak(page, { forbidden: INTERNAL });  // 整页的文本节点与 data-* 属性：没有内部编码，data-* 只放行登记过的取值
 }
 
 function watchOrigin(page: Page): string[] {

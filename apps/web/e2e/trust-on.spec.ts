@@ -6,11 +6,13 @@
 //   - axe（wcag2a / wcag2aa）无违规；浏览器只请求本前端；
 //   - 信任界面区域里的每个文本节点，要么是 copy.ts 的文案（全是 {{TODO_COPY:…}} 占位），要么在 data-claim-id（判断句）或
 //     data-value（数字、日期、编号）里——关于学生的句子都带 claim_id；
-//   - 页面上不出现异议类型、偏差方向的编码原文。
+//   - 页面上不出现异议类型、偏差方向的编码原文；整页的文本节点与 data-* 属性过 dom-leak.ts 的内部编码核对
+//     （判断状态码、原因码、错因编码、模板键、证据 ID、掌握数值等；data-* 只放行登记过的属性与取值）。
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { ALL_SHELL_COPY } from '../src/shell/copy.ts';
 import { targets } from './crawl-pages.ts';
+import { domLeaks, expectNoDomLeak, FORBIDDEN_CODES } from './dom-leak.ts';
 import { crawl } from './headers-check.ts';
 import { loginGuardian, loginStudent, TRUST_BASE } from './session.ts';
 
@@ -18,7 +20,9 @@ const GT = '5d000000-0000-4000-8000-0000000000c1';
 const GR = '5d000000-0000-4000-8000-0000000000c2';
 const GP = '5d000000-0000-4000-8000-0000000000c3';
 const CLAIM = '00000000-0000-4000-8000-00000000f001';
-const CODES = /one_off_slip|i_know|data_error|item_type_transfer|time_shortage|calculation_slip|diagnosis_optimistic|verification_scheduled|observe_followups|open_fact_for_correction/;
+/** 原来在这里单列的异议类型、偏差方向、下一步编码：现由 dom-leak.ts 的 FORBIDDEN_CODES 从文案映射的键推出，探针用例核对仍然覆盖 */
+const CODES = ['one_off_slip', 'i_know', 'data_error', 'item_type_transfer', 'time_shortage', 'calculation_slip', 'diagnosis_optimistic',
+               'verification_scheduled', 'observe_followups', 'open_fact_for_correction'];
 
 const axe = async (page: Page) => {
   const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
@@ -44,7 +48,7 @@ async function onlyCopyOrClaims(page: Page): Promise<void> {
     return out;
   }, ALL_SHELL_COPY);
   expect(offenders).toEqual([]);
-  expect(await page.locator('body').innerText()).not.toMatch(CODES);
+  await expectNoDomLeak(page);  // 整页文本节点与 data-* 属性：没有内部编码（含上面 CODES）
 }
 
 function watchOrigin(page: Page): string[] {
@@ -309,6 +313,38 @@ test('周报：学生“成长手记”与家长周报——每句带 data-claim
   // 另一户（gS）打开 HG 的孩子：与不存在同一个 404
   await loginGuardian(page, 'gS');
   expect((await page.goto(`/family/${GT}/weekly`))?.status()).toBe(404);
+});
+
+test('DOM 编码核对的探针：往页面里注入合成的泄露（编码属性、模板键、掌握数值、证据 ID、节点编号），核对逐个被抓到；data-value 里的节点编号放行', async ({ page }) => {
+  for (const c of CODES) expect(FORBIDDEN_CODES).toContain(c);
+  await loginStudent(page, GT);
+  await page.goto(`/s/${GT}/disputes`);
+  await expect(page.getByTestId('disputes-empty')).toBeVisible();
+  expect(await domLeaks(page)).toEqual([]);
+  await page.evaluate(() => {
+    const root = document.querySelector('[data-trust-root]')!;
+    const probe = document.createElement('div');
+    probe.innerHTML = [
+      '<span data-dispute-kind="x">（合成）甲</span>',
+      '<span data-dispute-status="refuted">（合成）乙</span>',
+      '<span data-testid="dispute-one_off_slip">（合成）丙</span>',
+      '<span data-code="verification_scheduled">（合成）丁</span>',
+      '<span aria-label="calculation_slip">（合成）戊</span>',
+      '<p>（合成）syn.weekly.node_mastery@1</p>',
+      '<p>（合成）p_mastery 0.62</p>',
+      '<p>（合成）5d000000-0000-4000-8000-00000000e999</p>',
+      '<p>（合成）MATH.FUNC.QUAD</p>',
+      '<p><span data-value="node">MATH.ALG.EQ</span></p>',
+    ].join('');
+    root.append(probe);
+  });
+  const offs = await domLeaks(page, { forbidden: ['algo:syn-probe'] });
+  for (const needle of ['未登记的属性：data-dispute-kind', 'data-dispute-status="refuted"', '禁止编码 one_off_slip', 'data-testid="dispute-one_off_slip"',
+                        '禁止编码 verification_scheduled', 'aria-label 含禁止编码 calculation_slip', '模板键', '@版本', '禁止编码 p_mastery', '掌握数值',
+                        'UUID', '知识节点编号']) {
+    expect(offs.some((o) => o.includes(needle)), needle).toBe(true);
+  }
+  expect(offs.filter((o) => o.includes('MATH.ALG.EQ'))).toEqual([]);  // data-value 里的编号是有意显示的值
 });
 
 test('安全头（第二轮 7.6，H6）：开关打开时信任界面的全部页面（学生与家长）都带本次 nonce 的 CSP、no-store、nosniff', async ({ page }) => {

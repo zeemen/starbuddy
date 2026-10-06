@@ -4,11 +4,12 @@
 //   - axe（wcag2a / wcag2aa）无违规；浏览器只请求本前端；
 //   - 演示页区域里的每个文本节点，要么是 copy.ts 的文案（全是 {{TODO_COPY:…}} 占位），要么在 data-claim-id（判断句与待验证虚线）里，
 //     要么在 data-fixed-text（洞察服务登记的固定文字：顶部提示语、标题、衔接短语）里——关于学生的句子都带 claim_id；
-//   - 页面上没有信封外层的内容（依据版本、证据 ID）：BFF 只转发 result。
+//   - 页面上没有信封外层的内容（依据版本、证据 ID）：BFF 只转发 result；整页过 dom-leak.ts 的内部编码核对（文本节点与 data-* 属性）。
 // 视觉回归（@visual，只由 make web-visual 运行）：家长版与学生版各一张，基线在 __screenshots__/first-report.spec.ts/（首次提交要有视觉负责人签字）。
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { ALL_SHELL_COPY, FIRST_REPORT } from '../src/shell/copy.ts';
+import { expectNoDomLeak } from './dom-leak.ts';
 import { cookieSession, loginGuardian, loginStudent, REPORT_BASE, REPORT_BFF } from './session.ts';
 
 const R1 = '5c000000-0000-4000-8000-0000000000c1';
@@ -42,6 +43,8 @@ async function onlyCopyOrClaims(page: Page): Promise<void> {
   expect(offenders).toEqual([]);
   const html = await page.content();
   for (const leak of ['algo:sie-report-fake', EVIDENCE, 'evidence_ids', 'model_version', 'source_version']) expect(html).not.toContain(leak);
+  // 整页的文本节点与 data-* 属性：没有内部编码；桩的模板键、证据 ID、算法版本也不在任何位置
+  await expectNoDomLeak(page, { forbidden: ['algo:sie-report-fake', EVIDENCE, 'syn.report.'] });
 }
 
 function watchOrigin(page: Page): string[] {

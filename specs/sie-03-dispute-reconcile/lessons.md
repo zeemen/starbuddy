@@ -340,6 +340,12 @@ PR 描述须写明这一点。
    - L3：原扫描只收编码样式字面量，漏了中文、COMMENT、异常消息和 yaml 的 description / example，已改为全部字符串。
 10. **运行时渲染**：本测试只做静态扫描；真实 DOM 文本节点的核对（含 `data-*` 属性是否该留编码，如 `DisputesPage` 的 `data-dispute-status`）
     由 apps/web 的 web-test 负责，登记为后续，未改 apps/web。
+    （2026-10-06 已补：`apps/web/e2e/dom-leak.ts` 共享辅助，扫描全部文本节点与 aria / title / alt / placeholder / data-* 属性，
+    禁止 copy 映射键推出的编码与内部字段名、编码样式；data-* 属性名与取值须登记；接入 trust-on、first-report、practice 各页并有注入探针用例。
+    运行时未发现泄露。待人确认：① 现存编码属性 `data-status`、`data-dispute-status`、`data-confidence`、`data-claim-source`、
+    `data-weekly-section`、`data-report-section` 是否保留（白名单暂按原值放行）；② 静态发现 `WhyPage.tsx` 的 DisputePanel
+    `data-testid="dispute-${kind}"` 与提交后 ResultForm 的 `data-code` 会带出异议类型 / 下一步编码，E2E 尚未渲染到，改页面还是登记允许由人定；
+    ③ “为什么”页 `data-value="version"` 显示 `source_version`，是否算内部版本泄露。）
 11. **更正**：0035 头注释说“33 张表的 DELETE 只授 eraser”，实际清单是 32 张 delete 表（GRANT 也是 32 张），注释有误，本 PR 不改迁移。
 
 ### 验证
