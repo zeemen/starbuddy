@@ -258,6 +258,30 @@ RESET ROLE;
 SELECT t.ok(EXISTS (SELECT 1 FROM kge.validate_map_version('ca100000-0000-4000-8000-00000000ca01') c
                      WHERE c.check_name = 'policy_scheme_missing' AND c.object_id = 'nanjing:2027' AND c.severity = 'warning'),
             '地区投影的城市届别在政策库没有已发布方案时，地图校验报警告');
+-- 第 11 项“只有草稿方案”（specs/policy-schema-v0.9 lessons 留给后续的用例）：草稿不算已有方案，照样报警告；有已发布方案的届别不报。
+-- 合成的草稿地图版本、投影与 synthcity 2028 届草稿方案都在事务里建，结束回滚，不影响后续文件
+BEGIN;
+SET LOCAL ROLE starbuddy_kge;
+INSERT INTO kge.map_version (id, subject, standard_year, version) VALUES ('ab000000-0000-4000-8000-0000000000ca', 'aya', 2022, '0.11.0');
+INSERT INTO kge.knowledge_node (map_version_id, id, level, parent_id, kind, name, includes, excludes, examples, cognitive_levels) VALUES
+  ('ab000000-0000-4000-8000-0000000000ca', 'MATH.POLX', 'domain', NULL, NULL, '合成', '{}', '{}', '{}', '{}'),
+  ('ab000000-0000-4000-8000-0000000000ca', 'MATH.POLX.T', 'topic', 'MATH.POLX', NULL, '合成', '{}', '{}', '{}', '{}'),
+  ('ab000000-0000-4000-8000-0000000000ca', 'MATH.POLX.T.A', 'node', 'MATH.POLX.T', 'kp', '合成', '{a}', '{b}', '{c}', '{understand}');
+INSERT INTO kge.region_projection (map_version_id, node_id, region, exam_year, weight, source_ref) VALUES
+  ('ab000000-0000-4000-8000-0000000000ca', 'MATH.POLX.T.A', 'synthcity', 2028, 0.5, '合成'),
+  ('ab000000-0000-4000-8000-0000000000ca', 'MATH.POLX.T.A', 'synthcity', 2027, 0.5, '合成');
+INSERT INTO policy.exam_scheme (id, city, cohort, version, source_document_id)
+  VALUES ('ab000000-0000-4000-8000-0000000000e8', 'synthcity', 2028, '1.0.0', :doc1);
+SELECT t.ok((SELECT array_agg(status::text) FROM policy.exam_scheme WHERE city = 'synthcity' AND cohort = 2028) = '{draft}'
+            AND EXISTS (SELECT 1 FROM policy.exam_scheme WHERE city = 'synthcity' AND cohort = 2027 AND status = 'published'),
+            '地图校验第 11 项的前提：synthcity 2028 届只有草稿方案，2027 届有已发布方案');
+SELECT t.ok(EXISTS (SELECT 1 FROM kge.validate_map_version('ab000000-0000-4000-8000-0000000000ca') c
+                     WHERE c.check_name = 'policy_scheme_missing' AND c.object_id = 'synthcity:2028' AND c.severity = 'warning'),
+            '城市届别只有草稿方案时，地图校验照样报警告（草稿不算已有方案）');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM kge.validate_map_version('ab000000-0000-4000-8000-0000000000ca') c
+                         WHERE c.check_name = 'policy_scheme_missing' AND c.object_id = 'synthcity:2027'),
+            '城市届别有已发布方案时，地图校验不报政策库缺方案');
+ROLLBACK;
 
 -- ================= 学生档案届别（0014） =================
 SELECT t.ok(NOT EXISTS (SELECT 1 FROM platform.student_profile WHERE exam_cohort IS NULL), '已有学生档案的届别全部回填');

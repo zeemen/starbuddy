@@ -969,6 +969,15 @@ M+=(
   ["考情签字：导出函数对 PUBLIC 开放"]="GRANT EXECUTE ON FUNCTION platform.policy_signoff_record() TO PUBLIC;"
   ["考情签字：写入方可签字（kge 签方案）"]="GRANT EXECUTE ON FUNCTION $QSS TO starbuddy_kge;"
 )
+# 考情方案发布路径的并发锁（specs/policy-schema-v0.9 lessons 后续项）：由 run.sh 的并发场景 6–10 发现；地图校验第 11 项的草稿路径由 77 发现
+M+=(
+  ["考情并发：发布不加同城同届咨询锁"]="$(afr "$QPS" "'PERFORM pg_advisory_xact_lock(hashtext(''policy.publish_scheme:'' || s.city || '':'' || s.cohort));'" "''")"
+  ["考情并发：发布不锁方案行"]="$(afr "$QPS" "'SELECT * INTO s FROM policy.exam_scheme WHERE id = p_scheme FOR UPDATE;'" "'SELECT * INTO s FROM policy.exam_scheme WHERE id = p_scheme;'")"
+  ["考情并发：发布不锁来源文件"]="$(afr "$QPS" "'PERFORM 1 FROM policy.source_document WHERE id = s.source_document_id FOR SHARE;'" "''")"
+  ["考情并发：子表写入不锁方案行"]="$(afr 'policy.guard_scheme_frozen()' "'ORDER BY s.id FOR SHARE LOOP'" "'ORDER BY s.id LOOP'")"
+  ["考情并发：方案签字不锁方案行"]="$(afr "$QSS" "'WHERE s.id = p_scheme FOR UPDATE;'" "'WHERE s.id = p_scheme;'")"
+  ["考情：地图校验把草稿方案也算作已有方案"]="$(afr 'kge.validate_map_version(uuid)' "'AND e.status = ''''published'''')'" "')'")"
+)
 
 # G 流第二部分 PR D：审核台读内容版本与发布记录（0042）、时政过期下架（0043）：由 79w 发现（授权类的同时由 80 的快照发现）。
 # DBMUT_FILTER=审核台读 与 DBMUT_FILTER=时政下架 只跑这两组

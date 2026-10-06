@@ -340,6 +340,100 @@ wait || { echo "db-test: 失败（并发考情签字：前一名 staff 的签字
   || { echo "db-test: 失败（两名 staff 同时签同一所学校后没有发布：签字没有串行计数）"; exit 1; }
 echo "ok - 并发：两名 staff 同时签同一考情对象，签字按对象行锁串行，第二名批准时发布" >> "$OUT"
 
+# 考情方案发布路径的并发（specs/policy-schema-v0.9 lessons 留给后续的两会话测试；按 0041 后的现状）：
+#   发布函数 policy.publish_scheme 的同城市同届别咨询锁、对方案行的 FOR UPDATE、对来源文件的 FOR SHARE；
+#   子表冻结触发器 policy.guard_scheme_frozen 对方案行的 FOR SHARE；方案签字 policy.sign_scheme 对方案行的 FOR UPDATE。
+# 夹具（合成城市 synthcity 2033–2037 届，非真实数据）：两份来源文件经两名 staff 签字发布；六个草稿方案各有一门计分科目与一个批次，
+# 都已由两名 staff 对当前内容批准（可以直接发布）
+QD1=d7600000-0000-4000-8000-0000000000d1; QD2=d7600000-0000-4000-8000-0000000000d2
+QA=d7610000-0000-4000-8000-0000000000e1; QB=d7610000-0000-4000-8000-0000000000e2; QC=d7610000-0000-4000-8000-0000000000e3
+QE=d7610000-0000-4000-8000-0000000000e4; QF=d7610000-0000-4000-8000-0000000000e5; QG=d7610000-0000-4000-8000-0000000000e6
+QALL="ARRAY['$QA', '$QB', '$QC', '$QE', '$QF', '$QG']::uuid[]"
+AS_SF2="SELECT set_config('app.account_id', 'f5000000-0000-4000-8000-0000000000f5', false); SET ROLE starbuddy_review;"
+AS_SF3="SELECT set_config('app.account_id', 'd7000000-0000-4000-8000-0000000000a3', false); SET ROLE starbuddy_review;"  # 79v 建的第三名合成 staff
+POL_SIGN_ALL="SELECT policy.sign_record('source_document', d, 'approved', policy.object_digest('source_document', d))
+                FROM unnest(ARRAY['$QD1', '$QD2']::uuid[]) d;
+              SELECT policy.sign_scheme(v, 'approved', policy.object_digest('exam_scheme', v)) FROM unnest($QALL) v;"
+printf '%s\n' "SET ROLE starbuddy_kge;
+  INSERT INTO policy.source_document (id, city, issuer, doc_number, title, published_on, url, applies_from_cohort, last_verified_on) VALUES
+    ('$QD1', 'synthcity', '合成教育局', '合成〔2032〕1号', '合成并发测试方案（非真实数据）', '2032-03-01', 'https://jyj.synthcity.example/doc/race1', 2033, '2032-09-01'),
+    ('$QD2', 'synthcity', '合成教育局', '合成〔2032〕2号', '合成并发测试方案二（非真实数据）', '2032-03-01', 'https://jyj.synthcity.example/doc/race2', 2036, '2032-09-01');
+  INSERT INTO policy.exam_scheme (id, city, cohort, version, source_document_id) VALUES
+    ('$QA', 'synthcity', 2033, '1.0.0', '$QD1'), ('$QB', 'synthcity', 2033, '1.1.0', '$QD1'), ('$QC', 'synthcity', 2034, '1.0.0', '$QD1'),
+    ('$QE', 'synthcity', 2035, '1.0.0', '$QD1'), ('$QF', 'synthcity', 2036, '1.0.0', '$QD2'), ('$QG', 'synthcity', 2037, '1.0.0', '$QD1');
+  INSERT INTO policy.subject_config (scheme_id, subject, scored, full_score, proposition, exam_form, taken_in_grade)
+    SELECT v, 'chinese', true, 100, 'city', 'closed_book', 9 FROM unnest($QALL) v;
+  INSERT INTO policy.admission_rule (scheme_id, batch_code, batch_order, track) SELECT v, 'batch_1', 1, 'unified' FROM unnest($QALL) v;
+  RESET ROLE; $AS_SF2 $POL_SIGN_ALL RESET ROLE; $AS_STAFF $POL_SIGN_ALL" \
+  | psql_run >/dev/null 2>"$WORK/polrace.err" || { echo "db-test: 失败（考情方案并发测试夹具：$(cat "$WORK/polrace.err")）"; exit 1; }
+[ "$(psql_run -tAc "SELECT count(*) FROM unnest($QALL) v WHERE policy.approval_count('exam_scheme', v) = 2 AND (SELECT count(*) FROM policy.validate_scheme(v) c WHERE c.severity = 'error') = 0" </dev/null)" = "6" ] \
+  || { echo "db-test: 失败（考情方案并发测试夹具：六个草稿方案不是都可以直接发布）"; exit 1; }
+# 场景 6（咨询锁）：同城市同届别两个草稿，会话 A 发布 1.0.0 后事务未提交；会话 B 此时发布 1.1.0。咨询锁让 B 等 A 提交，
+# 再按已发布状态校验，撤下 A 的 1.0.0 后发布自己；去掉锁时 B 看不到 A 的发布，撞“唯一已发布”索引失败（新版本发不出去）
+printf '%s\n' "BEGIN; $AS_STAFF SELECT policy.publish_scheme('$QA'); SELECT pg_sleep(1.5); COMMIT;" \
+  | psql_run >/dev/null 2>"$WORK/race_m.err" &
+sleep 0.5
+printf '%s\n' "$AS_SF2 SELECT policy.publish_scheme('$QB');" | psql_run >/dev/null 2>"$WORK/race_n.err" \
+  || { wait; echo "db-test: 失败（同城市同届别并发发布：后发布的新版本失败，没有等前一个提交后接替：$(cat "$WORK/race_n.err")）"; exit 1; }
+wait || { echo "db-test: 失败（并发场景 6 的先发布失败：$(cat "$WORK/race_m.err")）"; exit 1; }
+[ "$(psql_run -tAc "SELECT string_agg(version || ':' || status, ',' ORDER BY version) FROM policy.exam_scheme WHERE city = 'synthcity' AND cohort = 2033" </dev/null)" = "1.0.0:retired,1.1.0:published" ] \
+  || { echo "db-test: 失败（同城市同届别并发发布后不是旧版本撤下、新版本发布）"; exit 1; }
+echo "ok - 并发：同城市同届别两个草稿并发发布，咨询锁让后一个等前一个提交，撤下旧版本后发布新版本" >> "$OUT"
+# 场景 7（子表 FOR SHARE ← 发布 FOR UPDATE）：写入方改已签字草稿的科目配置并持有事务；此时发布。冻结触发器对方案行的共享锁让发布等改动提交，
+# 再按新内容的摘要数签字（旧签字不再计数）而拒绝；去掉任一边的锁时，发布按改动前的内容通过，提交后已发布方案的内容与签字不符
+printf '%s\n' "BEGIN; SET ROLE starbuddy_kge; UPDATE policy.subject_config SET full_score = 90 WHERE scheme_id = '$QC' AND subject = 'chinese';
+  SELECT pg_sleep(1.5); COMMIT;" | psql_run >/dev/null 2>"$WORK/race_o.err" &
+sleep 0.5
+if printf '%s\n' "$AS_STAFF SELECT policy.publish_scheme('$QC');" | psql_run >/dev/null 2>"$WORK/race_p.err"; then
+  wait; echo "db-test: 失败（发布没有等待进行中的科目配置修改，签字后改过的方案被发布）"; exit 1
+fi
+wait || { echo "db-test: 失败（并发场景 7 的科目配置修改失败：$(cat "$WORK/race_o.err")）"; exit 1; }
+grep -q '阻断问题' "$WORK/race_p.err" || { echo "db-test: 失败（并发场景 7 的发布不是被校验拒绝：$(cat "$WORK/race_p.err")）"; exit 1; }
+[ "$(psql_run -tAc "SELECT status FROM policy.exam_scheme WHERE id = '$QC'" </dev/null)" = "draft" ] \
+  || { echo "db-test: 失败（并发场景 7 的方案不是草稿）"; exit 1; }
+echo "ok - 并发：发布等待进行中的科目配置修改提交后，按新内容的签字不足拒绝" >> "$OUT"
+# 场景 8（发布 FOR UPDATE → 子表 FOR SHARE）：方案发布后事务未提交；写入方此时给它加招录规则。冻结触发器的共享锁让写入等发布提交，
+# 再按已发布状态拒绝；去掉锁时写入看到的还是草稿，规则进了已发布方案
+printf '%s\n' "BEGIN; $AS_STAFF SELECT policy.publish_scheme('$QE'); SELECT pg_sleep(1.5); COMMIT;" \
+  | psql_run >/dev/null 2>"$WORK/race_q.err" &
+sleep 0.5
+if printf '%s\n' "SET ROLE starbuddy_kge; INSERT INTO policy.admission_rule (scheme_id, batch_code, batch_order, track) VALUES ('$QE', 'batch_2', 2, 'unified');" \
+   | psql_run >/dev/null 2>"$WORK/race_r.err"; then
+  wait; echo "db-test: 失败（发布进行中写入的招录规则进入了已发布方案）"; exit 1
+fi
+wait || { echo "db-test: 失败（并发场景 8 的发布本身失败：$(cat "$WORK/race_q.err")）"; exit 1; }
+grep -q '已发布或已撤下' "$WORK/race_r.err" || { echo "db-test: 失败（并发场景 8 的写入不是被冻结拒绝：$(cat "$WORK/race_r.err")）"; exit 1; }
+[ "$(psql_run -tAc "SELECT count(*) FROM policy.admission_rule WHERE scheme_id = '$QE'" </dev/null)" = "1" ] \
+  || { echo "db-test: 失败（并发场景 8 的已发布方案多了招录规则）"; exit 1; }
+echo "ok - 并发：方案发布进行中的招录规则写入等发布提交后按已发布状态拒绝" >> "$OUT"
+# 场景 9（发布对来源文件的 FOR SHARE）：写入方撤下来源文件并持有事务；此时发布引用它的方案。共享锁让发布等撤下提交，再按来源文件未发布拒绝；
+# 去掉锁时发布按撤下前的状态通过，方案在来源文件已撤下之后才发布
+printf '%s\n' "BEGIN; SET ROLE starbuddy_kge; UPDATE policy.source_document SET status = 'retired' WHERE id = '$QD2';
+  SELECT pg_sleep(1.5); COMMIT;" | psql_run >/dev/null 2>"$WORK/race_s.err" &
+sleep 0.5
+if printf '%s\n' "$AS_STAFF SELECT policy.publish_scheme('$QF');" | psql_run >/dev/null 2>"$WORK/race_t.err"; then
+  wait; echo "db-test: 失败（发布没有等待进行中的来源文件撤下，方案引用已撤下的来源文件被发布）"; exit 1
+fi
+wait || { echo "db-test: 失败（并发场景 9 的来源文件撤下失败：$(cat "$WORK/race_s.err")）"; exit 1; }
+grep -q '阻断问题' "$WORK/race_t.err" || { echo "db-test: 失败（并发场景 9 的发布不是被校验拒绝：$(cat "$WORK/race_t.err")）"; exit 1; }
+[ "$(psql_run -tAc "SELECT status FROM policy.exam_scheme WHERE id = '$QF'" </dev/null)" = "draft" ] \
+  || { echo "db-test: 失败（并发场景 9 的方案不是草稿）"; exit 1; }
+echo "ok - 并发：发布等待进行中的来源文件撤下提交后，按来源文件未发布拒绝" >> "$OUT"
+# 场景 10（方案签字 FOR UPDATE ↔ 发布 FOR UPDATE）：方案发布后事务未提交；第三名 staff 此时驳回它。签字对方案行的锁让驳回等发布提交，
+# 再按“只能对草稿签字”拒绝；去掉锁时驳回记在已发布方案上（已发布方案的有效批准人数变成 0）
+printf '%s\n' "BEGIN; $AS_STAFF SELECT policy.publish_scheme('$QG'); SELECT pg_sleep(1.5); COMMIT;" \
+  | psql_run >/dev/null 2>"$WORK/race_u.err" &
+sleep 0.5
+if printf '%s\n' "$AS_SF3 SELECT policy.sign_scheme('$QG', 'rejected', policy.object_digest('exam_scheme', '$QG'));" \
+   | psql_run >/dev/null 2>"$WORK/race_v.err"; then
+  wait; echo "db-test: 失败（发布进行中的驳回记在了已发布方案上）"; exit 1
+fi
+wait || { echo "db-test: 失败（并发场景 10 的发布本身失败：$(cat "$WORK/race_u.err")）"; exit 1; }
+grep -q '只能对草稿方案签字' "$WORK/race_v.err" || { echo "db-test: 失败（并发场景 10 的驳回不是被草稿检查拒绝：$(cat "$WORK/race_v.err")）"; exit 1; }
+[ "$(psql_run -tAc "SELECT count(*) FROM platform.policy_signoff WHERE object_id = '$QG' AND decision = 'rejected'" </dev/null)" = "0" ] \
+  || { echo "db-test: 失败（并发场景 10 的已发布方案上有驳回记录）"; exit 1; }
+echo "ok - 并发：方案发布进行中的签字等发布提交后按非草稿拒绝" >> "$OUT"
+
 # 0041 的数据前提：库里已有已发布的考情数据（77、79v 经签字发布的）时，0041 up 以明确信息中止（自报工号的发布补不出签字记录）
 if psql_run -1 < "$(ls "$ROOT"/db/migrations/0041_*.up.sql)" >/dev/null 2>"$WORK/up41.err"; then
   echo "db-test: 失败（库里已有已发布考情数据时 0041 up 仍然执行成功）"; exit 1
