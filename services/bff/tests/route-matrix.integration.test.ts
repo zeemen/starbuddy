@@ -244,9 +244,9 @@ const DENIALS = new Set<string>([P.UNAUTHENTICATED, P.NOT_FOUND, P.FORBIDDEN, P.
 const ALLOWED_PROBLEM_KEYS = new Set(['type', 'title', 'status', 'code', 'reason']);
 /** 第二轮 7.6 / P3：每个 BFF 响应都 no-store、nosniff、JSON；没有 CORS 放行头、cookie、请求 ID、服务器标识；错误体只有错误码 */
 function checkHeaders(r: Res, what: string) {
-  assert.equal(r.headers.get('cache-control'), 'no-store', `${what} no-store`);
-  assert.equal(r.headers.get('x-content-type-options'), 'nosniff', `${what} nosniff`);
-  assert.match(r.headers.get('content-type') ?? '', /^application\/(problem\+)?json$/, `${what} content-type`);
+  assert.equal(r.headers.get('cache-control'), 'no-store', `${what} BFF 响应 no-store`);
+  assert.equal(r.headers.get('x-content-type-options'), 'nosniff', `${what} BFF 响应 nosniff`);
+  assert.match(r.headers.get('content-type') ?? '', /^application\/(problem\+)?json$/, `${what} BFF 响应是 JSON（content-type）`);
   for (const k of r.headers.keys()) {
     assert.ok(!k.startsWith('access-control-'), `${what} 没有 CORS 头（${k}）`);
     assert.ok(!['set-cookie', 'x-powered-by', 'server', 'x-request-id'].includes(k), `${what} 没有 ${k}`);
