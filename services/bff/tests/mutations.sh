@@ -77,7 +77,8 @@ SM=(
   $'诊断：取当前题不查宵禁\tsrc/diagnosis/service.ts\tawait curfewGate(deps, account, student, session);  // 宵禁：取题\tnull;'
   $'诊断：探针不查宵禁\tsrc/diagnosis/service.ts\tawait curfewGate(deps, account, student, session);  // 宵禁：探针\tnull;'
   $'诊断：宵禁不把会话置为暂停\tsrc/diagnosis/service.ts\t  if (session !== null) {\t  if (session === \'never\') {'
-  $'诊断：宵禁不看计量只读函数的结果\tsrc/diagnosis/service.ts\treturn rows[0]!.s.in_curfew === true;\treturn false;'
+  # 宵禁读取在错题再练 PR 3（审查 B1）抽成共享的 src/metering/curfew.ts，诊断与再练共用；这条仍跑诊断集成测试
+  $'诊断：宵禁不看计量只读函数的结果\tsrc/metering/curfew.ts\treturn rows[0]!.s.in_curfew === true;\treturn false;'
   $'诊断：探针幂等键不按步骤派生\tsrc/diagnosis/service.ts\t[student, step.subject, step.item_id, input.prediction, input.asked_at, probeKey]\t[student, step.subject, step.item_id, input.prediction, input.asked_at, input.idempotency_key]'
   $'诊断：视图带出题号\tsrc/diagnosis/service.ts\t    seq: v.step.seq, kind: v.step.kind,\t    seq: v.step.seq, item_id: v.step.item_id, kind: v.step.kind,'
   $'诊断：日志记原始 student_id\tsrc/http/server.ts\trecord[\'student\'] = logHash(deps.keys, params[\'student_id\']);\trecord[\'student\'] = params[\'student_id\'];'
@@ -255,6 +256,42 @@ SM=(
   $'语音：resumed 时照样开会话\tsrc/voice/minutes.ts\t  if (r.resumed) return { status: \'in_progress\', usageId: r.reservation.usageId };\t'
   $'语音：不核对库返回 usage_id\tsrc/voice/minutes.ts\tif (r[\'usage_id\'] !== usageId) throw\tif (false) throw'
   $'语音：no_time_left 时不释放\tsrc/voice/minutes.ts\t    await releaseVoiceMinutes(deps.pool, input.accountId, res, \'voice_no_time_left\');\t'
+  # 错题再练（specs/practice-loop-stage1 PR 3）：只认学生本人、开关、计次（作答计一次、一张票据最多扣一次、本地可判的拒绝不计次）、票据绑定学生、
+  # 宵禁、响应白名单、失败映射、重试；这几条跑 tests/practice-units.test.ts、tests/practice.integration.test.ts、tests/shell-openapi.test.ts
+  $'再练：作答不核对学生本人\tsrc/practice/service.ts\t  if (!(await isSelf(deps.pool, account, student))) return NOT_FOUND;\\n  // 本地能判的拒绝\t  // 本地能判的拒绝'
+  $'再练：列表不核对学生本人\tsrc/practice/service.ts\t  if (!(await isSelf(deps.pool, account, student))) return NOT_FOUND;\\n  const r = await withRetry(deps, (ms) => deps.learning.queue(\t  const r = await withRetry(deps, (ms) => deps.learning.queue('
+  $'再练：取题不核对本人\tsrc/practice/service.ts\t  if (!(await isSelf(deps.pool, account, student))) return NOT_FOUND;\\n  const blocked = await curfewBlocked(deps, account, student);  // 宵禁：取题\t  const blocked = await curfewBlocked(deps, account, student);  // 宵禁：取题'
+  $'再练：开关关闭也注册路由\tsrc/http/routes.ts\t...(practice ? PRACTICE_ROUTES : [])\t...PRACTICE_ROUTES'
+  $'再练：家长会话可读列表\tsrc/http/practice-routes.ts\t{ method: \'GET\', path: S, auth: \'student\'\t{ method: \'GET\', path: S, auth: \'session\''
+  $'再练：不限流\tsrc/http/practice-routes.ts\tconst RL = [{ bucket: \'practice.session.minute\', dim: \'session\' }] as const;\tconst RL = [] as const;'
+  $'再练：改挂别的限流桶\tsrc/http/practice-routes.ts\tconst RL = [{ bucket: \'practice.session.minute\', dim: \'session\' }] as const;\tconst RL = [{ bucket: \'trust_read.session.minute\', dim: \'session\' }] as const;'
+  $'再练：不挡宵禁\tsrc/practice/service.ts\t  return c ? CURFEW : null;\t  return null;'
+  $'再练：作答在计次之后才查宵禁\tsrc/practice/service.ts\t  const blocked = await curfewBlocked(deps, account, student);  // 宵禁：作答（计次之前）\\n  if (blocked) return blocked;\\n  const usage = usageIdFor(key);\\n  const m = await countPractice(deps.pool, account, student, key);\t  const usage = usageIdFor(key);\\n  const m = await countPractice(deps.pool, account, student, key);\\n  const blocked = await curfewBlocked(deps, account, student);\\n  if (blocked) return blocked;'
+  $'再练：一张票据可扣多次（用前端或随机的键）\tsrc/practice/service.ts\tconst key = t.idempotencyKey;\tconst key = crypto.randomUUID();'
+  $'再练：同票据换作答不回 TICKET_USED\tsrc/practice/service.ts\t(code === \'TICKET_USED\' || code === \'IDEMPOTENCY_CONFLICT\')\t(code === \'TICKET_USED\')'
+  $'再练：确定失败兜底回 422\tsrc/practice/service.ts\t  return PRACTICE_UNAVAILABLE;\\n}\\n\\nconst replayHeader\t  return INVALID;\\n}\\n\\nconst replayHeader'
+  $'再练：取题收到其他 409 不回 503\tsrc/practice/service.ts\t  if (op !== \'answer\') return PRACTICE_UNAVAILABLE;\t'
+  $'再练：确定性拒绝也重试\tsrc/practice/service.ts\tconst DETERMINISTIC = /^(?:501\\b|502 ADAPTER_RESULT_REJECTED$)/;\tconst DETERMINISTIC = /^$/;'
+  $'再练：重试不设总时限\tsrc/practice/service.ts\t    if (left() - d <= 0) {\t    if (false) {'
+  $'再练：判分结论不按契约枚举\tsrc/practice/service.ts\t!(VERDICTS as readonly unknown[]).includes(v[\'verdict\'])\ttypeof v[\'verdict\'] !== \'string\''
+  $'再练：作答不计次\tsrc/practice/service.ts\tconst m = await countPractice(deps.pool, account, student, key);\tconst m = { outcome: \'allowed\', usage_id: usage } as PracticeCount;'
+  $'再练：usage_id 不由幂等键派生\tsrc/practice/service.ts\tconst usage = usageIdFor(key);\tconst usage = key;'
+  $'再练：额度拒绝不回 402\tsrc/practice/service.ts\t    case \'no_entitlement\': case \'daily_limit_reached\':\\n      return quota(m.outcome);\t    case \'no_entitlement\': case \'daily_limit_reached\':'
+  $'再练：票据不绑定学生\tsrc/practice/ticket.ts\t`starbuddy-practice-ticket:v1:${student}`\t`starbuddy-practice-ticket:v1`'
+  $'再练：换学科的票据也收\tsrc/practice/service.ts\tif (!t || t.subject !== subject) return TICKET_INVALID;\tif (!t) return TICKET_INVALID;'
+  $'再练：作答形状不在计次前核对\tsrc/practice/service.ts\t  if (!answerFits(t.format, t.optionKeys, input.answer)) return INVALID_ANSWER;\t'
+  $'再练：本地不判过期\tsrc/practice/service.ts\tif (deps.now() >= Date.parse(t.expiresAt) - EXPIRY_MARGIN_MS && \tif (false && '
+  $'再练：过期不留余量\tsrc/practice/service.ts\tDate.parse(t.expiresAt) - EXPIRY_MARGIN_MS\tDate.parse(t.expiresAt)'
+  $'再练：已计次的键过期后不放行\tsrc/practice/service.ts\t && !(await alreadyCounted(deps.pool, account, student, key))\t'
+  $'再练：作答请求体放过未知键\tsrc/practice/service.ts\tif (!exactKeys(b, [\'ticket\', \'answer\'])) return null;\tif (![\'ticket\', \'answer\'].every((k) => k in b)) return null;'
+  $'再练：取题下发学习服务票据\tsrc/practice/service.ts\titem: ready.item, ticket: sealed,\titem: ready.item, ticket: ready.ticket,'
+  $'再练：取题转发题目引用\tsrc/practice/service.ts\treturn json(200, { status: \'ready\', entry_id: ready.entry_id,\treturn json(200, { status: \'ready\', item_ref: body[\'item_ref\'], entry_id: ready.entry_id,'
+  $'再练：条目不过白名单\tsrc/practice/service.ts\tconst entries = body[\'entries\'].map(pickEntry);\tconst entries = body[\'entries\'].map((e) => e);'
+  $'再练：作答结果不过白名单\tsrc/practice/service.ts\tconst out = pickAnswer(r.body);\tconst out = r.body as Record<string, unknown> | null;'
+  $'再练：结果未知不重试\tsrc/practice/service.ts\t    if (out.kind !== \'unknown\' || isDeterministic(out)) break;\t    break;'
+  $'再练：PRACTICE_NOT_DUE 不映射\tsrc/practice/service.ts\t  if (f.status === 409 && code === \'PRACTICE_NOT_DUE\') return op === \'queue\' ? PRACTICE_UNAVAILABLE : NOT_DUE;\t'
+  $'再练：410 不映射\tsrc/practice/service.ts\t  if (f.status === 410) return TICKET_EXPIRED;\t'
+  $'再练：重放不标响应头\tsrc/practice/service.ts\treturn json(200, out, replayHeader(r.replayed));\treturn json(200, out, replayHeader(false));'
 )
 # 副本保持仓库结构（测试按 ../../../ 找仓库根：adapters/aya 的登记脚本、db/seeds 的种子），adapters、db 软链接回仓库。
 # 安全审查阻断 1：原来的副本不保持结构，测试的 before 在任何代码下都失败，变异全部“被发现”却不说明任何问题。
@@ -304,6 +341,7 @@ star_run() {  # $1 副本根目录，$2 变异名（“计量：”开头的跑�
   [[ "${2:-}" == 星图v1：* ]] && tests="tests/star-map-v1.test.ts tests/star-map-v1.integration.test.ts"
   [[ "${2:-}" == 语音：* ]] && tests="tests/voice-minutes.test.ts tests/voice-minutes.integration.test.ts"
   [[ "${2:-}" == 报告：* ]] && tests="tests/report-units.test.ts tests/report.integration.test.ts"
+  [[ "${2:-}" == 再练：* ]] && tests="tests/practice-units.test.ts tests/practice.integration.test.ts tests/shell-openapi.test.ts"
   out=$( cd "$1/services/bff" && timeout 240 bash "$ROOT/db/tests/pg-ephemeral.sh" -- \
       node --no-warnings --test --test-concurrency=1 --test-timeout=60000 $tests 2>&1 ); rc=$?
   printf '%s\n' "$out" > "$1/run.out"  # H6 的“第一条失败必须是登记的断言”从这里读

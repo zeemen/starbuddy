@@ -4,8 +4,8 @@
 // x-sb-rate-buckets：挂的限流桶；x-sb-not-self：只认学生本人的路由对“不是本人”（兄妹、另一户学生、不存在）回的状态码。
 import { readFileSync } from 'node:fs';
 
-/** 接口定义文件（不含 .yaml）：v0 六份 + H5 星图 v1（开关 starmap_v1 后） */
-export const SPEC_FILES = ['shell.v0', 'star-map.v0', 'onboarding.v0', 'events.v0', 'diagnosis.v0', 'trust.v0', 'star-map.v1'] as const;
+/** 接口定义文件（不含 .yaml）：v0 六份 + H5 星图 v1（开关 starmap_v1 后）+ 错题再练（开关 practice 后） */
+export const SPEC_FILES = ['shell.v0', 'star-map.v0', 'onboarding.v0', 'events.v0', 'diagnosis.v0', 'trust.v0', 'star-map.v1', 'practice.v0'] as const;
 
 export interface Op { auth: string | null; buckets: string[] | null; notSelf: number | null; statuses: Set<string>; file: string }
 

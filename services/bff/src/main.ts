@@ -23,6 +23,9 @@
 //   STARBUDDY_STARMAP      dev / test：H5 星图 v1 的开关（starmap_v1[,starmap_dashed]；src/star-map/features.ts）；缺省全关、
 //                          v1 路由不注册、v0 不变；其余环境设了就拒绝启动。星态经 BFF_LEARNING_URL 调学习服务 star-map/nodes（同一个服务间令牌），
 //                          不配学习服务时 v1 的星全部是中性底星
+//   STARBUDDY_PRACTICE     dev / test：错题再练的开关（只认 practice；src/practice/features.ts）；缺省关、三条路由不注册；
+//                          其余环境设了就拒绝启动。经 BFF_LEARNING_URL 调学习服务 practice 内部接口（同一个服务间令牌），
+//                          不配学习服务时打开开关也一律 503。作答按题库自练计次（platform.meter_practice）
 //   BFF_TRUST_SECRET       信任界面专用密钥（删除确认凭据、异议幂等键）：十六进制 ≥ 32 字节，规则同 BFF_AUTH_SECRET
 // 诊断的宵禁判断用数据库的计量时钟（platform.meter_guard_status，迁移 0030），BFF 没有自己的时钟开关。
 import pg from 'pg';
@@ -40,12 +43,15 @@ import { httpInsightReadClient } from './trust/report.ts';
 import { assertBffRole } from './star-map/query.ts';
 import { parseStarMapFeatures } from './star-map/features.ts';
 import { httpStarMapClient } from './star-map/nodes-client.ts';
+import { parsePracticeFeature } from './practice/features.ts';
+import { httpPracticeLearning } from './practice/learning-client.ts';
 
 // 配置不全、环境不认识、非 dev / test 却没有短信供应商：一律拒绝启动（在连数据库之前）
 let shellDeps: Omit<ShellDeps, 'pool'>;
 try {
   const env = parseRunEnv(process.env['STARBUDDY_ENV']);
   const starMapFeatures = parseStarMapFeatures(env, process.env['STARBUDDY_STARMAP']);  // 非 dev / test 设了就拒绝启动
+  const practiceOn = parsePracticeFeature(env, process.env['STARBUDDY_PRACTICE']);     // 同上
   const configPath = process.env['BFF_AUTH_CONFIG'];
   if (configPath !== undefined && !isLocalEnv(env)) throw new Error('BFF_AUTH_CONFIG 只在 dev / test 可用');
   const keys = loadKeys(env);
@@ -59,7 +65,7 @@ try {
                 trustClientIpHeader: process.env['BFF_TRUST_CLIENT_IP'] === '1',
                 shell: { config: shellConfigPath === undefined ? loadShellConfig() : loadShellConfig(shellConfigPath) },
                 trust: { features: parseTrustFeatures(env, process.env['STARBUDDY_TRUST_UI']) },
-                starMap: { features: starMapFeatures } };
+                starMap: { features: starMapFeatures }, practice: { enabled: practiceOn } };
   // 连续使用提醒的计时在进程内（src/shell/rest.ts）：dev / test 以外没声明单实例部署就不启用，并在启动时告警（pilot 前须完成会话表加列迁移）
   if (!isLocalEnv(env) && !shellDeps.shell!.config!.rest.singleInstance) {
     console.warn(JSON.stringify({ event: 'rest_reminder_disabled', reason: 'in_process_timer_requires_single_instance' }));
@@ -96,6 +102,7 @@ if (learningUrl) {
   if (shellDeps.starMap!.features!.has('starmap_v1')) {
     shellDeps.starMap!.nodes = httpStarMapClient({ baseUrl: learningUrl, token: learningCredential, timeoutMs: shellDeps.shell!.config!.starMap.timeoutMs });
   }
+  if (shellDeps.practice!.enabled) shellDeps.practice!.learning = httpPracticeLearning({ baseUrl: learningUrl, token: learningCredential });
 }
 const insightUrl = process.env['BFF_INSIGHT_URL'];
 const insightCredential = process.env['BFF_INSIGHT_TOKEN'] ?? '';

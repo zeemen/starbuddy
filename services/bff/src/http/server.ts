@@ -56,7 +56,8 @@ const header = (req: IncomingMessage, name: string): string | null => {
  * 由 createShellServer 回 404（表外一律 404）。
  */
 export function createShellHandler(deps: ShellDeps): (req: IncomingMessage, res: ServerResponse) => Promise<boolean> {
-  const routes = activeRoutes(deps.trust?.features, deps.starMap?.features);  // 信任界面、星图 v1 开关关闭的路由不注册（表外 404）
+  // 信任界面、星图 v1、错题再练开关关闭的路由不注册（表外 404）
+  const routes = activeRoutes(deps.trust?.features, deps.starMap?.features, deps.practice?.enabled === true);
   const table = compile(routes);
   const shapes = templateShapes(routes);
   const log = deps.log ?? ((line) => console.log(JSON.stringify(line)));

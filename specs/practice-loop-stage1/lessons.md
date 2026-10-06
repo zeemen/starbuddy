@@ -51,3 +51,48 @@
 7. 锁池大小 8、取连接上限 5 秒为占位值，按部署并发定。
 8. 记给 PR 3：BFF 先计量再调学习服务，票据过期、409 等被拒作答也会扣次（留存态每天 5 次）；票据是否只留在 BFF（载荷含学生内部 ID，无密钥轮换 kid）；同一作答占 2 个以上连接，连接池上限与限流一起评估。
 9. 记给 PR 4：列表文案（如“这道题上次没做对”）是否算规则 11 所指的关于学生的陈述。
+
+## PR 3：BFF 路由与计量接入（2026-10-05）
+
+### 做了什么
+- `services/bff/src/practice/`：开关 `STARBUDDY_PRACTICE=practice`（默认关，只在 dev / test 可设）、学习服务客户端（BFF 令牌）、不透明票据、service；三条学生端路由（`auth=student`，非本人 404）：
+  - `GET /students/{student_id}/practice/{subject}`（列表）
+  - `POST .../practice/{subject}/entries/{entry_id}/next`（取题）
+  - `POST .../practice/{subject}/answer`（作答，请求体只收 `{ticket, answer}`）
+- 先用 `platform.is_self_student` 核对本人再调学习服务；前端字段白名单只给条目状态、轮次、节点与层次、题面、verdict（按契约枚举）与 `pending_review`；不转掌握、置信度、证据 ID、错因、题目引用、`retest_due`、`same_family_only`、学习服务票据。
+- 票据：学习服务票据连同过期时间、学科、条目、题型、选项键与 BFF 生成的 UUIDv4 用 AES-256-GCM 封装（密钥由 BFF_AUTH_SECRET 派生，AAD 绑定学生），前端拿不到学生内部 ID。
+- 计量：只有作答计次，`platform.meter_practice(学生, 票据内 UUIDv4)`，一张票据最多扣一次；`usage_id` 由该键派生并与库核对；402 不调下游。
+- 宵禁：共享函数 `src/metering/curfew.ts`（诊断改为调用，行为不变），取题与作答在计次前挡宵禁（402 reason=curfew），列表不挡。
+- 限流桶 `practice.session.minute`（60 次 / 60 秒，`config/auth.json`）。
+- 调学习服务整体总时限 45 秒（单调时钟，剩余时间作单次超时上限）；501 与 `502 ADAPTER_RESULT_REJECTED` 不重试；兜底一律 503 PRACTICE_UNAVAILABLE。
+- `openapi/practice.v0.yaml`、H6 路由矩阵与 `METER_CALLERS` 登记、变异组“再练：”34 条。
+
+### 测试
+`make bff-test` 在一次性 Postgres 上真跑通过；practice / route-matrix / diagnosis 等集成测试 60/60 未跳过；变异“再练：”34/34、“诊断：”17/17。
+
+### 审查意见处理（按用户“按默认建议处理审查意见”）
+- 阻断（安全）：宵禁没挡（`meter_practice` 不看宵禁，诊断早已挡）。已在取题与作答计次前挡宵禁。
+- 用户按默认确认：计次后才被学习服务拒绝的作答仍算一次（不改计量规则）；一张票据最多扣一次（BFF 生成票据内幂等键，忽略客户端键）；新建限流桶 `practice.session.minute`。
+- 其余：文档写明“本地拒绝不计次（含宵禁、额度），学习服务拒绝已计一次”；兜底映射 503 并按操作区分；45 秒总时限与确定性拒绝不重试；去掉 `same_family_only`；verdict 枚举；补“取题不核对本人”变异（借 `curfew_forbidden` 旁路 note 区分拒绝停在哪一步）；票据无 kid 写入注释。
+
+### 经验
+- 本人核对之后再加按身份授权的查询（如 `meter_guard_status`），会让“删掉本人核对”的变异测不出（同样 404），要靠旁路 note 区分。
+- 作答里的宵禁要放在本地票据检查之后，否则伪造票据的阳性对照被宵禁查询的 404 盖住。
+- 题库自练没有释放，“不扣冤枉次”只能把本地可判校验挪到计次之前，所以题型、选项键、过期时间都封进票据。
+- 过期票据如果对应键已计次，要放行找回原结果，否则“结果未知后重试”卡死。
+- 计时重试要把剩余时间作为单次超时上限，否则总时限只约束等待。
+- 测试里不要并发打开同一家长名下多个孩子的会话（号码与验证码冲突）。
+
+### 与 spec 的差异
+1. 学科码放进路径 `{subject}`（路由表不把查询参数交给 handler），取题路径为 `.../entries/{entry_id}/next`；前端学科码 math / politics / chinese。
+2. 家长会话回 403（`auth=student` 中间件统一处理，不泄露信息），兄妹、另一户、不存在回 404。
+3. 作答请求不收客户端幂等键，重试只需带同一张票据；同票据换作答回 409 TICKET_USED。
+4. 改了已提交的 `src/diagnosis/service.ts`（宵禁抽成共享函数，行为不变）。
+5. 集成测试的学习服务是假实现，端到端放 PR 4。
+
+### 待人确认
+1. 计次后才被学习服务拒绝的作答仍算一次（PRACTICE_NOT_DUE、TICKET_USED、学习服务判的 410 / 403 / 501、结果未知），留存态每天 5 次会被占用；若要不扣需改 0015 给自练加释放（必停）。
+2. 宵禁会挡住“上次结果未知、已计次”的同票据重试，学生要到白天才能找回结果。
+3. 票据无 kid：轮换 BFF_AUTH_SECRET 会让所有未作答票据失效，结果未知的那次也无法凭旧票据找回；是否加 kid 与双密钥过渡，建议避开学生在线时段轮换。
+4. `practice.session.minute` 阈值 60 / 分钟参照 trust_read，spec 未写数值。
+5. 一次作答在 BFF 侧 3–4 个短事务、学习服务侧 2 个以上连接，连接池上限与限流一起评估。

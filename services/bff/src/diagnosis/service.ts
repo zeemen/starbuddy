@@ -11,13 +11,14 @@
 //   - 放弃：只有还没有任何已作答的题时才释放；答过题的放弃按已结算处理（再结算一次，幂等）。
 //   - 第一道题在预留过期（开始后 10 分钟）之后才交：按现有规则“宁可少扣”不结算（lessons 待人确认 #3：有效期调长或按段计量）。
 // 宵禁（安全审查 B2）：续做、取题、探针、作答入口以学生本人调计量只读函数 platform.meter_guard_status（迁移 0030，
-//   4-H H3），取它的 in_curfew：与 meter_reserve 同一个函数、同一个计量时钟（meter_now），BFF 不再自算宵禁（SIE-02a lessons #15）；
+//   4-H H3；读取在共享的 src/metering/curfew.ts），取它的 in_curfew：与 meter_reserve 同一个函数、同一个计量时钟（meter_now），BFF 不再自算宵禁（SIE-02a lessons #15）；
 //   宵禁中先请学习服务把会话置为暂停，再回 402 reason = curfew。
 // 探针：BFF 以学生身份调 2-L 的 insight.record_confidence_probe，幂等键由（会话、序号）派生（安全审查 S3：并发提交只写一行，
 //   后到的内容不同时 23505，按派生键请学习服务找回同一条），把探针记到步骤；
 // 作答落库后按 2-L 的 insight.link_probe_attempt 关联（尽力而为：时间窗外、已关联时不影响作答）。
 import type { Pool } from 'pg';
 import { withAccount } from '../metering/db.ts';
+import { inCurfew } from '../metering/curfew.ts';
 import { meteringFingerprint } from '../metering/fingerprint.ts';
 import { release, reserve, settle } from '../metering/meter.ts';
 import { usageIdFor, uuidv5 } from '../metering/uuid.ts';
@@ -136,18 +137,7 @@ async function openSessionId(pool: Pool, account: string, student: string): Prom
 }
 
 // ---------- 宵禁（安全审查 B2） ----------
-/** 宵禁：计量只读函数 meter_guard_status 的 in_curfew（0030；授权与 0015 相同：本人或已绑定家长，否则 42501） */
-export async function inCurfew(pool: Pool, account: string, student: string): Promise<boolean | 'forbidden'> {
-  try {
-    return await withAccount(pool, account, async (c) => {
-      const { rows } = await c.query<{ s: { in_curfew: boolean } }>('SELECT platform.meter_guard_status($1::uuid) AS s', [student]);
-      return rows[0]!.s.in_curfew === true;
-    });
-  } catch (e) {
-    if ((e as { code?: string }).code === '42501') return 'forbidden';  // 调用前已核对过本人；绑定或账号状态刚变时同一个 403
-    throw e;
-  }
-}
+// 宵禁判断（计量只读函数 meter_guard_status 的 in_curfew）在 src/metering/curfew.ts，与错题再练共用；'forbidden' 在这里回 403。
 
 export const CURFEW = problem(402, 'QUOTA_UNAVAILABLE', 'not available during curfew hours', { reason: 'curfew' });
 

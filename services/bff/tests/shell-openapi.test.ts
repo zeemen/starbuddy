@@ -10,10 +10,12 @@ import { test } from 'node:test';
 import { compile, PREFIX, ROUTES } from '../src/http/routes.ts';
 import { TRUST_ROUTES } from '../src/http/trust-routes.ts';
 import { STAR_MAP_V1_ROUTES } from '../src/http/star-map-v1-routes.ts';
+import { PRACTICE_ROUTES } from '../src/http/practice-routes.ts';
 import { operations, SPEC_FILES } from './openapi-ops.ts';
 
 // 路由表 + 信任界面路由（SIE-03 PR③，按开关注册；接口定义在 openapi/trust.v0.yaml）+ 星图 v1（H5，开关 starmap_v1；openapi/star-map.v1.yaml）
-const ALL = [...ROUTES, ...TRUST_ROUTES, ...STAR_MAP_V1_ROUTES];
+// + 错题再练（开关 practice；openapi/practice.v0.yaml）
+const ALL = [...ROUTES, ...TRUST_ROUTES, ...STAR_MAP_V1_ROUTES, ...PRACTICE_ROUTES];
 
 const SPECS = SPEC_FILES.map((n) => readFileSync(new URL(`../openapi/${n}.yaml`, import.meta.url), 'utf8'));
 
@@ -68,6 +70,19 @@ test('星图 v1：star-map.v1.yaml 的操作集合恰好等于 v1 路由；v1 �
   const doc = operationsOf(readFileSync(new URL('../openapi/star-map.v1.yaml', import.meta.url), 'utf8')).sort();
   assert.deepEqual(doc, STAR_MAP_V1_ROUTES.map((r) => `${r.method} ${PREFIX}${r.path}`).sort());
   for (const r of STAR_MAP_V1_ROUTES) assert.ok(!ROUTES.includes(r), r.path);
+});
+
+test('错题再练：practice.v0.yaml 的操作集合恰好等于再练路由；再练路由不在固定路由表里（只随开关 practice 注册）；用到的问题码都在枚举里', async () => {
+  const spec = readFileSync(new URL('../openapi/practice.v0.yaml', import.meta.url), 'utf8');
+  assert.deepEqual(operationsOf(spec).sort(), PRACTICE_ROUTES.map((r) => `${r.method} ${PREFIX}${r.path}`).sort());
+  for (const r of PRACTICE_ROUTES) assert.ok(!ROUTES.includes(r), r.path);
+  const src = readFileSync(new URL('../src/practice/service.ts', import.meta.url), 'utf8');
+  const codes = new Set([...src.matchAll(/problem\(\d{3}, '([A-Z_]+)'/g)].map((m) => m[1]!));
+  const { P } = await import('../src/http/problems.ts');
+  for (const k of [...src.matchAll(/\bP\.([A-Z_]+)/g)].map((m) => m[1]!)) codes.add((JSON.parse((P as Record<string, string>)[k]!) as { code: string }).code);
+  const enumText = /code:\s*\n\s*enum: \[([^\]]+)\]/.exec(spec)![1]!;
+  assert.ok(codes.size >= 10, `问题码 ${[...codes].join(',')}`);
+  for (const c of codes) assert.ok(enumText.includes(c), `${c} 不在 practice.v0.yaml 的问题码枚举里`);
 });
 
 test('路径参数只匹配 UUID', () => {

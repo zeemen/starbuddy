@@ -37,12 +37,14 @@ import { MemoryExportStore } from '../src/trust/exports.ts';
 import { TRUST_FEATURES } from '../src/trust/features.ts';
 import { STAR_MAP_FEATURES } from '../src/star-map/features.ts';
 import type { StarMapNodesClient } from '../src/star-map/nodes-client.ts';
+import type { PracticeLearning } from '../src/practice/learning-client.ts';
+import { parseAnswer as parsePracticeAnswer } from '../src/practice/service.ts';
 import { createFamily, HAS_DB, setupHarness, type Harness } from './harness.ts';
 import { operations } from './openapi-ops.ts';
 import { callAs, ORIGIN, startShell, type Sess, type ShellHarness } from './shell-harness.ts';
 
-/** 本次部署可能注册的全部路由（信任界面开关全开，H5 星图 v1 开关全开） */
-const ALL: readonly Route[] = activeRoutes(new Set(TRUST_FEATURES), new Set(STAR_MAP_FEATURES));
+/** 本次部署可能注册的全部路由（信任界面开关全开，H5 星图 v1 开关全开，错题再练开关打开） */
+const ALL: readonly Route[] = activeRoutes(new Set(TRUST_FEATURES), new Set(STAR_MAP_FEATURES), true);
 const keyOf = (r: Route) => `${r.method} ${r.path}`;
 const OPS = operations();
 const opOf = (r: Route) => OPS.get(`${r.method} ${PREFIX}${r.path}`)!;
@@ -115,6 +117,11 @@ export const SAMPLES: Record<string, Sample> = {
   'POST /students/{student_id}/erasure': none,
   'POST /students/{student_id}/erasure/{request_id}/confirm': b(() => ({ confirm_token: '0'.repeat(64) })),
   'POST /students/{student_id}/erasure/{request_id}/cancel': none,
+  // 错题再练（specs/practice-loop-stage1 PR 3，开关 practice）：作答的票据是格式合法的假票据（解不开，阳性对照得到 422 TICKET_INVALID）
+  'GET /students/{student_id}/practice/{subject}': none,
+  'POST /students/{student_id}/practice/{subject}/entries/{entry_id}/next': none,
+  // （幂等键在票据里，前端不带）
+  'POST /students/{student_id}/practice/{subject}/answer': b(() => ({ ticket: `sbp1.${'A'.repeat(64)}`, answer: { text: '1' } })),
 };
 
 /**
@@ -197,7 +204,19 @@ const insightRead: InsightReadClient = {
   async report() { readCalls++; return { kind: 'unavailable' }; },
   async explain() { readCalls++; return { kind: 'unavailable' }; },
 };
-const callCount = () => calls.plan.length + calls.diagnosis.length + calls.dispute + calls.exams + starCalls.length + readCalls;
+/** 错题再练的学习服务内部接口（越权请求一次也不能到达；阳性对照：S 自己的条目 409 PRACTICE_NOT_DUE，别人的或不存在的条目 404） */
+const practiceCalls: string[] = [];
+const practiceLearning: PracticeLearning = {
+  async queue(student, subject) { practiceCalls.push(`queue:${student}`); return { kind: 'ok', status: 200, body: { subject, entries: [] }, replayed: false }; },
+  async next(student, _subject, entry) {
+    practiceCalls.push(`next:${student}`);
+    return student === A.S && entry === SEC.S.entry_id ? { kind: 'failure', status: 409, problem: { code: 'PRACTICE_NOT_DUE' } }
+      : { kind: 'failure', status: 404, problem: { code: 'ENTRY_NOT_FOUND' } };
+  },
+  async answer(student) { practiceCalls.push(`answer:${student}`); return { kind: 'failure', status: 409, problem: { code: 'PRACTICE_NOT_DUE' } }; },
+};
+const callCount = () => calls.plan.length + calls.diagnosis.length + calls.dispute + calls.exams + starCalls.length + readCalls + practiceCalls.length;
+const practiceLogCount = async (): Promise<number> => (await h.su.query(`SELECT count(*)::int AS n FROM platform.practice_log`)).rows[0].n;
 
 // ---------------------------------------------------------------- 合成家庭、账号与二级资源
 
@@ -207,7 +226,7 @@ let originalAuthNow = '';
 /** F：家长 gF，两个孩子（S 与兄妹 S2）；O：另一户家长 gO 与孩子 T */
 const A = { gF: '', gO: '', gU: '', gR: '', gD2: '', gX: '', S: '', aS: '', S2: '', aS2: '', T: '', aT: '' };
 /** 路径参数名 → 二级对象 ID（另带导出的一次性下载凭据） */
-type Ids = Partial<Record<'exam_id' | 'claim_id' | 'export_job_id' | 'request_id' | 'session_id' | 'probe_id' | 'download_ref', string>>;
+type Ids = Partial<Record<'exam_id' | 'claim_id' | 'export_job_id' | 'request_id' | 'session_id' | 'probe_id' | 'entry_id' | 'download_ref', string>>;
 const SEC: Record<'S' | 'S2' | 'T', Ids> = { S: {}, S2: {}, T: {} };
 const sess = (account: string) => shell.sessionFor(account);
 
@@ -308,6 +327,7 @@ async function secondary(student: string, guardian: string, opts: { erasure: boo
        VALUES ($1, 'aya', 'h6-synthetic@1', '0.1.0', gen_random_uuid(), gen_random_uuid()) RETURNING id`, [student]);
     ids.session_id = rows[0].id;
   }
+  ids.entry_id = randomUUID();  // 再练条目：学习服务读时计算、不落库，假实现按（学生、条目）认
   ids.probe_id = randomUUID();
   await replica(`INSERT INTO insight.confidence_probe (id, student_id, subject, item_id, prediction, asked_at, idempotency_key)
                  VALUES ($1, $2, 'zhixing', 'SYN-ZX-ITEM-01', 'unsure', now(), gen_random_uuid())`, [ids.probe_id, student]);
@@ -345,6 +365,7 @@ before(async () => {
     shell: { plan, config: { ...loadShellConfig(), externalTemplates: new Set([`${TPL}@1`]) } }, diagnosis: { learning, retryDelaysMs: [1] },
     trust: { features: new Set(TRUST_FEATURES), dispute, exams, exports: new MemoryExportStore(), read: insightRead },
     starMap: { features: new Set(STAR_MAP_FEATURES), nodes: starNodes },
+    practice: { enabled: true, learning: practiceLearning, retryDelaysMs: [1] },
   });
   // 会话都在改状态之前拿到（学生会话经 gF 打开学生模式）
   for (const a of [A.gF, A.gO, A.gU, A.gR, A.gD2, A.gX, A.aS, A.aS2, A.aT]) await sess(a);
@@ -398,6 +419,7 @@ test('H6 授权矩阵（从路由表生成）：未登录 401；账号类型不�
   await h.su.query(`UPDATE platform.account_contact SET phone_e164 = $2 WHERE account_id = $1`, [A.gD2, phone]);
   const before = callCount();
   const { rows: [{ n: reservations0 }] } = await h.su.query(`SELECT count(*)::int AS n FROM platform.usage_reservation`);
+  const practice0 = await practiceLogCount();
   try {
     for (const r of ALL) {
       const k = keyOf(r);
@@ -462,6 +484,7 @@ test('H6 授权矩阵（从路由表生成）：未登录 401；账号类型不�
   assert.equal(callCount(), before, '没有一次越权请求到达学习服务或洞察服务');
   const { rows: [{ n: reservations1 }] } = await h.su.query(`SELECT count(*)::int AS n FROM platform.usage_reservation`);
   assert.equal(reservations1, reservations0, '越权请求没有预留任何额度');
+  assert.equal(await practiceLogCount(), practice0, '越权请求没有计任何一次题库自练');
 });
 
 test('H6 跨对象：本人用自己孩子的路径带另一户（T）或兄妹（S2）的二级 ID，与不存在的二级 ID 逐字节相同', { skip: !HAS_DB }, async () => {
@@ -669,7 +692,7 @@ test('H6 限流（从路由表断言）：每个桶都在 config/auth.json、名
     const { rows: [x] } = await h.su.query(`SELECT (SELECT count(*) FROM platform.usage_reservation)::int AS rsv, (SELECT count(*) FROM platform.usage_ledger)::int AS led,
                                                    (SELECT count(*) FROM platform.student_profile)::int AS stu, (SELECT count(*) FROM platform.consent_record)::int AS con,
                                                    (SELECT count(*) FROM platform.auth_session)::int AS ses, (SELECT count(*) FROM platform.auth_otp_challenge)::int AS otp`);
-    return { ...x, calls: callCount(), sms: shell.sms.inbox.length };
+    return { ...x, calls: callCount(), sms: shell.sms.inbox.length, practice: await practiceLogCount() };
   };
   const gO = await sess(A.gO);
   const gF = await sess(A.gF);
@@ -707,7 +730,9 @@ const srcFiles = (dir: URL): string[] => readdirSync(dir).flatMap((n) => {
 
 /** 允许调用消耗类计量函数的文件（第二轮 7.7）：新增消耗类入口要在这里登记，并补 H6 的计量用例 */
 // src/voice/minutes.ts：语音分钟计量辅助（冲刺 4-I 第二部分），还没有挂到任何路由；接路由前须先补 H6 的集成用例锁住（见下方静态断言）
-const METER_CALLERS = ['src/diagnosis/service.ts', 'src/voice/minutes.ts'];
+// src/practice/service.ts：错题再练作答按题库自练计次（platform.meter_practice，specs/practice-loop-stage1 PR 3）；集成用例在
+// tests/practice.integration.test.ts（同 key 只计一次、本地可判的拒绝不计次、列表与取题不计次），这里锁参数与调用点
+const METER_CALLERS = ['src/diagnosis/service.ts', 'src/voice/minutes.ts', 'src/practice/service.ts'];
 
 test('H6 计量入口（静态）：只有登记的文件导入消耗类计量函数；诊断开始的资源类型、数量、usage_id 由 BFF 决定，请求体不收这些字段', () => {
   const METER_FNS = /\b(reserve|settle|release|meteredCall)\b/;
@@ -738,6 +763,25 @@ test('H6 计量入口（静态）：只有登记的文件导入消耗类计量�
   assert.equal(parseStart({ subject: 'aya', idempotency_key: randomUUID() })?.subject, 'aya');
   for (const extra of [{ usage_id: randomUUID() }, { quantity: 0 }, { resource_type: 'diagnosis_lite' }, { amount: 5 }, { student_ref: MISSING }]) {
     assert.equal(parseStart({ subject: 'aya', idempotency_key: randomUUID(), ...extra }), null, `诊断开始拒收 ${Object.keys(extra)[0]}`);
+  }
+  // 错题再练：计次参数只有（路径里已核对本人的学生、票据里 BFF 生成的幂等键），次数、资源、usage_id 都由库决定；usage_id 与库返回的核对一致；
+  // 只有作答计次（列表、取题不调）；请求体不收幂等键（审查 H2：一张票据最多扣一次）
+  const pr = readFileSync(new URL('../src/practice/service.ts', import.meta.url), 'utf8').replace(/\/\/.*$/gm, '');
+  assert.match(pr, /'SELECT platform\.meter_practice\(\$1::uuid, \$2\) AS r', \[student, key\]/);
+  assert.equal(pr.match(/platform\.meter_practice\(/g)?.length, 1, '只有一处计次');
+  assert.equal(pr.match(/countPractice\(/g)?.length, 2, 'countPractice 只定义一次、只在作答里调用一次');
+  assert.match(pr, /const usage = usageIdFor\(key\);\n  const m = await countPractice\(deps\.pool, account, student, key\);/);
+  assert.match(pr, /if \(m\.usage_id !== usage\) throw/);
+  for (const fn of ['practiceQueue', 'practiceNext']) {
+    const body = pr.slice(pr.indexOf(`export async function ${fn}(`), pr.indexOf('\n}\n', pr.indexOf(`export async function ${fn}(`)));
+    assert.ok(body.length > 100 && !/countPractice|meter_/.test(body), `${fn} 不计次`);
+  }
+  assert.match(pr, /const key = t\.idempotencyKey;/, '计次与学习服务用票据里的键');
+  const okBody = { ticket: `sbp1.${'A'.repeat(64)}`, answer: { text: '1' } };
+  assert.ok(parsePracticeAnswer(okBody));
+  for (const extra of [{ idempotency_key: randomUUID() }, { usage_id: randomUUID() }, { quantity: 0 }, { resource_type: 'mistake_analysis' }, { student_ref: MISSING },
+                       { purpose: 'retest' }, { channel: 'photo' }, { subject: 'aya' }]) {
+    assert.equal(parsePracticeAnswer({ ...okBody, ...extra }), null, `再练作答拒收 ${Object.keys(extra)[0]}`);
   }
 });
 
