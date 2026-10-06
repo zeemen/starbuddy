@@ -1036,6 +1036,19 @@ M+=(
   ["授权再核对：对 PUBLIC 开放"]="GRANT EXECUTE ON FUNCTION $VA TO PUBLIC;"
 )
 
+# 攻击面矩阵补测（specs/household-pentest-sprint3 待人确认 #13 里不需要人决定的几项）：按行的可见性、写矩阵、
+# 复核角色与定时任务角色的函数矩阵。都由 80 本身发现（预期断言登记在下面的 EXPECT）。DBMUT_FILTER=攻击面 一起跑
+M+=(
+  ["攻击面：周报不分受众"]="DROP POLICY weekly_report_front_read ON insight.weekly_report; CREATE POLICY weekly_report_front_read ON insight.weekly_report FOR SELECT TO starbuddy_bff USING (status = 'generated' AND platform.can_read_student(student_id));"
+  ["攻击面：家长看得到同一学生其他家长的绑定"]="DROP POLICY link_read ON platform.guardian_student_link; CREATE POLICY link_read ON platform.guardian_student_link FOR SELECT TO starbuddy_bff USING ((guardian_account_id = platform.current_account_id() AND platform.is_active_guardian()) OR platform.is_self_student(student_id) OR platform.is_linked_guardian(student_id));"
+  ["攻击面：家长自述删除不看作者"]="DROP POLICY greport_delete ON platform.guardian_report; CREATE POLICY greport_delete ON platform.guardian_report FOR DELETE TO starbuddy_bff USING (true);"
+  ["攻击面：解除绑定不限本人"]="DROP POLICY link_revoke ON platform.guardian_student_link; CREATE POLICY link_revoke ON platform.guardian_student_link FOR UPDATE TO starbuddy_bff USING (status = 'active') WITH CHECK (status = 'revoked');"
+  ["攻击面：复核队列认任何有效账号"]="$(afr 'platform.review_current_staff()' "'a.kind = ''staff'' AND '" "''")"
+  ["攻击面：签字发布认任何有效账号"]="$(afr 'kge.current_staff()' "'a.kind = ''staff'' AND '" "''")"
+  ["攻击面：删除执行接受未来时钟"]="$(afr 'platform.execute_due_erasures(timestamp with time zone)' "'p_now > now() OR '" "''")"
+  ["攻击面：抽检接受未来起点"]="$(afr 'platform.review_sample_spot_checks(platform.subject, timestamp with time zone, numeric)' "' OR p_since > now()'" "''")"
+)
+
 # 并行执行（每个变异各起一个一次性 Postgres，互不影响）；DBMUT_JOBS 控制并发数，默认等于 CPU 核数
 JOBS="${DBMUT_JOBS:-$(nproc 2>/dev/null || echo 2)}"
 RES="$(mktemp -d "${TMPDIR:-/tmp}/starbuddy-dbmut.XXXXXX")"
@@ -1068,6 +1081,14 @@ declare -A EXPECT=(
   ["攻击面：新函数的学生参数换个名字躲过越权矩阵"]="攻击面：BFF 可执行的 SECURITY DEFINER 函数要么在函数越权矩阵里"
   ["攻击面：新函数删除个人层表"]="攻击面：除删除执行函数外，没有函数删除个人层清单里的表"
   ["攻击面：删除执行身份有成员"]="攻击面：starbuddy_eraser 没有任何成员"
+  ["攻击面：周报不分受众"]="攻击面：可见性矩阵（按行）——"
+  ["攻击面：家长看得到同一学生其他家长的绑定"]="攻击面：可见性矩阵（按行）——"
+  ["攻击面：家长自述删除不看作者"]="攻击面：写矩阵——"
+  ["攻击面：解除绑定不限本人"]="攻击面：写矩阵——"
+  ["攻击面：复核队列认任何有效账号"]="攻击面：复核角色函数矩阵——"
+  ["攻击面：签字发布认任何有效账号"]="攻击面：复核角色函数矩阵——"
+  ["攻击面：删除执行接受未来时钟"]="攻击面：定时任务函数矩阵——"
+  ["攻击面：抽检接受未来起点"]="攻击面：定时任务函数矩阵——"
 )
 declare -A KEEP_SNAPSHOT=(["攻击面：可转授的授权"]=1)
 for name in "${!EXPECT[@]}"; do [ -n "${M[$name]+x}" ] || { echo "db-mutation: EXPECT 里的 $name 不是变异"; exit 1; }; done
