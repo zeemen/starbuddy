@@ -96,3 +96,39 @@
 3. 票据无 kid：轮换 BFF_AUTH_SECRET 会让所有未作答票据失效，结果未知的那次也无法凭旧票据找回；是否加 kid 与双密钥过渡，建议避开学生在线时段轮换。
 4. `practice.session.minute` 阈值 60 / 分钟参照 trust_read，spec 未写数值。
 5. 一次作答在 BFF 侧 3–4 个短事务、学习服务侧 2 个以上连接，连接池上限与限流一起评估。
+
+## PR 4：学生端页面、E2E、无障碍检查（2026-10-06）
+
+### 做了什么
+- apps/web 学生端再练列表与作答页（`/s/{studentId}/learn/{subject}/practice`、`.../practice/{entryId}`），前端开关 `STARBUDDY_PRACTICE=practice`（只在 dev / test，默认关，关时在读会话前 404、零请求）；只认学生本人，家长端不引用任何再练代码；入口只在数学、道法。
+- `src/lib/practice-api.ts` 唯一一处 fetch（服务端，经 BFF），作答请求体只 `{ticket, answer}`；`src/practice/view.ts` 按白名单重挑字段，丢弃题目引用、复测标记、同族标记、空原因、掌握、置信度、证据 ID、错因；待复核不显示判分结论。
+- `PracticeItem`：票据只在组件内存；结果未知（503）或作答限流（429）时锁住控件、原样重发首次答案快照；答案格式错时放开控件。
+- 文案全部 `{{TODO_COPY:practice.*}}` 占位并入 `ALL_SHELL_COPY`，过禁语、禁用推断与比较营销词表。
+- E2E 新环境 practice-on（第五个 BFF 开 practice、本机合成学习服务桩、合成种子 `practice-synthetic.sql`：试用、宵禁、无订阅三个孩子），另有 practice-off（开关关：入口不出现、页面与 BFF 路由 404、桩零请求）；每页 axe 与安全头；两张新视觉基线。
+
+### 测试
+`make web-test` 70 passed、1 skipped（非本 PR 用例），practice-on 8 条、practice-off 1 条均实际运行；视觉 15 条通过；tsc、check-fast 通过。
+
+### 审查意见处理（按用户“按默认建议处理审查意见”）
+- 安全、契约均无阻断。已改：结果未知 / 限流时锁控件、重发原答案（桩对同键换作答回 409，证明用的是原答案）；作答 429 保留票据（`rate_limited`）；知识点编号不合规则只隐藏该格；practice-off 断言桩零请求；e2e.sh 三套 BFF 都 unset `STARBUDDY_PRACTICE`；去掉 `data-entry-source`；回跳白名单 practice 段只跟在 math / politics 后。
+
+### 经验
+- 新增前端页面要同时登记 `e2e/crawl-pages.ts`，只在某套环境打开的页面用 `practiceOn` 标记。
+- 宵禁靠合成种子里家长宵禁覆盖（09:00–06:00）配合一次性库计量时钟稳定触发。
+- “结果未知后重试”要让桩对同一个键连续失败超过 BFF 重试次数（初次 + 3 次）。
+- 视觉用例与功能用例共用桩内存状态：先跑功能用例再跑视觉会失败；`make web-test` 与 `make web-visual` 分开跑不受影响。
+- e2e.sh 多行 export 注意续行空格。
+
+### 与 spec 的差异
+1. 作答控件没有复用诊断组件（诊断组件绑定会话、计时、探针），按同一写法另写 `PracticeItem`。
+2. 闭环状态文案用中性“这一条已完成”，不用“已做对”。
+3. 语文不放入口；道法科目页仍是“即将开放”占位但有再练入口。
+4. 列表直接显示知识点编号（放在 `data-value`），没有节点名称可用。
+5. 作答遇宵禁不在 E2E 测（宵禁时取不到票据），由 BFF 集成测试覆盖。
+
+### 待人确认
+1. 规则 11：列表“来源”列（纯占位键）、标题“错题再练”是否算关于学生的陈述（承 PR 1+2 #9）。
+2. 全部再练文案为占位，需人写人审（必停）；审时注意：额度不足“需要家长开通”是在引导未成年人找家长付费；宵禁“明天再继续”在 0–6 点不准确；“可以先看看讲解”目前没有讲解入口；新增 `practice.error.rate_limited`。
+3. 两张新视觉基线（`e2e/__screenshots__/practice.spec.ts/`）为本机生成，首次提交需视觉负责人签字。
+4. 知识点编号直接显示，待编译层或今日计划提供节点名称。
+5. 作答 429 假设在 BFF 计次前返回、未计次，票据仍可用，请 BFF 负责人确认。

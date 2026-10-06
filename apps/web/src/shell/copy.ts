@@ -444,6 +444,94 @@ export const FIRST_REPORT = {
 /** 报告的节（判断类别编码 → 占位键）：只有占位键，不附提示 */
 export const FIRST_REPORT_SECTION: Record<string, string> = { node_mastery: T('report.section.1'), node_transfer: T('report.section.2') };
 
+/**
+ * 错题再练（specs/practice-loop-stage1 PR 4，前端开关 practice，默认关；只给学生本人，家长端没有入口）的全部文案。
+ * 一律是明显占位 {{TODO_COPY:practice.…}}（面向学生的话术人写人审，必停；spec 待人确认 #6），少数界面标签在占位后附中性提示便于走查。
+ * 只陈述事实，不评价、不推断：不显示错因、掌握度、星态，不出现“粗心”“薄弱”之类的词（规则 11、12；七科合同第 5 条）。
+ * 条目来源（“这道题上次没做对”一类关于学生作答的陈述）是否算规则 11 所指的关于学生的陈述待人确认（lessons PR 1+2 待人确认 9），
+ * 默认只给纯占位键、不附提示文字；“已做对 / 闭环”只是再练状态，不是掌握结论，列表上也用中性的“这一条已完成”。
+ * 判分结论只来自验证器或 Rubric（BFF 转来的 verdict 枚举，规则 3）；待复核时只显示“等待复核”，不显示结论。
+ * 数字、日期、知识节点编号不拼进文案，由组件放在 data-value 元素里。
+ */
+export const PRACTICE = {
+  entry: T('practice.entry', '错题再练'),
+  heading: T('practice.heading', '错题再练'),
+  back: T('practice.back', '返回科目'),
+  backToList: T('practice.back_to_list', '返回再练列表'),
+  empty: T('practice.empty', '这一科现在没有要再练的题'),
+  unavailable: T('practice.unavailable', '暂时无法获取'),
+  colSource: T('practice.col.source', '来源'),
+  colNode: T('practice.col.node', '知识点'),
+  colLevel: T('practice.col.level', '层次'),
+  colStatus: T('practice.col.status', '状态'),
+  colRound: T('practice.col.round', '轮次'),
+  roundOf: T('practice.round_of', '共几轮'),
+  nextRoundAt: T('practice.next_round_at', '下一轮开放时间'),
+  start: T('practice.start', '再练一道同类题'),
+  itemHeading: T('practice.item.heading', '题目'),
+  loading: T('practice.loading', '正在准备题目'),
+  choiceLegend: T('practice.choice', '选一个答案'),
+  choiceLegendMulti: T('practice.choice_multi', '选出所有合适的答案'),
+  answerLabel: T('practice.answer', '答案'),
+  submit: T('practice.submit', '提交'),
+  submitting: T('practice.submitting', '正在提交'),
+  needAnswer: T('practice.need_answer', '先写好答案再提交'),
+  retry: T('practice.retry', '再提交一次'),
+  newItem: T('practice.new_item', '换一道题'),
+  another: T('practice.another', '再练一道'),
+  resultHeading: T('practice.result.heading', '这次作答'),
+  pendingReview: T('practice.pending_review', '等待复核'),
+  itemUnavailable: T('practice.item_unavailable', '这一条暂时没有可练的题'),
+} as const;
+
+/** 条目来源（wrong / hint_followup → 占位键）：只有占位键，不附提示（待人确认：是否算关于学生的陈述） */
+export const PRACTICE_SOURCE: Record<string, string> = { wrong: T('practice.source.1'), hint_followup: T('practice.source.2') };
+/** 题目的认知层次（描述题目，不描述学生） */
+export const PRACTICE_LEVEL: Record<string, string> = {
+  know: T('practice.level.1', '识记'), understand: T('practice.level.2', '理解'), apply: T('practice.level.3', '运用'), synthesize: T('practice.level.4', '综合'),
+};
+/** 条目的再练状态（只是再练进度，不是掌握结论） */
+export const PRACTICE_STATUS: Record<string, string> = {
+  due: T('practice.status.due', '可以再练'),
+  waiting: T('practice.status.waiting', '下一轮还没开始'),
+  closed: T('practice.status.closed', '这一条已完成'),
+  exhausted: T('practice.status.exhausted', '可以先看看讲解'),
+  unavailable: T('practice.status.unavailable', '暂时没有可练的题'),
+};
+/** 判分结论（验证器或 Rubric 的 verdict 枚举）；needs_review 与待复核同样只显示“等待复核” */
+export const PRACTICE_VERDICT: Record<string, string> = {
+  correct: T('practice.verdict.correct', '判分结果：正确'),
+  incorrect: T('practice.verdict.incorrect', '判分结果：不正确'),
+  partial: T('practice.verdict.partial', '判分结果：部分正确'),
+  not_applicable: T('practice.verdict.not_applicable', '这次作答已记录'),
+};
+/** 作答之后条目的新状态 */
+export const PRACTICE_AFTER: Record<string, string> = {
+  due: T('practice.after.due', '这一条还可以再练'),
+  waiting: T('practice.after.waiting', '下一轮开放时间'),
+  closed: T('practice.after.closed', '这一条已完成'),
+  exhausted: T('practice.after.exhausted', '可以先看看讲解'),
+};
+/** 取题与作答被拒的提示（BFF 的 402 宵禁与额度、409、410、422、429、503 等映射成这些编码，见 src/practice/view.ts） */
+export const PRACTICE_ERROR: Record<string, string> = {
+  curfew: T('practice.error.curfew', '现在是休息时间，明天再继续'),
+  no_entitlement: T('practice.error.no_entitlement', '这项功能暂时不可用，需要家长开通'),
+  daily_limit_reached: T('practice.error.daily_limit', '今天的题库自练次数已经用完，明天可以继续'),
+  not_due: T('practice.error.not_due', '这一条现在不能再练，请回到列表看看'),
+  ticket_used: T('practice.error.ticket_used', '这道题不能再提交了，请换一道题'),
+  expired: T('practice.error.expired', '这道题已经过期，请换一道题'),
+  invalid_answer: T('practice.error.invalid_answer', '答案的格式不对，请检查后再提交'),
+  retry: T('practice.error.retry', '这次没有确认提交成功，请再提交一次'),
+  rate_limited: T('practice.error.rate_limited', '提交得有点快，请稍等一会儿再提交一次'),
+  unavailable: T('practice.error.unavailable', '暂时无法完成，请稍后再试'),
+};
+
+/** 错题再练的全部文案（并入 ALL_SHELL_COPY：禁语、禁用推断词表、比较营销词表的扫描在 tests/shell.test.ts） */
+export const ALL_PRACTICE_COPY: string[] = [
+  ...Object.values(PRACTICE), ...Object.values(PRACTICE_SOURCE), ...Object.values(PRACTICE_LEVEL), ...Object.values(PRACTICE_STATUS),
+  ...Object.values(PRACTICE_VERDICT), ...Object.values(PRACTICE_AFTER), ...Object.values(PRACTICE_ERROR),
+];
+
 /** 信任界面的全部文案（静态检查逐条扫描；端到端的“每个文本节点”核对也用它） */
 export const ALL_TRUST_COPY: string[] = [
   ...Object.values(TRUST), ...Object.values(WHY), ...Object.values(WHY_STATUS), ...Object.values(EVIDENCE_SOURCE),
@@ -478,5 +566,5 @@ export const ALL_SHELL_COPY: string[] = [
   FAMILY_SHELL.regionLabel, FAMILY_SHELL.birthLabel, FAMILY_SHELL.create, FAMILY_SHELL.consentHeading, FAMILY_SHELL.consentText,
   FAMILY_SHELL.consentGrant, FAMILY_SHELL.consentFor('孩子 1 · 八年级'), FAMILY_SHELL.onboarding, FAMILY_SHELL.timeSettings,
   FAMILY_SHELL.backToFamily, ...Object.values(FAMILY_SHELL_RESULT), ...Object.values(TRUST_SLOT),
-  ...ALL_TRUST_COPY,
+  ...ALL_TRUST_COPY, ...ALL_PRACTICE_COPY,
 ];

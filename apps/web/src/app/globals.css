@@ -227,6 +227,10 @@ details.constellation[open] > summary::before { content: "▾" / ""; }
 .skill-view h2 { font-size: 1rem; margin: 0 0 4px; }
 .skill-view p { margin: 0; }
 
+/* 错题再练（specs/practice-loop-stage1 PR 4，开关 practice）：列表沿用 .trust-table；入口与按钮触控目标不小于 44px；不用颜色区分对错 */
+.practice-table a, .practice-item a, [data-testid="practice-entry"], [data-testid="practice-back"] { display: inline-flex; align-items: center; min-height: 44px; }
+.practice-item { max-width: 720px; }
+
 /* 首份报告开发演示页（SIE-02b 第二步 PR 2，开关 report）：顶部提示语框、“初步判断”标签、待验证虚线；类名只在演示页使用 */
 .report-notice { border: 1px solid var(--rule); border-radius: 4px; padding: 8px 16px; }
 .report-sentences { padding-left: 20px; }

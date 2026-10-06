@@ -97,7 +97,7 @@ for v in c['rate_limits'].values():
 json.dump(c, open(sys.argv[2], 'w'))
 PY
 ( cd "$ROOT/services/bff" || exit 1
-  unset STARBUDDY_STARMAP  # 星图开关全关（v0）：不从调用方环境继承
+  unset STARBUDDY_STARMAP STARBUDDY_PRACTICE  # 星图、错题再练开关全关（v0）：不从调用方环境继承
   export BFF_DATABASE_URL="postgresql://bff_app@/starbuddy_test?host=$PGHOST" PORT="$BFF_PORT" BFF_AUTH_CONFIG="$AUTH_CFG" \
     BFF_LEARNING_URL="http://127.0.0.1:$LEARNING_PORT" BFF_LEARNING_TOKEN="$SVC_CRED" \
     STARBUDDY_ENV=test BFF_SHELL_ORIGIN="http://127.0.0.1:$WEB_PORT" BFF_SMS_CAPTURE_FILE="$SMS_INBOX"
@@ -119,7 +119,7 @@ c['external_claim_templates'] = ['syn.weekly.node_mastery@1']
 json.dump(c, open(sys.argv[2], 'w'))
 PY
 ( cd "$ROOT/services/bff" || exit 1
-  unset STARBUDDY_STARMAP  # 星图开关全关（v0）：不从调用方环境继承
+  unset STARBUDDY_STARMAP STARBUDDY_PRACTICE  # 星图、错题再练开关全关（v0）：不从调用方环境继承
   export BFF_DATABASE_URL="postgresql://bff_app@/starbuddy_test?host=$PGHOST" PORT="$TRUST_BFF_PORT" BFF_AUTH_CONFIG="$AUTH_CFG" \
     BFF_LEARNING_URL="http://127.0.0.1:$LEARNING_PORT" BFF_LEARNING_TOKEN="$SVC_CRED" \
     STARBUDDY_ENV=test BFF_SHELL_ORIGIN="http://127.0.0.1:$WEB_TRUST_PORT" BFF_SMS_CAPTURE_FILE="$SMS_INBOX" \
@@ -158,6 +158,7 @@ c['star_map']['transfer_templates'] = ['syn.starmap.node_transfer@1']
 json.dump(c, open(sys.argv[2], 'w'))
 PY
 ( cd "$ROOT/services/bff" || exit 1
+  unset STARBUDDY_PRACTICE  # 错题再练开关关：不从调用方环境继承
   export BFF_DATABASE_URL="postgresql://bff_app@/starbuddy_test?host=$PGHOST" PORT="$SM_BFF_PORT" BFF_AUTH_CONFIG="$AUTH_CFG" \
     BFF_LEARNING_URL="http://127.0.0.1:$SM_LEARNING_PORT" BFF_LEARNING_TOKEN="$SVC_CRED" \
     STARBUDDY_ENV=test BFF_SHELL_ORIGIN="http://127.0.0.1:$WEB_STARMAP_PORT" BFF_SMS_CAPTURE_FILE="$SMS_INBOX" \
@@ -189,15 +190,45 @@ c['external_claim_templates'] = ['syn.report.node_mastery@1', 'syn.report.node_t
 json.dump(c, open(sys.argv[2], 'w'))
 PY
 ( cd "$ROOT/services/bff" || exit 1
-  unset STARBUDDY_STARMAP  # 星图开关全关（v0）：不从调用方环境继承
+  unset STARBUDDY_STARMAP STARBUDDY_PRACTICE  # 星图、错题再练开关全关（v0）：不从调用方环境继承
   export BFF_DATABASE_URL="postgresql://bff_app@/starbuddy_test?host=$PGHOST" PORT="$RP_BFF_PORT" BFF_AUTH_CONFIG="$AUTH_CFG" \
     STARBUDDY_ENV=test BFF_SHELL_ORIGIN="http://127.0.0.1:$WEB_REPORT_PORT" BFF_SMS_CAPTURE_FILE="$SMS_INBOX" \
     STARBUDDY_TRUST_UI=report,why BFF_SHELL_CONFIG="$RP_SHELL_CFG" BFF_INSIGHT_URL="http://127.0.0.1:$FI_PORT" BFF_INSIGHT_TOKEN="$FI_CRED"
   exec node --no-warnings src/main.ts ) > "$RPLOG" 2>&1 < /dev/null &
 RP_BFF_PID=$!
 trap 'kill "$BFF_PID" "$TRUST_BFF_PID" "$SM_BFF_PID" "$SM_LEARNING_PID" "$RP_BFF_PID" "$FI_PID" "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true; rm -f "$LOG" "$TLOG" "$SMLOG" "$RPLOG" "$FILOG" "$LLOG" "$SMLLOG" "$SMS_INBOX" "$AUTH_CFG" "$TRUST_SHELL_CFG" "$SM_SHELL_CFG" "$RP_SHELL_CFG"' EXIT
+# 错题再练学生端页面（specs/practice-loop-stage1 PR 4；e2e/practice.spec.ts，playwright.config.ts 的 practice-on 项目）：
+#   - 合成家庭 HP 与 P1、P2（宵禁）、P3（没有权益）（db/seeds/dev/practice-synthetic.sql，在统一壳种子之后执行）；
+#   - 合成学习服务桩（scripts/fake-learning-practice.ts，只监听 127.0.0.1，只实现 practice 的三个内部接口，按固定剧本返回合成条目、题面与判分；
+#     令牌每次随机生成，只经环境变量传）。真实学习服务的错题判定、选题、验票与 grade 落库由 services/learning 的测试覆盖；
+#   - 第五个 BFF：STARBUDDY_PRACTICE=practice（只在 STARBUDDY_ENV=test 生效），BFF_LEARNING_URL 指向桩（今日计划、诊断等其余学习服务调用都得到 501，
+#     按“暂无安排”处理）；作答照常经 platform.meter_practice 在这个一次性库里计次。另四套 BFF 不开 practice（开关关时三条路由 404，
+#     e2e/practice-off.spec.ts 在 trust-off 项目里核对，并按桩的请求记录核对这期间桩收到 0 个请求）。
+PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -q -v ON_ERROR_STOP=1 -f "$ROOT/db/seeds/dev/practice-synthetic.sql" >/dev/null
+FL_PORT="$(free_port)"
+PR_BFF_PORT="$(free_port)"
+WEB_PRACTICE_PORT="$(free_port)"
+FL_CRED="$(python3 -c 'import secrets; print(secrets.token_hex(24))')"
+FLLOG="$(mktemp)"
+PRLOG="$(mktemp)"
+# 桩的请求记录（每个请求一行 {"method","path"}，不含请求体与令牌）：端到端从这里读行数，核对开关关时桩收到 0 个请求；只有本用户可读，结束时删除
+FL_REQLOG="$(mktemp)"
+chmod 600 "$FL_REQLOG"
+export SB_FAKE_LEARNING_LOG="$FL_REQLOG"
+( export FAKE_LEARNING_PORT="$FL_PORT" FAKE_LEARNING_TOKEN="$FL_CRED" FAKE_LEARNING_REQUEST_LOG="$FL_REQLOG"
+  exec node --no-warnings "$WEB/scripts/fake-learning-practice.ts" ) > "$FLLOG" 2>&1 < /dev/null &
+FL_PID=$!
+( cd "$ROOT/services/bff" || exit 1
+  unset STARBUDDY_STARMAP STARBUDDY_TRUST_UI  # 星图、信任界面开关全关：不从调用方环境继承
+  export BFF_DATABASE_URL="postgresql://bff_app@/starbuddy_test?host=$PGHOST" PORT="$PR_BFF_PORT" BFF_AUTH_CONFIG="$AUTH_CFG" \
+    BFF_LEARNING_URL="http://127.0.0.1:$FL_PORT" BFF_LEARNING_TOKEN="$FL_CRED" \
+    STARBUDDY_ENV=test BFF_SHELL_ORIGIN="http://127.0.0.1:$WEB_PRACTICE_PORT" BFF_SMS_CAPTURE_FILE="$SMS_INBOX" \
+    STARBUDDY_PRACTICE=practice
+  exec node --no-warnings src/main.ts ) > "$PRLOG" 2>&1 < /dev/null &
+PR_BFF_PID=$!
+trap 'kill "$BFF_PID" "$TRUST_BFF_PID" "$SM_BFF_PID" "$SM_LEARNING_PID" "$RP_BFF_PID" "$FI_PID" "$PR_BFF_PID" "$FL_PID" "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true; rm -f "$LOG" "$TLOG" "$SMLOG" "$RPLOG" "$FILOG" "$PRLOG" "$FLLOG" "$FL_REQLOG" "$LLOG" "$SMLLOG" "$SMS_INBOX" "$AUTH_CFG" "$TRUST_SHELL_CFG" "$SM_SHELL_CFG" "$RP_SHELL_CFG"' EXIT
 for _ in $(seq 1 80); do
-  python3 -c "import socket,sys; ok=all(socket.socket().connect_ex(('127.0.0.1', p)) == 0 for p in ($BFF_PORT, $TRUST_BFF_PORT, $SM_BFF_PORT, $SM_LEARNING_PORT, $RP_BFF_PORT, $FI_PORT)); sys.exit(0 if ok else 1)" && break
+  python3 -c "import socket,sys; ok=all(socket.socket().connect_ex(('127.0.0.1', p)) == 0 for p in ($BFF_PORT, $TRUST_BFF_PORT, $SM_BFF_PORT, $SM_LEARNING_PORT, $RP_BFF_PORT, $FI_PORT, $PR_BFF_PORT, $FL_PORT)); sys.exit(0 if ok else 1)" && break
   sleep 0.25
 done
 
@@ -225,8 +256,8 @@ REVIEW_PID=$!
 ENVDTS="$(mktemp)"
 if [ -f "$WEB/next-env.d.ts" ]; then cp "$WEB/next-env.d.ts" "$ENVDTS"; else rm -f "$ENVDTS"; fi
 cleanup() {
-  kill "$BFF_PID" "$TRUST_BFF_PID" "$SM_BFF_PID" "$SM_LEARNING_PID" "$RP_BFF_PID" "$FI_PID" "$REVIEW_PID" "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true
-  rm -f "$LOG" "$TLOG" "$SMLOG" "$RPLOG" "$FILOG" "$RLOG" "$LLOG" "$SMLLOG" "$SMS_INBOX" "$AUTH_CFG" "$TRUST_SHELL_CFG" "$SM_SHELL_CFG" "$RP_SHELL_CFG"
+  kill "$BFF_PID" "$TRUST_BFF_PID" "$SM_BFF_PID" "$SM_LEARNING_PID" "$RP_BFF_PID" "$FI_PID" "$PR_BFF_PID" "$FL_PID" "$REVIEW_PID" "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true
+  rm -f "$LOG" "$TLOG" "$SMLOG" "$RPLOG" "$FILOG" "$PRLOG" "$FLLOG" "$FL_REQLOG" "$RLOG" "$LLOG" "$SMLLOG" "$SMS_INBOX" "$AUTH_CFG" "$TRUST_SHELL_CFG" "$SM_SHELL_CFG" "$RP_SHELL_CFG"
   if [ -f "$ENVDTS" ]; then cp "$ENVDTS" "$WEB/next-env.d.ts"; rm -f "$ENVDTS"; else rm -f "$WEB/next-env.d.ts"; fi
   rm -rf "${WEB:?}/.next-e2e"
 }
@@ -240,7 +271,8 @@ done
 export STARBUDDY_BFF_URL="http://127.0.0.1:$BFF_PORT" STARBUDDY_REVIEW_URL="http://127.0.0.1:$REVIEW_PORT" WEB_PORT STARBUDDY_DEV_PAGES=1 STARBUDDY_ENV=test NEXT_TELEMETRY_DISABLED=1 \
   STARBUDDY_NEXT_DIST_DIR=.next-e2e STARBUDDY_TRUST_BFF_URL="http://127.0.0.1:$TRUST_BFF_PORT" WEB_TRUST_PORT \
   STARBUDDY_STARMAP_BFF_URL="http://127.0.0.1:$SM_BFF_PORT" WEB_STARMAP_PORT \
-  STARBUDDY_REPORT_BFF_URL="http://127.0.0.1:$RP_BFF_PORT" WEB_REPORT_PORT
+  STARBUDDY_REPORT_BFF_URL="http://127.0.0.1:$RP_BFF_PORT" WEB_REPORT_PORT \
+  STARBUDDY_PRACTICE_BFF_URL="http://127.0.0.1:$PR_BFF_PORT" WEB_PRACTICE_PORT
 cd "$WEB"
 # 端到端用测试构建（冲刺 2-L）：开发专用页面（page.dev.tsx：探针、诊断演示页与符号样张页）只在 STARBUDDY_DEV_PAGES=1 且
 # STARBUDDY_ENV=dev/test 构建时才是页面（next.config.ts，构建期常量）。测试构建输出到 .next-e2e、类型检查用 tsconfig.e2e.json，正式的 .next 保持生产构建，
@@ -253,5 +285,6 @@ npx --no-install playwright test "$@"
 rc=$?
 if [ $rc -ne 0 ]; then echo "--- BFF 日志（最后 20 行）"; tail -20 "$LOG"; echo "--- 信任界面 BFF 日志（最后 20 行）"; tail -20 "$TLOG"; echo "--- 审核台后端日志（最后 20 行）"; tail -20 "$RLOG"; echo "--- 学习服务日志（最后 20 行）"; tail -20 "$LLOG"
   echo "--- 星图 v1 BFF 日志（最后 20 行）"; tail -20 "$SMLOG"; echo "--- 星图 v1 学习服务日志（最后 20 行）"; tail -20 "$SMLLOG"
-  echo "--- 首份报告 BFF 日志（最后 20 行）"; tail -20 "$RPLOG"; echo "--- 合成洞察服务桩日志（最后 20 行）"; tail -20 "$FILOG"; fi
+  echo "--- 首份报告 BFF 日志（最后 20 行）"; tail -20 "$RPLOG"; echo "--- 合成洞察服务桩日志（最后 20 行）"; tail -20 "$FILOG"
+  echo "--- 错题再练 BFF 日志（最后 20 行）"; tail -20 "$PRLOG"; echo "--- 合成学习服务桩日志（最后 20 行）"; tail -20 "$FLLOG"; fi
 exit $rc

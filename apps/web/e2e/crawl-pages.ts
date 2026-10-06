@@ -11,7 +11,11 @@ const NO_ID = '00000000-0000-4000-8000-0000000000f0';      // 不存在的判断
 /**
  * final：重定向后的最终地址（缺省 = path）；status：最终响应的状态码（缺省 200）。trustOn 的页面在开关全关的一套里一律 404、不重定向。
  */
-export interface CrawlPage { who: 'anon' | 'student' | 'guardian'; path: (student: string) => string; trustOn?: true; final?: (student: string) => string; status?: number }
+export interface CrawlPage {
+  who: 'anon' | 'student' | 'guardian'; path: (student: string) => string; trustOn?: true; final?: (student: string) => string; status?: number;
+  /** 错题再练（specs/practice-loop-stage1 PR 4）：只在 practice 开关打开的一套（practice-on）里有内容，其余各套一律 404 页 */
+  practiceOn?: true;
+}
 export interface Excluded { excluded: string }
 
 export const CRAWL: Record<string, CrawlPage | Excluded> = {
@@ -22,6 +26,8 @@ export const CRAWL: Record<string, CrawlPage | Excluded> = {
   's/[studentId]/learn/page.tsx': { who: 'student', path: (s) => `/s/${s}/learn` },
   's/[studentId]/learn/[subject]/page.tsx': { who: 'student', path: (s) => `/s/${s}/learn/math` },
   's/[studentId]/star-map/page.tsx': { who: 'student', path: (s) => `/s/${s}/star-map` },
+  's/[studentId]/learn/[subject]/practice/page.tsx': { who: 'student', path: (s) => `/s/${s}/learn/math/practice`, practiceOn: true },
+  's/[studentId]/learn/[subject]/practice/[entryId]/page.tsx': { who: 'student', path: (s) => `/s/${s}/learn/math/practice/${NO_ID}`, practiceOn: true },
   's/[studentId]/why/[claimId]/page.tsx': { who: 'student', path: (s) => `/s/${s}/why/${NO_ID}`, trustOn: true },
   's/[studentId]/disputes/page.tsx': { who: 'student', path: (s) => `/s/${s}/disputes`, trustOn: true },
   's/[studentId]/exams/page.tsx': { who: 'student', path: (s) => `/s/${s}/exams`, trustOn: true },
@@ -59,13 +65,16 @@ export const EXTRA_ANON: { path: string; status: number }[] = [{ path: '/no-such
 /** 一次爬取的目标：地址、最终状态码、重定向后的最终路径 */
 export interface CrawlTarget { path: string; status: number; final: string }
 
-/** 某个身份要爬的页面；trustOn = 当前这一套的信任界面开关是否打开（关时信任界面页面是 404 页） */
-export function targets(who: CrawlPage['who'], student: string, trustOn: boolean, onlyTrust = false): CrawlTarget[] {
+/**
+ * 某个身份要爬的页面；trustOn = 当前这一套的信任界面开关是否打开（关时信任界面页面是 404 页）；
+ * practiceOn = 当前这一套的错题再练开关是否打开（只有 practice-on 一套打开；关时再练页面是 404 页）
+ */
+export function targets(who: CrawlPage['who'], student: string, trustOn: boolean, onlyTrust = false, practiceOn = false): CrawlTarget[] {
   return Object.values(CRAWL)
     .filter((p): p is CrawlPage => 'who' in p && p.who === who && (!onlyTrust || p.trustOn === true))
     .map((p) => {
       const path = p.path(student);
-      const off = p.trustOn === true && !trustOn;
+      const off = (p.trustOn === true && !trustOn) || (p.practiceOn === true && !practiceOn);
       return { path, status: off ? 404 : p.status ?? 200, final: off ? path : (p.final?.(student) ?? path) };
     });
 }

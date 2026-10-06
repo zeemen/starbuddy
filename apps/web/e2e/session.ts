@@ -16,17 +16,22 @@ export const STARMAP_BASE = `http://127.0.0.1:${Number(process.env['WEB_STARMAP_
 /** 首份报告开发演示页的第四套（SIE-02b 第二步 PR 2，playwright.config.ts 的 report-on 项目）：前端与它连的 BFF */
 export const REPORT_BFF = process.env['STARBUDDY_REPORT_BFF_URL'] ?? 'http://127.0.0.1:8793';
 export const REPORT_BASE = `http://127.0.0.1:${Number(process.env['WEB_REPORT_PORT'] ?? 3103)}`;
+/** 错题再练的第五套（specs/practice-loop-stage1 PR 4，playwright.config.ts 的 practice-on 项目）：前端与它连的 BFF */
+export const PRACTICE_BFF = process.env['STARBUDDY_PRACTICE_BFF_URL'] ?? 'http://127.0.0.1:8794';
+export const PRACTICE_BASE = `http://127.0.0.1:${Number(process.env['WEB_PRACTICE_PORT'] ?? 3104)}`;
 /** 当前页面所在的那一套：前端来源与它连的 BFF（CSRF 令牌由各自的 BFF 签，不能混用） */
 export const endpointsOf = (page: Page): { base: string; bff: string } => {
   const origin = new URL(page.url()).origin;
   if (origin === TRUST_BASE) return { base: TRUST_BASE, bff: TRUST_BFF };
   if (origin === STARMAP_BASE) return { base: STARMAP_BASE, bff: STARMAP_BFF };
   if (origin === REPORT_BASE) return { base: REPORT_BASE, bff: REPORT_BFF };
+  if (origin === PRACTICE_BASE) return { base: PRACTICE_BASE, bff: PRACTICE_BFF };
   return { base: BASE, bff: BFF };
 };
 
 /** 合成家长的登录号码（未分配的国家码 +999） */
-export const PHONE = { gS: '+99900000101', gO: '+99900000102', gD: '+99900000105', gH: '+99900000106', gV: '+99900000107', gR: '+99900000108' } as const;
+export const PHONE = { gS: '+99900000101', gO: '+99900000102', gD: '+99900000105', gH: '+99900000106', gV: '+99900000107', gR: '+99900000108',
+                        gP: '+99900000109' } as const;
 /** 学生档案 → 打开学生模式的家长 */
 export const GUARDIAN_OF: Record<string, keyof typeof PHONE> = {
   '5a000000-0000-4000-8000-0000000000c1': 'gS',  // S1
@@ -39,6 +44,9 @@ export const GUARDIAN_OF: Record<string, keyof typeof PHONE> = {
   '5e000000-0000-4000-8000-0000000000c2': 'gV',  // V2（星图 v1：数学、语文，折叠）
   '5c000000-0000-4000-8000-0000000000c1': 'gR',  // R1（首份报告演示：四条合成判断）
   '5c000000-0000-4000-8000-0000000000c2': 'gR',  // R2（R1 的兄妹，没有判断）
+  '59000000-0000-4000-8000-0000000000c1': 'gP',  // P1（错题再练：走完闭环）
+  '59000000-0000-4000-8000-0000000000c2': 'gP',  // P2（错题再练：宵禁）
+  '59000000-0000-4000-8000-0000000000c3': 'gP',  // P3（错题再练：没有权益）
 };
 
 /** 捕获收件箱里这个号码在 after 之后最近一条验证码（等 BFF 写完） */
@@ -52,6 +60,13 @@ export async function codeFor(phone: string, after: number): Promise<string> {
     await new Promise((r) => setTimeout(r, 100));
   }
   throw new Error('收件箱里没有验证码');
+}
+
+/** 错题再练的合成学习服务桩到现在为止收到的请求数（scripts/fake-learning-practice.ts 每个请求往 SB_FAKE_LEARNING_LOG 追加一行） */
+export function fakeLearningRequests(): number {
+  const file = process.env['SB_FAKE_LEARNING_LOG'];
+  if (!file) throw new Error('SB_FAKE_LEARNING_LOG 未设置（由 scripts/e2e.sh 提供）');
+  return readFileSync(file, 'utf8').split('\n').filter(Boolean).length;
 }
 
 /** 以家长身份登录（走登录页），停在家长首页 */
