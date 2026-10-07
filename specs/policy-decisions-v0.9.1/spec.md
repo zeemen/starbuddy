@@ -96,6 +96,25 @@
   - 安全审查、契约审查；
   - 严格 `make check`（`CONTRACT_STRICT=1`）通过。
 
+## PR3：待人确认事项按默认处理（2026-10-07 用户确认“待人确认事项按默认建议处理”）
+对应 lessons“待人确认”#1–#13 的默认结论：
+- **只记录、不改代码**：
+  - #2 更正记录不进家长导出；
+  - #3 维持库里公式（暑假填刚读完的年级）；
+  - #4 限流阈值维持每对家长与学生每天 3 次、每账号每天 10 次；
+  - #5 接受 0048 回滚删除授予；
+  - #6 `changed_by` 外键随账号物理删除方案再定；
+  - #7 已在 PR2 完成。
+- **迁移 0049（草稿）**：
+  - #1：客服分支要求新 staff 权限 `cohort_correction`（与 `policy_source_admin` 同表，只由 DBA 授予）；无权限与学生不存在返回同一错误，消除存在性探测。
+  - #9：`normalize_source_host` 拒绝不能往返解码的 `xn--` 标签；来源说明在库里拒绝 Unicode Cc、Cf、Zl、Zp。
+  - #11：家长导出的 profile 主题加入 `exam_cohort` 与 `exam_cohort_source`；更正记录仍不导出。
+  - #13：`url_host` 拒绝显式端口；`guard_source_document` 读来源清单时加 `FOR SHARE`。
+- **SIE 字段字典（#8）**：`outer.g1.grade` 的存储改为“由 `current_grade(exam_cohort, 时刻)` 推算；事实与来源在 `exam_cohort` / `exam_cohort_source`；`grade` 列只是建档年级”，来源改为与 `exam_cohort_source` 一致。不新增 `outer.g1.exam_cohort` 字段。
+- **BFF（#10）**：年级为空时，选科列表仍列出已开通、已暂停的学科，只允许暂停，不能新选；今日计划同样不排这类学生的学科。
+- **学习服务（#12）**：诊断会话中途届别被改、新年级与建立时刻年级不同时，续做返回 409 `SESSION_INCONSISTENT`，不再静默结束。
+- **验收**：测试、变异、快照、攻击面同步；严格 `make check` 通过；提交首行 `[NEEDS-HUMAN]`。
+
 ## 待人确认
 1. **第 3 项的理解：** 维持两人签字（默认），还是允许直接改成已发布。
 2. **更正渠道：** 默认家长与 staff 都能更正，每次 ±1；家长端入口另做。
