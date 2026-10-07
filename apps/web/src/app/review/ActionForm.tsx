@@ -4,7 +4,8 @@
 import { useActionState, useEffect, useState, type ReactNode } from 'react';
 import type { ActionState } from './actions.ts';
 
-const OK = new Set(['saved', 'signed', 'published', 'retired', 'change_signed', 'taken', 'released', 'resolved', 'applied', 'recorded']);
+const OK = new Set(['saved', 'signed', 'published', 'retired', 'change_signed', 'taken', 'released', 'resolved', 'applied', 'recorded',
+  'source_added', 'source_retired']);
 
 export function ActionForm({
   action, labels, children, testId,

@@ -1,4 +1,4 @@
-// 考情政策线（冲刺 4，spec 第 8 节）：方案列表（链到差异视图），以及待签的来源文件、招录行、学校。
+// 考情政策线（冲刺 4，spec 第 8 节）：方案列表（链到差异视图），以及待签的来源文件、招录行、学校、控制线（迁移 0047）。
 // 来源文件、招录行、学校在第二名不同 staff 对当前内容批准时由库函数发布；发布被拒时整笔回滚、签字不留痕，界面给出明确提示。
 import { redirect } from 'next/navigation';
 import { currentSession } from '../../../lib/review-session.ts';
@@ -18,7 +18,8 @@ export default async function PolicyPage({ searchParams }: { searchParams: Promi
   return (
     <main>
       <h1>考情政策{city ? ` · ${city}` : ''}</h1>
-      <p className="muted">考情政策线一律高风险，需两名不同教研对当前内容批准。方案签字后由签字人另行发布；来源文件、招录行、学校在第二名批准时自动发布。</p>
+      <p className="muted">考情政策线一律高风险，需两名不同教研对当前内容批准。方案签字后由签字人另行发布；来源文件、招录行、学校、控制线在第二名批准时自动发布。</p>
+      <p><a href="/review/policy/sources">官方来源清单</a>（需要维护权限）</p>
       {!r.ok ? (
         <p className="review-result error">读取失败（{r.problem.code}）</p>
       ) : (
@@ -39,7 +40,7 @@ export default async function PolicyPage({ searchParams }: { searchParams: Promi
               </tbody>
             </table>
           )}
-          <h2>待签的来源文件、招录行、学校</h2>
+          <h2>待签的来源文件、招录行、学校、控制线</h2>
           {r.value.drafts.length === 0 ? <p data-testid="no-policy-drafts">没有待签的记录</p> : (
             <ul className="review-list" data-testid="policy-drafts">
               {r.value.drafts.map((x) => (

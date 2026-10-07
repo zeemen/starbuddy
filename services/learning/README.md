@@ -158,7 +158,14 @@ staff 对应表（`kge-pages-staff-map/1`，审核台配置，由人维护，不
   执行准入后返回 `recompute_since`：掌握重算由学习服务身份执行 `python -m learning.jobs admission-recompute --since <recompute_since>`（读 `platform.admission_change_log`，逐题调 KGE-04 的 `recompute_item`）；
   审核台的两个库身份都不能写个人层，所以不在审核台进程里重算。
 - **考情**：`GET /review/v0/policy?city=`（方案与待签的来源文件、招录行、学校）、`GET /review/v0/policy/schemes/{id}`（与同城同届上一版本、与上一届已发布方案的差异；`validate_scheme` 逐条）、
-  `POST …/schemes/{id}/sign|publish`、`POST /review/v0/policy/records/{id}/sign`。第二名批准时发布被表上的保护触发器拒绝，整笔回滚、签字不留痕：返回 409 `PUBLISH_FAILED_UNSIGNED` 并写明“签字没有保存”。
+  `POST …/schemes/{id}/sign|publish`、`POST /review/v0/policy/records/{id}/sign`（`object_type`：来源文件、招录行、学校，迁移 0047 起加控制线 `control_line`；
+  0047 从招录行旧列回填的控制线是草稿，要两名 staff 在这里重新签字发布）。第二名批准时发布被表上的保护触发器拒绝，整笔回滚、签字不留痕：返回 409 `PUBLISH_FAILED_UNSIGNED` 并写明“签字没有保存”。
+- **官方来源清单**（迁移 0048，specs/policy-decisions-v0.9.1 第 4 节）：`GET /review/v0/policy/sources`（主机名、发布机关、状态、登记时间）、
+  `POST /review/v0/policy/sources`（`{host, note}`：新增或重新启用，经 `policy.add_source_domain`，库里规范化主机名、拒 IP / 通配符 / 端口 / 路径 / 只有公共后缀）、
+  `POST /review/v0/policy/sources/retire`（`{host}`：下线，经 `policy.retire_source_domain`；清单行只下线不删除）。
+  只给有 staff 权限 `policy_source_admin`（DBA 授予，`platform.staff_permission`）的账号，没有权限的三个接口都是 403 `SOURCE_ADMIN_REQUIRED`；
+  主机名不合格 422、已在清单 409 `CONFLICT`、已下线再下线 409、不在清单 404。操作记录只在 `platform.policy_source_domain_change`（操作者是 staff 账号，不进 policy）。
+  说明写进公共层，不得填个人信息，含 Unicode 类别 Cc、Cf、Zl、Zp 的字符（C1 控制字符、U+202E 方向覆盖、零宽字符、行段分隔符）一律 422；前端 `/review/policy/sources` 把 punycode 主机名同时显示成 Unicode 形式，以防同形字。
 - **版本记录**新增 `line = content_version`（审核、发布、撤下）与 `line = admission`（审核、执行）行，末尾追加列 `content_version_id, six_segment, content_map_version_id, item_id, from_admission, to_admission, admission_review_level`；
   `admission_review_level` 是准入的学科审核等级（Q0–Q5，只在准入行有值），列名带前缀，免得与风险分级的 `review_level`（low/medium/high）混读。
   `action` 列新增取值 `apply`（准入执行行；原有取值 review、publish、retire 不变）。

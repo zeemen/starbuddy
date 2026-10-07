@@ -109,7 +109,7 @@ paths:
       x-sb-auth: session
       x-sb-rate-buckets: []
       operationId: me
-      description: 账号类型；家长返回已绑定孩子（档案 ID 与年级，没有姓名）；学生返回自己的 student_id。
+      description: 账号类型；家长返回已绑定孩子（档案 ID 与当前年级（由届别推算），没有姓名）；学生返回自己的 student_id。
       parameters: [{ $ref: '#/components/parameters/Session' }]
       responses:
         '200':
@@ -131,7 +131,13 @@ paths:
                           required: [student_id, grade]
                           properties:
                             student_id: { type: string, format: uuid }
-                            grade: { type: integer, minimum: 7, maximum: 9 }
+                            grade:
+                              type: [integer, 'null']
+                              minimum: 7
+                              maximum: 9
+                              description: >
+                                当前年级（由届别推算：platform.current_grade(届别, 请求时刻)，9 月 1 日切学年；迁移 0045 起不读建档年级）。
+                                不在 7–9（不在初中年级）时为 null
                   - type: object
                     additionalProperties: false
                     required: [account_kind, student_id]
@@ -155,7 +161,11 @@ paths:
               additionalProperties: false
               required: [grade, region]
               properties:
-                grade: { type: integer, minimum: 7, maximum: 9 }
+                grade:
+                  type: integer
+                  minimum: 7
+                  maximum: 9
+                  description: 建档年级，学年从 9 月 1 日起算，暑假填刚读完的年级（只用来推算中考届别；之后的年级由届别推算，迁移 0045）
                 region: { type: string, pattern: '^[a-z][a-z0-9-]{1,31}$' }
                 textbook_version: { type: [string, 'null'], pattern: '^[a-z0-9][a-z0-9-]{1,31}$' }
                 birth_year_month: { type: [string, 'null'], pattern: '^(19|20)[0-9]{2}-(0[1-9]|1[0-2])$' }
@@ -509,6 +519,54 @@ paths:
         '401': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/exam-cohort:
+    post:
+      x-sb-auth: guardian
+      x-sb-rate-buckets: [cohort_correction.link.day, cohort_correction.account.day]
+      operationId: correctExamCohort
+      description: >
+        家长更正孩子的中考届别（specs/policy-decisions-v0.9.1 第 1 节；迁移 0045 platform.correct_exam_cohort）。届别是档案的事实，
+        年级由它推算。授权在库里：必须是该学生的有效绑定家长（guardian_student_link），来源记为家长自述（guardian_report），
+        每次只能 ±1（相对当前存下的届别），更正后当前年级必须在 7–9，同时写一条届别更正记录。
+        请求体给更正后的届别（绝对值，重复提交同一个值第二次因步长不对被拒）。未绑定、学生不存在、已删除一律同一个 404；
+        步长不是 ±1 或更正后不在 7–9 → 422。学生会话 403。限流：每个家长账号对每个孩子每天 3 次（按账号与学生成对计数），
+        另外每个家长账号每天总共 10 次（换着学生 ID 试探也受限）。
+        暂无前端入口。
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/Session'
+        - $ref: '#/components/parameters/Origin'
+        - $ref: '#/components/parameters/Csrf'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [exam_cohort]
+              properties:
+                exam_cohort: { type: integer, minimum: 2015, maximum: 2100, description: 更正后的中考届别（中考年份） }
+      responses:
+        '200':
+          description: 已更正
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [student_id, exam_cohort, grade]
+                properties:
+                  student_id: { type: string, format: uuid }
+                  exam_cohort: { type: integer }
+                  grade: { type: [integer, 'null'], minimum: 7, maximum: 9, description: 按更正后的届别推算的当前年级 }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '413': { $ref: '#/components/responses/Problem' }
+        '415': { $ref: '#/components/responses/Problem' }
         '422': { $ref: '#/components/responses/Problem' }
         '429': { $ref: '#/components/responses/Problem' }
   /bff/v0/students/{student_id}/rest-reminder:

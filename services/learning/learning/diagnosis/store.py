@@ -29,6 +29,7 @@ class SessionRow:
     item_count: int
     idempotency_key: str
     resumed_at: datetime
+    created_at: datetime  # 会话建立时刻：选题用的年级按这一刻推算（current_grade），整个会话不变
 
 
 @dataclass
@@ -55,7 +56,7 @@ class StepRow:
 
 
 SESSION_COLS = """id::text, student_id::text, subject::text, status, algorithm_version::text, map_version, usage_id::text,
-                  time_budget_sec, item_limit, elapsed_sec, item_count, idempotency_key::text, resumed_at"""
+                  time_budget_sec, item_limit, elapsed_sec, item_count, idempotency_key::text, resumed_at, created_at"""
 
 
 def _session(r) -> SessionRow | None:
@@ -83,12 +84,13 @@ async def lock_session(conn, session_id: str, student: str) -> SessionRow | None
 
 
 async def insert_session(conn, *, student: str, subject: str, algorithm_version: str, map_version: str, usage_id: str, key: str,
-                         time_budget_sec: int, item_limit: int) -> SessionRow:
+                         time_budget_sec: int, item_limit: int, created_at: datetime) -> SessionRow:
+    """created_at 取服务时钟（与开始时推算年级的是同一刻）：之后每一步按这一刻重算年级，跨 9 月 1 日续做选题不变。"""
     return _session(await conn.fetchrow(
         f"""INSERT INTO platform.diagnosis_session (student_id, subject, algorithm_version, map_version, usage_id, idempotency_key,
-                                                   time_budget_sec, item_limit)
-            VALUES ($1::uuid, $2::platform.subject, $3, $4, $5::uuid, $6::uuid, $7, $8) RETURNING {SESSION_COLS}""",
-        student, subject, algorithm_version, map_version, usage_id, key, time_budget_sec, item_limit))
+                                                   time_budget_sec, item_limit, created_at)
+            VALUES ($1::uuid, $2::platform.subject, $3, $4, $5::uuid, $6::uuid, $7, $8, $9) RETURNING {SESSION_COLS}""",
+        student, subject, algorithm_version, map_version, usage_id, key, time_budget_sec, item_limit, created_at))
 
 
 async def set_status(conn, session_id: str, status: str) -> None:
@@ -184,8 +186,12 @@ async def probe_by_key(conn, student: str, key: str) -> str | None:
         "SELECT id::text FROM insight.confidence_probe WHERE student_id = $1::uuid AND idempotency_key = $2::uuid", student, key)
 
 
-async def student_grade(conn, student: str) -> int | None:
-    return await conn.fetchval("SELECT grade FROM platform.student_profile WHERE id = $1::uuid", student)
+async def student_grade(conn, student: str, at: datetime) -> tuple[bool, int | None]:
+    """（学生档案是否存在，该时刻的年级）。年级由届别推算（迁移 0045：platform.current_grade(届别, 时刻)，9 月 1 日切学年），
+    不读存下的建档年级；不在 7–9（未入学或已毕业）时为 None。时刻由调用方给（服务时钟或会话建立时刻），不用库里的 now()。"""
+    r = await conn.fetchrow("SELECT platform.current_grade(exam_cohort, $2::timestamptz) AS g FROM platform.student_profile WHERE id = $1::uuid",
+                            student, at)
+    return (False, None) if r is None else (True, r["g"])
 
 
 async def item_admission(conn, subject: str, item_id: str) -> str | None:

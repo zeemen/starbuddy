@@ -788,3 +788,120 @@ async def test_expire_affairs_cli(pg, rc):
     env2 = {**env, "REVIEW_CONSOLE_KGE_DATABASE_URL": "postgresql://u@db.example.cn/x"}
     p = subprocess.run([sys.executable, "-m", "review_console", "expire-affairs"], cwd=cwd, capture_output=True, text=True, env=env2)
     assert p.returncode != 0 and "只连本机" in p.stderr
+
+
+# ---------- 考情 v0.9 待定事项 PR2（specs/policy-decisions-v0.9.1）：控制线签字（迁移 0047）、官方来源清单（迁移 0048） ----------
+# 合成城市 synth-cl 的 2032 届合成方案（非真实数据）：一条指标生招录规则设控制线（control_line_basis = total_score）
+CL_DOC = uuid.UUID("c0a00000-0000-4000-8000-0000000000d1")
+CL_SCH = uuid.UUID("c0a00000-0000-4000-8000-0000000000e1")
+CL_LINE = uuid.UUID("c0a00000-0000-4000-8000-0000000000f1")
+
+
+async def test_control_line_sign_publish_and_records(pg, rc):
+    """控制线草稿出现在待签列表（带摘要与批准人数）；两名不同 staff 经审核台签字，第二名批准时发布；版本记录导出有控制线行。"""
+    c, _, rp = rc
+    pg.psql(f"""
+      INSERT INTO policy.source_domain (host, issuer, added_by) VALUES ('jyj.synthcity.example', '合成教育局', 'staff-001') ON CONFLICT DO NOTHING;
+      SET ROLE starbuddy_kge;
+      INSERT INTO policy.source_document (id, city, issuer, doc_number, title, published_on, url, applies_from_cohort, last_verified_on)
+        VALUES ('{CL_DOC}', 'synth-cl', '合成教育局', '合成〔2031〕1号', '合成 2032 届方案（非真实数据）', '2031-03-01',
+                'https://jyj.synthcity.example/doc/cl', 2032, '2031-09-01');
+      INSERT INTO policy.exam_scheme (id, city, cohort, version, source_document_id) VALUES ('{CL_SCH}', 'synth-cl', 2032, '1.0.0', '{CL_DOC}');
+      INSERT INTO policy.subject_config (scheme_id, subject, scored, full_score, proposition, exam_form, taken_in_grade)
+        VALUES ('{CL_SCH}', 'chinese', true, 120, 'city', 'closed_book', 9);
+      INSERT INTO policy.admission_rule (scheme_id, batch_code, batch_order, track, control_line_basis) VALUES
+        ('{CL_SCH}', 'batch_1', 1, 'unified', 'none'), ('{CL_SCH}', 'batch_1', 1, 'quota_allocation', 'total_score');""")
+
+    async def as_staff(staff: uuid.UUID, sql: str, *args):
+        async with rp.acquire() as conn, conn.transaction():
+            await conn.execute("SELECT set_config('app.account_id', $1, true)", str(staff))
+            return await conn.fetchval(sql, *args)
+    for s in (SF1, SF2):
+        await as_staff(s, "SELECT policy.sign_record('source_document', $1, 'approved', policy.object_digest('source_document', $1))", CL_DOC)
+        await as_staff(s, "SELECT policy.sign_scheme($1, 'approved', policy.object_digest('exam_scheme', $1))", CL_SCH)
+    await as_staff(SF1, "SELECT policy.publish_scheme($1)", CL_SCH)
+    pg.psql(f"""SET ROLE starbuddy_kge;
+      INSERT INTO policy.control_line (id, city, year, batch_code, score, source_document_id) VALUES ('{CL_LINE}', 'synth-cl', 2032, 'batch_1', 96.5, '{CL_DOC}');""")
+    drafts = (await c.get("/review/v0/policy", params={"city": "synth-cl"}, headers=H(SF1))).json()["drafts"]
+    line = next(x for x in drafts if x["id"] == str(CL_LINE))
+    assert (line["object_type"], line["cohort"], line["label"], line["approvals"]) == ("control_line", 2032, "batch_1 · quota_allocation · 96.5", 0)
+    sign = {"object_type": "control_line", "decision": "approved", "expected_digest": line["digest"]}
+    # 对象类型与 ID 对不上（按学校算不出这份摘要）、摘要不对：都是 409 DIGEST_CHANGED，不签
+    for bad in ({**sign, "object_type": "school"}, {**sign, "expected_digest": ZERO}):
+        r = await c.post(f"/review/v0/policy/records/{CL_LINE}/sign", json=bad, headers=H(SF1))
+        assert r.status_code == 409 and r.json()["code"] == "DIGEST_CHANGED"
+    # 非 staff（家长账号）不能签
+    assert (await c.post(f"/review/v0/policy/records/{CL_LINE}/sign", json=sign, headers=H(PARENT))).status_code == 403
+    assert (await c.post(f"/review/v0/policy/records/{CL_LINE}/sign", json=sign, headers=H(SF1))).json() == {"status": "draft"}
+    r = await c.post(f"/review/v0/policy/records/{CL_LINE}/sign", json=sign, headers=H(SF1))
+    assert r.status_code == 409 and r.json()["code"] == "CONFLICT"  # 同一账号同一内容只签一次
+    assert (await c.post(f"/review/v0/policy/records/{CL_LINE}/sign", json=sign, headers=H(SF2))).json() == {"status": "published"}
+    assert pg.psql(f"SELECT status FROM policy.control_line WHERE id = '{CL_LINE}'").strip() == "published"
+    drafts = (await c.get("/review/v0/policy", params={"city": "synth-cl"}, headers=H(SF1))).json()["drafts"]
+    assert all(x["id"] != str(CL_LINE) for x in drafts)
+    # 已发布：不能再签
+    r = await c.post(f"/review/v0/policy/records/{CL_LINE}/sign", json=sign, headers=H(SF1))
+    assert r.status_code == 409
+    # 版本记录：两次审核 + 一次发布，城市与年份来自控制线（platform.policy_signoff_record，0047）
+    items = (await c.get("/review/v0/records", params={"subject": "aya"}, headers=H(SF1))).json()["items"]
+    rows = [i for i in items if i["policy_object"] == "control_line"]
+    assert [(i["action"], i["signer"], i["city"], i["cohort"], i["policy_object_id"]) for i in rows] == [
+        ("review", str(SF1), "synth-cl", 2032, str(CL_LINE)), ("review", str(SF2), "synth-cl", 2032, str(CL_LINE)),
+        ("publish", str(SF2), "synth-cl", 2032, str(CL_LINE))]
+    assert all(i["line"] == "policy" and i["risk_level"] == "high" and i["policy_version"] is None for i in rows)
+
+
+async def test_source_domain_admin(pg, rc):
+    """官方来源清单（迁移 0048）：没有 policy_source_admin 的 staff（与非 staff）三个接口都是 403；有权限的能列表、新增（规范化）、
+    下线、重新启用；主机名不合格、重复、下线两次、下线不存在的各有明确错误；每次成功都写操作记录（platform）。"""
+    c, _, _ = rc
+    pg.psql("INSERT INTO policy.source_domain (host, issuer, added_by) VALUES ('jyj.synthcity.example', '合成教育局', 'staff-001') ON CONFLICT DO NOTHING;")
+    add = lambda who, host, note="合成教育局（非真实）": c.post("/review/v0/policy/sources", json={"host": host, "note": note}, headers=H(who))
+    retire = lambda who, host: c.post("/review/v0/policy/sources/retire", json={"host": host}, headers=H(who))
+    for who in (SF1, PARENT):
+        for r in (await c.get("/review/v0/policy/sources", headers=H(who)), await add(who, "rc-new.synth.example"),
+                  await retire(who, "jyj.synthcity.example")):
+            assert r.status_code == 403 and r.json()["code"] == "SOURCE_ADMIN_REQUIRED", r.text
+    assert pg.psql("SELECT count(*) FROM policy.source_domain WHERE host = 'rc-new.synth.example'").strip() == "0"
+    pg.psql(f"INSERT INTO platform.staff_permission (staff_id, permission, granted_by) VALUES ('{SF1}', 'policy_source_admin', 'synthetic-dba');")
+    lst = (await c.get("/review/v0/policy/sources", headers=H(SF1))).json()["items"]
+    assert {"host": "jyj.synthcity.example", "issuer": "合成教育局", "status": "active"}.items() <= next(
+        x for x in lst if x["host"] == "jyj.synthcity.example").items()
+    assert all(set(x) == {"host", "issuer", "status", "added_at"} for x in lst)  # 不给登记人
+    # 新增：去首尾空白、小写、去结尾的点
+    r = await add(SF1, " RC-New.Synth.Example. ")
+    assert r.status_code == 200 and r.json() == {"host": "rc-new.synth.example", "status": "active"}
+    r = await add(SF1, "rc-new.synth.example")
+    assert r.status_code == 409 and r.json()["code"] == "CONFLICT"
+    # punycode（国际化域名）可以登记，界面另显示 Unicode 形式
+    assert (await add(SF1, "xn--55qx5d.synth.example")).status_code == 200
+    for bad in ("10.0.0.1", "*.synth.example", "gov.cn", "rc.synth.example:8443", "rc.synth.example/doc", "example", "rc_bad.example"):
+        r = await add(SF1, bad)
+        assert r.status_code == 422 and r.json()["code"] == "INVALID_PARAMETER" and "主机名不合格" in r.json()["detail"], bad
+    for bad_note in ("合成\x00局", "   ", "长" * 65):
+        assert (await add(SF1, "rc-note.synth.example", bad_note)).status_code == 422, bad_note
+    # Unicode 类别 Cc（含 C1）、Cf（方向覆盖、零宽字符、BOM）、Zl、Zp：固定说明的 422，首尾的也算
+    for bad_note in ("合成‮局", "合成​局", "合成‍局", "合成\u0085局", "合成\u009f局", "合成 局", "合成 局",
+                     "﻿合成局", "合成局 ", "合成⁦局"):
+        r = await add(SF1, "rc-note.synth.example", bad_note)
+        assert r.status_code == 422 and "格式字符" in r.json()["detail"], repr(bad_note)
+    assert pg.psql("SELECT count(*) FROM policy.source_domain WHERE host = 'rc-note.synth.example'").strip() == "0"
+    assert (await c.post("/review/v0/policy/sources", json={"host": "rc-x.synth.example", "note": "x", "added_by": "x"},
+                         headers=H(SF1))).status_code == 422  # 未知字段
+    # 下线：只改状态不删行；下线两次 409（库里写好的说明）；不在清单 404；没有权限的 staff 仍 403
+    assert (await retire(SF2, "rc-new.synth.example")).status_code == 403
+    r = await retire(SF1, "RC-NEW.synth.example")
+    assert r.status_code == 200 and r.json() == {"host": "rc-new.synth.example", "status": "retired"}
+    r = await retire(SF1, "rc-new.synth.example")
+    assert r.status_code == 409 and r.json()["code"] == "RULE_VIOLATION" and "已下线" in r.json()["detail"]
+    assert (await retire(SF1, "rc-missing.synth.example")).status_code == 404
+    assert (await retire(SF1, "gov.cn")).status_code == 422
+    lst = (await c.get("/review/v0/policy/sources", headers=H(SF1))).json()["items"]
+    assert next(x for x in lst if x["host"] == "rc-new.synth.example")["status"] == "retired"
+    # 重新启用：说明更新为新的发布机关
+    assert (await add(SF1, "rc-new.synth.example", "合成教育局（重新启用）")).status_code == 200
+    assert pg.psql("SELECT status || ',' || issuer FROM policy.source_domain WHERE host = 'rc-new.synth.example'").strip() == "active,合成教育局（重新启用）"
+    # 操作记录只在 platform（操作者是 staff 账号）；清单行的登记人固定 review-console
+    assert pg.psql("SELECT string_agg(action || ':' || actor_account_id, ',' ORDER BY changed_at) FROM platform.policy_source_domain_change "
+                   "WHERE host = 'rc-new.synth.example'").strip() == f"add:{SF1},retire:{SF1},reactivate:{SF1}"
+    assert pg.psql("SELECT added_by FROM policy.source_domain WHERE host = 'rc-new.synth.example'").strip() == "review-console"

@@ -37,11 +37,18 @@ const restStore = (deps: ShellDeps): RestStore => {
   }
   return s;
 };
-const nowMs = (deps: ShellDeps): number => (deps.now ? deps.now() : new Date()).getTime();
+/** BFF 的请求时钟（deps.now，测试注入）：推算当前年级（platform.current_grade）等按“此刻”取值的读点都用它，不用数据库的 now() */
+export const asOf = (deps: ShellDeps): Date => (deps.now ? deps.now() : new Date());
+const nowMs = (deps: ShellDeps): number => asOf(deps).getTime();
 
-/** 该会话能读到的学生档案（RLS：学生本人或已绑定家长）；读不到 = 无权或不存在，同一个 404 */
-async function profile(q: Query, id: string): Promise<{ grade: number } | null> {
-  const { rows } = await q<{ grade: number }>('SELECT s.grade FROM platform.student_profile s WHERE s.id = $1', [id]);
+/**
+ * 该会话能读到的学生档案（RLS：学生本人或已绑定家长）；读不到 = 无权或不存在，同一个 404。
+ * 年级是推算值（迁移 0045，specs/policy-decisions-v0.9.1 第 1 节）：platform.current_grade(届别, 时刻)，时刻取 BFF 的请求时钟
+ * （deps.now，测试注入），不读存下的建档年级；不在 7–9（未入学或已毕业）时为 null。
+ */
+async function profile(q: Query, id: string, at: Date): Promise<{ grade: number | null } | null> {
+  const { rows } = await q<{ grade: number | null }>(
+    'SELECT platform.current_grade(s.exam_cohort, $2::timestamptz) AS grade FROM platform.student_profile s WHERE s.id = $1', [id, at]);
   return rows[0] ?? null;
 }
 
@@ -52,7 +59,9 @@ const ORDER = ['math', 'chinese', 'politics'];
 
 interface CatalogRow { code: string; product: string; status: 'beta' | 'live'; is_core: boolean; enrollment: 'active' | 'paused' | null; has_content: boolean }
 
-async function catalogFor(q: Query, id: string, grade: number): Promise<CatalogRow[]> {
+/** 学科目录按当前年级筛（subject_catalog.grades）；年级为 null（已毕业或未入学）时没有可选学科 */
+async function catalogFor(q: Query, id: string, grade: number | null): Promise<CatalogRow[]> {
+  if (grade === null) return [];
   const { rows } = await q<CatalogRow>(
     `SELECT c.code, c.product::text AS product, c.status, c.is_core, e.status::text AS enrollment,
             EXISTS (SELECT 1 FROM platform.curriculum_version v WHERE v.subject = c.product AND v.status = 'published') AS has_content
@@ -65,7 +74,7 @@ async function catalogFor(q: Query, id: string, grade: number): Promise<CatalogR
 
 const enrollments: Handler = async (ctx) => {
   const id = student(ctx);
-  const p = await profile(ctx.q, id);
+  const p = await profile(ctx.q, id, asOf(ctx.deps));
   if (!p) return problem(P.NOT_FOUND);
   // 口径说明只做展示：当前主订阅（与 meter_main_subscription 同一取法：有效、非附加、计量时钟落在周期内；时钟取 meter_guard_status
   // 的 as_of，BFF 没有 meter_now 的执行权）配置里的 core_subjects / elective_slots。能不能选只由 enroll_subject 判断（长期由库函数预判，lessons）
@@ -135,7 +144,7 @@ const today: Handler = async (ctx) => {
   // 一、在读学科（英语搁置、planned 不排）
   const first = await withAccount(deps.pool, s.accountId, async (c) => {
     const q: Query = (sql, p) => c.query(sql, p);
-    const p = await profile(q, id);
+    const p = await profile(q, id, asOf(deps));
     if (!p) return null;
     const { rows } = await q<{ code: string; product: PlanSubject }>(
       `SELECT c.code, c.product::text AS product FROM platform.subject_enrollment e
@@ -309,6 +318,38 @@ const timeGuardPut: Handler = async (ctx) => {
   }
 };
 
+// ---------------------------------------------------------------- 届别更正（specs/policy-decisions-v0.9.1 第 1 节，PR2）
+
+/**
+ * 家长更正孩子的中考届别：只经 platform.correct_exam_cohort（迁移 0045，SECURITY DEFINER）。授权全在库里：
+ * 经 BFF 调用时必须是该学生的有效绑定家长（guardian_student_link），来源记 guardian_report；每次只能 ±1，
+ * 更正后当前年级必须在 7–9，写一条 platform.exam_cohort_change。BFF 不比对旧值、不算步长。
+ * 请求体只收更正后的届别（绝对值：重复提交同一个值第二次因步长为 0 被拒，不会连改两次）。
+ * 错误：未绑定、学生不存在、已执行删除一律同一个 404；步长不是 ±1、更正后不在 7–9 → 422。
+ * 频控：每个（家长账号、学生）每天 3 次（cohort_correction.link.day），另加每个家长账号每天 10 次的总量上限
+ * （cohort_correction.account.day，挡换着学生 ID 试探；config/auth.json）。没有前端入口（spec“本任务不做前端入口”）。
+ */
+const cohortCorrect: Handler = async (ctx) => {
+  const b = ctx.body;
+  if (!b || Object.keys(b).join(',') !== 'exam_cohort') return problem(P.INVALID);
+  const cohort = b['exam_cohort'];
+  if (typeof cohort !== 'number' || !Number.isInteger(cohort) || cohort < 2015 || cohort > 2100) return problem(P.INVALID);
+  const id = student(ctx);
+  try {
+    const { rows } = await ctx.q<{ exam_cohort: number; grade: number | null }>(
+      `SELECT platform.correct_exam_cohort($1, $2::smallint) AS exam_cohort, platform.current_grade($2::smallint, $3::timestamptz) AS grade`,
+      [id, cohort, asOf(ctx.deps)]);
+    const r = rows[0]!;
+    ctx.note('outcome', 'corrected');
+    return json(200, { student_id: id, exam_cohort: r.exam_cohort, grade: r.grade });
+  } catch (e) {
+    const code = pgCode(e);
+    if (code === '42501' || code === 'P0002') return problem(P.NOT_FOUND);
+    if (code === '22023' || code === '23514') return problem(P.INVALID);
+    throw e;
+  }
+};
+
 // ---------------------------------------------------------------- 连续使用提醒（第 10 节）
 
 const restKey = (ctx: Ctx): string => rateKey(ctx.deps.keys, 'rest', ctx.session!.token).toString('hex');
@@ -316,7 +357,7 @@ const restKey = (ctx: Ctx): string => rateKey(ctx.deps.keys, 'rest', ctx.session
 export const restEnabled = (env: RunEnv, cfg: ShellConfig['rest']): boolean => isLocalEnv(env) || cfg.singleInstance;
 
 const rest = (reset: boolean): Handler => async (ctx) => {
-  if (!(await profile(ctx.q, student(ctx)))) return problem(P.NOT_FOUND);  // 学生会话只读得到自己
+  if (!(await profile(ctx.q, student(ctx), asOf(ctx.deps)))) return problem(P.NOT_FOUND);  // 学生会话只读得到自己
   const cfg = shellConfig(ctx.deps).rest;
   if (!restEnabled(ctx.deps.env, cfg)) {
     return json(200, { enabled: false, show: false, continuous_minutes: 0, threshold_minutes: cfg.continuousMinutes, suggest_break_minutes: cfg.breakMinutes });
@@ -342,6 +383,8 @@ export const SHELL_ROUTES: readonly Route[] = [
   read(`${S}/time-guard`, 'session', timeGuardGet),
   { method: 'PUT', path: `${S}/time-guard`, auth: 'guardian', csrf: 'session', body: true, handler: timeGuardPut,
     rateLimits: [{ bucket: 'time_guard.account.hour', dim: 'account' }] },
+  { method: 'POST', path: `${S}/exam-cohort`, auth: 'guardian', csrf: 'session', body: true, handler: cohortCorrect,
+    rateLimits: [{ bucket: 'cohort_correction.link.day', dim: 'link' }, { bucket: 'cohort_correction.account.day', dim: 'account' }] },
   read(`${S}/rest-reminder`, 'student', rest(false)),
   { method: 'POST', path: `${S}/rest-reminder/ack`, auth: 'student', csrf: 'session', body: false, handler: rest(true), rateLimits: [] },
 ];

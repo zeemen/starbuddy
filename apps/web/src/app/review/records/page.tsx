@@ -5,8 +5,10 @@ import { ACTION_LABEL, DECISION_LABEL, SUBJECTS, getRecords, isSubject, signerTa
 
 export const dynamic = 'force-dynamic';
 
-// 考情政策线（冲刺 4）的对象类型
-const POLICY_LABEL: Record<string, string> = { source_document: '来源文件', exam_scheme: '方案', admission_line: '招录行', school: '学校' };
+// 考情政策线（冲刺 4）的对象类型；控制线（迁移 0047）单独建表后有自己的签字与发布行
+const POLICY_LABEL: Record<string, string> = {
+  source_document: '来源文件', exam_scheme: '方案', admission_line: '招录行', school: '学校', control_line: '控制线',
+};
 
 export default async function RecordsPage({ searchParams }: { searchParams: Promise<{ subject?: string }> }) {
   const staff = await currentSession();

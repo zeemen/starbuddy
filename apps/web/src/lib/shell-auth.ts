@@ -9,7 +9,8 @@ export interface Problem { status: number; code: string }
 export type Result<T> = { ok: true; value: T } | { ok: false; problem: Problem };
 
 export interface IssuedSession { account_kind: 'guardian' | 'student'; session_token: string; csrf_token: string; student_id?: string }
-export type Me = { account_kind: 'guardian'; children: { student_id: string; grade: number }[] } | { account_kind: 'student'; student_id: string | null };
+/** 家长的孩子列表：grade 是当前年级（BFF 按届别推算，迁移 0045）；不在 7–9 时为 null（界面显示“不在初中年级”） */
+export type Me = { account_kind: 'guardian'; children: { student_id: string; grade: number | null }[] } | { account_kind: 'student'; student_id: string | null };
 
 /** 当前请求带的会话令牌与 CSRF 令牌（格式不对当作没有）；是否有效由 BFF 解析 */
 export async function currentSession(): Promise<{ token: string; csrf: string | null } | null> {

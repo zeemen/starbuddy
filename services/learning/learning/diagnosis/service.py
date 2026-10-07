@@ -23,8 +23,9 @@ from __future__ import annotations
 import json
 import re
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import timezone
+from datetime import datetime, timezone
 
 import asyncpg
 
@@ -66,6 +67,10 @@ def err(status: int, code: str, title: str, *, retryable: bool = False) -> Inges
 NOT_FOUND = ("SESSION_NOT_FOUND", "diagnosis session not found")
 
 
+def utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 @dataclass
 class StartResult:
     session_id: str
@@ -77,12 +82,14 @@ class StartResult:
 
 class DiagnosisService:
     def __init__(self, pool: asyncpg.Pool, ingest: IngestService, source_factory, presenter: ItemPresenter,
-                 params: Params = Params()) -> None:
+                 params: Params = Params(), clock: Callable[[], datetime] = utcnow) -> None:
         self.pool = pool
         self.ingest = ingest
         self.source_factory = source_factory   # async (grade) -> engine.Source
         self.presenter = presenter
         self.params = params
+        # 服务时钟（测试注入）：开始诊断时按这一刻推算年级（platform.current_grade），记为会话建立时刻
+        self.clock = clock
 
     # ---------- 工具 ----------
     def _params(self, s: store.SessionRow) -> Params:
@@ -97,7 +104,13 @@ class DiagnosisService:
             raise err(503, "KNOWLEDGE_UNAVAILABLE", "knowledge service is unavailable", retryable=True) from None
 
     async def _source(self, conn, s: store.SessionRow):
-        grade = await store.student_grade(conn, s.student_id)
+        # 年级按会话建立时刻推算：跨 9 月 1 日暂停后续做，选题规则复算出的仍是同一组步骤。
+        # 届别在会话中途被更正时按新届别重算建立时刻的年级：不在 7–9 → 下面直接 409；仍在 7–9 但变了 → 选题规则用新年级复算
+        # 已记下的步骤，对不上时由 HistoryMismatch 兜底 409；还没出题时会换成新年级的题目；新年级没有目标时复算判定已结束，
+        # 会话标为 finished（已出未答的一步留在原处；tests/test_diagnosis_session.py 钉住这一现有行为）
+        _, grade = await store.student_grade(conn, s.student_id, s.created_at)
+        if grade is None:
+            raise err(409, "SESSION_INCONSISTENT", "student grade at session start is no longer in range")
         src = await self._load(grade)
         if s.algorithm_version != ALGORITHM_VERSION or s.map_version != src.map_version:
             raise err(409, "SESSION_INCONSISTENT", "session was created with another algorithm or map version")
@@ -174,15 +187,20 @@ class DiagnosisService:
                         s.status = "active"
                         await self._advance(conn, s)
                         return StartResult(s.id, s.usage_id, s.status, created=False, replayed=False)
-                    grade = await store.student_grade(conn, student)
-                    if grade is None:
+                    at = self.clock()
+                    found, grade = await store.student_grade(conn, student, at)
+                    if not found:
                         raise err(404, "STUDENT_NOT_FOUND", "student_ref is not a registered student")
+                    # 当前年级不在 7–9（已毕业）：没有可测的目标，与“这个年级暂无诊断”同一个 422
+                    if grade is None:
+                        raise err(422, "NO_TARGETS", "no diagnosis targets for this grade in the pilot map")
                     src = await self._load(grade)
                     if not src.targets(grade):
                         raise err(422, "NO_TARGETS", "no diagnosis targets for this grade in the pilot map")
                     s = await store.insert_session(conn, student=student, subject=subject, algorithm_version=ALGORITHM_VERSION,
                                                    map_version=src.map_version, usage_id=usage_id, key=key,
-                                                   time_budget_sec=self.params.time_budget_sec, item_limit=self.params.item_limit)
+                                                   time_budget_sec=self.params.time_budget_sec, item_limit=self.params.item_limit,
+                                                   created_at=at)
                     transition(State.CREATED, Event.SELECT)
                     await self._advance(conn, s)
                     return StartResult(s.id, s.usage_id, s.status, created=True, replayed=False)

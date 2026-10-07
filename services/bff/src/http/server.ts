@@ -1,5 +1,5 @@
 // 统一壳的 HTTP 入口（spec 第 3 节）：node:http，一张路由表（routes.ts），一条固定顺序的中间件链：
-//   请求 ID → 匹配路由（表外 404）→ 读请求体 → 按 IP 限流 → 解析会话 → 按 auth 拦截 → CSRF → 按号码 / 账号限流
+//   请求 ID → 匹配路由（表外 404）→ 读请求体 → 按 IP 限流 → 解析会话 → 按 auth 拦截 → CSRF → 按号码 / 账号 / 会话 /（账号、学生）限流
 //   → withAccount(会话账号) → handler → 统一错误与安全头 → 访问日志
 // 与 spec 第 3 节的顺序差异：限流拆成两段——按 IP 的在解析会话之前；按号码、按账号的要先有请求体或会话，放在 CSRF 之后
 // （记入 specs/unified-shell-sprint4/lessons.md）。
@@ -157,6 +157,9 @@ export function createShellHandler(deps: ShellDeps): (req: IncomingMessage, res:
           await limit(r.bucket, 'account', session!.accountId);
         } else if (r.dim === 'session') {
           await limit(r.bucket, 'session', session!.token);  // 键是令牌的带密钥 HMAC（rateKey），不存令牌本身
+        } else if (r.dim === 'link') {
+          // （会话账号、路径里的学生）一对：在授权之前计数，按学生单独计数会让无权的家长替别人的孩子把次数用光
+          await limit(r.bucket, 'link', `${session!.accountId}:${params['student_id'] ?? ''}`);
         }
       }
 

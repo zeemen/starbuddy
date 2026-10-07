@@ -36,7 +36,10 @@ export const FAMILY_COPY = {
 } as const;
 
 export const GRADE_LABEL: Record<number, string> = { 7: '七年级', 8: '八年级', 9: '九年级' };
-export const childLabel = (ordinal: number, grade: number): string => `孩子 ${ordinal} · ${GRADE_LABEL[grade] ?? `${grade} 年级`}`;
+/** 当前年级由 BFF 按届别推算（/me）；不在 7–9 时为 null。措辞中性，只说不在初中年级 */
+export const GRADE_NONE = '不在初中年级';
+export const childLabel = (ordinal: number, grade: number | null): string =>
+  `孩子 ${ordinal} · ${grade === null ? GRADE_NONE : GRADE_LABEL[grade] ?? `${grade} 年级`}`;
 export const openStudentModeFor = (label: string): string => `为${label}打开学生模式`;
 export const starMapFor = (label: string): string => `${label}的星图`;
 
@@ -60,6 +63,6 @@ export const STUDENT_COPY = {
 /** 全部文案（静态检查逐条扫描） */
 export const ALL_AUTH_COPY: string[] = [
   ...Object.values(LOGIN_COPY), ...Object.values(LOGIN_RESULT), ...Object.values(FAMILY_COPY), ...Object.values(FAMILY_RESULT),
-  ...Object.values(STUDENT_COPY), ...Object.values(GRADE_LABEL), childLabel(1, 8), openStudentModeFor(childLabel(2, 9)),
+  ...Object.values(STUDENT_COPY), ...Object.values(GRADE_LABEL), childLabel(1, 8), childLabel(3, null), openStudentModeFor(childLabel(2, 9)),
   starMapFor(childLabel(1, 8)),
 ];

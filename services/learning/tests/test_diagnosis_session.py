@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import random
 import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
@@ -579,3 +580,86 @@ async def test_internal_openapi_matches_responses(dapi, student):
     r = await dapi.post(f"/internal/v1/diagnosis/sessions/{sid}/abandon", json={"student_ref": student})
     ab = doc["paths"]["/internal/v1/diagnosis/sessions/{session_id}/abandon"]["post"]["responses"]["200"]["content"]["application/json"]["schema"]
     assert set(r.json()) == set(ab["required"]) == set(ab["properties"])
+
+
+# ---------- 届别为真相源（specs/policy-decisions-v0.9.1 PR2）：选题年级 = platform.current_grade(届别, 时刻) ----------
+# 时刻：开始时取服务时钟（测试注入，不依赖墙钟），记为会话建立时刻；之后每一步按建立时刻推算，跨 9 月 1 日续做选题不变。
+# 合成学生建档于 2026-10-01（北京时间）、建档年级 8 → 推算届别 2028：2027-09-01 前是八年级，起是九年级（合成夹具只有九年级目标）。
+SEP1_2027 = datetime(2027, 8, 31, 16, 0, tzinfo=timezone.utc)  # 北京时间 2027-09-01 00:00
+
+
+async def cohort_student(admin, grade: int = 8, created_at: str = "2026-10-01 10:00+08") -> str:
+    acct, guardian, household, sid = (str(uuid.uuid4()) for _ in range(4))
+    async with admin.acquire() as c:
+        await c.execute("INSERT INTO platform.account (id, kind) VALUES ($1::uuid, 'guardian'), ($2::uuid, 'student')", guardian, acct)
+        await c.execute("INSERT INTO platform.household (id, created_by_account) VALUES ($1::uuid, $2::uuid)", household, guardian)
+        await c.execute("""INSERT INTO platform.student_profile (id, account_id, household_id, grade, region, textbook_version, created_at)
+                           VALUES ($1::uuid, $2::uuid, $3::uuid, $4, 'nanjing', 'suke-2024', $5::text::timestamptz)""",
+                        sid, acct, household, grade, created_at)
+        assert await c.fetchval("SELECT exam_cohort FROM platform.student_profile WHERE id = $1::uuid", sid) == 2028 + (8 - grade)
+    return sid
+
+
+async def test_grade_from_cohort_with_injected_clock(pools, aya_v1):
+    app_pool, admin = pools
+    now = {"t": SEP1_2027 - timedelta(seconds=1)}
+    s = make_settings(adapters={"aya": AdapterTarget(aya_v1, AYA_CREDENTIAL)}, diagnosis_presenter="synthetic")
+    app = create_app(s, pool=app_pool, diagnosis_clock=lambda: now["t"])
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://learning.test", timeout=60) as c:
+            c.headers["authorization"] = f"Bearer {CREDENTIAL}"
+            stu = await cohort_student(admin)
+            # 2027-08-31 23:59:59（北京时间）还是八年级：夹具没有八年级目标；存下的建档年级（8）不再被读
+            r = await start(c, stu)
+            assert r.status_code == 422 and r.json()["code"] == "NO_TARGETS"
+            # 跨过 9 月 1 日：九年级，可以开始；会话建立时刻 = 注入的时钟
+            now["t"] = SEP1_2027
+            r = await start(c, stu)
+            assert r.status_code == 201, r.text
+            sid = r.json()["session_id"]
+            async with admin.acquire() as a:
+                assert await a.fetchval("SELECT created_at FROM platform.diagnosis_session WHERE id = $1::uuid", sid) == SEP1_2027
+            first = (await cur_view(c, sid, stu)).json()["step"]
+            # 一年后续做（按当前时刻已毕业）：年级按会话建立时刻推算，仍是同一个会话、同一道题
+            now["t"] = datetime(2028, 9, 1, 2, 0, tzinfo=timezone.utc)
+            r = await start(c, stu)
+            assert r.status_code == 200 and r.json()["session_id"] == sid and r.json()["created"] is False
+            assert (await cur_view(c, sid, stu)).json()["step"] == first
+            # 新建档的学生按当前时刻已毕业（年级不在 7–9）：与“这个年级暂无诊断”同一个 422；没有档案仍是 404
+            gone = await cohort_student(admin, grade=9, created_at="2026-10-01 10:00+08")
+            r = await start(c, gone)
+            assert r.status_code == 422 and r.json()["code"] == "NO_TARGETS"
+            r = await start(c, str(uuid.uuid4()))
+            assert r.status_code == 404 and r.json()["code"] == "STUDENT_NOT_FOUND"
+            # 会话中途届别被更正、建立时刻的年级不在 7–9（迁移执行者直接改届别与来源，模拟客服更正）：按“与选题规则不符”409
+            async with admin.acquire() as a:
+                await a.execute("UPDATE platform.student_profile SET exam_cohort = 2026, exam_cohort_source = 'staff_correction' WHERE id = $1::uuid", stu)
+            r = await start(c, stu)
+            assert r.status_code == 409 and r.json()["code"] == "SESSION_INCONSISTENT"
+
+
+async def test_cohort_corrected_mid_session_grade_still_in_range(pools, aya_v1):
+    """钉住现有行为：会话中途届别被更正、建立时刻的年级变了但仍在 7–9（九年级 → 八年级）。年级按会话建立时刻、新届别重算，
+    选题规则用新年级复算已记下的步骤。本例新年级在合成夹具里没有目标：复算判定会话已结束，续做把会话标为 finished，
+    已出未答的那一步留在原处、不再出新题（没有 409）。复算与记下的步骤对不上时才由 HistoryMismatch 兜底回 409。"""
+    app_pool, admin = pools
+    s = make_settings(adapters={"aya": AdapterTarget(aya_v1, AYA_CREDENTIAL)}, diagnosis_presenter="synthetic")
+    app = create_app(s, pool=app_pool, diagnosis_clock=lambda: SEP1_2027)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://learning.test", timeout=60) as c:
+            c.headers["authorization"] = f"Bearer {CREDENTIAL}"
+            stu = await cohort_student(admin)          # 届别 2028：2027-09-01 起九年级
+            r = await start(c, stu)
+            assert r.status_code == 201, r.text
+            sid = r.json()["session_id"]
+            assert (await cur_view(c, sid, stu)).json()["step"]["seq"] == 1  # 已出第一题
+            # 客服把届别改晚一届（迁移执行者直接改届别与来源）：建立时刻的年级变成八年级，仍在 7–9
+            async with admin.acquire() as a:
+                await a.execute("UPDATE platform.student_profile SET exam_cohort = 2029, exam_cohort_source = 'staff_correction' WHERE id = $1::uuid", stu)
+                assert await a.fetchval("SELECT platform.current_grade(2029::smallint, $1::timestamptz)", SEP1_2027) == 8
+            # 续做：新年级（合成夹具没有八年级目标）复算判定已结束 → 同一会话标为 finished，不报错（现有行为，是否合适待人确认）
+            r = await start(c, stu)
+            assert r.status_code == 200 and r.json()["session_id"] == sid and r.json()["status"] == "finished", r.text
+            async with admin.acquire() as a:
+                assert await a.fetchval("SELECT count(*) FROM platform.diagnosis_step WHERE session_id = $1::uuid", sid) == 1  # 没有多记步骤
+                assert await a.fetchval("SELECT status FROM platform.diagnosis_step WHERE session_id = $1::uuid", sid) == "presented"

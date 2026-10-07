@@ -9,9 +9,10 @@ import {
   problemFrom, QUEUE_REASON_LABEL, QUEUE_REASONS, QUEUE_RESULT_LABEL, QUEUE_STATUS_LABEL, QUEUE_STATUSES, queueQuery, reasonLabel, RESULT_LABEL,
   reviewBaseUrl, SOURCE_KIND_LABEL,
   ADMISSION_LABEL, ADMISSIONS, isCity, isCommit, isDay, isItemId, isReviewLevel, isSourceRef, LICENSE_STATUSES, POLICY_OBJECT_LABEL, REASON_LABEL,
-  SOURCE_TYPES,
+  SOURCE_TYPES, POLICY_RECORD_TYPES, isSourceHost, isSourceNote, SOURCE_STATUS_LABEL,
 } from '../src/lib/review.ts';
 import { isSessionToken, staffCookieName, staffCookieOptions } from '../src/lib/staff-cookie.ts';
+import { hostView, suspiciousLabel } from '../src/lib/source-host.ts';
 
 test('审核台后端地址只能是 loopback 上的 http', () => {
   assert.equal(reviewBaseUrl({}), 'http://127.0.0.1:8790');
@@ -178,6 +179,61 @@ test('PR D：准入、考情、抽检表单字段校验与后端一致', () => {
   const mig = readFileSync(join(root, 'db/migrations/0039_platform__content_release.up.sql'), 'utf8');
   for (const t of SOURCE_TYPES) assert.ok(mig.includes(`'${t}'`), t);
   for (const t of LICENSE_STATUSES) assert.ok(mig.includes(`'${t}'`), t);
+});
+
+// ---------- 考情 v0.9 待定事项 PR2（specs/policy-decisions-v0.9.1）：控制线签字、官方来源清单 ----------
+test('PR2：签字的考情记录类型与后端 RecordSignBody 一致（含控制线），都有中文标签；记录页认控制线', () => {
+  const root = new URL('../../../', import.meta.url).pathname;
+  const app = readFileSync(join(root, 'services/learning/review_console/app.py'), 'utf8');
+  const m = /class RecordSignBody[\s\S]*?object_type: Literal\[([^\]]+)\]/.exec(app);
+  assert.ok(m);
+  assert.deepEqual([...m[1]!.matchAll(/"([a-z_]+)"/g)].map((x) => x[1]), [...POLICY_RECORD_TYPES]);
+  for (const t of POLICY_RECORD_TYPES) assert.ok(Object.hasOwn(POLICY_OBJECT_LABEL, t), t);
+  assert.equal(POLICY_OBJECT_LABEL['control_line'], '控制线');
+  const records = readFileSync(new URL('../src/app/review/records/page.tsx', import.meta.url), 'utf8');
+  assert.ok(records.includes("control_line: '控制线'"));
+  const actions = readFileSync(new URL('../src/app/review/actions.ts', import.meta.url), 'utf8');
+  assert.ok(actions.includes('POLICY_RECORD_TYPES as readonly string[]).includes(type)'), '签字表单按同一份类型清单校验');
+});
+
+test('PR2：官方来源清单表单校验、结果提示与权限提示；提示里没有内部编码；页面把主机名放在 data-value 里、说明旁有个人信息提示', () => {
+  for (const ok of ['jyj.synthcity.example', ' RC.Example. ', 'xn--55qx5d.example', '10.0.0.1']) assert.ok(isSourceHost(ok), ok);  // IP 由库函数拒
+  for (const bad of ['', '   ', 'https://a.example', 'a.example/x', 'a.example:8443', '*.a.example', '公司.example', 'a b.example', 'x'.repeat(254)]) {
+    assert.ok(!isSourceHost(bad), bad);
+  }
+  assert.ok(isSourceNote('合成教育局') && isSourceNote(' 合成 ') && isSourceNote('长'.repeat(64)));
+  for (const bad of ['', '  ', '长'.repeat(65), '合成\u0000局', '合成\n局']) assert.ok(!isSourceNote(bad), JSON.stringify(bad));
+  // Unicode 类别 Cc（含 C1）、Cf（方向覆盖、零宽字符、BOM、方向隔离）、Zl、Zp：首尾的也拒（trim 会吃掉它们，按原文查）
+  for (const bad of ['合成‮局', '合成​局', '合成‍局', '合成\u0085局', '合成\u009f局', '合成 局', '合成 局',
+    '﻿合成局', '合成局 ', '合成⁦局']) assert.ok(!isSourceNote(bad), JSON.stringify(bad));
+  assert.ok(isSourceNote('合成教育局（端到端）') && isSourceNote('Synthetic Bureau 2'));
+  for (const k of ['source_added', 'source_retired', 'SOURCE_ADMIN_REQUIRED']) assert.ok(Object.hasOwn(RESULT_LABEL, k), k);
+  assert.ok(!/[a-z]+_[a-z_]+/.test(RESULT_LABEL['SOURCE_ADMIN_REQUIRED']!), '权限提示里没有 snake_case 编码（页面 DOM 泄露检查）');
+  assert.deepEqual(Object.keys(SOURCE_STATUS_LABEL).sort(), ['active', 'retired']);
+  const form = readFileSync(new URL('../src/app/review/ActionForm.tsx', import.meta.url), 'utf8');
+  assert.ok(form.includes("'source_added'") && form.includes("'source_retired'"));
+  const page = readFileSync(new URL('../src/app/review/policy/sources/page.tsx', import.meta.url), 'utf8');
+  assert.ok(page.includes('公开信息，不得填写个人信息'));
+  assert.ok(page.includes('hostView(d.host)') && page.includes('无法解码'), 'punycode 主机名同时显示 Unicode 形式，解码失败明示');
+  assert.ok(!/\{d\.host\}/.test(page.replace(/<(?:code|span) data-value="host">\{d\.host\}<\/(?:code|span)>/g, '').replace(/value=\{d\.host\}/g, '').replace(/key=\{d\.host\}/g, '')),
+            '主机名只出现在 data-value 元素、隐藏字段与 key 里');
+  // 后端来源清单接口的权限错误码就是这里提示的那个
+  const app = readFileSync(new URL('../../../services/learning/review_console/app.py', import.meta.url), 'utf8');
+  assert.ok(app.includes('raise ReviewError(403, "SOURCE_ADMIN_REQUIRED")'));
+});
+
+test('PR2：来源清单主机名的同形字提示：xn-- 一律标国际化域名；解码失败标“无法解码”；非汉字非 ASCII 或混合书写系统加警告', () => {
+  assert.deepEqual(hostView('jyj.synthcity.example'), { idn: false, unicode: null, undecodable: false, suspicious: false });
+  assert.deepEqual(hostView('xn--55qx5d.example'), { idn: true, unicode: '公司.example', undecodable: false, suspicious: false });
+  // 西里尔字母 а 冒充拉丁 a
+  assert.deepEqual(hostView('xn--pple-43d.com'), { idn: true, unicode: 'аpple.com', undecodable: false, suspicious: true });
+  // 汉字与 ASCII 字母混写（公司abc）
+  assert.deepEqual(hostView('xn--abc-tw1em0j.example'), { idn: true, unicode: '公司abc.example', undecodable: false, suspicious: true });
+  // 解码失败：不显示成“—”
+  for (const bad of ['xn--zz.example', 'xn--abc.example', 'xn--.example']) {
+    assert.deepEqual(hostView(bad), { idn: true, unicode: null, undecodable: true, suspicious: true }, bad);
+  }
+  assert.ok(!suspiciousLabel('公司') && !suspiciousLabel('jyj-01') && suspiciousLabel('公司a') && suspiciousLabel('ﬁle') && suspiciousLabel('é'));
 });
 
 test('复核队列页面不取、不显示学生 id 与作答原文（只用 student_ref）', () => {

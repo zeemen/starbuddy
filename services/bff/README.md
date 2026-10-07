@@ -47,9 +47,13 @@
   - 路由表 `src/http/routes.ts`：每条路由声明方法、路径模板、auth（public / session / guardian / student）、CSRF、限流；分发只查这张表。
     表外一律 404（H2 起没有旧路由）；路由表与 `openapi/*.v0.yaml` 一一对应（`tests/shell-openapi.test.ts`）。
   - 中间件链：请求 ID → 匹配 → 请求体 → 按 IP 限流 → 解析会话（`x-sb-session` → `platform.auth_session_resolve`）→ 按 auth 拦截
-    → CSRF（Origin 等于 `BFF_SHELL_ORIGIN`；有会话的另核对与会话绑定的 `x-csrf-token`）→ 按号码 / 账号限流 → `withAccount` → handler。
+    → CSRF（Origin 等于 `BFF_SHELL_ORIGIN`；有会话的另核对与会话绑定的 `x-csrf-token`）→ 按号码 / 账号 / 会话 /（账号、学生）限流 → `withAccount` → handler。
   - 登录、会话、限流全部在迁移 0029 的库函数里（表不给任何应用角色策略）；验证码由 BFF 生成、经 `SmsSender` 发出，库里只存 HMAC。
   - 短信：只有捕获桩 `CaptureSmsSender`（dev / test，只收 +999 合成号码）；staging、pilot、生产没有供应商，启动即失败。
+  - 年级与届别（`specs/policy-decisions-v0.9.1` PR2，迁移 0045）：`/me` 的 `children[].grade` 与选科目录一律读
+    `platform.current_grade(届别, 请求时钟)`（`deps.now`，测试注入），不读存下的建档年级；不在 7–9 时为 null。家长届别更正
+    `POST /students/{id}/exam-cohort` 只经 `platform.correct_exam_cohort`，频控按（家长账号、学生）成对（限流维度 `link`，
+    桶 `cohort_correction.link.day`，每天 3 次），另加按账号的总量桶 `cohort_correction.account.day`（每天 10 次）。测试 `tests/cohort.integration.test.ts`，变异组 `BFFMUT_FILTER=届别：`。
   - 配置：阈值 `config/auth.json`；`STARBUDDY_ENV`（必填）、`BFF_SHELL_ORIGIN`、`BFF_LOG_HMAC_KEY`、`BFF_AUTH_SECRET`（十六进制 ≥ 32 字节，
     dev / test 缺省随机）、`BFF_TRUST_CLIENT_IP`、`BFF_SMS_CAPTURE_FILE`（dev / test）、`BFF_AUTH_CONFIG`（只在 dev / test，端到端放宽限流）。
     见 `src/main.ts` 开头的注释。

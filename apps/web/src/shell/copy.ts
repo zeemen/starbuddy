@@ -170,6 +170,8 @@ export const FAMILY_SHELL = {
   childPageFor: (label: string) => `${label}的孩子页`,
   createHeading: '新建孩子档案',
   gradeLabel: '年级',
+  // 建档年级只用来推算中考届别（迁移 0045）：库里按“9 月 1 日起算的学年”推算，暑假（6–8 月）建档算上一学年
+  gradeHint: '填本学年的年级（学年从 9 月 1 日起算；暑假里填刚读完的年级）。',
   regionLabel: '地区',
   regionDefault: 'nanjing',
   birthLabel: '出生年月（可不填）',
@@ -562,7 +564,7 @@ export const ALL_SHELL_COPY: string[] = [
   ENROLLMENT.enroll('数学'), ENROLLMENT.pause('数学'), ENROLLMENT.studentReadOnly,
   TIME_GUARD.heading, TIME_GUARD.capLabel, TIME_GUARD.capHint(90), TIME_GUARD.curfewStart, TIME_GUARD.curfewEnd, TIME_GUARD.curfewHint('21:30', '06:30'),
   TIME_GUARD.save, ...Object.values(TIME_RESULT),
-  FAMILY_SHELL.childPage, FAMILY_SHELL.childPageFor('孩子 1 · 八年级'), FAMILY_SHELL.createHeading, FAMILY_SHELL.gradeLabel,
+  FAMILY_SHELL.childPage, FAMILY_SHELL.childPageFor('孩子 1 · 八年级'), FAMILY_SHELL.createHeading, FAMILY_SHELL.gradeLabel, FAMILY_SHELL.gradeHint,
   FAMILY_SHELL.regionLabel, FAMILY_SHELL.birthLabel, FAMILY_SHELL.create, FAMILY_SHELL.consentHeading, FAMILY_SHELL.consentText,
   FAMILY_SHELL.consentGrant, FAMILY_SHELL.consentFor('孩子 1 · 八年级'), FAMILY_SHELL.onboarding, FAMILY_SHELL.timeSettings,
   FAMILY_SHELL.backToFamily, ...Object.values(FAMILY_SHELL_RESULT), ...Object.values(TRUST_SLOT),

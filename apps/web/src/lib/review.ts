@@ -124,7 +124,7 @@ export interface RecordRow extends Omit<Signoff, 'map_version_id' | 'version' | 
   validation_warnings: number | null;
   page_id: string | null;
   page_commit: string | null;
-  /** 考情行：source_document / exam_scheme / admission_line / school */
+  /** 考情行：source_document / exam_scheme / admission_line / school / control_line（迁移 0047） */
   policy_object: string | null;
   policy_object_id: string | null;
   city: string | null;
@@ -261,8 +261,11 @@ export interface SchemeRow {
   published_at: string | null;
 }
 
+/** 审核台能签字的考情记录类型（方案另走签字 + 发布）；control_line：指标生控制线（迁移 0047 单独建表） */
+export const POLICY_RECORD_TYPES = ['source_document', 'admission_line', 'school', 'control_line'] as const;
+
 export interface PolicyDraft {
-  object_type: 'source_document' | 'admission_line' | 'school';
+  object_type: (typeof POLICY_RECORD_TYPES)[number];
   id: string;
   city: string;
   cohort: number | null;
@@ -295,9 +298,33 @@ export const publishScheme = (staff: string, id: string, body: { expected_digest
 export const signPolicyRecord = (staff: string, id: string, body: { object_type: string; decision: string; expected_digest: string }) =>
   call<{ status: string }>(staff, 'POST', `/review/v0/policy/records/${id}/sign`, body);
 export const POLICY_OBJECT_LABEL: Record<string, string> = {
-  source_document: '来源文件', exam_scheme: '方案', admission_line: '招录行', school: '学校',
+  source_document: '来源文件', exam_scheme: '方案', admission_line: '招录行', school: '学校', control_line: '控制线',
   scheme: '方案', total: '计分总分', subject: '科目', batch: '批次', transition: '过渡规则',
 };
+
+// ---------- 官方来源清单（迁移 0048，specs/policy-decisions-v0.9.1 第 4 节）：列表、新增（或重新启用）、下线 ----------
+// 只给有 staff 权限 policy_source_admin 的账号（后端 403 SOURCE_ADMIN_REQUIRED）。主机名的规范化与合格判断在库函数里，这里只挡格式。
+export interface SourceDomain {
+  host: string;
+  issuer: string;
+  status: 'active' | 'retired';
+  added_at: string;
+}
+export const listSourceDomains = (staff: string) => call<{ items: SourceDomain[] }>(staff, 'GET', '/review/v0/policy/sources');
+export const addSourceDomain = (staff: string, body: { host: string; note: string }) =>
+  call<{ host: string; status: string }>(staff, 'POST', '/review/v0/policy/sources', body);
+export const retireSourceDomain = (staff: string, body: { host: string }) =>
+  call<{ host: string; status: string }>(staff, 'POST', '/review/v0/policy/sources/retire', body);
+/** 表单里的主机名：只收 ASCII 的域名字符（国际化域名填 punycode，xn--…），1–253 字；去首尾空白、小写、结尾的点由库里规范化 */
+export const isSourceHost = (s: string): boolean => /^[A-Za-z0-9.-]{1,253}\.?$/.test(s.trim()) && s.trim().length > 0;
+/** 说明里不许出现的 Unicode 类别：控制字符（Cc，含 C1）、格式字符（Cf，含 U+202E 方向覆盖与零宽字符）、行分隔符、段分隔符 */
+export const NOTE_FORBIDDEN = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
+/** 说明（发布机关）：1–64 字、没有上面这几类不可见或改方向的字符；写进公共层，不得填个人信息 */
+export const isSourceNote = (s: string): boolean => {
+  const t = s.trim();
+  return t.length >= 1 && [...t].length <= 64 && !NOTE_FORBIDDEN.test(s);  // 查原文：trim 会吃掉首尾的 U+2028、U+FEFF
+};
+export const SOURCE_STATUS_LABEL: Record<string, string> = { active: '在用', retired: '已下线' };
 
 // ---------- 编译页面签字与低风险事后抽检（冲刺 4，spec 第 2、6 节） ----------
 export const isCommit = (s: string): boolean => /^[0-9a-f]{40}$/.test(s);
@@ -498,6 +525,9 @@ export const RESULT_LABEL: Record<string, string> = {
   PUBLISH_FAILED_UNSIGNED: '第二名批准时发布失败，整笔回滚，你的签字没有保存', PAGES_EXPORT_UNAVAILABLE: '合并记录导出读不了',
   SELF_SIGN: '提交方不能给自己的合并请求签字或记抽检', AUTHOR_UNKNOWN: '合并记录里没有作者或作者不在 staff 对应表里，判不出是不是提交方，不能签',
   SPOT_CHECK_UNCONFIGURED: '审核台没有配置抽检种子，不能抽检',
+  // 官方来源清单（迁移 0048）
+  source_added: '已加入官方来源清单（或重新启用）', source_retired: '已下线',
+  SOURCE_ADMIN_REQUIRED: '没有维护官方来源清单的权限（需要由数据库管理员授予）',
 };
 export const RETIRE_BASIS = [
   { code: 'wrong_version', label: '版本有误' },

@@ -210,6 +210,17 @@ SM=(
   $'星图v1：不核对学习服务的地图版本\tsrc/star-map/v1.ts\tif (o.mapVersion !== first.versions.get(e.product) || \tif ('
   $'星图v1：不核对节点集合\tsrc/star-map/v1.ts\t || ours.length !== theirs.length || ours.some((id, i) => id !== theirs[i])\t'
   $'星图v1：去掉禁用推断词表过滤\tsrc/star-map/v1.ts\tif (st && !clean(st.text)) {\tif (false) {'
+  # 届别为真相源（specs/policy-decisions-v0.9.1 PR2）：年级读点按届别与请求时钟推算、家长届别更正入口的授权、请求体与频控；
+  # 这几条跑 tests/cohort.integration.test.ts
+  $'届别：/me 读存下的建档年级\tsrc/http/routes.ts\tplatform.current_grade(s.exam_cohort, $1::timestamptz) AS grade\tCASE WHEN $1::timestamptz IS NULL THEN NULL ELSE s.grade END AS grade'
+  $'届别：/me 不用请求时钟\tsrc/http/routes.ts\tORDER BY l.created_at, l.student_id`, [asOf(ctx.deps)]);\tORDER BY l.created_at, l.student_id`, [new Date()]);'
+  $'届别：选科目录读存下的建档年级\tsrc/http/shell-routes.ts\t\'SELECT platform.current_grade(s.exam_cohort, $2::timestamptz) AS grade FROM platform.student_profile s WHERE s.id = $1\'\t\'SELECT s.grade FROM platform.student_profile s WHERE s.id = $1 AND $2::timestamptz IS NOT NULL\''
+  $'届别：更正收未知字段\tsrc/http/shell-routes.ts\tif (!b || Object.keys(b).join(\',\') !== \'exam_cohort\') return problem(P.INVALID);\tif (!b || !(\'exam_cohort\' in b)) return problem(P.INVALID);'
+  $'届别：更正无权回 403\tsrc/http/shell-routes.ts\tif (code === \'42501\' || code === \'P0002\') return problem(P.NOT_FOUND);\tif (code === \'42501\' || code === \'P0002\') return problem(P.FORBIDDEN);'
+  $'届别：更正不限流\tsrc/http/shell-routes.ts\trateLimits: [{ bucket: \'cohort_correction.link.day\', dim: \'link\' }, { bucket: \'cohort_correction.account.day\', dim: \'account\' }]\trateLimits: []'
+  $'届别：更正没有按账号的总量上限\tsrc/http/shell-routes.ts\t, { bucket: \'cohort_correction.account.day\', dim: \'account\' }]\t]'
+  $'届别：步长错误映射成 404\tsrc/http/shell-routes.ts\tif (code === \'22023\' || code === \'23514\') return problem(P.INVALID);\tif (code === \'22023\' || code === \'23514\') return problem(P.NOT_FOUND);'
+  $'届别：步长错误不映射（500）\tsrc/http/shell-routes.ts\tif (code === \'22023\' || code === \'23514\') return problem(P.INVALID);\t'  $'届别：频控只按学生计数\tsrc/http/server.ts\t`${session!.accountId}:${params[\'student_id\'] ?? \'\'}`\t`${params[\'student_id\'] ?? \'\'}`'
   # 冲刺 4-H H6 第二轮第 7 节回归（每类至少一条）：这几条跑 tests/route-matrix.integration.test.ts
   # 7.1 授权矩阵与路由表覆盖
   $'H6：新路由不登记样例\tsrc/http/shell-routes.ts\t  read(`${S}/balance`, \'session\', balance),\t  read(`${S}/balance`, \'session\', balance), read(`${S}/balance-copy`, \'session\', balance),'
@@ -342,6 +353,7 @@ star_run() {  # $1 副本根目录，$2 变异名（“计量：”开头的跑�
   [[ "${2:-}" == 语音：* ]] && tests="tests/voice-minutes.test.ts tests/voice-minutes.integration.test.ts"
   [[ "${2:-}" == 报告：* ]] && tests="tests/report-units.test.ts tests/report.integration.test.ts"
   [[ "${2:-}" == 再练：* ]] && tests="tests/practice-units.test.ts tests/practice.integration.test.ts tests/shell-openapi.test.ts"
+  [[ "${2:-}" == 届别：* ]] && tests="tests/cohort.integration.test.ts"
   out=$( cd "$1/services/bff" && timeout 240 bash "$ROOT/db/tests/pg-ephemeral.sh" -- \
       node --no-warnings --test --test-concurrency=1 --test-timeout=60000 $tests 2>&1 ); rc=$?
   printf '%s\n' "$out" > "$1/run.out"  # H6 的“第一条失败必须是登记的断言”从这里读

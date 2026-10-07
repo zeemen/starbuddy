@@ -10,6 +10,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import re
+import unicodedata
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -114,9 +115,34 @@ class AdmissionApplyBody(_Strict):
 
 
 class RecordSignBody(_Strict):
-    object_type: Literal["source_document", "admission_line", "school"]
+    # control_line：指标生控制线（迁移 0047，单独建表；两名不同 staff 签字发布，第二名批准时由 policy.sign_record 发布）
+    object_type: Literal["source_document", "admission_line", "school", "control_line"]
     decision: Literal["approved", "rejected"]
     expected_digest: str = Field(pattern=DIGEST)
+
+
+# 官方来源清单（迁移 0048）：主机名的规范化与合格判断全在库函数 policy.normalize_source_host（小写、去尾点、拒 IP / 通配符 /
+# 端口 / 路径 / 只有公共后缀）；这里只挡长度与控制字符。说明写进公共层（policy.source_domain.issuer），不得填个人信息
+SOURCE_HOST = r"^[^\x00-\x1f\x7f]{1,260}$"  # 首尾空白由库函数去掉
+
+
+# 说明里不许出现的 Unicode 类别：Cc（控制字符，含 C1）、Cf（格式字符，含 U+202E 方向覆盖、零宽字符）、Zl、Zp（行、段分隔符）。
+# 查原文（strip 会吃掉首尾的分隔符）；库里另加核对属迁移，不在这里
+NOTE_FORBIDDEN_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp"})
+NOTE_INVALID = "说明（发布机关）须为 1–64 个字，不能含控制字符、格式字符（如方向覆盖、零宽字符）或行段分隔符"
+
+
+def note_has_forbidden(note: str) -> bool:
+    return any(unicodedata.category(ch) in NOTE_FORBIDDEN_CATEGORIES for ch in note)
+
+
+class SourceAddBody(_Strict):
+    host: str = Field(pattern=SOURCE_HOST)
+    note: str = Field(min_length=1, max_length=64)
+
+
+class SourceRetireBody(_Strict):
+    host: str = Field(pattern=SOURCE_HOST)
 
 
 class PageSignBody(_Strict):
@@ -443,6 +469,37 @@ def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthen
     async def policy_record_sign(object_id: uuid.UUID, body: RecordSignBody, request: Request):
         st = await state["review"].sign_record(request.state.staff, body.object_type, object_id, body.decision, body.expected_digest)
         return {"status": st}
+
+    # ---------- 官方来源清单（specs/policy-decisions-v0.9.1 第 4 节，迁移 0048）：列表、新增（或重新启用）、下线 ----------
+    # 只给有 staff 权限 policy_source_admin 的账号（由 DBA 授予）：没有权限的 staff 三个接口都是 403 SOURCE_ADMIN_REQUIRED。
+    # 新增与下线经库函数 policy.add_source_domain / retire_source_domain（再核对 active staff 与权限、规范化主机名、写操作记录）；
+    # 清单行只下线不删除。说明（发布机关）写进公共层，不得填个人信息。
+    async def _source_admin(request: Request) -> uuid.UUID:
+        staff = request.state.staff
+        if not await state["review"].is_source_admin(staff):
+            raise ReviewError(403, "SOURCE_ADMIN_REQUIRED")
+        return staff
+
+    @app.get("/review/v0/policy/sources")
+    async def policy_sources(request: Request):
+        await _source_admin(request)
+        from .snapshot import norm
+        return {"items": norm(await state["kge"].source_domains())}
+
+    @app.post("/review/v0/policy/sources")
+    async def policy_source_add(body: SourceAddBody, request: Request):
+        staff = await _source_admin(request)
+        note = body.note.strip()
+        if not note or note_has_forbidden(body.note):
+            raise ReviewError(422, "INVALID_PARAMETER", NOTE_INVALID)
+        host = await state["review"].add_source_domain(staff, body.host, note)
+        return {"host": host, "status": "active"}
+
+    @app.post("/review/v0/policy/sources/retire")
+    async def policy_source_retire(body: SourceRetireBody, request: Request):
+        staff = await _source_admin(request)
+        host = await state["review"].retire_source_domain(staff, body.host)
+        return {"host": host, "status": "retired"}
 
     @app.get("/review/v0/records")
     async def records(subject: str):

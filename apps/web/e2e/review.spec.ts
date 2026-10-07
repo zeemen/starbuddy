@@ -6,6 +6,7 @@
 import { execFileSync } from 'node:child_process';
 import { createHmac } from 'node:crypto';
 import AxeBuilder from '@axe-core/playwright';
+import { expectNoDomLeak } from './dom-leak.ts';
 import { openAs } from './session.ts';
 import { expect, test, type Page } from '@playwright/test';
 
@@ -355,4 +356,168 @@ SELECT kge.sign_page_review('MATH.SYN.T.D', '${'c3'.repeat(20)}', 'approved', 'l
   await expect(page.locator('tr[data-line="page"][data-page="MATH.SYN.T.A"]')).toHaveCount(2);
   await expect(page.locator('tr[data-line="page"][data-page="MATH.SYN.T.A"]').first()).toContainText('a1a1a1a1a1a1');
   await axe(page);
+});
+
+// ---------- 考情 v0.9 待定事项 PR2（specs/policy-decisions-v0.9.1）：控制线签字（迁移 0047）与官方来源清单页面（迁移 0048） ----------
+// 合成城市 synth-e2e 的 2033 届合成方案（非真实数据）：以迁移执行者身份播种来源文件与方案（两名合成教研经签字身份签字、发布）与一条控制线草稿
+const T1_ID = '5f0e0000-0000-4000-8000-0000000000e1';
+const T2_ID = '5f0e0000-0000-4000-8000-0000000000e2';
+const CL_DOC = '5c0f0000-0000-4000-8000-0000000000d1';
+const CL_SCH = '5c0f0000-0000-4000-8000-0000000000e1';
+const CL_LINE = '5c0f0000-0000-4000-8000-0000000000f1';
+function seedControlLine() {
+  const signAs = (staffId: string) => `SELECT set_config('app.account_id', '${staffId}', true);
+SELECT policy.sign_record('source_document', '${CL_DOC}', 'approved', policy.object_digest('source_document', '${CL_DOC}'));
+SELECT policy.sign_scheme('${CL_SCH}', 'approved', policy.object_digest('exam_scheme', '${CL_SCH}'));`;
+  const sql = `BEGIN;
+INSERT INTO policy.source_domain (host, issuer, added_by) VALUES ('jyj.synth-e2e.example', '合成教育局（端到端）', 'staff-e2e');
+SET LOCAL ROLE starbuddy_kge;
+INSERT INTO policy.source_document (id, city, issuer, doc_number, title, published_on, url, applies_from_cohort, last_verified_on)
+VALUES ('${CL_DOC}', 'synth-e2e', '合成教育局（端到端）', '合成〔2032〕1号', '合成 2033 届方案（非真实数据）', '2032-03-01',
+        'https://jyj.synth-e2e.example/doc/1', 2033, '2032-09-01');
+INSERT INTO policy.exam_scheme (id, city, cohort, version, source_document_id) VALUES ('${CL_SCH}', 'synth-e2e', 2033, '1.0.0', '${CL_DOC}');
+INSERT INTO policy.subject_config (scheme_id, subject, scored, full_score, proposition, exam_form, taken_in_grade)
+VALUES ('${CL_SCH}', 'chinese', true, 120, 'city', 'closed_book', 9);
+INSERT INTO policy.admission_rule (scheme_id, batch_code, batch_order, track, control_line_basis)
+VALUES ('${CL_SCH}', 'batch_1', 1, 'unified', 'none'), ('${CL_SCH}', 'batch_1', 1, 'quota_allocation', 'total_score');
+RESET ROLE;
+SET LOCAL ROLE starbuddy_review;
+${signAs(T1_ID)}
+${signAs(T2_ID)}
+SELECT policy.publish_scheme('${CL_SCH}');
+RESET ROLE;
+SET LOCAL ROLE starbuddy_kge;
+INSERT INTO policy.control_line (id, city, year, batch_code, score, source_document_id) VALUES ('${CL_LINE}', 'synth-e2e', 2033, 'batch_1', 98.5, '${CL_DOC}');
+COMMIT;`;
+  execFileSync('psql', ['-X', '-q', '-v', 'ON_ERROR_STOP=1', '-c', sql], { encoding: 'utf8' });
+}
+
+test('控制线：待签列表里有控制线草稿 → 两名教研各批准一次，第二名批准时发布 → 版本记录有控制线行（标签“控制线”）', async ({ page, browser }) => {
+  test.setTimeout(120_000);
+  seedControlLine();
+  await asStaff(page, T1);
+  const res = await page.goto('/review/policy?city=synth-e2e');
+  expect(res?.headers()['cache-control'] ?? '').toContain('no-store');
+  const item = page.getByTestId('policy-drafts').locator('li[data-object="control_line"]');
+  await expect(item).toHaveCount(1);
+  await expect(item).toContainText('控制线');
+  await expect(item).toContainText('batch_1 · quota_allocation · 98.5');
+  await expect(item).toHaveAttribute('data-approvals', '0');
+  await axe(page);
+  await hydrated(page);
+  const form = page.getByTestId(`policy-record-${CL_LINE}`);
+  await form.getByRole('button', { name: '批准' }).click();
+  await expect(form.getByRole('status')).toHaveAttribute('data-code', 'signed');
+
+  const other = await browser.newContext();
+  const p2 = await other.newPage();
+  await asStaff(p2, T2);
+  await p2.goto('/review/policy?city=synth-e2e');
+  const item2 = p2.getByTestId('policy-drafts').locator('li[data-object="control_line"]');
+  await expect(item2).toHaveAttribute('data-approvals', '1');
+  await expect(item2).toContainText('你若批准，就是第二名');
+  await hydrated(p2);
+  // 第二名批准即发布：页面重新渲染，这条控制线从待签列表里消失（表单随之消失）
+  await p2.getByTestId(`policy-record-${CL_LINE}`).getByRole('button', { name: '批准' }).click();
+  await expect(p2.locator('li[data-object="control_line"]')).toHaveCount(0);
+  await p2.reload();
+  await expect(p2.locator('li[data-object="control_line"]')).toHaveCount(0);
+  await other.close();
+  expect(execFileSync('psql', ['-X', '-At', '-c', `SELECT status FROM policy.control_line WHERE id = '${CL_LINE}'`], { encoding: 'utf8' }).trim())
+    .toBe('published');
+
+  await page.goto('/review/records?subject=aya');
+  const rows = page.locator(`tr[data-line="policy"][data-policy-object="control_line"][data-policy-id="${CL_LINE}"]`);
+  await expect(rows).toHaveCount(3);
+  await expect(rows.first()).toContainText('控制线');
+  await expect(rows.first()).toContainText('synth-e2e 2033');
+  await expect(page.locator(`tr[data-policy-id="${CL_LINE}"][data-action="publish"]`)).toHaveCount(1);
+  await axe(page);
+});
+
+test('官方来源清单：没有维护权限的教研看到 403 提示 → 授权后能列表、加入 punycode 主机名（同时显示 Unicode 形式）、不合格被拒、下线；DOM 不泄露内部编码', async ({ page, browser }) => {
+  test.setTimeout(120_000);
+  // T2 没有 policy_source_admin：页面只有“没有权限”，不列清单
+  const other = await browser.newContext();
+  const p2 = await other.newPage();
+  await asStaff(p2, T2);
+  const r2 = await p2.goto('/review/policy/sources');
+  expect(r2?.headers()['cache-control'] ?? '').toContain('no-store');
+  await expect(p2.getByTestId('sources-forbidden')).toContainText('没有维护官方来源清单的权限');
+  await expect(p2.getByTestId('sources')).toHaveCount(0);
+  await expect(p2.getByTestId('add-source')).toHaveCount(0);
+  await axe(p2);
+  await expectNoDomLeak(p2);
+  await other.close();
+
+  // DBA 授予 T1（只在一次性测试库里以迁移执行者身份写）
+  execFileSync('psql', ['-X', '-q', '-v', 'ON_ERROR_STOP=1', '-c',
+    `INSERT INTO platform.staff_permission (staff_id, permission, granted_by) VALUES ('${T1_ID}', 'policy_source_admin', 'synthetic-dba') ON CONFLICT DO NOTHING`],
+    { encoding: 'utf8' });
+  await asStaff(page, T1);
+  await page.goto('/review/policy');
+  await page.getByRole('link', { name: '官方来源清单' }).click();
+  await expect(page).toHaveURL(/\/review\/policy\/sources$/);
+  await expect(page.getByTestId('sources')).toBeVisible();
+  await expect(page.getByTestId('sources').locator('code', { hasText: 'jyj.synth-e2e.example' })).toHaveCount(1);
+  await expect(page.getByTestId('add-source')).toContainText('公开信息，不得填写个人信息');
+  await axe(page);
+  await expectNoDomLeak(page);
+
+  // 加入 punycode 主机名（大小写与结尾的点由库里规范化）；页面另列 Unicode 形式
+  await hydrated(page);
+  const add = page.getByTestId('add-source');
+  await add.getByLabel('主机名').fill('XN--55QX5D.Synth-E2E.Example.');
+  await add.getByLabel('说明（发布机关）').fill('合成教育局（端到端）');
+  await add.getByRole('button', { name: '加入清单' }).click();
+  await expect(add.getByRole('status')).toHaveAttribute('data-code', 'source_added');
+  await page.reload();
+  const row = page.getByTestId('sources').locator('tr', { has: page.locator('code', { hasText: 'xn--55qx5d.synth-e2e.example' }) });
+  await expect(row).toHaveCount(1);
+  await expect(row).toContainText('公司.synth-e2e.example');
+  await expect(row).toContainText('国际化域名');
+  await expect(row).toContainText('在用');
+  await expect(row.getByText(/可能是仿冒官网的同形字/)).toHaveCount(0);  // 全是汉字：不警告
+  // 同形字：西里尔字母 а 冒充拉丁 a（аpple）→ 醒目警告
+  await hydrated(page);
+  await add.getByLabel('主机名').fill('xn--pple-43d.synth-e2e.example');
+  await add.getByLabel('说明（发布机关）').fill('合成教育局（端到端）');
+  await add.getByRole('button', { name: '加入清单' }).click();
+  await expect(add.getByRole('status')).toHaveAttribute('data-code', 'source_added');
+  await page.reload();
+  const fake = page.getByTestId('sources').locator('tr', { has: page.locator('code', { hasText: 'xn--pple-43d.synth-e2e.example' }) });
+  await expect(fake).toContainText('国际化域名');
+  await expect(fake.getByText(/可能是仿冒官网的同形字/)).toBeVisible();
+  await axe(page);
+  await expectNoDomLeak(page);
+
+  // 不合格的主机名（IP）：库函数拒绝，提示说明原因；重复加入：重复操作
+  await hydrated(page);
+  await add.getByLabel('主机名').fill('10.0.0.1');
+  await add.getByLabel('说明（发布机关）').fill('合成教育局（端到端）');
+  await add.getByRole('button', { name: '加入清单' }).click();
+  await expect(add.getByRole('status')).toHaveAttribute('data-code', 'INVALID_PARAMETER');
+  await expect(add.getByRole('status')).toContainText('主机名不合格');
+  await add.getByLabel('主机名').fill('xn--55qx5d.synth-e2e.example');
+  await add.getByLabel('说明（发布机关）').fill('合成教育局（端到端）');
+  await add.getByRole('button', { name: '加入清单' }).click();
+  await expect(add.getByRole('status')).toHaveAttribute('data-code', 'CONFLICT');
+
+  // 下线（须勾选确认）：只改状态，行还在
+  await page.reload();
+  await hydrated(page);
+  const retire = row.locator('form');
+  await expect(retire.getByRole('checkbox')).toHaveAttribute('required', '');
+  await retire.getByRole('checkbox').check();
+  await retire.getByRole('button', { name: /下线/ }).click();
+  // 下线后页面重新渲染：这一行变为“已下线”，下线表单随之消失
+  await expect(row).toContainText('已下线');
+  await expect(row.locator('form')).toHaveCount(0);
+  await page.reload();
+  await expect(row).toContainText('已下线');
+  expect(execFileSync('psql', ['-X', '-At', '-c',
+    `SELECT string_agg(action, ',' ORDER BY changed_at) FROM platform.policy_source_domain_change WHERE host = 'xn--55qx5d.synth-e2e.example'`],
+  { encoding: 'utf8' }).trim()).toBe('add,retire');
+  await axe(page);
+  await expectNoDomLeak(page);
 });

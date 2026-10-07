@@ -7,10 +7,11 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { currentSession, staffCookieName, staffCookieOptions } from '../../lib/review-session.ts';
 import {
-  ADMISSIONS, LICENSE_STATUSES, SOURCE_TYPES, applyAdmission, editNode, isBasis, isCommit, isDigest, isItemId, isNodeId, isResolutionCode,
-  isReviewLevel, isSourceRef, isSubject, isTaskId, isVersionId, lines, loginRequest, logoutRequest, publishContentVersion, publishScheme,
-  publishVersion, releaseTask, resolveTask, retireContentVersion, retireVersion, signAdmission, signChange, signContentVersion, signPage,
-  signPolicyRecord, signScheme, signSpotCheck, signVersion, takeTask, type AdmissionSign, type Result,
+  ADMISSIONS, LICENSE_STATUSES, POLICY_RECORD_TYPES, SOURCE_TYPES, addSourceDomain, applyAdmission, editNode, isBasis, isCommit, isDigest,
+  isItemId, isNodeId, isResolutionCode, isReviewLevel, isSourceHost, isSourceNote, isSourceRef, isSubject, isTaskId, isVersionId, lines,
+  loginRequest, logoutRequest, publishContentVersion, publishScheme, publishVersion, releaseTask, resolveTask, retireContentVersion,
+  retireSourceDomain, retireVersion, signAdmission, signChange, signContentVersion, signPage, signPolicyRecord, signScheme, signSpotCheck,
+  signVersion, takeTask, type AdmissionSign, type Result,
 } from '../../lib/review.ts';
 
 export interface ActionState {
@@ -257,10 +258,30 @@ export async function signPolicyRecordAction(_: ActionState | null, f: FormData)
   const type = text(f, 'object_type');
   const digest = text(f, 'expected_digest');
   const decision = text(f, 'decision');
-  if (!isVersionId(id) || !['source_document', 'admission_line', 'school'].includes(type) || !isDigest(digest) || !DECISIONS.includes(decision)) {
+  // 来源文件、招录行、学校，以及迁移 0047 起的控制线（control_line）
+  if (!isVersionId(id) || !(POLICY_RECORD_TYPES as readonly string[]).includes(type) || !isDigest(digest) || !DECISIONS.includes(decision)) {
     return INVALID;
   }
   return doneAt(await signPolicyRecord(who, id, { object_type: type, decision, expected_digest: digest }), 'signed', '/review/policy');
+}
+
+// ---------- 官方来源清单（迁移 0048）：新增（或重新启用）、下线。是否有 policy_source_admin、主机名是否合格都由库函数核对 ----------
+export async function addSourceAction(_: ActionState | null, f: FormData): Promise<ActionState> {
+  const who = await staff();
+  if (!who) return { code: 'UNAUTHENTICATED' };
+  const host = text(f, 'host');
+  const note = text(f, 'note');
+  if (!isSourceHost(host) || !isSourceNote(note)) return INVALID;
+  return doneAt(await addSourceDomain(who, { host: host.trim(), note: note.trim() }), 'source_added', '/review/policy/sources');
+}
+
+export async function retireSourceAction(_: ActionState | null, f: FormData): Promise<ActionState> {
+  const who = await staff();
+  if (!who) return { code: 'UNAUTHENTICATED' };
+  const host = text(f, 'host');
+  // 下线须勾选确认（同撤下地图版本）
+  if (!isSourceHost(host) || text(f, 'confirm') !== 'yes') return INVALID;
+  return doneAt(await retireSourceDomain(who, { host: host.trim() }), 'source_retired', '/review/policy/sources');
 }
 
 export async function signPageAction(_: ActionState | null, f: FormData): Promise<ActionState> {

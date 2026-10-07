@@ -73,7 +73,8 @@ def _problem(e: IngestError, request_id: str | None) -> JSONResponse:
     return JSONResponse(e.problem(request_id), status_code=e.status, media_type="application/problem+json", headers=headers)
 
 
-def _diagnosis(settings: Settings, pool, client: httpx.AsyncClient, ingest: IngestService, params: DiagnosisParams | None):
+def _diagnosis(settings: Settings, pool, client: httpx.AsyncClient, ingest: IngestService, params: DiagnosisParams | None,
+               clock=None):
     """自适应诊断（SIE-02a）：合成题面只在 test 环境（配置层与构造函数各拦一道）；选题信息来自合成夹具或知识服务。"""
     from .diagnosis.presenter import SyntheticPresenter
     from .diagnosis.service import DiagnosisService
@@ -93,7 +94,10 @@ def _diagnosis(settings: Settings, pool, client: httpx.AsyncClient, ingest: Inge
 
         async def factory(grade):
             return fixture
-    return DiagnosisService(pool, ingest, factory, presenter, params or DiagnosisParams())
+    svc = DiagnosisService(pool, ingest, factory, presenter, params or DiagnosisParams())
+    if clock is not None:
+        svc.clock = clock  # 测试注入：开始诊断时推算年级的时刻
+    return svc
 
 
 SYNTHETIC_DB = re.compile(r"^starbuddy_(dev|test)(_[a-z0-9_]+)?$")  # 与合成种子（db/seeds/dev/*.sql）的库名核对一致
@@ -152,8 +156,9 @@ def create_app(
     profile: ProfilePages | None = None,
     practice_clock=None,
     practice_lock_pool: asyncpg.Pool | None = None,
+    diagnosis_clock=None,
 ) -> FastAPI:
-    """pool、transport、model_router、diagnosis_params、mastery、profile、practice_clock、practice_lock_pool 供测试注入；
+    """pool、transport、model_router、diagnosis_params、mastery、profile、practice_clock、practice_lock_pool、diagnosis_clock 供测试注入；
     不传时按配置创建。注入业务池又开了再练时必须一并注入再练锁池（锁连接不能取自业务池，审查 B2）。"""
     state: dict = {"router": model_router}
     # 错题再练配置（specs/practice-loop-stage1 第 7 节）：不合法拒绝启动；未签字配置出现在 test / dev 以外只是这一模块不启动（接口 501）
@@ -211,7 +216,7 @@ def create_app(
                 if own_pool:
                     await p.close()
                 raise
-            state["diagnosis"] = _diagnosis(settings, p, client, state["service"], diagnosis_params)
+            state["diagnosis"] = _diagnosis(settings, p, client, state["service"], diagnosis_params, diagnosis_clock)
         lock_pool, own_lock_pool = practice_lock_pool, False
         if practice_cfg is not None:
             try:

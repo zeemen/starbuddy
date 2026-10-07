@@ -97,6 +97,8 @@ export const SAMPLES: Record<string, Sample> = {
   'GET /students/{student_id}/balance': none,
   'GET /students/{student_id}/time-guard': none,
   'PUT /students/{student_id}/time-guard': b(() => ({ daily_cap_minutes: 60, curfew_start: null, curfew_end: null })),
+  // 届别更正（specs/policy-decisions-v0.9.1 PR2）：2015 能通过请求体校验，走到库里的授权（绑定家长）；对本人是步长不对的 422（阳性对照不改 S 的届别）
+  'POST /students/{student_id}/exam-cohort': b(() => ({ exam_cohort: 2015 })),
   'GET /students/{student_id}/rest-reminder': none,
   'POST /students/{student_id}/rest-reminder/ack': none,
   // 信任界面（SIE-03 PR③、5-H 周报），开关全开时注册
@@ -685,6 +687,10 @@ test('H6 限流（从路由表断言）：每个桶都在 config/auth.json、名
       assert.equal(dim, l.dim, `${l.bucket} 名字里的维度`);
       assert.equal(rule.window_seconds, WINDOW[win!], `${l.bucket} 名字里的窗口`);
       assert.ok(rule.limit >= 1);
+      // （账号、学生）成对计数只对路径里有学生的家长路由有意义
+      if (l.dim === 'link') assert.ok(r.path.includes('{student_id}') && r.auth === 'guardian', `${keyOf(r)} 的 link 桶`);
+      // 按（账号、学生）成对计数的路由另有按账号的总量上限（换着学生 ID 试探也受限）
+      if (l.dim === 'link') assert.ok(r.rateLimits.some((x) => x.dim === 'account'), `${keyOf(r)} 有 link 桶也要有按账号的总量桶`);
     }
     if (r.auth === 'public') assert.ok(r.rateLimits.some((l) => l.dim === 'ip'), `公开路由 ${keyOf(r)} 按 IP 限流`);
   }

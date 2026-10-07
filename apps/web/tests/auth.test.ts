@@ -64,6 +64,9 @@ test('文案不含比较、评价、营销类用词；关于孩子只有序号�
   const banned = /别人|同学都|排名|最差|最好|落后|领先|聪明|笨|天赋|性格|焦虑|紧张|懒|购买|升级|会员|优惠|加油|棒/;
   for (const s of ALL_AUTH_COPY) assert.ok(!banned.test(s), s);
   assert.equal(childLabel(1, 8), '孩子 1 · 八年级');
+  // /me 的年级由届别推算（迁移 0045），不在 7–9 时为 null：中性措辞
+  assert.equal(childLabel(2, null), '孩子 2 · 不在初中年级');
+  assert.ok(ALL_AUTH_COPY.every((s) => !s.includes('已毕业')));
 });
 
 test('会话令牌只在服务端：浏览器组件不引用会话读写；cookie 只在两个 server action 文件里写', () => {

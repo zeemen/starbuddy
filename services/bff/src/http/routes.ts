@@ -12,7 +12,7 @@ import type { PlanClient } from '../shell/plan-client.ts';
 import type { RestStore } from '../shell/rest.ts';
 import type { AuthConfig, Keys, RunEnv } from './config.ts';
 import { FEATURE_ROUTES } from './feature-routes.ts';
-import { SHELL_ROUTES } from './shell-routes.ts';
+import { asOf, SHELL_ROUTES } from './shell-routes.ts';
 import { TRUST_ROUTES } from './trust-routes.ts';
 import { STAR_MAP_V1_ROUTES } from './star-map-v1-routes.ts';
 import { PRACTICE_ROUTES } from './practice-routes.ts';
@@ -31,7 +31,8 @@ import type { SmsSender } from './sms.ts';
 export type AuthLevel = 'public' | 'session' | 'guardian' | 'student';
 /** none：不改变状态；origin：只核对 Origin（登录前没有会话）；session：Origin + 与会话绑定的 CSRF 令牌 */
 export type CsrfMode = 'none' | 'origin' | 'session';
-export type RateDim = 'ip' | 'phone' | 'account' | 'session';
+/** link：（会话账号、路径里的学生）一对——每个家长对每个孩子单独计数；按学生单独计数会让别的家长替这个孩子把次数用光 */
+export type RateDim = 'ip' | 'phone' | 'account' | 'session' | 'link';
 export interface RateLimit { bucket: string; dim: RateDim }
 
 export interface Session { token: string; accountId: string; kind: 'guardian' | 'student'; origin: string }
@@ -50,7 +51,7 @@ export interface ShellDeps {
   log?: (line: Record<string, unknown>) => void;
   /** 数学自适应诊断：学习服务客户端等（不配时诊断路由一律 503） */
   diagnosis?: Omit<DiagnosisDeps, 'pool'>;
-  /** 星图的生成时间、连续使用提醒的时钟（测试注入） */
+  /** 星图的生成时间、连续使用提醒、推算当前年级（platform.current_grade 的时刻）的时钟（测试注入） */
   now?: () => Date;
   /** 统一壳 H4（shell-routes.ts）：显示规则（缺省读 config/shell.json）、学习服务的今日计划、洞察服务的 insight.explain、
    *  连续使用提醒的存储（缺省进程内）。不配 plan 时每一科“今天暂无安排”；不配 insight 时不显示任何判断陈述 */
@@ -166,12 +167,14 @@ const me: Handler = async (ctx) => {
     const { rows } = await ctx.q<{ id: string }>('SELECT s.id FROM platform.student_profile s WHERE s.account_id = platform.current_account_id()');
     return json(200, { account_kind: 'student', student_id: rows[0]?.id ?? null });
   }
-  // 家长：已绑定孩子的档案 ID 与年级（档案没有姓名，界面按“孩子 1 · 八年级”区分，待人确认 #12）
-  const { rows } = await ctx.q<{ student_id: string; grade: number }>(
-    `SELECT l.student_id, s.grade FROM platform.guardian_student_link l
+  // 家长：已绑定孩子的档案 ID 与年级（档案没有姓名，界面按“孩子 1 · 八年级”区分，待人确认 #12）。
+  // 年级是当前年级，由届别推算（迁移 0045：platform.current_grade(届别, 请求时钟)），不读存下的建档年级；
+  // 不在 7–9 时为 null，孩子照常列出（界面显示“不在初中年级”，不按年级区分）
+  const { rows } = await ctx.q<{ student_id: string; grade: number | null }>(
+    `SELECT l.student_id, platform.current_grade(s.exam_cohort, $1::timestamptz) AS grade FROM platform.guardian_student_link l
        JOIN platform.student_profile s ON s.id = l.student_id
       WHERE l.status = 'active' AND l.guardian_account_id = platform.current_account_id()
-      ORDER BY l.created_at, l.student_id`);
+      ORDER BY l.created_at, l.student_id`, [asOf(ctx.deps)]);
   return json(200, { account_kind: 'guardian', children: rows.map((r) => ({ student_id: r.student_id, grade: r.grade })) });
 };
 

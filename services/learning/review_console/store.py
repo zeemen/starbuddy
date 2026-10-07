@@ -1,7 +1,8 @@
 """库访问。两个连接池、两个身份（spec 设计要点 3）：
 - kge 池：读地图版本、差异所需的行、校验结果、变更单、版本记录；改草稿节点。它不能签字、发布（库层授权保证）。
   冲刺 4 起另经只读函数读内容版本与发布记录（0042），直接读考情表（kge 是考情写入方），调时政过期下架（0043）。
-- review 池：签字、发布、撤下（地图、内容版本与准入 0039、考情 0041、编译页面 0038）。每次在一个事务里 `set_config('app.account_id', staff, true)`，staff 由调用方
+- review 池：签字、发布、撤下（地图、内容版本与准入 0039、考情 0041、控制线 0047、编译页面 0038），官方来源清单的新增与下线（0048，
+  另要 staff 权限 policy_source_admin）。每次在一个事务里 `set_config('app.account_id', staff, true)`，staff 由调用方
   （已登录的会话）给出，库里的函数再核对是否为 active staff。
 只读写 kge.* 与这些函数，不直接读写任何个人层表（规则 13）。统一复核队列（冲刺 2-G，迁移 0023）也只经库函数：
 队列与详情只给学生的不透明指针、结构化判分与判断元数据，不给 student_id 与作答原文；领取、放回、结案由库核对领取人与白名单。
@@ -242,8 +243,14 @@ class KgeStore:
                                      " ORDER BY severity, check_name, object_id, detail", scheme_id)
         return [dict(r) for r in rows]
 
+    async def source_domains(self) -> list[dict[str, Any]]:
+        """官方来源清单（policy.source_domain，公共层；迁移 0048 起只下线不删除）。不给登记人工号：审核台登记的一律是 review-console，
+        操作者只记在 platform.policy_source_domain_change（账号引用不进 policy，规则 13）。"""
+        rows = await self.pool.fetch("SELECT host, issuer, status, added_at FROM policy.source_domain ORDER BY status, host")
+        return [dict(r) for r in rows]
+
     async def policy_drafts(self, city: str | None = None) -> list[dict[str, Any]]:
-        """待签的来源文件、招录行、学校（草稿），带当前摘要与有效批准人数（第二名不同 staff 批准时由 policy.sign_record 发布）。"""
+        """待签的来源文件、招录行、学校、控制线（草稿），带当前摘要与有效批准人数（第二名不同 staff 批准时由 policy.sign_record 发布）。"""
         rows = await self.pool.fetch(
             """SELECT 'source_document' AS object_type, d.id, d.city::text AS city, d.applies_from_cohort::integer AS cohort,
                       d.doc_number || ' · ' || d.title AS label
@@ -256,6 +263,11 @@ class KgeStore:
                       h.code::text || ' · ' || l.batch_code::text || ' · ' || l.track
                  FROM policy.admission_line l JOIN policy.school h ON h.id = l.school_id
                 WHERE l.status = 'draft' AND ($1::text IS NULL OR h.city::text = $1)
+               UNION ALL
+               -- 指标生控制线（迁移 0047）：城市 × 年份 × 批次 × 类别一条；0047 从招录行旧列回填的也是草稿，要两名 staff 重新签字发布
+               SELECT 'control_line', k.id, k.city::text, k.year::integer,
+                      k.batch_code::text || ' · ' || k.track || ' · ' || k.score::text
+                 FROM policy.control_line k WHERE k.status = 'draft' AND ($1::text IS NULL OR k.city::text = $1)
                ORDER BY 1, 3, 5, 2""", city)
         out = []
         for r in rows:
@@ -434,6 +446,28 @@ class ReviewStore:
                                       + (f"（{err.detail}）" if err.detail else f"（{err.code}）")) from None
                 raise
         return await self._as_staff(staff, run)
+
+    # ---------- 官方来源清单（迁移 0048：权限 policy_source_admin 由 DBA 授予；函数再核对 active staff 与权限） ----------
+    async def is_source_admin(self, staff: uuid.UUID) -> bool:
+        """当前 staff 有没有 policy_source_admin。签字身份只读得到自己的权限行（RLS：staff_id = 当前账号），这里另按账号过滤一次。"""
+        return bool(await self._as_staff(staff, lambda c: c.fetchval(
+            "SELECT EXISTS (SELECT 1 FROM platform.staff_permission WHERE staff_id = $1 AND permission = 'policy_source_admin')", staff)))
+
+    async def add_source_domain(self, staff: uuid.UUID, host: str, note: str) -> str:
+        return await self._source_change(staff, "SELECT policy.add_source_domain($1, $2)", host, note)
+
+    async def retire_source_domain(self, staff: uuid.UUID, host: str) -> str:
+        return await self._source_change(staff, "SELECT policy.retire_source_domain($1)", host)
+
+    async def _source_change(self, staff: uuid.UUID, sql: str, *args) -> str:
+        """主机名不合格（22023）给固定说明（不回显库里的消息）；已在清单里（23505）409 CONFLICT；已下线（23514）带库里写好的说明。"""
+        try:
+            return await self._as_staff(staff, lambda c: c.fetchval(sql, *args))
+        except ReviewError as e:
+            if e.code == "INVALID_PARAMETER":
+                raise ReviewError(422, "INVALID_PARAMETER", "主机名不合格：只收域名（至少两段），不收 IP、通配符、端口、路径或只有公共后缀的主机；"
+                                                            "说明须为 1–64 个字") from None
+            raise
 
     # ---------- 编译页面签字（迁移 0038；PR A 待人确认 1 的默认：审核人在审核台逐个签） ----------
     async def sign_page(self, staff: uuid.UUID, page_id: str, page_commit: str, decision: str, risk: str, basis_code: str) -> uuid.UUID:

@@ -68,9 +68,10 @@ export default async function FamilyPage() {
         <h3 id="create-heading">{FAMILY_SHELL.createHeading}</h3>
         <ResultForm action={createStudentAction} labels={FAMILY_SHELL_RESULT} testId="create-student">
           <label htmlFor="grade">{FAMILY_SHELL.gradeLabel}</label>
-          <select id="grade" name="grade" defaultValue="8">
+          <select id="grade" name="grade" defaultValue="8" aria-describedby="grade-hint">
             {[7, 8, 9].map((g) => <option key={g} value={g}>{GRADE_LABEL[g]}</option>)}
           </select>
+          <p id="grade-hint" className="muted">{FAMILY_SHELL.gradeHint}</p>
           <input type="hidden" name="region" value={FAMILY_SHELL.regionDefault} />
           <label htmlFor="birth">{FAMILY_SHELL.birthLabel}</label>
           <input id="birth" name="birth_year_month" type="month" />

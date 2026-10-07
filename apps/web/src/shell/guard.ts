@@ -18,7 +18,8 @@ export async function requireStudent(studentId: string): Promise<PageSession> {
   return ps;
 }
 
-export async function requireGuardian(studentId: string): Promise<PageSession & { ordinal: number; grade: number }> {
+/** grade：当前年级（/me 按届别推算）；不在 7–9 时为 null，标签显示“不在初中年级”、考试满分默认按 100 */
+export async function requireGuardian(studentId: string): Promise<PageSession & { ordinal: number; grade: number | null }> {
   if (!isUuid(studentId)) notFound();
   const ps = await pageSession();
   if (!ps) redirect('/login');
