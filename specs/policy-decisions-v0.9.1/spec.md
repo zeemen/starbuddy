@@ -99,7 +99,6 @@
 ## PR3：待人确认事项按默认处理（2026-10-07 用户确认“待人确认事项按默认建议处理”）
 对应 lessons“待人确认”#1–#13 的默认结论：
 - **只记录、不改代码**：
-  - #2 更正记录不进家长导出；
   - #3 维持库里公式（暑假填刚读完的年级）；
   - #4 限流阈值维持每对家长与学生每天 3 次、每账号每天 10 次；
   - #5 接受 0048 回滚删除授予；
@@ -108,7 +107,7 @@
 - **迁移 0049（草稿）**：
   - #1：客服分支要求新 staff 权限 `cohort_correction`（与 `policy_source_admin` 同表，只由 DBA 授予）；无权限与学生不存在返回同一错误，消除存在性探测。
   - #9：`normalize_source_host` 拒绝不能往返解码的 `xn--` 标签；来源说明在库里拒绝 Unicode Cc、Cf、Zl、Zp。
-  - #11：家长导出的 profile 主题加入 `exam_cohort` 与 `exam_cohort_source`；更正记录仍不导出。
+  - #2/#11（用户 2026-10-07 改定：导出要带届别、来源和更正记录）：家长导出的 profile 主题加入 `exam_cohort` 与 `exam_cohort_source`；新增更正记录导出，含该学生全部更正的旧值、新值、来源、时间，不含操作者账号。
   - #13：`url_host` 拒绝显式端口；`guard_source_document` 读来源清单时加 `FOR SHARE`。
 - **SIE 字段字典（#8）**：`outer.g1.grade` 的存储改为“由 `current_grade(exam_cohort, 时刻)` 推算；事实与来源在 `exam_cohort` / `exam_cohort_source`；`grade` 列只是建档年级”，来源改为与 `exam_cohort_source` 一致。不新增 `outer.g1.exam_cohort` 字段。
 - **BFF（#10）**：年级为空时，选科列表仍列出已开通、已暂停的学科，只允许暂停，不能新选；今日计划同样不排这类学生的学科。
