@@ -54,7 +54,7 @@
     "student_key_columns_outside_personal_layer": [],
     "student_values_outside_personal_layer": [],
     "subject_named_tables_in_personal_layer": [],
-    "tables_outside_personal_layer": 26
+    "tables_outside_personal_layer": 28
    },
    "name": "no_private_copies",
    "passed": true
@@ -142,7 +142,7 @@
     "guardians_with_multiple_children": 4,
     "students_checked": 20,
     "table_source": "registry",
-    "tables_bff_cannot_read": 30,
+    "tables_bff_cannot_read": 33,
     "tables_compared": 28,
     "tables_not_comparable_column_privilege": [],
     "tables_skipped_no_privilege": [],

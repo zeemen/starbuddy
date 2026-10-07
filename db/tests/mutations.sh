@@ -469,13 +469,12 @@ declare -A M=(
   ["考情：校验不查复核人"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.validate_scheme(uuid)'::regprocedure); BEGIN IF position('WHERE policy.approval_count(''exam_scheme'', p_scheme) < policy.signers_required();' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'WHERE policy.approval_count(''exam_scheme'', p_scheme) < policy.signers_required();', 'WHERE false;'); END \$\$;"
   ["考情：校验不查合场分组"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.validate_scheme(uuid)'::regprocedure); BEGIN IF position('HAVING count(*) < 2;' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'HAVING count(*) < 2;', 'HAVING false;'); END \$\$;"
   ["考情：校验不查过渡规则"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.validate_scheme(uuid)'::regprocedure); BEGIN IF position('AND NOT EXISTS (SELECT 1 FROM policy.transition_rule t WHERE t.scheme_id = p_scheme);' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'AND NOT EXISTS (SELECT 1 FROM policy.transition_rule t WHERE t.scheme_id = p_scheme);', 'AND false;'); END \$\$;"
-  ["招录：分数可超过总分"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.guard_admission_line()'::regprocedure); BEGIN IF position('IF NEW.line_score > v_total OR NEW.control_line > v_total THEN' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'IF NEW.line_score > v_total OR NEW.control_line > v_total THEN', 'IF false THEN'); END \$\$;"
+  ["招录：分数可超过总分"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.guard_admission_line()'::regprocedure); BEGIN IF position('IF NEW.line_score > v_total THEN' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'IF NEW.line_score > v_total THEN', 'IF false THEN'); END \$\$;"
   ["招录：来源文件不必覆盖该年"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.guard_admission_line()'::regprocedure); BEGIN IF position('AND NEW.year BETWEEN d.applies_from_cohort AND coalesce(d.applies_to_cohort, NEW.year)) THEN' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'AND NEW.year BETWEEN d.applies_from_cohort AND coalesce(d.applies_to_cohort, NEW.year)) THEN', ') THEN'); END \$\$;"
   ["招录：没有方案也能录"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.guard_admission_line()'::regprocedure); BEGIN IF position('IF v_total IS NULL THEN' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'IF v_total IS NULL THEN', 'IF false THEN'); END \$\$;"
   ["招录：已发布行可改数值"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.guard_admission_line()'::regprocedure); BEGIN IF position('IF OLD.status = ''published'' AND (NEW.status <> ''retired'' OR' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'IF OLD.status = ''published'' AND (NEW.status <> ''retired'' OR', 'IF false AND (NEW.status <> ''retired'' OR'); END \$\$;"
   ["招录：招录行可不经签字发布"]="DROP TRIGGER guard_signoff_publish ON policy.admission_line;"
   ["招录：同一行可有两条已发布"]="DROP INDEX policy.admission_line_one_published;"
-  ["招录：统招可写控制线"]="ALTER TABLE policy.admission_line DROP CONSTRAINT admission_line_control_line;"
   ["考情：写入方可以删除"]="GRANT DELETE ON policy.admission_line TO starbuddy_kge;"
   ["考情：BFF 能看草稿方案"]="DROP POLICY exam_scheme_front_read ON policy.exam_scheme; CREATE POLICY exam_scheme_front_read ON policy.exam_scheme FOR SELECT TO starbuddy_bff USING (true);"
   ["考情：BFF 能看草稿方案的科目配置"]="DROP POLICY subject_config_front_read ON policy.subject_config; CREATE POLICY subject_config_front_read ON policy.subject_config FOR SELECT TO starbuddy_bff USING (true);"
@@ -979,6 +978,87 @@ M+=(
   ["考情：地图校验把草稿方案也算作已有方案"]="$(afr 'kge.validate_map_version(uuid)' "'AND e.status = ''''published'''')'" "')'")"
 )
 
+# 考情待定事项落地 PR1（0045–0048，specs/policy-decisions-v0.9.1）：由 77、79q、79y 与 run.sh 的并发场景 11–13 发现（授权类的同时由 80 的快照发现）。
+# DBMUT_FILTER=届别 / 往年 / 控制线 / 来源清单 / staff 权限 分组跑
+CE='platform.correct_exam_cohort(uuid, smallint)'
+CG='platform.current_grade(smallint, timestamp with time zone)'
+GCL='policy.guard_control_line()'
+ASD='policy.add_source_domain(text, text)'
+RSD='policy.retire_source_domain(text)'
+NSH='policy.normalize_source_host(text)'
+M+=(
+  ["届别：年级推算不按 9 月切换"]="$(afr "$CG" "' - interval ''8 months'''" "''")"
+  ["届别：年级越界不返回 NULL"]="$(afr "$CG" "'WHERE g BETWEEN 7 AND 9'" "'WHERE true'")"
+  ["届别：建档标 derived 可与推算值不同"]="$(afr 'platform.guard_student_cohort()' "'IF NEW.exam_cohort_source = ''derived'' AND NEW.exam_cohort <> v_expected THEN'" "'IF false THEN'")"
+  ["届别：之后改届别仍拿建档年级比对"]="DROP TRIGGER guard_student_cohort ON platform.student_profile; CREATE TRIGGER guard_student_cohort BEFORE INSERT OR UPDATE OF grade, exam_cohort ON platform.student_profile FOR EACH ROW EXECUTE FUNCTION platform.guard_student_cohort();"
+  ["届别：更正按账号类型分渠道"]="$(afr "$CE" "'IF v_via_bff AND NOT v_via_review THEN'" "'IF platform.is_active_guardian() THEN'") $(afr "$CE" "'ELSIF v_via_review AND NOT v_via_bff THEN'" "'ELSIF true THEN'")"
+  ["届别：超级用户也能更正"]="$(afr "$CE" "'ELSIF v_via_review AND NOT v_via_bff THEN'" "'ELSIF v_via_review THEN'")"
+  ["届别：更正不核对绑定"]="$(afr "$CE" "'IF p_student IS NULL OR NOT platform.is_linked_guardian(p_student) THEN'" "'IF p_student IS NULL OR NOT platform.is_active_guardian() THEN'")"
+  ["届别：学生本人可更正"]="$(afr "$CE" "'NOT platform.is_linked_guardian(p_student) THEN'" "'NOT platform.can_read_student(p_student) THEN'")"
+  ["届别：客服更正不查 staff"]="$(afr "$CE" "'v_actor := platform.review_current_staff();'" "'v_actor := platform.current_account_id();'")"
+  ["届别：更正不限 ±1"]="$(afr "$CE" "'IF abs(p_new_cohort - v_old) <> 1 THEN'" "'IF p_new_cohort = v_old THEN'")"
+  ["届别：更正后年级可越界"]="$(afr "$CE" "'IF platform.current_grade(p_new_cohort, v_at) IS NULL THEN'" "'IF false THEN'")"
+  ["届别：更正不锁档案行"]="$(afr "$CE" "'WHERE s.id = p_student FOR UPDATE;'" "'WHERE s.id = p_student;'")"
+  ["届别：更正不写来源"]="$(afr "$CE" "'SET exam_cohort = p_new_cohort, exam_cohort_source = v_source WHERE'" "'SET exam_cohort = p_new_cohort WHERE'")"
+  ["届别：更正不留记录"]="$(afr "$CE" "'VALUES (p_student, v_old, p_new_cohort, v_source, v_actor, v_at);'" "'SELECT p_student, v_old, p_new_cohort, v_source, v_actor, v_at WHERE false;'")"
+  ["届别：已删除档案可更正"]="$(afr "$CE" "'IF v_old IS NULL OR v_erased IS NOT NULL THEN'" "'IF v_old IS NULL THEN'")"
+  ["届别：更正记录对 BFF 可读"]="GRANT SELECT ON platform.exam_cohort_change TO starbuddy_bff; CREATE POLICY t_ecc ON platform.exam_cohort_change FOR SELECT TO starbuddy_bff USING (platform.can_read_student(student_id));"
+  ["届别：更正记录不随删除请求删除"]="UPDATE platform.personal_table_registry SET strategy = 'exempt', exempt_reason = 'x', delete_order = NULL, erase_scope = NULL WHERE nspname = 'platform' AND relname = 'exam_cohort_change';"
+  ["往年：BFF 看不到已撤下方案"]="DROP POLICY exam_scheme_front_read ON policy.exam_scheme; CREATE POLICY exam_scheme_front_read ON policy.exam_scheme FOR SELECT TO starbuddy_bff USING (status = 'published');"
+  ["往年：BFF 看不到已撤下来源文件"]="DROP POLICY source_document_front_read ON policy.source_document; CREATE POLICY source_document_front_read ON policy.source_document FOR SELECT TO starbuddy_bff USING (status = 'published');"
+  ["往年：BFF 能看草稿来源文件"]="DROP POLICY source_document_front_read ON policy.source_document; CREATE POLICY source_document_front_read ON policy.source_document FOR SELECT TO starbuddy_bff USING (true);"
+  ["往年：BFF 能看草稿方案的招录规则"]="DROP POLICY admission_rule_front_read ON policy.admission_rule; CREATE POLICY admission_rule_front_read ON policy.admission_rule FOR SELECT TO starbuddy_bff USING (true);"
+  ["往年：BFF 能看草稿方案的过渡规则"]="DROP POLICY transition_rule_front_read ON policy.transition_rule; CREATE POLICY transition_rule_front_read ON policy.transition_rule FOR SELECT TO starbuddy_bff USING (true);"
+  ["往年：BFF 看不到已撤下方案的科目配置"]="DROP POLICY subject_config_front_read ON policy.subject_config; CREATE POLICY subject_config_front_read ON policy.subject_config FOR SELECT TO starbuddy_bff USING (EXISTS (SELECT 1 FROM policy.exam_scheme s WHERE s.id = scheme_id AND s.status = 'published'));"
+  ["控制线：同一键可有多个已发布"]="DROP INDEX policy.control_line_one_published;"
+  ["控制线：不核对控制线依据"]="$(afr "$GCL" "' AND r.control_line_basis <> ''none'') THEN'" "') THEN'")"
+  ["控制线：没有方案也能录"]="$(afr "$GCL" "'IF v_total IS NULL THEN'" "'IF false THEN'")"
+  ["控制线：分数可超过总分"]="$(afr "$GCL" "'IF NEW.score > v_total THEN'" "'IF false THEN'")"
+  ["控制线：来源文件不核对"]="$(afr "$GCL" "'WHERE d.id = NEW.source_document_id AND d.status = ''published'' AND d.city = NEW.city'" "'WHERE d.id = NEW.source_document_id'")"
+  ["控制线：来源文件不必覆盖该年"]="$(afr "$GCL" "'AND NEW.year BETWEEN d.applies_from_cohort AND coalesce(d.applies_to_cohort, NEW.year)) THEN'" "') THEN'")"
+  ["控制线：已发布可改分数"]="$(afr "$GCL" "'IF OLD.status = ''published'' AND (NEW.status <> ''retired'' OR'" "'IF false AND (NEW.status <> ''retired'' OR'")"
+  ["控制线：已撤下可复活"]="$(afr "$GCL" "'IF OLD.status = ''retired'' THEN'" "'IF false THEN'")"
+  ["控制线：可不经签字发布"]="DROP TRIGGER guard_signoff_publish ON policy.control_line;"
+  ["控制线：摘要不含分数"]="$(afr "$QOD" "'SELECT to_jsonb(k) - ''status'''" "'SELECT to_jsonb(k) - ''score'' - ''status'''")"
+  ["控制线：导出不带城市"]="$(afr 'platform.policy_signoff_record()' "'coalesce(d.city, e.city, lh.city, h.city, k.city)'" "'coalesce(d.city, e.city, lh.city, h.city)'")"
+  ["控制线：BFF 能看草稿"]="DROP POLICY control_line_front_read ON policy.control_line; CREATE POLICY control_line_front_read ON policy.control_line FOR SELECT TO starbuddy_bff USING (true);"
+  ["控制线：BFF 能看复核时间"]="GRANT SELECT (reviewed_at) ON policy.control_line TO starbuddy_bff;"
+  ["控制线：草稿可直接撤下"]="$(afr "$GCL" "'IF OLD.status = ''draft'' AND NEW.status = ''retired'' THEN'" "'IF false THEN'")"
+  ["控制线：复核时间 CHECK 删掉"]="ALTER TABLE policy.control_line DROP CONSTRAINT control_line_reviewed;"
+  ["往年：草稿方案可直接撤下"]="$(afr 'policy.guard_scheme()' "'IF OLD.status = ''draft'' AND NEW.status = ''retired'' THEN'" "'IF false THEN'") $(afr 'policy.guard_scheme()' "'(OLD.status = ''draft'' AND NEW.status = ''published'')'" "'(OLD.status = ''draft'' AND NEW.status IN (''published'', ''retired''))'")"
+  ["往年：草稿来源文件可直接撤下"]="$(afr 'policy.guard_source_document()' "'IF OLD.status = ''draft'' AND NEW.status = ''retired'' THEN'" "'IF false THEN'")"
+  ["往年：方案复核时间 CHECK 删掉"]="ALTER TABLE policy.exam_scheme DROP CONSTRAINT exam_scheme_reviewed;"
+  ["往年：来源文件复核时间 CHECK 删掉"]="ALTER TABLE policy.source_document DROP CONSTRAINT source_document_reviewed;"
+  ["届别：更正记录不限 ±1（表约束）"]="ALTER TABLE platform.exam_cohort_change DROP CONSTRAINT exam_cohort_change_step;"
+  ["届别：调用角色取常量而不是登录角色"]="$(afr "$CE" "'session_user::text'" "'''postgres'''")"
+  ["届别：建档来源可是客服更正"]="$(afr 'platform.guard_student_cohort()' "'IF NEW.exam_cohort_source NOT IN (''derived'', ''guardian_report'') THEN'" "'IF false THEN'")"
+  ["届别：改届别可不改来源"]="DROP TRIGGER guard_student_cohort_update ON platform.student_profile;"
+  ["届别：更正函数内也要求改来源"]="$(afr 'platform.guard_student_cohort_update()' "' AND current_user <> ''starbuddy_authz'''" "''")"
+  ["来源清单：收公共后缀"]="$(afr "$NSH" "'''gov.cn'', ''com.cn'', ''edu.cn'', '" "''")"
+  ["攻击面：控制线归档表对 BFF 可读"]="GRANT SELECT ON policy.admission_line_control_line_archive TO starbuddy_bff;"
+  ["控制线：写入方可以删除"]="GRANT DELETE ON policy.control_line TO starbuddy_kge;"
+  ["来源清单：新增不查权限"]="$(afr "$ASD" "'IF NOT EXISTS (SELECT 1 FROM platform.staff_permission p WHERE p.staff_id = v_staff AND p.permission = ''policy_source_admin'') THEN'" "'IF false THEN'")"
+  ["来源清单：下线不查权限"]="$(afr "$RSD" "'IF NOT EXISTS (SELECT 1 FROM platform.staff_permission p WHERE p.staff_id = v_staff AND p.permission = ''policy_source_admin'') THEN'" "'IF false THEN'")"
+  ["来源清单：权限不看是谁"]="$(afr "$ASD" "'p.staff_id = v_staff AND '" "''")"
+  ["来源清单：新增不查 staff"]="$(afr "$ASD" "'v_staff uuid := platform.review_current_staff();'" "'v_staff uuid := platform.current_account_id();'")"
+  ["来源清单：主机名不转小写"]="$(afr "$NSH" "'lower(btrim(p_host))'" "'btrim(p_host)'")"
+  ["来源清单：不去结尾的点"]="$(afr "$NSH" "' AS h) x'" "' AS h0) y, LATERAL (SELECT lower(btrim(p_host)) AS h) x'")"
+  ["来源清单：收 IP"]="$(afr "$NSH" "')+[a-z]('" "')+[a-z0-9]('")"
+  ["来源清单：下线删行"]="GRANT DELETE ON policy.source_domain TO starbuddy_authz; $(afr "$RSD" "'UPDATE policy.source_domain SET status = ''retired'' WHERE host = v_host;'" "'DELETE FROM policy.source_domain WHERE host = v_host;'")"
+  ["来源清单：新增不记操作"]="$(afr "$ASD" "'VALUES (v_host, v_action, v_note, v_staff, clock_timestamp());'" "'SELECT v_host, v_action, v_note, v_staff, clock_timestamp() WHERE false;'")"
+  ["来源清单：下线不记操作"]="$(afr "$RSD" "'VALUES (v_host, ''retire'', NULL, v_staff, clock_timestamp());'" "'SELECT v_host, ''retire'', NULL, v_staff, clock_timestamp() WHERE false;'")"
+  ["来源清单：已在清单也能新增"]="$(afr "$ASD" "'IF v_status = ''active'' THEN'" "'IF false THEN'")"
+  ["来源清单：登记人写账号"]="$(afr "$ASD" "'''review-console'''" "'v_staff::text'")"
+  ["来源清单：操作记录可改"]="DROP TRIGGER reject_source_domain_change_change ON platform.policy_source_domain_change;"
+  ["来源清单：操作记录可清空"]="DROP TRIGGER reject_source_domain_change_truncate ON platform.policy_source_domain_change;"
+  ["staff 权限：学生账号也能有"]="DROP TRIGGER guard_staff_permission ON platform.staff_permission;"
+  ["staff 权限：签字身份读得到别人的"]="DROP POLICY staff_permission_self_read ON platform.staff_permission; CREATE POLICY staff_permission_self_read ON platform.staff_permission FOR SELECT TO starbuddy_review USING (true);"
+  ["staff 权限：签字身份可授予"]="GRANT INSERT ON platform.staff_permission TO starbuddy_review; CREATE POLICY t_sp ON platform.staff_permission FOR INSERT TO starbuddy_review WITH CHECK (true);"
+  ["攻击面：届别更正记录对 BFF 可读"]="GRANT SELECT ON platform.exam_cohort_change TO starbuddy_bff;"
+  ["攻击面：来源清单函数授给知识服务"]="GRANT EXECUTE ON FUNCTION $ASD TO starbuddy_kge;"
+  ["攻击面：届别更正授给学习服务"]="GRANT EXECUTE ON FUNCTION $CE TO starbuddy_learning;"
+)
+
 # G 流第二部分 PR D：审核台读内容版本与发布记录（0042）、时政过期下架（0043）：由 79w 发现（授权类的同时由 80 的快照发现）。
 # DBMUT_FILTER=审核台读 与 DBMUT_FILTER=时政下架 只跑这两组
 RCL='platform.content_version_list(platform.subject)'
@@ -1089,6 +1169,10 @@ declare -A EXPECT=(
   ["攻击面：签字发布认任何有效账号"]="攻击面：复核角色函数矩阵——"
   ["攻击面：删除执行接受未来时钟"]="攻击面：定时任务函数矩阵——"
   ["攻击面：抽检接受未来起点"]="攻击面：定时任务函数矩阵——"
+  ["攻击面：届别更正记录对 BFF 可读"]="攻击面：届别更正记录、staff 权限表、来源清单操作记录只有函数属主能写"
+  ["攻击面：来源清单函数授给知识服务"]="攻击面：届别更正只授 BFF 与签字身份"
+  ["攻击面：届别更正授给学习服务"]="攻击面：届别更正只授 BFF 与签字身份"
+  ["攻击面：控制线归档表对 BFF 可读"]="攻击面：控制线旧值归档表只读"
 )
 declare -A KEEP_SNAPSHOT=(["攻击面：可转授的授权"]=1)
 for name in "${!EXPECT[@]}"; do [ -n "${M[$name]+x}" ] || { echo "db-mutation: EXPECT 里的 $name 不是变异"; exit 1; }; done

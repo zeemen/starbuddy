@@ -165,6 +165,7 @@ platform.skill_node|skill_node_service|ALL|starbuddy_learning|PERMISSIVE|using=t
 platform.skill_observation|obs_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
 platform.skill_observation|obs_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
 platform.skill_observation|observation_insight_read|SELECT|starbuddy_insight|PERMISSIVE|using=true|check=-
+platform.staff_permission|staff_permission_self_read|SELECT|starbuddy_review|PERMISSIVE|using=(staff_id = platform.current_account_id())|check=-
 platform.student_profile|student_profile_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(id)|check=-
 platform.student_profile|student_profile_service_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
 platform.student_subject_textbook|textbook_service_read|SELECT|starbuddy_insight,starbuddy_learning|PERMISSIVE|using=true|check=-
@@ -175,31 +176,35 @@ platform.subject_enrollment|enrollment_service_read|SELECT|starbuddy_learning|PE
 platform.subscription|subscription_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
 platform.usage_ledger|usage_ledger_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
 platform.usage_reservation|usage_reservation_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
+policy.admission_line_control_line_archive|control_line_archive_read|SELECT|starbuddy_kge,starbuddy_learning|PERMISSIVE|using=true|check=-
 policy.admission_line|admission_line_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=(status = 'published'::policy.pub_status)|check=-
 policy.admission_line|admission_line_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
 policy.admission_line|admission_line_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
 policy.admission_rule|admission_rule_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=(EXISTS ( SELECT 1
    FROM policy.exam_scheme s
-  WHERE ((s.id = admission_rule.scheme_id) AND (s.status = 'published'::policy.pub_status))))|check=-
+  WHERE ((s.id = admission_rule.scheme_id) AND (s.status = ANY (ARRAY['published'::policy.pub_status, 'retired'::policy.pub_status])))))|check=-
 policy.admission_rule|admission_rule_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
 policy.admission_rule|admission_rule_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
-policy.exam_scheme|exam_scheme_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=(status = 'published'::policy.pub_status)|check=-
+policy.control_line|control_line_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=(status = 'published'::policy.pub_status)|check=-
+policy.control_line|control_line_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
+policy.control_line|control_line_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
+policy.exam_scheme|exam_scheme_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=(status = ANY (ARRAY['published'::policy.pub_status, 'retired'::policy.pub_status]))|check=-
 policy.exam_scheme|exam_scheme_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
 policy.exam_scheme|exam_scheme_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
 policy.school|school_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=(review_status = 'published'::policy.pub_status)|check=-
 policy.school|school_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
 policy.school|school_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
-policy.source_document|source_document_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=(status = 'published'::policy.pub_status)|check=-
+policy.source_document|source_document_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=(status = ANY (ARRAY['published'::policy.pub_status, 'retired'::policy.pub_status]))|check=-
 policy.source_document|source_document_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
 policy.source_document|source_document_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
 policy.source_domain|source_domain_read|SELECT|starbuddy_kge,starbuddy_learning|PERMISSIVE|using=true|check=-
 policy.subject_config|subject_config_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=(EXISTS ( SELECT 1
    FROM policy.exam_scheme s
-  WHERE ((s.id = subject_config.scheme_id) AND (s.status = 'published'::policy.pub_status))))|check=-
+  WHERE ((s.id = subject_config.scheme_id) AND (s.status = ANY (ARRAY['published'::policy.pub_status, 'retired'::policy.pub_status])))))|check=-
 policy.subject_config|subject_config_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
 policy.subject_config|subject_config_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
 policy.transition_rule|transition_rule_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=(EXISTS ( SELECT 1
    FROM policy.exam_scheme s
-  WHERE ((s.id = transition_rule.scheme_id) AND (s.status = 'published'::policy.pub_status))))|check=-
+  WHERE ((s.id = transition_rule.scheme_id) AND (s.status = ANY (ARRAY['published'::policy.pub_status, 'retired'::policy.pub_status])))))|check=-
 policy.transition_rule|transition_rule_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
 policy.transition_rule|transition_rule_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-

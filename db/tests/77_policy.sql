@@ -177,9 +177,10 @@ SELECT t.throws_like($$UPDATE policy.school SET review_status = 'published'$$,
 SELECT t.ok(t.pol_sign2('school', :school) = 'published', '学校：两名不同 staff 签字后发布');
 SELECT t.throws_like($$UPDATE policy.school SET public_name = '改名' WHERE id = 'a6000000-0000-4000-8000-0000000000f1'$$,
                      '23514', '只能改办学状态', '已复核发布的学校不能改名称');
-INSERT INTO policy.admission_line (school_id, year, batch_code, track, line_score, plan_count, control_line, source_document_id) VALUES
-  (:school, 2026, 'batch_1', 'unified', 180, 300, NULL, :doc2),
-  (:school, 2027, 'batch_1', 'quota_allocation', NULL, 50, 300, :doc2);
+-- 0047 起控制线单独成表（policy.control_line，79y），招录行不再有控制线列
+INSERT INTO policy.admission_line (school_id, year, batch_code, track, line_score, plan_count, source_document_id) VALUES
+  (:school, 2026, 'batch_1', 'unified', 180, 300, :doc2),
+  (:school, 2027, 'batch_1', 'quota_allocation', NULL, 50, :doc2);
 SELECT t.throws_like($$INSERT INTO policy.admission_line (school_id, year, batch_code, track, line_score, source_document_id)
                        VALUES ('a6000000-0000-4000-8000-0000000000f1', 2026, 'batch_1', 'unified', 201, 'a2000000-0000-4000-8000-0000000000d2')$$,
                      '23514', '超过该年方案的计分总分', '投档线不能超过该年方案的计分总分');
@@ -196,9 +197,6 @@ SELECT t.throws_like($$INSERT INTO policy.admission_line (school_id, year, batch
 SELECT t.throws_like($$INSERT INTO policy.admission_line (school_id, year, batch_code, track, line_score, source_document_id)
                        VALUES ('a6000000-0000-4000-8000-0000000000f1', 2026, 'batch_7', 'unified', 100, 'a2000000-0000-4000-8000-0000000000d2')$$,
                      '23514', '招录规则里没有这个批次', '招录行的批次与类别必须在该年已发布方案的招录规则里');
-SELECT t.throws_like($$INSERT INTO policy.admission_line (school_id, year, batch_code, track, line_score, control_line, source_document_id)
-                       VALUES ('a6000000-0000-4000-8000-0000000000f1', 2026, 'batch_1', 'unified', 100, 90, 'a2000000-0000-4000-8000-0000000000d2')$$,
-                     '23514', 'admission_line_control_line', '统招行不写控制线');
 SELECT t.throws_like($$INSERT INTO policy.admission_line (school_id, year, batch_code, track, source_document_id)
                        VALUES ('a6000000-0000-4000-8000-0000000000f1', 2026, 'batch_1', 'unified', 'a2000000-0000-4000-8000-0000000000d2')$$,
                      '23514', 'admission_line_has_value', '招录行至少有分数线或计划数');
@@ -234,13 +232,14 @@ SELECT t.ok(NOT EXISTS (
   '考情库：只有写入方能写，任何应用角色都不能删除或清空');
 SELECT t.ok(NOT has_schema_privilege('starbuddy_insight', 'policy', 'USAGE'), '洞察服务暂不读考情库');
 SET ROLE starbuddy_bff;
-SELECT t.ok((SELECT array_agg(id ORDER BY id) FROM policy.exam_scheme) = ARRAY[:sch1::uuid, :sch3::uuid], 'BFF 只看得到已发布方案');
-SELECT t.ok((SELECT count(DISTINCT scheme_id) FROM policy.subject_config) = 2, 'BFF 只看得到已发布方案的科目配置');
-SELECT t.ok(NOT EXISTS (SELECT 1 FROM policy.transition_rule WHERE scheme_id NOT IN (:sch1::uuid, :sch3::uuid))
-            AND (SELECT count(*) FROM policy.transition_rule) = 1, 'BFF 只看得到已发布方案的过渡规则');
-SELECT t.ok((SELECT count(DISTINCT scheme_id) FROM policy.admission_rule) = 2, 'BFF 只看得到已发布方案的招录规则');
-SELECT t.ok(NOT EXISTS (SELECT 1 FROM policy.source_document WHERE status <> 'published') AND (SELECT count(*) FROM policy.source_document) = 2,
-            'BFF 只看得到已发布的来源文件');
+-- 0046 起 BFF 读得到已撤下的往年方案（sch2）与已撤下的来源文件（d3），草稿（e4、e5、d4）仍看不到
+SELECT t.ok((SELECT array_agg(id ORDER BY id) FROM policy.exam_scheme) = ARRAY[:sch1::uuid, :sch2::uuid, :sch3::uuid], 'BFF 只看得到已发布与已撤下方案');
+SELECT t.ok((SELECT count(DISTINCT scheme_id) FROM policy.subject_config) = 3, 'BFF 只看得到已发布与已撤下方案的科目配置');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM policy.transition_rule WHERE scheme_id NOT IN (:sch1::uuid, :sch2::uuid, :sch3::uuid))
+            AND (SELECT count(*) FROM policy.transition_rule) = 2, 'BFF 只看得到已发布与已撤下方案的过渡规则');
+SELECT t.ok((SELECT count(DISTINCT scheme_id) FROM policy.admission_rule) = 3, 'BFF 只看得到已发布与已撤下方案的招录规则');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM policy.source_document WHERE status = 'draft') AND (SELECT count(*) FROM policy.source_document) = 3,
+            'BFF 只看得到已发布与已撤下的来源文件');
 SELECT t.ok((SELECT count(*) FROM policy.school) = 1, 'BFF 看得到已复核发布的学校');
 SELECT t.ok((SELECT count(*) FROM policy.admission_line) = 2 AND NOT EXISTS (SELECT 1 FROM policy.admission_line WHERE status <> 'published'),
             'BFF 只看得到已发布的招录行');
@@ -291,9 +290,7 @@ SELECT t.ok((SELECT exam_cohort FROM platform.student_profile WHERE id = 'c10000
 SELECT t.ok(platform.expected_cohort(9::smallint, '2026-10-01T00:00:00+08:00') = 2027 AND platform.expected_cohort(9::smallint, '2027-03-01T00:00:00+08:00') = 2027
             AND platform.expected_cohort(7::smallint, '2026-09-01T00:00:00+08:00') = 2029 AND platform.expected_cohort(9::smallint, '2026-08-31T12:00:00+08:00') = 2026,
             '届别推算：学年以 9 月 1 日切换');
-SELECT t.throws_like($$UPDATE platform.student_profile SET exam_cohort = exam_cohort + 3 WHERE id = 'c1000000-0000-4000-8000-0000000000c1'$$,
-                     '23514', '与年级', '届别与年级推算值相差超过 1 时拒绝');
-UPDATE platform.student_profile SET exam_cohort = exam_cohort + 1 WHERE id = 'c1000000-0000-4000-8000-0000000000c1';
-SELECT t.ok((SELECT exam_cohort = platform.expected_cohort(grade, created_at) + 1 FROM platform.student_profile WHERE id = 'c1000000-0000-4000-8000-0000000000c1'),
-            '届别可以在推算值 ±1 内更正（留级、跳级）');
-UPDATE platform.student_profile SET exam_cohort = exam_cohort - 1 WHERE id = 'c1000000-0000-4000-8000-0000000000c1';
+-- 0045 起届别以存下的值为准：建档时与推算值相差不超过 1，之后的更正只经 platform.correct_exam_cohort（每次 ±1），
+-- 不再拿建档年级比对；建档、更正、来源与并发的用例在 79y_policy_decisions 与 run.sh
+SELECT t.ok((SELECT exam_cohort_source = 'derived' FROM platform.student_profile WHERE id = 'c1000000-0000-4000-8000-0000000000c1'),
+            '0045：建档时按年级推算的届别来源记为 derived');

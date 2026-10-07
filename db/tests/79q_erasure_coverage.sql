@@ -285,32 +285,41 @@ BEGIN
       t.q_id(s, 'profile.check'), s, t.q_id(s, 'profile.page'),
       jsonb_build_array(jsonb_build_object('code', 'connective_unapproved', 'section', 'working_on', 'claim_ids', jsonb_build_array(v_node),
                                            'fragment', '合成衔接'))));
+  -- 届别更正记录（0045）：家长经 BFF 更正一次（每次 ±1；方向取更正后当前年级仍在 7–9 的一边）
+  PERFORM t.p_bff(g, format($f$SELECT platform.correct_exam_cohort(%L, (CASE WHEN platform.current_grade((p.exam_cohort + 1)::smallint, now()) IS NOT NULL
+      THEN p.exam_cohort + 1 ELSE p.exam_cohort - 1 END)::smallint)::text FROM platform.student_profile p WHERE p.id = %L$f$, s, s));
   -- ---- 导出（家长，0035）：导出任务是豁免表
   PERFORM t.p_bff(g, format('SELECT platform.export_student_data(%L)::text', s));
 END $$;
 SELECT t.q_seed(:X1, :aX1, :g9, :g9b, 1, 'q4mark1zz', 'trial');
 SELECT t.q_seed(:X2, :aX2, :g9, :g9b, 2, 'q4mark2zz', 'pilot_virtual');
 
--- 写不了的表（逐张说明）：staff 七表只收教研账号——凭据表有库层守卫，下面直接证明学生账号写不进去；
--- 会话与五张签字表（含 0039 的内容版本与准入审核记录 release_record、0040 的考情签字 policy_signoff）只由属主 authz 的函数写入（函数只认 staff 账号），
--- 应用角色都没有 INSERT，学生账号在这几张表里只能是零行（这六张没有库层守卫，只靠函数路径，见 lessons PR④ 缺口 1）
+-- 写不了的表（逐张说明）：staff 九表只收教研账号——凭据表与 staff 权限表（0048）有库层守卫，下面直接证明学生账号写不进去；
+-- 会话、五张签字表（含 0039 的内容版本与准入审核记录 release_record、0040 的考情签字 policy_signoff）与来源清单操作记录（0048）
+-- 只由属主 authz 的函数写入（函数只认 staff 账号），应用角色都没有 INSERT，学生账号在这几张表里只能是零行
+-- （这七张没有库层守卫，只靠函数路径，见 lessons PR④ 缺口 1）
 SELECT t.throws_like(format($$INSERT INTO platform.staff_credential (account_id, login, password_hash, totp_secret)
                              VALUES (%L, 'synthetic-student-login', 'x', '\x00')$$, :aX1), '23514', 'staff', 'staff_credential：学生账号写不进去（库层守卫）');
+SELECT t.throws_like(format($$INSERT INTO platform.staff_permission (staff_id, permission, granted_by) VALUES (%L, 'policy_source_admin', 'synthetic-dba')$$, :aX1),
+                     '23514', 'staff', 'staff_permission：学生账号写不进去（库层守卫，0048）');
 SELECT t.ok(NOT EXISTS (SELECT 1 FROM unnest(ARRAY['platform.staff_session', 'platform.content_signoff', 'platform.map_change_signoff',
-                                                   'platform.tag_candidate_signoff', 'platform.release_record', 'platform.policy_signoff']) tb,
+                                                   'platform.tag_candidate_signoff', 'platform.release_record', 'platform.policy_signoff',
+                                                   'platform.staff_permission', 'platform.policy_source_domain_change']) tb,
                               unnest(ARRAY['starbuddy_bff', 'starbuddy_learning', 'starbuddy_review', 'starbuddy_scheduler', 'starbuddy_insight',
                                            'starbuddy_kge', 'starbuddy_kge_read', 'starbuddy_report', 'starbuddy_eraser']) r(role)
                          WHERE has_table_privilege(r.role, tb, 'INSERT')),
-            'staff 会话与五张签字表：只有属主 authz 能写（经只认 staff 账号的函数），学生账号写不进去');
+            'staff 会话、五张签字表、staff 权限表与来源清单操作记录：只有属主 authz 能写（staff 权限只由迁移或 DBA 授予），学生账号写不进去');
 SELECT t.p_counts(:X1::uuid) AS x1_all \gset
 SELECT t.ok((SELECT string_agg(e.key, '、' ORDER BY e.key) FROM jsonb_each(:'x1_all'::jsonb) e WHERE e.value::int = 0)
-            = 'platform.content_signoff、platform.erasure_request、platform.map_change_signoff、platform.policy_signoff、platform.release_record、'
-              'platform.staff_credential、platform.staff_session、platform.tag_candidate_signoff',
-            '清单里除 staff 七表与删除请求（第三段由申请流程写入）外的每张表（delete 与 exempt）都有学生 X1 的行（零行的：'
+            = 'platform.content_signoff、platform.erasure_request、platform.map_change_signoff、platform.policy_signoff、'
+              'platform.policy_source_domain_change、platform.release_record、'
+              'platform.staff_credential、platform.staff_permission、platform.staff_session、platform.tag_candidate_signoff',
+            '清单里除 staff 九表与删除请求（第三段由申请流程写入）外的每张表（delete 与 exempt）都有学生 X1 的行（零行的：'
             || coalesce((SELECT string_agg(e.key, '、' ORDER BY e.key) FROM jsonb_each(:'x1_all'::jsonb) e WHERE e.value::int = 0), '无') || '）');
 SELECT t.ok((SELECT string_agg(e.key, '、' ORDER BY e.key) FROM jsonb_each(t.p_counts(:X2::uuid)) e WHERE e.value::int = 0)
-            = 'platform.content_signoff、platform.erasure_request、platform.map_change_signoff、platform.policy_signoff、platform.release_record、'
-              'platform.staff_credential、platform.staff_session、platform.tag_candidate_signoff、platform.trial_claim',
+            = 'platform.content_signoff、platform.erasure_request、platform.map_change_signoff、platform.policy_signoff、'
+              'platform.policy_source_domain_change、platform.release_record、'
+              'platform.staff_credential、platform.staff_permission、platform.staff_session、platform.tag_candidate_signoff、platform.trial_claim',
             '兄弟姐妹 X2 同样写满（删除请求只给 X1 发起；试用按家庭只能领一次，X2 走试点开通，试用领取行的学生键是 X1；零行的：'
             || coalesce((SELECT string_agg(e.key, '、' ORDER BY e.key) FROM jsonb_each(t.p_counts(:X2::uuid)) e WHERE e.value::int = 0), '无') || '）');
 

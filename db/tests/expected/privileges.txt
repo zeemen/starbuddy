@@ -236,6 +236,7 @@ col|platform.evidence_event.student_id|starbuddy_eraser|SELECT|SUPERUSER
 col|platform.evidence_event.student_id|starbuddy_insight|SELECT|SUPERUSER
 col|platform.evidence_event.subject|starbuddy_insight|SELECT|SUPERUSER
 col|platform.evidence_registry.student_id|starbuddy_eraser|SELECT|SUPERUSER
+col|platform.exam_cohort_change.student_id|starbuddy_eraser|SELECT|SUPERUSER
 col|platform.grade_dimension.grade_result_id|starbuddy_eraser|SELECT|SUPERUSER
 col|platform.grade_result.attempt_id|starbuddy_insight|SELECT|SUPERUSER
 col|platform.grade_result.attempt_occurred_at|starbuddy_insight|SELECT|SUPERUSER
@@ -347,6 +348,8 @@ col|platform.skill_observation.superseded_by|starbuddy_learning|UPDATE|SUPERUSER
 col|platform.student_profile.account_id|starbuddy_eraser|SELECT|SUPERUSER
 col|platform.student_profile.erased_at|starbuddy_eraser|SELECT|SUPERUSER
 col|platform.student_profile.erased_at|starbuddy_eraser|UPDATE|SUPERUSER
+col|platform.student_profile.exam_cohort_source|starbuddy_authz|UPDATE|SUPERUSER
+col|platform.student_profile.exam_cohort|starbuddy_authz|UPDATE|SUPERUSER
 col|platform.student_profile.household_id|starbuddy_eraser|SELECT|SUPERUSER
 col|platform.student_profile.id|starbuddy_eraser|SELECT|SUPERUSER
 col|platform.student_subject_textbook.student_id|starbuddy_eraser|SELECT|SUPERUSER
@@ -400,8 +403,6 @@ col|platform.usage_reservation.state|starbuddy_bff|SELECT|SUPERUSER
 col|platform.usage_reservation.student_id|starbuddy_bff|SELECT|SUPERUSER
 col|platform.usage_reservation.usage_id|starbuddy_bff|SELECT|SUPERUSER
 col|policy.admission_line.batch_code|starbuddy_bff|SELECT|SUPERUSER
-col|policy.admission_line.control_line|starbuddy_bff|SELECT|SUPERUSER
-col|policy.admission_line.control_line|starbuddy_kge|UPDATE|SUPERUSER
 col|policy.admission_line.id|starbuddy_bff|SELECT|SUPERUSER
 col|policy.admission_line.line_score|starbuddy_bff|SELECT|SUPERUSER
 col|policy.admission_line.line_score|starbuddy_kge|UPDATE|SUPERUSER
@@ -416,6 +417,19 @@ col|policy.admission_line.status|starbuddy_bff|SELECT|SUPERUSER
 col|policy.admission_line.status|starbuddy_kge|UPDATE|SUPERUSER
 col|policy.admission_line.track|starbuddy_bff|SELECT|SUPERUSER
 col|policy.admission_line.year|starbuddy_bff|SELECT|SUPERUSER
+col|policy.control_line.batch_code|starbuddy_bff|SELECT|SUPERUSER
+col|policy.control_line.city|starbuddy_bff|SELECT|SUPERUSER
+col|policy.control_line.id|starbuddy_bff|SELECT|SUPERUSER
+col|policy.control_line.reviewed_at|starbuddy_authz|UPDATE|SUPERUSER
+col|policy.control_line.score|starbuddy_bff|SELECT|SUPERUSER
+col|policy.control_line.score|starbuddy_kge|UPDATE|SUPERUSER
+col|policy.control_line.source_document_id|starbuddy_bff|SELECT|SUPERUSER
+col|policy.control_line.source_document_id|starbuddy_kge|UPDATE|SUPERUSER
+col|policy.control_line.status|starbuddy_authz|UPDATE|SUPERUSER
+col|policy.control_line.status|starbuddy_bff|SELECT|SUPERUSER
+col|policy.control_line.status|starbuddy_kge|UPDATE|SUPERUSER
+col|policy.control_line.track|starbuddy_bff|SELECT|SUPERUSER
+col|policy.control_line.year|starbuddy_bff|SELECT|SUPERUSER
 col|policy.exam_scheme.city|starbuddy_bff|SELECT|SUPERUSER
 col|policy.exam_scheme.cohort|starbuddy_bff|SELECT|SUPERUSER
 col|policy.exam_scheme.id|starbuddy_bff|SELECT|SUPERUSER
@@ -467,6 +481,8 @@ col|policy.source_document.title|starbuddy_bff|SELECT|SUPERUSER
 col|policy.source_document.title|starbuddy_kge|UPDATE|SUPERUSER
 col|policy.source_document.url|starbuddy_bff|SELECT|SUPERUSER
 col|policy.source_document.url|starbuddy_kge|UPDATE|SUPERUSER
+col|policy.source_domain.issuer|starbuddy_authz|UPDATE|SUPERUSER
+col|policy.source_domain.status|starbuddy_authz|UPDATE|SUPERUSER
 func|insight.basis_belongs(insight.basis_kind,uuid,uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|insight.basis_belongs(insight.basis_kind,uuid,uuid)|starbuddy_insight|EXECUTE|starbuddy_authz
 func|insight.change_allowed(insight.claim_status,insight.claim_status,text)|starbuddy_authz|EXECUTE|SUPERUSER
@@ -628,6 +644,9 @@ func|platform.content_version_list(platform.subject)|starbuddy_authz|EXECUTE|sta
 func|platform.content_version_list(platform.subject)|starbuddy_kge|EXECUTE|starbuddy_authz
 func|platform.content_version_snapshot(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.content_version_snapshot(uuid)|starbuddy_kge|EXECUTE|starbuddy_authz
+func|platform.correct_exam_cohort(uuid,smallint)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.correct_exam_cohort(uuid,smallint)|starbuddy_bff|EXECUTE|starbuddy_authz
+func|platform.correct_exam_cohort(uuid,smallint)|starbuddy_review|EXECUTE|starbuddy_authz
 func|platform.create_guardian_invite(uuid,interval)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.create_guardian_invite(uuid,interval)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|platform.create_student(uuid,smallint,text,text,date)|starbuddy_authz|EXECUTE|starbuddy_authz
@@ -637,6 +656,9 @@ func|platform.current_account_id()|starbuddy_authz|EXECUTE|SUPERUSER
 func|platform.current_account_id()|starbuddy_bff|EXECUTE|SUPERUSER
 func|platform.current_account_id()|starbuddy_learning|EXECUTE|SUPERUSER
 func|platform.current_account_id()|starbuddy_review|EXECUTE|SUPERUSER
+func|platform.current_grade(smallint,timestamp with time zone)|starbuddy_authz|EXECUTE|SUPERUSER
+func|platform.current_grade(smallint,timestamp with time zone)|starbuddy_bff|EXECUTE|SUPERUSER
+func|platform.current_grade(smallint,timestamp with time zone)|starbuddy_learning|EXECUTE|SUPERUSER
 func|platform.diagnosis_session_guard()|PUBLIC|EXECUTE|SUPERUSER
 func|platform.diagnosis_step_guard()|PUBLIC|EXECUTE|SUPERUSER
 func|platform.enqueue_claim_dispute(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
@@ -771,6 +793,8 @@ func|platform.take_review_task(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.take_review_task(uuid)|starbuddy_review|EXECUTE|starbuddy_authz
 func|platform.valid_profile_sections(jsonb,text)|starbuddy_learning|EXECUTE|SUPERUSER
 func|platform.valid_profile_violations(jsonb)|starbuddy_learning|EXECUTE|SUPERUSER
+func|policy.add_source_domain(text,text)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|policy.add_source_domain(text,text)|starbuddy_review|EXECUTE|starbuddy_authz
 func|policy.approval_count(text,uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|policy.approval_count(text,uuid)|starbuddy_kge|EXECUTE|starbuddy_authz
 func|policy.approval_count(text,uuid)|starbuddy_learning|EXECUTE|starbuddy_authz
@@ -778,11 +802,14 @@ func|policy.approval_count(text,uuid)|starbuddy_review|EXECUTE|starbuddy_authz
 func|policy.distinct_count(text[])|starbuddy_authz|EXECUTE|SUPERUSER
 func|policy.distinct_count(text[])|starbuddy_kge|EXECUTE|SUPERUSER
 func|policy.distinct_count(text[])|starbuddy_learning|EXECUTE|SUPERUSER
+func|policy.normalize_source_host(text)|starbuddy_authz|EXECUTE|SUPERUSER
 func|policy.object_digest(text,uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|policy.object_digest(text,uuid)|starbuddy_kge|EXECUTE|starbuddy_authz
 func|policy.object_digest(text,uuid)|starbuddy_review|EXECUTE|starbuddy_authz
 func|policy.publish_scheme(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|policy.publish_scheme(uuid)|starbuddy_review|EXECUTE|starbuddy_authz
+func|policy.retire_source_domain(text)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|policy.retire_source_domain(text)|starbuddy_review|EXECUTE|starbuddy_authz
 func|policy.scheme_total(uuid)|starbuddy_authz|EXECUTE|SUPERUSER
 func|policy.scheme_total(uuid)|starbuddy_bff|EXECUTE|SUPERUSER
 func|policy.scheme_total(uuid)|starbuddy_kge|EXECUTE|SUPERUSER
@@ -847,6 +874,7 @@ owner|platform.confirm_erasure(uuid)|starbuddy_authz
 owner|platform.content_version_digest(uuid)|starbuddy_authz
 owner|platform.content_version_list(platform.subject)|starbuddy_authz
 owner|platform.content_version_snapshot(uuid)|starbuddy_authz
+owner|platform.correct_exam_cohort(uuid,smallint)|starbuddy_authz
 owner|platform.create_guardian_invite(uuid,interval)|starbuddy_authz
 owner|platform.create_student(uuid,smallint,text,text,date)|starbuddy_authz
 owner|platform.enqueue_claim_dispute(uuid)|starbuddy_authz
@@ -911,9 +939,11 @@ owner|platform.staff_login(text,text,text)|starbuddy_authz
 owner|platform.staff_logout(text)|starbuddy_authz
 owner|platform.staff_session_resolve(text)|starbuddy_authz
 owner|platform.take_review_task(uuid)|starbuddy_authz
+owner|policy.add_source_domain(text,text)|starbuddy_authz
 owner|policy.approval_count(text,uuid)|starbuddy_authz
 owner|policy.object_digest(text,uuid)|starbuddy_authz
 owner|policy.publish_scheme(uuid)|starbuddy_authz
+owner|policy.retire_source_domain(text)|starbuddy_authz
 owner|policy.sign_record(text,uuid,text,text)|starbuddy_authz
 owner|policy.sign_scheme(uuid,text,text)|starbuddy_authz
 rel|insight.behavior_event|starbuddy_authz|INSERT|SUPERUSER
@@ -1124,6 +1154,9 @@ rel|platform.evidence_event|starbuddy_learning|SELECT|SUPERUSER
 rel|platform.evidence_registry|starbuddy_eraser|DELETE|SUPERUSER
 rel|platform.evidence_registry|starbuddy_learning|INSERT|SUPERUSER
 rel|platform.evidence_registry|starbuddy_learning|SELECT|SUPERUSER
+rel|platform.exam_cohort_change|starbuddy_authz|INSERT|SUPERUSER
+rel|platform.exam_cohort_change|starbuddy_authz|SELECT|SUPERUSER
+rel|platform.exam_cohort_change|starbuddy_eraser|DELETE|SUPERUSER
 rel|platform.export_job|starbuddy_authz|INSERT|SUPERUSER
 rel|platform.export_job|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.grade_dimension|starbuddy_authz|SELECT|SUPERUSER
@@ -1177,6 +1210,8 @@ rel|platform.plan_feature|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.plan_feature|starbuddy_bff|SELECT|SUPERUSER
 rel|platform.policy_signoff|starbuddy_authz|INSERT|SUPERUSER
 rel|platform.policy_signoff|starbuddy_authz|SELECT|SUPERUSER
+rel|platform.policy_source_domain_change|starbuddy_authz|INSERT|SUPERUSER
+rel|platform.policy_source_domain_change|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.practice_log|starbuddy_authz|INSERT|SUPERUSER
 rel|platform.practice_log|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.practice_log|starbuddy_bff|SELECT|SUPERUSER
@@ -1222,6 +1257,8 @@ rel|platform.skill_observation|starbuddy_learning|INSERT|SUPERUSER
 rel|platform.skill_observation|starbuddy_learning|SELECT|SUPERUSER
 rel|platform.staff_credential|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.staff_credential|starbuddy_authz|UPDATE|SUPERUSER
+rel|platform.staff_permission|starbuddy_authz|SELECT|SUPERUSER
+rel|platform.staff_permission|starbuddy_review|SELECT|SUPERUSER
 rel|platform.staff_session|starbuddy_authz|INSERT|SUPERUSER
 rel|platform.staff_session|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.staff_session|starbuddy_authz|UPDATE|SUPERUSER
@@ -1258,6 +1295,8 @@ rel|platform.usage_ledger|starbuddy_authz|INSERT|SUPERUSER
 rel|platform.usage_ledger|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.usage_reservation|starbuddy_authz|INSERT|SUPERUSER
 rel|platform.usage_reservation|starbuddy_authz|SELECT|SUPERUSER
+rel|policy.admission_line_control_line_archive|starbuddy_kge|SELECT|SUPERUSER
+rel|policy.admission_line_control_line_archive|starbuddy_learning|SELECT|SUPERUSER
 rel|policy.admission_line|starbuddy_authz|SELECT|SUPERUSER
 rel|policy.admission_line|starbuddy_kge|INSERT|SUPERUSER
 rel|policy.admission_line|starbuddy_kge|SELECT|SUPERUSER
@@ -1268,6 +1307,10 @@ rel|policy.admission_rule|starbuddy_kge|INSERT|SUPERUSER
 rel|policy.admission_rule|starbuddy_kge|SELECT|SUPERUSER
 rel|policy.admission_rule|starbuddy_kge|UPDATE|SUPERUSER
 rel|policy.admission_rule|starbuddy_learning|SELECT|SUPERUSER
+rel|policy.control_line|starbuddy_authz|SELECT|SUPERUSER
+rel|policy.control_line|starbuddy_kge|INSERT|SUPERUSER
+rel|policy.control_line|starbuddy_kge|SELECT|SUPERUSER
+rel|policy.control_line|starbuddy_learning|SELECT|SUPERUSER
 rel|policy.exam_scheme|starbuddy_authz|SELECT|SUPERUSER
 rel|policy.exam_scheme|starbuddy_kge|INSERT|SUPERUSER
 rel|policy.exam_scheme|starbuddy_kge|SELECT|SUPERUSER
@@ -1280,6 +1323,7 @@ rel|policy.source_document|starbuddy_authz|SELECT|SUPERUSER
 rel|policy.source_document|starbuddy_kge|INSERT|SUPERUSER
 rel|policy.source_document|starbuddy_kge|SELECT|SUPERUSER
 rel|policy.source_document|starbuddy_learning|SELECT|SUPERUSER
+rel|policy.source_domain|starbuddy_authz|INSERT|SUPERUSER
 rel|policy.source_domain|starbuddy_authz|SELECT|SUPERUSER
 rel|policy.source_domain|starbuddy_kge|SELECT|SUPERUSER
 rel|policy.source_domain|starbuddy_learning|SELECT|SUPERUSER
@@ -1384,6 +1428,7 @@ secdef|platform.confirm_erasure(uuid)
 secdef|platform.content_version_digest(uuid)
 secdef|platform.content_version_list(platform.subject)
 secdef|platform.content_version_snapshot(uuid)
+secdef|platform.correct_exam_cohort(uuid,smallint)
 secdef|platform.create_guardian_invite(uuid,interval)
 secdef|platform.create_student(uuid,smallint,text,text,date)
 secdef|platform.enqueue_claim_dispute(uuid)
@@ -1447,8 +1492,10 @@ secdef|platform.staff_login(text,text,text)
 secdef|platform.staff_logout(text)
 secdef|platform.staff_session_resolve(text)
 secdef|platform.take_review_task(uuid)
+secdef|policy.add_source_domain(text,text)
 secdef|policy.approval_count(text,uuid)
 secdef|policy.object_digest(text,uuid)
 secdef|policy.publish_scheme(uuid)
+secdef|policy.retire_source_domain(text)
 secdef|policy.sign_record(text,uuid,text,text)
 secdef|policy.sign_scheme(uuid,text,text)

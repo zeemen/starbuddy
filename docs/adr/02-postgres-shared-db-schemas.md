@@ -103,6 +103,23 @@ ADR 09 建议 pilot 和生产全链路境内。Supabase 托管版没有中国大
 - **0026（知识服务只读角色，specs/kge-03-compile-layer）**：读路径与写路径分开，新角色 `starbuddy_kge_read` 只读已发布的公共知识，与所有其他应用角色互斥（0026 断言）；只改 kge 的授权与策略。
 - **一个迁移只改一个 schema**：0013 只建 policy；学生档案的中考届别在 0014（platform）。kge 地图校验对政策库的读取写在 0011 的校验函数里，用动态查询，政策库不存在时跳过。
 - **不含学生数据**：攻击面测试的公共层断言扩到 policy。
+- **0045–0048（待定事项落地，草稿，2026-10-07，specs/policy-decisions-v0.9.1 PR1，待签字）**：
+  - **0045（只改 platform）届别真相源**：学生档案以 `platform.student_profile.exam_cohort` 为准，`grade` 改为“建档时年级”，当前年级由
+    `platform.current_grade(届别, 时刻)` 推算；届别来源列 `exam_cohort_source`（规则 6；建档只收 derived / guardian_report，之后改届别必须同时改来源）；
+    更正只经 `platform.correct_exam_cohort`（家长经 BFF、active staff 经签字连接，按调用角色分渠道，每次 ±1），最小记录 `platform.exam_cohort_change`
+    （随删除请求删除；审计总表随 PLT-01）。
+  - **0046（只改 policy）往年方案**：BFF 读方案、方案内容与来源文件放宽到已发布与已撤下；草稿与复核人列仍不可见；方案与来源文件的草稿不能直接撤下
+    （否则没签字的草稿会以“往年政策”露出）。
+  - **0047 控制线独立成表** `policy.control_line`（城市 × 年份 × 批次 × 指标生），签字与发布照 0041，没有自报复核人列；签字人表 `platform.policy_signoff`
+    加对象类型与列；`policy.admission_line.control_line` 原样归档到 `policy.admission_line_control_line_archive` 后，已发布与草稿的值回填为控制线草稿，删除旧列。
+  - **0048 官方来源清单由管理员维护**：staff 权限 `platform.staff_permission`（`policy_source_admin`，只由迁移或 DBA 授予）；新增、下线经 `policy.add_source_domain` /
+    `retire_source_domain`（只授签字身份），操作者记在 `platform.policy_source_domain_change`，policy 不存账号引用（规则 13）。
+  - **跨 schema 的例外（只有 0047、0048）**：
+    - 0047：签字人表 `platform.policy_signoff` 的新列 `control_line_id` 有外键指向 `policy.control_line`，签字与导出函数（policy.sign_record、object_digest、
+      platform.policy_signoff_record）的函数体按对象类型分支；拆开会有一个迁移里签字函数认得控制线、签字人表却存不下（或反过来）的中间状态。
+    - 0048：两个 SECURITY DEFINER 函数同时读 `platform.staff_permission`、写 `platform.policy_source_domain_change` 与 `policy.source_domain`；
+      账号引用只能在 platform（规则 13），清单只能在 policy，拆开会有一个迁移里函数引用尚不存在的表。
+    - 是否接受这两个例外随本 PR 签字决定。
 
 
 ## 增补：insight schema 的建档事实层（草稿，2026-09-29，specs/sie-01-onboarding，待签字）

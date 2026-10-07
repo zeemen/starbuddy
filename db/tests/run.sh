@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 在一次性的本地 Postgres 上验证迁移与 RLS（spec：specs/learner-schema-v0.9/spec.md）。
-#   1. 全部 up → 全部 down → 全部 up，再把最新迁移单独 down → up（迁移可回滚，开发计划 冲刺 1-B）
+#   1. 全部 up → 全部 down → 全部 up，再把最近四个迁移逐个单独 down → up（迁移可回滚，开发计划 冲刺 1-B）
 #   2. 按文件名顺序执行 db/tests/*.sql（合成数据，CLAUDE.md 规则 8）
 # 只连本机临时实例（Unix socket，不监听 TCP），结束即删除；不连接任何共享或生产库（规则 9）。
 # 退出码：0 通过；1 失败；3 本机没有 Postgres（由 Makefile 决定是否算失败）。
@@ -24,10 +24,13 @@ left=$(psql_run -tAc "SELECT count(*) FROM pg_namespace WHERE nspname IN ('platf
 [ "$left" = "0" ] || { echo "db-test: 失败（down 之后 platform、insight、kge 或 policy schema 仍存在）"; exit 1; }
 apply_or_exit "${UPS[@]}"
 echo "db-test: 迁移 up → down → up 通过（${#UPS[@]} 个迁移）"
-# 最新迁移单独 down → up（只回滚最后一步时，前面的迁移不受影响）
-apply_or_exit "${DOWNS[0]}"
-apply_or_exit "${UPS[${#UPS[@]}-1]}"
-echo "db-test: 最新迁移单独 down → up 通过（$(basename "${UPS[${#UPS[@]}-1]}")）"
+# 最新迁移单独 down → up（只回滚最后一步时，前面的迁移不受影响）；再把最近四个迁移逐个回滚到它为止再重新执行
+# （一个 PR 加了几个迁移时每个都要能单独回滚，specs/policy-decisions-v0.9.1 验收：0045–0048）
+for k in 1 2 3 4; do
+  apply_or_exit "${DOWNS[@]:0:k}"
+  apply_or_exit "${UPS[@]: -k}"
+  echo "db-test: 迁移 $(basename "${UPS[${#UPS[@]}-k]}") 单独 down → up 通过（先回滚其后的 $((k - 1)) 个）"
+done
 
 apply_mutation() {
   [ -n "${DBTEST_MUTATION_SQL:-}" ] || return 0
@@ -155,7 +158,7 @@ echo "ok - 登录角色间接同时继承 bff 与 learning 时迁移拒绝执行
 as_pg "$PGBIN/createdb" -h "$WORK" -U postgres kge_role_check
 psql_kge() { as_pg "$PGBIN/psql" -h "$WORK" -U postgres -d kge_role_check -X -q -v ON_ERROR_STOP=1 "$@"; }
 for f in "${UPS[@]}"; do
-  case "$(basename "$f")" in 0011_*|0012_*|0017_*|0018_*|0019_*|0024_*|0026_*|0028_*|0038_*|0039_*|0040_*|0041_*|0042_*|0043_*) continue ;; esac  # 0012、0017–0019、0024、0026、0028、0038、0043 依赖 0011 的 kge 表；0039、0040 依赖 0018（0039 还依赖 0012）；0041 依赖 0040；0042 依赖 0039
+  case "$(basename "$f")" in 0011_*|0012_*|0017_*|0018_*|0019_*|0024_*|0026_*|0028_*|0038_*|0039_*|0040_*|0041_*|0042_*|0043_*|0047_*|0048_*) continue ;; esac  # 0012、0017–0019、0024、0026、0028、0038、0043 依赖 0011 的 kge 表；0039、0040 依赖 0018（0039 还依赖 0012）；0041 依赖 0040；0042 依赖 0039；0047 依赖 0041；0048 依赖 0018 的只追加函数
   psql_kge -1 < "$f" >/dev/null 2>&1 || { echo "db-test: 失败（角色断言测试库执行 $(basename "$f") 出错）"; exit 1; }
 done
 kge_must_refuse() {  # $1 = 布置 SQL，$2 = 撤销 SQL，$3 = 说明
@@ -251,6 +254,75 @@ policy_must_refuse "CREATE ROLE t_pol_member IN ROLE starbuddy_authz;" "DROP ROL
 psql_pol -1 < "$U41" >/dev/null 2>"$WORK/role41.err" \
   || { echo "db-test: 失败（角色都正常时 0041 反而执行失败：$(cat "$WORK/role41.err")）"; exit 1; }
 echo "ok - 角色都正常时 0041 可以执行（上面的拒绝不是别的原因）" >> "$OUT"
+
+# 0047 的归档与回填（specs/policy-decisions-v0.9.1 PR1）：在执行到 0046 的库上，经签字发布三条合成指标生招录行
+# （两所合成学校在 batch_1 上控制线不同，另一条在 batch_2），0047 必须以明确信息中止且库不变（控制线按城市一条）；
+# 撤下 batch_1 的一条与 batch_2 的那条后 0047 执行成功：三条旧值原样进归档表，只回填已发布行（batch_1 一条控制线草稿，
+# 值与来源取已发布行），已撤下行的值只留在归档表（batch_2 不回填），删掉旧列
+as_pg "$PGBIN/createdb" -h "$WORK" -U postgres policy_backfill_check
+psql_bf() { as_pg "$PGBIN/psql" -h "$WORK" -U postgres -d policy_backfill_check -X -q -v ON_ERROR_STOP=1 "$@"; }
+U47="$(ls "$ROOT"/db/migrations/0047_*.up.sql)"
+for f in "${UPS[@]}"; do
+  [ "$f" = "$U47" ] && break  # 只执行 0047 之前的
+  psql_bf -1 < "$f" >/dev/null 2>&1 || { echo "db-test: 失败（0047 回填测试库执行 $(basename "$f") 出错）"; exit 1; }
+done
+BF_SF1=5f000000-0000-4000-8000-00000000005f; BF_SF2=f5000000-0000-4000-8000-0000000000f5
+BD=f7940000-0000-4000-8000-0000000000d1; BS=f7940000-0000-4000-8000-0000000000e1
+BH1=f7940000-0000-4000-8000-0000000000f1; BH2=f7940000-0000-4000-8000-0000000000f2
+BL1=f7940000-0000-4000-8000-0000000000b1; BL2=f7940000-0000-4000-8000-0000000000b2; BL3=f7940000-0000-4000-8000-0000000000b3
+bf_sign2() {  # $1 = 一条签字语句；两名合成 staff 各签一次
+  printf "SELECT set_config('app.account_id', '%s', false); SET ROLE starbuddy_review; %s RESET ROLE;
+          SELECT set_config('app.account_id', '%s', false); SET ROLE starbuddy_review; %s RESET ROLE;" "$BF_SF2" "$1" "$BF_SF1" "$1"
+}
+bf_rec() { printf "SELECT policy.sign_record('%s', '%s', 'approved', policy.object_digest('%s', '%s'));" "$1" "$2" "$1" "$2"; }
+{ printf '%s\n' "INSERT INTO platform.account (id, kind) VALUES ('$BF_SF1', 'staff'), ('$BF_SF2', 'staff');
+    INSERT INTO policy.source_domain (host, issuer, added_by) VALUES ('jyj.synthcity.example', '合成教育局', 'staff-001');
+    SET ROLE starbuddy_kge;
+    INSERT INTO policy.source_document (id, city, issuer, doc_number, title, published_on, url, applies_from_cohort, last_verified_on)
+      VALUES ('$BD', 'synthcity', '合成教育局', '合成〔2026〕1号', '合成回填测试（非真实数据）', '2026-03-01', 'https://jyj.synthcity.example/doc/bf', 2027, '2026-09-01');
+    RESET ROLE;"
+  bf_sign2 "$(bf_rec source_document "$BD")"
+  printf '%s\n' "SET ROLE starbuddy_kge;
+    INSERT INTO policy.exam_scheme (id, city, cohort, version, source_document_id) VALUES ('$BS', 'synthcity', 2027, '1.0.0', '$BD');
+    INSERT INTO policy.subject_config (scheme_id, subject, scored, full_score, proposition, exam_form, taken_in_grade)
+      VALUES ('$BS', 'chinese', true, 100, 'city', 'closed_book', 9);
+    INSERT INTO policy.admission_rule (scheme_id, batch_code, batch_order, track, control_line_basis) VALUES
+      ('$BS', 'batch_1', 1, 'quota_allocation', 'total_score'), ('$BS', 'batch_2', 2, 'quota_allocation', 'total_score');
+    INSERT INTO policy.school (id, city, code, public_name, level_code, source_document_id) VALUES
+      ('$BH1', 'synthcity', 'synth-bf-a', '合成高中甲（非真实）', 'level_a', '$BD'), ('$BH2', 'synthcity', 'synth-bf-b', '合成高中乙（非真实）', 'level_a', '$BD');
+    RESET ROLE;"
+  bf_sign2 "SELECT policy.sign_scheme('$BS', 'approved', policy.object_digest('exam_scheme', '$BS'));"
+  printf '%s\n' "SELECT set_config('app.account_id', '$BF_SF1', false); SET ROLE starbuddy_review; SELECT policy.publish_scheme('$BS'); RESET ROLE;"
+  bf_sign2 "$(bf_rec school "$BH1") $(bf_rec school "$BH2")"
+  printf '%s\n' "SET ROLE starbuddy_kge;
+    INSERT INTO policy.admission_line (id, school_id, year, batch_code, track, plan_count, control_line, source_document_id) VALUES
+      ('$BL1', '$BH1', 2027, 'batch_1', 'quota_allocation', 50, 80, '$BD'), ('$BL2', '$BH2', 2027, 'batch_1', 'quota_allocation', 40, 85, '$BD'),
+      ('$BL3', '$BH1', 2027, 'batch_2', 'quota_allocation', 30, 75, '$BD');
+    RESET ROLE;"
+  bf_sign2 "$(bf_rec admission_line "$BL1") $(bf_rec admission_line "$BL2") $(bf_rec admission_line "$BL3")"
+} | psql_bf >/dev/null 2>"$WORK/bf.err" || { echo "db-test: 失败（0047 回填测试夹具：$(cat "$WORK/bf.err")）"; exit 1; }
+[ "$(psql_bf -tAc "SELECT string_agg(status::text, ',') FROM policy.admission_line" </dev/null)" = "published,published,published" ] \
+  || { echo "db-test: 失败（0047 回填测试夹具：三条招录行没有都发布）"; exit 1; }
+if psql_bf -1 < "$U47" >/dev/null 2>"$WORK/up47.err"; then
+  echo "db-test: 失败（已发布招录行的控制线不一致时 0047 仍然执行成功）"; exit 1
+fi
+grep -q '0047 中止' "$WORK/up47.err" || { echo "db-test: 失败（0047 不是被回填检查中止：$(cat "$WORK/up47.err")）"; exit 1; }
+[ "$(psql_bf -tAc "SELECT count(*) FROM pg_attribute WHERE attrelid = 'policy.admission_line'::regclass AND attname = 'control_line' AND NOT attisdropped" </dev/null)" = "1" ] \
+  && [ "$(psql_bf -tAc "SELECT to_regclass('policy.control_line') IS NULL AND to_regclass('policy.admission_line_control_line_archive') IS NULL" </dev/null)" = "t" ] \
+  || { echo "db-test: 失败（0047 中止后库被改动了）"; exit 1; }
+echo "ok - 已发布招录行的控制线不一致时 0047 以明确信息中止，库不变" >> "$OUT"
+printf '%s\n' "SET ROLE starbuddy_kge; UPDATE policy.admission_line SET status = 'retired' WHERE id IN ('$BL2', '$BL3');" | psql_bf >/dev/null \
+  || { echo "db-test: 失败（0047 回填测试：撤下招录行失败）"; exit 1; }
+psql_bf -1 < "$U47" >/dev/null 2>"$WORK/up47.err" || { echo "db-test: 失败（撤下冲突行后 0047 仍然执行失败：$(cat "$WORK/up47.err")）"; exit 1; }
+[ "$(psql_bf -tAc "SELECT string_agg(concat_ws('|', city, year, batch_code, track, score, status, source_document_id, reviewed_at IS NULL), ',') FROM policy.control_line" </dev/null)" \
+  = "synthcity|2027|batch_1|quota_allocation|80.0|draft|$BD|t" ] \
+  || { echo "db-test: 失败（0047 回填的控制线不对：$(psql_bf -tAc "SELECT string_agg(to_jsonb(c)::text, ',') FROM policy.control_line c" </dev/null)）"; exit 1; }
+[ "$(psql_bf -tAc "SELECT string_agg(admission_line_id || ':' || control_line || ':' || line_status, ',' ORDER BY admission_line_id) FROM policy.admission_line_control_line_archive" </dev/null)" \
+  = "$BL1:80.0:published,$BL2:85.0:retired,$BL3:75.0:retired" ] \
+  || { echo "db-test: 失败（0047 的归档表不对：$(psql_bf -tAc "SELECT string_agg(to_jsonb(a)::text, ',') FROM policy.admission_line_control_line_archive a" </dev/null)）"; exit 1; }
+[ "$(psql_bf -tAc "SELECT count(*) FROM pg_attribute WHERE attrelid = 'policy.admission_line'::regclass AND attname = 'control_line' AND NOT attisdropped" </dev/null)" = "0" ] \
+  || { echo "db-test: 失败（0047 回填后招录行的控制线列还在）"; exit 1; }
+echo "ok - 0047 把三条旧控制线原样归档，只把已发布行回填为一条控制线草稿（已撤下行的值只在归档表），并删掉旧列" >> "$OUT"
 
 # 0037 的回滚（KGE-04 第二步）：库里有节点键掌握记录时，回滚必须以明确错误中止（不能静默删除，也不能补假的能力点键），且什么都不改
 D37="$(ls "$ROOT"/db/migrations/0037_*.down.sql)"
@@ -434,6 +506,79 @@ grep -q '只能对草稿方案签字' "$WORK/race_v.err" || { echo "db-test: 失
   || { echo "db-test: 失败（并发场景 10 的已发布方案上有驳回记录）"; exit 1; }
 echo "ok - 并发：方案发布进行中的签字等发布提交后按非草稿拒绝" >> "$OUT"
 
+# 考情待定事项 PR1（0045、0047，specs/policy-decisions-v0.9.1）的两会话并发与生产形态的登录角色。合成学生 Y1（79y 建，建档 9 年级，有效绑定家长 gA）、
+# 79y 的 2028 届合成方案与来源文件（指标生 batch_2 设控制线）
+Y1=f7900000-0000-4000-8000-0000000000c1; GA=a0000000-0000-4000-8000-00000000000a
+AS_GA="SELECT set_config('app.account_id', '$GA', false); SET ROLE starbuddy_bff;"
+Y1C="$(psql_run -tAc "SELECT exam_cohort FROM platform.student_profile WHERE id = '$Y1'" </dev/null)"
+[ -n "$Y1C" ] && [ "$(psql_run -tAc "SELECT platform.current_grade(exam_cohort, now()) FROM platform.student_profile WHERE id = '$Y1'" </dev/null)" = "9" ] \
+  || { echo "db-test: 失败（届别并发测试的前提不成立：79y 的合成学生 Y1 不在或当前不是 9 年级）"; exit 1; }
+y1_chain() {  # Y1 最近 $1 条更正记录：旧值>新值:来源（相对 Y1C）
+  psql_run -tAc "SELECT string_agg(x, ',' ORDER BY at) FROM (SELECT (old_cohort - $Y1C) || '>' || (new_cohort - $Y1C) || ':' || source AS x, changed_at AS at
+                   FROM platform.exam_cohort_change WHERE student_id = '$Y1' ORDER BY changed_at DESC, id DESC LIMIT $1) r" </dev/null
+}
+# 场景 11（更正与再次更正）：家长经 BFF 更正 +1 后事务未提交；客服此时按 +1 之后的值再更正。函数锁住档案行，后一个等前一个提交后，
+# 以提交后的届别为旧值核对 ±1 并记录（记录串成一条链）；去掉锁时后一个读到更正前的值，相差 2 被拒
+printf '%s\n' "BEGIN; $AS_GA SELECT platform.correct_exam_cohort('$Y1', $((Y1C + 1))::smallint); SELECT pg_sleep(1.5); COMMIT;" \
+  | psql_run >/dev/null 2>"$WORK/race_w.err" &
+sleep 0.5
+printf '%s\n' "$AS_STAFF SELECT platform.correct_exam_cohort('$Y1', $((Y1C + 2))::smallint);" | psql_run >/dev/null 2>"$WORK/race_x.err" \
+  || { wait; echo "db-test: 失败（两次更正并发：后一次没有等前一次提交后按新值核对：$(cat "$WORK/race_x.err")）"; exit 1; }
+wait || { echo "db-test: 失败（并发场景 11 的先更正失败：$(cat "$WORK/race_w.err")）"; exit 1; }
+[ "$(y1_chain 2)" = "0>1:guardian_report,1>2:staff_correction" ] \
+  && [ "$(psql_run -tAc "SELECT (exam_cohort - $Y1C) || ':' || exam_cohort_source FROM platform.student_profile WHERE id = '$Y1'" </dev/null)" = "2:staff_correction" ] \
+  || { echo "db-test: 失败（两次更正并发后届别或记录不对：$(y1_chain 2)）"; exit 1; }
+echo "ok - 并发：同一学生的两次届别更正按档案行锁串行，后一次以提交后的值为旧值，记录串成一条链" >> "$OUT"
+# 场景 12（更正与改建档年级）：DBA 改建档年级后事务未提交；家长此时更正。更正等改年级提交后执行，且不再拿建档年级比对
+printf '%s\n' "BEGIN; UPDATE platform.student_profile SET grade = 8 WHERE id = '$Y1'; SELECT pg_sleep(1.5); COMMIT;" \
+  | psql_run >/dev/null 2>"$WORK/race_y.err" &
+sleep 0.5
+printf '%s\n' "$AS_GA SELECT platform.correct_exam_cohort('$Y1', $((Y1C + 1))::smallint);" | psql_run >/dev/null 2>"$WORK/race_z.err" \
+  || { wait; echo "db-test: 失败（改建档年级进行中的届别更正失败：$(cat "$WORK/race_z.err")）"; exit 1; }
+wait || { echo "db-test: 失败（并发场景 12 的改年级失败：$(cat "$WORK/race_y.err")）"; exit 1; }
+[ "$(y1_chain 1)" = "2>1:guardian_report" ] \
+  && [ "$(psql_run -tAc "SELECT grade || ':' || (exam_cohort - $Y1C) || ':' || exam_cohort_source FROM platform.student_profile WHERE id = '$Y1'" </dev/null)" = "8:1:guardian_report" ] \
+  || { echo "db-test: 失败（改年级与更正并发后档案或记录不对：$(y1_chain 1)）"; exit 1; }
+echo "ok - 并发：改建档年级进行中的届别更正等它提交后执行，不再拿建档年级比对" >> "$OUT"
+# 生产形态（审查建议 1）：服务以继承应用角色的登录角色连接，不 SET ROLE。更正函数此时按登录角色（session_user）分渠道：
+# 继承 bff 的登录角色带家长账号走家长分支；带 staff 账号被拒（走不到客服分支）；继承 review 的登录角色带 staff 账号走客服分支
+psql_run </dev/null -c "CREATE ROLE t_bff_login LOGIN IN ROLE starbuddy_bff; CREATE ROLE t_review_login LOGIN IN ROLE starbuddy_review;"
+AS_LOGIN() { printf "SET SESSION AUTHORIZATION %s; SET app.account_id = '%s';" "$1" "$2"; }
+[ "$(printf '%s\n' "$(AS_LOGIN t_bff_login "$GA") SELECT current_setting('role') || ':' || session_user;" | psql_run -tA 2>&1)" = "none:t_bff_login" ] \
+  || { echo "db-test: 失败（生产形态测试的前提不成立：登录角色会话里 role 不是 none）"; psql_run </dev/null -c "DROP ROLE t_bff_login; DROP ROLE t_review_login;"; exit 1; }
+LOGIN_OK=1
+printf '%s\n' "$(AS_LOGIN t_bff_login "$GA") SELECT platform.correct_exam_cohort('$Y1', $((Y1C + 2))::smallint);" | psql_run >/dev/null 2>"$WORK/login_a.err" || LOGIN_OK=0
+printf '%s\n' "$(AS_LOGIN t_bff_login 5f000000-0000-4000-8000-00000000005f) SELECT platform.correct_exam_cohort('$Y1', $((Y1C + 1))::smallint);" \
+  | psql_run >/dev/null 2>"$WORK/login_b.err" && LOGIN_OK=0
+printf '%s\n' "$(AS_LOGIN t_review_login 5f000000-0000-4000-8000-00000000005f) SELECT platform.correct_exam_cohort('$Y1', $((Y1C + 1))::smallint);" \
+  | psql_run >/dev/null 2>"$WORK/login_c.err" || LOGIN_OK=0
+psql_run </dev/null -c "DROP ROLE t_bff_login; DROP ROLE t_review_login;"
+[ "$LOGIN_OK" = "1" ] && grep -q 'not allowed' "$WORK/login_b.err" && [ "$(y1_chain 2)" = "1>2:guardian_report,2>1:staff_correction" ] \
+  || { echo "db-test: 失败（登录角色形态的更正渠道不对：$(cat "$WORK/login_a.err" "$WORK/login_b.err" "$WORK/login_c.err")；记录 $(y1_chain 2)）"; exit 1; }
+echo "ok - 生产形态：不 SET ROLE 时按登录角色分渠道，继承 bff 的登录角色带家长账号能更正、带 staff 账号被拒，继承 review 的登录角色走客服分支" >> "$OUT"
+# 场景 13（控制线发布唯一）：同一城市年份批次类别两条控制线草稿各有一名 staff 批准；第二名 staff 发布前一条后事务未提交，
+# 第三名 staff 此时发布后一条。唯一索引让后一个等前一个提交后失败（整笔回滚），只留一条已发布；去掉索引时两条都发布
+ZA=f7930000-0000-4000-8000-0000000000b1; ZB=f7930000-0000-4000-8000-0000000000b2; YCD1=f7910000-0000-4000-8000-0000000000d1
+SIGN_Z() { printf "SELECT policy.sign_record('control_line', '%s', 'approved', policy.object_digest('control_line', '%s'));" "$1" "$1"; }
+printf '%s\n' "SET ROLE starbuddy_kge;
+  INSERT INTO policy.control_line (id, city, year, batch_code, score, source_document_id) VALUES
+    ('$ZA', 'synthcity', 2028, 'batch_2', 91, '$YCD1'), ('$ZB', 'synthcity', 2028, 'batch_2', 92, '$YCD1');
+  RESET ROLE; $AS_STAFF $(SIGN_Z "$ZA") $(SIGN_Z "$ZB")" | psql_run >/dev/null 2>"$WORK/clrace.err" \
+  || { echo "db-test: 失败（控制线并发测试夹具：$(cat "$WORK/clrace.err")）"; exit 1; }
+[ "$(psql_run -tAc "SELECT count(*) FROM policy.control_line WHERE city = 'synthcity' AND year = 2028 AND batch_code = 'batch_2' AND status = 'published'" </dev/null)" = "0" ] \
+  || { echo "db-test: 失败（控制线并发测试的前提不成立：2028 届 batch_2 已有已发布控制线）"; exit 1; }
+printf '%s\n' "BEGIN; $AS_SF2 $(SIGN_Z "$ZA") SELECT pg_sleep(1.5); COMMIT;" | psql_run >/dev/null 2>"$WORK/race_cl1.err" &
+sleep 0.5
+if printf '%s\n' "$AS_SF3 $(SIGN_Z "$ZB")" | psql_run >/dev/null 2>"$WORK/race_cl2.err"; then
+  wait; echo "db-test: 失败（同一城市年份批次类别的两条控制线并发发布都成功了）"; exit 1
+fi
+wait || { echo "db-test: 失败（并发场景 13 的先发布失败：$(cat "$WORK/race_cl1.err")）"; exit 1; }
+grep -q 'control_line_one_published' "$WORK/race_cl2.err" || { echo "db-test: 失败（并发场景 13 的后一个不是被唯一索引拒绝：$(cat "$WORK/race_cl2.err")）"; exit 1; }
+[ "$(psql_run -tAc "SELECT string_agg(id || ':' || status, ',' ORDER BY id) FROM policy.control_line WHERE id IN ('$ZA', '$ZB')" </dev/null)" = "$ZA:published,$ZB:draft" ] \
+  && [ "$(psql_run -tAc "SELECT policy.approval_count('control_line', '$ZB')" </dev/null)" = "1" ] \
+  || { echo "db-test: 失败（控制线并发发布后不是恰好一条已发布、另一条签字回滚）"; exit 1; }
+echo "ok - 并发：同一城市年份批次类别的两条控制线并发发布，唯一索引让后一个等前一个提交后失败，只留一条已发布" >> "$OUT"
+
 # 0041 的数据前提：库里已有已发布的考情数据（77、79v 经签字发布的）时，0041 up 以明确信息中止（自报工号的发布补不出签字记录）
 if psql_run -1 < "$(ls "$ROOT"/db/migrations/0041_*.up.sql)" >/dev/null 2>"$WORK/up41.err"; then
   echo "db-test: 失败（库里已有已发布考情数据时 0041 up 仍然执行成功）"; exit 1
@@ -452,6 +597,18 @@ done
 [ "$(psql_run -tAc "SELECT count(*) FROM pg_proc WHERE oid = 'policy.sign_record(text, uuid, text, text)'::regprocedure" </dev/null)" = "1" ] \
   || { echo "db-test: 失败（0041 回滚中止后签字函数不在了）"; exit 1; }
 echo "ok - 有考情签字记录时 0041、0040 回滚以明确错误中止，库不变" >> "$OUT"
+# 0048、0047、0045 的回滚：已有来源清单操作记录、控制线、届别更正记录（79y 与上面的并发场景写入）时，回滚以明确错误中止，且什么都不改
+# （0046 只改策略与守卫，没有数据前提）
+for n in 0048 0047 0045; do
+  if psql_run -1 < "$(ls "$ROOT"/db/migrations/${n}_*.down.sql)" >/dev/null 2>"$WORK/down$n.err"; then
+    echo "db-test: 失败（已有数据时 $n 回滚仍然执行成功）"; exit 1
+  fi
+  grep -q "$n 回滚中止" "$WORK/down$n.err" || { echo "db-test: 失败（$n 回滚不是被数据检查中止：$(cat "$WORK/down$n.err")）"; exit 1; }
+done
+[ "$(psql_run -tAc "SELECT to_regprocedure('policy.add_source_domain(text, text)') IS NOT NULL AND to_regclass('policy.control_line') IS NOT NULL
+                      AND to_regprocedure('platform.correct_exam_cohort(uuid, smallint)') IS NOT NULL" </dev/null)" = "t" ] \
+  || { echo "db-test: 失败（0045、0047、0048 回滚中止后对象不在了）"; exit 1; }
+echo "ok - 已有来源清单操作记录、控制线、届别更正记录时 0048、0047、0045 回滚以明确错误中止，库不变" >> "$OUT"
 
 n=$(grep -c 'ok - ' "$OUT" || true)
 echo "db-test: 通过（${n} 项断言）"

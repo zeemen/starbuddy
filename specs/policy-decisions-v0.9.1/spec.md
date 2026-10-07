@@ -82,8 +82,14 @@
   - `db/tests` 正反例（含两会话并发：更正与改年级、控制线发布）；
   - 变异全部被发现；
   - 每个新迁移单独 down → up；快照与攻击面同步。
-- **PR2（年级读点 + BFF + 审核台来源清单）：**
-  - BFF 改读 `current_grade`，测试不依赖墙钟；
+- **PR2（年级读点 + BFF + 审核台来源清单与控制线签字）：**
+  - 年级读点全部改读 `current_grade`（契约审查 B1 补全的清单），测试不依赖墙钟：
+    - BFF：`shell-routes.ts` 的 `profile()` 与内容版本选择（经插件契约 `ContentVersion.grade` 发出）、`routes.ts` 的 `GET /me` `children[].grade`（`shell.v0.yaml`）；
+    - 学习服务：`diagnosis/store.py` 的 `student_grade()`（诊断选题）；
+    - 前端（数据来自 `/me`）：`shell/guard.ts`、`auth/copy.ts` 的 `childLabel` 与家长端各页标签、`trust/ExamPages.tsx` 的满分默认值；
+    - `POST /students` 写入建档年级保持不变；建档表单写明“9 月起的年级”。
+  - 审核台支持控制线签字（契约审查 B2）：`review_console/app.py` 对象类型、`store.py` 待签列表、前端 `review/actions.ts`、`lib/review.ts`、记录页标签；
+  - BFF 届别更正入口加频控；
   - 审核台接口与页面，含 403 用例；
   - e2e 加 DOM 泄漏检查；路由矩阵与 OpenAPI 同步。
 - **两个 PR 都要：**

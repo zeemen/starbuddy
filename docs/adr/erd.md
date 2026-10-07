@@ -203,9 +203,9 @@ erDiagram
 
 个人层计划中的改动（冲刺 1-C，未建，只在这里画出）：`platform.evidence_event` 增加 `evidence_kind`、`map_version`、`cognitive_level` 三列，分别记录证据种类、证据产生时的地图版本、证据对应的认知层次，与契约 `EvidenceDraft` 一起改（必停项）。
 
-## policy schema：考情政策库与招录库（0013、0014）
+## policy schema：考情政策库与招录库（0013、0014；0045–0048 草稿）
 
-公共基础数据：城市 × 中考届别的考试方案（五层），学校 × 年度 × 批次的录取数据。唯一写入方是 `starbuddy_kge`，不含学生数据。录入规范见 `docs/design/policy/data-entry-rules.md`。
+公共基础数据：城市 × 中考届别的考试方案（五层），学校 × 年度 × 批次的录取数据，城市 × 年份 × 批次的指标生控制线。唯一写入方是 `starbuddy_kge`，不含学生数据。录入规范见 `docs/design/policy/data-entry-rules.md`。
 
 ```mermaid
 erDiagram
@@ -216,15 +216,28 @@ erDiagram
   exam_scheme ||--o{ admission_rule : "招录规则（第 5 层）"
   school ||--o{ admission_line : "学校 × 年度 × 批次 × 类别"
   source_document ||--o{ admission_line : "来源覆盖该年"
+  source_document ||--o{ control_line : "0047：来源覆盖该年"
+  admission_rule ||..o{ control_line : "0047：须对应该年已发布方案里 control_line_basis 不是 none 的指标生规则，不加外键"
+  admission_line ||--o| admission_line_control_line_archive : "0047：删列前的旧控制线原样归档"
   student_profile }o..|| exam_scheme : "0014：exam_cohort 与（region, 届别）对应，不加外键"
+  student_profile ||--o{ exam_cohort_change : "0045：届别更正记录（platform）"
+  source_domain ||..o{ policy_source_domain_change : "0048：清单操作记录（platform，按主机名，不加外键）"
 ```
 
 | 表 | 谁写 | 谁读 | 要点 |
 |---|---|---|---|
-| `policy.source_domain` | 人工登记 | kge、learning | 官方来源主机名清单 |
-| `policy.source_document` | kge | learning；bff 只看已发布，不看复核人 | https、主机名在清单里、两人复核后发布；发布后只能更新核对日期或撤下 |
-| `policy.exam_scheme` | kge（发布只能经 `policy.publish_scheme`，属主 authz） | learning；bff 只看已发布 | 同城市同届别只一个已发布；非草稿只能改状态 |
-| `policy.subject_config` / `transition_rule` / `admission_rule` | kge | learning；bff 只看已发布方案的 | 方案发布后冻结；计分科目必须有满分；总分由库计算 |
-| `policy.school` / `policy.admission_line` | kge | learning、bff（招录行只看已发布） | 分数不超过该年方案总分；来源覆盖该年；已发布行只能撤下，更正走新行 |
-| `platform.policy_signoff`（0040 草稿） | 只经 `policy.sign_scheme` / `sign_record` / `publish_scheme`（属主 authz，只授 review，0041 草稿） | 任何应用角色都不能直接读；kge、review 经 `platform.policy_signoff_record()`（0040）导出 | 考情签字人是 staff 账号（policy 不存账号引用，规则 13）；签字记内容摘要，两名不同 staff 对当前内容批准才发布，同一账号对同一内容只签一次；只追加。0041 起来源文件、招录行、学校在第二名批准时发布，方案由签字身份发布，kge 不能直接改为已发布 |
+| `policy.source_domain` | 迁移或 DBA；0048 起有 `policy_source_admin` 权限的 active staff 经 `policy.add_source_domain` / `retire_source_domain`（只授 review） | kge、learning | 官方来源主机名清单；主机名规范化（小写、去结尾的点，不收 IP、通配符、端口、只有公共后缀的主机）；只下线不删行；登记人列写固定标记，操作者只记在 platform |
+| `policy.source_document` | kge | learning；bff 看已发布与已撤下（0046），不看复核人 | https、主机名在清单里、两人复核后发布；发布后只能更新核对日期或撤下；草稿不能直接撤下（0046） |
+| `policy.exam_scheme` | kge（发布只能经 `policy.publish_scheme`，属主 authz） | learning；bff 看已发布与已撤下（往年方案，0046） | 同城市同届别只一个已发布；非草稿只能改状态；状态只能 草稿 → 已发布 → 已撤下（0046 起草稿不能直接撤下） |
+| `policy.subject_config` / `transition_rule` / `admission_rule` | kge | learning；bff 看已发布与已撤下方案的（0046） | 方案发布后冻结；计分科目必须有满分；总分由库计算 |
+| `policy.school` / `policy.admission_line` | kge | learning、bff（只看已复核学校与已发布招录行） | 分数不超过该年方案总分；来源覆盖该年；已发布行只能撤下，更正走新行；0047 起招录行没有控制线列 |
+| `policy.control_line`（0047 草稿） | kge 只能新建草稿、改分数、来源与撤下；发布只经 `policy.sign_record`（两名不同 staff） | learning；bff 只看已发布，不看复核时间 | 城市 × 年份 × 批次 × 指标生一条已发布；对应该年已发布方案里需要控制线的招录规则；来源同城市、已发布、覆盖该年；不超过计分总分；已发布只能撤下，草稿不能直接撤下；没有自报复核人列 |
+| `policy.admission_line_control_line_archive`（0047 草稿） | 只由 0047 写入 | kge、learning（bff 无权限） | 删列前招录行上的旧控制线（招录行 id、值、当时状态）原样归档；已撤下行的值只在这里 |
+| `platform.policy_signoff`（0040 草稿） | 只经 `policy.sign_scheme` / `sign_record` / `publish_scheme`（属主 authz，只授 review，0041 草稿） | 任何应用角色都不能直接读；kge、review 经 `platform.policy_signoff_record()`（0040）导出 | 考情签字人是 staff 账号（policy 不存账号引用，规则 13）；签字记内容摘要，两名不同 staff 对当前内容批准才发布，同一账号对同一内容只签一次；只追加。0041 起来源文件、招录行、学校在第二名批准时发布，方案由签字身份发布，kge 不能直接改为已发布；0047 起也收控制线（`control_line_id`） |
+| `platform.exam_cohort_change`（0045 草稿） | 只经 `platform.correct_exam_cohort`（属主 authz；授 bff 与 review） | 任何应用角色都不能读 | 学生档案届别更正的最小记录：旧值、新值、来源（guardian_report / staff_correction）、操作者、时间；随删除请求删除 |
+| `platform.staff_permission`（0048 草稿） | 只由迁移或 DBA 授予 | review 只读自己的权限 | staff 的附加权限，首个 `policy_source_admin`；库层守卫只认 staff 账号 |
+| `platform.policy_source_domain_change`（0048 草稿） | 只经来源清单的新增、下线函数（属主 authz） | 任何应用角色都不能读 | 官方来源清单的操作记录（主机名、动作、说明、操作者、时间）；只追加 |
+
+学生档案的届别（0045 起）：`exam_cohort` 是真相源，`grade` 是建档时年级；当前年级由 `platform.current_grade(exam_cohort, 时刻)` 推算（9 月 1 日切学年，不在 7–9 返回 NULL，时刻由调用方给）；
+来源列 `exam_cohort_source`（derived / guardian_report / staff_correction；建档只收前两种，之后改届别必须同时改来源）。更正只经 `platform.correct_exam_cohort`：经 BFF 时须是有效绑定家长，经审核台签字连接时须是 active staff，每次 ±1。
 

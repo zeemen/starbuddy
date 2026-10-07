@@ -71,6 +71,39 @@ BEGIN
                                        || coalesce('（命中：' || array_to_string(v_hits, '、') || '）', ''));
 END $$;
 
+-- 控制线旧值归档表（0047）：公共层（没有账号列，上面的公共层断言与金丝雀覆盖它），只读；只有写入方与学习服务能读，BFF 等其他角色没有任何权限
+SELECT t.ok(NOT EXISTS (
+  SELECT 1 FROM t.app_roles() r(role)
+   WHERE has_any_column_privilege(r.role, 'policy.admission_line_control_line_archive', 'INSERT')
+      OR has_any_column_privilege(r.role, 'policy.admission_line_control_line_archive', 'UPDATE')
+      OR has_table_privilege(r.role, 'policy.admission_line_control_line_archive', 'DELETE')
+      OR has_table_privilege(r.role, 'policy.admission_line_control_line_archive', 'TRUNCATE')
+      OR (has_any_column_privilege(r.role, 'policy.admission_line_control_line_archive', 'SELECT')
+          AND r.role NOT IN ('starbuddy_kge', 'starbuddy_learning'))),
+  '攻击面：控制线旧值归档表只读，只有写入方与学习服务能读（BFF 无权限）');
+-- 考情待定事项（0045–0048，specs/policy-decisions-v0.9.1）：届别更正记录、staff 权限表、来源清单操作记录只有函数属主 authz 能写；
+-- staff 权限只由迁移或 DBA 授予，签字身份只读（策略只给自己的行）；删除执行身份只读学生键、只删届别更正记录（随删除请求）。
+-- 来源清单的操作者是 staff 账号，记在 platform，不进 policy（上面的公共层断言与金丝雀同样覆盖 policy.source_domain）
+SELECT t.ok(NOT EXISTS (
+  SELECT 1 FROM unnest(ARRAY['platform.exam_cohort_change', 'platform.staff_permission', 'platform.policy_source_domain_change']::regclass[]) tb
+       CROSS JOIN t.app_roles() r(role)
+   WHERE r.role <> 'starbuddy_authz'
+     AND ((has_any_column_privilege(r.role, tb, 'SELECT')
+           AND NOT (tb = 'platform.staff_permission'::regclass AND r.role = 'starbuddy_review')
+           AND NOT (tb = 'platform.exam_cohort_change'::regclass AND r.role = 'starbuddy_eraser'))
+          OR has_any_column_privilege(r.role, tb, 'INSERT') OR has_any_column_privilege(r.role, tb, 'UPDATE')
+          OR (has_table_privilege(r.role, tb, 'DELETE') AND NOT (tb = 'platform.exam_cohort_change'::regclass AND r.role = 'starbuddy_eraser'))
+          OR has_table_privilege(r.role, tb, 'TRUNCATE'))),
+  '攻击面：届别更正记录、staff 权限表、来源清单操作记录只有函数属主能写（签字身份只读自己的权限，删除身份只删更正记录）');
+SELECT t.ok((SELECT array_agg(r.role ORDER BY r.role) FROM t.app_roles() r(role)
+              WHERE has_function_privilege(r.role, 'platform.correct_exam_cohort(uuid, smallint)', 'EXECUTE'))
+              = '{starbuddy_authz,starbuddy_bff,starbuddy_review}'
+            AND (SELECT array_agg(r.role ORDER BY r.role) FROM t.app_roles() r(role)
+                  WHERE has_function_privilege(r.role, 'policy.add_source_domain(text, text)', 'EXECUTE')
+                     OR has_function_privilege(r.role, 'policy.retire_source_domain(text)', 'EXECUTE'))
+              = '{starbuddy_authz,starbuddy_review}',
+            '攻击面：届别更正只授 BFF 与签字身份，来源清单的新增与下线只授签字身份');
+
 -- ================= 二、SECURITY DEFINER 函数（I1） =================
 SELECT t.ok(NOT EXISTS (
   SELECT 1 FROM pg_proc p
@@ -254,10 +287,12 @@ INSERT INTO t.visibility_exempt VALUES
   ('kge.map_version', '公共知识层，只看已发布版本，没有学生键（本文件第一节断言）'),
   ('kge.knowledge_node', '公共知识层，只看已发布版本的有效节点'), ('kge.knowledge_edge', '公共知识层，只看已发布版本的有效边'),
   ('kge.textbook_projection', '公共知识层，只看已发布版本；核对人列不授予'), ('kge.region_projection', '公共知识层，只看已发布版本'),
-  ('policy.source_document', '考情库，只看已发布；复核人列不授予'), ('policy.exam_scheme', '考情库，只看已发布方案；复核人列不授予'),
-  ('policy.subject_config', '考情库，只看已发布方案的内容'), ('policy.transition_rule', '考情库，只看已发布方案的内容'),
-  ('policy.admission_rule', '考情库，只看已发布方案的内容'), ('policy.school', '招录库，高中学校公开信息'),
-  ('policy.admission_line', '招录库，只看已发布行；复核人列不授予');
+  ('policy.source_document', '考情库，只看已发布与已撤下（往年政策的依据，0046；草稿不能直接撤下）；复核人列不授予'),
+  ('policy.exam_scheme', '考情库，只看已发布与已撤下方案（往年方案，0046；草稿不能直接撤下）；复核人列不授予'),
+  ('policy.subject_config', '考情库，只看已发布与已撤下方案的内容'), ('policy.transition_rule', '考情库，只看已发布与已撤下方案的内容'),
+  ('policy.admission_rule', '考情库，只看已发布与已撤下方案的内容'), ('policy.school', '招录库，高中学校公开信息'),
+  ('policy.admission_line', '招录库，只看已发布行；复核人列不授予'),
+  ('policy.control_line', '招录库，指标生控制线（0047），只看已发布行；复核时间列不授予');
 -- BFF 可执行、但不进函数越权矩阵的 SECURITY DEFINER 函数：没有“另一户的对象”可以作为参数，逐个写明由哪里覆盖
 CREATE TABLE t.function_matrix_exempt (sig text PRIMARY KEY, reason text NOT NULL);
 INSERT INTO t.function_matrix_exempt VALUES
