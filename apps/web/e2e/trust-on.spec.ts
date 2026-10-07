@@ -25,6 +25,8 @@ const CODES = ['one_off_slip', 'i_know', 'data_error', 'item_type_transfer', 'ti
                'verification_scheduled', 'observe_followups', 'open_fact_for_correction'];
 
 const axe = async (page: Page) => {
+  // 前端路由跳转后标题异步写入：先等标题非空再扫，否则偶发 document-title（2026-10-07 严格检查复现一次）
+  await expect(page).toHaveTitle(/\S/);
   const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
   expect(r.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)).toEqual([]);
 };

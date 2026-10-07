@@ -1,5 +1,5 @@
 # 未实现的目标明确打印“跳过”，不得伪装为通过。
-.PHONY: check-fast check contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test current-affair-expire model-router-mutation diagnosis-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-visual kge-inventory kge-inventory-test kge-import kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test sie-dictionary-check kge-id-check knowledge-test knowledge-mutation kge-compile-eval-test eval-persona eval-grade persona-registry-check persona-guard-test persona-lock persona-record insight-test insight-mutation release-walkthrough
+.PHONY: check-fast check contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test current-affair-expire model-router-mutation diagnosis-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-visual kge-inventory kge-inventory-test kge-import kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test sie-dictionary-check kge-id-check knowledge-test knowledge-mutation kge-compile-eval-test eval-persona eval-grade persona-registry-check persona-guard-test persona-lock persona-record insight-test insight-mutation release-walkthrough
 
 # 可指向装了 packages/contracts/requirements-dev.txt 的解释器，例如 make check PYTHON=.venv/bin/python
 PYTHON ?= python3
@@ -16,7 +16,7 @@ endef
 # 契约检查约 1 秒，改动后也跑一遍
 check-fast: contract-test taxonomy-check attack-surface-check sie-dictionary-check kge-id-check
 
-check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation practice-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona insight-test insight-mutation voice-blind-eval-test release-walkthrough
+check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation practice-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona insight-test insight-mutation voice-blind-eval-test release-walkthrough
 	@echo "check: lint 尚未配置，跳过；其余检查已通过"
 
 # 契约合法性 + 示例 + 反例集
@@ -152,6 +152,14 @@ practice-mutation:
 	  echo "practice-mutation: 跳过（没有安装学习服务依赖；见 services/learning/README.md）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
 	@services/learning/.venv/bin/python services/learning/scripts/practice_mutations.py; rc=$$?; \
+	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
+
+# 适配器客户端（learning/adapter_client.py）：把重试、错误归类、编码转发、严格 JSON、202、超时、总预算与 5 MB 上限逐条改坏，断言客户端测试能发现（不连库，并行 8 路，约 25 秒）
+adapter-client-mutation:
+	@if [ ! -x services/learning/.venv/bin/pytest ]; then \
+	  echo "adapter-client-mutation: 跳过（没有安装学习服务依赖；见 services/learning/README.md）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@services/learning/.venv/bin/python services/learning/scripts/adapter_client_mutations.py; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
 
 # BFF 计量模块（冲刺 2-E）：类型检查 + 单测（共享规范化向量、指纹、学习服务响应分类）+ Gate 0 六类场景集成测试
