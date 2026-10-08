@@ -65,7 +65,17 @@ MUTATIONS: dict[str, list[tuple[str, str, str]]] = {
     "版权受限的题也出": [(SRC, '\n                              and i.get("license_state") != "restricted")', ")")],
     "学生 ID 可以放在 URL 里": [(API, 'if "student_ref" in request.query_params:', "if False:")],
     "探针不能按派生键找回": [(SV, 'probe_id = await store.probe_by_key(conn, student, probe_key or "")', "probe_id = None")],
-    "放弃时不报已答题数": [(SV, '"item_count": s.item_count, "replayed": False}', '"item_count": 0, "replayed": False}')],
+    "放弃时不报已答题数": [(SV, '"item_count": s.item_count, "abandon_reason": reason, "replayed": False}',
+                    '"item_count": 0, "abandon_reason": reason, "replayed": False}')],
+    # 届别 PR3（specs/policy-decisions-v0.9.1 #12，迁移 0049）：会话中途届别被改、建立时刻的年级变了 → 续做 409
+    "续做不核对建立时的选题年级": [(SV, "(s.start_grade is not None and grade != s.start_grade)", "False")],
+    "建立会话不记选题年级": [(SV, "created_at=at, start_grade=grade)", "created_at=at, start_grade=None)")],
+    "读会话不取选题年级": [(ST, "resumed_at, created_at, start_grade, abandon_reason\"\"\"", "resumed_at, created_at, abandon_reason\"\"\"")],
+    "年级越界不报 409": [(SV, "return grade is None or (", "return (grade is not None) and (")],
+    "409 不带会话 ID": [(SV, 'extra={"session_id": s.id, "reason": "grade_changed"}', 'extra={"reason": "grade_changed"}')],
+    "放弃不记届别变化原因": [(SV, 'reason = "grade_changed" if s.start_grade is not None and grade_changed(s, grade) else None', "reason = None")],
+    "视图不带放弃原因": [(SV, '"abandon_reason": s.abandon_reason, "step": None}', '"abandon_reason": None, "step": None}')],
+    "重放放弃不返回原因": [(SV, '"abandon_reason": s.abandon_reason,\n                        "replayed": True}', '"abandon_reason": None,\n                        "replayed": True}')],
 }
 
 

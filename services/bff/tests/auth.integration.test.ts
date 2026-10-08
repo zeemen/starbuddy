@@ -325,7 +325,7 @@ test('学生模式：缺同意不能开；不满 14 另需监护人同意；打�
   assert.notEqual(s.json.session_token, g.token);
   assert.equal((await call('GET', '/me', { token: g.token })).status, 401, '家长会话同时作废');
   const me = await call('GET', '/me', { token: s.json.session_token });
-  assert.deepEqual(me.json, { account_kind: 'student', student_id: ID.S2 });
+  assert.deepEqual(me.json, { account_kind: 'student', student_id: ID.S2, grade: 9 });  // 学生本人的当前年级同样由届别推算（PR3）
   // 学生会话调 guardian 路由：全表一致地拒绝（与路径里是谁无关）
   const st = { token: s.json.session_token, csrf: s.json.csrf_token };
   const guardianRoutes = ROUTES.filter((r) => r.auth === 'guardian');

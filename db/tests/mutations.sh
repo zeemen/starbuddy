@@ -449,7 +449,7 @@ declare -A M=(
   ["跨版本边过期不报"]="DO \$\$ DECLARE d text := pg_get_functiondef('kge.validate_map_version(uuid)'::regprocedure); BEGIN IF position('AND v.status <> ''published''' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'AND v.status <> ''published''', 'AND false'); END \$\$;"
   ["攻击面：公共层加无外键的 uuid 列"]="ALTER TABLE kge.map_change ADD COLUMN sample_ref uuid;"
   ["攻击面：公共层文本里写学生 ID"]="INSERT INTO kge.map_change (subject, change_type, payload, evidence_pack) VALUES ('aya', 'other', '{}', '{\"note\": \"c1000000-0000-4000-8000-0000000000c1\"}');"
-  ["考情：来源主机名不校验"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.guard_source_document()'::regprocedure); BEGIN IF position('AND NOT EXISTS (SELECT 1 FROM policy.source_domain d WHERE d.host = policy.url_host(NEW.url) AND d.status = ''active'') THEN' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'AND NOT EXISTS (SELECT 1 FROM policy.source_domain d WHERE d.host = policy.url_host(NEW.url) AND d.status = ''active'') THEN', 'AND false THEN'); END \$\$;"
+  ["考情：来源主机名不校验"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.guard_source_document()'::regprocedure); BEGIN IF position('AND NOT coalesce(policy.lock_active_source_host(policy.url_host(NEW.url)), false) THEN' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'AND NOT coalesce(policy.lock_active_source_host(policy.url_host(NEW.url)), false) THEN', 'AND false THEN'); END \$\$;"
   ["考情：已发布来源文件可改内容"]="DO \$\$ DECLARE d text := pg_get_functiondef('policy.guard_source_document()'::regprocedure); BEGIN IF position('IF OLD.status = ''published'' AND (NEW.city,' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'IF OLD.status = ''published'' AND (NEW.city,', 'IF false AND (NEW.city,'); END \$\$;"
   ["考情：来源文件可不经签字发布"]="DROP TRIGGER guard_signoff_publish ON policy.source_document;"
   ["考情：适用届别起止不校验"]="ALTER TABLE policy.source_document DROP CONSTRAINT source_document_cohort_range;"
@@ -995,7 +995,7 @@ M+=(
   ["届别：超级用户也能更正"]="$(afr "$CE" "'ELSIF v_via_review AND NOT v_via_bff THEN'" "'ELSIF v_via_review THEN'")"
   ["届别：更正不核对绑定"]="$(afr "$CE" "'IF p_student IS NULL OR NOT platform.is_linked_guardian(p_student) THEN'" "'IF p_student IS NULL OR NOT platform.is_active_guardian() THEN'")"
   ["届别：学生本人可更正"]="$(afr "$CE" "'NOT platform.is_linked_guardian(p_student) THEN'" "'NOT platform.can_read_student(p_student) THEN'")"
-  ["届别：客服更正不查 staff"]="$(afr "$CE" "'v_actor := platform.review_current_staff();'" "'v_actor := platform.current_account_id();'")"
+  ["届别：客服更正不查 staff"]="$(afr "$CE" "'a.kind = ''staff'' AND a.status = ''active'' AND '" "''")"
   ["届别：更正不限 ±1"]="$(afr "$CE" "'IF abs(p_new_cohort - v_old) <> 1 THEN'" "'IF p_new_cohort = v_old THEN'")"
   ["届别：更正后年级可越界"]="$(afr "$CE" "'IF platform.current_grade(p_new_cohort, v_at) IS NULL THEN'" "'IF false THEN'")"
   ["届别：更正不锁档案行"]="$(afr "$CE" "'WHERE s.id = p_student FOR UPDATE;'" "'WHERE s.id = p_student;'")"
@@ -1057,6 +1057,60 @@ M+=(
   ["攻击面：届别更正记录对 BFF 可读"]="GRANT SELECT ON platform.exam_cohort_change TO starbuddy_bff;"
   ["攻击面：来源清单函数授给知识服务"]="GRANT EXECUTE ON FUNCTION $ASD TO starbuddy_kge;"
   ["攻击面：届别更正授给学习服务"]="GRANT EXECUTE ON FUNCTION $CE TO starbuddy_learning;"
+)
+
+# 考情待人确认事项按默认处理 PR3（0049 platform、0050 policy，specs/policy-decisions-v0.9.1“PR3”）：由 79y、79z、80 与 run.sh 的并发场景 14 发现
+# （授权类的同时由 80 的快照发现）。DBMUT_FILTER=届别 / 导出届别 / 来源清单 / 来源说明 / 考情 / 诊断会话 / 退回额度 分组跑
+ILO='policy.idn_label_ok(text)'
+RGC='platform.meter_refund_grade_changed(uuid)'
+LSH='policy.lock_active_source_host(text)'
+M+=(
+  ["届别：客服更正认别的权限"]="$(afr "$CE" "'p.permission = ''cohort_correction'')'" "'true)'")"
+  ["届别：客服更正不查权限表"]="$(afr "$CE" "'JOIN platform.staff_permission p ON p.staff_id = a.id'" "'LEFT JOIN platform.staff_permission p ON true'") $(afr "$CE" "'p.permission = ''cohort_correction'')'" "'true)'")"
+  ["届别：客服更正不查学生是否存在"]="$(afr "$CE" "'OR NOT EXISTS (SELECT 1 FROM platform.student_profile s WHERE s.id = p_student AND s.erased_at IS NULL) THEN'" "'THEN'")"
+  ["届别：客服更正对已删除档案报不同的错"]="$(afr "$CE" "' AND s.erased_at IS NULL) THEN'" "') THEN'")"
+  ["导出届别：profile 不带届别与来源"]="UPDATE platform.personal_table_registry SET export_columns = ARRAY['grade', 'region', 'birth_year_month', 'created_at'] WHERE nspname = 'platform' AND relname = 'student_profile';"
+  ["导出届别：更正记录不导出"]="UPDATE platform.personal_table_registry SET export_topic = NULL, export_columns = NULL WHERE nspname = 'platform' AND relname = 'exam_cohort_change';"
+  ["导出届别：更正记录带操作者账号"]="UPDATE platform.personal_table_registry SET export_columns = ARRAY['old_cohort', 'new_cohort', 'source', 'changed_at', 'changed_by'] WHERE nspname = 'platform' AND relname = 'exam_cohort_change';"
+  ["导出届别：更正记录只导本人做的"]="UPDATE platform.personal_table_registry SET export_filter = 'changed_by = platform.current_account_id()' WHERE nspname = 'platform' AND relname = 'exam_cohort_change';"
+  ["来源清单：不核对 xn-- 标签"]="$(afr "$NSH" "' AND NOT EXISTS (SELECT 1 FROM unnest(string_to_array(h, ''.'')) l WHERE NOT policy.idn_label_ok(l))'" "''")"
+  ["来源清单：xn-- 不做往返核对"]="$(afr "$ILO" "'RETURN v_enc = v_in;'" "'RETURN true;'")"
+  ["来源清单：xn-- 解码溢出不拒"]="$(afr "$ILO" "'IF v_i > 2147483647 THEN RETURN false; END IF;'" "''") $(afr "$ILO" "'IF v_w > 2147483647 THEN RETURN false; END IF;'" "''") $(afr "$ILO" "'IF v_n > 0x10FFFF OR v_n BETWEEN 0xD800 AND 0xDFFF THEN RETURN false; END IF;'" "''")"
+  ["来源清单：xn-- 解码出零宽字符不拒"]="$(afr "$ILO" "'WHERE policy.is_hidden_codepoint(c)'" "'WHERE false'")"
+  ["来源清单：xn-- 解码出句号变体不拒"]="$(afr "$ILO" "'OR c IN (0x3002, 0xFE52, 0xFF0E, 0xFF61)'" "''")"
+  ["来源清单：xn-- 标签不限 63 个字符"]="$(afr "$ILO" "'IF char_length(p_label) > 63 THEN'" "'IF false THEN'")"
+  ["来源清单：xn-- 前缀区分大小写"]="$(afr "$ILO" "'IF lower(left(p_label, 4)) <> ''xn--'' THEN'" "'IF left(p_label, 4) <> ''xn--'' THEN'")"
+  ["来源说明：函数不拒格式字符"]="$(afr "$ASD" "'IF policy.has_hidden_chars(v_note) THEN'" "'IF false THEN'")"
+  ["来源说明：码位表漏了零宽字符"]="$(afr 'policy.is_hidden_codepoint(integer)' "'OR p BETWEEN 0x200B AND 0x200F'" "'OR p BETWEEN 0x200C AND 0x200F'")"
+  ["来源说明：码位表漏了行段分隔符"]="$(afr 'policy.is_hidden_codepoint(integer)' "'OR p BETWEEN 0x2028 AND 0x2029'" "''")"
+  ["来源说明：码位表多收了普通空格"]="$(afr 'policy.is_hidden_codepoint(integer)' "'SELECT p BETWEEN 0x1 AND 0x1F'" "'SELECT p BETWEEN 0x1 AND 0x20'")"
+  ["来源说明：码位表漏了补充平面的格式字符"]="$(afr 'policy.is_hidden_codepoint(integer)' "'OR p BETWEEN 0x13430 AND 0x1343F'" "'OR p BETWEEN 0x13430 AND 0x13438'")"  ["来源说明：清单行 CHECK 删掉"]="ALTER TABLE policy.source_domain DROP CONSTRAINT source_domain_issuer_visible;"
+  ["来源说明：操作记录 CHECK 删掉"]="ALTER TABLE platform.policy_source_domain_change DROP CONSTRAINT policy_source_domain_change_note_visible;"
+  ["考情：url_host 收显式端口"]="CREATE OR REPLACE FUNCTION policy.url_host(p text) RETURNS text LANGUAGE sql IMMUTABLE PARALLEL SAFE AS \$\$ SELECT lower(substring(p FROM '^https://([^/:?#]+)')) \$\$;"
+  ["考情：来源主机名核对不加共享锁"]="$(afr "$LSH" "' FOR SHARE;'" "';'")"
+  ["考情：共享锁函数不看状态"]="$(afr "$LSH" "' AND d.status = ''active'' FOR SHARE;'" "' FOR SHARE;'")"
+  ["考情：共享锁函数授给 BFF"]="GRANT EXECUTE ON FUNCTION $LSH TO starbuddy_bff;"
+  ["诊断会话：学习服务可改建立年级"]="GRANT UPDATE (start_grade) ON platform.diagnosis_session TO starbuddy_learning;"
+  ["诊断会话：建立年级不限 7–9"]="ALTER TABLE platform.diagnosis_session DROP CONSTRAINT diagnosis_session_start_grade_check;"
+  ["诊断会话：进行中也能带放弃原因"]="ALTER TABLE platform.diagnosis_session DROP CONSTRAINT diagnosis_session_abandon_reason_status;"
+  ["诊断会话：BFF 可写放弃原因"]="GRANT UPDATE (abandon_reason) ON platform.diagnosis_session TO starbuddy_bff;"
+  ["退回额度：不看放弃原因"]="$(afr "$RGC" "' AND s.abandon_reason = ''grade_changed'''" "''")"
+  ["退回额度：不看额度桶"]="$(afr "$RGC" "'AND e.resource_type = ''diagnosis_full'')'" "')'")"
+  ["退回额度：不核对幂等键"]="$(afr "$RGC" "' AND s.idempotency_key::text = r.idempotency_key'" "''")"
+  ["退回额度：不核对会话属于同一学生"]="$(afr "$RGC" "' AND s.student_id = r.student_id AND s.idempotency_key'" "' AND s.idempotency_key'")"
+  ["退回额度：退回时不再核届别"]="$(afr "$RGC" "'AND platform.diagnosis_grade_changed(s.student_id, s.created_at, s.start_grade)) THEN'" "'AND true) THEN'")"
+  ["退回额度：余量为 0 也退"]="$(afr "$RGC" "'IF v_left IS NULL OR v_left <= 0 THEN'" "'IF v_left IS NULL THEN'")"
+  ["退回额度：余量不扣已有更正"]="$(afr "$RGC" "'WHERE c.corrects_entry_id = v_settle.entry_id AND c.corrects_occurred_at = v_settle.occurred_at), 0)'" "'WHERE false), 0)'")"
+  ["退回额度：不限次数"]="$(afr "$RGC" "'AND l.student_id = r.student_id AND l.kind = ''adjust'''" "'AND false AND l.kind = ''adjust'''")"
+  ["诊断会话：可直接以已放弃新建"]="$(afr 'platform.diagnosis_session_write_guard()' "'IF TG_OP = ''INSERT'' AND (NEW.status <> ''active'' OR'" "'IF false AND (NEW.status <> ''active'' OR'")"
+  ["诊断会话：库里不核实届别"]="$(afr 'platform.diagnosis_session_write_guard()' "'AND NOT platform.diagnosis_grade_changed(NEW.student_id, NEW.created_at, NEW.start_grade) THEN'" "'AND false THEN'")"
+  ["诊断会话：旧会话也能标届别变化"]="$(afr 'platform.diagnosis_grade_changed(uuid, timestamp with time zone, smallint)' "'SELECT p_start_grade IS NOT NULL'" "'SELECT true'")"
+  ["退回额度：不核对本人"]="$(afr "$RGC" "'PERFORM platform.meter_authorize_usage(p_usage);'" "''")"
+  ["退回额度：可重复退"]="$(afr "$RGC" "'AND l.source_method = r.source_method AND l.source_idempotency_key = r.idempotency_key)'" "'AND false)'")"
+  ["退回额度：不加回 granted"]="$(afr "$RGC" "'UPDATE platform.entitlement SET granted = granted + v_left WHERE id = r.entitlement_id;'" "''")"
+  ["退回额度：未结算的不释放"]="$(afr "$RGC" "'RETURN platform.meter_release(p_usage, ''grade_changed'');'" "'RETURN jsonb_build_object(''outcome'', ''conflict'', ''state'', r.state);'")"
+  ["退回额度：授给学习服务"]="GRANT EXECUTE ON FUNCTION $RGC TO starbuddy_learning;"
+  ["攻击面：客服更正不查 cohort_correction"]="$(afr "$CE" "'JOIN platform.staff_permission p ON p.staff_id = a.id'" "'LEFT JOIN platform.staff_permission p ON true'") $(afr "$CE" "'p.permission = ''cohort_correction'')'" "'true)'")"
 )
 
 # G 流第二部分 PR D：审核台读内容版本与发布记录（0042）、时政过期下架（0043）：由 79w 发现（授权类的同时由 80 的快照发现）。
@@ -1173,6 +1227,7 @@ declare -A EXPECT=(
   ["攻击面：来源清单函数授给知识服务"]="攻击面：届别更正只授 BFF 与签字身份"
   ["攻击面：届别更正授给学习服务"]="攻击面：届别更正只授 BFF 与签字身份"
   ["攻击面：控制线归档表对 BFF 可读"]="攻击面：控制线旧值归档表只读"
+  ["攻击面：客服更正不查 cohort_correction"]="攻击面：客服届别更正——"
 )
 declare -A KEEP_SNAPSHOT=(["攻击面：可转授的授权"]=1)
 for name in "${!EXPECT[@]}"; do [ -n "${M[$name]+x}" ] || { echo "db-mutation: EXPECT 里的 $name 不是变异"; exit 1; }; done

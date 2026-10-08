@@ -30,6 +30,10 @@ class SessionRow:
     idempotency_key: str
     resumed_at: datetime
     created_at: datetime  # 会话建立时刻：选题用的年级按这一刻推算（current_grade），整个会话不变
+    # 建立时用于选题的年级（迁移 0049）：续做时按建立时刻、当前届别重算，与它不同（中途届别被改）回 409；0049 之前的会话为 None
+    start_grade: int | None = None
+    # 放弃原因（迁移 0049）：grade_changed = 中途届别被改；其余放弃为 None
+    abandon_reason: str | None = None
 
 
 @dataclass
@@ -56,7 +60,7 @@ class StepRow:
 
 
 SESSION_COLS = """id::text, student_id::text, subject::text, status, algorithm_version::text, map_version, usage_id::text,
-                  time_budget_sec, item_limit, elapsed_sec, item_count, idempotency_key::text, resumed_at, created_at"""
+                  time_budget_sec, item_limit, elapsed_sec, item_count, idempotency_key::text, resumed_at, created_at, start_grade, abandon_reason"""
 
 
 def _session(r) -> SessionRow | None:
@@ -84,20 +88,23 @@ async def lock_session(conn, session_id: str, student: str) -> SessionRow | None
 
 
 async def insert_session(conn, *, student: str, subject: str, algorithm_version: str, map_version: str, usage_id: str, key: str,
-                         time_budget_sec: int, item_limit: int, created_at: datetime) -> SessionRow:
-    """created_at 取服务时钟（与开始时推算年级的是同一刻）：之后每一步按这一刻重算年级，跨 9 月 1 日续做选题不变。"""
+                         time_budget_sec: int, item_limit: int, created_at: datetime, start_grade: int) -> SessionRow:
+    """created_at 取服务时钟（与开始时推算年级的是同一刻）：之后每一步按这一刻重算年级，跨 9 月 1 日续做选题不变。
+    start_grade 是这一刻推算出的、用于选题的年级（迁移 0049）：续做时重算的年级与它不同就说明中途届别被改了。"""
     return _session(await conn.fetchrow(
         f"""INSERT INTO platform.diagnosis_session (student_id, subject, algorithm_version, map_version, usage_id, idempotency_key,
-                                                   time_budget_sec, item_limit, created_at)
-            VALUES ($1::uuid, $2::platform.subject, $3, $4, $5::uuid, $6::uuid, $7, $8, $9) RETURNING {SESSION_COLS}""",
-        student, subject, algorithm_version, map_version, usage_id, key, time_budget_sec, item_limit, created_at))
+                                                   time_budget_sec, item_limit, created_at, start_grade)
+            VALUES ($1::uuid, $2::platform.subject, $3, $4, $5::uuid, $6::uuid, $7, $8, $9, $10) RETURNING {SESSION_COLS}""",
+        student, subject, algorithm_version, map_version, usage_id, key, time_budget_sec, item_limit, created_at, start_grade))
 
 
-async def set_status(conn, session_id: str, status: str) -> None:
+async def set_status(conn, session_id: str, status: str, *, abandon_reason: str | None = None) -> None:
+    """abandon_reason 只在放弃时写（迁移 0049 的 CHECK：只能与 abandoned 同时出现）。"""
     await conn.execute(
         """UPDATE platform.diagnosis_session SET status = $2,
-                  finished_at = CASE WHEN $2 IN ('finished', 'abandoned') THEN now() END
-            WHERE id = $1::uuid""", session_id, status)
+                  finished_at = CASE WHEN $2 IN ('finished', 'abandoned') THEN now() END,
+                  abandon_reason = $3
+            WHERE id = $1::uuid""", session_id, status, abandon_reason)
 
 
 async def resume(conn, session_id: str) -> None:

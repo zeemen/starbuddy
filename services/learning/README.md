@@ -235,4 +235,7 @@ staff 对应表（`kge-pages-staff-map/1`，审核台配置，由人维护，不
 - 题面：契约 `present_item` 签字前只有测试环境的合成题面（`LEARNING_DIAGNOSIS_PRESENTER=synthetic`，只允许 `LEARNING_ENV=test`、库名 `starbuddy_dev*` / `starbuddy_test*`，
   并需 `STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1`：作答走候选契约 1.0.0）；不配时诊断接口 501。
   选题信息来自合成夹具（缺省）或知识服务（`LEARNING_DIAGNOSIS_SOURCE=knowledge`，见 `config.py`）。
-- `make diagnosis-mutation`：31 个变异，断言诊断测试能发现。
+- 年级（迁移 0045、0049，specs/policy-decisions-v0.9.1）：选题年级按会话建立时刻（服务时钟）与届别推算，建立时记在 `start_grade`；
+  续做时按建立时刻、当前届别重算，不在 7–9 或与 `start_grade` 不同（会话中途届别被改）回 409 `SESSION_INCONSISTENT`，问题体带
+  `session_id` 与 `reason = grade_changed`，会话不动；放弃这样的会话时记下 `abandon_reason = grade_changed`（BFF 据此退回额度）。
+- `make diagnosis-mutation`：38 个变异，断言诊断测试能发现。

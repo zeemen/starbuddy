@@ -29,6 +29,8 @@ export const CONFIDENCE_BAND: Record<string, string> = {
 export const TODAY = {
   title: '今日',
   noSubjects: '还没有在读的科目。',
+  /** 当前年级不在 7–9（/me 的 grade 为 null）：今日计划不排学科（PR3），不再说“还没有在读的科目” */
+  notInGrade: '不在初中年级，今日计划暂不安排',
   nothingToday: '今天暂无安排',
   minutes: (n: number) => `约 ${n} 分钟`,
   neutralTitle: (subject: string) => `${subjectLabel(subject)} · 本周任务`,
@@ -123,6 +125,7 @@ export const ENROLL_RESULT: Record<string, string> = {
   paused: '已暂停。',
   not_active: '这一科本来没有开通。',
   change_limit_reached: '本周期已换过 1 科。',
+  GRADE_OUT_OF_RANGE: '不在初中年级，不能新开通学科。',
   NOT_FOUND: '没有找到这个孩子的档案。',
   CSRF: '页面已过期，请刷新后再试。',
   TOO_MANY_REQUESTS: '操作太频繁了，请稍后再试。',
@@ -145,6 +148,8 @@ export const ENROLLMENT = {
   enroll: (name: string) => `开通${name}`,
   pause: (name: string) => `暂停${name}`,
   studentReadOnly: '选科由家长确认。',
+  /** 当前年级不在 7–9（BFF 按届别推算）：只能暂停已开通的学科，不能新选 */
+  onlyPause: '不在初中年级：已开通的学科只能暂停，不能新开通。',
 } as const;
 
 export const TIME_GUARD = {
@@ -350,6 +355,8 @@ export const DATA_RIGHTS = {
   heading: T('data.heading', '数据查看、导出与删除'),
   exportHeading: T('data.export', '导出'),
   exportNote: T('data.export.note', '导出文件只能下载一次，过一段时间会失效'),
+  // 0049：profile 主题同时有建档年级 grade 与届别 exam_cohort，说明两者的区别（措辞由人写人审）
+  exportGradeNote: T('data.export.grade', '导出中的 grade 为建档时填写的年级；当前年级由届别推算。'),
   exportStart: T('data.export.start', '生成导出文件'),
   download: T('data.export.download', '下载导出文件'),
   exportGone: T('data.export.gone', '下载凭据已失效，请重新生成'),
@@ -549,7 +556,7 @@ export const ALL_TRUST_COPY: string[] = [
 /** 全部文案（静态检查逐条扫描） */
 export const ALL_SHELL_COPY: string[] = [
   ...Object.values(NAV), ...Object.values(SUBJECT_LABEL), ...Object.values(TASK_KIND), ...Object.values(CONTENT_RATIONALE),
-  ...Object.values(CONFIDENCE_BAND), TODAY.title, TODAY.noSubjects, TODAY.nothingToday, TODAY.minutes(10), TODAY.neutralTitle('math'),
+  ...Object.values(CONFIDENCE_BAND), TODAY.title, TODAY.noSubjects, TODAY.notInGrade, TODAY.nothingToday, TODAY.minutes(10), TODAY.neutralTitle('math'),
   TODAY.rationaleLabel, SUBJECTS.title, SUBJECTS.enter('数学'), SUBJECTS.comingTitle, SUBJECTS.comingBody, SUBJECTS.backToStarMap,
   SUBJECTS.starSky('数学'), SUBJECTS.todayTasks, SUBJECTS.notEnrolled,
   ...Object.values(STAR_MAP_V1),  // STAR_DISPLAY_V1 不在这里：状态词只能出现在 data-claim-id 内（禁语等扫描在 tests/shell.test.ts 另列）
@@ -561,7 +568,7 @@ export const ALL_SHELL_COPY: string[] = [
   ...Object.values(RESOURCE_LABEL), ...Object.values(SOURCE_LABEL), REST.reminder(40, 10), REST.ack, ...Object.values(DIANDIAN),
   ...Object.values(ENROLL_RESULT), slotText('core', 1), ENROLLMENT.heading, ENROLLMENT.rulePickOne, ENROLLMENT.ruleAllLaunched,
   ENROLLMENT.electiveSlots('2'), ENROLLMENT.changeRule, ENROLLMENT.active, ENROLLMENT.paused, ENROLLMENT.none, ENROLLMENT.notOpen,
-  ENROLLMENT.enroll('数学'), ENROLLMENT.pause('数学'), ENROLLMENT.studentReadOnly,
+  ENROLLMENT.enroll('数学'), ENROLLMENT.pause('数学'), ENROLLMENT.studentReadOnly, ENROLLMENT.onlyPause,
   TIME_GUARD.heading, TIME_GUARD.capLabel, TIME_GUARD.capHint(90), TIME_GUARD.curfewStart, TIME_GUARD.curfewEnd, TIME_GUARD.curfewHint('21:30', '06:30'),
   TIME_GUARD.save, ...Object.values(TIME_RESULT),
   FAMILY_SHELL.childPage, FAMILY_SHELL.childPageFor('孩子 1 · 八年级'), FAMILY_SHELL.createHeading, FAMILY_SHELL.gradeLabel, FAMILY_SHELL.gradeHint,

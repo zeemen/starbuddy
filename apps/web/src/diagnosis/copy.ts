@@ -28,6 +28,9 @@ export const DIAGNOSIS_COPY = {
   finished: '完成了，老师会看你的过程。',
   endedNeutral: '这一组题到这里结束了。',
   curfew: '今天先到这里，下次接着做。',
+  // 会话中途届别被改（BFF 409 reason = grade_changed）：中性说明，不评价；点“重新开始”放弃旧会话再开新的（需人设评审）
+  gradeChanged: '年级信息有更新，这一组题需要重新开始。',
+  restart: '重新开始',
   notSaved: '这次没有提交上，请再点一次。',
   unavailable: '现在还不能开始，请稍后再来。',
   needAnswer: '先写好答案再提交。',
@@ -46,7 +49,7 @@ export function allDiagnosisCopy(): string[] {
   return [
     c.heading, c.intro, c.starting, c.timerLabel, c.timerOf('03:20', '35:00'), c.stepLabel(3), c.stemHeading, c.choiceLegend,
     c.choiceLegendMulti, c.answerLabel, c.processHint, c.processLabel, c.explainHint, c.explainLabel, c.submit, c.submitting, c.pause,
-    c.paused, c.resume, c.finished, c.endedNeutral, c.curfew, c.notSaved, c.unavailable, c.needAnswer, c.needWork,
+    c.paused, c.resume, c.finished, c.endedNeutral, c.curfew, c.gradeChanged, c.restart, c.notSaved, c.unavailable, c.needAnswer, c.needWork,
     DIAGNOSIS_DEMO_COPY.title, DIAGNOSIS_DEMO_COPY.note,
   ];
 }

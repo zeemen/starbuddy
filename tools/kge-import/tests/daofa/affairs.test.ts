@@ -26,6 +26,8 @@ test("日期运算：加月取月末、天数差", () => {
   assert.equal(daysBetween("2026-09-30", "2026-10-30"), 30);
   assert.equal(daysBetween("2026-09-30", "2026-09-01"), -29);
   assert.equal(urlHost("https://News.Example.org/x?y"), "news.example.org");
+  assert.equal(urlHost("https://news.example.org"), "news.example.org");
+  assert.equal(urlHost("https://news.example.org:443/x"), null);  // 与 policy.url_host 一致：带显式端口不认（迁移 0049）
 });
 
 test("合成样例能过校验；来源白名单、有效期、只存自写摘要、挂接观点逐条拦", () => {

@@ -164,8 +164,11 @@ const logoutAll: Handler = async (ctx) => {
 const me: Handler = async (ctx) => {
   const s = ctx.session!;
   if (s.kind === 'student') {
-    const { rows } = await ctx.q<{ id: string }>('SELECT s.id FROM platform.student_profile s WHERE s.account_id = platform.current_account_id()');
-    return json(200, { account_kind: 'student', student_id: rows[0]?.id ?? null });
+    // 学生本人的当前年级同样由届别推算（PR3：不在 7–9 时今日计划处显示“不在初中年级，今日计划暂不安排”）
+    const { rows } = await ctx.q<{ id: string; grade: number | null }>(
+      `SELECT p.id, platform.current_grade(p.exam_cohort, $1::timestamptz) AS grade FROM platform.student_profile p
+        WHERE p.account_id = platform.current_account_id()`, [asOf(ctx.deps)]);
+    return json(200, { account_kind: 'student', student_id: rows[0]?.id ?? null, grade: rows[0]?.grade ?? null });
   }
   // 家长：已绑定孩子的档案 ID 与年级（档案没有姓名，界面按“孩子 1 · 八年级”区分，待人确认 #12）。
   // 年级是当前年级，由届别推算（迁移 0045：platform.current_grade(届别, 请求时钟)），不读存下的建档年级；

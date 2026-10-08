@@ -31,6 +31,8 @@ export interface SessionView {
   item_limit: number;
   /** 本次是否作答过过程题或讲解题（前端结束页据此选文案；不是对学生的结论） */
   process_tasks: boolean;
+  /** 放弃原因（迁移 0049）：grade_changed 的已放弃会话，取当前题时也补调退回额度（幂等） */
+  abandon_reason?: string | null;
   step: StepView | null;
 }
 export interface AnswerBody { attempt_id: string; probe_id: string | null; status: string; usage_id: string }
@@ -44,8 +46,9 @@ export interface DiagnosisLearning {
   answer(studentRef: string, sessionId: string,
          body: { seq: number; answer: unknown; work?: string; elapsed_sec: number; idempotency_key: string }): Promise<DiagOutcome<AnswerBody>>;
   pause(studentRef: string, sessionId: string, seq: number | null, stepElapsedSec: number | null): Promise<DiagOutcome<{ status: string }>>;
-  /** item_count：已作答题数（没答过题才退额度） */
-  abandon(studentRef: string, sessionId: string): Promise<DiagOutcome<{ status: string; usage_id: string; item_count: number }>>;
+  /** item_count：已作答题数（没答过题才退额度）；abandon_reason = grade_changed：中途届别被改，退回额度（迁移 0049） */
+  abandon(studentRef: string, sessionId: string): Promise<DiagOutcome<{ status: string; usage_id: string; item_count: number;
+                                                                        abandon_reason?: string | null }>>;
 }
 
 export function classify<T>(status: number, body: unknown, replayed: boolean): DiagOutcome<T> {

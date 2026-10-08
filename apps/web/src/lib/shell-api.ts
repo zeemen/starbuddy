@@ -31,6 +31,8 @@ export interface Today { student_id: string; subjects: TodaySection[] }
 export interface EnrollmentRow { subject: string; is_core: boolean; catalog_status: 'beta' | 'live'; open: boolean; enrollment: 'active' | 'paused' | null }
 export interface Enrollments {
   student_id: string;
+  /** 当前年级在 7–9 时为真；为假时只列已开通、已暂停的学科，只能暂停（BFF 新选回 409 GRADE_OUT_OF_RANGE） */
+  can_enroll: boolean;
   rules: { core_subjects: string | null; elective_slots: string | null; max_active_subjects: string | null } | null;
   subjects: EnrollmentRow[];
 }

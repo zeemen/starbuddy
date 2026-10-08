@@ -114,12 +114,22 @@ ADR 09 建议 pilot 和生产全链路境内。Supabase 托管版没有中国大
     加对象类型与列；`policy.admission_line.control_line` 原样归档到 `policy.admission_line_control_line_archive` 后，已发布与草稿的值回填为控制线草稿，删除旧列。
   - **0048 官方来源清单由管理员维护**：staff 权限 `platform.staff_permission`（`policy_source_admin`，只由迁移或 DBA 授予）；新增、下线经 `policy.add_source_domain` /
     `retire_source_domain`（只授签字身份），操作者记在 `platform.policy_source_domain_change`，policy 不存账号引用（规则 13）。
-  - **跨 schema 的例外（只有 0047、0048）**：
+  - **跨 schema 的例外（控制线 0047；来源清单 0048，及其后续 0050 的操作记录说明 CHECK）**：
     - 0047：签字人表 `platform.policy_signoff` 的新列 `control_line_id` 有外键指向 `policy.control_line`，签字与导出函数（policy.sign_record、object_digest、
       platform.policy_signoff_record）的函数体按对象类型分支；拆开会有一个迁移里签字函数认得控制线、签字人表却存不下（或反过来）的中间状态。
     - 0048：两个 SECURITY DEFINER 函数同时读 `platform.staff_permission`、写 `platform.policy_source_domain_change` 与 `policy.source_domain`；
       账号引用只能在 platform（规则 13），清单只能在 policy，拆开会有一个迁移里函数引用尚不存在的表。
-    - 是否接受这两个例外随本 PR 签字决定。
+    - 0050（来源清单 0048 例外的延续）：`platform.policy_source_domain_change.note` 的 CHECK 引用 `policy.has_hidden_chars`——操作记录只能在
+      platform（账号引用），说明的核对规则在 policy，两边必须是同一条规则（同一张码位表）。除这一条 CHECK 外 0050 只改 policy。
+    - 是否接受这些例外随签字决定。
+- **0049–0050（待人确认事项按默认处理，草稿，2026-10-07，specs/policy-decisions-v0.9.1 PR3，待签字；审查意见 4 拆成两个迁移）**：
+  - **0049（只改 platform）**：客服更正届别要 staff 权限 `cohort_correction`（`platform.staff_permission`，只由 DBA 授予；先查权限、后查学生，
+    无权限与学生不存在同一个错误）；家长导出清单加届别、届别来源与更正记录主题（不含操作者）；诊断会话加 `start_grade`（建立时的选题年级，
+    会话参数）与 `abandon_reason`；因届别变化放弃的诊断退回额度 `platform.meter_refund_grade_changed`（adjust 流水，actor system）。
+  - **0050（只改 policy，除上面登记的一条 CHECK）**：`normalize_source_host` 拒绝不能往返解码的 xn-- 标签（`policy.idn_label_ok`，plpgsql 实现的
+    RFC 3492，标签不超过 63 个字符）；来源说明拒绝 Unicode Cc、Cf、Zl、Zp（码位表 `policy.is_hidden_codepoint`，函数与 CHECK 兜底）；
+    `url_host` 不收显式端口；来源文件守卫经 `policy.lock_active_source_host`（属主 authz，只授 kge）对清单行 FOR SHARE；
+    数据前提核对已有主机名都是规范形式。
 
 
 ## 增补：insight schema 的建档事实层（草稿，2026-09-29，specs/sie-01-onboarding，待签字）

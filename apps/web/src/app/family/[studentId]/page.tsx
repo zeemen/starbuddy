@@ -69,6 +69,7 @@ export default async function ChildPage({ params }: { params: Promise<{ studentI
           </p>
         ) : null}
         {!e ? <p className="muted" data-unavailable="enrollments">{BALANCE.unavailable}</p> : null}
+        {e && e.can_enroll === false ? <p className="muted" data-testid="enroll-only-pause">{ENROLLMENT.onlyPause}</p> : null}
         <ul className="shell-list" data-testid="enrollments">
           {(e?.subjects ?? []).map((s) => {
             const name = subjectLabel(s.subject);
@@ -84,7 +85,7 @@ export default async function ChildPage({ params }: { params: Promise<{ studentI
                     <input type="hidden" name="csrf" value={csrf} />
                     <button type="submit">{ENROLLMENT.pause(name)}</button>
                   </ResultForm>
-                ) : (
+                ) : e?.can_enroll === false ? null : (
                   <ResultForm action={enrollAction} labels={ENROLL_RESULT} testId={`enroll-${s.subject}`} className="shell-form inline-form">
                     <input type="hidden" name="student" value={studentId} />
                     <input type="hidden" name="subject" value={s.subject} />
@@ -101,6 +102,7 @@ export default async function ChildPage({ params }: { params: Promise<{ studentI
       <section aria-labelledby="today-heading">
         <h2 id="today-heading">{TODAY.title}</h2>
         {!t ? <p className="muted" data-unavailable="today">{BALANCE.unavailable}</p>
+          : ps.grade === null ? <p className="muted" data-testid="today-not-in-grade">{TODAY.notInGrade}</p>
           : t.subjects.length === 0 ? <p className="muted">{TODAY.noSubjects}</p> : null}
         {(t?.subjects ?? []).map((s) => (
           <section key={s.subject} data-subject={s.subject} aria-labelledby={`g-today-${s.subject}`}>

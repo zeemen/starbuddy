@@ -17,10 +17,13 @@ export default async function TodayPage({ params }: { params: Promise<{ studentI
     notFound();
   }
   const sections = r.value.subjects;
+  // 当前年级（/me，BFF 按届别推算）不在 7–9：今日计划不排学科，说明原因而不是“还没有在读的科目”（PR3）
+  const notInGrade = ps.me.account_kind === 'student' && ps.me.grade === null;
   return (
     <main data-testid="today">
       <h1>{TODAY.title}</h1>
-      {sections.length === 0 ? <p className="muted">{TODAY.noSubjects}</p> : null}
+      {notInGrade ? <p className="muted" data-testid="today-not-in-grade">{TODAY.notInGrade}</p>
+        : sections.length === 0 ? <p className="muted">{TODAY.noSubjects}</p> : null}
       {sections.map((s) => (
         <section key={s.subject} className="today-subject" data-subject={s.subject} aria-labelledby={`today-${s.subject}`}>
           <h2 id={`today-${s.subject}`}>{subjectLabel(s.subject)}</h2>

@@ -10,7 +10,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { test } from 'node:test';
-import { ALL_SHELL_COPY, CONFIDENCE_BAND, STAR_DISPLAY_V1, TRUST_SLOT } from '../src/shell/copy.ts';
+import { ALL_SHELL_COPY, CONFIDENCE_BAND, DATA_RIGHTS, ENROLL_RESULT, ENROLLMENT, STAR_DISPLAY_V1, TODAY, TRUST_SLOT } from '../src/shell/copy.ts';
 import { DENIAL_COPY } from '../src/shell/denials.ts';
 import { TRUST_FEATURES, trustEnabled, trustFeatures } from '../src/shell/features.ts';
 import { SUBJECT_MODULES, subjectModule, visibleSubjects } from '../src/subjects/registry.ts';
@@ -128,6 +128,28 @@ test('计量缺省值不写死在前端：默认宵禁、每天自练次数由 B
   const time = readFileSync(join(WEB, 'src/app/family/[studentId]/time/page.tsx'), 'utf8');
   assert.match(time, /TIME_GUARD\.curfewHint\(g\.default_curfew\.start, g\.default_curfew\.end\)/);
   assert.match(readFileSync(join(WEB, 'src/shell/StatusBar.tsx'), 'utf8'), /BALANCE\.trialAfter\(b\.practice_daily_limit\)/);
+});
+
+test('不在初中年级（PR3 #10）：选科 can_enroll = false 时不渲染开通按钮、出现“只能暂停”说明；今日计划处说明暂不安排', () => {
+  const page = code(readFileSync(join(WEB, 'src/app/family/[studentId]/page.tsx'), 'utf8'));
+  // 开通表单只在 can_enroll 不为假时渲染（已开通的照样有暂停按钮）；为假时出现 enroll-only-pause 说明
+  assert.match(page, /\) : e\?\.can_enroll === false \? null : \(\s*<ResultForm action=\{enrollAction\}/);
+  assert.match(page, /e && e\.can_enroll === false \? <p className="muted" data-testid="enroll-only-pause">\{ENROLLMENT\.onlyPause\}<\/p>/);
+  assert.match(page, /s\.enrollment === 'active' \? \(\s*<ResultForm action=\{pauseAction\}/);
+  // 今日计划：/me 的年级为 null 时说明“不在初中年级，今日计划暂不安排”，不显示“还没有在读的科目”
+  assert.match(page, /ps\.grade === null \? <p className="muted" data-testid="today-not-in-grade">\{TODAY\.notInGrade\}<\/p>\s*: t\.subjects\.length === 0/);
+  const today = code(readFileSync(join(WEB, 'src/app/s/[studentId]/today/page.tsx'), 'utf8'));
+  assert.match(today, /const notInGrade = ps\.me\.account_kind === 'student' && ps\.me\.grade === null;/);
+  assert.match(today, /\{notInGrade \? <p className="muted" data-testid="today-not-in-grade">\{TODAY\.notInGrade\}<\/p>\s*: sections\.length === 0/);
+  assert.equal(ENROLLMENT.onlyPause.includes('暂停'), true);
+  assert.equal(TODAY.notInGrade, '不在初中年级，今日计划暂不安排');
+  assert.ok(ENROLL_RESULT['GRADE_OUT_OF_RANGE'], 'BFF 的 409 GRADE_OUT_OF_RANGE 有对应的结果文案');
+});
+
+test('数据权利页：导出说明写明 grade 是建档年级、当前年级由届别推算（人写人审的占位）', () => {
+  assert.ok(DATA_RIGHTS.exportGradeNote.startsWith('{{TODO_COPY:data.export.grade}}'), DATA_RIGHTS.exportGradeNote);
+  assert.match(DATA_RIGHTS.exportGradeNote, /导出中的 grade 为建档时填写的年级；当前年级由届别推算。/);
+  assert.match(readFileSync(join(WEB, 'src/trust/DataRightsPage.tsx'), 'utf8'), /\{DATA_RIGHTS\.exportGradeNote\}/);
 });
 
 test('家长孩子页：只有 404 走“没有找到”，其他错误各区块显示“暂时无法获取”；开通按钮不按 open 隐藏（审查第 4、5 条）', () => {

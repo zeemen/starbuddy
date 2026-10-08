@@ -12,16 +12,21 @@ import { ConfidenceProbe } from '../probe/ConfidenceProbe.tsx';
 import type { Prediction } from '../probe/copy.ts';
 import { DIAGNOSIS_COPY as C, formatDuration } from './copy.ts';
 
-/** curfew：宵禁时段（服务端已把会话置为暂停），组件停在“今天先到这里” */
+/**
+ * curfew：宵禁时段（服务端已把会话置为暂停），组件停在“今天先到这里”。
+ * restart：会话中途届别被改（BFF 409 SESSION_INCONSISTENT、reason = grade_changed，迁移 0049），值是要放弃的会话 ID；
+ * 组件停在“重新开始”，点了先放弃这个会话（这类放弃退回额度）再开新会话，不会卡在旧会话上
+ */
 export interface DiagnosisApi {
-  start(): Promise<{ ok: boolean; sessionId?: string; curfew?: boolean }>;
-  current(sessionId: string): Promise<{ ok: boolean; view?: DiagnosisView; curfew?: boolean }>;
+  start(): Promise<{ ok: boolean; sessionId?: string; curfew?: boolean; restart?: string }>;
+  current(sessionId: string): Promise<{ ok: boolean; view?: DiagnosisView; curfew?: boolean; restart?: string }>;
   probe(sessionId: string, seq: number, prediction: Prediction): Promise<{ ok: boolean; curfew?: boolean }>;
-  answer(sessionId: string, seq: number, answer: Answer, work: string | null, elapsedSec: number): Promise<{ ok: boolean; curfew?: boolean }>;
+  answer(sessionId: string, seq: number, answer: Answer, work: string | null, elapsedSec: number): Promise<{ ok: boolean; curfew?: boolean; restart?: string }>;
   pause(sessionId: string, seq: number | null, stepElapsedSec: number): Promise<{ ok: boolean }>;
+  abandon(sessionId: string): Promise<{ ok: boolean }>;
 }
 
-type Phase = 'loading' | 'probe' | 'item' | 'paused' | 'finished' | 'curfew' | 'unavailable';
+type Phase = 'loading' | 'probe' | 'item' | 'paused' | 'finished' | 'curfew' | 'restart' | 'unavailable';
 
 export function Diagnosis({ api }: { api: DiagnosisApi }) {
   const ids = { stem: useId(), work: useId(), answer: useId(), timer: useId() };
@@ -62,25 +67,52 @@ export function Diagnosis({ api }: { api: DiagnosisApi }) {
     setPhase('curfew');
   }, []);
 
+  // 会话中途届别被改：记下要放弃的会话，停在“重新开始”
+  const [restartId, setRestartId] = useState<string | null>(null);
+  const toRestart = useCallback((sid: string) => {
+    stepStartedAt.current = null;
+    setRestartId(sid);
+    setMessage('');
+    setPhase('restart');
+  }, []);
+
   const load = useCallback(async (sid: string) => {
     const r = await api.current(sid);
     if (r.curfew) return toCurfew();
+    if (r.restart) return toRestart(r.restart);
     if (!r.ok || !r.view) {
       setMessage(C.notSaved);
       return;
     }
     setMessage('');
     show(r.view);
-  }, [api, show, toCurfew]);
+  }, [api, show, toCurfew, toRestart]);
 
   const begin = useCallback(async () => {
     setPhase('loading');
     const s = await api.start();
     if (s.curfew) return toCurfew();
+    if (s.restart) return toRestart(s.restart);
     if (!s.ok || !s.sessionId) return setPhase('unavailable');
     setSession(s.sessionId);
     await load(s.sessionId);
-  }, [api, load, toCurfew]);
+  }, [api, load, toCurfew, toRestart]);
+
+  // 重新开始：先放弃届别变化前的会话（BFF 退回额度），再开新会话
+  const restart = async () => {
+    if (!restartId || busy) return;
+    setBusy(true);
+    try {
+      const r = await api.abandon(restartId);
+      if (!r.ok) return setMessage(C.notSaved);
+      setRestartId(null);
+      setSession(null);
+      setView(null);
+      await begin();
+    } finally {
+      setBusy(false);
+    }
+  };
 
   useEffect(() => {
     if (started.current) return;
@@ -96,7 +128,7 @@ export function Diagnosis({ api }: { api: DiagnosisApi }) {
   }, [phase]);
 
   useEffect(() => {
-    if (phase === 'item' || phase === 'finished' || phase === 'paused' || phase === 'curfew') heading.current?.focus();
+    if (phase === 'item' || phase === 'finished' || phase === 'paused' || phase === 'curfew' || phase === 'restart') heading.current?.focus();
   }, [phase, view?.step?.seq]);
 
   const onPredict = async (p: Prediction) => {
@@ -126,6 +158,7 @@ export function Diagnosis({ api }: { api: DiagnosisApi }) {
     try {
       const r = await api.answer(session, step.seq, answer, needsWork ? work : null, Math.min(7200, stepElapsed()));
       if (r.curfew) return toCurfew();
+      if (r.restart) return toRestart(r.restart);
       if (!r.ok) return setMessage(C.notSaved);
       setMessage('');
       await load(session);
@@ -158,7 +191,7 @@ export function Diagnosis({ api }: { api: DiagnosisApi }) {
     <section className="diagnosis" data-testid="diagnosis" data-phase={phase} aria-labelledby={ids.stem + '-h'}>
       <h2 id={ids.stem + '-h'}>{C.heading}</h2>
       {phase === 'loading' || phase === 'probe' ? <p className="muted">{C.intro}</p> : null}
-      {view && phase !== 'finished' && phase !== 'unavailable' && phase !== 'curfew' ? (
+      {view && phase !== 'finished' && phase !== 'unavailable' && phase !== 'curfew' && phase !== 'restart' ? (
         <p className="diagnosis-timer">
           <span id={ids.timer}>{C.timerLabel}</span>{' '}
           <span role="timer" aria-labelledby={ids.timer} data-testid="diagnosis-timer">
@@ -220,6 +253,12 @@ export function Diagnosis({ api }: { api: DiagnosisApi }) {
         </h3>
       ) : null}
       {phase === 'curfew' ? <h3 ref={heading} tabIndex={-1} data-testid="diagnosis-curfew">{C.curfew}</h3> : null}
+      {phase === 'restart' ? (
+        <>
+          <h3 ref={heading} tabIndex={-1} data-testid="diagnosis-restart">{C.gradeChanged}</h3>
+          <p className="diagnosis-actions"><button type="button" disabled={busy} onClick={() => void restart()}>{C.restart}</button></p>
+        </>
+      ) : null}
       {phase === 'unavailable' ? <p>{C.unavailable}</p> : null}
       {phase === 'probe' || phase === 'item' ? (
         <p className="diagnosis-actions"><button type="button" className="diagnosis-pause" disabled={busy} onClick={() => void pause()}>{C.pause}</button></p>

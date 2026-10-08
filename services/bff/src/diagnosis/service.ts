@@ -9,6 +9,9 @@
 //   - 第一道题判分成功 → 立即结算（预留有效期 10 分钟，远短于一次诊断；之后放弃也不退）；之后每次作答再结算一次是幂等的；
 //   - 已有未结束的会话（暂停后续做）：不预留，直接续做同一个会话（不另占额度）；续做当场到上限结束也结算（S10）；
 //   - 放弃：只有还没有任何已作答的题时才释放；答过题的放弃按已结算处理（再结算一次，幂等）。
+//     例外（迁移 0049，用户 2026-10-08 确认）：会话中途届别被改、学习服务回 409 SESSION_INCONSISTENT（reason = grade_changed，带 session_id）
+//     时，前端“重新开始”放弃这个会话，学习服务在会话上记下 abandon_reason = grade_changed；这类放弃不论答没答过题都退回额度
+//     （platform.meter_refund_grade_changed，库里按会话上的原因再核对，同一笔只退一次）。
 //   - 第一道题在预留过期（开始后 10 分钟）之后才交：按现有规则“宁可少扣”不结算（lessons 待人确认 #3：有效期调长或按段计量）。
 // 宵禁（安全审查 B2）：续做、取题、探针、作答入口以学生本人调计量只读函数 platform.meter_guard_status（迁移 0030，
 //   4-H H3；读取在共享的 src/metering/curfew.ts），取它的 in_curfew：与 meter_reserve 同一个函数、同一个计量时钟（meter_now），BFF 不再自算宵禁（SIE-02a lessons #15）；
@@ -20,7 +23,7 @@ import type { Pool } from 'pg';
 import { withAccount } from '../metering/db.ts';
 import { inCurfew } from '../metering/curfew.ts';
 import { meteringFingerprint } from '../metering/fingerprint.ts';
-import { release, reserve, settle } from '../metering/meter.ts';
+import { refundGradeChanged, release, reserve, settle } from '../metering/meter.ts';
 import { usageIdFor, uuidv5 } from '../metering/uuid.ts';
 import { isUuid } from '../star-map/query.ts';
 import type { DiagnosisLearning, DiagOutcome, SessionView } from './learning-client.ts';
@@ -166,11 +169,20 @@ async function withRetry<T>(deps: DiagnosisDeps, fn: () => Promise<DiagOutcome<T
   return out;
 }
 
-/** 学习服务的确定失败映射到学生端：会话 / 步骤 / 状态类冲突原样给出编码（不带明细）；其余 422 */
-function fromFailure(p: { status: number; problem: { code?: string } }): Reply {
+/**
+ * 学习服务的确定失败映射到学生端：会话 / 步骤 / 状态类冲突原样给出编码（不带明细）；其余 422。
+ * 会话中途届别被改（409 SESSION_INCONSISTENT、reason = grade_changed，迁移 0049）：透传 reason 与 session_id，前端据此“重新开始”
+ * （放弃这个会话再开新的，因届别变化放弃的退回额度）。session_id 只在等于本次请求所针对的、已核对归属的会话时透传
+ * （expected：续做时是该学生未结束的会话，其余入口是路径里已核对归属的会话），否则只给编码。
+ */
+function fromFailure(p: { status: number; problem: { code?: string; session_id?: unknown; reason?: unknown } }, expected: string | null): Reply {
   const code = p.problem.code ?? '';
   if (p.status === 404) return FORBIDDEN;
   if (p.status === 501) return problem(503, 'DIAGNOSIS_UNAVAILABLE', 'diagnosis is not available');
+  if (p.status === 409 && code === 'SESSION_INCONSISTENT' && p.problem.reason === 'grade_changed'
+      && expected !== null && p.problem.session_id === expected) {
+    return problem(409, code, 'the grade at session start changed; start again', { reason: 'grade_changed', session_id: expected });
+  }
   if (p.status === 409 && ['STEP_NOT_CURRENT', 'INVALID_STATE', 'SESSION_INCONSISTENT'].includes(code)) {
     return problem(409, code, 'the session has moved on; fetch the current step');
   }
@@ -186,6 +198,12 @@ async function settleQuietly(deps: DiagnosisDeps, account: string, usage: string
   // 会话结束才结算；预留已过期或已释放时不结算（宁可少扣，同 meteredCall）
   const s = await settle(deps.pool, account, usage, 1);
   deps.note?.(s.outcome === 'settled' ? (s.idempotent ? 'settle_replayed' : 'settled') : `settle_${s.state}`);
+}
+
+async function refundQuietly(deps: DiagnosisDeps, account: string, usage: string): Promise<void> {
+  const r = await refundGradeChanged(deps.pool, account, usage);
+  deps.note?.(r.outcome === 'refunded' ? (r.idempotent ? 'refund_replayed' : 'refunded')
+    : r.outcome === 'released' ? (r.idempotent ? 'release_replayed' : 'released') : `refund_${r.reason ?? r.state}`);
 }
 
 async function releaseQuietly(deps: DiagnosisDeps, account: string, usage: string, reason: string): Promise<void> {
@@ -205,7 +223,7 @@ export async function startDiagnosis(deps: DiagnosisDeps, account: string, stude
     if (blocked) return blocked;
     const r = await withRetry(deps, () => deps.learning.start(student, input.subject, usage, key));
     if (r.kind === 'unknown') return UNAVAILABLE;
-    if (r.kind === 'failure') return fromFailure(r);
+    if (r.kind === 'failure') return fromFailure(r, open);
     if (r.body.status === 'finished') await settleQuietly(deps, account, r.body.usage_id);  // 续做当场到上限结束也结算（S10）
     return { status: 200, body: { session_id: r.body.session_id, status: r.body.status }, headers: replayHeader(r.replayed) };
   }
@@ -227,7 +245,7 @@ export async function startDiagnosis(deps: DiagnosisDeps, account: string, stude
   if (r.kind === 'unknown') return UNAVAILABLE;  // 不释放：结果未知，同一个键重试会找回同一笔预留与同一个会话
   if (r.kind === 'failure') {
     if (holding) await releaseQuietly(deps, account, usage, 'upstream_rejected');
-    return fromFailure(r);
+    return fromFailure(r, null);
   }
   if (holding && r.body.usage_id !== usage) {
     await releaseQuietly(deps, account, usage, 'session_already_open');  // 并发开始：续做了已有会话，这笔不用
@@ -249,9 +267,20 @@ export function publicView(v: SessionView): Record<string, unknown> {
            item_count: v.item_count, item_limit: v.item_limit, process_tasks: v.process_tasks === true, step };
 }
 
-/** 会话结束的计量：结束 → 结算；放弃 → 没答过题才释放，答过题按已结算处理（再结算一次是幂等的） */
-async function settleIfDone(deps: DiagnosisDeps, account: string, v: { status: string; usage_id: string; item_count: number }): Promise<void> {
+/**
+ * 会话结束的计量：结束 → 结算；放弃 → 没答过题才释放，答过题按已结算处理（再结算一次是幂等的）。
+ * 因届别变化放弃（学习服务返回 abandon_reason = grade_changed，迁移 0049）：不论答没答过题都退回额度
+ * （platform.meter_refund_grade_changed：未结算的释放、已结算的加回；只认会话上记下的原因，同一笔只退一次）。
+ * 取当前题时的会话视图也带放弃原因（退回审查 S5）：放弃那一次的退回没做成（结果未知、进程中断）时，前端再取当前题会补调（幂等）。
+ * 库里拒绝退回（超出每个额度周期 1 次的上限、余量为 0 等）时不退，放弃照常成功
+ */
+async function settleIfDone(deps: DiagnosisDeps, account: string,
+                            v: { status: string; usage_id: string; item_count: number; abandon_reason?: string | null }): Promise<void> {
   if (v.status === 'finished') await settleQuietly(deps, account, v.usage_id);
+  if (v.status === 'abandoned' && v.abandon_reason === 'grade_changed') {
+    await refundQuietly(deps, account, v.usage_id);
+    return;
+  }
   if (v.status === 'abandoned') {
     if (v.item_count > 0) await settleQuietly(deps, account, v.usage_id);
     else await releaseQuietly(deps, account, v.usage_id, 'abandoned');
@@ -262,7 +291,7 @@ export async function currentStep(deps: DiagnosisDeps, account: string, student:
   if (!(await ownsSession(deps.pool, account, student, session))) return FORBIDDEN;
   const r = await withRetry(deps, () => deps.learning.current(student, session));
   if (r.kind === 'unknown') return UNAVAILABLE;
-  if (r.kind === 'failure') return fromFailure(r);
+  if (r.kind === 'failure') return fromFailure(r, session);
   if (r.body.status === 'active') {
     const blocked = await curfewGate(deps, account, student, session);  // 宵禁：取题
     if (blocked) return blocked;
@@ -282,7 +311,7 @@ export async function submitProbe(deps: DiagnosisDeps, account: string, student:
   if (blocked) return blocked;
   const cur = await withRetry(deps, () => deps.learning.current(student, session));
   if (cur.kind === 'unknown') return UNAVAILABLE;
-  if (cur.kind === 'failure') return fromFailure(cur);
+  if (cur.kind === 'failure') return fromFailure(cur, session);
   const step = cur.body.step;
   if (cur.body.status !== 'active' || step === null || step.seq !== input.seq) {
     return problem(409, 'STEP_NOT_CURRENT', 'the session has moved on; fetch the current step');
@@ -306,7 +335,7 @@ export async function submitProbe(deps: DiagnosisDeps, account: string, student:
   }
   const r = await withRetry(deps, () => deps.learning.probe(student, session, input.seq, ref));
   if (r.kind === 'unknown') return UNAVAILABLE;
-  if (r.kind === 'failure') return fromFailure(r);
+  if (r.kind === 'failure') return fromFailure(r, session);
   return { status: 200, body: { status: 'ok' }, headers: replayHeader(r.replayed) };
 }
 
@@ -319,7 +348,7 @@ export async function submitAnswer(deps: DiagnosisDeps, account: string, student
     seq: input.seq, answer: input.answer, elapsed_sec: input.elapsed_sec, idempotency_key: input.idempotency_key,
     ...(input.work !== undefined ? { work: input.work } : {}) }));
   if (r.kind === 'unknown') return UNAVAILABLE;
-  if (r.kind === 'failure') return fromFailure(r);
+  if (r.kind === 'failure') return fromFailure(r, session);
   if (r.body.probe_id) {
     try {
       await withAccount(deps.pool, account, (c) =>
@@ -340,7 +369,7 @@ export async function pauseSession(deps: DiagnosisDeps, account: string, student
   if (!(await ownsSession(deps.pool, account, student, session))) return FORBIDDEN;
   const r = await withRetry(deps, () => deps.learning.pause(student, session, input.seq, input.step_elapsed_sec));
   if (r.kind === 'unknown') return UNAVAILABLE;
-  if (r.kind === 'failure') return fromFailure(r);
+  if (r.kind === 'failure') return fromFailure(r, session);
   return { status: 200, body: { status: r.body.status }, headers: replayHeader(r.replayed) };
 }
 
@@ -348,7 +377,8 @@ export async function abandonSession(deps: DiagnosisDeps, account: string, stude
   if (!(await ownsSession(deps.pool, account, student, session))) return FORBIDDEN;
   const r = await withRetry(deps, () => deps.learning.abandon(student, session));
   if (r.kind === 'unknown') return UNAVAILABLE;
-  if (r.kind === 'failure') return fromFailure(r);
-  await settleIfDone(deps, account, r.body);  // 没答过题才释放；答过题不退
+  if (r.kind === 'failure') return fromFailure(r, session);
+  // 普通放弃：没答过题才释放，答过题不退；因届别变化放弃（abandon_reason = grade_changed）：退回额度（库函数按会话上的原因再核对）
+  await settleIfDone(deps, account, r.body);
   return { status: 200, body: { status: r.body.status }, headers: replayHeader(r.replayed) };
 }

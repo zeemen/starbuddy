@@ -54,6 +54,9 @@
     `platform.current_grade(届别, 请求时钟)`（`deps.now`，测试注入），不读存下的建档年级；不在 7–9 时为 null。家长届别更正
     `POST /students/{id}/exam-cohort` 只经 `platform.correct_exam_cohort`，频控按（家长账号、学生）成对（限流维度 `link`，
     桶 `cohort_correction.link.day`，每天 3 次），另加按账号的总量桶 `cohort_correction.account.day`（每天 10 次）。测试 `tests/cohort.integration.test.ts`，变异组 `BFFMUT_FILTER=届别：`。
+    年级为 null 时（PR3 #10）：选科列表只列已开通、已暂停的学科、`can_enroll` 为假，只能暂停，新选回 409 `GRADE_OUT_OF_RANGE`；今日计划不排学科。
+    学生本人的 `/me` 也带 `grade`（同样由届别推算）。诊断会话中途届别被改：学习服务的 409 `SESSION_INCONSISTENT`（reason = grade_changed）
+    连同已核对归属的 `session_id` 透传给前端；“重新开始”放弃这个会话时调 `platform.meter_refund_grade_changed` 退回额度（迁移 0049）。
   - 配置：阈值 `config/auth.json`；`STARBUDDY_ENV`（必填）、`BFF_SHELL_ORIGIN`、`BFF_LOG_HMAC_KEY`、`BFF_AUTH_SECRET`（十六进制 ≥ 32 字节，
     dev / test 缺省随机）、`BFF_TRUST_CLIENT_IP`、`BFF_SMS_CAPTURE_FILE`（dev / test）、`BFF_AUTH_CONFIG`（只在 dev / test，端到端放宽限流）。
     见 `src/main.ts` 开头的注释。

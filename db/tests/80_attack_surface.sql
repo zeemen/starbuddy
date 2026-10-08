@@ -779,6 +779,38 @@ BEGIN
                       cardinality(v_fail)));
 END $$;
 
+-- 客服届别更正（0049，lessons 待人确认 #1）：上面的矩阵只看非 staff；active staff 还要有 staff 权限 cohort_correction。
+-- 有权限的 staff 对不存在的学生、没有权限的 active staff 对存在的学生，结果逐字相同（42501），不能据此探测学生是否存在。
+-- 顺序要求：客服分支必须先查权限、后查学生（两项放在同一个判断里、同一个错误）。如果先查学生是否存在、再查权限，没有权限的
+-- staff 就能凭“学生不存在”与“没有权限”两种不同结果探测学生 ID；这条断言与变异“攻击面：客服更正不查 cohort_correction”守住它
+DO $$
+DECLARE
+  c_with constant uuid := '5f000000-0000-4000-8000-00000000005f';     -- 有 cohort_correction（79y 或渗透测试夹具授予）
+  c_without constant uuid := 'f5000000-0000-4000-8000-0000000000f5';  -- 10 号夹具的第二名合成 staff，没有任何权限
+  v_student uuid;
+  v_cohort smallint;
+  v_missing text;
+  v_denied text;
+BEGIN
+  PERFORM t.ok(EXISTS (SELECT 1 FROM platform.staff_permission WHERE staff_id = c_with AND permission = 'cohort_correction')
+               AND NOT EXISTS (SELECT 1 FROM platform.staff_permission WHERE staff_id = c_without)
+               AND EXISTS (SELECT 1 FROM platform.account WHERE id = c_without AND kind = 'staff' AND status = 'active'),
+               '攻击面：客服更正对照的前提（一名有 cohort_correction、一名没有任何权限的 active staff）');
+  SELECT s.id, s.exam_cohort INTO v_student, v_cohort FROM platform.student_profile s
+   WHERE s.erased_at IS NULL AND platform.current_grade((s.exam_cohort + 1)::smallint, now()) IS NOT NULL ORDER BY s.id LIMIT 1;
+  PERFORM set_config('app.account_id', c_with::text, false);
+  EXECUTE 'SET ROLE starbuddy_review';
+  v_missing := t.try_call(format('SELECT platform.correct_exam_cohort(%L, %s::smallint)::text', gen_random_uuid(), v_cohort + 1));
+  EXECUTE 'RESET ROLE';
+  PERFORM set_config('app.account_id', c_without::text, false);
+  EXECUTE 'SET ROLE starbuddy_review';
+  v_denied := t.try_call(format('SELECT platform.correct_exam_cohort(%L, %s::smallint)::text', v_student, v_cohort + 1));
+  EXECUTE 'RESET ROLE';
+  PERFORM set_config('app.account_id', '', false);
+  PERFORM t.ok(v_student IS NOT NULL AND v_missing LIKE '42501:%' AND v_denied = v_missing,
+               format('攻击面：客服届别更正——没有 cohort_correction 的 active staff 与“学生不存在”结果相同（%s / %s）', v_denied, v_missing));
+END $$;
+
 -- 定时任务函数的合法参数（只用于“结果与身份无关”的对照与越界时的其余参数）
 CREATE FUNCTION t.scheduler_arg(typ regtype) RETURNS text LANGUAGE sql IMMUTABLE AS $$
   SELECT CASE typ::text

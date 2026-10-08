@@ -16,6 +16,7 @@ class IngestError(Exception):
         detail: str | None = None,
         retryable: bool = False,
         upstream_code: str | None = None,
+        extra: dict | None = None,
     ) -> None:
         super().__init__(title)
         self.status = status
@@ -24,6 +25,8 @@ class IngestError(Exception):
         self.detail = detail
         self.retryable = retryable
         self.upstream_code = upstream_code
+        # 问题体的附加字段（只给明确列在接口文档里的，例如诊断 409 SESSION_INCONSISTENT 的 session_id、reason）；不覆盖标准字段
+        self.extra = extra or {}
 
     def problem(self, request_id: str | None = None) -> dict:
         body: dict = {
@@ -39,6 +42,8 @@ class IngestError(Exception):
             body["upstream_code"] = self.upstream_code
         if request_id:
             body["request_id"] = request_id
+        for k, v in self.extra.items():
+            body.setdefault(k, v)
         return body
 
 

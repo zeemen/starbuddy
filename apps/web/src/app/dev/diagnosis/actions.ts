@@ -8,7 +8,8 @@ import type { BffSession } from '../../../lib/bff.ts';
 import { devRuntimeAllowed } from '../../../lib/dev-pages.ts';
 import { actionSession } from '../../../lib/session.ts';
 import {
-  answerDiagnosis, currentDiagnosis, isCurfew, isKey, pauseDiagnosis, probeDiagnosis, startDiagnosis, type Answer, type DiagnosisView,
+  abandonDiagnosis, answerDiagnosis, currentDiagnosis, isCurfew, isKey, pauseDiagnosis, probeDiagnosis, restartSession, startDiagnosis,
+  type Answer, type DiagnosisView,
 } from '../../../lib/diagnosis.ts';
 import { isUuid } from '../../../lib/star-map.ts';
 import { PREDICTION_OPTIONS, type Prediction } from '../../../probe/copy.ts';
@@ -31,18 +32,29 @@ function isAnswer(a: unknown): a is Answer {
 }
 
 // curfew：宵禁时段（BFF 402 reason = curfew，会话已置为暂停），组件显示“今天先到这里”
-export async function startAction(csrf: string, student: string, key: string): Promise<{ ok: boolean; sessionId?: string; curfew?: boolean }> {
+// restart：会话中途届别被改（BFF 409 SESSION_INCONSISTENT、reason = grade_changed），组件显示“重新开始”，点了先放弃这个会话再开新的
+export async function startAction(csrf: string, student: string, key: string): Promise<{ ok: boolean; sessionId?: string; curfew?: boolean; restart?: string }> {
   const who = await account(csrf);
   if (!who || !isUuid(student) || !isKey(key)) return { ok: false };
   const r = await startDiagnosis(who, student, key);
-  return r.ok ? { ok: true, sessionId: r.value.session_id } : { ok: false, curfew: isCurfew(r) };
+  if (r.ok) return { ok: true, sessionId: r.value.session_id };
+  const restart = restartSession(r);
+  return { ok: false, curfew: isCurfew(r), ...(restart ? { restart } : {}) };
 }
 
-export async function currentAction(csrf: string, student: string, session: string): Promise<{ ok: boolean; view?: DiagnosisView; curfew?: boolean }> {
+export async function currentAction(csrf: string, student: string, session: string): Promise<{ ok: boolean; view?: DiagnosisView; curfew?: boolean; restart?: string }> {
   const who = await account(csrf);
   if (!who || !isUuid(student) || !isUuid(session)) return { ok: false };
   const r = await currentDiagnosis(who, student, session);
-  return r.ok ? { ok: true, view: r.value } : { ok: false, curfew: isCurfew(r) };
+  if (r.ok) return { ok: true, view: r.value };
+  const restart = restartSession(r);
+  return { ok: false, curfew: isCurfew(r), ...(restart ? { restart } : {}) };
+}
+
+export async function abandonAction(csrf: string, student: string, session: string, key: string): Promise<{ ok: boolean }> {
+  const who = await account(csrf);
+  if (!who || !isUuid(student) || !isUuid(session) || !isKey(key)) return { ok: false };
+  return { ok: (await abandonDiagnosis(who, student, session, key)).ok };
 }
 
 export async function probeAction(csrf: string, student: string, session: string, seq: number, prediction: Prediction, key: string): Promise<{ ok: boolean; curfew?: boolean }> {
@@ -55,14 +67,16 @@ export async function probeAction(csrf: string, student: string, session: string
 }
 
 export async function answerAction(csrf: string, student: string, session: string, seq: number, answer: Answer, work: string | null, elapsedSec: number,
-  key: string): Promise<{ ok: boolean; curfew?: boolean }> {
+  key: string): Promise<{ ok: boolean; curfew?: boolean; restart?: string }> {
   const who = await account(csrf);
   if (!who || !isUuid(student) || !isUuid(session) || !isSeq(seq) || !isKey(key) || !isAnswer(answer) || !isSec(elapsedSec)
       || (work !== null && (typeof work !== 'string' || work.length === 0 || work.length > 20000))) {
     return { ok: false };
   }
   const r = await answerDiagnosis(who, student, session, seq, answer, work, elapsedSec, key);
-  return r.ok ? { ok: true } : { ok: false, curfew: isCurfew(r) };
+  if (r.ok) return { ok: true };
+  const restart = restartSession(r);
+  return { ok: false, curfew: isCurfew(r), ...(restart ? { restart } : {}) };
 }
 
 export async function pauseAction(csrf: string, student: string, session: string, seq: number | null, stepElapsedSec: number, key: string): Promise<{ ok: boolean }> {

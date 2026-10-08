@@ -31,7 +31,7 @@
 
 | id | 名称 | 层 | 来源 | 默认可见 | 落库 | 状态 | 改变的教学决策 |
 |---|---|---|---|---|---|---|---|
-| `outer.g1.grade` | 年级 | fact | 学生自述、家长观察 | Agent、家长 | `platform.student_profile.grade` | live | 选择教材进度与年级内的知识节点，决定冷启动先验 |
+| `outer.g1.grade` | 年级 | fact | 家长观察 | Agent、家长 | `platform.student_profile.exam_cohort（记录录入人：platform.student_profile.exam_cohort_source）` | live | 选择教材进度与年级内的知识节点，决定冷启动先验 |
 | `outer.g1.region` | 地区 | fact | 学生自述、家长观察 | Agent、家长 | `platform.student_profile.region` | live | 选择地区考情投影（题位与权重） |
 | `outer.g1.textbook_version` | 各科教材版本 | fact | 学生自述、家长观察 | Agent、家长 | `platform.student_subject_textbook.textbook_version` | live | 按教材投影渲染页码与原句，决定节点的教材进度 |
 | `outer.g1.birth_year_month` | 出生年月 | fact | 家长观察 | Agent、家长 | `platform.student_profile.birth_year_month` | live | （合规用途）判断是否未满 14 周岁、需要监护人同意；不参与任何推断与教学决策 |

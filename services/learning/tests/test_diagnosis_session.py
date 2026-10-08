@@ -109,7 +109,10 @@ async def play(api, admin, student: str, mastery: set[str], *, seed: int = 11, p
     seen: list[dict] = []
     for _ in range(80):
         v = (await api.get(f"/internal/v1/diagnosis/sessions/{sid}", headers={"x-student-ref": student})).json()
-        assert "answer" not in json.dumps(v) and "reason" not in json.dumps(v) and "node" not in json.dumps(v)
+        # 视图顶层的 abandon_reason（会话为何被放弃，只取 null / grade_changed）是允许的字段；其余部分不得带答案、判题理由、节点
+        assert v.get("abandon_reason") in (None, "grade_changed")
+        rest = json.dumps({k: x for k, x in v.items() if k != "abandon_reason"})
+        assert "answer" not in rest and "reason" not in rest and "node" not in rest
         if v["status"] == "finished":
             return {"session_id": sid, "view": v, "seen": seen}
         step = v["step"]
@@ -214,7 +217,9 @@ async def test_synthetic_student_full_session(dapi, pools, student, pg):
     assert [(x.kind, x.node_id, x.item_id, x.reason) for x in sim] == [(x.kind, x.node_id, x.item_id, x.reason) for x in steps]
     # 结束后：再答、再暂停都拒绝；诊断不产生对学生可见的结论（视图里没有对错与断点）
     assert out["view"]["step"] is None and set(out["view"]) == {"session_id", "status", "state", "usage_id", "elapsed_sec",
-                                                                 "time_budget_sec", "item_count", "item_limit", "process_tasks", "step"}
+                                                                 "time_budget_sec", "item_count", "item_limit", "process_tasks", "step",
+                                                                 "abandon_reason"}
+    assert out["view"]["abandon_reason"] is None  # 正常做完的会话没有放弃原因
     assert out["view"]["process_tasks"] is True
     # 作答走 v1 写入路径：键盘通道、证据等级按默认推导（A）；过程原文证据准入固定 pending_review，引用记在步骤上（契约 B1）
     async with admin.acquire() as c:
@@ -515,7 +520,8 @@ async def test_student_ref_not_in_url_and_abandon_reports_answers(dapi, pools, s
     step = (await cur_view(dapi, sid, student)).json()["step"]
     assert (await answer_step(dapi, sid, student, step, 10)).status_code == 200
     r = await dapi.post(f"/internal/v1/diagnosis/sessions/{sid}/abandon", json={"student_ref": student})
-    assert r.status_code == 200 and r.json() == {"status": "abandoned", "usage_id": r.json()["usage_id"], "item_count": 1}
+    assert r.status_code == 200 and r.json() == {"status": "abandoned", "usage_id": r.json()["usage_id"], "item_count": 1,
+                                                 "abandon_reason": None}
     v = (await cur_view(dapi, sid, student)).json()
     assert v["status"] == "abandoned" and v["process_tasks"] is False
 
@@ -619,6 +625,8 @@ async def test_grade_from_cohort_with_injected_clock(pools, aya_v1):
             sid = r.json()["session_id"]
             async with admin.acquire() as a:
                 assert await a.fetchval("SELECT created_at FROM platform.diagnosis_session WHERE id = $1::uuid", sid) == SEP1_2027
+                # 建立时用于选题的年级记在会话上（迁移 0049），续做时据此发现中途改届别
+                assert await a.fetchval("SELECT start_grade FROM platform.diagnosis_session WHERE id = $1::uuid", sid) == 9
             first = (await cur_view(c, sid, stu)).json()["step"]
             # 一年后续做（按当前时刻已毕业）：年级按会话建立时刻推算，仍是同一个会话、同一道题
             now["t"] = datetime(2028, 9, 1, 2, 0, tzinfo=timezone.utc)
@@ -639,9 +647,10 @@ async def test_grade_from_cohort_with_injected_clock(pools, aya_v1):
 
 
 async def test_cohort_corrected_mid_session_grade_still_in_range(pools, aya_v1):
-    """钉住现有行为：会话中途届别被更正、建立时刻的年级变了但仍在 7–9（九年级 → 八年级）。年级按会话建立时刻、新届别重算，
-    选题规则用新年级复算已记下的步骤。本例新年级在合成夹具里没有目标：复算判定会话已结束，续做把会话标为 finished，
-    已出未答的那一步留在原处、不再出新题（没有 409）。复算与记下的步骤对不上时才由 HistoryMismatch 兜底回 409。"""
+    """会话中途届别被更正、建立时刻的年级变了但仍在 7–9（九年级 → 八年级）：续做按会话建立时刻、新届别重算的年级与建立时记下的
+    选题年级（start_grade，迁移 0049）不同 → 409 SESSION_INCONSISTENT（specs/policy-decisions-v0.9.1 PR3 #12）。
+    不再静默把会话标为结束：会话仍是进行中，已出未答的那一步留在原处，没有多记步骤。届别改回来后可以照常续做。
+    0049 之前建立的会话（start_grade 为空）按 PR2 的行为处理（见 test_cohort_corrected_mid_session_legacy_session）。"""
     app_pool, admin = pools
     s = make_settings(adapters={"aya": AdapterTarget(aya_v1, AYA_CREDENTIAL)}, diagnosis_presenter="synthetic")
     app = create_app(s, pool=app_pool, diagnosis_clock=lambda: SEP1_2027)
@@ -657,9 +666,71 @@ async def test_cohort_corrected_mid_session_grade_still_in_range(pools, aya_v1):
             async with admin.acquire() as a:
                 await a.execute("UPDATE platform.student_profile SET exam_cohort = 2029, exam_cohort_source = 'staff_correction' WHERE id = $1::uuid", stu)
                 assert await a.fetchval("SELECT platform.current_grade(2029::smallint, $1::timestamptz)", SEP1_2027) == 8
-            # 续做：新年级（合成夹具没有八年级目标）复算判定已结束 → 同一会话标为 finished，不报错（现有行为，是否合适待人确认）
+            # 续做与读当前一步：建立时刻的年级与记下的不同 → 409，会话不动
+            r = await start(c, stu)
+            assert r.status_code == 409 and r.json()["code"] == "SESSION_INCONSISTENT", r.text
+            # 问题体带这个会话的 ID 与原因（前端据此“重新开始”，不卡死）
+            assert r.json()["session_id"] == sid and r.json()["reason"] == "grade_changed", r.text
+            async with admin.acquire() as a:
+                assert await a.fetchval("SELECT status FROM platform.diagnosis_session WHERE id = $1::uuid", sid) == "active"
+                assert await a.fetchval("SELECT count(*) FROM platform.diagnosis_step WHERE session_id = $1::uuid", sid) == 1  # 没有多记步骤
+                assert await a.fetchval("SELECT status FROM platform.diagnosis_step WHERE session_id = $1::uuid", sid) == "presented"
+            # 届别改回来（建立时刻的年级又是九年级）：同一会话照常续做
+            async with admin.acquire() as a:
+                await a.execute("UPDATE platform.student_profile SET exam_cohort = 2028, exam_cohort_source = 'guardian_report' WHERE id = $1::uuid", stu)
+            r = await start(c, stu)
+            assert r.status_code == 200 and r.json()["session_id"] == sid and r.json()["status"] == "active", r.text
+            # 再改一次，这回“重新开始”：放弃时记下原因 grade_changed（BFF 据此退回额度）；重放返回同一个原因；之后能开新会话
+            async with admin.acquire() as a:
+                await a.execute("UPDATE platform.student_profile SET exam_cohort = 2029, exam_cohort_source = 'staff_correction' WHERE id = $1::uuid", stu)
+            r = await c.post(f"/internal/v1/diagnosis/sessions/{sid}/abandon", json={"student_ref": stu})
+            assert r.status_code == 200 and r.json()["abandon_reason"] == "grade_changed" and r.headers["idempotent-replayed"] == "false", r.text
+            r = await c.post(f"/internal/v1/diagnosis/sessions/{sid}/abandon", json={"student_ref": stu})
+            assert r.status_code == 200 and r.json()["abandon_reason"] == "grade_changed" and r.headers["idempotent-replayed"] == "true", r.text
+            async with admin.acquire() as a:
+                assert await a.fetchval("SELECT abandon_reason FROM platform.diagnosis_session WHERE id = $1::uuid", sid) == "grade_changed"
+            # 读这个会话的视图也带放弃原因（BFF 丢了放弃结果时，读到已放弃 + grade_changed 也会去退回额度，审查 S5）
+            r = await c.get(f"/internal/v1/diagnosis/sessions/{sid}", headers={"x-student-ref": stu})
+            assert r.status_code == 200 and r.json()["status"] == "abandoned" and r.json()["abandon_reason"] == "grade_changed", r.text
+            r = await start(c, stu)  # 新届别下现在是八年级，合成夹具没有八年级目标：与“这个年级暂无诊断”同一个 422（不是卡在旧会话上）
+            assert r.status_code == 422 and r.json()["code"] == "NO_TARGETS", r.text
+
+
+async def test_ordinary_abandon_has_no_reason(pools, aya_v1):
+    """普通放弃（届别没变）：abandon_reason 为空，BFF 按原规则（答过题不退）处理。"""
+    app_pool, admin = pools
+    s = make_settings(adapters={"aya": AdapterTarget(aya_v1, AYA_CREDENTIAL)}, diagnosis_presenter="synthetic")
+    app = create_app(s, pool=app_pool, diagnosis_clock=lambda: SEP1_2027)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://learning.test", timeout=60) as c:
+            c.headers["authorization"] = f"Bearer {CREDENTIAL}"
+            stu = await cohort_student(admin)
+            sid = (await start(c, stu)).json()["session_id"]
+            r = await c.post(f"/internal/v1/diagnosis/sessions/{sid}/abandon", json={"student_ref": stu})
+            assert r.status_code == 200 and r.json()["abandon_reason"] is None, r.text
+            async with admin.acquire() as a:
+                assert await a.fetchval("SELECT abandon_reason FROM platform.diagnosis_session WHERE id = $1::uuid", sid) is None
+
+
+async def test_cohort_corrected_mid_session_legacy_session(pools, aya_v1):
+    """0049 之前建立的会话没有记下选题年级（start_grade 为空）：中途改届别仍按 PR2 的行为——年级按建立时刻、新届别重算，
+    选题规则用新年级复算已记下的步骤；本例新年级在合成夹具里没有目标，复算判定已结束，会话标为 finished（已出未答的一步留在原处）。"""
+    app_pool, admin = pools
+    s = make_settings(adapters={"aya": AdapterTarget(aya_v1, AYA_CREDENTIAL)}, diagnosis_presenter="synthetic")
+    app = create_app(s, pool=app_pool, diagnosis_clock=lambda: SEP1_2027)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://learning.test", timeout=60) as c:
+            c.headers["authorization"] = f"Bearer {CREDENTIAL}"
+            stu = await cohort_student(admin)
+            r = await start(c, stu)
+            assert r.status_code == 201, r.text
+            sid = r.json()["session_id"]
+            assert (await cur_view(c, sid, stu)).json()["step"]["seq"] == 1
+            async with admin.acquire() as a:
+                # 模拟 0049 之前建立的会话（迁移执行者清空这一列），再把届别改晚一届
+                await a.execute("UPDATE platform.diagnosis_session SET start_grade = NULL WHERE id = $1::uuid", sid)
+                await a.execute("UPDATE platform.student_profile SET exam_cohort = 2029, exam_cohort_source = 'staff_correction' WHERE id = $1::uuid", stu)
             r = await start(c, stu)
             assert r.status_code == 200 and r.json()["session_id"] == sid and r.json()["status"] == "finished", r.text
             async with admin.acquire() as a:
-                assert await a.fetchval("SELECT count(*) FROM platform.diagnosis_step WHERE session_id = $1::uuid", sid) == 1  # 没有多记步骤
-                assert await a.fetchval("SELECT status FROM platform.diagnosis_step WHERE session_id = $1::uuid", sid) == "presented"
+                assert await a.fetchval("SELECT count(*) FROM platform.diagnosis_step WHERE session_id = $1::uuid", sid) == 1

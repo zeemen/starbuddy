@@ -59,6 +59,16 @@ export async function settle(pool: Pool, accountId: string, usageId: string, set
   });
 }
 
+/** 因届别变化放弃的诊断退回额度（迁移 0049 platform.meter_refund_grade_changed）：库里只认学生本人、只认 abandon_reason = grade_changed 的会话 */
+export type RefundResult = { outcome: 'refunded' | 'released' | 'conflict'; usage_id: string; state: string; idempotent?: boolean;
+                             quantity?: number; reason?: string };
+export async function refundGradeChanged(pool: Pool, accountId: string, usageId: string): Promise<RefundResult> {
+  return withAccount(pool, accountId, async (c) => {
+    const { rows } = await c.query('SELECT platform.meter_refund_grade_changed($1) AS r', [usageId]);
+    return rows[0].r as RefundResult;
+  });
+}
+
 export async function release(pool: Pool, accountId: string, usageId: string, reason: string): Promise<TerminalResult> {
   return withAccount(pool, accountId, async (c) => {
     const { rows } = await c.query('SELECT platform.meter_release($1, $2) AS r', [usageId, reason]);

@@ -35,8 +35,8 @@ export interface AffairEntry {
 }
 export interface AffairsFile { synthetic: boolean; notice: string; entries: AffairEntry[] }
 
-/** policy.url_host 的同一规则：https:// 之后到第一个 / : ? # 为止，小写 */
-export const urlHost = (url: string): string | null => /^https:\/\/([^/:?#]+)/.exec(url)?.[1]?.toLowerCase() ?? null;
+/** policy.url_host 的同一规则：https:// 之后到第一个 / ? # 为止，小写；带显式端口（主机名后紧跟 :）的不认（迁移 0049） */
+export const urlHost = (url: string): string | null => /^https:\/\/([^/:?#]+)(?:[/?#]|$)/.exec(url)?.[1]?.toLowerCase() ?? null;
 
 /** 白名单清单：每行一个主机名（由人从 policy.source_domain 导出），# 开头为注释 */
 export function parseSourceDomains(txt: string): Set<string> {

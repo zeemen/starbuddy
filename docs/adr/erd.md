@@ -226,18 +226,25 @@ erDiagram
 
 | 表 | 谁写 | 谁读 | 要点 |
 |---|---|---|---|
-| `policy.source_domain` | 迁移或 DBA；0048 起有 `policy_source_admin` 权限的 active staff 经 `policy.add_source_domain` / `retire_source_domain`（只授 review） | kge、learning | 官方来源主机名清单；主机名规范化（小写、去结尾的点，不收 IP、通配符、端口、只有公共后缀的主机）；只下线不删行；登记人列写固定标记，操作者只记在 platform |
-| `policy.source_document` | kge | learning；bff 看已发布与已撤下（0046），不看复核人 | https、主机名在清单里、两人复核后发布；发布后只能更新核对日期或撤下；草稿不能直接撤下（0046） |
+| `policy.source_domain` | 迁移或 DBA；0048 起有 `policy_source_admin` 权限的 active staff 经 `policy.add_source_domain` / `retire_source_domain`（只授 review） | kge、learning | 官方来源主机名清单；主机名规范化（小写、去结尾的点，不收 IP、通配符、端口、只有公共后缀的主机；0050 起不收不能往返解码的 xn-- 标签）；说明（发布机关）不含 Unicode Cc、Cf、Zl、Zp（0050 CHECK）；只下线不删行；登记人列写固定标记，操作者只记在 platform |
+| `policy.source_document` | kge | learning；bff 看已发布与已撤下（0046），不看复核人 | https、主机名在清单里（0050 起核对时经 `policy.lock_active_source_host` 对清单行 FOR SHARE，与下线串行；`policy.url_host` 不收显式端口）、两人复核后发布；发布后只能更新核对日期或撤下；草稿不能直接撤下（0046） |
 | `policy.exam_scheme` | kge（发布只能经 `policy.publish_scheme`，属主 authz） | learning；bff 看已发布与已撤下（往年方案，0046） | 同城市同届别只一个已发布；非草稿只能改状态；状态只能 草稿 → 已发布 → 已撤下（0046 起草稿不能直接撤下） |
 | `policy.subject_config` / `transition_rule` / `admission_rule` | kge | learning；bff 看已发布与已撤下方案的（0046） | 方案发布后冻结；计分科目必须有满分；总分由库计算 |
 | `policy.school` / `policy.admission_line` | kge | learning、bff（只看已复核学校与已发布招录行） | 分数不超过该年方案总分；来源覆盖该年；已发布行只能撤下，更正走新行；0047 起招录行没有控制线列 |
 | `policy.control_line`（0047 草稿） | kge 只能新建草稿、改分数、来源与撤下；发布只经 `policy.sign_record`（两名不同 staff） | learning；bff 只看已发布，不看复核时间 | 城市 × 年份 × 批次 × 指标生一条已发布；对应该年已发布方案里需要控制线的招录规则；来源同城市、已发布、覆盖该年；不超过计分总分；已发布只能撤下，草稿不能直接撤下；没有自报复核人列 |
 | `policy.admission_line_control_line_archive`（0047 草稿） | 只由 0047 写入 | kge、learning（bff 无权限） | 删列前招录行上的旧控制线（招录行 id、值、当时状态）原样归档；已撤下行的值只在这里 |
 | `platform.policy_signoff`（0040 草稿） | 只经 `policy.sign_scheme` / `sign_record` / `publish_scheme`（属主 authz，只授 review，0041 草稿） | 任何应用角色都不能直接读；kge、review 经 `platform.policy_signoff_record()`（0040）导出 | 考情签字人是 staff 账号（policy 不存账号引用，规则 13）；签字记内容摘要，两名不同 staff 对当前内容批准才发布，同一账号对同一内容只签一次；只追加。0041 起来源文件、招录行、学校在第二名批准时发布，方案由签字身份发布，kge 不能直接改为已发布；0047 起也收控制线（`control_line_id`） |
-| `platform.exam_cohort_change`（0045 草稿） | 只经 `platform.correct_exam_cohort`（属主 authz；授 bff 与 review） | 任何应用角色都不能读 | 学生档案届别更正的最小记录：旧值、新值、来源（guardian_report / staff_correction）、操作者、时间；随删除请求删除 |
-| `platform.staff_permission`（0048 草稿） | 只由迁移或 DBA 授予 | review 只读自己的权限 | staff 的附加权限，首个 `policy_source_admin`；库层守卫只认 staff 账号 |
-| `platform.policy_source_domain_change`（0048 草稿） | 只经来源清单的新增、下线函数（属主 authz） | 任何应用角色都不能读 | 官方来源清单的操作记录（主机名、动作、说明、操作者、时间）；只追加 |
+| `platform.exam_cohort_change`（0045 草稿） | 只经 `platform.correct_exam_cohort`（属主 authz；授 bff 与 review） | 任何应用角色都不能读；0049 起家长导出（`platform.export_student_data`）带该学生的全部更正，只有旧值、新值、来源、时间 | 学生档案届别更正的最小记录：旧值、新值、来源（guardian_report / staff_correction）、操作者、时间；随删除请求删除；操作者不导出 |
+| `platform.staff_permission`（0048 草稿） | 只由迁移或 DBA 授予 | review 只读自己的权限 | staff 的附加权限：`policy_source_admin`（0048）、`cohort_correction`（0049，客服更正届别）；库层守卫只认 staff 账号 |
+| `platform.policy_source_domain_change`（0048 草稿） | 只经来源清单的新增、下线函数（属主 authz） | 任何应用角色都不能读 | 官方来源清单的操作记录（主机名、动作、说明、操作者、时间）；只追加；说明不含 Unicode Cc、Cf、Zl、Zp（0050 CHECK，引用 policy.has_hidden_chars） |
 
 学生档案的届别（0045 起）：`exam_cohort` 是真相源，`grade` 是建档时年级；当前年级由 `platform.current_grade(exam_cohort, 时刻)` 推算（9 月 1 日切学年，不在 7–9 返回 NULL，时刻由调用方给）；
-来源列 `exam_cohort_source`（derived / guardian_report / staff_correction；建档只收前两种，之后改届别必须同时改来源）。更正只经 `platform.correct_exam_cohort`：经 BFF 时须是有效绑定家长，经审核台签字连接时须是 active staff，每次 ±1。
+来源列 `exam_cohort_source`（derived / guardian_report / staff_correction；建档只收前两种，之后改届别必须同时改来源）。更正只经 `platform.correct_exam_cohort`：经 BFF 时须是有效绑定家长，经审核台签字连接时须是 active staff 且有 staff 权限 `cohort_correction`（0049；
+无权限与学生不存在同一个错误），每次 ±1。家长导出的 profile 主题带 `exam_cohort` 与 `exam_cohort_source`，`cohort_changes` 主题带全部更正（0049）。
+诊断会话 `platform.diagnosis_session.start_grade`（0049）记建立时用于选题的年级（会话参数，不是年级事实），学习服务据此发现会话中途届别被改；
+`abandon_reason = grade_changed`（0049）记因届别变化放弃，这类放弃经 `platform.meter_refund_grade_changed`（只授 BFF）退回额度
+（未结算的释放；已结算的写一条 adjust 流水，actor system，原因 grade_changed_refund；同一笔只退一次）。
+只认 `diagnosis_full` 额度桶、来源方法 diagnose、幂等键与会话一致、同一学生的预留；退回量 = 结算量减已有更正（≤0 不退）；
+同一学生同一额度期最多退一次（再有返回 conflict / limit）。写守卫触发器 `diagnosis_session_write_guard`：会话只能以进行中新建，
+标 grade_changed 时库里按建立时刻核实年级确实变了（`platform.diagnosis_grade_changed`；没有 start_grade 的旧会话不能标）。
 

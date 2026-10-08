@@ -60,8 +60,14 @@ def v4_shaped(name: str) -> str:
     return str(uuid.UUID(bytes=bytes(b)))
 
 
-def err(status: int, code: str, title: str, *, retryable: bool = False) -> IngestError:
-    return IngestError(status, code, title, retryable=retryable)
+def err(status: int, code: str, title: str, *, retryable: bool = False, extra: dict | None = None) -> IngestError:
+    return IngestError(status, code, title, retryable=retryable, extra=extra)
+
+
+def grade_changed(s: store.SessionRow, grade: int | None) -> bool:
+    """会话中途届别被改：按建立时刻、当前届别重算的年级不在 7–9（建立时一定在 7–9），或与建立时记下的选题年级（start_grade，
+    迁移 0049）不同。0049 之前的会话没有 start_grade，只能看前一条。"""
+    return grade is None or (s.start_grade is not None and grade != s.start_grade)
 
 
 NOT_FOUND = ("SESSION_NOT_FOUND", "diagnosis session not found")
@@ -105,12 +111,14 @@ class DiagnosisService:
 
     async def _source(self, conn, s: store.SessionRow):
         # 年级按会话建立时刻推算：跨 9 月 1 日暂停后续做，选题规则复算出的仍是同一组步骤。
-        # 届别在会话中途被更正时按新届别重算建立时刻的年级：不在 7–9 → 下面直接 409；仍在 7–9 但变了 → 选题规则用新年级复算
-        # 已记下的步骤，对不上时由 HistoryMismatch 兜底 409；还没出题时会换成新年级的题目；新年级没有目标时复算判定已结束，
-        # 会话标为 finished（已出未答的一步留在原处；tests/test_diagnosis_session.py 钉住这一现有行为）
+        # 届别在会话中途被更正时按新届别重算建立时刻的年级：不在 7–9，或与建立时记下的选题年级（start_grade，迁移 0049）不同 → 409
+        # SESSION_INCONSISTENT，不再静默结束或换题（specs/policy-decisions-v0.9.1 PR3 #12）。问题体带这个会话的 ID 与原因 grade_changed
+        # （会话是按学生取的，只会是该学生自己的会话）：前端据此“重新开始”——放弃这个会话（因届别变化放弃的退回额度）再开新会话。
+        # 0049 之前建立的会话没有记下年级，仍按 PR2 的行为：选题规则用新年级复算已记下的步骤，对不上时由 HistoryMismatch 兜底 409
         _, grade = await store.student_grade(conn, s.student_id, s.created_at)
-        if grade is None:
-            raise err(409, "SESSION_INCONSISTENT", "student grade at session start is no longer in range")
+        if grade_changed(s, grade):
+            raise err(409, "SESSION_INCONSISTENT", "student grade at session start changed after the session began",
+                      extra={"session_id": s.id, "reason": "grade_changed"})
         src = await self._load(grade)
         if s.algorithm_version != ALGORITHM_VERSION or s.map_version != src.map_version:
             raise err(409, "SESSION_INCONSISTENT", "session was created with another algorithm or map version")
@@ -200,7 +208,7 @@ class DiagnosisService:
                     s = await store.insert_session(conn, student=student, subject=subject, algorithm_version=ALGORITHM_VERSION,
                                                    map_version=src.map_version, usage_id=usage_id, key=key,
                                                    time_budget_sec=self.params.time_budget_sec, item_limit=self.params.item_limit,
-                                                   created_at=at)
+                                                   created_at=at, start_grade=grade)
                     transition(State.CREATED, Event.SELECT)
                     await self._advance(conn, s)
                     return StartResult(s.id, s.usage_id, s.status, created=True, replayed=False)
@@ -233,7 +241,9 @@ class DiagnosisService:
         view: dict = {"session_id": s.id, "status": s.status, "state": state.value, "usage_id": s.usage_id,
                       "elapsed_sec": s.elapsed_sec, "time_budget_sec": s.time_budget_sec,
                       "item_count": s.item_count, "item_limit": s.item_limit,
-                      "process_tasks": any(r.kind in ("process", "explain") and r.status == "answered" for r in rows), "step": None}
+                      "process_tasks": any(r.kind in ("process", "explain") and r.status == "answered" for r in rows),
+                      # 放弃原因（迁移 0049）：BFF 取当前题时看到 grade_changed 已放弃也补调退回额度（幂等；退回审查 S5）
+                      "abandon_reason": s.abandon_reason, "step": None}
         if cur is not None and s.status in ("active", "paused"):
             item = self.presenter.present(s.subject, cur.item_id or "")
             if item is None:
@@ -480,14 +490,20 @@ class DiagnosisService:
     async def abandon(self, student: str, session_id: str) -> dict:
         async with ingest_store.learning_tx(self.pool) as conn:
             s = await self._locked(conn, student, session_id)
-            # item_count：已作答的题数。BFF 据此决定放弃时退不退额度（答过题就不退，安全审查 B1）
+            # item_count：已作答的题数。BFF 据此决定放弃时退不退额度（答过题就不退，安全审查 B1）。
+            # abandon_reason：会话中途届别被改（建立时刻的年级变了）时为 grade_changed，记在会话上（迁移 0049）；这类放弃即使答过题
+            # 也退回额度（用户 2026-10-08 确认），BFF 调 platform.meter_refund_grade_changed，库里按这一列再核对一次
             if s.status == "abandoned":
-                return {"status": "abandoned", "usage_id": s.usage_id, "item_count": s.item_count, "replayed": True}
+                return {"status": "abandoned", "usage_id": s.usage_id, "item_count": s.item_count, "abandon_reason": s.abandon_reason,
+                        "replayed": True}
             rows = await store.steps(conn, s.id)
             cur = self._current(rows)
             self._check(derive_state(s.status, cur.done() if cur else None, bool(cur and cur.probe_id)), Event.ABANDON)
-            await store.set_status(conn, s.id, "abandoned")
-            return {"status": "abandoned", "usage_id": s.usage_id, "item_count": s.item_count, "replayed": False}
+            _, grade = await store.student_grade(conn, s.student_id, s.created_at)
+            # 只有记下了选题年级的会话才标 grade_changed（库里的写入守卫用同一判据再核实；0049 之前的会话按普通放弃，不退额度）
+            reason = "grade_changed" if s.start_grade is not None and grade_changed(s, grade) else None
+            await store.set_status(conn, s.id, "abandoned", abandon_reason=reason)
+            return {"status": "abandoned", "usage_id": s.usage_id, "item_count": s.item_count, "abandon_reason": reason, "replayed": False}
 
     # ---------- 内部：断点候选（给 KGE-04 / SIE-02b；不经 BFF，不对学生、家长展示） ----------
     async def break_points(self, session_id: str) -> dict:

@@ -162,23 +162,31 @@ col|platform.curriculum_version.region|starbuddy_learning|UPDATE|SUPERUSER
 col|platform.curriculum_version.retired_at|starbuddy_authz|UPDATE|SUPERUSER
 col|platform.curriculum_version.status|starbuddy_authz|UPDATE|SUPERUSER
 col|platform.curriculum_version.textbook_version|starbuddy_learning|UPDATE|SUPERUSER
+col|platform.diagnosis_session.abandon_reason|starbuddy_authz|SELECT|SUPERUSER
+col|platform.diagnosis_session.abandon_reason|starbuddy_learning|UPDATE|SUPERUSER
+col|platform.diagnosis_session.created_at|starbuddy_authz|SELECT|SUPERUSER
 col|platform.diagnosis_session.created_at|starbuddy_bff|SELECT|SUPERUSER
 col|platform.diagnosis_session.elapsed_sec|starbuddy_bff|SELECT|SUPERUSER
 col|platform.diagnosis_session.elapsed_sec|starbuddy_learning|UPDATE|SUPERUSER
 col|platform.diagnosis_session.finished_at|starbuddy_bff|SELECT|SUPERUSER
 col|platform.diagnosis_session.finished_at|starbuddy_learning|UPDATE|SUPERUSER
+col|platform.diagnosis_session.idempotency_key|starbuddy_authz|SELECT|SUPERUSER
 col|platform.diagnosis_session.id|starbuddy_bff|SELECT|SUPERUSER
 col|platform.diagnosis_session.id|starbuddy_eraser|SELECT|SUPERUSER
 col|platform.diagnosis_session.item_count|starbuddy_bff|SELECT|SUPERUSER
 col|platform.diagnosis_session.item_count|starbuddy_learning|UPDATE|SUPERUSER
 col|platform.diagnosis_session.item_limit|starbuddy_bff|SELECT|SUPERUSER
 col|platform.diagnosis_session.resumed_at|starbuddy_learning|UPDATE|SUPERUSER
+col|platform.diagnosis_session.start_grade|starbuddy_authz|SELECT|SUPERUSER
+col|platform.diagnosis_session.status|starbuddy_authz|SELECT|SUPERUSER
 col|platform.diagnosis_session.status|starbuddy_bff|SELECT|SUPERUSER
 col|platform.diagnosis_session.status|starbuddy_learning|UPDATE|SUPERUSER
+col|platform.diagnosis_session.student_id|starbuddy_authz|SELECT|SUPERUSER
 col|platform.diagnosis_session.student_id|starbuddy_bff|SELECT|SUPERUSER
 col|platform.diagnosis_session.student_id|starbuddy_eraser|SELECT|SUPERUSER
 col|platform.diagnosis_session.subject|starbuddy_bff|SELECT|SUPERUSER
 col|platform.diagnosis_session.time_budget_sec|starbuddy_bff|SELECT|SUPERUSER
+col|platform.diagnosis_session.usage_id|starbuddy_authz|SELECT|SUPERUSER
 col|platform.diagnosis_step.answer_key|starbuddy_learning|UPDATE|SUPERUSER
 col|platform.diagnosis_step.answered_at|starbuddy_learning|UPDATE|SUPERUSER
 col|platform.diagnosis_step.elapsed_sec|starbuddy_learning|UPDATE|SUPERUSER
@@ -659,6 +667,8 @@ func|platform.current_account_id()|starbuddy_review|EXECUTE|SUPERUSER
 func|platform.current_grade(smallint,timestamp with time zone)|starbuddy_authz|EXECUTE|SUPERUSER
 func|platform.current_grade(smallint,timestamp with time zone)|starbuddy_bff|EXECUTE|SUPERUSER
 func|platform.current_grade(smallint,timestamp with time zone)|starbuddy_learning|EXECUTE|SUPERUSER
+func|platform.diagnosis_grade_changed(uuid,timestamp with time zone,smallint)|starbuddy_authz|EXECUTE|SUPERUSER
+func|platform.diagnosis_grade_changed(uuid,timestamp with time zone,smallint)|starbuddy_learning|EXECUTE|SUPERUSER
 func|platform.diagnosis_session_guard()|PUBLIC|EXECUTE|SUPERUSER
 func|platform.diagnosis_step_guard()|PUBLIC|EXECUTE|SUPERUSER
 func|platform.enqueue_claim_dispute(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
@@ -713,6 +723,8 @@ func|platform.meter_phone_digest(text)|starbuddy_authz|EXECUTE|SUPERUSER
 func|platform.meter_plan_daily_cap(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.meter_practice(uuid,text)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.meter_practice(uuid,text)|starbuddy_bff|EXECUTE|starbuddy_authz
+func|platform.meter_refund_grade_changed(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.meter_refund_grade_changed(uuid)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|platform.meter_release(uuid,text)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.meter_release(uuid,text)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|platform.meter_renew_due(integer)|starbuddy_authz|EXECUTE|starbuddy_authz
@@ -802,6 +814,11 @@ func|policy.approval_count(text,uuid)|starbuddy_review|EXECUTE|starbuddy_authz
 func|policy.distinct_count(text[])|starbuddy_authz|EXECUTE|SUPERUSER
 func|policy.distinct_count(text[])|starbuddy_kge|EXECUTE|SUPERUSER
 func|policy.distinct_count(text[])|starbuddy_learning|EXECUTE|SUPERUSER
+func|policy.has_hidden_chars(text)|starbuddy_authz|EXECUTE|SUPERUSER
+func|policy.idn_label_ok(text)|starbuddy_authz|EXECUTE|SUPERUSER
+func|policy.is_hidden_codepoint(integer)|starbuddy_authz|EXECUTE|SUPERUSER
+func|policy.lock_active_source_host(text)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|policy.lock_active_source_host(text)|starbuddy_kge|EXECUTE|starbuddy_authz
 func|policy.normalize_source_host(text)|starbuddy_authz|EXECUTE|SUPERUSER
 func|policy.object_digest(text,uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|policy.object_digest(text,uuid)|starbuddy_kge|EXECUTE|starbuddy_authz
@@ -903,6 +920,7 @@ owner|platform.meter_minutes_until_curfew(uuid,timestamp with time zone)|starbud
 owner|platform.meter_open_subscription(uuid,text)|starbuddy_authz
 owner|platform.meter_plan_daily_cap(uuid)|starbuddy_authz
 owner|platform.meter_practice(uuid,text)|starbuddy_authz
+owner|platform.meter_refund_grade_changed(uuid)|starbuddy_authz
 owner|platform.meter_release(uuid,text)|starbuddy_authz
 owner|platform.meter_renew_due(integer)|starbuddy_authz
 owner|platform.meter_reserve(uuid,text,text,text,numeric,text,text)|starbuddy_authz
@@ -941,6 +959,7 @@ owner|platform.staff_session_resolve(text)|starbuddy_authz
 owner|platform.take_review_task(uuid)|starbuddy_authz
 owner|policy.add_source_domain(text,text)|starbuddy_authz
 owner|policy.approval_count(text,uuid)|starbuddy_authz
+owner|policy.lock_active_source_host(text)|starbuddy_authz
 owner|policy.object_digest(text,uuid)|starbuddy_authz
 owner|policy.publish_scheme(uuid)|starbuddy_authz
 owner|policy.retire_source_domain(text)|starbuddy_authz
@@ -1457,6 +1476,7 @@ secdef|platform.meter_minutes_until_curfew(uuid,timestamp with time zone)
 secdef|platform.meter_open_subscription(uuid,text)
 secdef|platform.meter_plan_daily_cap(uuid)
 secdef|platform.meter_practice(uuid,text)
+secdef|platform.meter_refund_grade_changed(uuid)
 secdef|platform.meter_release(uuid,text)
 secdef|platform.meter_renew_due(integer)
 secdef|platform.meter_reserve(uuid,text,text,text,numeric,text,text)
@@ -1494,6 +1514,7 @@ secdef|platform.staff_session_resolve(text)
 secdef|platform.take_review_task(uuid)
 secdef|policy.add_source_domain(text,text)
 secdef|policy.approval_count(text,uuid)
+secdef|policy.lock_active_source_host(text)
 secdef|policy.object_digest(text,uuid)
 secdef|policy.publish_scheme(uuid)
 secdef|policy.retire_source_domain(text)

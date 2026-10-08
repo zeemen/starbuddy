@@ -221,6 +221,19 @@ SM=(
   $'届别：更正没有按账号的总量上限\tsrc/http/shell-routes.ts\t, { bucket: \'cohort_correction.account.day\', dim: \'account\' }]\t]'
   $'届别：步长错误映射成 404\tsrc/http/shell-routes.ts\tif (code === \'22023\' || code === \'23514\') return problem(P.INVALID);\tif (code === \'22023\' || code === \'23514\') return problem(P.NOT_FOUND);'
   $'届别：步长错误不映射（500）\tsrc/http/shell-routes.ts\tif (code === \'22023\' || code === \'23514\') return problem(P.INVALID);\t'  $'届别：频控只按学生计数\tsrc/http/server.ts\t`${session!.accountId}:${params[\'student_id\'] ?? \'\'}`\t`${params[\'student_id\'] ?? \'\'}`'
+  $'届别：学生 /me 读存下的建档年级\tsrc/http/routes.ts\tplatform.current_grade(p.exam_cohort, $1::timestamptz) AS grade\tCASE WHEN $1::timestamptz IS NULL THEN NULL ELSE p.grade END AS grade'
+  # 届别 PR3（#12，迁移 0049）：会话中途届别被改时 409 透传 session_id 与 reason，因届别变化放弃即使答过题也退回额度（跑诊断集成测试）
+  $'诊断：届别变化放弃不退额度\tsrc/diagnosis/service.ts\tif (v.status === \'abandoned\' && v.abandon_reason === \'grade_changed\') {\tif (false) {'
+  $'诊断：409 不透传会话 ID\tsrc/diagnosis/service.ts\t{ reason: \'grade_changed\', session_id: expected }\t{ reason: \'grade_changed\' }'
+  $'诊断：续做的 409 不认会话\tsrc/diagnosis/service.ts\tif (r.kind === \'failure\') return fromFailure(r, open);\tif (r.kind === \'failure\') return fromFailure(r, null);'
+  $'诊断：退回走结算\tsrc/diagnosis/service.ts\t    await refundQuietly(deps, account, v.usage_id);\\n    return;\t    await settleQuietly(deps, account, v.usage_id);\\n    return;'
+  # 届别 PR3（#10）：年级不在 7–9 时选科只能暂停、今日计划不排学科
+  $'届别：毕业后也能新选\tsrc/http/shell-routes.ts\t    if (p.grade === null) return problem(P.GRADE_OUT_OF_RANGE);\t'
+  $'届别：毕业后选科列表为空\tsrc/http/shell-routes.ts\t OR ($2::smallint IS NULL AND e.status IS NOT NULL)\t'
+  $'届别：毕业后选科列表列出全部学科\tsrc/http/shell-routes.ts\t($2::smallint IS NULL AND e.status IS NOT NULL)\t$2::smallint IS NULL'
+  $'届别：毕业后今日计划仍排学科\tsrc/http/shell-routes.ts\t    if (p.grade === null) return { subjects: [] as { code: string; product: PlanSubject }[], linkId: undefined };\t'
+  $'届别：can_enroll 恒为真\tsrc/http/shell-routes.ts\tcan_enroll: p.grade !== null,\tcan_enroll: true,'
+  $'届别：年级检查先于授权\tsrc/http/shell-routes.ts\t    if (!p) return problem(P.NOT_FOUND);\\n    if (p.grade === null) return problem(P.GRADE_OUT_OF_RANGE);\t    if (!p || p.grade === null) return problem(P.GRADE_OUT_OF_RANGE);'
   # 冲刺 4-H H6 第二轮第 7 节回归（每类至少一条）：这几条跑 tests/route-matrix.integration.test.ts
   # 7.1 授权矩阵与路由表覆盖
   $'H6：新路由不登记样例\tsrc/http/shell-routes.ts\t  read(`${S}/balance`, \'session\', balance),\t  read(`${S}/balance`, \'session\', balance), read(`${S}/balance-copy`, \'session\', balance),'

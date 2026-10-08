@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # 在一次性的本地 Postgres 上验证迁移与 RLS（spec：specs/learner-schema-v0.9/spec.md）。
-#   1. 全部 up → 全部 down → 全部 up，再把最近四个迁移逐个单独 down → up（迁移可回滚，开发计划 冲刺 1-B）
+#   1. 全部 up → 全部 down → 全部 up，再把最近五个迁移逐个单独 down → up（迁移可回滚，开发计划 冲刺 1-B）；
+#      最新两个迁移（0049、0050）另在跑完全部测试、库里有数据时再单独 down → up 一次（文件末尾）
 #   2. 按文件名顺序执行 db/tests/*.sql（合成数据，CLAUDE.md 规则 8）
 # 只连本机临时实例（Unix socket，不监听 TCP），结束即删除；不连接任何共享或生产库（规则 9）。
 # 退出码：0 通过；1 失败；3 本机没有 Postgres（由 Makefile 决定是否算失败）。
@@ -24,9 +25,9 @@ left=$(psql_run -tAc "SELECT count(*) FROM pg_namespace WHERE nspname IN ('platf
 [ "$left" = "0" ] || { echo "db-test: 失败（down 之后 platform、insight、kge 或 policy schema 仍存在）"; exit 1; }
 apply_or_exit "${UPS[@]}"
 echo "db-test: 迁移 up → down → up 通过（${#UPS[@]} 个迁移）"
-# 最新迁移单独 down → up（只回滚最后一步时，前面的迁移不受影响）；再把最近四个迁移逐个回滚到它为止再重新执行
-# （一个 PR 加了几个迁移时每个都要能单独回滚，specs/policy-decisions-v0.9.1 验收：0045–0048）
-for k in 1 2 3 4; do
+# 最新迁移单独 down → up（只回滚最后一步时，前面的迁移不受影响）；再把最近五个迁移逐个回滚到它为止再重新执行
+# （一个 PR 加了几个迁移时每个都要能单独回滚，specs/policy-decisions-v0.9.1 验收：PR1 的 0045–0048 与 PR3 的 0049、0050）
+for k in 1 2 3 4 5 6; do
   apply_or_exit "${DOWNS[@]:0:k}"
   apply_or_exit "${UPS[@]: -k}"
   echo "db-test: 迁移 $(basename "${UPS[${#UPS[@]}-k]}") 单独 down → up 通过（先回滚其后的 $((k - 1)) 个）"
@@ -158,7 +159,7 @@ echo "ok - 登录角色间接同时继承 bff 与 learning 时迁移拒绝执行
 as_pg "$PGBIN/createdb" -h "$WORK" -U postgres kge_role_check
 psql_kge() { as_pg "$PGBIN/psql" -h "$WORK" -U postgres -d kge_role_check -X -q -v ON_ERROR_STOP=1 "$@"; }
 for f in "${UPS[@]}"; do
-  case "$(basename "$f")" in 0011_*|0012_*|0017_*|0018_*|0019_*|0024_*|0026_*|0028_*|0038_*|0039_*|0040_*|0041_*|0042_*|0043_*|0047_*|0048_*) continue ;; esac  # 0012、0017–0019、0024、0026、0028、0038、0043 依赖 0011 的 kge 表；0039、0040 依赖 0018（0039 还依赖 0012）；0041 依赖 0040；0042 依赖 0039；0047 依赖 0041；0048 依赖 0018 的只追加函数
+  case "$(basename "$f")" in 0011_*|0012_*|0017_*|0018_*|0019_*|0024_*|0026_*|0028_*|0038_*|0039_*|0040_*|0041_*|0042_*|0043_*|0047_*|0048_*|0049_*|0050_*) continue ;; esac  # 0012、0017–0019、0024、0026、0028、0038、0043 依赖 0011 的 kge 表；0039、0040 依赖 0018（0039 还依赖 0012）；0041 依赖 0040；0042 依赖 0039；0047 依赖 0041；0048 依赖 0018 的只追加函数；0049、0050 依赖 0048
   psql_kge -1 < "$f" >/dev/null 2>&1 || { echo "db-test: 失败（角色断言测试库执行 $(basename "$f") 出错）"; exit 1; }
 done
 kge_must_refuse() {  # $1 = 布置 SQL，$2 = 撤销 SQL，$3 = 说明
@@ -578,6 +579,56 @@ grep -q 'control_line_one_published' "$WORK/race_cl2.err" || { echo "db-test: �
   && [ "$(psql_run -tAc "SELECT policy.approval_count('control_line', '$ZB')" </dev/null)" = "1" ] \
   || { echo "db-test: 失败（控制线并发发布后不是恰好一条已发布、另一条签字回滚）"; exit 1; }
 echo "ok - 并发：同一城市年份批次类别的两条控制线并发发布，唯一索引让后一个等前一个提交后失败，只留一条已发布" >> "$OUT"
+# 场景 14（0050，来源文件守卫对清单行 FOR SHARE ↔ 下线 FOR UPDATE）：有 policy_source_admin 的 staff（79y 授予 sf1）下线一个合成主机名后事务未提交；
+# 写入方此时新建挂在它下面的来源文件。共享锁让新建等下线提交后再核对，按已下线拒绝；去掉锁时新建按下线前的快照通过，下线后仍进来新文件
+printf '%s\n' "$AS_STAFF SELECT policy.add_source_domain('jyj.race14.example', '合成并发教育局');" | psql_run >/dev/null 2>"$WORK/race14.err" \
+  || { echo "db-test: 失败（并发场景 14 的夹具：$(cat "$WORK/race14.err")）"; exit 1; }
+printf '%s\n' "BEGIN; $AS_STAFF SELECT policy.retire_source_domain('jyj.race14.example'); SELECT pg_sleep(1.5); COMMIT;" \
+  | psql_run >/dev/null 2>"$WORK/race_sd1.err" &
+sleep 0.5
+if printf '%s\n' "SET ROLE starbuddy_kge; INSERT INTO policy.source_document (city, issuer, doc_number, title, published_on, url, applies_from_cohort, last_verified_on)
+     VALUES ('synthcity', '合成并发教育局', '合成〔2027〕140号', '合成并发文件（非真实数据）', '2027-03-01', 'https://jyj.race14.example/doc/1', 2028, '2027-09-01');" \
+   | psql_run >/dev/null 2>"$WORK/race_sd2.err"; then
+  wait; echo "db-test: 失败（来源清单下线进行中新建的来源文件没有等下线提交，挂在已下线的主机名下）"; exit 1
+fi
+wait || { echo "db-test: 失败（并发场景 14 的下线本身失败：$(cat "$WORK/race_sd1.err")）"; exit 1; }
+grep -q '官方来源清单' "$WORK/race_sd2.err" || { echo "db-test: 失败（并发场景 14 的新建不是被清单核对拒绝：$(cat "$WORK/race_sd2.err")）"; exit 1; }
+[ "$(psql_run -tAc "SELECT count(*) FROM policy.source_document WHERE url LIKE 'https://jyj.race14.example/%'" </dev/null)" = "0" ] \
+  || { echo "db-test: 失败（并发场景 14 后已下线的主机名下有新来源文件）"; exit 1; }
+echo "ok - 并发：来源清单下线进行中新建的来源文件等下线提交后按已下线拒绝（守卫经属主函数对清单行 FOR SHARE）" >> "$OUT"
+# 场景 15（0049，退回额度审查 S4）：同一笔因届别变化放弃的诊断预留，两个会话同时调退回。函数锁住预留行，后一个等前一个提交后
+# 按幂等键看到已退过，返回 idempotent；整个过程只有一条退回流水、计数对账一致。合成学生 c2（学生账号 b1，10 号夹具，70 号开通了额度）
+C2=c2000000-0000-4000-8000-0000000000c2; B1=b1000000-0000-4000-8000-0000000000b1; RK=b0b00000-0000-4000-8000-000000007999
+AS_C2="SELECT set_config('app.account_id', '$B1', false); SET ROLE starbuddy_bff;"
+# 80 号把计量时钟 t.clock 固定成了真实 now()：晚上跑会落进宵禁、预留被拒（2026-10-08 21:15 严格检查复现）。本场景把计量时钟
+# 拨到当天北京时间 10:00，与墙钟无关
+psql_run -tAc "UPDATE t.clock SET now = (date_trunc('day', now() AT TIME ZONE 'Asia/Shanghai') + interval '10 hours') AT TIME ZONE 'Asia/Shanghai'" </dev/null >/dev/null \
+  || { echo "db-test: 失败（并发场景 15 无法固定计量时钟）"; exit 1; }
+# c2 到这里已是留存态（70 号的试用已结束），先以超级用户给它开一期合成的试点订阅并发放当期额度（只为本场景）
+printf '%s\n' "WITH s AS (INSERT INTO platform.subscription (household_id, student_id, tier, config_version, source, period_start, period_end)
+    SELECT household_id, id, 'pro', platform.meter_current_config(), 'pilot_virtual', platform.meter_now(), platform.meter_now() + interval '30 days'
+      FROM platform.student_profile WHERE id = '$C2' RETURNING id)
+  SELECT platform.meter_grant_period(id) FROM s;
+  $AS_C2 SELECT platform.meter_reserve('$C2', 'diagnosis_full', '$RK', repeat('7', 64), 1, NULL, 'diagnose')->>'outcome';
+  SELECT platform.meter_settle(platform.meter_usage_id('$RK'), 1)->>'outcome'; RESET ROLE;
+  INSERT INTO platform.diagnosis_session (id, student_id, subject, algorithm_version, map_version, usage_id, idempotency_key, start_grade)
+  VALUES ('f7990000-0000-4000-8000-0000000000ff', '$C2', 'wenli', 'aya-diag-trace@0.1.0', '0.2.0', platform.meter_usage_id('$RK'), '$RK',
+          CASE WHEN platform.current_grade((SELECT exam_cohort FROM platform.student_profile WHERE id = '$C2'), now()) = 7 THEN 8 ELSE 7 END);
+  UPDATE platform.diagnosis_session SET status = 'abandoned', finished_at = now(), abandon_reason = 'grade_changed'
+   WHERE id = 'f7990000-0000-4000-8000-0000000000ff';" | psql_run -tA >"$WORK/rf0.out" 2>"$WORK/rf0.err" \
+  && grep -qx reserved "$WORK/rf0.out" && grep -qx settled "$WORK/rf0.out" \
+  || { echo "db-test: 失败（并发场景 15 的夹具：$(cat "$WORK/rf0.out" "$WORK/rf0.err")）"; exit 1; }
+printf '%s\n' "BEGIN; $AS_C2 SELECT platform.meter_refund_grade_changed(platform.meter_usage_id('$RK')); SELECT pg_sleep(1.5); COMMIT;" \
+  | psql_run -tA >"$WORK/rf1.out" 2>"$WORK/rf1.err" &
+sleep 0.5
+printf '%s\n' "$AS_C2 SELECT platform.meter_refund_grade_changed(platform.meter_usage_id('$RK'));" | psql_run -tA >"$WORK/rf2.out" 2>"$WORK/rf2.err" \
+  || { wait; echo "db-test: 失败（并发场景 15 的后一次退回出错：$(cat "$WORK/rf2.err")）"; exit 1; }
+wait || { echo "db-test: 失败（并发场景 15 的先一次退回出错：$(cat "$WORK/rf1.err")）"; exit 1; }
+grep -q '"idempotent": false' "$WORK/rf1.out" && grep -q '"outcome": "refunded"' "$WORK/rf2.out" && grep -q '"idempotent": true' "$WORK/rf2.out" \
+  && [ "$(psql_run -tAc "SELECT count(*) FROM platform.usage_ledger WHERE kind = 'adjust' AND reason_code = 'grade_changed_refund' AND source_idempotency_key = '$RK'" </dev/null)" = "1" ] \
+  && [ "$(psql_run -tAc "SELECT (SELECT count(*) FROM platform.entitlement_reconciliation) + (SELECT count(*) FROM platform.reservation_ledger_mismatch)" </dev/null)" = "0" ] \
+  || { echo "db-test: 失败（并发场景 15：两次退回不是恰好一次生效、一次幂等：$(cat "$WORK/rf1.out" "$WORK/rf2.out")）"; exit 1; }
+echo "ok - 并发：同一笔诊断预留的两次退回额度按预留行锁串行，只退一次，后一次幂等，计数对账一致" >> "$OUT"
 
 # 0041 的数据前提：库里已有已发布的考情数据（77、79v 经签字发布的）时，0041 up 以明确信息中止（自报工号的发布补不出签字记录）
 if psql_run -1 < "$(ls "$ROOT"/db/migrations/0041_*.up.sql)" >/dev/null 2>"$WORK/up41.err"; then
@@ -609,6 +660,48 @@ done
                       AND to_regprocedure('platform.correct_exam_cohort(uuid, smallint)') IS NOT NULL" </dev/null)" = "t" ] \
   || { echo "db-test: 失败（0045、0047、0048 回滚中止后对象不在了）"; exit 1; }
 echo "ok - 已有来源清单操作记录、控制线、届别更正记录时 0048、0047、0045 回滚以明确错误中止，库不变" >> "$OUT"
+# 0050、0049 在有数据时单独 down → up（PR3）：回滚没有数据前提。0050 回滚恢复 0048 及之前的来源清单函数与 url_host；
+# 0049 回滚删掉已授予的 cohort_correction（回滚说明）、恢复导出清单，客服分支一律 42501（不恢复“任何 active staff 都能更正”，
+# PR3 审查意见 3）。重新执行后函数与清单回到 0049、0050 的版本（cohort_correction 要由 DBA 重新授予）
+U49="$(ls "$ROOT"/db/migrations/0049_*.up.sql)"; D49="$(ls "$ROOT"/db/migrations/0049_*.down.sql)"
+U50="$(ls "$ROOT"/db/migrations/0050_*.up.sql)"; D50="$(ls "$ROOT"/db/migrations/0050_*.down.sql)"
+[ "$(psql_run -tAc "SELECT count(*) > 0 FROM platform.staff_permission WHERE permission = 'cohort_correction'
+                      AND staff_id = '5f000000-0000-4000-8000-00000000005f'" </dev/null)" = "t" ] \
+  || { echo "db-test: 失败（0049 回滚测试的前提不成立：sf1 没有已授予的 cohort_correction）"; exit 1; }
+psql_run -1 < "$D50" >/dev/null 2>"$WORK/down50.err" || { echo "db-test: 失败（有数据时 0050 回滚失败：$(cat "$WORK/down50.err")）"; exit 1; }
+psql_run -1 < "$D49" >/dev/null 2>"$WORK/down49.err" || { echo "db-test: 失败（有数据时 0049 回滚失败：$(cat "$WORK/down49.err")）"; exit 1; }
+[ "$(psql_run -tAc "SELECT (SELECT count(*) FROM platform.staff_permission WHERE permission = 'cohort_correction') = 0
+                      AND to_regprocedure('policy.lock_active_source_host(text)') IS NULL
+                      AND to_regprocedure('platform.meter_refund_grade_changed(uuid)') IS NULL
+                      AND NOT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'platform.diagnosis_session'::regclass
+                                       AND attname IN ('start_grade', 'abandon_reason') AND NOT attisdropped)
+                      AND (SELECT export_topic IS NULL FROM platform.personal_table_registry WHERE relname = 'exam_cohort_change')
+                      AND policy.url_host('https://a.example:443/x') = 'a.example'" </dev/null)" = "t" ] \
+  || { echo "db-test: 失败（0050、0049 回滚后没有回到 0048 的状态）"; exit 1; }
+# 回滚后客服分支：即使是原来有权限的 active staff（sf1，授予已随回滚删除）也一律 42501，对存在与不存在的学生结果相同
+Y1NEXT="$(psql_run -tAc "SELECT exam_cohort + 1 FROM platform.student_profile WHERE id = '$Y1'" </dev/null)"
+STAFF_AFTER_DOWN="$(printf '%s\n' "$AS_STAFF SELECT platform.correct_exam_cohort('$Y1', ${Y1NEXT}::smallint);" | psql_run 2>&1 >/dev/null || true)"
+STAFF_AFTER_DOWN_X="$(printf '%s\n' "$AS_STAFF SELECT platform.correct_exam_cohort(gen_random_uuid(), 2028::smallint);" | psql_run 2>&1 >/dev/null || true)"
+grep -q 'not allowed' <<< "$STAFF_AFTER_DOWN" && [ "$STAFF_AFTER_DOWN" = "$STAFF_AFTER_DOWN_X" ] \
+  || { echo "db-test: 失败（0049 回滚后客服分支没有一律拒绝：$STAFF_AFTER_DOWN / $STAFF_AFTER_DOWN_X）"; exit 1; }
+echo "ok - 有数据时 0050、0049 单独回滚：删掉 cohort_correction 授予、恢复 0048 及之前的函数与导出清单；客服分支一律 42501（不退回任何 active staff 可更正）" >> "$OUT"
+psql_run -1 < "$U49" >/dev/null 2>"$WORK/up49.err" || { echo "db-test: 失败（0049 回滚后重新执行失败：$(cat "$WORK/up49.err")）"; exit 1; }
+# 0050 的数据前提：清单里有不是规范形式的主机名（这里是不能往返解码的 xn-- 标签，0048 的规范化收得下）时以明确信息中止，库不变
+psql_run </dev/null -c "INSERT INTO policy.source_domain (host, issuer, added_by) VALUES ('xn--zzzzzzzzzzzz.example', '合成', 'synthetic-dba')"
+if psql_run -1 < "$U50" >/dev/null 2>"$WORK/up50.err"; then echo "db-test: 失败（清单里有不规范的主机名时 0050 仍然执行成功）"; exit 1; fi
+grep -q '0050 中止' "$WORK/up50.err" && grep -q 'xn--zzzzzzzzzzzz.example' "$WORK/up50.err" \
+  || { echo "db-test: 失败（0050 不是被主机名前提中止：$(cat "$WORK/up50.err")）"; exit 1; }
+[ "$(psql_run -tAc "SELECT to_regprocedure('policy.idn_label_ok(text)') IS NULL" </dev/null)" = "t" ] \
+  || { echo "db-test: 失败（0050 中止后库被改动了）"; exit 1; }
+psql_run </dev/null -c "DELETE FROM policy.source_domain WHERE host = 'xn--zzzzzzzzzzzz.example'"
+echo "ok - 清单里有不是规范形式的主机名时 0050 以明确信息中止（列出主机名），库不变" >> "$OUT"
+psql_run -1 < "$U50" >/dev/null 2>"$WORK/up50.err" || { echo "db-test: 失败（0050 回滚后重新执行失败：$(cat "$WORK/up50.err")）"; exit 1; }
+[ "$(psql_run -tAc "SELECT to_regprocedure('policy.lock_active_source_host(text)') IS NOT NULL
+                      AND to_regprocedure('platform.meter_refund_grade_changed(uuid)') IS NOT NULL
+                      AND (SELECT export_topic = 'cohort_changes' FROM platform.personal_table_registry WHERE relname = 'exam_cohort_change')
+                      AND policy.url_host('https://a.example:443/x') IS NULL" </dev/null)" = "t" ] \
+  || { echo "db-test: 失败（0049、0050 重新执行后状态不对）"; exit 1; }
+echo "ok - 0049、0050 回滚后重新执行，函数与清单回到 0049、0050 的版本" >> "$OUT"
 
 n=$(grep -c 'ok - ' "$OUT" || true)
 echo "db-test: 通过（${n} 项断言）"

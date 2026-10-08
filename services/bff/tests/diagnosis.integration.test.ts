@@ -397,6 +397,60 @@ describe('数学自适应诊断（BFF 学生端）', { skip: READY ? false : '�
     assert.ok(await ledgerConsistent(h));
   });
 
+  test('届别中途被改（迁移 0049）：续做 409 带 session_id 与 reason；“重新开始”放弃即使答过题也退回额度，重放不重复退', async () => {
+    const fam = await createFamily(h, { source: 'pilot_virtual', children: 2 });
+    const [a, b] = fam.students as [{ id: string; account: string }, { id: string; account: string }];
+    // 合成学生建档九年级（届别按当前时刻推算）；客服把届别改晚一届：会话建立时刻的年级变成八年级
+    const shift = (s: string) => h.su.query(
+      `UPDATE platform.student_profile SET exam_cohort = exam_cohort + 1, exam_cohort_source = 'staff_correction' WHERE id = $1`, [s]);
+    // a：答过题（已结算）
+    const baseA = await counters(h, a.id, 'diagnosis_full');
+    const sidA = (await call('POST', url(a.id), a.account, startBody())).body['session_id'] as string;
+    await answerOne(a, sidA);
+    assert.equal((await counters(h, a.id, 'diagnosis_full')).settled, baseA.settled + 1);
+    await shift(a.id);
+    const stuck = await call('POST', url(a.id), a.account, startBody());
+    assert.equal(stuck.status, 409, stuck.raw);
+    assert.deepEqual([stuck.body['code'], stuck.body['reason'], stuck.body['session_id']], ['SESSION_INCONSISTENT', 'grade_changed', sidA]);
+    // 别的学生拿不到这个会话 ID：同一路径下仍是 403
+    assert.equal((await call('POST', url(a.id), b.account, startBody())).status, 403);
+    // 放弃在学习服务已生效，但 BFF 拿不到结果（结果未知）：这一次没退成（退回审查 S5）
+    learning.override = { ...learning.real!, abandon: async (...x) => { await learning.real!.abandon(...x); return { kind: 'unknown', reason: 'lost' }; } };
+    try {
+      assert.equal((await call('POST', url(a.id, `/${sidA}/abandon`), a.account, { idempotency_key: randomUUID() })).status, 503);
+    } finally {
+      learning.override = null;
+    }
+    assert.equal((await counters(h, a.id, 'diagnosis_full')).granted, baseA.granted, '结果未知时没有退');
+    // 前端再取当前题：视图带 abandon_reason = grade_changed，BFF 补调退回
+    assert.equal((await call('GET', url(a.id, `/${sidA}`), a.account)).body['status'], 'abandoned');
+    const afterA = await counters(h, a.id, 'diagnosis_full');
+    assert.deepEqual(afterA, { granted: baseA.granted + 1, reserved: baseA.reserved, settled: baseA.settled + 1 },
+                     '答过题也退回 1 次（加回额度桶）：取当前题时补调');
+    // 再放弃（重放）、再取当前题：幂等，不重复退
+    const again2 = await call('POST', url(a.id, `/${sidA}/abandon`), a.account, { idempotency_key: randomUUID() });
+    assert.equal(again2.status, 200, again2.raw);
+    assert.equal(again2.replayed, 'true');
+    assert.equal((await call('GET', url(a.id, `/${sidA}`), a.account)).body['status'], 'abandoned');
+    assert.deepEqual(await counters(h, a.id, 'diagnosis_full'), afterA);
+    assert.ok(notes.includes('refunded') && notes.includes('refund_replayed'), notes.join(','));
+    // 重新开始：新届别下是八年级，合成夹具没有八年级目标 → 422 NO_TARGETS（不再卡在旧会话上），新预留释放
+    const again = await call('POST', url(a.id), a.account, startBody());
+    assert.equal(again.status, 422, again.raw);
+    assert.equal(again.body['code'], 'NO_TARGETS');
+    assert.deepEqual(await counters(h, a.id, 'diagnosis_full'), afterA);
+    // b：还没答题（预留未结算）就被改届别：放弃时释放
+    const baseB = await counters(h, b.id, 'diagnosis_full');
+    const sidB = (await call('POST', url(b.id), b.account, startBody())).body['session_id'] as string;
+    await shift(b.id);
+    const stuckB = await call('POST', url(b.id), b.account, startBody());
+    assert.equal(stuckB.body['session_id'], sidB, stuckB.raw);
+    assert.equal((await call('POST', url(b.id, `/${sidB}/abandon`), b.account, { idempotency_key: randomUUID() })).status, 200);
+    assert.deepEqual((await reservationsByStudent(h, b.id)).map((x) => x.state), ['released']);
+    assert.deepEqual(await counters(h, b.id, 'diagnosis_full'), baseB);
+    assert.ok(await ledgerConsistent(h));
+  });
+
   test('计量：答过题再放弃不退额度；没答题就放弃退额度', async () => {
     const fam = await createFamily(h, { source: 'pilot_virtual', children: 2 });
     const [a, b] = fam.students as [{ id: string; account: string }, { id: string; account: string }];

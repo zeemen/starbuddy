@@ -22,8 +22,11 @@ export type Answer = { text: string } | { choice: string[] };
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 export const isKey = (s: unknown): s is string => typeof s === 'string' && UUID_V4.test(s);
 
-/** reason：402 时 BFF 给的原因编码（例如 curfew = 宵禁时段） */
-export type Result<T> = { ok: true; value: T } | { ok: false; status: number; code: string | null; reason?: string | null };
+/**
+ * reason：402 时 BFF 给的原因编码（例如 curfew = 宵禁时段）；409 SESSION_INCONSISTENT 时 reason = grade_changed 表示会话中途届别被改，
+ * sessionId 是要“重新开始”（放弃）的那个会话（迁移 0049）
+ */
+export type Result<T> = { ok: true; value: T } | { ok: false; status: number; code: string | null; reason?: string | null; sessionId?: string | null };
 
 async function call<T>(account: BffSession, student: string, method: 'GET' | 'POST', path: string, body?: unknown): Promise<Result<T>> {
   if (!isUuid(student)) return { ok: false, status: 403, code: 'FORBIDDEN' };
@@ -48,10 +51,19 @@ async function call<T>(account: BffSession, student: string, method: 'GET' | 'PO
   if (!r.ok) {
     const field = (k: string): string | null => parsed && typeof parsed === 'object' && typeof (parsed as Record<string, unknown>)[k] === 'string'
       ? (parsed as Record<string, string>)[k]! : null;
-    return { ok: false, status: r.status, code: field('code'), reason: field('reason') };
+    return failure(r.status, field('code'), field('reason'), field('session_id'));
   }
   return { ok: true, value: parsed as T };
 }
+
+/** 失败结果：session_id 只在“会话中途届别被改”（409 SESSION_INCONSISTENT、reason = grade_changed）且是 UUID 时保留 */
+export function failure(status: number, code: string | null, reason: string | null, sessionId: string | null): Result<never> {
+  const restart = status === 409 && code === 'SESSION_INCONSISTENT' && reason === 'grade_changed' && isUuid(sessionId ?? '');
+  return { ok: false, status, code, reason, ...(restart ? { sessionId } : {}) };
+}
+
+/** 会话中途届别被改：返回要“重新开始”的会话 ID（先放弃它，再开新会话）；其余情况 null */
+export const restartSession = (r: Result<unknown>): string | null => (!r.ok && r.sessionId ? r.sessionId : null);
 
 /** 只取白名单字段（防止 BFF 以后多给了什么被原样带进页面） */
 export function pickView(v: DiagnosisView): DiagnosisView {
@@ -87,6 +99,10 @@ export const answerDiagnosis = (account: BffSession, student: string, session: s
   call<{ status: string }>(account, student, 'POST', `/${session}/answer`,
     { seq, answer, elapsed_sec: elapsedSec, idempotency_key: key, ...(work !== null ? { work } : {}) });
 
-export const pauseDiagnosis = (account: BffSession, student: string, session: string, seq: number | null, stepElapsedSec: number, key: string) =>
+/** 放弃（“重新开始”用）：因届别变化放弃的，BFF 退回额度 */
+export const abandonDiagnosis = (account: BffSession, student: string, session: string, key: string) =>
+  call<{ status: string }>(account, student, 'POST', `/${session}/abandon`, { idempotency_key: key });
+
+export const pauseDiagnosis =(account: BffSession, student: string, session: string, seq: number | null, stepElapsedSec: number, key: string) =>
   call<{ status: string }>(account, student, 'POST', `/${session}/pause`,
     { ...(seq !== null ? { seq, step_elapsed_sec: stepElapsedSec } : {}), idempotency_key: key });

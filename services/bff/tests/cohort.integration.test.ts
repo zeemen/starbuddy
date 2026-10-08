@@ -77,6 +77,15 @@ test('年级读点：/me 的年级由届别按注入的请求时钟推算，跨 
   // 届别更正后（迁移执行者直接改届别与来源，模拟客服更正）：/me 立即按新届别推算
   await h.su.query(`UPDATE platform.student_profile SET exam_cohort = 2029, exam_cohort_source = 'staff_correction' WHERE id = $1`, [k8]);
   assert.deepEqual(await grades(), { [k8]: 8, [k9]: null });
+  // 学生本人的 /me 同样带按届别与请求时钟推算的年级（PR3：今日计划处据此显示“不在初中年级”）；不读存下的建档年级
+  const studentMe = async (s: string) => {
+    const acct = (await h.su.query(`SELECT account_id FROM platform.student_profile WHERE id = $1`, [s])).rows[0].account_id as string;
+    return (await callAs(shell.base, 'GET', '/me', await shell.sessionFor(acct))).body;
+  };
+  assert.deepEqual(await studentMe(k8), { account_kind: 'student', student_id: k8, grade: 8 });
+  assert.deepEqual(await studentMe(k9), { account_kind: 'student', student_id: k9, grade: null });
+  nowMs = SEP1_2027 - 1000;
+  assert.deepEqual(await studentMe(k9), { account_kind: 'student', student_id: k9, grade: 9 }, '跨 9 月 1 日之前还是九年级');
   nowMs = Date.now();
 });
 
@@ -102,6 +111,54 @@ test('年级读点：选科的学科目录按推算的当前年级筛（跨 9 �
     assert.deepEqual(await subjects(k9), [], '已毕业：没有可选学科');
   } finally {
     await h.su.query(`UPDATE platform.subject_catalog SET grades = $1::smallint[] WHERE code = 'politics'`, [saved]);
+    nowMs = Date.now();
+  }
+});
+
+test('不在初中年级（PR3 #10）：选科仍列出已开通、已暂停的学科，只能暂停，新选 409 GRADE_OUT_OF_RANGE；今日计划不排学科；别家仍是 404', { skip: !HAS_DB }, async () => {
+  const F = await family();
+  const k9 = await kid(F.g, F.household, 9, '2026-10-01T10:00:00+08:00');  // 届别 2027：北京时间 2027-09-01 起毕业
+  await h.su.query(`INSERT INTO platform.subject_enrollment (student_id, subject, status) VALUES ($1, 'aya', 'active'), ($1, 'wenli', 'paused')`, [k9]);
+  const sess = await shell.sessionFor(F.g);
+  const list = async () => {
+    const r = await callAs(shell.base, 'GET', `/students/${k9}/enrollments`, sess);
+    assert.equal(r.status, 200, r.text);
+    return r.body as { can_enroll: boolean; subjects: { subject: string; enrollment: string | null }[] };
+  };
+  const today = async () => {
+    const r = await callAs(shell.base, 'GET', `/students/${k9}/today`, sess);
+    assert.equal(r.status, 200, r.text);
+    return (r.body.subjects as { subject: string }[]).map((x) => x.subject);
+  };
+  try {
+    nowMs = SEP1_2027 - 1000;  // 还是九年级：照常可选，今日计划排在读的学科（学习服务没接，status = unavailable）
+    const before = await list();
+    assert.equal(before.can_enroll, true);
+    assert.ok(before.subjects.some((x) => x.enrollment === null), '九年级时目录里有未开通的学科');
+    assert.deepEqual(await today(), ['math']);
+    nowMs = SEP1_2027;         // 已毕业
+    const after = await list();
+    assert.equal(after.can_enroll, false);
+    assert.deepEqual(after.subjects.map((x) => `${x.subject}:${x.enrollment}`).sort(), ['chinese:paused', 'math:active'],
+                     '只列已开通、已暂停的学科（家长看得到、能暂停），不列可新选的');
+    for (const code of ['politics', 'math', 'chinese']) {
+      const r = await callAs(shell.base, 'POST', `/students/${k9}/enrollments/${code}`, sess);
+      assert.equal(r.status, 409, `${code}: ${r.text}`);
+      assert.equal(r.text, P.GRADE_OUT_OF_RANGE, '新选（含重新开通已暂停的）一律明确的 409');
+    }
+    assert.deepEqual(await today(), [], '今日计划不排这类学生的学科');
+    const paused = await callAs(shell.base, 'POST', `/students/${k9}/enrollments/math/pause`, sess);
+    assert.equal(paused.status, 200, paused.text);
+    assert.equal(paused.body.outcome, 'paused', '已开通的学科可以暂停');
+    assert.deepEqual((await list()).subjects.map((x) => `${x.subject}:${x.enrollment}`).sort(), ['chinese:paused', 'math:paused']);
+    const { rows: [{ n }] } = await h.su.query(`SELECT count(*)::int AS n FROM platform.subject_enrollment WHERE student_id = $1 AND status = 'active'`, [k9]);
+    assert.equal(n, 0, '被拒的新选没有写入');
+    // 别家的家长：先按无权与不存在同一个 404，不因年级先回 409（不暴露这个孩子是否已毕业）
+    const other = await family();
+    const r = await callAs(shell.base, 'POST', `/students/${k9}/enrollments/math`, await shell.sessionFor(other.g));
+    assert.equal(r.status, 404, r.text);
+    assert.equal(r.text, P.NOT_FOUND);
+  } finally {
     nowMs = Date.now();
   }
 });

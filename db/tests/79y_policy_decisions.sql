@@ -112,6 +112,9 @@ INSERT INTO platform.guardian_student_link (guardian_account_id, student_id, gra
 INSERT INTO platform.guardian_student_link (guardian_account_id, student_id, granted_via, status, revoked_at) VALUES (:gC, :Y1, 'invite', 'revoked', now());
 
 -- ================= 三、更正届别 =================
+-- 0049 起客服更正要 staff 权限 cohort_correction（只由 DBA 授予，这里以超级用户模拟 DBA）：sf1 与已停用的 sfx 有，sf2、sf3 没有。
+-- 无权限与学生不存在同一错误的正反例在 79z
+INSERT INTO platform.staff_permission (staff_id, permission, granted_by) VALUES (:sf1, 'cohort_correction', 'synthetic-dba'), (:sfx, 'cohort_correction', 'synthetic-dba');
 SELECT exam_cohort AS y1c FROM platform.student_profile WHERE id = :Y1 \gset
 -- 家长（经 BFF）：+1，来源 guardian_report
 SELECT t.ok(t.m_as('starbuddy_bff', :gA, t.y_correct_sql(:Y1, :y1c + 1)) = (:y1c + 1)::text, '更正：有效绑定家长经 BFF 更正 +1');
@@ -160,11 +163,14 @@ SELECT t.ok((SELECT exam_cohort = :y1c FROM platform.student_profile WHERE id = 
 -- 已执行删除的档案（0035 erased_at）不能更正
 BEGIN;
 UPDATE platform.student_profile SET erased_at = now() WHERE id = :Y3;
+-- 0049 起客服分支对已删除的档案与“学生不存在”同一个 42501（家长分支先核对绑定，仍是 P0002）
 SELECT t.ok(t.y_try('starbuddy_review', :sf1, t.y_correct_sql(:Y3, (SELECT exam_cohort + 1 FROM platform.student_profile WHERE id = :Y3)))
-              LIKE 'P0002:%'
+              = t.y_try('starbuddy_review', :sf1, t.y_correct_sql(gen_random_uuid(), 2027))
+            AND t.y_try('starbuddy_review', :sf1, t.y_correct_sql(:Y3, (SELECT exam_cohort + 1 FROM platform.student_profile WHERE id = :Y3)))
+              LIKE '42501:%'
             AND t.y_try('starbuddy_bff', :gA, t.y_correct_sql(:Y3, (SELECT exam_cohort + 1 FROM platform.student_profile WHERE id = :Y3)))
               LIKE 'P0002:%',
-            '更正：已执行删除的档案不能更正');
+            '更正：已执行删除的档案不能更正（客服分支与学生不存在同一个 42501）');
 ROLLBACK;
 -- 更正记录表：应用角色一律读不到、写不进（只有函数属主 authz；删除身份随删除请求删）
 SELECT t.ok(NOT EXISTS (SELECT 1 FROM unnest(ARRAY['starbuddy_bff', 'starbuddy_learning', 'starbuddy_review', 'starbuddy_kge', 'starbuddy_insight',
@@ -364,7 +370,7 @@ SELECT t.ok(t.y_try('starbuddy_review', :sf1, format($$INSERT INTO platform.staf
             AND t.y_try('starbuddy_review', :sf1, 'DELETE FROM platform.staff_permission') LIKE '42501:%'
             AND t.y_try('starbuddy_review', :sf1, $$UPDATE platform.staff_permission SET granted_by = 'x'$$) LIKE '42501:%',
             'staff 权限：签字身份不能授予、收回或改');
-SELECT t.ok(t.m_as('starbuddy_review', :sf1, 'SELECT count(*)::text FROM platform.staff_permission') = '1'
+SELECT t.ok(t.m_as('starbuddy_review', :sf1, 'SELECT count(*)::text FROM platform.staff_permission') = '2'  -- policy_source_admin 与三节授予的 cohort_correction
             AND t.m_as('starbuddy_review', :sf2, 'SELECT count(*)::text FROM platform.staff_permission') = '0',
             'staff 权限：签字身份只读得到自己的权限');
 SELECT t.ok(t.y_try('starbuddy_kge', :sf1, 'SELECT count(*)::text FROM platform.staff_permission') LIKE '42501:%'

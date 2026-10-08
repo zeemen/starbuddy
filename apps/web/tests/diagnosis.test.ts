@@ -8,7 +8,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { test } from 'node:test';
 import { allDiagnosisCopy, DIAGNOSIS_COPY, formatDuration } from '../src/diagnosis/copy.ts';
-import { pickView, type DiagnosisView } from '../src/lib/diagnosis.ts';
+import { failure, pickView, restartSession, type DiagnosisView } from '../src/lib/diagnosis.ts';
 
 const WEB = new URL('..', import.meta.url).pathname;
 const LEXICON = join(WEB, '..', '..', 'evals', 'persona', 'diandian', 'lexicon', 'forbidden.yaml');
@@ -31,6 +31,25 @@ test('诊断文案不命中禁语表（禁语表能读出来且确实能命中�
   for (const s of allDiagnosisCopy()) {
     assert.deepEqual(rules.filter((r) => r.rx.test(s)).map((r) => r.id), [], s);
   }
+});
+
+test('会话中途届别被改（迁移 0049）：只认 409 SESSION_INCONSISTENT + grade_changed + UUID 的会话 ID，组件给“重新开始”并先放弃再开新会话', () => {
+  const sid = '4ebe4691-a717-4d45-b99a-b60e25640271';
+  assert.equal(restartSession(failure(409, 'SESSION_INCONSISTENT', 'grade_changed', sid)), sid);
+  for (const r of [failure(409, 'SESSION_INCONSISTENT', null, sid), failure(409, 'STEP_NOT_CURRENT', 'grade_changed', sid),
+                   failure(422, 'SESSION_INCONSISTENT', 'grade_changed', sid), failure(409, 'SESSION_INCONSISTENT', 'grade_changed', 'x'),
+                   failure(409, 'SESSION_INCONSISTENT', 'grade_changed', null), failure(402, 'QUOTA_UNAVAILABLE', 'curfew', null)]) {
+    assert.equal(restartSession(r), null, JSON.stringify(r));
+  }
+  const src = readFileSync(join(WEB, 'src/diagnosis/Diagnosis.tsx'), 'utf8');
+  assert.equal((src.match(/if \(r\.restart\) return toRestart\(r\.restart\);/g) ?? []).length, 2);  // 取题、作答
+  assert.match(src, /if \(s\.restart\) return toRestart\(s\.restart\);/);                          // 开始 / 续做
+  assert.match(src, /const r = await api\.abandon\(restartId\);\s*if \(!r\.ok\) return setMessage\(C\.notSaved\);[\s\S]*?await begin\(\);/);
+  assert.match(src, /data-testid="diagnosis-restart">\{C\.gradeChanged\}<\/h3>/);
+  assert.match(src, /onClick=\{\(\) => void restart\(\)\}>\{C\.restart\}<\/button>/);
+  assert.equal(DIAGNOSIS_COPY.restart, '重新开始');
+  const demo = readFileSync(join(WEB, 'src/app/dev/diagnosis/[studentId]/DiagnosisDemo.tsx'), 'utf8');
+  assert.match(demo, /abandon: \(session\) => abandonAction\(csrf, student, session, crypto\.randomUUID\(\)\)/);
 });
 
 test('诊断中不评价、不给结论；结束页只说完成了', () => {

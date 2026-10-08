@@ -87,10 +87,13 @@ INSERT INTO t.export_col_ok VALUES
 SELECT t.ok(NOT EXISTS (
   SELECT 1 FROM platform.personal_table_registry g, unnest(g.export_columns) c
    WHERE g.export_columns IS NOT NULL
-     AND g.nspname || '.' || g.relname NOT IN ('insight.claim', 'platform.consent_record', 'platform.subscription')
+     AND g.nspname || '.' || g.relname NOT IN ('insight.claim', 'platform.consent_record', 'platform.subscription', 'platform.exam_cohort_change')
      AND NOT EXISTS (SELECT 1 FROM t.export_col_ok o WHERE o.col = c)
+     -- 0049（考情 PR3）：字典 outer.g1.grade 的落库改为届别 exam_cohort（来源列 exam_cohort_source）；建档年级 grade 照旧导出，只对这一列放行
+     AND NOT (g.nspname = 'platform' AND g.relname = 'student_profile' AND c = 'grade')
      AND NOT (:'dict_guardian_cols'::jsonb ? (g.nspname || '.' || g.relname || '.' || c))),
-  '导出列都是字典里对家长可见的字段或通用元数据（判断账本按行可见范围过滤；同意与订阅是家长本人的记录）');
+  '导出列都是字典里对家长可见的字段或通用元数据（判断账本按行可见范围过滤；同意与订阅是家长本人的记录；'
+  '届别更正记录是 outer.g1.grade 事实（届别）的变更历史，只导旧值、新值、来源、时间，0049）');
 BEGIN;
 CREATE TABLE platform.t_new_personal (id uuid PRIMARY KEY, student_id uuid);
 CREATE TABLE insight.t_new_child (id uuid PRIMARY KEY, claim_ref uuid REFERENCES insight.claim (id));

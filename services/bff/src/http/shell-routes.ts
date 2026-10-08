@@ -59,15 +59,18 @@ const ORDER = ['math', 'chinese', 'politics'];
 
 interface CatalogRow { code: string; product: string; status: 'beta' | 'live'; is_core: boolean; enrollment: 'active' | 'paused' | null; has_content: boolean }
 
-/** 学科目录按当前年级筛（subject_catalog.grades）；年级为 null（已毕业或未入学）时没有可选学科 */
+/**
+ * 学科目录按当前年级筛（subject_catalog.grades）。年级为 null（已毕业或未入学）时没有可新选的学科，
+ * 但已开通、已暂停的学科照样列出（家长要能看到并暂停它们；specs/policy-decisions-v0.9.1 PR3 #10）
+ */
 async function catalogFor(q: Query, id: string, grade: number | null): Promise<CatalogRow[]> {
-  if (grade === null) return [];
   const { rows } = await q<CatalogRow>(
     `SELECT c.code, c.product::text AS product, c.status, c.is_core, e.status::text AS enrollment,
             EXISTS (SELECT 1 FROM platform.curriculum_version v WHERE v.subject = c.product AND v.status = 'published') AS has_content
        FROM platform.subject_catalog c
        LEFT JOIN platform.subject_enrollment e ON e.student_id = $1 AND e.subject = c.product
-      WHERE c.status <> 'planned' AND c.product IS NOT NULL AND $2::smallint = ANY (c.grades)
+      WHERE c.status <> 'planned' AND c.product IS NOT NULL
+        AND ($2::smallint = ANY (c.grades) OR ($2::smallint IS NULL AND e.status IS NOT NULL))
       ORDER BY array_position($3::text[], c.code) NULLS LAST, c.code`, [id, grade, ORDER]);
   return rows;
 }
@@ -93,6 +96,8 @@ const enrollments: Handler = async (ctx) => {
   const rows = await catalogFor(ctx.q, id, p.grade);
   return json(200, {
     student_id: id,
+    // 当前年级不在 7–9 时为假：列表里只有已开通、已暂停的学科，只能暂停，新选回 409 GRADE_OUT_OF_RANGE
+    can_enroll: p.grade !== null,
     rules: sub ? { core_subjects: sub.core, elective_slots: sub.elective, max_active_subjects: sub.max_active } : null,
     subjects: rows.map((r) => ({
       subject: r.code, is_core: r.is_core, catalog_status: r.status,
@@ -113,6 +118,12 @@ const ENROLL_KEYS = ['outcome', 'slot', 'limit', 'max_active_subjects'];
 const subjectOp = (fn: 'enroll_subject' | 'pause_subject'): Handler => async (ctx) => {
   const product = await productOf(ctx.q, ctx.params['subject']!);
   if (!product) return problem(P.NOT_FOUND);  // 英语（planned）与不认识的学科码：与“不存在”相同
+  if (fn === 'enroll_subject') {
+    // 当前年级（届别按请求时钟推算）不在 7–9：不能新选，只能暂停（PR3 #10）。读不到档案 = 无权或不存在，同一个 404
+    const p = await profile(ctx.q, student(ctx), asOf(ctx.deps));
+    if (!p) return problem(P.NOT_FOUND);
+    if (p.grade === null) return problem(P.GRADE_OUT_OF_RANGE);
+  }
   try {
     const { rows } = await ctx.q<{ r: Record<string, unknown> }>(`SELECT platform.${fn}($1, $2::platform.subject) AS r`, [student(ctx), product]);
     const r = rows[0]!.r;
@@ -141,11 +152,12 @@ const today: Handler = async (ctx) => {
   const id = student(ctx);
   const s = ctx.session!;
   const audience = audienceOf(ctx);
-  // 一、在读学科（英语搁置、planned 不排）
+  // 一、在读学科（英语搁置、planned 不排）；当前年级不在 7–9（未入学或已毕业）时不排任何学科（PR3 #10，与选科只能暂停一致）
   const first = await withAccount(deps.pool, s.accountId, async (c) => {
     const q: Query = (sql, p) => c.query(sql, p);
     const p = await profile(q, id, asOf(deps));
     if (!p) return null;
+    if (p.grade === null) return { subjects: [] as { code: string; product: PlanSubject }[], linkId: undefined };
     const { rows } = await q<{ code: string; product: PlanSubject }>(
       `SELECT c.code, c.product::text AS product FROM platform.subject_enrollment e
          JOIN platform.subject_catalog c ON c.product = e.subject

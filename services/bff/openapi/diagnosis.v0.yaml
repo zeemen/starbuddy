@@ -179,7 +179,10 @@ paths:
       x-sb-rate-buckets: []
       x-sb-not-self: 403
       operationId: abandonDiagnosis
-      description: 放弃本次诊断：还没答过题时释放开始时的额度预留，答过题不退；之后可以重新开始。
+      description: >
+        放弃本次诊断：还没答过题时释放开始时的额度预留，答过题不退；之后可以重新开始。
+        例外（迁移 0049）：会话中途届别被改（续做、取题、作答回 409 SESSION_INCONSISTENT、reason = grade_changed）时放弃，
+        即使答过题也退回额度（库里按学习服务记在会话上的放弃原因核对；重放不重复退）。
       requestBody:
         required: true
         content:
@@ -314,6 +317,10 @@ components:
             UNAUTHENTICATED、FORBIDDEN、INVALID、IDEMPOTENCY_KEY_REUSED、STEP_NOT_CURRENT（会话已推进，重新取当前题）、
             INVALID_STATE（例如暂停中作答）、ANSWER_CONFLICT（同一步已用别的答案作答）、SESSION_INCONSISTENT、KEY_EXPIRED / KEY_FAILED_PREVIOUSLY（换新键重新开始）、
             NO_TARGETS、TOO_MANY、UPSTREAM_UNAVAILABLE（同一请求重试）、DIAGNOSIS_UNAVAILABLE。
+            SESSION_INCONSISTENT 且 reason = grade_changed（迁移 0049）：会话中途届别被改、建立时刻的年级变了；带该学生自己的 session_id，
+            前端“重新开始”：POST …/{session_id}/abandon 放弃这个会话（这类放弃即使答过题也退回额度，重放不重复退），再开始新会话。
+        reason: { enum: [grade_changed], description: 只在 409 SESSION_INCONSISTENT 由会话中途届别被改引起时出现 }
+        session_id: { type: string, format: uuid, description: 同上；只会是本次请求所针对、已核对归属的该学生自己的会话 }
     QuotaProblem:
       allOf:
         - $ref: '#/components/schemas/Problem'

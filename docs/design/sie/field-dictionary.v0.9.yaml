@@ -32,14 +32,15 @@ fields:
   - id: outer.g1.grade
     name: 年级
     layer: fact
-    source_type: [self, guardian]
+    source_type: [guardian]
     collect: { level: required, timing: onboarding }
     visibility: [agent, guardian]
-    storage: platform.student_profile.grade
+    storage: platform.student_profile.exam_cohort
+    source_column: platform.student_profile.exam_cohort_source
     status: live
     teaching_decision: 选择教材进度与年级内的知识节点，决定冷启动先验
     guardian_deletable: false
-    note: 删除年级等于删除档案，走整档删除流程
+    note: "年级由 platform.current_grade(student_profile.exam_cohort, 时刻) 推算（迁移 0045）；事实与来源在 exam_cohort / exam_cohort_source，grade 列只是建档年级。来源对应：derived = 家长建档时填写（只能由家长经 create_student 建档，按建档年级推算届别）；guardian_report = 家长；staff_correction = 客服按家长说法代录。有凭学籍核实的渠道后再映射 objective。删除年级等于删除档案，走整档删除流程"
   - id: outer.g1.region
     name: 地区
     layer: fact

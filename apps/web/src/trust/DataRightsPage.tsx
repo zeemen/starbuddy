@@ -27,6 +27,7 @@ export async function DataRightsPage({ studentId }: { studentId: string }) {
       <section aria-labelledby="export-heading">
         <h2 id="export-heading">{DATA_RIGHTS.exportHeading}</h2>
         <p className="muted">{DATA_RIGHTS.exportNote}</p>
+        <p className="muted" data-testid="export-grade-note">{DATA_RIGHTS.exportGradeNote}</p>
         <ExportPanel studentId={studentId} csrf={csrf} />
       </section>
 
