@@ -114,7 +114,7 @@
 - **学习服务（#12）**：诊断会话中途届别被改、新年级与建立时刻年级不同时，续做返回 409 `SESSION_INCONSISTENT`，不再静默结束。
 - **验收**：测试、变异、快照、攻击面同步；严格 `make check` 通过；提交首行 `[NEEDS-HUMAN]`。
 
-## PR4（草案，待确认）：PR3 遗留的两条已知风险
+## PR4：PR3 遗留的两条已知风险（2026-10-08 用户确认“按默认建议，开始实现”）
 来源：lessons“PR3 / 已知风险”，审查时默认“下一个迁移兜底”。
 - **迁移 0051（platform）**：`platform.enroll_subject` 在库里核对 `current_grade(exam_cohort, meter_now())` 在 7–9，否则拒绝（错误码与 BFF 的 `GRADE_OUT_OF_RANGE` 对齐；未授权仍先拒授权，不泄露年级）。暂停、恢复已开通学科不受影响。
 - **迁移 0052（policy）**：`policy.retire_source_domain` 与 `add_source_domain` 内 `SET LOCAL lock_timeout = '5s'`，超时返回明确错误（审核台映射为 409“稍后重试”）；kge 写入角色设 `idle_in_transaction_session_timeout = '60s'`（`ALTER ROLE`，down 复原）。
