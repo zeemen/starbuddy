@@ -18,6 +18,7 @@ import {
 } from '../src/shell/copy.ts';
 import { TRUST_FEATURES } from '../src/shell/features.ts';
 import { ENTRY_STATUSES, SOURCES, VERDICTS } from '../src/practice/view.ts';
+import { ANSWER_FIELD_NAMES } from '../src/lib/rich-item.ts';
 
 const keys = (o: Record<string, string>): string[] => Object.keys(o);
 const coded = (xs: string[]): string[] => xs.filter((k) => k.includes('_'));
@@ -32,6 +33,8 @@ export const FORBIDDEN_CODES: readonly string[] = [...new Set([
   // 内部字段名：模板、证据、版本、掌握、错因、原因码、复测与同族标记、计量
   'template_key', 'template_version', 'evidence_id', 'source_version', 'model_version', 'human_review_required', 'p_mastery', 'mastery_state',
   'error_attribution', 'error_cause', 'reason_code', 'empty_reason', 'retest_due', 'same_family_only', 'item_ref', 'usage_id', 'idempotency_key',
+  // 答案类字段（PLT-12 题面 present_item：答案、解析、采分点、Rubric、提示阶梯、错因陷阱不得进页面；src/lib/rich-item.ts）
+  ...ANSWER_FIELD_NAMES,
 ])];
 
 type Rule = readonly string[] | 'uuid' | RegExp;

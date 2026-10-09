@@ -76,6 +76,20 @@ MUTATIONS: dict[str, list[tuple[str, str, str]]] = {
     "放弃不记届别变化原因": [(SV, 'reason = "grade_changed" if s.start_grade is not None and grade_changed(s, grade) else None', "reason = None")],
     "视图不带放弃原因": [(SV, '"abandon_reason": s.abandon_reason, "step": None}', '"abandon_reason": None, "step": None}')],
     "重放放弃不返回原因": [(SV, '"abandon_reason": s.abandon_reason,\n                        "replayed": True}', '"abandon_reason": None,\n                        "replayed": True}')],
+    # PLT-12：题面来源开关（LEARNING_PRESENT_ITEM_SOURCE=adapter 时题面经阿鸦 present_item；关闭时与合成题面逐字节一致）
+    "开关打开诊断仍用合成题面": [(APP, 'if settings.present_item_source == "adapter":\n        # PLT-12：题面改经适配器 present_item',
+                          'if False:\n        # PLT-12：题面改经适配器 present_item')],
+    "诊断题面不用判分请求的内容版本": [(APP, 'return dict(CONTENT_VERSION) if subject == CONTENT_VERSION["subject"] else None', "return None")],
+    "出题前不检查有没有题面": [(SV, 'if plan.reason != "no_item" and await present_cached(self.presenter, s.subject, plan.item_id or "") is None:',
+                         "if False:")],
+    "视图的题面不是适配器给的那一份": [(SV, 'item = await present_cached(self.presenter, s.subject, cur.item_id or "")',
+                             'item = await present_cached(self.presenter, s.subject, cur.item_id or "")\n'
+                             '            item = None if item is None else {k: v for k, v in item.items() if k != "rich"}')],
+    # PLT-12 审查建议 7：取题面（网络调用）不放在事务与 advisory 锁里
+    "选题时在事务内调适配器取题面": [(SV, 'if plan.reason != "no_item" and await present_cached(self.presenter, s.subject, plan.item_id or "") is None:',
+                           'if plan.reason != "no_item" and await present_view(self.presenter, s.subject, plan.item_id or "") is None:')],
+    "当前题视图在事务内调适配器取题面": [(SV, 'item = await present_cached(self.presenter, s.subject, cur.item_id or "")',
+                              'item = await present_view(self.presenter, s.subject, cur.item_id or "")')],
 }
 
 

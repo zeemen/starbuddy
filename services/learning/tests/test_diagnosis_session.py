@@ -734,3 +734,170 @@ async def test_cohort_corrected_mid_session_legacy_session(pools, aya_v1):
             assert r.status_code == 200 and r.json()["session_id"] == sid and r.json()["status"] == "finished", r.text
             async with admin.acquire() as a:
                 assert await a.fetchval("SELECT count(*) FROM platform.diagnosis_step WHERE session_id = $1::uuid", sid) == 1
+
+
+# ---------- PLT-12：题面来源开关（LEARNING_PRESENT_ITEM_SOURCE；specs/present-item-contract） ----------
+# 开关打开时题面经阿鸦适配器的 present_item（契约 1.1.0 候选版）取。真实内容包不收录题干（present_item 一律 withheld），
+# 所以这里给阿鸦另起一个进程，用带合成题面的内容包副本（AYA_CONTENT_PACK）：题干取合成夹具的占位文字，另加一个行内公式。
+STEM_LATEX = "x^2-2x+1"
+FIXTURE_ITEMS = {i["item_id"]: i for i in load_fixture()["items"]}
+
+
+def write_stem_pack(path: Path) -> None:
+    """合成题面的内容包副本。学习服务只展示版权已核（original、licensed、public）的题面（审查建议 5），所以这些题另标为
+    自编、授权已核、待审（pending_review，带合成审核记录编号；admission_decisions 的条数与之一致，摘要是合成的）：
+    阿鸦报 license_state = original。准入仍未到 admitted，判分照常是 practice。"""
+    pack = json.loads((ROOT / "adapters/aya/content/pack.json").read_text(encoding="utf-8"))
+    n = 0
+    for it in pack["items"]:
+        f = FIXTURE_ITEMS.get(it["id"])
+        if f is None:
+            continue
+        n += 1
+        it["stem"] = [{"type": "paragraph", "runs": [{"type": "text", "text": f["stem"]}, {"type": "math", "latex": STEM_LATEX}]}]
+        if "options" in f:
+            it["option_content"] = {o["key"]: [{"type": "text", "text": o["text"]}] for o in f["options"]}
+        it["admission"] = "pending_review"
+        it["source"] = {"source_ref": f"SYN-SRC-{n:04d}", "source_type": "self_authored", "license_status": "cleared"}
+        it["admission_review"] = {"review_level": it.get("reviewStatus") or "Q1", "review_ids": [f"4a000000-0000-4000-8000-{n:012d}"]}
+    pack["admission_decisions"] = {"format": "aya-admission-decisions/1", "export_ref": "SYN-EXPORT-0001",
+                                   "exported_at": "2026-10-01T00:00:00Z", "digest": "sha256:" + "0" * 64, "decisions": n}
+    path.write_text(json.dumps(pack, ensure_ascii=False), encoding="utf-8")
+
+
+@pytest.fixture(scope="module")
+def aya_stems(aya_v1, tmp_path_factory):
+    """带合成题面的阿鸦适配器进程（候选契约打开）。内容登记沿用 aya_adapter 夹具做过的那一次。"""
+    import os
+    import socket
+    import subprocess
+    import time
+
+    from test_e2e_aya import AYA
+    pack = tmp_path_factory.mktemp("aya-stems") / "pack.json"
+    write_stem_pack(pack)
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    env = dict(os.environ, AYA_ADAPTER_SERVICE_TOKEN=AYA_CREDENTIAL, PORT=str(port), AYA_CONTENT_PACK=str(pack),
+               STARBUDDY_ALLOW_CANDIDATE_CONTRACT="1")
+    proc = subprocess.Popen(["node", "--no-warnings", "src/main.ts"], cwd=AYA, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    deadline = time.time() + 20
+    while True:
+        try:
+            if httpx.get(f"http://127.0.0.1:{port}/plugin/v0/capabilities", headers={"authorization": f"Bearer {AYA_CREDENTIAL}"}).status_code == 200:
+                break
+        except httpx.TransportError:
+            pass
+        if time.time() > deadline:
+            proc.kill()
+            pytest.fail("带合成题面的阿鸦适配器没有启动")
+        time.sleep(0.2)
+    yield f"http://127.0.0.1:{port}"
+    proc.terminate()
+    proc.wait(timeout=10)
+
+
+@pytest.fixture
+async def dapi_with(pools):
+    """按给定设置起诊断接口（开关对拍用）；用完关闭。"""
+    app_pool, _ = pools
+    opened: list = []
+
+    async def make(url: str, **over) -> httpx.AsyncClient:
+        app = create_app(make_settings(adapters={"aya": AdapterTarget(url, AYA_CREDENTIAL)}, diagnosis_presenter="synthetic", **over),
+                         pool=app_pool)
+        ctx = app.router.lifespan_context(app)
+        await ctx.__aenter__()
+        c = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://learning.test", timeout=60)
+        c.headers["authorization"] = f"Bearer {CREDENTIAL}"
+        opened.append((ctx, c))
+        return c
+    yield make
+    for ctx, c in reversed(opened):
+        await c.aclose()
+        await ctx.__aexit__(None, None, None)
+
+
+async def test_present_switch_off_is_byte_identical(dapi_with, aya_v1, student):
+    """开关关闭（不设与显式 synthetic）：同一会话的当前题视图逐字节相同，题面只有 format、stem、options（对拍）。"""
+    off = await dapi_with(aya_v1)
+    syn = await dapi_with(aya_v1, present_item_source="synthetic")
+    sid = (await start(off, student)).json()["session_id"]
+    a, b = await cur_view(off, sid, student), await cur_view(syn, sid, student)
+    assert a.status_code == b.status_code == 200
+    assert a.content == b.content
+    item = a.json()["step"]["item"]
+    f = FIXTURE_ITEMS[a.json()["step"]["item_id"]]
+    assert item == {"format": f["format"], "stem": f["stem"], **({"options": f["options"]} if "options" in f else {})}
+
+
+async def test_present_switch_on_full_session_through_adapter(dapi_with, aya_stems, pools, student):
+    """开关打开：整次诊断的每道题题面都来自阿鸦 present_item（受限富文本 + 纯文字兜底），作答照常由验证器判分。"""
+    _, admin = pools
+    on = await dapi_with(aya_stems, present_item_source="adapter")
+    out = await play(on, admin, student, PRESET, probe=False)
+    assert out["view"]["status"] == "finished"
+    assert out["seen"], "没有出题"
+    for step in out["seen"]:
+        f = FIXTURE_ITEMS[step["item_id"]]
+        item = step["item"]
+        assert item["format"] == f["format"] and item["stem"] == f"{f['stem']}{STEM_LATEX}"
+        assert item["rich"]["stem"] == [{"type": "paragraph", "runs": [{"type": "text", "text": f["stem"]}, {"type": "math", "latex": STEM_LATEX}]}]
+        if "options" in f:
+            assert item["options"] == f["options"]
+            assert item["rich"]["options"] == [{"key": o["key"], "content": [{"type": "text", "text": o["text"]}]} for o in f["options"]]
+        assert set(item) <= {"format", "stem", "options", "rich"}
+    rows = await db_steps(admin, out["session_id"])
+    answered = [r for r in rows if r["status"] == "answered"]
+    assert answered and all(r["verdict"] in ("correct", "incorrect") for r in answered if r["kind"] == "adaptive")
+
+
+async def test_present_item_calls_happen_outside_transactions_and_locks(dapi_with, aya_stems, pools, student, monkeypatch):
+    """审查建议 7：取题面（网络调用）不在数据库事务与 advisory 锁里。每次调适配器 present_item 时：学习服务的连接池没有借出的连接
+    （没有进行中的事务），这个学生的诊断 advisory 锁也没人持有；事务内只查缓存，没命中时回滚、事务外预取后重做。"""
+    seen = watch_present_calls(pools, student, monkeypatch)
+    _, admin = pools
+    on = await dapi_with(aya_stems, present_item_source="adapter")
+    out = await play(on, admin, student, PRESET, probe=False)
+    assert out["view"]["status"] == "finished" and out["seen"]
+    assert seen, "没有调适配器取题面"
+    assert all(size == idle and free for size, idle, free in seen), seen
+
+
+def watch_present_calls(pools, student: str, monkeypatch) -> list[tuple[int, int, bool]]:
+    """记下每次调适配器 present_item 时：学习服务连接池的连接数与空闲数、这个学生的诊断 advisory 锁是否空闲。"""
+    from learning import present_item as P
+    app_pool, admin = pools
+    seen: list[tuple[int, int, bool]] = []
+    real = P.call_adapter
+
+    async def watched(client, target, method, body, timeout):
+        async with admin.acquire() as a:
+            free = await a.fetchval("SELECT pg_try_advisory_lock(hashtextextended('platform.diagnosis:' || $1, 0))", student)
+            if free:
+                await a.execute("SELECT pg_advisory_unlock(hashtextextended('platform.diagnosis:' || $1, 0))", student)
+        seen.append((app_pool.get_size(), app_pool.get_idle_size(), bool(free)))
+        return await real(client, target, method, body, timeout)
+    monkeypatch.setattr(P, "call_adapter", watched)
+    return seen
+
+
+async def test_current_view_in_a_fresh_process_fetches_outside_transactions(dapi_with, aya_stems, pools, student, monkeypatch):
+    """取当前题时题面不在缓存里（另一个学习服务进程，或缓存过期）：同样回滚、在事务与锁之外取，再重做。"""
+    seen = watch_present_calls(pools, student, monkeypatch)
+    on = await dapi_with(aya_stems, present_item_source="adapter")
+    sid = (await start(on, student)).json()["session_id"]
+    fresh = await dapi_with(aya_stems, present_item_source="adapter")
+    n = len(seen)
+    r = await cur_view(fresh, sid, student)
+    assert r.status_code == 200 and r.json()["step"]["item"]["rich"], r.text
+    assert len(seen) == n + 1, "新进程取当前题应调一次适配器"
+    assert all(size == idle and free for size, idle, free in seen), seen
+
+
+async def test_present_switch_on_real_pack_withheld_is_501(dapi_with, aya_v1, student):
+    """开关打开但适配器是真实内容包（不收录题干 → withheld）：没有题面，开始诊断回 501，平台不补写题面。"""
+    on = await dapi_with(aya_v1, present_item_source="adapter")
+    r = await start(on, student)
+    assert r.status_code == 501 and r.json()["code"] == "PRESENTER_UNAVAILABLE", r.text

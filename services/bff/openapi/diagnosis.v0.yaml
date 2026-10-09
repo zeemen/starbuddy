@@ -304,6 +304,19 @@ components:
                         additionalProperties: false
                         required: [key, text]
                         properties: { key: { type: string }, text: { type: string } }
+                    rich:
+                      type: object
+                      description: |
+                        PLT-12：受限富文本题面（插件契约 1.1.0 候选版 present_item；学习服务 LEARNING_PRESENT_ITEM_SOURCE=adapter 时才有，签字前只在测试里）。
+                        段落里只有文字、行内公式（LaTeX 源码）、图片引用（对象存储引用）三种片段；BFF 按 src/item-rich.ts 白名单重建后才转，
+                        重建不过（多余字段、HTML 标签、不可见或双向控制字符、危险公式命令、非对象存储图片、总字数超过 8000）就不转 rich，
+                        题目照常以纯文字题面出（前端只显示纯文字 stem；与再练同一口径）。形状同学习服务 diagnosis-internal.v0.yaml 的 RichItem。
+                        不含答案、解析、采分点。
+                      additionalProperties: false
+                      required: [stem]
+                      properties:
+                        stem: { type: array, minItems: 1, maxItems: 20, items: { type: object } }
+                        options: { type: array, maxItems: 10, items: { type: object } }
     Problem:
       type: object
       required: [type, title, status, code]

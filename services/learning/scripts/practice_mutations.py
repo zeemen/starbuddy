@@ -7,6 +7,8 @@
 - 纯函数（PR 1）：tests/test_practice_pure.py、tests/test_practice_properties.py，不连库；
 - 库上（PR 2）：tests/test_practice_service.py，一次性 Postgres（每个变异起一个库）。PR 2 的测试文件还不存在时这一组打印“跳过”；
   没有本机 Postgres 时退出码 3（Makefile 决定是否算失败）。
+- 题面来源（PLT-12，specs/present-item-contract）：learning/present_item.py 与开关（配置、create_app），不连库，
+  跑 tests/test_present_item.py；再练里开关打开时的接线在“库上”一组。
 """
 from __future__ import annotations
 
@@ -120,6 +122,51 @@ DB: dict[str, list[tuple[str, str, str]]] = {
     "合成题面不核对库名": [(APP, 'if not SYNTHETIC_DB.fullmatch(db or ""):\n            raise RuntimeError("再练合成题面',
                        'if False:\n            raise RuntimeError("再练合成题面')],
     "题面带出夹具字段": [(PR, "return _clean(view)", "return dict(it)")],
+    # PLT-12：题面来源开关（LEARNING_PRESENT_ITEM_SOURCE=adapter 时题面经适配器 present_item）
+    "开关打开再练仍用合成题面": [(APP, 'if presenter is not None and settings.present_item_source == "adapter":', "if False:")],
+    "再练题面取不到题目登记的内容版本": [(APP, "return await practice_store.content_version(conn, subject, item_id)", "return None")],
+    "再练题面不经 present_view（开关打开也同步取合成）": [(SV, "if (v := await present_view(presenter, subject, c.item_id)) is not None:",
+                                                "if (v := presenter.present(subject, c.item_id)) is not None:")],
+}
+
+# PLT-12 题面来源（learning/present_item.py、配置与 create_app 的开关）：不连库，只跑 tests/test_present_item.py
+PI, CF = "learning/present_item.py", "learning/config.py"
+PRESENT_TESTS = ["tests/test_present_item.py"]
+PRESENT: dict[str, list[tuple[str, str, str]]] = {
+    "配置层不要求候选开关": [(CF, 'if present_source == "adapter" and e.get("STARBUDDY_ALLOW_CANDIDATE_CONTRACT") != "1":', "if False:")],
+    "开关值不校验": [(CF, "if present_source not in PRESENT_ITEM_SOURCES:", "if False:")],
+    "构造时不要求候选契约": [(PI, "        plugin_contract(CONTRACT)\n    except UnsupportedContractVersion:",
+                         "        pass\n    except UnsupportedContractVersion:")],
+    "create_app 不拦（只靠配置层）": [(APP, "        require_candidate()\n", "        pass\n")],
+    "不过共享库白名单": [(PI, 'projected = project_presented_item(data.get("result"))', 'projected = data.get("result")')],
+    "第二道白名单不核键": [(PI, "if set(view) - VIEW_KEYS or not", "if not")],
+    "第二道白名单不核富文本": [(PI, "        cleaned = project_presented_item(probe)\n", "        cleaned = probe\n")],
+    "withheld 也当有题面": [(PI, ' or projected["content_state"] != "complete"', "")],
+    "版权未核或受限也当有题面": [(PI, ' or projected["license_state"] not in SHOWABLE_LICENSES', "")],
+    "版权未核也当有题面": [(PI, 'SHOWABLE_LICENSES = frozenset({"original", "licensed", "public"})',
+                       'SHOWABLE_LICENSES = frozenset({"original", "licensed", "public", "unverified"})')],
+    "适配器故障当作没有题面（不可重试）": [(PI, '            raise IngestError(503, "ITEM_VIEW_UNAVAILABLE", "item view is temporarily unavailable", retryable=True) from None',
+                                   "            return None")],
+    "适配器拒绝一律当故障": [(PI, "if not_presentable(e):", "if False:")],
+    "上游 501 当故障（只认 METHOD_NOT_IMPLEMENTED）": [(PI, "if e.upstream_code in NOT_PRESENTABLE or e.upstream_status == 501:",
+                                                "if e.upstream_code in NOT_PRESENTABLE:")],
+    "上游 404 INVALID_REQUEST（未知路由）当故障": [(PI, 'return e.upstream_status == 404 and e.upstream_code == "INVALID_REQUEST"', "return False")],
+    "上游 CONTRACT_VERSION_UNSUPPORTED 当故障": [(PI, '"METHOD_NOT_IMPLEMENTED",\n                             "CONTRACT_VERSION_UNSUPPORTED"})',
+                                           '"METHOD_NOT_IMPLEMENTED"})')],
+    "题面请求带 usage_id（计量）": [(PI, '"subject": subject, "data_class": "L1"},',
+                               '"subject": subject, "data_class": "L1", "usage_id": str(uuid.uuid4())},')],
+    "题面请求带幂等键（又进了适配器的幂等缓存）": [(PI, '"subject": subject, "data_class": "L1"},',
+                                       '"subject": subject, "data_class": "L1", "idempotency_key": str(uuid.uuid4())},')],
+    "题面请求按 L2": [(PI, '"subject": subject, "data_class": "L1"},', '"subject": subject, "data_class": "L2"},')],
+    "不按契约校验适配器响应": [(PI, 'if contract.validate("PresentItemResponse", data) or data.get("contract_version") != CONTRACT:', "if False:")],
+    "不核对返回的题号": [(PI, 'if projected["item_ref"] != item_ref:', "if False:")],
+    "缓存不复制（调用方改动污染缓存）": [(PI, "        return None if view is None else ItemView(json.loads(json.dumps(view)))", "        return view")],
+    # 审查建议 6、7：缓存过期、缓存键带内容版本；事务内只查缓存
+    "缓存键去掉内容版本": [(PI, "return (subject, item_id, json.dumps(cv, sort_keys=True)), cv", 'return (subject, item_id, ""), cv')],
+    "缓存不过期": [(PI, "if self.clock() >= hit[0]:", "if False:")],
+    "事务内查缓存没命中也去调适配器": [(PI, "            raise ViewNotCached(subject, item_id)\n        return view",
+                              "            return await self.fetch(subject, item_id)\n        return view")],
+    "合成路径也走异步取题面": [(PI, "    return presenter.present(subject, item_id)", "    return dict(presenter.present(subject, item_id) or {}, rich=None)")],
 }
 
 
@@ -179,6 +226,9 @@ def main() -> int:
         print("practice-mutation: 跳过（没有安装学习服务依赖）")
         return 3
     rc = group("纯函数", PURE, PURE_TESTS, 6)
+    if rc:
+        return rc
+    rc = group("题面来源（PLT-12）", PRESENT, PRESENT_TESTS, 6)
     if rc:
         return rc
     if not (HERE / DB_TESTS[0]).exists():

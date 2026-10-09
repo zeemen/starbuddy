@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import type { Answer } from '../lib/diagnosis.ts';
 import { PRACTICE as C, PRACTICE_AFTER, PRACTICE_ERROR, PRACTICE_VERDICT } from '../shell/copy.ts';
+import { RichParagraphs, RichRuns } from '../shell/RichItem.tsx';
 import { answerPracticeAction, nextPracticeAction } from './actions.ts';
 import { keepsTicket, needsNewItem, resubmitsSnapshot, shanghaiMinute, type AnswerView, type ReadyView, type UiError } from './view.ts';
 
@@ -97,7 +98,11 @@ export function PracticeItem({ csrf, student, subject, entry, listHref }: { csrf
         <form onSubmit={submit} noValidate data-format={item.format}>
           <h2 id={ids.heading} ref={heading} tabIndex={-1}>{C.itemHeading}</h2>
           <p className="muted"><span>{C.colRound}</span>{' '}<span data-value="round">{ready.round}</span></p>
-          <p data-testid="practice-stem" data-item-text="stem">{item.stem}</p>
+          {item.rich ? (
+            <div data-testid="practice-stem" data-item-text="stem" className="item-rich"><RichParagraphs stem={item.rich.stem} /></div>
+          ) : (
+            <p data-testid="practice-stem" data-item-text="stem">{item.stem}</p>
+          )}
           {item.format === 'fill' ? (
             <p className="diagnosis-field">
               <label htmlFor={ids.answer}>{C.answerLabel}</label>
@@ -107,13 +112,17 @@ export function PracticeItem({ csrf, student, subject, entry, listHref }: { csrf
           ) : (
             <fieldset className="diagnosis-options" disabled={locked}>
               <legend>{item.format === 'single' ? C.choiceLegend : C.choiceLegendMulti}</legend>
-              {(item.options ?? []).map((o) => (
-                <label key={o.key}>
-                  <input type={item.format === 'single' ? 'radio' : 'checkbox'} name="practice-choice" value={o.key}
-                         checked={choice.includes(o.key)} onChange={() => toggle(o.key)} />
-                  {' '}<span data-value="option-key">{o.key}</span>{' '}<span data-item-text="option">{o.text}</span>
-                </label>
-              ))}
+              {(item.options ?? []).map((o, i) => {
+                const rich = item.rich?.options?.[i];
+                return (
+                  <label key={o.key}>
+                    <input type={item.format === 'single' ? 'radio' : 'checkbox'} name="practice-choice" value={o.key}
+                           checked={choice.includes(o.key)} onChange={() => toggle(o.key)} />
+                    {' '}<span data-value="option-key">{o.key}</span>{' '}
+                    <span data-item-text="option">{rich && rich.key === o.key ? <RichRuns runs={rich.content} /> : o.text}</span>
+                  </label>
+                );
+              })}
             </fieldset>
           )}
           <p className="diagnosis-actions">

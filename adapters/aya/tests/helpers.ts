@@ -93,6 +93,29 @@ export function contextV1(overrides: Record<string, unknown> = {}) {
   return context({ contract_version: "1.0.0", idempotency_key: `4d000000-0000-4000-8000-${n}`, ...overrides });
 }
 
+let seqV11 = 0;
+/** v1.1 的 RequestContext（六个已有方法用）：同 v1.0，契约版本 1.1.0，不带 usage_id（消耗类方法自己加） */
+export function contextV11(overrides: Record<string, unknown> = {}) {
+  seqV11++;
+  const n = String(seqV11).padStart(12, "0");
+  const { usage_id: _drop, ...ctx } = context({ contract_version: "1.1.0", idempotency_key: `4e000000-0000-4000-8000-${n}` });
+  return { ...ctx, ...overrides };
+}
+
+/** v1.1 PresentItemContext（PLT-12 present_item）：题面与学生无关——不带 student_ref、usage_id，幂等键可选（默认不带），L1 */
+export function presentContext(overrides: Record<string, unknown> = {}) {
+  seqV11++;
+  const n = String(seqV11).padStart(12, "0");
+  return {
+    request_id: `00000000-0000-4000-8000-7${n.slice(1)}`,
+    contract_version: "1.1.0",
+    subject: "aya",
+    data_class: "L1",
+    content_version: { ...realPack.pack.curriculum },
+    ...overrides,
+  };
+}
+
 /** 合成审核记录编号（UUIDv4 格式） */
 export const synReviewId = (n: number) => `4a000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 
@@ -119,7 +142,7 @@ export function syntheticDecisionFile(items: Pick<PackItem, "id" | "reviewStatus
 /** 合成题目，用于内容包里没有的边界情况。sourceVerified = true 时经准入决定文件重建（与构建脚本同一条路径） */
 export function syntheticPack(
   items: Partial<PackItem>[],
-  opts: { sourceVerified?: boolean; traps?: ContentPack["traps"]; skillLinks?: ContentPack["skill_links"] } = {},
+  opts: { sourceVerified?: boolean; traps?: ContentPack["traps"]; skillLinks?: ContentPack["skill_links"]; decisionOverrides?: Partial<AdmissionDecision>[] } = {},
 ): LoadedPack {
   const base = realPack.pack;
   const full = items.map((it, i): PackItem => ({
@@ -137,7 +160,7 @@ export function syntheticPack(
   }));
   const pack: ContentPack = { ...base, items: full, traps: opts.traps ?? base.traps, skill_links: opts.skillLinks ?? base.skill_links };
   const decisions = opts.sourceVerified
-    ? parseAdmissionDecisions(syntheticDecisionFile(full), pack.curriculum, new Set(full.map((i) => i.id)))
+    ? parseAdmissionDecisions(syntheticDecisionFile(full, opts.decisionOverrides), pack.curriculum, new Set(full.map((i) => i.id)))
     : null;
   return indexPack(applyAdmissionDecisions(pack, decisions));
 }

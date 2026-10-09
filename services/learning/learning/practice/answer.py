@@ -26,6 +26,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 from ..errors import IngestError
+from ..present_item import present_view
 from . import queue as Q
 from . import store
 from . import ticket as T
@@ -145,7 +146,7 @@ async def answer(svc: PracticeService, *, student: str, subject: str, ticket: ob
     if t.student != student or t.subject != subject:
         svc.stats["ticket_invalid"] += 1
         raise err(403, "TICKET_INVALID", "practice ticket is not valid")
-    view = presenter.present(subject, t.item_id)
+    view = await present_view(presenter, subject, t.item_id)
     rubric = presenter.rubric_version(subject, t.item_id)
     if view is None or rubric is None:
         raise err(501, "PRESENTER_UNAVAILABLE", "no item view for the ticket item")

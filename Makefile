@@ -219,6 +219,24 @@ conformance:
 	$(call run_contract,packages/contracts/conformance/cli.py --quiet --adapter-cmd "node --no-warnings conformance/harness.ts" --adapter-cwd adapters/wenli --token-var WENLI_ADAPTER_SERVICE_TOKEN --fixtures adapters/wenli/conformance/fixtures.yaml --report $(CONFORMANCE_REPORT_DIR)/conformance-wenli.json)
 	@STARBUDDY_CONTRACT_VERSION=1.0.0 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1 $(PYTHON) packages/contracts/conformance/cli.py --quiet --adapter-cmd "node --no-warnings conformance/harness.ts --contract-version 1.0.0 --allow-candidate-contract" --adapter-cwd adapters/wenli --token-var WENLI_ADAPTER_SERVICE_TOKEN --fixtures adapters/wenli/conformance/fixtures.yaml; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
+	@# v1.1 候选版（PLT-12 present_item，specs/present-item-contract）：参考适配器（同步、异步）、阿鸦、知行按 1.1.0 再跑一遍；夹具里
+	@# since: 1.1.0 的题面用例只在这一遍跑。覆盖率报告另写 conformance-<学科>-v1.1.json（Gate 0 仍取上面 1.0.0 那一遍）。文砺不在 PLT-12
+	@STARBUDDY_CONTRACT_VERSION=1.1.0 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1 $(PYTHON) packages/contracts/conformance/cli.py --reference --quiet --report $(CONFORMANCE_REPORT_DIR)/conformance-reference-v1.1.json; rc=$$?; \
+	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
+	@STARBUDDY_CONTRACT_VERSION=1.1.0 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1 $(PYTHON) packages/contracts/conformance/cli.py --reference --reference-async --quiet; rc=$$?; \
+	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
+	@# 阿鸦这一遍带题面叠加文件（合成题面，--stem-overlay；只在候选版开关打开时读），夹具里的 complete 题面用例靠它。
+	@# 缺依赖时：严格模式（CONTRACT_STRICT=1）报错，否则打印“跳过”（审查建议 14：不静默跳过）
+	@if [ -d adapters/aya/node_modules/ajv ]; then \
+	  STARBUDDY_CONTRACT_VERSION=1.1.0 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1 $(PYTHON) packages/contracts/conformance/cli.py --quiet --adapter-cmd "node --no-warnings src/main.ts --contract-version 1.1.0 --allow-candidate-contract --stem-overlay conformance/stems.synthetic.json" --adapter-cwd adapters/aya --token-var AYA_ADAPTER_SERVICE_TOKEN --fixtures adapters/aya/conformance/fixtures.yaml --report $(CONFORMANCE_REPORT_DIR)/conformance-aya-v1.1.json; rc=$$?; \
+	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi; \
+	else echo "conformance: 阿鸦 v1.1 部分跳过（没有安装依赖；cd adapters/aya && npm ci）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; fi; fi
+	@if [ -d adapters/zhixing/node_modules/ajv ]; then \
+	  STARBUDDY_CONTRACT_VERSION=1.1.0 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1 $(PYTHON) packages/contracts/conformance/cli.py --quiet --adapter-cmd "node --no-warnings conformance/harness.ts --contract-version 1.1.0 --allow-candidate-contract" --adapter-cwd adapters/zhixing --token-var ZHIXING_ADAPTER_SERVICE_TOKEN --fixtures adapters/zhixing/conformance/fixtures.yaml --report $(CONFORMANCE_REPORT_DIR)/conformance-zhixing-v1.1.json; rc=$$?; \
+	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi; \
+	else echo "conformance: 知行 v1.1 部分跳过（没有安装依赖；cd adapters/zhixing && npm ci）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; fi; fi
 
 # 一致性测试的变异测试：参考假适配器逐一注入 28 类违约，断言每次都由指定的测试发现（约 45 秒）
 conformance-mutation:

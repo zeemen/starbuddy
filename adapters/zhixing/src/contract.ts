@@ -10,12 +10,13 @@ import { Ajv2020, type ValidateFunction } from "ajv/dist/2020.js";
 import addFormatsModule from "ajv-formats";
 import { parse } from "yaml";
 
-export const SUPPORTED_CONTRACT_VERSIONS = ["0.9.0", "1.0.0"] as const;
+// 1.1.0 候选版（PLT-12，specs/present-item-contract）：以 1.0.0 为底，只多一个只读方法 present_item
+export const SUPPORTED_CONTRACT_VERSIONS = ["0.9.0", "1.0.0", "1.1.0"] as const;
 export type ContractVersion = (typeof SUPPORTED_CONTRACT_VERSIONS)[number];
 /** 迁移期能力声明默认报的版本（待人确认 #2 默认：0.9.0；v1.0 签字后改报 1.0.0） */
 export const DEFAULT_CONTRACT_VERSION: ContractVersion = "0.9.0";
 /** 候选版：签字前只在测试与演练环境使用（能力声明默认版本要改成它时需显式打开开关） */
-export const CANDIDATE_CONTRACT_VERSIONS: readonly ContractVersion[] = ["1.0.0"];
+export const CANDIDATE_CONTRACT_VERSIONS: readonly ContractVersion[] = ["1.0.0", "1.1.0"];
 /** 兼容旧引用：等于默认版本 */
 export const CONTRACT_VERSION = DEFAULT_CONTRACT_VERSION;
 
@@ -23,6 +24,7 @@ export const OPENAPI_DIR = new URL("../../../packages/contracts/openapi/", impor
 export const PLUGIN_CONTRACT_FILES: Record<ContractVersion, string> = {
   "0.9.0": "plugin-api.v0.9.yaml",
   "1.0.0": "plugin-api.v1.0.yaml",
+  "1.1.0": "plugin-api.v1.1.yaml",
 };
 /** 插件契约跨文件引用到的服务契约（v1.0 → 两份服务契约 → v0.9） */
 const RELATED_CONTRACT_FILES = ["knowledge-service.v0.9.yaml", "insight-service.v0.9.yaml"];
@@ -42,6 +44,8 @@ export type SchemaName =
   | "PlanResponse"
   | "ReportRequest"
   | "ReportResponse"
+  | "PresentItemRequest"
+  | "PresentItemResponse"
   | "Problem";
 
 export type ValidationResult = { ok: true } | { ok: false; errors: string[] };

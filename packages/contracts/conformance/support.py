@@ -23,8 +23,9 @@ import yaml
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "python"))
 
-from starbuddy_contract.checks import parse_time  # noqa: E402
+from starbuddy_contract.checks import ContractViolation, parse_time  # noqa: E402
 from starbuddy_contract.contract import CONTRACT_VERSION, PLUGIN_CONTRACT  # noqa: E402
+from starbuddy_contract.present import answer_field_paths, project_presented_item  # noqa: E402
 
 STUDENT = "5c000000-0000-4000-8000-00000000c0f0"  # 合成学生（规则 8）
 T0 = datetime(2026, 10, 8, 11, 0, tzinfo=timezone.utc)
@@ -42,6 +43,10 @@ def _schemas() -> dict:
 # 方法、学科、消耗类方法都从契约推导，契约新增学科或方法时不会不同步（契约守护复核）
 METHODS: tuple[str, ...] = tuple(_schemas()["Method"]["enum"])
 SUBJECTS: tuple[str, ...] = tuple(_schemas()["Subject"]["enum"])
+# Gate 0 覆盖率的分母固定是六个学科方法（开发计划 v2.0 Gate 0：“六方法覆盖”）。v1.1 的 present_item 是只读的平台取数方法，
+# 不计入 of / implemented / passed，在报告里单列为 read_only_methods（PLT-12 审查阻断 1）
+SUBJECT_METHODS: tuple[str, ...] = ("diagnose", "plan", "teach", "grade", "generate_variation", "report")
+READ_ONLY_METHODS: tuple[str, ...] = tuple(m for m in METHODS if m not in SUBJECT_METHODS)
 
 
 def _schema_name(method: str, kind: str) -> str:
@@ -71,7 +76,13 @@ class Fixtures:
         return [c for c in self.cases if c["method"] == method]
 
 
+def _version(v: str) -> tuple[int, ...]:
+    return tuple(int(x) for x in str(v).split("."))
+
+
 def load_fixtures(path: str | Path) -> Fixtures:
+    """夹具里的用例可以写 `since: 1.1.0`：只在不低于这个契约版本时才跑（例如 v1.1 才有的 present_item），
+    同一份夹具因此能在 0.9.0 / 1.0.0 / 1.1.0 下都跑。"""
     p = Path(path)
     d = yaml.safe_load(p.read_text(encoding="utf-8"))
     if d["subject"] not in SUBJECTS:
@@ -79,6 +90,7 @@ def load_fixtures(path: str | Path) -> Fixtures:
     ids = [c["id"] for c in d["cases"]]
     if len(set(ids)) != len(ids):
         raise ValueError("夹具 case id 重复")
+    d["cases"] = [c for c in d["cases"] if _version(c.get("since", "0.0.0")) <= _version(CONTRACT_VERSION)]
     for c in d["cases"]:
         if c["method"] not in METHODS:
             raise ValueError(f"{c['id']}: 未知方法 {c['method']}")
@@ -95,7 +107,50 @@ def load_fixtures(path: str | Path) -> Fixtures:
 
 
 # ---------- 请求 ----------
+def coverage_report(caps: dict, results: dict[str, list[str]], subject: str | None, exit_status: int,
+                    global_failures: list[str], read_only: tuple[str, ...] = READ_ONLY_METHODS) -> dict:
+    """覆盖率报告（Gate 0 统计用）。of / implemented / passed 只按六个学科方法算；只读方法单列在 read_only_methods。
+    任何全局用例失败（例如不校验令牌、契约版本不对），或整套测试没有通过，所有方法都不算“通过”（契约守护 S1）。"""
+    suite_ok = int(exit_status) == 0 and not global_failures
+
+    def one(m: str) -> dict:
+        implemented = bool(((caps.get("methods") or {}).get(m) or {}).get("implemented"))
+        outcomes = results.get(m, [])
+        return {
+            "implemented": implemented,
+            "tests": len(outcomes),
+            "failed": sum(o != "passed" for o in outcomes),
+            "passed": suite_ok and implemented and bool(outcomes) and all(o == "passed" for o in outcomes),
+        }
+
+    methods = {m: one(m) for m in SUBJECT_METHODS}
+    return {
+        "subject": subject,
+        "adapter_version": caps.get("adapter_version"),
+        "contract_version": caps.get("contract_version"),
+        "implemented": sum(v["implemented"] for v in methods.values()),
+        "passed": sum(v["passed"] for v in methods.values()),
+        "of": len(SUBJECT_METHODS),
+        "methods": methods,
+        "read_only_methods": {m: one(m) for m in read_only},
+        "suite_exit_status": int(exit_status),
+        "global_failures": list(global_failures),
+    }
+
+
 def context(fx: Fixtures, case: dict) -> dict:
+    if case["method"] == "present_item":
+        # v1.1 PresentItemContext：题面与学生无关，不带 student_ref、usage_id；幂等键可选（默认不带），最低 L1
+        ctx = {
+            "request_id": str(uuid.uuid4()),
+            "contract_version": CONTRACT_VERSION,
+            "subject": fx.subject,
+            "data_class": case.get("data_class", "L1"),
+            "content_version": dict(fx.content_version),
+        }
+        if case.get("idempotency_key"):
+            ctx["idempotency_key"] = str(uuid.uuid4())
+        return ctx
     ctx = {
         "request_id": str(uuid.uuid4()),
         "contract_version": CONTRACT_VERSION,
@@ -133,6 +188,10 @@ def build_request(fx: Fixtures, case: dict) -> dict:
             if CONTRACT_VERSION != "0.9.0":
                 for a in body["attempts"]:
                     a.setdefault("attempt_id", str(uuid.uuid4()))
+        body.update(copy.deepcopy(case.get("body", {})))
+    elif m == "present_item":
+        # v1.1：取题面（只读、非消耗类）。内容版本取夹具的六段标识；夹具的 body 只给 item_ref
+        body["content_version"] = dict(fx.content_version)
         body.update(copy.deepcopy(case.get("body", {})))
     else:
         body.update(copy.deepcopy(case.get("body", {})))
@@ -328,3 +387,50 @@ def leak_problems(body: object, *, inputs: list[str], secrets: list[str]) -> lis
 
 def string_leaves(v: object) -> list[str]:
     return [x for _, x in _leaves(v) if isinstance(x, str)]
+
+
+# ---------- present_item（v1.1，PLT-12）的泄露检查 ----------
+# 题面内容本身（文字、公式、图片说明）是教研内容，允许出现夹具里登记为“题面文字”的秘密（例如知行的材料地名）；
+# 其他位置只能是受控值。用例自己的 secrets（答案、解析、采分点说明）在任何位置都不许出现，包括题面内容。
+CONTENT_LEAF = re.compile(r"/result/(stem/\d+/runs|options/\d+/content)/\d+/(text|latex|alt)")
+PRESENT_NUMERIC = NUMERIC_KEYS | {"min_choices", "max_choices", "max_length"}
+
+
+def present_problems(body: object, *, secrets: list[str], answer_secrets: list[str]) -> list[str]:
+    """present_item 响应的平台侧核对与泄露检查（只报路径，不回显值）：
+    1. 平台侧白名单（starbuddy_contract.present，学习服务用的同一份）能重建题面；
+    2. 任何位置都没有答案类字段名；不产生证据；
+    3. 用例的答案类秘密在任何位置都不出现（3 个字符以上按子串，更短的按完全相等）；
+    4. 题面内容之外的字符串只能是受控值，且不含夹具的全局秘密；数字只在白名单字段。"""
+    problems: list[str] = []
+    if not isinstance(body, dict):
+        return ["/: 响应不是对象"]
+    try:
+        project_presented_item(body.get("result"))
+    except ContractViolation as e:
+        problems.append(f"/result: 平台侧白名单不通过（{e}）")
+    problems += [f"{p}: 答案类字段名" for p in answer_field_paths(body)]
+    if body.get("evidence_ids") or "evidence" in body:
+        problems.append("/evidence_ids: 题面不得产生证据")
+    patterns = [_contract_pattern(n) for n in ("SkillNodeRef", "ModelVersion", "SourceVersion", "VersionedName")]
+    for path, v in _leaves(body):
+        if isinstance(v, bool) or v is None:
+            continue
+        if isinstance(v, (int, float)):
+            if path.rsplit("/", 1)[-1] not in PRESENT_NUMERIC:
+                problems.append(f"{path}: 数字出现在白名单之外的字段")
+            continue
+        if _secret_hit(v, answer_secrets):
+            problems.append(f"{path}: 出现了用例标注的答案类秘密")
+            continue
+        if CONTENT_LEAF.fullmatch(path):
+            continue  # 题面内容：教研内容，受限富文本已由契约与白名单约束
+        if _secret_hit(v, secrets):
+            problems.append(f"{path}: 出现了夹具标注的秘密")
+            continue
+        if OBJSTORE_RE.fullmatch(v):
+            continue  # 图片引用（契约已限定为对象存储引用）
+        controlled = UUID_RE.fullmatch(v) or CODE_RE.fullmatch(v) or SEMVER_RE.fullmatch(v) or any(p.fullmatch(v) for p in patterns)
+        if not controlled:
+            problems.append(f"{path}: 不是受控值")
+    return problems

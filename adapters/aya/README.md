@@ -5,6 +5,13 @@
 `context.contract_version` 校验与应答（v1.0 下作答类证据带 `attempt_id`），其他版本返回 400 `CONTRACT_VERSION_UNSUPPORTED`；
 能力声明默认报 0.9.0，可用 `--contract-version 1.0.0 --allow-candidate-contract`（或环境变量 `AYA_CONTRACT_VERSION`、
 `STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1`）改报 1.0.0，签字前只在测试与演练里用。
+v1.1 候选版（`plugin-api.v1.1.yaml`，PLT-12）：六个方法照旧，另加只读的 `present_item`（`src/methods/present.ts`，只按 1.1.0 应答）。
+真实内容包不收录题干，题面一律 `withheld`（只有题型、选项键、作答格式）；测试与演练可用 `AYA_CONTENT_PACK` 换一份带合成题面
+（题目可选字段 `stem`、`option_content`，受限富文本，`src/rich-text.ts`）的内容包，或用 `AYA_STEM_OVERLAY` / `--stem-overlay`
+给真实内容包里的几道题叠加合成题面（`conformance/stems.synthetic.json`，1.1.0 一致性测试用）。这两项只在候选版开关打开时才读，
+开关没开却设了就拒绝启动；用了它们时内容版本号接上文件的 sha256 前 8 位（`items` 段与题面 `item_version`）。
+题面加载时另做答案词扫描（填空题的标准答案原文、“答案”“故选”“解析”等标记）与总字数（≤ 8000）检查。
+`present_item` 的请求用契约的 `PresentItemContext`（不带学生 ID 与计量 ID），只读，不进幂等缓存。
 规格见 `specs/adapter-aya-sprint1/spec.md`（capabilities、grade、diagnose）与 `specs/adapter-aya-methods-sprint4/spec.md`
 （plan、teach、generate_variation、report），实现记录与待人确认见各自目录的 `lessons.md`。
 

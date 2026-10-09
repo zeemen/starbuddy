@@ -133,6 +133,50 @@ components:
   securitySchemes:
     serviceToken: { type: http, scheme: bearer }
   schemas:
+    RichItem:
+      type: object
+      additionalProperties: false
+      required: [stem]
+      description: |
+        PLT-12：受限富文本题面（插件契约 1.1.0 候选版 present_item 的题干段落与选项片段，学习服务过两道白名单后原样给出）。
+        只在 LEARNING_PRESENT_ITEM_SOURCE=adapter 时出现（候选契约开关打开，签字前只在测试里）；开关关闭时没有这个键，题面与之前逐字节一致。
+        stem、options[].text 是纯文字兜底（公式写 LaTeX 源码、图片写 [图]）。不含答案、解析、采分点。
+      properties:
+        stem: { type: array, minItems: 1, maxItems: 20, items: { $ref: '#/components/schemas/RichParagraph' } }
+        options:
+          type: array
+          maxItems: 10
+          items:
+            type: object
+            additionalProperties: false
+            required: [key, content]
+            properties:
+              key: { type: string, pattern: '^[A-Za-z0-9]{1,8}$' }
+              content: { type: array, minItems: 1, maxItems: 32, items: { $ref: '#/components/schemas/RichInline' } }
+    RichParagraph:
+      type: object
+      additionalProperties: false
+      required: [type, runs]
+      properties:
+        type: { const: paragraph }
+        runs: { type: array, minItems: 1, maxItems: 64, items: { $ref: '#/components/schemas/RichInline' } }
+    RichInline:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [type, text]
+          properties: { type: { const: text }, text: { type: string, maxLength: 2000, pattern: '^[^<>\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u200B-\u200F\u2028\u2029\u202A-\u202E\u2066-\u2069\uFEFF]{1,2000}$' } }
+        - type: object
+          additionalProperties: false
+          required: [type, latex]
+          properties: { type: { const: math }, latex: { type: string, maxLength: 1000, pattern: '^(?!.*\\(?:href|url|includegraphics|htmlClass|htmlId|htmlStyle|htmlData|def|gdef|edef|xdef|let|newcommand|renewcommand|providecommand|newenvironment|input|include|write|immediate|catcode|csname)(?![A-Za-z]))[\x20-\x7E]{1,1000}$' } }
+        - type: object
+          additionalProperties: false
+          required: [type, image_ref]
+          properties:
+            type: { const: image }
+            image_ref: { type: string, pattern: '^objstore://[a-z0-9][a-z0-9/_.\-]{0,255}$' }
+            alt: { type: string, maxLength: 200, pattern: '^[^<>\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u200B-\u200F\u2028\u2029\u202A-\u202E\u2066-\u2069\uFEFF]{1,200}$' }
     Entry:
       type: object
       additionalProperties: false
@@ -170,6 +214,7 @@ components:
             options:
               type: array
               items: { type: object, additionalProperties: false, required: [key, text], properties: { key: { type: string }, text: { type: string } } }
+            rich: { $ref: '#/components/schemas/RichItem' }
         ticket: { type: string, maxLength: 1024 }
         expires_at: { type: string, format: date-time }
         same_family_only: { type: boolean }

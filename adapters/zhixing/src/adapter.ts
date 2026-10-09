@@ -10,6 +10,7 @@
 // - M3 一律低置信并复核（决定 A2）；不输出掌握度（规则 2）；diagnose 只输出观测，不写关于学生的陈述（规则 11）。
 // - plan、report 不产分、不调模型：plan 只输出任务 ID、编码、数字；report 只输出逐维 / 逐类计数与证据 ID，没有结论句与评价（规则 11）。
 // - 响应、日志、错误详情里不出现题面、Rubric、模型原文；学生原文只出现在作答证据的 payload 里。
+//   例外只有契约 1.1.0 候选版的 present_item（PLT-12）：按白名单返回材料与设问（src/present.ts），仍不返回 Rubric 与采分点。
 import { CANDIDATE_CONTRACT_VERSIONS, type ContractValidator, type ContractVersion, type SchemaName } from "./contract.ts";
 import {
   ATTRIBUTION_CODES,
@@ -24,7 +25,8 @@ import { parseModelOutput, postProcess, type PointOutcome } from "./core/m3-post
 import { buildM3GradeMessages, hasInjectionSignal, PROMPT_SOURCE_VERSION, PROMPT_TEMPLATE, PROMPT_VERSION } from "./core/m3-prompt.ts";
 import { prerequisiteEdges, planUnits, rankUnits, MAX_ITEMS_PER_TASK, MAX_TASKS_WITHOUT_BUDGET, MINUTES_PER_ITEM, type MasteryInput, type PathStep } from "./core/plan.ts";
 import { ATTEMPT_KINDS, inWindow, instant, trendOf, type HistoryRecord } from "./core/report.ts";
-import { contentUuid, deriveUuid, requestFingerprint, routeIdempotencyKey } from "./ids.ts";
+import { canonical, contentUuid, deriveUuid, requestFingerprint, routeIdempotencyKey } from "./ids.ts";
+import { PRESENT_ALGORITHM, presentItem } from "./present.ts";
 import { loadPlanWeights, type PlanWeights } from "./plan-weights.ts";
 import { callRoute, RouteError, type FetchLike, type RouteConfig, type RouteFailure } from "./route-client.ts";
 import type { ZhixingTaxonomy } from "./taxonomy.ts";
@@ -388,6 +390,8 @@ export function createAdapter(deps: AdapterDeps) {
         grade: { implemented: true, async: false, notes_code: "history_grading_excluded" },
         generate_variation: { implemented: true },
         report: { implemented: true, async: false, notes_code: "counts_only" },
+        // v1.1（PLT-12）：能力声明逐一声明七个方法；1.1.0 以下的能力声明没有这一项（v1.0 Capabilities 不允许多余方法）
+        ...(contract.version === "1.1.0" ? { present_item: { implemented: true, async: false } } : {}),
       },
     }, contract.version);
 
@@ -812,8 +816,39 @@ export function createAdapter(deps: AdapterDeps) {
     }, version);
   };
 
+  // ---------- present_item（契约 1.1.0 候选版，PLT-12；只读、不调模型） ----------
+  /**
+   * 题面：只按 1.1.0 应答（更低版本 501）。不带 usage_id（schema 已拒）；顶层 content_version 必须是本包，
+   * context.content_version 同时出现时必须与它相同。历史题与 grade 同一口径（契约 v1 只接道法）。同 key 不同请求体 → 409。
+   */
+  const present = async (body: unknown): Promise<HandlerResult> => {
+    const version = requestVersion(body);
+    if (version !== "1.1.0") {
+      throw new ProblemError(501, "METHOD_NOT_IMPLEMENTED", "present_item is implemented for contract 1.1.0 only");
+    }
+    validateOrThrow("PresentItemRequest", body, version);
+    const req = body as { context: RequestContext; item_ref: string; content_version: Record<string, string | number> };
+    if (req.context.content_version && canonical(req.context.content_version) !== canonical(req.content_version)) {
+      throw new ProblemError(400, "INVALID_REQUEST", "context.content_version and content_version differ");
+    }
+    checkContext({ ...req.context, content_version: req.content_version } as RequestContext, true);
+    // 契约 PresentItemContext：不带 student_ref、usage_id，幂等键可选。只读、结果由（题目, 内容版本）确定，
+    // 不进幂等缓存（审查阻断 2：进缓存只会挤掉 grade 等写方法的条目）
+    const item = findItem(req.item_ref);
+    return selfCheck("PresentItemResponse", {
+      contract_version: version,
+      result: presentItem(content, item, MAX_ANSWER_CHARS),
+      evidence_ids: [],
+      confidence: 1,
+      source_version: `algo:${PRESENT_ALGORITHM};${content.itemsSourceVersion}`,
+      model_version: `algo:${PRESENT_ALGORITHM}`,
+      human_review_required: false,
+      semantics: item.admission === "admitted" ? "formal" : "practice",
+    }, version);
+  };
+
   const NOT_IMPLEMENTED = new Set(["teach"]);
-  const KNOWN_ROUTES = new Set(["capabilities", "grade", "diagnose", "generate_variation", "plan", "report", ...NOT_IMPLEMENTED]);
+  const KNOWN_ROUTES = new Set(["capabilities", "grade", "diagnose", "generate_variation", "plan", "report", "present_item", ...NOT_IMPLEMENTED]);
 
   /** 路由（路径不含 /plugin/v0 前缀）。所有错误都转成契约 Problem。 */
   const handle = async (method: string, path: string, body: unknown): Promise<HandlerResult> => {
@@ -832,6 +867,7 @@ export function createAdapter(deps: AdapterDeps) {
       else if (method === "POST" && name === "generate_variation") result = await generateVariation(body);
       else if (method === "POST" && name === "plan") result = await plan(body);
       else if (method === "POST" && name === "report") result = await report(body);
+      else if (method === "POST" && name === "present_item") result = await present(body);
       else if (method === "POST" && NOT_IMPLEMENTED.has(name)) {
         throw new ProblemError(501, "METHOD_NOT_IMPLEMENTED", `${name} is not implemented by the zhixing adapter yet`);
       } else if (method === "GET" && name.startsWith("jobs/")) {

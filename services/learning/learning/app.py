@@ -77,10 +77,18 @@ def _diagnosis(settings: Settings, pool, client: httpx.AsyncClient, ingest: Inge
                clock=None):
     """自适应诊断（SIE-02a）：合成题面只在 test 环境（配置层与构造函数各拦一道）；选题信息来自合成夹具或知识服务。"""
     from .diagnosis.presenter import SyntheticPresenter
-    from .diagnosis.service import DiagnosisService
+    from .diagnosis.service import CONTENT_VERSION, DiagnosisService
     from .diagnosis.source import FixtureSource, KnowledgeServiceSource
 
     presenter = SyntheticPresenter(settings.env)
+    if settings.present_item_source == "adapter":
+        # PLT-12：题面改经适配器 present_item（插件契约 1.1.0 候选版）。内容版本与诊断判分请求用的同一组六段（CONTENT_VERSION）
+        from .present_item import AdapterItemSource
+
+        async def diagnosis_content_version(subject: str, item_id: str) -> dict | None:
+            return dict(CONTENT_VERSION) if subject == CONTENT_VERSION["subject"] else None
+
+        presenter = AdapterItemSource(client, settings.adapters, diagnosis_content_version)
     if settings.diagnosis_source == "knowledge":
         assert settings.knowledge is not None and settings.diagnosis_map_version is not None
         ks = KnowledgeServiceSource(client, settings.knowledge.base_url, settings.knowledge.credential, "aya",
@@ -132,12 +140,22 @@ PRACTICE_LOCK_POOL_SIZE = 8   # 再练作答串行锁的连接数上限：同时
 
 
 def _practice(settings: Settings, cfg, pool, client: httpx.AsyncClient, ingest: IngestService, clock, lock_pool):
-    from .practice.presenter import SyntheticPracticePresenter
+    from .practice import store as practice_store
+    from .practice.presenter import AdapterPracticePresenter, SyntheticPracticePresenter
     from .practice.service import PracticeService, utcnow
     from .practice.sources import KnowledgeCandidates
 
     assert settings.practice_ticket_secret is not None
     presenter = SyntheticPracticePresenter(settings.env) if settings.practice_presenter == "synthetic" else None
+    if presenter is not None and settings.present_item_source == "adapter":
+        # PLT-12：题面改经适配器 present_item（插件契约 1.1.0 候选版）；内容版本取题目登记的六段（与再练判分请求同一来源）
+        from .present_item import AdapterItemSource
+
+        async def practice_content_version(subject: str, item_id: str) -> dict | None:
+            async with practice_store.tx(pool) as conn:
+                return await practice_store.content_version(conn, subject, item_id)
+
+        presenter = AdapterPracticePresenter(AdapterItemSource(client, settings.adapters, practice_content_version), presenter)
     knowledge = (KnowledgeCandidates(client, settings.knowledge.base_url, settings.knowledge.credential)
                  if settings.knowledge is not None else None)
     return PracticeService(pool=pool, ingest=ingest, client=client, cfg=cfg, adapters=dict(settings.adapters),
@@ -161,6 +179,11 @@ def create_app(
     """pool、transport、model_router、diagnosis_params、mastery、profile、practice_clock、practice_lock_pool、diagnosis_clock 供测试注入；
     不传时按配置创建。注入业务池又开了再练时必须一并注入再练锁池（锁连接不能取自业务池，审查 B2）。"""
     state: dict = {"router": model_router}
+    if settings.present_item_source == "adapter":
+        # PLT-12：题面经适配器 present_item 只在候选契约 1.1.0 打开时可用（配置层已拦一道；这里在建任何连接之前再拦一道）
+        from .present_item import require_candidate
+
+        require_candidate()
     # 错题再练配置（specs/practice-loop-stage1 第 7 节）：不合法拒绝启动；未签字配置出现在 test / dev 以外只是这一模块不启动（接口 501）
     practice_cfg = None
     if settings.practice_config:

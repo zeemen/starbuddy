@@ -1,6 +1,6 @@
 """按契约 YAML 校验（和阿鸦适配器加载同一份文件，不手抄结构）。
 
-- 学科插件 API：packages/contracts/openapi/plugin-api.v0.9.yaml（默认）或 v1.0 候选版（请求与适配器响应）
+- 学科插件 API：packages/contracts/openapi/plugin-api.v0.9.yaml（默认）或 v1.0 / v1.1 候选版（请求与适配器响应）
 - 学习服务内部 API：packages/contracts/openapi/learning-internal.v0.yaml（返回给 BFF 的摘要与错误）
 迁移期两个插件契约版本并存（specs/plugin-api-v1.0/spec.md）：环境变量 STARBUDDY_CONTRACT_VERSION 选版本，
 缺省 0.9.0。学习服务与阿鸦在第二步切换前一直用 0.9.0；一致性测试用它按 1.0.0 跑参考适配器。
@@ -19,13 +19,15 @@ from referencing import Registry, Resource
 from referencing.jsonschema import DRAFT202012
 
 OPENAPI = Path(__file__).resolve().parents[2] / "openapi"
-PLUGIN_CONTRACTS = {"0.9.0": OPENAPI / "plugin-api.v0.9.yaml", "1.0.0": OPENAPI / "plugin-api.v1.0.yaml"}
+# 1.1.0 候选版（PLT-12，specs/present-item-contract）：以 1.0.0 为底，只多一个只读方法 present_item
+PLUGIN_CONTRACTS = {"0.9.0": OPENAPI / "plugin-api.v0.9.yaml", "1.0.0": OPENAPI / "plugin-api.v1.0.yaml",
+                    "1.1.0": OPENAPI / "plugin-api.v1.1.yaml"}
 CONTRACT_VERSION = os.environ.get("STARBUDDY_CONTRACT_VERSION", "0.9.0")
 if CONTRACT_VERSION not in PLUGIN_CONTRACTS:
     raise RuntimeError(f"不支持的契约版本 {CONTRACT_VERSION}（可选：{sorted(PLUGIN_CONTRACTS)}）")
 # 候选版签字前只能在测试里用（安全审查建议 3）：还要显式设 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1，
 # 防止服务进程因为全局环境变量误用候选版（学习服务的内部契约还停在 v0）
-CANDIDATE_VERSIONS = {"1.0.0"}
+CANDIDATE_VERSIONS = {"1.0.0", "1.1.0"}
 
 
 def candidate_allowed() -> bool:

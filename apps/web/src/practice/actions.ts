@@ -22,7 +22,7 @@ function isAnswer(a: unknown): a is Answer {
   if (keys.length !== 1) return false;
   if (keys[0] === 'text') return typeof o['text'] === 'string' && o['text'].trim().length > 0 && o['text'].length <= 200;
   return keys[0] === 'choice' && Array.isArray(o['choice']) && o['choice'].length > 0 && o['choice'].length <= 8
-    && new Set(o['choice']).size === o['choice'].length && o['choice'].every((k) => typeof k === 'string' && /^[A-Z]$/.test(k));
+    && new Set(o['choice']).size === o['choice'].length && o['choice'].every((k) => typeof k === 'string' && /^[A-Za-z0-9]{1,8}$/.test(k));
 }
 
 const err = (error: UiError): { kind: 'error'; error: UiError } => {

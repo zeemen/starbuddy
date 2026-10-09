@@ -1,9 +1,10 @@
-// 服务端只读内容包（spec 设计要点 2）。内容包是合成题（待人确认 #4），题面与采分点只进本进程与模型路由，
-// 任何接口都不返回。采分点字段对齐 KGE kge.scoring_point（迁移 0011）：point_id、score、subject_dimension、
+// 服务端只读内容包（spec 设计要点 2）。内容包是合成题（待人确认 #4），采分点只进本进程与模型路由，任何接口都不返回；
+// 题面（材料与设问）只经契约 1.1.0 候选版的 present_item 按白名单返回（PLT-12，src/present.ts），其他接口仍不返回。采分点字段对齐 KGE kge.scoring_point（迁移 0011）：point_id、score、subject_dimension、
 // node_ids（kge.node_id，MORAL 命名空间，1–8 个）、keyword_family（三档）、required_logic、material_linkage、
 // partial_credit_rule（结构化：mode + allowed_scores + description）、common_errors。
 // skill_node 是合成的能力视图节点（五个判分维度各一个，待人确认 #3），正式坐标待教研定。
 import { readFileSync } from "node:fs";
+import { presentationProblems } from "./present.ts";
 
 export const PACK_FORMAT = "zhixing-content-pack/1";
 
@@ -175,6 +176,8 @@ export function indexPack(pack: ContentPack): LoadedPack {
     for (const k of ["title", "grade_scope", "material_text", "prompt_question"] as const) {
       if (typeof it[k] !== "string" || it[k].length === 0 || it[k].length > 2000) problems.push(`${where} 的 ${k} 为空或过长`);
     }
+    // 题面（PLT-12 present_item）：材料与设问必须是契约允许的纯文字片段
+    if (typeof it.material_text === "string" && typeof it.prompt_question === "string") problems.push(...presentationProblems(it));
     if (!Array.isArray(it.points) || it.points.length === 0 || it.points.length > 30) problems.push(`${where} 的采分点数量不合格`);
     const seen = new Set<string>();
     let sum = 0;

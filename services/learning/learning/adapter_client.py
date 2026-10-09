@@ -88,6 +88,7 @@ async def _call(client: httpx.AsyncClient, target: AdapterTarget, method: str, b
             "adapter rejected the request" if client_error else "adapter failed",
             retryable=retryable,
             upstream_code=upstream_code,
+            upstream_status=status,
         )
         if not retryable:
             raise err

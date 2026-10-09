@@ -14,7 +14,8 @@
 由 Makefile 决定如何呈现；本脚本不会在缺依赖时假装通过。
 
 用法：check_contract.py [契约 yaml 路径]
-不带参数时检查 v0.9 与 v1.0 候选版两份（迁移期两份并存，specs/plugin-api-v1.0/spec.md），外加 v1.0 的破坏性变更反例。
+不带参数时检查 v0.9、v1.0 候选版与 v1.1 候选版三份（迁移期并存，specs/plugin-api-v1.0/spec.md），外加 v1.0 的破坏性变更反例，
+以及 v1.1 只做增量（v1.0 的 schema、路径、示例逐项不变，只多 present_item；specs/present-item-contract/spec.md）。
 """
 from __future__ import annotations
 
@@ -26,7 +27,8 @@ HERE = Path(__file__).resolve().parent
 OPENAPI = HERE.parent / "openapi"
 DEFAULT_SPEC = OPENAPI / "plugin-api.v0.9.yaml"
 V1_SPEC = OPENAPI / "plugin-api.v1.0.yaml"
-SPECS = [DEFAULT_SPEC, V1_SPEC]
+V11_SPEC = OPENAPI / "plugin-api.v1.1.yaml"  # PLT-12：v1.0 + 只读方法 present_item
+SPECS = [DEFAULT_SPEC, V1_SPEC, V11_SPEC]
 
 try:
     import yaml
@@ -46,6 +48,7 @@ ENVELOPE_REQUIRED = {
 RESPONSES = {
     "diagnose": "DiagnoseResponse", "plan": "PlanResponse", "teach": "TeachResponse",
     "grade": "GradeResponse", "generate_variation": "GenerateVariationResponse", "report": "ReportResponse",
+    "present_item": "PresentItemResponse",  # v1.1（PLT-12）
 }
 # 允许出现“无约束字符串 / 开放对象”的位置：(schema 名, 属性名) -> 允许的响应
 # 学生作答原文是证据本身；teach 的讲解文本就是教学内容。grade 不允许任何其他自由文本（CLAUDE.md 规则 3）。
@@ -58,8 +61,12 @@ FREE_TEXT_ALLOW = {
     ("TeachResult.verified_statements", "statement"): {"TeachResponse"},  # v1.0 改名（评审 sie-#4）
     ("Problem", "title"): {"JobStatus"},
     ("Problem", "detail"): {"JobStatus"},
+    # v1.1 present_item：题面本身是教研内容（受限富文本）。只有文字片段与图片说明两处；都必须限长，且另由
+    # check_present_item 用探针核对它们拒收 HTML 标签与控制字符（规则：题面不能夹带 HTML）
+    ("RichTextRun", "text"): {"PresentItemResponse"},
+    ("RichImageRun", "alt"): {"PresentItemResponse"},
 }
-# 自由文本扫描的根：六个响应 + 异步任务状态（失败时带 Problem）
+# 自由文本扫描的根：各方法的响应（取决于契约的 Method 枚举）+ 异步任务状态（失败时带 Problem）
 SCAN_ROOTS = [*RESPONSES.values(), "JobStatus"]
 PII_PATTERNS = {
     "手机号": re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)"),
@@ -80,6 +87,17 @@ def _registry(doc: dict, path: Path) -> tuple[Registry, str]:
 
 def _schemas(doc: dict) -> dict:
     return doc["components"]["schemas"]
+
+
+def _ver(doc: dict) -> tuple[int, ...]:
+    return tuple(int(x) for x in str(doc["info"]["version"]).split("."))
+
+
+def _methods(doc: dict) -> list[str]:
+    """契约声明的方法（Method 枚举）。v0.9 / v1.0 是六个学科方法，v1.1 多一个只读的 present_item。
+    枚举缺失或被改坏时退回六个方法，由 check_v11_additive 报出。"""
+    enum = _schemas(doc).get("Method", {}).get("enum")
+    return [m for m in enum if m in RESPONSES] if isinstance(enum, list) and enum else list(METHODS)
 
 
 def _refname(ref: str) -> str:
@@ -155,7 +173,8 @@ def check_structure(doc: dict, errors: list[str]) -> None:
     if missing:
         errors.append(f"PluginResultBase 缺少必填字段：{sorted(missing)}")
 
-    for m in METHODS:
+    methods = _methods(doc)
+    for m in methods:
         path = f"/{m}"
         if path not in doc.get("paths", {}):
             errors.append(f"缺少方法路径 {path}")
@@ -175,7 +194,10 @@ def check_structure(doc: dict, errors: list[str]) -> None:
         ctx = _context_ref(schemas.get(req_name, {})) if req_name else None
         if m in METERED and ctx != "MeteredContext":
             errors.append(f"{m} 是消耗类方法，context 必须基于 MeteredContext（usage_id 必填）")
-        if m not in METERED and ctx != "RequestContext":
+        if m == "present_item":  # v1.1：题面与学生无关，用自己的上下文（不带 student_ref、usage_id）
+            if ctx != "PresentItemContext":
+                errors.append("present_item 的 context 必须是 PresentItemContext（不带 student_ref、usage_id）")
+        elif m not in METERED and ctx != "RequestContext":
             errors.append(f"{m} 是非消耗类方法，context 应基于 RequestContext")
 
     ctx = schemas.get("RequestContext", {})
@@ -187,9 +209,12 @@ def check_structure(doc: dict, errors: list[str]) -> None:
     if "semantics" not in base.get("required", []):
         errors.append("PluginResultBase.semantics 必须必填（内容准入）")
 
-    for name in SCAN_ROOTS:
+    for name in [*(RESPONSES[m] for m in methods), "JobStatus"]:
         if name in schemas:
             errors.extend(_free_text_leaks(doc, name))
+    extra_paths = sorted(p for p in doc.get("paths", {}) if p.lstrip("/") in RESPONSES and p.lstrip("/") not in methods)
+    if extra_paths:
+        errors.append(f"有方法路径不在 Method 枚举里（能力声明与覆盖率统计不到它）：{extra_paths}")
 
     # 规则 1/2：适配器需要的数据由平台放进请求（内容，不是 ID），适配器不查库
     need_content = {
@@ -277,7 +302,7 @@ def check_examples(doc: dict, errors: list[str], path: Path = DEFAULT_SPEC) -> N
     unused = set(examples) - used
     if unused:
         errors.append(f"有示例没有挂到任何操作上：{sorted(unused)}")
-    for m in METHODS:
+    for m in _methods(doc):
         try:
             has = doc["paths"][f"/{m}"]["post"]["requestBody"]["content"]["application/json"].get("examples")
         except KeyError:
@@ -303,12 +328,17 @@ def check_counterexamples(doc: dict, errors: list[str], path: Path = DEFAULT_SPE
     sys.path.insert(0, str(HERE.parent / "tests"))
     from counterexamples import CASES  # noqa: PLC0415
     from counterexamples_v1 import V1_CASES  # noqa: PLC0415
+    from counterexamples_v11 import V11_CASES  # noqa: PLC0415
 
     registry, uri = _registry(doc, path)
     examples = doc["components"]["examples"]
-    cases = [*CASES, *(V1_CASES if doc["info"]["version"] == "1.0.0" else [])]
+    # v1.0 的反例对 v1.1 照样成立（v1.1 只做增量）；v1.1 另有 present_item 的反例
+    cases = [*CASES, *(V1_CASES if _ver(doc) >= (1, 0, 0) else []), *(V11_CASES if _ver(doc) >= (1, 1, 0) else [])]
     for case in cases:
         value = case.build(examples)
+        if not isinstance(value, dict):  # mutate 误返回了被删掉的值（dict.pop）：反例变成了别的东西，证明不了规则
+            errors.append(f"反例构造错了（实例不是对象）：{case.name}")
+            continue
         if _validator(registry, uri, case.schema).is_valid(value):
             errors.append(f"反例未被拒绝：{case.name}（{case.rule}）")
 
@@ -342,9 +372,16 @@ def check_versions(doc: dict, errors: list[str]) -> None:
         "PluginResultBase": schemas["PluginResultBase"]["properties"]["contract_version"].get("const"),
         "Capabilities": schemas["Capabilities"]["properties"]["contract_version"].get("const"),
     }
+    if "PresentItemContext" in schemas:  # v1.1
+        found["PresentItemContext"] = schemas["PresentItemContext"].get("properties", {}).get("contract_version", {}).get("const")
     for where, v in found.items():
         if str(v) != version:
             errors.append(f"{where}.contract_version（{v}）与 info.version（{version}）不一致")
+    # 能力声明必须逐一声明 Method 枚举里的每个方法（一致性测试按 Method 枚举核对能力声明）
+    declared = schemas["Capabilities"]["properties"]["methods"]
+    enum = set(schemas.get("Method", {}).get("enum", []))
+    if set(declared.get("required", [])) != enum or set(declared.get("properties", {})) != enum:
+        errors.append(f"Capabilities.methods 的必填与属性必须正好是 Method 枚举（{sorted(enum)}）")
 
 
 V1_FIELDS = {  # v1.0 与两个核心、考情库、输入通道的衔接字段（评审 svc-#1、#5、#6、pol-#1、ADR 15）
@@ -359,8 +396,9 @@ V1_CODES = {"UNAUTHENTICATED", "MODE_NOT_SUPPORTED"}  # 评审 N1、N9
 
 
 def check_v1_rules(doc: dict, errors: list[str]) -> None:
-    """v1.0 才有的结构要求：衔接字段都在且不是必填（迁移期平台未必能填）；新增错误码在枚举里；预测不在报告里。"""
-    if doc["info"]["version"] != "1.0.0":
+    """v1.0 起的结构要求：衔接字段都在且不是必填（迁移期平台未必能填）；新增错误码在枚举里；预测不在报告里。
+    v1.1 以 v1.0 为底，同样适用。"""
+    if _ver(doc) < (1, 0, 0):
         return
     schemas = _schemas(doc)
     for req, fields in V1_FIELDS.items():
@@ -377,13 +415,185 @@ def check_v1_rules(doc: dict, errors: list[str]) -> None:
         errors.append("ReportFields 不能再有 forecast（评审 sie-#2：预测只由洞察服务提供）")
 
 
+# ---------- v1.1：present_item（PLT-12，specs/present-item-contract/spec.md） ----------
+PRESENT_SCHEMAS = {"PresentItemContext", "PresentItemRequest", "PresentItemResponse", "PresentedItem", "PresentedOption", "AnswerFormat", "LicenseState",
+                   "RichText", "RichParagraph", "RichInline", "RichTextRun", "RichMathRun", "RichImageRun"}
+# 受限富文本字段的探针：每个 pattern 必须拒收 reject、接受 accept（防止有人把 pattern 放宽成“任意文字”而扫描看不出来）
+# 双向文本控制符、零宽与方向标记、行/段分隔符、BOM、C1 控制字符：都能让显示内容与实际内容不一致（审查建议 4）
+INVISIBLE_PROBES = ["a\u202eb", "a\u202ab", "a\u2066b", "a\u2069b", "a\u200bb", "a\u200fb", "a\u2028b",
+                    "a\u2029b", "a\ufeffb", "a\u0080b", "a\u0085b", "a\u009fb"]
+PRESENT_PROBES = {
+    ("RichTextRun", "text"): (["<script>alert(1)</script>", "x<y", "<img src=x onerror=alert(1)>", "a\u0000b", "a\u001bb",
+                               *INVISIBLE_PROBES],
+                              ["（合成）把下面的式子化简：x = 1", "第 2 步：a+b", "温度 30°C，é"]),
+    ("RichImageRun", "alt"): (["<b>图</b>", "a\u0007b", *INVISIBLE_PROBES], ["（合成）一个直角三角形"]),
+    ("RichMathRun", "latex"): (["\\href{https://x.invalid}{y}", "\\url{https://x.invalid}", "\\includegraphics{a.png}",
+                                "\\htmlClass{a}{b}", "\\def\\x{1}", "\\newcommand{\\a}{b}", "x^{\\input{f}}", "解：x=1"],
+                               ["\\frac{1}{2}", "\\left(x-1\\right)^2", "x<3", "\\sqrt{2}\\times 3", "\\text{cm}"]),
+    ("RichImageRun", "image_ref"): (["https://example.invalid/a.png", "javascript:alert(1)", "data:image/png;base64,AAAA",
+                                     "objstore://../etc/passwd x"], ["objstore://synthetic/aya/fig-01.png"]),
+}
+
+
+def _local_refs(node, schemas: dict, seen: set[str]):
+    """深度遍历 schema（跟着本文件的 $ref 走），产出每个节点。"""
+    if isinstance(node, list):
+        for x in node:
+            yield from _local_refs(x, schemas, seen)
+        return
+    if not isinstance(node, dict):
+        return
+    yield node
+    ref = node.get("$ref")
+    if isinstance(ref, str) and ref.startswith("#/components/schemas/"):
+        name = _refname(ref)
+        if name not in seen:
+            seen.add(name)
+            yield from _local_refs(schemas.get(name, {}), schemas, seen)
+    for k, v in node.items():
+        if k not in ("$ref", "description", "examples", "enum", "const", "pattern"):
+            yield from _local_refs(v, schemas, seen)
+
+
+def check_present_item(doc: dict, errors: list[str]) -> None:
+    """v1.1 起：present_item 的结构要求。
+    1. 题面 schema 树（含引用）里没有答案类字段名（ANSWER_FIELD_NAMES，与学习服务、一致性测试同一份）；
+    2. 题面结果的每个对象都 additionalProperties: false，每个数组都有 maxItems；
+    3. 受限富文本字段的 pattern 用探针核对：拒收 HTML 标签、控制字符、危险 LaTeX 命令、公网 URL；
+    4. 请求必须带 item_ref 与 content_version；响应不得带证据。"""
+    if _ver(doc) < (1, 1, 0):
+        return
+    sys.path.insert(0, str(HERE.parent / "python"))
+    from starbuddy_contract.present import ANSWER_FIELD_NAMES  # noqa: PLC0415
+
+    schemas = _schemas(doc)
+    missing = sorted(PRESENT_SCHEMAS - set(schemas))
+    if missing:
+        errors.append(f"v1.1 缺少 present_item 的 schema：{missing}")
+        return
+    for node in _local_refs(schemas["PresentItemResponse"], schemas, {"PresentItemResponse"}):
+        for k in node.get("properties", {}) if isinstance(node.get("properties"), dict) else {}:
+            if str(k).lower() in ANSWER_FIELD_NAMES:
+                errors.append(f"present_item 题面里出现答案类字段 {k}（题面不得含答案、解析、采分点、Rubric）")
+        if node.get("patternProperties") or node.get("unevaluatedProperties") is True:
+            errors.append("present_item 题面不得用 patternProperties / unevaluatedProperties: true 放开字段")
+    for node in _local_refs(schemas["PresentedItem"], schemas, {"PresentedItem"}):
+        if node.get("type") == "object" and node.get("additionalProperties") is not False:
+            errors.append("present_item 题面结果的对象必须 additionalProperties: false")
+        if node.get("type") == "array" and "maxItems" not in node:
+            errors.append("present_item 题面结果的数组必须有 maxItems")
+    for (schema, prop), (reject, accept) in PRESENT_PROBES.items():
+        node = schemas[schema].get("properties", {}).get(prop, {})
+        pat = node.get("pattern")
+        if not isinstance(pat, str):
+            errors.append(f"{schema}.{prop} 没有 pattern（受限富文本必须约束字符）")
+            continue
+        try:
+            rx = re.compile(pat)
+        except re.error as exc:
+            errors.append(f"{schema}.{prop} 的 pattern 不能编译：{exc}")
+            continue
+        for probe in reject:
+            if rx.search(probe):
+                errors.append(f"{schema}.{prop} 的 pattern 接受了不该接受的内容（探针 {probe[:24]!r}）")
+        for probe in accept:
+            if not rx.search(probe):
+                errors.append(f"{schema}.{prop} 的 pattern 拒收了正常内容（探针 {probe[:24]!r}）")
+    req = schemas["PresentItemRequest"]
+    if not {"context", "item_ref", "content_version"} <= set(req.get("required", [])) or req.get("additionalProperties") is not False:
+        errors.append("PresentItemRequest 必须要求 context、item_ref、content_version，且不放开多余字段")
+    pctx = schemas["PresentItemContext"]
+    pprops = pctx.get("properties", {}) if isinstance(pctx.get("properties"), dict) else {}
+    if pctx.get("additionalProperties") is not False:
+        errors.append("PresentItemContext 必须 additionalProperties: false（不能夹带 student_ref、usage_id）")
+    for banned in ("student_ref", "usage_id"):
+        if banned in pprops or banned in pctx.get("required", []):
+            errors.append(f"PresentItemContext 不得有 {banned}（题面与学生无关、不计量）")
+    if not {"request_id", "subject", "data_class", "contract_version"} <= set(pctx.get("required", [])):
+        errors.append("PresentItemContext 必须要求 request_id、subject、data_class、contract_version")
+    if "idempotency_key" in pctx.get("required", []):
+        errors.append("PresentItemContext.idempotency_key 应为可选（只读请求不进幂等缓存）")
+    resp_parts = schemas["PresentItemResponse"].get("allOf", [])
+    extra = resp_parts[1] if len(resp_parts) > 1 else {}
+    if extra.get("properties", {}).get("evidence_ids", {}).get("maxItems") != 0 or extra.get("not") != {"required": ["evidence"]}:
+        errors.append("PresentItemResponse 不得产生证据（evidence_ids 为空、不带 evidence）")
+
+
+V11_VERSION_CONSTS = (("RequestContext", "contract_version"), ("PluginResultBase", "contract_version"), ("Capabilities", "contract_version"))
+
+
+def _bump_versions(value, old: str, new: str):
+    """把实例里的 contract_version 从 old 换成 new（只改这个键），用于逐项对照两版示例。"""
+    if isinstance(value, dict):
+        return {k: (new if k == "contract_version" and v == old else _bump_versions(v, old, new)) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_bump_versions(v, old, new) for v in value]
+    return value
+
+
+def check_v11_additive(v1: dict, v11: dict, errors: list[str]) -> None:
+    """v1.1 只做增量（spec 范围第 1 条：不改 v1.0 正在表决的 61 项）：
+    v1.0 的每个 schema、路径、响应、示例在 v1.1 里逐字不变；只允许三处契约版本常量改成 1.1.0、Method 枚举与能力声明
+    多一个 present_item、示例里的 contract_version 改成 1.1.0、能力声明示例多一个 present_item；新增的只能是 present_item 的
+    路径与 schema、示例。"""
+    import copy  # noqa: PLC0415
+
+    if str(v11["info"]["version"]) != "1.1.0":
+        errors.append(f"v1.1 的 info.version 应为 1.1.0，实为 {v11['info']['version']}")
+    s1, s11 = copy.deepcopy(_schemas(v1)), copy.deepcopy(_schemas(v11))
+    for name, prop in V11_VERSION_CONSTS:
+        for s in (s1, s11):
+            s.get(name, {}).get("properties", {}).get(prop, {}).pop("const", None)
+    m1, m11 = s1.get("Method", {}).get("enum", []), s11.get("Method", {}).get("enum", [])
+    if m11 != [*m1, "present_item"]:
+        errors.append(f"v1.1 的 Method 枚举必须是 v1.0 的六个方法加 present_item，实为 {m11}")
+    s11.get("Method", {})["enum"] = list(m1)
+    caps = s11.get("Capabilities", {}).get("properties", {}).get("methods", {})
+    if "present_item" not in caps.get("required", []) or "present_item" not in caps.get("properties", {}):
+        errors.append("v1.1 的能力声明必须声明 present_item")
+    caps.get("properties", {}).pop("present_item", None)
+    if isinstance(caps.get("required"), list):
+        caps["required"] = [m for m in caps["required"] if m != "present_item"]
+    caps.pop("description", None)
+    s1.get("Capabilities", {}).get("properties", {}).get("methods", {}).pop("description", None)
+    for name, sch in s1.items():
+        if name not in s11:
+            errors.append(f"v1.1 删掉了 v1.0 的 schema {name}")
+        elif s11[name] != sch:
+            errors.append(f"v1.1 改动了 v1.0 的 schema {name}（只允许增量）")
+    extra = set(s11) - set(s1)
+    if extra - PRESENT_SCHEMAS:
+        errors.append(f"v1.1 新增了 present_item 之外的 schema：{sorted(extra - PRESENT_SCHEMAS)}")
+    p1, p11 = v1.get("paths", {}), v11.get("paths", {})
+    for path, item in p1.items():
+        if p11.get(path) != item:
+            errors.append(f"v1.1 改动或删掉了 v1.0 的路径 {path}")
+    if set(p11) - set(p1) != {"/present_item"}:
+        errors.append(f"v1.1 新增的路径只能是 /present_item，实为 {sorted(set(p11) - set(p1))}")
+    for key in ("responses", "securitySchemes"):
+        if v1["components"].get(key) != v11["components"].get(key):
+            errors.append(f"v1.1 改动了 v1.0 的 components.{key}")
+    if v1.get("security") != v11.get("security") or v1.get("servers") != v11.get("servers"):
+        errors.append("v1.1 改动了 v1.0 的 security / servers")
+    e1, e11 = v1["components"].get("examples", {}), copy.deepcopy(v11["components"].get("examples", {}))
+    cap_ex = e11.get("CapabilitiesAya", {}).get("value", {}).get("methods", {})
+    cap_ex.pop("present_item", None)
+    for name, ex in e1.items():
+        if name not in e11:
+            errors.append(f"v1.1 删掉了 v1.0 的示例 {name}")
+        elif e11[name] != _bump_versions(ex, "1.0.0", "1.1.0"):
+            errors.append(f"v1.1 改动了 v1.0 的示例 {name}（只允许把 contract_version 换成 1.1.0）")
+    if any(not n.startswith("PresentItem") for n in set(e11) - set(e1)):
+        errors.append(f"v1.1 新增的示例只能是 present_item 的：{sorted(set(e11) - set(e1))}")
+
+
 def run_checks(doc: dict, path: Path = DEFAULT_SPEC) -> list[str]:
     errors: list[str] = []
     try:
         validate_openapi(doc, base_uri=path.resolve().as_uri())
     except Exception as exc:  # noqa: BLE001 - 打印校验器的原始信息
         errors.append(f"OpenAPI 3.1 校验失败：{str(exc)[:500]}")
-    for fn in (check_structure, check_versions, check_v1_rules):
+    for fn in (check_structure, check_versions, check_v1_rules, check_present_item):
         try:
             fn(doc, errors)
         except Exception as exc:  # noqa: BLE001 - 结构不完整时报错而不是崩溃
@@ -776,12 +986,20 @@ def main() -> int:
     else:
         doc = load(DEFAULT_SPEC)
         v1 = load(V1_SPEC)
-        errors = run_checks(doc, DEFAULT_SPEC) + [f"v1.0：{e}" for e in run_checks(v1, V1_SPEC)]
+        v11 = load(V11_SPEC)
+        errors = (run_checks(doc, DEFAULT_SPEC) + [f"v1.0：{e}" for e in run_checks(v1, V1_SPEC)]
+                  + [f"v1.1：{e}" for e in run_checks(v11, V11_SPEC)])
         try:
             n_breaking = check_breaking(doc, v1, errors)
         except Exception as exc:  # noqa: BLE001
             errors.append(f"check_breaking 无法完成：{type(exc).__name__}: {exc}")
             n_breaking = 0
+        additive: list[str] = []
+        try:
+            check_v11_additive(v1, v11, additive)
+        except Exception as exc:  # noqa: BLE001
+            additive.append(f"check_v11_additive 无法完成：{type(exc).__name__}: {exc}")
+        errors += [f"v1.1：{e}" for e in additive]
     internal_refs = check_internal(errors) if len(sys.argv) <= 1 else None
     service_summary = None
     if len(sys.argv) <= 1:
@@ -800,11 +1018,14 @@ def main() -> int:
     sys.path.insert(0, str(HERE.parent / "tests"))
     from counterexamples import CASES  # noqa: PLC0415
     from counterexamples_v1 import V1_CASES  # noqa: PLC0415
+    from counterexamples_v11 import V11_CASES  # noqa: PLC0415
     print(f"contract-test: 通过（OpenAPI 3.1 合法；{n_ex} 个示例符合 schema 且证据引用闭合；"
           f"{len(CASES)} 个反例全部被拒绝（v1.0 另加 {len(V1_CASES)} 个）；六方法信封、计量字段、无约束文本扫描、JobStatus 绑定、示例无 PII"
           + (f"；learning-internal v0 与 v1 合法、{internal_refs} 个跨文件引用可解析、v1 信封与摘要 {len(INTERNAL_V1_COUNTER)} 个反例全部被拒绝" if internal_refs is not None else "")
           + (f"；{service_summary}" if service_summary else "")
           + (f"；v1.0 候选版合法、{len(v1['components']['examples'])} 个示例、{n_breaking} 条破坏性变更 v0.9 接受 / v1.0 拒绝"
+             f"；v1.1 候选版合法、{len(v11['components']['examples'])} 个示例、只做增量（v1.0 的 schema / 路径 / 示例逐项不变），"
+             f"present_item 另加 {len(V11_CASES)} 个反例全部被拒绝、答案类字段名黑名单与受限富文本探针通过"
              if len(sys.argv) <= 1 else "") + "）")
     return 0
 

@@ -13,7 +13,7 @@ from collections import defaultdict
 
 import pytest
 
-from support import METHODS, AdapterClient, load_fixtures
+from support import METHODS, AdapterClient, coverage_report, load_fixtures
 
 _results: dict[str, list[str]] = defaultdict(list)
 _untagged_failures: list[str] = []
@@ -78,28 +78,7 @@ def pytest_sessionfinish(session, exitstatus):
         caps = client.call("GET", "capabilities").body or {}
     except Exception:  # noqa: BLE001 — 报告尽力而为
         caps, fx = {}, None
-    # 任何全局用例失败（例如不校验令牌、契约版本不对），或整套测试没有通过，所有方法都不算“通过”（契约守护 S1）
-    suite_ok = int(exitstatus) == 0 and not _untagged_failures
-    methods = {}
-    for m in METHODS:
-        implemented = bool(((caps.get("methods") or {}).get(m) or {}).get("implemented"))
-        outcomes = _results.get(m, [])
-        methods[m] = {
-            "implemented": implemented,
-            "tests": len(outcomes),
-            "failed": sum(o != "passed" for o in outcomes),
-            "passed": suite_ok and implemented and bool(outcomes) and all(o == "passed" for o in outcomes),
-        }
-    report = {
-        "subject": fx.subject if fx else None,
-        "adapter_version": caps.get("adapter_version"),
-        "contract_version": caps.get("contract_version"),
-        "implemented": sum(v["implemented"] for v in methods.values()),
-        "passed": sum(v["passed"] for v in methods.values()),
-        "of": len(METHODS),
-        "methods": methods,
-        "suite_exit_status": int(exitstatus),
-        "global_failures": _untagged_failures,
-    }
+    # Gate 0 分母只算六个学科方法，present_item 单列（support.coverage_report）
+    report = coverage_report(caps, _results, fx.subject if fx else None, int(exitstatus), _untagged_failures)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=2)

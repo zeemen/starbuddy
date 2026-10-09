@@ -4,6 +4,7 @@
 // 任何一条形状不对，整页按“暂时无法获取”处理（不挑着显示一部分）；唯一的例外是知识节点编号：不合前端口径时只隐藏这一行的编号（node_id 置 null），
 // 其余照常显示（编号只是给人看的标签，不参与任何判断）。
 import type { PracticeApi } from '../lib/practice-api.ts';
+import { pickRich, type RichItem } from '../lib/rich-item.ts';
 
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 /** 公共知识层的节点编号（与 BFF 今日计划同一口径）；不合的不显示 */
@@ -25,7 +26,8 @@ export interface EntryView {
   entry_id: string; node_id: string | null; cognitive_level: (typeof LEVELS)[number]; source: (typeof SOURCES)[number]; status: EntryStatus;
   round: number; max_rounds: number; next_round_at: string | null;
 }
-export interface ItemView { format: 'single' | 'multi' | 'fill'; stem: string; options?: { key: string; text: string }[] }
+/** rich：PLT-12 受限富文本题面（只在学习服务开了 present_item 题面来源时有；src/lib/rich-item.ts） */
+export interface ItemView { format: 'single' | 'multi' | 'fill'; stem: string; options?: { key: string; text: string }[]; rich?: RichItem }
 export interface ReadyView { entry_id: string; round: number; item: ItemView; ticket: string }
 export interface AnswerView {
   /** 待复核时为 null：页面只显示“等待复核”，不显示结论 */
@@ -72,13 +74,19 @@ export function pickNext(raw: unknown, entry: string): NextView | null {
   let opts: { key: string; text: string }[] | undefined;
   if (options !== undefined) {
     if (!Array.isArray(options) || options.length > 26
-        || !options.every((o) => isRecord(o) && typeof o['key'] === 'string' && /^[A-Z]$/.test(o['key']) && typeof o['text'] === 'string')) {
+        || !options.every((o) => isRecord(o) && typeof o['key'] === 'string' && /^[A-Za-z0-9]{1,8}$/.test(o['key']) && typeof o['text'] === 'string')) {
       return null;
     }
     opts = options.map((o) => ({ key: (o as { key: string }).key, text: (o as { text: string }).text }));
   }
   if ((format === 'fill') !== (opts === undefined || opts.length === 0)) return null;
-  return { kind: 'ready', ready: { entry_id: entry, round, ticket, item: { format, stem, ...(opts && opts.length > 0 ? { options: opts } : {}) } } };
+  // PLT-12：富文本题面按白名单重建；不合格就丢掉 rich，退回纯文字题面照常出题（与 BFF、诊断同一口径，审查建议 10）
+  let rich: RichItem | undefined;
+  if (item['rich'] !== undefined) {
+    rich = pickRich(item['rich'], (opts ?? []).map((o) => o.key)) ?? undefined;
+  }
+  return { kind: 'ready', ready: { entry_id: entry, round, ticket,
+                                   item: { format, stem, ...(opts && opts.length > 0 ? { options: opts } : {}), ...(rich ? { rich } : {}) } } };
 }
 
 /** 作答结果：判分结论（契约枚举）与条目新状态；待复核（pending_review 或 needs_review）时不给结论 */

@@ -341,6 +341,69 @@ V1_MUTATIONS = {
 }
 
 
+# ---------- v1.1 候选版（PLT-12 present_item，specs/present-item-contract/spec.md 验收第 1 条） ----------
+PI = f"{S}.PresentedItem"
+V11_MUTATIONS = {
+    # 答案类字段
+    "题面结果加 answer 字段（受约束的编码，自由文本扫描看不出来）": assign(f"{PI}.properties.answer",
+                                                            {"type": "array", "maxItems": 10, "items": {"type": "string", "pattern": "^[A-Z]$"}}),
+    "选项加 is_correct 布尔": assign(f"{S}.PresentedOption.properties.is_correct", {"type": "boolean"}),
+    "题面结果加 explanation 自由文本": assign(f"{PI}.properties.explanation", {"type": "string", "maxLength": 500}),
+    "作答格式加 rubric_version": assign(f"{S}.AnswerFormat.properties.rubric_version", {"$ref": "#/components/schemas/VersionedName"}),
+    "题面结果放开多余字段": assign(f"{PI}.additionalProperties", True),
+    "选项放开多余字段": delete(f"{S}.PresentedOption.additionalProperties"),
+    "段落放开多余字段": assign(f"{S}.RichParagraph.additionalProperties", True),
+    "响应信封外放开字段": delete(f"{S}.PresentItemResponse.unevaluatedProperties"),
+    # 受限富文本
+    "文字片段允许尖括号": assign(f"{S}.RichTextRun.properties.text.pattern", "^[\\s\\S]{1,2000}$"),
+    "文字片段去掉 pattern": delete(f"{S}.RichTextRun.properties.text.pattern"),
+    "文字片段去掉长度上限": delete(f"{S}.RichTextRun.properties.text.maxLength"),
+    "公式允许 \\href": assign(f"{S}.RichMathRun.properties.latex.pattern", "^[\\x20-\\x7E]{1,1000}$"),
+    "图片引用允许公网 URL": assign(f"{S}.RichImageRun.properties.image_ref.pattern", "^(objstore|https)://[a-z0-9][a-z0-9/_.\\-]{0,255}$"),
+    "图片说明允许 HTML": assign(f"{S}.RichImageRun.properties.alt.pattern", "^.{1,200}$"),
+    "片段加入 html 类型": lambda d: _get(d, f"{S}.RichInline.oneOf").append(
+        {"type": "object", "required": ["type", "html"], "additionalProperties": False,
+         "properties": {"type": {"const": "html"}, "html": {"type": "string", "maxLength": 2000}}}),
+    "题干段落数不设上限": delete(f"{S}.RichText.maxItems"),
+    # 证据、计量与请求
+    "题面响应允许证据 ID": delete(f"{S}.PresentItemResponse.allOf.1.properties.evidence_ids"),
+    "题面响应允许 evidence 草稿": delete(f"{S}.PresentItemResponse.allOf.1.not"),
+    "题面请求允许 usage_id": assign(f"{S}.PresentItemRequest.properties.context", {"$ref": "#/components/schemas/RequestContext"}),
+    "题面改成消耗类": assign(f"{S}.PresentItemRequest.properties.context", {"$ref": "#/components/schemas/MeteredContext"}),
+    # PresentItemContext（审查阻断 2）
+    "题面上下文加 student_ref": assign(f"{S}.PresentItemContext.properties.student_ref", {"type": "string", "format": "uuid"}),
+    "题面上下文加 usage_id": assign(f"{S}.PresentItemContext.properties.usage_id", {"type": "string", "format": "uuid"}),
+    "题面上下文放开多余字段": delete(f"{S}.PresentItemContext.additionalProperties"),
+    "题面上下文允许 L0": assign(f"{S}.PresentItemContext.properties.data_class.allOf.1.enum", ["L0", "L1", "L2", "L3"]),
+    "题面上下文幂等键改成必填": lambda d: _get(d, f"{S}.PresentItemContext.required").append("idempotency_key"),
+    "题面上下文版本停在 1.0.0": assign(f"{S}.PresentItemContext.properties.contract_version.const", "1.0.0"),
+    "题面上下文不要求 request_id": lambda d: _get(d, f"{S}.PresentItemContext.required").remove("request_id"),
+    # 不可见字符（审查建议 4）
+    "文字片段允许双向控制符": assign(f"{S}.RichTextRun.properties.text.pattern",
+                          "^[^<>\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F]{1,2000}$"),
+    "文字片段允许零宽字符": assign(f"{S}.RichTextRun.properties.text.pattern",
+                         "^[^<>\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F-\\u009F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069]{1,2000}$"),
+    "图片说明允许 C1 控制字符": assign(f"{S}.RichImageRun.properties.alt.pattern",
+                           "^[^<>\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F\\u200B-\\u200F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069\\uFEFF]{1,200}$"),
+    "题面请求不要求 content_version": assign(f"{S}.PresentItemRequest.required", ["context", "item_ref"]),
+    "删除题面请求的前缀规则": delete(f"{S}.PresentItemRequest.allOf"),
+    # 题面完整性、版权与题型
+    "删除“withheld 不给题干”": drop_allof_clause("PresentedItem", "题面不可展示时"),
+    "删除“版权受限不给题面”": drop_allof_clause("PresentedItem", "版权受限"),
+    "删除“完整题面必须有题干”": drop_allof_clause("PresentedItem", "题面完整时"),
+    "删除“选择题必须给选项”": drop_allof_clause("PresentedItem", "选择题必须给选项"),
+    "删除“单选只能选一项”": drop_allof_clause("PresentedItem", "单选只能选一项"),
+    "版权状态放开": assign(f"{S}.LicenseState", {"type": "string", "pattern": "^[a-z_]{1,32}$"}),
+    # 只做增量
+    "v1.1 改动了 v1.0 已表决的 schema": lambda d: _get(d, f"{S}.GradeResult.properties.verdict.enum").append("maybe"),
+    "v1.1 改动了 v1.0 的示例": assign("components.examples.PlanRequestAya.value.constraints.time_budget_minutes", 45),
+    "Method 枚举去掉 present_item": lambda d: _get(d, f"{S}.Method.enum").remove("present_item"),
+    "能力声明不声明 present_item": lambda d: _get(d, f"{S}.Capabilities.properties.methods.required").remove("present_item"),
+    "信封版本停在 1.0.0": assign(f"{S}.PluginResultBase.properties.contract_version.const", "1.0.0"),
+    "删掉 /present_item 路径": delete("paths./present_item"),
+}
+
+
 # ---------- 学习服务内部 API v1（1.1.0：掌握读取与验证任务，KGE-04 第二步 PR 3） ----------
 P = "paths"
 INTERNAL_MUTATIONS = {
@@ -472,6 +535,25 @@ def main() -> int:
         if not [e for e in errs if "OpenAPI 3.1 校验失败" not in e and "无法完成" not in e]:
             missed.append(f"v1.0：{name}")
 
+    v11_base = cc.load(cc.V11_SPEC)
+    v11_baseline = cc.run_checks(v11_base, cc.V11_SPEC)
+    cc.check_v11_additive(v1_base, v11_base, v11_baseline)
+    if v11_baseline:
+        print("mutation-test: v1.1 候选版基线本身就不通过，先修契约：")
+        for e in v11_baseline:
+            print(f"  - {e}")
+        return 1
+    for name, mutate in V11_MUTATIONS.items():
+        doc = copy.deepcopy(v11_base)
+        mutate(doc)
+        errs = cc.run_checks(doc, cc.V11_SPEC)
+        try:
+            cc.check_v11_additive(v1_base, doc, errs)
+        except Exception as exc:  # noqa: BLE001 - 结构被改坏导致检查崩溃不算“发现”
+            errs.append(f"无法完成：{type(exc).__name__}")
+        if not [e for e in errs if "OpenAPI 3.1 校验失败" not in e and "无法完成" not in e]:
+            missed.append(f"v1.1：{name}")
+
     internal_base = cc.load(cc.INTERNAL_SPECS[1])
     internal_baseline: list[str] = []
     cc._check_internal_v1_examples(internal_baseline, copy.deepcopy(internal_base))
@@ -491,14 +573,15 @@ def main() -> int:
         if not [e for e in errs if "无法完成" not in e]:
             missed.append(f"learning-internal v1：{name}")
 
-    total = len(MUTATIONS) + len(SERVICE_MUTATIONS) + len(ALLOWLIST_MUTATIONS) + len(V1_MUTATIONS) + len(INTERNAL_MUTATIONS)
+    total = (len(MUTATIONS) + len(SERVICE_MUTATIONS) + len(ALLOWLIST_MUTATIONS) + len(V1_MUTATIONS) + len(V11_MUTATIONS)
+             + len(INTERNAL_MUTATIONS))
     if missed:
         print(f"mutation-test: 失败，{len(missed)}/{total} 个变异没有被发现：")
         for m in missed:
             print(f"  - {m}")
         return 1
     print(f"mutation-test: 通过（{total} 个变异全部被发现，其中服务契约 {len(SERVICE_MUTATIONS)} 个、允许清单 {len(ALLOWLIST_MUTATIONS)} 个、v1.0 候选版 {len(V1_MUTATIONS)} 个、"
-          f"learning-internal v1 {len(INTERNAL_MUTATIONS)} 个）")
+          f"v1.1 候选版（present_item）{len(V11_MUTATIONS)} 个、learning-internal v1 {len(INTERNAL_MUTATIONS)} 个）")
     return 0
 
 

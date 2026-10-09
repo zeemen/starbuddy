@@ -26,6 +26,7 @@ from ..config import AdapterTarget
 from ..contract import UnsupportedContractVersion, plugin_contract
 from ..diagnosis.source import SourceError
 from ..errors import IngestError
+from ..present_item import present_view
 from ..service import IngestService
 from . import queue as Q
 from . import select as S
@@ -198,7 +199,11 @@ class PracticeService:
         picks = await self._variation(target, student, subject, entry, tier, snap.recent_items, category, admission)
         if isinstance(picks, str):
             return self._unavailable(picks)
-        chosen = next(((c, v) for c in picks if (v := presenter.present(subject, c.item_id)) is not None), None)
+        chosen = None
+        for c in picks:
+            if (v := await present_view(presenter, subject, c.item_id)) is not None:
+                chosen = (c, v)
+                break
         if chosen is None or presenter.rubric_version(subject, chosen[0].item_id) is None:
             raise err(501, "PRESENTER_UNAVAILABLE", "no item view for the selected item")
         c, item_view = chosen

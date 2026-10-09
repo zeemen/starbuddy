@@ -28,6 +28,7 @@ import { withAccount } from '../metering/db.ts';
 import { usageIdFor } from '../metering/uuid.ts';
 import { P } from '../http/problems.ts';
 import type { Reply } from '../http/routes.ts';
+import { pickRich, type RichItem } from '../item-rich.ts';
 import type { PracticeLearning, PracticeOutcome } from './learning-client.ts';
 import { MAX_SEALED, openTicket, sealTicket, SEALED_PREFIX, type ItemFormat } from './ticket.ts';
 
@@ -87,7 +88,8 @@ export const EXPIRY_MARGIN_MS = 30_000;
 /** 学习服务调用（含重试与每次调用的超时）的整体总时限 */
 export const RETRY_BUDGET_MS = 45_000;
 const MAX_FILL = 200;
-const CHOICE_KEY = /^[A-Z]$/;
+/** 选项键：与插件契约 PresentedOption.key 同一规则（PLT-12 审查建议 10；适配器题面的选项键原样转到这里） */
+const CHOICE_KEY = /^[A-Za-z0-9]{1,8}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const RFC3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}:\d{2})$/;
 const CODE = /^[a-z][a-z0-9_]{0,47}$/;
@@ -247,11 +249,11 @@ export function pickEntry(e: unknown): Record<string, unknown> | null {
 }
 
 interface Ready {
-  entry_id: string; round: number; item: { format: ItemFormat; stem: string; options?: { key: string; text: string }[] };
+  entry_id: string; round: number; item: { format: ItemFormat; stem: string; options?: { key: string; text: string }[]; rich?: RichItem };
   ticket: string; expires_at: string;
 }
 
-function readReady(v: Record<string, unknown>, entry: string): Ready | null {
+export function readReady(v: Record<string, unknown>, entry: string): Ready | null {
   const { entry_id, round, item, ticket, expires_at } = v;
   if (entry_id !== entry || !isInt(round, 1, 1000) || typeof ticket !== 'string' || ticket === '' || ticket.length > 1024
       || !isTime(expires_at) || !isRecord(item)) {
@@ -266,8 +268,14 @@ function readReady(v: Record<string, unknown>, entry: string): Ready | null {
     opts = options.map((o) => ({ key: (o as { key: string }).key, text: (o as { text: string }).text }));
   }
   if ((format === 'fill') !== (opts === undefined || opts.length === 0)) return null;
+  // PLT-12：受限富文本题面（学习服务开了 LEARNING_PRESENT_ITEM_SOURCE=adapter 时才有）。按白名单重建；不合格就丢掉 rich，
+  // 退回纯文字题面照常出题（与诊断同一口径，审查建议 10；纯文字题面由 React 按文本转义）
+  let rich: RichItem | undefined;
+  if (item['rich'] !== undefined) {
+    rich = pickRich(item['rich'], (opts ?? []).map((o) => o.key)) ?? undefined;
+  }
   return { entry_id: entry, round, ticket, expires_at,
-           item: { format, stem, ...(opts && opts.length > 0 ? { options: opts } : {}) } };
+           item: { format, stem, ...(opts && opts.length > 0 ? { options: opts } : {}), ...(rich ? { rich } : {}) } };
 }
 
 /** 作答结果：判分结论（契约枚举，来自验证器或 Rubric 的 grade 摘要）、待复核标记、条目新状态；其余一律不转 */

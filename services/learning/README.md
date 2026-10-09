@@ -235,6 +235,13 @@ staff 对应表（`kge-pages-staff-map/1`，审核台配置，由人维护，不
 - 题面：契约 `present_item` 签字前只有测试环境的合成题面（`LEARNING_DIAGNOSIS_PRESENTER=synthetic`，只允许 `LEARNING_ENV=test`、库名 `starbuddy_dev*` / `starbuddy_test*`，
   并需 `STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1`：作答走候选契约 1.0.0）；不配时诊断接口 501。
   选题信息来自合成夹具（缺省）或知识服务（`LEARNING_DIAGNOSIS_SOURCE=knowledge`，见 `config.py`）。
+  PLT-12（`specs/present-item-contract`）：`LEARNING_PRESENT_ITEM_SOURCE=adapter` 时诊断与再练的题面改经适配器 `present_item`（插件契约
+  1.1.0 候选版，`learning/present_item.py`；只在 `STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1` 时允许，否则拒绝启动），题面过两道白名单后多带
+  `rich`（受限富文本）；缺省 `synthetic`，与之前逐字节一致。判分版本与判分方式仍取合成登记（真实来源随契约另定）。
+  请求用契约的 `PresentItemContext`：不带学生 ID、幂等键与计量 ID，数据级别 L1。只展示版权状态 `original`、`licensed`、`public`
+  的题面；`unverified`、`restricted`、withheld、简答，以及停在 1.0 的学科（`CONTRACT_VERSION_UNSUPPORTED`、404 `INVALID_REQUEST`、
+  任何 501）都按没有题面（501 `PRESENTER_UNAVAILABLE`）。题面按（学科, 题号, 内容版本）进程内缓存 10 分钟。取题面不在数据库事务与
+  advisory 锁里：事务内只查缓存，没命中则回滚、在事务外取题面后重做（`ViewNotCached`，`learning/diagnosis/service.py` 的 `views_prefetched`）。
 - 年级（迁移 0045、0049，specs/policy-decisions-v0.9.1）：选题年级按会话建立时刻（服务时钟）与届别推算，建立时记在 `start_grade`；
   续做时按建立时刻、当前届别重算，不在 7–9 或与 `start_grade` 不同（会话中途届别被改）回 409 `SESSION_INCONSISTENT`，问题体带
   `session_id` 与 `reason = grade_changed`，会话不动；放弃这样的会话时记下 `abandon_reason = grade_changed`（BFF 据此退回额度）。

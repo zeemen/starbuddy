@@ -164,6 +164,10 @@ a { color: inherit; }
 .diagnosis-field { display: flex; flex-direction: column; gap: 4px; }
 .diagnosis-field textarea, .diagnosis-field input { font: inherit; padding: 8px; min-height: 44px; }
 .diagnosis-options { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--rule); padding: 8px 12px; }
+/* PLT-12 受限富文本题面（src/shell/RichItem.tsx）：公式用纯文本排版，图片只显示说明 */
+.item-rich p { margin: 0 0 8px; }
+.item-math { font-family: "Times New Roman", serif; font-style: italic; white-space: nowrap; }
+.item-figure { border: 1px dashed var(--rule); padding: 0 4px; }
 .diagnosis-options label { min-height: 44px; display: flex; align-items: center; gap: 8px; }
 .diagnosis-actions button { font: inherit; min-height: 44px; min-width: 88px; }
 

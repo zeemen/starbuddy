@@ -23,6 +23,7 @@ const TESTS = [
   "tests/pack.test.ts",
   "tests/pack-format3.test.ts",
   "tests/hint-scan.test.ts",
+  "tests/present.test.ts",
 ];
 const P = "src/methods/plan.ts";
 const V = "src/methods/variation.ts";
@@ -33,6 +34,8 @@ const A = "src/adapter.ts";
 const C = "src/content.ts";
 const AD = "src/pack/admission.ts";
 const HS = "src/pack/hint-scan.ts";
+const PR = "src/methods/present.ts";
+const RT = "src/rich-text.ts";
 
 type Edit = [file: string, from: string, to: string];
 // 名字 → 改动（原文必须恰好出现，替换第一处）
@@ -114,6 +117,30 @@ const MUTATIONS: Record<string, Edit[]> = {
   "C9 不核对结果条数": [[HS, "if (!Array.isArray(out.results) || out.results.length !== entries.length) throw", "if (!Array.isArray(out.results)) throw"]],
   "C9 不核对结果顺序": [[HS, "if (r.source !== `stdin[${i}]`) throw", "if (r.source === \"\") throw"]],
   "C9 记录严格模式带标记也能加载": [[C, 'if (scan.mode === "strict" && scan.flagged_items.length > 0) problems.push(', 'if (scan.mode === "strict" && scan.flagged_items.length < 0) problems.push(']],
+  // ---------- present_item（契约 1.1.0 候选版，PLT-12） ----------
+  "题面不按白名单投影：选项原样带出（含陷阱码）": [[PR, "return runs ? { key: o.key, content: projectRuns(runs) } : { key: o.key };", "return runs ? { ...o, content: projectRuns(runs) } : { ...o };"]],
+  "版权受限仍给题面": [[PR, 'const complete = item.stem !== undefined && license !== "restricted";', "const complete = item.stem !== undefined;"]],
+  "多选上限取正确选项数（从答案推出）": [[PR, 'max_choices: item.format === "single" ? 1 : (item.options ?? []).length', 'max_choices: item.format === "single" ? 1 : item.answer.length']],
+  "填空按标准答案的形状给 number": [[PR, '? { kind: "expression", max_length: FILL_MAX_LENGTH }', '? { kind: item.answer.every((a) => /^-?\\d+(\\.\\d+)?$/.test(a)) ? "number" : "expression", max_length: FILL_MAX_LENGTH }']],
+  "授权已核的自编题报 licensed": [[PR, 's.source_type === "self_authored" ? "original" : "licensed"', '"licensed"']],
+  "题面进了幂等缓存（挤掉 grade 的条目）": [[A, "    const item = findItem(req.item_ref);\n    return selfCheck(\"PresentItemResponse\", {",
+    "    if (idempotency.size >= cacheSize) idempotency.delete(idempotency.keys().next().value!);\n    idempotency.set(`present_item\\0${req.item_ref}`, { fingerprint: req.item_ref, at: Date.now() });\n    const item = findItem(req.item_ref);\n    return selfCheck(\"PresentItemResponse\", {"]],
+  "不设候选开关也读替代包": [[C, "  if (!src.candidateAllowed) {\n    throw new Error(`替代内容包", "  if (src.candidateAllowed === undefined) {\n    throw new Error(`替代内容包"]],
+  "替代包的版本号不带摘要": [[C, "const versionTag = altDigest ? `${pack.pack_version}-${altDigest}` : pack.pack_version;", "const versionTag = pack.pack_version;"]],
+  "叠加文件不计入摘要": [[C, "    hash.update(\"overlay\\0\").update(overlayText);\n", ""]],
+  "题面不做答案词扫描": [[C, "problems.push(...(shape.length ? shape : presentationLeakProblems(it)));", "problems.push(...shape);"]],
+  "填空题干写出答案也放行": [[C, 'if (it.format === "fill" && plain.some((s) => hintRevealsAnswer(s, answers))) out.push(', 'if (it.format === "fill" && plain.some((s) => s === answers[0])) out.push(']],
+  "“解析式”之外的“解析”也放行": [[C, "解析(?!式)|", "解析式|"]],
+  "题面不限总字数": [[C, "> MAX_TOTAL_CHARS) out.push(", "> MAX_TOTAL_CHARS * 2) out.push("]],
+  "文字片段允许双向控制符与零宽字符": [[RT, "\\u007F-\\u009F\\u200B-\\u200F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069\\uFEFF]{1,2000}$/u;", "\\u007F]{1,2000}$/u;"]],
+  "1.0.0 请求也应答题面": [[A, 'if (version !== "1.1.0") {\n      throw new ProblemError(501, "METHOD_NOT_IMPLEMENTED", "present_item', 'if (version === "0.9.0") {\n      throw new ProblemError(501, "METHOD_NOT_IMPLEMENTED", "present_item']],
+  "两处内容版本不一致不拒绝": [[A, "if (req.context.content_version && canonical(req.context.content_version) !== canonical(req.content_version)) {", "if (req.context.content_version && canonical(req.context.content_version) === \"\") {"]],
+  "顶层内容版本不核对": [[A, "checkContext({ ...req.context, content_version: req.content_version } as unknown as RequestContext, true);",
+    "checkContext(req.context as unknown as RequestContext, false);"]],
+  "内容包不检查题干": [[C, "if (it.stem !== undefined) out.push(...richTextProblems(", "if (it.stem !== undefined && it.id === \"\") out.push(...richTextProblems("]],
+  "文字片段允许尖括号": [[RT, "export const TEXT_RE = /^[^<>\\u0000", "export const TEXT_RE = /^[^\\u0000"]],
+  "公式允许 \\href": [[RT, "(?:href|url|", "(?:url|"]],
+  "能力声明 1.1.0 不声明 present_item": [[A, '...(contract.version === "1.1.0" ? { present_item: { implemented: true, async: false } } : {}),', ""]],
 };
 
 function sh(cmd: string, args: string[], cwd: string, timeoutMs = 240_000): Promise<number> {

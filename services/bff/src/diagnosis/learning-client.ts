@@ -16,7 +16,8 @@ export interface StepView {
   kind: 'adaptive' | 'process' | 'explain';
   subject: string;
   item_id: string;
-  item: { format: 'single' | 'multi' | 'fill'; stem: string; options?: { key: string; text: string }[] };
+  /** rich：PLT-12 受限富文本题面（只在学习服务 LEARNING_PRESENT_ITEM_SOURCE=adapter 时有；BFF 按 src/item-rich.ts 白名单重建后才转） */
+  item: { format: 'single' | 'multi' | 'fill'; stem: string; options?: { key: string; text: string }[]; rich?: unknown };
   probe_recorded: boolean;
   step_elapsed_sec: number;
 }

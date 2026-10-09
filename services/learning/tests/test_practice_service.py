@@ -40,6 +40,9 @@ SECRET = "synthetic-practice-ticket-secret-0000000001"
 KNOWLEDGE = AdapterTarget("http://knowledge.invalid", "synthetic-learning-to-knowledge-credential-1")
 ORCH, INSIGHT = "synthetic-orchestrator-to-learning-cred-0001", "synthetic-insight-to-learning-credential-01"
 OPENAPI = Path(__file__).resolve().parents[1] / "openapi/practice-internal.v0.yaml"
+# 合成题面（PLT-12 的假适配器 present_item 取它的文字，开关关闭时的合成题面提供者也读它）
+SYN_PRACTICE = {it["item_id"]: it for it in json.loads((Path(__file__).resolve().parents[1] / "learning/practice/fixtures/synthetic-items.json")
+                                                      .read_text(encoding="utf-8"))["items"]}
 FORBIDDEN = ("p_mastery", "mastery", "confidence", "evidence_id", "error_categor", "subject_category", "粗心", "薄弱", "answer_key")
 
 # 题目：(题号, 主节点, 层次, 题目族, 准入, 版权)
@@ -187,6 +190,8 @@ class Fakes:
         self.variation_requests: list[dict] = []
         self.grade_mode = "ok"             # ok / bad（返回非 JSON：判分失败，幂等表记 failed）
         self.grade_delay = 0.0             # 判分延时（秒）：并发用例用
+        self.present_mode = "complete"     # PLT-12 present_item：complete / withheld
+        self.present_requests: list[dict] = []
 
     def _count(self, name: str) -> None:
         self.calls[name] = self.calls.get(name, 0) + 1
@@ -230,6 +235,31 @@ class Fakes:
                                          "model_version": "algo:aya-variant-select@0.1.0", "human_review_required": False,
                                          "semantics": "formal"})
 
+    def present(self, body: dict) -> httpx.Response:
+        """PLT-12：按契约 1.1.0 形状应答 present_item。题面取合成题面的文字，另加一个行内公式（受限富文本）。"""
+        self._count("present_item")
+        self.present_requests.append(body)
+        item_id = body["item_ref"].split(":", 1)[1]
+        it = SYN_PRACTICE[item_id]
+        kind = {"fill": "fill_blank", "single": "single_choice", "multi": "multi_choice"}[it["format"]]
+        result: dict = {"item_ref": body["item_ref"], "item_version": "syn-practice@0.0.1", "item_type": kind,
+                        "license_state": "original"}
+        if self.present_mode == "withheld":
+            result["content_state"] = "withheld"
+        else:
+            result["content_state"] = "complete"
+            result["stem"] = [{"type": "paragraph", "runs": [{"type": "text", "text": it["stem"]}, {"type": "math", "latex": "x^2+1"}]}]
+        if "options" in it:
+            result["options"] = [{"key": o["key"], **({} if self.present_mode == "withheld" else
+                                                     {"content": [{"type": "text", "text": o["text"]}]})} for o in it["options"]]
+            result["answer_format"] = {"kind": "choice", "min_choices": 1, "max_choices": 1 if kind == "single_choice" else len(it["options"])}
+        else:
+            result["answer_format"] = {"kind": "expression", "max_length": 200}
+        return httpx.Response(200, json={"contract_version": "1.1.0", "result": result, "evidence_ids": [], "confidence": 1,
+                                         "source_version": "algo:aya-present@0.1.0;items:syn-practice@0.0.1",
+                                         "model_version": "algo:aya-present@0.1.0", "human_review_required": False,
+                                         "semantics": "formal"})
+
     async def handler(self, request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)
         if request.url.host == "knowledge.invalid":
@@ -239,6 +269,8 @@ class Fakes:
         method = request.url.path.rsplit("/", 1)[-1]
         if method == "generate_variation":
             return self.variation(body)
+        if method == "present_item":
+            return self.present(body)
         assert method == "grade"
         self._count("grade")
         if self.grade_delay:
@@ -988,3 +1020,81 @@ async def test_internal_openapi_matches_responses(api, student):
     a = (await api.answer(student, n["ticket"], "41")).json()
     _validator("AnswerResult").validate(a)
     assert a["entry"]["next_round_at"] is not None
+
+
+# ---------- PLT-12：题面来源开关（LEARNING_PRESENT_ITEM_SOURCE；specs/present-item-contract） ----------
+@pytest.fixture
+async def api_with(ppools, plock):
+    """按给定设置起一个再练接口（开关对拍用）；用完关闭。"""
+    app_pool, _ = ppools
+    opened: list = []
+
+    async def make(**over) -> Api:
+        app, fakes = await make_api(app_pool, plock, mastery=engine(app_pool), **over)
+        ctx = app.router.lifespan_context(app)
+        await ctx.__aenter__()
+        c = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://learning.test")
+        c.headers["authorization"] = f"Bearer {CREDENTIAL}"
+        opened.append((ctx, c))
+        return Api(c, fakes, app)
+    yield make
+    for ctx, c in reversed(opened):
+        await c.aclose()
+        await ctx.__aexit__(None, None, None)
+
+
+async def test_switch_off_is_byte_identical_to_synthetic(api_with, student):
+    """开关关闭（不设与显式 synthetic）时，题面逐字节相同，且只有 format、stem、options：不调 present_item（对拍）。"""
+    off = await api_with()
+    syn = await api_with(present_item_source="synthetic")
+    await off.grade(student, "SYNP-0001", "41")
+    e = await due_entry(off, student)
+    items = []
+    for a in (off, syn):
+        r = await a.next(student, e["entry_id"])
+        assert r.status_code == 200, r.text
+        n = r.json()
+        items.append(json.dumps(n["item"], ensure_ascii=False))
+        assert (n["status"], n["item_ref"], n["round"]) == ("ready", "aya:SYNP-0003", 1)
+        assert a.fakes.calls.get("present_item", 0) == 0
+    assert items[0] == items[1] == json.dumps({"format": "fill", "stem": SYN_PRACTICE["SYNP-0003"]["stem"]}, ensure_ascii=False)
+
+
+async def test_switch_on_serves_adapter_item_view_end_to_end(api_with, ppools, student):
+    """开关打开：next 的题面来自适配器 present_item（契约 1.1.0，不带 usage_id），过两道白名单；作答照常走判分与闭环。"""
+    _, admin = ppools
+    on = await api_with(present_item_source="adapter")
+    await on.grade(student, "SYNP-0001", "41")
+    e = await due_entry(on, student)
+    r = await on.next(student, e["entry_id"])
+    assert r.status_code == 200, r.text
+    n = r.json()
+    _validator("NextReady").validate(n)
+    stem = SYN_PRACTICE["SYNP-0003"]["stem"]
+    assert n["item"] == {"format": "fill", "stem": f"{stem}x^2+1",
+                         "rich": {"stem": [{"type": "paragraph", "runs": [{"type": "text", "text": stem}, {"type": "math", "latex": "x^2+1"}]}]}}
+    no_forbidden(n)
+    req = on.fakes.present_requests[-1]
+    assert req["item_ref"] == "aya:SYNP-0003" and req["context"]["contract_version"] == "1.1.0"
+    # PresentItemContext：不带学生 ID、计量 ID 与幂等键，L1（题面与学生无关）；内容版本取题目登记的六段
+    assert set(req["context"]) == {"request_id", "contract_version", "subject", "data_class"} and req["context"]["data_class"] == "L1"
+    assert student not in json.dumps(req) and req["content_version"] == CV
+    a = await on.answer(student, n["ticket"], "42")
+    assert a.status_code == 200, a.text
+    assert a.json()["verdict"] == "correct" and a.json()["entry"]["status"] == "closed"
+    assert on.fakes.calls["present_item"] == 1                       # 作答时的题面取自缓存（同一题、同一内容版本）
+
+
+async def test_switch_on_choice_item_and_withheld(api_with, student):
+    """选择题：选项文字与富文本片段都来自适配器；题干缺失（withheld）时没有题面 → 501，不补写。"""
+    on = await api_with(present_item_source="adapter")
+    svc = on.svc
+    view = await svc.presenter.fetch("aya", "SYNP-0011")
+    assert view["format"] == "single" and [o["key"] for o in view["options"]] == [o["key"] for o in SYN_PRACTICE["SYNP-0011"]["options"]]
+    assert view["rich"]["options"] == [{"key": o["key"], "content": [{"type": "text", "text": o["text"]}]} for o in SYN_PRACTICE["SYNP-0011"]["options"]]
+    off = await api_with(present_item_source="adapter")
+    off.fakes.present_mode = "withheld"
+    await off.grade(student, "SYNP-0006", "41")
+    e = await due_entry(off, student, N2)
+    r = await off.next(student, e["entry_id"])
+    assert r.status_code == 501 and r.json()["code"] == "PRESENTER_UNAVAILABLE"

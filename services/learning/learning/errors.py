@@ -17,6 +17,7 @@ class IngestError(Exception):
         retryable: bool = False,
         upstream_code: str | None = None,
         extra: dict | None = None,
+        upstream_status: int | None = None,
     ) -> None:
         super().__init__(title)
         self.status = status
@@ -25,6 +26,8 @@ class IngestError(Exception):
         self.detail = detail
         self.retryable = retryable
         self.upstream_code = upstream_code
+        # 适配器原始的 HTTP 状态码（只在进程内判断用，不进问题体）：例如 present_item 把上游 501 当作“这道题没有题面”
+        self.upstream_status = upstream_status
         # 问题体的附加字段（只给明确列在接口文档里的，例如诊断 409 SESSION_INCONSISTENT 的 session_id、reason）；不覆盖标准字段
         self.extra = extra or {}
 

@@ -71,13 +71,16 @@ test('作答请求体：只收票据与作答（幂等键在票据里，前端�
   const ok = { ticket: `sbp1.${'A'.repeat(64)}`, answer: { choice: ['A'] } };
   assert.deepEqual(parseAnswer(ok), ok);
   assert.deepEqual(parseAnswer({ ...ok, answer: { text: ' 3 ' } })?.answer, { text: ' 3 ' });
+  assert.deepEqual(parseAnswer({ ...ok, answer: { choice: ['a', '1', 'B2'] } })?.answer, { choice: ['a', '1', 'B2'] });
   for (const [what, b] of [
     ['idempotency_key', { ...ok, idempotency_key: randomUUID() }],
     ['usage_id', { ...ok, usage_id: randomUUID() }], ['quantity', { ...ok, quantity: 1 }], ['purpose', { ...ok, purpose: 'practice' }],
     ['channel', { ...ok, channel: 'keypad' }], ['student_ref', { ...ok, student_ref: S }], ['缺票据', { answer: ok.answer }], ['缺作答', { ticket: ok.ticket }],
     ['票据前缀', { ...ok, ticket: `pt1.${'A'.repeat(64)}` }], ['票据超长', { ...ok, ticket: `sbp1.${'A'.repeat(MAX_SEALED)}` }],
     ['空填空', { ...ok, answer: { text: '  ' } }], ['填空超长', { ...ok, answer: { text: 'x'.repeat(201) } }], ['空选择', { ...ok, answer: { choice: [] } }],
-    ['重复选项', { ...ok, answer: { choice: ['A', 'A'] } }], ['小写选项', { ...ok, answer: { choice: ['a'] } }],
+    // 选项键与插件契约 PresentedOption.key 同一规则 [A-Za-z0-9]{1,8}（PLT-12 审查建议 10）：小写、数字可以，带空格、标点或超长不行
+    ['重复选项', { ...ok, answer: { choice: ['A', 'A'] } }], ['选项键带空格', { ...ok, answer: { choice: ['A 正确'] } }],
+    ['选项键带标点', { ...ok, answer: { choice: ['A.'] } }], ['选项键超长', { ...ok, answer: { choice: ['ABCDEFGHI'] } }],
     ['两种都给', { ...ok, answer: { text: '1', choice: ['A'] } }], ['作答多字段', { ...ok, answer: { text: '1', work: 'x' } }],
     ['作答是数组', { ...ok, answer: ['A'] }],
   ] as const) {

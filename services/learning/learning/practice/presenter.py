@@ -69,3 +69,28 @@ class SyntheticPracticePresenter:
     def grading(self, subject: str, item_id: str) -> str | None:
         it = self._items.get((subject, item_id))
         return None if it is None else it["grading"]
+
+
+class AdapterPracticePresenter:
+    """PLT-12：题面经适配器 present_item 取（learning/present_item.py，LEARNING_PRESENT_ITEM_SOURCE=adapter，只在候选契约开关打开时）；
+    判分版本与判分方式仍由合成登记给（真实来源随契约另定：practice lessons 待人确认 2、3，PLT-12 不做）。
+    present_item 只给题面，不给判分版本与判分方式，所以这里两者分开：题面来自适配器，判分登记来自合成夹具。"""
+
+    def __init__(self, source, registry: SyntheticPracticePresenter) -> None:
+        self.source = source
+        self.registry = registry
+
+    async def fetch(self, subject: str, item_id: str) -> ItemView | None:
+        # 只出判分登记里有的题（客观题、有判分版本）：登记里没有的题不调适配器
+        if self.registry.rubric_version(subject, item_id) is None:
+            return None
+        return await self.source.fetch(subject, item_id)
+
+    def present(self, subject: str, item_id: str) -> ItemView | None:
+        raise RuntimeError("adapter item views are fetched asynchronously (present_view)")
+
+    def rubric_version(self, subject: str, item_id: str) -> str | None:
+        return self.registry.rubric_version(subject, item_id)
+
+    def grading(self, subject: str, item_id: str) -> str | None:
+        return self.registry.grading(subject, item_id)

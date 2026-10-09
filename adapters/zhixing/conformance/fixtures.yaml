@@ -260,3 +260,21 @@ cases:
       window: {from: "2026-10-05T00:00:00+08:00", to: "2026-10-12T00:00:00+08:00"}
       audience: student
     conflict_body: {audience: parent}
+
+  # ---------------- present_item（契约 1.1.0 候选版，PLT-12；since 使它只在 1.1.0 下跑） ----------------
+  # 题面就是材料与设问，所以上面的全局 secrets（材料里的虚构地名）在题面内容里允许出现；用例自己的 secrets 是给分规则与
+  # 常见失分的说明文字，题面任何位置都不许出现。本段由实现 present_item 的同一会话起草，待独立会话复核。
+  - id: present-short-answer
+    method: present_item
+    since: 1.1.0
+    body: {item_ref: "zhixing:synthetic-m3-01"}
+    conflict_body: {item_ref: "zhixing:synthetic-m3-02"}
+    secrets: ["只写出民主权利而未结合议事过程的", "停留在叙述材料", "把居民议事答成人民代表大会制度"]
+    expect: {content_state: complete, item_type: short_answer, license_state: original}
+
+  - id: present-short-answer-02
+    method: present_item
+    since: 1.1.0
+    body: {item_ref: "zhixing:synthetic-m3-02"}
+    conflict_body: {item_ref: "zhixing:synthetic-m3-03"}
+    expect: {content_state: complete, item_type: short_answer}

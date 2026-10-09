@@ -3,18 +3,20 @@
 // 规格：specs/adapter-aya-sprint1/spec.md“映射规则”；specs/adapter-aya-methods-sprint4/spec.md（四个新方法只按 v1.0 候选版实现，
 // 0.9.0 请求返回 501；它们都是确定性的：不调模型、不写话术与关于学生的陈述、不产生证据、不读系统时钟）。
 // 契约：packages/contracts/openapi/plugin-api.v0.9.yaml 与 v1.0 候选版 plugin-api.v1.0.yaml：迁移期按请求的 context.contract_version 选版本校验与应答，能力声明报默认版本
-// （specs/plugin-api-v1.0-step2/spec.md 第 3 条、待人确认 #2）。
+// （specs/plugin-api-v1.0-step2/spec.md 第 3 条、待人确认 #2）。v1.1 候选版 plugin-api.v1.1.yaml（PLT-12）：v1.0 的六个方法照旧，
+// 另加只读的 present_item（题面；只按 1.1.0 应答，见 src/methods/present.ts）。
 //
 // 适配器不读写任何平台表（CLAUDE.md 规则 1）：证据与推断放在响应里，由学习服务落库。
 // 不输出掌握度（规则 2）；判分只来自验证器（规则 3）；响应和日志里不出现答案、解析、评分标准（decisions #4）。
 import { CANDIDATE_CONTRACT_VERSIONS, type ContractValidator, type ContractVersion, type SchemaName } from "./contract.ts";
 import type { Admission, LoadedPack, PackItem } from "./content.ts";
-import { deriveUuid, requestFingerprint } from "./ids.ts";
+import { canonical, deriveUuid, requestFingerprint } from "./ids.ts";
 import { ProblemError, type ProblemCode } from "./problem.ts";
 import { planTasks, PLAN_ALGORITHM, type PlanInput } from "./methods/plan.ts";
 import { buildReport, REPORT_ALGORITHM, type ReportInput } from "./methods/report.ts";
 import { checkTeachConfig, DEFAULT_TEACH_CONFIG, HINT_ALGORITHM, PAGE_LESSON_ALGORITHM, teachHint, teachLesson, type TeachConfig } from "./methods/teach.ts";
 import { selectVariants, VARIANT_ALGORITHM, type VariationInput } from "./methods/variation.ts";
+import { PRESENT_ALGORITHM, presentItem } from "./methods/present.ts";
 import type { AyaTaxonomy } from "./taxonomy.ts";
 import {
   BOUNDARY_MAX_CONFIDENCE,
@@ -325,6 +327,8 @@ export function createAdapter(deps: AdapterDeps) {
         grade: { implemented: true, async: false },
         generate_variation: v1Methods ? { implemented: true, async: false } : { implemented: false },
         report: v1Methods ? { implemented: true, async: false } : { implemented: false },
+        // v1.1（PLT-12）：能力声明逐一声明七个方法；1.1.0 以下的能力声明没有这一项（v1.0 Capabilities 不允许多余方法）
+        ...(contract.version === "1.1.0" ? { present_item: { implemented: true, async: false } } : {}),
       },
       verifiers: [{ verifier_id: VERIFIER_ID, version: VERIFIER_VERSION }],
     }, contract.version);
@@ -548,13 +552,45 @@ export function createAdapter(deps: AdapterDeps) {
       }, version);
     });
 
+  // ---------- PLT-12：present_item（只按 1.1.0 候选版） ----------
+  /**
+   * 题面：只读、非消耗类、与学生无关（契约 PresentItemContext：不带 student_ref、usage_id，schema 已拒）。请求顶层的
+   * content_version 必须是本适配器服务的那一版；context.content_version 同时出现时必须与它相同（schema 表达不了，这里核对）。
+   * 不进幂等缓存（审查阻断 2）：结果由（题目, 内容版本）确定、不产生证据，重放天然一致；进缓存只会挤掉 grade 等写方法的条目。
+   */
+  const present = (body: unknown): HandlerResult => {
+    const version = requestVersion(body);
+    if (version !== "1.1.0") {
+      throw new ProblemError(501, "METHOD_NOT_IMPLEMENTED", "present_item is implemented for contract 1.1.0 only");
+    }
+    validateOrThrow("PresentItemRequest", body, version);
+    const req = body as { context: { subject: string; content_version?: Record<string, string | number> }; item_ref: string;
+      content_version: Record<string, string | number> };
+    if (req.context.content_version && canonical(req.context.content_version) !== canonical(req.content_version)) {
+      throw new ProblemError(400, "INVALID_REQUEST", "context.content_version and content_version differ");
+    }
+    checkContext({ ...req.context, content_version: req.content_version } as unknown as RequestContext, true);
+    const item = findItem(req.item_ref);
+    return selfCheck("PresentItemResponse", {
+      contract_version: version,
+      result: presentItem(content, item),
+      evidence_ids: [],
+      confidence: 1,
+      source_version: sourceVersion(`algo:${PRESENT_ALGORITHM}`),
+      model_version: `algo:${PRESENT_ALGORITHM}`,
+      human_review_required: false,
+      // 题面不判分、不进复核；未准入的题只能当练习展示（同其他三个确定性方法）
+      semantics: item.admission === "admitted" ? "formal" : "practice",
+    }, version);
+  };
+
   const V1_ROUTES: Record<(typeof V1_ONLY_METHODS)[number], (body: unknown) => HandlerResult> = {
     plan,
     teach,
     generate_variation: generateVariation,
     report,
   };
-  const KNOWN_ROUTES = new Set<string>(["capabilities", "grade", "diagnose", ...V1_ONLY_METHODS]);
+  const KNOWN_ROUTES = new Set<string>(["capabilities", "grade", "diagnose", "present_item", ...V1_ONLY_METHODS]);
 
   /** 路由（路径不含 /plugin/v0 前缀）。所有错误都转成契约 Problem。 */
   const handle = (method: string, path: string, body: unknown): HandlerResult => {
@@ -571,6 +607,7 @@ export function createAdapter(deps: AdapterDeps) {
       else if (method === "POST" && name === "grade") result = grade(body);
       else if (method === "POST" && name === "diagnose") result = diagnose(body);
       else if (method === "POST" && Object.hasOwn(V1_ROUTES, name)) result = V1_ROUTES[name as keyof typeof V1_ROUTES](body);
+      else if (method === "POST" && name === "present_item") result = present(body);
       else if (method === "GET" && name.startsWith("jobs/")) {
         throw new ProblemError(404, "JOB_NOT_FOUND", "the aya adapter runs synchronously and has no jobs");
       } else throw new ProblemError(404, "INVALID_REQUEST", "unknown route");

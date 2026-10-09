@@ -31,6 +31,10 @@
   LEARNING_PRACTICE_PRESENTER    不设 = next / answer 回 501；synthetic = 合成题面（只允许 LEARNING_ENV=test，present_item 签字前不接真实题库）
   LEARNING_PRACTICE_TICKET_SECRET  再练票据的 HMAC 密钥（≥ 32 字符，与所有令牌各不相同）；设了 LEARNING_PRACTICE_CONFIG 就必须设
   选题经知识服务（LEARNING_KNOWLEDGE_URL / LEARNING_KNOWLEDGE_TOKEN，同上）；不设 = next 回 501
+  题面来源（PLT-12，specs/present-item-contract）：
+  LEARNING_PRESENT_ITEM_SOURCE   synthetic（缺省：诊断与再练用合成题面，行为与之前逐字节一致）| adapter（经适配器 present_item，
+                                 插件契约 1.1.0 候选版；只在 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1 时允许，否则拒绝启动）。只换题面来源：
+                                 诊断与再练仍由 LEARNING_DIAGNOSIS_PRESENTER / LEARNING_PRACTICE_PRESENTER 打开，判分版本与判分方式仍取合成登记
 """
 from __future__ import annotations
 
@@ -41,6 +45,7 @@ from dataclasses import dataclass, field
 
 SUBJECTS = ("wenli", "aya", "zhixing", "echo")
 ALLOWED_ENVS = ("dev", "test")
+PRESENT_ITEM_SOURCES = ("synthetic", "adapter")  # PLT-12：题面来源
 
 
 def _budget(raw: str | None) -> float:
@@ -102,6 +107,8 @@ class Settings:
     practice_config: str | None = None
     practice_presenter: str | None = None
     practice_ticket_secret: str | None = field(default=None, repr=False)
+    # 题面来源（PLT-12）：synthetic（缺省）| adapter（插件契约 1.1.0 present_item；候选开关打开时才允许）
+    present_item_source: str = "synthetic"
 
     @staticmethod
     def from_env(environ: dict[str, str] | None = None) -> "Settings":
@@ -151,6 +158,12 @@ class Settings:
             raise RuntimeError("LEARNING_PRACTICE_PRESENTER 只能不设或为 synthetic")
         if practice_presenter == "synthetic" and env != "test":
             raise RuntimeError("再练合成题面只允许 LEARNING_ENV=test（契约 present_item 签字前不接真实题库）")
+        present_source = e.get("LEARNING_PRESENT_ITEM_SOURCE") or "synthetic"
+        if present_source not in PRESENT_ITEM_SOURCES:
+            raise RuntimeError("LEARNING_PRESENT_ITEM_SOURCE 只能是 synthetic 或 adapter")
+        if present_source == "adapter" and e.get("STARBUDDY_ALLOW_CANDIDATE_CONTRACT") != "1":
+            raise RuntimeError("LEARNING_PRESENT_ITEM_SOURCE=adapter 走插件契约 1.1.0 候选版的 present_item：签字前只在测试里开"
+                               "（需 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1）")
         practice_secret = e.get("LEARNING_PRACTICE_TICKET_SECRET") or None
         if practice_cfg and (practice_secret is None or len(practice_secret) < 32):
             raise RuntimeError("设了 LEARNING_PRACTICE_CONFIG 就必须设 LEARNING_PRACTICE_TICKET_SECRET（≥ 32 字符）")
@@ -187,4 +200,5 @@ class Settings:
                         mastery_sync_budget_seconds=_budget(e.get("LEARNING_MASTERY_SYNC_BUDGET_SECONDS")),
                         insight_client_credential=insight_tok, orchestrator_client_credential=orch_tok,
                         profile_page_config=e.get("LEARNING_PROFILE_PAGE_CONFIG") or None, practice_config=practice_cfg,
-                        practice_presenter=practice_presenter, practice_ticket_secret=practice_secret)
+                        practice_presenter=practice_presenter, practice_ticket_secret=practice_secret,
+                        present_item_source=present_source)

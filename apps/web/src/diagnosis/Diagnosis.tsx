@@ -10,6 +10,7 @@ import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 
 import type { Answer, DiagnosisView } from '../lib/diagnosis.ts';
 import { ConfidenceProbe } from '../probe/ConfidenceProbe.tsx';
 import type { Prediction } from '../probe/copy.ts';
+import { RichParagraphs, RichRuns } from '../shell/RichItem.tsx';
 import { DIAGNOSIS_COPY as C, formatDuration } from './copy.ts';
 
 /**
@@ -209,7 +210,11 @@ export function Diagnosis({ api }: { api: DiagnosisApi }) {
       {phase === 'item' && step ? (
         <form onSubmit={submit} className="diagnosis-item" data-kind={step.kind} noValidate>
           <h3 ref={heading} tabIndex={-1}>{C.stemHeading}（{C.stepLabel(step.seq)}）</h3>
-          <p data-testid="diagnosis-stem">{step.item.stem}</p>
+          {step.item.rich ? (
+            <div data-testid="diagnosis-stem" className="item-rich"><RichParagraphs stem={step.item.rich.stem} /></div>
+          ) : (
+            <p data-testid="diagnosis-stem">{step.item.stem}</p>
+          )}
           {step.kind !== 'adaptive' ? (
             <>
               <p>{step.kind === 'process' ? C.processHint : C.explainHint}</p>
@@ -227,13 +232,16 @@ export function Diagnosis({ api }: { api: DiagnosisApi }) {
           ) : (
             <fieldset className="diagnosis-options">
               <legend>{step.item.format === 'single' ? C.choiceLegend : C.choiceLegendMulti}</legend>
-              {(step.item.options ?? []).map((o) => (
-                <label key={o.key}>
-                  <input type={step.item.format === 'single' ? 'radio' : 'checkbox'} name={`choice-${step.seq}`} value={o.key}
-                         checked={choice.includes(o.key)} onChange={() => toggle(o.key)} />
-                  {' '}{o.key}. {o.text}
-                </label>
-              ))}
+              {(step.item.options ?? []).map((o, i) => {
+                const rich = step.item.rich?.options?.[i];
+                return (
+                  <label key={o.key}>
+                    <input type={step.item.format === 'single' ? 'radio' : 'checkbox'} name={`choice-${step.seq}`} value={o.key}
+                           checked={choice.includes(o.key)} onChange={() => toggle(o.key)} />
+                    {' '}{o.key}. {rich && rich.key === o.key ? <RichRuns runs={rich.content} /> : o.text}
+                  </label>
+                );
+              })}
             </fieldset>
           )}
           <p className="diagnosis-actions">

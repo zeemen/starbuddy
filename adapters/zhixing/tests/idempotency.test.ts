@@ -146,10 +146,19 @@ test("缓存满：优先淘汰已完成的条目，进行中的条目不淘汰�
 
 test("缓存满且全是进行中的请求：新请求回 429 RATE_LIMITED（retryable，稍后用同一个 key 重试），不调模型", async () => {
   const judge = keywordJudge(realPack);
-  const h = await harness({ idempotencyCacheSize: 2, handler: async (req) => ({ ...(await judge(req)), delayMs: 150 }) });
+  // 确定性（W13 T09）：模型桩挂在一个闸门上，两次调用都到达桩之后才发第三个请求，最后再放行；不靠固定的等待时长
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const h = await harness({ idempotencyCacheSize: 2, handler: async (req) => {
+    await gate;
+    return judge(req);
+  } });
   try {
     const runs = [h.adapter.handle("POST", "grade", gradeBody("synthetic-m3-01", ANSWERS.partial01)), h.adapter.handle("POST", "grade", gradeBody("synthetic-m3-01", ANSWERS.full01))];
-    await new Promise((r) => setTimeout(r, 30));
+    for (let i = 0; h.stub.calls.length < 2; i++) {
+      assert.ok(i < 1000, "两次模型调用没有到达桩");
+      await new Promise((r) => setTimeout(r, 5));
+    }
     const busyBody = gradeBody("synthetic-m3-01", ANSWERS.miss01);
     const busy = await h.adapter.handle("POST", "grade", busyBody);
     assert.equal(busy.status, 429);
@@ -159,10 +168,12 @@ test("缓存满且全是进行中的请求：新请求回 429 RATE_LIMITED（ret
     assert.deepEqual(contract.validate("Problem", pb), { ok: true });
     assert.deepEqual(contract.validate("Problem", pb, "1.0.0"), { ok: true });
     assert.equal(h.stub.calls.length, 2, "被拒的请求没有调模型");
+    release();
     for (const r of await Promise.all(runs)) assert.equal(r.status, 200);
     // 进行中的完成之后，同一个 key 重试成功
     assert.equal((await h.adapter.handle("POST", "grade", busyBody)).status, 200);
   } finally {
+    release(); // 断言失败时也放行，免得挂住的模型调用拖住关闭
     await h.close();
   }
 });

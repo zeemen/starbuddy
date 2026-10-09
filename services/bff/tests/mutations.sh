@@ -319,6 +319,15 @@ SM=(
   $'再练：PRACTICE_NOT_DUE 不映射\tsrc/practice/service.ts\t  if (f.status === 409 && code === \'PRACTICE_NOT_DUE\') return op === \'queue\' ? PRACTICE_UNAVAILABLE : NOT_DUE;\t'
   $'再练：410 不映射\tsrc/practice/service.ts\t  if (f.status === 410) return TICKET_EXPIRED;\t'
   $'再练：重放不标响应头\tsrc/practice/service.ts\treturn json(200, out, replayHeader(r.replayed));\treturn json(200, out, replayHeader(false));'
+  # PLT-12 受限富文本题面（审查建议 16）：BFF 第三道白名单 src/item-rich.ts 与诊断、再练两条路径；这几条跑 tests/item-rich.test.ts
+  $'题面：rich 顶层放过多余字段\tsrc/item-rich.ts\tif (!isRecord(v) || !only(v, [\'stem\', \'options\'])\tif (!isRecord(v)'
+  $'题面：文字允许双向控制符与零宽字符\tsrc/item-rich.ts\t\\u007F-\\u009F\\u200B-\\u200F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069\\uFEFF]{1,2000}$/u;\t\\u007F]{1,2000}$/u;'
+  $'题面：图片允许公网地址\tsrc/item-rich.ts\texport const IMAGE_REF_RE = /^objstore:\\/\\/\texport const IMAGE_REF_RE = /^(?:objstore|https):\\/\\/'
+  $'题面：公式不核对认得的命令\tsrc/item-rich.ts\t\\n      && latexCommandsKnown(v[\'latex\'])) {\t) {'
+  $'题面：不限总字数\tsrc/item-rich.ts\treturn totalChars(stem, options) <= MAX_TOTAL_CHARS ? { stem, options } : null;\treturn { stem, options };'
+  $'题面：诊断不过白名单直接转 rich\tsrc/diagnosis/service.ts\t: pickRich(v.step.item.rich, (v.step.item.options ?? []).map((o) => o.key));\t: (v.step.item.rich as never);'
+  $'题面：再练 rich 不合格整道题不出\tsrc/practice/service.ts\t    rich = pickRich(item[\'rich\'], (opts ?? []).map((o) => o.key)) ?? undefined;\t    rich = pickRich(item[\'rich\'], (opts ?? []).map((o) => o.key)) ?? undefined;\\n    if (rich === undefined) return null;'
+  $'题面：再练选项键只认大写字母\tsrc/practice/service.ts\tconst CHOICE_KEY = /^[A-Za-z0-9]{1,8}$/;\tconst CHOICE_KEY = /^[A-Z]$/;'
 )
 # 副本保持仓库结构（测试按 ../../../ 找仓库根：adapters/aya 的登记脚本、db/seeds 的种子），adapters、db 软链接回仓库。
 # 安全审查阻断 1：原来的副本不保持结构，测试的 before 在任何代码下都失败，变异全部“被发现”却不说明任何问题。
@@ -370,6 +379,7 @@ star_run() {  # $1 副本根目录，$2 变异名（“计量：”开头的跑�
   [[ "${2:-}" == 报告：* ]] && tests="tests/report-units.test.ts tests/report.integration.test.ts"
   [[ "${2:-}" == 再练：* ]] && tests="tests/practice-units.test.ts tests/practice.integration.test.ts tests/shell-openapi.test.ts"
   [[ "${2:-}" == 届别：* ]] && tests="tests/cohort.integration.test.ts"
+  [[ "${2:-}" == 题面：* ]] && tests="tests/item-rich.test.ts"
   out=$( cd "$1/services/bff" && timeout 240 bash "$ROOT/db/tests/pg-ephemeral.sh" -- \
       node --no-warnings --test --test-concurrency=1 --test-timeout=60000 $tests 2>&1 ); rc=$?
   printf '%s\n' "$out" > "$1/run.out"  # H6 的“第一条失败必须是登记的断言”从这里读

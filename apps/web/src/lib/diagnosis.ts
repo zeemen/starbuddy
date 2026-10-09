@@ -1,10 +1,12 @@
 // 数学自适应诊断的 BFF 客户端（SIE-02a；只在服务端调用，浏览器不直连 BFF）。接口见 services/bff/openapi/diagnosis.v0.yaml。
 // BFF 只回题面、步骤序号、题型与进度，不回答案、题号、节点、对错；这里再按白名单取一遍字段再交给页面。
 import { bffBaseUrl, bffHeaders, type BffSession } from './bff.ts';
+import { pickRich, type RichItem } from './rich-item.ts';
 import { isUuid } from './star-map.ts';
 
 export type StepKind = 'adaptive' | 'process' | 'explain';
-export interface ItemView { format: 'single' | 'multi' | 'fill'; stem: string; options?: { key: string; text: string }[] }
+/** rich：PLT-12 受限富文本题面（只在学习服务开了 present_item 题面来源时有；src/lib/rich-item.ts） */
+export interface ItemView { format: 'single' | 'multi' | 'fill'; stem: string; options?: { key: string; text: string }[]; rich?: RichItem }
 export interface DiagnosisStep { seq: number; kind: StepKind; item: ItemView; probe_recorded: boolean; step_elapsed_sec: number }
 export interface DiagnosisView {
   session_id: string;
@@ -68,12 +70,15 @@ export const restartSession = (r: Result<unknown>): string | null => (!r.ok && r
 /** 只取白名单字段（防止 BFF 以后多给了什么被原样带进页面） */
 export function pickView(v: DiagnosisView): DiagnosisView {
   const s = v.step;
+  // PLT-12：富文本题面按白名单重建；不合格就不用（只显示纯文字题面）
+  const rich = s === null || s.item.rich === undefined ? null : pickRich(s.item.rich, (s.item.options ?? []).map((o) => o.key));
   return {
     session_id: v.session_id, status: v.status, elapsed_sec: v.elapsed_sec, time_budget_sec: v.time_budget_sec,
     item_count: v.item_count, item_limit: v.item_limit, process_tasks: v.process_tasks === true,
     step: s === null ? null : {
       seq: s.seq, kind: s.kind, probe_recorded: s.probe_recorded, step_elapsed_sec: s.step_elapsed_sec,
-      item: { format: s.item.format, stem: s.item.stem, ...(s.item.options ? { options: s.item.options.map((o) => ({ key: o.key, text: o.text })) } : {}) },
+      item: { format: s.item.format, stem: s.item.stem, ...(s.item.options ? { options: s.item.options.map((o) => ({ key: o.key, text: o.text })) } : {}),
+              ...(rich ? { rich } : {}) },
     },
   };
 }

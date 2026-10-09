@@ -20,6 +20,7 @@
 """
 from __future__ import annotations
 
+import functools
 import json
 import re
 import uuid
@@ -36,6 +37,7 @@ from ..service import IngestService
 from . import store
 from .engine import (ALGORITHM_VERSION, Event, HistoryMismatch, InvalidTransition, Params, State, derive_state, trace,
                      transition)
+from ..present_item import ViewNotCached, present_cached, present_view
 from .presenter import ItemPresenter
 from .source import SourceError
 
@@ -75,6 +77,24 @@ NOT_FOUND = ("SESSION_NOT_FOUND", "diagnosis session not found")
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+VIEW_PREFETCH_TRIES = 4
+
+
+def views_prefetched(fn):
+    """PLT-12 审查建议 7：取题面（present_item 的网络调用）不放在数据库事务与 advisory 锁里。
+    事务内只查题面缓存（present_cached）；没命中时 ViewNotCached 让事务回滚、锁释放，这里在事务外取题面（present_view），
+    放进缓存后重做整段。合成题面没有缓存一说，不会抛 ViewNotCached，行为不变。"""
+    @functools.wraps(fn)
+    async def run(self, *args, **kwargs):
+        for _ in range(VIEW_PREFETCH_TRIES):
+            try:
+                return await fn(self, *args, **kwargs)
+            except ViewNotCached as miss:
+                await present_view(self.presenter, miss.subject, miss.item_id)
+        raise err(503, "ITEM_VIEW_UNAVAILABLE", "item view is temporarily unavailable", retryable=True)
+    return run
 
 
 @dataclass
@@ -144,7 +164,7 @@ class DiagnosisService:
                 return
             plan = t.next
             assert plan is not None
-            if plan.reason != "no_item" and self.presenter.present(s.subject, plan.item_id or "") is None:
+            if plan.reason != "no_item" and await present_cached(self.presenter, s.subject, plan.item_id or "") is None:
                 raise err(501, "PRESENTER_UNAVAILABLE", "no item view for the selected item")
             await store.insert_step(conn, s.id, len(rows) + 1, plan.kind, plan.node_id, plan.item_id, plan.reason)
             if plan.reason != "no_item":
@@ -172,6 +192,7 @@ class DiagnosisService:
             raise err(409, "INVALID_STATE", f"{event.value} is not allowed while the session is {state.value}") from None
 
     # ---------- 开始 / 续做 ----------
+    @views_prefetched
     async def start(self, student: str, subject: str, usage_id: str, key: str) -> StartResult:
         if subject != "aya":
             raise err(400, "SUBJECT_NOT_SUPPORTED", "adaptive diagnosis is only available for aya in the pilot")
@@ -219,6 +240,7 @@ class DiagnosisService:
         raise err(503, "BUSY", "concurrent start, retry", retryable=True)
 
     # ---------- 当前题 ----------
+    @views_prefetched
     async def current(self, student: str, session_id: str) -> dict:
         async with ingest_store.learning_tx(self.pool) as conn:
             s = await self._locked(conn, student, session_id)
@@ -233,9 +255,9 @@ class DiagnosisService:
                 await self._advance(conn, s)
                 rows = await store.steps(conn, s.id)
                 cur = self._current(rows)
-            return self._view(s, cur, rows)
+            return await self._view(s, cur, rows)
 
-    def _view(self, s: store.SessionRow, cur: store.StepRow | None, rows: list[store.StepRow]) -> dict:
+    async def _view(self, s: store.SessionRow, cur: store.StepRow | None, rows: list[store.StepRow]) -> dict:
         state = derive_state(s.status, cur.done() if cur else None, bool(cur and cur.probe_id))
         # process_tasks：本次是否出过过程题或讲解题（前端据此决定结束页说不说“老师会看你的过程”）；不是对学生的结论
         view: dict = {"session_id": s.id, "status": s.status, "state": state.value, "usage_id": s.usage_id,
@@ -245,7 +267,7 @@ class DiagnosisService:
                       # 放弃原因（迁移 0049）：BFF 取当前题时看到 grade_changed 已放弃也补调退回额度（幂等；退回审查 S5）
                       "abandon_reason": s.abandon_reason, "step": None}
         if cur is not None and s.status in ("active", "paused"):
-            item = self.presenter.present(s.subject, cur.item_id or "")
+            item = await present_cached(self.presenter, s.subject, cur.item_id or "")
             if item is None:
                 raise err(501, "PRESENTER_UNAVAILABLE", "no item view for the current item")
             view["step"] = {"seq": cur.seq, "kind": cur.kind, "subject": s.subject, "item_id": cur.item_id, "item": dict(item),
@@ -280,8 +302,8 @@ class DiagnosisService:
             return {"status": "ok", "replayed": False}
 
     # ---------- 作答 ----------
-    def _validate_answer(self, subject: str, item_id: str, kind: str, answer: object, work: object) -> dict:
-        view = self.presenter.present(subject, item_id)
+    async def _validate_answer(self, subject: str, item_id: str, kind: str, answer: object, work: object) -> dict:
+        view = await present_cached(self.presenter, subject, item_id)
         if view is None:
             raise err(501, "PRESENTER_UNAVAILABLE", "no item view for the current item")
         fmt = view["format"]
@@ -368,6 +390,7 @@ class DiagnosisService:
     def _replay(self, s: store.SessionRow, step: store.StepRow) -> dict:
         return {"attempt_id": step.attempt_id, "probe_id": step.probe_id, "status": s.status, "usage_id": s.usage_id, "replayed": True}
 
+    @views_prefetched
     async def answer(self, student: str, session_id: str, seq: int, answer: object, work: object, elapsed_sec: object,
                      key: object) -> dict:
         if not isinstance(elapsed_sec, int) or isinstance(elapsed_sec, bool) or not 0 <= elapsed_sec <= 7200:
@@ -388,7 +411,7 @@ class DiagnosisService:
             if step is None or cur is None or cur.seq != seq:
                 raise err(409, "STEP_NOT_CURRENT", "step is not the current one")
             self._check(derive_state(s.status, cur.done(), cur.probe_id is not None), Event.ANSWER)
-            answer = self._validate_answer(s.subject, cur.item_id or "", cur.kind, answer, work)
+            answer = await self._validate_answer(s.subject, cur.item_id or "", cur.kind, answer, work)
             occurred_at = await self._occurred_at(conn, cur)
             keys = self._grade_keys(s, seq)
             prior = await store.grade_requests(conn, keys)
@@ -426,7 +449,12 @@ class DiagnosisService:
         if recorded is None:
             assert body is not None
             recorded, _ = await self.ingest.ingest("grade", body, GRADE_VERSION)
-        # ---- 第二段（事务内）：记到步骤上，按规则选下一步 ----
+        # ---- 第二段（事务内）：记到步骤上，按规则选下一步（下一题的题面没缓存时在事务外预取后重做这一段） ----
+        return await self._record_answer(student, session_id, seq, recorded, elapsed, work, occurred_at, replayed)
+
+    @views_prefetched
+    async def _record_answer(self, student: str, session_id: str, seq: int, recorded: dict, elapsed: int, work: object,
+                             occurred_at: str | None, replayed: bool) -> dict:
         async with ingest_store.learning_tx(self.pool) as conn:
             s = await self._locked(conn, student, session_id)
             rows = await store.steps(conn, s.id)

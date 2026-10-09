@@ -195,7 +195,19 @@ components:
             stem: { type: string }
             options:
               type: array
-              items: { type: object, additionalProperties: false, required: [key, text], properties: { key: { type: string, pattern: '^[A-Z]$' }, text: { type: string } } }
+              items: { type: object, additionalProperties: false, required: [key, text], properties: { key: { type: string, pattern: '^[A-Za-z0-9]{1,8}$', description: 与插件契约 PresentedOption.key 同一规则 }, text: { type: string } } }
+            rich:
+              type: object
+              description: |
+                PLT-12：受限富文本题面（插件契约 1.1.0 候选版 present_item；学习服务 LEARNING_PRESENT_ITEM_SOURCE=adapter 时才有，签字前只在测试里）。
+                段落里只有文字、行内公式（LaTeX 源码）、图片引用三种片段；BFF 按 src/item-rich.ts 白名单重建，不合格（多余字段、HTML 标签、
+                不可见或双向控制字符、危险公式命令、非对象存储图片、总字数超过 8000）就不给 rich，题目照常以纯文字题面（stem、options）出（与诊断同一口径）。
+                形状同学习服务 practice-internal.v0.yaml 的 RichItem。不含答案、解析、采分点。
+              additionalProperties: false
+              required: [stem]
+              properties:
+                stem: { type: array, minItems: 1, maxItems: 20, items: { type: object } }
+                options: { type: array, maxItems: 10, items: { type: object } }
         ticket: { type: string, pattern: '^sbp1\.[A-Za-z0-9_-]+$', maxLength: 2400, description: 不透明票据（含 BFF 生成的幂等键），作答时原样带回；重试用同一张 }
         expires_at: { type: string, format: date-time }
     NextUnavailable:
@@ -222,7 +234,7 @@ components:
               additionalProperties: false
               required: [choice]
               properties:
-                choice: { type: array, minItems: 1, maxItems: 8, uniqueItems: true, items: { type: string, pattern: '^[A-Z]$' } }
+                choice: { type: array, minItems: 1, maxItems: 8, uniqueItems: true, items: { type: string, pattern: '^[A-Za-z0-9]{1,8}$' } }
     AnswerResult:
       type: object
       additionalProperties: false

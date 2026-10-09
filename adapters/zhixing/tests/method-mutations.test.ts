@@ -24,6 +24,7 @@ interface Mutation {
 
 const PLAN = ["tests/plan.test.ts"];
 const REPORT = ["tests/report.test.ts"];
+const PRESENT = ["tests/present.test.ts"]; // 契约 1.1.0 候选版 present_item（PLT-12）
 export const MUTATIONS: Mutation[] = [
   // ---------- plan：排序 ----------
   { name: "plan 不乘领域权重", file: "src/core/plan.ts", from: "const raw = u.weight * loss * gain;", to: "const raw = loss * gain;", tests: PLAN },
@@ -46,6 +47,18 @@ export const MUTATIONS: Mutation[] = [
   { name: "report trend 方向反了", file: "src/core/report.ts", from: 'return d > 0 ? "up" : d < 0 ? "down" : "flat";', to: 'return d > 0 ? "down" : d < 0 ? "up" : "flat";', tests: REPORT },
   { name: "report 未准入证据也报 formal", file: "src/adapter.ts", from: 'semantics: counted.every((e) => e.admission === "admitted") ? "formal" : "practice",', to: 'semantics: "formal",', tests: REPORT },
   { name: "report 置信度写死 1", file: "src/adapter.ts", from: "confidence: attributions.length > 0 ? round3(Math.min(...attributions.map((a) => a.confidence))) : 1,", to: "confidence: 1,", tests: REPORT },
+  // ---------- present_item（PLT-12） ----------
+  { name: "题面带出采分点关键词", file: "src/present.ts", from: "stem: stemParagraphs(item).map(", to: "stem: [...stemParagraphs(item), item.points[0]!.keyword_family.core[0]!].map(", tests: PRESENT },
+  { name: "题面作答上限不跟 grade 一致", file: "src/present.ts", from: 'answer_format: { kind: "text", max_length: maxAnswerChars },', to: 'answer_format: { kind: "text", max_length: 200 },', tests: PRESENT },
+  { name: "题面版权状态一律 original", file: "src/present.ts", from: 'license_state: content.pack.synthetic && item.synthetic ? "original" : "unverified",', to: 'license_state: "original",', tests: PRESENT },
+  { name: "题面不分段（材料整段原样）", file: "src/present.ts", from: "item.material_text.split(/\\r?\\n+/u)", to: "[item.material_text]", tests: PRESENT },
+  { name: "1.0.0 请求也应答题面", file: "src/adapter.ts", from: 'if (version !== "1.1.0") {', to: 'if (version === "0.9.0") {', tests: PRESENT },
+  { name: "题面两处内容版本不一致不拒绝", file: "src/adapter.ts", from: "if (req.context.content_version && canonical(req.context.content_version) !== canonical(req.content_version)) {", to: "if (req.context.content_version && canonical(req.context.content_version) === \"\") {", tests: PRESENT },
+  { name: "题面进了幂等缓存（挤掉 grade 的条目）", file: "src/adapter.ts", from: "    const item = findItem(req.item_ref);\n    return selfCheck(\"PresentItemResponse\", {",
+    to: "    await idempotent(\"present_item\", `${req.item_ref}|${req.context.request_id}`, \"x\", async () => true);\n    const item = findItem(req.item_ref);\n    return selfCheck(\"PresentItemResponse\", {", tests: PRESENT },
+  { name: "题面文字允许双向控制符与零宽字符", file: "src/present.ts", from: "\\u007F-\\u009F\\u200B-\\u200F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069\\uFEFF]{1,2000}$/u;", to: "\\u007F]{1,2000}$/u;", tests: PRESENT },
+  { name: "题面不限总字数", file: "src/present.ts", from: "return total > MAX_TOTAL_CHARS ?", to: "return total > MAX_TOTAL_CHARS * 2 ?", tests: PRESENT },
+  { name: "内容包不核对题面字符", file: "src/content.ts", from: "problems.push(...presentationProblems(it));", to: "void presentationProblems;", tests: PRESENT },
 ];
 
 function run(cmd: string, args: string[], cwd: string): Promise<number> {
@@ -91,8 +104,9 @@ async function check(m: Mutation): Promise<string | null> {
   }
 }
 
-test(`变异：plan、report 的 ${MUTATIONS.length} 个关键改动都被单测发现`, { timeout: 300_000 }, async () => {
+test(`变异：plan、report、present_item 的 ${MUTATIONS.length} 个关键改动都被单测发现`, { timeout: 300_000 }, async () => {
   assert.ok(MUTATIONS.filter((m) => m.tests === PLAN).length >= 6 && MUTATIONS.filter((m) => m.tests === REPORT).length >= 6);
+  assert.ok(MUTATIONS.filter((m) => m.tests === PRESENT).length >= 6);
   const missed: string[] = [];
   const queue = [...MUTATIONS];
   const workers = Array.from({ length: 2 }, async () => {

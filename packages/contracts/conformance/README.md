@@ -16,6 +16,10 @@
 | 每条夹具 | 响应符合 schema，通过平台侧核对，且不比平台判定更松；verdict、复核原因、错因大类、观测结论、置信度上限与夹具一致；不泄露 |
 | 幂等 | 同 key、同请求体重试，证据 ID 不变（异步时 job_id 也不变）；换 `request_id` 也不变；换了请求体返回 409 Problem，且不回显作答 |
 | 异步 | 适配器返回 202 时，按契约校验 JobAccepted，轮询 `/jobs/{job_id}`，校验 JobStatus，再用任务结果跑上面的检查 |
+| 题面（v1.1，PLT-12） | `present_item`：响应符合 schema、是请求的那道题；共享库白名单（`starbuddy_contract.present`）能重建；任何位置没有答案类字段名；不产生证据；用例的 `secrets`（答案、解析、采分点说明）在任何位置都不出现，夹具全局 `secrets` 只许出现在题面内容里；坏请求另加“带 usage_id”“要求带答案” |
+
+夹具用例可以写 `since: 1.1.0`：契约版本低于它时这条用例不跑（同一份夹具在 0.9.0 / 1.0.0 / 1.1.0 下都能用）。
+参考假适配器在 1.1.0 下另实现 `present_item`，`FAULT_CONTRACT` 里的题面违约由 `mutation.py` 按 1.1.0 注入。
 
 ## 文件
 | 文件 | 说明 |
@@ -38,7 +42,11 @@ make conformance-mutation PYTHON=...
 python packages/contracts/conformance/cli.py --adapter-cmd "node --no-warnings src/main.ts" --adapter-cwd adapters/aya \
     --token-var AYA_ADAPTER_SERVICE_TOKEN --fixtures adapters/aya/conformance/fixtures.yaml --report /tmp/aya.json
 ```
-覆盖率报告示例：`{"subject": "aya", "implemented": 2, "passed": 2, "of": 6, "methods": {...}}`。Gate 0 的契约覆盖率按这个统计（`/gate-check 0`）。
+覆盖率报告示例：`{"subject": "aya", "implemented": 2, "passed": 2, "of": 6, "methods": {...}, "read_only_methods": {"present_item": {...}}}`。
+Gate 0 的契约覆盖率按这个统计（`/gate-check 0`）：`of`、`implemented`、`passed` 与 `methods` 只算六个学科方法（`support.SUBJECT_METHODS`），
+v1.1 的只读方法 `present_item` 单列在 `read_only_methods`，不进分母（PLT-12 审查阻断 1；`mutation.py` 先核对这一点）。
+`present_item` 的请求用 `PresentItemContext`（不带 `student_ref`、`usage_id`，幂等键可选，L1 起）：坏请求另加“带学生 ID”，
+不测“缺幂等键”“L1”；幂等测试改为“同一道题两次取到的题面逐字节相同”，不要求冲突检测（只读，不进适配器幂等缓存）。
 
 ## 检查边界（审查时请注意）
 - **平台侧核对与泄露检查只覆盖 grade、diagnose。** 其他四个方法目前只做 schema、坏请求、幂等。共享库对其他方法会明确报“未实现”，不会静默放行。

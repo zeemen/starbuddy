@@ -26,6 +26,7 @@ import { meteringFingerprint } from '../metering/fingerprint.ts';
 import { refundGradeChanged, release, reserve, settle } from '../metering/meter.ts';
 import { usageIdFor, uuidv5 } from '../metering/uuid.ts';
 import { isUuid } from '../star-map/query.ts';
+import { pickRich } from '../item-rich.ts';
 import type { DiagnosisLearning, DiagOutcome, SessionView } from './learning-client.ts';
 
 export interface DiagnosisDeps {
@@ -258,10 +259,15 @@ export async function startDiagnosis(deps: DiagnosisDeps, account: string, stude
 
 // ---------- 当前题 ----------
 export function publicView(v: SessionView): Record<string, unknown> {
+  // PLT-12：学习服务开了 LEARNING_PRESENT_ITEM_SOURCE=adapter 时题面多带 rich（受限富文本）。按白名单重建后才转；
+  // 重建不过（多余字段、HTML 标签、危险公式命令等）就丢掉 rich，前端只显示纯文字题面（React 按文本转义）
+  const rich = v.step === null || v.step.item.rich === undefined ? null
+    : pickRich(v.step.item.rich, (v.step.item.options ?? []).map((o) => o.key));
   const step = v.step === null ? null : {
     seq: v.step.seq, kind: v.step.kind, probe_recorded: v.step.probe_recorded, step_elapsed_sec: v.step.step_elapsed_sec,
     item: { format: v.step.item.format, stem: v.step.item.stem,
-            ...(v.step.item.options ? { options: v.step.item.options.map((o) => ({ key: o.key, text: o.text })) } : {}) },
+            ...(v.step.item.options ? { options: v.step.item.options.map((o) => ({ key: o.key, text: o.text })) } : {}),
+            ...(rich ? { rich } : {}) },
   };
   return { session_id: v.session_id, status: v.status, elapsed_sec: v.elapsed_sec, time_budget_sec: v.time_budget_sec,
            item_count: v.item_count, item_limit: v.item_limit, process_tasks: v.process_tasks === true, step };

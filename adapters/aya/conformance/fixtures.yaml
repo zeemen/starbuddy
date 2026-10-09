@@ -459,3 +459,43 @@ cases:
       evidence: []
     conflict_body:
       audience: teacher
+
+  # ---------------- present_item（契约 1.1.0 候选版，PLT-12；since 使它只在 1.1.0 下跑） ----------------
+  # 真实内容包不收录题干（版权未核），所以三种题型都是 withheld：只有题型、选项键与作答格式。
+  # secrets 是这道题的标准答案，题面任何位置都不许出现。注意：本段由实现 present_item 的同一会话起草，待独立会话复核。
+  - id: present-single-withheld
+    method: present_item
+    since: 1.1.0
+    body: {item_ref: "aya:Q-ALG-U01-D-001"}
+    conflict_body: {item_ref: "aya:Q-ALG-U02-R-001"}
+    expect: {content_state: withheld, item_type: single_choice, license_state: unverified}
+
+  - id: present-multi-withheld
+    method: present_item
+    since: 1.1.0
+    body: {item_ref: "aya:Q-ALG-U02-R-001"}
+    conflict_body: {item_ref: "aya:Q-ALG-U01-D-001"}
+    expect: {content_state: withheld, item_type: multi_choice}
+
+  - id: present-fill-withheld
+    method: present_item
+    since: 1.1.0
+    body: {item_ref: "aya:Q-ALG-U01-D-002"}
+    conflict_body: {item_ref: "aya:Q-ALG-U01-D-001"}
+    secrets: ["4n+16", "16+4n"]
+    expect: {content_state: withheld, item_type: fill_blank}
+
+  # 下面两条要求适配器带题面叠加文件启动（Makefile 的 1.1.0 那一遍：--stem-overlay conformance/stems.synthetic.json）：
+  # 叠加文件给这两道题加了合成题面，所以是 complete；secrets 是填空题的标准答案，题面任何位置都不许出现
+  - id: present-fill-complete
+    method: present_item
+    since: 1.1.0
+    body: {item_ref: "aya:Q-ALG-U04-D-003"}
+    secrets: ["5x^2+2x", "5x²+2x"]
+    expect: {content_state: complete, item_type: fill_blank, license_state: unverified}
+
+  - id: present-single-complete
+    method: present_item
+    since: 1.1.0
+    body: {item_ref: "aya:Q-ALG-U01-R-001"}
+    expect: {content_state: complete, item_type: single_choice, license_state: unverified}

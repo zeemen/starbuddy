@@ -3,7 +3,7 @@
 // 请求体指纹不含 context.request_id：重试时 request_id 可能变化，但作答内容不变。
 import { createHash } from "node:crypto";
 
-function canonical(value: unknown): string {
+export function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
   if (value && typeof value === "object") {
     const entries = Object.entries(value as Record<string, unknown>)

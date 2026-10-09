@@ -1,0 +1,40 @@
+{
+  "format": "aya-stem-overlay/1",
+  "note": "合成题面（CLAUDE.md 规则 8），只给 1.1.0 一致性测试与演练用：node src/main.ts --stem-overlay conformance/stems.synthetic.json --allow-candidate-contract。不是这两道题的真实题干。",
+  "items": {
+    "Q-ALG-U04-D-003": {
+      "stem": [
+        {
+          "type": "paragraph",
+          "runs": [
+            { "type": "text", "text": "（合成题面）合并同类项：" },
+            { "type": "math", "latex": "3x^2+2x+2x^2" },
+            { "type": "text", "text": "。" }
+          ]
+        }
+      ]
+    },
+    "Q-ALG-U01-R-001": {
+      "stem": [
+        {
+          "type": "paragraph",
+          "runs": [
+            { "type": "text", "text": "（合成题面）下面哪个式子是单项式？" }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "runs": [
+            { "type": "image", "image_ref": "objstore://synthetic/aya/conformance-fig-01.png", "alt": "（合成）示意图" }
+          ]
+        }
+      ],
+      "option_content": {
+        "A": [{ "type": "math", "latex": "3ab" }],
+        "B": [{ "type": "math", "latex": "a+b" }],
+        "C": [{ "type": "math", "latex": "\\frac{1}{a}" }],
+        "D": [{ "type": "text", "text": "（合成）以上都不是" }]
+      }
+    }
+  }
+}

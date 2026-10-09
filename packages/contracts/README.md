@@ -9,6 +9,8 @@
 | `scripts/check_contract.py` | 契约检查：OpenAPI 合法性、示例符合 schema 且证据引用闭合、反例集、验收标准的结构化检查 |
 | `tests/counterexamples.py` | 反例集：每个反例都必须被 schema 拒绝。新增规则时同时新增反例 |
 | `tests/test_mutations.py` | 变异测试：把契约故意改坏，断言检查能发现，证明每条规则都在起作用 |
+| `openapi/plugin-api.v1.1.yaml` | **v1.1 候选版（PLT-12，待签字）**：以 v1.0 候选版为底只做增量，新增只读方法 `present_item`（受限富文本题面，不含答案、解析、采分点、Rubric；不产生证据、不计量）。“只做增量”由 `check_contract.py` 的 `check_v11_additive` 逐项断言；反例在 `tests/counterexamples_v11.py`，变异在 `tests/test_mutations.py` 的 `V11_MUTATIONS`；签字前只在测试里用（`STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1`） |
+| `python/starbuddy_contract/present.py` | 题面的平台侧白名单（逐字段重建、答案类字段名黑名单、不可见与双向控制字符、题面总字数 ≤ 8000）：学习服务、一致性测试、契约检查共用这一份 |
 | `openapi/learning-internal.v0.yaml` | 学习服务内部 API（BFF → 学习服务），草稿 |
 | `openapi/learning-internal.v1.yaml` | 学习服务内部 API v1 候选版（信封写入、重放接口、模型路由、冲刺 4-H 的今日计划 `POST /internal/v1/plan`），待签字；plan 在候选开关关闭时返回 200 + 各科 `unavailable`。**1.1.0**（KGE-04 第二步 PR 3，待签字）加 `POST /internal/v1/mastery/get`、`/mastery/explain`（请求与响应直接引用知识服务 v0.9 的 schema）与 `POST /internal/v1/verification`（只接受洞察服务令牌，不返回题目）；检查在 `check_contract.py` 的 `INTERNAL_V1_COUNTER` / `INTERNAL_V1_REFS`，变异在 `test_mutations.py` 的 `INTERNAL_MUTATIONS` |
 | `openapi/knowledge-service.v0.9.yaml` | 知识服务 API（KGE 第八章十个工具），草稿 v0.9。公共层读知识、题目、采分点；个人层写证据、读掌握 |
