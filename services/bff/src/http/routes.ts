@@ -16,7 +16,9 @@ import { asOf, SHELL_ROUTES } from './shell-routes.ts';
 import { TRUST_ROUTES } from './trust-routes.ts';
 import { STAR_MAP_V1_ROUTES } from './star-map-v1-routes.ts';
 import { PRACTICE_ROUTES } from './practice-routes.ts';
+import { RETEST_ROUTES } from './retest-routes.ts';
 import type { PracticeOptions } from '../practice/service.ts';
+import type { RetestOptions } from '../retest/service.ts';
 import type { TrustFeature } from '../trust/features.ts';
 import type { StarMapFeature } from '../star-map/features.ts';
 import type { StarMapNodesClient } from '../star-map/nodes-client.ts';
@@ -67,6 +69,9 @@ export interface ShellDeps {
   /** 错题再练（practice-routes.ts，specs/practice-loop-stage1 PR 3）：开关 practice（缺省关，路由不注册）、学习服务再练客户端
    *  （开关打开但不配时三条路由 503） */
   practice?: PracticeOptions;
+  /** 复测与验证题（retest-routes.ts，specs/retest-delivery-kge05）：开关 retest（STARBUDDY_RETEST_UI，缺省关，路由不注册）、
+   *  学习服务复测客户端（开关打开但不配时三条路由 503） */
+  retest?: RetestOptions;
 }
 
 export type Query = <R extends QueryResultRow = QueryResultRow>(sql: string, params?: unknown[]) => Promise<{ rows: R[] }>;
@@ -279,9 +284,9 @@ export const ROUTES: readonly Route[] = [
 
 /** 本次部署实际注册的路由：固定路由表 + 已打开开关的信任界面路由 + 星图 v1（starmap_v1）+ 错题再练（practice）（开关缺省全关） */
 export function activeRoutes(features: ReadonlySet<TrustFeature> = new Set(), starMap: ReadonlySet<StarMapFeature> = new Set(),
-                             practice = false): readonly Route[] {
+                             practice = false, retest = false): readonly Route[] {
   return [...ROUTES, ...TRUST_ROUTES.filter((r) => r.feature !== undefined && features.has(r.feature)),
-          ...(starMap.has('starmap_v1') ? STAR_MAP_V1_ROUTES : []), ...(practice ? PRACTICE_ROUTES : [])];
+          ...(starMap.has('starmap_v1') ? STAR_MAP_V1_ROUTES : []), ...(practice ? PRACTICE_ROUTES : []), ...(retest ? RETEST_ROUTES : [])];
 }
 
 /** 路由模板编译成正则：路径参数（student_id、session_id、probe_id、claim_id、exam_id、export_job_id、request_id、entry_id）一律只匹配小写 UUID；学科码 {subject} 只匹配小写字母（H4） */

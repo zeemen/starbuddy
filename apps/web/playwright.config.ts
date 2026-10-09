@@ -20,7 +20,9 @@ const REPORT_SPECS = /first-report\.spec\.ts$/;
 // 学习服务是合成桩 scripts/fake-learning-practice.ts），前端只开 practice；只跑 practice.spec.ts（含 @visual）。另四套前端的 practice 都关
 // （trust-off 里的 practice-off.spec.ts 核对入口不出现、页面 404、BFF 路由不注册）。
 const practicePort = Number(process.env['WEB_PRACTICE_PORT'] ?? 3104);
-const PRACTICE_SPECS = /(^|\/)practice\.spec\.ts$/;
+// 复测与验证题（specs/retest-delivery-kge05）也在这一套：前端与第五个 BFF 另开 STARBUDDY_RETEST_UI=retest，跑 retest.spec.ts；
+// 另四套都关（trust-off 里的 retest-off.spec.ts 核对入口不出现、页面 404、BFF 路由不注册）。
+const PRACTICE_SPECS = /(^|\/)(practice|retest)\.spec\.ts$/;
 // 数据权利用例（导出下载、删除二次确认，标 @data-rights）另在 WebKit 与 Firefox 上跑（安全审查 2）：本机只装了 Chromium，
 // 所以按需打开——STARBUDDY_E2E_BROWSERS=webkit,firefox（需要对应的 Playwright 浏览器二进制；lessons 登记）。
 const extraBrowsers = (process.env['STARBUDDY_E2E_BROWSERS'] ?? '').split(',').map((s) => s.trim())
@@ -32,6 +34,8 @@ const serverEnv = {
   STARBUDDY_STARMAP: '',
   // 错题再练开关显式关闭（不从调用方环境继承）：只有 practice-on 的前端在下面另行打开
   STARBUDDY_PRACTICE: '',
+  // 复测与验证题开关同样显式关闭：只有 practice-on 的前端另行打开
+  STARBUDDY_RETEST_UI: '',
   STARBUDDY_REVIEW_URL: process.env['STARBUDDY_REVIEW_URL'] ?? 'http://127.0.0.1:8790',
   NEXT_TELEMETRY_DISABLED: '1',
   // scripts/e2e.sh 的测试构建在 .next-e2e（next.config.ts），next start 要读同一个目录
@@ -117,6 +121,7 @@ export default defineConfig({
         ...serverEnv,
         STARBUDDY_BFF_URL: process.env['STARBUDDY_PRACTICE_BFF_URL'] ?? 'http://127.0.0.1:8794',
         STARBUDDY_PRACTICE: 'practice',
+        STARBUDDY_RETEST_UI: 'retest',
       },
     },
   ],

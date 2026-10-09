@@ -102,7 +102,8 @@ test('不直连学习服务：前端源码没有学习服务的地址、内部�
   for (const f of src) {
     assert.ok(!/\/internal\/v1|LEARNING_|BFF_LEARNING|learning-client|practice-internal/.test(code(f.text)), f.path);
   }
-  for (const f of src.filter((x) => /\.(tsx?)$/.test(x.path) && x.path !== 'src/lib/practice-api.ts')) {
+  // 复测与验证题（specs/retest-delivery-kge05）的 BFF 客户端 src/lib/retest-api.ts 同一写法（路径段是 /retest/），另在 tests/retest.test.ts 核对
+  for (const f of src.filter((x) => /\.(tsx?)$/.test(x.path) && x.path !== 'src/lib/practice-api.ts' && x.path !== 'src/lib/retest-api.ts')) {
     assert.ok(!/\/practice\/\$\{subject\}\$\{tail\}|\/entries\/|['"`]\/answer['"`]/.test(code(f.text)), f.path);
   }
   // 再练的组件、页面与 action 不自己发请求，只经 practice-api（服务端）与 server action（客户端组件）

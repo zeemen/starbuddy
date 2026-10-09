@@ -97,7 +97,7 @@ for v in c['rate_limits'].values():
 json.dump(c, open(sys.argv[2], 'w'))
 PY
 ( cd "$ROOT/services/bff" || exit 1
-  unset STARBUDDY_STARMAP STARBUDDY_PRACTICE  # 星图、错题再练开关全关（v0）：不从调用方环境继承
+  unset STARBUDDY_STARMAP STARBUDDY_PRACTICE STARBUDDY_RETEST_UI  # 星图、错题再练、复测开关全关（v0）：不从调用方环境继承
   export BFF_DATABASE_URL="postgresql://bff_app@/starbuddy_test?host=$PGHOST" PORT="$BFF_PORT" BFF_AUTH_CONFIG="$AUTH_CFG" \
     BFF_LEARNING_URL="http://127.0.0.1:$LEARNING_PORT" BFF_LEARNING_TOKEN="$SVC_CRED" \
     STARBUDDY_ENV=test BFF_SHELL_ORIGIN="http://127.0.0.1:$WEB_PORT" BFF_SMS_CAPTURE_FILE="$SMS_INBOX"
@@ -119,7 +119,7 @@ c['external_claim_templates'] = ['syn.weekly.node_mastery@1']
 json.dump(c, open(sys.argv[2], 'w'))
 PY
 ( cd "$ROOT/services/bff" || exit 1
-  unset STARBUDDY_STARMAP STARBUDDY_PRACTICE  # 星图、错题再练开关全关（v0）：不从调用方环境继承
+  unset STARBUDDY_STARMAP STARBUDDY_PRACTICE STARBUDDY_RETEST_UI  # 星图、错题再练、复测开关全关（v0）：不从调用方环境继承
   export BFF_DATABASE_URL="postgresql://bff_app@/starbuddy_test?host=$PGHOST" PORT="$TRUST_BFF_PORT" BFF_AUTH_CONFIG="$AUTH_CFG" \
     BFF_LEARNING_URL="http://127.0.0.1:$LEARNING_PORT" BFF_LEARNING_TOKEN="$SVC_CRED" \
     STARBUDDY_ENV=test BFF_SHELL_ORIGIN="http://127.0.0.1:$WEB_TRUST_PORT" BFF_SMS_CAPTURE_FILE="$SMS_INBOX" \
@@ -158,7 +158,7 @@ c['star_map']['transfer_templates'] = ['syn.starmap.node_transfer@1']
 json.dump(c, open(sys.argv[2], 'w'))
 PY
 ( cd "$ROOT/services/bff" || exit 1
-  unset STARBUDDY_PRACTICE  # 错题再练开关关：不从调用方环境继承
+  unset STARBUDDY_PRACTICE STARBUDDY_RETEST_UI  # 错题再练、复测开关关：不从调用方环境继承
   export BFF_DATABASE_URL="postgresql://bff_app@/starbuddy_test?host=$PGHOST" PORT="$SM_BFF_PORT" BFF_AUTH_CONFIG="$AUTH_CFG" \
     BFF_LEARNING_URL="http://127.0.0.1:$SM_LEARNING_PORT" BFF_LEARNING_TOKEN="$SVC_CRED" \
     STARBUDDY_ENV=test BFF_SHELL_ORIGIN="http://127.0.0.1:$WEB_STARMAP_PORT" BFF_SMS_CAPTURE_FILE="$SMS_INBOX" \
@@ -190,7 +190,7 @@ c['external_claim_templates'] = ['syn.report.node_mastery@1', 'syn.report.node_t
 json.dump(c, open(sys.argv[2], 'w'))
 PY
 ( cd "$ROOT/services/bff" || exit 1
-  unset STARBUDDY_STARMAP STARBUDDY_PRACTICE  # 星图、错题再练开关全关（v0）：不从调用方环境继承
+  unset STARBUDDY_STARMAP STARBUDDY_PRACTICE STARBUDDY_RETEST_UI  # 星图、错题再练、复测开关全关（v0）：不从调用方环境继承
   export BFF_DATABASE_URL="postgresql://bff_app@/starbuddy_test?host=$PGHOST" PORT="$RP_BFF_PORT" BFF_AUTH_CONFIG="$AUTH_CFG" \
     STARBUDDY_ENV=test BFF_SHELL_ORIGIN="http://127.0.0.1:$WEB_REPORT_PORT" BFF_SMS_CAPTURE_FILE="$SMS_INBOX" \
     STARBUDDY_TRUST_UI=report,why BFF_SHELL_CONFIG="$RP_SHELL_CFG" BFF_INSIGHT_URL="http://127.0.0.1:$FI_PORT" BFF_INSIGHT_TOKEN="$FI_CRED"
@@ -204,6 +204,8 @@ trap 'kill "$BFF_PID" "$TRUST_BFF_PID" "$SM_BFF_PID" "$SM_LEARNING_PID" "$RP_BFF
 #   - 第五个 BFF：STARBUDDY_PRACTICE=practice（只在 STARBUDDY_ENV=test 生效），BFF_LEARNING_URL 指向桩（今日计划、诊断等其余学习服务调用都得到 501，
 #     按“暂无安排”处理）；作答照常经 platform.meter_practice 在这个一次性库里计次。另四套 BFF 不开 practice（开关关时三条路由 404，
 #     e2e/practice-off.spec.ts 在 trust-off 项目里核对，并按桩的请求记录核对这期间桩收到 0 个请求）。
+#   - 复测与验证题（specs/retest-delivery-kge05；e2e/retest.spec.ts）也在这一套：第五个 BFF 另开 STARBUDDY_RETEST_UI=retest，桩另实现
+#     retest 的三个内部接口；另四套 BFF 不开（e2e/retest-off.spec.ts 在 trust-off 项目里核对路由 404、桩收到 0 个请求）。
 PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -q -v ON_ERROR_STOP=1 -f "$ROOT/db/seeds/dev/practice-synthetic.sql" >/dev/null
 FL_PORT="$(free_port)"
 PR_BFF_PORT="$(free_port)"
@@ -223,7 +225,7 @@ FL_PID=$!
   export BFF_DATABASE_URL="postgresql://bff_app@/starbuddy_test?host=$PGHOST" PORT="$PR_BFF_PORT" BFF_AUTH_CONFIG="$AUTH_CFG" \
     BFF_LEARNING_URL="http://127.0.0.1:$FL_PORT" BFF_LEARNING_TOKEN="$FL_CRED" \
     STARBUDDY_ENV=test BFF_SHELL_ORIGIN="http://127.0.0.1:$WEB_PRACTICE_PORT" BFF_SMS_CAPTURE_FILE="$SMS_INBOX" \
-    STARBUDDY_PRACTICE=practice
+    STARBUDDY_PRACTICE=practice STARBUDDY_RETEST_UI=retest
   exec node --no-warnings src/main.ts ) > "$PRLOG" 2>&1 < /dev/null &
 PR_BFF_PID=$!
 trap 'kill "$BFF_PID" "$TRUST_BFF_PID" "$SM_BFF_PID" "$SM_LEARNING_PID" "$RP_BFF_PID" "$FI_PID" "$PR_BFF_PID" "$FL_PID" "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true; rm -f "$LOG" "$TLOG" "$SMLOG" "$RPLOG" "$FILOG" "$PRLOG" "$FLLOG" "$FL_REQLOG" "$LLOG" "$SMLLOG" "$SMS_INBOX" "$AUTH_CFG" "$TRUST_SHELL_CFG" "$SM_SHELL_CFG" "$RP_SHELL_CFG"' EXIT

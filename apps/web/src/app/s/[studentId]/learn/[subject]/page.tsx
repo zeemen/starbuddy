@@ -1,6 +1,7 @@
 // 学生端科目页 /s/{studentId}/learn/{subject}（spec 第 18 节）：按清单挂各科的入口组件；英语与清单外的学科 404。
 // 每个科目页都能一步回到星图（顶栏常驻“星图”，页内另有一个）。只调 BFF，不调原产品，不用 iframe。
 // 错题再练入口（specs/practice-loop-stage1 PR 4）：PracticeLink 在开关关、学科不在再练范围时返回 null（与开关打开前零差异）。
+// 复测入口（specs/retest-delivery-kge05）：RetestLink 同理，开关 STARBUDDY_RETEST_UI 关时返回 null。
 import { notFound, redirect } from 'next/navigation';
 import { fetchToday } from '../../../../../lib/shell-api.ts';
 import { subjectLabel, SUBJECTS } from '../../../../../shell/copy.ts';
@@ -9,6 +10,7 @@ import { ChineseEntry } from '../../../../../subjects/chinese/Entry.tsx';
 import { MathEntry } from '../../../../../subjects/math/Entry.tsx';
 import { PoliticsEntry } from '../../../../../subjects/politics/Entry.tsx';
 import { PracticeLink } from '../../../../../practice/PracticePages.tsx';
+import { RetestLink } from '../../../../../retest/RetestPages.tsx';
 import { subjectModule } from '../../../../../subjects/registry.ts';
 
 export const dynamic = 'force-dynamic';
@@ -35,6 +37,7 @@ export default async function SubjectPage({ params }: { params: Promise<{ studen
       <h1>{name}</h1>
       <p><a href={`/s/${studentId}/star-map`} data-testid="back-to-star-map">{SUBJECTS.backToStarMap}</a></p>
       <PracticeLink studentId={studentId} subject={m.code} />
+      <RetestLink studentId={studentId} subject={m.code} />
       {body}
     </main>
   );

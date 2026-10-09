@@ -161,6 +161,24 @@ class PracticeService:
             raise err(404, "ENTRY_NOT_FOUND", "practice entry not found")
         if entry.status != "due":
             raise err(409, "PRACTICE_NOT_DUE", "this practice entry is not open for a new round")
+        picked = await self.pick(student, subject, snap, entry, presenter, target)
+        if isinstance(picked, dict):
+            return picked
+        c, item_view, tier = picked
+        unit = entry.unit
+        t = T.Ticket(student=student, subject=subject, node_id=unit.node_id, cognitive_level=unit.cognitive_level, anchor=entry.anchor,
+                     item_id=c.item_id, round=entry.round, issued_at=T.issued(now))
+        self.stats["ticket_issued"] += 1
+        return {"status": "ready", "entry_id": eid, "round": entry.round, "item_ref": c.item_ref, "item": dict(item_view),
+                "ticket": T.issue(self.ticket_secret, t), "expires_at": iso(T.expires_at(t, self.cfg.ticket_ttl_minutes)),
+                "same_family_only": tier.same_family_only}
+
+    async def pick(self, student: str, subject: str, snap: store.Snapshot, entry: Q.Entry, presenter: PracticePresenter,
+                   target: AdapterTarget, *, require_new_family: bool = False) -> tuple[S.Candidate, dict, S.Tier] | dict:
+        """为一个开着的条目选一道题：知识服务候选 → 平台过滤 → 题目族分档 → generate_variation → 核对 → 取题面。
+        返回（题, 题面, 这一档），或不可用（{"status": "unavailable", ...}）。不签票据（调用方按自己的用途签）。
+        require_new_family：只出学生在这个单元没做过的题目族（复测与验证题用，KGE-05：同族重做 KGE-04 记 repeat_family，
+        既不计入也不判复测轮）；没有不同族的候选时这一轮不可用（no_new_family），不出同族题。"""
         unit = entry.unit
         used = snap.used_families(unit)
         source_item_id = entry.source_item_id
@@ -196,6 +214,10 @@ class PracticeService:
         if f.empty_reason is not None:
             return self._unavailable(f.empty_reason)
         tier = S.tier(f.kept, used, prefer_new_family=self.cfg.prefer_new_family)
+        if require_new_family:
+            tier = S.tier(f.kept, used, prefer_new_family=True)
+            if tier.same_family_only:
+                return self._unavailable(S.NO_NEW_FAMILY)
         picks = await self._variation(target, student, subject, entry, tier, snap.recent_items, category, admission)
         if isinstance(picks, str):
             return self._unavailable(picks)
@@ -207,12 +229,7 @@ class PracticeService:
         if chosen is None or presenter.rubric_version(subject, chosen[0].item_id) is None:
             raise err(501, "PRESENTER_UNAVAILABLE", "no item view for the selected item")
         c, item_view = chosen
-        t = T.Ticket(student=student, subject=subject, node_id=unit.node_id, cognitive_level=unit.cognitive_level, anchor=entry.anchor,
-                     item_id=c.item_id, round=entry.round, issued_at=T.issued(now))
-        self.stats["ticket_issued"] += 1
-        return {"status": "ready", "entry_id": eid, "round": entry.round, "item_ref": c.item_ref, "item": dict(item_view),
-                "ticket": T.issue(self.ticket_secret, t), "expires_at": iso(T.expires_at(t, self.cfg.ticket_ttl_minutes)),
-                "same_family_only": tier.same_family_only}
+        return c, dict(item_view), tier
 
     def _error_category(self, subject: str, code: str | None) -> str | None:
         """错因编码只在存在、属于该科、且不属于敏感类时传给适配器。错因分类表读不到（文件缺失、格式坏）时不传、计数，

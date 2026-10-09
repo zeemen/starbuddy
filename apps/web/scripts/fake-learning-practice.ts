@@ -1,6 +1,8 @@
 // 端到端用的合成学习服务桩（specs/practice-loop-stage1 PR 4：错题再练学生端页面，e2e/practice.spec.ts）：只在 scripts/e2e.sh 的一次性环境里起，
 // 只监听 127.0.0.1，只认 BFF 的服务间令牌（FAKE_LEARNING_TOKEN，每次随机生成、只经环境变量传）。
 // 只实现错题再练的三个内部接口（services/learning/openapi/practice-internal.v0.yaml）：queue、next、answer，按该文件的响应形状返回；
+// 另实现复测与验证题的内部接口（retest-internal.v0.yaml，specs/retest-delivery-kge05：queue、next、answer 与只读的 check、replay，
+// 剧本见文件后部）；
 // 其余路径（今日计划、诊断、星图等）一律 501（BFF 按“暂无安排 / 暂时无法获取”处理）。
 // 不是学习服务的实现：错题判定、选题、票据验签、经 grade 写入落库与掌握重算在 services/learning，有它自己的单测与库上集成测试；
 // 这里的条目、题面、判分全是合成的固定剧本（学生 P1、P2、P3 见 db/seeds/dev/practice-synthetic.sql），状态只在进程内存里。
@@ -194,20 +196,125 @@ function answer(b: Record<string, unknown>) {
   return res;
 }
 
+// ---------- 复测与验证题（specs/retest-delivery-kge05；e2e/retest.spec.ts）：retest 的三个内部接口（retest-internal.v0.yaml 的响应形状） ----------
+// 剧本（学生 P1，数学 aya；道法空列表；语文 400）：
+//   R1 复测 due 单选：作答（对错都一样）→ done（KGE-04 关闭复测轮）    R2 验证 due 填空：判分待复核，条目仍 due
+//   R3 验证 unavailable（no_new_family）    R4 复测 due：取题 200 unavailable（no_source_item）
+// 响应故意带上任务原因（reason）、作答用途（purpose）、题目引用与空原因编码：端到端断言它们不出现在页面上。
+interface RetestEntry { entry_id: string; node_id: string; kind: 'retest' | 'verify'; status: 'due' | 'unavailable'; reason: string; empty_reason: string | null;
+                        play: { format?: Format; next?: 'ready' | 'unavailable'; answer?: 'done' | 'pending' } }
+const RETEST: Record<string, RetestEntry[]> = {
+  [P1]: [
+    { entry_id: id('401'), node_id: 'MATH.SYN.P1.R1', kind: 'retest', status: 'due', reason: 'scheduled', empty_reason: null,
+      play: { format: 'single', next: 'ready', answer: 'done' } },
+    { entry_id: id('402'), node_id: 'MATH.SYN.P1.R2', kind: 'verify', status: 'due', reason: 'verify_self_report', empty_reason: null,
+      play: { format: 'fill', next: 'ready', answer: 'pending' } },
+    { entry_id: id('403'), node_id: 'MATH.SYN.P1.R3', kind: 'verify', status: 'unavailable', reason: 'verify_in_platform', empty_reason: 'no_new_family', play: {} },
+    { entry_id: id('404'), node_id: 'MATH.SYN.P1.R4', kind: 'retest', status: 'due', reason: 'decay', empty_reason: null, play: { next: 'unavailable' } },
+  ],
+};
+const RETEST_TICKETS = new Map<string, { student: string; subject: string; entry: string; expiresAt: number }>();
+const retestOf = (b: Record<string, unknown>): RetestEntry[] => (b['subject'] === 'aya' ? RETEST[b['student_ref'] as string] ?? [] : []);
+const DONE_RETEST = new Set<string>();
+
+function rqueue(b: Record<string, unknown>) {
+  if (!exact(b, ['student_ref', 'subject'])) return problem(400, 'INVALID_REQUEST');
+  return subjectCheck(b) ?? { status: 200, body: { subject: b['subject'], entries: retestOf(b).filter((e) => !DONE_RETEST.has(e.entry_id)).map((e) => ({
+    entry_id: e.entry_id, node_id: e.node_id, cognitive_level: 'apply', kind: e.kind, status: e.status, empty_reason: e.empty_reason, reason: e.reason })) } };
+}
+
+function rnext(b: Record<string, unknown>) {
+  if (!exact(b, ['student_ref', 'subject', 'entry_id'])) return problem(400, 'INVALID_REQUEST');
+  const bad = subjectCheck(b);
+  if (bad) return bad;
+  const e = retestOf(b).find((x) => x.entry_id === b['entry_id']);
+  if (!e) return problem(404, 'ENTRY_NOT_FOUND');
+  if (DONE_RETEST.has(e.entry_id)) return problem(409, 'RETEST_NOT_DUE');
+  if (e.status !== 'due' || e.play.next === 'unavailable') return { status: 200, body: { status: 'unavailable', empty_reason: e.empty_reason ?? 'no_source_item' } };
+  const ticket = `rt1.${randomBytes(24).toString('base64url')}.${randomBytes(16).toString('base64url')}`;
+  const expiresAt = Date.now() + 3_600_000;
+  RETEST_TICKETS.set(ticket, { student: b['student_ref'] as string, subject: b['subject'] as string, entry: e.entry_id, expiresAt });
+  const format = e.play.format ?? 'single';
+  return { status: 200, body: {
+    status: 'ready', entry_id: e.entry_id, kind: e.kind, reason: e.reason, item_ref: `aya:item-SYN-${e.entry_id.slice(-3)}-rt`,
+    item: { format, stem: `【合成题面】${e.node_id} 的一道复测占位题`, ...(format === 'fill' ? {} : { options: OPTIONS }) },
+    ticket, expires_at: new Date(expiresAt).toISOString() } };
+}
+
+function ranswer(b: Record<string, unknown>) {
+  if (!exact(b, ['student_ref', 'subject', 'ticket', 'answer', 'idempotency_key', 'usage_id'])) return problem(400, 'INVALID_REQUEST');
+  const bad = subjectCheck(b);
+  if (bad) return bad;
+  const key = b['idempotency_key'];
+  if (typeof key !== 'string' || !UUID_V4.test(key) || typeof b['usage_id'] !== 'string' || !UUID.test(b['usage_id'])) return problem(400, 'INVALID_REQUEST');
+  const student = b['student_ref'] as string;
+  const answerJson = JSON.stringify(b['answer']);
+  const done = KEYS.get(key);
+  if (done) {
+    if (done.student !== student || done.answer !== answerJson) return problem(409, 'IDEMPOTENCY_CONFLICT');
+    return { ...done, replayed: true };
+  }
+  const t = typeof b['ticket'] === 'string' ? RETEST_TICKETS.get(b['ticket']) : undefined;
+  if (!t || t.student !== student || t.subject !== b['subject']) return problem(403, 'TICKET_INVALID');
+  if (Date.now() >= t.expiresAt) return problem(410, 'TICKET_EXPIRED');
+  const e = retestOf(b).find((x) => x.entry_id === t.entry);
+  if (!e || DONE_RETEST.has(e.entry_id)) return problem(409, 'RETEST_NOT_DUE');
+  const a = b['answer'] as Record<string, unknown>;
+  const given = Array.isArray(a?.['choice']) ? [...(a['choice'] as string[])].sort() : typeof a?.['text'] === 'string' ? [String(a['text']).trim()] : null;
+  if (!given) return problem(422, 'INVALID_ANSWER');
+  let out: Record<string, unknown>;
+  if (e.play.answer === 'pending') {
+    out = { verdict: 'correct', pending_review: true, entry: { entry_id: e.entry_id, status: 'due' }, purpose: 'transfer_check' };
+  } else {
+    DONE_RETEST.add(e.entry_id);
+    out = { verdict: JSON.stringify(given) === '["B"]' ? 'correct' : 'incorrect', entry: { entry_id: e.entry_id, status: 'done' }, purpose: 'retest' };
+  }
+  const res = { status: 200, body: out };
+  KEYS.set(key, { student, answer: answerJson, ...res });
+  return res;
+}
+
+/** 计次前的只读预检：票据是这个学生这一科的、没过期、条目还没做完 */
+function rcheck(b: Record<string, unknown>) {
+  if (!exact(b, ['student_ref', 'subject', 'ticket'])) return problem(400, 'INVALID_REQUEST');
+  const bad = subjectCheck(b);
+  if (bad) return bad;
+  const t = typeof b['ticket'] === 'string' ? RETEST_TICKETS.get(b['ticket']) : undefined;
+  if (!t || t.student !== b['student_ref'] || t.subject !== b['subject']) return problem(403, 'TICKET_INVALID');
+  if (Date.now() >= t.expiresAt) return problem(410, 'TICKET_EXPIRED');
+  if (DONE_RETEST.has(t.entry)) return problem(409, 'RETEST_NOT_DUE');
+  return { status: 200, body: { status: 'ok' } };
+}
+
+/** 宵禁时只找回原结果：这个键已有结果就原样回，否则 404（不执行） */
+function rreplay(b: Record<string, unknown>) {
+  if (!exact(b, ['student_ref', 'subject', 'ticket', 'idempotency_key', 'usage_id'])) return problem(400, 'INVALID_REQUEST');
+  const done = typeof b['idempotency_key'] === 'string' ? KEYS.get(b['idempotency_key']) : undefined;
+  if (!done || done.student !== b['student_ref']) return problem(404, 'REPLAY_NOT_FOUND');
+  return { ...done, replayed: true };
+}
+
+const PRACTICE_PATHS = ['/internal/v1/practice/queue', '/internal/v1/practice/next', '/internal/v1/practice/answer'];
+const RETEST_PATHS = ['/internal/v1/retest/queue', '/internal/v1/retest/next', '/internal/v1/retest/answer', '/internal/v1/retest/check',
+                      '/internal/v1/retest/replay'];
+
 createServer((req, res) => {
   void (async () => {
     let out: { status: number; body: unknown; replayed?: boolean };
     const path = req.url ?? '';
     if (REQUEST_LOG) appendFileSync(REQUEST_LOG, `${JSON.stringify({ method: req.method ?? '', path: path.slice(0, 200) })}\n`);
     if (req.headers['authorization'] !== `Bearer ${TOKEN}`) out = problem(401, 'UNAUTHENTICATED');
-    else if (req.method !== 'POST' || !['/internal/v1/practice/queue', '/internal/v1/practice/next', '/internal/v1/practice/answer'].includes(path)) {
+    else if (req.method !== 'POST' || ![...PRACTICE_PATHS, ...RETEST_PATHS].includes(path)) {
       out = problem(501, 'NOT_IMPLEMENTED');
     } else {
       const b = await readBody(req);
-      out = !b ? problem(400, 'INVALID_REQUEST') : path.endsWith('/queue') ? queue(b) : path.endsWith('/next') ? next(b) : answer(b);
+      const retest = RETEST_PATHS.includes(path);
+      out = !b ? problem(400, 'INVALID_REQUEST')
+        : path.endsWith('/check') ? rcheck(b) : path.endsWith('/replay') ? rreplay(b)
+        : path.endsWith('/queue') ? (retest ? rqueue(b) : queue(b)) : path.endsWith('/next') ? (retest ? rnext(b) : next(b)) : (retest ? ranswer(b) : answer(b));
     }
     const headers: Record<string, string> = { 'content-type': out.status === 200 ? 'application/json' : 'application/problem+json' };
-    if (path.endsWith('/answer') && out.status === 200) headers['idempotent-replayed'] = out.replayed ? 'true' : 'false';
+    if ((path.endsWith('/answer') || path.endsWith('/replay')) && out.status === 200) headers['idempotent-replayed'] = out.replayed ? 'true' : 'false';
     res.writeHead(out.status, headers);
     res.end(JSON.stringify(out.body));
   })();

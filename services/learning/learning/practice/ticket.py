@@ -62,9 +62,10 @@ def _sign(secret: str, head: str) -> str:
     return _b64(hmac.new(_key(secret), head.encode(), hashlib.sha256).digest())
 
 
-def issue(secret: str, t: Ticket) -> str:
+def issue(secret: str, t: Ticket, *, prefix: str = PREFIX) -> str:
+    """prefix 区分票据用途（再练 pt1、复测与验证题 rt1，KGE-05）：前缀在签名覆盖的范围内，一种用途的票据改不成另一种。"""
     payload = json.dumps(asdict(t), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
-    head = f"{PREFIX}.{_b64(payload.encode())}"
+    head = f"{prefix}.{_b64(payload.encode())}"
     return f"{head}.{_sign(secret, head)}"
 
 
@@ -81,11 +82,11 @@ def _valid_payload(d: object) -> bool:
             and isinstance(d["issued_at"], int) and not isinstance(d["issued_at"], bool) and d["issued_at"] > 0)
 
 
-def verify(secret: str, token: object, *, now: datetime, ttl_minutes: int) -> Ticket:
+def verify(secret: str, token: object, *, now: datetime, ttl_minutes: int, prefix: str = PREFIX) -> Ticket:
     if not isinstance(token, str) or len(token) > MAX_LEN:
         raise TicketError("TICKET_INVALID")
     parts = token.split(".")
-    if len(parts) != 3 or parts[0] != PREFIX:
+    if len(parts) != 3 or parts[0] != prefix:
         raise TicketError("TICKET_INVALID")
     head = f"{parts[0]}.{parts[1]}"
     if not hmac.compare_digest(_sign(secret, head).encode(), parts[2].encode()):

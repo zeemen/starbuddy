@@ -28,6 +28,9 @@ export const CRAWL: Record<string, CrawlPage | Excluded> = {
   's/[studentId]/star-map/page.tsx': { who: 'student', path: (s) => `/s/${s}/star-map` },
   's/[studentId]/learn/[subject]/practice/page.tsx': { who: 'student', path: (s) => `/s/${s}/learn/math/practice`, practiceOn: true },
   's/[studentId]/learn/[subject]/practice/[entryId]/page.tsx': { who: 'student', path: (s) => `/s/${s}/learn/math/practice/${NO_ID}`, practiceOn: true },
+  // 复测与验证题（specs/retest-delivery-kge05）：开关 STARBUDDY_RETEST_UI 只在 practice-on 一套里打开，所以同样按 practiceOn 登记
+  's/[studentId]/learn/[subject]/retest/page.tsx': { who: 'student', path: (s) => `/s/${s}/learn/math/retest`, practiceOn: true },
+  's/[studentId]/learn/[subject]/retest/[entryId]/page.tsx': { who: 'student', path: (s) => `/s/${s}/learn/math/retest/${NO_ID}`, practiceOn: true },
   's/[studentId]/why/[claimId]/page.tsx': { who: 'student', path: (s) => `/s/${s}/why/${NO_ID}`, trustOn: true },
   's/[studentId]/disputes/page.tsx': { who: 'student', path: (s) => `/s/${s}/disputes`, trustOn: true },
   's/[studentId]/exams/page.tsx': { who: 'student', path: (s) => `/s/${s}/exams`, trustOn: true },

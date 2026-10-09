@@ -57,7 +57,7 @@ const header = (req: IncomingMessage, name: string): string | null => {
  */
 export function createShellHandler(deps: ShellDeps): (req: IncomingMessage, res: ServerResponse) => Promise<boolean> {
   // 信任界面、星图 v1、错题再练开关关闭的路由不注册（表外 404）
-  const routes = activeRoutes(deps.trust?.features, deps.starMap?.features, deps.practice?.enabled === true);
+  const routes = activeRoutes(deps.trust?.features, deps.starMap?.features, deps.practice?.enabled === true, deps.retest?.enabled === true);
   const table = compile(routes);
   const shapes = templateShapes(routes);
   const log = deps.log ?? ((line) => console.log(JSON.stringify(line)));

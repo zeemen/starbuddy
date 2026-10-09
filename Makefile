@@ -37,7 +37,7 @@ make-skip-check:
 # 契约检查约 1 秒，改动后也跑一遍
 check-fast: contract-test taxonomy-check attack-surface-check sie-dictionary-check kge-id-check
 
-check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation practice-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona insight-test insight-mutation voice-blind-eval-test release-walkthrough
+check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation practice-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona insight-test insight-mutation voice-blind-eval-test release-walkthrough retest-mutation
 	@echo "check: lint 尚未配置，跳过；其余检查已通过"
 
 # 契约合法性 + 示例 + 反例集
@@ -177,6 +177,15 @@ practice-mutation:
 	@$(call guard,$(LEARNING_MISSING))services/learning/.venv/bin/python services/learning/scripts/practice_mutations.py; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
 
+# 复测与验证题交付（KGE-05，specs/retest-delivery-kge05）：把任务 → 条目、用途、到期、自述验证道数、8 周复测点开关、票据前缀与核对、
+# 作答确认、只出新族、鉴权逐条改坏，断言复测测试能发现（纯函数组不连库；库上组每个变异一个一次性 Postgres）
+.PHONY: retest-mutation
+retest-mutation:
+	@if $(LEARNING_MISSING); then \
+	  echo "retest-mutation: 跳过（没有安装学习服务依赖；见 services/learning/README.md）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@$(call skip_rest,$(LEARNING_MISSING))services/learning/.venv/bin/python services/learning/scripts/retest_mutations.py; rc=$$?; \
+	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
 
 # 适配器客户端（learning/adapter_client.py）：把重试、错误归类、编码转发、严格 JSON、202、超时、总预算与 5 MB 上限逐条改坏，断言客户端测试能发现（不连库，并行 8 路，约 25 秒）
 adapter-client-mutation:

@@ -39,12 +39,14 @@ import { STAR_MAP_FEATURES } from '../src/star-map/features.ts';
 import type { StarMapNodesClient } from '../src/star-map/nodes-client.ts';
 import type { PracticeLearning } from '../src/practice/learning-client.ts';
 import { parseAnswer as parsePracticeAnswer } from '../src/practice/service.ts';
+import type { RetestLearning } from '../src/retest/learning-client.ts';
+import { parseRetestAnswer } from '../src/retest/service.ts';
 import { createFamily, HAS_DB, setupHarness, type Harness } from './harness.ts';
 import { operations } from './openapi-ops.ts';
 import { callAs, ORIGIN, startShell, type Sess, type ShellHarness } from './shell-harness.ts';
 
-/** 本次部署可能注册的全部路由（信任界面开关全开，H5 星图 v1 开关全开，错题再练开关打开） */
-const ALL: readonly Route[] = activeRoutes(new Set(TRUST_FEATURES), new Set(STAR_MAP_FEATURES), true);
+/** 本次部署可能注册的全部路由（信任界面开关全开，H5 星图 v1 开关全开，错题再练开关打开，复测与验证题开关打开） */
+const ALL: readonly Route[] = activeRoutes(new Set(TRUST_FEATURES), new Set(STAR_MAP_FEATURES), true, true);
 const keyOf = (r: Route) => `${r.method} ${r.path}`;
 const OPS = operations();
 const opOf = (r: Route) => OPS.get(`${r.method} ${PREFIX}${r.path}`)!;
@@ -124,6 +126,10 @@ export const SAMPLES: Record<string, Sample> = {
   'POST /students/{student_id}/practice/{subject}/entries/{entry_id}/next': none,
   // （幂等键在票据里，前端不带）
   'POST /students/{student_id}/practice/{subject}/answer': b(() => ({ ticket: `sbp1.${'A'.repeat(64)}`, answer: { text: '1' } })),
+  // 复测与验证题（specs/retest-delivery-kge05，开关 retest）：同错题再练，作答的票据是格式合法的假票据（阳性对照 422 TICKET_INVALID）
+  'GET /students/{student_id}/retest/{subject}': none,
+  'POST /students/{student_id}/retest/{subject}/entries/{entry_id}/next': none,
+  'POST /students/{student_id}/retest/{subject}/answer': b(() => ({ ticket: `sbr1.${'A'.repeat(64)}`, answer: { text: '1' } })),
 };
 
 /**
@@ -217,7 +223,21 @@ const practiceLearning: PracticeLearning = {
   },
   async answer(student) { practiceCalls.push(`answer:${student}`); return { kind: 'failure', status: 409, problem: { code: 'PRACTICE_NOT_DUE' } }; },
 };
-const callCount = () => calls.plan.length + calls.diagnosis.length + calls.dispute + calls.exams + starCalls.length + readCalls + practiceCalls.length;
+/** 复测与验证题的学习服务内部接口（同再练：越权请求一次也不能到达；阳性对照：S 自己的条目 409 RETEST_NOT_DUE，别人的或不存在的条目 404） */
+const retestCalls: string[] = [];
+const retestLearning: RetestLearning = {
+  async queue(student, subject) { retestCalls.push(`queue:${student}`); return { kind: 'ok', status: 200, body: { subject, entries: [] }, replayed: false }; },
+  async next(student, _subject, entry) {
+    retestCalls.push(`next:${student}`);
+    return student === A.S && entry === SEC.S.entry_id ? { kind: 'failure', status: 409, problem: { code: 'RETEST_NOT_DUE' } }
+      : { kind: 'failure', status: 404, problem: { code: 'ENTRY_NOT_FOUND' } };
+  },
+  async answer(student) { retestCalls.push(`answer:${student}`); return { kind: 'failure', status: 409, problem: { code: 'RETEST_NOT_DUE' } }; },
+  async check(student) { retestCalls.push(`check:${student}`); return { kind: 'failure', status: 409, problem: { code: 'RETEST_NOT_DUE' } }; },
+  async replay(student) { retestCalls.push(`replay:${student}`); return { kind: 'failure', status: 404, problem: { code: 'REPLAY_NOT_FOUND' } }; },
+};
+const callCount = () => calls.plan.length + calls.diagnosis.length + calls.dispute + calls.exams + starCalls.length + readCalls + practiceCalls.length
+  + retestCalls.length;
 const practiceLogCount = async (): Promise<number> => (await h.su.query(`SELECT count(*)::int AS n FROM platform.practice_log`)).rows[0].n;
 
 // ---------------------------------------------------------------- 合成家庭、账号与二级资源
@@ -368,6 +388,7 @@ before(async () => {
     trust: { features: new Set(TRUST_FEATURES), dispute, exams, exports: new MemoryExportStore(), read: insightRead },
     starMap: { features: new Set(STAR_MAP_FEATURES), nodes: starNodes },
     practice: { enabled: true, learning: practiceLearning, retryDelaysMs: [1] },
+    retest: { enabled: true, learning: retestLearning, retryDelaysMs: [1] },
   });
   // 会话都在改状态之前拿到（学生会话经 gF 打开学生模式）
   for (const a of [A.gF, A.gO, A.gU, A.gR, A.gD2, A.gX, A.aS, A.aS2, A.aT]) await sess(a);
@@ -788,6 +809,31 @@ test('H6 计量入口（静态）：只有登记的文件导入消耗类计量�
   for (const extra of [{ idempotency_key: randomUUID() }, { usage_id: randomUUID() }, { quantity: 0 }, { resource_type: 'mistake_analysis' }, { student_ref: MISSING },
                        { purpose: 'retest' }, { channel: 'photo' }, { subject: 'aya' }]) {
     assert.equal(parsePracticeAnswer({ ...okBody, ...extra }), null, `再练作答拒收 ${Object.keys(extra)[0]}`);
+  }
+  // 复测与验证题（KGE-05）：不另写计量 SQL，复用错题再练的 countPractice（上面“只有一处计次”仍成立）；只在作答里调一次，
+  // 参数同再练（本人核对过的学生、票据里 BFF 生成的幂等键），usage_id 与库返回的核对一致；列表、取题不计次；请求体不收幂等键与用途
+  const rt = readFileSync(new URL('../src/retest/service.ts', import.meta.url), 'utf8').replace(/\/\/.*$/gm, '');
+  assert.ok(!/platform\.meter_/.test(rt), '复测不另写计量 SQL');
+  assert.equal(rt.match(/countPractice\(/g)?.length, 1, '复测只在作答里调一次 countPractice');
+  assert.match(rt, /const usage = usageIdFor\(key\);\n  const m = await countPractice\(deps\.pool, account, student, key\);/);
+  assert.match(rt, /if \(m\.usage_id !== usage\) throw/);
+  assert.match(rt, /const key = t\.idempotencyKey;/);
+  // 审查意见 2：计次之前先过学习服务的只读预检；宵禁中只找回原结果（只读接口），两者都在 countPractice 之前、不计次
+  const answerBody = rt.slice(rt.indexOf('export async function retestAnswer('));
+  assert.ok(answerBody.indexOf('deps.learning.check(') > 0 && answerBody.indexOf('deps.learning.check(') < answerBody.indexOf('countPractice('),
+            '预检在计次之前');
+  assert.ok(answerBody.indexOf('deps.learning.replay(') > 0 && answerBody.indexOf('deps.learning.replay(') < answerBody.indexOf('countPractice('),
+            '宵禁中的找回原结果在计次之前');
+  for (const fn of ['retestQueue', 'retestNext']) {
+    const body = rt.slice(rt.indexOf(`export async function ${fn}(`), rt.indexOf('\n}\n', rt.indexOf(`export async function ${fn}(`)));
+    assert.ok(body.length > 100 && !/countPractice|meter_/.test(body), `${fn} 不计次`);
+  }
+  const okRetest = { ticket: `sbr1.${'A'.repeat(64)}`, answer: { text: '1' } };
+  assert.ok(parseRetestAnswer(okRetest));
+  assert.equal(parseRetestAnswer(okBody), null, '复测作答不收再练票据');
+  for (const extra of [{ idempotency_key: randomUUID() }, { usage_id: randomUUID() }, { quantity: 0 }, { student_ref: MISSING },
+                       { purpose: 'retest' }, { purpose: 'transfer_check' }, { channel: 'photo' }, { subject: 'aya' }]) {
+    assert.equal(parseRetestAnswer({ ...okRetest, ...extra }), null, `复测作答拒收 ${Object.keys(extra)[0]}`);
   }
 });
 

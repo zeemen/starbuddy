@@ -328,6 +328,40 @@ SM=(
   $'题面：诊断不过白名单直接转 rich\tsrc/diagnosis/service.ts\t: pickRich(v.step.item.rich, (v.step.item.options ?? []).map((o) => o.key));\t: (v.step.item.rich as never);'
   $'题面：再练 rich 不合格整道题不出\tsrc/practice/service.ts\t    rich = pickRich(item[\'rich\'], (opts ?? []).map((o) => o.key)) ?? undefined;\t    rich = pickRich(item[\'rich\'], (opts ?? []).map((o) => o.key)) ?? undefined;\\n    if (rich === undefined) return null;'
   $'题面：再练选项键只认大写字母\tsrc/practice/service.ts\tconst CHOICE_KEY = /^[A-Za-z0-9]{1,8}$/;\tconst CHOICE_KEY = /^[A-Z]$/;'
+  # 复测与验证题（specs/retest-delivery-kge05）：只认学生本人、开关、计次（复用题库自练、一张票据最多扣一次、本地可判的拒绝不计次）、
+  # 票据与再练不通用、宵禁、响应白名单、失败映射；这几条跑 tests/retest-units.test.ts、tests/retest.integration.test.ts、tests/shell-openapi.test.ts
+  $'复测：作答不核对学生本人\tsrc/retest/service.ts\t  if (!(await isSelf(deps.pool, account, student))) return NOT_FOUND;\\n  // 本地能判的拒绝\t  // 本地能判的拒绝'
+  $'复测：列表不核对学生本人\tsrc/retest/service.ts\t  if (!(await isSelf(deps.pool, account, student))) return NOT_FOUND;\\n  const r = await withRetry(deps, (ms) => deps.learning.queue(\t  const r = await withRetry(deps, (ms) => deps.learning.queue('
+  $'复测：取题不核对本人\tsrc/retest/service.ts\t  if (!(await isSelf(deps.pool, account, student))) return NOT_FOUND;\\n  const blocked = await curfewBlocked(deps, account, student);  // 宵禁：取题\t  const blocked = await curfewBlocked(deps, account, student);  // 宵禁：取题'
+  $'复测：开关关闭也注册路由\tsrc/http/routes.ts\t...(retest ? RETEST_ROUTES : [])\t...RETEST_ROUTES'
+  $'复测：家长会话可读列表\tsrc/http/retest-routes.ts\t{ method: \'GET\', path: S, auth: \'student\'\t{ method: \'GET\', path: S, auth: \'session\''
+  $'复测：不限流\tsrc/http/retest-routes.ts\tconst RL = [{ bucket: \'practice.session.minute\', dim: \'session\' }] as const;\tconst RL = [] as const;'
+  $'复测：取题不挡宵禁\tsrc/retest/service.ts\t  const blocked = await curfewBlocked(deps, account, student);  // 宵禁：取题\\n  if (blocked) return blocked;\\n\t'
+  $'复测：作答不挡宵禁\tsrc/retest/service.ts\t  if (blocked) {\\n    if (!counted) return blocked;\t  if (false) {\\n    if (!counted) return blocked;'
+  $'复测：宵禁中没计次的票据也去找回\tsrc/retest/service.ts\t    if (!counted) return blocked;\\n\t'
+  $'复测：不预检就计次\tsrc/retest/service.ts\t  if (!counted) {\\n    // 计次之前的只读预检\t  if (false) {\\n    // 计次之前的只读预检'
+  $'复测：预检不通过也计次\tsrc/retest/service.ts\t    if (pre.kind === \'failure\') {\t    if (false) {'
+  $'复测：取题路由改成家长\tsrc/http/retest-routes.ts\t{ method: \'POST\', path: `${S}/entries/{entry_id}/next`, auth: \'student\'\t{ method: \'POST\', path: `${S}/entries/{entry_id}/next`, auth: \'guardian\''
+  $'复测：作答路由改成家长\tsrc/http/retest-routes.ts\t{ method: \'POST\', path: `${S}/answer`, auth: \'student\'\t{ method: \'POST\', path: `${S}/answer`, auth: \'guardian\''
+  $'复测：作答结果不核对票据条目\tsrc/retest/service.ts\t  if (!out || (out[\'entry\'] as { entry_id: string }).entry_id !== t.entryId) return UPSTREAM_UNAVAILABLE;\t  if (!out) return UPSTREAM_UNAVAILABLE;'
+  $'复测：一张票据可扣多次（用随机的键）\tsrc/retest/service.ts\tconst key = t.idempotencyKey;\tconst key = crypto.randomUUID();'
+  $'复测：作答不计次\tsrc/retest/service.ts\tconst m = await countPractice(deps.pool, account, student, key);\tconst m = { outcome: \'allowed\', usage_id: usage } as const;'
+  $'复测：usage_id 不由幂等键派生\tsrc/retest/service.ts\tconst usage = usageIdFor(key);\tconst usage = key;'
+  $'复测：额度拒绝不回 402\tsrc/retest/service.ts\t    case \'no_entitlement\': case \'daily_limit_reached\':\\n      return quota(m.outcome);\t    case \'no_entitlement\': case \'daily_limit_reached\':'
+  $'复测：票据与再练同一附加数据\tsrc/practice/ticket.ts\t`starbuddy-retest-ticket:v1:${student}`\t`starbuddy-practice-ticket:v1:${student}`'
+  $'复测：换学科的票据也收\tsrc/retest/service.ts\tif (!t || t.subject !== subject) return TICKET_INVALID;\tif (!t) return TICKET_INVALID;'
+  $'复测：作答形状不在计次前核对\tsrc/retest/service.ts\t  if (!answerFits(t.format, t.optionKeys, input.answer)) return INVALID_ANSWER;\t'
+  $'复测：本地不判过期\tsrc/retest/service.ts\tif (deps.now() >= Date.parse(t.expiresAt) - EXPIRY_MARGIN_MS && \tif (false && '
+  $'复测：作答请求体收任何前缀的票据\tsrc/retest/service.ts\t!ticket.startsWith(RETEST_SEALED_PREFIX)\t!ticket.startsWith(\'sb\')'
+  $'复测：作答请求体放过未知键\tsrc/retest/service.ts\tif (!exactKeys(b, [\'ticket\', \'answer\'])) return null;\tif (![\'ticket\', \'answer\'].every((k) => k in b)) return null;'
+  $'复测：取题下发学习服务票据\tsrc/retest/service.ts\titem: ready.item, ticket: sealed,\titem: ready.item, ticket: ready.ticket,'
+  $'复测：条目不过白名单\tsrc/retest/service.ts\tconst entries = body[\'entries\'].map(pickRetestEntry);\tconst entries = body[\'entries\'].map((e) => e);'
+  $'复测：作答结果不过白名单\tsrc/retest/service.ts\tconst out = pickRetestAnswer(r.body);\tconst out = r.body as Record<string, unknown> | null;'
+  $'复测：不可用转出原因编码\tsrc/retest/service.ts\treturn json(200, { status: \'unavailable\' });\treturn json(200, body);'
+  $'复测：RETEST_NOT_DUE 不映射\tsrc/retest/service.ts\t  if (f.status === 409 && code === \'RETEST_NOT_DUE\') return op === \'queue\' ? RETEST_UNAVAILABLE : NOT_DUE;\t'
+  $'复测：同票据换作答不回 TICKET_USED\tsrc/retest/service.ts\t(code === \'TICKET_USED\' || code === \'IDEMPOTENCY_CONFLICT\')\t(code === \'TICKET_USED\')'
+  $'复测：重放不标响应头\tsrc/retest/service.ts\treturn json(200, out, replayHeader(r.replayed));\treturn json(200, out, replayHeader(false));'
+  $'复测：确定性拒绝当可重试\tsrc/retest/service.ts\t(isDeterministic(out) ? RETEST_UNAVAILABLE : UPSTREAM_UNAVAILABLE)\tUPSTREAM_UNAVAILABLE'
 )
 # 副本保持仓库结构（测试按 ../../../ 找仓库根：adapters/aya 的登记脚本、db/seeds 的种子），adapters、db 软链接回仓库。
 # 安全审查阻断 1：原来的副本不保持结构，测试的 before 在任何代码下都失败，变异全部“被发现”却不说明任何问题。
@@ -378,6 +412,7 @@ star_run() {  # $1 副本根目录，$2 变异名（“计量：”开头的跑�
   [[ "${2:-}" == 语音：* ]] && tests="tests/voice-minutes.test.ts tests/voice-minutes.integration.test.ts"
   [[ "${2:-}" == 报告：* ]] && tests="tests/report-units.test.ts tests/report.integration.test.ts"
   [[ "${2:-}" == 再练：* ]] && tests="tests/practice-units.test.ts tests/practice.integration.test.ts tests/shell-openapi.test.ts"
+  [[ "${2:-}" == 复测：* ]] && tests="tests/retest-units.test.ts tests/retest.integration.test.ts tests/shell-openapi.test.ts"
   [[ "${2:-}" == 届别：* ]] && tests="tests/cohort.integration.test.ts"
   [[ "${2:-}" == 题面：* ]] && tests="tests/item-rich.test.ts"
   out=$( cd "$1/services/bff" && timeout 240 bash "$ROOT/db/tests/pg-ephemeral.sh" -- \

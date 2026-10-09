@@ -54,7 +54,8 @@ export async function callAs(base: string, method: string, path: string, sess: S
 
 let phoneSeq = 0;
 
-export async function startShell(pool: pg.Pool, su: pg.Pool, extra: Partial<Pick<ShellDeps, 'log' | 'diagnosis' | 'now' | 'shell' | 'trust' | 'starMap' | 'practice'>> = {})
+export async function startShell(pool: pg.Pool, su: pg.Pool,
+                                 extra: Partial<Pick<ShellDeps, 'log' | 'diagnosis' | 'now' | 'shell' | 'trust' | 'starMap' | 'practice' | 'retest'>> = {})
   : Promise<ShellHarness> {
   const base0 = loadAuthConfig();
   const config: AuthConfig = { ...base0, rate_limits: Object.fromEntries(Object.entries(base0.rate_limits)

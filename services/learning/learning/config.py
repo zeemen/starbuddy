@@ -31,6 +31,10 @@
   LEARNING_PRACTICE_PRESENTER    不设 = next / answer 回 501；synthetic = 合成题面（只允许 LEARNING_ENV=test，present_item 签字前不接真实题库）
   LEARNING_PRACTICE_TICKET_SECRET  再练票据的 HMAC 密钥（≥ 32 字符，与所有令牌各不相同）；设了 LEARNING_PRACTICE_CONFIG 就必须设
   选题经知识服务（LEARNING_KNOWLEDGE_URL / LEARNING_KNOWLEDGE_TOKEN，同上）；不设 = next 回 501
+  复测与验证题交付（KGE-05，specs/retest-delivery-kge05）：
+  LEARNING_RETEST_CONFIG         synthetic（合成占位，只允许 test / dev）或配置文件路径。不设 = 复测接口一律 501 RETEST_UNAVAILABLE；
+                                 复用再练的选题、题面与票据密钥，所以必须同时设 LEARNING_PRACTICE_CONFIG；未签字的配置在 test / dev 以外
+                                 不启动这一模块（接口 501），不合法拒绝启动
   题面来源（PLT-12，specs/present-item-contract）：
   LEARNING_PRESENT_ITEM_SOURCE   synthetic（缺省：诊断与再练用合成题面，行为与之前逐字节一致）| adapter（经适配器 present_item，
                                  插件契约 1.1.0 候选版；只在 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1 时允许，否则拒绝启动）。只换题面来源：
@@ -109,6 +113,8 @@ class Settings:
     practice_ticket_secret: str | None = field(default=None, repr=False)
     # 题面来源（PLT-12）：synthetic（缺省）| adapter（插件契约 1.1.0 present_item；候选开关打开时才允许）
     present_item_source: str = "synthetic"
+    # 复测与验证题（KGE-05）：配置（synthetic 或路径；None = 接口 501）。依赖再练（选题、题面、票据密钥）
+    retest_config: str | None = None
 
     @staticmethod
     def from_env(environ: dict[str, str] | None = None) -> "Settings":
@@ -167,6 +173,9 @@ class Settings:
         practice_secret = e.get("LEARNING_PRACTICE_TICKET_SECRET") or None
         if practice_cfg and (practice_secret is None or len(practice_secret) < 32):
             raise RuntimeError("设了 LEARNING_PRACTICE_CONFIG 就必须设 LEARNING_PRACTICE_TICKET_SECRET（≥ 32 字符）")
+        retest_cfg = e.get("LEARNING_RETEST_CONFIG") or None
+        if retest_cfg and not practice_cfg:
+            raise RuntimeError("LEARNING_RETEST_CONFIG 复用再练的选题、题面与票据密钥：必须同时设 LEARNING_PRACTICE_CONFIG")
         if (presenter and source == "knowledge") or (practice_cfg and e.get("LEARNING_KNOWLEDGE_URL")):
             url, tok = e.get("LEARNING_KNOWLEDGE_URL", ""), e.get("LEARNING_KNOWLEDGE_TOKEN", "")
             if len(tok) < 32:
@@ -201,4 +210,4 @@ class Settings:
                         insight_client_credential=insight_tok, orchestrator_client_credential=orch_tok,
                         profile_page_config=e.get("LEARNING_PROFILE_PAGE_CONFIG") or None, practice_config=practice_cfg,
                         practice_presenter=practice_presenter, practice_ticket_secret=practice_secret,
-                        present_item_source=present_source)
+                        present_item_source=present_source, retest_config=retest_cfg)

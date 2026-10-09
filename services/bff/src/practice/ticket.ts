@@ -14,6 +14,11 @@ import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'node:
 import { isUuidV4 } from '../metering/uuid.ts';
 
 export const SEALED_PREFIX = 'sbp1.';
+/** 复测与验证题（KGE-05，src/retest/）的票据前缀：同一把密钥，前缀与附加数据（AAD）都不同，两种票据互相解不开 */
+export const RETEST_SEALED_PREFIX = 'sbr1.';
+/** 票据用途：practice（错题再练，缺省）/ retest（复测与验证题） */
+export type TicketDomain = 'practice' | 'retest';
+const prefixOf = (domain: TicketDomain) => (domain === 'retest' ? RETEST_SEALED_PREFIX : SEALED_PREFIX);
 /** 学习服务票据上限 1024 字符（practice-internal.v0.yaml）；加上 BFF 核对项、幂等键与加密开销，下发的票据不超过这个长度 */
 export const MAX_SEALED = 2400;
 const IV_LEN = 12;
@@ -42,29 +47,31 @@ export interface OpenedTicket extends TicketContent {
   idempotencyKey: string;
 }
 
-const aad = (student: string) => Buffer.from(`starbuddy-practice-ticket:v1:${student}`, 'utf8');
+const aad = (student: string, domain: TicketDomain = 'practice') =>
+  Buffer.from(domain === 'retest' ? `starbuddy-retest-ticket:v1:${student}` : `starbuddy-practice-ticket:v1:${student}`, 'utf8');
 
-/** 封装；幂等键在这里生成（每张票据一个，调用方不能指定） */
-export function sealTicket(key: Buffer, student: string, t: TicketContent): string {
+/** 封装；幂等键在这里生成（每张票据一个，调用方不能指定）。domain 缺省 practice（错题再练，行为不变） */
+export function sealTicket(key: Buffer, student: string, t: TicketContent, domain: TicketDomain = 'practice'): string {
   const iv = randomBytes(IV_LEN);
   const c = createCipheriv('aes-256-gcm', key, iv);
-  c.setAAD(aad(student));
+  c.setAAD(aad(student, domain));
   const plain = JSON.stringify({ t: t.ticket, s: t.subject, e: t.entryId, x: t.expiresAt, f: t.format, k: t.optionKeys, i: randomUUID() });
   const ct = Buffer.concat([c.update(plain, 'utf8'), c.final()]);
-  return SEALED_PREFIX + Buffer.concat([iv, ct, c.getAuthTag()]).toString('base64url');
+  return prefixOf(domain) + Buffer.concat([iv, ct, c.getAuthTag()]).toString('base64url');
 }
 
-/** 解开并逐项核对；伪造、篡改、换学生、格式不对一律 null（调用方回同一个 TICKET_INVALID） */
-export function openTicket(key: Buffer, student: string, sealed: string): OpenedTicket | null {
-  if (typeof sealed !== 'string' || sealed.length > MAX_SEALED || !sealed.startsWith(SEALED_PREFIX)) return null;
-  const body = sealed.slice(SEALED_PREFIX.length);
+/** 解开并逐项核对；伪造、篡改、换学生、换用途（再练与复测）、格式不对一律 null（调用方回同一个 TICKET_INVALID） */
+export function openTicket(key: Buffer, student: string, sealed: string, domain: TicketDomain = 'practice'): OpenedTicket | null {
+  const prefix = prefixOf(domain);
+  if (typeof sealed !== 'string' || sealed.length > MAX_SEALED || !sealed.startsWith(prefix)) return null;
+  const body = sealed.slice(prefix.length);
   if (!B64URL.test(body)) return null;
   const raw = Buffer.from(body, 'base64url');
   if (raw.length <= IV_LEN + TAG_LEN) return null;
   let plain: string;
   try {
     const d = createDecipheriv('aes-256-gcm', key, raw.subarray(0, IV_LEN));
-    d.setAAD(aad(student));
+    d.setAAD(aad(student, domain));
     d.setAuthTag(raw.subarray(raw.length - TAG_LEN));
     plain = Buffer.concat([d.update(raw.subarray(IV_LEN, raw.length - TAG_LEN)), d.final()]).toString('utf8');
   } catch {

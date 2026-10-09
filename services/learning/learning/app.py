@@ -34,6 +34,8 @@ from .model_router.config import load_for_deployment
 from .plan import plan_today
 from .practice import api as practice_api
 from .practice import config as practice_config
+from .retest import api as retest_api
+from .retest import config as retest_config
 from .route_api import MAX_ROUTE_BODY, RouteApiError, parse_request
 from .route_api import route as route_call
 from .service import IngestService
@@ -191,6 +193,13 @@ def create_app(
             practice_cfg = practice_config.load(settings.practice_config, env=settings.env)
         except practice_config.PracticeConfigUnsigned:
             log.warning(json.dumps({"event": "practice_disabled", "reason": "unsigned_config"}, ensure_ascii=False))
+    # 复测与验证题配置（KGE-05）：不合法拒绝启动；未签字配置出现在 test / dev 以外只是这一模块不启动（接口 501）
+    retest_cfg = None
+    if settings.retest_config:
+        try:
+            retest_cfg = retest_config.load(settings.retest_config, env=settings.env)
+        except retest_config.RetestConfigUnsigned:
+            log.warning(json.dumps({"event": "retest_disabled", "reason": "unsigned_config"}, ensure_ascii=False))
     # 学情档案页配置（KGE-04 第二步 PR 4）启动即加载与校验：未签字或合成配置出现在非 test 环境、短语不在衔接短语表里，一律拒绝启动
     profile_cfg = load_profile_config(settings.profile_page_config, env=settings.env) if settings.profile_page_config else None
     # 掌握配置启动即加载与校验（KGE-04 第二步）：不合法、学科对不上、未签字或合成配置出现在非 test 环境，一律拒绝启动
@@ -256,6 +265,11 @@ def create_app(
                 lock_pool = await asyncpg.create_pool(settings.database_url, min_size=0, max_size=PRACTICE_LOCK_POOL_SIZE)
                 own_lock_pool = True
             state["practice"] = _practice(settings, practice_cfg, p, client, state["service"], practice_clock, lock_pool)
+            if retest_cfg is not None:
+                # 复测与验证题（KGE-05）：复用再练的选题、题面、票据密钥与单元锁；再练没启动时复测接口一律 501
+                from .retest.service import RetestService
+                state["retest"] = RetestService(practice=state["practice"], cfg=retest_cfg,
+                                               clock=state["practice"].clock)
         # 有路由客户端时才建模型路由：环境从 LEARNING_ENV 读，配置不合规（出境、未批准供应商等）即拒绝启动
         own_router = state["router"] is None and bool(settings.route_clients)
         if own_router:
@@ -307,6 +321,8 @@ def create_app(
     diagnosis_api.register(app, lambda r: _bearer_ok(r.headers.get("authorization"), settings.service_credential), state)
     # 错题再练（specs/practice-loop-stage1 第 4 节）：只认 BFF 服务令牌；编排层、洞察服务、路由客户端令牌一律 401
     practice_api.register(app, lambda r: _bearer_ok(r.headers.get("authorization"), settings.service_credential), state)
+    # 复测与验证题（KGE-05）：同再练，只认 BFF 服务令牌
+    retest_api.register(app, lambda r: _bearer_ok(r.headers.get("authorization"), settings.service_credential), state)
     # learning-internal 1.1.0（KGE-04 第二步 PR 3）：掌握读取只认编排层令牌；验证任务与撤销只认洞察服务令牌（未配置即一律 401）；
     # BFF 服务令牌对这四个接口一律 401；档案页 ensure 认编排层（会话开始）与洞察服务（周报），read 只认编排层（PR 4）；
     # 星图节点星态只认 BFF 服务令牌（H5 星图 v1 PR 1）

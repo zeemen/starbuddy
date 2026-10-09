@@ -33,8 +33,9 @@ ADAPTER_REJECTED = "adapter_result_rejected"     # 适配器选了候选集之�
 ADAPTER_UNAVAILABLE = "adapter_unavailable"      # 适配器没有实现 generate_variation（501）或拒绝请求
 NO_OBJECTIVE = "no_objective_candidate"          # 有已准入候选，但没有一道是验证器或确定性 Rubric 判分的客观题（审查 S7）
 NO_SOURCE_ITEM = "no_source_item"                # hint_followup 找不到提示后做对的那道题：不调适配器（审查 S5）
+NO_NEW_FAMILY = "no_new_family"                  # 复测与验证题（KGE-05）：合格候选都在学生做过的题目族里，不调适配器，不出同族题
 EMPTY_REASONS = (NO_CANDIDATE, NO_ADMITTED, ALL_EXCLUDED, "skill_node_unknown", "subject_not_supported", ADAPTER_REJECTED,
-                 ADAPTER_UNAVAILABLE, NO_OBJECTIVE, NO_SOURCE_ITEM)
+                 ADAPTER_UNAVAILABLE, NO_OBJECTIVE, NO_SOURCE_ITEM, NO_NEW_FAMILY)
 # 首发只覆盖客观题（spec 设计要点 0、待人确认 #7）：验证器判分或确定性 Rubric 判分；模型判分的主观题一律待复核，闭不了环
 OBJECTIVE_GRADING = frozenset({"validator", "deterministic_rubric"})
 

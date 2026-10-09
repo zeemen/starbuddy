@@ -35,6 +35,8 @@ export const FORBIDDEN_CODES: readonly string[] = [...new Set([
   'error_attribution', 'error_cause', 'reason_code', 'empty_reason', 'retest_due', 'same_family_only', 'item_ref', 'usage_id', 'idempotency_key',
   // 答案类字段（PLT-12 题面 present_item：答案、解析、采分点、Rubric、提示阶梯、错因陷阱不得进页面；src/lib/rich-item.ts）
   ...ANSWER_FIELD_NAMES,
+  // 复测与验证题（specs/retest-delivery-kge05）：作答用途、任务原因与空原因编码不进页面
+  'transfer_check', 'verify_self_report', 'verify_in_platform', 'no_new_family', 'no_source_item',
 ])];
 
 type Rule = readonly string[] | 'uuid' | RegExp;
@@ -50,6 +52,7 @@ export const ATTRS: Record<string, Rule> = {
   'trust-link': TRUST_FEATURES,
   'trust-slot': TRUST_FEATURES,
   'practice-root': ['list', 'item'],
+  'retest-root': ['list', 'item'],                                     // 复测与验证题（specs/retest-delivery-kge05）
   'claim-id': 'uuid', 'for-claim': 'uuid', request: 'uuid', 'entry-id': 'uuid',
   value: KEBAB,                                                        // 值的种类名（date、node、days…），值本身在元素文本里
   unavailable: KEBAB,
@@ -76,7 +79,7 @@ export const ATTRS: Record<string, Rule> = {
   rationale: ['content', 'claim'],
   resource: keys(RESOURCE_LABEL),
   enrollment: ['active', 'paused', 'none'],
-  'entry-status': ENTRY_STATUSES,
+  'entry-status': [...ENTRY_STATUSES, 'done'],                          // done：复测条目作答后不再出题
   verdict: ['', ...VERDICTS.filter((v) => v !== 'needs_review')],
   error: ['', ...keys(PRACTICE_ERROR), 'not_found', 'login'],
   phase: ['loading', 'item', 'result', 'empty', 'stopped'],

@@ -138,7 +138,9 @@ export function answerFits(format: ItemFormat, optionKeys: readonly string[], a:
 }
 
 // ---------- 身份 ----------
-async function isSelf(pool: Pool, account: string, student: string): Promise<boolean> {
+// isSelf、curfewBlocked、countPractice、alreadyCounted、isDeterministic 另由复测与验证题（KGE-05，src/retest/service.ts）复用：
+// 本人核对、宵禁与题库自练计次只有这一份实现（计次的 SQL 只在本文件，H6 的 METER_CALLERS 不变）
+export async function isSelf(pool: Pool, account: string, student: string): Promise<boolean> {
   if (!UUID.test(account) || !UUID.test(student)) return false;
   return withAccount(pool, account, async (c) =>
     (await c.query<{ ok: boolean }>('SELECT platform.is_self_student($1::uuid) AS ok', [student])).rows[0]!.ok === true);
@@ -146,7 +148,7 @@ async function isSelf(pool: Pool, account: string, student: string): Promise<boo
 
 // ---------- 宵禁（审查 B1） ----------
 /** 宵禁中回 402 curfew，否则 null。只在本人核对之后调用：读不到（42501，账号状态刚变）与不是本人同一个 404 */
-async function curfewBlocked(deps: PracticeDeps, account: string, student: string): Promise<Reply | null> {
+export async function curfewBlocked(deps: Pick<PracticeDeps, 'pool' | 'note'>, account: string, student: string): Promise<Reply | null> {
   const c = await inCurfew(deps.pool, account, student);
   if (c === 'forbidden') {
     deps.note?.('curfew_forbidden');  // 正常情况下到不了这里（本人核对在前）；测试据此确认越权请求停在本人核对
@@ -156,12 +158,12 @@ async function curfewBlocked(deps: PracticeDeps, account: string, student: strin
 }
 
 // ---------- 计次 ----------
-type PracticeCount =
+export type PracticeCount =
   | { outcome: 'allowed' | 'existing'; usage_id: string }
   | { outcome: 'conflict' | 'no_entitlement' | 'daily_limit_reached' };
 
 /** 题库自练计次（0015）：以学生本人身份，参数只有学生与幂等键（次数、资源、usage_id 都由库决定） */
-async function countPractice(pool: Pool, account: string, student: string, key: string): Promise<PracticeCount | 'forbidden' | 'invalid'> {
+export async function countPractice(pool: Pool, account: string, student: string, key: string): Promise<PracticeCount | 'forbidden' | 'invalid'> {
   try {
     return await withAccount(pool, account, async (c) =>
       (await c.query<{ r: PracticeCount }>('SELECT platform.meter_practice($1::uuid, $2) AS r', [student, key])).rows[0]!.r);
@@ -174,7 +176,7 @@ async function countPractice(pool: Pool, account: string, student: string, key: 
 }
 
 /** 这个键是否已经计过次（RLS：本人读得到自己的记录）：票据过期后同一张票据重试找回原结果用 */
-async function alreadyCounted(pool: Pool, account: string, student: string, key: string): Promise<boolean> {
+export async function alreadyCounted(pool: Pool, account: string, student: string, key: string): Promise<boolean> {
   return withAccount(pool, account, async (c) =>
     (await c.query('SELECT 1 FROM platform.practice_log WHERE idempotency_key = $1 AND student_id = $2::uuid', [key, student])).rowCount === 1);
 }
@@ -183,7 +185,7 @@ async function alreadyCounted(pool: Pool, account: string, student: string, key:
 const DEFAULT_DELAYS = [300, 1000, 2000];
 /** 归为“结果未知”（5xx）但其实是确定的拒绝：没配再练或题面（501）、判分结果没通过平台核对（502，一行不写）。重试也不会变 */
 const DETERMINISTIC = /^(?:501\b|502 ADAPTER_RESULT_REJECTED$)/;
-const isDeterministic = (out: PracticeOutcome<unknown>): boolean => out.kind === 'unknown' && DETERMINISTIC.test(out.reason);
+export const isDeterministic = (out: PracticeOutcome<unknown>): boolean => out.kind === 'unknown' && DETERMINISTIC.test(out.reason);
 
 /** fn 收到本次调用可用的剩余时间（毫秒），客户端把它作为单次超时的上限 */
 export async function withRetry<T>(deps: Pick<PracticeDeps, 'sleep' | 'retryDelaysMs' | 'retryBudgetMs' | 'monotonic' | 'note'>,

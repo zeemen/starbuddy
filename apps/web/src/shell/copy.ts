@@ -541,6 +541,83 @@ export const ALL_PRACTICE_COPY: string[] = [
   ...Object.values(PRACTICE_VERDICT), ...Object.values(PRACTICE_AFTER), ...Object.values(PRACTICE_ERROR),
 ];
 
+/**
+ * 复测与验证题（specs/retest-delivery-kge05，前端开关 STARBUDDY_RETEST_UI，默认关；只给学生本人，家长端没有入口）的全部文案。
+ * 一律是明显占位 {{TODO_COPY:retest.…}}（面向学生的话术人写人审，必停），少数界面标签在占位后附中性提示便于走查。
+ * 任务说明只用固定占位：条目类别（复测 / 验证）只给纯占位键、不附提示文字；不出现关于学生的陈述（规则 11），
+ * 不显示掌握度、星态、错因、任务原因，不出现“粗心”“薄弱”之类的词（规则 12）。“做完”只表示这一条不再出题，不是掌握结论。
+ * 判分结论只来自验证器或 Rubric（BFF 转来的 verdict 枚举，规则 3）；待复核时只显示“等待复核”。
+ */
+export const RETEST = {
+  entry: T('retest.entry', '复测'),
+  heading: T('retest.heading', '复测'),
+  back: T('retest.back', '返回科目'),
+  backToList: T('retest.back_to_list', '返回复测列表'),
+  empty: T('retest.empty', '这一科现在没有到期的复测'),
+  unavailable: T('retest.unavailable', '暂时无法获取'),
+  colKind: T('retest.col.kind', '类别'),
+  colNode: T('retest.col.node', '知识点'),
+  colLevel: T('retest.col.level', '层次'),
+  colStatus: T('retest.col.status', '状态'),
+  start: T('retest.start', '开始'),
+  itemHeading: T('retest.item.heading', '题目'),
+  loading: T('retest.loading', '正在准备题目'),
+  choiceLegend: T('retest.choice', '选一个答案'),
+  choiceLegendMulti: T('retest.choice_multi', '选出所有合适的答案'),
+  answerLabel: T('retest.answer', '答案'),
+  submit: T('retest.submit', '提交'),
+  submitting: T('retest.submitting', '正在提交'),
+  needAnswer: T('retest.need_answer', '先写好答案再提交'),
+  retry: T('retest.retry', '再提交一次'),
+  newItem: T('retest.new_item', '换一道题'),
+  another: T('retest.another', '再做一道'),
+  resultHeading: T('retest.result.heading', '这次作答'),
+  pendingReview: T('retest.pending_review', '等待复核'),
+  itemUnavailable: T('retest.item_unavailable', '这一条暂时没有可做的题'),
+} as const;
+/** 条目类别（retest / verify → 占位键）：只有占位键，不附提示（任务说明人写人审） */
+export const RETEST_KIND: Record<string, string> = { retest: T('retest.kind.1'), verify: T('retest.kind.2') };
+/** 题目的认知层次（描述题目，不描述学生） */
+export const RETEST_LEVEL: Record<string, string> = {
+  know: T('retest.level.1', '识记'), understand: T('retest.level.2', '理解'), apply: T('retest.level.3', '运用'), synthesize: T('retest.level.4', '综合'),
+};
+/** 列表上的条目状态 */
+export const RETEST_STATUS: Record<string, string> = {
+  due: T('retest.status.due', '可以开始'),
+  unavailable: T('retest.status.unavailable', '暂时没有可做的题'),
+};
+/** 判分结论（验证器或 Rubric 的 verdict 枚举） */
+export const RETEST_VERDICT: Record<string, string> = {
+  correct: T('retest.verdict.correct', '判分结果：正确'),
+  incorrect: T('retest.verdict.incorrect', '判分结果：不正确'),
+  partial: T('retest.verdict.partial', '判分结果：部分正确'),
+  not_applicable: T('retest.verdict.not_applicable', '这次作答已记录'),
+};
+/** 作答之后条目的新状态（done 只表示这一条不再出题） */
+export const RETEST_AFTER: Record<string, string> = {
+  due: T('retest.after.due', '这一条还可以再做一道'),
+  done: T('retest.after.done', '这一条已完成'),
+};
+/** 取题与作答被拒的提示（编码同错题再练，见 src/retest/view.ts） */
+export const RETEST_ERROR: Record<string, string> = {
+  curfew: T('retest.error.curfew', '现在是休息时间'),
+  no_entitlement: T('retest.error.no_entitlement', '这项功能暂时不可用'),
+  daily_limit_reached: T('retest.error.daily_limit', '今天的次数已经用完'),
+  not_due: T('retest.error.not_due', '这一条现在不能做，请回到列表看看'),
+  ticket_used: T('retest.error.ticket_used', '这道题不能再提交了，请换一道题'),
+  expired: T('retest.error.expired', '这道题已经过期，请换一道题'),
+  invalid_answer: T('retest.error.invalid_answer', '答案的格式不对，请检查后再提交'),
+  retry: T('retest.error.retry', '这次没有确认提交成功，请再提交一次'),
+  rate_limited: T('retest.error.rate_limited', '请稍等一会儿再提交一次'),
+  unavailable: T('retest.error.unavailable', '暂时无法完成，请稍后再试'),
+};
+
+/** 复测与验证题的全部文案（并入 ALL_SHELL_COPY：禁语、禁用推断词表、比较营销词表的扫描在 tests/shell.test.ts） */
+export const ALL_RETEST_COPY: string[] = [
+  ...Object.values(RETEST), ...Object.values(RETEST_KIND), ...Object.values(RETEST_LEVEL), ...Object.values(RETEST_STATUS),
+  ...Object.values(RETEST_VERDICT), ...Object.values(RETEST_AFTER), ...Object.values(RETEST_ERROR),
+];
+
 /** 信任界面的全部文案（静态检查逐条扫描；端到端的“每个文本节点”核对也用它） */
 export const ALL_TRUST_COPY: string[] = [
   ...Object.values(TRUST), ...Object.values(WHY), ...Object.values(WHY_STATUS), ...Object.values(EVIDENCE_SOURCE),
@@ -575,5 +652,5 @@ export const ALL_SHELL_COPY: string[] = [
   FAMILY_SHELL.regionLabel, FAMILY_SHELL.birthLabel, FAMILY_SHELL.create, FAMILY_SHELL.consentHeading, FAMILY_SHELL.consentText,
   FAMILY_SHELL.consentGrant, FAMILY_SHELL.consentFor('孩子 1 · 八年级'), FAMILY_SHELL.onboarding, FAMILY_SHELL.timeSettings,
   FAMILY_SHELL.backToFamily, ...Object.values(FAMILY_SHELL_RESULT), ...Object.values(TRUST_SLOT),
-  ...ALL_TRUST_COPY, ...ALL_PRACTICE_COPY,
+  ...ALL_TRUST_COPY, ...ALL_PRACTICE_COPY, ...ALL_RETEST_COPY,
 ];
