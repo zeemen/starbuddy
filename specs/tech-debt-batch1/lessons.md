@@ -25,6 +25,9 @@
 - 在事务里读 `pg_stat_activity` 得到的是首次读取时的快照，轮询等待别的会话状态时每轮要调 `pg_stat_clear_snapshot()`。
 - Makefile 里 `! [a] && [b]` 的 `!` 只取反前一半，成组判断要用花括号。
 
+## 提交说明的疏漏
+- 提交 ced0cd5 的首行漏写了 `[NEEDS-HUMAN]`。安全审查要求加上，因为新增了 Docker Hub 基础镜像作为供应来源，且镜像未固定摘要；构建时还会现拉 setuptools。不改写历史，在此补记：合并前请按必停项审这一提交里的 Dockerfile 与锁文件。
+
 ## 待人确认
 1. 删除旧禁语镜像与 manifest 的 `legacy_mirror`（禁语表清单变更，要升 prompts.lock 版本）。
 2. 构建契约共享库时 setuptools 在隔离环境现拉、未锁；是否加入锁定项。
