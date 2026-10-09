@@ -528,6 +528,8 @@ export const RESULT_LABEL: Record<string, string> = {
   // 官方来源清单（迁移 0048）
   source_added: '已加入官方来源清单（或重新启用）', source_retired: '已下线',
   SOURCE_ADMIN_REQUIRED: '没有维护官方来源清单的权限（需要由数据库管理员授予）',
+  // 等锁超时（迁移 0052：来源清单的新增与下线最多等 5 秒，例如有来源文件正在登记）
+  BUSY: '正被占用，请稍后重试',
 };
 export const RETIRE_BASIS = [
   { code: 'wrong_version', label: '版本有误' },

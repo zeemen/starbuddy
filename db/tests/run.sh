@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 在一次性的本地 Postgres 上验证迁移与 RLS（spec：specs/learner-schema-v0.9/spec.md）。
-#   1. 全部 up → 全部 down → 全部 up，再把最近五个迁移逐个单独 down → up（迁移可回滚，开发计划 冲刺 1-B）；
-#      最新两个迁移（0049、0050）另在跑完全部测试、库里有数据时再单独 down → up 一次（文件末尾）
+#   1. 全部 up → 全部 down → 全部 up，再把最近八个迁移逐个单独 down → up（迁移可回滚，开发计划 冲刺 1-B）；
+#      最新四个迁移（0049–0052）另在跑完全部测试、库里有数据时再单独 down → up 一次（文件末尾）
 #   2. 按文件名顺序执行 db/tests/*.sql（合成数据，CLAUDE.md 规则 8）
 # 只连本机临时实例（Unix socket，不监听 TCP），结束即删除；不连接任何共享或生产库（规则 9）。
 # 退出码：0 通过；1 失败；3 本机没有 Postgres（由 Makefile 决定是否算失败）。
@@ -25,9 +25,9 @@ left=$(psql_run -tAc "SELECT count(*) FROM pg_namespace WHERE nspname IN ('platf
 [ "$left" = "0" ] || { echo "db-test: 失败（down 之后 platform、insight、kge 或 policy schema 仍存在）"; exit 1; }
 apply_or_exit "${UPS[@]}"
 echo "db-test: 迁移 up → down → up 通过（${#UPS[@]} 个迁移）"
-# 最新迁移单独 down → up（只回滚最后一步时，前面的迁移不受影响）；再把最近五个迁移逐个回滚到它为止再重新执行
-# （一个 PR 加了几个迁移时每个都要能单独回滚，specs/policy-decisions-v0.9.1 验收：PR1 的 0045–0048 与 PR3 的 0049、0050）
-for k in 1 2 3 4 5 6; do
+# 最新迁移单独 down → up（只回滚最后一步时，前面的迁移不受影响）；再把最近八个迁移逐个回滚到它为止再重新执行
+# （一个 PR 加了几个迁移时每个都要能单独回滚，specs/policy-decisions-v0.9.1 验收：PR1 的 0045–0048、PR3 的 0049、0050 与 PR4 的 0051、0052）
+for k in 1 2 3 4 5 6 7 8; do
   apply_or_exit "${DOWNS[@]:0:k}"
   apply_or_exit "${UPS[@]: -k}"
   echo "db-test: 迁移 $(basename "${UPS[${#UPS[@]}-k]}") 单独 down → up 通过（先回滚其后的 $((k - 1)) 个）"
@@ -159,7 +159,7 @@ echo "ok - 登录角色间接同时继承 bff 与 learning 时迁移拒绝执行
 as_pg "$PGBIN/createdb" -h "$WORK" -U postgres kge_role_check
 psql_kge() { as_pg "$PGBIN/psql" -h "$WORK" -U postgres -d kge_role_check -X -q -v ON_ERROR_STOP=1 "$@"; }
 for f in "${UPS[@]}"; do
-  case "$(basename "$f")" in 0011_*|0012_*|0017_*|0018_*|0019_*|0024_*|0026_*|0028_*|0038_*|0039_*|0040_*|0041_*|0042_*|0043_*|0047_*|0048_*|0049_*|0050_*) continue ;; esac  # 0012、0017–0019、0024、0026、0028、0038、0043 依赖 0011 的 kge 表；0039、0040 依赖 0018（0039 还依赖 0012）；0041 依赖 0040；0042 依赖 0039；0047 依赖 0041；0048 依赖 0018 的只追加函数；0049、0050 依赖 0048
+  case "$(basename "$f")" in 0011_*|0012_*|0017_*|0018_*|0019_*|0024_*|0026_*|0028_*|0038_*|0039_*|0040_*|0041_*|0042_*|0043_*|0047_*|0048_*|0049_*|0050_*|0052_*) continue ;; esac  # 0012、0017–0019、0024、0026、0028、0038、0043 依赖 0011 的 kge 表；0039、0040 依赖 0018（0039 还依赖 0012）；0041 依赖 0040；0042 依赖 0039；0047 依赖 0041；0048 依赖 0018 的只追加函数；0049、0050、0052 依赖 0048
   psql_kge -1 < "$f" >/dev/null 2>&1 || { echo "db-test: 失败（角色断言测试库执行 $(basename "$f") 出错）"; exit 1; }
 done
 kge_must_refuse() {  # $1 = 布置 SQL，$2 = 撤销 SQL，$3 = 说明
@@ -629,6 +629,80 @@ grep -q '"idempotent": false' "$WORK/rf1.out" && grep -q '"outcome": "refunded"'
   && [ "$(psql_run -tAc "SELECT (SELECT count(*) FROM platform.entitlement_reconciliation) + (SELECT count(*) FROM platform.reservation_ledger_mismatch)" </dev/null)" = "0" ] \
   || { echo "db-test: 失败（并发场景 15：两次退回不是恰好一次生效、一次幂等：$(cat "$WORK/rf1.out" "$WORK/rf2.out")）"; exit 1; }
 echo "ok - 并发：同一笔诊断预留的两次退回额度按预留行锁串行，只退一次，后一次幂等，计数对账一致" >> "$OUT"
+# 场景 16（0052，PR3 已知风险 1）：写入方 kge 开着事务、经 policy.lock_active_source_host 对清单行持有共享锁并一直在执行（不空闲，
+# 空闲上限管不到）；有权限的 staff（sf1）此时下线这个主机名。下线最多等 5 秒即以 55P03“稍后重试”失败（不挂到 kge 提交），
+# 清单与操作记录都不变；kge 提交后再下线成功。去掉锁等待上限时下线一直等到 kge 提交后成功
+# 持锁方拿到锁、进入 pg_sleep(12) 之后才开始计时（并行跑变异时机器繁忙，不用固定的 0.5 秒），上限 10 秒内必须失败
+H16=jyj.race16.example
+since_ms() { echo $(( ($(date +%s%N) - $1) / 1000000 )); }
+holder_sleeping() {  # 等到另一个会话正在执行 pg_sleep(<$1，默认 12>)（此前的语句已取到锁），最多 10 秒
+  local i s="${1:-12}"
+  for i in $(seq 1 100); do
+    [ "$(psql_run -tAc "SELECT count(*) FROM pg_stat_activity WHERE state = 'active' AND query LIKE '%pg_sleep($s)%' AND pid <> pg_backend_pid()" </dev/null)" = "1" ] && return 0
+    sleep 0.1
+  done
+  return 1
+}
+printf '%s\n' "$AS_STAFF SELECT policy.add_source_domain('$H16', '合成锁等待教育局');" | psql_run >/dev/null 2>"$WORK/race16.err" \
+  || { echo "db-test: 失败（并发场景 16 的夹具：$(cat "$WORK/race16.err")）"; exit 1; }
+printf '%s\n' "BEGIN; SET ROLE starbuddy_kge; SELECT policy.lock_active_source_host('$H16'); SELECT pg_sleep(12); COMMIT;" \
+  | psql_run >/dev/null 2>"$WORK/race_lt1.err" &
+holder_sleeping || { wait; echo "db-test: 失败（并发场景 16 的 kge 持锁事务没有开始：$(cat "$WORK/race_lt1.err")）"; exit 1; }
+T16=$(date +%s%N)
+if printf '%s\n' '\set VERBOSITY verbose' "$AS_STAFF SELECT policy.retire_source_domain('$H16');" | psql_run >/dev/null 2>"$WORK/race_lt2.err"; then
+  wait; echo "db-test: 失败（kge 持有清单行共享锁时下线没有在锁等待上限内失败，而是等到 kge 提交后成功：$(since_ms "$T16") ms）"; exit 1
+fi
+E16=$(since_ms "$T16")
+wait || { echo "db-test: 失败（并发场景 16 的 kge 持锁事务失败：$(cat "$WORK/race_lt1.err")）"; exit 1; }
+grep -q '55P03' "$WORK/race_lt2.err" && grep -q '稍后重试' "$WORK/race_lt2.err" && [ "$E16" -ge 4500 ] && [ "$E16" -lt 10000 ] \
+  || { echo "db-test: 失败（并发场景 16 的下线不是约 5 秒后以 55P03“稍后重试”失败：${E16} ms，$(cat "$WORK/race_lt2.err")）"; exit 1; }
+[ "$(psql_run -tAc "SELECT (SELECT status FROM policy.source_domain WHERE host = '$H16') || ':' ||
+                          (SELECT count(*) FROM platform.policy_source_domain_change WHERE host = '$H16' AND action = 'retire')" </dev/null)" = "active:0" ] \
+  || { echo "db-test: 失败（并发场景 16 超时失败后清单或操作记录被改了）"; exit 1; }
+printf '%s\n' "$AS_STAFF SELECT policy.retire_source_domain('$H16');" | psql_run >/dev/null 2>"$WORK/race_lt3.err" \
+  || { echo "db-test: 失败（并发场景 16 kge 提交后下线失败：$(cat "$WORK/race_lt3.err")）"; exit 1; }
+echo "ok - 并发：kge 持有清单行共享锁时下线约 5 秒（${E16} ms）后以 55P03“稍后重试”失败而不是挂起，库不变；kge 提交后下线成功" >> "$OUT"
+# 场景 16b（0052）：一笔重新启用（新增函数对清单行 FOR UPDATE 并改状态）未提交时，另一笔重新启用同一主机名同样约 5 秒后 55P03 失败；
+# 去掉新增函数的锁等待上限时后一笔一直等到前一笔提交，再按“已在清单里”失败（不是 55P03）
+printf '%s\n' "BEGIN; $AS_STAFF SELECT policy.add_source_domain('$H16', '合成锁等待教育局（重新启用）'); SELECT pg_sleep(12); COMMIT;" \
+  | psql_run >/dev/null 2>"$WORK/race_lt4.err" &
+holder_sleeping || { wait; echo "db-test: 失败（并发场景 16b 的先一笔重新启用没有开始：$(cat "$WORK/race_lt4.err")）"; exit 1; }
+T16=$(date +%s%N)
+if printf '%s\n' '\set VERBOSITY verbose' "$AS_STAFF SELECT policy.add_source_domain('$H16', '合成锁等待教育局（第二笔）');" \
+   | psql_run >/dev/null 2>"$WORK/race_lt5.err"; then
+  wait; echo "db-test: 失败（另一笔重新启用未提交时新增居然成功了）"; exit 1
+fi
+E16=$(since_ms "$T16")
+wait || { echo "db-test: 失败（并发场景 16b 的先一笔重新启用失败：$(cat "$WORK/race_lt4.err")）"; exit 1; }
+grep -q '55P03' "$WORK/race_lt5.err" && grep -q '稍后重试' "$WORK/race_lt5.err" && [ "$E16" -ge 4500 ] && [ "$E16" -lt 10000 ] \
+  || { echo "db-test: 失败（并发场景 16b 的新增不是约 5 秒后以 55P03“稍后重试”失败：${E16} ms，$(cat "$WORK/race_lt5.err")）"; exit 1; }
+[ "$(psql_run -tAc "SELECT status || ':' || issuer FROM policy.source_domain WHERE host = '$H16'" </dev/null)" = "active:合成锁等待教育局（重新启用）" ] \
+  || { echo "db-test: 失败（并发场景 16b 后清单行不是先一笔重新启用的结果）"; exit 1; }
+echo "ok - 并发：另一笔重新启用未提交时新增约 5 秒（${E16} ms）后以 55P03“稍后重试”失败而不是挂起" >> "$OUT"
+# 场景 17（0051，PR3 已知风险 2）：迁移执行者直接把合成学生 Z1（79za 建，有效绑定家长 gZ）的届别改成已毕业的一届后事务未提交；
+# 家长此时重新开通已暂停的学科。选科函数对档案行 FOR SHARE，等改届别提交后按新届别核对，以 GRADE_OUT_OF_RANGE 拒绝；
+# 去掉 FOR SHARE 时按改动前的届别（在读）放行。计量时钟 t.clock 沿用场景 15 固定的当天北京时间 10:00，与墙钟无关
+Z1=f7a00000-0000-4000-8000-0000000000c1; GZ=f7a00000-0000-4000-8000-0000000000a1
+AS_GZ="SELECT set_config('app.account_id', '$GZ', false); SET ROLE starbuddy_bff;"
+Z1S="$(psql_run -tAc "SELECT e.subject FROM platform.subject_enrollment e WHERE e.student_id = '$Z1' AND e.status = 'paused'
+                         AND EXISTS (SELECT 1 FROM platform.curriculum_version v WHERE v.subject = e.subject AND v.status = 'published')
+                       ORDER BY e.subject::text LIMIT 1" </dev/null)"
+# 已毕业的一届：按计量时钟当前年级为 10 的届别 = 现届别 − (10 − 当前年级)；Z1 当前不在 7–9 时为空，前提不成立
+Z1OLD="$(psql_run -tAc "SELECT exam_cohort - (10 - platform.current_grade(exam_cohort, platform.meter_now())) FROM platform.student_profile WHERE id = '$Z1'" </dev/null)"
+[ -n "$Z1S" ] && [ -n "$Z1OLD" ] && [ "$(psql_run -tAc "SELECT platform.current_grade($Z1OLD::smallint, platform.meter_now()) IS NULL" </dev/null)" = "t" ] \
+  || { echo "db-test: 失败（并发场景 17 的前提不成立：79za 的 Z1 没有已暂停的学科（$Z1S）或当前不在 7–9（$Z1OLD））"; exit 1; }
+printf '%s\n' "BEGIN; UPDATE platform.student_profile SET exam_cohort = $Z1OLD, exam_cohort_source = 'staff_correction' WHERE id = '$Z1';
+  SELECT pg_sleep(6); COMMIT;" | psql_run >/dev/null 2>"$WORK/race_en1.err" &
+# 等改届别的事务已更新档案行、进入 pg_sleep(6) 后再开始选科（不靠固定的 0.5 秒；机器繁忙时也成立）
+holder_sleeping 6 || { wait; echo "db-test: 失败（并发场景 17 的改届别事务没有开始：$(cat "$WORK/race_en1.err")）"; exit 1; }
+if printf '%s\n' "$AS_GZ SELECT platform.enroll_subject('$Z1', '$Z1S');" | psql_run >/dev/null 2>"$WORK/race_en2.err"; then
+  wait; echo "db-test: 失败（改届别进行中的选科没有等它提交，按改动前的届别放行了）"; exit 1
+fi
+wait || { echo "db-test: 失败（并发场景 17 的改届别失败：$(cat "$WORK/race_en1.err")）"; exit 1; }
+grep -q 'GRADE_OUT_OF_RANGE' "$WORK/race_en2.err" || { echo "db-test: 失败（并发场景 17 的选科不是被年级核对拒绝：$(cat "$WORK/race_en2.err")）"; exit 1; }
+[ "$(psql_run -tAc "SELECT status FROM platform.subject_enrollment WHERE student_id = '$Z1' AND subject = '$Z1S'" </dev/null)" = "paused" ] \
+  || { echo "db-test: 失败（并发场景 17 后学科被重新开通了）"; exit 1; }
+echo "ok - 并发：改届别进行中的选科等它提交后按新届别核对年级，已毕业时拒绝（选科函数对档案行 FOR SHARE）" >> "$OUT"
 
 # 0041 的数据前提：库里已有已发布的考情数据（77、79v 经签字发布的）时，0041 up 以明确信息中止（自报工号的发布补不出签字记录）
 if psql_run -1 < "$(ls "$ROOT"/db/migrations/0041_*.up.sql)" >/dev/null 2>"$WORK/up41.err"; then
@@ -660,6 +734,26 @@ done
                       AND to_regprocedure('platform.correct_exam_cohort(uuid, smallint)') IS NOT NULL" </dev/null)" = "t" ] \
   || { echo "db-test: 失败（0045、0047、0048 回滚中止后对象不在了）"; exit 1; }
 echo "ok - 已有来源清单操作记录、控制线、届别更正记录时 0048、0047、0045 回滚以明确错误中止，库不变" >> "$OUT"
+# 0052、0051 在有数据时单独 down → up（PR4）：回滚没有数据前提，只换回函数。0052 回滚后新增、下线没有锁等待上限，取锁函数不设空闲上限；
+# 0051 回滚后选科不核对年级（场景 17 后 Z1 已毕业：库函数放行到订阅判断）。重新执行后回到 0051、0052 的版本
+U51="$(ls "$ROOT"/db/migrations/0051_*.up.sql)"; D51="$(ls "$ROOT"/db/migrations/0051_*.down.sql)"
+U52="$(ls "$ROOT"/db/migrations/0052_*.up.sql)"; D52="$(ls "$ROOT"/db/migrations/0052_*.down.sql)"
+pr4_state() {  # 新增、下线有 lock_timeout | 取锁函数设空闲上限 | 选科核对年级 | Z1（已毕业）重新开通已暂停学科的结果（事务回滚，不留改动）
+  local a b
+  a="$(psql_run -tAc "SELECT (SELECT bool_and(coalesce('lock_timeout=5s' = ANY (proconfig), false)) FROM pg_proc
+                               WHERE oid IN ('policy.add_source_domain(text, text)'::regprocedure, 'policy.retire_source_domain(text)'::regprocedure))
+                        || '|' || (SELECT position('idle_in_transaction_session_timeout' IN prosrc) > 0 FROM pg_proc WHERE oid = 'policy.lock_active_source_host(text)'::regprocedure)
+                        || '|' || (SELECT position('GRADE_OUT_OF_RANGE' IN prosrc) > 0 FROM pg_proc WHERE oid = 'platform.enroll_subject(uuid, platform.subject)'::regprocedure)" </dev/null)"
+  b="$(printf '%s\n' "BEGIN; $AS_GZ SELECT platform.enroll_subject('$Z1', '$Z1S')->>'outcome'; ROLLBACK;" | psql_run -tA -v VERBOSITY=terse 2>&1 | tail -n1 | sed 's/^.*ERROR: *//')"
+  echo "$a|$b"
+}
+[ "$(pr4_state)" = "true|true|true|GRADE_OUT_OF_RANGE" ] \
+  || { echo "db-test: 失败（0051、0052 回滚测试的前提不成立：$(pr4_state)）"; exit 1; }
+psql_run -1 < "$D52" >/dev/null 2>"$WORK/down52.err" || { echo "db-test: 失败（有数据时 0052 回滚失败：$(cat "$WORK/down52.err")）"; exit 1; }
+psql_run -1 < "$D51" >/dev/null 2>"$WORK/down51.err" || { echo "db-test: 失败（有数据时 0051 回滚失败：$(cat "$WORK/down51.err")）"; exit 1; }
+[ "$(pr4_state)" = "false|false|false|no_subscription" ] \
+  || { echo "db-test: 失败（0052、0051 回滚后没有回到 0050 的状态：$(pr4_state)）"; exit 1; }
+echo "ok - 有数据时 0052、0051 单独回滚：新增、下线去掉锁等待上限，取锁函数不设空闲上限，选科不再核对年级" >> "$OUT"
 # 0050、0049 在有数据时单独 down → up（PR3）：回滚没有数据前提。0050 回滚恢复 0048 及之前的来源清单函数与 url_host；
 # 0049 回滚删掉已授予的 cohort_correction（回滚说明）、恢复导出清单，客服分支一律 42501（不恢复“任何 active staff 都能更正”，
 # PR3 审查意见 3）。重新执行后函数与清单回到 0049、0050 的版本（cohort_correction 要由 DBA 重新授予）
@@ -702,6 +796,11 @@ psql_run -1 < "$U50" >/dev/null 2>"$WORK/up50.err" || { echo "db-test: 失败（
                       AND policy.url_host('https://a.example:443/x') IS NULL" </dev/null)" = "t" ] \
   || { echo "db-test: 失败（0049、0050 重新执行后状态不对）"; exit 1; }
 echo "ok - 0049、0050 回滚后重新执行，函数与清单回到 0049、0050 的版本" >> "$OUT"
+psql_run -1 < "$U51" >/dev/null 2>"$WORK/up51.err" || { echo "db-test: 失败（0051 回滚后重新执行失败：$(cat "$WORK/up51.err")）"; exit 1; }
+psql_run -1 < "$U52" >/dev/null 2>"$WORK/up52.err" || { echo "db-test: 失败（0052 回滚后重新执行失败：$(cat "$WORK/up52.err")）"; exit 1; }
+[ "$(pr4_state)" = "true|true|true|GRADE_OUT_OF_RANGE" ] \
+  || { echo "db-test: 失败（0051、0052 重新执行后状态不对：$(pr4_state)）"; exit 1; }
+echo "ok - 0051、0052 回滚后重新执行：锁等待上限、空闲上限与选科年级核对都回来了" >> "$OUT"
 
 n=$(grep -c 'ok - ' "$OUT" || true)
 echo "db-test: 通过（${n} 项断言）"

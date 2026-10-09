@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { after, before, test } from 'node:test';
 import { loadAuthConfig } from '../src/http/config.ts';
 import { P } from '../src/http/problems.ts';
+import { withAccount } from '../src/metering/db.ts';
 import { HAS_DB, setupHarness, type Harness } from './harness.ts';
 import { callAs, startShell, type ShellHarness } from './shell-harness.ts';
 
@@ -160,6 +161,59 @@ test('不在初中年级（PR3 #10）：选科仍列出已开通、已暂停的�
     assert.equal(r.text, P.NOT_FOUND);
   } finally {
     nowMs = Date.now();
+  }
+});
+
+test('不在初中年级的库层兜底（PR4，迁移 0051）：BFF 前置检查放行时库函数按计量时钟再核年级，拒绝映射成同一个 409；库函数未授权先 42501、暂停不受影响', { skip: !HAS_DB }, async () => {
+  const F = await family();
+  const O = await family();
+  const k9 = await kid(F.g, F.household, 9, '2026-10-01T10:00:00+08:00');  // 届别 2027：北京时间 2027-09-01 起毕业
+  await h.su.query(`INSERT INTO platform.subject_enrollment (student_id, subject, status) VALUES ($1, 'aya', 'active'), ($1, 'wenli', 'paused')`, [k9]);
+  const sess = await shell.sessionFor(F.g);
+  const savedClock = h.clockMs();
+  /** 直接以 BFF 登录角色调库函数（绕过 BFF 的前置检查），返回 outcome 或 SQLSTATE:消息 */
+  const direct = async (account: string, fn: 'enroll_subject' | 'pause_subject', student: string, subject: string): Promise<string> => {
+    try {
+      return await withAccount(h.bff, account, async (c) =>
+        String((await c.query<{ r: { outcome: string } }>(`SELECT platform.${fn}($1, $2::platform.subject) AS r`, [student, subject])).rows[0]!.r.outcome));
+    } catch (e) {
+      const err = e as { code?: string; message?: string };
+      return `${err.code}:${err.message}`;
+    }
+  };
+  try {
+    // BFF 请求时钟：北京时间 2027-08-31 23:59:59（还是九年级，前置检查放行）；库的计量时钟：2027-09-01 00:00（已毕业）
+    nowMs = SEP1_2027 - 1000;
+    await h.setClock(SEP1_2027 - 1000);
+    const ok = await callAs(shell.base, 'POST', `/students/${k9}/enrollments/chinese`, sess);
+    assert.equal(ok.status, 200, ok.text);
+    assert.equal(ok.body.outcome, 'no_subscription', '两边都还是九年级：库函数过了年级核对，按订阅判断（这个孩子没有订阅）');
+    await h.setClock(SEP1_2027);
+    for (const code of ['chinese', 'math']) {
+      const r = await callAs(shell.base, 'POST', `/students/${k9}/enrollments/${code}`, sess);
+      assert.equal(r.status, 409, `${code}: ${r.text}`);
+      assert.equal(r.text, P.GRADE_OUT_OF_RANGE, '库层拒绝与 BFF 前置检查是同一个 409（重新开通已暂停的、已开通的都一样）');
+    }
+    // 直接调库函数：绑定家长 55000 GRADE_OUT_OF_RANGE；别家家长与不存在的学生先按授权 42501（不泄露年级）；暂停照常
+    assert.equal(await direct(F.g, 'enroll_subject', k9, 'wenli'), '55000:GRADE_OUT_OF_RANGE');
+    assert.equal(await direct(O.g, 'enroll_subject', k9, 'wenli'), '42501:not permitted', '别家家长：先拒授权，不回年级错误');
+    assert.equal(await direct(O.g, 'enroll_subject', randomUUID(), 'wenli'), '42501:not permitted');
+    assert.equal(await direct(F.g, 'pause_subject', k9, 'aya'), 'paused', '已开通的学科照常可以暂停');
+    const { rows } = await h.su.query(`SELECT subject::text || ':' || status::text AS s FROM platform.subject_enrollment WHERE student_id = $1 ORDER BY subject::text`, [k9]);
+    assert.deepEqual(rows.map((x) => x.s), ['aya:paused', 'wenli:paused'], '被拒的开通没有写入');
+    // 经 BFF 的别家家长仍是 404（不因年级先回 409）
+    const other = await callAs(shell.base, 'POST', `/students/${k9}/enrollments/chinese`, await shell.sessionFor(O.g));
+    assert.equal(other.status, 404, other.text);
+    assert.equal(other.text, P.NOT_FOUND);
+    // 档案已删除（PR4 安全审查）：两边都还是九年级时，绑定家长直接调库函数也是 42501（与未授权相同），状态不变
+    await h.setClock(SEP1_2027 - 1000);
+    await h.su.query(`UPDATE platform.student_profile SET erased_at = now() WHERE id = $1`, [k9]);
+    assert.equal(await direct(F.g, 'enroll_subject', k9, 'wenli'), '42501:not permitted', '已删除的档案不能再选科');
+    const { rows: after } = await h.su.query(`SELECT count(*)::int AS n FROM platform.subject_enrollment WHERE student_id = $1 AND status = 'active'`, [k9]);
+    assert.equal(after[0].n, 0);
+  } finally {
+    nowMs = Date.now();
+    await h.setClock(savedClock);
   }
 });
 

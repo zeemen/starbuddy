@@ -234,6 +234,9 @@ SM=(
   $'届别：毕业后今日计划仍排学科\tsrc/http/shell-routes.ts\t    if (p.grade === null) return { subjects: [] as { code: string; product: PlanSubject }[], linkId: undefined };\t'
   $'届别：can_enroll 恒为真\tsrc/http/shell-routes.ts\tcan_enroll: p.grade !== null,\tcan_enroll: true,'
   $'届别：年级检查先于授权\tsrc/http/shell-routes.ts\t    if (!p) return problem(P.NOT_FOUND);\\n    if (p.grade === null) return problem(P.GRADE_OUT_OF_RANGE);\t    if (!p || p.grade === null) return problem(P.GRADE_OUT_OF_RANGE);'
+  # 届别 PR4（迁移 0051）：库函数 enroll_subject 的年级拒绝（55000 GRADE_OUT_OF_RANGE）映射成与前置检查相同的 409
+  $'届别：库层年级拒绝不映射（500）\tsrc/http/shell-routes.ts\t    if (fn === \'enroll_subject\' && isGradeOutOfRange(e)) return problem(P.GRADE_OUT_OF_RANGE);\t'
+  $'届别：库层年级拒绝映射成 404\tsrc/http/shell-routes.ts\t    if (fn === \'enroll_subject\' && isGradeOutOfRange(e)) return problem(P.GRADE_OUT_OF_RANGE);\t    if (fn === \'enroll_subject\' && isGradeOutOfRange(e)) return problem(P.NOT_FOUND);'
   # 冲刺 4-H H6 第二轮第 7 节回归（每类至少一条）：这几条跑 tests/route-matrix.integration.test.ts
   # 7.1 授权矩阵与路由表覆盖
   $'H6：新路由不登记样例\tsrc/http/shell-routes.ts\t  read(`${S}/balance`, \'session\', balance),\t  read(`${S}/balance`, \'session\', balance), read(`${S}/balance-copy`, \'session\', balance),'

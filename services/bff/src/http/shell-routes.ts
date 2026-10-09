@@ -131,9 +131,14 @@ const subjectOp = (fn: 'enroll_subject' | 'pause_subject'): Handler => async (ct
     return json(200, Object.fromEntries(ENROLL_KEYS.filter((k) => k in r).map((k) => [k, r[k]])));
   } catch (e) {
     if (pgCode(e) === '42501') return problem(P.NOT_FOUND);
+    // 库层兜底（迁移 0051）：enroll_subject 按届别与计量时钟再核一次当前年级，不在 7–9 时 55000 GRADE_OUT_OF_RANGE。
+    // 与上面的前置检查同一个 409（BFF 请求时钟与库的计量时钟在 9 月 1 日前后可能差几秒，或绕过前置检查直接走到库函数）
+    if (fn === 'enroll_subject' && isGradeOutOfRange(e)) return problem(P.GRADE_OUT_OF_RANGE);
     throw e;
   }
 };
+const isGradeOutOfRange = (e: unknown): boolean =>
+  pgCode(e) === '55000' && e instanceof Error && e.message === 'GRADE_OUT_OF_RANGE';
 
 // ---------------------------------------------------------------- 今日计划（第 6 节）
 

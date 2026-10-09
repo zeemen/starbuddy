@@ -38,10 +38,14 @@ _TABLES = {
     "current_affair": "SELECT * FROM kge.current_affair WHERE map_version_id = $1",
 }
 
-# 库里的错误码 → HTTP：权限 403；业务规则（校验、摘要、人数、版本号）409；参数 422；不存在 404
+# 库里的错误码 → HTTP：权限 403；业务规则（校验、摘要、人数、版本号）409；参数 422；不存在 404；
+# 等锁超时（55P03，迁移 0052 起来源清单的新增与下线每次等锁最多 5 秒）409 BUSY，固定说明“稍后重试”（不回显库里的消息）
 _PG_MAP = {"42501": (403, "FORBIDDEN"), "23514": (409, "RULE_VIOLATION"), "22023": (422, "INVALID_PARAMETER"),
            "P0002": (404, "NOT_FOUND"), "23505": (409, "CONFLICT"), "23503": (422, "INVALID_REFERENCE"),
-           "22P02": (422, "INVALID_PARAMETER"), "23502": (422, "INVALID_PARAMETER"), "22001": (422, "INVALID_PARAMETER")}
+           "22P02": (422, "INVALID_PARAMETER"), "23502": (422, "INVALID_PARAMETER"), "22001": (422, "INVALID_PARAMETER"),
+           "55P03": (409, "BUSY")}
+BUSY_DETAIL = "正被占用，请稍后重试"
+SOURCE_BUSY_DETAIL = "官方来源清单的这一行正被占用（可能有来源文件正在登记），请稍后重试"
 
 
 def db_error(e: asyncpg.PostgresError) -> ReviewError:
@@ -50,6 +54,8 @@ def db_error(e: asyncpg.PostgresError) -> ReviewError:
     # 约束名，一律只给错误码（安全审查 B-5）
     native = getattr(e, "constraint_name", None) is not None or getattr(e, "table_name", None) is not None
     detail = (getattr(e, "message", None) or str(e)) if code == "RULE_VIOLATION" and not native else None
+    if code == "BUSY":
+        detail = BUSY_DETAIL
     return ReviewError(status, code, detail)
 
 
@@ -459,14 +465,24 @@ class ReviewStore:
     async def retire_source_domain(self, staff: uuid.UUID, host: str) -> str:
         return await self._source_change(staff, "SELECT policy.retire_source_domain($1)", host)
 
+    # 新增、下线的客户端超时（秒）：库里每次等锁最多 5 秒（0052），但持续有登记时总等待可能更久；超过这里就放弃（asyncpg 取消查询、
+    # 事务回滚），同样回 409 BUSY，审核台请求不会挂住
+    SOURCE_CHANGE_TIMEOUT_S = 10.0
+
     async def _source_change(self, staff: uuid.UUID, sql: str, *args) -> str:
-        """主机名不合格（22023）给固定说明（不回显库里的消息）；已在清单里（23505）409 CONFLICT；已下线（23514）带库里写好的说明。"""
+        """主机名不合格（22023）给固定说明（不回显库里的消息）；已在清单里（23505）409 CONFLICT；已下线（23514）带库里写好的说明；
+        等清单行锁超时（55P03，迁移 0052 每次等锁最多 5 秒：写入方正对这一行持有共享锁，或另一笔新增 / 下线未提交）
+        或整个调用超过客户端超时（SOURCE_CHANGE_TIMEOUT_S）都是 409 BUSY，固定说明“稍后重试”。"""
         try:
-            return await self._as_staff(staff, lambda c: c.fetchval(sql, *args))
+            return await self._as_staff(staff, lambda c: c.fetchval(sql, *args, timeout=self.SOURCE_CHANGE_TIMEOUT_S))
+        except TimeoutError:  # asyncio.TimeoutError 在 Python 3.11 起就是内置 TimeoutError
+            raise ReviewError(409, "BUSY", SOURCE_BUSY_DETAIL) from None
         except ReviewError as e:
             if e.code == "INVALID_PARAMETER":
                 raise ReviewError(422, "INVALID_PARAMETER", "主机名不合格：只收域名（至少两段），不收 IP、通配符、端口、路径或只有公共后缀的主机；"
                                                             "说明须为 1–64 个字") from None
+            if e.code == "BUSY":
+                raise ReviewError(409, "BUSY", SOURCE_BUSY_DETAIL) from None
             raise
 
     # ---------- 编译页面签字（迁移 0038；PR A 待人确认 1 的默认：审核人在审核台逐个签） ----------

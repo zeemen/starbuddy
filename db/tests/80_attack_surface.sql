@@ -103,6 +103,14 @@ SELECT t.ok((SELECT array_agg(r.role ORDER BY r.role) FROM t.app_roles() r(role)
                      OR has_function_privilege(r.role, 'policy.retire_source_domain(text)', 'EXECUTE'))
               = '{starbuddy_authz,starbuddy_review}',
             '攻击面：届别更正只授 BFF 与签字身份，来源清单的新增与下线只授签字身份');
+-- 来源清单的锁等待上限（0052）：写入方 kge 开着事务持有清单行共享锁时，新增与下线最多等 5 秒后失败（55P03“稍后重试”），
+-- 不会让审核台请求一直挂住；取锁函数只授 kge（BFF、学习服务等不能借它对清单行加锁拖住下线）
+SELECT t.ok((SELECT bool_and(coalesce('lock_timeout=5s' = ANY (p.proconfig), false)) FROM pg_proc p
+              WHERE p.oid IN ('policy.add_source_domain(text, text)'::regprocedure, 'policy.retire_source_domain(text)'::regprocedure))
+            AND (SELECT array_agg(r.role ORDER BY r.role) FROM t.app_roles() r(role)
+                  WHERE has_function_privilege(r.role, 'policy.lock_active_source_host(text)', 'EXECUTE'))
+              = '{starbuddy_authz,starbuddy_kge}',
+            '攻击面：来源清单的新增与下线有 5 秒锁等待上限，清单行取锁函数只授写入方');
 
 -- ================= 二、SECURITY DEFINER 函数（I1） =================
 SELECT t.ok(NOT EXISTS (

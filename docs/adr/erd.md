@@ -226,7 +226,7 @@ erDiagram
 
 | 表 | 谁写 | 谁读 | 要点 |
 |---|---|---|---|
-| `policy.source_domain` | 迁移或 DBA；0048 起有 `policy_source_admin` 权限的 active staff 经 `policy.add_source_domain` / `retire_source_domain`（只授 review） | kge、learning | 官方来源主机名清单；主机名规范化（小写、去结尾的点，不收 IP、通配符、端口、只有公共后缀的主机；0050 起不收不能往返解码的 xn-- 标签）；说明（发布机关）不含 Unicode Cc、Cf、Zl、Zp（0050 CHECK）；只下线不删行；登记人列写固定标记，操作者只记在 platform |
+| `policy.source_domain` | 迁移或 DBA；0048 起有 `policy_source_admin` 权限的 active staff 经 `policy.add_source_domain` / `retire_source_domain`（只授 review） | kge、learning | 官方来源主机名清单；主机名规范化（小写、去结尾的点，不收 IP、通配符、端口、只有公共后缀的主机；0050 起不收不能往返解码的 xn-- 标签）；说明（发布机关）不含 Unicode Cc、Cf、Zl、Zp（0050 CHECK）；只下线不删行；登记人列写固定标记，操作者只记在 platform；0052 起新增与下线每次等清单行锁最多 5 秒（持续有登记时总等待可能更久；55P03“稍后重试”，审核台另有 10 秒客户端超时），来源文件守卫取锁后持锁事务空闲上限 60 秒（防程序出错的安全网） |
 | `policy.source_document` | kge | learning；bff 看已发布与已撤下（0046），不看复核人 | https、主机名在清单里（0050 起核对时经 `policy.lock_active_source_host` 对清单行 FOR SHARE，与下线串行；`policy.url_host` 不收显式端口）、两人复核后发布；发布后只能更新核对日期或撤下；草稿不能直接撤下（0046） |
 | `policy.exam_scheme` | kge（发布只能经 `policy.publish_scheme`，属主 authz） | learning；bff 看已发布与已撤下（往年方案，0046） | 同城市同届别只一个已发布；非草稿只能改状态；状态只能 草稿 → 已发布 → 已撤下（0046 起草稿不能直接撤下） |
 | `policy.subject_config` / `transition_rule` / `admission_rule` | kge | learning；bff 看已发布与已撤下方案的（0046） | 方案发布后冻结；计分科目必须有满分；总分由库计算 |
@@ -241,6 +241,8 @@ erDiagram
 学生档案的届别（0045 起）：`exam_cohort` 是真相源，`grade` 是建档时年级；当前年级由 `platform.current_grade(exam_cohort, 时刻)` 推算（9 月 1 日切学年，不在 7–9 返回 NULL，时刻由调用方给）；
 来源列 `exam_cohort_source`（derived / guardian_report / staff_correction；建档只收前两种，之后改届别必须同时改来源）。更正只经 `platform.correct_exam_cohort`：经 BFF 时须是有效绑定家长，经审核台签字连接时须是 active staff 且有 staff 权限 `cohort_correction`（0049；
 无权限与学生不存在同一个错误），每次 ±1。家长导出的 profile 主题带 `exam_cohort` 与 `exam_cohort_source`，`cohort_changes` 主题带全部更正（0049）。
+选科（`platform.enroll_subject`，写 `subject_enrollment`）0051 起在库里核对 `current_grade(exam_cohort, meter_now())` 在 7–9（先核授权，再对档案行 FOR SHARE 读届别），
+不在时 55000 GRADE_OUT_OF_RANGE；暂停不查年级。
 诊断会话 `platform.diagnosis_session.start_grade`（0049）记建立时用于选题的年级（会话参数，不是年级事实），学习服务据此发现会话中途届别被改；
 `abandon_reason = grade_changed`（0049）记因届别变化放弃，这类放弃经 `platform.meter_refund_grade_changed`（只授 BFF）退回额度
 （未结算的释放；已结算的写一条 adjust 流水，actor system，原因 grade_changed_refund；同一笔只退一次）。

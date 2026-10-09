@@ -164,7 +164,7 @@ staff 对应表（`kge-pages-staff-map/1`，审核台配置，由人维护，不
   `POST /review/v0/policy/sources`（`{host, note}`：新增或重新启用，经 `policy.add_source_domain`，库里规范化主机名、拒 IP / 通配符 / 端口 / 路径 / 只有公共后缀）、
   `POST /review/v0/policy/sources/retire`（`{host}`：下线，经 `policy.retire_source_domain`；清单行只下线不删除）。
   只给有 staff 权限 `policy_source_admin`（DBA 授予，`platform.staff_permission`）的账号，没有权限的三个接口都是 403 `SOURCE_ADMIN_REQUIRED`；
-  主机名不合格 422、已在清单 409 `CONFLICT`、已下线再下线 409、不在清单 404。操作记录只在 `platform.policy_source_domain_change`（操作者是 staff 账号，不进 policy）。
+  主机名不合格 422、已在清单 409 `CONFLICT`、已下线再下线 409、不在清单 404；等清单行锁超过 5 秒时 409 `BUSY`（迁移 0052，固定说明，已整笔回滚，可稍后重试；与内部 API 的 `BUSY`“结果未知”含义不同）。操作记录只在 `platform.policy_source_domain_change`（操作者是 staff 账号，不进 policy）。
   说明写进公共层，不得填个人信息，含 Unicode 类别 Cc、Cf、Zl、Zp 的字符（C1 控制字符、U+202E 方向覆盖、零宽字符、行段分隔符）一律 422；前端 `/review/policy/sources` 把 punycode 主机名同时显示成 Unicode 形式，以防同形字。
 - **版本记录**新增 `line = content_version`（审核、发布、撤下）与 `line = admission`（审核、执行）行，末尾追加列 `content_version_id, six_segment, content_map_version_id, item_id, from_admission, to_admission, admission_review_level`；
   `admission_review_level` 是准入的学科审核等级（Q0–Q5，只在准入行有值），列名带前缀，免得与风险分级的 `review_level`（low/medium/high）混读。

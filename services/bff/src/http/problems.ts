@@ -23,7 +23,8 @@ export const P = {
   PROBE_LINKED: problem(409, 'PROBE_ALREADY_LINKED', 'probe already linked to a different attempt'),
   WRITE_CAP: problem(429, 'TOO_MANY', 'too many writes'),  // 库里的 24 小时写入上限（0025），不是限流
   DIAGNOSIS_UNAVAILABLE: problem(503, 'DIAGNOSIS_UNAVAILABLE', 'diagnosis is not available'),
-  // 届别 PR3（specs/policy-decisions-v0.9.1 #10）：当前年级不在 7–9（未入学或已毕业）时不能新选学科，只能暂停已开通的
+  // 届别 PR3（specs/policy-decisions-v0.9.1 #10）：当前年级不在 7–9（未入学或已毕业）时不能新选学科，只能暂停已开通的；
+  // PR4 起库函数 enroll_subject 同样拒绝（迁移 0051，55000 GRADE_OUT_OF_RANGE），映射成这同一个 409
   GRADE_OUT_OF_RANGE: problem(409, 'GRADE_OUT_OF_RANGE', 'not in a junior-high grade: subjects can only be paused'),
   // SIE-03 PR③ 信任界面：状态不允许（已结束、确认超时、已删除等）、会话内二次确认未通过、洞察服务或读取通道不可用
   STATE_CONFLICT: problem(409, 'STATE_CONFLICT', 'request conflicts with current state'),

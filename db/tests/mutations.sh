@@ -1113,6 +1113,34 @@ M+=(
   ["攻击面：客服更正不查 cohort_correction"]="$(afr "$CE" "'JOIN platform.staff_permission p ON p.staff_id = a.id'" "'LEFT JOIN platform.staff_permission p ON true'") $(afr "$CE" "'p.permission = ''cohort_correction'')'" "'true)'")"
 )
 
+# 考情 PR4（0051 platform、0052 policy，specs/policy-decisions-v0.9.1“PR4”）：由 79za、80 与 run.sh 的并发场景 16、16b、17 发现
+# （攻击面类只由 80 发现）。DBMUT_FILTER=选科年级 / 锁等待 分组跑
+ENR='platform.enroll_subject(uuid, platform.subject)'
+PAU='platform.pause_subject(uuid, platform.subject)'
+M+=(
+  ["选科年级：库里不核对年级"]="$(afr "$ENR" "'IF platform.current_grade(v_cohort, platform.meter_now()) IS NULL THEN'" "'IF false THEN'")"
+  ["选科年级：按墙钟推算"]="$(afr "$ENR" "'platform.current_grade(v_cohort, platform.meter_now())'" "'platform.current_grade(v_cohort, now())'")"
+  ["选科年级：读建档年级"]="$(afr "$ENR" "'IF platform.current_grade(v_cohort, platform.meter_now()) IS NULL THEN'" "'IF (SELECT sp.grade FROM platform.student_profile sp WHERE sp.id = p_student) NOT BETWEEN 7 AND 9 THEN'")"
+  ["选科年级：拒绝报成别的错误码"]="$(afr "$ENR" "'RAISE EXCEPTION ''GRADE_OUT_OF_RANGE'' USING ERRCODE = ''object_not_in_prerequisite_state'';'" "'RAISE EXCEPTION ''GRADE_OUT_OF_RANGE'' USING ERRCODE = ''check_violation'';'")"
+  ["选科年级：年级核对先于授权"]="$(afr "$ENR" "'IF p_student IS NULL OR p_subject IS NULL OR NOT platform.can_read_student(p_student) THEN'" "'IF p_student IS NOT NULL AND platform.current_grade((SELECT sp.exam_cohort FROM platform.student_profile sp WHERE sp.id = p_student), platform.meter_now()) IS NULL THEN RAISE EXCEPTION ''GRADE_OUT_OF_RANGE'' USING ERRCODE = ''object_not_in_prerequisite_state''; END IF; IF p_student IS NULL OR p_subject IS NULL OR NOT platform.can_read_student(p_student) THEN'")"
+  ["选科年级：不看档案删除"]="$(afr "$ENR" "'IF v_erased IS NOT NULL THEN'" "'IF false THEN'")"
+  ["选科年级：删除状态报成年级错误"]="$(afr "$ENR" "'IF v_erased IS NOT NULL THEN
+    RAISE EXCEPTION ''not permitted'' USING ERRCODE = ''insufficient_privilege'';'" "'IF v_erased IS NOT NULL THEN
+    RAISE EXCEPTION ''GRADE_OUT_OF_RANGE'' USING ERRCODE = ''object_not_in_prerequisite_state'';'")"
+  ["选科年级：不锁档案行"]="$(afr "$ENR" "' WHERE sp.id = p_student FOR SHARE;'" "' WHERE sp.id = p_student;'")"
+  ["选科年级：暂停也核对年级"]="$(afr "$PAU" "'s := platform.meter_main_subscription(p_student);'" "'IF platform.current_grade((SELECT sp.exam_cohort FROM platform.student_profile sp WHERE sp.id = p_student), platform.meter_now()) IS NULL THEN RAISE EXCEPTION ''GRADE_OUT_OF_RANGE'' USING ERRCODE = ''object_not_in_prerequisite_state''; END IF; s := platform.meter_main_subscription(p_student);'")"
+  ["锁等待：下线不设上限"]="ALTER FUNCTION $RSD RESET lock_timeout;"
+  ["锁等待：新增不设上限"]="ALTER FUNCTION $ASD RESET lock_timeout;"
+  ["锁等待：下线上限放宽到 30 秒"]="ALTER FUNCTION $RSD SET lock_timeout = '30s';"
+  ["锁等待：下线超时报成规则错误"]="$(afr "$RSD" "'USING ERRCODE = ''lock_not_available'';'" "'USING ERRCODE = ''check_violation'';'")"
+  ["锁等待：新增超时不给说明"]="$(afr "$ASD" "'官方来源清单的这一行正被占用，请稍后重试'" "'锁等待超时'")"
+  ["锁等待：取锁不设空闲上限"]="$(afr "$LSH" "'PERFORM set_config(''idle_in_transaction_session_timeout'', ''60s'', true);'" "'NULL;'")"
+  ["锁等待：取锁放宽调用方更短的空闲上限"]="$(afr "$LSH" "'IF v_idle = 0 OR v_idle > 60000 THEN'" "'IF true THEN'")"
+  ["锁等待：空闲上限留到会话结束"]="$(afr "$LSH" "'''60s'', true)'" "'''60s'', false)'")"
+  ["攻击面：来源清单下线不设锁等待上限"]="ALTER FUNCTION $RSD RESET lock_timeout;"
+  ["攻击面：清单取锁函数授给学习服务"]="GRANT EXECUTE ON FUNCTION $LSH TO starbuddy_learning;"
+)
+
 # G 流第二部分 PR D：审核台读内容版本与发布记录（0042）、时政过期下架（0043）：由 79w 发现（授权类的同时由 80 的快照发现）。
 # DBMUT_FILTER=审核台读 与 DBMUT_FILTER=时政下架 只跑这两组
 RCL='platform.content_version_list(platform.subject)'
@@ -1228,6 +1256,8 @@ declare -A EXPECT=(
   ["攻击面：届别更正授给学习服务"]="攻击面：届别更正只授 BFF 与签字身份"
   ["攻击面：控制线归档表对 BFF 可读"]="攻击面：控制线旧值归档表只读"
   ["攻击面：客服更正不查 cohort_correction"]="攻击面：客服届别更正——"
+  ["攻击面：来源清单下线不设锁等待上限"]="攻击面：来源清单的新增与下线有 5 秒锁等待上限"
+  ["攻击面：清单取锁函数授给学习服务"]="攻击面：来源清单的新增与下线有 5 秒锁等待上限"
 )
 declare -A KEEP_SNAPSHOT=(["攻击面：可转授的授权"]=1)
 for name in "${!EXPECT[@]}"; do [ -n "${M[$name]+x}" ] || { echo "db-mutation: EXPECT 里的 $name 不是变异"; exit 1; }; done

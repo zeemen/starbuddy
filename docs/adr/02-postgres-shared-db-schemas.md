@@ -114,7 +114,7 @@ ADR 09 建议 pilot 和生产全链路境内。Supabase 托管版没有中国大
     加对象类型与列；`policy.admission_line.control_line` 原样归档到 `policy.admission_line_control_line_archive` 后，已发布与草稿的值回填为控制线草稿，删除旧列。
   - **0048 官方来源清单由管理员维护**：staff 权限 `platform.staff_permission`（`policy_source_admin`，只由迁移或 DBA 授予）；新增、下线经 `policy.add_source_domain` /
     `retire_source_domain`（只授签字身份），操作者记在 `platform.policy_source_domain_change`，policy 不存账号引用（规则 13）。
-  - **跨 schema 的例外（控制线 0047；来源清单 0048，及其后续 0050 的操作记录说明 CHECK）**：
+  - **跨 schema 的例外（控制线 0047；来源清单 0048，及其后续 0050 的操作记录说明 CHECK、0052 的锁等待上限）**：
     - 0047：签字人表 `platform.policy_signoff` 的新列 `control_line_id` 有外键指向 `policy.control_line`，签字与导出函数（policy.sign_record、object_digest、
       platform.policy_signoff_record）的函数体按对象类型分支；拆开会有一个迁移里签字函数认得控制线、签字人表却存不下（或反过来）的中间状态。
     - 0048：两个 SECURITY DEFINER 函数同时读 `platform.staff_permission`、写 `platform.policy_source_domain_change` 与 `policy.source_domain`；
@@ -130,6 +130,14 @@ ADR 09 建议 pilot 和生产全链路境内。Supabase 托管版没有中国大
     RFC 3492，标签不超过 63 个字符）；来源说明拒绝 Unicode Cc、Cf、Zl、Zp（码位表 `policy.is_hidden_codepoint`，函数与 CHECK 兜底）；
     `url_host` 不收显式端口；来源文件守卫经 `policy.lock_active_source_host`（属主 authz，只授 kge）对清单行 FOR SHARE；
     数据前提核对已有主机名都是规范形式。
+- **0051–0052（PR3 遗留的两条已知风险，草稿，2026-10-08，specs/policy-decisions-v0.9.1 PR4，待签字）**：
+  - **0051（只改 platform）**：`platform.enroll_subject` 授权通过后按 `platform.current_grade(exam_cohort, meter_now())` 核对当前年级在 7–9
+    （对档案行 FOR SHARE，与届别更正串行），否则 55000 GRADE_OUT_OF_RANGE（BFF 映射为与前置检查相同的 409）；未授权先 42501；暂停不受影响。
+  - **0052（只改 policy 的三个来源清单函数，属 0048 已登记的来源清单例外：函数读写 platform 的权限表与操作记录）**：新增、下线函数级
+    `lock_timeout = 5s`，等锁超时以 55P03“稍后重试”报出（审核台 409 BUSY）；`policy.lock_active_source_host` 取到锁后把本事务的
+    `idle_in_transaction_session_timeout` 设为 60 秒（不放宽更短的设置）。spec 写的是对 kge 写入角色 `ALTER ROLE … SET`，但 `starbuddy_kge`
+    是 NOLOGIN 组角色，角色级参数只在以该角色登录时生效（SET ROLE 与继承都不读），对任何 kge 连接都不起作用，故改在取锁处按事务设置；
+    部署时建议 DBA 另对 kge 的登录角色 `ALTER ROLE <登录角色> SET idle_in_transaction_session_timeout = '60s'`（同 0020 对签字登录角色的做法）。
 
 
 ## 增补：insight schema 的建档事实层（草稿，2026-09-29，specs/sie-01-onboarding，待签字）

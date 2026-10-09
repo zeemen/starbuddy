@@ -306,7 +306,7 @@ paths:
         家长开通一科（platform.enroll_subject；默认只有家长能选科，待人确认 #7）。outcome 与数据库函数一一对应：
         enrolled（带 slot、limit）、already_active、limit_reached（带 slot、limit）、change_next_period、no_subscription、not_launched。
         学生会话 403；未绑定与不存在、英语等不可选的学科码同一个 404。当前年级不在 7–9（未入学或已毕业）时 409 GRADE_OUT_OF_RANGE
-        （不调 enroll_subject；已开通的学科仍可暂停）。
+        （前置检查不调 enroll_subject；库函数同样核对年级（迁移 0051），拒绝时也是这个 409；已开通的学科仍可暂停）。
       parameters:
         - $ref: '#/components/parameters/StudentId'
         - $ref: '#/components/parameters/Subject'

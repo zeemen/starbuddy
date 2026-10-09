@@ -207,7 +207,7 @@ test('PR2：官方来源清单表单校验、结果提示与权限提示；提�
   for (const bad of ['合成‮局', '合成​局', '合成‍局', '合成\u0085局', '合成\u009f局', '合成 局', '合成 局',
     '﻿合成局', '合成局 ', '合成⁦局']) assert.ok(!isSourceNote(bad), JSON.stringify(bad));
   assert.ok(isSourceNote('合成教育局（端到端）') && isSourceNote('Synthetic Bureau 2'));
-  for (const k of ['source_added', 'source_retired', 'SOURCE_ADMIN_REQUIRED']) assert.ok(Object.hasOwn(RESULT_LABEL, k), k);
+  for (const k of ['source_added', 'source_retired', 'SOURCE_ADMIN_REQUIRED', 'BUSY']) assert.ok(Object.hasOwn(RESULT_LABEL, k), k);
   assert.ok(!/[a-z]+_[a-z_]+/.test(RESULT_LABEL['SOURCE_ADMIN_REQUIRED']!), '权限提示里没有 snake_case 编码（页面 DOM 泄露检查）');
   assert.deepEqual(Object.keys(SOURCE_STATUS_LABEL).sort(), ['active', 'retired']);
   const form = readFileSync(new URL('../src/app/review/ActionForm.tsx', import.meta.url), 'utf8');

@@ -905,3 +905,75 @@ async def test_source_domain_admin(pg, rc):
     assert pg.psql("SELECT string_agg(action || ':' || actor_account_id, ',' ORDER BY changed_at) FROM platform.policy_source_domain_change "
                    "WHERE host = 'rc-new.synth.example'").strip() == f"add:{SF1},retire:{SF1},reactivate:{SF1}"
     assert pg.psql("SELECT added_by FROM policy.source_domain WHERE host = 'rc-new.synth.example'").strip() == "review-console"
+
+
+def test_db_error_lock_timeout_fixed_detail():
+    """等锁超时（55P03）映射为 409 BUSY，说明是固定的“稍后重试”，不回显库里的消息（迁移 0052）。"""
+    from review_console.store import BUSY_DETAIL, db_error
+    err = db_error(asyncpg.exceptions.LockNotAvailableError("canceling statement due to lock timeout on relation source_domain"))
+    assert (err.status, err.code, err.detail) == (409, "BUSY", BUSY_DETAIL) and "稍后重试" in BUSY_DETAIL
+
+
+async def test_source_domain_lock_timeout(pg, rc):
+    """官方来源清单的锁等待上限（迁移 0052，PR3 已知风险 1）：写入方（kge 登录角色）开着事务、经 policy.lock_active_source_host
+    对清单行持有共享锁时，审核台下线约 5 秒后返回 409 BUSY（固定说明“稍后重试”）而不是挂住；清单不变；持锁事务的空闲上限被设为 60 秒；
+    写入方结束事务后下线成功。"""
+    c, kp, _ = rc
+    host = "rc-lock.synth.example"
+    pg.psql(f"INSERT INTO platform.staff_permission (staff_id, permission, granted_by) VALUES ('{SF1}', 'policy_source_admin', 'synthetic-dba') "
+            "ON CONFLICT DO NOTHING;")
+    r = await c.post("/review/v0/policy/sources", json={"host": host, "note": "合成锁等待教育局（非真实）"}, headers=H(SF1))
+    assert r.status_code == 200, r.text
+    conn = await kp.acquire()
+    tr = conn.transaction()
+    await tr.start()
+    try:
+        assert await conn.fetchval("SELECT policy.lock_active_source_host($1)", host) is True
+        assert await conn.fetchval("SELECT current_setting('idle_in_transaction_session_timeout')") == "1min"
+        t0 = time.monotonic()
+        r = await c.post("/review/v0/policy/sources/retire", json={"host": host}, headers=H(SF1))
+        elapsed = time.monotonic() - t0
+        assert r.status_code == 409, r.text
+        assert r.json() == {"type": "urn:starbuddy:review:busy", "status": 409, "code": "BUSY",
+                            "detail": "官方来源清单的这一行正被占用（可能有来源文件正在登记），请稍后重试"}
+        assert 4.5 <= elapsed < 10, elapsed
+        assert pg.psql(f"SELECT status FROM policy.source_domain WHERE host = '{host}'").strip() == "active"
+        assert pg.psql(f"SELECT count(*) FROM platform.policy_source_domain_change WHERE host = '{host}' AND action = 'retire'").strip() == "0"
+    finally:
+        await tr.rollback()
+        await kp.release(conn)
+    r = await c.post("/review/v0/policy/sources/retire", json={"host": host}, headers=H(SF1))
+    assert r.status_code == 200 and r.json() == {"host": host, "status": "retired"}, r.text
+
+
+async def test_source_domain_client_timeout(pg, rc, monkeypatch):
+    """审核台的客户端超时（PR4 安全审查）：库里每次等锁最多 5 秒，但持续有登记时总等待可能更久；整个调用超过客户端超时
+    （生产 10 秒，这里调成 1 秒以先于库里的 5 秒触发）同样回 409 BUSY 固定说明，查询被取消、事务回滚、清单不变，连接池仍可用。"""
+    from review_console.store import ReviewStore
+    c, kp, _ = rc
+    assert ReviewStore.SOURCE_CHANGE_TIMEOUT_S == 10.0
+    monkeypatch.setattr(ReviewStore, "SOURCE_CHANGE_TIMEOUT_S", 1.0)
+    host = "rc-timeout.synth.example"
+    pg.psql(f"INSERT INTO platform.staff_permission (staff_id, permission, granted_by) VALUES ('{SF1}', 'policy_source_admin', 'synthetic-dba') "
+            "ON CONFLICT DO NOTHING;")
+    r = await c.post("/review/v0/policy/sources", json={"host": host, "note": "合成超时教育局（非真实）"}, headers=H(SF1))
+    assert r.status_code == 200, r.text
+    conn = await kp.acquire()
+    tr = conn.transaction()
+    await tr.start()
+    try:
+        assert await conn.fetchval("SELECT policy.lock_active_source_host($1)", host) is True
+        t0 = time.monotonic()
+        r = await c.post("/review/v0/policy/sources/retire", json={"host": host}, headers=H(SF1))
+        elapsed = time.monotonic() - t0
+        assert r.status_code == 409, r.text
+        assert r.json() == {"type": "urn:starbuddy:review:busy", "status": 409, "code": "BUSY",
+                            "detail": "官方来源清单的这一行正被占用（可能有来源文件正在登记），请稍后重试"}
+        assert elapsed < 4.5, elapsed  # 是客户端超时，不是库里的 5 秒锁等待上限
+        assert pg.psql(f"SELECT status FROM policy.source_domain WHERE host = '{host}'").strip() == "active"
+        assert pg.psql(f"SELECT count(*) FROM platform.policy_source_domain_change WHERE host = '{host}' AND action = 'retire'").strip() == "0"
+    finally:
+        await tr.rollback()
+        await kp.release(conn)
+    r = await c.post("/review/v0/policy/sources/retire", json={"host": host}, headers=H(SF1))
+    assert r.status_code == 200 and r.json() == {"host": host, "status": "retired"}, r.text
