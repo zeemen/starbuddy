@@ -1,5 +1,5 @@
 // 数学自适应诊断组件与演示页（SIE-02a）的单测与静态检查：
-//   - 文案集中在 src/diagnosis/copy.ts，过点点禁语表（evals/persona/diandian/lexicon/forbidden.yaml，只读；做法同 tests/probe.test.ts），
+//   - 文案集中在 src/diagnosis/copy.ts，过禁语表 A–E 类（packages/personas/forbidden/，只读，经 tests/forbidden-lexicon.ts；做法同 tests/probe.test.ts），
 //     另查一遍不评价、不给结论、不提对错与历史的用词；结束页只有“完成了，老师会看你的过程。”；
 //   - 组件与页面源码里没有题号、答案、对错、节点等字段（组件只拿到题面与序号）；
 //   - 演示页是 page.dev.tsx；它的 action 与客户端只被演示页引用；BFF 客户端按白名单取字段。
@@ -9,24 +9,14 @@ import { join, relative } from 'node:path';
 import { test } from 'node:test';
 import { allDiagnosisCopy, DIAGNOSIS_COPY, formatDuration } from '../src/diagnosis/copy.ts';
 import { failure, pickView, restartSession, type DiagnosisView } from '../src/lib/diagnosis.ts';
+import { CLASSES, loadForbidden, ruleLineCount } from './forbidden-lexicon.ts';
 
 const WEB = new URL('..', import.meta.url).pathname;
-const LEXICON = join(WEB, '..', '..', 'evals', 'persona', 'diandian', 'lexicon', 'forbidden.yaml');
-
-function loadForbidden(): { id: string; rx: RegExp }[] {
-  const text = readFileSync(LEXICON, 'utf8');
-  const section = text.slice(text.indexOf('\nforbidden:'), text.indexOf('\npatterns:'));
-  const out: { id: string; rx: RegExp }[] = [];
-  for (const line of section.split('\n')) {
-    const m = /^\s*- \{ id: ([A-Z]-\d+),.*?\bclass: ([A-Z]),.*?\bregex: "((?:[^"\\]|\\.)*)"/.exec(line);
-    if (m) out.push({ id: m[1]!, rx: new RegExp(JSON.parse(`"${m[3]!}"`) as string) });
-  }
-  return out;
-}
 
 test('诊断文案不命中禁语表（禁语表能读出来且确实能命中）', () => {
   const rules = loadForbidden();
   assert.ok(rules.length >= 30, `只读出 ${rules.length} 条`);
+  assert.equal(rules.length, CLASSES.reduce((n, c) => n + ruleLineCount(c), 0), '每一条禁语都要解析出来（规则条数 = 各类文件规则行数之和）');
   assert.ok(rules.some((r) => r.rx.test('合成：你总是这样')));
   for (const s of allDiagnosisCopy()) {
     assert.deepEqual(rules.filter((r) => r.rx.test(s)).map((r) => r.id), [], s);

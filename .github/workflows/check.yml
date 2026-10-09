@@ -47,11 +47,13 @@ jobs:
           python -m venv .venv-contracts
           .venv-contracts/bin/pip install -q -r packages/contracts/requirements-dev.txt
 
+      # 第三方依赖只从带哈希的锁文件装；契约共享库是本地包，不在锁里，--no-deps 单独装（W13 技术债 T06）
       - name: 学习服务依赖
         working-directory: services/learning
         run: |
           python -m venv .venv
-          .venv/bin/pip install -q -r requirements-dev.txt
+          .venv/bin/pip install -q --require-hashes -r requirements-dev.lock
+          .venv/bin/pip install -q --no-deps -e ../../packages/contracts/python
 
       - name: 阿鸦适配器依赖
         working-directory: adapters/aya
@@ -72,9 +74,11 @@ jobs:
           npx --no-install playwright install --with-deps chromium
 
       # 人设回归每次都跑（不靠 paths 过滤）：Prompt、禁语表、人设规格有变更时报告标“人设变更”，缺录音或录音过期严格模式失败。
-      # 报告作为 Gate 0“最近一次运行报告”上传（spec 设计要点 6、待人确认 #11、#12）；不需要任何密钥
-      - name: 人设回归与报告（冲刺 3-F，严格模式）
-        run: make eval-persona CONTRACT_STRICT=1 PERSONA_REPORT_DIR=${{ runner.temp }}/persona-report
+      # 报告作为 Gate 0“最近一次运行报告”上传（spec 设计要点 6、待人确认 #11、#12）；不需要任何密钥。
+      # eval-persona 与 check 放在同一次 make 里：eval-persona 先跑（写报告），check 依赖它时同一次 make 不再重跑，
+      # 家族级回归只跑一遍（W13 技术债 T08，specs/tech-debt-batch1；原先单独一步再加 make check 里一遍，共两遍）
+      - name: 人设回归与报告（冲刺 3-F）+ make check（严格模式）
+        run: make eval-persona check CONTRACT_STRICT=1 PYTHON=.venv-contracts/bin/python PGBIN=/usr/lib/postgresql/16/bin PERSONA_REPORT_DIR=${{ runner.temp }}/persona-report
 
       - name: 上传人设回归报告（保留 90 天）
         if: always()
@@ -84,6 +88,3 @@ jobs:
           path: ${{ runner.temp }}/persona-report/
           retention-days: 90
           if-no-files-found: warn
-
-      - name: make check（严格模式）
-        run: make check CONTRACT_STRICT=1 PYTHON=.venv-contracts/bin/python PGBIN=/usr/lib/postgresql/16/bin

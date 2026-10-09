@@ -136,6 +136,37 @@ wait || { echo "db-test: 失败（并发页面签字：前一名 staff 的签字
 [ "$(psql_run -tAc "SELECT string_agg(page_signer_no::text, ',' ORDER BY page_signer_no) FROM kge.content_review WHERE object_type = 'page' AND page_commit = '$PC'" </dev/null)" = "1,2" ] \
   || { echo "db-test: 失败（并发页面签字的签字序号不是 1、2）"; exit 1; }
 echo "ok - 并发：两名 staff 同时签同一页面同一提交，按咨询锁串行分到签字位 1、2" >> "$OUT"
+# 场景 3b（0023 复核队列领取；W13 技术债 T19，specs/review-queue-sprint2 lessons 待人确认 11 / 安全 N1）：两名 staff 同时领取同一复核任务。
+# 不靠固定睡眠排先后：会话 A 领取后不提交，在事务里等到会话 B 因行锁进入等待（pg_stat_activity 的 wait_event_type = 'Lock'）才提交；
+# B 在 A 进入等待循环（领取已执行、行已锁）之后才开始。领取函数的 SELECT … FOR UPDATE 让 B 等 A 提交后读到“处理中”，
+# 按“已被其他人领取”拒绝，领取人仍是 A；去掉 FOR UPDATE 时 B 先读到提交前的“待处理”，等 A 提交后覆盖领取人（变异“复核队列：领取不加行锁”）
+QT=7a190000-0000-4000-8000-0000000000a1
+printf '%s\n' "INSERT INTO platform.review_task (id, subject, student_id, source_kind, source_id, reasons)
+  VALUES ('$QT', 'zhixing', 'c1000000-0000-4000-8000-0000000000c1', 'grade_result', gen_random_uuid(), '{subjective_dimension}');" \
+  | psql_run >/dev/null || { echo "db-test: 失败（并发领取测试夹具）"; exit 1; }
+printf '%s\n' "SET application_name = 't19_take_a'; BEGIN; $AS_STAFF SELECT platform.take_review_task('$QT'); RESET ROLE;
+  DO \$\$ BEGIN
+    FOR i IN 1..600 LOOP
+      PERFORM pg_stat_clear_snapshot();  -- 事务内的 pg_stat_activity 是首次读取时的快照，每轮清掉才看得到 B 的新状态
+      IF EXISTS (SELECT 1 FROM pg_stat_activity WHERE application_name = 't19_take_b' AND wait_event_type = 'Lock') THEN RETURN; END IF;
+      PERFORM pg_sleep(0.05);
+    END LOOP;
+    RAISE EXCEPTION '并发领取：30 秒内没有看到另一个会话因行锁等待';
+  END \$\$;
+  COMMIT;" | psql_run >/dev/null 2>"$WORK/race_q1.err" &
+for _ in $(seq 1 600); do  # 等 A 进入等待循环（此时领取已执行、事务未提交）
+  [ "$(psql_run -tAc "SELECT count(*) FROM pg_stat_activity WHERE application_name = 't19_take_a' AND position('pg_sleep' IN query) > 0" </dev/null)" = "1" ] && break
+  sleep 0.05
+done
+if printf '%s\n' "SET application_name = 't19_take_b'; $AS_STAFF2 SELECT platform.take_review_task('$QT');" \
+     | psql_run >/dev/null 2>"$WORK/race_q2.err"; then
+  wait || true; echo "db-test: 失败（两名 staff 同时领取同一复核任务，后一名也领取成功：领取人被覆盖；前一名：$(cat "$WORK/race_q1.err")）"; exit 1
+fi
+wait || { echo "db-test: 失败（并发领取：前一名 staff 的领取失败：$(cat "$WORK/race_q1.err")）"; exit 1; }
+grep -q '已被其他人领取' "$WORK/race_q2.err" || { echo "db-test: 失败（并发领取：后一名不是被“已被其他人领取”拒绝：$(cat "$WORK/race_q2.err")）"; exit 1; }
+[ "$(psql_run -tAc "SELECT status || ':' || assigned_to FROM platform.review_task WHERE id = '$QT'" </dev/null)" = "in_progress:5f000000-0000-4000-8000-00000000005f" ] \
+  || { echo "db-test: 失败（并发领取后任务不是由前一名 staff 领取的处理中）"; exit 1; }
+echo "ok - 并发：两名 staff 同时领取同一复核任务，行锁让后一名等前一名提交后按“已被其他人领取”拒绝，领取人不被覆盖" >> "$OUT"
 
 # 角色属性断言（安全审查阻断 5）：BFF 角色带 BYPASSRLS 时，0001 必须拒绝执行
 as_pg "$PGBIN/createdb" -h "$WORK" -U postgres role_check

@@ -117,20 +117,37 @@ test("不同 key：v0.9 下作答证据 ID 不同；diagnose 与 generate_variat
 // ---------- 缓存满时的淘汰（审查意见第 10 条） ----------
 test("缓存满：优先淘汰已完成的条目，进行中的条目不淘汰（同 key 重试仍共享那一次模型调用）", async () => {
   const judge = keywordJudge(realPack);
-  let delay = 0;
-  const h = await harness({ idempotencyCacheSize: 2, handler: async (req) => ({ ...(await judge(req)), delayMs: delay }) });
+  // 确定性（W13 T09，同下一条）：“进行中”的那次模型调用挂在闸门上，等它到达桩再发第三个请求、发完重试再放行；
+  // 原先靠 30 ms 等待 + 150 ms 桩延迟，机器繁忙时会错位
+  let gate: Promise<void> | null = null;
+  let release: () => void = () => {};
+  const h = await harness({ idempotencyCacheSize: 2, handler: async (req) => {
+    if (gate) await gate;
+    return judge(req);
+  } });
   try {
     const done = gradeBody("synthetic-m3-01", ANSWERS.partial01);
     assert.equal((await h.adapter.handle("POST", "grade", done)).status, 200);
-    delay = 150;
+    gate = new Promise<void>((r) => (release = r));
     const slow = gradeBody("synthetic-m3-01", ANSWERS.full01);
+    const callsDone = h.stub.calls.length;
     const slowRun = h.adapter.handle("POST", "grade", slow);
-    await new Promise((r) => setTimeout(r, 30));
+    for (let i = 0; h.stub.calls.length < callsDone + 1; i++) {
+      assert.ok(i < 1000, "进行中的模型调用没有到达桩");
+      await new Promise((r) => setTimeout(r, 5));
+    }
     // 第三个 key：缓存已满（1 条已完成 + 1 条进行中）→ 淘汰已完成的那条，不动进行中的
-    delay = 0;
+    gate = null;
     assert.equal((await h.adapter.handle("POST", "grade", gradeBody("synthetic-m3-01", ANSWERS.miss01))).status, 200);
     const callsBefore = h.stub.calls.length;
     const slowRetry = h.adapter.handle("POST", "grade", slow);
+    // 放行前确认重试已挂到进行中的条目上：handle 到幂等查表是同步路径，几轮 setImmediate（在全部微任务之后）足以跑完；
+    // 此时进行中的调用仍卡在闸门上，重试只能还在等它，且没有发起新的模型调用（任何新调用都会让下面和最后的计数对不上）
+    for (let i = 0; i < 3; i++) await new Promise((r) => setImmediate(r));
+    const state = await Promise.race([slowRetry.then(() => "settled"), new Promise((r) => setImmediate(() => r("pending")))]);
+    assert.equal(state, "pending", "进行中的调用还卡在闸门上：重试应在等它，而不是已经自己算完");
+    assert.equal(h.stub.calls.length, callsBefore, "重试没有发起新的模型调用");
+    release();
     const [a, b] = await Promise.all([slowRun, slowRetry]);
     assert.equal(a.status, 200);
     assert.deepEqual(b, a);
@@ -140,6 +157,7 @@ test("缓存满：优先淘汰已完成的条目，进行中的条目不淘汰�
     assert.equal(again.status, 200);
     assert.equal(h.stub.calls.length, callsBefore + 1);
   } finally {
+    release(); // 断言失败时也放行，免得挂住的模型调用拖住关闭
     await h.close();
   }
 });

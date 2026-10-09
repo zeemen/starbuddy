@@ -223,6 +223,9 @@ SELECT t.p_bff(:aS1, format($$SELECT insight.submit_self_report(%L, 'through.g9.
 SELECT t.p_bff(:gA, format($$SELECT insight.submit_guardian_report(%L, 'outer.g8.cooperation_capacity', '{"level": "regular"}')::text$$, :S1));
 SELECT t.p_bff(:aS1, format($$SELECT insight.record_onboarding_step(%L, 'onboarding', 'started')::text$$, :S1));
 SELECT t.p_bff(:aS1, format($$SELECT (insight.record_behavior_event(%L, 'session_start', '{"entry": "today"}', now(), gen_random_uuid())).id::text$$, :S1));
+-- “能做对吗”探针（W13 技术债 T20）：两名学生各一条。原先 S1 没有探针行，清单里 insight.confidence_probe 的谓词改坏时 79p 发现不了
+SELECT t.p_bff(:aS1, format($$SELECT (insight.record_confidence_probe(%L, 'aya', 'synthetic-0301-07', 'unsure', now(), gen_random_uuid())).id::text$$, :S1));
+SELECT t.p_bff(:aS2, format($$SELECT (insight.record_confidence_probe(%L, 'aya', 'synthetic-0301-07', 'yes', now(), gen_random_uuid())).id::text$$, :S2));
 SELECT t.p_bff(:aS1, format($$SELECT platform.set_subject_textbook(%L, 'wenli', 'suke-2024')::text$$, :S1));
 SELECT t.p_bff(:gB, format($$SELECT insight.submit_guardian_report(%L, 'outer.g8.cooperation_capacity', '{"level": "occasional"}')::text$$, :S2));
 SELECT (now() AT TIME ZONE 'Asia/Shanghai')::date AS today \gset
@@ -278,6 +281,9 @@ BEGIN
   RETURN array_to_string(o, '、');
 END $$;
 SELECT t.ok(t.p_direct_left(:S1::uuid) = '', '独立复核（不经清单谓词）：该学生没有残留行（残留：' || t.p_direct_left(:S1::uuid) || '）');
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM insight.confidence_probe WHERE student_id = :S1::uuid)
+            AND EXISTS (SELECT 1 FROM insight.confidence_probe WHERE student_id = :S2::uuid),
+            '探针（学生自述的“能做对吗”）：该学生的已删，别的学生的还在（不经清单谓词直接查，T20）');
 SELECT t.throws_like(format('SELECT t.p_bff(%L, %L)', :gA, 'SELECT platform.cancel_erasure(''e1e00000-0000-4000-8000-0000000000e1'')::text'),
                      '23514', '已执行', '已执行的删除不能撤回');
 SELECT t.ok(t.p_counts(:S1::uuid, 'exempt') = :'s1_exempt_before'::jsonb, '豁免表（档案骨架、授权、同意、计量、回执）保持不变');

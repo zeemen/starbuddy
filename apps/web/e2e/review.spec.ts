@@ -47,6 +47,7 @@ async function nextCode(page: Page, who: Staff): Promise<string> {
 
 async function asStaff(page: Page, who: Staff) {
   await page.goto('/review/login');
+  await hydrated(page);  // W13 T09：登录表单同样要等水合，原先导航后立即填写、点击
   await page.getByLabel('登录名').fill(who.login);
   await page.getByLabel('口令').fill(who.password);
   await page.getByLabel('6 位码').fill(await nextCode(page, who));
@@ -81,6 +82,7 @@ test('学生身份进不了审核台（去审核台登录页）；开发身份�
 test('登录失败统一提示；退出后回登录页，旧会话失效', async ({ page }) => {
   await page.goto('/review/login');
   await axe(page);
+  await hydrated(page);  // W13 T09
   await page.getByLabel('登录名').fill(T2.login);
   await page.getByLabel('口令').fill(T2.password);
   await page.getByLabel('6 位码').fill(totp(T2.secret, Math.floor(Date.now() / 30_000) + 10));  // 超出容差

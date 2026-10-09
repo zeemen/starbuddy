@@ -1,5 +1,5 @@
 // “能做对吗”探针（冲刺 2-L）的单测与静态检查：
-//   - 文案过点点禁语表（evals/persona/diandian/lexicon/forbidden.yaml，只读；词表本身 reviewed: false，待人设负责人核对），
+//   - 文案过禁语表 A–E 类（packages/personas/forbidden/，只读，经 tests/forbidden-lexicon.ts；词表本身 reviewed: false，待人设负责人核对），
 //     另查一遍不打分、不评价、不提历史的用词；
 //   - 构建开关（构建期常量，4-H H2）：只有 STARBUDDY_DEV_PAGES=1 且 STARBUDDY_ENV 为 dev / test 时，page.dev.tsx 才算页面；
 //   - 开发专用页面的文件名都是 page.dev.tsx，演示页的 server action 与客户端只被演示页引用。
@@ -9,24 +9,9 @@ import { join, relative } from 'node:path';
 import { test } from 'node:test';
 import { devPagesEnabled, distDirFor, E2E_DIST_DIR, pageExtensionsFor } from '../next.config.ts';
 import { DEMO_COPY, PREDICTION_OPTIONS, PROBE_COPY } from '../src/probe/copy.ts';
+import { CLASSES, loadForbidden, ruleLineCount } from './forbidden-lexicon.ts';
 
 const WEB = new URL('..', import.meta.url).pathname;
-const LEXICON = join(WEB, '..', '..', 'evals', 'persona', 'diandian', 'lexicon', 'forbidden.yaml');
-
-/**
- * 读禁语表的 forbidden 段。apps/web 不引入 YAML 解析依赖：词表每条是一行流式映射
- * `- { id: A-01, …, class: A, regex: "…", source: … }`，这里只取 id、class 与双引号里的 regex（按 JSON 字符串转义还原）。
- */
-function loadForbidden(): { id: string; cls: string; rx: RegExp }[] {
-  const text = readFileSync(LEXICON, 'utf8');
-  const section = text.slice(text.indexOf('\nforbidden:'), text.indexOf('\npatterns:'));
-  const out: { id: string; cls: string; rx: RegExp }[] = [];
-  for (const line of section.split('\n')) {
-    const m = /^\s*- \{ id: ([A-Z]-\d+),.*?\bclass: ([A-Z]),.*?\bregex: "((?:[^"\\]|\\.)*)"/.exec(line);
-    if (m) out.push({ id: m[1]!, cls: m[2]!, rx: new RegExp(JSON.parse(`"${m[3]!}"`) as string) });
-  }
-  return out;
-}
 
 const COPY: string[] = [
   PROBE_COPY.question, PROBE_COPY.skip, ...PREDICTION_OPTIONS.map((o) => o.label),
@@ -36,9 +21,10 @@ const COPY: string[] = [
 
 test('禁语表能读出来，且确实能命中（防止解析失败后“什么都没查”）', () => {
   const rules = loadForbidden();
-  const lines = readFileSync(LEXICON, 'utf8').split('\n').filter((l) => /^\s*- \{ id: [A-Z]-\d+,/.test(l)).length;
+  const lines = CLASSES.reduce((n, c) => n + ruleLineCount(c), 0);
   assert.ok(rules.length >= 30, `只读出 ${rules.length} 条`);
   assert.equal(rules.length, lines, '每一条禁语都要解析出来');
+  assert.deepEqual([...new Set(rules.map((r) => r.cls))], [...CLASSES]);
   const hit = (s: string) => rules.filter((r) => r.rx.test(s)).map((r) => r.id);
   assert.ok(hit('合成：你总是这样').includes('E-12'));
   assert.ok(hit('合成：你应该先读题').includes('A-01'));

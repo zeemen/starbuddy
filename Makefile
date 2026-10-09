@@ -7,11 +7,32 @@ export PYTHONDONTWRITEBYTECODE = 1
 # CI 里设 CONTRACT_STRICT=1：缺依赖（Python 依赖或本机 Postgres）直接失败，不允许“跳过”变绿
 CONTRACT_STRICT ?= 0
 
-# 退出码 3 = 缺依赖：非严格模式下打印“跳过”但不算失败
+# 退出码 3 = 缺依赖：非严格模式下打印“跳过”但不算失败。可选的第二个参数放在命令前，用于 guard（见下）
 define run_contract
-	@$(PYTHON) $(1); rc=$$?; \
+	@$(2)$(PYTHON) $(1); rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
 endef
+
+# “跳过”分支要结束整个目标（W13 技术债 T04，specs/tech-debt-batch1）：配方每一行是单独的 shell，跳过分支里的 exit 0
+# 只结束它所在的那一行，make 会接着执行后面的行。guard 是放在跳过分支后面各行开头的一段 shell：每行运行时自己再查一次
+# 缺依赖条件（不在 make 展开时求值，所以命令行传入的 PGBIN 等变量与配方看到的一致），缺依赖时严格模式以 1 退出、
+# 非严格静默以 0 退出（“跳过”只由首行的跳过分支打印一次）；不缺依赖时什么都不做，命令原样执行。
+# 写法：缺依赖条件写成一个变量，跳过分支（if $(XXX_MISSING); then …）与后面各行（@$(call guard,$(XXX_MISSING))…）共用。
+# 验证：make make-skip-check（tools/make-skip-check/check.sh，不进 make check）
+guard = if $(1); then [ "$(CONTRACT_STRICT)" = "1" ] && exit 1; exit 0; fi;
+skip_rest = $(call guard,$(1))
+AYA_MISSING = [ ! -d adapters/aya/node_modules/ajv ]
+ZHIXING_MISSING = [ ! -d adapters/zhixing/node_modules/ajv ]
+WENLI_MISSING = [ ! -d adapters/wenli/node_modules/ajv ]
+LEARNING_MISSING = [ ! -x services/learning/.venv/bin/pytest ]
+BFF_MISSING = [ ! -d services/bff/node_modules/pg ]
+KGE_INVENTORY_MISSING = [ ! -d tools/kge-inventory/node_modules/typescript ]
+KGE_COVERAGE_MISSING = [ ! -d tools/kge-coverage/node_modules/typescript ]
+
+# 跳过分支的可复现验证（W13 技术债 T04）：空目录里严格 / 非严格、命令行 PGBIN、伪依赖目录放行（约 1 分钟，不进 make check）
+.PHONY: make-skip-check
+make-skip-check:
+	@bash tools/make-skip-check/check.sh
 
 # 契约检查约 1 秒，改动后也跑一遍
 check-fast: contract-test taxonomy-check attack-surface-check sie-dictionary-check kge-id-check
@@ -53,54 +74,55 @@ db-mutation:
 # 阿鸦适配器：类型检查 + 单测（契约、验证器、映射、泄露、幂等、HTTP）。端到端在 learning-test 里
 # 依赖需先在 adapters/aya 下 npm ci；没装时非严格模式打印“跳过”
 adapter-aya-test:
-	@if [ ! -d adapters/aya/node_modules/ajv ]; then \
+	@if $(AYA_MISSING); then \
 	  echo "adapter-aya-test: 跳过（没有安装依赖；cd adapters/aya && npm ci）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
-	@cd adapters/aya && npx --no-install tsc -p tsconfig.json && echo "adapter-aya-test: 类型检查通过"
-	@cd adapters/aya && node --no-warnings --test --test-reporter=dot tests/*.test.ts
+	@$(call guard,$(AYA_MISSING))cd adapters/aya && npx --no-install tsc -p tsconfig.json && echo "adapter-aya-test: 类型检查通过"
+	@$(call guard,$(AYA_MISSING))cd adapters/aya && node --no-warnings --test --test-reporter=dot tests/*.test.ts
 
 # 阿鸦适配器冲刺 4-D 四个方法（plan、teach、generate_variation、report）的变异测试：逐条改坏关键规则，断言单测能发现（约 3–4 分钟）
 adapter-aya-mutation:
-	@if [ ! -d adapters/aya/node_modules/ajv ]; then \
+	@if $(AYA_MISSING); then \
 	  echo "adapter-aya-mutation: 跳过（没有安装依赖；cd adapters/aya && npm ci）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
-	@cd adapters/aya && node --no-warnings scripts/mutations.ts; rc=$$?; \
+	@$(call guard,$(AYA_MISSING))cd adapters/aya && node --no-warnings scripts/mutations.ts; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
 
 # 知行（道法）适配器（ADP-道法-01，specs/adapter-zhixing-sprint2）：类型检查 + 单测（判分后处理、路由客户端、幂等、禁语与供应商信息扫描）
 # 依赖需先在 adapters/zhixing 下 npm ci；没装时非严格模式打印“跳过”
 adapter-zhixing-test:
-	@if [ ! -d adapters/zhixing/node_modules/ajv ]; then \
+	@if $(ZHIXING_MISSING); then \
 	  echo "adapter-zhixing-test: 跳过（没有安装依赖；cd adapters/zhixing && npm ci）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
-	@cd adapters/zhixing && npx --no-install tsc -p tsconfig.json && echo "adapter-zhixing-test: 类型检查通过"
-	@cd adapters/zhixing && node --no-warnings --test --test-reporter=dot tests/*.test.ts && echo "adapter-zhixing-test: 单测通过"
+	@$(call guard,$(ZHIXING_MISSING))cd adapters/zhixing && npx --no-install tsc -p tsconfig.json && echo "adapter-zhixing-test: 类型检查通过"
+	@$(call guard,$(ZHIXING_MISSING))cd adapters/zhixing && node --no-warnings --test --test-reporter=dot tests/*.test.ts && echo "adapter-zhixing-test: 单测通过"
 
 # 文砺（语文）适配器（ADP-语文-01，specs/adapter-wenli-sprint2）：类型检查 + 单测（作文后处理、客观题确定性判分、通道加权、plan、路由客户端、幂等、禁语与供应商信息扫描）
 # 依赖需先在 adapters/wenli 下 npm ci；没装时非严格模式打印“跳过”
 adapter-wenli-test:
-	@if [ ! -d adapters/wenli/node_modules/ajv ]; then \
+	@if $(WENLI_MISSING); then \
 	  echo "adapter-wenli-test: 跳过（没有安装依赖；cd adapters/wenli && npm ci）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
-	@cd adapters/wenli && npx --no-install tsc -p tsconfig.json && echo "adapter-wenli-test: 类型检查通过"
-	@cd adapters/wenli && node --no-warnings --test --test-reporter=dot tests/*.test.ts && echo "adapter-wenli-test: 单测通过"
+	@$(call guard,$(WENLI_MISSING))cd adapters/wenli && npx --no-install tsc -p tsconfig.json && echo "adapter-wenli-test: 类型检查通过"
+	@$(call guard,$(WENLI_MISSING))cd adapters/wenli && node --no-warnings --test --test-reporter=dot tests/*.test.ts && echo "adapter-wenli-test: 单测通过"
 
 # 学习服务：写入接口的单测、幂等与核对测试、端到端（学习服务 → 阿鸦适配器 → 本地临时 Postgres，约 10 秒）
-# 依赖需先安装：cd services/learning && python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+# 依赖需先安装（带哈希的锁文件，W13 技术债 T06）：cd services/learning && python3 -m venv .venv &&
+#   .venv/bin/pip install --require-hashes -r requirements-dev.lock && .venv/bin/pip install --no-deps -e ../../packages/contracts/python
 learning-test:
-	@if [ ! -x services/learning/.venv/bin/pytest ]; then \
+	@if $(LEARNING_MISSING); then \
 	  echo "learning-test: 跳过（没有安装依赖；见 services/learning/README.md）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
-	@cd services/learning && LEARNING_TEST_STRICT=$(if $(filter 1,$(CONTRACT_STRICT)),1,0) .venv/bin/python -m pytest -q
+	@$(call guard,$(LEARNING_MISSING))cd services/learning && LEARNING_TEST_STRICT=$(if $(filter 1,$(CONTRACT_STRICT)),1,0) .venv/bin/python -m pytest -q
 
 # 编译页面对账（specs/release-gate-sprint4 冲刺 3 段，第 6 节）：托管平台合并记录导出 × kge.content_review 页面审核记录 × staff 对应表。
 # 只用合成文件（services/learning/tests/fixtures/pages-reconcile），不连托管平台、不连库：一致通过；删一条审核记录、改一个提交号、
 # 高风险只剩一名批准人各报失败；命令行退出码与“受影响页面清单”（held_pages，合并窗口据此跳过）。约 3 秒；也随 learning-test 运行
 page-reconcile-test:
-	@if [ ! -x services/learning/.venv/bin/pytest ]; then \
+	@if $(LEARNING_MISSING); then \
 	  echo "page-reconcile-test: 跳过（没有安装依赖；见 services/learning/README.md）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
-	@cd services/learning && .venv/bin/python -m pytest -q -p no:cacheprovider tests/test_review_pages.py && echo "page-reconcile-test: 通过"
+	@$(call guard,$(LEARNING_MISSING))cd services/learning && .venv/bin/python -m pytest -q -p no:cacheprovider tests/test_review_pages.py && echo "page-reconcile-test: 通过"
 
 # 时政过期下架（specs/release-gate-sprint4 第 9 节，迁移 0043）：每日任务的命令行入口，手动或本机调度执行；不接生产调度（规则 9）。
 # 需要 REVIEW_CONSOLE_ENV=dev|test 与 REVIEW_CONSOLE_KGE_DATABASE_URL（只继承 starbuddy_kge 的登录角色，主机只能是本机或 Unix socket，命令里核对）。
@@ -116,70 +138,72 @@ current-affair-expire:
 # 产物目录跑完保留、不自动删除（路径打印在输出里；约 1 MB，主要是重建后的内容包），由人或系统的临时目录清理处理。
 # 缺学习服务依赖、node、adapters/aya 的 npm ci 或本机 Postgres 服务端（PGBIN 或 /usr/lib/postgresql/*/bin/initdb）时非严格跳过、严格失败。
 RELEASE_WALK_BAD = $(or $(filter-out 0 1,$(words $(RELEASE_WALK_OUT))),$(findstring ',$(RELEASE_WALK_OUT)))
+RELEASE_WALK_MISSING = [ ! -x services/learning/.venv/bin/python ] || ! command -v node >/dev/null 2>&1 || [ ! -d adapters/aya/node_modules/ajv ] || \
+	  { [ ! -x "$${PGBIN:-/nonexistent}/initdb" ] && ! ls /usr/lib/postgresql/*/bin/initdb >/dev/null 2>&1; }
 .PHONY: release-walkthrough
 release-walkthrough:
 	@$(if $(RELEASE_WALK_BAD),echo "用法：make release-walkthrough [RELEASE_WALK_OUT=<新目录或空目录>]（路径不含空格与单引号）"; exit 2)
-	@if [ ! -x services/learning/.venv/bin/python ] || ! command -v node >/dev/null 2>&1 || [ ! -d adapters/aya/node_modules/ajv ] || \
-	  { [ ! -x "$${PGBIN:-/nonexistent}/initdb" ] && ! ls /usr/lib/postgresql/*/bin/initdb >/dev/null 2>&1; }; then \
+	@if $(RELEASE_WALK_MISSING); then \
 	  echo "release-walkthrough: 跳过（缺学习服务依赖、node、adapters/aya 的 npm ci 或本机 Postgres 服务端）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
-	@out='$(RELEASE_WALK_OUT)'; \
+	@$(call guard,$(RELEASE_WALK_MISSING))out='$(RELEASE_WALK_OUT)'; \
 	  if [ -z "$$out" ]; then out=$$(mktemp -d "$${TMPDIR:-/tmp}/release-walkthrough.XXXXXX") || exit 1; fi; \
 	  echo "release-walkthrough: 产物目录 $$out（跑完保留，不自动删除）"; \
 	  $(MAKE) --no-print-directory -C tools/release-walkthrough walkthrough OUT="$$out" && echo "release-walkthrough: 通过"
 
 # 模型路由（冲刺 1-F，specs/model-router-sprint1）：单测与性质测试在 learning-test 里；这里改坏出境过滤、启动校验、熔断等关键检查，断言测试能发现（约 15 秒）
 model-router-mutation:
-	@if [ ! -x services/learning/.venv/bin/pytest ]; then \
+	@if $(LEARNING_MISSING); then \
 	  echo "model-router-mutation: 跳过（没有安装依赖；见 services/learning/README.md）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
-	@cd services/learning && .venv/bin/python scripts/model_router_mutations.py
+	@$(call guard,$(LEARNING_MISSING))cd services/learning && .venv/bin/python scripts/model_router_mutations.py
 
 # 数学自适应诊断（SIE-02a，specs/sie-02a-math-diagnosis）：单测、合成学生回放与性质测试在 learning-test 里；
 # 这里把选题规则、状态机、幂等与可见范围的关键检查逐条改坏，断言诊断测试能发现（并行 4 路，约 1 分钟；需要本机 Postgres 与阿鸦依赖）
 diagnosis-mutation:
-	@if [ ! -x services/learning/.venv/bin/pytest ] || [ ! -d adapters/aya/node_modules/ajv ]; then \
+	@if $(LEARNING_MISSING) || $(AYA_MISSING); then \
 	  echo "diagnosis-mutation: 跳过（没有安装学习服务或阿鸦适配器依赖）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
-	@services/learning/.venv/bin/python services/learning/scripts/diagnosis_mutations.py; rc=$$?; \
+	@$(call guard,$(LEARNING_MISSING) || $(AYA_MISSING))services/learning/.venv/bin/python services/learning/scripts/diagnosis_mutations.py; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
 
 # 错题再练（specs/practice-loop-stage1）：单测、性质测试与库上测试在 learning-test 里；这里把错题判定、闭环、轮次、选题过滤、
 # 票据、作答核对与鉴权的关键检查逐条改坏，断言再练测试能发现（纯函数一组不连库；库上一组每个变异起一个一次性 Postgres，并行 4 路）
 .PHONY: practice-mutation
 practice-mutation:
-	@if [ ! -x services/learning/.venv/bin/pytest ]; then \
+	@if $(LEARNING_MISSING); then \
 	  echo "practice-mutation: 跳过（没有安装学习服务依赖；见 services/learning/README.md）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
-	@services/learning/.venv/bin/python services/learning/scripts/practice_mutations.py; rc=$$?; \
+	@$(call guard,$(LEARNING_MISSING))services/learning/.venv/bin/python services/learning/scripts/practice_mutations.py; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
+
 
 # 适配器客户端（learning/adapter_client.py）：把重试、错误归类、编码转发、严格 JSON、202、超时、总预算与 5 MB 上限逐条改坏，断言客户端测试能发现（不连库，并行 8 路，约 25 秒）
 adapter-client-mutation:
-	@if [ ! -x services/learning/.venv/bin/pytest ]; then \
+	@if $(LEARNING_MISSING); then \
 	  echo "adapter-client-mutation: 跳过（没有安装学习服务依赖；见 services/learning/README.md）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
-	@services/learning/.venv/bin/python services/learning/scripts/adapter_client_mutations.py; rc=$$?; \
+	@$(call guard,$(LEARNING_MISSING))services/learning/.venv/bin/python services/learning/scripts/adapter_client_mutations.py; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
 
 # BFF 计量模块（冲刺 2-E）：类型检查 + 单测（共享规范化向量、指纹、学习服务响应分类）+ Gate 0 六类场景集成测试
 # 集成测试在 db/tests/pg-ephemeral.sh 起的一次性 Postgres 上跑（多连接并发、断线），约 5 秒
 # 依赖需先在 services/bff 下 npm ci；没装时非严格模式打印“跳过”
 bff-test:
-	@if [ ! -d services/bff/node_modules/pg ]; then \
+	@if $(BFF_MISSING); then \
 	  echo "bff-test: 跳过（没有安装依赖；cd services/bff && npm ci）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
-	@cd services/bff && npx --no-install tsc -p tsconfig.json && echo "bff-test: 类型检查通过"
-	@cd services/bff && bash ../../db/tests/pg-ephemeral.sh -- node --no-warnings --test --test-concurrency=1 --test-reporter=dot tests/*.test.ts; rc=$$?; \
+	@$(call guard,$(BFF_MISSING))cd services/bff && npx --no-install tsc -p tsconfig.json && echo "bff-test: 类型检查通过"
+	@$(call guard,$(BFF_MISSING))cd services/bff && bash ../../db/tests/pg-ephemeral.sh -- node --no-warnings --test --test-concurrency=1 --test-reporter=dot tests/*.test.ts; rc=$$?; \
 	  if [ $$rc -eq 0 ]; then echo "bff-test: 通过（单测 + Gate 0 六类场景集成测试）"; fi; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
 
 # BFF 集成测试的变异测试：去掉计量函数里的加锁或并发判断，断言 Gate 0 集成测试能发现（约 10 秒）
 bff-mutation:
-	@if [ ! -d services/bff/node_modules/pg ]; then \
+	@if $(BFF_MISSING); then \
 	  echo "bff-mutation: 跳过（没有安装依赖；cd services/bff && npm ci）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
-	@bash services/bff/tests/mutations.sh; rc=$$?; \
+	@$(call guard,$(BFF_MISSING))bash services/bff/tests/mutations.sh; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
 
 # 契约一致性测试（冲刺 1-A）：共享核对库单测；同一套测试跑参考假适配器（同步、异步）与阿鸦适配器（约 10 秒）
@@ -195,29 +219,30 @@ conformance:
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
 	@STARBUDDY_CONTRACT_VERSION=1.0.0 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1 $(PYTHON) packages/contracts/conformance/cli.py --reference --reference-async --quiet; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
-	@if [ ! -d adapters/aya/node_modules/ajv ]; then \
+	@# 下面三科各有一个跳过分支，只结束该科的几行（guard），其余部分照跑
+	@if $(AYA_MISSING); then \
 	  echo "conformance: 阿鸦部分跳过（没有安装依赖；cd adapters/aya && npm ci）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
 	@# 阿鸦按 0.9.0：plan、teach、generate_variation、report 只按 v1.0 实现（specs/adapter-aya-methods-sprint4），0.9.0 下声明未实现，
 	@# 所以这一遍用去掉这四个方法用例的夹具副本 fixtures.v0.9.yaml（与 fixtures.yaml 的漂移由 adapters/aya/tests/methods-v1.test.ts 断言）
-	$(call run_contract,packages/contracts/conformance/cli.py --quiet --adapter-cmd "node --no-warnings src/main.ts" --adapter-cwd adapters/aya --token-var AYA_ADAPTER_SERVICE_TOKEN --fixtures adapters/aya/conformance/fixtures.v0.9.yaml)
+	$(call run_contract,packages/contracts/conformance/cli.py --quiet --adapter-cmd "node --no-warnings src/main.ts" --adapter-cwd adapters/aya --token-var AYA_ADAPTER_SERVICE_TOKEN --fixtures adapters/aya/conformance/fixtures.v0.9.yaml,$(call guard,$(AYA_MISSING)))
 	@# 阿鸦按 1.0.0（specs/plugin-api-v1.0-step2/spec.md 第 3 条）：请求按 context.contract_version 应答；能力声明默认报 0.9.0，
 	@# 这里用启动参数让它报 1.0.0（cli.py 不向适配器进程透传环境变量）。冲刺 4-D 起覆盖率报告取这一遍（阿鸦 6/6，spec 验收标准）
-	@STARBUDDY_CONTRACT_VERSION=1.0.0 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1 $(PYTHON) packages/contracts/conformance/cli.py --quiet --adapter-cmd "node --no-warnings src/main.ts --contract-version 1.0.0 --allow-candidate-contract" --adapter-cwd adapters/aya --token-var AYA_ADAPTER_SERVICE_TOKEN --fixtures adapters/aya/conformance/fixtures.yaml --report $(CONFORMANCE_REPORT_DIR)/conformance-aya.json; rc=$$?; \
+	@$(call guard,$(AYA_MISSING))STARBUDDY_CONTRACT_VERSION=1.0.0 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1 $(PYTHON) packages/contracts/conformance/cli.py --quiet --adapter-cmd "node --no-warnings src/main.ts --contract-version 1.0.0 --allow-candidate-contract" --adapter-cwd adapters/aya --token-var AYA_ADAPTER_SERVICE_TOKEN --fixtures adapters/aya/conformance/fixtures.yaml --report $(CONFORMANCE_REPORT_DIR)/conformance-aya.json; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
 	@# 知行（ADP-道法-01）：conformance/harness.ts 先起模型路由接口的本机桩，再加载 src/main.ts；v0.9 与 v1.0 候选版都跑
-	@if [ ! -d adapters/zhixing/node_modules/ajv ]; then \
+	@if $(ZHIXING_MISSING); then \
 	  echo "conformance: 知行部分跳过（没有安装依赖；cd adapters/zhixing && npm ci）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
-	$(call run_contract,packages/contracts/conformance/cli.py --quiet --adapter-cmd "node --no-warnings conformance/harness.ts" --adapter-cwd adapters/zhixing --token-var ZHIXING_ADAPTER_SERVICE_TOKEN --fixtures adapters/zhixing/conformance/fixtures.yaml --report $(CONFORMANCE_REPORT_DIR)/conformance-zhixing.json)
-	@STARBUDDY_CONTRACT_VERSION=1.0.0 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1 $(PYTHON) packages/contracts/conformance/cli.py --quiet --adapter-cmd "node --no-warnings conformance/harness.ts --contract-version 1.0.0 --allow-candidate-contract" --adapter-cwd adapters/zhixing --token-var ZHIXING_ADAPTER_SERVICE_TOKEN --fixtures adapters/zhixing/conformance/fixtures.yaml; rc=$$?; \
+	$(call run_contract,packages/contracts/conformance/cli.py --quiet --adapter-cmd "node --no-warnings conformance/harness.ts" --adapter-cwd adapters/zhixing --token-var ZHIXING_ADAPTER_SERVICE_TOKEN --fixtures adapters/zhixing/conformance/fixtures.yaml --report $(CONFORMANCE_REPORT_DIR)/conformance-zhixing.json,$(call guard,$(ZHIXING_MISSING)))
+	@$(call guard,$(ZHIXING_MISSING))STARBUDDY_CONTRACT_VERSION=1.0.0 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1 $(PYTHON) packages/contracts/conformance/cli.py --quiet --adapter-cmd "node --no-warnings conformance/harness.ts --contract-version 1.0.0 --allow-candidate-contract" --adapter-cwd adapters/zhixing --token-var ZHIXING_ADAPTER_SERVICE_TOKEN --fixtures adapters/zhixing/conformance/fixtures.yaml; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
 	@# 文砺（ADP-语文-01）：同知行，harness.ts 先起路由桩；v0.9 与 v1.0 候选版都跑
-	@if [ ! -d adapters/wenli/node_modules/ajv ]; then \
+	@if $(WENLI_MISSING); then \
 	  echo "conformance: 文砺部分跳过（没有安装依赖；cd adapters/wenli && npm ci）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
-	$(call run_contract,packages/contracts/conformance/cli.py --quiet --adapter-cmd "node --no-warnings conformance/harness.ts" --adapter-cwd adapters/wenli --token-var WENLI_ADAPTER_SERVICE_TOKEN --fixtures adapters/wenli/conformance/fixtures.yaml --report $(CONFORMANCE_REPORT_DIR)/conformance-wenli.json)
-	@STARBUDDY_CONTRACT_VERSION=1.0.0 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1 $(PYTHON) packages/contracts/conformance/cli.py --quiet --adapter-cmd "node --no-warnings conformance/harness.ts --contract-version 1.0.0 --allow-candidate-contract" --adapter-cwd adapters/wenli --token-var WENLI_ADAPTER_SERVICE_TOKEN --fixtures adapters/wenli/conformance/fixtures.yaml; rc=$$?; \
+	$(call run_contract,packages/contracts/conformance/cli.py --quiet --adapter-cmd "node --no-warnings conformance/harness.ts" --adapter-cwd adapters/wenli --token-var WENLI_ADAPTER_SERVICE_TOKEN --fixtures adapters/wenli/conformance/fixtures.yaml --report $(CONFORMANCE_REPORT_DIR)/conformance-wenli.json,$(call guard,$(WENLI_MISSING)))
+	@$(call guard,$(WENLI_MISSING))STARBUDDY_CONTRACT_VERSION=1.0.0 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1 $(PYTHON) packages/contracts/conformance/cli.py --quiet --adapter-cmd "node --no-warnings conformance/harness.ts --contract-version 1.0.0 --allow-candidate-contract" --adapter-cwd adapters/wenli --token-var WENLI_ADAPTER_SERVICE_TOKEN --fixtures adapters/wenli/conformance/fixtures.yaml; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
 	@# v1.1 候选版（PLT-12 present_item，specs/present-item-contract）：参考适配器（同步、异步）、阿鸦、知行按 1.1.0 再跑一遍；夹具里
 	@# since: 1.1.0 的题面用例只在这一遍跑。覆盖率报告另写 conformance-<学科>-v1.1.json（Gate 0 仍取上面 1.0.0 那一遍）。文砺不在 PLT-12
@@ -227,12 +252,12 @@ conformance:
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
 	@# 阿鸦这一遍带题面叠加文件（合成题面，--stem-overlay；只在候选版开关打开时读），夹具里的 complete 题面用例靠它。
 	@# 缺依赖时：严格模式（CONTRACT_STRICT=1）报错，否则打印“跳过”（审查建议 14：不静默跳过）
-	@if [ -d adapters/aya/node_modules/ajv ]; then \
+	@if ! $(AYA_MISSING); then \
 	  STARBUDDY_CONTRACT_VERSION=1.1.0 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1 $(PYTHON) packages/contracts/conformance/cli.py --quiet --adapter-cmd "node --no-warnings src/main.ts --contract-version 1.1.0 --allow-candidate-contract --stem-overlay conformance/stems.synthetic.json" --adapter-cwd adapters/aya --token-var AYA_ADAPTER_SERVICE_TOKEN --fixtures adapters/aya/conformance/fixtures.yaml --report $(CONFORMANCE_REPORT_DIR)/conformance-aya-v1.1.json; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi; \
 	else echo "conformance: 阿鸦 v1.1 部分跳过（没有安装依赖；cd adapters/aya && npm ci）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; fi; fi
-	@if [ -d adapters/zhixing/node_modules/ajv ]; then \
+	@if ! $(ZHIXING_MISSING); then \
 	  STARBUDDY_CONTRACT_VERSION=1.1.0 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1 $(PYTHON) packages/contracts/conformance/cli.py --quiet --adapter-cmd "node --no-warnings conformance/harness.ts --contract-version 1.1.0 --allow-candidate-contract" --adapter-cwd adapters/zhixing --token-var ZHIXING_ADAPTER_SERVICE_TOKEN --fixtures adapters/zhixing/conformance/fixtures.yaml --report $(CONFORMANCE_REPORT_DIR)/conformance-zhixing-v1.1.json; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi; \
 	else echo "conformance: 知行 v1.1 部分跳过（没有安装依赖；cd adapters/zhixing && npm ci）"; \
@@ -259,39 +284,42 @@ attack-surface-check:
 # 统一壳前端（冲刺 3-H，specs/star-map-sprint3/spec.md）：许可证清单 → next build → 单测与静态检查（含构建产物不外链）→
 # 端到端（一次性 Postgres + 阿鸦登记 + 合成种子 + BFF（真实会话、短信捕获桩）+ Playwright：计数、授权、安全头、16px 像素、axe、不外链、不存储）
 # 依赖：apps/web 与 services/bff 已 npm ci，Playwright 的 chromium 已安装；没装时非严格模式打印“跳过”
-WEB_DEPS_OK = [ -d apps/web/node_modules/next ] && [ -d services/bff/node_modules/pg ]
+# 用花括号成组：原先 `! [ a ] && [ b ]` 里的 ! 只取反前一半，两个都没装时不跳过（T04 一并修）
+WEB_DEPS_OK = { [ -d apps/web/node_modules/next ] && [ -d services/bff/node_modules/pg ]; }
+WEB_MISSING = ! $(WEB_DEPS_OK)
 web-test:
-	@if ! $(WEB_DEPS_OK); then \
+	@if $(WEB_MISSING); then \
 	  echo "web-test: 跳过（没有安装依赖；cd apps/web && npm ci，cd services/bff && npm ci）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
-	@cd apps/web && node scripts/license-check.mjs
-	@cd apps/web && NEXT_TELEMETRY_DISABLED=1 npx --no-install next build > .next-build.log 2>&1 || { tail -30 .next-build.log; rm -f .next-build.log; exit 1; }; \
+	@$(call guard,$(WEB_MISSING))cd apps/web && node scripts/license-check.mjs
+	@$(call guard,$(WEB_MISSING))cd apps/web && NEXT_TELEMETRY_DISABLED=1 npx --no-install next build > .next-build.log 2>&1 || { tail -30 .next-build.log; rm -f .next-build.log; exit 1; }; \
 	  rm -f .next-build.log; echo "web-test: next build 通过（含类型检查）"
-	@if grep -rlE 'x-dev-staff-id|sb_dev_staff|SYNTHETIC_STAFF|5f0e0000-0000-4000-8000-0000000000e[12]' apps/web/.next --exclude-dir=cache >/dev/null 2>&1; then \
+	@$(call guard,$(WEB_MISSING))if grep -rlE 'x-dev-staff-id|sb_dev_staff|SYNTHETIC_STAFF|5f0e0000-0000-4000-8000-0000000000e[12]' apps/web/.next --exclude-dir=cache >/dev/null 2>&1; then \
 	  echo "web-test: 构建产物里还有开发 staff 身份桩"; exit 1; fi; echo "web-test: 构建产物里没有开发 staff 身份桩"
-	@if grep -rlE 'x-dev-account-id|sb_dev_account|STARBUDDY_DEV_AUTH|/dev/login|/dev/session|/dev/star-glyphs|SYNTHETIC_ACCOUNTS' apps/web/.next --exclude-dir=cache >/dev/null 2>&1; then \
+	@$(call guard,$(WEB_MISSING))if grep -rlE 'x-dev-account-id|sb_dev_account|STARBUDDY_DEV_AUTH|/dev/login|/dev/session|/dev/star-glyphs|SYNTHETIC_ACCOUNTS' apps/web/.next --exclude-dir=cache >/dev/null 2>&1; then \
 	  echo "web-test: 生产构建产物里还有开发身份桩或开发专用页面（4-H H2）"; exit 1; fi; echo "web-test: 生产构建产物里没有开发身份桩与开发专用页面"
-	@cd apps/web && node --no-warnings --test --test-reporter=dot tests/*.test.ts && echo "web-test: 单测与静态检查通过"
-	@bash apps/web/scripts/e2e.sh --grep-invert @visual --reporter=dot; rc=$$?; \
+	@$(call guard,$(WEB_MISSING))cd apps/web && node --no-warnings --test --test-reporter=dot tests/*.test.ts && echo "web-test: 单测与静态检查通过"
+	@$(call guard,$(WEB_MISSING))bash apps/web/scripts/e2e.sh --grep-invert @visual --reporter=dot; rc=$$?; \
 	  if [ $$rc -eq 0 ]; then echo "web-test: 端到端通过"; fi; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
 
 # 视觉回归（@visual）：与已提交的基线比较，差异像素 ≤ 0.1%。基线要在固定版本的容器与浏览器里生成，
 # 首次提交需视觉负责人签字（lessons）。暂不进 make check 与 CI（spec 待人确认 #11）；更新基线：加 UPDATE=1
 web-visual:
-	@if ! $(WEB_DEPS_OK); then echo "web-visual: 跳过（没有安装依赖）"; exit 0; fi
-	@cd apps/web && NEXT_TELEMETRY_DISABLED=1 npx --no-install next build > /dev/null
-	@bash apps/web/scripts/e2e.sh --grep @visual $(if $(filter 1,$(UPDATE)),--update-snapshots,)
+	@if $(WEB_MISSING); then echo "web-visual: 跳过（没有安装依赖）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@$(call guard,$(WEB_MISSING))cd apps/web && NEXT_TELEMETRY_DISABLED=1 npx --no-install next build > /dev/null
+	@$(call guard,$(WEB_MISSING))bash apps/web/scripts/e2e.sh --grep @visual $(if $(filter 1,$(UPDATE)),--update-snapshots,)
 
 # KGE-00 知识资产盘点（specs/kge-00-asset-inventory/spec.md）。
 # 测试只用合成夹具（CI 没有 legacy 副本）：类型检查、图检查正反例、夹具盘点、只读 SQL 的静态检查与本机临时库运行
 kge-inventory-test:
-	@if [ ! -d tools/kge-inventory/node_modules/typescript ]; then \
+	@if $(KGE_INVENTORY_MISSING); then \
 	  echo "kge-inventory-test: 跳过（没有安装依赖；cd tools/kge-inventory && npm ci）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
-	@cd tools/kge-inventory && npx --no-install tsc -p tsconfig.json && echo "kge-inventory-test: 类型检查通过"
-	@cd tools/kge-inventory && node --no-warnings --test --test-reporter=dot tests/*.test.ts
-	@bash tools/kge-inventory/tests/sql-run.sh; rc=$$?; \
+	@$(call guard,$(KGE_INVENTORY_MISSING))cd tools/kge-inventory && npx --no-install tsc -p tsconfig.json && echo "kge-inventory-test: 类型检查通过"
+	@$(call guard,$(KGE_INVENTORY_MISSING))cd tools/kge-inventory && node --no-warnings --test --test-reporter=dot tests/*.test.ts
+	@$(call guard,$(KGE_INVENTORY_MISSING))bash tools/kge-inventory/tests/sql-run.sh; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
 
 # KGE-01 骨架导入（specs/kge-01-skeleton-import）：生成阿鸦 fun 专题的草稿地图版本种子；不连库，SQL 由人在演练库执行
@@ -302,21 +330,21 @@ kge-import:
 
 # KGE-02 题库导入与打标（specs/kge-02-atoms-tagging）：类型检查（借用 kge-inventory 的 tsc）+ 单测 + 种子的库上验证（一次性 Postgres）
 kge-items-test:
-	@if [ ! -d tools/kge-inventory/node_modules/typescript ]; then \
+	@if $(KGE_INVENTORY_MISSING); then \
 	  echo "kge-items-test: 跳过（没有安装依赖；cd tools/kge-inventory && npm ci）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
-	@cd tools/kge-import && ../kge-inventory/node_modules/.bin/tsc -p tsconfig.json && echo "kge-items-test: 类型检查通过"
-	@cd tools/kge-import && node --no-warnings --test --test-reporter=dot tests/*.test.ts && echo "kge-items-test: 单测通过"
-	@bash tools/kge-import/tests/items-db.sh; rc=$$?; \
+	@$(call guard,$(KGE_INVENTORY_MISSING))cd tools/kge-import && ../kge-inventory/node_modules/.bin/tsc -p tsconfig.json && echo "kge-items-test: 类型检查通过"
+	@$(call guard,$(KGE_INVENTORY_MISSING))cd tools/kge-import && node --no-warnings --test --test-reporter=dot tests/*.test.ts && echo "kge-items-test: 单测通过"
+	@$(call guard,$(KGE_INVENTORY_MISSING))bash tools/kge-import/tests/items-db.sh; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
 
 # KGE-02 覆盖矩阵报表：单测 + 只读 SQL 与报表在一次性库上逐字节核对
 kge-coverage-test:
-	@if [ ! -d tools/kge-coverage/node_modules/typescript ]; then \
+	@if $(KGE_COVERAGE_MISSING); then \
 	  echo "kge-coverage-test: 跳过（没有安装依赖；cd tools/kge-coverage && npm ci）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
-	@cd tools/kge-coverage && npx --no-install tsc -p tsconfig.json && node --no-warnings --test --test-reporter=dot tests/*.test.ts && echo "kge-coverage-test: 单测通过"
-	@bash tools/kge-coverage/tests/coverage-db.sh; rc=$$?; \
+	@$(call guard,$(KGE_COVERAGE_MISSING))cd tools/kge-coverage && npx --no-install tsc -p tsconfig.json && node --no-warnings --test --test-reporter=dot tests/*.test.ts && echo "kge-coverage-test: 单测通过"
+	@$(call guard,$(KGE_COVERAGE_MISSING))bash tools/kge-coverage/tests/coverage-db.sh; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
 
 # KGE-02 打标评测脚本（kappa、Top-1）：只在合成夹具上证明计算正确；教研金标到位后另用 --enforce 验收
@@ -326,10 +354,10 @@ kge-tagging-eval-test:
 # 单测（tests/import.test.ts）随 kge-inventory-test 的 tests/*.test.ts 一起跑；这里只跑库上验证。
 # 道法部分（冲刺 4-K）作为前置目标一起跑（同一次 make 里不重复执行）
 kge-import-test: kge-daofa-import-test
-	@if [ ! -d tools/kge-inventory/node_modules/typescript ]; then \
+	@if $(KGE_INVENTORY_MISSING); then \
 	  echo "kge-import-test: 跳过（没有安装依赖；cd tools/kge-inventory && npm ci）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
-	@bash tools/kge-inventory/tests/import-db.sh; rc=$$?; \
+	@$(call guard,$(KGE_INVENTORY_MISSING))bash tools/kge-inventory/tests/import-db.sh; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
 
 # 冲刺 4-K 道法切片（specs/kge-daofa-slice-sprint4）：观点地图导入器、页码抽样核验、采分点入原子层、时政（tools/kge-import/src/daofa）。
@@ -338,14 +366,14 @@ kge-import-test: kge-daofa-import-test
 # （page-backfill-demo.sh：低于阈值不能标 verified；达标时现有表因 projection_verified_by 写不进 verified，见 lessons 待人确认）。
 # 缺 tsc 或 Postgres 时非严格跳过、严格失败
 kge-daofa-import-test:
-	@if [ ! -d tools/kge-inventory/node_modules/typescript ]; then \
+	@if $(KGE_INVENTORY_MISSING); then \
 	  echo "kge-daofa-import-test: 跳过（没有安装依赖；cd tools/kge-inventory && npm ci）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
-	@cd tools/kge-import && ../kge-inventory/node_modules/.bin/tsc -p tsconfig.json && echo "kge-daofa-import-test: 类型检查通过"
-	@cd tools/kge-import && node --no-warnings --test --test-reporter=dot tests/daofa/*.test.ts && echo "kge-daofa-import-test: 单测通过"
-	@bash tools/kge-import/tests/daofa/daofa-db.sh; rc=$$?; \
+	@$(call guard,$(KGE_INVENTORY_MISSING))cd tools/kge-import && ../kge-inventory/node_modules/.bin/tsc -p tsconfig.json && echo "kge-daofa-import-test: 类型检查通过"
+	@$(call guard,$(KGE_INVENTORY_MISSING))cd tools/kge-import && node --no-warnings --test --test-reporter=dot tests/daofa/*.test.ts && echo "kge-daofa-import-test: 单测通过"
+	@$(call guard,$(KGE_INVENTORY_MISSING))bash tools/kge-import/tests/daofa/daofa-db.sh; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
-	@bash tools/kge-import/tests/daofa/page-backfill-demo.sh; rc=$$?; \
+	@$(call guard,$(KGE_INVENTORY_MISSING))bash tools/kge-import/tests/daofa/page-backfill-demo.sh; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
 
 # 采分点单一真相源（冲刺 4-K 设计要点 3）：adapters/zhixing/content/pack.json 与原子层 kge.scoring_point 按同一 rubric_version 逐字段一致，
@@ -372,11 +400,12 @@ kge-inventory:
 # 端到端在 tests/pgkge.py 起的一次性 Postgres 上跑（约 25 秒）。没有 Postgres 时库上测试非严格跳过、严格失败
 # PR ③：兜底检索（jieba + 进程内 BM25，只切公共层）、node.resolve 接全文检索、补页面信号、M1 报表（tests/test_retrieval.py、test_m1.py）
 # 依赖需先安装（带哈希的锁文件）：cd services/knowledge && python3 -m venv .venv && .venv/bin/pip install --require-hashes -r requirements-dev.lock
+KNOWLEDGE_MISSING = [ ! -x services/knowledge/.venv/bin/pytest ] || ! services/knowledge/.venv/bin/python -c "import fastapi, asyncpg, mcp, jsonschema, jieba" 2>/dev/null
 knowledge-test:
-	@if [ ! -x services/knowledge/.venv/bin/pytest ] || ! services/knowledge/.venv/bin/python -c "import fastapi, asyncpg, mcp, jsonschema, jieba" 2>/dev/null; then \
+	@if $(KNOWLEDGE_MISSING); then \
 	  echo "knowledge-test: 跳过（没有安装依赖；见 services/knowledge/README.md）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
-	@cd services/knowledge && KNOWLEDGE_TEST_STRICT=$(if $(filter 1,$(CONTRACT_STRICT)),1,0) .venv/bin/python -m pytest -q -rs \
+	@$(call guard,$(KNOWLEDGE_MISSING))cd services/knowledge && KNOWLEDGE_TEST_STRICT=$(if $(filter 1,$(CONTRACT_STRICT)),1,0) .venv/bin/python -m pytest -q -rs \
 	  && echo "knowledge-test: 通过"
 
 # 变异测试：改坏编译器与程序体检（锁定段比对、缺引用、SymPy 验算、个人信息模式、人设词表、合并窗口、全量重编）和
@@ -402,11 +431,12 @@ kge-m2:
 
 # KGE-03 PR ③ 对照评测（evals/kge-compile）：页面优先 vs 切块检索的指标与手算一致、确定性输出、报告只含汇总与题目 ID、
 # 合成样例报告与夹具是最新的。用知识服务的 venv（需要 jieba 与 knowledge 包）；缺依赖时非严格跳过、严格失败
+KGE_COMPILE_EVAL_MISSING = [ ! -x services/knowledge/.venv/bin/pytest ] || ! services/knowledge/.venv/bin/python -c "import jieba, yaml" 2>/dev/null
 kge-compile-eval-test:
-	@if [ ! -x services/knowledge/.venv/bin/pytest ] || ! services/knowledge/.venv/bin/python -c "import jieba, yaml" 2>/dev/null; then \
+	@if $(KGE_COMPILE_EVAL_MISSING); then \
 	  echo "kge-compile-eval-test: 跳过（没有安装依赖；见 services/knowledge/README.md）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
-	@cd evals/kge-compile && PYTHONDONTWRITEBYTECODE=1 ../../services/knowledge/.venv/bin/python -m pytest -q && echo "kge-compile-eval-test: 通过"
+	@$(call guard,$(KGE_COMPILE_EVAL_MISSING))cd evals/kge-compile && PYTHONDONTWRITEBYTECODE=1 ../../services/knowledge/.venv/bin/python -m pytest -q && echo "kge-compile-eval-test: 通过"
 
 # 人设治理（冲刺 3-F，specs/persona-governance-sprint3）：Prompt 登记表与指纹锁、禁语分类器 guard、七类家族级检查、长对话漂移、
 # N16 泄露探针、录制回放与人设回归报告。全部离线：不联网、不读密钥、不调用任何模型。只用标准库 + PyYAML（+ jsonschema、pytest 跑测试）。
@@ -440,18 +470,19 @@ persona-record:
 #   （默认 PR 的目标分支或上一个提交）。录音缺失或过期：严格模式失败“需要重新录制”，非严格打印“跳过（缺录音）”并在报告里记“未运行”（退出码 3）。
 # 不联网、不需要密钥、不调用任何真实模型，所以并入 make check；真实模型评测（2-I、3-I）不进 CI。
 EVAL_PY := services/learning/.venv/bin/python
+EVAL_PY_MISSING = [ ! -x $(EVAL_PY) ]
 PERSONA_REPORT_DIR ?= $(or $(TMPDIR),/tmp)/persona-report
 eval-persona:
-	@if [ ! -x $(EVAL_PY) ]; then \
+	@if $(EVAL_PY_MISSING); then \
 	  echo "eval-persona: 跳过（没有安装依赖；见 services/learning/README.md）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
-	@cd evals/persona && ../../$(EVAL_PY) -m scorer validate
-	@cd evals/persona && ../../$(EVAL_PY) -m scorer selftest
-	@cd evals/persona && ../../$(EVAL_PY) -m pytest -q -p no:cacheprovider tests && echo "eval-persona: 评分器与人设治理测试通过（含离线全流程）"
-	@cd evals/persona && ../../$(EVAL_PY) -m governance run $(if $(ROLE),--role $(ROLE)) $(if $(BASE),--base $(BASE)) \
+	@$(call guard,$(EVAL_PY_MISSING))cd evals/persona && ../../$(EVAL_PY) -m scorer validate
+	@$(call guard,$(EVAL_PY_MISSING))cd evals/persona && ../../$(EVAL_PY) -m scorer selftest
+	@$(call guard,$(EVAL_PY_MISSING))cd evals/persona && ../../$(EVAL_PY) -m pytest -q -p no:cacheprovider tests && echo "eval-persona: 评分器与人设治理测试通过（含离线全流程）"
+	@$(call guard,$(EVAL_PY_MISSING))cd evals/persona && ../../$(EVAL_PY) -m governance run $(if $(ROLE),--role $(ROLE)) $(if $(BASE),--base $(BASE)) \
 	  $(if $(filter 1,$(CONTRACT_STRICT)),--strict) --out $(abspath $(PERSONA_REPORT_DIR)); rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
-	@if [ -n "$(ROLE)" ]; then echo "eval-persona: 指定了 ROLE，跳过变异测试"; \
+	@$(call guard,$(EVAL_PY_MISSING))if [ -n "$(ROLE)" ]; then echo "eval-persona: 指定了 ROLE，跳过变异测试"; \
 	  else cd evals/persona && ../../$(EVAL_PY) scripts/mutations.py; fi
 
 eval-grade:
@@ -463,10 +494,10 @@ eval-grade:
 # 没有本机 Postgres 时第二组退出码 3：非严格跳过、严格失败
 .PHONY: mastery-mutation
 mastery-mutation:
-	@if [ ! -x services/learning/.venv/bin/pytest ]; then \
+	@if $(LEARNING_MISSING); then \
 	  echo "mastery-mutation: 跳过（没有安装学习服务依赖；见 services/learning/README.md）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
-	@services/learning/.venv/bin/python services/learning/scripts/mastery_mutations.py; rc=$$?; \
+	@$(call guard,$(LEARNING_MISSING))services/learning/.venv/bin/python services/learning/scripts/mastery_mutations.py; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
 
 # SIE-02b 第一步（specs/sie-02b-claims-first-report）：洞察服务 services/insight——判断生成与生命周期（合成掌握行驱动）、
@@ -474,12 +505,13 @@ mastery-mutation:
 # （evals/sie-shadow，用洞察服务的 venv）。库上测试在 tests/pginsight.py 起的一次性 Postgres 上跑（执行 bootstrap 角色与全部迁移）。
 # 没有 Postgres 时库上测试非严格跳过、严格失败。依赖需先安装（带哈希的锁文件）：
 #   cd services/insight && python3 -m venv .venv && .venv/bin/pip install --require-hashes -r requirements-dev.lock
+INSIGHT_MISSING = [ ! -x services/insight/.venv/bin/python ] || ! services/insight/.venv/bin/python -c "import fastapi, asyncpg, jsonschema, yaml, httpx, pytest" 2>/dev/null
 insight-test:
-	@if [ ! -x services/insight/.venv/bin/python ] || ! services/insight/.venv/bin/python -c "import fastapi, asyncpg, jsonschema, yaml, httpx, pytest" 2>/dev/null; then \
+	@if $(INSIGHT_MISSING); then \
 	  echo "insight-test: 跳过（没有安装依赖；见 services/insight/README.md）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
-	@cd services/insight && INSIGHT_TEST_STRICT=$(if $(filter 1,$(CONTRACT_STRICT)),1,0) PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -rs
-	@cd evals/sie-shadow && PYTHONDONTWRITEBYTECODE=1 ../../services/insight/.venv/bin/python -m pytest -q && echo "insight-test: 通过"
+	@$(call guard,$(INSIGHT_MISSING))cd services/insight && INSIGHT_TEST_STRICT=$(if $(filter 1,$(CONTRACT_STRICT)),1,0) PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -rs
+	@$(call guard,$(INSIGHT_MISSING))cd evals/sie-shadow && PYTHONDONTWRITEBYTECODE=1 ../../services/insight/.venv/bin/python -m pytest -q && echo "insight-test: 通过"
 
 # 变异测试：改坏判断生命周期、首份报告的一致性与禁用推断检查、渲染、中圈指标、可见范围过滤、契约校验、调用方准入与授权核对、
 # 角色断言、监听地址与影子评审脚本的关键检查，断言测试能发现（50 条以上，约 1–2 分钟）。没有依赖或 Postgres 时退出码 3（非严格跳过、严格失败）
@@ -507,11 +539,11 @@ voice-blind-eval-test:
 # 先跑星图截图的对账与护栏单测 tools/e2e-cohort/tests（不需要数据库与浏览器，几秒；specs/e2e-integration-sprint5/lessons.md 的后续项）。
 .PHONY: e2e-cohort gate0-evidence
 e2e-cohort:
-	@if [ ! -x services/learning/.venv/bin/pytest ]; then \
+	@if $(LEARNING_MISSING); then \
 	  echo "e2e-cohort: 跳过（没有安装依赖；见 services/learning/README.md）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
-	@cd services/learning && PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider --rootdir '$(abspath tools/e2e-cohort)' '$(abspath tools/e2e-cohort/tests)'
-	@cd services/learning && LEARNING_TEST_STRICT=$(if $(filter 1,$(CONTRACT_STRICT)),1,0) .venv/bin/python -m pytest -q tests/test_e2e_cohort.py
+	@$(call guard,$(LEARNING_MISSING))cd services/learning && PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider --rootdir '$(abspath tools/e2e-cohort)' '$(abspath tools/e2e-cohort/tests)'
+	@$(call guard,$(LEARNING_MISSING))cd services/learning && LEARNING_TEST_STRICT=$(if $(filter 1,$(CONTRACT_STRICT)),1,0) .venv/bin/python -m pytest -q tests/test_e2e_cohort.py
 
 # Gate 0 证据包（合成联调，不是内测结论）：跑一遍完整合成联调，把事件计数、节点查询摘要、断言结果与运行元数据写到执行人指定目录
 # （确定性输出，只含合成数据与 ID；仓库只收一份合成样例 tools/e2e-cohort/sample/）。
@@ -547,6 +579,7 @@ gate0-starmap-v1:
 # 变量一律经环境变量传给命令（不在命令行里展开），shell 不会把它们当代码执行。
 .PHONY: loadtest-baseline degradation-test cost-report
 LOADTEST_PY := services/learning/.venv/bin/python
+LOADTEST_PY_MISSING = [ ! -x $(LOADTEST_PY) ]
 LOADTEST_STAGES ?= small
 LOADTEST_OUT ?=
 LOADTEST_ARGS ?=
@@ -563,21 +596,21 @@ loadtest-baseline:
 	@case "$$LT_STAGES" in small|full) ;; ""|*[!0-9:,.]*) echo "loadtest-baseline: LOADTEST_STAGES 只收 small、full 或 并发:秒,…"; exit 2;; esac
 	@case "$$LT_ARGS" in *[!A-Za-z0-9=:._\ -]*) echo "loadtest-baseline: LOADTEST_ARGS 含不允许的字符"; exit 2;; esac; \
 	  for a in $$LT_ARGS; do case "$$a" in --i-know|--fault|--retry-scale|--median-ms|--p90-ms|--seed|fake-[abx]=unavailable|fake-[abx]=timeout|fake-[abx]=rate_limited|fake-[abx]=error_ratio:[0-9.]*|fake-[abx]=slow:[0-9]*|[0-9]*) ;; *) echo "loadtest-baseline: LOADTEST_ARGS 里的 $$a 不在白名单"; exit 2;; esac; done
-	@if [ ! -x $(LOADTEST_PY) ]; then echo "loadtest-baseline: 跳过（没有 services/learning/.venv）"; \
+	@if $(LOADTEST_PY_MISSING); then echo "loadtest-baseline: 跳过（没有 services/learning/.venv）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
-	@cd tools/loadtest && PYTHONDONTWRITEBYTECODE=1 ../../$(LOADTEST_PY) -m pytest -q tests/test_arrivals.py tests/test_guards.py
-	@cd tools/loadtest && ../../$(LOADTEST_PY) -m loadtest baseline --stages "$$LT_STAGES" $${LT_OUT:+--out "$$LT_OUT"} $$LT_ARGS \
+	@$(call guard,$(LOADTEST_PY_MISSING))cd tools/loadtest && PYTHONDONTWRITEBYTECODE=1 ../../$(LOADTEST_PY) -m pytest -q tests/test_arrivals.py tests/test_guards.py
+	@$(call guard,$(LOADTEST_PY_MISSING))cd tools/loadtest && ../../$(LOADTEST_PY) -m loadtest baseline --stages "$$LT_STAGES" $${LT_OUT:+--out "$$LT_OUT"} $$LT_ARGS \
 	  && echo "loadtest-baseline: 报告见上面 out 目录的 baseline.md（本机基线，不代表生产容量）"
 degradation-test:
-	@if [ ! -x services/learning/.venv/bin/pytest ]; then echo "degradation-test: 跳过（没有 services/learning/.venv）"; \
+	@if $(LEARNING_MISSING); then echo "degradation-test: 跳过（没有 services/learning/.venv）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
-	@cd tools/loadtest && PYTHONDONTWRITEBYTECODE=1 ../../$(LOADTEST_PY) -m pytest -q tests/test_metrics_faults.py
-	@cd services/learning && LEARNING_TEST_STRICT=$(if $(filter 1,$(CONTRACT_STRICT)),1,0) .venv/bin/python -m pytest -q -rs tests/test_degradation.py \
+	@$(call guard,$(LEARNING_MISSING))cd tools/loadtest && PYTHONDONTWRITEBYTECODE=1 ../../$(LOADTEST_PY) -m pytest -q tests/test_metrics_faults.py
+	@$(call guard,$(LEARNING_MISSING))cd services/learning && LEARNING_TEST_STRICT=$(if $(filter 1,$(CONTRACT_STRICT)),1,0) .venv/bin/python -m pytest -q -rs tests/test_degradation.py \
 	  && echo "degradation-test: 通过"
 cost-report:
 	@$(if $(LOADTEST_PATH_BAD),echo "cost-report: 路径不能含空格或单引号"; exit 2)
-	@if [ ! -x $(LOADTEST_PY) ]; then echo "cost-report: 跳过（没有 services/learning/.venv）"; \
+	@if $(LOADTEST_PY_MISSING); then echo "cost-report: 跳过（没有 services/learning/.venv）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
-	@cd tools/loadtest && PYTHONDONTWRITEBYTECODE=1 ../../$(LOADTEST_PY) -m pytest -q tests/test_cost.py
-	@cd tools/loadtest && ../../$(LOADTEST_PY) -m loadtest cost --records "$$LT_COST_RECORDS" $${LT_COST_OUT:+--out "$$LT_COST_OUT"} \
+	@$(call guard,$(LOADTEST_PY_MISSING))cd tools/loadtest && PYTHONDONTWRITEBYTECODE=1 ../../$(LOADTEST_PY) -m pytest -q tests/test_cost.py
+	@$(call guard,$(LOADTEST_PY_MISSING))cd tools/loadtest && ../../$(LOADTEST_PY) -m loadtest cost --records "$$LT_COST_RECORDS" $${LT_COST_OUT:+--out "$$LT_COST_OUT"} \
 	  && echo "cost-report: 报告见上面 out 目录的 cost-report.md（合成估算、示例价）"

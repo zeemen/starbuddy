@@ -89,14 +89,17 @@ test('合成学生做完一次诊断：探针、暂停续做、过程题、结�
   // 其余各题：探针一律跳过；过程题、讲解题写全过程
   const kinds = new Set<string>();
   let checkedProcess = false;
+  // 确定性（W13 T09）：每一轮先等到一个确定的状态（结束页、探针或题目）出现再动作，不靠固定 200 ms 等待加重试次数；
+  // 这三种状态在用户动作之前都不会自己消失，所以等到之后再逐个判断不会错位
+  const finished = page.getByTestId('diagnosis-finished');
+  const skip = page.getByRole('button', { name: '跳过' });
+  const form = page.locator('form.diagnosis-item');
   for (let i = 0; i < 40; i++) {
-    if (await page.getByTestId('diagnosis-finished').isVisible()) break;
-    const skip = page.getByRole('button', { name: '跳过' });
-    if (await skip.isVisible()) await skip.click();
-    const form = page.locator('form.diagnosis-item');
-    if (!(await form.isVisible())) {
-      await page.waitForTimeout(200);
-      continue;
+    await expect(finished.or(skip).or(form).first()).toBeVisible({ timeout: 15_000 });
+    if (await finished.isVisible()) break;
+    if (await skip.isVisible()) {
+      await skip.click();
+      await expect(form).toBeVisible({ timeout: 15_000 });
     }
     const kind = (await form.getAttribute('data-kind')) ?? '';
     if (kind !== 'adaptive' && !checkedProcess) {

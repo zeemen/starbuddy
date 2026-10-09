@@ -53,7 +53,8 @@
 
 ## 常用命令
 ```bash
-python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt   # 在本目录执行；含可编辑安装的契约共享库
+python3 -m venv .venv && .venv/bin/pip install --require-hashes -r requirements-dev.lock   # 在本目录执行；带哈希的锁文件
+.venv/bin/pip install --no-deps -e ../../packages/contracts/python   # 契约共享库（本地包，不在锁里；它的依赖已在锁里）
 make learning-test          # 在仓库根目录：单测 + 幂等与核对测试 + 端到端（需要本机 PostgreSQL 16 与 node）
 LEARNING_ENV=dev LEARNING_DATABASE_URL=... LEARNING_SERVICE_TOKEN=... \
 LEARNING_ADAPTER_AYA_URL=http://127.0.0.1:8787 LEARNING_ADAPTER_AYA_TOKEN=... .venv/bin/python -m learning
@@ -71,8 +72,26 @@ LEARNING_ADAPTER_AYA_URL=http://127.0.0.1:8787 LEARNING_ADAPTER_AYA_TOKEN=... .v
 | jsonschema | 4.26.0 | MIT |
 | pyyaml | 6.0.3 | MIT |
 | pytest、pytest-asyncio（开发） | 9.1.1、1.4.0 | MIT、Apache-2.0 |
+| rfc3339-validator、six（契约共享库的依赖，见 `packages/contracts/python/pyproject.toml`） | 0.1.4、1.17.0 | MIT、MIT |
 
 传递依赖都是 MIT、BSD、Apache-2.0 或 PSF-2.0，只有一个例外：**certifi 是 MPL-2.0**。它随 httpx 引入，只提供 CA 证书包。MPL 是文件级弱著佐权，不修改它就没有义务；已列入待人确认。
+
+**锁文件**（W13 技术债 T06，specs/tech-debt-batch1）：`requirements.lock`（运行）与 `requirements-dev.lock`（运行 + pytest）由 `requirements*.txt`
+用 pip-compile（pip-tools 7.6.1，BSD-3-Clause，只在临时环境里用来生成，不是依赖）生成，逐包带 sha256，版本与生成时 `.venv` 的已装版本逐个相同，
+没有新增依赖；共有包的版本与哈希与 services/insight、services/knowledge 的锁文件一致。契约共享库是仓库内的本地包，`--require-hashes` 不接受，
+所以不在锁里、单独 `--no-deps` 安装。重新生成的命令写在锁文件头部。
+锁里共 31 个包：新登记核对的只有 rfc3339-validator 与 six（上表；原先随契约共享库装入、未在本表列出），pytest-asyncio 原表已有，
+其余 28 个与 insight、knowledge 锁文件里的同名包版本、哈希一致，许可证见上段。
+已知未锁：安装契约共享库时 pip 在构建隔离环境里现拉 setuptools（pyproject 的 build-system 要求）；要锁需把 setuptools 加进锁文件并改用
+`--no-build-isolation`，属于新增锁定项，待人定。
+
+## 镜像（dev / staging）
+`Dockerfile`（W13 技术债 T07）：只用于 dev / staging，不部署生产。在仓库根目录构建：`docker build -f services/learning/Dockerfile -t starbuddy-learning:dev .`
+（`Dockerfile.dockerignore` 白名单只放进要用的路径）。第三方依赖从 `requirements.lock` 带哈希安装；契约共享库**非可编辑安装**，
+它按自己文件的位置找契约 YAML（site-packages 往上两级的 `openapi/`），所以装完由 `scripts/place_contract_yaml.py --source packages/contracts/openapi`
+原样放置并逐份核对（不改共享库；让共享库随包携带 YAML 或读显式路径要改 packages/contracts，属于必停项）。
+启动测试 `tests/test_noneditable_install.py`（随 learning-test）：摆出非可编辑安装的目录布局，断言不放契约时启动即失败、放置后启动通过。
+基础镜像未固定摘要、服务只监听 127.0.0.1 两点见 Dockerfile 头部注释。
 
 数据库驱动没有用 psycopg 3，因为它是 LGPL-3.0（spec 待人确认 #1）。
 
