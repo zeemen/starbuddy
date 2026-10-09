@@ -780,12 +780,14 @@ async def test_subject_without_config_writes_nothing(mpools, student):
 
 # ---------- 接入 grade：同步重算、重放不触发、重算失败不影响落库 ----------
 @pytest.fixture
-def candidate(monkeypatch):
-    monkeypatch.setenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", "1")
+def internal_v1(monkeypatch):
+    # learning-internal v1 未签字：只在测试里开 LEARNING_INTERNAL_V1=1；插件契约 1.0.0 已签字，候选版开关关着
+    monkeypatch.setenv("LEARNING_INTERNAL_V1", "1")
+    monkeypatch.delenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", raising=False)
 
 
 @pytest.fixture
-async def mapi(mpools, candidate, mpg):
+async def mapi(mpools, internal_v1, mpg):
     app_pool, admin = mpools
     async with admin.acquire() as c:
         async with c.transaction():
@@ -906,7 +908,7 @@ async def test_uppercase_student_id_same_lock_and_task(mpools, student):
     assert a["task_id"] == b["task_id"] and a["created"] and not b["created"]
 
 
-async def test_sync_recompute_time_budget(mpools, student, candidate):
+async def test_sync_recompute_time_budget(mpools, student, internal_v1):
     """落库后同步重算有时间预算：超时接口照常 200，记 failed，交给对账补上。"""
     app_pool, admin = mpools
     async with admin.acquire() as c:

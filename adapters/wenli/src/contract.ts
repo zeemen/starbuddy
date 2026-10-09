@@ -2,7 +2,7 @@
 // 直接加载契约原文，不手抄结构：契约一改，这里的校验随之改变。
 // 来源：adapters/zhixing/src/contract.ts（其来源为 adapters/aya/src/contract.ts；同一套版本开关，spec 设计要点 1），只改了本科用到的 schema 名。
 //
-// 迁移期两版并存（specs/plugin-api-v1.0-step2/spec.md 第 3 条）：0.9.0 与 1.0.0（候选版）同时加载，
+// 迁移期两版并存（specs/plugin-api-v1.0-step2/spec.md 第 3 条）：0.9.0 与 1.0.0（2026-10-09 签字）同时加载，
 // 按请求的 context.contract_version 选版本。v1.0 用相对路径 $ref 引用两份服务契约（它们又引用 v0.9），
 // 所以 openapi 目录下相关的四份契约都按“文件 URL”作 $id 登记到同一个 ajv 实例，跨文件引用按 URI 解析。
 import { readFileSync } from "node:fs";
@@ -12,10 +12,11 @@ import { parse } from "yaml";
 
 export const SUPPORTED_CONTRACT_VERSIONS = ["0.9.0", "1.0.0"] as const;
 export type ContractVersion = (typeof SUPPORTED_CONTRACT_VERSIONS)[number];
-/** 迁移期能力声明默认报的版本（待人确认 #2 默认：0.9.0；v1.0 签字后改报 1.0.0） */
-export const DEFAULT_CONTRACT_VERSION: ContractVersion = "0.9.0";
-/** 候选版：签字前只在测试与演练环境使用（能力声明默认版本要改成它时需显式打开开关） */
-export const CANDIDATE_CONTRACT_VERSIONS: readonly ContractVersion[] = ["1.0.0"];
+/** 能力声明默认报的版本：v1.0 已于 2026-10-09 签字，改报 1.0.0（specs/contract-v1.0-signoff）；0.9.0 迁移期仍可显式指定 */
+export const DEFAULT_CONTRACT_VERSION: ContractVersion = "1.0.0";
+/** 候选版：签字前只在测试与演练环境使用（能力声明默认版本要改成它时需显式打开开关）。
+ *  1.0.0 已签字，不再是候选版；本科不支持 1.1.0，目前没有候选版（开关保留，供后续候选版用） */
+export const CANDIDATE_CONTRACT_VERSIONS: readonly ContractVersion[] = [];
 /** 兼容旧引用：等于默认版本 */
 export const CONTRACT_VERSION = DEFAULT_CONTRACT_VERSION;
 

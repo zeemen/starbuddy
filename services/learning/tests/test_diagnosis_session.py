@@ -42,8 +42,10 @@ def synthetic_answer(item_id: str, correct: bool) -> dict:
 
 @pytest.fixture(scope="module")
 def aya_v1(request):
-    """诊断作答走 v1 写入路径（候选契约 1.0.0）：本模块内学习服务与阿鸦适配器都开候选版（只在测试里）。"""
+    """诊断作答走 learning-internal v1 写入路径（内部 v1 未签字）：本模块内开 LEARNING_INTERNAL_V1=1（只在测试里）。
+    插件契约 1.0.0 已签字，不需候选版开关；仍开候选版开关只为 PLT-12 题面开关用例（present_item，候选版 1.1.0）。"""
     mp = pytest.MonkeyPatch()
+    mp.setenv("LEARNING_INTERNAL_V1", "1")
     mp.setenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", "1")
     try:
         yield request.getfixturevalue("aya_adapter")
@@ -526,8 +528,9 @@ async def test_student_ref_not_in_url_and_abandon_reports_answers(dapi, pools, s
     assert v["status"] == "abandoned" and v["process_tasks"] is False
 
 
-async def test_synthetic_presenter_needs_test_database_and_candidate(monkeypatch):
-    """合成题面除 LEARNING_ENV=test 外还要求库名 starbuddy_(dev|test)*（S6），并要求开候选契约（作答走 v1 写入路径）。"""
+async def test_synthetic_presenter_needs_test_database_and_internal_v1(monkeypatch):
+    """合成题面除 LEARNING_ENV=test 外还要求库名 starbuddy_(dev|test)*（S6），并要求开 LEARNING_INTERNAL_V1=1
+    （作答走 learning-internal v1 写入路径，内部 v1 未签字）。插件契约 1.0.0 已签字：候选版开关关着也不影响。"""
     from learning.app import _check_diagnosis_env
 
     class FakePool:
@@ -536,14 +539,17 @@ async def test_synthetic_presenter_needs_test_database_and_candidate(monkeypatch
 
         async def fetchval(self, _sql):
             return self.name
-    monkeypatch.setenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", "1")
+    monkeypatch.setenv("LEARNING_INTERNAL_V1", "1")
+    monkeypatch.delenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", raising=False)
     for ok in ("starbuddy_test", "starbuddy_dev", "starbuddy_test_ci"):
         await _check_diagnosis_env(FakePool(ok))
     for bad in ("learning_test", "starbuddy", "starbuddy_pilot", "prod_starbuddy_test", "starbuddy_testx"):
         with pytest.raises(RuntimeError):
             await _check_diagnosis_env(FakePool(bad))
-    monkeypatch.delenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT")
-    with pytest.raises(RuntimeError):
+    # 内部 v1 没开：拒绝启动（即使开着候选版开关）
+    monkeypatch.delenv("LEARNING_INTERNAL_V1")
+    monkeypatch.setenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", "1")
+    with pytest.raises(RuntimeError, match="LEARNING_INTERNAL_V1"):
         await _check_diagnosis_env(FakePool("starbuddy_test"))
 
 

@@ -5,7 +5,7 @@
 // 把地址与令牌放进本进程环境，再加载正式入口 src/main.ts。适配器代码与正式启动完全相同，只是路由指向桩。
 //   python packages/contracts/conformance/cli.py --adapter-cmd "node --no-warnings conformance/harness.ts" \
 //       --adapter-cwd adapters/zhixing --token-var ZHIXING_ADAPTER_SERVICE_TOKEN --fixtures adapters/zhixing/conformance/fixtures.yaml
-// 命令行参数原样交给 src/main.ts（例如 --contract-version 1.0.0 --allow-candidate-contract）。
+// 命令行参数原样交给 src/main.ts（例如 --contract-version 0.9.0；候选版 1.1.0 另加 --allow-candidate-contract）。
 import { loadPack } from "../src/content.ts";
 import { keywordJudge, startRouteStub } from "../tests/route-stub.ts";
 

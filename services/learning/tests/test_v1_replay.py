@@ -1,4 +1,4 @@
-"""插件契约 1.0.0 候选版路径与只查询的重放接口（specs/plugin-api-v1.0-step2/spec.md 验收第 1、2 条）。全部合成数据。"""
+"""learning-internal v1 写入路径（插件契约 1.0.0；内部 v1 未签字，测试里开 LEARNING_INTERNAL_V1=1）与只查询的重放接口（specs/plugin-api-v1.0-step2/spec.md 验收第 1、2 条）。全部合成数据。"""
 from __future__ import annotations
 
 import asyncio
@@ -7,7 +7,7 @@ import uuid
 
 import pytest
 
-from conftest import CREDENTIAL, counts, env, grade_body, to_v1_body
+from conftest import CREDENTIAL, at, counts, diagnose_body, env, grade_body, to_v1_body
 from learning import store
 
 ONE_GRADE = {"evidence_event": 2, "attempt": 1, "grade_result": 1, "grade_dimension": 1, "error_attribution": 1, "skill_observation": 0}
@@ -15,8 +15,11 @@ NOTHING = dict.fromkeys(ONE_GRADE, 0)
 
 
 @pytest.fixture(autouse=True)
-def allow_candidate(monkeypatch):
-    monkeypatch.setenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", "1")
+def internal_v1(monkeypatch):
+    # learning-internal v1 未签字：只在测试里开 LEARNING_INTERNAL_V1=1。插件契约 1.0.0 已签字（specs/contract-v1.0-signoff），
+    # 本模块一律在候选版开关关着时跑，证明 v1 写入不靠候选版开关
+    monkeypatch.setenv("LEARNING_INTERNAL_V1", "1")
+    monkeypatch.delenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", raising=False)
 
 
 def replay_url(method: str, body: dict) -> str:
@@ -87,10 +90,38 @@ async def test_declared_version_must_match_endpoint(api, student, fake_adapter, 
     assert fake_adapter.calls == 0
 
 
-async def test_v1_refused_when_candidate_not_enabled(api, student, fake_adapter, monkeypatch):
-    monkeypatch.delenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT")
+@pytest.mark.parametrize("method", ["grade", "diagnose"])
+async def test_v1_refused_when_internal_v1_not_enabled(api, pools, student, fake_adapter, monkeypatch, method):
+    """learning-internal v1 未签字：没开 LEARNING_INTERNAL_V1=1 时 /internal/v1 写入与签字前同样 400，不调适配器、不落库
+    （即使开着候选版开关也一样：插件 1.0.0 签字不连带放开内部 v1）。"""
+    _, admin = pools
+    monkeypatch.delenv("LEARNING_INTERNAL_V1")
+    monkeypatch.setenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", "1")
+    body = to_v1_body(grade_body(student) if method == "grade" else diagnose_body(student, [at("SYN-UNV", "42", 1)]))
+    r = await api.post(f"/internal/v1/{method}", json=env(body))
+    assert r.status_code == 400 and r.json()["code"] == "INVALID_REQUEST"
+    assert fake_adapter.calls == 0 and await counts(admin, student) == NOTHING
+
+
+async def test_v1_accepted_without_candidate_switch(api, pools, student, fake_adapter, monkeypatch):
+    """开着 LEARNING_INTERNAL_V1、关着候选版开关：/internal/v1 照常写入（插件 1.0.0 已签字，不再靠候选版开关）。"""
+    _, admin = pools
+    monkeypatch.delenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", raising=False)
     r = await api.post("/internal/v1/grade", json=env(to_v1_body(grade_body(student))))
-    assert r.status_code == 400 and fake_adapter.calls == 0
+    assert r.status_code == 200, r.text
+    assert fake_adapter.calls == 1 and await counts(admin, student) == ONE_GRADE
+
+
+@pytest.mark.parametrize("version", ["1.1.0", "2.0.0"])
+async def test_v1_endpoint_refuses_other_declared_versions(api, pools, student, fake_adapter, monkeypatch, version):
+    """1.1.0 仍是候选版、2.0.0 不存在：即使开着候选版开关，/internal/v1 只认 1.0.0，不调适配器、不落库。"""
+    _, admin = pools
+    monkeypatch.setenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", "1")
+    body = to_v1_body(grade_body(student))
+    body["context"]["contract_version"] = version
+    r = await api.post("/internal/v1/grade", json=env(body))
+    assert r.status_code == 400 and r.json()["code"] == "INVALID_REQUEST"
+    assert fake_adapter.calls == 0 and await counts(admin, student) == NOTHING
 
 
 async def test_adapter_answering_in_other_version_is_rejected(api, pools, student, fake_adapter):

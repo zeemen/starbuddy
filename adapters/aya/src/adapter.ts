@@ -1,9 +1,9 @@
 // 阿鸦适配器：capabilities、grade（客观题）、diagnose（intake / gap_test），以及冲刺 4-D 补齐的
 // plan、teach（提示阶梯与知识页面直出）、generate_variation（选题）、report（字段与证据引用）。
-// 规格：specs/adapter-aya-sprint1/spec.md“映射规则”；specs/adapter-aya-methods-sprint4/spec.md（四个新方法只按 v1.0 候选版实现，
+// 规格：specs/adapter-aya-sprint1/spec.md“映射规则”；specs/adapter-aya-methods-sprint4/spec.md（四个新方法只按 v1.0 实现，
 // 0.9.0 请求返回 501；它们都是确定性的：不调模型、不写话术与关于学生的陈述、不产生证据、不读系统时钟）。
-// 契约：packages/contracts/openapi/plugin-api.v0.9.yaml 与 v1.0 候选版 plugin-api.v1.0.yaml：迁移期按请求的 context.contract_version 选版本校验与应答，能力声明报默认版本
-// （specs/plugin-api-v1.0-step2/spec.md 第 3 条、待人确认 #2）。v1.1 候选版 plugin-api.v1.1.yaml（PLT-12）：v1.0 的六个方法照旧，
+// 契约：packages/contracts/openapi/plugin-api.v0.9.yaml 与 v1.0（2026-10-09 签字）plugin-api.v1.0.yaml：迁移期按请求的 context.contract_version 选版本校验与应答，
+// 能力声明报默认版本 1.0.0（specs/plugin-api-v1.0-step2/spec.md 第 3 条、specs/contract-v1.0-signoff）。v1.1 候选版 plugin-api.v1.1.yaml（PLT-12）：v1.0 的六个方法照旧，
 // 另加只读的 present_item（题面；只按 1.1.0 应答，见 src/methods/present.ts）。
 //
 // 适配器不读写任何平台表（CLAUDE.md 规则 1）：证据与推断放在响应里，由学习服务落库。
@@ -31,7 +31,7 @@ import {
 export const ADAPTER_VERSION = "0.2.0";
 /** plan、teach(hint) 引用了未准入的题时的置信度（spec 待人确认 #5 默认）；其余新方法为 1.0 */
 export const UNADMITTED_CONTENT_CONFIDENCE = 0.5;
-/** 冲刺 4-D 的四个方法：只按 v1.0 候选版实现 */
+/** 冲刺 4-D 的四个方法：只按 v1.0 实现 */
 export const V1_ONLY_METHODS = ["plan", "teach", "generate_variation", "report"] as const;
 export const TRAP_ATTRIBUTION_ALGORITHM_BASE = "aya-trap-attr@0.1.0";
 /** 错因的算法版本同时带映射表版本（规则 6）：映射表签字后改动，已落库的错因仍能分清按哪一版映射 */

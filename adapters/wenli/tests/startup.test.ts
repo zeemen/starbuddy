@@ -2,6 +2,7 @@
 // 拒绝启动时退出码非 0，错误信息不含地址、令牌与代理配置。全部是合成值。
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { createServer, type AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { envProxyEnabled, startupRefusal } from "../src/startup.ts";
@@ -92,4 +93,59 @@ test("进程级对照：配置合格时正常启动并监听（证明上面的�
   const r = await runMain(baseEnv);
   assert.equal(r.code, null, r.out);
   assert.match(r.out, /"event":"listening"/);
+});
+
+// ---------- 缺省契约版本（specs/contract-v1.0-signoff）：正式入口、不设任何版本变量与候选版开关 ----------
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const s = createServer();
+    s.once("error", reject);
+    s.listen(0, "127.0.0.1", () => {
+      const { port } = s.address() as AddressInfo;
+      s.close(() => resolve(port));
+    });
+  });
+}
+
+/** 起正式入口 src/main.ts（环境只含 PATH、PORT 与传入的变量），取 capabilities 的 contract_version 后杀掉进程 */
+async function capabilitiesVersion(env: Record<string, string>): Promise<string> {
+  const port = await freePort();
+  const child = spawn(process.execPath, ["--no-warnings", "src/main.ts"], {
+    cwd: ROOT,
+    env: { PATH: process.env.PATH ?? "", PORT: String(port), ...env },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  try {
+    let out = "";
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`没有启动：${out.slice(0, 300)}`)), 10_000);
+      child.stdout.on("data", (d) => {
+        out += d;
+        if (out.includes('"event":"listening"')) {
+          clearTimeout(timer);
+          resolve();
+        }
+      });
+      child.stderr.on("data", (d) => (out += d));
+      child.on("exit", (code) => {
+        clearTimeout(timer);
+        reject(new Error(`进程退出（${code}）：${out.slice(0, 300)}`));
+      });
+    });
+    const r = await fetch(`http://127.0.0.1:${port}/plugin/v0/capabilities`, { headers: { authorization: `Bearer ${SERVICE}` } });
+    assert.equal(r.status, 200);
+    return ((await r.json()) as { contract_version: string }).contract_version;
+  } finally {
+    child.kill("SIGKILL");
+  }
+}
+
+test("进程级：不设 WENLI_CONTRACT_VERSION 与候选版开关 → 能力声明报 1.0.0；显式 0.9.0 → 报 0.9.0", async () => {
+  assert.equal(await capabilitiesVersion(baseEnv), "1.0.0");
+  assert.equal(await capabilitiesVersion({ ...baseEnv, WENLI_CONTRACT_VERSION: "0.9.0" }), "0.9.0");
+});
+
+test("进程级：本科不支持的 1.1.0（开着候选版开关也一样）与未知版本 → 拒绝启动", async () => {
+  assertRefused(await runMain({ ...baseEnv, WENLI_CONTRACT_VERSION: "1.1.0", STARBUDDY_ALLOW_CANDIDATE_CONTRACT: "1" }), /不支持的契约版本/);
+  assertRefused(await runMain({ ...baseEnv, WENLI_CONTRACT_VERSION: "2.0.0" }), /不支持的契约版本/);
 });

@@ -1,9 +1,9 @@
 // 启动入口：node src/main.ts
 //   AYA_ADAPTER_SERVICE_TOKEN  平台到适配器的服务间令牌（必填，≥ 32 字符；由部署环境注入，不写进仓库）
 //   PORT                       监听端口（默认 8787）。只监听 127.0.0.1，由平台侧网关转发
-//   AYA_CONTRACT_VERSION       能力声明报的默认契约版本（缺省 0.9.0，待人确认 #2）。请求一律按各自的
+//   AYA_CONTRACT_VERSION       能力声明报的默认契约版本（缺省 1.0.0，v1.0 已签字；0.9.0 迁移期仍可显式指定）。请求一律按各自的
 //                              context.contract_version 应答（0.9.0 / 1.0.0），与此无关。
-//                              设为候选版 1.0.0 / 1.1.0 还需 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1（签字前只在测试与演练里用）
+//                              设为候选版 1.1.0 还需 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1（签字前只在测试与演练里用）
 //   AYA_CONTENT_PACK           换一份内容包（文件路径；只给测试与演练：带合成题面的内容包，PLT-12）。不设用 content/pack.json
 //   AYA_STEM_OVERLAY           题面叠加文件（文件路径；只给测试与演练：给真实内容包里的几道题加合成题面）
 //                              这两项只在候选版开关打开时才读；开关没开却设了，拒绝启动（审查阻断 3）。

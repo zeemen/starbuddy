@@ -14,7 +14,7 @@
 由 Makefile 决定如何呈现；本脚本不会在缺依赖时假装通过。
 
 用法：check_contract.py [契约 yaml 路径]
-不带参数时检查 v0.9、v1.0 候选版与 v1.1 候选版三份（迁移期并存，specs/plugin-api-v1.0/spec.md），外加 v1.0 的破坏性变更反例，
+不带参数时检查 v0.9、v1.0（2026-10-09 签字）与 v1.1 候选版三份（迁移期并存，specs/plugin-api-v1.0/spec.md），外加 v1.0 的破坏性变更反例，
 以及 v1.1 只做增量（v1.0 的 schema、路径、示例逐项不变，只多 present_item；specs/present-item-contract/spec.md）。
 """
 from __future__ import annotations
@@ -1023,7 +1023,7 @@ def main() -> int:
           f"{len(CASES)} 个反例全部被拒绝（v1.0 另加 {len(V1_CASES)} 个）；六方法信封、计量字段、无约束文本扫描、JobStatus 绑定、示例无 PII"
           + (f"；learning-internal v0 与 v1 合法、{internal_refs} 个跨文件引用可解析、v1 信封与摘要 {len(INTERNAL_V1_COUNTER)} 个反例全部被拒绝" if internal_refs is not None else "")
           + (f"；{service_summary}" if service_summary else "")
-          + (f"；v1.0 候选版合法、{len(v1['components']['examples'])} 个示例、{n_breaking} 条破坏性变更 v0.9 接受 / v1.0 拒绝"
+          + (f"；v1.0（已签字）合法、{len(v1['components']['examples'])} 个示例、{n_breaking} 条破坏性变更 v0.9 接受 / v1.0 拒绝"
              f"；v1.1 候选版合法、{len(v11['components']['examples'])} 个示例、只做增量（v1.0 的 schema / 路径 / 示例逐项不变），"
              f"present_item 另加 {len(V11_CASES)} 个反例全部被拒绝、答案类字段名黑名单与受限富文本探针通过"
              if len(sys.argv) <= 1 else "") + "）")

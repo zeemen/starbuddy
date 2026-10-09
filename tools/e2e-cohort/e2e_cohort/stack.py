@@ -149,9 +149,9 @@ class AdapterProc:
 
 def _adapter_env(subject: str, port: int, route_url: str) -> dict:
     p = ENV_PREFIX[subject]
-    # 三科能力声明默认都报 0.9.0；联调请求用 1.0.0，三科都设同一环境变量，运行元数据里的能力声明版本一致
-    env = {"PATH": os.environ["PATH"], f"{p}_ADAPTER_SERVICE_TOKEN": ADAPTER_TOKENS[subject], "PORT": str(port),
-           "STARBUDDY_ALLOW_CANDIDATE_CONTRACT": "1", f"{p}_CONTRACT_VERSION": "1.0.0"}
+    # v1.0 签字后（specs/contract-v1.0-signoff）三科能力声明缺省都报 1.0.0，联调请求也用 1.0.0：不设版本变量、不开候选版开关，
+    # 联调本身就验证“缺省按 1.0.0 工作”；运行元数据里的能力声明版本一致
+    env = {"PATH": os.environ["PATH"], f"{p}_ADAPTER_SERVICE_TOKEN": ADAPTER_TOKENS[subject], "PORT": str(port)}
     if subject in ROUTE_TOKENS:
         env.update({f"{p}_ROUTE_URL": route_url, f"{p}_ROUTE_TOKEN": ROUTE_TOKENS[subject]})
     return env
@@ -232,17 +232,21 @@ class Stack:
 @asynccontextmanager
 async def running_stack(pg, model: ScriptedModel, *, register: bool = True):
     """pg：pgharness.EphemeralPG（已执行角色与全部迁移）。"""
-    # 插件契约 1.0.0 仍是候选版：与现有 e2e 一样只在联调期间放开，结束后恢复（不影响同一 pytest 会话里的其他测试）
-    previous = os.environ.get("STARBUDDY_ALLOW_CANDIDATE_CONTRACT")
-    os.environ["STARBUDDY_ALLOW_CANDIDATE_CONTRACT"] = "1"
+    # learning-internal v1 未签字：与现有 e2e 一样只在联调期间开 LEARNING_INTERNAL_V1=1。
+    # 插件契约 1.0.0 已于 2026-10-09 签字（specs/contract-v1.0-signoff）：联调期间显式关掉候选版开关，证明插件侧缺省不靠它。
+    # 结束后两者都恢复（不影响同一 pytest 会话里的其他测试）
+    previous = {k: os.environ.get(k) for k in ("LEARNING_INTERNAL_V1", "STARBUDDY_ALLOW_CANDIDATE_CONTRACT")}
+    os.environ["LEARNING_INTERNAL_V1"] = "1"
+    os.environ.pop("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", None)
     try:
         async with _stack(pg, model, register=register) as st:
             yield st
     finally:
-        if previous is None:
-            os.environ.pop("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", None)
-        else:
-            os.environ["STARBUDDY_ALLOW_CANDIDATE_CONTRACT"] = previous
+        for k, v in previous.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
 
 
 @asynccontextmanager

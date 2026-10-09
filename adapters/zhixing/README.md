@@ -1,9 +1,9 @@
 # 知行（道法）适配器
 
-ADP-道法-01。实现学科插件 API v0.9（`packages/contracts/openapi/plugin-api.v0.9.yaml`），迁移期同时支持 v1.0 候选版
-（`plugin-api.v1.0.yaml`）：按请求的 `context.contract_version` 校验与应答，其他版本返回 400 `CONTRACT_VERSION_UNSUPPORTED`。
-版本开关与阿鸦相同：能力声明默认报 0.9.0，可用 `--contract-version 1.0.0 --allow-candidate-contract`（或环境变量
-`ZHIXING_CONTRACT_VERSION`、`STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1`）改报 1.0.0，签字前只在测试与演练里用。
+ADP-道法-01。实现学科插件 API v1.0（`plugin-api.v1.0.yaml`，2026-10-09 签字）与迁移期旧版 v0.9
+（`packages/contracts/openapi/plugin-api.v0.9.yaml`）：按请求的 `context.contract_version` 校验与应答，其他版本返回 400 `CONTRACT_VERSION_UNSUPPORTED`。
+版本开关与阿鸦相同：能力声明缺省报 1.0.0（签字后切换，`specs/contract-v1.0-signoff`），不需候选版开关；迁移期可用
+`--contract-version 0.9.0`（或环境变量 `ZHIXING_CONTRACT_VERSION=0.9.0`）改报 0.9.0。候选版开关现在只管 1.1.0。
 规格见 `specs/adapter-zhixing-sprint2/spec.md`（待人确认 #1–#6 按默认执行）。
 
 | 接口 | 状态 |
@@ -106,8 +106,8 @@ Authorization: Bearer {ZHIXING_ROUTE_TOKEN}
 | `ZHIXING_ROUTE_URL` | 学习服务内部路由接口地址：https，或本机回环的 http；不得带凭据、查询串 |
 | `ZHIXING_ROUTE_TOKEN` | 调用该接口的服务间令牌（≥ 32 字符；必须与 `ZHIXING_ADAPTER_SERVICE_TOKEN` 不同，否则拒绝启动） |
 | `NODE_USE_ENV_PROXY` | 不得设置（设置了就拒绝启动；`--use-env-proxy` 同） |
-| `ZHIXING_CONTRACT_VERSION` | 能力声明报的默认契约版本（缺省 0.9.0） |
-| `STARBUDDY_ALLOW_CANDIDATE_CONTRACT` | 设为 1 时接受候选版 1.0.0 |
+| `ZHIXING_CONTRACT_VERSION` | 能力声明报的默认契约版本（缺省 1.0.0；迁移期可设 0.9.0） |
+| `STARBUDDY_ALLOW_CANDIDATE_CONTRACT` | 设为 1 时接受候选版 1.1.0（1.0.0 已签字，不需要） |
 
 ## 内容
 `content/pack.json` 是 4 道**合成**道法主观题（`zhixing:synthetic-m3-01`–`04`，标注“合成、非真题”，材料与人物都是虚构），
@@ -150,8 +150,8 @@ npm run register:sql > zhixing-register.sql   # 生成登记 SQL；目标库由�
 # 一致性测试（仓库根目录；路由接口用桩）：
 python packages/contracts/conformance/cli.py --adapter-cmd "node --no-warnings conformance/harness.ts" \
   --adapter-cwd adapters/zhixing --token-var ZHIXING_ADAPTER_SERVICE_TOKEN --fixtures adapters/zhixing/conformance/fixtures.yaml
-STARBUDDY_CONTRACT_VERSION=1.0.0 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1 python packages/contracts/conformance/cli.py \
-  --adapter-cmd "node --no-warnings conformance/harness.ts --contract-version 1.0.0 --allow-candidate-contract" \
+STARBUDDY_CONTRACT_VERSION=0.9.0 python packages/contracts/conformance/cli.py \
+  --adapter-cmd "node --no-warnings conformance/harness.ts --contract-version 0.9.0" \
   --adapter-cwd adapters/zhixing --token-var ZHIXING_ADAPTER_SERVICE_TOKEN --fixtures adapters/zhixing/conformance/fixtures.yaml
 ```
 

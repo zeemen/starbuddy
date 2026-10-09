@@ -1,7 +1,9 @@
 """FastAPI 应用：内部接口，只供平台内部服务调用（spec 范围第 2 条；1.1.0 的掌握读取与验证任务见 mastery_routes.py）。
 
 接口定义：packages/contracts/openapi/learning-internal.v0.yaml（插件契约 0.9.0）与 learning-internal.v1.yaml
-（插件契约 1.0.0 候选版，另有只查询的重放接口；specs/plugin-api-v1.0-step2/spec.md）。迁移期两套路径并存。
+（插件契约 1.0.0，2026-10-09 签字；另有只查询的重放接口；specs/plugin-api-v1.0-step2/spec.md）。迁移期两套路径并存。
+插件契约缺省版本随共享库切到 1.0.0（specs/contract-v1.0-signoff），不再需要候选版开关；但 learning-internal v1 本身仍待签字：
+/internal/v1 的 grade、diagnose 写入、plan 调适配器、诊断与再练模块启动另由 LEARNING_INTERNAL_V1=1 挡住（缺省关，只在测试里开）。
 日志只记方法、状态码、错误码、request_id（必须是 UUID 形状）、耗时、是否重放；不记请求体与异常消息。
 """
 from __future__ import annotations
@@ -22,7 +24,7 @@ from fastapi.responses import JSONResponse
 from . import mastery_routes
 from .adapter_client import strict_json
 from .config import Settings
-from .contract import UnsupportedContractVersion, internal_contract, plugin_contract
+from .contract import UnsupportedContractVersion, internal_contract, internal_v1_enabled, plugin_contract
 from .diagnosis import api as diagnosis_api
 from .diagnosis.engine import Params as DiagnosisParams
 from .errors import IngestError
@@ -115,27 +117,32 @@ SYNTHETIC_DB = re.compile(r"^starbuddy_(dev|test)(_[a-z0-9_]+)?$")  # 与合成�
 
 async def _check_diagnosis_env(pool) -> None:
     """合成题面除 LEARNING_ENV=test 外再核对库名（安全审查 S6）：只能连一次性开发 / 测试库；
-    诊断作答走 v1 写入路径（候选契约 1.0.0），签字前只在测试里开（STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1）。"""
+    诊断作答走 v1 写入路径：插件契约 1.0.0 已签字，但 learning-internal v1 未签字，只在测试里开（LEARNING_INTERNAL_V1=1）。"""
     db = await pool.fetchval("SELECT current_database()")
     if not SYNTHETIC_DB.fullmatch(db or ""):
         raise RuntimeError("合成诊断题面只能连开发库或测试库（库名 starbuddy_dev* 或 starbuddy_test*）")
+    if not internal_v1_enabled():
+        raise RuntimeError("诊断作答走 v1 写入路径：learning-internal v1 未签字，需 LEARNING_INTERNAL_V1=1（只在测试里）")
     try:
         plugin_contract("1.0.0")
     except UnsupportedContractVersion:
-        raise RuntimeError("诊断作答走 v1 写入路径：签字前需 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1（只在测试里）") from None
+        raise RuntimeError("诊断作答走 v1 写入路径：插件契约 1.0.0 在本服务不可用") from None
 
 
 async def _check_practice_env(pool, synthetic_presenter: bool) -> None:
-    """再练出题与作答走 generate_variation 与 v1 写入路径（候选契约 1.0.0）：签字前只在测试里开（STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1）；
+    """再练出题与作答走 generate_variation 与 v1 写入路径：插件契约 1.0.0 已签字，但 learning-internal v1 未签字，
+    只在测试里开（LEARNING_INTERNAL_V1=1）；复测模块依赖再练，同样受这一检查约束；
     合成题面另核对库名（与诊断合成题面同一做法，安全审查 S6）。"""
     if synthetic_presenter:
         db = await pool.fetchval("SELECT current_database()")
         if not SYNTHETIC_DB.fullmatch(db or ""):
             raise RuntimeError("再练合成题面只能连开发库或测试库（库名 starbuddy_dev* 或 starbuddy_test*）")
+    if not internal_v1_enabled():
+        raise RuntimeError("错题再练走 generate_variation 与 v1 写入路径：learning-internal v1 未签字，需 LEARNING_INTERNAL_V1=1（只在测试里）")
     try:
         plugin_contract("1.0.0")
     except UnsupportedContractVersion:
-        raise RuntimeError("错题再练走 generate_variation 与 v1 写入路径：签字前需 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1（只在测试里）") from None
+        raise RuntimeError("错题再练走 generate_variation 与 v1 写入路径：插件契约 1.0.0 在本服务不可用") from None
 
 
 PRACTICE_LOCK_POOL_SIZE = 8   # 再练作答串行锁的连接数上限：同时在判分的再练作答最多这么多，再多的取锁连接超时回 503 BUSY

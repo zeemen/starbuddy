@@ -1,9 +1,10 @@
 """按契约 YAML 校验（和阿鸦适配器加载同一份文件，不手抄结构）。
 
-- 学科插件 API：packages/contracts/openapi/plugin-api.v0.9.yaml（默认）或 v1.0 / v1.1 候选版（请求与适配器响应）
+- 学科插件 API：packages/contracts/openapi/plugin-api.v1.0.yaml（默认，2026-10-09 签字）、v0.9（迁移期旧版）
+  或 v1.1 候选版（请求与适配器响应）
 - 学习服务内部 API：packages/contracts/openapi/learning-internal.v0.yaml（返回给 BFF 的摘要与错误）
-迁移期两个插件契约版本并存（specs/plugin-api-v1.0/spec.md）：环境变量 STARBUDDY_CONTRACT_VERSION 选版本，
-缺省 0.9.0。学习服务与阿鸦在第二步切换前一直用 0.9.0；一致性测试用它按 1.0.0 跑参考适配器。
+迁移期插件契约版本并存（specs/plugin-api-v1.0/spec.md）：环境变量 STARBUDDY_CONTRACT_VERSION 选版本，
+缺省 1.0.0（签字后切换，specs/contract-v1.0-signoff）；0.9.0 仍可显式指定，迁移期终点另定。
 错误只报位置与关键字，不带实例数据，避免把学生原文写进错误详情或日志。
 """
 from __future__ import annotations
@@ -22,12 +23,13 @@ OPENAPI = Path(__file__).resolve().parents[2] / "openapi"
 # 1.1.0 候选版（PLT-12，specs/present-item-contract）：以 1.0.0 为底，只多一个只读方法 present_item
 PLUGIN_CONTRACTS = {"0.9.0": OPENAPI / "plugin-api.v0.9.yaml", "1.0.0": OPENAPI / "plugin-api.v1.0.yaml",
                     "1.1.0": OPENAPI / "plugin-api.v1.1.yaml"}
-CONTRACT_VERSION = os.environ.get("STARBUDDY_CONTRACT_VERSION", "0.9.0")
+DEFAULT_CONTRACT_VERSION = "1.0.0"
+CONTRACT_VERSION = os.environ.get("STARBUDDY_CONTRACT_VERSION", DEFAULT_CONTRACT_VERSION)
 if CONTRACT_VERSION not in PLUGIN_CONTRACTS:
     raise RuntimeError(f"不支持的契约版本 {CONTRACT_VERSION}（可选：{sorted(PLUGIN_CONTRACTS)}）")
 # 候选版签字前只能在测试里用（安全审查建议 3）：还要显式设 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1，
-# 防止服务进程因为全局环境变量误用候选版（学习服务的内部契约还停在 v0）
-CANDIDATE_VERSIONS = {"1.0.0", "1.1.0"}
+# 防止服务进程因为全局环境变量误用候选版。1.0.0 已于 2026-10-09 签字，不再是候选版；1.1.0（PLT-12）仍待签字
+CANDIDATE_VERSIONS = {"1.1.0"}
 
 
 def candidate_allowed() -> bool:
@@ -95,7 +97,7 @@ def _has_file_refs(node) -> bool:
 
 
 def plugin_contract(version: str | None = None) -> ContractDoc:
-    """按版本取插件契约；不给版本时取缺省版本（环境变量 STARBUDDY_CONTRACT_VERSION，缺省 0.9.0）。
+    """按版本取插件契约；不给版本时取缺省版本（环境变量 STARBUDDY_CONTRACT_VERSION，缺省 1.0.0）。
     迁移期学习服务按请求的 context.contract_version 选版本（specs/plugin-api-v1.0-step2/spec.md）。"""
     v = version or CONTRACT_VERSION
     if v not in PLUGIN_CONTRACTS:

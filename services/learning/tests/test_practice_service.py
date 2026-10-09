@@ -147,7 +147,8 @@ def capture_practice_service(monkeypatch):
 @pytest.fixture(scope="module", autouse=True)
 def candidate_contract():
     mp = pytest.MonkeyPatch()
-    mp.setenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", "1")   # 签字前只在测试里开（generate_variation 与 v1 写入路径）
+    mp.setenv("LEARNING_INTERNAL_V1", "1")   # 再练作答走 learning-internal v1 写入路径（内部 v1 未签字，只在测试里开）
+    mp.setenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", "1")   # 只为 PLT-12 题面开关用例（present_item，候选版 1.1.0）；插件 1.0.0 已签字，不需开关
     yield
     mp.undo()
 
@@ -963,7 +964,7 @@ def test_synthetic_presenter_and_config_need_test_env():
         PC.load("synthetic", env="pilot")
 
 
-async def test_synthetic_presenter_checks_database_name():
+async def test_synthetic_presenter_checks_database_name_and_internal_v1(monkeypatch):
     from learning.app import _check_practice_env
 
     class FakePool:
@@ -977,6 +978,11 @@ async def test_synthetic_presenter_checks_database_name():
         with pytest.raises(RuntimeError):
             await _check_practice_env(FakePool(bad), True)
     await _check_practice_env(FakePool("anything"), False)
+    # learning-internal v1 未签字：没开 LEARNING_INTERNAL_V1=1 时再练（及依赖它的复测）拒绝启动，合成与非合成题面都一样
+    monkeypatch.delenv("LEARNING_INTERNAL_V1")
+    for synthetic in (True, False):
+        with pytest.raises(RuntimeError, match="LEARNING_INTERNAL_V1"):
+            await _check_practice_env(FakePool("starbuddy_test"), synthetic)
 
 
 # ---------- 服务目录 OpenAPI 一致性（沿 SIE-02a 先例） ----------

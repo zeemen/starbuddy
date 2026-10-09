@@ -100,12 +100,15 @@ class PlanAdapter:
 
 
 @pytest.fixture
-def candidate(monkeypatch):
-    monkeypatch.setenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", "1")
+def internal_v1(monkeypatch):
+    # learning-internal v1（含 /internal/v1/plan）未签字：只在测试里开 LEARNING_INTERNAL_V1=1。
+    # 插件契约 1.0.0 已签字（specs/contract-v1.0-signoff）：plan 一律在候选版开关关着时跑，证明不靠候选版开关
+    monkeypatch.setenv("LEARNING_INTERNAL_V1", "1")
+    monkeypatch.delenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", raising=False)
 
 
 @pytest.fixture
-async def plan_api(pools, synthetic_map, candidate):
+async def plan_api(pools, synthetic_map, internal_v1):
     app_pool, _ = pools
     adapter = PlanAdapter()
     app = create_app(settings(plan_timeout=0.3), pool=app_pool, transport=httpx.MockTransport(adapter.handler))
@@ -208,9 +211,22 @@ async def test_requires_service_token(plan_api, student):
     assert r.status_code == 401
 
 
-async def test_candidate_contract_not_enabled_means_unavailable(plan_api, student, monkeypatch):
+async def test_internal_v1_not_enabled_means_unavailable(plan_api, student, monkeypatch):
+    """learning-internal v1 未签字：没开 LEARNING_INTERNAL_V1=1 时与签字前一样各科 unavailable、不调适配器
+    （即使开着候选版开关也一样）。"""
     client, adapter = plan_api
-    monkeypatch.delenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT")
+    monkeypatch.delenv("LEARNING_INTERNAL_V1")
+    monkeypatch.setenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", "1")
     r = await client.post("/internal/v1/plan", json=query(student, ("aya",)))
     assert r.json() == {"subjects": [{"subject": "aya", "status": "unavailable", "tasks": []}]}
     assert adapter.requests == []
+
+
+async def test_plan_works_without_candidate_switch(plan_api, student, monkeypatch):
+    """开着 LEARNING_INTERNAL_V1、关着候选版开关：plan 照常调适配器（插件 1.0.0 已签字，不再靠候选版开关）。"""
+    client, adapter = plan_api
+    monkeypatch.delenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", raising=False)
+    r = await client.post("/internal/v1/plan", json=query(student, ("aya",)))
+    assert r.status_code == 200, r.text
+    assert r.json()["subjects"][0]["status"] == "ok"
+    assert len(adapter.requests) == 1 and adapter.requests[0]["context"]["contract_version"] == "1.0.0"

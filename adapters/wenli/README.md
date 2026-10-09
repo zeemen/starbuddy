@@ -1,9 +1,9 @@
 # 文砺（语文）适配器
 
-ADP-语文-01。实现学科插件 API v0.9（`packages/contracts/openapi/plugin-api.v0.9.yaml`），迁移期同时支持 v1.0 候选版
-（`plugin-api.v1.0.yaml`）：按请求的 `context.contract_version` 校验与应答，其他版本返回 400 `CONTRACT_VERSION_UNSUPPORTED`。
-版本开关与阿鸦、知行相同：能力声明默认报 0.9.0，可用 `--contract-version 1.0.0 --allow-candidate-contract`（或环境变量
-`WENLI_CONTRACT_VERSION`、`STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1`）改报 1.0.0，签字前只在测试与演练里用。
+ADP-语文-01。实现学科插件 API v1.0（`plugin-api.v1.0.yaml`，2026-10-09 签字）与迁移期旧版 v0.9
+（`packages/contracts/openapi/plugin-api.v0.9.yaml`）：按请求的 `context.contract_version` 校验与应答，其他版本（含本科不支持的 1.1.0）
+返回 400 `CONTRACT_VERSION_UNSUPPORTED`。版本开关与阿鸦、知行相同：能力声明缺省报 1.0.0（签字后切换，`specs/contract-v1.0-signoff`），
+不需候选版开关；迁移期可用 `--contract-version 0.9.0`（或环境变量 `WENLI_CONTRACT_VERSION=0.9.0`）改报 0.9.0。本科目前没有候选版。
 规格见 `specs/adapter-wenli-sprint2/spec.md`（待人确认 #1–#8 按默认执行）。骨架、路由客户端、幂等、启动检查照搬知行（`adapters/zhixing/`）。
 
 | 接口 | 状态 |
@@ -128,8 +128,8 @@ Authorization: Bearer {WENLI_ROUTE_TOKEN}
 | `WENLI_ROUTE_URL` | 学习服务内部路由接口地址：https，或本机回环的 http；不得带凭据、查询串 |
 | `WENLI_ROUTE_TOKEN` | 调用该接口的服务间令牌（≥ 32 字符；必须与 `WENLI_ADAPTER_SERVICE_TOKEN` 不同，否则拒绝启动） |
 | `NODE_USE_ENV_PROXY` | 不得设置（设置了就拒绝启动；`--use-env-proxy` 同） |
-| `WENLI_CONTRACT_VERSION` | 能力声明报的默认契约版本（缺省 0.9.0） |
-| `STARBUDDY_ALLOW_CANDIDATE_CONTRACT` | 设为 1 时接受候选版 1.0.0 |
+| `WENLI_CONTRACT_VERSION` | 能力声明报的默认契约版本（缺省 1.0.0；迁移期可设 0.9.0） |
+| `STARBUDDY_ALLOW_CANDIDATE_CONTRACT` | 候选版开关；1.0.0 已签字，本科目前没有候选版，设不设都一样 |
 
 ## 内容（全部合成、非真题，待教研抽查与替换，待人确认 #5、#8）
 `content/pack.json`：
@@ -173,8 +173,8 @@ npm run register:sql > wenli-register.sql     # 生成登记 SQL；目标库由�
 # 一致性测试（仓库根目录；路由接口用桩）：
 python packages/contracts/conformance/cli.py --adapter-cmd "node --no-warnings conformance/harness.ts" \
   --adapter-cwd adapters/wenli --token-var WENLI_ADAPTER_SERVICE_TOKEN --fixtures adapters/wenli/conformance/fixtures.yaml
-STARBUDDY_CONTRACT_VERSION=1.0.0 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1 python packages/contracts/conformance/cli.py \
-  --adapter-cmd "node --no-warnings conformance/harness.ts --contract-version 1.0.0 --allow-candidate-contract" \
+STARBUDDY_CONTRACT_VERSION=0.9.0 python packages/contracts/conformance/cli.py \
+  --adapter-cmd "node --no-warnings conformance/harness.ts --contract-version 0.9.0" \
   --adapter-cwd adapters/wenli --token-var WENLI_ADAPTER_SERVICE_TOKEN --fixtures adapters/wenli/conformance/fixtures.yaml
 ```
 

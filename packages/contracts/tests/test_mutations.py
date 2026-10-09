@@ -300,7 +300,7 @@ ALLOWLIST_MUTATIONS = {
 }
 
 
-# ---------- v1.0 候选版（specs/plugin-api-v1.0/spec.md 验收第 4 条） ----------
+# ---------- v1.0（2026-10-09 签字；specs/plugin-api-v1.0/spec.md 验收第 4 条） ----------
 V1_MUTATIONS = {
     "删除“作答类证据必带 attempt_id”": drop_allof_clause("EvidenceDraft", "作答类证据必须指出"),
     "作答 attempt_id 改回可选": assign(f"{S}.AttemptInput.required", ["item_ref", "occurred_at", "response"]),
@@ -523,7 +523,7 @@ def main() -> int:
     v1_baseline = cc.run_checks(v1_base, cc.V1_SPEC)
     cc.check_breaking(v09, v1_base, v1_baseline)
     if v1_baseline:
-        print("mutation-test: v1.0 候选版基线本身就不通过，先修契约：")
+        print("mutation-test: v1.0 基线本身就不通过，先修契约：")
         for e in v1_baseline:
             print(f"  - {e}")
         return 1
@@ -580,7 +580,7 @@ def main() -> int:
         for m in missed:
             print(f"  - {m}")
         return 1
-    print(f"mutation-test: 通过（{total} 个变异全部被发现，其中服务契约 {len(SERVICE_MUTATIONS)} 个、允许清单 {len(ALLOWLIST_MUTATIONS)} 个、v1.0 候选版 {len(V1_MUTATIONS)} 个、"
+    print(f"mutation-test: 通过（{total} 个变异全部被发现，其中服务契约 {len(SERVICE_MUTATIONS)} 个、允许清单 {len(ALLOWLIST_MUTATIONS)} 个、v1.0 {len(V1_MUTATIONS)} 个、"
           f"v1.1 候选版（present_item）{len(V11_MUTATIONS)} 个、learning-internal v1 {len(INTERNAL_MUTATIONS)} 个）")
     return 0
 

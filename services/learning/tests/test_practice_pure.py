@@ -332,7 +332,7 @@ def test_check_picks():
 
 
 def test_variation_request_matches_contract(monkeypatch):
-    monkeypatch.setenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", "1")
+    monkeypatch.delenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", raising=False)  # 1.0.0 已签字：不需候选版开关
     from learning.contract import plugin_contract
     ctx = {"request_id": str(uuid.uuid4()), "contract_version": "1.0.0", "subject": "aya", "student_ref": STUDENT,
            "data_class": "L2", "idempotency_key": str(uuid.uuid4())}

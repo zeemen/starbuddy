@@ -6,7 +6,9 @@ import { loadContract } from "../src/contract.ts";
 import { parseRouteConfig, type RouteConfig } from "../src/route-client.ts";
 import { levelJudge, startRouteStub, type RouteStub, type StubHandler } from "./route-stub.ts";
 
-export const contract = loadContract();
+// 这组用例按 0.9.0 写（context() 声明 0.9.0）：显式钉住 0.9.0，作为迁移期旧版的回归。
+// v1.0 签字后缺省版本是 1.0.0（contract.test.ts 断言），1.0.0 用例用 contextV1
+export const contract = loadContract({ defaultVersion: "0.9.0" });
 export const realPack = loadPack();
 
 export const STUDENT = "c1000000-0000-4000-8000-0000000000c3";

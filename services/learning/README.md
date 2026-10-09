@@ -7,11 +7,17 @@
 |---|---|
 | `POST /internal/v0/grade` | 请求体是契约 `GradeRequest`；调适配器判分，核对后写入 |
 | `POST /internal/v0/diagnose` | 请求体是契约 `DiagnoseRequest`（冲刺 1 只支持带 attempts 的同步诊断） |
-| `POST /internal/v1/grade`、`/internal/v1/diagnose` | 请求体是信封 `{request, ingest}`：`request` 为插件契约 1.0.0 候选版请求（需 `STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1`，声明的 `contract_version` 必须与路径一致），`ingest` 为输入通道与用途；学习服务据此补齐证据的作答情境、等级、通道、地图版本（迁移 0017，specs/evidence-attributes-sprint1） |
-| `POST /internal/v1/plan` | 今日计划（冲刺 4-H，契约变更待签字；`learning/plan.py`）：按 BFF 给的在读学科读当前掌握快照、调各科适配器 `/plan`（v1.0 候选版），能力点经已发布地图的 `kge.skill_link` 换成知识节点；只回任务类型、目标节点、优先级、预计分钟、`rationale_code`。非消耗类，不写任何表；某科不可用时 `unavailable` |
+| `POST /internal/v1/grade`、`/internal/v1/diagnose` | 请求体是信封 `{request, ingest}`：`request` 为插件契约 1.0.0 请求（插件 v1.0 已于 2026-10-09 签字，不再需要候选版开关；声明的 `contract_version` 必须与路径一致）。learning-internal v1 本身仍未签字：没设 `LEARNING_INTERNAL_V1=1` 时与签字前同样 400 `INVALID_REQUEST`，`ingest` 为输入通道与用途；学习服务据此补齐证据的作答情境、等级、通道、地图版本（迁移 0017，specs/evidence-attributes-sprint1） |
+| `POST /internal/v1/plan` | 今日计划（冲刺 4-H，契约变更待签字；`learning/plan.py`）：按 BFF 给的在读学科读当前掌握快照、调各科适配器 `/plan`（插件契约 v1.0），能力点经已发布地图的 `kge.skill_link` 换成知识节点；只回任务类型、目标节点、优先级、预计分钟、`rationale_code`。非消耗类，不写任何表；某科不可用时 `unavailable` |
 | `GET /internal/v1/replay/{method}/{key}?student_ref=&usage_id=` | 只查不执行：200 原摘要；404 `REPLAY_NOT_FOUND` 并封存 key（`platform.replay_seal`，迁移 0016）；409 `BUSY` |
 
-接口定义：`packages/contracts/openapi/learning-internal.v0.yaml`、`learning-internal.v1.yaml`（迁移期并存到 W6，specs/plugin-api-v1.0-step2）。只供 BFF 调用，服务间令牌鉴权。
+接口定义：`packages/contracts/openapi/learning-internal.v0.yaml`、`learning-internal.v1.yaml`（迁移期并存，终点另定，specs/plugin-api-v1.0-step2）。只供 BFF 调用，服务间令牌鉴权。
+
+**开关 `LEARNING_INTERNAL_V1`（缺省关，只在测试与演练里设 `1`）**：learning-internal v1 未签字，插件 API v1.0 签字（2026-10-09）不连带放开它。
+关着时与签字前的行为相同：`/internal/v1/grade`、`/internal/v1/diagnose` 返回 400 `INVALID_REQUEST`、不调适配器；`/internal/v1/plan`
+各科 `unavailable`、不调适配器；配了合成诊断题面（`LEARNING_DIAGNOSIS_PRESENTER=synthetic`）或错题再练（`LEARNING_PRACTICE_CONFIG`，
+复测依赖再练）时拒绝启动。只查询的重放接口 `/internal/v1/replay/...` 签字前就不受候选版开关约束（BFF 计量重试要用），本开关也不挡它。
+插件契约 1.1.0（PLT-12 `present_item`）仍是候选版，另需 `STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1`。
 
 部署注意（specs/plugin-api-v1.0-step2）：先执行迁移 0016 再上线本版本（启动时检查 `platform.replay_seal`，不存在就拒绝启动）；
 重放接口的查询串带 `student_ref`、`usage_id`，运行 uvicorn 时加 `--no-access-log`，不经会记录 URL 的代理。
@@ -252,7 +258,7 @@ staff 对应表（`kge-pages-staff-map/1`，审核台配置，由人维护，不
 - 显式状态机与选题规则 `aya-diag-trace@0.1.0` 在 `engine.py`（纯函数，按步骤历史复算）；判分只经既有 v1 grade 写入流程（信封 `{request, ingest}`，键盘通道）调阿鸦验证器；只写迁移 0027 两张表、证据与复核队列。
 - 用时按墙钟封顶（`resumed_at`），作答幂等键记在步骤上（同键或同内容重放回原结果，否则 409 `ANSWER_CONFLICT`）；过程原文证据 ID 记在 `work_evidence_id`。
 - 题面：契约 `present_item` 签字前只有测试环境的合成题面（`LEARNING_DIAGNOSIS_PRESENTER=synthetic`，只允许 `LEARNING_ENV=test`、库名 `starbuddy_dev*` / `starbuddy_test*`，
-  并需 `STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1`：作答走候选契约 1.0.0）；不配时诊断接口 501。
+  并需 `LEARNING_INTERNAL_V1=1`：作答走 learning-internal v1 写入路径，内部 v1 未签字；插件契约 1.0.0 已签字，不再需要候选版开关）；不配时诊断接口 501。
   选题信息来自合成夹具（缺省）或知识服务（`LEARNING_DIAGNOSIS_SOURCE=knowledge`，见 `config.py`）。
   PLT-12（`specs/present-item-contract`）：`LEARNING_PRESENT_ITEM_SOURCE=adapter` 时诊断与再练的题面改经适配器 `present_item`（插件契约
   1.1.0 候选版，`learning/present_item.py`；只在 `STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1` 时允许，否则拒绝启动），题面过两道白名单后多带

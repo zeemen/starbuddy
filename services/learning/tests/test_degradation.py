@@ -271,8 +271,9 @@ async def e2e(e2e_pg):
     from loadtest.seed import METER_NOW_MS_SQL, family, seed_families
     from pgharness import LOGIN_ROLE
 
-    prev = os.environ.get("STARBUDDY_ALLOW_CANDIDATE_CONTRACT")
-    os.environ["STARBUDDY_ALLOW_CANDIDATE_CONTRACT"] = "1"
+    # learning-internal v1 未签字：只在这个一次性栈里开 LEARNING_INTERNAL_V1=1（插件契约 1.0.0 已签字，不再需要候选版开关）
+    prev = os.environ.get("LEARNING_INTERNAL_V1")
+    os.environ["LEARNING_INTERNAL_V1"] = "1"
     items = load_zhixing_items()
     points = {k: v["points"] for k, v in items.items()}
     model = ScriptedModel(items)
@@ -326,9 +327,9 @@ async def e2e(e2e_pg):
         await bff.close()
         await scheduler.close()
         if prev is None:
-            os.environ.pop("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", None)
+            os.environ.pop("LEARNING_INTERNAL_V1", None)
         else:
-            os.environ["STARBUDDY_ALLOW_CANDIDATE_CONTRACT"] = prev
+            os.environ["LEARNING_INTERNAL_V1"] = prev
 
 
 _slots = iter(range(40))

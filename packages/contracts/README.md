@@ -5,14 +5,15 @@
 
 | 文件 | 说明 |
 |---|---|
-| `openapi/plugin-api.v0.9.yaml` | OpenAPI 3.1 草稿 v0.9（待评审） |
+| `openapi/plugin-api.v0.9.yaml` | OpenAPI 3.1 v0.9（迁移期旧版，须显式指定） |
+| `openapi/plugin-api.v1.0.yaml` | **v1.0（2026-10-09 签字，缺省版本）**，见下文“版本策略” |
 | `scripts/check_contract.py` | 契约检查：OpenAPI 合法性、示例符合 schema 且证据引用闭合、反例集、验收标准的结构化检查 |
 | `tests/counterexamples.py` | 反例集：每个反例都必须被 schema 拒绝。新增规则时同时新增反例 |
 | `tests/test_mutations.py` | 变异测试：把契约故意改坏，断言检查能发现，证明每条规则都在起作用 |
-| `openapi/plugin-api.v1.1.yaml` | **v1.1 候选版（PLT-12，待签字）**：以 v1.0 候选版为底只做增量，新增只读方法 `present_item`（受限富文本题面，不含答案、解析、采分点、Rubric；不产生证据、不计量）。“只做增量”由 `check_contract.py` 的 `check_v11_additive` 逐项断言；反例在 `tests/counterexamples_v11.py`，变异在 `tests/test_mutations.py` 的 `V11_MUTATIONS`；签字前只在测试里用（`STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1`） |
+| `openapi/plugin-api.v1.1.yaml` | **v1.1 候选版（PLT-12，待签字）**：以 v1.0 为底只做增量，新增只读方法 `present_item`（受限富文本题面，不含答案、解析、采分点、Rubric；不产生证据、不计量）。“只做增量”由 `check_contract.py` 的 `check_v11_additive` 逐项断言；反例在 `tests/counterexamples_v11.py`，变异在 `tests/test_mutations.py` 的 `V11_MUTATIONS`；签字前只在测试里用（`STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1`） |
 | `python/starbuddy_contract/present.py` | 题面的平台侧白名单（逐字段重建、答案类字段名黑名单、不可见与双向控制字符、题面总字数 ≤ 8000）：学习服务、一致性测试、契约检查共用这一份 |
 | `openapi/learning-internal.v0.yaml` | 学习服务内部 API（BFF → 学习服务），草稿 |
-| `openapi/learning-internal.v1.yaml` | 学习服务内部 API v1 候选版（信封写入、重放接口、模型路由、冲刺 4-H 的今日计划 `POST /internal/v1/plan`），待签字；plan 在候选开关关闭时返回 200 + 各科 `unavailable`。**1.1.0**（KGE-04 第二步 PR 3，待签字）加 `POST /internal/v1/mastery/get`、`/mastery/explain`（请求与响应直接引用知识服务 v0.9 的 schema）与 `POST /internal/v1/verification`（只接受洞察服务令牌，不返回题目）；检查在 `check_contract.py` 的 `INTERNAL_V1_COUNTER` / `INTERNAL_V1_REFS`，变异在 `test_mutations.py` 的 `INTERNAL_MUTATIONS` |
+| `openapi/learning-internal.v1.yaml` | 学习服务内部 API v1 候选版（信封写入、重放接口、模型路由、冲刺 4-H 的今日计划 `POST /internal/v1/plan`），待签字；plan 在开关关闭时返回 200 + 各科 `unavailable`（插件 v1.0 签字后，这个开关由学习服务的 `LEARNING_INTERNAL_V1` 担任，见 `services/learning/README.md`）。**1.1.0**（KGE-04 第二步 PR 3，待签字）加 `POST /internal/v1/mastery/get`、`/mastery/explain`（请求与响应直接引用知识服务 v0.9 的 schema）与 `POST /internal/v1/verification`（只接受洞察服务令牌，不返回题目）；检查在 `check_contract.py` 的 `INTERNAL_V1_COUNTER` / `INTERNAL_V1_REFS`，变异在 `test_mutations.py` 的 `INTERNAL_MUTATIONS` |
 | `openapi/knowledge-service.v0.9.yaml` | 知识服务 API（KGE 第八章十个工具），草稿 v0.9。公共层读知识、题目、采分点；个人层写证据、读掌握 |
 | `openapi/insight-service.v0.9.yaml` | 洞察服务 API（SIE 第九章九个工具，另加 SIE-02b 第二步追加的首份报告 `insight.report`），草稿 v0.9。画像视图、判断解释、异议、预测与对账、事实记录、导出与删除 |
 | `scripts/check_services.py` | 两份服务契约的检查（`check_contract.py` 默认运行时一起调用）；反例在 `tests/service_counterexamples.py`，变异在 `tests/test_mutations.py` 的 `SERVICE_MUTATIONS` |
@@ -40,10 +41,16 @@ make conformance-mutation PYTHON=.venv/bin/python  # 一致性测试的变异测
 - **非破坏性变更**（升次版本号）：新增可选字段、新增枚举值（例如新学科、新错因编码）、新增方法。
 - **破坏性变更**（升主版本号）：删除字段或枚举值、把可选改成必填、收紧取值范围、改变字段语义。
 - v0.x 期间允许破坏性变更，但每次都要在 PR 描述里列出影响到的适配器。W4 冻结为 v1.0 之后，破坏性变更必须有迁移期。
-- **v1.0 候选版**（`openapi/plugin-api.v1.0.yaml`，2026-09-28，待评审签字）：相对 v0.9 的破坏性变更列在文件的 `info.description` 里，
-  每条都有“v0.9 接受、v1.0 拒绝”的用例（`tests/counterexamples_v1.py`）。**迁移期**：v0.9 保留到冲刺 2 结束（W6），
-  期间学习服务同时接受两个版本；适配器路径不变，以 `contract_version` 协商。共享库按环境变量 `STARBUDDY_CONTRACT_VERSION`
-  选版本（缺省 0.9.0）。`learning-internal.v1.yaml` 与之配套（新增重放接口）。
+- **v1.0**（`openapi/plugin-api.v1.0.yaml`，2026-09-28 起草；**2026-10-09 签字**，61 项按默认结论采纳，
+  `docs/reviews/decisions-2026-10-09.md` 第五节）：相对 v0.9 的破坏性变更列在文件的 `info.description` 里，
+  每条都有“v0.9 接受、v1.0 拒绝”的用例（`tests/counterexamples_v1.py`）。签字后（`specs/contract-v1.0-signoff`）：
+  共享库缺省版本与三科适配器的 `DEFAULT_CONTRACT_VERSION` 都是 1.0.0，1.0.0 不再是候选版，不需要 `STARBUDDY_ALLOW_CANDIDATE_CONTRACT`。
+  **迁移期**：v0.9 保留为旧版（终点另定，删除前先把两份服务契约改指 v1.0），期间学习服务同时接受两个版本；适配器路径不变，
+  以 `contract_version` 协商。共享库按环境变量 `STARBUDDY_CONTRACT_VERSION` 选版本（缺省 1.0.0；0.9.0 须显式指定）。
+  `learning-internal.v1.yaml` 与之配套（新增重放接口），它与 `insight-service` 两份契约仍待签字；插件 v1.0 签字不连带放开
+  学习服务的 /internal/v1 写入与今日计划，它们由学习服务的 `LEARNING_INTERNAL_V1`（缺省关）挡住。
+- **候选版开关**：共享库 `CANDIDATE_VERSIONS` 与三科 `CANDIDATE_CONTRACT_VERSIONS` 里的版本签字前只在测试与演练里用，
+  需显式设 `STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1`（适配器另可用 `--allow-candidate-contract`）。目前只有 v1.1（1.1.0）是候选版。
 - 契约测试**由契约生成**，不由写适配器的同一个会话手写（ClaudeCode 执行方案 第六章）。
 
 ## 设计要点（评审时请重点看）

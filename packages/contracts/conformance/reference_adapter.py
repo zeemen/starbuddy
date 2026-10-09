@@ -70,7 +70,7 @@ FAULTS = {
     "present_nondeterministic": ("同一道题两次取到的题面不一样", "test_idempotency"),
 }
 ASYNC_FAULTS = {"async_new_job_id"}  # 这些违约只在异步模式下有意义
-# 只在某个契约版本下才有意义的违约 → 版本（mutation.py 以这个版本运行一致性测试）
+# 只在某个契约版本下才有意义的违约 → 版本（mutation.py 只以这个版本运行一致性测试；不在这里的违约 0.9.0 与 1.0.0 两版都跑）
 FAULT_CONTRACT = {f: "1.1.0" for f in FAULTS if f.startswith("present_")}
 # 合成题面（规则 8）：与 ITEMS 同号；REF-1 是填空（题面里有公式），REF-2 是单选
 PRESENT = {

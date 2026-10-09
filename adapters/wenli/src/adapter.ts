@@ -2,7 +2,7 @@
 // generate_variation（只从已准入题库选题）、report（逐维计数与证据 ID）。
 // 规格：specs/adapter-wenli-sprint2/spec.md（待人确认 #1–#8 按默认执行）；generate_variation、report 见
 // specs/adapter-zhixing-wenli-methods-sprint4/spec.md（待人确认 #1–#4 按默认：确定性、不调模型；teach 不做）。模板：adapters/zhixing/src/adapter.ts。
-// 契约：packages/contracts/openapi/plugin-api.v0.9.yaml 与 v1.0 候选版；按请求的 context.contract_version 校验与应答。
+// 契约：packages/contracts/openapi/plugin-api.v0.9.yaml 与 v1.0（2026-10-09 签字，能力声明默认报 1.0.0）；按请求的 context.contract_version 校验与应答。
 //
 // 边界：
 // - 适配器不读写任何平台表（CLAUDE.md 规则 1）：证据与推断放在响应里，由学习服务落库。

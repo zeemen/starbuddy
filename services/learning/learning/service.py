@@ -21,7 +21,7 @@ from .adapter_client import call_adapter
 from .checks import collect_refs, local_id, parse_time, verify
 from .config import Settings
 from .attributes import Attributes, derive, v0_attributes
-from .contract import UnsupportedContractVersion, internal_contract, plugin_contract
+from .contract import UnsupportedContractVersion, internal_contract, internal_v1_enabled, plugin_contract
 from .errors import IngestError
 from .fingerprint import request_fingerprint, sha256_hex
 from .mastery.recompute import MasteryEngine, after_ingest
@@ -67,6 +67,9 @@ class IngestService:
         declared = body.get("context", {}).get("contract_version") if isinstance(body, dict) and isinstance(body.get("context"), dict) else None
         if declared != version:
             raise IngestError(400, "INVALID_REQUEST", "context.contract_version does not match this endpoint")
+        # /internal/v1 的写入属于 learning-internal v1（未签字）：没开 LEARNING_INTERNAL_V1=1 时与签字前同样拒绝
+        if version != "0.9.0" and not internal_v1_enabled():
+            raise IngestError(400, "INVALID_REQUEST", "contract version is not enabled on this service")
         try:
             contract = plugin_contract(version)
         except UnsupportedContractVersion:

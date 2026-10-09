@@ -5,8 +5,9 @@
 //   ZHIXING_ROUTE_TOKEN            调用该接口的服务间令牌（≥ 32 字符）
 //                                  两者缺一或不合格：照常启动，但 grade 返回 503 UPSTREAM_UNAVAILABLE，其他方法照常
 //                                  与 ZHIXING_ADAPTER_SERVICE_TOKEN 相同：拒绝启动（src/startup.ts）
-//   ZHIXING_CONTRACT_VERSION       能力声明报的默认契约版本（缺省 0.9.0）。请求一律按各自的 context.contract_version 应答。
-//                                  设为候选版 1.0.0 还需 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1（签字前只在测试与演练里用）
+//   ZHIXING_CONTRACT_VERSION       能力声明报的默认契约版本（缺省 1.0.0，v1.0 已签字；0.9.0 迁移期仍可显式指定）。
+//                                  请求一律按各自的 context.contract_version 应答。
+//                                  设为候选版 1.1.0 还需 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1（签字前只在测试与演练里用）
 // 命令行参数（优先于环境变量；一致性测试的 cli.py 不向适配器进程透传环境变量，用参数选版本）：
 //   --contract-version <v>        同 ZHIXING_CONTRACT_VERSION
 //   --allow-candidate-contract    同 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1

@@ -6,14 +6,16 @@ import { ADMISSION_DECISIONS_FORMAT, applyAdmissionDecisions, DEFAULT_SOURCE, pa
 import { loadContract } from "../src/contract.ts";
 import { loadTaxonomy } from "../src/taxonomy.ts";
 
-export const contract = loadContract();
+// 这组用例按 0.9.0 写（context() 声明 0.9.0）：显式钉住 0.9.0，作为迁移期旧版的回归。
+// v1.0 签字后缺省版本是 1.0.0（contract.test.ts 断言），1.0.0 用例用下面的 contractV1 / contextV1
+export const contract = loadContract({ defaultVersion: "0.9.0" });
 export const taxonomy = loadTaxonomy();
 export const realPack = loadPack();
 
 export const STUDENT = "c1000000-0000-4000-8000-0000000000c1";
 export const RUBRIC = "aya-symbolic-ts@0.1.0";
 
-// 测试即演练环境：打开候选版开关；关着时的行为由 contract-v1.test.ts 单独测
+// 测试即演练环境：打开候选版开关（v1.0 已签字不需要它，只为 1.1.0 present_item 用例）；关着时的行为由 contract-v1.test.ts 单独测
 export function makeAdapter(content: LoadedPack = realPack, logs?: LogRecord[], allowCandidate = true) {
   return createAdapter({ content, taxonomy, contract, allowCandidate, ...(logs ? { log: (r) => logs.push(r) } : {}) });
 }

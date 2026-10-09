@@ -3,17 +3,24 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createAdapter } from "../src/adapter.ts";
-import { loadContract, SUPPORTED_CONTRACT_VERSIONS, type ContractValidator } from "../src/contract.ts";
+import { CANDIDATE_CONTRACT_VERSIONS, DEFAULT_CONTRACT_VERSION, loadContract, SUPPORTED_CONTRACT_VERSIONS, type ContractValidator } from "../src/contract.ts";
 import { ESSAYS, context, contract, gradeBody, gradeBodyV1, harness, realPack, type Json } from "./helpers.ts";
 
 test("两个契约版本的全部 components.schemas 都能编译（v1.0 的跨文件引用可解析）", () => {
   for (const v of SUPPORTED_CONTRACT_VERSIONS) assert.deepEqual(contract.compileAll(v), [], v);
 });
 
-test("capabilities：默认报 0.9.0；默认版本 1.0.0 时报 1.0.0；5/6 已实现（teach 未实现，等人设 Prompt 与 3-F）", async () => {
-  const a = createAdapter({ content: realPack, contract, route: null });
+test("capabilities：缺省报 1.0.0（v1.0 已签字，不需候选版开关）；显式 0.9.0 时报 0.9.0；5/6 已实现（teach 未实现，等人设 Prompt 与 3-F）", async () => {
+  assert.equal(DEFAULT_CONTRACT_VERSION, "1.0.0");
+  const a0 = createAdapter({ content: realPack, contract: loadContract(), route: null, allowCandidate: false });
+  const r0 = await a0.handle("GET", "capabilities", undefined);
+  assert.equal(r0.status, 200);
+  assert.equal((r0.body as Json).contract_version, "1.0.0");
+  assert.deepEqual(contract.validate("Capabilities", r0.body, "1.0.0"), { ok: true });
+  const a = createAdapter({ content: realPack, contract, route: null }); // helpers 显式钉住 0.9.0
   const r = await a.handle("GET", "capabilities", undefined);
   assert.equal(r.status, 200);
+  assert.equal((r.body as Json).contract_version, "0.9.0");
   assert.deepEqual(contract.validate("Capabilities", r.body), { ok: true });
   const m = (r.body as Json).methods;
   for (const k of ["grade", "diagnose", "plan", "generate_variation", "report"]) assert.equal(m[k].implemented, true, k);
@@ -68,14 +75,20 @@ test("错误响应都是契约 Problem，且不含学生原文", async () => {
   }
 });
 
-test("契约版本：不支持的版本 → CONTRACT_VERSION_UNSUPPORTED；候选版开关关着时 v1.0 请求被拒；v1.0 幂等键必须是 UUIDv4", async () => {
+test("契约版本：不支持的版本（含本科不支持的 1.1.0）→ CONTRACT_VERSION_UNSUPPORTED；候选版开关关着时 1.0.0（已签字）与 0.9.0 照常；v1.0 幂等键必须是 UUIDv4", async () => {
+  assert.deepEqual([...CANDIDATE_CONTRACT_VERSIONS], []);
   const h = await harness({ allowCandidate: false });
   try {
-    const bad = gradeBody("synthetic-essay-01", ESSAYS.long) as Json;
-    bad.context.contract_version = "0.8.0";
-    assert.equal(((await h.adapter.handle("POST", "grade", bad)).body as Json).code, "CONTRACT_VERSION_UNSUPPORTED");
+    for (const unsupported of ["0.8.0", "1.1.0"]) {
+      const bad = gradeBody("synthetic-essay-01", ESSAYS.long) as Json;
+      bad.context.contract_version = unsupported;
+      assert.equal(((await h.adapter.handle("POST", "grade", bad)).body as Json).code, "CONTRACT_VERSION_UNSUPPORTED", unsupported);
+    }
     const v1 = gradeBodyV1("synthetic-essay-01", ESSAYS.long);
-    assert.equal(((await h.adapter.handle("POST", "grade", v1)).body as Json).code, "CONTRACT_VERSION_UNSUPPORTED");
+    const r1 = await h.adapter.handle("POST", "grade", v1);
+    assert.equal(r1.status, 200, JSON.stringify(r1.body).slice(0, 300));
+    assert.equal((r1.body as Json).contract_version, "1.0.0");
+    assert.equal((await h.adapter.handle("POST", "grade", gradeBody("synthetic-essay-01", ESSAYS.long))).status, 200);
   } finally {
     await h.close();
   }

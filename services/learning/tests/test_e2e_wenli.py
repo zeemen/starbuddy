@@ -113,7 +113,7 @@ def wenli_adapter(pg, route_endpoint):
     port = _port()
     env = {"PATH": os.environ["PATH"], "WENLI_ADAPTER_SERVICE_TOKEN": WL_ADAPTER, "PORT": str(port),
            "WENLI_ROUTE_URL": route_endpoint[0], "WENLI_ROUTE_TOKEN": WL_ROUTE,
-           "WENLI_CONTRACT_VERSION": "1.0.0", "STARBUDDY_ALLOW_CANDIDATE_CONTRACT": "1"}
+           "WENLI_CONTRACT_VERSION": "1.0.0"}  # 1.0.0 已签字：适配器不需候选版开关
     proc = subprocess.Popen(["node", "--no-warnings", "src/main.ts"], cwd=WL, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     deadline = time.time() + 20
     while True:
@@ -133,9 +133,11 @@ def wenli_adapter(pg, route_endpoint):
 
 
 @pytest.fixture(autouse=True)
-def _allow_candidate(monkeypatch):
-    # 插件契约 1.0.0 仍是候选版：与 test_v1_replay 一样只在测试里放开
-    monkeypatch.setenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", "1")
+def _internal_v1(monkeypatch):
+    # learning-internal v1 未签字：与 test_v1_replay 一样只在测试里开 LEARNING_INTERNAL_V1=1；
+    # 插件契约 1.0.0 已签字（specs/contract-v1.0-signoff），候选版开关关着
+    monkeypatch.setenv("LEARNING_INTERNAL_V1", "1")
+    monkeypatch.delenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", raising=False)
 
 
 @pytest.fixture

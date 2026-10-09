@@ -23,7 +23,7 @@ import httpx
 
 from ..adapter_client import call_adapter
 from ..config import AdapterTarget
-from ..contract import UnsupportedContractVersion, plugin_contract
+from ..contract import UnsupportedContractVersion, internal_v1_enabled, plugin_contract
 from ..diagnosis.source import SourceError
 from ..errors import IngestError
 from ..present_item import present_view
@@ -247,6 +247,8 @@ class PracticeService:
     async def _variation(self, target: AdapterTarget, student: str, subject: str, entry: Q.Entry, tier: S.Tier, recent: frozenset[str],
                          category: str | None, admission: dict[str, str]) -> list[S.Candidate] | str:
         """调 generate_variation 并核对；返回合格的题（按适配器给的顺序），或不可用原因。"""
+        if not internal_v1_enabled():  # 作答走 learning-internal v1 写入路径（未签字）：与签字前同样 501
+            raise err(501, "PRACTICE_UNAVAILABLE", "plugin contract 1.0.0 is not enabled on this service")
         try:
             contract = plugin_contract(CONTRACT)
         except UnsupportedContractVersion:

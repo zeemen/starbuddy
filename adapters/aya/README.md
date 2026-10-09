@@ -1,10 +1,11 @@
 # 阿鸦（数学）适配器
 
-实现学科插件 API v0.9（`packages/contracts/openapi/plugin-api.v0.9.yaml`）的三个接口；按 v1.0 候选版实现全部六个方法（阿鸦 6/6）。
-迁移期同时支持 v1.0 候选版（`plugin-api.v1.0.yaml`，`specs/plugin-api-v1.0-step2/spec.md` 第 3 条）：按请求的
+实现学科插件 API v0.9（`packages/contracts/openapi/plugin-api.v0.9.yaml`）的三个接口；按 v1.0 实现全部六个方法（阿鸦 6/6）。
+v1.0（`plugin-api.v1.0.yaml`，2026-10-09 签字）与迁移期旧版 v0.9 并存（`specs/plugin-api-v1.0-step2/spec.md` 第 3 条）：按请求的
 `context.contract_version` 校验与应答（v1.0 下作答类证据带 `attempt_id`），其他版本返回 400 `CONTRACT_VERSION_UNSUPPORTED`；
-能力声明默认报 0.9.0，可用 `--contract-version 1.0.0 --allow-candidate-contract`（或环境变量 `AYA_CONTRACT_VERSION`、
-`STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1`）改报 1.0.0，签字前只在测试与演练里用。
+能力声明缺省报 1.0.0（签字后切换，`specs/contract-v1.0-signoff`），不需候选版开关；迁移期可用 `--contract-version 0.9.0`
+（或环境变量 `AYA_CONTRACT_VERSION=0.9.0`）改报 0.9.0。候选版开关 `--allow-candidate-contract` / `STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1`
+现在只管 1.1.0。
 v1.1 候选版（`plugin-api.v1.1.yaml`，PLT-12）：六个方法照旧，另加只读的 `present_item`（`src/methods/present.ts`，只按 1.1.0 应答）。
 真实内容包不收录题干，题面一律 `withheld`（只有题型、选项键、作答格式）；测试与演练可用 `AYA_CONTENT_PACK` 换一份带合成题面
 （题目可选字段 `stem`、`option_content`，受限富文本，`src/rich-text.ts`）的内容包，或用 `AYA_STEM_OVERLAY` / `--stem-overlay`

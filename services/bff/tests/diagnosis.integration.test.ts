@@ -80,7 +80,8 @@ describe('数学自适应诊断（BFF 学生端）', { skip: READY ? false : '�
     }
     const ayaPort = await freePort();
     procs.push(spawn(process.execPath, ['--no-warnings', 'src/main.ts'], { cwd: AYA, stdio: 'ignore',
-      env: { ...process.env, AYA_ADAPTER_SERVICE_TOKEN: AYA_CRED, PORT: String(ayaPort), STARBUDDY_ALLOW_CANDIDATE_CONTRACT: '1' } }));
+      // 插件契约 1.0.0 已签字（specs/contract-v1.0-signoff）：阿鸦适配器不再需要候选版开关
+      env: { ...process.env, AYA_ADAPTER_SERVICE_TOKEN: AYA_CRED, PORT: String(ayaPort) } }));
     await waitFor(`http://127.0.0.1:${ayaPort}/plugin/v0/capabilities`, { authorization: `Bearer ${AYA_CRED}` }, (s) => s === 200);
     const lPort = await freePort();
     learningUrl = `http://127.0.0.1:${lPort}`;
@@ -88,7 +89,8 @@ describe('数学自适应诊断（BFF 学生端）', { skip: READY ? false : '�
       PATH: process.env['PATH'] ?? '/usr/bin:/bin', PORT: String(lPort), LEARNING_ENV: 'test',
       LEARNING_DATABASE_URL: `postgresql://learning_app@/${process.env['PGDATABASE'] ?? 'starbuddy_test'}?host=${process.env['PGHOST']}`,
       LEARNING_SERVICE_TOKEN: SERVICE_CRED, LEARNING_ADAPTER_AYA_URL: `http://127.0.0.1:${ayaPort}`, LEARNING_ADAPTER_AYA_TOKEN: AYA_CRED,
-      LEARNING_DIAGNOSIS_PRESENTER: 'synthetic', STARBUDDY_ALLOW_CANDIDATE_CONTRACT: '1' } }));
+      // 诊断作答走 learning-internal v1 写入路径：内部 v1 未签字，只在测试里开 LEARNING_INTERNAL_V1=1
+      LEARNING_DIAGNOSIS_PRESENTER: 'synthetic', LEARNING_INTERNAL_V1: '1' } }));
     await waitFor(`${learningUrl}/internal/v1/diagnosis/sessions/${randomUUID()}`,
                   { authorization: `Bearer ${SERVICE_CRED}`, 'x-student-ref': randomUUID() }, (s) => s === 404);
     learning.real = httpDiagnosisLearning({ baseUrl: learningUrl, token: SERVICE_CRED });

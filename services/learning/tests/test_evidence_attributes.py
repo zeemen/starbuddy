@@ -13,8 +13,10 @@ from learning.contract import internal_contract
 
 
 @pytest.fixture(autouse=True)
-def allow_candidate(monkeypatch):
-    monkeypatch.setenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", "1")
+def internal_v1(monkeypatch):
+    # learning-internal v1 未签字：只在测试里开 LEARNING_INTERNAL_V1=1；插件契约 1.0.0 已签字，候选版开关关着
+    monkeypatch.setenv("LEARNING_INTERNAL_V1", "1")
+    monkeypatch.delenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", raising=False)
 
 
 async def rows(admin, student: str) -> tuple[list[dict], list[dict]]:

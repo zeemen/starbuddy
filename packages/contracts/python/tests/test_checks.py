@@ -5,6 +5,8 @@
 from __future__ import annotations
 
 import copy
+import os
+import subprocess
 import sys
 import uuid
 from pathlib import Path
@@ -141,7 +143,8 @@ def test_parse_time_is_strict(bad):
 
 
 # ---------- 双版本（specs/plugin-api-v1.0-step2；契约审查“共享库补单测”） ----------
-from starbuddy_contract.contract import UnsupportedContractVersion, plugin_contract  # noqa: E402
+from starbuddy_contract.contract import (CANDIDATE_VERSIONS, CONTRACT_VERSION, DEFAULT_CONTRACT_VERSION,  # noqa: E402
+                                         UnsupportedContractVersion, plugin_contract)
 
 A1 = str(uuid.uuid4())
 
@@ -156,19 +159,48 @@ def v1(req, resp):
 
 
 def test_plugin_contract_version_gate(monkeypatch):
+    """v1.0 签字后（specs/contract-v1.0-signoff）：1.0.0 不需开关、1.1.0 仍需开关、未知版本拒绝、0.9.0 显式可用。"""
+    assert DEFAULT_CONTRACT_VERSION == "1.0.0"
+    assert CANDIDATE_VERSIONS == {"1.1.0"}
+    assert plugin_contract(None).version == CONTRACT_VERSION, "不指定版本时用环境默认版本"
+    monkeypatch.delenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", raising=False)
     assert plugin_contract("0.9.0").version == "0.9.0"
+    assert plugin_contract("1.0.0").version == "1.0.0"
+    with pytest.raises(UnsupportedContractVersion):
+        plugin_contract("1.1.0")
     with pytest.raises(UnsupportedContractVersion):
         plugin_contract("2.0.0")
-    assert plugin_contract(None).version == "0.9.0", "不指定版本时用环境默认版本"
-    monkeypatch.delenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", raising=False)
-    with pytest.raises(UnsupportedContractVersion):
-        plugin_contract("1.0.0")
     monkeypatch.setenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", "1")
-    assert plugin_contract("1.0.0").version == "1.0.0"
+    assert plugin_contract("1.1.0").version == "1.1.0"
+    with pytest.raises(UnsupportedContractVersion):
+        plugin_contract("2.0.0")
+
+
+def _import_contract_version(env_overrides: dict[str, str]) -> subprocess.CompletedProcess:
+    """另起进程导入共享库：模块级的缺省版本与候选版闸只在导入时生效，不能在本进程里改环境变量重测。"""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("STARBUDDY_")}
+    env.update(env_overrides, PYTHONPATH=str(Path(__file__).resolve().parents[1]))
+    code = "from starbuddy_contract.contract import CONTRACT_VERSION, PLUGIN_CONTRACT; print(CONTRACT_VERSION, PLUGIN_CONTRACT.name)"
+    return subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, timeout=60)
+
+
+def test_module_default_version_without_candidate_switch():
+    p = _import_contract_version({})
+    assert p.returncode == 0, p.stderr[-500:]
+    assert p.stdout.split() == ["1.0.0", "plugin-api.v1.0.yaml"], "不设任何环境变量时缺省按 1.0.0，不需候选版开关"
+    p = _import_contract_version({"STARBUDDY_CONTRACT_VERSION": "0.9.0"})
+    assert p.returncode == 0, p.stderr[-500:]
+    assert p.stdout.split() == ["0.9.0", "plugin-api.v0.9.yaml"], "迁移期 0.9.0 显式指定仍可用"
+    p = _import_contract_version({"STARBUDDY_CONTRACT_VERSION": "1.1.0"})
+    assert p.returncode != 0 and "候选版" in p.stderr, "1.1.0 仍是候选版：不开开关拒绝"
+    p = _import_contract_version({"STARBUDDY_CONTRACT_VERSION": "1.1.0", "STARBUDDY_ALLOW_CANDIDATE_CONTRACT": "1"})
+    assert p.returncode == 0 and p.stdout.split()[0] == "1.1.0", p.stderr[-500:]
+    p = _import_contract_version({"STARBUDDY_CONTRACT_VERSION": "2.0.0", "STARBUDDY_ALLOW_CANDIDATE_CONTRACT": "1"})
+    assert p.returncode != 0 and "不支持的契约版本" in p.stderr
 
 
 def test_v1_result_passes(monkeypatch):
-    monkeypatch.setenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", "1")
+    monkeypatch.delenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", raising=False)  # 1.0.0 已签字：不需开关
     assert run(*v1(request(), response())).response_evidence_ids == [E1]
 
 
@@ -179,7 +211,7 @@ def test_v1_result_passes(monkeypatch):
     ("trace_foreign_attempt_id", lambda r: r["evidence"][1].__setitem__("attempt_id", str(uuid.uuid4()))),
 ])
 def test_v1_violations_are_rejected(monkeypatch, name, mutate):
-    monkeypatch.setenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", "1")
+    monkeypatch.delenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", raising=False)
     req, resp = v1(request(), response())
     mutate(resp)
     with pytest.raises(ContractViolation):

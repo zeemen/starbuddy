@@ -1,5 +1,5 @@
-// 契约 v1.0 候选版（specs/plugin-api-v1.0-step2/spec.md 第 3、5 条）：迁移期同时支持 0.9.0 与 1.0.0，
-// 按请求的 context.contract_version 校验与应答；能力声明报默认版本（待人确认 #2：0.9.0）。
+// 契约 v1.0（specs/plugin-api-v1.0-step2/spec.md 第 3、5 条；2026-10-09 签字，specs/contract-v1.0-signoff）：迁移期同时支持
+// 0.9.0 与 1.0.0，按请求的 context.contract_version 校验与应答；能力声明报默认版本（签字后缺省 1.0.0）。
 // 全部是合成数据（CLAUDE.md 规则 8）：学生、请求、作答 ID 都是固定的示例 UUID。
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -7,7 +7,7 @@ import { test } from "node:test";
 import { parse } from "yaml";
 import { createAdapter } from "../src/adapter.ts";
 import { BOUNDARY_MAX_CONFIDENCE } from "../src/verifier.ts";
-import { contractPath, loadContract, SUPPORTED_CONTRACT_VERSIONS } from "../src/contract.ts";
+import { CANDIDATE_CONTRACT_VERSIONS, contractPath, DEFAULT_CONTRACT_VERSION, isSupportedVersion, loadContract, SUPPORTED_CONTRACT_VERSIONS } from "../src/contract.ts";
 import { contract, context, gradeBody, makeAdapter, realPack, sweepCases, taxonomy, type Json, type Response } from "./helpers.ts";
 
 const adapter = makeAdapter();
@@ -76,15 +76,24 @@ test("加载时核对每份插件契约的 info.version", () => {
 });
 
 // ---------- 能力声明 ----------
-test("能力声明默认报 0.9.0；默认版本设为 1.0.0 时报 1.0.0 并通过 v1.0 schema", () => {
-  const r0 = adapter.handle("GET", "capabilities", undefined);
-  assert.equal((r0.body as Json).contract_version, "0.9.0");
-  assert.deepEqual(contract.validate("Capabilities", r0.body, "0.9.0"), { ok: true });
-  const v1 = createAdapter({ content: realPack, taxonomy, contract: loadContract({ defaultVersion: "1.0.0" }), allowCandidate: true });
+test("能力声明缺省报 1.0.0（v1.0 已签字，不需候选版开关）并通过 v1.0 schema；显式设 0.9.0 时报 0.9.0", () => {
+  assert.equal(DEFAULT_CONTRACT_VERSION, "1.0.0");
+  const v1 = createAdapter({ content: realPack, taxonomy, contract: loadContract(), allowCandidate: false });
   const r1 = v1.handle("GET", "capabilities", undefined);
   assert.equal(r1.status, 200);
   assert.equal((r1.body as Json).contract_version, "1.0.0");
   assert.deepEqual(contract.validate("Capabilities", r1.body, "1.0.0"), { ok: true });
+  const r0 = adapter.handle("GET", "capabilities", undefined); // helpers 显式钉住 0.9.0
+  assert.equal((r0.body as Json).contract_version, "0.9.0");
+  assert.deepEqual(contract.validate("Capabilities", r0.body, "0.9.0"), { ok: true });
+});
+
+test("候选版集合只剩 1.1.0：1.0.0 不在其中，未知版本不受支持", () => {
+  assert.deepEqual([...CANDIDATE_CONTRACT_VERSIONS], ["1.1.0"]);
+  assert.equal(isSupportedVersion("1.0.0"), true);
+  assert.equal(isSupportedVersion("0.9.0"), true);
+  assert.equal(isSupportedVersion("2.0.0"), false);
+  assert.throws(() => loadContract({ defaultVersion: "2.0.0" as never }), /不支持的契约版本/);
 });
 
 // ---------- grade：正常 ----------
@@ -240,13 +249,24 @@ test("v0.9 行为不变：响应报 0.9.0、不带 attempt_id（即使请求带�
   for (const e of b.evidence) assert.ok(!("attempt_id" in e));
 });
 
-test("候选版开关没开：声明 1.0.0 的请求返回 CONTRACT_VERSION_UNSUPPORTED，0.9.0 照常", () => {
+test("候选版开关没开：1.0.0（已签字）与 0.9.0 照常；声明 1.1.0（仍是候选版）的请求返回 CONTRACT_VERSION_UNSUPPORTED；未知版本拒绝", () => {
   const closed = makeAdapter(realPack, undefined, false);
-  const r = closed.handle("POST", "grade", gradeBodyV1(fillItem.id, { text: fillItem.answer[0]! }));
-  assert.equal(r.status, 400);
-  assert.equal((r.body as Json).code, "CONTRACT_VERSION_UNSUPPORTED");
+  const v1 = closed.handle("POST", "grade", gradeBodyV1(fillItem.id, { text: fillItem.answer[0]! }));
+  assert.equal(v1.status, 200, JSON.stringify(v1.body).slice(0, 300));
+  assert.equal((v1.body as Json).contract_version, "1.0.0");
+  assert.deepEqual(contract.validate("GradeResponse", v1.body, "1.0.0"), { ok: true });
   const ok = closed.handle("POST", "grade", gradeBody(fillItem.id, { text: fillItem.answer[0]! }));
   assert.equal(ok.status, 200);
+  const v11 = gradeBodyV1(fillItem.id, { text: fillItem.answer[0]! });
+  v11.context.contract_version = "1.1.0";
+  const r = closed.handle("POST", "grade", v11);
+  assert.equal(r.status, 400);
+  assert.equal((r.body as Json).code, "CONTRACT_VERSION_UNSUPPORTED");
+  const unknown = gradeBodyV1(fillItem.id, { text: fillItem.answer[0]! });
+  unknown.context.contract_version = "2.0.0";
+  const u = closed.handle("POST", "grade", unknown);
+  assert.equal(u.status, 400);
+  assert.equal((u.body as Json).code, "CONTRACT_VERSION_UNSUPPORTED");
 });
 
 test("v1.0 不支持的作答形态报 MODE_NOT_SUPPORTED，0.9.0 仍报 INVALID_REQUEST", () => {
