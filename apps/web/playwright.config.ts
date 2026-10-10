@@ -22,7 +22,9 @@ const REPORT_SPECS = /first-report\.spec\.ts$/;
 const practicePort = Number(process.env['WEB_PRACTICE_PORT'] ?? 3104);
 // 复测与验证题（specs/retest-delivery-kge05）也在这一套：前端与第五个 BFF 另开 STARBUDDY_RETEST_UI=retest，跑 retest.spec.ts；
 // 另四套都关（trust-off 里的 retest-off.spec.ts 核对入口不出现、页面 404、BFF 路由不注册）。
-const PRACTICE_SPECS = /(^|\/)(practice|retest)\.spec\.ts$/;
+// 今日计划跨科编排（PLT-11，e2e/today-orch.spec.ts）也在这一套：前端与第五个 BFF 另开 STARBUDDY_TODAY_ORCH=today_orch（桩另实现
+// /internal/v1/today）；另四套都关（trust-off 里的 today-orch-off.spec.ts 核对今日页没有跨科列表、BFF 响应没有 ordered）。
+const PRACTICE_SPECS = /(^|\/)(practice|retest|today-orch)\.spec\.ts$/;
 // 数据权利用例（导出下载、删除二次确认，标 @data-rights）另在 WebKit 与 Firefox 上跑（安全审查 2）：本机只装了 Chromium，
 // 所以按需打开——STARBUDDY_E2E_BROWSERS=webkit,firefox（需要对应的 Playwright 浏览器二进制；lessons 登记）。
 const extraBrowsers = (process.env['STARBUDDY_E2E_BROWSERS'] ?? '').split(',').map((s) => s.trim())
@@ -36,6 +38,8 @@ const serverEnv = {
   STARBUDDY_PRACTICE: '',
   // 复测与验证题开关同样显式关闭：只有 practice-on 的前端另行打开
   STARBUDDY_RETEST_UI: '',
+  // 今日计划跨科编排开关同样显式关闭：只有 practice-on 的前端另行打开
+  STARBUDDY_TODAY_ORCH: '',
   STARBUDDY_REVIEW_URL: process.env['STARBUDDY_REVIEW_URL'] ?? 'http://127.0.0.1:8790',
   NEXT_TELEMETRY_DISABLED: '1',
   // scripts/e2e.sh 的测试构建在 .next-e2e（next.config.ts），next start 要读同一个目录
@@ -122,6 +126,7 @@ export default defineConfig({
         STARBUDDY_BFF_URL: process.env['STARBUDDY_PRACTICE_BFF_URL'] ?? 'http://127.0.0.1:8794',
         STARBUDDY_PRACTICE: 'practice',
         STARBUDDY_RETEST_UI: 'retest',
+        STARBUDDY_TODAY_ORCH: 'today_orch',
       },
     },
   ],

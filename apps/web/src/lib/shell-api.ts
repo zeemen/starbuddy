@@ -26,7 +26,14 @@ export interface ClaimStatement { kind: 'claim'; claim_id: string; text: string;
 export type Rationale = null | { kind: 'content'; code: string } | ClaimStatement;
 export interface TodayTask { kind: string; node_id: string | null; node_name: string | null; priority: number; estimated_minutes: number; rationale: Rationale }
 export interface TodaySection { subject: string; status: 'ok' | 'unavailable'; tasks: TodayTask[] }
-export interface Today { student_id: string; subjects: TodaySection[] }
+/** 跨科有序列表的一条（PLT-11；开关 today_orch 打开且是学生本人时才有） */
+export interface OrderedTask {
+  subject: string; kind: string; node_id: string | null; node_name: string | null; estimated_minutes: number;
+  source: 'retest' | 'practice' | 'plan'; entry_id: string | null; rationale: Rationale;
+}
+export interface OrderedToday { items: OrderedTask[]; truncated_count: number; partial: boolean }
+/** ordered：没有这个键 = BFF 开关关（与开关上线前相同）；null = 学习服务暂不可用 */
+export interface Today { student_id: string; subjects: TodaySection[]; ordered?: OrderedToday | null }
 
 export interface EnrollmentRow { subject: string; is_core: boolean; catalog_status: 'beta' | 'live'; open: boolean; enrollment: 'active' | 'paused' | null }
 export interface Enrollments {

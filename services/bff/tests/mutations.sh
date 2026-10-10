@@ -362,6 +362,13 @@ SM=(
   $'复测：同票据换作答不回 TICKET_USED\tsrc/retest/service.ts\t(code === \'TICKET_USED\' || code === \'IDEMPOTENCY_CONFLICT\')\t(code === \'TICKET_USED\')'
   $'复测：重放不标响应头\tsrc/retest/service.ts\treturn json(200, out, replayHeader(r.replayed));\treturn json(200, out, replayHeader(false));'
   $'复测：确定性拒绝当可重试\tsrc/retest/service.ts\t(isDeterministic(out) ? RETEST_UNAVAILABLE : UPSTREAM_UNAVAILABLE)\tUPSTREAM_UNAVAILABLE'
+  # 今日计划跨科编排（PLT-11，specs/today-plan-orchestration-plt11）：字段白名单、只给学生本人、开关关时不调 /today、每页只排一次计划、
+  # partial 不算未启用；这几条跑 tests/today-orch-units.test.ts、tests/today-orch.integration.test.ts
+  $'编排：去掉字段白名单\tsrc/shell/today-orch.ts\titems.push({ subject: x[\'subject\'] as PlanSubject,\titems.push(x as unknown as OrderedItem); if (false) items.push({ subject: x[\'subject\'] as PlanSubject,'
+  $'编排：家长会话也带跨科列表\tsrc/http/shell-routes.ts\tconst orchOn = deps.shell?.orch?.enabled === true && audience === \'student\';\tconst orchOn = deps.shell?.orch?.enabled === true;'
+  $'编排：开关关时仍调 /today\tsrc/http/shell-routes.ts\tconst orchClient = orchOn ? deps.shell?.orch?.client : undefined;\tconst orchClient = deps.shell?.orch?.client;'
+  $'编排：开关开时仍另调 /plan\tsrc/http/shell-routes.ts\tif (asked.length > 0 && orchClient) {\tif (false) {'
+  $'编排：未启用的来源也算 partial\tsrc/shell/today-orch.ts\treturn st !== \'ok\' && st !== \'source_disabled\';\treturn st !== \'ok\';'
 )
 # 副本保持仓库结构（测试按 ../../../ 找仓库根：adapters/aya 的登记脚本、db/seeds 的种子），adapters、db 软链接回仓库。
 # 安全审查阻断 1：原来的副本不保持结构，测试的 before 在任何代码下都失败，变异全部“被发现”却不说明任何问题。
@@ -415,6 +422,7 @@ star_run() {  # $1 副本根目录，$2 变异名（“计量：”开头的跑�
   [[ "${2:-}" == 复测：* ]] && tests="tests/retest-units.test.ts tests/retest.integration.test.ts tests/shell-openapi.test.ts"
   [[ "${2:-}" == 届别：* ]] && tests="tests/cohort.integration.test.ts"
   [[ "${2:-}" == 题面：* ]] && tests="tests/item-rich.test.ts"
+  [[ "${2:-}" == 编排：* ]] && tests="tests/today-orch-units.test.ts tests/today-orch.integration.test.ts"
   out=$( cd "$1/services/bff" && timeout 240 bash "$ROOT/db/tests/pg-ephemeral.sh" -- \
       node --no-warnings --test --test-concurrency=1 --test-timeout=60000 $tests 2>&1 ); rc=$?
   printf '%s\n' "$out" > "$1/run.out"  # H6 的“第一条失败必须是登记的断言”从这里读

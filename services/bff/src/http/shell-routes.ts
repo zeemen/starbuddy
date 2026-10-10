@@ -13,6 +13,7 @@ import { loadShellConfig, type ShellConfig } from '../shell/config.ts';
 import type { Audience } from '../shell/insight-client.ts';
 import type { PlanSection, PlanSubject } from '../shell/plan-client.ts';
 import { MemoryRestStore, type RestStore } from '../shell/rest.ts';
+import type { OrderedList } from '../shell/today-orch.ts';
 import { linkIdFor, nodeClaims, resolveStatements, templateRef, type ShownStatement, type StatementJob } from '../shell/statements.ts';
 import { P } from './problems.ts';
 import { isLocalEnv, type RunEnv } from './config.ts';
@@ -171,11 +172,27 @@ const today: Handler = async (ctx) => {
     return { subjects: rows, linkId: audience === 'guardian' ? await linkIdFor(q, id) : undefined };
   });
   if (!first) return problem(P.NOT_FOUND);
-  // 二、学习服务排计划（事务外调用，不占着连接等 HTTP）；学习服务不可用时每一科都“今天暂无安排”
+  // 二、学习服务排计划（事务外调用，不占着连接等 HTTP）；学习服务不可用时每一科都“今天暂无安排”。
+  // 跨科编排（PLT-11）开关打开、是学生本人、且配了客户端时只调 /internal/v1/today（每页只排一次计划）：按科 sections 用它附带的
+  // 各科计划（与 /plan 同一套挑字段）；其余情况（开关关、家长会话、没配客户端）只调 /plan，与开关上线前相同
   const asked = first.subjects.map((r) => r.product);
+  const orchOn = deps.shell?.orch?.enabled === true && audience === 'student';
+  const orchClient = orchOn ? deps.shell?.orch?.client : undefined;
+  let planned: PlanSection[] | null = null;
+  let orderedRaw: OrderedList | null = null;
+  if (asked.length > 0 && orchClient) {
+    const r = await orchClient.today(id, asked);
+    planned = r?.sections ?? null;
+    orderedRaw = r?.ordered ?? null;
+  } else if (asked.length > 0) {
+    planned = (await deps.shell?.plan?.plan(id, asked)) ?? null;
+  }
   const sections: PlanSection[] = asked.length === 0 ? []
-    : (await deps.shell?.plan?.plan(id, asked)) ?? asked.map((subject) => ({ subject, status: 'unavailable' as const, tasks: [] }));
-  const nodeIds = [...new Set(sections.flatMap((x) => x.tasks.flatMap((t) => t.target_node_ids.slice(0, 1))))];
+    : planned ?? asked.map((subject) => ({ subject, status: 'unavailable' as const, tasks: [] }));
+  // 没有在读学科：跨科列表为空（与按科为空一致）；学习服务不可用、响应不合格或没配客户端：null（界面不显示跨科列表）
+  const ordered: OrderedList | null = asked.length === 0 ? { items: [], truncated_count: 0, partial: false } : orderedRaw;
+  const nodeIds = [...new Set([...sections.flatMap((x) => x.tasks.flatMap((t) => t.target_node_ids.slice(0, 1))),
+                               ...(orchOn && ordered ? ordered.items.flatMap((i) => (i.node_id ? [i.node_id] : [])) : [])])];
   const claimNodes = [...new Set(sections.flatMap((x) => x.tasks.filter((t) => cfg.studentRationale.has(t.rationale_code))
     .flatMap((t) => t.target_node_ids.slice(0, 1))))];
   // 三、节点名与判断（RLS 下读，受众由会话决定）
@@ -189,6 +206,8 @@ const today: Handler = async (ctx) => {
   const codeOf = new Map(first.subjects.map((r) => [r.product, r.code]));
   const jobs: StatementJob[] = [];
   const out: { subject: string; status: string; tasks: OutTask[] }[] = [];
+  // 跨科列表里的计划任务沿用按科任务的推荐理由（同一学科、类别、节点、理由编码的第一条）：不另取陈述，不新增关于学生的陈述
+  const sectionTask = new Map<string, OutTask>();
   for (const sec of sections) {
     const tasks: OutTask[] = [];
     const sorted = [...sec.tasks].sort((a, b) => b.priority - a.priority || KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind));
@@ -210,6 +229,11 @@ const today: Handler = async (ctx) => {
       tasks.push({ kind: t.kind, node_id: node, node_name: node ? names.get(node) ?? null : null, priority: t.priority,
                    estimated_minutes: t.estimated_minutes, rationale, job: null });
     }
+    // 每条任务恰好对应 tasks 里同一位置的一项
+    sorted.forEach((t, i) => {
+      const k = taskKey(sec.subject, t.kind, t.target_node_ids[0] ?? null, t.rationale_code);
+      if (!sectionTask.has(k)) sectionTask.set(k, tasks[i]!);
+    });
     out.push({ subject: codeOf.get(sec.subject) ?? sec.subject, status: sec.status, tasks });
   }
   // 四、陈述：并行取（并发上限、整页总时限、每页条数上限、每会话限频）；时限内没回来的句子不显示
@@ -222,8 +246,22 @@ const today: Handler = async (ctx) => {
       delete t.job;
     }
   }
-  return json(200, { student_id: id, subjects: out });
+  if (!orchOn) return json(200, { student_id: id, subjects: out });
+  // 五、跨科有序列表（PLT-11）：只带学科码、类别、节点名、预计分钟、来源、可去做的条目引用与推荐理由；理由只沿用按科任务已决定的那一条
+  // （内容类固定短句、或已显示的判断陈述），复测与再练条目没有理由；不带理由编码、优先级与其他内部编码
+  const orderedOut = ordered === null ? null : {
+    items: ordered.items.map((i) => ({
+      subject: codeOf.get(i.subject) ?? i.subject, kind: i.kind, node_id: i.node_id, node_name: i.node_id ? names.get(i.node_id) ?? null : null,
+      estimated_minutes: i.estimated_minutes, source: i.source, entry_id: i.entry_id,
+      rationale: i.source === 'plan' && i.rationale_code !== null
+        ? sectionTask.get(taskKey(i.subject, i.kind, i.node_id, i.rationale_code))?.rationale ?? null : null,
+    })),
+    truncated_count: ordered.truncated_count,
+    partial: ordered.partial,
+  };
+  return json(200, { student_id: id, subjects: out, ordered: orderedOut });
 };
+const taskKey = (subject: string, kind: string, node: string | null, code: string): string => JSON.stringify([subject, kind, node, code]);
 
 // ---------------------------------------------------------------- 额度与时长（第 9 节）
 

@@ -41,6 +41,8 @@ from .retest import config as retest_config
 from .route_api import MAX_ROUTE_BODY, RouteApiError, parse_request
 from .route_api import route as route_call
 from .service import IngestService
+from .today import api as today_api
+from .today import config as today_config
 
 log = logging.getLogger("starbuddy.learning")
 UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
@@ -207,6 +209,13 @@ def create_app(
             retest_cfg = retest_config.load(settings.retest_config, env=settings.env)
         except retest_config.RetestConfigUnsigned:
             log.warning(json.dumps({"event": "retest_disabled", "reason": "unsigned_config"}, ensure_ascii=False))
+    # 今日计划跨科编排配置（PLT-11）：不合法拒绝启动；未签字配置出现在 test / dev 以外只是这一模块不启动（接口 501）
+    today_cfg = None
+    if settings.today_config:
+        try:
+            today_cfg = today_config.load(settings.today_config, env=settings.env)
+        except today_config.TodayConfigUnsigned:
+            log.warning(json.dumps({"event": "today_disabled", "reason": "unsigned_config"}, ensure_ascii=False))
     # 学情档案页配置（KGE-04 第二步 PR 4）启动即加载与校验：未签字或合成配置出现在非 test 环境、短语不在衔接短语表里，一律拒绝启动
     profile_cfg = load_profile_config(settings.profile_page_config, env=settings.env) if settings.profile_page_config else None
     # 掌握配置启动即加载与校验（KGE-04 第二步）：不合法、学科对不上、未签字或合成配置出现在非 test 环境，一律拒绝启动
@@ -277,6 +286,10 @@ def create_app(
                 from .retest.service import RetestService
                 state["retest"] = RetestService(practice=state["practice"], cfg=retest_cfg,
                                                clock=state["practice"].clock)
+        if today_cfg is not None:
+            # 今日计划跨科编排（PLT-11）：只读汇总 plan、再练与复测（运行时从 state 取；没启动的来源标 source_unavailable）
+            from .today.service import TodayService
+            state["today"] = TodayService(settings=settings, cfg=today_cfg, state=state)
         # 有路由客户端时才建模型路由：环境从 LEARNING_ENV 读，配置不合规（出境、未批准供应商等）即拒绝启动
         own_router = state["router"] is None and bool(settings.route_clients)
         if own_router:
@@ -330,6 +343,8 @@ def create_app(
     practice_api.register(app, lambda r: _bearer_ok(r.headers.get("authorization"), settings.service_credential), state)
     # 复测与验证题（KGE-05）：同再练，只认 BFF 服务令牌
     retest_api.register(app, lambda r: _bearer_ok(r.headers.get("authorization"), settings.service_credential), state)
+    # 今日计划跨科编排（PLT-11）：同再练，只认 BFF 服务令牌
+    today_api.register(app, lambda r: _bearer_ok(r.headers.get("authorization"), settings.service_credential), state)
     # learning-internal 1.1.0（KGE-04 第二步 PR 3）：掌握读取只认编排层令牌；验证任务与撤销只认洞察服务令牌（未配置即一律 401）；
     # BFF 服务令牌对这四个接口一律 401；档案页 ensure 认编排层（会话开始）与洞察服务（周报），read 只认编排层（PR 4）；
     # 星图节点星态只认 BFF 服务令牌（H5 星图 v1 PR 1）

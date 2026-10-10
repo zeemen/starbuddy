@@ -10,6 +10,7 @@ import type { ShellConfig } from '../shell/config.ts';
 import type { InsightClient } from '../shell/insight-client.ts';
 import type { PlanClient } from '../shell/plan-client.ts';
 import type { RestStore } from '../shell/rest.ts';
+import type { TodayOrchClient } from '../shell/today-orch.ts';
 import type { AuthConfig, Keys, RunEnv } from './config.ts';
 import { FEATURE_ROUTES } from './feature-routes.ts';
 import { asOf, SHELL_ROUTES } from './shell-routes.ts';
@@ -56,8 +57,11 @@ export interface ShellDeps {
   /** 星图的生成时间、连续使用提醒、推算当前年级（platform.current_grade 的时刻）的时钟（测试注入） */
   now?: () => Date;
   /** 统一壳 H4（shell-routes.ts）：显示规则（缺省读 config/shell.json）、学习服务的今日计划、洞察服务的 insight.explain、
-   *  连续使用提醒的存储（缺省进程内）。不配 plan 时每一科“今天暂无安排”；不配 insight 时不显示任何判断陈述 */
-  shell?: { config?: ShellConfig; plan?: PlanClient; insight?: InsightClient; rest?: RestStore };
+   *  连续使用提醒的存储（缺省进程内）。不配 plan 时每一科“今天暂无安排”；不配 insight 时不显示任何判断陈述。
+   *  orch：今日计划跨科编排（PLT-11，开关 STARBUDDY_TODAY_ORCH，缺省关）：打开且配了客户端时，学生本人的 today 只调 /internal/v1/today
+   *  （按科 sections 用它附带的各科计划）并另带 ordered；打开但没配客户端时仍调 plan 排按科 sections，ordered 为 null */
+  shell?: { config?: ShellConfig; plan?: PlanClient; insight?: InsightClient; rest?: RestStore;
+            orch?: { enabled: boolean; client?: TodayOrchClient } };
   /** SIE-03 PR③ 信任界面（trust-routes.ts）：打开的开关（缺省全关，路由不注册）、洞察服务的异议工具、预测与对账卡的读取
    *  （契约没有 BFF 可用的工具，缺省不配，路由 503）、导出包暂存（缺省进程内） */
   trust?: { features?: ReadonlySet<TrustFeature>; dispute?: DisputeClient; exams?: ExamViewClient; exports?: ExportStore;

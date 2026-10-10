@@ -35,6 +35,10 @@
   LEARNING_RETEST_CONFIG         synthetic（合成占位，只允许 test / dev）或配置文件路径。不设 = 复测接口一律 501 RETEST_UNAVAILABLE；
                                  复用再练的选题、题面与票据密钥，所以必须同时设 LEARNING_PRACTICE_CONFIG；未签字的配置在 test / dev 以外
                                  不启动这一模块（接口 501），不合法拒绝启动
+  今日计划跨科编排（PLT-11，specs/today-plan-orchestration-plt11）：
+  LEARNING_TODAY_CONFIG          synthetic（合成占位，只允许 test / dev）或配置文件路径。不设 = /internal/v1/today 一律 501 TODAY_UNAVAILABLE；
+                                 未签字的配置在 test / dev 以外不启动这一模块（接口 501），不合法拒绝启动。只读汇总：再练、复测没启动时
+                                 对应来源标 source_unavailable，不要求同时设它们
   题面来源（PLT-12，specs/present-item-contract）：
   LEARNING_PRESENT_ITEM_SOURCE   synthetic（缺省：诊断与再练用合成题面，行为与之前逐字节一致）| adapter（经适配器 present_item，
                                  插件契约 1.1.0 候选版；只在 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1 时允许，否则拒绝启动）。只换题面来源：
@@ -115,6 +119,8 @@ class Settings:
     present_item_source: str = "synthetic"
     # 复测与验证题（KGE-05）：配置（synthetic 或路径；None = 接口 501）。依赖再练（选题、题面、票据密钥）
     retest_config: str | None = None
+    # 今日计划跨科编排（PLT-11）：配置（synthetic 或路径；None = 接口 501）
+    today_config: str | None = None
 
     @staticmethod
     def from_env(environ: dict[str, str] | None = None) -> "Settings":
@@ -210,4 +216,5 @@ class Settings:
                         insight_client_credential=insight_tok, orchestrator_client_credential=orch_tok,
                         profile_page_config=e.get("LEARNING_PROFILE_PAGE_CONFIG") or None, practice_config=practice_cfg,
                         practice_presenter=practice_presenter, practice_ticket_secret=practice_secret,
-                        present_item_source=present_source, retest_config=retest_cfg)
+                        present_item_source=present_source, retest_config=retest_cfg,
+                        today_config=e.get("LEARNING_TODAY_CONFIG") or None)

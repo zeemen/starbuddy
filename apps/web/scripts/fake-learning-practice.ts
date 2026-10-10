@@ -2,7 +2,7 @@
 // 只监听 127.0.0.1，只认 BFF 的服务间令牌（FAKE_LEARNING_TOKEN，每次随机生成、只经环境变量传）。
 // 只实现错题再练的三个内部接口（services/learning/openapi/practice-internal.v0.yaml）：queue、next、answer，按该文件的响应形状返回；
 // 另实现复测与验证题的内部接口（retest-internal.v0.yaml，specs/retest-delivery-kge05：queue、next、answer 与只读的 check、replay，
-// 剧本见文件后部）；
+// 剧本见文件后部）与今日计划跨科编排的只读接口（today-internal.v0.yaml，PLT-11：/internal/v1/today，剧本见文件后部）；
 // 其余路径（今日计划、诊断、星图等）一律 501（BFF 按“暂无安排 / 暂时无法获取”处理）。
 // 不是学习服务的实现：错题判定、选题、票据验签、经 grade 写入落库与掌握重算在 services/learning，有它自己的单测与库上集成测试；
 // 这里的条目、题面、判分全是合成的固定剧本（学生 P1、P2、P3 见 db/seeds/dev/practice-synthetic.sql），状态只在进程内存里。
@@ -294,6 +294,30 @@ function rreplay(b: Record<string, unknown>) {
   return { ...done, replayed: true };
 }
 
+// ---------- 今日计划跨科编排（PLT-11；e2e/today-orch.spec.ts）：POST /internal/v1/today（today-internal.v0.yaml 的响应形状） ----------
+// 剧本（学生 P1；其余学生空列表）：R2 验证 due（复测页）、E6 再练 due（再练页）、一条没有节点的计划任务（科目页）；截掉 2 条；
+// 有一个来源不可用（partial）。条目引用对得上上面两份剧本里仍可作答的条目（R2、E6 作答后仍是 due）。
+// 响应故意带上内部字段（优先级、单元层次、掌握、置信度、证据 ID、任务原因、预算与来源状态编码）：端到端断言它们不出现在页面上。
+function today(b: Record<string, unknown>) {
+  const keys = Object.keys(b).sort().join(',');
+  if (keys !== 'request_id,student_ref,subjects' || typeof b['student_ref'] !== 'string' || !UUID.test(b['student_ref'])
+      || !Array.isArray(b['subjects'])) return problem(400, 'INVALID_REQUEST');
+  const internal = { priority: 0.9, cognitive_level: 'apply', p_mastery: 0.42, confidence: 0.77, evidence_ids: [id('9e1')], reason: 'verify_self_report' };
+  const items = b['student_ref'] !== P1 ? [] : [
+    { subject: 'aya', kind: 'verify', node_id: 'MATH.SYN.P1.R2', estimated_minutes: 5, source: 'retest', entry_id: id('402'), rationale_code: null, ...internal },
+    { subject: 'aya', kind: 'practice', node_id: 'MATH.SYN.P1.N6', estimated_minutes: 8, source: 'practice', entry_id: id('106'), rationale_code: null, ...internal },
+    { subject: 'aya', kind: 'lesson', node_id: null, estimated_minutes: 5, source: 'plan', entry_id: null, rationale_code: 'high_exam_weight', ...internal },
+  ];
+  // 各科计划（与 /internal/v1/plan 同形状）：P1 的数学有一条没有节点的微课任务（BFF 用它排按科 sections，跨科列表里那条沿用它的理由）
+  const plan = b['student_ref'] !== P1 ? null : { subjects: [{ subject: 'aya', status: 'ok', tasks: [
+    { kind: 'lesson', target_node_ids: [], priority: 0.3, estimated_minutes: 5, rationale_code: 'high_exam_weight' }] }] };
+  // P1：有一个启用了但失败的来源（partial）；其余学生只有未启用的来源（source_disabled，不算 partial）
+  const sources = b['student_ref'] === P1
+    ? [{ source: 'retest', subject: 'aya', status: 'ok' }, { source: 'plan', subject: 'aya', status: 'source_unavailable' }]
+    : [{ source: 'retest', subject: 'aya', status: 'source_disabled' }, { source: 'plan', subject: 'aya', status: 'ok' }];
+  return { status: 200, body: { items, truncated_count: items.length ? 2 : 0, budget_minutes: 30, sources, plan } };
+}
+
 const PRACTICE_PATHS = ['/internal/v1/practice/queue', '/internal/v1/practice/next', '/internal/v1/practice/answer'];
 const RETEST_PATHS = ['/internal/v1/retest/queue', '/internal/v1/retest/next', '/internal/v1/retest/answer', '/internal/v1/retest/check',
                       '/internal/v1/retest/replay'];
@@ -304,7 +328,10 @@ createServer((req, res) => {
     const path = req.url ?? '';
     if (REQUEST_LOG) appendFileSync(REQUEST_LOG, `${JSON.stringify({ method: req.method ?? '', path: path.slice(0, 200) })}\n`);
     if (req.headers['authorization'] !== `Bearer ${TOKEN}`) out = problem(401, 'UNAUTHENTICATED');
-    else if (req.method !== 'POST' || ![...PRACTICE_PATHS, ...RETEST_PATHS].includes(path)) {
+    else if (req.method === 'POST' && path === '/internal/v1/today') {
+      const b = await readBody(req);
+      out = b ? today(b) : problem(400, 'INVALID_REQUEST');
+    } else if (req.method !== 'POST' || ![...PRACTICE_PATHS, ...RETEST_PATHS].includes(path)) {
       out = problem(501, 'NOT_IMPLEMENTED');
     } else {
       const b = await readBody(req);

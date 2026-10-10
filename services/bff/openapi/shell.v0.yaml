@@ -348,6 +348,13 @@ paths:
         推荐理由（规则 11）：内容类编码 → {kind: content, code}，显示固定短句，不带 claim_id；其余编码（含映射表外的）只有在目标节点上
         有该受众可见、成立或假设、模板在对外白名单里的判断时才给 {kind: claim, claim_id, text, confidence_band}，text 只取洞察服务
         insight.explain 返回的 RenderedStatement.text；否则 rationale 为 null。响应里没有 p_mastery、confidence、evidence_ids、learner_context。
+        跨科编排（PLT-11，specs/today-plan-orchestration-plt11）：开关 STARBUDDY_TODAY_ORCH=today_orch（只在 dev / test，缺省关）打开时，
+        学生本人的响应另带 ordered；这时 BFF 只调 /internal/v1/today（每页只排一次计划），按科的 subjects 用它附带的各科计划构造
+        （与 /internal/v1/plan 同一套处理，对同一数据逐字段一致）。开关关、家长会话时只调 /internal/v1/plan，没有 ordered 这个键，
+        响应与开关上线前逐字段一致。
+        ordered 来自学习服务 POST /internal/v1/today（services/learning/openapi/today-internal.v0.yaml，只读汇总：各科计划、错题再练与
+        复测的 due 条目；去重、来源优先级、学科轮转、按时间预算截断），学习服务不可用时为 null。推荐理由只沿用按科任务已决定的那一条
+        （同一学科、类别、节点、理由编码）：内容类固定短句或已显示的判断陈述；复测与再练条目为 null；不新增关于学生的陈述。
       parameters: [{ $ref: '#/components/parameters/StudentId' }, { $ref: '#/components/parameters/Session' }]
       responses:
         '200':
@@ -389,6 +396,38 @@ paths:
                                     required: [kind, code]
                                     properties: { kind: { const: content }, code: { type: string } }
                                   - $ref: '#/components/schemas/ClaimStatement'
+                  ordered:
+                    description: 只在开关 today_orch 打开且是学生本人时出现；学习服务不可用时为 null
+                    oneOf:
+                      - type: 'null'
+                      - type: object
+                        additionalProperties: false
+                        required: [items, truncated_count, partial]
+                        properties:
+                          items:
+                            type: array
+                            items:
+                              type: object
+                              additionalProperties: false
+                              required: [subject, kind, node_id, node_name, estimated_minutes, source, entry_id, rationale]
+                              properties:
+                                subject: { $ref: '#/components/schemas/SubjectCode' }
+                                kind: { enum: [retest, verify, practice, diagnose, review, lesson, mock_exam] }
+                                node_id: { type: [string, 'null'] }
+                                node_name: { type: [string, 'null'], description: 已发布地图的知识节点名；拿不到时为空，界面显示中性标题 }
+                                estimated_minutes: { type: integer, minimum: 1 }
+                                source: { enum: [retest, practice, plan], description: 决定“去做”链到复测页、再练页还是科目页 }
+                                entry_id: { type: [string, 'null'], format: uuid, description: 复测、再练条目的 ID（去做的链接用）；计划任务为空 }
+                                rationale:
+                                  oneOf:
+                                    - type: 'null'
+                                    - type: object
+                                      additionalProperties: false
+                                      required: [kind, code]
+                                      properties: { kind: { const: content }, code: { type: string } }
+                                    - $ref: '#/components/schemas/ClaimStatement'
+                          truncated_count: { type: integer, minimum: 0, description: 按时间预算截掉的条数 }
+                          partial: { type: boolean, description: 有启用了的来源（某科的计划、再练或复测）失败、已跳过；未启用的来源不算 }
         '401': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
         '429': { description: 超过限流（同一个 429，不分原因）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }

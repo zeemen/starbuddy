@@ -618,6 +618,30 @@ export const ALL_RETEST_COPY: string[] = [
   ...Object.values(RETEST_VERDICT), ...Object.values(RETEST_AFTER), ...Object.values(RETEST_ERROR),
 ];
 
+/**
+ * 今日计划跨科编排（PLT-11，specs/today-plan-orchestration-plt11；前端开关 STARBUDDY_TODAY_ORCH，默认关；只给学生本人）的全部文案。
+ * 一律是明显占位 {{TODO_COPY:today.…}}（面向学生的话术人写人审，必停），少数界面标签在占位后附中性提示便于走查。
+ * 不出现关于学生的陈述（推荐理由沿用按科任务的那一条，渲染在 TaskList 里）；不显示掌握、置信度、证据、来源与原因编码；
+ * 截掉的条数是唯一外露的数字，放在 data-value 里，不拼进文案。
+ */
+export const TODAY_ORCH = {
+  heading: T('today.orch.heading', '今天的顺序'),
+  go: T('today.orch.go', '去做'),
+  minutes: T('today.orch.minutes', '预计分钟'),
+  untitled: T('today.orch.untitled', '一项任务'),
+  empty: T('today.orch.empty', '今天没有要做的'),
+  unavailable: T('today.orch.unavailable', '暂时无法获取'),
+  truncated: T('today.orch.truncated', '另有几项留到之后'),
+  partial: T('today.orch.partial', '有的内容暂时没有列出'),
+} as const;
+/** 条目类别：复测列表的复测 / 验证、再练、计划原有的类别（只给占位键，任务说明人写人审） */
+export const TODAY_ORCH_KIND: Record<string, string> = {
+  retest: T('today.orch.kind.retest'), verify: T('today.orch.kind.verify'), practice: T('today.orch.kind.practice'),
+  diagnose: T('today.orch.kind.diagnose'), review: T('today.orch.kind.review'), lesson: T('today.orch.kind.lesson'),
+  mock_exam: T('today.orch.kind.mock_exam'),
+};
+export const ALL_TODAY_ORCH_COPY: string[] = [...Object.values(TODAY_ORCH), ...Object.values(TODAY_ORCH_KIND)];
+
 /** 信任界面的全部文案（静态检查逐条扫描；端到端的“每个文本节点”核对也用它） */
 export const ALL_TRUST_COPY: string[] = [
   ...Object.values(TRUST), ...Object.values(WHY), ...Object.values(WHY_STATUS), ...Object.values(EVIDENCE_SOURCE),
@@ -652,5 +676,5 @@ export const ALL_SHELL_COPY: string[] = [
   FAMILY_SHELL.regionLabel, FAMILY_SHELL.birthLabel, FAMILY_SHELL.create, FAMILY_SHELL.consentHeading, FAMILY_SHELL.consentText,
   FAMILY_SHELL.consentGrant, FAMILY_SHELL.consentFor('孩子 1 · 八年级'), FAMILY_SHELL.onboarding, FAMILY_SHELL.timeSettings,
   FAMILY_SHELL.backToFamily, ...Object.values(FAMILY_SHELL_RESULT), ...Object.values(TRUST_SLOT),
-  ...ALL_TRUST_COPY, ...ALL_PRACTICE_COPY, ...ALL_RETEST_COPY,
+  ...ALL_TRUST_COPY, ...ALL_PRACTICE_COPY, ...ALL_RETEST_COPY, ...ALL_TODAY_ORCH_COPY,
 ];

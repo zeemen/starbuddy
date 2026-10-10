@@ -29,6 +29,9 @@
 //   STARBUDDY_RETEST_UI    dev / test：复测与验证题的开关（只认 retest；src/retest/features.ts，KGE-05）；缺省关、三条路由不注册；
 //                          其余环境设了就拒绝启动。经 BFF_LEARNING_URL 调学习服务 retest 内部接口（同一个服务间令牌），
 //                          不配学习服务时打开开关也一律 503。作答默认沿用题库自练计次（platform.meter_practice，待人确认）
+//   STARBUDDY_TODAY_ORCH   dev / test：今日计划跨科编排的开关（只认 today_orch；src/shell/today-orch.ts，PLT-11）；缺省关、today 响应不变；
+//                          其余环境设了就拒绝启动。打开时学生本人的 today 另带 ordered，经 BFF_LEARNING_URL 调学习服务 /internal/v1/today
+//                          （同一个服务间令牌、同一个计划时限）；不配学习服务时 ordered 为 null
 //   BFF_TRUST_SECRET       信任界面专用密钥（删除确认凭据、异议幂等键）：十六进制 ≥ 32 字节，规则同 BFF_AUTH_SECRET
 // 诊断的宵禁判断用数据库的计量时钟（platform.meter_guard_status，迁移 0030），BFF 没有自己的时钟开关。
 import pg from 'pg';
@@ -40,6 +43,7 @@ import { createSmsSender } from './http/sms.ts';
 import { loadShellConfig } from './shell/config.ts';
 import { httpInsightClient } from './shell/insight-client.ts';
 import { httpPlanClient } from './shell/plan-client.ts';
+import { httpTodayOrchClient, parseTodayOrchFeature } from './shell/today-orch.ts';
 import { httpDisputeClient } from './trust/clients.ts';
 import { parseTrustFeatures } from './trust/features.ts';
 import { httpInsightReadClient } from './trust/report.ts';
@@ -58,6 +62,7 @@ try {
   const starMapFeatures = parseStarMapFeatures(env, process.env['STARBUDDY_STARMAP']);  // 非 dev / test 设了就拒绝启动
   const practiceOn = parsePracticeFeature(env, process.env['STARBUDDY_PRACTICE']);     // 同上
   const retestOn = parseRetestFeature(env, process.env['STARBUDDY_RETEST_UI']);        // 同上
+  const orchOn = parseTodayOrchFeature(env, process.env['STARBUDDY_TODAY_ORCH']);      // 同上
   const configPath = process.env['BFF_AUTH_CONFIG'];
   if (configPath !== undefined && !isLocalEnv(env)) throw new Error('BFF_AUTH_CONFIG 只在 dev / test 可用');
   const keys = loadKeys(env);
@@ -69,7 +74,7 @@ try {
   if (shellConfigPath !== undefined && !isLocalEnv(env)) throw new Error('BFF_SHELL_CONFIG 只在 dev / test 可用');
   shellDeps = { config: configPath === undefined ? loadAuthConfig() : loadAuthConfig(configPath), keys, env, sms: createSmsSender(env), shellOrigin,
                 trustClientIpHeader: process.env['BFF_TRUST_CLIENT_IP'] === '1',
-                shell: { config: shellConfigPath === undefined ? loadShellConfig() : loadShellConfig(shellConfigPath) },
+                shell: { config: shellConfigPath === undefined ? loadShellConfig() : loadShellConfig(shellConfigPath), orch: { enabled: orchOn } },
                 trust: { features: parseTrustFeatures(env, process.env['STARBUDDY_TRUST_UI']) },
                 starMap: { features: starMapFeatures }, practice: { enabled: practiceOn }, retest: { enabled: retestOn } };
   // 连续使用提醒的计时在进程内（src/shell/rest.ts）：dev / test 以外没声明单实例部署就不启用，并在启动时告警（pilot 前须完成会话表加列迁移）
@@ -105,6 +110,9 @@ if (learningUrl) {
   }
   shellDeps.diagnosis = { learning: httpDiagnosisLearning({ baseUrl: learningUrl, token: learningCredential }) };
   shellDeps.shell!.plan = httpPlanClient({ baseUrl: learningUrl, token: learningCredential, timeoutMs: shellDeps.shell!.config!.plan.timeoutMs });
+  if (shellDeps.shell!.orch!.enabled) {
+    shellDeps.shell!.orch!.client = httpTodayOrchClient({ baseUrl: learningUrl, token: learningCredential, timeoutMs: shellDeps.shell!.config!.plan.timeoutMs });
+  }
   if (shellDeps.starMap!.features!.has('starmap_v1')) {
     shellDeps.starMap!.nodes = httpStarMapClient({ baseUrl: learningUrl, token: learningCredential, timeoutMs: shellDeps.shell!.config!.starMap.timeoutMs });
   }
