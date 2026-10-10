@@ -31,6 +31,11 @@ export const P = {
   CONFIRM_REQUIRED: problem(403, 'CONFIRMATION_REQUIRED', 'confirmation not accepted'),
   REAUTH_REQUIRED: problem(403, 'REAUTH_REQUIRED', 'sign in again to confirm'),
   TRUST_UNAVAILABLE: problem(503, 'UNAVAILABLE', 'not available right now'),
+  // PLT-14 家长诉求（迁移 0053）：补充说明命中禁用推断词表（不存）；关注学校只在初三可设
+  TEXT_NOT_ACCEPTED: problem(422, 'TEXT_NOT_ACCEPTED', 'text not accepted'),
+  SCHOOL_NOT_OPEN: problem(409, 'SCHOOL_NOT_OPEN_FOR_GRADE', 'school can only be set in grade 9'),
+  // 当前年级不在 7–9（未入学或已毕业）时不能填写诉求（库里 55000 GRADE_OUT_OF_RANGE；不复用选科的同名问题码，标题不同）
+  GOAL_GRADE_NOT_SUPPORTED: problem(409, 'GOAL_GRADE_NOT_SUPPORTED', 'goals can only be set in a junior-high grade'),
 } as const;
 
 export type ProblemBody = (typeof P)[keyof typeof P];

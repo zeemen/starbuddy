@@ -369,6 +369,14 @@ SM=(
   $'编排：开关关时仍调 /today\tsrc/http/shell-routes.ts\tconst orchClient = orchOn ? deps.shell?.orch?.client : undefined;\tconst orchClient = deps.shell?.orch?.client;'
   $'编排：开关开时仍另调 /plan\tsrc/http/shell-routes.ts\tif (asked.length > 0 && orchClient) {\tif (false) {'
   $'编排：未启用的来源也算 partial\tsrc/shell/today-orch.ts\treturn st !== \'ok\' && st !== \'source_disabled\';\treturn st !== \'ok\';'
+  # 家长诉求（PLT-14 第 1 步，specs/family-goals-monthly-plan）：学生会话在请求体、CSRF、限流之前 404；补充说明的禁用推断词表过滤；
+  # 开关关时不注册；年级不在 7–9 与写入上限的映射。这几条跑 tests/family-goals-units.test.ts、tests/family-goals.integration.test.ts、
+  # tests/shell-openapi.test.ts（BFFMUT_FILTER=诉求：）
+  $'诉求：去掉学生 404 守卫\tsrc/http/server.ts\tif (guardianOnly404 && session!.kind !== \'guardian\') throw new Stop(P.NOT_FOUND);\t'
+  $'诉求：关掉词表过滤\tsrc/family/goals.ts\tif (note !== null && forbiddenHits(note, loadLexicon()).length > 0) return { kind: \'forbidden_text\' };\t'
+  $'诉求：不管开关一律注册\tsrc/http/routes.ts\t...(familyGoals ? FAMILY_GOALS_ROUTES : [])\t...FAMILY_GOALS_ROUTES'
+  $'诉求：去掉年级专用问题码\tsrc/http/family-goals-routes.ts\tproblem(P.GOAL_GRADE_NOT_SUPPORTED);\tproblem(P.GRADE_OUT_OF_RANGE);'
+  $'诉求：去掉写入上限映射\tsrc/family/goals.ts\tif (code === \'54000\') return { kind: \'too_many\' };\t'
 )
 # 副本保持仓库结构（测试按 ../../../ 找仓库根：adapters/aya 的登记脚本、db/seeds 的种子），adapters、db 软链接回仓库。
 # 安全审查阻断 1：原来的副本不保持结构，测试的 before 在任何代码下都失败，变异全部“被发现”却不说明任何问题。
@@ -423,6 +431,7 @@ star_run() {  # $1 副本根目录，$2 变异名（“计量：”开头的跑�
   [[ "${2:-}" == 届别：* ]] && tests="tests/cohort.integration.test.ts"
   [[ "${2:-}" == 题面：* ]] && tests="tests/item-rich.test.ts"
   [[ "${2:-}" == 编排：* ]] && tests="tests/today-orch-units.test.ts tests/today-orch.integration.test.ts"
+  [[ "${2:-}" == 诉求：* ]] && tests="tests/family-goals-units.test.ts tests/family-goals.integration.test.ts tests/shell-openapi.test.ts"
   out=$( cd "$1/services/bff" && timeout 240 bash "$ROOT/db/tests/pg-ephemeral.sh" -- \
       node --no-warnings --test --test-concurrency=1 --test-timeout=60000 $tests 2>&1 ); rc=$?
   printf '%s\n' "$out" > "$1/run.out"  # H6 的“第一条失败必须是登记的断言”从这里读
@@ -436,6 +445,10 @@ star_copy() {
   cp -r src tests openapi config package.json tsconfig.json "$work/services/bff/"
   ln -s "$PWD/node_modules" "$work/services/bff/node_modules"
   ln -s "$ROOT/adapters" "$work/adapters"; ln -s "$ROOT/db" "$work/db"
+  # 禁用推断词表（src/trust/lexicon.ts 按 ../../../../docs/design/sie/ 读）：没有它时带文字的路由 fail closed（503），
+  # 家长诉求的词表变异会因此“被发现”却不说明任何问题，所以“诉求：”一组的副本带上 docs。
+  # 其余组暂不带：带上之后“信任：周报收已撤回的判断”“报告：不核对受众”两条漏检——它们现在被“发现”只因为副本里没有词表（PLT-14 报告，待人处理）
+  [[ "${1:-}" == 诉求：* ]] && ln -s "$ROOT/docs" "$work/docs"
   ln -s "$ROOT/services/learning" "$work/services/learning"  # 诊断集成测试起学习服务进程（只读用，不改）
   echo "$work"
 }
@@ -446,7 +459,7 @@ for spec in "${SM[@]}"; do
   IFS=$'\t' read -r name file from to <<< "$spec"
   if [ -n "$FILTER" ] && [[ "$name" != *"$FILTER"* ]]; then continue; fi
   total=$((total + 1))
-  work="$(star_copy)"
+  work="$(star_copy "$name")"
   unique=0; [[ "$name" == H6：* ]] && unique=1
   if ! MUT_UNIQUE=$unique MUT_FILE="$work/services/bff/$file" MUT_FROM="$from" MUT_TO="$to" python3 - <<'PYM'
 import os, sys

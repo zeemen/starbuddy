@@ -25,7 +25,7 @@
 ## 字典
 
 <!-- BEGIN GENERATED: dictionary -->
-字典版本 0.9.0（draft）；字段 47 个。
+字典版本 0.9.0（draft）；字段 51 个。
 
 ### g1 基础身份与学习环境（outer）
 
@@ -114,6 +114,10 @@
 |---|---|---|---|---|---|---|---|
 | `through.g9.focus_subject` | 最想改善的学科 | fact | 学生自述 | Agent、学生、家长 | `insight.self_report.value` | live | 跨科时间预算的优先级 |
 | `through.g9.near_term_goal` | 近期目标（学生自述） | fact | 学生自述 | Agent、学生、家长 | `insight.self_report.value` | live | 两周学习路径的终点与复盘口径；与家长期望不同时两边都存 |
+| `through.g9.guardian_focus_subjects` | 家长关注的学科 | fact | 家长观察 | Agent、家长 | `insight.guardian_goal.focus_subjects` | planned | 月度计划跨科排序时作为权重项之一（PLT-14 第 2 步）；不作为对学生的陈述 |
+| `through.g9.guardian_target_scores` | 家长设定的分科目标分 | fact | 家长观察 | Agent、家长 | `insight.guardian_goal.target_scores` | planned | 与已录入的学校考试分科成绩对比，分解出差距所在的学科（PLT-14 第 2 步）；只给区间与下一步，不给概率与承诺 |
+| `through.g9.guardian_target_school` | 家长关注的高中学校 | fact | 家长观察 | Agent、家长 | `insight.guardian_goal.school_id` | planned | 家长端只显示招录库里已发布的事实（往年线、计划数），不计算够不够得着；不改变学生端任何内容 |
+| `through.g9.guardian_goal_note` | 家长补充说明 | fact | 家长观察 | Agent、家长 | `insight.guardian_goal.note` | planned | 月度计划的人工复核参考；不进入任何自动判断与学生端 |
 | `through.g9.disputes` | 对判断的异议 | fact | 学生自述、家长观察 | Agent、学生、家长 | `insight.dispute.kind（记录录入人：insight.dispute.raised_by）` | planned | “我其实会”24 小时内推送验证题；“识别错了”打开原始事实供更正 |
 | `through.g9.interventions` | 触发的提醒、处方、鼓励与降负 | inference | 模型推断 | Agent | `insight.intervention_log.action` | planned | 评估触发规则是否奏效，避免同一提醒重复 |
 | `through.g9.weekly_snapshot` | 每周画像快照 | inference | 模型推断 | Agent | `insight.profile_snapshot.payload（SIE-03 建）` | planned | 成长轨迹与“与一个月前的自己相比”的依据 |

@@ -288,6 +288,9 @@ BEGIN
   -- 届别更正记录（0045）：家长经 BFF 更正一次（每次 ±1；方向取更正后当前年级仍在 7–9 的一边）
   PERFORM t.p_bff(g, format($f$SELECT platform.correct_exam_cohort(%L, (CASE WHEN platform.current_grade((p.exam_cohort + 1)::smallint, now()) IS NOT NULL
       THEN p.exam_cohort + 1 ELSE p.exam_cohort - 1 END)::smallint)::text FROM platform.student_profile p WHERE p.id = %L$f$, s, s));
+  -- 家长诉求（0053，PLT-14）：家长经 BFF 提交一版（补充说明带该学生的内容标记；X1 初二、X2 初三都不设学校）
+  PERFORM t.p_bff(g, format($f$SELECT insight.submit_guardian_goal(%L, '{aya}', '[{"subject": "aya", "full_score": 120, "target_score": 100}]',
+                                                                    NULL, %L)::text$f$, s, '合成诉求-' || p_token));
   -- ---- 导出（家长，0035）：导出任务是豁免表
   PERFORM t.p_bff(g, format('SELECT platform.export_student_data(%L)::text', s));
 END $$;

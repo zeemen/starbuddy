@@ -155,3 +155,25 @@ ADR 09 建议 pilot 和生产全链路境内。Supabase 托管版没有中国大
 - 待签字：随 SIE-01 的 PR 一起评审（必停项：迁移、RLS 与权限、画像可见范围）。
 - **0027（数学自适应诊断，specs/sie-02a-math-diagnosis）**：`platform.diagnosis_session` / `diagnosis_step` 只由学习服务写；学生经 BFF 只读自己的进度列，家长读不到；步骤只存选题决策与引用，对错以 `grade_result` 为准；过程观察以新原因 `process_observation` 挂诊断步骤进统一复核队列。只改 platform。
 - **0028（洞察服务只读授权，specs/sie-02b-claims-first-report #4）**：`starbuddy_insight` 列级只读 platform 的掌握估计、观测、错因、判分结论、作答与证据的属性列，不给任何原文、维度、账号与家庭表，不给写权限（79j）。只改 platform。
+
+## 增补（2026-10-10，PLT-14，待签字）
+
+specs/family-goals-monthly-plan 第 1 步（家长诉求收集），迁移 0053（草稿）。不改上文已采纳的内容。
+
+- **唯一结构化来源**：`insight.guardian_goal` 是“关注学科、分科目标分、关注学校”三项家长诉求的唯一结构化来源（另有补充说明文本）。
+  0006 的 `platform.guardian_report` 中 `expectation` 主题（字段 `outer.g8.expectation`）只作家长的叙述文本，PLT-14 第 2 步计算月度计划的权重时**不读它**；
+  两处不存同一事实的结构化副本（CLAUDE.md 规则 2）。
+- **为什么另开新表，而不是写进 `insight.guardian_report` 的字段白名单**：
+  1. 多字段原子成版：一次提交是四个字段一起的一版（version 递增、旧版标 superseded_at），按字段各自替换会拼出家长从没提交过的组合；
+  2. 关注学校用外键引用 `policy.school`（只能引用已复核发布、在办、同地区的学校），jsonb 取值里做不了外键；
+  3. 关注学科是 `platform.subject[]` 数组（最多 2 科、限在读学科），目标分按科成组，表约束直接核对。
+- **两处跨 schema 依赖**（与 0050 已登记的“来源清单”例外同一思路：同一条规则只留一份）：
+  1. 外键 `insight.guardian_goal.school_id → policy.school(id)`：个人层引用公共层，方向是 insight → policy；policy 侧没有任何指向个人层的键（80 号攻击面断言不变）。
+     policy 的学校行发布后不删除（写入方没有 DELETE 权限），外键不会挡住公共层的正常维护；
+  2. 运行时调用 `policy.has_hidden_chars`（0050）：补充说明拒绝 Unicode Cc、Cf、Zl、Zp。用 plpgsql 在运行时调用，不登记依赖；
+     0050 单独回滚期间诉求写入一律失败（fail closed），重新执行后恢复。
+- **一个迁移只改一个 schema**：0053 只建 insight 对象，另在 `platform.personal_table_registry` 登记一行（与 0036 周报同一做法）。
+- **写入方与可见范围**：只经 SECURITY DEFINER 函数（属主 authz，只授 BFF），按 guardian_student_link 核对当前账号；学生不可见；
+  学习服务、洞察服务暂不授权读取（第 2 步再定）。
+- 若本增补不被接受：替代方案是把表移到 `platform.*`（表结构与函数不变，只改 schema 名），迁移仍是草稿、未执行。
+- 待签字：随 PLT-14 第 1 步的 PR 一起评审（必停项：迁移、RLS 与权限、画像可见范围）。

@@ -19,6 +19,9 @@ export const REPORT_BASE = `http://127.0.0.1:${Number(process.env['WEB_REPORT_PO
 /** 错题再练的第五套（specs/practice-loop-stage1 PR 4，playwright.config.ts 的 practice-on 项目）：前端与它连的 BFF */
 export const PRACTICE_BFF = process.env['STARBUDDY_PRACTICE_BFF_URL'] ?? 'http://127.0.0.1:8794';
 export const PRACTICE_BASE = `http://127.0.0.1:${Number(process.env['WEB_PRACTICE_PORT'] ?? 3104)}`;
+/** 家长诉求的第六套（PLT-14 第 1 步，playwright.config.ts 的 family-on 项目）：前端与它连的 BFF */
+export const FAMILY_BFF = process.env['STARBUDDY_FAMILY_BFF_URL'] ?? 'http://127.0.0.1:8795';
+export const FAMILY_BASE = `http://127.0.0.1:${Number(process.env['WEB_FAMILY_PORT'] ?? 3105)}`;
 /** 当前页面所在的那一套：前端来源与它连的 BFF（CSRF 令牌由各自的 BFF 签，不能混用） */
 export const endpointsOf = (page: Page): { base: string; bff: string } => {
   const origin = new URL(page.url()).origin;
@@ -26,12 +29,13 @@ export const endpointsOf = (page: Page): { base: string; bff: string } => {
   if (origin === STARMAP_BASE) return { base: STARMAP_BASE, bff: STARMAP_BFF };
   if (origin === REPORT_BASE) return { base: REPORT_BASE, bff: REPORT_BFF };
   if (origin === PRACTICE_BASE) return { base: PRACTICE_BASE, bff: PRACTICE_BFF };
+  if (origin === FAMILY_BASE) return { base: FAMILY_BASE, bff: FAMILY_BFF };
   return { base: BASE, bff: BFF };
 };
 
 /** 合成家长的登录号码（未分配的国家码 +999） */
 export const PHONE = { gS: '+99900000101', gO: '+99900000102', gD: '+99900000105', gH: '+99900000106', gV: '+99900000107', gR: '+99900000108',
-                        gP: '+99900000109' } as const;
+                        gP: '+99900000109', gG: '+99900000110' } as const;
 /** 学生档案 → 打开学生模式的家长 */
 export const GUARDIAN_OF: Record<string, keyof typeof PHONE> = {
   '5a000000-0000-4000-8000-0000000000c1': 'gS',  // S1
@@ -47,6 +51,8 @@ export const GUARDIAN_OF: Record<string, keyof typeof PHONE> = {
   '59000000-0000-4000-8000-0000000000c1': 'gP',  // P1（错题再练：走完闭环）
   '59000000-0000-4000-8000-0000000000c2': 'gP',  // P2（错题再练：宵禁）
   '59000000-0000-4000-8000-0000000000c3': 'gP',  // P3（错题再练：没有权益）
+  '57530000-0000-4000-8000-0000000000c9': 'gG',  // G9（家长诉求：初三，在读数学、语文）
+  '57530000-0000-4000-8000-0000000000c8': 'gG',  // G8（家长诉求：初二，在读数学）
 };
 
 /** 捕获收件箱里这个号码在 after 之后最近一条验证码（等 BFF 写完） */

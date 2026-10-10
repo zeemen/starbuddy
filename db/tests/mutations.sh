@@ -1145,6 +1145,33 @@ M+=(
   ["攻击面：清单取锁函数授给学习服务"]="GRANT EXECUTE ON FUNCTION $LSH TO starbuddy_learning;"
 )
 
+# PLT-14 第 1 步 家长诉求（0053，specs/family-goals-monthly-plan）：由 79zb 发现（授权类的同时由 80 的快照、清单类由 79p 发现）。
+# DBMUT_FILTER=家长诉求 只跑这一组
+GGS='insight.submit_guardian_goal(uuid, platform.subject[], jsonb, uuid, text)'
+GGV='insight.guardian_goal_view(uuid)'
+M+=(
+  ["家长诉求：写入认学生本人"]="$(afr "$GGS" "'IF p_student IS NULL OR NOT platform.is_linked_guardian(p_student) THEN'" "'IF p_student IS NULL OR NOT platform.can_read_student(p_student) THEN'")"
+  ["家长诉求：学生读得到"]="$(afr "$GGV" "'IF p_student IS NULL OR NOT platform.is_linked_guardian(p_student) THEN'" "'IF p_student IS NULL OR NOT platform.can_read_student(p_student) THEN'")"
+  ["家长诉求：取值核对先于授权"]="$(afr "$GGS" "'-- 授权先于一切取值核对'" "'IF NOT insight.valid_goal_note(p_note) THEN RAISE EXCEPTION ''x'' USING ERRCODE = ''invalid_parameter_value''; END IF; -- 授权先于一切取值核对'")"
+  ["家长诉求：更正覆盖另一位家长"]="$(afr "$GGS" "'WHERE student_id = p_student AND guardian_account_id = v_me AND superseded_at IS NULL;'" "'WHERE student_id = p_student AND superseded_at IS NULL;'")"
+  ["家长诉求：历史可改写"]="DROP TRIGGER guard_fact_update ON insight.guardian_goal;"
+  ["家长诉求：暂停的学科也算在读"]="$(afr "$GGS" "'n.subject::text = x.s AND n.status = ''active'')) THEN'" "'n.subject::text = x.s)) THEN'")"
+  ["家长诉求：初二可设学校"]="$(afr "$GGS" "'IF v_grade <> 9 THEN'" "'IF false THEN'")"
+  ["家长诉求：学校不看发布与在办"]="$(afr "$GGS" "'WHERE h.id = p_school AND h.review_status = ''published'' AND h.status = ''active'''" "'WHERE h.id = p_school'")"
+  ["家长诉求：学校不看地区"]="$(afr "$GGS" "'AND d.status = ''published'' AND h.city::text = v_region) THEN'" "'AND d.status = ''published'') THEN'")"
+  ["家长诉求：可选学校不分年级"]="$(afr "$GGV" "'CASE WHEN v_grade = 9 THEN'" "'CASE WHEN true THEN'")"
+  ["家长诉求：说明不拒隐形字符"]="CREATE OR REPLACE FUNCTION insight.valid_goal_note(p text) RETURNS boolean LANGUAGE plpgsql IMMUTABLE SET search_path = pg_catalog, pg_temp AS \$f\$ BEGIN RETURN p IS NULL OR char_length(p) BETWEEN 1 AND 200; END \$f\$;"
+  ["家长诉求：不限写入量"]="$(afr "$GGS" "'>= 20 THEN'" "'>= 2000 THEN'")"
+  ["家长诉求：已毕业照样写"]="$(afr "$GGS" "'IF v_grade IS NULL THEN'" "'IF false THEN'")"
+  ["家长诉求：来源不限家长"]="ALTER TABLE insight.guardian_goal DROP CONSTRAINT guardian_goal_source_type_check;"
+  ["家长诉求：学习服务可读表"]="GRANT SELECT ON insight.guardian_goal TO starbuddy_learning;"
+  ["家长诉求：洞察服务可调读函数"]="GRANT EXECUTE ON FUNCTION $GGV TO starbuddy_insight;"
+  ["家长诉求：导出不按作者过滤"]="UPDATE platform.personal_table_registry SET export_filter = NULL WHERE nspname = 'insight' AND relname = 'guardian_goal';"
+  ["家长诉求：目标分校验依赖短路"]="CREATE OR REPLACE FUNCTION insight.valid_goal_targets(p jsonb) RETURNS boolean LANGUAGE sql IMMUTABLE SET search_path = pg_catalog AS \$f\$ SELECT jsonb_typeof(p) = 'array' AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(p) e WHERE NOT ((e ->> 'full_score')::numeric > 0 AND (e ->> 'full_score')::numeric <= 300 AND (e ->> 'target_score')::numeric BETWEEN 0 AND (e ->> 'full_score')::numeric) OR jsonb_typeof(e) <> 'object' OR NOT (e ->> 'subject') = ANY (enum_range(NULL::platform.subject)::text[])) \$f\$;"
+  ["家长诉求：学校名称不看在办"]="$(afr "$GGV" "'WHERE h.id = g.school_id AND h.review_status = ''published'' AND h.status = ''active'''" "'WHERE h.id = g.school_id AND h.review_status = ''published'''")"
+  ["家长诉求：不登记个人层表清单"]="DELETE FROM platform.personal_table_registry WHERE nspname = 'insight' AND relname = 'guardian_goal';"
+)
+
 # G 流第二部分 PR D：审核台读内容版本与发布记录（0042）、时政过期下架（0043）：由 79w 发现（授权类的同时由 80 的快照发现）。
 # DBMUT_FILTER=审核台读 与 DBMUT_FILTER=时政下架 只跑这两组
 RCL='platform.content_version_list(platform.subject)'

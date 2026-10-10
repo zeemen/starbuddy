@@ -58,6 +58,7 @@ col|insight.exam_reconciliation.sentences|starbuddy_insight|INSERT|SUPERUSER
 col|insight.exam_reconciliation.student_id|starbuddy_eraser|SELECT|SUPERUSER
 col|insight.exam_reconciliation.student_id|starbuddy_insight|INSERT|SUPERUSER
 col|insight.exam_record.student_id|starbuddy_eraser|SELECT|SUPERUSER
+col|insight.guardian_goal.student_id|starbuddy_eraser|SELECT|SUPERUSER
 col|insight.guardian_report.student_id|starbuddy_eraser|SELECT|SUPERUSER
 col|insight.intervention_log.action|starbuddy_insight|INSERT|SUPERUSER
 col|insight.intervention_log.claim_ids|starbuddy_insight|INSERT|SUPERUSER
@@ -503,6 +504,8 @@ func|insight.exam_freeze_at(date)|starbuddy_authz|EXECUTE|SUPERUSER
 func|insight.exam_freeze_at(date)|starbuddy_insight|EXECUTE|SUPERUSER
 func|insight.freeze_due_predictions(timestamp with time zone)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|insight.freeze_due_predictions(timestamp with time zone)|starbuddy_scheduler|EXECUTE|starbuddy_authz
+func|insight.guardian_goal_view(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|insight.guardian_goal_view(uuid)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|insight.intervention_claims_ok(uuid,uuid[])|starbuddy_insight|EXECUTE|SUPERUSER
 func|insight.link_probe_attempt(uuid,uuid,uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|insight.link_probe_attempt(uuid,uuid,uuid)|starbuddy_bff|EXECUTE|starbuddy_authz
@@ -526,6 +529,8 @@ func|insight.submit_exam_record(uuid,platform.subject,text,date,numeric,numeric,
 func|insight.submit_exam_record(uuid,platform.subject,text,date,numeric,numeric,text,text,text)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|insight.submit_exam_score(uuid,uuid,numeric)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|insight.submit_exam_score(uuid,uuid,numeric)|starbuddy_bff|EXECUTE|starbuddy_authz
+func|insight.submit_guardian_goal(uuid,platform.subject[],jsonb,uuid,text)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|insight.submit_guardian_goal(uuid,platform.subject[],jsonb,uuid,text)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|insight.submit_guardian_report(uuid,text,jsonb)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|insight.submit_guardian_report(uuid,text,jsonb)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|insight.submit_self_report(uuid,text,jsonb)|starbuddy_authz|EXECUTE|starbuddy_authz
@@ -533,6 +538,9 @@ func|insight.submit_self_report(uuid,text,jsonb)|starbuddy_bff|EXECUTE|starbuddy
 func|insight.valid_behavior_payload(text,jsonb)|starbuddy_authz|EXECUTE|SUPERUSER
 func|insight.valid_code_set(text[],text[])|starbuddy_authz|EXECUTE|SUPERUSER
 func|insight.valid_code_set(text[],text[])|starbuddy_insight|EXECUTE|SUPERUSER
+func|insight.valid_goal_note(text)|starbuddy_authz|EXECUTE|SUPERUSER
+func|insight.valid_goal_subjects(platform.subject[])|starbuddy_authz|EXECUTE|SUPERUSER
+func|insight.valid_goal_targets(jsonb)|starbuddy_authz|EXECUTE|SUPERUSER
 func|insight.valid_node_ids(text[],integer,integer)|starbuddy_authz|EXECUTE|SUPERUSER
 func|insight.valid_node_ids(text[],integer,integer)|starbuddy_insight|EXECUTE|SUPERUSER
 func|insight.valid_reconciliation_sentences(jsonb)|starbuddy_authz|EXECUTE|SUPERUSER
@@ -849,6 +857,7 @@ owner|insight.basis_belongs(insight.basis_kind,uuid,uuid)|starbuddy_authz
 owner|insight.claim_history_guard()|starbuddy_authz
 owner|insight.claim_log()|starbuddy_authz
 owner|insight.freeze_due_predictions(timestamp with time zone)|starbuddy_authz
+owner|insight.guardian_goal_view(uuid)|starbuddy_authz
 owner|insight.link_probe_attempt(uuid,uuid,uuid)|starbuddy_authz
 owner|insight.onboarding_stats(timestamp with time zone,timestamp with time zone)|starbuddy_authz
 owner|insight.onboarding_view(uuid)|starbuddy_authz
@@ -859,6 +868,7 @@ owner|insight.record_onboarding_step(uuid,text,text)|starbuddy_authz
 owner|insight.submit_exam_plan(uuid,platform.subject,text,date,numeric,text[])|starbuddy_authz
 owner|insight.submit_exam_record(uuid,platform.subject,text,date,numeric,numeric,text,text,text)|starbuddy_authz
 owner|insight.submit_exam_score(uuid,uuid,numeric)|starbuddy_authz
+owner|insight.submit_guardian_goal(uuid,platform.subject[],jsonb,uuid,text)|starbuddy_authz
 owner|insight.submit_guardian_report(uuid,text,jsonb)|starbuddy_authz
 owner|insight.submit_self_report(uuid,text,jsonb)|starbuddy_authz
 owner|insight.verify_actor(uuid,text,uuid)|starbuddy_authz
@@ -1003,6 +1013,10 @@ rel|insight.exam_record|starbuddy_authz|UPDATE|SUPERUSER
 rel|insight.exam_record|starbuddy_eraser|DELETE|SUPERUSER
 rel|insight.exam_record|starbuddy_insight|SELECT|SUPERUSER
 rel|insight.exam_record|starbuddy_learning|SELECT|SUPERUSER
+rel|insight.guardian_goal|starbuddy_authz|INSERT|SUPERUSER
+rel|insight.guardian_goal|starbuddy_authz|SELECT|SUPERUSER
+rel|insight.guardian_goal|starbuddy_authz|UPDATE|SUPERUSER
+rel|insight.guardian_goal|starbuddy_eraser|DELETE|SUPERUSER
 rel|insight.guardian_report|starbuddy_authz|INSERT|SUPERUSER
 rel|insight.guardian_report|starbuddy_authz|SELECT|SUPERUSER
 rel|insight.guardian_report|starbuddy_authz|UPDATE|SUPERUSER
@@ -1405,6 +1419,7 @@ secdef|insight.basis_belongs(insight.basis_kind,uuid,uuid)
 secdef|insight.claim_history_guard()
 secdef|insight.claim_log()
 secdef|insight.freeze_due_predictions(timestamp with time zone)
+secdef|insight.guardian_goal_view(uuid)
 secdef|insight.link_probe_attempt(uuid,uuid,uuid)
 secdef|insight.onboarding_stats(timestamp with time zone,timestamp with time zone)
 secdef|insight.onboarding_view(uuid)
@@ -1415,6 +1430,7 @@ secdef|insight.record_onboarding_step(uuid,text,text)
 secdef|insight.submit_exam_plan(uuid,platform.subject,text,date,numeric,text[])
 secdef|insight.submit_exam_record(uuid,platform.subject,text,date,numeric,numeric,text,text,text)
 secdef|insight.submit_exam_score(uuid,uuid,numeric)
+secdef|insight.submit_guardian_goal(uuid,platform.subject[],jsonb,uuid,text)
 secdef|insight.submit_guardian_report(uuid,text,jsonb)
 secdef|insight.submit_self_report(uuid,text,jsonb)
 secdef|insight.verify_actor(uuid,text,uuid)

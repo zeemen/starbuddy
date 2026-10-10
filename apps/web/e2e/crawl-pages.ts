@@ -40,6 +40,9 @@ export const CRAWL: Record<string, CrawlPage | Excluded> = {
   'family/[studentId]/page.tsx': { who: 'guardian', path: (s) => `/family/${s}` },
   'family/[studentId]/star-map/page.tsx': { who: 'guardian', path: (s) => `/family/${s}/star-map` },
   'family/[studentId]/time/page.tsx': { who: 'guardian', path: (s) => `/family/${s}/time` },
+  // 家长诉求（PLT-14 第 1 步）：开关 STARBUDDY_FAMILY_GOALS 在现有各套里都关，同一地址一律是 404 页（安全头照样核对）；
+  // 打开开关的一套要等 playwright.config.ts / scripts/e2e.sh 接线（PLT-11 正在改这两个文件，已报告）
+  'family/[studentId]/goals/page.tsx': { who: 'guardian', path: (s) => `/family/${s}/goals`, status: 404 },
   'family/[studentId]/why/[claimId]/page.tsx': { who: 'guardian', path: (s) => `/family/${s}/why/${NO_ID}`, trustOn: true },
   'family/[studentId]/disputes/page.tsx': { who: 'guardian', path: (s) => `/family/${s}/disputes`, trustOn: true },
   'family/[studentId]/exams/page.tsx': { who: 'guardian', path: (s) => `/family/${s}/exams`, trustOn: true },

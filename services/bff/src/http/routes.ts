@@ -18,6 +18,7 @@ import { TRUST_ROUTES } from './trust-routes.ts';
 import { STAR_MAP_V1_ROUTES } from './star-map-v1-routes.ts';
 import { PRACTICE_ROUTES } from './practice-routes.ts';
 import { RETEST_ROUTES } from './retest-routes.ts';
+import { FAMILY_GOALS_ROUTES } from './family-goals-routes.ts';
 import type { PracticeOptions } from '../practice/service.ts';
 import type { RetestOptions } from '../retest/service.ts';
 import type { TrustFeature } from '../trust/features.ts';
@@ -76,6 +77,8 @@ export interface ShellDeps {
   /** 复测与验证题（retest-routes.ts，specs/retest-delivery-kge05）：开关 retest（STARBUDDY_RETEST_UI，缺省关，路由不注册）、
    *  学习服务复测客户端（开关打开但不配时三条路由 503） */
   retest?: RetestOptions;
+  /** 家长诉求（family-goals-routes.ts，PLT-14 第 1 步）：开关 family_goals（STARBUDDY_FAMILY_GOALS，缺省关，路由不注册） */
+  familyGoals?: { enabled: boolean };
 }
 
 export type Query = <R extends QueryResultRow = QueryResultRow>(sql: string, params?: unknown[]) => Promise<{ rows: R[] }>;
@@ -107,6 +110,9 @@ export interface Route {
   ownTx?: boolean;
   /** 挂在哪个信任界面开关上（SIE-03 PR③）：开关关闭时不注册，与表外路径同一个 404 */
   feature?: TrustFeature;
+  /** 只给家长、学生会话一律 404（家长诉求，PLT-14）：auth 仍是 session（学生不能从 403 得知接口存在），
+   *  server.ts 在请求体错误、CSRF、限流之前对学生会话回与“不存在”逐字节相同的 404 */
+  guardianOnly404?: true;
   handler: Handler;
 }
 
@@ -286,11 +292,13 @@ export const ROUTES: readonly Route[] = [
   ...SHELL_ROUTES,
 ];
 
-/** 本次部署实际注册的路由：固定路由表 + 已打开开关的信任界面路由 + 星图 v1（starmap_v1）+ 错题再练（practice）（开关缺省全关） */
+/** 本次部署实际注册的路由：固定路由表 + 已打开开关的信任界面路由 + 星图 v1（starmap_v1）+ 错题再练（practice）+ 复测（retest）
+ *  + 家长诉求（family_goals，PLT-14）（开关缺省全关） */
 export function activeRoutes(features: ReadonlySet<TrustFeature> = new Set(), starMap: ReadonlySet<StarMapFeature> = new Set(),
-                             practice = false, retest = false): readonly Route[] {
+                             practice = false, retest = false, familyGoals = false): readonly Route[] {
   return [...ROUTES, ...TRUST_ROUTES.filter((r) => r.feature !== undefined && features.has(r.feature)),
-          ...(starMap.has('starmap_v1') ? STAR_MAP_V1_ROUTES : []), ...(practice ? PRACTICE_ROUTES : []), ...(retest ? RETEST_ROUTES : [])];
+          ...(starMap.has('starmap_v1') ? STAR_MAP_V1_ROUTES : []), ...(practice ? PRACTICE_ROUTES : []), ...(retest ? RETEST_ROUTES : []),
+          ...(familyGoals ? FAMILY_GOALS_ROUTES : [])];
 }
 
 /** 路由模板编译成正则：路径参数（student_id、session_id、probe_id、claim_id、exam_id、export_job_id、request_id、entry_id）一律只匹配小写 UUID；学科码 {subject} 只匹配小写字母（H4） */

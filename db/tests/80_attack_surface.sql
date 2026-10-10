@@ -324,7 +324,10 @@ INSERT INTO t.function_matrix_exempt VALUES
   ('platform.cancel_erasure(uuid)',
    '参数是删除请求 ID：只有该学生的有效绑定家长能撤回，别户与不存在的请求同样 42501：79p_erasure'),
   ('insight.link_probe_attempt(uuid,uuid,uuid)',
-   '探针与作答都按学生本人核对，别人的探针与“不存在”同样报错：79g_behavior_events 的“不能关联别人的探针”');
+   '探针与作答都按学生本人核对，别人的探针与“不存在”同样报错：79g_behavior_events 的“不能关联别人的探针”'),
+  ('insight.submit_guardian_goal(uuid,platform.subject[],jsonb,uuid,text)',
+   '第二个 uuid 是关注学校（policy.school，公共层）；授权先于取值核对，别家、学生本人、已解除绑定与不存在的学生同样 42501：'
+   '79zb_guardian_goal 的“按绑定授权”与“别家家长带非法取值：先按授权拒绝”');
 
 CREATE FUNCTION t.readable_students(acc uuid) RETURNS uuid[] LANGUAGE sql STABLE AS $$
   SELECT coalesce(array_agg(DISTINCT s.id ORDER BY s.id), '{}')

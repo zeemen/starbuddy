@@ -70,3 +70,18 @@ test('H5 星图 v1 开关只在 dev / test：staging、pilot、生产设了 STAR
   assert.equal(r.status, 2);
   assert.match(r.stderr, /STARBUDDY_STARMAP/);
 });
+
+test('家长诉求开关只在 dev / test（PLT-14）：staging、pilot、生产设了 STARBUDDY_FAMILY_GOALS 就拒绝启动；test 下不认识的值也拒绝', () => {
+  for (const env of ['production', 'pilot', 'staging']) {
+    const r = start({ STARBUDDY_ENV: env, STARBUDDY_FAMILY_GOALS: 'family_goals', BFF_LOG_HMAC_KEY: hex(), BFF_AUTH_SECRET: hex(), BFF_TRUST_SECRET: hex(),
+                      BFF_SHELL_ORIGIN: 'https://shell.example.invalid' });
+    assert.equal(r.status, 2, env);
+    assert.match(r.stderr, /STARBUDDY_FAMILY_GOALS/, env);
+  }
+  const r = start({ STARBUDDY_ENV: 'test', STARBUDDY_FAMILY_GOALS: 'monthly_plan' });
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /STARBUDDY_FAMILY_GOALS/);
+  // 合法取值能过开关解析（之后因为连不上数据库才退出，错误信息不是开关的）
+  const ok = start({ STARBUDDY_ENV: 'test', STARBUDDY_FAMILY_GOALS: 'family_goals' });
+  assert.doesNotMatch(ok.stderr, /STARBUDDY_FAMILY_GOALS/);
+});

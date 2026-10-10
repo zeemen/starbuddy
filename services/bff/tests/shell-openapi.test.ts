@@ -12,11 +12,13 @@ import { TRUST_ROUTES } from '../src/http/trust-routes.ts';
 import { STAR_MAP_V1_ROUTES } from '../src/http/star-map-v1-routes.ts';
 import { PRACTICE_ROUTES } from '../src/http/practice-routes.ts';
 import { RETEST_ROUTES } from '../src/http/retest-routes.ts';
+import { FAMILY_GOALS_ROUTES } from '../src/http/family-goals-routes.ts';
 import { operations, SPEC_FILES } from './openapi-ops.ts';
 
 // 路由表 + 信任界面路由（SIE-03 PR③，按开关注册；接口定义在 openapi/trust.v0.yaml）+ 星图 v1（H5，开关 starmap_v1；openapi/star-map.v1.yaml）
 // + 错题再练（开关 practice；openapi/practice.v0.yaml）+ 复测与验证题（开关 retest；openapi/retest.v0.yaml，KGE-05）
-const ALL = [...ROUTES, ...TRUST_ROUTES, ...STAR_MAP_V1_ROUTES, ...PRACTICE_ROUTES, ...RETEST_ROUTES];
+// + 家长诉求（开关 family_goals；openapi/family-goals.v0.yaml，PLT-14）
+const ALL = [...ROUTES, ...TRUST_ROUTES, ...STAR_MAP_V1_ROUTES, ...PRACTICE_ROUTES, ...RETEST_ROUTES, ...FAMILY_GOALS_ROUTES];
 
 const SPECS = SPEC_FILES.map((n) => readFileSync(new URL(`../openapi/${n}.yaml`, import.meta.url), 'utf8'));
 
@@ -99,6 +101,24 @@ test('复测与验证题：retest.v0.yaml 的操作集合恰好等于复测路�
   for (const c of codes) assert.ok(enumText.includes(c), `${c} 不在 retest.v0.yaml 的问题码枚举里`);
   // 与错题再练共用限流桶；路由都只给学生本人
   for (const r of RETEST_ROUTES) assert.deepEqual([r.auth, r.rateLimits.map((x) => x.bucket)], ['student', ['practice.session.minute']], r.path);
+});
+
+test('家长诉求：family-goals.v0.yaml 的操作集合恰好等于诉求路由；诉求路由不在固定路由表里（只随开关 family_goals 注册）；用到的问题码都在枚举里', async () => {
+  const spec = readFileSync(new URL('../openapi/family-goals.v0.yaml', import.meta.url), 'utf8');
+  assert.deepEqual(operationsOf(spec).sort(), FAMILY_GOALS_ROUTES.map((r) => `${r.method} ${PREFIX}${r.path}`).sort());
+  for (const r of FAMILY_GOALS_ROUTES) assert.ok(!ROUTES.includes(r), r.path);
+  const { P } = await import('../src/http/problems.ts');
+  const src = readFileSync(new URL('../src/http/family-goals-routes.ts', import.meta.url), 'utf8');
+  const enumText = /code:\s*\n\s*enum: \[([^\]]+)\]/.exec(spec)![1]!;
+  const used = [...src.matchAll(/\bP\.([A-Z_]+)/g)].map((m) => m[1]!);
+  assert.ok(used.length >= 7, used.join(','));
+  for (const k of used) {
+    const code = (JSON.parse((P as Record<string, string>)[k]!) as { code: string }).code;
+    assert.ok(enumText.includes(code), `${k} → ${code} 不在 family-goals.v0.yaml 的问题码枚举里`);
+  }
+  // 学生会话 404（不是 403）：路由 auth = session，由 handler 在任何查询之前拒绝；写按（家长，孩子）一对与账号限流
+  for (const r of FAMILY_GOALS_ROUTES) assert.equal(r.auth, 'session', r.path);
+  assert.deepEqual(FAMILY_GOALS_ROUTES.find((r) => r.method === 'PUT')!.rateLimits.map((x) => x.dim), ['link', 'account']);
 });
 
 test('路径参数只匹配 UUID', () => {

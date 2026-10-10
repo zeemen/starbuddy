@@ -46,7 +46,7 @@ import { operations } from './openapi-ops.ts';
 import { callAs, ORIGIN, startShell, type Sess, type ShellHarness } from './shell-harness.ts';
 
 /** 本次部署可能注册的全部路由（信任界面开关全开，H5 星图 v1 开关全开，错题再练开关打开，复测与验证题开关打开） */
-const ALL: readonly Route[] = activeRoutes(new Set(TRUST_FEATURES), new Set(STAR_MAP_FEATURES), true, true);
+const ALL: readonly Route[] = activeRoutes(new Set(TRUST_FEATURES), new Set(STAR_MAP_FEATURES), true, true, true);
 const keyOf = (r: Route) => `${r.method} ${r.path}`;
 const OPS = operations();
 const opOf = (r: Route) => OPS.get(`${r.method} ${PREFIX}${r.path}`)!;
@@ -130,6 +130,9 @@ export const SAMPLES: Record<string, Sample> = {
   'GET /students/{student_id}/retest/{subject}': none,
   'POST /students/{student_id}/retest/{subject}/entries/{entry_id}/next': none,
   'POST /students/{student_id}/retest/{subject}/answer': b(() => ({ ticket: `sbr1.${'A'.repeat(64)}`, answer: { text: '1' } })),
+  // 家长诉求（PLT-14 第 1 步，开关 family_goals）：只给家长，学生会话一律 404（guardianOnly404）；样例只设关注学科（S 在读数学）
+  'GET /students/{student_id}/family-goals': none,
+  'PUT /students/{student_id}/family-goals': b(() => ({ focus_subjects: ['aya'], target_scores: [], school_id: null, note: null })),
 };
 
 /**
@@ -389,6 +392,7 @@ before(async () => {
     starMap: { features: new Set(STAR_MAP_FEATURES), nodes: starNodes },
     practice: { enabled: true, learning: practiceLearning, retryDelaysMs: [1] },
     retest: { enabled: true, learning: retestLearning, retryDelaysMs: [1] },
+    familyGoals: { enabled: true },
   });
   // 会话都在改状态之前拿到（学生会话经 gF 打开学生模式）
   for (const a of [A.gF, A.gO, A.gU, A.gR, A.gD2, A.gX, A.aS, A.aS2, A.aT]) await sess(a);
@@ -499,6 +503,15 @@ test('H6 授权矩阵（从路由表生成）：未登录 401；账号类型不�
         same(await call(r.method, path, aS2, body), missing, `兄妹的学生会话 ${k}`);
         same(await call(r.method, path, aT, body), missing, `另一户的学生会话 ${k}`);
         same(await call(r.method, pathFor(r, MISSING), aS, body), missing, `学生会话 + 不存在 ${k}`);
+        if (r.guardianOnly404) {
+          // 只给家长的路由（家长诉求）：学生本人读写自己的档案、缺 CSRF、错 Origin、坏请求体，都与“不存在”逐字节相同（在 CSRF 与限流之前）
+          same(await call(r.method, path, aS, body), missing, `学生本人 ${k}`);
+          if (r.method !== 'GET') {
+            same(await call(r.method, path, aS, body, { csrf: null }), missing, `学生本人缺 CSRF ${k}`);
+            same(await call(r.method, path, aS, body, { origin: 'http://evil.test' }), missing, `学生本人错 Origin ${k}`);
+            same(await call(r.method, path, aS, undefined, { rawBody: '{bad' }), missing, `学生本人坏 JSON ${k}`);
+          }
+        }
       }
     }
   } finally {
@@ -536,7 +549,8 @@ test('H6 阳性对照：本人用真实二级 ID 的同一请求能通过授权�
   shell.forget(throwaway);
   for (const r of ALL.filter((x) => x.auth !== 'public')) {
     const k = keyOf(r);
-    const owners: Sess[] = r.auth === 'student' ? [aS] : r.auth === 'guardian' ? [gF] : [gF, aS];
+    // 只给家长的路由（guardianOnly404）：学生本人按设计 404，阳性对照只用家长
+    const owners: Sess[] = r.auth === 'student' ? [aS] : r.auth === 'guardian' || r.guardianOnly404 ? [gF] : [gF, aS];
     for (const owner of owners) {
       let who = owner;
       let subject = 'math';
@@ -709,7 +723,8 @@ test('H6 限流（从路由表断言）：每个桶都在 config/auth.json、名
       assert.equal(rule.window_seconds, WINDOW[win!], `${l.bucket} 名字里的窗口`);
       assert.ok(rule.limit >= 1);
       // （账号、学生）成对计数只对路径里有学生的家长路由有意义
-      if (l.dim === 'link') assert.ok(r.path.includes('{student_id}') && r.auth === 'guardian', `${keyOf(r)} 的 link 桶`);
+      // （家长诉求的路由 auth 是 session 但只给家长：guardianOnly404，学生会话在限流之前就 404，不会计入 link 桶）
+      if (l.dim === 'link') assert.ok(r.path.includes('{student_id}') && (r.auth === 'guardian' || r.guardianOnly404 === true), `${keyOf(r)} 的 link 桶`);
       // 按（账号、学生）成对计数的路由另有按账号的总量上限（换着学生 ID 试探也受限）
       if (l.dim === 'link') assert.ok(r.rateLimits.some((x) => x.dim === 'account'), `${keyOf(r)} 有 link 桶也要有按账号的总量桶`);
     }

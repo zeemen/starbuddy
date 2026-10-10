@@ -56,8 +56,9 @@ const header = (req: IncomingMessage, name: string): string | null => {
  * 由 createShellServer 回 404（表外一律 404）。
  */
 export function createShellHandler(deps: ShellDeps): (req: IncomingMessage, res: ServerResponse) => Promise<boolean> {
-  // 信任界面、星图 v1、错题再练开关关闭的路由不注册（表外 404）
-  const routes = activeRoutes(deps.trust?.features, deps.starMap?.features, deps.practice?.enabled === true, deps.retest?.enabled === true);
+  // 信任界面、星图 v1、错题再练、复测、家长诉求（PLT-14，开关 family_goals）开关关闭的路由不注册（表外 404）
+  const routes = activeRoutes(deps.trust?.features, deps.starMap?.features, deps.practice?.enabled === true, deps.retest?.enabled === true,
+                              deps.familyGoals?.enabled === true);
   const table = compile(routes);
   const shapes = templateShapes(routes);
   const log = deps.log ?? ((line) => console.log(JSON.stringify(line)));
@@ -102,7 +103,10 @@ export function createShellHandler(deps: ShellDeps): (req: IncomingMessage, res:
       if (params['student_id']) record['student'] = logHash(deps.keys, params['student_id']);
 
       // 请求体
+      // 家长诉求（PLT-14）：学生会话要在任何其他检查之前得到与“不存在”逐字节相同的 404，所以请求体的错误先记下，核对完会话类型再抛
+      const guardianOnly404 = route.guardianOnly404 === true;
       let body: Record<string, unknown> | null = null;
+      let bodyError: unknown = null;
       if (route.body) {
         try {
           body = await readJson(req);
@@ -111,7 +115,8 @@ export function createShellHandler(deps: ShellDeps): (req: IncomingMessage, res:
             res.setHeader('Connection', 'close');
             res.once('finish', () => req.destroy());
           }
-          throw e;
+          if (!guardianOnly404) throw e;
+          bodyError = e;
         }
       }
 
@@ -137,6 +142,9 @@ export function createShellHandler(deps: ShellDeps): (req: IncomingMessage, res:
           throw new Stop(P.FORBIDDEN);
         }
       }
+      // 家长诉求：学生会话一律 404（在请求体错误、CSRF、限流之前；与“不存在”的响应逐字节相同，学生端不知道有这个接口）
+      if (guardianOnly404 && session!.kind !== 'guardian') throw new Stop(P.NOT_FOUND);
+      if (bodyError !== null) throw bodyError;
 
       // CSRF：改变状态的请求 Origin 必须恰好是壳的来源；有会话的还要带与会话绑定的令牌（双重提交，apps/web 从表单转交）
       if (route.csrf !== 'none') {

@@ -116,7 +116,7 @@ fields:
     status: live
     teaching_decision: 把任务排进学生实际可学习的时段，并给出休息提醒
     guardian_deletable: true
-    note: "现表按主题存家长自由文本；结构化字段在 SIE-01 另建（待人确认 #6，已按默认确认）。同一主题只存一处：五个既有主题在 platform.guardian_report，新增主题在 insight.guardian_report"
+    note: "现表按主题存家长自由文本；结构化字段在 SIE-01 另建（待人确认 #6，已按默认确认）。同一主题只存一处：五个既有主题在 platform.guardian_report，新增主题在 insight.guardian_report。家长诉求（关注学科、分科目标分、关注学校）的唯一结构化来源是 insight.guardian_goal（0053，ADR 02 增补 2026-10-10 PLT-14）；platform.guardian_report 的期望主题只作叙述文本，月度计划算权重时不读它"
   - id: outer.g8.sleep_schedule
     name: 作息时间（家长观察原文）
     layer: fact
@@ -147,6 +147,7 @@ fields:
     status: live
     teaching_decision: 周报与对账卡的解释口径；与学生自述目标不同时两边都存，落差作为信号
     guardian_deletable: true
+    note: "只作家长的叙述文本。结构化的关注学科、分科目标分、关注学校只在 insight.guardian_goal（0053，ADR 02 增补 2026-10-10 PLT-14）；月度计划算权重时不读本字段"
   - id: outer.g8.cooperation_capacity
     name: 家长可配合程度
     layer: fact
@@ -554,6 +555,51 @@ fields:
     status: live
     teaching_decision: 两周学习路径的终点与复盘口径；与家长期望不同时两边都存
     guardian_deletable: true
+  # 家长诉求（PLT-14 第 1 步，迁移 0053 草稿）：学生不可见；只影响月度计划的优先顺序（spec 用户确认的口径 1），不进学生模型
+  - id: through.g9.guardian_focus_subjects
+    name: 家长关注的学科
+    layer: fact
+    source_type: [guardian]
+    collect: { level: optional, timing: periodic }
+    visibility: [agent, guardian]
+    storage: insight.guardian_goal.focus_subjects
+    status: planned
+    teaching_decision: 月度计划跨科排序时作为权重项之一（PLT-14 第 2 步）；不作为对学生的陈述
+    guardian_deletable: false
+    note: "来源 家长自述；学生不可见（字段与页面都不出现在学生端）。关注学科的唯一结构化来源（ADR 02 增补 2026-10-10 PLT-14）；platform.guardian_report 的期望主题只作叙述文本、不作权重来源。最多 2 科，限该学生在读的学科码；每位家长各存各的，更正为新的一版、旧版保留（只追加，不能单项删除）。学习服务、洞察服务暂无读权限（第 2 步再定）；开关 family_goals 只在 dev / test 打开。删除途径：随整档删除请求（0035）删除全部版本"
+  - id: through.g9.guardian_target_scores
+    name: 家长设定的分科目标分
+    layer: fact
+    source_type: [guardian]
+    collect: { level: optional, timing: periodic }
+    visibility: [agent, guardian]
+    storage: insight.guardian_goal.target_scores
+    status: planned
+    teaching_decision: 与已录入的学校考试分科成绩对比，分解出差距所在的学科（PLT-14 第 2 步）；只给区间与下一步，不给概率与承诺
+    guardian_deletable: false
+    note: "来源 家长自述；学生不可见。分科目标分的唯一结构化来源（ADR 02 增补 2026-10-10 PLT-14）。学校考试口径（月考、期中、期末的分科分），不是中考总分；每科 0 至该科满分，可不填；只追加，不能单项删除。删除途径：随整档删除请求（0035）删除全部版本"
+  - id: through.g9.guardian_target_school
+    name: 家长关注的高中学校
+    layer: fact
+    source_type: [guardian]
+    collect: { level: optional, timing: periodic }
+    visibility: [agent, guardian]
+    storage: insight.guardian_goal.school_id
+    status: planned
+    teaching_decision: 家长端只显示招录库里已发布的事实（往年线、计划数），不计算够不够得着；不改变学生端任何内容
+    guardian_deletable: false
+    note: "来源 家长自述；学生不可见。关注学校的唯一结构化来源（ADR 02 增补 2026-10-10 PLT-14），外键引用 policy.school（跨 schema 依赖，已登记）。只引用招录库已复核发布、在办、同地区的学校；按当前年级只有初三可设；只追加，不能单项删除。删除途径：随整档删除请求（0035）删除全部版本"
+  - id: through.g9.guardian_goal_note
+    name: 家长补充说明
+    layer: fact
+    source_type: [guardian]
+    collect: { level: optional, timing: periodic }
+    visibility: [agent, guardian]
+    storage: insight.guardian_goal.note
+    status: planned
+    teaching_decision: 月度计划的人工复核参考；不进入任何自动判断与学生端
+    guardian_deletable: false
+    note: "来源 家长自述；学生不可见。1 到 200 字，拒绝换行、零宽等隐形字符（运行时调用 policy.has_hidden_chars，跨 schema 依赖，已登记于 ADR 02 增补 2026-10-10 PLT-14）；提交前经禁用推断词表过滤，命中不存；只追加，不能单项删除。删除途径：随整档删除请求（0035）删除全部版本"
   - id: through.g9.disputes
     name: 对判断的异议
     layer: fact

@@ -12,6 +12,7 @@
 // 它们该不该留在 DOM 里由人决定（lessons 第 10 条）；这里只把现有取值列成白名单，别的编码一律不放行。
 import { expect, type Page } from '@playwright/test';
 import { FAMILY_RESULT } from '../src/auth/copy.ts';
+import { FAMILY_GOALS_RESULT } from '../src/family-goals/copy.ts';
 import {
   ADJUSTMENT, CONFIDENCE_BAND, DATA_RESULT, DEVIATION_DIRECTION, DISPUTE_KIND, DISPUTE_RESULT, DISPUTE_STATUS, ERASURE_CANCEL_REASON, ERASURE_SCOPE,
   ERASURE_STATUS, EXAM_RESULT, EXAM_SUBJECT, FIRST_REPORT_SECTION, PRACTICE_ERROR, RESOURCE_LABEL, SUBJECT_LABEL, TASK_KIND, WEEKLY_SECTION, WEEKLY_SOURCE, WHY_STATUS,
@@ -69,7 +70,9 @@ export const ATTRS: Record<string, Rule> = {
   'weekly-objective': [''], 'report-verify': [''],
   display: ['solid', 'dashed'],
   // 表单结果码（BFF 错误码与本地结果；异议的下一步编码不放行）
-  code: ['', ...new Set([...keys(DISPUTE_RESULT), ...keys(EXAM_RESULT), ...keys(DATA_RESULT), ...keys(FAMILY_RESULT)])].filter((k) => !FORBIDDEN_SET.has(k)),
+  // （家长诉求页的结果码 FAMILY_GOALS_RESULT，PLT-14 第 1 步）
+  code: ['', ...new Set([...keys(DISPUTE_RESULT), ...keys(EXAM_RESULT), ...keys(DATA_RESULT), ...keys(FAMILY_RESULT),
+                         ...keys(FAMILY_GOALS_RESULT)])].filter((k) => !FORBIDDEN_SET.has(k)),
   state: [...keys(ERASURE_STATUS), 'trialing', 'active', 'grace', 'retained', 'none'],
   frozen: BOOL, within: BOOL, 'pending-review': BOOL, retained: BOOL,
   'direction-index': /^[1-4]$/,                                        // 偏差方向只给序号，编码不进 DOM
