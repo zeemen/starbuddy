@@ -251,6 +251,9 @@ test('报告：洞察服务 404（无权、没有报告、检查不过）→ rep
 test('报告：受众对不上、多出外层键、禁用推断、要人工复核、判断不可见 / 过期 / 状态对不上 / 模板不在白名单 / 不属于该学生——整份不出（null）并记原因', { skip: !HAS_DB }, async () => {
   const cases: [string, (who: Who) => ReadOutcome, string][] = [
     ['受众对不上', () => ok(report('guardian', [[C['est']!, 'established']])), 'invalid_shape'],
+    // 句子形状合本次受众、只有 audience 字段标成另一受众：仍整份不出（受众核对本身，不靠置信度分档碰巧拒绝）
+    ['只有 audience 字段对不上', (w) => ok(report(w.audience, [[C['est']!, 'established']], { audience: w.audience === 'student' ? 'guardian' : 'student' })),
+     'invalid_shape'],
     ['result 多出 confidence', (w) => ok({ ...report(w.audience, [[C['est']!, 'established']]), confidence: 0.4 }), 'invalid_shape'],
     ['result 多出 evidence_ids', (w) => ok({ ...report(w.audience, [[C['est']!, 'established']]), evidence_ids: [E1] }), 'invalid_shape'],
     ['提示语命中禁用推断词表', (w) => ok(report(w.audience, [[C['est']!, 'established']], { notice: '（合成）孩子很聪明' })), 'forbidden_inference'],

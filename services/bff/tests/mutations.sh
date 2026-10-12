@@ -473,11 +473,11 @@ star_copy() {
   ln -s "$PWD/node_modules" "$work/services/bff/node_modules"
   ln -s "$ROOT/adapters" "$work/adapters"; ln -s "$ROOT/db" "$work/db"
   # 禁用推断词表（src/trust/lexicon.ts 按 ../../../../docs/design/sie/ 读）：没有它时带文字的路由 fail closed（503），
-  # 家长诉求的词表变异会因此“被发现”却不说明任何问题，所以“诉求：”一组的副本带上 docs。
-  # 其余组暂不带：带上之后“信任：周报收已撤回的判断”“报告：不核对受众”两条漏检——它们现在被“发现”只因为副本里没有词表（PLT-14 报告，待人处理）
-  [[ "${1:-}" == 诉求：* ]] && ln -s "$ROOT/docs" "$work/docs"
-  # 月度计划（PLT-14 第 3 步）：两张词表在 docs/design/sie/，模板库与洞察服务同一份文件（services/insight/templates/）；只读用，不改
-  if [[ "${1:-}" == 月度计划：* ]]; then ln -s "$ROOT/docs" "$work/docs"; ln -s "$ROOT/services/insight" "$work/services/insight"; fi
+  # 变异会因环境缺词表“被发现”却不说明任何问题。所以所有组的副本（含对照组）一律链接 docs，与仓库内跑测试的环境一致，
+  # 检测只反映对应断言（specs/bff-mutation-lexicon-fix）。只读用，不改。
+  ln -s "$ROOT/docs" "$work/docs"
+  # 月度计划（PLT-14 第 3 步）：模板库与洞察服务同一份文件（services/insight/templates/）；只读用，不改
+  [[ "${1:-}" == 月度计划：* ]] && ln -s "$ROOT/services/insight" "$work/services/insight"
   ln -s "$ROOT/services/learning" "$work/services/learning"  # 诊断集成测试起学习服务进程（只读用，不改）
   echo "$work"
 }

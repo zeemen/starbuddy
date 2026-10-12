@@ -123,6 +123,10 @@ test('报告：受众对不上、多键少键、格式与策略版本、长度�
   const bad: [string, unknown, 'student' | 'guardian'][] = [
     ['受众对不上', result('guardian'), 'student'],
     ['家长版当学生版', result('student'), 'guardian'],
+    // 只有 audience 字段与请求受众不一致（句子形状本身合本次受众）：靠受众核对本身拒绝，而不是靠置信度分档碰巧拒绝
+    ['学生形状但 audience 标家长', result('student', { audience: 'guardian' }), 'student'],
+    ['家长形状但 audience 标学生', result('guardian', { audience: 'student' }), 'guardian'],
+    ['audience 缺值', result('student', { audience: null }), 'student'],
     ['多一个键', { ...result('student'), confidence: 0.4 }, 'student'],
     ['多 evidence_ids', { ...result('student'), evidence_ids: [E1] }, 'student'],
     ['少一个键', (({ notice: _n, ...r }) => r)(result('student')), 'student'],

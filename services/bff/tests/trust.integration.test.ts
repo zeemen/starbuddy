@@ -733,14 +733,15 @@ test('周报：学生读学生版“成长手记”、家长读家长版；每�
   assert.deepEqual((await weeklyOf(O.kid.account, O.kid)).body, { student_id: O.kid.id, report: null });
 });
 
-test('周报：删掉或降为不可见任一判断、过期、白名单外、模板对不上，对应句子消失并记数；一句不剩时 report 为 null', { skip: !HAS_DB }, async () => {
+test('周报：删掉或降为不可见任一判断、撤回或待验证、过期、白名单外、模板对不上，对应句子消失并记数；一句不剩时 report 为 null', { skip: !HAS_DB }, async () => {
   const W = await family();
-  const [a, b, c, d, e] = [await claimW(W.kid), await claimW(W.kid), await claimW(W.kid), await claimW(W.kid, { template: TPL_HIDDEN }), await claimW(W.kid)];
+  const [a, b, c, d, e, f] = [await claimW(W.kid), await claimW(W.kid), await claimW(W.kid), await claimW(W.kid, { template: TPL_HIDDEN }), await claimW(W.kid),
+                              await claimW(W.kid)];
   await weeklyRow(W.kid, 'student', [wsent(a, 'lit', 'student'), wsent(b, 'working_on', 'student'), wsent(c, 'working_on', 'student'),
-                                     wsent(d, 'working_on', 'student', TPL_HIDDEN), wsent(e, 'working_on', 'student')]);
+                                     wsent(d, 'working_on', 'student', TPL_HIDDEN), wsent(e, 'working_on', 'student'), wsent(f, 'working_on', 'student')]);
   const ids = async () => ((await weeklyOf(W.kid.account, W.kid)).body.report?.sections ?? [])
     .flatMap((x: any) => x.sentences.map((y: any) => y.claim_id)).sort();
-  assert.deepEqual(await ids(), [a, b, c, e].sort(), '白名单外的判断即使可见也不展示');
+  assert.deepEqual(await ids(), [a, b, c, e, f].sort(), '白名单外的判断即使可见也不展示');
   const su = async (sql: string, p: unknown[]) => {
     const k = await h.su.connect();
     try {
@@ -755,9 +756,11 @@ test('周报：删掉或降为不可见任一判断、过期、白名单外、�
   await su(`UPDATE insight.claim SET visibility = '{agent,guardian}' WHERE id = $1`, [b]);          // 降为学生不可见
   await su(`UPDATE insight.claim SET status = 'withdrawn' WHERE id = $1`, [c]);                     // 撤回
   await su(`UPDATE insight.claim SET created_at = now() - interval '2 days', expires_at = now() - interval '1 minute' WHERE id = $1`, [e]); // 过期
+  // 待验证（to_verify）：前端 RLS（0010 claim_front_read）放行，只有周报的库内再核（只收成立或假设）挡得住；修订标记不变（replica 不跑守卫）
+  await su(`UPDATE insight.claim SET status = 'to_verify' WHERE id = $1`, [f]);
   logs.length = 0;
-  assert.deepEqual(await ids(), [a]);
-  assert.ok(logs.some((l) => l['dropped_statements'] === '4'), JSON.stringify(logs.slice(-3)));
+  assert.deepEqual(await ids(), [a], '周报只收成立或假设的判断：撤回、待验证的句子不出现');
+  assert.ok(logs.some((l) => l['dropped_statements'] === '5'), JSON.stringify(logs.slice(-3)));
   await su(`UPDATE insight.claim SET template_version = 2 WHERE id = $1`, [a]);                    // 模板对不上
   assert.deepEqual((await weeklyOf(W.kid.account, W.kid)).body, { student_id: W.kid.id, report: null });
 });
