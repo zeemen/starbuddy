@@ -599,7 +599,49 @@ fields:
     status: planned
     teaching_decision: 月度计划的人工复核参考；不进入任何自动判断与学生端
     guardian_deletable: false
-    note: "来源 家长自述；学生不可见。1 到 200 字，拒绝换行、零宽等隐形字符（运行时调用 policy.has_hidden_chars，跨 schema 依赖，已登记于 ADR 02 增补 2026-10-10 PLT-14）；提交前经禁用推断词表过滤，命中不存；只追加，不能单项删除。删除途径：随整档删除请求（0035）删除全部版本"
+    note: "来源 家长自述；学生不可见。1 到 200 字，拒绝换行、零宽等隐形字符（运行时调用 policy.has_hidden_chars，跨 schema 依赖，已登记于 ADR 02 增补 2026-10-10 PLT-14）；提交前经禁用推断词表过滤，命中不存；只追加，不能单项删除。月度计划（第 2 步）不读本字段。删除途径：随整档删除请求（0035）删除全部版本"
+  # 月度计划快照（PLT-14 第 2 步，迁移 0054 草稿）：洞察服务按月生成，结构化内容与模板键，不存渲染后的文字；关于学生的每一项都引用判断
+  - id: through.g9.monthly_study_plan
+    name: 月度学习计划
+    layer: inference
+    source_type: [objective, inferred, guardian]
+    collect: { level: automatic, timing: periodic }
+    visibility: [agent, student, guardian]
+    storage: insight.monthly_plan.student_plan
+    exposed_via: insight.claim
+    dimension: knowledge_mastery
+    launch_subjects: [aya]
+    status: planned
+    teaching_decision: 本月优先知识点（每项引用一条待点亮的知识掌握判断）、每周节奏、复测与分科小复评安排；只陈述做什么，不陈述学生是什么
+    guardian_deletable: false
+    note: "来源：客观记录（掌握行、复测任务、今日计划配置）、模型推断（每个优先知识点引用的待点亮判断）、家长观察（家长诉求里的关注学科，只作排序输入，不出现在本段任何字段里）。权益：当前主订阅的 weekly_report 取值含 monthly（不另设套餐开关）；每月一份、只追加。学生只经 insight.monthly_plan_student_view 读这一段，不含排序系数与任何来自家长诉求的字段；引用的判断读时再核（学生受众另要求不是家长观察来源）。position 是计划里的先后，不得渲染成名次。排序依据（plan_basis）与输入引用（input_refs）只供审计与重放，任何视图都不返回、任何计算都不读取。不能单项删除，删除途径：随整档删除请求（0035）删除"
+  - id: through.g9.monthly_guardian_notes
+    name: 月度家长注意事项
+    layer: inference
+    source_type: [objective, guardian]
+    collect: { level: automatic, timing: periodic }
+    visibility: [agent, guardian]
+    storage: insight.monthly_plan.guardian_notes
+    dimension: knowledge_mastery
+    launch_subjects: [aya]
+    status: planned
+    teaching_decision: 按计划事实（复测次数、每周次数、本月有没有考试）从模板库选出家长可做的安排，最多 3 条；不评价孩子
+    guardian_deletable: false
+    note: "来源：客观记录（本月复测次数、今日计划配置的每周次数与每次时长、优先知识点个数）与家长或学生录入的考试安排（只用“本月有没有考试、几场”这一计划事实；学生录入的那部分未列为 self 来源，待人确认）。不引用判断、不含关于学生的陈述，所以不经 insight.claim 对外。学生不可见。只有模板键与计划事实变量，文案由人写人审（模板库 services/insight/templates/monthly_plan.v0.yaml，过禁用推断与“名次 / 概率 / 承诺”词表）。不能单项删除，删除途径：随整档删除请求（0035）删除"
+  - id: through.g9.monthly_review
+    name: 月度回顾与目标分差
+    layer: inference
+    source_type: [inferred, guardian]
+    collect: { level: automatic, timing: periodic }
+    visibility: [agent, guardian]
+    storage: insight.monthly_plan.review
+    exposed_via: insight.claim
+    dimension: knowledge_mastery
+    launch_subjects: [aya]
+    status: planned
+    teaching_decision: 上月计划节点中新点亮的（只列引用迁移判断的项，按判断历史在上个月进入迁移）与上月计划节点数；分科目标分与当前成绩的差距区间（引用考试判断，5 分一档，与下一步同屏）
+    guardian_deletable: false
+    note: "来源：模型推断（上月点亮引用的迁移判断、分差引用的考试判断）与家长观察（家长诉求里的目标分）；成绩记录由学生或家长录入，快照只存它的 ID（学生录入的那部分未列为 self 来源，待人确认）。快照只存引用（成绩记录 ID、诉求版本 ID、判断 ID），不存成绩、目标分与分差的值；家长视图读时现算，再核成绩记录与诉求仍是当前版、诉求作者是当前有效绑定家长，只给本人诉求对应的项、5 分一档的区间，不给精确值、不给概率、不预测。不给任何不引用判断的关于学生的计数（规则 11）。学生不可见。不能单项删除，删除途径：随整档删除请求（0035）删除"
   - id: through.g9.disputes
     name: 对判断的异议
     layer: fact

@@ -174,6 +174,24 @@ specs/family-goals-monthly-plan 第 1 步（家长诉求收集），迁移 0053�
      0050 单独回滚期间诉求写入一律失败（fail closed），重新执行后恢复。
 - **一个迁移只改一个 schema**：0053 只建 insight 对象，另在 `platform.personal_table_registry` 登记一行（与 0036 周报同一做法）。
 - **写入方与可见范围**：只经 SECURITY DEFINER 函数（属主 authz，只授 BFF），按 guardian_student_link 核对当前账号；学生不可见；
-  学习服务、洞察服务暂不授权读取（第 2 步再定）。
+  学习服务不授权读取。洞察服务（第 2 步，0054）只经 `insight.monthly_plan_facts` 读当前有效绑定家长（链接与家长账号都 active）
+  当前版诉求里的**关注学科与分科目标分**（另带诉求版本 ID 供引用），不读补充说明、关注学校与家长账号；没有表权限。
 - 若本增补不被接受：替代方案是把表移到 `platform.*`（表结构与函数不变，只改 schema 名），迁移仍是草稿、未执行。
 - 待签字：随 PLT-14 第 1 步的 PR 一起评审（必停项：迁移、RLS 与权限、画像可见范围）。
+
+specs/family-goals-monthly-plan 第 2 步（月度计划生成与存储），迁移 0054（草稿）。
+
+- **归属 `insight.monthly_plan`**：月度计划快照放 insight。理由：
+  1. 它是洞察服务的产出（与 0036 的周报同类），只由洞察服务写入；关于学生的每一项都引用判断账本里的判断（规则 11），读时按受众再核判断，
+     判断账本与它在同一 schema，守卫与视图不跨 schema 读判断；
+  2. 它不是任何事实的副本：快照只存计划编码、模板键与引用（判断 ID、成绩记录 ID、诉求版本 ID），不存成绩、目标分、掌握度的值，
+     家长视图读时按引用现算（规则 2）；
+  3. 个人层表：登记进 `platform.personal_table_registry`（随整档删除请求删除，与 0036 同一做法），应用角色都没有表权限。
+- **一个迁移只改一个 schema**：0054 只建 insight 对象（含权益判断 `insight.monthly_plan_entitled`，属主 authz，只读 platform 的套餐配置与主订阅；
+  不另设套餐开关、不改 `platform.plan_feature`：权益取既有 weekly_report 的取值含 monthly），另在 personal_table_registry 登记一行。
+  **例外（待人确认）**：为在输入引用里记复测任务 ID，给函数属主 authz 补授 `platform.retest_task (id)` 一列只读（0037 已授该表其余属性列），
+  另给 authz 授 `insight.claim_history` 只读（上月点亮按判断历史判定进入“迁移”的时刻）。
+- **读写面**：洞察服务只经四个函数（facts、read、replay_inputs、save）；BFF 只经两个视图函数（家长视图、学生视图）。
+- **只供审计**：`plan_basis`（排序依据，时点审计记录）任何视图都不返回，任何计算（含下月的生成）都不读取；
+  `input_refs`（输入引用与配置、模板库、今日计划配置的指纹）任何视图都不返回，只由重放读取，按它取回当时的输入、核对快照可复现。
+- 待签字：随 PLT-14 第 2 步的 PR 一起评审（必停项：迁移、RLS 与权限、计量与权益、画像可见范围）。

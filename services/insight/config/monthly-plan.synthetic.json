@@ -1,0 +1,16 @@
+{
+  "$comment": "PLT-14 第 2 步月度计划的合成占位配置，非签字值，只允许 INSIGHT_ENV=test 加载。优先知识点上限（合成 8）、关注学科系数（合成 1.5）、按门槛的缺口表、每周次数、小复评日、注意事项与分差条数上限全部待产品与教研签字；每次时长复用今日计划配置（today_config）的 default_budget_minutes，不另设。考情分值权重与频率没有已发布数据时一律为 1（快照标 policy_weights = default）。",
+  "schema_version": "sie-monthly-plan-config/0.1",
+  "config_version": "syn-0.1.0",
+  "synthetic": true,
+  "signed_by": "",
+  "signed_at": "",
+  "max_priority_nodes": 8,
+  "focus_subject_factor": 1.5,
+  "gate_gap": {"unseen": 1.0, "understand": 0.75, "execute": 0.5, "stable": 0.25},
+  "sessions_per_week": 5,
+  "today_config": "synthetic",
+  "mini_review_day": 24,
+  "max_guardian_notes": 3,
+  "max_score_gaps": 8
+}

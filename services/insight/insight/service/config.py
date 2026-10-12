@@ -14,6 +14,8 @@
   INSIGHT_LEARNING_URL           学习服务地址（https 或本机回环）：“我其实会”的验证任务经学习服务 POST /internal/v1/verification 建
   INSIGHT_LEARNING_TOKEN         洞察服务 → 学习服务验证任务接口的令牌（≥ 32 字符；学习服务侧 LEARNING_INSIGHT_CLIENT_TOKEN），与调用方令牌各不相同。
                                  两个都设才启用真实验证任务；只设一个拒绝启动。非 test 环境不设 = i_know 回 501；test 环境用接口桩
+  INSIGHT_MONTHLY_PLAN           月度计划配置（PLT-14 第 2 步；JSON；缺省 config/monthly-plan.synthetic.json，合成占位只允许 test 环境）
+  INSIGHT_MONTHLY_TEMPLATES      月度计划模板库（YAML；缺省 templates/monthly_plan.v0.yaml，未签字只允许 test 环境）
   INSIGHT_HOST                   监听地址，缺省 127.0.0.1；不接受 0.0.0.0、:: 等通配地址（只在服务内网监听，由平台侧网关转发）
   INSIGHT_PORT                   缺省 8791（契约 servers）
 """
@@ -26,6 +28,7 @@ import socket
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ..monthly import TEMPLATE_PATH
 from ..policy import CONFIG_DIR
 
 ALLOWED_ENVS = ("dev", "test")
@@ -72,6 +75,8 @@ class Settings:
     policy_path: Path = CONFIG_DIR / "claims.synthetic.json"
     report_check_path: Path = CONFIG_DIR / "report-check.synthetic.json"
     sie03_path: Path = CONFIG_DIR / "sie03.synthetic.json"
+    monthly_path: Path = CONFIG_DIR / "monthly-plan.synthetic.json"
+    monthly_templates_path: Path = TEMPLATE_PATH
     host: str = DEFAULT_HOST
     port: int = DEFAULT_PORT
     learning: tuple[str, str] | None = None  # (学习服务地址, 验证任务接口令牌)；KGE-04 第二步 PR 3
@@ -116,4 +121,6 @@ class Settings:
                         policy_path=Path(e.get("INSIGHT_POLICY") or CONFIG_DIR / "claims.synthetic.json"),
                         report_check_path=Path(e.get("INSIGHT_REPORT_CHECK") or CONFIG_DIR / "report-check.synthetic.json"),
                         sie03_path=Path(e.get("INSIGHT_SIE03") or CONFIG_DIR / "sie03.synthetic.json"),
+                        monthly_path=Path(e.get("INSIGHT_MONTHLY_PLAN") or CONFIG_DIR / "monthly-plan.synthetic.json"),
+                        monthly_templates_path=Path(e.get("INSIGHT_MONTHLY_TEMPLATES") or TEMPLATE_PATH),
                         host=check_host(e.get("INSIGHT_HOST", DEFAULT_HOST)), port=int(port_raw), learning=learning)

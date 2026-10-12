@@ -291,6 +291,22 @@ BEGIN
   -- 家长诉求（0053，PLT-14）：家长经 BFF 提交一版（补充说明带该学生的内容标记；X1 初二、X2 初三都不设学校）
   PERFORM t.p_bff(g, format($f$SELECT insight.submit_guardian_goal(%L, '{aya}', '[{"subject": "aya", "full_score": 120, "target_score": 100}]',
                                                                     NULL, %L)::text$f$, s, '合成诉求-' || p_token));
+  -- 月度计划快照（0054，PLT-14 第 2 步）：写入函数 insight.save_monthly_plan 要求本月有 Pro / Max 权益，这两名学生走试用（基础档）与
+  -- 试点开通、周报档位不一定含 monthly，所以以超级用户直接写一份本月快照（表守卫照常核对形状、月份与输入引用；不引用判断）。
+  -- 快照只存编码与模板键、不存自由文本，内容标记放不进去；覆盖靠 ID 标记与逐表计数
+  INSERT INTO insight.monthly_plan (student_id, month, student_plan, guardian_notes, review, plan_basis, algorithm_version, config_version,
+                                    template_version, policy_weights, inputs_digest, input_refs)
+  VALUES (s, date_trunc('month', now() AT TIME ZONE 'Asia/Shanghai')::date,
+          jsonb_build_object('priority_nodes', '[]'::jsonb,
+                             'weekly_rhythm', '{"sessions_per_week": 5, "minutes_per_session": 30, "copy_key": "monthly_plan.student.weekly_rhythm"}'::jsonb,
+                             'retests', '{"count": 0, "dates": [], "by_subject": [], "copy_key": "monthly_plan.student.retests"}'::jsonb,
+                             'mini_reviews', '[]'::jsonb),
+          '[]', '{"last_month": null, "score_gaps": []}', '{"items": []}', 'sie-monthly@0.1.0', 'syn-coverage', 'syn-coverage', 'default',
+          encode(sha256(convert_to('monthly-' || p_token, 'UTF8')), 'hex'),
+          '{"as_of": "2026-01-01T00:00:00Z", "claims": [], "mastery": [], "exam_records": [], "exam_plans": [], "goals": [],
+            "retest_tasks": [], "prev_plan_id": null,
+            "fingerprints": {"claims_policy": "0000000000000000", "config": "0000000000000000",
+                             "templates": "0000000000000000", "today": "0000000000000000"}}');
   -- ---- 导出（家长，0035）：导出任务是豁免表
   PERFORM t.p_bff(g, format('SELECT platform.export_student_data(%L)::text', s));
 END $$;

@@ -1172,6 +1172,76 @@ M+=(
   ["家长诉求：不登记个人层表清单"]="DELETE FROM platform.personal_table_registry WHERE nspname = 'insight' AND relname = 'guardian_goal';"
 )
 
+# PLT-14 第 2 步 月度计划快照（0054，specs/family-goals-monthly-plan/step2-spec.md）：由 79zc 发现（授权类的同时由 80 的快照、清单类由 79p 发现；
+# 攻击面类只由 80 发现）。DBMUT_FILTER=月度计划 只跑这一组
+MPS='insight.save_monthly_plan(uuid, date, jsonb)'
+MPF='insight.monthly_plan_facts(uuid, date)'
+MPG='insight.monthly_plan_guardian_view(uuid, date)'
+MPV='insight.monthly_plan_student_view(uuid, date)'
+MPD='insight.monthly_plan_guard()'
+MPL='insight.monthly_live_claim(uuid, text, text, integer, text)'
+MPE='insight.monthly_plan_entitled(uuid)'
+MPR='insight.monthly_plan_replay_inputs(uuid, date)'
+M+=(
+  ["月度计划：写入不查权益"]="$(afr "$MPS" "'IF NOT insight.monthly_plan_entitled(p_student) THEN'" "'IF false THEN'")"
+  ["月度计划：写入先查权益再返回已有快照"]="$(afr "$MPS" "'PERFORM pg_advisory_xact_lock('" "'IF NOT insight.monthly_plan_entitled(p_student) THEN RAISE EXCEPTION ''PLAN_NOT_ENTITLED'' USING ERRCODE = ''object_not_in_prerequisite_state''; END IF; PERFORM pg_advisory_xact_lock('")"
+  ["月度计划：已有快照仍写新行"]="$(afr "$MPS" "'IF FOUND THEN'" "'IF false THEN'")"
+  ["月度计划：写入不查档案"]="$(afr "$MPS" "'IF NOT EXISTS (SELECT 1 FROM platform.student_profile s WHERE s.id = p_student AND s.erased_at IS NULL) THEN'" "'IF false THEN'")"
+  ["月度计划：权益不看周报取值"]="$(afr "$MPE" "'position(''monthly'' IN f.value_code) > 0'" "'true'")"
+  ["月度计划：权益看错权益代码"]="$(afr "$MPE" "'WHERE f.feature_code = ''weekly_report'''" "'WHERE f.feature_code = ''lesson_mode'''")"
+  ["月度计划：输入读已解绑家长的诉求"]="$(afr "$MPF" "' AND l.status = ''active'''" "''")"
+  ["月度计划：输入读旧版诉求"]="$(afr "$MPF" "'WHERE g.student_id = p_student AND g.superseded_at IS NULL'" "'WHERE g.student_id = p_student'")"
+  ["月度计划：输入带补充说明"]="$(afr "$MPF" "'''target_scores'', g.target_scores)'" "'''target_scores'', g.target_scores, ''note'', g.note)'")"
+  ["月度计划：输入不分月份复测"]="$(afr "$MPF" "' AND r.due_at < v_end'" "''")"
+  ["月度计划：守卫收家长观察来源"]="$(afr "$MPD" "' AND c.source_type <> ''guardian'''" "''")"
+  ["月度计划：学习计划不要求家长可见"]="$(afr "$MPD" "' AND ''guardian'' = ANY (c.visibility) AND c.source_type'" "' AND c.source_type'")"
+  ["月度计划：学习计划不要求学生可见"]="$(afr "$MPD" "'''student'' = ANY (c.visibility) AND '" "''")"
+  ["月度计划：守卫不查所引判断在输入引用里"]="$(afr "$MPD" "'WHERE NOT EXISTS (SELECT 1 FROM jsonb_array_elements(NEW.input_refs -> ''claims'') r WHERE r ->> 0 = x.cid)) THEN'" "'WHERE false) THEN'")"
+  ["月度计划：守卫收已点亮的判断"]="$(afr "$MPD" "'IN (''unseen'', ''understand'', ''execute'', ''stable'')'" "'IS NOT NULL'")"
+  ["月度计划：守卫不查层次"]="$(afr "$MPD" "'AND c.value ->> ''level'' = e ->> ''cognitive_level'''" "'AND true'")"
+  ["月度计划：守卫不查判断属于该学生"]="$(afr "$MPD" "'c.student_id = NEW.student_id AND c.target_type = ''node'''" "'c.student_id IS NOT NULL AND c.target_type = ''node'''")"
+  ["月度计划：守卫收待验证的判断"]="$(afr "$MPD" "'c.status IN (''hypothesis'', ''established'') AND '" "''")"
+  ["月度计划：守卫收已过期的判断"]="$(afr "$MPD" "' AND c.expires_at > now()'" "''")"
+  ["月度计划：守卫不查月份"]="$(afr "$MPD" "'IF NEW.month IS DISTINCT FROM date_trunc'" "'IF false AND NEW.month IS DISTINCT FROM date_trunc'")"
+  ["月度计划：守卫不查日期在本月"]="$(afr "$MPD" "'WHERE insight.monthly_date(d) < NEW.month OR insight.monthly_date(d) >= v_end)'" "'WHERE false)'")"
+  ["月度计划：分差不查诉求作者仍绑定"]="$(afr "$MPD" "' AND l.status = ''active'''" "''")"
+  ["月度计划：分差不查诉求当前版"]="$(afr "$MPD" "' AND g.superseded_at IS NULL'" "''")"
+  ["月度计划：分差不查成绩当前版"]="$(afr "$MPD" "' AND r.superseded_at IS NULL'" "''")"
+  ["月度计划：分差不查考试判断家长可见"]="$(afr "$MPD" "'''guardian'' = ANY (c.visibility))'" "'true)'")"
+  ["月度计划：上月点亮不查迁移门槛"]="$(afr "$MPD" "'AND c.value ->> ''gate'' IN (''transfer'', ''retain'')'" "''") $(afr "$MPD" "'AND h.value ->> ''gate'' IN (''transfer'', ''retain''))'" "')'")"
+  ["月度计划：上月点亮不限上个月进入迁移"]="$(afr "$MPD" "') < v_start)) THEN'" "') IS NOT NULL)) THEN'")"
+  ["月度计划：上月点亮不查在上月计划里"]="$(afr "$MPD" "'n ->> ''subject'' = e ->> ''subject'' AND n ->> ''node_id'' = e ->> ''node_id'''" "'true'")"
+  ["月度计划：上月回顾不核对上月快照"]="$(afr "$MPD" "'IF v_prev_nodes IS NULL OR '" "'IF false AND '")"
+  ["月度计划：快照可修改"]="$(afr "$MPD" "'RAISE EXCEPTION ''月度计划只追加，不能修改'''" "'RETURN NEW; RAISE EXCEPTION ''x'''")"
+  ["月度计划：删除不限删除请求"]="DROP TRIGGER monthly_plan_guard ON insight.monthly_plan;"
+  ["月度计划：快照可清空"]="DROP TRIGGER monthly_plan_truncate ON insight.monthly_plan;"
+  ["月度计划：分差可存值"]="$(afr 'insight.valid_monthly_review(jsonb)' "'''goal_id'', ''subject'', ''template_key'', ''template_version'']) THEN'" "'''goal_id'', ''subject'', ''template_key'', ''template_version'']) AND false THEN'")"
+  ["月度计划：上月回顾收不引用判断的计数"]="$(afr 'insight.valid_monthly_review(jsonb)' "'ARRAY[''copy_key'', ''lit'', ''month'', ''planned_nodes'']) THEN'" "'ARRAY[''copy_key'', ''lit'', ''month'', ''planned_nodes'']) AND false THEN'")"
+  ["月度计划：注意事项变量收文字"]="$(afr 'insight.valid_monthly_notes(jsonb)' "'jsonb_typeof(v.value) = ''boolean'''" "'jsonb_typeof(v.value) IN (''boolean'', ''string'')'")"
+  ["月度计划：学生段收多余字段"]="$(afr 'insight.valid_monthly_student_plan(jsonb)' "'ARRAY[''claim_id'', ''cognitive_level'', ''copy_key'', ''node_id'', ''position'', ''subject'', ''template_key'', ''template_version'']) THEN'" "'ARRAY[''claim_id'', ''cognitive_level'', ''copy_key'', ''node_id'', ''position'', ''subject'', ''template_key'', ''template_version'']) AND false THEN'")"
+  ["月度计划：家长视图认学生本人"]="$(afr "$MPG" "'NOT platform.is_linked_guardian(p_student)'" "'NOT platform.can_read_student(p_student)'")"
+  ["月度计划：学生视图认家长"]="$(afr "$MPV" "'NOT platform.is_self_student(p_student)'" "'NOT platform.can_read_student(p_student)'")"
+  ["月度计划：家长视图分差不按作者"]="$(afr "$MPG" "' AND g.guardian_account_id = v_me'" "''")"
+  ["月度计划：家长视图给诉求 ID"]="$(afr "$MPG" "'''subject'', e ->> ''subject'', ''exam_type'''" "'''goal_id'', e ->> ''goal_id'', ''subject'', e ->> ''subject'', ''exam_type'''")"
+  ["月度计划：家长视图给精确分差"]="$(afr "$MPG" "'insight.monthly_gap_band(ts.target - r.raw_score)'" "'to_jsonb(ts.target - r.raw_score)'")"
+  ["月度计划：家长视图泄露排序依据"]="$(afr "$MPG" "'''guardian_notes'', m.guardian_notes,'" "'''guardian_notes'', m.guardian_notes, ''plan_basis'', m.plan_basis,'")"
+  ["月度计划：家长视图分差不核成绩当前版"]="$(afr "$MPG" "' AND r.superseded_at IS NULL'" "''")"
+  ["月度计划：家长视图分差不核诉求当前版"]="$(afr "$MPG" "' AND g.superseded_at IS NULL'" "''")"
+  ["月度计划：学生视图带回顾"]="$(afr "$MPV" "'''student_plan'', insight.monthly_live_student_plan(m.student_plan, p_student, ''student''))'" "'''student_plan'', insight.monthly_live_student_plan(m.student_plan, p_student, ''student''), ''review'', m.review)'")"
+  ["月度计划：视图不再核判断"]="$(afr "$MPL" "'AND c.status IN (''hypothesis'', ''established'') AND c.expires_at > now() AND p_audience = ANY (c.visibility)'" "'AND true'")"
+  ["月度计划：学生视图不滤家长观察来源"]="$(afr "$MPL" "' AND (p_audience <> ''student'' OR c.source_type <> ''guardian'')'" "''")"
+  ["月度计划：重放取回未登记的诉求"]="$(afr "$MPR" "'AND g.id::text IN (SELECT jsonb_array_elements_text(m.input_refs -> ''goals''))'" "'AND true'")"
+  ["月度计划：重放取回未登记的复测"]="$(afr "$MPR" "'AND r.id::text IN (SELECT jsonb_array_elements_text(m.input_refs -> ''retest_tasks''))'" "'AND true'")"
+  ["月度计划：学习服务可调重放函数"]="GRANT EXECUTE ON FUNCTION $MPR TO starbuddy_learning;"
+  ["月度计划：BFF 可调写入函数"]="GRANT EXECUTE ON FUNCTION $MPS TO starbuddy_bff;"
+  ["月度计划：学习服务可调输入函数"]="GRANT EXECUTE ON FUNCTION $MPF TO starbuddy_learning;"
+  ["月度计划：洞察服务可直读快照表"]="GRANT SELECT ON insight.monthly_plan TO starbuddy_insight; CREATE POLICY t_mp ON insight.monthly_plan FOR SELECT TO starbuddy_insight USING (true);"
+  ["月度计划：洞察服务可调权益判断"]="GRANT EXECUTE ON FUNCTION $MPE TO starbuddy_insight;"
+  ["月度计划：不登记个人层表清单"]="DELETE FROM platform.personal_table_registry WHERE nspname = 'insight' AND relname = 'monthly_plan';"
+  ["攻击面：月度计划视图对 PUBLIC 开放"]="GRANT EXECUTE ON FUNCTION $MPG TO PUBLIC;"
+  ["攻击面：月度计划写入函数不固定 pg_temp"]="ALTER FUNCTION $MPS SET search_path = pg_catalog, insight, platform;"
+)
+
 # G 流第二部分 PR D：审核台读内容版本与发布记录（0042）、时政过期下架（0043）：由 79w 发现（授权类的同时由 80 的快照发现）。
 # DBMUT_FILTER=审核台读 与 DBMUT_FILTER=时政下架 只跑这两组
 RCL='platform.content_version_list(platform.subject)'
@@ -1289,6 +1359,8 @@ declare -A EXPECT=(
   ["攻击面：客服更正不查 cohort_correction"]="攻击面：客服届别更正——"
   ["攻击面：来源清单下线不设锁等待上限"]="攻击面：来源清单的新增与下线有 5 秒锁等待上限"
   ["攻击面：清单取锁函数授给学习服务"]="攻击面：来源清单的新增与下线有 5 秒锁等待上限"
+  ["攻击面：月度计划视图对 PUBLIC 开放"]="攻击面：每个 SECURITY DEFINER 函数"
+  ["攻击面：月度计划写入函数不固定 pg_temp"]="攻击面：每个 SECURITY DEFINER 函数"
 )
 declare -A KEEP_SNAPSHOT=(["攻击面：可转授的授权"]=1)
 for name in "${!EXPECT[@]}"; do [ -n "${M[$name]+x}" ] || { echo "db-mutation: EXPECT 里的 $name 不是变异"; exit 1; }; done

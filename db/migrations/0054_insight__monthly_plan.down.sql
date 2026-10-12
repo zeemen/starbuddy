@@ -1,0 +1,31 @@
+-- 0054 回滚：删除月度计划快照表、读写与视图函数、取值校验函数与权益判断；个人层表清单去掉这张表；收回函数属主对判断历史的只读。
+-- 注意：回滚会删除全部月度计划快照，请先在副本演练并按需导出 insight.monthly_plan。本迁移没有改 platform.plan_feature，回滚也不碰它。
+DELETE FROM platform.personal_table_registry WHERE nspname = 'insight' AND relname = 'monthly_plan';
+DROP FUNCTION insight.monthly_plan_student_view(uuid, date);
+DROP FUNCTION insight.monthly_plan_guardian_view(uuid, date);
+DROP FUNCTION insight.save_monthly_plan(uuid, date, jsonb);
+DROP FUNCTION insight.monthly_plan_replay_inputs(uuid, date);
+DROP FUNCTION insight.monthly_plan_read(uuid, date);
+DROP FUNCTION insight.monthly_plan_facts(uuid, date);
+DROP FUNCTION insight.monthly_gap_band(numeric);
+DROP FUNCTION insight.monthly_live_student_plan(jsonb, uuid, text);
+DROP FUNCTION insight.monthly_live_claim(uuid, text, text, integer, text);
+REVOKE SELECT (student_id) ON insight.monthly_plan FROM starbuddy_eraser;
+REVOKE DELETE ON insight.monthly_plan FROM starbuddy_eraser;
+DROP TABLE insight.monthly_plan;
+DROP FUNCTION insight.monthly_plan_guard();
+REVOKE SELECT ON insight.claim_history FROM starbuddy_authz;
+REVOKE SELECT (id) ON platform.retest_task FROM starbuddy_authz;
+DROP FUNCTION insight.valid_monthly_refs(jsonb);
+DROP FUNCTION insight.valid_monthly_basis(jsonb);
+DROP FUNCTION insight.valid_monthly_review(jsonb);
+DROP FUNCTION insight.valid_monthly_notes(jsonb);
+DROP FUNCTION insight.valid_monthly_student_plan(jsonb);
+DROP FUNCTION insight.monthly_uuids(jsonb, integer);
+DROP FUNCTION insight.monthly_date(jsonb);
+DROP FUNCTION insight.monthly_num(jsonb, numeric);
+DROP FUNCTION insight.monthly_subject(jsonb);
+DROP FUNCTION insight.monthly_str(jsonb, text);
+DROP FUNCTION insight.monthly_int(jsonb, integer, integer);
+DROP FUNCTION insight.monthly_keys(jsonb, text[]);
+DROP FUNCTION insight.monthly_plan_entitled(uuid);

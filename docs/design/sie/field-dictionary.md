@@ -25,7 +25,7 @@
 ## 字典
 
 <!-- BEGIN GENERATED: dictionary -->
-字典版本 0.9.0（draft）；字段 51 个。
+字典版本 0.9.0（draft）；字段 54 个。
 
 ### g1 基础身份与学习环境（outer）
 
@@ -118,6 +118,9 @@
 | `through.g9.guardian_target_scores` | 家长设定的分科目标分 | fact | 家长观察 | Agent、家长 | `insight.guardian_goal.target_scores` | planned | 与已录入的学校考试分科成绩对比，分解出差距所在的学科（PLT-14 第 2 步）；只给区间与下一步，不给概率与承诺 |
 | `through.g9.guardian_target_school` | 家长关注的高中学校 | fact | 家长观察 | Agent、家长 | `insight.guardian_goal.school_id` | planned | 家长端只显示招录库里已发布的事实（往年线、计划数），不计算够不够得着；不改变学生端任何内容 |
 | `through.g9.guardian_goal_note` | 家长补充说明 | fact | 家长观察 | Agent、家长 | `insight.guardian_goal.note` | planned | 月度计划的人工复核参考；不进入任何自动判断与学生端 |
+| `through.g9.monthly_study_plan` | 月度学习计划 | inference | 客观记录、模型推断、家长观察 | Agent、学生、家长 | `insight.monthly_plan.student_plan` | planned | 本月优先知识点（每项引用一条待点亮的知识掌握判断）、每周节奏、复测与分科小复评安排；只陈述做什么，不陈述学生是什么 |
+| `through.g9.monthly_guardian_notes` | 月度家长注意事项 | inference | 客观记录、家长观察 | Agent、家长 | `insight.monthly_plan.guardian_notes` | planned | 按计划事实（复测次数、每周次数、本月有没有考试）从模板库选出家长可做的安排，最多 3 条；不评价孩子 |
+| `through.g9.monthly_review` | 月度回顾与目标分差 | inference | 模型推断、家长观察 | Agent、家长 | `insight.monthly_plan.review` | planned | 上月计划节点中新点亮的（只列引用迁移判断的项，按判断历史在上个月进入迁移）与上月计划节点数；分科目标分与当前成绩的差距区间（引用考试判断，5 分一档，与下一步同屏） |
 | `through.g9.disputes` | 对判断的异议 | fact | 学生自述、家长观察 | Agent、学生、家长 | `insight.dispute.kind（记录录入人：insight.dispute.raised_by）` | planned | “我其实会”24 小时内推送验证题；“识别错了”打开原始事实供更正 |
 | `through.g9.interventions` | 触发的提醒、处方、鼓励与降负 | inference | 模型推断 | Agent | `insight.intervention_log.action` | planned | 评估触发规则是否奏效，避免同一提醒重复 |
 | `through.g9.weekly_snapshot` | 每周画像快照 | inference | 模型推断 | Agent | `insight.profile_snapshot.payload（SIE-03 建）` | planned | 成长轨迹与“与一个月前的自己相比”的依据 |
@@ -141,7 +144,7 @@
 
 | 维度 | 首发 | 取自字段 |
 |---|---|---|
-| 知识掌握 | 对外展示（仅数学） | `inner.g3.node_mastery`、`inner.g3.next_retest_at`、`through.g9.star_lit_history` |
+| 知识掌握 | 对外展示（仅数学） | `inner.g3.node_mastery`、`inner.g3.next_retest_at`、`through.g9.monthly_study_plan`、`through.g9.monthly_guardian_notes`、`through.g9.monthly_review`、`through.g9.star_lit_history` |
 | 知识迁移 | 对外展示（仅数学） | `inner.g4.transfer_gap_math` |
 | 学习策略 | 静默采集 | `middle.g7.independent_solve_rate`、`middle.g7.hint_dependency`、`middle.g7.transfer_gap`、`middle.g7.self_assessment_calibration`、`middle.g7.reading_question_error_share` |
 | 自主学习 | 静默采集 | `middle.g5.plan_completion_rate`、`middle.g6.self_initiated_sessions` |

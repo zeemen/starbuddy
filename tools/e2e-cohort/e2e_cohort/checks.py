@@ -20,7 +20,7 @@ PERSONAL_SCHEMA = "platform"
 INSIGHT_PERSONAL_TABLES = (
     "claim", "claim_history", "dispute", "intervention_log", "exam_prediction", "exam_reconciliation",
     "self_report", "guardian_report", "exam_record", "onboarding_progress", "behavior_event", "confidence_probe",
-    "weekly_report", "guardian_goal",
+    "weekly_report", "guardian_goal", "monthly_plan",
 )
 SYSTEM_SCHEMAS = ("pg_catalog", "information_schema", "pg_toast")
 # 标识学生、其作答或家庭的列名：出现在个人层以外的表上即为“第二份学生事实”的结构信号
