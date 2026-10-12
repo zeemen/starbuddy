@@ -114,7 +114,7 @@ async def weekly_reports(store: InsightStore, week_start: date, policy: Policy, 
     return await run_week(store, week_start, policy, weekly, check_cfg, forbidden or forbidden_matcher(), students, env, profile_pages)
 
 
-if __name__ == "__main__":  # python -m insight.jobs sync|sweep|metrics（只连本机数据库；见 jobs_cli.py）
+if __name__ == "__main__":  # python -m insight.jobs sync|sweep|metrics|weekly（只连本机数据库；见 jobs_cli.py）
     import sys
 
     from .jobs_cli import main

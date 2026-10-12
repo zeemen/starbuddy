@@ -1,0 +1,3 @@
+# 带哈希的锁文件（规则 10 供应链）：与洞察服务的开发锁逐字相同，直接引用。
+# 安装：cd services/scheduler && python3 -m venv .venv && .venv/bin/pip install --require-hashes -r requirements-dev.lock
+-r ../insight/requirements-dev.lock

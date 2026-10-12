@@ -1,0 +1,2 @@
+-r requirements.txt
+-r ../insight/requirements-dev.txt

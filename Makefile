@@ -37,7 +37,7 @@ make-skip-check:
 # 契约检查约 1 秒，改动后也跑一遍
 check-fast: contract-test taxonomy-check attack-surface-check sie-dictionary-check kge-id-check
 
-check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation practice-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona insight-test insight-mutation voice-blind-eval-test release-walkthrough retest-mutation today-mutation
+check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation practice-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona insight-test insight-mutation voice-blind-eval-test release-walkthrough retest-mutation today-mutation scheduler-test scheduler-mutation
 	@echo "check: lint 尚未配置，跳过；其余检查已通过"
 
 # 契约合法性 + 示例 + 反例集
@@ -195,6 +195,28 @@ today-mutation:
 	  echo "today-mutation: 跳过（没有安装学习服务依赖；见 services/learning/README.md）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
 	@$(call skip_rest,$(LEARNING_MISSING))services/learning/.venv/bin/python services/learning/scripts/today_mutations.py; rc=$$?; \
+	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
+
+# 调度器第一步（PLT-13，specs/scheduler-plt13）：services/scheduler 按时间表以子进程调用已有入口（insight.scheduled、insight.jobs、
+# learning.jobs、review_console），环境变量按身份白名单传递，pg_try_advisory_lock 互斥，结构化日志与 alert 级别；不建表、不新增授权。
+# 测试：时间表纯函数（时区、月末、周一、与夏令时无关）、配置校验、运行器（白名单、超时、退出码映射、清洗）、命令行启动核对，
+# 以及一次性 Postgres 上每个任务 --once 的端到端效果、重复运行幂等与两个实例互斥（子进程用洞察服务与学习服务的 venv）。
+# 依赖需先安装（锁文件与洞察服务相同，不新增包）：cd services/scheduler && python3 -m venv .venv && .venv/bin/pip install --require-hashes -r requirements-dev.lock
+SCHEDULER_MISSING = [ ! -x services/scheduler/.venv/bin/python ] || ! services/scheduler/.venv/bin/python -c "import asyncpg, yaml, pytest, fastapi" 2>/dev/null
+.PHONY: scheduler-test scheduler-mutation
+scheduler-test:
+	@if $(SCHEDULER_MISSING); then \
+	  echo "scheduler-test: 跳过（没有安装调度器依赖；见 services/scheduler/README.md）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@$(call guard,$(SCHEDULER_MISSING))cd services/scheduler && SCHEDULER_TEST_STRICT=$(if $(filter 1,$(CONTRACT_STRICT)),1,0) PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -rs && echo "scheduler-test: 通过"
+
+# 变异测试：把时间表计算、配置校验、环境白名单、启动核对、超时、退出码映射、告警、计数清洗、咨询锁与常驻循环逐条改坏，
+# 断言调度器的测试能发现（纯函数组不连库；库上组每个变异一个一次性 Postgres）。没有依赖或 Postgres 时退出码 3（非严格跳过、严格失败）
+scheduler-mutation:
+	@if $(SCHEDULER_MISSING); then \
+	  echo "scheduler-mutation: 跳过（没有安装调度器依赖；见 services/scheduler/README.md）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@$(call skip_rest,$(SCHEDULER_MISSING))services/scheduler/.venv/bin/python services/scheduler/scripts/mutations.py; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
 
 # 适配器客户端（learning/adapter_client.py）：把重试、错误归类、编码转发、严格 JSON、202、超时、总预算与 5 MB 上限逐条改坏，断言客户端测试能发现（不连库，并行 8 路，约 25 秒）

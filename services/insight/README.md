@@ -30,7 +30,7 @@ SIE-03 PR②（`specs/sie-03-dispute-reconcile/spec.md`）：异议三路、考�
 | `insight/triggers.py` | 触发规则 v1 的纯函数：提醒、证据化鼓励、降负（连续中断、连错后退出增多）；只引用成立 / 假设、未过期的判断，去重 |
 | `insight/store_sie03.py` | SIE-03 数据库层：提出异议（库函数再核提出人 + 洞察服务核对身份一致，i_know 同事务转待验证并登记验证任务）、事实更正后撤回相关判断并重算、异议清理与指标、预测、对账卡生成与读取、触发建议与下发 |
 | `insight/guardian_requests.py` | `insight.export` / `insight.erase` 的接口与形状映射；0035 的库函数只授 BFF 会话，缺省实现不接线（501） |
-| `insight/scheduled.py` | 调度器入口：`freeze_due_predictions`、`execute_due_erasures`（`starbuddy_scheduler` 连接，角色断言） |
+| `insight/scheduled.py` | 调度器入口：`freeze_due_predictions`、`execute_due_erasures`，PLT-13 第一步补 `meter_expire_due`、`meter_renew_due`（小批量循环）、`sample_spot_checks` 与命令行（`starbuddy_scheduler` 连接，角色断言） |
 | `insight/shared.py` | 只读引用学习服务的 `learning.mastery.consistency`（一致性检查规则引擎）与认知层次；禁用推断词表经同一模块取 `docs/design/sie/sie_lexicon.py` |
 | `insight/service/` | FastAPI（`POST /v0/<工具名>`）：`config`（环境变量）、`contract`（契约加载与严格校验）、`tools`（唯一实现层）、`app`（鉴权、Host 校验、请求体限制） |
 
@@ -52,7 +52,9 @@ BFF 调用的授权再核对（`ActorVerifier`）：`create_app` 缺省用 `DbAc
 
 定时任务命令行（只连本机数据库，不接生产调度，由人接调度）：
 `INSIGHT_ENV=dev INSIGHT_DATABASE_URL=postgresql://...@localhost/... python -m insight.jobs sync (--student <uuid> ... | --all)`、
-`... sweep [--limit 1000]`、`... metrics (--student <uuid> ... | --all)`（`insight/jobs_cli.py`；输出一行 JSON，只有计数）。
+`... sweep [--limit 1000]`、`... metrics (--student <uuid> ... | --all)`、`... weekly [--week-start <周一>]`（`insight/jobs_cli.py`；输出一行 JSON，只有计数）。
+调度器身份（`starbuddy_scheduler`）的入口：`SCHEDULER_ENV=dev SCHEDULER_DATABASE_URL=... python -m insight.scheduled
+freeze|erasures|meter-expire|meter-renew|spot-check`（`insight/scheduled.py`，PLT-13 第一步；库函数与授权不改）。按时间表调用见 `services/scheduler`。
 注意：`--student` 的学生 ID 会留在 shell 历史与进程列表（`ps`）里，只限本机合成库使用；不要对任何含真实学生数据的库这样传参（规则 8）。
 
 处理顺序与知识服务相同：令牌决定 caller（sha256 后常量时间比较）→ 调用方准入 → 501 → 契约版本 → 请求体 caller 与令牌一致 →

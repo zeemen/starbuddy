@@ -1,0 +1,208 @@
+"""调度器（PLT-13 第一步，specs/scheduler-plt13）的变异测试：把时间表计算、配置校验、环境白名单、启动核对、超时、退出码映射、
+告警级别、计数清洗、咨询锁与常驻循环的关键检查逐条改坏，断言调度器的测试能发现。
+
+做法同 services/learning/scripts/practice_mutations.py：每个变异在临时目录里复制一份 services/scheduler（仓库其余部分软链接回去，
+保持目录结构：子进程解释器、审核台的本机核对、洞察服务的一次性库都按相对位置找），改一处源码再跑测试；只有“测试失败”（退出码 1）
+算发现，原文找不到或不唯一、收集错误（退出码 2 及以上）算变异本身写错。先跑一次不变异的对照组，必须通过。两组：
+- 纯函数与运行器：tests/test_schedule.py、test_config.py、test_runner.py，不连库（子进程用假模块）；
+- 库上：tests/test_db_e2e.py，一次性 Postgres（每个变异起一个库）；没有本机 Postgres 或子进程的 venv 时退出码 3（Makefile 决定是否算失败）。
+"""
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from concurrent.futures import ThreadPoolExecutor
+from glob import glob
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parents[1]          # services/scheduler
+REPO = HERE.parents[1]
+PY = HERE / ".venv" / "bin" / "python"
+PURE_TESTS = ["tests/test_schedule.py", "tests/test_config.py", "tests/test_runner.py"]
+DB_TESTS = ["tests/test_db_e2e.py"]
+S, C, R, L, M = "scheduler/schedule.py", "scheduler/config.py", "scheduler/runner.py", "scheduler/loop.py", "scheduler/__main__.py"
+
+PURE: dict[str, list[tuple[str, str, str]]] = {
+    # 时间表（纯函数）
+    "每 N 分钟不对齐整点": [(S, "slot = (m // s.every_minutes + 1) * s.every_minutes", "slot = m + s.every_minutes")],
+    "每天恰好在点上不往后推": [(S, "return cand if cand > local else _at(today + timedelta(days=1), s.hour, s.minute)",
+                         "return cand if cand >= local else _at(today + timedelta(days=1), s.hour, s.minute)")],
+    "每周不按周几": [(S, "d = today + timedelta(days=(s.weekday - today.weekday()) % 7)", "d = today")],
+    "每周恰好在点上不推到下周": [(S, "return cand if cand > local else _at(d + timedelta(days=7), s.hour, s.minute)",
+                            "return cand if cand >= local else _at(d + timedelta(days=7), s.hour, s.minute)")],
+    "时区不是上海": [(S, "TZ = ZoneInfo(TZ_NAME)", "TZ = ZoneInfo(\"UTC\")")],
+    "跨月末按日加一": [(S, "return cand if cand > local else _at(today + timedelta(days=1), s.hour, s.minute)",
+                    "return cand if cand > local else _at(today.replace(day=min(today.day + 1, 28)), s.hour, s.minute)")],
+    "每小时跨日算错": [(S, "            nxt = local.replace(minute=0, second=0, microsecond=0, tzinfo=None) + timedelta(hours=1)\n"
+                         "            cand = _at(nxt.date(), nxt.hour, s.minute)",
+                    "            cand = _at(today, (local.hour + 1) % 24, s.minute)")],
+    "N 不整除 1440 也收": [(S, "if n > MINUTES_PER_DAY // 2 or MINUTES_PER_DAY % n:", "if n > MINUTES_PER_DAY // 2:")],
+    "不要求输入带时区": [(S, "if after.tzinfo is None or after.utcoffset() is None:", "if False:")],
+    # 配置
+    "子命令不按身份限定": [(C, "_need(args[0] in ident.commands,", "_need(True,")],
+    # 附加环境变量：每个身份的显式白名单；连接串类名字只认本身份的
+    "声明的附加变量不查白名单（同前缀都收）": [(C, "    return name in identity.extra_names and not is_url_name(name)",
+                                  "    return name.startswith(identity.env_var.rsplit(\"_\", 1)[0] + \"_\") and not is_url_name(name)")],
+    "白名单收连接串类名字": [(C, "    return name in identity.extra_names and not is_url_name(name)",
+                        "    return name in identity.extra_names or is_url_name(name)")],
+    "通配声明不查登记的前缀": [(C, "        return name[:-1] in identity.extra_prefixes", "        return True")],
+    "通配匹配收连接串类名字": [(C, "and bool(_ENV_NAME.fullmatch(name)) and not is_url_name(name) and not any(",
+                          "and bool(_ENV_NAME.fullmatch(name)) and not any(")],
+    "连接串后缀只认 _DATABASE_URL": [(C, "URL_SUFFIXES = (\"_URL\", \"_DSN\", \"_DATABASE_URL\")", "URL_SUFFIXES = (\"_DATABASE_URL\",)")],
+    "通配匹配不过滤凭据字样": [(C, " and not any(w in name for w in FORBIDDEN_ENV_WORDS))", ")")],
+    "通配匹配不限登记的前缀": [(C, "    return (prefix in identity.extra_prefixes and name.startswith(prefix)",
+                          "    return (name.startswith(prefix)")],
+    "审核台退出码 1 不算拒绝": [(C, "frozenset({\"expire-affairs\"}), refused_exits=frozenset({1, 2})),",
+                           "frozenset({\"expire-affairs\"}), refused_exits=frozenset({2})),")],
+    "启动补跑不限周报": [(C, "_need(not catch_up or args[0] in CATCH_UP_COMMANDS,", "_need(True,")],
+    "时区可以随便配": [(C, "_need(doc[\"timezone\"] == TZ_NAME,", "_need(True,")],
+    "合成配置也算已签字": [(C, "signed = bool(doc[\"signed_by\"].strip() and doc[\"signed_at\"].strip()) and not doc[\"synthetic\"]",
+                       "signed = bool(doc[\"signed_by\"].strip() and doc[\"signed_at\"].strip())")],
+    "任务级超时默认不是 10 分钟": [(C, "DEFAULT_TIMEOUT = 600", "DEFAULT_TIMEOUT = 3600")],
+    "参数不限简单字符串": [(C, "_ARG = re.compile(r\"[A-Za-z0-9_.:=+/-]{1,64}\")", "_ARG = re.compile(r\".{1,64}\")")],
+    # 环境白名单与启动核对
+    "子进程继承调度器的全部环境": [(R, "    out = dict(BASE_ENV)\n    for name in job.required_env:",
+                              "    out = {**BASE_ENV, **environ}\n    for name in job.required_env:")],
+    "子进程继承调度器的 PATH": [(R, "    out = dict(BASE_ENV)\n    for name in job.required_env:",
+                             "    out = dict(BASE_ENV, PATH=environ.get(\"PATH\", \"\"))\n    for name in job.required_env:")],
+    "运行时通配匹配不核对名字": [(R, "if v and matched_name_ok(job.identity, prefix, k)}", "if v and k.startswith(prefix)}")],
+    "子进程连接串不加语句超时": [(R, "    env[url] = with_statement_timeout(env[url], statement_timeout_ms(job.timeout_seconds))", "    pass")],
+    "语句超时不小于任务超时": [(R, "return max(1000, int(timeout_seconds * 900))", "return max(1000, int(timeout_seconds * 1000))")],
+    "直接构造的任务不再核附加变量": [(R, "        if not env_name_ok(job.identity, pattern):", "        if False:")],
+    "身份的运行环境不限 dev/test": [(R, "    if env[job.identity.env_var] not in ALLOWED_ENVS:", "    if False:")],
+    "连接串不核对本机": [(R, "            check_local_url(k, v)", "            pass")],
+    "缺必填变量不报": [(R, "        if not environ.get(name):\n            raise PreflightError(f\"任务 {job.name} 缺少 {name}\")\n"
+                         "        out[name] = environ[name]", "        out[name] = environ.get(name, \"\")")],
+    "子进程解释器不存在也跑": [(R, "    if not interpreter.exists():", "    if False:")],
+    "取锁连接不核对服务端": [(R, "        await check_server_local(conn)\n        got =", "        got =")],
+    # 运行：超时、退出码、告警、清洗、锁
+    "任务级超时不生效": [(R, "deadline = loop.time() + job.timeout_seconds", "deadline = loop.time() + 3600")],
+    "运行中不探活锁连接": [(R, "if loop.time() < deadline and not await handle.probe():", "if False:")],
+    "退出码 1 当成功": [(R, "return \"partial\" if returncode == 1 else \"crashed\"", "return \"ok\" if returncode == 1 else \"crashed\"")],
+    "被信号杀掉不算崩溃": [(R, "return \"partial\" if returncode == 1 else \"crashed\"", "return \"partial\" if returncode == 1 else \"ok\"")],
+    "拒绝退出码不按身份区分": [(R, "if returncode in (identity.refused_exits if identity is not None else frozenset({2})):",
+                          "if returncode == 2:")],
+    "锁丢失不告警": [(R, "\"lock_error\", \"lock_lost\", \"skipped_running\"})", "\"lock_error\", \"skipped_running\"})")],
+    "拒绝的退出码不是 2": [(R, "EXIT = {\"ok\": 0, \"partial\": 1, \"refused\": 2,", "EXIT = {\"ok\": 0, \"partial\": 1, \"refused\": 1,")],
+    "部分失败不告警": [(R, "ALERT = frozenset({\"partial\", ", "ALERT = frozenset({")],
+    "stale_estimate 不告警": [(R, "return outcome in ALERT or (isinstance(stale", "return outcome in ALERT or False and (isinstance(stale")],
+    "计数不清洗 UUID": [(R, "return v if _TEXT.fullmatch(v) and not _UUID.search(v) else None", "return v")],
+    "计数不限键名": [(R, "            if isinstance(k, str) and _KEY.fullmatch(k):", "            if isinstance(k, str):")],
+    "错误摘要不抹 UUID": [(R, "    s = _UNSAFE.sub(\" \", _UUID.sub(\"uuid\", s))", "    s = _UNSAFE.sub(\" \", s)")],
+    "错误摘要不按字符白名单": [(R, "    s = _UNSAFE.sub(\" \", _UUID.sub(\"uuid\", s))", "    s = _UUID.sub(\"uuid\", s)")],
+    "错误摘要不剥连接串": [(R, "    s = _USER.sub(\" \", _URLISH.sub(\" \", lines[-1]))", "    s = _USER.sub(\" \", lines[-1])")],
+    "错误摘要不剥 user=": [(R, "    s = _USER.sub(\" \", _URLISH.sub(\" \", lines[-1]))", "    s = _URLISH.sub(\" \", lines[-1])")],
+    "计数清洗放过 @": [(R, "_TEXT = re.compile(r\"[A-Za-z0-9_.:+-]{1,40}\")", "_TEXT = re.compile(r\"[A-Za-z0-9_.:@+-]{1,40}\")")],
+    "输出不是 JSON 也算成功": [(R, "return \"ok\" if counts is not None else \"bad_output\"", "return \"ok\"")],
+    "取不到锁也执行": [(R, "                if not handle.acquired:\n                    return done(\"skipped_locked\")",
+                    "                if False:\n                    return done(\"skipped_locked\")")],
+    "锁键不按任务名派生": [(R, "f\"starbuddy.scheduler:{job_name}\".encode(\"utf-8\")", "b\"starbuddy.scheduler\"")],
+    "dry-run 也取锁": [(R, "        if dry_run:\n            return done(\"dry_run\"", "        if False:\n            return done(\"dry_run\"")],
+    # 常驻循环
+    "上一轮没结束也重叠": [(L, "(busy if t is not None and not t.done() else start).append(job)", "start.append(job)")],
+    "错过的轮次补跑": [(L, "            self.next_due[name] = next_run(job.schedule, now)",
+                    "            self.next_due[name] = next_run(job.schedule, self.next_due[name])")],
+    "启动补跑失效": [(L, "now if j.catch_up else next_run(j.schedule, now)", "next_run(j.schedule, now)")],
+    "所有任务都启动补跑": [(L, "now if j.catch_up else next_run(j.schedule, now)", "now")],
+    # 命令行
+    "SCHEDULER_ENV 不限 dev/test": [(M, "    if env.get(ENV_VAR, \"\") not in ALLOWED_ENVS:", "    if False:")],
+    "启动核对不过也启动": [(M, "    if problems:\n        for msg in problems:", "    if False:\n        for msg in problems:")],
+    "--once 也核对全部任务": [(M, "    for job in selected:\n        try:\n            run.check(job)",
+                          "    for job in cfg.jobs.values():\n        try:\n            run.check(job)")],
+    "dry-run 列出变量的值": [(M, "\"env\": sorted(child_env(job, env))", "\"env\": sorted(f\"{k}={v}\" for k, v in child_env(job, env).items())")],
+}
+
+DB: dict[str, list[tuple[str, str, str]]] = {
+    "咨询锁形同虚设（总是取到）": [(R, "got = bool(await conn.fetchval(\"SELECT pg_try_advisory_lock($1::bigint)\", lock_key(job.name)))",
+                            "got = True")],
+    "所有任务共用一把锁": [(R, "\"SELECT pg_try_advisory_lock($1::bigint)\", lock_key(job.name)", "\"SELECT pg_try_advisory_lock($1::bigint)\", 1")],
+    "锁不按该身份的连接取": [(R, "conn = await asyncpg.connect(env[job.identity.url_var],", "conn = await asyncpg.connect(env[\"SCHEDULER_DATABASE_URL\"],")],
+    "子进程拿不到白名单环境": [(R, "cwd=str(cwd), env=dict(env),", "cwd=str(cwd), env=dict(BASE_ENV),")],
+    "子进程在调度器目录里跑": [(R, "        cwd = self.interpreter(job)[1]\n", "        cwd = SERVICES / \"scheduler\"\n")],
+    "取不到锁也执行（库上）": [(R, "                if not handle.acquired:\n                    return done(\"skipped_locked\")",
+                         "                if False:\n                    return done(\"skipped_locked\")")],
+    "探活总说锁还在": [(R, "return await asyncio.wait_for(conn.fetchval(\"SELECT 1\"), PROBE_TIMEOUT) == 1", "return True")],
+    "传给子进程的语句超时不生效": [(R, "    q.append((\"statement_timeout\", str(ms)))", "    q.append((\"statement_timeout_ms\", str(ms)))")],
+}
+
+
+def _copy(tmp: Path) -> Path:
+    """tmp/repo：services/scheduler 复制一份（不带 .venv），仓库其余部分软链接回去"""
+    root = tmp / "repo"
+    (root / "services").mkdir(parents=True)
+    for e in REPO.iterdir():
+        if e.name not in ("services", ".git"):
+            (root / e.name).symlink_to(e)
+    for e in (REPO / "services").iterdir():
+        if e.name != "scheduler":
+            (root / "services" / e.name).symlink_to(e)
+    dst = root / "services" / "scheduler"
+    shutil.copytree(HERE, dst, ignore=shutil.ignore_patterns(".venv", "__pycache__", ".pytest_cache"))
+    return dst
+
+
+def _run(dst: Path, tests: list[str]) -> tuple[int, str]:
+    env = {**os.environ, "SCHEDULER_TEST_STRICT": "1", "PYTHONDONTWRITEBYTECODE": "1"}
+    try:
+        p = subprocess.run([str(PY), "-m", "pytest", "-q", "-x", "-p", "no:cacheprovider", *tests], cwd=dst, env=env,
+                           capture_output=True, text=True, timeout=300)
+    except subprocess.TimeoutExpired:
+        return 124, "timeout"
+    return p.returncode, p.stdout[-4000:] + p.stderr[-2000:]
+
+
+def one(name: str, edits: list[tuple[str, str, str]], tests: list[str]) -> str | None:
+    with tempfile.TemporaryDirectory(prefix="scheduler-mut.") as t:
+        dst = _copy(Path(t))
+        for rel, orig, repl in edits:
+            f = dst / rel
+            src = f.read_text(encoding="utf-8")
+            if src.count(orig) != 1:
+                return f"{name}：变异本身写错（原文找不到或不唯一：{rel}）"
+            f.write_text(src.replace(orig, repl), encoding="utf-8")
+        rc, _ = _run(dst, tests)
+    if rc == 1:
+        return None
+    return f"{name}：{'漏检' if rc == 0 else '超时（算漏检）' if rc == 124 else f'变异本身写错（pytest 退出码 {rc}）'}"
+
+
+def group(label: str, mutations: dict[str, list[tuple[str, str, str]]], tests: list[str], workers: int) -> int:
+    with tempfile.TemporaryDirectory(prefix="scheduler-mut.") as t:
+        rc, out = _run(_copy(Path(t)), tests)
+    if rc != 0:
+        print(out)
+        print(f"scheduler-mutation（{label}）：失败（对照组没有通过，rc={rc}）")
+        return 1
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        results = list(pool.map(lambda kv: one(kv[0], kv[1], tests), mutations.items()))
+    missed = [r for r in results if r]
+    for m in missed:
+        print(f"  {m}")
+    if missed:
+        print(f"scheduler-mutation（{label}）：失败，{len(missed)}/{len(mutations)} 个变异没有被发现")
+        return 1
+    print(f"scheduler-mutation（{label}）：通过（{len(mutations)} 个变异全部被发现）")
+    return 0
+
+
+def main() -> int:
+    if not PY.exists():
+        print("scheduler-mutation: 跳过（没有安装调度器依赖；见 services/scheduler/README.md）")
+        return 3
+    rc = group("纯函数与运行器", PURE, PURE_TESTS, 6)
+    if rc:
+        return rc
+    if not (os.environ.get("PGBIN") or glob("/usr/lib/postgresql/*/bin/initdb")):
+        print("scheduler-mutation（库上）：跳过（本机没有 Postgres 服务端）")
+        return 3
+    if not all((REPO / "services" / s / ".venv/bin/python").exists() for s in ("insight", "learning")):
+        print("scheduler-mutation（库上）：跳过（没有洞察服务或学习服务的 venv：子进程解释器）")
+        return 3
+    return group("库上", DB, DB_TESTS, 3)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
