@@ -2,6 +2,7 @@
 // 推荐理由按判断显示（TaskList）；关于学生的句子只来自 RenderedStatement.text，带 data-claim-id。
 // 跨科编排（PLT-11，开关 today_orch 默认关）：前端开关打开、且 BFF 返回了 ordered 时，在按科列表之前显示跨科有序列表，每条带“去做”；
 // 开关关或 BFF 没返回 ordered 时与开关上线前零差异。
+// 本月计划入口（PLT-14 第 3 步，开关 monthly_plan 默认关）：打开时标题下多一条“本月计划”链接（只链到学习计划）；关时零差异。
 import { notFound, redirect } from 'next/navigation';
 import { fetchToday } from '../../../../lib/shell-api.ts';
 import { subjectLabel, TODAY, TODAY_ORCH } from '../../../../shell/copy.ts';
@@ -9,6 +10,7 @@ import { requireStudent } from '../../../../shell/guard.ts';
 import { TaskList } from '../../../../shell/TaskList.tsx';
 import { todayOrchEnabled } from '../../../../shell/today-orch.ts';
 import { OrderedTaskList } from '../../../../today/OrderedTaskList.tsx';
+import { MyPlanLink } from '../../../../monthly-plan/MyPlanLink.tsx';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,6 +30,8 @@ export default async function TodayPage({ params }: { params: Promise<{ studentI
   return (
     <main data-testid="today">
       <h1>{TODAY.title}</h1>
+      {/* 本月计划入口（PLT-14 第 3 步，开关 monthly_plan 默认关；关时不渲染任何元素）：只给学生本人 */}
+      {ps.me.account_kind === 'student' && ps.me.student_id === studentId ? <MyPlanLink studentId={studentId} /> : null}
       {notInGrade ? <p className="muted" data-testid="today-not-in-grade">{TODAY.notInGrade}</p>
         : sections.length === 0 ? <p className="muted">{TODAY.noSubjects}</p> : null}
       {showOrch ? (

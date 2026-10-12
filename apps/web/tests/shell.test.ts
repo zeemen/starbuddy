@@ -65,8 +65,10 @@ test('壳页面与组件里没有中文文案：文字只从文案文件取；�
   const claimRenderers = src.filter((f) => /data-claim-id/.test(code(f.text))).map((f) => f.path);
   // 冲刺 5-H 起另有“为什么”页、考试页（对账卡）与周报页渲染判断句（tests/trust.test.ts 逐个核对）；
   // H5 星图 v1（开关 starmap_v1，默认关）的星位与星数说明（tests/star-v1.test.ts 核对）；
-  // 首份报告开发演示页（SIE-02b 第二步 PR 2，开关 report，默认关）的报告句与待验证虚线（tests/first-report.test.ts 核对）
-  assert.deepEqual(claimRenderers.sort(), ['src/shell/TaskList.tsx', 'src/star/StarMapV1.tsx', 'src/trust/ExamPages.tsx',
+  // 首份报告开发演示页（SIE-02b 第二步 PR 2，开关 report，默认关）的报告句与待验证虚线（tests/first-report.test.ts 核对）；
+  // 月度计划（PLT-14 第 3 步，开关 monthly_plan，默认关）的家长端页面与学习计划组件（tests/monthly-plan.test.ts 核对）
+  assert.deepEqual(claimRenderers.sort(), ['src/app/family/[studentId]/monthly-plan/page.tsx', 'src/monthly-plan/StudentPlanSection.tsx',
+                                          'src/shell/TaskList.tsx', 'src/star/StarMapV1.tsx', 'src/trust/ExamPages.tsx',
                                           'src/trust/FirstReportDemo.tsx', 'src/trust/WeeklyPage.tsx', 'src/trust/WhyPage.tsx']);
   assert.match(readFileSync(join(WEB, 'src/shell/TaskList.tsx'), 'utf8'), /data-claim-id=\{r\.claim_id\}>\{r\.text\}/);
 });

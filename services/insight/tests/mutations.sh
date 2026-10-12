@@ -210,6 +210,10 @@ M=(
   $'月度计划：模板库不查禁用推断\tinsight/monthly.py\t        _need(not fm(text), "模板库文案命中禁用推断词表")\t        pass\ttests/test_monthly.py'
   $'月度计划：未签字模板收人写文案\tinsight/monthly.py\t        _need(signed and 1 <= len(text.strip())\t        _need(1 <= len(text.strip())\ttests/test_monthly.py'
   $'月度计划：合成配置可在 dev 加载\tinsight/monthly.py\t    if doc["synthetic"] and env != TEST_ENV:\n        raise PolicyError("合成占位的月度计划配置\t    if False:\n        raise PolicyError("合成占位的月度计划配置\ttests/test_monthly.py'
+  # PLT-14 第 3 步审查（模板一致性）：钉死文件核对、签字文案的 {变量} 集合（指纹算法一改，仓库里的模板库就与钉死文件对不上、
+  # 模块导入即失败，变异脚本会把它当成“变异本身写错”，所以不单列；由 test_template_fingerprint_is_sha256_of_raw_bytes_and_lock_is_checked 覆盖）
+  $'月度计划：模板库不核对钉死文件\tinsight/monthly.py\t    check_lock(lib, lp.read_text(encoding="utf-8"))\n    return lib\t    return lib\ttests/test_monthly.py'
+  $'月度计划：签字文案变量不核对\tinsight/monthly.py\t        _need(set(SLOT.findall(text)) == set(variables) and\t        _need(True or\ttests/test_monthly.py'
   $'月度计划：生成不读诉求\tinsight/store_monthly.py\tgoals=_goals(facts.get("goals")),\tgoals=(),\ttests/test_monthly_db.py'
   $'月度计划：生成先查权益再返回已有快照\tinsight/store_monthly.py\t        existing = await conn.fetchval("SELECT insight.monthly_plan_read($1::uuid, $2::date)", student, month)\t        f0 = await conn.fetchval("SELECT insight.monthly_plan_facts($1::uuid, $2::date)", student, month)\n        if not f0 or f0.get("entitled") is not True:\n            raise MonthlyError("unavailable")\n        existing = await conn.fetchval("SELECT insight.monthly_plan_read($1::uuid, $2::date)", student, month)\ttests/test_monthly_db.py'
   $'月度计划：重放不按历史版本取判断\tinsight/store_monthly.py\t WHERE c.student_id = $1::uuid AND h.id = ANY ($2::uuid[])\t WHERE c.student_id = $1::uuid AND h.claim_id IN (SELECT x.claim_id FROM insight.claim_history x WHERE x.id = ANY ($2::uuid[]))\ttests/test_monthly_db.py'

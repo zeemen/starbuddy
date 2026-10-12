@@ -37,7 +37,8 @@ const scalar = (raw: string): string => {
   return v.startsWith('"') ? (JSON.parse(v) as string) : v;
 };
 
-export function parseLexicon(text: string): Lexicon {
+/** minCategories：禁用推断词表至少十类（缺省）；“名次 / 概率 / 承诺”词表三类（PLT-14 第 3 步，noPromiseLexicon） */
+export function parseLexicon(text: string, minCategories: number = MIN_CATEGORIES): Lexicon {
   const categories: Lexicon['categories'] = [];
   const allowedExamples: string[] = [];
   let list: string[] | null = null;
@@ -77,7 +78,7 @@ export function parseLexicon(text: string): Lexicon {
       if (list === patterns) categories[categories.length - 1]!.patterns.push(new RegExp(scalar(m[1]!), 'i'));
     }
   }
-  if (categories.length < MIN_CATEGORIES || new Set(categories.map((c) => c.id)).size !== categories.length
+  if (categories.length < minCategories || new Set(categories.map((c) => c.id)).size !== categories.length
       || categories.some((c) => c.patterns.length === 0)) {
     throw new Error('禁用推断词表不完整：检查不能缺席');
   }
@@ -91,6 +92,34 @@ export function lexicon(): Lexicon {
     cached = parseLexicon(readFileSync(LEXICON_PATH, 'utf8'));
   }
   return cached;
+}
+
+// “名次 / 概率 / 承诺”最小词表（草稿，PLT-14 第 2 步新增；docs/design/sie/no-promise.v0.draft.yaml）：与禁用推断词表同一格式、
+// 同一个解析与匹配（同一套规范化）。月度计划的成品句子两张表都要过（第 3 步）。读不到、少于三类、或自检不过时抛错（fail closed）：
+// 自检 = 每类的禁止示例被本类命中、全局允许示例不被任何一类命中（防止 JS 与 Python 的正则语义差异让词表在这里失效）。
+export const NO_PROMISE_PATH = new URL('../../../../docs/design/sie/no-promise.v0.draft.yaml', import.meta.url);
+export const NO_PROMISE_MIN_CATEGORIES = 3;
+
+export function checkNoPromise(lex: Lexicon): Lexicon {
+  for (const c of lex.categories) {
+    if (c.forbiddenExamples.length === 0) throw new Error('“名次 / 概率 / 承诺”词表有类别没有禁止示例');
+    for (const e of c.forbiddenExamples) {
+      if (!forbiddenHits(e, lex).includes(c.id)) throw new Error('“名次 / 概率 / 承诺”词表的禁止示例没有被本类命中');
+    }
+  }
+  if (lex.allowedExamples.length === 0 || lex.allowedExamples.some((e) => forbiddenHits(e, lex).length > 0)) {
+    throw new Error('“名次 / 概率 / 承诺”词表的允许示例被误伤');
+  }
+  return lex;
+}
+
+let noPromiseCached: Lexicon | null = null;
+export function noPromiseLexicon(): Lexicon {
+  if (!noPromiseCached) {
+    t2sMap();
+    noPromiseCached = checkNoPromise(parseLexicon(readFileSync(NO_PROMISE_PATH, 'utf8'), NO_PROMISE_MIN_CATEGORIES));
+  }
+  return noPromiseCached;
 }
 
 /** 命中的类别 ID（空 = 没有命中） */

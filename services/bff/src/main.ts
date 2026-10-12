@@ -34,6 +34,10 @@
 //                          （同一个服务间令牌、同一个计划时限）；不配学习服务时 ordered 为 null
 //   STARBUDDY_FAMILY_GOALS dev / test：家长诉求的开关（只认 family_goals；src/family/features.ts，PLT-14 第 1 步）；缺省关、两条路由不注册；
 //                          其余环境设了就拒绝启动。只给家长：学生会话在请求体、CSRF、限流之前一律 404；不计量
+//   STARBUDDY_MONTHLY_PLAN dev / test：月度计划的开关（只认 monthly_plan；src/family/monthly-plan.ts，PLT-14 第 3 步）；缺省关、两条路由不注册；
+//                          其余环境设了就拒绝启动；打开时启动即读模板库（services/insight/templates/monthly_plan.v0.yaml）与两张词表，
+//                          读不到拒绝启动。家长端本月没有快照时经 BFF_INSIGHT_URL 调洞察服务生成接口（同一个 caller=bff 令牌）；
+//                          不配洞察服务时家长端本月没有快照就 503。不计量
 //   BFF_TRUST_SECRET       信任界面专用密钥（删除确认凭据、异议幂等键）：十六进制 ≥ 32 字节，规则同 BFF_AUTH_SECRET
 // 诊断的宵禁判断用数据库的计量时钟（platform.meter_guard_status，迁移 0030），BFF 没有自己的时钟开关。
 import pg from 'pg';
@@ -57,6 +61,8 @@ import { httpPracticeLearning } from './practice/learning-client.ts';
 import { parseRetestFeature } from './retest/features.ts';
 import { httpRetestLearning } from './retest/learning-client.ts';
 import { parseFamilyGoalsFeature } from './family/features.ts';
+import { cleanWith, httpMonthlyPlanClient, loadTemplates, parseMonthlyPlanFeature } from './family/monthly-plan.ts';
+import { lexicon, noPromiseLexicon } from './trust/lexicon.ts';
 
 // 配置不全、环境不认识、非 dev / test 却没有短信供应商：一律拒绝启动（在连数据库之前）
 let shellDeps: Omit<ShellDeps, 'pool'>;
@@ -67,6 +73,14 @@ try {
   const retestOn = parseRetestFeature(env, process.env['STARBUDDY_RETEST_UI']);        // 同上
   const orchOn = parseTodayOrchFeature(env, process.env['STARBUDDY_TODAY_ORCH']);      // 同上
   const familyGoalsOn = parseFamilyGoalsFeature(env, process.env['STARBUDDY_FAMILY_GOALS']);  // 同上
+  const monthlyPlanOn = parseMonthlyPlanFeature(env, process.env['STARBUDDY_MONTHLY_PLAN']);  // 同上
+  if (monthlyPlanOn) {
+    try {
+      loadTemplates(env, cleanWith(lexicon(), noPromiseLexicon()));  // 模板库与两张词表启动即读一次（fail closed）
+    } catch (e) {
+      throw new Error(`STARBUDDY_MONTHLY_PLAN 打开但月度计划模板库或词表不可用：${(e as Error).message}`);
+    }
+  }
   const configPath = process.env['BFF_AUTH_CONFIG'];
   if (configPath !== undefined && !isLocalEnv(env)) throw new Error('BFF_AUTH_CONFIG 只在 dev / test 可用');
   const keys = loadKeys(env);
@@ -81,7 +95,7 @@ try {
                 shell: { config: shellConfigPath === undefined ? loadShellConfig() : loadShellConfig(shellConfigPath), orch: { enabled: orchOn } },
                 trust: { features: parseTrustFeatures(env, process.env['STARBUDDY_TRUST_UI']) },
                 starMap: { features: starMapFeatures }, practice: { enabled: practiceOn }, retest: { enabled: retestOn },
-                familyGoals: { enabled: familyGoalsOn } };
+                familyGoals: { enabled: familyGoalsOn }, monthlyPlan: { enabled: monthlyPlanOn } };
   // 连续使用提醒的计时在进程内（src/shell/rest.ts）：dev / test 以外没声明单实例部署就不启用，并在启动时告警（pilot 前须完成会话表加列迁移）
   if (!isLocalEnv(env) && !shellDeps.shell!.config!.rest.singleInstance) {
     console.warn(JSON.stringify({ event: 'rest_reminder_disabled', reason: 'in_process_timer_requires_single_instance' }));
@@ -136,6 +150,8 @@ if (insightUrl) {
   shellDeps.shell!.insight = httpInsightClient({ baseUrl: insightUrl, token: insightCredential });
   shellDeps.trust!.dispute = httpDisputeClient({ baseUrl: insightUrl, token: insightCredential });
   shellDeps.trust!.read = httpInsightReadClient({ baseUrl: insightUrl, token: insightCredential });  // 首份报告与单条解释（开关 report / why）
+  // 月度计划生成接口（开关 monthly_plan；只在家长打开页面且本月没有快照时调）
+  if (shellDeps.monthlyPlan!.enabled) shellDeps.monthlyPlan!.client = httpMonthlyPlanClient({ baseUrl: insightUrl, token: insightCredential });
 }
 const server = createShellServer({ ...shellDeps, pool });
 server.listen(port, '127.0.0.1', () => {

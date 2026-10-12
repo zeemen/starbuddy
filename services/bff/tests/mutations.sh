@@ -377,6 +377,32 @@ SM=(
   $'诉求：不管开关一律注册\tsrc/http/routes.ts\t...(familyGoals ? FAMILY_GOALS_ROUTES : [])\t...FAMILY_GOALS_ROUTES'
   $'诉求：去掉年级专用问题码\tsrc/http/family-goals-routes.ts\tproblem(P.GOAL_GRADE_NOT_SUPPORTED);\tproblem(P.GRADE_OUT_OF_RANGE);'
   $'诉求：去掉写入上限映射\tsrc/family/goals.ts\tif (code === \'54000\') return { kind: \'too_many\' };\t'
+  # 月度计划（PLT-14 第 3 步，specs/family-goals-monthly-plan/step3-spec.md）：家长端只给家长、先确认有效绑定再调生成、同月只生成一次、
+  # 没有权益的统一回答、学生端只给本人、模板版本核对、两张词表、对外白名单、分差区间形状、开关关时不注册、生成客户端的错误映射。
+  # 这几条跑 tests/monthly-plan-units.test.ts、tests/monthly-plan.integration.test.ts、tests/shell-openapi.test.ts（BFFMUT_FILTER=月度计划：）
+  $'月度计划：家长端不标 guardianOnly404\tsrc/http/monthly-plan-routes.ts\tauth: \'session\', guardianOnly404: true,\tauth: \'session\','
+  $'月度计划：不确认有效绑定就读视图、调生成\tsrc/http/monthly-plan-routes.ts\tif (!a || a.linked !== true || a.live !== true) return null;\tif (!a) return null;'
+  $'月度计划：已有快照仍调生成\tsrc/http/monthly-plan-routes.ts\tif (first.view === null) {\tif (true) {'
+  $'月度计划：没有权益当成不可用\tsrc/http/monthly-plan-routes.ts\tif (out === \'not_available\') entitled = false;\tif (false) entitled = false;'
+  $'月度计划：不核对模板版本\tsrc/http/monthly-plan-routes.ts\t || v[\'template_version\'] !== rc.lib.version) {\t) {'
+  $'月度计划：学生端不核对本人\tsrc/http/monthly-plan-routes.ts\tif (!a || a.self !== true) return null;\tif (!a) return null;'
+  $'月度计划：成品句子不过名次概率承诺词表\tsrc/family/monthly-plan.ts\tforbiddenHits(text, forbidden).length === 0 && forbiddenHits(text, noPromise).length === 0;\tforbiddenHits(text, forbidden).length === 0;'
+  $'月度计划：不核对对外白名单\tsrc/family/monthly-plan.ts\t || !ctx.external.has(templateRef(e[\'template_key\'], e[\'template_version\']))) {\t) {'
+  $'月度计划：分差区间收多余字段\tsrc/family/monthly-plan.ts\tv[\'reached\'] === false && Object.keys(v).length === 3 && \tv[\'reached\'] === false && '
+  $'月度计划：不管开关一律注册\tsrc/http/routes.ts\t...(monthlyPlan ? MONTHLY_PLAN_ROUTES : [])\t...MONTHLY_PLAN_ROUTES'
+  $'月度计划：别的 404 也当没有权益\tsrc/family/monthly-plan.ts\tbody?.[\'code\'] === \'CONTENT_VERSION_NOT_FOUND\' ? \'not_available\' : \'unavailable\'\t\'not_available\''
+  # 审查后补（PLT-14 第 3 步审查意见 4）：判断句 copy_key、本月按上海时区、注意事项只用 guardian 段模板、学生端完整时间戳、生成中途解绑 404；
+  # 生成桶、负缓存、钉死文件、词表命中计数
+  $'月度计划：判断句不核对 copy_key\tsrc/family/monthly-plan.ts\t      || e[\'copy_key\'] !== copyKey || !ctx.external.has(\t      || !ctx.external.has('
+  $'月度计划：本月不按上海时区\tsrc/http/monthly-plan-routes.ts\t${ts} AT TIME ZONE \'Asia/Shanghai\'\t${ts} AT TIME ZONE \'UTC\''
+  $'月度计划：注意事项可借别段模板\tsrc/family/monthly-plan.ts\tn[\'copy_key\'] !== `monthly_plan.guardian.${n[\'key\']}`\ttypeof n[\'copy_key\'] !== \'string\''
+  $'月度计划：学生端时间戳只看前缀\tsrc/family/monthly-plan.ts\t!STAMP.test(raw[\'generated_at\'])) return null;\\n  const student_plan = renderStudentPlan(raw[\'student_plan\'], ctx, t);\\n  return\t!/^\\d{4}-\\d{2}-\\d{2}T/.test(raw[\'generated_at\'])) return null;\\n  const student_plan = renderStudentPlan(raw[\'student_plan\'], ctx, t);\\n  return'
+  $'月度计划：生成中途解绑不回 404\tsrc/http/monthly-plan-routes.ts\tif (!again) return problem(P.NOT_FOUND);\tif (!again) return UNAVAILABLE;'
+  $'月度计划：不计生成桶\tsrc/http/monthly-plan-routes.ts\tif (!(await generateAllowed(deps, account))) {\tif (false) {'
+  $'月度计划：没有负缓存\tsrc/http/monthly-plan-routes.ts\tif (until !== undefined && until > nowMs(deps)) {\tif (false) {'
+  $'月度计划：不核对钉死文件\tsrc/family/monthly-plan.ts\tneed(l[\'template_version\'] === lib.version && l[\'sha256\'] === lib.fingerprint, \'模板库与钉死文件不一致\');\t'
+  $'月度计划：签字文案变量不核对\tsrc/family/monthly-plan.ts\t      need(slots.size === t.vars!.length\t      need(true || slots.size === t.vars!.length'
+  $'月度计划：词表命中不另计\tsrc/family/monthly-plan.ts\t    t.lexicon_hits++;\t'
 )
 # 副本保持仓库结构（测试按 ../../../ 找仓库根：adapters/aya 的登记脚本、db/seeds 的种子），adapters、db 软链接回仓库。
 # 安全审查阻断 1：原来的副本不保持结构，测试的 before 在任何代码下都失败，变异全部“被发现”却不说明任何问题。
@@ -432,6 +458,7 @@ star_run() {  # $1 副本根目录，$2 变异名（“计量：”开头的跑�
   [[ "${2:-}" == 题面：* ]] && tests="tests/item-rich.test.ts"
   [[ "${2:-}" == 编排：* ]] && tests="tests/today-orch-units.test.ts tests/today-orch.integration.test.ts"
   [[ "${2:-}" == 诉求：* ]] && tests="tests/family-goals-units.test.ts tests/family-goals.integration.test.ts tests/shell-openapi.test.ts"
+  [[ "${2:-}" == 月度计划：* ]] && tests="tests/monthly-plan-units.test.ts tests/monthly-plan.integration.test.ts tests/shell-openapi.test.ts"
   out=$( cd "$1/services/bff" && timeout 240 bash "$ROOT/db/tests/pg-ephemeral.sh" -- \
       node --no-warnings --test --test-concurrency=1 --test-timeout=60000 $tests 2>&1 ); rc=$?
   printf '%s\n' "$out" > "$1/run.out"  # H6 的“第一条失败必须是登记的断言”从这里读
@@ -449,6 +476,8 @@ star_copy() {
   # 家长诉求的词表变异会因此“被发现”却不说明任何问题，所以“诉求：”一组的副本带上 docs。
   # 其余组暂不带：带上之后“信任：周报收已撤回的判断”“报告：不核对受众”两条漏检——它们现在被“发现”只因为副本里没有词表（PLT-14 报告，待人处理）
   [[ "${1:-}" == 诉求：* ]] && ln -s "$ROOT/docs" "$work/docs"
+  # 月度计划（PLT-14 第 3 步）：两张词表在 docs/design/sie/，模板库与洞察服务同一份文件（services/insight/templates/）；只读用，不改
+  if [[ "${1:-}" == 月度计划：* ]]; then ln -s "$ROOT/docs" "$work/docs"; ln -s "$ROOT/services/insight" "$work/services/insight"; fi
   ln -s "$ROOT/services/learning" "$work/services/learning"  # 诊断集成测试起学习服务进程（只读用，不改）
   echo "$work"
 }

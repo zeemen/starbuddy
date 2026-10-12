@@ -9,8 +9,10 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 import yaml
@@ -103,7 +105,7 @@ def test_templates_are_placeholders_and_unsigned_only_in_test():
     with pytest.raises(PolicyError):
         M.parse_templates(tpl_doc(), env="dev")
     d = tpl_doc()
-    d["student"]["retests"]["copy"] = "本月复测几次"  # 未签字只收占位
+    d["student"]["retests"]["copy"] = "本月复测 {count} 次"  # 未签字只收占位（变量集合合规，只因未签字被拒）
     with pytest.raises(PolicyError):
         M.parse_templates(d, env="test")
     d = tpl_doc()
@@ -120,11 +122,53 @@ def test_templates_are_placeholders_and_unsigned_only_in_test():
         M.parse_templates(d, env="test")
 
 
-def signed_doc(copy_text: str) -> dict:
+def signed_doc(copy_text: str, variables: list[str] | None = None) -> dict:
     d = tpl_doc()
     d.update(status="signed", synthetic=False, signed_by="test-signer", signed_at="2026-10-11")
     d["guardian"][0]["copy"] = copy_text
+    d["guardian"][0]["vars"] = variables or []  # 签字文案里的 {变量} 集合必须恰好等于声明的 vars
     return d
+
+
+def test_signed_copy_slots_must_equal_declared_vars():
+    ok = M.parse_templates(signed_doc("本月有 {retest_count} 次复测，请每周留出 {sessions_per_week} 天的安静时段",
+                                      ["retest_count", "sessions_per_week"]), env="dev")
+    assert ok.notes[0].vars == ("retest_count", "sessions_per_week")
+    for text, variables in [("本月有 {retest_count} 次复测", ["retest_count", "sessions_per_week"]),   # 少用一个
+                            ("本月有 {retest_count} 次复测，每周 {exam_count} 天", ["retest_count"]),   # 多出未声明的
+                            ("本月有 {retest_count} 次复测 }", ["retest_count"]),                      # 多余的花括号
+                            ("本月有 {Retest} 次复测", [])]:
+        with pytest.raises(PolicyError, match="vars"):
+            M.parse_templates(signed_doc(text, variables), env="dev")
+
+
+def test_template_fingerprint_is_sha256_of_raw_bytes_and_lock_is_checked(tmp_path):
+    raw = M.TEMPLATE_PATH.read_bytes()
+    assert TPL.fingerprint == hashlib.sha256(raw).hexdigest() == M.template_fingerprint(raw)
+    lock = json.loads(M.lock_path(M.TEMPLATE_PATH).read_text(encoding="utf-8"))
+    assert lock["template_version"] == TPL.template_version and lock["sha256"] == TPL.fingerprint
+    # 内容变了而版本号与钉死文件不变：拒绝加载
+    changed = tmp_path / "monthly_plan.v0.yaml"
+    changed.write_bytes(raw.replace(b"retest_count_min: 1", b"retest_count_min: 2"))
+    (tmp_path / "monthly_plan.v0.lock").write_text(M.lock_path(M.TEMPLATE_PATH).read_text(encoding="utf-8"), encoding="utf-8")
+    assert changed.read_bytes() != raw
+    with pytest.raises(PolicyError, match="钉死"):
+        M.load_templates(changed, env="test")
+    # 只改版本号（钉死文件没跟着改）、钉死文件缺失、多出键：同样拒绝
+    (tmp_path / "monthly_plan.v0.yaml").write_bytes(raw.replace(b"template_version: syn-tpl-0.1.0", b"template_version: syn-tpl-0.1.1"))
+    with pytest.raises(PolicyError, match="钉死"):
+        M.load_templates(changed, env="test")
+    (tmp_path / "monthly_plan.v0.lock").unlink()
+    with pytest.raises(PolicyError, match="钉死"):
+        M.load_templates(changed, env="test")
+    with pytest.raises(PolicyError):
+        M.check_lock(TPL, json.dumps({"template_version": TPL.template_version, "sha256": TPL.fingerprint, "extra": 1}))
+
+
+def test_cross_language_fixture_matches_python_parse():
+    """BFF（services/bff/tests/monthly-plan-units.test.ts）比对同一份夹具：两边解析出的键、vars、文案、版本、指纹一致"""
+    fixture = Path(__file__).parent / "fixtures" / "monthly_plan_templates.expected.json"
+    assert M.export_library(TPL) == json.loads(fixture.read_text(encoding="utf-8"))
 
 
 @pytest.mark.parametrize("text", ["坚持一个月保证提分", "期中有望进入年级前 50 名", "考上的概率很高", "本月可以提高 15 分"])

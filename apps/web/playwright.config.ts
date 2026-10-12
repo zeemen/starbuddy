@@ -28,7 +28,9 @@ const PRACTICE_SPECS = /(^|\/)(practice|retest|today-orch)\.spec\.ts$/;
 // 第六套（家长诉求，PLT-14 第 1 步）：family-on 连 scripts/e2e.sh 起的第六个 BFF（STARBUDDY_FAMILY_GOALS=family_goals），前端只开 family_goals；
 // 只跑 family-goals.spec.ts。另五套前端与 BFF 都关（trust-off 里的 family-goals-off.spec.ts 核对入口不出现、页面 404、BFF 路由不注册）。
 const familyPort = Number(process.env['WEB_FAMILY_PORT'] ?? 3105);
-const FAMILY_SPECS = /(^|\/)family-goals\.spec\.ts$/;
+// 月度计划（PLT-14 第 3 步，e2e/monthly-plan.spec.ts）也在这一套：前端与第六个 BFF 另开 STARBUDDY_MONTHLY_PLAN=monthly_plan 与
+// STARBUDDY_TRUST_UI=why（“为什么”入口），BFF 连真实洞察服务（scripts/e2e.sh）；另五套都关（trust-off 里的 monthly-plan-off.spec.ts 核对）。
+const FAMILY_SPECS = /(^|\/)(family-goals|monthly-plan)\.spec\.ts$/;
 // 数据权利用例（导出下载、删除二次确认，标 @data-rights）另在 WebKit 与 Firefox 上跑（安全审查 2）：本机只装了 Chromium，
 // 所以按需打开——STARBUDDY_E2E_BROWSERS=webkit,firefox（需要对应的 Playwright 浏览器二进制；lessons 登记）。
 const extraBrowsers = (process.env['STARBUDDY_E2E_BROWSERS'] ?? '').split(',').map((s) => s.trim())
@@ -46,6 +48,8 @@ const serverEnv = {
   STARBUDDY_TODAY_ORCH: '',
   // 家长诉求开关同样显式关闭：只有 family-on 的前端另行打开
   STARBUDDY_FAMILY_GOALS: '',
+  // 月度计划开关同样显式关闭：只有 family-on 的前端另行打开
+  STARBUDDY_MONTHLY_PLAN: '',
   STARBUDDY_REVIEW_URL: process.env['STARBUDDY_REVIEW_URL'] ?? 'http://127.0.0.1:8790',
   NEXT_TELEMETRY_DISABLED: '1',
   // scripts/e2e.sh 的测试构建在 .next-e2e（next.config.ts），next start 要读同一个目录
@@ -145,6 +149,8 @@ export default defineConfig({
         ...serverEnv,
         STARBUDDY_BFF_URL: process.env['STARBUDDY_FAMILY_BFF_URL'] ?? 'http://127.0.0.1:8795',
         STARBUDDY_FAMILY_GOALS: 'family_goals',
+        STARBUDDY_MONTHLY_PLAN: 'monthly_plan',
+        STARBUDDY_TRUST_UI: 'why',
       },
     },
   ],

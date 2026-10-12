@@ -19,6 +19,9 @@ import { STAR_MAP_V1_ROUTES } from './star-map-v1-routes.ts';
 import { PRACTICE_ROUTES } from './practice-routes.ts';
 import { RETEST_ROUTES } from './retest-routes.ts';
 import { FAMILY_GOALS_ROUTES } from './family-goals-routes.ts';
+import { MONTHLY_PLAN_ROUTES } from './monthly-plan-routes.ts';
+import type { MonthlyPlanClient, TemplateLibrary } from '../family/monthly-plan.ts';
+import type { Lexicon } from '../trust/lexicon.ts';
 import type { PracticeOptions } from '../practice/service.ts';
 import type { RetestOptions } from '../retest/service.ts';
 import type { TrustFeature } from '../trust/features.ts';
@@ -79,6 +82,11 @@ export interface ShellDeps {
   retest?: RetestOptions;
   /** 家长诉求（family-goals-routes.ts，PLT-14 第 1 步）：开关 family_goals（STARBUDDY_FAMILY_GOALS，缺省关，路由不注册） */
   familyGoals?: { enabled: boolean };
+  /** 月度计划（monthly-plan-routes.ts，PLT-14 第 3 步）：开关 monthly_plan（STARBUDDY_MONTHLY_PLAN，缺省关，路由不注册）、洞察服务生成接口
+   *  客户端（不配时家长端本月没有快照就 503）；templates / lexicon / noPromise 只为测试注入（缺省读模板库与两张词表的文件） */
+  monthlyPlan?: { enabled: boolean; client?: MonthlyPlanClient; templates?: () => TemplateLibrary; lexicon?: () => Lexicon; noPromise?: () => Lexicon;
+                  /** 洞察服务“不可用”回答的进程内负缓存时长（缺省 5 分钟；测试注入） */
+                  negativeTtlMs?: number };
 }
 
 export type Query = <R extends QueryResultRow = QueryResultRow>(sql: string, params?: unknown[]) => Promise<{ rows: R[] }>;
@@ -110,7 +118,7 @@ export interface Route {
   ownTx?: boolean;
   /** 挂在哪个信任界面开关上（SIE-03 PR③）：开关关闭时不注册，与表外路径同一个 404 */
   feature?: TrustFeature;
-  /** 只给家长、学生会话一律 404（家长诉求，PLT-14）：auth 仍是 session（学生不能从 403 得知接口存在），
+  /** 只给家长、学生会话一律 404（家长诉求与月度计划家长端，PLT-14）：auth 仍是 session（学生不能从 403 得知接口存在），
    *  server.ts 在请求体错误、CSRF、限流之前对学生会话回与“不存在”逐字节相同的 404 */
   guardianOnly404?: true;
   handler: Handler;
@@ -293,12 +301,12 @@ export const ROUTES: readonly Route[] = [
 ];
 
 /** 本次部署实际注册的路由：固定路由表 + 已打开开关的信任界面路由 + 星图 v1（starmap_v1）+ 错题再练（practice）+ 复测（retest）
- *  + 家长诉求（family_goals，PLT-14）（开关缺省全关） */
+ *  + 家长诉求（family_goals，PLT-14）+ 月度计划（monthly_plan，PLT-14 第 3 步）（开关缺省全关） */
 export function activeRoutes(features: ReadonlySet<TrustFeature> = new Set(), starMap: ReadonlySet<StarMapFeature> = new Set(),
-                             practice = false, retest = false, familyGoals = false): readonly Route[] {
+                             practice = false, retest = false, familyGoals = false, monthlyPlan = false): readonly Route[] {
   return [...ROUTES, ...TRUST_ROUTES.filter((r) => r.feature !== undefined && features.has(r.feature)),
           ...(starMap.has('starmap_v1') ? STAR_MAP_V1_ROUTES : []), ...(practice ? PRACTICE_ROUTES : []), ...(retest ? RETEST_ROUTES : []),
-          ...(familyGoals ? FAMILY_GOALS_ROUTES : [])];
+          ...(familyGoals ? FAMILY_GOALS_ROUTES : []), ...(monthlyPlan ? MONTHLY_PLAN_ROUTES : [])];
 }
 
 /** 路由模板编译成正则：路径参数（student_id、session_id、probe_id、claim_id、exam_id、export_job_id、request_id、entry_id）一律只匹配小写 UUID；学科码 {subject} 只匹配小写字母（H4） */

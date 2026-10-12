@@ -85,3 +85,18 @@ test('家长诉求开关只在 dev / test（PLT-14）：staging、pilot、生产
   const ok = start({ STARBUDDY_ENV: 'test', STARBUDDY_FAMILY_GOALS: 'family_goals' });
   assert.doesNotMatch(ok.stderr, /STARBUDDY_FAMILY_GOALS/);
 });
+
+test('月度计划开关只在 dev / test（PLT-14 第 3 步）：staging、pilot、生产设了 STARBUDDY_MONTHLY_PLAN 就拒绝启动；test 下不认识的值也拒绝；打开时模板库与词表启动即读', () => {
+  for (const env of ['production', 'pilot', 'staging']) {
+    const r = start({ STARBUDDY_ENV: env, STARBUDDY_MONTHLY_PLAN: 'monthly_plan', BFF_LOG_HMAC_KEY: hex(), BFF_AUTH_SECRET: hex(), BFF_TRUST_SECRET: hex(),
+                      BFF_SHELL_ORIGIN: 'https://shell.example.invalid' });
+    assert.equal(r.status, 2, env);
+    assert.match(r.stderr, /STARBUDDY_MONTHLY_PLAN/, env);
+  }
+  const r = start({ STARBUDDY_ENV: 'test', STARBUDDY_MONTHLY_PLAN: 'family_goals' });
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /STARBUDDY_MONTHLY_PLAN/);
+  // 合法取值能过开关解析、模板库与两张词表读得到（之后因为连不上数据库才退出，错误信息不是开关的）
+  const ok = start({ STARBUDDY_ENV: 'test', STARBUDDY_MONTHLY_PLAN: 'monthly_plan' });
+  assert.doesNotMatch(ok.stderr, /STARBUDDY_MONTHLY_PLAN/);
+});

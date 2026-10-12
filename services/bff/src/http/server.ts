@@ -56,9 +56,10 @@ const header = (req: IncomingMessage, name: string): string | null => {
  * 由 createShellServer 回 404（表外一律 404）。
  */
 export function createShellHandler(deps: ShellDeps): (req: IncomingMessage, res: ServerResponse) => Promise<boolean> {
-  // 信任界面、星图 v1、错题再练、复测、家长诉求（PLT-14，开关 family_goals）开关关闭的路由不注册（表外 404）
+  // 信任界面、星图 v1、错题再练、复测、家长诉求（PLT-14，开关 family_goals）、月度计划（PLT-14 第 3 步，开关 monthly_plan）
+  // 开关关闭的路由不注册（表外 404）
   const routes = activeRoutes(deps.trust?.features, deps.starMap?.features, deps.practice?.enabled === true, deps.retest?.enabled === true,
-                              deps.familyGoals?.enabled === true);
+                              deps.familyGoals?.enabled === true, deps.monthlyPlan?.enabled === true);
   const table = compile(routes);
   const shapes = templateShapes(routes);
   const log = deps.log ?? ((line) => console.log(JSON.stringify(line)));
@@ -103,7 +104,7 @@ export function createShellHandler(deps: ShellDeps): (req: IncomingMessage, res:
       if (params['student_id']) record['student'] = logHash(deps.keys, params['student_id']);
 
       // 请求体
-      // 家长诉求（PLT-14）：学生会话要在任何其他检查之前得到与“不存在”逐字节相同的 404，所以请求体的错误先记下，核对完会话类型再抛
+      // 家长诉求与月度计划家长端（PLT-14）：学生会话要在任何其他检查之前得到与“不存在”逐字节相同的 404，所以请求体的错误先记下，核对完会话类型再抛
       const guardianOnly404 = route.guardianOnly404 === true;
       let body: Record<string, unknown> | null = null;
       let bodyError: unknown = null;

@@ -323,7 +323,10 @@ test('信任界面组件里没有中文文案；data-claim-id 只在登记的组
   const renderers = src.filter((f) => /data-claim-id/.test(code(f.text))).map((f) => f.path).sort();
   // src/star/StarMapV1.tsx：H5 星图 v1（开关 starmap_v1，默认关），由 tests/star-v1.test.ts 核对；
   // src/trust/FirstReportDemo.tsx：首份报告开发演示页（开关 report，默认关），由 tests/first-report.test.ts 核对
-  assert.deepEqual(renderers, ['src/shell/TaskList.tsx', 'src/star/StarMapV1.tsx', 'src/trust/ExamPages.tsx', 'src/trust/FirstReportDemo.tsx',
+  // 月度计划（PLT-14 第 3 步，开关 monthly_plan，默认关）：家长端页面与学习计划组件，句子只来自 BFF 按模板库渲染、引用判断的结果，
+  // 由 tests/monthly-plan.test.ts 与 e2e/monthly-plan.spec.ts 核对
+  assert.deepEqual(renderers, ['src/app/family/[studentId]/monthly-plan/page.tsx', 'src/monthly-plan/StudentPlanSection.tsx', 'src/shell/TaskList.tsx',
+                               'src/star/StarMapV1.tsx', 'src/trust/ExamPages.tsx', 'src/trust/FirstReportDemo.tsx',
                                'src/trust/WeeklyPage.tsx', 'src/trust/WhyPage.tsx']);
   assert.match(read('src/trust/WhyPage.tsx'), /<span data-claim-id=\{st\.claim_id\}>\{st\.text\}<\/span>/);
   assert.match(read('src/trust/ExamPages.tsx'), /s\.claim_id \? \(\n\s+<li key=\{i\}>\n\s+<span data-claim-id=\{s\.claim_id\}>\{s\.text\}<\/span>/);

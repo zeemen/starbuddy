@@ -152,10 +152,11 @@ test('学生端不出现诉求：学生端页面与组件不引用诉求模块�
       assert.ok(!f.text.includes(s), `${f.path} 含 ${s}`);
     }
   }
-  // 诉求模块只被家长端引用：家长孩子页（入口）与“我的诉求”页
+  // 诉求模块只被家长端引用：家长孩子页（入口）、“我的诉求”页与“月度计划”页（本月诉求摘要，PLT-14 第 3 步）
   const users = files(join(WEB, 'src')).map((p) => relative(WEB, p))
     .filter((p) => !p.startsWith('src/family-goals/') && /family-goals\//.test(code(readFileSync(join(WEB, p), 'utf8'))));
-  assert.deepEqual(users.sort(), ['src/app/family/[studentId]/goals/page.tsx', 'src/app/family/[studentId]/page.tsx']);
+  assert.deepEqual(users.sort(), ['src/app/family/[studentId]/goals/page.tsx', 'src/app/family/[studentId]/monthly-plan/page.tsx',
+                                  'src/app/family/[studentId]/page.tsx']);
   // 页面与组件里没有中文文案（只从 ./copy.ts 取）
   for (const p of ['src/app/family/[studentId]/goals/page.tsx', 'src/family-goals/GoalsLink.tsx']) {
     assert.deepEqual(code(read(p)).match(/[一-鿿]+/g) ?? [], [], p);

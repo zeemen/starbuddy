@@ -41,12 +41,13 @@ import type { PracticeLearning } from '../src/practice/learning-client.ts';
 import { parseAnswer as parsePracticeAnswer } from '../src/practice/service.ts';
 import type { RetestLearning } from '../src/retest/learning-client.ts';
 import { parseRetestAnswer } from '../src/retest/service.ts';
+import type { MonthlyPlanClient } from '../src/family/monthly-plan.ts';
 import { createFamily, HAS_DB, setupHarness, type Harness } from './harness.ts';
 import { operations } from './openapi-ops.ts';
 import { callAs, ORIGIN, startShell, type Sess, type ShellHarness } from './shell-harness.ts';
 
-/** 本次部署可能注册的全部路由（信任界面开关全开，H5 星图 v1 开关全开，错题再练开关打开，复测与验证题开关打开） */
-const ALL: readonly Route[] = activeRoutes(new Set(TRUST_FEATURES), new Set(STAR_MAP_FEATURES), true, true, true);
+/** 本次部署可能注册的全部路由（信任界面开关全开，H5 星图 v1 开关全开，错题再练开关打开，复测与验证题开关打开，家长诉求与月度计划打开） */
+const ALL: readonly Route[] = activeRoutes(new Set(TRUST_FEATURES), new Set(STAR_MAP_FEATURES), true, true, true, true);
 const keyOf = (r: Route) => `${r.method} ${r.path}`;
 const OPS = operations();
 const opOf = (r: Route) => OPS.get(`${r.method} ${PREFIX}${r.path}`)!;
@@ -133,6 +134,10 @@ export const SAMPLES: Record<string, Sample> = {
   // 家长诉求（PLT-14 第 1 步，开关 family_goals）：只给家长，学生会话一律 404（guardianOnly404）；样例只设关注学科（S 在读数学）
   'GET /students/{student_id}/family-goals': none,
   'PUT /students/{student_id}/family-goals': b(() => ({ focus_subjects: ['aya'], target_scores: [], school_id: null, note: null })),
+  // 月度计划（PLT-14 第 3 步，开关 monthly_plan）：家长端只给家长（guardianOnly404），本月没有快照时调洞察服务生成（假实现计数，
+  // 越权请求一次也不能到达）；学生端只给学生本人，不触发生成
+  'GET /students/{student_id}/monthly-plan': none,
+  'GET /students/{student_id}/my-plan': none,
 };
 
 /**
@@ -239,8 +244,11 @@ const retestLearning: RetestLearning = {
   async check(student) { retestCalls.push(`check:${student}`); return { kind: 'failure', status: 409, problem: { code: 'RETEST_NOT_DUE' } }; },
   async replay(student) { retestCalls.push(`replay:${student}`); return { kind: 'failure', status: 404, problem: { code: 'REPLAY_NOT_FOUND' } }; },
 };
+/** 月度计划生成（洞察服务）：按“没有权益”回答，不写任何快照 */
+const monthlyCalls: string[] = [];
+const monthlyPlanClient: MonthlyPlanClient = { async generate(student) { monthlyCalls.push(student); return 'not_available'; } };
 const callCount = () => calls.plan.length + calls.diagnosis.length + calls.dispute + calls.exams + starCalls.length + readCalls + practiceCalls.length
-  + retestCalls.length;
+  + retestCalls.length + monthlyCalls.length;
 const practiceLogCount = async (): Promise<number> => (await h.su.query(`SELECT count(*)::int AS n FROM platform.practice_log`)).rows[0].n;
 
 // ---------------------------------------------------------------- 合成家庭、账号与二级资源
@@ -393,6 +401,7 @@ before(async () => {
     practice: { enabled: true, learning: practiceLearning, retryDelaysMs: [1] },
     retest: { enabled: true, learning: retestLearning, retryDelaysMs: [1] },
     familyGoals: { enabled: true },
+    monthlyPlan: { enabled: true, client: monthlyPlanClient },
   });
   // 会话都在改状态之前拿到（学生会话经 gF 打开学生模式）
   for (const a of [A.gF, A.gO, A.gU, A.gR, A.gD2, A.gX, A.aS, A.aS2, A.aT]) await sess(a);

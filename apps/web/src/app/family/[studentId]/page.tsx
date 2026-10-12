@@ -5,6 +5,7 @@ import { notFound, redirect } from 'next/navigation';
 import { childLabel, FAMILY_COPY } from '../../../auth/copy.ts';
 import { ResultForm } from '../../../auth/ResultForm.tsx';
 import { GoalsLink } from '../../../family-goals/GoalsLink.tsx';
+import { GuardianPlanLink } from '../../../monthly-plan/PlanLinks.tsx';
 import { fetchBalance, fetchEnrollments, fetchToday } from '../../../lib/shell-api.ts';
 import { BALANCE, ENROLL_RESULT, ENROLLMENT, FAMILY_SHELL, resourceLabel, slotText, SOURCE_LABEL, subjectLabel, TODAY } from '../../../shell/copy.ts';
 import { requireGuardian } from '../../../shell/guard.ts';
@@ -43,6 +44,8 @@ export default async function ChildPage({ params }: { params: Promise<{ studentI
         <a href={`/onboarding/${studentId}`} data-testid="child-onboarding">{FAMILY_SHELL.onboarding}</a>
         {/* 家长诉求（PLT-14，开关 family_goals 默认关；关时不渲染任何元素） */}
         <GoalsLink studentId={studentId} />
+        {/* 月度计划（PLT-14 第 3 步，开关 monthly_plan 默认关；关时不渲染任何元素） */}
+        <GuardianPlanLink studentId={studentId} />
       </p>
 
       <section aria-labelledby="balance-heading">

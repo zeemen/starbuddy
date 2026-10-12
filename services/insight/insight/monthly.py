@@ -223,22 +223,35 @@ class TemplateLibrary:
     signed: bool
     fixed: Mapping[str, str]          # 模板键 → 文案（占位）
     notes: tuple[NoteTemplate, ...]   # 家长注意事项：按顺序选取
-    fingerprint: str = ""             # 模板库内容（含 when 条件与变量）的哈希
+    fingerprint: str = ""             # 模板库原文字节的 SHA-256（与 BFF 同一算法，PLT-14 第 3 步审查）
+    fixed_vars: Mapping[str, tuple[str, ...]] = field(default_factory=dict)  # 固定模板键 → 声明的变量
 
 
-def _copy_ok(text: Any, copy_key: str, signed: bool) -> str:
-    """文案：未签字时必须是与模板键一致的 {{TODO_COPY:…}} 占位；签字后可以是人写的文字（1–120 字，不含花括号）"""
+SLOT = re.compile(r"\{([a-z][a-z0-9_]*)\}")
+
+
+def template_fingerprint(raw: bytes) -> str:
+    """模板库指纹：原文字节的 SHA-256（十六进制 64 位）。BFF（services/bff/src/family/monthly-plan.ts）同一算法"""
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _copy_ok(text: Any, copy_key: str, signed: bool, variables: Sequence[str] = ()) -> str:
+    """文案：未签字时必须是与模板键一致的 {{TODO_COPY:…}} 占位；签字后可以是人写的文字（1–120 字），
+    其中的 {变量} 集合必须恰好等于声明的 vars，除此之外不含花括号"""
     _need(isinstance(text, str), f"{copy_key} 的文案必须是字符串")
     m = PLACEHOLDER.fullmatch(text)
     if m:
         _need(m.group(1) == copy_key, f"{copy_key} 的占位键不一致")
     else:
         _need(signed and 1 <= len(text.strip()) <= 120 and "{{" not in text, f"{copy_key}：未签字的模板库只收 {{{{TODO_COPY:…}}}} 占位")
+        _need(set(SLOT.findall(text)) == set(variables) and not re.search(r"[{}]", SLOT.sub("", text)),
+              f"{copy_key}：签字文案里的 {{变量}} 必须恰好是声明的 vars")
     return text
 
 
 def parse_templates(doc: Mapping[str, Any], *, env: str, forbidden: Forbidden | None = None,
-                    no_promise: Forbidden | None = None) -> TemplateLibrary:
+                    no_promise: Forbidden | None = None, raw: bytes | None = None) -> TemplateLibrary:
+    """raw：模板库原文字节（指纹按它算）；只给解析后的文档时（测试）按规范化的 YAML 文本算"""
     keys = {"format", "template_version", "status", "synthetic", "signed_by", "signed_at", "student", "review", "guardian"}
     _need(isinstance(doc, dict) and set(doc) - {"$comment"} == keys, f"模板库的配置位不对（应为 {sorted(keys)}）")
     _need(doc["format"] == TEMPLATE_FORMAT, f"format 必须是 {TEMPLATE_FORMAT}")
@@ -250,6 +263,7 @@ def parse_templates(doc: Mapping[str, Any], *, env: str, forbidden: Forbidden | 
     if not signed and env != TEST_ENV:
         raise PolicyError("未签字（含合成占位）的月度计划模板库只允许 INSIGHT_ENV=test 加载（文案人写人审）")
     fixed: dict[str, str] = {}
+    fixed_vars: dict[str, tuple[str, ...]] = {}
     sections = {"student": ("priority_node", "weekly_rhythm", "retests", "mini_review"), "review": ("last_month", "lit", "score_gap")}
     for sec, names in sections.items():
         s = doc[sec]
@@ -258,8 +272,10 @@ def parse_templates(doc: Mapping[str, Any], *, env: str, forbidden: Forbidden | 
             t = s[n]
             _need(isinstance(t, dict) and set(t) == {"copy", "vars"}, f"{sec}.{n} 必须恰好有 copy 与 vars")
             _need(isinstance(t["vars"], list) and all(isinstance(v, str) and KEY.fullmatch(v) for v in t["vars"]), f"{sec}.{n}.vars 必须是变量名")
+            _need(len(t["vars"]) <= 8 and len(set(t["vars"])) == len(t["vars"]), f"{sec}.{n}.vars 不能重复、至多 8 个")
             ck = COPY[n]
-            fixed[ck] = _copy_ok(t["copy"], ck, signed)
+            fixed[ck] = _copy_ok(t["copy"], ck, signed, t["vars"])
+            fixed_vars[ck] = tuple(t["vars"])
     g = doc["guardian"]
     _need(isinstance(g, list) and 1 <= len(g) <= 12, "guardian 必须是 1–12 条注意事项模板")
     notes: list[NoteTemplate] = []
@@ -272,20 +288,52 @@ def parse_templates(doc: Mapping[str, Any], *, env: str, forbidden: Forbidden | 
                 _need(isinstance(v, bool), f"guardian[{i}].when.exam_in_month 必须是布尔值")
             else:
                 _int(v, f"guardian[{i}].when.{ck}", 0, 999)
-        _need(isinstance(t["vars"], list) and len(t["vars"]) <= 8 and all(v in NOTE_FACTS for v in t["vars"]),
-              f"guardian[{i}].vars 只能是计划事实 {list(NOTE_FACTS)}")
+        _need(isinstance(t["vars"], list) and len(t["vars"]) <= 8 and all(v in NOTE_FACTS for v in t["vars"])
+              and len(set(t["vars"])) == len(t["vars"]), f"guardian[{i}].vars 只能是计划事实 {list(NOTE_FACTS)}")
         nt = NoteTemplate(t["key"], "", dict(t["when"]), tuple(t["vars"]))
-        notes.append(NoteTemplate(nt.key, _copy_ok(t["copy"], nt.copy_key, signed), nt.when, nt.vars))
+        notes.append(NoteTemplate(nt.key, _copy_ok(t["copy"], nt.copy_key, signed, nt.vars), nt.when, nt.vars))
     _need(len({n.key for n in notes}) == len(notes), "注意事项模板的 key 不能重复")
     fm, npm = forbidden or forbidden_matcher(), no_promise or no_promise_matcher()
     for text in [*fixed.values(), *(n.copy for n in notes)]:
         _need(not fm(text), "模板库文案命中禁用推断词表")
         _need(not npm(text), "模板库文案命中“名次 / 概率 / 承诺”词表")
-    return TemplateLibrary(doc["template_version"], doc["synthetic"], signed, fixed, tuple(notes), _fp(doc))
+    if raw is None:
+        raw = yaml.safe_dump(dict(doc), allow_unicode=True, sort_keys=True).encode("utf-8")
+    return TemplateLibrary(doc["template_version"], doc["synthetic"], signed, fixed, tuple(notes), template_fingerprint(raw), fixed_vars)
+
+
+def check_lock(lib: TemplateLibrary, lock_text: str) -> None:
+    """钉死文件（与模板库同目录、同名 .lock）：恰好记 template_version 与原文指纹 sha256（可带 $comment）。
+    任何一项与读到的模板库不一致即拒绝加载——内容改了而版本号没改、或钉死文件没跟着改，都加载不了（BFF 同一规则）"""
+    try:
+        lock = json.loads(lock_text)
+    except ValueError:
+        raise PolicyError("模板库钉死文件不是合法 JSON") from None
+    _need(isinstance(lock, dict) and set(lock) - {"$comment"} == {"template_version", "sha256"}, "模板库钉死文件只能有 template_version 与 sha256")
+    _need(lock["template_version"] == lib.template_version and lock["sha256"] == lib.fingerprint,
+          "模板库与钉死文件不一致（内容改了要同时改版本号与钉死文件，并经人审）")
+
+
+def lock_path(path: str | Path) -> Path:
+    return Path(path).with_suffix(".lock")
 
 
 def load_templates(path: str | Path = TEMPLATE_PATH, *, env: str) -> TemplateLibrary:
-    return parse_templates(yaml.safe_load(Path(path).read_text(encoding="utf-8")), env=env)
+    raw = Path(path).read_bytes()
+    lib = parse_templates(yaml.safe_load(raw.decode("utf-8")), env=env, raw=raw)
+    lp = lock_path(path)
+    _need(lp.is_file(), f"缺少模板库钉死文件 {lp.name}")
+    check_lock(lib, lp.read_text(encoding="utf-8"))
+    return lib
+
+
+def export_library(lib: TemplateLibrary) -> dict[str, Any]:
+    """跨语言一致性核对用（services/insight/tests/fixtures/monthly_plan_templates.expected.json；BFF 的单测比对同一份）：
+    模板键 → 文案与变量、版本、是否签字、指纹"""
+    templates = {k: {"copy": v, "vars": list(lib.fixed_vars.get(k, ()))} for k, v in lib.fixed.items()}
+    templates.update({n.copy_key: {"copy": n.copy, "vars": list(n.vars)} for n in lib.notes})
+    return {"template_version": lib.template_version, "signed": lib.signed, "fingerprint": lib.fingerprint,
+            "templates": dict(sorted(templates.items()))}
 
 
 # ---------------------------------------------------------------- 输入
