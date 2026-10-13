@@ -20,6 +20,8 @@ from .jobs import CompileJob
 from .templates import render_sections
 
 CST = dt.timezone(dt.timedelta(hours=8), "Asia/Shanghai")  # 合并窗口按北京时间换日
+# 由教材投影渲染的段落：知识点页的“教材位置”，素材卡的“原文”（原句占位）与“出处”（册-课-页）——变更一律高风险
+TEXTBOOK_SECTIONS = ("textbook", "source_text", "provenance")
 
 
 class CompileError(RuntimeError):
@@ -79,7 +81,7 @@ def assemble(old: Page, snapshot: Snapshot, narrative: Mapping[str, Section], kn
     node = snapshot.node(node_id)
     if node is None:
         raise CompileError(f"节点 {node_id} 不在地图快照里（孤立页由体检报出，编译器不重建）")
-    templ, atoms = render_sections(snapshot, node_id, known_pages)
+    templ, atoms = render_sections(snapshot, node_id, known_pages, ptype)
     sections = []
     for spec in SECTIONS_BY_TYPE[ptype]:
         if spec.kind == "narrative":
@@ -122,9 +124,9 @@ def classify(old: Page, new: Page) -> tuple[str, tuple[str, ...], tuple[str, ...
         elif spec.id == "relations" and _prerequisite_block(a.content if a else "") != _prerequisite_block(b.content if b else ""):
             high = True
             reasons.append("前置关系表述变更（高风险）")
-        elif spec.id == "textbook":
+        elif spec.id in TEXTBOOK_SECTIONS:
             high = True
-            reasons.append("教材投影（页码或版次）变更（高风险）")
+            reasons.append(f"教材投影（{'原句占位、' if spec.id == 'source_text' else ''}页码或版次）变更（高风险）")
         elif spec.kind == "narrative":
             high = True
             reasons.append(f"叙述段 {spec.id} 改写（高风险）")
@@ -133,7 +135,7 @@ def classify(old: Page, new: Page) -> tuple[str, tuple[str, ...], tuple[str, ...
     old_h = {r.key: r.hash for r in old.atom_refs}
     new_h = {r.key: r.hash for r in new.atom_refs}
     moved = sorted(k for k in set(old_h) | set(new_h) if old_h.get(k) != new_h.get(k))
-    if any(k.startswith("projection:") for k in moved) and "textbook" not in changed:
+    if any(k.startswith("projection:") for k in moved) and not set(TEXTBOOK_SECTIONS) & set(changed):
         high = True
         reasons.append("教材投影原句变更（原句不在页面里，但属高风险，须核对）")
     if moved and not changed:

@@ -37,7 +37,7 @@ make-skip-check:
 # 契约检查约 1 秒，改动后也跑一遍
 check-fast: contract-test taxonomy-check attack-surface-check sie-dictionary-check kge-id-check
 
-check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation practice-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona insight-test insight-mutation voice-blind-eval-test release-walkthrough retest-mutation today-mutation scheduler-test scheduler-mutation gate1-test gate1-mutation review-console-mutation
+check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation practice-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona insight-test insight-mutation voice-blind-eval-test release-walkthrough retest-mutation today-mutation scheduler-test scheduler-mutation gate1-test gate1-mutation review-console-mutation kge-chinese-import kge-chinese-mutation knowledge-material-mutation
 	@echo "check: lint 尚未配置，跳过；其余检查已通过"
 
 # 契约合法性 + 示例 + 反例集
@@ -706,4 +706,36 @@ review-console-mutation:
 	  echo "review-console-mutation: 跳过（没有安装依赖；见 services/learning/README.md）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
 	@$(call skip_rest,$(LEARNING_MISSING))services/learning/.venv/bin/python services/learning/scripts/review_console_mutations.py; rc=$$?; \
+	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
+
+# KGE-07 语文切片工程底座第一步（specs/kge07-chinese-slice，全程合成数据）：
+# kge-chinese-import：导入器语文分支（tools/kge-import/src/chinese）的类型检查（借用 kge-inventory 的 tsc）+ 单测（tests/chinese/*.test.ts：
+#   确定性、素材不进前置图、层次递进 = prerequisite + weak、无环、无传递冗余边、无孤点、CHN. 规则与反例）+ 一次性 Postgres 上的端到端
+#   （chinese-db.sh：两次逐字节相同、合成挡板、以 starbuddy_kge 写入草稿、发布前校验零阻断、库上校验与离线同口径、
+#   库上快照 = 离线快照、语文覆盖报表两边逐字节相同）。语文覆盖报表的单测与数学、道法回归随 kge-coverage-test 运行
+# kge-chinese-mutation：导入器、语文覆盖报表与库上快照导出的关键检查逐条改坏（约 4 分钟；没有 Postgres 时库上一组跳过，退出码 3）
+# knowledge-material-mutation：编译层素材卡（页面类型、模板、体检、编译器风险分级与编入）逐条改坏，断言 tests/test_material.py 能发现（约 30 秒）
+# 缺依赖或 Postgres 时非严格跳过、严格失败
+.PHONY: kge-chinese-import kge-chinese-mutation knowledge-material-mutation
+kge-chinese-import:
+	@if $(KGE_INVENTORY_MISSING); then \
+	  echo "kge-chinese-import: 跳过（没有安装依赖；cd tools/kge-inventory && npm ci）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@$(call guard,$(KGE_INVENTORY_MISSING))cd tools/kge-import && ../kge-inventory/node_modules/.bin/tsc -p tsconfig.json && echo "kge-chinese-import: 类型检查通过"
+	@$(call guard,$(KGE_INVENTORY_MISSING))cd tools/kge-import && node --no-warnings --test --test-reporter=dot tests/chinese/*.test.ts && echo "kge-chinese-import: 单测通过"
+	@$(call guard,$(KGE_INVENTORY_MISSING))bash tools/kge-import/tests/chinese/chinese-db.sh; rc=$$?; \
+	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
+
+kge-chinese-mutation:
+	@if $(KGE_INVENTORY_MISSING) || $(KGE_COVERAGE_MISSING); then \
+	  echo "kge-chinese-mutation: 跳过（没有安装依赖；cd tools/kge-inventory && npm ci；cd tools/kge-coverage && npm ci）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@$(call skip_rest,$(KGE_INVENTORY_MISSING) || $(KGE_COVERAGE_MISSING))node --no-warnings tools/kge-import/tests/chinese/mutations.ts; rc=$$?; \
+	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
+
+knowledge-material-mutation:
+	@if $(KNOWLEDGE_MISSING); then \
+	  echo "knowledge-material-mutation: 跳过（没有安装依赖；见 services/knowledge/README.md）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@$(call skip_rest,$(KNOWLEDGE_MISSING))services/knowledge/.venv/bin/python services/knowledge/tests/material_mutations.py; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi

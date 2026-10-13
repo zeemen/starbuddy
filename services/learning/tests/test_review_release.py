@@ -61,7 +61,9 @@ def test_classify_page(change, level, reason):
 def test_page_sections_match_knowledge_format():
     """页面段落与类型和编译器的知识点页模板一致（services/knowledge/knowledge/pages/format.py 的 KP_SECTIONS，两处各写一份，这里核对）。"""
     src = (ROOT / "services/knowledge/knowledge/pages/format.py").read_text(encoding="utf-8")
-    found = dict(re.findall(r'SectionSpec\("([a-z_]+)", "(locked|render|narrative)"', src))
+    kp_block = re.search(r"^KP_SECTIONS\b.*?^\)", src, re.S | re.M)  # 只取知识点页一组（KGE-07 另有素材卡 MATERIAL_SECTIONS）
+    assert kp_block is not None
+    found = dict(re.findall(r'SectionSpec\("([a-z_]+)", "(locked|render|narrative)"', kp_block.group(0)))
     assert found == PAGE_SECTIONS
 
 

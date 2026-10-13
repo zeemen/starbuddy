@@ -1,0 +1,41 @@
+{
+  "format": "kge-chinese-snapshot/1",
+  "subject": "wenli",
+  "map_version_id": "00000000-0000-4000-8000-0000000c4e01",
+  "version": "9.9.9",
+  "nodes": [
+    { "id": "CHN.SYN_A", "level": "domain", "parent_id": null, "kind": null, "name": "（合成）领域甲", "scope": "required", "cognitive_levels": [], "status": "active" },
+    { "id": "CHN.SYN_A.T1", "level": "topic", "parent_id": "CHN.SYN_A", "kind": null, "name": "（合成）主题一", "scope": "required", "cognitive_levels": [], "status": "active" },
+    { "id": "CHN.SYN_A.T1.H1", "level": "node", "parent_id": "CHN.SYN_A.T1", "kind": "method", "name": "（合成）方法一", "scope": "required", "cognitive_levels": [], "status": "active" },
+    { "id": "CHN.SYN_A.T1.H2", "level": "node", "parent_id": "CHN.SYN_A.T1", "kind": "method", "name": "（合成）方法二", "scope": "required", "cognitive_levels": [], "status": "active" },
+    { "id": "CHN.SYN_A.T1.K1", "level": "node", "parent_id": "CHN.SYN_A.T1", "kind": "ability_kp", "name": "（合成）能力点一", "scope": "required", "cognitive_levels": ["understand"], "status": "active" },
+    { "id": "CHN.SYN_A.T1.K2", "level": "node", "parent_id": "CHN.SYN_A.T1", "kind": "ability_kp", "name": "（合成）能力点二", "scope": "required", "cognitive_levels": ["understand", "apply"], "status": "active" },
+    { "id": "CHN.SYN_A.T1.K3", "level": "node", "parent_id": "CHN.SYN_A.T1", "kind": "ability_kp", "name": "（合成）能力点三", "scope": "required", "cognitive_levels": [], "status": "active" },
+    { "id": "CHN.SYN_A.T1.M1", "level": "node", "parent_id": "CHN.SYN_A.T1", "kind": "material", "name": "（合成）素材一", "scope": "required", "cognitive_levels": [], "status": "active" },
+    { "id": "CHN.SYN_A.T1.M2", "level": "node", "parent_id": "CHN.SYN_A.T1", "kind": "material", "name": "（合成）素材二", "scope": "required", "cognitive_levels": [], "status": "active" },
+    { "id": "CHN.SYN_A.T1.M3", "level": "node", "parent_id": "CHN.SYN_A.T1", "kind": "material", "name": "（合成）素材三", "scope": "required", "cognitive_levels": [], "status": "active" },
+    { "id": "CHN.SYN_A.T1.X1", "level": "node", "parent_id": "CHN.SYN_A.T1", "kind": "material", "name": "（合成）拓展素材", "scope": "exam_ext", "cognitive_levels": [], "status": "active" },
+    { "id": "CHN.SYN_A.T2", "level": "topic", "parent_id": "CHN.SYN_A", "kind": null, "name": "（合成）主题二", "scope": "required", "cognitive_levels": [], "status": "active" },
+    { "id": "CHN.SYN_A.T3", "level": "topic", "parent_id": "CHN.SYN_A", "kind": null, "name": "（合成）主题三", "scope": "required", "cognitive_levels": [], "status": "active" },
+    { "id": "CHN.SYN_A.T3.OLD", "level": "node", "parent_id": "CHN.SYN_A.T3", "kind": "ability_kp", "name": "（合成）已停用能力点", "scope": "required", "cognitive_levels": ["know"], "status": "deprecated" },
+    { "id": "CHN.SYN_B", "level": "domain", "parent_id": null, "kind": null, "name": "（合成）领域乙", "scope": "required", "cognitive_levels": [], "status": "active" },
+    { "id": "CHN.SYN_B.T1", "level": "topic", "parent_id": "CHN.SYN_B", "kind": null, "name": "（合成）主题乙一", "scope": "required", "cognitive_levels": [], "status": "active" },
+    { "id": "CHN.SYN_B.T1.MB1", "level": "node", "parent_id": "CHN.SYN_B.T1", "kind": "material", "name": "（合成）素材乙一", "scope": "required", "cognitive_levels": [], "status": "active" }
+  ],
+  "edges": [
+    { "from_id": "CHN.SYN_A.T1.K1", "to_id": "CHN.SYN_A.T1.H1", "type": "uses_method", "strength": "strong" },
+    { "from_id": "CHN.SYN_A.T1.K1", "to_id": "CHN.SYN_A.T1.K2", "type": "prerequisite", "strength": "weak" },
+    { "from_id": "CHN.SYN_A.T1.K2", "to_id": "CHN.SYN_A.T1.K3", "type": "prerequisite", "strength": "strong" },
+    { "from_id": "CHN.SYN_A.T1.K2", "to_id": "CHN.SYN_A.T3.OLD", "type": "prerequisite", "strength": "weak" },
+    { "from_id": "CHN.SYN_A.T1.K3", "to_id": "CHN.SYN_A.T1.M1", "type": "related", "strength": "strong" },
+    { "from_id": "CHN.SYN_A.T1.M1", "to_id": "CHN.SYN_A.T1.M2", "type": "confusable", "strength": "strong" },
+    { "from_id": "CHN.SYN_B.T1.MB1", "to_id": "CHN.SYN_A.T1.M1", "type": "related", "strength": "strong" }
+  ],
+  "projections": [
+    { "id": "00000000-0000-4000-8000-0000000c4ep1", "node_id": "CHN.SYN_A.T1.M1", "edition": "syn-tb-2024", "edition_year": 2024, "volume": "（合成）册甲", "chapter": "（合成）第1课", "page_from": 3, "page_to": 3, "mapping_state": "verified" },
+    { "id": "00000000-0000-4000-8000-0000000c4ep2", "node_id": "CHN.SYN_A.T1.M1", "edition": "syn-tb-2024", "edition_year": 2024, "volume": "（合成）册乙", "chapter": "（合成）第2课", "page_from": 9, "page_to": 10, "mapping_state": "unverified" },
+    { "id": "00000000-0000-4000-8000-0000000c4ep3", "node_id": "CHN.SYN_A.T1.M2", "edition": "syn-tb-2024", "edition_year": 2024, "volume": "（合成）册甲", "chapter": "（合成）第4课", "page_from": 20, "page_to": 20, "mapping_state": "unverified" },
+    { "id": "00000000-0000-4000-8000-0000000c4ep4", "node_id": "CHN.SYN_A.T3.OLD", "edition": "syn-tb-2024", "edition_year": 2024, "volume": "（合成）册甲", "chapter": "（合成）第5课", "page_from": 30, "page_to": 31, "mapping_state": "disputed" },
+    { "id": "00000000-0000-4000-8000-0000000c4ep5", "node_id": "CHN.SYN_B.T1.MB1", "edition": "syn-tb-2024", "edition_year": 2024, "volume": "（合成）册乙", "chapter": "（合成）第6课", "page_from": 40, "page_to": 40, "mapping_state": "verified" }
+  ]
+}

@@ -60,3 +60,22 @@ node --no-warnings src/main.ts --subject zhixing --snapshot <snapshot.json> [--f
 - `--focus-domain`（默认法律 `MORAL.LAW`）的缺口清单：没有观点的大概念；观点缺认知层次、没有已核对投影、没有采分点、没有题目。
 
 单测 `tests/daofa.test.ts`（夹具 `tests/fixtures/daofa-snapshot.json` 全部合成，手算写在注释里）。
+
+## 语文（KGE-07 第一步）
+
+```bash
+node --no-warnings src/main.ts --subject wenli --snapshot <snapshot.json> [--focus-domain CHN.SYN_READ] --out report
+```
+
+输入是语文快照（`format = kge-chinese-snapshot/1`）：离线由 `tools/kge-import` 的 `chinese map` 生成（`snapshot.json`），或在演练库上只读导出
+（`psql -X -q -At -v map_version_id=<uuid> -f sql/chinese-snapshot.sql`），两边格式与排序相同（`tools/kge-import/tests/chinese/chinese-db.sh` 核对）。
+输出 `coverage-wenli-<版本>.md` 与 `.csv`（同一输入逐字节相同，只含汇总与 ID）：
+
+- 主题 × 节点类型（能力点、素材、方法）× 认知层次（只算能力点）；
+- 节点矩阵：投影 已核对 / 未核对 / 有争议，层次递进（prerequisite + weak）与显式强前置的入 / 出，关联、易混、用方法；
+- 必修覆盖只算 `scope = required`，考情拓展等单列；
+- `--focus-domain`（默认整张地图 `CHN`）的缺口清单（只看必修）：主题下没有知识节点；能力点缺认知层次、不在任何层次递进上；
+  素材没有教材出处或出处都未核对；方法没有被任何能力点使用。
+- 能力 × 文本类型 × 题型三列不在库里，只在导入器的 `import-report.json`（`ability_grid`）。
+
+单测 `tests/chinese.test.ts`（夹具 `tests/fixtures/chinese-snapshot.json` 全部合成，手算写在注释里），并核对数学、道法报表与 KGE-07 之前逐字节相同。

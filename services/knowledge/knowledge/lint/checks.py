@@ -26,6 +26,9 @@ from .lexicon import Lexicon
 DEFAULT_MIN_GROUP = 30  # 群体统计最小人数门槛（spec 待人确认 #6，默认 30）
 KP_NODE_KINDS = ("kp", "ability_kp")
 KP_NODE_LEVELS = ("node", "detail")
+# 素材卡只挂素材节点（知识节点层；迁移 0011 的细目只能是易错点或考点）
+MATERIAL_NODE_KINDS = ("material",)
+MATERIAL_NODE_LEVELS = ("node",)
 _HASH = re.compile(rf"^{re.escape(HASH_PREFIX)}[0-9a-f]{{{HASH_HEX_LEN}}}$")
 _MD_LINK = re.compile(r"\]\(([^)\s]+)\)")
 # 原子 ID 白名单：节点用节点 ID 规范（is_node_id）；其余类型只收编码字符（边 <from>><类型>><to>、课标 <年份>/<编码>、投影等 <前缀>-<哈希>）
@@ -131,7 +134,7 @@ def check_header(pf: PageFile) -> list[LintIssue]:
         bad(f"头部有 {len(unknown)} 个未登记字段")
     ptype = h.get("page_type")
     if ptype in RESERVED_PAGE_TYPES:
-        bad(f"页面类型 {ptype} 已预留但首期未实现（只做知识点页 kp）")
+        bad(f"页面类型 {ptype} 已预留但首期未实现（只做知识点页 kp 与素材卡 material）")
     elif ptype not in PAGE_TYPES:
         bad("页面类型不合法")
     subject, node_id = h.get("subject"), h.get("node_id")
@@ -241,7 +244,7 @@ def check_template(pf: PageFile, ctx: LintContext) -> list[LintIssue]:
     node_id = str(page.header.get("node_id"))
     if snap is None or snap.node(node_id) is None or page.header.get("page_type") not in SECTIONS_BY_TYPE:
         return []
-    expected, _ = render_sections(snap, node_id, ctx.page_ids)
+    expected, _ = render_sections(snap, node_id, ctx.page_ids, str(page.header.get("page_type")))
     out = []
     if page.title != snap.node(node_id)["name"]:  # type: ignore[index]
         out.append(_issue(pf, "template", "block", "一级标题应为节点名称"))
@@ -337,6 +340,9 @@ def check_orphans(ctx: LintContext) -> list[LintIssue]:
             out.append(_issue(pf, "orphan", "block", f"孤立页：节点 {nid} 已撤下（deprecated）"))
         elif pf.page.header.get("page_type") == "kp" and (node.get("kind") not in KP_NODE_KINDS or node.get("level") not in KP_NODE_LEVELS):
             out.append(_issue(pf, "orphan", "block", f"孤立页：节点 {nid} 的类型（{node.get('level')}/{node.get('kind')}）挂不了知识点页"))
+        elif pf.page.header.get("page_type") == "material" and (node.get("kind") not in MATERIAL_NODE_KINDS
+                                                                 or node.get("level") not in MATERIAL_NODE_LEVELS):
+            out.append(_issue(pf, "orphan", "block", f"孤立页：节点 {nid} 的类型（{node.get('level')}/{node.get('kind')}）挂不了素材卡"))
     for nid, pfs in by_node.items():
         if len(pfs) > 1:
             shown = f"节点 {nid}" if is_node_id(nid) else "同一节点"

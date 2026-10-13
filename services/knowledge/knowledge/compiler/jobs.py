@@ -58,9 +58,18 @@ def _name(snap: Snapshot, key: str) -> str | None:
     return None if atom is None else str(atom.record["name"])
 
 
-def _neighbors(snap: Snapshot, node_id: str) -> set[str]:
-    return ({e.record["from_id"] for e in snap.edges_to(node_id, "prerequisite")}
-            | {e.record["to_id"] for e in snap.edges_from(node_id, "prerequisite")})
+def _neighbors(snap: Snapshot, node_id: str, types: tuple[str, ...] = ("prerequisite",)) -> set[str]:
+    return ({e.record["from_id"] for t in types for e in snap.edges_to(node_id, t)}
+            | {e.record["to_id"] for t in types for e in snap.edges_from(node_id, t)})
+
+
+# 素材卡的“易混项与关联”会渲染易混、关联另一端的名称（KGE-07）：只对挂素材卡的邻居生效，知识点页保持原行为
+MATERIAL_LINK_TYPES = ("confusable", "related")
+
+
+def _material_neighbors(pages: Mapping[str, Page], by_node: Mapping[str, str], old: Snapshot, new: Snapshot, node_id: str) -> set[str]:
+    linked = _neighbors(old, node_id, MATERIAL_LINK_TYPES) | _neighbors(new, node_id, MATERIAL_LINK_TYPES)
+    return {n for n in linked if n in by_node and pages[by_node[n]].header.get("page_type") == "material"}
 
 
 def _estimate_risk(node_id: str, trig: Iterable[Trigger], old: Snapshot, new: Snapshot) -> str:
@@ -100,6 +109,7 @@ def plan_jobs(pages: Mapping[str, Page], old: Snapshot, new: Snapshot) -> list[C
         touched = _nodes_touched(old.atoms.get(key), old) | _nodes_touched(new.atoms.get(key), new)
         if key.startswith("node:") and _name(old, key) != _name(new, key):  # 节点名称会渲染进相邻页面的“前置与后续”
             touched |= _neighbors(old, key[5:]) | _neighbors(new, key[5:])
+            touched |= _material_neighbors(pages, by_node, old, new, key[5:])
         for nid in touched:
             if nid in by_node:
                 affected.add(by_node[nid])

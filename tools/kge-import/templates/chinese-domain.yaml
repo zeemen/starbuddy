@@ -1,0 +1,104 @@
+# 语文地图模板（KGE-07 第一步，specs/kge07-chinese-slice/spec.md 范围 1；KGE 分册语文段落 :590-606）。
+# 教研按本模板填写 content/chinese/<领域>.yaml（放内容仓或执行人目录，不在本仓）；本仓只放模板、校验器与合成样例（samples/chinese/）。
+# 校验：node src/chinese/main.ts map --domain <文件> [--domain ...] --version <主.次.修订> --out <目录>（通过才生成草稿地图版本的种子）。
+#
+# 注意：KGE-07 第一步只收合成样例。本模板写的是真实内容的形状（synthetic: false），在法务与语文教研确认前校验器一律拒绝；
+#       合成样例见 samples/chinese/（synthetic: true，名称、ID 与每个自由文本字段都带“合成”标记）。
+#
+# 填写规则（校验器会拦）：
+#   - 层级：领域（domain，2 段 ID）→ 主题（topics，3 段）→ 知识节点层（nodes，4 段）。ID 全大写，CHN. 开头，上一级就是去掉最后一段。
+#   - 知识节点层只收三类 kind：
+#       ability_kp 能力点 = 能力 × 文本类型 × 题型：必须写 ability（能力阶梯编码）、rung（阶梯里的哪一级）、text_type、question_type，
+#                  以及 includes、excludes、examples、cognitive_levels（发布前校验要求）；28 点能力格保留为能力视图，不在这里写；
+#       material   素材（篇目、实词虚词、字音字形、名著要素）：不带认知层次，只用 related / confusable 边；
+#       method     方法（阅读方法、写作方法）：不带认知层次，由能力点用 uses_method 指向。
+#   - ladders：能力阶梯，rungs 由低到高；text_types、question_types：文本类型与题型的编码表。几个领域文件可以重复写，定义必须一致。
+#   - 不得出现篇目原文、教材原句、教材注释一类的字段（quote、original、原文、注释、annotation……任何层级都拒绝）；
+#     教材投影只写版次、册、课（chapter）、页码范围，导入后一律“未核对”。素材卡的原文段在编译层只放占位。
+#   - relations（只用迁移 0011 已有的边类型，不新增类型）：
+#       progression   层次递进：同一能力阶梯的相邻两级（低一级 → 高一级），库里写成 prerequisite + weak；
+#       prerequisite  教研显式标注的强前置（少见，如“文言实词推断”对“文言翻译”）：explicit_prerequisite: true + basis；
+#       related       关联；confusable 易混（只连同类素材或同类能力点）；两者无方向，一对节点只写一种、一条；
+#       uses_method   能力点 → 方法。
+#     素材与方法不进前置依赖图；前置图（强弱合在一起）不能成环、不能有传递冗余边；每个知识节点至少一条边或一条教材投影（不能是孤点）。
+#   - 名著拆成素材节点（情节人物）与能力点（专题探究）两部分，用 related 连起来，掌握度不混算。
+#   - 在地文化等拓展素材写 scope: exam_ext（考情拓展），不进必修覆盖统计。
+#   - 不写任何学生数据（规则 13）。
+format: kge-chinese-domain/1
+synthetic: false            # 真实内容填 false；合成样例必须 true，notice 写明“合成、非教材内容”，名称带“合成”、领域 ID 第二段以 SYN 开头
+notice: 由语文教研填写；能力点、素材、方法均为自写概括，不含篇目原文与教材注释
+subject: wenli              # 语文（节点前缀 CHN）
+domain:
+  id: CHN.READ
+  name: 阅读
+ladders:
+  - code: INFER
+    name: 能力名称（自写）
+    rungs: [L1, L2, L3]
+text_types:
+  - code: NARR
+    name: 文本类型名称（自写）
+question_types:
+  - code: CHAR
+    name: 题型名称（自写）
+topics:
+  - id: CHN.READ.NARR
+    name: 主题名称（自写）
+    nodes:
+      - id: CHN.READ.NARR.INFER_CHAR_L1
+        kind: ability_kp
+        name: 能力点名称（自写）
+        ability: INFER
+        rung: L1
+        text_type: NARR
+        question_type: CHAR
+        cognitive_levels: [understand]   # know / understand / apply / synthesize
+        scope: required     # required / elective / edition_ext / exam_ext / enrichment
+        includes:
+          - 包含：这个能力点管到哪里（自写）
+        excludes:
+          - 不包含：容易混进来但属于别的能力点的内容（自写）
+        examples:
+          - 典型题例：合成题或题目 ID
+        projections:
+          - edition: tongbian-2024   # 版次编码，与 platform.curriculum_version.textbook_version 同一套
+            edition_year: 2024
+            volume: 七年级上册
+            chapter: 第一单元
+            page_from: 1
+            page_to: 2
+      - id: CHN.READ.NARR.INFER_CHAR_L2
+        kind: ability_kp
+        name: 能力点名称（自写）
+        ability: INFER
+        rung: L2
+        text_type: NARR
+        question_type: CHAR
+        cognitive_levels: [understand, apply]
+        includes:
+          - 包含（自写）
+        excludes:
+          - 不包含（自写）
+        examples:
+          - 典型题例：合成题或题目 ID
+  - id: CHN.READ.METHOD
+    name: 阅读方法
+    nodes:
+      - id: CHN.READ.METHOD.EVIDENCE
+        kind: method
+        name: 方法名称（自写）
+        includes:
+          - 方法要点（自写）
+relations:
+  - from: CHN.READ.NARR.INFER_CHAR_L1
+    to: CHN.READ.NARR.INFER_CHAR_L2
+    type: progression
+  - from: CHN.READ.NARR.INFER_CHAR_L1
+    to: CHN.READ.METHOD.EVIDENCE
+    type: uses_method
+  # 确需强前置（少见）：
+  # - from: CHN.READ.XXX.YYY
+  #   to: CHN.READ.XXX.ZZZ
+  #   type: prerequisite
+  #   explicit_prerequisite: true
+  #   basis: 教研依据（自写，≤ 200 字）

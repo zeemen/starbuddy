@@ -63,6 +63,8 @@ def curriculum(snapshot: Snapshot, node_id: str) -> tuple[str, list[Atom]]:
 
 def relations(snapshot: Snapshot, node_id: str, known_pages: Iterable[str]) -> tuple[str, list[Atom]]:
     known = list(known_pages)
+    # 注意（KGE-07）：这里不分强弱。语文的层次递进写成 prerequisite + weak，编能力点（ability_kp）页之前须区分递进与前置，
+    # 否则递进的上一级会被写成“前置”。本步不编能力点页，未改
     pre = snapshot.edges_to(node_id, "prerequisite")
     post = snapshot.edges_from(node_id, "prerequisite")
     node = _node(snapshot, node_id)
@@ -103,7 +105,79 @@ def region(snapshot: Snapshot, node_id: str) -> tuple[str, list[Atom]]:
     return "\n".join(body), items
 
 
-def render_sections(snapshot: Snapshot, node_id: str, known_pages: Iterable[str]) -> tuple[dict[str, Section], list[Atom]]:
+# ---------- 素材卡（KGE-07 第一步；KGE 分册 :443） ----------
+
+def _projections(snapshot: Snapshot, node_id: str) -> list[Atom]:
+    return sorted(snapshot.projections_of(node_id, "projection"),
+                  key=lambda a: (a.record["edition"], a.record["edition_year"], a.record["volume"], a.record["chapter"], a.record["page_from"], a.id))
+
+
+def entry(snapshot: Snapshot, node_id: str) -> tuple[str, list[Atom]]:
+    """词条（锁定段）：名称、释义要点（节点 includes）、不包括（节点 excludes）"""
+    atom = _node(snapshot, node_id)
+    n = atom.record
+    body = [f"## {_title('entry', 'material')}", "", f"**{n['name']}** {_cite(atom)}"]
+    if n.get("includes"):
+        body += ["", "释义要点：" + "；".join(n["includes"]) + f"。 {_cite(atom)}"]
+    if n.get("excludes"):
+        body += ["", "不包括：" + "；".join(n["excludes"]) + f"。 {_cite(atom)}"]
+    return "\n".join(body), [atom]
+
+
+def source_text(snapshot: Snapshot, node_id: str) -> tuple[str, list[Atom]]:
+    """原文（渲染段）：只放教材原句占位，原文不写进页面；没有投影时写暂无"""
+    items = _projections(snapshot, node_id)
+    body = [f"## {_title('source_text', 'material')}", ""]
+    if not items:
+        node = _node(snapshot, node_id)
+        body.append(f"{EMPTY} {_cite(node)}")
+        return "\n".join(body), [node]
+    body += [f"- {{{{quote:{a.id}}}}} {_cite(a)}" for a in items]
+    return "\n".join(body), items
+
+
+def provenance(snapshot: Snapshot, node_id: str) -> tuple[str, list[Atom]]:
+    """出处（渲染段）：版次、册、课、页码（册-课-页）"""
+    items = _projections(snapshot, node_id)
+    body = [f"## {_title('provenance', 'material')}", ""]
+    if not items:
+        node = _node(snapshot, node_id)
+        body.append(f"{EMPTY} {_cite(node)}")
+        return "\n".join(body), [node]
+    for a in items:
+        p = a.record
+        pages = f"第 {p['page_from']} 页" if p["page_from"] == p["page_to"] else f"第 {p['page_from']}–{p['page_to']} 页"
+        body.append(f"- {p['edition']}（{p['edition_year']}）{p['volume']}-{p['chapter']}-{pages} {_cite(a)}")
+    return "\n".join(body), items
+
+
+def material_examples(snapshot: Snapshot, node_id: str) -> tuple[str, list[Atom]]:
+    """例句（渲染段）：节点 examples"""
+    atom = _node(snapshot, node_id)
+    body = [f"## {_title('examples', 'material')}", ""]
+    body += [f"- {x} {_cite(atom)}" for x in atom.record.get("examples") or []] or [f"{EMPTY} {_cite(atom)}"]
+    return "\n".join(body), [atom]
+
+
+def _other_end(e: Atom, node_id: str) -> str:
+    return e.record["to_id"] if e.record["from_id"] == node_id else e.record["from_id"]
+
+
+def confusables(snapshot: Snapshot, node_id: str, known_pages: Iterable[str]) -> tuple[str, list[Atom]]:
+    """易混项与关联（渲染段）：confusable 与 related 边无方向，列出另一端"""
+    known = list(known_pages)
+    node = _node(snapshot, node_id)
+    out: list[Atom] = []
+    body = [f"## {_title('confusables', 'material')}"]
+    for label, etype in (("易混：", "confusable"), ("关联：", "related")):
+        edges = sorted(snapshot.edges_to(node_id, etype) + snapshot.edges_from(node_id, etype), key=lambda a: (_other_end(a, node_id), a.id))
+        body += ["", label]
+        body += [f"- {_name(snapshot, _other_end(e, node_id), known)} {_cite(e)}" for e in edges] or [f"- {EMPTY} {_cite(node)}"]
+        out += edges or [node]
+    return "\n".join(body), out
+
+
+def render_sections(snapshot: Snapshot, node_id: str, known_pages: Iterable[str], page_type: str = "kp") -> tuple[dict[str, Section], list[Atom]]:
     """锁定段与渲染段：段落 ID → 段落；以及这些段落引用的全部原子（去重、保序）"""
     known = list(known_pages)
     out: dict[str, Section] = {}
@@ -111,7 +185,11 @@ def render_sections(snapshot: Snapshot, node_id: str, known_pages: Iterable[str]
     gens = {"definition": lambda: definition(snapshot, node_id), "curriculum": lambda: curriculum(snapshot, node_id),
             "relations": lambda: relations(snapshot, node_id, known), "textbook": lambda: textbook(snapshot, node_id),
             "region": lambda: region(snapshot, node_id)}
-    for spec in SECTIONS_BY_TYPE["kp"]:
+    if page_type == "material":
+        gens = {"entry": lambda: entry(snapshot, node_id), "source_text": lambda: source_text(snapshot, node_id),
+                "provenance": lambda: provenance(snapshot, node_id), "examples": lambda: material_examples(snapshot, node_id),
+                "confusables": lambda: confusables(snapshot, node_id, known)}
+    for spec in SECTIONS_BY_TYPE[page_type]:
         if spec.kind == "narrative":
             continue
         text, atoms = gens[spec.id]()

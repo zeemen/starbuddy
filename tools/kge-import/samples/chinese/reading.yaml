@@ -1,0 +1,240 @@
+# 合成样例（合成、非教材内容）：语文阅读领域。KGE-07 第一步（specs/kge07-chinese-slice）在一次性测试库证明导入流程用。
+# 能力阶梯、能力点（能力 × 文本类型 × 题型）、方法节点、版次、册、课、页码全部由工程起草，不对应任何真实教材、篇目或考试；
+# 不含任何篇目原文、教材注释、真实实词虚词清单，也不含学生数据。
+format: kge-chinese-domain/1
+synthetic: true
+notice: 合成、非教材内容：能力阶梯、能力点与页码均为工程起草的占位，待语文教研下钻真实能力点后替换
+subject: wenli
+domain:
+  id: CHN.SYN_READ
+  name: （合成）阅读领域
+ladders:
+  - code: SYN_INFER
+    name: （合成）推断赏析
+    rungs: [L1, L2, L3]
+  - code: SYN_LOCATE
+    name: （合成）信息定位
+    rungs: [L1, L2]
+  - code: SYN_CLASSICAL
+    name: （合成）文言理解
+    rungs: [L1, L2]
+text_types:
+  - code: SYN_NARR
+    name: （合成）文本类型甲
+  - code: SYN_PROSE
+    name: （合成）文本类型乙
+  - code: SYN_CLASSICAL_TEXT
+    name: （合成）文本类型丙
+  - code: SYN_BOOK
+    name: （合成）整本书
+question_types:
+  - code: SYN_CHAR
+    name: （合成）题型甲
+  - code: SYN_DETAIL
+    name: （合成）题型乙
+  - code: SYN_WORD
+    name: （合成）题型丙
+  - code: SYN_TRANS
+    name: （合成）题型丁
+  - code: SYN_THEME
+    name: （合成）题型戊
+topics:
+  - id: CHN.SYN_READ.SYN_NARR
+    name: （合成）文本类型甲阅读
+    nodes:
+      - id: CHN.SYN_READ.SYN_NARR.INFER_CHAR_L1
+        kind: ability_kp
+        name: （合成）推断赏析一级 × 文本类型甲 × 题型甲
+        ability: SYN_INFER
+        rung: L1
+        text_type: SYN_NARR
+        question_type: SYN_CHAR
+        cognitive_levels: [understand]
+        includes:
+          - （合成）包含：在合成短文里找出描写并说出它表现的特点
+        excludes:
+          - （合成）不包含：二级要求的多处描写综合
+        examples:
+          - （合成）典型题例占位 SYN-CHN-R01
+        projections:
+          - edition: syn-tb-2024
+            edition_year: 2024
+            volume: （合成）册甲
+            chapter: （合成）第1课
+            page_from: 5
+            page_to: 6
+      - id: CHN.SYN_READ.SYN_NARR.INFER_CHAR_L2
+        kind: ability_kp
+        name: （合成）推断赏析二级 × 文本类型甲 × 题型甲
+        ability: SYN_INFER
+        rung: L2
+        text_type: SYN_NARR
+        question_type: SYN_CHAR
+        cognitive_levels: [understand, apply]
+        includes:
+          - （合成）包含：综合合成短文里的多处描写概括特点
+        excludes:
+          - （合成）不包含：三级要求的写法评价
+        examples:
+          - （合成）典型题例占位 SYN-CHN-R02
+      - id: CHN.SYN_READ.SYN_NARR.INFER_CHAR_L3
+        kind: ability_kp
+        name: （合成）推断赏析三级 × 文本类型甲 × 题型甲
+        ability: SYN_INFER
+        rung: L3
+        text_type: SYN_NARR
+        question_type: SYN_CHAR
+        cognitive_levels: [apply, synthesize]
+        includes:
+          - （合成）包含：评价合成短文的写法与表达效果
+        excludes:
+          - （合成）不包含：整本书层面的专题探究
+        examples:
+          - （合成）典型题例占位 SYN-CHN-R03
+      - id: CHN.SYN_READ.SYN_NARR.LOCATE_DETAIL_L1
+        kind: ability_kp
+        name: （合成）信息定位一级 × 文本类型甲 × 题型乙
+        ability: SYN_LOCATE
+        rung: L1
+        text_type: SYN_NARR
+        question_type: SYN_DETAIL
+        cognitive_levels: [know]
+        includes:
+          - （合成）包含：按题干在合成短文里找到对应语句
+        excludes:
+          - （合成）不包含：跨段落的信息整合
+        examples:
+          - （合成）典型题例占位 SYN-CHN-R04
+      - id: CHN.SYN_READ.SYN_NARR.LOCATE_DETAIL_L2
+        kind: ability_kp
+        name: （合成）信息定位二级 × 文本类型甲 × 题型乙
+        ability: SYN_LOCATE
+        rung: L2
+        text_type: SYN_NARR
+        question_type: SYN_DETAIL
+        cognitive_levels: [understand]
+        includes:
+          - （合成）包含：跨段落整合合成短文里的信息
+        excludes:
+          - （合成）不包含：对信息的评价
+        examples:
+          - （合成）典型题例占位 SYN-CHN-R05
+  - id: CHN.SYN_READ.SYN_PROSE
+    name: （合成）文本类型乙阅读
+    nodes:
+      - id: CHN.SYN_READ.SYN_PROSE.LOCATE_DETAIL_L1
+        kind: ability_kp
+        name: （合成）信息定位一级 × 文本类型乙 × 题型乙
+        ability: SYN_LOCATE
+        rung: L1
+        text_type: SYN_PROSE
+        question_type: SYN_DETAIL
+        cognitive_levels: [know]
+        includes:
+          - （合成）包含：在合成散文片段里找到对应语句
+        excludes:
+          - （合成）不包含：跨段落的信息整合
+        examples:
+          - （合成）典型题例占位 SYN-CHN-R09
+  - id: CHN.SYN_READ.SYN_CLASSICAL
+    name: （合成）文本类型丙阅读
+    nodes:
+      - id: CHN.SYN_READ.SYN_CLASSICAL.WORD_INFER_L1
+        kind: ability_kp
+        name: （合成）文言理解一级 × 文本类型丙 × 题型丙
+        ability: SYN_CLASSICAL
+        rung: L1
+        text_type: SYN_CLASSICAL_TEXT
+        question_type: SYN_WORD
+        cognitive_levels: [understand]
+        includes:
+          - （合成）包含：借助上下文推断合成词条的意思
+        excludes:
+          - （合成）不包含：整句翻译
+        examples:
+          - （合成）典型题例占位 SYN-CHN-R06
+      - id: CHN.SYN_READ.SYN_CLASSICAL.TRANSLATE_L1
+        kind: ability_kp
+        name: （合成）文言理解一级 × 文本类型丙 × 题型丁
+        ability: SYN_CLASSICAL
+        rung: L1
+        text_type: SYN_CLASSICAL_TEXT
+        question_type: SYN_TRANS
+        cognitive_levels: [apply]
+        includes:
+          - （合成）包含：把合成句子译成通顺的现代汉语
+        excludes:
+          - （合成）不包含：单个词条的推断
+        examples:
+          - （合成）典型题例占位 SYN-CHN-R07
+  - id: CHN.SYN_READ.SYN_BOOK
+    name: （合成）整本书阅读（能力面）
+    nodes:
+      - id: CHN.SYN_READ.SYN_BOOK.THEME_L1
+        kind: ability_kp
+        name: （合成）推断赏析一级 × 整本书 × 题型戊
+        ability: SYN_INFER
+        rung: L1
+        text_type: SYN_BOOK
+        question_type: SYN_THEME
+        cognitive_levels: [apply]
+        includes:
+          - （合成）包含：围绕合成专题梳理整本书的材料
+        excludes:
+          - （合成）不包含：名著情节人物的识记（属素材节点）
+        examples:
+          - （合成）典型题例占位 SYN-CHN-R08
+  - id: CHN.SYN_READ.SYN_METHOD
+    name: （合成）阅读方法
+    nodes:
+      - id: CHN.SYN_READ.SYN_METHOD.EVIDENCE
+        kind: method
+        name: （合成）方法甲：找依据
+        includes:
+          - （合成）包含：先找题干关键词再回到文本找依据
+        projections:
+          - edition: syn-tb-2024
+            edition_year: 2024
+            volume: （合成）册甲
+            chapter: （合成）单元导语一
+            page_from: 1
+            page_to: 1
+      - id: CHN.SYN_READ.SYN_METHOD.CONTEXT
+        kind: method
+        name: （合成）方法乙：联系上下文
+        includes:
+          - （合成）包含：结合前后文推断词句意思
+relations:
+  # 层次递进：同一能力阶梯相邻两级（库里是 prerequisite + weak）
+  - from: CHN.SYN_READ.SYN_NARR.INFER_CHAR_L1
+    to: CHN.SYN_READ.SYN_NARR.INFER_CHAR_L2
+    type: progression
+  - from: CHN.SYN_READ.SYN_NARR.INFER_CHAR_L2
+    to: CHN.SYN_READ.SYN_NARR.INFER_CHAR_L3
+    type: progression
+  - from: CHN.SYN_READ.SYN_NARR.LOCATE_DETAIL_L1
+    to: CHN.SYN_READ.SYN_NARR.LOCATE_DETAIL_L2
+    type: progression
+  # 不同文本类型之间不写层次递进（递进只在同一“能力 × 文本类型 × 题型”内），用关联边
+  - from: CHN.SYN_READ.SYN_NARR.LOCATE_DETAIL_L1
+    to: CHN.SYN_READ.SYN_PROSE.LOCATE_DETAIL_L1
+    type: related
+  # 教研显式标注的强前置（库里是 prerequisite + strong）
+  - from: CHN.SYN_READ.SYN_CLASSICAL.WORD_INFER_L1
+    to: CHN.SYN_READ.SYN_CLASSICAL.TRANSLATE_L1
+    type: prerequisite
+    explicit_prerequisite: true
+    basis: （合成）依据占位：先能推断词条再能整句翻译
+  - from: CHN.SYN_READ.SYN_NARR.INFER_CHAR_L1
+    to: CHN.SYN_READ.SYN_NARR.LOCATE_DETAIL_L1
+    type: related
+  - from: CHN.SYN_READ.SYN_NARR.LOCATE_DETAIL_L1
+    to: CHN.SYN_READ.SYN_METHOD.EVIDENCE
+    type: uses_method
+  - from: CHN.SYN_READ.SYN_CLASSICAL.WORD_INFER_L1
+    to: CHN.SYN_READ.SYN_METHOD.CONTEXT
+    type: uses_method
+  # 名著拆分：能力面（专题探究）与素材面（情节人物）用关联边连起来，掌握度不混算
+  - from: CHN.SYN_READ.SYN_BOOK.THEME_L1
+    to: CHN.SYN_ACC.SYN_CLASSIC.BOOK_A_PLOT
+    type: related

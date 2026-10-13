@@ -73,7 +73,9 @@ test("道法：快照按不可信输入核对；命令行参数与退出码", ()
     assert.equal(readFileSync(join(out, "coverage-zhixing-9.9.9.csv"), "utf8"), toDaofaCsv(computeDaofaCoverage(load())));
     assert.equal(main(["--subject", "zhixing", "--out", out]), 2);
     assert.equal(main(["--subject", "zhixing", "--snapshot", FIX, "--focus-domain", "LAW", "--out", out]), 2);
-    assert.equal(main(["--subject", "wenli", "--snapshot", FIX]), 2);
+    assert.equal(main(["--subject", "nosuch", "--snapshot", FIX]), 2);
+    // KGE-07 起 wenli 是语文覆盖报表：喂道法快照按格式不对退出 1
+    assert.equal(main(["--subject", "wenli", "--snapshot", FIX, "--out", out]), 1);
     assert.equal(main(["--subject", "zhixing", "--snapshot", join(out, "missing.json"), "--out", out]), 1);
   } finally {
     console.log = log;

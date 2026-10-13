@@ -132,3 +132,27 @@ node src/daofa/main.ts snapshot --map /tmp/daofa-map --pack ... --entries ... --
   已知限制：0011 的 `projection_verified_by` 要求 verified 必须有 `quote_text`，原句不入库时写不进 verified（`page-backfill-demo.sh` 演示；lessons 待人确认）。
 
 `make kge-daofa-import-test`（并入 `kge-import-test` 与 `check`）、`make zhixing-rubric-check`。
+
+## 语文切片（KGE-07 第一步，`src/chinese/`）
+
+对应 `specs/kge07-chinese-slice/spec.md` 范围 1。只读输入、只生成文件，不连库；全程合成数据，不含篇目原文、教材注释与真实实词虚词清单。
+
+```bash
+node src/chinese/main.ts map --domain samples/chinese/reading.yaml --domain samples/chinese/accumulation.yaml --version 0.0.1 --out /tmp/chinese-map
+```
+
+- **模板** `templates/chinese-domain.yaml`：领域 → 主题 → 知识节点层；节点只收能力点 `ability_kp`（能力 × 文本类型 × 题型，标明在能力阶梯的哪一级）、
+  素材 `material`、方法 `method`；能力阶梯（`ladders`）、文本类型、题型的编码表可在多个领域文件里重复写，定义必须一致。
+- **只收合成样例**：`synthetic: false` 在法务与语文教研确认前一律拒绝；合成样例的名称、领域 ID 与每个自由文本字段
+  （includes、excludes、examples、basis、册、课、印次）都须带“合成”标记。
+- **边只用迁移 0011 已有的类型**：`progression`（层次递进，只连同一能力阶梯的相邻两级，且文本类型、题型相同）→ `prerequisite` + `strength = weak`；
+  `prerequisite`（教研显式强前置，须 `explicit_prerequisite: true` + `basis`）→ `prerequisite` + `strong`；`related`、`confusable`（无方向）、`uses_method`（能力点 → 方法）同名。
+  诊断与 `node.path` 只走强前置边，弱边只表达递进。
+- **校验**：素材与方法不进前置图；前置图（强弱合在一起，与 `kge.validate_map_version` 同口径）无环、无传递冗余边；知识节点层无孤点；
+  ID 符合节点 ID 规范且以 `CHN.` 开头；拒绝原文、注释类字段（`quote`、`original`、`原文`、`annotation`、`注释`……任何层级）；
+  素材与方法不带认知层次；合成样例须 `synthetic: true`、notice 写明“合成、非教材内容”、名称带“合成”、领域 ID 第二段以 `SYN` 开头。
+- **产物**：`import.sql`（草稿地图版本，`subject = wenli`，以 `starbuddy_kge` 写入，投影 `quote_text` 为空、`unverified`，合成样例带挡板）、
+  `import-report.json`（计数、`expected_missing_boundary`、不计入必修的节点、能力阶梯格 `ability_grid`）、
+  `snapshot.json`（`kge-chinese-snapshot/1`，覆盖报表 `tools/kge-coverage --subject wenli` 的输入）。同一输入逐字节相同。发布走已有路径，本工具不发布。
+
+`make kge-chinese-import`（单测 + 一次性库上的 `tests/chinese/chinese-db.sh`）、`make kge-chinese-mutation`，两者都并入 `check`。

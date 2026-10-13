@@ -134,6 +134,9 @@ async def full_recompile(job: CompileJob, rel_path: str, old: Page, old_text: st
                          router: Any, compiled_at: dt.datetime) -> CompileResult:
     if job.rebuild_kind != "full":
         raise CompileError("full_recompile 只接全量重编任务")
+    if old.header.get("page_type") != "kp":
+        # 编纂 Prompt（SYSTEM_PROMPT）只覆盖知识点页；素材卡的叙述段要另写 Prompt，属必停项，KGE-07 第一步不接
+        raise CompileError(f"页面类型 {old.header.get('page_type')} 暂不支持全量重编（编纂 Prompt 只覆盖知识点页）")
     mr = _router_module()
     node_id = str(old.header.get("node_id"))
     payload = public_payload(snapshot, node_id)

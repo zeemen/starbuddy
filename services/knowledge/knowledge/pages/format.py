@@ -30,9 +30,9 @@ from typing import Any
 
 import yaml
 
-# 首期只实现知识点页；其余七类留类型不实现（KGE 第四章页面体系）
-PAGE_TYPES = ("kp",)
-RESERVED_PAGE_TYPES = ("viewpoint", "material", "method", "pitfall", "unit_overview", "exam_profile", "edition_diff")
+# 首期实现知识点页；KGE-07 第一步加素材卡（material，语文积累训练）；其余六类留类型不实现（KGE 第四章页面体系）
+PAGE_TYPES = ("kp", "material")
+RESERVED_PAGE_TYPES = ("viewpoint", "method", "pitfall", "unit_overview", "exam_profile", "edition_diff")
 RISK_LEVELS = ("low", "medium", "high")
 REBUILD_KINDS = ("render", "full")
 SECTION_KINDS = ("locked", "render", "narrative")
@@ -61,7 +61,18 @@ KP_SECTIONS: tuple[SectionSpec, ...] = (
     SectionSpec("pitfalls", "narrative", "易错"),
     SectionSpec("frequent_questions", "narrative", "高频设问"),
 )
-SECTIONS_BY_TYPE: dict[str, tuple[SectionSpec, ...]] = {"kp": KP_SECTIONS}
+# 素材卡的段落，顺序固定（KGE 分册 :443 素材卡：篇目或词条原文、释义、例句、出处（册-课-页）、易混项）。
+# 原文段只放教材原句占位 {{quote:<投影 ID>}}（原文不写进页面，读取时按版次渲染）；释义要点取节点 includes，例句取节点 examples，
+# 出处取教材投影的版次、册、课、页码，易混项取 confusable 边（关联节点取 related 边）。只有“积累要点”是叙述段
+MATERIAL_SECTIONS: tuple[SectionSpec, ...] = (
+    SectionSpec("entry", "locked", "词条"),
+    SectionSpec("source_text", "render", "原文"),
+    SectionSpec("provenance", "render", "出处"),
+    SectionSpec("examples", "render", "例句"),
+    SectionSpec("confusables", "render", "易混项与关联"),
+    SectionSpec("study_notes", "narrative", "积累要点"),
+)
+SECTIONS_BY_TYPE: dict[str, tuple[SectionSpec, ...]] = {"kp": KP_SECTIONS, "material": MATERIAL_SECTIONS}
 
 BEGIN = re.compile(r"^<!-- kge:section id=([a-z_]+) kind=([a-z]+) -->$")
 END = re.compile(r"^<!-- kge:end id=([a-z_]+) -->$")
