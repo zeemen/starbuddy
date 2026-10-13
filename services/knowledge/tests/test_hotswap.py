@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import signal
+import time
 from pathlib import Path
 
 import pytest
@@ -316,8 +317,16 @@ async def _sighup_flow(kgedb, ptr: Path, a: Path, b: Path, bad: Path) -> None:
             assert (sw.stats.loads, sw.stats.failures, sw.stats.commit) == (want_loads, want_failures, want_commit)
             r = await call(client, "page.get", page_body())
             assert r.status_code == 200 and commit_of(r.json()) == want_commit[:12]
-        # 关停时等进行中的 reload 做完：排一次切换就立刻退出
+        # 关停时等进行中的 reload 做完：排一次切换就立刻退出。这次载入人为放慢（线程里睡 0.3 秒），
+        # 不等就关停时一定还没做完，测试不靠时序碰运气（原先载入太快时“不等”也能偶然通过）
         ptr.write_text(str(a), encoding="utf-8")
+        load = sw.load
+
+        def slow_load(root):
+            time.sleep(0.3)
+            return load(root)
+
+        sw.load = slow_load  # type: ignore[method-assign]
         sw.request_reload()
     assert sw.stats.loads == 3 and sw.stats.commit == A and not sw._tasks
 
