@@ -37,7 +37,7 @@ make-skip-check:
 # 契约检查约 1 秒，改动后也跑一遍
 check-fast: contract-test taxonomy-check attack-surface-check sie-dictionary-check kge-id-check
 
-check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation practice-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona insight-test insight-mutation voice-blind-eval-test release-walkthrough retest-mutation today-mutation scheduler-test scheduler-mutation gate1-test gate1-mutation review-console-mutation kge-chinese-import kge-chinese-mutation knowledge-material-mutation
+check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation practice-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona insight-test insight-mutation voice-blind-eval-test release-walkthrough retest-mutation today-mutation scheduler-test scheduler-mutation gate1-test gate1-mutation review-console-mutation kge-chinese-import kge-chinese-mutation knowledge-material-mutation stage-test stage-mutation
 	@echo "check: lint 尚未配置，跳过；其余检查已通过"
 
 # 契约合法性 + 示例 + 反例集
@@ -738,4 +738,26 @@ knowledge-material-mutation:
 	  echo "knowledge-material-mutation: 跳过（没有安装依赖；见 services/knowledge/README.md）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
 	@$(call skip_rest,$(KNOWLEDGE_MISSING))services/knowledge/.venv/bin/python services/knowledge/tests/material_mutations.py; rc=$$?; \
+	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
+
+# 舞台第一步（specs/stage-whiteboard-step1，全程合成数据）：packages/stage 的讲解 DSL v0.1.0（类型、JSON Schema、确定性校验器）、
+# 播放状态机与最小 SVG 白板（零新依赖：本包不装依赖，借用 apps/web 已安装的 typescript、react 与 @types）。
+# stage-test：类型检查 + 单测（校验器正反例、状态机、白板折叠、三套布局令牌、schema 与常量一致、SSR 快照、渲染无外链、讲解权 1.25 线、
+#   只渲染已校验的 DSL、源码不碰存储与网络）。样张页 /dev/stage 的接线与端到端随 web-test 运行（tests/stage.test.ts、e2e/stage.spec.ts）
+# stage-mutation：校验器、文字安全、公式排版、状态机、白板折叠、组件、布局令牌与 schema 逐条改坏，断言测试能发现（约 2 分钟）
+# 缺 apps/web 依赖时非严格跳过、严格失败
+STAGE_MISSING = [ ! -d apps/web/node_modules/react ] || [ ! -x apps/web/node_modules/.bin/tsc ]
+.PHONY: stage-test stage-mutation
+stage-test:
+	@if $(STAGE_MISSING); then \
+	  echo "stage-test: 跳过（没有安装 apps/web 依赖；cd apps/web && npm ci）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@$(call guard,$(STAGE_MISSING))apps/web/node_modules/.bin/tsc -p packages/stage/tsconfig.json && echo "stage-test: 类型检查通过"
+	@$(call guard,$(STAGE_MISSING))cd packages/stage && node --no-warnings --test --test-reporter=dot tests/*.test.ts && echo "stage-test: 单测通过"
+
+stage-mutation:
+	@if $(STAGE_MISSING); then \
+	  echo "stage-mutation: 跳过（没有安装 apps/web 依赖；cd apps/web && npm ci）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@$(call skip_rest,$(STAGE_MISSING))node --no-warnings packages/stage/scripts/mutations.ts; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi

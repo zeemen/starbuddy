@@ -10,6 +10,9 @@ import { test } from 'node:test';
 
 const NEXT = new URL('../.next', import.meta.url).pathname;
 const BUILT = existsSync(join(NEXT, 'BUILD_ID'));
+/** 打包器把非 ASCII 字符串写成反斜杠 u 加四位小写十六进制的写法 */
+const escapeUnicode = (s: string): string =>
+  [...s].map((c) => (c.charCodeAt(0) < 128 ? c : `${String.fromCharCode(92)}u${c.charCodeAt(0).toString(16).padStart(4, '0')}`)).join('');
 
 function files(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
@@ -50,9 +53,12 @@ test('生产构建里没有开发专用页面（探针演示页、数学诊断�
   assert.ok(!existsSync(join(NEXT, 'server', 'app', 'dev', 'diagnosis')));  // 数学诊断演示页（SIE-02a）
   assert.ok(!existsSync(join(NEXT, 'server', 'app', 'dev', 'star-glyphs')));  // 符号样张页（4-H H2 起只在开发构建里）
   assert.ok(!existsSync(join(NEXT, 'server', 'app', 'dev', 'first-report')));  // 首份报告演示页（SIE-02b 第二步 PR 2）
+  assert.ok(!existsSync(join(NEXT, 'server', 'app', 'dev', 'stage')));  // 舞台样张页（specs/stage-whiteboard-step1）
   const markers = ['探针演示', '\\u63a2\\u9488\\u6f14\\u793a', 'probe-demo', 'page.dev', 'first-report-page', 'data-report-verify',
     '数学诊断演示', '\\u6570\\u5b66\\u8bca\\u65ad\\u6f14\\u793a', 'diagnosis-page', '老师会看你的过程', '星形符号样张',
-    '\\u8001\\u5e08\\u4f1a\\u770b\\u4f60\\u7684\\u8fc7\\u7a0b'];
+    '\\u8001\\u5e08\\u4f1a\\u770b\\u4f60\\u7684\\u8fc7\\u7a0b',
+    // 舞台样张页与 packages/stage（只有样张页引用它）：页面标记、白板的属性名、合成样例标题（原文与 \u 转义两种写法）
+    'data-stage-page', 'data-stage-demo', 'data-stage-part', ...['舞台样张', '（合成样例）一元一次方程'].flatMap((s) => [s, escapeUnicode(s)])];
   const hits = files(NEXT).filter((p) => /\.(css|html|js|json|rsc|txt)$/.test(p))  // 不查 .map：源码映射里带注释原文
     .filter((p) => { const t = readFileSync(p, 'utf8'); return markers.some((m) => t.includes(m)); })
     .map((p) => relative(NEXT, p));

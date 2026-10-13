@@ -9,6 +9,8 @@
 //   - 端到端测试构建（scripts/e2e.sh）输出到单独的目录 .next-e2e（STARBUDDY_NEXT_DIST_DIR=.next-e2e，只认这一个取值），
 //     正式的 .next 永远是生产构建；测试构建用 tsconfig.e2e.json 做类型检查，Next 生成的路由类型写在 .next-e2e/types 下，
 //     不改 tsconfig.json、也不和 .next/types 的路由类型重复。
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import type { NextConfig } from 'next';
 
 type Env = Record<string, string | undefined>;
@@ -28,10 +30,27 @@ export const E2E_DIST_DIR = '.next-e2e';
 export const distDirFor = (env: Env = process.env): string =>
   env['STARBUDDY_NEXT_DIST_DIR'] === E2E_DIST_DIR ? E2E_DIST_DIR : '.next';
 
+/**
+ * 舞台样张页（/dev/stage，specs/stage-whiteboard-step1）以相对路径引用仓库里的 packages/stage（不改 npm 工作区）。Turbopack 默认只解析
+ * 项目根（apps/web）以内的文件，所以只在包含开发专用页面的构建里把 Turbopack 根目录放到仓库根；生产构建不引用 packages/stage，
+ * 根目录保持默认。Next 以 CommonJS 方式加载本文件时有 __dirname；单测以 ESM 加载时退回当前目录（单测都在 apps/web 下运行）。
+ */
+export function repoRoot(webDir: string = typeof __dirname === 'string' ? __dirname : process.cwd()): string {
+  const root = resolve(webDir, '..', '..');
+  // 失败即停（fail closed）：算出的目录里必须真有 packages/stage，否则不放宽 Turbopack 的解析范围
+  if (!existsSync(resolve(root, 'packages', 'stage', 'package.json'))) {
+    throw new Error(`next.config.ts：${root} 下没有 packages/stage/package.json，拒绝把 Turbopack 根目录放到这里`);
+  }
+  return root;
+}
+export const turbopackRootFor = (env: Env = process.env): string | undefined => (devPagesEnabled(env) ? repoRoot() : undefined);
+
 const distDir = distDirFor();
+const turbopackRoot = turbopackRootFor();
 
 const config: NextConfig = {
   distDir,
+  ...(turbopackRoot ? { turbopack: { root: turbopackRoot } } : {}),
   // 测试构建换一份 tsconfig：它只包含 .next-e2e 的路由类型；Next 在构建时补写 include 也只会写到这份文件里
   ...(distDir === E2E_DIST_DIR ? { typescript: { tsconfigPath: 'tsconfig.e2e.json' } } : {}),
   pageExtensions: pageExtensionsFor(),

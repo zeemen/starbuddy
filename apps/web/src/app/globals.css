@@ -116,6 +116,15 @@ a { color: inherit; }
 .glyph-table th, .glyph-table td { padding: 12px 16px; text-align: center; border-bottom: 1px solid var(--rule); }
 .glyph-panel { padding: 16px; border-radius: 8px; margin-bottom: 16px; background: var(--bg); color: var(--fg); }
 
+/* 舞台样张（/dev/stage，packages/stage 的白板只用 currentColor，颜色由这里给） */
+.stage-frame { color: var(--fg); border: 1px solid var(--rule); border-radius: 8px; margin: 8px 0; }
+.stage-frame-mobile { max-width: 400px; }
+.stage-svg { display: block; width: 100%; height: auto; }
+.stage-layouts { display: flex; gap: 16px; border: none; padding: 0; margin: 0; }
+.stage-layouts label { display: flex; align-items: center; gap: 4px; min-height: 44px; }
+.stage-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.stage-controls button, .stage-controls select { font: inherit; min-height: 44px; min-width: 88px; }
+
 /* 点亮：描边外发光 0 → 6 线宽 → 0，1.2 秒，一次，不循环（视觉规范第五章） */
 @keyframes star-light-up {
   0% { filter: drop-shadow(0 0 0 var(--star-stroke)); }
