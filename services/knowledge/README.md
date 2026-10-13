@@ -83,6 +83,9 @@ KNOWLEDGE_ENV=dev KNOWLEDGE_DATABASE_URL=... KNOWLEDGE_TOKEN_ORCHESTRATOR=... KN
 | `KNOWLEDGE_DATABASE_URL` | asyncpg 连接串。登录角色**只继承** `starbuddy_kge_read`（例：`CREATE ROLE knowledge_app LOGIN IN ROLE starbuddy_kge_read`，由人按 `db/bootstrap/roles.sql` 的约定创建）。连接建立后服务执行 `SET ROLE starbuddy_kge_read`，会话默认只读事务、`TimeZone=Asia/Shanghai`（时政有效期按北京时间）；启动时断言登录角色不是超级用户、没有 BYPASSRLS、CREATEROLE、CREATEDB，不继承 `starbuddy_kge` 或其他应用角色，也不是任何 `pg_` 预置角色（`pg_read_all_data` 等）的成员，不满足即拒绝启动 |
 | `KNOWLEDGE_TOKEN_BFF` / `_ORCHESTRATOR` / `_LEARNING` | 服务间令牌（≥ 32 字符、各不相同、至少配一个）。令牌决定 caller，请求体 `context.caller` 必须一致（否则 403）；`node.resolve` 只给编排层，个人层工具没有 bff。学生与家长没有令牌（401） |
 | `KNOWLEDGE_PAGE_SNAPSHOT` | 页面快照目录。不设：`page.get` 回契约规定的 501；设了但目录不存在或不合格：拒绝启动。换快照 = 导出新目录、改配置、重启（快照在启动时整体核对后载入内存）。载入时：目录、manifest 与页面文件不能是符号链接、不能对属组或其他用户可写；逐页再跑头部（含原子 ID 白名单）、引用登记、缺引用、个人信息、人设与禁语检查，有阻断即拒绝启动。manifest 签名未实现（待人确认） |
+| `KNOWLEDGE_PAGE_SNAPSHOT_POINTER` | （KGE-06，与上一项二选一）快照指针文件的绝对路径：文件里一行快照目录的绝对路径，不能含 `..`（指针文件不能是符号链接、不能组可写，它所在的目录也不能对属组或其他用户可写）。启动时按它载入；换快照 = 导出新目录、**先把新路径写进同目录的临时文件、再 `rename` 覆盖指针文件**（原子替换，不会读到半行）、给进程发 `SIGHUP`：新快照按上一行的全部核对（另加签名；manifest.json 以 O_NOFOLLOW 打开、对描述符 fstat 核对后只读一次，验签与解析用同一份字节）通过才原子切换，失败保留旧快照、失败计数加一（`app.state.knowledge["snapshot"].stats`，日志只记原因）。热切换期间的请求整个用开头取到的那一份快照。没配置指针文件时也装 `SIGHUP` 处理器，只记一条日志、快照不变；关停时等进行中的切换做完 |
+| `KNOWLEDGE_PAGE_SNAPSHOT_ROOT` | （可选，绝对路径）快照根目录：配置时载入的快照目录（启动与热切换，含指针指向的目录）解析符号链接后必须在根目录里面，否则不载入 |
+| `KNOWLEDGE_SNAPSHOT_HMAC_KEY` | （可选，≥ 32 字符）manifest 签名密钥，**只留接口**（`knowledge/service/hotswap.py` 的 `ManifestVerifier`）。不设：按现状不验签，每次载入记一条“未验签”日志并计数。设了：按占位格式验 `manifest.json.hmac-sha256`（HMAC-SHA256(密钥, manifest.json 原始字节) 的十六进制），缺或不符即拒绝载入；导出器还不写签名文件，签名格式、密钥保管与轮换待人确认（T30、T31） |
 | `KNOWLEDGE_HOST` / `KNOWLEDGE_PORT` | 缺省 `127.0.0.1:8790`（契约 servers）；不接受 `0.0.0.0`、`::` 等通配地址，主机名与旧式写法（如 `0`）先解析，结果是通配地址或解析不了一律拒绝；需要内网地址时显式配置具体地址。MCP 与 HTTP 同一监听地址；整个应用（`/v0/*` 与 `/mcp`）按同一份 Host 允许列表校验（不在列表回 400），MCP 另有 DNS 重绑定防护 |
 | `KNOWLEDGE_CACHE_DIR` | 服务私有的运行时目录（缺省 `services/knowledge/.cache`，已被忽略）；jieba 的词典缓存写在 `<目录>/jieba/`（0700，必须属于服务进程用户、不是符号链接），不用系统共享的临时目录 |
 
@@ -165,6 +168,10 @@ make kge-m2 M2_SUBJECT=aya M2_INPUTS=/path/to/inputs M2_OUT=/path/to/out     # �
   未标认知层次、或层次不在节点声明里的已发布题不计入任何层次，只在说明里计数。
 - M1 报告：`met` 必须与数值一致（比率 = 分子等于分母，阻断 = 0），否则退出 2；“不可计算：没有给……”改判待填；其他说明只转引 `knowledge.m1`
   的固定文案，不回显输入。M1 的页面快照提交号与本报表读的不一致时，知识点页发布率与核心节点页面发布率报不可计算。
+- 快照摘要（KGE-06，T33）：M1 报告记 `map.snapshot_digest`（地图快照的规范化摘要：解析后按键排序、无多余空白、保留中文的 JSON 的 sha256，
+  与写法无关）与 `manifest_sha256`（页面快照 manifest.json 原始字节，与本报表 inputs 里 page_snapshot 的 sha256 同一口径）。本报表对自己
+  读的地图快照用同一函数计算（`map.map_snapshot_digest`）：不一致或 M1 没有地图摘要（旧版）时 M1 三项报不可计算；manifest 摘要不一致时
+  两项页面指标报不可计算（旧版 M1 没有 manifest 摘要时只比提交号）。
 - kappa、Top-1 的判定沿用来源脚本（按精确分数算）；报告里的门槛与本报表不一致、或数值与判定矛盾，按输入错误处理。
 
 准入记录（只收汇总数字与状态，不收名册；未知字段一律拒收）：

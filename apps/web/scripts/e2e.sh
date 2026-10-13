@@ -307,7 +307,10 @@ RLOG="$(mktemp)"
     REVIEW_CONSOLE_REVIEW_DATABASE_URL="postgresql://review_sign_app@/starbuddy_test?host=$PGHOST" \
     REVIEW_CONSOLE_PAGES_EXPORT="$PAGES_FIX/export.json" REVIEW_CONSOLE_PAGES_STAFF_MAP="$PAGES_FIX/staff-map.json" \
     REVIEW_CONSOLE_PAGES_MR_URL='https://git.example.cn/synthetic/kge-pages/-/merge_requests/{mr_id}' \
+    REVIEW_CONSOLE_FEATURES=tag_worklist,revision_preflight \
     "$PY" -m review_console serve --port "$REVIEW_PORT" ) > "$RLOG" 2>&1 < /dev/null &
+# ↑ KGE-06：审核台后端打开低置信工作单与修订预检（只有 practice-on 那一套前端打开同名开关，e2e/review-kge06.spec.ts；
+#   其余前端关着，trust-off 里的 review-kge06-off.spec.ts 核对页面 404）
 REVIEW_PID=$!
 # 测试构建会改写 next-env.d.ts（指向 .next-e2e/types）：先备份，结束时还原，并删掉测试构建目录
 ENVDTS="$(mktemp)"

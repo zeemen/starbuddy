@@ -16,6 +16,12 @@
   构建方不接触留出集；报表只写明来源与执行人。
 报表不下结论：M1 是否达成由人定。输出确定（同样输入逐字节相同，不含时间与本机路径）。
 
+快照摘要（KGE-06，技术债 T33）：报告记下两份快照的摘要，供 M2 核对“M1 用的快照”与“M2 读的快照”是同一份内容——
+- map.snapshot_digest：地图快照的规范化摘要（snapshot_digest：解析后的文档按键排序、无多余空白、保留中文的 JSON 的 sha256），
+  YAML 与 JSON 写法、缩进与键顺序不影响摘要；M2 对它读入的地图快照用同一个函数计算；
+- metrics.kp_page_publish_rate.manifest_sha256：页面快照 manifest.json 原始字节的 sha256，与 M2 在 inputs 里记的 page_snapshot
+  的 sha256 同一口径（M2 对目录类输入取 manifest.json 的哈希）。
+
     python -m knowledge.m1 --map-snapshot <快照> [--page-snapshot <快照目录>] [--lint-report <体检 JSON>] --out <目录>
     python -m knowledge.m1 --database-url <只读连接串> --subject aya ...   # 库上数据：承接率必为“不可计算”
 退出码：0 生成成功；2 参数或输入错误。
@@ -23,9 +29,12 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
+import hashlib
 import json
 import sys
 from dataclasses import dataclass
+from decimal import Decimal
 from fractions import Fraction
 from pathlib import Path
 from typing import Any, Mapping
@@ -42,6 +51,25 @@ TARGETS = {"curriculum_coverage": "100%", "kp_page_publish_rate": "100%", "lint_
 
 class M1InputError(ValueError):
     """输入不合格式（消息不含内容，只含字段名）"""
+
+
+def _canon(v: Any) -> Any:
+    # YAML 会把日期解析成 date；库上数据源可能有 Decimal。其余类型一律拒绝（不让摘要依赖对象的 repr）
+    if isinstance(v, (dt.date, dt.datetime)):
+        return v.isoformat()
+    if isinstance(v, Decimal):
+        return format(v, "f")
+    raise TypeError("地图快照里有不能规范化的值")
+
+
+def snapshot_digest(doc: Any) -> str:
+    """地图快照的规范化摘要（T33）：解析后的文档按键排序、无多余空白、保留中文序列化（不收 NaN / Infinity），取 sha256 十六进制。
+    M1 报告记它，M2 对自己读入的地图快照用同一个函数算，两边相等才算同一份快照。"""
+    try:
+        raw = json.dumps(doc, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False, default=_canon)
+    except (TypeError, ValueError):
+        raise M1InputError("地图快照无法规范化（含不能序列化的值）") from None
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -85,9 +113,11 @@ def kp_publish_rate(doc: Mapping[str, Any], page_snapshot_dir: str | Path | None
         return {"status": "not_computable", "note": "不可计算：没有给已发布页面快照"}
     if not kp:
         return {"status": "not_computable", "note": "不可计算：地图里没有有效的知识点（kp）节点"}
-    from .service.pages import SnapshotLoadError, load_snapshot_dir
+    from .service.pages import SnapshotLoadError, load_snapshot_dir, read_safe
     try:
-        pages = load_snapshot_dir(page_snapshot_dir)
+        # manifest 只读一次：摘要与解析用同一份字节（摘要必须对应真正载入的那一份）
+        manifest_raw = read_safe(Path(page_snapshot_dir) / "manifest.json", "页面快照缺少 manifest.json")
+        pages = load_snapshot_dir(page_snapshot_dir, manifest_raw=manifest_raw)
     except SnapshotLoadError as e:
         raise M1InputError(f"页面快照不合格：{e}") from None
     by_node = {pp.node_id: pp for pp in pages.pages.values()}
@@ -96,6 +126,7 @@ def kp_publish_rate(doc: Mapping[str, Any], page_snapshot_dir: str | Path | None
     r = Ratio(len(published) - len(stale), len(kp))
     incl = Ratio(len(published), len(kp))
     return {"status": "computed", **r.to_dict(), "met": r.num == r.den, "snapshot_commit": pages.commit,
+            "manifest_sha256": hashlib.sha256(manifest_raw).hexdigest(),
             "including_stale": {**incl.to_dict(), "met": incl.num == incl.den},
             "missing": [n for n in kp if n not in by_node], "stale_map_version": stale,
             "pages_not_on_active_kp": sorted(n for n in by_node if n not in kp)}
@@ -130,7 +161,7 @@ def build_report(doc: Mapping[str, Any], *, page_snapshot_dir: str | Path | None
         "format": REPORT_FORMAT,
         "note": "报表只列数字，不下结论：M1 是否达成由人定（KGE V1.1 第九章）",
         "map": {"subject": snap.subject, "map_version": snap.map_version, "status": snap.status,
-                "standard_year": snap.standard_year, "data_source": data_source},
+                "standard_year": snap.standard_year, "data_source": data_source, "snapshot_digest": snapshot_digest(doc)},
         "targets": TARGETS,
         "metrics": {
             "curriculum_coverage": curriculum_coverage(doc),
@@ -154,6 +185,7 @@ def render_markdown(rep: Mapping[str, Any]) -> str:
              "holdout_untaggable_rate": "留出集无处可标率"}
     lines = ["# KGE M1 报表", "", f"> {rep['note']}", "",
              f"- 学科：{mp['subject']}；地图版本：{mp['map_version']}（{mp['status']}）；课标年份：{mp['standard_year']}；数据源：{mp['data_source']}",
+             f"- 地图快照规范化摘要（sha256）：{mp['snapshot_digest']}",
              "", "| 指标 | 门槛 | 数值 | 对照门槛 |", "|---|---|---|---|"]
     for k, label in names.items():
         value, verdict = _cell(ms[k])
@@ -167,7 +199,7 @@ def render_markdown(rep: Mapping[str, Any]) -> str:
     if cc["status"] == "computed":
         lines.append(f"- 未被承接的课标条目（{len(cc['uncovered'])}）：" + ("、".join(cc["uncovered"]) or "无"))
     if kp["status"] == "computed":
-        lines.append(f"- 页面快照提交号：{kp['snapshot_commit']}")
+        lines.append(f"- 页面快照提交号：{kp['snapshot_commit']}；manifest.json 的 sha256：{kp['manifest_sha256']}")
         lines.append(f"- 没有已发布页面的 kp 节点（{len(kp['missing'])}）：" + ("、".join(kp["missing"]) or "无"))
         lines.append(f"- 页面地图版本落后、待重编（{len(kp['stale_map_version'])}）：" + ("、".join(kp["stale_map_version"]) or "无"))
         lines.append(f"- 快照里不对应有效 kp 节点的页面（{len(kp['pages_not_on_active_kp'])}）：" + ("、".join(kp["pages_not_on_active_kp"]) or "无"))

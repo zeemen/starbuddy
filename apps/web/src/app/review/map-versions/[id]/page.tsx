@@ -2,6 +2,7 @@
 // 节点编辑（草稿）、签字、发布、撤下、签字记录。所有表单都带当前内容摘要：页面显示的就是签的、发布的。
 import { notFound, redirect } from 'next/navigation';
 import { currentSession } from '../../../../lib/review-session.ts';
+import { reviewFeatureEnabled } from '../../../../lib/review-features.ts';
 import {
   ACTION_LABEL, CHANGE_STATUS_LABEL, DECISION_LABEL, LEVEL_LABEL, OBJECT_LABEL, OP_LABEL, REASON_LABEL, RESULT_LABEL, RETIRE_BASIS,
   STATUS_LABEL, getDiff, isVersionId, signerTail, type Change, type NodeRow,
@@ -85,6 +86,9 @@ export default async function MapVersionPage({ params }: { params: Promise<{ id:
       <p className="muted">
         学科 {v.subject} · 课标年份 {v.standard_year} · 对比基准：{d.base_version ? `已发布版本 ${d.base_version}` : '没有已发布版本，全部按新增列出'} · 内容摘要 <code data-testid="digest">{d.digest.slice(0, 12)}</code>
       </p>
+      {isDraft && reviewFeatureEnabled('revision_preflight') ? (
+        <p><a href={`/review/map-versions/${v.id}/preflight`} data-testid="preflight-link">修订发布预检（结构性、版本号段、签字人数）</a></p>
+      ) : null}
 
       {isDraft ? (
       <section aria-labelledby="h-summary" data-testid="summary" data-structural={String(d.summary.structural)} data-signers={d.summary.required_signers}

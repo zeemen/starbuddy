@@ -11,8 +11,9 @@ import {
   isItemId, isNodeId, isResolutionCode, isReviewLevel, isSourceHost, isSourceNote, isSourceRef, isSubject, isTaskId, isVersionId, lines,
   loginRequest, logoutRequest, publishContentVersion, publishScheme, publishVersion, releaseTask, resolveTask, retireContentVersion,
   retireSourceDomain, retireVersion, signAdmission, signChange, signContentVersion, signPage, signPolicyRecord, signScheme, signSpotCheck,
-  signVersion, takeTask, type AdmissionSign, type Result,
+  signVersion, takeTask, type AdmissionSign, type Result, decideTag, isTagDecision,
 } from '../../lib/review.ts';
+import { reviewFeatureEnabled } from '../../lib/review-features.ts';
 
 export interface ActionState {
   code: string;
@@ -282,6 +283,23 @@ export async function retireSourceAction(_: ActionState | null, f: FormData): Pr
   // 下线须勾选确认（同撤下地图版本）
   if (!isSourceHost(host) || text(f, 'confirm') !== 'yes') return INVALID;
   return doneAt(await retireSourceDomain(who, { host: host.trim() }), 'source_retired', '/review/policy/sources');
+}
+
+/** KGE-06 低置信工作单：接受、驳回、改标（改标要选一个可选节点）。开关关着时不调后端（后端同样不注册接口） */
+export async function decideTagAction(_: ActionState | null, f: FormData): Promise<ActionState> {
+  if (!reviewFeatureEnabled('tag_worklist')) return { code: 'NOT_FOUND' };
+  const who = await staff();
+  if (!who) return { code: 'UNAUTHENTICATED' };
+  const candidate = text(f, 'candidate');
+  const decision = text(f, 'decision');
+  const target = text(f, 'target_id');
+  if (!isVersionId(candidate) || !isTagDecision(decision)) return INVALID;
+  if (decision === 'relabel' && !isVersionId(target)) return INVALID;  // 接受、驳回时忽略改标下拉框
+  const body = decision === 'relabel' ? { decision, target_id: target } : { decision };
+  const r = await decideTag(who, candidate, body);
+  if (!r.ok) return { code: r.problem.code, detail: r.problem.detail };
+  revalidatePath('/review/tag-candidates');
+  return { code: r.value.status };
 }
 
 export async function signPageAction(_: ActionState | null, f: FormData): Promise<ActionState> {

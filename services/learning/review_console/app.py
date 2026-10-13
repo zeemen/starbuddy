@@ -14,6 +14,7 @@ import unicodedata
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Literal, Protocol
 
 import asyncpg
@@ -23,7 +24,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from . import service
-from .config import PagesSettings, ReviewSettings
+from .config import FEATURES, PagesSettings, ReviewSettings
 from .errors import ReviewError
 from .pages import MR_REVIEW_BASIS
 from .spot_check import SPOT_CHECK_BASIS, SpotCheckSettings
@@ -157,6 +158,12 @@ QUEUE_REASONS = ("subjective_dimension", "low_confidence", "verifier_boundary_ca
                  "full_score_second_review", "profile_dispute", "process_observation")
 
 
+class TagDecideBody(_Strict):
+    """低置信工作单的处理（KGE-06）：accept 接受、reject 驳回、relabel 改标（接受 target_id 那条候选并驳回本条）"""
+    decision: Literal["accept", "reject", "relabel"]
+    target_id: uuid.UUID | None = None
+
+
 class LoginBody(_Strict):
     login_name: str = Field(pattern=r"^[a-z][a-z0-9_.-]{2,31}$")
     password: str = Field(min_length=1, max_length=72)  # 字节数另在库里核对（bcrypt 只看前 72 字节）
@@ -192,10 +199,16 @@ _UNSET: Any = object()
 
 def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthenticator | None = None,
                pools: tuple[asyncpg.Pool, asyncpg.Pool] | None = None, pages_settings: PagesSettings | None = _UNSET,
-               spot_settings: SpotCheckSettings | None = None) -> FastAPI:
+               spot_settings: SpotCheckSettings | None = None, features: frozenset[str] | None = None) -> FastAPI:
     """pages_settings：编译页面入口的配置；缺省取 settings.pages（测试可直接注入）。spot_settings：事后抽检配置，缺省取 settings.spot_check；
-    都没有时抽检接口回 503 SPOT_CHECK_UNCONFIGURED（种子必须由配置给出，仓库里没有缺省种子）。"""
+    都没有时抽检接口回 503 SPOT_CHECK_UNCONFIGURED（种子必须由配置给出，仓库里没有缺省种子）。
+    features：KGE-06 的功能开关（tag_worklist、revision_preflight），缺省取 settings.features；注入连接池的测试缺省全关。
+    关着的功能不注册接口（404），与开关打开前零差异。"""
     state: dict[str, Any] = {}
+    enabled = frozenset(features if features is not None else (settings.features if settings is not None else frozenset()))
+    unknown = enabled - set(FEATURES)
+    if unknown:
+        raise RuntimeError("未知的审核台功能开关")
 
     async def session_auth(request: Request) -> uuid.UUID | None:
         token = session_token(request)
@@ -504,5 +517,40 @@ def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthen
     @app.get("/review/v0/records")
     async def records(subject: str):
         return {"items": await service.version_record(state["kge"], _subject(subject))}
+
+    # ---------- KGE-06 封测周修订支持（specs/kge06-weekly-revision）：开关默认关，关着不注册 ----------
+    if "revision_preflight" in enabled:
+        @app.get("/review/v0/map-versions/{version_id}/preflight")
+        async def preflight(version_id: uuid.UUID):
+            """修订发布预检：结构性 / 非结构性、应升的版本号段、要几人签、版本号是否合发布规则。只给建议，不签字、不发布。"""
+            return await service.preflight_view(state["kge"], version_id)
+
+    if "tag_worklist" in enabled:
+        @app.get("/review/v0/tag-candidates")
+        async def tag_candidates(subject: str, map_version_id: uuid.UUID | None = None, limit: int = 50,
+                                 after_confidence: Decimal | None = None, after_id: uuid.UUID | None = None):
+            """低置信工作单：待处理的打标候选（经知识服务身份读，0024 授权），置信度升序、游标翻页。"""
+            if not 1 <= limit <= service.WORKLIST_MAX or (after_confidence is None) != (after_id is None) \
+                    or (after_confidence is not None
+                        and (not after_confidence.is_finite() or not Decimal(0) <= after_confidence <= Decimal(1))):
+                raise ReviewError(422, "INVALID_PARAMETER")
+            after = (after_confidence, after_id) if after_id is not None else None
+            return await service.worklist_view(state["kge"], _subject(subject), map_version_id, limit, after)
+
+        @app.post("/review/v0/tag-candidates/{candidate_id}/decide")
+        async def tag_decide(candidate_id: uuid.UUID, body: TagDecideBody, request: Request):
+            """接受 / 驳回 / 改标。结论只经签字身份调 kge.decide_tag_candidate（库里核对 active staff，处理人记进
+            platform.tag_candidate_signoff）；改标先经知识服务身份核对两条候选同版本同题同角色、都待处理。"""
+            staff = request.state.staff
+            if body.decision == "relabel":
+                if body.target_id is None:
+                    raise ReviewError(422, "INVALID_PARAMETER", "改标要指定换成哪一条候选")
+                service.check_relabel(await state["kge"].tag_candidate(candidate_id), await state["kge"].tag_candidate(body.target_id))
+                status = await state["review"].relabel_tag(staff, candidate_id, body.target_id)
+            else:
+                if body.target_id is not None:
+                    raise ReviewError(422, "INVALID_PARAMETER", "只有改标才指定目标候选")
+                status = await state["review"].decide_tag(staff, candidate_id, "accepted" if body.decision == "accept" else "rejected")
+            return {"status": status, "decision": body.decision, "decided_by": str(staff)}
 
     return app

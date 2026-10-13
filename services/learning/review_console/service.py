@@ -5,7 +5,7 @@ import datetime as dt
 import uuid
 from typing import Any
 
-from . import pages
+from . import pages, revision
 from .content import content_summary, diff_content, diff_scheme, policy_summary
 from .diff import diff, touched_nodes
 from .risk import classify, classify_change_type, summarize
@@ -78,6 +78,62 @@ async def diff_view(kge: KgeStore, version_id: uuid.UUID) -> dict[str, Any]:
         "change_requests": [{**r, "risk": classify_change_type(r["change_type"]).as_dict()} for r in requests],
         "signoffs": signoffs,
     })
+
+
+async def preflight_view(kge: KgeStore, version_id: uuid.UUID) -> dict[str, Any]:
+    """修订发布预检（KGE-06 范围 2）：复用差异视图（diff、结构性判定、影响分析、签字进度），加版本号段建议与版本号核对。只给建议。"""
+    view = await diff_view(kge, version_id)
+    v, s = view["version"], view["summary"]
+    others = [x["version"] for x in await kge.list_versions(v["subject"])
+              if str(x["id"]) != str(version_id) and x["status"] in ("published", "retired")]
+    pf = revision.preflight(status=v["status"], draft_version=v["version"], existing_versions=others, structural=bool(s["structural"]))
+    return norm({
+        "version": v,
+        "base_version_id": view["base_version_id"],
+        "base_version": view["base_version"],
+        "digest": view["digest"],
+        **pf,
+        "structural_reasons": revision.structural_reasons(view["changes"], view["change_requests"]),
+        "counts": s.get("counts", {}),
+        "risk_level": s.get("level"),
+        "impact": view["impact"],
+        "validation_errors": sum(1 for i in view["validation"] if i["severity"] == "error"),
+        # 签字进度（与发布函数同一口径，diff_view 已算好）：最近一条结论批准且摘要与当前一致、批准人数够
+        "signoff": {"approvals": s["approvals"], "required": pf["required_signers"], "latest_decision": s["latest_decision"],
+                    "latest_matches": s["latest_matches"],
+                    "enough": bool(s["latest_decision"] == "approved" and s["latest_matches"] and s["approvals"] >= pf["required_signers"])},
+    })
+
+
+WORKLIST_MAX = 100
+
+
+def candidate_view(c: dict[str, Any], siblings: list[dict[str, Any]]) -> dict[str, Any]:
+    """一条候选与它的改标可选项（同一地图版本、同一题、同一角色、不同节点的其他待处理候选）。只含公共层内容。"""
+    alts = [{"id": s["id"], "node_id": s["node_id"], "node_name": s["node_name"], "confidence": s["confidence"], "layer": s["layer"]}
+            for s in siblings if s["id"] != c["id"] and str(s["map_version_id"]) == str(c["map_version_id"])
+            and s["item_id"] == c["item_id"] and s["role"] == c["role"] and s["node_id"] != c["node_id"]]
+    return {**c, "alternatives": alts}
+
+
+async def worklist_view(kge: KgeStore, subject: str, map_version_id: uuid.UUID | None, limit: int,
+                        after: tuple[Any, uuid.UUID] | None) -> dict[str, Any]:
+    """低置信工作单（KGE-06 范围 1）：待处理候选按置信度升序分页；每条带改标可选项。"""
+    rows = await kge.tag_candidates(subject, map_version_id, limit, after)
+    sib = await kge.sibling_candidates(subject, sorted({r["item_id"] for r in rows}))
+    items = [candidate_view(r, sib) for r in rows]
+    nxt = {"after_confidence": rows[-1]["confidence"], "after_id": rows[-1]["id"]} if len(rows) == limit else None
+    return norm({"items": items, "next": nxt, "open_total": await kge.open_candidate_count(subject, map_version_id)})
+
+
+def check_relabel(original: dict[str, Any], target: dict[str, Any]) -> None:
+    """改标只能换成同一地图版本、同一题、同一角色、不同节点的另一条待处理候选（不新造候选：来源与置信度要有出处，规则 6）。"""
+    from .errors import ReviewError
+    if original["status"] != "open" or target["status"] != "open":
+        raise ReviewError(409, "RULE_VIOLATION", "打标候选已处理")
+    same = all(str(original[k]) == str(target[k]) for k in ("map_version_id", "subject", "item_id", "role"))
+    if not same or original["node_id"] == target["node_id"] or original["id"] == target["id"]:
+        raise ReviewError(409, "RULE_VIOLATION", "改标只能换成同一地图版本、同一题、同一角色的另一个节点的待处理候选")
 
 
 async def pages_view(kge: KgeStore, settings: Any) -> dict[str, Any]:

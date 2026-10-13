@@ -167,6 +167,16 @@ staff 对应表（`kge-pages-staff-map/1`，审核台配置，由人维护，不
 `{"format": "kge-page-review-records/1.1", "records": [{"page_id", "page_commit", "risk_level", "decision", "signer", "basis_code"?}]}`。
 合成样例：`tests/fixtures/pages-reconcile/`（对账通过的一组；测试在其上删记录、改提交号、减批准人）。
 
+### KGE-06 封测周修订支持（specs/kge06-weekly-revision 范围 1、2；零迁移）
+开关 `REVIEW_CONSOLE_FEATURES`（逗号分隔，缺省全关、只在 dev / test，名字不认识拒绝启动；关着时接口不注册）；前端同名开关 `STARBUDDY_REVIEW_FEATURES`。
+- **低置信工作单**（`tag_worklist`）：`GET /review/v0/tag-candidates?subject=&map_version_id=&limit=&after_confidence=&after_id=` 经知识服务身份读待处理的
+  `kge.tag_candidate`（0024 授权），置信度升序、（置信度, id）游标；每条带改标可选项（同一地图版本、同一题、同一角色、不同节点的其他待处理候选）。
+  `POST /review/v0/tag-candidates/{id}/decide`（`accept` / `reject` / `relabel` + `target_id`）只经签字身份调 `kge.decide_tag_candidate`（库里核对 active staff，
+  处理人记进 `platform.tag_candidate_signoff`）；改标 = 接受目标候选并驳回原候选，一个事务（不新造候选：来源与置信度要有出处）。
+- **修订发布预检**（`revision_preflight`）：`GET /review/v0/map-versions/{id}/preflight` 复用差异视图（diff、`kge.structural_diff`、影响分析、签字进度），
+  给出结构性 / 非结构性、应升的版本号段（结构性 → 次版本，其余 → 修订号）、要几人签、版本号是否合发布规则（`revision.py`，纯函数，与 `kge.publish_map_version` 同口径）。
+  只给建议，签字发布仍走现有接口。测试 `tests/test_review_revision.py`；变异 `make review-console-mutation`。
+
 ### 冲刺 4 补全（specs/release-gate-sprint4 第 2、7、8、9、11 节；G 流第二部分 PR D）
 - **页面签字入口**（PR A 待人确认 1 的默认）：`POST /review/v0/pages/sign`，只能签合并记录导出里某个合并请求的头提交，风险取合并请求标注，依据 `mr_review`；
   签字人等于合并请求作者 → 409 `SELF_SIGN`，作者缺失或不在对应表 → 409 `AUTHOR_UNKNOWN`（见上文 `author`）。

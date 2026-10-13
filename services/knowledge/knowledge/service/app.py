@@ -5,13 +5,18 @@
 学生与家长没有令牌（401）。请求体限 64 KB，JSON 拒绝 NaN / Infinity 与重复键。
 启动时：加载契约；以 starbuddy_kge_read 建连接池并断言角色安全（不满足即拒绝启动）；配置了页面快照就逐页核对后加载
 （不合格即拒绝启动，不带着坏快照对外服务）。
+KGE-06：快照可经指针文件 + SIGHUP 热切换（hotswap.py）：新快照全部核对通过才原子替换，失败保留旧快照并计数；
+计数在 app.state.knowledge["snapshot"].stats（进程内，不新增对外接口）。
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import json
+import logging
 import re
+import signal
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -24,10 +29,12 @@ from .config import Settings
 from .contract import Contract, contract as default_contract
 from .errors import ServiceError, invalid, unauthenticated
 from .mcp_server import allowed_hosts, build_mcp_server, host_allowed, transport_security
-from .pages import PageSnapshot, load_snapshot_dir
+from .hotswap import SnapshotSwapper, verifier_for
+from .pages import PageSnapshot
 from .reader import KgeReader, assert_reader_role, create_reader_pool
 from .tools import ToolCore
 
+log = logging.getLogger("starbuddy.knowledge")
 MAX_BODY_BYTES = 64 * 1024
 MCP_PATH = "/mcp"
 
@@ -153,12 +160,30 @@ def create_app(settings: Settings, *, pool: asyncpg.Pool | None = None, contract
             if not own_pool:
                 async with p.acquire() as c:
                     await assert_reader_role(c)
-            snap = pages
-            if snap is None and settings.page_snapshot is not None:
-                snap = load_snapshot_dir(settings.page_snapshot)
-            core_holder["core"] = state["core"] = ToolCore(KgeReader(p), the_contract, snap)
-            async with mcp_server.session_manager.run():
-                yield
+            core = ToolCore(KgeReader(p), the_contract, pages)
+            # KGE-06：快照经热切换器载入（启动时失败即拒绝启动；运行中 SIGHUP 重读指针文件，失败保留旧快照并计数）
+            swapper = SnapshotSwapper(core, verifier_for(settings.snapshot_hmac_key), settings.page_snapshot_pointer,
+                                      snapshot_root=settings.page_snapshot_root)
+            if pages is None:
+                swapper.load_initial(settings.page_snapshot)
+            else:
+                swapper.install(pages)
+            core_holder["core"] = state["core"] = core
+            state["snapshot"] = swapper
+            # 总是装 SIGHUP 处理器：没配置指针文件时只记日志（不按缺省动作结束进程）
+            hup = False
+            try:
+                asyncio.get_running_loop().add_signal_handler(signal.SIGHUP, swapper.request_reload)
+                hup = True
+            except (NotImplementedError, RuntimeError, ValueError):  # 非主线程或平台不支持：只能重启换快照
+                log.warning("SIGHUP handler not installed: page snapshot hot swap unavailable")
+            try:
+                async with mcp_server.session_manager.run():
+                    yield
+            finally:
+                if hup:
+                    asyncio.get_running_loop().remove_signal_handler(signal.SIGHUP)
+                await swapper.drain()  # 等进行中的 reload 做完再关连接池
         finally:
             core_holder.pop("core", None)
             if own_pool:

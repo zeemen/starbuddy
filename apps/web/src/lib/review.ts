@@ -531,6 +531,99 @@ export const RESULT_LABEL: Record<string, string> = {
   // 等锁超时（迁移 0052：来源清单的新增与下线最多等 5 秒，例如有来源文件正在登记）
   BUSY: '正被占用，请稍后重试',
 };
+// ---------- KGE-06 封测周修订支持（specs/kge06-weekly-revision）：低置信打标候选工作单、修订发布预检（开关见 review-features.ts） ----------
+export interface TagCandidateAlt {
+  id: string;
+  node_id: string;
+  node_name: string | null;
+  confidence: string;
+  layer: string;
+}
+export interface TagCandidate {
+  id: string;
+  map_version_id: string;
+  version: string;
+  map_status: 'draft' | 'published' | 'retired';
+  subject: string;
+  item_id: string;
+  node_id: string;
+  node_name: string | null;
+  node_level: string | null;
+  role: 'main' | 'secondary';
+  layer: 'rule' | 'vector' | 'model';
+  /** 十进制字符串（库里 numeric(4,3)），不转浮点 */
+  confidence: string;
+  tagger_version: string;
+  model_version: string | null;
+  reason_code: string;
+  grade: 'A' | 'B';
+  item_source_kind: string;
+  created_at: string;
+  /** 改标可选项：同一地图版本、同一题、同一角色、不同节点的其他待处理候选 */
+  alternatives: TagCandidateAlt[];
+}
+export interface TagWorklist {
+  items: TagCandidate[];
+  next: { after_confidence: string; after_id: string } | null;
+  open_total: number;
+}
+/** 游标的置信度：0–1 的小数（最多 3 位），与后端 numeric(4,3) 一致 */
+export const isConfidence = (s: string): boolean => /^(0(\.\d{1,3})?|1(\.0{1,3})?)$/.test(s);
+export const TAG_DECISIONS = ['accept', 'reject', 'relabel'] as const;
+export type TagDecision = (typeof TAG_DECISIONS)[number];
+export const isTagDecision = (s: string): s is TagDecision => (TAG_DECISIONS as readonly string[]).includes(s);
+
+export function worklistQuery(f: { subject: SubjectCode; map_version_id?: string; after_confidence?: string; after_id?: string }): string {
+  const q = new URLSearchParams({ subject: f.subject, limit: '50' });
+  if (f.map_version_id) q.set('map_version_id', f.map_version_id);
+  if (f.after_confidence && f.after_id) {
+    q.set('after_confidence', f.after_confidence);
+    q.set('after_id', f.after_id);
+  }
+  return q.toString();
+}
+export const listTagCandidates = (staff: string, f: Parameters<typeof worklistQuery>[0]) =>
+  call<TagWorklist>(staff, 'GET', `/review/v0/tag-candidates?${worklistQuery(f)}`);
+export const decideTag = (staff: string, id: string, body: { decision: TagDecision; target_id?: string }) =>
+  call<{ status: 'written' | 'recorded'; decision: TagDecision; decided_by: string }>(staff, 'POST', `/review/v0/tag-candidates/${id}/decide`, body);
+
+export const ROLE_LABEL: Record<string, string> = { main: '主考点', secondary: '次要节点' };
+export const LAYER_LABEL: Record<string, string> = { rule: '规则层', vector: '向量层', model: '模型层' };
+export const TAG_RESULT_LABEL: Record<string, string> = {
+  ...RESULT_LABEL,
+  written: '已处理：已写回草稿版本的题目标签', recorded: '已处理：已记录结论（已发布版本上的打标变更走审核记录）',
+  RULE_VIOLATION: '不能这样处理', FORBIDDEN: '没有权限（需要在职的教研账号）', NOT_FOUND: '打标候选不存在',
+  INVALID_PARAMETER: '处理方式不对（改标要选一个可选节点）',
+};
+
+export interface PreflightIssue { code: string; detail: string }
+export interface PreflightView {
+  version: MapVersion;
+  base_version_id: string | null;
+  base_version: string | null;
+  digest: string;
+  structural: boolean;
+  required_signers: number;
+  bump: 'patch' | 'minor' | 'initial';
+  latest_version: string | null;
+  suggested_version: string | null;
+  draft_version: string;
+  version_ok: boolean;
+  problems: PreflightIssue[];
+  advice: PreflightIssue[];
+  note: string;
+  structural_reasons: { source: 'diff' | 'change_request'; object: string; key: string; op: string; reason: string }[];
+  counts: Record<string, number>;
+  risk_level: string | null;
+  impact: { item_tags: number; scoring_points: number };
+  validation_errors: number;
+  signoff: { approvals: number; required: number; latest_decision: 'approved' | 'rejected' | null; latest_matches: boolean; enough: boolean };
+}
+export const getPreflight = (staff: string, id: string) => call<PreflightView>(staff, 'GET', `/review/v0/map-versions/${id}/preflight`);
+export const BUMP_LABEL: Record<string, string> = {
+  patch: '修订号（按周修订）', minor: '次版本号（含结构性变更）', initial: '首次发布（没有已发布或已撤下的版本，不比较版本号）',
+};
+
 export const RETIRE_BASIS = [
   { code: 'wrong_version', label: '版本有误' },
   { code: 'content_error', label: '内容错误' },

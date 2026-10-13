@@ -6,6 +6,7 @@ import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { currentSession } from '../../lib/review-session.ts';
 import { whoAmI } from '../../lib/review.ts';
+import { reviewFeatureEnabled } from '../../lib/review-features.ts';
 import { logoutAction } from './actions.ts';
 
 export const metadata: Metadata = {
@@ -17,6 +18,7 @@ export default async function ReviewLayout({ children }: { children: ReactNode }
   const token = await currentSession();
   const me = token ? await whoAmI(token) : null;
   const login = me && me.ok ? me.value.login_name : null;
+  const tagWorklist = reviewFeatureEnabled('tag_worklist');  // KGE-06：开关关着时不出现入口
   return (
     <div className="review">
       <header className="review-header">
@@ -31,6 +33,7 @@ export default async function ReviewLayout({ children }: { children: ReactNode }
             <a href="/review/policy">考情政策</a>
             <a href="/review/pages">编译页面</a>
             <a href="/review/spot-checks">事后抽检</a>
+            {tagWorklist ? <a href="/review/tag-candidates">低置信打标</a> : null}
             <span data-testid="whoami">{login}</span>{' '}
             <form action={logoutAction} className="inline-form">
               <button type="submit">退出</button>

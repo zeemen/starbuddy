@@ -68,6 +68,9 @@ export const CRAWL: Record<string, CrawlPage | Excluded> = {
   'review/policy/[id]/page.tsx': { excluded: '审核台（staff 登录，迁移 0020，不在壳内）：与壳同一个 proxy（CSP）与 next.config（安全头），但需要 staff 会话，本爬取不覆盖（PR D 新增；CSP 逐页爬取登记为 lessons H6 待人确认）' },
   'review/policy/sources/page.tsx': { excluded: '审核台（staff 登录，迁移 0020，不在壳内）：与壳同一个 proxy（CSP）与 next.config（安全头），但需要 staff 会话，本爬取不覆盖；e2e/review.spec.ts 核对 no-store、403、DOM 泄露与 axe（考情 v0.9 待定事项 PR2 新增）' },
   'review/spot-checks/page.tsx': { excluded: '审核台（staff 登录，迁移 0020，不在壳内）：与壳同一个 proxy（CSP）与 next.config（安全头），但需要 staff 会话，本爬取不覆盖（PR D 新增；CSP 逐页爬取登记为 lessons H6 待人确认）' },
+  // KGE-06（specs/kge06-weekly-revision）：开关默认关（关时 404，e2e/review-kge06-off.spec.ts）；开着时需要 staff 会话，e2e/review-kge06.spec.ts 核对
+  'review/tag-candidates/page.tsx': { excluded: '审核台（staff 登录，不在壳内）：KGE-06 低置信工作单，开关 STARBUDDY_REVIEW_FEATURES 默认关；关时 404 由 e2e/review-kge06-off.spec.ts、开时由 e2e/review-kge06.spec.ts 核对（含 axe）' },
+  'review/map-versions/[id]/preflight/page.tsx': { excluded: '审核台（staff 登录，不在壳内）：KGE-06 修订发布预检，开关 STARBUDDY_REVIEW_FEATURES 默认关；关时 404 由 e2e/review-kge06-off.spec.ts、开时由 e2e/review-kge06.spec.ts 核对（含 axe）' },
 };
 
 /** 不对应 src/app 文件、但也要核对的地址：404 页、开发构建里的符号样张页 */

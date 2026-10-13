@@ -12,6 +12,9 @@
    compare-shadow.json，只取汇总数字，不取分歧清单里的学生编码）、执行人填的准入记录（`kge-m2-attestation/1`：影子评审人数与排班
    覆盖周数、留出集无处可标的汇总数字与签字、C 级约束、监护人同意与删除、安全测试，后三项引用证据文件）。
 
+快照核对（KGE-06，T33）：M1 报告记地图快照的规范化摘要与页面快照 manifest 的 sha256，本报表对自己读入的快照用同一口径计算
+（knowledge.m1.snapshot_digest；manifest 即 inputs 里 page_snapshot 的 sha256），不一致或 M1 没有地图摘要时相关项改报“不可计算”。
+
 每项输出：数值、门槛、判定（达到 / 未达到 / 不可计算 / 待填）、来源文件 sha256。缺输入一律“待填”，不当作 0。
 报表不下总结论（过门由人定），但列出全部未达到、不可计算与待填项。输出确定（同样输入逐字节相同），不含时间、本机路径与学生数据；
 留出集本身不读（规则 14），只收执行人填入的汇总数字。
@@ -36,7 +39,7 @@ import yaml  # type: ignore[import-untyped]  # 本机没有 types-PyYAML 存根
 from .atoms import VERB_LEVELS, Snapshot, SnapshotError, parse_snapshot
 from .m1 import NOT_STORED as M1_NOT_STORED
 from .m1 import REPORT_FORMAT as M1_FORMAT
-from .m1 import Ratio
+from .m1 import M1InputError, Ratio, snapshot_digest
 from .nodeid import is_node_id
 
 REPORT_FORMAT = "kge-m2-report/1"
@@ -71,6 +74,11 @@ INPUT_FILES: dict[str, tuple[str, ...]] = {
 ITEM_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$")
 MAP_VERSION = re.compile(r"^\d{1,3}\.\d{1,3}\.\d{1,4}$")  # 知识服务契约 MapVersion（kge.map_version.version）
 COMMIT = re.compile(r"^[0-9a-f]{40}$")
+SHA256 = re.compile(r"^[0-9a-f]{64}$")
+# 快照摘要核对（KGE-06，T33）：M1 报告与本报表读的不是同一份快照时，相关项改报“不可计算”（数字不能并排比较）
+MAP_DIGEST_MISSING = "不可计算：M1 报告没有地图快照摘要（旧版 M1 报告），无法核对与本报表读取的是同一份地图快照"
+MAP_DIGEST_MISMATCH = "不可计算：M1 报告的地图快照摘要与本报表读取的地图快照不一致"
+MANIFEST_MISMATCH = "不可计算：M1 报告的页面快照 manifest 摘要与本报表读取的页面快照不一致"
 EVIDENCE_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$")
 EVIDENCE_MAX_BYTES = 10 * 1024 * 1024
 EXECUTOR_ROLES = ("教研负责人",)  # 留出集执行人只写角色（规则 14），不写姓名
@@ -319,6 +327,9 @@ def m1_items(src: Source | None, subject: str, map_version: str | None) -> list[
         raise M2InputError("m1_report：学科与 --subject 不一致")
     if map_version is not None and str(rep["map"].get("map_version")) != map_version:
         raise M2InputError("m1_report：地图版本与地图快照不一致")
+    digest = rep["map"].get("snapshot_digest")
+    if digest is not None and (not isinstance(digest, str) or not SHA256.fullmatch(digest)):
+        raise M2InputError("m1_report：map.snapshot_digest 不合格式")
     out = []
     for k, label, thr in M1_ITEMS:
         m = rep["metrics"].get(k)
@@ -349,6 +360,11 @@ def m1_items(src: Source | None, subject: str, map_version: str | None) -> list[
                 if not isinstance(commit, str) or not COMMIT.fullmatch(commit):
                     raise M2InputError("m1_report：metrics.kp_page_publish_rate.snapshot_commit 不合格式")
                 detail["snapshot_commit"] = commit
+                manifest = m.get("manifest_sha256")
+                if manifest is not None:  # 旧版 M1 没有这一项：只核对提交号
+                    if not isinstance(manifest, str) or not SHA256.fullmatch(manifest):
+                        raise M2InputError("m1_report：metrics.kp_page_publish_rate.manifest_sha256 不合格式")
+                    detail["manifest_sha256"] = manifest
         if m["met"] != met:
             raise M2InputError(f"m1_report：metrics.{k}.met 与数值不一致")
         out.append(_item(f"m1.{k}", label, thr, "met" if met else "not_met", value=value, detail=detail, sources=[src]))
@@ -368,7 +384,12 @@ def completeness_items(map_src: Source | None, core_src: Source | None, items_sr
     if not MAP_VERSION.fullmatch(snap.map_version):
         raise M2InputError("map_snapshot：map_version 不合格式（主.次.修订）")
     core = parse_core_nodes(core_src.data, subject, snap) if core_src is not None else None
-    info = {"subject": snap.subject, "map_version": snap.map_version, "status": snap.status, "standard_year": snap.standard_year}
+    try:
+        digest = snapshot_digest(map_src.data)  # 与 knowledge.m1 同一个函数（T33）
+    except M1InputError:
+        raise M2InputError("map_snapshot：无法规范化") from None
+    info = {"subject": snap.subject, "map_version": snap.map_version, "status": snap.status, "standard_year": snap.standard_year,
+            "map_snapshot_digest": digest}
     items = parse_items(items_src.data, subject, snap.map_version) if items_src is not None else None
     pages, commit = load_pages(pages_src) if pages_src is not None else (None, None)
     if commit is not None:
@@ -654,6 +675,31 @@ def _check_page_commits(m1: list[dict[str, Any]], comp: list[dict[str, Any]], in
         it.update(verdict="not_computable", verdict_label=VERDICTS["not_computable"], note=note)
 
 
+def _check_snapshot_digests(m1: list[dict[str, Any]], comp: list[dict[str, Any]], info: Mapping[str, Any] | None,
+                            m1_src: Source | None, pages_src: Source | None) -> None:
+    """T33：核对 M1 报告用的快照与本报表读的快照是同一份内容。
+    - 地图：M1 的 map.snapshot_digest 与本报表对地图快照算的规范化摘要（knowledge.m1.snapshot_digest）比；M1 没有摘要（旧版）或不一致时，
+      M1 的各项（待填的除外）改报“不可计算”；本报表没有地图快照时无从核对，不动。
+    - 页面：M1 的 manifest_sha256 与本报表 inputs 里 page_snapshot 的 sha256（manifest.json 原始字节）比，不一致时两项页面指标改报
+      “不可计算”；M1 没有这一项（旧版）时只按提交号核对（_check_page_commits）。"""
+    if m1_src is None:
+        return
+    if info is not None:
+        mine = info.get("map_snapshot_digest")
+        theirs = m1_src.data["map"].get("snapshot_digest")
+        note = MAP_DIGEST_MISSING if theirs is None else (MAP_DIGEST_MISMATCH if theirs != mine else None)
+        if note is not None:
+            for it in m1:
+                if it["verdict"] != "pending":
+                    it.update(verdict="not_computable", verdict_label=VERDICTS["not_computable"], note=note)
+    kp = next(i for i in m1 if i["key"] == "m1.kp_page_publish_rate")
+    theirs_manifest = (kp["detail"] or {}).get("manifest_sha256")
+    if pages_src is None or theirs_manifest is None or theirs_manifest == pages_src.sha256:
+        return
+    for it in (kp, next(i for i in comp if i["key"] == "core.page_publish_rate")):
+        it.update(verdict="not_computable", verdict_label=VERDICTS["not_computable"], note=MANIFEST_MISMATCH)
+
+
 def build_report(subject: str, sources: Mapping[str, Source]) -> dict[str, Any]:
     if subject not in SUBJECTS:
         raise M2InputError("--subject 只收 aya（数学）或 zhixing（道法）")
@@ -669,6 +715,7 @@ def build_report(subject: str, sources: Mapping[str, Source]) -> dict[str, Any]:
             load_pages(sources["page_snapshot"])
     m1 = m1_items(sources.get("m1_report"), subject, mv)
     _check_page_commits(m1, comp, info)
+    _check_snapshot_digests(m1, comp, info, sources.get("m1_report"), sources.get("page_snapshot"))
     items = [*m1, *comp, kappa_item(sources.get("kappa_report"), subject), top1_item(sources.get("top1_report"), subject, mv)]
     if subject == "zhixing":
         items.append(daofa_item(sources.get("daofa_grading_report")))
@@ -695,7 +742,8 @@ def render_markdown(rep: Mapping[str, Any]) -> str:
     mp = rep["map"]
     head = (f"- 学科：{rep['subject_label']}（{rep['subject']}）；" +
             (f"地图版本：{mp['map_version']}（{mp['status']}）；课标年份：{mp['standard_year']}" if mp else "地图版本：待填（没有地图快照）") +
-            (f"；页面快照提交号：{mp['page_snapshot_commit']}" if mp and "page_snapshot_commit" in mp else ""))
+            (f"；页面快照提交号：{mp['page_snapshot_commit']}" if mp and "page_snapshot_commit" in mp else "") +
+            (f"；地图快照规范化摘要：{mp['map_snapshot_digest']}" if mp else ""))
     lines = [f"# KGE M2 报表 · {rep['subject_label']}", "", f"> {rep['note']}", "", head, "",
              "| 项目 | 门槛 | 数值 | 判定 | 说明 | 来源 |", "|---|---|---|---|---|---|"]
     for it in rep["items"]:

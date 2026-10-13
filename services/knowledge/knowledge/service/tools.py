@@ -221,9 +221,10 @@ class ToolCore:
         return {"root": root, "direction": direction, "steps": steps}, {"source_version": graph_source(subject, v)}
 
     async def page_get(self, body: dict) -> tuple[dict, dict]:
-        if self.pages is None:
+        snap = self.pages  # 热切换（KGE-06）：整个请求只用开头取到的这一份快照，切换不会让页面与提交号对不上
+        if snap is None:
             raise ServiceError(501, "METHOD_NOT_IMPLEMENTED", "page snapshot is not configured")
-        pp = self.pages.get(body["page_id"])
+        pp = snap.get(body["page_id"])
         if pp is None:  # 只有快照 manifest 列出的页面算已发布
             raise not_found()
         subject, v = await self._node_version(pp.node_id, body["context"])
@@ -241,7 +242,7 @@ class ToolCore:
                                     node=node_record(n), projections=projections, regions=regions, edition=edition)
         result = {"page_id": pp.page_id, "page_version": pp.page_version, "body_md": body_md, "atom_refs": refs}
         # 对账失败被扣、沿用上一份快照的页面带它自己的来源提交（manifest 的 source_commit），page_version 仍能对回提交号
-        commit = (pp.source_commit or self.pages.commit)[:12]
+        commit = (pp.source_commit or snap.commit)[:12]
         return result, {"source_version": f"{graph_source(subject, v)};graph:kge-pages@{commit}"}
 
     async def item_search(self, body: dict) -> tuple[dict, dict]:

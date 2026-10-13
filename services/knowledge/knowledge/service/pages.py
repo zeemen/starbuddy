@@ -11,7 +11,8 @@ manifest 的每页：page_id（页面仓库里的页面 ID = 节点 ID）、path
 - 对每页再跑一遍程序体检里不依赖地图快照的检查（头部含原子 ID 白名单、原子引用登记、缺引用、个人信息、人设中立与禁语，
   knowledge.lint.checks.published_page_checks）：导出后被人改过、或绕过导出直接拼出来的快照，读取时渲染也绕不过体检；
   有阻断即拒绝加载（知识服务拒绝启动）。
-manifest 的签名（HMAC）属于密钥管理，未实现（lessons 待人确认）。
+manifest 的签名（HMAC）：KGE-06 只留接口（hotswap.py 的 ManifestVerifier；密钥 KNOWLEDGE_SNAPSHOT_HMAC_KEY，未配置时不验签并记录），
+签名格式与密钥管理待人确认。运行中换快照见 hotswap.py（全部核对通过才原子替换）。
 page.get 只服务 map_version 与当前已发布地图版本一致的页面（tools.page_get）：升版到重编合并之间，落后的页面回 404。
 
 契约的 PageId 是小写编码（`math.func.quad.vertex-form`）：节点 ID 转小写、下划线换连字符（节点 ID 里没有连字符，
@@ -22,6 +23,7 @@ page.get 只服务 map_version 与当前已发布地图版本一致的页面（t
 """
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
@@ -64,6 +66,34 @@ def _safe_entry(path: Path, *, directory: bool) -> None:
         raise SnapshotLoadError("页面快照的文件或目录对属组或其他用户可写")
 
 
+def read_safe(path: Path, missing: str = "页面快照缺少必要的文件或目录") -> bytes:
+    """读一个普通文件：O_NOFOLLOW 打开（最后一段是符号链接即失败），对打开的描述符 fstat 核对类型与权限，再从同一个描述符读。
+    检查与读取是同一个文件对象，lstat 与 open 之间被换成符号链接也读不到别处（KGE-06）。"""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0))
+    except OSError as e:
+        if e.errno == errno.ELOOP:
+            raise SnapshotLoadError("页面快照里不能有符号链接") from None
+        raise SnapshotLoadError(missing) from None
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            raise SnapshotLoadError("页面快照里的文件类型不对")
+        if st.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+            raise SnapshotLoadError("页面快照的文件或目录对属组或其他用户可写")
+        chunks = []
+        while True:
+            b = os.read(fd, 1 << 20)
+            if not b:
+                break
+            chunks.append(b)
+        return b"".join(chunks)
+    except OSError:
+        raise SnapshotLoadError(missing) from None
+    finally:
+        os.close(fd)
+
+
 def contract_page_id(node_id: str) -> str:
     return node_id.lower().replace("_", "-")
 
@@ -96,8 +126,10 @@ class PageSnapshot:
         return self.pages.get(page_id)
 
 
-def load_snapshot_dir(root: str | Path, lexicon: Any = None) -> PageSnapshot:
-    """lexicon：人设词表（缺省从 docs/personas 只读抽取，与体检同一份）"""
+def load_snapshot_dir(root: str | Path, lexicon: Any = None, manifest_raw: bytes | None = None) -> PageSnapshot:
+    """lexicon：人设词表（缺省从 docs/personas 只读抽取，与体检同一份）。
+    manifest_raw：调用方已读到的 manifest.json 原始字节（KGE-06：验签、解析与摘要共用同一份字节，不再从磁盘读第二次）；
+    不给时这里用 read_safe 读一次。"""
     from ..lint.checks import PageFile, published_page_checks
     from ..lint.lexicon import LexiconError, default_lexicon
 
@@ -105,10 +137,10 @@ def load_snapshot_dir(root: str | Path, lexicon: Any = None) -> PageSnapshot:
     if not d.is_dir():
         raise SnapshotLoadError("页面快照目录不存在")
     _safe_entry(d, directory=True)
-    _safe_entry(d / "manifest.json", directory=False)
+    raw_manifest = manifest_raw if manifest_raw is not None else read_safe(d / "manifest.json", "页面快照缺少 manifest.json 或无法解析")
     try:
-        manifest = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        manifest = json.loads(raw_manifest.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
         raise SnapshotLoadError("页面快照缺少 manifest.json 或无法解析") from None
     if not isinstance(manifest, dict) or manifest.get("format") != FORMAT:
         raise SnapshotLoadError("manifest 格式不对")
@@ -136,11 +168,7 @@ def load_snapshot_dir(root: str | Path, lexicon: Any = None) -> PageSnapshot:
         if not is_node_id(nid) or rel != f"pages/kp/{nid}.md" or not SEMVER.fullmatch(str(ver)) or not SHA256.fullmatch(str(digest)):
             raise SnapshotLoadError(f"manifest.pages[{i}] 取值不合规范")
         path = d / rel
-        _safe_entry(path, directory=False)
-        try:
-            raw = path.read_bytes()
-        except OSError:
-            raise SnapshotLoadError(f"manifest.pages[{i}] 指向的文件不存在") from None
+        raw = read_safe(path, f"manifest.pages[{i}] 指向的文件不存在")
         if hashlib.sha256(raw).hexdigest() != digest:
             raise SnapshotLoadError(f"manifest.pages[{i}] 的哈希与文件不符")
         try:

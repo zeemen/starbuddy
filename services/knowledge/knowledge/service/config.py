@@ -10,6 +10,11 @@
                                    三个令牌至少配一个、各不相同；令牌决定 caller（契约 PublicContext.caller 的三个取值），
                                    学生与家长没有令牌，只能经 BFF 按档案授权后间接访问（规则 5）
   KNOWLEDGE_PAGE_SNAPSHOT          编译器导出的页面快照目录（knowledge.compiler.snapshot）；不设则 page.get 回 501
+  KNOWLEDGE_PAGE_SNAPSHOT_POINTER  （KGE-06，与上一项二选一）快照指针文件：一行快照目录的绝对路径；启动时按它载入，
+                                   进程收到 SIGHUP 时重读指针、核对后热切换（失败保留旧快照并计数，见 hotswap.py）
+  KNOWLEDGE_PAGE_SNAPSHOT_ROOT     （可选，绝对路径）快照根目录：配置时载入的快照目录解析符号链接后必须在它里面
+  KNOWLEDGE_SNAPSHOT_HMAC_KEY     （可选，≥ 32 字符）manifest 签名密钥；只留接口（签名格式与密钥管理待人确认），
+                                   不设则按现状不验签并在每次载入时记录
   KNOWLEDGE_HOST                   HTTP 与 MCP 的监听地址，缺省 127.0.0.1；不接受 0.0.0.0、:: 等通配地址
                                    （只在服务内网监听，由平台侧网关转发；需要内网地址时显式配置具体地址）
   KNOWLEDGE_PORT                   缺省 8790（契约 servers）
@@ -67,6 +72,9 @@ class Settings:
     page_snapshot: Path | None = None
     host: str = DEFAULT_HOST
     port: int = DEFAULT_PORT
+    page_snapshot_pointer: Path | None = None
+    page_snapshot_root: Path | None = None
+    snapshot_hmac_key: str | None = field(default=None, repr=False)  # 不进 repr（日志、异常）
 
     @staticmethod
     def from_env(environ: dict[str, str] | None = None) -> "Settings":
@@ -90,8 +98,21 @@ class Settings:
         if len(set(tokens.values())) != len(tokens):
             raise RuntimeError("各调用方的令牌必须各不相同")
         snap = e.get("KNOWLEDGE_PAGE_SNAPSHOT")
+        pointer = e.get("KNOWLEDGE_PAGE_SNAPSHOT_POINTER")
+        if snap and pointer:
+            raise RuntimeError("KNOWLEDGE_PAGE_SNAPSHOT 与 KNOWLEDGE_PAGE_SNAPSHOT_POINTER 只能设一个")
+        if pointer and not os.path.isabs(pointer):
+            raise RuntimeError("KNOWLEDGE_PAGE_SNAPSHOT_POINTER 必须是绝对路径")
+        root = e.get("KNOWLEDGE_PAGE_SNAPSHOT_ROOT")
+        if root and not os.path.isabs(root):
+            raise RuntimeError("KNOWLEDGE_PAGE_SNAPSHOT_ROOT 必须是绝对路径")
+        key = e.get("KNOWLEDGE_SNAPSHOT_HMAC_KEY") or None
+        if key is not None and len(key) < 32:
+            raise RuntimeError("KNOWLEDGE_SNAPSHOT_HMAC_KEY 少于 32 个字符")
         port_raw = e.get("KNOWLEDGE_PORT", str(DEFAULT_PORT))
         if not port_raw.isdigit() or not 0 < int(port_raw) < 65536:
             raise RuntimeError("KNOWLEDGE_PORT 不合法")
         return Settings(env=env, database_url=database_url, tokens=tokens, page_snapshot=Path(snap) if snap else None,
-                        host=check_host(e.get("KNOWLEDGE_HOST", DEFAULT_HOST)), port=int(port_raw))
+                        host=check_host(e.get("KNOWLEDGE_HOST", DEFAULT_HOST)), port=int(port_raw),
+                        page_snapshot_pointer=Path(pointer) if pointer else None, snapshot_hmac_key=key,
+                        page_snapshot_root=Path(root) if root else None)

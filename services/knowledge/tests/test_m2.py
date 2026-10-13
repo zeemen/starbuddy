@@ -636,3 +636,79 @@ def test_published_items_with_undeclared_level_counted():
     finally:
         m2mod.load_pages = orig
     assert "1 道已发布题目的认知层次不在节点声明的层次里" in item(rep, "core.completeness")["note"]
+
+
+# ---------- KGE-06（T33）：M1 与 M2 的快照摘要一致 ----------
+M1_KEYS = ["m1.curriculum_coverage", "m1.kp_page_publish_rate", "m1.lint_blocks"]
+
+
+def _edit_m1(d: Path, fn) -> None:
+    doc = json.loads((d / "m1-report.json").read_text(encoding="utf-8"))
+    fn(doc)
+    (d / "m1-report.json").write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+
+
+def test_m1_and_m2_snapshot_digests_agree(tmp_path, lexicon):
+    d = scenario_inputs(tmp_path, "aya-pass", lexicon)
+    m1rep = json.loads((d / "m1-report.json").read_text(encoding="utf-8"))
+    rep = build_report("aya", resolve_inputs(d, {}))
+    assert rep["map"]["map_snapshot_digest"] == m1rep["map"]["snapshot_digest"] == m1.snapshot_digest(map_doc("aya"))
+    page_input = next(s for s in rep["inputs"] if s["input"] == "page_snapshot")
+    assert m1rep["metrics"]["kp_page_publish_rate"]["manifest_sha256"] == page_input["sha256"]
+    assert item(rep, "m1.kp_page_publish_rate")["detail"]["manifest_sha256"] == page_input["sha256"]
+    assert set(verdicts(rep).values()) == {"met"}
+    assert f"地图快照规范化摘要：{rep['map']['map_snapshot_digest']}" in render_markdown(rep)
+
+
+def test_map_changed_after_m1_makes_m1_items_not_computable(tmp_path, lexicon):
+    """同一个版本号、内容不同（T33 的原问题：只比版本号查不出来）"""
+    d = scenario_inputs(tmp_path, "aya-pass", lexicon)
+    doc = yaml.safe_load((d / "map-snapshot.yaml").read_text(encoding="utf-8"))
+    node = next(n for n in doc["nodes"] if n["id"] == T)
+    node["name"] = node["name"] + "（改）"
+    (d / "map-snapshot.yaml").write_text(yaml.safe_dump(doc, allow_unicode=True), encoding="utf-8")
+    rep = build_report("aya", resolve_inputs(d, {}))
+    assert rep["open_items"]["not_computable"] == M1_KEYS
+    assert all(item(rep, k)["note"] == "不可计算：M1 报告的地图快照摘要与本报表读取的地图快照不一致" for k in M1_KEYS)
+    assert item(rep, "core.completeness")["verdict"] == "met"  # 本报表自己的计算不受影响
+
+
+def test_old_m1_without_digest_is_not_computable(tmp_path, lexicon):
+    d = scenario_inputs(tmp_path, "aya-pass", lexicon)
+    _edit_m1(d, lambda doc: doc["map"].pop("snapshot_digest"))
+    rep = build_report("aya", resolve_inputs(d, {}))
+    assert rep["open_items"]["not_computable"] == M1_KEYS
+    assert "旧版 M1 报告" in item(rep, "m1.lint_blocks")["note"]
+    # 待填的 M1 项保持待填（M1 运行时没给体检 JSON）
+    _edit_m1(d, lambda doc: doc["metrics"].update(lint_blocks={"status": "not_computable", "note": "不可计算：没有给体检 JSON"}))
+    rep = build_report("aya", resolve_inputs(d, {}))
+    assert item(rep, "m1.lint_blocks")["verdict"] == "pending"
+    # 本报表没有地图快照时无从核对：M1 各项照原样
+    (d / "map-snapshot.yaml").unlink()
+    (d / "core-nodes.yaml").unlink()
+    (d / "items.json").unlink()
+    rep = build_report("aya", resolve_inputs(d, {}))
+    assert item(rep, "m1.curriculum_coverage")["verdict"] == "met" and rep["map"] is None
+
+
+def test_manifest_mismatch_makes_page_items_not_computable(tmp_path, lexicon):
+    d = scenario_inputs(tmp_path, "aya-pass", lexicon)
+    _edit_m1(d, lambda doc: doc["metrics"]["kp_page_publish_rate"].update(manifest_sha256="0" * 64))
+    rep = build_report("aya", resolve_inputs(d, {}))
+    assert rep["open_items"]["not_computable"] == ["m1.kp_page_publish_rate", "core.page_publish_rate"]
+    assert item(rep, "core.page_publish_rate")["note"].startswith("不可计算：M1 报告的页面快照 manifest 摘要")
+    assert item(rep, "core.completeness")["verdict"] == "met" and item(rep, "m1.lint_blocks")["verdict"] == "met"
+    # 旧版 M1 没有 manifest 摘要：只按提交号核对（提交号一致即照常）
+    _edit_m1(d, lambda doc: doc["metrics"]["kp_page_publish_rate"].pop("manifest_sha256"))
+    assert build_report("aya", resolve_inputs(d, {}))["open_items"]["not_computable"] == []
+
+
+@pytest.mark.parametrize("mutate", [
+    lambda doc: doc["map"].update(snapshot_digest="ABC"),
+    lambda doc: doc["map"].update(snapshot_digest=1),
+    lambda doc: doc["metrics"]["kp_page_publish_rate"].update(manifest_sha256="z" * 64),
+])
+def test_digest_format_errors_exit_2(tmp_path, lexicon, mutate):
+    d = scenario_inputs(tmp_path, "aya-pass", lexicon)
+    _edit_m1(d, mutate)
+    assert main(["--subject", "aya", "--inputs", str(d), "--out", str(tmp_path / "out")]) == 2

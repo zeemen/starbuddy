@@ -8,7 +8,7 @@ import pytest
 
 from conftest import APPLY, LINEAR, MAP_V1, PAGES, SQUARE, TRANSPOSE, TODAY, edit, make_page_snapshot, map_doc, node_rec, page_file
 from knowledge.lint import lint_dir
-from knowledge.m1 import (HOLDOUT_SOURCE, NOT_STORED, M1InputError, Ratio, build_report, main, render_markdown,
+from knowledge.m1 import (HOLDOUT_SOURCE, NOT_STORED, M1InputError, Ratio, build_report, main, render_markdown, snapshot_digest,
                           write_report)
 
 
@@ -157,3 +157,64 @@ def test_database_source_reports_links_not_stored(kgedb, tmp_path):
     rep = build_report(doc, data_source="database")
     assert rep["metrics"]["curriculum_coverage"] == {"status": "not_computable", "note": NOT_STORED}
     assert rep["map"]["data_source"] == "database"
+    assert rep["map"]["snapshot_digest"] == snapshot_digest(doc)  # 库上数据源同样有规范化摘要（Decimal、日期可规范化）
+
+
+# ---------- KGE-06（T33）：快照摘要 ----------
+def test_snapshot_digest_is_canonical_and_recorded(tmp_path):
+    import hashlib
+
+    import yaml
+    doc = map_doc()
+    d = snapshot_digest(doc)
+    canon = json.dumps(doc, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    assert d == hashlib.sha256(canon).hexdigest()  # 与手算一致
+    # 写法无关：YAML、换了键顺序与缩进的 JSON，摘要相同
+    as_json = tmp_path / "m.json"
+    as_json.write_text(json.dumps(dict(reversed(list(doc.items()))), ensure_ascii=False, indent=4), encoding="utf-8")
+    assert snapshot_digest(json.loads(as_json.read_text(encoding="utf-8"))) == d
+    assert snapshot_digest(yaml.safe_load(MAP_V1.read_text(encoding="utf-8"))) == d
+    # 内容变一点，摘要就变（中文不转义：改一个汉字也变）
+    changed = map_doc()
+    node_rec(changed, LINEAR)["name"] = node_rec(changed, LINEAR)["name"] + "甲"
+    assert snapshot_digest(changed) != d
+    with pytest.raises(M1InputError):
+        snapshot_digest({"x": object()})
+    with pytest.raises(M1InputError):
+        snapshot_digest({"x": float("nan")})
+    snap_dir = make_page_snapshot(tmp_path / "snap")
+    rep = build_report(doc, page_snapshot_dir=snap_dir)
+    assert rep["map"]["snapshot_digest"] == d
+    kp = rep["metrics"]["kp_page_publish_rate"]
+    assert kp["manifest_sha256"] == hashlib.sha256((snap_dir / "manifest.json").read_bytes()).hexdigest()
+    md = render_markdown(rep)
+    assert f"地图快照规范化摘要（sha256）：{d}" in md and kp["manifest_sha256"] in md
+
+
+def test_manifest_read_once_and_digest_matches_parsed_bytes(tmp_path, monkeypatch):
+    """manifest 只读一次：交给载入的就是算摘要的那一份字节；读完之后磁盘上被换掉也不影响这次报告"""
+    import hashlib
+
+    from knowledge.service import pages as pages_mod
+    snap_dir = make_page_snapshot(tmp_path / "snap")
+    real = pages_mod.load_snapshot_dir
+    given: list = []
+
+    def spy(root, lexicon=None, manifest_raw=None):
+        given.append(manifest_raw)
+        m = Path(root) / "manifest.json"  # 载入时磁盘上的 manifest 被换掉（提交号改了）
+        m.write_text(m.read_text(encoding="utf-8").replace("d" * 40, "e" * 40), encoding="utf-8")
+        return real(root, lexicon, manifest_raw=manifest_raw)
+    monkeypatch.setattr(pages_mod, "load_snapshot_dir", spy)
+    kp = build_report(map_doc(), page_snapshot_dir=snap_dir)["metrics"]["kp_page_publish_rate"]
+    assert given and given[0] is not None
+    assert kp["manifest_sha256"] == hashlib.sha256(given[0]).hexdigest() and kp["snapshot_commit"] == "d" * 40
+    # manifest 是符号链接：拒绝（O_NOFOLLOW）
+    snap2 = make_page_snapshot(tmp_path / "snap2")
+    real_m = tmp_path / "m.json"
+    real_m.write_bytes((snap2 / "manifest.json").read_bytes())
+    (snap2 / "manifest.json").unlink()
+    (snap2 / "manifest.json").symlink_to(real_m)
+    monkeypatch.setattr(pages_mod, "load_snapshot_dir", real)
+    with pytest.raises(M1InputError):
+        build_report(map_doc(), page_snapshot_dir=snap2)

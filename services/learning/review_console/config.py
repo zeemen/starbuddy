@@ -13,6 +13,10 @@
 低风险事后抽检（冲刺 4，可选；比例与窗口的默认值待教研负责人定，见 spot_check.py）：
   REVIEW_CONSOLE_SPOT_CHECK_SEED（必须由人配置，仓库里没有缺省种子；不设则抽检接口回 503 SPOT_CHECK_UNCONFIGURED）
   REVIEW_CONSOLE_SPOT_CHECK_RATIO / REVIEW_CONSOLE_MERGE_WINDOW
+
+封测周修订支持（KGE-06，specs/kge06-weekly-revision；可选，缺省全关）：
+  REVIEW_CONSOLE_FEATURES            逗号分隔：tag_worklist（低置信打标候选工作单）、revision_preflight（修订发布预检）。
+                                     只在 dev / test 生效（本服务本来就只允许这两个环境）；未知名字拒绝启动。关着时对应接口不注册（404）。
 """
 from __future__ import annotations
 
@@ -23,6 +27,20 @@ from .pages import check_mr_url_template
 from .spot_check import SpotCheckSettings
 
 ALLOWED_ENVS = ("dev", "test")
+FEATURES = ("tag_worklist", "revision_preflight")
+
+
+def parse_features(raw: str, env: str) -> frozenset[str]:
+    """REVIEW_CONSOLE_FEATURES → 打开的功能。缺省全关；只在 dev / test 能开；名字不认识拒绝启动（不静默忽略拼错的开关）。"""
+    names = [x.strip() for x in raw.split(",") if x.strip()]
+    if not names:
+        return frozenset()
+    if env not in ALLOWED_ENVS:
+        raise RuntimeError("REVIEW_CONSOLE_FEATURES 只能在 dev / test 打开")
+    unknown = sorted(set(names) - set(FEATURES))
+    if unknown:
+        raise RuntimeError(f"REVIEW_CONSOLE_FEATURES 有不认识的功能（只认 {', '.join(FEATURES)}）")
+    return frozenset(names)
 
 
 @dataclass(frozen=True)
@@ -48,6 +66,7 @@ class ReviewSettings:
     review_database_url: str
     pages: PagesSettings | None = None
     spot_check: SpotCheckSettings | None = None  # 没设种子时为空：抽检接口报错，不用缺省种子
+    features: frozenset[str] = frozenset()       # KGE-06：打开的功能（缺省全关）
 
     @staticmethod
     def from_env(environ: dict[str, str] | None = None) -> "ReviewSettings":
@@ -61,4 +80,5 @@ class ReviewSettings:
         if kge == review:
             raise RuntimeError("提交与签字必须用两个不同的数据库登录角色")
         return ReviewSettings(env=env, kge_database_url=kge, review_database_url=review, pages=PagesSettings.from_env(e),
-                              spot_check=SpotCheckSettings.from_env(e))
+                              spot_check=SpotCheckSettings.from_env(e),
+                              features=parse_features(e.get("REVIEW_CONSOLE_FEATURES", ""), env))

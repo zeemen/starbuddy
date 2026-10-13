@@ -283,6 +283,46 @@ class KgeStore:
             out.append(d)
         return out
 
+    # ---------- 低置信打标候选工作单（KGE-06 范围 1；迁移 0024：知识服务身份能读候选，结论只经 kge.decide_tag_candidate） ----------
+    _CANDIDATE_COLS = """c.id, c.map_version_id, v.version, v.status AS map_status, c.subject::text AS subject, c.item_id::text AS item_id,
+                         c.node_id::text AS node_id, n.name AS node_name, n.level AS node_level, c.role, c.layer, c.confidence,
+                         c.tagger_version::text AS tagger_version, c.model_version::text AS model_version, c.reason_code, c.grade,
+                         c.item_source_kind, c.status, c.created_at
+                    FROM kge.tag_candidate c JOIN kge.map_version v ON v.id = c.map_version_id
+                    LEFT JOIN kge.knowledge_node n ON n.map_version_id = c.map_version_id AND n.id = c.node_id"""
+
+    async def tag_candidates(self, subject: str, map_version_id: uuid.UUID | None, limit: int,
+                             after: tuple[Any, uuid.UUID] | None) -> list[dict[str, Any]]:
+        """待处理的打标候选：按置信度升序（最没把握的在前），同置信度按 id；游标是（置信度, id）。公共层内容，没有学生数据。"""
+        rows = await self.pool.fetch(
+            f"""SELECT {self._CANDIDATE_COLS}
+                 WHERE c.status = 'open' AND c.subject = $1::platform.subject AND ($2::uuid IS NULL OR c.map_version_id = $2)
+                   AND ($3::numeric IS NULL OR (c.confidence, c.id) > ($3::numeric, $4::uuid))
+                 ORDER BY c.confidence, c.id LIMIT $5""",
+            subject, map_version_id, after[0] if after else None, after[1] if after else None, limit)
+        return [dict(r) for r in rows]
+
+    async def open_candidate_count(self, subject: str, map_version_id: uuid.UUID | None) -> int:
+        return int(await self.pool.fetchval(
+            "SELECT count(*) FROM kge.tag_candidate WHERE status = 'open' AND subject = $1::platform.subject"
+            " AND ($2::uuid IS NULL OR map_version_id = $2)", subject, map_version_id))
+
+    async def sibling_candidates(self, subject: str, item_ids: list[str]) -> list[dict[str, Any]]:
+        """同题的其他待处理候选（改标的可选项：同一地图版本、同一题、同一角色、不同节点）。"""
+        if not item_ids:
+            return []
+        rows = await self.pool.fetch(
+            f"""SELECT {self._CANDIDATE_COLS}
+                 WHERE c.status = 'open' AND c.subject = $1::platform.subject AND c.item_id::text = ANY ($2::text[])
+                 ORDER BY c.confidence DESC, c.id""", subject, item_ids)
+        return [dict(r) for r in rows]
+
+    async def tag_candidate(self, candidate_id: uuid.UUID) -> dict[str, Any]:
+        r = await self.pool.fetchrow(f"SELECT {self._CANDIDATE_COLS} WHERE c.id = $1", candidate_id)
+        if r is None:
+            raise ReviewError(404, "NOT_FOUND", "打标候选不存在")
+        return dict(r)
+
     async def expire_current_affairs(self, today) -> int:
         """时政过期下架（迁移 0043）：知识服务身份调库函数，函数写系统审核记录。"""
         return int(await self.pool.fetchval("SELECT kge.expire_current_affairs($1)", today))
@@ -484,6 +524,21 @@ class ReviewStore:
             if e.code == "BUSY":
                 raise ReviewError(409, "BUSY", SOURCE_BUSY_DETAIL) from None
             raise
+
+    # ---------- 打标候选的结论（KGE-06 范围 1；迁移 0024 kge.decide_tag_candidate 只授 starbuddy_review，处理人由库记进
+    # platform.tag_candidate_signoff） ----------
+    async def decide_tag(self, staff: uuid.UUID, candidate: uuid.UUID, decision: str) -> str:
+        """接受或驳回一条候选；返回 'written'（草稿版本上写回了 item_tag）或 'recorded'（只记结论）。"""
+        return await self._as_staff(staff, lambda c: c.fetchval("SELECT kge.decide_tag_candidate($1, $2)", candidate, decision))
+
+    async def relabel_tag(self, staff: uuid.UUID, original: uuid.UUID, target: uuid.UUID) -> str:
+        """改标：同一签字事务里先驳回原候选、再接受目标候选。原候选已被别人处理（并发）时驳回失败，整笔回滚、回 409，
+        目标候选保持待处理——不会出现“原候选已被接受、又接受了另一个节点”。先驳回再接受：草稿版本上接受主考点时，
+        库函数只会把其余仍待处理的主考点候选一并驳回，原候选已是驳回状态，不受影响。"""
+        async def run(c):
+            await c.fetchval("SELECT kge.decide_tag_candidate($1, 'rejected')", original)
+            return await c.fetchval("SELECT kge.decide_tag_candidate($1, 'accepted')", target)
+        return await self._as_staff(staff, run)
 
     # ---------- 编译页面签字（迁移 0038；PR A 待人确认 1 的默认：审核人在审核台逐个签） ----------
     async def sign_page(self, staff: uuid.UUID, page_id: str, page_commit: str, decision: str, risk: str, basis_code: str) -> uuid.UUID:

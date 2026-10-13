@@ -25,6 +25,9 @@ const practicePort = Number(process.env['WEB_PRACTICE_PORT'] ?? 3104);
 // 今日计划跨科编排（PLT-11，e2e/today-orch.spec.ts）也在这一套：前端与第五个 BFF 另开 STARBUDDY_TODAY_ORCH=today_orch（桩另实现
 // /internal/v1/today）；另四套都关（trust-off 里的 today-orch-off.spec.ts 核对今日页没有跨科列表、BFF 响应没有 ordered）。
 const PRACTICE_SPECS = /(^|\/)(practice|retest|today-orch)\.spec\.ts$/;
+// KGE-06 审核台封测周修订支持（e2e/review-kge06.spec.ts）也在这一套前端：另开 STARBUDDY_REVIEW_FEATURES=tag_worklist,revision_preflight
+// （审核台后端由 scripts/e2e.sh 打开同名功能）；另五套前端都关（trust-off 里的 review-kge06-off.spec.ts 核对两个页面 404）。
+const REVIEW_KGE06_SPECS = /(^|\/)review-kge06\.spec\.ts$/;
 // 第六套（家长诉求，PLT-14 第 1 步）：family-on 连 scripts/e2e.sh 起的第六个 BFF（STARBUDDY_FAMILY_GOALS=family_goals），前端只开 family_goals；
 // 只跑 family-goals.spec.ts。另五套前端与 BFF 都关（trust-off 里的 family-goals-off.spec.ts 核对入口不出现、页面 404、BFF 路由不注册）。
 const familyPort = Number(process.env['WEB_FAMILY_PORT'] ?? 3105);
@@ -50,6 +53,8 @@ const serverEnv = {
   STARBUDDY_FAMILY_GOALS: '',
   // 月度计划开关同样显式关闭：只有 family-on 的前端另行打开
   STARBUDDY_MONTHLY_PLAN: '',
+  // KGE-06 审核台功能开关同样显式关闭：只有 practice-on 的前端另行打开
+  STARBUDDY_REVIEW_FEATURES: '',
   STARBUDDY_REVIEW_URL: process.env['STARBUDDY_REVIEW_URL'] ?? 'http://127.0.0.1:8790',
   NEXT_TELEMETRY_DISABLED: '1',
   // scripts/e2e.sh 的测试构建在 .next-e2e（next.config.ts），next start 要读同一个目录
@@ -75,11 +80,11 @@ export default defineConfig({
   },
   expect: { toHaveScreenshot: { maxDiffPixelRatio: 0.001, animations: 'disabled' } },
   projects: [
-    { name: 'trust-off', testIgnore: [/trust-on\.spec\.ts$/, STARMAP_SPECS, REPORT_SPECS, PRACTICE_SPECS, FAMILY_SPECS] },
+    { name: 'trust-off', testIgnore: [/trust-on\.spec\.ts$/, STARMAP_SPECS, REPORT_SPECS, PRACTICE_SPECS, FAMILY_SPECS, REVIEW_KGE06_SPECS] },
     { name: 'trust-on', testMatch: /trust-on\.spec\.ts$/, use: { baseURL: `http://127.0.0.1:${trustPort}` } },
     { name: 'starmap-on', testMatch: STARMAP_SPECS, use: { baseURL: `http://127.0.0.1:${starmapPort}` } },
     { name: 'report-on', testMatch: REPORT_SPECS, use: { baseURL: `http://127.0.0.1:${reportPort}` } },
-    { name: 'practice-on', testMatch: PRACTICE_SPECS, use: { baseURL: `http://127.0.0.1:${practicePort}` } },
+    { name: 'practice-on', testMatch: [PRACTICE_SPECS, REVIEW_KGE06_SPECS], use: { baseURL: `http://127.0.0.1:${practicePort}` } },
     { name: 'family-on', testMatch: FAMILY_SPECS, use: { baseURL: `http://127.0.0.1:${familyPort}` } },
     ...extraBrowsers.map((b) => ({
       name: `trust-on-${b}`, testMatch: /trust-on\.spec\.ts$/, grep: /@data-rights/,
@@ -138,6 +143,7 @@ export default defineConfig({
         STARBUDDY_PRACTICE: 'practice',
         STARBUDDY_RETEST_UI: 'retest',
         STARBUDDY_TODAY_ORCH: 'today_orch',
+        STARBUDDY_REVIEW_FEATURES: 'tag_worklist,revision_preflight',
       },
     },
     {
