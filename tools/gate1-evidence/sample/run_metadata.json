@@ -1,0 +1,17 @@
+{
+ "cohort": {
+  "digest": "ad6a56f19ec6864b2775cf263b23308a7660f7841cff317556091fbf65ef363e",
+  "seed": 20261012,
+  "students": 40,
+  "weeks": 12
+ },
+ "commit": "8d5c693424e5df59703fdf9a392baf24a4f0a028",
+ "config": {
+  "config_version": "unsigned-0.2.0",
+  "fingerprint": "b11ea3c819f6edab",
+  "signoff": "待签字"
+ },
+ "generator": "gate1-evidence@0.1.0",
+ "notice": "合成，不是试点结论",
+ "worktree_dirty": true
+}

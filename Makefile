@@ -37,7 +37,7 @@ make-skip-check:
 # 契约检查约 1 秒，改动后也跑一遍
 check-fast: contract-test taxonomy-check attack-surface-check sie-dictionary-check kge-id-check
 
-check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation practice-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona insight-test insight-mutation voice-blind-eval-test release-walkthrough retest-mutation today-mutation scheduler-test scheduler-mutation
+check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation practice-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona insight-test insight-mutation voice-blind-eval-test release-walkthrough retest-mutation today-mutation scheduler-test scheduler-mutation gate1-test gate1-mutation
 	@echo "check: lint 尚未配置，跳过；其余检查已通过"
 
 # 契约合法性 + 示例 + 反例集
@@ -619,6 +619,36 @@ gate0-starmap-v1:
 	@if ! $(WEB_DEPS_OK); then echo "gate0-starmap-v1: 没有安装依赖（cd apps/web && npm ci，cd services/bff && npm ci）"; exit 2; fi
 	@STARBUDDY_GATE0_V1_OUT='$(abspath $(GATE0_V1_OUT))' bash apps/web/scripts/e2e.sh --grep @gate0 --project starmap-on --reporter=line
 
+# Gate 1 证据管线第一步（SIE-04，specs/gate1-evidence-sie04）：固定种子 40 名合成学生 12 周的纵向队列（作答、首轮与 8 周后复测、
+# 会话、三轮考试预测与成绩），四项报表（G1-2 8 周复测与续用、G1-3 考试区间覆盖率与 MAE、G1-4 中圈指标效度、附加分组误差差异）
+# 直接调用洞察服务的纯函数（insight/predict.py 的 predict_interval / reconcile_plan、insight/metrics.py），方法与阈值放未签字配置
+# tools/gate1-evidence/config.unsigned.json。不连库、不联网、不读留出集；用洞察服务的 venv（不新增依赖）。
+#   make gate1-evidence GATE1_OUT=<输出目录>   证据包（CSV、checks.json、summary.md、run_metadata.json；标“合成，不是试点结论”）
+#   make gate1-test       纯函数测试与反例、证据包确定性、与仓库样例 tools/gate1-evidence/sample 逐字节一致（几秒）
+#   make gate1-mutation   把报表的门槛、边界、方向、口径逐条改坏，断言测试能发现（约 1 分钟）
+# 样例过期时：make gate1-evidence GATE1_OUT=tools/gate1-evidence/sample（路径不含空格与单引号）
+GATE1_PY := services/insight/.venv/bin/python
+GATE1_MISSING = [ ! -x $(GATE1_PY) ] || ! $(GATE1_PY) -c "import pytest" 2>/dev/null
+GATE1_BAD = $(or $(filter-out 1,$(words $(GATE1_OUT))),$(findstring ',$(GATE1_OUT)))
+.PHONY: gate1-evidence gate1-test gate1-mutation
+gate1-evidence:
+	@$(if $(GATE1_BAD),echo "用法：make gate1-evidence GATE1_OUT=<输出目录>（路径不含空格与单引号）"; exit 2)
+	@if [ ! -x $(GATE1_PY) ]; then echo "gate1-evidence: 没有安装洞察服务依赖（见 services/insight/README.md）"; exit 2; fi
+	@cd services/insight && PYTHONDONTWRITEBYTECODE=1 PYTHONPATH='$(abspath tools/gate1-evidence)' .venv/bin/python -m gate1_evidence evidence --out '$(abspath $(GATE1_OUT))'
+
+gate1-test:
+	@if $(GATE1_MISSING); then \
+	  echo "gate1-test: 跳过（没有安装洞察服务依赖；见 services/insight/README.md）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@$(call guard,$(GATE1_MISSING))cd services/insight && PYTHONDONTWRITEBYTECODE=1 PYTHONPATH='$(abspath tools/gate1-evidence)' .venv/bin/python -m pytest -q -p no:cacheprovider --rootdir '$(abspath tools/gate1-evidence)' '$(abspath tools/gate1-evidence/tests)' && echo "gate1-test: 通过"
+
+gate1-mutation:
+	@if $(GATE1_MISSING); then \
+	  echo "gate1-mutation: 跳过（没有安装洞察服务依赖；见 services/insight/README.md）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@$(call skip_rest,$(GATE1_MISSING))$(GATE1_PY) tools/gate1-evidence/mutations.py; rc=$$?; \
+	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
+
 # 冲刺 5 压测基线、单模型失效降级、成本测算（specs/load-cost-baseline-sprint5；工具与手册见 tools/loadtest/README.md、RUNBOOK.md）。
 # 只在本机一次性栈上跑（规则 9），只用合成数据（规则 8）；依赖同 learning-test、三科适配器与 BFF 的 npm ci。
 #   make loadtest-baseline [LOADTEST_STAGES=small|full|10:120,50:120] [LOADTEST_OUT=<目录>] [LOADTEST_ARGS='--fault fake-a=unavailable']
@@ -665,3 +695,4 @@ cost-report:
 	@$(call guard,$(LOADTEST_PY_MISSING))cd tools/loadtest && PYTHONDONTWRITEBYTECODE=1 ../../$(LOADTEST_PY) -m pytest -q tests/test_cost.py
 	@$(call guard,$(LOADTEST_PY_MISSING))cd tools/loadtest && ../../$(LOADTEST_PY) -m loadtest cost --records "$$LT_COST_RECORDS" $${LT_COST_OUT:+--out "$$LT_COST_OUT"} \
 	  && echo "cost-report: 报告见上面 out 目录的 cost-report.md（合成估算、示例价）"
+

@@ -1,0 +1,61 @@
+{
+  "$comment": "Gate 1 证据管线的方法与阈值（SIE-04 第一步）。全部未签字：每一节的 signoff 都是“待签字”，由 SIE 负责人、教研与产品签字后才能用于真实试点；签字前报表只给“对照未签字阈值”的结果，Gate 1 判定一律写“无法自动判断（需人）”。填了 signed_by / signed_at 时，每一节的 signoff 必须改成签字记录（不能再是“待签字”）。数值取开发计划 v2.0 Gate 1 条件（:447-454）与 SIE 分册（:401-412、:595-601）的文字，其余为占位。样本门槛分两种：按记录计（min_*_records / min_records_*）与按学生计（min_students*，同一名学生多科、多轮只算一名独立样本），两者都要满足。",
+  "schema_version": "gate1-evidence-config/0.1",
+  "config_version": "unsigned-0.2.0",
+  "signed_by": "",
+  "signed_at": "",
+  "retest_g12": {
+    "signoff": "待签字",
+    "improvement": {
+      "definition": "paired_mean_delta",
+      "$comment": "改善 = 同一名学生 8 周后复测正确率 − 首轮复测正确率（配对），队列均值 > min_mean_delta（严格大于），且改善（差值 > 0）的学生占比 ≥ min_share_improved。口径是“幸存者口径”：只有两轮都做够题的学生进入配对，中途停用、没有 8 周后复测的学生不计入（他们体现在续用率里），可能高估改善。“改善”的定义与这一口径都待签字。",
+      "min_mean_delta": 0.0,
+      "min_share_improved": 0.5
+    },
+    "min_items_per_round": 8,
+    "min_paired_students": 20,
+    "continuation": {
+      "$comment": "8 周续用 = 入组后第 after_days 天起 window_days 天内仍有会话。分母 = 入组学生中观察窗完整者（入组 + after_days + window_days 不晚于数据截止），含入组后从未使用的学生（计为未续用）；观察窗不完整的按删失不计。续用率门槛为占位。",
+      "after_days": 56,
+      "window_days": 14,
+      "min_rate": 0.6
+    },
+    "min_enrolled_students": 20
+  },
+  "exam_g13": {
+    "signoff": "待签字",
+    "nominal": 0.8,
+    "coverage_low": 0.7,
+    "coverage_high": 0.9,
+    "min_records_per_round": 30,
+    "min_students_per_round": 20,
+    "min_rounds": 2,
+    "mae_unit": "fraction_of_full_score",
+    "$comment": "中值 = gate1_evidence/basis.py 的 predicted_median：预测依据里的得分率均值 × 满分，保留一位（区间中心，未截断）；MAE 以占满分比例计，跨 100 分与 120 分口径可比。每轮同时要求记录数 ≥ min_records_per_round 与不同学生数 ≥ min_students_per_round（一名学生多科只算一名）。误差较首轮下降 = 最后一轮 MAE 严格低于首轮，且至少低 min_mae_relative_drop（相对值）。",
+    "min_mae_relative_drop": 0.0
+  },
+  "validity_g14": {
+    "signoff": "待签字",
+    "method": "pearson",
+    "measure_week": 6,
+    "min_students": 20,
+    "min_abs_r": 0.3,
+    "min_metrics_passing": 2,
+    "$comment": "每个指标在第 measure_week 周末按洞察服务 metrics.py 的纯函数计算（最低样本取洞察服务的合成判断策略配置），与之后的结局配对：先按学生聚合（同一学生各科的指标值取均值、结局取均值，一名学生一对），再求相关；min_students 是聚合后的学生数。方向与预期一致且 |r| ≥ min_abs_r 才算对照未签字阈值通过。结局与方向是对 SIE 分册效度检验一栏的简化（提示依赖度原文是“下降是否伴随独立解题率上升”，这里用与 8 周复测的负相关代替），待签字。",
+    "metrics": {
+      "independent_solve_rate": {"outcome": "week8_retest_accuracy", "direction": "positive"},
+      "hint_dependency": {"outcome": "week8_retest_accuracy", "direction": "negative"},
+      "transfer_gap": {"outcome": "last_exam_fraction", "direction": "positive"},
+      "retention_rate": {"outcome": "last_exam_fraction", "direction": "positive"}
+    }
+  },
+  "fairness": {
+    "signoff": "待签字",
+    "$comment": "分组误差差异只用合成的非敏感分组键（规则 12：不用地区、学校、家庭推断）。SIE 分册原文是“不同学校、不同基础学生群体”，真实试点用哪些分组键待人确认。误差以占满分比例计，取各轮全部考试记录；每组同时要求记录数 ≥ min_records_per_group 与不同学生数 ≥ min_students_per_group。",
+    "group_keys": ["wave", "grade"],
+    "min_records_per_group": 10,
+    "min_students_per_group": 10,
+    "max_mae_gap": 0.05,
+    "max_bias_gap": 0.05
+  }
+}
