@@ -1,0 +1,13 @@
+{
+  "name": "@starbuddy/kge-dedupe",
+  "version": "0.1.0",
+  "private": true,
+  "description": "KGE-08 第一步：题目层文本的规范化、指纹（SHA-256 + 64 位 SimHash）、重复题 / 近似题 / 题目族候选与同卷识别，离线只出候选报告。借用 tools/kge-inventory 的开发依赖（不另装依赖）",
+  "type": "module",
+  "engines": { "node": ">=22.18" },
+  "scripts": {
+    "typecheck": "../kge-inventory/node_modules/.bin/tsc -p tsconfig.json",
+    "test": "node --no-warnings --test --test-reporter=dot tests/*.test.ts",
+    "mutation": "node --no-warnings tests/mutations.ts"
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "format": "kge-dedupe-input/1",
+  "synthetic": true,
+  "notice": "（合成）样例：KGE-08 题目去重与同卷识别的单测与演示，全部为构建方编写的合成题目，不是任何真实试卷或教材内容",
+  "items": [
+    { "id": "SYN-DUP-A", "text": "（合成）解方程：$2x + 3 = 11$，求 x 的值。", "main_nodes": ["SYN.ALG.EQ1"] },
+    { "id": "SYN-DUP-B", "text": "（合成） 解方程：  ２ｘ＋３＝１１ ，求ｘ的值。", "main_nodes": ["SYN.ALG.EQ1"] },
+    { "id": "SYN-DUP-C", "text": "（合成）解方程：\\(2x+3=11\\)，求 x 的值．", "main_nodes": ["SYN.ALG.EQ1"] },
+
+    { "id": "SYN-NEAR-A", "text": "（合成）甲从家出发步行去图书馆，先向东走了三个路口，再向北拐弯走了两个路口，问他一共走过了几个路口？", "main_nodes": ["SYN.GEO.DIR"] },
+    { "id": "SYN-NEAR-B", "text": "（合成）甲从家出发步行去图书馆，先向东走了三个路口，再向南拐弯走了两个路口，问他一共走过了几个路口？", "main_nodes": ["SYN.GEO.DIR"] },
+
+    { "id": "SYN-FAM-1", "text": "（合成）一个长方形的长是 8 厘米，宽是 5 厘米，求它的面积和周长各是多少。", "main_nodes": ["SYN.GEO.AREA"] },
+    { "id": "SYN-FAM-2", "text": "（合成）一个长方形的长是 12 厘米，宽是 7 厘米，求它的面积和周长各是多少。", "main_nodes": ["SYN.GEO.AREA"] },
+    { "id": "SYN-FAM-3", "text": "（合成）一个长方形的长是 15 厘米，宽是 6 厘米，求它的面积和周长各是多少。", "main_nodes": ["SYN.GEO.AREA"] },
+    { "id": "SYN-FAM-4", "text": "（合成）一个长方形的长是 20 厘米，宽是 13 厘米，求它的面积和周长各是多少。", "main_nodes": ["SYN.GEO.PERIM"] },
+
+    { "id": "SYN-CROSS-1", "text": "（合成）计算：3 + 4 × 5 的结果，并说明先算乘法的道理。", "main_nodes": ["SYN.NUM.ORDER"] },
+    { "id": "SYN-CROSS-2", "text": "（合成）计算：16 + 23 × 9 的结果，并说明先算乘法的道理。", "main_nodes": ["SYN.NUM.MULT"] },
+
+    { "id": "SYN-MULTI-1", "text": "（合成）一个正方形的边长是 6 分米，把它剪成两个同样的长方形，求每个长方形的面积。", "main_nodes": ["SYN.GEO.AREA", "SYN.GEO.SQUARE"] },
+    { "id": "SYN-MULTI-2", "text": "（合成）一个正方形的边长是 14 分米，把它剪成两个同样的长方形，求每个长方形的面积。", "main_nodes": ["SYN.GEO.AREA", "SYN.GEO.SQUARE"] },
+
+    { "id": "SYN-LONE", "text": "（合成）下列关于光合作用的说法中，正确的一项是哪一个选项，请说明理由。", "main_nodes": ["SYN.BIO.PHOTO"] },
+
+    { "id": "SYN-K01", "paper_id": "SYN-PAPER-K", "seq": 1, "text": "（合成）下列各数中，最小的负整数是哪一个，请写出理由。", "main_nodes": ["SYN.P.T01"] },
+    { "id": "SYN-K02", "paper_id": "SYN-PAPER-K", "seq": 2, "text": "（合成）已知一次函数的图像经过第一、二、四象限，判断其斜率与截距的符号。", "main_nodes": ["SYN.P.T02"] },
+    { "id": "SYN-K03", "paper_id": "SYN-PAPER-K", "seq": 3, "text": "（合成）用配方法把二次三项式化成顶点式，并写出对称轴。", "main_nodes": ["SYN.P.T03"] },
+    { "id": "SYN-K04", "paper_id": "SYN-PAPER-K", "seq": 4, "text": "（合成）一个等腰三角形的两条边分别长 4 和 9，求它的周长。", "main_nodes": ["SYN.P.T04"] },
+    { "id": "SYN-K05", "paper_id": "SYN-PAPER-K", "seq": 5, "text": "（合成）解不等式组，并把解集在数轴上表示出来。", "main_nodes": ["SYN.P.T05"] },
+    { "id": "SYN-K06", "paper_id": "SYN-PAPER-K", "seq": 6, "text": "（合成）在平行四边形中，对角线互相平分，试证明这一性质。", "main_nodes": ["SYN.P.T06"] },
+    { "id": "SYN-K07", "paper_id": "SYN-PAPER-K", "seq": 7, "text": "（合成）抛掷一枚质地均匀的骰子，求朝上点数为偶数的概率。", "main_nodes": ["SYN.P.T07"] },
+    { "id": "SYN-K08", "paper_id": "SYN-PAPER-K", "seq": 8, "text": "（合成）把一个圆柱沿高剪开，侧面展开图是什么形状？说明原因。", "main_nodes": ["SYN.P.T08"] },
+    { "id": "SYN-K09", "paper_id": "SYN-PAPER-K", "seq": 9, "text": "（合成）某商品先提价一成再降价一成，现价与原价相比如何变化？", "main_nodes": ["SYN.P.T09"] },
+    { "id": "SYN-K10", "paper_id": "SYN-PAPER-K", "seq": 10, "text": "（合成）化简分式，并在给定的取值范围内选一个合适的数代入求值。", "main_nodes": ["SYN.P.T10"] },
+    { "id": "SYN-K11", "paper_id": "SYN-PAPER-K", "seq": 11, "text": "（合成）观察下列等式的规律，写出第 n 个等式并加以证明。", "main_nodes": ["SYN.P.T11"] },
+    { "id": "SYN-K12", "paper_id": "SYN-PAPER-K", "seq": 12, "text": "（合成）综合题：抛物线与直线交于两点，求三角形面积的最大值。", "main_nodes": ["SYN.P.T12"] },
+
+    { "id": "SYN-S01", "paper_id": "SYN-PAPER-S", "seq": 1, "text": "（合成） 下列各数中，最小的负整数是哪一个,请写出理由.", "main_nodes": ["SYN.P.T01"] },
+    { "id": "SYN-S02", "paper_id": "SYN-PAPER-S", "seq": 2, "text": "（合成）已知一次函数的图像经过第一、二、四象限，判断其斜率与截距的符号。", "main_nodes": ["SYN.P.T02"] },
+    { "id": "SYN-S03", "paper_id": "SYN-PAPER-S", "seq": 3, "text": "（合成）用配方法把二次三项式化成顶点式，并写出对称轴。", "main_nodes": ["SYN.P.T03"] },
+    { "id": "SYN-S04", "paper_id": "SYN-PAPER-S", "seq": 4, "text": "（合成）一个等腰三角形的两条边分别长 ４ 和 ９，求它的周长。", "main_nodes": ["SYN.P.T04"] },
+    { "id": "SYN-S05", "paper_id": "SYN-PAPER-S", "seq": 5, "text": "（合成）解不等式组，并把解集在数轴上表示出来。", "main_nodes": ["SYN.P.T05"] },
+    { "id": "SYN-S06", "paper_id": "SYN-PAPER-S", "seq": 6, "text": "（合成）在平行四边形中，对角线互相平分，试证明这一性质。", "main_nodes": ["SYN.P.T06"] },
+    { "id": "SYN-S07", "paper_id": "SYN-PAPER-S", "seq": 7, "text": "（合成）抛掷一枚质地均匀的骰子，求朝上点数为偶数的概率。", "main_nodes": ["SYN.P.T07"] },
+    { "id": "SYN-S08", "paper_id": "SYN-PAPER-S", "seq": 8, "text": "（合成）把一个圆柱沿高剪开，侧面展开图是什么形状？说明原因。", "main_nodes": ["SYN.P.T08"] },
+    { "id": "SYN-S09", "paper_id": "SYN-PAPER-S", "seq": 9, "text": "（合成）某商品先提价一成再降价一成，现价与原价相比如何变化？", "main_nodes": ["SYN.P.T09"] },
+    { "id": "SYN-S10", "paper_id": "SYN-PAPER-S", "seq": 10, "text": "（合成）化简分式，并在给定的取值范围内选一个合适的数代入求值。", "main_nodes": ["SYN.P.T10"] },
+    { "id": "SYN-S11", "paper_id": "SYN-PAPER-S", "seq": 11, "text": "（合成）观察下列等式的规律，写出第 n 个等式并加以证明。", "main_nodes": ["SYN.P.T11"] },
+    { "id": "SYN-S12", "paper_id": "SYN-PAPER-S", "seq": 12, "text": "（合成）综合题：抛物线与直线交于两点，求三角形面积的最大值。", "main_nodes": ["SYN.P.T12"] },
+
+    { "id": "SYN-W01", "paper_id": "SYN-PAPER-W", "seq": 1, "text": "（合成）下列各数中，最小的负整数是哪一个，请写出理由。", "main_nodes": ["SYN.P.T01"] },
+    { "id": "SYN-W02", "paper_id": "SYN-PAPER-W", "seq": 2, "text": "（合成）已知一次函数的图像经过第一、二、四象限，判断其斜率与截距的符号。", "main_nodes": ["SYN.P.T02"] },
+    { "id": "SYN-W03", "paper_id": "SYN-PAPER-W", "seq": 3, "text": "（合成）用配方法把二次三项式化成顶点式，并写出对称轴。", "main_nodes": ["SYN.P.T03"] },
+    { "id": "SYN-W04", "paper_id": "SYN-PAPER-W", "seq": 4, "text": "（合成）一个等腰三角形的两条边分别长 4 和 9，求它的周长。", "main_nodes": ["SYN.P.T04"] },
+    { "id": "SYN-W05", "paper_id": "SYN-PAPER-W", "seq": 5, "text": "（合成）在平行四边形中，对角线互相平分，试证明这一性质。", "main_nodes": ["SYN.P.T06"] },
+    { "id": "SYN-W06", "paper_id": "SYN-PAPER-W", "seq": 6, "text": "（合成）解不等式组，并把解集在数轴上表示出来。", "main_nodes": ["SYN.P.T05"] },
+    { "id": "SYN-W07", "paper_id": "SYN-PAPER-W", "seq": 7, "text": "（合成）抛掷一枚质地均匀的骰子，求朝上点数为偶数的概率。", "main_nodes": ["SYN.P.T07"] },
+    { "id": "SYN-W08", "paper_id": "SYN-PAPER-W", "seq": 8, "text": "（合成）把一个圆柱沿高剪开，侧面展开图是什么形状？说明原因。", "main_nodes": ["SYN.P.T08"] },
+    { "id": "SYN-W09", "paper_id": "SYN-PAPER-W", "seq": 9, "text": "（合成）某商品先提价一成再降价一成，现价与原价相比如何变化？", "main_nodes": ["SYN.P.T09"] },
+    { "id": "SYN-W10", "paper_id": "SYN-PAPER-W", "seq": 10, "text": "（合成）化简分式，并在给定的取值范围内选一个合适的数代入求值。", "main_nodes": ["SYN.P.T10"] },
+    { "id": "SYN-W11", "paper_id": "SYN-PAPER-W", "seq": 11, "text": "（合成）观察下列等式的规律，写出第 n 个等式并加以证明。", "main_nodes": ["SYN.P.T11"] },
+    { "id": "SYN-W12", "paper_id": "SYN-PAPER-W", "seq": 12, "text": "（合成）综合题：抛物线与直线交于两点，求三角形面积的最大值。", "main_nodes": ["SYN.P.T12"] },
+
+    { "id": "SYN-H01", "paper_id": "SYN-PAPER-H", "seq": 1, "text": "（合成）下列各数中，最小的负整数是哪一个，请写出理由。", "main_nodes": ["SYN.P.T01"] },
+    { "id": "SYN-H02", "paper_id": "SYN-PAPER-H", "seq": 2, "text": "（合成）已知一次函数的图像经过第一、二、四象限，判断其斜率与截距的符号。", "main_nodes": ["SYN.P.T02"] },
+    { "id": "SYN-H03", "paper_id": "SYN-PAPER-H", "seq": 3, "text": "（合成）用配方法把二次三项式化成顶点式，并写出对称轴。", "main_nodes": ["SYN.P.T03"] },
+    { "id": "SYN-H04", "paper_id": "SYN-PAPER-H", "seq": 4, "text": "（合成）一个等腰三角形的两条边分别长 4 和 9，求它的周长。", "main_nodes": ["SYN.P.T04"] },
+    { "id": "SYN-H05", "paper_id": "SYN-PAPER-H", "seq": 5, "text": "（合成）解不等式组，并把解集在数轴上表示出来。", "main_nodes": ["SYN.P.T05"] },
+    { "id": "SYN-H06", "paper_id": "SYN-PAPER-H", "seq": 6, "text": "（合成）在平行四边形中，对角线互相平分，试证明这一性质。", "main_nodes": ["SYN.P.T06"] },
+    { "id": "SYN-H07", "paper_id": "SYN-PAPER-H", "seq": 7, "text": "（合成）一辆车匀速行驶，路程与时间成正比，写出函数关系式。", "main_nodes": ["SYN.P.H07"] },
+    { "id": "SYN-H08", "paper_id": "SYN-PAPER-H", "seq": 8, "text": "（合成）根据统计表绘制条形统计图，并比较两组数据的众数。", "main_nodes": ["SYN.P.H08"] },
+    { "id": "SYN-H09", "paper_id": "SYN-PAPER-H", "seq": 9, "text": "（合成）尺规作图：作已知线段的垂直平分线，保留作图痕迹。", "main_nodes": ["SYN.P.H09"] },
+    { "id": "SYN-H10", "paper_id": "SYN-PAPER-H", "seq": 10, "text": "（合成）判断两个三角形是否全等，并写出所依据的判定方法。", "main_nodes": ["SYN.P.H10"] },
+    { "id": "SYN-H11", "paper_id": "SYN-PAPER-H", "seq": 11, "text": "（合成）求一组数据的方差，并说明方差大小反映了什么。", "main_nodes": ["SYN.P.H11"] },
+    { "id": "SYN-H12", "paper_id": "SYN-PAPER-H", "seq": 12, "text": "（合成）压轴题：动点在正方形边上运动，求线段长度的取值范围。", "main_nodes": ["SYN.P.H12"] }
+  ]
+}

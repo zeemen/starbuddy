@@ -1,5 +1,5 @@
 # 未实现的目标明确打印“跳过”，不得伪装为通过。
-.PHONY: check-fast check contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test current-affair-expire model-router-mutation diagnosis-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-visual kge-inventory kge-inventory-test kge-import kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test sie-dictionary-check kge-id-check knowledge-test knowledge-mutation kge-compile-eval-test eval-persona eval-grade persona-registry-check persona-guard-test persona-lock persona-record insight-test insight-mutation release-walkthrough
+.PHONY: check-fast check contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test current-affair-expire model-router-mutation diagnosis-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-visual kge-inventory kge-inventory-test kge-import kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test sie-dictionary-check kge-id-check knowledge-test knowledge-mutation kge-compile-eval-test eval-persona eval-grade persona-registry-check persona-guard-test persona-lock persona-record insight-test insight-mutation release-walkthrough kge-dedupe-test kge-dedupe-mutation
 
 # 可指向装了 packages/contracts/requirements-dev.txt 的解释器，例如 make check PYTHON=.venv/bin/python
 PYTHON ?= python3
@@ -37,7 +37,7 @@ make-skip-check:
 # 契约检查约 1 秒，改动后也跑一遍
 check-fast: contract-test taxonomy-check attack-surface-check sie-dictionary-check kge-id-check
 
-check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation practice-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona insight-test insight-mutation voice-blind-eval-test release-walkthrough retest-mutation today-mutation scheduler-test scheduler-mutation gate1-test gate1-mutation review-console-mutation kge-chinese-import kge-chinese-mutation knowledge-material-mutation stage-test stage-mutation
+check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation practice-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona insight-test insight-mutation voice-blind-eval-test release-walkthrough retest-mutation today-mutation scheduler-test scheduler-mutation gate1-test gate1-mutation review-console-mutation kge-chinese-import kge-chinese-mutation knowledge-material-mutation stage-test stage-mutation kge-dedupe-test kge-dedupe-mutation
 	@echo "check: lint 尚未配置，跳过；其余检查已通过"
 
 # 契约合法性 + 示例 + 反例集
@@ -760,4 +760,23 @@ stage-mutation:
 	  echo "stage-mutation: 跳过（没有安装 apps/web 依赖；cd apps/web && npm ci）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
 	@$(call skip_rest,$(STAGE_MISSING))node --no-warnings packages/stage/scripts/mutations.ts; rc=$$?; \
+	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
+
+# KGE-08 第一步（specs/kge08-paper-dedupe，全程合成数据，离线、零新依赖：借用 tools/kge-inventory 的 tsc 与 @types）：
+# tools/kge-dedupe 的规范化、SHA-256 + 64 位 SimHash、近似两道门、题目族候选、同卷识别（宁严勿松）、输入守卫与报告。
+# kge-dedupe-test：类型检查 + 单测（含“报告与清单不含题干”与逐字节一致）
+# kge-dedupe-mutation：关键检查逐条改坏（106 条），断言测试能发现（约 11 分钟）
+# 缺 tools/kge-inventory 依赖时非严格跳过、严格失败
+kge-dedupe-test:
+	@if $(KGE_INVENTORY_MISSING); then \
+	  echo "kge-dedupe-test: 跳过（没有安装依赖；cd tools/kge-inventory && npm ci）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@$(call guard,$(KGE_INVENTORY_MISSING))cd tools/kge-dedupe && ../kge-inventory/node_modules/.bin/tsc -p tsconfig.json && echo "kge-dedupe-test: 类型检查通过"
+	@$(call guard,$(KGE_INVENTORY_MISSING))cd tools/kge-dedupe && node --no-warnings --test --test-reporter=dot tests/*.test.ts && echo "kge-dedupe-test: 单测通过"
+
+kge-dedupe-mutation:
+	@if $(KGE_INVENTORY_MISSING); then \
+	  echo "kge-dedupe-mutation: 跳过（没有安装依赖；cd tools/kge-inventory && npm ci）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@$(call skip_rest,$(KGE_INVENTORY_MISSING))node --no-warnings tools/kge-dedupe/tests/mutations.ts; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
