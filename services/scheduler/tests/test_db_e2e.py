@@ -208,6 +208,26 @@ def test_sweep(db):
     assert rc == 0 and log["counts"]["to_verify"] == 0
 
 
+def test_metrics(db):
+    """中圈指标静默重算（SIE-05）以 insight 身份运行 insight.jobs metrics --all：有当前节点键掌握行、16 道带提示作答的学生
+    第一轮新建一条只给 agent 看的提示依赖度判断（状态只到假设），学习持续性被 --skip 跳过；第二轮不再新建"""
+    s = SD.seed_metric_inputs(db)
+    own = f"FROM insight.claim WHERE student_id = '{s['student']}' AND target_type = 'metric'"
+    assert q(db, f"SELECT count(*) {own}") == "0"
+    rc, log = once(db, "metrics")
+    assert (rc, log["outcome"], log["level"]) == (0, "ok", "info"), log
+    c = log["counts"]
+    assert c["job"] == "metrics" and c["students"] >= 1 and c["metric_results"] >= 1 and c["writes"].get("created", 0) >= 1
+    assert c["missing_templates"] == [] and c["skipped_metrics"] == ["persistence"]
+    # 只有提示依赖度：学习持续性本可出结果（有 30 天前的作答），但定时作业 --skip persistence 不重算它
+    assert q(db, f"SELECT string_agg(target_id || ':' || status || ':' || visibility::text, ',') {own}") == \
+        "hint_dependency:hypothesis:{agent}"
+    assert q(db, f"SELECT value ->> 'v' {own}") == str(round((21 * 2 + 1 + 2 + 3 + 4) / 6 / 16, 4))
+    rc, again = once(db, "metrics")
+    assert rc == 0 and "created" not in again["counts"]["writes"], again
+    assert q(db, f"SELECT count(*) {own}") == "1"
+
+
 def test_mastery_sweep(db):
     """掌握对账以学习服务身份运行（LEARNING_MASTERY_CONFIG_* 按通配传入）：一次已判分、已打标的作答还没有掌握记录 →
     第一轮写出该节点 × 层次的掌握记录（未签字的合成配置最高到“稳定”）；第二轮不再新增记录"""

@@ -3,7 +3,8 @@
 
 做法同 services/learning/scripts/practice_mutations.py：每个变异在临时目录里复制一份 services/scheduler（仓库其余部分软链接回去，
 保持目录结构：子进程解释器、审核台的本机核对、洞察服务的一次性库都按相对位置找），改一处源码再跑测试；只有“测试失败”（退出码 1）
-算发现，原文找不到或不唯一、收集错误（退出码 2 及以上）算变异本身写错。先跑一次不变异的对照组，必须通过。两组：
+算发现，原文找不到或不唯一、收集错误（退出码 2 及以上）算变异本身写错。先跑一次不变异的对照组，必须通过。
+SIE-05 起包括中圈指标静默重算：insight 身份放行 metrics、其余未放行子命令仍拒绝、每日一次、库上 --all 真实写出 agent 可见的指标判断。两组：
 - 纯函数与运行器：tests/test_schedule.py、test_config.py、test_runner.py，不连库（子进程用假模块）；
 - 库上：tests/test_db_e2e.py，一次性 Postgres（每个变异起一个库）；没有本机 Postgres 或子进程的 venv 时退出码 3（Makefile 决定是否算失败）。
 """
@@ -24,6 +25,7 @@ PY = HERE / ".venv" / "bin" / "python"
 PURE_TESTS = ["tests/test_schedule.py", "tests/test_config.py", "tests/test_runner.py"]
 DB_TESTS = ["tests/test_db_e2e.py"]
 S, C, R, L, M = "scheduler/schedule.py", "scheduler/config.py", "scheduler/runner.py", "scheduler/loop.py", "scheduler/__main__.py"
+Y = "config/schedule.synthetic.yaml"
 
 PURE: dict[str, list[tuple[str, str, str]]] = {
     # 时间表（纯函数）
@@ -43,6 +45,15 @@ PURE: dict[str, list[tuple[str, str, str]]] = {
     "不要求输入带时区": [(S, "if after.tzinfo is None or after.utcoffset() is None:", "if False:")],
     # 配置
     "子命令不按身份限定": [(C, "_need(args[0] in ident.commands,", "_need(True,")],
+    # 中圈指标静默重算（SIE-05）：insight 身份放行 metrics，其余未放行的子命令仍拒绝
+    "insight 身份不放行 metrics": [(C, "frozenset({\"sweep\", \"weekly\", \"metrics\"})", "frozenset({\"sweep\", \"weekly\"})")],
+    "insight 身份连带放行 sync": [(C, "frozenset({\"sweep\", \"weekly\", \"metrics\"})", "frozenset({\"sweep\", \"weekly\", \"metrics\", \"sync\"})")],
+    "调度器身份也放行 metrics": [(C, "frozenset({\"meter-expire\", \"meter-renew\", \"erasures\", \"freeze\", \"spot-check\"})",
+                              "frozenset({\"meter-expire\", \"meter-renew\", \"erasures\", \"freeze\", \"spot-check\", \"metrics\"})")],
+    "指标重算可以启动补跑": [(C, "CATCH_UP_COMMANDS = frozenset({\"weekly\"})", "CATCH_UP_COMMANDS = frozenset({\"weekly\", \"metrics\"})")],
+    "指标重算频率不是每日一次": [(Y, "    schedule: daily 03:20\n    identity: insight\n    args: [metrics, --all, --skip, persistence]",
+                             "    schedule: hourly :20\n    identity: insight\n    args: [metrics, --all, --skip, persistence]")],
+    "定时作业不跳过学习持续性（纯配置）": [(Y, "    args: [metrics, --all, --skip, persistence]", "    args: [metrics, --all]")],
     # 附加环境变量：每个身份的显式白名单；连接串类名字只认本身份的
     "声明的附加变量不查白名单（同前缀都收）": [(C, "    return name in identity.extra_names and not is_url_name(name)",
                                   "    return name.startswith(identity.env_var.rsplit(\"_\", 1)[0] + \"_\") and not is_url_name(name)")],
@@ -125,6 +136,11 @@ DB: dict[str, list[tuple[str, str, str]]] = {
     "取不到锁也执行（库上）": [(R, "                if not handle.acquired:\n                    return done(\"skipped_locked\")",
                          "                if False:\n                    return done(\"skipped_locked\")")],
     "探活总说锁还在": [(R, "return await asyncio.wait_for(conn.fetchval(\"SELECT 1\"), PROBE_TIMEOUT) == 1", "return True")],
+    "指标重算只跑指定学生（不是 --all）": [(Y, "    args: [metrics, --all, --skip, persistence]",
+                                     "    args: [metrics, --student, 00000000-0000-4000-8000-000000000000, --skip, persistence]")],
+    "指标重算任务调起的是 sweep": [(Y, "    args: [metrics, --all, --skip, persistence]", "    args: [sweep]")],
+    "定时作业去掉 --skip persistence（重算学习持续性）": [(Y, "    args: [metrics, --all, --skip, persistence]",
+                                                "    args: [metrics, --all]")],
     "传给子进程的语句超时不生效": [(R, "    q.append((\"statement_timeout\", str(ms)))", "    q.append((\"statement_timeout_ms\", str(ms)))")],
 }
 

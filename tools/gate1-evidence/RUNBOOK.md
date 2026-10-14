@@ -38,7 +38,7 @@
 | G1-2 8 周复测 | 首轮与 8 周后复测作答的当前判分（只 correct / incorrect） | `improvement` |
 | G1-2 续用 | 授权名单内全部入组学生的入组时间（含从未使用者）与会话开始事件的时间 | `continuation` |
 | G1-3 考试对账 | 冻结的预测区间、预测依据（`exam_prediction.basis`）、实得分数 | `exam_report`（区间内外由洞察服务 `reconcile_plan` 判；中值一律用 `gate1_evidence/basis.py` 的 `predicted_median(basis, 满分)`，即依据里的得分率均值 × 满分、保留一位，不用其他来源的中值） |
-| G1-4 效度 | 测量时点以前的作答事实（洞察服务 `metrics.py` 的输入形状）与之后的结局 | `validity_pairs` 的同一计算 → `student_pairs`（按学生聚合）→ `validity_report` |
+| G1-4 效度 | 测量时点以前的作答、做题前探针、计划事件（plan_done / plan_skip）、会话开始事件与当前错因（洞察服务 `metrics.py` 的输入形状，全部 8 个静默指标）与之后的结局 | `validity_pairs` 的同一计算 → `student_pairs`（按学生聚合）→ `validity_report` |
 | 附加 分组误差 | 预测依据与实得 + **已签字的**非敏感分组键 | `fairness_report`（中值同样用 `predicted_median`） |
 
 口径说明（都待签字，见 `config.unsigned.json` 的注释）：

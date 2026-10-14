@@ -24,8 +24,9 @@ from insight.sie03_policy import synthetic_sie03
 from gate1_evidence import SYNTHETIC_NOTICE
 from gate1_evidence import reports as R
 from gate1_evidence.basis import BasisError, predicted_median
-from gate1_evidence.cohort import NODES, SIZE, WEEKS, Attempt, ExamRecord, Session, Student, generate
-from gate1_evidence.config import (CONFIG_PATH, UNSIGNED, ConfigError, ExamCfg, FairnessCfg, RetestCfg, ValidityCfg,
+from gate1_evidence.cohort import (NODES, OTHER_ERRORS, SIZE, WEEKS, Attempt, Cohort, ErrorEvent, ExamRecord, PlanEvent, Probe, Session,
+                                   Student, generate)
+from gate1_evidence.config import (CONFIG_PATH, UNSIGNED, VALIDITY_METRICS, ConfigError, ExamCfg, FairnessCfg, RetestCfg, ValidityCfg,
                                    load_config, parse_config)
 from gate1_evidence.evidence import DATA_FILES, NEEDS_HUMAN, VOLATILE_METADATA, PackRefused, build, render, write_pack
 
@@ -383,7 +384,8 @@ def test_exam_sample_threshold():
 # ---------- G1-4 ----------
 VCFG = ValidityCfg(measure_week=6, min_students=5, min_abs_r=0.3, min_metrics_passing=2,
                    metrics={"independent_solve_rate": ("week8_retest_accuracy", "positive"),
-                            "hint_dependency": ("week8_retest_accuracy", "negative")})
+                            "hint_dependency": ("week8_retest_accuracy", "negative")},
+                   counted=frozenset({"independent_solve_rate", "hint_dependency"}))
 
 
 def test_pearson():
@@ -467,7 +469,11 @@ def test_validity_pairs_reuse_insight_metric_functions(pack):
     ret = [r for r in pack.metric_rows if r["metric"] == "retention_rate"]
     assert ret and all(r["n"] == len(NODES[r["subject"]]) for r in ret)
     # 样本不足（低频学生）不成对
-    assert all(r["n"] >= policy.metrics.min_samples[r["metric"]] for r in pack.metric_rows)
+    ms = policy.metrics.min_samples
+    floor = {"plan_completion_rate": 1, "persistence": 1,
+             "reading_question_error_share": ms["reading_question_error_share_per_subject"] * ms["reading_question_error_share_subjects"]}
+    assert all(r["n"] >= floor.get(r["metric"], ms.get(r["metric"], 0)) for r in pack.metric_rows)
+    assert all(r["n"] >= ms["self_assessment_calibration"] for r in pack.metric_rows if r["metric"] == "self_assessment_calibration")
 
 
 def test_outcomes_use_week8_and_last_round(pack):
@@ -482,8 +488,256 @@ def test_outcomes_use_week8_and_last_round(pack):
     assert res[("week8_retest_accuracy", sid, "aya")] == sum(a.verdict == "correct" for a in xs) / len(xs)
 
 
+# ---------- G1-4 · SIE-05：全部 8 个静默指标 ----------
+NEW_METRICS = ("self_assessment_calibration", "plan_completion_rate", "reading_question_error_share", "persistence")
+METRICS_CSV = "label,student_id,subject,metric,value,n,outcome,outcome_value"
+
+
+def test_validity_covers_all_eight_silent_metrics(pack, files):
+    """效度检验覆盖洞察服务 metrics.py 的全部 8 个静默指标；新增四项的结果变量写在未签字配置里、逐项标“待签字”；metrics.csv 列不变"""
+    assert set(VALIDITY_METRICS) == set(M.METRIC_DEFS) == set(R.METRIC_CALCULATORS) and len(VALIDITY_METRICS) == 8
+    assert R.METRIC_CALCULATORS == {f.__name__: f for f in M.CALCULATORS}          # 直接用洞察服务的纯函数，不另写口径
+    assert tuple(pack.config.validity.metrics) == VALIDITY_METRICS
+    doc = _raw_config()["validity_g14"]["metrics"]
+    for k in NEW_METRICS:
+        assert "待签字" in doc[k]["$comment"] and doc[k]["outcome"] in ("week8_retest_accuracy", "last_exam_fraction")
+    assert [m["metric"] for m in pack.g14["metrics"]] == list(VALIDITY_METRICS)
+    assert {r["metric"] for r in pack.metric_rows} == set(VALIDITY_METRICS)        # 合成队列上每个指标都有配对
+    assert files["metrics.csv"].splitlines()[0] == METRICS_CSV
+    for k in NEW_METRICS:
+        rows = [r for r in pack.metric_rows if r["metric"] == k]
+        assert rows and all(r["subject"] == R.CROSS for r in rows)                  # 跨科指标每名学生一行
+        assert len({r["student_id"] for r in rows}) == len(rows)
+        assert f"| {k} |" in files["summary.md"]
+
+
+def test_cohort_has_middle_circle_raw_materials(pack):
+    """合成队列补齐原料：探针三种预判、计划完成与跳过（含先跳过后补做）、审题与其他错因、只浏览的会话；全部合成 ID"""
+    c = pack.cohort
+    ids = {s.student_id for s in c.students}
+    assert {p.fact.prediction for p in c.probes} == {"yes", "no", "unsure"}
+    assert {p.fact.verdict for p in c.probes} == {"correct", "incorrect"}
+    attempt_at = {(a.student_id, a.fact.occurred_at) for a in c.attempts if a.retest_round is None}
+    assert all((p.student_id, p.fact.asked_at + timedelta(seconds=30)) in attempt_at for p in c.probes)   # 探针都在作答之前
+    assert {p.fact.kind for p in c.plans} == {"plan_done", "plan_skip"}
+    by_task: dict[str, list] = {}
+    for p in c.plans:
+        by_task.setdefault(p.fact.plan_task_id, []).append(p.fact)
+    redo = [xs for xs in by_task.values() if len(xs) > 1]
+    assert redo and all([x.kind for x in sorted(xs, key=lambda x: x.occurred_at)] == ["plan_skip", "plan_done"] for xs in redo)
+    cats = {e.fact.cross_subject_category for e in c.errors}
+    assert "reading_the_question" in cats and cats - {"reading_the_question"} and cats <= {"reading_the_question", *OTHER_ERRORS}
+    practice_days = {(a.student_id, a.fact.occurred_at.date()) for a in c.attempts if a.retest_round is None}
+    assert any((s.student_id, s.occurred_at.date()) not in practice_days for s in c.sessions)              # 只浏览的会话
+    assert {p.student_id for p in c.probes} | {p.student_id for p in c.plans} | {e.student_id for e in c.errors} <= ids
+    assert all(UUID_RE.fullmatch(x.fact.fact_id) for x in (*c.probes, *c.plans, *c.errors))
+
+
+def test_raw_materials_are_in_digest():
+    sie = synthetic_sie03()
+    a = generate(sie.exam.interval, sie.exam.scales, sie.config_version, size=3)
+    from gate1_evidence.cohort import _digest
+    base = _digest(a.seed, a.students, a.sessions, a.attempts, a.exams, a.probes, a.plans, a.errors)
+    assert base == a.digest
+    assert _digest(a.seed, a.students, a.sessions, a.attempts, a.exams, a.probes[1:], a.plans, a.errors) != base
+    assert _digest(a.seed, a.students, a.sessions, a.attempts, a.exams, a.probes, a.plans[1:], a.errors) != base
+    assert _digest(a.seed, a.students, a.sessions, a.attempts, a.exams, a.probes, a.plans, a.errors[1:]) != base
+
+
+B = datetime(2027, 3, 1, 0, 0, tzinfo=CN)
+NOW6 = B + timedelta(days=42)          # 第 6 周末（measure_week = 6）
+# 小队列没有考试：新增四项一律对 8 周后复测（只为测配对与截断；真实配置的结局变量见 config.unsigned.json）
+VCFG8 = ValidityCfg(measure_week=6, min_students=3, min_abs_r=0.3, min_metrics_passing=2,
+                    metrics={k: ("week8_retest_accuracy", d) for k, (_o, d) in load_config().validity.metrics.items()},
+                    counted=load_config().validity.counted)
+
+
+def _week8(sid: str, subject: str, oks: list[bool]) -> list[Attempt]:
+    return [Attempt(sid, M.AttemptFact(_uid(f"w8{sid}{subject}{i}"), subject, f"{subject}-w8-{i}", B + timedelta(days=69, minutes=i), 0,
+                                       "delayed_retest", "correct" if ok else "incorrect", NODES[subject][0], "apply"), "week8")
+            for i, ok in enumerate(oks)]
+
+
+def _probes(sid: str, n: int, at_day: float = 10) -> list[Probe]:
+    """n 次探针：前一半说“能”且做对、后一半说“不能”且做错（Brier = 0）"""
+    return [Probe(sid, M.ProbeFact(_uid(f"pb{sid}{i}"), "aya", B + timedelta(days=at_day, minutes=i), "yes" if i < n // 2 else "no",
+                                   "correct" if i < n // 2 else "incorrect")) for i in range(n)]
+
+
+def _plan(sid: str, task: str, kind: str, day: float) -> PlanEvent:
+    return PlanEvent(sid, M.PlanFact(_uid(f"pl{sid}{task}{kind}{day}"), kind, _uid(f"task{sid}{task}"), B + timedelta(days=day)))
+
+
+def _errs(sid: str, subject: str, n: int, reading: int, day: float = 10) -> list[ErrorEvent]:
+    return [ErrorEvent(sid, B + timedelta(days=day, minutes=i), M.ErrorFact(_uid(f"er{sid}{subject}{day}{i}"), subject,
+                                                                           "reading_the_question" if i < reading else "thinking_method"))
+            for i in range(n)]
+
+
+def _mini(sid: str = "s1", *, probes=(), plans=(), errors=(), sessions=(), attempts=None) -> Cohort:
+    """一名合成学生的小队列：8 周后复测数学 0.5、道法 1.0（跨科结局均值 0.75）"""
+    attempts = list(attempts or []) + _week8(sid, "aya", [True, True, False, False]) + _week8(sid, "zhixing", [True] * 4)
+    return Cohort(0, B, 12, (Student("S1", sid, "a", 9, 120, B),), tuple(sessions), tuple(attempts), (), "test", "test",
+                  probes=tuple(probes), plans=tuple(plans), errors=tuple(errors))
+
+
+def _pairs(c: Cohort) -> dict[str, dict]:
+    return {r["metric"]: r for r in R.validity_pairs(c, synthetic_policy(), VCFG8)}
+
+
+def test_metric_inputs_cut_at_measure_time():
+    """原料按测量时点截断：之后的探针、计划、会话与错因都不进；会话开始与作答都算活跃"""
+    sess = [Session(_uid("ss1"), "s1", B + timedelta(days=3)), Session(_uid("ss2"), "s1", NOW6 + timedelta(days=1))]
+    c = _mini(probes=_probes("s1", 2) + _probes("s1", 2, at_day=43), plans=[_plan("s1", "t1", "plan_done", 1), _plan("s1", "t2", "plan_skip", 43)],
+              errors=_errs("s1", "aya", 2, 1) + _errs("s1", "aya", 3, 3, day=43), sessions=sess)
+    inp = R.metric_inputs(c, "s1", NOW6)
+    assert len(inp.probes) == 2 and len(inp.plans) == 1 and len(inp.errors) == 2
+    assert [a.fact_id for a in inp.activity] == [_uid("ss1")]            # 8 周后复测在测量时点之后，不算
+    assert inp.attempts == ()
+    assert R.metric_inputs(c, "other", NOW6) == M.MetricInputs()
+
+
+def test_new_metrics_pair_with_cross_subject_outcome():
+    """正例：四个跨科指标都出值，结局取各科均值（0.5 与 1.0 → 0.75），学科位为 CROSS"""
+    sess = [Session(_uid(f"ss{d}"), "s1", B + timedelta(days=d, hours=19)) for d in range(0, 42)]
+    plans = [_plan("s1", "t1", "plan_done", 1), _plan("s1", "t2", "plan_skip", 2), _plan("s1", "t2", "plan_done", 3),
+             _plan("s1", "t3", "plan_skip", 20)]
+    c = _mini(probes=_probes("s1", 20), plans=plans, errors=_errs("s1", "aya", 5, 3) + _errs("s1", "zhixing", 5, 1), sessions=sess)
+    got = _pairs(c)
+    assert set(got) == set(NEW_METRICS)
+    assert all(r["subject"] == R.CROSS and r["outcome_value"] == 0.75 for r in got.values())
+    assert got["self_assessment_calibration"]["value"] == 0.0 and got["self_assessment_calibration"]["n"] == 20
+    assert got["plan_completion_rate"]["value"] == round(2 / 3, 4) and got["plan_completion_rate"]["n"] == 3   # 先跳过后补做按完成计
+    assert got["reading_question_error_share"]["value"] == 0.4 and got["reading_question_error_share"]["n"] == 10
+    assert got["persistence"]["value"] == 6.75        # 近 4 周（第 15–42 天，测量当天 0 点以前）活跃 27 天 ÷ 4 周
+    # 结局变量取配置：未签字配置里自评校准、审题类错因占比对最后一轮考试（小队列没有考试 → 不成对），计划完成率、持续性对 8 周后复测
+    cfg = dataclasses.replace(VCFG8, metrics=dict(load_config().validity.metrics))
+    rows = R.validity_pairs(c, synthetic_policy(), cfg)
+    assert {r["metric"]: r["outcome"] for r in rows} == {"plan_completion_rate": "week8_retest_accuracy",
+                                                         "persistence": "week8_retest_accuracy"}
+
+
+def test_new_metrics_insufficient_samples_do_not_pair():
+    """反例：探针 19 次（< 20）、计划不足两周、只有一科错因够 5 条、活跃不足 4 周 → 洞察服务纯函数不出结果，不成对"""
+    sess = [Session(_uid(f"ss{d}"), "s1", B + timedelta(days=d, hours=19)) for d in range(20, 42)]
+    c = _mini(probes=_probes("s1", 19), plans=[_plan("s1", "t1", "plan_done", 30), _plan("s1", "t2", "plan_skip", 31)],
+              errors=_errs("s1", "aya", 5, 3) + _errs("s1", "zhixing", 4, 1), sessions=sess)
+    assert _pairs(c) == {}
+    # 测量时点之后的错因不会把样本凑够
+    late = _mini(errors=_errs("s1", "aya", 5, 3) + _errs("s1", "zhixing", 4, 1) + _errs("s1", "zhixing", 3, 0, day=43))
+    assert "reading_question_error_share" not in _pairs(late)
+
+
+def test_outcome_of_cross_subject_mean():
+    res = {("week8_retest_accuracy", "s1", "aya"): 0.5, ("week8_retest_accuracy", "s1", "zhixing"): 1.0,
+           ("last_exam_fraction", "s1", "aya"): 0.2, ("week8_retest_accuracy", "s2", "aya"): 0.1}
+    assert R.outcome_of(res, "week8_retest_accuracy", "s1", R.CROSS) == 0.75
+    assert R.outcome_of(res, "week8_retest_accuracy", "s1", "aya") == 0.5
+    assert R.outcome_of(res, "last_exam_fraction", "s1", R.CROSS) == 0.2
+    assert R.outcome_of(res, "last_exam_fraction", "s2", R.CROSS) is None
+
+
+@pytest.mark.parametrize("key, expected", [("self_assessment_calibration", "negative"), ("plan_completion_rate", "positive"),
+                                           ("reading_question_error_share", "negative"), ("persistence", "positive")])
+def test_new_metrics_validity_direction_and_insufficient(key, expected):
+    """新增指标的正反例：方向一致且 |r| 够 → 达到；方向反了 → 未达到；学生数不足 → 样本不足（不报通过）"""
+    cfg = ValidityCfg(measure_week=6, min_students=5, min_abs_r=0.3, min_metrics_passing=1, metrics={key: ("last_exam_fraction", expected)},
+                      counted=frozenset({key}))
+    good, bad = (UP, DOWN) if expected == "positive" else (DOWN, UP)
+    rep = R.validity_report({key: good}, cfg)
+    assert rep["metrics"][0]["result"] == R.MEETS and rep["result"] == R.MEETS
+    rep = R.validity_report({key: bad}, cfg)
+    assert rep["metrics"][0]["result"] == R.BELOW and rep["result"] == R.BELOW
+    rep = R.validity_report({key: good[:4]}, cfg)
+    assert rep["metrics"][0]["result"] == R.INSUFFICIENT and "r" not in rep["metrics"][0] and rep["result"] == R.INSUFFICIENT
+
+
+ORIGINAL4 = ("independent_solve_rate", "hint_dependency", "transfer_gap", "retention_rate")
+
+
+def test_gate_counts_only_metrics_marked_counts_toward_gate():
+    """Gate 1 只数 counts_toward_gate = true 的指标：观察用的四项全部达到、计入的四项都未达到 → 通过数 0、未达到"""
+    cfg = load_config().validity
+    assert cfg.counted == frozenset(ORIGINAL4)
+    doc = _raw_config()["validity_g14"]["metrics"]
+    assert all(doc[k]["counts_toward_gate"] is True for k in ORIGINAL4)
+    assert all(doc[k]["counts_toward_gate"] is False and "由人定" in doc[k]["$comment"] and "观察用" in doc[k]["$comment"]
+               for k in NEW_METRICS)
+    small = dataclasses.replace(cfg, min_students=5)
+    pairs = {**{k: (DOWN if cfg.metrics[k][1] == "positive" else UP) for k in ORIGINAL4},
+             **{k: (UP if cfg.metrics[k][1] == "positive" else DOWN) for k in NEW_METRICS}}
+    rep = R.validity_report(pairs, small)
+    assert [m["counts_toward_gate"] for m in rep["metrics"]] == [k in ORIGINAL4 for k in VALIDITY_METRICS]
+    assert all(m["result"] == R.MEETS for m in rep["metrics"] if m["metric"] in NEW_METRICS)        # 观察用的照常算 r
+    assert rep["passing"] == 0 and rep["observational_meeting"] == 4 and rep["result"] == R.BELOW
+    # 观察用的样本不足也不能让结果变成“样本不足”
+    rep = R.validity_report({k: v for k, v in pairs.items() if k in ORIGINAL4}, small)
+    assert rep["result"] == R.BELOW
+    # 计入的两项达到 → 达到
+    good = {**pairs, "independent_solve_rate": UP if cfg.metrics["independent_solve_rate"][1] == "positive" else DOWN,
+            "retention_rate": UP if cfg.metrics["retention_rate"][1] == "positive" else DOWN}
+    rep = R.validity_report(good, small)
+    assert rep["passing"] == 2 and rep["result"] == R.MEETS
+
+
+def test_config_requires_counts_toward_gate():
+    for k in ("persistence", "independent_solve_rate"):
+        doc = _raw_config()
+        del doc["validity_g14"]["metrics"][k]["counts_toward_gate"]
+        with pytest.raises(ConfigError):
+            parse_config(doc)
+    for bad in ("false", 0, 1, None):
+        doc = _raw_config()
+        doc["validity_g14"]["metrics"]["persistence"]["counts_toward_gate"] = bad
+        with pytest.raises(ConfigError):
+            parse_config(doc)
+    doc = _raw_config()
+    doc["validity_g14"]["metrics"]["persistence"]["counts_toward_gate"] = True
+    assert "persistence" in parse_config(doc).validity.counted and parse_config(doc).fingerprint != load_config().fingerprint
+
+
+def test_summary_marks_observational_substitutes_and_generator_caveats(pack, files):
+    md = files["summary.md"]
+    sec = md.split("## G1-4", 1)[1].split("## 附加", 1)[0]
+    for k in VALIDITY_METRICS:
+        row = next(ln for ln in sec.splitlines() if ln.startswith(f"| {k} |"))
+        assert row.endswith("| 观察用，不计入 |") == (k in NEW_METRICS) and row.endswith("| 计入 |") == (k in ORIGINAL4)
+        note = next(ln for ln in sec.splitlines() if ln.startswith(f"- {k}："))
+        assert ("结局为替代口径（字典原文：" in note) == (k != "independent_solve_rate")
+    assert "审题类错因占比随学生基础 θ" in sec and "计划完成倾向随每周增量 gain" in sec and "不得当作效度证据" in sec
+    assert "persistence 只用周活跃天数" in sec
+    assert f"计入 Gate 1 的指标中对照未签字阈值通过：{pack.g14['passing']}" in sec
+    assert pack.g14["passing"] == sum(1 for m in pack.g14["metrics"] if m["counts_toward_gate"] and m["result"] == R.MEETS)
+
+
+def test_config_rejects_bad_new_metric_entries():
+    doc = _raw_config()
+    doc["validity_g14"]["metrics"]["persistence"]["outcome"] = "self_reported_effort"     # 不在既有结局口径里
+    with pytest.raises(ConfigError):
+        parse_config(doc)
+    doc = _raw_config()
+    doc["validity_g14"]["metrics"]["plan_completion_rate"]["direction"] = "up"
+    with pytest.raises(ConfigError):
+        parse_config(doc)
+    doc = _raw_config()
+    doc["validity_g14"]["metrics"]["self_initiated_sessions"] = {"outcome": "last_exam_fraction", "direction": "positive"}  # 未实现的指标
+    with pytest.raises(ConfigError):
+        parse_config(doc)
+
+
+def test_summary_reports_insufficient_sample_for_metric(pack):
+    """样本不足的指标在摘要里写“样本不足”，不写“达到”"""
+    from gate1_evidence.evidence import render as _render
+    cfg = dataclasses.replace(pack.config, validity=dataclasses.replace(pack.config.validity, min_students=1000))
+    p = dataclasses.replace(pack, config=cfg, g14=R.validity_report(R.student_pairs(pack.metric_rows), cfg.validity))
+    md = _render(p, {"commit": "test", "worktree_dirty": False})["summary.md"]
+    for k in VALIDITY_METRICS:
+        line = next(ln for ln in md.splitlines() if ln.startswith(f"| {k} |"))
+        assert "样本不足" in line and "达到未签字阈值" not in line
+
+
 # ---------- 附加：分组误差差异 ----------
-FCFG = FairnessCfg(group_keys=("wave",), min_records_per_group=3, min_students_per_group=3, max_mae_gap=0.05, max_bias_gap=0.05)
+FCFG =FairnessCfg(group_keys=("wave",), min_records_per_group=3, min_students_per_group=3, max_mae_gap=0.05, max_bias_gap=0.05)
 
 
 def _fair(errors_a: list[float], errors_b: list[float]):

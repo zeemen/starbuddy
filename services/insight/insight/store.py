@@ -335,14 +335,16 @@ class InsightStore:
         return out
 
     async def recompute_metrics(self, student: str, policy: Policy, forbidden: Forbidden,
-                                tags: Mapping[tuple[str, str], tuple[str, str]] | None = None) -> tuple[list[MetricResult], SyncResult]:
+                                tags: Mapping[tuple[str, str], tuple[str, str]] | None = None,
+                                skip: Sequence[str] = ()) -> tuple[list[MetricResult], SyncResult]:
         """中圈指标：读事实 → 计算 → 写 visibility = {agent} 的 metric 判断（一个事务）。
-        tags：(学科, 题目 ID) → (节点 ID, 认知层次)；洞察服务暂无 kge.item_tag 读权限（lessons 待人确认），由调用方注入"""
+        tags：(学科, 题目 ID) → (节点 ID, 认知层次)；洞察服务暂无 kge.item_tag 读权限（lessons 待人确认），由调用方注入。
+        skip：本次不算的指标（metrics.METRIC_NAMES 里的名字；被跳过的指标已有判断不动、照常到期）"""
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 now = await self._lock(conn, student)
                 inputs = await load_metric_inputs(conn, student, now, tags)
-                results = compute_metrics(inputs, policy, now, forbidden)
+                results = compute_metrics(inputs, policy, now, forbidden, skip)
                 templates, missing = await self._templates(conn, policy, ("metric",))
                 existing = await self._live(conn, student, [policy.templates["metric"].key])
                 ops = plan_metric_claims(existing, results, policy, now, templates.get("metric"), student)

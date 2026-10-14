@@ -39,8 +39,9 @@ async def sync_mastery_from_db(store: InsightStore, student: str, policy: Policy
     return await store.sync_mastery_claims(student, rows, policy)
 
 
-async def recompute_metrics(store: InsightStore, student: str, policy: Policy, forbidden: Forbidden | None = None):
-    return await store.recompute_metrics(student, policy, forbidden or forbidden_matcher())
+async def recompute_metrics(store: InsightStore, student: str, policy: Policy, forbidden: Forbidden | None = None,
+                            skip: Sequence[str] = ()):
+    return await store.recompute_metrics(student, policy, forbidden or forbidden_matcher(), skip=skip)
 
 
 async def sweep(store: InsightStore, limit: int = 1000) -> int:

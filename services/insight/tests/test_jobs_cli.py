@@ -64,6 +64,24 @@ def test_env_and_arguments_checked(monkeypatch, capsys):
         jobs_cli.main(["sync"])  # --student 与 --all 必须给一个（argparse）
     with pytest.raises(SystemExit):
         jobs_cli.main(["sync", "--all", "--student", S1])
+    with pytest.raises(SystemExit):
+        jobs_cli.main(["sync", "--all", "--skip", "persistence"])   # --skip 只属于 metrics
+
+
+def test_metrics_skip_unknown_name_refused_before_connect(monkeypatch, capsys):
+    """--skip 只收 metrics.py CALCULATORS 里的名字；其他名字退出码 2，不连库"""
+    monkeypatch.setenv("INSIGHT_ENV", "test")
+    monkeypatch.setenv("INSIGHT_DATABASE_URL", "postgresql://u@localhost/x")
+
+    async def never(*_a, **_k):
+        raise AssertionError("不应连库")
+    import insight.store
+    monkeypatch.setattr(insight.store, "create_pool", never)
+    for bad in (["--skip", "self_initiated_sessions"], ["--skip", "persistence", "--skip", "Persistence"], ["--skip", ""]):
+        assert jobs_cli.main(["metrics", "--all", *bad]) == 2
+    assert "--skip 只接受" in capsys.readouterr().err
+    assert jobs_cli._skip(["persistence", "persistence"]) == ("persistence",)
+    assert jobs_cli._skip(None) == ()
 
 
 @pytest.mark.anyio
@@ -98,7 +116,12 @@ def test_jobs_run_on_local_db(insightdb):
         p = _run("metrics", "--student", S3, env=env)
         assert p.returncode == 0, p.stderr
         m = json.loads(p.stdout)
-        assert m["job"] == "metrics" and m["students"] == 1 and m["metric_results"] >= 1
+        assert m["job"] == "metrics" and m["students"] == 1 and m["metric_results"] >= 1 and m["skipped_metrics"] == []
+        # --skip persistence：学习持续性不算，其余照算
+        p = _run("metrics", "--student", S3, "--skip", "persistence", env=env)
+        assert p.returncode == 0, p.stderr
+        sk = json.loads(p.stdout)
+        assert sk["skipped_metrics"] == ["persistence"] and sk["metric_results"] == m["metric_results"] - 1
         # 输出只有计数：不含任何学生、判断或证据 ID
         for args in (("sync", "--student", S1), ("metrics", "--student", S3), ("sweep",)):
             q = _run(*args, env=env)

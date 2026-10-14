@@ -282,12 +282,23 @@ CALCULATORS = (independent_solve_rate, hint_dependency, transfer_gap, self_asses
                plan_completion_rate, reading_question_error_share, persistence)
 
 
-def compute_metrics(inp: MetricInputs, policy: Policy, now: datetime, forbidden: Forbidden) -> list[MetricResult]:
+METRIC_NAMES = tuple(calc.__name__ for calc in CALCULATORS)
+
+
+def compute_metrics(inp: MetricInputs, policy: Policy, now: datetime, forbidden: Forbidden,
+                    skip: Iterable[str] = ()) -> list[MetricResult]:
+    """skip：本次不算的指标（SIE-05：定时作业暂不重算学习持续性）。只收 METRIC_NAMES 里的名字；
+    被跳过的指标没有结果，已有判断按“样本不足”同样处理（不新建、不改，照常到期）。口径不变"""
     if now.tzinfo is None:
         raise InputError("now must be timezone-aware")
+    skipped = frozenset(skip)
+    if not skipped <= set(METRIC_NAMES):
+        raise InputError("unknown metric in skip")
     check_definitions(forbidden)
     out: list[MetricResult] = []
     for calc in CALCULATORS:
+        if calc.__name__ in skipped:
+            continue
         out.extend(calc(inp, policy, now))
     return sorted(out, key=lambda r: (r.key, r.subject or "", r.qualifier or ""))
 

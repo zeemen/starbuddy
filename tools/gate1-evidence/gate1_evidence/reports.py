@@ -2,7 +2,8 @@
 
 - G1-2 retest_report：首轮 vs 8 周后复测正确率（逐学生配对）与 8 周续用率；
 - G1-3 exam_report：每轮考试 80% 区间覆盖率、中值 MAE、轮间对比；区间内外直接调用洞察服务的 reconcile_plan（insight/predict.py）；
-- G1-4 validity_report：中圈指标值与结局的相关与方向；指标值由 validity_pairs 调洞察服务 metrics.py 的纯函数计算；
+- G1-4 validity_report：中圈指标值与结局的相关与方向；指标值由 validity_pairs 调洞察服务 metrics.py 的纯函数计算，
+  覆盖全部 8 个静默指标（SIE-05）；原料按测量时点截断（metric_inputs）；
 - 附加 fairness_report：分组误差差异，分组只用合成的非敏感分组键（规则 12）。
 结果只有三种：insufficient_sample / meets_unsigned_threshold / below_unsigned_threshold——对照的是未签字配置，
 不是 Gate 1 判定（Gate 1 判定一律由人做）。
@@ -155,17 +156,39 @@ def exam_report(records: Sequence[ExamRecord], z: float, cfg: ExamCfg) -> dict[s
 
 
 # ---------- G1-4 ----------
-def _metric_values(facts: Sequence[M.AttemptFact], policy: Policy, now: datetime) -> dict[tuple[str, str], tuple[float, int]]:
-    """(指标, 学科) → (值, 样本数)。独立解题率按认知层次分开算，这里按样本数加权合并到学科"""
-    calcs: dict[str, Callable[..., list[M.MetricResult]]] = {
-        "independent_solve_rate": M.independent_solve_rate, "hint_dependency": M.hint_dependency,
-        "transfer_gap": M.transfer_gap, "retention_rate": M.retention_rate}
-    inp = M.MetricInputs(attempts=tuple(a for a in facts if a.occurred_at <= now))  # 只用测量时点以前的作答（不泄漏结局）
+CROSS = ""   # 跨科指标（自评校准、计划完成率、审题类错因占比、学习持续性）的学科位
+
+
+def metric_inputs(cohort: Cohort, student_id: str, now: datetime) -> M.MetricInputs:
+    """该学生测量时点（含）以前的全部原料，形状同洞察服务 store.load_metric_inputs：作答、探针、计划事件、
+    活跃（会话开始 + 作答）、当前错因。只用测量时点以前的数据（不泄漏结局）。
+    与 store.load_metric_inputs 的差异：
+    - 没有 180 天回看下界（LOOKBACK_DAYS）：合成队列只有 12 周，下界不起作用；真实试点数据跨度更长时要补上；
+    - 错因按写入时间截断到测量时点（ErrorFact 不带时间；库上读取只限下界、不限上界，因为线上 now 就是当前时刻），
+      这里防止把测量时点之后的错因泄漏进指标。"""
+    attempts = tuple(a.fact for a in cohort.attempts if a.student_id == student_id and a.fact.occurred_at <= now)
+    probes = tuple(p.fact for p in cohort.probes if p.student_id == student_id and p.fact.asked_at <= now)
+    plans = tuple(p.fact for p in cohort.plans if p.student_id == student_id and p.fact.occurred_at <= now)
+    activity = tuple(M.ActivityFact(s.fact_id, s.occurred_at) for s in cohort.sessions
+                     if s.student_id == student_id and s.occurred_at <= now)
+    activity += tuple(M.ActivityFact(a.fact_id, a.occurred_at) for a in attempts)
+    errors = tuple(e.fact for e in cohort.errors if e.student_id == student_id and e.created_at <= now)
+    return M.MetricInputs(attempts, probes, plans, activity, errors)
+
+
+# 直接从洞察服务 metrics.py 的 CALCULATORS 派生（不另列一份，避免漂移）；与配置的指标集合 VALIDITY_METRICS 必须一致
+# （tests/test_gate1.py 断言集合相等）
+METRIC_CALCULATORS: dict[str, Callable[..., list[M.MetricResult]]] = {calc.__name__: calc for calc in M.CALCULATORS}
+
+
+def _metric_values(inp: M.MetricInputs, policy: Policy, now: datetime) -> dict[tuple[str, str], tuple[float, int]]:
+    """(指标, 学科) → (值, 样本数)；跨科指标的学科位是 CROSS。独立解题率按认知层次分开算，这里按样本数加权合并到学科。
+    样本不足的指标洞察服务纯函数不出结果，这里也就没有值（不成对）"""
     out: dict[tuple[str, str], tuple[float, int]] = {}
-    for key, calc in calcs.items():
+    for key, calc in METRIC_CALCULATORS.items():
         acc: dict[str, list[tuple[float, int]]] = {}
         for res in calc(inp, policy, now):
-            acc.setdefault(res.subject or "", []).append((float(res.value["v"]), res.n))
+            acc.setdefault(res.subject or CROSS, []).append((float(res.value["v"]), res.n))
         for subject, vs in acc.items():
             n = sum(k for _, k in vs)
             out[(key, subject)] = (sum(v * k for v, k in vs) / n, n)
@@ -189,18 +212,27 @@ def outcomes(cohort: Cohort) -> dict[tuple[str, str, str], float]:
     return out
 
 
+def outcome_of(res: Mapping[tuple[str, str, str], float], outcome: str, student_id: str, subject: str) -> float | None:
+    """单科指标取同一学科的结局；跨科指标（学科位 CROSS）取该学生各科结局的均值（按学科排序后求均值）"""
+    if subject != CROSS:
+        return res.get((outcome, student_id, subject))
+    ys = [v for (o, s, _subj), v in sorted(res.items()) if o == outcome and s == student_id]
+    return _mean(ys) if ys else None
+
+
 def validity_pairs(cohort: Cohort, policy: Policy, cfg: ValidityCfg) -> list[dict[str, Any]]:
-    """逐学生 × 学科：第 measure_week 周末的指标值（洞察服务纯函数）与之后的结局。指标样本不足或没有结局的不成对"""
+    """逐学生 × 学科（跨科指标每名学生一行）：第 measure_week 周末的指标值（洞察服务纯函数）与之后的结局。
+    指标样本不足或没有结局的不成对"""
     now = cohort.base + timedelta(days=7 * cfg.measure_week)
     res = outcomes(cohort)
     rows = []
     for st in cohort.students:
-        values = _metric_values(cohort.facts_of(st.student_id), policy, now)
+        values = _metric_values(metric_inputs(cohort, st.student_id, now), policy, now)
         for (key, subject), (v, n) in sorted(values.items()):
             if key not in cfg.metrics:
                 continue
             outcome = cfg.metrics[key][0]
-            y = res.get((outcome, st.student_id, subject))
+            y = outcome_of(res, outcome, st.student_id, subject)
             if y is None:
                 continue
             rows.append({"label": st.label, "student_id": st.student_id, "subject": subject, "metric": key, "value": _r(v),
@@ -221,7 +253,8 @@ def validity_report(pairs: Mapping[str, Sequence[tuple[float, float]]], cfg: Val
     items = []
     for key, (outcome, expected) in cfg.metrics.items():
         xs = pairs.get(key, ())
-        row: dict[str, Any] = {"metric": key, "outcome": outcome, "expected_direction": expected, "students": len(xs)}
+        row: dict[str, Any] = {"metric": key, "outcome": outcome, "expected_direction": expected, "students": len(xs),
+                               "counts_toward_gate": key in cfg.counted}
         if len(xs) < cfg.min_students:
             items.append({**row, "result": INSUFFICIENT})
             continue
@@ -232,12 +265,15 @@ def validity_report(pairs: Mapping[str, Sequence[tuple[float, float]]], cfg: Val
         observed = "positive" if r > 0 else "negative" if r < 0 else "none"
         ok = observed == expected and abs(r) >= cfg.min_abs_r
         items.append({**row, "r": _r(r), "observed_direction": observed, "result": MEETS if ok else BELOW})
-    passing = sum(1 for i in items if i["result"] == MEETS)
-    pending = sum(1 for i in items if i["result"] == INSUFFICIENT)
+    # 只数 counts_toward_gate = true 的指标；观察用的照常列出 r 与结果，不计入
+    counted = [i for i in items if i["counts_toward_gate"]]
+    passing = sum(1 for i in counted if i["result"] == MEETS)
+    pending = sum(1 for i in counted if i["result"] == INSUFFICIENT)
     result = MEETS if passing >= cfg.min_metrics_passing else INSUFFICIENT if passing + pending >= cfg.min_metrics_passing else BELOW
     return {"method": "pearson", "aggregation": "per_student_mean", "min_students": cfg.min_students, "min_abs_r": cfg.min_abs_r,
             "min_metrics_passing": cfg.min_metrics_passing, "measure_week": cfg.measure_week,
-            "metrics": items, "passing": passing, "result": result}
+            "metrics": items, "passing": passing,
+            "observational_meeting": sum(1 for i in items if not i["counts_toward_gate"] and i["result"] == MEETS), "result": result}
 
 
 # ---------- 附加：分组误差差异 ----------

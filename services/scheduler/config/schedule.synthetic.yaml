@@ -52,6 +52,17 @@ jobs:
     schedule: daily 02:30
     identity: scheduler
     args: [spot-check, --subject, aya, --subject, zhixing, --subject, wenli, --ratio, "0.1", --lookback-hours, "26"]
+  metrics:
+    $comment: >-
+      中圈指标静默重算（insight.jobs metrics --all → jobs.recompute_metrics；SIE-05，specs/sie05-silent-metrics）：结果只写
+      visibility = {agent} 的指标判断，状态只到“假设”；--all 取有当前节点键掌握行的学生，所以排在 02:30 掌握对账之后。
+      频率每日一次、03:20 为默认值，待人确认（spec 待人确认 #1）。
+      --skip persistence：定时作业暂不重算学习持续性（它用会话时间戳计活跃日，与迁移 0025“时间戳只用于降负触发、不做作息分析”
+      的关系待人确认，spec 待人确认 #3）；已有的持续性判断不动、照常到期。
+    schedule: daily 03:20
+    identity: insight
+    args: [metrics, --all, --skip, persistence]
+    env: [INSIGHT_POLICY]
   weekly:
     $comment: >-
       上一周的家长周报与学生成长手记（insight.jobs weekly → jobs.weekly_reports）；周报配置未签字时 test 以外不生成。

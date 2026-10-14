@@ -63,6 +63,9 @@ async def test_metrics_match_hand_calculation(insightdb):
         # 再算一次：没有写入
         _, again = await store.recompute_metrics(S3, P, forbidden_matcher(), TAGS)
         assert again.ops == ()
+        # skip（SIE-05）：被跳过的指标没有结果，已有判断不动
+        res_skip, sync_skip = await store.recompute_metrics(S3, P, forbidden_matcher(), TAGS, skip=("persistence",))
+        assert {r.key for r in res_skip} == {r.key for r in results} - {"persistence"} and sync_skip.ops == ()
         # 没有题目打标（洞察服务暂无 kge.item_tag 读权限）：依赖节点与认知层次的两个指标不出结果、已有判断不动
         res_no_tags, sync2 = await store.recompute_metrics(S3, P, forbidden_matcher())
         assert {r.key for r in res_no_tags} == {"hint_dependency", "self_assessment_calibration", "retention_rate",

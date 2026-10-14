@@ -314,7 +314,7 @@ async def test_dry_run_does_not_lock_or_spawn():
 
 
 def test_lock_key_derived_from_name():
-    keys = {n: lock_key(n) for n in ("meter-expire", "meter-renew", "erasures", "freeze", "sweep", "mastery-sweep", "weekly")}
+    keys = {n: lock_key(n) for n in ("meter-expire", "meter-renew", "erasures", "freeze", "sweep", "mastery-sweep", "weekly", "metrics")}
     assert len(set(keys.values())) == len(keys)
     assert all(-(1 << 63) <= k < (1 << 63) for k in keys.values()) and lock_key("sweep") == keys["sweep"]
 
@@ -435,12 +435,14 @@ def test_cli_dry_run_lists_plan_without_values(capsys):
     rc, out, err = _cli(["--dry-run"], FULL_ENV, capsys)
     assert rc == 0, err
     plans = [json.loads(ln) for ln in out.splitlines()]
-    assert len(plans) == 9 and all(p["event"] == "plan" and len(p["next"]) == 3 for p in plans)
+    assert len(plans) == 10 and all(p["event"] == "plan" and len(p["next"]) == 3 for p in plans)
     for v in ("/tmp", "localhost", "127.0.0.1", "/synthetic/", "synthetic", "/opt/evil"):
         assert v not in out
     by = {p["job"]: p for p in plans}
     assert by["mastery-sweep"]["env"] == sorted(set(BASE_ENV) | {"LEARNING_ENV", "LEARNING_DATABASE_URL", "LEARNING_MASTERY_CONFIG_AYA"})
     assert by["weekly"]["next"][0].endswith("03:00:00+08:00")
+    assert by["metrics"]["next"][0].endswith("03:20:00+08:00")
+    assert by["metrics"]["env"] == sorted(set(BASE_ENV) | {"INSIGHT_ENV", "INSIGHT_DATABASE_URL", "INSIGHT_POLICY"})
 
 
 def test_cli_bad_schedule_file(tmp_path, capsys):

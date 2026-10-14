@@ -73,8 +73,53 @@ MUTATIONS: dict[str, list[tuple[str, str, str]]] = {
     "相关公式不开方": [(RP, "/ math.sqrt(sxx * syy)", "/ (sxx * syy)")],
     "效度样本不足当作未达到": [(RP, "INSUFFICIENT if passing + pending >= cfg.min_metrics_passing else BELOW", "BELOW")],
     "一项通过就算": [(RP, "result = MEETS if passing >= cfg.min_metrics_passing", "result = MEETS if passing >= 1")],
-    "指标用到测量时点之后的作答（泄漏结局）": [(RP, "for res in calc(inp, policy, now):", "for res in calc(M.MetricInputs(attempts=tuple(facts)), "
-                                                                               "policy, now + timedelta(days=60)):")],
+    "指标用到测量时点之后的作答（泄漏结局）": [(RP, "values = _metric_values(metric_inputs(cohort, st.student_id, now), policy, now)",
+                                       "values = _metric_values(metric_inputs(cohort, st.student_id, cohort.horizon_end), policy, "
+                                       "cohort.horizon_end)")],
+    # G1-4 · SIE-05：全部 8 个静默指标与原料
+    "效度漏掉学习持续性": [(RP, "{calc.__name__: calc for calc in M.CALCULATORS}",
+                          "{calc.__name__: calc for calc in M.CALCULATORS if calc.__name__ != \"persistence\"}")],
+    "效度漏掉自评校准": [(RP, "{calc.__name__: calc for calc in M.CALCULATORS}",
+                        "{calc.__name__: calc for calc in M.CALCULATORS if calc.__name__ != \"self_assessment_calibration\"}")],
+    "计划完成率换成自写口径（不按任务去重）": [(RP, "{calc.__name__: calc for calc in M.CALCULATORS}",
+                                       '{**{calc.__name__: calc for calc in M.CALCULATORS}, "plan_completion_rate": lambda i, p, n: '
+                                       '[M.MetricResult("plan_completion_rate", None, None, '
+                                       '{"v": sum(x.kind == "plan_done" for x in i.plans) / len(i.plans)}, len(i.plans), 1, ()) ] '
+                                       'if i.plans and min(x.occurred_at for x in i.plans) <= n - timedelta(days=14) else []}')],
+    # 审查阻断：Gate 1 只数 counts_toward_gate = true 的指标
+    "观察类指标被计入 Gate 1": [(RP, '    counted = [i for i in items if i["counts_toward_gate"]]', "    counted = items")],
+    "观察类样本不足也算待定": [(RP, 'pending = sum(1 for i in counted if i["result"] == INSUFFICIENT)',
+                            'pending = sum(1 for i in items if i["result"] == INSUFFICIENT)')],
+    "报表不标是否计入": [(RP, '"counts_toward_gate": key in cfg.counted}', '"counts_toward_gate": True}')],
+    "counts_toward_gate 不必是布尔": [(CF, '_need(isinstance(m["counts_toward_gate"], bool)', "_need(True")],
+    "counts_toward_gate 可缺省（缺省计入）": [
+        (CF, '_keys(m, {"outcome", "direction", "counts_toward_gate"}, f"validity_g14.metrics.{k}")',
+             '_keys(m, {"outcome", "direction"} | ({"counts_toward_gate"} & set(m)), f"validity_g14.metrics.{k}")'),
+        (CF, '_need(isinstance(m["counts_toward_gate"], bool)', '_need(isinstance(m.get("counts_toward_gate", True), bool)'),
+        (CF, '        if m["counts_toward_gate"]:', '        if m.get("counts_toward_gate", True):')],
+    "摘要观察用也写“计入”": [(EV, "{'计入' if m['counts_toward_gate'] else NOT_COUNTED}", "计入")],
+    "摘要不标替代口径": [(EV, 'f"结局为替代口径（字典原文：{original}）" if substitute', 'f"结局与字典原文一致（字典原文：{original}）" if substitute')],
+    "摘要不写生成器预设的相关": [(EV, '    lines += ["", *GENERATOR_CAVEATS, "",', '    lines += ["", "",')],
+    "错因不按测量时点截断": [(RP, "errors = tuple(e.fact for e in cohort.errors if e.student_id == student_id and e.created_at <= now)",
+                          "errors = tuple(e.fact for e in cohort.errors if e.student_id == student_id)")],
+    "会话事件不进活跃": [(RP, "    activity = tuple(M.ActivityFact(s.fact_id, s.occurred_at) for s in cohort.sessions\n"
+                              "                     if s.student_id == student_id and s.occurred_at <= now)\n"
+                              "    activity += tuple(", "    activity = tuple(")],
+    "探针不分学生": [(RP, "probes = tuple(p.fact for p in cohort.probes if p.student_id == student_id and p.fact.asked_at <= now)",
+                     "probes = tuple(p.fact for p in cohort.probes if p.fact.asked_at <= now)")],
+    "计划事件不分学生": [(RP, "plans = tuple(p.fact for p in cohort.plans if p.student_id == student_id and p.fact.occurred_at <= now)",
+                       "plans = tuple(p.fact for p in cohort.plans if p.fact.occurred_at <= now)")],
+    "跨科指标结局只取一科": [(RP, "    return _mean(ys) if ys else None", "    return ys[0] if ys else None")],
+    "跨科指标结局当作单科查（不成对）": [(RP, "    if subject != CROSS:\n", "    if True:\n")],
+    "新增指标的结局可以随便写": [(CF, "_need(m[\"outcome\"] in OUTCOMES and m[\"direction\"] in DIRECTIONS,",
+                              "_need(m[\"direction\"] in DIRECTIONS,")],
+    "配置可以写未实现的指标": [(CF, "set(v[\"metrics\"]) <= set(VALIDITY_METRICS)", "True")],
+    "合成队列没有补做的计划任务": [(CO, "if not done and r.random() < REDO_RATE:", "if False:")],
+    "合成队列没有审题类错因": [(CO, "cat = READING if xr.random() < habits.reading else xr.choice(OTHER_ERRORS)",
+                            "cat = xr.choice(OTHER_ERRORS)")],
+    "合成队列探针都说“能”": [(CO, "return \"yes\" if x >= 0.65 else \"no\" if x <= 0.35 else \"unsure\"", "return \"yes\"")],
+    "合成队列没有只浏览的会话": [(CO, "or br.random() >= BROWSE_RATE:", "or True:")],
+    "队列摘要不含探针": [(CO, "        \"probes\": [[p.student_id,", "        \"probes_\": [] and [[p.student_id,")],
     "结局混入首轮复测": [(RP, 'if a.retest_round == "week8" and a.fact.verdict in GRADED:', "if a.retest_round is not None and a.fact.verdict in GRADED:")],
     "考试结局取首轮": [(RP, "last = max(e.round_index for e in cohort.exams)", "last = min(e.round_index for e in cohort.exams)")],
     # 附加：分组误差差异

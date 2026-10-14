@@ -2,8 +2,9 @@
 
 > **合成，不是试点结论。** 全部学生、作答、复测、考试均为固定种子生成的合成数据（仓库总则规则 8），只有合成 ID 与非敏感分组键；方法与阈值来自未签字配置，结果只是“对照未签字阈值”，不是 Gate 1 判定。Gate 1 是否通过由人决定。
 
-- 合成学生：40 名，12 周；会话 1941 次，练习作答 9622 道，复测 1120 道，考试记录 204 条
-- 配置：`unsigned-0.2.0`，指纹 `b11ea3c819f6edab`，待签字
+- 合成学生：40 名，12 周；会话 2033 次，练习作答 9622 道，复测 1120 道，考试记录 204 条
+- 中圈指标原料：做题前探针 2936 次，计划事件 1315 条（1217 个任务，同一任务取最后一次），错因 2239 条（其中审题类 690 条）
+- 配置：`unsigned-0.3.0`，指纹 `4f1acb01e78cd339`，待签字
 - 预测与指标：洞察服务 `algo:sie-predict@0.1.0`、`algo:sie-middle-metrics@0.1.0`（合成、未签字的洞察服务配置）
 
 | 条件 | 内容 | 报表结果（对照未签字阈值） | Gate 1 判定 |
@@ -34,16 +35,36 @@
 
 ## G1-4 中圈指标效度
 
-按学生聚合（各科取均值，一名学生一对）后求皮尔逊相关。
+覆盖洞察服务 metrics.py 的全部 8 个静默指标；按学生聚合（各科取均值，一名学生一对）后求皮尔逊相关。跨科指标每名学生一个值，结局取各科均值。新增四项的结局变量与方向待签字（config.unsigned.json）；样本不足的指标不出结论。
 
-| 指标 | 结局 | 预期方向 | 学生数 | r | 结果 |
-|---|---|---|---|---|---|
-| independent_solve_rate | week8_retest_accuracy | positive | 30 | 0.4653 | 达到未签字阈值 |
-| hint_dependency | week8_retest_accuracy | negative | 29 | 0.2395 | 未达到未签字阈值 |
-| transfer_gap | last_exam_fraction | positive | 29 | -0.1757 | 未达到未签字阈值 |
-| retention_rate | last_exam_fraction | positive | 32 | 0.3754 | 达到未签字阈值 |
+| 指标 | 结局 | 预期方向 | 学生数 | r | 结果 | 计入 Gate 1 |
+|---|---|---|---|---|---|---|
+| independent_solve_rate | week8_retest_accuracy | positive | 30 | 0.4653 | 达到未签字阈值 | 计入 |
+| hint_dependency | week8_retest_accuracy | negative | 29 | 0.2395 | 未达到未签字阈值 | 计入 |
+| transfer_gap | last_exam_fraction | positive | 29 | -0.1757 | 未达到未签字阈值 | 计入 |
+| retention_rate | last_exam_fraction | positive | 32 | 0.3754 | 达到未签字阈值 | 计入 |
+| self_assessment_calibration | last_exam_fraction | negative | 29 | -0.2475 | 未达到未签字阈值 | 观察用，不计入 |
+| plan_completion_rate | week8_retest_accuracy | positive | 32 | -0.0325 | 未达到未签字阈值 | 观察用，不计入 |
+| reading_question_error_share | last_exam_fraction | negative | 29 | -0.3369 | 达到未签字阈值 | 观察用，不计入 |
+| persistence | week8_retest_accuracy | positive | 32 | 0.0596 | 未达到未签字阈值 | 观察用，不计入 |
 
-- 对照未签字阈值通过的指标：2（需要 2）；“上线”不在本管线范围
+结局口径（逐项对照 SIE 分册效度检验一栏原文）：
+
+- independent_solve_rate：结局与字典原文一致（字典原文：与延迟复测结果相关）
+- hint_dependency：结局为替代口径（字典原文：下降是否伴随独立解题率上升；这里用与 8 周后复测正确率的负相关代替）
+- transfer_gap：结局为替代口径（字典原文：预测综合题得分；这里用最后一轮考试得分率代替）
+- retention_rate：结局为替代口径（字典原文：预测学校考试同节点得分；这里用最后一轮考试整卷得分率代替）
+- self_assessment_calibration：结局为替代口径（字典原文：与考试预测偏差方向一致性；这里用 Brier 分数与最后一轮考试得分率的负相关代替）
+- plan_completion_rate：结局为替代口径（字典原文：与后续进步相关（观察用）；这里用 8 周后复测正确率代替“后续进步”）
+- reading_question_error_share：结局为替代口径（字典原文：针对训练后是否下降；合成队列没有针对训练，这里用与最后一轮考试得分率的负相关代替）
+- persistence：结局为替代口径（字典原文：观察用，不参与评价；这里只用周活跃天数（不含中断后恢复率）对 8 周后复测正确率）
+
+合成世界的相关由生成器预设，不得当作效度证据：
+- 审题类错因占比随学生基础 θ 变化（基础较弱审题类略多），计划完成倾向随每周增量 gain 变化——这两项的相关是生成器写进去的；
+- 其余指标与结局同出自生成器的潜在能力（θ、gain、迁移缺口），相关大小只反映生成器设定，只用于检验管线能否算出、能否发现方向错误；
+- persistence 只用周活跃天数（metrics.py 结果的 v），不含中断后恢复率；会话时段是合成占位，不做时段分析。
+
+- 计入 Gate 1 的指标中对照未签字阈值通过：2（需要 2）；观察用、不计入的指标中达到阈值：1；“上线”不在本管线范围
 
 ## 附加：分组误差差异
 
@@ -60,11 +81,11 @@
 
 ## 数据文件 SHA-256
 
-- `students.csv` 4aaf556ce0f5ebd7668357f4593af00dc89add74309f409d1ea7e6cba61f7985
+- `students.csv` 753f871fa7f5348c4c85b3903f810843ebf7f58d8103a38c8a9e32cf08dea4a9
 - `retests.csv` 2d1f2e4c06268bf56abd0b5772c16928604a29504603f7130bb37c6903f60cfe
 - `exams.csv` bcc86fbb63a97f789f31027831d6f8ed328e92165c7e37e571e05faea8177c94
-- `metrics.csv` d25e2ecac2586b833ea1943f6d3549c19b7a25a4a2798ae4233506cef75d337b
+- `metrics.csv` 1471da8f6bf3e3ae895dc6e5f775439708757effa3f02fabf819a145fcc6ade4
 - `fairness.csv` 24f4fbe7a1d0375947da9ea86cc7ca5e04e4087345f23714f66f93d590ae1f88
-- `checks.json` 174148d191681ca93b06b25b70e78e88bd208630326ddd3d1e03ebf0c899460c
+- `checks.json` 096b182af16c2733af562435fceafb1b7801dae8ddbf9657c80d4e62967bed48
 
 运行元数据（提交号、种子、队列摘要、配置指纹）见 `run_metadata.json`。

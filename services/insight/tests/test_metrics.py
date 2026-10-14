@@ -145,6 +145,19 @@ def test_metric_claims_agent_only_hypothesis_and_revised():
     assert m.plan_metric_claims([], res, P, NOW, None, STUDENT) == []
 
 
+def test_compute_metrics_skip():
+    """SIE-05：skip 只跳过指名的指标，其余照算；只收 CALCULATORS 里的名字"""
+    assert m.METRIC_NAMES == tuple(c.__name__ for c in m.CALCULATORS) and set(m.METRIC_NAMES) == set(m.METRIC_DEFS)
+    xs = tuple(att(i, kind="delayed_retest", days=40) for i in range(8)) + tuple(att(100 + i, hint=0) for i in range(15))
+    full = m.compute_metrics(m.MetricInputs(xs), P, NOW, FORBID)
+    assert [r.key for r in full] == ["hint_dependency", "retention_rate"]
+    assert [r.key for r in m.compute_metrics(m.MetricInputs(xs), P, NOW, FORBID, skip=("retention_rate",))] == ["hint_dependency"]
+    assert m.compute_metrics(m.MetricInputs(xs), P, NOW, FORBID, skip=("persistence",)) == full
+    for bad in (("retention",), ("persistence", "self_initiated_sessions"), ("compute_metrics",)):
+        with pytest.raises(InputError):
+            m.compute_metrics(m.MetricInputs(xs), P, NOW, FORBID, skip=bad)
+
+
 def test_compute_metrics_is_sorted_and_deterministic():
     xs = tuple(att(i, kind="delayed_retest", days=40) for i in range(8)) + tuple(att(100 + i, hint=0) for i in range(15))
     a = m.compute_metrics(m.MetricInputs(xs), P, NOW, FORBID)

@@ -1,7 +1,7 @@
 {
   "$comment": "Gate 1 证据管线的方法与阈值（SIE-04 第一步）。全部未签字：每一节的 signoff 都是“待签字”，由 SIE 负责人、教研与产品签字后才能用于真实试点；签字前报表只给“对照未签字阈值”的结果，Gate 1 判定一律写“无法自动判断（需人）”。填了 signed_by / signed_at 时，每一节的 signoff 必须改成签字记录（不能再是“待签字”）。数值取开发计划 v2.0 Gate 1 条件（:447-454）与 SIE 分册（:401-412、:595-601）的文字，其余为占位。样本门槛分两种：按记录计（min_*_records / min_records_*）与按学生计（min_students*，同一名学生多科、多轮只算一名独立样本），两者都要满足。",
   "schema_version": "gate1-evidence-config/0.1",
-  "config_version": "unsigned-0.2.0",
+  "config_version": "unsigned-0.3.0",
   "signed_by": "",
   "signed_at": "",
   "retest_g12": {
@@ -41,12 +41,16 @@
     "min_students": 20,
     "min_abs_r": 0.3,
     "min_metrics_passing": 2,
-    "$comment": "每个指标在第 measure_week 周末按洞察服务 metrics.py 的纯函数计算（最低样本取洞察服务的合成判断策略配置），与之后的结局配对：先按学生聚合（同一学生各科的指标值取均值、结局取均值，一名学生一对），再求相关；min_students 是聚合后的学生数。方向与预期一致且 |r| ≥ min_abs_r 才算对照未签字阈值通过。结局与方向是对 SIE 分册效度检验一栏的简化（提示依赖度原文是“下降是否伴随独立解题率上升”，这里用与 8 周复测的负相关代替），待签字。",
+    "$comment": "每个指标在第 measure_week 周末按洞察服务 metrics.py 的纯函数计算（最低样本取洞察服务的合成判断策略配置），与之后的结局配对：先按学生聚合（同一学生各科的指标值取均值、结局取均值，一名学生一对），再求相关；min_students 是聚合后的学生数。跨科指标（自评校准、计划完成率、审题类错因占比、学习持续性）每名学生一个值，结局取该学生各科结局的均值。方向与预期一致且 |r| ≥ min_abs_r 才算对照未签字阈值通过。结局与方向是对 SIE 分册效度检验一栏的简化（提示依赖度原文是“下降是否伴随独立解题率上升”，这里用与 8 周复测的负相关代替），待签字。SIE-05 新增的四个指标沿用现有两种结局口径，结局变量与方向逐项待签字（见各项 $comment）。counts_toward_gate（每项必填）：只有 true 的指标计入“至少 min_metrics_passing 个指标通过”；false 的照常计算 r、只作观察（字典写明“观察用”或结局为替代口径），是否计入由人定。",
     "metrics": {
-      "independent_solve_rate": {"outcome": "week8_retest_accuracy", "direction": "positive"},
-      "hint_dependency": {"outcome": "week8_retest_accuracy", "direction": "negative"},
-      "transfer_gap": {"outcome": "last_exam_fraction", "direction": "positive"},
-      "retention_rate": {"outcome": "last_exam_fraction", "direction": "positive"}
+      "independent_solve_rate": {"outcome": "week8_retest_accuracy", "direction": "positive", "counts_toward_gate": true},
+      "hint_dependency": {"outcome": "week8_retest_accuracy", "direction": "negative", "counts_toward_gate": true},
+      "transfer_gap": {"outcome": "last_exam_fraction", "direction": "positive", "counts_toward_gate": true},
+      "retention_rate": {"outcome": "last_exam_fraction", "direction": "positive", "counts_toward_gate": true},
+      "self_assessment_calibration": {"$comment": "待签字。观察用，不计入 Gate 1（counts_toward_gate = false）：结局为替代口径——SIE 分册原文“与考试预测偏差方向一致性”，这里简化为 Brier 分数（越小越准）与最后一轮考试得分率负相关；Brier 同时含正确率本身的成分，不是纯校准。是否计入由人定。", "outcome": "last_exam_fraction", "direction": "negative", "counts_toward_gate": false},
+      "plan_completion_rate": {"$comment": "待签字。观察用，不计入 Gate 1（counts_toward_gate = false）：字段字典原文即“与后续进步相关（观察用）”，且这里用 8 周后复测正确率代替“后续进步”（替代口径）。是否计入由人定。", "outcome": "week8_retest_accuracy", "direction": "positive", "counts_toward_gate": false},
+      "reading_question_error_share": {"$comment": "待签字。观察用，不计入 Gate 1（counts_toward_gate = false）：结局为替代口径——SIE 分册原文“针对训练后是否下降”（需要训练前后两个时点，合成队列没有针对训练），这里简化为与最后一轮考试得分率负相关。是否计入由人定。", "outcome": "last_exam_fraction", "direction": "negative", "counts_toward_gate": false},
+      "persistence": {"$comment": "待签字。观察用，不计入 Gate 1（counts_toward_gate = false）：字段字典原文即“观察用，不参与评价”；这里只取周活跃天数（不含中断后恢复率）与 8 周后复测正确率（替代口径），预期正相关。是否计入由人定。", "outcome": "week8_retest_accuracy", "direction": "positive", "counts_toward_gate": false}
     }
   },
   "fairness": {

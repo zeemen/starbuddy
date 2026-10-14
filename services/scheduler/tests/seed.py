@@ -173,3 +173,30 @@ def seed_answer(db) -> dict[str, str]:
                 'verifier:aya-symbolic-ts@0.1.0;items:syn-pack@0.0.1', 'algo:aya-symbolic-ts@0.1.0', false, 'formal',
                 ARRAY['{s['evidence']}'::uuid], gen_random_uuid());""")
     return s
+
+
+def seed_metric_inputs(db, n: int = 16) -> dict[str, str]:
+    """中圈指标重算（SIE-05）：一名学生一条当前节点键掌握行（--all 才会选到他）与 n 道近一天内带提示的已判分作答
+    （提示等级 1–6 轮换；n ≥ 合成策略的最低样本 15 时，提示依赖度出结果），另有一道 30 天前的作答
+    （在提示依赖度 14 天窗口外，但让学习持续性满 4 周、能出结果：定时作业 --skip persistence 时不应写它）。
+    掌握行放在道法（zhixing）：掌握对账只配了数学，不会把这行没有证据的合成掌握当作 stale_estimate（测试互不影响）"""
+    s = new_student(db)
+    s["mastery"] = u()
+    db.psql(f"""SET session_replication_role = replica;
+      INSERT INTO platform.mastery_estimate (id, student_id, subject, node_id, cognitive_level, map_version_id, state, p_mastery, confidence,
+        algorithm_version, evidence_ids, is_current) VALUES
+        ('{s['mastery']}', '{s['student']}', 'zhixing', 'SYN.SCHED.ZX.N1', '{LEVEL}', '{MAPV_MATH}', 'execute', 0.6, 0.5, 'kge-mastery@0.1.0.syn',
+         ARRAY[gen_random_uuid()], true);
+      CREATE TEMP TABLE sched_metric_attempt AS
+        SELECT i AS n, gen_random_uuid() AS attempt_id, now() - interval '1 day' + i * interval '1 minute' AS at, 1 + (i - 1) % 6 AS hint
+          FROM generate_series(1, {n}) i
+        UNION ALL SELECT 0, gen_random_uuid(), now() - interval '30 days', 6;
+      INSERT INTO platform.attempt (attempt_id, occurred_at, student_id, subject, item_id, response_evidence_id, hint_level_used,
+        request_idempotency_key, evidence_kind, evidence_level, channel)
+        SELECT attempt_id, at, '{s['student']}', 'aya', format('syn-sched-metric-%s', n), gen_random_uuid(), hint,
+               format('synthetic-sched-metric-%s', attempt_id), 'hinted', 'A', 'keypad' FROM sched_metric_attempt;
+      INSERT INTO platform.grade_result (student_id, subject, attempt_id, attempt_occurred_at, verdict, rubric_version, score_total, max_total,
+        calibrated, confidence, source_version, model_version, human_review_required, semantics, evidence_ids, source_request_id)
+        SELECT '{s['student']}', 'aya', attempt_id, at, 'correct', 'aya-symbolic-ts@0.1.0', 1, 1, true, 1, 'rubric:aya-symbolic-ts@0.1.0',
+               'algo:aya-symbolic-ts@0.1.0', false, 'formal', ARRAY[gen_random_uuid()], gen_random_uuid() FROM sched_metric_attempt;""")
+    return s

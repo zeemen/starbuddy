@@ -178,6 +178,12 @@ M=(
   $'命令行不限运行环境\tinsight/jobs_cli.py\t    if env not in ALLOWED_ENVS:\t    if False:\ttests/test_jobs_cli.py'
   $'命令行连接前不核对本机\tinsight/jobs_cli.py\t    return env, check_local_url(url)\t    return env, url\ttests/test_jobs_cli.py'
   $'命令行不核对服务端地址\tinsight/jobs_cli.py\t        await check_server_local(conn)\t        pass\ttests/test_jobs_cli.py'
+  # SIE-05（specs/sie05-silent-metrics）：metrics --skip（定时作业暂不重算学习持续性）
+  $'指标 skip 不生效\tinsight/metrics.py\t        if calc.__name__ in skipped:\t        if False:\ttests/test_metrics.py'
+  $'指标 skip 收未知名字\tinsight/metrics.py\t    if not skipped <= set(METRIC_NAMES):\t    if False:\ttests/test_metrics.py'
+  $'命令行 --skip 不核对名字\tinsight/jobs_cli.py\t    if any(s not in METRIC_NAMES for s in out):\t    if False:\ttests/test_jobs_cli.py'
+  $'命令行不把 --skip 传给重算\tinsight/jobs_cli.py\tjobs.recompute_metrics(store, s, policy, skip=skip)\tjobs.recompute_metrics(store, s, policy)\ttests/test_jobs_cli.py'
+  $'库上重算不把 skip 传给计算\tinsight/store.py\t                results = compute_metrics(inputs, policy, now, forbidden, skip)\t                results = compute_metrics(inputs, policy, now, forbidden)\ttests/test_db_metrics.py'
   # PLT-13 第一步（specs/scheduler-plt13）：调度器身份的命令行 insight.scheduled 与 insight.jobs weekly
   $'调度器命令行不限运行环境\tinsight/scheduled.py\t    if environ.get(ENV_VAR, "") not in ALLOWED_ENVS:\t    if False:\ttests/test_scheduled_cli.py'
   $'调度器命令行连接前不核对本机\tinsight/scheduled.py\t        return local_only(url)\t        return url\ttests/test_scheduled_cli.py'

@@ -2,13 +2,15 @@
 
   INSIGHT_ENV=dev INSIGHT_DATABASE_URL=postgresql://...@localhost/... python -m insight.jobs sync (--student <uuid> ... | --all)
   INSIGHT_ENV=dev INSIGHT_DATABASE_URL=... python -m insight.jobs sweep [--limit 1000]
-  INSIGHT_ENV=dev INSIGHT_DATABASE_URL=... python -m insight.jobs metrics (--student <uuid> ... | --all)
+  INSIGHT_ENV=dev INSIGHT_DATABASE_URL=... python -m insight.jobs metrics (--student <uuid> ... | --all) [--skip <指标名> ...]
   INSIGHT_ENV=dev INSIGHT_DATABASE_URL=... python -m insight.jobs weekly [--week-start 2026-10-05]
 
 - sync：判断生成接真实掌握（jobs.sync_mastery_from_db）：读该学生全部当前节点键掌握行，生成与流转判断；
 - sweep：每天的到期扫描（jobs.sweep）：到期的假设 / 成立判断转待验证；
 - metrics：中圈指标静默重算（jobs.recompute_metrics）：结果只写 visibility = {agent} 的指标判断；题目打标注入要等待人确认 E，
-  不注入时独立解题率与迁移差不出结果。
+  不注入时独立解题率与迁移差不出结果。--skip（可重复，SIE-05）：本次不算的指标，只收 metrics.py CALCULATORS 里的名字，
+  其他名字退出码 2；被跳过的指标已有判断不动、照常到期。调度器的定时作业用 --skip persistence 暂不重算学习持续性
+  （与迁移 0025“时间戳只用于降负触发”的关系待人确认）。
 - weekly（PLT-13 第一步，specs/scheduler-plt13）：每周家长周报与学生成长手记（jobs.weekly_reports，不改其逻辑）：缺省为上一个已结束的周
   （上海时区，按数据库日期）；学生取“有对学生或家长可见的节点判断的全部学生”。判断策略同 sync（INSIGHT_POLICY），周报配置
   INSIGHT_WEEKLY_POLICY（缺省 config/weekly.synthetic.json）、一致性检查词表 INSIGHT_WEEKLY_CHECK（缺省 config/weekly-check.synthetic.json）；
@@ -97,6 +99,14 @@ def _students(raw: Sequence[str] | None) -> list[str]:
     return out
 
 
+def _skip(raw: Sequence[str] | None) -> tuple[str, ...]:
+    from .metrics import METRIC_NAMES
+    out = tuple(dict.fromkeys(raw or ()))
+    if any(s not in METRIC_NAMES for s in out):
+        raise JobError(f"--skip 只接受 {', '.join(METRIC_NAMES)}")
+    return out
+
+
 def _week_start(raw: str | None) -> date | None:
     if raw is None:
         return None
@@ -141,7 +151,8 @@ async def _weekly(store: Any, conn_pool: Any, env: str, week: date | None, polic
             "outcomes": {s: run.count(s) for s in statuses}, "sampled": run.sampled, "profile_pages": dict(run.profile_pages)}
 
 
-async def _run(cmd: str, students: list[str], all_students: bool, limit: int, week: date | None = None) -> dict[str, Any]:
+async def _run(cmd: str, students: list[str], all_students: bool, limit: int, week: date | None = None,
+               skip: tuple[str, ...] = ()) -> dict[str, Any]:
     from . import jobs
     from .store import InsightStore, create_pool
 
@@ -173,7 +184,7 @@ async def _run(cmd: str, students: list[str], all_students: bool, limit: int, we
             if cmd == "sync":
                 r = await jobs.sync_mastery_from_db(store, s, policy)
             else:
-                metric_results, r = await jobs.recompute_metrics(store, s, policy)
+                metric_results, r = await jobs.recompute_metrics(store, s, policy, skip=skip)
                 results += len(metric_results)
             reasons.update(op.reason for op in r.ops)
             skipped += r.skipped_rows
@@ -184,6 +195,7 @@ async def _run(cmd: str, students: list[str], all_students: bool, limit: int, we
             out["skipped_rows"] = skipped
         else:
             out["metric_results"] = results
+            out["skipped_metrics"] = sorted(skip)
         return out
     finally:
         await pool.close()
@@ -197,7 +209,9 @@ def main(argv: list[str] | None = None) -> int:
         g = sp.add_mutually_exclusive_group(required=True)
         g.add_argument("--student", action="append", help="学生 ID（可重复；会留在 shell 历史与进程列表里，只限本机合成库）")
         g.add_argument("--all", action="store_true", help="有当前节点键掌握行的全部学生")
-    sw = sub.add_parser("sweep", help="到期扫描：到期的假设 / 成立判断转待验证")
+        if name == "metrics":
+            sp.add_argument("--skip", action="append", help="本次不算的指标（可重复；只收 metrics.py CALCULATORS 里的名字）")
+    sw =sub.add_parser("sweep", help="到期扫描：到期的假设 / 成立判断转待验证")
     sw.add_argument("--limit", type=int, default=1000)
     wk = sub.add_parser("weekly", help="每周家长周报与学生成长手记（缺省上一个已结束的周）")
     wk.add_argument("--week-start", help="周一日期 YYYY-MM-DD（只接受已结束、35 天内的周）")
@@ -207,7 +221,8 @@ def main(argv: list[str] | None = None) -> int:
             raise JobError("--limit 必须在 1–100000 之间")
         students = _students(getattr(a, "student", None))
         week = _week_start(getattr(a, "week_start", None))
-        out = asyncio.run(_run(a.cmd, students, bool(getattr(a, "all", False)), getattr(a, "limit", 1000), week))
+        skip = _skip(getattr(a, "skip", None))
+        out = asyncio.run(_run(a.cmd, students, bool(getattr(a, "all", False)), getattr(a, "limit", 1000), week, skip))
     except JobError as e:
         print(f"insight.jobs：{e}", file=sys.stderr)
         return 2

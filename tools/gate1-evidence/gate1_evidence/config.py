@@ -17,7 +17,9 @@ SCHEMA_VERSION = "gate1-evidence-config/0.1"
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config.unsigned.json"
 SECTIONS = ("retest_g12", "exam_g13", "validity_g14", "fairness")
 UNSIGNED = "待签字"
-VALIDITY_METRICS = ("independent_solve_rate", "hint_dependency", "transfer_gap", "retention_rate")
+# 洞察服务 metrics.py 的全部 8 个静默指标（SIE-05：效度检验覆盖全部）；顺序即报表顺序
+VALIDITY_METRICS = ("independent_solve_rate", "hint_dependency", "transfer_gap", "retention_rate", "self_assessment_calibration",
+                    "plan_completion_rate", "reading_question_error_share", "persistence")
 OUTCOMES = ("week8_retest_accuracy", "last_exam_fraction")
 DIRECTIONS = ("positive", "negative")
 # 合成队列提供的分组键（cohort.Student 的字段）；真实试点的分组键待人确认
@@ -85,6 +87,7 @@ class ValidityCfg:
     min_abs_r: float
     min_metrics_passing: int
     metrics: Mapping[str, tuple[str, str]]  # 指标 → (结局, 预期方向)
+    counted: frozenset[str]                 # 计入 Gate 1“至少 N 个指标通过”的指标（counts_toward_gate = true）；其余观察用
 
 
 @dataclass(frozen=True)
@@ -162,15 +165,20 @@ def parse_config(doc: Mapping[str, Any]) -> Config:
     _need(isinstance(v["metrics"], dict) and v["metrics"] and set(v["metrics"]) <= set(VALIDITY_METRICS),
           f"validity_g14.metrics 只能是 {VALIDITY_METRICS} 的子集")
     ms: dict[str, tuple[str, str]] = {}
+    counted: set[str] = set()
     for k in VALIDITY_METRICS:
         if k not in v["metrics"]:
             continue
         m = v["metrics"][k]
-        _keys(m, {"outcome", "direction"}, f"validity_g14.metrics.{k}")
+        _keys(m, {"outcome", "direction", "counts_toward_gate"}, f"validity_g14.metrics.{k}")   # 缺 counts_toward_gate 即拒绝
         _need(m["outcome"] in OUTCOMES and m["direction"] in DIRECTIONS, f"validity_g14.metrics.{k} 的结局或方向不对")
+        _need(isinstance(m["counts_toward_gate"], bool), f"validity_g14.metrics.{k}.counts_toward_gate 必须是布尔值")
         ms[k] = (m["outcome"], m["direction"])
+        if m["counts_toward_gate"]:
+            counted.add(k)
     validity = ValidityCfg(_int(v["measure_week"], "measure_week", 2, 11), _int(v["min_students"], "min_students", 3),
-                           _num(v["min_abs_r"], "min_abs_r"), _int(v["min_metrics_passing"], "min_metrics_passing", 1, 8), ms)
+                           _num(v["min_abs_r"], "min_abs_r"), _int(v["min_metrics_passing"], "min_metrics_passing", 1, 8), ms,
+                           frozenset(counted))
 
     f = doc["fairness"]
     _keys(f, {"signoff", "group_keys", "min_records_per_group", "min_students_per_group", "max_mae_gap", "max_bias_gap"},

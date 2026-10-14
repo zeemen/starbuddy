@@ -60,6 +60,24 @@ CONDITIONS = {
     "G1-附加": "画像误差的群体公平性检查（分组误差差异；只用合成的非敏感分组键）",
 }
 ORDER = ("G1-1", "G1-2", "G1-3", "G1-4", "G1-5", "G1-6", "G1-附加")
+NOT_COUNTED = "观察用，不计入"
+# SIE 分册（docs/plan/SIE-学生洞察引擎-V1.1.html:404-412）效度检验一栏原文，及本管线的结局是否为替代口径
+VALIDITY_ORIGINAL = {
+    "independent_solve_rate": ("与延迟复测结果相关", False),
+    "hint_dependency": ("下降是否伴随独立解题率上升；这里用与 8 周后复测正确率的负相关代替", True),
+    "transfer_gap": ("预测综合题得分；这里用最后一轮考试得分率代替", True),
+    "retention_rate": ("预测学校考试同节点得分；这里用最后一轮考试整卷得分率代替", True),
+    "self_assessment_calibration": ("与考试预测偏差方向一致性；这里用 Brier 分数与最后一轮考试得分率的负相关代替", True),
+    "plan_completion_rate": ("与后续进步相关（观察用）；这里用 8 周后复测正确率代替“后续进步”", True),
+    "reading_question_error_share": ("针对训练后是否下降；合成队列没有针对训练，这里用与最后一轮考试得分率的负相关代替", True),
+    "persistence": ("观察用，不参与评价；这里只用周活跃天数（不含中断后恢复率）对 8 周后复测正确率", True),
+}
+GENERATOR_CAVEATS = (
+    "合成世界的相关由生成器预设，不得当作效度证据：",
+    "- 审题类错因占比随学生基础 θ 变化（基础较弱审题类略多），计划完成倾向随每周增量 gain 变化——这两项的相关是生成器写进去的；",
+    "- 其余指标与结局同出自生成器的潜在能力（θ、gain、迁移缺口），相关大小只反映生成器设定，只用于检验管线能否算出、能否发现方向错误；",
+    "- persistence 只用周活跃天数（metrics.py 结果的 v），不含中断后恢复率；会话时段是合成占位，不做时段分析。",
+)
 
 
 @dataclass(frozen=True)
@@ -197,6 +215,9 @@ def _summary(p: Pack, files: dict[str, str]) -> str:
         "",
         f"- 合成学生：{len(c.students)} 名，{c.weeks} 周；会话 {len(c.sessions)} 次，练习作答 "
         f"{sum(1 for a in c.attempts if a.retest_round is None)} 道，复测 {len(c.retests)} 道，考试记录 {len(c.exams)} 条",
+        f"- 中圈指标原料：做题前探针 {len(c.probes)} 次，计划事件 {len(c.plans)} 条（{len({p.fact.plan_task_id for p in c.plans})} 个任务，"
+        f"同一任务取最后一次），错因 {len(c.errors)} 条（其中审题类 "
+        f"{sum(1 for e in c.errors if e.fact.cross_subject_category == 'reading_the_question')} 条）",
         f"- 配置：`{p.config.config_version}`，指纹 `{p.config.fingerprint}`，{p.config.provenance()['signoff']}",
         f"- 预测与指标：洞察服务 `{insight_predict.MODEL_VERSION}`、`{insight_metrics.MODEL_VERSION}`（合成、未签字的洞察服务配置）",
         "",
@@ -224,12 +245,21 @@ def _summary(p: Pack, files: dict[str, str]) -> str:
                      f"{_fmt(r.get('mae'))} | {_fmt(r.get('bias'))} | {RESULT_ZH[r['result']]} |")
     if "mae_decreased_vs_first" in p.g13:
         lines += ["", f"- 误差较首轮下降：{'是' if p.g13['mae_decreased_vs_first'] else '否'}（区间内外按 reconcile_plan 口径）"]
-    lines += ["", "## G1-4 中圈指标效度", "", "按学生聚合（各科取均值，一名学生一对）后求皮尔逊相关。", "",
-              "| 指标 | 结局 | 预期方向 | 学生数 | r | 结果 |", "|---|---|---|---|---|---|"]
+    lines += ["", "## G1-4 中圈指标效度", "",
+              "覆盖洞察服务 metrics.py 的全部 8 个静默指标；按学生聚合（各科取均值，一名学生一对）后求皮尔逊相关。"
+              "跨科指标每名学生一个值，结局取各科均值。新增四项的结局变量与方向待签字（config.unsigned.json）；样本不足的指标不出结论。", "",
+              "| 指标 | 结局 | 预期方向 | 学生数 | r | 结果 | 计入 Gate 1 |", "|---|---|---|---|---|---|---|"]
     for m in p.g14["metrics"]:
         lines.append(f"| {m['metric']} | {m['outcome']} | {m['expected_direction']} | {m['students']} | {_fmt(m.get('r'))} | "
-                     f"{RESULT_ZH[m['result']]} |")
-    lines += ["", f"- 对照未签字阈值通过的指标：{p.g14['passing']}（需要 {p.g14['min_metrics_passing']}）；“上线”不在本管线范围",
+                     f"{RESULT_ZH[m['result']]} | {'计入' if m['counts_toward_gate'] else NOT_COUNTED} |")
+    lines += ["", "结局口径（逐项对照 SIE 分册效度检验一栏原文）：", ""]
+    for m in p.g14["metrics"]:
+        original, substitute = VALIDITY_ORIGINAL[m["metric"]]
+        lines.append(f"- {m['metric']}：" + (f"结局为替代口径（字典原文：{original}）" if substitute
+                                            else f"结局与字典原文一致（字典原文：{original}）"))
+    lines += ["", *GENERATOR_CAVEATS, "",
+              f"- 计入 Gate 1 的指标中对照未签字阈值通过：{p.g14['passing']}（需要 {p.g14['min_metrics_passing']}）；"
+              f"观察用、不计入的指标中达到阈值：{p.g14['observational_meeting']}；“上线”不在本管线范围",
               "", "## 附加：分组误差差异", "", "| 分组键 | 组样本（记录 / 学生） | MAE 差距 | 偏差差距 | 结果 |", "|---|---|---|---|---|"]
     for k in p.fairness["keys"]:
         sizes = "，".join(f"{g}: {n} / {k['students'][g]}" for g, n in k["groups"].items())

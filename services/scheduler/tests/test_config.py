@@ -25,8 +25,15 @@ def test_default_schedule_matches_spec():
         "mastery-sweep": ("daily 02:30", "learning", "learning.jobs", "mastery-sweep"),
         "expire-affairs": ("daily 02:30", "kge", "review_console", "expire-affairs"),
         "spot-check": ("daily 02:30", "scheduler", "insight.scheduled", "spot-check"),
+        "metrics": ("daily 03:20", "insight", "insight.jobs", "metrics"),
         "weekly": ("weekly mon 03:00", "insight", "insight.jobs", "weekly"),
     }
+    # 中圈指标静默重算（SIE-05）：insight 身份、全部学生、只带判断策略变量，不补跑
+    m = cfg.jobs["metrics"]
+    # 定时作业暂不重算学习持续性（与迁移 0025 的关系待人确认）：参数校验放行这组参数
+    assert m.args == ("metrics", "--all", "--skip", "persistence") and m.extra_env == ("INSIGHT_POLICY",) and m.catch_up is False
+    assert m.required_env == ("INSIGHT_ENV", "INSIGHT_DATABASE_URL")
+    assert "待人确认" in DOC["jobs"]["metrics"]["$comment"] and "0025" in DOC["jobs"]["metrics"]["$comment"]
     assert all(j.timeout_seconds == 600 for j in cfg.jobs.values())  # 任务级超时默认 10 分钟
     assert cfg.jobs["mastery-sweep"].extra_env == ("LEARNING_MASTERY_CONFIG_*",)
     sc = cfg.jobs["spot-check"].args
@@ -51,7 +58,14 @@ def bad(mut) -> None:
     lambda d: d["jobs"]["sweep"].update(identity="root"),
     lambda d: d["jobs"]["sweep"].update(schedule="monthly 1 03:00"),
     lambda d: d["jobs"]["sweep"].update(args=["sync", "--all"]),                 # 判断生成 sync 不在本步范围
-    lambda d: d["jobs"]["sweep"].update(args=["metrics", "--all"]),              # 中圈指标不在本步范围
+    lambda d: d["jobs"]["metrics"].update(args=["sync", "--all"]),               # 放行 metrics 不等于放行 sync
+    lambda d: d["jobs"]["metrics"].update(args=["admission-recompute"]),
+    lambda d: d["jobs"]["metrics"].update(identity="scheduler"),                 # 指标重算只授 insight 身份
+    lambda d: d["jobs"]["metrics"].update(identity="learning"),
+    lambda d: d["jobs"]["metrics"].update(catch_up=True),                        # 只有周报可以启动补跑
+    lambda d: d["jobs"]["metrics"].update(env=["INSIGHT_DATABASE_URL"]),
+    lambda d: d["jobs"]["metrics"].update(args=["metrics", "--student", "x; rm"]),
+    lambda d: d["jobs"]["metrics"].update(args=["metrics", "--all", "--skip", "persistence; rm"]),
     lambda d: d["jobs"]["expire-affairs"].update(args=["serve", "--port", "1"]), # 审核台后端不能由调度器起
     lambda d: d["jobs"]["mastery-sweep"].update(args=["admission-recompute"]),
     lambda d: d["jobs"]["meter-expire"].update(identity="insight"),              # 计量函数只授调度器身份：换身份即子命令不匹配
@@ -86,6 +100,13 @@ def test_identity_table_is_fixed():
         "learning": ("learning", "learning.jobs", "LEARNING_ENV", "LEARNING_DATABASE_URL", frozenset(), ("LEARNING_MASTERY_CONFIG_",),
                      frozenset({2})),
         "kge": ("learning", "review_console", "REVIEW_CONSOLE_ENV", "REVIEW_CONSOLE_KGE_DATABASE_URL", frozenset(), (), frozenset({1, 2})),
+    }
+    # 子命令按身份固定：insight 放行 sweep、weekly 与中圈指标 metrics（SIE-05）；sync、admission-recompute、serve 等仍不放行
+    assert {i.name: i.commands for i in IDENTITIES.values()} == {
+        "scheduler": frozenset({"meter-expire", "meter-renew", "erasures", "freeze", "spot-check"}),
+        "insight": frozenset({"sweep", "weekly", "metrics"}),
+        "learning": frozenset({"mastery-sweep"}),
+        "kge": frozenset({"expire-affairs"}),
     }
     for i in IDENTITIES.values():                                  # 白名单里没有连接串类名字
         assert not any(is_url_name(n) for n in i.extra_names) and not any(is_url_name(p) for p in i.extra_prefixes)

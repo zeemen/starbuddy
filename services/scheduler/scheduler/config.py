@@ -7,7 +7,8 @@
   insight    insight · insight.jobs                              INSIGHT_ENV / INSIGHT_DATABASE_URL                  INSIGHT_POLICY、INSIGHT_WEEKLY_POLICY、INSIGHT_WEEKLY_CHECK
   learning   learning · learning.jobs                            LEARNING_ENV / LEARNING_DATABASE_URL                LEARNING_MASTERY_CONFIG_*
   kge        learning · review_console                           REVIEW_CONSOLE_ENV / REVIEW_CONSOLE_KGE_DATABASE_URL （无）
-- 子命令按身份限定在本步范围内（判断生成 sync、中圈指标、admission-recompute、审核台 serve 等不在里面，spec“不做”）；
+- 子命令按身份限定在本步范围内（判断生成 sync、admission-recompute、审核台 serve 等不在里面，spec“不做”）；
+  中圈指标静默重算 metrics 由 SIE-05（specs/sie05-silent-metrics）放行给 insight 身份，结果只写 agent 可见的指标判断；
 - 附加环境变量是每个身份的显式白名单：精确名，或明确登记的前缀（以 * 结尾声明）。不按“前缀 + 黑词”放行；
   名字以 _URL、_DSN、_DATABASE_URL 结尾的变量（连接串）只认该身份自己的连接串变量，通配匹配也一律不收这类名字；
 - 子进程退出码的“拒绝”含义按身份区分：审核台命令行以 SystemExit(说明文字) 拒绝（退出码 1），其余命令行以 2 拒绝；
@@ -58,7 +59,7 @@ class Identity:
 IDENTITIES: Mapping[str, Identity] = {
     "scheduler": Identity("scheduler", "insight", "insight.scheduled", "SCHEDULER_ENV", "SCHEDULER_DATABASE_URL",
                           frozenset({"meter-expire", "meter-renew", "erasures", "freeze", "spot-check"})),
-    "insight": Identity("insight", "insight", "insight.jobs", "INSIGHT_ENV", "INSIGHT_DATABASE_URL", frozenset({"sweep", "weekly"}),
+    "insight": Identity("insight", "insight", "insight.jobs", "INSIGHT_ENV", "INSIGHT_DATABASE_URL", frozenset({"sweep", "weekly", "metrics"}),
                         extra_names=frozenset({"INSIGHT_POLICY", "INSIGHT_WEEKLY_POLICY", "INSIGHT_WEEKLY_CHECK"})),
     "learning": Identity("learning", "learning", "learning.jobs", "LEARNING_ENV", "LEARNING_DATABASE_URL", frozenset({"mastery-sweep"}),
                          extra_prefixes=("LEARNING_MASTERY_CONFIG_",)),

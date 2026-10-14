@@ -32,18 +32,21 @@ SCHEDULER_ENV=dev <各身份的变量> .venv/bin/python -m scheduler            
 | mastery-sweep | daily 02:30 | learning | `learning.jobs mastery-sweep` |
 | expire-affairs | daily 02:30 | kge | `review_console expire-affairs` |
 | spot-check | daily 02:30 | scheduler | `insight.scheduled spot-check`（`platform.review_sample_spot_checks`，比例 0.1，回看 26 小时） |
+| metrics | daily 03:20（频率待人确认，SIE-05） | insight | `insight.jobs metrics --all --skip persistence`（中圈指标静默重算，只写 agent 可见的指标判断；暂不重算学习持续性，与迁移 0025 的关系待人确认） |
 | weekly | weekly mon 03:00（启动时补跑一次） | insight | `insight.jobs weekly`（上一周的周报） |
 
 表达式：`every <N>m`（N 整除 1440）、`hourly[ :MM]`、`daily HH:MM`、`weekly <周几> HH:MM`。
 
 ## 身份与环境白名单
 
-| 身份 | 运行环境变量 | 连接串变量 | 可声明的附加变量（显式白名单） | 子进程“拒绝”退出码 |
-|---|---|---|---|---|
-| scheduler | `SCHEDULER_ENV` | `SCHEDULER_DATABASE_URL`（登录角色只继承 starbuddy_scheduler） | 无 | 2 |
-| insight | `INSIGHT_ENV` | `INSIGHT_DATABASE_URL` | `INSIGHT_POLICY`、`INSIGHT_WEEKLY_POLICY`、`INSIGHT_WEEKLY_CHECK` | 2 |
-| learning | `LEARNING_ENV` | `LEARNING_DATABASE_URL` | 前缀 `LEARNING_MASTERY_CONFIG_*` | 2 |
-| kge | `REVIEW_CONSOLE_ENV` | `REVIEW_CONSOLE_KGE_DATABASE_URL` | 无 | 1、2 |
+| 身份 | 可调用的子命令 | 运行环境变量 | 连接串变量 | 可声明的附加变量（显式白名单） | 子进程“拒绝”退出码 |
+|---|---|---|---|---|---|
+| scheduler | meter-expire、meter-renew、erasures、freeze、spot-check | `SCHEDULER_ENV` | `SCHEDULER_DATABASE_URL`（登录角色只继承 starbuddy_scheduler） | 无 | 2 |
+| insight | sweep、weekly、metrics | `INSIGHT_ENV` | `INSIGHT_DATABASE_URL` | `INSIGHT_POLICY`、`INSIGHT_WEEKLY_POLICY`、`INSIGHT_WEEKLY_CHECK` | 2 |
+| learning | mastery-sweep | `LEARNING_ENV` | `LEARNING_DATABASE_URL` | 前缀 `LEARNING_MASTERY_CONFIG_*` | 2 |
+| kge | expire-affairs | `REVIEW_CONSOLE_ENV` | `REVIEW_CONSOLE_KGE_DATABASE_URL` | 无 | 1、2 |
+
+未列出的子命令（判断生成 `sync`、`admission-recompute`、审核台 `serve` 等）一律拒绝启动。
 
 子进程环境 = 固定的 `PATH=/usr/bin:/bin`、`PYTHONDONTWRITEBYTECODE`、`PYTHONIOENCODING`、`LANG` + 该身份的两个变量 + 任务声明的附加变量。
 附加变量只认上表的精确名或登记的前缀，不按“前缀 + 黑词”放行；名字以 `_URL`、`_DSN`、`_DATABASE_URL` 结尾的变量只认本身份的连接串变量，

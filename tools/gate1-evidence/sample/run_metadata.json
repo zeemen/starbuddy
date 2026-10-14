@@ -1,17 +1,17 @@
 {
  "cohort": {
-  "digest": "ad6a56f19ec6864b2775cf263b23308a7660f7841cff317556091fbf65ef363e",
+  "digest": "52994538a28e3c79bf5175033c5528f163723c74cefa772fa3ea1b5e84c03ee9",
   "seed": 20261012,
   "students": 40,
   "weeks": 12
  },
- "commit": "8d5c693424e5df59703fdf9a392baf24a4f0a028",
+ "commit": "efad9e3cf6a32c1af7de30a1c4fa18c645be8c37",
  "config": {
-  "config_version": "unsigned-0.2.0",
-  "fingerprint": "b11ea3c819f6edab",
+  "config_version": "unsigned-0.3.0",
+  "fingerprint": "4f1acb01e78cd339",
   "signoff": "待签字"
  },
- "generator": "gate1-evidence@0.1.0",
+ "generator": "gate1-evidence@0.2.0",
  "notice": "合成，不是试点结论",
  "worktree_dirty": true
 }
