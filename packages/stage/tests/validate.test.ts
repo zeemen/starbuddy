@@ -208,7 +208,8 @@ test('错误数有上限；畸形输入不拖慢校验', () => {
   assert.equal(errorsOf(bad).length, MAX_ERRORS);
   const t0 = performance.now();
   validateStageDsl({ ...minimal(), steps: Array.from({ length: 1e6 }, () => ({})) });
-  assert.ok(performance.now() - t0 < 1000);
+  // 只防平方级退化（正常约 0.3 秒）；上限留足余量，避免机器负载高时误报
+  assert.ok(performance.now() - t0 < 5000);
 });
 
 /** 每次读取返回不同值的字段：第一次是合格值，之后是恶意值（检查与重建若各读一次，恶意值就会混进结果） */
