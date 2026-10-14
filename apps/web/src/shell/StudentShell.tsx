@@ -1,12 +1,15 @@
 // 学生壳的公共布局（spec 第 10、11、18 节）：顶栏“今日”“星图”“科目”、额度与时长状态、连续使用提醒条、点点入口、退出学生模式。
 // 任何科目页一步回到星图（顶栏常驻“星图”）。点点入口只是占位面板（系统口吻“点点正在准备中”，没有台词、对话、模型调用、形象）。
 // 休息提醒系统口吻、只提醒不锁定；计时以 BFF 为准，这里只显示。不写 localStorage。
+// 会话起止（SIE-05 PR2）由 src/behavior/SessionBeacon.tsx 经本站 /s/{id}/presence 写入，壳本身不显示任何事件。
 import type { ReactNode } from 'react';
 import { FAMILY_RESULT } from '../auth/copy.ts';
 import { ResultForm } from '../auth/ResultForm.tsx';
 import { logoutAction } from '../app/family/actions.ts';
 import { ackRestAction } from '../app/s/[studentId]/actions.ts';
 import type { Balance, RestView } from '../lib/shell-api.ts';
+import { entryOf } from '../behavior/presence.ts';
+import { SessionBeacon } from '../behavior/SessionBeacon.tsx';
 import { DIANDIAN, NAV, REST } from './copy.ts';
 import { StatusBar } from './StatusBar.tsx';
 import { TrustNav } from '../trust/links.tsx';
@@ -19,6 +22,8 @@ export function StudentShell({ studentId, csrf, balance, rest, path, children }:
   const base = `/s/${studentId}`;
   return (
     <div className="shell" data-testid="student-mode">
+      {/* 会话起止（SIE-05 PR2）：不渲染元素；只按入口类别记 session_start / session_end，不记哪一页、停了多久 */}
+      <SessionBeacon studentId={studentId} csrf={csrf} entry={entryOf(path, studentId)} />
       <header className="shell-top">
         <nav aria-label={NAV.label} className="shell-nav">
           <a href={`${base}/today`} data-testid="nav-today">{NAV.today}</a>

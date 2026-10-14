@@ -5,6 +5,7 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import type { FormResult } from '../../auth/ResultForm.tsx';
+import { endPresenceOnLogout } from '../../behavior/presence-server.ts';
 import { csrfCookieName, sessionCookieName, sessionCookieOptions } from '../../lib/session-cookie.ts';
 import { actionSession } from '../../lib/session.ts';
 import { logout, openStudentMode } from '../../lib/shell-auth.ts';
@@ -42,6 +43,8 @@ export async function openStudentModeAction(_: FormResult | null, f: FormData): 
 export async function logoutAction(_: FormResult | null, f: FormData): Promise<FormResult> {
   const s = await sessionFor(f);
   if (!s) return { code: 'CSRF' };
+  // 学生壳的会话状态（SIE-05 PR2）：撤销会话之前，能结束的先补记 session_end，再删 cookie（家长会话只删、不写）
+  await endPresenceOnLogout(s);
   await logout(s.token, s.csrf);
   await clearCookies();
   redirect('/login');

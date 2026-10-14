@@ -26,6 +26,7 @@ export const CRAWL: Record<string, CrawlPage | Excluded> = {
   's/[studentId]/learn/page.tsx': { who: 'student', path: (s) => `/s/${s}/learn` },
   's/[studentId]/learn/[subject]/page.tsx': { who: 'student', path: (s) => `/s/${s}/learn/math` },
   's/[studentId]/star-map/page.tsx': { who: 'student', path: (s) => `/s/${s}/star-map` },
+  's/[studentId]/presence/route.ts': { excluded: '只认 POST 的会话起止路由（SIE-05 PR2）：一律 204、no-store、不回内容；同源与 CSRF 核对由 tests/behavior.test.ts 静态核对，写入与越权由 e2e/behavior-events.spec.ts 核对' },
   's/[studentId]/learn/[subject]/practice/page.tsx': { who: 'student', path: (s) => `/s/${s}/learn/math/practice`, practiceOn: true },
   's/[studentId]/learn/[subject]/practice/[entryId]/page.tsx': { who: 'student', path: (s) => `/s/${s}/learn/math/practice/${NO_ID}`, practiceOn: true },
   // 复测与验证题（specs/retest-delivery-kge05）：开关 STARBUDDY_RETEST_UI 只在 practice-on 一套里打开，所以同样按 practiceOn 登记

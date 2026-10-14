@@ -17,6 +17,9 @@ function sql(q: string): string {
 }
 const events = (student: string, kind: string) =>
   Number(sql(`SELECT count(*) FROM insight.behavior_event WHERE student_id = '${student}' AND kind = '${kind}' AND source_type = 'objective'`));
+// 学生登录后先落在壳的“今日”，壳也会记一条 session_start（entry = today，SIE-05 PR2，e2e/behavior-events.spec.ts）；演示页记的是 entry = other
+const demoStarts = (student: string) =>
+  Number(sql(`SELECT count(*) FROM insight.behavior_event WHERE student_id = '${student}' AND kind = 'session_start' AND payload->>'entry' = 'other'`));
 const probes = (student: string) => Number(sql(`SELECT count(*) FROM insight.confidence_probe WHERE student_id = '${student}'`));
 
 async function open(page: Page, who: string, student: string) {
@@ -31,9 +34,9 @@ const axe = async (page: Page) =>
 test.describe.configure({ mode: 'serial' });
 
 test('学生选“不确定”：一条学生自述探针；会话开始、结束各一条客观记录', async ({ page }) => {
-  const [starts, ends, n] = [events(STU.S1, 'session_start'), events(STU.S1, 'session_end'), probes(STU.S1)];
+  const [starts, ends, n] = [demoStarts(STU.S1), events(STU.S1, 'session_end'), probes(STU.S1)];
   await open(page, ACC.S1, STU.S1);
-  await expect.poll(() => events(STU.S1, 'session_start')).toBe(starts + 1);
+  await expect.poll(() => demoStarts(STU.S1)).toBe(starts + 1);
   // 题目展示前先问；按钮有可访问名称，整组由问题句标注；不显示题干
   const group = page.getByRole('group', { name: '这道题你觉得能做对吗？' });
   await expect(group).toBeVisible();

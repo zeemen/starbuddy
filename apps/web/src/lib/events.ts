@@ -30,6 +30,33 @@ async function post(account: BffSession, student: string, sub: string, body: unk
 export const postSessionEvent = (account: BffSession, student: string, e: SessionEvent, key: string, occurredAt = new Date()) =>
   post(account, student, 'events', { kind: e.kind, payload: e.payload, occurred_at: occurredAt.toISOString(), idempotency_key: key });
 
+/** 按事件类别与结果类别（2xx / 4xx / 5xx / network）累计的写入次数；只在本进程内，日志不含学生 ID 与幂等键 */
+const writeCounts = new Map<string, number>();
+function countWrite(kind: string, result: string): void {
+  const k = `${kind}:${result}`;
+  const n = (writeCounts.get(k) ?? 0) + 1;
+  writeCounts.set(k, n);
+  console.info(`behavior_event write kind=${kind} result=${result} count=${n}`);
+}
+export const behaviorWriteCounts = (): ReadonlyMap<string, number> => writeCounts;
+
+/**
+ * 学生壳真实页面用（SIE-05 PR2）：对学生静默——BFF 不可达、超时都当“没写入”，不抛错、不重试（调用方也不重试）；
+ * 409（同一幂等键已记过）算已记下。服务端按结果类别计数写日志。BFF 地址配置错误不吞掉（照常抛出）。
+ */
+export async function postEventQuietly(account: BffSession, student: string, e: SessionEvent, key: string,
+  occurredAt = new Date()): Promise<boolean> {
+  bffBaseUrl();  // 配置错误在这里抛出，不当作“没写入”
+  try {
+    const r = await postSessionEvent(account, student, e, key, occurredAt);
+    countWrite(e.kind, `${Math.floor(r.status / 100)}xx`);
+    return r.ok || r.status === 409;
+  } catch {
+    countWrite(e.kind, 'network');
+    return false;
+  }
+}
+
 export const postProbe = (account: BffSession, student: string, item: { subject: string; item_id: string }, prediction: Prediction, key: string,
   askedAt = new Date()) =>
   post(account, student, 'probes', { subject: item.subject, item_id: item.item_id, prediction, asked_at: askedAt.toISOString(), idempotency_key: key });

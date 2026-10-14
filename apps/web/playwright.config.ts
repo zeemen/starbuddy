@@ -38,6 +38,8 @@ const FAMILY_SPECS = /(^|\/)(family-goals|monthly-plan)\.spec\.ts$/;
 // 所以按需打开——STARBUDDY_E2E_BROWSERS=webkit,firefox（需要对应的 Playwright 浏览器二进制；lessons 登记）。
 const extraBrowsers = (process.env['STARBUDDY_E2E_BROWSERS'] ?? '').split(',').map((s) => s.trim())
   .filter((b): b is 'webkit' | 'firefox' => b === 'webkit' || b === 'firefox');
+/** 端到端用的合成签名密钥（见下方 serverEnv 的说明；e2e/behavior-events.spec.ts 用它构造 cookie） */
+export const E2E_PRESENCE_KEY = 'synthetic-e2e-presence-signing-material-000000';
 const serverEnv = {
   STARBUDDY_DEV_PAGES: '1',
   STARBUDDY_ENV: 'test',
@@ -57,6 +59,9 @@ const serverEnv = {
   STARBUDDY_REVIEW_FEATURES: '',
   STARBUDDY_REVIEW_URL: process.env['STARBUDDY_REVIEW_URL'] ?? 'http://127.0.0.1:8790',
   NEXT_TELEMETRY_DISABLED: '1',
+  // 学生壳会话状态 cookie 的签名密钥（SIE-05 PR2）：端到端固定一个合成值，用例才能构造“已超时”“被篡改”的 cookie（e2e/behavior-events.spec.ts）；
+  // 只在这个一次性测试环境用，不是任何真实环境的密钥。dev 没配时进程内随机，正式环境没配拒绝写入（src/behavior/presence-server.ts）
+  STARBUDDY_PRESENCE_HMAC_KEY: E2E_PRESENCE_KEY,
   // scripts/e2e.sh 的测试构建在 .next-e2e（next.config.ts），next start 要读同一个目录
   STARBUDDY_NEXT_DIST_DIR: process.env['STARBUDDY_NEXT_DIST_DIR'] ?? '.next-e2e',
 };
