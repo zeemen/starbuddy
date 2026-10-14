@@ -33,3 +33,9 @@
 9. 洞察服务以后实现“预测中值 MAE”指标时应复用 `basis.predicted_median`，避免第二套口径。
 10. G1-4 中的“上线”（可见范围、`validated`）、G1-1 的判分一致率（`make eval-grade` 目前只打印“evals 尚未建立”）不在本管线范围。
 11. 合成证据能否算 Gate 证据仍待人确认（同 e2e-integration-sprint5 #3）。
+
+## 签字记录（2026-10-14）
+- 用户（项目负责人）在开发会话中确认：`tools/gate1-evidence/config.unsigned.json` **整份配置**由其一人代表 SIE 负责人、教研、产品三方签字，占位数值按签字时现值生效；`config_version = signed-1.0.0`，阈值数值未改。文件名沿用历史。
+- 签字后合成样例的 Gate 1 判定仍全部为“无法自动判断（需人）”；报表标签改为“对照签字阈值”。合成样例上“达到签字阈值”不是试点结论，也不是 Gate 1 判定。
+- 仍待人确认：真实试点的分组误差键（签字的是合成队列的 wave、grade；SIE 分册“不同学校”一项）；`checks.json` 机器值 `meets_unsigned_threshold` / `below_unsigned_threshold` 为历史名称，是否改名由人定；上文第 11 条（合成证据能否算 Gate 证据）不因签字改变。
+- 过程：子代理复现一条变异时，一条拼环境变量的命令被 hook 以“读取密钥”拦下，未绕过；该变异改写为不在加载期崩溃的写法，98/98 全部发现。

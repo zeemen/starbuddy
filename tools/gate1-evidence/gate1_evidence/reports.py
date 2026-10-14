@@ -5,8 +5,9 @@
 - G1-4 validity_report：中圈指标值与结局的相关与方向；指标值由 validity_pairs 调洞察服务 metrics.py 的纯函数计算，
   覆盖全部 8 个静默指标（SIE-05）；原料按测量时点截断（metric_inputs）；
 - 附加 fairness_report：分组误差差异，分组只用合成的非敏感分组键（规则 12）。
-结果只有三种：insufficient_sample / meets_unsigned_threshold / below_unsigned_threshold——对照的是未签字配置，
-不是 Gate 1 判定（Gate 1 判定一律由人做）。
+结果只有三种：insufficient_sample / meets_unsigned_threshold / below_unsigned_threshold——对照的是配置里的阈值，
+不是 Gate 1 判定（Gate 1 判定一律由人做）。枚举值沿用 spec（specs/gate1-evidence-sie04）定义的历史名称；
+配置自 2026-10-14 起已签字，对照的即签字阈值，签字状态看证据包里的配置 provenance，不看枚举名。
 """
 from __future__ import annotations
 

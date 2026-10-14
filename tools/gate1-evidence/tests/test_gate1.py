@@ -26,7 +26,7 @@ from gate1_evidence import reports as R
 from gate1_evidence.basis import BasisError, predicted_median
 from gate1_evidence.cohort import (NODES, OTHER_ERRORS, SIZE, WEEKS, Attempt, Cohort, ErrorEvent, ExamRecord, PlanEvent, Probe, Session,
                                    Student, generate)
-from gate1_evidence.config import (CONFIG_PATH, UNSIGNED, VALIDITY_METRICS, ConfigError, ExamCfg, FairnessCfg, RetestCfg, ValidityCfg,
+from gate1_evidence.config import (CONFIG_PATH, SIGNED, UNSIGNED, VALIDITY_METRICS, ConfigError, ExamCfg, FairnessCfg, RetestCfg, ValidityCfg,
                                    load_config, parse_config)
 from gate1_evidence.evidence import DATA_FILES, NEEDS_HUMAN, VOLATILE_METADATA, PackRefused, build, render, write_pack
 
@@ -56,12 +56,31 @@ def _raw_config() -> dict:
 
 
 # ---------- 配置 ----------
-def test_config_is_unsigned_and_fingerprinted():
+SECTIONS = ("retest_g12", "exam_g13", "validity_g14", "fairness")
+SIGNER = "项目负责人（代表 SIE 负责人、教研、产品三方；2026-10-14 在开发会话中确认）"
+SECTION_SIGNOFF = "已签字（项目负责人代表三方，2026-10-14）"
+
+
+def _unsigned_doc() -> dict:
+    """把仓库配置还原成未签字形态（只用于反例：未签字时的校验与文案）"""
+    doc = _raw_config()
+    doc["signed_by"], doc["signed_at"] = "", ""
+    for s in SECTIONS:
+        doc[s]["signoff"] = UNSIGNED
+    return doc
+
+
+def test_config_is_signed_and_fingerprinted():
+    """整份配置已由项目负责人代表三方签字（2026-10-14）；文件名沿用历史；数值按签字时现值生效"""
+    assert CONFIG_PATH.name == "config.unsigned.json"
     cfg = load_config()
-    assert not cfg.signed and cfg.provenance()["signoff"] == UNSIGNED
+    assert cfg.signed and cfg.provenance() == {"config_version": "signed-1.0.0", "fingerprint": cfg.fingerprint, "signoff": SIGNED,
+                                               "signed_by": SIGNER, "signed_at": "2026-10-14"}
     assert re.fullmatch(r"[0-9a-f]{16}", cfg.fingerprint)
     doc = _raw_config()
-    assert all(doc[s]["signoff"] == UNSIGNED for s in ("retest_g12", "exam_g13", "validity_g14", "fairness"))
+    assert (doc["signed_by"], doc["signed_at"], doc["config_version"]) == (SIGNER, "2026-10-14", "signed-1.0.0")
+    assert all(doc[s]["signoff"] == SECTION_SIGNOFF for s in SECTIONS)
+    assert "文件名" in doc["$comment"] and "沿用历史" in doc["$comment"] and "含原占位值" in doc["$comment"]
     assert (cfg.exam.coverage_low, cfg.exam.coverage_high, cfg.exam.nominal) == (0.7, 0.9, 0.8)
     changed = _raw_config()
     changed["exam_g13"]["min_rounds"] = 3
@@ -80,7 +99,7 @@ def test_config_rejects_sensitive_or_unknown_group_keys(key):
     (("exam_g13", "coverage_low"), 0.85),          # 区间不包住 0.8
     (("exam_g13", "coverage_high"), 0.75),
     (("exam_g13", "nominal"), 0.9),
-    (("retest_g12", "signoff"), "已签字"),           # 未签字配置里不能自称已签字
+    (("retest_g12", "signoff"), UNSIGNED),           # 已签字配置里某节仍是“待签字”
     (("validity_g14", "method"), "spearman"),
     (("retest_g12", "min_paired_students"), 1),
 ])
@@ -494,13 +513,13 @@ METRICS_CSV = "label,student_id,subject,metric,value,n,outcome,outcome_value"
 
 
 def test_validity_covers_all_eight_silent_metrics(pack, files):
-    """效度检验覆盖洞察服务 metrics.py 的全部 8 个静默指标；新增四项的结果变量写在未签字配置里、逐项标“待签字”；metrics.csv 列不变"""
+    """效度检验覆盖洞察服务 metrics.py 的全部 8 个静默指标；新增四项的结果变量写在配置里、逐项注明已随配置签字；metrics.csv 列不变"""
     assert set(VALIDITY_METRICS) == set(M.METRIC_DEFS) == set(R.METRIC_CALCULATORS) and len(VALIDITY_METRICS) == 8
     assert R.METRIC_CALCULATORS == {f.__name__: f for f in M.CALCULATORS}          # 直接用洞察服务的纯函数，不另写口径
     assert tuple(pack.config.validity.metrics) == VALIDITY_METRICS
     doc = _raw_config()["validity_g14"]["metrics"]
     for k in NEW_METRICS:
-        assert "待签字" in doc[k]["$comment"] and doc[k]["outcome"] in ("week8_retest_accuracy", "last_exam_fraction")
+        assert "已由项目负责人代表三方签字" in doc[k]["$comment"] and "待签字" not in doc[k]["$comment"] and doc[k]["outcome"] in ("week8_retest_accuracy", "last_exam_fraction")
     assert [m["metric"] for m in pack.g14["metrics"]] == list(VALIDITY_METRICS)
     assert {r["metric"] for r in pack.metric_rows} == set(VALIDITY_METRICS)        # 合成队列上每个指标都有配对
     assert files["metrics.csv"].splitlines()[0] == METRICS_CSV
@@ -661,7 +680,7 @@ def test_gate_counts_only_metrics_marked_counts_toward_gate():
     assert cfg.counted == frozenset(ORIGINAL4)
     doc = _raw_config()["validity_g14"]["metrics"]
     assert all(doc[k]["counts_toward_gate"] is True for k in ORIGINAL4)
-    assert all(doc[k]["counts_toward_gate"] is False and "由人定" in doc[k]["$comment"] and "观察用" in doc[k]["$comment"]
+    assert all(doc[k]["counts_toward_gate"] is False and "按签字时现值不计入" in doc[k]["$comment"] and "观察用" in doc[k]["$comment"]
                for k in NEW_METRICS)
     small = dataclasses.replace(cfg, min_students=5)
     pairs = {**{k: (DOWN if cfg.metrics[k][1] == "positive" else UP) for k in ORIGINAL4},
@@ -706,7 +725,7 @@ def test_summary_marks_observational_substitutes_and_generator_caveats(pack, fil
         assert ("结局为替代口径（字典原文：" in note) == (k != "independent_solve_rate")
     assert "审题类错因占比随学生基础 θ" in sec and "计划完成倾向随每周增量 gain" in sec and "不得当作效度证据" in sec
     assert "persistence 只用周活跃天数" in sec
-    assert f"计入 Gate 1 的指标中对照未签字阈值通过：{pack.g14['passing']}" in sec
+    assert f"计入 Gate 1 的指标中对照签字阈值通过：{pack.g14['passing']}" in sec
     assert pack.g14["passing"] == sum(1 for m in pack.g14["metrics"] if m["counts_toward_gate"] and m["result"] == R.MEETS)
 
 
@@ -733,7 +752,7 @@ def test_summary_reports_insufficient_sample_for_metric(pack):
     md = _render(p, {"commit": "test", "worktree_dirty": False})["summary.md"]
     for k in VALIDITY_METRICS:
         line = next(ln for ln in md.splitlines() if ln.startswith(f"| {k} |"))
-        assert "样本不足" in line and "达到未签字阈值" not in line
+        assert "样本不足" in line and "达到" not in line
 
 
 # ---------- 附加：分组误差差异 ----------
@@ -825,7 +844,16 @@ def test_pack_notice_judgements_and_hashes(files):
             assert i["references"] and "result" not in i and "report" not in i
         else:
             assert i["result"] in (R.INSUFFICIENT, R.MEETS, R.BELOW) and i["report"]["result"] == i["result"]
-    assert doc["config"]["signoff"] == UNSIGNED and doc["config"]["fingerprint"] == load_config().fingerprint
+    assert doc["config"] == load_config().provenance()
+    assert (doc["config"]["signoff"], doc["config"]["signed_by"], doc["config"]["signed_at"]) == (SIGNED, SIGNER, "2026-10-14")
+    # 配置已签字，合成样例上仍不出 Gate 1 判定，理由写明“合成数据，不是试点结论”与“不构成 Gate 1 判定”
+    for i in doc["items"]:
+        if "result" in i:
+            assert i["reason"].startswith("合成数据，不是试点结论；方法与阈值已签字（2026-10-14") and "不构成 Gate 1 判定" in i["reason"]
+    md = files["summary.md"]
+    assert "| 报表结果（对照签字阈值） | Gate 1 判定 |" in md and "未签字阈值" not in md
+    assert f"已签字配置（签字人：{SIGNER}；签字日期：2026-10-14）" in md and "不是试点结论，也不是 Gate 1 判定" in md
+    assert "未达到签字阈值" in md or "达到签字阈值" in md
     for name in DATA_FILES:
         assert f"`{name}` {hashlib.sha256(files[name].encode()).hexdigest()}" in files["summary.md"]
     for v in ("满足 |", "不满足 |"):
@@ -884,17 +912,53 @@ def test_write_pack_refuses_foreign_or_nonempty_dirs(tmp_path, files):
 
 
 def test_config_signed_requires_signoff_records():
-    doc = _raw_config()
+    doc = _unsigned_doc()
     doc["signed_by"], doc["signed_at"] = "SIE 负责人", "2027-06-01"
     with pytest.raises(ConfigError):                                    # 填了签字人，各节却仍是“待签字”
         parse_config(doc)
-    for s in ("retest_g12", "exam_g13", "validity_g14", "fairness"):
+    for s in SECTIONS:
         doc[s]["signoff"] = "已签字 2027-06-01"
     cfg = parse_config(doc)
-    assert cfg.signed and cfg.provenance()["signoff"] == "已签字"
+    assert cfg.signed and cfg.provenance()["signoff"] == SIGNED and cfg.provenance()["signed_at"] == "2027-06-01"
     doc["fairness"]["signoff"] = UNSIGNED                               # 只要有一节还是“待签字”就拒绝
     with pytest.raises(ConfigError):
         parse_config(doc)
+    for s in SECTIONS:                                                  # 仓库配置：任一节退回“待签字”都拒绝
+        doc = _raw_config()
+        doc[s]["signoff"] = UNSIGNED
+        with pytest.raises(ConfigError):
+            parse_config(doc)
+
+
+def test_config_unsigned_cannot_claim_signed_sections():
+    """未填签字人或签字时间的配置：各节只能是“待签字”，不能自称已签字；签字状态要签字人与时间都填"""
+    doc = _unsigned_doc()
+    cfg = parse_config(doc)
+    assert not cfg.signed and cfg.provenance() == {"config_version": "signed-1.0.0", "fingerprint": cfg.fingerprint,
+                                                   "signoff": UNSIGNED}
+    for s in SECTIONS:
+        bad = _unsigned_doc()
+        bad[s]["signoff"] = SECTION_SIGNOFF
+        with pytest.raises(ConfigError):
+            parse_config(bad)
+    only_by = _unsigned_doc()
+    only_by["signed_by"] = SIGNER                                       # 只有签字人、没有签字时间：仍算未签字
+    assert not parse_config(only_by).signed
+    raw = _raw_config()
+    raw["signed_at"] = ""                                               # 仓库配置去掉签字时间：各节签字记录不再成立
+    with pytest.raises(ConfigError):
+        parse_config(raw)
+
+
+def test_unsigned_config_renders_unsigned_wording(pack):
+    """同一合成队列换成未签字配置：文案退回“对照未签字阈值”；签字与否 Gate 1 判定都写“无法自动判断（需人）”"""
+    cfg = parse_config(_unsigned_doc())
+    out = render(dataclasses.replace(pack, config=cfg), {"commit": "test", "worktree_dirty": False})
+    md, doc = out["summary.md"], json.loads(out["checks.json"])
+    assert "| 报表结果（对照未签字阈值） | Gate 1 判定 |" in md and "方法与阈值来自未签字配置" in md and "已签字配置" not in md
+    assert all(i["gate_judgement"] == NEEDS_HUMAN for i in doc["items"]) and doc["config"]["signoff"] == UNSIGNED
+    assert all(i["reason"] == "合成数据，不是试点结论；方法与阈值未签字（tools/gate1-evidence/config.unsigned.json）"
+               for i in doc["items"] if "result" in i)
 
 
 def test_copy_of_config_is_not_mutated_by_parse():

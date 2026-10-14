@@ -137,14 +137,26 @@ MUTATIONS: dict[str, list[tuple[str, str, str]]] = {
     "覆盖率区间不必包住名义值": [(CF, '_need(lo < 0.8 < hi, "覆盖率区间必须包住名义值 0.8")', '_need(lo < hi, "覆盖率区间必须包住名义值 0.8")')],
     "未签字配置可自称已签字": [(CF, '_need(signed or doc[s]["signoff"] == UNSIGNED', "_need(True")],
     "已签字配置可保留“待签字”": [(CF, '_need(not signed or doc[s]["signoff"] != UNSIGNED', "_need(True")],
+    "只填签字人不填时间也算签字": [(CF, 'signed = bool(doc["signed_by"].strip() and doc["signed_at"].strip())',
+                                'signed = bool(doc["signed_by"].strip())')],
+    "溯源把已签字配置写成“待签字”": [(CF, '"signoff": SIGNED if self.signed else UNSIGNED}', '"signoff": UNSIGNED}')],
+    "配置溯源不带签字人与时间": [(CF, "            out.update(signed_by=self.signed_by, signed_at=self.signed_at)\n", "            pass\n")],
     "多余配置位放行":[(CF, 'extra = set(doc) - required - {"$comment"}', "extra = set()")],
     # 合成队列
     "8 周后复测间隔改成 7 周": [(CO, "WEEK8_RETEST_DAY = FIRST_RETEST_DAY + 56", "WEEK8_RETEST_DAY = FIRST_RETEST_DAY + 49")],
     "停用学生也有 8 周后复测": [(CO, "            if not lat.active(day):\n                continue\n            t0 = BASE + timedelta(days=day, hours=20)",
                               "            t0 = BASE + timedelta(days=day, hours=20)")],
     # 证据包
-    "达到未签字阈值就写“满足”": [(EV, '"gate_judgement": NEEDS_HUMAN, "reason": SYNTHETIC_REASON',
-                               '"gate_judgement": "满足" if reports[key]["result"] == MEETS else NEEDS_HUMAN, "reason": SYNTHETIC_REASON')],
+    "达到阈值就写“满足”": [(EV, '"gate_judgement": NEEDS_HUMAN, "reason": reason',
+                          '"gate_judgement": "满足" if reports[key]["result"] == MEETS else NEEDS_HUMAN, "reason": reason')],
+    "配置已签字就在合成样例上自动出 Gate 1 判定": [
+        (EV, '"gate_judgement": NEEDS_HUMAN, "reason": reason',
+             '"gate_judgement": ({MEETS: "满足", BELOW: "不满足"}.get(reports[key]["result"], NEEDS_HUMAN) if p.config.signed '
+             'else NEEDS_HUMAN), "reason": reason')],
+    "签字后判定理由不写“合成数据，不是试点结论”": [(EV, 'return (f"{SYNTHETIC_PREFIX}；方法与阈值已签字', 'return (f"方法与阈值已签字')],
+    "签字后判定理由不写“不构成 Gate 1 判定”": [(EV, "但合成队列上的报表结果即使达到签字阈值也不构成 Gate 1 判定，", "")],
+    "签字后摘要仍写“未签字阈值”": [(EV, 'return "签字阈值" if cfg.signed else "未签字阈值"', 'return "未签字阈值"')],
+    "未签字时摘要也写“签字阈值”": [(EV, 'return "签字阈值" if cfg.signed else "未签字阈值"', 'return "签字阈值"')],
     "不检查输出目录": [(EV, "    check_out_dir(out_dir, set(files))\n", "")],
     "输出目录里的同名目录与符号链接放行": [(EV, "if e.name not in names or e.is_symlink() or not e.is_file()", "if e.name not in names")],
     "输出目录本身是符号链接也放行": [(EV, "    if out_dir.is_symlink():\n        raise PackRefused", "    if False:\n        raise PackRefused")],

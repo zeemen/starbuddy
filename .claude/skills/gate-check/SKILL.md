@@ -20,8 +20,11 @@ description: 汇总阶段 Gate 的证据包（Gate 0 / Gate 1），逐条核对�
   5. G1-5 四科通过分科验收（完整方案 5.9，含知识切片与画像两项；只引用）；
   6. G1-6 合规路径明确（只引用：完整方案 :623、docs/compliance/vendors.md、docs/gates/human-checklist.md）；
   附加：画像误差的群体公平性（fairness.csv、checks.json 的 G1-附加；分组只用非敏感键，不用地区、学校、家庭，规则 12）。
-  口径：报表结果是 insufficient_sample 时不得写“满足”；方法与阈值来自 tools/gate1-evidence/config.unsigned.json，未签字时只是“对照未签字阈值”；
-  tools/gate1-evidence/sample 是合成样例（“合成，不是试点结论”），G1-2、G1-3、G1-4 与附加项据此一律写“无法自动判断（需人）”；
+  口径：报表结果是 insufficient_sample 时不得写“满足”；方法与阈值来自 tools/gate1-evidence/config.unsigned.json（文件名沿用历史；
+  2026-10-14 已由项目负责人代表 SIE 负责人、教研、产品三方签字，config_version signed-1.0.0，取证时引用指纹与签字人、日期），报表结果是“对照签字阈值”；
+  配置若被改回未签字或改动后未重签，只是“对照未签字阈值”；
+  tools/gate1-evidence/sample 是合成样例（“合成，不是试点结论”），配置已签字也不变：G1-2、G1-3、G1-4 与附加项据此一律写“无法自动判断（需人）”，
+  合成样例上“达到签字阈值”不得表述为试点结论或 Gate 1 判定；
   真实试点核对见 tools/gate1-evidence/RUNBOOK.md（只读，本仓不执行）。
 - 留出集的盲测结果只引用教研给出的报告，不读取留出集本身（CLAUDE.md 规则 14）。
 运行 make check、make contract-test、make eval-persona（Gate 1 另跑 make gate1-test 与 make gate1-evidence），引用输出。

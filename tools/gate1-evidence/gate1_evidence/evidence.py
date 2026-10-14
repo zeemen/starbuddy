@@ -6,7 +6,8 @@
   exams.csv          每名学生 × 学科 × 轮次：80% 区间、中值、实得、区间位置（reconcile_plan 口径，G1-3）
   metrics.csv        中圈指标值与结局的配对（G1-4；指标值由洞察服务 metrics.py 纯函数计算）
   fairness.csv       分组误差（附加项；只用合成的非敏感分组键）
-  checks.json        六条 Gate 1 条件与附加项：报表结果（对照未签字阈值）与 Gate 1 判定（一律“无法自动判断（需人）”）
+  checks.json        六条 Gate 1 条件与附加项：报表结果（对照配置阈值；配置已签字即签字阈值）与 Gate 1 判定
+                     （一律“无法自动判断（需人）”：本管线只有合成数据，配置签字与否都不出 Gate 1 判定）
   summary.md         说明、结果一览、数据文件 SHA-256（不含提交号，同一输入逐字节相同）
   run_metadata.json  提交号与工作区状态（唯一随提交变化的字段）、种子、队列摘要、配置指纹、洞察服务算法版本
 """
@@ -35,8 +36,25 @@ from .reports import (BELOW, INSUFFICIENT, MEETS, exam_report, fairness_report, 
 DATA_FILES = ("students.csv", "retests.csv", "exams.csv", "metrics.csv", "fairness.csv", "checks.json")
 VOLATILE_METADATA = ("commit", "worktree_dirty")
 NEEDS_HUMAN = "无法自动判断（需人）"
-SYNTHETIC_REASON = "合成数据，不是试点结论；方法与阈值未签字（tools/gate1-evidence/config.unsigned.json）"
-RESULT_ZH = {INSUFFICIENT: "样本不足（不出结论）", MEETS: "达到未签字阈值", BELOW: "未达到未签字阈值"}
+SYNTHETIC_PREFIX = "合成数据，不是试点结论"
+CONFIG_FILE = "tools/gate1-evidence/config.unsigned.json"
+
+
+def synthetic_reason(cfg: Config) -> str:
+    """G1-2、G1-3、G1-4、附加项的 Gate 1 判定理由。配置已签字也一样不出判定：本管线只有合成数据"""
+    if cfg.signed:
+        return (f"{SYNTHETIC_PREFIX}；方法与阈值已签字（{cfg.signed_at}，{CONFIG_FILE}），"
+                "但合成队列上的报表结果即使达到签字阈值也不构成 Gate 1 判定，Gate 1 判定由人基于真实试点数据作出")
+    return f"{SYNTHETIC_PREFIX}；方法与阈值未签字（{CONFIG_FILE}）"
+
+
+def threshold_label(cfg: Config) -> str:
+    return "签字阈值" if cfg.signed else "未签字阈值"
+
+
+def result_zh(cfg: Config) -> dict[str, str]:
+    t = threshold_label(cfg)
+    return {INSUFFICIENT: "样本不足（不出结论）", MEETS: f"达到{t}", BELOW: f"未达到{t}"}
 
 REFERENCE_ITEMS = {
     "G1-1": ("各科批改与教师一致率达标，发布阻断指标无超阈值", [
@@ -152,6 +170,7 @@ def _exams(c: Cohort, z: float) -> list[dict]:
 def checks(p: Pack) -> dict[str, Any]:
     reports = {"G1-2": p.g12, "G1-3": p.g13, "G1-4": p.g14,
                "G1-附加": {k: v for k, v in p.fairness.items() if k != "rows"}}
+    reason = synthetic_reason(p.config)
     items = []
     for key in ORDER:
         if key in REFERENCE_ITEMS:
@@ -159,7 +178,7 @@ def checks(p: Pack) -> dict[str, Any]:
             items.append({"id": key, "condition": cond, "gate_judgement": NEEDS_HUMAN,
                           "reason": "本管线不计算，只引用既有评测或文档位置", "references": refs})
         else:
-            items.append({"id": key, "condition": CONDITIONS[key], "gate_judgement": NEEDS_HUMAN, "reason": SYNTHETIC_REASON,
+            items.append({"id": key, "condition": CONDITIONS[key], "gate_judgement": NEEDS_HUMAN, "reason": reason,
                           "report": reports[key], "result": reports[key]["result"]})
     return {
         "notice": SYNTHETIC_NOTICE,
@@ -207,11 +226,15 @@ def _fmt(x: Any) -> str:
 
 def _summary(p: Pack, files: dict[str, str]) -> str:
     c = p.cohort
+    zh, t = result_zh(p.config), threshold_label(p.config)
+    basis = (f"方法与阈值来自已签字配置（签字人：{p.config.signed_by}；签字日期：{p.config.signed_at}），结果是合成队列“对照签字阈值”的报表结果，"
+             "不是试点结论，也不是 Gate 1 判定" if p.config.signed
+             else "方法与阈值来自未签字配置，结果只是“对照未签字阈值”，不是 Gate 1 判定")
     lines = [
         "# Gate 1 证据包（合成）",
         "",
         f"> **{SYNTHETIC_NOTICE}。** 全部学生、作答、复测、考试均为固定种子生成的合成数据（仓库总则规则 8），只有合成 ID 与非敏感分组键；"
-        "方法与阈值来自未签字配置，结果只是“对照未签字阈值”，不是 Gate 1 判定。Gate 1 是否通过由人决定。",
+        f"{basis}。Gate 1 是否通过由人基于真实试点数据决定。",
         "",
         f"- 合成学生：{len(c.students)} 名，{c.weeks} 周；会话 {len(c.sessions)} 次，练习作答 "
         f"{sum(1 for a in c.attempts if a.retest_round is None)} 道，复测 {len(c.retests)} 道，考试记录 {len(c.exams)} 条",
@@ -219,51 +242,53 @@ def _summary(p: Pack, files: dict[str, str]) -> str:
         f"同一任务取最后一次），错因 {len(c.errors)} 条（其中审题类 "
         f"{sum(1 for e in c.errors if e.fact.cross_subject_category == 'reading_the_question')} 条）",
         f"- 配置：`{p.config.config_version}`，指纹 `{p.config.fingerprint}`，{p.config.provenance()['signoff']}",
-        f"- 预测与指标：洞察服务 `{insight_predict.MODEL_VERSION}`、`{insight_metrics.MODEL_VERSION}`（合成、未签字的洞察服务配置）",
+        f"- 预测与指标：洞察服务 `{insight_predict.MODEL_VERSION}`、`{insight_metrics.MODEL_VERSION}`（洞察服务自身的合成、未签字配置，与本管线 Gate 1 配置的签字无关）",
         "",
-        "| 条件 | 内容 | 报表结果（对照未签字阈值） | Gate 1 判定 |",
+        f"| 条件 | 内容 | 报表结果（对照{t}） | Gate 1 判定 |",
         "|---|---|---|---|",
     ]
     for it in checks(p)["items"]:
-        res = RESULT_ZH[it["result"]] if "result" in it else "—（只引用）"
+        res = zh[it["result"]] if "result" in it else "—（只引用）"
         lines.append(f"| {it['id']} | {it['condition']} | {res} | {it['gate_judgement']} |")
     imp, cont = p.g12["improvement"], p.g12["continuation"]
     lines += ["", "## G1-2 8 周延迟复测与续用", "",
               f"- 配对学生 {imp['paired_students']}（门槛 {imp['min_paired_students']}）：首轮 {_fmt(imp.get('first_accuracy'))}，"
               f"8 周后 {_fmt(imp.get('week8_accuracy'))}，均值差 {_fmt(imp.get('mean_delta'))}，改善占比 {_fmt(imp.get('share_improved'))}"
-              f"（{RESULT_ZH[imp['result']]}）",
-              "- 改善按幸存者口径：只有两轮都做够题的学生进入配对，中途停用的学生体现在续用率里（口径待签字）",
+              f"（{zh[imp['result']]}）",
+              "- 改善按幸存者口径：只有两轮都做够题的学生进入配对，中途停用的学生体现在续用率里"
+              f"（口径{'已随配置签字' if p.config.signed else '待签字'}）",
               f"- 续用：入组 {cont['enrolled']}，观察窗完整 {cont['evaluable']}（门槛 {cont['min_enrolled_students']}，"
               f"其中从未使用 {cont['never_used_evaluable']}；删失 {cont['censored']}），"
-              f"续用率 {_fmt(cont.get('rate'))}（{RESULT_ZH[cont['result']]}）",
+              f"续用率 {_fmt(cont.get('rate'))}（{zh[cont['result']]}）",
               "", "## G1-3 考试对账", "",
               "| 轮次 | 类型 | 记录数 | 学生数 | 覆盖率 | 区间下 / 内 / 上 | 中值 MAE（占满分） | 偏差 | 结果 |",
               "|---|---|---|---|---|---|---|---|---|"]
     for r in p.g13["rounds"]:
         spread = f"{r['below']} / {r['inside']} / {r['above']}" if "inside" in r else "—"
         lines.append(f"| {r['round']} | {r['exam_type']} | {r['n']} | {r['students']} | {_fmt(r.get('coverage'))} | {spread} | "
-                     f"{_fmt(r.get('mae'))} | {_fmt(r.get('bias'))} | {RESULT_ZH[r['result']]} |")
+                     f"{_fmt(r.get('mae'))} | {_fmt(r.get('bias'))} | {zh[r['result']]} |")
     if "mae_decreased_vs_first" in p.g13:
         lines += ["", f"- 误差较首轮下降：{'是' if p.g13['mae_decreased_vs_first'] else '否'}（区间内外按 reconcile_plan 口径）"]
     lines += ["", "## G1-4 中圈指标效度", "",
               "覆盖洞察服务 metrics.py 的全部 8 个静默指标；按学生聚合（各科取均值，一名学生一对）后求皮尔逊相关。"
-              "跨科指标每名学生一个值，结局取各科均值。新增四项的结局变量与方向待签字（config.unsigned.json）；样本不足的指标不出结论。", "",
+              "跨科指标每名学生一个值，结局取各科均值。新增四项的结局变量与方向"
+              f"{'已随配置签字' if p.config.signed else '待签字'}（config.unsigned.json）；样本不足的指标不出结论。", "",
               "| 指标 | 结局 | 预期方向 | 学生数 | r | 结果 | 计入 Gate 1 |", "|---|---|---|---|---|---|---|"]
     for m in p.g14["metrics"]:
         lines.append(f"| {m['metric']} | {m['outcome']} | {m['expected_direction']} | {m['students']} | {_fmt(m.get('r'))} | "
-                     f"{RESULT_ZH[m['result']]} | {'计入' if m['counts_toward_gate'] else NOT_COUNTED} |")
+                     f"{zh[m['result']]} | {'计入' if m['counts_toward_gate'] else NOT_COUNTED} |")
     lines += ["", "结局口径（逐项对照 SIE 分册效度检验一栏原文）：", ""]
     for m in p.g14["metrics"]:
         original, substitute = VALIDITY_ORIGINAL[m["metric"]]
         lines.append(f"- {m['metric']}：" + (f"结局为替代口径（字典原文：{original}）" if substitute
                                             else f"结局与字典原文一致（字典原文：{original}）"))
     lines += ["", *GENERATOR_CAVEATS, "",
-              f"- 计入 Gate 1 的指标中对照未签字阈值通过：{p.g14['passing']}（需要 {p.g14['min_metrics_passing']}）；"
+              f"- 计入 Gate 1 的指标中对照{t}通过：{p.g14['passing']}（需要 {p.g14['min_metrics_passing']}）；"
               f"观察用、不计入的指标中达到阈值：{p.g14['observational_meeting']}；“上线”不在本管线范围",
               "", "## 附加：分组误差差异", "", "| 分组键 | 组样本（记录 / 学生） | MAE 差距 | 偏差差距 | 结果 |", "|---|---|---|---|---|"]
     for k in p.fairness["keys"]:
         sizes = "，".join(f"{g}: {n} / {k['students'][g]}" for g, n in k["groups"].items())
-        lines.append(f"| {k['group_key']} | {sizes} | {_fmt(k.get('mae_gap'))} | {_fmt(k.get('bias_gap'))} | {RESULT_ZH[k['result']]} |")
+        lines.append(f"| {k['group_key']} | {sizes} | {_fmt(k.get('mae_gap'))} | {_fmt(k.get('bias_gap'))} | {zh[k['result']]} |")
     lines += ["", "## 只引用、不计算的条件", ""]
     for key in ("G1-1", "G1-5", "G1-6"):
         cond, refs = REFERENCE_ITEMS[key]

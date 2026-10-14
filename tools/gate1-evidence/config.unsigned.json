@@ -1,21 +1,21 @@
 {
-  "$comment": "Gate 1 证据管线的方法与阈值（SIE-04 第一步）。全部未签字：每一节的 signoff 都是“待签字”，由 SIE 负责人、教研与产品签字后才能用于真实试点；签字前报表只给“对照未签字阈值”的结果，Gate 1 判定一律写“无法自动判断（需人）”。填了 signed_by / signed_at 时，每一节的 signoff 必须改成签字记录（不能再是“待签字”）。数值取开发计划 v2.0 Gate 1 条件（:447-454）与 SIE 分册（:401-412、:595-601）的文字，其余为占位。样本门槛分两种：按记录计（min_*_records / min_records_*）与按学生计（min_students*，同一名学生多科、多轮只算一名独立样本），两者都要满足。",
+  "$comment": "Gate 1 证据管线的方法与阈值（SIE-04 第一步）。整份配置已由项目负责人代表 SIE 负责人、教研、产品三方签字（2026-10-14 在开发会话中确认），数值按签字时现值生效（含原占位值）；四节 signoff 都是签字记录。文件名 config.unsigned.json 沿用历史（签字前的命名，改名波及太广），不代表未签字，签字状态以 signed_by / signed_at 与各节 signoff 为准。签字只确认方法与阈值：合成样例（sample/）上的结果仍是“合成数据，不是试点结论”，Gate 1 判定仍由人基于真实试点数据作出。填了 signed_by / signed_at 时，每一节的 signoff 必须是签字记录（不能是“待签字”）。数值来源：开发计划 v2.0 Gate 1 条件（:447-454）与 SIE 分册（:401-412、:595-601）的文字，其余为签字前的占位值、按现值签字生效。样本门槛分两种：按记录计（min_*_records / min_records_*）与按学生计（min_students*，同一名学生多科、多轮只算一名独立样本），两者都要满足。",
   "schema_version": "gate1-evidence-config/0.1",
-  "config_version": "unsigned-0.3.0",
-  "signed_by": "",
-  "signed_at": "",
+  "config_version": "signed-1.0.0",
+  "signed_by": "项目负责人（代表 SIE 负责人、教研、产品三方；2026-10-14 在开发会话中确认）",
+  "signed_at": "2026-10-14",
   "retest_g12": {
-    "signoff": "待签字",
+    "signoff": "已签字（项目负责人代表三方，2026-10-14）",
     "improvement": {
       "definition": "paired_mean_delta",
-      "$comment": "改善 = 同一名学生 8 周后复测正确率 − 首轮复测正确率（配对），队列均值 > min_mean_delta（严格大于），且改善（差值 > 0）的学生占比 ≥ min_share_improved。口径是“幸存者口径”：只有两轮都做够题的学生进入配对，中途停用、没有 8 周后复测的学生不计入（他们体现在续用率里），可能高估改善。“改善”的定义与这一口径都待签字。",
+      "$comment": "改善 = 同一名学生 8 周后复测正确率 − 首轮复测正确率（配对），队列均值 > min_mean_delta（严格大于），且改善（差值 > 0）的学生占比 ≥ min_share_improved。口径是“幸存者口径”：只有两轮都做够题的学生进入配对，中途停用、没有 8 周后复测的学生不计入（他们体现在续用率里），可能高估改善。“改善”的定义与这一口径已由项目负责人代表三方签字（2026-10-14），按现值生效。",
       "min_mean_delta": 0.0,
       "min_share_improved": 0.5
     },
     "min_items_per_round": 8,
     "min_paired_students": 20,
     "continuation": {
-      "$comment": "8 周续用 = 入组后第 after_days 天起 window_days 天内仍有会话。分母 = 入组学生中观察窗完整者（入组 + after_days + window_days 不晚于数据截止），含入组后从未使用的学生（计为未续用）；观察窗不完整的按删失不计。续用率门槛为占位。",
+      "$comment": "8 周续用 = 入组后第 after_days 天起 window_days 天内仍有会话。分母 = 入组学生中观察窗完整者（入组 + after_days + window_days 不晚于数据截止），含入组后从未使用的学生（计为未续用）；观察窗不完整的按删失不计。续用率门槛原为占位值，已由项目负责人代表三方签字（2026-10-14），按现值生效。",
       "after_days": 56,
       "window_days": 14,
       "min_rate": 0.6
@@ -23,7 +23,7 @@
     "min_enrolled_students": 20
   },
   "exam_g13": {
-    "signoff": "待签字",
+    "signoff": "已签字（项目负责人代表三方，2026-10-14）",
     "nominal": 0.8,
     "coverage_low": 0.7,
     "coverage_high": 0.9,
@@ -35,27 +35,27 @@
     "min_mae_relative_drop": 0.0
   },
   "validity_g14": {
-    "signoff": "待签字",
+    "signoff": "已签字（项目负责人代表三方，2026-10-14）",
     "method": "pearson",
     "measure_week": 6,
     "min_students": 20,
     "min_abs_r": 0.3,
     "min_metrics_passing": 2,
-    "$comment": "每个指标在第 measure_week 周末按洞察服务 metrics.py 的纯函数计算（最低样本取洞察服务的合成判断策略配置），与之后的结局配对：先按学生聚合（同一学生各科的指标值取均值、结局取均值，一名学生一对），再求相关；min_students 是聚合后的学生数。跨科指标（自评校准、计划完成率、审题类错因占比、学习持续性）每名学生一个值，结局取该学生各科结局的均值。方向与预期一致且 |r| ≥ min_abs_r 才算对照未签字阈值通过。结局与方向是对 SIE 分册效度检验一栏的简化（提示依赖度原文是“下降是否伴随独立解题率上升”，这里用与 8 周复测的负相关代替），待签字。SIE-05 新增的四个指标沿用现有两种结局口径，结局变量与方向逐项待签字（见各项 $comment）。counts_toward_gate（每项必填）：只有 true 的指标计入“至少 min_metrics_passing 个指标通过”；false 的照常计算 r、只作观察（字典写明“观察用”或结局为替代口径），是否计入由人定。",
+    "$comment": "每个指标在第 measure_week 周末按洞察服务 metrics.py 的纯函数计算（最低样本取洞察服务的合成判断策略配置），与之后的结局配对：先按学生聚合（同一学生各科的指标值取均值、结局取均值，一名学生一对），再求相关；min_students 是聚合后的学生数。跨科指标（自评校准、计划完成率、审题类错因占比、学习持续性）每名学生一个值，结局取该学生各科结局的均值。方向与预期一致且 |r| ≥ min_abs_r 才算对照签字阈值通过。结局与方向是对 SIE 分册效度检验一栏的简化（提示依赖度原文是“下降是否伴随独立解题率上升”，这里用与 8 周复测的负相关代替），这一简化已由项目负责人代表三方签字（2026-10-14），按现值生效。SIE-05 新增的四个指标沿用现有两种结局口径，结局变量与方向随整份配置一并签字（见各项 $comment）。counts_toward_gate（每项必填）：只有 true 的指标计入“至少 min_metrics_passing 个指标通过”；false 的照常计算 r、只作观察（字典写明“观察用”或结局为替代口径），按签字时现值不计入。",
     "metrics": {
       "independent_solve_rate": {"outcome": "week8_retest_accuracy", "direction": "positive", "counts_toward_gate": true},
       "hint_dependency": {"outcome": "week8_retest_accuracy", "direction": "negative", "counts_toward_gate": true},
       "transfer_gap": {"outcome": "last_exam_fraction", "direction": "positive", "counts_toward_gate": true},
       "retention_rate": {"outcome": "last_exam_fraction", "direction": "positive", "counts_toward_gate": true},
-      "self_assessment_calibration": {"$comment": "待签字。观察用，不计入 Gate 1（counts_toward_gate = false）：结局为替代口径——SIE 分册原文“与考试预测偏差方向一致性”，这里简化为 Brier 分数（越小越准）与最后一轮考试得分率负相关；Brier 同时含正确率本身的成分，不是纯校准。是否计入由人定。", "outcome": "last_exam_fraction", "direction": "negative", "counts_toward_gate": false},
-      "plan_completion_rate": {"$comment": "待签字。观察用，不计入 Gate 1（counts_toward_gate = false）：字段字典原文即“与后续进步相关（观察用）”，且这里用 8 周后复测正确率代替“后续进步”（替代口径）。是否计入由人定。", "outcome": "week8_retest_accuracy", "direction": "positive", "counts_toward_gate": false},
-      "reading_question_error_share": {"$comment": "待签字。观察用，不计入 Gate 1（counts_toward_gate = false）：结局为替代口径——SIE 分册原文“针对训练后是否下降”（需要训练前后两个时点，合成队列没有针对训练），这里简化为与最后一轮考试得分率负相关。是否计入由人定。", "outcome": "last_exam_fraction", "direction": "negative", "counts_toward_gate": false},
-      "persistence": {"$comment": "待签字。观察用，不计入 Gate 1（counts_toward_gate = false）：字段字典原文即“观察用，不参与评价”；这里只取周活跃天数（不含中断后恢复率）与 8 周后复测正确率（替代口径），预期正相关。是否计入由人定。", "outcome": "week8_retest_accuracy", "direction": "positive", "counts_toward_gate": false}
+      "self_assessment_calibration": {"$comment": "已由项目负责人代表三方签字（2026-10-14），按现值生效。观察用，不计入 Gate 1（counts_toward_gate = false）：结局为替代口径——SIE 分册原文“与考试预测偏差方向一致性”，这里简化为 Brier 分数（越小越准）与最后一轮考试得分率负相关；Brier 同时含正确率本身的成分，不是纯校准。按签字时现值不计入。", "outcome": "last_exam_fraction", "direction": "negative", "counts_toward_gate": false},
+      "plan_completion_rate": {"$comment": "已由项目负责人代表三方签字（2026-10-14），按现值生效。观察用，不计入 Gate 1（counts_toward_gate = false）：字段字典原文即“与后续进步相关（观察用）”，且这里用 8 周后复测正确率代替“后续进步”（替代口径）。按签字时现值不计入。", "outcome": "week8_retest_accuracy", "direction": "positive", "counts_toward_gate": false},
+      "reading_question_error_share": {"$comment": "已由项目负责人代表三方签字（2026-10-14），按现值生效。观察用，不计入 Gate 1（counts_toward_gate = false）：结局为替代口径——SIE 分册原文“针对训练后是否下降”（需要训练前后两个时点，合成队列没有针对训练），这里简化为与最后一轮考试得分率负相关。按签字时现值不计入。", "outcome": "last_exam_fraction", "direction": "negative", "counts_toward_gate": false},
+      "persistence": {"$comment": "已由项目负责人代表三方签字（2026-10-14），按现值生效。观察用，不计入 Gate 1（counts_toward_gate = false）：字段字典原文即“观察用，不参与评价”；这里只取周活跃天数（不含中断后恢复率）与 8 周后复测正确率（替代口径），预期正相关。按签字时现值不计入。", "outcome": "week8_retest_accuracy", "direction": "positive", "counts_toward_gate": false}
     }
   },
   "fairness": {
-    "signoff": "待签字",
-    "$comment": "分组误差差异只用合成的非敏感分组键（规则 12：不用地区、学校、家庭推断）。SIE 分册原文是“不同学校、不同基础学生群体”，真实试点用哪些分组键待人确认。误差以占满分比例计，取各轮全部考试记录；每组同时要求记录数 ≥ min_records_per_group 与不同学生数 ≥ min_students_per_group。",
+    "signoff": "已签字（项目负责人代表三方，2026-10-14）",
+    "$comment": "分组误差差异只用合成的非敏感分组键（规则 12：不用地区、学校、家庭推断）。本节按现值（group_keys = wave、grade 及各门槛）已由项目负责人代表三方签字（2026-10-14）。SIE 分册原文是“不同学校、不同基础学生群体”，真实试点用哪些分组键仍待人确认（签字只覆盖合成队列的非敏感键）。误差以占满分比例计，取各轮全部考试记录；每组同时要求记录数 ≥ min_records_per_group 与不同学生数 ≥ min_students_per_group。",
     "group_keys": ["wave", "grade"],
     "min_records_per_group": 10,
     "min_students_per_group": 10,

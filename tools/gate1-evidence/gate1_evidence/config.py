@@ -1,6 +1,9 @@
-"""未签字配置 config.unsigned.json：加载、形状与取值校验、配置指纹。
+"""Gate 1 配置 config.unsigned.json：加载、形状与取值校验、签字状态、配置指纹。
 
-本模块只校验形状与方向，不规定任何签字数值（每一节 signoff 必须是“待签字”或签字记录）；报表输出带配置指纹。
+文件名沿用历史（签字前的命名）；2026-10-14 起整份配置已由项目负责人代表 SIE 负责人、教研、产品三方签字，
+签字状态以 signed_by / signed_at 与各节 signoff 为准，不看文件名。
+本模块只校验形状、方向与签字一致性（未填签字人时每一节 signoff 只能是“待签字”；填了签字人与签字时间时每一节都必须是签字记录），
+不规定任何数值；报表输出带配置指纹与签字状态。
 分组键只能是合成队列提供的非敏感键，且不得命中地区、学校、家庭等词（规则 12）。
 """
 from __future__ import annotations
@@ -17,6 +20,7 @@ SCHEMA_VERSION = "gate1-evidence-config/0.1"
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config.unsigned.json"
 SECTIONS = ("retest_g12", "exam_g13", "validity_g14", "fairness")
 UNSIGNED = "待签字"
+SIGNED = "已签字"
 # 洞察服务 metrics.py 的全部 8 个静默指标（SIE-05：效度检验覆盖全部）；顺序即报表顺序
 VALIDITY_METRICS = ("independent_solve_rate", "hint_dependency", "transfer_gap", "retention_rate", "self_assessment_calibration",
                     "plan_completion_rate", "reading_question_error_share", "persistence")
@@ -108,10 +112,15 @@ class Config:
     validity: ValidityCfg
     fairness: FairnessCfg
     fingerprint: str
+    signed_by: str = ""
+    signed_at: str = ""
 
     def provenance(self) -> dict[str, Any]:
-        return {"config_version": self.config_version, "fingerprint": self.fingerprint,
-                "signoff": "已签字" if self.signed else UNSIGNED}
+        out: dict[str, Any] = {"config_version": self.config_version, "fingerprint": self.fingerprint,
+                               "signoff": SIGNED if self.signed else UNSIGNED}
+        if self.signed:
+            out.update(signed_by=self.signed_by, signed_at=self.signed_at)
+        return out
 
 
 def check_group_key(key: str) -> None:
@@ -192,7 +201,8 @@ def parse_config(doc: Mapping[str, Any]) -> Config:
                            _num(f["max_mae_gap"], "max_mae_gap"), _num(f["max_bias_gap"], "max_bias_gap"))
 
     fp = hashlib.sha256(json.dumps(doc, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()[:16]
-    return Config(doc["config_version"], signed, retest, exam, validity, fairness, fp)
+    return Config(doc["config_version"], signed, retest, exam, validity, fairness, fp,
+                  doc["signed_by"].strip() if signed else "", doc["signed_at"].strip() if signed else "")
 
 
 def load_config(path: str | Path = CONFIG_PATH) -> Config:

@@ -196,7 +196,7 @@ def _latent(seed: int, i: int, node_offset: Mapping[str, float]) -> _Latent:
 class _Habits:
     """中圈指标原料的潜在倾向（独立随机数流，只在生成器内部使用，不进证据包）"""
     self_bias: float       # 自评偏差：正 = 倾向高估
-    plan_follow: float     # 计划任务完成倾向（与每周增量正相关：合成世界假设，待签字时一并复核）
+    plan_follow: float     # 计划任务完成倾向（与每周增量正相关：合成世界假设，不是签字口径，不得当作效度证据）
     reading: float         # 错因里审题类的比例（基础较弱的学生略高：合成世界假设）
 
 

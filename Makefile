@@ -621,8 +621,8 @@ gate0-starmap-v1:
 
 # Gate 1 证据管线第一步（SIE-04，specs/gate1-evidence-sie04）：固定种子 40 名合成学生 12 周的纵向队列（作答、首轮与 8 周后复测、
 # 会话、三轮考试预测与成绩），四项报表（G1-2 8 周复测与续用、G1-3 考试区间覆盖率与 MAE、G1-4 中圈指标效度、附加分组误差差异）
-# 直接调用洞察服务的纯函数（insight/predict.py 的 predict_interval / reconcile_plan、insight/metrics.py），方法与阈值放未签字配置
-# tools/gate1-evidence/config.unsigned.json。不连库、不联网、不读留出集；用洞察服务的 venv（不新增依赖）。
+# 直接调用洞察服务的纯函数（insight/predict.py 的 predict_interval / reconcile_plan、insight/metrics.py），方法与阈值放配置
+# tools/gate1-evidence/config.unsigned.json（文件名沿用历史；2026-10-14 已由项目负责人代表三方签字）。不连库、不联网、不读留出集；用洞察服务的 venv（不新增依赖）。
 #   make gate1-evidence GATE1_OUT=<输出目录>   证据包（CSV、checks.json、summary.md、run_metadata.json；标“合成，不是试点结论”）
 #   make gate1-test       纯函数测试与反例、证据包确定性、与仓库样例 tools/gate1-evidence/sample 逐字节一致（几秒）
 #   make gate1-mutation   把报表的门槛、边界、方向、口径逐条改坏，断言测试能发现（约 1 分钟）
