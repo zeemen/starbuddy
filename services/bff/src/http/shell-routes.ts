@@ -255,9 +255,13 @@ const today: Handler = async (ctx) => {
       estimated_minutes: i.estimated_minutes, source: i.source, entry_id: i.entry_id,
       rationale: i.source === 'plan' && i.rationale_code !== null
         ? sectionTask.get(taskKey(i.subject, i.kind, i.node_id, i.rationale_code))?.rationale ?? null : null,
+      // 今日计划快照（PLT-15 PR2）：学习服务冻结了当天快照时带任务 ID（写 plan_done / plan_skip 用）；没有就不带这个键
+      ...(i.task_id !== undefined ? { task_id: i.task_id } : {}),
     })),
     truncated_count: ordered.truncated_count,
     partial: ordered.partial,
+    // 快照状态只在学习服务给了时带（学习服务快照开关关时响应与开关上线前逐字段一致）
+    ...(ordered.snapshot !== undefined ? { snapshot: ordered.snapshot } : {}),
   };
   return json(200, { student_id: id, subjects: out, ordered: orderedOut });
 };

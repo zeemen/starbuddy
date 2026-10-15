@@ -85,6 +85,35 @@ test('响应白名单：任何一条不合格就整张列表不可用（不猜�
   assert.equal(pickOrdered(ok({ items: Array.from({ length: 201 }, () => ok().items[0]) }), ['aya']), null, '条数上限');
 });
 
+test('今日计划快照（PLT-15）：frozen 时每条带 task_id 并透出；not_frozen 与没有 snapshot 时不带；形状不对整张列表不可用', () => {
+  const T = ok().items.map(() => randomUUID());
+  const frozen = (o: Record<string, unknown> = {}) => ok({ snapshot: 'frozen', items: ok().items.map((i, k) => ({ ...i, task_id: T[k] })), ...o });
+  const r = pickOrdered(frozen(), ['aya', 'zhixing'])!;
+  assert.equal(r.snapshot, 'frozen');
+  assert.deepEqual(r.items.map((i) => i.task_id), T);
+  assert.ok(r.items.every((i) => Object.keys(i).sort().join(',') === 'entry_id,estimated_minutes,kind,node_id,rationale_code,source,subject,task_id'));
+  const nf = pickOrdered(ok({ snapshot: 'not_frozen' }), ['aya', 'zhixing'])!;
+  assert.equal(nf.snapshot, 'not_frozen');
+  assert.ok(nf.items.every((i) => !('task_id' in i)));
+  // 学习服务快照开关关：没有 snapshot 键，结果与开关上线前逐字段一致
+  const plain = pickOrdered(ok(), ['aya', 'zhixing'])!;
+  assert.deepEqual(Object.keys(plain).sort(), ['items', 'partial', 'truncated_count']);
+  assert.ok(plain.items.every((i) => !('task_id' in i)));
+  const bad: [string, unknown][] = [
+    ['认不出的快照状态', ok({ snapshot: 'partial' })],
+    ['快照状态是 null', ok({ snapshot: null })],
+    ['frozen 缺一条 task_id', frozen({ items: ok().items.map((i, k) => (k === 1 ? i : { ...i, task_id: T[k] })) })],
+    ['frozen 的 task_id 不是 UUID', frozen({ items: ok().items.map((i, k) => ({ ...i, task_id: k === 0 ? 'T1' : T[k] })) })],
+    ['frozen 的 task_id 是大写', frozen({ items: ok().items.map((i, k) => ({ ...i, task_id: k === 0 ? T[0]!.toUpperCase() : T[k] })) })],
+    ['frozen 的 task_id 重复', frozen({ items: ok().items.map((i) => ({ ...i, task_id: T[0] })) })],
+    ['not_frozen 却带 task_id', ok({ snapshot: 'not_frozen', items: ok().items.map((i, k) => ({ ...i, task_id: T[k] })) })],
+    ['没有 snapshot 却带 task_id', ok({ items: ok().items.map((i, k) => ({ ...i, task_id: T[k] })) })],
+  ];
+  for (const [name, body] of bad) assert.equal(pickOrdered(body, ['aya', 'zhixing']), null, name);
+  // frozen 且没有条目（再读时按本次学科过滤后为空）：合格，空列表
+  assert.deepEqual(pickOrdered(ok({ snapshot: 'frozen', items: [] }), ['aya'])!.items, []);
+});
+
 // ---------- 学习服务客户端 ----------
 let server: Server;
 let base = '';

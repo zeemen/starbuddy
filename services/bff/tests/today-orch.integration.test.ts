@@ -280,6 +280,51 @@ test('开关开：家长会话不带 ordered、不调跨科接口；学习服务
   assert.deepEqual(orch.calls, []);
 });
 
+test('今日计划快照（PLT-15）：frozen 时学生本人每条带 task_id 与 snapshot；not_frozen 不带 task_id；家长会话两者都没有', { skip: !HAS_DB }, async () => {
+  setPlan();
+  const t1 = randomUUID();
+  const t2 = randomUUID();
+  const e1 = randomUUID();
+  orch.reply = { truncated_count: 0, partial: false, snapshot: 'frozen', items: [
+    { subject: 'aya', kind: 'retest', node_id: N[0]!, estimated_minutes: 5, source: 'retest', entry_id: e1, rationale_code: null, task_id: t1 },
+    { subject: 'aya', kind: 'lesson', node_id: null, estimated_minutes: 5, source: 'plan', entry_id: null, rationale_code: 'weak_mastery', task_id: t2 },
+  ] };
+  const r = await get(on, kid.account);
+  assert.equal(r.status, 200, r.text);
+  if (validateToday) assert.equal(validateToday(r.body), null, r.text.slice(0, 200));
+  assert.equal(r.body.ordered.snapshot, 'frozen');
+  assert.deepEqual(r.body.ordered.items.map((i: { task_id?: string }) => i.task_id), [t1, t2]);
+  assert.deepEqual(Object.keys(r.body.ordered.items[0]).sort(),
+                   ['entry_id', 'estimated_minutes', 'kind', 'node_id', 'node_name', 'rationale', 'source', 'subject', 'task_id']);
+  for (const k of FORBIDDEN) assert.ok(!r.text.includes(k), k);
+  // not_frozen：条目不带 task_id，snapshot 照实透出
+  orch.reply = { truncated_count: 0, partial: true, snapshot: 'not_frozen', items: [
+    { subject: 'aya', kind: 'retest', node_id: N[0]!, estimated_minutes: 5, source: 'retest', entry_id: e1, rationale_code: null },
+  ] };
+  const n = await get(on, kid.account);
+  assert.equal(n.body.ordered.snapshot, 'not_frozen');
+  assert.ok(!('task_id' in n.body.ordered.items[0]));
+  if (validateToday) assert.equal(validateToday(n.body), null, n.text.slice(0, 200));
+  // 家长会话：没有 ordered，也就没有 task_id 与 snapshot（按钮所需字段不透出）；不调跨科接口
+  orch.reply = { truncated_count: 0, partial: false, snapshot: 'frozen', items: [
+    { subject: 'aya', kind: 'retest', node_id: N[0]!, estimated_minutes: 5, source: 'retest', entry_id: e1, rationale_code: null, task_id: t1 },
+  ] };
+  orch.calls = [];
+  const g = await get(on, guardian);
+  assert.equal(g.status, 200, g.text);
+  assert.ok(!g.text.includes(t1) && !g.text.includes('task_id') && !g.text.includes('snapshot'));
+  assert.deepEqual(orch.calls, []);
+  // schema：snapshot 只认两个值，task_id 必须是 UUID
+  if (validateToday) {
+    const v = validateToday;
+    const item = { subject: 'math', kind: 'retest', node_id: null, node_name: null, estimated_minutes: 5, source: 'retest', entry_id: e1, rationale: null };
+    assert.notEqual(v({ student_id: kid.id, subjects: [], ordered: { items: [], truncated_count: 0, partial: false, snapshot: 'weird' } }), null);
+    assert.notEqual(v({ student_id: kid.id, subjects: [], ordered: { items: [{ ...item, task_id: 'x' }], truncated_count: 0, partial: false } }), null);
+    assert.equal(v({ student_id: kid.id, subjects: [], ordered: { items: [{ ...item, task_id: t1 }], truncated_count: 0, partial: false, snapshot: 'frozen' } }), null);
+  }
+  orch.reply = null;
+});
+
 test('开关开：没有在读学科时 ordered 为空列表、不调学习服务', { skip: !HAS_DB }, async () => {
   await h.su.query(`UPDATE platform.subject_enrollment SET status = 'paused', paused_at = now() WHERE student_id = $1`, [sib.id]);
   orch.calls = [];

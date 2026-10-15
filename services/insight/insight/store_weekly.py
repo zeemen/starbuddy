@@ -17,6 +17,7 @@ from typing import Sequence
 
 import asyncpg
 
+from .plan_tasks import PLAN_KINDS, PlanRecord, plan_outcome_counts
 from .policy import TEST_ENV, Policy
 from .profile_pages import SUBJECTS as PROFILE_SUBJECTS
 from .profile_pages import ProfilePageTrigger
@@ -62,17 +63,18 @@ async def weekly_claims(store: InsightStore, student: str, audience: str) -> lis
 async def objective_facts(conn: asyncpg.Connection, student: str, week_start: date) -> ObjectiveFacts:
     start, end = week_window(week_start)
     beh = await conn.fetch(
-        """SELECT kind, payload ->> 'plan_task_id' AS task, payload ->> 'duration_sec' AS sec FROM insight.behavior_event
+        """SELECT id, kind, payload ->> 'plan_task_id' AS task, payload ->> 'duration_sec' AS sec, occurred_at FROM insight.behavior_event
             WHERE student_id = $1::uuid AND kind IN ('session_end', 'plan_done', 'plan_skip') AND occurred_at >= $2 AND occurred_at < $3
             ORDER BY occurred_at, id""", student, start, end)
     seconds = sum(int(r["sec"]) for r in beh if r["kind"] == "session_end" and r["sec"] is not None)
-    done = {r["task"] for r in beh if r["kind"] == "plan_done" and r["task"]}
-    skipped = {r["task"] for r in beh if r["kind"] == "plan_skip" and r["task"]} - done  # 先跳过后完成的算完成
+    # 与计划完成率同一口径（plan_tasks.py，PLT-15 PR2）：同一任务以本周内最后一次记录为准；计入全部来源（是否只计 plan 待人确认）
+    done, skipped = plan_outcome_counts(PlanRecord(str(r["id"]), r["kind"], r["task"], r["occurred_at"]) for r in beh
+                                        if r["kind"] in PLAN_KINDS and r["task"])
     rows = await conn.fetch(
         """SELECT subject::text AS subject, coalesce(sum(elapsed_sec), 0) AS seconds, count(*) AS n FROM platform.attempt
             WHERE student_id = $1::uuid AND occurred_at >= $2 AND occurred_at < $3 GROUP BY subject ORDER BY subject""",
         student, start, end)
-    return ObjectiveFacts(seconds, len(done), len(skipped), {r["subject"]: (int(r["seconds"]), int(r["n"])) for r in rows})
+    return ObjectiveFacts(seconds, done, skipped, {r["subject"]: (int(r["seconds"]), int(r["n"])) for r in rows})
 
 
 async def students_with_claims(store: InsightStore) -> list[str]:

@@ -22,6 +22,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any, Iterable, Mapping, Sequence
 
 from .claims import AUDIENCE_ORDER, ClaimRow, InputError, Op, TemplateInfo, check_ops
+from .plan_tasks import PlanRecord, last_per_task
 from .policy import Policy
 from .shared import COGNITIVE_LEVELS, Forbidden
 
@@ -230,9 +231,8 @@ def plan_completion_rate(inp: MetricInputs, policy: Policy, now: datetime) -> li
                 key=lambda p: (p.occurred_at, p.fact_id))
     if not xs or xs[0].occurred_at > now - timedelta(days=days):
         return []
-    last: dict[str, str] = {}
-    for p in xs:
-        last[p.plan_task_id] = p.kind  # 以学生调整后的计划为准：同一任务最后一次记录说了算
+    # 口径与周报客观栏同一份（plan_tasks.py，PLT-15 PR2）：同一任务以最后一次记录为准；计入全部来源（是否只计 plan 待人确认）
+    last = last_per_task(PlanRecord(p.fact_id, p.kind, p.plan_task_id, p.occurred_at) for p in xs)
     done = sum(1 for kind in last.values() if kind == "plan_done")
     return [MetricResult("plan_completion_rate", None, None, {"v": _r(done / len(last)), "n": len(last)}, len(last), 1, _ids(xs))]
 

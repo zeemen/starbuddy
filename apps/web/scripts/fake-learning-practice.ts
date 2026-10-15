@@ -303,11 +303,16 @@ function today(b: Record<string, unknown>) {
   if (keys !== 'request_id,student_ref,subjects' || typeof b['student_ref'] !== 'string' || !UUID.test(b['student_ref'])
       || !Array.isArray(b['subjects'])) return problem(400, 'INVALID_REQUEST');
   const internal = { priority: 0.9, cognitive_level: 'apply', p_mastery: 0.42, confidence: 0.77, evidence_ids: [id('9e1')], reason: 'verify_self_report' };
-  const items = b['student_ref'] !== P1 ? [] : [
-    { subject: 'aya', kind: 'verify', node_id: 'MATH.SYN.P1.R2', estimated_minutes: 5, source: 'retest', entry_id: id('402'), rationale_code: null, ...internal },
-    { subject: 'aya', kind: 'practice', node_id: 'MATH.SYN.P1.N6', estimated_minutes: 8, source: 'practice', entry_id: id('106'), rationale_code: null, ...internal },
+  // 今日计划快照（PLT-15 PR2，e2e/today-orch.spec.ts）：P1 当天快照已冻结，每条带任务 ID（7a1–7a3；端到端在库里以超级用户写同 ID 的快照行，
+  // 写入方本是学习服务）；P3 有一条计划任务但没冻结（not_frozen，不带任务 ID，页面不显示“完成”“先跳过”）；P2 没有条目、没冻结
+  const items = b['student_ref'] === P1 ? [
+    { subject: 'aya', kind: 'verify', node_id: 'MATH.SYN.P1.R2', estimated_minutes: 5, source: 'retest', entry_id: id('402'), rationale_code: null, task_id: id('7a1'), ...internal },
+    { subject: 'aya', kind: 'practice', node_id: 'MATH.SYN.P1.N6', estimated_minutes: 8, source: 'practice', entry_id: id('106'), rationale_code: null, task_id: id('7a2'), ...internal },
+    { subject: 'aya', kind: 'lesson', node_id: null, estimated_minutes: 5, source: 'plan', entry_id: null, rationale_code: 'high_exam_weight', task_id: id('7a3'), ...internal },
+  ] : b['student_ref'] === P3 ? [
     { subject: 'aya', kind: 'lesson', node_id: null, estimated_minutes: 5, source: 'plan', entry_id: null, rationale_code: 'high_exam_weight', ...internal },
-  ];
+  ] : [];
+  const snapshot = b['student_ref'] === P1 ? 'frozen' : 'not_frozen';
   // 各科计划（与 /internal/v1/plan 同形状）：P1 的数学有一条没有节点的微课任务（BFF 用它排按科 sections，跨科列表里那条沿用它的理由）
   const plan = b['student_ref'] !== P1 ? null : { subjects: [{ subject: 'aya', status: 'ok', tasks: [
     { kind: 'lesson', target_node_ids: [], priority: 0.3, estimated_minutes: 5, rationale_code: 'high_exam_weight' }] }] };
@@ -315,7 +320,7 @@ function today(b: Record<string, unknown>) {
   const sources = b['student_ref'] === P1
     ? [{ source: 'retest', subject: 'aya', status: 'ok' }, { source: 'plan', subject: 'aya', status: 'source_unavailable' }]
     : [{ source: 'retest', subject: 'aya', status: 'source_disabled' }, { source: 'plan', subject: 'aya', status: 'ok' }];
-  return { status: 200, body: { items, truncated_count: items.length ? 2 : 0, budget_minutes: 30, sources, plan } };
+  return { status: 200, body: { snapshot, items, truncated_count: b['student_ref'] === P1 ? 2 : 0, budget_minutes: 30, sources, plan } };
 }
 
 const PRACTICE_PATHS = ['/internal/v1/practice/queue', '/internal/v1/practice/next', '/internal/v1/practice/answer'];

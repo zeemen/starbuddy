@@ -31,7 +31,9 @@ from .report import _order
 from .shared import STAR_GATES, Forbidden, consistency, forbidden_matcher
 
 FORMAT = "sie-weekly-report/0.1"
-ALGORITHM_VERSION = "sie-weekly@0.1.0"
+# 0.1.1（PLT-15 PR2）：客观栏的计划完成 / 跳过改为“同一任务以最后一次记录为准”（与计划完成率同一口径，plan_tasks.py）；
+# 原来“只要有完成就算完成”。判断句、模板、可见范围不变
+ALGORITHM_VERSION = "sie-weekly@0.1.1"
 SCHEMA_VERSION = "sie-weekly-policy/0.1"
 AUDIENCES = ("student", "guardian")
 SECTIONS: Mapping[str, tuple[str, ...]] = {"student": ("lit", "working_on", "next"),
@@ -140,7 +142,8 @@ def week_window(week_start: date) -> tuple[datetime, datetime]:
 
 @dataclass(frozen=True)
 class ObjectiveFacts:
-    """一周的客观记录（事实，不是判断）：会话结束事件的时长、计划完成与跳过、各科作答（用时与题数）"""
+    """一周的客观记录（事实，不是判断）：会话结束事件的时长、计划完成与跳过、各科作答（用时与题数）。
+    计划完成 / 跳过是学生自己点的记录（同一任务以最后一次为准，plan_tasks.py），不是核实过的完成，也不代表掌握"""
     session_seconds: int = 0
     plan_done: int = 0
     plan_skipped: int = 0

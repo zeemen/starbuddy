@@ -219,7 +219,14 @@ components:
               additionalProperties: false
               required: [plan_task_id]
               properties:
-                plan_task_id: { type: string, format: uuid, pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' }
+                plan_task_id:
+                  type: string
+                  format: uuid
+                  pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+                  description: >
+                    今日计划快照的任务 ID（GET …/today 的 ordered.items[].task_id，PLT-15）。迁移 0056 起库函数核对它是该生的快照行、
+                    且计划日是事件发生日（北京时间）当天或前一天；别人的、不存在的、越日的同一个 422（不泄露存在性）。
+                    plan_done 只表示学生自己点了完成，不是核实过的完成
             occurred_at: { $ref: '#/components/schemas/Timestamp' }
             idempotency_key: { $ref: '#/components/schemas/IdempotencyKey' }
     ConfidenceProbeInput:

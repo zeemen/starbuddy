@@ -421,8 +421,9 @@ export const WEEKLY = {
   objectiveHeading: T('weekly.objective.heading', '使用记录'),
   objectiveSource: T('weekly.objective.source', '来自使用记录，不是判断'),
   usage: T('weekly.objective.usage', '使用时长（分钟）'),
-  planDone: T('weekly.objective.plan_done', '完成的计划任务'),
-  planSkipped: T('weekly.objective.plan_skipped', '跳过的计划任务'),
+  // 计划完成 / 跳过（PLT-15）：学生自己点的记录，同一任务以最后一次为准；不是核实过的完成，更不是掌握（规则 6、11）
+  planDone: T('weekly.objective.plan_done', '自己标记完成的计划任务'),
+  planSkipped: T('weekly.objective.plan_skipped', '自己标记跳过的计划任务'),
   colSubject: T('weekly.objective.col.subject', '学科'),
   colPractice: T('weekly.objective.col.practice', '练习时长（分钟）'),
   colAttempts: T('weekly.objective.col.attempts', '作答题数'),
@@ -640,7 +641,17 @@ export const TODAY_ORCH_KIND: Record<string, string> = {
   diagnose: T('today.orch.kind.diagnose'), review: T('today.orch.kind.review'), lesson: T('today.orch.kind.lesson'),
   mock_exam: T('today.orch.kind.mock_exam'),
 };
-export const ALL_TODAY_ORCH_COPY: string[] = [...Object.values(TODAY_ORCH), ...Object.values(TODAY_ORCH_KIND)];
+/**
+ * 今日计划“完成”“先跳过”（PLT-15 PR2，specs/today-plan-snapshot-plt15 范围第 3 条；只给学生本人、只对带任务 ID 的条目）。
+ * 一律是明显占位 {{TODO_COPY:today.mark.…}}（人写人审，必停），占位后附中性短语便于走查；不评价学生、不出现人设话术，
+ * 也不说“已掌握”“已完成核实”：这只是学生自己点的记录（规则 6）。
+ */
+export const TODAY_MARK = {
+  done: T('today.mark.done', '完成'),
+  skip: T('today.mark.skip', '先跳过'),
+  recorded: T('today.mark.recorded', '已记下'),
+} as const;
+export const ALL_TODAY_ORCH_COPY: string[] = [...Object.values(TODAY_ORCH), ...Object.values(TODAY_ORCH_KIND), ...Object.values(TODAY_MARK)];
 
 /** 信任界面的全部文案（静态检查逐条扫描；端到端的“每个文本节点”核对也用它） */
 export const ALL_TRUST_COPY: string[] = [

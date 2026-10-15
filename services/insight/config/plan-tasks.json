@@ -1,0 +1,5 @@
+{
+  "$comment": "计划完成 / 跳过的统计口径（PLT-15 PR2，insight/plan_tasks.py）：计划完成率（中圈指标）与周报客观栏共用；同一任务以最后一次记录为准。count_sources = all：计入全部来源（计划、再练、复测、验证）。【待人确认】是否只计 source = plan（spec 待人确认 2）；只计 plan 还需要洞察服务读今日计划快照来源列的授权迁移（PLT-15 PR1 lessons 待人确认 4），在此之前写 plan 会拒绝加载。改 count_sources 必须同时升指标与周报的算法版本并改 insight/plan_tasks.py 的 COUNTING_VERSIONS（测试锁住）；每次计数前现读，不缓存。",
+  "schema_version": "plan-tasks/0.1",
+  "count_sources": "all"
+}

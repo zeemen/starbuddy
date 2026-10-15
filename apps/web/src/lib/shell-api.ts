@@ -30,8 +30,11 @@ export interface TodaySection { subject: string; status: 'ok' | 'unavailable'; t
 export interface OrderedTask {
   subject: string; kind: string; node_id: string | null; node_name: string | null; estimated_minutes: number;
   source: 'retest' | 'practice' | 'plan'; entry_id: string | null; rationale: Rationale;
+  /** 今日计划快照的任务 ID（PLT-15）：只在 snapshot = frozen 时有；“完成”“先跳过”只对带它的任务显示 */
+  task_id?: string;
 }
-export interface OrderedToday { items: OrderedTask[]; truncated_count: number; partial: boolean }
+/** snapshot（PLT-15）：没有 = 学习服务没开快照；not_frozen = 这次没冻结（不显示“完成”“先跳过”） */
+export interface OrderedToday { items: OrderedTask[]; truncated_count: number; partial: boolean; snapshot?: 'frozen' | 'not_frozen' }
 /** ordered：没有这个键 = BFF 开关关（与开关上线前相同）；null = 学习服务暂不可用 */
 export interface Today { student_id: string; subjects: TodaySection[]; ordered?: OrderedToday | null }
 

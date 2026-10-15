@@ -355,6 +355,11 @@ paths:
         ordered 来自学习服务 POST /internal/v1/today（services/learning/openapi/today-internal.v0.yaml，只读汇总：各科计划、错题再练与
         复测的 due 条目；去重、来源优先级、学科轮转、按时间预算截断），学习服务不可用时为 null。推荐理由只沿用按科任务已决定的那一条
         （同一学科、类别、节点、理由编码）：内容类固定短句或已显示的判断陈述；复测与再练条目为 null；不新增关于学生的陈述。
+        今日计划快照（PLT-15 PR2，specs/today-plan-snapshot-plt15）：学习服务开了快照（LEARNING_TODAY_SNAPSHOT）时 ordered 另带 snapshot；
+        frozen 时每条带 task_id（当天快照行 ID，即行为事件 plan_done / plan_skip 的 plan_task_id，前端据此显示“完成”“先跳过”），
+        not_frozen 时条目不带 task_id（前端不显示按钮）；学习服务没开快照时两者都没有，响应与之前逐字段一致。
+        ordered 只给学生本人，家长会话没有 ordered，也就没有 task_id 与 snapshot。task_id 是否属于该生当天（或前一天）的快照由写入事件时的
+        库函数核对（迁移 0056），BFF 这里只透出。
       parameters: [{ $ref: '#/components/parameters/StudentId' }, { $ref: '#/components/parameters/Session' }]
       responses:
         '200':
@@ -418,6 +423,10 @@ paths:
                                 estimated_minutes: { type: integer, minimum: 1 }
                                 source: { enum: [retest, practice, plan], description: 决定“去做”链到复测页、再练页还是科目页 }
                                 entry_id: { type: [string, 'null'], format: uuid, description: 复测、再练条目的 ID（去做的链接用）；计划任务为空 }
+                                task_id:
+                                  type: string
+                                  format: uuid
+                                  description: 今日计划快照的任务 ID（PLT-15）；只在 snapshot = frozen 时出现，且每条都有；用于写 plan_done / plan_skip
                                 rationale:
                                   oneOf:
                                     - type: 'null'
@@ -428,6 +437,11 @@ paths:
                                     - $ref: '#/components/schemas/ClaimStatement'
                           truncated_count: { type: integer, minimum: 0, description: 按时间预算截掉的条数 }
                           partial: { type: boolean, description: 有启用了的来源（某科的计划、再练或复测）失败、已跳过；未启用的来源不算 }
+                          snapshot:
+                            enum: [frozen, not_frozen]
+                            description: >
+                              今日计划快照状态（PLT-15）：只在学习服务开了快照时出现。frozen = 条目取自当天快照、每条带 task_id；
+                              not_frozen = 这次没冻结（有来源失败、没有条目等），条目不带 task_id，前端不显示“完成”“先跳过”
         '401': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
         '429': { description: 超过限流（同一个 429，不分原因）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }

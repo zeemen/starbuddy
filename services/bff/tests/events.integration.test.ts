@@ -163,6 +163,67 @@ test('白名单外键、自由文本、类型不对：422，不写入、不回�
   assert.equal(await count(`SELECT count(*) AS n FROM insight.behavior_event WHERE student_id = $1`, [ID.S1]), before);
 });
 
+/** 合成快照行（写入方本是学习服务；这里以超级用户写）。days < 0 的越日行要绕过插入守卫（只收当天），用复制模式 */
+async function snapshotRow(student: string, days = 0): Promise<string> {
+  const id = randomUUID();
+  const c = await su.connect();
+  try {
+    await c.query('BEGIN');
+    if (days !== 0) await c.query('SET LOCAL session_replication_role = replica');
+    await c.query(`INSERT INTO platform.today_plan_item (id, student_id, plan_date, seq, subject, kind, source, estimated_minutes)
+                   VALUES ($1, $2, (now() AT TIME ZONE 'Asia/Shanghai')::date + $3::int,
+                           (SELECT coalesce(max(seq), 0) + 1 FROM platform.today_plan_item
+                             WHERE student_id = $2 AND plan_date = (now() AT TIME ZONE 'Asia/Shanghai')::date + $3::int), 'aya', 'lesson', 'plan', 5)`,
+                  [id, student, days]);
+    await c.query('COMMIT');
+  } finally {
+    c.release(true);
+  }
+  return id;
+}
+
+test('计划完成 / 跳过（PLT-15）：本人当天任务可写；别人的、不存在的、越日的任务 422；家长与别人 403；同键重放不重复', { skip: !HAS_DB }, async () => {
+  const mine = await snapshotRow(ID.S1);
+  const sibling = await snapshotRow(ID.S2);
+  const old = await snapshotRow(ID.S1, -3);
+  const yesterday = await snapshotRow(ID.S1, -1);
+  const plan = (task: string, kind = 'plan_done', key = randomUUID(), at = now()) =>
+    ({ kind, payload: { plan_task_id: task }, occurred_at: at, idempotency_key: key });
+  const before = await count(`SELECT count(*) AS n FROM insight.behavior_event WHERE student_id = $1 AND kind IN ('plan_done', 'plan_skip')`, [ID.S1]);
+  // 别人的、不存在的、越日（计划日早于事件日前一天）的任务：同一个 422，不泄露存在性
+  const rejected: string[] = [];
+  for (const [name, task] of [['兄妹的任务', sibling], ['不存在的任务', randomUUID()], ['三天前的任务', old]] as const) {
+    const r = await post(url(ID.S1, 'events'), ID.S1acc, plan(task));
+    assert.equal(r.status, 422, name);
+    rejected.push(await r.text());
+  }
+  assert.equal(new Set(rejected).size, 1, '三种拒绝的响应体相同');
+  // 家长、兄妹、别家家长替孩子写：403（只认学生本人）
+  for (const account of [ID.gS, ID.S2acc, ID.gO]) assert.equal((await post(url(ID.S1, 'events'), account, plan(mine))).status, 403, account);
+  assert.equal(await count(`SELECT count(*) AS n FROM insight.behavior_event WHERE student_id = $1 AND kind IN ('plan_done', 'plan_skip')`, [ID.S1]),
+               before, '被拒的一条都没写');
+  // 本人：当天与前一天的任务都能写；同一幂等键（前端同一张票据内固定）重放 200、时间不同 409，都只有一行
+  const key = randomUUID();
+  assert.equal((await post(url(ID.S1, 'events'), ID.S1acc, plan(mine, 'plan_done', key))).status, 201);
+  const first = plan(mine, 'plan_done', key);
+  first.occurred_at = (await su.query(`SELECT to_char(occurred_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS t FROM insight.behavior_event
+                                       WHERE idempotency_key = $1`, [key])).rows[0].t;
+  assert.equal((await post(url(ID.S1, 'events'), ID.S1acc, first)).status, 200);
+  assert.equal((await post(url(ID.S1, 'events'), ID.S1acc, plan(mine, 'plan_done', key, new Date(Date.now() + 1000).toISOString()))).status, 409);
+  assert.equal(await count(`SELECT count(*) AS n FROM insight.behavior_event WHERE idempotency_key = $1`, [key]), 1);
+  assert.equal((await post(url(ID.S1, 'events'), ID.S1acc, plan(yesterday, 'plan_skip'))).status, 201);
+  assert.equal(await count(`SELECT count(*) AS n FROM insight.behavior_event WHERE student_id = $1 AND kind IN ('plan_done', 'plan_skip')`, [ID.S1]),
+               before + 2);
+  // 改主意（前端每次记下后换票据，幂等键随之换）：完成 → 跳过 → 完成三条都入库，库里最后一条是完成
+  const flip = await snapshotRow(ID.S1);
+  for (const [k, ms] of [['plan_done', 3000], ['plan_skip', 2000], ['plan_done', 1000]] as const) {
+    assert.equal((await post(url(ID.S1, 'events'), ID.S1acc, plan(flip, k, randomUUID(), new Date(Date.now() - ms).toISOString()))).status, 201, k);
+  }
+  const { rows } = await su.query<{ kind: string }>(
+    `SELECT kind FROM insight.behavior_event WHERE payload ->> 'plan_task_id' = $1 ORDER BY occurred_at, id`, [flip]);
+  assert.deepEqual(rows.map((r) => r.kind), ['plan_done', 'plan_skip', 'plan_done']);
+});
+
 /** 409 的错误码与文案：同一幂等键内容不同，不复用会误导重试的 CONFLICT */
 async function assertKeyReused(r: Response, name: string): Promise<void> {
   assert.equal(r.status, 409, name);

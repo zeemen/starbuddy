@@ -158,6 +158,19 @@ async def test_concurrent_first_reads_freeze_one_batch(ppools, plock, student):
     assert [r["id"] for r in await rows(admin, student)] == ids[0]
 
 
+async def test_freeze_waits_on_advisory_lock(ppools, plock, student):
+    """确定性核对冻结先取（学生, 当天）咨询锁：别处持锁时首读等到锁超时回 503、不写任何行（并发用例只是概率性发现）。"""
+    _, admin = ppools
+    async with today_api(ppools, plock, snapshot=True) as a, admin.acquire() as c:
+        async with c.transaction():
+            day = await c.fetchval("SELECT (now() AT TIME ZONE 'Asia/Shanghai')::date")
+            await c.execute("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", f"platform.today_plan_item:{student}:{day.isoformat()}")
+            # 限时：锁等待上限若被去掉，这里会一直等，按失败计（不拖住变异测试）
+            r = await asyncio.wait_for(a.today(student), timeout=15)
+            assert r.status_code == 503, r.text
+    assert await rows(admin, student) == []
+
+
 async def test_each_student_own_snapshot(ppools, plock, student):
     _, admin = ppools
     other = await new_student(admin)

@@ -20,8 +20,10 @@ from insight.shared import consistency
 from insight import store_weekly
 from insight.store import InsightStore, create_pool
 from insight.store_sie03 import Unavailable
+from insight.plan_tasks import PlanRecord, plan_outcome_counts
+from insight.store import load_metric_inputs
 from insight.store_weekly import objective_facts
-from insight.weekly import objective_column, synthetic_weekly_check_config, synthetic_weekly_policy, week_of
+from insight.weekly import objective_column, synthetic_weekly_check_config, synthetic_weekly_policy, week_of, week_window
 from pginsight import APP_ROLE, BFF_ROLE, E, GA, GB, M, M_S2, S1, S2, SA1, SA2
 from support import NODE_A, NODE_B, NODE_C, make_policy
 
@@ -91,7 +93,7 @@ async def test_weekly_job_generates_both_versions_and_samples(insightdb):
             sents = json.loads(r["sentences"]) if isinstance(r["sentences"], str) else r["sentences"]
             obj = json.loads(r["objective"]) if isinstance(r["objective"], str) else r["objective"]
             assert r["status"] == "generated" and r["week_start"] == week and r["week_end"] == week + timedelta(days=6)
-            assert r["algorithm_version"] == "sie-weekly@0.1.0" and r["policy_version"] == f"{POLICY.config_version}_{WEEKLY.config_version}"
+            assert r["algorithm_version"] == "sie-weekly@0.1.1" and r["policy_version"] == f"{POLICY.config_version}_{WEEKLY.config_version}"
             assert sents and all(s["claim_id"] in claims for s in sents)  # 每句都引用这个学生的判断
             assert all(claims[s["claim_id"]]["template_key"] == s["template_key"] for s in sents)
             # 每句的修订标记 = 写入时判断的 updated_at（安全审查 F1）
@@ -175,7 +177,16 @@ async def test_objective_facts_only_this_week(insightdb):
             ('{S1}', 'plan_skip', '{{"plan_task_id": "70000000-0000-4000-8000-0000000000a1"}}', now() - interval '3 minutes', 'student', gen_random_uuid()),
             ('{S1}', 'plan_done', '{{"plan_task_id": "70000000-0000-4000-8000-0000000000a1"}}', now() - interval '2 minutes', 'student', gen_random_uuid()),
             ('{S1}', 'plan_skip', '{{"plan_task_id": "70000000-0000-4000-8000-0000000000a2"}}', now() - interval '2 minutes', 'student', gen_random_uuid()),
-            ('{S1}', 'plan_done', '{{"plan_task_id": "70000000-0000-4000-8000-0000000000a3"}}', now() - interval '9 days', 'student', gen_random_uuid());
+            ('{S1}', 'plan_done', '{{"plan_task_id": "70000000-0000-4000-8000-0000000000a3"}}', now() - interval '9 days', 'student', gen_random_uuid()),
+            -- PLT-15 PR2：同一任务以最后一次为准——先完成后跳过算跳过（原来“只要有完成就算完成”）；重复完成只算一个任务
+            ('{S1}', 'plan_done', '{{"plan_task_id": "70000000-0000-4000-8000-0000000000a4"}}', now() - interval '4 minutes', 'student', gen_random_uuid()),
+            ('{S1}', 'plan_skip', '{{"plan_task_id": "70000000-0000-4000-8000-0000000000a4"}}', now() - interval '1 minute', 'student', gen_random_uuid()),
+            ('{S1}', 'plan_done', '{{"plan_task_id": "70000000-0000-4000-8000-0000000000a5"}}', now() - interval '5 minutes', 'student', gen_random_uuid()),
+            ('{S1}', 'plan_done', '{{"plan_task_id": "70000000-0000-4000-8000-0000000000a5"}}', now() - interval '4 minutes', 'student', gen_random_uuid()),
+            -- 同一页面内改主意（每次新键）：完成 → 跳过 → 完成，最后一条是完成
+            ('{S1}', 'plan_done', '{{"plan_task_id": "70000000-0000-4000-8000-0000000000a6"}}', now() - interval '6 minutes', 'student', gen_random_uuid()),
+            ('{S1}', 'plan_skip', '{{"plan_task_id": "70000000-0000-4000-8000-0000000000a6"}}', now() - interval '5 minutes', 'student', gen_random_uuid()),
+            ('{S1}', 'plan_done', '{{"plan_task_id": "70000000-0000-4000-8000-0000000000a6"}}', now() - interval '30 seconds', 'student', gen_random_uuid());
           INSERT INTO platform.attempt (attempt_id, occurred_at, student_id, subject, item_id, response_evidence_id, hint_level_used,
                                         request_idempotency_key, evidence_kind, evidence_level, channel, elapsed_sec) VALUES
             (gen_random_uuid(), now() - interval '1 minute', '{S1}', 'aya', 'syn-item-001', gen_random_uuid(), 0, 'syn-weekly-att-1', 'independent', 'A', 'keypad', 300),
@@ -189,9 +200,16 @@ async def test_objective_facts_only_this_week(insightdb):
     try:
         async with pool.acquire() as conn:
             facts = await objective_facts(conn, S1, week)
+            # 口径一致（PLT-15 PR2）：指标的读取（load_metric_inputs）取同一批计划事件、限在本周内，按同一口径算出的完成 / 跳过与客观栏相同
+            now = await conn.fetchval("SELECT now()")
+            inputs = await load_metric_inputs(conn, S1, now)
     finally:
         await pool.close()
-    assert objective_column(facts) == {"source_type": "objective", "usage_minutes": 40, "plan_done": 1, "plan_skipped": 1,
+    start, end = week_window(week)
+    in_week = [PlanRecord(p.fact_id, p.kind, p.plan_task_id, p.occurred_at) for p in inputs.plans if start <= p.occurred_at < end]
+    assert plan_outcome_counts(in_week) == (facts.plan_done, facts.plan_skipped) == (3, 2)
+    # a1 先跳过后完成 → 完成；a5 完成两次 → 一个完成；a6 完成→跳过→完成 → 完成；a2 跳过；a4 先完成后跳过 → 跳过；a3 不在本周
+    assert objective_column(facts) == {"source_type": "objective", "usage_minutes": 40, "plan_done": 3, "plan_skipped": 2,
                                        "subjects": [{"subject": "aya", "practice_minutes": 10, "attempts": 2}]}
 
 

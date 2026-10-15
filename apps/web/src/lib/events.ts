@@ -10,6 +10,10 @@ export const DEMO_PROBE_ITEM = { subject: 'zhixing', item_id: 'SYN-ZX-ITEM-01' }
 export type SessionEvent =
   | { kind: 'session_start'; payload: { entry: 'today' | 'star_map' | 'subject' | 'onboarding' | 'other' } }
   | { kind: 'session_end'; payload: { duration_sec: number } };
+/** 今日计划“完成”“先跳过”（PLT-15 PR2）：只由今日页的 server action 写（src/app/s/[studentId]/actions.ts）；
+ *  plan_done 只表示学生自己点了完成，不是核实过的完成（规则 6） */
+export type PlanEvent = { kind: 'plan_done' | 'plan_skip'; payload: { plan_task_id: string } };
+export type BehaviorEvent = SessionEvent | PlanEvent;
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 export const isKey = (s: unknown): s is string => typeof s === 'string' && UUID_V4.test(s);
@@ -27,7 +31,7 @@ async function post(account: BffSession, student: string, sub: string, body: unk
   return { ok: r.ok, status: r.status };
 }
 
-export const postSessionEvent = (account: BffSession, student: string, e: SessionEvent, key: string, occurredAt = new Date()) =>
+export const postSessionEvent = (account: BffSession, student: string, e: BehaviorEvent, key: string, occurredAt = new Date()) =>
   post(account, student, 'events', { kind: e.kind, payload: e.payload, occurred_at: occurredAt.toISOString(), idempotency_key: key });
 
 /** 按事件类别与结果类别（2xx / 4xx / 5xx / network）累计的写入次数；只在本进程内，日志不含学生 ID 与幂等键 */
@@ -44,12 +48,13 @@ export const behaviorWriteCounts = (): ReadonlyMap<string, number> => writeCount
  * 学生壳真实页面用（SIE-05 PR2）：对学生静默——BFF 不可达、超时都当“没写入”，不抛错、不重试（调用方也不重试）；
  * 409（同一幂等键已记过）算已记下。服务端按结果类别计数写日志。BFF 地址配置错误不吞掉（照常抛出）。
  */
-export async function postEventQuietly(account: BffSession, student: string, e: SessionEvent, key: string,
+export async function postEventQuietly(account: BffSession, student: string, e: BehaviorEvent, key: string,
   occurredAt = new Date()): Promise<boolean> {
   bffBaseUrl();  // 配置错误在这里抛出，不当作“没写入”
   try {
     const r = await postSessionEvent(account, student, e, key, occurredAt);
-    countWrite(e.kind, `${Math.floor(r.status / 100)}xx`);
+    // 403（不是本人）与 422（取值不合要求，含任务 ID 不属于该生当天快照）单独计，其余按类别（审查建议；不带学生 ID 与任务 ID）
+    countWrite(e.kind, r.status === 403 || r.status === 422 ? String(r.status) : `${Math.floor(r.status / 100)}xx`);
     return r.ok || r.status === 409;
   } catch {
     countWrite(e.kind, 'network');

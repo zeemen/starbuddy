@@ -4,7 +4,8 @@
 //   - 签名 cookie（src/behavior/presence-server.ts）：签名覆盖全部字段、账号类型与会话令牌哈希；任何一项被改或换了会话都验签失败；
 //     正式环境没配密钥拒绝写入，dev / test 进程内随机；
 //   - 只经 BFF 现有事件接口（src/lib/events.ts）写，对学生静默、服务端按结果类别计数、配置错误不吞；路由同源 + JSON + 长度 + CSRF + 本人、一律 204；
-//   - 家长端不挂；退出登录先补记再删 cookie；不写 plan_done / plan_skip。
+//   - 家长端不挂；退出登录先补记再删 cookie；会话起止模块不写 plan_done / plan_skip（PLT-15 PR2 起只由今日页的 server action 写，
+//     单测与静态检查在 tests/today-orch.test.ts）。
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
@@ -105,20 +106,25 @@ test('密钥：配了（至少 32 字符）就用；dev / test 没配时进程�
   for (const f of src.filter((x) => /^['"]use client['"]/m.test(x.text))) assert.ok(!/presence-server|STARBUDDY_PRESENCE_HMAC_KEY/.test(f.text), f.path);
 });
 
-test('只经 BFF 现有事件接口写两类会话事件：静默、409 算已记下、按结果类别计数（不含学生 ID）、配置错误不吞；不写 plan_done / plan_skip', () => {
+test('只经 BFF 现有事件接口写行为事件：静默、409 算已记下、按结果类别计数（不含学生 ID）、配置错误不吞；计划事件只由今日页的 server action 写', () => {
   const events = code(read('src/lib/events.ts'));
   assert.match(events, /post\(account, student, 'events', \{ kind: e\.kind, payload: e\.payload, occurred_at: occurredAt\.toISOString\(\), idempotency_key: key \}\)/);
   assert.match(events, /bffBaseUrl\(\);\s*try \{/, 'bffBaseUrl 在 try 之外');
+  // 403 与 422 单独计，其余按类别（PLT-15 PR2 审查建议）
+  assert.match(events, /countWrite\(e\.kind, r\.status === 403 \|\| r\.status === 422 \? String\(r\.status\) : `\$\{Math\.floor\(r\.status \/ 100\)\}xx`\);/);
   assert.match(events, /return r\.ok \|\| r\.status === 409;\s*\} catch \{\s*countWrite\(e\.kind, 'network'\);\s*return false;/);
   assert.match(events, /console\.info\(`behavior_event write kind=\$\{kind\} result=\$\{result\} count=\$\{n\}`\)/);
   const writers = src.filter((f) => /postEventQuietly\(/.test(code(f.text)) && f.path !== 'src/lib/events.ts').map((f) => f.path).sort();
-  assert.deepEqual(writers, ['src/app/s/[studentId]/presence/route.ts', 'src/behavior/presence-server.ts']);
-  // 周报的“完成的计划任务”是既有的只读展示（src/trust/），不在此列
+  assert.deepEqual(writers, ['src/app/s/[studentId]/actions.ts', 'src/app/s/[studentId]/presence/route.ts', 'src/behavior/presence-server.ts']);
+  // PLT-15 PR2 起计划完成 / 跳过接入：只在事件客户端（类型）、今日页的 server action 与“完成”“先跳过”的纯函数、按钮组件里出现；
+  // 会话起止的模块（behavior/、presence 路由）与壳仍不写计划事件。周报的计划栏是既有的只读展示（src/trust/），不在此列
+  const planWriters = ['src/lib/events.ts', 'src/app/s/[studentId]/actions.ts', 'src/today/plan-mark.ts', 'src/today/PlanMarks.tsx'];
   for (const f of src.filter((x) => /^src\/(behavior|today|shell|lib|app\/s)\//.test(x.path) && x.path !== 'src/shell/copy.ts')) {
+    if (planWriters.includes(f.path)) continue;
     assert.ok(!/plan_done|plan_skip|plan_task_id/.test(code(f.text)), f.path);
   }
-  assert.ok(!/planTaskId|PlanMark/.test(code(read('src/today/OrderedTaskList.tsx'))));
-  assert.ok(!ALL_SHELL_COPY.some((s) => /today\.orch\.(done|skip)/.test(s)));
+  assert.ok(!/plan_done|plan_skip|planMarkKey/.test(code(read('src/app/s/[studentId]/presence/route.ts'))));
+  assert.ok(ALL_SHELL_COPY.filter((s) => /today\.mark\.(done|skip)/.test(s)).length === 2);
   for (const p of ['src/behavior/SessionBeacon.tsx']) {
     const t = code(read(p));
     assert.match(t, /^'use client';/, p);
@@ -164,7 +170,12 @@ test('只挂在学生本人的壳：家长端不挂；退出登录先补记再�
   assert.match(read('src/app/s/[studentId]/layout.tsx'), /ps\.me\.account_kind !== 'student' \|\| ps\.me\.student_id !== studentId\) return <>\{children\}<\/>;/);
   const users = (rx: RegExp) => src.filter((f) => rx.test(code(f.text))).map((f) => f.path).sort();
   assert.deepEqual(users(/SessionBeacon/), ['src/behavior/SessionBeacon.tsx', 'src/shell/StudentShell.tsx']);
-  assert.deepEqual(users(/presence-server/), ['src/app/family/actions.ts', 'src/app/s/[studentId]/presence/route.ts']);
+  // 今日计划“完成”“先跳过”（PLT-15 PR2）的票据复用同一把签名密钥（只取 presenceKey，不碰会话 cookie）
+  assert.deepEqual(users(/presence-server/), ['src/app/family/actions.ts', 'src/app/s/[studentId]/actions.ts', 'src/app/s/[studentId]/presence/route.ts',
+                                              'src/app/s/[studentId]/today/page.tsx']);
+  for (const p of ['src/app/s/[studentId]/actions.ts', 'src/app/s/[studentId]/today/page.tsx']) {
+    assert.match(code(read(p)), /import \{ presenceKey \} from '[./]+behavior\/presence-server\.ts';/, p);
+  }
   for (const f of src.filter((x) => /^src\/(app\/family|family-goals|monthly-plan|auth)\//.test(x.path) && x.path !== 'src/app/family/actions.ts')) {
     assert.ok(!/SessionBeacon|presence|postEventQuietly/.test(code(f.text)), f.path);
   }

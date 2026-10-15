@@ -59,6 +59,7 @@ export const ATTRS: Record<string, Rule> = {
   unavailable: KEBAB,
   'fixed-text': ['notice', 'title', 'connective'],
   hydrated: ['true'],
+  marked: ['', 'done', 'skip'],                                        // 今日计划“完成”“先跳过”这次记下的是哪一个（PLT-15 PR2）
   // 待人确认（lessons 第 10 条）：以下带的是判断状态、异议状态、置信度分档、判断来源、周报 / 报告段落（判断类别）编码
   status: [...keys(WHY_STATUS), 'trial', 'trial-after', 'retained', 'ai-off', 'open', 'none', 'curfew', 'cap', 'minutes', 'curfew-near', 'settings'],
   'dispute-status': keys(DISPUTE_STATUS),

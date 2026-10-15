@@ -369,6 +369,13 @@ SM=(
   $'编排：开关关时仍调 /today\tsrc/http/shell-routes.ts\tconst orchClient = orchOn ? deps.shell?.orch?.client : undefined;\tconst orchClient = deps.shell?.orch?.client;'
   $'编排：开关开时仍另调 /plan\tsrc/http/shell-routes.ts\tif (asked.length > 0 && orchClient) {\tif (false) {'
   $'编排：未启用的来源也算 partial\tsrc/shell/today-orch.ts\treturn st !== \'ok\' && st !== \'source_disabled\';\treturn st !== \'ok\';'
+  # 今日计划快照（PLT-15 PR2）：task_id 只在 frozen 时、每条都有、是 UUID、不重复；snapshot 只认两个值；BFF 照实透出
+  $'编排：快照 frozen 不要求每条带 task_id\tsrc/shell/today-orch.ts\tif (frozen ? typeof task !== \'string\' || !UUID.test(task) || taskIds.has(task) : task !== undefined) return null;\tif (frozen ? typeof task === \'number\' : task !== undefined) return null;'
+  $'编排：快照 task_id 可以重复\tsrc/shell/today-orch.ts\t || taskIds.has(task) : task\t : task'
+  $'编排：快照 not_frozen 也收 task_id\tsrc/shell/today-orch.ts\t : task !== undefined) return null;\t : false) return null;'
+  $'编排：快照状态不核对取值\tsrc/shell/today-orch.ts\tif (snapshot !== undefined && snapshot !== \'frozen\' && snapshot !== \'not_frozen\') return null;\t'
+  $'编排：快照 task_id 不透出\tsrc/http/shell-routes.ts\t...(i.task_id !== undefined ? { task_id: i.task_id } : {}),\t'
+  $'编排：快照状态不透出\tsrc/http/shell-routes.ts\t...(ordered.snapshot !== undefined ? { snapshot: ordered.snapshot } : {}),\t'
   # 家长诉求（PLT-14 第 1 步，specs/family-goals-monthly-plan）：学生会话在请求体、CSRF、限流之前 404；补充说明的禁用推断词表过滤；
   # 开关关时不注册；年级不在 7–9 与写入上限的映射。这几条跑 tests/family-goals-units.test.ts、tests/family-goals.integration.test.ts、
   # tests/shell-openapi.test.ts（BFFMUT_FILTER=诉求：）

@@ -50,7 +50,13 @@ M=(
   $'迁移差母题不限同节点\tinsight/metrics.py\t and a.node_id in nodes]\t]\ttests/test_metrics.py'
   $'自评校准偏差方向写反\tinsight/metrics.py\t    direction = "over" if bias > eps else "under"\t    direction = "under" if bias > eps else "over"\ttests/test_metrics.py'
   $'审题占比不要求两科\tinsight/metrics.py\t    if sum(1 for n in counts.values() if n >= per) < need:\t    if False:\ttests/test_metrics.py'
-  $'计划完成率不看最后一次记录\tinsight/metrics.py\t        last[p.plan_task_id] = p.kind\t        last.setdefault(p.plan_task_id, p.kind)\ttests/test_metrics.py'
+  # 计划完成 / 跳过的口径（PLT-15 PR2，insight/plan_tasks.py）：指标与周报共用；同一任务以最后一次为准、按发生时间排序、只认已实现的来源口径
+  $'计划完成率不看最后一次记录\tinsight/plan_tasks.py\t        last[r.plan_task_id] = r.kind\t        last.setdefault(r.plan_task_id, r.kind)\ttests/test_metrics.py tests/test_plan_tasks.py tests/test_weekly_db.py'
+  $'计划口径不按发生时间排序\tinsight/plan_tasks.py\tkey=lambda r: (r.occurred_at, r.record_id))\tkey=lambda r: r.record_id)\ttests/test_plan_tasks.py'
+  $'计划口径配置放行只计 plan\tinsight/plan_tasks.py\tSUPPORTED_SOURCES = ("all",)\tSUPPORTED_SOURCES = ("all", "plan")\ttests/test_plan_tasks.py'
+  $'计划口径不核对来源配置\tinsight/plan_tasks.py\t    if (counting or default_counting()).count_sources not in SUPPORTED_SOURCES:\t    if False:\ttests/test_plan_tasks.py'
+  $'指标不用共用口径\tinsight/metrics.py\t    last = last_per_task(PlanRecord(p.fact_id, p.kind, p.plan_task_id, p.occurred_at) for p in xs)\t    last = {p.plan_task_id: p.kind for p in sorted(xs, key=lambda p: p.kind)}\ttests/test_metrics.py tests/test_plan_tasks.py'
+  $'周报客观栏回到只要有完成就算完成\tinsight/store_weekly.py\t                                        if r["kind"] in PLAN_KINDS and r["task"])\t                                        if r["kind"] in PLAN_KINDS and r["task"] and not (r["kind"] == "plan_skip" and any(x["kind"] == "plan_done" and x["task"] == r["task"] for x in beh)))\ttests/test_weekly_db.py'
   $'持续性不要求满 4 周\tinsight/metrics.py\t    if not facts or min(a.occurred_at for a in facts) > now - timedelta(days=7 * weeks):\t    if not facts:\ttests/test_metrics.py'
   $'指标判断对学生家长可见\tinsight/metrics.py\t"visibility": tuple(a for a in AUDIENCE_ORDER if a == "agent"),\t"visibility": AUDIENCE_ORDER,\ttests/test_metrics.py'
   $'指标名与说明不过禁用词表\tinsight/metrics.py\t        if forbidden(f"{key}\\n{name}\\n{desc}"):\t        if False:\ttests/test_metrics.py'
@@ -140,7 +146,9 @@ M=(
   $'客观栏不标来源 objective\tinsight/weekly.py\t    return {"source_type": "objective", "usage_minutes"\t    return {"source_type": "inferred", "usage_minutes"\ttests/test_weekly.py'
   $'合成周报配置在 dev 也能加载\tinsight/weekly.py\t    if doc["synthetic"] and env != TEST_ENV:\t    if False:\ttests/test_weekly.py'
   $'周报抽检比例不校验\tinsight/weekly.py\t and 0 < ratio <= 0.5,\t,\ttests/test_weekly.py'
-  $'先跳过后完成算跳过\tinsight/store_weekly.py\t} - done  # 先跳过后完成的算完成\t}\ttests/test_weekly_db.py'
+  # PLT-15 PR2：原“先跳过后完成算跳过”（改的是已删掉的集合差写法）由上面“计划完成率不看最后一次记录”（共用口径，同时跑周报库上测试）
+  # 与“周报客观栏回到只要有完成就算完成”替代
+  $'周报客观栏跳过数多算\tinsight/store_weekly.py\t    return ObjectiveFacts(seconds, done, skipped,\t    return ObjectiveFacts(seconds, done, skipped + done,\ttests/test_weekly_db.py'
   $'客观栏不限本周\tinsight/store_weekly.py\t\'plan_skip\') AND occurred_at >= $2 AND occurred_at < $3\t\'plan_skip\') AND occurred_at < $3\ttests/test_weekly_db.py'
   $'周报重复运行重写\tinsight/store_weekly.py\t           ON CONFLICT (student_id, week_start, audience) DO NOTHING RETURNING id\t           RETURNING id\ttests/test_weekly_db.py'
   $'周报生成后不抽检\tinsight/store_weekly.py\t    sampled = await sample_week(store, week_start, weekly)\t    sampled = 0\ttests/test_weekly_db.py'
