@@ -5,7 +5,7 @@
   "students": 40,
   "weeks": 12
  },
- "commit": "a52f24a17861417c50bd9ab887d9b64367b0c1bb",
+ "commit": "f3fbda0d0c0ec006cf0abd5756c8f20cc28422af",
  "config": {
   "config_version": "signed-1.0.0",
   "fingerprint": "293adf43a779554c",
@@ -15,5 +15,5 @@
  },
  "generator": "gate1-evidence@0.2.0",
  "notice": "合成，不是试点结论",
- "worktree_dirty": true
+ "worktree_dirty": false
 }
