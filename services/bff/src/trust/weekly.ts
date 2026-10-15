@@ -1,6 +1,7 @@
 // 冲刺 5-H 跨科周报 v0 的 BFF 纯函数（不连库）：库里周报快照（0036 insight.weekly_report）的句子与客观栏再挑一次形状。
 // 句子只保留要转给前端的字段；没有合法 claim_id、段落不属于这个受众、家长版缺置信度分档（或学生版带了）的一律丢弃——
-// 丢弃后再由路由在库里核对每句的判断（trust-routes.ts 的 weeklyClaims）。客观栏固定标来源 objective，形状对不上就不显示。
+// 丢弃后再由路由在库里核对每句的判断（trust-routes.ts 的 weeklyClaims）。客观栏标来源 objective，其中学生自己标记的计划完成 / 跳过
+// 单独一栏标来源 self（0057）；形状对不上就不显示。
 import type { Audience } from '../shell/insight-client.ts';
 
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -37,12 +38,25 @@ export function pickWeeklySentence(raw: unknown, audience: Audience): WeeklySent
            claim_revision: s['claim_revision'], ...(audience === 'guardian' ? { confidence_band: band as string } : {}) };
 }
 
-/** 客观栏：固定标来源 objective；形状对不上就不显示（null） */
+/**
+ * 客观栏：使用时长与各科练习固定标来源 objective；计划完成 / 跳过是学生自己标记的，单独放在 self_marked 栏、固定标来源 self（迁移 0057，规则 6）。
+ * 库里两种形状都认：新形状（sie-weekly@0.2.0 起）计划计数在 self_marked 里；旧快照（0.1.0 / 0.1.1）计划计数在顶层、整栏标 objective——
+ * 那两个数同样是学生自己点的，转给前端时一律放进 self_marked、标 self。形状对不上就不显示（null）。
+ */
 export function pickObjective(raw: unknown): Record<string, unknown> | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const o = raw as Record<string, unknown>;
   const int = (v: unknown, hi: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= hi;
-  if (o['source_type'] !== 'objective' || !int(o['usage_minutes'], 10080) || !int(o['plan_done'], 9999) || !int(o['plan_skipped'], 9999)
+  const sm = o['self_marked'];
+  let plan: Record<string, unknown>;
+  if (sm !== undefined) {
+    if (!sm || typeof sm !== 'object' || Array.isArray(sm) || 'plan_done' in o || 'plan_skipped' in o) return null;
+    plan = sm as Record<string, unknown>;
+    if (plan['source_type'] !== 'self') return null;
+  } else {
+    plan = o;
+  }
+  if (o['source_type'] !== 'objective' || !int(o['usage_minutes'], 10080) || !int(plan['plan_done'], 9999) || !int(plan['plan_skipped'], 9999)
       || !Array.isArray(o['subjects'])) {
     return null;
   }
@@ -55,6 +69,7 @@ export function pickObjective(raw: unknown): Record<string, unknown> | null {
     }
     subjects.push({ subject: r['subject'], practice_minutes: r['practice_minutes'], attempts: r['attempts'] });
   }
-  return { source_type: 'objective', usage_minutes: o['usage_minutes'], plan_done: o['plan_done'], plan_skipped: o['plan_skipped'], subjects };
+  return { source_type: 'objective', usage_minutes: o['usage_minutes'], subjects,
+           self_marked: { source_type: 'self', plan_done: plan['plan_done'], plan_skipped: plan['plan_skipped'] } };
 }
 

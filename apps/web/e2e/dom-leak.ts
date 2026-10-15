@@ -67,8 +67,8 @@ export const ATTRS: Record<string, Rule> = {
   'claim-source': keys(WEEKLY_SOURCE),
   'weekly-section': keys(WEEKLY_SECTION),
   'report-section': keys(FIRST_REPORT_SECTION),
-  'source-type': ['objective'],
-  'weekly-objective': [''], 'report-verify': [''],
+  'source-type': ['objective', 'self'],                               // 周报：使用记录 objective、学生自己标记的计划栏 self（0057）
+  'weekly-objective': [''], 'weekly-self-marked': [''], 'report-verify': [''],
   display: ['solid', 'dashed'],
   // 表单结果码（BFF 错误码与本地结果；异议的下一步编码不放行）
   // （家长诉求页的结果码 FAMILY_GOALS_RESULT，PLT-14 第 1 步）

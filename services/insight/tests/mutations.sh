@@ -144,6 +144,9 @@ M=(
   $'周报每段不设上限\tinsight/weekly.py\t[:weekly.max_per_section]\t\ttests/test_weekly.py'
   $'客观栏收英语\tinsight/weekly.py\t for s in sorted(practice) if s in OBJECTIVE_SUBJECTS]\t for s in sorted(practice)]\ttests/test_weekly.py'
   $'客观栏不标来源 objective\tinsight/weekly.py\t    return {"source_type": "objective", "usage_minutes"\t    return {"source_type": "inferred", "usage_minutes"\ttests/test_weekly.py'
+  # PLT-15 PR3（迁移 0057）：计划计数单独一栏标来源 self；改了客观栏形状必须升周报算法版本
+  $'自己标记栏标成客观记录\tinsight/weekly.py\t"self_marked": {"source_type": "self",\t"self_marked": {"source_type": "objective",\ttests/test_weekly.py tests/test_weekly_db.py'
+  $'改了客观栏形状不升周报版本\tinsight/weekly.py\tALGORITHM_VERSION = "sie-weekly@0.2.0"\tALGORITHM_VERSION = "sie-weekly@0.1.1"\ttests/test_weekly.py tests/test_plan_tasks.py'
   $'合成周报配置在 dev 也能加载\tinsight/weekly.py\t    if doc["synthetic"] and env != TEST_ENV:\t    if False:\ttests/test_weekly.py'
   $'周报抽检比例不校验\tinsight/weekly.py\t and 0 < ratio <= 0.5,\t,\ttests/test_weekly.py'
   # PLT-15 PR2：原“先跳过后完成算跳过”（改的是已删掉的集合差写法）由上面“计划完成率不看最后一次记录”（共用口径，同时跑周报库上测试）

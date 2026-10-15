@@ -190,11 +190,19 @@ test('周报（冲刺 5-H）：句子只收带合法 claim_id、段落属于该�
   assert.equal(pickWeeklySentence({ ...g, section: 'lit' }, 'guardian'), null, '学生的段落不进家长版');
 });
 
-test('周报客观栏：固定来源 objective、有界整数、英语不出现；形状不对为 null', () => {
-  const o = { source_type: 'objective', usage_minutes: 95, plan_done: 4, plan_skipped: 1, subjects: [{ subject: 'aya', practice_minutes: 60, attempts: 18 }] };
+test('周报客观栏：使用记录标来源 objective，计划计数单独一栏标 self（0057）；有界整数、英语不出现；形状不对为 null', () => {
+  const subjects = [{ subject: 'aya', practice_minutes: 60, attempts: 18 }];
+  const o = { source_type: 'objective', usage_minutes: 95, subjects, self_marked: { source_type: 'self', plan_done: 4, plan_skipped: 1 } };
   assert.deepEqual(pickObjective({ ...o, extra: 'x' }), o);
+  // 旧快照（sie-weekly@0.1.0 / 0.1.1）：顶层计划计数，转给前端时同样放进 self_marked、标 self（那两个数是学生自己点的）
+  assert.deepEqual(pickObjective({ source_type: 'objective', usage_minutes: 95, plan_done: 4, plan_skipped: 1, subjects }), o);
+  const sm = o.self_marked;
   for (const bad of [{ ...o, source_type: 'inferred' }, { ...o, usage_minutes: -1 }, { ...o, usage_minutes: 1.5 }, { ...o, usage_minutes: 20000 },
-                     { ...o, subjects: [{ subject: 'echo', practice_minutes: 1, attempts: 1 }] }, { ...o, subjects: 'x' }, null]) {
+                     { ...o, subjects: [{ subject: 'echo', practice_minutes: 1, attempts: 1 }] }, { ...o, subjects: 'x' }, null,
+                     { ...o, self_marked: { ...sm, source_type: 'objective' } }, { ...o, self_marked: { plan_done: 4, plan_skipped: 1 } },
+                     { ...o, self_marked: { ...sm, plan_done: -1 } }, { ...o, self_marked: { ...sm, plan_skipped: 10000 } },
+                     { ...o, self_marked: [sm] }, { ...o, self_marked: null }, { ...o, plan_done: 4 },
+                     { source_type: 'objective', usage_minutes: 95, subjects }]) {
     assert.equal(pickObjective(bad), null, JSON.stringify(bad));
   }
 });

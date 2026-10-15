@@ -70,9 +70,10 @@ def test_student_notebook_structure_every_sentence_has_a_claim_id():
         assert set(s) <= {"claim_id", "template_key", "template_version", "section", "text", "label"} and s["claim_id"]
     assert [s.get("label") for s in sentences_of(r)] == ["preliminary", None, "preliminary"]  # 假设标“初步判断”，学生版不带置信度
     assert sentences_of(r)[0]["text"] == f"【占位模板·未审核】迁移｜{NODE_C}｜apply"
-    assert r["objective"] == {"source_type": "objective", "usage_minutes": 300, "plan_done": 4, "plan_skipped": 1,
+    assert r["objective"] == {"source_type": "objective", "usage_minutes": 300,
                               "subjects": [{"subject": "aya", "practice_minutes": 60, "attempts": 18},
-                                           {"subject": "wenli", "practice_minutes": 2, "attempts": 2}]}
+                                           {"subject": "wenli", "practice_minutes": 2, "attempts": 2}],
+                              "self_marked": {"source_type": "self", "plan_done": 4, "plan_skipped": 1}}
 
 
 def test_guardian_weekly_structure_with_confidence_bands():
@@ -200,9 +201,22 @@ def test_reuses_first_report_pipeline():
 
 def test_objective_column_rules():
     col = objective_column(ObjectiveFacts(10 ** 9, 10 ** 6, -3, {"zhixing": (59, 1), "echo": (6000, 9)}))
-    assert col == {"source_type": "objective", "usage_minutes": 10080, "plan_done": 9999, "plan_skipped": 0,
-                   "subjects": [{"subject": "zhixing", "practice_minutes": 0, "attempts": 1}]}
+    assert col == {"source_type": "objective", "usage_minutes": 10080,
+                   "subjects": [{"subject": "zhixing", "practice_minutes": 0, "attempts": 1}],
+                   "self_marked": {"source_type": "self", "plan_done": 9999, "plan_skipped": 0}}
     assert objective_column(ObjectiveFacts())["subjects"] == []
+
+
+def test_plan_counts_are_labelled_self_and_shape_is_versioned():
+    """PLT-15 PR3（迁移 0057，规则 6）：计划完成 / 跳过是学生自己标记的，单独一栏标来源 self，不在客观记录的顶层；
+    改了客观栏形状就升了周报算法版本，且当前版本不在 0057 允许旧形状的版本里（与迁移里的列表一致）"""
+    col = objective_column(FACTS)
+    assert "plan_done" not in col and "plan_skipped" not in col and col["source_type"] == "objective"
+    assert col["self_marked"]["source_type"] == "self"
+    assert weekly_mod.ALGORITHM_VERSION not in weekly_mod.LEGACY_OBJECTIVE_VERSIONS
+    migration = next((CONFIG_DIR.parents[2] / "db" / "migrations").glob("0057_*.up.sql")).read_text(encoding="utf-8")
+    allowed = "algorithm_version IN (" + ", ".join(f"'{v}'" for v in weekly_mod.LEGACY_OBJECTIVE_VERSIONS) + ")"
+    assert allowed in migration
 
 
 def test_week_helpers():

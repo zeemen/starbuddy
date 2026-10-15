@@ -285,6 +285,9 @@ test('周报：学生“成长手记”与家长周报——每句带 data-claim
   const ids = await root.locator('[data-claim-id]').evaluateAll((els) => els.map((e) => e.getAttribute('data-claim-id')));
   expect(ids).toEqual(WEEKLY_CLAIMS);
   await expect(root.locator('[data-weekly-objective][data-source-type="objective"]')).toBeVisible();
+  // 计划完成 / 跳过是学生自己标记的：单独一栏、来源 self（0057）；客观栏里不再有计划计数
+  await expect(root.locator('[data-weekly-self-marked][data-source-type="self"] [data-value="count"]')).toHaveCount(2);
+  await expect(root.locator('[data-weekly-objective] dl [data-value="count"]')).toHaveCount(0);
   await expect(root.locator('[data-trust-link="why"]')).toHaveCount(2);  // 每句旁一个“为什么”入口（开关 why）
   expect(await root.innerText()).not.toMatch(/置信度说明/);  // 学生端不附置信度说明
   await onlyCopyOrClaims(page);

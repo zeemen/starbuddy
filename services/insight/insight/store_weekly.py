@@ -2,8 +2,8 @@
 
 - 读判断：沿用 InsightStore.visible_claims（与 0010 前端策略同一条件：可见范围含受众、非终态、未过期、模板已审核；中圈指标对学生家长不返回），
   只取知识节点、假设或成立；weekly.build_weekly 里再按首发学科、模板版本、来源过滤一次；
-- 读客观记录：只用已授的列（0025 insight.behavior_event 的会话结束时长与计划事件，0028 platform.attempt 的学科、用时），
-  不读证据原文；
+- 读使用记录：只用已授的列（0025 insight.behavior_event 的会话结束时长与计划事件，0028 platform.attempt 的学科、用时），
+  不读证据原文；行为事件按类别读，不按来源过滤（0057 起计划事件来源是 self、会话事件是 objective）；
 - 写：insight.weekly_report 只追加（同一学生、同一周、同一受众只有一份，重复运行 ON CONFLICT DO NOTHING）；库里的守卫再核每句判断；
 - 抽检：platform.review_sample_weekly_reports（只授洞察服务），按周抽样进统一复核队列，不阻断周报可见。
 时间一律取数据库的 now()。
@@ -67,7 +67,8 @@ async def objective_facts(conn: asyncpg.Connection, student: str, week_start: da
             WHERE student_id = $1::uuid AND kind IN ('session_end', 'plan_done', 'plan_skip') AND occurred_at >= $2 AND occurred_at < $3
             ORDER BY occurred_at, id""", student, start, end)
     seconds = sum(int(r["sec"]) for r in beh if r["kind"] == "session_end" and r["sec"] is not None)
-    # 与计划完成率同一口径（plan_tasks.py，PLT-15 PR2）：同一任务以本周内最后一次记录为准；计入全部来源（是否只计 plan 待人确认）
+    # 与计划完成率同一口径（plan_tasks.py，PLT-15 PR2）：同一任务以本周内最后一次记录为准；计入全部来源（计划、复测、再练、验证，用户决定）。
+    # 这是学生自己标记的记录（来源 self，0057），周报里放在单独的 self_marked 栏（weekly.objective_column）
     done, skipped = plan_outcome_counts(PlanRecord(str(r["id"]), r["kind"], r["task"], r["occurred_at"]) for r in beh
                                         if r["kind"] in PLAN_KINDS and r["task"])
     rows = await conn.fetch(

@@ -1,6 +1,7 @@
 """跨科周报 v0 的结构化生成（冲刺 5-H spec 设计要点 4；SIE V1.1 第六章节奏、第八章信任界面）：纯函数，不连库、不调模型。
 
-周报 = 固定结构（按受众的固定段落）+ 衔接短语占位 + 判断渲染句，外加一栏客观记录（使用时长与计划完成，来源 objective）。
+周报 = 固定结构（按受众的固定段落）+ 衔接短语占位 + 判断渲染句，外加一栏使用记录：使用时长与各科练习（来源 objective），
+以及单独的“学生自己标记”栏（计划完成 / 跳过，来源 self，迁移 0057）。两栏都是记录，不是判断。
 - 学生版“成长手记”：本周点亮了什么（lit）、正在攻克什么（working_on）、下一步（next）；
   家长版周报：本周进展（progress）、当前卡点（stuck）、一条具体配合建议（suggestion）、预测与对账摘要（prediction）。
 - 只由判断渲染（规则 11）：首发只收数学“知识掌握 / 知识迁移”两类节点判断（待人确认 #2），与首份报告同一套筛选——
@@ -30,10 +31,15 @@ from .render import ClaimForRender, render_text
 from .report import _order
 from .shared import STAR_GATES, Forbidden, consistency, forbidden_matcher
 
-FORMAT = "sie-weekly-report/0.1"
+# 0.2（PLT-15 PR3）：客观栏里的计划完成 / 跳过移到 self_marked 栏（来源 self）
+FORMAT = "sie-weekly-report/0.2"
 # 0.1.1（PLT-15 PR2）：客观栏的计划完成 / 跳过改为“同一任务以最后一次记录为准”（与计划完成率同一口径，plan_tasks.py）；
 # 原来“只要有完成就算完成”。判断句、模板、可见范围不变
-ALGORITHM_VERSION = "sie-weekly@0.1.1"
+# 0.2.0（PLT-15 PR3，迁移 0057）：计划完成 / 跳过移到客观栏里单独的 self_marked 栏、标来源 self（学生自己标记的，规则 6）；
+# 计数口径不变。旧形状只留给 0.1.0 / 0.1.1 的已有快照（0057 的表约束 weekly_report_objective_plan_source）
+ALGORITHM_VERSION = "sie-weekly@0.2.0"
+# 0057 里允许旧形状（顶层计划计数、标 objective）的算法版本：当前版本不得在其中（tests/test_weekly.py 锁住）
+LEGACY_OBJECTIVE_VERSIONS = ("sie-weekly@0.1.0", "sie-weekly@0.1.1")
 SCHEMA_VERSION = "sie-weekly-policy/0.1"
 AUDIENCES = ("student", "guardian")
 SECTIONS: Mapping[str, tuple[str, ...]] = {"student": ("lit", "working_on", "next"),
@@ -142,8 +148,8 @@ def week_window(week_start: date) -> tuple[datetime, datetime]:
 
 @dataclass(frozen=True)
 class ObjectiveFacts:
-    """一周的客观记录（事实，不是判断）：会话结束事件的时长、计划完成与跳过、各科作答（用时与题数）。
-    计划完成 / 跳过是学生自己点的记录（同一任务以最后一次为准，plan_tasks.py），不是核实过的完成，也不代表掌握"""
+    """一周的使用记录（事实，不是判断）：会话结束事件的时长、计划完成与跳过、各科作答（用时与题数）。
+    计划完成 / 跳过是学生自己点的记录（来源 self，0057；同一任务以最后一次为准，plan_tasks.py），不是核实过的完成，也不代表掌握"""
     session_seconds: int = 0
     plan_done: int = 0
     plan_skipped: int = 0
@@ -151,15 +157,16 @@ class ObjectiveFacts:
 
 
 def objective_column(facts: ObjectiveFacts) -> dict[str, Any]:
-    """客观栏：标来源 objective；分钟向下取整、封顶一周；只列首发学科（英语不出现），按学科编码排序"""
+    """客观栏：使用时长与各科练习标来源 objective；计划完成 / 跳过放在单独的 self_marked 栏、标来源 self（学生自己标记的，0057）。
+    分钟向下取整、封顶一周；只列首发学科（英语不出现），按学科编码排序"""
     def minutes(sec: int) -> int:
         return max(0, min(MAX_MINUTES, int(sec) // 60))
     practice = facts.practice or {}
     subjects = [{"subject": s, "practice_minutes": minutes(practice[s][0]), "attempts": max(0, min(99999, int(practice[s][1])))}
                 for s in sorted(practice) if s in OBJECTIVE_SUBJECTS]
-    return {"source_type": "objective", "usage_minutes": minutes(facts.session_seconds),
-            "plan_done": max(0, min(9999, int(facts.plan_done))), "plan_skipped": max(0, min(9999, int(facts.plan_skipped))),
-            "subjects": subjects}
+    return {"source_type": "objective", "usage_minutes": minutes(facts.session_seconds), "subjects": subjects,
+            "self_marked": {"source_type": "self", "plan_done": max(0, min(9999, int(facts.plan_done))),
+                            "plan_skipped": max(0, min(9999, int(facts.plan_skipped)))}}
 
 
 # ---------------------------------------------------------------- 周报

@@ -681,10 +681,14 @@ async function claimW(kid: Kid, o: { source?: string; template?: string; visibil
 }
 const wsent = (claimId: string, section: string, audience: 'student' | 'guardian', tpl = TPL) =>
   ({ claim_id: claimId, template_key: tpl, template_version: 1, section, text: `合成渲染句 ${section}`, ...(audience === 'guardian' ? { confidence_band: 'moderate' } : {}) });
+// 旧快照形状（sie-weekly@0.1.0，顶层计划计数）；BFF 转给前端时计划计数一律放进 self_marked、标 self（0057）
 const OBJECTIVE = { source_type: 'objective', usage_minutes: 95, plan_done: 4, plan_skipped: 1, subjects: [{ subject: 'aya', practice_minutes: 60, attempts: 18 }] };
+const OBJECTIVE_OUT = { source_type: 'objective', usage_minutes: 95, subjects: [{ subject: 'aya', practice_minutes: 60, attempts: 18 }],
+                        self_marked: { source_type: 'self', plan_done: 4, plan_skipped: 1 } };
 /** 写一份周报（超级用户；replica = 绕过写入守卫，模拟“库里已有的不合规快照”，验证 BFF 的库内再核）。
  *  每句按库里判断当前的 updated_at 盖修订标记（与 0036 守卫同一做法；replica 下守卫不跑，这里照样盖上）；默认上一周（只收已结束的周） */
-async function weeklyRow(kid: Kid, audience: 'student' | 'guardian', sentences: object[], o: { weeksAgo?: number; withheld?: boolean; replica?: boolean } = {}) {
+async function weeklyRow(kid: Kid, audience: 'student' | 'guardian', sentences: object[],
+                         o: { weeksAgo?: number; withheld?: boolean; replica?: boolean; objective?: object; version?: string } = {}) {
   const c = await h.su.connect();
   try {
     await c.query('BEGIN');
@@ -694,10 +698,11 @@ async function weeklyRow(kid: Kid, audience: 'student' | 'guardian', sentences: 
        SELECT $1, w, w + 6, $2, $3,
               (SELECT coalesce(jsonb_agg(x.s || jsonb_build_object('claim_revision', c.updated_at) ORDER BY x.o), '[]')
                  FROM jsonb_array_elements($4::jsonb) WITH ORDINALITY x(s, o) JOIN insight.claim c ON c.id = (x.s ->> 'claim_id')::uuid),
-              $5::jsonb, $6::text[], 'sie-weekly@0.1.0', 'syn'
+              $5::jsonb, $6::text[], $8, 'syn'
          FROM (SELECT date_trunc('week', (now() AT TIME ZONE 'Asia/Shanghai')::date)::date - 7 * $7::int AS w) x`,
-      [kid.id, audience, o.withheld ? 'withheld' : 'generated', JSON.stringify(o.withheld ? [] : sentences), o.withheld ? null : JSON.stringify(OBJECTIVE),
-       o.withheld ? ['forbidden_inference'] : [], o.weeksAgo ?? 1]);
+      [kid.id, audience, o.withheld ? 'withheld' : 'generated', JSON.stringify(o.withheld ? [] : sentences),
+       o.withheld ? null : JSON.stringify(o.objective ?? OBJECTIVE), o.withheld ? ['forbidden_inference'] : [], o.weeksAgo ?? 1,
+       o.version ?? 'sie-weekly@0.1.0']);
     await c.query('COMMIT');
   } finally {
     c.release(true);
@@ -722,7 +727,7 @@ test('周报：学生读学生版“成长手记”、家长读家长版；每�
   assert.deepEqual(r.sections[1].sentences[0], { claim_id: c2, text: '合成渲染句 working_on', source_type: 'objective', label: 'preliminary' },
                    '学生版不带置信度分档，不转模板键与修订标记；“初步判断”按判断当前状态推导，随句带来源');
   assert.equal(r.sections[0].sentences[0].label, undefined, '成立的判断不标“初步判断”');
-  assert.deepEqual(r.objective, OBJECTIVE);
+  assert.deepEqual(r.objective, OBJECTIVE_OUT);
   const g = await weeklyOf(W.guardian, W.kid);
   assert.deepEqual(g.body.report.sections.map((x: any) => x.key), ['progress', 'stuck']);
   assert.ok(g.body.report.sections.every((x: any) => x.sentences.every((y: any) => y.confidence_band === 'moderate')));
@@ -731,6 +736,18 @@ test('周报：学生读学生版“成长手记”、家长读家长版；每�
   assert.equal((await weeklyOf(unlinked, W.kid)).status, 404);
   // 还没有周报的孩子：report 为 null
   assert.deepEqual((await weeklyOf(O.kid.account, O.kid)).body, { student_id: O.kid.id, report: null });
+});
+
+test('周报：新形状（sie-weekly@0.2.0，0057）计划计数在“学生自己标记”栏、标来源 self，原样转给学生与家长', { skip: !HAS_DB }, async () => {
+  const W = await family();
+  const c1 = await claimW(W.kid);
+  await weeklyRow(W.kid, 'student', [wsent(c1, 'lit', 'student')], { objective: OBJECTIVE_OUT, version: 'sie-weekly@0.2.0' });
+  await weeklyRow(W.kid, 'guardian', [wsent(c1, 'progress', 'guardian')], { objective: OBJECTIVE_OUT, version: 'sie-weekly@0.2.0' });
+  for (const account of [W.kid.account, W.guardian]) {
+    const r = await weeklyOf(account, W.kid);
+    assert.equal(r.status, 200, r.text);
+    assert.deepEqual(r.body.report.objective, OBJECTIVE_OUT);
+  }
 });
 
 test('周报：删掉或降为不可见任一判断、撤回或待验证、过期、白名单外、模板对不上，对应句子消失并记数；一句不剩时 report 为 null', { skip: !HAS_DB }, async () => {

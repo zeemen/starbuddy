@@ -195,7 +195,8 @@ test('删除申请：待确认 / 冷静期中 / 已撤回 / 已删除；回执�
 // ---------------------------------------------------------------- 周报
 
 test('周报：段落只认该受众的编码；无 claim_id 或空文字的句子丢弃；置信度只在家长版；一句不剩整份不显示；客观栏形状不对不显示', () => {
-  const obj = { source_type: 'objective', usage_minutes: 95, plan_done: 4, plan_skipped: 1, subjects: [{ subject: 'aya', practice_minutes: 60, attempts: 18 }] };
+  const obj = { source_type: 'objective', usage_minutes: 95, subjects: [{ subject: 'aya', practice_minutes: 60, attempts: 18 }],
+                self_marked: { source_type: 'self', plan_done: 4, plan_skipped: 1 } };
   const raw = (sections: unknown[], objective: unknown = obj) => ({ student_id: C2, report: { week_start: '2026-09-28', week_end: '2026-10-04',
                                                                                           generated_at: '2026-10-05T00:00:00Z', sections, objective } });
   const v = pickWeekly(raw([
@@ -209,13 +210,19 @@ test('周报：段落只认该受众的编码；无 claim_id 或空文字的句�
   assert.equal(v.sections[0]!.sentences[0]!.source_type, null, '来源缺失或不认识：不标注');
   assert.equal(v.sections[0]!.sentences[0]!.preliminary, true);
   assert.equal(v.dropped, 4);
-  assert.deepEqual(v.objective, { usage_minutes: 95, plan_done: 4, plan_skipped: 1, subjects: [{ subject: 'aya', practice_minutes: 60, attempts: 18 }] });
+  assert.deepEqual(v.objective, { usage_minutes: 95, subjects: [{ subject: 'aya', practice_minutes: 60, attempts: 18 }],
+                                  self_marked: { plan_done: 4, plan_skipped: 1 } });
   assert.equal(pickWeekly(raw([{ key: 'lit', sentences: [{ claim_id: C1, text: '学生版带了置信度', confidence_band: 'strong' }] }]), 'student'), null);
   const g = pickWeekly(raw([{ key: 'stuck', sentences: [{ claim_id: C1, text: '家长版', confidence_band: 'moderate' }, { claim_id: C2, text: '缺分档' }] }]), 'guardian')!;
   assert.deepEqual(g.sections[0]!.sentences.map((x) => x.confidence_band), ['moderate']);
   assert.equal(pickWeekly(raw([{ key: 'lit', sentences: [{ text: '没有 claim_id' }] }]), 'student'), null, '一句不剩整份不显示');
   assert.equal(pickWeekly({ student_id: C2, report: null }, 'student'), null);
-  for (const bad of [{ ...obj, source_type: 'inferred' }, { ...obj, usage_minutes: -1 }, { ...obj, subjects: [{ subject: 'echo', practice_minutes: 1, attempts: 1 }] }]) {
+  const sm = obj.self_marked;
+  for (const bad of [{ ...obj, source_type: 'inferred' }, { ...obj, usage_minutes: -1 }, { ...obj, subjects: [{ subject: 'echo', practice_minutes: 1, attempts: 1 }] },
+                     // 计划计数（0057）：只认 self_marked 栏且来源是 self；缺栏、来源不对、顶层再出现计划计数都整栏不显示
+                     { ...obj, self_marked: { ...sm, source_type: 'objective' } }, { ...obj, self_marked: { plan_done: 4, plan_skipped: 1 } },
+                     { ...obj, self_marked: { ...sm, plan_skipped: -1 } }, { ...obj, self_marked: undefined }, { ...obj, plan_done: 4 },
+                     { source_type: 'objective', usage_minutes: 95, plan_done: 4, plan_skipped: 1, subjects: [] }]) {
     assert.equal(pickWeekly(raw([{ key: 'lit', sentences: [{ claim_id: C1, text: '句' }] }], bad), 'student')!.objective, null, JSON.stringify(bad));
   }
   // 段落编码只映射到占位键，不附提示、不含编码原文

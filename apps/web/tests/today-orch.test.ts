@@ -142,7 +142,8 @@ test('文案：“完成”“先跳过”“已记下”是 {{TODO_COPY:today.m
     assert.ok(!/掌握|核实|真棒|厉害|加油|偷懒|又|总是|应该|必须|点点|阿鸦|妙笔|[!！]/.test(s), s);
   }
   // 周报的计划栏：说明是自己标记的记录，不说成已掌握或已核实完成
-  for (const s of [WEEKLY.planDone, WEEKLY.planSkipped]) {
+  // 0057 起计划栏单独成栏、来源学生自述：栏目标题与来源说明同样只说“自己标记”
+  for (const s of [WEEKLY.planDone, WEEKLY.planSkipped, WEEKLY.selfMarkedHeading, WEEKLY.selfMarkedSource]) {
     assert.match(s, /自己标记/, s);
     assert.ok(!/掌握|核实|学会|达标/.test(s), s);
   }

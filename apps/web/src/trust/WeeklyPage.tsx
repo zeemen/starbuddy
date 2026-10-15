@@ -2,7 +2,8 @@
 // 只在壳内展示（待人确认 #5），不发短信、推送。关于学生的句子只来自判断：每句一个 data-claim-id（view.ts 再断言，无 ID 的不渲染）；
 // 段落标题、栏目标签全是占位文案（人写人审）；学生端不附置信度说明，家长端附（SIE 第八章）。每句旁是“为什么”入口（开关 why）；
 // 判断来源不是模型推断时（客观记录、学生自述、家长观察）另加来源标注（规则 6，契约审查 L1）。
-// 客观栏是客观记录（使用时长、计划完成、各科练习），标明来源、不是判断；数字放在 data-value 里。
+// 客观栏是客观记录（使用时长、各科练习），标明来源、不是判断；计划完成 / 跳过是学生自己标记的，单独一栏、标来源 self（迁移 0057，规则 6）。
+// 数字放在 data-value 里。
 import { notFound, redirect } from 'next/navigation';
 import { fetchWeekly } from '../lib/trust-api.ts';
 import { CONFIDENCE_BAND, EXAM_SUBJECT, TRUST, WEEKLY, WEEKLY_SECTION, WEEKLY_SOURCE } from '../shell/copy.ts';
@@ -54,16 +55,15 @@ export async function WeeklyPage({ studentId, audience }: { studentId: string; a
   );
 }
 
-/** 客观栏：使用时长、计划完成与跳过、各科练习时长与作答题数（来源 objective，不是判断） */
+/** 客观栏：使用时长、各科练习时长与作答题数（来源 objective，不是判断）；其后是单独的“学生自己标记”栏 */
 function ObjectiveColumn({ o }: { o: WeeklyObjective }) {
   return (
+    <>
     <section aria-labelledby="weekly-objective" data-weekly-objective="" data-source-type="objective">
       <h2 id="weekly-objective">{WEEKLY.objectiveHeading}</h2>
       <p className="muted">{WEEKLY.objectiveSource}</p>
       <dl>
         <dt>{WEEKLY.usage}</dt><dd><span data-value="minutes">{o.usage_minutes}</span></dd>
-        <dt>{WEEKLY.planDone}</dt><dd><span data-value="count">{o.plan_done}</span></dd>
-        <dt>{WEEKLY.planSkipped}</dt><dd><span data-value="count">{o.plan_skipped}</span></dd>
       </dl>
       {o.subjects.length > 0 ? (
         <table className="trust-table" data-testid="weekly-subjects">
@@ -81,6 +81,22 @@ function ObjectiveColumn({ o }: { o: WeeklyObjective }) {
           </tbody>
         </table>
       ) : null}
+    </section>
+    <SelfMarkedColumn m={o.self_marked} />
+    </>
+  );
+}
+
+/** 学生自己标记的计划完成 / 跳过（来源 self，迁移 0057）：单独一栏、单独标来源；不是核实过的完成，也不是判断（规则 6、11） */
+function SelfMarkedColumn({ m }: { m: WeeklyObjective['self_marked'] }) {
+  return (
+    <section aria-labelledby="weekly-self-marked" data-weekly-self-marked="" data-source-type="self">
+      <h2 id="weekly-self-marked">{WEEKLY.selfMarkedHeading}</h2>
+      <p className="muted">{WEEKLY.selfMarkedSource}</p>
+      <dl>
+        <dt>{WEEKLY.planDone}</dt><dd><span data-value="count">{m.plan_done}</span></dd>
+        <dt>{WEEKLY.planSkipped}</dt><dd><span data-value="count">{m.plan_skipped}</span></dd>
+      </dl>
     </section>
   );
 }

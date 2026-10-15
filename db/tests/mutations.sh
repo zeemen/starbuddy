@@ -517,7 +517,7 @@ declare -A M=(
   ["行为事件：payload 不限键"]="ALTER TABLE insight.behavior_event DROP CONSTRAINT behavior_event_payload; DO \$\$ DECLARE d text := pg_get_functiondef('insight.record_behavior_event(uuid, text, jsonb, timestamptz, uuid)'::regprocedure); BEGIN IF position('OR p_payload IS NULL OR NOT coalesce(insight.valid_behavior_payload(p_kind, p_payload), false)' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'OR p_payload IS NULL OR NOT coalesce(insight.valid_behavior_payload(p_kind, p_payload), false)', 'OR p_payload IS NULL'); END \$\$;"
   ["行为事件：会话时长不设上限"]="DO \$\$ DECLARE d text := pg_get_functiondef('insight.valid_behavior_payload(text, jsonb)'::regprocedure); BEGIN IF position('AND (p->>''duration_sec'') ~ ''^[0-9]{1,5}$'' AND (p->>''duration_sec'')::integer BETWEEN 0 AND 86400' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'AND (p->>''duration_sec'') ~ ''^[0-9]{1,5}$'' AND (p->>''duration_sec'')::integer BETWEEN 0 AND 86400', 'AND (p->>''duration_sec'')::numeric >= 0'); END \$\$;"
   ["行为事件：时间不设窗口"]="DO \$\$ DECLARE d text := pg_get_functiondef('insight.record_behavior_event(uuid, text, jsonb, timestamptz, uuid)'::regprocedure); BEGIN IF position('OR p_occurred_at IS NULL OR p_occurred_at < now() - interval ''1 day'' OR p_occurred_at > now() + interval ''5 minutes''' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'OR p_occurred_at IS NULL OR p_occurred_at < now() - interval ''1 day'' OR p_occurred_at > now() + interval ''5 minutes''', 'OR p_occurred_at IS NULL'); END \$\$;"
-  ["行为事件：来源可不是客观记录"]="ALTER TABLE insight.behavior_event DROP CONSTRAINT behavior_event_source_type_check;"
+  ["行为事件：来源可不是客观记录"]="ALTER TABLE insight.behavior_event DROP CONSTRAINT behavior_event_source_by_kind;"
   ["探针：不核对学生本人"]="DO \$\$ DECLARE d text := pg_get_functiondef('insight.record_confidence_probe(uuid, platform.subject, text, text, timestamptz, uuid)'::regprocedure); BEGIN IF position('IF p_student IS NULL OR NOT platform.is_self_student(p_student) THEN' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'IF p_student IS NULL OR NOT platform.is_self_student(p_student) THEN', 'IF p_student IS NULL OR NOT platform.can_read_student(p_student) THEN'); END \$\$;"
   ["探针：关联别人的作答"]="DO \$\$ DECLARE d text := pg_get_functiondef('insight.link_probe_attempt(uuid, uuid, uuid)'::regprocedure); BEGIN IF position('WHERE a.attempt_id = p_attempt AND a.student_id = p_student' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'WHERE a.attempt_id = p_attempt AND a.student_id = p_student', 'WHERE a.attempt_id = p_attempt'); END \$\$;"
   ["探针：关联不同题的作答"]="DO \$\$ DECLARE d text := pg_get_functiondef('insight.link_probe_attempt(uuid, uuid, uuid)'::regprocedure); BEGIN IF position('AND a.subject = p.subject AND a.item_id = p.item_id' IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, 'AND a.subject = p.subject AND a.item_id = p.item_id', ''); END \$\$;"
@@ -1294,6 +1294,20 @@ M+=(
   ["计划事件：别人的任务报不同的错（泄露存在性）"]="$(afr "$TPB" "'    IF NOT EXISTS (SELECT 1 FROM platform.today_plan_item i'" "'    IF EXISTS (SELECT 1 FROM platform.today_plan_item i WHERE i.id = (p_payload ->> ''plan_task_id'')::uuid AND i.student_id <> p_student) THEN RAISE EXCEPTION ''not allowed'' USING ERRCODE = ''insufficient_privilege''; END IF;
     IF NOT EXISTS (SELECT 1 FROM platform.today_plan_item i'")"
   ["攻击面：今日计划快照对 BFF 全开"]="DROP POLICY today_plan_item_read ON platform.today_plan_item; CREATE POLICY today_plan_item_read ON platform.today_plan_item FOR SELECT TO starbuddy_bff USING (true);"
+)
+
+# PLT-15 PR3 计划完成 / 跳过事件的来源改为学生自述（0057）：由 79ze 发现（写入函数类的同时由 79zd 的计划事件写入发现）。
+# DBMUT_FILTER=计划来源 只跑这一组（约束整条删掉的情形是上面的“行为事件：来源可不是客观记录”，由 79g 发现）
+M+=(
+  ["计划来源：计划事件可标客观记录"]="ALTER TABLE insight.behavior_event DROP CONSTRAINT behavior_event_source_by_kind; ALTER TABLE insight.behavior_event ADD CONSTRAINT behavior_event_source_by_kind CHECK (CASE WHEN kind IN ('plan_done', 'plan_skip') THEN source_type IN ('self', 'objective') ELSE source_type = 'objective' END);"
+  ["计划来源：会话事件可标学生自述"]="ALTER TABLE insight.behavior_event DROP CONSTRAINT behavior_event_source_by_kind; ALTER TABLE insight.behavior_event ADD CONSTRAINT behavior_event_source_by_kind CHECK (CASE WHEN kind IN ('plan_done', 'plan_skip') THEN source_type = 'self' ELSE source_type IN ('objective', 'self') END);"
+  ["计划来源：写入函数仍写客观记录"]="$(afr "$TPB" "'THEN ''self''::insight.source_type ELSE'" "'THEN ''objective''::insight.source_type ELSE'")"
+  ["计划来源：自己标记栏来源不限"]="$(afr "$WO" "'AND p -> ''self_marked'' -> ''source_type'' = ''\"self\"''::jsonb'" "''")"
+  ["计划来源：自己标记栏可带别的键"]="$(afr "$WO" "'= ARRAY[''plan_done'', ''plan_skipped'', ''source_type'']'" "'IS NOT NULL'")"
+  ["计划来源：新形状顶层可再放计划计数"]="$(afr "$WO" "'= ARRAY[''self_marked'', ''source_type'', ''subjects'', ''usage_minutes'']'" "'@> ARRAY[''self_marked'', ''source_type'', ''subjects'', ''usage_minutes'']'")"
+  ["计划来源：自己标记计数不设上限"]="$(afr "$WO" "'(p -> ''self_marked'' ->> ''plan_done'') ~ ''^[0-9]{1,4}\$'''" "'(p -> ''self_marked'' ->> ''plan_done'') ~ ''^[0-9]+\$'''")"
+  ["计划来源：新版本可写旧形状"]="ALTER TABLE insight.weekly_report DROP CONSTRAINT weekly_report_objective_plan_source;"
+  ["计划来源：客观栏核对可返回 NULL"]="$(afr "$WO" "'''subjects'')), false)'" "'''subjects'')), NULL)'")"
 )
 
 # G 流第二部分 PR D：审核台读内容版本与发布记录（0042）、时政过期下架（0043）：由 79w 发现（授权类的同时由 80 的快照发现）。

@@ -5,7 +5,8 @@ info:
   title: StarBuddy BFF · behavior events & confidence probes (v0, prototype)
   version: 0.1.0
   description: >
-    学生本人写自己的行为事件（来源类型固定为客观记录 objective）与“能做对吗”探针（来源类型固定为学生自述 self）。
+    学生本人写自己的行为事件与“能做对吗”探针（来源类型固定为学生自述 self）。行为事件的来源类型由库函数按类别决定（迁移 0057）：
+    会话开始、结束是客观记录 objective；计划完成 / 跳过（plan_done / plan_skip）是学生自己标记的，记为学生自述 self。
     只写不读：行为事件与探针只给 Agent 用，学生、家长界面都不显示，响应只回记录 ID，不回显 payload（CLAUDE.md 规则 11、12）。
     授权、payload 白名单、时间窗（最近 1 天内、不晚于现在 5 分钟）与幂等全部由迁移 0025 的库函数决定；BFF 先做一遍请求体校验
     （未知键、自由文本、类型不对一律 422）。不消耗额度，不走计量预留。请求体上限 16 KB。

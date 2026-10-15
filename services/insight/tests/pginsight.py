@@ -128,16 +128,17 @@ INSERT INTO insight.confidence_probe (student_id, subject, item_id, prediction, 
 INSERT INTO insight.confidence_probe (student_id, subject, item_id, prediction, asked_at, idempotency_key)
   VALUES ('{S3}', 'aya', 'syn-item-040', 'yes', now() - interval '1 hour', gen_random_uuid());
 -- 计划：T1 完成、T2 跳过、T3 先跳过后完成、T4 完成、T5 跳过 → 3 / 5
-INSERT INTO insight.behavior_event (student_id, kind, payload, occurred_at, recorded_by, idempotency_key) VALUES
-  ('{S3}', 'plan_done', '{{"plan_task_id": "70000000-0000-4000-8000-000000000001"}}', now() - interval '20 days', 'student', gen_random_uuid()),
-  ('{S3}', 'plan_skip', '{{"plan_task_id": "70000000-0000-4000-8000-000000000002"}}', now() - interval '18 days', 'student', gen_random_uuid()),
-  ('{S3}', 'plan_skip', '{{"plan_task_id": "70000000-0000-4000-8000-000000000003"}}', now() - interval '10 days', 'student', gen_random_uuid()),
-  ('{S3}', 'plan_done', '{{"plan_task_id": "70000000-0000-4000-8000-000000000003"}}', now() - interval '9 days', 'student', gen_random_uuid()),
-  ('{S3}', 'plan_done', '{{"plan_task_id": "70000000-0000-4000-8000-000000000004"}}', now() - interval '3 days', 'student', gen_random_uuid()),
-  ('{S3}', 'plan_skip', '{{"plan_task_id": "70000000-0000-4000-8000-000000000005"}}', now() - interval '2 days', 'student', gen_random_uuid()),
-  ('{S3}', 'session_start', '{{"entry": "today"}}', now() - interval '5 days', 'student', gen_random_uuid()),
-  ('{S3}', 'session_start', '{{"entry": "today"}}', now() - interval '13 days', 'student', gen_random_uuid()),
-  ('{S3}', 'session_start', '{{"entry": "star_map"}}', now() - interval '27 days', 'student', gen_random_uuid());
+-- 来源按类别（0057）：计划事件是学生自己标记的（self），会话事件是客观记录（objective）
+INSERT INTO insight.behavior_event (student_id, kind, payload, source_type, occurred_at, recorded_by, idempotency_key) VALUES
+  ('{S3}', 'plan_done', '{{"plan_task_id": "70000000-0000-4000-8000-000000000001"}}', 'self', now() - interval '20 days', 'student', gen_random_uuid()),
+  ('{S3}', 'plan_skip', '{{"plan_task_id": "70000000-0000-4000-8000-000000000002"}}', 'self', now() - interval '18 days', 'student', gen_random_uuid()),
+  ('{S3}', 'plan_skip', '{{"plan_task_id": "70000000-0000-4000-8000-000000000003"}}', 'self', now() - interval '10 days', 'student', gen_random_uuid()),
+  ('{S3}', 'plan_done', '{{"plan_task_id": "70000000-0000-4000-8000-000000000003"}}', 'self', now() - interval '9 days', 'student', gen_random_uuid()),
+  ('{S3}', 'plan_done', '{{"plan_task_id": "70000000-0000-4000-8000-000000000004"}}', 'self', now() - interval '3 days', 'student', gen_random_uuid()),
+  ('{S3}', 'plan_skip', '{{"plan_task_id": "70000000-0000-4000-8000-000000000005"}}', 'self', now() - interval '2 days', 'student', gen_random_uuid()),
+  ('{S3}', 'session_start', '{{"entry": "today"}}', 'objective', now() - interval '5 days', 'student', gen_random_uuid()),
+  ('{S3}', 'session_start', '{{"entry": "today"}}', 'objective', now() - interval '13 days', 'student', gen_random_uuid()),
+  ('{S3}', 'session_start', '{{"entry": "star_map"}}', 'objective', now() - interval '27 days', 'student', gen_random_uuid());
 -- 错因：数学 5 条（2 条审题）、文砺 5 条（1 条审题），另有一条已被取代的数学审题错因（不计）→ 3 / 10
 INSERT INTO platform.error_attribution (student_id, subject, subject_category, cross_subject_category, confidence, algorithm_version,
   evidence_ids, source_request_id)

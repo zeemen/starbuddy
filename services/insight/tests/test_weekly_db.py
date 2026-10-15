@@ -93,12 +93,12 @@ async def test_weekly_job_generates_both_versions_and_samples(insightdb):
             sents = json.loads(r["sentences"]) if isinstance(r["sentences"], str) else r["sentences"]
             obj = json.loads(r["objective"]) if isinstance(r["objective"], str) else r["objective"]
             assert r["status"] == "generated" and r["week_start"] == week and r["week_end"] == week + timedelta(days=6)
-            assert r["algorithm_version"] == "sie-weekly@0.1.1" and r["policy_version"] == f"{POLICY.config_version}_{WEEKLY.config_version}"
+            assert r["algorithm_version"] == "sie-weekly@0.2.0" and r["policy_version"] == f"{POLICY.config_version}_{WEEKLY.config_version}"
             assert sents and all(s["claim_id"] in claims for s in sents)  # 每句都引用这个学生的判断
             assert all(claims[s["claim_id"]]["template_key"] == s["template_key"] for s in sents)
             # 每句的修订标记 = 写入时判断的 updated_at（安全审查 F1）
             assert all(s["claim_revision"] and claims[s["claim_id"]]["updated_at"] == datetime.fromisoformat(s["claim_revision"]) for s in sents)
-            assert obj["source_type"] == "objective"
+            assert obj["source_type"] == "objective" and obj["self_marked"]["source_type"] == "self"  # 计划计数单独一栏，学生自述（0057）
             assert r["spot_check_task_id"] is not None and r["reasons"] == ["spot_check"] and r["source_kind"] == "weekly_report"
             assert r["task_subject"] == "aya"
         student, guardian = [json.loads(r["sentences"]) if isinstance(r["sentences"], str) else r["sentences"] for r in rows]
@@ -170,23 +170,24 @@ async def test_objective_facts_only_this_week(insightdb):
           SET session_replication_role = replica;
           DELETE FROM insight.behavior_event WHERE student_id = '{S1}';
           DELETE FROM platform.attempt WHERE student_id = '{S1}';
-          INSERT INTO insight.behavior_event (student_id, kind, payload, occurred_at, recorded_by, idempotency_key) VALUES
-            ('{S1}', 'session_end', '{{"duration_sec": 1800}}', now() - interval '1 minute', 'student', gen_random_uuid()),
-            ('{S1}', 'session_end', '{{"duration_sec": 659}}', now() - interval '2 minutes', 'student', gen_random_uuid()),
-            ('{S1}', 'session_end', '{{"duration_sec": 9999}}', now() - interval '8 days', 'student', gen_random_uuid()),
-            ('{S1}', 'plan_skip', '{{"plan_task_id": "70000000-0000-4000-8000-0000000000a1"}}', now() - interval '3 minutes', 'student', gen_random_uuid()),
-            ('{S1}', 'plan_done', '{{"plan_task_id": "70000000-0000-4000-8000-0000000000a1"}}', now() - interval '2 minutes', 'student', gen_random_uuid()),
-            ('{S1}', 'plan_skip', '{{"plan_task_id": "70000000-0000-4000-8000-0000000000a2"}}', now() - interval '2 minutes', 'student', gen_random_uuid()),
-            ('{S1}', 'plan_done', '{{"plan_task_id": "70000000-0000-4000-8000-0000000000a3"}}', now() - interval '9 days', 'student', gen_random_uuid()),
+          -- 来源按类别（0057）：会话事件 objective，计划事件 self（学生自己标记的）
+          INSERT INTO insight.behavior_event (student_id, kind, payload, source_type, occurred_at, recorded_by, idempotency_key) VALUES
+            ('{S1}', 'session_end', '{{"duration_sec": 1800}}', 'objective', now() - interval '1 minute', 'student', gen_random_uuid()),
+            ('{S1}', 'session_end', '{{"duration_sec": 659}}', 'objective', now() - interval '2 minutes', 'student', gen_random_uuid()),
+            ('{S1}', 'session_end', '{{"duration_sec": 9999}}', 'objective', now() - interval '8 days', 'student', gen_random_uuid()),
+            ('{S1}', 'plan_skip', '{{"plan_task_id": "70000000-0000-4000-8000-0000000000a1"}}', 'self', now() - interval '3 minutes', 'student', gen_random_uuid()),
+            ('{S1}', 'plan_done', '{{"plan_task_id": "70000000-0000-4000-8000-0000000000a1"}}', 'self', now() - interval '2 minutes', 'student', gen_random_uuid()),
+            ('{S1}', 'plan_skip', '{{"plan_task_id": "70000000-0000-4000-8000-0000000000a2"}}', 'self', now() - interval '2 minutes', 'student', gen_random_uuid()),
+            ('{S1}', 'plan_done', '{{"plan_task_id": "70000000-0000-4000-8000-0000000000a3"}}', 'self', now() - interval '9 days', 'student', gen_random_uuid()),
             -- PLT-15 PR2：同一任务以最后一次为准——先完成后跳过算跳过（原来“只要有完成就算完成”）；重复完成只算一个任务
-            ('{S1}', 'plan_done', '{{"plan_task_id": "70000000-0000-4000-8000-0000000000a4"}}', now() - interval '4 minutes', 'student', gen_random_uuid()),
-            ('{S1}', 'plan_skip', '{{"plan_task_id": "70000000-0000-4000-8000-0000000000a4"}}', now() - interval '1 minute', 'student', gen_random_uuid()),
-            ('{S1}', 'plan_done', '{{"plan_task_id": "70000000-0000-4000-8000-0000000000a5"}}', now() - interval '5 minutes', 'student', gen_random_uuid()),
-            ('{S1}', 'plan_done', '{{"plan_task_id": "70000000-0000-4000-8000-0000000000a5"}}', now() - interval '4 minutes', 'student', gen_random_uuid()),
+            ('{S1}', 'plan_done', '{{"plan_task_id": "70000000-0000-4000-8000-0000000000a4"}}', 'self', now() - interval '4 minutes', 'student', gen_random_uuid()),
+            ('{S1}', 'plan_skip', '{{"plan_task_id": "70000000-0000-4000-8000-0000000000a4"}}', 'self', now() - interval '1 minute', 'student', gen_random_uuid()),
+            ('{S1}', 'plan_done', '{{"plan_task_id": "70000000-0000-4000-8000-0000000000a5"}}', 'self', now() - interval '5 minutes', 'student', gen_random_uuid()),
+            ('{S1}', 'plan_done', '{{"plan_task_id": "70000000-0000-4000-8000-0000000000a5"}}', 'self', now() - interval '4 minutes', 'student', gen_random_uuid()),
             -- 同一页面内改主意（每次新键）：完成 → 跳过 → 完成，最后一条是完成
-            ('{S1}', 'plan_done', '{{"plan_task_id": "70000000-0000-4000-8000-0000000000a6"}}', now() - interval '6 minutes', 'student', gen_random_uuid()),
-            ('{S1}', 'plan_skip', '{{"plan_task_id": "70000000-0000-4000-8000-0000000000a6"}}', now() - interval '5 minutes', 'student', gen_random_uuid()),
-            ('{S1}', 'plan_done', '{{"plan_task_id": "70000000-0000-4000-8000-0000000000a6"}}', now() - interval '30 seconds', 'student', gen_random_uuid());
+            ('{S1}', 'plan_done', '{{"plan_task_id": "70000000-0000-4000-8000-0000000000a6"}}', 'self', now() - interval '6 minutes', 'student', gen_random_uuid()),
+            ('{S1}', 'plan_skip', '{{"plan_task_id": "70000000-0000-4000-8000-0000000000a6"}}', 'self', now() - interval '5 minutes', 'student', gen_random_uuid()),
+            ('{S1}', 'plan_done', '{{"plan_task_id": "70000000-0000-4000-8000-0000000000a6"}}', 'self', now() - interval '30 seconds', 'student', gen_random_uuid());
           INSERT INTO platform.attempt (attempt_id, occurred_at, student_id, subject, item_id, response_evidence_id, hint_level_used,
                                         request_idempotency_key, evidence_kind, evidence_level, channel, elapsed_sec) VALUES
             (gen_random_uuid(), now() - interval '1 minute', '{S1}', 'aya', 'syn-item-001', gen_random_uuid(), 0, 'syn-weekly-att-1', 'independent', 'A', 'keypad', 300),
@@ -209,8 +210,9 @@ async def test_objective_facts_only_this_week(insightdb):
     in_week = [PlanRecord(p.fact_id, p.kind, p.plan_task_id, p.occurred_at) for p in inputs.plans if start <= p.occurred_at < end]
     assert plan_outcome_counts(in_week) == (facts.plan_done, facts.plan_skipped) == (3, 2)
     # a1 先跳过后完成 → 完成；a5 完成两次 → 一个完成；a6 完成→跳过→完成 → 完成；a2 跳过；a4 先完成后跳过 → 跳过；a3 不在本周
-    assert objective_column(facts) == {"source_type": "objective", "usage_minutes": 40, "plan_done": 3, "plan_skipped": 2,
-                                       "subjects": [{"subject": "aya", "practice_minutes": 10, "attempts": 2}]}
+    assert objective_column(facts) == {"source_type": "objective", "usage_minutes": 40,
+                                       "subjects": [{"subject": "aya", "practice_minutes": 10, "attempts": 2}],
+                                       "self_marked": {"source_type": "self", "plan_done": 3, "plan_skipped": 2}}
 
 
 async def test_guard_rejection_is_recorded_and_the_run_continues(insightdb, monkeypatch):

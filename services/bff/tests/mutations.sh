@@ -157,6 +157,8 @@ SM=(
   $'信任：周报句子不核对 claim_id\tsrc/trust/weekly.ts\t  if (typeof s[\'claim_id\'] !== \'string\' || !UUID.test(s[\'claim_id\']) || typeof s[\'template_key\']\t  if (typeof s[\'template_key\']'
   $'信任：周报学生版可带置信度\tsrc/trust/weekly.ts\t  if (audience === \'guardian\' ? typeof band !== \'string\' || !BANDS.includes(band) : band !== undefined) return null;\t'
   $'信任：周报客观栏不核来源\tsrc/trust/weekly.ts\t  if (o[\'source_type\'] !== \'objective\' || \t  if ('
+  $'信任：周报自己标记栏不核来源\tsrc/trust/weekly.ts\t    if (plan[\'source_type\'] !== \'self\') return null;\t'
+  $'信任：周报自己标记栏与顶层计数并存也收\tsrc/trust/weekly.ts\t || \'plan_done\' in o || \'plan_skipped\' in o) return null;\t) return null;'
   $'信任：周报只给家长\tsrc/http/trust-routes.ts\t`${S}/weekly-report`, \'session\', weeklyReport\t`${S}/weekly-report`, \'guardian\', weeklyReport'
   $'信任：周报不限流\tsrc/http/trust-routes.ts\tweeklyReport, [{ bucket: \'trust_read.session.minute\', dim: \'session\' }]\tweeklyReport, []'
   # KGE-04 第二步 PR 4 学情档案页（profile）：白名单、实线核对、初步判断标注、谁能读、限流

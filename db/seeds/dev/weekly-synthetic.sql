@@ -7,7 +7,8 @@
 -- 内容（全部合成，文本是明显占位，不是真实文案）：
 --   - 判断模板 syn.weekly.node_mastery@1（已审核，合成占位；以迁移执行者身份模拟人工登记）；
 --   - GT 的两条知识节点判断（一条成立、一条假设，对学生、家长可见），以洞察服务身份写入（0010 的守卫照常核对）；
---   - GT 上一周（只收已结束的周）一份学生版成长手记、一份家长版周报（以洞察服务身份写入，0036 的守卫逐句核对判断），客观栏来源 objective。
+--   - GT 上一周（只收已结束的周）一份学生版成长手记、一份家长版周报（以洞察服务身份写入，0036 的守卫逐句核对判断），客观栏来源 objective，
+--     计划计数在 self_marked 栏、来源 self（0057 新形状，sie-weekly@0.2.0）；再前一周同样两份旧形状（sie-weekly@0.1.0），BFF 只取最近一周。
 -- 端到端的第二个 BFF 用一份把 syn.weekly.node_mastery@1 列进对外白名单的显示规则（scripts/e2e.sh 生成，只在这个一次性环境）。
 BEGIN;
 
@@ -46,10 +47,17 @@ SELECT '5d000000-0000-4000-8000-0000000000c1', w, w + 6, a, 'generated',
                             'section', CASE a WHEN 'student' THEN 'working_on' ELSE 'stuck' END,
                             'text', '【占位模板·未审核】MATH.FUNC.QUAD.AXIS｜execute', 'label', 'preliminary')
            || CASE a WHEN 'guardian' THEN '{"confidence_band": "moderate"}'::jsonb ELSE '{}'::jsonb END),
-       '{"source_type": "objective", "usage_minutes": 95, "plan_done": 4, "plan_skipped": 1,
-         "subjects": [{"subject": "aya", "practice_minutes": 60, "attempts": 18}]}',
-       'sie-weekly@0.1.0', 'syn-weekly-seed'
-  FROM (SELECT date_trunc('week', (now() AT TIME ZONE 'Asia/Shanghai')::date)::date - 7 AS w) x, unnest(ARRAY['student', 'guardian']) a;
+       x.objective, x.version, 'syn-weekly-seed'
+  FROM (SELECT date_trunc('week', (now() AT TIME ZONE 'Asia/Shanghai')::date)::date - 7 AS w,
+               -- 上一周：新形状（PLT-15 PR3，0057，sie-weekly@0.2.0）——计划完成 / 跳过在 self_marked 栏、来源 self
+               '{"source_type": "objective", "usage_minutes": 95, "subjects": [{"subject": "aya", "practice_minutes": 60, "attempts": 18}],
+                 "self_marked": {"source_type": "self", "plan_done": 4, "plan_skipped": 1}}'::jsonb AS objective, 'sie-weekly@0.2.0' AS version
+        UNION ALL
+        -- 再前一周：旧形状保留（0.1.0 的顶层计划计数；BFF 读时转进 self_marked）
+        SELECT date_trunc('week', (now() AT TIME ZONE 'Asia/Shanghai')::date)::date - 14,
+               '{"source_type": "objective", "usage_minutes": 95, "plan_done": 4, "plan_skipped": 1,
+                 "subjects": [{"subject": "aya", "practice_minutes": 60, "attempts": 18}]}'::jsonb, 'sie-weekly@0.1.0') x,
+       unnest(ARRAY['student', 'guardian']) a;
 RESET ROLE;
 
 COMMIT;

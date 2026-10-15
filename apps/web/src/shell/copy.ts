@@ -421,7 +421,10 @@ export const WEEKLY = {
   objectiveHeading: T('weekly.objective.heading', '使用记录'),
   objectiveSource: T('weekly.objective.source', '来自使用记录，不是判断'),
   usage: T('weekly.objective.usage', '使用时长（分钟）'),
-  // 计划完成 / 跳过（PLT-15）：学生自己点的记录，同一任务以最后一次为准；不是核实过的完成，更不是掌握（规则 6、11）
+  // 计划完成 / 跳过（PLT-15）：学生自己点的记录，同一任务以最后一次为准；不是核实过的完成，更不是掌握（规则 6、11）。
+  // 0057 起单独一栏、来源学生自述（self）；栏目标题与来源说明是占位，人写人审（仍是“来自使用记录，不是判断”的豁免，用户已确认）
+  selfMarkedHeading: T('weekly.self_marked.heading', '学生自己标记'),
+  selfMarkedSource: T('weekly.self_marked.source', '学生自己标记的，来自使用记录，不是判断'),
   planDone: T('weekly.objective.plan_done', '自己标记完成的计划任务'),
   planSkipped: T('weekly.objective.plan_skipped', '自己标记跳过的计划任务'),
   colSubject: T('weekly.objective.col.subject', '学科'),

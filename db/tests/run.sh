@@ -844,5 +844,43 @@ grep -q '0055 回滚中止' "$WORK/down55.err" || { echo "db-test: 失败（0055
   || { echo "db-test: 失败（0055 回滚中止后快照表或数据不在了）"; exit 1; }
 echo "ok - 0056 未回滚时 0055 回滚以明确错误中止，快照表与数据不变" >> "$OUT"
 
+# 0057 在有数据时单独 down → up（PLT-15 PR3）：计划事件的来源在 self 与 objective 之间回填往返，约束与写入函数跟着换；
+# 已有新形状客观栏（self_marked）的周报时回滚以明确错误中止、库不变（周报只追加，恢复 0036 的形状核对后这些行会违反约束）
+U57="$(ls "$ROOT"/db/migrations/0057_*.up.sql)"; D57="$(ls "$ROOT"/db/migrations/0057_*.down.sql)"
+PE_S1=c1000000-0000-4000-8000-0000000000c1
+PE_KEYS="'7d570000-0000-4000-8000-0000000000f2', '7d570000-0000-4000-8000-0000000000f3'"
+psql_run </dev/null -c "INSERT INTO insight.behavior_event (student_id, kind, payload, source_type, occurred_at, idempotency_key) VALUES
+  ('$PE_S1', 'plan_done', '{\"plan_task_id\": \"7d570000-0000-4000-8000-0000000000f1\"}', 'self', now(), '7d570000-0000-4000-8000-0000000000f2'),
+  ('$PE_S1', 'session_start', '{\"entry\": \"today\"}', 'objective', now(), '7d570000-0000-4000-8000-0000000000f3')" >/dev/null
+pe_state() {  # 两条合成事件的类别:来源 | 行为事件的来源约束名 | 写入函数按类别写 self | 周报的形状版本约束个数
+  psql_run -tAc "SELECT (SELECT string_agg(kind || ':' || source_type, ',' ORDER BY kind) FROM insight.behavior_event
+                          WHERE student_id = '$PE_S1' AND idempotency_key IN ($PE_KEYS))
+                   || '|' || (SELECT string_agg(conname, ',' ORDER BY conname) FROM pg_constraint
+                               WHERE conrelid = 'insight.behavior_event'::regclass AND conname LIKE 'behavior_event_source%')
+                   || '|' || (SELECT position('''self''::insight.source_type' IN prosrc) > 0 FROM pg_proc
+                               WHERE oid = 'insight.record_behavior_event(uuid, text, jsonb, timestamptz, uuid)'::regprocedure)
+                   || '|' || (SELECT count(*) FROM pg_constraint WHERE conname = 'weekly_report_objective_plan_source')" </dev/null
+}
+PE_UP="plan_done:self,session_start:objective|behavior_event_source_by_kind|true|1"
+[ "$(pe_state)" = "$PE_UP" ] || { echo "db-test: 失败（0057 回滚测试的前提不成立：$(pe_state)）"; exit 1; }
+PE_WEEKLY="'[{\"claim_id\": \"7d570000-0000-4000-8000-0000000000f4\", \"template_key\": \"test.weekly.node\", \"template_version\": 1, \"section\": \"progress\", \"text\": \"合成渲染句\", \"confidence_band\": \"moderate\"}]',
+           '{\"source_type\": \"objective\", \"usage_minutes\": 5, \"subjects\": [], \"self_marked\": {\"source_type\": \"self\", \"plan_done\": 1, \"plan_skipped\": 0}}'"
+psql_run </dev/null -c "SET session_replication_role = replica;
+  INSERT INTO insight.weekly_report (student_id, week_start, week_end, audience, status, sentences, objective, algorithm_version, policy_version)
+  VALUES ('$PE_S1', '2025-01-06', '2025-01-12', 'guardian', 'generated', $PE_WEEKLY, 'sie-weekly@0.2.0', 'syn-0057')" >/dev/null
+if psql_run -1 < "$D57" >/dev/null 2>"$WORK/down57.err"; then echo "db-test: 失败（已有新形状周报时 0057 回滚仍然执行成功）"; exit 1; fi
+grep -q '0057 回滚中止' "$WORK/down57.err" || { echo "db-test: 失败（0057 回滚不是被周报形状检查中止：$(cat "$WORK/down57.err")）"; exit 1; }
+[ "$(pe_state)" = "$PE_UP" ] || { echo "db-test: 失败（0057 回滚中止后库被改动了：$(pe_state)）"; exit 1; }
+echo "ok - 已有新形状客观栏的周报时 0057 回滚以明确错误中止，库不变" >> "$OUT"
+psql_run </dev/null -c "SET session_replication_role = replica; DELETE FROM insight.weekly_report WHERE policy_version = 'syn-0057'" >/dev/null
+psql_run -1 < "$D57" >/dev/null 2>"$WORK/down57.err" || { echo "db-test: 失败（有数据时 0057 回滚失败：$(cat "$WORK/down57.err")）"; exit 1; }
+[ "$(pe_state)" = "plan_done:objective,session_start:objective|behavior_event_source_type_check|false|0" ] \
+  || { echo "db-test: 失败（0057 回滚后没有回到 0056 的状态：$(pe_state)）"; exit 1; }
+echo "ok - 有数据时 0057 单独回滚：计划事件回填为 objective，约束与写入函数回到 0056" >> "$OUT"
+psql_run -1 < "$U57" >/dev/null 2>"$WORK/up57.err" || { echo "db-test: 失败（0057 回滚后重新执行失败：$(cat "$WORK/up57.err")）"; exit 1; }
+[ "$(pe_state)" = "$PE_UP" ] || { echo "db-test: 失败（0057 重新执行后状态不对：$(pe_state)）"; exit 1; }
+echo "ok - 0057 回滚后重新执行：已有计划事件回填为 self，约束与写入函数回到 0057" >> "$OUT"
+psql_run </dev/null -c "DELETE FROM insight.behavior_event WHERE student_id = '$PE_S1' AND idempotency_key IN ($PE_KEYS)" >/dev/null
+
 n=$(grep -c 'ok - ' "$OUT" || true)
 echo "db-test: 通过（${n} 项断言）"

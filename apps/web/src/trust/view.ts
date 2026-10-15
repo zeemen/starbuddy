@@ -187,8 +187,10 @@ export const WEEKLY_SECTIONS: Record<Audience, readonly string[]> = {
 export const OBJECTIVE_SUBJECTS = ['aya', 'zhixing', 'wenli'] as const;
 export interface WeeklySentence { claim_id: string; text: string; preliminary: boolean; confidence_band: Band | null;
                                   source_type: 'inferred' | 'objective' | 'self' | 'guardian' | null }
-export interface WeeklyObjective { usage_minutes: number; plan_done: number; plan_skipped: number;
-                                   subjects: { subject: (typeof OBJECTIVE_SUBJECTS)[number]; practice_minutes: number; attempts: number }[] }
+/** 使用记录：使用时长与各科练习是客观记录（objective）；计划完成 / 跳过是学生自己标记的（self_marked，来源 self，迁移 0057） */
+export interface WeeklyObjective { usage_minutes: number;
+                                   subjects: { subject: (typeof OBJECTIVE_SUBJECTS)[number]; practice_minutes: number; attempts: number }[];
+                                   self_marked: { plan_done: number; plan_skipped: number } }
 export interface WeeklyView { week_start: string; week_end: string; sections: { key: string; sentences: WeeklySentence[] }[];
                               objective: WeeklyObjective | null; dropped: number }
 
@@ -196,8 +198,11 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const nat = (v: unknown, hi: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= hi;
 
 function pickObjectiveColumn(raw: unknown): WeeklyObjective | null {
-  if (!obj(raw) || raw['source_type'] !== 'objective' || !nat(raw['usage_minutes'], 10080) || !nat(raw['plan_done'], 9999)
-      || !nat(raw['plan_skipped'], 9999) || !Array.isArray(raw['subjects'])) {
+  // 计划计数只认 self_marked 栏且来源必须是 self（BFF 已把旧快照的顶层计数转进来）；顶层再出现计划计数就整栏不显示
+  const sm = obj(raw) ? raw['self_marked'] : undefined;
+  if (!obj(raw) || raw['source_type'] !== 'objective' || !nat(raw['usage_minutes'], 10080) || !Array.isArray(raw['subjects'])
+      || 'plan_done' in raw || 'plan_skipped' in raw
+      || !obj(sm) || sm['source_type'] !== 'self' || !nat(sm['plan_done'], 9999) || !nat(sm['plan_skipped'], 9999)) {
     return null;
   }
   const subjects: WeeklyObjective['subjects'] = [];
@@ -207,7 +212,7 @@ function pickObjectiveColumn(raw: unknown): WeeklyObjective | null {
     }
     subjects.push({ subject: x['subject'] as WeeklyObjective['subjects'][number]['subject'], practice_minutes: x['practice_minutes'], attempts: x['attempts'] });
   }
-  return { usage_minutes: raw['usage_minutes'], plan_done: raw['plan_done'], plan_skipped: raw['plan_skipped'], subjects };
+  return { usage_minutes: raw['usage_minutes'], subjects, self_marked: { plan_done: sm['plan_done'], plan_skipped: sm['plan_skipped'] } };
 }
 
 /**

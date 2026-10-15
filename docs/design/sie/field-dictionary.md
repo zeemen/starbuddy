@@ -71,7 +71,7 @@
 
 | id | 名称 | 层 | 来源 | 默认可见 | 落库 | 状态 | 改变的教学决策 |
 |---|---|---|---|---|---|---|---|
-| `middle.g5.behavior_events` | 学习行为事件（会话、计划完成与跳过、连错后退出、异议） | fact | 客观记录 | Agent | `insight.behavior_event.payload` | live | 降负触发（连续中断、连错后退出）与计划调整 |
+| `middle.g5.behavior_events` | 学习行为事件（会话、计划完成与跳过、连错后退出、异议） | fact | 客观记录、学生自述 | Agent | `insight.behavior_event.payload（记录录入人：insight.behavior_event.source_type）` | live | 降负触发（连续中断、连错后退出）与计划调整 |
 | `middle.g5.plan_completion_rate` | 计划完成率 | inference | 模型推断 | Agent | `insight.learner_metric.value（SIE-02 建）` | silent | 计划偏重时缩短任务，并先询问原因 |
 | `middle.g5.persistence` | 学习持续性 | inference | 模型推断 | Agent | `insight.learner_metric.value（SIE-02 建）` | silent | 中断后缩短任务、插入熟悉题；只与自己过去比较 |
 

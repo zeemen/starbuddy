@@ -6,6 +6,7 @@
   “是否只计 source = plan”待人确认（spec 待人确认 2）。只计 plan 要读今日计划快照表的来源列，洞察服务目前没有这张表的读权限
   （PR1 lessons 待人确认 4，需要一个授权迁移），所以配置写 "plan" 时拒绝加载，而不是悄悄按全部来源算；
 - plan_done 只是学生自己点了完成，不是核实过的完成，更不是掌握（规则 6、11）：这里只数记录，不推断任何东西。
+  迁移 0057 起这两类事件在库里标来源学生自述（self）；这里按类别读，不按来源过滤（读取不依赖 source_type）。
 """
 from __future__ import annotations
 
@@ -51,7 +52,8 @@ def default_counting() -> PlanCounting:
 
 
 # 口径与版本的对应：count_sources → (指标 metrics.ALGORITHM_VERSION, 周报 weekly.ALGORITHM_VERSION)
-COUNTING_VERSIONS = {"all": ("0.1.0", "sie-weekly@0.1.1")}
+# 周报 0.2.0（PLT-15 PR3）只改了计划计数在客观栏里的位置与来源标注（self_marked，来源 self），口径仍是 all
+COUNTING_VERSIONS = {"all": ("0.1.0", "sie-weekly@0.2.0")}
 
 
 @dataclass(frozen=True)

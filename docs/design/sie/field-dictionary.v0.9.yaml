@@ -341,12 +341,13 @@ fields:
   - id: middle.g5.behavior_events
     name: 学习行为事件（会话、计划完成与跳过、连错后退出、异议）
     layer: fact
-    source_type: [objective]
+    source_type: [objective, self]
     collect: { level: automatic, timing: continuous }
     visibility: [agent]
     storage: insight.behavior_event.payload
+    source_column: insight.behavior_event.source_type
     status: live
-    note: 冲刺 2-L（迁移 0025）落库；学生端只写会话与计划四类，连错后退出与异议由后端与编排层写（未实现）；时间戳只用于降负触发，不做作息分析；家长单独删除的入口待 insight.erase 实现，目前随学生档案级联删除
+    note: 冲刺 2-L（迁移 0025）落库；学生端只写会话与计划四类，连错后退出与异议由后端与编排层写（未实现）；来源按类别（迁移 0057，按行记在 insight.behavior_event.source_type）——会话、连错后退出、异议是客观记录，计划完成与跳过为学生主动标记（学生自述，不是核实过的完成）；周报只显示汇总计数（学生自己标记完成、跳过的任务数），不显示逐条事件（豁免见 PLT-15 lessons 决定记录）；时间戳只用于降负触发，不做作息分析；家长单独删除的入口待 insight.erase 实现，目前随学生档案级联删除
     teaching_decision: 降负触发（连续中断、连错后退出）与计划调整
     guardian_deletable: true
   - id: middle.g5.plan_completion_rate
@@ -362,6 +363,7 @@ fields:
     status: silent
     teaching_decision: 计划偏重时缩短任务，并先询问原因
     guardian_deletable: true
+    note: 输入是学生自己标记的计划完成与跳过（middle.g5.behavior_events 中来源为学生自述的两类，迁移 0057），不是核实过的完成；同一任务以最后一次标记为准
     metric: { definition: 完成任务数 ÷ 计划任务数（以学生调整后的计划为准）, min_sample: 至少 2 周, validity: 与后续进步相关（观察用）, validated: false }
   - id: middle.g5.persistence
     name: 学习持续性

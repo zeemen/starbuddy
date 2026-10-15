@@ -175,7 +175,8 @@ test('“完成”“先跳过”：学生本人每条都有；同一票据重�
   expect(lastKind()).toBe('plan_done');
   const kinds = sql(`SELECT string_agg(kind || ':' || source_type::text, ',' ORDER BY occurred_at, id) FROM insight.behavior_event
                       WHERE payload ->> 'plan_task_id' = '${TASKS[2]}'`);
-  expect(kinds).toBe('plan_done:objective,plan_skip:objective,plan_done:objective,plan_done:objective');
+  // 0057：计划完成 / 跳过是学生自己标记的，来源记为学生自述（self）
+  expect(kinds).toBe('plan_done:self,plan_skip:self,plan_done:self,plan_done:self');
   await expectNoDomLeak(page, { forbidden: INTERNAL });
   expect(off).toEqual([]);
 });
