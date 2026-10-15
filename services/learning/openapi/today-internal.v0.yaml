@@ -3,9 +3,9 @@
 openapi: 3.1.0
 info:
   title: StarBuddy learning service · today orchestration (internal, v0 draft)
-  version: 0.1.0
+  version: 0.2.0
   description: >
-    读时汇总，不落库：把各科今日计划（learning-internal v1 的 /internal/v1/plan，同一进程内调用 plan_today）、错题再练列表
+    读时汇总（开关 LEARNING_TODAY_SNAPSHOT 关着时不落库；打开时只落当天快照，见下）：把各科今日计划（learning-internal v1 的 /internal/v1/plan，同一进程内调用 plan_today）、错题再练列表
     （practice-internal.v0.yaml 的 queue，只取 status = due）、复测与验证题列表（retest-internal.v0.yaml 的 queue，只取 status = due）
     汇成一张跨科有序列表。三个来源都在进程内复用读取函数，不走 HTTP。任一来源（按学科）未启用或失败只跳过它，不整体失败：
     未启用（模块没启动、配置里这一科没开、这一科没配适配器）标 source_disabled；启用了但失败（含条目不合格）标 source_unavailable。
@@ -15,10 +15,25 @@ info:
     排序：配置的来源优先级（合成：retest > practice > plan）→ 各来源内原有顺序 → 学科轮转（按请求里学科的顺序）。
     截断：按 estimated_minutes 依次累加到预算，第一条放不进的及其之后全部截掉，截掉的条数在 truncated_count；第一条本身超预算时仍保留。
     复测、验证与再练条目的预计分钟取配置（entry_minutes），计划任务取适配器给的 estimated_minutes。
-    只读：不写任何表、不计量、不调模型。返回内容没有掌握、置信度、证据 ID（规则 3、11）；计划任务只带它原有的 rationale_code，
-    BFF 按既有两类推荐理由机制与白名单处理。
+    开关关着时只读：不写任何表；无论开关都不计量、不调模型。返回内容没有掌握、置信度、证据 ID（规则 3、11）；计划任务只带它原有的
+    rationale_code，BFF 按既有两类推荐理由机制与白名单处理。
     鉴权：Bearer 服务间令牌，只认 BFF 的令牌。请求体上限 64 KB，拒绝未知键、NaN、重复键。
     没配 LEARNING_TODAY_CONFIG（或未签字配置出现在 test / dev 以外）、没开 LEARNING_INTERNAL_V1 时一律 501 TODAY_UNAVAILABLE。
+    今日计划快照（PLT-15 PR1，specs/today-plan-snapshot-plt15；迁移 0055 platform.today_plan_item）：开关 LEARNING_TODAY_SNAPSHOT 缺省关，
+    关着时本接口只读、响应与上面逐字段一致（条目没有 task_id，也没有 snapshot 字段）。打开时汇总照常算，然后：
+    (1) 当天（北京时间）已冻结：条目与 task_id 都取快照（只给本次请求 subjects 里的学科，按快照顺序；不按新算的结果改写），
+        snapshot = frozen；
+    (2) 还没冻结、这次有条目、且没有任何启用的来源是 source_unavailable：把条目冻结成快照（只写快照表这一张），同 (1)；
+        推荐理由编码只保留 BFF 已登记的那几个（其余置为 null，迁移 0055 的 CHECK 同一张表）；
+    (3) 还没冻结、但有来源 source_unavailable 或这次没有条目：不冻结，照常返回现算的列表、条目不带 task_id，snapshot = not_frozen
+        （前端据此不显示完成 / 跳过）；来源恢复后的读取再冻结；
+    (4) 学生已执行删除：不写，items 为空，snapshot = not_frozen。
+    task_id 是快照行 ID，即行为事件 plan_done / plan_skip 的 plan_task_id。
+    与快照条目可能对不上的字段：truncated_count、budget_minutes、sources 与 plan 总按这次读取现算。所以 frozen 时
+    budget_minutes 是这次请求的预算（冻结时用的预算可能不同，条目分钟之和可能超过它），truncated_count 是这次现算截掉的条数
+    （不是冻结时截掉的），sources 是这次的来源状态（快照冻结后来源失败也照样返回快照），plan 是这次现算的各科计划（可能与快照里的
+    计划任务不同）；BFF 显示跨科列表以 items 为准。
+    快照读写失败：约束违反是确定失败，500 TODAY_SNAPSHOT_REJECTED（不可重试）；锁等待超时、连接问题等 503 TODAY_SNAPSHOT_UNAVAILABLE（可重试）。
 servers:
   - url: http://127.0.0.1:8788
 security:
@@ -27,7 +42,7 @@ paths:
   /internal/v1/today:
     post:
       operationId: todayOrchestrate
-      description: 学生今天的跨科有序列表（读时算出）。只读，不写任何表，不计量。
+      description: 学生今天的跨科有序列表（读时算出）。开关关着时只读，不写任何表；打开时只写当天的快照。不计量。
       requestBody:
         required: true
         content:
@@ -57,6 +72,8 @@ paths:
         '401': { $ref: '#/components/responses/Problem' }
         '413': { $ref: '#/components/responses/Problem' }
         '501': { description: TODAY_UNAVAILABLE }
+        '500': { description: TODAY_SNAPSHOT_REJECTED（只在 LEARNING_TODAY_SNAPSHOT=1 时；快照违反平台约束，确定失败，不可重试）；其余内部错误 INTERNAL }
+        '503': { description: TODAY_SNAPSHOT_UNAVAILABLE（只在 LEARNING_TODAY_SNAPSHOT=1 时；快照读写失败，可重试） }
 components:
   securitySchemes:
     serviceToken: { type: http, scheme: bearer }
@@ -75,11 +92,22 @@ components:
         source: { enum: [retest, practice, plan] }
         entry_id: { type: [string, 'null'], format: uuid, description: 可去做的条目（复测、再练列表的 entry_id）；计划任务为空 }
         rationale_code: { type: [string, 'null'], pattern: '^[a-z0-9_]{1,48}$', description: 计划任务原有的推荐理由编码；复测、再练为空 }
+        task_id:
+          type: string
+          format: uuid
+          description: >
+            今日计划快照的任务 ID（plan_task_id）。只在 snapshot = frozen 时出现，且每条都有；snapshot = not_frozen 与开关关着时没有。
+            同一学生同一天各次读取相同，跨天不同
     TodayList:
       type: object
       additionalProperties: false
       required: [items, truncated_count, budget_minutes, sources, plan]
       properties:
+        snapshot:
+          enum: [frozen, not_frozen]
+          description: >
+            只在 LEARNING_TODAY_SNAPSHOT=1 时出现（关着时没有这个字段）。frozen = items 取自当天的快照、每条带 task_id；
+            not_frozen = 这次没冻结（有启用的来源失败、没有条目或学生已删除），items 是现算的、不带 task_id，前端不显示完成 / 跳过
         items: { type: array, items: { $ref: '#/components/schemas/TodayItem' } }
         truncated_count: { type: integer, minimum: 0, description: 按预算截掉的条数 }
         budget_minutes: { type: integer, minimum: 20, maximum: 40 }

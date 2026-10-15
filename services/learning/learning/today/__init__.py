@@ -6,6 +6,7 @@
 - merge：纯函数（去重、排序、按预算截断），不连库；
 - service、api：取来源（任一来源未启用或失败只跳过它，标 source_unavailable）与服务目录内部接口
   （openapi/today-internal.v0.yaml，只供 BFF；不改 packages/contracts）。
-只读：不写任何表、不计量、不调模型；对 BFF 只回学科、类别、节点、预计分钟、来源、可去做的条目引用与计划原有的 rationale_code，
+- store：今日计划快照（PLT-15，开关 LEARNING_TODAY_SNAPSHOT，缺省关）：当天首次读取冻结进 platform.today_plan_item，同日再读返回同一批任务 ID。
+开关关着时只读：不写任何表、不计量、不调模型（打开时只多写快照表这一张）；对 BFF 只回学科、类别、节点、预计分钟、来源、可去做的条目引用与计划原有的 rationale_code，
 不回掌握、置信度、证据 ID（规则 3、11）。
 """

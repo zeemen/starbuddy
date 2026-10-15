@@ -20,6 +20,10 @@ SELECT t.ok(t.ob(:aS1, format($$SELECT (insight.record_behavior_event(%L, 'sessi
             '同一幂等键重放返回原记录，不重复入库');
 SELECT t.throws(format('SELECT t.ob(%L, %L)', :aS1, format($$SELECT (insight.record_behavior_event(%L, 'session_end', '{"duration_sec": 60}', now(), %L)).id::text$$, :S1, :k1)),
                 '23505', '同一幂等键、内容不同回冲突');
+-- 0056 起计划事件的任务 ID 必须是该生今日计划快照里的行：以超级用户写两条当天的合成快照行（快照的逐条断言在 79zd）
+INSERT INTO platform.today_plan_item (id, student_id, seq, subject, kind, source, estimated_minutes)
+VALUES ('0a000000-0000-4000-8000-000000000001', :S1, 1, 'aya', 'lesson', 'plan', 5),
+       ('0a000000-0000-4000-8000-000000000002', :S1, 2, 'aya', 'review', 'plan', 5);
 SELECT t.ok(t.ob(:aS1, format($$SELECT (insight.record_behavior_event(%L, 'session_end', '{"duration_sec": 1800}', now(), %L)).id::text$$, :S1, :k2)) IS NOT NULL
             AND t.ob(:aS1, format($$SELECT (insight.record_behavior_event(%L, 'plan_done', '{"plan_task_id": "0a000000-0000-4000-8000-000000000001"}', now(), gen_random_uuid())).id::text$$, :S1)) IS NOT NULL
             AND t.ob(:aS1, format($$SELECT (insight.record_behavior_event(%L, 'plan_skip', '{"plan_task_id": "0a000000-0000-4000-8000-000000000002"}', now(), gen_random_uuid())).id::text$$, :S1)) IS NOT NULL,

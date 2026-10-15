@@ -438,6 +438,7 @@ def test_internal_openapi_matches_api_keys():
     assert schema["additionalProperties"] is False
     item = doc["components"]["schemas"]["TodayItem"]
     from learning.today.merge import Item
-    assert set(item["required"]) == set(item["properties"]) == set(Item.__dataclass_fields__)
+    # task_id 只在 LEARNING_TODAY_SNAPSHOT=1 时出现（PLT-15），不在必填里；其余字段与 Item 一一对应
+    assert set(item["required"]) == set(item["properties"]) - {"task_id"} == set(Item.__dataclass_fields__)
     src = (Path(__file__).resolve().parents[1] / "learning/today/api.py").read_text(encoding="utf-8")
     assert re.findall(r'@app\.post\("([^"]+)"\)', src) == ["/internal/v1/today"]

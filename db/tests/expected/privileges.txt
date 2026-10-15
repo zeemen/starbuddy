@@ -385,6 +385,20 @@ col|platform.subscription.period_end|starbuddy_authz|UPDATE|SUPERUSER
 col|platform.subscription.period_start|starbuddy_authz|UPDATE|SUPERUSER
 col|platform.subscription.status|starbuddy_authz|UPDATE|SUPERUSER
 col|platform.subscription.tier|starbuddy_authz|UPDATE|SUPERUSER
+col|platform.today_plan_item.entry_ref|starbuddy_bff|SELECT|SUPERUSER
+col|platform.today_plan_item.estimated_minutes|starbuddy_bff|SELECT|SUPERUSER
+col|platform.today_plan_item.id|starbuddy_authz|SELECT|SUPERUSER
+col|platform.today_plan_item.id|starbuddy_bff|SELECT|SUPERUSER
+col|platform.today_plan_item.kind|starbuddy_bff|SELECT|SUPERUSER
+col|platform.today_plan_item.plan_date|starbuddy_authz|SELECT|SUPERUSER
+col|platform.today_plan_item.plan_date|starbuddy_bff|SELECT|SUPERUSER
+col|platform.today_plan_item.plan_date|starbuddy_eraser|SELECT|SUPERUSER
+col|platform.today_plan_item.seq|starbuddy_bff|SELECT|SUPERUSER
+col|platform.today_plan_item.source|starbuddy_bff|SELECT|SUPERUSER
+col|platform.today_plan_item.student_id|starbuddy_authz|SELECT|SUPERUSER
+col|platform.today_plan_item.student_id|starbuddy_bff|SELECT|SUPERUSER
+col|platform.today_plan_item.student_id|starbuddy_eraser|SELECT|SUPERUSER
+col|platform.today_plan_item.subject|starbuddy_bff|SELECT|SUPERUSER
 col|platform.usage_ledger.actor|starbuddy_bff|SELECT|SUPERUSER
 col|platform.usage_ledger.corrects_entry_id|starbuddy_bff|SELECT|SUPERUSER
 col|platform.usage_ledger.corrects_kind|starbuddy_bff|SELECT|SUPERUSER
@@ -841,6 +855,8 @@ func|platform.staff_session_resolve(text)|starbuddy_review|EXECUTE|starbuddy_aut
 func|platform.staff_totp(bytea,bigint)|starbuddy_authz|EXECUTE|SUPERUSER
 func|platform.take_review_task(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.take_review_task(uuid)|starbuddy_review|EXECUTE|starbuddy_authz
+func|platform.today_plan_item_guard()|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.today_plan_retention_days()|starbuddy_eraser|EXECUTE|SUPERUSER
 func|platform.valid_profile_sections(jsonb,text)|starbuddy_learning|EXECUTE|SUPERUSER
 func|platform.valid_profile_violations(jsonb)|starbuddy_learning|EXECUTE|SUPERUSER
 func|policy.add_source_domain(text,text)|starbuddy_authz|EXECUTE|starbuddy_authz
@@ -1004,6 +1020,7 @@ owner|platform.staff_login(text,text,text)|starbuddy_authz
 owner|platform.staff_logout(text)|starbuddy_authz
 owner|platform.staff_session_resolve(text)|starbuddy_authz
 owner|platform.take_review_task(uuid)|starbuddy_authz
+owner|platform.today_plan_item_guard()|starbuddy_authz
 owner|policy.add_source_domain(text,text)|starbuddy_authz
 owner|policy.approval_count(text,uuid)|starbuddy_authz
 owner|policy.lock_active_source_host(text)|starbuddy_authz
@@ -1361,6 +1378,9 @@ rel|platform.subscription|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.subscription|starbuddy_bff|SELECT|SUPERUSER
 rel|platform.tag_candidate_signoff|starbuddy_authz|INSERT|SUPERUSER
 rel|platform.tag_candidate_signoff|starbuddy_authz|SELECT|SUPERUSER
+rel|platform.today_plan_item|starbuddy_eraser|DELETE|SUPERUSER
+rel|platform.today_plan_item|starbuddy_learning|INSERT|SUPERUSER
+rel|platform.today_plan_item|starbuddy_learning|SELECT|SUPERUSER
 rel|platform.trial_claim_phone|starbuddy_authz|INSERT|SUPERUSER
 rel|platform.trial_claim_phone|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.trial_claim|starbuddy_authz|INSERT|SUPERUSER
@@ -1575,6 +1595,7 @@ secdef|platform.staff_login(text,text,text)
 secdef|platform.staff_logout(text)
 secdef|platform.staff_session_resolve(text)
 secdef|platform.take_review_task(uuid)
+secdef|platform.today_plan_item_guard()
 secdef|policy.add_source_domain(text,text)
 secdef|policy.approval_count(text,uuid)
 secdef|policy.lock_active_source_host(text)

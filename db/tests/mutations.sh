@@ -1242,6 +1242,60 @@ M+=(
   ["攻击面：月度计划写入函数不固定 pg_temp"]="ALTER FUNCTION $MPS SET search_path = pg_catalog, insight, platform;"
 )
 
+# PLT-15 PR1 今日计划快照（0055）与计划事件核对任务 ID（0056），specs/today-plan-snapshot-plt15：由 79zd 发现（授权类的同时由 80 的快照、
+# 清单类由 79p、删除覆盖由 79q 发现；攻击面类只由 80 发现）。DBMUT_FILTER=今日计划 只跑这一组
+TPE='platform.execute_due_erasures(timestamp with time zone)'
+TPB='insight.record_behavior_event(uuid, text, jsonb, timestamp with time zone, uuid)'
+M+=(
+  ["今日计划快照：BFF 读不限当天"]="DROP POLICY today_plan_item_read ON platform.today_plan_item; CREATE POLICY today_plan_item_read ON platform.today_plan_item FOR SELECT TO starbuddy_bff USING (platform.can_read_student(student_id));"
+  ["今日计划快照：BFF 读不限本人与绑定家长"]="DROP POLICY today_plan_item_read ON platform.today_plan_item; CREATE POLICY today_plan_item_read ON platform.today_plan_item FOR SELECT TO starbuddy_bff USING (plan_date = (now() AT TIME ZONE 'Asia/Shanghai')::date);"
+  ["今日计划快照：家长读不到（只给学生本人）"]="DROP POLICY today_plan_item_read ON platform.today_plan_item; CREATE POLICY today_plan_item_read ON platform.today_plan_item FOR SELECT TO starbuddy_bff USING (platform.is_self_student(student_id) AND plan_date = (now() AT TIME ZONE 'Asia/Shanghai')::date);"
+  ["今日计划快照：可补写别的日子"]="DROP TRIGGER today_plan_item_guard ON platform.today_plan_item;"
+  ["今日计划快照：学习服务可改"]="GRANT UPDATE ON platform.today_plan_item TO starbuddy_learning;"
+  ["今日计划快照：学习服务可删"]="GRANT DELETE ON platform.today_plan_item TO starbuddy_learning; CREATE POLICY t_tp_del ON platform.today_plan_item FOR DELETE TO starbuddy_learning USING (true);"
+  ["今日计划快照：BFF 可写"]="GRANT INSERT ON platform.today_plan_item TO starbuddy_bff; CREATE POLICY t_tp_bff ON platform.today_plan_item FOR INSERT TO starbuddy_bff WITH CHECK (true);"
+  ["今日计划快照：洞察服务可读"]="GRANT SELECT ON platform.today_plan_item TO starbuddy_insight; CREATE POLICY t_tp_ins ON platform.today_plan_item FOR SELECT TO starbuddy_insight USING (true);"
+  ["今日计划快照：authz 可读节点列"]="GRANT SELECT (node_id) ON platform.today_plan_item TO starbuddy_authz;"
+  ["今日计划快照：同一条目可重复"]="DROP INDEX platform.today_plan_item_entry_uq;"
+  ["今日计划快照：序号可重复"]="ALTER TABLE platform.today_plan_item DROP CONSTRAINT today_plan_item_seq;"
+  ["今日计划快照：来源与类别不核对"]="ALTER TABLE platform.today_plan_item DROP CONSTRAINT today_plan_item_kind_source;"
+  ["今日计划快照：计划任务可带条目引用"]="ALTER TABLE platform.today_plan_item DROP CONSTRAINT today_plan_item_entry_ref;"
+  ["今日计划快照：复测条目可不带节点"]="ALTER TABLE platform.today_plan_item DROP CONSTRAINT today_plan_item_entry_node;"
+  ["今日计划快照：复测条目可带推荐理由"]="ALTER TABLE platform.today_plan_item DROP CONSTRAINT today_plan_item_rationale;"
+  ["今日计划快照：推荐理由收任意编码与文本"]="ALTER TABLE platform.today_plan_item DROP CONSTRAINT today_plan_item_rationale_code;"
+  ["今日计划快照：推荐理由收未登记的编码"]="ALTER TABLE platform.today_plan_item DROP CONSTRAINT today_plan_item_rationale_code; ALTER TABLE platform.today_plan_item ADD CONSTRAINT today_plan_item_rationale_code CHECK (rationale_code ~ '^[a-z0-9_]{1,48}\$');"
+  ["今日计划快照：守卫不查已删除"]="$(afr 'platform.today_plan_item_guard()' "'IF NOT FOUND OR v_erased IS NOT NULL THEN'" "'IF false THEN'")"
+  ["今日计划快照：守卫不查档案存在"]="$(afr 'platform.today_plan_item_guard()' "'IF NOT FOUND OR v_erased IS NOT NULL THEN'" "'IF v_erased IS NOT NULL THEN'")"
+  ["今日计划快照：守卫不锁档案行"]="$(afr 'platform.today_plan_item_guard()' "' FOR KEY SHARE;'" "';'")"
+  ["今日计划快照：BFF 可读节点与理由"]="GRANT SELECT (node_id, rationale_code) ON platform.today_plan_item TO starbuddy_bff;"
+  ["今日计划快照：保留期清理不隔离"]="$(afr "$TPE" "'  EXCEPTION WHEN OTHERS THEN
+    RAISE WARNING ''today_plan_item 保留期清理失败（%），本次跳过'', SQLSTATE;
+'" "''")"
+  ["攻击面：今日计划守卫不固定 pg_temp"]="ALTER FUNCTION platform.today_plan_item_guard() SET search_path = pg_catalog, platform;"
+  ["今日计划快照：删档案不级联"]="ALTER TABLE platform.today_plan_item DROP CONSTRAINT today_plan_item_student_id_fkey; ALTER TABLE platform.today_plan_item ADD FOREIGN KEY (student_id) REFERENCES platform.student_profile (id);"
+  ["今日计划快照：不登记个人层表清单"]="DELETE FROM platform.personal_table_registry WHERE nspname = 'platform' AND relname = 'today_plan_item';"
+  ["今日计划快照：清单登记为豁免"]="UPDATE platform.personal_table_registry SET strategy = 'exempt', exempt_reason = 'x', delete_order = NULL, erase_scope = NULL WHERE nspname = 'platform' AND relname = 'today_plan_item';"
+  ["今日计划快照：删除作业不清保留期"]="$(afr "$TPE" "'    DELETE FROM platform.today_plan_item
+     WHERE plan_date <= (p_now AT TIME ZONE ''Asia/Shanghai'')::date - platform.today_plan_retention_days();'" "''")"
+  ["今日计划快照：保留期边界差一天"]="$(afr "$TPE" "'WHERE plan_date <= (p_now'" "'WHERE plan_date < (p_now'")"
+  ["今日计划快照：保留期清理不分日期"]="$(afr "$TPE" "'WHERE plan_date <= (p_now AT TIME ZONE ''Asia/Shanghai'')::date - platform.today_plan_retention_days();'" "'WHERE plan_date <= (p_now AT TIME ZONE ''Asia/Shanghai'')::date;'")"
+  ["今日计划快照：保留期改成 30 天"]="CREATE OR REPLACE FUNCTION platform.today_plan_retention_days() RETURNS integer LANGUAGE sql IMMUTABLE SET search_path = pg_catalog AS \$f\$ SELECT 30 \$f\$;"
+  ["今日计划快照：保留期配置授给学习服务"]="GRANT EXECUTE ON FUNCTION platform.today_plan_retention_days() TO starbuddy_learning;"
+  ["计划事件：不核对任务 ID"]="$(afr "$TPB" "'IF p_kind IN (''plan_done'', ''plan_skip'') THEN'" "'IF false THEN'")"
+  ["计划事件：不核对任务属于该生"]="$(afr "$TPB" "' AND i.student_id = p_student'" "''")"
+  ["计划事件：不核对计划日"]="$(afr "$TPB" "'
+                      AND i.plan_date BETWEEN v_day - 1 AND v_day'" "''")"
+  ["计划事件：计划日放宽到 ±2 天"]="$(afr "$TPB" "'BETWEEN v_day - 1 AND v_day)'" "'BETWEEN v_day - 2 AND v_day + 2)'")"
+  ["计划事件：计划日又收后一天"]="$(afr "$TPB" "'BETWEEN v_day - 1 AND v_day)'" "'BETWEEN v_day - 1 AND v_day + 1)'")"
+  ["计划事件：计划日只认当天"]="$(afr "$TPB" "'BETWEEN v_day - 1 AND v_day)'" "'BETWEEN v_day AND v_day)'")"
+  ["计划事件：事件日按 UTC 算"]="$(afr "$TPB" "'v_day := (p_occurred_at AT TIME ZONE ''Asia/Shanghai'')::date;'" "'v_day := (p_occurred_at AT TIME ZONE ''UTC'')::date;'")"
+  ["计划事件：任务核对先于重放"]="$(afr "$TPB" "'  SELECT * INTO e FROM insight.behavior_event b WHERE b.student_id = p_student AND b.idempotency_key = p_key;'" "'  IF p_kind IN (''plan_done'', ''plan_skip'') AND NOT EXISTS (SELECT 1 FROM platform.today_plan_item i WHERE i.id = (p_payload ->> ''plan_task_id'')::uuid) THEN RAISE EXCEPTION ''PLAN_TASK_NOT_FOUND'' USING ERRCODE = ''invalid_parameter_value''; END IF;
+  SELECT * INTO e FROM insight.behavior_event b WHERE b.student_id = p_student AND b.idempotency_key = p_key;'")"
+  ["计划事件：别人的任务报不同的错（泄露存在性）"]="$(afr "$TPB" "'    IF NOT EXISTS (SELECT 1 FROM platform.today_plan_item i'" "'    IF EXISTS (SELECT 1 FROM platform.today_plan_item i WHERE i.id = (p_payload ->> ''plan_task_id'')::uuid AND i.student_id <> p_student) THEN RAISE EXCEPTION ''not allowed'' USING ERRCODE = ''insufficient_privilege''; END IF;
+    IF NOT EXISTS (SELECT 1 FROM platform.today_plan_item i'")"
+  ["攻击面：今日计划快照对 BFF 全开"]="DROP POLICY today_plan_item_read ON platform.today_plan_item; CREATE POLICY today_plan_item_read ON platform.today_plan_item FOR SELECT TO starbuddy_bff USING (true);"
+)
+
 # G 流第二部分 PR D：审核台读内容版本与发布记录（0042）、时政过期下架（0043）：由 79w 发现（授权类的同时由 80 的快照发现）。
 # DBMUT_FILTER=审核台读 与 DBMUT_FILTER=时政下架 只跑这两组
 RCL='platform.content_version_list(platform.subject)'
@@ -1361,6 +1415,8 @@ declare -A EXPECT=(
   ["攻击面：清单取锁函数授给学习服务"]="攻击面：来源清单的新增与下线有 5 秒锁等待上限"
   ["攻击面：月度计划视图对 PUBLIC 开放"]="攻击面：每个 SECURITY DEFINER 函数"
   ["攻击面：月度计划写入函数不固定 pg_temp"]="攻击面：每个 SECURITY DEFINER 函数"
+  ["攻击面：今日计划快照对 BFF 全开"]="攻击面：可见性矩阵——"
+  ["攻击面：今日计划守卫不固定 pg_temp"]="攻击面：每个 SECURITY DEFINER 函数"
 )
 declare -A KEEP_SNAPSHOT=(["攻击面：可转授的授权"]=1)
 for name in "${!EXPECT[@]}"; do [ -n "${M[$name]+x}" ] || { echo "db-mutation: EXPECT 里的 $name 不是变异"; exit 1; }; done

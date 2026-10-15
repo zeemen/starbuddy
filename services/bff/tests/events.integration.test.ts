@@ -85,7 +85,12 @@ async function syntheticAttempt(student: string, evidence: string, item = ITEM):
 }
 
 test('学生本人写四种事件：201 只回 ID，库里来源类型是客观记录', { skip: !HAS_DB }, async () => {
+  // 0056 起计划事件的任务 ID 必须是该生当天的今日计划快照行：以超级用户写一条合成快照（写入方本是学习服务，PLT-15）
   const task = randomUUID();
+  await su.query(`INSERT INTO platform.today_plan_item (id, student_id, seq, subject, kind, source, estimated_minutes)
+                  VALUES ($1, $2, (SELECT coalesce(max(seq), 0) + 1 FROM platform.today_plan_item
+                                    WHERE student_id = $2 AND plan_date = (now() AT TIME ZONE 'Asia/Shanghai')::date), 'aya', 'lesson', 'plan', 5)`,
+                 [task, ID.S1]);
   const bodies = [
     start(),
     { kind: 'session_end', payload: { duration_sec: 600 }, occurred_at: now(), idempotency_key: randomUUID() },

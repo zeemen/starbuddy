@@ -3,6 +3,7 @@
 鉴权、请求体限制与日志同复测与再练（retest/api.py）：Bearer 服务间令牌（只认 BFF 的 LEARNING_SERVICE_TOKEN），64 KB 上限，
 拒绝 NaN 与重复键，未知键一律 400。日志只记接口名、状态码、错误码、耗时，不记请求体与学生 ID。
 没配 LEARNING_TODAY_CONFIG（或未签字配置出现在 test / dev 以外）、没开 LEARNING_INTERNAL_V1 时一律 501 TODAY_UNAVAILABLE。
+LEARNING_TODAY_SNAPSHOT=1 时快照写入失败回 503 TODAY_SNAPSHOT_UNAVAILABLE（可重试，带 retry-after）。
 """
 from __future__ import annotations
 

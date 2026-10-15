@@ -287,6 +287,14 @@ def create_app(
                 state["retest"] = RetestService(practice=state["practice"], cfg=retest_cfg,
                                                clock=state["practice"].clock)
         if today_cfg is not None:
+            # 今日计划快照（PLT-15）：开关打开时写 platform.today_plan_item，依赖迁移 0055
+            if settings.today_snapshot and not await p.fetchval("SELECT to_regclass('platform.today_plan_item') IS NOT NULL"):
+                await client.aclose()
+                if own_lock_pool and lock_pool is not None:
+                    await lock_pool.close()
+                if own_pool:
+                    await p.close()
+                raise RuntimeError("platform.today_plan_item is missing: run migration 0055 before enabling LEARNING_TODAY_SNAPSHOT")
             # 今日计划跨科编排（PLT-11）：只读汇总 plan、再练与复测（运行时从 state 取；没启动的来源标 source_unavailable）
             from .today.service import TodayService
             state["today"] = TodayService(settings=settings, cfg=today_cfg, state=state)

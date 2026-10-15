@@ -7,8 +7,16 @@
 任一来源（按学科）未启用或失败只跳过它，不整体失败：未启用（模块没启动、这一科没开、没配适配器）标 source_disabled，
 启用了但失败（含条目不合格）标 source_unavailable。各科计划只算一次（不传预算），原样附在响应的 plan 里：
 BFF 开关打开时按科 sections 用它构造，不再另调 /internal/v1/plan（每页只排一次计划）；截断只在跨科汇总里做。
-只读：三个读取函数都不写表；本模块不写任何表、不计量、不调模型。对 BFF 只回 merge.Item 的七个字段与截断计数、各来源状态；
-日志只记学科数、各来源条数、截掉的条数与耗时，不记学生 ID 与条目内容（规则 8）。
+只读：三个读取函数都不写表；开关 LEARNING_TODAY_SNAPSHOT 关着（缺省）时本模块不写任何表、不计量、不调模型，响应与 PLT-11 逐字段一致。
+对 BFF 只回 merge.Item 的七个字段与截断计数、各来源状态；日志只记学科数、各来源条数、截掉的条数与耗时，不记学生 ID 与条目内容（规则 8）。
+快照（PLT-15 PR1，开关打开时）：汇总照常算，然后经 store.freeze——
+- 当天已冻结：条目与任务 ID 都取快照（只给本次请求的学科，按快照序号），每条带 task_id，snapshot = frozen；
+- 还没冻结、这次有条目、且没有任何启用的来源失败（source_unavailable）：写入 platform.today_plan_item（只写这一张表）后同上；
+- 还没冻结、但有来源失败或这次没有条目：不写，照常返回现算的列表、不带 task_id，snapshot = not_frozen（前端据此不显示完成 / 跳过）；
+- 学生已执行删除：不写，items 为空、snapshot = not_frozen。
+截掉的条数、预算、各来源状态与附带的各科计划总按这次读取现算（快照不存它们，与快照条目可能对不上，见 OpenAPI）。
+快照读写失败：约束违反（23xxx）是确定失败，500 TODAY_SNAPSHOT_REJECTED（不可重试）；其余（锁等待超时、连接问题）503
+TODAY_SNAPSHOT_UNAVAILABLE（可重试）。都不回没有任务 ID 的“已冻结”列表。
 """
 from __future__ import annotations
 
@@ -20,10 +28,13 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
+import asyncpg
+
 from ..config import Settings
 from ..errors import IngestError
 from ..plan import plan_today
 from . import merge as M
+from . import store as S
 from .config import BUDGET_RANGE, TodayConfig
 
 log = logging.getLogger("starbuddy.learning.today")
@@ -138,7 +149,36 @@ class TodayService:
             return [i for s in subjects for i in (by_source[src][s][1] or [])]
         items, cut = M.build(flat("retest"), flat("practice"), flat("plan"), priority=self.cfg.source_priority,
                              subjects=subjects, budget=budget)
+        if self.settings.today_snapshot:
+            return await self._snapshot(student, subjects, items, cut, budget, sources, digest)
         log.info(json.dumps({"event": "today", "subjects": len(subjects), "items": len(items), "truncated": cut,
                              "unavailable": sum(1 for x in sources if x["status"] == UNAVAILABLE)}, ensure_ascii=False))
         return {"items": [i.view() for i in items], "truncated_count": cut, "budget_minutes": budget, "sources": sources,
                 "plan": digest}
+
+    async def _snapshot(self, student: str, subjects: list[str], items: list[M.Item], cut: int, budget: int, sources: list[dict],
+                        digest: dict | None) -> dict:
+        """开关打开时：冻结（或取回当天已冻结的）快照。任一启用的来源失败时不冻结（返回现算列表、不带 task_id）。"""
+        plan = self.state.get("plan")
+        if plan is None:
+            raise IngestError(503, "TODAY_SNAPSHOT_UNAVAILABLE", "today snapshot is not available", retryable=True)
+        unavailable = sum(1 for x in sources if x["status"] == UNAVAILABLE)
+        try:
+            status, frozen = await S.freeze(plan[0], student, items, may_freeze=unavailable == 0)
+        except asyncpg.PostgresError as e:
+            log.warning(json.dumps({"event": "today_snapshot_failed", "sqlstate": (e.sqlstate or "")[:5]}, ensure_ascii=False))
+            if (e.sqlstate or "").startswith("23"):   # 约束违反：结果本身违反平台规则，重试也一样（确定失败）
+                raise IngestError(500, "TODAY_SNAPSHOT_REJECTED", "today snapshot rejected by platform constraints") from None
+            raise IngestError(503, "TODAY_SNAPSHOT_UNAVAILABLE", "today snapshot is not available", retryable=True) from None
+        except (asyncpg.InterfaceError, OSError, asyncio.TimeoutError):
+            log.warning(json.dumps({"event": "today_snapshot_failed"}, ensure_ascii=False))
+            raise IngestError(503, "TODAY_SNAPSHOT_UNAVAILABLE", "today snapshot is not available", retryable=True) from None
+        log.info(json.dumps({"event": "today", "subjects": len(subjects), "items": len(frozen) if frozen else len(items), "truncated": cut,
+                             "unavailable": unavailable, "snapshot": status}, ensure_ascii=False))
+        if status in (S.CREATED, S.FROZEN):
+            return {"items": [{**i.view(), "task_id": tid} for tid, i in S.for_subjects(frozen, subjects)], "truncated_count": cut,
+                    "budget_minutes": budget, "sources": sources, "plan": digest, "snapshot": "frozen"}
+        if status == S.ERASED:
+            return {"items": [], "truncated_count": 0, "budget_minutes": budget, "sources": sources, "plan": digest, "snapshot": "not_frozen"}
+        return {"items": [i.view() for i in items], "truncated_count": cut, "budget_minutes": budget, "sources": sources, "plan": digest,
+                "snapshot": "not_frozen"}

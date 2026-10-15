@@ -833,5 +833,16 @@ psql_run -1 < "$U52" >/dev/null 2>"$WORK/up52.err" || { echo "db-test: 失败（
   || { echo "db-test: 失败（0051、0052 重新执行后状态不对：$(pr4_state)）"; exit 1; }
 echo "ok - 0051、0052 回滚后重新执行：锁等待上限、空闲上限与选科年级核对都回来了" >> "$OUT"
 
+# 0055 的回滚（PLT-15 审查建议）：0056 还在（行为事件写入函数读快照表）时，单独回滚 0055 必须以明确错误中止，且什么都不改
+D55="$(ls "$ROOT"/db/migrations/0055_*.down.sql)"
+if psql_run -1 < "$D55" >/dev/null 2>"$WORK/down55.err"; then
+  echo "db-test: 失败（0056 未回滚时 0055 回滚仍然执行成功）"; exit 1
+fi
+grep -q '0055 回滚中止' "$WORK/down55.err" || { echo "db-test: 失败（0055 回滚不是被 0056 检查中止：$(cat "$WORK/down55.err")）"; exit 1; }
+[ "$(psql_run -tAc "SELECT to_regclass('platform.today_plan_item') IS NOT NULL
+                      AND (SELECT count(*) FROM platform.today_plan_item) > 0" </dev/null)" = "t" ] \
+  || { echo "db-test: 失败（0055 回滚中止后快照表或数据不在了）"; exit 1; }
+echo "ok - 0056 未回滚时 0055 回滚以明确错误中止，快照表与数据不变" >> "$OUT"
+
 n=$(grep -c 'ok - ' "$OUT" || true)
 echo "db-test: 通过（${n} 项断言）"

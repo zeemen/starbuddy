@@ -307,6 +307,13 @@ BEGIN
             "retest_tasks": [], "prev_plan_id": null,
             "fingerprints": {"claims_policy": "0000000000000000", "config": "0000000000000000",
                              "templates": "0000000000000000", "today": "0000000000000000"}}');
+  -- 今日计划快照（0055，PLT-15）：经 starbuddy_learning 写当天的两条（计划任务一条、再练条目一条）；快照只存编码与引用、不存自由文本，
+  -- 内容标记放不进去；覆盖靠 ID 标记（任务 ID、条目引用）与逐表计数
+  PERFORM t.m_as('starbuddy_learning', NULL, format($f$INSERT INTO platform.today_plan_item (id, student_id, seq, subject, kind, source, node_id,
+      estimated_minutes, entry_ref, rationale_code) VALUES
+      (%L, %L, 1, 'aya', 'practice', 'practice', 'MATH.FUNC.QUAD.GRAPH', 8, %L, NULL),
+      (%L, %L, 2, 'aya', 'lesson', 'plan', NULL, 5, NULL, 'prerequisite_of_many') RETURNING 'ok'$f$,
+      t.q_id(s, 'today.1'), s, t.q_id(s, 'today.entry'), t.q_id(s, 'today.2'), s));
   -- ---- 导出（家长，0035）：导出任务是豁免表
   PERFORM t.p_bff(g, format('SELECT platform.export_student_data(%L)::text', s));
 END $$;

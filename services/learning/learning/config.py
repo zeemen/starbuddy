@@ -39,6 +39,10 @@
   LEARNING_TODAY_CONFIG          synthetic（合成占位，只允许 test / dev）或配置文件路径。不设 = /internal/v1/today 一律 501 TODAY_UNAVAILABLE；
                                  未签字的配置在 test / dev 以外不启动这一模块（接口 501），不合法拒绝启动。只读汇总：再练、复测没启动时
                                  对应来源标 source_unavailable，不要求同时设它们
+  LEARNING_TODAY_SNAPSHOT        今日计划快照（PLT-15，specs/today-plan-snapshot-plt15，迁移 0055）：不设或 0 = 关（缺省，
+                                 /internal/v1/today 只读、响应与 PLT-11 逐字段一致）；1 = 当天首次读取冻结快照、每条带 task_id，
+                                 同日再读返回同一批（写 platform.today_plan_item，启动时核对迁移 0055 已执行）。其他取值拒绝启动；
+                                 设了 1 就必须设 LEARNING_TODAY_CONFIG
   题面来源（PLT-12，specs/present-item-contract）：
   LEARNING_PRESENT_ITEM_SOURCE   synthetic（缺省：诊断与再练用合成题面，行为与之前逐字节一致）| adapter（经适配器 present_item，
                                  插件契约 1.1.0 候选版；只在 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1 时允许，否则拒绝启动）。只换题面来源：
@@ -121,6 +125,8 @@ class Settings:
     retest_config: str | None = None
     # 今日计划跨科编排（PLT-11）：配置（synthetic 或路径；None = 接口 501）
     today_config: str | None = None
+    # 今日计划快照（PLT-15）：缺省关；打开时 /internal/v1/today 冻结当天快照并返回 task_id
+    today_snapshot: bool = False
 
     @staticmethod
     def from_env(environ: dict[str, str] | None = None) -> "Settings":
@@ -209,6 +215,12 @@ class Settings:
                   *([orch_tok] if orch_tok else []), *([practice_secret] if practice_secret else [])]
         if len(set(tokens)) != len(tokens):
             raise RuntimeError("服务间令牌、适配器令牌、路由客户端令牌、知识服务令牌、洞察服务与编排层客户端令牌、再练票据密钥必须各不相同")
+        snapshot_raw = e.get("LEARNING_TODAY_SNAPSHOT", "")
+        if snapshot_raw not in ("", "0", "1"):
+            raise RuntimeError("LEARNING_TODAY_SNAPSHOT 只能不设、0 或 1")
+        today_cfg = e.get("LEARNING_TODAY_CONFIG") or None
+        if snapshot_raw == "1" and not today_cfg:
+            raise RuntimeError("LEARNING_TODAY_SNAPSHOT=1 冻结的是今日编排的结果：必须同时设 LEARNING_TODAY_CONFIG")
         return Settings(env=env, database_url=database_url, service_credential=credential, adapters=adapters,
                         route_clients=route_clients, diagnosis_presenter=presenter, diagnosis_source=source, knowledge=knowledge,
                         diagnosis_targets=targets, diagnosis_map_version=map_version, mastery_configs=mastery_config_paths(e),
@@ -217,4 +229,4 @@ class Settings:
                         profile_page_config=e.get("LEARNING_PROFILE_PAGE_CONFIG") or None, practice_config=practice_cfg,
                         practice_presenter=practice_presenter, practice_ticket_secret=practice_secret,
                         present_item_source=present_source, retest_config=retest_cfg,
-                        today_config=e.get("LEARNING_TODAY_CONFIG") or None)
+                        today_config=today_cfg, today_snapshot=snapshot_raw == "1")

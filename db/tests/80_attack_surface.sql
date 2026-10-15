@@ -249,6 +249,8 @@ INSERT INTO t.visibility_row_filter VALUES
            OR (x.audience = 'guardian' AND EXISTS (SELECT 1 FROM platform.account a WHERE a.id = $2 AND a.kind = 'guardian')))$q$,
    '学生本人只看学生版、家长只看家长版，都只看已出的'),
   ('insight.dispute', 'x.raised_by = $2', '只看自己提出的异议'),
+  ('platform.today_plan_item', $q$x.plan_date = (now() AT TIME ZONE 'Asia/Shanghai')::date$q$,
+   '今日计划快照只给当天的行（0055 today_plan_item_read）；越日、他人行的逐行断言在 79zd_today_plan'),
   ('platform.guardian_report', 'x.guardian_account_id = $2', '只看自己写的家长自述'),
   ('platform.guardian_student_link',
    $q$x.guardian_account_id = $2

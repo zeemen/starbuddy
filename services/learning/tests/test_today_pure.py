@@ -176,3 +176,38 @@ def test_validate_rejects(body):
     with pytest.raises(IngestError) as e:
         validate(body)
     assert (e.value.status, e.value.code) == (400, "INVALID_REQUEST")
+
+
+# ---------- 今日计划快照（PLT-15）：来源列与读回 ----------
+def test_snapshot_source_column_and_round_trip():
+    from learning.today import store as S
+    items = [rt("aya", "N-1"), rt("aya", "N-2", kind="verify"), pr("zhixing", "N-3"),
+             M.Item("aya", "lesson", None, 5, "plan", None, "prerequisite_of_many"), M.Item("aya", "retest", "N-4", 10, "plan", None, "retest_scheduled")]
+    # 复测列表里的验证题单列为 verify；计划里 kind = retest 的任务仍是 plan 来源
+    assert [S.db_source(i) for i in items] == ["retest", "verify", "practice", "plan", "plan"]
+    for i in items:
+        row = {"subject": i.subject, "kind": i.kind, "node_id": i.node_id, "estimated_minutes": i.estimated_minutes,
+               "source": S.db_source(i), "entry_ref": i.entry_id, "rationale_code": i.rationale_code}
+        assert S.from_row(row) == i                                   # 读回与汇总结果同形状（verify 读回仍是复测来源）
+
+
+def test_snapshot_rationale_filter_and_subject_filter():
+    from learning.today import store as S
+    keep = M.Item("aya", "lesson", None, 5, "plan", None, "weak_mastery")
+    drop = M.Item("aya", "lesson", None, 5, "plan", None, "syn_unlisted_code")
+    assert S.snapshot_item(keep) == keep and S.snapshot_item(drop).rationale_code is None
+    r1 = rt("aya", "N-1")
+    assert S.snapshot_item(r1) is r1                                  # 没有推荐理由的条目原样
+    # 与迁移 0055 的 CHECK、BFF 已登记的理由编码同一张表
+    shell_path = Path(__file__).resolve().parents[3] / "services/bff/config/shell.json"
+    if shell_path.exists():                                           # 变异测试的临时副本里没有 BFF 目录，只核对迁移
+        shell = json.loads(shell_path.read_text(encoding="utf-8"))
+        assert S.SNAPSHOT_RATIONALE_CODES == set(shell["rationale_codes"]["content"]) | set(shell["rationale_codes"]["about_student"])
+    mig = (Path(__file__).resolve().parents[3] / "db/migrations/0055_platform__today_plan_item.up.sql").read_text(encoding="utf-8")
+    import re
+    m = re.search(r"today_plan_item_rationale_code CHECK \(rationale_code IN \(([^)]*)\)\)", mig)
+    assert m and set(re.findall(r"'([a-z0-9_]+)'", m.group(1))) == S.SNAPSHOT_RATIONALE_CODES
+    frozen = [("t1", pr("aya", "N-1")), ("t2", pr("zhixing", "N-2")), ("t3", pr("aya", "N-3"))]
+    assert S.for_subjects(frozen, ["aya"]) == [frozen[0], frozen[2]]
+    assert S.for_subjects(frozen, ["zhixing", "aya"]) == frozen          # 学科顺序不改快照顺序
+    assert S.for_subjects(frozen, ["wenli"]) == []
