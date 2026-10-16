@@ -1,5 +1,6 @@
 """KGE-09 第一步（specs/kge09-map-calibration）：统计函数正反例、配置与输入守卫、前置边检验与隐藏依赖的结论与边界、
 合成队列上的召回与误报上限、样本不足与最小格守卫、伪名不外泄、差分泄露（删一人跑两次）、逐字节一致。
+第二步（易错候选、难归类、节点内部分化）的测试在 test_step2.py；合成队列的 fixture 在 conftest.py（两个文件共用）。
 
 不连库、不联网、只用合成数据；用洞察服务的 venv 运行（make kge-calibrate-test，本工具纯标准库，只借 pytest）。
 """
@@ -30,9 +31,11 @@ from kge_calibrate.inputs import (COMPUTABLE_KINDS, EDGE_TYPES, MASTERY_FORMAT, 
 from kge_calibrate.inputs import _FIELDS, _LISTS, _TOP  # noqa: PLC2701 — 与知识服务白名单逐字核对
 from kge_calibrate.report import (OUTPUT_NAMES, OutputRefused, assert_no_pseudonyms, build_report, check_out_dir, render, run,
                                   write_files)
+from kge_calibrate.responses import parse_attempts, parse_errors
 
 TOOL = Path(__file__).resolve().parents[1]
 REPO = Path(os.environ.get("KGE_CALIBRATE_REPO") or TOOL.parents[1])
+TAXONOMY = REPO / "docs/mapping/error-taxonomy.md"
 SAMPLE = TOOL / "sample"
 CFG = load_config()
 Z95 = S.z_for(0.95)
@@ -188,7 +191,7 @@ def test_config_defaults_pending():
     assert CFG.min_cell == 20 == MIN_CELL_FLOOR
     assert CFG.mastery.rule == "star_lit" and CFG.condition_on_shared is True and CFG.max_pairs_per_topic == 5000
     assert re.fullmatch(r"[0-9a-f]{16}", CFG.fingerprint)
-    assert CFG.provenance() == {"config_version": "draft-0.2.0", "fingerprint": CFG.fingerprint, "signoff": PENDING}
+    assert CFG.provenance() == {"config_version": "draft-0.3.0", "fingerprint": CFG.fingerprint, "signoff": PENDING}
 
 
 @pytest.mark.parametrize("path,value", [
@@ -256,7 +259,7 @@ def test_map_parsing_picks_computable_nodes_and_prereq_edges():
     doc["edges"].append({"from_id": "MATH.CALIB.T1.N5", "to_id": "MATH.CALIB.T1.N4", "type": "prerequisite", "status": "deprecated"})
     doc["edges"].append({"from_id": "MATH.CALIB.T1.PIT", "to_id": "MATH.CALIB.T1.N5", "type": "prerequisite"})
     mp = parse_map(doc)
-    assert len(mp.nodes) == len(Y.NODES) and "MATH.CALIB.T1.OLD" not in mp.nodes and "MATH.CALIB.T1.PIT" not in mp.nodes
+    assert len(mp.nodes) == len(Y.NODES) + len(Y.T5) and "MATH.CALIB.T1.OLD" not in mp.nodes and "MATH.CALIB.T1.PIT" not in mp.nodes
     assert mp.nodes["MATH.CALIB.T1.N1"] == "MATH.CALIB.T1"
     assert {(e.from_id, e.to_id) for e in mp.edges} == {*Y.HOLDS, *Y.NOT_HOLDS, *Y.WEAK_TRUE}
     assert ("MATH.CALIB.T1.PIT", "MATH.CALIB.T1.N5") in mp.all_prereq
@@ -504,7 +507,7 @@ def test_hidden_scope_and_exclusions():
     keys = {frozenset((r["u"], r["v"])) for r in recs}
     assert frozenset((A, B)) not in keys and frozenset((B, C2)) not in keys
     assert frozenset((A, C2)) not in keys
-    assert excluded == {"direct_edge": 2, "transitive": 1, "topic_over_limit": 0}
+    assert excluded == {"direct_edge": 2, "transitive": 1, "topic_over_limit": 0, "topic_no_data": 0}
     assert all(r["topic"] == TA for r in recs) and not any(bn in (r["u"], r["v"]) for r in recs)
     cand = _pair(recs, D, E)
     assert cand["conclusion"] == C.CANDIDATE and cand["directions"] == [[D, E], [E, D]]
@@ -515,7 +518,16 @@ def test_hidden_scope_and_exclusions():
 def test_hidden_transitive_either_direction():
     nodes = [(A, TA), (B, TA), (C2, TA)]
     recs, excluded = _pairs(four(A, C2, 150, 30, 30, 150, {B: True}), nodes, [(C2, B, "strong"), (B, A, "strong")])
-    assert excluded == {"direct_edge": 2, "transitive": 1, "topic_over_limit": 0} and recs == []
+    assert excluded == {"direct_edge": 2, "transitive": 1, "topic_over_limit": 0, "topic_no_data": 0} and recs == []
+
+
+def test_hidden_skips_topics_without_mastery_data():
+    """整个主题没有任何掌握观测：不扫描，只计数（不出一堆“样本不足”）；有一个节点有观测就照常扫描"""
+    nodes = [(A, TA), (B, TA), ("MATH.X.B.N1", TB), ("MATH.X.B.N2", TB), ("MATH.X.B.N3", TB)]
+    recs, excluded = _pairs(four(A, B, 150, 30, 30, 150), nodes, [])
+    assert excluded["topic_no_data"] == 3 and {r["topic"] for r in recs} == {TA}
+    recs, excluded = _pairs(four(A, B, 150, 30, 30, 150, {"MATH.X.B.N1": True}), nodes, [])
+    assert excluded["topic_no_data"] == 0 and {r["topic"] for r in recs} == {TA, TB}
 
 
 def test_hidden_topic_pair_limit():
@@ -592,16 +604,7 @@ def test_shared_prerequisites_only_computable_and_observed():
     assert rec["shared_prerequisites"] == [p] and rec["conditioned_on_shared"] and rec["n_approx"] == 360
 
 
-# ---------- 合成队列：召回与误报 ----------
-@pytest.fixture(scope="module")
-def synthetic():
-    inputs = Y.render_inputs()
-    mp = parse_map(json.loads(inputs["map-snapshot.json"]))
-    mastery = parse_mastery(inputs["mastery.csv"], mp, CFG.mastery)
-    report = build_report(mp, mastery, CFG)
-    return {"inputs": inputs, "map": mp, "mastery": mastery, "report": report, "files": run(mp, mastery, CFG)}
-
-
+# ---------- 合成队列：召回与误报（fixture synthetic 在 conftest.py） ----------
 def test_synthetic_recall_and_false_positive_caps(synthetic):
     ev = Y.evaluate(synthetic["report"], json.loads(synthetic["inputs"]["truth.json"]))
     assert ev["not_holds_found"] == ev["not_holds_planted"] == 3
@@ -672,7 +675,8 @@ def test_no_exact_counts_in_output(synthetic):
     同一次运行内跨表相减也就得不到任何精确数（更得不到 < 20 的格子）"""
     rep = json.loads(synthetic["files"]["calibration-report.json"])
     m = rep["method"]["min_cell"]
-    assert rep["cohort"] == {"students_approx": 600}
+    assert rep["cohort"]["students_approx"] == 600 and rep["cohort"]["attempts_students_approx"] == 1200
+    assert rep["cohort"]["errors_students_approx"] % 10 == 0 and 1000 <= rep["cohort"]["errors_students_approx"] <= 1200
     seen_insufficient = False
     for kind, r in _records(rep):
         assert not (EXACT_COUNT_KEYS & set(r))
@@ -877,7 +881,7 @@ def test_pseudonyms_never_in_output(synthetic):
     assert set(files) == set(OUTPUT_NAMES)
     for text in files.values():
         assert "syn-" not in text
-        for pid in list(synthetic["mastery"].pseudonyms)[:50]:
+        for pid in sorted(synthetic["mastery"].pseudonyms | synthetic["step2"].pseudonyms()):
             assert pid not in text
 
 
@@ -923,7 +927,7 @@ def test_worklist_content(synthetic):
     for f, t in Y.NOT_HOLDS:
         assert f"{f}（合成节点 {f.split('.', 2)[2]}） → {t}" in wl
     assert wl.count("- [ ] 确认（删除这条前置边）") == 3 and wl.count("- [ ] 修改为弱前置\n") == 3
-    assert wl.count("- [ ] 驳回") == 5
+    assert wl.count("- [ ] 驳回") == 7          # 前置 3 + 隐藏依赖 2 + 新增易错点 1 + 拆分节点 1
     for u, v in Y.HIDDEN:
         assert f"- [ ] 确认 {u} → {v}" in wl and f"- [ ] 确认 {v} → {u}" in wl
     assert "Newcombe" in wl and "Wilson" in wl and "phi" in wl and "约 " in wl
@@ -942,15 +946,23 @@ def test_worklist_empty_sections():
 
 
 def test_byte_identical(synthetic):
-    again = run(synthetic["map"], parse_mastery(Y.render_inputs()["mastery.csv"], synthetic["map"], CFG.mastery), CFG)
+    inputs = Y.render_inputs()
+    mp, s2 = synthetic["map"], synthetic["step2"]
+    tax = synthetic["taxonomy"]
+    step2 = dataclasses.replace(s2, attempts=parse_attempts(inputs["attempts.csv"], mp),
+                                errors=parse_errors(inputs["errors.csv"], mp, tax, CFG.pitfall.min_confidence))
+    again = run(mp, parse_mastery(inputs["mastery.csv"], mp, CFG.mastery), CFG, step2)
     assert again == synthetic["files"]
     assert synthetic["files"]["calibration-report.json"].endswith("}\n")
 
 
+BIG_INPUTS = ("mastery.csv", "attempts.csv", "errors.csv")
+
+
 def test_matches_committed_sample(synthetic):
-    """与仓库样例逐字节一致（mastery.csv 约 600 KB，不进仓库：由固定种子重生）。
+    """与仓库样例逐字节一致（mastery.csv、attempts.csv、errors.csv 共数 MB，不进仓库：由固定种子重生）。
     样例过期时：python -m kge_calibrate synth --out <空的临时目录>，再 run 到一个空目录，把结果放进 tools/kge-calibrate/sample，并在 PR 里说明差异。"""
-    want = {**{k: v for k, v in synthetic["inputs"].items() if k != "mastery.csv"}, **synthetic["files"]}
+    want = {**{k: v for k, v in synthetic["inputs"].items() if k not in BIG_INPUTS}, **synthetic["files"]}
     assert sorted(p.name for p in SAMPLE.iterdir()) == sorted(want)
     for name, content in want.items():
         assert (SAMPLE / name).read_text(encoding="utf-8") == content, f"{name} 与样例不同"
@@ -975,8 +987,11 @@ def test_sql_texts_static_guards():
 # ---------- 命令行与输出目录 ----------
 def test_cli_end_to_end(tmp_path, synthetic, capsys):
     assert main(["synth", "--out", str(tmp_path / "in")]) == 0
-    assert sorted(p.name for p in (tmp_path / "in").iterdir()) == ["map-snapshot.json", "mastery.csv", "truth.json"]
+    assert sorted(p.name for p in (tmp_path / "in").iterdir()) == ["attempts.csv", "errors.csv", "map-snapshot.json", "mastery.csv",
+                                                                    "pitfall-codes.json", "truth.json"]
     args = ["run", "--map", str(tmp_path / "in/map-snapshot.json"), "--mastery", str(tmp_path / "in/mastery.csv"),
+            "--attempts", str(tmp_path / "in/attempts.csv"), "--errors", str(tmp_path / "in/errors.csv"),
+            "--pitfall-codes", str(tmp_path / "in/pitfall-codes.json"), "--taxonomy", str(TAXONOMY),
             "--out", str(tmp_path / "out")]
     assert main(args) == 0
     for name, content in synthetic["files"].items():

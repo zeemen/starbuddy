@@ -59,6 +59,21 @@
       "strength": "strong",
       "to_id": "MATH.CALIB.T4.N2",
       "type": "prerequisite"
+    },
+    {
+      "from_id": "MATH.CALIB.T5.N1",
+      "to_id": "MATH.CALIB.T5.P3",
+      "type": "has_pitfall"
+    },
+    {
+      "from_id": "MATH.CALIB.T5.N2",
+      "to_id": "MATH.CALIB.T5.P1",
+      "type": "has_pitfall"
+    },
+    {
+      "from_id": "MATH.CALIB.T5.N7",
+      "to_id": "MATH.CALIB.T5.P2",
+      "type": "has_pitfall"
     }
   ],
   "map_version": "0.1.0",
@@ -90,6 +105,12 @@
       "id": "MATH.CALIB.T4",
       "level": "topic",
       "name": "合成主题四（噪声）",
+      "parent_id": "MATH.CALIB"
+    },
+    {
+      "id": "MATH.CALIB.T5",
+      "level": "topic",
+      "name": "合成主题五（错因与分化）",
       "parent_id": "MATH.CALIB"
     },
     {
@@ -311,6 +332,126 @@
       "level": "node",
       "name": "合成节点 T4.N5",
       "parent_id": "MATH.CALIB.T4"
+    },
+    {
+      "cognitive_levels": [
+        "apply"
+      ],
+      "id": "MATH.CALIB.T5.N1",
+      "kind": "kp",
+      "level": "node",
+      "name": "合成节点 T5.N1",
+      "parent_id": "MATH.CALIB.T5"
+    },
+    {
+      "cognitive_levels": [
+        "apply"
+      ],
+      "id": "MATH.CALIB.T5.N2",
+      "kind": "kp",
+      "level": "node",
+      "name": "合成节点 T5.N2",
+      "parent_id": "MATH.CALIB.T5"
+    },
+    {
+      "cognitive_levels": [
+        "apply"
+      ],
+      "id": "MATH.CALIB.T5.N3",
+      "kind": "kp",
+      "level": "node",
+      "name": "合成节点 T5.N3",
+      "parent_id": "MATH.CALIB.T5"
+    },
+    {
+      "cognitive_levels": [
+        "apply"
+      ],
+      "id": "MATH.CALIB.T5.N4",
+      "kind": "kp",
+      "level": "node",
+      "name": "合成节点 T5.N4",
+      "parent_id": "MATH.CALIB.T5"
+    },
+    {
+      "cognitive_levels": [
+        "apply"
+      ],
+      "id": "MATH.CALIB.T5.N5",
+      "kind": "kp",
+      "level": "node",
+      "name": "合成节点 T5.N5",
+      "parent_id": "MATH.CALIB.T5"
+    },
+    {
+      "cognitive_levels": [
+        "apply"
+      ],
+      "id": "MATH.CALIB.T5.N6",
+      "kind": "kp",
+      "level": "node",
+      "name": "合成节点 T5.N6",
+      "parent_id": "MATH.CALIB.T5"
+    },
+    {
+      "cognitive_levels": [
+        "apply"
+      ],
+      "id": "MATH.CALIB.T5.N7",
+      "kind": "kp",
+      "level": "node",
+      "name": "合成节点 T5.N7",
+      "parent_id": "MATH.CALIB.T5"
+    },
+    {
+      "id": "MATH.CALIB.T5.P1",
+      "includes": [
+        "合成识别特征"
+      ],
+      "kind": "pitfall",
+      "level": "node",
+      "name": "合成易错点 表达",
+      "parent_id": "MATH.CALIB.T5"
+    },
+    {
+      "id": "MATH.CALIB.T5.P2",
+      "includes": [
+        "合成识别特征"
+      ],
+      "kind": "pitfall",
+      "level": "node",
+      "name": "合成易错点 未对照",
+      "parent_id": "MATH.CALIB.T5"
+    },
+    {
+      "id": "MATH.CALIB.T5.P3",
+      "includes": [
+        "合成识别特征"
+      ],
+      "kind": "pitfall",
+      "level": "node",
+      "name": "合成易错点 审题",
+      "parent_id": "MATH.CALIB.T5"
+    },
+    {
+      "id": "MATH.CALIB.T5.N4.SLIP1",
+      "includes": [
+        "合成识别特征"
+      ],
+      "kind": "pitfall",
+      "level": "detail",
+      "name": "合成易错点 推理",
+      "parent_id": "MATH.CALIB.T5.N4"
+    },
+    {
+      "id": "MATH.CALIB.T5.N4.SLIP2",
+      "includes": [
+        "合成识别特征"
+      ],
+      "kind": "pitfall",
+      "level": "detail",
+      "name": "合成易错点 知识",
+      "parent_id": "MATH.CALIB.T5.N4"
     }
   ],
   "standard_year": 2022,

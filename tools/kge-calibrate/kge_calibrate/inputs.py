@@ -130,6 +130,9 @@ class MapView:
     names: Mapping[str, str]                 # 节点与主题 → 名称（公共层）
     edges: tuple[Edge, ...]                  # 有效前置边（两端都是可计算节点），按 (from, to) 排序
     all_prereq: tuple[tuple[str, str], ...]  # 全部有效前置边（含不可计算节点），用于传递可达
+    # 第二步：可计算节点 → 关联的有效易错点（has_pitfall 边指向的易错点，或 parent_id 是该节点的细目级易错点），按 ID 排序
+    pitfalls_of: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+    pitfall_ids: frozenset[str] = frozenset()  # 快照里全部有效易错点（kind = pitfall）
 
 
 def _pick(kind: str, raw: Any, where: str) -> dict[str, Any]:
@@ -160,6 +163,8 @@ def parse_map(doc: Any) -> MapView:
     all_ids: set[str] = set()
     nodes: dict[str, str] = {}
     names: dict[str, str] = {}
+    pits: set[str] = set()
+    pit_parent: dict[str, str] = {}
     for i, n in enumerate(lists["nodes"]):
         nid = n["id"]
         _need(isinstance(nid, str) and NODE_ID.fullmatch(nid) is not None and nid.split(".")[0] == prefix,
@@ -171,14 +176,21 @@ def parse_map(doc: Any) -> MapView:
         if (n["level"] == "node" and n.get("status", "active") == "active" and n.get("kind") in COMPUTABLE_KINDS
                 and isinstance(n.get("parent_id"), str)):
             nodes[nid] = n["parent_id"]
+        if n.get("kind") == "pitfall" and n.get("status", "active") == "active" and n["level"] in ("node", "detail"):
+            pits.add(nid)
+            if n["level"] == "detail" and isinstance(n.get("parent_id"), str):
+                pit_parent[nid] = n["parent_id"]
     edges: dict[tuple[str, str], Edge] = {}
     all_prereq: set[tuple[str, str]] = set()
+    pit_links: set[tuple[str, str]] = {(parent, p) for p, parent in pit_parent.items()}
     for i, e in enumerate(lists["edges"]):
         _need(e["type"] in EDGE_TYPES, f"地图快照 edges[{i}]：边类型不合法")
         _need(e["from_id"] in all_ids and e["to_id"] in all_ids, f"地图快照 edges[{i}]：指向不存在的节点")
         _need(e["from_id"] != e["to_id"], f"地图快照 edges[{i}]：自环")
         strength = e.get("strength", "strong")
         _need(strength in STRENGTHS, f"地图快照 edges[{i}]：strength 只能是 strong / weak")
+        if e["type"] == "has_pitfall" and e.get("status", "active") == "active" and e["to_id"] in pits:
+            pit_links.add((e["from_id"], e["to_id"]))
         if e["type"] != "prerequisite" or e.get("status", "active") != "active":
             continue
         key = (e["from_id"], e["to_id"])
@@ -191,8 +203,13 @@ def parse_map(doc: Any) -> MapView:
         digest = canonical_digest(doc)
     except (TypeError, ValueError):
         raise InputRefused("地图快照无法规范化") from None
+    pitfalls_of: dict[str, list[str]] = {}
+    for src, p in sorted(pit_links):
+        if src in nodes:
+            pitfalls_of.setdefault(src, []).append(p)
     return MapView(subject, doc["map_version"], digest, dict(sorted(nodes.items())), dict(sorted(names.items())),
-                   tuple(edges[k] for k in sorted(edges)), tuple(sorted(all_prereq)))
+                   tuple(edges[k] for k in sorted(edges)), tuple(sorted(all_prereq)),
+                   {k: tuple(v) for k, v in sorted(pitfalls_of.items())}, frozenset(pits))
 
 
 def load_map(path: str | Path) -> MapView:

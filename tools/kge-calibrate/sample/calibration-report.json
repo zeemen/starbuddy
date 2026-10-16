@@ -1,16 +1,19 @@
 {
   "cohort": {
+    "attempts_students_approx": 1200,
+    "errors_students_approx": 1190,
     "students_approx": 600
   },
   "config": {
-    "config_version": "draft-0.2.0",
-    "fingerprint": "f81df64e64715b3c",
+    "config_version": "draft-0.3.0",
+    "fingerprint": "5492d48fa6e622f7",
     "signoff": "待教研确认"
   },
-  "generator": "kge-calibrate@0.2.0",
+  "generator": "kge-calibrate@0.3.0",
   "hidden_dependency": {
     "excluded_pairs": {
       "direct_edge": 9,
+      "topic_no_data": 21,
       "topic_over_limit": 0,
       "transitive": 3
     },
@@ -812,13 +815,13 @@
     ]
   },
   "map": {
-    "computable_nodes": 22,
+    "computable_nodes": 29,
     "map_version": "0.1.0",
     "prerequisite_edges": {
       "strong": 9,
       "weak": 1
     },
-    "snapshot_digest": "501bd5e81ec01de0d5f5f2a63c2ea586ca17b3711bae6540a467831531af0679",
+    "snapshot_digest": "ef56f09e65a6f4e05aea8c7861ca27c283da216cc575a8e5e0a1eb0f6d40ac0e",
     "subject": "aya"
   },
   "method": {
@@ -835,6 +838,35 @@
     },
     "mastery": "星亮口径（与学习服务 star_lit 同口径）：星亮层次那一行的门槛为 transfer 或 retain 算掌握；掌握概率不参与判定；unseen、空门槛或无记录算未观测",
     "min_cell": 20,
+    "node_split": {
+      "bootstrap_draws": 2000,
+      "error_evidence": "只失败一群的学生 × 有无某编码，取 |phi| 最大的编码，Bonferroni",
+      "error_min_phi": 0.2,
+      "fdr_q": 0.05,
+      "item_guard": "答对、答错两格各扰动，扰动后作答人数 ≥ 24 才参与；两格都 ≥ 22 才给 2 位小数正确率，否则只给分档（≥0.90 / ≤0.10 / 0.10–0.90）；参与检验的题目有分档时，两群均值、差值、R² 只给 1 位小数",
+      "item_rate_min_attempts": 20,
+      "max_h_ratio": 0.5,
+      "max_items_per_node": 40,
+      "min_gap": 0.2,
+      "min_items_per_group": 3,
+      "multiple_comparison": "Benjamini–Hochberg（全部可检验节点一族）",
+      "pass_rate": 0.5,
+      "student_level": "Loevinger H = 1 − 实际“难的过关、易的不过关”人数 ÷ 独立时的期望（嵌套结构 → H 高）；H 比值 = 两群之间的 H ÷ 两群群内两半 H 的均值（消去猜对与失误的整体压低）",
+      "test": "按正确率排序的最佳二分（组间平方和占比 R²）+ 参数自助法（正态零假设）"
+    },
+    "pitfall": {
+      "baseline": "本主题其他节点有、本节点没有高置信错因记录的学生（每人按伪名哈希只取一个节点的记录）",
+      "coverage": "has_pitfall 边或细目级易错点 + 易错点编码对照（教研给出的公共层对照）",
+      "fdr_q": 0.05,
+      "low_conf_share": 0.3,
+      "min_confidence": 0.6,
+      "min_lift": 0.15,
+      "min_share": 0.2,
+      "multiple_comparison": "Benjamini–Hochberg（全部可检验的节点 × 编码一族）",
+      "test": "两比例 z 检验（合并方差，双侧）；差值 Newcombe 区间",
+      "unclassifiable_interval": "Wilson，置信水平按族校正：1 − (1 − confidence) / 可给出的节点数",
+      "unit": "学生（一名学生在一个节点上的全部当前错因行合为一条记录；只有低置信行 = 难归类）"
+    },
     "prerequisite": {
       "b_observed_rate": "组内在 B 上有观测的比例（保留 1 位）",
       "confidence": 0.95,
@@ -846,7 +878,1216 @@
       "test": "两比例 z 检验（合并方差，双侧）"
     }
   },
+  "node_split": {
+    "insufficient_nodes": [
+      "MATH.CALIB.T1.N1",
+      "MATH.CALIB.T1.N2",
+      "MATH.CALIB.T1.N3",
+      "MATH.CALIB.T1.N4",
+      "MATH.CALIB.T1.N5",
+      "MATH.CALIB.T2.N1",
+      "MATH.CALIB.T2.N2",
+      "MATH.CALIB.T2.N3",
+      "MATH.CALIB.T2.N4",
+      "MATH.CALIB.T2.N5",
+      "MATH.CALIB.T3.N1",
+      "MATH.CALIB.T3.N2",
+      "MATH.CALIB.T3.N3",
+      "MATH.CALIB.T3.N4",
+      "MATH.CALIB.T3.N5",
+      "MATH.CALIB.T3.N6",
+      "MATH.CALIB.T3.N7",
+      "MATH.CALIB.T4.N1",
+      "MATH.CALIB.T4.N2",
+      "MATH.CALIB.T4.N3",
+      "MATH.CALIB.T4.N4",
+      "MATH.CALIB.T4.N5"
+    ],
+    "nodes": [
+      {
+        "conclusion": "未达阈值",
+        "cross_group": {
+          "cols": "高正确率一群过关与否",
+          "disclosed": true,
+          "h_ratio": 1.41,
+          "loevinger_h": 0.4,
+          "log_odds_ratio": 1.23,
+          "log_odds_ratio_ci": [
+            0.97,
+            1.5
+          ],
+          "n_approx": 1090,
+          "phi": 0.28,
+          "rows": "低正确率一群过关与否",
+          "u_rate": 0.42,
+          "v_rate": 0.58,
+          "within_h": [
+            0.31,
+            0.25
+          ]
+        },
+        "error_evidence": {
+          "code": "shijian_wenti",
+          "codes_tested": 1,
+          "conclusion": "未见错因分群",
+          "log_odds_ratio": -0.29,
+          "log_odds_ratio_ci": [
+            -0.89,
+            0.32
+          ],
+          "n_approx": 220,
+          "p_adj_band": "≥0.05",
+          "phi": -0.06,
+          "rows": [
+            "只失败低正确率一群",
+            "只失败高正确率一群"
+          ],
+          "u_rate": 0.7,
+          "v_rate": 0.62
+        },
+        "gap": 0.14,
+        "high_group": [
+          "CALIB-T5N1-Q1",
+          "CALIB-T5N1-Q2",
+          "CALIB-T5N1-Q3"
+        ],
+        "high_mean": 0.57,
+        "items": [
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N1-Q1",
+            "n_approx": 1100,
+            "rate": 0.62,
+            "rate_ci": [
+              0.59,
+              0.65
+            ]
+          },
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N1-Q2",
+            "n_approx": 1100,
+            "rate": 0.58,
+            "rate_ci": [
+              0.55,
+              0.61
+            ]
+          },
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N1-Q3",
+            "n_approx": 1100,
+            "rate": 0.52,
+            "rate_ci": [
+              0.49,
+              0.55
+            ]
+          },
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N1-Q4",
+            "n_approx": 1100,
+            "rate": 0.47,
+            "rate_ci": [
+              0.44,
+              0.5
+            ]
+          },
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N1-Q5",
+            "n_approx": 1100,
+            "rate": 0.43,
+            "rate_ci": [
+              0.41,
+              0.46
+            ]
+          },
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N1-Q6",
+            "n_approx": 1100,
+            "rate": 0.39,
+            "rate_ci": [
+              0.36,
+              0.41
+            ]
+          }
+        ],
+        "items_withheld": 0,
+        "low_group": [
+          "CALIB-T5N1-Q4",
+          "CALIB-T5N1-Q5",
+          "CALIB-T5N1-Q6"
+        ],
+        "low_mean": 0.43,
+        "node": "MATH.CALIB.T5.N1",
+        "p_adj_band": "≥0.05",
+        "r2": 0.77,
+        "reason": "题目正确率未显著分成两群，或两群之差未达阈值",
+        "tested": true,
+        "topic": "MATH.CALIB.T5"
+      },
+      {
+        "conclusion": "未达阈值",
+        "cross_group": {
+          "cols": "高正确率一群过关与否",
+          "disclosed": true,
+          "h_ratio": 1.53,
+          "loevinger_h": 0.46,
+          "log_odds_ratio": 1.38,
+          "log_odds_ratio_ci": [
+            1.1,
+            1.65
+          ],
+          "n_approx": 1090,
+          "phi": 0.31,
+          "rows": "低正确率一群过关与否",
+          "u_rate": 0.41,
+          "v_rate": 0.61,
+          "within_h": [
+            0.29,
+            0.31
+          ]
+        },
+        "error_evidence": {
+          "code": "biaoda_cuowu",
+          "codes_tested": 1,
+          "conclusion": "未见错因分群",
+          "log_odds_ratio": 0.63,
+          "log_odds_ratio_ci": [
+            -0.02,
+            1.29
+          ],
+          "n_approx": 200,
+          "p_adj_band": "≥0.05",
+          "phi": 0.13,
+          "rows": [
+            "只失败低正确率一群",
+            "只失败高正确率一群"
+          ],
+          "u_rate": 0.77,
+          "v_rate": 0.61
+        },
+        "gap": 0.15,
+        "high_group": [
+          "CALIB-T5N2-Q1",
+          "CALIB-T5N2-Q2",
+          "CALIB-T5N2-Q3"
+        ],
+        "high_mean": 0.57,
+        "items": [
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N2-Q1",
+            "n_approx": 1090,
+            "rate": 0.59,
+            "rate_ci": [
+              0.56,
+              0.62
+            ]
+          },
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N2-Q2",
+            "n_approx": 1090,
+            "rate": 0.57,
+            "rate_ci": [
+              0.54,
+              0.6
+            ]
+          },
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N2-Q3",
+            "n_approx": 1090,
+            "rate": 0.56,
+            "rate_ci": [
+              0.53,
+              0.59
+            ]
+          },
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N2-Q4",
+            "n_approx": 1090,
+            "rate": 0.47,
+            "rate_ci": [
+              0.45,
+              0.5
+            ]
+          },
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N2-Q5",
+            "n_approx": 1090,
+            "rate": 0.42,
+            "rate_ci": [
+              0.39,
+              0.45
+            ]
+          },
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N2-Q6",
+            "n_approx": 1090,
+            "rate": 0.4,
+            "rate_ci": [
+              0.37,
+              0.42
+            ]
+          }
+        ],
+        "items_withheld": 0,
+        "low_group": [
+          "CALIB-T5N2-Q4",
+          "CALIB-T5N2-Q5",
+          "CALIB-T5N2-Q6"
+        ],
+        "low_mean": 0.43,
+        "node": "MATH.CALIB.T5.N2",
+        "p_adj_band": "≥0.05",
+        "r2": 0.89,
+        "reason": "题目正确率未显著分成两群，或两群之差未达阈值",
+        "tested": true,
+        "topic": "MATH.CALIB.T5"
+      },
+      {
+        "conclusion": "未达阈值",
+        "cross_group": {
+          "cols": "高正确率一群过关与否",
+          "disclosed": true,
+          "h_ratio": 1.87,
+          "loevinger_h": 0.44,
+          "log_odds_ratio": 1.36,
+          "log_odds_ratio_ci": [
+            1.09,
+            1.62
+          ],
+          "n_approx": 1090,
+          "phi": 0.31,
+          "rows": "低正确率一群过关与否",
+          "u_rate": 0.4,
+          "v_rate": 0.57,
+          "within_h": [
+            0.22,
+            0.25
+          ]
+        },
+        "error_evidence": {
+          "conclusion": "样本不足",
+          "reason": "只失败一群的学生按编码分的四格不足门槛 20"
+        },
+        "gap": 0.13,
+        "high_group": [
+          "CALIB-T5N3-Q1",
+          "CALIB-T5N3-Q2",
+          "CALIB-T5N3-Q3"
+        ],
+        "high_mean": 0.56,
+        "items": [
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N3-Q1",
+            "n_approx": 1080,
+            "rate": 0.59,
+            "rate_ci": [
+              0.56,
+              0.61
+            ]
+          },
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N3-Q2",
+            "n_approx": 1080,
+            "rate": 0.59,
+            "rate_ci": [
+              0.56,
+              0.62
+            ]
+          },
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N3-Q3",
+            "n_approx": 1080,
+            "rate": 0.49,
+            "rate_ci": [
+              0.46,
+              0.52
+            ]
+          },
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N3-Q4",
+            "n_approx": 1080,
+            "rate": 0.47,
+            "rate_ci": [
+              0.44,
+              0.5
+            ]
+          },
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N3-Q5",
+            "n_approx": 1080,
+            "rate": 0.43,
+            "rate_ci": [
+              0.4,
+              0.46
+            ]
+          },
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N3-Q6",
+            "n_approx": 1080,
+            "rate": 0.39,
+            "rate_ci": [
+              0.36,
+              0.42
+            ]
+          }
+        ],
+        "items_withheld": 0,
+        "low_group": [
+          "CALIB-T5N3-Q4",
+          "CALIB-T5N3-Q5",
+          "CALIB-T5N3-Q6"
+        ],
+        "low_mean": 0.43,
+        "node": "MATH.CALIB.T5.N3",
+        "p_adj_band": "≥0.05",
+        "r2": 0.72,
+        "reason": "题目正确率未显著分成两群，或两群之差未达阈值",
+        "tested": true,
+        "topic": "MATH.CALIB.T5"
+      },
+      {
+        "conclusion": "拆分节点候选",
+        "cross_group": {
+          "cols": "高正确率一群过关与否",
+          "disclosed": true,
+          "h_ratio": 0.02,
+          "loevinger_h": 0.01,
+          "log_odds_ratio": 0.03,
+          "log_odds_ratio_ci": [
+            -0.27,
+            0.32
+          ],
+          "n_approx": 1110,
+          "phi": 0.01,
+          "rows": "低正确率一群过关与否",
+          "u_rate": 0.39,
+          "v_rate": 0.79,
+          "within_h": [
+            0.62,
+            0.7
+          ]
+        },
+        "error_evidence": {
+          "code": "zhishi_queshi",
+          "codes_tested": 1,
+          "conclusion": "错因两群与题目分群对应",
+          "log_odds_ratio": 1.47,
+          "log_odds_ratio_ci": [
+            0.98,
+            1.97
+          ],
+          "n_approx": 550,
+          "p_adj_band": "<0.001",
+          "phi": 0.26,
+          "rows": [
+            "只失败低正确率一群",
+            "只失败高正确率一群"
+          ],
+          "u_rate": 0.86,
+          "v_rate": 0.72
+        },
+        "gap": 0.36,
+        "high_group": [
+          "CALIB-T5N4-Q1",
+          "CALIB-T5N4-Q2",
+          "CALIB-T5N4-Q3",
+          "CALIB-T5N4-Q4"
+        ],
+        "high_mean": 0.74,
+        "items": [
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N4-Q1",
+            "n_approx": 1110,
+            "rate": 0.74,
+            "rate_ci": [
+              0.71,
+              0.76
+            ]
+          },
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N4-Q2",
+            "n_approx": 1110,
+            "rate": 0.75,
+            "rate_ci": [
+              0.72,
+              0.78
+            ]
+          },
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N4-Q3",
+            "n_approx": 1110,
+            "rate": 0.74,
+            "rate_ci": [
+              0.71,
+              0.77
+            ]
+          },
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N4-Q4",
+            "n_approx": 1110,
+            "rate": 0.74,
+            "rate_ci": [
+              0.71,
+              0.76
+            ]
+          },
+          {
+            "cognitive_level": "synthesize",
+            "item_id": "CALIB-T5N4-Q5",
+            "n_approx": 1110,
+            "rate": 0.37,
+            "rate_ci": [
+              0.35,
+              0.4
+            ]
+          },
+          {
+            "cognitive_level": "synthesize",
+            "item_id": "CALIB-T5N4-Q6",
+            "n_approx": 1110,
+            "rate": 0.39,
+            "rate_ci": [
+              0.37,
+              0.42
+            ]
+          },
+          {
+            "cognitive_level": "synthesize",
+            "item_id": "CALIB-T5N4-Q7",
+            "n_approx": 1110,
+            "rate": 0.36,
+            "rate_ci": [
+              0.33,
+              0.39
+            ]
+          },
+          {
+            "cognitive_level": "synthesize",
+            "item_id": "CALIB-T5N4-Q8",
+            "n_approx": 1110,
+            "rate": 0.4,
+            "rate_ci": [
+              0.37,
+              0.43
+            ]
+          }
+        ],
+        "items_withheld": 0,
+        "low_group": [
+          "CALIB-T5N4-Q5",
+          "CALIB-T5N4-Q6",
+          "CALIB-T5N4-Q7",
+          "CALIB-T5N4-Q8"
+        ],
+        "low_mean": 0.38,
+        "node": "MATH.CALIB.T5.N4",
+        "p_adj_band": "<0.01",
+        "r2": 0.99,
+        "reason": "题目正确率显著分成两群、两群之差达到阈值，且两群之间的 Loevinger H 远低于群内两半：两群题目考的不是同一能力",
+        "tested": true,
+        "topic": "MATH.CALIB.T5"
+      },
+      {
+        "conclusion": "难度分档（不建议拆分）",
+        "cross_group": {
+          "cols": "高正确率一群过关与否",
+          "disclosed": true,
+          "h_ratio": 2.34,
+          "loevinger_h": 0.29,
+          "log_odds_ratio": 0.65,
+          "log_odds_ratio_ci": [
+            0.19,
+            1.1
+          ],
+          "n_approx": 1100,
+          "phi": 0.08,
+          "rows": "低正确率一群过关与否",
+          "u_rate": 0.5,
+          "v_rate": 0.92,
+          "within_h": [
+            0.1,
+            0.15
+          ]
+        },
+        "error_evidence": {
+          "conclusion": "样本不足",
+          "reason": "只失败一群的学生按编码分的四格不足门槛 20"
+        },
+        "gap": 0.32,
+        "high_group": [
+          "CALIB-T5N5-Q1",
+          "CALIB-T5N5-Q2",
+          "CALIB-T5N5-Q3",
+          "CALIB-T5N5-Q4",
+          "CALIB-T5N5-Q5",
+          "CALIB-T5N5-Q6"
+        ],
+        "high_mean": 0.74,
+        "items": [
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N5-Q1",
+            "n_approx": 1100,
+            "rate": 0.75,
+            "rate_ci": [
+              0.72,
+              0.77
+            ]
+          },
+          {
+            "cognitive_level": "synthesize",
+            "item_id": "CALIB-T5N5-Q10",
+            "n_approx": 1100,
+            "rate": 0.4,
+            "rate_ci": [
+              0.38,
+              0.43
+            ]
+          },
+          {
+            "cognitive_level": "synthesize",
+            "item_id": "CALIB-T5N5-Q11",
+            "n_approx": 1100,
+            "rate": 0.45,
+            "rate_ci": [
+              0.42,
+              0.48
+            ]
+          },
+          {
+            "cognitive_level": "synthesize",
+            "item_id": "CALIB-T5N5-Q12",
+            "n_approx": 1100,
+            "rate": 0.44,
+            "rate_ci": [
+              0.41,
+              0.47
+            ]
+          },
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N5-Q2",
+            "n_approx": 1100,
+            "rate": 0.72,
+            "rate_ci": [
+              0.69,
+              0.75
+            ]
+          },
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N5-Q3",
+            "n_approx": 1100,
+            "rate": 0.76,
+            "rate_ci": [
+              0.73,
+              0.78
+            ]
+          },
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N5-Q4",
+            "n_approx": 1100,
+            "rate": 0.76,
+            "rate_ci": [
+              0.73,
+              0.78
+            ]
+          },
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N5-Q5",
+            "n_approx": 1100,
+            "rate": 0.75,
+            "rate_ci": [
+              0.72,
+              0.77
+            ]
+          },
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N5-Q6",
+            "n_approx": 1100,
+            "rate": 0.72,
+            "rate_ci": [
+              0.69,
+              0.75
+            ]
+          },
+          {
+            "cognitive_level": "synthesize",
+            "item_id": "CALIB-T5N5-Q7",
+            "n_approx": 1100,
+            "rate": 0.4,
+            "rate_ci": [
+              0.37,
+              0.43
+            ]
+          },
+          {
+            "cognitive_level": "synthesize",
+            "item_id": "CALIB-T5N5-Q8",
+            "n_approx": 1100,
+            "rate": 0.4,
+            "rate_ci": [
+              0.37,
+              0.43
+            ]
+          },
+          {
+            "cognitive_level": "synthesize",
+            "item_id": "CALIB-T5N5-Q9",
+            "n_approx": 1100,
+            "rate": 0.46,
+            "rate_ci": [
+              0.43,
+              0.49
+            ]
+          }
+        ],
+        "items_withheld": 0,
+        "low_group": [
+          "CALIB-T5N5-Q10",
+          "CALIB-T5N5-Q11",
+          "CALIB-T5N5-Q12",
+          "CALIB-T5N5-Q7",
+          "CALIB-T5N5-Q8",
+          "CALIB-T5N5-Q9"
+        ],
+        "low_mean": 0.42,
+        "node": "MATH.CALIB.T5.N5",
+        "p_adj_band": "<0.01",
+        "r2": 0.98,
+        "reason": "题目正确率分成两群，但两群之间的嵌套程度（Loevinger H）与群内两半相当：更像同一能力的难易两档（猜对与失误会压低 H，所以与群内参照相比）",
+        "tested": true,
+        "topic": "MATH.CALIB.T5"
+      },
+      {
+        "conclusion": "未达阈值",
+        "cross_group": {
+          "cols": "高正确率一群过关与否",
+          "disclosed": true,
+          "h_ratio": 1.16,
+          "loevinger_h": 0.33,
+          "log_odds_ratio": 1.13,
+          "log_odds_ratio_ci": [
+            0.88,
+            1.38
+          ],
+          "n_approx": 1100,
+          "phi": 0.27,
+          "rows": "低正确率一群过关与否",
+          "u_rate": 0.45,
+          "v_rate": 0.55,
+          "within_h": [
+            0.33,
+            0.24
+          ]
+        },
+        "error_evidence": {
+          "code": "shenti_cuowu",
+          "codes_tested": 1,
+          "conclusion": "未见错因分群",
+          "log_odds_ratio": -0.75,
+          "log_odds_ratio_ci": [
+            -1.4,
+            -0.1
+          ],
+          "n_approx": 200,
+          "p_adj_band": "<0.05",
+          "phi": -0.16,
+          "rows": [
+            "只失败低正确率一群",
+            "只失败高正确率一群"
+          ],
+          "u_rate": 0.65,
+          "v_rate": 0.24
+        },
+        "gap": 0.08,
+        "high_group": [
+          "CALIB-T5N6-Q1",
+          "CALIB-T5N6-Q2",
+          "CALIB-T5N6-Q3"
+        ],
+        "high_mean": 0.54,
+        "items": [
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N6-Q1",
+            "n_approx": 1100,
+            "rate": 0.59,
+            "rate_ci": [
+              0.56,
+              0.62
+            ]
+          },
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N6-Q2",
+            "n_approx": 1100,
+            "rate": 0.53,
+            "rate_ci": [
+              0.5,
+              0.56
+            ]
+          },
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N6-Q3",
+            "n_approx": 1100,
+            "rate": 0.5,
+            "rate_ci": [
+              0.47,
+              0.53
+            ]
+          },
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N6-Q4",
+            "n_approx": 1100,
+            "rate": 0.49,
+            "rate_ci": [
+              0.46,
+              0.52
+            ]
+          },
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N6-Q5",
+            "n_approx": 1100,
+            "rate": 0.46,
+            "rate_ci": [
+              0.44,
+              0.49
+            ]
+          },
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N6-Q6",
+            "n_approx": 1100,
+            "rate": 0.42,
+            "rate_ci": [
+              0.39,
+              0.45
+            ]
+          }
+        ],
+        "items_withheld": 0,
+        "low_group": [
+          "CALIB-T5N6-Q4",
+          "CALIB-T5N6-Q5",
+          "CALIB-T5N6-Q6"
+        ],
+        "low_mean": 0.46,
+        "node": "MATH.CALIB.T5.N6",
+        "p_adj_band": "≥0.05",
+        "r2": 0.62,
+        "reason": "题目正确率未显著分成两群，或两群之差未达阈值",
+        "tested": true,
+        "topic": "MATH.CALIB.T5"
+      },
+      {
+        "conclusion": "未达阈值",
+        "cross_group": {
+          "cols": "高正确率一群过关与否",
+          "disclosed": true,
+          "h_ratio": 0.98,
+          "loevinger_h": 0.31,
+          "log_odds_ratio": 0.96,
+          "log_odds_ratio_ci": [
+            0.7,
+            1.21
+          ],
+          "n_approx": 1100,
+          "phi": 0.22,
+          "rows": "低正确率一群过关与否",
+          "u_rate": 0.43,
+          "v_rate": 0.59,
+          "within_h": [
+            0.34,
+            0.3
+          ]
+        },
+        "error_evidence": {
+          "code": "fangfa_cuowu",
+          "codes_tested": 1,
+          "conclusion": "未见错因分群",
+          "log_odds_ratio": 0.1,
+          "log_odds_ratio_ci": [
+            -0.46,
+            0.67
+          ],
+          "n_approx": 230,
+          "p_adj_band": "≥0.05",
+          "phi": 0.02,
+          "rows": [
+            "只失败低正确率一群",
+            "只失败高正确率一群"
+          ],
+          "u_rate": 0.69,
+          "v_rate": 0.59
+        },
+        "gap": 0.12,
+        "high_group": [
+          "CALIB-T5N7-Q1",
+          "CALIB-T5N7-Q2",
+          "CALIB-T5N7-Q3"
+        ],
+        "high_mean": 0.57,
+        "items": [
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N7-Q1",
+            "n_approx": 1100,
+            "rate": 0.61,
+            "rate_ci": [
+              0.59,
+              0.64
+            ]
+          },
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N7-Q2",
+            "n_approx": 1100,
+            "rate": 0.58,
+            "rate_ci": [
+              0.55,
+              0.61
+            ]
+          },
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N7-Q3",
+            "n_approx": 1100,
+            "rate": 0.52,
+            "rate_ci": [
+              0.49,
+              0.55
+            ]
+          },
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N7-Q4",
+            "n_approx": 1100,
+            "rate": 0.5,
+            "rate_ci": [
+              0.47,
+              0.53
+            ]
+          },
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N7-Q5",
+            "n_approx": 1100,
+            "rate": 0.43,
+            "rate_ci": [
+              0.4,
+              0.46
+            ]
+          },
+          {
+            "cognitive_level": "apply",
+            "item_id": "CALIB-T5N7-Q6",
+            "n_approx": 1100,
+            "rate": 0.42,
+            "rate_ci": [
+              0.39,
+              0.45
+            ]
+          }
+        ],
+        "items_withheld": 0,
+        "low_group": [
+          "CALIB-T5N7-Q4",
+          "CALIB-T5N7-Q5",
+          "CALIB-T5N7-Q6"
+        ],
+        "low_mean": 0.45,
+        "node": "MATH.CALIB.T5.N7",
+        "p_adj_band": "≥0.05",
+        "r2": 0.73,
+        "reason": "题目正确率未显著分成两群，或两群之差未达阈值",
+        "tested": true,
+        "topic": "MATH.CALIB.T5"
+      }
+    ],
+    "provided": true
+  },
   "notice": "合成，不是试点结论",
+  "pitfall": {
+    "below_tests": [
+      "MATH.CALIB.T5.N1 · biaoda_cuowu",
+      "MATH.CALIB.T5.N1 · fangfa_cuowu",
+      "MATH.CALIB.T5.N1 · gainian_cuowu",
+      "MATH.CALIB.T5.N1 · shenti_cuowu",
+      "MATH.CALIB.T5.N1 · tuili_cuowu",
+      "MATH.CALIB.T5.N1 · yunsuan_cuowu",
+      "MATH.CALIB.T5.N1 · zhishi_queshi",
+      "MATH.CALIB.T5.N2 · fangfa_cuowu",
+      "MATH.CALIB.T5.N2 · gainian_cuowu",
+      "MATH.CALIB.T5.N2 · shenti_cuowu",
+      "MATH.CALIB.T5.N2 · shijian_wenti",
+      "MATH.CALIB.T5.N2 · tuili_cuowu",
+      "MATH.CALIB.T5.N2 · yunsuan_cuowu",
+      "MATH.CALIB.T5.N2 · zhishi_queshi",
+      "MATH.CALIB.T5.N3 · biaoda_cuowu",
+      "MATH.CALIB.T5.N3 · fangfa_cuowu",
+      "MATH.CALIB.T5.N3 · gainian_cuowu",
+      "MATH.CALIB.T5.N3 · shenti_cuowu",
+      "MATH.CALIB.T5.N3 · shijian_wenti",
+      "MATH.CALIB.T5.N3 · tuili_cuowu",
+      "MATH.CALIB.T5.N3 · yunsuan_cuowu",
+      "MATH.CALIB.T5.N3 · zhishi_queshi",
+      "MATH.CALIB.T5.N4 · biaoda_cuowu",
+      "MATH.CALIB.T5.N4 · fangfa_cuowu",
+      "MATH.CALIB.T5.N4 · gainian_cuowu",
+      "MATH.CALIB.T5.N4 · shenti_cuowu",
+      "MATH.CALIB.T5.N4 · shijian_wenti",
+      "MATH.CALIB.T5.N4 · yunsuan_cuowu",
+      "MATH.CALIB.T5.N5 · biaoda_cuowu",
+      "MATH.CALIB.T5.N5 · fangfa_cuowu",
+      "MATH.CALIB.T5.N5 · gainian_cuowu",
+      "MATH.CALIB.T5.N5 · shenti_cuowu",
+      "MATH.CALIB.T5.N5 · shijian_wenti",
+      "MATH.CALIB.T5.N5 · tuili_cuowu",
+      "MATH.CALIB.T5.N5 · yunsuan_cuowu",
+      "MATH.CALIB.T5.N5 · zhishi_queshi",
+      "MATH.CALIB.T5.N6 · biaoda_cuowu",
+      "MATH.CALIB.T5.N6 · fangfa_cuowu",
+      "MATH.CALIB.T5.N6 · gainian_cuowu",
+      "MATH.CALIB.T5.N6 · shenti_cuowu",
+      "MATH.CALIB.T5.N6 · shijian_wenti",
+      "MATH.CALIB.T5.N6 · tuili_cuowu",
+      "MATH.CALIB.T5.N6 · yunsuan_cuowu",
+      "MATH.CALIB.T5.N6 · zhishi_queshi",
+      "MATH.CALIB.T5.N7 · biaoda_cuowu",
+      "MATH.CALIB.T5.N7 · gainian_cuowu",
+      "MATH.CALIB.T5.N7 · shenti_cuowu",
+      "MATH.CALIB.T5.N7 · shijian_wenti",
+      "MATH.CALIB.T5.N7 · tuili_cuowu",
+      "MATH.CALIB.T5.N7 · yunsuan_cuowu",
+      "MATH.CALIB.T5.N7 · zhishi_queshi"
+    ],
+    "excluded_codes": [
+      "biaozheng_cuowu",
+      "fenlei_yilou",
+      "jianyan_cuowu",
+      "xinli_xiguan"
+    ],
+    "insufficient_tests": 176,
+    "nodes_with_linked_pitfalls": {
+      "MATH.CALIB.T5.N1": [
+        "MATH.CALIB.T5.P3"
+      ],
+      "MATH.CALIB.T5.N2": [
+        "MATH.CALIB.T5.P1"
+      ],
+      "MATH.CALIB.T5.N4": [
+        "MATH.CALIB.T5.N4.SLIP1",
+        "MATH.CALIB.T5.N4.SLIP2"
+      ],
+      "MATH.CALIB.T5.N7": [
+        "MATH.CALIB.T5.P2"
+      ]
+    },
+    "pitfall_codes_provided": true,
+    "provided": true,
+    "tests": [
+      {
+        "baseline": {
+          "n_approx": 580,
+          "share": 0.06,
+          "share_ci": [
+            0.05,
+            0.09
+          ]
+        },
+        "code": "shijian_wenti",
+        "conclusion": "新增易错点候选",
+        "covering_pitfalls": [],
+        "cross_subject_category": "strategy_and_time",
+        "diff": 0.57,
+        "diff_ci": [
+          0.52,
+          0.61
+        ],
+        "disclosed": true,
+        "node": "MATH.CALIB.T5.N1",
+        "node_group": {
+          "n_approx": 610,
+          "share": 0.63,
+          "share_ci": [
+            0.59,
+            0.67
+          ]
+        },
+        "p_adj_band": "<0.001",
+        "reason": "该编码在本节点显著偏高（相对本主题基线），且没有关联的易错点覆盖这一编码",
+        "topic": "MATH.CALIB.T5",
+        "unmapped_pitfalls": []
+      },
+      {
+        "baseline": {
+          "n_approx": 590,
+          "share": 0.08,
+          "share_ci": [
+            0.06,
+            0.1
+          ]
+        },
+        "code": "biaoda_cuowu",
+        "conclusion": "已有易错点覆盖",
+        "covering_pitfalls": [
+          "MATH.CALIB.T5.P1"
+        ],
+        "cross_subject_category": "expression_convention",
+        "diff": 0.55,
+        "diff_ci": [
+          0.5,
+          0.59
+        ],
+        "disclosed": true,
+        "node": "MATH.CALIB.T5.N2",
+        "node_group": {
+          "n_approx": 600,
+          "share": 0.63,
+          "share_ci": [
+            0.59,
+            0.67
+          ]
+        },
+        "p_adj_band": "<0.001",
+        "reason": "该编码在本节点显著偏高，已有关联易错点覆盖",
+        "topic": "MATH.CALIB.T5",
+        "unmapped_pitfalls": []
+      },
+      {
+        "baseline": {
+          "n_approx": 330,
+          "share": 0.09,
+          "share_ci": [
+            0.07,
+            0.13
+          ]
+        },
+        "code": "tuili_cuowu",
+        "conclusion": "已有易错点覆盖",
+        "covering_pitfalls": [
+          "MATH.CALIB.T5.N4.SLIP1"
+        ],
+        "cross_subject_category": "thinking_method",
+        "diff": 0.33,
+        "diff_ci": [
+          0.29,
+          0.38
+        ],
+        "disclosed": true,
+        "node": "MATH.CALIB.T5.N4",
+        "node_group": {
+          "n_approx": 860,
+          "share": 0.43,
+          "share_ci": [
+            0.39,
+            0.46
+          ]
+        },
+        "p_adj_band": "<0.001",
+        "reason": "该编码在本节点显著偏高，已有关联易错点覆盖",
+        "topic": "MATH.CALIB.T5",
+        "unmapped_pitfalls": []
+      },
+      {
+        "baseline": {
+          "n_approx": 330,
+          "share": 0.08,
+          "share_ci": [
+            0.06,
+            0.12
+          ]
+        },
+        "code": "zhishi_queshi",
+        "conclusion": "已有易错点覆盖",
+        "covering_pitfalls": [
+          "MATH.CALIB.T5.N4.SLIP2"
+        ],
+        "cross_subject_category": "knowledge",
+        "diff": 0.62,
+        "diff_ci": [
+          0.58,
+          0.66
+        ],
+        "disclosed": true,
+        "node": "MATH.CALIB.T5.N4",
+        "node_group": {
+          "n_approx": 860,
+          "share": 0.71,
+          "share_ci": [
+            0.68,
+            0.74
+          ]
+        },
+        "p_adj_band": "<0.001",
+        "reason": "该编码在本节点显著偏高，已有关联易错点覆盖",
+        "topic": "MATH.CALIB.T5",
+        "unmapped_pitfalls": []
+      },
+      {
+        "baseline": {
+          "n_approx": 580,
+          "share": 0.13,
+          "share_ci": [
+            0.11,
+            0.16
+          ]
+        },
+        "code": "fangfa_cuowu",
+        "conclusion": "易错点对照缺失",
+        "covering_pitfalls": [],
+        "cross_subject_category": "thinking_method",
+        "diff": 0.5,
+        "diff_ci": [
+          0.45,
+          0.55
+        ],
+        "disclosed": true,
+        "node": "MATH.CALIB.T5.N7",
+        "node_group": {
+          "n_approx": 600,
+          "share": 0.64,
+          "share_ci": [
+            0.6,
+            0.67
+          ]
+        },
+        "p_adj_band": "<0.001",
+        "reason": "该编码在本节点显著偏高；本节点有关联易错点，但易错点编码对照里没有它们，无法判断是否已覆盖",
+        "topic": "MATH.CALIB.T5",
+        "unmapped_pitfalls": [
+          "MATH.CALIB.T5.P2"
+        ]
+      }
+    ]
+  },
   "prerequisite_tests": [
     {
       "a_mastered": {
@@ -1189,7 +2430,7 @@
       "to_topic": "MATH.CALIB.T4"
     }
   ],
-  "schema_version": "kge-calibrate-report/0.2",
+  "schema_version": "kge-calibrate-report/0.3",
   "status": "候选：待教研在审核台确认、修改或驳回（结构性变更两人确认）；本工具不改地图、不写库",
   "summary": {
     "hidden_dependency": {
@@ -1197,12 +2438,151 @@
       "未达阈值": 36,
       "样本不足": 1
     },
+    "node_split": {
+      "待定": 0,
+      "拆分节点候选": 1,
+      "未达阈值": 5,
+      "样本不足": 22,
+      "难度分档（不建议拆分）": 1
+    },
+    "pitfall": {
+      "已有易错点覆盖": 3,
+      "新增易错点候选": 1,
+      "易错点对照缺失": 1,
+      "未达阈值": 51,
+      "样本不足": 176
+    },
     "prerequisite": {
       "不成立候选": 3,
       "仅报告（弱前置）": 1,
       "待定": 0,
       "成立": 6,
       "样本不足": 0
+    },
+    "unclassifiable": {
+      "未达阈值": 6,
+      "样本不足": 22,
+      "错因难归类信号": 1
     }
+  },
+  "unclassifiable": {
+    "insufficient_nodes": [
+      "MATH.CALIB.T1.N1",
+      "MATH.CALIB.T1.N2",
+      "MATH.CALIB.T1.N3",
+      "MATH.CALIB.T1.N4",
+      "MATH.CALIB.T1.N5",
+      "MATH.CALIB.T2.N1",
+      "MATH.CALIB.T2.N2",
+      "MATH.CALIB.T2.N3",
+      "MATH.CALIB.T2.N4",
+      "MATH.CALIB.T2.N5",
+      "MATH.CALIB.T3.N1",
+      "MATH.CALIB.T3.N2",
+      "MATH.CALIB.T3.N3",
+      "MATH.CALIB.T3.N4",
+      "MATH.CALIB.T3.N5",
+      "MATH.CALIB.T3.N6",
+      "MATH.CALIB.T3.N7",
+      "MATH.CALIB.T4.N1",
+      "MATH.CALIB.T4.N2",
+      "MATH.CALIB.T4.N3",
+      "MATH.CALIB.T4.N4",
+      "MATH.CALIB.T4.N5"
+    ],
+    "nodes": [
+      {
+        "conclusion": "未达阈值",
+        "disclosed": true,
+        "low_conf_rate": 0.12,
+        "low_conf_rate_ci": [
+          0.1,
+          0.15
+        ],
+        "n_approx": 700,
+        "node": "MATH.CALIB.T5.N1",
+        "reason": "难归类占比未确定地高于阈值",
+        "topic": "MATH.CALIB.T5"
+      },
+      {
+        "conclusion": "未达阈值",
+        "disclosed": true,
+        "low_conf_rate": 0.13,
+        "low_conf_rate_ci": [
+          0.11,
+          0.16
+        ],
+        "n_approx": 690,
+        "node": "MATH.CALIB.T5.N2",
+        "reason": "难归类占比未确定地高于阈值",
+        "topic": "MATH.CALIB.T5"
+      },
+      {
+        "conclusion": "错因难归类信号",
+        "disclosed": true,
+        "low_conf_rate": 0.48,
+        "low_conf_rate_ci": [
+          0.44,
+          0.52
+        ],
+        "n_approx": 640,
+        "node": "MATH.CALIB.T5.N3",
+        "reason": "只有低置信错因的学生占比（按族校正的区间下界）高于阈值：错因难归类，请教研查看（不自动提议新编码）",
+        "topic": "MATH.CALIB.T5"
+      },
+      {
+        "conclusion": "未达阈值",
+        "disclosed": true,
+        "low_conf_rate": 0.09,
+        "low_conf_rate_ci": [
+          0.08,
+          0.11
+        ],
+        "n_approx": 950,
+        "node": "MATH.CALIB.T5.N4",
+        "reason": "难归类占比未确定地高于阈值",
+        "topic": "MATH.CALIB.T5"
+      },
+      {
+        "conclusion": "未达阈值",
+        "disclosed": true,
+        "low_conf_rate": 0.12,
+        "low_conf_rate_ci": [
+          0.09,
+          0.15
+        ],
+        "n_approx": 630,
+        "node": "MATH.CALIB.T5.N5",
+        "reason": "难归类占比未确定地高于阈值",
+        "topic": "MATH.CALIB.T5"
+      },
+      {
+        "conclusion": "未达阈值",
+        "disclosed": true,
+        "low_conf_rate": 0.11,
+        "low_conf_rate_ci": [
+          0.09,
+          0.14
+        ],
+        "n_approx": 660,
+        "node": "MATH.CALIB.T5.N6",
+        "reason": "难归类占比未确定地高于阈值",
+        "topic": "MATH.CALIB.T5"
+      },
+      {
+        "conclusion": "未达阈值",
+        "disclosed": true,
+        "low_conf_rate": 0.11,
+        "low_conf_rate_ci": [
+          0.09,
+          0.13
+        ],
+        "n_approx": 670,
+        "node": "MATH.CALIB.T5.N7",
+        "reason": "难归类占比未确定地高于阈值",
+        "topic": "MATH.CALIB.T5"
+      }
+    ],
+    "provided": true
   }
 }

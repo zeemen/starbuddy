@@ -1,7 +1,7 @@
-# 执行手册：在试点环境导出伪名化掌握状态并运行地图校准（只读，本仓不执行）
+# 执行手册：在试点环境导出伪名化掌握状态、作答与错因，并运行地图校准（只读，本仓不执行）
 
-对应 `specs/kge09-map-calibration/spec.md` 范围 1 的“只读 SQL 说明”与待人确认 3。**本仓 CI 不执行本手册，也没有连接任何数据库的代码**；
-本仓只有合成管线（`make kge-calibrate-test`，样例见 `sample/`，标“合成，不是试点结论”）。
+对应 `specs/kge09-map-calibration/spec.md` 范围 1 的“只读 SQL 说明”与待人确认 3，以及 `spec-step2.md` 范围 1 的导出说明（第 6 节）。
+**本仓 CI 不执行本手册，也没有连接任何数据库的代码**；本仓只有合成管线（`make kge-calibrate-test`，样例见 `sample/`，标“合成，不是试点结论”）。
 
 > **在下面两件事都完成之前，不得做任何真实导出：**
 > 1. 只读导出函数（草案 [`sql/export-function.draft.sql`](sql/export-function.draft.sql)）已由另起的 [NEEDS-HUMAN] PR 落为迁移、附 RLS 测试、合并并经人执行；
@@ -67,3 +67,48 @@ cd tools/kge-calibrate && python -m kge_calibrate run --map "$WORK/map-snapshot.
 
 任一前置条件缺失、连接的不是试点库、输出里出现任何伪名、学生级字段或精确计数、需要写入才能继续——立即停止，
 记录在 `specs/kge09-map-calibration/lessons.md` 的“待人确认”。
+
+## 6. 第二步：作答聚合行与错因行（易错候选、难归类、节点内部分化）
+
+前置条件与第 0 节相同（导出函数草案里的第二个函数 `kge.calibration_export_responses` 同样须经另起的 [NEEDS-HUMAN] PR 落为迁移、
+合并并经人执行；synthetic 守卫同样须另起任务放开），另加两项：
+
+| # | 条件 | 负责人 | 记录 |
+|---|---|---|---|
+| 8 | 错因分类表（`docs/mapping/error-taxonomy.md`）的映射已签字，或明确按草稿运行；工具只读它，不改它 | 教研负责人 | 分类表版本 |
+| 9 | 易错点编码对照（`pitfall-codes.json`：易错点 → 它覆盖的学科错因编码，公共层）由教研给出，与地图快照同一版本。这份对照只是教研的**临时口径**：易错点的错因大类以 `kge.knowledge_node.error_type` 为准，同一易错点的编码必须映射到同一个跨科大类（工具拒绝不一致的对照） | 教研负责人 | 对照版本 |
+
+口径（详见 `sql/export-function.draft.sql` 第二个函数的注释；均待人确认）：
+- 作答：独立作答、证据等级 A、证据与题目已准入、正式判分、未用提示、判分不需人工复核且判分置信度 ≥ `min_grade_confidence`；
+  只取 correct / incorrect；每名学生每道题只取第一次；自报“猜的”且判对的不导出；题目经已发布地图版本上审核通过的题目标签挂到主节点，
+  并带出题目的认知层次。
+- 错因：`platform.error_attribution` 的当前行（`superseded_by IS NULL`），与作答同口径（只取挂在上述作答上的错因）；
+  该表没有节点列，经证据找到作答的题目再挂到节点，挂不上的不导出；库内按 学生 × 节点 × 编码 去重。
+- 只导出错因分类表里状态“明确”的编码：待定与敏感编码（如 `xinli_xiguan`）不出库（工具读入时也会再丢一次）。
+- 一次调用同时导出两类行（同一伪名对齐同一学生；两表伪名完全不相交时工具拒绝）；与第一步的掌握状态导出是不同的调用，伪名不可对齐。
+
+导出（连接串只从环境变量读）并按 `record_kind` 拆成工具的两个输入（元数据行的 `synthetic=false` 在守卫放开之前会被拒绝）：
+
+```bash
+CODES=$(cd tools/kge-calibrate && python -m kge_calibrate codes --subject aya)      # 只含“明确”的编码，公共层
+psql -X -q -v ON_ERROR_STOP=1 -v subject=aya -v usable_codes="$CODES" -v min_grade_confidence=0.8 \
+     -f tools/kge-calibrate/sql/export-responses.readonly.sql -o "$WORK/responses.csv"
+{ printf '# format=kge-calibrate-attempts/1 synthetic=false subject=aya map_version=%s\n' "$MAP_VERSION"
+  echo 'pseudonym,item_id,node_id,correct,cognitive_level'
+  awk -F, '$1=="attempt"{print $2","$3","$4","$5","$6}' "$WORK/responses.csv"; } > "$WORK/attempts.csv"
+{ printf '# format=kge-calibrate-errors/1 synthetic=false subject=aya map_version=%s\n' "$MAP_VERSION"
+  echo 'pseudonym,node_id,subject_category,cross_subject_category,confidence'
+  awk -F, '$1=="error"{print $2","$4","$7","$8","$9}' "$WORK/responses.csv"; } > "$WORK/errors.csv"
+cd tools/kge-calibrate && python -m kge_calibrate run --map "$WORK/map-snapshot.json" --mastery "$WORK/mastery.csv" \
+  --attempts "$WORK/attempts.csv" --errors "$WORK/errors.csv" --pitfall-codes "$WORK/pitfall-codes.json" \
+  --taxonomy ../../docs/mapping/error-taxonomy.md --out "$WORK/out"
+```
+
+输出核对在第 4 节之外另加：
+- 易错候选只列四格（扰动后，“无该编码”两格多留一份余量）都够门槛的“节点 × 编码”，其余只给“样本不足”的条数；
+  同一节点的各编码表共用行人数扰动；难归类每个节点两格都 ≥ `min_cell` 才给数；
+- 题目只在作答人数达标时列出：答对、答错两格都扰动，扰动后作答人数 ≥ `split.min_item_attempts` + 4（保证真实 ≥ 20）；
+  两格（扰动后）都 ≥ `min_cell` + 2 才给 2 位小数正确率，否则只给分档（≥0.90 / ≤0.10 / 0.10–0.90），防“全对 / 全错”；
+  题目 ID 与认知层次属公共层，可以出现；
+- 工作单只提出候选：不生成错因编码、易错点文本，不改错因分类表与地图。
+- `$WORK/responses.csv`、`attempts.csv`、`errors.csv` 与掌握状态表一样是个人层数据：核对完与整个 `$WORK` 一起删除。

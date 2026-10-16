@@ -12,10 +12,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
-SCHEMA_VERSION = "kge-calibrate-config/0.2"
+SCHEMA_VERSION = "kge-calibrate-config/0.3"
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config.json"
 PENDING = "待教研确认"
 MIN_CELL_FLOOR = 20
+# KGE“同一题少于 20 人不展示得分率”：题目级正确率的作答人数门槛不得低于它（调低是隐私口径变更，须由人决定后改代码）
+MIN_ITEM_ATTEMPTS_FLOOR = 20
 # 取值与 services/learning/learning/mastery/gates.py 的 GATES、LIT 一致（测试逐字核对）；只读口径，不改掌握计算
 GATES = ("unseen", "understand", "execute", "stable", "transfer", "retain")
 LIT = frozenset({"transfer", "retain"})
@@ -63,6 +65,28 @@ class MasteryRule:
 
 
 @dataclass(frozen=True)
+class PitfallConfig:
+    min_confidence: float      # 错因行置信度 ≥ 它才进入编码分布；一名学生在一个节点上只有低于它的行 = 难归类
+    fdr_q: float
+    min_share: float           # 节点上该编码的学生占比至少
+    min_lift: float            # 节点占比 − 主题基线占比 至少
+    low_conf_share: float      # 难归类占比（按族校正的 Wilson 下界）超过它 → 错因难归类信号
+
+
+@dataclass(frozen=True)
+class SplitConfig:
+    min_item_attempts: int     # 题目只在作答人数 ≥ 它时参与（不低于 MIN_ITEM_ATTEMPTS_FLOOR；答对答错两格都扰动，门槛加 2 × 扰动上限）
+    min_items_per_group: int
+    max_items_per_node: int    # 每个节点参与两群检验的题数上限（按作答人数多到少、题目 ID 取前若干道）
+    min_gap: float             # 两群平均正确率之差至少
+    fdr_q: float
+    bootstrap_draws: int
+    pass_rate: float           # 学生在一群题目上答对比例 ≥ 它算“这一群过关”
+    max_h_ratio: float         # 两群之间的 Loevinger H ÷ 群内两半 H 的均值，不超过它才算“拆分候选”（spec 之外的补充）
+    error_min_phi: float       # 错因两群与题目分群对应（加强证据）的 |phi| 下限
+
+
+@dataclass(frozen=True)
 class Config:
     config_version: str
     signoff: str
@@ -78,6 +102,12 @@ class Config:
     max_false_not_holds: int
     max_false_hidden: int
     fingerprint: str
+    # 第二步：易错候选与节点内部分化（全部“待教研确认”）
+    pitfall: "PitfallConfig" = None  # type: ignore[assignment]
+    split: "SplitConfig" = None      # type: ignore[assignment]
+    max_false_pitfall: int = 0
+    max_false_unclassifiable: int = 0
+    max_false_split: int = 0
 
     def provenance(self) -> dict[str, Any]:
         return {"config_version": self.config_version, "fingerprint": self.fingerprint, "signoff": self.signoff}
@@ -85,7 +115,7 @@ class Config:
 
 def parse_config(doc: Mapping[str, Any]) -> Config:
     _keys(doc, {"schema_version", "config_version", "signoff", "mastery", "min_cell", "prerequisite", "hidden_dependency",
-                "synthetic_acceptance"}, "校准配置")
+                "pitfall", "split", "synthetic_acceptance"}, "校准配置")
     _need(doc["schema_version"] == SCHEMA_VERSION, f"schema_version 必须是 {SCHEMA_VERSION}")
     _need(isinstance(doc["config_version"], str) and 0 < len(doc["config_version"]) <= 32
           and all(ch.isascii() and (ch.isalnum() or ch in "._-") for ch in doc["config_version"]), "config_version 格式不对")
@@ -103,7 +133,28 @@ def parse_config(doc: Mapping[str, Any]) -> Config:
     _keys(h, {"fdr_q", "min_phi", "condition_on_shared_prerequisites", "max_pairs_per_topic"}, "hidden_dependency")
     _need(isinstance(h["condition_on_shared_prerequisites"], bool), "hidden_dependency.condition_on_shared_prerequisites 必须是布尔值")
     a = doc["synthetic_acceptance"]
-    _keys(a, {"max_false_not_holds", "max_false_hidden"}, "synthetic_acceptance")
+    _keys(a, {"max_false_not_holds", "max_false_hidden", "max_false_pitfall", "max_false_unclassifiable", "max_false_split"},
+          "synthetic_acceptance")
+    pf = doc["pitfall"]
+    _keys(pf, {"min_confidence", "fdr_q", "min_share", "min_lift", "low_conf_share"}, "pitfall")
+    pitfall = PitfallConfig(_num(pf["min_confidence"], "pitfall.min_confidence", 0.0, 1.0),
+                            _num(pf["fdr_q"], "pitfall.fdr_q", 0.001, 0.2),
+                            _num(pf["min_share"], "pitfall.min_share", 0.0, 1.0),
+                            _num(pf["min_lift"], "pitfall.min_lift", 0.01, 1.0),
+                            _num(pf["low_conf_share"], "pitfall.low_conf_share", 0.0, 0.99))
+    sp = doc["split"]
+    _keys(sp, {"min_item_attempts", "min_items_per_group", "max_items_per_node", "min_gap", "fdr_q", "bootstrap_draws", "pass_rate",
+               "max_h_ratio", "error_min_phi"}, "split")
+    split = SplitConfig(_int(sp["min_item_attempts"], "split.min_item_attempts", MIN_ITEM_ATTEMPTS_FLOOR, 100_000),
+                        _int(sp["min_items_per_group"], "split.min_items_per_group", 2, 100),
+                        _int(sp["max_items_per_node"], "split.max_items_per_node", 4, 200),
+                        _num(sp["min_gap"], "split.min_gap", 0.01, 1.0),
+                        _num(sp["fdr_q"], "split.fdr_q", 0.001, 0.2),
+                        _int(sp["bootstrap_draws"], "split.bootstrap_draws", 200, 10_000),
+                        _num(sp["pass_rate"], "split.pass_rate", 0.05, 0.95),
+                        _num(sp["max_h_ratio"], "split.max_h_ratio", 0.0, 1.0),
+                        _num(sp["error_min_phi"], "split.error_min_phi", 0.05, 1.0))
+    _need(split.max_items_per_node >= 2 * split.min_items_per_group, "split.max_items_per_node 不得小于 2 × min_items_per_group")
 
     fp = hashlib.sha256(json.dumps(doc, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()[:16]
     return Config(doc["config_version"], doc["signoff"].strip(), MasteryRule(m["rule"]), min_cell,
@@ -115,7 +166,10 @@ def parse_config(doc: Mapping[str, Any]) -> Config:
                   h["condition_on_shared_prerequisites"],
                   _int(h["max_pairs_per_topic"], "hidden_dependency.max_pairs_per_topic", 1, 1_000_000),
                   _int(a["max_false_not_holds"], "synthetic_acceptance.max_false_not_holds", 0, 1000),
-                  _int(a["max_false_hidden"], "synthetic_acceptance.max_false_hidden", 0, 1000), fp)
+                  _int(a["max_false_hidden"], "synthetic_acceptance.max_false_hidden", 0, 1000), fp, pitfall, split,
+                  _int(a["max_false_pitfall"], "synthetic_acceptance.max_false_pitfall", 0, 1000),
+                  _int(a["max_false_unclassifiable"], "synthetic_acceptance.max_false_unclassifiable", 0, 1000),
+                  _int(a["max_false_split"], "synthetic_acceptance.max_false_split", 0, 1000))
 
 
 def load_config(path: str | Path = CONFIG_PATH) -> Config:

@@ -125,15 +125,29 @@ def disclosable(t: Table2, min_cell: int, margin: int = 0) -> bool:
     return min(t.cells()) >= min_cell + margin
 
 
+def perturb_cells(cells: tuple[int, ...], key: int, tag: str = "") -> tuple[int, ...]:
+    """任意格数的表（第二步）：各格加一个由表键、表标签（节点、编码、题目，公共层）与格位决定的扰动；不小于 0。
+    同一成员集合的不同表（如同一节点的不同编码）用不同标签，扰动各自独立"""
+    return tuple(max(0, x + noise(key, tag + slot)) for x, slot in zip(cells, "abcdefgh"))
+
+
 # ---------- 由计数到输出数值（报表与差分测试共用同一函数） ----------
+def rate_numbers(x: int, n: int, z: float, rate_key: str = "rate") -> dict[str, Any]:
+    """一个比率（两格：x 与 n − x）由计数决定的全部数值：粗分档人数、2 位比率与 Wilson 区间"""
+    lo, hi = S.wilson(x, n, z)
+    return {"n_approx": n_approx(n), rate_key: r2(x / n), f"{rate_key}_ci": [r2(lo), r2(hi)]}
+
+
+def two_group_numbers(x1: int, n1: int, x2: int, n2: int, z: float, groups: tuple[str, str], rate_key: str) -> dict[str, Any]:
+    """两组比率之差（四格）由计数决定的全部数值：两组的 rate_numbers、差值与 Newcombe 区间"""
+    d, lo, hi = S.newcombe(x1, n1, x2, n2, z)
+    return {groups[0]: rate_numbers(x1, n1, z, rate_key), groups[1]: rate_numbers(x2, n2, z, rate_key),
+            "diff": r2(d), "diff_ci": [r2(lo), r2(hi)]}
+
+
 def edge_numbers(x1: int, n1: int, x2: int, n2: int, z: float) -> dict[str, Any]:
     """前置边一条记录里由计数决定的全部数值（不含 p 分档与观测率）：只含粗分档人数与 2 位比率、区间"""
-    l1, u1 = S.wilson(x1, n1, z)
-    l2, u2 = S.wilson(x2, n2, z)
-    d, lo, hi = S.newcombe(x1, n1, x2, n2, z)
-    return {"a_mastered": {"n_approx": n_approx(n1), "b_rate": r2(x1 / n1), "b_rate_ci": [r2(l1), r2(u1)]},
-            "a_not_mastered": {"n_approx": n_approx(n2), "b_rate": r2(x2 / n2), "b_rate_ci": [r2(l2), r2(u2)]},
-            "diff": r2(d), "diff_ci": [r2(lo), r2(hi)]}
+    return two_group_numbers(x1, n1, x2, n2, z, ("a_mastered", "a_not_mastered"), "b_rate")
 
 
 def pair_numbers(a: int, b: int, c: int, d: int, z: float) -> dict[str, Any]:
@@ -259,11 +273,14 @@ def scan_pairs(mp: MapView, mastery: Mastery, cfg: Config, noisy: bool = True) -
     by_topic: dict[str, list[str]] = {}
     for nid, topic in mp.nodes.items():
         by_topic.setdefault(topic, []).append(nid)
-    excluded = {"direct_edge": 0, "transitive": 0, "topic_over_limit": 0}
+    excluded = {"direct_edge": 0, "transitive": 0, "topic_over_limit": 0, "topic_no_data": 0}
     raws: list[dict[str, Any]] = []
     for topic in sorted(by_topic):
         ids = sorted(by_topic[topic])
         total = len(ids) * (len(ids) - 1) // 2
+        if not any(mastery.observed.get(n) for n in ids):     # 整个主题没有任何掌握观测：不扫描，只计数
+            excluded["topic_no_data"] += total
+            continue
         if total > cfg.max_pairs_per_topic:
             excluded["topic_over_limit"] += total
             continue

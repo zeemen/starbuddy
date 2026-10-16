@@ -85,3 +85,102 @@ AS $fn$
    ORDER BY 1, 2
 $fn$;
 -- 落迁移时另加：REVOKE ALL ON FUNCTION … FROM PUBLIC；只 GRANT EXECUTE 给专用只读导出角色；配 RLS / 权限测试。
+
+-- =====================================================================================================================
+-- 第二步扩展（specs/kge09-map-calibration/spec-step2.md）：作答聚合行与错因行的只读导出函数【草案】。
+-- 同样不执行、不是迁移，与上面的函数一起由另起的 [NEEDS-HUMAN] PR 落为迁移（附 RLS 测试）。
+-- 一次调用同时返回两类行（record_kind = 'attempt' / 'error'）：两类行要用同一个伪名对齐同一学生（拆分节点的错因加强证据），
+--   而 salt 每次调用现场生成、不出函数，所以不能分两次调用；执行人按 record_kind 拆成两个文件（RUNBOOK 第 6 节）。
+--   与第一步的掌握状态导出是不同的调用，伪名不可对齐（第二步不需要掌握状态）。
+-- 作答（“按掌握口径取证据”，落迁移时须与学习服务 services/learning/learning/mastery/ 的证据筛选逐条对照，待人确认）：
+--   独立作答（evidence_kind = 'independent'）、证据等级 A、证据与题目都已准入、当前判分为正式语义（formal）、未用提示；
+--   当前判分不需人工复核（human_review_required = false）且判分置信度 ≥ p_min_grade_confidence；
+--   判分只取 correct / incorrect（partial、needs_review 等不导出，待人确认）；每名学生每道题只取第一次符合条件的作答；
+--   学生自报“猜的”（self_report = 'guessed'）且判对的不导出（猜对不是掌握证据）；
+--   题目 → 节点：当前已发布地图版本上、打标审核通过的 kge.item_tag.main_node_id（次要节点不导出，待人确认），节点须是可计算的有效知识节点；
+--   同时导出题目的认知层次（item_tag.cognitive_level，公共层，报表随题目列出）。
+-- 错因：platform.error_attribution 的当前行（superseded_by IS NULL），与作答同口径——只取挂在上面“符合条件的作答”上的错因
+--   （它没有节点列，只有 skill_local_id：经 evidence_ids 找到那次作答的题目、再经 item_tag 挂到节点；挂不上的不导出；
+--   经 kge.skill_link 从能力点挂节点是另一种取法，待人确认）；
+--   只导出 p_usable_codes 里的学科编码（执行人用 python -m kge_calibrate codes 从错因分类表取“明确”的编码；待定与敏感编码，
+--   如 xinli_xiguan，一律不出库）；库内按 学生 × 节点 × 编码 去重（置信度取最大），跨科大类原样导出（工具核对与错因分类表一致）。
+-- 名单与第一步相同（试点参与同意、排除已删除与删除请求进行中的学生）。
+CREATE FUNCTION kge.calibration_export_responses(p_subject platform.subject, p_usable_codes text[], p_min_grade_confidence numeric)
+RETURNS TABLE (record_kind text, pseudonym text, item_id text, node_id text, correct smallint, cognitive_level text,
+               subject_category text, cross_subject_category text, confidence numeric)
+LANGUAGE sql VOLATILE SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $fn$
+  WITH salt AS MATERIALIZED (
+    SELECT public.gen_random_bytes(32) AS s
+  ),
+  pub AS (
+    SELECT v.id FROM kge.map_version v WHERE v.subject = p_subject AND v.status = 'published'
+  ),
+  roster AS (
+    SELECT c.student_id
+      FROM (SELECT DISTINCT ON (cr.student_id) cr.student_id, cr.decision
+              FROM platform.consent_record cr
+             WHERE cr.consent_type = 'pilot_participation'
+             ORDER BY cr.student_id, cr.decided_at DESC, (cr.decision = 'revoked') DESC) c
+      JOIN platform.student_profile sp ON sp.id = c.student_id
+     WHERE c.decision = 'granted'
+       AND sp.erased_at IS NULL
+       AND NOT EXISTS (SELECT 1 FROM platform.erasure_request er WHERE er.student_id = c.student_id AND er.status = 'pending')
+  ),
+  tag AS (                                        -- 题目 → 主节点（已发布版本、打标审核通过、可计算的有效知识节点）与认知层次
+    SELECT t.item_id, t.main_node_id, t.cognitive_level
+      FROM kge.item_tag t
+      JOIN pub ON t.map_version_id = pub.id
+      JOIN kge.knowledge_node n ON n.map_version_id = pub.id AND n.id = t.main_node_id
+     WHERE t.subject = p_subject AND t.tag_review_status = 'approved'
+       AND n.level = 'node' AND n.status = 'active' AND n.kind IN ('kp', 'ability_kp', 'viewpoint')
+  ),
+  first_attempt AS (                              -- 每名学生每道题第一次符合条件的作答（作答与错因共用这一口径）
+    SELECT DISTINCT ON (a.student_id, a.item_id) a.student_id, a.item_id, a.response_evidence_id, a.self_report,
+           tag.main_node_id AS node_id, tag.cognitive_level, g.verdict
+      FROM platform.attempt a
+      JOIN roster r ON r.student_id = a.student_id
+      JOIN platform.evidence_event e ON e.evidence_id = a.response_evidence_id AND e.student_id = a.student_id AND e.subject = a.subject
+      JOIN platform.item i ON i.subject = a.subject AND i.item_id = a.item_id
+      JOIN tag ON tag.item_id = a.item_id
+      JOIN LATERAL (SELECT g0.verdict, g0.semantics, g0.human_review_required, g0.confidence FROM platform.grade_result g0
+                     WHERE g0.attempt_id = a.attempt_id AND g0.attempt_occurred_at = a.occurred_at
+                       AND g0.student_id = a.student_id AND g0.superseded_by IS NULL
+                     ORDER BY g0.created_at DESC, g0.id LIMIT 1) g ON true
+     WHERE a.subject = p_subject
+       AND e.evidence_kind = 'independent' AND e.evidence_level = 'A'
+       AND e.admission = 'admitted' AND i.admission = 'admitted'
+       AND g.semantics = 'formal' AND coalesce(a.hint_level_used, 0) = 0
+       AND NOT g.human_review_required AND g.confidence >= p_min_grade_confidence
+       AND g.verdict IN ('correct', 'incorrect')
+     ORDER BY a.student_id, a.item_id, a.occurred_at, a.attempt_id
+  ),
+  err AS (                                        -- 挂在符合条件的作答上的当前错因行；只取可用编码；学生 × 节点 × 编码去重
+    SELECT x.student_id, f.node_id, x.subject_category, min(x.cross_subject_category::text) AS cross_subject_category,
+           max(x.confidence) AS confidence
+      FROM platform.error_attribution x
+      JOIN first_attempt f ON f.student_id = x.student_id AND f.response_evidence_id = ANY (x.evidence_ids)
+     WHERE x.subject = p_subject AND x.superseded_by IS NULL
+       AND x.subject_category = ANY (p_usable_codes)
+     GROUP BY x.student_id, f.node_id, x.subject_category
+  ),
+  rows_out AS (
+    SELECT 'attempt' AS record_kind, f.student_id, f.item_id::text AS item_id, f.node_id::text AS node_id,
+           (CASE f.verdict WHEN 'correct' THEN 1 ELSE 0 END)::smallint AS correct, f.cognitive_level,
+           NULL::text AS subject_category, NULL::text AS cross_subject_category, NULL::numeric AS confidence
+      FROM first_attempt f
+     WHERE NOT (f.verdict = 'correct' AND f.self_report IS NOT DISTINCT FROM 'guessed')   -- 猜对不导出
+    UNION ALL
+    SELECT 'error', x.student_id, NULL, x.node_id::text, NULL, NULL, x.subject_category, x.cross_subject_category,
+           round(x.confidence::numeric, 3)
+      FROM err x
+  )
+  SELECT o.record_kind,
+         'pil-' || translate(substr(encode(public.hmac(convert_to(o.student_id::text, 'UTF8'), salt.s, 'sha256'), 'hex'), 1, 24),
+                             '0123456789', 'ghijklmnop'),
+         o.item_id, o.node_id, o.correct, o.cognitive_level, o.subject_category, o.cross_subject_category, o.confidence
+    FROM rows_out o CROSS JOIN salt
+   ORDER BY 1, 2, 3, 4, 7
+$fn$;
+-- 落迁移时同上：REVOKE ALL … FROM PUBLIC；只 GRANT EXECUTE 给专用只读导出角色；配 RLS / 权限测试。
