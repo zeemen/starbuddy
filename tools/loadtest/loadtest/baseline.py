@@ -8,7 +8,7 @@ from pathlib import Path
 from . import dbstats, meter, outdir
 from .arrivals import Profile, describe, digest, plan, requests, slot_counts
 from .driver import Runner, SmsInbox
-from .metrics import by_endpoint, by_stage, percentile
+from .metrics import by_endpoint, by_stage, gate_summary, percentile
 from .report import BANNER, render_markdown, to_json
 from .seed import family, seed_families, skew_sql
 from .stack import call_records, local_stack
@@ -27,7 +27,8 @@ POOL_NOTE = ("学习服务 asyncpg 池 max 10（learning/app.py）、BFF pg 池 
 
 
 async def run_baseline(profile: Profile, out: Path | None, *, provider_median_ms: float = 300.0, provider_p90_ms: float = 900.0,
-                       faults: dict[str, dict] | None = None, scale_note: str | None = None, retry_scale: float = 1.0) -> dict:
+                       faults: dict[str, dict] | None = None, scale_note: str | None = None, retry_scale: float = 1.0,
+                       subject_gate: bool = False, gate_config: Path | None = None) -> dict:
     arrivals = plan(profile)
     planned = requests(profile, arrivals)
     slots = slot_counts(arrivals)
@@ -36,7 +37,8 @@ async def run_baseline(profile: Profile, out: Path | None, *, provider_median_ms
 
     zx_points = {k: v["points"] for k, v in load_zhixing_items().items()}
     async with local_stack(seed_value=profile.seed, students=slots["student"], provider_median_ms=provider_median_ms,
-                           provider_p90_ms=provider_p90_ms, retry_scale=retry_scale) as st:
+                           provider_p90_ms=provider_p90_ms, retry_scale=retry_scale, subject_gate=subject_gate,
+                           practice=profile.practice, gate_config=gate_config) as st:
         seeded = await seed_families(st.admin, st.bff_pool, [f for fs in fams.values() for f in fs])
         for vendor, spec in (faults or {}).items():
             await st.set_fault(vendor, spec)
@@ -57,6 +59,8 @@ async def run_baseline(profile: Profile, out: Path | None, *, provider_median_ms
         leak = await meter.leak_report(st.admin, [f.student for fs in fams.values() for f in fs])
         provider = await st.provider_stats()
         records = call_records(st.learning_log)
+        # 分学科并发闸门（PLT-16）：只取访问日志里 gate_* 枚举字段的汇总（临时目录随栈删除）
+        gate = gate_summary(st.bff_log.read_text(encoding="utf-8", errors="replace").splitlines())
 
     rec = runner.recorder
     wall = timing["wall_seconds"]
@@ -68,6 +72,7 @@ async def run_baseline(profile: Profile, out: Path | None, *, provider_median_ms
         "stages": by_stage(rec), "endpoints": by_endpoint(rec, wall), "skipped": dict(sorted(rec.skipped.items())),
         "provider": {"median_ms": provider_median_ms, "p90_ms": provider_p90_ms, "counts": coded(provider.get("counts", {}))},
         "faults": coded(faults or {}), "retry_scale": retry_scale,
+        "subject_gate": {"enabled": subject_gate, "custom_config": gate_config is not None, "by_subject": gate},
         "db": {"activity": activity, "top_queries": top, "stat_statements": st.stat_statements, "pool_note": POOL_NOTE},
         "metering": {**leak, "skew": EXPIRY_SKEW, "expired_by_job": expired},
         "model_calls": {

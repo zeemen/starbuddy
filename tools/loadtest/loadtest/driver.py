@@ -5,6 +5,7 @@
   确定成功结算 / 确定失败释放 / 结果未知同键退避重试，仍未知则不结算不释放（留给过期任务）；
 - 计量旅程直接调计量函数（与 BFF 同一组函数、同一数据库角色）。
 请求序列（到达、步骤、幂等键）逐条记下，压测后与计划比对（arrivals.digest）。
+PLT-16：429 限流与 503 SUBJECT_BUSY（分学科并发闸门被拒）单列（仍算错误）；--with-practice 时学生旅程另走再练与复测的列表、取题。
 """
 from __future__ import annotations
 
@@ -24,7 +25,7 @@ from .answers import Answers, for_student
 from .arrivals import Arrival, Profile, sid, step_key
 from .envelopes import grade_request
 from .metrics import Recorder
-from .scenarios import JOURNEYS, PlannedRequest
+from .scenarios import PlannedRequest
 from .seed import Family
 
 PREFIX = "/bff/v0"
@@ -92,12 +93,28 @@ def _parse_ts(v) -> float:
     return datetime.fromisoformat(str(v).replace("Z", "+00:00")).timestamp()
 
 
-def classify(status: int) -> str:
+def classify(status: int, code: str | None = None) -> str:
     if 200 <= status < 300:
         return "ok"
     if status == 402:
         return "rejected"  # 额度不足、宵禁等业务拒绝（不算错误，单列）
+    # PLT-16：限流（429）与分学科并发闸门被拒（503 SUBJECT_BUSY）单列；仍按错误计（错误率口径不变），报表另给两列
+    if status == 429:
+        return "throttled"
+    if status == 503 and code == "SUBJECT_BUSY":
+        return "busy"
     return "http_4xx" if status < 500 else "http_5xx"
+
+
+def problem_code(r: httpx.Response) -> str | None:
+    """503 时读问题码（只取 code 一个枚举值，不留响应内容）"""
+    if r.status_code != 503:
+        return None
+    try:
+        v = r.json()
+    except ValueError:
+        return None
+    return v.get("code") if isinstance(v, dict) and isinstance(v.get("code"), str) else None
 
 
 @dataclass
@@ -133,8 +150,10 @@ class Runner:
         except httpx.TransportError as e:
             self.recorder.add(stage, step, (time.monotonic() - t) * 1000, "transport", type(e).__name__)
             return None
-        outcome = "ok" if r.status_code in expect else classify(r.status_code)
-        self.recorder.add(stage, step, (time.monotonic() - t) * 1000, outcome, str(r.status_code))
+        code = problem_code(r)
+        outcome = "ok" if r.status_code in expect else classify(r.status_code, code)
+        label = f"{r.status_code} {code}" if code == "SUBJECT_BUSY" else str(r.status_code)
+        self.recorder.add(stage, step, (time.monotonic() - t) * 1000, outcome, label)
         return r
 
     async def timed_db(self, stage: int, step: str, fn: Callable[[], Awaitable[dict]], ok: set[str]) -> dict | None:
@@ -221,6 +240,23 @@ class Runner:
             except StepFailed:
                 pass  # 一科批改失败（例如模型主备全失效）：学生照常继续下一科与星图
         await self.get(run, "star_map", f"/students/{f.student}/star-map", s)
+        if self.profile.practice:
+            await self.practice_steps(a, f, s, run)
+
+    async def practice_steps(self, a: Arrival, f: Family, s: Session, run) -> None:
+        """PLT-16（--with-practice）：数学的再练与复测，各一次列表、一次取题（取题经 BFF 的分学科闸门）。
+        列表里没有到期条目时用（种子、到达、步骤）派生的条目 ID 取题：学习服务回 404，请求照样经过闸门，记为预期结果；
+        四步总是都发出（请求序列可复现）。作答不在场景里（要有到期条目与票据）。"""
+        for kind in ("practice", "retest"):
+            base = f"/students/{f.student}/{kind}/math"
+            r = await run(f"{kind}.queue", lambda: self.bff.get(PREFIX + base, headers=self.headers(s, False)))
+            due = None
+            if r is not None and r.status_code == 200:
+                entries = r.json().get("entries") or []
+                due = next((e.get("entry_id") for e in entries if isinstance(e, dict) and e.get("status") == "due"), None)
+            eid = due or sid("entry", self.profile.seed, a.index, kind)
+            await run(f"{kind}.next", lambda: self.bff.post(f"{PREFIX}{base}/entries/{eid}/next", headers=self.headers(s, True)),
+                      frozenset() if due else frozenset({404}))
 
     async def parent(self, a: Arrival, run) -> None:
         f = self.families["parent"][a.slot]
@@ -258,7 +294,7 @@ class Runner:
                       "wenli": (ans.wenli_item, ans.wenli_text)}[subject]
         at = (BASE_DAY + timedelta(days=5, seconds=a.index)).isoformat()
         body = grade_request(subject, f.student, item, text, sid("attempt", self.profile.seed, a.index, subject), at)
-        self.issued.append(PlannedRequest(a.index, JOURNEYS[a.kind].index(step), step, key))
+        self.issued.append(PlannedRequest(a.index, self.profile.steps(a.kind).index(step), step, key))
         t = time.monotonic()
         try:
             out = await harness.metered_grade(self.harness, self.harness_url, account=f.student_account, student=f.student, key=key,
@@ -281,7 +317,7 @@ class Runner:
         t = time.monotonic()
         async with sems[a.stage]:
             self.recorder.queue_wait_ms.append((time.monotonic() - t) * 1000)
-            steps = JOURNEYS[a.kind]
+            steps = self.profile.steps(a.kind)
             done: set[str] = set()
 
             async def think(step: str) -> None:
@@ -289,12 +325,12 @@ class Runner:
                 if i > 0 and a.think_s[i] > 0:
                     await asyncio.sleep(a.think_s[i])
 
-            async def run(step: str, fn):
+            async def run(step: str, fn, expect: frozenset[int] = frozenset()):
                 await think(step)
                 if step not in done:
                     done.add(step)
                     self.issued.append(PlannedRequest(a.index, steps.index(step), step, step_key(self.profile.seed, a, step)))
-                return await self.timed(a.stage, step, fn)
+                return await self.timed(a.stage, step, fn, expect)
 
             async def run_db(step: str, fn, ok: set[str]):
                 if step not in done:

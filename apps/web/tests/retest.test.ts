@@ -108,6 +108,8 @@ test('取题：只认 sbr1 票据（再练票据不认）、类别与题面；�
   assert.equal(retestUiError({ ok: false, status: 402, code: 'QUOTA_UNAVAILABLE', reason: 'curfew' }, 'next'), 'curfew');
   assert.equal(retestUiError({ ok: false, status: 503, code: 'RETEST_UNAVAILABLE', reason: null }, 'answer'), 'unavailable');
   assert.equal(retestUiError({ ok: false, status: 503, code: 'UPSTREAM_UNAVAILABLE', reason: null }, 'answer'), 'retry');
+  assert.equal(retestUiError({ ok: false, status: 503, code: 'SUBJECT_BUSY', reason: null }, 'answer'), 'rate_limited', 'PLT-16 闸门被拒的作答：留票据原样重发');
+  assert.equal(retestUiError({ ok: false, status: 503, code: 'SUBJECT_BUSY', reason: null }, 'next'), 'unavailable', 'PLT-16 闸门被拒的取题：稍后再试');
 });
 
 test('复测文案全部是 {{TODO_COPY:retest.*}} 占位，已并入壳文案；编码映射齐全；条目类别是纯占位；没有关于学生的陈述与评价词', () => {

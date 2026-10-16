@@ -15,7 +15,7 @@ import uuid
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 
-from .scenarios import DEFAULT_MIX, JOURNEYS, PlannedRequest, keyed
+from .scenarios import DEFAULT_MIX, JOURNEYS, PlannedRequest, journey_steps, keyed
 
 NS = uuid.UUID("7d1b8a52-5c0e-4f31-9a55-000000000505")
 
@@ -37,6 +37,10 @@ class Profile:
     mean_session_s: float = 6.0     # 用于由并发数推到达率
     think_mean_s: float = 0.2       # 步骤之间的平均思考时间
     mix: tuple[tuple[str, float], ...] = DEFAULT_MIX
+    practice: bool = False          # 学生旅程另走再练与复测的列表、取题（PLT-16；不开时序列与以前逐项相同）
+
+    def steps(self, kind: str) -> tuple[str, ...]:
+        return journey_steps(kind, self.practice)
 
     def __post_init__(self) -> None:
         if not self.stages or any(s.concurrency < 1 or s.duration_s <= 0 for s in self.stages):
@@ -96,7 +100,7 @@ def plan(profile: Profile) -> list[Arrival]:
             if t >= t0 + st.duration_s:
                 break
             kind = rng.choices(kinds, weights)[0]
-            n = len(JOURNEYS[kind])
+            n = len(profile.steps(kind))
             think = tuple(round(rng.expovariate(1 / profile.think_mean_s), 4) if profile.think_mean_s > 0 else 0.0
                           for _ in range(n))
             out.append(Arrival(len(out), si, round(t, 4), kind, slots[kind], think))
@@ -119,7 +123,7 @@ def step_key(seed: int, a: Arrival, step: str) -> str | None:
 def requests(profile: Profile, arrivals: Iterable[Arrival] | None = None) -> list[PlannedRequest]:
     arrivals = plan(profile) if arrivals is None else arrivals
     return [PlannedRequest(a.index, i, step, step_key(profile.seed, a, step))
-            for a in arrivals for i, step in enumerate(JOURNEYS[a.kind])]
+            for a in arrivals for i, step in enumerate(profile.steps(a.kind))]
 
 
 def digest(reqs: Iterable[PlannedRequest]) -> str:

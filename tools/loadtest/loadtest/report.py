@@ -12,6 +12,21 @@ def _fmt(v) -> str:
     return "—" if v is None else (f"{v:.1f}" if isinstance(v, float) else str(v))
 
 
+def render_gate(g: dict | None) -> list[str]:
+    """分学科并发闸门（PLT-16）：按学科的放行 / 排队后放行 / 被拒与排队毫秒分档（来自 BFF 访问日志的枚举字段）"""
+    if not g or not g.get("enabled"):
+        return ["", "分学科并发闸门：未打开（--subject-gate 打开；开关关时 BFF 行为与以前逐字节相同）"]
+    out = ["", "## 分学科并发闸门（BFF 访问日志汇总）", "",
+           "| 学科码 | 立即放行 | 排队后放行 | 被拒 | 绕过（已计量的重试） | 被拒原因 | 排队毫秒分档 |", "|---|---|---|---|---|---|---|"]
+    if not g.get("by_subject"):
+        out.append("| — | 0 | 0 | 0 | 0 | — | — |")
+    for subject, d in g.get("by_subject", {}).items():
+        reasons = "、".join(f"{k}×{v}" for k, v in sorted(d["reasons"].items())) or "—"
+        buckets = "、".join(f"{k}×{v}" for k, v in d["queue_ms"].items()) or "—"
+        out.append(f"| {subject} | {d['admitted']} | {d['queued']} | {d['rejected']} | {d.get('bypassed', 0)} | {reasons} | {buckets} |")
+    return out
+
+
 def render_markdown(r: dict) -> str:
     lines = [f"# 压测基线报告（{BANNER}）", ""]
     if r.get("scale_note"):
@@ -35,12 +50,14 @@ def render_markdown(r: dict) -> str:
         lines.append(f"| {p['stages'][s['stage']]['concurrency']} 并发 | {s['count']} | {_fmt(s['error_rate'])} | {_fmt(s['p50_ms'])} | "
                      f"{_fmt(s['p95_ms'])} | {_fmt(s['p99_ms'])} | {_fmt(s['throughput_rps'])} |")
     lines += ["", "## 各接口", "",
-              "| 接口 | 请求数 | 错误率 | 业务拒绝 | p50 ms | p95 ms | p99 ms | 吞吐 req/s | 状态 |",
-              "|---|---|---|---|---|---|---|---|---|"]
+              "| 接口 | 请求数 | 错误率 | 业务拒绝 | 429 限流 | 503 SUBJECT_BUSY | p50 ms | p95 ms | p99 ms | 吞吐 req/s | 状态 |",
+              "|---|---|---|---|---|---|---|---|---|---|---|"]
     for step, d in r["endpoints"].items():
         codes = "、".join(f"{c}×{n}" for c, n in d["codes"].items())
-        lines.append(f"| {ENDPOINTS.get(step, step)} | {d['count']} | {_fmt(d['error_rate'])} | {d['rejected']} | {_fmt(d['p50_ms'])} | "
+        lines.append(f"| {ENDPOINTS.get(step, step)} | {d['count']} | {_fmt(d['error_rate'])} | {d['rejected']} | {d.get('throttled_429', 0)} | "
+                     f"{d.get('subject_busy_503', 0)} | {_fmt(d['p50_ms'])} | "
                      f"{_fmt(d['p95_ms'])} | {_fmt(d['p99_ms'])} | {_fmt(d['throughput_rps'])} | {codes} |")
+    lines += render_gate(r.get("subject_gate"))
     if r["skipped"]:
         lines += ["", "跳过的步骤（前置失败）：" + "、".join(f"{ENDPOINTS.get(k, k)} ×{v}" for k, v in r["skipped"].items())]
     db = r["db"]
@@ -67,7 +84,7 @@ def render_markdown(r: dict) -> str:
               f"- 共 {mc['total']} 次；按科目与任务：" + "、".join(f"{k} {v}" for k, v in mc["by_subject_task"].items()),
               "- 结果：" + "、".join(f"{k} {v}" for k, v in mc["by_outcome"].items()), ""]
     lines += ["## 说明", "",
-              "- 分位数为最近秩法；错误 = 非 2xx 且非 402 业务拒绝，或连接失败；",
+              "- 分位数为最近秩法；错误 = 非 2xx 且非 402 业务拒绝，或连接失败（429 限流与 503 SUBJECT_BUSY 仍算错误，另单列两列）；",
               "- 批改没有 BFF HTTP 入口（壳里尚无批改路由）：经计量驱动桩直接运行 BFF 的 meteredCall（耗时含预留、同键退避重试与结算）；",
               "- 负载生成器、学习服务、BFF、适配器、假供应商与数据库同在一台机器，互相争用 CPU；数字只作回归比较的基线；",
               f"- {BANNER}。", ""]

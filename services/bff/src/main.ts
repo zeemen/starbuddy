@@ -39,6 +39,11 @@
 //                          读不到拒绝启动。家长端本月没有快照时经 BFF_INSIGHT_URL 调洞察服务生成接口（同一个 caller=bff 令牌）；
 //                          不配洞察服务时家长端本月没有快照就 503。不计量
 //   BFF_TRUST_SECRET       信任界面专用密钥（删除确认凭据、异议幂等键）：十六进制 ≥ 32 字节，规则同 BFF_AUTH_SECRET
+//   STARBUDDY_SUBJECT_GATE 分学科并发闸门的开关（只认 subject_gate；src/gate/subject-gate.ts，PLT-16 第一步）；缺省关：不读配置、不建闸门，
+//                          响应与访问日志逐字节不变。打开时启动即读 config/concurrency.json（读不到或不合格拒绝启动），诊断开始 / 取题 / 探针 / 作答、
+//                          再练与复测的取题与作答在计量之前按学科（另按学生）取名额，超限回 503 SUBJECT_BUSY（带 retry-after）；
+//                          闸门状态在进程内：dev / test 以外须在配置里声明 single_instance: true 才建闸门，否则不建并告警；建了也告警
+//   BFF_CONCURRENCY_CONFIG dev / test：换一份闸门配置（config/concurrency.json 的格式）；其余环境设了就拒绝启动
 // 诊断的宵禁判断用数据库的计量时钟（platform.meter_guard_status，迁移 0030），BFF 没有自己的时钟开关。
 import pg from 'pg';
 import { httpDiagnosisLearning } from './diagnosis/learning-client.ts';
@@ -63,6 +68,7 @@ import { httpRetestLearning } from './retest/learning-client.ts';
 import { parseFamilyGoalsFeature } from './family/features.ts';
 import { cleanWith, httpMonthlyPlanClient, loadTemplates, parseMonthlyPlanFeature } from './family/monthly-plan.ts';
 import { lexicon, noPromiseLexicon } from './trust/lexicon.ts';
+import { createSubjectGate, decideSubjectGate, loadConcurrencyConfig, parseSubjectGateFeature } from './gate/subject-gate.ts';
 
 // 配置不全、环境不认识、非 dev / test 却没有短信供应商：一律拒绝启动（在连数据库之前）
 let shellDeps: Omit<ShellDeps, 'pool'>;
@@ -90,12 +96,24 @@ try {
   }
   const shellConfigPath = process.env['BFF_SHELL_CONFIG'];
   if (shellConfigPath !== undefined && !isLocalEnv(env)) throw new Error('BFF_SHELL_CONFIG 只在 dev / test 可用');
+  const gateOn = parseSubjectGateFeature(env, process.env['STARBUDDY_SUBJECT_GATE']);
+  const concurrencyPath = process.env['BFF_CONCURRENCY_CONFIG'];
+  if (concurrencyPath !== undefined && !isLocalEnv(env)) throw new Error('BFF_CONCURRENCY_CONFIG 只在 dev / test 可用');
   shellDeps = { config: configPath === undefined ? loadAuthConfig() : loadAuthConfig(configPath), keys, env, sms: createSmsSender(env), shellOrigin,
                 trustClientIpHeader: process.env['BFF_TRUST_CLIENT_IP'] === '1',
                 shell: { config: shellConfigPath === undefined ? loadShellConfig() : loadShellConfig(shellConfigPath), orch: { enabled: orchOn } },
                 trust: { features: parseTrustFeatures(env, process.env['STARBUDDY_TRUST_UI']) },
                 starMap: { features: starMapFeatures }, practice: { enabled: practiceOn }, retest: { enabled: retestOn },
                 familyGoals: { enabled: familyGoalsOn }, monthlyPlan: { enabled: monthlyPlanOn } };
+  // 分学科并发闸门（PLT-16）：开关关时不读配置、不建闸门（与开关上线前逐字节一致）
+  if (gateOn) {
+    const gateConfig = concurrencyPath === undefined ? loadConcurrencyConfig() : loadConcurrencyConfig(concurrencyPath);
+    // 闸门的占用与队列在进程内：多实例部署时每个实例各算各的（spec 待人确认 #3）。dev / test 以外没声明 single_instance 就不建并告警，
+    // 建了也告警（同 rest.singleInstance 先例）
+    const decision = decideSubjectGate(env, gateConfig);
+    if (decision.build) shellDeps.subjectGate = createSubjectGate(gateConfig);
+    console.warn(JSON.stringify(decision.warning));
+  }
   // 连续使用提醒的计时在进程内（src/shell/rest.ts）：dev / test 以外没声明单实例部署就不启用，并在启动时告警（pilot 前须完成会话表加列迁移）
   if (!isLocalEnv(env) && !shellDeps.shell!.config!.rest.singleInstance) {
     console.warn(JSON.stringify({ event: 'rest_reminder_disabled', reason: 'in_process_timer_requires_single_instance' }));

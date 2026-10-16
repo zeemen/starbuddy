@@ -6,7 +6,7 @@ import statistics
 import pytest
 
 from loadtest.arrivals import PROFILES, Profile, Stage, digest, parse_stages, plan, requests, slot_counts
-from loadtest.scenarios import ENDPOINTS, JOURNEYS, keyed
+from loadtest.scenarios import ENDPOINTS, JOURNEYS, PRACTICE_STEPS, keyed
 
 
 def test_same_seed_same_request_sequence():
@@ -65,6 +65,25 @@ def test_keys_only_on_write_steps_and_all_distinct():
 
 def test_every_step_has_a_report_label():
     assert {s for steps in JOURNEYS.values() for s in steps} <= set(ENDPOINTS)
+    assert set(PRACTICE_STEPS) <= set(ENDPOINTS)
+
+
+def test_practice_steps_optional_and_default_sequence_unchanged():
+    """PLT-16 --with-practice：不开时请求序列与以前逐项相同；开时只在学生旅程末尾追加再练与复测的列表、取题（前面各步序号不变、没有幂等键）"""
+    base = Profile(seed=11, stages=(Stage(8, 30),))
+    assert base.practice is False
+    assert all(base.steps(k) == JOURNEYS[k] for k in JOURNEYS)
+    assert digest(requests(base)) == digest(requests(Profile(seed=11, stages=(Stage(8, 30),), practice=False)))
+    on = Profile(seed=11, stages=(Stage(8, 30),), practice=True)
+    assert on.steps("student") == JOURNEYS["student"] + PRACTICE_STEPS
+    assert on.steps("parent") == JOURNEYS["parent"] and on.steps("meter") == JOURNEYS["meter"]
+    reqs = requests(on)
+    assert digest(reqs) != digest(requests(base))
+    assert all(r.key is None for r in reqs if r.step in PRACTICE_STEPS)
+    assert all(len(a.think_s) == len(on.steps(a.kind)) for a in plan(on))
+    student = [r for r in reqs if r.step in PRACTICE_STEPS]
+    assert student and {r.seq for r in student} == set(range(len(JOURNEYS["student"]), len(JOURNEYS["student"]) + len(PRACTICE_STEPS)))
+    assert digest(requests(on)) == digest(requests(Profile(seed=11, stages=(Stage(8, 30),), practice=True))), "同种子可复现"
 
 
 def test_profiles():

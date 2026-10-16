@@ -173,11 +173,18 @@ export function createShellHandler(deps: ShellDeps): (req: IncomingMessage, res:
       }
 
       const note = (k: string, v: string) => { record[k] = v; };
+      // 分学科并发闸门（PLT-16，开关打开时才有）：响应写完之前连接就关闭了 → 排队中的请求离队、入闸后计量前不再执行
+      let signal: AbortSignal | undefined;
+      if (deps.subjectGate) {
+        const ac = new AbortController();
+        res.once('close', () => { if (!res.writableEnded) ac.abort(); });
+        signal = ac.signal;
+      }
       let reply: Reply;
       if (session && route.ownTx) {
         // handler 自己按会话账号开事务（feature-routes.ts）；这里不给查询入口，防止在事务外查询
         const q: Query = () => Promise.reject(new Error('route manages its own transaction'));
-        reply = await route.handler({ deps, params, body, session, q, presentedToken: presented, note });
+        reply = await route.handler({ deps, params, body, session, q, presentedToken: presented, note, ...(signal ? { signal } : {}) });
       } else if (session) {
         const s = session;
         // 会话账号只在本事务内生效（set_config 第三个参数 true），连接池复用不串号（第二轮 N4）

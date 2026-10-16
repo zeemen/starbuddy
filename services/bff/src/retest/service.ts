@@ -12,15 +12,20 @@
 // 票据：学习服务的复测票据（rt1）封进不透明的 sbr1 票据（与再练的 sbp1 同一把密钥，前缀与附加数据不同，互相解不开）。
 // 转给前端的只有：条目 ID、知识节点与层次、条目类别（复测 / 验证）、状态、题面、判分结论（与待复核标记）、条目新状态（due / done）。
 // 不转：掌握、置信度、证据 ID、错因、任务原因、空原因编码、题目引用、学习服务票据（规则 3、11）。任务说明只用前端的固定文案占位。
+// 分学科并发闸门（PLT-16 第一步，src/gate/subject-gate.ts；开关关时 deps.gate 为空，直接执行原来的代码）：
+//   取题：宵禁检查之后包住转发；作答：宵禁检查（含宵禁中只找回原结果的那条路）之后、只读预检与计次之前取名额
+//   （被拒回 503 SUBJECT_BUSY：本次请求没有新增计量、不预检；之前已计次的用同一张票据重试不再计），处理结束（含失败、抛错）在 finally 里释放；
+//   这张票据已计过次（counted）的重试绕过闸门（不再被拒）；列表不经闸门。
+import { withSubjectSlot, type GateObserve, type SubjectGate } from '../gate/subject-gate.ts';
 import { P } from '../http/problems.ts';
 import type { Reply } from '../http/routes.ts';
 import { pickRich, type RichItem } from '../item-rich.ts';
 import { usageIdFor } from '../metering/uuid.ts';
 import {
-  alreadyCounted, answerFits, countPractice, curfewBlocked, EXPIRY_MARGIN_MS, isDeterministic, isSelf, SUBJECTS, VERDICTS, withRetry,
+  alreadyCounted, answerFits, countPractice, curfewBlocked, EXPIRY_MARGIN_MS, isDeterministic, isSelf, SUBJECTS, gateSlot, subjectBusy, VERDICTS, withRetry,
   type AnswerInput, type AnswerValue,
 } from '../practice/service.ts';
-import { MAX_SEALED, openTicket, RETEST_SEALED_PREFIX, sealTicket, type ItemFormat } from '../practice/ticket.ts';
+import { MAX_SEALED, openTicket, RETEST_SEALED_PREFIX, sealTicket, type ItemFormat, type OpenedTicket } from '../practice/ticket.ts';
 import type { Pool } from 'pg';
 import type { RetestLearning, RetestOutcome } from './learning-client.ts';
 
@@ -48,6 +53,10 @@ export interface RetestDeps {
   retryBudgetMs?: number;
   monotonic?: () => number;
   note?: (event: string) => void;
+  /** 分学科并发闸门（PLT-16；开关关时为空）、访问日志的记录入口（ctx.note：只记学科码与闸门结果）、请求方断开的信号 */
+  gate?: SubjectGate;
+  observe?: GateObserve;
+  signal?: AbortSignal | undefined;
 }
 
 const problem = (status: number, code: string, title: string, extra: Record<string, unknown> = {}): Reply =>
@@ -200,6 +209,11 @@ export async function retestNext(deps: RetestDeps, account: string, student: str
   if (!(await isSelf(deps.pool, account, student))) return NOT_FOUND;
   const blocked = await curfewBlocked(deps, account, student);  // 宵禁：取题
   if (blocked) return blocked;
+  // 闸门（PLT-16）：宵禁检查之后包住转发
+  return withSubjectSlot(deps.gate, gateSlot(deps, subject, student), subjectBusy, () => retestNextAdmitted(deps, student, subject, entry));
+}
+
+async function retestNextAdmitted(deps: RetestDeps, student: string, subject: string, entry: string): Promise<Reply> {
   const r = await withRetry(deps, (ms) => deps.learning.next(student, subject, entry, ms));
   if (r.kind === 'unknown') return fromUnknown(r);
   if (r.kind === 'failure') return fromRetestFailure(r, 'next');
@@ -242,6 +256,14 @@ export async function retestAnswer(deps: RetestDeps, account: string, student: s
     if (!found || (found['entry'] as { entry_id: string }).entry_id !== t.entryId) return UPSTREAM_UNAVAILABLE;
     return json(200, found, replayHeader(true));
   }
+  // 闸门（PLT-16）：宵禁检查之后、只读预检与计次之前（被拒的请求本次不预检、不计次）；这张票据已计过次的重试绕过闸门，不再被拒
+  return withSubjectSlot(deps.gate, gateSlot(deps, subject, student, counted), subjectBusy,
+                         () => retestAnswerAdmitted(deps, account, student, subject, t, key, counted, input));
+}
+
+/** 已入闸的作答：预检（没计过次时）、计次，再调学习服务（名额由 withSubjectSlot 在 finally 里释放） */
+async function retestAnswerAdmitted(deps: RetestDeps, account: string, student: string, subject: string, t: OpenedTicket, key: string,
+                                    counted: boolean, input: AnswerInput): Promise<Reply> {
   if (!counted) {
     // 计次之前的只读预检（审查意见 2）：条目已变、票据已用、学习服务那边已过期等，在这里就拒绝，不扣冤枉次。
     // 已计过次的键不预检（同一张票据重试要找回原结果，学习服务按幂等处理）

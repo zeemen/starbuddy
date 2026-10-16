@@ -109,7 +109,8 @@ export type UiError =
  * BFF 的失败 → 页面错误编码（services/bff/openapi/practice.v0.yaml）：
  *   402（宵禁、没有权益、今天的自练次数用完）、409（条目不开、票据已用）、410（票据过期）、422（作答形状不对、票据无效）、
  *   429（作答时被限流：请求没进 BFF 的处理，票据还能用；稍等之后用同一张票据、原样的作答再提交一次）、
- *   503（UPSTREAM_UNAVAILABLE / 断连：作答时结果未知，用同一张票据再提交一次，BFF 不再计次；PRACTICE_UNAVAILABLE：确定失败）。
+ *   503（UPSTREAM_UNAVAILABLE / 断连：作答时结果未知，用同一张票据再提交一次，BFF 不再计次；PRACTICE_UNAVAILABLE：确定失败；
+ *   SUBJECT_BUSY：分学科并发闸门满了，本次没有新增计量；作答时按 429 同样处理（留票据、原样重发），取题时按“稍后再试”）。
  */
 export function uiError(r: Extract<PracticeApi<unknown>, { ok: false }>, op: 'next' | 'answer'): UiError {
   const { status, code, reason } = r;
@@ -121,6 +122,9 @@ export function uiError(r: Extract<PracticeApi<unknown>, { ok: false }>, op: 'ne
   if (status === 410) return 'expired';
   if (status === 422 && code === 'TICKET_INVALID') return 'ticket_used';
   if (status === 422 && code === 'INVALID_ANSWER') return 'invalid_answer';
+  // PLT-16 分学科并发闸门：这一科暂时满了（本次请求没有新增计量）。作答按限流处理：留着票据、原样重发首次作答
+  // （之前若有一次结果未知的提交已计次，同一张票据重试绕过闸门、不再计次）；取题沿用“暂时无法完成，请稍后再试”。不另加文案
+  if (status === 503 && code === 'SUBJECT_BUSY') return op === 'answer' ? 'rate_limited' : 'unavailable';
   if (op === 'answer' && status === 503 && (code === 'UPSTREAM_UNAVAILABLE' || code === 'UNAVAILABLE')) return 'retry';
   if (op === 'answer' && status === 429) return 'rate_limited';
   return 'unavailable';

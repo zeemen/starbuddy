@@ -22,7 +22,12 @@
 // 宵禁（审查 B1）：取题与作答在本人核对之后、计次之前查 meter_guard_status 的 in_curfew（src/metering/curfew.ts，与诊断共用），
 //   宵禁中回 402 QUOTA_UNAVAILABLE reason = curfew，不计次、不调学习服务；列表不挡（只读、不出题）。
 // 学习服务调用：结果未知时同一请求重试，整体总时限 45 秒（含每次调用的超时）；确定性拒绝（501、502 ADAPTER_RESULT_REJECTED）不重试。
+// 分学科并发闸门（PLT-16 第一步，src/gate/subject-gate.ts；开关关时 deps.gate 为空，直接执行原来的代码）：学科按学习服务学科码。
+//   取题：宵禁检查之后包住转发；作答：宵禁检查之后、计次之前取名额（被拒回 503 SUBJECT_BUSY：本次请求没有新增计量、不调学习服务；
+//   之前已计次的用同一张票据重试不再计），计次与学习服务调用在名额内，处理结束（含失败、抛错）在 finally 里释放；
+//   同一张票据已计过次的重试绕过闸门（不再被拒）；列表不经闸门。
 import type { Pool } from 'pg';
+import { busyHeaders, withSubjectSlot, type GateObserve, type SubjectGate } from '../gate/subject-gate.ts';
 import { inCurfew } from '../metering/curfew.ts';
 import { withAccount } from '../metering/db.ts';
 import { usageIdFor } from '../metering/uuid.ts';
@@ -30,7 +35,7 @@ import { P } from '../http/problems.ts';
 import type { Reply } from '../http/routes.ts';
 import { pickRich, type RichItem } from '../item-rich.ts';
 import type { PracticeLearning, PracticeOutcome } from './learning-client.ts';
-import { MAX_SEALED, openTicket, sealTicket, SEALED_PREFIX, type ItemFormat } from './ticket.ts';
+import { MAX_SEALED, openTicket, sealTicket, SEALED_PREFIX, type ItemFormat, type OpenedTicket } from './ticket.ts';
 
 export interface PracticeOptions {
   /** 功能开关 practice（缺省关闭：路由不注册） */
@@ -58,6 +63,10 @@ export interface PracticeDeps {
   retryBudgetMs?: number;
   monotonic?: () => number;
   note?: (event: string) => void;
+  /** 分学科并发闸门（PLT-16；开关关时为空）、访问日志的记录入口（ctx.note：只记学科码与闸门结果）、请求方断开的信号 */
+  gate?: SubjectGate;
+  observe?: GateObserve;
+  signal?: AbortSignal | undefined;
 }
 
 const problem = (status: number, code: string, title: string, extra: Record<string, unknown> = {}): Reply =>
@@ -79,6 +88,11 @@ const TICKET_USED = problem(409, 'TICKET_USED', 'this practice item was already 
 const KEY_SEALED = problem(409, 'KEY_SEALED', 'this practice item can no longer be answered; fetch a new one');
 const quota = (reason: string) => problem(402, 'QUOTA_UNAVAILABLE', 'no practice available right now', { reason });
 const CURFEW = quota('curfew');
+/** 闸门被拒（PLT-16）：503 SUBJECT_BUSY 带 retry-after；再练与复测共用 */
+export const subjectBusy = (retryAfterSec: number): Reply => ({ ...fixed(P.SUBJECT_BUSY), headers: busyHeaders(retryAfterSec) });
+/** 闸门的请求描述（学生 ID 只作进程内每生上限的计数键）；bypass：这次是已计次的重试，绕过闸门。再练与复测共用 */
+export const gateSlot = (deps: Pick<PracticeDeps, 'signal' | 'observe'>, subject: string, student: string, bypass = false) =>
+  ({ subject, student, signal: deps.signal, observe: deps.observe, bypass });
 
 /** 前端的学科码（与选科、今日计划同一套）→ 学习服务的学科码。开不开由学习服务的配置决定（语文默认关，回 404） */
 export const SUBJECTS: Readonly<Record<string, string>> = { math: 'aya', politics: 'zhixing', chinese: 'wenli' };
@@ -315,6 +329,11 @@ export async function practiceNext(deps: PracticeDeps, account: string, student:
   if (!(await isSelf(deps.pool, account, student))) return NOT_FOUND;
   const blocked = await curfewBlocked(deps, account, student);  // 宵禁：取题
   if (blocked) return blocked;
+  // 闸门（PLT-16）：宵禁检查之后包住转发
+  return withSubjectSlot(deps.gate, gateSlot(deps, subject, student), subjectBusy, () => nextAdmitted(deps, student, subject, entry));
+}
+
+async function nextAdmitted(deps: PracticeDeps, student: string, subject: string, entry: string): Promise<Reply> {
   const r = await withRetry(deps, (ms) => deps.learning.next(student, subject, entry, ms));
   if (r.kind === 'unknown') return fromUnknown(r);
   if (r.kind === 'failure') return fromFailure(r, 'next');
@@ -350,6 +369,15 @@ export async function practiceAnswer(deps: PracticeDeps, account: string, studen
   }
   const blocked = await curfewBlocked(deps, account, student);  // 宵禁：作答（计次之前）
   if (blocked) return blocked;
+  // 闸门（PLT-16）：宵禁检查之后、计次之前（被拒的请求本次不计次）；同一张票据已经计过次（上一次结果未知或被拒后重试）绕过闸门，不再被拒
+  const counted = deps.gate !== undefined && (await alreadyCounted(deps.pool, account, student, key));
+  return withSubjectSlot(deps.gate, gateSlot(deps, subject, student, counted), subjectBusy,
+                         () => answerAdmitted(deps, account, student, subject, t, key, input));
+}
+
+/** 已入闸的作答：计次，再调学习服务（名额由 withSubjectSlot 在 finally 里释放） */
+async function answerAdmitted(deps: PracticeDeps, account: string, student: string, subject: string, t: OpenedTicket, key: string,
+                              input: AnswerInput): Promise<Reply> {
   const usage = usageIdFor(key);
   const m = await countPractice(deps.pool, account, student, key);
   if (m === 'forbidden') return NOT_FOUND;

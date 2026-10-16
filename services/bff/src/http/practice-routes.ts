@@ -18,6 +18,8 @@ const practice = (op: Op): Handler => async (ctx) => {
     now: () => (ctx.deps.now ? ctx.deps.now() : new Date()).getTime(),
     ...(p.sleep ? { sleep: p.sleep } : {}), ...(p.retryDelaysMs ? { retryDelaysMs: p.retryDelaysMs } : {}), ...(p.note ? { note: p.note } : {}),
     ...(p.retryBudgetMs !== undefined ? { retryBudgetMs: p.retryBudgetMs } : {}), ...(p.monotonic ? { monotonic: p.monotonic } : {}),
+    // 分学科并发闸门（PLT-16，开关关时不传，服务直接执行原来的代码）
+    ...(ctx.deps.subjectGate ? { gate: ctx.deps.subjectGate, observe: ctx.note, signal: ctx.signal } : {}),
   };
   return op(deps, ctx, ctx.session!.accountId, ctx.params['student_id']!, ctx.params['subject']!);
 };

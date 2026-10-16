@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+import json
 import math
 from collections import defaultdict
 from collections.abc import Sequence
@@ -26,7 +27,9 @@ class Sample:
     stage: int
     step: str
     ms: float
-    outcome: str  # ok | http_4xx | http_5xx | transport | rejected（业务拒绝：额度、宵禁等）| skipped
+    # ok | http_4xx | http_5xx | transport | rejected（业务拒绝：额度、宵禁等）| skipped
+    # | throttled（429 限流）| busy（503 SUBJECT_BUSY：分学科并发闸门被拒，PLT-16）——后两类仍算错误，报表另单列
+    outcome: str
 
 
 @dataclass
@@ -68,9 +71,41 @@ def by_endpoint(rec: Recorder, seconds: float) -> dict[str, dict]:
         errs = sum(1 for s in ss if s.outcome not in ("ok", "rejected"))
         d = summarize([s.ms for s in ss], errs, len(ss), seconds)
         d["rejected"] = sum(1 for s in ss if s.outcome == "rejected")
+        d["throttled_429"] = sum(1 for s in ss if s.outcome == "throttled")
+        d["subject_busy_503"] = sum(1 for s in ss if s.outcome == "busy")
         d["codes"] = {code: n for (st, code), n in sorted(rec.codes.items()) if st == step}
         out[step] = d
     return out
+
+
+GATE_RESULTS = ("admitted", "queued", "rejected", "bypassed")
+GATE_BUCKETS = ("0", "lt100", "lt500", "lt2000", "ge2000")
+GATE_REASONS = ("full", "timeout", "per_student", "aborted")
+
+
+def gate_summary(lines) -> dict:
+    """BFF 访问日志（每行一个 JSON）里分学科并发闸门的字段（PLT-16）汇总：按学科的放行 / 排队后放行 / 被拒次数、
+    被拒原因、排队毫秒分档。只读 gate_* 这几个枚举字段，不读也不留任何别的内容；开关关时没有这些字段，结果为空。"""
+    out: dict[str, dict] = {}
+    for line in lines:
+        try:
+            rec = json.loads(line)
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(rec, dict):
+            continue
+        subject, result, bucket = rec.get("gate_subject"), rec.get("gate"), rec.get("gate_queue_ms")
+        # 绕过闸门（已计量的重试）不排队，没有分档
+        if not isinstance(subject, str) or result not in GATE_RESULTS or (result != "bypassed" and bucket not in GATE_BUCKETS):
+            continue
+        d = out.setdefault(subject, {"admitted": 0, "queued": 0, "rejected": 0, "bypassed": 0, "reasons": {}, "queue_ms": {}})
+        d[result] += 1
+        if result != "bypassed":
+            d["queue_ms"][bucket] = d["queue_ms"].get(bucket, 0) + 1
+        reason = rec.get("gate_reason")
+        if result == "rejected" and reason in GATE_REASONS:
+            d["reasons"][reason] = d["reasons"].get(reason, 0) + 1
+    return dict(sorted(out.items()))
 
 
 def by_stage(rec: Recorder) -> list[dict]:

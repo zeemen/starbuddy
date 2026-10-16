@@ -193,6 +193,8 @@ test('错误映射：402 宵禁与额度、409、410、422、503（作答时结�
     [f(404, 'NOT_FOUND'), 'next', 'not_found'], [f(401, 'UNAUTHENTICATED'), 'answer', 'login'], [f(403, 'FORBIDDEN'), 'next', 'unavailable'],
     [f(429, 'TOO_MANY_REQUESTS'), 'answer', 'rate_limited'], [f(429, 'RATE_LIMITED'), 'answer', 'rate_limited'],
     [f(429, 'TOO_MANY_REQUESTS'), 'next', 'unavailable'],
+    // PLT-16：分学科并发闸门被拒：取题沿用“稍后再试”；作答按限流（留票据、原样重发，不丢已计次的票据；不另加文案）
+    [f(503, 'SUBJECT_BUSY'), 'next', 'unavailable'], [f(503, 'SUBJECT_BUSY'), 'answer', 'rate_limited'],
   ];
   for (const [r, op, want] of cases) assert.equal(uiError(r, op), want, `${r.status} ${r.code} ${r.reason} ${op}`);
   // [留票据, 换一道题, 原样再发首次作答快照（控件禁用）]

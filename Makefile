@@ -653,6 +653,7 @@ gate1-mutation:
 # 只在本机一次性栈上跑（规则 9），只用合成数据（规则 8）；依赖同 learning-test、三科适配器与 BFF 的 npm ci。
 #   make loadtest-baseline [LOADTEST_STAGES=small|full|10:120,50:120] [LOADTEST_OUT=<目录>] [LOADTEST_ARGS='--fault fake-a=unavailable']
 #     默认 small（5 → 10 并发 × 10 s）；完整分阶段 10 → 50 → 100 → 200 用 LOADTEST_STAGES=full LOADTEST_ARGS=--i-know（约 8 分钟，占满本机）
+#     PLT-16：LOADTEST_ARGS='--subject-gate --with-practice --fault fake-a=slow:800' 打开分学科并发闸门与再练、复测场景并观察排队
 #   make degradation-test   故障注入与降级断言（路由层 + 端到端，约 40 秒）
 #   make cost-report [COST_RECORDS=<调用记录 jsonl>] [COST_OUT=<目录>]   成本测试 + 科目 × 会员档 P50 / P90 报表（合成估算、示例价）
 # 不给输出目录时写到新建的临时目录（mkdtemp）；给了则不能是符号链接、须属于当前用户。
@@ -676,7 +677,7 @@ loadtest-baseline:
 	@$(if $(LOADTEST_PATH_BAD),echo "loadtest-baseline: 路径不能含空格或单引号"; exit 2)
 	@case "$$LT_STAGES" in small|full) ;; ""|*[!0-9:,.]*) echo "loadtest-baseline: LOADTEST_STAGES 只收 small、full 或 并发:秒,…"; exit 2;; esac
 	@case "$$LT_ARGS" in *[!A-Za-z0-9=:._\ -]*) echo "loadtest-baseline: LOADTEST_ARGS 含不允许的字符"; exit 2;; esac; \
-	  for a in $$LT_ARGS; do case "$$a" in --i-know|--fault|--retry-scale|--median-ms|--p90-ms|--seed|fake-[abx]=unavailable|fake-[abx]=timeout|fake-[abx]=rate_limited|fake-[abx]=error_ratio:[0-9.]*|fake-[abx]=slow:[0-9]*|[0-9]*) ;; *) echo "loadtest-baseline: LOADTEST_ARGS 里的 $$a 不在白名单"; exit 2;; esac; done
+	  for a in $$LT_ARGS; do case "$$a" in --i-know|--fault|--retry-scale|--median-ms|--p90-ms|--seed|--subject-gate|--with-practice|fake-[abx]=unavailable|fake-[abx]=timeout|fake-[abx]=rate_limited|fake-[abx]=error_ratio:[0-9.]*|fake-[abx]=slow:[0-9]*|[0-9]*) ;; *) echo "loadtest-baseline: LOADTEST_ARGS 里的 $$a 不在白名单"; exit 2;; esac; done
 	@if $(LOADTEST_PY_MISSING); then echo "loadtest-baseline: 跳过（没有 services/learning/.venv）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
 	@$(call guard,$(LOADTEST_PY_MISSING))cd tools/loadtest && PYTHONDONTWRITEBYTECODE=1 ../../$(LOADTEST_PY) -m pytest -q tests/test_arrivals.py tests/test_guards.py

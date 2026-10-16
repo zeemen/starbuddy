@@ -17,6 +17,8 @@ const retest = (op: Op): Handler => async (ctx) => {
     now: () => (ctx.deps.now ? ctx.deps.now() : new Date()).getTime(),
     ...(r.sleep ? { sleep: r.sleep } : {}), ...(r.retryDelaysMs ? { retryDelaysMs: r.retryDelaysMs } : {}), ...(r.note ? { note: r.note } : {}),
     ...(r.retryBudgetMs !== undefined ? { retryBudgetMs: r.retryBudgetMs } : {}), ...(r.monotonic ? { monotonic: r.monotonic } : {}),
+    // 分学科并发闸门（PLT-16，开关关时不传，服务直接执行原来的代码）
+    ...(ctx.deps.subjectGate ? { gate: ctx.deps.subjectGate, observe: ctx.note, signal: ctx.signal } : {}),
   };
   return op(deps, ctx, ctx.session!.accountId, ctx.params['student_id']!, ctx.params['subject']!);
 };

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import shutil
 import socket
 import subprocess
@@ -98,6 +99,7 @@ class Stack:
     scheduler: asyncpg.Pool
     stat_statements: bool
     harness_url: str
+    bff_log: Path  # BFF 的访问日志（压测后只取分学科闸门的枚举字段汇总，见 metrics.gate_summary）
 
     async def set_fault(self, vendor: str, spec: dict | None) -> None:
         body = {"clear": True, "vendor": vendor} if spec is None else {"vendor": vendor, "spec": spec}
@@ -120,8 +122,11 @@ def relaxed_auth_config(dst: Path) -> None:
 
 @asynccontextmanager
 async def local_stack(*, seed_value: int, students: int, provider_median_ms: float, provider_p90_ms: float,
-                      retry_scale: float = 1.0):
-    """students：假供应商预先登记合成作答的学生数（学生旅程的合成对象数）"""
+                      retry_scale: float = 1.0, subject_gate: bool = False, practice: bool = False, gate_config: Path | None = None):
+    """students：假供应商预先登记合成作答的学生数（学生旅程的合成对象数）。
+    subject_gate：BFF 打开分学科并发闸门（STARBUDDY_SUBJECT_GATE，缺省用仓库 config/concurrency.json 的合成默认值；
+    gate_config 给一份同格式的配置时经 BFF_CONCURRENCY_CONFIG 换用，只在 STARBUDDY_ENV=test 的本栈有效）；
+    practice：BFF 打开错题再练与复测路由，学习服务用合成配置与合成题面（只在 LEARNING_ENV=test），票据密钥每次启动随机生成"""
     work = Path(tempfile.mkdtemp(prefix="starbuddy-loadtest."))
     os.chmod(work, 0o700)
     pg = EphemeralPG()
@@ -159,6 +164,9 @@ async def local_stack(*, seed_value: int, students: int, provider_median_ms: flo
                 lenv[f"LEARNING_ADAPTER_{s.upper()}_TOKEN"] = ADAPTER_TOKENS[s]
             for s, tok in ROUTE_TOKENS.items():
                 lenv[f"LEARNING_ROUTE_CLIENT_{s.upper()}_TOKEN"] = tok
+            if practice:
+                lenv |= {"LEARNING_PRACTICE_CONFIG": "synthetic", "LEARNING_PRACTICE_PRESENTER": "synthetic",
+                         "LEARNING_PRACTICE_TICKET_SECRET": secrets.token_hex(32), "LEARNING_RETEST_CONFIG": "synthetic"}
             learning_log = work / "learning.log"
             es.enter_context(process([str(PY), "-m", "learning"], ROOT / "services/learning", lenv, learning_log, lport, "学习服务"))
             # ---- BFF
@@ -173,7 +181,14 @@ async def local_stack(*, seed_value: int, students: int, provider_median_ms: flo
                 "BFF_LEARNING_URL": learning_url, "BFF_LEARNING_TOKEN": LEARNING_CREDENTIAL, "STARBUDDY_ENV": "test",
                 "BFF_SHELL_ORIGIN": shell_origin, "BFF_SMS_CAPTURE_FILE": str(sms),
             }
-            es.enter_context(process(["node", "--no-warnings", "src/main.ts"], ROOT / "services/bff", benv, work / "bff.log", bport, "BFF"))
+            if subject_gate:
+                benv["STARBUDDY_SUBJECT_GATE"] = "subject_gate"
+                if gate_config is not None:
+                    benv["BFF_CONCURRENCY_CONFIG"] = str(gate_config)
+            if practice:
+                benv |= {"STARBUDDY_PRACTICE": "practice", "STARBUDDY_RETEST_UI": "retest"}
+            bff_log = work / "bff.log"
+            es.enter_context(process(["node", "--no-warnings", "src/main.ts"], ROOT / "services/bff", benv, bff_log, bport, "BFF"))
             # ---- 计量驱动桩：批改经 BFF 的 meteredCall（契约审查 H1）
             harness_url = es.enter_context(harness.meter_harness(
                 f"postgresql://bff_app@/{pg.db}?host={pg.work}", learning_url, LEARNING_CREDENTIAL,
@@ -184,7 +199,7 @@ async def local_stack(*, seed_value: int, students: int, provider_median_ms: flo
             scheduler = await asyncpg.create_pool(**pg.dsn("loadtest_scheduler"), min_size=1, max_size=1)
             try:
                 yield Stack(pg, work, f"http://127.0.0.1:{bport}", learning_url, provider_url, shell_origin, sms, learning_log,
-                            admin, bff_pool, scheduler, stat, harness_url)
+                            admin, bff_pool, scheduler, stat, harness_url, bff_log)
             finally:
                 await admin.close()
                 await bff_pool.close()

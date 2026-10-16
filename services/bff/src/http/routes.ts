@@ -6,6 +6,7 @@
 // 路径里的 student_id 只作查询条件，授权交给数据库（RLS 与 SECURITY DEFINER 函数）；无权与不存在同一个 404。
 import type { Pool, PoolClient, QueryResultRow } from 'pg';
 import type { DiagnosisDeps } from '../diagnosis/service.ts';
+import type { SubjectGate } from '../gate/subject-gate.ts';
 import type { ShellConfig } from '../shell/config.ts';
 import type { InsightClient } from '../shell/insight-client.ts';
 import type { PlanClient } from '../shell/plan-client.ts';
@@ -87,6 +88,9 @@ export interface ShellDeps {
   monthlyPlan?: { enabled: boolean; client?: MonthlyPlanClient; templates?: () => TemplateLibrary; lexicon?: () => Lexicon; noPromise?: () => Lexicon;
                   /** 洞察服务“不可用”回答的进程内负缓存时长（缺省 5 分钟；测试注入） */
                   negativeTtlMs?: number };
+  /** 分学科并发闸门（src/gate/subject-gate.ts，PLT-16 第一步，开关 STARBUDDY_SUBJECT_GATE，缺省关）：不配时诊断、再练、复测的接入点
+   *  直接执行原来的代码，响应与访问日志逐字节不变 */
+  subjectGate?: SubjectGate;
 }
 
 export type Query = <R extends QueryResultRow = QueryResultRow>(sql: string, params?: unknown[]) => Promise<{ rows: R[] }>;
@@ -102,6 +106,8 @@ export interface Ctx {
   presentedToken: string | null;
   /** handler 可以记日志的额外字段（只放不含个人信息的枚举值） */
   note: (k: string, v: string) => void;
+  /** 请求方断开（响应写完之前连接关闭）时触发；只在分学科并发闸门打开时有（PLT-16：排队中断开即离队） */
+  signal?: AbortSignal;
 }
 
 export interface Reply { status: number; body: string; headers?: Record<string, string> }

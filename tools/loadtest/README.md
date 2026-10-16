@@ -17,6 +17,28 @@ make cost-report [COST_RECORDS=<调用记录.jsonl>] [COST_OUT=<目录>]   # 科
 `--fault <供应商>=<模式>[:参数]`：模式 `unavailable`、`timeout`、`error_ratio:0.3`、`slow:800`（毫秒）、`rate_limited`；供应商是路由表 test 节的
 `fake-a`（主）、`fake-b`（备）、`fake-x`（模拟境外）。报告里只出现合成代号（代号A / B / X），不写供应商 ID 与模型标识。
 
+### 分学科并发闸门（PLT-16，`specs/subject-concurrency-plt16`）
+
+```bash
+make loadtest-baseline LOADTEST_ARGS='--subject-gate --with-practice --fault fake-a=slow:800'
+python -m loadtest baseline --stages 10:20 --subject-gate --with-practice --gate-config <调小 max_inflight 的一份配置> --fault fake-a=slow:800
+```
+
+- `--subject-gate`：BFF 以 `STARBUDDY_SUBJECT_GATE=subject_gate` 启动（缺省用 `services/bff/config/concurrency.json` 的合成默认值；
+  `--gate-config` 换一份同格式配置，经 `BFF_CONCURRENCY_CONFIG`，只在本栈的 `STARBUDDY_ENV=test` 有效，不在 Makefile 白名单里）。
+  不加时 BFF 与以前逐字节相同，报告只注明“未打开”。
+- `--with-practice`：学生旅程在星图之后另走数学的再练与复测各一次列表、一次取题（取题经闸门）；BFF 打开再练与复测路由，
+  学习服务用合成配置与合成题面（票据密钥每次启动随机生成）。没有到期条目时用派生的条目 ID 取题（学习服务回 404，请求照样经过闸门，记为预期）。
+  不加时旅程与请求序列（digest）和以前逐项相同。
+- 报告：“各接口”表单列 **429 限流** 与 **503 SUBJECT_BUSY** 两列（二者仍算错误，错误率口径不变）；另有“分学科并发闸门”一节，
+  按学科给立即放行 / 排队后放行 / 被拒 / 绕过（已计量的重试）次数、被拒原因（full 队列满 / timeout 排队超时 / per_student 本学生这一科已到上限 /
+  aborted 请求方断开）与**排队毫秒分档**（来自 BFF 访问日志的 `gate_*` 枚举字段，
+  不含学生 ID；会话级的“会话排队等待”是驱动器自己的并发上限，与闸门无关）。
+- 用 `--fault fake-a=slow:800` 观察排队：慢的是走模型的调用（道法、语文批改经计量驱动桩，不经 BFF 闸门），它们与诊断、再练、复测共用
+  单进程的学习服务与数据库池，把经闸门的请求一起拖慢，名额占用变长，排队与 SUBJECT_BUSY 才会出现；本栈的诊断与再练题面是合成的、不调模型，
+  所以默认上限（每科 8）下往往看不到排队，这时用 `--gate-config` 把 `max_inflight` 调小（例如 1–2）、`queue_timeout_ms` 调短再跑。
+  数字只作本机对照，不代表生产容量与上限取值（取值待人确认）。
+
 假供应商的 `/_control/faults`、`/_control/stats` 与计量驱动桩的接口**没有鉴权**：只监听 127.0.0.1、只在本机一次性栈里存在，
 不得暴露到任何共享网络（预发故障演练见 RUNBOOK 第 2 节）。
 
@@ -64,4 +86,6 @@ make cost-report [COST_RECORDS=<调用记录.jsonl>] [COST_OUT=<目录>]   # 科
   本栈适配器按契约 1.0.0 启动，驱动桩把同一请求体包成 v1 信封发 `/internal/v1/grade`，响应仍由 BFF 的 `classifyResponse` 归类；
   `--retry-scale` 可按比例缩短退避（口径不变）；
 - 负载生成器与被测服务同机，数字只作回归比较；学习服务与 BFF 的连接池上限各 10，计量驱动桩与计量旅程各另用一个 20 的 bff_app 池；
-- token 为假供应商按字符数估算（`CHARS_PER_TOKEN = 1.5`），不是供应商计数；T1 / T9 没有任何学科方法调用，全靠假设。
+- token 为假供应商按字符数估算（`CHARS_PER_TOKEN = 1.5`），不是供应商计数；T1 / T9 没有任何学科方法调用，全靠假设；
+- 再练与复测场景（`--with-practice`）只有列表与取题，没有作答（要有到期条目与票据，合成学生在本栈里多半没有到期条目）；
+  闸门的计次前拒绝由 `services/bff/tests/subject-gate.integration.test.ts` 覆盖。

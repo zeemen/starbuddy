@@ -111,7 +111,9 @@ type DiagnosisOp = (deps: DiagnosisDeps, ctx: Ctx) => Promise<DiagnosisReply | n
 const diagnosis = (op: DiagnosisOp): Handler => async (ctx) => {
   if (!ctx.deps.diagnosis) return problem(P.DIAGNOSIS_UNAVAILABLE);
   ctx.note('route_group', 'diagnosis');  // 诊断：日志只记哈希，不记作答
-  const r = await op({ ...ctx.deps.diagnosis, pool: ctx.deps.pool }, ctx);
+  // 分学科并发闸门（PLT-16，开关关时不传，服务直接执行原来的代码）
+  const gate = ctx.deps.subjectGate ? { gate: ctx.deps.subjectGate, observe: ctx.note, signal: ctx.signal } : {};
+  const r = await op({ ...ctx.deps.diagnosis, pool: ctx.deps.pool, ...gate }, ctx);
   return r === null ? problem(P.INVALID) : { status: r.status, body: JSON.stringify(r.body), ...(r.headers ? { headers: r.headers } : {}) };
 };
 const session = (ctx: Ctx): string => ctx.params['session_id']!;
@@ -143,6 +145,8 @@ const write = (method: 'POST' | 'PUT', path: string, auth: Route['auth'], handle
   ({ method, path, auth, csrf: 'session', body: true, ownTx: true, handler, rateLimits: [] });
 
 const DIAG = '/students/{student_id}/diagnosis/sessions';
+/** 诊断六条路由的每会话桶（PLT-16 审查：照 practice.session.minute 的写法；阈值在 config/auth.json，待人确认） */
+const DIAG_RL = [{ bucket: 'diagnosis.session.minute', dim: 'session' }] as const;
 
 export const FEATURE_ROUTES: readonly Route[] = [
   read('/students/{student_id}/star-map', 'session', starMap),
@@ -154,10 +158,10 @@ export const FEATURE_ROUTES: readonly Route[] = [
   write('POST', '/students/{student_id}/events', 'student', events),
   write('POST', '/students/{student_id}/probes', 'student', probes),
   write('POST', '/students/{student_id}/probes/{probe_id}/attempt', 'student', probeAttempt),
-  write('POST', DIAG, 'student', diagnosisStart),
-  read(`${DIAG}/{session_id}`, 'student', diagnosisCurrent),
-  write('POST', `${DIAG}/{session_id}/probe`, 'student', diagnosisProbe),
-  write('POST', `${DIAG}/{session_id}/answer`, 'student', diagnosisAnswer),
-  write('POST', `${DIAG}/{session_id}/pause`, 'student', diagnosisPause),
-  write('POST', `${DIAG}/{session_id}/abandon`, 'student', diagnosisAbandon),
+  { ...write('POST', DIAG, 'student', diagnosisStart), rateLimits: DIAG_RL },
+  { ...read(`${DIAG}/{session_id}`, 'student', diagnosisCurrent), rateLimits: DIAG_RL },
+  { ...write('POST', `${DIAG}/{session_id}/probe`, 'student', diagnosisProbe), rateLimits: DIAG_RL },
+  { ...write('POST', `${DIAG}/{session_id}/answer`, 'student', diagnosisAnswer), rateLimits: DIAG_RL },
+  { ...write('POST', `${DIAG}/{session_id}/pause`, 'student', diagnosisPause), rateLimits: DIAG_RL },
+  { ...write('POST', `${DIAG}/{session_id}/abandon`, 'student', diagnosisAbandon), rateLimits: DIAG_RL },
 ];

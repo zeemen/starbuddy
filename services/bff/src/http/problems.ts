@@ -36,6 +36,10 @@ export const P = {
   SCHOOL_NOT_OPEN: problem(409, 'SCHOOL_NOT_OPEN_FOR_GRADE', 'school can only be set in grade 9'),
   // 当前年级不在 7–9（未入学或已毕业）时不能填写诉求（库里 55000 GRADE_OUT_OF_RANGE；不复用选科的同名问题码，标题不同）
   GOAL_GRADE_NOT_SUPPORTED: problem(409, 'GOAL_GRADE_NOT_SUPPORTED', 'goals can only be set in a junior-high grade'),
+  // PLT-16 分学科并发闸门（开关 STARBUDDY_SUBJECT_GATE，缺省关）：这一科同时处理的请求已满且排队已满或排队超时、本学生在这一科已到上限、
+  // 或请求方已断开；本次请求没有新增计量，之前已计次或已预留的用同一请求重试不再计，可按 retry-after 原样重试。
+  // 与学习服务不可用的 503 UPSTREAM_UNAVAILABLE 区分
+  SUBJECT_BUSY: problem(503, 'SUBJECT_BUSY', 'this subject is busy right now, retry later'),
 } as const;
 
 export type ProblemBody = (typeof P)[keyof typeof P];

@@ -39,6 +39,57 @@ def test_recorder_groups_by_endpoint_and_stage():
     assert [s["count"] for s in st] == [3, 2] and st[1]["error_rate"] == 0.5
 
 
+def test_throttled_and_subject_busy_are_listed_separately():
+    """PLT-16：429 与 503 SUBJECT_BUSY 单列（仍算错误，错误率口径不变）；别的 503 仍是 http_5xx；402 仍是业务拒绝"""
+    from loadtest.driver import classify, problem_code
+
+    assert [classify(200), classify(402), classify(429), classify(503, "SUBJECT_BUSY"), classify(503, "UPSTREAM_UNAVAILABLE"), classify(503),
+            classify(404)] == ["ok", "rejected", "throttled", "busy", "http_5xx", "http_5xx", "http_4xx"]
+    busy = httpx.Response(503, json={"type": "/problems/subject_busy", "title": "x", "status": 503, "code": "SUBJECT_BUSY"})
+    assert problem_code(busy) == "SUBJECT_BUSY"
+    assert problem_code(httpx.Response(503, text="not json")) is None
+    assert problem_code(httpx.Response(200, json={"code": "SUBJECT_BUSY"})) is None, "只看 503"
+    r = Recorder()
+    r.stage_windows = {0: [0.0, 10.0]}
+    r.add(0, "practice.next", 5, "ok", "200")
+    r.add(0, "practice.next", 6, "busy", "503 SUBJECT_BUSY")
+    r.add(0, "practice.next", 7, "throttled", "429")
+    r.add(0, "practice.next", 8, "http_5xx", "503")
+    d = by_endpoint(r, 10.0)["practice.next"]
+    assert (d["errors"], d["throttled_429"], d["subject_busy_503"], d["rejected"]) == (3, 1, 1, 0)
+    assert d["codes"] == {"200": 1, "503 SUBJECT_BUSY": 1, "429": 1, "503": 1}
+
+
+def test_gate_summary_reads_only_gate_enums():
+    from loadtest.metrics import gate_summary
+    from loadtest.report import render_gate
+
+    lines = [
+        json.dumps({"event": "listening", "port": 1}),
+        json.dumps({"request_id": "r1", "route": "POST /x", "status": 200, "student": "hash", "gate_subject": "aya", "gate": "admitted",
+                    "gate_queue_ms": "0"}),
+        json.dumps({"gate_subject": "aya", "gate": "queued", "gate_queue_ms": "lt500"}),
+        json.dumps({"gate_subject": "aya", "gate": "rejected", "gate_queue_ms": "lt2000", "gate_reason": "timeout"}),
+        json.dumps({"gate_subject": "zhixing", "gate": "rejected", "gate_queue_ms": "0", "gate_reason": "full"}),
+        json.dumps({"gate_subject": "wenli", "gate": "rejected", "gate_queue_ms": "0", "gate_reason": "per_student"}),
+        json.dumps({"gate_subject": "wenli", "gate": "bypassed"}),
+        json.dumps({"gate_subject": "aya", "gate": "weird", "gate_queue_ms": "0"}),
+        json.dumps({"gate_subject": "aya", "gate": "admitted", "gate_queue_ms": "999"}),
+        "not json", json.dumps(["list"]), "",
+    ]
+    g = gate_summary(lines)
+    assert g == {
+        "aya": {"admitted": 1, "queued": 1, "rejected": 1, "bypassed": 0, "reasons": {"timeout": 1}, "queue_ms": {"0": 1, "lt500": 1, "lt2000": 1}},
+        "wenli": {"admitted": 0, "queued": 0, "rejected": 1, "bypassed": 1, "reasons": {"per_student": 1}, "queue_ms": {"0": 1}},
+        "zhixing": {"admitted": 0, "queued": 0, "rejected": 1, "bypassed": 0, "reasons": {"full": 1}, "queue_ms": {"0": 1}},
+    }
+    assert "hash" not in json.dumps(g) and "r1" not in json.dumps(g), "只留闸门的枚举字段"
+    assert gate_summary([json.dumps({"route": "GET /x", "status": 200})]) == {}, "开关关时没有闸门字段"
+    md = "\n".join(render_gate({"enabled": True, "by_subject": g}))
+    assert "| aya | 1 | 1 | 1 | 0 | timeout×1 |" in md and "| zhixing | 0 | 0 | 1 | 0 | full×1 |" in md and "| wenli | 0 | 0 | 1 | 1 | per_student×1 |" in md
+    assert "未打开" in "\n".join(render_gate({"enabled": False, "by_subject": {}}))
+
+
 def test_fault_decisions():
     rng = random.Random(1)
     lat = LatencyModel()

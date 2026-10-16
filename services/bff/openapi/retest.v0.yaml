@@ -92,7 +92,9 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { description: RETEST_NOT_DUE（这一条已做完）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
         '429': { $ref: '#/components/responses/Problem' }
-        '503': { description: RETEST_UNAVAILABLE（确定失败，不必重试）、UPSTREAM_UNAVAILABLE（可重试）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+        '503': { description: RETEST_UNAVAILABLE（确定失败，不必重试）、UPSTREAM_UNAVAILABLE（可重试）、SUBJECT_BUSY（分学科并发闸门被拒，带 retry-after，稍后重试）,
+                 headers: { retry-after: { description: 只在 SUBJECT_BUSY 时有：建议多少秒后重试, schema: { type: integer, minimum: 1 } } },
+                 content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
   /bff/v0/students/{student_id}/retest/{subject}/answer:
     parameters:
       - $ref: '#/components/parameters/StudentId'
@@ -137,7 +139,9 @@ paths:
         '415': { $ref: '#/components/responses/Problem' }
         '422': { description: INVALID、TICKET_INVALID、INVALID_ANSWER（本地判定的不计次；学习服务判 INVALID_ANSWER 时已计一次）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
         '429': { $ref: '#/components/responses/Problem' }
-        '503': { description: RETEST_UNAVAILABLE（确定失败，已计一次）、UPSTREAM_UNAVAILABLE（结果未知，已计一次：用同一张票据重试，不会再计次）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+        '503': { description: RETEST_UNAVAILABLE（确定失败，已计一次）、UPSTREAM_UNAVAILABLE（结果未知，已计一次：用同一张票据重试，不会再计次）、SUBJECT_BUSY（分学科并发闸门被拒：本次请求没有新增计量，之前已计次的同一张票据重试不再计、也不再被闸门拒；带 retry-after，稍后用同一张票据、原样的作答重试）,
+                 headers: { retry-after: { description: 只在 SUBJECT_BUSY 时有：建议多少秒后重试, schema: { type: integer, minimum: 1 } } },
+                 content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
 components:
   parameters:
     StudentId:
@@ -250,7 +254,11 @@ components:
         code:
           enum: [UNAUTHENTICATED, FORBIDDEN, CSRF, NOT_FOUND, METHOD_NOT_ALLOWED, TOO_LARGE, UNSUPPORTED_MEDIA_TYPE, INVALID, TOO_MANY_REQUESTS,
                  INTERNAL, IDEMPOTENCY_KEY_REUSED, RETEST_UNAVAILABLE, UPSTREAM_UNAVAILABLE, TICKET_INVALID, TICKET_EXPIRED, INVALID_ANSWER,
-                 RETEST_NOT_DUE, TICKET_USED, KEY_SEALED, QUOTA_UNAVAILABLE]
+                 RETEST_NOT_DUE, TICKET_USED, KEY_SEALED, QUOTA_UNAVAILABLE, SUBJECT_BUSY]
+          description: >
+            SUBJECT_BUSY（503，PLT-16 分学科并发闸门，开关 STARBUDDY_SUBJECT_GATE 缺省关）：取题、作答在这一科已满且排队已满或排队超时、
+            本学生在这一科已到上限；闸门在只读预检与计次之前，本次请求没有新增计量、没有预检，之前已计次的同一张票据重试不再计（且绕过闸门）；
+            带 retry-after（秒），稍后用同一张票据、原样的作答重试。
     QuotaProblem:
       allOf:
         - $ref: '#/components/schemas/Problem'

@@ -30,7 +30,7 @@ paths:
       - $ref: '#/components/parameters/Session'
     post:
       x-sb-auth: student
-      x-sb-rate-buckets: []
+      x-sb-rate-buckets: [diagnosis.session.minute]
       x-sb-not-self: 403
       operationId: startDiagnosis
       description: 开始诊断；已有未结束（进行中或暂停）的会话时续做它。
@@ -43,6 +43,7 @@ paths:
         '200': { $ref: '#/components/responses/Session' }
         '201': { $ref: '#/components/responses/Session' }
         '401': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
         '402':
           description: 额度不可用（用完、没有权益、宵禁、留存态等），reason 给出编码
           content:
@@ -53,7 +54,7 @@ paths:
         '413': { $ref: '#/components/responses/Problem' }
         '415': { $ref: '#/components/responses/Problem' }
         '422': { $ref: '#/components/responses/Problem' }
-        '503': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Unavailable' }
         '404': { description: 无权、不存在或路径参数不合法（同一个 404）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
   /bff/v0/students/{student_id}/diagnosis/sessions/{session_id}:
     parameters:
@@ -62,7 +63,7 @@ paths:
       - $ref: '#/components/parameters/Session'
     get:
       x-sb-auth: student
-      x-sb-rate-buckets: []
+      x-sb-rate-buckets: [diagnosis.session.minute]
       x-sb-not-self: 403
       operationId: getDiagnosisCurrent
       description: >
@@ -76,13 +77,14 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/SessionView' }
         '401': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
         '402':
           description: 宵禁时段（reason = curfew），进行中的会话已置为暂停
           content:
             application/problem+json:
               schema: { $ref: '#/components/schemas/QuotaProblem' }
         '403': { $ref: '#/components/responses/Problem' }
-        '503': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Unavailable' }
         '404': { description: 无权、不存在或路径参数不合法（同一个 404）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
   /bff/v0/students/{student_id}/diagnosis/sessions/{session_id}/probe:
     parameters:
@@ -91,7 +93,7 @@ paths:
       - $ref: '#/components/parameters/Session'
     post:
       x-sb-auth: student
-      x-sb-rate-buckets: []
+      x-sb-rate-buckets: [diagnosis.session.minute]
       x-sb-not-self: 403
       operationId: postDiagnosisProbe
       description: 当前题出题前的“这道题你觉得能做对吗？”（跳过不调用）。写 insight.confidence_probe（学生自述），作答后自动关联作答。
@@ -103,6 +105,7 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Ok' }
         '401': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
         '402':
           description: 宵禁时段（reason = curfew），进行中的会话已置为暂停
           content:
@@ -111,8 +114,7 @@ paths:
         '403': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
         '422': { $ref: '#/components/responses/Problem' }
-        '429': { $ref: '#/components/responses/Problem' }
-        '503': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Unavailable' }
         '404': { description: 无权、不存在或路径参数不合法（同一个 404）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
   /bff/v0/students/{student_id}/diagnosis/sessions/{session_id}/answer:
     parameters:
@@ -121,7 +123,7 @@ paths:
       - $ref: '#/components/parameters/Session'
     post:
       x-sb-auth: student
-      x-sb-rate-buckets: []
+      x-sb-rate-buckets: [diagnosis.session.minute]
       x-sb-not-self: 403
       operationId: postDiagnosisAnswer
       description: >
@@ -135,6 +137,7 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Status' }
         '401': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
         '402':
           description: 宵禁时段（reason = curfew），进行中的会话已置为暂停
           content:
@@ -143,7 +146,7 @@ paths:
         '403': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
         '422': { $ref: '#/components/responses/Problem' }
-        '503': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Unavailable' }
         '404': { description: 无权、不存在或路径参数不合法（同一个 404）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
   /bff/v0/students/{student_id}/diagnosis/sessions/{session_id}/pause:
     parameters:
@@ -152,7 +155,7 @@ paths:
       - $ref: '#/components/parameters/Session'
     post:
       x-sb-auth: student
-      x-sb-rate-buckets: []
+      x-sb-rate-buckets: [diagnosis.session.minute]
       x-sb-not-self: 403
       operationId: pauseDiagnosis
       description: 暂停（可跨天续做）。带上当前题已用秒数，续做时接着算；暂停期间不计时。
@@ -164,6 +167,7 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Status' }
         '401': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
         '422': { $ref: '#/components/responses/Problem' }
@@ -176,7 +180,7 @@ paths:
       - $ref: '#/components/parameters/Session'
     post:
       x-sb-auth: student
-      x-sb-rate-buckets: []
+      x-sb-rate-buckets: [diagnosis.session.minute]
       x-sb-not-self: 403
       operationId: abandonDiagnosis
       description: >
@@ -191,6 +195,7 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Status' }
         '401': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
         '422': { $ref: '#/components/responses/Problem' }
@@ -330,6 +335,9 @@ components:
             UNAUTHENTICATED、FORBIDDEN、INVALID、IDEMPOTENCY_KEY_REUSED、STEP_NOT_CURRENT（会话已推进，重新取当前题）、
             INVALID_STATE（例如暂停中作答）、ANSWER_CONFLICT（同一步已用别的答案作答）、SESSION_INCONSISTENT、KEY_EXPIRED / KEY_FAILED_PREVIOUSLY（换新键重新开始）、
             NO_TARGETS、TOO_MANY、UPSTREAM_UNAVAILABLE（同一请求重试）、DIAGNOSIS_UNAVAILABLE。
+            TOO_MANY_REQUESTS（429，PLT-16 审查补的每会话桶 diagnosis.session.minute，六个操作都挂，阈值待人确认）。
+            SUBJECT_BUSY（503，PLT-16 分学科并发闸门，开关 STARBUDDY_SUBJECT_GATE 缺省关）：开始、取当前题、探针、作答在这一科已满且排队已满
+            或排队超时、本学生在这一科已到上限；本次请求没有新增计量，之前已预留的用同一请求重试不再计；带 retry-after（秒），稍后用同一请求重试。
             SESSION_INCONSISTENT 且 reason = grade_changed（迁移 0049）：会话中途届别被改、建立时刻的年级变了；带该学生自己的 session_id，
             前端“重新开始”：POST …/{session_id}/abandon 放弃这个会话（这类放弃即使答过题也退回额度，重放不重复退），再开始新会话。
         reason: { enum: [grade_changed], description: 只在 409 SESSION_INCONSISTENT 由会话中途届别被改引起时出现 }
@@ -370,6 +378,16 @@ components:
           schema: { type: object, additionalProperties: false, required: [status], properties: { status: { const: ok } } }
     Problem:
       description: 错误（不回显请求内容）
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unavailable:
+      description: >
+        UPSTREAM_UNAVAILABLE（学习服务结果未知，同一请求重试）、DIAGNOSIS_UNAVAILABLE；
+        SUBJECT_BUSY（PLT-16 分学科并发闸门，开关缺省关）：这一科已满且排队已满或排队超时、本学生在这一科已到上限，带 retry-after（秒）；
+        本次请求没有新增计量，之前已预留的用同一请求重试不再计（同一幂等键已预留的开始绕过闸门）。
+      headers:
+        retry-after: { description: 只在 SUBJECT_BUSY 时有：建议多少秒后重试, schema: { type: integer, minimum: 1 } }
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }

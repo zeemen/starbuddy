@@ -295,7 +295,8 @@ SM=(
   $'再练：不限流\tsrc/http/practice-routes.ts\tconst RL = [{ bucket: \'practice.session.minute\', dim: \'session\' }] as const;\tconst RL = [] as const;'
   $'再练：改挂别的限流桶\tsrc/http/practice-routes.ts\tconst RL = [{ bucket: \'practice.session.minute\', dim: \'session\' }] as const;\tconst RL = [{ bucket: \'trust_read.session.minute\', dim: \'session\' }] as const;'
   $'再练：不挡宵禁\tsrc/practice/service.ts\t  return c ? CURFEW : null;\t  return null;'
-  $'再练：作答在计次之后才查宵禁\tsrc/practice/service.ts\t  const blocked = await curfewBlocked(deps, account, student);  // 宵禁：作答（计次之前）\\n  if (blocked) return blocked;\\n  const usage = usageIdFor(key);\\n  const m = await countPractice(deps.pool, account, student, key);\t  const usage = usageIdFor(key);\\n  const m = await countPractice(deps.pool, account, student, key);\\n  const blocked = await curfewBlocked(deps, account, student);\\n  if (blocked) return blocked;'
+  # PLT-16 起作答在宵禁检查与计次之间进分学科闸门（计次移到 answerAdmitted）：锚点连同闸门一段，把宵禁检查挪到计次之后
+  $'再练：作答在计次之后才查宵禁\tsrc/practice/service.ts\t  const blocked = await curfewBlocked(deps, account, student);  // 宵禁：作答（计次之前）\\n  if (blocked) return blocked;\\n  // 闸门（PLT-16）：宵禁检查之后、计次之前（被拒的请求本次不计次）；同一张票据已经计过次（上一次结果未知或被拒后重试）绕过闸门，不再被拒\\n  const counted = deps.gate !== undefined && (await alreadyCounted(deps.pool, account, student, key));\\n  return withSubjectSlot(deps.gate, gateSlot(deps, subject, student, counted), subjectBusy,\\n                         () => answerAdmitted(deps, account, student, subject, t, key, input));\\n}\\n\\n/** 已入闸的作答：计次，再调学习服务（名额由 withSubjectSlot 在 finally 里释放） */\\nasync function answerAdmitted(deps: PracticeDeps, account: string, student: string, subject: string, t: OpenedTicket, key: string,\\n                              input: AnswerInput): Promise<Reply> {\\n  const usage = usageIdFor(key);\\n  const m = await countPractice(deps.pool, account, student, key);\t  const counted = deps.gate !== undefined && (await alreadyCounted(deps.pool, account, student, key));\\n  return withSubjectSlot(deps.gate, gateSlot(deps, subject, student, counted), subjectBusy,\\n                         () => answerAdmitted(deps, account, student, subject, t, key, input));\\n}\\n\\nasync function answerAdmitted(deps: PracticeDeps, account: string, student: string, subject: string, t: OpenedTicket, key: string,\\n                              input: AnswerInput): Promise<Reply> {\\n  const usage = usageIdFor(key);\\n  const m = await countPractice(deps.pool, account, student, key);\\n  const blocked = await curfewBlocked(deps, account, student);\\n  if (blocked) return blocked;'
   $'再练：一张票据可扣多次（用前端或随机的键）\tsrc/practice/service.ts\tconst key = t.idempotencyKey;\tconst key = crypto.randomUUID();'
   $'再练：同票据换作答不回 TICKET_USED\tsrc/practice/service.ts\t(code === \'TICKET_USED\' || code === \'IDEMPOTENCY_CONFLICT\')\t(code === \'TICKET_USED\')'
   $'再练：确定失败兜底回 422\tsrc/practice/service.ts\t  return PRACTICE_UNAVAILABLE;\\n}\\n\\nconst replayHeader\t  return INVALID;\\n}\\n\\nconst replayHeader'
@@ -412,6 +413,44 @@ SM=(
   $'月度计划：不核对钉死文件\tsrc/family/monthly-plan.ts\tneed(l[\'template_version\'] === lib.version && l[\'sha256\'] === lib.fingerprint, \'模板库与钉死文件不一致\');\t'
   $'月度计划：签字文案变量不核对\tsrc/family/monthly-plan.ts\t      need(slots.size === t.vars!.length\t      need(true || slots.size === t.vars!.length'
   $'月度计划：词表命中不另计\tsrc/family/monthly-plan.ts\t    t.lexicon_hits++;\t'
+  # PLT-16 分学科并发闸门（specs/subject-concurrency-plt16）：并发上限、FIFO 交接、有界队列、排队超时离队、异常路径释放且只释放一次、
+  # 各科独立、被拒不执行（本次不新增计量）、问题码与 retry-after、各接入点都经闸门、开关关时不建闸门、日志字段。
+  # 这几条跑 tests/subject-gate-units.test.ts、tests/subject-gate.integration.test.ts（BFFMUT_FILTER=闸门：）
+  $'闸门：释放不把名额交给队首\tsrc/gate/subject-gate.ts\t      if (next) next.grant();\\n      else lane.inflight -= 1;\t      lane.inflight -= 1;'
+  $'闸门：不按并发上限放行\tsrc/gate/subject-gate.ts\tif (lane.inflight < lane.limits.maxInflight && lane.waiting.length === 0) {\tif (lane.waiting.length === 0) {'
+  $'闸门：队列不设上限\tsrc/gate/subject-gate.ts\tif (lane.waiting.length >= lane.limits.maxQueue) {\tif (false) {'
+  $'闸门：排队超时后不离队\tsrc/gate/subject-gate.ts\t          lane.waiting.splice(i, 1);\\n\t'
+  $'闸门：抛错时不释放名额\tsrc/gate/subject-gate.ts\t  try {\\n    return await fn();\\n  } finally {\\n    g.release();\\n  }\t  const out = await fn();\\n  g.release();\\n  return out;'
+  $'闸门：重复释放多空出位置\tsrc/gate/subject-gate.ts\t      if (released) return;\\n\t'
+  $'闸门：各科共用一条线\tsrc/gate/subject-gate.ts\tconst lane = lanes.get(subject);\tconst lane = lanes.get(\'aya\');'
+  $'闸门：被拒的请求照样执行（碰了计量再拒）\tsrc/gate/subject-gate.ts\t    observe?.(\'gate_reason\', g.reason);\\n    return busy(g.retryAfterSec);\t    observe?.(\'gate_reason\', g.reason);\\n    await fn();\\n    return busy(g.retryAfterSec);'
+  $'闸门：放行不记日志\tsrc/gate/subject-gate.ts\t  observe?.(\'gate\', g.ok ? g.result : \'rejected\');\\n\t'
+  $'闸门：被拒不带 retry-after\tsrc/practice/service.ts\t({ ...fixed(P.SUBJECT_BUSY), headers: busyHeaders(retryAfterSec) })\t({ ...fixed(P.SUBJECT_BUSY) })'
+  $'闸门：被拒与上游不可用同一个问题码\tsrc/http/problems.ts\tproblem(503, \'SUBJECT_BUSY\',\tproblem(503, \'UPSTREAM_UNAVAILABLE\','
+  $'闸门：诊断开始不经闸门\tsrc/diagnosis/service.ts\treturn withSubjectSlot(deps.gate, slot(deps, \'aya\', student, replay), subjectBusy, () => startAdmitted(deps, account, student, input));\treturn startAdmitted(deps, account, student, input);'
+  $'闸门：诊断取当前题不经闸门\tsrc/diagnosis/service.ts\treturn withSubjectSlot(deps.gate, slot(deps, \'aya\', student), subjectBusy, () => currentAdmitted(deps, account, student, session));\treturn currentAdmitted(deps, account, student, session);'
+  $'闸门：诊断探针不经闸门\tsrc/diagnosis/service.ts\treturn withSubjectSlot(deps.gate, slot(deps, \'aya\', student), subjectBusy, () => probeAdmitted(deps, account, student, session, input));\treturn probeAdmitted(deps, account, student, session, input);'
+  $'闸门：诊断作答不经闸门\tsrc/diagnosis/service.ts\treturn withSubjectSlot(deps.gate, slot(deps, \'aya\', student), subjectBusy, () => answerAdmitted(deps, account, student, session, input));\treturn answerAdmitted(deps, account, student, session, input);'
+  $'闸门：再练取题不经闸门\tsrc/practice/service.ts\treturn withSubjectSlot(deps.gate, gateSlot(deps, subject, student), subjectBusy, () => nextAdmitted(deps, student, subject, entry));\treturn nextAdmitted(deps, student, subject, entry);'
+  $'闸门：再练作答不经闸门\tsrc/practice/service.ts\treturn withSubjectSlot(deps.gate, gateSlot(deps, subject, student, counted), subjectBusy,\\n                         () => answerAdmitted(deps, account, student, subject, t, key, input));\treturn answerAdmitted(deps, account, student, subject, t, key, input);'
+  $'闸门：复测取题不经闸门\tsrc/retest/service.ts\treturn withSubjectSlot(deps.gate, gateSlot(deps, subject, student), subjectBusy, () => retestNextAdmitted(deps, student, subject, entry));\treturn retestNextAdmitted(deps, student, subject, entry);'
+  $'闸门：复测作答不经闸门\tsrc/retest/service.ts\treturn withSubjectSlot(deps.gate, gateSlot(deps, subject, student, counted), subjectBusy,\\n                         () => retestAnswerAdmitted(deps, account, student, subject, t, key, counted, input));\treturn retestAnswerAdmitted(deps, account, student, subject, t, key, counted, input);'
+  $'闸门：路由不把闸门传给再练\tsrc/http/practice-routes.ts\t...(ctx.deps.subjectGate ? { gate: ctx.deps.subjectGate, observe: ctx.note, signal: ctx.signal } : {}),\t'
+  $'闸门：开关关也建闸门\tsrc/main.ts\t  if (gateOn) {\t  if (true) {'
+  # 审查处理（PLT-16 两份审查）：每生每科上限（安全阻断）、已计量的重试绕过闸门（契约阻断）、诊断限流桶、请求方断开即离队、
+  # 非本地须声明单实例、诊断重试总时限
+  $'闸门：不卡每生每科上限\tsrc/gate/subject-gate.ts\tif (mine >= lane.limits.perStudentMax) {\tif (false) {'
+  $'闸门：释放时每生计数不回落\tsrc/gate/subject-gate.ts\t      released = true;\\n      leave(lane, student);\t      released = true;'
+  $'闸门：请求方断开不离队\tsrc/gate/subject-gate.ts\t        signal?.addEventListener(\'abort\', onAbort, { once: true });\\n\t'
+  $'闸门：入闸后计量前不再查断开\tsrc/gate/subject-gate.ts\t  if (g.ok && req.signal?.aborted) {\t  if (false) {'
+  $'闸门：服务端不把断开传给闸门\tsrc/http/server.ts\t        res.once(\'close\', () => { if (!res.writableEnded) ac.abort(); });\t'
+  $'闸门：已计量的重试也不绕过\tsrc/gate/subject-gate.ts\t  if (req.bypass === true) {\t  if (false) {'
+  $'闸门：再练已计次的重试不绕过\tsrc/practice/service.ts\tgateSlot(deps, subject, student, counted)\tgateSlot(deps, subject, student)'
+  $'闸门：复测已计次的重试不绕过\tsrc/retest/service.ts\tgateSlot(deps, subject, student, counted)\tgateSlot(deps, subject, student)'
+  $'闸门：诊断开始同键重放不绕过\tsrc/diagnosis/service.ts\tslot(deps, \'aya\', student, replay)\tslot(deps, \'aya\', student)'
+  $'闸门：诊断路由不限流\tsrc/http/feature-routes.ts\tconst DIAG_RL = [{ bucket: \'diagnosis.session.minute\', dim: \'session\' }] as const;\tconst DIAG_RL = [] as const;'
+  $'闸门：非本地不要求声明单实例\tsrc/gate/subject-gate.ts\tif (!isLocalEnv(env) && config.singleInstance !== true) {\tif (false) {'
+  $'闸门：诊断重试不设总时限\tsrc/diagnosis/service.ts\t    if (mono() - start + d >= budget) {\t    if (false) {'
 )
 # 副本保持仓库结构（测试按 ../../../ 找仓库根：adapters/aya 的登记脚本、db/seeds 的种子），adapters、db 软链接回仓库。
 # 安全审查阻断 1：原来的副本不保持结构，测试的 before 在任何代码下都失败，变异全部“被发现”却不说明任何问题。
@@ -468,6 +507,7 @@ star_run() {  # $1 副本根目录，$2 变异名（“计量：”开头的跑�
   [[ "${2:-}" == 编排：* ]] && tests="tests/today-orch-units.test.ts tests/today-orch.integration.test.ts"
   [[ "${2:-}" == 诉求：* ]] && tests="tests/family-goals-units.test.ts tests/family-goals.integration.test.ts tests/shell-openapi.test.ts"
   [[ "${2:-}" == 月度计划：* ]] && tests="tests/monthly-plan-units.test.ts tests/monthly-plan.integration.test.ts tests/shell-openapi.test.ts"
+  [[ "${2:-}" == 闸门：* ]] && tests="tests/subject-gate-units.test.ts tests/subject-gate.integration.test.ts tests/shell-openapi.test.ts"
   out=$( cd "$1/services/bff" && timeout 240 bash "$ROOT/db/tests/pg-ephemeral.sh" -- \
       node --no-warnings --test --test-concurrency=1 --test-timeout=60000 $tests 2>&1 ); rc=$?
   printf '%s\n' "$out" > "$1/run.out"  # H6 的“第一条失败必须是登记的断言”从这里读

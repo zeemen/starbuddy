@@ -2,6 +2,7 @@
 
   python -m loadtest plan     --stages small|full|'10:120,50:120' [--seed N]        只打印计划摘要与请求序列 digest（不起栈）
   python -m loadtest baseline --stages small [--out DIR] [--seed N] [--fault fake-a=unavailable] [--median-ms 300 --p90-ms 900]
+                              [--subject-gate] [--with-practice]   分学科并发闸门与再练、复测场景（PLT-16）
   python -m loadtest cost     --records FILE [--out DIR] [--prices FILE] [--profile FILE]
 
 baseline 只在本机一次性栈上跑（规则 9）；预发压测见 RUNBOOK.md，需人批准。
@@ -42,7 +43,13 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--seed", type=int, default=20260930)
         p.add_argument("--mean-session-s", type=float, default=6.0)
         p.add_argument("--think-s", type=float, default=0.2)
+        p.add_argument("--with-practice", action="store_true",
+                       help="学生旅程另走再练与复测的列表、取题（BFF 与学习服务各自打开合成的再练、复测；不开时请求序列不变）")
     b = sub.choices["baseline"]
+    b.add_argument("--subject-gate", action="store_true",
+                   help="BFF 打开分学科并发闸门（STARBUDDY_SUBJECT_GATE，config/concurrency.json 的合成默认值）；配合 --fault fake-a=slow:800 观察排队")
+    b.add_argument("--gate-config", default=None,
+                   help="与 config/concurrency.json 同格式的一份闸门配置（调小 max_inflight 更容易看到排队）；须同时给 --subject-gate")
     b.add_argument("--out", default=None, help="不给则写到新建的临时目录（mkdtemp）；给了则不能是符号链接、须属于当前用户")
     b.add_argument("--fault", action="append", type=_fault, default=[], help="例如 fake-a=unavailable、fake-a=error_ratio:0.3")
     b.add_argument("--median-ms", type=float, default=300.0)
@@ -62,12 +69,16 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"out": r["out"], "rows": len(r["table"]), "example_prices": r["example_prices"]}, ensure_ascii=False))
         return 0
 
-    profile = Profile(seed=args.seed, stages=parse_stages(args.stages), mean_session_s=args.mean_session_s, think_mean_s=args.think_s)
+    profile = Profile(seed=args.seed, stages=parse_stages(args.stages), mean_session_s=args.mean_session_s, think_mean_s=args.think_s,
+                      practice=args.with_practice)
     if args.cmd == "plan":
         arr = plan(profile)
         print(json.dumps({"profile": describe(profile), "arrivals": len(arr), "slots": slot_counts(arr),
                           "digest": digest(requests(profile, arr))}, ensure_ascii=False, indent=1))
         return 0
+    if args.gate_config is not None and (not args.subject_gate or not Path(args.gate_config).is_file()):
+        print("--gate-config 须同时给 --subject-gate，且是存在的文件", file=sys.stderr)
+        return 2
     if max(s.concurrency for s in profile.stages) > MAX_SAFE and not args.i_know:
         print(f"并发超过 {MAX_SAFE}：完整分阶段请显式加 --i-know（只在本机一次性栈）", file=sys.stderr)
         return 2
@@ -80,7 +91,8 @@ def main(argv: list[str] | None = None) -> int:
         return 3
     r = asyncio.run(run_baseline(profile, Path(args.out) if args.out else None, provider_median_ms=args.median_ms, provider_p90_ms=args.p90_ms,
                                  faults=dict(args.fault), scale_note=args.scale_note,
-                                 retry_scale=args.retry_scale))
+                                 retry_scale=args.retry_scale, subject_gate=args.subject_gate,
+                                 gate_config=Path(args.gate_config).resolve() if args.gate_config else None))
     ok = r["metering"]["zero_leak"] and r["plan_digest"] == r["executed_digest"]
     print(json.dumps({"out": r["out"], "zero_leak": r["metering"]["zero_leak"], "sequence_match": r["plan_digest"] == r["executed_digest"],
                       "requests": sum(d["count"] for d in r["endpoints"].values())}, ensure_ascii=False))

@@ -19,7 +19,14 @@
 // 探针：BFF 以学生身份调 2-L 的 insight.record_confidence_probe，幂等键由（会话、序号）派生（安全审查 S3：并发提交只写一行，
 //   后到的内容不同时 23505，按派生键请学习服务找回同一条），把探针记到步骤；
 // 作答落库后按 2-L 的 insight.link_probe_attempt 关联（尽力而为：时间窗外、已关联时不影响作答）。
+// 分学科并发闸门（PLT-16 第一步，src/gate/subject-gate.ts；开关关时 deps.gate 为空，直接执行原来的代码）：学科按 aya。
+//   开始：本人核对之后、续做与预留之前取名额；取当前题：会话归属核对之后包住转发；探针、作答：宵禁检查之后包住转发。
+//   排队与拒绝判断只在计量之前（被拒回 503 SUBJECT_BUSY：本次请求没有新增计量；之前已预留的用同一请求重试不再计），
+//   已入闸请求持有名额直到处理结束（含失败、抛错，在 finally 里释放）；同一幂等键已预留过的开始（重放）绕过闸门；暂停、放弃不经闸门。
+//   学习服务调用（含重试）另有整体总时限 DIAG_RETRY_BUDGET_MS（与再练对齐）。
 import type { Pool } from 'pg';
+import { busyHeaders, withSubjectSlot, type GateObserve, type SubjectGate } from '../gate/subject-gate.ts';
+import { P } from '../http/problems.ts';
 import { withAccount } from '../metering/db.ts';
 import { inCurfew } from '../metering/curfew.ts';
 import { meteringFingerprint } from '../metering/fingerprint.ts';
@@ -36,6 +43,13 @@ export interface DiagnosisDeps {
   retryDelaysMs?: number[];
   /** 计量与关联的旁路记录（测试断言用）；只收事件名 */
   note?: (event: string) => void;
+  /** 学习服务调用（含重试）的整体总时限，缺省 DIAG_RETRY_BUDGET_MS；单调时钟（测试注入） */
+  retryBudgetMs?: number;
+  monotonic?: () => number;
+  /** 分学科并发闸门（PLT-16；开关关时为空）、访问日志的记录入口（ctx.note：只记学科码与闸门结果）、请求方断开的信号 */
+  gate?: SubjectGate;
+  observe?: GateObserve;
+  signal?: AbortSignal | undefined;
 }
 
 export interface Reply { status: number; body: unknown; headers?: Record<string, string> }
@@ -46,6 +60,9 @@ export const FORBIDDEN = problem(403, 'FORBIDDEN', 'not allowed');
 const INVALID = problem(422, 'INVALID', 'invalid request');
 const KEY_REUSED = problem(409, 'IDEMPOTENCY_KEY_REUSED', 'idempotency key reused with different content');
 const UNAVAILABLE = problem(503, 'UPSTREAM_UNAVAILABLE', 'diagnosis service unavailable, retry with the same request');
+/** 闸门被拒（PLT-16）：与 src/http/problems.ts 的 SUBJECT_BUSY 逐字节相同（单测核对），带 retry-after */
+export const subjectBusy = (retryAfterSec: number): Reply =>
+  ({ status: 503, body: JSON.parse(P.SUBJECT_BUSY) as unknown, headers: busyHeaders(retryAfterSec) });
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const RFC3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}:\d{2})$/;
@@ -159,11 +176,21 @@ async function curfewGate(deps: DiagnosisDeps, account: string, student: string,
 
 // ---------- 学习服务调用：结果未知时同一请求重试 ----------
 const DEFAULT_DELAYS = [300, 1000, 2000];
-async function withRetry<T>(deps: DiagnosisDeps, fn: () => Promise<DiagOutcome<T>>): Promise<DiagOutcome<T>> {
+/** 学习服务调用（含重试）的整体总时限，与错题再练的 RETRY_BUDGET_MS 对齐（PLT-16 审查建议：名额不会被无限重试长期占住） */
+export const DIAG_RETRY_BUDGET_MS = 45_000;
+export async function withRetry<T>(deps: Pick<DiagnosisDeps, 'sleep' | 'retryDelaysMs' | 'retryBudgetMs' | 'monotonic' | 'note'>,
+                                   fn: () => Promise<DiagOutcome<T>>): Promise<DiagOutcome<T>> {
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const mono = deps.monotonic ?? (() => performance.now());
+  const budget = deps.retryBudgetMs ?? DIAG_RETRY_BUDGET_MS;
+  const start = mono();
   let out = await fn();
   for (const d of deps.retryDelaysMs ?? DEFAULT_DELAYS) {
     if (out.kind !== 'unknown') break;
+    if (mono() - start + d >= budget) {  // 总时限：等完这一下就超了，不再重试（结果仍未知，调用方照原样处理）
+      deps.note?.('learning_retry_budget_exhausted');
+      break;
+    }
     await sleep(d);
     out = await fn();
   }
@@ -215,6 +242,22 @@ async function releaseQuietly(deps: DiagnosisDeps, account: string, usage: strin
 // ---------- 开始 / 续做 ----------
 export async function startDiagnosis(deps: DiagnosisDeps, account: string, student: string, input: StartInput): Promise<Reply> {
   if (!(await isSelf(deps.pool, account, student))) return FORBIDDEN;
+  // 闸门：续做与预留之前（被拒的请求本次没有预留）；同一幂等键已经预留过（结果未知后的重放）绕过闸门，不再被拒
+  const replay = deps.gate !== undefined && (await keyReserved(deps.pool, account, usageIdFor(input.idempotency_key)));
+  return withSubjectSlot(deps.gate, slot(deps, 'aya', student, replay), subjectBusy, () => startAdmitted(deps, account, student, input));
+}
+
+/** 闸门的请求描述（学生 ID 只作进程内每生上限的计数键） */
+const slot = (deps: DiagnosisDeps, subject: string, student: string, bypass = false) =>
+  ({ subject, student, signal: deps.signal, observe: deps.observe, bypass });
+
+/** 这个幂等键是否已经有预留（RLS：学生本人读得到自己的预留；只读 usage_id 一列） */
+async function keyReserved(pool: Pool, account: string, usage: string): Promise<boolean> {
+  return withAccount(pool, account, async (c) =>
+    (await c.query('SELECT 1 FROM platform.usage_reservation WHERE usage_id = $1::uuid', [usage])).rowCount === 1);
+}
+
+async function startAdmitted(deps: DiagnosisDeps, account: string, student: string, input: StartInput): Promise<Reply> {
   const key = input.idempotency_key;
   const usage = usageIdFor(key);
   const open = await openSessionId(deps.pool, account, student);
@@ -295,6 +338,11 @@ async function settleIfDone(deps: DiagnosisDeps, account: string,
 
 export async function currentStep(deps: DiagnosisDeps, account: string, student: string, session: string): Promise<Reply> {
   if (!(await ownsSession(deps.pool, account, student, session))) return FORBIDDEN;
+  // 闸门：包住转发（结算在名额内、闸门之后）
+  return withSubjectSlot(deps.gate, slot(deps, 'aya', student), subjectBusy, () => currentAdmitted(deps, account, student, session));
+}
+
+async function currentAdmitted(deps: DiagnosisDeps, account: string, student: string, session: string): Promise<Reply> {
   const r = await withRetry(deps, () => deps.learning.current(student, session));
   if (r.kind === 'unknown') return UNAVAILABLE;
   if (r.kind === 'failure') return fromFailure(r, session);
@@ -315,6 +363,11 @@ export async function submitProbe(deps: DiagnosisDeps, account: string, student:
   if (!(await ownsSession(deps.pool, account, student, session))) return FORBIDDEN;
   const blocked = await curfewGate(deps, account, student, session);  // 宵禁：探针
   if (blocked) return blocked;
+  // 闸门：宵禁检查之后包住转发
+  return withSubjectSlot(deps.gate, slot(deps, 'aya', student), subjectBusy, () => probeAdmitted(deps, account, student, session, input));
+}
+
+async function probeAdmitted(deps: DiagnosisDeps, account: string, student: string, session: string, input: ProbeInput): Promise<Reply> {
   const cur = await withRetry(deps, () => deps.learning.current(student, session));
   if (cur.kind === 'unknown') return UNAVAILABLE;
   if (cur.kind === 'failure') return fromFailure(cur, session);
@@ -350,6 +403,11 @@ export async function submitAnswer(deps: DiagnosisDeps, account: string, student
   if (!(await ownsSession(deps.pool, account, student, session))) return FORBIDDEN;
   const blocked = await curfewGate(deps, account, student, session);  // 宵禁：作答
   if (blocked) return blocked;
+  // 闸门：宵禁检查之后包住转发（判分后的结算在名额内、闸门之后）
+  return withSubjectSlot(deps.gate, slot(deps, 'aya', student), subjectBusy, () => answerAdmitted(deps, account, student, session, input));
+}
+
+async function answerAdmitted(deps: DiagnosisDeps, account: string, student: string, session: string, input: AnswerInput): Promise<Reply> {
   const r = await withRetry(deps, () => deps.learning.answer(student, session, {
     seq: input.seq, answer: input.answer, elapsed_sec: input.elapsed_sec, idempotency_key: input.idempotency_key,
     ...(input.work !== undefined ? { work: input.work } : {}) }));

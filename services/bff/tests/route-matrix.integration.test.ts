@@ -160,12 +160,7 @@ export const RATE_EXEMPT: Record<string, string> = {
   'POST /students/{student_id}/events': '库里 24 小时写入上限（0025）',
   'POST /students/{student_id}/probes': '库里 24 小时写入上限（0025）',
   'POST /students/{student_id}/probes/{probe_id}/attempt': '每个探针只能关联一次作答（0025 confidence_probe_attempt 唯一）',
-  'POST /students/{student_id}/diagnosis/sessions': '消耗类：额度、单日上限与宵禁由 meter_reserve 卡；续做与失败释放后可无限重来（AA：建议每学生每小时桶）',
-  'GET /students/{student_id}/diagnosis/sessions/{session_id}': '只认学生本人（AA：建议每会话缺省桶）',
-  'POST /students/{student_id}/diagnosis/sessions/{session_id}/probe': '同一步只认第一次探针（派生键），但没有频率上限（AA）',
-  'POST /students/{student_id}/diagnosis/sessions/{session_id}/answer': '按会话与序号幂等，但没有频率上限（AA）',
-  'POST /students/{student_id}/diagnosis/sessions/{session_id}/pause': '按会话幂等（AA）',
-  'POST /students/{student_id}/diagnosis/sessions/{session_id}/abandon': '按会话幂等（AA）',
+  // 诊断六条路由 PLT-16 审查起挂每会话桶 diagnosis.session.minute（阈值待人确认），不再豁免
   'GET /students/{student_id}/enrollments': '只读（AA）',
   'POST /students/{student_id}/enrollments/{subject}': '换科次数由 enroll_subject 卡（change_limit_reached），没有频率上限（AA）',
   'POST /students/{student_id}/enrollments/{subject}/pause': '同上（AA）',

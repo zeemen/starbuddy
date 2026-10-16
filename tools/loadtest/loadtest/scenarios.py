@@ -6,6 +6,9 @@
 
 每一步的“接口标签”是报表里的行名（不含任何 ID）。批改没有 BFF HTTP 入口（壳里还没有批改路由）：经计量驱动桩
 （node/meter-harness.mts）直接运行 BFF 的 meteredCall（计量语义与 BFF 相同，耗时含预留、重试与结算），见 README 与 lessons。
+
+可选（PLT-16，--with-practice）：学生旅程在星图之后另走错题再练与复测的列表与取题（PRACTICE_STEPS），用来观察分学科并发闸门；
+不开时旅程与请求序列（digest）和以前逐项相同。作答不在场景里（要有到期条目与票据，见 README“已知偏差”）。
 """
 from __future__ import annotations
 
@@ -23,6 +26,14 @@ PARENT_STEPS = (
 METER_STEPS = ("meter.reserve_pair", "meter.settle", "meter.settle_repeat", "meter.reserve", "meter.release")
 
 JOURNEYS: dict[str, tuple[str, ...]] = {"student": STUDENT_STEPS, "parent": PARENT_STEPS, "meter": METER_STEPS}
+# 可选的再练与复测步骤（追加在学生旅程末尾，前面各步的序号不变）
+PRACTICE_STEPS = ("practice.queue", "practice.next", "retest.queue", "retest.next")
+
+
+def journey_steps(kind: str, practice: bool = False) -> tuple[str, ...]:
+    """旅程的步骤；practice 打开时学生旅程另带再练与复测的列表、取题"""
+    steps = JOURNEYS[kind]
+    return steps + PRACTICE_STEPS if practice and kind == "student" else steps
 
 # 报表行名：接口（方法 + 路径模板），不含 ID
 ENDPOINTS: dict[str, str] = {
@@ -42,6 +53,10 @@ ENDPOINTS: dict[str, str] = {
     "parent.child_star_map": "BFF GET /students/{id}/star-map（家长）",
     "parent.child_balance": "BFF GET /students/{id}/balance（家长）",
     "parent.child_enrollments": "BFF GET /students/{id}/enrollments（家长）",
+    "practice.queue": "BFF GET /students/{id}/practice/math（再练列表）",
+    "practice.next": "BFF POST …/practice/math/entries/{eid}/next（再练取题，经闸门）",
+    "retest.queue": "BFF GET /students/{id}/retest/math（复测列表）",
+    "retest.next": "BFF POST …/retest/math/entries/{eid}/next（复测取题，经闸门）",
     "meter.reserve_pair": "计量 meter_reserve ×2（同键并发）",
     "meter.settle": "计量 meter_settle",
     "meter.settle_repeat": "计量 meter_settle（重复，幂等）",
