@@ -1,0 +1,319 @@
+{
+  "edges": [
+    {
+      "from_id": "MATH.CALIB.T1.N1",
+      "strength": "strong",
+      "to_id": "MATH.CALIB.T1.N2",
+      "type": "prerequisite"
+    },
+    {
+      "from_id": "MATH.CALIB.T1.N2",
+      "strength": "strong",
+      "to_id": "MATH.CALIB.T1.N3",
+      "type": "prerequisite"
+    },
+    {
+      "from_id": "MATH.CALIB.T1.N3",
+      "strength": "strong",
+      "to_id": "MATH.CALIB.T1.N4",
+      "type": "prerequisite"
+    },
+    {
+      "from_id": "MATH.CALIB.T2.N1",
+      "strength": "strong",
+      "to_id": "MATH.CALIB.T2.N2",
+      "type": "prerequisite"
+    },
+    {
+      "from_id": "MATH.CALIB.T2.N1",
+      "strength": "strong",
+      "to_id": "MATH.CALIB.T2.N3",
+      "type": "prerequisite"
+    },
+    {
+      "from_id": "MATH.CALIB.T2.N2",
+      "strength": "strong",
+      "to_id": "MATH.CALIB.T4.N5",
+      "type": "prerequisite"
+    },
+    {
+      "from_id": "MATH.CALIB.T3.N1",
+      "strength": "strong",
+      "to_id": "MATH.CALIB.T3.N2",
+      "type": "prerequisite"
+    },
+    {
+      "from_id": "MATH.CALIB.T3.N1",
+      "strength": "strong",
+      "to_id": "MATH.CALIB.T3.N3",
+      "type": "prerequisite"
+    },
+    {
+      "from_id": "MATH.CALIB.T3.N4",
+      "strength": "weak",
+      "to_id": "MATH.CALIB.T3.N5",
+      "type": "prerequisite"
+    },
+    {
+      "from_id": "MATH.CALIB.T4.N1",
+      "strength": "strong",
+      "to_id": "MATH.CALIB.T4.N2",
+      "type": "prerequisite"
+    }
+  ],
+  "map_version": "0.1.0",
+  "nodes": [
+    {
+      "id": "MATH.CALIB",
+      "level": "domain",
+      "name": "合成校准领域"
+    },
+    {
+      "id": "MATH.CALIB.T1",
+      "level": "topic",
+      "name": "合成主题一（链）",
+      "parent_id": "MATH.CALIB"
+    },
+    {
+      "id": "MATH.CALIB.T2",
+      "level": "topic",
+      "name": "合成主题二",
+      "parent_id": "MATH.CALIB"
+    },
+    {
+      "id": "MATH.CALIB.T3",
+      "level": "topic",
+      "name": "合成主题三（兄弟节点）",
+      "parent_id": "MATH.CALIB"
+    },
+    {
+      "id": "MATH.CALIB.T4",
+      "level": "topic",
+      "name": "合成主题四（噪声）",
+      "parent_id": "MATH.CALIB"
+    },
+    {
+      "cognitive_levels": [
+        "apply"
+      ],
+      "id": "MATH.CALIB.T1.N1",
+      "kind": "kp",
+      "level": "node",
+      "name": "合成节点 T1.N1",
+      "parent_id": "MATH.CALIB.T1"
+    },
+    {
+      "cognitive_levels": [
+        "apply"
+      ],
+      "id": "MATH.CALIB.T1.N2",
+      "kind": "kp",
+      "level": "node",
+      "name": "合成节点 T1.N2",
+      "parent_id": "MATH.CALIB.T1"
+    },
+    {
+      "cognitive_levels": [
+        "apply"
+      ],
+      "id": "MATH.CALIB.T1.N3",
+      "kind": "kp",
+      "level": "node",
+      "name": "合成节点 T1.N3",
+      "parent_id": "MATH.CALIB.T1"
+    },
+    {
+      "cognitive_levels": [
+        "apply"
+      ],
+      "id": "MATH.CALIB.T1.N4",
+      "kind": "kp",
+      "level": "node",
+      "name": "合成节点 T1.N4",
+      "parent_id": "MATH.CALIB.T1"
+    },
+    {
+      "cognitive_levels": [
+        "apply"
+      ],
+      "id": "MATH.CALIB.T1.N5",
+      "kind": "kp",
+      "level": "node",
+      "name": "合成节点 T1.N5",
+      "parent_id": "MATH.CALIB.T1"
+    },
+    {
+      "cognitive_levels": [
+        "apply"
+      ],
+      "id": "MATH.CALIB.T2.N1",
+      "kind": "kp",
+      "level": "node",
+      "name": "合成节点 T2.N1",
+      "parent_id": "MATH.CALIB.T2"
+    },
+    {
+      "cognitive_levels": [
+        "apply"
+      ],
+      "id": "MATH.CALIB.T2.N2",
+      "kind": "kp",
+      "level": "node",
+      "name": "合成节点 T2.N2",
+      "parent_id": "MATH.CALIB.T2"
+    },
+    {
+      "cognitive_levels": [
+        "apply"
+      ],
+      "id": "MATH.CALIB.T2.N3",
+      "kind": "kp",
+      "level": "node",
+      "name": "合成节点 T2.N3",
+      "parent_id": "MATH.CALIB.T2"
+    },
+    {
+      "cognitive_levels": [
+        "apply"
+      ],
+      "id": "MATH.CALIB.T2.N4",
+      "kind": "kp",
+      "level": "node",
+      "name": "合成节点 T2.N4",
+      "parent_id": "MATH.CALIB.T2"
+    },
+    {
+      "cognitive_levels": [
+        "apply"
+      ],
+      "id": "MATH.CALIB.T2.N5",
+      "kind": "kp",
+      "level": "node",
+      "name": "合成节点 T2.N5",
+      "parent_id": "MATH.CALIB.T2"
+    },
+    {
+      "cognitive_levels": [
+        "apply"
+      ],
+      "id": "MATH.CALIB.T3.N1",
+      "kind": "kp",
+      "level": "node",
+      "name": "合成节点 T3.N1",
+      "parent_id": "MATH.CALIB.T3"
+    },
+    {
+      "cognitive_levels": [
+        "apply"
+      ],
+      "id": "MATH.CALIB.T3.N2",
+      "kind": "kp",
+      "level": "node",
+      "name": "合成节点 T3.N2",
+      "parent_id": "MATH.CALIB.T3"
+    },
+    {
+      "cognitive_levels": [
+        "apply"
+      ],
+      "id": "MATH.CALIB.T3.N3",
+      "kind": "kp",
+      "level": "node",
+      "name": "合成节点 T3.N3",
+      "parent_id": "MATH.CALIB.T3"
+    },
+    {
+      "cognitive_levels": [
+        "apply"
+      ],
+      "id": "MATH.CALIB.T3.N4",
+      "kind": "kp",
+      "level": "node",
+      "name": "合成节点 T3.N4",
+      "parent_id": "MATH.CALIB.T3"
+    },
+    {
+      "cognitive_levels": [
+        "apply"
+      ],
+      "id": "MATH.CALIB.T3.N5",
+      "kind": "kp",
+      "level": "node",
+      "name": "合成节点 T3.N5",
+      "parent_id": "MATH.CALIB.T3"
+    },
+    {
+      "cognitive_levels": [
+        "apply"
+      ],
+      "id": "MATH.CALIB.T3.N6",
+      "kind": "kp",
+      "level": "node",
+      "name": "合成节点 T3.N6",
+      "parent_id": "MATH.CALIB.T3"
+    },
+    {
+      "cognitive_levels": [
+        "apply"
+      ],
+      "id": "MATH.CALIB.T3.N7",
+      "kind": "kp",
+      "level": "node",
+      "name": "合成节点 T3.N7",
+      "parent_id": "MATH.CALIB.T3"
+    },
+    {
+      "cognitive_levels": [
+        "apply"
+      ],
+      "id": "MATH.CALIB.T4.N1",
+      "kind": "kp",
+      "level": "node",
+      "name": "合成节点 T4.N1",
+      "parent_id": "MATH.CALIB.T4"
+    },
+    {
+      "cognitive_levels": [
+        "apply"
+      ],
+      "id": "MATH.CALIB.T4.N2",
+      "kind": "kp",
+      "level": "node",
+      "name": "合成节点 T4.N2",
+      "parent_id": "MATH.CALIB.T4"
+    },
+    {
+      "cognitive_levels": [
+        "apply"
+      ],
+      "id": "MATH.CALIB.T4.N3",
+      "kind": "kp",
+      "level": "node",
+      "name": "合成节点 T4.N3",
+      "parent_id": "MATH.CALIB.T4"
+    },
+    {
+      "cognitive_levels": [
+        "apply"
+      ],
+      "id": "MATH.CALIB.T4.N4",
+      "kind": "kp",
+      "level": "node",
+      "name": "合成节点 T4.N4",
+      "parent_id": "MATH.CALIB.T4"
+    },
+    {
+      "cognitive_levels": [
+        "apply"
+      ],
+      "id": "MATH.CALIB.T4.N5",
+      "kind": "kp",
+      "level": "node",
+      "name": "合成节点 T4.N5",
+      "parent_id": "MATH.CALIB.T4"
+    }
+  ],
+  "standard_year": 2022,
+  "status": "published",
+  "subject": "aya"
+}

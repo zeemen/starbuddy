@@ -1,0 +1,1208 @@
+{
+  "cohort": {
+    "students_approx": 600
+  },
+  "config": {
+    "config_version": "draft-0.2.0",
+    "fingerprint": "f81df64e64715b3c",
+    "signoff": "待教研确认"
+  },
+  "generator": "kge-calibrate@0.2.0",
+  "hidden_dependency": {
+    "excluded_pairs": {
+      "direct_edge": 9,
+      "topic_over_limit": 0,
+      "transitive": 3
+    },
+    "pairs": [
+      {
+        "conclusion": "未达阈值",
+        "conditioned_on_shared": false,
+        "disclosed": true,
+        "log_odds_ratio": 0.15,
+        "log_odds_ratio_ci": [
+          -0.22,
+          0.51
+        ],
+        "n_approx": 510,
+        "p_adj_band": "≥0.05",
+        "phi": 0.03,
+        "reason": "phi 未达阈值或校正后不显著",
+        "shared_prerequisites": [],
+        "topic": "MATH.CALIB.T1",
+        "u": "MATH.CALIB.T1.N1",
+        "u_rate": 0.66,
+        "v": "MATH.CALIB.T1.N5",
+        "v_rate": 0.52
+      },
+      {
+        "conclusion": "未达阈值",
+        "conditioned_on_shared": false,
+        "disclosed": true,
+        "log_odds_ratio": 0.44,
+        "log_odds_ratio_ci": [
+          0.08,
+          0.79
+        ],
+        "n_approx": 510,
+        "p_adj_band": "≥0.05",
+        "phi": 0.11,
+        "reason": "phi 未达阈值或校正后不显著",
+        "shared_prerequisites": [],
+        "topic": "MATH.CALIB.T1",
+        "u": "MATH.CALIB.T1.N2",
+        "u_rate": 0.6,
+        "v": "MATH.CALIB.T1.N5",
+        "v_rate": 0.51
+      },
+      {
+        "conclusion": "未达阈值",
+        "conditioned_on_shared": false,
+        "disclosed": true,
+        "log_odds_ratio": 0.35,
+        "log_odds_ratio_ci": [
+          0.0,
+          0.7
+        ],
+        "n_approx": 510,
+        "p_adj_band": "≥0.05",
+        "phi": 0.09,
+        "reason": "phi 未达阈值或校正后不显著",
+        "shared_prerequisites": [],
+        "topic": "MATH.CALIB.T1",
+        "u": "MATH.CALIB.T1.N3",
+        "u_rate": 0.59,
+        "v": "MATH.CALIB.T1.N5",
+        "v_rate": 0.5
+      },
+      {
+        "conclusion": "未达阈值",
+        "conditioned_on_shared": false,
+        "disclosed": true,
+        "log_odds_ratio": -0.02,
+        "log_odds_ratio_ci": [
+          -0.37,
+          0.33
+        ],
+        "n_approx": 490,
+        "p_adj_band": "≥0.05",
+        "phi": -0.01,
+        "reason": "phi 未达阈值或校正后不显著",
+        "shared_prerequisites": [],
+        "topic": "MATH.CALIB.T1",
+        "u": "MATH.CALIB.T1.N4",
+        "u_rate": 0.51,
+        "v": "MATH.CALIB.T1.N5",
+        "v_rate": 0.53
+      },
+      {
+        "conclusion": "未达阈值",
+        "conditioned_on_shared": false,
+        "disclosed": true,
+        "log_odds_ratio": 0.12,
+        "log_odds_ratio_ci": [
+          -0.24,
+          0.48
+        ],
+        "n_approx": 500,
+        "p_adj_band": "≥0.05",
+        "phi": 0.03,
+        "reason": "phi 未达阈值或校正后不显著",
+        "shared_prerequisites": [],
+        "topic": "MATH.CALIB.T2",
+        "u": "MATH.CALIB.T2.N1",
+        "u_rate": 0.57,
+        "v": "MATH.CALIB.T2.N4",
+        "v_rate": 0.6
+      },
+      {
+        "conclusion": "未达阈值",
+        "conditioned_on_shared": false,
+        "disclosed": true,
+        "log_odds_ratio": -0.07,
+        "log_odds_ratio_ci": [
+          -0.43,
+          0.28
+        ],
+        "n_approx": 500,
+        "p_adj_band": "≥0.05",
+        "phi": -0.02,
+        "reason": "phi 未达阈值或校正后不显著",
+        "shared_prerequisites": [],
+        "topic": "MATH.CALIB.T2",
+        "u": "MATH.CALIB.T2.N1",
+        "u_rate": 0.56,
+        "v": "MATH.CALIB.T2.N5",
+        "v_rate": 0.54
+      },
+      {
+        "conclusion": "未达阈值",
+        "conditioned_on_shared": true,
+        "disclosed": true,
+        "log_odds_ratio": 0.47,
+        "log_odds_ratio_ci": [
+          -0.15,
+          1.08
+        ],
+        "n_approx": 270,
+        "p_adj_band": "≥0.05",
+        "phi": 0.09,
+        "reason": "phi 未达阈值或校正后不显著",
+        "shared_prerequisites": [
+          "MATH.CALIB.T2.N1"
+        ],
+        "topic": "MATH.CALIB.T2",
+        "u": "MATH.CALIB.T2.N2",
+        "u_rate": 0.81,
+        "v": "MATH.CALIB.T2.N3",
+        "v_rate": 0.55
+      },
+      {
+        "conclusion": "未达阈值",
+        "conditioned_on_shared": false,
+        "disclosed": true,
+        "log_odds_ratio": -0.02,
+        "log_odds_ratio_ci": [
+          -0.38,
+          0.34
+        ],
+        "n_approx": 500,
+        "p_adj_band": "≥0.05",
+        "phi": 0.0,
+        "reason": "phi 未达阈值或校正后不显著",
+        "shared_prerequisites": [],
+        "topic": "MATH.CALIB.T2",
+        "u": "MATH.CALIB.T2.N2",
+        "u_rate": 0.57,
+        "v": "MATH.CALIB.T2.N4",
+        "v_rate": 0.59
+      },
+      {
+        "conclusion": "未达阈值",
+        "conditioned_on_shared": false,
+        "disclosed": true,
+        "log_odds_ratio": 0.05,
+        "log_odds_ratio_ci": [
+          -0.3,
+          0.41
+        ],
+        "n_approx": 500,
+        "p_adj_band": "≥0.05",
+        "phi": 0.01,
+        "reason": "phi 未达阈值或校正后不显著",
+        "shared_prerequisites": [],
+        "topic": "MATH.CALIB.T2",
+        "u": "MATH.CALIB.T2.N2",
+        "u_rate": 0.57,
+        "v": "MATH.CALIB.T2.N5",
+        "v_rate": 0.53
+      },
+      {
+        "conclusion": "未达阈值",
+        "conditioned_on_shared": false,
+        "disclosed": true,
+        "log_odds_ratio": 0.05,
+        "log_odds_ratio_ci": [
+          -0.3,
+          0.4
+        ],
+        "n_approx": 510,
+        "p_adj_band": "≥0.05",
+        "phi": 0.01,
+        "reason": "phi 未达阈值或校正后不显著",
+        "shared_prerequisites": [],
+        "topic": "MATH.CALIB.T2",
+        "u": "MATH.CALIB.T2.N3",
+        "u_rate": 0.53,
+        "v": "MATH.CALIB.T2.N4",
+        "v_rate": 0.59
+      },
+      {
+        "conclusion": "未达阈值",
+        "conditioned_on_shared": false,
+        "disclosed": true,
+        "log_odds_ratio": 0.01,
+        "log_odds_ratio_ci": [
+          -0.33,
+          0.36
+        ],
+        "n_approx": 510,
+        "p_adj_band": "≥0.05",
+        "phi": 0.0,
+        "reason": "phi 未达阈值或校正后不显著",
+        "shared_prerequisites": [],
+        "topic": "MATH.CALIB.T2",
+        "u": "MATH.CALIB.T2.N3",
+        "u_rate": 0.53,
+        "v": "MATH.CALIB.T2.N5",
+        "v_rate": 0.54
+      },
+      {
+        "conclusion": "新增前置边候选",
+        "conditioned_on_shared": false,
+        "directions": [
+          [
+            "MATH.CALIB.T2.N4",
+            "MATH.CALIB.T2.N5"
+          ],
+          [
+            "MATH.CALIB.T2.N5",
+            "MATH.CALIB.T2.N4"
+          ]
+        ],
+        "disclosed": true,
+        "log_odds_ratio": 3.13,
+        "log_odds_ratio_ci": [
+          2.66,
+          3.6
+        ],
+        "n_approx": 510,
+        "p_adj_band": "<0.001",
+        "phi": 0.64,
+        "reason": "phi 达到阈值且校正后显著（方向不定，两向都列）",
+        "shared_prerequisites": [],
+        "topic": "MATH.CALIB.T2",
+        "u": "MATH.CALIB.T2.N4",
+        "u_rate": 0.58,
+        "v": "MATH.CALIB.T2.N5",
+        "v_rate": 0.53
+      },
+      {
+        "conclusion": "未达阈值",
+        "conditioned_on_shared": false,
+        "disclosed": true,
+        "log_odds_ratio": 0.14,
+        "log_odds_ratio_ci": [
+          -0.22,
+          0.5
+        ],
+        "n_approx": 510,
+        "p_adj_band": "≥0.05",
+        "phi": 0.03,
+        "reason": "phi 未达阈值或校正后不显著",
+        "shared_prerequisites": [],
+        "topic": "MATH.CALIB.T3",
+        "u": "MATH.CALIB.T3.N1",
+        "u_rate": 0.62,
+        "v": "MATH.CALIB.T3.N4",
+        "v_rate": 0.59
+      },
+      {
+        "conclusion": "未达阈值",
+        "conditioned_on_shared": false,
+        "disclosed": true,
+        "log_odds_ratio": -0.09,
+        "log_odds_ratio_ci": [
+          -0.45,
+          0.27
+        ],
+        "n_approx": 510,
+        "p_adj_band": "≥0.05",
+        "phi": -0.02,
+        "reason": "phi 未达阈值或校正后不显著",
+        "shared_prerequisites": [],
+        "topic": "MATH.CALIB.T3",
+        "u": "MATH.CALIB.T3.N1",
+        "u_rate": 0.61,
+        "v": "MATH.CALIB.T3.N5",
+        "v_rate": 0.57
+      },
+      {
+        "conclusion": "未达阈值",
+        "conditioned_on_shared": false,
+        "disclosed": true,
+        "log_odds_ratio": -0.23,
+        "log_odds_ratio_ci": [
+          -0.58,
+          0.13
+        ],
+        "n_approx": 510,
+        "p_adj_band": "≥0.05",
+        "phi": -0.05,
+        "reason": "phi 未达阈值或校正后不显著",
+        "shared_prerequisites": [],
+        "topic": "MATH.CALIB.T3",
+        "u": "MATH.CALIB.T3.N1",
+        "u_rate": 0.6,
+        "v": "MATH.CALIB.T3.N6",
+        "v_rate": 0.57
+      },
+      {
+        "conclusion": "未达阈值",
+        "conditioned_on_shared": false,
+        "disclosed": true,
+        "log_odds_ratio": -0.73,
+        "log_odds_ratio_ci": [
+          -1.09,
+          -0.36
+        ],
+        "n_approx": 510,
+        "p_adj_band": "<0.01",
+        "phi": -0.17,
+        "reason": "phi 未达阈值或校正后不显著",
+        "shared_prerequisites": [],
+        "topic": "MATH.CALIB.T3",
+        "u": "MATH.CALIB.T3.N1",
+        "u_rate": 0.61,
+        "v": "MATH.CALIB.T3.N7",
+        "v_rate": 0.53
+      },
+      {
+        "conclusion": "样本不足",
+        "conditioned_on_shared": true,
+        "disclosed": false,
+        "reason": "四格最小格不足门槛 20",
+        "shared_prerequisites": [
+          "MATH.CALIB.T3.N1"
+        ],
+        "topic": "MATH.CALIB.T3",
+        "u": "MATH.CALIB.T3.N2",
+        "v": "MATH.CALIB.T3.N3"
+      },
+      {
+        "conclusion": "未达阈值",
+        "conditioned_on_shared": false,
+        "disclosed": true,
+        "log_odds_ratio": 0.08,
+        "log_odds_ratio_ci": [
+          -0.28,
+          0.44
+        ],
+        "n_approx": 500,
+        "p_adj_band": "≥0.05",
+        "phi": 0.02,
+        "reason": "phi 未达阈值或校正后不显著",
+        "shared_prerequisites": [],
+        "topic": "MATH.CALIB.T3",
+        "u": "MATH.CALIB.T3.N2",
+        "u_rate": 0.59,
+        "v": "MATH.CALIB.T3.N4",
+        "v_rate": 0.59
+      },
+      {
+        "conclusion": "未达阈值",
+        "conditioned_on_shared": false,
+        "disclosed": true,
+        "log_odds_ratio": -0.21,
+        "log_odds_ratio_ci": [
+          -0.57,
+          0.14
+        ],
+        "n_approx": 500,
+        "p_adj_band": "≥0.05",
+        "phi": -0.05,
+        "reason": "phi 未达阈值或校正后不显著",
+        "shared_prerequisites": [],
+        "topic": "MATH.CALIB.T3",
+        "u": "MATH.CALIB.T3.N2",
+        "u_rate": 0.57,
+        "v": "MATH.CALIB.T3.N5",
+        "v_rate": 0.56
+      },
+      {
+        "conclusion": "未达阈值",
+        "conditioned_on_shared": false,
+        "disclosed": true,
+        "log_odds_ratio": -0.23,
+        "log_odds_ratio_ci": [
+          -0.58,
+          0.13
+        ],
+        "n_approx": 500,
+        "p_adj_band": "≥0.05",
+        "phi": -0.06,
+        "reason": "phi 未达阈值或校正后不显著",
+        "shared_prerequisites": [],
+        "topic": "MATH.CALIB.T3",
+        "u": "MATH.CALIB.T3.N2",
+        "u_rate": 0.56,
+        "v": "MATH.CALIB.T3.N6",
+        "v_rate": 0.58
+      },
+      {
+        "conclusion": "未达阈值",
+        "conditioned_on_shared": false,
+        "disclosed": true,
+        "log_odds_ratio": -0.49,
+        "log_odds_ratio_ci": [
+          -0.85,
+          -0.13
+        ],
+        "n_approx": 500,
+        "p_adj_band": "≥0.05",
+        "phi": -0.12,
+        "reason": "phi 未达阈值或校正后不显著",
+        "shared_prerequisites": [],
+        "topic": "MATH.CALIB.T3",
+        "u": "MATH.CALIB.T3.N2",
+        "u_rate": 0.58,
+        "v": "MATH.CALIB.T3.N7",
+        "v_rate": 0.54
+      },
+      {
+        "conclusion": "未达阈值",
+        "conditioned_on_shared": false,
+        "disclosed": true,
+        "log_odds_ratio": 0.07,
+        "log_odds_ratio_ci": [
+          -0.28,
+          0.43
+        ],
+        "n_approx": 500,
+        "p_adj_band": "≥0.05",
+        "phi": 0.02,
+        "reason": "phi 未达阈值或校正后不显著",
+        "shared_prerequisites": [],
+        "topic": "MATH.CALIB.T3",
+        "u": "MATH.CALIB.T3.N3",
+        "u_rate": 0.58,
+        "v": "MATH.CALIB.T3.N4",
+        "v_rate": 0.59
+      },
+      {
+        "conclusion": "未达阈值",
+        "conditioned_on_shared": false,
+        "disclosed": true,
+        "log_odds_ratio": -0.16,
+        "log_odds_ratio_ci": [
+          -0.52,
+          0.19
+        ],
+        "n_approx": 500,
+        "p_adj_band": "≥0.05",
+        "phi": -0.04,
+        "reason": "phi 未达阈值或校正后不显著",
+        "shared_prerequisites": [],
+        "topic": "MATH.CALIB.T3",
+        "u": "MATH.CALIB.T3.N3",
+        "u_rate": 0.58,
+        "v": "MATH.CALIB.T3.N5",
+        "v_rate": 0.56
+      },
+      {
+        "conclusion": "未达阈值",
+        "conditioned_on_shared": false,
+        "disclosed": true,
+        "log_odds_ratio": 0.17,
+        "log_odds_ratio_ci": [
+          -0.19,
+          0.52
+        ],
+        "n_approx": 500,
+        "p_adj_band": "≥0.05",
+        "phi": 0.04,
+        "reason": "phi 未达阈值或校正后不显著",
+        "shared_prerequisites": [],
+        "topic": "MATH.CALIB.T3",
+        "u": "MATH.CALIB.T3.N3",
+        "u_rate": 0.57,
+        "v": "MATH.CALIB.T3.N6",
+        "v_rate": 0.57
+      },
+      {
+        "conclusion": "未达阈值",
+        "conditioned_on_shared": false,
+        "disclosed": true,
+        "log_odds_ratio": -0.21,
+        "log_odds_ratio_ci": [
+          -0.56,
+          0.15
+        ],
+        "n_approx": 510,
+        "p_adj_band": "≥0.05",
+        "phi": -0.05,
+        "reason": "phi 未达阈值或校正后不显著",
+        "shared_prerequisites": [],
+        "topic": "MATH.CALIB.T3",
+        "u": "MATH.CALIB.T3.N3",
+        "u_rate": 0.59,
+        "v": "MATH.CALIB.T3.N7",
+        "v_rate": 0.52
+      },
+      {
+        "conclusion": "未达阈值",
+        "conditioned_on_shared": false,
+        "disclosed": true,
+        "log_odds_ratio": -0.04,
+        "log_odds_ratio_ci": [
+          -0.4,
+          0.32
+        ],
+        "n_approx": 500,
+        "p_adj_band": "≥0.05",
+        "phi": -0.01,
+        "reason": "phi 未达阈值或校正后不显著",
+        "shared_prerequisites": [],
+        "topic": "MATH.CALIB.T3",
+        "u": "MATH.CALIB.T3.N4",
+        "u_rate": 0.58,
+        "v": "MATH.CALIB.T3.N6",
+        "v_rate": 0.56
+      },
+      {
+        "conclusion": "未达阈值",
+        "conditioned_on_shared": false,
+        "disclosed": true,
+        "log_odds_ratio": -0.08,
+        "log_odds_ratio_ci": [
+          -0.44,
+          0.28
+        ],
+        "n_approx": 500,
+        "p_adj_band": "≥0.05",
+        "phi": -0.02,
+        "reason": "phi 未达阈值或校正后不显著",
+        "shared_prerequisites": [],
+        "topic": "MATH.CALIB.T3",
+        "u": "MATH.CALIB.T3.N4",
+        "u_rate": 0.6,
+        "v": "MATH.CALIB.T3.N7",
+        "v_rate": 0.54
+      },
+      {
+        "conclusion": "未达阈值",
+        "conditioned_on_shared": false,
+        "disclosed": true,
+        "log_odds_ratio": -0.03,
+        "log_odds_ratio_ci": [
+          -0.39,
+          0.32
+        ],
+        "n_approx": 500,
+        "p_adj_band": "≥0.05",
+        "phi": -0.01,
+        "reason": "phi 未达阈值或校正后不显著",
+        "shared_prerequisites": [],
+        "topic": "MATH.CALIB.T3",
+        "u": "MATH.CALIB.T3.N5",
+        "u_rate": 0.57,
+        "v": "MATH.CALIB.T3.N6",
+        "v_rate": 0.58
+      },
+      {
+        "conclusion": "未达阈值",
+        "conditioned_on_shared": false,
+        "disclosed": true,
+        "log_odds_ratio": 0.1,
+        "log_odds_ratio_ci": [
+          -0.26,
+          0.45
+        ],
+        "n_approx": 500,
+        "p_adj_band": "≥0.05",
+        "phi": 0.02,
+        "reason": "phi 未达阈值或校正后不显著",
+        "shared_prerequisites": [],
+        "topic": "MATH.CALIB.T3",
+        "u": "MATH.CALIB.T3.N5",
+        "u_rate": 0.57,
+        "v": "MATH.CALIB.T3.N7",
+        "v_rate": 0.53
+      },
+      {
+        "conclusion": "新增前置边候选",
+        "conditioned_on_shared": false,
+        "directions": [
+          [
+            "MATH.CALIB.T3.N6",
+            "MATH.CALIB.T3.N7"
+          ],
+          [
+            "MATH.CALIB.T3.N7",
+            "MATH.CALIB.T3.N6"
+          ]
+        ],
+        "disclosed": true,
+        "log_odds_ratio": 2.79,
+        "log_odds_ratio_ci": [
+          2.35,
+          3.24
+        ],
+        "n_approx": 500,
+        "p_adj_band": "<0.001",
+        "phi": 0.6,
+        "reason": "phi 达到阈值且校正后显著（方向不定，两向都列）",
+        "shared_prerequisites": [],
+        "topic": "MATH.CALIB.T3",
+        "u": "MATH.CALIB.T3.N6",
+        "u_rate": 0.57,
+        "v": "MATH.CALIB.T3.N7",
+        "v_rate": 0.52
+      },
+      {
+        "conclusion": "未达阈值",
+        "conditioned_on_shared": false,
+        "disclosed": true,
+        "log_odds_ratio": -0.15,
+        "log_odds_ratio_ci": [
+          -0.5,
+          0.21
+        ],
+        "n_approx": 500,
+        "p_adj_band": "≥0.05",
+        "phi": -0.04,
+        "reason": "phi 未达阈值或校正后不显著",
+        "shared_prerequisites": [],
+        "topic": "MATH.CALIB.T4",
+        "u": "MATH.CALIB.T4.N1",
+        "u_rate": 0.46,
+        "v": "MATH.CALIB.T4.N3",
+        "v_rate": 0.46
+      },
+      {
+        "conclusion": "未达阈值",
+        "conditioned_on_shared": false,
+        "disclosed": true,
+        "log_odds_ratio": 0.07,
+        "log_odds_ratio_ci": [
+          -0.28,
+          0.43
+        ],
+        "n_approx": 500,
+        "p_adj_band": "≥0.05",
+        "phi": 0.02,
+        "reason": "phi 未达阈值或校正后不显著",
+        "shared_prerequisites": [],
+        "topic": "MATH.CALIB.T4",
+        "u": "MATH.CALIB.T4.N1",
+        "u_rate": 0.46,
+        "v": "MATH.CALIB.T4.N4",
+        "v_rate": 0.39
+      },
+      {
+        "conclusion": "未达阈值",
+        "conditioned_on_shared": false,
+        "disclosed": true,
+        "log_odds_ratio": 0.09,
+        "log_odds_ratio_ci": [
+          -0.26,
+          0.45
+        ],
+        "n_approx": 490,
+        "p_adj_band": "≥0.05",
+        "phi": 0.02,
+        "reason": "phi 未达阈值或校正后不显著",
+        "shared_prerequisites": [],
+        "topic": "MATH.CALIB.T4",
+        "u": "MATH.CALIB.T4.N1",
+        "u_rate": 0.47,
+        "v": "MATH.CALIB.T4.N5",
+        "v_rate": 0.55
+      },
+      {
+        "conclusion": "未达阈值",
+        "conditioned_on_shared": false,
+        "disclosed": true,
+        "log_odds_ratio": 0.15,
+        "log_odds_ratio_ci": [
+          -0.21,
+          0.5
+        ],
+        "n_approx": 500,
+        "p_adj_band": "≥0.05",
+        "phi": 0.04,
+        "reason": "phi 未达阈值或校正后不显著",
+        "shared_prerequisites": [],
+        "topic": "MATH.CALIB.T4",
+        "u": "MATH.CALIB.T4.N2",
+        "u_rate": 0.56,
+        "v": "MATH.CALIB.T4.N3",
+        "v_rate": 0.43
+      },
+      {
+        "conclusion": "未达阈值",
+        "conditioned_on_shared": false,
+        "disclosed": true,
+        "log_odds_ratio": 0.19,
+        "log_odds_ratio_ci": [
+          -0.17,
+          0.54
+        ],
+        "n_approx": 510,
+        "p_adj_band": "≥0.05",
+        "phi": 0.05,
+        "reason": "phi 未达阈值或校正后不显著",
+        "shared_prerequisites": [],
+        "topic": "MATH.CALIB.T4",
+        "u": "MATH.CALIB.T4.N2",
+        "u_rate": 0.54,
+        "v": "MATH.CALIB.T4.N4",
+        "v_rate": 0.4
+      },
+      {
+        "conclusion": "未达阈值",
+        "conditioned_on_shared": false,
+        "disclosed": true,
+        "log_odds_ratio": -0.1,
+        "log_odds_ratio_ci": [
+          -0.45,
+          0.25
+        ],
+        "n_approx": 500,
+        "p_adj_band": "≥0.05",
+        "phi": -0.02,
+        "reason": "phi 未达阈值或校正后不显著",
+        "shared_prerequisites": [],
+        "topic": "MATH.CALIB.T4",
+        "u": "MATH.CALIB.T4.N2",
+        "u_rate": 0.54,
+        "v": "MATH.CALIB.T4.N5",
+        "v_rate": 0.55
+      },
+      {
+        "conclusion": "未达阈值",
+        "conditioned_on_shared": false,
+        "disclosed": true,
+        "log_odds_ratio": -0.29,
+        "log_odds_ratio_ci": [
+          -0.65,
+          0.07
+        ],
+        "n_approx": 510,
+        "p_adj_band": "≥0.05",
+        "phi": -0.07,
+        "reason": "phi 未达阈值或校正后不显著",
+        "shared_prerequisites": [],
+        "topic": "MATH.CALIB.T4",
+        "u": "MATH.CALIB.T4.N3",
+        "u_rate": 0.44,
+        "v": "MATH.CALIB.T4.N4",
+        "v_rate": 0.41
+      },
+      {
+        "conclusion": "未达阈值",
+        "conditioned_on_shared": false,
+        "disclosed": true,
+        "log_odds_ratio": 0.19,
+        "log_odds_ratio_ci": [
+          -0.16,
+          0.54
+        ],
+        "n_approx": 500,
+        "p_adj_band": "≥0.05",
+        "phi": 0.05,
+        "reason": "phi 未达阈值或校正后不显著",
+        "shared_prerequisites": [],
+        "topic": "MATH.CALIB.T4",
+        "u": "MATH.CALIB.T4.N3",
+        "u_rate": 0.46,
+        "v": "MATH.CALIB.T4.N5",
+        "v_rate": 0.55
+      },
+      {
+        "conclusion": "未达阈值",
+        "conditioned_on_shared": false,
+        "disclosed": true,
+        "log_odds_ratio": -0.09,
+        "log_odds_ratio_ci": [
+          -0.44,
+          0.27
+        ],
+        "n_approx": 510,
+        "p_adj_band": "≥0.05",
+        "phi": -0.02,
+        "reason": "phi 未达阈值或校正后不显著",
+        "shared_prerequisites": [],
+        "topic": "MATH.CALIB.T4",
+        "u": "MATH.CALIB.T4.N4",
+        "u_rate": 0.4,
+        "v": "MATH.CALIB.T4.N5",
+        "v_rate": 0.55
+      }
+    ]
+  },
+  "map": {
+    "computable_nodes": 22,
+    "map_version": "0.1.0",
+    "prerequisite_edges": {
+      "strong": 9,
+      "weak": 1
+    },
+    "snapshot_digest": "501bd5e81ec01de0d5f5f2a63c2ea586ca17b3711bae6540a467831531af0679",
+    "subject": "aya"
+  },
+  "method": {
+    "guard": "四格表各格先按表键加 −2…+2 的确定性扰动，扰动后任一格 < 22 即只写“样本不足”（保证真实每格 ≥ 20）；数值与结论都由扰动后的四格算出；不输出精确计数：人数向下取整到 10，比率与区间保留 2 位，p 值只给分档；输出不含学生伪名",
+    "hidden_dependency": {
+      "association": "phi 系数；对数优势比（Woolf 区间）",
+      "condition_on_shared_prerequisites": true,
+      "fdr_q": 0.05,
+      "max_pairs_per_topic": 5000,
+      "min_phi": 0.3,
+      "multiple_comparison": "Benjamini–Hochberg",
+      "scope": "同一主题内、无前置边（任一方向、强弱都算）、不传递可达的节点对",
+      "test": "卡方检验 df = 1（无连续性校正）"
+    },
+    "mastery": "星亮口径（与学习服务 star_lit 同口径）：星亮层次那一行的门槛为 transfer 或 retain 算掌握；掌握概率不参与判定；unseen、空门槛或无记录算未观测",
+    "min_cell": 20,
+    "prerequisite": {
+      "b_observed_rate": "组内在 B 上有观测的比例（保留 1 位）",
+      "confidence": 0.95,
+      "fdr_q": 0.05,
+      "interval": "Wilson（各组）、Newcombe 混合分数（差值）",
+      "min_effect": 0.1,
+      "min_effect_interval": "置信水平按族校正：1 − (1 − confidence) / 族内检验数",
+      "multiple_comparison": "Benjamini–Hochberg（强前置一族、弱前置一族）",
+      "test": "两比例 z 检验（合并方差，双侧）"
+    }
+  },
+  "notice": "合成，不是试点结论",
+  "prerequisite_tests": [
+    {
+      "a_mastered": {
+        "b_observed_rate": 0.9,
+        "b_rate": 0.81,
+        "b_rate_ci": [
+          0.77,
+          0.85
+        ],
+        "n_approx": 330
+      },
+      "a_not_mastered": {
+        "b_observed_rate": 0.9,
+        "b_rate": 0.18,
+        "b_rate_ci": [
+          0.13,
+          0.24
+        ],
+        "n_approx": 170
+      },
+      "conclusion": "成立",
+      "diff": 0.63,
+      "diff_ci": [
+        0.55,
+        0.69
+      ],
+      "disclosed": true,
+      "from": "MATH.CALIB.T1.N1",
+      "from_topic": "MATH.CALIB.T1",
+      "p_adj_band": "<0.001",
+      "reason": "差值显著为正",
+      "strength": "strong",
+      "to": "MATH.CALIB.T1.N2",
+      "to_topic": "MATH.CALIB.T1"
+    },
+    {
+      "a_mastered": {
+        "b_observed_rate": 0.9,
+        "b_rate": 0.83,
+        "b_rate_ci": [
+          0.78,
+          0.87
+        ],
+        "n_approx": 300
+      },
+      "a_not_mastered": {
+        "b_observed_rate": 0.9,
+        "b_rate": 0.18,
+        "b_rate_ci": [
+          0.14,
+          0.24
+        ],
+        "n_approx": 200
+      },
+      "conclusion": "成立",
+      "diff": 0.64,
+      "diff_ci": [
+        0.57,
+        0.7
+      ],
+      "disclosed": true,
+      "from": "MATH.CALIB.T1.N2",
+      "from_topic": "MATH.CALIB.T1",
+      "p_adj_band": "<0.001",
+      "reason": "差值显著为正",
+      "strength": "strong",
+      "to": "MATH.CALIB.T1.N3",
+      "to_topic": "MATH.CALIB.T1"
+    },
+    {
+      "a_mastered": {
+        "b_observed_rate": 0.9,
+        "b_rate": 0.5,
+        "b_rate_ci": [
+          0.44,
+          0.56
+        ],
+        "n_approx": 290
+      },
+      "a_not_mastered": {
+        "b_observed_rate": 0.9,
+        "b_rate": 0.51,
+        "b_rate_ci": [
+          0.44,
+          0.58
+        ],
+        "n_approx": 200
+      },
+      "conclusion": "不成立候选",
+      "diff": -0.01,
+      "diff_ci": [
+        -0.09,
+        0.08
+      ],
+      "disclosed": true,
+      "from": "MATH.CALIB.T1.N3",
+      "from_topic": "MATH.CALIB.T1",
+      "p_adj_band": "≥0.05",
+      "reason": "差值区间包含 0：A 未掌握者在 B 上并不显著更差",
+      "strength": "strong",
+      "to": "MATH.CALIB.T1.N4",
+      "to_topic": "MATH.CALIB.T1"
+    },
+    {
+      "a_mastered": {
+        "b_observed_rate": 0.9,
+        "b_rate": 0.81,
+        "b_rate_ci": [
+          0.76,
+          0.85
+        ],
+        "n_approx": 290
+      },
+      "a_not_mastered": {
+        "b_observed_rate": 0.9,
+        "b_rate": 0.25,
+        "b_rate_ci": [
+          0.2,
+          0.31
+        ],
+        "n_approx": 210
+      },
+      "conclusion": "成立",
+      "diff": 0.56,
+      "diff_ci": [
+        0.48,
+        0.63
+      ],
+      "disclosed": true,
+      "from": "MATH.CALIB.T2.N1",
+      "from_topic": "MATH.CALIB.T2",
+      "p_adj_band": "<0.001",
+      "reason": "差值显著为正",
+      "strength": "strong",
+      "to": "MATH.CALIB.T2.N2",
+      "to_topic": "MATH.CALIB.T2"
+    },
+    {
+      "a_mastered": {
+        "b_observed_rate": 0.9,
+        "b_rate": 0.54,
+        "b_rate_ci": [
+          0.48,
+          0.6
+        ],
+        "n_approx": 290
+      },
+      "a_not_mastered": {
+        "b_observed_rate": 0.9,
+        "b_rate": 0.49,
+        "b_rate_ci": [
+          0.42,
+          0.55
+        ],
+        "n_approx": 210
+      },
+      "conclusion": "不成立候选",
+      "diff": 0.05,
+      "diff_ci": [
+        -0.04,
+        0.14
+      ],
+      "disclosed": true,
+      "from": "MATH.CALIB.T2.N1",
+      "from_topic": "MATH.CALIB.T2",
+      "p_adj_band": "≥0.05",
+      "reason": "差值区间包含 0：A 未掌握者在 B 上并不显著更差",
+      "strength": "strong",
+      "to": "MATH.CALIB.T2.N3",
+      "to_topic": "MATH.CALIB.T2"
+    },
+    {
+      "a_mastered": {
+        "b_observed_rate": 0.9,
+        "b_rate": 0.84,
+        "b_rate_ci": [
+          0.8,
+          0.88
+        ],
+        "n_approx": 290
+      },
+      "a_not_mastered": {
+        "b_observed_rate": 0.9,
+        "b_rate": 0.13,
+        "b_rate_ci": [
+          0.09,
+          0.18
+        ],
+        "n_approx": 200
+      },
+      "conclusion": "成立",
+      "diff": 0.71,
+      "diff_ci": [
+        0.64,
+        0.77
+      ],
+      "disclosed": true,
+      "from": "MATH.CALIB.T2.N2",
+      "from_topic": "MATH.CALIB.T2",
+      "p_adj_band": "<0.001",
+      "reason": "差值显著为正",
+      "strength": "strong",
+      "to": "MATH.CALIB.T4.N5",
+      "to_topic": "MATH.CALIB.T4"
+    },
+    {
+      "a_mastered": {
+        "b_observed_rate": 0.9,
+        "b_rate": 0.81,
+        "b_rate_ci": [
+          0.76,
+          0.85
+        ],
+        "n_approx": 310
+      },
+      "a_not_mastered": {
+        "b_observed_rate": 0.9,
+        "b_rate": 0.2,
+        "b_rate_ci": [
+          0.15,
+          0.26
+        ],
+        "n_approx": 200
+      },
+      "conclusion": "成立",
+      "diff": 0.61,
+      "diff_ci": [
+        0.53,
+        0.67
+      ],
+      "disclosed": true,
+      "from": "MATH.CALIB.T3.N1",
+      "from_topic": "MATH.CALIB.T3",
+      "p_adj_band": "<0.001",
+      "reason": "差值显著为正",
+      "strength": "strong",
+      "to": "MATH.CALIB.T3.N2",
+      "to_topic": "MATH.CALIB.T3"
+    },
+    {
+      "a_mastered": {
+        "b_observed_rate": 0.9,
+        "b_rate": 0.81,
+        "b_rate_ci": [
+          0.76,
+          0.85
+        ],
+        "n_approx": 310
+      },
+      "a_not_mastered": {
+        "b_observed_rate": 0.9,
+        "b_rate": 0.2,
+        "b_rate_ci": [
+          0.15,
+          0.26
+        ],
+        "n_approx": 200
+      },
+      "conclusion": "成立",
+      "diff": 0.61,
+      "diff_ci": [
+        0.53,
+        0.67
+      ],
+      "disclosed": true,
+      "from": "MATH.CALIB.T3.N1",
+      "from_topic": "MATH.CALIB.T3",
+      "p_adj_band": "<0.001",
+      "reason": "差值显著为正",
+      "strength": "strong",
+      "to": "MATH.CALIB.T3.N3",
+      "to_topic": "MATH.CALIB.T3"
+    },
+    {
+      "a_mastered": {
+        "b_observed_rate": 0.9,
+        "b_rate": 0.83,
+        "b_rate_ci": [
+          0.78,
+          0.87
+        ],
+        "n_approx": 290
+      },
+      "a_not_mastered": {
+        "b_observed_rate": 0.9,
+        "b_rate": 0.2,
+        "b_rate_ci": [
+          0.15,
+          0.26
+        ],
+        "n_approx": 200
+      },
+      "conclusion": "仅报告（弱前置）",
+      "diff": 0.63,
+      "diff_ci": [
+        0.55,
+        0.69
+      ],
+      "disclosed": true,
+      "from": "MATH.CALIB.T3.N4",
+      "from_topic": "MATH.CALIB.T3",
+      "p_adj_band": "<0.001",
+      "reason": "弱前置只报告，不出候选",
+      "strength": "weak",
+      "to": "MATH.CALIB.T3.N5",
+      "to_topic": "MATH.CALIB.T3"
+    },
+    {
+      "a_mastered": {
+        "b_observed_rate": 0.9,
+        "b_rate": 0.54,
+        "b_rate_ci": [
+          0.48,
+          0.61
+        ],
+        "n_approx": 230
+      },
+      "a_not_mastered": {
+        "b_observed_rate": 0.9,
+        "b_rate": 0.58,
+        "b_rate_ci": [
+          0.52,
+          0.63
+        ],
+        "n_approx": 260
+      },
+      "conclusion": "不成立候选",
+      "diff": -0.03,
+      "diff_ci": [
+        -0.12,
+        0.06
+      ],
+      "disclosed": true,
+      "from": "MATH.CALIB.T4.N1",
+      "from_topic": "MATH.CALIB.T4",
+      "p_adj_band": "≥0.05",
+      "reason": "差值区间包含 0：A 未掌握者在 B 上并不显著更差",
+      "strength": "strong",
+      "to": "MATH.CALIB.T4.N2",
+      "to_topic": "MATH.CALIB.T4"
+    }
+  ],
+  "schema_version": "kge-calibrate-report/0.2",
+  "status": "候选：待教研在审核台确认、修改或驳回（结构性变更两人确认）；本工具不改地图、不写库",
+  "summary": {
+    "hidden_dependency": {
+      "新增前置边候选": 2,
+      "未达阈值": 36,
+      "样本不足": 1
+    },
+    "prerequisite": {
+      "不成立候选": 3,
+      "仅报告（弱前置）": 1,
+      "待定": 0,
+      "成立": 6,
+      "样本不足": 0
+    }
+  }
+}

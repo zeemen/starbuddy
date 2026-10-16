@@ -1,0 +1,29 @@
+{
+  "$comment": "KGE-09 地图数据校准第一步（specs/kge09-map-calibration/spec.md）的门槛与阈值，集中在这一份。全部数值是占位值，待教研确认（spec 待人确认 1、2）：确认前在任何数据上的输出都只是候选，不构成地图变更依据；合成样例上的结果是“合成，不是试点结论”。改任一数值或口径都要在 signoff 里重新记录。",
+  "schema_version": "kge-calibrate-config/0.2",
+  "config_version": "draft-0.2.0",
+  "signoff": "待教研确认",
+  "mastery": {
+    "$comment": "“掌握”只有一种口径（待人确认 1）：星亮，与学习服务 services/learning/learning/mastery/gates.py 的 star_lit 同口径、不另立——掌握状态表里每名学生每个节点的那一行，必须是按掌握配置 star_level_rule 选出的星亮层次（star_basis_level）的那一行（导出 SQL 负责选层次，门槛状态与掌握概率取自同一行），门槛状态是 transfer 或 retain（gates.py 的 LIT）算掌握，其余门槛算未掌握。掌握概率只随行带出，不参与判定。门槛为 unseen、为空、或这名学生在这个节点上没有记录，一律算“未观测”，不进入该节点的任何计数（不当作未掌握）。",
+    "rule": "star_lit"
+  },
+  "min_cell": 20,
+  "prerequisite": {
+    "$comment": "强前置 A→B 的检验（待人确认 2）：A 已掌握组与 A 未掌握组在 B 上的掌握率之差。四格（A 掌握与否 × B 掌握与否）每一格人数都 ≥ min_cell 才检验，否则结论只写“样本不足”。区间：各组 Wilson、差值 Newcombe（混合分数法），置信水平 confidence；p 值：合并方差的两比例 z 检验（双侧），全部可检验的强前置为一族做 Benjamini–Hochberg 校正。成立 = 差值区间下界 > 0、校正后 p ≤ fdr_q 且差值 ≥ min_effect；不成立候选 = 差值区间包含 0，或区间整体 < 0（反向），或按族校正后的区间（置信水平 1 − (1 − confidence) / 族内检验数）上界 < min_effect（差值确定地小于效应量阈值：spec 之外的补充——总体能力让任意两节点都弱正相关，大样本下区间会脱离 0，待教研确认）；其余为待定。弱前置照算、单独一族校正，只报告不出候选。",
+    "confidence": 0.95,
+    "fdr_q": 0.05,
+    "min_effect": 0.1
+  },
+  "hidden_dependency": {
+    "$comment": "隐藏依赖（待人确认 2）：同一主题内、地图里没有前置边（任一方向、强弱都算）且不传递可达的节点对；一个主题的节点对数超过 max_pairs_per_topic 时整个主题不扫描（报告里计数）。condition_on_shared_prerequisites = true 时，两节点有共同前置（传递；只算地图里可计算、且有观测的节点）的，只在共同前置全部已掌握的学生里计算（否则兄弟节点会因共同前置而相关，报成假候选）——这一条是 spec 之外的补充，待教研确认。四格最小格 ≥ min_cell 才计算；phi ≥ min_phi 且卡方检验（df = 1）BH 校正后 p ≤ fdr_q → 新增前置边候选（方向不定，两向都列）。",
+    "fdr_q": 0.05,
+    "min_phi": 0.3,
+    "condition_on_shared_prerequisites": true,
+    "max_pairs_per_topic": 5000
+  },
+  "synthetic_acceptance": {
+    "$comment": "只用于合成队列上的自检（测试与变异）：埋入的不成立前置与隐藏依赖都要找出；误报（真成立的前置被报成不成立候选、没有埋入依赖的节点对被报成新增前置边候选）不超过下面的上限。真实试点数据上没有“真值”，不用这一节。",
+    "max_false_not_holds": 0,
+    "max_false_hidden": 0
+  }
+}
