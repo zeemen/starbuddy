@@ -271,8 +271,10 @@ test('家长打开即生成、同月只生成一次：渲染出学习计划、�
   assert.deepEqual(p.review.score_gaps.map((x: Record<string, unknown>) => [x['claim_id'], x['subject'], x['gap_band'], x['text']]),
                    [[ID.cE, 'aya', { reached: false, low: 10, high: 15 }, '{{TODO_COPY:monthly_plan.review.score_gap}}｜aya｜10–15']]);
   // 不出成绩、目标分、精确分差、诉求与系数、先后编号、模板键
+  // 先去掉 ISO 时间戳（generated_at 的秒数可能恰好是 12.5xx、92.5xx，造成误报）
+  const bodyText = r.text.replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?/g, '<ts>');
   for (const k of ['92.5', '105', '12.5', 'goal_id', 'exam_record_id', 'focus', 'position', 'template_key', 'copy_key', 'plan_basis', 'input_refs', '合成说明']) {
-    assert.ok(!r.text.includes(k), k);
+    assert.ok(!bodyText.includes(k), k);
   }
   const line = logs.filter((l) => l['route'] === 'GET /students/{student_id}/monthly-plan' && l['status'] === 200).at(-1)!;
   assert.equal(line['generate'], 'ready');
