@@ -34,3 +34,7 @@
 5. 试点导出函数与授权（必停，另起 `[NEEDS-HUMAN]` PR）：专用属主角色、列级授权与逐表 RLS 策略、同意文档版本白名单取值；`ingest_request` 目前只对 `starbuddy_learning` 开放；只读事务内建临时表是否可行需副本演练确认。
 6. 统计窗口与时机：只导出当前计费周期，周期未满时使用率偏低；导出时机（建议续期前）与频率上限。
 7. 残留合成数据目录待人工清理：`/tmp/starbuddy-cost-dashboard.8s4dxtnj`、`/tmp/starbuddy-cost-dashboard._xv1s9sr`、`/tmp/starbuddy-cost-dashboard.ce82qeug`、`/tmp/tmp.D2i5BYQdzE`。
+
+## 决定记录（2026-10-17，用户“按建议确认”）
+- 待人确认 1–6 按现行默认执行：学科分摊两种口径继续并列，未归因消耗单列、不摊进学科，待试点数据再定 D5；价格表沿用示例价，“签字价”须带 `signoff_version`；`model_call_log` 落库与“是否回退”字段另起任务；防回推参数先用现值（占位），不改用差分隐私，与 KGE-09 同口径；按会员档分组的聚合只供内部运营，接受；导出函数与授权仍另起 `[NEEDS-HUMAN]` PR，合并前不做任何真实导出；导出时机定在续期前、每计费周期至多一次。
+- 第 7 项残留目录仍待人工清理。
