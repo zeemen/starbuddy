@@ -37,7 +37,7 @@ make-skip-check:
 # 契约检查约 1 秒，改动后也跑一遍
 check-fast: contract-test taxonomy-check attack-surface-check sie-dictionary-check kge-id-check
 
-check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation practice-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona insight-test insight-mutation voice-blind-eval-test release-walkthrough retest-mutation today-mutation scheduler-test scheduler-mutation gate1-test gate1-mutation review-console-mutation kge-chinese-import kge-chinese-mutation knowledge-material-mutation stage-test stage-mutation kge-dedupe-test kge-dedupe-mutation kge-calibrate-test kge-calibrate-mutation cost-dashboard-test cost-dashboard-mutation
+check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation practice-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona insight-test insight-mutation voice-blind-eval-test release-walkthrough retest-mutation today-mutation scheduler-test scheduler-mutation gate1-test gate1-mutation review-console-mutation kge-chinese-import kge-chinese-mutation knowledge-material-mutation stage-test stage-mutation kge-dedupe-test kge-dedupe-mutation kge-calibrate-test kge-calibrate-mutation cost-dashboard-test cost-dashboard-mutation mock-exam-test mock-exam-mutation
 	@echo "check: lint 尚未配置，跳过；其余检查已通过"
 
 # 契约合法性 + 示例 + 反例集
@@ -195,6 +195,24 @@ today-mutation:
 	  echo "today-mutation: 跳过（没有安装学习服务依赖；见 services/learning/README.md）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
 	@$(call skip_rest,$(LEARNING_MISSING))services/learning/.venv/bin/python services/learning/scripts/today_mutations.py; rc=$$?; \
+	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
+
+# 模考限时整卷第一步（PLT-18，specs/mock-exam-plt18）：卷清单校验、限时状态机与会话票据、整卷汇总的纯函数（learning/mock_exam/，
+# 不注册路由、不连库）。mock-exam-test 只跑这三份测试（也随 learning-test 运行）；mock-exam-mutation 把截止边界、宽限、交卷后作答、
+# 重复作答取最后一次、票据签名与换卷换学生、分值和、待复核与暂定、缺溯源字段等逐条改坏，断言测试能发现（不连库，约 1 分钟）
+.PHONY: mock-exam-test mock-exam-mutation
+mock-exam-test:
+	@if $(LEARNING_MISSING); then \
+	  echo "mock-exam-test: 跳过（没有安装学习服务依赖；见 services/learning/README.md）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@$(call skip_rest,$(LEARNING_MISSING))cd services/learning && .venv/bin/python -m pytest -q -p no:cacheprovider \
+	  tests/test_mock_exam_manifest.py tests/test_mock_exam_session.py tests/test_mock_exam_summary.py && echo "mock-exam-test: 通过"
+
+mock-exam-mutation:
+	@if $(LEARNING_MISSING); then \
+	  echo "mock-exam-mutation: 跳过（没有安装学习服务依赖；见 services/learning/README.md）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@$(call skip_rest,$(LEARNING_MISSING))services/learning/.venv/bin/python services/learning/scripts/mock_exam_mutations.py; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
 
 # 调度器第一步（PLT-13，specs/scheduler-plt13）：services/scheduler 按时间表以子进程调用已有入口（insight.scheduled、insight.jobs、

@@ -1,0 +1,12 @@
+{
+ "format": "starbuddy-mock-exam-scoring-points-snapshot/1",
+ "synthetic": true,
+ "note": "采分点 → 节点快照的合成样例（kge.scoring_point 的 (题号, 采分点, 分值, 节点) 投影；分值是判分满分口径，不是卷面分值）。点号、分值、节点均为工程起草的占位。",
+ "items": {
+  "SYN-MOCK-LAW-M01": {
+   "p1": {"score": 2, "node_ids": ["MORAL.LAW.SYN_BC_A.VP_A1"]},
+   "p2": {"score": 2, "node_ids": ["MORAL.LAW.SYN_BC_A.VP_A2"]},
+   "p3": {"score": 2, "node_ids": ["MORAL.LAW.SYN_BC_A.VP_A1"]}
+  }
+ }
+}

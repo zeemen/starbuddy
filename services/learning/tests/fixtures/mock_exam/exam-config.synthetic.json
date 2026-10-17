@@ -1,0 +1,9 @@
+{
+ "format": "starbuddy-mock-exam-config-snapshot/1",
+ "synthetic": true,
+ "note": "合成样例。full_score、duration_minutes 是 policy.subject_config 的只读投影，数值与 db/tests/77_policy.sql 的合成方案一致，不是真实考情；question_type_codes 是工程占位词表（考情库没有题型码字段，词表未定；数学沿用阿鸦 shared.ts 的映射），不是考情配置投影。",
+ "subjects": {
+  "math": {"full_score": 120, "duration_minutes": 120, "question_type_codes": ["single_choice", "fill_blank", "multi_choice"]},
+  "morality_law": {"full_score": 60, "duration_minutes": 60, "question_type_codes": ["single_choice", "material_analysis"]}
+ }
+}

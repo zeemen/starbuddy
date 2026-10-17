@@ -6,7 +6,7 @@
 ## 现状（只读摸底）
 - 库里没有卷结构（`kge.paper` 推迟到 KGE-08 落库任务）；`platform.item` 只存准入状态；分值只在 `kge.scoring_point.score`；满分与时长在 `policy.subject_config.full_score / duration_minutes`。
 - 作答一次一题：再练、复测都经 `ingest("grade")`，`evidence_kind` 只有 independent / hinted / transfer / delayed_retest，`purpose` 只有 practice / retest / transfer_check，没有考试情境。
-- 计量已有资源 `mock_exam`（按次、预留 150 分钟；各档 0 / 1 / 4 / 10），无调用方。
+- 计量已有资源 `mock_exam`（按次、预留 150 分钟、交卷时预留，见 0008；现行 v12-pilot 各档 1 / 2 / 6 / 12，见 0015），无调用方。
 - 契约：diagnose 有 `mode: paper` 但阿鸦、知行均回 422；grade 是单题。`insight.exam_record` 只收手工录入（含 mock1 / mock2）。
 - 前端计时只在诊断组件里。
 
@@ -22,7 +22,7 @@
 3. **整卷汇总**（纯函数）：输入为逐题判分结果（只接受带 `evidence_ids`、`confidence`、`source_version`、`model_version`、`human_review_required` 的验证器 / Rubric 结果，规则 3；缺任一字段拒绝），输出：
    - 得分、各节得分、未作答题数、超时状态；`human_review_required` 或低置信的题单列为“待复核”，总分标“暂定”；
    - 按知识节点的得失分聚合（节点映射输入为题目 → 节点快照）。只是证据汇总，**不生成任何对学生的结论性陈述**（规则 11）；报告文案、判断与对账另起。
-4. **计量与证据口径只写方案**（RUNBOOK 段落，不实现）：开始时 `mock_exam` 预留、交卷或过期时结算、开始失败回滚；整卷内逐题判分不再另计再练次数；逐题证据第一步按 `independent` 口径设计，是否新增考试情境的 `evidence_kind / purpose` 值待人确认。
+4. **计量与证据口径只写方案**（RUNBOOK 段落，不实现）：照 0008，交卷或过期定格时以 `source_method = grade` 预留 `mock_exam`、判分完成时结算、失败回滚；整卷内逐题判分不再另计再练次数；逐题证据第一步按 `independent` 口径设计，是否新增考试情境的 `evidence_kind / purpose` 值待人确认。
 5. **测试与变异**：清单校验正反例；状态机全部转移、截止边界（截止前 1ms / 截止时刻 / 之后）、时钟回拨、重复作答、交卷后作答；票据篡改与换绑；汇总与手算一致、缺溯源字段拒绝、待复核与暂定标注；make 目标 `mock-exam-test`、`mock-exam-mutation` 接进 check。
 
 ## 不做

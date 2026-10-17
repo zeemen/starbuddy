@@ -281,3 +281,63 @@ staff 对应表（`kge-pages-staff-map/1`，审核台配置，由人维护，不
   续做时按建立时刻、当前届别重算，不在 7–9 或与 `start_grade` 不同（会话中途届别被改）回 409 `SESSION_INCONSISTENT`，问题体带
   `session_id` 与 `reason = grade_changed`，会话不动；放弃这样的会话时记下 `abandon_reason = grade_changed`（BFF 据此退回额度）。
 - `make diagnosis-mutation`：38 个变异，断言诊断测试能发现。
+
+## 模考限时整卷（`learning/mock_exam/`，specs/mock-exam-plt18，PLT-18 第一步）
+第一步只有纯函数与格式：不注册路由、不读写数据库、不计量、不写证据、零迁移、不改契约。
+- `manifest.py`：卷清单 `starbuddy-mock-paper/1`（结构草案 `config/mock_exam/paper-manifest.schema.json`；合成样例
+  `paper.math-fun-syn.json` 数学九年级函数、`paper.daofa-law-syn.json` 道法法律领域）。校验题目 ID 唯一、卷面分值（`paper_score`）和 = 满分、
+  满分与限时与考情配置快照（`policy.subject_config` 投影）一致、题目在准入清单快照内且题型码与准入快照一致、题型码属于该科词表；
+  快照由调用方传入（测试用 `tests/fixtures/mock_exam/` 的合成快照）。题型码（`single_choice`、`material_analysis` 等）是**工程占位词表**，
+  考情库里没有这个字段。分值最多两位小数（对齐 `kge.scoring_point.score` 的 numeric(5,2)），按百分之一分整数运算；`policy.subject_config.full_score`
+  是 numeric(5,1)、契约 `ExamConfig.full_score` 是 integer，三处精度不一致，这里不改（待人确认）。
+  学科码映射在 `config/mock_exam/subjects.json`（待人确认，学科目录建成后改外键；`platform.subject_catalog` 把道法写作 `politics`，迁移 0013 写作 `morality_law`）。
+- `session.py`：`created → in_progress → submitted | expired`。时间一律由调用方注入；截止 = 开始 + 限时 + `grace_seconds`，只在开始时算；
+  `now < 截止` 才收作答，同题取最后一次，交卷、过期后拒绝，时钟回拨拒绝；截止及之后交卷或 `advance` 记为 expired（结束时刻 = 截止）。
+  会话快照可签成 `me1.<kid>.<载荷>.<签名>`（HMAC-SHA256，标准库）；验签按 kid 在“当前 + 上一把”两把密钥里选，用于轮换，只用当前密钥签发；
+  另核对载荷形状与时序一致性（建立 ≤ 开始 ≤ 截止，作答在 [开始, 截止)，交卷在截止前、过期结束 = 截止，最后处理时刻不早于以上任何时刻）。
+  篡改、未知 kid、换卷、换学生、时序不一致一律 `TICKET_INVALID`，超过 `ticket_ttl_minutes` 为 `TICKET_EXPIRED`。密钥不合规（短于 32 字节、
+  kid 不合规、两把相同）抛 `SigningKeyError`（配置错误，不是票据错误），路由层应映射为 500。
+- `summary.py`：只收带 `evidence_ids`、`confidence`、`source_version`、`model_version`、`human_review_required` 的验证器 / Rubric 结果
+  （缺任一字段 `MISSING_PROVENANCE`）；判分方式取再练登记的词表 `practice.presenter.GRADING`（对应契约 `DimensionScore.judged_by`，
+  第二步改从 GradeResult 维度推出）。卷面得分 = 判分得分 / 判分满分 × 卷面分值，四舍五入到 0.01（ROUND_HALF_UP）；`score.total` 为 null
+  的题计 0 分、列为待复核；`calibrated = false` 的题让输出带“未校准”标记；给了题目登记的判分版本时核对 `source_version` 里的 rubric / verifier 段。
+  输出得分、各节得分、未作答题数、超时、待复核（人工复核、置信度 < `review_confidence_below`、得分为 null）与“暂定”标记、按节点的得失分聚合
+  （判分带采分点且采分点快照完整覆盖时按采分点归到节点，否则整题计入并列入 `whole_item_ids`）。`nodes` 只是证据汇总，**不得落库，也不得当作
+  掌握度使用**。只有数字、ID 与编码，不生成任何对学生的陈述（规则 11）。
+- 配置位 `config/mock_exam/config.synthetic.json`（宽限 30 秒、低置信阈值 0.6、票据有效期 240 分钟）全部是合成占位，待教研签字；
+  未签字只允许 `LEARNING_ENV=test / dev`。签字沿用复测配置的做法：签字人与时间由人填进配置文件（`signed_by`、`signed_at`，自填、不是密码学签名）。
+  第二步接入时，`env` 只能取自 `learning/config.py` 已校验的 `LEARNING_ENV`，不得由请求或其他来源传入。
+- `make mock-exam-test`（也随 `learning-test`）、`make mock-exam-mutation`（把关键检查逐条改坏，断言测试能发现；不连库）。
+
+### 票据安全（第二步上线前必须满足）
+- **只签名不加密**：载荷里有学生内部 ID、会话 ID、各题 `answer_ref` 与作答时刻。第二步之前票据**不得交给客户端**，也不得进 URL、日志与分析事件；
+  第二步改为 AEAD 封装（沿用 BFF `sbp1` 的做法）或只给客户端服务端会话 ID。
+- **密钥**：模考票据密钥单独配置，不与 BFF（`BFF_AUTH_SECRET` 派生的各用途密钥）、再练 / 复测票据密钥复用；轮换时把旧密钥放进“上一把”，
+  旧票据过了 `ticket_ttl_minutes` 后再撤掉上一把。
+- **重放（第一步不防，第二步上线前置条件）**：票据是自包含快照，纯函数无法知道它是否已被用过。已知两种攻击：
+  1. 重复开始：保存 created 状态的票据，开考后再拿它开始一次，得到更晚的截止（重置截止）；
+  2. 回滚重答：交卷后拿交卷前 in_progress 状态的旧票据继续作答、再次交卷（覆盖已交的答卷、重复交卷）。
+  第二步建会话表解决：会话表唯一约束（每个会话只能开始一次、只能结束一次）+ 状态版本号（票据带版本，只认最新版本，只能单调前进）。
+  `tests/test_mock_exam_session.py` 里两条 `xfail(strict=True)` 用例记录这两种攻击，修好后应改为普通用例。
+
+### 计量与证据口径（只是方案，第一步不实现，接入前须人确认）
+- **计量**（规则 4）：照迁移 0008 第 557 行的设计——“完整诊断、模考、讲评课在‘提交时’预留（不是开始时）”，资源 `mock_exam` 按次、
+  `reservation_ttl` 150 分钟（按处理时长定）。方案：**交卷（或到截止由 `advance` 定格为 expired）时**，BFF 带 `usage_id` 与
+  `idempotency_key`、以 `source_method = grade` 预留一次 `mock_exam`；**整卷判分全部完成时**结算；判分失败或预留过期前没能完成时回滚。
+  迁移 0009 第 78 行 `platform.meter_method_allowed` 只允许 `mock_exam` 配 `grade`（不能配 `diagnose` 或其他方法），所以预留与结算的
+  `source_method` 必须是 `grade`。一次模考只预留一次，以会话 ID 为幂等依据（第二步会话表的唯一约束保证）；整卷内逐题判分属于这一次模考，
+  **不再另计再练或复测次数**，也不各自预留。
+- **票据有效期与预留时长**：两者计时起点不同、互不替代。票据有效期（合成占位 240 分钟）从每次签发起算，要覆盖“限时 + 宽限”内学生
+  作答的全程，交卷那一次请求带的票据必须仍有效；预留时长（150 分钟）从交卷预留起算，只覆盖交卷后的判分处理，判分（含需要模型的题）
+  必须在这段时间内结算，否则预留过期、按回滚处理。
+- **备选（待人确认，必停）**：开始时预留、并把 `mock_exam` 的预留时长上调到覆盖“最长限时 + 宽限 + 判分处理”。这要改迁移 0008 种子与
+  计量逻辑，与 0008 第 557 行的“提交时预留”不同，未经人确认不采用。
+- **证据**：逐题作答仍经现有 grade 写入路径（learning-internal v1 信封 `{request, ingest}`）由学习服务落库。`evidence_kind` 不由调用方给，
+  由学习服务按 learning-internal v1 `IngestContext` 的规则推导：用过提示 → `hinted`；没报 `hint_level_used` → 空（掌握计算按保守口径）；
+  否则 `purpose = retest` → `delayed_retest`、`transfer_check` → `transfer`、其余 `independent`。所以模考逐题 grade **必须报
+  `hint_level_used = 0`、`purpose = practice`**，推导结果才是 `independent`。按 practice 口径的影响：这些证据照常进入 KGE-04 的同步掌握重算，
+  可能让该单元已排的复测任务按既有规则提前满足或改排，但不会被当作延迟复测（`delayed_retest`）计数，也不会计入转移检验。
+  是否新增考试情境的 `evidence_kind / purpose` 值（要改迁移 0017 的 CHECK、learning-internal 契约与 KGE-04 证据权重键，必停）待人确认
+  （spec 待人确认 2）。整卷汇总本身不是证据、不写任何表，模考成绩是否进入预测与对账另定（spec 待人确认 3）。
+- **判分时机**：限时内只记作答引用；判分在交卷后进行（与提交时预留一致），汇总只认会话里每题最后一次作答对应的判分；
+  `human_review_required` 为真、低置信或得分为 null 的题让总分保持“暂定”，复核结论回来后重算汇总（重算口径随第二步）。

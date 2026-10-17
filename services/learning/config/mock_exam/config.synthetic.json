@@ -1,0 +1,9 @@
+{
+ "format": "starbuddy-mock-exam-config/1",
+ "synthetic": true,
+ "signed_by": null,
+ "signed_at": null,
+ "grace_seconds": 30,
+ "review_confidence_below": 0.6,
+ "ticket_ttl_minutes": 240
+}

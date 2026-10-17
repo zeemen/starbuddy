@@ -1,0 +1,50 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "starbuddy-mock-paper/1",
+ "title": "模考卷清单（草案，PLT-18 第一步）",
+ "description": "只管结构。跨字段与对快照的校验（题目 ID 全卷唯一、分值和 = 满分、满分与限时与考情配置一致、题目在准入清单内且题型码与准入快照一致、题型码属于该科工程占位词表、合成卷只在 test / dev）在 learning/mock_exam/manifest.py。草案：卷清单放本仓配置还是内容包待人确认（spec 待人确认 4）。",
+ "type": "object",
+ "additionalProperties": false,
+ "required": ["format", "paper_id", "subject", "version", "full_score", "duration_minutes", "source", "synthetic", "notice", "sections"],
+ "properties": {
+  "format": {"const": "starbuddy-mock-paper/1"},
+  "paper_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$"},
+  "subject": {"enum": ["aya", "zhixing"], "description": "平台学科码；到考情库学科码的映射见 config/mock_exam/subjects.json（待人确认）"},
+  "version": {"type": "string", "pattern": "^\\d{1,4}\\.\\d{1,4}\\.\\d{1,4}$"},
+  "full_score": {"type": "number", "exclusiveMinimum": 0, "maximum": 300, "description": "最多两位小数（对齐 kge.scoring_point numeric(5,2)；按十进制核对，见 manifest.py；不用 multipleOf，浮点除法会误判）。注意 policy.subject_config 为 numeric(5,1)、契约 ExamConfig 为 integer，三处精度不一致待人确认"},
+  "duration_minutes": {"type": "integer", "minimum": 1, "maximum": 300},
+  "source": {"enum": ["synthetic", "curated"], "description": "合成 / 教研组卷"},
+  "synthetic": {"type": "boolean"},
+  "notice": {"type": "string", "maxLength": 500},
+  "sections": {
+   "type": "array",
+   "minItems": 1,
+   "maxItems": 12,
+   "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["name", "items"],
+    "properties": {
+     "name": {"type": "string", "minLength": 1, "maxLength": 40},
+     "items": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+       "type": "object",
+       "additionalProperties": false,
+       "required": ["item_id", "paper_score", "question_type_code"],
+       "properties": {
+        "item_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$"},
+        "paper_score": {"type": "number", "exclusiveMinimum": 0, "description": "卷面分值，最多两位小数（同 full_score）。判分得分按 判分得分 / 判分满分 × 卷面分值 折算"},
+        "question_type_code": {"type": "string", "pattern": "^[a-z0-9_]{1,48}$", "description": "工程占位词表（考情库没有题型码字段，待人确认）；须与准入快照里该题的题型码一致"}
+       }
+      }
+     }
+    }
+   }
+  }
+ },
+ "allOf": [
+  {"if": {"properties": {"source": {"const": "synthetic"}}}, "then": {"properties": {"synthetic": {"const": true}}}}
+ ]
+}
