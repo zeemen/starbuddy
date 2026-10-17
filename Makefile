@@ -1,5 +1,5 @@
 # 未实现的目标明确打印“跳过”，不得伪装为通过。
-.PHONY: check-fast check contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test current-affair-expire model-router-mutation diagnosis-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-visual kge-inventory kge-inventory-test kge-import kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test sie-dictionary-check kge-id-check knowledge-test knowledge-mutation kge-compile-eval-test eval-persona eval-grade persona-registry-check persona-guard-test persona-lock persona-record insight-test insight-mutation release-walkthrough kge-dedupe-test kge-dedupe-mutation kge-calibrate-test kge-calibrate-mutation
+.PHONY: check-fast check contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test current-affair-expire model-router-mutation diagnosis-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-visual kge-inventory kge-inventory-test kge-import kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test sie-dictionary-check kge-id-check knowledge-test knowledge-mutation kge-compile-eval-test eval-persona eval-grade persona-registry-check persona-guard-test persona-lock persona-record insight-test insight-mutation release-walkthrough kge-dedupe-test kge-dedupe-mutation kge-calibrate-test kge-calibrate-mutation cost-dashboard-test cost-dashboard-mutation
 
 # 可指向装了 packages/contracts/requirements-dev.txt 的解释器，例如 make check PYTHON=.venv/bin/python
 PYTHON ?= python3
@@ -37,7 +37,7 @@ make-skip-check:
 # 契约检查约 1 秒，改动后也跑一遍
 check-fast: contract-test taxonomy-check attack-surface-check sie-dictionary-check kge-id-check
 
-check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation practice-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona insight-test insight-mutation voice-blind-eval-test release-walkthrough retest-mutation today-mutation scheduler-test scheduler-mutation gate1-test gate1-mutation review-console-mutation kge-chinese-import kge-chinese-mutation knowledge-material-mutation stage-test stage-mutation kge-dedupe-test kge-dedupe-mutation kge-calibrate-test kge-calibrate-mutation
+check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation practice-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona insight-test insight-mutation voice-blind-eval-test release-walkthrough retest-mutation today-mutation scheduler-test scheduler-mutation gate1-test gate1-mutation review-console-mutation kge-chinese-import kge-chinese-mutation knowledge-material-mutation stage-test stage-mutation kge-dedupe-test kge-dedupe-mutation kge-calibrate-test kge-calibrate-mutation cost-dashboard-test cost-dashboard-mutation
 	@echo "check: lint 尚未配置，跳过；其余检查已通过"
 
 # 契约合法性 + 示例 + 反例集
@@ -696,6 +696,50 @@ cost-report:
 	@$(call guard,$(LOADTEST_PY_MISSING))cd tools/loadtest && PYTHONDONTWRITEBYTECODE=1 ../../$(LOADTEST_PY) -m pytest -q tests/test_cost.py
 	@$(call guard,$(LOADTEST_PY_MISSING))cd tools/loadtest && ../../$(LOADTEST_PY) -m loadtest cost --records "$$LT_COST_RECORDS" $${LT_COST_OUT:+--out "$$LT_COST_OUT"} \
 	  && echo "cost-report: 报告见上面 out 目录的 cost-report.md（合成估算、示例价）"
+
+# PLT-17 成本仪表盘第一步（specs/cost-dashboard-plt17，全程合成数据，离线、零新依赖；复用 tools/loadtest 成本模块的额度、价格、分位数与报表）：
+#   make cost-dashboard [DASH_USAGE=<消耗聚合行 csv>] [DASH_RECORDS=<调用记录 jsonl>] [DASH_OUT=<目录>]
+#     消耗聚合行 + 调用记录 → cost-dashboard.json / .md（只出聚合；每人一个点、人数加 ±2 扰动后 ≥ 22 才公开、取整到 10；分位数插值后粗化；
+#     标注由数据决定：合成 / 试点、示例价 / 签字价）。不给 DASH_USAGE / DASH_RECORDS 时先用固定种子生成合成队列（临时目录，退出时清理）；
+#     给了输入就必须给 DASH_OUT（须不存在或为空）。本目标产出数据，不进 check。
+#   make cost-dashboard-test       仪表盘单测：手算、扰动门槛与取整、P90 尾部、未归因份额、分摊两口径、标注、输入守卫、差分（删一人重跑）、逐字节一致（几秒）
+#   make cost-dashboard-mutation   关键检查逐条改坏，断言测试能发现（约 10 秒）
+# 样例过期时：python -m loadtest dashboard-synth --out <新的空临时目录>，再 dashboard 输出到另一个空临时目录，
+#   把 cost-dashboard.md 替换进 tools/loadtest/sample，并把 cost-dashboard.json 的 sha256 更新到 tests/test_dashboard.py。
+# 护栏同 cost-report：路径不含空格与单引号；变量经环境变量传给命令。缺学习服务 venv 时非严格跳过、严格失败。
+.PHONY: cost-dashboard
+DASH_USAGE ?=
+DASH_RECORDS ?=
+DASH_OUT ?=
+DASH_PATH_BAD = $(or $(filter-out 0 1,$(words $(DASH_USAGE))),$(findstring ',$(DASH_USAGE)),$(filter-out 0 1,$(words $(DASH_RECORDS))),$(findstring ',$(DASH_RECORDS)),$(filter-out 0 1,$(words $(DASH_OUT))),$(findstring ',$(DASH_OUT)))
+COST_DASH_MISSING = [ ! -x $(LOADTEST_PY) ] || ! $(LOADTEST_PY) -c "import pytest, yaml" 2>/dev/null
+cost-dashboard: export LT_DASH_USAGE = $(if $(DASH_USAGE),$(abspath $(DASH_USAGE)),)
+cost-dashboard: export LT_DASH_RECORDS = $(if $(DASH_RECORDS),$(abspath $(DASH_RECORDS)),)
+cost-dashboard: export LT_DASH_OUT = $(if $(DASH_OUT),$(abspath $(DASH_OUT)),)
+cost-dashboard:
+	@$(if $(DASH_PATH_BAD),echo "cost-dashboard: 路径不能含空格或单引号"; exit 2)
+	@case "$${LT_DASH_USAGE:+u}$${LT_DASH_RECORDS:+r}" in u|r) echo "cost-dashboard: DASH_USAGE 与 DASH_RECORDS 要么都给、要么都不给"; exit 2;; esac
+	@if [ -n "$$LT_DASH_USAGE" ] && [ -z "$$LT_DASH_OUT" ]; then echo "cost-dashboard: 给了输入就必须给 DASH_OUT（受控目录，须不存在或为空）"; exit 2; fi
+	@if $(COST_DASH_MISSING); then echo "cost-dashboard: 跳过（没有 services/learning/.venv 或其中没有 pytest、PyYAML）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@$(call guard,$(COST_DASH_MISSING))cd tools/loadtest && export PYTHONDONTWRITEBYTECODE=1; \
+	  if [ -z "$$LT_DASH_USAGE" ]; then syn=$$(mktemp -d) || exit 1; trap 'rm -rf "$$syn"' EXIT; \
+	    ../../$(LOADTEST_PY) -m loadtest dashboard-synth --out "$$syn" \
+	    && LT_DASH_USAGE="$$syn/usage.csv" && LT_DASH_RECORDS="$$syn/call-records.jsonl" || exit 1; fi; \
+	  ../../$(LOADTEST_PY) -m loadtest dashboard --usage "$$LT_DASH_USAGE" --records "$$LT_DASH_RECORDS" $${LT_DASH_OUT:+--out "$$LT_DASH_OUT"} \
+	  && echo "cost-dashboard: 报表见上面 out 目录的 cost-dashboard.md（合成，不是试点结论；价格为示例价）"
+
+cost-dashboard-test:
+	@if $(COST_DASH_MISSING); then echo "cost-dashboard-test: 跳过（没有 services/learning/.venv 或其中没有 pytest、PyYAML）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@$(call guard,$(COST_DASH_MISSING))cd tools/loadtest && PYTHONDONTWRITEBYTECODE=1 ../../$(LOADTEST_PY) -m pytest -q -p no:cacheprovider tests/test_dashboard.py \
+	  && echo "cost-dashboard-test: 通过"
+
+cost-dashboard-mutation:
+	@if $(COST_DASH_MISSING); then echo "cost-dashboard-mutation: 跳过（没有 services/learning/.venv 或其中没有 pytest、PyYAML）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@$(call skip_rest,$(COST_DASH_MISSING))PYTHONDONTWRITEBYTECODE=1 $(LOADTEST_PY) tools/loadtest/dashboard_mutations.py; rc=$$?; \
+	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
 
 # KGE-06 封测周修订支持（specs/kge06-weekly-revision）审核台部分：低置信打标候选工作单与修订发布预检的测试在 learning-test 里
 # （tests/test_review_revision.py）；这里把开关、排序与游标、只列待处理、只经签字身份决定、改标核对、版本号段与两人签、

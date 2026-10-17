@@ -4,6 +4,9 @@
   python -m loadtest baseline --stages small [--out DIR] [--seed N] [--fault fake-a=unavailable] [--median-ms 300 --p90-ms 900]
                               [--subject-gate] [--with-practice]   分学科并发闸门与再练、复测场景（PLT-16）
   python -m loadtest cost     --records FILE [--out DIR] [--prices FILE] [--profile FILE]
+  python -m loadtest dashboard --usage FILE --records FILE [--out DIR] [--prices FILE] [--profile FILE] [--config FILE]
+                              成本仪表盘（PLT-17）：消耗聚合行 + 调用记录 → cost-dashboard.json / .md（只出聚合；本步只收合成样例）
+  python -m loadtest dashboard-synth [--out DIR] [--seed N]   固定种子的合成队列（usage.csv、call-records.jsonl）
 
 baseline 只在本机一次性栈上跑（规则 9）；预发压测见 RUNBOOK.md，需人批准。
 """
@@ -62,8 +65,39 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--out", default=None, help="同 baseline --out")
     c.add_argument("--prices", default=str(CONFIG / "prices.example.yaml"))
     c.add_argument("--profile", default=str(CONFIG / "cost_profile.yaml"))
+    d = sub.add_parser("dashboard")
+    d.add_argument("--usage", required=True, help="消耗聚合行（cost-dashboard-usage/1，synthetic=true）")
+    d.add_argument("--records", required=True, help="调用记录 JSON Lines（call-records 格式）")
+    d.add_argument("--out", default=None, help="不存在或为空的目录（文件 0600 新建、不覆盖）；不给则新建临时目录，非合成输入必须给")
+    d.add_argument("--prices", default=str(CONFIG / "prices.example.yaml"))
+    d.add_argument("--profile", default=str(CONFIG / "cost_profile.yaml"))
+    d.add_argument("--config", default=str(CONFIG / "cost_dashboard.yaml"))
+    ds = sub.add_parser("dashboard-synth")
+    ds.add_argument("--out", default=None, help="同 baseline --out")
+    ds.add_argument("--seed", type=int, default=None)
     args = ap.parse_args(argv)
 
+    if args.cmd == "dashboard":
+        from .dashboard import InputRefused, OutputRefused, run_dashboard
+
+        try:
+            r = run_dashboard(Path(args.usage), Path(args.records), Path(args.prices), Path(args.profile), Path(args.config),
+                              Path(args.out) if args.out else None)
+        except InputRefused as e:
+            print(f"cost-dashboard: 输入被拒绝：{e}", file=sys.stderr)
+            return 2
+        except OutputRefused as e:
+            print(f"cost-dashboard: 不写出：{e}", file=sys.stderr)
+            return 2
+        print(json.dumps({"out": r["out"], "banner": r["banner"], "cohort": r["cohort"]}, ensure_ascii=False))
+        return 0
+    if args.cmd == "dashboard-synth":
+        from . import dashboard_synth
+
+        out = dashboard_synth.run(Path(args.out) if args.out else None,
+                                  dashboard_synth.SEED if args.seed is None else args.seed)
+        print(json.dumps({"out": str(out), "synthetic": True}, ensure_ascii=False))
+        return 0
     if args.cmd == "cost":
         r = run_cost(Path(args.records), Path(args.prices), Path(args.profile), Path(args.out) if args.out else None)
         print(json.dumps({"out": r["out"], "rows": len(r["table"]), "example_prices": r["example_prices"]}, ensure_ascii=False))

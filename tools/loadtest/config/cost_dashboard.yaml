@@ -1,0 +1,26 @@
+# PLT-17 成本仪表盘第一步（specs/cost-dashboard-plt17/spec.md）的口径与门槛。全部是占位值，待人确认（spec 待人确认 1、3）。
+# 计算全部复用 loadtest/cost.py：额度取迁移 0015 草稿（cost_profile.yaml 的 quota_config）、单次调用成本与 token 来源、
+# 各科“资源 → 任务 × 每单位调用次数”取 cost_profile.yaml 的 subjects、价格取价格表（默认示例价）、分位数用 weighted_quantile（等权）。
+# 本文件只补 cost_profile.yaml 没有的两样：披露门槛，与“未归因”消耗（讲解、语音、上传、存储、深度报告等归不到学科的资源）的计价方式。
+
+# 任一组（档 × 科 × 资源、档、档 × 科分摊）的学生数加 ±2 的确定性扰动后 < min_group + 2 只写“样本不足”（保证真实 ≥ min_group；
+# spec 待人确认 3，默认 20；工具拒绝低于 20）。每名学生一个点（多月取月均）
+min_group: 20
+# 公开的人数为扰动后人数向下取整到 round_to 的倍数（默认 10；工具拒绝低于 10）。分位数粗化粒度在 dashboard.py（消耗 5% 额度、使用率 5%、成本 0.1 元）
+round_to: 10
+
+# 未归因消耗的计价（D5 待产品确认）：与 cost_profile.yaml 的 activities 同格式。
+# token 取全部调用记录（不分科）按任务汇总的成功调用均值；没有记录的任务回退到 cost_profile.yaml 的 fallback_tokens（报告标“假设”）。
+# task 为空的资源不计模型成本（价格表没有对应任务：上传识别 T3、深度报告、存储摊销本版不计），报告列出“未计价”。
+unattributed:
+  label: 未归因
+  activities:
+    - { resource: ai_active_time, task: T1, calls_per_unit: 1.0, note: 每分钟 1 轮教学对话（同 cost_profile 各科的假设） }
+    - { resource: ai_active_time, task: T9, calls_per_unit: 1.0, note: 每轮对话 1 次守卫（同 cost_profile 各科的假设） }
+    - { resource: voice_realtime, task: voice, calls_per_unit: 1.0, note: 语音按分钟计价 }
+    - { resource: lesson_whiteboard, task: null, calls_per_unit: 0, note: 白板讲解尚未实现，未计价 }
+    - { resource: upload, task: null, calls_per_unit: 0, note: 上传识别（T3）价格表没有，未计价 }
+    - { resource: storage_bytes, task: null, calls_per_unit: 0, note: 存储摊销本版不计 }
+    - { resource: deep_report, task: null, calls_per_unit: 0, note: 深度报告价格表没有，未计价 }
+    - { resource: mock_exam, task: null, calls_per_unit: 0, note: 模考价格表没有，未计价 }
+    - { resource: diagnosis_screen, task: null, calls_per_unit: 0, note: 诊断初筛不调模型（未归因时；归到学科的按该科画像，画像里没有即不计价） }

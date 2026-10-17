@@ -11,9 +11,18 @@ make loadtest-baseline LOADTEST_STAGES=full LOADTEST_ARGS=--i-know   # spec 的 
 make loadtest-baseline LOADTEST_STAGES='10:60,20:60' LOADTEST_OUT=<目录> LOADTEST_ARGS='--fault fake-a=unavailable'
 make degradation-test                                    # 故障注入 + 降级断言（路由层 + 端到端，约 30 秒）
 make cost-report [COST_RECORDS=<调用记录.jsonl>] [COST_OUT=<目录>]   # 科目 × 会员档单月 P50 / P90（合成估算、示例价）
+make cost-dashboard [DASH_USAGE=<消耗聚合行.csv> DASH_RECORDS=<调用记录.jsonl>] [DASH_OUT=<目录>]   # PLT-17 成本仪表盘（只出聚合）
+make cost-dashboard-test / cost-dashboard-mutation        # 仪表盘单测与变异（进 make check）
 ```
 
-命令行（在 `tools/loadtest` 下，用 `services/learning/.venv/bin/python`）：`python -m loadtest plan|baseline|cost --help`。
+成本仪表盘（PLT-17，`specs/cost-dashboard-plt17`）：`loadtest/dashboard.py` 复用 `cost.py` 的额度、价格、token 来源、单次成本、
+月成本与分位数，把“学生 × 月 × 资源 × 档位 × 学科（可为未归因）”的消耗聚合行与调用记录汇总成各档 × 各科消耗与使用率、各档模型成本、
+按任务的失败 / 多次尝试 / 回退与平均成本、两种学科分摊口径（D5 待产品确认）。防回推：每人一个点；组人数加 ±2 确定性扰动，扰动后 < 22
+只写“样本不足”、公开人数取整到 10；分位数相邻两秩插值后粗化，P90 以上不足 5 人不给 P90；按任务调用数 < 20 不给数。
+本步只收合成样例（`python -m loadtest dashboard-synth`，固定种子，`loadtest/dashboard_synth.py`）；样例报表 `sample/cost-dashboard.md`；
+试点导出见 RUNBOOK 第 4 节与 `sql/`（草案，不是迁移）。
+
+命令行（在 `tools/loadtest` 下，用 `services/learning/.venv/bin/python`）：`python -m loadtest plan|baseline|cost|dashboard|dashboard-synth --help`。
 `--fault <供应商>=<模式>[:参数]`：模式 `unavailable`、`timeout`、`error_ratio:0.3`、`slow:800`（毫秒）、`rate_limited`；供应商是路由表 test 节的
 `fake-a`（主）、`fake-b`（备）、`fake-x`（模拟境外）。报告里只出现合成代号（代号A / B / X），不写供应商 ID 与模型标识。
 
