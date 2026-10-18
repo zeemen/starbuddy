@@ -5,6 +5,7 @@
 逐条标记与 kge.structural_diff 同口径（只看有效的一侧，契约审查 S1）；整个版本是否结构性、要几人签，以库的 kge.structural_diff
 与未驳回的结构性变更单为准（service.diff_view），本模块的 summarize 只在没有库时用于单测。
 阶段 0 没有语义体检，中风险按高风险审（spec 待人确认 #7 默认）：条目仍显示 medium，review_level 为 high。
+KGE-11 加了分流建议 suggest_review_level（开关缺省关，关时与 review_level 相同）；review_level 本身不变。
 冲刺 4 补全（第二部分 PR D）：编译页面（classify_page）、原子（classify_atom）、考情方案（classify_policy）、内容版本（classify_content）；
 同样是纯函数，判不出的一律按高风险。
 """
@@ -51,6 +52,90 @@ def _touches_active(change: dict[str, Any]) -> bool:
 
 def review_level(level: str) -> str:
     return "high" if level == "medium" else level
+
+
+# ---------- 风险分流建议（KGE-11 范围 3：specs/kge11-semantic-lint；开关缺省关） ----------
+# 待人确认（kge11 #1，必停：改审核级别）：规则式语义体检能否作为中风险降为抽检的依据。确认前开关保持关，
+# 关时 suggest_review_level 与 review_level 逐字节相同（tests/test_review_triage.py 核对）。只返回建议级别，不接入审核流。
+SEMANTIC_TRIAGE_DEFAULT = False
+SPOT_CHECK = "medium_spot_check"
+LINT_REPORT_FORMAT = "kge-lint-report/1.1"  # 与 services/knowledge/knowledge/lint/issues.py 的 REPORT_FORMAT 相同（测试核对）
+# 建议级别 → 合并前所需审核人数的映射说明（**尚未生效**）：compiler/window.py 的 REVIEWERS 与 pages.py 的 REQUIRED 里没有
+# medium_spot_check，中风险仍两人；若分流获批，medium_spot_check 才按“合并前 0 人 + 合并后按 spot_check.py 事后抽检”接入，
+# 届时两处常量与本表一起改（tests/test_review_triage.py 核对 low、high 三处一致，且 medium_spot_check 尚未进两处常量）。
+SUGGESTED_REVIEWERS = {"low": 0, SPOT_CHECK: 0, "high": 2}
+# 语义体检报告出现这些规则即不放行（词表缺失被跳过的检查）
+SEMANTIC_SKIP_RULES = ("out_of_scope.no_vocab", "age_style.no_lexicon")
+
+
+def _nonempty(x: Any) -> bool:
+    return isinstance(x, str) and bool(x)
+
+
+def lint_blocks(report: Any, layer: str, *, page_id: Any = None, page_version: Any = None, map_version: Any = None) -> int | None:
+    """kge-lint-report/1.1 报告的阻断数；报告判不出时 None（调用方按高风险）。判不出：
+    不是 /1.1；顶层 layer 不是 layer、条目的 layer 不全是 layer；map_version 不等于给定版本；scope.pages 里没有
+    （page_id, page_version）；config.skipped_checks 非空；语义层另要求分级全是缺省、没有覆盖项、各词表都不是合成样例、
+    没有词表缺失的提示；摘要与条目对不上；没覆盖任何页面。page_id、page_version、map_version 都必须给。"""
+    if not (_nonempty(page_id) and _nonempty(page_version) and _nonempty(map_version)):
+        return None
+    if not isinstance(report, dict) or report.get("format") != LINT_REPORT_FORMAT or report.get("layer") != layer:
+        return None
+    if report.get("map_version") != map_version:
+        return None
+    issues, summary, scope, config = report.get("issues"), report.get("summary"), report.get("scope"), report.get("config")
+    if not isinstance(issues, list) or not isinstance(summary, dict) or not isinstance(scope, dict) or not isinstance(config, dict):
+        return None
+    covered = scope.get("pages")
+    if not isinstance(covered, list) or not any(isinstance(p, dict) and p.get("page_id") == page_id
+                                                and p.get("page_version") == page_version for p in covered):
+        return None
+    if config.get("skipped_checks") != []:
+        return None
+    if layer == "semantic":
+        synthetic = config.get("synthetic_inputs")
+        if config.get("levels_default") is not True or config.get("levels_overrides") != {} or not isinstance(synthetic, dict) \
+                or any(v is not False and v is not None for v in synthetic.values()) \
+                or synthetic.get("scope_vocab") is not False or synthetic.get("style_lexicon") is not False:
+            return None
+    if any(not isinstance(i, dict) or i.get("layer") != layer or i.get("severity") not in ("block", "warn") for i in issues):
+        return None
+    if any(isinstance(i.get("detail"), dict) and i["detail"].get("rule") in SEMANTIC_SKIP_RULES for i in issues):
+        return None
+    blocks = sum(1 for i in issues if i["severity"] == "block")
+    pages = summary.get("pages")
+    if summary.get("blocks") != blocks or summary.get("warnings") != len(issues) - blocks:
+        return None
+    if not isinstance(pages, int) or isinstance(pages, bool) or pages < 1:
+        return None
+    return blocks
+
+
+def suggest_review_level(level: str, program_report: Any = None, semantic_report: Any = None, *, page_id: Any = None,
+                         page_version: Any = None, map_version: Any = None, structural: Any = False,
+                         enabled: bool = SEMANTIC_TRIAGE_DEFAULT) -> str:
+    """建议的审核级别。开关关（缺省）：等于 review_level(level)。开关开：结构性变更（structural 不是 False）一律高；
+    中风险且两份报告（顶层 layer 分别为 program、semantic）都覆盖被审页面的这一版本、地图版本一致且快照摘要相同、没有跳过检查、
+    分级缺省、词表都不是合成样例、都零阻断 → medium_spot_check；中风险其余情形仍按高风险；低、高风险不变；
+    认不出的级别按高。只给建议，不改任何审核记录，也尚未生效（见 SUGGESTED_REVIEWERS）。"""
+    if enabled is not True:
+        return review_level(level)
+    if level not in LEVELS or structural is not False:
+        return "high"
+    if level != "medium":
+        return review_level(level)
+    bind = {"page_id": page_id, "page_version": page_version, "map_version": map_version}
+    if lint_blocks(program_report, "program", **bind) == 0 and lint_blocks(semantic_report, "semantic", **bind) == 0 \
+            and _same_snapshot(program_report, semantic_report):
+        return SPOT_CHECK
+    return "high"
+
+
+def _same_snapshot(a: Any, b: Any) -> bool:
+    """两份报告依据的是同一份地图快照（inputs.map_snapshot 摘要相同且非空；版本号相同、内容不同的快照也拦下）"""
+    da, db = (r.get("inputs", {}).get("map_snapshot") if isinstance(r, dict) and isinstance(r.get("inputs"), dict) else None
+              for r in (a, b))
+    return _nonempty(da) and da == db
 
 
 def classify(change: dict[str, Any]) -> Risk:

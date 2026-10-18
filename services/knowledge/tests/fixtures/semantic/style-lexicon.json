@@ -1,0 +1,10 @@
+{
+  "format": "kge-semantic-style/1",
+  "synthetic": true,
+  "note": "合成占位（KGE-11 测试夹具）：适龄文风的可配置词表规则示例，正式词表由教研提供（spec 待人确认 #2）",
+  "rules": [
+    {"id": "STY-SYN-OBVIOUS", "kind": "literal", "pattern": "显然可得", "message": "省略推理的成人化说法（合成占位）"},
+    {"id": "STY-SYN-TRIVIAL", "kind": "regex", "pattern": "易证|不难证明|不言而喻", "message": "跳步的论证口吻（合成占位）"},
+    {"id": "STY-SYN-SCARE", "kind": "regex", "pattern": "必挂|肯定考砸", "message": "恐吓式说法（合成占位）"}
+  ]
+}

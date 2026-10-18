@@ -5,6 +5,8 @@
   当天已发布过的页面顺延到下一天的窗口。
 - 中、高风险：每个编译结果单独成一个合并请求，标注审核人数：高风险两人（结构性变更两人确认，类别待 ADR 12 #2）；
   阶段 0 没有语义体检，中风险按高风险处理，也是两人（与 release-gate-sprint4 #7 一致）。
+  KGE-11 的规则式语义体检与审核台分流建议（review_console.risk.suggest_review_level，返回 medium_spot_check）**尚未生效**：
+  REVIEWERS 里没有 medium_spot_check，中风险仍两人；建议级别与这里的映射说明见 risk.SUGGESTED_REVIEWERS（学习服务测试核对）。
 - 对账失败的页面（specs/release-gate-sprint4 第 6 节）：审核台的页面对账（`python -m review_console reconcile-pages`，
   报告格式 kge-pages-reconcile/1）列出 held_pages，合并窗口跳过这些页面的一切改动，直到人处理、对账重新通过。
 """

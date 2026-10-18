@@ -37,7 +37,7 @@ make-skip-check:
 # 契约检查约 1 秒，改动后也跑一遍
 check-fast: contract-test taxonomy-check attack-surface-check sie-dictionary-check kge-id-check
 
-check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation practice-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona insight-test insight-mutation voice-blind-eval-test release-walkthrough retest-mutation today-mutation scheduler-test scheduler-mutation gate1-test gate1-mutation review-console-mutation kge-chinese-import kge-chinese-mutation knowledge-material-mutation stage-test stage-mutation kge-dedupe-test kge-dedupe-mutation kge-calibrate-test kge-calibrate-mutation cost-dashboard-test cost-dashboard-mutation mock-exam-test mock-exam-mutation kge-irt-test kge-irt-mutation knowledge-cache-mutation
+check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation practice-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona insight-test insight-mutation voice-blind-eval-test release-walkthrough retest-mutation today-mutation scheduler-test scheduler-mutation gate1-test gate1-mutation review-console-mutation kge-chinese-import kge-chinese-mutation knowledge-material-mutation stage-test stage-mutation kge-dedupe-test kge-dedupe-mutation kge-calibrate-test kge-calibrate-mutation cost-dashboard-test cost-dashboard-mutation mock-exam-test mock-exam-mutation kge-irt-test kge-irt-mutation knowledge-cache-mutation knowledge-semantic-test knowledge-semantic-mutation
 	@echo "check: lint 尚未配置，跳过；其余检查已通过"
 
 # 契约合法性 + 示例 + 反例集
@@ -813,6 +813,26 @@ knowledge-cache-mutation:
 	  echo "knowledge-cache-mutation: 跳过（没有安装依赖；见 services/knowledge/README.md）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
 	@$(call skip_rest,$(KNOWLEDGE_MISSING))PYTHONDONTWRITEBYTECODE=1 services/knowledge/.venv/bin/python services/knowledge/tests/cache_mutations.py; rc=$$?; \
+	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
+
+# KGE-11 第一步（specs/kge11-semantic-lint）：规则式语义体检（knowledge.semantic，报告 kge-lint-report/1.1）、文件式编入事件
+# （knowledge.compiler plan-events）、审核台分流建议（review_console.risk.suggest_review_level，开关缺省关、尚未生效）。不连库、不调模型。
+# knowledge-semantic-test：services/knowledge/tests/test_semantic.py、test_semantic_events.py 与 services/learning/tests/test_review_triage.py
+# knowledge-semantic-mutation：检查规则、比对范围、报告绑定、M1 兼容、分级、输入校验、编入清单与信号、分流逐条改坏（约 10 分钟；
+#   没有审核台依赖时审核台一侧跳过，退出码 3：非严格算跳过、严格算失败）
+.PHONY: knowledge-semantic-test knowledge-semantic-mutation
+knowledge-semantic-test:
+	@if $(KNOWLEDGE_MISSING) || $(LEARNING_MISSING); then \
+	  echo "knowledge-semantic-test: 跳过（没有安装依赖；见 services/knowledge/README.md、services/learning/README.md）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@$(call guard,$(KNOWLEDGE_MISSING) || $(LEARNING_MISSING))cd services/knowledge && PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/test_semantic.py tests/test_semantic_events.py
+	@$(call guard,$(KNOWLEDGE_MISSING) || $(LEARNING_MISSING))cd services/learning && PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/test_review_triage.py && echo "knowledge-semantic-test: 通过"
+
+knowledge-semantic-mutation:
+	@if $(KNOWLEDGE_MISSING); then \
+	  echo "knowledge-semantic-mutation: 跳过（没有安装依赖；见 services/knowledge/README.md）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@$(call skip_rest,$(KNOWLEDGE_MISSING))PYTHONDONTWRITEBYTECODE=1 services/knowledge/.venv/bin/python services/knowledge/tests/semantic_mutations.py; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
 
 # 舞台第一步（specs/stage-whiteboard-step1，全程合成数据）：packages/stage 的讲解 DSL v0.1.0（类型、JSON Schema、确定性校验器）、

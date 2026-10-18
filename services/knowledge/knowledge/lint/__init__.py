@@ -9,6 +9,7 @@ from pathlib import Path
 
 from ..atoms import Snapshot
 from . import checks
+from .binding import pages_digest, scope_pages, sha256_text, snapshot_digest
 from .checks import DEFAULT_MIN_GROUP, LintContext, PageFile, load_files
 from .issues import LintIssue, LintReport
 from .lexicon import Lexicon, default_lexicon
@@ -45,7 +46,19 @@ def lint_context(ctx: LintContext) -> LintReport:
         issues += checks.check_textbook_quote(pf, ctx)
     issues += checks.check_orphans(ctx)
     issues.sort(key=lambda i: (i.file, i.line or 0, i.check_type, i.severity, i.message))
-    return LintReport(tuple(issues), sum(1 for pf in ctx.files))
+    skipped = [] if ctx.snapshot is not None else list(SNAPSHOT_CHECKS)
+    if not ctx.baseline:
+        skipped.append("locked_baseline")
+    return LintReport(tuple(issues), sum(1 for pf in ctx.files), "program",
+                      ctx.snapshot.map_version if ctx.snapshot is not None else None,
+                      {"pages": scope_pages(ctx.files)},
+                      {"map_snapshot": snapshot_digest(ctx.snapshot), "lexicon": sha256_text(ctx.lexicon.to_json()),
+                       "baseline": pages_digest(ctx.baseline)},
+                      {"min_group": ctx.min_group, "today": ctx.today.isoformat(), "skipped_checks": sorted(skipped)})
+
+
+# 没有地图快照时跳过的检查（lint_context 首条 snapshot 警告里列的那些）
+SNAPSHOT_CHECKS = ("atom_expired", "atom_hash", "node_id", "template", "textbook_quote")
 
 
 def lint_dir(pages_dir: str | Path, *, snapshot: Snapshot | None = None, baseline_dir: str | Path | None = None,

@@ -1,8 +1,8 @@
 """KGE M1 报表（spec 设计要点 8；KGE V1.1 第九章 M1：课标承接 100%、留出集无处可标 < 2%、知识点页发布率 100%、体检零阻断）。
 
 放在 services/knowledge 而不是 tools/kge-coverage 的理由：三项输入——地图快照的 `curriculum_links`（PR ① 的快照格式，
-`knowledge.atoms`）、已发布页面快照（manifest 与逐页哈希核对，`knowledge.service.pages`）、体检 JSON（`kge-lint-report/1`，
-`knowledge.lint`）——的解析与校验都在本包；kge-coverage 读的是 KGE-01 导入产物与打标报告，没有承接关系、页面与体检。
+`knowledge.atoms`）、已发布页面快照（manifest 与逐页哈希核对，`knowledge.service.pages`）、体检 JSON（`kge-lint-report/1` 或 `/1.1`，
+只收程序体检，`knowledge.lint`）——的解析与校验都在本包；kge-coverage 读的是 KGE-01 导入产物与打标报告，没有承接关系、页面与体检。
 
 口径：
 - 课标承接率 = 被至少一个有效节点承接的课标条目数 / 该地图课标年份的课标条目数。
@@ -40,7 +40,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from .atoms import SnapshotError, parse_snapshot, read_structured
-from .lint.issues import REPORT_FORMAT as LINT_FORMAT
+from .lint.issues import READ_FORMATS as LINT_READ_FORMATS
 
 REPORT_FORMAT = "kge-m1-report/1"
 NOT_STORED = "不可计算：承接关系未入库"
@@ -135,9 +135,14 @@ def kp_publish_rate(doc: Mapping[str, Any], page_snapshot_dir: str | Path | None
 def lint_blocks(report: Any | None) -> dict[str, Any]:
     if report is None:
         return {"status": "not_computable", "note": "不可计算：没有给体检 JSON"}
-    if not isinstance(report, dict) or report.get("format") != LINT_FORMAT or not isinstance(report.get("summary"), dict) \
+    if not isinstance(report, dict) or report.get("format") not in LINT_READ_FORMATS or not isinstance(report.get("summary"), dict) \
             or not isinstance(report.get("issues"), list):
-        raise M1InputError(f"体检 JSON 不是 {LINT_FORMAT}")
+        raise M1InputError(f"体检 JSON 不是 {' / '.join(LINT_READ_FORMATS)}")
+    # 只统计程序体检报告（/1 只有程序体检；/1.1 看顶层 layer）：语义体检报告不算进 M1“体检阻断数”
+    if report["format"] != "kge-lint-report/1" and report.get("layer") != "program":
+        raise M1InputError("体检 JSON 不是程序体检报告（layer 必须是 program）")
+    if any(isinstance(i, dict) and i.get("layer", "program") != "program" for i in report["issues"]):
+        raise M1InputError("体检 JSON 里有非程序体检的条目")
     blocks = report["summary"].get("blocks")
     counted = sum(1 for i in report["issues"] if isinstance(i, dict) and i.get("severity") == "block")
     if not isinstance(blocks, int) or isinstance(blocks, bool) or blocks != counted:

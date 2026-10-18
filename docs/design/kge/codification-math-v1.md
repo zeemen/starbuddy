@@ -1,7 +1,8 @@
 # 编纂规范 · 数学 v1（结构骨架与机器可检规则）
 
 状态：**骨架草稿**（KGE-03 PR ①，`specs/kge-03-compile-layer/spec.md` 设计要点 2、待人确认 #2）。
-本文只写页面的**结构骨架**与**机器可检规则**（由 `services/knowledge` 的程序体检执行）；**教学内容要求由教研填写并签发**（第 10 节），
+本文只写页面的**结构骨架**与**机器可检规则**（由 `services/knowledge` 的程序体检执行；第 9 节所列语义层检查是 KGE-11 的
+规则式草稿，由 `knowledge.semantic` 执行，阻断 / 提示分级待教研签发）；**教学内容要求由教研填写并签发**（第 10 节），
 签发前本规范不作为页面发布依据。依据：KGE V1.1 第四章（页面体系、三种段落、两种重建、分级发布闸门）、第五章 V1.1 修订、第七章、第九章。
 
 每条机器规则后面的 `check_type` 是体检结果里的检查类型（字段对应 KGE 第七章 `lint_issue`）；“阻断”即不能合并。
@@ -94,15 +95,18 @@
 | 风险 | 改动类型 | 发布 |
 |---|---|---|
 | 低 | 地区权重等考情数值、后续节点、只有原子哈希更新 | 程序体检通过后进每日合并窗口，每页每天最多发布一次，事后抽检 |
-| 中 | （阶段 0 没有语义体检，按高风险处理） | 单独合并请求，两人审核 |
+| 中 | 叙述段改写（阶段 0 没有语义体检，按高风险处理；KGE-11 的规则式语义体检是草稿、分级待教研签发，分流建议未生效，仍按高风险） | 单独合并请求，两人审核 |
 | 高 | 定义与课标要求（锁定段）、前置关系表述、教材投影（页码、版次、原句）、全量重编 | 单独合并请求，必须教研审核，两人确认（审核类别待 ADR 12 #2） |
 
 ## 9. 体检结果
-- 结构化 JSON（`python -m knowledge.lint <页面目录> --json`），每条字段：`id`、`page_id`、`page_version`、`layer`（`program`）、
-  `check_type`、`severity`（`block` / `warn`）、`detail`（说明与定位：文件、行、段落）、`status`。
+- 结构化 JSON（`python -m knowledge.lint <页面目录> --json`，格式 `kge-lint-report/1.1`），每条字段：`id`、`page_id`、`page_version`、
+  `layer`（`program`）、`check_type`、`severity`（`block` / `warn`）、`detail`（说明与定位：文件、行、段落）、`status`。
+  报告顶层另有 `layer`、`map_version`、`scope`（页面 ID、版本、原文摘要）、`inputs`（输入摘要）、`config`（被跳过的检查等），`summary` 不变。
 - 检查类型：`format`、`header`、`node_id`、`sections`、`template`、`locked_baseline`、`link`、`orphan`、`citation`、`atom_hash`、
-  `atom_expired`、`latex`、`sympy`、`pii`、`group_stats`、`persona`、`forbidden_phrase`、`sentence_length`、`textbook_quote`、`snapshot`。
-- 语义体检（与原子冲突、跨页矛盾、超纲、角色语言混入的语义层）不在程序体检里。
+  `atom_expired`、`latex`、`sympy`、`pii`、`group_stats`、`persona`、`forbidden_phrase`、`sentence_length`、`textbook_quote`、`snapshot`、
+  `atom_conflict`、`prerequisite_direction`、`term_consistency`、`edition_scope`、`out_of_scope`、`age_style`、`persona_mix`、`affected_scope`。
+- 后八类属语义层（`layer` 为 `semantic`，KGE-11 规则式语义体检，`python -m knowledge.semantic`，见
+  services/knowledge/knowledge/semantic/README.md）：程序体检先跑，语义体检随后；报告格式相同。阻断 / 提示分级待教研确认。
 
 ## 10. 教学内容要求（待教研填写并签发）
 ### 10.1 讲解要点怎么写

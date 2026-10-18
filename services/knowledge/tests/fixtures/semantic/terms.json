@@ -1,0 +1,11 @@
+{
+  "format": "kge-semantic-terms/1",
+  "synthetic": true,
+  "note": "合成样例（KGE-11 测试夹具）：节点别名与版次专属表述，正式版由教研提供",
+  "aliases": {
+    "MATH.SYN.EQ.TRANSPOSE": ["移项法则"]
+  },
+  "edition_terms": {
+    "syn-ed": ["合成旧版专栏"]
+  }
+}

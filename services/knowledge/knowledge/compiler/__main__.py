@@ -6,6 +6,10 @@
 编入 → 渲染重建 → 合并窗口 → 每个合并请求叠加体检 → 写到本地输出目录。不推送任何远程仓库。
 全量重编要经模型路由，只提供 Python 接口（knowledge.compiler.full.full_recompile），不在命令行里调用模型。
 退出码：0 完成；1 有合并请求体检阻断；2 参数或输入错误。
+
+子命令（KGE-11）：python -m knowledge.compiler plan-events --pages 页面目录 [--changes 原子变更清单 --old-snapshot 旧快照
+    --new-snapshot 新快照] [--signals 兜底检索信号] [--out 编入清单]——只产出编译任务清单（knowledge.compiler.events），不重建、不发布。
+第一个参数不是 plan-events 时行为与原来相同。
 """
 from __future__ import annotations
 
@@ -23,7 +27,11 @@ from .window import DEFAULT_HOLD_MAX_AGE, plan_window, read_hold_report
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="python -m knowledge.compiler", description="编译层编译器（KGE-03）：渲染重建与合并窗口")
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["plan-events"]:
+        from .events import main as plan_events  # noqa: PLC0415
+        return plan_events(argv[1:])
+    ap = argparse.ArgumentParser(prog="python -m knowledge.compiler",description="编译层编译器（KGE-03）：渲染重建与合并窗口")
     ap.add_argument("--pages", required=True, help="页面目录（页面仓库主分支的 pages/）")
     ap.add_argument("--old-snapshot", required=True, help="页面当前所依据的地图快照")
     ap.add_argument("--new-snapshot", required=True, help="原子变更后的地图快照")
