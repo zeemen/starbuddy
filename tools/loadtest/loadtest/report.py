@@ -6,6 +6,7 @@ import json
 from .scenarios import ENDPOINTS
 
 BANNER = "本机基线，不代表生产容量"
+PEAK_BANNER = "本机合成，不是容量结论"   # PLT-20 --profile peak2x 的报告首段
 
 
 def _fmt(v) -> str:
@@ -27,16 +28,113 @@ def render_gate(g: dict | None) -> list[str]:
     return out
 
 
+SLO_ITEMS = (("p50_ms", "p50 ms"), ("p95_ms", "p95 ms"), ("p99_ms", "p99 ms"), ("error_rate", "错误率"),
+             ("throttled_429_rate", "429 占比"), ("subject_busy_503_rate", "503 BUSY 占比"))
+VERDICT = {"pass": "通过", "fail": "**未达**", "no_threshold": "无通过线", "no_samples": "无样本"}
+
+
+def render_slo(s: dict | None, stage_names: list[str]) -> list[str]:
+    """SLO 判定（PLT-20）：每组总体判定与逐项值 / 上限，另按阶段给一行判定；未签字时注明“只报告，不影响退出码”"""
+    if not s:
+        return []
+    signed = "已签字" if s["signed"] else f"**{s['status'] or '未签字'}**"
+    mode = "严格（未达使退出码失败）" if s.get("strict") else "只报告（未达不影响退出码）"
+    out = ["", "## SLO 判定（config/slo.yaml）", "", f"- 状态：{signed}；判定方式：{mode}；边界值算通过；样本按到达阶段归属", "",
+           "| 路由组 | 请求数 | 判定 | " + " | ".join(name for _, name in SLO_ITEMS) + " |", "|---|---|---|" + "---|" * len(SLO_ITEMS)]
+    for g in s["groups"]:
+        cells = []
+        for k, _ in SLO_ITEMS:
+            v, limit = g["values"].get(k), g["limits"].get(k)
+            cells.append(f"{_fmt(v)} / ≤{_fmt(limit)}" if limit is not None else f"{_fmt(v)} / —")
+        out.append(f"| {g['group']} | {g['values']['count']} | {VERDICT[g['verdict']]} | " + " | ".join(cells) + " |")
+    if any(g["by_stage"] for g in s["groups"]):
+        stages = sorted({b["stage"] for g in s["groups"] for b in g["by_stage"]})
+        out += ["", "按阶段：", "", "| 路由组 | " + " | ".join(stage_names[i] if i < len(stage_names) else str(i) for i in stages) + " |",
+                "|---|" + "---|" * len(stages)]
+        for g in s["groups"]:
+            by = {b["stage"]: b for b in g["by_stage"]}
+            out.append(f"| {g['group']} | " + " | ".join(
+                f"{VERDICT[by[i]['verdict']]}（{by[i]['count']}）" if i in by else "—" for i in stages) + " |")
+    if s["ungrouped_steps"]:
+        out += ["", "无通过线的步骤（不在任何组）：" + "、".join(ENDPOINTS.get(k, k) for k in s["ungrouped_steps"])]
+    return out
+
+
+def render_extras_check(x: dict | None) -> list[str]:
+    """可选场景核对（PLT-20 审查 S1、S3、契约 5）：按步骤的真 ID / 真票据与派生路径次数、预期占比与告警、续做核对、月度计划改记"""
+    if not x:
+        return []
+    out = ["", "## 可选场景核对", "",
+           "真路径（真 ID / 真票据）必须 2xx；派生 / 预期路径必须全部是预期结果——任一不满足即告警。", "",
+           "| 接口 | 真路径 | 派生路径 | 派生中预期占比 | 真路径非 2xx | 派生非预期 | 告警 |", "|---|---|---|---|---|---|---|"]
+    alerts = []
+    for step, d in x["paths"].items():
+        share = "—" if d["expected_share"] is None else f"{d['expected_share'] * 100:.1f}%"
+        out.append(f"| {ENDPOINTS.get(step, step)} | {d['real']} | {d['derived']} | {share} | {d['real_not_2xx']} | "
+                   f"{d['derived_not_expected']} | {'**是**' if d['alert'] else '否'} |")
+        if d["alert"]:
+            alerts.append(ENDPOINTS.get(step, step))
+    if x.get("notes"):
+        out += ["", "核对标记：" + "、".join(f"{k} ×{v}" for k, v in x["notes"].items())]
+        if any(k.endswith(":resumed_new") for k in x["notes"]):
+            alerts.append("诊断续做回了新会话（resumed_new）")
+    if x.get("monthly_plan_demoted"):
+        out += ["", f"家长月度计划：{x['monthly_plan_demoted']} 次 503 在 BFF 访问日志里没有核对到 generate=not_configured，已改记为错误"]
+        alerts.append("月度计划的 503 未全部核对到 not_configured")
+    out += ["", ("**告警**：" + "；".join(alerts)) if alerts else "无告警"]
+    return out
+
+
+def render_stage_detail(r: dict) -> list[str]:
+    """各阶段明细（PLT-20 peak2x）：吞吐、分位数、错误率、429 / 503、连接峰值与等待、本阶段慢查询、闸门排队分档"""
+    detail = r.get("stage_detail") or []
+    if not detail or not r.get("peak2x"):
+        return []
+    out = ["", "## 2 倍峰值各阶段", "",
+           "延迟、吞吐、错误率按到达阶段归属；连接峰值、慢查询、闸门分档按墙钟所在阶段（交界处可能差一个会话时长）。", "",
+           "| 阶段 | 并发 | 请求数 | 吞吐 req/s | p50 ms | p95 ms | p99 ms | 错误率 | 429 | 503 BUSY | 预期 | 连接峰值（角色:总/活跃/锁等待/等待） | 闸门排队分档 |",
+           "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    for d in detail:
+        peaks = "；".join(f"{role}:{p['max_connections']}/{p['max_active']}/{p['max_lock_wait']}/{p.get('max_waiting', 0)}"
+                         for role, p in sorted(d.get("db_peaks", {}).items())) or "—"
+        buckets: dict[str, int] = {}
+        for g in d.get("gate", {}).values():
+            for k, v in g["queue_ms"].items():
+                buckets[k] = buckets.get(k, 0) + v
+        gate = "、".join(f"{k}×{v}" for k, v in buckets.items()) or "—"
+        out.append(f"| {d['label']} | {d['concurrency']} | {d['count']} | {_fmt(d['throughput_rps'])} | {_fmt(d['p50_ms'])} | "
+                   f"{_fmt(d['p95_ms'])} | {_fmt(d['p99_ms'])} | {_fmt(d['error_rate'])} | {d.get('throttled_429', 0)} | "
+                   f"{d.get('subject_busy_503', 0)} | {d.get('expected', 0)} | {peaks} | {gate} |")
+    if any(d.get("top_queries") for d in detail):
+        out += ["", "各阶段慢查询（pg_stat_statements 阶段边界快照相减，按总耗时前三；语句已规范化）：", "",
+                "| 阶段 | 角色 | 调用 | 总 ms | 平均 ms | 语句（截断） |", "|---|---|---|---|---|---|"]
+        for d in detail:
+            for q in d.get("top_queries", []):
+                text = q["query"].replace("|", "\\|")
+                out.append(f"| {d['label']} | {q['role']} | {q['calls']} | {q['total_ms']} | {q['mean_ms']} | `{text}` |")
+    return out
+
+
 def render_markdown(r: dict) -> str:
-    lines = [f"# 压测基线报告（{BANNER}）", ""]
+    banner = r.get("banner") or BANNER
+    peak = r.get("peak2x")
+    title = "2 倍峰值压测报告" if peak else "压测基线报告"
+    lines = [f"# {title}（{banner}）", ""]
+    if peak:
+        lines += [f"> {PEAK_BANNER}：负载生成器与全部服务同在一台机器，阶段并发是合成占位；{peak['note']}。", ""]
     if r.get("scale_note"):
         lines += [f"> {r['scale_note']}", ""]
     p = r["profile"]
-    stages = " → ".join(f"{s['concurrency']} 并发 × {s['duration_s']:.0f} s" for s in p["stages"])
+    stages = " → ".join((f"{s['label']} " if s.get("label") else "") + f"{s['concurrency']} 并发 × {s['duration_s']:.0f} s"
+                        for s in p["stages"])
     lines += [
         "## 运行参数", "",
         f"- 种子：`{p['seed']}`；阶段：{stages}；平均会话时长（推到达率）{p['mean_session_s']} s；步骤间平均思考 {p['think_mean_s']} s",
         "- 旅程配比：" + "、".join(f"{m['journey']} {m['weight']}" for m in p["mix"]),
+    ]
+    if p.get("journeys"):
+        lines.append("- 可选场景（PLT-20）：" + "、".join(p["journeys"]))
+    lines += [
         f"- 到达数：{r['arrivals']}（" + "、".join(f"{k} {v}" for k, v in r["arrivals_by_journey"].items()) + "）",
         f"- 假供应商延迟：中位 {r['provider']['median_ms']} ms、P90 {r['provider']['p90_ms']} ms；故障注入："
         + (json.dumps(r["faults"], ensure_ascii=False) if r["faults"] else "无"),
@@ -47,16 +145,28 @@ def render_markdown(r: dict) -> str:
         "| 阶段 | 请求数 | 错误率 | p50 ms | p95 ms | p99 ms | 吞吐 req/s |", "|---|---|---|---|---|---|---|",
     ]
     for s in r["stages"]:
-        lines.append(f"| {p['stages'][s['stage']]['concurrency']} 并发 | {s['count']} | {_fmt(s['error_rate'])} | {_fmt(s['p50_ms'])} | "
+        st = p["stages"][s["stage"]]
+        name = (f"{st['label']}（{st['concurrency']} 并发）" if st.get("label") else f"{st['concurrency']} 并发")
+        lines.append(f"| {name} | {s['count']} | {_fmt(s['error_rate'])} | {_fmt(s['p50_ms'])} | "
                      f"{_fmt(s['p95_ms'])} | {_fmt(s['p99_ms'])} | {_fmt(s['throughput_rps'])} |")
+    lines += render_stage_detail(r)
     lines += ["", "## 各接口", "",
-              "| 接口 | 请求数 | 错误率 | 业务拒绝 | 429 限流 | 503 SUBJECT_BUSY | p50 ms | p95 ms | p99 ms | 吞吐 req/s | 状态 |",
-              "|---|---|---|---|---|---|---|---|---|---|---|"]
+              "| 接口 | 请求数 | 错误率 | 业务拒绝 | 429 限流 | 503 SUBJECT_BUSY | 预期 | p50 ms | p95 ms | p99 ms | 吞吐 req/s | 状态 |",
+              "|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for step, d in r["endpoints"].items():
         codes = "、".join(f"{c}×{n}" for c, n in d["codes"].items())
         lines.append(f"| {ENDPOINTS.get(step, step)} | {d['count']} | {_fmt(d['error_rate'])} | {d['rejected']} | {d.get('throttled_429', 0)} | "
-                     f"{d.get('subject_busy_503', 0)} | {_fmt(d['p50_ms'])} | "
+                     f"{d.get('subject_busy_503', 0)} | {d.get('expected', 0)} | {_fmt(d['p50_ms'])} | "
                      f"{_fmt(d['p95_ms'])} | {_fmt(d['p99_ms'])} | {_fmt(d['throughput_rps'])} | {codes} |")
+    stage_names = [(s.get("label") or f"{s['concurrency']} 并发") for s in p["stages"]]
+    lines += render_extras_check(r.get("extras_check"))
+    mb = r.get("model_budget")
+    if mb and mb.get("limit") is not None:
+        lines += ["", f"模型调用上限（--max-model-calls）：{mb['used']} / {mb['limit']}"
+                  + ("，**已到上限并停止**（之后的走模型请求与新到达的旅程都没有发出）" if mb["stopped"] else "")]
+    if "plan_events" in (p.get("journeys") or []):
+        lines += ["", "注：开了 plan_events，学生的今日计划另走跨科编排与快照，行名“today.orch”，不与基线的 today 比较。"]
+    lines += render_slo(r.get("slo"), stage_names)
     lines += render_gate(r.get("subject_gate"))
     if r["skipped"]:
         lines += ["", "跳过的步骤（前置失败）：" + "、".join(f"{ENDPOINTS.get(k, k)} ×{v}" for k, v in r["skipped"].items())]
@@ -84,10 +194,12 @@ def render_markdown(r: dict) -> str:
               f"- 共 {mc['total']} 次；按科目与任务：" + "、".join(f"{k} {v}" for k, v in mc["by_subject_task"].items()),
               "- 结果：" + "、".join(f"{k} {v}" for k, v in mc["by_outcome"].items()), ""]
     lines += ["## 说明", "",
-              "- 分位数为最近秩法；错误 = 非 2xx 且非 402 业务拒绝，或连接失败（429 限流与 503 SUBJECT_BUSY 仍算错误，另单列两列）；",
+              "- 分位数为最近秩法；错误 = 非 2xx 且非 402 业务拒绝、非“预期”，或连接失败（429 限流与 503 SUBJECT_BUSY 仍算错误，另单列两列）；",
+              "- “预期”= 本栈缺依赖时的预期结果（PLT-20 可选场景：没有洞察服务时月度计划与预测的 503 UNAVAILABLE、"
+              "没有可作答题时派生票据的 422 TICKET_INVALID、快照里没有任务时派生任务 ID 的 422 INVALID 等），不算错误，单列；",
               "- 批改没有 BFF HTTP 入口（壳里尚无批改路由）：经计量驱动桩直接运行 BFF 的 meteredCall（耗时含预留、同键退避重试与结算）；",
               "- 负载生成器、学习服务、BFF、适配器、假供应商与数据库同在一台机器，互相争用 CPU；数字只作回归比较的基线；",
-              f"- {BANNER}。", ""]
+              f"- {banner}。", ""]
     return "\n".join(lines)
 
 

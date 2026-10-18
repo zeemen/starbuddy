@@ -112,6 +112,29 @@ class Stack:
             return (await c.get(f"{self.provider_url}/_control/stats")).json()
 
 
+TRUST_FEATURE_OF = {"weekly_report": "weekly", "profile_pages": "profile", "prediction": "reconcile"}
+
+
+def journey_env(journeys: tuple[str, ...] | list[str]) -> tuple[dict[str, str], dict[str, str]]:
+    """PLT-20 可选场景需要打开的开关 →（BFF 环境变量, 学习服务环境变量）。都只在 STARBUDDY_ENV=test / LEARNING_ENV=test 的本栈有效；
+    没开任何场景时两个都为空（栈与以前逐项相同）。不起洞察服务：月度计划的生成与预测在本栈回 503 UNAVAILABLE（预期）。"""
+    on = set(journeys)
+    bff: dict[str, str] = {}
+    learning: dict[str, str] = {}
+    trust = [TRUST_FEATURE_OF[j] for j in ("weekly_report", "profile_pages", "prediction") if j in on]
+    if trust:
+        bff["STARBUDDY_TRUST_UI"] = ",".join(trust)
+    if "star_map_v1" in on:
+        bff["STARBUDDY_STARMAP"] = "starmap_v1"
+    if on & {"monthly_plan", "my_plan"}:
+        bff["STARBUDDY_MONTHLY_PLAN"] = "monthly_plan"
+    if "plan_events" in on:
+        # 今日计划快照（PLT-15）：学习服务冻结当天快照、每条带 task_id；BFF 打开跨科编排才把 task_id 透给学生
+        bff["STARBUDDY_TODAY_ORCH"] = "today_orch"
+        learning |= {"LEARNING_TODAY_CONFIG": "synthetic", "LEARNING_TODAY_SNAPSHOT": "1"}
+    return bff, learning
+
+
 def relaxed_auth_config(dst: Path) -> None:
     """同 apps/web/scripts/e2e.sh：阈值 ×1000 的一份配置，只在 STARBUDDY_ENV=test 时 BFF 才认"""
     c = json.loads((ROOT / "services/bff/config/auth.json").read_text(encoding="utf-8"))
@@ -122,11 +145,14 @@ def relaxed_auth_config(dst: Path) -> None:
 
 @asynccontextmanager
 async def local_stack(*, seed_value: int, students: int, provider_median_ms: float, provider_p90_ms: float,
-                      retry_scale: float = 1.0, subject_gate: bool = False, practice: bool = False, gate_config: Path | None = None):
+                      retry_scale: float = 1.0, subject_gate: bool = False, practice: bool = False, gate_config: Path | None = None,
+                      journeys: tuple[str, ...] = ()):
     """students：假供应商预先登记合成作答的学生数（学生旅程的合成对象数）。
     subject_gate：BFF 打开分学科并发闸门（STARBUDDY_SUBJECT_GATE，缺省用仓库 config/concurrency.json 的合成默认值；
     gate_config 给一份同格式的配置时经 BFF_CONCURRENCY_CONFIG 换用，只在 STARBUDDY_ENV=test 的本栈有效）；
-    practice：BFF 打开错题再练与复测路由，学习服务用合成配置与合成题面（只在 LEARNING_ENV=test），票据密钥每次启动随机生成"""
+    practice：BFF 打开错题再练与复测路由，学习服务用合成配置与合成题面（只在 LEARNING_ENV=test），票据密钥每次启动随机生成；
+    journeys：PLT-20 可选场景，按 journey_env 打开对应开关"""
+    extra_bff, extra_learning = journey_env(journeys)
     work = Path(tempfile.mkdtemp(prefix="starbuddy-loadtest."))
     os.chmod(work, 0o700)
     pg = EphemeralPG()
@@ -167,6 +193,7 @@ async def local_stack(*, seed_value: int, students: int, provider_median_ms: flo
             if practice:
                 lenv |= {"LEARNING_PRACTICE_CONFIG": "synthetic", "LEARNING_PRACTICE_PRESENTER": "synthetic",
                          "LEARNING_PRACTICE_TICKET_SECRET": secrets.token_hex(32), "LEARNING_RETEST_CONFIG": "synthetic"}
+            lenv |= extra_learning
             learning_log = work / "learning.log"
             es.enter_context(process([str(PY), "-m", "learning"], ROOT / "services/learning", lenv, learning_log, lport, "学习服务"))
             # ---- BFF
@@ -187,6 +214,7 @@ async def local_stack(*, seed_value: int, students: int, provider_median_ms: flo
                     benv["BFF_CONCURRENCY_CONFIG"] = str(gate_config)
             if practice:
                 benv |= {"STARBUDDY_PRACTICE": "practice", "STARBUDDY_RETEST_UI": "retest"}
+            benv |= extra_bff
             bff_log = work / "bff.log"
             es.enter_context(process(["node", "--no-warnings", "src/main.ts"], ROOT / "services/bff", benv, bff_log, bport, "BFF"))
             # ---- 计量驱动桩：批改经 BFF 的 meteredCall（契约审查 H1）

@@ -37,7 +37,7 @@ make-skip-check:
 # 契约检查约 1 秒，改动后也跑一遍
 check-fast: contract-test taxonomy-check attack-surface-check sie-dictionary-check kge-id-check
 
-check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation practice-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona insight-test insight-mutation voice-blind-eval-test release-walkthrough retest-mutation today-mutation scheduler-test scheduler-mutation gate1-test gate1-mutation review-console-mutation kge-chinese-import kge-chinese-mutation knowledge-material-mutation stage-test stage-mutation kge-dedupe-test kge-dedupe-mutation kge-calibrate-test kge-calibrate-mutation cost-dashboard-test cost-dashboard-mutation mock-exam-test mock-exam-mutation kge-irt-test kge-irt-mutation knowledge-cache-mutation knowledge-semantic-test knowledge-semantic-mutation
+check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation practice-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona insight-test insight-mutation voice-blind-eval-test release-walkthrough retest-mutation today-mutation scheduler-test scheduler-mutation gate1-test gate1-mutation review-console-mutation kge-chinese-import kge-chinese-mutation knowledge-material-mutation stage-test stage-mutation kge-dedupe-test kge-dedupe-mutation kge-calibrate-test kge-calibrate-mutation cost-dashboard-test cost-dashboard-mutation mock-exam-test mock-exam-mutation kge-irt-test kge-irt-mutation knowledge-cache-mutation knowledge-semantic-test knowledge-semantic-mutation loadtest-test
 	@echo "check: lint 尚未配置，跳过；其余检查已通过"
 
 # 契约合法性 + 示例 + 反例集
@@ -758,6 +758,15 @@ cost-dashboard-mutation:
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
 	@$(call skip_rest,$(COST_DASH_MISSING))PYTHONDONTWRITEBYTECODE=1 $(LOADTEST_PY) tools/loadtest/dashboard_mutations.py; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
+
+# PLT-20 第一步（specs/loadtest-2x-peak-plt20）：压测工具的纯函数单测——可选场景与请求体、SLO 判定、peak2x 阶段、报告格式与
+# digest 钉值、样例 sample/peak2x.md 标注。不起栈、不跑真实压测（实际压测见 tools/loadtest/README.md，不进 check）
+.PHONY: loadtest-test
+loadtest-test:
+	@if $(COST_DASH_MISSING); then echo "loadtest-test: 跳过（没有 services/learning/.venv 或其中没有 pytest、PyYAML）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@$(call guard,$(COST_DASH_MISSING))cd tools/loadtest && PYTHONDONTWRITEBYTECODE=1 ../../$(LOADTEST_PY) -m pytest -q -p no:cacheprovider \
+	  tests/test_peak2x.py tests/test_arrivals.py tests/test_metrics_faults.py && echo "loadtest-test: 通过"
 
 # KGE-06 封测周修订支持（specs/kge06-weekly-revision）审核台部分：低置信打标候选工作单与修订发布预检的测试在 learning-test 里
 # （tests/test_review_revision.py）；这里把开关、排序与游标、只列待处理、只经签字身份决定、改标核对、版本号段与两人签、

@@ -11,23 +11,26 @@ from __future__ import annotations
 import hashlib
 import json
 import random
+import re
 import uuid
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 
-from .scenarios import DEFAULT_MIX, JOURNEYS, PlannedRequest, journey_steps, keyed
+from .scenarios import DEFAULT_MIX, EXTRAS, JOURNEYS, NEEDS_PRACTICE, PlannedRequest, journey_steps, keyed
 
 NS = uuid.UUID("7d1b8a52-5c0e-4f31-9a55-000000000505")
+RUN_ID = re.compile(r"[A-Za-z0-9-]{1,32}")
 
 
 @dataclass(frozen=True)
 class Stage:
     concurrency: int
     duration_s: float
+    label: str = ""     # 阶段名（peak2x 的 0.5× / 1× / 2× / 2× 保持）；不进请求序列
 
     @property
     def name(self) -> str:
-        return f"c{self.concurrency}"
+        return self.label or f"c{self.concurrency}"
 
 
 @dataclass(frozen=True)
@@ -38,9 +41,12 @@ class Profile:
     think_mean_s: float = 0.2       # 步骤之间的平均思考时间
     mix: tuple[tuple[str, float], ...] = DEFAULT_MIX
     practice: bool = False          # 学生旅程另走再练与复测的列表、取题（PLT-16；不开时序列与以前逐项相同）
+    journeys: tuple[str, ...] = ()  # PLT-20 可选场景（scenarios.EXTRAS 的名字，按其顺序）；空 = 不开，序列与以前逐项相同
+    # PLT-20 审查 S2：运行 ID 进幂等键派生（同一种子多轮演练时键不重复）；空 = 不进（默认 digest 与以前逐项相同）
+    run_id: str = ""
 
     def steps(self, kind: str) -> tuple[str, ...]:
-        return journey_steps(kind, self.practice)
+        return journey_steps(kind, self.practice, self.journeys)
 
     def __post_init__(self) -> None:
         if not self.stages or any(s.concurrency < 1 or s.duration_s <= 0 for s in self.stages):
@@ -49,6 +55,12 @@ class Profile:
             raise ValueError("session and think times must be positive")
         if not self.mix or any(k not in JOURNEYS or w < 0 for k, w in self.mix) or sum(w for _, w in self.mix) <= 0:
             raise ValueError("mix must name known journeys with non-negative weights")
+        if any(j not in EXTRAS for j in self.journeys) or list(self.journeys) != [k for k in EXTRAS if k in self.journeys]:
+            raise ValueError("journeys must be known extras in scenarios.EXTRAS order without duplicates")
+        if self.run_id and not RUN_ID.fullmatch(self.run_id):
+            raise ValueError("run_id must be 1-32 characters of [A-Za-z0-9-]")
+        if NEEDS_PRACTICE & set(self.journeys) and not self.practice:
+            raise ValueError("practice_answer needs practice=True (the answer follows the practice / retest next steps)")
 
 
 # 预置档：small 用于样例与开发（并发 ≤ 20、时长 ≤ 30 s）；full 是 spec 的 10 → 50 → 100 → 200（只在人手动传参时跑）
@@ -56,6 +68,22 @@ PROFILES = {
     "small": (Stage(5, 10.0), Stage(10, 10.0)),
     "full": (Stage(10, 120.0), Stage(50, 120.0), Stage(100, 120.0), Stage(200, 120.0)),
 }
+
+# PLT-20 --profile peak2x：以“峰值并发”P 为 1 倍，0.5× → 1× → 2× → 2× 保持（倍数与顺序固定；P 与时长来自配置，见 peak.py）
+PEAK2X_STEPS = ((0.5, "0.5×"), (1.0, "1×"), (2.0, "2×"), (2.0, "2× 保持"))
+
+
+def peak2x_stages(peak: int, ramp_s: float, hold_s: float) -> tuple[Stage, ...]:
+    """0.5×（向上取整，至少 1）→ 1× → 2× 各 ramp_s 秒，最后 2× 保持 hold_s 秒"""
+    if not isinstance(peak, int) or isinstance(peak, bool) or peak < 1:
+        raise ValueError("peak concurrency must be a positive integer")
+    if ramp_s <= 0 or hold_s <= 0:
+        raise ValueError("stage durations must be positive")
+    out = []
+    for i, (m, label) in enumerate(PEAK2X_STEPS):
+        c = max(1, -(-peak // 2)) if m == 0.5 else int(peak * m)
+        out.append(Stage(c, float(hold_s if i == len(PEAK2X_STEPS) - 1 else ramp_s), label))
+    return tuple(out)
 
 
 def parse_stages(text: str) -> tuple[Stage, ...]:
@@ -116,13 +144,15 @@ def slot_counts(arrivals: Iterable[Arrival]) -> dict[str, int]:
     return out
 
 
-def step_key(seed: int, a: Arrival, step: str) -> str | None:
-    return sid("key", seed, a.index, step) if keyed(step) else None
+def step_key(seed: int, a: Arrival, step: str, run_id: str = "") -> str | None:
+    if not keyed(step):
+        return None
+    return sid("key", seed, a.index, step) if not run_id else sid("key", seed, f"run:{run_id}", a.index, step)
 
 
 def requests(profile: Profile, arrivals: Iterable[Arrival] | None = None) -> list[PlannedRequest]:
     arrivals = plan(profile) if arrivals is None else arrivals
-    return [PlannedRequest(a.index, i, step, step_key(profile.seed, a, step))
+    return [PlannedRequest(a.index, i, step, step_key(profile.seed, a, step, profile.run_id))
             for a in arrivals for i, step in enumerate(profile.steps(a.kind))]
 
 
@@ -133,6 +163,14 @@ def digest(reqs: Iterable[PlannedRequest]) -> str:
 
 def describe(profile: Profile) -> dict:
     d = asdict(profile)
-    d["stages"] = [{"concurrency": s.concurrency, "duration_s": s.duration_s} for s in profile.stages]
+    # 阶段名、可选场景只在用到时写（不用时报告的 profile 段与以前逐字段相同）
+    d["stages"] = [{"concurrency": s.concurrency, "duration_s": s.duration_s, **({"label": s.label} if s.label else {})}
+                   for s in profile.stages]
     d["mix"] = [{"journey": k, "weight": w} for k, w in profile.mix]
+    if profile.journeys:
+        d["journeys"] = list(profile.journeys)
+    else:
+        d.pop("journeys")
+    if not profile.run_id:
+        d.pop("run_id")
     return d

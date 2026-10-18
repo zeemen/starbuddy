@@ -48,6 +48,46 @@ python -m loadtest baseline --stages 10:20 --subject-gate --with-practice --gate
   所以默认上限（每科 8）下往往看不到排队，这时用 `--gate-config` 把 `max_inflight` 调小（例如 1–2）、`queue_timeout_ms` 调短再跑。
   数字只作本机对照，不代表生产容量与上限取值（取值待人确认）。
 
+### 新场景、SLO 判定与 2 倍峰值阶段（PLT-20，`specs/loadtest-2x-peak-plt20`）
+
+```bash
+# 在 tools/loadtest 下（Makefile 的 LOADTEST_ARGS 白名单还没有这些选项，直接调用）
+PYTHONDONTWRITEBYTECODE=1 ../../services/learning/.venv/bin/python -m loadtest plan --profile peak2x --journeys all      # 只看计划与 digest
+PYTHONDONTWRITEBYTECODE=1 ../../services/learning/.venv/bin/python -m loadtest baseline --stages small --journeys all --out <空目录>
+PYTHONDONTWRITEBYTECODE=1 ../../services/learning/.venv/bin/python -m loadtest baseline --profile peak2x --peak-concurrency 20 --i-know \
+    --journeys all --subject-gate --out <空目录>
+```
+
+- `--journeys a,b|all`（缺省全关；`--profile peak2x` 时缺省取 `config/peak2x.yaml` 的 `journeys`；`all` 不含 `prediction`，要测写
+  `all,prediction`）：每个场景接在宿主旅程末尾、随其配比进混合负载，前面各步序号不变，同一种子请求序列可复现；不开时请求序列与以前逐项相同
+  （`tests/test_peak2x.py` 钉了两个 digest）。场景与本栈打开的开关（`stack.journey_env`，只在 test 环境）与本栈的实际结果（读源码确认）：
+
+  | 场景 | 宿主 | 步骤 | 打开的开关 | 本栈的结果 |
+  |---|---|---|---|---|
+  | `practice_answer` | 学生 | 再练、复测作答（票据） | 同 `--with-practice`（自动打开） | 取题 ready 时用下发的真票据（必须 2xx）；没有可作答的题时用派生的同前缀假票据：422 TICKET_INVALID（计次之前，记“预期”） |
+  | `plan_events` | 学生 | plan_done、plan_skip | BFF `STARBUDDY_TODAY_ORCH`、学习服务 `LEARNING_TODAY_CONFIG=synthetic` + `LEARNING_TODAY_SNAPSHOT=1` | 今日计划带快照任务 ID 时用真 ID（必须 2xx）；没有时用派生 ID：422 INVALID（记“预期”）。打开后学生的今日计划另走跨科编排，行名改为 `today.orch`，不与基线 `today` 比较 |
+  | `my_plan` / `monthly_plan` | 学生 / 家长 | my-plan / monthly-plan | `STARBUDDY_MONTHLY_PLAN` | my-plan：本月无快照 200（plan 为空）。monthly-plan：本月无快照要调洞察服务生成，本栈不起洞察服务 → 503 UNAVAILABLE；**只有 BFF 访问日志里核对到 `generate=not_configured` 的才算“预期”**，核对不到的改记为错误 |
+  | `star_map_v1` | 学生 | star-map/v1 | `STARBUDDY_STARMAP=starmap_v1` | 没有掌握配置时全中性（200） |
+  | `diagnose_more` | 学生 | 续做 → 取题 → 探针 → 放弃 | — | 续做应回 200 且是原会话（暂停的会话恢复，不另预留）；若回了新会话（201 或不同 ID，原会话已结束或过期时）单记 `resumed_new` 并告警，新会话照样放弃。会话不在进行中时探针 409 STEP_NOT_CURRENT（记“预期”） |
+  | `weekly_report` / `profile_pages` | 家长 | weekly-report、profile-pages/math | `STARBUDDY_TRUST_UI=weekly,profile` | 本栈没有已生成的周报与档案页：200（report / page 为空），不设预期码 |
+  | `prediction`（不进 all） | 家长 | exams/{派生 ID}/prediction | `STARBUDDY_TRUST_UI=reconcile` | BFF 没有接预测客户端（`main.ts` 不设），本栈与任何环境都一律 503 UNAVAILABLE：只测鉴权、档案读取与拒绝路径（记“预期”） |
+
+- 场景核对（报告“可选场景核对”一节）：按步骤给真 ID / 真票据与派生路径各多少次、派生中“预期”占比；派生路径里出现非预期结果、
+  真路径里出现非 2xx、诊断续做回了新会话、月度计划 503 未核对到 not_configured，都标**告警**（stdout 的 `extras_alert`）。
+- `--run-id <ID>`：运行 ID 进幂等键派生（同一种子多轮演练时键不重复）；不给时 digest 不变。`--max-model-calls N`：驱动器侧模型调用硬上限
+  （道法、语文批改按学习服务调用次数累计），到上限即不再发走模型的请求与新旅程，报告注明，退出码 1。
+- SLO：`config/slo.yaml`（**待技术负责人签字**）按路由组给 p50 / p95 / p99、错误率、429 与 503 SUBJECT_BUSY 占比的上限；报告每组给
+  “通过 / 未达 / 无通过线 / 无样本”（总体与按阶段），边界值算通过。“预期”结果不进任何一项、单列计数；分位数只取 2xx 与 402 业务拒绝的请求。
+  过闸门的诊断取题单独成组（`gated_read`，有 503 BUSY 上限）。未签字时**只报告，退出码不因未达失败**；签字（`signed_by`、`signed_at`）后
+  `enforce: true` 或 `--slo-strict` 才严格（未签字时 `--slo-strict` 直接退出码 2）。
+- `--profile peak2x`：以 `config/peak2x.yaml` 的 `peak_concurrency`（**合成占位 10，待确认**；`--peak-concurrency` 可覆盖，报告注明）为 1 倍，
+  0.5× → 1× → 2× 各 `ramp_seconds`，再 2× 保持 `hold_seconds`；可与 `--subject-gate`、`--fault fake-a=slow:800` 组合；超过 20 并发仍须 `--i-know`。
+  报告写 `peak2x.md` / `peak2x.json`（首段“本机合成，不是容量结论”），另有“2 倍峰值各阶段”表：吞吐、分位数、错误率、429 / 503、预期、
+  连接峰值（pg_stat_activity，按角色：总 / 活跃 / 锁等待 / 活跃中等待）、闸门排队分档，与各阶段慢查询（pg_stat_statements 边界快照相减）。
+  延迟按到达阶段归属，连接、慢查询、闸门按墙钟阶段归属。
+- 已知偏差：本栈没有知识服务与合成地图，再练、复测取不到真题，作答只走到 BFF 的票据校验（见上表）；要让作答经学习服务落库、计次，
+  需另起：合成地图与题、假知识服务（item.similar / item.search）、能判合成题的适配器，并种到期条目（待人确认）。
+
 假供应商的 `/_control/faults`、`/_control/stats` 与计量驱动桩的接口**没有鉴权**：只监听 127.0.0.1、只在本机一次性栈里存在，
 不得暴露到任何共享网络（预发故障演练见 RUNBOOK 第 2 节）。
 
@@ -67,6 +107,7 @@ python -m loadtest baseline --stages 10:20 --subject-gate --with-practice --gate
 | `meter.py` | 计量旅程的计量函数调用（与 BFF 同一组函数、同一角色）与零泄漏核对 |
 | `harness.py` + `node/meter-harness.mts` | 计量驱动桩：在本机运行 BFF 的 `meteredCall`（批改的计量全走它）；计量时钟由调用方经 `/clock-sync` 对齐 |
 | `metrics.py` / `report.py` / `baseline.py` | 分位数（最近秩）、错误率、吞吐；Markdown + JSON 报告；一次压测的编排 |
+| `bodies.py` / `slo.py` / `peak.py` / `phases.py` | PLT-20：新场景的请求构造与票据处理；SLO 判定；peak2x 配置与阶段；按阶段的连接、慢查询、闸门汇总（均为纯函数，`tests/test_peak2x.py`） |
 | `cost.py` + `config/` | 成本模型与报表；`prices.example.yaml`（**示例价**）、`cost_profile.yaml`（使用画像，逐项标来源） |
 | `degradation.py` | 降级清单：每科每个方法是否用模型、任务与数据级别、三种情形下的期望行为（断言的唯一来源）；静态扫描适配器源码核对清单完整 |
 
@@ -96,5 +137,5 @@ python -m loadtest baseline --stages 10:20 --subject-gate --with-practice --gate
   `--retry-scale` 可按比例缩短退避（口径不变）；
 - 负载生成器与被测服务同机，数字只作回归比较；学习服务与 BFF 的连接池上限各 10，计量驱动桩与计量旅程各另用一个 20 的 bff_app 池；
 - token 为假供应商按字符数估算（`CHARS_PER_TOKEN = 1.5`），不是供应商计数；T1 / T9 没有任何学科方法调用，全靠假设；
-- 再练与复测场景（`--with-practice`）只有列表与取题，没有作答（要有到期条目与票据，合成学生在本栈里多半没有到期条目）；
+- 再练与复测场景（`--with-practice`）只有列表与取题；作答在 PLT-20 的 `practice_answer` 场景里，本栈取不到真票据时只走到 BFF 的票据校验（见上文）；
   闸门的计次前拒绝由 `services/bff/tests/subject-gate.integration.test.ts` 覆盖。

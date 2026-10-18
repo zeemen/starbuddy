@@ -6,6 +6,7 @@
 - 计量旅程直接调计量函数（与 BFF 同一组函数、同一数据库角色）。
 请求序列（到达、步骤、幂等键）逐条记下，压测后与计划比对（arrivals.digest）。
 PLT-16：429 限流与 503 SUBJECT_BUSY（分学科并发闸门被拒）单列（仍算错误）；--with-practice 时学生旅程另走再练与复测的列表、取题。
+PLT-20：--journeys 打开的可选场景接在学生 / 家长旅程末尾（请求体见 bodies.py）；本栈缺依赖时的预期结果按（状态码, 问题码）记为 expected。
 """
 from __future__ import annotations
 
@@ -20,12 +21,12 @@ import httpx
 
 from e2e_cohort.cohort import BASE_DAY
 
-from . import harness, meter
+from . import bodies, harness, meter
 from .answers import Answers, for_student
 from .arrivals import Arrival, Profile, sid, step_key
 from .envelopes import grade_request
 from .metrics import Recorder
-from .scenarios import PlannedRequest
+from .scenarios import EXTRAS, TODAY_ORCH, PlannedRequest
 from .seed import Family
 
 PREFIX = "/bff/v0"
@@ -86,6 +87,21 @@ class SmsInbox:
         raise StepFailed("no otp code")
 
 
+def resume_check(status: int, got: str, original: str) -> str:
+    """续做核对：200 且同一会话 → resumed_same；否则 resumed_new（新开了会话，会另预留额度）"""
+    return "resumed_same" if status == 200 and got == original else "resumed_new"
+
+
+def _json_or_none(r: httpx.Response | None) -> object:
+    """2xx 的 JSON 响应体，其余为 None（只在内存里用来取票据、任务 ID，不记录）"""
+    if r is None or not 200 <= r.status_code < 300:
+        return None
+    try:
+        return r.json()
+    except ValueError:
+        return None
+
+
 def _parse_ts(v) -> float:
     if isinstance(v, (int, float)):
         return float(v) / (1000 if v > 1e12 else 1)
@@ -106,15 +122,58 @@ def classify(status: int, code: str | None = None) -> str:
     return "http_4xx" if status < 500 else "http_5xx"
 
 
-def problem_code(r: httpx.Response) -> str | None:
-    """503 时读问题码（只取 code 一个枚举值，不留响应内容）"""
-    if r.status_code != 503:
+def problem_code(r: httpx.Response, statuses: frozenset[int] = frozenset({503})) -> str | None:
+    """statuses 里的状态码（缺省只看 503）读问题码（只取 code 一个枚举值，不留响应内容）"""
+    if r.status_code not in statuses:
         return None
     try:
         v = r.json()
     except ValueError:
         return None
     return v.get("code") if isinstance(v, dict) and isinstance(v.get("code"), str) else None
+
+
+EXTRA_STEPS = frozenset(s for _, steps in EXTRAS.values() for s in steps)
+MODEL_SUBJECTS = frozenset({"zhixing", "wenli"})  # 批改走模型的两科（数学是验证器）
+
+
+@dataclass
+class ModelBudget:
+    """PLT-20 审查 S4：驱动器侧按模型调用次数的硬上限（--max-model-calls）。按计量驱动桩回报的学习服务调用次数累计
+    （道法、语文批改各至少一次模型调用，重试另计）；到上限后不再发任何走模型的请求，之后到达的旅程也不再开始。None = 不设上限。"""
+    limit: int | None = None
+    used: int = 0
+    stopped: bool = False
+
+    def allows(self) -> bool:
+        if self.limit is not None and self.used >= self.limit:
+            self.stopped = True
+        return not self.stopped
+
+    def spend(self, n: int) -> None:
+        self.used += max(0, n)
+        if self.limit is not None and self.used >= self.limit:
+            self.stopped = True
+
+    def summary(self) -> dict:
+        return {"limit": self.limit, "used": self.used, "stopped": self.stopped}
+
+
+def outcome_of(r: httpx.Response, expect: frozenset[int] = frozenset(),
+               expect_codes: frozenset[tuple[int, str]] = frozenset()) -> tuple[str, str]:
+    """响应 → （类别, 报表里的状态标签）。expect：按状态码视为成功（PLT-16 的派生条目 404）；
+    expect_codes（PLT-20）：按（状态码, 问题码）记为“预期”（本栈缺依赖时的预期结果，不算错误、单列）。
+    给了 expect_codes 时标签带问题码（只取 code 枚举值）；否则同以前（只有 SUBJECT_BUSY 带码）。"""
+    statuses = frozenset({503}) | frozenset(s for s, _ in expect_codes)
+    code = problem_code(r, statuses)
+    if r.status_code in expect:
+        outcome = "ok"
+    elif code is not None and (r.status_code, code) in expect_codes:
+        outcome = "expected"
+    else:
+        outcome = classify(r.status_code, code)
+    label = f"{r.status_code} {code}" if code is not None and (code == "SUBJECT_BUSY" or expect_codes) else str(r.status_code)
+    return outcome, label
 
 
 @dataclass
@@ -136,6 +195,7 @@ class Runner:
     harness_url: str = ""
     recorder: Recorder = field(default_factory=Recorder)
     issued: list[PlannedRequest] = field(default_factory=list)
+    budget: ModelBudget = field(default_factory=ModelBudget)
     _start: float = 0.0
 
     # ---------------- 基础 ----------------
@@ -143,16 +203,14 @@ class Runner:
         return time.monotonic() - self._start
 
     async def timed(self, stage: int, step: str, fn: Callable[[], Awaitable[httpx.Response]],
-                    expect: frozenset[int] = frozenset()) -> httpx.Response | None:
+                    expect: frozenset[int] = frozenset(), expect_codes: frozenset[tuple[int, str]] = frozenset()) -> httpx.Response | None:
         t = time.monotonic()
         try:
             r = await fn()
         except httpx.TransportError as e:
             self.recorder.add(stage, step, (time.monotonic() - t) * 1000, "transport", type(e).__name__)
             return None
-        code = problem_code(r)
-        outcome = "ok" if r.status_code in expect else classify(r.status_code, code)
-        label = f"{r.status_code} {code}" if code == "SUBJECT_BUSY" else str(r.status_code)
+        outcome, label = outcome_of(r, expect, expect_codes)
         self.recorder.add(stage, step, (time.monotonic() - t) * 1000, outcome, label)
         return r
 
@@ -211,7 +269,8 @@ class Runner:
             raise StepFailed("student_session")
         b = r.json()
         s = Session(b["session_token"], b["csrf_token"])
-        await self.get(run, "today", f"/students/{f.student}/today", s)
+        today_step = TODAY_ORCH if "plan_events" in self.profile.journeys else "today"
+        today = await self.get(run, today_step, f"/students/{f.student}/today", s)
         base = f"/students/{f.student}/diagnosis/sessions"
         r = await run("diagnose.start", lambda: self.bff.post(PREFIX + base, json={"subject": "aya", "idempotency_key": self.key(a, "diagnose.start")},
                                                                headers=self.headers(s, True)))
@@ -240,13 +299,16 @@ class Runner:
             except StepFailed:
                 pass  # 一科批改失败（例如模型主备全失效）：学生照常继续下一科与星图
         await self.get(run, "star_map", f"/students/{f.student}/star-map", s)
+        nexts: dict[str, object] = {}
         if self.profile.practice:
-            await self.practice_steps(a, f, s, run)
+            nexts = await self.practice_steps(a, f, s, run)
+        await self.student_extras(a, f, s, run, today, session_id, nexts)
 
-    async def practice_steps(self, a: Arrival, f: Family, s: Session, run) -> None:
+    async def practice_steps(self, a: Arrival, f: Family, s: Session, run) -> dict[str, object]:
         """PLT-16（--with-practice）：数学的再练与复测，各一次列表、一次取题（取题经 BFF 的分学科闸门）。
         列表里没有到期条目时用（种子、到达、步骤）派生的条目 ID 取题：学习服务回 404，请求照样经过闸门，记为预期结果；
-        四步总是都发出（请求序列可复现）。作答不在场景里（要有到期条目与票据）。"""
+        四步总是都发出（请求序列可复现）。返回两次取题的响应体（PLT-20 作答场景从中取票据；不进报告）。"""
+        out: dict[str, object] = {}
         for kind in ("practice", "retest"):
             base = f"/students/{f.student}/{kind}/math"
             r = await run(f"{kind}.queue", lambda: self.bff.get(PREFIX + base, headers=self.headers(s, False)))
@@ -255,8 +317,65 @@ class Runner:
                 entries = r.json().get("entries") or []
                 due = next((e.get("entry_id") for e in entries if isinstance(e, dict) and e.get("status") == "due"), None)
             eid = due or sid("entry", self.profile.seed, a.index, kind)
-            await run(f"{kind}.next", lambda: self.bff.post(f"{PREFIX}{base}/entries/{eid}/next", headers=self.headers(s, True)),
-                      frozenset() if due else frozenset({404}))
+            r = await run(f"{kind}.next", lambda: self.bff.post(f"{PREFIX}{base}/entries/{eid}/next", headers=self.headers(s, True)),
+                          frozenset() if due else frozenset({404}))
+            out[kind] = _json_or_none(r)
+        return out
+
+    async def student_extras(self, a: Arrival, f: Family, s: Session, run, today: httpx.Response, session_id: str,
+                             nexts: dict[str, object]) -> None:
+        """PLT-20 学生旅程的可选场景（按 scenarios.EXTRAS 顺序；开了的场景每一步都发出，请求序列可复现）"""
+        on = set(self.profile.journeys)
+        stu = f"/students/{f.student}"
+        if "practice_answer" in on:
+            for kind in ("practice", "retest"):
+                body, codes = bodies.answer_request(kind, nexts.get(kind), self.profile.seed, a.index)
+                await run(f"{kind}.answer", lambda: self.bff.post(f"{PREFIX}{stu}/{kind}/math/answer", json=body,
+                                                                  headers=self.headers(s, True)), expect_codes=codes)
+        if "plan_events" in on:
+            derived = {st: sid("plan-task", self.profile.seed, a.index, st) for st in ("plan.done", "plan.skip")}
+            keys = {st: self.key(a, st) for st in ("plan.done", "plan.skip")}
+            for step, body, codes in bodies.plan_events(_json_or_none(today), derived, keys, bodies.rfc3339()):
+                await run(step, lambda: self.bff.post(f"{PREFIX}{stu}/events", json=body, headers=self.headers(s, True)),
+                          expect_codes=codes)
+        # 只读场景失败不拦住后面的场景（失败照记）
+        for name, path in (("my_plan", f"{stu}/my-plan"), ("star_map_v1", f"{stu}/star-map/v1")):
+            if name in on:
+                await run(name, lambda: self.bff.get(PREFIX + path, headers=self.headers(s, False)))
+        if "diagnose_more" in on:
+            base = f"{stu}/diagnosis/sessions"
+            # 续做：同一学科已有暂停的会话时 BFF 不另预留，学习服务把它恢复为进行中（与开始同一路由、新幂等键）
+            r = await run("diagnose.resume", lambda: self.bff.post(PREFIX + base, json={"subject": "aya",
+                                                                                           "idempotency_key": self.key(a, "diagnose.resume")},
+                                                                    headers=self.headers(s, True)))
+            if r is None or r.status_code >= 300:
+                raise StepFailed("diagnose.resume")
+            got = _json_or_none(r)
+            sid_ = got.get("session_id") if isinstance(got, dict) and isinstance(got.get("session_id"), str) else session_id
+            # 审查 S1：续做应回 200 且是原会话；回了新会话（201 或不同 ID，例如原会话已结束或过期）单记 resumed_new，照样把新会话放弃掉
+            self.recorder.note("diagnose.resume", resume_check(r.status_code, sid_, session_id))
+            view = (await self.get(run, "diagnose.recheck", f"{base}/{sid_}", s)).json()
+            body, codes = bodies.probe_body(view, self.key(a, "diagnose.probe"), bodies.rfc3339())
+            await run("diagnose.probe", lambda: self.bff.post(f"{PREFIX}{base}/{sid_}/probe", json=body, headers=self.headers(s, True)),
+                      expect_codes=codes)
+            await run("diagnose.abandon", lambda: self.bff.post(f"{PREFIX}{base}/{sid_}/abandon",
+                                                                json=bodies.abandon_body(self.key(a, "diagnose.abandon")),
+                                                                headers=self.headers(s, True)))
+
+    async def parent_extras(self, a: Arrival, f: Family, g: Session, run) -> None:
+        """PLT-20 家长旅程的可选场景。月度计划（本月无快照时要调洞察服务生成，本栈不起洞察服务）回 503 UNAVAILABLE，先记为预期，
+        压测后按 BFF 访问日志的 generate=not_configured 核对；预测：BFF 未接预测客户端，一律 503，只测拒绝路径。
+        周报、档案页：本栈没有已生成的周报与档案页，回 200（report / page 为空）。"""
+        on = set(self.profile.journeys)
+        stu = f"/students/{f.student}"
+        reads = (("monthly_plan", "parent.monthly_plan", f"{stu}/monthly-plan", bodies.EXPECT_NO_INSIGHT),
+                 ("weekly_report", "parent.weekly_report", f"{stu}/weekly-report", frozenset()),
+                 ("profile_pages", "parent.profile_page", f"{stu}/profile-pages/math", frozenset()),
+                 ("prediction", "parent.prediction", f"{stu}/exams/{sid('exam', self.profile.seed, a.index)}/prediction",
+                  bodies.EXPECT_PREDICTION_UNWIRED))
+        for name, step, path, codes in reads:
+            if name in on:
+                await run(step, lambda: self.bff.get(PREFIX + path, headers=self.headers(g, False)), expect_codes=codes)
 
     async def parent(self, a: Arrival, run) -> None:
         f = self.families["parent"][a.slot]
@@ -265,6 +384,7 @@ class Runner:
         await self.get(run, "parent.child_star_map", f"/students/{f.student}/star-map", g)
         await self.get(run, "parent.child_balance", f"/students/{f.student}/balance", g)
         await self.get(run, "parent.child_enrollments", f"/students/{f.student}/enrollments", g)
+        await self.parent_extras(a, f, g, run)
 
     async def metering(self, a: Arrival, run_db) -> None:
         f = self.families["meter"][a.slot]
@@ -289,6 +409,8 @@ class Runner:
     # ---------------- 批改（经计量驱动桩运行 BFF 的 meteredCall） ----------------
     async def grade(self, a: Arrival, f: Family, ans: Answers, subject: str) -> None:
         step = f"grade.{subject}"
+        if subject in MODEL_SUBJECTS and not self.budget.allows():
+            raise StepFailed("model budget reached")  # 到上限：不再发任何走模型的请求（这一步记为跳过）
         key = self.key(a, step)
         item, text = {"aya": (ans.aya_item, ans.aya_text), "zhixing": (ans.zhixing_item, ans.zhixing_text),
                       "wenli": (ans.wenli_item, ans.wenli_text)}[subject]
@@ -303,13 +425,15 @@ class Runner:
             self.recorder.add(a.stage, step, (time.monotonic() - t) * 1000, "transport", type(e).__name__)
             raise StepFailed(step) from None
         status, calls = out["result"]["status"], out["learning_calls"]
+        if subject in MODEL_SUBJECTS:
+            self.budget.spend(int(calls))
         code = status if calls <= 1 else f"{status}（学习服务 {calls} 次）"
         self.recorder.add(a.stage, step, (time.monotonic() - t) * 1000, harness.classify(status), code)
         if status != "ok":
             raise StepFailed(step)
 
     def key(self, a: Arrival, step: str) -> str:
-        return step_key(self.profile.seed, a, step)  # type: ignore[return-value]
+        return step_key(self.profile.seed, a, step, self.profile.run_id)  # type: ignore[return-value]
 
     # ---------------- 调度 ----------------
     async def journey(self, a: Arrival, sems: list[asyncio.Semaphore]) -> None:
@@ -319,24 +443,34 @@ class Runner:
             self.recorder.queue_wait_ms.append((time.monotonic() - t) * 1000)
             steps = self.profile.steps(a.kind)
             done: set[str] = set()
+            if self.budget.stopped:
+                # 模型调用到了 --max-model-calls：之后到达的旅程一律不发（全部记为跳过，请求序列不一致 → 退出码 1）
+                for step in steps:
+                    self.recorder.skip(step)
+                return
 
             async def think(step: str) -> None:
                 i = steps.index(step)
                 if i > 0 and a.think_s[i] > 0:
                     await asyncio.sleep(a.think_s[i])
 
-            async def run(step: str, fn, expect: frozenset[int] = frozenset()):
+            async def run(step: str, fn, expect: frozenset[int] = frozenset(), expect_codes: frozenset[tuple[int, str]] = frozenset()):
                 await think(step)
                 if step not in done:
                     done.add(step)
-                    self.issued.append(PlannedRequest(a.index, steps.index(step), step, step_key(self.profile.seed, a, step)))
-                return await self.timed(a.stage, step, fn, expect)
+                    self.issued.append(PlannedRequest(a.index, steps.index(step), step, self.key(a, step)))
+                r = await self.timed(a.stage, step, fn, expect, expect_codes)
+                if step in EXTRA_STEPS:
+                    # 可选场景：给了预期码 = 派生 / 预期路径（必须是预期结果），没给 = 真 ID / 真票据（必须 2xx）；不记内容
+                    oc = "transport" if r is None else outcome_of(r, expect, expect_codes)[0]
+                    self.recorder.path(step, "derived" if expect_codes else "real", oc)
+                return r
 
             async def run_db(step: str, fn, ok: set[str]):
                 if step not in done:
                     await think(step)
                     done.add(step)
-                    self.issued.append(PlannedRequest(a.index, steps.index(step), step, step_key(self.profile.seed, a, step)))
+                    self.issued.append(PlannedRequest(a.index, steps.index(step), step, self.key(a, step)))
                 return await self.timed_db(a.stage, step, fn, ok)
 
             try:

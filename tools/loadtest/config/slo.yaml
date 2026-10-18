@@ -1,0 +1,46 @@
+# PLT-20 SLO 判定（通过线）。状态：**待技术负责人签字**（specs/loadtest-2x-peak-plt20 待人确认 #1）。
+# 数值是建议值：核心接口 p95 ≤ 800 ms、批改 ≤ 30 s 来自完整方案容量一节与冲刺 5 待人确认 D4，其余（p50、p99、错误率、429 / 503 上限）是占位。
+# 未签字时报告照常给出每组“通过 / 未达 / 无通过线”，但退出码不因未达而失败；签字（填 signed_by 与 signed_at）后
+# enforce: true 或命令行 --slo-strict 才按未达失败。
+#
+# 口径：
+# - 每组的样本 = 组内各步骤的请求（按到达阶段归属；另按阶段逐个判定）；“预期结果”（本栈缺依赖时的预期拒绝，见 README）
+#   不进任何一项、只单列计数；分位数为最近秩法（同 metrics.percentile），只取成功（2xx）与 402 业务拒绝的请求；
+# - error_rate = 错误数 / 非预期的请求数；错误 = 非 2xx 且非 402 业务拒绝，或连接失败；
+#   429 限流与 503 SUBJECT_BUSY 仍算错误，另各有上限（throttled_429_rate、subject_busy_503_rate）；
+# - 上限写 null = 该项无通过线；一组全部为 null = 该组“无通过线”；没有样本的组记“无样本”，不算未达；
+# - 不在任何组里的步骤列入“无通过线”。
+format: loadtest-slo/1
+status: 待技术负责人签字
+signed_by: null
+signed_at: null
+enforce: false
+groups:
+  login:
+    steps: [login.otp_request, login.otp_verify, login.student_session]
+    limits: {p50_ms: 300, p95_ms: 800, p99_ms: 2000, error_rate: 0.01, throttled_429_rate: 0.005, subject_busy_503_rate: null}
+  student_read:
+    steps: [today, star_map, star_map_v1, my_plan, practice.queue, retest.queue]
+    limits: {p50_ms: 300, p95_ms: 800, p99_ms: 2000, error_rate: 0.01, throttled_429_rate: 0.005, subject_busy_503_rate: null}
+  # 开 plan_events 时的今日计划（跨科编排 + 快照，多一次学习服务调用）：单独一组，不与基线 today 比较
+  today_orch:
+    steps: [today.orch]
+    limits: {p50_ms: 400, p95_ms: 800, p99_ms: 2500, error_rate: 0.01, throttled_429_rate: 0.005, subject_busy_503_rate: null}
+  # 过分学科并发闸门的读接口（诊断取当前题）：可能被 503 SUBJECT_BUSY 拒绝，另给上限
+  gated_read:
+    steps: [diagnose.current, diagnose.recheck]
+    limits: {p50_ms: 300, p95_ms: 800, p99_ms: 2000, error_rate: 0.01, throttled_429_rate: 0.005, subject_busy_503_rate: 0.01}
+  student_write:
+    steps: [diagnose.start, diagnose.answer, diagnose.pause, diagnose.resume, diagnose.probe, diagnose.abandon,
+            practice.next, retest.next, practice.answer, retest.answer, plan.done, plan.skip]
+    limits: {p50_ms: 400, p95_ms: 800, p99_ms: 2500, error_rate: 0.01, throttled_429_rate: 0.005, subject_busy_503_rate: 0.01}
+  grade:
+    steps: [grade.aya, grade.zhixing, grade.wenli]
+    limits: {p50_ms: null, p95_ms: 30000, p99_ms: null, error_rate: 0.02, throttled_429_rate: null, subject_busy_503_rate: null}
+  parent_read:
+    steps: [parent.children, parent.child_star_map, parent.child_balance, parent.child_enrollments, parent.monthly_plan,
+            parent.weekly_report, parent.profile_page, parent.prediction]
+    limits: {p50_ms: 300, p95_ms: 800, p99_ms: 2000, error_rate: 0.01, throttled_429_rate: 0.005, subject_busy_503_rate: null}
+  metering:
+    steps: [meter.reserve_pair, meter.settle, meter.settle_repeat, meter.reserve, meter.release]
+    limits: {p50_ms: null, p95_ms: 800, p99_ms: null, error_rate: 0.001, throttled_429_rate: null, subject_busy_503_rate: null}

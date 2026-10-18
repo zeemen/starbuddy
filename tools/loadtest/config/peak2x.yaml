@@ -1,0 +1,10 @@
+# PLT-20 2 倍峰值阶段（--profile peak2x）的配置。全部是合成占位，待人确认（specs/loadtest-2x-peak-plt20 待人确认 #2）。
+# “1 倍峰值并发”取值未定：按 pilot 实测、按 5 月计划规模（约 1,000 户内测）推算，还是沿用完整方案按 100 万注册推算
+# （高峰 7,500 在线、约 37.5 次/秒）。这里的 10 只是本机能跑动的占位，不代表任何容量目标；本机对照可用 --peak-concurrency 覆盖。
+format: loadtest-peak2x/1
+confirmed: false                # 人确认 1 倍取值后改为 true，并在 basis 写来源
+basis: 合成占位（本机可承受规模），不是容量目标
+peak_concurrency: 10            # 1 倍 = 同时在线的会话数；阶段为 0.5× → 1× → 2× → 2× 保持（倍数固定）
+ramp_seconds: 30                # 0.5×、1×、2× 各阶段时长
+hold_seconds: 60                # 2× 保持阶段时长
+journeys: []                    # 默认开启的可选场景（scenarios.EXTRAS 的名字；空 = 全关；命令行 --journeys 优先）
