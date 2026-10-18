@@ -1,0 +1,66 @@
+{
+  "$comment": "KGE-10 IRT 试点评估第一步（specs/kge10-irt-pilot/spec.md）的口径、参数界、先验与防泄露参数，集中在这一份。全部数值是占位值，待教研确认（spec 待人确认 1–3）：确认前在任何数据上的输出都只是评估报告，不构成替换先验难度或改掌握计算的依据；合成样例上的结果是“合成，不是试点结论”。改任一数值或口径都要在 signoff 里重新记录。",
+  "schema_version": "kge-irt-config/0.2",
+  "config_version": "draft-0.2.0",
+  "signoff": "待教研确认",
+  "split": {
+    "$comment": "时间切分（待人确认 1）：作答表每行由导出标好 segment（fit = 切分点之前、eval = 之后），切分点与掌握估计基线的取数时刻相同（由导出负责）；工具核对 fit 段的时间序全部早于 eval 段，且实际拟合比例落在 [min_fit_fraction, max_fit_fraction] 内，否则拒绝。报表只写配置范围，不写实际比例。synthetic_fit_fraction 只给合成队列用。",
+    "min_fit_fraction": 0.5,
+    "max_fit_fraction": 0.9,
+    "synthetic_fit_fraction": 0.7
+  },
+  "blocking": {
+    "$comment": "分块粒度（待人确认 3）：本步只支持按节点（node）分块，每个节点一组题目、各自拟合；主题与学科分块需要地图快照，另起。题目族内不共享参数（share_family_parameters 只能是 false，族只随报表列出）。",
+    "unit": "node",
+    "share_family_parameters": false
+  },
+  "fit": {
+    "$comment": "边际最大似然 + EM（待人确认 1）：学生能力先验 N(0, 1)，Gauss–Hermite 固定节点数 quadrature_points；模型 P(答对) = 1 / (1 + exp(−a(θ − b)))。1PL = 块内共同区分度、各题难度；2PL = 各题区分度与难度。先验（防发散）：难度 b ~ N(0, difficulty_prior_sd²)，log a ~ N(log_discrimination_prior_mean, log_discrimination_prior_sd²)；参数界 difficulty_bounds、discrimination_bounds（超界截断）。M 步用 Fisher 得分 + 步长减半（只接受不降的步），保证 EM 目标（边际对数似然 + 对数先验）单调不降。收敛：相邻两轮参数最大变化 < tolerance，或到 max_iterations（报表标“未收敛”）。初值确定（由拟合段正确率给出），无随机初始化。“先验难度 + 能力”对照模型：b = c0 + c1 ×（先验难度 − 0.5），c1 ~ N(0, prior_slope_sd²)。",
+    "quadrature_points": 15,
+    "max_iterations": 300,
+    "tolerance": 0.001,
+    "m_step_iterations": 4,
+    "difficulty_bounds": [-4.0, 4.0],
+    "discrimination_bounds": [0.25, 4.0],
+    "difficulty_prior_sd": 2.0,
+    "log_discrimination_prior_mean": 0.0,
+    "log_discrimination_prior_sd": 0.5,
+    "prior_slope_sd": 5.0,
+    "min_block_students": 50
+  },
+  "bootstrap": {
+    "$comment": "题目参数稳定性（待人确认 1）：块内学生有放回重抽 draws 次（固定种子 seed，与数据无关），每次从全样本估计出发重跑 2PL 的 EM（至多 max_iterations 轮），取难度与区分度的插值分位数区间（置信水平 confidence）；区间端点与点估计同样粗化加扰动后才公开。",
+    "draws": 30,
+    "seed": 20261017,
+    "confidence": 0.9,
+    "max_iterations": 30
+  },
+  "disclosure": {
+    "$comment": "防泄露（规则 13，沿用 KGE-09 / PLT-17）：题目作答人数 = 拟合段作答过该题的不同伪名数；答对、答错两格各按表键加 −2…+2 的扰动，扰动后人数 ≥ min_respondents + 4 才算达标（保证真实 ≥ min_respondents，不得低于 20），且两格（扰动后）都 ≥ min_outcome_cell + 2 才给参数（与 KGE-09 精确正确率同一门槛，防全对 / 全错），否则只写“样本不足”并给可识别性告警。公开的难度、区分度与区间端点 = 四舍五入到格点，再按表键（该题拟合段作答学生集合）加 −2…+2 格；1PL 与 2PL 难度各用独立扰动（共用一个扰动会精确公开两者之差，强攻击者实测定格 20/51 次；独立时 0/51，待人确认）。区分度格点 = discrimination_step；难度格点按单人影响上界逐题加粗：单人影响 ≈ 1 / (a × n × p × (1 − p))（a 取公开的 2PL 区分度与 1PL 共同区分度中较小者、不低于区分度下界，n、p 取扰动后的人数与正确率），格点取 difficulty_step × {1, 2, 5, 10} 中第一个 ≥ 2 × 单人影响的值（作答人数少、区分度低的题更粗）。评估指标“每生一个点”：先算每名学生在后段的平均损失，再对学生平均（AUC 按 1 / 该生后段作答数加权）；组内学生（扰动后）≥ min_eval_students + 2 才公开；AUC 另要求答对、答错两类的按人加权总量各加 −2…+2 扰动后，较小一类 ≥ 0.25 × 两类之和 + 2；指标粒度 = 指标取值范围 ÷ 扰动后学生数（向上取到 0.001 / 0.002 / 0.005 / 0.01 / 0.02 / 0.05 / 0.1 的格点），再按表键加 −2…+2 格。概率截断 [prob_clip, 1 − prob_clip]（对数损失的取值范围 = −ln prob_clip）。人数一律向下取整到 10。",
+    "min_respondents": 20,
+    "min_outcome_cell": 20,
+    "difficulty_step": 0.1,
+    "discrimination_step": 0.1,
+    "min_eval_students": 20,
+    "prob_clip": 0.01
+  },
+  "baseline": {
+    "$comment": "现行掌握估计基线（只读口径，不改掌握计算）：BKT 参数、证据权重、来源权重与错因系数一律从 source 所指的学习服务掌握配置读取（单一真相源，本文件不抄数值）。后段每次作答的预测 = p_mastery × (1 − p_slip) + (1 − p_mastery) × p_guess(题型)，p_mastery 取同一切分点上该生在该题（主节点 × 认知层次）这一单元的掌握概率，没有记录的用 p_init。输入是 synthetic=false 时，source 必须是已签字（signed_by、signed_at 非空）且 synthetic=false 的掌握配置，否则拒绝运行。学习服务的 aya 掌握配置尚未签字（bkt 段为空），合成样例暂用学习服务测试用的合成占位配置，待教研确认。",
+    "source": "services/learning/config/mastery/synthetic-test.json"
+  },
+  "comparison": {
+    "$comment": "对照判定（待人确认 2）：每名学生一个点——该生后段平均对数损失之差 d = 对照 − IRT；组内 d 的均值与配对自助法区间（按学生重抽 bootstrap_draws 次、固定种子 bootstrap_seed）各只加一次 ±2 格扰动（粒度 = 2 × ln(1/prob_clip) ÷ 扰动后人数，向上取到格点）。公开区间下端 > 0 且公开均值 ≥ min_logloss_gain 才写“IRT 更好”，公开区间上端 < 0 且均值 ≤ −min_logloss_gain 写“IRT 更差”，其余“差别不大”。秩相关（Spearman）只在公开了参数的题目 ≥ min_items_for_rank 时给出；先验难度疑似标错（候选，仅供教研参考）= 按节点对公开的 2PL 难度做“先验难度 → 难度”的 Theil–Sen 稳健直线，残差绝对值超过 prior_mismatch_logits 且 2PL 自助法区间不覆盖直线上的值。near_bound_steps：公开值距参数界不足这么多格时给“接近参数界”告警。",
+    "bootstrap_draws": 200,
+    "bootstrap_seed": 20261018,
+    "min_logloss_gain": 0.02,
+    "min_items_for_rank": 5,
+    "prior_mismatch_logits": 1.0,
+    "near_bound_steps": 1
+  },
+  "synthetic_acceptance": {
+    "$comment": "只用于合成队列上的自检（测试与变异）：参数恢复误差（公开了参数的题目上，2PL 难度与区分度的平均绝对误差；真值见合成生成器）不超过上限；埋入的“先验难度标错”题目全部找出、误报不超过上限。真实试点数据上没有真值，不用这一节。",
+    "max_difficulty_mae": 0.25,
+    "max_discrimination_mae": 0.3,
+    "max_false_prior_mismatch": 0
+  }
+}
