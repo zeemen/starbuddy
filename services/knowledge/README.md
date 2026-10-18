@@ -32,6 +32,7 @@ KGE-03 编译层（`specs/kge-03-compile-layer/spec.md`）。本目录现在包�
 python3 -m venv .venv && .venv/bin/pip install --require-hashes -r requirements-dev.lock   # 在本目录执行（.venv 已被 .gitignore 忽略）
 # 只装运行依赖（部署、页面仓库 CI 的检查工具制品）：pip install --require-hashes -r requirements.lock
 make knowledge-test knowledge-mutation                                       # 在仓库根目录：单测 + 端到端 + 变异
+make knowledge-cache-mutation                                                # PLT-19 公共层只读缓存的变异（约 1–2 分钟）
 
 # 程序体检（页面仓库 CI 用同一条命令，见 tools/kge-pages-template/repo/ci/lint.sh；CI 带 --require-map-snapshot）
 .venv/bin/python -m knowledge.lint tests/fixtures/pages --map-snapshot tests/fixtures/map-v1.yaml --require-map-snapshot \
@@ -87,6 +88,7 @@ KNOWLEDGE_ENV=dev KNOWLEDGE_DATABASE_URL=... KNOWLEDGE_TOKEN_ORCHESTRATOR=... KN
 | `KNOWLEDGE_PAGE_SNAPSHOT_ROOT` | （可选，绝对路径）快照根目录：配置时载入的快照目录（启动与热切换，含指针指向的目录）解析符号链接后必须在根目录里面，否则不载入 |
 | `KNOWLEDGE_SNAPSHOT_HMAC_KEY` | （可选，≥ 32 字符）manifest 签名密钥，**只留接口**（`knowledge/service/hotswap.py` 的 `ManifestVerifier`）。不设：按现状不验签，每次载入记一条“未验签”日志并计数。设了：按占位格式验 `manifest.json.hmac-sha256`（HMAC-SHA256(密钥, manifest.json 原始字节) 的十六进制），缺或不符即拒绝载入；导出器还不写签名文件，签名格式、密钥保管与轮换待人确认（T30、T31） |
 | `KNOWLEDGE_HOST` / `KNOWLEDGE_PORT` | 缺省 `127.0.0.1:8790`（契约 servers）；不接受 `0.0.0.0`、`::` 等通配地址，主机名与旧式写法（如 `0`）先解析，结果是通配地址或解析不了一律拒绝；需要内网地址时显式配置具体地址。MCP 与 HTTP 同一监听地址；整个应用（`/v0/*` 与 `/mcp`）按同一份 Host 允许列表校验（不在列表回 400），MCP 另有 DNS 重绑定防护 |
+| `KNOWLEDGE_READ_CACHE` / `_SIZE` / `_MAX_BYTES` / `_LOG_EVERY` | （PLT-19 第一步，`knowledge/service/cache.py`）公共层只读缓存开关：`1` 开，`0` 或不设关（**缺省关**，关时代码路径、响应与日志与原来相同）。容量两道上限，任一超出按 LRU 淘汰：条目数缺省 1024（1–10000）、总字节数缺省 64 MiB（64 KiB–1 GiB，按条目 JSON 长度估算）；单条超过总字节上限的 1/64（缺省 1 MiB）不入缓存。不设 TTL（键含版本）。数值只收 ASCII 十进制数字，不合格拒绝启动。只缓存 `node.get`、`node.path`、`page.get` 的成功结果；键 = 工具 + 学科 + `map_version_id` + 页面快照 commit 与快照代号（仅 `page.get`）+ 入键参数（edition、region 等；契约有缺省值的先补缺省值，如 `max_depth`=3；context 不入键）；每请求仍先查已发布版本。`page.get` 另有三种结果不入缓存：请求途中快照被换掉、没有任何教材投影、单条过大。参数里有学生 ID 类字段名时不缓存并告警（只记类别）。单进程单事件循环，不加锁（理由见 cache.py） |
 | `KNOWLEDGE_CACHE_DIR` | 服务私有的运行时目录（缺省 `services/knowledge/.cache`，已被忽略）；jieba 的词典缓存写在 `<目录>/jieba/`（0700，必须属于服务进程用户、不是符号链接），不用系统共享的临时目录 |
 
 - 鉴权照学习服务内部接口：Bearer 令牌 sha256 后常量时间比较、全部比完再取结果；请求体限 64 KB，JSON 拒绝 NaN / Infinity 与重复键。
@@ -96,6 +98,15 @@ KNOWLEDGE_ENV=dev KNOWLEDGE_DATABASE_URL=... KNOWLEDGE_TOKEN_ORCHESTRATOR=... KN
   （`partial_credit_rule` 有 `mode` 以外的键、`keyword_family` 是对象或含非字符串）回 500，日志只记异常类名。
 - `node.resolve` 的 `source_version` 附分词器版本：`graph:<学科>-map@<版本>;algo:kge-tokenize@<TOKENIZER_VERSION，非编码字符换成点>`。
 - 日志只记 request_id（UUID 形状才记）、caller、工具名、状态码、错误码、耗时；不记请求体（`node.resolve` 的文本可能来自学生，规则 13）。
+  只读缓存开着时（PLT-19）：访问日志对 `node.get`、`node.path`、`page.get` 多一个 `cache` 字段（`hit` / `miss` / `bypass`）；
+  logger `starbuddy.knowledge.cache` 每 `KNOWLEDGE_READ_CACHE_LOG_EVERY` 次缓存判断打一条计数日志
+  （`cache_stats`：按工具的 hits、misses、evictions、bypass、not_stored、entries、bytes，另有 requests、entries、bytes、generation），只有数字、不含请求参数；
+  请求参数里有学生 ID 类字段名时记一条 warning（工具名与命中的类别如 `student`，不记原始键名与值）。同一份计数在 `app.state.knowledge["cache"].snapshot()`。
+  没开时日志与原来相同。不改契约文件。
+- 热切换与缓存（PLT-19）：同一个 commit 的两份快照内容可能不同（对账扣页 `held_pages` 不同时，被扣页沿用上一份快照的内容），
+  所以 `page.get` 的缓存不能只靠 commit 区分快照。前提与做法：热切换（`SnapshotSwapper.install`）必须在同一段同步代码里先换快照、
+  再换快照代号并清空 `page.get` 条目（清空是正确性所必需的一层）；键里带快照代号；入缓存前核对当前快照仍是请求开头取到的那一份。
+  绕过 `install` 直接改 `ToolCore.pages` 既不换代号也不清空：换成同 commit 的快照时，旧条目仍可能被命中。缓存开着时只能经 `install` 换快照。
 - 测试：`tests/pgkge.py` 起一次性 Postgres（做法同 `services/learning/tests/pgharness.py`），执行 bootstrap 角色与全部迁移、灌合成 kge 数据；
   `make knowledge-test CONTRACT_STRICT=1` 时没有 Postgres 直接失败，非严格模式下库上测试跳过。
 

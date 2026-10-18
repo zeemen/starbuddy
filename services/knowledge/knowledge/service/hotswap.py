@@ -150,6 +150,12 @@ class SnapshotSwapper:
 
     def install(self, snap: PageSnapshot) -> None:
         self.core.pages = snap  # 一次引用赋值：请求在开头取走快照引用，切换前后各自一致
+        # PLT-19：缓存开着时换快照代号并清掉 page.get 条目。清空是正确性所必需的一层：同一个 commit 的两份快照内容可能不同
+        # （对账扣页 held_pages 不同），只靠 commit 入键会串；另两层是键里的快照代号、入缓存前核对快照没被换掉（tools.py）。
+        # 与上一行同在一段同步代码里，请求开头取到的快照与代号总是对得上
+        cache = getattr(self.core, "cache", None)
+        if cache is not None:
+            cache.new_snapshot()
         self.stats.loads += 1
         self.stats.unverified_loads += self.verifier.name == "unverified"
         self.stats.commit = snap.commit

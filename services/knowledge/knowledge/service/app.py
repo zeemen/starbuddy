@@ -25,6 +25,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from .cache import ReadCache
 from .config import Settings
 from .contract import Contract, contract as default_contract
 from .errors import ServiceError, invalid, unauthenticated
@@ -160,7 +161,11 @@ def create_app(settings: Settings, *, pool: asyncpg.Pool | None = None, contract
             if not own_pool:
                 async with p.acquire() as c:
                     await assert_reader_role(c)
-            core = ToolCore(KgeReader(p), the_contract, pages)
+            # PLT-19：公共层只读缓存，缺省关（settings.read_cache）；计数在 app.state.knowledge["cache"]（进程内，不新增对外接口）
+            cache = ReadCache(size=settings.read_cache_size, max_bytes=settings.read_cache_max_bytes,
+                              log_every=settings.read_cache_log_every) if settings.read_cache else None
+            core = ToolCore(KgeReader(p), the_contract, pages, cache=cache)
+            state["cache"] = cache
             # KGE-06：快照经热切换器载入（启动时失败即拒绝启动；运行中 SIGHUP 重读指针文件，失败保留旧快照并计数）
             swapper = SnapshotSwapper(core, verifier_for(settings.snapshot_hmac_key), settings.page_snapshot_pointer,
                                       snapshot_root=settings.page_snapshot_root)

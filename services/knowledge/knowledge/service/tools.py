@@ -4,6 +4,8 @@
 按契约严格校验请求（additionalProperties、枚举、长度）→ 执行 → 组统一信封 → 按契约校验响应，不合格回 500（不把
 不合契约的数据交出去）。
 日志只记 request_id（UUID 形状才记）、caller、工具名、状态码、错误码、耗时；不记请求体（node.resolve 的 text 可能来自学生）。
+PLT-19：开了公共层只读缓存（cache.py，缺省关）时 node.get / node.path / page.get 先查已发布版本、再按键查缓存，
+访问日志多一个 cache 字段（hit / miss / bypass）；没开时代码路径、响应与日志都与原来相同。
 """
 from __future__ import annotations
 
@@ -14,6 +16,7 @@ import time
 from typing import Any, Awaitable, Callable
 
 from ..nodeid import SUBJECT_PREFIX
+from .cache import CACHED_TOOLS, ReadCache, cacheable
 from .contract import CONTRACT_VERSION, PERSONAL_TOOLS, Contract
 from .errors import ServiceError, forbidden, internal, invalid, not_found
 from .pages import PageSnapshot, render_page
@@ -50,10 +53,11 @@ def tokenizer_source(version: str = TOKENIZER_VERSION) -> str:
 
 class ToolCore:
     def __init__(self, reader: KgeReader, contract: Contract, pages: PageSnapshot | None = None,
-                 resolver: Resolver | None = None) -> None:
+                 resolver: Resolver | None = None, cache: ReadCache | None = None) -> None:
         self.reader = reader
         self.contract = contract
         self.pages = pages
+        self.cache = cache  # PLT-19：None = 缓存关（缺省）
         self.resolver = resolver or CombinedResolver()  # PR ③：规则 + 全文（jieba + BM25），经 Resolver 接口
         self.handlers: dict[str, Callable[[dict], Awaitable[tuple[dict, dict]]]] = {
             "node.resolve": self.node_resolve, "node.get": self.node_get, "node.path": self.node_path, "page.get": self.page_get,
@@ -69,7 +73,7 @@ class ToolCore:
             if isinstance(body, dict) and isinstance(body.get("context"), dict):
                 cand = body["context"].get("request_id")
                 rid = cand if isinstance(cand, str) and UUID_RE.fullmatch(cand) else None
-            out = await self._call(tool, body, caller)
+            out = await self._call(tool, body, caller, record)
             record["status"] = 200
             return 200, out
         except ServiceError as e:
@@ -84,7 +88,7 @@ class ToolCore:
             record["duration_ms"] = round((time.monotonic() - started) * 1000)
             log.info(json.dumps(record, ensure_ascii=False))
 
-    async def _call(self, tool: str, body: Any, caller: str | None) -> dict:
+    async def _call(self, tool: str, body: Any, caller: str | None, record: dict[str, Any] | None = None) -> dict:
         spec = self.contract.tools.get(tool)
         if spec is None:
             raise not_found()
@@ -103,7 +107,10 @@ class ToolCore:
         errors = self.contract.validate(spec.request_schema, body)
         if errors:
             raise invalid("request does not conform to the contract", "; ".join(errors)[:500])
-        result, meta = await self.handlers[tool](body)
+        if self.cache is not None and tool in CACHED_TOOLS:
+            result, meta = await self._cached(tool, body, self.cache, {} if record is None else record)
+        else:
+            result, meta = await self.handlers[tool](body)
         envelope = {"contract_version": CONTRACT_VERSION, "result": result, "evidence_ids": [],
                     "confidence": meta.get("confidence", 1), "source_version": meta["source_version"],
                     "model_version": meta.get("model_version", f"algo:kge-{tool.replace('.', '-')}@{ALGO_VERSION}"),
@@ -123,11 +130,53 @@ class ToolCore:
             raise not_found()
         return v
 
-    async def _node_version(self, node_id: str, ctx: dict) -> tuple[str, MapVersionRow]:
+    async def _node_version(self, node_id: str, ctx: dict, pinned: MapVersionRow | None = None) -> tuple[str, MapVersionRow]:
+        """pinned：缓存路径已在本请求里查过的已发布版本（同一请求不查第二次，键与结果用同一个版本）"""
         subject = subject_of(node_id)
         if subject is None:
             raise not_found()
-        return subject, await self._version(subject, ctx)
+        return subject, (pinned if pinned is not None else await self._version(subject, ctx))
+
+    async def _cached(self, tool: str, body: dict, cache: ReadCache, record: dict[str, Any]) -> tuple[dict, dict]:
+        """PLT-19：node.get / node.path / page.get 的缓存路径（只在缓存开着时走）。
+        先查已发布版本（每请求一次：发布、撤下即时生效），再按（工具, 学科, map_version_id, 快照 commit 与代号, 规范化参数）查缓存；
+        没命中就用同一个版本（与 page.get 的同一份快照）跑处理器，成功才入缓存（处理器抛错直接往外抛，不入缓存）；
+        page.get 入缓存前再核对当前快照仍是请求开头取到的那一份（途中热切换了就不入，同 commit 的快照内容也可能不同）"""
+        try:
+            return await self._cached_once(tool, body, cache, record)
+        finally:
+            cache.tick()  # 每次缓存判断之后计一次（含出错的请求）；每 log_every 次打一条计数日志
+
+    async def _cached_once(self, tool: str, body: dict, cache: ReadCache, record: dict[str, Any]) -> tuple[dict, dict]:
+        params = cache.params(tool, body)
+        # 整个请求只用这一份快照；快照与代号在同一段同步代码里取（install 也是同步地先换快照、再换代号），两者对得上
+        snap, generation = (self.pages, cache.generation) if tool == "page.get" else (None, None)
+        pp = snap.pages.get(body["page_id"]) if snap is not None else None
+        node_id = pp.node_id if pp is not None else body.get("node_id")
+        subject = subject_of(node_id) if isinstance(node_id, str) else None
+        if params is None or subject is None:
+            record["cache"] = "bypass"  # 不缓存的请求，或快照没配 / 页面不在快照 / 学科不明（错误由处理器照原样回）
+            if params is not None:
+                cache.note_bypass(tool)  # 另两种绕过（学生 ID 类字段、未知字段）已在 params 里计数
+            return await self.handlers[tool](body)
+        v = await self._version(subject, body["context"])  # 每请求都查已发布版本，命中也不例外
+        key = cache.key(tool, subject, v.id, snap.commit if snap is not None else None, generation, params)
+        hit = cache.get(key)
+        if hit is not None:
+            record["cache"] = "hit"
+            return hit
+        record["cache"] = "miss"
+        if tool == "page.get":
+            value = await self.page_get(body, pinned=v, snap=snap)
+        else:
+            value = await self.handlers[tool](body, pinned=v)  # type: ignore[call-arg]
+        if tool == "page.get" and self.pages is not snap:
+            cache.note_not_stored(tool)  # 读库途中热切换了快照：这份结果属于旧快照，不入缓存
+        elif not cacheable(tool, value):
+            cache.note_not_stored(tool)
+        else:
+            cache.put(key, value)
+        return value
 
     @staticmethod
     def _item_ref(item_ref: str) -> tuple[str, str]:
@@ -167,9 +216,9 @@ class ToolCore:
             meta["review_reasons"] = ["low_confidence"]
         return {"map_version": v.version, "candidates": out}, meta
 
-    async def node_get(self, body: dict) -> tuple[dict, dict]:
+    async def node_get(self, body: dict, pinned: MapVersionRow | None = None) -> tuple[dict, dict]:
         node_id = body["node_id"]
-        subject, v = await self._node_version(node_id, body["context"])
+        subject, v = await self._node_version(node_id, body["context"], pinned)
         n = await self.reader.node(v.id, node_id)
         if n is None:
             raise not_found()
@@ -194,9 +243,9 @@ class ToolCore:
         return {"node": view, "textbook_projections": projections, "region_weights": weights}, \
             {"source_version": graph_source(subject, v)}
 
-    async def node_path(self, body: dict) -> tuple[dict, dict]:
+    async def node_path(self, body: dict, pinned: MapVersionRow | None = None) -> tuple[dict, dict]:
         root, direction = body["node_id"], body["direction"]
-        subject, v = await self._node_version(root, body["context"])
+        subject, v = await self._node_version(root, body["context"], pinned)
         visible = {r["id"] for r in await self.reader.nodes(v.id)}
         if root not in visible:
             raise not_found()
@@ -220,14 +269,16 @@ class ToolCore:
             frontier = sorted(nxt)
         return {"root": root, "direction": direction, "steps": steps}, {"source_version": graph_source(subject, v)}
 
-    async def page_get(self, body: dict) -> tuple[dict, dict]:
-        snap = self.pages  # 热切换（KGE-06）：整个请求只用开头取到的这一份快照，切换不会让页面与提交号对不上
+    async def page_get(self, body: dict, pinned: MapVersionRow | None = None, snap: PageSnapshot | None = None) -> tuple[dict, dict]:
+        """pinned / snap：缓存路径在请求开头取到的已发布版本与快照（不传时这里取）"""
+        if snap is None:
+            snap = self.pages  # 热切换（KGE-06）：整个请求只用开头取到的这一份快照，切换不会让页面与提交号对不上
         if snap is None:
             raise ServiceError(501, "METHOD_NOT_IMPLEMENTED", "page snapshot is not configured")
         pp = snap.get(body["page_id"])
         if pp is None:  # 只有快照 manifest 列出的页面算已发布
             raise not_found()
-        subject, v = await self._node_version(pp.node_id, body["context"])
+        subject, v = await self._node_version(pp.node_id, body["context"], pinned)
         if pp.map_version != v.version:
             # 页面按旧地图版本编译：升版到重编合并之间暂不服务（继续服务旧页需让 source_version 反映编译版本，属契约变更，
             # 见 lessons）。与“对象不存在”同一个 404（title = code，不带 detail）

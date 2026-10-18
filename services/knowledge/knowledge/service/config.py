@@ -18,11 +18,18 @@
   KNOWLEDGE_HOST                   HTTP 与 MCP 的监听地址，缺省 127.0.0.1；不接受 0.0.0.0、:: 等通配地址
                                    （只在服务内网监听，由平台侧网关转发；需要内网地址时显式配置具体地址）
   KNOWLEDGE_PORT                   缺省 8790（契约 servers）
+  KNOWLEDGE_READ_CACHE             （PLT-19）公共层只读缓存开关：1 开、0 或不设关（缺省关；关时行为与响应逐字节不变）
+  KNOWLEDGE_READ_CACHE_SIZE        缓存条目上限（LRU），缺省 1024，范围 1–10000（见 cache.py）
+  KNOWLEDGE_READ_CACHE_MAX_BYTES   缓存总字节上限（按条目 JSON 长度估算，超出按 LRU 淘汰），缺省 64 MiB，范围 64 KiB–1 GiB；
+                                   单条超过它的 1/64（缺省 1 MiB）不入缓存
+  KNOWLEDGE_READ_CACHE_LOG_EVERY   每多少次缓存判断打一条计数日志，缺省 1000
+  以上数值只收 ASCII 十进制数字，不合格即拒绝启动
 """
 from __future__ import annotations
 
 import ipaddress
 import os
+import re
 import socket
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -31,6 +38,13 @@ ALLOWED_ENVS = ("dev", "test")
 CALLERS = ("bff", "orchestrator", "learning")
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8790
+DEFAULT_CACHE_SIZE = 1024
+MAX_CACHE_SIZE = 10_000
+DEFAULT_CACHE_MAX_BYTES = 64 * 1024 * 1024
+MIN_CACHE_MAX_BYTES = 64 * 1024
+MAX_CACHE_MAX_BYTES = 1024 * 1024 * 1024
+DEFAULT_CACHE_LOG_EVERY = 1000
+MAX_CACHE_LOG_EVERY = 10_000_000
 _WILDCARD = {"", "*", "0.0.0.0", "::", "[::]", "0:0:0:0:0:0:0:0"}
 
 
@@ -75,6 +89,10 @@ class Settings:
     page_snapshot_pointer: Path | None = None
     page_snapshot_root: Path | None = None
     snapshot_hmac_key: str | None = field(default=None, repr=False)  # 不进 repr（日志、异常）
+    read_cache: bool = False  # PLT-19：缺省关
+    read_cache_size: int = DEFAULT_CACHE_SIZE
+    read_cache_max_bytes: int = DEFAULT_CACHE_MAX_BYTES
+    read_cache_log_every: int = DEFAULT_CACHE_LOG_EVERY
 
     @staticmethod
     def from_env(environ: dict[str, str] | None = None) -> "Settings":
@@ -112,7 +130,22 @@ class Settings:
         port_raw = e.get("KNOWLEDGE_PORT", str(DEFAULT_PORT))
         if not port_raw.isdigit() or not 0 < int(port_raw) < 65536:
             raise RuntimeError("KNOWLEDGE_PORT 不合法")
+        cache_flag = e.get("KNOWLEDGE_READ_CACHE", "0")
+        if cache_flag not in ("0", "1"):
+            raise RuntimeError("KNOWLEDGE_READ_CACHE 只能是 0 或 1")
+        size = _bounded_int(e, "KNOWLEDGE_READ_CACHE_SIZE", DEFAULT_CACHE_SIZE, 1, MAX_CACHE_SIZE)
+        max_bytes = _bounded_int(e, "KNOWLEDGE_READ_CACHE_MAX_BYTES", DEFAULT_CACHE_MAX_BYTES, MIN_CACHE_MAX_BYTES, MAX_CACHE_MAX_BYTES)
+        log_every = _bounded_int(e, "KNOWLEDGE_READ_CACHE_LOG_EVERY", DEFAULT_CACHE_LOG_EVERY, 1, MAX_CACHE_LOG_EVERY)
         return Settings(env=env, database_url=database_url, tokens=tokens, page_snapshot=Path(snap) if snap else None,
                         host=check_host(e.get("KNOWLEDGE_HOST", DEFAULT_HOST)), port=int(port_raw),
                         page_snapshot_pointer=Path(pointer) if pointer else None, snapshot_hmac_key=key,
-                        page_snapshot_root=Path(root) if root else None)
+                        page_snapshot_root=Path(root) if root else None, read_cache=cache_flag == "1",
+                        read_cache_size=size, read_cache_max_bytes=max_bytes, read_cache_log_every=log_every)
+
+
+def _bounded_int(e: dict[str, str], name: str, default: int, low: int, high: int) -> int:
+    """只收 ASCII 十进制数字（不收空白、正负号与其他文字的数字），范围 [low, high]；不合格一律 RuntimeError"""
+    raw = e.get(name, str(default))
+    if not re.fullmatch(r"[0-9]+", raw) or not low <= int(raw) <= high:
+        raise RuntimeError(f"{name} 必须是 {low}–{high} 的整数")
+    return int(raw)
