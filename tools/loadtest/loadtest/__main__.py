@@ -6,6 +6,8 @@
                               [--journeys a,b|all]                  PLT-20 可选场景（默认全关，见 scenarios.EXTRAS）
                               [--profile peak2x [--peak-config FILE] [--peak-concurrency N]]   0.5× → 1× → 2× → 2× 保持
                               [--slo FILE] [--slo-strict]           SLO 判定（config/slo.yaml；未签字只报告，--slo-strict 要求已签字）
+                              [--no-write-path | --require-write-path]   PLT-21：不接写路径 / 写路径必须接上（缺省能接就接：
+                                                                    真知识服务、合成地图与题、到期条目；没接上只在报告注明）
   python -m loadtest cost     --records FILE [--out DIR] [--prices FILE] [--profile FILE]
   python -m loadtest dashboard --usage FILE --records FILE [--out DIR] [--prices FILE] [--profile FILE] [--config FILE]
                               成本仪表盘（PLT-17）：消耗聚合行 + 调用记录 → cost-dashboard.json / .md（只出聚合；本步只收合成样例）
@@ -73,6 +75,10 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument("--retry-scale", type=float, default=1.0, help="BFF meteredCall 退避时长的比例（1 = 1/2/4/8 s）")
     b.add_argument("--slo", default=None, help="与 config/slo.yaml 同格式的通过线（缺省用它）")
     b.add_argument("--slo-strict", action="store_true", help="未达使退出码失败；只在通过线已签字（signed_by、signed_at）时允许")
+    b.add_argument("--no-write-path", action="store_true",
+                   help="PLT-21：不接写路径（不起知识服务、不装合成地图与题），再练 / 复测作答照 PLT-20 只到票据校验（对照用）")
+    b.add_argument("--require-write-path", action="store_true",
+                   help="PLT-21：写路径必须接上（缺依赖没接上时退出码 1；须同时打开再练与复测）；与 --no-write-path 互斥")
     b.add_argument("--max-model-calls", type=int, default=None,
                    help="驱动器侧模型调用次数硬上限（道法、语文批改按学习服务调用次数累计）：到上限即停止发走模型的请求与新旅程，退出码 1")
     c = sub.add_parser("cost")
@@ -146,11 +152,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.gate_config is not None and (not args.subject_gate or not Path(args.gate_config).is_file()):
         print("--gate-config 须同时给 --subject-gate，且是存在的文件", file=sys.stderr)
         return 2
+    if args.require_write_path and (args.no_write_path or not profile.practice):
+        print("--require-write-path 须打开再练与复测（--with-practice 或 practice_answer），且不能与 --no-write-path 同用", file=sys.stderr)
+        return 2
     if max(s.concurrency for s in profile.stages) > MAX_SAFE and not args.i_know:
         print(f"并发超过 {MAX_SAFE}：完整分阶段请显式加 --i-know（只在本机一次性栈）", file=sys.stderr)
         return 2
     from .baseline import run_baseline
     from .stack import missing_prerequisites
+    from .writepath import run_ok
 
     why = missing_prerequisites()
     if why:
@@ -160,13 +170,18 @@ def main(argv: list[str] | None = None) -> int:
                                  faults=dict(args.fault), scale_note=args.scale_note,
                                  retry_scale=args.retry_scale, subject_gate=args.subject_gate,
                                  gate_config=Path(args.gate_config).resolve() if args.gate_config else None,
-                                 slo=slo_cfg, slo_strict=strict, peak_note=peak_note, max_model_calls=args.max_model_calls))
-    ok = r["metering"]["zero_leak"] and r["plan_digest"] == r["executed_digest"] and not r["model_budget"]["stopped"]
+                                 slo=slo_cfg, slo_strict=strict, peak_note=peak_note, max_model_calls=args.max_model_calls,
+                                 write_path=not args.no_write_path))
+    wp = r.get("write_path") or {}
+    wp_ok = (wp.get("check") or {}).get("ok")
+    ok = (r["metering"]["zero_leak"] and r["plan_digest"] == r["executed_digest"] and not r["model_budget"]["stopped"]
+          and run_ok(r.get("write_path"), args.require_write_path))
     slo_ok = slo_mod.exit_ok(r["slo"], strict)
     print(json.dumps({"out": r["out"], "zero_leak": r["metering"]["zero_leak"], "sequence_match": r["plan_digest"] == r["executed_digest"],
                       "requests": sum(d["count"] for d in r["endpoints"].values()),
                       "slo": {"signed": r["slo"]["signed"], "strict": strict, "failed_groups": r["slo"]["failed_groups"]},
                       "model_budget": r["model_budget"],
+                      "write_path": {"enabled": wp.get("enabled"), "consistent": wp_ok} if wp else None,
                       "extras_alert": any(d["alert"] for d in ((r.get("extras_check") or {}).get("paths") or {}).values())},
                      ensure_ascii=False))
     return 0 if ok and slo_ok else 1

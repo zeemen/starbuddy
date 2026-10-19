@@ -7,6 +7,7 @@
 请求序列（到达、步骤、幂等键）逐条记下，压测后与计划比对（arrivals.digest）。
 PLT-16：429 限流与 503 SUBJECT_BUSY（分学科并发闸门被拒）单列（仍算错误）；--with-practice 时学生旅程另走再练与复测的列表、取题。
 PLT-20：--journeys 打开的可选场景接在学生 / 家长旅程末尾（请求体见 bodies.py）；本栈缺依赖时的预期结果按（状态码, 问题码）记为 expected。
+PLT-21：写路径接上时（Runner.write_path）再练 / 复测的派生条目与派生票据不再算预期；写路径未接上时同 PLT-20。
 """
 from __future__ import annotations
 
@@ -196,6 +197,9 @@ class Runner:
     recorder: Recorder = field(default_factory=Recorder)
     issued: list[PlannedRequest] = field(default_factory=list)
     budget: ModelBudget = field(default_factory=ModelBudget)
+    # PLT-21：本栈写路径可用（真知识服务、合成地图与题、到期条目）：再练 / 复测的取题与作答不再有“派生路径的预期”，
+    # 取题与作答都按真路径计（派生的照发、按错误计、路径记 derived，真路径占比应为 100%）
+    write_path: bool = False
     _start: float = 0.0
 
     # ---------------- 基础 ----------------
@@ -306,7 +310,8 @@ class Runner:
 
     async def practice_steps(self, a: Arrival, f: Family, s: Session, run) -> dict[str, object]:
         """PLT-16（--with-practice）：数学的再练与复测，各一次列表、一次取题（取题经 BFF 的分学科闸门）。
-        列表里没有到期条目时用（种子、到达、步骤）派生的条目 ID 取题：学习服务回 404，请求照样经过闸门，记为预期结果；
+        列表里没有到期条目时用（种子、到达、步骤）派生的条目 ID 取题：请求照样经过闸门；写路径未接上时记为预期结果（404），
+        写路径接上时（PLT-21，self.write_path）不设预期、按错误计，并记真 / 派生路径；
         四步总是都发出（请求序列可复现）。返回两次取题的响应体（PLT-20 作答场景从中取票据；不进报告）。"""
         out: dict[str, object] = {}
         for kind in ("practice", "retest"):
@@ -318,7 +323,8 @@ class Runner:
                 due = next((e.get("entry_id") for e in entries if isinstance(e, dict) and e.get("status") == "due"), None)
             eid = due or sid("entry", self.profile.seed, a.index, kind)
             r = await run(f"{kind}.next", lambda: self.bff.post(f"{PREFIX}{base}/entries/{eid}/next", headers=self.headers(s, True)),
-                          frozenset() if due else frozenset({404}))
+                          frozenset() if due or self.write_path else frozenset({404}),
+                          path=("real" if due else "derived") if self.write_path else None)
             out[kind] = _json_or_none(r)
         return out
 
@@ -329,9 +335,11 @@ class Runner:
         stu = f"/students/{f.student}"
         if "practice_answer" in on:
             for kind in ("practice", "retest"):
-                body, codes = bodies.answer_request(kind, nexts.get(kind), self.profile.seed, a.index)
+                nb = nexts.get(kind)
+                body, codes = bodies.answer_request(kind, nb, self.profile.seed, a.index, expect_derived=not self.write_path)
                 await run(f"{kind}.answer", lambda: self.bff.post(f"{PREFIX}{stu}/{kind}/math/answer", json=body,
-                                                                  headers=self.headers(s, True)), expect_codes=codes)
+                                                                  headers=self.headers(s, True)), expect_codes=codes,
+                          path="real" if bodies.ready_ticket(kind, nb) is not None else "derived")
         if "plan_events" in on:
             derived = {st: sid("plan-task", self.profile.seed, a.index, st) for st in ("plan.done", "plan.skip")}
             keys = {st: self.key(a, st) for st in ("plan.done", "plan.skip")}
@@ -454,16 +462,18 @@ class Runner:
                 if i > 0 and a.think_s[i] > 0:
                     await asyncio.sleep(a.think_s[i])
 
-            async def run(step: str, fn, expect: frozenset[int] = frozenset(), expect_codes: frozenset[tuple[int, str]] = frozenset()):
+            async def run(step: str, fn, expect: frozenset[int] = frozenset(), expect_codes: frozenset[tuple[int, str]] = frozenset(),
+                          path: str | None = None):
                 await think(step)
                 if step not in done:
                     done.add(step)
                     self.issued.append(PlannedRequest(a.index, steps.index(step), step, self.key(a, step)))
                 r = await self.timed(a.stage, step, fn, expect, expect_codes)
-                if step in EXTRA_STEPS:
-                    # 可选场景：给了预期码 = 派生 / 预期路径（必须是预期结果），没给 = 真 ID / 真票据（必须 2xx）；不记内容
+                if path is not None or step in EXTRA_STEPS:
+                    # 可选场景：给了预期码 = 派生 / 预期路径（必须是预期结果），没给 = 真 ID / 真票据（必须 2xx）；不记内容。
+                    # PLT-21：写路径可用时调用方直接给 path（派生路径不再有预期码，照样记为 derived）
                     oc = "transport" if r is None else outcome_of(r, expect, expect_codes)[0]
-                    self.recorder.path(step, "derived" if expect_codes else "real", oc)
+                    self.recorder.path(step, path or ("derived" if expect_codes else "real"), oc)
                 return r
 
             async def run_db(step: str, fn, ok: set[str]):

@@ -64,7 +64,7 @@ PYTHONDONTWRITEBYTECODE=1 ../../services/learning/.venv/bin/python -m loadtest b
 
   | 场景 | 宿主 | 步骤 | 打开的开关 | 本栈的结果 |
   |---|---|---|---|---|
-  | `practice_answer` | 学生 | 再练、复测作答（票据） | 同 `--with-practice`（自动打开） | 取题 ready 时用下发的真票据（必须 2xx）；没有可作答的题时用派生的同前缀假票据：422 TICKET_INVALID（计次之前，记“预期”） |
+  | `practice_answer` | 学生 | 再练、复测作答（票据） | 同 `--with-practice`（自动打开） | 取题 ready 时用下发的真票据（必须 2xx）；没有可作答的题时用派生的同前缀假票据：422 TICKET_INVALID（计次之前；只在写路径没接上时记“预期”，见 PLT-21） |
   | `plan_events` | 学生 | plan_done、plan_skip | BFF `STARBUDDY_TODAY_ORCH`、学习服务 `LEARNING_TODAY_CONFIG=synthetic` + `LEARNING_TODAY_SNAPSHOT=1` | 今日计划带快照任务 ID 时用真 ID（必须 2xx）；没有时用派生 ID：422 INVALID（记“预期”）。打开后学生的今日计划另走跨科编排，行名改为 `today.orch`，不与基线 `today` 比较 |
   | `my_plan` / `monthly_plan` | 学生 / 家长 | my-plan / monthly-plan | `STARBUDDY_MONTHLY_PLAN` | my-plan：本月无快照 200（plan 为空）。monthly-plan：本月无快照要调洞察服务生成，本栈不起洞察服务 → 503 UNAVAILABLE；**只有 BFF 访问日志里核对到 `generate=not_configured` 的才算“预期”**，核对不到的改记为错误 |
   | `star_map_v1` | 学生 | star-map/v1 | `STARBUDDY_STARMAP=starmap_v1` | 没有掌握配置时全中性（200） |
@@ -85,13 +85,46 @@ PYTHONDONTWRITEBYTECODE=1 ../../services/learning/.venv/bin/python -m loadtest b
   报告写 `peak2x.md` / `peak2x.json`（首段“本机合成，不是容量结论”），另有“2 倍峰值各阶段”表：吞吐、分位数、错误率、429 / 503、预期、
   连接峰值（pg_stat_activity，按角色：总 / 活跃 / 锁等待 / 活跃中等待）、闸门排队分档，与各阶段慢查询（pg_stat_statements 边界快照相减）。
   延迟按到达阶段归属，连接、慢查询、闸门按墙钟阶段归属。
-- 已知偏差：本栈没有知识服务与合成地图，再练、复测取不到真题，作答只走到 BFF 的票据校验（见上表）；要让作答经学习服务落库、计次，
-  需另起：合成地图与题、假知识服务（item.similar / item.search）、能判合成题的适配器，并种到期条目（待人确认）。
+- PLT-21 起写路径已补上（见下一节）：上表 `practice_answer` 一行的“派生票据 422 记预期”只在写路径没接上时（`--no-write-path` 或缺依赖）成立。
+
+### 写路径（PLT-21，`specs/loadtest-write-path-plt21`，`loadtest/writepath.py`）
+
+打开再练与复测（`--with-practice` 或 `practice_answer`）时缺省接上写路径，再练 / 复测取题回 ready 与真票据，作答经判分落库、计次：
+
+- 合成题：学习服务再练合成题面夹具里的 12 道客观题（SYNP-*），写进阿鸦内容包的合成副本（真实内容包原样 + 这些题的答案、来源已核、Q2、admitted；
+  经阿鸦自己的 `indexPack` 校验），阿鸦另起一个进程用它（`AYA_CONTENT_PACK`），generate_variation 与 grade
+  都走它的合成题路径（验证器，确定性判分）；
+  - 替代内容包只在候选版开关打开时允许，所以合成阿鸦进程带 `STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1`。**副作用**：这个进程同时接受 1.1.0
+    候选版请求（含 present_item），只限该进程（其余适配器、学习服务、BFF 都不开）；学习服务对它仍按 1.0.0 发请求，题面来源仍是合成夹具；
+  - 合成副本的准入决定记录（`admission_decisions`）是**合成占位摘要，不是真实准入依据**（导出编号 `SYN-EXPORT-LT-PLACEHOLDER`、全零 sha256），
+    条数与副本里带审核依据的题数一致；真实内容包已有准入决定记录时拒绝生成副本（不与真实依据混用）；
+  - `e2e_cohort.stack.adapters` 一次起三科，原阿鸦进程照起但不再收到请求（那是 e2e-cohort 的共用接口，本任务不改）；
+- 登记与准入：阿鸦内容登记脚本的 `registrationSql`（`node/aya-register.mts`）登记为 pending_review，两名合成 staff（新建；ID 已存在即停下）
+  经发布闸门签准入并执行（`sign_admission` → `change_admission`）；合成地图草稿（两个知识节点、层次 apply、题目族与打标）经两人签字与
+  `publish_map_version` 发布，以学习服务角色绑到阿鸦内容包的草稿内容版本；之后两名 staff 停用。不用复制模式绕过守卫；每段 SQL 先核对是本机
+  Unix socket 上的一次性库（`starbuddy_test*`）；
+- 知识服务：起真知识服务（`services/knowledge/.venv`，一次性登录角色只继承 `starbuddy_kge_read`，只读这个一次性库，只配学习服务的合成令牌）；
+  学习服务按 `packages/contracts` 知识服务 OpenAPI 严格校验它的响应（不另写替身）；
+- 到期条目：每个合成学生压测前经学习服务 grade 写入路径做错一道 N1 的题（再练首轮间隔 0 小时，立即到期）、做对一道 N2 的题（复测参照题），
+  并以学习服务角色种一条已到期的平台内验证任务（`verify_in_platform`，复测条目；**手工种入，不是 KGE-04 调度**）。
+  种子只用于准备数据：**不经 BFF 与计量**（不预留、不结算、不计次），不计入压测指标；种子只发给 127.0.0.1 上本栈的学习服务，
+  判分结论必须正好是 practice:incorrect × n、retest:correct × n，否则立即失败；
+- 驱动器：写路径接上时派生条目（404）与派生票据（422 TICKET_INVALID）的“预期”自动停用，取题与作答一律记真 / 派生路径，派生的照发、按错误计（真路径应为 100%）；
+- 报告“写路径（PLT-21）”一节（只取本轮合成学生、压测前后增量）：
+  - 作答（驱动器记的真票据 2xx）= 合成题计次增量（`platform.practice_log` 中经幂等键关联到 SYNP-* 作答的行）= 作答证据行增量（SYNP-* 的作答证据，每次作答一行）；
+  - “计次无对应作答证据”与“作答证据无对应计次”都为 0，全部计次 = 合成题计次 + 无对应作答证据的计次（没有计次关联到合成题以外的作答）；
+  - 口径说明：题库自练是“开始即计数、没有释放”（BFF 先 `meter_practice` 再调学习服务，`specs/metering-v2` 偏差 13），计次之后学习服务失败会留下
+    “计次无对应作答证据”——这是设计口径，不是计量故障；本机无故障注入时应为 0，出现即判不通过；
+  - 不通过时退出码 1；另给各环节耗时（学习服务、知识服务、阿鸦各自访问日志的方法名、状态码、耗时；压测期间）。掌握更新本栈不测（不设掌握配置）；
+- 缺 `services/knowledge/.venv` 时照旧（报告注明“未接上”与原因）；`--no-write-path` 显式关（对照 PLT-20）；`--require-write-path`
+  要求写路径必须接上，没接上（或没打开再练与复测）退出码失败，用于确认写路径确实被测到；
+- 报告的 Markdown 由写出的 JSON 读回后渲染：`sample/peak2x.json` 重渲染与 `sample/peak2x.md` 逐字节相等（`tests/test_write_path.py` 核对）。
 
 假供应商的 `/_control/faults`、`/_control/stats` 与计量驱动桩的接口**没有鉴权**：只监听 127.0.0.1、只在本机一次性栈里存在，
 不得暴露到任何共享网络（预发故障演练见 RUNBOOK 第 2 节）。
 
 依赖：`services/learning/.venv`、本机 Postgres 16 服务端、`node`，`adapters/{aya,wenli,zhixing}` 与 `services/bff` 的 `npm ci`。缺依赖时跳过（`CONTRACT_STRICT=1` 失败）。
+写路径（PLT-21）另要 `services/knowledge/.venv`；缺时只是写路径不接上。
 
 ## 组成（`loadtest/`）
 
@@ -107,6 +140,7 @@ PYTHONDONTWRITEBYTECODE=1 ../../services/learning/.venv/bin/python -m loadtest b
 | `meter.py` | 计量旅程的计量函数调用（与 BFF 同一组函数、同一角色）与零泄漏核对 |
 | `harness.py` + `node/meter-harness.mts` | 计量驱动桩：在本机运行 BFF 的 `meteredCall`（批改的计量全走它）；计量时钟由调用方经 `/clock-sync` 对齐 |
 | `metrics.py` / `report.py` / `baseline.py` | 分位数（最近秩）、错误率、吞吐；Markdown + JSON 报告；一次压测的编排 |
+| `writepath.py` + `node/aya-register.mts` | PLT-21 写路径：合成内容包、登记 / 准入 / 地图种子 SQL（经闸门）、知识服务环境、到期条目种子、一致性核对与环节耗时（`tests/test_write_path.py`） |
 | `bodies.py` / `slo.py` / `peak.py` / `phases.py` | PLT-20：新场景的请求构造与票据处理；SLO 判定；peak2x 配置与阶段；按阶段的连接、慢查询、闸门汇总（均为纯函数，`tests/test_peak2x.py`） |
 | `cost.py` + `config/` | 成本模型与报表；`prices.example.yaml`（**示例价**）、`cost_profile.yaml`（使用画像，逐项标来源） |
 | `degradation.py` | 降级清单：每科每个方法是否用模型、任务与数据级别、三种情形下的期望行为（断言的唯一来源）；静态扫描适配器源码核对清单完整 |
@@ -137,5 +171,6 @@ PYTHONDONTWRITEBYTECODE=1 ../../services/learning/.venv/bin/python -m loadtest b
   `--retry-scale` 可按比例缩短退避（口径不变）；
 - 负载生成器与被测服务同机，数字只作回归比较；学习服务与 BFF 的连接池上限各 10，计量驱动桩与计量旅程各另用一个 20 的 bff_app 池；
 - token 为假供应商按字符数估算（`CHARS_PER_TOKEN = 1.5`），不是供应商计数；T1 / T9 没有任何学科方法调用，全靠假设；
-- 再练与复测场景（`--with-practice`）只有列表与取题；作答在 PLT-20 的 `practice_answer` 场景里，本栈取不到真票据时只走到 BFF 的票据校验（见上文）；
+- 再练与复测场景（`--with-practice`）只有列表与取题；作答在 PLT-20 的 `practice_answer` 场景里；PLT-21 起写路径接上后取题 ready、作答落库计次，
+  写路径没接上时只走到 BFF 的票据校验（见上文）；
   闸门的计次前拒绝由 `services/bff/tests/subject-gate.integration.test.ts` 覆盖。

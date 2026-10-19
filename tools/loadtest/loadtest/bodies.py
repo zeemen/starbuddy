@@ -1,8 +1,9 @@
 """PLT-20 新场景的请求构造与票据处理（纯函数，不碰网络；形状对照 services/bff/src 的 parse* 函数）。
 
 - 再练 / 复测作答：取题返回 status = ready 时用它下发的封装票据（sbp1. / sbr1.）和一个合题型的作答；没有可作答的题时
-  （本栈没有到期条目或知识服务，见 README“已知偏差”）用（种子、到达、类别）派生的同前缀假票据——BFF 在解票据这一步回
-  422 TICKET_INVALID（计次之前），记为预期结果，请求序列照样可复现；
+  用（种子、到达、类别）派生的同前缀假票据——BFF 在解票据这一步回 422 TICKET_INVALID（计次之前），请求序列照样可复现。
+  只在写路径未接上时（PLT-21 之前的本栈、--no-write-path 或缺依赖：没有到期条目或知识服务）记为预期结果；
+  写路径接上时派生票据不算预期（expect_derived=False），按错误计；
 - 计划完成 / 跳过：今日计划带快照任务 ID（ordered.items[].task_id）时用它；没有时用派生 ID（库函数回 22023 → BFF 422 INVALID，预期）；
 - 诊断探针与放弃：请求体键集合与 BFF parseProbe / parseAbandon 完全一致。
 请求体只含合成值；不读、不记响应里的题面与票据内容以外的任何东西（票据只原样回传，不进报告）。
@@ -59,13 +60,14 @@ def fallback_ticket(kind: str, seed: int, arrival: int) -> str:
     return f"{TICKET_PREFIX[kind]}synthetic.{digest}"
 
 
-def answer_request(kind: str, next_body: object, seed: int, arrival: int) -> tuple[dict, frozenset]:
-    """作答请求体与预期结果集：有真票据时不设预期（必须 2xx），否则用派生票据并预期 422 TICKET_INVALID"""
+def answer_request(kind: str, next_body: object, seed: int, arrival: int, *, expect_derived: bool = True) -> tuple[dict, frozenset]:
+    """作答请求体与预期结果集：有真票据时不设预期（必须 2xx），否则用派生票据并预期 422 TICKET_INVALID。
+    expect_derived=False（PLT-21：本栈写路径可用，取题应当 ready）：派生票据不再算预期，照发（请求序列不变）、结果按错误计"""
     got = ready_ticket(kind, next_body)
     if got is not None:
         ticket, answer = got
         return {"ticket": ticket, "answer": answer}, frozenset()
-    return {"ticket": fallback_ticket(kind, seed, arrival), "answer": {"text": "1"}}, EXPECT_TICKET_INVALID
+    return {"ticket": fallback_ticket(kind, seed, arrival), "answer": {"text": "1"}}, (EXPECT_TICKET_INVALID if expect_derived else frozenset())
 
 
 def plan_task_ids(today: object) -> list[str]:

@@ -6,7 +6,9 @@
   假模型供应商（fake_provider.py，独立进程，OpenAI 兼容协议，可注入故障）；
   三科适配器（复用 tools/e2e-cohort 的 stack.adapters，真实 node 进程，只拿到学习服务路由接口的地址与令牌）；
   学习服务（独立进程 python -m learning，LEARNING_ENV=test：模型路由按仓库路由表的 test 节经 OpenAI 兼容适配器调假供应商）；
-  BFF（独立进程 node src/main.ts，STARBUDDY_ENV=test，短信捕获桩写验证码到临时文件；限流阈值放宽的一份配置同 apps/web/scripts/e2e.sh）。
+  BFF（独立进程 node src/main.ts，STARBUDDY_ENV=test，短信捕获桩写验证码到临时文件；限流阈值放宽的一份配置同 apps/web/scripts/e2e.sh）；
+  PLT-21 写路径（打开再练与复测时，writepath.py）：合成题与合成地图经准入、发布闸门装进一次性库，真知识服务（只读角色、只读这个库）
+  与带合成题的阿鸦适配器进程（AYA_CONTENT_PACK，候选版开关只在这个栈）接给学习服务。
 服务间令牌沿用 e2e_cohort 的合成常量（不是真实凭据）；日志只落在临时目录，压测后只取调用记录的元数据（token 数、任务、科目）。
 """
 from __future__ import annotations
@@ -26,10 +28,10 @@ from pathlib import Path
 import asyncpg
 import httpx
 
-from e2e_cohort.stack import ADAPTER_TOKENS, LEARNING_CREDENTIAL, ROUTE_TOKENS, adapters, register_content
+from e2e_cohort.stack import ADAPTER_TOKENS, LEARNING_CREDENTIAL, ROUTE_TOKENS, _adapter_env, adapters, register_content
 from pgharness import LOGIN_ROLE, EphemeralPG
 
-from . import dbstats, harness, seed
+from . import dbstats, harness, seed, writepath
 
 ROOT = Path(__file__).resolve().parents[3]
 TOOLS = ROOT / "tools/loadtest"
@@ -100,6 +102,12 @@ class Stack:
     stat_statements: bool
     harness_url: str
     bff_log: Path  # BFF 的访问日志（压测后只取分学科闸门的枚举字段汇总，见 metrics.gate_summary）
+    # PLT-21 写路径（writepath.py）：是否可用、不可用的原因、合成内容（内容包路径、内容版本、种子核对）、知识服务与合成阿鸦的日志
+    write_path: bool = False
+    write_path_note: str | None = None
+    content: dict | None = None
+    knowledge_log: Path | None = None
+    aya_log: Path | None = None
 
     async def set_fault(self, vendor: str, spec: dict | None) -> None:
         body = {"clear": True, "vendor": vendor} if spec is None else {"vendor": vendor, "spec": spec}
@@ -146,8 +154,10 @@ def relaxed_auth_config(dst: Path) -> None:
 @asynccontextmanager
 async def local_stack(*, seed_value: int, students: int, provider_median_ms: float, provider_p90_ms: float,
                       retry_scale: float = 1.0, subject_gate: bool = False, practice: bool = False, gate_config: Path | None = None,
-                      journeys: tuple[str, ...] = ()):
+                      journeys: tuple[str, ...] = (), write_path: bool = True):
     """students：假供应商预先登记合成作答的学生数（学生旅程的合成对象数）。
+    write_path（PLT-21，只在 practice 打开时有意义）：装合成地图与合成题、起真知识服务（只读）与带合成题的阿鸦适配器进程，
+    学习服务的再练 / 复测接上它们（取题 ready、作答经判分落库）；缺依赖（writepath.missing）时照旧不起，Stack.write_path_note 写原因。
     subject_gate：BFF 打开分学科并发闸门（STARBUDDY_SUBJECT_GATE，缺省用仓库 config/concurrency.json 的合成默认值；
     gate_config 给一份同格式的配置时经 BFF_CONCURRENCY_CONFIG 换用，只在 STARBUDDY_ENV=test 的本栈有效）；
     practice：BFF 打开错题再练与复测路由，学习服务用合成配置与合成题面（只在 LEARNING_ENV=test），票据密钥每次启动随机生成；
@@ -164,6 +174,13 @@ async def local_stack(*, seed_value: int, students: int, provider_median_ms: flo
         stat = dbstats.enable_stat_statements(pg)
         pg.psql(seed.setup_sql())
         register_content(pg)
+        wp_note = None if practice else "未打开再练与复测"
+        if practice and not write_path:
+            wp_note = "命令行关闭（--no-write-path）"
+        elif practice:
+            wp_note = writepath.missing()
+        wp = practice and wp_note is None
+        content = writepath.prepare_content(pg, work) if wp else None
         with ExitStack() as es:
             env_base = {"PATH": os.environ["PATH"], "LANG": "C.UTF-8"}
             # ---- 假供应商
@@ -177,6 +194,29 @@ async def local_stack(*, seed_value: int, students: int, provider_median_ms: flo
             lport = free_port()
             learning_url = f"http://127.0.0.1:{lport}"
             procs = es.enter_context(adapters(learning_url))
+            urls = {s: p.url for s, p in procs.items()}
+            knowledge_log = aya_log = None
+            kport = 0
+            if wp:
+                # ---- PLT-21：真知识服务（只读角色、只读这个一次性库）+ 带合成题的阿鸦适配器进程（替代内容包只在候选版开关打开时允许）
+                kport, aport = free_port(), free_port()
+                kcache = work / "knowledge-cache"
+                kcache.mkdir(mode=0o700)
+                knowledge_log = work / "knowledge.log"
+                es.enter_context(process(
+                    [str(writepath.KNOWLEDGE_PY), "-m", "knowledge.service"], writepath.KNOWLEDGE,
+                    env_base | writepath.knowledge_env(f"postgresql://{writepath.KNOWLEDGE_ROLE}@/{pg.db}?host={pg.work}", kport, kcache),
+                    knowledge_log, kport, "知识服务"))
+                aya_log = work / "aya-synthetic.log"
+                es.enter_context(process(
+                    ["node", "--no-warnings", "src/main.ts"], writepath.AYA,
+                    _adapter_env("aya", aport, learning_url) | {"AYA_CONTENT_PACK": str(content["pack"]),
+                                                               "STARBUDDY_ALLOW_CANDIDATE_CONTRACT": "1"},
+                    aya_log, aport, "合成阿鸦适配器"))
+                # 学习服务的阿鸦地址换成合成阿鸦；e2e_cohort.stack.adapters 起的原阿鸦进程之后不再收到任何请求，
+                # 仍照起：那个上下文管理器一次起三科、不能按学科挑（它是 tools/e2e-cohort 的共用接口，本任务不改它），
+                # 多一个空闲的本机进程不影响结果（报告的连接、慢查询都只看数据库；阿鸦不连库）
+                urls["aya"] = f"http://127.0.0.1:{aport}"
             # ---- 学习服务
             db_url = f"postgresql://{LOGIN_ROLE}@/{pg.db}?host={pg.work}"
             lenv = env_base | {
@@ -185,9 +225,11 @@ async def local_stack(*, seed_value: int, students: int, provider_median_ms: flo
                 "MODEL_FAKE_A_URL": f"{provider_url}/fake-a", "MODEL_FAKE_B_URL": f"{provider_url}/fake-b",
                 "MODEL_FAKE_X_URL": f"{provider_url}/fake-x",
             }
-            for s, p in procs.items():
-                lenv[f"LEARNING_ADAPTER_{s.upper()}_URL"] = p.url
+            for s in procs:
+                lenv[f"LEARNING_ADAPTER_{s.upper()}_URL"] = urls[s]
                 lenv[f"LEARNING_ADAPTER_{s.upper()}_TOKEN"] = ADAPTER_TOKENS[s]
+            if wp:
+                lenv |= {"LEARNING_KNOWLEDGE_URL": f"http://127.0.0.1:{kport}", "LEARNING_KNOWLEDGE_TOKEN": writepath.KNOWLEDGE_CREDENTIAL}
             for s, tok in ROUTE_TOKENS.items():
                 lenv[f"LEARNING_ROUTE_CLIENT_{s.upper()}_TOKEN"] = tok
             if practice:
@@ -227,7 +269,8 @@ async def local_stack(*, seed_value: int, students: int, provider_median_ms: flo
             scheduler = await asyncpg.create_pool(**pg.dsn("loadtest_scheduler"), min_size=1, max_size=1)
             try:
                 yield Stack(pg, work, f"http://127.0.0.1:{bport}", learning_url, provider_url, shell_origin, sms, learning_log,
-                            admin, bff_pool, scheduler, stat, harness_url, bff_log)
+                            admin, bff_pool, scheduler, stat, harness_url, bff_log, write_path=wp, write_path_note=wp_note,
+                            content=content, knowledge_log=knowledge_log, aya_log=aya_log)
             finally:
                 await admin.close()
                 await bff_pool.close()

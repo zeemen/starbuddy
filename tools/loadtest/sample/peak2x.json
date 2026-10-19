@@ -1,0 +1,2950 @@
+{
+ "arrivals": 723,
+ "arrivals_by_journey": {
+  "meter": 103,
+  "parent": 195,
+  "student": 425
+ },
+ "banner": "本机合成，不是容量结论",
+ "db": {
+  "activity": {
+   "by_role": {
+    "bff_app": {
+     "max_active": 2,
+     "max_connections": 17,
+     "max_lock_wait": 0
+    },
+    "learning_app": {
+     "max_active": 3,
+     "max_connections": 16,
+     "max_lock_wait": 0
+    }
+   },
+   "by_stage": {
+    "0": {
+     "bff_app": {
+      "max_active": 1,
+      "max_connections": 7,
+      "max_lock_wait": 0,
+      "max_waiting": 0
+     },
+     "learning_app": {
+      "max_active": 2,
+      "max_connections": 12,
+      "max_lock_wait": 0,
+      "max_waiting": 0
+     }
+    },
+    "1": {
+     "bff_app": {
+      "max_active": 2,
+      "max_connections": 9,
+      "max_lock_wait": 0,
+      "max_waiting": 1
+     },
+     "learning_app": {
+      "max_active": 1,
+      "max_connections": 13,
+      "max_lock_wait": 0,
+      "max_waiting": 0
+     }
+    },
+    "2": {
+     "bff_app": {
+      "max_active": 2,
+      "max_connections": 17,
+      "max_lock_wait": 0,
+      "max_waiting": 1
+     },
+     "learning_app": {
+      "max_active": 3,
+      "max_connections": 16,
+      "max_lock_wait": 0,
+      "max_waiting": 0
+     }
+    },
+    "3": {
+     "bff_app": {
+      "max_active": 2,
+      "max_connections": 16,
+      "max_lock_wait": 0,
+      "max_waiting": 0
+     },
+     "learning_app": {
+      "max_active": 2,
+      "max_connections": 16,
+      "max_lock_wait": 0,
+      "max_waiting": 0
+     }
+    }
+   },
+   "samples": 311
+  },
+  "pool_note": "学习服务 asyncpg 池 max 10 + 再练作答串行锁池 max 8（learning/app.py PRACTICE_LOCK_POOL_SIZE，打开再练时）、BFF pg 池 max 10（services/bff/src/main.ts）；批改经计量驱动桩运行 BFF meteredCall，另用 bff_app 池 max 20；计量旅程另用 bff_app 池 max 20",
+  "stat_statements": true,
+  "top_queries": [
+   {
+    "calls": 4215,
+    "max_ms": 35.5,
+    "mean_ms": 2.38,
+    "query": "SELECT platform.meter_guard_status($1::uuid) AS g",
+    "role": "bff_app",
+    "total_ms": 10043.1
+   },
+   {
+    "calls": 2009,
+    "max_ms": 30.4,
+    "mean_ms": 3.44,
+    "query": "SELECT platform.meter_reserve($1, $2, $3, $4, $5, $6, $7) AS r",
+    "role": "bff_app",
+    "total_ms": 6912.4
+   },
+   {
+    "calls": 2331,
+    "max_ms": 27.4,
+    "mean_ms": 2.05,
+    "query": "SELECT platform.meter_settle($1, $2) AS r",
+    "role": "bff_app",
+    "total_ms": 4783.7
+   },
+   {
+    "calls": 10485,
+    "max_ms": 14.5,
+    "mean_ms": 0.38,
+    "query": "SELECT account_id, account_kind::text AS account_kind, origin FROM platform.auth_session_resolve($1)",
+    "role": "bff_app",
+    "total_ms": 3990.9
+   },
+   {
+    "calls": 11105,
+    "max_ms": 7.1,
+    "mean_ms": 0.23,
+    "query": "SELECT platform.auth_rate_hit($1, $2, $3, $4) AS ok",
+    "role": "bff_app",
+    "total_ms": 2537.8
+   },
+   {
+    "calls": 5950,
+    "max_ms": 5.7,
+    "mean_ms": 0.26,
+    "query": "SELECT platform.is_self_student($1::uuid) AS ok",
+    "role": "bff_app",
+    "total_ms": 1553.9
+   },
+   {
+    "calls": 850,
+    "max_ms": 12.4,
+    "mean_ms": 1.46,
+    "query": "SELECT id, replayed FROM insight.record_behavior_event($1, $2, $3::jsonb, $4::timestamptz, $5::uuid)",
+    "role": "bff_app",
+    "total_ms": 1243.7
+   },
+   {
+    "calls": 620,
+    "max_ms": 5.8,
+    "mean_ms": 1.21,
+    "query": "SELECT e.subject::text AS subject, e.status AS enrollment_status, n.local_id, n.label_code, m.state::text AS state, m.confidence::text AS confidence FROM platform.subject_enrollment e JOIN platform.sk",
+    "role": "bff_app",
+    "total_ms": 750.5
+   },
+   {
+    "calls": 850,
+    "max_ms": 7.4,
+    "mean_ms": 0.79,
+    "query": "SELECT platform.meter_practice($1::uuid, $2) AS r",
+    "role": "bff_app",
+    "total_ms": 674.0
+   },
+   {
+    "calls": 2550,
+    "max_ms": 3.1,
+    "mean_ms": 0.22,
+    "query": "SELECT $3 FROM platform.diagnosis_session WHERE id = $1::uuid AND student_id = $2::uuid",
+    "role": "bff_app",
+    "total_ms": 554.5
+   }
+  ]
+ },
+ "endpoints": {
+  "diagnose.abandon": {
+   "codes": {
+    "200": 425
+   },
+   "count": 425,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 0,
+   "max_ms": 113.9,
+   "p50_ms": 22.8,
+   "p95_ms": 61.9,
+   "p99_ms": 88.9,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 2.719
+  },
+  "diagnose.answer": {
+   "codes": {
+    "200": 425
+   },
+   "count": 425,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 0,
+   "max_ms": 541.7,
+   "p50_ms": 100.5,
+   "p95_ms": 273.0,
+   "p99_ms": 351.8,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 2.719
+  },
+  "diagnose.current": {
+   "codes": {
+    "200": 425
+   },
+   "count": 425,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 0,
+   "max_ms": 174.1,
+   "p50_ms": 22.6,
+   "p95_ms": 79.7,
+   "p99_ms": 142.8,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 2.719
+  },
+  "diagnose.pause": {
+   "codes": {
+    "200": 425
+   },
+   "count": 425,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 0,
+   "max_ms": 94.4,
+   "p50_ms": 19.2,
+   "p95_ms": 53.2,
+   "p99_ms": 77.6,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 2.719
+  },
+  "diagnose.probe": {
+   "codes": {
+    "200": 425
+   },
+   "count": 425,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 0,
+   "max_ms": 177.0,
+   "p50_ms": 36.9,
+   "p95_ms": 94.7,
+   "p99_ms": 149.3,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 2.719
+  },
+  "diagnose.recheck": {
+   "codes": {
+    "200": 425
+   },
+   "count": 425,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 0,
+   "max_ms": 154.3,
+   "p50_ms": 23.5,
+   "p95_ms": 70.4,
+   "p99_ms": 100.0,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 2.719
+  },
+  "diagnose.resume": {
+   "codes": {
+    "200": 425
+   },
+   "count": 425,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 0,
+   "max_ms": 162.1,
+   "p50_ms": 27.4,
+   "p95_ms": 73.9,
+   "p99_ms": 116.5,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 2.719
+  },
+  "diagnose.start": {
+   "codes": {
+    "201": 425
+   },
+   "count": 425,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 0,
+   "max_ms": 574.4,
+   "p50_ms": 31.7,
+   "p95_ms": 93.6,
+   "p99_ms": 174.7,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 2.719
+  },
+  "grade.aya": {
+   "codes": {
+    "ok": 425
+   },
+   "count": 425,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 0,
+   "max_ms": 302.5,
+   "p50_ms": 73.0,
+   "p95_ms": 183.3,
+   "p99_ms": 259.1,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 2.719
+  },
+  "grade.wenli": {
+   "codes": {
+    "ok": 425
+   },
+   "count": 425,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 0,
+   "max_ms": 3914.1,
+   "p50_ms": 409.2,
+   "p95_ms": 1239.6,
+   "p99_ms": 1860.7,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 2.719
+  },
+  "grade.zhixing": {
+   "codes": {
+    "ok": 425
+   },
+   "count": 425,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 0,
+   "max_ms": 4581.8,
+   "p50_ms": 418.1,
+   "p95_ms": 1293.4,
+   "p99_ms": 1789.4,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 2.719
+  },
+  "login.otp_request": {
+   "codes": {
+    "202": 620
+   },
+   "count": 620,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 0,
+   "max_ms": 87.3,
+   "p50_ms": 6.6,
+   "p95_ms": 18.2,
+   "p99_ms": 31.8,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 3.966
+  },
+  "login.otp_verify": {
+   "codes": {
+    "200": 620
+   },
+   "count": 620,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 0,
+   "max_ms": 40.6,
+   "p50_ms": 6.6,
+   "p95_ms": 15.5,
+   "p99_ms": 25.0,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 3.966
+  },
+  "login.student_session": {
+   "codes": {
+    "200": 425
+   },
+   "count": 425,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 0,
+   "max_ms": 74.2,
+   "p50_ms": 7.5,
+   "p95_ms": 18.1,
+   "p99_ms": 29.1,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 2.719
+  },
+  "meter.release": {
+   "codes": {
+    "outcome:released": 103
+   },
+   "count": 103,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 0,
+   "max_ms": 29.8,
+   "p50_ms": 4.5,
+   "p95_ms": 13.4,
+   "p99_ms": 16.2,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 0.659
+  },
+  "meter.reserve": {
+   "codes": {
+    "outcome:reserved": 103
+   },
+   "count": 103,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 0,
+   "max_ms": 40.7,
+   "p50_ms": 6.7,
+   "p95_ms": 23.8,
+   "p99_ms": 32.1,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 0.659
+  },
+  "meter.reserve_pair": {
+   "codes": {
+    "outcome:existing": 103,
+    "outcome:reserved": 103
+   },
+   "count": 206,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 0,
+   "max_ms": 34.2,
+   "p50_ms": 7.3,
+   "p95_ms": 18.8,
+   "p99_ms": 23.4,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 1.318
+  },
+  "meter.settle": {
+   "codes": {
+    "outcome:settled": 103
+   },
+   "count": 103,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 0,
+   "max_ms": 23.1,
+   "p50_ms": 5.5,
+   "p95_ms": 13.5,
+   "p99_ms": 18.3,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 0.659
+  },
+  "meter.settle_repeat": {
+   "codes": {
+    "outcome:settled": 103
+   },
+   "count": 103,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 0,
+   "max_ms": 26.8,
+   "p50_ms": 2.4,
+   "p95_ms": 11.9,
+   "p99_ms": 24.2,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 0.659
+  },
+  "my_plan": {
+   "codes": {
+    "200": 425
+   },
+   "count": 425,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 0,
+   "max_ms": 44.3,
+   "p50_ms": 7.5,
+   "p95_ms": 20.8,
+   "p99_ms": 34.3,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 2.719
+  },
+  "parent.child_balance": {
+   "codes": {
+    "200": 195
+   },
+   "count": 195,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 0,
+   "max_ms": 49.4,
+   "p50_ms": 9.9,
+   "p95_ms": 22.5,
+   "p99_ms": 32.7,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 1.247
+  },
+  "parent.child_enrollments": {
+   "codes": {
+    "200": 195
+   },
+   "count": 195,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 0,
+   "max_ms": 62.5,
+   "p50_ms": 14.3,
+   "p95_ms": 30.0,
+   "p99_ms": 54.6,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 1.247
+  },
+  "parent.child_star_map": {
+   "codes": {
+    "200": 195
+   },
+   "count": 195,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 0,
+   "max_ms": 37.6,
+   "p50_ms": 9.3,
+   "p95_ms": 21.8,
+   "p99_ms": 37.2,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 1.247
+  },
+  "parent.children": {
+   "codes": {
+    "200": 195
+   },
+   "count": 195,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 0,
+   "max_ms": 71.2,
+   "p50_ms": 7.2,
+   "p95_ms": 18.0,
+   "p99_ms": 27.1,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 1.247
+  },
+  "parent.monthly_plan": {
+   "codes": {
+    "503 UNAVAILABLE": 195
+   },
+   "count": 195,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 195,
+   "max_ms": 45.7,
+   "p50_ms": 8.6,
+   "p95_ms": 22.3,
+   "p99_ms": 43.5,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 1.247
+  },
+  "parent.prediction": {
+   "codes": {
+    "503 UNAVAILABLE": 195
+   },
+   "count": 195,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 195,
+   "max_ms": 36.3,
+   "p50_ms": 7.5,
+   "p95_ms": 19.7,
+   "p99_ms": 36.1,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 1.247
+  },
+  "parent.profile_page": {
+   "codes": {
+    "200": 195
+   },
+   "count": 195,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 0,
+   "max_ms": 88.0,
+   "p50_ms": 10.2,
+   "p95_ms": 24.1,
+   "p99_ms": 62.2,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 1.247
+  },
+  "parent.weekly_report": {
+   "codes": {
+    "200": 195
+   },
+   "count": 195,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 0,
+   "max_ms": 39.0,
+   "p50_ms": 7.8,
+   "p95_ms": 21.9,
+   "p99_ms": 37.0,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 1.247
+  },
+  "plan.done": {
+   "codes": {
+    "201": 425
+   },
+   "count": 425,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 0,
+   "max_ms": 43.6,
+   "p50_ms": 8.0,
+   "p95_ms": 19.2,
+   "p99_ms": 27.2,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 2.719
+  },
+  "plan.skip": {
+   "codes": {
+    "201": 425
+   },
+   "count": 425,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 0,
+   "max_ms": 86.5,
+   "p50_ms": 8.0,
+   "p95_ms": 18.5,
+   "p99_ms": 27.8,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 2.719
+  },
+  "practice.answer": {
+   "codes": {
+    "200": 425
+   },
+   "count": 425,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 0,
+   "max_ms": 646.6,
+   "p50_ms": 103.5,
+   "p95_ms": 309.6,
+   "p99_ms": 415.9,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 2.719
+  },
+  "practice.next": {
+   "codes": {
+    "200": 425
+   },
+   "count": 425,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 0,
+   "max_ms": 1087.1,
+   "p50_ms": 60.0,
+   "p95_ms": 145.3,
+   "p99_ms": 223.4,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 2.719
+  },
+  "practice.queue": {
+   "codes": {
+    "200": 425
+   },
+   "count": 425,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 0,
+   "max_ms": 208.1,
+   "p50_ms": 24.1,
+   "p95_ms": 67.3,
+   "p99_ms": 84.7,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 2.719
+  },
+  "retest.answer": {
+   "codes": {
+    "200": 425
+   },
+   "count": 425,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 0,
+   "max_ms": 698.4,
+   "p50_ms": 132.4,
+   "p95_ms": 373.2,
+   "p99_ms": 494.7,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 2.719
+  },
+  "retest.next": {
+   "codes": {
+    "200": 425
+   },
+   "count": 425,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 0,
+   "max_ms": 291.2,
+   "p50_ms": 62.3,
+   "p95_ms": 164.3,
+   "p99_ms": 206.1,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 2.719
+  },
+  "retest.queue": {
+   "codes": {
+    "200": 425
+   },
+   "count": 425,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 0,
+   "max_ms": 132.5,
+   "p50_ms": 28.8,
+   "p95_ms": 83.1,
+   "p99_ms": 117.2,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 2.719
+  },
+  "star_map": {
+   "codes": {
+    "200": 425
+   },
+   "count": 425,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 0,
+   "max_ms": 84.0,
+   "p50_ms": 8.3,
+   "p95_ms": 19.2,
+   "p99_ms": 42.5,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 2.719
+  },
+  "star_map_v1": {
+   "codes": {
+    "200": 425
+   },
+   "count": 425,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 0,
+   "max_ms": 112.0,
+   "p50_ms": 20.9,
+   "p95_ms": 58.3,
+   "p99_ms": 79.0,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 2.719
+  },
+  "today.orch": {
+   "codes": {
+    "200": 425
+   },
+   "count": 425,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 0,
+   "max_ms": 297.6,
+   "p50_ms": 66.6,
+   "p95_ms": 157.3,
+   "p99_ms": 203.6,
+   "rejected": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 2.719
+  }
+ },
+ "executed_digest": "926c5578ad7ce092dd6916ca923e3a353e584162d8bc7f60210fd5a789fe5811",
+ "extras_check": {
+  "monthly_plan_demoted": 0,
+  "notes": {
+   "diagnose.resume:resumed_same": 425
+  },
+  "paths": {
+   "diagnose.abandon": {
+    "alert": false,
+    "derived": 0,
+    "derived_not_expected": 0,
+    "expected_share": null,
+    "real": 425,
+    "real_not_2xx": 0
+   },
+   "diagnose.probe": {
+    "alert": false,
+    "derived": 0,
+    "derived_not_expected": 0,
+    "expected_share": null,
+    "real": 425,
+    "real_not_2xx": 0
+   },
+   "diagnose.recheck": {
+    "alert": false,
+    "derived": 0,
+    "derived_not_expected": 0,
+    "expected_share": null,
+    "real": 425,
+    "real_not_2xx": 0
+   },
+   "diagnose.resume": {
+    "alert": false,
+    "derived": 0,
+    "derived_not_expected": 0,
+    "expected_share": null,
+    "real": 425,
+    "real_not_2xx": 0
+   },
+   "my_plan": {
+    "alert": false,
+    "derived": 0,
+    "derived_not_expected": 0,
+    "expected_share": null,
+    "real": 425,
+    "real_not_2xx": 0
+   },
+   "parent.monthly_plan": {
+    "alert": false,
+    "derived": 195,
+    "derived_not_expected": 0,
+    "expected_share": 1.0,
+    "real": 0,
+    "real_not_2xx": 0
+   },
+   "parent.prediction": {
+    "alert": false,
+    "derived": 195,
+    "derived_not_expected": 0,
+    "expected_share": 1.0,
+    "real": 0,
+    "real_not_2xx": 0
+   },
+   "parent.profile_page": {
+    "alert": false,
+    "derived": 0,
+    "derived_not_expected": 0,
+    "expected_share": null,
+    "real": 195,
+    "real_not_2xx": 0
+   },
+   "parent.weekly_report": {
+    "alert": false,
+    "derived": 0,
+    "derived_not_expected": 0,
+    "expected_share": null,
+    "real": 195,
+    "real_not_2xx": 0
+   },
+   "plan.done": {
+    "alert": false,
+    "derived": 0,
+    "derived_not_expected": 0,
+    "expected_share": null,
+    "real": 425,
+    "real_not_2xx": 0
+   },
+   "plan.skip": {
+    "alert": false,
+    "derived": 0,
+    "derived_not_expected": 0,
+    "expected_share": null,
+    "real": 425,
+    "real_not_2xx": 0
+   },
+   "practice.answer": {
+    "alert": false,
+    "derived": 0,
+    "derived_not_expected": 0,
+    "expected_share": null,
+    "real": 425,
+    "real_not_2xx": 0
+   },
+   "practice.next": {
+    "alert": false,
+    "derived": 0,
+    "derived_not_expected": 0,
+    "expected_share": null,
+    "real": 425,
+    "real_not_2xx": 0
+   },
+   "retest.answer": {
+    "alert": false,
+    "derived": 0,
+    "derived_not_expected": 0,
+    "expected_share": null,
+    "real": 425,
+    "real_not_2xx": 0
+   },
+   "retest.next": {
+    "alert": false,
+    "derived": 0,
+    "derived_not_expected": 0,
+    "expected_share": null,
+    "real": 425,
+    "real_not_2xx": 0
+   },
+   "star_map_v1": {
+    "alert": false,
+    "derived": 0,
+    "derived_not_expected": 0,
+    "expected_share": null,
+    "real": 425,
+    "real_not_2xx": 0
+   }
+  }
+ },
+ "faults": {},
+ "metering": {
+  "bucket_reserved": 0,
+  "expired": 0,
+  "expired_by_job": 0,
+  "reconciliation_rows": 0,
+  "released": 103,
+  "reservations": 1906,
+  "settled": 1803,
+  "settled_qty": 2009,
+  "skew": "3 hours",
+  "still_reserved": 0,
+  "unbalanced": 0,
+  "zero_leak": true
+ },
+ "model_budget": {
+  "limit": null,
+  "stopped": false,
+  "used": 850
+ },
+ "model_calls": {
+  "by_outcome": {
+   "ok": 850
+  },
+  "by_subject_task": {
+   "wenli/T4": 425,
+   "zhixing/T2": 425
+  },
+  "total": 850
+ },
+ "peak2x": {
+  "note": "1 倍峰值并发 = 20（命令行覆盖，本机对照占位，不是容量目标）"
+ },
+ "plan_digest": "926c5578ad7ce092dd6916ca923e3a353e584162d8bc7f60210fd5a789fe5811",
+ "profile": {
+  "journeys": [
+   "practice_answer",
+   "plan_events",
+   "my_plan",
+   "star_map_v1",
+   "diagnose_more",
+   "monthly_plan",
+   "weekly_report",
+   "profile_pages",
+   "prediction"
+  ],
+  "mean_session_s": 6.0,
+  "mix": [
+   {
+    "journey": "student",
+    "weight": 0.6
+   },
+   {
+    "journey": "parent",
+    "weight": 0.25
+   },
+   {
+    "journey": "meter",
+    "weight": 0.15
+   }
+  ],
+  "practice": true,
+  "seed": 20260930,
+  "stages": [
+   {
+    "concurrency": 10,
+    "duration_s": 30.0,
+    "label": "0.5×"
+   },
+   {
+    "concurrency": 20,
+    "duration_s": 30.0,
+    "label": "1×"
+   },
+   {
+    "concurrency": 40,
+    "duration_s": 30.0,
+    "label": "2×"
+   },
+   {
+    "concurrency": 40,
+    "duration_s": 60.0,
+    "label": "2× 保持"
+   }
+  ],
+  "think_mean_s": 0.2
+ },
+ "provider": {
+  "counts": {
+   "代号A（境内，主）": {
+    "ok": 850
+   }
+  },
+  "median_ms": 300.0,
+  "p90_ms": 900.0
+ },
+ "queue_wait_p95_ms": 1107.523778999166,
+ "retry_scale": 1.0,
+ "scale_note": null,
+ "seeded": {
+  "families": 723,
+  "pilot": 240
+ },
+ "skipped": {},
+ "slo": {
+  "all_pass": true,
+  "failed_groups": [],
+  "groups": [
+   {
+    "by_stage": [
+     {
+      "checks": {
+       "error_rate": {
+        "limit": 0.01,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "p50_ms": {
+        "limit": 300.0,
+        "value": 6.9,
+        "verdict": "pass"
+       },
+       "p95_ms": {
+        "limit": 800.0,
+        "value": 13.5,
+        "verdict": "pass"
+       },
+       "p99_ms": {
+        "limit": 2000.0,
+        "value": 29.1,
+        "verdict": "pass"
+       },
+       "throttled_429_rate": {
+        "limit": 0.005,
+        "value": 0.0,
+        "verdict": "pass"
+       }
+      },
+      "count": 105,
+      "stage": 0,
+      "verdict": "pass"
+     },
+     {
+      "checks": {
+       "error_rate": {
+        "limit": 0.01,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "p50_ms": {
+        "limit": 300.0,
+        "value": 6.0,
+        "verdict": "pass"
+       },
+       "p95_ms": {
+        "limit": 800.0,
+        "value": 9.5,
+        "verdict": "pass"
+       },
+       "p99_ms": {
+        "limit": 2000.0,
+        "value": 14.1,
+        "verdict": "pass"
+       },
+       "throttled_429_rate": {
+        "limit": 0.005,
+        "value": 0.0,
+        "verdict": "pass"
+       }
+      },
+      "count": 183,
+      "stage": 1,
+      "verdict": "pass"
+     },
+     {
+      "checks": {
+       "error_rate": {
+        "limit": 0.01,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "p50_ms": {
+        "limit": 300.0,
+        "value": 7.7,
+        "verdict": "pass"
+       },
+       "p95_ms": {
+        "limit": 800.0,
+        "value": 22.1,
+        "verdict": "pass"
+       },
+       "p99_ms": {
+        "limit": 2000.0,
+        "value": 40.6,
+        "verdict": "pass"
+       },
+       "throttled_429_rate": {
+        "limit": 0.005,
+        "value": 0.0,
+        "verdict": "pass"
+       }
+      },
+      "count": 479,
+      "stage": 2,
+      "verdict": "pass"
+     },
+     {
+      "checks": {
+       "error_rate": {
+        "limit": 0.01,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "p50_ms": {
+        "limit": 300.0,
+        "value": 6.8,
+        "verdict": "pass"
+       },
+       "p95_ms": {
+        "limit": 800.0,
+        "value": 15.9,
+        "verdict": "pass"
+       },
+       "p99_ms": {
+        "limit": 2000.0,
+        "value": 29.6,
+        "verdict": "pass"
+       },
+       "throttled_429_rate": {
+        "limit": 0.005,
+        "value": 0.0,
+        "verdict": "pass"
+       }
+      },
+      "count": 898,
+      "stage": 3,
+      "verdict": "pass"
+     }
+    ],
+    "checks": {
+     "error_rate": {
+      "limit": 0.01,
+      "value": 0.0,
+      "verdict": "pass"
+     },
+     "p50_ms": {
+      "limit": 300.0,
+      "value": 6.9,
+      "verdict": "pass"
+     },
+     "p95_ms": {
+      "limit": 800.0,
+      "value": 16.9,
+      "verdict": "pass"
+     },
+     "p99_ms": {
+      "limit": 2000.0,
+      "value": 30.7,
+      "verdict": "pass"
+     },
+     "throttled_429_rate": {
+      "limit": 0.005,
+      "value": 0.0,
+      "verdict": "pass"
+     }
+    },
+    "group": "login",
+    "limits": {
+     "error_rate": 0.01,
+     "p50_ms": 300.0,
+     "p95_ms": 800.0,
+     "p99_ms": 2000.0,
+     "subject_busy_503_rate": null,
+     "throttled_429_rate": 0.005
+    },
+    "steps": [
+     "login.otp_request",
+     "login.otp_verify",
+     "login.student_session"
+    ],
+    "values": {
+     "count": 1665,
+     "error_rate": 0.0,
+     "expected": 0,
+     "p50_ms": 6.8832890028716065,
+     "p95_ms": 16.90354500169633,
+     "p99_ms": 30.674822999571916,
+     "subject_busy_503_rate": 0.0,
+     "throttled_429_rate": 0.0
+    },
+    "verdict": "pass"
+   },
+   {
+    "by_stage": [
+     {
+      "checks": {
+       "error_rate": {
+        "limit": 0.01,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "p50_ms": {
+        "limit": 300.0,
+        "value": 13.2,
+        "verdict": "pass"
+       },
+       "p95_ms": {
+        "limit": 800.0,
+        "value": 28.2,
+        "verdict": "pass"
+       },
+       "p99_ms": {
+        "limit": 2000.0,
+        "value": 76.1,
+        "verdict": "pass"
+       },
+       "throttled_429_rate": {
+        "limit": 0.005,
+        "value": 0.0,
+        "verdict": "pass"
+       }
+      },
+      "count": 135,
+      "stage": 0,
+      "verdict": "pass"
+     },
+     {
+      "checks": {
+       "error_rate": {
+        "limit": 0.01,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "p50_ms": {
+        "limit": 300.0,
+        "value": 11.7,
+        "verdict": "pass"
+       },
+       "p95_ms": {
+        "limit": 800.0,
+        "value": 24.8,
+        "verdict": "pass"
+       },
+       "p99_ms": {
+        "limit": 2000.0,
+        "value": 39.0,
+        "verdict": "pass"
+       },
+       "throttled_429_rate": {
+        "limit": 0.005,
+        "value": 0.0,
+        "verdict": "pass"
+       }
+      },
+      "count": 235,
+      "stage": 1,
+      "verdict": "pass"
+     },
+     {
+      "checks": {
+       "error_rate": {
+        "limit": 0.01,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "p50_ms": {
+        "limit": 300.0,
+        "value": 19.6,
+        "verdict": "pass"
+       },
+       "p95_ms": {
+        "limit": 800.0,
+        "value": 72.8,
+        "verdict": "pass"
+       },
+       "p99_ms": {
+        "limit": 2000.0,
+        "value": 112.0,
+        "verdict": "pass"
+       },
+       "throttled_429_rate": {
+        "limit": 0.005,
+        "value": 0.0,
+        "verdict": "pass"
+       }
+      },
+      "count": 625,
+      "stage": 2,
+      "verdict": "pass"
+     },
+     {
+      "checks": {
+       "error_rate": {
+        "limit": 0.01,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "p50_ms": {
+        "limit": 300.0,
+        "value": 16.2,
+        "verdict": "pass"
+       },
+       "p95_ms": {
+        "limit": 800.0,
+        "value": 60.5,
+        "verdict": "pass"
+       },
+       "p99_ms": {
+        "limit": 2000.0,
+        "value": 81.0,
+        "verdict": "pass"
+       },
+       "throttled_429_rate": {
+        "limit": 0.005,
+        "value": 0.0,
+        "verdict": "pass"
+       }
+      },
+      "count": 1130,
+      "stage": 3,
+      "verdict": "pass"
+     }
+    ],
+    "checks": {
+     "error_rate": {
+      "limit": 0.01,
+      "value": 0.0,
+      "verdict": "pass"
+     },
+     "p50_ms": {
+      "limit": 300.0,
+      "value": 15.4,
+      "verdict": "pass"
+     },
+     "p95_ms": {
+      "limit": 800.0,
+      "value": 61.9,
+      "verdict": "pass"
+     },
+     "p99_ms": {
+      "limit": 2000.0,
+      "value": 95.0,
+      "verdict": "pass"
+     },
+     "throttled_429_rate": {
+      "limit": 0.005,
+      "value": 0.0,
+      "verdict": "pass"
+     }
+    },
+    "group": "student_read",
+    "limits": {
+     "error_rate": 0.01,
+     "p50_ms": 300.0,
+     "p95_ms": 800.0,
+     "p99_ms": 2000.0,
+     "subject_busy_503_rate": null,
+     "throttled_429_rate": 0.005
+    },
+    "steps": [
+     "today",
+     "star_map",
+     "star_map_v1",
+     "my_plan",
+     "practice.queue",
+     "retest.queue"
+    ],
+    "values": {
+     "count": 2125,
+     "error_rate": 0.0,
+     "expected": 0,
+     "p50_ms": 15.38082899787696,
+     "p95_ms": 61.86471300316043,
+     "p99_ms": 95.04206400015391,
+     "subject_busy_503_rate": 0.0,
+     "throttled_429_rate": 0.0
+    },
+    "verdict": "pass"
+   },
+   {
+    "by_stage": [
+     {
+      "checks": {
+       "error_rate": {
+        "limit": 0.01,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "p50_ms": {
+        "limit": 400.0,
+        "value": 44.8,
+        "verdict": "pass"
+       },
+       "p95_ms": {
+        "limit": 800.0,
+        "value": 292.2,
+        "verdict": "pass"
+       },
+       "p99_ms": {
+        "limit": 2500.0,
+        "value": 297.6,
+        "verdict": "pass"
+       },
+       "throttled_429_rate": {
+        "limit": 0.005,
+        "value": 0.0,
+        "verdict": "pass"
+       }
+      },
+      "count": 27,
+      "stage": 0,
+      "verdict": "pass"
+     },
+     {
+      "checks": {
+       "error_rate": {
+        "limit": 0.01,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "p50_ms": {
+        "limit": 400.0,
+        "value": 42.2,
+        "verdict": "pass"
+       },
+       "p95_ms": {
+        "limit": 800.0,
+        "value": 67.2,
+        "verdict": "pass"
+       },
+       "p99_ms": {
+        "limit": 2500.0,
+        "value": 72.9,
+        "verdict": "pass"
+       },
+       "throttled_429_rate": {
+        "limit": 0.005,
+        "value": 0.0,
+        "verdict": "pass"
+       }
+      },
+      "count": 47,
+      "stage": 1,
+      "verdict": "pass"
+     },
+     {
+      "checks": {
+       "error_rate": {
+        "limit": 0.01,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "p50_ms": {
+        "limit": 400.0,
+        "value": 83.6,
+        "verdict": "pass"
+       },
+       "p95_ms": {
+        "limit": 800.0,
+        "value": 176.7,
+        "verdict": "pass"
+       },
+       "p99_ms": {
+        "limit": 2500.0,
+        "value": 203.6,
+        "verdict": "pass"
+       },
+       "throttled_429_rate": {
+        "limit": 0.005,
+        "value": 0.0,
+        "verdict": "pass"
+       }
+      },
+      "count": 125,
+      "stage": 2,
+      "verdict": "pass"
+     },
+     {
+      "checks": {
+       "error_rate": {
+        "limit": 0.01,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "p50_ms": {
+        "limit": 400.0,
+        "value": 71.1,
+        "verdict": "pass"
+       },
+       "p95_ms": {
+        "limit": 800.0,
+        "value": 146.9,
+        "verdict": "pass"
+       },
+       "p99_ms": {
+        "limit": 2500.0,
+        "value": 185.9,
+        "verdict": "pass"
+       },
+       "throttled_429_rate": {
+        "limit": 0.005,
+        "value": 0.0,
+        "verdict": "pass"
+       }
+      },
+      "count": 226,
+      "stage": 3,
+      "verdict": "pass"
+     }
+    ],
+    "checks": {
+     "error_rate": {
+      "limit": 0.01,
+      "value": 0.0,
+      "verdict": "pass"
+     },
+     "p50_ms": {
+      "limit": 400.0,
+      "value": 66.6,
+      "verdict": "pass"
+     },
+     "p95_ms": {
+      "limit": 800.0,
+      "value": 157.3,
+      "verdict": "pass"
+     },
+     "p99_ms": {
+      "limit": 2500.0,
+      "value": 203.6,
+      "verdict": "pass"
+     },
+     "throttled_429_rate": {
+      "limit": 0.005,
+      "value": 0.0,
+      "verdict": "pass"
+     }
+    },
+    "group": "today_orch",
+    "limits": {
+     "error_rate": 0.01,
+     "p50_ms": 400.0,
+     "p95_ms": 800.0,
+     "p99_ms": 2500.0,
+     "subject_busy_503_rate": null,
+     "throttled_429_rate": 0.005
+    },
+    "steps": [
+     "today.orch"
+    ],
+    "values": {
+     "count": 425,
+     "error_rate": 0.0,
+     "expected": 0,
+     "p50_ms": 66.62549699831288,
+     "p95_ms": 157.27199699904304,
+     "p99_ms": 203.58602999476716,
+     "subject_busy_503_rate": 0.0,
+     "throttled_429_rate": 0.0
+    },
+    "verdict": "pass"
+   },
+   {
+    "by_stage": [
+     {
+      "checks": {
+       "error_rate": {
+        "limit": 0.01,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "p50_ms": {
+        "limit": 300.0,
+        "value": 15.9,
+        "verdict": "pass"
+       },
+       "p95_ms": {
+        "limit": 800.0,
+        "value": 30.1,
+        "verdict": "pass"
+       },
+       "p99_ms": {
+        "limit": 2000.0,
+        "value": 32.1,
+        "verdict": "pass"
+       },
+       "subject_busy_503_rate": {
+        "limit": 0.01,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "throttled_429_rate": {
+        "limit": 0.005,
+        "value": 0.0,
+        "verdict": "pass"
+       }
+      },
+      "count": 54,
+      "stage": 0,
+      "verdict": "pass"
+     },
+     {
+      "checks": {
+       "error_rate": {
+        "limit": 0.01,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "p50_ms": {
+        "limit": 300.0,
+        "value": 15.4,
+        "verdict": "pass"
+       },
+       "p95_ms": {
+        "limit": 800.0,
+        "value": 30.1,
+        "verdict": "pass"
+       },
+       "p99_ms": {
+        "limit": 2000.0,
+        "value": 60.3,
+        "verdict": "pass"
+       },
+       "subject_busy_503_rate": {
+        "limit": 0.01,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "throttled_429_rate": {
+        "limit": 0.005,
+        "value": 0.0,
+        "verdict": "pass"
+       }
+      },
+      "count": 94,
+      "stage": 1,
+      "verdict": "pass"
+     },
+     {
+      "checks": {
+       "error_rate": {
+        "limit": 0.01,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "p50_ms": {
+        "limit": 300.0,
+        "value": 30.3,
+        "verdict": "pass"
+       },
+       "p95_ms": {
+        "limit": 800.0,
+        "value": 107.4,
+        "verdict": "pass"
+       },
+       "p99_ms": {
+        "limit": 2000.0,
+        "value": 153.8,
+        "verdict": "pass"
+       },
+       "subject_busy_503_rate": {
+        "limit": 0.01,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "throttled_429_rate": {
+        "limit": 0.005,
+        "value": 0.0,
+        "verdict": "pass"
+       }
+      },
+      "count": 250,
+      "stage": 2,
+      "verdict": "pass"
+     },
+     {
+      "checks": {
+       "error_rate": {
+        "limit": 0.01,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "p50_ms": {
+        "limit": 300.0,
+        "value": 24.3,
+        "verdict": "pass"
+       },
+       "p95_ms": {
+        "limit": 800.0,
+        "value": 58.7,
+        "verdict": "pass"
+       },
+       "p99_ms": {
+        "limit": 2000.0,
+        "value": 92.9,
+        "verdict": "pass"
+       },
+       "subject_busy_503_rate": {
+        "limit": 0.01,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "throttled_429_rate": {
+        "limit": 0.005,
+        "value": 0.0,
+        "verdict": "pass"
+       }
+      },
+      "count": 452,
+      "stage": 3,
+      "verdict": "pass"
+     }
+    ],
+    "checks": {
+     "error_rate": {
+      "limit": 0.01,
+      "value": 0.0,
+      "verdict": "pass"
+     },
+     "p50_ms": {
+      "limit": 300.0,
+      "value": 22.9,
+      "verdict": "pass"
+     },
+     "p95_ms": {
+      "limit": 800.0,
+      "value": 73.4,
+      "verdict": "pass"
+     },
+     "p99_ms": {
+      "limit": 2000.0,
+      "value": 142.1,
+      "verdict": "pass"
+     },
+     "subject_busy_503_rate": {
+      "limit": 0.01,
+      "value": 0.0,
+      "verdict": "pass"
+     },
+     "throttled_429_rate": {
+      "limit": 0.005,
+      "value": 0.0,
+      "verdict": "pass"
+     }
+    },
+    "group": "gated_read",
+    "limits": {
+     "error_rate": 0.01,
+     "p50_ms": 300.0,
+     "p95_ms": 800.0,
+     "p99_ms": 2000.0,
+     "subject_busy_503_rate": 0.01,
+     "throttled_429_rate": 0.005
+    },
+    "steps": [
+     "diagnose.current",
+     "diagnose.recheck"
+    ],
+    "values": {
+     "count": 850,
+     "error_rate": 0.0,
+     "expected": 0,
+     "p50_ms": 22.881044998939615,
+     "p95_ms": 73.3677579992218,
+     "p99_ms": 142.0554509968497,
+     "subject_busy_503_rate": 0.0,
+     "throttled_429_rate": 0.0
+    },
+    "verdict": "pass"
+   },
+   {
+    "by_stage": [
+     {
+      "checks": {
+       "error_rate": {
+        "limit": 0.01,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "p50_ms": {
+        "limit": 400.0,
+        "value": 26.4,
+        "verdict": "pass"
+       },
+       "p95_ms": {
+        "limit": 800.0,
+        "value": 97.7,
+        "verdict": "pass"
+       },
+       "p99_ms": {
+        "limit": 2500.0,
+        "value": 574.4,
+        "verdict": "pass"
+       },
+       "subject_busy_503_rate": {
+        "limit": 0.01,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "throttled_429_rate": {
+        "limit": 0.005,
+        "value": 0.0,
+        "verdict": "pass"
+       }
+      },
+      "count": 324,
+      "stage": 0,
+      "verdict": "pass"
+     },
+     {
+      "checks": {
+       "error_rate": {
+        "limit": 0.01,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "p50_ms": {
+        "limit": 400.0,
+        "value": 25.4,
+        "verdict": "pass"
+       },
+       "p95_ms": {
+        "limit": 800.0,
+        "value": 88.5,
+        "verdict": "pass"
+       },
+       "p99_ms": {
+        "limit": 2500.0,
+        "value": 133.2,
+        "verdict": "pass"
+       },
+       "subject_busy_503_rate": {
+        "limit": 0.01,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "throttled_429_rate": {
+        "limit": 0.005,
+        "value": 0.0,
+        "verdict": "pass"
+       }
+      },
+      "count": 564,
+      "stage": 1,
+      "verdict": "pass"
+     },
+     {
+      "checks": {
+       "error_rate": {
+        "limit": 0.01,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "p50_ms": {
+        "limit": 400.0,
+        "value": 50.5,
+        "verdict": "pass"
+       },
+       "p95_ms": {
+        "limit": 800.0,
+        "value": 281.4,
+        "verdict": "pass"
+       },
+       "p99_ms": {
+        "limit": 2500.0,
+        "value": 445.7,
+        "verdict": "pass"
+       },
+       "subject_busy_503_rate": {
+        "limit": 0.01,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "throttled_429_rate": {
+        "limit": 0.005,
+        "value": 0.0,
+        "verdict": "pass"
+       }
+      },
+      "count": 1500,
+      "stage": 2,
+      "verdict": "pass"
+     },
+     {
+      "checks": {
+       "error_rate": {
+        "limit": 0.01,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "p50_ms": {
+        "limit": 400.0,
+        "value": 42.0,
+        "verdict": "pass"
+       },
+       "p95_ms": {
+        "limit": 800.0,
+        "value": 192.5,
+        "verdict": "pass"
+       },
+       "p99_ms": {
+        "limit": 2500.0,
+        "value": 288.9,
+        "verdict": "pass"
+       },
+       "subject_busy_503_rate": {
+        "limit": 0.01,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "throttled_429_rate": {
+        "limit": 0.005,
+        "value": 0.0,
+        "verdict": "pass"
+       }
+      },
+      "count": 2712,
+      "stage": 3,
+      "verdict": "pass"
+     }
+    ],
+    "checks": {
+     "error_rate": {
+      "limit": 0.01,
+      "value": 0.0,
+      "verdict": "pass"
+     },
+     "p50_ms": {
+      "limit": 400.0,
+      "value": 41.3,
+      "verdict": "pass"
+     },
+     "p95_ms": {
+      "limit": 800.0,
+      "value": 204.1,
+      "verdict": "pass"
+     },
+     "p99_ms": {
+      "limit": 2500.0,
+      "value": 348.5,
+      "verdict": "pass"
+     },
+     "subject_busy_503_rate": {
+      "limit": 0.01,
+      "value": 0.0,
+      "verdict": "pass"
+     },
+     "throttled_429_rate": {
+      "limit": 0.005,
+      "value": 0.0,
+      "verdict": "pass"
+     }
+    },
+    "group": "student_write",
+    "limits": {
+     "error_rate": 0.01,
+     "p50_ms": 400.0,
+     "p95_ms": 800.0,
+     "p99_ms": 2500.0,
+     "subject_busy_503_rate": 0.01,
+     "throttled_429_rate": 0.005
+    },
+    "steps": [
+     "diagnose.start",
+     "diagnose.answer",
+     "diagnose.pause",
+     "diagnose.resume",
+     "diagnose.probe",
+     "diagnose.abandon",
+     "practice.next",
+     "retest.next",
+     "practice.answer",
+     "retest.answer",
+     "plan.done",
+     "plan.skip"
+    ],
+    "values": {
+     "count": 5100,
+     "error_rate": 0.0,
+     "expected": 0,
+     "p50_ms": 41.25296500569675,
+     "p95_ms": 204.12480700179003,
+     "p99_ms": 348.50852499948815,
+     "subject_busy_503_rate": 0.0,
+     "throttled_429_rate": 0.0
+    },
+    "verdict": "pass"
+   },
+   {
+    "by_stage": [
+     {
+      "checks": {
+       "error_rate": {
+        "limit": 0.02,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "p95_ms": {
+        "limit": 30000.0,
+        "value": 916.3,
+        "verdict": "pass"
+       }
+      },
+      "count": 81,
+      "stage": 0,
+      "verdict": "pass"
+     },
+     {
+      "checks": {
+       "error_rate": {
+        "limit": 0.02,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "p95_ms": {
+        "limit": 30000.0,
+        "value": 839.4,
+        "verdict": "pass"
+       }
+      },
+      "count": 141,
+      "stage": 1,
+      "verdict": "pass"
+     },
+     {
+      "checks": {
+       "error_rate": {
+        "limit": 0.02,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "p95_ms": {
+        "limit": 30000.0,
+        "value": 1168.5,
+        "verdict": "pass"
+       }
+      },
+      "count": 375,
+      "stage": 2,
+      "verdict": "pass"
+     },
+     {
+      "checks": {
+       "error_rate": {
+        "limit": 0.02,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "p95_ms": {
+        "limit": 30000.0,
+        "value": 1232.3,
+        "verdict": "pass"
+       }
+      },
+      "count": 678,
+      "stage": 3,
+      "verdict": "pass"
+     }
+    ],
+    "checks": {
+     "error_rate": {
+      "limit": 0.02,
+      "value": 0.0,
+      "verdict": "pass"
+     },
+     "p95_ms": {
+      "limit": 30000.0,
+      "value": 1145.1,
+      "verdict": "pass"
+     }
+    },
+    "group": "grade",
+    "limits": {
+     "error_rate": 0.02,
+     "p50_ms": null,
+     "p95_ms": 30000.0,
+     "p99_ms": null,
+     "subject_busy_503_rate": null,
+     "throttled_429_rate": null
+    },
+    "steps": [
+     "grade.aya",
+     "grade.zhixing",
+     "grade.wenli"
+    ],
+    "values": {
+     "count": 1275,
+     "error_rate": 0.0,
+     "expected": 0,
+     "p50_ms": 275.0014029952581,
+     "p95_ms": 1145.1160599972354,
+     "p99_ms": 1789.4164600002114,
+     "subject_busy_503_rate": 0.0,
+     "throttled_429_rate": 0.0
+    },
+    "verdict": "pass"
+   },
+   {
+    "by_stage": [
+     {
+      "checks": {
+       "error_rate": {
+        "limit": 0.01,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "p50_ms": {
+        "limit": 300.0,
+        "value": 9.2,
+        "verdict": "pass"
+       },
+       "p95_ms": {
+        "limit": 800.0,
+        "value": 16.2,
+        "verdict": "pass"
+       },
+       "p99_ms": {
+        "limit": 2000.0,
+        "value": 21.0,
+        "verdict": "pass"
+       },
+       "throttled_429_rate": {
+        "limit": 0.005,
+        "value": 0.0,
+        "verdict": "pass"
+       }
+      },
+      "count": 72,
+      "stage": 0,
+      "verdict": "pass"
+     },
+     {
+      "checks": {
+       "error_rate": {
+        "limit": 0.01,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "p50_ms": {
+        "limit": 300.0,
+        "value": 7.9,
+        "verdict": "pass"
+       },
+       "p95_ms": {
+        "limit": 800.0,
+        "value": 14.1,
+        "verdict": "pass"
+       },
+       "p99_ms": {
+        "limit": 2000.0,
+        "value": 17.2,
+        "verdict": "pass"
+       },
+       "throttled_429_rate": {
+        "limit": 0.005,
+        "value": 0.0,
+        "verdict": "pass"
+       }
+      },
+      "count": 126,
+      "stage": 1,
+      "verdict": "pass"
+     },
+     {
+      "checks": {
+       "error_rate": {
+        "limit": 0.01,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "p50_ms": {
+        "limit": 300.0,
+        "value": 10.9,
+        "verdict": "pass"
+       },
+       "p95_ms": {
+        "limit": 800.0,
+        "value": 28.3,
+        "verdict": "pass"
+       },
+       "p99_ms": {
+        "limit": 2000.0,
+        "value": 54.6,
+        "verdict": "pass"
+       },
+       "throttled_429_rate": {
+        "limit": 0.005,
+        "value": 0.0,
+        "verdict": "pass"
+       }
+      },
+      "count": 312,
+      "stage": 2,
+      "verdict": "pass"
+     },
+     {
+      "checks": {
+       "error_rate": {
+        "limit": 0.01,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "p50_ms": {
+        "limit": 300.0,
+        "value": 9.7,
+        "verdict": "pass"
+       },
+       "p95_ms": {
+        "limit": 800.0,
+        "value": 22.0,
+        "verdict": "pass"
+       },
+       "p99_ms": {
+        "limit": 2000.0,
+        "value": 35.2,
+        "verdict": "pass"
+       },
+       "throttled_429_rate": {
+        "limit": 0.005,
+        "value": 0.0,
+        "verdict": "pass"
+       }
+      },
+      "count": 660,
+      "stage": 3,
+      "verdict": "pass"
+     }
+    ],
+    "checks": {
+     "error_rate": {
+      "limit": 0.01,
+      "value": 0.0,
+      "verdict": "pass"
+     },
+     "p50_ms": {
+      "limit": 300.0,
+      "value": 9.7,
+      "verdict": "pass"
+     },
+     "p95_ms": {
+      "limit": 800.0,
+      "value": 23.2,
+      "verdict": "pass"
+     },
+     "p99_ms": {
+      "limit": 2000.0,
+      "value": 37.2,
+      "verdict": "pass"
+     },
+     "throttled_429_rate": {
+      "limit": 0.005,
+      "value": 0.0,
+      "verdict": "pass"
+     }
+    },
+    "group": "parent_read",
+    "limits": {
+     "error_rate": 0.01,
+     "p50_ms": 300.0,
+     "p95_ms": 800.0,
+     "p99_ms": 2000.0,
+     "subject_busy_503_rate": null,
+     "throttled_429_rate": 0.005
+    },
+    "steps": [
+     "parent.children",
+     "parent.child_star_map",
+     "parent.child_balance",
+     "parent.child_enrollments",
+     "parent.monthly_plan",
+     "parent.weekly_report",
+     "parent.profile_page",
+     "parent.prediction"
+    ],
+    "values": {
+     "count": 1170,
+     "error_rate": 0.0,
+     "expected": 390,
+     "p50_ms": 9.660714997153264,
+     "p95_ms": 23.22472899686545,
+     "p99_ms": 37.202828003501054,
+     "subject_busy_503_rate": 0.0,
+     "throttled_429_rate": 0.0
+    },
+    "verdict": "pass"
+   },
+   {
+    "by_stage": [
+     {
+      "checks": {
+       "error_rate": {
+        "limit": 0.001,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "p95_ms": {
+        "limit": 800.0,
+        "value": 13.5,
+        "verdict": "pass"
+       }
+      },
+      "count": 60,
+      "stage": 0,
+      "verdict": "pass"
+     },
+     {
+      "checks": {
+       "error_rate": {
+        "limit": 0.001,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "p95_ms": {
+        "limit": 800.0,
+        "value": 9.3,
+        "verdict": "pass"
+       }
+      },
+      "count": 66,
+      "stage": 1,
+      "verdict": "pass"
+     },
+     {
+      "checks": {
+       "error_rate": {
+        "limit": 0.001,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "p95_ms": {
+        "limit": 800.0,
+        "value": 18.9,
+        "verdict": "pass"
+       }
+      },
+      "count": 198,
+      "stage": 2,
+      "verdict": "pass"
+     },
+     {
+      "checks": {
+       "error_rate": {
+        "limit": 0.001,
+        "value": 0.0,
+        "verdict": "pass"
+       },
+       "p95_ms": {
+        "limit": 800.0,
+        "value": 16.9,
+        "verdict": "pass"
+       }
+      },
+      "count": 294,
+      "stage": 3,
+      "verdict": "pass"
+     }
+    ],
+    "checks": {
+     "error_rate": {
+      "limit": 0.001,
+      "value": 0.0,
+      "verdict": "pass"
+     },
+     "p95_ms": {
+      "limit": 800.0,
+      "value": 18.3,
+      "verdict": "pass"
+     }
+    },
+    "group": "metering",
+    "limits": {
+     "error_rate": 0.001,
+     "p50_ms": null,
+     "p95_ms": 800.0,
+     "p99_ms": null,
+     "subject_busy_503_rate": null,
+     "throttled_429_rate": null
+    },
+    "steps": [
+     "meter.reserve_pair",
+     "meter.settle",
+     "meter.settle_repeat",
+     "meter.reserve",
+     "meter.release"
+    ],
+    "values": {
+     "count": 618,
+     "error_rate": 0.0,
+     "expected": 0,
+     "p50_ms": 5.968177996692248,
+     "p95_ms": 18.250281995278783,
+     "p99_ms": 26.7628590008826,
+     "subject_busy_503_rate": 0.0,
+     "throttled_429_rate": 0.0
+    },
+    "verdict": "pass"
+   }
+  ],
+  "signed": false,
+  "status": "待技术负责人签字",
+  "strict": false,
+  "ungrouped_steps": []
+ },
+ "stage_detail": [
+  {
+   "concurrency": 10,
+   "count": 882,
+   "db_peaks": {
+    "bff_app": {
+     "max_active": 1,
+     "max_connections": 7,
+     "max_lock_wait": 0,
+     "max_waiting": 0
+    },
+    "learning_app": {
+     "max_active": 2,
+     "max_connections": 12,
+     "max_lock_wait": 0,
+     "max_waiting": 0
+    }
+   },
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 24,
+   "gate": {
+    "aya": {
+     "admitted": 232,
+     "bypassed": 0,
+     "queue_ms": {
+      "0": 232
+     },
+     "queued": 0,
+     "reasons": {},
+     "rejected": 0
+    }
+   },
+   "label": "0.5×",
+   "max_ms": 1652.2,
+   "p50_ms": 15.0,
+   "p95_ms": 221.5,
+   "p99_ms": 742.3,
+   "seconds": 30.0,
+   "stage": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 29.4,
+   "top_queries": [
+    {
+     "calls": 126,
+     "mean_ms": 5.18,
+     "query": "SELECT platform.meter_reserve($1, $2, $3, $4, $5, $6, $7) AS r",
+     "role": "bff_app",
+     "total_ms": 653.0
+    },
+    {
+     "calls": 232,
+     "mean_ms": 2.37,
+     "query": "SELECT platform.meter_guard_status($1::uuid) AS g",
+     "role": "bff_app",
+     "total_ms": 548.9
+    },
+    {
+     "calls": 137,
+     "mean_ms": 2.86,
+     "query": "SELECT platform.meter_settle($1, $2) AS r",
+     "role": "bff_app",
+     "total_ms": 392.2
+    }
+   ]
+  },
+  {
+   "concurrency": 20,
+   "count": 1498,
+   "db_peaks": {
+    "bff_app": {
+     "max_active": 2,
+     "max_connections": 9,
+     "max_lock_wait": 0,
+     "max_waiting": 1
+    },
+    "learning_app": {
+     "max_active": 1,
+     "max_connections": 13,
+     "max_lock_wait": 0,
+     "max_waiting": 0
+    }
+   },
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 42,
+   "gate": {
+    "aya": {
+     "admitted": 429,
+     "bypassed": 0,
+     "queue_ms": {
+      "0": 429
+     },
+     "queued": 0,
+     "reasons": {},
+     "rejected": 0
+    }
+   },
+   "label": "1×",
+   "max_ms": 1578.3,
+   "p50_ms": 14.1,
+   "p95_ms": 205.3,
+   "p99_ms": 689.6,
+   "seconds": 30.0,
+   "stage": 1,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 49.933,
+   "top_queries": [
+    {
+     "calls": 426,
+     "mean_ms": 2.29,
+     "query": "SELECT platform.meter_guard_status($1::uuid) AS g",
+     "role": "bff_app",
+     "total_ms": 974.5
+    },
+    {
+     "calls": 213,
+     "mean_ms": 3.1,
+     "query": "SELECT platform.meter_reserve($1, $2, $3, $4, $5, $6, $7) AS r",
+     "role": "bff_app",
+     "total_ms": 660.4
+    },
+    {
+     "calls": 241,
+     "mean_ms": 1.99,
+     "query": "SELECT platform.meter_settle($1, $2) AS r",
+     "role": "bff_app",
+     "total_ms": 480.6
+    }
+   ]
+  },
+  {
+   "concurrency": 40,
+   "count": 3968,
+   "db_peaks": {
+    "bff_app": {
+     "max_active": 2,
+     "max_connections": 17,
+     "max_lock_wait": 0,
+     "max_waiting": 1
+    },
+    "learning_app": {
+     "max_active": 3,
+     "max_connections": 16,
+     "max_lock_wait": 0,
+     "max_waiting": 0
+    }
+   },
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 104,
+   "gate": {
+    "aya": {
+     "admitted": 1067,
+     "bypassed": 0,
+     "queue_ms": {
+      "0": 1067,
+      "lt100": 121,
+      "lt500": 23
+     },
+     "queued": 144,
+     "reasons": {},
+     "rejected": 0
+    }
+   },
+   "label": "2×",
+   "max_ms": 3914.1,
+   "p50_ms": 25.6,
+   "p95_ms": 353.9,
+   "p99_ms": 776.7,
+   "seconds": 30.0,
+   "stage": 2,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 132.267,
+   "top_queries": [
+    {
+     "calls": 1188,
+     "mean_ms": 2.46,
+     "query": "SELECT platform.meter_guard_status($1::uuid) AS g",
+     "role": "bff_app",
+     "total_ms": 2918.6
+    },
+    {
+     "calls": 591,
+     "mean_ms": 3.69,
+     "query": "SELECT platform.meter_reserve($1, $2, $3, $4, $5, $6, $7) AS r",
+     "role": "bff_app",
+     "total_ms": 2182.2
+    },
+    {
+     "calls": 675,
+     "mean_ms": 2.27,
+     "query": "SELECT platform.meter_settle($1, $2) AS r",
+     "role": "bff_app",
+     "total_ms": 1535.1
+    }
+   ]
+  },
+  {
+   "concurrency": 40,
+   "count": 7270,
+   "db_peaks": {
+    "bff_app": {
+     "max_active": 2,
+     "max_connections": 16,
+     "max_lock_wait": 0,
+     "max_waiting": 0
+    },
+    "learning_app": {
+     "max_active": 2,
+     "max_connections": 16,
+     "max_lock_wait": 0,
+     "max_waiting": 0
+    }
+   },
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 220,
+   "gate": {
+    "aya": {
+     "admitted": 2357,
+     "bypassed": 0,
+     "queue_ms": {
+      "0": 2357,
+      "lt100": 21
+     },
+     "queued": 21,
+     "reasons": {},
+     "rejected": 0
+    }
+   },
+   "label": "2× 保持",
+   "max_ms": 4581.8,
+   "p50_ms": 20.8,
+   "p95_ms": 289.0,
+   "p99_ms": 861.3,
+   "seconds": 66.33,
+   "stage": 3,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 109.599,
+   "top_queries": [
+    {
+     "calls": 2369,
+     "mean_ms": 2.36,
+     "query": "SELECT platform.meter_guard_status($1::uuid) AS g",
+     "role": "bff_app",
+     "total_ms": 5601.1
+    },
+    {
+     "calls": 1079,
+     "mean_ms": 3.17,
+     "query": "SELECT platform.meter_reserve($1, $2, $3, $4, $5, $6, $7) AS r",
+     "role": "bff_app",
+     "total_ms": 3416.8
+    },
+    {
+     "calls": 1278,
+     "mean_ms": 1.86,
+     "query": "SELECT platform.meter_settle($1, $2) AS r",
+     "role": "bff_app",
+     "total_ms": 2375.8
+    }
+   ]
+  }
+ ],
+ "stages": [
+  {
+   "count": 882,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 24,
+   "max_ms": 1652.2,
+   "p50_ms": 15.0,
+   "p95_ms": 221.5,
+   "p99_ms": 742.3,
+   "seconds": 30.0,
+   "stage": 0,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 29.4
+  },
+  {
+   "count": 1498,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 42,
+   "max_ms": 1578.3,
+   "p50_ms": 14.1,
+   "p95_ms": 205.3,
+   "p99_ms": 689.6,
+   "seconds": 30.0,
+   "stage": 1,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 49.933
+  },
+  {
+   "count": 3968,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 104,
+   "max_ms": 3914.1,
+   "p50_ms": 25.6,
+   "p95_ms": 353.9,
+   "p99_ms": 776.7,
+   "seconds": 30.0,
+   "stage": 2,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 132.267
+  },
+  {
+   "count": 7270,
+   "error_rate": 0.0,
+   "errors": 0,
+   "expected": 220,
+   "max_ms": 4581.8,
+   "p50_ms": 20.8,
+   "p95_ms": 289.0,
+   "p99_ms": 861.3,
+   "seconds": 66.33,
+   "stage": 3,
+   "subject_busy_503": 0,
+   "throttled_429": 0,
+   "throughput_rps": 109.599
+  }
+ ],
+ "subject_gate": {
+  "by_subject": {
+   "aya": {
+    "admitted": 4085,
+    "bypassed": 0,
+    "queue_ms": {
+     "0": 4085,
+     "lt100": 142,
+     "lt500": 23
+    },
+    "queued": 165,
+    "reasons": {},
+    "rejected": 0
+   }
+  },
+  "custom_config": false,
+  "enabled": true
+ },
+ "wall_seconds": 156.33,
+ "write_path": {
+  "check": {
+   "answers_derived": 0,
+   "answers_ok": 850,
+   "answers_real": 850,
+   "applicable": true,
+   "counted_all_delta": 850,
+   "counted_delta": 850,
+   "counted_without_evidence_delta": 0,
+   "evidence_delta": 1700,
+   "evidence_per_answer": 2.0,
+   "evidence_without_count_delta": 0,
+   "ok": true,
+   "problems": [],
+   "real_share": 1.0,
+   "response_evidence_delta": 850
+  },
+  "content": {
+   "check": {
+    "active_staff": 0,
+    "cv_bound": 1,
+    "items_admitted": 12,
+    "map_published": true,
+    "tags_approved": 12
+   },
+   "items": 12,
+   "level": "apply",
+   "map_version": "1.0.0",
+   "units": [
+    "MATH.LTW.T1.N1",
+    "MATH.LTW.T1.N2"
+   ]
+  },
+  "enabled": true,
+  "note": null,
+  "seeded": {
+   "grades": 850,
+   "retest_tasks": 425,
+   "students": 425,
+   "verdicts": {
+    "practice:incorrect": 425,
+    "retest:correct": 425
+   }
+  },
+  "segments": [
+   {
+    "count": 425,
+    "label": "学习服务 再练取题（含知识服务与 generate_variation）",
+    "max_ms": 1073.0,
+    "name": "practice:next",
+    "not_2xx": 0,
+    "p50_ms": 45.0,
+    "p95_ms": 120.0,
+    "source": "learning"
+   },
+   {
+    "count": 425,
+    "label": "学习服务 复测取题（同上）",
+    "max_ms": 177.0,
+    "name": "retest:next",
+    "not_2xx": 0,
+    "p50_ms": 47.0,
+    "p95_ms": 122.0,
+    "source": "learning"
+   },
+   {
+    "count": 850,
+    "label": "知识服务 item.similar",
+    "max_ms": 26.0,
+    "name": "item.similar",
+    "not_2xx": 0,
+    "p50_ms": 6.0,
+    "p95_ms": 13.0,
+    "source": "knowledge"
+   },
+   {
+    "count": 850,
+    "label": "阿鸦 generate_variation（选题）",
+    "max_ms": 43.0,
+    "name": "generate_variation",
+    "not_2xx": 0,
+    "p50_ms": 0.0,
+    "p95_ms": 1.0,
+    "source": "aya"
+   },
+   {
+    "count": 425,
+    "label": "学习服务 复测作答预检（计次之前）",
+    "max_ms": 110.0,
+    "name": "retest:check",
+    "not_2xx": 0,
+    "p50_ms": 14.0,
+    "p95_ms": 54.0,
+    "source": "learning"
+   },
+   {
+    "count": 425,
+    "label": "学习服务 再练作答（验票、判分、证据落库）",
+    "max_ms": 509.0,
+    "name": "practice:answer",
+    "not_2xx": 0,
+    "p50_ms": 86.0,
+    "p95_ms": 277.0,
+    "source": "learning"
+   },
+   {
+    "count": 425,
+    "label": "学习服务 复测作答（同上）",
+    "max_ms": 448.0,
+    "name": "retest:answer",
+    "not_2xx": 0,
+    "p50_ms": 88.0,
+    "p95_ms": 283.0,
+    "source": "learning"
+   },
+   {
+    "count": 1700,
+    "label": "阿鸦 grade（验证器；含学生旅程的数学批改）",
+    "max_ms": 6.0,
+    "name": "grade",
+    "not_2xx": 0,
+    "p50_ms": 0.0,
+    "p95_ms": 1.0,
+    "source": "aya"
+   }
+  ]
+ }
+}
