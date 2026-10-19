@@ -15,15 +15,20 @@ from dataclasses import dataclass, field
 
 import asyncpg
 
-APP_ROLES = ("learning_app", "bff_app")
+APP_ROLES = ("learning_app", "bff_app")   # 登录名：连接采样（pg_stat_activity.usename）按它
+# 语句统计的角色（PLT-22）：pg_stat_statements 记的是执行时的当前角色，学习服务在 learning_tx 里 SET LOCAL ROLE starbuddy_learning，
+# 那些语句记在 starbuddy_learning 名下；PLT-21 及以前只按登录名过滤，看不到学习服务的大部分语句
+STATEMENT_ROLES = APP_ROLES + ("starbuddy_learning",)
 
 
 def enable_stat_statements(pg) -> bool:
-    """临时实例上打开 pg_stat_statements（需要重启）。不可用时返回 False，报告里标“未采集”。"""
+    """临时实例上打开 pg_stat_statements（需要重启）。不可用时返回 False，报告里标“未采集”。
+    PLT-22：同一次重启另打开 track_commit_timestamp（只在临时实例），压测后按事务提交时间戳算掌握重算耗时（writepath.mastery_rows）。"""
     try:
         pg.psql("ALTER SYSTEM SET shared_preload_libraries = 'pg_stat_statements';")
         pg._as_pg(f"{pg.pgbin}/pg_ctl", "-D", f"{pg.work}/data", "-w", "-l", f"{pg.work}/pg.log",
-                  "-o", f"-k {pg.work} -c listen_addresses='' -c fsync=off -c timezone=UTC -c max_connections=300",
+                  "-o", f"-k {pg.work} -c listen_addresses='' -c fsync=off -c timezone=UTC -c max_connections=300"
+                        " -c track_commit_timestamp=on",
                   "restart")
         pg.psql("CREATE SCHEMA IF NOT EXISTS loadtest_ext; CREATE EXTENSION IF NOT EXISTS pg_stat_statements SCHEMA loadtest_ext;")
         return True
@@ -47,7 +52,7 @@ async def top_queries(admin: asyncpg.Pool, enabled: bool, limit: int = 10) -> li
              FROM loadtest_ext.pg_stat_statements s JOIN pg_roles r ON r.oid = s.userid
             WHERE s.dbid = (SELECT oid FROM pg_database WHERE datname = current_database())
               AND r.rolname = ANY($1::text[])
-            ORDER BY s.total_exec_time DESC LIMIT $2""", list(APP_ROLES), limit)
+            ORDER BY s.total_exec_time DESC LIMIT $2""", list(STATEMENT_ROLES), limit)
     return [{"role": r["rolname"], "query": _WS.sub(" ", r["query"]).strip()[:200], "calls": r["calls"],
              "total_ms": round(r["total_exec_time"], 1), "mean_ms": round(r["mean_exec_time"], 2),
              "max_ms": round(r["max_exec_time"], 1)} for r in rows]
@@ -61,7 +66,7 @@ async def snapshot_statements(admin: asyncpg.Pool, enabled: bool) -> dict[tuple[
         """SELECT r.rolname, s.queryid, s.query, s.calls, s.total_exec_time
              FROM loadtest_ext.pg_stat_statements s JOIN pg_roles r ON r.oid = s.userid
             WHERE s.dbid = (SELECT oid FROM pg_database WHERE datname = current_database())
-              AND r.rolname = ANY($1::text[])""", list(APP_ROLES))
+              AND r.rolname = ANY($1::text[])""", list(STATEMENT_ROLES))
     return {(r["rolname"], int(r["queryid"] or 0)): {"query": _WS.sub(" ", r["query"]).strip()[:200], "calls": int(r["calls"]),
                                                      "total_ms": float(r["total_exec_time"])} for r in rows}
 

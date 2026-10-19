@@ -8,6 +8,7 @@
 PLT-16：429 限流与 503 SUBJECT_BUSY（分学科并发闸门被拒）单列（仍算错误）；--with-practice 时学生旅程另走再练与复测的列表、取题。
 PLT-20：--journeys 打开的可选场景接在学生 / 家长旅程末尾（请求体见 bodies.py）；本栈缺依赖时的预期结果按（状态码, 问题码）记为 expected。
 PLT-21：写路径接上时（Runner.write_path）再练 / 复测的派生条目与派生票据不再算预期；写路径未接上时同 PLT-20。
+PLT-22：写路径接上时取题没拿到真票据就不发作答（记 notes[(步骤, upstream_missing)]，该步算跳过，不进写路径一致性）。
 """
 from __future__ import annotations
 
@@ -31,6 +32,7 @@ from .scenarios import EXTRAS, TODAY_ORCH, PlannedRequest
 from .seed import Family
 
 PREFIX = "/bff/v0"
+UPSTREAM_MISSING = "upstream_missing"   # PLT-22：取题没拿到真票据、未发作答（写路径接上时）
 
 
 class StepFailed(Exception):
@@ -336,6 +338,11 @@ class Runner:
         if "practice_answer" in on:
             for kind in ("practice", "retest"):
                 nb = nexts.get(kind)
+                if self.write_path and bodies.ready_ticket(kind, nb) is None:
+                    # PLT-22 审查：写路径接上时取题没拿到真票据（上游非 2xx 或没有可作答的题）就不再用派生票据去作答：
+                    # 单列“上游未取到（未发作答）”，这一步记为跳过，不计入写路径一致性
+                    self.recorder.note(f"{kind}.answer", UPSTREAM_MISSING)
+                    continue
                 body, codes = bodies.answer_request(kind, nb, self.profile.seed, a.index, expect_derived=not self.write_path)
                 await run(f"{kind}.answer", lambda: self.bff.post(f"{PREFIX}{stu}/{kind}/math/answer", json=body,
                                                                   headers=self.headers(s, True)), expect_codes=codes,

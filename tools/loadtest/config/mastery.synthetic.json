@@ -1,0 +1,41 @@
+{
+  "$comment": "压测专用副本（PLT-22）：由 services/learning/config/mastery/synthetic-test.json 原样复制，数值一个未改，与学习服务单测配置解耦；合成占位、未签字（synthetic=true），数值待人确认，不代表任何学科口径。只在 tools/loadtest 的本机一次性栈（LEARNING_ENV=test）加载；加载器对合成或未签字配置在非 test 环境拒绝加载。",
+  "schema_version": "kge-mastery-config/0.1",
+  "subject": "aya",
+  "config_version": "syn-0.1.0",
+  "synthetic": true,
+  "signed_by": "",
+  "signed_at": "",
+  "calibrated": false,
+  "low_hint_max_level": 2,
+  "grade_confidence_min": 0.6,
+  "evidence_weights": {
+    "independent": 0.8,
+    "hinted_low": 0.4,
+    "hinted_high": 0.0,
+    "transfer": 0.9,
+    "delayed_retest": 0.9,
+    "independent_wrong": -0.7,
+    "hinted_wrong": -0.3
+  },
+  "level_weight_B": 0.5,
+  "source_weights": {"diagnose": 1.0, "practice": 0.9},
+  "error_penalty": {"default": 1.0, "computation_or_grammar": 0.6},
+  "delayed_retest_min_interval_seconds": 432000,
+  "item_type_groups": {"syn-choice": "syn-g1", "syn-fill": "syn-g1", "syn-solve": "syn-g2", "syn-proof": "syn-g3"},
+  "gates": {
+    "understand": {"correct_min": 1},
+    "execute": {"families_min": 2, "p_floor": 0.3},
+    "stable": {"families_min": 3, "item_type_groups_min": 2, "p_floor": 0.5},
+    "transfer": {"transfer_evidence_min": 1, "p_floor": 0.6}
+  },
+  "retest": {"rung0_min_gap_seconds": 7200, "rung1_interval_seconds": 172800, "rung2_interval_seconds": 777600},
+  "bkt": {"p_init": 0.2, "p_learn": 0.15, "p_slip": 0.1, "p_guess": {"default": 0.2, "by_item_type": {"syn-choice": 0.25}}},
+  "confidence_formula": {"k": 2.0},
+  "confidence_decay": {"grace_seconds": 864000, "half_life_seconds": 1728000},
+  "review_confidence_floor": 0.3,
+  "write_threshold": {"p_mastery": 0.02, "confidence": 0.02},
+  "star_level_rule": {"mode": "star_level", "node_levels": {}},
+  "skill_view_aggregation": {"method": "weighted_mean"},
+  "sweep": {"lookback_seconds": 86400}
+}

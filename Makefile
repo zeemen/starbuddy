@@ -763,12 +763,15 @@ cost-dashboard-mutation:
 # digest 钉值、样例 sample/peak2x.md 标注。不起栈、不跑真实压测（实际压测见 tools/loadtest/README.md，不进 check）
 # PLT-21（specs/loadtest-write-path-plt21）另加 tests/test_write_path.py：写路径种子、一致性核对与环节耗时的纯函数，
 # 以及一次性 Postgres 上的种子（经准入与发布闸门）与真知识服务（只读）启动；没有 Postgres、node 或知识服务 .venv 时这两条跳过（严格模式失败）
+# PLT-22（specs/loadtest-mastery-path-plt22）另加 tests/test_mastery_path.py：合成掌握配置的加载与环境限制、种子不写任务表、
+# 复测任务来源核对、作答 = 计次 = 作答证据 = 单元重算的一致性、重算耗时与状态变化的纯函数（不起栈）
 .PHONY: loadtest-test
 loadtest-test:
 	@if $(COST_DASH_MISSING); then echo "loadtest-test: 跳过（没有 services/learning/.venv 或其中没有 pytest、PyYAML）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
 	@$(call guard,$(COST_DASH_MISSING))cd tools/loadtest && PYTHONDONTWRITEBYTECODE=1 ../../$(LOADTEST_PY) -m pytest -q -p no:cacheprovider \
-	  tests/test_peak2x.py tests/test_arrivals.py tests/test_metrics_faults.py tests/test_write_path.py && echo "loadtest-test: 通过"
+	  tests/test_peak2x.py tests/test_arrivals.py tests/test_metrics_faults.py tests/test_write_path.py tests/test_mastery_path.py \
+	  && echo "loadtest-test: 通过"
 
 # KGE-06 封测周修订支持（specs/kge06-weekly-revision）审核台部分：低置信打标候选工作单与修订发布预检的测试在 learning-test 里
 # （tests/test_review_revision.py）；这里把开关、排序与游标、只列待处理、只经签字身份决定、改标核对、版本号段与两人签、

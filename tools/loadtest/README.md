@@ -105,20 +105,70 @@ PYTHONDONTWRITEBYTECODE=1 ../../services/learning/.venv/bin/python -m loadtest b
   Unix socket 上的一次性库（`starbuddy_test*`）；
 - 知识服务：起真知识服务（`services/knowledge/.venv`，一次性登录角色只继承 `starbuddy_kge_read`，只读这个一次性库，只配学习服务的合成令牌）；
   学习服务按 `packages/contracts` 知识服务 OpenAPI 严格校验它的响应（不另写替身）；
-- 到期条目：每个合成学生压测前经学习服务 grade 写入路径做错一道 N1 的题（再练首轮间隔 0 小时，立即到期）、做对一道 N2 的题（复测参照题），
-  并以学习服务角色种一条已到期的平台内验证任务（`verify_in_platform`，复测条目；**手工种入，不是 KGE-04 调度**）。
-  种子只用于准备数据：**不经 BFF 与计量**（不预留、不结算、不计次），不计入压测指标；种子只发给 127.0.0.1 上本栈的学习服务，
-  判分结论必须正好是 practice:incorrect × n、retest:correct × n，否则立即失败；
-- 驱动器：写路径接上时派生条目（404）与派生票据（422 TICKET_INVALID）的“预期”自动停用，取题与作答一律记真 / 派生路径，派生的照发、按错误计（真路径应为 100%）；
-- 报告“写路径（PLT-21）”一节（只取本轮合成学生、压测前后增量）：
-  - 作答（驱动器记的真票据 2xx）= 合成题计次增量（`platform.practice_log` 中经幂等键关联到 SYNP-* 作答的行）= 作答证据行增量（SYNP-* 的作答证据，每次作答一行）；
+- 掌握配置（PLT-22，`specs/loadtest-mastery-path-plt22`）：学习服务以 `LEARNING_MASTERY_CONFIG_AYA` 加载压测专用副本
+  `tools/loadtest/config/mastery.synthetic.json`——由学习服务单测用的 `services/learning/config/mastery/synthetic-test.json` 原样复制，
+  **数值一个未改**，只改了 `$comment`（注明压测专用、与单测配置解耦、数值待人确认）；`synthetic: true`、未签字，**参数是测试占位，不代表任何
+  学科口径**。学习服务原文件不动；`tests/test_mastery_path.py` 核对两份除注释外逐项相同（单测配置改了会提醒人决定是否同步）。学习服务的
+  加载器只在 `LEARNING_ENV=test` 接受合成或未签字配置；本工具起栈前再核对一遍（synthetic、未签字、学科 aya）；
+  未签字的配置下状态机最高只到“稳定”，不会点亮星。同步重算的时间预算本栈不设，取服务缺省（从 `learning.config` 读，读不到时报告标“假设”）；
+- `--no-mastery`（对照）：写路径照接，但学习服务不加载掌握配置——作答后不重算、不生成复测任务（复测列表没有到期条目），报告只给
+  作答 = 计次 = 作答证据三项与“单元重算次数 / 复测任务数应为 0”。用来和同参数开掌握的运行比较闸门 503 次数与作答延迟；
+- 种子（PLT-22 起）：每个合成学生压测前经学习服务 grade 写入路径串行做两道——先做对一道 N2 的题（复测参照题），再做错一道 N1 的题
+  （再练首轮间隔 0 小时，立即到期）。**工具不写任务表**（PLT-21 手工种入 `verify_in_platform` 的做法已去掉）：复测任务只由落库后的同步重算生成。
+  合成配置下一道题的置信度（质量 / (质量 + k)）低于复核下限，重算当即给两个单元各排一条 `decay` 任务，到期 = 最后一条计入证据的记录时间
+  （KGE-04 现有口径，**没有用时间注入**；学习服务进程也没有可从外部注入的时钟）。复测列表按到期时间排序，先做的 N2 排前面，驱动器取第一条
+  到期条目 → 复测落在 N2，不与再练（N1）撞同一单元；N1 那条 decay 在再练作答后由重算撤销（若复测也落在 N1，已签发的复测票据会因任务被撤销
+  回 409 RETEST_NOT_DUE——这是服务的正确行为，先做对 N2 的顺序就是为了避开它）。压测中复测作答把 N2 推到两族独立做对、到“执行”时，
+  重算排出复测轮（rung0），间隔 7200 s，压测窗口内不到期，只计数。种子之后核对：全部任务能证明由重算写出、每名学生至少一条开着的到期任务，
+  否则立即失败（`--no-mastery` 时不核对）。种子只用于准备数据：**不经 BFF 与计量**（不预留、不结算、不计次），不计入压测指标；
+  种子只发给 127.0.0.1 上本栈的学习服务，判分结论必须正好是 practice:incorrect × n、retest:correct × n，否则立即失败；
+- 驱动器：写路径接上时派生条目（404）的“预期”自动停用，取题一律记真 / 派生路径，派生的照发、按错误计；**取题没拿到真票据（上游非 2xx、
+  闸门 503 或没有可作答的题）时不再用派生票据去作答**（PLT-22 审查）：这一步不发、记为跳过，另计“上游未取到（未发作答）”，不计入写路径一致性。
+  因此上游一有失败，请求序列 digest 就与计划不一致（同前置失败的跳过）；写路径没接上时照 PLT-20（派生票据照发、422 记预期）；
+- 报告“写路径（PLT-21 / PLT-22 掌握路径）”一节（只取本轮合成学生、压测前后增量）：
+  - 作答（驱动器记的真票据 2xx）= 合成题计次增量（`platform.practice_log` 中经幂等键关联到 SYNP-* 作答的行）= 作答证据行增量（SYNP-* 的作答证据，每次作答一行）
+    = 触发的单元重算次数（PLT-22）；
+  - 重算的触发口径（按服务实际规则）：每次 grade / diagnose **新落库**提交后（重放不触发），该科有掌握配置时同步重算这次作答涉及的单元——只按主节点，
+    单元 = 当前已发布地图里打了标的题的主节点 × 层次（`learning/service.py` `_recompute_mastery` → `mastery/recompute.py` `after_ingest`，
+    时间预算 2 s，超时记 failed 交给对账）。本栈只有 SYNP-* 在合成地图里打了标：学生旅程的数学批改与诊断也触发 after_ingest，但不涉及任何单元。
+    所以每次合成题作答恰好重算一个单元。单元重算次数取重算专用的“读当前记录”语句（`mastery/store.py` `current_estimate`，服务里只此一处）在
+    `pg_stat_statements` 里的调用数（阶段边界快照相减）；重算在 `SET LOCAL ROLE starbuddy_learning` 下执行，按语句文本计、不按登录角色过滤。
+    一致性的触发条件逐条说明：
+    - **仍触发、仍算一次**：计入不了掌握的证据（同族重做 repeat_family、判分置信度低于下限、提示后做对、待复核、C 级）——after_ingest 照样
+      对作答的主节点单元重算，重放后不写新记录（变化低于写入阈值），但“读当前记录”照样执行一次；
+    - **不触发**：幂等重放（同一幂等键的第二次请求直接回原结果）、落库失败（判分或证据写入出错，作答也不算 2xx）、该科没有掌握配置
+      （`--no-mastery`）、题目在当前已发布地图里没有打标（学生旅程的真实阿鸦题、诊断题）；
+    - **多算一次**：同一单元并发写撞唯一索引（23505）或更正守卫（23514）时整单元事务回滚、重试一次，会多读一次当前记录（日志里看不到），
+      表现为“作答 < 单元重算次数”而判不通过；同步预算超时（`mastery_after_ingest_timeout`）时已开始的单元也已读过，计入重算次数、另记失败；
+  - 复测任务全部来自重算，**推断 + 直接证据**：
+    - 推断（逐条）：复测轮（scheduled / early）的 `scheduled_by_estimate_id` 指向同学生同单元、**同一事务**写出的掌握记录，且到期等于其
+      `next_retest_at`；其他原因（decay 等）要求同单元有同一事务写出的记录。“同一事务”靠两个触发器把时间戳置为事务开始的 `now()`：迁移 0005 的
+      `guard_inference_insert`（`mastery_estimate.computed_at`）与迁移 0037 的 `retest_task_guard`（`retest_task.created_at`）；压测后只读核对
+      两个触发器存在且启用。都不满足的记为“不能证明”（应为 0；PLT-21 手工种入的那种行就是这一类）；
+    - 直接证据：`pg_stat_statements` 里所有写 `platform.retest_task` 的语句（INSERT / UPDATE）——只能是学习服务重算 / 自述验证的那几条
+      语句文本（`writepath.SERVICE_TASK_WRITES`，测试核对它们出自 `mastery/recompute.py`）且由 `starbuddy_learning` 执行；其他角色或其他语句
+      的调用数应为 0。pg_stat_statements 压测前清零一次，所以种子阶段在清零前取一次、压测后再取一次，两次相加；
+  - 测到与没测到的：decay 任务在后续作答后由重算**撤销**（cancelled，置信度回到下限以上），不是“通过 / 失败”关闭；KGE 复测轮的关闭
+    （passed / failed）与靠复测轮通过的晋级（执行 → 稳定）在压测窗口内没有测到（rung0 间隔 7200 s），只测到了 unseen → understand → execute；
+  - 重算失败 / 超时：学习服务日志里 `mastery_after_ingest_timeout`、`mastery_after_ingest_failed`、`mastery_recompute_failed` 的条数（只读 event 字段），应为 0；
+  - 掌握重算耗时（“掌握重算”小节，总体与各墙钟阶段 p50 / p95 / 最大）：数据库事务提交时间戳（`track_commit_timestamp`，只在一次性实例随
+    pg_stat_statements 同一次重启打开）——“单元事务”= 重算事务开始（`computed_at`）→ 提交；“作答后重算”= 这名学生最近一次合成题作答证据的
+    落库提交 → 重算事务提交（含 after_ingest 预读地图与证据的只读事务）。只覆盖写出新记录的重算（变化低于写入阈值的不写记录、不在样本里），
+    报告并列单元重算次数与写出记录数；服务源码不改、不加日志；
+  - 门槛状态变化：写出的记录里“前一状态 → 新状态”计数（没有前一条记作“无”）；
   - “计次无对应作答证据”与“作答证据无对应计次”都为 0，全部计次 = 合成题计次 + 无对应作答证据的计次（没有计次关联到合成题以外的作答）；
   - 口径说明：题库自练是“开始即计数、没有释放”（BFF 先 `meter_practice` 再调学习服务，`specs/metering-v2` 偏差 13），计次之后学习服务失败会留下
     “计次无对应作答证据”——这是设计口径，不是计量故障；本机无故障注入时应为 0，出现即判不通过；
-  - 不通过时退出码 1；另给各环节耗时（学习服务、知识服务、阿鸦各自访问日志的方法名、状态码、耗时；压测期间）。掌握更新本栈不测（不设掌握配置）；
+  - 不通过时退出码 1；另给各环节耗时（学习服务、知识服务、阿鸦各自访问日志的方法名、状态码、耗时；压测期间；学习服务作答环节已含同步掌握重算）；
+  - 口径变化（PLT-22 审查）：“慢查询前十 / 各阶段慢查询”的角色过滤加入 `starbuddy_learning`——pg_stat_statements 记的是执行时的当前角色，
+    学习服务在 `SET LOCAL ROLE starbuddy_learning` 下执行的语句以前不在表里；PLT-22 起计入，与 PLT-21 及以前的样例不可直接比较。
+    连接采样（pg_stat_activity）仍按登录名（`learning_app`、`bff_app`）；
+  - 报告里的错误率、429 / 503 占比改为百分比两位小数（以前 0.0073 显示为 0.0）；
+  - 2× 阶段数学闸门 503 SUBJECT_BUSY 的增量可能来自同步重算拉长了作答占用闸门的时间，用 `--no-mastery` 同参数对照；
 - 缺 `services/knowledge/.venv` 时照旧（报告注明“未接上”与原因）；`--no-write-path` 显式关（对照 PLT-20）；`--require-write-path`
   要求写路径必须接上，没接上（或没打开再练与复测）退出码失败，用于确认写路径确实被测到；
-- 报告的 Markdown 由写出的 JSON 读回后渲染：`sample/peak2x.json` 重渲染与 `sample/peak2x.md` 逐字节相等（`tests/test_write_path.py` 核对）。
+- 报告的 Markdown 由写出的 JSON 读回后渲染：`sample/peak2x.json` 重渲染与 `sample/peak2x.md` 逐字节相等（`tests/test_write_path.py`、
+  `tests/test_mastery_path.py` 核对；后者另核对样例含掌握测量、没有手工任务）。
 
 假供应商的 `/_control/faults`、`/_control/stats` 与计量驱动桩的接口**没有鉴权**：只监听 127.0.0.1、只在本机一次性栈里存在，
 不得暴露到任何共享网络（预发故障演练见 RUNBOOK 第 2 节）。
@@ -136,11 +186,11 @@ PYTHONDONTWRITEBYTECODE=1 ../../services/learning/.venv/bin/python -m loadtest b
 | `seed.py` | 计量时钟替换（北京时间 10:00 起、可快进，只在测试库）、`v12-pilot@1` 的已发布副本 `loadtest-plan@1`、合成家庭（+999 号码、同意、选科、经 `meter_open_subscription` 开通） |
 | `driver.py` | 负载驱动：每阶段会话并发上限、真实 BFF 会话、批改经计量驱动桩运行 BFF 的 meteredCall（见“已知偏差”）、记录实际请求序列 |
 | `fake_provider.py` / `faults.py` | OpenAI 兼容的假供应商（独立进程，延迟为对数正态，token 按字符数估算）；故障注入：整家不可用、超时、5xx 比例、慢响应、限流；同一判定也给进程内 `FakeProvider` 用（不改 `model_router/providers.py`） |
-| `dbstats.py` | `pg_stat_activity` 采样（按登录角色的连接峰值）与 `pg_stat_statements` 慢查询前十（只在临时实例打开） |
+| `dbstats.py` | `pg_stat_activity` 采样（按登录角色的连接峰值）与 `pg_stat_statements` 慢查询前十（只在临时实例打开；PLT-22 起语句统计含 `starbuddy_learning`，另开 `track_commit_timestamp`） |
 | `meter.py` | 计量旅程的计量函数调用（与 BFF 同一组函数、同一角色）与零泄漏核对 |
 | `harness.py` + `node/meter-harness.mts` | 计量驱动桩：在本机运行 BFF 的 `meteredCall`（批改的计量全走它）；计量时钟由调用方经 `/clock-sync` 对齐 |
 | `metrics.py` / `report.py` / `baseline.py` | 分位数（最近秩）、错误率、吞吐；Markdown + JSON 报告；一次压测的编排 |
-| `writepath.py` + `node/aya-register.mts` | PLT-21 写路径：合成内容包、登记 / 准入 / 地图种子 SQL（经闸门）、知识服务环境、到期条目种子、一致性核对与环节耗时（`tests/test_write_path.py`） |
+| `writepath.py` + `node/aya-register.mts` | PLT-21 写路径：合成内容包、登记 / 准入 / 地图种子 SQL（经闸门）、知识服务环境、到期条目种子、一致性核对与环节耗时（`tests/test_write_path.py`）；PLT-22 合成掌握配置、任务来源核对、单元重算计数、重算耗时与状态变化（`tests/test_mastery_path.py`） |
 | `bodies.py` / `slo.py` / `peak.py` / `phases.py` | PLT-20：新场景的请求构造与票据处理；SLO 判定；peak2x 配置与阶段；按阶段的连接、慢查询、闸门汇总（均为纯函数，`tests/test_peak2x.py`） |
 | `cost.py` + `config/` | 成本模型与报表；`prices.example.yaml`（**示例价**）、`cost_profile.yaml`（使用画像，逐项标来源） |
 | `degradation.py` | 降级清单：每科每个方法是否用模型、任务与数据级别、三种情形下的期望行为（断言的唯一来源）；静态扫描适配器源码核对清单完整 |

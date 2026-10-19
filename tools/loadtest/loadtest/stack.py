@@ -8,7 +8,9 @@
   学习服务（独立进程 python -m learning，LEARNING_ENV=test：模型路由按仓库路由表的 test 节经 OpenAI 兼容适配器调假供应商）；
   BFF（独立进程 node src/main.ts，STARBUDDY_ENV=test，短信捕获桩写验证码到临时文件；限流阈值放宽的一份配置同 apps/web/scripts/e2e.sh）；
   PLT-21 写路径（打开再练与复测时，writepath.py）：合成题与合成地图经准入、发布闸门装进一次性库，真知识服务（只读角色、只读这个库）
-  与带合成题的阿鸦适配器进程（AYA_CONTENT_PACK，候选版开关只在这个栈）接给学习服务。
+  与带合成题的阿鸦适配器进程（AYA_CONTENT_PACK，候选版开关只在这个栈）接给学习服务；
+  PLT-22：同时给学习服务合成掌握配置（LEARNING_MASTERY_CONFIG_AYA → config/mastery/synthetic-test.json，只在 LEARNING_ENV=test），
+  作答落库后同步重算掌握、由重算生成复测任务。
 服务间令牌沿用 e2e_cohort 的合成常量（不是真实凭据）；日志只落在临时目录，压测后只取调用记录的元数据（token 数、任务、科目）。
 """
 from __future__ import annotations
@@ -154,10 +156,11 @@ def relaxed_auth_config(dst: Path) -> None:
 @asynccontextmanager
 async def local_stack(*, seed_value: int, students: int, provider_median_ms: float, provider_p90_ms: float,
                       retry_scale: float = 1.0, subject_gate: bool = False, practice: bool = False, gate_config: Path | None = None,
-                      journeys: tuple[str, ...] = (), write_path: bool = True):
+                      journeys: tuple[str, ...] = (), write_path: bool = True, mastery: bool = True):
     """students：假供应商预先登记合成作答的学生数（学生旅程的合成对象数）。
     write_path（PLT-21，只在 practice 打开时有意义）：装合成地图与合成题、起真知识服务（只读）与带合成题的阿鸦适配器进程，
     学习服务的再练 / 复测接上它们（取题 ready、作答经判分落库）；缺依赖（writepath.missing）时照旧不起，Stack.write_path_note 写原因。
+    mastery（PLT-22，只在写路径接上时有意义）：学习服务加载合成掌握配置；False = --no-mastery 对照。
     subject_gate：BFF 打开分学科并发闸门（STARBUDDY_SUBJECT_GATE，缺省用仓库 config/concurrency.json 的合成默认值；
     gate_config 给一份同格式的配置时经 BFF_CONCURRENCY_CONFIG 换用，只在 STARBUDDY_ENV=test 的本栈有效）；
     practice：BFF 打开错题再练与复测路由，学习服务用合成配置与合成题面（只在 LEARNING_ENV=test），票据密钥每次启动随机生成；
@@ -230,6 +233,10 @@ async def local_stack(*, seed_value: int, students: int, provider_median_ms: flo
                 lenv[f"LEARNING_ADAPTER_{s.upper()}_TOKEN"] = ADAPTER_TOKENS[s]
             if wp:
                 lenv |= {"LEARNING_KNOWLEDGE_URL": f"http://127.0.0.1:{kport}", "LEARNING_KNOWLEDGE_TOKEN": writepath.KNOWLEDGE_CREDENTIAL}
+                # PLT-22：合成掌握配置（只阿鸦一科；工具侧先核对 synthetic、未签字，学习服务的加载器只在 LEARNING_ENV=test 接受）；
+                # mastery=False（--no-mastery）不加载，作对照
+                if mastery:
+                    lenv |= writepath.mastery_env()
             for s, tok in ROUTE_TOKENS.items():
                 lenv[f"LEARNING_ROUTE_CLIENT_{s.upper()}_TOKEN"] = tok
             if practice:

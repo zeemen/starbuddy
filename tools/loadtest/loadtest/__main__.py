@@ -8,6 +8,7 @@
                               [--slo FILE] [--slo-strict]           SLO 判定（config/slo.yaml；未签字只报告，--slo-strict 要求已签字）
                               [--no-write-path | --require-write-path]   PLT-21：不接写路径 / 写路径必须接上（缺省能接就接：
                                                                     真知识服务、合成地图与题、到期条目；没接上只在报告注明）
+                              [--no-mastery]                        PLT-22 对照：写路径照接，不加载合成掌握配置
   python -m loadtest cost     --records FILE [--out DIR] [--prices FILE] [--profile FILE]
   python -m loadtest dashboard --usage FILE --records FILE [--out DIR] [--prices FILE] [--profile FILE] [--config FILE]
                               成本仪表盘（PLT-17）：消耗聚合行 + 调用记录 → cost-dashboard.json / .md（只出聚合；本步只收合成样例）
@@ -79,6 +80,8 @@ def main(argv: list[str] | None = None) -> int:
                    help="PLT-21：不接写路径（不起知识服务、不装合成地图与题），再练 / 复测作答照 PLT-20 只到票据校验（对照用）")
     b.add_argument("--require-write-path", action="store_true",
                    help="PLT-21：写路径必须接上（缺依赖没接上时退出码 1；须同时打开再练与复测）；与 --no-write-path 互斥")
+    b.add_argument("--no-mastery", action="store_true",
+                   help="PLT-22 对照：写路径照接，但学习服务不加载合成掌握配置（作答后不重算、不生成复测任务、不测掌握）")
     b.add_argument("--max-model-calls", type=int, default=None,
                    help="驱动器侧模型调用次数硬上限（道法、语文批改按学习服务调用次数累计）：到上限即停止发走模型的请求与新旅程，退出码 1")
     c = sub.add_parser("cost")
@@ -171,7 +174,7 @@ def main(argv: list[str] | None = None) -> int:
                                  retry_scale=args.retry_scale, subject_gate=args.subject_gate,
                                  gate_config=Path(args.gate_config).resolve() if args.gate_config else None,
                                  slo=slo_cfg, slo_strict=strict, peak_note=peak_note, max_model_calls=args.max_model_calls,
-                                 write_path=not args.no_write_path))
+                                 write_path=not args.no_write_path, mastery=not args.no_mastery))
     wp = r.get("write_path") or {}
     wp_ok = (wp.get("check") or {}).get("ok")
     ok = (r["metering"]["zero_leak"] and r["plan_digest"] == r["executed_digest"] and not r["model_budget"]["stopped"]

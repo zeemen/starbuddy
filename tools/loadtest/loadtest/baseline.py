@@ -13,7 +13,7 @@ from e2e_cohort.stack import LEARNING_CREDENTIAL
 from . import dbstats, meter, outdir, phases, writepath
 from . import slo as slo_mod
 from .arrivals import Profile, describe, digest, plan, requests, slot_counts
-from .driver import ModelBudget, Runner, SmsInbox
+from .driver import UPSTREAM_MISSING, ModelBudget, Runner, SmsInbox
 from .metrics import by_endpoint, by_stage, count_log, demote_unverified, gate_summary, path_summary, percentile
 
 MONTHLY_ROUTE = "GET /students/{student_id}/monthly-plan"
@@ -36,12 +36,16 @@ class StageMarks:
         self.admin, self.stat, self.log, self.durations = admin, stat_enabled, bff_log, durations
         self.snaps: list[dict] = []
         self.offsets: list[int] = []
+        self.db_times: list = []   # PLT-22：各边界的数据库时刻（掌握记录的 computed_at 按它归阶段）
+        self.recomputes: list = []  # PLT-22：各边界的单元重算读语句累计调用数（pg_stat_statements；没打开为 None）
         self.t0 = 0.0
         self._task: asyncio.Task | None = None
 
     async def _mark(self) -> None:
         self.snaps.append(await dbstats.snapshot_statements(self.admin, self.stat))
         self.offsets.append(self.log.stat().st_size if self.log.exists() else 0)
+        self.db_times.append(await self.admin.fetchval("SELECT clock_timestamp()"))
+        self.recomputes.append(await writepath.recompute_calls_now(self.admin, self.stat))
 
     async def start(self) -> None:
         self.t0 = time.monotonic()
@@ -87,9 +91,10 @@ async def run_baseline(profile: Profile, out: Path | None, *, provider_median_ms
                        faults: dict[str, dict] | None = None, scale_note: str | None = None, retry_scale: float = 1.0,
                        subject_gate: bool = False, gate_config: Path | None = None, slo: slo_mod.SloConfig | None = None,
                        slo_strict: bool = False, peak_note: str | None = None, max_model_calls: int | None = None,
-                       write_path: bool = True) -> dict:
+                       write_path: bool = True, mastery: bool = True) -> dict:
     """peak_note 不为空 = --profile peak2x：报告首段标“本机合成，不是容量结论”，另给各阶段表，文件名 peak2x.md / peak2x.json。
-    write_path（PLT-21）：打开再练与复测时接上写路径（真知识服务、合成地图与题、到期条目），报告另给写路径一致性核对"""
+    write_path（PLT-21）：打开再练与复测时接上写路径（真知识服务、合成地图与题、到期条目），报告另给写路径一致性核对。
+    mastery（PLT-22）：写路径接上时学习服务加载合成掌握配置；False = --no-mastery 对照（不重算、不测掌握）"""
     arrivals = plan(profile)
     planned = requests(profile, arrivals)
     slots = slot_counts(arrivals)
@@ -100,7 +105,7 @@ async def run_baseline(profile: Profile, out: Path | None, *, provider_median_ms
     async with local_stack(seed_value=profile.seed, students=slots["student"], provider_median_ms=provider_median_ms,
                            provider_p90_ms=provider_p90_ms, retry_scale=retry_scale, subject_gate=subject_gate,
                            practice=profile.practice, gate_config=gate_config, journeys=profile.journeys,
-                           write_path=write_path) as st:
+                           write_path=write_path, mastery=mastery) as st:
         seeded = await seed_families(st.admin, st.bff_pool, [f for fs in fams.values() for f in fs])
         wp_students = [f.student for f in fams.get("student", [])]
         wp_seeded = wp_before = None
@@ -109,7 +114,7 @@ async def run_baseline(profile: Profile, out: Path | None, *, provider_median_ms
             # PLT-21：合成学生的到期条目（经学习服务 grade 写入路径，压测前、不计次），再取压测前的计数与各服务日志位置
             async with httpx.AsyncClient(trust_env=False) as c:
                 wp_seeded = await writepath.seed_students(c, st.learning_url, LEARNING_CREDENTIAL, st.admin, wp_students, profile.seed,
-                                                          st.content["curriculum"])
+                                                          st.content["curriculum"], mastery=mastery)
             wp_before = await writepath.counts(st.admin, wp_students)
             wp_offsets = {k: writepath.size(p) for k, p in (("learning", st.learning_log), ("knowledge", st.knowledge_log),
                                                              ("aya", st.aya_log))}
@@ -117,8 +122,12 @@ async def run_baseline(profile: Profile, out: Path | None, *, provider_median_ms
             await st.set_fault(vendor, spec)
         inbox = SmsInbox(st.sms_inbox)
         inbox.start()
+        on_mastery = st.write_path and mastery
+        mastery_doc = writepath.check_mastery_config() if on_mastery else None
         runner = Runner(profile, arrivals, fams, st.bff_url, st.shell_origin, inbox, st.bff_pool, zx_points, st.harness_url,
                         budget=ModelBudget(max_model_calls), write_path=st.write_path)
+        # PLT-22 直接证据：pg_stat_statements 压测前要清零，种子阶段的任务表写入先取一次
+        tw_seed = await writepath.task_writes_now(st.admin, st.stat_statements) if st.write_path else None
         await dbstats.reset(st.admin, st.stat_statements)
         marks = StageMarks(st.admin, st.stat_statements, st.bff_log, [s.duration_s for s in profile.stages])
         await marks.start()
@@ -136,13 +145,48 @@ async def run_baseline(profile: Profile, out: Path | None, *, provider_median_ms
             write = {"enabled": st.write_path, "note": st.write_path_note}
             if st.write_path:
                 wp_after = await writepath.counts(st.admin, wp_students)
+                learning_lines = writepath.read_from(st.learning_log, wp_offsets["learning"])
+                labels = [s.label or f"{s.concurrency} 并发" for s in profile.stages]
+                recompute_stages = writepath.stage_diffs(marks.recomputes)
+                tw_end = await writepath.task_writes_now(st.admin, st.stat_statements)
+                task_writes = None if tw_seed is None or tw_end is None else {k: tw_seed[k] + tw_end[k] for k in tw_seed}
+                checks = None
+                mastery_out: dict = {"enabled": False}
+                if on_mastery:
+                    rows = await writepath.mastery_rows(st.admin, wp_students, marks.db_times[0])
+                    checks = {
+                        "recompute_units": None if recompute_stages is None else sum(recompute_stages),
+                        "tasks": await writepath.tasks(st.admin, wp_students),
+                        "events": writepath.mastery_log_events(learning_lines),
+                        "triggers": await writepath.check_triggers(st.admin),
+                        "task_writes": task_writes,
+                    }
+                    budget, budget_source = writepath.sync_budget_seconds()
+                    mastery_out = {
+                        "enabled": True,
+                        "config": {"file": str(writepath.MASTERY_CONFIG.relative_to(writepath.ROOT)),
+                                   "config_version": mastery_doc["config_version"], "synthetic": True, "signed": False,
+                                   "rung0_gap_seconds": writepath.rung0_gap_seconds(mastery_doc),
+                                   "sync_budget_seconds": budget, "sync_budget_source": budget_source},
+                        "recompute_units": checks["recompute_units"], "recompute_by_stage": recompute_stages,
+                        "timing": writepath.mastery_timing(rows, marks.db_times, labels),
+                        "states": writepath.state_changes(rows),
+                        "commit_timestamps": any(r["unit_ms"] is not None for r in rows),
+                    }
+                else:
+                    mastery_out |= {"recompute_units": None if recompute_stages is None else sum(recompute_stages),
+                                    "tasks": await writepath.tasks(st.admin, wp_students), "task_writes": task_writes}
                 write |= {
                     "content": {"map_version": writepath.MAP_VERSION, "items": len(writepath.ITEMS), "units": [writepath.N1, writepath.N2],
                                 "level": writepath.LEVEL, "check": st.content["check"]},
                     "seeded": wp_seeded,
                     "check": writepath.consistency(writepath.answers_ok(runner.recorder.paths), wp_before, wp_after,
-                                                   applicable="practice_answer" in profile.journeys),
-                    "segments": writepath.segments(writepath.read_from(st.learning_log, wp_offsets["learning"]),
+                                                   applicable="practice_answer" in profile.journeys, mastery=checks),
+                    # PLT-22 审查：取题没拿到真票据、因此没发作答的次数（不计入一致性）
+                    "upstream_missing": {k: int(runner.recorder.notes.get((f"{k}.answer", UPSTREAM_MISSING), 0))
+                                         for k in ("practice", "retest")},
+                    "mastery": mastery_out,
+                    "segments": writepath.segments(learning_lines,
                                                    writepath.read_from(st.knowledge_log, wp_offsets["knowledge"]),
                                                    writepath.read_from(st.aya_log, wp_offsets["aya"])),
                 }
