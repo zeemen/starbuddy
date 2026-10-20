@@ -25,3 +25,10 @@
 - **签字**：用户（代表技术负责人）确认第一节签字范围，learning-internal v1 冻结为 1.1.0 正式版。契约文件中的签字字段在 LT-04 实现提交中写入（与第二节第 3 条文字修订同批，属契约变更，`[NEEDS-HUMAN]`）。
 - **防护方式**：服务身份限定 + 计量核对——只有 BFF 服务身份可调用 `/internal/v1` 的 grade / diagnose 写入，且必须携带与计量账本核对一致的 `usage_id` + 幂等键；`purpose` 与证据等级由学习服务按票据 / 会话上下文推导，不接受调用方自报。
 - 启用（删除 `LEARNING_INTERNAL_V1`、BFF 切 `/internal/v1`）在第二节 1–4 实现并过审查、严格检查后进行；LT-01 提交后开工。
+
+## 决定记录（续，2026-10-20，用户）
+实施中发现学习服务角色读不到任何计量表（0008、0015 只授权 BFF）。子代理写了迁移草稿 0058 并停下。用户决定：
+1. **采用迁移草稿 0058**：只读函数 `platform.learning_meter_check(p_usage, p_key, p_student, p_method)`（SECURITY DEFINER、属主 `starbuddy_authz`、只授权 `starbuddy_learning`），只返回状态编码 `reserved / lapsed / settled / released / expired / counted / none`，不返回额度与时间、不改扣次规则。须更新权限快照并补越权与判据测试；草稿仍待人在副本演练后执行。
+2. **核对不通过返回 409 `IDEMPOTENCY_KEY_SEALED`**（不改已签字契约的枚举），在契约描述中注明“该幂等键无有效计量，不可写入”。各路径放行状态：`/internal/v1` 的 grade / diagnose 放行 `reserved`；再练、复测放行 `counted`；诊断会话按会话自身 usage_id 与预留键、方法 diagnose，放行 `reserved` 与 `settled`。
+3. **证据等级与 purpose 由学习服务推导**：直接经 HTTP 的写入 purpose 只能是 practice（自报其他值 400 `INVALID_REQUEST`）；键盘输入记 A，其他通道须有平台侧确认记录，若核实需新读权限则另写迁移草稿并停下。
+4. 服务身份：沿用 `LEARNING_SERVICE_TOKEN`（只有 BFF 持有），补其他令牌调用写入接口 401 的测试。BFF 写入切 v1 时请求体改为 `{request, ingest}` 信封、`contract_version` 1.0.0；计量指纹算法不变（如须变更，停下）。
