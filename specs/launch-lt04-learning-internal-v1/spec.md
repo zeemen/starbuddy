@@ -1,0 +1,22 @@
+# LT-04 learning-internal v1 签字与启用（[NEEDS-HUMAN]：契约签字）
+
+2026-10-20 用户决定“现在就签”learning-internal v1（LT-01 契约审查：诊断、再练、复测在 staging 依赖它，否则教研配置签字后学习服务仍拒绝启动）。本文件是签字包，并给出启用前必须先完成的工程项。
+
+## 一、签字范围
+- 契约文件：`packages/contracts/openapi/learning-internal.v1.yaml`（当前 `info.version: 1.1.0`）。
+- 签字即确认：接口集合、请求 / 响应 schema、问题码、`evidence_kind` 推导口径、`purpose` 枚举（practice / retest / transfer_check）与现行实现一致，冻结为 1.1.0 正式版；之后任何改动走契约变更（必停）。
+- 签字**不等于**立即放开 `LEARNING_INTERNAL_V1`：见第二节。
+
+## 二、启用前必须先完成（来自 specs/contract-v1.0-signoff/lessons.md 安全审查阻断）
+1. **调用方声明字段不可信**：`ingest.purpose`、`evidence_level` 由调用方声明，裸 `/internal/v1/grade` 可写 A 级迁移证据。须改为由学习服务按会话 / 票据上下文推导或校验（不接受调用方任意声明），或限定只有特定服务身份可写特定用途。
+2. **绕过计量**：裸 `/internal/v1/grade` 不经 BFF 预留即可写证据。须要求有效的预留 / 计次凭据（usage_id + idempotency_key 与计量账本核对），或只允许 BFF 服务身份调用且 BFF 侧已计量。
+3. 契约文字修订：约第 161 行“候选版开关关闭时 plan unavailable”改为签字后口径。
+4. 签字后：删除 `LEARNING_INTERNAL_V1` 开关，BFF 写入切到 `/internal/v1`（决定记录 6.3 第 5、7 条）；测试覆盖开关删除前后行为与上述两项防护。
+
+## 三、流程
+1. 本签字包由用户（代表技术负责人）确认第一节 → 契约 1.1.0 状态标为已签字（签字人、日期写入契约 `info` 的签字字段与 `specs/launch-lt04-learning-internal-v1/lessons.md`）。
+2. 工程实现第二节 1–4 → 安全与契约审查 → 严格 `make check` → `[NEEDS-HUMAN]` 提交。
+3. 之后 staging 才可启用诊断、再练、复测（仍需教研签字配置）。
+
+## 待人确认
+- 第一节签字范围是否确认；第二节 1、2 的防护方式（推导校验 vs 服务身份限定）。
