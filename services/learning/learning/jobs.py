@@ -28,7 +28,7 @@ from typing import Mapping
 
 import asyncpg
 
-from .config import ALLOWED_ENVS, mastery_config_paths
+from .config import SERVICE_ENVS, mastery_config_paths
 from .mastery import load_config
 from .mastery.jobs import admission_recompute, mastery_sweep
 from .mastery.recompute import MasteryEngine
@@ -51,12 +51,34 @@ def _parse(argv: list[str]) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
+def check_staging_db_url(url: str) -> None:
+    """staging（LT-01 安全审查 S10）：连接串里的全部主机只收回环、Unix socket 或内网 IPv4 字面量（复用审核台命令行的核对）"""
+    from review_console.__main__ import local_only
+    if not url:
+        raise JobError("缺少 LEARNING_DATABASE_URL")
+    try:
+        local_only(url, "staging")
+    except SystemExit:
+        raise JobError("LEARNING_DATABASE_URL 在 staging 只能指向回环、Unix socket 或内网 IPv4") from None
+
+
+async def check_staging_db_server(conn) -> None:
+    from review_console.__main__ import check_server_local
+    try:
+        await check_server_local(conn, "staging")
+    except SystemExit:
+        raise JobError("连上的服务端不是回环或内网地址") from None
+
+
 async def run(argv: list[str], environ: Mapping[str, str] | None = None, *, pool: asyncpg.Pool | None = None) -> dict:
     args = _parse(argv)
     e = dict(os.environ if environ is None else environ)
     mode = e.get("LEARNING_ENV", "")
-    if mode not in ALLOWED_ENVS:
-        raise JobError(f"LEARNING_ENV 必须是 {ALLOWED_ENVS} 之一")
+    # staging（LT-01 决定记录第 5 条：调度器在 staging 调 mastery-sweep）：掌握配置照旧只收签字的（mastery.config.parse_config）
+    if mode not in SERVICE_ENVS:
+        raise JobError(f"LEARNING_ENV 必须是 {SERVICE_ENVS} 之一")
+    if mode == "staging" and pool is None:
+        check_staging_db_url(e.get("LEARNING_DATABASE_URL", ""))  # 连接前先核对主机（不读配置、不连库）
     now = None
     if args.now:
         if mode != "test":
@@ -87,6 +109,9 @@ async def run(argv: list[str], environ: Mapping[str, str] | None = None, *, pool
         pool = await asyncpg.create_pool(e["LEARNING_DATABASE_URL"], min_size=1, max_size=2)
     assert pool is not None
     try:
+        if own and mode == "staging":
+            async with pool.acquire() as conn:
+                await check_staging_db_server(conn)
         engine = MasteryEngine(pool, configs)
         if args.job == "admission-recompute":
             counts = await admission_recompute(engine, since, subjects=args.subject, now=now)

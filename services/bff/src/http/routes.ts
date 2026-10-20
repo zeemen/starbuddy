@@ -35,6 +35,7 @@ import { recentLogins } from '../trust/proof.ts';
 import { P } from './problems.ts';
 import { codeMac, csrfFor, E164, newCode } from './secrets.ts';
 import type { SmsSender } from './sms.ts';
+import type { StagingOtp } from './staging-otp.ts';
 
 export type AuthLevel = 'public' | 'session' | 'guardian' | 'student';
 /** none：不改变状态；origin：只核对 Origin（登录前没有会话）；session：Origin + 与会话绑定的 CSRF 令牌 */
@@ -91,6 +92,10 @@ export interface ShellDeps {
   /** 分学科并发闸门（src/gate/subject-gate.ts，PLT-16 第一步，开关 STARBUDDY_SUBJECT_GATE，缺省关）：不配时诊断、再练、复测的接入点
    *  直接执行原来的代码，响应与访问日志逐字节不变 */
   subjectGate?: SubjectGate;
+  /** staging 由人登记的同意文本版本（BFF_CONSENT_VERSIONS，LT-01 决定记录第 10 条）；staging 下不配 = 一律不收 */
+  consentVersions?: ReadonlySet<string>;
+  /** staging 白名单固定码 OTP（BFF_STAGING_OTP_FILE，LT-01 决定记录第 6 条）：配了时签发与核验经它（src/http/staging-otp.ts） */
+  stagingOtp?: StagingOtp;
 }
 
 export type Query = <R extends QueryResultRow = QueryResultRow>(sql: string, params?: unknown[]) => Promise<{ rows: R[] }>;
@@ -145,9 +150,13 @@ const otpRequest: Handler = async (ctx) => {
   const b = ctx.body;
   if (!onlyKeys(b, ['phone']) || typeof b['phone'] !== 'string' || !E164.test(b['phone'])) return problem(P.INVALID);
   const phone = b['phone'];
-  const code = newCode();
+  // staging 白名单固定码（LT-01）：有有效条目用条目的码，否则与现状相同（随机码；staging 不投递，等同发送失败）。
+  // 库写成功之后才记签发账（契约审查 3）
+  const picked = ctx.deps.stagingOtp?.pick(phone) ?? null;
+  const code = picked?.code ?? newCode();
   const { config, keys } = ctx.deps;
   await ctx.q('SELECT platform.auth_otp_issue($1, $2, $3, $4)', [phone, codeMac(keys, phone, code), config.otp.ttl_seconds, config.otp.max_attempts]);
+  if (picked) ctx.deps.stagingOtp!.markIssued(phone, picked.entry);
   try {
     await ctx.deps.sms.sendLoginCode(phone, code);
   } catch {
@@ -169,6 +178,7 @@ const otpVerify: Handler = async (ctx) => {
     [phone, codeMac(ctx.deps.keys, phone, code), life.absolute_seconds, life.idle_seconds, ctx.presentedToken]);
   const r = rows[0];
   ctx.note('outcome', r?.outcome ?? 'none');
+  ctx.deps.stagingOtp?.onVerify(phone, r?.outcome === 'ok' && !!r.session_token);  // 成功即作废条目，失败计数（只对用条目签发的号码）
   if (r?.outcome === 'ok' && r.session_token) {
     // 信任界面：删除的二次确认要求本会话近期登录过（src/trust/proof.ts，进程内）
     recentLogins(ctx.deps).record(ctx.deps.keys, r.session_token, (ctx.deps.now ? ctx.deps.now() : new Date()).getTime());
@@ -243,8 +253,34 @@ const createStudent: Handler = async (ctx) => {
 
 const CONSENT_TYPES = ['privacy_policy', 'guardian_consent_under14', 'voice_processing', 'pilot_participation'];
 const VERSIONED = /^[a-z0-9][a-z0-9-]{0,47}@[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/;
-/** 合成的同意文本版本号（synthetic-*）只在 dev / test / staging 可用；pilot 与生产在合规交付前不能记同意，也就打不开学生模式（待人确认 #13） */
-export const syntheticConsentAllowed = (env: RunEnv): boolean => env === 'dev' || env === 'test' || env === 'staging';
+/** 合成的同意文本版本号（synthetic-*）只在 dev / test 可用（LT-01 决定记录第 10 条起 staging 也拒绝）；
+ *  pilot 与生产在合规交付前不能记同意，也就打不开学生模式（待人确认 #13） */
+export const syntheticConsentAllowed = (env: RunEnv): boolean => env === 'dev' || env === 'test';
+
+/** staging 只收由人登记的真实版本（BFF_CONSENT_VERSIONS，逗号分隔的 同意类型=文本版本；不设 = 一律不收，fail closed）。其余环境不经这一步 */
+/** 合成的同意文本版本（@ 之后以 synthetic- 开头，不区分大小写；安全审查 S6） */
+export const isSyntheticConsentVersion = (version: string): boolean => (version.split('@')[1] ?? '').toLowerCase().startsWith('synthetic-');
+
+export function consentVersionAllowed(env: RunEnv, registered: ReadonlySet<string> | undefined, type: string, version: string): boolean {
+  if (isSyntheticConsentVersion(version) && !syntheticConsentAllowed(env)) return false;
+  if (env !== 'staging') return true;
+  return registered !== undefined && registered.has(`${type}=${version}`);
+}
+
+/** 解析 BFF_CONSENT_VERSIONS：只在 staging 可设；每项须是 同意类型=文本版本（类型在同意类型表里、版本合格式、不是合成版本） */
+export function parseConsentVersions(env: RunEnv, raw: string | undefined): ReadonlySet<string> | undefined {
+  if (raw === undefined || raw.trim() === '') return env === 'staging' ? new Set() : undefined;
+  if (env !== 'staging') throw new Error('BFF_CONSENT_VERSIONS 只在 staging 设置');
+  const items = raw.split(',').map((s) => s.trim()).filter((s) => s !== '');
+  for (const item of items) {
+    const [type, version, ...rest] = item.split('=');
+    if (rest.length > 0 || type === undefined || version === undefined || !CONSENT_TYPES.includes(type) || !VERSIONED.test(version)
+        || isSyntheticConsentVersion(version)) {
+      throw new Error('BFF_CONSENT_VERSIONS 每项须是 同意类型=文本版本（不收合成版本）');
+    }
+  }
+  return new Set(items);
+}
 
 const recordConsent: Handler = async (ctx) => {
   const b = ctx.body;
@@ -256,7 +292,7 @@ const recordConsent: Handler = async (ctx) => {
       || (decision !== 'granted' && decision !== 'revoked')) {
     return problem(P.INVALID);
   }
-  if (version.split('@')[1]!.startsWith('synthetic-') && !syntheticConsentAllowed(ctx.deps.env)) return problem(P.INVALID);
+  if (!consentVersionAllowed(ctx.deps.env, ctx.deps.consentVersions, type, version)) return problem(P.INVALID);
   try {
     await ctx.q(
       `INSERT INTO platform.consent_record (student_id, guardian_account_id, consent_type, document_version, decision)

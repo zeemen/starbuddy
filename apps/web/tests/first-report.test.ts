@@ -110,7 +110,8 @@ test('待验证：查询参数只收小写 UUID、去重、至多 5 条；单条
 test('开关 report：默认关；只在 dev / test 可开；关时 BFF 客户端不发请求', async () => {
   assert.equal(trustFeatures({ STARBUDDY_ENV: 'test' }).has('report'), false);
   assert.equal(trustFeatures({ STARBUDDY_ENV: 'test', STARBUDDY_TRUST_UI: 'report' }).has('report'), true);
-  for (const env of ['staging', 'pilot', 'production']) assert.equal(trustFeatures({ STARBUDDY_ENV: env, STARBUDDY_TRUST_UI: 'report' }).has('report'), false);
+  assert.equal(trustFeatures({ STARBUDDY_ENV: 'staging', STARBUDDY_TRUST_UI: 'report' }).has('report'), true);  // LT-01
+  for (const env of ['pilot', 'production']) assert.equal(trustFeatures({ STARBUDDY_ENV: env, STARBUDDY_TRUST_UI: 'report' }).has('report'), false);
   const saved = { env: process.env['STARBUDDY_ENV'], ui: process.env['STARBUDDY_TRUST_UI'], fetch: globalThis.fetch };
   const calls: string[] = [];
   globalThis.fetch = (async (u: string | URL) => { calls.push(String(u)); return new Response('{"code":"UNAVAILABLE"}', { status: 503 }); }) as typeof fetch;

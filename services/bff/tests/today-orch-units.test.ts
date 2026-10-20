@@ -34,7 +34,8 @@ test('开关：只认 today_orch，只在 dev / test；其余环境设了就拒�
   assert.equal(parseTodayOrchFeature('test', 'today_orch'), true);
   assert.equal(parseTodayOrchFeature('dev', ' today_orch '), true);
   assert.throws(() => parseTodayOrchFeature('test', 'retest'));
-  for (const env of ['staging', 'pilot', 'production'] as const) assert.throws(() => parseTodayOrchFeature(env, 'today_orch'), env);
+  assert.equal(parseTodayOrchFeature('staging', 'today_orch'), true);  // LT-01：staging 可开
+  for (const env of ['pilot', 'production'] as const) assert.throws(() => parseTodayOrchFeature(env, 'today_orch'), env);
 });
 
 test('响应白名单：只挑七个字段；来源不可用标 partial；学习服务多给的内部字段不进来', () => {

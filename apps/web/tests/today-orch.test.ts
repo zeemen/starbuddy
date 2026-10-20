@@ -34,7 +34,8 @@ test('开关：默认关；只在 dev / test 可开；staging、pilot、生产�
   assert.equal(todayOrchEnabled({ STARBUDDY_ENV: 'test', STARBUDDY_TODAY_ORCH: 'today_orch' }), true);
   assert.equal(todayOrchEnabled({ STARBUDDY_ENV: 'dev', STARBUDDY_TODAY_ORCH: ' today_orch ' }), true);
   assert.equal(todayOrchEnabled({ STARBUDDY_ENV: 'test', STARBUDDY_TODAY_ORCH: 'retest' }), false);
-  for (const env of ['staging', 'pilot', 'production', '']) {
+  assert.equal(todayOrchEnabled({ STARBUDDY_ENV: 'staging', STARBUDDY_TODAY_ORCH: 'today_orch' }), true);  // LT-01
+  for (const env of ['pilot', 'production', '']) {
     assert.equal(todayOrchEnabled({ STARBUDDY_ENV: env, STARBUDDY_TODAY_ORCH: 'today_orch' }), false, env);
   }
 });

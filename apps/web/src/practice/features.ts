@@ -5,13 +5,15 @@
 // 打开方式：STARBUDDY_PRACTICE=practice；只在 dev / test 生效，staging、pilot、生产一律关闭——封测开不开由人决定
 // （前提是教研数值签字、present_item 题面契约与准入决定落地，spec 待人确认 #12、#13）。只在服务端读，不进浏览器。
 
+// LT-01 决定记录第 1、5、7 条：staging 也可开（学习服务在教研签字前回 501，开关开、待签字内容）；pilot、生产仍一律关闭。
+import { launchTier } from '../lib/launch-env.ts';
+
 type Env = Record<string, string | undefined>;
 
 export const PRACTICE_FEATURE = 'practice';
 
 export function practiceEnabled(env: Env = process.env): boolean {
-  const run = env['STARBUDDY_ENV'] ?? '';
-  if (run !== 'dev' && run !== 'test') return false;
+  if (launchTier(env) === null) return false;
   return (env['STARBUDDY_PRACTICE'] ?? '').split(',').map((s) => s.trim()).includes(PRACTICE_FEATURE);
 }
 

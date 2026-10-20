@@ -3,7 +3,10 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { test } from 'node:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { after, test } from 'node:test';
 
 const MAIN = new URL('../src/main.ts', import.meta.url).pathname;
 const hex = () => randomBytes(32).toString('hex');
@@ -16,11 +19,71 @@ function start(vars: Record<string, string>): { status: number | null; stderr: s
   return { status: r.status, stderr: r.stderr };
 }
 
-test('生产、pilot、staging：密钥与来源都配齐也拒绝启动（没有短信供应商，捕获桩不可用）', () => {
+test('生产、pilot、staging：密钥与来源都配齐也拒绝启动（没有短信供应商，捕获桩不可用；staging 没配白名单固定码同样拒绝）', () => {
   for (const env of ['production', 'pilot', 'staging']) {
     const r = start({ STARBUDDY_ENV: env, BFF_LOG_HMAC_KEY: hex(), BFF_AUTH_SECRET: hex(), BFF_TRUST_SECRET: hex(), BFF_SHELL_ORIGIN: 'https://shell.example.invalid' });
     assert.equal(r.status, 2, env);
     assert.match(r.stderr, /短信供应商/, env);
+  }
+});
+
+// ---------------------------------------------------------------- LT-01 staging（决定记录第 1、6、10 条）
+const tmp = mkdtempSync(join(tmpdir(), 'bff-staging-'));
+const OTP_FILE = join(tmp, 'otp.json');
+writeFileSync(OTP_FILE, JSON.stringify({ entries: [] }), { mode: 0o600 });
+after(() => rmSync(tmp, { recursive: true, force: true }));
+const stagingVars = (extra: Record<string, string> = {}) => ({
+  STARBUDDY_ENV: 'staging', BFF_LOG_HMAC_KEY: hex(), BFF_AUTH_SECRET: hex(), BFF_TRUST_SECRET: hex(), BFF_SHELL_ORIGIN: 'https://shell.example.invalid',
+  BFF_STAGING_OTP_FILE: OTP_FILE, BFF_STAGING_OTP_AUDIT_FILE: join(tmp, `audit-${randomBytes(4).toString('hex')}.jsonl`), ...extra });
+const CONFIG_ERR = /STARBUDDY_|BFF_HOST|BFF_CONSENT|短信|OTP|BFF_AUTH_CONFIG|BFF_SHELL_CONFIG|镜像环境标记/;
+
+test('staging：配了白名单固定码与上线测试开关能过启动校验（之后因连不上数据库才退出）', () => {
+  const r = start(stagingVars({ STARBUDDY_TRUST_UI: 'why,dispute,reconcile,weekly,data_rights,report', STARBUDDY_STARMAP: 'starmap_v1',
+                                STARBUDDY_PRACTICE: 'practice', STARBUDDY_RETEST_UI: 'retest', STARBUDDY_TODAY_ORCH: 'today_orch',
+                                BFF_HOST: '172.28.0.30', STARBUDDY_IMAGE_ENV: 'staging',
+                                BFF_CONSENT_VERSIONS: 'privacy_policy=privacy@2026-10-v1,guardian_consent_under14=guardian-consent@2026-10-v1' }));
+  assert.equal(r.status, 2);
+  assert.doesNotMatch(r.stderr, CONFIG_ERR, r.stderr);
+});
+
+test('staging 反例：开发开关、范围外开关、坏的监听地址、合成同意版本、坏的 OTP 文件都拒绝启动', () => {
+  const cases: [Record<string, string>, RegExp][] = [
+    [{ STARBUDDY_TRUST_UI: 'profile' }, /STARBUDDY_TRUST_UI/],
+    [{ STARBUDDY_STARMAP: 'starmap_v1,starmap_dashed' }, /STARBUDDY_STARMAP/],
+    [{ STARBUDDY_MONTHLY_PLAN: 'monthly_plan' }, /STARBUDDY_MONTHLY_PLAN/],
+    [{ STARBUDDY_FAMILY_GOALS: 'family_goals' }, /STARBUDDY_FAMILY_GOALS/],
+    [{ BFF_AUTH_CONFIG: '/nonexistent/auth.json' }, /BFF_AUTH_CONFIG/],
+    [{ BFF_SMS_CAPTURE_FILE: join(tmp, 'sms') }, /BFF_SMS_CAPTURE_FILE/],
+    [{ BFF_HOST: '0.0.0.0' }, /BFF_HOST/],
+    [{ BFF_HOST: '8.8.8.8' }, /BFF_HOST/],
+    [{ BFF_CONSENT_VERSIONS: 'privacy_policy=privacy@synthetic-v1' }, /BFF_CONSENT_VERSIONS/],
+    [{ BFF_STAGING_OTP_FILE: join(tmp, 'missing.json') }, /OTP/],
+    [{ STARBUDDY_IMAGE_ENV: 'test' }, /STARBUDDY_IMAGE_ENV/],
+  ];
+  for (const [extra, re] of cases) {
+    const r = start(stagingVars(extra));
+    assert.equal(r.status, 2, JSON.stringify(extra));
+    assert.match(r.stderr, re, JSON.stringify(extra));
+  }
+});
+
+test('dev / test 与 pilot、生产不变：BFF_HOST、BFF_CONSENT_VERSIONS、BFF_STAGING_OTP_FILE 只在 staging', () => {
+  const localCases: Record<string, string>[] = [{ BFF_HOST: '172.28.0.30' }, { BFF_CONSENT_VERSIONS: 'privacy_policy=privacy@2026-10-v1' },
+                                                { BFF_STAGING_OTP_FILE: OTP_FILE }];
+  for (const extra of localCases) {
+    const r = start({ STARBUDDY_ENV: 'test', ...extra });
+    assert.equal(r.status, 2, JSON.stringify(extra));
+    assert.match(r.stderr, /BFF_HOST|BFF_CONSENT_VERSIONS|BFF_STAGING_OTP/, JSON.stringify(extra));
+  }
+  for (const env of ['pilot', 'production']) {
+    // 开关在短信发送方之前解析的三个：错误信息就是开关的；信任界面开关在其后解析（单测 trust-units 核对 pilot 拒绝）
+    const featureCases: Record<string, string>[] = [{ STARBUDDY_PRACTICE: 'practice' }, { STARBUDDY_RETEST_UI: 'retest' }, { STARBUDDY_TODAY_ORCH: 'today_orch' }];
+    for (const extra of featureCases) {
+      const r = start({ STARBUDDY_ENV: env, BFF_LOG_HMAC_KEY: hex(), BFF_AUTH_SECRET: hex(), BFF_TRUST_SECRET: hex(),
+                        BFF_SHELL_ORIGIN: 'https://shell.example.invalid', ...extra });
+      assert.equal(r.status, 2, env);
+      assert.match(r.stderr, /STARBUDDY_/, env);
+    }
   }
 });
 
@@ -59,8 +122,8 @@ test('阈值配置只能在 dev / test 换：staging、pilot、生产设了 BFF_
   }
 });
 
-test('H5 星图 v1 开关只在 dev / test：staging、pilot、生产设了 STARBUDDY_STARMAP 就拒绝启动；test 下不认识的值也拒绝', () => {
-  for (const env of ['production', 'pilot', 'staging']) {
+test('H5 星图 v1 开关只在 dev / test / staging（LT-01）：pilot、生产设了 STARBUDDY_STARMAP 就拒绝启动；test 下不认识的值也拒绝', () => {
+  for (const env of ['production', 'pilot']) {
     const r = start({ STARBUDDY_ENV: env, STARBUDDY_STARMAP: 'starmap_v1', BFF_LOG_HMAC_KEY: hex(), BFF_AUTH_SECRET: hex(), BFF_TRUST_SECRET: hex(),
                       BFF_SHELL_ORIGIN: 'https://shell.example.invalid' });
     assert.equal(r.status, 2, env);

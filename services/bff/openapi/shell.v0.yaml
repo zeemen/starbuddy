@@ -26,6 +26,8 @@ paths:
       description: >
         发登录验证码（6 位，5 分钟有效，错 5 次作废）。无论号码是否注册都返回同一个 202 与同一个响应体。
         限流：每号每分钟 1 次、每号每天 10 次、每 IP 每小时 30 次。4-H 只有短信捕获桩（dev / test），不给真实号码发短信。
+        staging（LT-01）：不接短信厂商，白名单号码用管理员线下按人下发的固定码（一次性、每条目签发 ≤ 3 次、失败 ≤ 5 次锁定），
+        其余号码签发随机码且不投递；响应与上面完全相同。pilot、生产没有短信供应商，BFF 不启动。
       parameters: [{ $ref: '#/components/parameters/Origin' }]
       requestBody:
         required: true
@@ -190,7 +192,8 @@ paths:
       x-sb-rate-buckets: []
       operationId: recordConsent
       description: >
-        已绑定的家长写同意记录（只追加，撤回也是一条新记录）。合成版本号（…@synthetic-*）只在 dev / test / staging 可用，
+        已绑定的家长写同意记录（只追加，撤回也是一条新记录）。合成版本号（…@synthetic-*，不区分大小写）只在 dev / test 可用；
+        staging 只收由人登记的真实版本（BFF_CONSENT_VERSIONS 的 同意类型=文本版本，没登记的一律 422；LT-01 决定记录第 10 条）；
         pilot 与生产在合规交付前记不了同意，也就打不开学生模式（待人确认 #13）。
       parameters:
         - $ref: '#/components/parameters/StudentId'

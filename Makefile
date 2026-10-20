@@ -37,8 +37,22 @@ make-skip-check:
 # 契约检查约 1 秒，改动后也跑一遍
 check-fast: contract-test taxonomy-check attack-surface-check sie-dictionary-check kge-id-check
 
-check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation practice-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona insight-test insight-mutation voice-blind-eval-test release-walkthrough retest-mutation today-mutation scheduler-test scheduler-mutation gate1-test gate1-mutation review-console-mutation kge-chinese-import kge-chinese-mutation knowledge-material-mutation stage-test stage-mutation kge-dedupe-test kge-dedupe-mutation kge-calibrate-test kge-calibrate-mutation cost-dashboard-test cost-dashboard-mutation mock-exam-test mock-exam-mutation kge-irt-test kge-irt-mutation knowledge-cache-mutation knowledge-semantic-test knowledge-semantic-mutation loadtest-test
+check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation practice-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona insight-test insight-mutation voice-blind-eval-test release-walkthrough retest-mutation today-mutation scheduler-test scheduler-mutation gate1-test gate1-mutation review-console-mutation kge-chinese-import kge-chinese-mutation knowledge-material-mutation stage-test stage-mutation kge-dedupe-test kge-dedupe-mutation kge-calibrate-test kge-calibrate-mutation cost-dashboard-test cost-dashboard-mutation mock-exam-test mock-exam-mutation kge-irt-test kge-irt-mutation knowledge-cache-mutation knowledge-semantic-test knowledge-semantic-mutation loadtest-test deploy-check staging-mutation
 	@echo "check: lint 尚未配置，跳过；其余检查已通过"
+
+# LT-01 部署打包（specs/launch-lt01-deploy-packaging）：镜像与编排的静态校验、开关矩阵、环境变量清单、迁移执行器单测与一次性库上的
+# 副本演练、compose 结构校验（约 10 秒，接进 make check）。DEPLOY_BUILD=1 时另加镜像构建与本机合成全栈冒烟（要能拉基础镜像与 docker
+# 守护进程，耗时长，只单独跑：make deploy-check DEPLOY_BUILD=1 PYTHON_IMAGE=…@sha256:… NODE_IMAGE=…@sha256:… POSTGRES_IMAGE=…）。
+.PHONY: deploy-check staging-mutation
+deploy-check:
+	@CONTRACT_STRICT=$(CONTRACT_STRICT) bash deploy/scripts/deploy-check.sh
+
+# LT-01 staging 运行环境：学习服务与审核台后端的 staging 启动校验逐条改坏，断言 tests/test_staging_env.py 能发现（纯函数，约 30 秒）
+staging-mutation:
+	@if $(LEARNING_MISSING); then \
+	  echo "staging-mutation: 跳过（没有安装依赖；见 services/learning/README.md）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@$(call guard,$(LEARNING_MISSING))cd services/learning && .venv/bin/python scripts/staging_mutations.py
 
 # 契约合法性 + 示例 + 反例集
 contract-test:

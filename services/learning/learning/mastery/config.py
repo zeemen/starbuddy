@@ -292,5 +292,6 @@ def load_config(path: str | Path, *, env: str) -> MasteryConfig:
 def load_config_from_env(path: str | Path, environ: Mapping[str, str] | None = None) -> MasteryConfig:
     """部署入口：环境从 LEARNING_ENV 读，不由调用方传。"""
     env = (os.environ if environ is None else environ).get("LEARNING_ENV", "")
-    _need(env in ("dev", TEST_ENV), "LEARNING_ENV 没有设置或不认识：掌握配置拒绝加载")
+    # staging（LT-01 决定记录第 1 条）：可以加载，但 parse_config 在非 test 环境照旧拒绝合成与未签字的配置
+    _need(env in ("dev", TEST_ENV, "staging"), "LEARNING_ENV 没有设置或不认识：掌握配置拒绝加载")
     return load_config(path, env=env)

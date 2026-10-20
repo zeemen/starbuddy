@@ -152,8 +152,11 @@ def create_app(settings: Settings, *, pool: asyncpg.Pool | None = None, contract
     check_cfg = load_check_config(settings.report_check_path, env=settings.env)  # 启动即校验；insight.report 与 insight.jobs 使用
     the_sie03 = sie03 or load_sie03(settings.sie03_path, env=settings.env)  # 启动即校验（含占位文案的禁用推断检查）
     # 月度计划（PLT-14 第 2 步）：配置与模板库启动即校验（模板库过禁用推断与“名次 / 概率 / 承诺”词表；合成或未签字只允许 test）
-    the_monthly = monthly or load_monthly_config(settings.monthly_path, env=settings.env)
-    the_templates = monthly_templates or load_templates(settings.monthly_templates_path, env=settings.env)
+    # LT-01 决定记录第 9 条：月度计划开关关闭（settings.monthly_enabled 为假，staging 未显式配置 INSIGHT_MONTHLY_PLAN）时不加载
+    # 配置与模板库，生成接口回 501；开关开时照旧启动即校验签字配置。dev / test 恒为开（行为不变）
+    monthly_on = settings.monthly_enabled or monthly is not None
+    the_monthly = (monthly or load_monthly_config(settings.monthly_path, env=settings.env)) if monthly_on else None
+    the_templates = (monthly_templates or load_templates(settings.monthly_templates_path, env=settings.env)) if monthly_on else None
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -167,8 +170,8 @@ def create_app(settings: Settings, *, pool: asyncpg.Pool | None = None, contract
             ops = Sie03Store(p)
             the_mastery = mastery or DbMasterySource(p)
             state.update(store=store, ops=ops, policy=the_policy, sie03=the_sie03, check_cfg=check_cfg,
-                         monthly={"config": the_monthly, "templates": the_templates, "forbidden": forbidden_matcher(),
-                                  "mastery": the_mastery},
+                         monthly=({"config": the_monthly, "templates": the_templates, "forbidden": forbidden_matcher(),
+                                   "mastery": the_mastery} if monthly_on else None),
                          # 月度计划接口代表家长时的库内再核（0044 insight.verify_actor），与契约工具同一口径
                          verifier=verifier if verifier is not None else DbActorVerifier(p),
                          core=ToolCore(store, the_contract, the_policy, forbidden_matcher(), verifier or DbActorVerifier(p),

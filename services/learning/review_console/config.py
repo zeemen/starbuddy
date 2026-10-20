@@ -1,6 +1,7 @@
-"""配置：全部来自环境变量，不写进仓库；只允许 dev / test（CLAUDE.md 规则 9，spec 待人确认 #3：只部署在 dev / staging）。
+"""配置：全部来自环境变量，不写进仓库；只允许 dev / test / staging（CLAUDE.md 规则 9，spec 待人确认 #3：只部署在 dev / staging）。
 
-  REVIEW_CONSOLE_ENV                 dev | test
+  REVIEW_CONSOLE_ENV                 dev | test | staging（staging：LT-01 决定记录第 5 条；REVIEW_CONSOLE_FEATURES 开发开关在 staging 仍拒绝）
+  REVIEW_CONSOLE_HOST                监听地址，缺省 127.0.0.1；只有 staging 能设为内网 IPv4（RFC 1918）
   REVIEW_CONSOLE_KGE_DATABASE_URL    读草稿、改草稿用；登录角色只继承 starbuddy_kge
   REVIEW_CONSOLE_REVIEW_DATABASE_URL 签字、发布、撤下用；登录角色只继承 starbuddy_review
 两个连接串必须是两个不同的登录角色（spec 设计要点 3：提交方不能自己签字），启动时核对。
@@ -23,10 +24,12 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+from learning.netpolicy import SERVICE_ENVS, check_image_env, listen_host
+
 from .pages import check_mr_url_template
 from .spot_check import SpotCheckSettings
 
-ALLOWED_ENVS = ("dev", "test")
+ALLOWED_ENVS = ("dev", "test")  # 开发开关（REVIEW_CONSOLE_FEATURES）与命令行导出仍只认这两个；服务本身另收 staging（SERVICE_ENVS）
 FEATURES = ("tag_worklist", "revision_preflight")
 
 
@@ -67,13 +70,16 @@ class ReviewSettings:
     pages: PagesSettings | None = None
     spot_check: SpotCheckSettings | None = None  # 没设种子时为空：抽检接口报错，不用缺省种子
     features: frozenset[str] = frozenset()       # KGE-06：打开的功能（缺省全关）
+    host: str = "127.0.0.1"                      # LT-01：监听地址（只有 staging 能改为内网 IPv4）
 
     @staticmethod
     def from_env(environ: dict[str, str] | None = None) -> "ReviewSettings":
         e = dict(os.environ if environ is None else environ)
         env = e.get("REVIEW_CONSOLE_ENV", "")
-        if env not in ALLOWED_ENVS:
-            raise RuntimeError(f"REVIEW_CONSOLE_ENV 必须是 {ALLOWED_ENVS} 之一；审核台 v0 不连接 pilot 或生产环境")
+        if env not in SERVICE_ENVS:
+            raise RuntimeError(f"REVIEW_CONSOLE_ENV 必须是 {SERVICE_ENVS} 之一；审核台 v0 不连接 pilot 或生产环境")
+        check_image_env(env, e)
+        host = listen_host(e.get("REVIEW_CONSOLE_HOST"), env, "REVIEW_CONSOLE_HOST")
         kge, review = e.get("REVIEW_CONSOLE_KGE_DATABASE_URL", ""), e.get("REVIEW_CONSOLE_REVIEW_DATABASE_URL", "")
         if not kge or not review:
             raise RuntimeError("缺少 REVIEW_CONSOLE_KGE_DATABASE_URL 或 REVIEW_CONSOLE_REVIEW_DATABASE_URL")
@@ -81,4 +87,4 @@ class ReviewSettings:
             raise RuntimeError("提交与签字必须用两个不同的数据库登录角色")
         return ReviewSettings(env=env, kge_database_url=kge, review_database_url=review, pages=PagesSettings.from_env(e),
                               spot_check=SpotCheckSettings.from_env(e),
-                              features=parse_features(e.get("REVIEW_CONSOLE_FEATURES", ""), env))
+                              features=parse_features(e.get("REVIEW_CONSOLE_FEATURES", ""), env), host=host)

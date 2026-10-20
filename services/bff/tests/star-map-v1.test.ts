@@ -144,7 +144,10 @@ test('开关：缺省全关；只在 dev / test 可开；不认识的值、只�
   assert.equal(parseStarMapFeatures('test', '').size, 0);
   assert.deepEqual([...parseStarMapFeatures('test', 'starmap_v1')], ['starmap_v1']);
   assert.deepEqual([...parseStarMapFeatures('dev', 'starmap_dashed, starmap_v1')], ['starmap_v1', 'starmap_dashed']);
-  for (const env of ['staging', 'pilot', 'production'] as const) assert.throws(() => parseStarMapFeatures(env, 'starmap_v1'), /dev \/ test/);
+  // LT-01：staging 只开 starmap_v1，虚线另待签字；pilot、生产仍拒绝
+  assert.deepEqual([...parseStarMapFeatures('staging', 'starmap_v1')], ['starmap_v1']);
+  assert.throws(() => parseStarMapFeatures('staging', 'starmap_v1,starmap_dashed'), /待签字/);
+  for (const env of ['pilot', 'production'] as const) assert.throws(() => parseStarMapFeatures(env, 'starmap_v1'), /dev \/ test \/ staging/);
   assert.throws(() => parseStarMapFeatures('test', 'starmap_v2'), /不认识/);
   assert.throws(() => parseStarMapFeatures('test', 'starmap_dashed'), /starmap_v1/);
 });

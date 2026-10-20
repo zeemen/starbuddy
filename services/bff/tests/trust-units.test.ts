@@ -14,11 +14,16 @@ import { readFileSync } from 'node:fs';
 
 const U = (n: string) => `5e000000-0000-4000-8000-0000000000${n}`;
 
-test('开关：缺省全关；dev / test 可开；staging 以上设了就拒绝；不认识的开关拒绝', () => {
+test('开关：缺省全关；dev / test 可开；staging 只开上线测试范围（不含 profile，LT-01）；pilot 以上设了就拒绝；不认识的开关拒绝', () => {
   assert.equal(parseTrustFeatures('production', undefined).size, 0);
   assert.equal(parseTrustFeatures('test', '').size, 0);
   assert.deepEqual([...parseTrustFeatures('dev', 'dispute, data_rights')].sort(), ['data_rights', 'dispute']);
-  for (const env of ['staging', 'pilot', 'production'] as const) assert.throws(() => parseTrustFeatures(env, 'dispute'), /dev \/ test/);
+  assert.deepEqual([...parseTrustFeatures('dev', 'profile')], ['profile']);
+  assert.deepEqual([...parseTrustFeatures('staging', 'why,dispute,reconcile,weekly,data_rights,report')].sort(),
+    ['data_rights', 'dispute', 'reconcile', 'report', 'weekly', 'why']);
+  assert.throws(() => parseTrustFeatures('staging', 'dispute,profile'), /profile 不在上线测试范围/);
+  assert.throws(() => parseTrustFeatures('staging', 'dispute,everything'), /不认识/);
+  for (const env of ['pilot', 'production'] as const) assert.throws(() => parseTrustFeatures(env, 'dispute'), /dev \/ test \/ staging/);
   assert.throws(() => parseTrustFeatures('test', 'dispute,everything'), /不认识/);
 });
 

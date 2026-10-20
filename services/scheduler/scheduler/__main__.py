@@ -5,7 +5,8 @@
   SCHEDULER_ENV=dev ... python -m scheduler --dry-run [--once <任务>]             只核对并列出计划（命令、变量名、接下来 3 次运行时刻），不连库
   可选 --schedule <路径>（缺省 config/schedule.synthetic.yaml）
 
-启动核对（规则 9）：SCHEDULER_ENV 只收 dev / test；时间表配置合法；选中的每个任务所需的变量都在、各身份的运行环境变量只收 dev / test、
+启动核对（规则 9）：SCHEDULER_ENV 只收 dev / test / staging（staging：LT-01 决定记录第 5 条，只收签字时间表，各身份也须 staging，
+连接串另收内网 IPv4）；时间表配置合法；选中的每个任务所需的变量都在、各身份的运行环境变量只收 dev / test、
 全部连接串是本机、子进程解释器存在——任一不过拒绝启动（退出码 2），不连库、不起子进程。
 退出码：--once 时为该任务一轮的退出码（0 正常或跳过；1 部分失败、超时、崩溃、输出不对；2 拒绝）；常驻与 --dry-run 正常结束为 0；启动核对不过为 2。
 """
@@ -21,7 +22,7 @@ from typing import Callable, Mapping, TextIO
 
 from .config import DEFAULT_SCHEDULE, ConfigError, load_config
 from .loop import Loop, serve_forever
-from .runner import ALLOWED_ENVS, PreflightError, Runner, child_env
+from .runner import SERVICE_ENVS, STAGING, PreflightError, Runner, child_env
 from .schedule import upcoming
 
 ENV_VAR = "SCHEDULER_ENV"
@@ -42,12 +43,18 @@ def main(argv: list[str] | None = None, environ: Mapping[str, str] | None = None
     env = dict(os.environ if environ is None else environ)
     out = out if out is not None else sys.stdout
     clock = clock or (lambda: datetime.now(timezone.utc))
-    if env.get(ENV_VAR, "") not in ALLOWED_ENVS:
-        return _refuse(f"{ENV_VAR} 必须是 {ALLOWED_ENVS} 之一；调度器不接 pilot 或生产环境（规则 9）")
+    if env.get(ENV_VAR, "") not in SERVICE_ENVS:
+        return _refuse(f"{ENV_VAR} 必须是 {SERVICE_ENVS} 之一；调度器不接 pilot 或生产环境（规则 9）")
+    marked = env.get("STARBUDDY_IMAGE_ENV")  # 镜像固化的环境标记（LT-01 安全审查 S10）：设了就必须与运行环境一致
+    if marked is not None and marked != env.get(ENV_VAR):
+        return _refuse(f"镜像环境标记是 {marked}，与 {ENV_VAR} 不一致（STARBUDDY_IMAGE_ENV）")
     try:
         cfg = load_config(a.schedule)
     except ConfigError as e:
         return _refuse(f"时间表配置不合法：{e}")
+    if env.get(ENV_VAR) == STAGING and not cfg.signed:
+        # LT-01 决定记录第 1、5 条：staging 拒绝合成或未签字的时间表
+        return _refuse("staging 只收签字的时间表（合成或未签字的时间表拒绝；用 --schedule 指定签字配置）")
     if a.once is not None and a.once not in cfg.jobs:
         return _refuse(f"没有任务 {a.once!r}（有：{', '.join(sorted(cfg.jobs))}）")
     selected = [cfg.jobs[a.once]] if a.once else list(cfg.jobs.values())

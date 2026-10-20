@@ -127,7 +127,8 @@ async def sample_spot_checks(conn: asyncpg.Connection, subject: str, ratio: floa
 
 # ---------- 命令行 ----------
 ENV_VAR, URL_VAR = "SCHEDULER_ENV", "SCHEDULER_DATABASE_URL"
-ALLOWED_ENVS = ("dev", "test")
+# staging：LT-01 决定记录第 5 条（调度器连库按同一口径放开：连接串与服务端只收本机或内网 IPv4 字面量）
+ALLOWED_ENVS = ("dev", "test", "staging")
 LOCAL_ONLY = "调度器定时任务只连本机数据库（localhost、回环地址或 Unix socket）"
 
 
@@ -159,16 +160,16 @@ def check_env(environ: dict[str, str]) -> str:
         raise CliError(f"缺少 {URL_VAR}")
     not_local, local_only, _ = _local_checks()
     try:
-        return local_only(url)
+        return local_only(url, environ.get(ENV_VAR))
     except SystemExit as e:
         raise _rephrase(e, not_local) from None
 
 
-async def check_server(conn: Any) -> None:
-    """连上之后：服务端地址为空（Unix socket）或回环地址，否则中止"""
+async def check_server(conn: Any, env: str | None = None) -> None:
+    """连上之后：服务端地址为空（Unix socket）或回环地址（staging 另收内网 IPv4），否则中止"""
     not_local, _, check_server_local = _local_checks()
     try:
-        await check_server_local(conn)
+        await check_server_local(conn, env)
     except SystemExit as e:
         raise _rephrase(e, not_local) from None
 
@@ -203,10 +204,10 @@ def _parse(argv: Sequence[str] | None) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
-async def _run(a: argparse.Namespace, url: str) -> dict[str, Any]:
+async def _run(a: argparse.Namespace, url: str, env: str | None = None) -> dict[str, Any]:
     conn = await connect_scheduler(url)  # 角色断言不过即关闭连接并报错
     try:
-        await check_server(conn)
+        await check_server(conn, env)
         if a.cmd == "freeze":
             return {"job": "freeze", "frozen": await freeze_due_predictions(conn)}
         if a.cmd == "erasures":
@@ -233,8 +234,9 @@ def main(argv: Sequence[str] | None = None, environ: dict[str, str] | None = Non
             if a.lookback_hours is not None and not 1 <= a.lookback_hours <= MAX_LOOKBACK_HOURS:
                 raise CliError(f"--lookback-hours 必须在 1–{MAX_LOOKBACK_HOURS} 之间")
             _since(a.since)
-        url = check_env(dict(os.environ if environ is None else environ))
-        out = asyncio.run(_run(a, url))
+        env_map = dict(os.environ if environ is None else environ)
+        url = check_env(env_map)
+        out = asyncio.run(_run(a, url, env_map.get(ENV_VAR)))
     except CliError as e:
         print(f"insight.scheduled：{e}", file=sys.stderr)
         return 2

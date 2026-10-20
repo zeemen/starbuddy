@@ -419,12 +419,18 @@ export interface Problem {
 
 export type Result<T> = { ok: true; value: T } | { ok: false; problem: Problem };
 
-/** 审核台后端只能是 loopback 上的 http（开发原型；PR 4 定部署拓扑） */
+const PRIVATE_V4 = /^(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})$/;
+
+/** 审核台后端只能是 loopback 上的 http（开发原型；PR 4 定部署拓扑）。LT-01 决定记录第 5 条：STARBUDDY_ENV=staging 时
+ *  另收内网 IPv4 字面量的 http（容器网络，与 src/lib/bff.ts 的内网口径一致）；pilot、生产仍只收 loopback */
 export function reviewBaseUrl(env: Record<string, string | undefined> = process.env): string {
   const raw = env['STARBUDDY_REVIEW_URL'] ?? 'http://127.0.0.1:8790';
   const u = new URL(raw);
-  if (u.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(u.hostname)) {
-    throw new Error('STARBUDDY_REVIEW_URL 只能指向本机 loopback（开发原型）');
+  const loopback = ['127.0.0.1', 'localhost', '[::1]'].includes(u.hostname);
+  const stagingPrivate = env['STARBUDDY_ENV'] === 'staging' && PRIVATE_V4.test(u.hostname)
+    && u.hostname.split('.').every((p) => Number(p) <= 255 && !(p.length > 1 && p.startsWith('0')));
+  if (u.protocol !== 'http:' || !(loopback || stagingPrivate) || u.username || u.password) {
+    throw new Error('STARBUDDY_REVIEW_URL 只能指向本机 loopback（staging 另收内网 IPv4）');
   }
   return u.origin;
 }

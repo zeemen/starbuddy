@@ -246,9 +246,9 @@ test('开关关时 BFF 客户端不发任何请求（按 404 返回）；打开�
       assert.deepEqual(r, { ok: false, status: 404, code: 'NOT_FOUND' });
     }
     assert.deepEqual(await api.downloadExport(s, C2, P1, `dl_${'0'.repeat(64)}`), { ok: false, status: 404 });
-    process.env['STARBUDDY_ENV'] = 'staging';
+    process.env['STARBUDDY_ENV'] = 'pilot';
     process.env['STARBUDDY_TRUST_UI'] = 'why,dispute,reconcile,data_rights';
-    assert.deepEqual(await api.fetchDisputes(s, C2), { ok: false, status: 404, code: 'NOT_FOUND' }, 'staging 以上开关一律关');
+    assert.deepEqual(await api.fetchDisputes(s, C2), { ok: false, status: 404, code: 'NOT_FOUND' }, 'pilot 以上开关一律关（LT-01 起 staging 可开）');
     assert.deepEqual(calls, []);
     process.env['STARBUDDY_ENV'] = 'test';
     assert.deepEqual(await api.fetchPrediction(s, C2, P1), { ok: false, status: 503, code: 'UNAVAILABLE' });

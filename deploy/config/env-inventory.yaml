@@ -1,0 +1,194 @@
+# 各服务环境变量清单（LT-01 范围第 2 条）。只登记名字与口径，不写任何取值（规则 8、9；示例值见 deploy/compose，全部合成）。
+# 字段：name、purpose（用途）、secret（是否密钥：true 的只能由密钥管理注入，不进镜像、不进编排文件明文、不进日志）、
+#       default（缺省；null = 没有缺省）、envs：
+#         all          dev / test / staging 都可设
+#         local        只在 dev / test（开发开关与合成配置；staging 设了拒绝启动，或按关）
+#         staging      只在 staging 可设（LT-01 新增；dev / test 设了拒绝启动）
+#       required_in_staging（staging 必填）。
+# 名字里的 <SUBJECT> / <CALLER> 是模板（源码里按学科或调用方拼出），测试按模板核对。
+# 核对：deploy/tests/test_env_inventory.py（每个名字在 sources 里真实存在；编排文件只用这里登记的名字；密钥不以明文出现）。
+schema: starbuddy-env-inventory/1
+services:
+  learning:
+    sources: [services/learning/learning/config.py, services/learning/learning/__main__.py, services/learning/learning/mastery/config.py,
+              services/learning/learning/netpolicy.py]
+    vars:
+      - {name: LEARNING_ENV, purpose: 运行环境 dev/test/staging, secret: false, default: null, envs: all, required_in_staging: true}
+      - {name: LEARNING_HOST, purpose: 监听地址（staging 可设内网 IPv4）, secret: false, default: 127.0.0.1, envs: staging}
+      - {name: PORT, purpose: 监听端口, secret: false, default: "8788", envs: all}
+      - {name: LEARNING_DATABASE_URL, purpose: 连接串（登录角色只继承 starbuddy_learning；口令走 PGPASSFILE 或密钥注入）, secret: true, default: null, envs: all, required_in_staging: true}
+      - {name: LEARNING_SERVICE_TOKEN, purpose: BFF → 学习服务令牌（≥ 32 字符）, secret: true, default: null, envs: all, required_in_staging: true}
+      - {name: LEARNING_ADAPTER_<SUBJECT>_URL, purpose: 适配器地址（同网络命名空间回环）, secret: false, default: null, envs: all}
+      - {name: LEARNING_ADAPTER_<SUBJECT>_TOKEN, purpose: 学习服务 → 适配器令牌, secret: true, default: null, envs: all}
+      - {name: LEARNING_ROUTE_CLIENT_<SUBJECT>_TOKEN, purpose: 适配器 → 模型路由接口令牌（LT-02 前不设）, secret: true, default: null, envs: all}
+      - {name: LEARNING_KNOWLEDGE_URL, purpose: 知识服务地址, secret: false, default: null, envs: all}
+      - {name: LEARNING_KNOWLEDGE_TOKEN, purpose: caller=learning 的知识服务令牌, secret: true, default: null, envs: all}
+      - {name: LEARNING_INSIGHT_CLIENT_TOKEN, purpose: 洞察服务 → 验证任务接口令牌, secret: true, default: null, envs: all}
+      - {name: LEARNING_ORCHESTRATOR_CLIENT_TOKEN, purpose: 编排层 → 掌握读取令牌, secret: true, default: null, envs: all}
+      - {name: LEARNING_MASTERY_CONFIG_<SUBJECT>, purpose: 掌握配置文件（staging 只收签字配置）, secret: false, default: null, envs: all}
+      - {name: LEARNING_MASTERY_SYNC_BUDGET_SECONDS, purpose: 同步重算时间预算, secret: false, default: "2", envs: all}
+      - {name: LEARNING_PROFILE_PAGE_CONFIG, purpose: 学情档案页配置（staging 只收签字配置）, secret: false, default: null, envs: all}
+      - {name: LEARNING_PRACTICE_CONFIG, purpose: 再练配置（synthetic 只在 dev/test；staging 只收签字配置文件）, secret: false, default: null, envs: all}
+      - {name: LEARNING_PRACTICE_TICKET_SECRET, purpose: 再练票据 HMAC 密钥, secret: true, default: null, envs: all}
+      - {name: LEARNING_RETEST_CONFIG, purpose: 复测配置（同上）, secret: false, default: null, envs: all}
+      - {name: LEARNING_TODAY_CONFIG, purpose: 今日编排配置（同上）, secret: false, default: null, envs: all}
+      - {name: LEARNING_TODAY_SNAPSHOT, purpose: 今日计划快照 0/1, secret: false, default: "0", envs: all}
+      - {name: LEARNING_DIAGNOSIS_PRESENTER, purpose: 合成题面（只 test）, secret: false, default: null, envs: local}
+      - {name: LEARNING_DIAGNOSIS_SOURCE, purpose: fixture（只 test）或 knowledge, secret: false, default: fixture, envs: all}
+      - {name: LEARNING_DIAGNOSIS_TARGETS, purpose: knowledge 模式的目标节点, secret: false, default: null, envs: all}
+      - {name: LEARNING_DIAGNOSIS_MAP_VERSION, purpose: knowledge 模式的地图版本, secret: false, default: null, envs: all}
+      - {name: LEARNING_PRACTICE_PRESENTER, purpose: 再练合成题面（只 test）, secret: false, default: null, envs: local}
+      - {name: LEARNING_PRESENT_ITEM_SOURCE, purpose: 题面来源 synthetic / adapter（adapter 需候选契约开关）, secret: false, default: synthetic, envs: all}
+      - {name: STARBUDDY_ALLOW_CANDIDATE_CONTRACT, purpose: 候选契约开关（开发开关）, secret: false, default: null, envs: local}
+      - {name: LEARNING_INTERNAL_V1, purpose: learning-internal v1 写入路径开关（未签字，LT-04；开发开关，staging 设了拒绝启动）, secret: false, default: null, envs: local}
+      - {name: STARBUDDY_IMAGE_ENV, purpose: 镜像固化的环境标记（构建时写入；设了须与运行环境一致）, secret: false, default: null, envs: all}
+  insight:
+    sources: [services/insight/insight/service/config.py, services/insight/insight/service/contract.py, services/insight/insight/jobs_cli.py]
+    vars:
+      - {name: INSIGHT_ENV, purpose: 运行环境 dev/test/staging, secret: false, default: null, envs: all, required_in_staging: true}
+      - {name: INSIGHT_HOST, purpose: 监听地址（staging 只收 127.0.0.1 或内网 IPv4）, secret: false, default: 127.0.0.1, envs: all}
+      - {name: INSIGHT_PORT, purpose: 监听端口, secret: false, default: "8791", envs: all}
+      - {name: INSIGHT_DATABASE_URL, purpose: 连接串（只继承 starbuddy_insight）, secret: true, default: null, envs: all, required_in_staging: true}
+      - {name: INSIGHT_TOKEN_<CALLER>, purpose: 调用方令牌（BFF / ORCHESTRATOR）, secret: true, default: null, envs: all, required_in_staging: true}
+      - {name: INSIGHT_POLICY, purpose: 判断策略配置（staging 须签字）, secret: false, default: config/claims.synthetic.json, envs: all, required_in_staging: true}
+      - {name: INSIGHT_REPORT_CHECK, purpose: 首份报告一致性词表（staging 须签字）, secret: false, default: config/report-check.synthetic.json, envs: all, required_in_staging: true}
+      - {name: INSIGHT_SIE03, purpose: SIE-03 配置（staging 须签字）, secret: false, default: config/sie03.synthetic.json, envs: all, required_in_staging: true}
+      - {name: INSIGHT_MONTHLY_PLAN, purpose: 月度计划配置；staging 下兼作开关（不设 = 关）, secret: false, default: config/monthly-plan.synthetic.json, envs: all}
+      - {name: INSIGHT_MONTHLY_TEMPLATES, purpose: 月度计划模板库, secret: false, default: templates/monthly_plan.v0.yaml, envs: all}
+      - {name: INSIGHT_LEARNING_URL, purpose: 学习服务地址（验证任务）, secret: false, default: null, envs: all}
+      - {name: INSIGHT_LEARNING_TOKEN, purpose: 洞察服务 → 学习服务验证任务令牌, secret: true, default: null, envs: all}
+      - {name: INSIGHT_CONTRACT_DIR, purpose: 契约目录覆盖（测试用；staging 设了拒绝启动）, secret: false, default: null, envs: local}
+      - {name: STARBUDDY_IMAGE_ENV, purpose: 镜像固化的环境标记（设了须与运行环境一致）, secret: false, default: null, envs: all}
+      - {name: INSIGHT_WEEKLY_POLICY, purpose: 周报策略（insight.jobs weekly）, secret: false, default: null, envs: all}
+      - {name: INSIGHT_WEEKLY_CHECK, purpose: 周报一致性词表, secret: false, default: null, envs: all}
+  knowledge:
+    sources: [services/knowledge/knowledge/service/config.py, services/knowledge/knowledge/service/contract.py, services/knowledge/knowledge/retrieval/tokenize.py]
+    vars:
+      - {name: KNOWLEDGE_ENV, purpose: 运行环境 dev/test/staging, secret: false, default: null, envs: all, required_in_staging: true}
+      - {name: KNOWLEDGE_HOST, purpose: 监听地址（staging 只收 127.0.0.1 或内网 IPv4）, secret: false, default: 127.0.0.1, envs: all}
+      - {name: KNOWLEDGE_PORT, purpose: 监听端口, secret: false, default: "8790", envs: all}
+      - {name: KNOWLEDGE_DATABASE_URL, purpose: 连接串（只继承 starbuddy_kge_read）, secret: true, default: null, envs: all, required_in_staging: true}
+      - {name: KNOWLEDGE_TOKEN_<CALLER>, purpose: 调用方令牌（BFF / ORCHESTRATOR / LEARNING）, secret: true, default: null, envs: all, required_in_staging: true}
+      - {name: KNOWLEDGE_PAGE_SNAPSHOT, purpose: 页面快照目录（只读挂载）, secret: false, default: null, envs: all}
+      - {name: KNOWLEDGE_PAGE_SNAPSHOT_POINTER, purpose: 快照指针文件, secret: false, default: null, envs: all}
+      - {name: KNOWLEDGE_PAGE_SNAPSHOT_ROOT, purpose: 快照根目录, secret: false, default: null, envs: all}
+      - {name: KNOWLEDGE_SNAPSHOT_HMAC_KEY, purpose: manifest 签名密钥（接口预留）, secret: true, default: null, envs: all}
+      - {name: KNOWLEDGE_READ_CACHE, purpose: 公共层只读缓存开关（上线测试关）, secret: false, default: "0", envs: all}
+      - {name: KNOWLEDGE_READ_CACHE_SIZE, purpose: 缓存条目上限, secret: false, default: "1024", envs: all}
+      - {name: KNOWLEDGE_READ_CACHE_MAX_BYTES, purpose: 缓存字节上限, secret: false, default: "67108864", envs: all}
+      - {name: KNOWLEDGE_READ_CACHE_LOG_EVERY, purpose: 缓存计数日志间隔, secret: false, default: "1000", envs: all}
+      - {name: KNOWLEDGE_CACHE_DIR, purpose: 分词器缓存目录（只读根文件系统下挂 tmpfs）, secret: false, default: /tmp/knowledge-cache, envs: all}
+      - {name: KNOWLEDGE_CONTRACT_DIR, purpose: 契约目录覆盖（测试用；staging 设了拒绝启动）, secret: false, default: null, envs: local}
+      - {name: STARBUDDY_IMAGE_ENV, purpose: 镜像固化的环境标记（设了须与运行环境一致）, secret: false, default: null, envs: all}
+  scheduler:
+    sources: [services/scheduler/scheduler/__main__.py, services/scheduler/scheduler/config.py, services/scheduler/scheduler/runner.py]
+    vars:
+      - {name: SCHEDULER_ENV, purpose: 运行环境 dev/test/staging（staging 只收签字时间表）, secret: false, default: null, envs: all, required_in_staging: true}
+      - {name: SCHEDULER_DATABASE_URL, purpose: 连接串（只继承 starbuddy_scheduler；staging 只收内网 IPv4）, secret: true, default: null, envs: all, required_in_staging: true}
+      - {name: STARBUDDY_IMAGE_ENV, purpose: 镜像固化的环境标记（设了须与 SCHEDULER_ENV 一致；不转交子进程）, secret: false, default: null, envs: all}
+  review_console:
+    sources: [services/learning/review_console/config.py, services/learning/review_console/__main__.py, services/learning/review_console/spot_check.py,
+              services/learning/learning/netpolicy.py]
+    vars:
+      - {name: REVIEW_CONSOLE_ENV, purpose: 运行环境 dev/test/staging, secret: false, default: null, envs: all, required_in_staging: true}
+      - {name: REVIEW_CONSOLE_HOST, purpose: 监听地址（staging 可设内网 IPv4）, secret: false, default: 127.0.0.1, envs: staging}
+      - {name: REVIEW_CONSOLE_KGE_DATABASE_URL, purpose: 草稿读写连接串（只继承 starbuddy_kge）, secret: true, default: null, envs: all, required_in_staging: true}
+      - {name: REVIEW_CONSOLE_REVIEW_DATABASE_URL, purpose: 签字发布连接串（只继承 starbuddy_review）, secret: true, default: null, envs: all, required_in_staging: true}
+      - {name: REVIEW_CONSOLE_FEATURES, purpose: 封测周修订开关（开发开关）, secret: false, default: null, envs: local}
+      - {name: REVIEW_CONSOLE_PAGES_EXPORT, purpose: 编译页面合并记录导出, secret: false, default: null, envs: all}
+      - {name: REVIEW_CONSOLE_PAGES_STAFF_MAP, purpose: staff 对应表, secret: false, default: null, envs: all}
+      - {name: REVIEW_CONSOLE_PAGES_MR_URL, purpose: 合并请求地址模板, secret: false, default: null, envs: all}
+      - {name: REVIEW_CONSOLE_SPOT_CHECK_SEED, purpose: 抽检种子, secret: true, default: null, envs: all}
+      - {name: REVIEW_CONSOLE_SPOT_CHECK_RATIO, purpose: 抽检比例, secret: false, default: null, envs: all}
+      - {name: REVIEW_CONSOLE_MERGE_WINDOW, purpose: 合并窗口, secret: false, default: null, envs: all}
+      - {name: STARBUDDY_IMAGE_ENV, purpose: 镜像固化的环境标记（设了须与运行环境一致）, secret: false, default: null, envs: all}
+  bff:
+    sources: [services/bff/src/main.ts, services/bff/src/http/config.ts, services/bff/src/http/sms.ts]
+    vars:
+      - {name: STARBUDDY_ENV, purpose: 运行环境 dev/test/staging/pilot/production, secret: false, default: null, envs: all, required_in_staging: true}
+      - {name: BFF_HOST, purpose: 监听地址（只 staging 可设内网 IPv4）, secret: false, default: 127.0.0.1, envs: staging}
+      - {name: PORT, purpose: 监听端口, secret: false, default: "8787", envs: all}
+      - {name: BFF_DATABASE_URL, purpose: 连接串（只继承 starbuddy_bff）, secret: true, default: null, envs: all, required_in_staging: true}
+      - {name: BFF_SHELL_ORIGIN, purpose: 壳的来源（staging 必须 https）, secret: false, default: null, envs: all, required_in_staging: true}
+      - {name: BFF_LOG_HMAC_KEY, purpose: 日志 HMAC 密钥（十六进制 ≥ 32 字节）, secret: true, default: null, envs: all, required_in_staging: true}
+      - {name: BFF_AUTH_SECRET, purpose: 认证派生根密钥, secret: true, default: null, envs: all, required_in_staging: true}
+      - {name: BFF_TRUST_SECRET, purpose: 信任界面密钥, secret: true, default: null, envs: all, required_in_staging: true}
+      - {name: BFF_TRUST_CLIENT_IP, purpose: 取前端转交的客户端 IP, secret: false, default: null, envs: all}
+      - {name: BFF_LEARNING_URL, purpose: 学习服务地址, secret: false, default: null, envs: all}
+      - {name: BFF_LEARNING_TOKEN, purpose: BFF → 学习服务令牌, secret: true, default: null, envs: all}
+      - {name: BFF_INSIGHT_URL, purpose: 洞察服务地址, secret: false, default: null, envs: all}
+      - {name: BFF_INSIGHT_TOKEN, purpose: caller=bff 的洞察服务令牌, secret: true, default: null, envs: all}
+      - {name: BFF_STAGING_OTP_FILE, purpose: 白名单固定码条目文件的路径（文件本身属密钥：含号码与码，从密钥管理只读挂载）, secret: false, default: null, envs: staging, required_in_staging: true}
+      - {name: BFF_STAGING_OTP_AUDIT_FILE, purpose: OTP 审计文件（可写卷，不含码与号码原文）, secret: false, default: null, envs: staging, required_in_staging: true}
+      - {name: BFF_CONSENT_VERSIONS, purpose: 由人登记的同意文本版本（同意类型=文本版本）, secret: false, default: null, envs: staging, required_in_staging: true}
+      - {name: BFF_AUTH_CONFIG, purpose: 换阈值配置（开发开关）, secret: false, default: null, envs: local}
+      - {name: BFF_SHELL_CONFIG, purpose: 换壳显示规则（开发开关）, secret: false, default: null, envs: local}
+      - {name: BFF_CONCURRENCY_CONFIG, purpose: 换闸门配置（开发开关）, secret: false, default: null, envs: local}
+      - {name: BFF_SMS_CAPTURE_FILE, purpose: 短信捕获桩文件（开发开关）, secret: false, default: null, envs: local}
+      - {name: STARBUDDY_TRUST_UI, purpose: 信任界面开关（矩阵）, secret: false, default: null, envs: all}
+      - {name: STARBUDDY_STARMAP, purpose: 星图 v1 开关（矩阵）, secret: false, default: null, envs: all}
+      - {name: STARBUDDY_PRACTICE, purpose: 再练开关（矩阵）, secret: false, default: null, envs: all}
+      - {name: STARBUDDY_RETEST_UI, purpose: 复测开关（矩阵）, secret: false, default: null, envs: all}
+      - {name: STARBUDDY_TODAY_ORCH, purpose: 今日编排开关（矩阵）, secret: false, default: null, envs: all}
+      - {name: STARBUDDY_FAMILY_GOALS, purpose: 家长诉求开关（只 dev/test）, secret: false, default: null, envs: local}
+      - {name: STARBUDDY_MONTHLY_PLAN, purpose: 月度计划开关（只 dev/test）, secret: false, default: null, envs: local}
+      - {name: STARBUDDY_SUBJECT_GATE, purpose: 分学科闸门开关, secret: false, default: null, envs: all}
+      - {name: STARBUDDY_IMAGE_ENV, purpose: 镜像固化的环境标记（设了须与 STARBUDDY_ENV 一致）, secret: false, default: null, envs: all}
+  web:
+    sources: [apps/web/src/lib/bff.ts, apps/web/src/lib/review.ts, apps/web/src/app/family/shell-actions.ts, apps/web/src/today/plan-mark-server.ts,
+              apps/web/src/lib/dev-pages.ts, apps/web/next.config.ts, apps/web/src/shell/features.ts, apps/web/src/star/features.ts,
+              apps/web/src/practice/features.ts, apps/web/src/retest/features.ts, apps/web/src/shell/today-orch.ts,
+              apps/web/src/monthly-plan/features.ts, apps/web/src/family-goals/features.ts, apps/web/src/lib/review-features.ts,
+              apps/web/src/lib/serve-env.ts, apps/web/src/lib/consent-version.ts]
+    vars:
+      - {name: WEB_HOST, purpose: 监听地址（启动包装核对：dev/test 只 127.0.0.1，staging 另收内网 IPv4）, secret: false, default: 127.0.0.1, envs: all}
+      - {name: PORT, purpose: 监听端口, secret: false, default: "3000", envs: all}
+      - {name: STARBUDDY_IMAGE_ENV, purpose: 镜像固化的环境标记（设了须与 STARBUDDY_ENV 一致）, secret: false, default: null, envs: all}
+      - {name: STARBUDDY_CONSENT_VERSION_PRIVACY, purpose: 隐私政策版本（staging 必填、不收合成版本；须与 BFF 登记一致）, secret: false, default: null, envs: all, required_in_staging: true}
+      - {name: STARBUDDY_CONSENT_VERSION_GUARDIAN, purpose: 监护人同意书版本（同上）, secret: false, default: null, envs: all, required_in_staging: true}
+      - {name: STARBUDDY_TRUST_UI, purpose: 信任界面开关（矩阵）, secret: false, default: null, envs: all}
+      - {name: STARBUDDY_STARMAP, purpose: 星图 v1 开关（矩阵；staging 只 starmap_v1）, secret: false, default: null, envs: all}
+      - {name: STARBUDDY_PRACTICE, purpose: 再练开关（矩阵）, secret: false, default: null, envs: all}
+      - {name: STARBUDDY_RETEST_UI, purpose: 复测开关（矩阵）, secret: false, default: null, envs: all}
+      - {name: STARBUDDY_TODAY_ORCH, purpose: 今日编排开关（矩阵）, secret: false, default: null, envs: all}
+      - {name: STARBUDDY_MONTHLY_PLAN, purpose: 月度计划开关（只 dev/test）, secret: false, default: null, envs: local}
+      - {name: STARBUDDY_FAMILY_GOALS, purpose: 家长诉求开关（只 dev/test）, secret: false, default: null, envs: local}
+      - {name: STARBUDDY_REVIEW_FEATURES, purpose: 审核台修订开关（开发开关）, secret: false, default: null, envs: local}
+      - {name: STARBUDDY_ENV, purpose: 运行环境（构建期与运行期一致）, secret: false, default: null, envs: all, required_in_staging: true}
+      - {name: STARBUDDY_BFF_URL, purpose: BFF 地址（staging 只收内网地址）, secret: false, default: "http://127.0.0.1:8787", envs: all, required_in_staging: true}
+      - {name: STARBUDDY_REVIEW_URL, purpose: 审核台后端地址（staging 另收内网 IPv4）, secret: false, default: "http://127.0.0.1:8790", envs: all}
+      - {name: STARBUDDY_PRESENCE_HMAC_KEY, purpose: 在场标记 HMAC 密钥（staging 必填）, secret: true, default: null, envs: all, required_in_staging: true}
+      - {name: STARBUDDY_CONSENT_VERSION, purpose: 两份文书共用的版本（只 dev/test 的退路；staging 不认，须分别配置）, secret: false, default: synthetic-0, envs: local}
+      - {name: STARBUDDY_DEV_PAGES, purpose: 开发专用页面（构建期，开发开关）, secret: false, default: null, envs: local}
+      - {name: STARBUDDY_NEXT_DIST_DIR, purpose: 端到端测试构建目录（开发开关）, secret: false, default: null, envs: local}
+  adapter-aya:
+    sources: [adapters/aya/src/main.ts, adapters/aya/src/content.ts]
+    vars:
+      - {name: AYA_ADAPTER_SERVICE_TOKEN, purpose: 平台 → 适配器令牌, secret: true, default: null, envs: all, required_in_staging: true}
+      - {name: PORT, purpose: 监听端口（只监听 127.0.0.1）, secret: false, default: "8787", envs: all}
+      - {name: AYA_CONTRACT_VERSION, purpose: 默认契约版本, secret: false, default: "1.0.0", envs: all}
+      - {name: STARBUDDY_ALLOW_CANDIDATE_CONTRACT, purpose: 候选契约开关（开发开关；适配器不改代码、自身不区分环境，staging 编排一律不设，由编排测试把关）, secret: false, default: null, envs: local}
+      - {name: AYA_CONTENT_PACK, purpose: 换内容包（只给测试与演练；只在候选契约开关打开时才读，否则拒绝启动）, secret: false, default: null, envs: local}
+      - {name: AYA_STEM_OVERLAY, purpose: 题面叠加文件（同上）, secret: false, default: null, envs: local}
+  adapter-zhixing:
+    sources: [adapters/zhixing/src/main.ts, adapters/zhixing/src/startup.ts]
+    vars:
+      - {name: ZHIXING_ADAPTER_SERVICE_TOKEN, purpose: 平台 → 适配器令牌, secret: true, default: null, envs: all, required_in_staging: true}
+      - {name: PORT, purpose: 监听端口（只监听 127.0.0.1）, secret: false, default: "8788", envs: all}
+      - {name: ZHIXING_ROUTE_URL, purpose: 模型路由接口地址（https 或回环；LT-02 前不设）, secret: false, default: null, envs: all}
+      - {name: ZHIXING_ROUTE_TOKEN, purpose: 适配器 → 模型路由令牌, secret: true, default: null, envs: all}
+      - {name: ZHIXING_CONTRACT_VERSION, purpose: 默认契约版本, secret: false, default: "1.0.0", envs: all}
+      - {name: STARBUDDY_ALLOW_CANDIDATE_CONTRACT, purpose: 候选契约开关（开发开关；适配器自身不区分环境，staging 编排一律不设）, secret: false, default: null, envs: local}
+  adapter-wenli:
+    sources: [adapters/wenli/src/main.ts, adapters/wenli/src/startup.ts]
+    vars:
+      - {name: WENLI_ADAPTER_SERVICE_TOKEN, purpose: 平台 → 适配器令牌, secret: true, default: null, envs: all, required_in_staging: true}
+      - {name: PORT, purpose: 监听端口（只监听 127.0.0.1）, secret: false, default: "8789", envs: all}
+      - {name: WENLI_ROUTE_URL, purpose: 模型路由接口地址（LT-02 前不设）, secret: false, default: null, envs: all}
+      - {name: WENLI_ROUTE_TOKEN, purpose: 适配器 → 模型路由令牌, secret: true, default: null, envs: all}
+      - {name: WENLI_CONTRACT_VERSION, purpose: 默认契约版本, secret: false, default: "1.0.0", envs: all}
+      - {name: STARBUDDY_ALLOW_CANDIDATE_CONTRACT, purpose: 候选契约开关（开发开关；适配器自身不区分环境，staging 编排一律不设）, secret: false, default: null, envs: local}
+  migrate:
+    sources: [deploy/migrate/migrate.py]
+    vars:
+      - {name: MIGRATE_DSN, purpose: 目标库连接串（缺省变量名，可用 --dsn-env 换名）；不收带口令的连接串（口令走 PGPASSFILE）, secret: true, default: null, envs: all}

@@ -1,0 +1,20 @@
+# deploy/docker/web.Dockerfile 专用（白名单；上下文是仓库根目录）。node_modules、.next、测试与端到端产物不进上下文。
+*
+!apps/web/package.json
+!apps/web/package-lock.json
+!apps/web/vendor
+!apps/web/next.config.ts
+!apps/web/tsconfig.json
+!apps/web/src
+!apps/web/scripts/serve.ts
+!packages/stage/package.json
+!packages/stage/src
+!packages/stage/schema
+**/node_modules
+**/.next
+**/.next-e2e
+**/.env*
+**/tests
+**/fixtures
+**/test-results
+legacy

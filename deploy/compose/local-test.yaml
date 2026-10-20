@@ -1,0 +1,180 @@
+# 本机合成全栈（LT-01 范围第 6 条“本机用 compose 起全栈，合成数据”）：用 staging 同一批镜像，以 test 模式运行
+# （合成配置、短信捕获桩只在 dev / test 可用），全部服务共用一个网络命名空间、经回环互访（与 tools/loadtest 本机起全栈的方式一致）。
+# 一次性：数据库是本机容器（trust 认证、只在共享命名空间的回环上监听、不发布端口、数据不持久化），首次启动时由 local-init/ 执行
+# 角色 bootstrap 与全部迁移。不连接任何共享或生产库（规则 9）；所有令牌由冒烟脚本每次随机生成（deploy/scripts/compose-smoke.sh），
+# 文件里没有任何取值。不发布任何端口：冒烟脚本在容器里经回环访问。模型路由不配（判分走确定性验证器的数学照常；要调模型的回 503）。
+# 启动顺序：db → knowledge → learning（+ 三科适配器）→ insight、review-console → bff → web；scheduler 只做 --dry-run 核对。
+
+x-hardening: &hardening
+  read_only: true
+  user: "10001:10001"
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs: ["/tmp:size=16m,mode=1777"]
+  network_mode: service:db
+
+name: starbuddy-local-test
+
+networks:
+  sblocal:
+    driver: bridge
+    internal: true
+
+services:
+  db:
+    image: ${POSTGRES_IMAGE:?Postgres 16 镜像（以摘要给出）}
+    networks: [sblocal]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: starbuddy_local
+      POSTGRES_HOST_AUTH_METHOD: trust
+    command: ["postgres", "-c", "listen_addresses=127.0.0.1", "-c", "max_connections=200"]
+    volumes:
+      - ../../db:/repo/db:ro
+      - ./local-init/10-migrate.sh:/docker-entrypoint-initdb.d/10-migrate.sh:ro
+      - ./local-init/local-roles.sql:/repo/deploy/compose/local-init/local-roles.sql:ro
+    tmpfs: ["/var/lib/postgresql/data:size=512m", "/var/run/postgresql:size=1m"]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "starbuddy_local"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 60s
+
+  knowledge:
+    <<: *hardening
+    image: ${STARBUDDY_REGISTRY:?镜像仓库}/starbuddy-knowledge:${STARBUDDY_IMAGE_TAG:?镜像版本}
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    environment:
+      KNOWLEDGE_ENV: test
+      KNOWLEDGE_DATABASE_URL: postgresql://local_kge_read@127.0.0.1:5432/starbuddy_local
+      KNOWLEDGE_TOKEN_LEARNING: ${KNOWLEDGE_TOKEN_LEARNING:?}
+      KNOWLEDGE_CACHE_DIR: /tmp/knowledge-cache
+    depends_on:
+      db: {condition: service_healthy}
+
+  learning:
+    <<: *hardening
+    image: ${STARBUDDY_REGISTRY:?镜像仓库}/starbuddy-learning:${STARBUDDY_IMAGE_TAG:?镜像版本}
+    environment:
+      LEARNING_ENV: test
+      PORT: "8788"
+      LEARNING_DATABASE_URL: postgresql://local_learning@127.0.0.1:5432/starbuddy_local
+      LEARNING_SERVICE_TOKEN: ${LEARNING_SERVICE_TOKEN:?}
+      LEARNING_ADAPTER_AYA_URL: http://127.0.0.1:8781
+      LEARNING_ADAPTER_AYA_TOKEN: ${AYA_ADAPTER_SERVICE_TOKEN:?}
+      LEARNING_ADAPTER_ZHIXING_URL: http://127.0.0.1:8782
+      LEARNING_ADAPTER_ZHIXING_TOKEN: ${ZHIXING_ADAPTER_SERVICE_TOKEN:?}
+      LEARNING_ADAPTER_WENLI_URL: http://127.0.0.1:8783
+      LEARNING_ADAPTER_WENLI_TOKEN: ${WENLI_ADAPTER_SERVICE_TOKEN:?}
+      LEARNING_KNOWLEDGE_URL: http://127.0.0.1:8790
+      LEARNING_KNOWLEDGE_TOKEN: ${KNOWLEDGE_TOKEN_LEARNING:?}
+      LEARNING_INSIGHT_CLIENT_TOKEN: ${LEARNING_INSIGHT_CLIENT_TOKEN:?}
+      LEARNING_PRACTICE_CONFIG: synthetic
+      LEARNING_PRACTICE_TICKET_SECRET: ${LEARNING_PRACTICE_TICKET_SECRET:?}
+      LEARNING_RETEST_CONFIG: synthetic
+      LEARNING_TODAY_CONFIG: synthetic
+    depends_on:
+      knowledge: {condition: service_started}
+
+  adapter-aya:
+    <<: *hardening
+    image: ${STARBUDDY_REGISTRY:?镜像仓库}/starbuddy-adapter-aya:${STARBUDDY_IMAGE_TAG:?镜像版本}
+    environment: {PORT: "8781", AYA_ADAPTER_SERVICE_TOKEN: "${AYA_ADAPTER_SERVICE_TOKEN:?}"}
+    depends_on: {db: {condition: service_healthy}}
+
+  adapter-zhixing:
+    <<: *hardening
+    image: ${STARBUDDY_REGISTRY:?镜像仓库}/starbuddy-adapter-zhixing:${STARBUDDY_IMAGE_TAG:?镜像版本}
+    environment: {PORT: "8782", ZHIXING_ADAPTER_SERVICE_TOKEN: "${ZHIXING_ADAPTER_SERVICE_TOKEN:?}"}
+    depends_on: {db: {condition: service_healthy}}
+
+  adapter-wenli:
+    <<: *hardening
+    image: ${STARBUDDY_REGISTRY:?镜像仓库}/starbuddy-adapter-wenli:${STARBUDDY_IMAGE_TAG:?镜像版本}
+    environment: {PORT: "8783", WENLI_ADAPTER_SERVICE_TOKEN: "${WENLI_ADAPTER_SERVICE_TOKEN:?}"}
+    depends_on: {db: {condition: service_healthy}}
+
+  insight:
+    <<: *hardening
+    image: ${STARBUDDY_REGISTRY:?镜像仓库}/starbuddy-insight:${STARBUDDY_IMAGE_TAG:?镜像版本}
+    environment:
+      INSIGHT_ENV: test
+      INSIGHT_DATABASE_URL: postgresql://local_insight@127.0.0.1:5432/starbuddy_local
+      INSIGHT_TOKEN_BFF: ${INSIGHT_TOKEN_BFF:?}
+      INSIGHT_LEARNING_URL: http://127.0.0.1:8788
+      INSIGHT_LEARNING_TOKEN: ${LEARNING_INSIGHT_CLIENT_TOKEN:?}
+    depends_on:
+      learning: {condition: service_healthy}
+
+  review-console:
+    <<: *hardening
+    image: ${STARBUDDY_REGISTRY:?镜像仓库}/starbuddy-review-console:${STARBUDDY_IMAGE_TAG:?镜像版本}
+    environment:
+      REVIEW_CONSOLE_ENV: test
+      REVIEW_CONSOLE_PORT: "8792"
+      REVIEW_CONSOLE_KGE_DATABASE_URL: postgresql://local_kge@127.0.0.1:5432/starbuddy_local
+      REVIEW_CONSOLE_REVIEW_DATABASE_URL: postgresql://local_review@127.0.0.1:5432/starbuddy_local
+    depends_on:
+      db: {condition: service_healthy}
+
+  bff:
+    <<: *hardening
+    image: ${STARBUDDY_REGISTRY:?镜像仓库}/starbuddy-bff:${STARBUDDY_IMAGE_TAG:?镜像版本}
+    volumes:
+      - bff-audit:/var/lib/starbuddy/audit
+    environment:
+      STARBUDDY_ENV: test
+      PORT: "8787"
+      BFF_DATABASE_URL: postgresql://local_bff@127.0.0.1:5432/starbuddy_local
+      BFF_SMS_CAPTURE_FILE: /var/lib/starbuddy/audit/sms-capture.jsonl
+      BFF_LEARNING_URL: http://127.0.0.1:8788
+      BFF_LEARNING_TOKEN: ${LEARNING_SERVICE_TOKEN:?}
+      BFF_INSIGHT_URL: http://127.0.0.1:8791
+      BFF_INSIGHT_TOKEN: ${INSIGHT_TOKEN_BFF:?}
+      STARBUDDY_TRUST_UI: why,dispute,reconcile,weekly,data_rights,report
+      STARBUDDY_STARMAP: starmap_v1
+      STARBUDDY_PRACTICE: practice
+      STARBUDDY_RETEST_UI: retest
+      STARBUDDY_TODAY_ORCH: today_orch
+    depends_on:
+      learning: {condition: service_healthy}
+      insight: {condition: service_healthy}
+
+  web:
+    <<: *hardening
+    image: ${STARBUDDY_REGISTRY:?镜像仓库}/starbuddy-web:${STARBUDDY_IMAGE_TAG:?镜像版本}
+    tmpfs: ["/tmp:size=16m,mode=1777", "/srv/starbuddy/apps/web/.next/cache:size=64m,uid=10001"]
+    environment:
+      STARBUDDY_ENV: test
+      WEB_HOST: 127.0.0.1
+      PORT: "3000"
+      STARBUDDY_BFF_URL: http://127.0.0.1:8787
+      STARBUDDY_REVIEW_URL: http://127.0.0.1:8792
+      STARBUDDY_TRUST_UI: why,dispute,reconcile,weekly,data_rights,report
+      STARBUDDY_STARMAP: starmap_v1
+      STARBUDDY_PRACTICE: practice
+      STARBUDDY_RETEST_UI: retest
+      STARBUDDY_TODAY_ORCH: today_orch
+    depends_on:
+      bff: {condition: service_healthy}
+
+  scheduler:
+    <<: *hardening
+    image: ${STARBUDDY_REGISTRY:?镜像仓库}/starbuddy-scheduler:${STARBUDDY_IMAGE_TAG:?镜像版本}
+    command: ["--dry-run"]
+    restart: "no"
+    environment:
+      SCHEDULER_ENV: test
+      SCHEDULER_DATABASE_URL: postgresql://local_scheduler@127.0.0.1:5432/starbuddy_local
+      INSIGHT_ENV: test
+      INSIGHT_DATABASE_URL: postgresql://local_insight@127.0.0.1:5432/starbuddy_local
+      LEARNING_ENV: test
+      LEARNING_DATABASE_URL: postgresql://local_learning@127.0.0.1:5432/starbuddy_local
+      REVIEW_CONSOLE_ENV: test
+      REVIEW_CONSOLE_KGE_DATABASE_URL: postgresql://local_kge@127.0.0.1:5432/starbuddy_local
+    depends_on:
+      db: {condition: service_healthy}
+
+volumes:
+  bff-audit: {}

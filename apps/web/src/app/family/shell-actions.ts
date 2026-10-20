@@ -5,6 +5,7 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import type { FormResult } from '../../auth/ResultForm.tsx';
+import { consentVersions } from '../../lib/consent-version.ts';
 import { actionSession } from '../../lib/session.ts';
 import { createStudent, enrollSubject, pauseSubject, recordConsent, setTimeGuard } from '../../lib/shell-api.ts';
 import { isUuid } from '../../lib/star-map.ts';
@@ -13,11 +14,8 @@ const text = (f: FormData, k: string): string => (typeof f.get(k) === 'string' ?
 const HHMM = /^([01][0-9]|2[0-3]):[0-5][0-9]$/;
 const SUBJECT = /^(math|chinese|politics)$/;
 
-/** 同意文本版本号：合规轨交付前是合成版本（BFF 在 pilot 与生产拒收 synthetic-*，待人确认 #13） */
-const consentVersion = (): string => {
-  const v = process.env['STARBUDDY_CONSENT_VERSION'] ?? 'synthetic-0';
-  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/.test(v) ? v : 'synthetic-0';
-};
+// 同意文本版本号：两份文书分别配置（src/lib/consent-version.ts，LT-01 安全审查 S7）；合规轨交付前 dev / test 是合成版本
+// （BFF 在 staging、pilot 与生产拒收 synthetic-*，待人确认 #13）。staging 没配齐时不写任何一条。
 
 function fail(code: string): FormResult {
   if (code === 'UNAUTHENTICATED') redirect('/login');
@@ -41,9 +39,12 @@ export async function consentAction(_: FormResult | null, f: FormData): Promise<
   if (!s) return { code: 'CSRF' };
   const student = text(f, 'student');
   if (!isUuid(student)) return { code: 'NOT_FOUND' };
-  const v = consentVersion();
-  for (const [type, doc] of [['privacy_policy', 'privacy-policy'], ['guardian_consent_under14', 'guardian-consent']] as const) {
-    const r = await recordConsent(s, student, type, `${doc}@${v}`);
+  // 两条都先确认可用再写（只配了一份或是合成版本时一条也不写）；BFF 拒收时原样映射错误码
+  const versions = consentVersions();
+  if (versions === null) return { code: 'INVALID' };
+  const [privacy, guardian] = versions;
+  for (const [type, version] of [['privacy_policy', privacy], ['guardian_consent_under14', guardian]] as const) {
+    const r = await recordConsent(s, student, type, version);
     if (!r.ok) return fail(r.code);
   }
   revalidatePath('/family');

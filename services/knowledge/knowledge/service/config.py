@@ -1,7 +1,7 @@
 """配置：全部来自环境变量，不写进仓库（做法同 services/learning/learning/config.py）。
 
-只允许开发与测试环境（CLAUDE.md 规则 9：不接触生产）。pilot 与生产的部署配置由人决定。
-  KNOWLEDGE_ENV                    dev | test
+只允许开发、测试与 staging 环境（CLAUDE.md 规则 9：不接触生产）。pilot 与生产的部署配置由人决定。
+  KNOWLEDGE_ENV                    dev | test | staging（staging：LT-01 决定记录第 1 条；KNOWLEDGE_HOST 只收 127.0.0.1 或内网 IPv4）
   KNOWLEDGE_DATABASE_URL           asyncpg 连接串；登录角色只继承 starbuddy_kge_read（迁移 0026），不能是超级用户、
                                    不能有 BYPASSRLS、不能继承 starbuddy_kge 或其他应用角色（启动时断言，不满足即拒绝启动）
   KNOWLEDGE_TOKEN_BFF              BFF → 知识服务的服务间令牌（≥ 32 字符）
@@ -35,7 +35,21 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 ALLOWED_ENVS = ("dev", "test")
+# LT-01 决定记录第 1 条：服务另收 staging；staging 的监听地址只收 127.0.0.1 或内网 IPv4 字面量；pilot / 生产仍拒绝。
+# 公共层只读缓存（KNOWLEDGE_READ_CACHE）不是开发开关，staging 照常可设（上线测试开关矩阵里保持关）
+STAGING = "staging"
+SERVICE_ENVS = ALLOWED_ENVS + (STAGING,)
 CALLERS = ("bff", "orchestrator", "learning")
+_PRIVATE_V4 = tuple(ipaddress.IPv4Network(n) for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
+
+
+def private_ipv4(host: str) -> bool:
+    """RFC 1918 的 IPv4 字面量（点分十进制、不带前导零；主机名与旧式写法一律 False）"""
+    try:
+        ip = ipaddress.IPv4Address(host)
+    except ValueError:
+        return False
+    return str(ip) == host and any(ip in n for n in _PRIVATE_V4)
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8790
 DEFAULT_CACHE_SIZE = 1024
@@ -98,8 +112,13 @@ class Settings:
     def from_env(environ: dict[str, str] | None = None) -> "Settings":
         e = dict(os.environ if environ is None else environ)
         env = e.get("KNOWLEDGE_ENV", "")
-        if env not in ALLOWED_ENVS:
-            raise RuntimeError(f"KNOWLEDGE_ENV 必须是 {ALLOWED_ENVS} 之一；本服务不连接 pilot 或生产环境")
+        if env not in SERVICE_ENVS:
+            raise RuntimeError(f"KNOWLEDGE_ENV 必须是 {SERVICE_ENVS} 之一；本服务不连接 pilot 或生产环境")
+        marked = e.get("STARBUDDY_IMAGE_ENV")  # 镜像固化的环境标记（LT-01 安全审查 S10）：设了就必须与运行环境一致
+        if marked is not None and marked != env:
+            raise RuntimeError(f"镜像环境标记是 {marked}，运行环境却是 {env}：拒绝启动（STARBUDDY_IMAGE_ENV）")
+        if env == STAGING and e.get("KNOWLEDGE_CONTRACT_DIR"):
+            raise RuntimeError("KNOWLEDGE_CONTRACT_DIR 只给测试换契约目录：staging 拒绝启动（LT-01 契约审查 8）")
         database_url = e.get("KNOWLEDGE_DATABASE_URL", "")
         if not database_url:
             raise RuntimeError("缺少 KNOWLEDGE_DATABASE_URL")
@@ -136,8 +155,11 @@ class Settings:
         size = _bounded_int(e, "KNOWLEDGE_READ_CACHE_SIZE", DEFAULT_CACHE_SIZE, 1, MAX_CACHE_SIZE)
         max_bytes = _bounded_int(e, "KNOWLEDGE_READ_CACHE_MAX_BYTES", DEFAULT_CACHE_MAX_BYTES, MIN_CACHE_MAX_BYTES, MAX_CACHE_MAX_BYTES)
         log_every = _bounded_int(e, "KNOWLEDGE_READ_CACHE_LOG_EVERY", DEFAULT_CACHE_LOG_EVERY, 1, MAX_CACHE_LOG_EVERY)
+        host = check_host(e.get("KNOWLEDGE_HOST", DEFAULT_HOST))
+        if env == STAGING and host != DEFAULT_HOST and not private_ipv4(host):
+            raise RuntimeError("KNOWLEDGE_HOST 在 staging 只能是 127.0.0.1 或内网 IPv4 地址（RFC 1918）")
         return Settings(env=env, database_url=database_url, tokens=tokens, page_snapshot=Path(snap) if snap else None,
-                        host=check_host(e.get("KNOWLEDGE_HOST", DEFAULT_HOST)), port=int(port_raw),
+                        host=host, port=int(port_raw),
                         page_snapshot_pointer=Path(pointer) if pointer else None, snapshot_hmac_key=key,
                         page_snapshot_root=Path(root) if root else None, read_cache=cache_flag == "1",
                         read_cache_size=size, read_cache_max_bytes=max_bytes, read_cache_log_every=log_every)

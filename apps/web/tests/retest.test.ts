@@ -36,7 +36,8 @@ test('开关：默认关；只在 dev / test 可开；staging、pilot、生产�
   assert.equal(retestEnabled({ STARBUDDY_ENV: 'test', STARBUDDY_RETEST_UI: 'retest' }), true);
   assert.equal(retestEnabled({ STARBUDDY_ENV: 'dev', STARBUDDY_RETEST_UI: ' retest ' }), true);
   assert.equal(retestEnabled({ STARBUDDY_ENV: 'test', STARBUDDY_RETEST_UI: 'practice' }), false);
-  for (const env of ['staging', 'pilot', 'production', '']) assert.equal(retestEnabled({ STARBUDDY_ENV: env, STARBUDDY_RETEST_UI: 'retest' }), false, env);
+  assert.equal(retestEnabled({ STARBUDDY_ENV: 'staging', STARBUDDY_RETEST_UI: 'retest' }), true);  // LT-01
+  for (const env of ['pilot', 'production', '']) assert.equal(retestEnabled({ STARBUDDY_ENV: env, STARBUDDY_RETEST_UI: 'retest' }), false, env);
   assert.deepEqual([...RETEST_SUBJECTS], ['math', 'politics']);
   for (const s of ['chinese', 'english', 'aya', '']) assert.equal(isRetestSubject(s), false, s);
 });

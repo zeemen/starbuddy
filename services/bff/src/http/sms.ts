@@ -5,6 +5,7 @@
 //   - 收件箱：内存（集成测试直接读）；设了 BFF_SMS_CAPTURE_FILE 时另追加一行 JSON 到这个文件（端到端测试从这里读码）。
 import { appendFileSync } from 'node:fs';
 import { isLocalEnv, type RunEnv } from './config.ts';
+import { NoDeliverySender } from './staging-otp.ts';
 
 export interface SmsSender {
   /** 发登录验证码。失败时抛错；调用方不把失败告诉请求方（响应与成功相同，第一轮 C3） */
@@ -38,9 +39,20 @@ export class CaptureSmsSender implements SmsSender {
   }
 }
 
-/** 按环境选发送方：dev / test 用捕获桩；staging、pilot、生产没有供应商可选，拒绝启动 */
+/** 按环境选发送方：dev / test 用捕获桩；staging 只在配了白名单固定码（BFF_STAGING_OTP_FILE，LT-01 决定记录第 6 条）时
+ *  用“不投递”的发送方（固定码由管理员线下下发，src/http/staging-otp.ts）；pilot、生产没有供应商可选，拒绝启动 */
 export function createSmsSender(env: RunEnv, vars: Record<string, string | undefined> = process.env): SmsSender {
-  if (isLocalEnv(env)) return new CaptureSmsSender(env, vars['BFF_SMS_CAPTURE_FILE'] || undefined);
+  if (isLocalEnv(env)) {
+    if (vars['BFF_STAGING_OTP_FILE'] || vars['BFF_STAGING_OTP_AUDIT_FILE']) throw new Error('BFF_STAGING_OTP_FILE / _AUDIT_FILE 只能在 staging 设置');
+    return new CaptureSmsSender(env, vars['BFF_SMS_CAPTURE_FILE'] || undefined);
+  }
   if (vars['BFF_SMS_CAPTURE_FILE']) throw new Error('BFF_SMS_CAPTURE_FILE 只能在 dev / test 环境设置');
+  if (env === 'staging') {
+    if (!vars['BFF_STAGING_OTP_FILE'] || !vars['BFF_STAGING_OTP_AUDIT_FILE']) {
+      throw new Error('staging 没有短信供应商：须配置白名单固定码 BFF_STAGING_OTP_FILE 与审计文件 BFF_STAGING_OTP_AUDIT_FILE');
+    }
+    return new NoDeliverySender();
+  }
+  if (vars['BFF_STAGING_OTP_FILE'] || vars['BFF_STAGING_OTP_AUDIT_FILE']) throw new Error('BFF_STAGING_OTP_FILE / _AUDIT_FILE 只能在 staging 设置');
   throw new Error(`${env} 环境没有配置短信供应商（4-H 只有捕获桩；接入供应商是必停项）`);
 }

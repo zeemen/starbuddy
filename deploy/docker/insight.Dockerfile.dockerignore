@@ -1,0 +1,22 @@
+# deploy/docker/insight.Dockerfile 专用（BuildKit 按“<Dockerfile>.dockerignore”取用；上下文是仓库根目录）。
+# 白名单：默认全部排除，只放进 COPY 的路径；.env、.venv、node_modules、legacy/、测试与夹具一律不进构建上下文。
+*
+!services/insight/requirements.lock
+!services/insight/config
+!services/insight/templates
+!services/insight/insight
+!services/learning/learning
+!services/learning/review_console
+!services/learning/config
+!packages/contracts/openapi
+!docs/design/sie/sie_lexicon.py
+!docs/design/sie/forbidden-inference.v0.yaml
+!docs/design/sie/field-dictionary.v0.9.yaml
+!docs/design/sie/no-promise.v0.draft.yaml
+# 白名单之后再排除一次：即使白名单目录里出现这些文件，也不进构建上下文
+**/__pycache__
+**/*.pyc
+**/.env*
+**/tests
+**/fixtures
+legacy

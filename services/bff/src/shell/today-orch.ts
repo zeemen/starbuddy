@@ -8,15 +8,16 @@
 // 学习服务多给的字段（掌握、置信度、证据 ID 等）一律不进 BFF 的响应（规则 11）。
 // 今日计划快照（PLT-15 PR2，specs/today-plan-snapshot-plt15 范围第 3 条）：学习服务开了 LEARNING_TODAY_SNAPSHOT 时响应带 snapshot，
 // frozen 时每条带 task_id（快照行 ID）；BFF 照样透出给学生本人（前端据此显示“完成”“先跳过”），家长会话本来就没有 ordered。
-import { isLocalEnv, type RunEnv } from '../http/config.ts';
+// LT-01 决定记录第 1、7 条：staging 可开（学习服务在签字配置前回 501，开关开、待签字内容）；pilot、生产仍拒绝。
+import { launchFeatureEnv, type RunEnv } from '../http/config.ts';
 import { pickSections, type PlanSection, type PlanSubject } from './plan-client.ts';
 
 export const TODAY_ORCH_FEATURE = 'today_orch';
 
-/** 解析开关；非 dev / test 设了直接抛错（调用方拒绝启动），没设则关闭 */
+/** 解析开关；dev / test / staging 以外设了直接抛错（调用方拒绝启动），没设则关闭 */
 export function parseTodayOrchFeature(env: RunEnv, raw: string | undefined): boolean {
   if (raw === undefined || raw.trim() === '') return false;
-  if (!isLocalEnv(env)) throw new Error('STARBUDDY_TODAY_ORCH 只在 dev / test 可用（今日编排的数值与文案签字之前 staging 以上一律关闭）');
+  if (!launchFeatureEnv(env)) throw new Error('STARBUDDY_TODAY_ORCH 只在 dev / test / staging 可用（今日编排的数值与文案签字之前 pilot 以上一律关闭）');
   if (raw.trim() !== TODAY_ORCH_FEATURE) throw new Error(`STARBUDDY_TODAY_ORCH 只认 ${TODAY_ORCH_FEATURE}`);
   return true;
 }

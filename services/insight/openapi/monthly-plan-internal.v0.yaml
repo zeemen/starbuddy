@@ -53,6 +53,7 @@ paths:
         '404': { description: 'CONTENT_VERSION_NOT_FOUND：actor 再核不通过、档案不存在或已删除、没有权益（同一个回答）', $ref: '#/components/responses/Problem' }
         '409': { description: MONTH_NOT_CURRENT（月份不是本月）或 PLAN_REJECTED（库里守卫拒收，可重试）, $ref: '#/components/responses/Problem' }
         '413': { $ref: '#/components/responses/Problem' }
+        '501': { description: 'METHOD_NOT_IMPLEMENTED：月度计划没有启用（staging 没配 INSIGHT_MONTHLY_PLAN 时不加载配置与模板库，LT-01 决定记录第 9 条）', $ref: '#/components/responses/Problem' }
 components:
   securitySchemes:
     serviceToken: { type: http, scheme: bearer }

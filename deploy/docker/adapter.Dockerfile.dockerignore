@@ -1,0 +1,22 @@
+# deploy/docker/adapter.Dockerfile 专用（白名单；上下文是仓库根目录；三科共用）。
+*
+!adapters/aya/package.json
+!adapters/aya/package-lock.json
+!adapters/aya/content
+!adapters/aya/src
+!adapters/zhixing/package.json
+!adapters/zhixing/package-lock.json
+!adapters/zhixing/content
+!adapters/zhixing/src
+!adapters/wenli/package.json
+!adapters/wenli/package-lock.json
+!adapters/wenli/content
+!adapters/wenli/src
+!packages/contracts/openapi
+!docs/mapping/error-taxonomy.v0.9.yaml
+**/node_modules
+**/.env*
+**/tests
+**/fixtures
+**/conformance
+legacy

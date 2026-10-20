@@ -1,7 +1,10 @@
 """配置：全部来自环境变量，不写进仓库。
 
-只允许开发与测试环境（CLAUDE.md 规则 9：不接触生产）。pilot 与生产的部署配置由人决定。
-  LEARNING_ENV                   dev | test
+只允许开发、测试与 staging 环境（CLAUDE.md 规则 9：不接触生产）。pilot 与生产的部署配置由人决定。
+  LEARNING_ENV                   dev | test | staging（staging：LT-01 决定记录第 1 条，拒绝合成配置 synthetic、合成夹具与
+                                 STARBUDDY_ALLOW_CANDIDATE_CONTRACT；未签字的配置文件照旧不启动对应模块）
+  LEARNING_HOST                  监听地址，缺省 127.0.0.1；只有 staging 能设为内网 IPv4（RFC 1918），dev / test 设别的值拒绝启动
+  服务间地址（适配器、知识服务）：https 或本机回环的 http；staging 另收内网 IPv4 字面量的 http（learning/netpolicy.py）
   LEARNING_DATABASE_URL          asyncpg 连接串；登录角色只继承 starbuddy_learning
   LEARNING_SERVICE_TOKEN         BFF → 学习服务的服务间令牌（≥ 32 字符）
   LEARNING_ADAPTER_<SUBJECT>_URL    例如 LEARNING_ADAPTER_AYA_URL=http://127.0.0.1:8787
@@ -55,8 +58,13 @@ import os
 import re
 from dataclasses import dataclass, field
 
+from .netpolicy import STAGING, SERVICE_ENVS, check_image_env, listen_host, service_url_ok
+
 SUBJECTS = ("wenli", "aya", "zhixing", "echo")
 ALLOWED_ENVS = ("dev", "test")
+# LT-01 决定记录第 1 条：服务本身收 SERVICE_ENVS（dev / test / staging；staging 下拒绝合成配置与开发开关，见 from_env）；
+# 命令行任务（learning.jobs）同样收 staging（调度器在 staging 调 mastery-sweep），其余入口仍只收 ALLOWED_ENVS
+SYNTHETIC_KEYWORD_VARS = ("LEARNING_PRACTICE_CONFIG", "LEARNING_RETEST_CONFIG", "LEARNING_TODAY_CONFIG")
 PRESENT_ITEM_SOURCES = ("synthetic", "adapter")  # PLT-12：题面来源
 
 
@@ -127,13 +135,29 @@ class Settings:
     today_config: str | None = None
     # 今日计划快照（PLT-15）：缺省关；打开时 /internal/v1/today 冻结当天快照并返回 task_id
     today_snapshot: bool = False
+    # 监听地址（LT-01）：缺省 127.0.0.1；只有 staging 能配置为内网 IPv4（LEARNING_HOST）
+    host: str = "127.0.0.1"
 
     @staticmethod
     def from_env(environ: dict[str, str] | None = None) -> "Settings":
         e = dict(os.environ if environ is None else environ)
         env = e.get("LEARNING_ENV", "")
-        if env not in ALLOWED_ENVS:
-            raise RuntimeError(f"LEARNING_ENV 必须是 {ALLOWED_ENVS} 之一；本服务在冲刺 1 不连接 pilot 或生产环境")
+        if env not in SERVICE_ENVS:
+            raise RuntimeError(f"LEARNING_ENV 必须是 {SERVICE_ENVS} 之一；本服务不连接 pilot 或生产环境")
+        if env == STAGING:
+            # staging 拒绝合成配置与开发开关（LT-01 决定记录第 1 条）；未签字的配置文件照旧只是不启动对应模块（接口 501）
+            for name in SYNTHETIC_KEYWORD_VARS:
+                if e.get(name) == "synthetic":
+                    raise RuntimeError(f"{name}=synthetic 是合成占位：staging 拒绝启动（须配教研签字的配置文件）")
+            if e.get("STARBUDDY_ALLOW_CANDIDATE_CONTRACT"):
+                raise RuntimeError("STARBUDDY_ALLOW_CANDIDATE_CONTRACT 是开发开关：staging 拒绝启动")
+            if e.get("LEARNING_DIAGNOSIS_SOURCE") == "fixture":
+                raise RuntimeError("LEARNING_DIAGNOSIS_SOURCE=fixture 是合成夹具：staging 拒绝启动")
+            # learning-internal v1 未签字（LT-01 契约审查 A2）：开关只在测试与演练里开，staging 设了（任何取值）拒绝启动
+            if e.get("LEARNING_INTERNAL_V1") is not None:
+                raise RuntimeError("LEARNING_INTERNAL_V1 是开发开关（learning-internal v1 未签字，LT-04）：staging 拒绝启动")
+        check_image_env(env, e)
+        host = listen_host(e.get("LEARNING_HOST"), env, "LEARNING_HOST")
         credential = e.get("LEARNING_SERVICE_TOKEN", "")
         if len(credential) < 32:
             raise RuntimeError("LEARNING_SERVICE_TOKEN 缺失或少于 32 个字符")
@@ -147,8 +171,8 @@ class Settings:
                 cred = e.get(f"LEARNING_ADAPTER_{subject.upper()}_TOKEN", "")
                 if len(cred) < 32:
                     raise RuntimeError(f"LEARNING_ADAPTER_{subject.upper()}_TOKEN 缺失或少于 32 个字符")
-                if not (url.startswith("https://") or re.match(r"http://(127\.0\.0\.1|localhost|\[::1\])(:\d+)?(/|$)", url)):
-                    raise RuntimeError(f"LEARNING_ADAPTER_{subject.upper()}_URL 必须是 https，或本机回环地址")
+                if not service_url_ok(url, env):
+                    raise RuntimeError(f"LEARNING_ADAPTER_{subject.upper()}_URL 必须是 https，或本机回环地址（staging 另收内网 IPv4）")
                 adapters[subject] = AdapterTarget(url.rstrip("/"), cred)
         route_clients = {}
         for subject in SUBJECTS:
@@ -162,7 +186,8 @@ class Settings:
             raise RuntimeError("LEARNING_DIAGNOSIS_PRESENTER 只能不设或为 synthetic")
         if presenter == "synthetic" and env != "test":
             raise RuntimeError("合成题面只允许 LEARNING_ENV=test（契约 present_item 签字前不接真实题库）")
-        source = e.get("LEARNING_DIAGNOSIS_SOURCE") or "fixture"
+        # staging 缺省经知识服务（合成夹具只在 test；LT-01 安全审查 S10）
+        source = e.get("LEARNING_DIAGNOSIS_SOURCE") or ("knowledge" if env == STAGING else "fixture")
         if source not in ("fixture", "knowledge"):
             raise RuntimeError("LEARNING_DIAGNOSIS_SOURCE 只能是 fixture 或 knowledge")
         if presenter and source == "fixture" and env != "test":
@@ -192,8 +217,8 @@ class Settings:
             url, tok = e.get("LEARNING_KNOWLEDGE_URL", ""), e.get("LEARNING_KNOWLEDGE_TOKEN", "")
             if len(tok) < 32:
                 raise RuntimeError("LEARNING_KNOWLEDGE_TOKEN 缺失或少于 32 个字符")
-            if not (url.startswith("https://") or re.match(r"http://(127\.0\.0\.1|localhost|\[::1\])(:\d+)?(/|$)", url)):
-                raise RuntimeError("LEARNING_KNOWLEDGE_URL 必须是 https，或本机回环地址")
+            if not service_url_ok(url, env):
+                raise RuntimeError("LEARNING_KNOWLEDGE_URL 必须是 https，或本机回环地址（staging 另收内网 IPv4）")
             knowledge = AdapterTarget(url.rstrip("/"), tok)
         if presenter and source == "knowledge":
             try:
@@ -229,4 +254,4 @@ class Settings:
                         profile_page_config=e.get("LEARNING_PROFILE_PAGE_CONFIG") or None, practice_config=practice_cfg,
                         practice_presenter=practice_presenter, practice_ticket_secret=practice_secret,
                         present_item_source=present_source, retest_config=retest_cfg,
-                        today_config=today_cfg, today_snapshot=snapshot_raw == "1")
+                        today_config=today_cfg, today_snapshot=snapshot_raw == "1", host=host)

@@ -451,6 +451,34 @@ SM=(
   $'闸门：诊断路由不限流\tsrc/http/feature-routes.ts\tconst DIAG_RL = [{ bucket: \'diagnosis.session.minute\', dim: \'session\' }] as const;\tconst DIAG_RL = [] as const;'
   $'闸门：非本地不要求声明单实例\tsrc/gate/subject-gate.ts\tif (!isLocalEnv(env) && config.singleInstance !== true) {\tif (false) {'
   $'闸门：诊断重试不设总时限\tsrc/diagnosis/service.ts\t    if (mono() - start + d >= budget) {\t    if (false) {'
+  # LT-01 staging 白名单固定码 OTP（决定记录第 6 条）与 staging 启动校验（第 1、10 条）
+  $'OTP：成功不作废条目\tsrc/http/staging-otp.ts\t    if (ok) {\\n      s.consumed = true;\t    if (ok) {'
+  $'OTP：签发次数不设上限\tsrc/http/staging-otp.ts\ts.issues < MAX_ISSUES && \t'
+  $'OTP：失败不锁定\tsrc/http/staging-otp.ts\t    const lockNow = s.failures >= MAX_FAILURES && !s.locked;\t    const lockNow = false;'
+  $'OTP：过期条目也签发\tsrc/http/staging-otp.ts\te.issuedAt <= now && now < e.notAfter\ttrue'
+  $'OTP：窗口不限 24 小时\tsrc/http/staging-otp.ts\t || b - a > MAX_WINDOW_MS\t'
+  $'OTP：审计记号码原文\tsrc/http/staging-otp.ts\tphone_hmac: phone === null ? null : phoneHash(this.#keys, phone)\tphone_hmac: phone'
+  $'OTP：审计记验证码\tsrc/http/staging-otp.ts\t    this.#auditQuiet(\'issued\', entry, phone);\t    this.#auditQuiet(\'issued\', entry, phone); writeDurable(this.#auditFile, String(this.#entries.find((x) => x.id === entry)?.code), \'a\');'
+  $'OTP：重启不恢复作废\tsrc/http/staging-otp.ts\t    if (a.event === \'consumed\') s.consumed = true;\t'
+  $'OTP：重启不恢复待核验\tsrc/http/staging-otp.ts\t      if (a.event === \'issued\' && a.entry !== null) pending.set(a.phone_hmac, a.entry);\t'
+  $'OTP：核验不回报结果\tsrc/http/routes.ts\t  ctx.deps.stagingOtp?.onVerify(phone, r?.outcome === \'ok\' && !!r.session_token);\t'
+  $'OTP：库写之前就记签发账\tsrc/http/staging-otp.ts\t    return { code: e.code, entry: e.id };\t    this.markIssued(phone, e.id); return { code: e.code, entry: e.id };'
+  $'OTP：签发不记账\tsrc/http/routes.ts\t  if (picked) ctx.deps.stagingOtp!.markIssued(phone, picked.entry);\t'
+  $'OTP：哈希链不核对\tsrc/http/staging-otp.ts\t    if (a.prev !== last || auditLineText(key, a).text !== line) throw new Error\t    if (false) throw new Error'
+  $'OTP：只核对链接不核对 mac\tsrc/http/staging-otp.ts\t    if (a.prev !== last || auditLineText(key, a).text !== line) throw new Error\t    if (a.prev !== last) throw new Error'
+  $'OTP：审计缺失也启动\tsrc/http/staging-otp.ts\t      if (this.#entries.some((e) => e.issuedAt <= now)) {\t      if (false) {'
+  $'OTP：条目文件可写也启动\tsrc/http/staging-otp.ts\t  if (em & 0o022) throw new Error\t  if (false) throw new Error'
+  $'OTP：审计文件权限不查\tsrc/http/staging-otp.ts\t    if (st.mode & 0o177) throw new Error\t    if (false) throw new Error'
+  $'OTP：单实例锁不查\tsrc/http/staging-otp.ts\t    if (fresh && !(held!.host === me.host && held!.pid === me.pid)) {\t    if (false) {'
+  $'OTP：非白名单核验不写审计\tsrc/http/staging-otp.ts\t      this.#auditQuiet(\'verify_other\', null, phone);\t'
+  $'OTP：同意版本大小写敏感\tsrc/http/routes.ts\t(version.split(\'@\')[1] ?? \'\').toLowerCase().startsWith(\'synthetic-\')\t(version.split(\'@\')[1] ?? \'\').startsWith(\'synthetic-\')'
+  $'OTP：镜像环境标记不查\tsrc/http/config.ts\t  if (marked !== undefined && marked !== env) throw new Error\t  if (false) throw new Error'
+  $'OTP：dev 也可配固定码\tsrc/http/staging-otp.ts\t    if (o.env !== \'staging\') throw new Error\t    if (false) throw new Error'
+  $'OTP：staging 不配固定码也启动\tsrc/http/sms.ts\t    if (!vars[\'BFF_STAGING_OTP_FILE\'] || !vars[\'BFF_STAGING_OTP_AUDIT_FILE\']) {\t    if (false) {'
+  $'OTP：staging 收合成同意版本\tsrc/http/routes.ts\texport const syntheticConsentAllowed = (env: RunEnv): boolean => env === \'dev\' || env === \'test\';\texport const syntheticConsentAllowed = (env: RunEnv): boolean => env !== \'pilot\' && env !== \'production\';'
+  $'OTP：staging 不核对登记的同意版本\tsrc/http/routes.ts\t  if (env !== \'staging\') return true;\t  return true;'
+  $'OTP：BFF_HOST 收任意地址\tsrc/http/config.ts\t  if (!privateIpv4(raw)) throw new Error\t  if (false) throw new Error'
+  $'OTP：staging 开 starmap_dashed\tsrc/star-map/features.ts\t  if (outside.length > 0) throw new Error(`STARBUDDY_STARMAP\t  if (false) throw new Error(`STARBUDDY_STARMAP'
 )
 # 副本保持仓库结构（测试按 ../../../ 找仓库根：adapters/aya 的登记脚本、db/seeds 的种子），adapters、db 软链接回仓库。
 # 安全审查阻断 1：原来的副本不保持结构，测试的 before 在任何代码下都失败，变异全部“被发现”却不说明任何问题。
@@ -508,6 +536,7 @@ star_run() {  # $1 副本根目录，$2 变异名（“计量：”开头的跑�
   [[ "${2:-}" == 诉求：* ]] && tests="tests/family-goals-units.test.ts tests/family-goals.integration.test.ts tests/shell-openapi.test.ts"
   [[ "${2:-}" == 月度计划：* ]] && tests="tests/monthly-plan-units.test.ts tests/monthly-plan.integration.test.ts tests/shell-openapi.test.ts"
   [[ "${2:-}" == 闸门：* ]] && tests="tests/subject-gate-units.test.ts tests/subject-gate.integration.test.ts tests/shell-openapi.test.ts"
+  [[ "${2:-}" == OTP：* ]] && tests="tests/staging-otp-units.test.ts tests/staging-otp.integration.test.ts tests/shell-startup.test.ts tests/star-map-v1.test.ts"
   out=$( cd "$1/services/bff" && timeout 240 bash "$ROOT/db/tests/pg-ephemeral.sh" -- \
       node --no-warnings --test --test-concurrency=1 --test-timeout=60000 $tests 2>&1 ); rc=$?
   printf '%s\n' "$out" > "$1/run.out"  # H6 的“第一条失败必须是登记的断言”从这里读

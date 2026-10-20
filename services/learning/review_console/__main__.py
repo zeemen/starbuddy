@@ -32,6 +32,8 @@ import asyncpg
 
 from . import pages
 from .app import SUBJECTS
+from learning.netpolicy import SERVICE_ENVS, STAGING, private_ipv4
+
 from .config import ALLOWED_ENVS
 from .diff import canonical_json
 from .service import RECORD_COLUMNS, version_record
@@ -107,9 +109,15 @@ REMOTE_PARAMS = ("hostaddr", "service", "servicefile")
 NOT_LOCAL = "时政下架任务只连本机数据库（localhost、回环地址或 Unix socket）"
 
 
-def _is_local(host: str) -> bool:
+NOT_PRIVATE = "staging 下只连内网数据库（回环、Unix socket 或 RFC 1918 内网 IPv4 字面量）"
+
+
+def _is_local(host: str, env: str | None = None) -> bool:
+    """本机：localhost、回环、Unix socket。env 为 staging 时（LT-01 决定记录第 5 条）另收内网 IPv4 字面量（不收主机名与公网地址）"""
     import ipaddress
     if host in LOCAL_NAMES or host.startswith("/"):
+        return True
+    if env == STAGING and private_ipv4(host):
         return True
     try:
         return ipaddress.ip_address(host).is_loopback
@@ -143,46 +151,51 @@ def _asyncpg_hosts(url: str) -> list[str]:
     return [a[0] if isinstance(a, tuple) else str(a) for a in addrs]
 
 
-def local_only(url: str) -> str:
+def local_only(url: str, env: str | None = None) -> str:
     """时政下架任务只连本地或测试库（规则 9；不接生产调度）。连接串里出现的全部主机——主机部分的每一个（多主机写法按逗号拆）、
     每个 host 查询参数里的每一个——以及 asyncpg 实际解析出的全部地址，任一不是本机（localhost、回环地址、Unix socket 目录）即拒。
-    连上之后还要再核对服务端地址（check_server_local）。"""
+    连上之后还要再核对服务端地址（check_server_local）。
+    env 为 staging 时（LT-01 决定记录第 5 条，调度器与其子命令）另收内网 IPv4 字面量；其余口径不变（不收主机名、hostaddr 等）。"""
+    not_local = NOT_PRIVATE if env == STAGING else NOT_LOCAL
     from urllib.parse import parse_qs, urlsplit
     try:
         u = urlsplit(url)
         query = parse_qs(u.query, keep_blank_values=True)
     except ValueError:
-        raise SystemExit(NOT_LOCAL + "：连接串解析不了") from None
+        raise SystemExit(not_local + "：连接串解析不了") from None
     if u.scheme not in ("postgres", "postgresql"):
         raise SystemExit("REVIEW_CONSOLE_KGE_DATABASE_URL 必须是 postgresql:// 连接串")
     if any(k in query for k in REMOTE_PARAMS):
-        raise SystemExit(NOT_LOCAL + "：不接受 hostaddr、service、servicefile 参数")
+        raise SystemExit(not_local + "：不接受 hostaddr、service、servicefile 参数")
     hosts = _netloc_hosts(u.netloc) + [h for v in query.get("host", []) for h in v.split(",") if h] + _asyncpg_hosts(url)
-    if not hosts or any(not _is_local(h) for h in hosts):
-        raise SystemExit(NOT_LOCAL)
+    if not hosts or any(not _is_local(h, env) for h in hosts):
+        raise SystemExit(not_local)
     return url
 
 
-async def check_server_local(conn) -> None:
-    """连上之后核对服务端地址：inet_server_addr() 为空（Unix socket）或回环地址，否则中止（名字解析到别处、端口转发等）。"""
+async def check_server_local(conn, env: str | None = None) -> None:
+    """连上之后核对服务端地址：inet_server_addr() 为空（Unix socket）或回环地址，否则中止（名字解析到别处、端口转发等）。
+    env 为 staging 时另收内网 IPv4（LT-01 决定记录第 5 条）。"""
     import ipaddress
     addr = await conn.fetchval("SELECT host(inet_server_addr())")
-    if addr is not None and not ipaddress.ip_address(addr).is_loopback:
-        raise SystemExit(NOT_LOCAL + "：连上的服务端不是本机")
+    if addr is None or ipaddress.ip_address(addr).is_loopback or (env == STAGING and private_ipv4(addr)):
+        return
+    raise SystemExit((NOT_PRIVATE if env == STAGING else NOT_LOCAL) + "：连上的服务端不是本机")
 
 
 async def _expire(today_arg: str | None) -> dict:
     import datetime as dt
-    if os.environ.get("REVIEW_CONSOLE_ENV") not in ALLOWED_ENVS:
-        raise SystemExit(f"REVIEW_CONSOLE_ENV 必须是 {ALLOWED_ENVS} 之一")
+    env = os.environ.get("REVIEW_CONSOLE_ENV")
+    if env not in SERVICE_ENVS:
+        raise SystemExit(f"REVIEW_CONSOLE_ENV 必须是 {SERVICE_ENVS} 之一")
     url = os.environ.get("REVIEW_CONSOLE_KGE_DATABASE_URL")
     if not url:
         raise SystemExit("缺少 REVIEW_CONSOLE_KGE_DATABASE_URL")
-    local_only(url)
+    local_only(url, env)
     today = dt.date.fromisoformat(today_arg) if today_arg else dt.datetime.now(dt.timezone(dt.timedelta(hours=8))).date()
     conn = await asyncpg.connect(url)
     try:
-        await check_server_local(conn)
+        await check_server_local(conn, env)
         expect_role(await role_facts(conn), "starbuddy_kge")
         n = await KgeStore(conn).expire_current_affairs(today)  # type: ignore[arg-type]
     finally:
@@ -196,7 +209,9 @@ def _serve(port: int) -> None:
     from .app import create_app
     from .config import ReviewSettings
 
-    uvicorn.run(create_app(ReviewSettings.from_env()), host="127.0.0.1", port=port, access_log=False, log_level="warning")
+    settings = ReviewSettings.from_env()
+    # 监听地址：缺省 127.0.0.1；只有 staging 能经 REVIEW_CONSOLE_HOST 配置内网 IPv4（LT-01 决定记录第 5 条）
+    uvicorn.run(create_app(settings), host=settings.host, port=port, access_log=False, log_level="warning")
 
 
 def main(argv: list[str] | None = None) -> int:

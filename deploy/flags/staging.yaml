@@ -1,0 +1,165 @@
+# 上线测试 staging 功能开关矩阵（LT-01 范围第 5 条；specs/launch-test-2026/spec.md 第七节 2026-10-19 决定记录；
+# specs/launch-lt01-deploy-packaging 决定记录第 1、5、7 条）。
+#
+# 只写开关的名字与取值，不写任何地址、令牌或密钥（那些在 deploy/config/env-inventory.yaml 里登记名字，值由运行环境注入）。
+# 口径：
+#   state: "on"   上线测试打开；"off"：保持关（加引号：YAML 1.1 会把裸的 on / off 读成布尔）（变量不设，或设为关的取值）
+#   pending（列表，可多项）：
+#     signed_content   开关开，但对应模块在教研签字配置到位前回 501（决定记录第 7 条）
+#     internal_v1      开关开，但走 learning-internal v1 的写入、调适配器与模块启动在 v1 签字并启用（LT-04）之前不可用
+#                      （LEARNING_INTERNAL_V1 是开发开关，staging 设了拒绝启动；契约审查 A2）
+#     model_provider   开关开，但要调模型的路径在真实模型供应商接入（LT-02）前回 503
+#     human            还没有开关或口径，待人确认（见 notes）
+# switches 每项：service（bff / web / learning / insight / knowledge / review_console / scheduler）、var（环境变量名）、
+#   value（staging 设的值；null = 不设）、source（定义它的源码文件，测试核对变量名真实存在）。
+# 测试：deploy/tests/test_flags_matrix.py（名字在源码里、取值被 staging 的解析器接受、关的开关在 staging 不设）
+#       deploy/tests/flags_check.ts（用 BFF 与前端的真实解析函数核对 staging 取值，pilot / 生产仍拒绝或按关）。
+schema: starbuddy-flags/1
+environment: staging
+
+subjects:
+  - id: math
+    title: 数学（阿鸦，九年级函数主题）
+    state: "on"
+    pending: [internal_v1]
+    notes: 判分（/internal/v1/grade）与计划调适配器（/internal/v1/plan）走 learning-internal v1，LT-04 前不可用
+    switches:
+      - {service: learning, var: LEARNING_ADAPTER_AYA_URL, value: "http://127.0.0.1:8781", source: services/learning/learning/config.py}
+  - id: daofa
+    title: 道法（知行）
+    state: "on"
+    pending: [internal_v1, model_provider]
+    switches:
+      - {service: learning, var: LEARNING_ADAPTER_ZHIXING_URL, value: "http://127.0.0.1:8782", source: services/learning/learning/config.py}
+  - id: chinese_grading
+    title: 语文（文砺）只开批改
+    state: "on"
+    pending: [internal_v1, model_provider, human]
+    notes: 没有“只开批改”的开关：文砺适配器的 diagnose / plan 照常可用，只开批改靠选科与内容范围约束（待人确认）
+    switches:
+      - {service: learning, var: LEARNING_ADAPTER_WENLI_URL, value: "http://127.0.0.1:8783", source: services/learning/learning/config.py}
+  - id: english
+    title: 英语（开口成章，已搁置）
+    state: "off"
+    switches:
+      - {service: learning, var: LEARNING_ADAPTER_ECHO_URL, value: null, source: services/learning/learning/config.py}
+
+features:
+  - id: today_plan
+    title: 今日计划（跨科编排）
+    state: "on"
+    pending: [internal_v1, signed_content]
+    notes: 编排要调 /internal/v1/plan 与再练、复测，没开 learning-internal v1 时与没配一样回 501（today/api.py）
+    switches:
+      - {service: bff, var: STARBUDDY_TODAY_ORCH, value: today_orch, source: services/bff/src/shell/today-orch.ts}
+      - {service: web, var: STARBUDDY_TODAY_ORCH, value: today_orch, source: apps/web/src/shell/today-orch.ts}
+      - {service: learning, var: LEARNING_TODAY_CONFIG, value: "<签字配置路径>", source: services/learning/learning/config.py}
+  - id: diagnosis
+    title: 诊断（数学自适应诊断）
+    state: "on"
+    pending: [internal_v1, signed_content]
+    notes: 待 learning-internal v1 签字与启用（LT-04）；BFF 配了学习服务地址即注册诊断路由；学习服务只有合成题面（只允许 test），
+      present_item 签字前 staging 回 501
+    switches:
+      - {service: bff, var: BFF_LEARNING_URL, value: "http://172.28.0.10:8788", source: services/bff/src/main.ts}
+      - {service: learning, var: LEARNING_DIAGNOSIS_PRESENTER, value: null, source: services/learning/learning/config.py}
+  - id: practice
+    title: 再练（错题再练）
+    state: "on"
+    pending: [internal_v1, signed_content]
+    notes: 待 learning-internal v1 签字与启用（LT-04）：再练模块启动要求 LEARNING_INTERNAL_V1=1（app.py _check_practice_env）
+    switches:
+      - {service: bff, var: STARBUDDY_PRACTICE, value: practice, source: services/bff/src/practice/features.ts}
+      - {service: web, var: STARBUDDY_PRACTICE, value: practice, source: apps/web/src/practice/features.ts}
+      - {service: learning, var: LEARNING_PRACTICE_CONFIG, value: "<签字配置路径>", source: services/learning/learning/config.py}
+  - id: retest
+    title: 复测（复测与验证题）
+    state: "on"
+    pending: [internal_v1, signed_content]
+    notes: 待 learning-internal v1 签字与启用（LT-04）：复测依赖再练，受同一检查约束
+    switches:
+      - {service: bff, var: STARBUDDY_RETEST_UI, value: retest, source: services/bff/src/retest/features.ts}
+      - {service: web, var: STARBUDDY_RETEST_UI, value: retest, source: apps/web/src/retest/features.ts}
+      - {service: learning, var: LEARNING_RETEST_CONFIG, value: "<签字配置路径>", source: services/learning/learning/config.py}
+  - id: star_map
+    title: 星图（v1；待验证虚线另待 ADR 13 #2 签字，保持关）
+    state: "on"
+    pending: [signed_content]
+    switches:
+      - {service: bff, var: STARBUDDY_STARMAP, value: starmap_v1, source: services/bff/src/star-map/features.ts}
+      - {service: web, var: STARBUDDY_STARMAP, value: starmap_v1, source: apps/web/src/star/features.ts}
+      - {service: learning, var: LEARNING_MASTERY_CONFIG_AYA, value: "<签字配置路径>", source: services/learning/learning/config.py}
+  - id: trust_ui
+    title: 信任界面（为什么 / 我不同意、授权与删除、首份报告）+ 周报 + 对账卡
+    state: "on"
+    covers: [trust_ui, weekly_report, reconcile_card]
+    switches:
+      - {service: bff, var: STARBUDDY_TRUST_UI, value: "why,dispute,reconcile,weekly,data_rights,report", source: services/bff/src/trust/features.ts}
+      - {service: web, var: STARBUDDY_TRUST_UI, value: "why,dispute,reconcile,weekly,data_rights,report", source: apps/web/src/shell/features.ts}
+      - {service: bff, var: BFF_INSIGHT_URL, value: "http://172.28.0.14:8791", source: services/bff/src/main.ts}
+  - id: review_console
+    title: 审核台（教研用）
+    state: "on"
+    switches:
+      - {service: review_console, var: REVIEW_CONSOLE_ENV, value: staging, source: services/learning/review_console/config.py}
+      - {service: web, var: STARBUDDY_REVIEW_URL, value: "http://172.28.0.13:8792", source: apps/web/src/lib/review.ts}
+      - {service: review_console, var: REVIEW_CONSOLE_FEATURES, value: null, source: services/learning/review_console/config.py}
+      - {service: web, var: STARBUDDY_REVIEW_FEATURES, value: null, source: apps/web/src/lib/review-features.ts}
+  - id: mock_exam
+    title: 模考
+    state: "off"
+    notes: 模考只有学习服务的库与合成卷，没有接进任何服务路由（learning/app.py 不注册），因此没有开关；测试核对它没有被接线
+    switches: []
+  - id: monthly_plan
+    title: 月度计划
+    state: "off"
+    switches:
+      - {service: bff, var: STARBUDDY_MONTHLY_PLAN, value: null, source: services/bff/src/family/monthly-plan.ts}
+      - {service: web, var: STARBUDDY_MONTHLY_PLAN, value: null, source: apps/web/src/monthly-plan/features.ts}
+      - {service: insight, var: INSIGHT_MONTHLY_PLAN, value: null, source: services/insight/insight/service/config.py}
+  - id: stage_whiteboard
+    title: 讲评白板（舞台）
+    state: "off"
+    notes: 只有开发专用页面 /dev/stage（page.dev.tsx），staging 构建不含开发页面
+    switches:
+      - {service: web, var: STARBUDDY_DEV_PAGES, value: null, source: apps/web/src/lib/dev-pages.ts}
+  - id: knowledge_read_cache
+    title: 知识读缓存
+    state: "off"
+    switches:
+      - {service: knowledge, var: KNOWLEDGE_READ_CACHE, value: "0", source: services/knowledge/knowledge/service/config.py}
+  - id: family_goals
+    title: 家长诉求（不在上线测试范围）
+    state: "off"
+    switches:
+      - {service: bff, var: STARBUDDY_FAMILY_GOALS, value: null, source: services/bff/src/family/features.ts}
+      - {service: web, var: STARBUDDY_FAMILY_GOALS, value: null, source: apps/web/src/family-goals/features.ts}
+  - id: today_snapshot
+    title: 今日计划快照（依赖今日编排签字配置）
+    state: "off"
+    pending: [internal_v1, signed_content]
+    switches:
+      - {service: learning, var: LEARNING_TODAY_SNAPSHOT, value: "0", source: services/learning/learning/config.py}
+  - id: subject_gate
+    title: 分学科并发闸门（压测项，不在上线测试功能清单）
+    state: "off"
+    notes: 进程内状态，多实例须另议（PLT-16 待人确认 #3）；是否在 staging 打开由人定
+    switches:
+      - {service: bff, var: STARBUDDY_SUBJECT_GATE, value: null, source: services/bff/src/gate/subject-gate.ts}
+
+# 开发开关与合成配置：staging 一律不设（服务启动校验拒绝；deploy/tests 核对这张清单里每个名字都真实存在）
+dev_only:
+  - {service: bff, var: BFF_AUTH_CONFIG, source: services/bff/src/main.ts}
+  - {service: bff, var: BFF_SHELL_CONFIG, source: services/bff/src/main.ts}
+  - {service: bff, var: BFF_CONCURRENCY_CONFIG, source: services/bff/src/main.ts}
+  - {service: bff, var: BFF_SMS_CAPTURE_FILE, source: services/bff/src/http/sms.ts}
+  - {service: learning, var: STARBUDDY_ALLOW_CANDIDATE_CONTRACT, source: services/learning/learning/config.py}
+  - {service: learning, var: LEARNING_DIAGNOSIS_PRESENTER, source: services/learning/learning/config.py}
+  - {service: learning, var: LEARNING_PRACTICE_PRESENTER, source: services/learning/learning/config.py}
+  - {service: learning, var: LEARNING_INTERNAL_V1, source: services/learning/learning/contract.py}
+  - {service: knowledge, var: KNOWLEDGE_CONTRACT_DIR, source: services/knowledge/knowledge/service/contract.py}
+  - {service: insight, var: INSIGHT_CONTRACT_DIR, source: services/insight/insight/service/contract.py}
+  - {service: adapters, var: STARBUDDY_ALLOW_CANDIDATE_CONTRACT, source: adapters/aya/src/main.ts}
+  - {service: web, var: STARBUDDY_DEV_PAGES, source: apps/web/src/lib/dev-pages.ts}
+  - {service: web, var: STARBUDDY_REVIEW_FEATURES, source: apps/web/src/lib/review-features.ts}
+  - {service: review_console, var: REVIEW_CONSOLE_FEATURES, source: services/learning/review_console/config.py}

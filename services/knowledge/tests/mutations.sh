@@ -59,6 +59,11 @@ M=(
   $'知识服务：快照篡改（哈希不符）不拒绝\tknowledge/service/pages.py\t        if hashlib.sha256(raw).hexdigest() != digest:\t        if False:\ttests/test_service_unit.py'
   $'知识服务：监听地址缺省为 0.0.0.0\tknowledge/service/config.py\tDEFAULT_HOST = "127.0.0.1"\tDEFAULT_HOST = "0.0.0.0"\ttests/test_service_unit.py'
   $'知识服务：不拒绝通配监听地址\tknowledge/service/config.py\t    if h.lower() in _WILDCARD:\t    if False:\ttests/test_service_unit.py'
+  $'LT-01：staging 监听地址不限内网\tknowledge/service/config.py\t        if env == STAGING and host != DEFAULT_HOST and not private_ipv4(host):\t        if False:\ttests/test_staging_env.py'
+  $'LT-01：内网判断放过公网\tknowledge/service/config.py\t    return str(ip) == host and any(ip in n for n in _PRIVATE_V4)\t    return True\ttests/test_staging_env.py'
+  $'LT-01：staging 收契约目录覆盖\tknowledge/service/config.py\t        if env == STAGING and e.get("KNOWLEDGE_CONTRACT_DIR"):\t        if False:\ttests/test_staging_env.py'
+  $'LT-01：镜像环境标记不查\tknowledge/service/config.py\t        if marked is not None and marked != env:\t        if False:\ttests/test_staging_env.py'
+  $'LT-01：pilot 也收\tknowledge/service/config.py\tSERVICE_ENVS = ALLOWED_ENVS + (STAGING,)\tSERVICE_ENVS = ALLOWED_ENVS + (STAGING, "pilot")\ttests/test_staging_env.py'
   $'知识服务：node.resolve 放给编排层以外的调用方\tknowledge/service/tools.py\t    "node.resolve": frozenset({"orchestrator"}),\t    "node.resolve": PUBLIC_CALLERS,\ttests/test_service_unit.py'
   # PR ③：兜底检索
   $'BM25 idf 漏掉分母\tknowledge/retrieval/bm25.py\t        return math.log(1 + (self.n - d + 0.5) / (d + 0.5))\t        return math.log(1 + (self.n - d + 0.5))\ttests/test_retrieval.py'

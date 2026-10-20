@@ -10,16 +10,21 @@
 // 打开方式：STARBUDDY_TRUST_UI=why,dispute（逗号分隔）；只在 dev / test 生效，staging、pilot、生产一律关闭，
 // 直到冲刺 5 的实现与文案签字后由人改这里的规则。只在服务端（服务端组件、server action、路由处理器）读，不进浏览器。
 
+// LT-01 决定记录第 1、5 条：staging 可开上线测试范围内的块（STAGING_TRUST_FEATURES，与 BFF 一致）；pilot、生产仍一律关闭。
+import { launchTier } from '../lib/launch-env.ts';
+
 export const TRUST_FEATURES = ['why', 'dispute', 'reconcile', 'weekly', 'data_rights', 'report'] as const;
 export type TrustFeature = (typeof TRUST_FEATURES)[number];
+export const STAGING_TRUST_FEATURES: readonly TrustFeature[] = ['why', 'dispute', 'reconcile', 'weekly', 'data_rights', 'report'];
 
 type Env = Record<string, string | undefined>;
 
 export function trustFeatures(env: Env = process.env): ReadonlySet<TrustFeature> {
-  const run = env['STARBUDDY_ENV'] ?? '';
-  if (run !== 'dev' && run !== 'test') return new Set();
+  const tier = launchTier(env);
+  if (tier === null) return new Set();
+  const allowed = tier === 'local' ? TRUST_FEATURES : STAGING_TRUST_FEATURES;
   const wanted = (env['STARBUDDY_TRUST_UI'] ?? '').split(',').map((s) => s.trim());
-  return new Set(TRUST_FEATURES.filter((f) => wanted.includes(f)));
+  return new Set(allowed.filter((f) => wanted.includes(f)));
 }
 
 export const trustEnabled = (f: TrustFeature, env: Env = process.env): boolean => trustFeatures(env).has(f);

@@ -118,7 +118,7 @@ async def test_meter_loop_semantics():
 
 
 def test_more_due_exit_code(monkeypatch, capsys):
-    async def fake_run(a, url):
+    async def fake_run(a, url, env=None):  # LT-01：_run 另收运行环境（staging 的服务端地址口径）
         return {"job": "meter-expire", "expired": 100, "batches": 2, "more_due": True}
     monkeypatch.setattr(scheduled, "_run", fake_run)
     assert scheduled.main(["meter-expire"], GOOD) == 1

@@ -10,6 +10,40 @@ import { readFileSync } from 'node:fs';
 export type RunEnv = 'dev' | 'test' | 'staging' | 'pilot' | 'production';
 const RUN_ENVS: readonly RunEnv[] = ['dev', 'test', 'staging', 'pilot', 'production'];
 export const isLocalEnv = (e: RunEnv): boolean => e === 'dev' || e === 'test';
+/** 上线测试开关矩阵（LT-01 决定记录第 1 条，deploy/flags/staging.yaml）里的功能可以打开的环境：dev / test，加 staging；
+ *  pilot、生产仍一律拒绝。开发开关（BFF_AUTH_CONFIG 等）不用它，仍只认 isLocalEnv */
+export const launchFeatureEnv = (e: RunEnv): boolean => isLocalEnv(e) || e === 'staging';
+
+/** RFC 1918 的 IPv4 字面量（点分十进制、不带前导零） */
+export function privateIpv4(host: string): boolean {
+  if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return false;
+  const parts = host.split('.');
+  if (parts.some((p) => (p.length > 1 && p.startsWith('0')) || Number(p) > 255)) return false;
+  const [a, b] = parts.map(Number) as [number, number];
+  return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+}
+
+/** 服务间地址（学习服务、洞察服务）：https、本机回环的 http；staging 另收内网 IPv4 字面量的 http（LT-01 决定记录第 1 条） */
+export function serviceUrlOk(url: string, env: RunEnv): boolean {
+  if (/^(https:\/\/|http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?(\/|$))/.test(url)) return true;
+  if (env !== 'staging') return false;
+  const m = /^http:\/\/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(:\d{1,5})?(\/|$)/.exec(url);
+  return m !== null && privateIpv4(m[1]!);
+}
+
+/** 镜像固化的环境标记（STARBUDDY_IMAGE_ENV，LT-01 安全审查 S10）：设了就必须与运行环境一致（staging 镜像拒绝 dev / test 运行）；
+ *  已知局限：运行时同名变量可以覆盖，只防误用 */
+export function checkImageEnv(env: RunEnv, marked: string | undefined): void {
+  if (marked !== undefined && marked !== env) throw new Error(`镜像环境标记是 ${marked}，运行环境却是 ${env}：拒绝启动（STARBUDDY_IMAGE_ENV）`);
+}
+
+/** 监听地址（BFF_HOST）：不设 = 127.0.0.1；dev / test 设了只能是 127.0.0.1；staging 只能是 127.0.0.1 或内网 IPv4；pilot / 生产只能是 127.0.0.1 */
+export function listenHost(raw: string | undefined, env: RunEnv): string {
+  if (raw === undefined || raw === '' || raw === '127.0.0.1') return '127.0.0.1';
+  if (env !== 'staging') throw new Error('BFF_HOST 只有 staging 能改（其余环境只监听 127.0.0.1）');
+  if (!privateIpv4(raw)) throw new Error('BFF_HOST 在 staging 只能是 127.0.0.1 或内网 IPv4 地址（RFC 1918，不收通配地址与主机名）');
+  return raw;
+}
 
 export interface RateRule { window_seconds: number; limit: number }
 export interface Lifetime { absolute_seconds: number; idle_seconds: number }

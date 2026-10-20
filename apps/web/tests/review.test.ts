@@ -20,6 +20,15 @@ test('审核台后端地址只能是 loopback 上的 http', () => {
   for (const bad of ['https://127.0.0.1:1', 'http://10.0.0.2:8790', 'http://review.example.test', 'file:///tmp/x']) {
     assert.throws(() => reviewBaseUrl({ STARBUDDY_REVIEW_URL: bad }), bad);
   }
+  // LT-01 决定记录第 5 条：staging 另收内网 IPv4 的 http；pilot、生产与 dev / test 不变
+  assert.equal(reviewBaseUrl({ STARBUDDY_ENV: 'staging', STARBUDDY_REVIEW_URL: 'http://172.28.0.13:8790' }), 'http://172.28.0.13:8790');
+  for (const env of ['dev', 'test', 'pilot', 'production']) {
+    assert.throws(() => reviewBaseUrl({ STARBUDDY_ENV: env, STARBUDDY_REVIEW_URL: 'http://172.28.0.13:8790' }), env);
+  }
+  for (const bad of ['http://8.8.8.8:8790', 'http://review.example.test:8790', 'https://172.28.0.13:8790', 'http://u:p@172.28.0.13:8790',
+                     'http://172.32.0.1:8790']) {
+    assert.throws(() => reviewBaseUrl({ STARBUDDY_ENV: 'staging', STARBUDDY_REVIEW_URL: bad }), bad);
+  }
 });
 
 test('表单字段校验', () => {

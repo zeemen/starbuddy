@@ -13,5 +13,8 @@
 !docs/mapping/error-taxonomy.v0.9.yaml
 **/__pycache__
 **/*.pyc
-# 白名单之后再排除一次：即使白名单目录里出现 .env 类文件，也不进构建上下文
+# 白名单之后再排除一次：即使白名单目录里出现 .env 类文件、测试与夹具，也不进构建上下文
 **/.env*
+**/tests
+**/fixtures
+legacy

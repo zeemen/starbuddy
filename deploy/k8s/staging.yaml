@@ -1,0 +1,377 @@
+# staging 清单草案（LT-01 范围第 3 条）：云厂商无关的 Kubernetes 清单——Deployment / Service / 探针 / 资源限制 / 出网白名单注释。
+# 不绑定任何云厂商、不写真实地址、域名、镜像仓库或凭据（规则 8、9）；云厂商选定后转为该厂商的具体配置（LT-03，spec 待人确认 #1）。
+# 约定：
+#   - 镜像写成 REGISTRY/starbuddy-<服务>@sha256:DIGEST 占位，由发布流程替换为境内镜像仓库的摘要（决定记录第 11 条）；
+#   - 密钥只经 Secret 引用（secretKeyRef），Secret 由人在集群里创建，本仓库不提交任何 Secret 清单；签字配置与白名单 OTP 条目经
+#     只读挂载的 Secret / ConfigMap 提供；
+#   - 监听地址：staging 各服务显式配置为 Pod IP（downward API status.podIP，属集群内网地址）；服务间地址只收内网 IPv4 字面量，
+#     所以 Service 显式指定 clusterIP（10.96.100.x 是合成占位，须按集群的 Service 网段改写）；
+#   - 学习服务与三科适配器在同一个 Pod（共用网络命名空间，经回环互访；决定记录第 5 条，适配器不改代码）；
+#   - 每个容器：非 root、只读根文件系统、禁止提权、去掉全部 capability、RuntimeDefault seccomp、不挂 ServiceAccount 令牌；
+#   - 探针：TCP（HTTP 健康端点另起，决定记录第 11 条）；只监听回环的适配器用 exec 探针。
+#   - 出网白名单（ADR 09 §5）：默认拒绝全部出网，只放行集群内服务、托管 Postgres、（LT-02 后）境内已备案模型供应商的地址；
+#     具体名单随 LT-02 / LT-03 由人填写，NetworkPolicy 只表达“默认拒绝 + 集群内”，供应商地址见注释占位。
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: starbuddy-staging
+  labels: {app.kubernetes.io/part-of: starbuddy, starbuddy/environment: staging}
+---
+# ---------------------------------------------------------------- 学习服务 + 三科适配器（同一个 Pod）
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: learning, namespace: starbuddy-staging, labels: {app: learning}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: learning}}
+  template:
+    metadata: {labels: {app: learning}}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      volumes:
+        - {name: signed-config, secret: {secretName: starbuddy-signed-config}}
+        - {name: tmp, emptyDir: {medium: Memory, sizeLimit: 16Mi}}
+      containers:
+        - name: learning
+          image: REGISTRY/starbuddy-learning@sha256:DIGEST
+          ports: [{containerPort: 8788}]
+          env:
+            - {name: LEARNING_ENV, value: staging}
+            - {name: LEARNING_HOST, valueFrom: {fieldRef: {fieldPath: status.podIP}}}
+            - {name: PORT, value: "8788"}
+            - {name: LEARNING_DATABASE_URL, valueFrom: {secretKeyRef: {name: starbuddy-learning, key: database-url}}}
+            - {name: LEARNING_SERVICE_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-learning, key: service-token}}}
+            - {name: LEARNING_ADAPTER_AYA_URL, value: "http://127.0.0.1:8781"}
+            - {name: LEARNING_ADAPTER_AYA_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-adapters, key: aya-token}}}
+            - {name: LEARNING_ADAPTER_ZHIXING_URL, value: "http://127.0.0.1:8782"}
+            - {name: LEARNING_ADAPTER_ZHIXING_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-adapters, key: zhixing-token}}}
+            - {name: LEARNING_ADAPTER_WENLI_URL, value: "http://127.0.0.1:8783"}
+            - {name: LEARNING_ADAPTER_WENLI_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-adapters, key: wenli-token}}}
+            - {name: LEARNING_KNOWLEDGE_URL, value: "http://10.96.100.12:8790"}
+            - {name: LEARNING_KNOWLEDGE_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-knowledge, key: learning-token}}}
+            - {name: LEARNING_INSIGHT_CLIENT_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-learning, key: insight-client-token}}}
+            - {name: LEARNING_MASTERY_CONFIG_AYA, value: /run/config/mastery-aya.signed.json}
+            - {name: LEARNING_PRACTICE_CONFIG, value: /run/config/practice.signed.json}
+            - {name: LEARNING_PRACTICE_TICKET_SECRET, valueFrom: {secretKeyRef: {name: starbuddy-learning, key: practice-ticket-secret}}}
+            - {name: LEARNING_RETEST_CONFIG, value: /run/config/retest.signed.json}
+            - {name: LEARNING_TODAY_CONFIG, value: /run/config/today.signed.json}
+            - {name: LEARNING_TODAY_SNAPSHOT, value: "0"}
+          volumeMounts:
+            - {name: signed-config, mountPath: /run/config, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+          readinessProbe: {tcpSocket: {port: 8788}, periodSeconds: 10, timeoutSeconds: 3}
+          livenessProbe: {tcpSocket: {port: 8788}, periodSeconds: 20, timeoutSeconds: 3, failureThreshold: 3}
+          resources: {requests: {cpu: 250m, memory: 384Mi}, limits: {cpu: "1", memory: 768Mi}}
+          securityContext: &csc {readOnlyRootFilesystem: true, allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+        - name: adapter-aya
+          image: REGISTRY/starbuddy-adapter-aya@sha256:DIGEST
+          env:
+            - {name: PORT, value: "8781"}
+            - {name: AYA_ADAPTER_SERVICE_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-adapters, key: aya-token}}}
+          readinessProbe: &adapterprobe {exec: {command: ["node", "-e", "const s=require('node:net').connect(Number(process.env.PORT),'127.0.0.1');s.on('connect',()=>{s.end();process.exit(0)});s.on('error',()=>process.exit(1))"]}, periodSeconds: 10, timeoutSeconds: 3}
+          livenessProbe: *adapterprobe
+          resources: &adapterres {requests: {cpu: 50m, memory: 128Mi}, limits: {cpu: 500m, memory: 256Mi}}
+          securityContext: *csc
+        - name: adapter-zhixing
+          image: REGISTRY/starbuddy-adapter-zhixing@sha256:DIGEST
+          env:
+            - {name: PORT, value: "8782"}
+            - {name: ZHIXING_ADAPTER_SERVICE_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-adapters, key: zhixing-token}}}
+          readinessProbe: *adapterprobe
+          livenessProbe: *adapterprobe
+          resources: *adapterres
+          securityContext: *csc
+        - name: adapter-wenli
+          image: REGISTRY/starbuddy-adapter-wenli@sha256:DIGEST
+          env:
+            - {name: PORT, value: "8783"}
+            - {name: WENLI_ADAPTER_SERVICE_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-adapters, key: wenli-token}}}
+          readinessProbe: *adapterprobe
+          livenessProbe: *adapterprobe
+          resources: *adapterres
+          securityContext: *csc
+---
+apiVersion: v1
+kind: Service
+metadata: {name: learning, namespace: starbuddy-staging}
+spec: {selector: {app: learning}, clusterIP: 10.96.100.10, ports: [{port: 8788, targetPort: 8788}]}
+---
+# ---------------------------------------------------------------- 知识服务
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: knowledge, namespace: starbuddy-staging, labels: {app: knowledge}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: knowledge}}
+  template:
+    metadata: {labels: {app: knowledge}}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      volumes:
+        - {name: snapshot, persistentVolumeClaim: {claimName: knowledge-snapshot, readOnly: true}}
+        - {name: tmp, emptyDir: {medium: Memory, sizeLimit: 64Mi}}
+      containers:
+        - name: knowledge
+          image: REGISTRY/starbuddy-knowledge@sha256:DIGEST
+          ports: [{containerPort: 8790}]
+          env:
+            - {name: KNOWLEDGE_ENV, value: staging}
+            - {name: KNOWLEDGE_HOST, valueFrom: {fieldRef: {fieldPath: status.podIP}}}
+            - {name: KNOWLEDGE_PORT, value: "8790"}
+            - {name: KNOWLEDGE_DATABASE_URL, valueFrom: {secretKeyRef: {name: starbuddy-knowledge, key: database-url}}}
+            - {name: KNOWLEDGE_TOKEN_LEARNING, valueFrom: {secretKeyRef: {name: starbuddy-knowledge, key: learning-token}}}
+            - {name: KNOWLEDGE_PAGE_SNAPSHOT, value: /run/snapshot}
+            - {name: KNOWLEDGE_READ_CACHE, value: "0"}
+            - {name: KNOWLEDGE_CACHE_DIR, value: /tmp/knowledge-cache}
+          volumeMounts:
+            - {name: snapshot, mountPath: /run/snapshot, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+          readinessProbe: {tcpSocket: {port: 8790}, periodSeconds: 10, timeoutSeconds: 3}
+          livenessProbe: {tcpSocket: {port: 8790}, periodSeconds: 20, timeoutSeconds: 3, failureThreshold: 3}
+          resources: {requests: {cpu: 250m, memory: 384Mi}, limits: {cpu: "1", memory: 768Mi}}
+          securityContext: {readOnlyRootFilesystem: true, allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: knowledge, namespace: starbuddy-staging}
+spec: {selector: {app: knowledge}, clusterIP: 10.96.100.12, ports: [{port: 8790, targetPort: 8790}]}
+---
+# ---------------------------------------------------------------- 洞察服务
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: insight, namespace: starbuddy-staging, labels: {app: insight}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: insight}}
+  template:
+    metadata: {labels: {app: insight}}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      volumes:
+        - {name: signed-config, secret: {secretName: starbuddy-signed-config}}
+        - {name: tmp, emptyDir: {medium: Memory, sizeLimit: 16Mi}}
+      containers:
+        - name: insight
+          image: REGISTRY/starbuddy-insight@sha256:DIGEST
+          ports: [{containerPort: 8791}]
+          env:
+            - {name: INSIGHT_ENV, value: staging}
+            - {name: INSIGHT_HOST, valueFrom: {fieldRef: {fieldPath: status.podIP}}}
+            - {name: INSIGHT_PORT, value: "8791"}
+            - {name: INSIGHT_DATABASE_URL, valueFrom: {secretKeyRef: {name: starbuddy-insight, key: database-url}}}
+            - {name: INSIGHT_TOKEN_BFF, valueFrom: {secretKeyRef: {name: starbuddy-insight, key: bff-token}}}
+            - {name: INSIGHT_POLICY, value: /run/config/claims.signed.json}
+            - {name: INSIGHT_REPORT_CHECK, value: /run/config/report-check.signed.json}
+            - {name: INSIGHT_SIE03, value: /run/config/sie03.signed.json}
+            - {name: INSIGHT_LEARNING_URL, value: "http://10.96.100.10:8788"}
+            - {name: INSIGHT_LEARNING_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-learning, key: insight-client-token}}}
+          volumeMounts:
+            - {name: signed-config, mountPath: /run/config, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+          readinessProbe: {tcpSocket: {port: 8791}, periodSeconds: 10, timeoutSeconds: 3}
+          livenessProbe: {tcpSocket: {port: 8791}, periodSeconds: 20, timeoutSeconds: 3, failureThreshold: 3}
+          resources: {requests: {cpu: 250m, memory: 384Mi}, limits: {cpu: "1", memory: 768Mi}}
+          securityContext: {readOnlyRootFilesystem: true, allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: insight, namespace: starbuddy-staging}
+spec: {selector: {app: insight}, clusterIP: 10.96.100.14, ports: [{port: 8791, targetPort: 8791}]}
+---
+# ---------------------------------------------------------------- 审核台后端
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: review-console, namespace: starbuddy-staging, labels: {app: review-console}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: review-console}}
+  template:
+    metadata: {labels: {app: review-console}}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      volumes:
+        - {name: tmp, emptyDir: {medium: Memory, sizeLimit: 16Mi}}
+      containers:
+        - name: review-console
+          image: REGISTRY/starbuddy-review-console@sha256:DIGEST
+          ports: [{containerPort: 8792}]
+          env:
+            - {name: REVIEW_CONSOLE_ENV, value: staging}
+            - {name: REVIEW_CONSOLE_HOST, valueFrom: {fieldRef: {fieldPath: status.podIP}}}
+            - {name: REVIEW_CONSOLE_PORT, value: "8792"}
+            - {name: REVIEW_CONSOLE_KGE_DATABASE_URL, valueFrom: {secretKeyRef: {name: starbuddy-review-console, key: kge-database-url}}}
+            - {name: REVIEW_CONSOLE_REVIEW_DATABASE_URL, valueFrom: {secretKeyRef: {name: starbuddy-review-console, key: review-database-url}}}
+          volumeMounts: [{name: tmp, mountPath: /tmp}]
+          readinessProbe: {tcpSocket: {port: 8792}, periodSeconds: 10, timeoutSeconds: 3}
+          livenessProbe: {tcpSocket: {port: 8792}, periodSeconds: 20, timeoutSeconds: 3, failureThreshold: 3}
+          resources: {requests: {cpu: 100m, memory: 256Mi}, limits: {cpu: 500m, memory: 512Mi}}
+          securityContext: {readOnlyRootFilesystem: true, allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: review-console, namespace: starbuddy-staging}
+spec: {selector: {app: review-console}, clusterIP: 10.96.100.13, ports: [{port: 8792, targetPort: 8792}]}
+---
+# ---------------------------------------------------------------- BFF（单实例：白名单 OTP 状态、连续使用提醒在进程内，见 lessons）
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: bff, namespace: starbuddy-staging, labels: {app: bff}}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app: bff}}
+  template:
+    metadata: {labels: {app: bff}}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      volumes:
+        - {name: otp, secret: {secretName: starbuddy-staging-otp, defaultMode: 0400}}
+        - {name: audit, persistentVolumeClaim: {claimName: bff-otp-audit}}
+        - {name: tmp, emptyDir: {medium: Memory, sizeLimit: 16Mi}}
+      containers:
+        - name: bff
+          image: REGISTRY/starbuddy-bff@sha256:DIGEST
+          ports: [{containerPort: 8787}]
+          env:
+            - {name: STARBUDDY_ENV, value: staging}
+            - {name: BFF_HOST, valueFrom: {fieldRef: {fieldPath: status.podIP}}}
+            - {name: PORT, value: "8787"}
+            - {name: BFF_DATABASE_URL, valueFrom: {secretKeyRef: {name: starbuddy-bff, key: database-url}}}
+            - {name: BFF_SHELL_ORIGIN, valueFrom: {configMapKeyRef: {name: starbuddy-staging, key: shell-origin}}}
+            - {name: BFF_LOG_HMAC_KEY, valueFrom: {secretKeyRef: {name: starbuddy-bff, key: log-hmac-key}}}
+            - {name: BFF_AUTH_SECRET, valueFrom: {secretKeyRef: {name: starbuddy-bff, key: auth-secret}}}
+            - {name: BFF_TRUST_SECRET, valueFrom: {secretKeyRef: {name: starbuddy-bff, key: trust-secret}}}
+            # 只在网关覆盖 X-Forwarded-For、BFF 只对前端开放时才能改为 1（发布检查项，安全审查 S5）
+            - {name: BFF_TRUST_CLIENT_IP, value: "0"}
+            - {name: BFF_LEARNING_URL, value: "http://10.96.100.10:8788"}
+            - {name: BFF_LEARNING_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-learning, key: service-token}}}
+            - {name: BFF_INSIGHT_URL, value: "http://10.96.100.14:8791"}
+            - {name: BFF_INSIGHT_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-insight, key: bff-token}}}
+            - {name: BFF_STAGING_OTP_FILE, value: /run/otp/otp.json}
+            - {name: BFF_STAGING_OTP_AUDIT_FILE, value: /var/lib/starbuddy/audit/otp-audit.jsonl}
+            - {name: BFF_CONSENT_VERSIONS, valueFrom: {configMapKeyRef: {name: starbuddy-staging, key: consent-versions}}}
+            - {name: STARBUDDY_TRUST_UI, value: "why,dispute,reconcile,weekly,data_rights,report"}
+            - {name: STARBUDDY_STARMAP, value: starmap_v1}
+            - {name: STARBUDDY_PRACTICE, value: practice}
+            - {name: STARBUDDY_RETEST_UI, value: retest}
+            - {name: STARBUDDY_TODAY_ORCH, value: today_orch}
+          volumeMounts:
+            - {name: otp, mountPath: /run/otp, readOnly: true}
+            - {name: audit, mountPath: /var/lib/starbuddy/audit}
+            - {name: tmp, mountPath: /tmp}
+          readinessProbe: {tcpSocket: {port: 8787}, periodSeconds: 10, timeoutSeconds: 3}
+          livenessProbe: {tcpSocket: {port: 8787}, periodSeconds: 20, timeoutSeconds: 3, failureThreshold: 3}
+          resources: {requests: {cpu: 250m, memory: 256Mi}, limits: {cpu: "1", memory: 512Mi}}
+          securityContext: {readOnlyRootFilesystem: true, allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: bff, namespace: starbuddy-staging}
+spec: {selector: {app: bff}, clusterIP: 10.96.100.30, ports: [{port: 8787, targetPort: 8787}]}
+---
+# ---------------------------------------------------------------- 前端（对外入口由内部测试网关 / 访问控制提供，不公开域名，LT-03 定）
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: web, namespace: starbuddy-staging, labels: {app: web}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: web}}
+  template:
+    metadata: {labels: {app: web}}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      volumes:
+        - {name: tmp, emptyDir: {medium: Memory, sizeLimit: 16Mi}}
+        - {name: next-cache, emptyDir: {medium: Memory, sizeLimit: 64Mi}}
+      containers:
+        - name: web
+          image: REGISTRY/starbuddy-web@sha256:DIGEST
+          ports: [{containerPort: 3000}]
+          env:
+            - {name: STARBUDDY_ENV, value: staging}
+            - {name: WEB_HOST, valueFrom: {fieldRef: {fieldPath: status.podIP}}}
+            - {name: PORT, value: "3000"}
+            - {name: STARBUDDY_BFF_URL, value: "http://10.96.100.30:8787"}
+            - {name: STARBUDDY_REVIEW_URL, value: "http://10.96.100.13:8792"}
+            - {name: STARBUDDY_PRESENCE_HMAC_KEY, valueFrom: {secretKeyRef: {name: starbuddy-web, key: presence-hmac-key}}}
+            - {name: STARBUDDY_CONSENT_VERSION_PRIVACY, valueFrom: {configMapKeyRef: {name: starbuddy-staging, key: consent-version-privacy}}}
+            - {name: STARBUDDY_CONSENT_VERSION_GUARDIAN, valueFrom: {configMapKeyRef: {name: starbuddy-staging, key: consent-version-guardian}}}
+            - {name: STARBUDDY_TRUST_UI, value: "why,dispute,reconcile,weekly,data_rights,report"}
+            - {name: STARBUDDY_STARMAP, value: starmap_v1}
+            - {name: STARBUDDY_PRACTICE, value: practice}
+            - {name: STARBUDDY_RETEST_UI, value: retest}
+            - {name: STARBUDDY_TODAY_ORCH, value: today_orch}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            - {name: next-cache, mountPath: /srv/starbuddy/apps/web/.next/cache}
+          readinessProbe: {tcpSocket: {port: 3000}, periodSeconds: 10, timeoutSeconds: 3}
+          livenessProbe: {tcpSocket: {port: 3000}, periodSeconds: 20, timeoutSeconds: 3, failureThreshold: 3}
+          resources: {requests: {cpu: 250m, memory: 384Mi}, limits: {cpu: "1", memory: 768Mi}}
+          securityContext: {readOnlyRootFilesystem: true, allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: web, namespace: starbuddy-staging}
+spec: {selector: {app: web}, ports: [{port: 3000, targetPort: 3000}]}
+---
+# ---------------------------------------------------------------- 调度器（单实例；只收签字时间表）
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: scheduler, namespace: starbuddy-staging, labels: {app: scheduler}}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app: scheduler}}
+  template:
+    metadata: {labels: {app: scheduler}}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      volumes:
+        - {name: signed-config, secret: {secretName: starbuddy-signed-config}}
+        - {name: tmp, emptyDir: {medium: Memory, sizeLimit: 16Mi}}
+      containers:
+        - name: scheduler
+          image: REGISTRY/starbuddy-scheduler@sha256:DIGEST
+          args: ["--schedule", "/run/config/schedule.signed.yaml"]
+          env:
+            - {name: SCHEDULER_ENV, value: staging}
+            - {name: SCHEDULER_DATABASE_URL, valueFrom: {secretKeyRef: {name: starbuddy-scheduler, key: database-url}}}
+            - {name: INSIGHT_ENV, value: staging}
+            - {name: INSIGHT_DATABASE_URL, valueFrom: {secretKeyRef: {name: starbuddy-insight, key: database-url}}}
+            - {name: INSIGHT_POLICY, value: /run/config/claims.signed.json}
+            - {name: LEARNING_ENV, value: staging}
+            - {name: LEARNING_DATABASE_URL, valueFrom: {secretKeyRef: {name: starbuddy-learning, key: database-url}}}
+            - {name: LEARNING_MASTERY_CONFIG_AYA, value: /run/config/mastery-aya.signed.json}
+            - {name: REVIEW_CONSOLE_ENV, value: staging}
+            - {name: REVIEW_CONSOLE_KGE_DATABASE_URL, valueFrom: {secretKeyRef: {name: starbuddy-review-console, key: kge-database-url}}}
+          volumeMounts:
+            - {name: signed-config, mountPath: /run/config, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+          livenessProbe: {exec: {command: ["/srv/starbuddy/services/insight/.venv/bin/python", "-I", "-c", "import os; os.kill(1, 0)"]}, periodSeconds: 60}
+          resources: {requests: {cpu: 100m, memory: 256Mi}, limits: {cpu: 500m, memory: 512Mi}}
+          securityContext: {readOnlyRootFilesystem: true, allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+---
+# ---------------------------------------------------------------- 出网白名单（ADR 09 §5）：默认拒绝出网，只放行集群内与 DNS
+# 托管 Postgres（境内，LT-03）与境内已备案模型供应商（LT-02）的地址段由人按白名单流程补入，例如：
+#   - to: [{ipBlock: {cidr: <托管 Postgres 内网地址段>}}]          ports: [{port: 5432}]
+#   - to: [{ipBlock: {cidr: <模型供应商入口地址段>}}]                ports: [{port: 443}]   # 只放学习服务（模型路由）
+# 境外地址一律不放行；白名单外的出网须被拦截（发布检查项）。
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny-egress, namespace: starbuddy-staging}
+spec:
+  podSelector: {}
+  policyTypes: [Egress, Ingress]
+  ingress:
+    - from: [{podSelector: {}}]
+  egress:
+    - to: [{podSelector: {}}]
+    - to: [{namespaceSelector: {}, podSelector: {matchLabels: {k8s-app: kube-dns}}}]
+      ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]

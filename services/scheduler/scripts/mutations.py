@@ -22,7 +22,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parents[1]          # services/scheduler
 REPO = HERE.parents[1]
 PY = HERE / ".venv" / "bin" / "python"
-PURE_TESTS = ["tests/test_schedule.py", "tests/test_config.py", "tests/test_runner.py"]
+PURE_TESTS = ["tests/test_schedule.py", "tests/test_config.py", "tests/test_runner.py", "tests/test_staging_env.py"]  # 后者：LT-01 staging
 DB_TESTS = ["tests/test_db_e2e.py"]
 S, C, R, L, M = "scheduler/schedule.py", "scheduler/config.py", "scheduler/runner.py", "scheduler/loop.py", "scheduler/__main__.py"
 Y = "config/schedule.synthetic.yaml"
@@ -83,12 +83,14 @@ PURE: dict[str, list[tuple[str, str, str]]] = {
     "子进程连接串不加语句超时": [(R, "    env[url] = with_statement_timeout(env[url], statement_timeout_ms(job.timeout_seconds))", "    pass")],
     "语句超时不小于任务超时": [(R, "return max(1000, int(timeout_seconds * 900))", "return max(1000, int(timeout_seconds * 1000))")],
     "直接构造的任务不再核附加变量": [(R, "        if not env_name_ok(job.identity, pattern):", "        if False:")],
-    "身份的运行环境不限 dev/test": [(R, "    if env[job.identity.env_var] not in ALLOWED_ENVS:", "    if False:")],
-    "连接串不核对本机": [(R, "            check_local_url(k, v)", "            pass")],
+    "身份的运行环境不限 dev/test": [(R, "    elif run not in ALLOWED_ENVS:", "    elif False:")],
+    "staging 下身份环境可以混用": [(R, "        if run != STAGING:\n", "        if False:\n")],
+    "连接串不核对本机": [(R, "            check_local_url(k, v, run)", "            pass")],
+    "连接串核对总按 staging 口径": [(R, "            check_local_url(k, v, run)", "            check_local_url(k, v, STAGING)")],
     "缺必填变量不报": [(R, "        if not environ.get(name):\n            raise PreflightError(f\"任务 {job.name} 缺少 {name}\")\n"
                          "        out[name] = environ[name]", "        out[name] = environ.get(name, \"\")")],
     "子进程解释器不存在也跑": [(R, "    if not interpreter.exists():", "    if False:")],
-    "取锁连接不核对服务端": [(R, "        await check_server_local(conn)\n        got =", "        got =")],
+    "取锁连接不核对服务端": [(R, "        await check_server_local(conn, env.get(job.identity.env_var))\n        got =", "        got =")],
     # 运行：超时、退出码、告警、清洗、锁
     "任务级超时不生效": [(R, "deadline = loop.time() + job.timeout_seconds", "deadline = loop.time() + 3600")],
     "运行中不探活锁连接": [(R, "if loop.time() < deadline and not await handle.probe():", "if False:")],
@@ -119,7 +121,9 @@ PURE: dict[str, list[tuple[str, str, str]]] = {
     "启动补跑失效": [(L, "now if j.catch_up else next_run(j.schedule, now)", "next_run(j.schedule, now)")],
     "所有任务都启动补跑": [(L, "now if j.catch_up else next_run(j.schedule, now)", "now")],
     # 命令行
-    "SCHEDULER_ENV 不限 dev/test": [(M, "    if env.get(ENV_VAR, \"\") not in ALLOWED_ENVS:", "    if False:")],
+    "SCHEDULER_ENV 不限 dev/test/staging": [(M, "    if env.get(ENV_VAR, \"\") not in SERVICE_ENVS:", "    if False:")],
+    "staging 也收合成时间表": [(M, "    if env.get(ENV_VAR) == STAGING and not cfg.signed:", "    if False:")],
+    "镜像环境标记不查": [(M, "    if marked is not None and marked != env.get(ENV_VAR):", "    if False:")],
     "启动核对不过也启动": [(M, "    if problems:\n        for msg in problems:", "    if False:\n        for msg in problems:")],
     "--once 也核对全部任务": [(M, "    for job in selected:\n        try:\n            run.check(job)",
                           "    for job in cfg.jobs.values():\n        try:\n            run.check(job)")],

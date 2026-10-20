@@ -173,7 +173,11 @@ test('阈值与时长读 config/auth.json，与 spec 默认一致（待人确认
   for (const r of ROUTES) for (const l of r.rateLimits) assert.ok(c.rate_limits[l.bucket], `路由表用到的限流桶 ${l.bucket} 在配置里`);
 });
 
-test('短信：捕获桩只在 dev / test；其余环境没有供应商，拒绝启动；密钥在非本地环境必须配置', () => {
+test('短信：捕获桩只在 dev / test；staging 只能配白名单固定码（LT-01）；其余环境没有供应商，拒绝启动；密钥在非本地环境必须配置', () => {
+  assert.throws(() => createSmsSender('staging', { BFF_STAGING_OTP_FILE: '/run/x.json' }), /BFF_STAGING_OTP_AUDIT_FILE/);
+  assert.ok(createSmsSender('staging', { BFF_STAGING_OTP_FILE: '/run/x.json', BFF_STAGING_OTP_AUDIT_FILE: '/run/a.jsonl' }));
+  assert.throws(() => createSmsSender('test', { BFF_STAGING_OTP_FILE: '/run/x.json' }), /只能在 staging/);
+  assert.throws(() => createSmsSender('pilot', { BFF_STAGING_OTP_FILE: '/run/x.json', BFF_STAGING_OTP_AUDIT_FILE: '/run/a.jsonl' }), /只能在 staging/);
   for (const env of ['staging', 'pilot', 'production'] as const) {
     assert.throws(() => createSmsSender(env, {}), /短信供应商/);
     assert.throws(() => new CaptureSmsSender(env), /dev \/ test/);
@@ -374,9 +378,9 @@ test('学生模式：未绑定、已解除绑定、另一户家长与“学生�
   }
 });
 
-test('同意：合成版本号只在 dev / test / staging；取值不合要求 422', { skip: !HAS_DB }, async () => {
+test('同意：合成版本号只在 dev / test（LT-01 决定记录第 10 条起 staging 拒绝）；取值不合要求 422', { skip: !HAS_DB }, async () => {
   const { syntheticConsentAllowed } = await import('../src/http/routes.ts');
-  assert.deepEqual((['dev', 'test', 'staging', 'pilot', 'production'] as const).map(syntheticConsentAllowed), [true, true, true, false, false]);
+  assert.deepEqual((['dev', 'test', 'staging', 'pilot', 'production'] as const).map(syntheticConsentAllowed), [true, true, false, false, false]);
   const g = await login(PH.gA);
   const bad = (body: unknown) => call('POST', `/students/${ID.S1}/consents`, { token: g.token, csrf: g.csrf, body });
   assert.equal((await bad({ consent_type: 'privacy_policy', document_version: 'not versioned', decision: 'granted' })).status, 422);

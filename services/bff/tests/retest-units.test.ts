@@ -111,7 +111,8 @@ test('开关：只认 retest，只在 dev / test；其余环境设了就拒绝�
   assert.equal(parseRetestFeature('dev', ' '), false);
   assert.equal(parseRetestFeature('test', 'retest'), true);
   assert.throws(() => parseRetestFeature('test', 'practice'));
-  assert.throws(() => parseRetestFeature('staging', 'retest'));
+  assert.equal(parseRetestFeature('staging', 'retest'), true);  // LT-01：staging 可开（学习服务签字前 501）
+  assert.throws(() => parseRetestFeature('staging', 'practice'));
   assert.throws(() => parseRetestFeature('production', 'retest'));
   assert.throws(() => parseRetestFeature('pilot', 'retest'));
 });

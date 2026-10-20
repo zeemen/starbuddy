@@ -7,6 +7,9 @@ const mac = (key: Buffer, label: string, value: string): Buffer => createHmac('s
 /** 日志里的 student_id：带密钥 HMAC 的前 16 位十六进制（换密钥后值变化） */
 export const logHash = (keys: Keys, id: string): string => mac(keys.log, 'student', id).toString('hex').slice(0, 16);
 
+/** 审计里的手机号：带密钥 HMAC 的前 16 位十六进制（staging 白名单 OTP 的审计文件不记号码原文，LT-01 决定记录第 6 条） */
+export const phoneHash = (keys: Keys, phone: string): string => mac(keys.log, 'phone', phone).toString('hex').slice(0, 16);
+
 /** 验证码的 MAC（与号码绑定：换号使用必然对不上）。库里只存它，验证码原文不进库 */
 export const codeMac = (keys: Keys, phone: string, code: string): Buffer => mac(keys.otp, 'otp', `${phone}:${code}`);
 

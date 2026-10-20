@@ -3,13 +3,15 @@
 // BFF 侧是同名开关（services/bff/src/retest/features.ts）：开关关时 BFF 不注册三条路由。前后端的开关由部署环境各自设置。
 // 打开方式：STARBUDDY_RETEST_UI=retest；只在 dev / test 生效，staging、pilot、生产一律关闭。只在服务端读，不进浏览器。
 
+// LT-01 决定记录第 1、5、7 条：staging 也可开（学习服务在教研签字前回 501，开关开、待签字内容）；pilot、生产仍一律关闭。
+import { launchTier } from '../lib/launch-env.ts';
+
 type Env = Record<string, string | undefined>;
 
 export const RETEST_FEATURE = 'retest';
 
 export function retestEnabled(env: Env = process.env): boolean {
-  const run = env['STARBUDDY_ENV'] ?? '';
-  if (run !== 'dev' && run !== 'test') return false;
+  if (launchTier(env) === null) return false;
   return (env['STARBUDDY_RETEST_UI'] ?? '').split(',').map((s) => s.trim()).includes(RETEST_FEATURE);
 }
 

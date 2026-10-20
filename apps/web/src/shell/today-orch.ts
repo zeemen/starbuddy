@@ -4,12 +4,14 @@
 // 前端开着而 BFF 没返回 ordered 时同样不渲染。打开方式：STARBUDDY_TODAY_ORCH=today_orch；只在 dev / test 生效。只在服务端读，不进浏览器。
 // 只给学生本人：家长端没有跨科列表（可见范围待人确认，spec“不做”）。跨科列表与“去做”地址在 src/today/（壳目录不链再练、复测页）。
 
+// LT-01 决定记录第 1、5、7 条：staging 也可开；pilot、生产仍一律关闭。
+import { launchTier } from '../lib/launch-env.ts';
+
 type Env = Record<string, string | undefined>;
 
 export const TODAY_ORCH_FEATURE = 'today_orch';
 
 export function todayOrchEnabled(env: Env = process.env): boolean {
-  const run = env['STARBUDDY_ENV'] ?? '';
-  if (run !== 'dev' && run !== 'test') return false;
+  if (launchTier(env) === null) return false;
   return (env['STARBUDDY_TODAY_ORCH'] ?? '').split(',').map((s) => s.trim()).includes(TODAY_ORCH_FEATURE);
 }

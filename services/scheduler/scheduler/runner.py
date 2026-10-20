@@ -35,6 +35,10 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from .config import SERVICES, Identity, Job, env_name_ok, matched_name_ok
 
 ALLOWED_ENVS = ("dev", "test")
+# LT-01 决定记录第 5 条：调度器另收 staging。staging 下各身份的运行环境变量必须也是 staging（不混用），连接串与服务端地址
+# 另收内网 IPv4 字面量（review_console.__main__.local_only / check_server_local 的 env 参数）；合成时间表拒绝（__main__）
+STAGING = "staging"
+SERVICE_ENVS = ALLOWED_ENVS + (STAGING,)
 BASE_ENV: Mapping[str, str] = {"PATH": "/usr/bin:/bin", "PYTHONDONTWRITEBYTECODE": "1", "PYTHONIOENCODING": "utf-8", "LANG": "C.UTF-8"}
 KILL_GRACE_SECONDS = 5.0
 PROBE_SECONDS = 15.0
@@ -82,20 +86,21 @@ def _local_checks() -> tuple[str, Callable[[str], str], Callable[[Any], Any]]:
     return NOT_LOCAL, local_only, check_server_local
 
 
-def check_local_url(name: str, url: str) -> None:
+def check_local_url(name: str, url: str, env: str | None = None) -> None:
     _, local_only, _ = _local_checks()
     try:
-        local_only(url)
+        local_only(url, env)
     except SystemExit:
-        raise PreflightError(f"{name} 必须是本机数据库的 postgresql:// 连接串（规则 9）") from None
+        where = "本机或内网 IPv4" if env == STAGING else "本机"
+        raise PreflightError(f"{name} 必须是{where}数据库的 postgresql:// 连接串（规则 9）") from None
 
 
-async def check_server_local(conn: Any) -> None:
+async def check_server_local(conn: Any, env: str | None = None) -> None:
     _, _, check = _local_checks()
     try:
-        await check(conn)
+        await check(conn, env)
     except SystemExit:
-        raise PreflightError("连上的服务端不是本机（规则 9）") from None
+        raise PreflightError("连上的服务端不是本机（规则 9；staging 另收内网 IPv4）") from None
 
 
 def child_env(job: Job, environ: Mapping[str, str]) -> dict[str, str]:
@@ -119,11 +124,15 @@ def child_env(job: Job, environ: Mapping[str, str]) -> dict[str, str]:
 def preflight(job: Job, environ: Mapping[str, str], interpreter: Path) -> dict[str, str]:
     """一个任务的启动核对：返回子进程环境（连接串已追加语句超时）"""
     env = child_env(job, environ)
-    if env[job.identity.env_var] not in ALLOWED_ENVS:
+    run = env[job.identity.env_var]
+    if environ.get("SCHEDULER_ENV") == STAGING:
+        if run != STAGING:
+            raise PreflightError(f"SCHEDULER_ENV=staging 时 {job.identity.env_var} 也必须是 staging（不混用环境）")
+    elif run not in ALLOWED_ENVS:
         raise PreflightError(f"{job.identity.env_var} 必须是 {ALLOWED_ENVS} 之一（规则 9）")
     for k, v in env.items():
         if k.endswith("_DATABASE_URL"):
-            check_local_url(k, v)
+            check_local_url(k, v, run)
     if not interpreter.exists():
         raise PreflightError(f"任务 {job.name} 的子进程解释器不存在（services/{job.identity.service}/.venv）")
     url = job.identity.url_var
@@ -240,7 +249,7 @@ async def pg_advisory_lock(job: Job, env: Mapping[str, str]) -> AsyncIterator[Lo
         except Exception:  # noqa: BLE001 连接断开、超时：都按锁已丢失
             return False
     try:
-        await check_server_local(conn)
+        await check_server_local(conn, env.get(job.identity.env_var))
         got = bool(await conn.fetchval("SELECT pg_try_advisory_lock($1::bigint)", lock_key(job.name)))
         try:
             yield LockHandle(got, probe)

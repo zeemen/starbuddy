@@ -48,7 +48,8 @@ test('开关：默认关；只在 dev / test 可开；staging、pilot、生产�
   assert.equal(practiceEnabled({ STARBUDDY_ENV: 'test', STARBUDDY_PRACTICE: 'practice' }), true);
   assert.equal(practiceEnabled({ STARBUDDY_ENV: 'dev', STARBUDDY_PRACTICE: ' practice ' }), true);
   assert.equal(practiceEnabled({ STARBUDDY_ENV: 'test', STARBUDDY_PRACTICE: 'practise' }), false);
-  for (const env of ['staging', 'pilot', 'production', '']) {
+  assert.equal(practiceEnabled({ STARBUDDY_ENV: 'staging', STARBUDDY_PRACTICE: 'practice' }), true);  // LT-01
+  for (const env of ['pilot', 'production', '']) {
     assert.equal(practiceEnabled({ STARBUDDY_ENV: env, STARBUDDY_PRACTICE: 'practice' }), false, env);
   }
   assert.deepEqual([...PRACTICE_SUBJECTS], ['math', 'politics']);
@@ -71,9 +72,9 @@ test('开关关时 BFF 客户端不发任何请求（按 404 返回）；打开�
     assert.deepEqual(await api.fetchPracticeQueue(s, S, 'math'), OFF);
     assert.deepEqual(await api.nextPracticeItem(s, S, 'math', E1), OFF);
     assert.deepEqual(await api.answerPractice(s, S, 'math', TICKET, { choice: ['A'] }), OFF);
-    process.env['STARBUDDY_ENV'] = 'staging';
+    process.env['STARBUDDY_ENV'] = 'pilot';
     process.env['STARBUDDY_PRACTICE'] = 'practice';
-    assert.deepEqual(await api.fetchPracticeQueue(s, S, 'math'), OFF, 'staging 以上开关一律关');
+    assert.deepEqual(await api.fetchPracticeQueue(s, S, 'math'), OFF, 'pilot 以上开关一律关（LT-01 起 staging 可开）');
     process.env['STARBUDDY_ENV'] = 'test';
     assert.deepEqual(await api.fetchPracticeQueue(s, '../admin', 'math'), OFF);
     assert.deepEqual(await api.fetchPracticeQueue(s, S, 'chinese'), OFF);

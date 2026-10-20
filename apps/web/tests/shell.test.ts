@@ -77,7 +77,9 @@ test('信任界面开关：默认全关；只在 dev / test 可开；staging、p
   assert.deepEqual([...trustFeatures({})], []);
   assert.deepEqual([...trustFeatures({ STARBUDDY_ENV: 'test' })], []);
   assert.deepEqual([...trustFeatures({ STARBUDDY_ENV: 'test', STARBUDDY_TRUST_UI: 'why, dispute,bogus' })], ['why', 'dispute']);
-  for (const env of ['staging', 'pilot', 'production']) {
+  // LT-01：staging 可开上线测试范围内的全部块
+  assert.deepEqual([...trustFeatures({ STARBUDDY_ENV: 'staging', STARBUDDY_TRUST_UI: TRUST_FEATURES.join(',') })], [...TRUST_FEATURES]);
+  for (const env of ['pilot', 'production']) {
     assert.deepEqual([...trustFeatures({ STARBUDDY_ENV: env, STARBUDDY_TRUST_UI: TRUST_FEATURES.join(',') })], [], env);
   }
   assert.equal(trustEnabled('reconcile', {}), false);

@@ -197,13 +197,16 @@ test('学科码：前端学科码对应学习服务学科码；英语等不在�
   assert.equal(SUBJECTS['english'], undefined);
 });
 
-test('开关：缺省关闭；只认 practice；dev / test 以外设了就拒绝启动', () => {
+test('开关：缺省关闭；只认 practice；dev / test / staging 以外设了就拒绝启动（LT-01）', () => {
   assert.equal(parsePracticeFeature('test', undefined), false);
   assert.equal(parsePracticeFeature('dev', ' '), false);
   assert.equal(parsePracticeFeature('test', 'practice'), true);
+  assert.equal(parsePracticeFeature('staging', 'practice'), true);
+  assert.equal(parsePracticeFeature('staging', undefined), false);
   assert.throws(() => parsePracticeFeature('test', '1'), /只认 practice/);
-  for (const env of ['staging', 'pilot', 'production'] as const) {
-    assert.throws(() => parsePracticeFeature(env, 'practice'), /只在 dev \/ test/);
+  assert.throws(() => parsePracticeFeature('staging', '1'), /只认 practice/);
+  for (const env of ['pilot', 'production'] as const) {
+    assert.throws(() => parsePracticeFeature(env, 'practice'), /只在 dev \/ test \/ staging/);
     assert.equal(parsePracticeFeature(env, undefined), false);
   }
 });

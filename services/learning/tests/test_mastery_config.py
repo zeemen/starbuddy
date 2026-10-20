@@ -31,7 +31,7 @@ def test_synthetic_config_loads_in_test_env_and_is_unsigned():
     assert "合成占位" in cfg["$comment"] and "禁止用于任何非测试环境" in cfg["$comment"]
 
 
-@pytest.mark.parametrize("env", ["dev", "pilot", "prod", ""])
+@pytest.mark.parametrize("env", ["dev", "staging", "pilot", "prod", ""])
 def test_unsigned_or_synthetic_rejected_outside_test(env):
     with pytest.raises(ConfigError):
         parse_config(synthetic_doc(), env=env)

@@ -40,7 +40,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from .policy import CONFIG_DIR, PolicyError, load_check_config, load_policy
-from .service.config import ALLOWED_ENVS
+from .service.config import SERVICE_ENVS
 from .shared import forbidden_matcher  # noqa: F401  先导入 shared：把 services/learning 加进 sys.path（复用审核台的本机核对）
 
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
@@ -64,32 +64,33 @@ def _rephrase(e: SystemExit) -> JobError:
     return JobError(LOCAL_ONLY)
 
 
-def check_local_url(url: str) -> str:
-    """连接前：连接串里出现的与 asyncpg 实际会连的全部主机都必须是本机（review_console.__main__.local_only）"""
+def check_local_url(url: str, env: str | None = None) -> str:
+    """连接前：连接串里出现的与 asyncpg 实际会连的全部主机都必须是本机（review_console.__main__.local_only）；
+    staging 另收内网 IPv4 字面量（LT-01 决定记录第 5 条）"""
     from review_console.__main__ import local_only
     try:
-        return local_only(url)
+        return local_only(url, env)
     except SystemExit as e:
         raise _rephrase(e) from None
 
 
-async def check_server(conn: Any) -> None:
-    """连上之后：服务端地址为空（Unix socket）或回环地址，否则中止（名字解析到别处、端口转发等）"""
+async def check_server(conn: Any, env: str | None = None) -> None:
+    """连上之后：服务端地址为空（Unix socket）或回环地址（staging 另收内网 IPv4），否则中止（名字解析到别处、端口转发等）"""
     from review_console.__main__ import check_server_local
     try:
-        await check_server_local(conn)
+        await check_server_local(conn, env)
     except SystemExit as e:
         raise _rephrase(e) from None
 
 
 def _env() -> tuple[str, str]:
     env = os.environ.get("INSIGHT_ENV", "")
-    if env not in ALLOWED_ENVS:
-        raise JobError(f"INSIGHT_ENV 必须是 {ALLOWED_ENVS} 之一；本命令不连接 pilot 或生产环境")
+    if env not in SERVICE_ENVS:
+        raise JobError(f"INSIGHT_ENV 必须是 {SERVICE_ENVS} 之一；本命令不连接 pilot 或生产环境")
     url = os.environ.get("INSIGHT_DATABASE_URL", "")
     if not url:
         raise JobError("缺少 INSIGHT_DATABASE_URL")
-    return env, check_local_url(url)
+    return env, check_local_url(url, env)
 
 
 def _students(raw: Sequence[str] | None) -> list[str]:
@@ -167,7 +168,7 @@ async def _run(cmd: str, students: list[str], all_students: bool, limit: int, we
     pool = await create_pool(url)  # 角色断言：只继承 starbuddy_insight，否则关闭池并报错
     try:
         async with pool.acquire() as conn:
-            await check_server(conn)
+            await check_server(conn, env)
             if all_students:
                 students = [r["student_id"] for r in await conn.fetch(STUDENTS_SQL)]
         store = InsightStore(pool)

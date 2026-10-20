@@ -36,7 +36,9 @@ test('开关：默认全关；只在 dev / test 可开；只开虚线不开 v1 �
   assert.deepEqual([...starMapFeatures({ STARBUDDY_ENV: 'test', STARBUDDY_STARMAP: 'starmap_v1' })], ['starmap_v1']);
   assert.deepEqual([...starMapFeatures({ STARBUDDY_ENV: 'dev', STARBUDDY_STARMAP: ' starmap_v1, starmap_dashed ,bogus' })], ['starmap_v1', 'starmap_dashed']);
   assert.deepEqual([...starMapFeatures({ STARBUDDY_ENV: 'test', STARBUDDY_STARMAP: 'starmap_dashed' })], []);
-  for (const env of ['', 'staging', 'pilot', 'production']) {
+  // LT-01：staging 只开 starmap_v1（虚线设了也按关）
+  assert.deepEqual([...starMapFeatures({ STARBUDDY_ENV: 'staging', STARBUDDY_STARMAP: STAR_MAP_FEATURES.join(',') })], ['starmap_v1']);
+  for (const env of ['', 'pilot', 'production']) {
     assert.deepEqual([...starMapFeatures({ STARBUDDY_ENV: env, STARBUDDY_STARMAP: STAR_MAP_FEATURES.join(',') })], [], env);
   }
   assert.equal(starMapEnabled('starmap_v1', {}), false);
