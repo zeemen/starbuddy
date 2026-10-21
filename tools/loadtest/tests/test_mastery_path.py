@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -138,8 +139,8 @@ def test_one_answer_leaves_confidence_below_review_floor_in_synthetic_config():
 
 
 class FakeResponse:
-    def __init__(self, verdict: str):
-        self.status_code = 200
+    def __init__(self, verdict: str, status: int = 200):
+        self.status_code = status
         self._v = verdict
 
     def json(self):
@@ -147,12 +148,35 @@ class FakeResponse:
 
 
 class FakeClient:
-    def __init__(self):
-        self.posts = []
+    def __init__(self, status: int = 200):
+        self.posts, self.usage, self.status = [], [], status
 
     async def post(self, url, json, headers, timeout):
-        self.posts.append((url, json["request"]["context"]["student_ref"], json["request"]["attempt"]["item_ref"]))
-        return FakeResponse("incorrect" if json["request"]["attempt"]["response"]["text"] == "0" else "correct")
+        ctx = json["request"]["context"]
+        self.posts.append((url, ctx["student_ref"], json["request"]["attempt"]["item_ref"]))
+        self.usage.append((ctx["student_ref"], ctx["idempotency_key"], ctx["usage_id"]))
+        return FakeResponse("incorrect" if json["request"]["attempt"]["response"]["text"] == "0" else "correct", self.status)
+
+
+class FakeMeter:
+    """SeedMeter 的替身（BFF 计量函数）：usage_id 按幂等键派生（同库里的做法，值不同），记下预留、结算、释放"""
+
+    def __init__(self):
+        self.reserved, self.settled, self.released = {}, [], []
+
+    async def reserve(self, student, key, fingerprint):
+        assert len(fingerprint) == 64
+        usage = str(uuid.uuid5(uuid.NAMESPACE_URL, f"synthetic-meter:{key}"))
+        self.reserved[usage] = (student, key)
+        return usage
+
+    async def settle(self, student, usage_id):
+        assert self.reserved[usage_id][0] == student
+        self.settled.append(usage_id)
+
+    async def release(self, student, usage_id):
+        assert self.reserved[usage_id][0] == student
+        self.released.append(usage_id)
 
 
 class ReadOnlyAdmin:
@@ -183,9 +207,12 @@ DECAYS = [_task("decay", due=True) for _ in range(4)]   # 两名学生 × 两个
 
 def test_seed_students_only_posts_grades_and_reads_back_tasks():
     students = ["5c1e0000-0000-4000-8000-0000000000a1", "5c1e0000-0000-4000-8000-0000000000a2"]
-    client, admin = FakeClient(), ReadOnlyAdmin(DECAYS)
-    out = asyncio.run(W.seed_students(client, "http://127.0.0.1:1", "c" * 40, admin, students, 7, BASE["curriculum"]))
+    client, admin, meter = FakeClient(), ReadOnlyAdmin(DECAYS), FakeMeter()
+    out = asyncio.run(W.seed_students(client, "http://127.0.0.1:1", "c" * 40, admin, students, 7, BASE["curriculum"], meter=meter))
     assert out["grades"] == 4 and out["verdicts"] == {"practice:incorrect": 2, "retest:correct": 2} and out["manual_tasks"] == 0
+    # LT-04：每笔种子先经计量预留（学习服务写入前核对计量，裸写 409），请求带的 usage_id 就是预留返回的那一个；成功即结算，不释放
+    assert len(client.usage) == 4 and all(meter.reserved[u] == (s, k) for s, k, u in client.usage)
+    assert sorted(meter.settled) == sorted(u for _, _, u in client.usage) and meter.released == []
     assert out["retest_tasks"]["by_reason_status"] == {"decay:open": 4} and out["retest_tasks"]["unproven"] == 0
     assert out["retest_tasks"]["due_open"] == 4
     for s in students:  # 同一学生按先 N2、后 N1 的顺序串行
@@ -204,7 +231,28 @@ def test_seed_fails_when_tasks_not_from_recompute(rows, needle):
     students = ["5c1e0000-0000-4000-8000-0000000000a1", "5c1e0000-0000-4000-8000-0000000000a2"]
     with pytest.raises(RuntimeError, match=needle):
         asyncio.run(W.seed_students(FakeClient(), "http://127.0.0.1:1", "c" * 40, ReadOnlyAdmin(rows), students, 7,
-                                    BASE["curriculum"]))
+                                    BASE["curriculum"], meter=FakeMeter()))
+
+
+@pytest.mark.parametrize("status,released", [(409, True), (400, True), (500, False), (429, False)])
+def test_seed_failure_releases_only_definite_failures(status, released):
+    """种子 grade 没成功：确定失败（4xx，408 / 429 除外，例如计量核对不通过的 409）释放预留；结果未知（5xx、429）不释放、
+    留给过期任务（同 BFF meteredCall 口径）；都不结算，且整轮种子失败"""
+    meter = FakeMeter()
+    with pytest.raises(RuntimeError, match="grade 失败"):
+        asyncio.run(W.seed_students(FakeClient(status), "http://127.0.0.1:1", "c" * 40, ReadOnlyAdmin(DECAYS),
+                                    ["5c1e0000-0000-4000-8000-0000000000a1"], 7, BASE["curriculum"], meter=meter))
+    assert meter.settled == [] and len(meter.released) == (1 if released else 0) and len(meter.reserved) == 1
+
+
+def test_seed_meter_uses_bff_metering_functions_only():
+    """SeedMeter 只调 BFF 同一组计量函数（预留、结算、释放，事务里先设 app.account_id），不直写计量表"""
+    src = inspect.getsource(W.SeedMeter)
+    for fn in ("M.reserve(", "M.settle(", "M.release("):
+        assert fn in src, fn
+    for banned in ("INSERT", "UPDATE", "usage_reservation", "practice_log", "execute("):
+        assert banned not in src, banned
+    assert W.SEED_RESOURCE == "mistake_analysis"
 
 
 def test_task_origins_counts_reason_status_due_and_unproven():

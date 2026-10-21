@@ -17,7 +17,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from conftest import CREDENTIAL, at, counts, diagnose_body, grade_body
+from conftest import CREDENTIAL, at, counts, diagnose_body, env, grade_body, to_v1_body
 from conftest import settings as make_settings
 from learning.app import create_app
 from learning.config import AdapterTarget
@@ -98,8 +98,9 @@ async def test_content_registration_is_complete_and_idempotent(aya_adapter, pool
 async def test_grade_through_real_aya_adapter(e2e_api, pools, student, pg):
     _, admin = pools
     # (x-2)^2=49 答成 “9”：命中预标注陷阱，产出错因
-    body = grade_body(student, item="Q-EQU-U03-D-001", text="9")
-    r = await e2e_api.post("/internal/v0/grade", json=body)
+    # 写入只经 /internal/v1（v0 写入已下线，LT-04 决定记录（再续）第 1 条；计量记录由 conftest 代建）
+    body = env(to_v1_body(grade_body(student, item="Q-EQU-U03-D-001", text="9")))
+    r = await e2e_api.post("/internal/v1/grade", json=body)
     assert r.status_code == 200, r.text
     s = r.json()
     assert s["verdict"] == "incorrect" and s["semantics"] == "practice" and s["human_review_required"]
@@ -119,8 +120,8 @@ async def test_grade_through_real_aya_adapter(e2e_api, pools, student, pg):
         assert set(attr["evidence_ids"]) <= set(s["evidence_ids"])
     # 同 key 重试：同一批证据，不再入库
     retry = copy.deepcopy(body)
-    retry["context"]["request_id"] = str(uuid.uuid4())
-    r2 = await e2e_api.post("/internal/v0/grade", json=retry)
+    retry["request"]["context"]["request_id"] = str(uuid.uuid4())
+    r2 = await e2e_api.post("/internal/v1/grade", json=retry)
     assert r2.headers["idempotent-replayed"] == "true" and r2.json()["evidence_ids"] == s["evidence_ids"]
     assert (await counts(admin, student))["evidence_event"] == 2
     # 统一复核队列闭环（冲刺 2-G）：同一事务进队，重放不重复，staff 经审核台领取、结案
@@ -134,7 +135,7 @@ async def test_diagnose_through_real_aya_adapter(e2e_api, pools, student):
     _, admin = pools
     attempts = [at("Q-EQU-U03-D-001", "9,-5", 1), at("Q-EQU-U03-D-001", "7,-7", 2)]
     attempts[0]["self_report"] = "guessed"
-    r = await e2e_api.post("/internal/v0/diagnose", json=diagnose_body(student, attempts))
+    r = await e2e_api.post("/internal/v1/diagnose", json=env(to_v1_body(diagnose_body(student, attempts))))
     assert r.status_code == 200, r.text
     s = r.json()
     async with admin.acquire() as c:

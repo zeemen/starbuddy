@@ -22,7 +22,8 @@ import asyncpg
 import httpx
 import pytest
 
-from conftest import ADAPTER_CREDENTIAL, CREDENTIAL, FIXTURE_SQL, _answer_in_version, fake_grade, grade_body, settings, to_v1_body
+from conftest import (ADAPTER_CREDENTIAL, CREDENTIAL, FIXTURE_SQL, _answer_in_version, fake_grade, grade_body, meter_row,
+                      register_admin, settings, to_v1_body, unregister_admin)
 from learning.app import create_app
 from learning.config import AdapterTarget
 from learning.mastery import recompute as R
@@ -113,7 +114,9 @@ def ppg():
 async def ppools(ppg):
     app_pool = await asyncpg.create_pool(**ppg.dsn(LOGIN_ROLE), min_size=1, max_size=30)
     admin = await asyncpg.create_pool(**ppg.dsn("postgres"), min_size=1, max_size=4)
+    register_admin(app_pool, admin)  # 计量代建经超级用户池（conftest.MeterProvision）
     yield app_pool, admin
+    unregister_admin(app_pool)
     await app_pool.close()
     await admin.close()
 
@@ -147,7 +150,6 @@ def capture_practice_service(monkeypatch):
 @pytest.fixture(scope="module", autouse=True)
 def candidate_contract():
     mp = pytest.MonkeyPatch()
-    mp.setenv("LEARNING_INTERNAL_V1", "1")   # 再练作答走 learning-internal v1 写入路径（内部 v1 未签字，只在测试里开）
     mp.setenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", "1")   # 只为 PLT-12 题面开关用例（present_item，候选版 1.1.0）；插件 1.0.0 已签字，不需开关
     yield
     mp.undo()
@@ -337,15 +339,13 @@ class Api:
         body.update(extra or {})
         return await self.c.post("/internal/v1/practice/answer", json=body)
 
-    async def grade(self, student, item, text, hint=0, channel="keypad"):
-        """平台作答（不经再练）：learning-internal v1 的 grade（缺省键盘通道；拍照通道记 B 级）。"""
+    async def grade(self, student, item, text, hint=0):
+        """平台作答（不经再练）：learning-internal v1 的 grade（键盘通道；计量记录由 conftest 代建）。"""
         b = to_v1_body(grade_body(student, item=item, text=text))
         b["context"]["content_version"] = dict(CV)
         b["attempt"]["hint_level_used"] = hint
         b["attempt"]["occurred_at"] = clock().isoformat()
-        if channel == "photo":
-            b["evidence_level"] = "B"
-        r = await self.c.post("/internal/v1/grade", json={"request": b, "ingest": {"channel": channel}})
+        r = await self.c.post("/internal/v1/grade", json={"request": b, "ingest": {"channel": "keypad"}})
         assert r.status_code == 200, r.text
         return r.json()
 
@@ -483,11 +483,26 @@ async def test_same_family_fallback(api, student):
 
 
 async def test_photo_wrong_does_not_enter(api, ppools, student):
-    """拍照上传的错题不进再练（上传深度分析是另一项计量资源，KGE-05）；同单元键盘错题照常进。"""
+    """拍照上传的错题不进再练（上传深度分析是另一项计量资源，KGE-05；队列按通道过滤的规则另见 test_practice_pure）。
+    LT-04 起非键盘通道没有平台确认记录，直接写入本身就 400、不落库，队列里自然没有；同单元键盘错题照常进。"""
     _, admin = ppools
-    s = await api.grade(student, "SYNP-0001", "41", channel="photo")
-    assert s["verdict"] == "incorrect"
+    b = to_v1_body(grade_body(student, item="SYNP-0001", text="41"))
+    b["context"]["content_version"] = dict(CV)
+    b["attempt"]["occurred_at"] = clock().isoformat()
+    b["evidence_level"] = "B"
+    r = await api.c.post("/internal/v1/grade", json={"request": b, "ingest": {"channel": "photo"}})
+    assert r.status_code == 400 and r.json()["code"] == "INVALID_REQUEST"
     async with admin.acquire() as c:
+        assert await c.fetchval("SELECT count(*) FROM platform.attempt WHERE student_id = $1::uuid", student) == 0
+    assert await api.entries(student) == []
+    # 队列按通道过滤的接线（审查时的变异“作答通道不读”）：以前经 API 写一道拍照错题，现在 API 不收拍照，改为先写键盘错题、再以超级用户
+    # 把这道作答与它的证据改成拍照 B 级（只在一次性测试库，绕过只追加的触发器，同 test_diagnosis_session 的 backdate），队列不能出现它
+    await api.grade(student, "SYNP-0001", "41")
+    async with admin.acquire() as c, c.transaction():
+        await c.execute("SET LOCAL session_replication_role = replica")
+        await c.execute("""UPDATE platform.evidence_event SET channel = 'photo', evidence_level = 'B'
+                            WHERE student_id = $1::uuid AND kind = 'response_text'""", student)
+        await c.execute("UPDATE platform.attempt SET channel = 'photo', evidence_level = 'B' WHERE student_id = $1::uuid", student)
         assert await c.fetchval("SELECT channel FROM platform.attempt WHERE student_id = $1::uuid", student) == "photo"
     assert await api.entries(student) == []
     await api.grade(student, "SYNP-0002", "41")
@@ -653,6 +668,7 @@ async def test_small_pool_concurrent_answers_do_not_hang(ppg, ppools, plock):
     """业务池上限 2、同时 3 个作答：锁连接不占业务池、取连接有上限，不会互相等死；每个作答成功或 503 BUSY（B2）。"""
     _, admin = ppools
     small = await asyncpg.create_pool(**ppg.dsn(LOGIN_ROLE), min_size=0, max_size=2)
+    register_admin(small, admin)  # 计量代建经超级用户池（conftest.MeterProvision）
     try:
         app, fakes = await make_api(small, plock, mastery=engine(small))
         async with app.router.lifespan_context(app):
@@ -673,6 +689,7 @@ async def test_small_pool_concurrent_answers_do_not_hang(ppg, ppools, plock):
                     if r.status_code == 503:
                         assert r.json()["code"] == "BUSY" and r.json()["retryable"] is True
     finally:
+        unregister_admin(small)
         await small.close()
 
 
@@ -964,7 +981,7 @@ def test_synthetic_presenter_and_config_need_test_env():
         PC.load("synthetic", env="pilot")
 
 
-async def test_synthetic_presenter_checks_database_name_and_internal_v1(monkeypatch):
+async def test_synthetic_presenter_checks_database_name(monkeypatch):
     from learning.app import _check_practice_env
 
     class FakePool:
@@ -973,16 +990,54 @@ async def test_synthetic_presenter_checks_database_name_and_internal_v1(monkeypa
 
         async def fetchval(self, _sql):
             return self.name
+    # learning-internal v1 已签字（LT-04）：不设任何开关（含旧的 LEARNING_INTERNAL_V1）再练模块照常启动，只核对库名
+    monkeypatch.delenv("LEARNING_INTERNAL_V1", raising=False)
     await _check_practice_env(FakePool("starbuddy_test"), True)
     for bad in ("starbuddy", "starbuddy_pilot", "prod_starbuddy_test"):
         with pytest.raises(RuntimeError):
             await _check_practice_env(FakePool(bad), True)
     await _check_practice_env(FakePool("anything"), False)
-    # learning-internal v1 未签字：没开 LEARNING_INTERNAL_V1=1 时再练（及依赖它的复测）拒绝启动，合成与非合成题面都一样
-    monkeypatch.delenv("LEARNING_INTERNAL_V1")
-    for synthetic in (True, False):
-        with pytest.raises(RuntimeError, match="LEARNING_INTERNAL_V1"):
-            await _check_practice_env(FakePool("starbuddy_test"), synthetic)
+
+
+# ---------- 计量核对（LT-04 决定记录（续）第 2 条：再练作答只认题库自练计次 counted） ----------
+@pytest.mark.parametrize("state,ok", [("counted", True), ("reserved", False), ("settled", False), (None, False)])
+async def test_answer_meter_check_accepts_counted_only(api, ppools, student, meter_provisioned, state, ok):
+    """再练作答的 usage_id + 幂等键 + 学生须对上 BFF 的题库自练计次（meter_practice）；对上预留（即使预留中或已结算）、
+    或什么都没有：409 IDEMPOTENCY_KEY_SEALED，不判分、不落库。准备数据（平台作答）照常代建，作答前关掉代建。"""
+    _, admin = ppools
+    await api.grade(student, "SYNP-0001", "41")
+    e = await due_entry(api, student)
+    tok = (await api.next(student, e["entry_id"])).json()["ticket"]
+    meter_provisioned.on = False
+    key, usage = str(uuid.uuid4()), str(uuid.uuid4())
+    if state is not None:
+        await meter_row(admin, usage_id=usage, key=key, student=student, state=state)
+    before, grades = await counts(admin, student), api.fakes.calls["grade"]
+    r = await api.answer(student, tok, "42", key=key, usage=usage)
+    if ok:
+        assert r.status_code == 200 and r.json()["verdict"] == "correct", r.text
+        again = await api.answer(student, tok, "42", key=key, usage=usage)
+        assert again.status_code == 200 and again.headers["idempotent-replayed"] == "true"
+        assert api.fakes.calls["grade"] == grades + 1
+    else:
+        assert r.status_code == 409 and r.json()["code"] == "IDEMPOTENCY_KEY_SEALED", r.text
+        assert api.fakes.calls["grade"] == grades
+        after = await counts(admin, student)
+        assert {k: v for k, v in after.items() if k != "ingest_request"} == {k: v for k, v in before.items() if k != "ingest_request"}
+        assert (await due_entry(api, student))["status"] == "due", "没有落库：条目仍开着"
+
+
+async def test_answer_meter_check_other_student_count_is_409(api, ppools, student, meter_provisioned):
+    """自练计次属于另一名学生（同 usage_id 与键）：409。"""
+    _, admin = ppools
+    await api.grade(student, "SYNP-0001", "41")
+    e = await due_entry(api, student)
+    tok = (await api.next(student, e["entry_id"])).json()["ticket"]
+    meter_provisioned.on = False
+    key, usage = str(uuid.uuid4()), str(uuid.uuid4())
+    await meter_row(admin, usage_id=usage, key=key, student=await new_student(admin), state="counted")
+    r = await api.answer(student, tok, "42", key=key, usage=usage)
+    assert r.status_code == 409 and r.json()["code"] == "IDEMPOTENCY_KEY_SEALED"
 
 
 # ---------- 服务目录 OpenAPI 一致性（沿 SIE-02a 先例） ----------

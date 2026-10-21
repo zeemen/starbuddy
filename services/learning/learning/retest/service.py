@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Callable
 
+from .. import meter as METER
 from ..errors import IngestError
 from ..present_item import present_view
 from ..practice import answer as PA
@@ -194,7 +195,8 @@ class RetestService:
             body["ingest"] = {"channel": INGEST_CHANNEL, "purpose": purpose}
             # 作答 ID 由幂等键与锚点派生：读时据此认出“用本任务票据作答的题”（自述验证题道数），重试不变
             body["request"]["attempt"]["attempt_id"] = K.attempt_id_for(key, t.anchor)
-            summary, replayed = await svc.ingest.ingest("grade", body, PA.GRADE_VERSION)
+            # 计量核对（LT-04）：同再练，BFF 按题库自练计次，只认 counted；用途是服务端按票据写的，可信
+            summary, replayed = await svc.ingest.ingest("grade", body, PA.GRADE_VERSION, meter=METER.COUNTED)
         out = await self._result(summary, student, subject, t)
         self.stats[f"answer_{out['verdict']}"] += 1
         if "pending_review" in out:

@@ -1,4 +1,6 @@
-"""learning-internal v1 写入路径（插件契约 1.0.0；内部 v1 未签字，测试里开 LEARNING_INTERNAL_V1=1）与只查询的重放接口（specs/plugin-api-v1.0-step2/spec.md 验收第 1、2 条）。全部合成数据。"""
+"""learning-internal v1 写入路径（插件契约 1.0.0；learning-internal v1 于 2026-10-20 签字，开关已删除，LT-04）与只查询的重放接口
+（specs/plugin-api-v1.0-step2/spec.md 验收第 1、2 条）。计量记录由 conftest 的 meter_provisioned 代建（核对本身见 test_internal_v1_guard.py）。
+全部合成数据。"""
 from __future__ import annotations
 
 import asyncio
@@ -15,10 +17,8 @@ NOTHING = dict.fromkeys(ONE_GRADE, 0)
 
 
 @pytest.fixture(autouse=True)
-def internal_v1(monkeypatch):
-    # learning-internal v1 未签字：只在测试里开 LEARNING_INTERNAL_V1=1。插件契约 1.0.0 已签字（specs/contract-v1.0-signoff），
-    # 本模块一律在候选版开关关着时跑，证明 v1 写入不靠候选版开关
-    monkeypatch.setenv("LEARNING_INTERNAL_V1", "1")
+def no_candidate_switch(monkeypatch):
+    # 插件契约 1.0.0 与 learning-internal v1 都已签字：本模块一律在候选版开关关着时跑，证明 v1 写入不靠任何开关
     monkeypatch.delenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", raising=False)
 
 
@@ -33,11 +33,11 @@ async def seals(admin, key: str) -> int:
 
 
 # ---------- 双版本写入 ----------
-async def test_same_attempt_writes_via_v0_and_v1(api, pools, student, fake_adapter):
+async def test_same_attempt_writes_via_v0_and_v1(api, v0, pools, student, fake_adapter):
+    """0.9.0 的写入只剩进程内（HTTP 已下线，LT-04 决定记录（再续）第 1 条），与 v1 写入落到同一套表。"""
     _, admin = pools
-    v0 = grade_body(student)
     v1 = to_v1_body(grade_body(student))
-    r0 = await api.post("/internal/v0/grade", json=v0)
+    r0 = await v0("grade", grade_body(student))
     r1 = await api.post("/internal/v1/grade", json=env(v1))
     assert r0.status_code == 200 and r1.status_code == 200, (r0.text, r1.text)
     assert r1.json()["attempt_ids"] == [v1["attempt"]["attempt_id"]], "v1.0 用平台在请求里给的 attempt_id"
@@ -82,34 +82,31 @@ async def test_v1_evidence_pointing_at_foreign_attempt_is_rejected(api, pools, s
     assert r.status_code == 502 and await counts(admin, student) == NOTHING
 
 
-@pytest.mark.parametrize("path,version", [("/internal/v0/grade", "1.0.0"), ("/internal/v1/grade", "0.9.0")])
-async def test_declared_version_must_match_endpoint(api, student, fake_adapter, path, version):
-    body = to_v1_body(grade_body(student)) if version == "1.0.0" else grade_body(student)
-    r = await api.post(path, json=body)
+async def test_declared_version_must_match_endpoint(api, v0, student, fake_adapter):
+    """路径（或进程内调用的版本）决定契约版本，请求声明的版本必须一致：/internal/v1 收 0.9.0 的请求、0.9.0 的写入收 1.0.0 的请求都 400。"""
+    r = await api.post("/internal/v1/grade", json=grade_body(student))
+    assert r.status_code == 400 and r.json()["code"] == "INVALID_REQUEST"
+    r = await v0("grade", to_v1_body(grade_body(student)))
     assert r.status_code == 400 and r.json()["code"] == "INVALID_REQUEST"
     assert fake_adapter.calls == 0
 
 
 @pytest.mark.parametrize("method", ["grade", "diagnose"])
-async def test_v1_refused_when_internal_v1_not_enabled(api, pools, student, fake_adapter, monkeypatch, method):
-    """learning-internal v1 未签字：没开 LEARNING_INTERNAL_V1=1 时 /internal/v1 写入与签字前同样 400，不调适配器、不落库
-    （即使开着候选版开关也一样：插件 1.0.0 签字不连带放开内部 v1）。"""
-    _, admin = pools
-    monkeypatch.delenv("LEARNING_INTERNAL_V1")
-    monkeypatch.setenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", "1")
-    body = to_v1_body(grade_body(student) if method == "grade" else diagnose_body(student, [at("SYN-UNV", "42", 1)]))
-    r = await api.post(f"/internal/v1/{method}", json=env(body))
-    assert r.status_code == 400 and r.json()["code"] == "INVALID_REQUEST"
-    assert fake_adapter.calls == 0 and await counts(admin, student) == NOTHING
-
-
-async def test_v1_accepted_without_candidate_switch(api, pools, student, fake_adapter, monkeypatch):
-    """开着 LEARNING_INTERNAL_V1、关着候选版开关：/internal/v1 照常写入（插件 1.0.0 已签字，不再靠候选版开关）。"""
+async def test_v1_accepted_without_any_switch(api, pools, student, fake_adapter, monkeypatch, method):
+    """开关删除之后（LT-04）：不设 LEARNING_INTERNAL_V1、关着候选版开关，/internal/v1 的 grade、diagnose 照常写入；
+    设了旧开关（任何取值）也不改变行为（已不再读它）。"""
     _, admin = pools
     monkeypatch.delenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", raising=False)
-    r = await api.post("/internal/v1/grade", json=env(to_v1_body(grade_body(student))))
+    monkeypatch.delenv("LEARNING_INTERNAL_V1", raising=False)
+    body = to_v1_body(grade_body(student) if method == "grade" else diagnose_body(student, [at("SYN-UNV", "42", 1)]))
+    r = await api.post(f"/internal/v1/{method}", json=env(body))
     assert r.status_code == 200, r.text
-    assert fake_adapter.calls == 1 and await counts(admin, student) == ONE_GRADE
+    assert fake_adapter.calls == 1
+    monkeypatch.setenv("LEARNING_INTERNAL_V1", "0")
+    body2 = to_v1_body(grade_body(student) if method == "grade" else diagnose_body(student, [at("SYN-UNV", "42", 2)]))
+    assert (await api.post(f"/internal/v1/{method}", json=env(body2))).status_code == 200
+    if method == "grade":
+        assert await counts(admin, student) == {k: 2 * v for k, v in ONE_GRADE.items()}
 
 
 @pytest.mark.parametrize("version", ["1.1.0", "2.0.0"])
@@ -301,13 +298,13 @@ async def test_legacy_row_without_usage_id_is_matched_by_student(api, pools, stu
     assert await seals(admin, other["context"]["idempotency_key"]) == 0, "旧行学生对不上：不封存"
 
 
-async def test_sealed_key_on_v0_path_uses_v0_error_code(api, pools, student, fake_adapter):
-    """安全审查必须改 3：v0 契约没有 IDEMPOTENCY_KEY_SEALED，v0 路径返回 409 IDEMPOTENCY_CONFLICT。"""
+async def test_sealed_key_on_v0_path_uses_v0_error_code(api, v0, pools, student, fake_adapter):
+    """安全审查必须改 3：v0 契约没有 IDEMPOTENCY_KEY_SEALED，0.9.0 的写入（进程内）返回 409 IDEMPOTENCY_CONFLICT。"""
     _, admin = pools
     body = grade_body(student)
     body["context"]["idempotency_key"] = str(uuid.uuid4())
     assert (await api.get(replay_url("grade", body))).status_code == 404
-    r = await api.post("/internal/v0/grade", json=body)
+    r = await v0("grade", body)
     assert r.status_code == 409 and r.json()["code"] == "IDEMPOTENCY_CONFLICT" and r.json()["retryable"] is False
     assert fake_adapter.calls == 0 and await counts(admin, student) == NOTHING
 
@@ -324,6 +321,47 @@ async def test_startup_refuses_without_migration_0016():
     with pytest.raises(RuntimeError, match="0016"):
         async with app.router.lifespan_context(app):
             pass
+
+
+async def test_startup_refuses_without_migration_0058():
+    """LT-04：计量核对函数（迁移 0058）不存在时拒绝启动（否则 /internal/v1 写入一律失败）。"""
+    from conftest import settings
+    from learning.app import create_app
+
+    class NoMeterCheckPool:
+        async def fetchval(self, q, *a):
+            return "replay_seal" in q
+    app = create_app(settings(), pool=NoMeterCheckPool())
+    with pytest.raises(RuntimeError, match="learning_meter_check is missing: run migration 0058"):
+        async with app.router.lifespan_context(app):
+            pass
+
+
+async def test_startup_refuses_without_execute_on_meter_check():
+    """LT-04 决定记录（再续）第 4 条：函数在，但当前登录角色没有执行权（授权没跟上、连错角色）同样拒绝启动。"""
+    from conftest import settings
+    from learning.app import create_app
+
+    class NoExecutePool:
+        seen: list[str] = []
+
+        async def fetchval(self, q, *a):
+            self.seen.append(q)
+            return "has_function_privilege" not in q
+    pool = NoExecutePool()
+    app = create_app(settings(), pool=pool)
+    with pytest.raises(RuntimeError, match="not executable by this role: check the grants of migration 0058"):
+        async with app.router.lifespan_context(app):
+            pass
+    assert any("has_function_privilege(current_user" in q for q in pool.seen)
+
+
+async def test_startup_meter_check_privilege_on_real_database(pools):
+    """真实库里：学习服务的登录角色（只继承 starbuddy_learning）对核对函数有执行权，启动核对能通过；超级用户池同样通过。"""
+    from learning import store
+    app_pool, admin = pools
+    for p in (app_pool, admin):
+        assert await p.fetchval("SELECT has_function_privilege(current_user, $1, 'EXECUTE')", store.METER_CHECK_FUNCTION) is True
 
 
 async def test_v1_diagnose_swapped_attempt_ids_are_rejected(api, pools, student, fake_adapter):

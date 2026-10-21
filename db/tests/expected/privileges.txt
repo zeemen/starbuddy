@@ -750,6 +750,8 @@ func|platform.is_self_student(uuid)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|platform.item_admission_digest(platform.subject,text)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.item_admission_digest(platform.subject,text)|starbuddy_learning|EXECUTE|starbuddy_authz
 func|platform.item_admission_digest(platform.subject,text)|starbuddy_review|EXECUTE|starbuddy_authz
+func|platform.learning_meter_check(uuid,text,uuid,text)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.learning_meter_check(uuid,text,uuid,text)|starbuddy_learning|EXECUTE|starbuddy_authz
 func|platform.lookup_accounts_by_phone(text)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.meter_apply_subject_limits(uuid,text,platform.plan_tier)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.meter_authorize_usage(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
@@ -966,6 +968,7 @@ owner|platform.is_active_guardian()|starbuddy_authz
 owner|platform.is_linked_guardian(uuid)|starbuddy_authz
 owner|platform.is_self_student(uuid)|starbuddy_authz
 owner|platform.item_admission_digest(platform.subject,text)|starbuddy_authz
+owner|platform.learning_meter_check(uuid,text,uuid,text)|starbuddy_authz
 owner|platform.lookup_accounts_by_phone(text)|starbuddy_authz
 owner|platform.meter_apply_subject_limits(uuid,text,platform.plan_tier)|starbuddy_authz
 owner|platform.meter_authorize_usage(uuid)|starbuddy_authz
@@ -1542,6 +1545,7 @@ secdef|platform.is_active_guardian()
 secdef|platform.is_linked_guardian(uuid)
 secdef|platform.is_self_student(uuid)
 secdef|platform.item_admission_digest(platform.subject,text)
+secdef|platform.learning_meter_check(uuid,text,uuid,text)
 secdef|platform.lookup_accounts_by_phone(text)
 secdef|platform.meter_apply_subject_limits(uuid,text,platform.plan_tier)
 secdef|platform.meter_authorize_usage(uuid)

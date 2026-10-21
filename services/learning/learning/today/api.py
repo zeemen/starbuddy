@@ -2,7 +2,8 @@
 
 鉴权、请求体限制与日志同复测与再练（retest/api.py）：Bearer 服务间令牌（只认 BFF 的 LEARNING_SERVICE_TOKEN），64 KB 上限，
 拒绝 NaN 与重复键，未知键一律 400。日志只记接口名、状态码、错误码、耗时，不记请求体与学生 ID。
-没配 LEARNING_TODAY_CONFIG（或未签字配置出现在 test / dev 以外）、没开 LEARNING_INTERNAL_V1 时一律 501 TODAY_UNAVAILABLE。
+没配 LEARNING_TODAY_CONFIG（或未签字配置出现在 test / dev 以外）时一律 501 TODAY_UNAVAILABLE（learning-internal v1 已签字，
+不再另设开关，LT-04）。
 LEARNING_TODAY_SNAPSHOT=1 时快照写入失败回 503 TODAY_SNAPSHOT_UNAVAILABLE（可重试，带 retry-after）。
 """
 from __future__ import annotations
@@ -15,7 +16,6 @@ from typing import Callable
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from ..contract import internal_v1_enabled
 from ..diagnosis.api import _body
 from ..errors import IngestError
 
@@ -25,8 +25,7 @@ log = logging.getLogger("starbuddy.learning.today")
 def register(app: FastAPI, authorized: Callable[[Request], bool], state: dict) -> None:
     def svc():
         t = state.get("today")
-        # learning-internal v1 未签字：编排要调 /plan 与再练、复测（都在 v1 之后），没开 LEARNING_INTERNAL_V1=1 时与没配一样 501
-        if t is None or not internal_v1_enabled():
+        if t is None:
             raise IngestError(501, "TODAY_UNAVAILABLE", "today orchestration is not configured on this service")
         return t
 

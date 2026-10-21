@@ -1,7 +1,10 @@
-"""写入流程：幂等检查 → 调适配器 → 平台核对 → 一个事务落库（spec 范围第 2–6 条）。
+"""写入流程：幂等检查 → 计量核对（v1）→ 调适配器 → 平台核对 → 一个事务落库（spec 范围第 2–6 条）。
 
 冲刺 1 只有这一步，幂等表里的状态（pending / succeeded / failed）就是这一步的状态；
 完整的编排状态机（ADR 03）在后续冲刺。
+learning-internal v1（插件契约 1.0.0 的信封写入）签字后（LT-04）：写入前按 meter.MeterBasis 核对计量（不通过 409
+IDEMPOTENCY_KEY_SEALED），用途与证据等级由学习服务推导（attributes.derive）；幂等重放在核对之前返回。
+v0 写入已从 HTTP 下线（/internal/v0 一律 410，决定记录（再续）第 1 条）；0.9.0 只剩进程内调用（测试），不核对计量。
 """
 from __future__ import annotations
 
@@ -16,12 +19,13 @@ import uuid
 import asyncpg
 import httpx
 
+from . import meter as M
 from . import store
 from .adapter_client import call_adapter
 from .checks import collect_refs, local_id, parse_time, verify
 from .config import Settings
 from .attributes import Attributes, derive, v0_attributes
-from .contract import UnsupportedContractVersion, internal_contract, internal_v1_enabled, plugin_contract
+from .contract import UnsupportedContractVersion, internal_contract, plugin_contract
 from .errors import IngestError
 from .fingerprint import request_fingerprint, sha256_hex
 from .mastery.recompute import MasteryEngine, after_ingest
@@ -67,9 +71,6 @@ class IngestService:
         declared = body.get("context", {}).get("contract_version") if isinstance(body, dict) and isinstance(body.get("context"), dict) else None
         if declared != version:
             raise IngestError(400, "INVALID_REQUEST", "context.contract_version does not match this endpoint")
-        # /internal/v1 的写入属于 learning-internal v1（未签字）：没开 LEARNING_INTERNAL_V1=1 时与签字前同样拒绝
-        if version != "0.9.0" and not internal_v1_enabled():
-            raise IngestError(400, "INVALID_REQUEST", "contract version is not enabled on this service")
         try:
             contract = plugin_contract(version)
         except UnsupportedContractVersion:
@@ -132,28 +133,32 @@ class IngestService:
         return body["request"], body["ingest"]
 
     @staticmethod
-    def _fingerprint(method: str, request: dict, ingest: dict | None) -> tuple[str, Attributes]:
+    def _fingerprint(method: str, request: dict, ingest: dict | None, trusted_purpose: bool = False) -> tuple[str, Attributes]:
         fp = request_fingerprint(method, request)
         attrs: Attributes = v0_attributes(method, request)
         if ingest is not None:
-            attrs = derive(method, request, ingest)
+            attrs = derive(method, request, ingest, trusted_purpose=trusted_purpose)
             # 指纹含推导后的平台上下文：同 key 换输入通道、用途或等级算冲突；语义相同的不同写法得到同一指纹（契约审查建议 7）
             fp = sha256_hex({"request": fp, "ingest": {"channel": attrs.channel, "purpose": attrs.purpose, "level": attrs.evidence_level}})
         return fp, attrs
 
-    def envelope_fingerprint(self, method: str, body: object, version: str) -> str:
+    def envelope_fingerprint(self, method: str, body: object, version: str, meter: M.MeterBasis = M.DIRECT) -> str:
         """与 ingest 落库的请求指纹同一算法（供诊断会话比对“同一步是不是同一内容”，不调适配器、不落库）。"""
         inner, ingest = self._unwrap(method, body, version)
         assert isinstance(inner, dict)
-        return self._fingerprint(method, inner, ingest)[0]
+        return self._fingerprint(method, inner, ingest, meter.trusted_purpose)[0]
 
-    async def ingest(self, method: str, body: object, version: str = "0.9.0") -> tuple[dict, bool]:
-        """返回 (摘要, 是否为重放)。"""
+    async def ingest(self, method: str, body: object, version: str = "0.9.0", *,
+                     meter: M.MeterBasis = M.DIRECT) -> tuple[dict, bool]:
+        """返回 (摘要, 是否为重放)。
+
+        meter：v1 写入前的计量核对依据（LT-04）。缺省 DIRECT = 直接经 HTTP 的 /internal/v1 写入（放行 reserved、用途只能 practice）；
+        再练、复测传 meter.COUNTED，诊断会话传 meter.diagnosis_session(...)。0.9.0（v0 HTTP 已下线，只剩进程内调用）不核对。"""
         inner, ingest = self._unwrap(method, body, version)
         request = self._validate_request(method, inner, version)
         ctx = request["context"]
         key = ctx["idempotency_key"]
-        fp, attrs = self._fingerprint(method, request, ingest)
+        fp, attrs = self._fingerprint(method, request, ingest, meter.trusted_purpose)
         if ingest is not None:
             attrs = Attributes(attrs.channel, attrs.evidence_level, attrs.purpose,
                                await store.map_version_for(self.pool, ctx["subject"], ctx.get("content_version")))
@@ -200,6 +205,10 @@ class IngestService:
                 backoff = min(backoff * 2, BUSY_MAX_POLL_SECONDS)
                 continue
             try:
+                if ingest is not None:
+                    # 计量核对（LT-04 决定第 2 条）：同键已成功的重放在上面 done 分支返回、不核对；新执行与接管失败过的键都要核对，
+                    # 对不上 409 IDEMPOTENCY_KEY_SEALED（不调适配器、不落库，下面标记失败）
+                    await M.require(self.pool, meter, method=method, ctx=ctx)
                 summary = await self._run(method, request, key, c, prior, attrs, versioned=ingest is not None)
             except store.LeaseLost:
                 continue  # 别人接管并可能已完成：回到幂等检查拿它的结果

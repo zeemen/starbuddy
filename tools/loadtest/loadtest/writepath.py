@@ -24,7 +24,9 @@
   到期时刻 = 最后一条计入证据的记录时间（已到期，KGE-04 现有口径，不用时间注入）；复测列表按到期时间排序，先做的 N2 在前。
   复测轮（rung0，到“执行”时排）的间隔是 7200 秒，学习服务进程没有可从外部注入的时钟（MasteryEngine / 再练时钟只在进程内测试里
   可注入；证据 recorded_at 是数据库服务器时间），压测窗口内排出的复测轮不会到期（只计数、不作答）。
-  种子 grade 不经 BFF 与计量（不预留、不结算、不计次），不进压测指标；
+  种子 grade 不经 BFF 的 HTTP 入口、不进压测指标；但要经计量（LT-04：学习服务写入前按计量账本核对 usage_id + 幂等键，
+  没有预留的裸写 409）——由 SeedMeter 以学生本人账号、BFF 角色调同一组计量函数（meter_reserve 一笔 mistake_analysis / grade，
+  学习服务确定成功即 meter_settle 1 次，确定失败 meter_release），usage_id 用库里按幂等键派生的那一个；不改任何计量规则、额度或扣次口径；
 - 一致性核对：压测前后各取一次计数（只取本轮合成学生；计次经幂等键关联到 SYNP-* 题的作答），
   作答次数（真票据 2xx）= 合成题的计次增量（platform.practice_log）= 作答证据行增量（platform.attempt 的作答证据）
   = 触发的单元重算次数（pg_stat_statements 里重算读当前记录那条语句的调用数；见 mastery_consistency），
@@ -45,6 +47,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from . import meter as M
 from .metrics import percentile
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -476,11 +479,39 @@ def check_seed_tasks(t: Mapping, students: int) -> None:
                            "（检查合成掌握配置是否加载、种子判分与地图打标）")
 
 
+SEED_RESOURCE = "mistake_analysis"   # 与 BFF 批改同一资源（meteredCall 的 mistake_analysis → grade）
+
+
+class SeedMeter:
+    """写路径种子的计量（LT-04）：学习服务写入前按计量账本核对 usage_id + 幂等键 + 学生 + 方法（迁移 0058），没有预留的裸写一律
+    409 IDEMPOTENCY_KEY_SEALED。种子与 BFF 的 meteredCall 走同一组计量函数、同一数据库角色（bff_app 池，事务里先设 app.account_id
+    为学生本人账号）：预留一笔 mistake_analysis（来源方法 grade），学习服务确定成功即结算 1 次，否则释放。只调函数、不直写计量表，
+    不改任何计量规则；结算与释放让每笔预留恰好一个终态，零泄漏核对（meter.leak_report）照常成立。"""
+
+    def __init__(self, bff_pool, accounts: Mapping[str, str]) -> None:
+        self.pool, self.accounts = bff_pool, dict(accounts)
+
+    async def reserve(self, student: str, key: str, fingerprint: str) -> str:
+        r = await M.reserve(self.pool, self.accounts[student], student, SEED_RESOURCE, key, fingerprint, 1, None, "grade")
+        if not isinstance(r, dict) or r.get("outcome") != "reserved" or not isinstance(r.get("usage_id"), str):
+            raise RuntimeError(f"写路径种子预留失败：{r.get('outcome') if isinstance(r, dict) else r}")
+        return r["usage_id"]
+
+    async def settle(self, student: str, usage_id: str) -> None:
+        r = await M.settle(self.pool, self.accounts[student], usage_id, 1)
+        if not isinstance(r, dict) or r.get("outcome") != "settled":
+            raise RuntimeError(f"写路径种子结算失败：{r.get('outcome') if isinstance(r, dict) else r}")
+
+    async def release(self, student: str, usage_id: str) -> None:
+        await M.release(self.pool, self.accounts[student], usage_id, "loadtest_seed_failed")
+
+
 async def seed_students(client, learning_url: str, credential: str, admin, students: Sequence[str], seed: int,
-                        curriculum: Mapping, concurrency: int = 8, mastery: bool = True) -> dict:
+                        curriculum: Mapping, concurrency: int = 8, mastery: bool = True, *, meter: SeedMeter) -> dict:
     """mastery=False（--no-mastery 对照）时学习服务不重算，不核对任务（照实汇总，应为 0 条）。
     每个合成学生依次：做对 N2 一道（复测参照题）、做错 N1 一道（再练到期）；重算按合成配置给两个单元各排一条已到期的 decay 任务。
-    经学习服务 grade 写入路径（BFF 服务令牌）；不经 BFF 与计量（不预留、不结算、不计次），只用于准备数据，不计入压测指标。
+    经学习服务 grade 写入路径（BFF 服务令牌）；每笔先经 meter（SeedMeter，BFF 同一组计量函数）预留、成功结算、失败释放——
+    学习服务写入前核对计量（LT-04），裸写会被 409 拒绝；只用于准备数据，不计入压测指标。
     **不写任务表**：复测任务只由学习服务落库后的同步重算生成（PLT-22）；本函数对库只读（目标核对与任务来源核对）。
     同一学生的两笔串行（先 N2 后 N1：复测列表按到期时间排序，见 SEEDS），不同学生之间并发。
     任何一笔没成功、判分结论不符、任务不符即失败。"""
@@ -497,11 +528,17 @@ async def seed_students(client, learning_url: str, credential: str, admin, stude
             for kind, item, answer in SEEDS:
                 label = f"{kind}:{item}"
                 key = uuid4_shaped("seed", seed, student, label)
-                body = seed_envelope(student, item, answer, key, uuid4_shaped("seed-usage", seed, student, label), curriculum, now)
+                # usage_id 只能是库里按幂等键派生的那一个（meter_reserve 返回），学习服务按它核对计量
+                usage_id = await meter.reserve(student, key, M.fingerprint("loadtest-seed", student, label, key))
+                body = seed_envelope(student, item, answer, key, usage_id, curriculum, now)
                 r = await client.post(f"{learning_url}/internal/v1/grade", json=body,
                                       headers={"authorization": f"Bearer {credential}"}, timeout=60)
                 if r.status_code != 200:
+                    # 与 BFF 同一口径：确定失败（4xx，408 / 429 除外）释放；结果未知（5xx 等）不释放，留给过期任务
+                    if 400 <= r.status_code < 500 and r.status_code not in (408, 429):
+                        await meter.release(student, usage_id)
                     raise RuntimeError(f"写路径种子 grade 失败：{r.status_code}")
+                await meter.settle(student, usage_id)
                 verdicts[f"{kind}:{_verdict(r.json())}"] += 1
 
     await asyncio.gather(*(student_seeds(s) for s in students))

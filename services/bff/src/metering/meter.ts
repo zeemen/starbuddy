@@ -7,7 +7,7 @@
 import type { Pool } from 'pg';
 import { withAccount } from './db.ts';
 import { meteringFingerprint, type MeteredMethod } from './fingerprint.ts';
-import type { LearningCall, LearningOutcome, LearningReplay, Problem } from './learning-client.ts';
+import { assertLearningContractVersion, type LearningCall, type LearningOutcome, type LearningReplay, type Problem } from './learning-client.ts';
 import { noopMetrics, type Metrics } from './metrics.ts';
 import { isUuidV4, usageIdFor } from './uuid.ts';
 
@@ -122,10 +122,14 @@ export async function meteredCall(deps: MeterDeps, input: MeteredCallInput): Pro
   if (method === undefined) throw new TypeError(`${String(input.resourceType)} is not metered through the BFF in this sprint`);
   const metrics = deps.metrics ?? noopMetrics;
   const usageId = usageIdFor(input.idempotencyKey);
-  // 按实际发出去的 JSON 处理（Date 等值先按 JSON.stringify 的规则转换），指纹与请求体一致
+  // 先按 JSON 规范化（Date 等值按 JSON.stringify 的规则转换），计量指纹按这份插件请求体算（算法不变）；发出去时 learning-client
+  // 再包成 learning-internal v1 信封 {request, ingest}、把 context.contract_version 写成 1.0.0——信封与版本字段不进指纹（LT-04）
   const body = JSON.parse(JSON.stringify(input.body)) as Record<string, unknown>;
   const given = (body['context'] ?? {}) as Record<string, unknown>;
-  // 扣谁的额度，就只能写谁的学习记录：学习服务以 student_ref 为准且不再核对（安全审查阻断 A）
+  // 契约版本只能缺省或 1.0.0：在预留之前拒绝（不扣额度、不留预留），而不是发出去后被学习服务 400
+  assertLearningContractVersion(given);
+  // 扣谁的额度，就只能写谁的学习记录：学习服务以 student_ref 为准（安全审查阻断 A）；LT-04 起学习服务写入前还按计量账本
+  // 核对 usage_id + 幂等键 + 学生（迁移 0058），但这里仍是第一道关：不一致在预留之前就拒绝
   if (given['student_ref'] !== undefined && given['student_ref'] !== input.studentId) {
     throw new TypeError('context.student_ref must equal the metered student');
   }

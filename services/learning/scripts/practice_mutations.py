@@ -78,6 +78,12 @@ DB: dict[str, list[tuple[str, str, str]]] = {
     "不核对票据的学生": [(AN, "if t.student != student or t.subject != subject:", "if t.subject != subject:")],
     "不核对票据的学科": [(AN, "if t.student != student or t.subject != subject:", "if t.student != student:")],
     "用途写成复测": [(AN, 'INGEST = {"channel": "keypad", "purpose": "practice"}', 'INGEST = {"channel": "keypad", "purpose": "retest"}')],
+    # LT-04 计量核对：再练作答只认题库自练计次（counted）
+    "再练作答按预留核对（不认自练计次）": [(AN, 'GRADE_VERSION, meter=METER.COUNTED)', 'GRADE_VERSION, meter=METER.DIRECT)')],
+    "再练作答不核对计量": [(AN, 'GRADE_VERSION, meter=METER.COUNTED)',
+                     'GRADE_VERSION, meter=METER.MeterBasis(frozenset(METER.STATES), trusted_purpose=True))')],
+    "自练计次也认预留": [("learning/meter.py", 'COUNTED = MeterBasis(frozenset({"counted"}), trusted_purpose=True)',
+                    'COUNTED = MeterBasis(frozenset({"counted", "reserved", "settled"}), trusted_purpose=True)')],
     "不报提示等级": [(AN, '"response": answer, "hint_level_used": 0},', '"response": answer},')],
     "作答返回带出证据 ID": [(AN, 'out: dict = {"verdict": verdict, "entry": entry}',
                          'out: dict = {"verdict": verdict, "entry": entry, "evidence_ids": summary.get("evidence_ids")}')],

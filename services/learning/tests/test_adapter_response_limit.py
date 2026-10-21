@@ -18,7 +18,7 @@ from collections.abc import Callable
 import httpx
 import pytest
 
-from conftest import ADAPTER_CREDENTIAL, _answer_in_version, counts, fake_grade, grade_body, settings
+from conftest import ADAPTER_CREDENTIAL, _answer_in_version, counts, env, fake_grade, grade_body, settings, to_v1_body
 from learning.adapter_client import MAX_RESPONSE_BYTES, call_adapter
 from learning.app import create_app
 from learning.config import AdapterTarget
@@ -182,7 +182,7 @@ def _grade_reply(size: int, mode: str) -> Callable[[dict], Reply]:
 async def test_ingest_accepts_grade_response_exactly_at_limit(real_api, pools, student, adapter, mode):
     _, admin = pools
     adapter.responder = _grade_reply(MAX_RESPONSE_BYTES, mode)
-    r = await real_api.post("/internal/v0/grade", json=grade_body(student))
+    r = await real_api.post("/internal/v1/grade", json=env(to_v1_body(grade_body(student))))
     assert r.status_code == 200, r.text[:500]
     assert adapter.calls == 1
     assert await counts(admin, student) == ONE_GRADE
@@ -194,18 +194,18 @@ async def test_ingest_rejects_oversized_response_and_writes_nothing(real_api, po
     _, admin = pools
     caplog.set_level(logging.DEBUG)
     adapter.responder = _grade_reply(size, mode)
-    body = grade_body(student, text=f"作答-{MARKER}")  # 适配器把作答原文回写进证据：超限时也不得回显
-    r = await real_api.post("/internal/v0/grade", json=body)
+    body = env(to_v1_body(grade_body(student, text=f"作答-{MARKER}")))  # 适配器把作答原文回写进证据：超限时也不得回显
+    r = await real_api.post("/internal/v1/grade", json=body)
     assert r.status_code == 502, r.text[:500]
     p = r.json()
     assert p["code"] == "ADAPTER_RESULT_REJECTED" and p["retryable"] is False
-    assert internal_contract().validate("Problem", p) == []
+    assert internal_contract("1.0.0").validate("Problem", p) == []
     assert MARKER not in r.text
     assert MARKER not in caplog.text
     assert adapter.calls == 1
     assert await counts(admin, student) == NOTHING
     # 同一个键换回正常大小的响应可以重试成功（失败已标记，不占着键）
     adapter.responder = _grade_reply(64 * 1024, "length")
-    r2 = await real_api.post("/internal/v0/grade", json=body)
+    r2 = await real_api.post("/internal/v1/grade", json=body)
     assert r2.status_code == 200, r2.text[:500]
     assert await counts(admin, student) == ONE_GRADE

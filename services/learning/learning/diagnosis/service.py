@@ -30,6 +30,7 @@ from datetime import datetime, timezone
 
 import asyncpg
 
+from .. import meter as METER
 from .. import store as ingest_store
 from ..attributes import V0
 from ..errors import IngestError
@@ -338,6 +339,12 @@ class DiagnosisService:
         return {"request": request, "ingest": dict(INGEST)}
 
     @staticmethod
+    def _meter(s: store.SessionRow) -> METER.MeterBasis:
+        """计量核对依据（LT-04 决定第 2 条）：会话自己的 usage_id 与预留键（diagnosis_full，方法 diagnose）；
+        BFF 在第一道题判分成功后即结算，所以 reserved 与 settled 都放行（会话已结束或放弃由会话状态挡住）。"""
+        return METER.diagnosis_session(s.usage_id, s.idempotency_key)
+
+    @staticmethod
     def _grade_keys(s: store.SessionRow, seq: int) -> list[str]:
         """这一步第 0、1、2… 次判分请求的键（确定性：同一步在任何进程里都算出同一组键）。"""
         return [v4_shaped(f"diag|{s.id}|{seq}|grade|{n}") for n in range(MAX_GRADE_TRIES)]
@@ -366,7 +373,8 @@ class DiagnosisService:
                 continue
             try:
                 fp = self.ingest.envelope_fingerprint(
-                    "grade", self._grade_body(s, step, answer, occurred_at, step.elapsed_sec or 0, r["idempotency_key"]), GRADE_VERSION)
+                    "grade", self._grade_body(s, step, answer, occurred_at, step.elapsed_sec or 0, r["idempotency_key"]), GRADE_VERSION,
+                    self._meter(s))
             except IngestError:
                 return False
             if fp != r["request_fingerprint"]:
@@ -438,7 +446,7 @@ class DiagnosisService:
                 n = len(prior)
                 for i, r in enumerate(prior):
                     cand = self._grade_body(s, cur, answer, occurred_at, elapsed, r["idempotency_key"])
-                    if self.ingest.envelope_fingerprint("grade", cand, GRADE_VERSION) == r["request_fingerprint"]:
+                    if self.ingest.envelope_fingerprint("grade", cand, GRADE_VERSION, self._meter(s)) == r["request_fingerprint"]:
                         n = i  # 同一内容上次没完成：沿用原键（学习服务幂等表接管或返回原结果）
                         break
                 if n >= MAX_GRADE_TRIES:
@@ -448,7 +456,7 @@ class DiagnosisService:
         replayed = recorded is not None  # 这一步已判过（上一次在两段之间中断）：沿用已记录的结果，不再判第二次
         if recorded is None:
             assert body is not None
-            recorded, _ = await self.ingest.ingest("grade", body, GRADE_VERSION)
+            recorded, _ = await self.ingest.ingest("grade", body, GRADE_VERSION, meter=self._meter(s))
         # ---- 第二段（事务内）：记到步骤上，按规则选下一步（下一题的题面没缓存时在事务外预取后重做这一段） ----
         return await self._record_answer(student, session_id, seq, recorded, elapsed, work, occurred_at, replayed)
 

@@ -65,9 +65,12 @@
 （别的副本主机须 `--replica-host-allow` 显式放行，S9）；目标库已有 `platform` schema 却没有 `deploy_meta`（不是本执行器管理的库）时 up / down /
 rehearse 拒绝、plan 只提示。**真实环境执行迁移须人批准**（CLAUDE.md 必停项）。
 
-## 5.1 学习服务的 learning-internal v1（契约审查 A2）
-`LEARNING_INTERNAL_V1` 是开发开关（v1 未签字，LT-04），staging 设了拒绝启动。因此 staging 上判分、计划调适配器、诊断、再练、复测与今日编排
-在 LT-04 之前都不可用（开关矩阵标 `internal_v1`）。`LEARNING_DIAGNOSIS_SOURCE` 在 staging 缺省为 knowledge（合成夹具只在 test）。
+## 5.1 学习服务的 learning-internal v1（契约审查 A2；LT-04）
+learning-internal v1 已于 2026-10-20 签字为 1.1.0（specs/launch-lt04-learning-internal-v1），原开发开关 `LEARNING_INTERNAL_V1` 随之删除
+（清单与开关矩阵都已移除，学习服务不再读它）。`/internal/v1` 的 grade、diagnose 写入只认 BFF 服务令牌（`LEARNING_SERVICE_TOKEN`），
+写入前经迁移 0058 的 `platform.learning_meter_check` 核对计量（**0058 须由人在副本演练后先于本版本执行**，学习服务启动时核对它存在），
+用途与证据等级由学习服务推导。staging 上诊断、再练、复测与今日编排只待教研签字内容（开关矩阵只标 `signed_content`）。
+`LEARNING_DIAGNOSIS_SOURCE` 在 staging 缺省为 knowledge（合成夹具只在 test）。
 
 ## 5.2 环境变量的反向核对（契约审查 A3）
 `deploy/tests/test_env_reads.py` 扫描各服务源码里读取环境变量的调用，被读取的名字都必须在 `env-inventory.yaml` 登记；白名单例外（运行时自带、

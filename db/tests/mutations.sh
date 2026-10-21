@@ -1367,6 +1367,40 @@ M+=(
   ["授权再核对：对 PUBLIC 开放"]="GRANT EXECUTE ON FUNCTION $VA TO PUBLIC;"
 )
 
+# LT-04 学习服务写证据前的计量核对（0058 platform.learning_meter_check，specs/launch-lt04-learning-internal-v1 决定记录（续）第 1 条）：
+# 由 79zf 发现（授权类的同时由 80 的快照发现）。DBMUT_FILTER=计量核对 只跑这一组
+LMC='platform.learning_meter_check(uuid, text, uuid, text)'
+M+=(
+  ["计量核对：授给 BFF"]="GRANT EXECUTE ON FUNCTION $LMC TO starbuddy_bff;"
+  ["计量核对：授给洞察服务"]="GRANT EXECUTE ON FUNCTION $LMC TO starbuddy_insight;"
+  ["计量核对：对 PUBLIC 开放"]="GRANT EXECUTE ON FUNCTION $LMC TO PUBLIC;"
+  ["计量核对：改为调用者权限"]="ALTER FUNCTION $LMC SECURITY INVOKER;"
+  ["计量核对：不固定 search_path"]="ALTER FUNCTION $LMC RESET search_path;"
+  ["计量核对：学习服务可直接读预留表"]="GRANT SELECT ON platform.usage_reservation TO starbuddy_learning; CREATE POLICY t_lmc_read ON platform.usage_reservation FOR SELECT TO starbuddy_learning USING (true);"
+  ["计量核对：不核对幂等键"]="$(afr "$LMC" "'usage_id = p_usage AND idempotency_key = p_key AND student_id = p_student'" "'usage_id = p_usage AND student_id = p_student'")"
+  ["计量核对：不核对 usage_id"]="$(afr "$LMC" "'WHERE usage_id = p_usage AND idempotency_key = p_key'" "'WHERE idempotency_key = p_key'")"
+  ["计量核对：不核对学生"]="$(afr "$LMC" "'AND student_id = p_student AND source_method = p_method;'" "'AND source_method = p_method;'")"
+  ["计量核对：不核对方法"]="$(afr "$LMC" "' AND source_method = p_method;'" "';'")"
+  ["计量核对：方法不限 grade / diagnose"]="$(afr "$LMC" "' OR p_method NOT IN (''grade'', ''diagnose'')'" "''")"
+  ["计量核对：过期未处理仍算预留中"]="$(afr "$LMC" "'IF r.state = ''reserved'' AND r.expires_at > platform.meter_now() THEN'" "'IF r.state = ''reserved'' THEN'")"
+  ["计量核对：会话放行不比时间"]="$(afr "$LMC" "' AND s.created_at <= r.expires_at'" "''")"
+  ["计量核对：会话放行用严格早于（比较方向写反）"]="$(afr "$LMC" "'s.created_at <= r.expires_at'" "'s.created_at > r.expires_at'")"
+  ["计量核对：会话放行不核对学生"]="$(afr "$LMC" "' AND s.student_id = p_student'" "''")"
+  ["计量核对：会话放行不核对幂等键"]="$(afr "$LMC" "' AND s.idempotency_key::text = p_key'" "''")"
+  ["计量核对：已释放也按会话放行"]="$(afr "$LMC" "'r.state IN (''reserved'', ''expired'')'" "'r.state IN (''reserved'', ''expired'', ''released'')'")"
+  ["计量核对：grade 也按会话放行"]="$(afr "$LMC" "'IF p_method = ''diagnose'' AND r.state IN'" "'IF r.state IN'")"
+  ["计量核对：返回预留数量"]="$(afr "$LMC" "'RETURN r.state::text;'" "'RETURN r.state::text || '':'' || r.reserved_qty::text;'")"
+  ["计量核对：诊断也认自练计次"]="$(afr "$LMC" "'IF p_method = ''grade'' AND EXISTS'" "'IF EXISTS'")"
+  ["计量核对：自练计次不核对学生"]="$(afr "$LMC" "' AND l.student_id = p_student) THEN'" "') THEN'")"
+  ["计量核对：自练计次不核对幂等键"]="$(afr "$LMC" "' AND l.idempotency_key = p_key'" "''")"
+  ["计量核对：自练计次不核对 usage_id"]="$(afr "$LMC" "'WHERE l.usage_id = p_usage AND '" "'WHERE '")"
+  ["计量核对：空参数不拦"]="$(afr "$LMC" "'  IF p_usage IS NULL OR p_key IS NULL OR p_student IS NULL OR p_method IS NULL OR p_method NOT IN (''grade'', ''diagnose'') THEN
+    RETURN ''none'';
+  END IF;'" "''")"
+  ["计量核对：核对时顺手把过期预留标为 expired"]="$(afr "$LMC" "'IF r.state = ''reserved'' AND r.expires_at > platform.meter_now() THEN'" "'IF r.state = ''reserved'' AND r.expires_at <= platform.meter_now() THEN UPDATE platform.usage_reservation SET state = ''expired'', finished_at = platform.meter_now() WHERE usage_id = r.usage_id; END IF;
+    IF r.state = ''reserved'' AND r.expires_at > platform.meter_now() THEN'") ALTER FUNCTION $LMC VOLATILE;"
+)
+
 # 攻击面矩阵补测（specs/household-pentest-sprint3 待人确认 #13 里不需要人决定的几项）：按行的可见性、写矩阵、
 # 复核角色与定时任务角色的函数矩阵。都由 80 本身发现（预期断言登记在下面的 EXPECT）。DBMUT_FILTER=攻击面 一起跑
 M+=(

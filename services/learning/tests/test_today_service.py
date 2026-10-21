@@ -5,7 +5,7 @@
 覆盖：三个来源汇成跨科有序列表（去重、优先级、预算截断、截掉的计数）；任一来源未启用或失败只跳过它（source_unavailable）；
 接口前后 platform.*、kge.*、insight.* 每张表的行数与内容校验和不变（不写、不改任何表，不计量）；各科计划每页只算一次、
 与 /internal/v1/plan 逐字段一致；条目不合格只标该来源不可用；未启用标 source_disabled；不调模型（只有 /plan，没有模型路由）；响应合 today-internal.v0.yaml、
-没有掌握、置信度、证据 ID；鉴权只认 BFF 令牌；没配 LEARNING_TODAY_CONFIG、没开 LEARNING_INTERNAL_V1 时 501。
+没有掌握、置信度、证据 ID；鉴权只认 BFF 令牌；没配 LEARNING_TODAY_CONFIG 时 501（LEARNING_INTERNAL_V1 已随 LT-04 删除）。
 """
 from __future__ import annotations
 
@@ -364,15 +364,10 @@ async def test_modules_not_started_are_source_disabled(ppools, plock, student):
 NO_PRACTICE = {"practice_config": None, "retest_config": None, "practice_ticket_secret": None, "practice_presenter": None}
 
 
-@pytest.mark.parametrize("case", ["no_config", "internal_v1_off"])
-async def test_not_configured_is_501(ppools, plock, student, monkeypatch, case):
-    """不设 LEARNING_TODAY_CONFIG：501（再练、复测照常）；设了但没开 LEARNING_INTERNAL_V1：同样 501，不调适配器。"""
+async def test_not_configured_is_501(ppools, plock, student):
+    """不设 LEARNING_TODAY_CONFIG：501（再练、复测照常），不调适配器。"""
     app_pool, _ = ppools
-    if case == "no_config":
-        app, fakes = await open_api(app_pool, plock, None, today_config=None)
-    else:
-        monkeypatch.delenv("LEARNING_INTERNAL_V1", raising=False)   # 再练模块要求它，所以这里只配今日编排
-        app, fakes = await open_api(app_pool, plock, None, **NO_PRACTICE)
+    app, fakes = await open_api(app_pool, plock, None, today_config=None)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://learning.test") as c:
             c.headers["authorization"] = f"Bearer {CREDENTIAL}"
@@ -380,8 +375,19 @@ async def test_not_configured_is_501(ppools, plock, student, monkeypatch, case):
             r = await a.today(student)
             assert r.status_code == 501 and r.json()["code"] == "TODAY_UNAVAILABLE", r.text
             assert fakes.calls == {}                                     # 不调适配器
-            if case == "no_config":
-                assert len(await a.queue("practice", student)) == 0 and len(await a.queue("retest", student)) == 0
+            assert len(await a.queue("practice", student)) == 0 and len(await a.queue("retest", student)) == 0
+
+
+async def test_configured_without_any_switch_serves(ppools, plock, student, monkeypatch):
+    """LT-04 删除 LEARNING_INTERNAL_V1 之后：只配今日编排、不设任何开关，接口照常 200（以前没开开关一律 501）。"""
+    app_pool, _ = ppools
+    monkeypatch.delenv("LEARNING_INTERNAL_V1", raising=False)
+    app, fakes = await open_api(app_pool, plock, None, **NO_PRACTICE)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://learning.test") as c:
+            c.headers["authorization"] = f"Bearer {CREDENTIAL}"
+            r = await TApi(c, fakes, None).today(student)
+            assert r.status_code == 200, r.text
 
 
 async def test_unsigned_config_outside_test_dev_disables_module(ppools, plock, monkeypatch):

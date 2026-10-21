@@ -19,7 +19,8 @@ from pathlib import Path
 import httpx
 import pytest
 
-from conftest import ADAPTER_CREDENTIAL, CREDENTIAL, grade_body, to_v1_body
+from conftest import ADAPTER_CREDENTIAL, CREDENTIAL, grade_body, meter_row, to_v1_body
+from learning import meter as METER
 from learning.app import create_app
 from learning.mastery import parse_config
 from learning.mastery import recompute as R
@@ -102,12 +103,17 @@ class RApi:
             "idempotency_key": str(uuid.uuid4()), "usage_id": str(uuid.uuid4())})
 
     async def grade(self, student, item, text, hint=0, purpose=None):
-        """平台作答（不经本模块）：learning-internal v1 的 grade；purpose 给了就按它写（对拍用）。"""
+        """平台作答（不经本模块）：learning-internal v1 的 grade；purpose 给了就按它写（对拍用）。
+        LT-04 起直接经 HTTP 的写入用途只能是 practice：非 practice 用途改由进程内的同一个写入服务（可信调用方、按自练计次核对计量，
+        与复测模块自己的作答路径相同）写，HTTP 只用于 practice。"""
         b = to_v1_body(grade_body(student, item=item, text=text))
         b["context"]["content_version"] = dict(CV)
         b["attempt"]["hint_level_used"] = hint
         b["attempt"]["occurred_at"] = clock().isoformat()
         ingest = {"channel": "keypad", **({"purpose": purpose} if purpose else {})}
+        if purpose not in (None, "practice"):
+            summary, _ = await self.svc.practice.ingest.ingest("grade", {"request": b, "ingest": ingest}, "1.0.0", meter=METER.COUNTED)
+            return summary
         r = await self.c.post("/internal/v1/grade", json={"request": b, "ingest": ingest})
         assert r.status_code == 200, r.text
         return r.json()
@@ -634,6 +640,32 @@ async def test_internal_openapi_matches_responses(api, student):
     _validator("NextReady").validate(n)
     _validator("NextUnavailable").validate((await api.next(student, (await one_entry(api, student, N2, "verify"))["entry_id"])).json())
     _validator("AnswerResult").validate((await api.answer(student, n["ticket"], "41")).json())
+
+
+# ---------- 计量核对（LT-04 决定记录（续）第 2 条：复测作答只认题库自练计次 counted） ----------
+@pytest.mark.parametrize("state,ok", [("counted", True), ("reserved", False), ("settled", False), (None, False)])
+async def test_answer_meter_check_accepts_counted_only(api, ppools, student, meter_provisioned, state, ok):
+    """复测作答同再练：usage_id + 幂等键 + 学生须对上题库自练计次；对上预留或什么都没有 409 IDEMPOTENCY_KEY_SEALED，
+    不判分、不落库、复测轮不关闭。准备数据照常代建，作答前关掉代建。"""
+    _, admin = ppools
+    await reach_execute(api, student)
+    e = await one_entry(api, student)
+    tok = (await api.next(student, e["entry_id"])).json()["ticket"]
+    meter_provisioned.on = False
+    key, usage = str(uuid.uuid4()), str(uuid.uuid4())
+    if state is not None:
+        await meter_row(admin, usage_id=usage, key=key, student=student, state=state)
+    before, grades = await counts(admin, student), api.fakes.calls["grade"]
+    r = await api.answer(student, tok, "42", key=key, usage=usage)
+    if ok:
+        assert r.status_code == 200 and r.json()["entry"]["status"] == "done", r.text
+        assert api.fakes.calls["grade"] == grades + 1
+    else:
+        assert r.status_code == 409 and r.json()["code"] == "IDEMPOTENCY_KEY_SEALED", r.text
+        assert api.fakes.calls["grade"] == grades
+        after = await counts(admin, student)
+        assert {k: v for k, v in after.items() if k != "ingest_request"} == {k: v for k, v in before.items() if k != "ingest_request"}
+        assert (await one_entry(api, student))["status"] == "due", "没有落库：复测轮仍开着"
 
 
 @pytest.fixture

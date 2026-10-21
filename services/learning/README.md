@@ -5,19 +5,24 @@
 
 | 接口 | 说明 |
 |---|---|
-| `POST /internal/v0/grade` | 请求体是契约 `GradeRequest`；调适配器判分，核对后写入 |
-| `POST /internal/v0/diagnose` | 请求体是契约 `DiagnoseRequest`（冲刺 1 只支持带 attempts 的同步诊断） |
-| `POST /internal/v1/grade`、`/internal/v1/diagnose` | 请求体是信封 `{request, ingest}`：`request` 为插件契约 1.0.0 请求（插件 v1.0 已于 2026-10-09 签字，不再需要候选版开关；声明的 `contract_version` 必须与路径一致）。learning-internal v1 本身仍未签字：没设 `LEARNING_INTERNAL_V1=1` 时与签字前同样 400 `INVALID_REQUEST`，`ingest` 为输入通道与用途；学习服务据此补齐证据的作答情境、等级、通道、地图版本（迁移 0017，specs/evidence-attributes-sprint1） |
-| `POST /internal/v1/plan` | 今日计划（冲刺 4-H，契约变更待签字；`learning/plan.py`）：按 BFF 给的在读学科读当前掌握快照、调各科适配器 `/plan`（插件契约 v1.0），能力点经已发布地图的 `kge.skill_link` 换成知识节点；只回任务类型、目标节点、优先级、预计分钟、`rationale_code`。非消耗类，不写任何表；某科不可用时 `unavailable` |
+| `POST /internal/v0/grade`、`/internal/v0/diagnose` | **已下线**（LT-04 决定记录（再续）第 1 条）：一律 410（问题码 `INVALID_REQUEST`、`retryable: false`），不读请求体、不验令牌、不调适配器、不落库。v0 写下的结果仍可经下面的重放接口查回（只读保留） |
+| `POST /internal/v1/grade`、`/internal/v1/diagnose` | 请求体是信封 `{request, ingest}`：`request` 为插件契约 1.0.0 请求（插件 v1.0 已于 2026-10-09 签字；声明的 `contract_version` 必须与路径一致）。learning-internal v1 于 2026-10-20 签字为 1.1.0（LT-04）：只认 BFF 服务令牌；写入前经迁移 0058 的 `platform.learning_meter_check` 核对 `usage_id` + 幂等键 + 学生 + 方法，只放行预留中（reserved）的预留，否则 409 `IDEMPOTENCY_KEY_SEALED`（同键已成功的重放不受影响）；`ingest` 只能是键盘通道、用途 practice（自报其他用途或证据等级、非键盘通道 400），学习服务据此补齐证据的作答情境、等级（键盘 A、申诉 C）、通道、地图版本（迁移 0017，specs/evidence-attributes-sprint1；`learning/meter.py`、`learning/attributes.py`） |
+| `POST /internal/v1/plan` | 今日计划（冲刺 4-H，随 learning-internal v1 于 2026-10-20 签字；`learning/plan.py`）：按 BFF 给的在读学科读当前掌握快照、调各科适配器 `/plan`（插件契约 v1.0），能力点经已发布地图的 `kge.skill_link` 换成知识节点；只回任务类型、目标节点、优先级、预计分钟、`rationale_code`。非消耗类，不写任何表；某科不可用时 `unavailable` |
 | `GET /internal/v1/replay/{method}/{key}?student_ref=&usage_id=` | 只查不执行：200 原摘要；404 `REPLAY_NOT_FOUND` 并封存 key（`platform.replay_seal`，迁移 0016）；409 `BUSY` |
 
-接口定义：`packages/contracts/openapi/learning-internal.v0.yaml`、`learning-internal.v1.yaml`（迁移期并存，终点另定，specs/plugin-api-v1.0-step2）。只供 BFF 调用，服务间令牌鉴权。
+接口定义：`packages/contracts/openapi/learning-internal.v1.yaml`；`learning-internal.v0.yaml` 只剩下线说明（两个写入接口 410）。只供 BFF 调用，服务间令牌鉴权。
 
-**开关 `LEARNING_INTERNAL_V1`（缺省关，只在测试与演练里设 `1`）**：learning-internal v1 未签字，插件 API v1.0 签字（2026-10-09）不连带放开它。
-关着时与签字前的行为相同：`/internal/v1/grade`、`/internal/v1/diagnose` 返回 400 `INVALID_REQUEST`、不调适配器；`/internal/v1/plan`
-各科 `unavailable`、不调适配器；配了合成诊断题面（`LEARNING_DIAGNOSIS_PRESENTER=synthetic`）或错题再练（`LEARNING_PRACTICE_CONFIG`，
-复测依赖再练）时拒绝启动。只查询的重放接口 `/internal/v1/replay/...` 签字前就不受候选版开关约束（BFF 计量重试要用），本开关也不挡它。
-插件契约 1.1.0（PLT-12 `present_item`）仍是候选版，另需 `STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1`。
+**learning-internal v1 已签字（LT-04，2026-10-20）**：原开关 `LEARNING_INTERNAL_V1` 已删除，`/internal/v1` 的写入、`plan`、诊断与再练（含复测）
+模块不再需要任何开关。写入防护是“服务身份限定 + 计量核对”：只有 BFF 服务令牌能写；写入前按计量账本核对（迁移 0058；启动时核对函数存在、
+且当前登录角色有执行权，任一不满足拒绝启动）——直接写入只放行预留中的预留，再练、复测作答只放行题库自练计次（counted），诊断步骤作答按会话自己的
+`usage_id` 与预留键、方法 diagnose 放行预留中、已结算，以及“会话在预留有效期内开始、之后预留才过期”（`started_in_time`，库里比较会话创建时间
+与预留过期时间，学习服务拿不到时间；决定记录（再续）第 2 条，计量规则变更待人确认）；会话创建于预留过期之后的仍 409。
+不通过 409 `IDEMPOTENCY_KEY_SEALED`（该幂等键无有效计量，不可写入）。用途与证据等级由学习服务推导。
+v0 写入已下线（410）；插件契约 0.9.0 的写入核心只剩进程内调用（测试经 `tests/conftest.py` 的 `v0` 夹具）。插件契约 1.1.0（PLT-12 `present_item`）仍是候选版，
+另需 `STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1`。
+测试里计量记录由 `tests/conftest.py` 的 `meter_provisioned` 经测试库的 `learningtest.provision_meter`（`tests/fixtures/meter_provision.sql`）代建：
+只经超级用户（admin）连接池调用，夹具函数不授给 `starbuddy_learning`；夹具只能在 `starbuddy_dev*` / `starbuddy_test*` 库执行，迁移后的库里不应有
+`learningtest`（`db/tests/79zf` 断言）。核对本身是真实函数；测核对的用例标 `real_meter`。变异：`make internal-v1-mutation`。
 
 部署注意（specs/plugin-api-v1.0-step2）：先执行迁移 0016 再上线本版本（启动时检查 `platform.replay_seal`，不存在就拒绝启动）；
 重放接口的查询串带 `student_ref`、`usage_id`，运行 uvicorn 时加 `--no-access-log`，不经会记录 URL 的代理。
@@ -268,7 +273,7 @@ staff 对应表（`kge-pages-staff-map/1`，审核台配置，由人维护，不
 - 显式状态机与选题规则 `aya-diag-trace@0.1.0` 在 `engine.py`（纯函数，按步骤历史复算）；判分只经既有 v1 grade 写入流程（信封 `{request, ingest}`，键盘通道）调阿鸦验证器；只写迁移 0027 两张表、证据与复核队列。
 - 用时按墙钟封顶（`resumed_at`），作答幂等键记在步骤上（同键或同内容重放回原结果，否则 409 `ANSWER_CONFLICT`）；过程原文证据 ID 记在 `work_evidence_id`。
 - 题面：契约 `present_item` 签字前只有测试环境的合成题面（`LEARNING_DIAGNOSIS_PRESENTER=synthetic`，只允许 `LEARNING_ENV=test`、库名 `starbuddy_dev*` / `starbuddy_test*`，
-  并需 `LEARNING_INTERNAL_V1=1`：作答走 learning-internal v1 写入路径，内部 v1 未签字；插件契约 1.0.0 已签字，不再需要候选版开关）；不配时诊断接口 501。
+  作答走 learning-internal v1 写入路径，插件契约 1.0.0 与 learning-internal v1 都已签字，不需开关；作答按会话的 diagnosis_full 预留核对计量）；不配时诊断接口 501。
   选题信息来自合成夹具（缺省）或知识服务（`LEARNING_DIAGNOSIS_SOURCE=knowledge`，见 `config.py`）。
   PLT-12（`specs/present-item-contract`）：`LEARNING_PRESENT_ITEM_SOURCE=adapter` 时诊断与再练的题面改经适配器 `present_item`（插件契约
   1.1.0 候选版，`learning/present_item.py`；只在 `STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1` 时允许，否则拒绝启动），题面过两道白名单后多带

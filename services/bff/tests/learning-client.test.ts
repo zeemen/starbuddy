@@ -1,4 +1,4 @@
-// 学习服务响应的三分类：成功 / 确定失败 / 结果未知（learning-internal.v0 的重试约定）
+// 学习服务响应的三分类：成功 / 确定失败 / 结果未知（learning-internal 的重试约定；LT-04 起写入走 v1 信封）
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -12,6 +12,8 @@ test('按 status 与 Problem.retryable 分类', () => {
   // 5xx 即使写着 retryable = false 也算结果未知：学习服务提交阶段出错时事务可能已经提交（契约守护 H2）
   assert.equal(classifyResponse(500, { code: 'INTERNAL', retryable: false }).kind, 'unknown');
   assert.equal(classifyResponse(409, { code: 'IDEMPOTENCY_CONFLICT', retryable: false }).kind, 'failure');
+  // LT-04：计量核对不通过（该幂等键无有效计量）是确定失败，BFF 释放预留
+  assert.equal(classifyResponse(409, { code: 'IDEMPOTENCY_KEY_SEALED', retryable: false }).kind, 'failure');
   const ok = classifyResponse(200, {}, true);
   assert.ok(ok.kind === 'success' && ok.replayed);
   assert.equal(classifyResponse(502, null).kind, 'unknown');
@@ -19,14 +21,14 @@ test('按 status 与 Problem.retryable 分类', () => {
   assert.equal(classifyResponse(404, null).kind, 'failure');
 });
 
-test('HTTP 客户端：带令牌、同一请求体；超时与断连算结果未知', async () => {
-  const seen: { auth: string | undefined; body: string }[] = [];
+test('HTTP 客户端：带令牌、发 learning-internal v1 信封；超时与断连算结果未知', async () => {
+  const seen: { auth: string | undefined; body: string; url: string | undefined }[] = [];
   let mode = 'ok';
   const server = createServer((req, res) => {
     let body = '';
     req.on('data', (c) => { body += c; });
     req.on('end', () => {
-      seen.push({ auth: req.headers.authorization, body });
+      seen.push({ auth: req.headers.authorization, body, url: req.url });
       if (mode === 'ok') { res.writeHead(200, { 'content-type': 'application/json', 'idempotent-replayed': 'true' }); res.end('{"verdict":"correct"}'); }
       else if (mode === 'redirect') { res.writeHead(307, { location: '/elsewhere' }); res.end(); }
       else if (mode === 'reject') { res.writeHead(422, { 'content-type': 'application/problem+json' }); res.end('{"code":"INVALID_REQUEST","retryable":false}'); }
@@ -41,7 +43,25 @@ test('HTTP 客户端：带令牌、同一请求体；超时与断连算结果未
     const first = await call('grade', { a: 1 });
     assert.ok(first.kind === 'success' && first.replayed, '读取 idempotent-replayed 响应头');
     assert.equal(seen[0]?.auth, 'Bearer synthetic-token');
-    assert.equal(seen[0]?.body, '{"a":1}');
+    // LT-04：写入切到 /internal/v1，请求体是信封 {request, ingest}；request 的契约版本写成 1.0.0，ingest 只有键盘通道（用途与等级由学习服务推导）
+    assert.equal(seen[0]?.url, '/internal/v1/grade');
+    assert.deepEqual(JSON.parse(seen[0]?.body ?? ''), { request: { a: 1, context: { contract_version: '1.0.0' } }, ingest: { channel: 'keypad' } });
+    const body: { context: Record<string, unknown>; attempt: unknown } = {
+      context: { request_id: 'r', student_ref: 's', usage_id: 'u', idempotency_key: 'k' }, attempt: { x: 1 } };
+    await call('diagnose', body);
+    assert.equal(seen[1]?.url, '/internal/v1/diagnose');
+    assert.deepEqual(JSON.parse(seen[1]?.body ?? ''), {
+      request: { context: { request_id: 'r', contract_version: '1.0.0', student_ref: 's', usage_id: 'u', idempotency_key: 'k' }, attempt: { x: 1 } },
+      ingest: { channel: 'keypad' } }, '其余字段原样转发，契约版本缺省时补 1.0.0；不带 purpose、evidence_level');
+    assert.equal(body.context['contract_version'], undefined, '不改调用方的对象（计量指纹在预留前按它算，算法不变）');
+    // 调用方显式给 1.0.0：原样发出
+    await call('grade', { context: { contract_version: '1.0.0' }, a: 2 });
+    assert.deepEqual(JSON.parse(seen[2]?.body ?? '').request, { context: { contract_version: '1.0.0' }, a: 2 });
+    // 调用方给了别的版本（旧的 0.9.0、候选版 1.1.0、非字符串）：抛 TypeError，不发请求，不悄悄改写成 1.0.0
+    for (const v of ['0.9.0', '1.1.0', '', 1, null]) {
+      await assert.rejects(call('grade', { context: { contract_version: v }, a: 3 }), TypeError, String(v));
+    }
+    assert.equal(seen.length, 3, '版本不对的请求一个都没有发出去');
     mode = 'reject';
     assert.equal((await call('grade', { a: 1 })).kind, 'failure');
     mode = 'redirect';

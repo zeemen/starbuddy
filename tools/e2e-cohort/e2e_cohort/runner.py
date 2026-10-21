@@ -169,7 +169,7 @@ async def run_synthetic(pg, *, register: bool = True) -> Report:
     async with running_stack(pg, model, register=register) as st:
         await seed_accounts(st.admin, cohort)
         scheduler = RetestTaskScheduler(st.app_pool)
-        log = await replay_cohort(st.api, cohort, model, scheduler)
+        log = await replay_cohort(st, cohort, model, scheduler)
         explained = await mastery_setup.explanation(st.app_pool, [s.student_id for s in cohort.students], mastery_setup.config())
         results = [check_calls(log), check_adapters_isolated(st.adapters)]
         async with st.admin.acquire() as conn:
@@ -182,7 +182,7 @@ async def run_synthetic(pg, *, register: bool = True) -> Report:
             results.append(await C.check_isolation(conn, pop))
             before = await C.snapshot_counts(conn, pop)
             calls_before = st.transport.calls
-            again = await rerun(st.api, log)
+            again = await rerun(st, log)
             after = await C.snapshot_counts(conn, pop)
             keys_ok = all(c.usage_id and c.idempotency_key for c in log.calls)
             results.append(C.check_rerun(before, after, replayed=sum(1 for c in again if c.replayed and c.status == 200),

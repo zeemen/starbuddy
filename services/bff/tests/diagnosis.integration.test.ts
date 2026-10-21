@@ -89,8 +89,9 @@ describe('数学自适应诊断（BFF 学生端）', { skip: READY ? false : '�
       PATH: process.env['PATH'] ?? '/usr/bin:/bin', PORT: String(lPort), LEARNING_ENV: 'test',
       LEARNING_DATABASE_URL: `postgresql://learning_app@/${process.env['PGDATABASE'] ?? 'starbuddy_test'}?host=${process.env['PGHOST']}`,
       LEARNING_SERVICE_TOKEN: SERVICE_CRED, LEARNING_ADAPTER_AYA_URL: `http://127.0.0.1:${ayaPort}`, LEARNING_ADAPTER_AYA_TOKEN: AYA_CRED,
-      // 诊断作答走 learning-internal v1 写入路径：内部 v1 未签字，只在测试里开 LEARNING_INTERNAL_V1=1
-      LEARNING_DIAGNOSIS_PRESENTER: 'synthetic', LEARNING_INTERNAL_V1: '1' } }));
+      // 诊断作答走 learning-internal v1 写入路径（2026-10-20 签字，LT-04 删除了开关）：学习服务按 BFF 在开始时建的 diagnosis_full 预留
+      // （会话的 usage_id 与预留键、方法 diagnose）核对计量，预留中或已结算才放行
+      LEARNING_DIAGNOSIS_PRESENTER: 'synthetic' } }));
     await waitFor(`${learningUrl}/internal/v1/diagnosis/sessions/${randomUUID()}`,
                   { authorization: `Bearer ${SERVICE_CRED}`, 'x-student-ref': randomUUID() }, (s) => s === 404);
     learning.real = httpDiagnosisLearning({ baseUrl: learningUrl, token: SERVICE_CRED });

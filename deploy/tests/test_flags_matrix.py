@@ -44,10 +44,15 @@ def test_structure(flags):
     for e in entries(flags):
         pend = e.get("pending", [])
         assert e["state"] in ("on", "off") and isinstance(pend, list), e["id"]
-        assert set(pend) <= {"signed_content", "internal_v1", "model_provider", "human"}, e["id"]
-    # 契约审查 A2：诊断、再练、复测（以及依赖它们的今日计划）在 learning-internal v1 签字与启用（LT-04）之前不可用
-    for i in ("diagnosis", "practice", "retest", "today_plan"):
-        assert "internal_v1" in by_id[i]["pending"], i
+        assert set(pend) <= {"signed_content", "migration_0058", "model_provider", "human"}, e["id"]
+        assert "internal_v1" not in pend, e["id"]
+    # LT-04：learning-internal v1 已签字、开关删除；诊断、再练、复测（以及依赖它们的今日计划）待教研签字内容，
+    # 且依赖 v1 写入的各项都标“待人执行 0058”（决定记录（再续）第 4 条：缺 0058 学习服务拒绝启动）
+    for i in ("diagnosis", "practice", "retest", "today_plan", "today_snapshot"):
+        assert by_id[i]["pending"] == ["migration_0058", "signed_content"], i
+    for i in ("math", "daofa", "chinese_grading"):
+        assert "migration_0058" in by_id[i]["pending"], i
+    assert "LEARNING_INTERNAL_V1" not in {s["var"] for s in flags["dev_only"]}, "开关已删除，不再列为开发开关"
 
 
 def test_switch_names_exist_in_source(flags):

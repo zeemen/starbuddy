@@ -1,7 +1,9 @@
 """跨科联调回放（spec 设计要点 1）：诊断 → 批改 → 复测，全部经学习服务的契约接口（learning-internal v1 → plugin-api v1.0）。
 
 - 建档（账号、家庭、学生档案、家长绑定、选科）是平台账号侧的准备工作，以超级用户写入测试库，做法同
-  services/learning/tests/conftest.py 的 student 夹具；学习数据（证据、作答、判分、观察、错因）只经 /internal/v1/{diagnose,grade} 写入；
+  services/learning/tests/conftest.py 的 student 夹具；学习数据（证据、作答、判分、观察、错因）只经学习服务的写入路径：诊断与批改经
+  /internal/v1/{diagnose,grade}（BFF 服务令牌），复测经进程内的同一个写入服务（LT-04：直接经 HTTP 的用途只能是 practice，复测用途只由
+  可信调用方按票据写入）；写入前的计量记录（预留、自练计次）以超级用户经测试库的 learningtest.provision_meter 代建（联调不经 BFF）；
 - 复测：由 KGE-04 第二步的真实调度驱动（RetestTaskScheduler）：学习服务在 grade 落库后同步重算掌握、同一事务里建
   platform.retest_task；这里以学习服务身份读该生开着的复测轮任务（reason = scheduled / early），把时钟推进到任务的 due_at
   确认到期（learning.mastery.store.due_tasks），按任务的节点与层次选一道该生没做过的题，执行仍经同一个 grade 契约接口
@@ -15,6 +17,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Protocol
 
+from learning import meter as METER
+from learning.errors import IngestError
 from learning.mastery import store as MS
 from learning.store import learning_tx
 
@@ -171,13 +175,33 @@ class RunLog:
         return {"calls": [asdict(c) for c in self.calls], "retests": self.retests}
 
 
-async def _post(api, student: Student, step: Step, *, run: int, purpose: str, scheduler: str | None) -> CallRecord:
+async def _meter(admin, ctx: dict, method: str, *, counted: bool) -> None:
+    """计量（LT-04）：学习服务写入前核对计量账本。联调不经 BFF，以超级用户经测试库里的 learningtest.provision_meter 代建 BFF 那一步：
+    练习与诊断是一笔预留中的预留（BFF meteredCall），复测是一行题库自练计次（BFF meter_practice）。已有记录时什么都不做（重跑不新增）。"""
+    async with admin.acquire() as c:
+        await c.execute("SELECT learningtest.provision_meter($1::uuid, $2, $3::uuid, $4, $5)",
+                        ctx["usage_id"], ctx["idempotency_key"], ctx["student_ref"], method, counted)
+
+
+async def _post(st, student: Student, step: Step, *, run: int, purpose: str, scheduler: str | None) -> CallRecord:
+    """st：联调栈（stack.Stack）。练习与诊断经 HTTP（BFF 服务令牌）写；复测的用途只由可信调用方按票据写入，直接经 HTTP 只能是 practice
+    （LT-04 决定记录（续）第 3 条），所以复测经进程内的同一个写入服务（IngestService，与学习服务里复测模块的路径相同）写。"""
     body = build_envelope(student, step, run=run, purpose=purpose)
-    r = await api.post(f"/internal/v1/{step.method}", json=body)
     ctx = body["request"]["context"]
+    if purpose == "practice":
+        await _meter(st.admin, ctx, step.method, counted=False)
+        r = await st.api.post(f"/internal/v1/{step.method}", json=body)
+        status, replayed = r.status_code, r.headers.get("idempotent-replayed") == "true"
+        summary = r.json() if r.headers.get("content-type", "").startswith("application/") else {}
+    else:
+        await _meter(st.admin, ctx, step.method, counted=True)
+        try:
+            summary, replayed = await st.ingest.ingest(step.method, body, "1.0.0", meter=METER.COUNTED)
+            status = 200
+        except IngestError as e:
+            status, replayed, summary = e.status, False, e.problem()
     return CallRecord(student.label, student.student_id, step.step_id, step.method, step.subject, purpose,
-                      ctx["idempotency_key"], ctx["usage_id"], r.status_code, r.headers.get("idempotent-replayed") == "true",
-                      r.json() if r.headers.get("content-type", "").startswith("application/") else {}, scheduler)
+                      ctx["idempotency_key"], ctx["usage_id"], status, replayed, summary, scheduler)
 
 
 def register_texts(cohort: Cohort, model: ScriptedModel) -> None:
@@ -188,15 +212,15 @@ def register_texts(cohort: Cohort, model: ScriptedModel) -> None:
                 model.register(step.subject, a.item, a.response["text"], s.pattern)
 
 
-async def replay_cohort(api, cohort: Cohort, model: ScriptedModel, scheduler: RetestScheduler) -> RunLog:
-    """第一轮：诊断 → 批改（按学生脚本顺序）→ 复测（retest_task 驱动）。"""
+async def replay_cohort(st, cohort: Cohort, model: ScriptedModel, scheduler: RetestScheduler) -> RunLog:
+    """第一轮：诊断 → 批改（按学生脚本顺序）→ 复测（retest_task 驱动）。st：联调栈（stack.Stack）。"""
     zx_items = load_zhixing_items()
     register_texts(cohort, model)
     log = RunLog()
     for s in cohort.students:
         mine = []
         for step in s.steps:
-            rec = await _post(api, s, step, run=1, purpose="practice", scheduler=None)
+            rec = await _post(st, s, step, run=1, purpose="practice", scheduler=None)
             log.calls.append(rec)
             log.requests.append((s, step, "practice", None))
             mine.append(rec)
@@ -204,7 +228,7 @@ async def replay_cohort(api, cohort: Cohort, model: ScriptedModel, scheduler: Re
             continue  # 中断：离开后没有复测
         for task in await scheduler.due(s, mine):
             step = retest_step(s, task, model, zx_items)
-            rec = await _post(api, s, step, run=1, purpose="retest", scheduler=task.scheduler)
+            rec = await _post(st, s, step, run=1, purpose="retest", scheduler=task.scheduler)
             log.calls.append(rec)
             log.requests.append((s, step, "retest", task.scheduler))
             log.retests.append({"label": s.label, "student_id": s.student_id, "subject": task.subject, "node_id": task.node_id,
@@ -213,9 +237,9 @@ async def replay_cohort(api, cohort: Cohort, model: ScriptedModel, scheduler: Re
     return log
 
 
-async def rerun(api, log: RunLog) -> list[CallRecord]:
+async def rerun(st, log: RunLog) -> list[CallRecord]:
     """整轮重跑：同一批请求体、同一幂等键（request_id 换新，模拟 BFF 重试），应当全部是重放。"""
     out = []
     for s, step, purpose, scheduler in log.requests:
-        out.append(await _post(api, s, step, run=2, purpose=purpose, scheduler=scheduler))
+        out.append(await _post(st, s, step, run=2, purpose=purpose, scheduler=scheduler))
     return out

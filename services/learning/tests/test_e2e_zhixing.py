@@ -128,10 +128,8 @@ def zhixing_adapter(pg, route_endpoint):
 
 
 @pytest.fixture(autouse=True)
-def _internal_v1(monkeypatch):
-    # learning-internal v1 未签字：与 test_v1_replay 一样只在测试里开 LEARNING_INTERNAL_V1=1；
-    # 插件契约 1.0.0 已签字（specs/contract-v1.0-signoff），候选版开关关着
-    monkeypatch.setenv("LEARNING_INTERNAL_V1", "1")
+def _no_candidate_switch(monkeypatch):
+    # 插件契约 1.0.0、learning-internal v1 都已签字（LT-04 删除了 LEARNING_INTERNAL_V1）：候选版开关关着；计量记录由 conftest 代建
     monkeypatch.delenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", raising=False)
 
 

@@ -6,12 +6,17 @@ from datetime import datetime, timedelta, timezone
 
 import asyncpg
 
-from conftest import grade_body
+from conftest import env, grade_body, to_v1_body
 from review_loop import STAFF_A, as_staff, close_loop, console, find_task
 
 
+def v1_grade_body(*a, **kw) -> dict:
+    """写入只经 /internal/v1（v0 写入已下线，LT-04 决定记录（再续）第 1 条）：插件契约 1.0.0 的判分请求。"""
+    return to_v1_body(grade_body(*a, **kw))
+
+
 async def post_grade(api, body) -> dict:
-    r = await api.post("/internal/v0/grade", json=body)
+    r = await api.post("/internal/v1/grade", json=env(body))
     assert r.status_code == 200, r.text
     return r.json()
 
@@ -25,7 +30,7 @@ async def tasks_for(admin, student) -> list[dict]:
 
 async def test_review_required_grade_enters_queue_once(api, pools, student):
     _, admin = pools
-    body = grade_body(student)
+    body = v1_grade_body(student)
     s = await post_grade(api, body)
     assert s["human_review_required"]
     await post_grade(api, body)  # 重放：同一幂等键
@@ -37,7 +42,7 @@ async def test_review_required_grade_enters_queue_once(api, pools, student):
 async def test_no_review_no_task(api, pools, student, fake_adapter):
     _, admin = pools
     fake_adapter.admission = "admitted"
-    s = await post_grade(api, grade_body(student, item="SYN-ADM", text="42"))
+    s = await post_grade(api, v1_grade_body(student, item="SYN-ADM", text="42"))
     assert not s["human_review_required"]
     assert await tasks_for(admin, student) == []
 
@@ -45,7 +50,7 @@ async def test_no_review_no_task(api, pools, student, fake_adapter):
 async def test_appeal_enters_queue(api, pools, student, fake_adapter):
     _, admin = pools
     fake_adapter.admission = "admitted"
-    s = await post_grade(api, grade_body(student, item="SYN-ADM", text="42", appeal=True))
+    s = await post_grade(api, v1_grade_body(student, item="SYN-ADM", text="42", appeal=True))
     t = await tasks_for(admin, student)
     assert len(t) == 1 and t[0]["source_id"] == s["grade_result_id"] and "student_appeal" in t[0]["reasons"]
 
@@ -59,7 +64,7 @@ async def test_adapter_declared_spot_check_enters_queue(api, pools, student, fak
         out["human_review_required"], out["review_reasons"] = True, ["spot_check"]
         return out
     fake_adapter.mutate = mutate
-    s = await post_grade(api, grade_body(student, item="SYN-ADM", text="42"))
+    s = await post_grade(api, v1_grade_body(student, item="SYN-ADM", text="42"))
     t = await tasks_for(admin, student)
     assert len(t) == 1 and t[0]["source_id"] == s["grade_result_id"] and t[0]["reasons"] == ["spot_check"]
 
@@ -74,7 +79,7 @@ async def test_console_reason_list_matches_db_enum(pools):
 
 
 async def test_console_closed_loop_aya(api, pools, pg, student):
-    s = await post_grade(api, grade_body(student))
+    s = await post_grade(api, v1_grade_body(student))
     async with console(pg) as client:
         await close_loop(client, source_id=s["grade_result_id"], student_id=student, subject="aya",
                          expect_reasons={"content_not_admitted"}, code="content_issue")
@@ -105,7 +110,7 @@ async def test_spot_check_and_profile_dispute(api, pools, pg, student, fake_adap
     _, admin = pools
     async with console(pg) as client:  # 建好调度与洞察服务的登录角色
         fake_adapter.admission = "admitted"
-        ids = [(await post_grade(api, grade_body(student, item="SYN-ADM", text="42")))["grade_result_id"] for _ in range(30)]
+        ids = [(await post_grade(api, v1_grade_body(student, item="SYN-ADM", text="42")))["grade_result_id"] for _ in range(30)]
         sched = await asyncpg.connect(**pg.dsn("rq_sched_app"))
         try:
             since = datetime.now(timezone.utc) - timedelta(hours=1)

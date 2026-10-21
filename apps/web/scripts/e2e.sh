@@ -68,8 +68,8 @@ AYA_CRED="$(python3 -c 'import secrets; print(secrets.token_hex(24))')"
 SVC_CRED="$(python3 -c 'import secrets; print(secrets.token_hex(24))')"
 LLOG="$(mktemp)"
 # 服务间凭据只经环境变量传：在子 shell 里 export 再 exec，不出现在任何进程的命令行（argv）里（安全审查 S8）。
-# 诊断作答走 learning-internal v1 写入路径：内部 v1 未签字，学习服务开 LEARNING_INTERNAL_V1=1（只在这个一次性测试环境）。
-# 插件契约 1.0.0 已签字（specs/contract-v1.0-signoff）：学习服务与阿鸦适配器都不再需要候选版开关。
+# 诊断作答走 learning-internal v1 写入路径（2026-10-20 签字，LT-04 删除了 LEARNING_INTERNAL_V1）；插件契约 1.0.0 已签字
+# （specs/contract-v1.0-signoff）：学习服务与阿鸦适配器都不需要任何开关。学习服务按 BFF 建的诊断预留核对计量。
 ( cd "$ROOT/adapters/aya" || exit 1
   export AYA_ADAPTER_SERVICE_TOKEN="$AYA_CRED" PORT="$AYA_PORT"
   exec node --no-warnings src/main.ts ) > /dev/null 2>&1 < /dev/null &
@@ -80,7 +80,7 @@ AYA_PID=$!
   db_url="postgresql://learning_app@/starbuddy_test?host=$PGHOST"
   while read -r v; do unset "$v" 2>/dev/null || true; done < <(compgen -e)
   export PATH="$keep_path" LEARNING_ENV=test PORT="$LEARNING_PORT" LEARNING_DIAGNOSIS_PRESENTER=synthetic \
-    LEARNING_INTERNAL_V1=1 LEARNING_DATABASE_URL="$db_url" LEARNING_SERVICE_TOKEN="$SVC_CRED" \
+    LEARNING_DATABASE_URL="$db_url" LEARNING_SERVICE_TOKEN="$SVC_CRED" \
     LEARNING_ADAPTER_AYA_URL="http://127.0.0.1:$AYA_PORT" LEARNING_ADAPTER_AYA_TOKEN="$AYA_CRED"
   exec "$PY" -m learning ) > "$LLOG" 2>&1 < /dev/null &
 LEARNING_PID=$!
@@ -149,7 +149,7 @@ SMLOG="$(mktemp)"
   db_url="postgresql://learning_app@/starbuddy_test?host=$PGHOST"
   while read -r v; do unset "$v" 2>/dev/null || true; done < <(compgen -e)
   export PATH="$keep_path" LEARNING_ENV=test PORT="$SM_LEARNING_PORT" LEARNING_DIAGNOSIS_PRESENTER=synthetic \
-    LEARNING_INTERNAL_V1=1 LEARNING_DATABASE_URL="$db_url" LEARNING_SERVICE_TOKEN="$SVC_CRED" \
+    LEARNING_DATABASE_URL="$db_url" LEARNING_SERVICE_TOKEN="$SVC_CRED" \
     LEARNING_ADAPTER_AYA_URL="http://127.0.0.1:$AYA_PORT" LEARNING_ADAPTER_AYA_TOKEN="$AYA_CRED" \
     LEARNING_MASTERY_CONFIG_AYA=config/mastery/synthetic-test.json
   exec "$PY" -m learning ) > "$SMLLOG" 2>&1 < /dev/null &

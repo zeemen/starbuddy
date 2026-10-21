@@ -114,8 +114,6 @@ def test_staging_positive():
     ({"LEARNING_DIAGNOSIS_SOURCE": "fixture"}, "fixture"),
     ({"LEARNING_DIAGNOSIS_PRESENTER": "synthetic", "LEARNING_DIAGNOSIS_SOURCE": "knowledge"}, "合成题面"),
     ({"LEARNING_PRACTICE_PRESENTER": "synthetic"}, "合成题面"),
-    ({"LEARNING_INTERNAL_V1": "1"}, "LEARNING_INTERNAL_V1"),
-    ({"LEARNING_INTERNAL_V1": "0"}, "LEARNING_INTERNAL_V1"),
     ({"STARBUDDY_IMAGE_ENV": "test"}, "STARBUDDY_IMAGE_ENV"),
     ({"LEARNING_HOST": "0.0.0.0"}, "LEARNING_HOST"),
     ({"LEARNING_HOST": "8.8.8.8"}, "LEARNING_HOST"),
@@ -132,9 +130,21 @@ def test_image_env_and_diagnosis_source_default():
         with pytest.raises(RuntimeError, match="STARBUDDY_IMAGE_ENV"):
             Settings.from_env(base(env, STARBUDDY_IMAGE_ENV="staging"))
         assert Settings.from_env(base(env)).diagnosis_source == "fixture"
-        Settings.from_env(base(env, LEARNING_INTERNAL_V1="1"))  # dev / test 照旧可开
     s = Settings.from_env(base("staging", STARBUDDY_IMAGE_ENV="staging"))
     assert s.diagnosis_source == "knowledge"  # staging 缺省经知识服务，不用合成夹具
+
+
+def test_internal_v1_switch_is_gone():
+    """LT-04：learning-internal v1 签字后开关 LEARNING_INTERNAL_V1 已删除——各环境都不再读它（设了也不影响启动与配置），
+    源码里也没有它。"""
+    from pathlib import Path
+    for env in ("dev", "test"):
+        assert Settings.from_env(base(env, LEARNING_INTERNAL_V1="1")) == Settings.from_env(base(env))
+    assert Settings.from_env(base("staging", STARBUDDY_IMAGE_ENV="staging", LEARNING_INTERNAL_V1="1")) == \
+        Settings.from_env(base("staging", STARBUDDY_IMAGE_ENV="staging"))
+    src = Path(__file__).resolve().parents[1] / "learning"
+    assert not [p for p in src.rglob("*.py") if "LEARNING_INTERNAL_V1\"" in p.read_text(encoding="utf-8")
+                or "internal_v1_enabled" in p.read_text(encoding="utf-8")]
 
 
 def test_jobs_staging_db_host_check():

@@ -150,6 +150,26 @@ async def mark_failed(pool, *, method, key, lease_token, error_code) -> None:
         pass
 
 
+# ---------- 计量核对（0058，LT-04） ----------
+METER_CHECK_FUNCTION = "platform.learning_meter_check(uuid,text,uuid,text)"
+
+
+async def meter_check(pool, *, usage_id, key, student_id, method) -> str:
+    """只读：经 0058 的 SECURITY DEFINER 函数拿到状态编码（学习服务对计量表没有读权限）。
+    usage_id 不是 UUID 形状时直接 none（函数参数是 uuid，不让驱动报错带出原文）。"""
+    if not isinstance(usage_id, str) or not isinstance(student_id, str) or not isinstance(key, str):
+        return "none"
+    try:
+        uuid.UUID(usage_id)
+        uuid.UUID(student_id)
+    except ValueError:
+        return "none"
+    async with learning_tx(pool) as conn:
+        state = await conn.fetchval("SELECT platform.learning_meter_check($1::text::uuid, $2, $3::text::uuid, $4)",
+                                    usage_id, key, student_id, method)
+    return state if isinstance(state, str) else "none"
+
+
 # ---------- 登记查询 ----------
 async def registered(pool, subject: str, item_refs: set[str], node_refs: set[str]) -> tuple[dict[str, str], set[str]]:
     async with learning_tx(pool) as conn:

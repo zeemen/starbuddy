@@ -113,8 +113,10 @@ async def run_baseline(profile: Profile, out: Path | None, *, provider_median_ms
         if st.write_path:
             # PLT-21：合成学生的到期条目（经学习服务 grade 写入路径，压测前、不计次），再取压测前的计数与各服务日志位置
             async with httpx.AsyncClient(trust_env=False) as c:
+                # LT-04：种子经 BFF 同一组计量函数预留、结算（学习服务写入前核对计量，裸写 409）
+                seed_meter = writepath.SeedMeter(st.bff_pool, {f.student: f.student_account for f in fams.get("student", [])})
                 wp_seeded = await writepath.seed_students(c, st.learning_url, LEARNING_CREDENTIAL, st.admin, wp_students, profile.seed,
-                                                          st.content["curriculum"], mastery=mastery)
+                                                          st.content["curriculum"], mastery=mastery, meter=seed_meter)
             wp_before = await writepath.counts(st.admin, wp_students)
             wp_offsets = {k: writepath.size(p) for k, p in (("learning", st.learning_log), ("knowledge", st.knowledge_log),
                                                              ("aya", st.aya_log))}

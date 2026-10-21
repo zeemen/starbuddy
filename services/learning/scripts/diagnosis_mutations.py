@@ -21,6 +21,7 @@ TESTS = ["tests/test_diagnosis_engine.py", "tests/test_diagnosis_session.py"]
 E, SV, SRC, ST, PR, API, APP = ("learning/diagnosis/engine.py", "learning/diagnosis/service.py", "learning/diagnosis/source.py",
                                 "learning/diagnosis/store.py", "learning/diagnosis/presenter.py", "learning/diagnosis/api.py",
                                 "learning/app.py")
+LM = "learning/meter.py"
 
 # 名字 → [(文件, 原文, 替换为), …]
 MUTATIONS: dict[str, list[tuple[str, str, str]]] = {
@@ -90,6 +91,24 @@ MUTATIONS: dict[str, list[tuple[str, str, str]]] = {
                            'if plan.reason != "no_item" and await present_view(self.presenter, s.subject, plan.item_id or "") is None:')],
     "当前题视图在事务内调适配器取题面": [(SV, 'item = await present_cached(self.presenter, s.subject, cur.item_id or "")',
                               'item = await present_view(self.presenter, s.subject, cur.item_id or "")')],
+    # LT-04 计量核对（决定记录（续）第 2 条）：诊断作答按会话自己的 usage_id 与预留键、方法 diagnose 核对，放行 reserved 与 settled
+    "诊断作答按判分键核对（不按会话预留）": [(SV, "return METER.diagnosis_session(s.usage_id, s.idempotency_key)",
+                               'return METER.MeterBasis(frozenset({"reserved", "settled", "started_in_time"}), trusted_purpose=True)')],
+    "诊断作答不放行已结算的会话预留": [(LM, 'return MeterBasis(frozenset({"reserved", "settled", "started_in_time"}), usage_id=usage_id',
+                              'return MeterBasis(frozenset({"reserved", "started_in_time"}), usage_id=usage_id')],
+    # 决定记录（再续）第 2 条：在预留有效期内开始的会话放行过期预留（started_in_time，库里比会话创建时间与预留过期时间）；
+    # 会话创建于预留过期之后的仍 409
+    "诊断作答也放行过期未处理的预留（不看会话开始时间）": [
+        (LM, 'return MeterBasis(frozenset({"reserved", "settled", "started_in_time"}), usage_id=usage_id',
+         'return MeterBasis(frozenset({"reserved", "settled", "started_in_time", "lapsed"}), usage_id=usage_id')],
+    "诊断作答也放行已过期的预留（不看会话开始时间）": [
+        (LM, 'return MeterBasis(frozenset({"reserved", "settled", "started_in_time"}), usage_id=usage_id',
+         'return MeterBasis(frozenset({"reserved", "settled", "started_in_time", "expired"}), usage_id=usage_id')],
+    "诊断作答不放行会话开始后才过期的预留": [
+        (LM, 'return MeterBasis(frozenset({"reserved", "settled", "started_in_time"}), usage_id=usage_id',
+         'return MeterBasis(frozenset({"reserved", "settled"}), usage_id=usage_id')],    "诊断作答核对方法写成 grade": [(LM, 'reservation_key, method="diagnose",', 'reservation_key, method="grade",')],
+    "诊断作答不核对计量": [(SV, "recorded, _ = await self.ingest.ingest(\"grade\", body, GRADE_VERSION, meter=self._meter(s))",
+                     'recorded, _ = await self.ingest.ingest("grade", body, GRADE_VERSION, meter=METER.MeterBasis(frozenset(METER.STATES)))')],
 }
 
 

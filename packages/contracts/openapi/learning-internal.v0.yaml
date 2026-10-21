@@ -4,7 +4,11 @@ info:
   version: 0.1.0
   summary: 冲刺 1-C 写入接口。只供 BFF 调用，学生与家长不能直接访问。
   description: |
-    状态：**草稿，随冲刺 1-C 实现提交，待评审**（specs/learning-ingest-sprint1/spec.md；待人确认 #2 默认方案 a）。
+    状态：**已下线（写入）**。2026-10-20 起 `/internal/v0/grade`、`/internal/v0/diagnose` 一律返回 410
+    （`code: INVALID_REQUEST`、`retryable: false`：确定没有写入，BFF 释放预留），不读请求体、不调适配器、不落库；
+    写入只经 `learning-internal.v1.yaml` 的 `/internal/v1/grade`、`/internal/v1/diagnose`（BFF 服务令牌 + 计量核对，
+    specs/launch-lt04-learning-internal-v1 决定记录（再续）第 1 条）。v0 写下的结果仍可经 v1 的重放接口查回（只读保留）。
+    以下为下线前的口径，留作追溯（原状态：冲刺 1-C 草稿，specs/learning-ingest-sprint1/spec.md）。
 
     请求体就是学科插件 API v0.9 的 `GradeRequest` / `DiagnoseRequest`（`plugin-api.v0.9.yaml`），
     BFF 在调用前已完成鉴权、家长授权、选科（subject_enrollment）与同意（consent）检查，以及计量预留
@@ -37,7 +41,8 @@ paths:
   /internal/v0/grade:
     post:
       operationId: ingestGrade
-      summary: 判分并写入学习者模型
+      summary: 已下线（410）；原为判分并写入学习者模型，改用 /internal/v1/grade
+      deprecated: true
       requestBody:
         required: true
         content:
@@ -51,11 +56,13 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GradeSummary' }
+        '410': { $ref: '#/components/responses/Problem' }
         default: { $ref: '#/components/responses/Problem' }
   /internal/v0/diagnose:
     post:
       operationId: ingestDiagnose
-      summary: 诊断并写入学习者模型（冲刺 1 只支持带 attempts 的同步诊断）
+      summary: 已下线（410）；原为诊断并写入学习者模型，改用 /internal/v1/diagnose
+      deprecated: true
       requestBody:
         required: true
         content:
@@ -69,6 +76,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/DiagnoseSummary' }
+        '410': { $ref: '#/components/responses/Problem' }
         default: { $ref: '#/components/responses/Problem' }
 
 components:

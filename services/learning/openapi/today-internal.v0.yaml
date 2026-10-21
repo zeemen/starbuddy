@@ -18,7 +18,7 @@ info:
     开关关着时只读：不写任何表；无论开关都不计量、不调模型。返回内容没有掌握、置信度、证据 ID（规则 3、11）；计划任务只带它原有的
     rationale_code，BFF 按既有两类推荐理由机制与白名单处理。
     鉴权：Bearer 服务间令牌，只认 BFF 的令牌。请求体上限 64 KB，拒绝未知键、NaN、重复键。
-    没配 LEARNING_TODAY_CONFIG（或未签字配置出现在 test / dev 以外）、没开 LEARNING_INTERNAL_V1 时一律 501 TODAY_UNAVAILABLE。
+    没配 LEARNING_TODAY_CONFIG（或未签字配置出现在 test / dev 以外）时一律 501 TODAY_UNAVAILABLE（learning-internal v1 已于 2026-10-20 签字，不再另设开关）。
     今日计划快照（PLT-15 PR1，specs/today-plan-snapshot-plt15；迁移 0055 platform.today_plan_item）：开关 LEARNING_TODAY_SNAPSHOT 缺省关，
     关着时本接口只读、响应与上面逐字段一致（条目没有 task_id，也没有 snapshot 字段）。打开时汇总照常算，然后：
     (1) 当天（北京时间）已冻结：条目与 task_id 都取快照（只给本次请求 subjects 里的学科，按快照顺序；不按新算的结果改写），

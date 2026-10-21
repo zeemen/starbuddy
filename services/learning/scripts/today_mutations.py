@@ -107,7 +107,7 @@ DB: dict[str, list[tuple[str, str, str]]] = {
                           '        log.info(json.dumps({"event": "today"')],
     # 开关与鉴权
     "鉴权不查": [(API, "if not authorized(request):", "if False:")],
-    "不看 LEARNING_INTERNAL_V1": [(API, "if t is None or not internal_v1_enabled():", "if t is None:")],
+    "没配今日编排也服务": [(API, "        if t is None:\n            raise IngestError(501", "        if False:\n            raise IngestError(501")],
     "也认编排层令牌": [(APP, 'today_api.register(app, lambda r: _bearer_ok(r.headers.get("authorization"), settings.service_credential), state)',
                     'today_api.register(app, lambda r: _bearer_ok(r.headers.get("authorization"), settings.service_credential) or '
                     '_bearer_ok(r.headers.get("authorization"), settings.orchestrator_client_credential or "-"), state)')],

@@ -174,9 +174,13 @@ def test_seed_checks_target_before_any_request():
             Client.calls += 1
             raise AssertionError("不应发请求")
 
+    class Meter:  # 目标不对时连计量预留也不能发生
+        async def reserve(self, *a):
+            raise AssertionError("不应预留")
+
     for url, admin, needle in (("http://10.0.0.1:1", Admin(True), "127.0.0.1"), ("http://127.0.0.1:1", Admin(False), "一次性测试库")):
         with pytest.raises(RuntimeError, match=needle):
-            asyncio.run(W.seed_students(Client(), url, "c" * 40, admin, ["s"], 1, BASE["curriculum"]))
+            asyncio.run(W.seed_students(Client(), url, "c" * 40, admin, ["s"], 1, BASE["curriculum"], meter=Meter()))
     assert Client.calls == 0
 
 

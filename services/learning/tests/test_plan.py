@@ -101,9 +101,9 @@ class PlanAdapter:
 
 @pytest.fixture
 def internal_v1(monkeypatch):
-    # learning-internal v1（含 /internal/v1/plan）未签字：只在测试里开 LEARNING_INTERNAL_V1=1。
-    # 插件契约 1.0.0 已签字（specs/contract-v1.0-signoff）：plan 一律在候选版开关关着时跑，证明不靠候选版开关
-    monkeypatch.setenv("LEARNING_INTERNAL_V1", "1")
+    # 插件契约 1.0.0 与 learning-internal v1（含 /internal/v1/plan）都已签字（LT-04 删除了 LEARNING_INTERNAL_V1）：
+    # plan 一律在候选版开关关着时跑，证明不靠任何开关
+    monkeypatch.delenv("LEARNING_INTERNAL_V1", raising=False)
     monkeypatch.delenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", raising=False)
 
 
@@ -211,20 +211,10 @@ async def test_requires_service_token(plan_api, student):
     assert r.status_code == 401
 
 
-async def test_internal_v1_not_enabled_means_unavailable(plan_api, student, monkeypatch):
-    """learning-internal v1 未签字：没开 LEARNING_INTERNAL_V1=1 时与签字前一样各科 unavailable、不调适配器
-    （即使开着候选版开关也一样）。"""
+async def test_plan_works_without_any_switch(plan_api, student, monkeypatch):
+    """LT-04 删除开关之后：不设 LEARNING_INTERNAL_V1、关着候选版开关，plan 照常调适配器（以前没开开关时各科 unavailable）。"""
     client, adapter = plan_api
-    monkeypatch.delenv("LEARNING_INTERNAL_V1")
-    monkeypatch.setenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", "1")
-    r = await client.post("/internal/v1/plan", json=query(student, ("aya",)))
-    assert r.json() == {"subjects": [{"subject": "aya", "status": "unavailable", "tasks": []}]}
-    assert adapter.requests == []
-
-
-async def test_plan_works_without_candidate_switch(plan_api, student, monkeypatch):
-    """开着 LEARNING_INTERNAL_V1、关着候选版开关：plan 照常调适配器（插件 1.0.0 已签字，不再靠候选版开关）。"""
-    client, adapter = plan_api
+    monkeypatch.delenv("LEARNING_INTERNAL_V1", raising=False)
     monkeypatch.delenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", raising=False)
     r = await client.post("/internal/v1/plan", json=query(student, ("aya",)))
     assert r.status_code == 200, r.text

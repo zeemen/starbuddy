@@ -165,13 +165,14 @@ def test_harness_runs_bff_meteredcall_with_same_policy():
     src = (ROOT / "tools/loadtest/node/meter-harness.mts").read_text(encoding="utf-8")
     meter_ts = (ROOT / "services/bff/src/metering/meter.ts").read_text(encoding="utf-8")
     # 直接 import BFF 的实现（不复制）：meteredCall（预留、退避、结算 / 释放、existing 按 state、过期后 replay、meteringFingerprint）、
-    # classifyResponse（结果归类）、httpLearningReplay（重放）、itemFingerprint（内容指纹）
-    for name, mod in (("meteredCall", "meter.ts"), ("classifyResponse", "learning-client.ts"), ("httpLearningReplay", "learning-client.ts"),
+    # httpLearningClient（LT-04 起 BFF 写入的传输层：/internal/v1 信封，内含 classifyResponse 结果归类）、httpLearningReplay（重放）、
+    # itemFingerprint（内容指纹）
+    for name, mod in (("meteredCall", "meter.ts"), ("httpLearningClient", "learning-client.ts"), ("httpLearningReplay", "learning-client.ts"),
                       ("itemFingerprint", "content-fingerprint.ts")):
         assert re.search(rf"import \{{[^}}]*\b{name}\b[^}}]*\}} from '\.\./\.\./\.\./services/bff/src/metering/{re.escape(mod)}'", src), name
     assert "meteringFingerprint(method, body)" in meter_ts, "请求指纹由 meteredCall 内部按 BFF 口径计算"
     bff_delays = re.search(r"const DEFAULT_DELAYS = \[([0-9, ]+)\]", meter_ts).group(1)
     harness_delays = re.search(r"const delays = \[([0-9, ]+)\]", src).group(1)
     assert bff_delays.replace(" ", "") == harness_delays.replace(" ", ""), "退避序列与 BFF 相同（只按比例缩短）"
-    assert "fetch(" in src and "classifyResponse(res.status, parsed" in src
+    assert "fetch(" not in src and "return learning(method, body)" in src, "不自己发写入请求：传输层与 BFF 同一份"
     assert "127\\.0\\.0\\.1" in src and "'127.0.0.1'" in src, "只连本机学习服务、只监听本机"

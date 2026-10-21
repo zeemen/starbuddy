@@ -170,9 +170,7 @@ async def local_stack(*, seed_value: int, students: int, provider_median_ms: flo
     os.chmod(work, 0o700)
     pg = EphemeralPG()
     pg.start()
-    # learning-internal v1 未签字：只在这个一次性栈开 LEARNING_INTERNAL_V1=1（同 e2e_cohort）；插件契约 1.0.0 已签字，不需候选版开关
-    previous = os.environ.get("LEARNING_INTERNAL_V1")
-    os.environ["LEARNING_INTERNAL_V1"] = "1"
+    # 插件契约 1.0.0 与 learning-internal v1 都已签字（LT-04 删除了 LEARNING_INTERNAL_V1），不需任何开关
     try:
         stat = dbstats.enable_stat_statements(pg)
         pg.psql(seed.setup_sql())
@@ -224,7 +222,7 @@ async def local_stack(*, seed_value: int, students: int, provider_median_ms: flo
             db_url = f"postgresql://{LOGIN_ROLE}@/{pg.db}?host={pg.work}"
             lenv = env_base | {
                 "LEARNING_ENV": "test", "PORT": str(lport), "LEARNING_DATABASE_URL": db_url, "LEARNING_SERVICE_TOKEN": LEARNING_CREDENTIAL,
-                "LEARNING_DIAGNOSIS_PRESENTER": "synthetic", "LEARNING_INTERNAL_V1": "1",
+                "LEARNING_DIAGNOSIS_PRESENTER": "synthetic",
                 "MODEL_FAKE_A_URL": f"{provider_url}/fake-a", "MODEL_FAKE_B_URL": f"{provider_url}/fake-b",
                 "MODEL_FAKE_X_URL": f"{provider_url}/fake-x",
             }
@@ -283,10 +281,6 @@ async def local_stack(*, seed_value: int, students: int, provider_median_ms: flo
                 await bff_pool.close()
                 await scheduler.close()
     finally:
-        if previous is None:
-            os.environ.pop("LEARNING_INTERNAL_V1", None)
-        else:
-            os.environ["LEARNING_INTERNAL_V1"] = previous
         pg.stop()
         shutil.rmtree(work, ignore_errors=True)
 

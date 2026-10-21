@@ -22,6 +22,8 @@ info:
     鉴权：Bearer 服务间令牌，只认 BFF 的令牌（编排层、洞察服务、路由客户端令牌一律 401）。请求体上限 64 KB，拒绝未知键、NaN、重复键。
     没配再练（LEARNING_PRACTICE_CONFIG）时一律 501 PRACTICE_UNAVAILABLE；没配题面提供者（合成题面只允许 LEARNING_ENV=test）、
     知识服务或该科适配器时 next、answer 回 501 PRACTICE_UNAVAILABLE。计量在 BFF（PR 3）：queue、next 不计量，answer 带 usage_id。
+    写入前核对计量（LT-04，迁移 0058）：answer 的 usage_id + idempotency_key + 学生须对上 BFF 的题库自练计次（meter_practice），
+    否则 409 IDEMPOTENCY_KEY_SEALED（该幂等键无有效计量，不可写入）；同键已成功的重放不受影响。
 servers:
   - url: http://127.0.0.1:8788
 security:

@@ -1,9 +1,12 @@
 """FastAPI 应用：内部接口，只供平台内部服务调用（spec 范围第 2 条；1.1.0 的掌握读取与验证任务见 mastery_routes.py）。
 
 接口定义：packages/contracts/openapi/learning-internal.v0.yaml（插件契约 0.9.0）与 learning-internal.v1.yaml
-（插件契约 1.0.0，2026-10-09 签字；另有只查询的重放接口；specs/plugin-api-v1.0-step2/spec.md）。迁移期两套路径并存。
-插件契约缺省版本随共享库切到 1.0.0（specs/contract-v1.0-signoff），不再需要候选版开关；但 learning-internal v1 本身仍待签字：
-/internal/v1 的 grade、diagnose 写入、plan 调适配器、诊断与再练模块启动另由 LEARNING_INTERNAL_V1=1 挡住（缺省关，只在测试里开）。
+（插件契约 1.0.0，2026-10-09 签字；另有只查询的重放接口；specs/plugin-api-v1.0-step2/spec.md）。
+v0 写入（/internal/v0/grade、/internal/v0/diagnose）已下线，一律 410（LT-04 决定记录（再续）第 1 条）；v0 写下的结果仍可经
+v1 重放接口与同键 v1 重试读回（只读保留）。
+learning-internal v1 于 2026-10-20 签字为 1.1.0（specs/launch-lt04-learning-internal-v1）：开关 LEARNING_INTERNAL_V1 已删除；
+/internal/v1 的 grade、diagnose 写入只认 BFF 服务令牌，写入前按计量账本核对 usage_id + 幂等键（迁移 0058，learning/meter.py），
+用途与证据等级由学习服务推导（直接写入只能 practice、键盘作答）。
 日志只记方法、状态码、错误码、request_id（必须是 UUID 形状）、耗时、是否重放；不记请求体与异常消息。
 """
 from __future__ import annotations
@@ -21,10 +24,10 @@ import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from . import mastery_routes
+from . import mastery_routes, store
 from .adapter_client import strict_json
 from .config import Settings
-from .contract import UnsupportedContractVersion, internal_contract, internal_v1_enabled, plugin_contract
+from .contract import UnsupportedContractVersion, internal_contract, plugin_contract
 from .diagnosis import api as diagnosis_api
 from .diagnosis.engine import Params as DiagnosisParams
 from .errors import IngestError
@@ -49,6 +52,8 @@ UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 UUID4_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
 # 契约允许 diagnose 带 200 道作答、每道 20000 字（UTF-8 最多约 12 MB），再加 500 条既有证据
 MAX_BODY_BYTES = 16 * 1024 * 1024
+# v0 写入下线（LT-04 决定记录（再续）第 1 条）：410 的标题，不含任何请求内容
+V0_RETIRED = "v0 write endpoints are retired; use /internal/v1"
 
 
 async def _read_limited(request: Request) -> bytes:
@@ -119,12 +124,10 @@ SYNTHETIC_DB = re.compile(r"^starbuddy_(dev|test)(_[a-z0-9_]+)?$")  # 与合成�
 
 async def _check_diagnosis_env(pool) -> None:
     """合成题面除 LEARNING_ENV=test 外再核对库名（安全审查 S6）：只能连一次性开发 / 测试库；
-    诊断作答走 v1 写入路径：插件契约 1.0.0 已签字，但 learning-internal v1 未签字，只在测试里开（LEARNING_INTERNAL_V1=1）。"""
+    诊断作答走 v1 写入路径（插件契约 1.0.0 与 learning-internal v1 都已签字）。"""
     db = await pool.fetchval("SELECT current_database()")
     if not SYNTHETIC_DB.fullmatch(db or ""):
         raise RuntimeError("合成诊断题面只能连开发库或测试库（库名 starbuddy_dev* 或 starbuddy_test*）")
-    if not internal_v1_enabled():
-        raise RuntimeError("诊断作答走 v1 写入路径：learning-internal v1 未签字，需 LEARNING_INTERNAL_V1=1（只在测试里）")
     try:
         plugin_contract("1.0.0")
     except UnsupportedContractVersion:
@@ -132,15 +135,12 @@ async def _check_diagnosis_env(pool) -> None:
 
 
 async def _check_practice_env(pool, synthetic_presenter: bool) -> None:
-    """再练出题与作答走 generate_variation 与 v1 写入路径：插件契约 1.0.0 已签字，但 learning-internal v1 未签字，
-    只在测试里开（LEARNING_INTERNAL_V1=1）；复测模块依赖再练，同样受这一检查约束；
-    合成题面另核对库名（与诊断合成题面同一做法，安全审查 S6）。"""
+    """再练出题与作答走 generate_variation 与 v1 写入路径（插件契约 1.0.0 与 learning-internal v1 都已签字）；
+    复测模块依赖再练，同样受这一检查约束；合成题面另核对库名（与诊断合成题面同一做法，安全审查 S6）。"""
     if synthetic_presenter:
         db = await pool.fetchval("SELECT current_database()")
         if not SYNTHETIC_DB.fullmatch(db or ""):
             raise RuntimeError("再练合成题面只能连开发库或测试库（库名 starbuddy_dev* 或 starbuddy_test*）")
-    if not internal_v1_enabled():
-        raise RuntimeError("错题再练走 generate_variation 与 v1 写入路径：learning-internal v1 未签字，需 LEARNING_INTERNAL_V1=1（只在测试里）")
     try:
         plugin_contract("1.0.0")
     except UnsupportedContractVersion:
@@ -239,6 +239,16 @@ def create_app(
             if own_pool:
                 await p.close()
             raise RuntimeError("platform.replay_seal is missing: run migration 0016 before starting this version")
+        # 迁移 0058 必须先于本版本执行：/internal/v1 写入前要经它核对计量（LT-04）；缺了所有 v1 写入都会失败，启动即拒绝。
+        # 函数在但当前登录角色没有执行权（授权没跟上、连错角色）同样拒绝启动（决定记录（再续）第 4 条），不等到第一笔写入才 500
+        if not await p.fetchval("SELECT to_regprocedure($1) IS NOT NULL", store.METER_CHECK_FUNCTION):
+            if own_pool:
+                await p.close()
+            raise RuntimeError("platform.learning_meter_check is missing: run migration 0058 before starting this version")
+        if not await p.fetchval("SELECT has_function_privilege(current_user, $1, 'EXECUTE')", store.METER_CHECK_FUNCTION):
+            if own_pool:
+                await p.close()
+            raise RuntimeError("platform.learning_meter_check is not executable by this role: check the grants of migration 0058")
         # trust_env=False：不读 HTTP(S)_PROXY 等环境变量，含学生作答的请求体不会被悄悄送进代理（安全审查 S1）
         client = httpx.AsyncClient(transport=transport, trust_env=False, follow_redirects=False)
         engine = mastery
@@ -315,7 +325,7 @@ def create_app(
 
     app = FastAPI(title="StarBuddy learning service (internal)", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 
-    async def handle(method: str, request: Request, version: str = "0.9.0") -> JSONResponse:
+    async def handle(method: str, request: Request, version: str) -> JSONResponse:  # 只有 /internal/v1（1.0.0）调用
         started = time.monotonic()
         rid: str | None = None
         record: dict = {"method": method}
@@ -363,13 +373,19 @@ def create_app(
         insight_ok=lambda r: insight_token is not None and _bearer_ok(r.headers.get("authorization"), insight_token),
         bff_ok=lambda r: _bearer_ok(r.headers.get("authorization"), settings.service_credential), state=state)
 
+    def retired_v0(method: str) -> JSONResponse:
+        """v0 写入已下线（LT-04 决定记录（再续）第 1 条）：一律 410，不读请求体、不验令牌、不核对、不调适配器、不落库。
+        retryable = false：BFF 按“确定没有写入”释放预留；写入只经 /internal/v1（BFF 服务令牌 + 计量核对）。"""
+        log.info(json.dumps({"method": method, "path": "v0", "status": 410, "code": "INVALID_REQUEST"}, ensure_ascii=False))
+        return _problem(IngestError(410, "INVALID_REQUEST", V0_RETIRED), None)
+
     @app.post("/internal/v0/grade")
-    async def grade(request: Request) -> JSONResponse:
-        return await handle("grade", request)
+    async def grade(request: Request) -> JSONResponse:  # noqa: ARG001
+        return retired_v0("grade")
 
     @app.post("/internal/v0/diagnose")
-    async def diagnose(request: Request) -> JSONResponse:
-        return await handle("diagnose", request)
+    async def diagnose(request: Request) -> JSONResponse:  # noqa: ARG001
+        return retired_v0("diagnose")
 
     @app.post("/internal/v1/grade")
     async def grade_v1(request: Request) -> JSONResponse:

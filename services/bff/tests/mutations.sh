@@ -63,6 +63,17 @@ SM=(
   $'计量：重放没有结果当成功\tsrc/metering/meter.ts\tif (out.kind === \'found\') {\tif (out.kind !== \'busy\') {'
   $'计量：路由 404 当作已封存\tsrc/metering/learning-client.ts\tif (status === 404 && problem.code === \'REPLAY_NOT_FOUND\')\tif (status === 404)'
   $'计量：重放 BUSY 当作已封存\tsrc/metering/learning-client.ts\tif (status === 409 && problem.code === \'BUSY\') return { kind: \'busy\' };\tif (status === 409) return { kind: \'not_found\', problem };'
+  # LT-04：BFF 写入切到 learning-internal v1（信封 {request, ingest}、契约版本 1.0.0、只给键盘通道）
+  $'计量：写入仍发 v0\tsrc/metering/learning-client.ts\t/internal/v1/${method}\t/internal/v0/${method}'
+  $'计量：写入不包信封\tsrc/metering/learning-client.ts\tconst payload = JSON.stringify(ingestEnvelope(body));\tconst payload = JSON.stringify(body);'
+  $'计量：信封版本错误当成结果未知（在 try 里包信封）\tsrc/metering/learning-client.ts\tconst payload = JSON.stringify(ingestEnvelope(body));\tconst payload = (() => { try { return JSON.stringify(ingestEnvelope(body)); } catch { return \'\'; } })();'
+  $'计量：信封缺省时不补契约版本\tsrc/metering/learning-client.ts\tcontext: { ...context, contract_version: LEARNING_CONTRACT_VERSION }\tcontext: { ...context }'
+  # LT-04 审查建议：调用方给了 1.0.0 以外的契约版本抛 TypeError（预留之前），缺省时补 1.0.0
+  $'计量：信封不核对契约版本（改写成 1.0.0 放行）\tsrc/metering/learning-client.ts\t  assertLearningContractVersion(context);\t'
+  $'计量：预留前不核对契约版本\tsrc/metering/meter.ts\t  assertLearningContractVersion(given);\t'
+  $'计量：版本核对放过 0.9.0\tsrc/metering/learning-client.ts\tif (v !== undefined && v !== LEARNING_CONTRACT_VERSION) {\tif (v !== undefined && v !== LEARNING_CONTRACT_VERSION && v !== \'0.9.0\') {'
+  $'计量：信封自报用途\tsrc/metering/learning-client.ts\tingest: { channel: \'keypad\' } };\tingest: { channel: \'keypad\', purpose: \'practice\' } as { channel: \'keypad\' } };'
+  $'计量：信封改了调用方的请求体\tsrc/metering/learning-client.ts\tconst context = (body[\'context\'] ?? {}) as Record<string, unknown>;\tconst context = (body[\'context\'] ?? {}) as Record<string, unknown>; context[\'contract_version\'] = LEARNING_CONTRACT_VERSION;'
   # 数学自适应诊断（SIE-02a）：只认学生本人、计量（开始预留、结束结算、放弃与确定失败释放、结果未知不释放、续做不另占）、
   # 视图不带题号、日志只记哈希；这几条跑诊断集成测试（学习服务与阿鸦适配器进程）
   $'诊断：开始不核对学生本人\tsrc/diagnosis/service.ts\tif (!(await isSelf(deps.pool, account, student))) return FORBIDDEN;\t'

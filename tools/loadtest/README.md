@@ -216,8 +216,11 @@ PYTHONDONTWRITEBYTECODE=1 ../../services/learning/.venv/bin/python -m loadtest b
 - 批改没有 BFF HTTP 入口（壳里尚无批改路由）：经计量驱动桩 `node/meter-harness.mts` **直接运行 BFF 的 `meteredCall`**（import BFF 源码，不改它）：
   确定成功结算、确定失败（非 408 / 429 的 4xx 且不 retryable）释放、结果未知（5xx、408、429、retryable、超时）按 1/2/4/8 s 退避同键重试
   （预算为预留剩余时间的一半），仍未知则**不结算不释放**，留给过期任务；同键重试遇到已过期的预留只查不执行（replay）。
-  请求指纹与内容指纹用 BFF 的 `meteringFingerprint` / `itemFingerprint`。唯一差别在传输层：BFF 的 `httpLearningClient` 发 `/internal/v0/grade`，
-  本栈适配器按契约 1.0.0 启动，驱动桩把同一请求体包成 v1 信封发 `/internal/v1/grade`，响应仍由 BFF 的 `classifyResponse` 归类；
+  请求指纹与内容指纹用 BFF 的 `meteringFingerprint` / `itemFingerprint`；传输层也用 BFF 的 `httpLearningClient`（LT-04 起发 `/internal/v1/grade`，
+  信封 `{request, ingest}`，学习服务写入前按计量账本核对 usage_id + 幂等键），响应由其中的 `classifyResponse` 归类，与 BFF 没有差别；
+  写路径种子（`writepath.seed_students`）直接调 `/internal/v1/grade`（不经 BFF 的 HTTP 入口、不进压测指标），但每笔先经 `writepath.SeedMeter`
+  以学生本人账号、BFF 角色调同一组计量函数预留一笔 `mistake_analysis`（grade），确定成功即结算、确定失败释放（LT-04：学习服务写入前核对计量，
+  裸写 409）；种子因此每名学生多两笔已结算的批改预留，零泄漏核对照常成立；
   `--retry-scale` 可按比例缩短退避（口径不变）；
 - 负载生成器与被测服务同机，数字只作回归比较；学习服务与 BFF 的连接池上限各 10，计量驱动桩与计量旅程各另用一个 20 的 bff_app 池；
 - token 为假供应商按字符数估算（`CHARS_PER_TOKEN = 1.5`），不是供应商计数；T1 / T9 没有任何学科方法调用，全靠假设；

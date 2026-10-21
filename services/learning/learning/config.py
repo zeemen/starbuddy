@@ -153,9 +153,6 @@ class Settings:
                 raise RuntimeError("STARBUDDY_ALLOW_CANDIDATE_CONTRACT 是开发开关：staging 拒绝启动")
             if e.get("LEARNING_DIAGNOSIS_SOURCE") == "fixture":
                 raise RuntimeError("LEARNING_DIAGNOSIS_SOURCE=fixture 是合成夹具：staging 拒绝启动")
-            # learning-internal v1 未签字（LT-01 契约审查 A2）：开关只在测试与演练里开，staging 设了（任何取值）拒绝启动
-            if e.get("LEARNING_INTERNAL_V1") is not None:
-                raise RuntimeError("LEARNING_INTERNAL_V1 是开发开关（learning-internal v1 未签字，LT-04）：staging 拒绝启动")
         check_image_env(env, e)
         host = listen_host(e.get("LEARNING_HOST"), env, "LEARNING_HOST")
         credential = e.get("LEARNING_SERVICE_TOKEN", "")

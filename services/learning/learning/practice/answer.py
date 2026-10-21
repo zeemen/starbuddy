@@ -6,6 +6,7 @@
 - 组装 learning-internal v1 的 GradeIngest 信封，在进程内调 IngestService.ingest("grade", …, "1.0.0")：复用幂等、封存、核对、
   落库与同步重算（重算失败只记计数，不影响作答）。ingest.channel = keypad、ingest.purpose = practice 由服务端写入，
   请求里出现这两个键按 400 处理（未知键）；hint_level_used = 0（本任务不提供提示，如实上报）。
+  写入前核对计量（LT-04）：usage_id + 幂等键 + 学生须对上 BFF 的题库自练计次（counted），否则 409 IDEMPOTENCY_KEY_SEALED。
 - 判分请求的键就是 BFF 给的 idempotency_key（小写 UUIDv4），attempt_id 由它确定地派生；occurred_at 取票据签发时间（出题时间），
   同一请求重试时请求指纹不变。同一学生的键已经成功、或正在执行且租约未过期时，放过过期票据、不再看条目状态，直接交给 ingest 的
   幂等处理：同键同内容回原结果（响应头 idempotent-replayed: true），同键异内容 409；失败过或租约已过期的键照常验票、照常确认条目
@@ -25,6 +26,7 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
+from .. import meter as METER
 from ..errors import IngestError
 from ..present_item import present_view
 from . import queue as Q
@@ -165,7 +167,8 @@ async def answer(svc: PracticeService, *, student: str, subject: str, ticket: ob
         body = grade_envelope(student=student, subject=subject, item_id=t.item_id, answer=answer,
                               occurred_at=datetime.fromtimestamp(t.issued_at, tz=timezone.utc), key=key, usage_id=usage_id,
                               rubric_version=rubric, content_version=cv)
-        summary, replayed = await svc.ingest.ingest("grade", body, GRADE_VERSION)
+        # 计量核对（LT-04）：BFF 按题库自练计次（meter_practice），只认 counted
+        summary, replayed = await svc.ingest.ingest("grade", body, GRADE_VERSION, meter=METER.COUNTED)
     after = svc.clock()
     snap = await svc.snapshot(student, subject, after)
     cur = next((e for e in svc.entries(snap, after, capped=False) if e.unit == unit), None)

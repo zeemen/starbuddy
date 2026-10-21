@@ -40,7 +40,6 @@ services:
       - {name: LEARNING_PRACTICE_PRESENTER, purpose: 再练合成题面（只 test）, secret: false, default: null, envs: local}
       - {name: LEARNING_PRESENT_ITEM_SOURCE, purpose: 题面来源 synthetic / adapter（adapter 需候选契约开关）, secret: false, default: synthetic, envs: all}
       - {name: STARBUDDY_ALLOW_CANDIDATE_CONTRACT, purpose: 候选契约开关（开发开关）, secret: false, default: null, envs: local}
-      - {name: LEARNING_INTERNAL_V1, purpose: learning-internal v1 写入路径开关（未签字，LT-04；开发开关，staging 设了拒绝启动）, secret: false, default: null, envs: local}
       - {name: STARBUDDY_IMAGE_ENV, purpose: 镜像固化的环境标记（构建时写入；设了须与运行环境一致）, secret: false, default: null, envs: all}
   insight:
     sources: [services/insight/insight/service/config.py, services/insight/insight/service/contract.py, services/insight/insight/jobs_cli.py]

@@ -355,6 +355,27 @@ describe('Gate 0 计量场景', { skip: HAS_DB ? false : '没有 PGHOST（make b
     assert.equal((fake.lastBody?.['context'] as { student_ref: string }).student_ref, s.id, '没给 student_ref 时由 BFF 补上被扣费的学生');
   });
 
+  test('契约版本：调用方给了 1.0.0 以外的 contract_version，在预留之前 TypeError（不扣额度、不留预留、不调学习服务）', async () => {
+    const fam = await createFamily(h, { source: 'pilot_virtual' });
+    const s = fam.students[0]!;
+    const fake = new FakeLearning();
+    for (const v of ['0.9.0', '1.1.0']) {
+      await assert.rejects(meteredCall(deps(fake), {
+        accountId: s.account, studentId: s.id, resourceType: 'diagnosis_full', idempotencyKey: key(),
+        body: { context: { subject: 'aya', contract_version: v }, attempts: [] },
+      }), TypeError, v);
+    }
+    assert.equal(fake.calls.length, 0);
+    assert.equal((await reservationsByStudent(h, s.id)).length, 0, '没有留下任何预留');
+    for (const context of [{ subject: 'aya' }, { subject: 'aya', contract_version: '1.0.0' }]) {
+      const ok = await meteredCall(deps(fake), {
+        accountId: s.account, studentId: s.id, resourceType: 'diagnosis_full', idempotencyKey: key(), body: { context, attempts: [] },
+      });
+      assert.equal(ok.status, 'ok', '缺省或 1.0.0 照常预留与调用');
+    }
+    assert.ok(await ledgerConsistent(h));
+  });
+
   test('选科并发：基础会员同时选两科，只有一科成功', async () => {
     // 已上线学科在目录里是 beta，只对试点开放（0015）：用试点家庭，档位改成 basic（只能开 1 科）
     const fam = await createFamily(h, { source: 'pilot_virtual' });

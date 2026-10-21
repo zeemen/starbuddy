@@ -166,7 +166,7 @@
      "practice_log": 0,
      "skill_observation": 140,
      "usage_ledger": 0,
-     "usage_reservation": 0
+     "usage_reservation": 112
     },
     "delta": {},
     "every_request_has_usage_id_and_idempotency_key": true,

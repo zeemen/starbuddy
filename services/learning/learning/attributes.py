@@ -4,9 +4,12 @@
 - evidence_kind：用过提示（hint_level_used > 0，或适配器证据里有 hint_opened 信号）→ hinted（优先，最保守）；
   没报 hint_level_used → 空（不知道有没有用提示，交给 KGE-04 按保守口径，安全审查必须改 3）；
   否则用途 retest → delayed_retest，transfer_check → transfer，其余 independent；
-- evidence_level：grade 取请求的 evidence_level（ingest 里不许再给），diagnose 取 ingest.evidence_level；都没给时键盘记 A，其余通道必须显式给出；
-  拍照最高 B；画布、语音记 A 必须带作答证据引用 answer_evidence_ref（回显、复述确认记录在平台侧，安全审查必须改 1）；
-  申诉一律 C（ADR 15“申诉中”）；
+- evidence_level（LT-04 决定记录（续）第 3 条：由学习服务推导，不接受调用方自报）：键盘作答记 A；申诉一律 C（ADR 15“申诉中”）；
+  请求里自报等级（grade 的 request.evidence_level、diagnose 的 ingest.evidence_level）一律 400；
+  其他通道（画布、语音、拍照）须有平台侧确认记录才能定级——平台还没有作答证据对象与确认记录（ADR 15 输入通道服务未上线），
+  学习服务无从核实，所以一律 400（不再以调用方声明的等级或 answer_evidence_ref 放行，待人确认见 lessons）；
+- purpose（同一条）：直接经 HTTP 的写入只能是 practice（缺省），自报其他值 400；复测、迁移检验的用途只由进程内调用方
+  按票据写入（trusted_purpose）；
 - C 级：照常写证据、作答、判分结果（批改要展示），不写能力观察与错因（不进入学习者模型）。
 v0 路径（插件契约 0.9.0）没有 ingest：只按提示等级写 evidence_kind，等级与通道为空；申诉同样不写能力观察与错因（安全审查建议 4）。
 """
@@ -48,20 +51,17 @@ def v0_attributes(method: str, request: dict) -> Attributes:
     return Attributes(None, None, None, model_blocked=method == "grade" and request.get("appeal") is True)
 
 
-def derive(method: str, request: dict, ingest: dict) -> Attributes:
+def derive(method: str, request: dict, ingest: dict, *, trusted_purpose: bool = False) -> Attributes:
     channel = ingest["channel"]
     purpose = ingest.get("purpose", "practice")
-    given = {v for v in (request.get("evidence_level") if method == "grade" else None, ingest.get("evidence_level")) if v}
-    if len(given) > 1:
-        raise IngestError(400, "INVALID_REQUEST", "request.evidence_level and ingest.evidence_level disagree")
-    level = given.pop() if given else ("A" if channel == "keypad" else None)
+    if purpose != "practice" and not trusted_purpose:
+        raise IngestError(400, "INVALID_REQUEST", "ingest.purpose is derived by the learning service; direct writes are practice only")
+    if (method == "grade" and request.get("evidence_level") is not None) or ingest.get("evidence_level") is not None:
+        raise IngestError(400, "INVALID_REQUEST", "evidence_level is derived by the learning service and cannot be declared")
+    if channel != "keypad":
+        # 非键盘通道要平台侧确认记录才能定级；平台还没有这类记录（ADR 15 输入通道服务），学习服务无从核实
+        raise IngestError(400, "INVALID_REQUEST", "channels other than keypad need a platform confirmation record (not available)")
     if method == "grade" and request.get("appeal") is True:
-        # 申诉先于其他规则：结果一律 C，不要求补等级（契约审查建议 8）
+        # 申诉一律 C（ADR 15“申诉中”；契约审查建议 8）
         return Attributes(channel=channel, evidence_level="C", purpose=purpose)
-    if level is None:
-        raise IngestError(400, "INVALID_REQUEST", "evidence_level is required for channels other than keypad")
-    if channel == "photo" and level == "A":
-        raise IngestError(400, "INVALID_REQUEST", "photo evidence is at most level B")
-    if channel in ("canvas", "voice") and level == "A" and not (method == "grade" and request.get("answer_evidence_ref")):
-        raise IngestError(400, "INVALID_REQUEST", "level A on canvas or voice needs answer_evidence_ref (confirmation record)")
-    return Attributes(channel=channel, evidence_level=level, purpose=purpose)
+    return Attributes(channel=channel, evidence_level="A", purpose=purpose)

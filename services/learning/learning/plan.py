@@ -20,7 +20,7 @@ import httpx
 
 from .adapter_client import call_adapter
 from .config import Settings
-from .contract import UnsupportedContractVersion, internal_contract, internal_v1_enabled, plugin_contract
+from .contract import UnsupportedContractVersion, internal_contract, plugin_contract
 from .errors import IngestError
 from .mastery.store import skill_view
 
@@ -101,10 +101,8 @@ async def _one_subject(settings: Settings, pool: asyncpg.Pool, client: httpx.Asy
     target = settings.adapters.get(subject)
     if target is None:
         return unavailable
-    # 插件 plan 只按 v1.0 实现（specs/adapter-aya-methods-sprint4；v1.0 已签字）；但 /internal/v1/plan 属于未签字的
-    # learning-internal v1：没开 LEARNING_INTERNAL_V1=1 时与签字前一样各科 unavailable、不调适配器
-    if not internal_v1_enabled():
-        return unavailable
+    # 插件 plan 只按 v1.0 实现（specs/adapter-aya-methods-sprint4；v1.0 已签字）；/internal/v1/plan 属于 learning-internal v1
+    #（2026-10-20 签字，LT-04），不再另设开关
     try:
         contract = plugin_contract(PLAN_CONTRACT)
     except UnsupportedContractVersion:

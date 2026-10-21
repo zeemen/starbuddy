@@ -15,7 +15,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from conftest import CREDENTIAL
+from conftest import CREDENTIAL, meter_row
 from conftest import settings as make_settings
 from learning.app import create_app
 from learning.config import AdapterTarget, Settings
@@ -42,10 +42,9 @@ def synthetic_answer(item_id: str, correct: bool) -> dict:
 
 @pytest.fixture(scope="module")
 def aya_v1(request):
-    """诊断作答走 learning-internal v1 写入路径（内部 v1 未签字）：本模块内开 LEARNING_INTERNAL_V1=1（只在测试里）。
-    插件契约 1.0.0 已签字，不需候选版开关；仍开候选版开关只为 PLT-12 题面开关用例（present_item，候选版 1.1.0）。"""
+    """诊断作答走 learning-internal v1 写入路径（插件契约 1.0.0 与 learning-internal v1 都已签字，不需任何开关；
+    计量记录由 conftest 代建）。仍开候选版开关只为 PLT-12 题面开关用例（present_item，候选版 1.1.0）。"""
     mp = pytest.MonkeyPatch()
-    mp.setenv("LEARNING_INTERNAL_V1", "1")
     mp.setenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", "1")
     try:
         yield request.getfixturevalue("aya_adapter")
@@ -528,9 +527,9 @@ async def test_student_ref_not_in_url_and_abandon_reports_answers(dapi, pools, s
     assert v["status"] == "abandoned" and v["process_tasks"] is False
 
 
-async def test_synthetic_presenter_needs_test_database_and_internal_v1(monkeypatch):
-    """合成题面除 LEARNING_ENV=test 外还要求库名 starbuddy_(dev|test)*（S6），并要求开 LEARNING_INTERNAL_V1=1
-    （作答走 learning-internal v1 写入路径，内部 v1 未签字）。插件契约 1.0.0 已签字：候选版开关关着也不影响。"""
+async def test_synthetic_presenter_needs_test_database(monkeypatch):
+    """合成题面除 LEARNING_ENV=test 外还要求库名 starbuddy_(dev|test)*（S6）。插件契约 1.0.0 与 learning-internal v1 都已签字：
+    不设任何开关（含旧的 LEARNING_INTERNAL_V1，LT-04 已删除）、候选版开关关着也照常启动。"""
     from learning.app import _check_diagnosis_env
 
     class FakePool:
@@ -539,18 +538,114 @@ async def test_synthetic_presenter_needs_test_database_and_internal_v1(monkeypat
 
         async def fetchval(self, _sql):
             return self.name
-    monkeypatch.setenv("LEARNING_INTERNAL_V1", "1")
+    monkeypatch.delenv("LEARNING_INTERNAL_V1", raising=False)
     monkeypatch.delenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", raising=False)
     for ok in ("starbuddy_test", "starbuddy_dev", "starbuddy_test_ci"):
         await _check_diagnosis_env(FakePool(ok))
     for bad in ("learning_test", "starbuddy", "starbuddy_pilot", "prod_starbuddy_test", "starbuddy_testx"):
         with pytest.raises(RuntimeError):
             await _check_diagnosis_env(FakePool(bad))
-    # 内部 v1 没开：拒绝启动（即使开着候选版开关）
-    monkeypatch.delenv("LEARNING_INTERNAL_V1")
-    monkeypatch.setenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", "1")
-    with pytest.raises(RuntimeError, match="LEARNING_INTERNAL_V1"):
-        await _check_diagnosis_env(FakePool("starbuddy_test"))
+
+
+# ---------- 计量核对（LT-04 决定记录（续）第 2 条：按会话自己的 usage_id 与预留键、方法 diagnose，放行 reserved 与 settled） ----------
+@pytest.mark.real_meter
+@pytest.mark.parametrize("state,ok", [("reserved", True), ("settled", True), ("lapsed", False), ("released", False), ("expired", False),
+                                      ("counted", False), (None, False), ("grade", False)])
+async def test_answer_meter_check_uses_session_reservation(dapi, pools, student, state, ok):
+    """诊断步骤作答核对的是会话开始时那一笔 diagnosis_full 预留（会话的 usage_id 与开始用的幂等键、方法 diagnose）：
+    预留中或已结算（BFF 在第一道题判分后即结算）放行；已释放、只有自练计次、没有记录、方法是 grade 的预留，以及会话创建于预留过期
+    之后的过期未处理 / 已过期预留（meter_row 的过期预留有效期在过去，会话现在才开始）都 409 IDEMPOTENCY_KEY_SEALED，
+    这一步不判分、不落库，仍是当前步。在有效期内开始的会话见下一个用例。"""
+    _, admin = pools
+    key, usage = str(uuid.uuid4()), str(uuid.uuid4())
+    if state == "grade":
+        await meter_row(admin, usage_id=usage, key=key, student=student, method="grade")
+    elif state is not None:
+        await meter_row(admin, usage_id=usage, key=key, student=student, method="diagnose", state=state)
+    r = await start(dapi, student, key=key, usage=usage)
+    assert r.status_code == 201, r.text
+    sid = r.json()["session_id"]
+    step = (await cur_view(dapi, sid, student)).json()["step"]
+    before = await counts(admin, student)
+    a = await dapi.post(f"/internal/v1/diagnosis/sessions/{sid}/answer", json=_answer_body(student, step))
+    if ok:
+        assert a.status_code == 200, a.text
+        assert (await counts(admin, student))["attempts"] == before["attempts"] + 1
+    else:
+        assert a.status_code == 409 and a.json()["code"] == "IDEMPOTENCY_KEY_SEALED", a.text
+        assert await counts(admin, student) == before
+        assert (await cur_view(dapi, sid, student)).json()["step"]["seq"] == step["seq"], "这一步没有作答记录，仍是当前步"
+
+
+async def _session_started_minutes_ago(admin, sid: str, minutes: int) -> None:
+    """把会话的创建时间挪到 minutes 分钟前（模拟“会话早已开始，学生过了预留有效期才作答”）。只在测试库：
+    绕过 0027 的会话守卫（会话创建时间本不可改）；续做时间一起挪，墙钟用时封顶不受影响。"""
+    async with admin.acquire() as c, c.transaction():
+        await c.execute("SET LOCAL session_replication_role = replica")
+        await c.execute("""UPDATE platform.diagnosis_session SET created_at = now() - make_interval(mins => $2),
+                                  resumed_at = least(resumed_at, now() - make_interval(mins => $2)) WHERE id = $1::uuid""", sid, minutes)
+
+
+@pytest.mark.real_meter
+@pytest.mark.parametrize("state", ["lapsed", "expired"])
+@pytest.mark.parametrize("started_minutes_ago,ok", [(5, True), (0, False)])
+async def test_session_started_in_time_answers_after_reservation_expiry(dapi, pools, student, state, started_minutes_ago, ok):
+    """决定记录（再续）第 2 条：预留有效期是 9 分钟前到 1 分钟前（已过期未处理 / 已过期）。
+    会话 5 分钟前开始（在有效期内）、学生现在（超过有效期之后）才作答：放行，连续两步都能推进；
+    会话现在才开始（创建于预留过期之后）：409 IDEMPOTENCY_KEY_SEALED，不判分、不落库。"""
+    _, admin = pools
+    key, usage = str(uuid.uuid4()), str(uuid.uuid4())
+    await meter_row(admin, usage_id=usage, key=key, student=student, method="diagnose", state=state)
+    r = await start(dapi, student, key=key, usage=usage)
+    assert r.status_code == 201, r.text
+    sid = r.json()["session_id"]
+    if started_minutes_ago:
+        await _session_started_minutes_ago(admin, sid, started_minutes_ago)
+    before = await counts(admin, student)
+    step = (await cur_view(dapi, sid, student)).json()["step"]
+    a = await dapi.post(f"/internal/v1/diagnosis/sessions/{sid}/answer", json=_answer_body(student, step))
+    if not ok:
+        assert a.status_code == 409 and a.json()["code"] == "IDEMPOTENCY_KEY_SEALED", a.text
+        assert await counts(admin, student) == before
+        return
+    assert a.status_code == 200, a.text
+    assert (await counts(admin, student))["attempts"] == before["attempts"] + 1
+    nxt = (await cur_view(dapi, sid, student)).json()["step"]
+    assert nxt is not None and nxt["seq"] > step["seq"]
+    b = await dapi.post(f"/internal/v1/diagnosis/sessions/{sid}/answer", json=_answer_body(student, nxt))
+    assert b.status_code == 200, b.text
+    assert (await counts(admin, student))["attempts"] == before["attempts"] + 2
+
+
+@pytest.mark.real_meter
+async def test_answer_meter_check_other_students_reservation_is_409(dapi, pools, student):
+    """会话的预留键与 usage_id 对上的是另一名学生的预留：409。"""
+    _, admin = pools
+    other = await _another_student(admin)
+    key, usage = str(uuid.uuid4()), str(uuid.uuid4())
+    await meter_row(admin, usage_id=usage, key=key, student=other, method="diagnose")
+    sid = (await start(dapi, student, key=key, usage=usage)).json()["session_id"]
+    step = (await cur_view(dapi, sid, student)).json()["step"]
+    a = await dapi.post(f"/internal/v1/diagnosis/sessions/{sid}/answer", json=_answer_body(student, step))
+    assert a.status_code == 409 and a.json()["code"] == "IDEMPOTENCY_KEY_SEALED"
+
+
+def _answer_body(student: str, step: dict) -> dict:
+    body = {"student_ref": student, "seq": step["seq"], "answer": synthetic_answer(step["item_id"], True), "elapsed_sec": 5,
+            "idempotency_key": str(uuid.uuid4())}
+    if step["kind"] != "adaptive":
+        body["work"] = f"合成过程第 {step['seq']} 步：先写已知，再列式，最后求解。"
+    return body
+
+
+async def _another_student(admin) -> str:
+    acct, guardian, household, sid = (str(uuid.uuid4()) for _ in range(4))
+    async with admin.acquire() as c:
+        await c.execute("INSERT INTO platform.account (id, kind) VALUES ($1::uuid, 'guardian'), ($2::uuid, 'student')", guardian, acct)
+        await c.execute("INSERT INTO platform.household (id, created_by_account) VALUES ($1::uuid, $2::uuid)", household, guardian)
+        await c.execute("""INSERT INTO platform.student_profile (id, account_id, household_id, grade, region, textbook_version, birth_year_month)
+                           VALUES ($1::uuid, $2::uuid, $3::uuid, 9, 'nanjing', 'suke-2024', '2012-03-01')""", sid, acct, household)
+    return sid
 
 
 def test_internal_openapi_matches_api_keys():

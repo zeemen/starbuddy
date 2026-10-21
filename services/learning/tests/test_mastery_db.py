@@ -19,7 +19,7 @@ import asyncpg
 import httpx
 import pytest
 
-from conftest import CREDENTIAL, FIXTURE_SQL, FakeAdapter, env, grade_body, settings, to_v1_body
+from conftest import CREDENTIAL, FIXTURE_SQL, FakeAdapter, env, grade_body, register_admin, settings, to_v1_body, unregister_admin
 from learning import jobs as jobs_cli
 from learning.app import create_app
 from learning.mastery import explain_gates, parse_config, replay, star_lit
@@ -126,7 +126,9 @@ def mpg():
 async def mpools(mpg):
     app_pool = await asyncpg.create_pool(**mpg.dsn(LOGIN_ROLE), min_size=1, max_size=20)
     admin = await asyncpg.create_pool(**mpg.dsn("postgres"), min_size=1, max_size=4)
+    register_admin(app_pool, admin)  # 计量代建经超级用户池（conftest.MeterProvision）
     yield app_pool, admin
+    unregister_admin(app_pool)
     await app_pool.close()
     await admin.close()
 
@@ -781,8 +783,7 @@ async def test_subject_without_config_writes_nothing(mpools, student):
 # ---------- 接入 grade：同步重算、重放不触发、重算失败不影响落库 ----------
 @pytest.fixture
 def internal_v1(monkeypatch):
-    # learning-internal v1 未签字：只在测试里开 LEARNING_INTERNAL_V1=1；插件契约 1.0.0 已签字，候选版开关关着
-    monkeypatch.setenv("LEARNING_INTERNAL_V1", "1")
+    # 插件契约 1.0.0、learning-internal v1 都已签字（LT-04 删除了 LEARNING_INTERNAL_V1）：候选版开关关着
     monkeypatch.delenv("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", raising=False)
 
 

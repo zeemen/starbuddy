@@ -30,6 +30,7 @@ from learning.app import create_app
 from learning.config import AdapterTarget, Settings
 from learning.mastery.recompute import MasteryEngine
 from learning.model_router import DEFAULT_PATH, FakeProvider, MemorySink, ModelRouter, ProviderReply, Usage, load
+from learning.service import IngestService
 from pgharness import LOGIN_ROLE
 
 from . import mastery as mastery_setup
@@ -37,6 +38,7 @@ from .scripted import ScriptedModel
 
 ROOT = Path(__file__).resolve().parents[3]
 ADAPTERS = ROOT / "adapters"
+METER_PROVISION_SQL = ROOT / "services/learning/tests/fixtures/meter_provision.sql"
 SUBJECTS = ("aya", "wenli", "zhixing")
 LEARNING_CREDENTIAL = "synthetic-bff-to-learning-cohort-credential-01"
 ADAPTER_TOKENS = {s: f"synthetic-learning-to-{s}-cohort-credential-0001" for s in SUBJECTS}
@@ -227,16 +229,17 @@ class Stack:
     model: ScriptedModel
     connlog: ConnectionLog
     mastery: MasteryEngine
+    # 进程内的写入服务（与学习服务里复测模块用的是同一个 IngestService 类）：复测作答的用途只由可信调用方按票据写入，
+    # 直接经 HTTP 只能是 practice（LT-04 决定记录（续）第 3 条），所以联调的复测作答经它写（计量按题库自练计次核对）
+    ingest: IngestService
 
 
 @asynccontextmanager
 async def running_stack(pg, model: ScriptedModel, *, register: bool = True):
     """pg：pgharness.EphemeralPG（已执行角色与全部迁移）。"""
-    # learning-internal v1 未签字：与现有 e2e 一样只在联调期间开 LEARNING_INTERNAL_V1=1。
-    # 插件契约 1.0.0 已于 2026-10-09 签字（specs/contract-v1.0-signoff）：联调期间显式关掉候选版开关，证明插件侧缺省不靠它。
-    # 结束后两者都恢复（不影响同一 pytest 会话里的其他测试）
-    previous = {k: os.environ.get(k) for k in ("LEARNING_INTERNAL_V1", "STARBUDDY_ALLOW_CANDIDATE_CONTRACT")}
-    os.environ["LEARNING_INTERNAL_V1"] = "1"
+    # 插件契约 1.0.0（2026-10-09）与 learning-internal v1（2026-10-20，LT-04 删除了 LEARNING_INTERNAL_V1）都已签字：
+    # 联调期间显式关掉候选版开关，证明插件侧缺省不靠它；结束后恢复（不影响同一 pytest 会话里的其他测试）
+    previous = {k: os.environ.get(k) for k in ("STARBUDDY_ALLOW_CANDIDATE_CONTRACT",)}
     os.environ.pop("STARBUDDY_ALLOW_CANDIDATE_CONTRACT", None)
     try:
         async with _stack(pg, model, register=register) as st:
@@ -256,6 +259,8 @@ async def _stack(pg, model: ScriptedModel, *, register: bool):
         register_content(pg)
     # 合成掌握配置（KGE-04 第二步 PR 3）：合成数学地图、打标与内容版本绑定；复测由 platform.retest_task 驱动（mastery.py）
     pg.psql(mastery_setup.seed_sql())
+    # 计量夹具（LT-04）：学习服务写入前核对计量；联调不经 BFF，由测试库里的 learningtest.provision_meter 代建预留与自练计次（replay.py）
+    pg.psql(METER_PROVISION_SQL.read_text(encoding="utf-8"))
     if register:
         publish_content(pg)
     app_pool = await asyncpg.create_pool(**pg.dsn(LOGIN_ROLE), min_size=1, max_size=20)
@@ -269,9 +274,11 @@ async def _stack(pg, model: ScriptedModel, *, register: bool):
             app = create_app(settings, pool=app_pool, transport=transport, mastery=engine)
             async with app.router.lifespan_context(app):
                 async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://learning.test",
-                                             timeout=60) as client:
+                                             timeout=60) as client, \
+                        httpx.AsyncClient(transport=transport, trust_env=False, follow_redirects=False) as adapter_client:
                     client.headers["authorization"] = f"Bearer {LEARNING_CREDENTIAL}"
-                    yield Stack(client, admin, app_pool, transport, procs, model, connlog, engine)
+                    ingest = IngestService(settings, app_pool, adapter_client, mastery=engine)
+                    yield Stack(client, admin, app_pool, transport, procs, model, connlog, engine, ingest)
     finally:
         await app_pool.close()
         await admin.close()

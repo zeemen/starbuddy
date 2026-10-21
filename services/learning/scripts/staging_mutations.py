@@ -32,7 +32,6 @@ MUTATIONS: dict[str, list[tuple[str, str, str]]] = {
     "命令行 staging 连接串不分环境": [(RM, "    if env == STAGING and private_ipv4(host):\n        return True", "    if private_ipv4(host):\n        return True")],
     "服务端核对 staging 放过公网": [(RM, "(env == STAGING and private_ipv4(addr))", "(env == STAGING)")],
     # 审查后补（契约 A2、安全 S10）
-    "staging 收 LEARNING_INTERNAL_V1": [(CF, '            if e.get("LEARNING_INTERNAL_V1") is not None:', "            if False:")],
     "镜像环境标记不查": [(NP, "    if marked is not None and marked != env:", "    if False:")],
     "staging 诊断来源缺省用合成夹具": [(CF, '("knowledge" if env == STAGING else "fixture")', '"fixture"')],
     "对账命令 staging 不核对库主机": [("learning/jobs.py", '    if mode == "staging" and pool is None:\n        check_staging_db_url', '    if False:\n        check_staging_db_url')],

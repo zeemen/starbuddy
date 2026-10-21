@@ -63,8 +63,8 @@ DB: dict[str, list[tuple[str, str, str]]] = {
                                'body["ingest"] = {"channel": INGEST_CHANNEL, "purpose": "practice"}')],
     "作答 ID 不按锚点派生": [(SV, 'body["request"]["attempt"]["attempt_id"] = K.attempt_id_for(key, t.anchor)', "pass")],
     # 审查意见 3：本模块只经 grade 写；作答之后直接改任务必须被对拍发现
-    "作答后直接 UPDATE retest_task": [(SV, 'summary, replayed = await svc.ingest.ingest("grade", body, PA.GRADE_VERSION)',
-                                     'summary, replayed = await svc.ingest.ingest("grade", body, PA.GRADE_VERSION)\n'
+    "作答后直接 UPDATE retest_task": [(SV, 'summary, replayed = await svc.ingest.ingest("grade", body, PA.GRADE_VERSION, meter=METER.COUNTED)',
+                                     'summary, replayed = await svc.ingest.ingest("grade", body, PA.GRADE_VERSION, meter=METER.COUNTED)\n'
                                      '            async with P.tx(svc.pool) as _c:\n'
                                      '                await _c.execute("UPDATE platform.retest_task SET status = \'cancelled\' '
                                      'WHERE id = $1::uuid AND status = \'open\'", t.anchor.split(":", 1)[1])')],
@@ -84,6 +84,10 @@ DB: dict[str, list[tuple[str, str, str]]] = {
     "请求可以给 purpose、channel": [(API, '_keys(b, {"student_ref", "subject", "ticket", "answer", "idempotency_key", "usage_id"})',
                                   '_keys(b, {"student_ref", "subject", "ticket", "answer", "idempotency_key", "usage_id"}, '
                                   '{"purpose", "channel", "hint_level_used", "evidence_level"})')],
+    # LT-04 计量核对：复测作答只认题库自练计次（counted）
+    "复测作答按预留核对（不认自练计次）": [(SV, 'PA.GRADE_VERSION, meter=METER.COUNTED)', 'PA.GRADE_VERSION, meter=METER.DIRECT)')],
+    "复测作答不核对计量": [(SV, 'PA.GRADE_VERSION, meter=METER.COUNTED)',
+                     'PA.GRADE_VERSION, meter=METER.MeterBasis(frozenset(METER.STATES), trusted_purpose=True))')],
     "不核对票据的学生": [(SV, "if t.student != student or t.subject != subject:", "if t.subject != subject:")],
     "不核对票据的学科": [(SV, "if t.student != student or t.subject != subject:", "if t.student != student:")],
     "复测票据与再练票据同前缀": [(SV, 'PREFIX = "rt1"', 'PREFIX = "pt1"')],

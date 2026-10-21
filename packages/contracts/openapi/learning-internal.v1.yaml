@@ -3,14 +3,23 @@ info:
   title: StarBuddy 学习服务内部 API（BFF → 学习服务）
   version: 1.1.0
   summary: 冲刺 1-C 写入接口；1.1.0 加掌握读取与验证任务（KGE-04 第二步）。只供平台内部服务调用，学生与家长不能直接访问。
+  x-signoff:
+    signed_by: 用户（代表技术负责人）
+    date: '2026-10-20'
+    status: signed
+    version: 1.1.0
+    record: specs/launch-lt04-learning-internal-v1/spec.md（签字与决定记录）
   description: |
-    状态：**v1 候选版，待评审签字**（`specs/plugin-api-v1.0/spec.md`；评审清单 N17、N18）。v0 保留到迁移期结束。
+    状态：**已签字，1.1.0 正式版**（2026-10-20，用户代表技术负责人；`specs/launch-lt04-learning-internal-v1/spec.md`，见 `info.x-signoff`）。
+    之后任何改动走契约变更（必停）。起草依据 `specs/plugin-api-v1.0/spec.md`、评审清单 N17、N18。
+    v0（`learning-internal.v0.yaml`）的写入已于签字后下线（`/internal/v0/grade`、`/internal/v0/diagnose` 一律 410；
+    specs/launch-lt04-learning-internal-v1 决定记录（再续）第 1 条），写入只经本契约。
 
     相对 v0：请求体改为信封（插件 API v1.0 的 `GradeRequest` / `DiagnoseRequest` 加平台侧的 `IngestContext`）；
     新增只查询、不执行的重放接口（N17）；写明 5xx 一律是结果未知（N18）；摘要带证据等级与是否写入学习者模型。
-    冲刺 4-H 另加非消耗类的今日计划 `POST /internal/v1/plan`（specs/unified-shell-sprint4/spec.md 第 6 节；契约变更，待签字）。
+    冲刺 4-H 另加非消耗类的今日计划 `POST /internal/v1/plan`（specs/unified-shell-sprint4/spec.md 第 6 节），随 1.1.0 一并签字。
 
-    ## 1.1.0（KGE-04 第二步 PR 3，specs/kge-04-mastery-step2/spec.md 第 3 节；契约变更，待签字）
+    ## 1.1.0（KGE-04 第二步 PR 3，specs/kge-04-mastery-step2/spec.md 第 3 节；2026-10-20 随本契约签字）
     非破坏性：只新增四个接口、两个令牌方案与 Problem 的三个错误码，已有接口与 schema 不变。
     - `POST /internal/v1/mastery/get`、`POST /internal/v1/mastery/explain`：请求与响应**直接引用** `knowledge-service.v0.9.yaml` 的
       `MasteryGetRequest / MasteryGetResponse`、`MasteryExplainRequest / MasteryExplainResponse`（形状逐字照搬，信封五字段齐全，
@@ -23,20 +32,22 @@ info:
       返回任务 ID 与 `item.similar` 选题入口所需的节点与层次，**不返回题目内容**（第二步待人确认 #3）。
     - `POST /internal/v1/verification/cancel`：洞察服务写异议的事务在建任务之后回滚时的补偿，按任务 ID + 学生撤销 open 的自述验证任务；
       幂等、不改掌握；只接受洞察服务令牌。
-    - （KGE-04 第二步 PR 4，仍在未发布的 1.1.0 草稿内追加，非破坏性）`POST /internal/v1/profile-page/ensure` 与
+    - （KGE-04 第二步 PR 4，在 1.1.0 签字前追加，非破坏性）`POST /internal/v1/profile-page/ensure` 与
       `POST /internal/v1/profile-page/read`：学情档案页的惰性编译与 Agent 版读取（第一步 spec 第 14 节）。ensure 接受编排层令牌
       （`trigger = session_start`）或洞察服务令牌（`trigger = weekly`，周报生成前），令牌与触发点不符 403 `CALLER_MISMATCH`；
       read 只接受编排层令牌。新增 Problem 码 `PROFILE_UNAVAILABLE`。不调模型；BFF 令牌一律 401。
-    - （冲刺 4-H H5 星图 v1 PR 1，specs/star-map-v1-h5/spec.md 第 2 节；仍在未发布的 1.1.0 草稿内追加，非破坏性）
+    - （冲刺 4-H H5 星图 v1 PR 1，specs/star-map-v1-h5/spec.md 第 2 节；在 1.1.0 签字前追加，非破坏性）
       `POST /internal/v1/star-map/nodes`：当前已发布地图里每颗星（知识节点）的星态，只认 BFF 服务令牌（`bffServiceToken`；
       编排层、洞察服务令牌一律 401）。只有 `node_id`、`state`、`star_lit`、`basis_id`，**不含** `p_mastery`、`confidence`、证据 ID
       与各层次明细（schema 用 `additionalProperties: false` 保证）。地图未发布为 200 `status = no_map`；`MASTERY_UNAVAILABLE` 的用途扩大到本接口。
 
     请求体是信封 `{ request, ingest }`：`request` 是学科插件 API v1.0 的 `GradeRequest` / `DiagnoseRequest`
-    （`plugin-api.v1.0.yaml`），原样转发给适配器；`ingest` 是平台侧的作答上下文（输入通道、用途），只由学习服务使用，
-    不转发给适配器（ADR 15；specs/evidence-attributes-sprint1）。
+    （`plugin-api.v1.0.yaml`），原样转发给适配器；`ingest` 是平台侧的作答上下文（输入通道），只由学习服务使用，
+    不转发给适配器（ADR 15；specs/evidence-attributes-sprint1）。证据等级与用途（purpose）由学习服务推导，不接受调用方自报：
+    直接经本接口写入的用途只能是 practice；非键盘通道在平台确认记录上线前一律 400 `INVALID_REQUEST`（见 `IngestContext`）。
     BFF 在调用前已完成鉴权、家长授权、选科（subject_enrollment）与同意（consent）检查，以及计量预留
-    （ADR 01 第 4 条、ADR 06）。学习服务不重复检查这些。学习服务调用对应学科的适配器，
+    （ADR 01 第 4 条、ADR 06）。学习服务不重复做鉴权、授权、选科与同意检查；计量方面，学习服务不预留、不结算，
+    但签字后（LT-04）写入前按计量账本只读核对 BFF 的预留（见“计量”最后一条），对不上即拒绝。学习服务调用对应学科的适配器，
     按平台规则核对结果，在一个事务里幂等地写入学习者模型，然后返回**平台摘要**，不原样转发适配器响应。
 
     ## 幂等
@@ -56,6 +67,9 @@ info:
       已写入就拿回摘要且不扣费；没有记录或失败过，重放接口**同时封存这个 key**，之后以它到达的原请求一律返回
       409 `IDEMPOTENCY_KEY_SEALED`、不执行，BFF 再换新 key 重新预留。这样晚到的原请求不会在没有预留的情况下执行，
       同一次作答也不会写两遍（评审 N17；安全审查、契约审查必须改）。
+    - 签字后的写入防护（LT-04）：grade、diagnose 只接受 BFF 服务令牌；学习服务写入前按计量账本核对 `request.context.usage_id`、
+      `idempotency_key`、学生与方法（只读核对，不预留、不结算），对不上（含没带 `usage_id`）时返回 409 `IDEMPOTENCY_KEY_SEALED`：
+      **该幂等键无有效计量，不可写入**（`retryable: false`，不调适配器、不落库，BFF 按确定失败释放）；同一个 key 已成功写入的重放不受影响。
   license:
     name: 内部，未授权对外
     identifier: LicenseRef-StarBuddy-Internal
@@ -145,7 +159,7 @@ paths:
       operationId: planToday
       summary: 今日计划（按科并列；冲刺 4-H 统一壳，specs/unified-shell-sprint4/spec.md 第 6 节）
       description: |
-        **契约变更，待评审签字（必停项）。** 非消耗类：不计量、不写任何表、计划不落库，每次现算。
+        非消耗类：不计量、不写任何表、计划不落库，每次现算。
 
         BFF 已按会话与档案授权确定学生，并从已选科目里给出要排的学科（`subjects`）。学习服务对每一科：
         读该生当前的掌握快照（平台掌握状态，规则 2；`next_retest_at` 按 KGE-04 的复测调度），组装插件 API v1.0 的
@@ -158,8 +172,8 @@ paths:
 
         某一科没有配置适配器、适配器 501、超时、结果不合契约（含 `estimated_minutes` 超过 600，不截断）时，这一科
         `status = unavailable` 且 `tasks` 为空，不影响其他科；整个请求仍是 200。
-        `plan` 只按插件 API v1.0 候选版实现：候选版开关关闭（签字前，学习服务进程没有 `STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1`）时，
-        不调任何适配器，返回 200 且每一科都是 `unavailable`（不是 4xx / 5xx）。
+        `plan` 按插件 API v1.0（2026-10-09 签字）实现。learning-internal v1 签字（1.1.0，2026-10-20）之后不再有任何开关挡住 `plan`
+        （签字前的候选版开关与 `LEARNING_INTERNAL_V1` 都已不用）：配置了适配器的学科照常调用，其余按上一段返回 `unavailable`。
       requestBody:
         required: true
         content:
@@ -209,7 +223,7 @@ paths:
       operationId: masteryGet
       summary: 节点 × 层次的掌握状态（形状照搬 knowledge-service v0.9 的 mastery.get；1.1.0）
       description: |
-        **契约变更，待签字（必停项）。** 只读，不计量、不写任何表。只接受编排层令牌（`orchestratorServiceToken`），`context.caller`
+        只读，不计量、不写任何表。只接受编排层令牌（`orchestratorServiceToken`），`context.caller`
         必须是 `orchestrator`。读 `platform.mastery_estimate` 的节点键当前记录，
         只认当前已发布地图里有效的节点与层次（改名、合并、拆分、撤下的旧单元不出现）。每个请求节点按其在当前地图里的
         全部认知层次各回一行：没有记录的层次 `gate = unseen`、不带 `p_mastery` 与 `next_review_at`；不在任何当前地图里的节点不回。
@@ -241,7 +255,7 @@ paths:
       operationId: masteryExplain
       summary: 某节点掌握状态的证据链（形状照搬 knowledge-service v0.9 的 mastery.explain；1.1.0）
       description: |
-        **契约变更，待签字（必停项）。** 只读。证据链 = 该节点各层次当前记录引用的证据（按服务器记录时间排序，去重），每条带
+        只读。证据链 = 该节点各层次当前记录引用的证据（按服务器记录时间排序，去重），每条带
         `evidence_kind`（作答情境）、`evidence_level`（生效等级：旧证据与未准入内容上的证据按 B）、`weight`（这条证据对掌握的更新强度，
         ∈ [0, 1]；按读取时的配置与证据重放得出，当前已不计入的记 0）、`hint_level`（提示等级，契约上限 5，平台阶梯 6 级记 5）。
         门槛条件的编码与数值只在服务内（第一步 #17），不经本接口外露。
@@ -269,7 +283,7 @@ paths:
       operationId: scheduleVerification
       summary: “我其实会”的平台内验证任务（SIE-03 → KGE-04；1.1.0）
       description: |
-        **契约变更，待签字（必停项）。** 建一条 `platform.retest_task`（`reason = verify_self_report`），不改掌握记录
+        建一条 `platform.retest_task`（`reason = verify_self_report`），不改掌握记录
         （只有之后做题产生的证据会改）。幂等：同一 `dispute_ref` 与单元重复调用返回同一条任务；该单元已有开着的自述验证任务时返回那一条
         （每单元每种原因最多一条 open）。
         **学生由谁定**：学习服务没有读 `insight.dispute` 的权限（迁移 0032 未授），不能由异议记录反查学生；
@@ -301,7 +315,7 @@ paths:
       operationId: cancelVerification
       summary: 撤销一条自述验证任务（洞察服务事务回滚时的补偿；1.1.0）
       description: |
-        **契约变更，待签字（必停项）。** 洞察服务在写异议的事务里调 `/internal/v1/verification` 建任务；该事务随后回滚时，任务会留在
+        洞察服务在写异议的事务里调 `/internal/v1/verification` 建任务；该事务随后回滚时，任务会留在
         open、没有异议引用。洞察服务回滚后尽力调本接口撤销（失败只记计数，不影响异议的返回）。
         按 `task_id` + `student_ref` 撤销 `status = open` 且 `reason = verify_self_report` 的任务（置 cancelled），不改掌握记录。
         幂等：已撤销或已关闭的任务返回现状、`cancelled = false`。任务不存在、不属于该学生或不是自述验证任务：同一个 404 `TASK_NOT_FOUND`。
@@ -328,9 +342,9 @@ paths:
   /internal/v1/profile-page/ensure:
     post:
       operationId: ensureProfilePage
-      summary: 学情档案页的惰性编译（会话开始、周报；1.1.0 草稿内追加，KGE-04 第二步 PR 4）
+      summary: 学情档案页的惰性编译（会话开始、周报；1.1.0，KGE-04 第二步 PR 4）
       description: |
-        **契约变更，待签字（必停项）。** 判断没变（`claims_digest` 与该生该科的全部候选判断一致）就不重编（`unchanged`）；变了就按判断模板渲染、
+        判断没变（`claims_digest` 与该生该科的全部候选判断一致）就不重编（`unchanged`）；变了就按判断模板渲染、
         加固定衔接短语、跑陈述—判断一致性检查，通过为 `compiled`，不通过降级为纯模板版本并记一条阻断记录（`blocked_fallback`）；
         没有候选判断也没有页时不写（`empty`）；超出时间预算或编译失败不写库、不报错（`template_only`：read 此时返回纯模板版本），不阻塞会话与周报。
         作答与掌握重算不触发编译。不调任何模型。
@@ -360,9 +374,9 @@ paths:
   /internal/v1/profile-page/read:
     post:
       operationId: readProfilePage
-      summary: 学情档案页 Agent 完整版（读取时按判断现状重核后渲染；1.1.0 草稿内追加，KGE-04 第二步 PR 4）
+      summary: 学情档案页 Agent 完整版（读取时按判断现状重核后渲染；1.1.0，KGE-04 第二步 PR 4）
       description: |
-        **契约变更，待签字（必停项）。** 只读，不编译、不写库。每次读取都按判断现状重核（Agent 可见、状态、模板键与版本、模板仍已审核）后
+        只读，不编译、不写库。每次读取都按判断现状重核（Agent 可见、状态、模板键与版本、模板仍已审核）后
         按判断模板渲染：被推翻、撤回、过期、转待验证的陈述消失，消失了陈述的那一节不显示衔接语。页的摘要与现状不一致（判断变了还没重编）或没有页时，
         由现有判断直接渲染纯模板版本（`variant = template_only`，没有衔接语）。
         陈述只来自成立或假设的判断（规则 11），每条带 `claim_id`；待验证判断只作为待办引用（`todo`，没有文字）。
@@ -389,9 +403,9 @@ paths:
   /internal/v1/star-map/nodes:
     post:
       operationId: starMapNodes
-      summary: 星图 v1 的节点星态（BFF 读；1.1.0 草稿内追加，冲刺 4-H H5 PR 1）
+      summary: 星图 v1 的节点星态（BFF 读；1.1.0，冲刺 4-H H5 PR 1）
       description: |
-        **契约变更，待签字（必停项）。** 只读，不计量、不写任何表。只接受 BFF 服务令牌（`bffServiceToken`），编排层与洞察服务令牌一律 401；
+        只读，不计量、不写任何表。只接受 BFF 服务令牌（`bffServiceToken`），编排层与洞察服务令牌一律 401；
         请求体 `caller` 必须是 `bff`（与令牌身份一致），否则 403 `CALLER_MISMATCH`。BFF 已按会话与档案授权确定学生（规则 5）。
         **星** = 该科当前已发布地图版本中**全部** `status = active`、`level = node` 的知识节点（统一壳 spec 待人确认 #9 默认；
         领域、主题、细目不成星，撤下的节点与旧版本节点不出现）。按 `node_id` 排序。
@@ -717,7 +731,7 @@ components:
         verdict: incorrect
 
     DiagnoseIngestCanvasC:
-      summary: 画布作答未经回显确认：记 C 级，诊断照常返回，不写入学习者模型
+      summary: 键盘作答的诊断（示例名沿用旧名）：证据等级由学习服务推导为 A；非键盘通道在平台确认记录上线前一律 400
       value:
         request:
           context:
@@ -735,9 +749,9 @@ components:
               occurred_at: '2026-10-08T19:30:00+08:00'
               response: { text: '2(x-1)' }
               hint_level_used: 0
-        ingest: { channel: canvas, evidence_level: C }
+        ingest: { channel: keypad }
     DiagnoseSummaryLevelC:
-      summary: C 级诊断：观察数为 0
+      summary: 键盘作答的诊断结果（示例名沿用旧名）：记 A 级，写入学习者模型
       value:
         method: diagnose
         subject: aya
@@ -746,35 +760,39 @@ components:
         semantics: practice
         human_review_required: true
         error_categories: []
-        evidence_level: C
-        learner_model_updated: false
-        observation_count: 0
+        evidence_level: A
+        learner_model_updated: true
+        observation_count: 1
 
   schemas:
     Uuid: { type: string, format: uuid }
     IngestContext:
       type: object
       description: |
-        平台侧的作答上下文（specs/evidence-attributes-sprint1），学习服务据此补齐证据的作答情境、证据等级、输入通道：
+        平台侧的作答上下文（specs/evidence-attributes-sprint1；签字后口径见 specs/launch-lt04-learning-internal-v1 决定记录（续）第 3 条）。
+        **证据等级与用途（purpose）由学习服务推导，不接受调用方自报**；学习服务据此补齐证据的作答情境、证据等级、输入通道：
+        - `purpose`：直接经本接口写入的用途只能是 `practice`（缺省；给出其他值 400 `INVALID_REQUEST`）；复测、迁移检验的用途
+          只由学习服务内部按票据（复测锚点）写入，不经本接口；
         - `evidence_kind`：用过提示（`hint_level_used > 0`，或适配器证据里有 `hint_opened` 信号）→ `hinted`；
           作答没报 `hint_level_used` → 空（交给掌握计算按保守口径）；否则 `purpose = retest` → `delayed_retest`，
           `transfer_check` → `transfer`，其余 `independent`；
-        - `evidence_level`：grade 取 `request.evidence_level`，diagnose 取本对象的 `evidence_level`（插件诊断请求没有这个字段）；都没给时
-          `channel = keypad` 记 A，其余通道必须给出（否则 400）；拍照最高 B；画布、语音记 A 必须带
-          `request.answer_evidence_ref`（确认记录在平台侧，否则 400）；`request.appeal = true` 一律记 C（ADR 15“申诉中”）；
+        - `evidence_level`：由学习服务推导——`channel = keypad` 记 A，`request.appeal = true` 一律记 C（ADR 15“申诉中”）；
+          调用方自报等级（grade 的 `request.evidence_level`、diagnose 的本对象 `evidence_level`）一律 400；
+        - **非键盘通道（canvas、voice、photo）在平台确认记录上线前一律 400 `INVALID_REQUEST`**（定级须有平台侧的回显 / 复述确认记录，
+          学习服务目前无从核实；`request.answer_evidence_ref` 不再作为放行依据）；
         - C 级证据照常写入证据、作答与判分结果（批改要展示），但不写能力观察与错因（不进入学习者模型），
           摘要里 `error_categories` 为空、`observation_count` 为 0（没有落库的结论不出现在摘要里，规则 11），
           也不能作为之后请求的 `prior_evidence`（422）；键盘通道的结果里出现识别转写证据 → 502。
       required: [channel]
       additionalProperties: false
       properties:
-        channel: { type: string, enum: [keypad, canvas, voice, photo], description: 输入通道（ADR 15）。 }
+        channel: { type: string, enum: [keypad, canvas, voice, photo], description: 输入通道（ADR 15）。平台确认记录上线前只接受 keypad，其余 400。 }
         purpose:
           type: string
           enum: [practice, retest, transfer_check]
           default: practice
-          description: 这次作答的用途，由编排层（复测调度、迁移检验）给出；客户端不能直接指定。
-        evidence_level: { type: string, enum: [A, B, C] }
+          description: 这次作答的用途，由学习服务推导；直接经本接口写入只能是 practice（缺省），给出其他值 400。
+        evidence_level: { type: string, enum: [A, B, C], description: 由学习服务推导，调用方不得给出（给出即 400）。 }
     GradeIngest:
       type: object
       required: [request, ingest]
@@ -782,7 +800,7 @@ components:
       properties:
         request: { $ref: './plugin-api.v1.0.yaml#/components/schemas/GradeRequest' }
         ingest:
-          description: grade 的证据等级只写在 `request.evidence_level`，不能在 ingest 里再给一次（同一事实只有一处，契约审查建议 7）。
+          description: 证据等级由学习服务推导：ingest 里不能给（同一事实只有一处，契约审查建议 7），`request.evidence_level` 给出也 400。
           allOf:
             - $ref: '#/components/schemas/IngestContext'
             - not: { required: [evidence_level] }
@@ -1209,7 +1227,7 @@ components:
             - ASYNC_NOT_SUPPORTED
             - ADAPTER_RESULT_REJECTED
             - REPLAY_NOT_FOUND  # 重放接口：没有记录或之前确定失败，同时封存该 key（评审 N17）
-            - IDEMPOTENCY_KEY_SEALED  # 该 key 已被重放接口封存，原请求不再执行
+            - IDEMPOTENCY_KEY_SEALED  # 该 key 已被重放接口封存，原请求不再执行；或该幂等键无有效计量，不可写入（LT-04 计量核对，见“计量”）
             - SUBJECT_MISMATCH  # 模型路由接口：请求的学科与路由客户端令牌绑定的学科不一致
             - ROUTE_REJECTED  # 模型路由接口：任务、数据级别或计量字段不合要求（不重试）
             - ROUTE_UNAVAILABLE  # 模型路由接口：没有数据级别允许的可用供应商（可稍后重试）
