@@ -141,7 +141,7 @@ DB: dict[str, list[tuple[str, str, str]]] = {
     "启动不查迁移 0055": [(APP, "            if settings.today_snapshot and not await p.fetchval(", "            if False and await p.fetchval(")],
     "开关取值放宽": [(CF, '        if snapshot_raw not in ("", "0", "1"):', "        if False:")],
     "开关不要求今日编排配置": [(CF, '        if snapshot_raw == "1" and not today_cfg:', "        if False:")],
-    "开关当成缺省开": [(CF, 'today_snapshot=snapshot_raw == "1", host=host)', 'today_snapshot=snapshot_raw != "0", host=host)')],
+    "开关当成缺省开": [(CF, 'today_snapshot=snapshot_raw == "1", host=host,', 'today_snapshot=snapshot_raw != "0", host=host,')],
 }
 
 

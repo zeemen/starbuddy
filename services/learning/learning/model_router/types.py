@@ -73,6 +73,18 @@ class RouteUnavailable(RouterError):
         self.attempts = attempts
 
 
+class BudgetExceeded(RouteUnavailable):
+    """成本护栏（LT-02 范围第 5 条）：该任务当日（UTC+8 自然日）的供应商调用次数或 token 已到上限，不再调任何供应商
+    （本次请求在到上限之前已经发生的尝试在 attempts 里）。是 RouteUnavailable 的子类，按 RouteUnavailable 处理的调用方行为不变；
+    内部模型路由接口另在 Problem.detail 写明原因"""
+
+    code = "ROUTE_BUDGET_EXCEEDED"
+
+    def __init__(self, message: str, retry_after_seconds: int, attempts: tuple["Attempt", ...] = ()) -> None:
+        super().__init__(message, attempts)
+        self.retry_after_seconds = retry_after_seconds
+
+
 @dataclass(frozen=True)
 class RouteRequest:
     task: Task

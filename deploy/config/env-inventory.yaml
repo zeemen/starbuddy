@@ -11,16 +11,23 @@ schema: starbuddy-env-inventory/1
 services:
   learning:
     sources: [services/learning/learning/config.py, services/learning/learning/__main__.py, services/learning/learning/mastery/config.py,
-              services/learning/learning/netpolicy.py]
+              services/learning/learning/netpolicy.py, services/learning/config/model_routes.yaml]
     vars:
       - {name: LEARNING_ENV, purpose: 运行环境 dev/test/staging, secret: false, default: null, envs: all, required_in_staging: true}
       - {name: LEARNING_HOST, purpose: 监听地址（staging 可设内网 IPv4）, secret: false, default: 127.0.0.1, envs: staging}
       - {name: PORT, purpose: 监听端口, secret: false, default: "8788", envs: all}
+      - {name: LEARNING_ROUTE_PORT, purpose: staging 回环路由监听端口（127.0.0.1 上只服务 /internal/v1/model/route，其他路径 404；两科适配器的 *_ROUTE_URL = http://127.0.0.1:8785，改端口时一起改；不能与 PORT 相同；dev / test 设了拒绝启动）, secret: false, default: "8785", envs: staging}
       - {name: LEARNING_DATABASE_URL, purpose: 连接串（登录角色只继承 starbuddy_learning；口令走 PGPASSFILE 或密钥注入）, secret: true, default: null, envs: all, required_in_staging: true}
       - {name: LEARNING_SERVICE_TOKEN, purpose: BFF → 学习服务令牌（≥ 32 字符）, secret: true, default: null, envs: all, required_in_staging: true}
       - {name: LEARNING_ADAPTER_<SUBJECT>_URL, purpose: 适配器地址（同网络命名空间回环）, secret: false, default: null, envs: all}
       - {name: LEARNING_ADAPTER_<SUBJECT>_TOKEN, purpose: 学习服务 → 适配器令牌, secret: true, default: null, envs: all}
-      - {name: LEARNING_ROUTE_CLIENT_<SUBJECT>_TOKEN, purpose: 适配器 → 模型路由接口令牌（LT-02 前不设）, secret: true, default: null, envs: all}
+      - {name: LEARNING_ROUTE_CLIENT_<SUBJECT>_TOKEN, purpose: 适配器 → 模型路由接口令牌（知行、文砺两科；设了即按 LEARNING_ENV 加载路由表，staging 占位未填时拒绝启动，所以人填好快照名与主机名、批准之前不设）, secret: true, default: null, envs: all}
+      # LT-02 模型供应商（变量名由路由表 services/learning/config/model_routes.yaml 的 staging 节登记，路由按名读取；值由人开通后经密钥管理注入）。
+      # 地址也按密钥处理：仓库与编排文件里不出现真实地址（只经 secretKeyRef 注入）
+      - {name: MODEL_BAILIAN_URL, purpose: 阿里云百炼 OpenAI 兼容接入地址（https，主机名须在路由表 allowed_hosts 与 vendors.md 登记）, secret: true, default: null, envs: staging}
+      - {name: MODEL_BAILIAN_API_KEY, purpose: 阿里云百炼 API Key, secret: true, default: null, envs: staging}
+      - {name: MODEL_ARK_URL, purpose: 火山方舟 OpenAI 兼容接入地址（同上）, secret: true, default: null, envs: staging}
+      - {name: MODEL_ARK_API_KEY, purpose: 火山方舟 API Key, secret: true, default: null, envs: staging}
       - {name: LEARNING_KNOWLEDGE_URL, purpose: 知识服务地址, secret: false, default: null, envs: all}
       - {name: LEARNING_KNOWLEDGE_TOKEN, purpose: caller=learning 的知识服务令牌, secret: true, default: null, envs: all}
       - {name: LEARNING_INSIGHT_CLIENT_TOKEN, purpose: 洞察服务 → 验证任务接口令牌, secret: true, default: null, envs: all}
@@ -174,8 +181,8 @@ services:
     vars:
       - {name: ZHIXING_ADAPTER_SERVICE_TOKEN, purpose: 平台 → 适配器令牌, secret: true, default: null, envs: all, required_in_staging: true}
       - {name: PORT, purpose: 监听端口（只监听 127.0.0.1）, secret: false, default: "8788", envs: all}
-      - {name: ZHIXING_ROUTE_URL, purpose: 模型路由接口地址（https 或回环；LT-02 前不设）, secret: false, default: null, envs: all}
-      - {name: ZHIXING_ROUTE_TOKEN, purpose: 适配器 → 模型路由令牌, secret: true, default: null, envs: all}
+      - {name: ZHIXING_ROUTE_URL, purpose: 模型路由接口地址（https 或回环；staging 为学习服务的回环路由监听 http://127.0.0.1:<LEARNING_ROUTE_PORT>，缺省 8785；模型供应商开通、路由表填好之前不设）, secret: false, default: null, envs: all}
+      - {name: ZHIXING_ROUTE_TOKEN, purpose: 适配器 → 模型路由令牌（与学习服务的 LEARNING_ROUTE_CLIENT_ZHIXING_TOKEN 同值）, secret: true, default: null, envs: all}
       - {name: ZHIXING_CONTRACT_VERSION, purpose: 默认契约版本, secret: false, default: "1.0.0", envs: all}
       - {name: STARBUDDY_ALLOW_CANDIDATE_CONTRACT, purpose: 候选契约开关（开发开关；适配器自身不区分环境，staging 编排一律不设）, secret: false, default: null, envs: local}
   adapter-wenli:
@@ -183,8 +190,8 @@ services:
     vars:
       - {name: WENLI_ADAPTER_SERVICE_TOKEN, purpose: 平台 → 适配器令牌, secret: true, default: null, envs: all, required_in_staging: true}
       - {name: PORT, purpose: 监听端口（只监听 127.0.0.1）, secret: false, default: "8789", envs: all}
-      - {name: WENLI_ROUTE_URL, purpose: 模型路由接口地址（LT-02 前不设）, secret: false, default: null, envs: all}
-      - {name: WENLI_ROUTE_TOKEN, purpose: 适配器 → 模型路由令牌, secret: true, default: null, envs: all}
+      - {name: WENLI_ROUTE_URL, purpose: 模型路由接口地址（同上：staging 为 http://127.0.0.1:<LEARNING_ROUTE_PORT>；模型供应商开通、路由表填好之前不设）, secret: false, default: null, envs: all}
+      - {name: WENLI_ROUTE_TOKEN, purpose: 适配器 → 模型路由令牌（与学习服务的 LEARNING_ROUTE_CLIENT_WENLI_TOKEN 同值）, secret: true, default: null, envs: all}
       - {name: WENLI_CONTRACT_VERSION, purpose: 默认契约版本, secret: false, default: "1.0.0", envs: all}
       - {name: STARBUDDY_ALLOW_CANDIDATE_CONTRACT, purpose: 候选契约开关（开发开关；适配器自身不区分环境，staging 编排一律不设）, secret: false, default: null, envs: local}
   migrate:

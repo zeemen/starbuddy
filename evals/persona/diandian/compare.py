@@ -363,6 +363,10 @@ def load_candidates(path: Path, env: str, categories: set[str]) -> list[Candidat
         doc_one = {"version": 1, "defaults": copy.deepcopy(raw_routes.get("defaults") or {}),
                    "environments": {env: {"vendors": {vendor: copy.deepcopy(raw_vendors[vendor])},
                                           "routes": {CANDIDATE_TASK.value: {"data_classes": ["L0"], "primary": target}}}}}
+        # LT-02：staging 及以上要求每个路由都有成本护栏；带上该环境 T1 的护栏（只在本进程计数，与学习服务各算各的）
+        t1_budget = (section.get("budgets") or {}).get(CANDIDATE_TASK.value)
+        if t1_budget is not None:
+            doc_one["environments"][env]["budgets"] = {CANDIDATE_TASK.value: copy.deepcopy(t1_budget)}
         try:
             cfg = parse(doc_one, env)
         except ConfigError as e:

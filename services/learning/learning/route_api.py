@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from .model_router import (DataClass, ModelRouter, RouteRejected, RouteRequest, RouteResult, RouteUnavailable, Task)
+from .model_router import (BudgetExceeded, DataClass, ModelRouter, RouteRejected, RouteRequest, RouteResult, RouteUnavailable, Task)
 
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 UUID4_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
@@ -20,14 +20,26 @@ MAX_ROUTE_BODY = 1024 * 1024
 FIELDS = {"task", "data_class", "subject", "prompt_template", "prompt_version", "messages", "usage_id", "idempotency_key", "deadline_ms"}
 
 
+# 成本护栏到上限（LT-02）：契约 Problem.code 的枚举里没有专门的码（新增属契约变更、必停项），沿用 503 ROUTE_UNAVAILABLE，
+# 用 Problem.detail（契约：面向开发者的编码化说明）写明原因，另带 retry-after（距北京时间 0 点重置的秒数）。
+# 适配器按 503 处理为 unavailable（与没有可用供应商时一致）；retryable 为 false：当日内用同一个键重试也不会成功
+BUDGET_EXCEEDED_DETAIL = "ROUTE_BUDGET_EXCEEDED"
+
+
 class RouteApiError(Exception):
-    def __init__(self, status: int, code: str, title: str, retryable: bool = False) -> None:
+    def __init__(self, status: int, code: str, title: str, retryable: bool = False, *, detail: str | None = None,
+                 headers: dict[str, str] | None = None) -> None:
         super().__init__(code)
         self.status, self.code, self.title, self.retryable = status, code, title, retryable
+        self.detail = detail
+        self.headers = headers or {}
 
     def problem(self) -> dict[str, Any]:
-        return {"type": f"/problems/{self.code.lower()}", "title": self.title, "status": self.status, "code": self.code,
-                "retryable": self.retryable}
+        out = {"type": f"/problems/{self.code.lower()}", "title": self.title, "status": self.status, "code": self.code,
+               "retryable": self.retryable}
+        if self.detail is not None:
+            out["detail"] = self.detail
+        return out
 
 
 def parse_request(body: Any, client_subject: str) -> RouteRequest:
@@ -73,5 +85,8 @@ async def route(router: ModelRouter, req: RouteRequest) -> dict[str, Any]:
         return to_response(await router.route(req))
     except RouteRejected:
         raise RouteApiError(400, "ROUTE_REJECTED", "route request rejected") from None
+    except BudgetExceeded as e:
+        raise RouteApiError(503, "ROUTE_UNAVAILABLE", "daily model call budget exhausted", retryable=False,
+                            detail=BUDGET_EXCEEDED_DETAIL, headers={"retry-after": str(e.retry_after_seconds)}) from None
     except RouteUnavailable:
         raise RouteApiError(503, "ROUTE_UNAVAILABLE", "no allowed model provider available", retryable=True) from None

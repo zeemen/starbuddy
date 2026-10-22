@@ -12,10 +12,12 @@ from collections.abc import Awaitable, Callable, Mapping
 
 from ..config import SUBJECTS
 from .breaker import CircuitBreaker
+from .budget import DailyBudget
 from .config import SYNTHETIC_ENVS, RouterConfig, Target, Vendor, check_invariants
-from .ledger import CallRecord, LedgerSink, LogSink, digest
+from .ledger import CallRecord, LedgerSink, LogSink, digest, estimate_cost
 from .providers import BREAKER_FAILURES, Provider, ProviderError, build_provider
-from .types import (CHAT_TASKS, Attempt, DataClass, Residency, RouteRejected, RouteRequest, RouteResult, RouteUnavailable, Usage)
+from .types import (CHAT_TASKS, Attempt, BudgetExceeded, DataClass, Residency, RouteRejected, RouteRequest, RouteResult,
+                    RouteUnavailable, Usage)
 
 _KEY = re.compile(r"^[A-Za-z0-9._:-]{8,128}$")
 # 与插件 API 契约 SourceVersion 一致：prompt:<名称 [a-z0-9][a-z0-9-]{0,47}>@<版本 [A-Za-z0-9][A-Za-z0-9._-]{0,31}>（契约审查应改 1）
@@ -40,7 +42,8 @@ def egress_allowed(vendor: Vendor, data_class: DataClass, env: str) -> bool:
 
 class ModelRouter:
     def __init__(self, config: RouterConfig, providers: Mapping[str, Provider], *, sink: LedgerSink | None = None,
-                 clock: Callable[[], float] = time.monotonic, sleep: Callable[[float], Awaitable[None]] | None = None) -> None:
+                 clock: Callable[[], float] = time.monotonic, sleep: Callable[[float], Awaitable[None]] | None = None,
+                 wall_clock: Callable[[], float] = time.time) -> None:
         check_invariants(config)
         self._cfg = config
         self._providers = dict(providers)
@@ -48,6 +51,8 @@ class ModelRouter:
         self._clock = clock
         self._sleep = sleep or _default_sleep
         self.breaker = CircuitBreaker(config.failure_threshold, config.cooldown_seconds, clock)
+        # 成本护栏（LT-02）：按 UTC+8 自然日计数，用墙上时钟（单调时钟没有日期）
+        self.budget = DailyBudget(config.budgets, wall_clock)
 
     @classmethod
     def from_config(cls, config: RouterConfig, environ: Mapping[str, str] | None = None, **kw) -> "ModelRouter":
@@ -87,9 +92,11 @@ class ModelRouter:
         attempts: list[Attempt] = []
         written = False
 
-        def finish(outcome: str, model_version: str | None, usage: Usage, mismatch: bool = False, reported: str | None = None) -> None:
+        def finish(outcome: str, model_version: str | None, usage: Usage, mismatch: bool = False, reported: str | None = None,
+                   target: Target | None = None) -> None:
             nonlocal written
             written = True
+            price = self._cfg.pricing.get(f"{target.vendor}/{target.model}") if target is not None else None
             self._sink.write(CallRecord(
                 env=self._cfg.env, task=req.task.value, data_class=req.data_class.value,
                 subject=req.subject if req.subject in SUBJECTS else None,
@@ -97,7 +104,8 @@ class ModelRouter:
                 source_version=source_version if SOURCE_VERSION.match(source_version) else "invalid",
                 outcome=outcome, model_version=model_version, attempts=tuple(attempts),
                 input_tokens=usage.input_tokens, output_tokens=usage.output_tokens,
-                elapsed_ms=int((self._clock() - started) * 1000), model_mismatch=mismatch, reported_model=reported))
+                elapsed_ms=int((self._clock() - started) * 1000), model_mismatch=mismatch, reported_model=reported,
+                estimated_cost_cny=estimate_cost(price, usage.input_tokens, usage.output_tokens)))
 
         try:
             return await self._route(req, started, source_version, attempts, finish)
@@ -132,6 +140,14 @@ class ModelRouter:
                 if remaining <= 0:
                     self.breaker.release(ticket)
                     break
+                # 成本护栏（安全审查建议 1）：每次真实的供应商调用（含重试与切备）都先预留一次；没有候选、熔断跳过、
+                # 超过总时限的都不预留。到上限就不再调任何供应商（已经发生的尝试照常记在 attempts 里）
+                reservation = self.budget.reserve(req.task)
+                if reservation is None:
+                    self.breaker.release(ticket)
+                    finish("budget_exceeded", None, Usage())
+                    raise BudgetExceeded(f"任务 {req.task.value} 当日供应商调用次数或 token 已到上限（成本护栏）",
+                                         self.budget.retry_after(), tuple(attempts))
                 timeout = min(route.timeout_seconds, remaining)
                 t0 = self._clock()
                 kind: str | None = None
@@ -144,6 +160,8 @@ class ModelRouter:
                     raise
                 except ProviderError as e:
                     kind, retry_after = e.kind, e.retry_after
+                    if e.usage is not None:  # 失败但供应商报了用量（例如 200 但内容不合格式）：token 照样累加
+                        self.budget.settle(reservation, e.usage.input_tokens + e.usage.output_tokens)
                 except asyncio.TimeoutError:
                     kind = "timeout"
                 except Exception:  # noqa: BLE001 适配器的任何意外都算供应商返回异常，保证释放试探名额（安全审查应改 3）
@@ -153,7 +171,8 @@ class ModelRouter:
                     self.breaker.success(ticket)
                     reported = _SAFE_MODEL.sub("", reply.reported_model)[:128] if reply.reported_model else None
                     mismatch = reported is not None and reported != target.api_name
-                    finish("ok", target.model_version, reply.usage, mismatch, reported)
+                    self.budget.settle(reservation, reply.usage.input_tokens + reply.usage.output_tokens)
+                    finish("ok", target.model_version, reply.usage, mismatch, reported, target)
                     return RouteResult(output=reply.output, model_version=target.model_version, source_version=source_version,
                                        attempts=tuple(attempts), usage=reply.usage, model_mismatch=mismatch, reported_model=reported)
                 attempts.append(Attempt(target.vendor, target.model_version, kind, int((self._clock() - t0) * 1000)))

@@ -25,7 +25,12 @@ spec:
   replicas: 1
   selector: {matchLabels: {app: learning}}
   template:
-    metadata: {labels: {app: learning}}
+    metadata:
+      labels: {app: learning}
+      # 出网白名单占位（LT-02）：只有本 Pod（学习服务的模型路由）可以出网到模型供应商；主机名由人在开通后填写，
+      # 须与路由表 allowed_hosts、docs/compliance/vendors.md 一致，并据此在集群出网网关 / FQDN 策略里放行 443（见下方 NetworkPolicy 注释）
+      annotations:
+        starbuddy/model-egress-hosts: "<由人填写：MODEL_BAILIAN_URL、MODEL_ARK_URL 的主机名，见 deploy/config/README.md 第 7 节>"
     spec:
       automountServiceAccountToken: false
       securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
@@ -57,6 +62,18 @@ spec:
             - {name: LEARNING_RETEST_CONFIG, value: /run/config/retest.signed.json}
             - {name: LEARNING_TODAY_CONFIG, value: /run/config/today.signed.json}
             - {name: LEARNING_TODAY_SNAPSHOT, value: "0"}
+            # 回环路由监听（LT-02 决定记录（续）第 5 条）：staging 下学习服务另在 127.0.0.1:8785 只服务 /internal/v1/model/route，
+            # 其他路径 404；同 Pod 的适配器经它调模型（适配器只认 https 或回环）。端口须与下面适配器注释里的 *_ROUTE_URL 一致（部署测试核对）
+            - {name: LEARNING_ROUTE_PORT, value: "8785"}
+            # 模型供应商（LT-02，开关矩阵 model_provider 仍 pending）：人开通、填好路由表 staging 节的快照名与主机名、
+            # 两处登记改为已批准之后，才解开下面几行（路由客户端令牌一旦设置，学习服务就加载路由表，占位未填会拒绝启动）。
+            # 两科适配器另加的几行见各自容器里的注释（ZHIXING_ROUTE_URL / WENLI_ROUTE_URL = http://127.0.0.1:8785）。
+            # - {name: MODEL_BAILIAN_URL, valueFrom: {secretKeyRef: {name: starbuddy-model-vendors, key: bailian-url}}}
+            # - {name: MODEL_BAILIAN_API_KEY, valueFrom: {secretKeyRef: {name: starbuddy-model-vendors, key: bailian-api-key}}}
+            # - {name: MODEL_ARK_URL, valueFrom: {secretKeyRef: {name: starbuddy-model-vendors, key: ark-url}}}
+            # - {name: MODEL_ARK_API_KEY, valueFrom: {secretKeyRef: {name: starbuddy-model-vendors, key: ark-api-key}}}
+            # - {name: LEARNING_ROUTE_CLIENT_ZHIXING_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-learning, key: route-client-zhixing}}}
+            # - {name: LEARNING_ROUTE_CLIENT_WENLI_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-learning, key: route-client-wenli}}}
           volumeMounts:
             - {name: signed-config, mountPath: /run/config, readOnly: true}
             - {name: tmp, mountPath: /tmp}
@@ -78,6 +95,9 @@ spec:
           env:
             - {name: PORT, value: "8782"}
             - {name: ZHIXING_ADAPTER_SERVICE_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-adapters, key: zhixing-token}}}
+            # 模型路由（LT-02，model_provider 解开 pending 后再设）：学习服务的回环路由监听
+            # - {name: ZHIXING_ROUTE_URL, value: "http://127.0.0.1:8785"}
+            # - {name: ZHIXING_ROUTE_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-learning, key: route-client-zhixing}}}
           readinessProbe: *adapterprobe
           livenessProbe: *adapterprobe
           resources: *adapterres
@@ -87,6 +107,9 @@ spec:
           env:
             - {name: PORT, value: "8783"}
             - {name: WENLI_ADAPTER_SERVICE_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-adapters, key: wenli-token}}}
+            # 模型路由（LT-02，model_provider 解开 pending 后再设）：学习服务的回环路由监听
+            # - {name: WENLI_ROUTE_URL, value: "http://127.0.0.1:8785"}
+            # - {name: WENLI_ROUTE_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-learning, key: route-client-wenli}}}
           readinessProbe: *adapterprobe
           livenessProbe: *adapterprobe
           resources: *adapterres
@@ -362,6 +385,12 @@ spec:
 # 托管 Postgres（境内，LT-03）与境内已备案模型供应商（LT-02）的地址段由人按白名单流程补入，例如：
 #   - to: [{ipBlock: {cidr: <托管 Postgres 内网地址段>}}]          ports: [{port: 5432}]
 #   - to: [{ipBlock: {cidr: <模型供应商入口地址段>}}]                ports: [{port: 443}]   # 只放学习服务（模型路由）
+# 模型供应商（LT-02）：只给 app=learning 的 Pod 另加一条出网策略，目标是下面两家的接入主机名（由人填写，三处一致：
+#   路由表 allowed_hosts、docs/compliance/vendors.md、learning Pod 注解 starbuddy/model-egress-hosts）：
+#   - 阿里云百炼：<由人填写：百炼 OpenAI 兼容接入的主机名>   端口 443
+#   - 火山方舟：  <由人填写：方舟 OpenAI 兼容接入的主机名>   端口 443
+#   NetworkPolicy 只认 IP 段：按主机名放行须用云厂商的出网网关 / NAT 白名单或支持 FQDN 的策略（LT-03 选定后转写）；
+#   路由在建连前还会再核一次主机名（providers.check_endpoint），两道都要有。
 # 境外地址一律不放行；白名单外的出网须被拦截（发布检查项）。
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

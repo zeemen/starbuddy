@@ -461,7 +461,9 @@ def create_app(
             return JSONResponse(out)
         except RouteApiError as e:
             record.update(status=e.status, code=e.code)
-            return JSONResponse(e.problem(), status_code=e.status, media_type="application/problem+json")
+            if e.detail is not None:
+                record["detail"] = e.detail
+            return JSONResponse(e.problem(), status_code=e.status, media_type="application/problem+json", headers=e.headers or None)
         except Exception as e:  # noqa: BLE001 不记异常消息：可能带出请求内容
             record.update(status=500, code="INTERNAL", error_class=type(e).__name__[:48])
             return JSONResponse(RouteApiError(500, "INTERNAL", "internal error", retryable=True).problem(), status_code=500,

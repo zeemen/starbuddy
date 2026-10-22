@@ -255,16 +255,28 @@ staff 对应表（`kge-pages-staff-map/1`，审核台配置，由人维护，不
 
 ## 模型路由骨架（`learning/model_router/`，specs/model-router-sprint1，冲刺 1-F）
 - 所有模型调用只经 `ModelRouter.route(RouteRequest)`：调用方声明任务类型（T1–T9）与数据级别（L0–L3），不指定模型；返回 `model_version`（`model:<供应商>/<模型>@<快照>`）与 `source_version`（`prompt:<模板>@<版本>`）。
-- 路由表 `config/model_routes.yaml`：仓库里只有 dev、test 两节与本地假供应商；staging、pilot、prod 由人按 `docs/compliance/vendors.md` 填写（必停项）。
-  pilot、prod 启动校验：不出境、只用已批准的供应商、登记主机名并只接受 https、显式写带版本的快照名、主备不同厂商或平台；staging 可达 L2 的路由也只能用已批准的供应商；运行时再按数据级别过滤一次（境外只在 dev、test 接 L0）。部署入口 `load_for_deployment()` 从 `LEARNING_ENV` 读环境。
-- 供应商地址与 Key 只写环境变量名（例如 `MODEL_FAKE_A_URL`），值由部署环境提供。调用记录只含元数据，默认写结构化日志（logger `starbuddy.model_router`）。
-- `make model-router-mutation`：改坏出境过滤、启动校验、地址核对、熔断令牌、契约格式等 31 处关键检查，断言测试能发现（只有断言失败算发现）。
+- 路由表 `config/model_routes.yaml`：dev、test 两节是本地假供应商；staging 节（LT-02）登记百炼（主）与方舟（备）的变量名与占位，
+  快照名、接入主机名、白名单批准由人填写（步骤见 `deploy/config/README.md` 第 7 节）；pilot、prod 仍为空（必停项）。
+  staging、pilot、prod 启动校验（LT-02 起 staging 与 pilot 同口径）：不出境、只用已批准的供应商、登记主机名并只接受 https、显式写带日期或版本号的快照名、
+  拒绝 `<…>` 占位、主备不同厂商或平台；运行时再按数据级别过滤一次（境外只在 dev、test 接 L0）。部署入口 `load_for_deployment()` 从 `LEARNING_ENV` 读环境。
+- 供应商登记联动（`learning/model_router/registry.py`）：staging 及以上引用的供应商必须在 `docs/compliance/vendors.md` 登记、状态一致（`pending` ↔ 待开通 / 待登记、待审；
+  `approved` ↔ 已批准；停用的不能出现），已批准的主机名两边一致；由 `tests/test_model_router_staging.py` 核对，不参与服务启动。
+- 成本护栏（`learning/model_router/budget.py`）：路由表每个环境可配 `budgets`（任务 → `daily_calls`、`daily_tokens`；staging、pilot、prod 每个已配路由的任务必配），
+  按北京时间自然日、进程内计数（多实例按实例计）；按每次真实的供应商调用计次（含重试与切备）；token 按供应商报告的用量累加（失败的调用只有报告了用量才计，
+  HTTP 错误、超时没有用量、只计次数）。到上限抛 `BudgetExceeded`（`RouteUnavailable` 的子类，不再调任何供应商）。`pricing`（元 / 百万 token）只用于调用记录的 `estimated_cost_cny`，缺省为空则不估算；都不改计量与扣次。
+- 供应商地址与 Key 只写环境变量名（例如 `MODEL_FAKE_A_URL`、`MODEL_BAILIAN_URL`），值由部署环境提供。调用记录只含元数据，默认写结构化日志（logger `starbuddy.model_router`）。
+- `make model-router-mutation`：改坏出境过滤、启动校验、地址核对、熔断令牌、契约格式，以及 LT-02 的 staging 口径、占位拒绝、成本护栏、成本估算、登记联动、冒烟限制等
+  staging 回环路由监听等 71 处关键检查，断言测试能发现（只有断言失败算发现；先跑不变异的对照组）。
+- `make model-smoke SMOKE_ENV=staging MAX_CALLS=5`（`scripts/model_smoke.py`）：真实模型冒烟，人执行、限次、不进 `make check`；pilot、prod、test 拒绝。
+- staging 回环路由监听（`learning/route_listener.py`，LT-02 决定记录（续）第 5 条）：staging 下另在 `127.0.0.1:LEARNING_ROUTE_PORT`（缺省 8785）
+  只服务 `/internal/v1/model/route`（其他路径 404），供同 Pod 的适配器调模型；主监听不变；dev、test 不起。
 - 部署要求：错误上报（例如 Sentry）关闭局部变量采集（`with_locals` 之类），避免把请求内容、Key 带进异常上报。
 
 ## 内部模型路由接口（`POST /internal/v1/model/route`，specs/adapter-zhixing-sprint2 设计要点 5）
 - 各科适配器调用模型的唯一入口：适配器只配本接口的地址与令牌（`LEARNING_ROUTE_CLIENT_<SUBJECT>_TOKEN`，按学科发放、绑定学科，与服务间令牌、适配器令牌互不相同），
   不持有任何供应商信息；请求交给 `model_router`（环境从 `LEARNING_ENV` 读，配置不合规即拒绝启动）。
 - 400 `ROUTE_REJECTED`（任务、数据级别、Prompt 版本不合要求）、403 `SUBJECT_MISMATCH`、503 `ROUTE_UNAVAILABLE`（可重试）；日志只记学科、任务、数据级别、状态与耗时。
+  成本护栏到上限（LT-02）：仍是 503 `ROUTE_UNAVAILABLE`（契约枚举没有专门的码），`detail: ROUTE_BUDGET_EXCEEDED`、`retryable: false`、`retry-after` 为距北京时间 0 点的秒数。
 - 本接口不预留、不结算、不按幂等键去重：调用方（适配器）的 usage_id / idempotency_key 由学习服务上游的计量预留覆盖。
 - 端到端：`tests/test_e2e_zhixing.py`（学习服务 → 知行适配器进程 → 本接口 → 假供应商 → 平台库）。
 

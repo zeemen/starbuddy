@@ -289,7 +289,8 @@ def test_non_test_env_with_prompt_still_needs_registered_vendor_and_env_credenti
     monkeypatch.delenv("MODEL_FAKE_A_URL", raising=False)
     real = _cands(tmp_path, [{"id": "a", "vendor": "fake-a", "model": "fake-chat"}])
     assert compare.main(["--candidates", str(real), "--env", "staging", "--out", str(tmp_path / "o")]) == 2
-    assert "未在模型路由配置的 staging 环境登记" in capsys.readouterr().out
+    # LT-02：仓库里的 staging 节只有占位（快照名、主机名由人填写），整节校验就拒绝，不会走到建连
+    assert "模型路由配置在 staging 环境不可用" in capsys.readouterr().out
     faked = _cands(tmp_path, [{"id": "a", "vendor": "fake-a", "model": "fake-chat", "fake_profile": "compliant"}], "faked")
     assert compare.main(["--candidates", str(faked), "--env", "dev", "--out", str(tmp_path / "o")]) == 2
     assert "只在 test 环境有效" in capsys.readouterr().out
@@ -343,7 +344,9 @@ def _staging(doc: dict) -> None:
         "vendors": {"real-a": {"org": "org-a", "platform": "platform-a", "residency": "domestic", "protocol": "openai_compat",
                                "whitelist": "approved", "base_url_env": "MODEL_REAL_A_URL", "allowed_hosts": ["llm.example.cn"]}},
         "routes": {"T1": {"data_classes": ["L0"], "primary": {"vendor": "real-a", "model": "chat-m", "version": "2026-09-01",
-                                                              "api_name": "chat-m-2026-09-01"}}}}
+                                                              "api_name": "chat-m-2026-09-01"}}},
+        # LT-02：staging 每个已配路由的任务都必须有成本护栏
+        "budgets": {"T1": {"daily_calls": 100, "daily_tokens": 100000}}}
 
 
 def test_out_dir_and_files_are_private(sample):
@@ -516,6 +519,8 @@ def test_check_endpoints_unit(tmp_path, monkeypatch):
     _routes(tmp_path, monkeypatch, _staging)
     cats = {c["category"] for c in DEV}
     staging = compare.load_candidates(_cands(tmp_path, [{"id": "a", "vendor": "real-a", "model": "chat-m"}]), "staging", cats)
+    # LT-02：候选的临时路由表带上该环境 T1 的成本护栏（staging 要求每个路由都有护栏）
+    assert {t.value: (b.daily_calls, b.daily_tokens) for t, b in staging[0].config.budgets.items()} == {"T1": (100, 100000)}
     compare.check_endpoints(staging, "staging", {"MODEL_REAL_A_URL": "https://llm.example.cn/v1"})
     for url, needle in [("http://llm.example.cn/v1", "https"), ("https://evil.example.com/v1", "allowed_hosts"),
                         ("", "执行环境"), ("https://u:p@llm.example.cn", "合法地址")]:

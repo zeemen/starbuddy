@@ -28,9 +28,15 @@ def vendor(org: str, residency: str = "domestic", protocol: str = "openai_compat
             "base_url_env": f"MODEL_{env}_URL", "allowed_hosts": ["127.0.0.1", "api.example.invalid"]}
 
 
-def doc_with(env: str, vendors: dict, routes: dict) -> dict:
+def doc_with(env: str, vendors: dict, routes: dict, budgets: dict | None = None) -> dict:
+    """staging、pilot、prod 要求每个已配路由的任务都有成本护栏（LT-02）：不显式给 budgets 时按路由补一份合成额度"""
+    if budgets is None and env in ("staging", "pilot", "prod"):
+        budgets = {t: {"daily_calls": 1000, "daily_tokens": 10**7} for t in routes if t in Task.__members__}
+    section = {"vendors": vendors, "routes": routes}
+    if budgets is not None:
+        section["budgets"] = budgets
     return {"version": 1, "defaults": {"max_retries": 2, "breaker": {"failure_threshold": 5, "cooldown_seconds": 30}},
-            "environments": {env: {"vendors": vendors, "routes": routes}}}
+            "environments": {env: section}}
 
 
 def target(v: str, model: str = "m", version: str = "2026-09-01", pinned: bool = False) -> dict:
@@ -94,8 +100,11 @@ def test_repo_config_loads_every_environment():
     for env in ("dev", "test"):
         cfg = load(DEFAULT_PATH, env)
         assert Task.T1 in cfg.routes and cfg.vendors["fake-x"].residency is Residency.FOREIGN
-    for env in ("staging", "pilot", "prod"):
-        assert load(DEFAULT_PATH, env).routes == {}, "仓库里不提交 staging、pilot、prod 的路由（必停项）"
+    for env in ("pilot", "prod"):
+        assert load(DEFAULT_PATH, env).routes == {}, "仓库里不提交 pilot、prod 的路由（必停项）"
+    # staging（LT-02）：只有变量名与占位，占位未填就拒绝启动（正例见 tests/test_model_router_staging.py）
+    with pytest.raises(ConfigError, match="占位"):
+        load(DEFAULT_PATH, "staging")
 
 
 BAD_CONFIGS = {
@@ -135,6 +144,20 @@ def test_valid_pilot_config_is_accepted():
     assert cfg.routes[Task.T1].backup is not None
 
 
+@pytest.mark.parametrize("env", ["staging", "pilot", "prod"])
+def test_strict_env_requires_budget_for_every_route(env):
+    """安全审查建议 2（LT-02）：staging、pilot、prod 每个已配路由的任务都必须有成本护栏，否则拒绝启动"""
+    vendors = {"a": vendor("a", whitelist="approved")}
+    routes = {"T1": {"data_classes": ["L2"], "primary": target("a", pinned=True)},
+              "T2": {"data_classes": ["L2"], "primary": target("a", model="r", pinned=True)}}
+    for budgets in ({}, {"T1": {"daily_calls": 1, "daily_tokens": 1}}):
+        with pytest.raises(ConfigError, match="成本护栏"):
+            parse(doc_with(env, vendors, routes, budgets), env)
+    assert parse(doc_with(env, vendors, routes), env).budgets.keys() == {Task.T1, Task.T2}
+    # dev、test 可以不配（不设上限）
+    assert parse(doc_with("test", vendors, routes, {}), "test").budgets == {}
+
+
 MORE_BAD = {
     "YAML 不带引号的版本号（1.10 读成 1.1）": ("test", {"a": vendor("a")}, {"T1": {"data_classes": ["L0"], "primary": {**target("a"), "version": 1.1}}}),
     "供应商 ID 带大写（不合契约）": ("test", {"Fake_A": vendor("a")}, {"T1": {"data_classes": ["L0"], "primary": target("Fake_A")}}),
@@ -146,6 +169,15 @@ MORE_BAD = {
                                  {"T1": {"data_classes": ["L2"], "primary": target("a", pinned=True)}}),
     "staging 可达 L2 却用未批准的供应商": ("staging", {"a": vendor("a", whitelist="pending")}, {"T1": {"data_classes": ["L2"], "primary": target("a")}}),
     "供应商有未知键": ("test", {"a": {**vendor("a"), "base_url": "https://x.invalid"}}, {}),
+    # 供应商一级的校验对“登记了但没有路由引用”的供应商同样生效（不只靠 check_invariants 核对被引用的；LT-02 变异对照组修复后补）
+    "pilot 登记了未使用的境外供应商": ("pilot", {"a": vendor("a", whitelist="approved"), "x": vendor("x", "foreign", whitelist="approved")},
+                               {"T1": {"data_classes": ["L2"], "primary": target("a", pinned=True)}}),
+    "pilot 登记了未使用的未批准供应商": ("pilot", {"a": vendor("a", whitelist="approved"), "p": vendor("p", whitelist="pending")},
+                                {"T1": {"data_classes": ["L2"], "primary": target("a", pinned=True)}}),
+    "staging 登记了未使用、没有 allowed_hosts 的供应商": ("staging", {"a": vendor("a", whitelist="approved"),
+                                                       "b": {**vendor("b", whitelist="approved"), "allowed_hosts": []}},
+                                               {"T1": {"data_classes": ["L2"], "primary": target("a", pinned=True)}}),
+    "未使用的供应商 ID 不合契约": ("test", {"Fake_A": vendor("a")}, {}),
 }
 
 
@@ -503,7 +535,7 @@ async def test_subject_must_be_platform_code(subject):
 
 def random_doc(rng: random.Random, env: str) -> dict:
     vendors = {}
-    strict = env in ("pilot", "prod")
+    strict = env in ("staging", "pilot", "prod")  # LT-02：staging 与 pilot 同口径
     bad = 0.04 if strict else 0.3  # 生产与试点的随机配置大多要合法，才测得到运行时路径；非法的也要有，测启动校验
     for i in range(rng.randint(1, 4)):
         vendors[f"v{i}"] = {"org": f"o{i}" if rng.random() > bad else "o0", "platform": f"p{rng.randint(0, 2)}",
@@ -518,7 +550,7 @@ def random_doc(rng: random.Random, env: str) -> dict:
         if rng.random() < 0.7:
             r["backup"] = target(rng.choice(list(vendors)), model="m2", pinned=True)
         routes[t] = r
-    return doc_with(env, vendors, routes)
+    return doc_with(env, vendors, routes)  # staging、pilot、prod 自动补成本护栏（LT-02），额度够大，不影响性质测试
 
 
 @pytest.mark.parametrize("env", ["dev", "test", "staging", "pilot", "prod"])
@@ -631,10 +663,14 @@ def test_openai_compat_checks_scheme_and_host():
 
 async def test_openai_compat_limits_response_size_and_reads_retry_after():
     t = parse(doc_with("test", {"a": vendor("a")}, {"T1": {"data_classes": ["L0"], "primary": target("a")}}), "test").routes[Task.T1].primary
-    big = compat(lambda r: httpx.Response(200, content=b"x" * (2 << 20)))
+    # 合法的 JSON，只是超过 1 MiB：没有大小上限时会被当成正常回复（LT-02 变异对照组修复后补：原来的非 JSON 正文本身就解析失败）
+    big_json = {"model": "m", "choices": [{"message": {"content": "x" * (2 << 20)}}]}
+    big = compat(lambda r: httpx.Response(200, json=big_json))
     with pytest.raises(ProviderError) as e:
         await big.complete(t, [], idempotency_key="k" * 8, timeout=5)
     assert e.value.kind == "bad_response"
+    small = compat(lambda r: httpx.Response(200, json={"model": "m", "choices": [{"message": {"content": "x" * 1000}}]}))
+    assert (await small.complete(t, [], idempotency_key="k" * 8, timeout=5)).output == "x" * 1000
     limited = compat(lambda r: httpx.Response(429, headers={"retry-after": "999"}))
     with pytest.raises(ProviderError) as e:
         await limited.complete(t, [], idempotency_key="k" * 8, timeout=5)

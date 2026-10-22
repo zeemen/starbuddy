@@ -85,6 +85,32 @@ python diandian/compare.py --candidates <签字后的清单>.yaml --env <staging
    提交 `reports/r1-<日期>/report.{md,json}`；`--out` 下的回复原文、逐次评分与 `calls.jsonl` 核对后删除，不入库、不外传。
    报告里 3-I 口径（核心通过率两两差 ≤ 5 个百分点）只报告，结论由人定（Gate 0）。
 
+### staging 执行步骤（LT-02，`specs/launch-lt02-model-provider`；本任务不执行，交接给人）
+
+LT-02 已在路由表 staging 节登记百炼（`bailian`，主）与方舟（`ark`，备）的变量名与占位：T1 主 `bailian/qwen3.8-flash`、备 `ark/doubao-2.1-turbo`，
+两者都是可选的点点候选。仓库里的 staging 节**带着占位就整节拒绝**（`compare.py` 打印“模型路由配置在 staging 环境不可用：…占位…”），所以：
+1. 先按 `deploy/config/README.md` 第 7 节由人完成开通、登记、填写快照名与主机名、批准（`whitelist: approved`），并跑过 `make model-smoke SMOKE_ENV=staging MAX_CALLS=5`。
+2. 在 staging 执行环境（有 `MODEL_BAILIAN_URL`、`MODEL_BAILIAN_API_KEY`、`MODEL_ARK_URL`、`MODEL_ARK_API_KEY`，`LEARNING_ENV` 无关：运行器按 `--env` 取路由表）里，
+   在 `evals/persona` 下用 `services/learning/.venv/bin/python`：
+
+```
+# 候选清单（签字后）只写 T1 路由里的目标，例如
+#   version: 1
+#   candidates:
+#     - {id: bailian-flash, vendor: bailian, model: qwen3.8-flash, note: "T1 主，锁定快照"}
+#     - {id: ark-turbo, vendor: ark, model: doubao-2.1-turbo, note: "T1 备，锁定快照"}
+python diandian/compare.py --candidates <签字后的清单>.yaml --env staging --runs 3     # 不带 --max-calls：只打印预计次数并拒绝
+python diandian/compare.py --candidates <签字后的清单>.yaml --env staging --runs 3 --max-calls <人定的预算> \
+    --out <仓库外的新目录> --report-dir reports/r1-<日期>
+```
+
+3. 注意：
+   - 对照运行器为每个候选临时拼一张只含该候选的路由表（T1 × L0），并带上路由表 staging 节 T1 的成本护栏（staging 要求每个路由都有护栏）；
+     护栏只在运行器自己的进程里计数，与学习服务进程的当日计数各算各的。调用量先由 `--max-calls` 管：预算按“候选数 × 次数 × 开发集总轮数”
+     （失败重试另计）定；T1 护栏额度小于预算时，超出的调用会以 `ROUTE_BUDGET_EXCEEDED` 失败（记为调用失败），需要时由人临时调大额度。
+   - staging 只收 https 地址，主机名必须在路由表 `allowed_hosts` 里（运行前与建连时各核一次）；Key 只放执行环境变量，不进命令行与日志。
+   - 回复原文只在 `--out`（仓库外，0700 / 0600），核对后删除；只提交 `reports/` 下不含原文的报告。人设 Prompt、替代句、留出集的前提同上。
+
 ## 点点跨模型一致性 · 二轮（冲刺 3-I，`specs/diandian-consistency-r2-sprint3/`）
 
 二轮 = 按首轮差异至多三次修订（人设 Prompt 或后处理，每次只改一个对象、每次签字）后再跑一次，报两组数字并给验收判定。本仓只交付工具与流程，

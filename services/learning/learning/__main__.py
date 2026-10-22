@@ -1,12 +1,14 @@
-"""启动：python -m learning（缺省只监听 127.0.0.1，由平台侧网关转发；staging 可经 LEARNING_HOST 显式配置内网地址）。配置见 config.py。"""
+"""启动：python -m learning（缺省只监听 127.0.0.1，由平台侧网关转发；staging 可经 LEARNING_HOST 显式配置内网地址）。配置见 config.py。
+
+staging 另在 127.0.0.1:LEARNING_ROUTE_PORT 起一个只服务模型路由接口的回环监听（LT-02 决定记录（续）第 5 条，见 route_listener.py）。
+"""
 import logging
 import os
 
-import uvicorn
-
 from .app import create_app
 from .config import Settings
+from .route_listener import serve
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 settings = Settings.from_env()
-uvicorn.run(create_app(settings), host=settings.host, port=int(os.environ.get("PORT", "8788")), access_log=False)
+serve(create_app(settings), settings, int(os.environ.get("PORT", "8788")))

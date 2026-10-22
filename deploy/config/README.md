@@ -80,3 +80,42 @@ learning-internal v1 已于 2026-10-20 签字为 1.1.0（specs/launch-lt04-learn
 ## 6. 校验
 `make deploy-check`：静态校验（Dockerfile、.dockerignore、编排、清单）+ 开关矩阵 + 环境变量清单 + 迁移执行器单测与一次性库上的副本演练；
 `DEPLOY_BUILD=1` 时另加镜像构建（需要能拉到基础镜像）与 `deploy/scripts/compose-smoke.sh` 本机合成全栈冒烟。
+
+## 7. 模型供应商（LT-02，`specs/launch-lt02-model-provider` 决定记录 2026-10-21）
+仓库里只有变量名与占位：路由表 `services/learning/config/model_routes.yaml` 的 staging 节登记阿里云百炼（`bailian`，主）与火山方舟
+（`ark`，备，含方舟托管的 DeepSeek），`whitelist: pending`；`docs/compliance/vendors.md` 两家状态“待开通 / 待登记”。
+**主机名不写进仓库**：路由表 `allowed_hosts`、登记表“允许的主机名”、k8s 学习服务 Pod 注解 `starbuddy/model-egress-hosts` 都是
+`<由人填写…>` 占位——真实接入主机名属于开通结果，由人在开通后三处同时填写（同一个 PR，`[NEEDS-HUMAN]`）。
+
+由人完成（顺序）：
+1. 开通两家、签数据处理协议、登记备案或准入依据（合规负责人），在 `vendors.md` 填写两行（主机名、地点、协议、依据、保留期限）。
+2. 在路由表 staging 节填写：`allowed_hosts`（与登记表一致）、每个目标的 `version`（快照日期或版本号）与 `api_name`（控制台里的带日期快照名；
+   思考 / 非思考按快照区分）；批准后把 `whitelist` 改为 `approved`、登记表状态改为“已批准”。按需调整 `budgets`（成本护栏，缺省小额度）
+   与 `pricing`（单价，元 / 百万 token；空则不估算）。占位未填、未批准、缺 `allowed_hosts`、`api_name` 不带日期或版本号时 staging 拒绝启动；
+   `services/learning/tests/test_model_router_staging.py` 核对路由表与登记表状态、主机名一致。
+3. 在密钥管理里建 Secret（地址与 Key 都按密钥处理，变量名见 `env-inventory.yaml`：`MODEL_BAILIAN_URL`、`MODEL_BAILIAN_API_KEY`、
+   `MODEL_ARK_URL`、`MODEL_ARK_API_KEY`；两科路由客户端令牌 `LEARNING_ROUTE_CLIENT_ZHIXING_TOKEN` / `_WENLI_TOKEN` 与适配器的
+   `ZHIXING_ROUTE_TOKEN` / `WENLI_ROUTE_TOKEN` 同值）；按 `deploy/k8s/staging.yaml`（或 `deploy/compose/staging.yaml`）里学习服务与两科适配器
+   注释掉的几行接线：适配器的 `ZHIXING_ROUTE_URL` / `WENLI_ROUTE_URL` = `http://127.0.0.1:8785`（学习服务的回环路由监听，见下）。
+   **路由客户端令牌一旦设置，学习服务就按 `LEARNING_ENV` 加载路由表**：上面第 2 步没做完就设令牌，学习服务拒绝启动。
+
+   **回环路由监听**（决定记录（续）第 5 条）：staging 的主监听是 Pod 内网地址（`LEARNING_HOST`），而适配器只认 https 或回环 http（适配器不改代码），
+   所以 staging 下学习服务另在 `127.0.0.1:LEARNING_ROUTE_PORT`（缺省 8785，编排里显式写 8785，不能与 `PORT` 相同）起一个监听，**只服务**
+   `/internal/v1/model/route`，其他路径一律 404；与主监听共用同一个应用与状态（同一份成本护栏计数），主监听不变；dev、test 不起
+   （设了 `LEARNING_ROUTE_PORT` 拒绝启动）。改端口时 `LEARNING_ROUTE_PORT` 与两科 `*_ROUTE_URL` 要一起改（`deploy/tests/test_model_provider.py` 核对一致）。
+4. 出网白名单：只给学习服务 Pod 放行两家接入主机名的 443（NetworkPolicy 只认 IP 段，按主机名放行用云厂商出网网关 / NAT 白名单或 FQDN 策略，LT-03 转写）；
+   路由建连前还会核对主机名（`allowed_hosts`，只收 https）。
+5. 人执行冒烟（不进 `make check`、不进 CI，限次）：在有凭据的 staging 执行环境里 `make model-smoke SMOKE_ENV=staging MAX_CALLS=5`——
+   每个不同的路由目标（主、备分别算；去重键是 供应商 + 模型 + 版本 + 快照名，现为 5 个）各发一次合成 L0 请求、不重试，
+   只打印状态、耗时、token 与快照名是否一致，不打印回复原文；
+   pilot、prod、test 一律拒绝。全部通过后把开关矩阵里 `model_provider` 的 pending 去掉（另起 PR）。
+6. 人设回归：点点对照评测在 staging 的执行步骤见 `evals/persona/README.md`“staging 执行步骤（LT-02）”。
+
+成本护栏（路由层、进程内，多实例按实例计；staging 每个已配路由的任务都必须配，否则拒绝启动）：按**每次真实的供应商调用**计次
+（含重试与切到备选，成败都算）；token 按供应商报告的用量累加——失败的调用只有报告了用量（200 但内容不合格式）才累加，
+HTTP 错误、超时、连接失败没有用量可读，只计次数。任务当日（北京时间 0 点重置）次数或 token 到上限后，内部接口 `/internal/v1/model/route`
+返回 503 `ROUTE_UNAVAILABLE`、`detail: ROUTE_BUDGET_EXCEEDED`、`retryable: false`、`retry-after`（距重置的秒数）；适配器按 503 处理（与没有可用供应商时一致）。
+不改计量与扣次规则；调用记录（日志 `starbuddy.model_router`）带 `estimated_cost_cny`（有单价时）。
+部署侧核对：`deploy/tests/test_model_provider.py`（供应商变量登记为 staging 密钥；`MODEL_*`、路由客户端令牌与 `*_ROUTE_TOKEN` 不论何时都只经
+secretKeyRef / `${…}` 注入；`model_provider` 仍 pending 时编排不设令牌与供应商变量；出网注解只在学习服务 Pod，且是占位或与路由表 `allowed_hosts` 一致；
+回环路由端口在 env-inventory、k8s、compose、本节与编排注释里的 `*_ROUTE_URL` 一致）。

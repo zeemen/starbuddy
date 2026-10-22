@@ -137,6 +137,9 @@ class Settings:
     today_snapshot: bool = False
     # 监听地址（LT-01）：缺省 127.0.0.1；只有 staging 能配置为内网 IPv4（LEARNING_HOST）
     host: str = "127.0.0.1"
+    # staging 的回环路由监听端口（LT-02 决定记录（续）第 5 条）：127.0.0.1 上只服务 /internal/v1/model/route；
+    # 只在 staging（缺省 8785，LEARNING_ROUTE_PORT 可改）；dev、test 为 None（不起，设了拒绝启动）
+    route_port: int | None = None
 
     @staticmethod
     def from_env(environ: dict[str, str] | None = None) -> "Settings":
@@ -243,6 +246,7 @@ class Settings:
         today_cfg = e.get("LEARNING_TODAY_CONFIG") or None
         if snapshot_raw == "1" and not today_cfg:
             raise RuntimeError("LEARNING_TODAY_SNAPSHOT=1 冻结的是今日编排的结果：必须同时设 LEARNING_TODAY_CONFIG")
+        route_port = _route_port(e.get("LEARNING_ROUTE_PORT"), e.get("PORT"), env)
         return Settings(env=env, database_url=database_url, service_credential=credential, adapters=adapters,
                         route_clients=route_clients, diagnosis_presenter=presenter, diagnosis_source=source, knowledge=knowledge,
                         diagnosis_targets=targets, diagnosis_map_version=map_version, mastery_configs=mastery_config_paths(e),
@@ -251,4 +255,19 @@ class Settings:
                         profile_page_config=e.get("LEARNING_PROFILE_PAGE_CONFIG") or None, practice_config=practice_cfg,
                         practice_presenter=practice_presenter, practice_ticket_secret=practice_secret,
                         present_item_source=present_source, retest_config=retest_cfg,
-                        today_config=today_cfg, today_snapshot=snapshot_raw == "1", host=host)
+                        today_config=today_cfg, today_snapshot=snapshot_raw == "1", host=host, route_port=route_port)
+
+
+def _route_port(raw: str | None, main_raw: str | None, env: str) -> int | None:
+    """staging 的回环路由监听端口（LT-02 决定记录（续）第 5 条）：只在 staging；1024–65535 的整数，不能与主监听端口相同"""
+    from .route_listener import DEFAULT_ROUTE_PORT  # noqa: PLC0415  避免启动配置依赖顺序
+    if env != STAGING:
+        if raw:
+            raise RuntimeError("LEARNING_ROUTE_PORT 只在 staging 生效（回环路由监听）：dev / test 设了拒绝启动")
+        return None
+    text = raw or str(DEFAULT_ROUTE_PORT)
+    if not re.fullmatch(r"[1-9]\d{3,4}", text) or not 1024 <= int(text) <= 65535:
+        raise RuntimeError("LEARNING_ROUTE_PORT 必须是 1024–65535 的整数")
+    if text == (main_raw or "8788"):
+        raise RuntimeError("LEARNING_ROUTE_PORT 不能与主监听端口 PORT 相同")
+    return int(text)

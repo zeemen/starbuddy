@@ -26,10 +26,12 @@ MAX_RETRY_AFTER = 30.0
 
 
 class ProviderError(Exception):
-    def __init__(self, kind: str, retry_after: float | None = None) -> None:
+    def __init__(self, kind: str, retry_after: float | None = None, usage: Usage | None = None) -> None:
         super().__init__(kind)
         self.kind = kind
         self.retry_after = retry_after
+        # 失败时供应商报告的用量（只有 200 且带 usage、但内容不合格式时才有；HTTP 错误响应没有用量，不计 token，只计次数）
+        self.usage = usage
 
     @property
     def retryable(self) -> bool:
@@ -108,14 +110,21 @@ class OpenAICompatProvider:
             raise ProviderError("server") from None
         try:
             data = json.loads(bytes(buf))
+        except ValueError:
+            raise ProviderError("bad_response") from None
+        try:
+            u = data.get("usage") or {}
+            usage = Usage(int(u.get("prompt_tokens", 0)), int(u.get("completion_tokens", 0)))
+        except (AttributeError, ValueError, TypeError):
+            raise ProviderError("bad_response") from None
+        try:
             content = data["choices"][0]["message"]["content"]
             if not isinstance(content, str):
                 raise TypeError
-            u = data.get("usage") or {}
-            usage = Usage(int(u.get("prompt_tokens", 0)), int(u.get("completion_tokens", 0)))
             reported = data.get("model")
-        except (ValueError, KeyError, IndexError, TypeError):
-            raise ProviderError("bad_response") from None
+        except (KeyError, IndexError, TypeError):
+            # 内容不合格式但供应商报了用量：交给成本护栏累加 token
+            raise ProviderError("bad_response", usage=usage if usage.input_tokens or usage.output_tokens else None) from None
         return ProviderReply(output=content, usage=usage, reported_model=reported if isinstance(reported, str) else None)
 
     async def aclose(self) -> None:

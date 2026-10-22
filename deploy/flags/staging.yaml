@@ -12,7 +12,10 @@
 #                      写入前的计量核对函数 platform.learning_meter_check 在迁移 0058（草稿，待人在副本演练后执行）；
 #                      缺 0058 或学习服务角色没有执行权时学习服务拒绝启动（LT-04 决定记录（再续）第 4 条），所以人执行之前
 #                      学习服务在 staging 起不来，这些项都不可用
-#     model_provider   开关开，但要调模型的路径在真实模型供应商接入（LT-02）前回 503
+#     model_provider   开关开，但要调模型的路径待人开通与填写快照名：LT-02 已在路由表 staging 节登记百炼（主）与方舟（备）的
+#                      变量名与占位（services/learning/config/model_routes.yaml），开通、密钥、带日期快照名、接入主机名、
+#                      白名单批准与 docs/compliance/vendors.md 登记由人完成；完成之前不设路由客户端令牌，模型路由接口回 503
+#                      （设了令牌而占位未填，学习服务拒绝启动）。步骤见 deploy/config/README.md 第 7 节
 #     human            还没有开关或口径，待人确认（见 notes）
 # switches 每项：service（bff / web / learning / insight / knowledge / review_console / scheduler）、var（环境变量名）、
 #   value（staging 设的值；null = 不设）、source（定义它的源码文件，测试核对变量名真实存在）。
@@ -34,14 +37,15 @@ subjects:
     title: 道法（知行）
     state: "on"
     pending: [migration_0058, model_provider]
-    notes: 判分走 /internal/v1/grade（写入前核对计量），待人执行 0058
+    notes: 判分走 /internal/v1/grade（写入前核对计量），待人执行 0058；判分推理（T2）待人开通模型供应商与填写快照名（LT-02）
     switches:
       - {service: learning, var: LEARNING_ADAPTER_ZHIXING_URL, value: "http://127.0.0.1:8782", source: services/learning/learning/config.py}
   - id: chinese_grading
     title: 语文（文砺）只开批改
     state: "on"
     pending: [migration_0058, model_provider, human]
-    notes: 没有“只开批改”的开关：文砺适配器的 diagnose / plan 照常可用，只开批改靠选科与内容范围约束（待人确认）；批改走 /internal/v1/grade，待人执行 0058
+    notes: 没有“只开批改”的开关：文砺适配器的 diagnose / plan 照常可用，只开批改靠选科与内容范围约束（待人确认）；批改走 /internal/v1/grade，待人执行 0058；
+      作文批改（T4）待人开通模型供应商与填写快照名（LT-02）
     switches:
       - {service: learning, var: LEARNING_ADAPTER_WENLI_URL, value: "http://127.0.0.1:8783", source: services/learning/learning/config.py}
   - id: english

@@ -57,6 +57,10 @@ services:
       LEARNING_RETEST_CONFIG: /run/config/retest.signed.json
       LEARNING_TODAY_CONFIG: /run/config/today.signed.json
       LEARNING_TODAY_SNAPSHOT: "0"
+      # 回环路由监听（LT-02 决定记录（续）第 5 条）：127.0.0.1:8785 只服务 /internal/v1/model/route，其他路径 404；
+      # 共用网络命名空间的适配器经它调模型。模型供应商开通（model_provider 解开 pending）后才另设
+      # LEARNING_ROUTE_CLIENT_ZHIXING_TOKEN / _WENLI_TOKEN 与 MODEL_*（都用 ${…:?} 从运行环境注入）
+      LEARNING_ROUTE_PORT: "8785"
     healthcheck:
       test: ["CMD", "python", "-I", "-c", "import socket; socket.create_connection(('172.28.0.10', 8788), 2).close()"]
       interval: 15s
@@ -83,7 +87,9 @@ services:
     environment:
       PORT: "8782"
       ZHIXING_ADAPTER_SERVICE_TOKEN: ${ZHIXING_ADAPTER_SERVICE_TOKEN:?由运行环境注入}
-      # 模型路由（ZHIXING_ROUTE_URL / _TOKEN）随 LT-02 接入；不设时 grade 回 503、其他方法照常
+      # 模型路由（LT-02）：model_provider 解开 pending 后再设；不设时 grade 回 503、其他方法照常
+      #   ZHIXING_ROUTE_URL: http://127.0.0.1:8785                       （学习服务的回环路由监听）
+      #   ZHIXING_ROUTE_TOKEN: ${ZHIXING_ROUTE_TOKEN:?由运行环境注入}       （与 LEARNING_ROUTE_CLIENT_ZHIXING_TOKEN 同值）
     depends_on:
       learning: {condition: service_started}
 
@@ -94,6 +100,9 @@ services:
     environment:
       PORT: "8783"
       WENLI_ADAPTER_SERVICE_TOKEN: ${WENLI_ADAPTER_SERVICE_TOKEN:?由运行环境注入}
+      # 模型路由（LT-02）：model_provider 解开 pending 后再设
+      #   WENLI_ROUTE_URL: http://127.0.0.1:8785                         （学习服务的回环路由监听）
+      #   WENLI_ROUTE_TOKEN: ${WENLI_ROUTE_TOKEN:?由运行环境注入}           （与 LEARNING_ROUTE_CLIENT_WENLI_TOKEN 同值）
     depends_on:
       learning: {condition: service_started}
 

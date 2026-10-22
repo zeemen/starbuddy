@@ -11,6 +11,7 @@ import logging
 from dataclasses import asdict, dataclass
 from typing import Protocol
 
+from .config import Price
 from .types import Attempt
 
 log = logging.getLogger("starbuddy.model_router")
@@ -18,6 +19,13 @@ log = logging.getLogger("starbuddy.model_router")
 
 def digest(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+
+
+def estimate_cost(price: Price | None, input_tokens: int, output_tokens: int) -> float | None:
+    """元；没有单价就不估算（None）。保留 6 位小数，避免浮点尾数进日志"""
+    if price is None:
+        return None
+    return round((input_tokens * price.input_per_million + output_tokens * price.output_per_million) / 1_000_000, 6)
 
 
 @dataclass(frozen=True)
@@ -29,7 +37,7 @@ class CallRecord:
     usage_ref: str
     idempotency_ref: str
     source_version: str
-    outcome: str  # ok | unavailable | rejected
+    outcome: str  # ok | unavailable | rejected | budget_exceeded | error
     model_version: str | None
     attempts: tuple[Attempt, ...]
     input_tokens: int
@@ -37,6 +45,9 @@ class CallRecord:
     elapsed_ms: int
     model_mismatch: bool = False  # 供应商报告的模型名与配置不一致（按配置记录，告警）
     reported_model: str | None = None  # 供应商报告的模型名（元数据，截断到 128 字符、只留安全字符）
+    # 成本估算（LT-02 决定记录第 4 条）：按路由表 pricing 的单价（元 / 百万 token）× 供应商报告的 token；
+    # 没有单价（缺省为空）或调用没成功则为 None。只是估算，不参与计量与扣次
+    estimated_cost_cny: float | None = None
 
 
 class LedgerSink(Protocol):

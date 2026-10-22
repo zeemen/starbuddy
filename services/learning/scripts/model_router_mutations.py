@@ -1,83 +1,146 @@
-"""模型路由的变异测试（specs/model-router-sprint1/spec.md 范围第 4 条）。
+"""模型路由的变异测试（specs/model-router-sprint1/spec.md 范围第 4 条；LT-02 范围第 7 条补充）。
 
-每个变异把 learning/model_router 的一段关键检查改坏，复制到临时目录里跑 tests/test_model_router.py，
-断言测试能发现（失败）。有一个没被发现就退出码 1。约 10 秒。
+每个变异把 learning/model_router（以及 LT-02 的内部接口映射、冒烟脚本）的一段关键检查改坏，在临时目录里的仓库副本上跑
+TESTS，断言测试能发现（失败）。有一个没被发现就退出码 1。
+
+LT-02 起：副本按仓库目录结构摆放（services/learning 复制，docs、packages 等用符号链接，同 practice_mutations），
+测试才能读到 docs/compliance/vendors.md 与契约文件；先跑不变异的对照组，对照组不通过就直接失败
+（此前复制到扁平临时目录，读契约文件的用例在对照组里就会失败，变异“被发现”不可信）。并行 6 路，约 1–2 分钟。
 """
 from __future__ import annotations
 
-import shutil
-import subprocess
 import sys
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-PKG = "learning/model_router"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import practice_mutations as PM  # noqa: E402
+
+TESTS = ["tests/test_model_router.py", "tests/test_model_router_staging.py", "tests/test_model_smoke.py", "tests/test_route_listener.py"]
+P = "learning/model_router/"
+CF, RT, PR, BR, BG, LG, RG = (P + "config.py", P + "router.py", P + "providers.py", P + "breaker.py", P + "budget.py", P + "ledger.py",
+                              P + "registry.py")
+API, SMOKE, LS, SCF = "learning/route_api.py", "scripts/model_smoke.py", "learning/route_listener.py", "learning/config.py"
 
 MUTATIONS: dict[str, tuple[str, str, str]] = {
-    "运行时不过滤境外（出境第二道防线）": ("router.py", "return env in SYNTHETIC_ENVS and data_class is DataClass.L0", "return True"),
-    "境外只接 L0 改成接到 L1": ("router.py", "and data_class is DataClass.L0", "and data_class.rank <= 1"),
-    "staging 也允许境外": ("config.py", 'SYNTHETIC_ENVS = frozenset({"dev", "test"})', 'SYNTHETIC_ENVS = frozenset({"dev", "test", "staging"})'),
-    "启动校验放过 pilot、prod 的境外供应商": ("config.py", '_need(residency is Residency.DOMESTIC, f"{where}: {env} 环境不能出现境外供应商（数据不出境）")', "pass"),
-    "启动校验放过未批准的供应商": ("config.py", '_need(whitelist == "approved", f"{where}: {env} 环境只能用白名单里已批准的供应商")', "pass"),
-    "可达 L2 的任务允许境外": ("config.py", '_need(vendors[t.vendor].residency is Residency.DOMESTIC, f"{where}: 可达 L2、L3 的任务只能配境内供应商")', "pass"),
-    "staging 可达 L2 用未批准的供应商": ("config.py", "if env not in SYNTHETIC_ENVS:\n                    _need(vendors[t.vendor].whitelist", "if False:\n                    _need(vendors[t.vendor].whitelist"),
-    "允许 latest 别名": ("config.py", '_need(not _FLOATING.search(model) and not _FLOATING.search(api_name), f"{where}: 不能用 latest 之类会漂移的别名")', "pass"),
-    "pilot 不要求带版本的 api_name": ("config.py", '_need(bool(_PINNED_API_NAME.search(api_name)), f"{where}: api_name 必须带日期或版本号（锁定快照）")', "pass"),
-    "版本号可以是 YAML 数字": ("config.py", '_need(isinstance(raw.get(k), str), f"{where}: {k} 必须是带引号的字符串")', "pass"),
-    "供应商 ID 不按契约校验": ("config.py", "_need(isinstance(vid, str) and bool(_VENDOR_ID.match(vid))", "_need(True or bool(_VENDOR_ID.match(vid))"),
-    "不核对地址主机名": ("providers.py", "if vendor.allowed_hosts and parts.hostname.lower() not in vendor.allowed_hosts:", "if False:"),
-    "pilot 允许 http": ("providers.py", 'if env not in SYNTHETIC_ENVS and parts.scheme != "https":', "if False:"),
-    "手工配置绕过不变量": ("router.py", "        check_invariants(config)\n", ""),
-    "主备可以同一厂商同一平台": ("config.py", "_need(not (a.org == b.org and a.platform == b.platform)", "_need(True or not (a.org == b.org and a.platform == b.platform)"),
-    "熔断后不过滤数据级别（候选不经过滤）": ("router.py", "return tuple(t for t in route.targets if egress_allowed(self._cfg.vendors[t.vendor], req.data_class, self._cfg.env))",
+    "运行时不过滤境外（出境第二道防线）": (RT, "return env in SYNTHETIC_ENVS and data_class is DataClass.L0", "return True"),
+    "境外只接 L0 改成接到 L1": (RT, "and data_class is DataClass.L0", "and data_class.rank <= 1"),
+    "staging 也允许境外": (CF, 'SYNTHETIC_ENVS = frozenset({"dev", "test"})', 'SYNTHETIC_ENVS = frozenset({"dev", "test", "staging"})'),
+    "启动校验放过 pilot、prod 的境外供应商": (CF, '_need(residency is Residency.DOMESTIC, f"{where}: {env} 环境不能出现境外供应商（数据不出境）")', "pass"),
+    "启动校验放过未批准的供应商": (CF, '_need(whitelist == "approved", f"{where}: {env} 环境只能用白名单里已批准的供应商")', "pass"),
+    "可达 L2 的任务允许境外": (CF, '_need(vendors[t.vendor].residency is Residency.DOMESTIC, f"{where}: 可达 L2、L3 的任务只能配境内供应商")', "pass"),
+    "允许 latest 别名": (CF, '_need(not _FLOATING.search(model) and not _FLOATING.search(api_name), f"{where}: 不能用 latest 之类会漂移的别名")', "pass"),
+    "pilot 不要求带版本的 api_name": (CF, '_need(bool(_PINNED_API_NAME.search(api_name)), f"{where}: api_name 必须带日期或版本号（锁定快照）")', "pass"),
+    "版本号可以是 YAML 数字": (CF, '_need(isinstance(raw.get(k), str), f"{where}: {k} 必须是带引号的字符串")', "pass"),
+    "供应商 ID 不按契约校验": (CF, "_need(isinstance(vid, str) and bool(_VENDOR_ID.match(vid))", "_need(True or bool(_VENDOR_ID.match(vid))"),
+    "不核对地址主机名": (PR, "if vendor.allowed_hosts and parts.hostname.lower() not in vendor.allowed_hosts:", "if False:"),
+    "pilot 允许 http": (PR, 'if env not in SYNTHETIC_ENVS and parts.scheme != "https":', "if False:"),
+    "手工配置绕过不变量": (RT, "        check_invariants(config)\n", ""),
+    "主备可以同一厂商同一平台": (CF, "_need(not (a.org == b.org and a.platform == b.platform)", "_need(True or not (a.org == b.org and a.platform == b.platform)"),
+    "熔断后不过滤数据级别（候选不经过滤）": (RT, "return tuple(t for t in route.targets if egress_allowed(self._cfg.vendors[t.vendor], req.data_class, self._cfg.env))",
                                   "return route.targets"),
-    "熔断永不打开": ("breaker.py", "if s.failures >= self._threshold:", "if False:"),
-    "半开放行多个试探": ("breaker.py", 'if st == "half_open" and s.probe is None:', 'if st == "half_open":'),
-    "任何令牌都能释放试探名额": ("breaker.py", "return t.is_probe and self._get(t.vendor, t.task).probe is t", "return True"),
-    "意外异常不兜底": ("router.py", "                except Exception:  # noqa: BLE001", "                except ZeroDivisionError:  # noqa: BLE001"),
-    "不查 usage_id 与幂等键": ("router.py", "if not req.usage_id or not _KEY.match(req.usage_id) or not req.idempotency_key or not _KEY.match(req.idempotency_key):", "if False:"),
-    "prompt 名不按契约校验": ("router.py", '_PROMPT = re.compile(r"^[a-z0-9][a-z0-9\\-]{0,47}$")', '_PROMPT = re.compile(r"^[a-z0-9][a-z0-9._/\\-]{0,63}$")'),
-    "不查学科": ("router.py", "if req.subject is not None and req.subject not in SUBJECTS:", "if False:"),
-    "重试换了幂等键": ("router.py", "idempotency_key=req.idempotency_key, timeout=timeout", "idempotency_key=f\"{req.idempotency_key}-{t0}\", timeout=timeout"),
-    "client 错误也计入熔断": ("router.py", "if kind in BREAKER_FAILURES:", "if True:"),
-    "不传总时限时没有上限": ("router.py", "deadline = started + (req.deadline_ms or DEFAULT_DEADLINE_MS) / 1000", "deadline = started + (req.deadline_ms or 10**9) / 1000"),
-    "不看 Retry-After": ("router.py", "wait = retry_after if retry_after is not None else BACKOFF_BASE * (2 ** n)", "wait = BACKOFF_BASE * (2 ** n)"),
-    "调用记录带上请求内容": ("router.py", "subject=req.subject if req.subject in SUBJECTS else None,", "subject=str(req.messages),"),
-    "不一致不告诉调用方": ("router.py", "usage=reply.usage, model_mismatch=mismatch, reported_model=reported)", "usage=reply.usage)"),
-    "model_version 写死": ("router.py", "return RouteResult(output=reply.output, model_version=target.model_version,", "return RouteResult(output=reply.output, model_version=\"routed\","),
-    "响应体不限大小": ("providers.py", "if len(buf) > MAX_RESPONSE_BYTES:", "if False:"),
+    "熔断永不打开": (BR, "if s.failures >= self._threshold:", "if False:"),
+    "半开放行多个试探": (BR, 'if st == "half_open" and s.probe is None:', 'if st == "half_open":'),
+    "任何令牌都能释放试探名额": (BR, "return t.is_probe and self._get(t.vendor, t.task).probe is t", "return True"),
+    "意外异常不兜底": (RT, "                except Exception:  # noqa: BLE001", "                except ZeroDivisionError:  # noqa: BLE001"),
+    "不查 usage_id 与幂等键": (RT, "if not req.usage_id or not _KEY.match(req.usage_id) or not req.idempotency_key or not _KEY.match(req.idempotency_key):", "if False:"),
+    "prompt 名不按契约校验": (RT, '_PROMPT = re.compile(r"^[a-z0-9][a-z0-9\\-]{0,47}$")', '_PROMPT = re.compile(r"^[a-z0-9][a-z0-9._/\\-]{0,63}$")'),
+    "不查学科": (RT, "if req.subject is not None and req.subject not in SUBJECTS:", "if False:"),
+    "重试换了幂等键": (RT, "idempotency_key=req.idempotency_key, timeout=timeout", "idempotency_key=f\"{req.idempotency_key}-{t0}\", timeout=timeout"),
+    "client 错误也计入熔断": (RT, "if kind in BREAKER_FAILURES:", "if True:"),
+    "不传总时限时没有上限": (RT, "deadline = started + (req.deadline_ms or DEFAULT_DEADLINE_MS) / 1000", "deadline = started + (req.deadline_ms or 10**9) / 1000"),
+    "不看 Retry-After": (RT, "wait = retry_after if retry_after is not None else BACKOFF_BASE * (2 ** n)", "wait = BACKOFF_BASE * (2 ** n)"),
+    "调用记录带上请求内容": (RT, "subject=req.subject if req.subject in SUBJECTS else None,", "subject=str(req.messages),"),
+    "不一致不告诉调用方": (RT, "usage=reply.usage, model_mismatch=mismatch, reported_model=reported)", "usage=reply.usage)"),
+    "model_version 写死": (RT, "return RouteResult(output=reply.output, model_version=target.model_version,", "return RouteResult(output=reply.output, model_version=\"routed\","),
+    "响应体不限大小": (PR, "if len(buf) > MAX_RESPONSE_BYTES:", "if False:"),
+    # ---- LT-02：staging 按 pilot 口径、占位拒绝 ----
+    "staging 不按 pilot 口径校验": (CF, 'STRICT_ENVS = frozenset({"staging"}) | NO_EGRESS_ENVS', "STRICT_ENVS = NO_EGRESS_ENVS"),
+    "占位值不拒绝": (CF, "return isinstance(value, str) and bool(_PLACEHOLDER.match(value))", "return False"),
+    "staging 不要求 allowed_hosts": (CF, '_need(bool(hosts), f"{where}: {env} 环境必须登记 allowed_hosts（启动时核对实际地址）")', "pass"),
+    "staging 不要求显式 api_name": (CF, '_need("api_name" in raw, f"{where}: {env} 环境必须显式写发给供应商的快照名 api_name")', "pass"),
+    "手工配置的占位不核对": (CF, "_need(not is_placeholder(t.api_name) and not any(is_placeholder(h) for h in v.allowed_hosts),", "_need(True,"),
+    "环境节收未知键": (CF, '_need(not extra, f"{env}: 未知键 {sorted(extra)}")', "pass"),
+    # ---- LT-02：成本护栏 ----
+    "超限也放行": (RT, "                if reservation is None:\n                    self.breaker.release(ticket)",
+                "                if False:\n                    self.breaker.release(ticket)"),
+    "失败调用报告的用量不计": (RT, "if e.usage is not None:", "if False:"),
+    "内容不合格式时不带用量": (PR, 'raise ProviderError("bad_response", usage=usage if usage.input_tokens or usage.output_tokens else None)',
+                    'raise ProviderError("bad_response")'),
+    "staging 等不要求每个路由都有成本护栏": (CF, "_need(not missing,", "_need(True,"),
+    "次数不计": (BG, "            self._calls[task] = self._calls.get(task, 0) + 1", "            pass"),
+    "token 不计": (RT, "self.budget.settle(reservation, reply.usage.input_tokens + reply.usage.output_tokens)", "pass"),
+    "按 UTC 自然日重置": (BG, "UTC8_OFFSET_SECONDS = 8 * 3600", "UTC8_OFFSET_SECONDS = 0"),
+    "跨 0 点的结算算进新一天": (BG, "if reservation.day == self._day:", "if True:"),
+    "次数上限差一（多放一次）": (BG, "                if self._calls.get(task, 0) >= limit.daily_calls or", "                if self._calls.get(task, 0) > limit.daily_calls or"),
+    "token 上限不看": (BG, " or self._tokens.get(task, 0) >= limit.daily_tokens:", ":"),
+    "预算可配给没有路由的任务": (CF, '_need(task in routes, f"{where}: 本环境没有这个任务的路由")', "pass"),
+    "预算次数收布尔": (CF, "return isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= upper", "return isinstance(value, int) and 1 <= value <= upper"),
+    "超限映射成普通 503": (API, "    except BudgetExceeded as e:", "    except ZeroDivisionError as e:"),
+    "超限标为可重试": (API, '"daily model call budget exhausted", retryable=False,', '"daily model call budget exhausted", retryable=True,'),
+    "超限不带 retry-after": (API, 'headers={"retry-after": str(e.retry_after_seconds)}', "headers={}"),
+    # ---- LT-02：成本估算 ----
+    "没有单价也估算": (LG, "    if price is None:\n        return None", "    if price is None:\n        return 0.0"),
+    "单价键不校验": (CF, '_need(isinstance(key, str) and key in known,', "_need(isinstance(key, str),"),
+    # ---- LT-02：供应商登记联动 ----
+    "登记状态不核对": (RG, "elif entry.status not in STATUS_FOR_WHITELIST[wl]:", "elif False:"),
+    "未登记供应商不报": (RG, 'problems.append(f"{where}: 不在 docs/compliance/vendors.md 的登记表里")\n', "pass\n"),
+    "停用照样放过": (RG, 'if entry.status == "停用":', "if False:"),
+    "主机名不核对": (RG, "if entry.hosts_placeholder or set(entry.hosts) != {str(h).lower() for h in hosts}:", "if False:"),
+    "只核对 staging": (RG, "for env in sorted(STRICT_ENVS):", 'for env in ["staging"]:'),
+    "登记表重复 ID 不报": (RG, "if vid in out:", "if False:"),
+    "测试专用供应商进 staging 不报": (RG, "elif wl not in STATUS_FOR_WHITELIST:", "elif False:"),
+    "登记表不靠标记锚定": (RG, "    if len(marks) != 1:", "    if False:"),
+    "不像主机名的片段不报": (RG, "    if bad:", "    if False:"),
+    # ---- LT-02 决定记录（续）第 5 条：staging 回环路由监听 ----
+    "回环监听放行所有路径": (LS, 'if kind == "http" and scope.get("path") == ROUTE_PATH and not scope.get("root_path"):', 'if kind == "http":'),
+    "回环监听重复跑应用的启动与关闭": (LS, '        if kind == "lifespan":', "        if False:"),
+    "回环监听不在回环地址": (LS, 'LOOPBACK = "127.0.0.1"', 'LOOPBACK = "0.0.0.0"'),
+    "dev、test 也起回环监听": (SCF, "    if env != STAGING:\n        if raw:", "    if False:\n        if raw:"),
+    "回环端口可与主监听相同": (SCF, 'if text == (main_raw or "8788"):', "if False:"),
+    # ---- LT-02：真实模型冒烟 ----
+    "冒烟收 pilot、prod": (SMOKE, 'SMOKE_ENVS = ("staging", "dev")', 'SMOKE_ENVS = ("staging", "dev", "pilot", "prod", "test")'),
+    "冒烟不限次": (SMOKE, "if len(targets) > max_calls:", "if False:"),
+    "冒烟打印回复原文": (SMOKE, "回复 {len(res.output)} 字", "回复 {res.output}"),
+    "冒烟带重试": (SMOKE, "timeout_seconds=cfg.routes[task].timeout_seconds, max_retries=0)", "timeout_seconds=cfg.routes[task].timeout_seconds, max_retries=2)"),
 }
 
 
+def one(name: str, fname: str, pattern: str, replacement: str) -> str | None:
+    with tempfile.TemporaryDirectory(prefix="model-router-mut.") as t:
+        dst = PM._copy(Path(t))  # noqa: SLF001
+        f = dst / fname
+        text = f.read_text(encoding="utf-8")
+        if pattern not in text:
+            return f"变异本身写错（找不到原文）：{name}"
+        f.write_text(text.replace(pattern, replacement, 1), encoding="utf-8")
+        rc, _ = PM._run(dst, TESTS)  # noqa: SLF001
+        # 只有“测试失败”（退出码 1）算发现；收集错误、导入错误（2、4 等）说明变异把代码改坏了，不算（安全审查建议 13）
+        if rc != 1:
+            return f"{'漏检' if rc == 0 else f'不是被断言发现（退出码 {rc}）'}：{name}"
+    return None
+
+
 def main() -> int:
-    missed: list[str] = []
-    for name, (fname, pattern, replacement) in MUTATIONS.items():
-        with tempfile.TemporaryDirectory(prefix="model-router-mut.") as tmp:
-            dst = Path(tmp)
-            shutil.copytree(ROOT / "learning", dst / "learning", ignore=shutil.ignore_patterns("__pycache__"))
-            shutil.copytree(ROOT / "config", dst / "config")
-            shutil.copy(ROOT / "pytest.ini", dst / "pytest.ini")
-            (dst / "tests").mkdir()
-            shutil.copy(ROOT / "tests" / "test_model_router.py", dst / "tests" / "test_model_router.py")
-            target = dst / PKG / fname
-            src = target.read_text(encoding="utf-8")
-            if pattern not in src:
-                print(f"  变异本身写错（找不到原文）：{name}")
-                missed.append(name)
-                continue
-            target.write_text(src.replace(pattern, replacement, 1), encoding="utf-8")
-            r = subprocess.run([sys.executable, "-m", "pytest", "-q", "-x", "-p", "no:cacheprovider", "tests/test_model_router.py"],
-                               cwd=dst, capture_output=True, text=True,
-                               env={"PYTHONPATH": str(dst), "PATH": "/usr/bin:/bin", "PYTHONDONTWRITEBYTECODE": "1"})
-            # 只有“测试失败”（退出码 1）算发现；收集错误、导入错误（2、4 等）说明变异把代码改坏了，不算（安全审查建议 13）
-            if r.returncode != 1:
-                print(f"  {'漏检' if r.returncode == 0 else f'不是被断言发现（退出码 {r.returncode}）'}：{name}")
-                missed.append(name)
+    if not (PM.HERE / ".venv/bin/python").exists():
+        print("model-router-mutation: 跳过（没有安装学习服务依赖）")
+        return 3
+    with tempfile.TemporaryDirectory(prefix="model-router-mut.") as t:
+        rc, out = PM._run(PM._copy(Path(t)), TESTS)  # noqa: SLF001
+    if rc != 0:
+        print(out)
+        print(f"model-router-mutation: 失败（对照组没有通过，rc={rc}）")
+        return 1
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        results = list(pool.map(lambda kv: one(kv[0], *kv[1]), MUTATIONS.items()))
+    missed = [r for r in results if r]
+    for m in missed:
+        print(f"  {m}")
     if missed:
         print(f"model-router-mutation: 失败，{len(missed)}/{len(MUTATIONS)} 个变异没有被发现")
         return 1
-    print(f"model-router-mutation: 通过（{len(MUTATIONS)} 个变异全部被发现）")
+    print(f"model-router-mutation: 通过（对照组通过；{len(MUTATIONS)} 个变异全部被发现）")
     return 0
 
 

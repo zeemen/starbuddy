@@ -172,6 +172,15 @@ model-router-mutation:
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
 	@$(call guard,$(LEARNING_MISSING))cd services/learning && .venv/bin/python scripts/model_router_mutations.py
 
+# 真实模型冒烟（LT-02，specs/launch-lt02-model-provider 范围第 6 条）：由人在有凭据的 staging 执行环境里运行，不进 make check、不进 CI。
+# 每个不同的路由目标各发一次合成 L0 请求（不重试），只打印元数据；必须显式给 MAX_CALLS（硬上限 12）；pilot、prod、test 一律拒绝。
+#   make model-smoke SMOKE_ENV=staging MAX_CALLS=5      步骤见 deploy/config/README.md 第 7 节
+.PHONY: model-smoke
+model-smoke:
+	@if $(LEARNING_MISSING); then echo "model-smoke: 没有安装学习服务依赖（见 services/learning/README.md）"; exit 1; fi
+	@if [ -z "$(SMOKE_ENV)" ]; then echo "model-smoke: 必须给 SMOKE_ENV（只收 staging、dev）"; exit 2; fi
+	@cd services/learning && .venv/bin/python scripts/model_smoke.py --env "$(SMOKE_ENV)" $(if $(MAX_CALLS),--max-calls "$(MAX_CALLS)")
+
 # 数学自适应诊断（SIE-02a，specs/sie-02a-math-diagnosis）：单测、合成学生回放与性质测试在 learning-test 里；
 # 这里把选题规则、状态机、幂等与可见范围的关键检查逐条改坏，断言诊断测试能发现（并行 4 路，约 1 分钟；需要本机 Postgres 与阿鸦依赖）
 diagnosis-mutation:
