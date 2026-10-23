@@ -191,3 +191,42 @@ compose 里调用方直接用被调方的固定内网地址（= 监听地址）�
 地址访问）与第 8 节的额外允许 Host（调用方经 Service clusterIP 访问）。
 k8s：就绪探针 `/readyz`、存活探针 `/healthz`（存活不依赖库，库抖动只摘流不重启）；适配器只监听回环，用 exec 在容器里做 TCP 连接
 （启动探针兜底启动时间，存活探针 30 秒后开始、30 秒一次）。
+
+## 10. 可观测性：指标、日志、告警（LT-05，`specs/launch-lt05-observability` 决定记录 2026-10-23：阿里云 ARMS 托管 Prometheus + SLS）
+**指标**（决定记录（续）第 5 条）：学习服务、审核台后端、洞察服务、知识服务、BFF、调度器各另起一个**只服务 `GET /metrics` 的指标监听**
+（与业务监听同一地址；端口变量与 staging 缺省：`LEARNING_METRICS_PORT` 9788、`REVIEW_CONSOLE_METRICS_PORT` 9792、`INSIGHT_METRICS_PORT` 9791、
+`KNOWLEDGE_METRICS_PORT` 9790、`BFF_METRICS_PORT` 9787、`SCHEDULER_METRICS_PORT` 9793，各不相同、不能与业务端口相同；dev / test 只在设了时起）。
+指标端口只认 GET、路径逐字相等（别的路径 404、别的方法 405）、`no-store`、不记访问日志、免鉴权、只在 Pod 内网；业务端口、学习服务的回环路由
+监听与调度器的健康监听上的 `/metrics` 一律 404。k8s：容器端口名 `metrics`，PodMonitor 只采它；NetworkPolicy `metrics-from-collector` 在
+命名空间外只给 ARMS 采集组件放行指标端口、不放行业务端口（命名空间与 Pod 标签由人填写）。前端与三科适配器不暴露指标。
+- 实现：Python 三份 `obs.py`（`services/learning/learning/obs.py`、`services/insight/insight/service/obs.py`、
+  `services/knowledge/knowledge/service/obs.py`，代码逐字相同，`deploy/tests/test_obs_shared.py` 核对；审核台与调度器复用学习服务那份），
+  依赖 `prometheus-client 0.26.0`（Apache-2.0 AND BSD-2-Clause）；BFF `services/bff/src/observability/metrics.ts` 自写文本格式，**不引入指标依赖**
+  （决定记录（续）第 4 条：不用 `prom-client`）。不出进程 / GC 等缺省指标。写指标出任何错都只丢这一条，不影响请求；计量计数在事务提交之后，
+  计数出错不改变计量结果（第 6 条）。
+- 标签白名单（集中定义、有测试与变异）：`service`、`route`（路由模板，匹配不到记 `unmatched`，不记原始路径）、`method`、`status_class`、
+  `subject`、`task`、`provider`、`outcome`；学科、任务类型、供应商、结果只收枚举集合（枚举外一律记 `other`，Python 与 BFF 同一份），
+  路由只收模板形状（像 UUID、手机号、邮箱、长数字、原始路径的值写入前就拒绝）。**任何学生 / 家长 / 账号标识、手机号、内容都不进指标。**
+- 指标清单：`deploy/observability/metrics-inventory.yaml`（各服务测试把进程实际注册的指标与它逐项比对）。核心指标：请求数与时延直方图、
+  连接池、就绪；模型路由调用 / 供应商尝试（失败）/ 熔断 / 护栏剩余 / 估算成本；BFF 计量预留 / 结算 / 释放（回滚）/ 冲突（409）/ 计量事件，
+  学习服务写入前核对的放行与 409；复核队列积压（按学科计数与最早等待，采集时查库、缓存 30 秒）；调度任务成败、耗时、最近一次成功时刻。
+
+**日志**：各服务一行一个 JSON：`ts`、`level`、`service`、`logger`（BFF 无此项），请求内另带 `route`（路由模板）与 `request_id`，
+再并入原记录里**登记过的元数据字段**（安全审查 B：字段白名单 `LOG_FIELDS`，键名先驼峰归一为下划线小写，白名单外的键整项丢掉；Python 三份
+`obs.py` 与 BFF `observability/log.ts` 同一份清单，IaC 日志索引字段只能从中选，`deploy/tests/test_obs_shared.py` 核对；BFF 另有 `student`、
+`account` 两个哈希字段，只收带密钥 HMAC 截断的 16 位十六进制）。脱敏集中实现（两边同口径、有测试）：嵌套结构里的作答原文与内容、手机号、
+邮箱、身份证、令牌 / 口令 / 密钥 / 会话、姓名、文本、地址、标识等字段整项丢掉；字符串里的手机号（允许空格、连字符分隔）、邮箱、身份证号、
+Bearer / JWT / 密钥样式串、连接串替换为 `[redacted]`，UUID 替换为 `[uuid]`（`request_id` 字段除外）；超长截断；异常只记类名。
+uvicorn 以 `log_config=None` 启动，它的日志也经同一个处理器。SLS 采集见 `deploy/k8s/observability.yaml`（安全审查 A：只采六个后端主容器——
+Pod 标签 `starbuddy/metrics=true` 且容器名在白名单里；标准输出与标准错误，JSON 展开一层，解析失败的行丢弃；进 IaC 预建的 `app` 日志库，
+留存 180–365 天由 IaC 设、采集配置不写；`sls.tf` 只给白名单字段建字段索引，不建全文索引）。
+
+**告警与仪表盘**：`deploy/observability/alerts.yaml`（Prometheus 规则：服务不可用、就绪失败、5xx 率、p95 时延、连接池、模型熔断与失败率、
+护栏将满 / 已满、估算成本、计量回滚 / 409 / 结果未知、复核积压、调度失败 / 长时间未成功、证书、磁盘、容器重启）与
+`deploy/observability/dashboards/*.json`（总览、模型与成本、计量、学习链路）；`check_observability.py`（O01–O06）核对只引用登记的指标、
+标签只用白名单，随 `make deploy-check`；有 promtool 的环境另跑 `make obs-promtool`。**阈值都是占位缺省，待人签字（SLO 通过线）**。
+
+**由人完成**：开通 ARMS 托管 Prometheus 与 SLS（新增云服务，必停）；按 ARMS 实际情况填 NetworkPolicy 的采集组件命名空间与 Pod 标签、
+`AliyunLogConfig` 的 project；在 ARMS 控制台导入告警规则与仪表盘，**配置告警接收人、通知渠道与值守排班**（仓库不含联系方式）；
+签字阈值；核对 `external` 里采集侧指标名（kube-state-metrics、kubelet、拨测）在 ARMS 里可用；证书拨测只从 VPC 内网发起（集群内探针或
+内网拨测点），不开公网拨测。ARMS 与 SLS 已作为数据处理方登记在 `docs/compliance/vendors.md`（状态待开通）。每周恢复演练见 `deploy/runbooks/weekly-restore-verify.md`。

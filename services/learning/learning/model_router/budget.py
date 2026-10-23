@@ -79,6 +79,13 @@ class DailyBudget:
     def retry_after(self) -> int:
         return seconds_until_reset(self._wall())
 
+    def remaining(self) -> dict[Task, tuple[int, int, Budget]]:
+        """配了上限的任务 →（当日剩余次数，当日剩余 token，上限）；只读，供指标采集（LT-05）"""
+        with self._lock:
+            self._roll(day_of(self._wall()))
+            return {t: (max(0, b.daily_calls - self._calls.get(t, 0)), max(0, b.daily_tokens - self._tokens.get(t, 0)), b)
+                    for t, b in self._limits.items()}
+
     def used(self, task: Task) -> tuple[int, int]:
         """（当日已用次数，当日已用 token）；只读，供测试与运维核对"""
         with self._lock:

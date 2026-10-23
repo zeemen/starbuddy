@@ -10,12 +10,12 @@
 | `providers.tf` | 地域（只引用 `var.region`）、账号数据源（账号 ID 只在 plan 时取得）、统一标签 |
 | `variables.tf` | 全部变量；没有缺省值的由人填写（`terraform.tfvars.example`） |
 | `network.tf` | VPC、节点 / Pod / 数据库交换机（两个可用区）、普通安全组（入方向只收 VPC；出方向白名单：VPC、内网 DNS 53、元数据 80、服务内网端点 443、公网 443，100.64.0.0/10 与 169.254.0.0/16 在公网 443 之前拒绝，最后全拒绝）、NAT（只 SNAT，排在云防火墙访问控制之后、须人确认防火墙已开）+ EIP（只绑 NAT） |
-| `ack.tf` | ACK Pro 托管集群（API Server 不开公网、Terway + NetworkPolicy、Secret 落盘 KMS 加密、控制面日志、RRSA）与节点池（系统盘 KMS 加密、无公网地址） |
+| `ack.tf` | ACK Pro 托管集群（API Server 不开公网、Terway + NetworkPolicy、Secret 落盘 KMS 加密、控制面日志、RRSA；LT-05 加 ARMS 托管 Prometheus 采集组件 arms-prometheus，R20）与节点池（系统盘 KMS 加密、无公网地址） |
 | `rds.tf` | RDS PostgreSQL 16 高可用（只内网、白名单只收 VPC、KMS 云盘加密、删除保护；强制 TLS：证书只签内网连接地址、pg_hba 只有 hostssl）与备份策略（每日 + 日志备份 = PITR） |
 | `oss.tf` | 私有桶（私有 ACL、阻止公共访问、KMS 服务端加密、版本控制、生命周期）；OSS 网关终端节点（策略只放行本桶，待人确认） |
 | `acr.tf` | ACR 企业版（缺省 Advanced，待人核实）：私有命名空间与仓库（10 个服务镜像 + 2 个基础镜像）、VPC 访问端点 |
 | `egress.tf` | 出网白名单：云防火墙 NAT 边界只放行 `var.model_egress_fqdns` 的 TCP 443，最后一条拒绝其余；`nat_firewall_confirmed` 由人确认 |
-| `sls.tf` | 日志服务：留存 ≥ 180 天、服务端加密、不建全文索引；不记个人信息的口径在应用侧 |
+| `sls.tf` | 日志服务：留存 ≥ 180 天、服务端加密、不建全文索引；app 日志库只给白名单字段建字段索引（LT-05，R21）；不记个人信息的口径在应用侧（各服务 obs 模块集中脱敏） |
 | `kms.tf` | KMS 主密钥与凭据管家专用密钥（都自动轮转、删除保护）；ack-secret-manager 的最小权限 RAM 角色（逐个列名的凭据、只用专用密钥 Decrypt，不用通配符） |
 | `slb.tf` | 内网负载均衡的访问控制（办公网 / VPN 网段白名单）；负载均衡本身由 ACK 按 web Service 创建 |
 | `outputs.tf` | 只给执行 apply 的人填部署配置用的标识与内网地址（不提交） |
@@ -31,7 +31,8 @@
 | tfsec | MIT（已并入 Trivy，Trivy 为 Apache-2.0） | 可用 |
 
 本机（Claude 的工作环境）没有 terraform / tofu / tflint / checkov / tfsec，也不联网下载（不重装依赖原则），所以：
-- **总是运行**：`deploy/iac/check_iac.py`（只用标准库的 HCL 小解析器 + 19 条规则 R01–R19，随 `make deploy-check`；规则逐条有变异测试 `deploy/tests/test_iac.py`）；
+- **总是运行**：`deploy/iac/check_iac.py`（只用标准库的 HCL 小解析器 + 21 条规则 R01–R21，随 `make deploy-check`；规则逐条有变异测试 `deploy/tests/test_iac.py`；
+  R20、R21 为 LT-05 新增：采集组件 arms-prometheus / logtail-ds 必须装、告警联系人类资源不进 IaC；日志库不建全文索引、字段索引只收白名单字段）；
 - **工具在时运行**：`make iac-validate`（`deploy/scripts/iac-validate.sh`：`terraform init -backend=false` + `terraform validate`、tflint、checkov、tfsec；
   缺工具打印“跳过”，非严格模式算通过、`CONTRACT_STRICT=1` 时失败）。provider 不联网下载：须由人准备本地镜像目录 `IAC_PLUGIN_DIR`。
 
@@ -70,6 +71,13 @@
 - VPC `10.20.0.0/16`；节点、Pod（Terway）、数据库交换机都在 VPC 内；Service 网段 `10.96.0.0/16`（不与 VPC 重叠），
   `deploy/k8s/staging.yaml` 里显式写的 clusterIP（10.96.100.x）都在这个网段里；
 - Pod IP 来自 Pod 交换机（RFC 1918），各服务的 `*_HOST`（downward API `status.podIP`）与服务间地址的内网 IPv4 口径不变。
+
+## 4b. 监控与日志采集（LT-05，specs/launch-lt05-observability；由人开通与配置）
+- 开通 ARMS 托管 Prometheus（随 ACK 组件 `arms-prometheus`，新增云服务属必停）；apply 后在集群里应用 `deploy/k8s/observability.yaml`
+  （PodMonitor 采各服务 `/metrics`、AliyunLogConfig 把容器标准输出 / 标准错误采进 SLS 的 `app` 日志库）；
+- 核对 ARMS 采集组件所在命名空间与 Pod 标签，填进 `deploy/k8s/staging.yaml` 的 NetworkPolicy `metrics-from-collector`（占位 `<由人填写…>`）；
+- 告警规则 `deploy/observability/alerts.yaml` 在 ARMS 控制台导入（阈值是占位缺省，待人签字）；仪表盘 `deploy/observability/dashboards/*.json`
+  导入 ARMS 的 Grafana；**告警联系人、通知渠道、值守排班由人在控制台配置**，不进 IaC 与仓库（R20 拒绝告警联系人类资源）。
 
 ## 5. 已知与待人确认
 - 迁移用到的扩展 `pgcrypto`（`WITH SCHEMA starbuddy_ext`）与 `db/bootstrap/roles.sql` 里带 `BYPASSRLS` 的属主角色：RDS 的高权限账号能否创建

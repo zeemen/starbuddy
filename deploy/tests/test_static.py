@@ -226,7 +226,8 @@ def test_k8s_http_probes(k8s_docs):
                 assert c["startupProbe"]["failureThreshold"] * c["startupProbe"]["periodSeconds"] >= 60, where
                 continue
             port = APP_PORTS[c["name"]]
-            assert [p["containerPort"] for p in c["ports"]] == [port], where
+            # LT-05 决定记录（续）第 5 条：后端另有一个只服务 /metrics 的指标端口（端口名 metrics，deploy/tests/test_observability.py 核对）
+            assert [p["containerPort"] for p in c["ports"] if p.get("name") != "metrics"] == [port], where
             assert c["readinessProbe"]["httpGet"] == {"path": "/readyz", "port": port}, where
             assert c["livenessProbe"]["httpGet"] == {"path": "/healthz", "port": port}, where
     sched = _deployments(k8s_docs)["scheduler"]["spec"]["template"]["spec"]["containers"][0]

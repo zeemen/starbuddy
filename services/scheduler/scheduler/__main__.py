@@ -4,7 +4,8 @@
   SCHEDULER_ENV=dev ... python -m scheduler --once meter-expire                  立刻运行一个任务一轮（取锁、子进程、日志）后退出
   SCHEDULER_ENV=dev ... python -m scheduler --dry-run [--once <任务>]             只核对并列出计划（命令、变量名、接下来 3 次运行时刻），不连库
   可选 --schedule <路径>（缺省 config/schedule.synthetic.yaml）
-  常驻模式下设了 SCHEDULER_HEALTH_PORT（与可选的 SCHEDULER_HOST）另起 HTTP 健康监听：GET /healthz、/readyz（LT-03，scheduler/health.py）
+  常驻模式下设了 SCHEDULER_HEALTH_PORT（与可选的 SCHEDULER_HOST）另起 HTTP 健康监听：GET /healthz、/readyz（LT-03，scheduler/health.py）；
+  另起只服务 GET /metrics 的指标监听（LT-05；SCHEDULER_METRICS_PORT，staging 缺省 9793，dev / test 只在设了时起）
 
 启动核对（规则 9）：SCHEDULER_ENV 只收 dev / test / staging（staging：LT-01 决定记录第 5 条，只收签字时间表，各身份也须 staging，
 连接串另收内网 IPv4）；时间表配置合法；选中的每个任务所需的变量都在、各身份的运行环境变量只收 dev / test、
@@ -82,15 +83,19 @@ def main(argv: list[str] | None = None, environ: Mapping[str, str] | None = None
             out.write(json.dumps(doc, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n")
         return 0
     # 健康监听（LT-03，scheduler/health.py）：只在常驻模式、且设了 SCHEDULER_HEALTH_PORT 时起；配置不合格拒绝启动
+    # 指标监听（LT-05 决定记录（续）第 5 条）：只服务 GET /metrics；staging 缺省 9793，dev / test 只在设了 SCHEDULER_METRICS_PORT 时起
     try:
         listen = health.listen_config(env, env[ENV_VAR])
         server = health.HealthServer(*listen, health.db_probe_for(env, env[ENV_VAR])) if listen is not None else None
+        mlisten = health.metrics_config(env, env[ENV_VAR], listen)
+        mserver = health.MetricsServer(*mlisten) if mlisten is not None else None
     except (health.HealthConfigError, PreflightError) as e:
         return _refuse(f"健康监听配置不合法：{e}")
-    out.write(json.dumps({"event": "start", "level": "info", "jobs": sorted(cfg.jobs), "synthetic": cfg.synthetic, "signed": cfg.signed},
+    out.write(json.dumps({"ts": clock().isoformat(timespec="milliseconds"), "service": "scheduler", "event": "start", "level": "info",
+                          "jobs": sorted(cfg.jobs), "synthetic": cfg.synthetic, "signed": cfg.signed},
                          ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n")
     out.flush()
-    asyncio.run(serve_forever(Loop(cfg.jobs, run, clock), server))
+    asyncio.run(serve_forever(Loop(cfg.jobs, run, clock), server, mserver))
     return 0
 
 

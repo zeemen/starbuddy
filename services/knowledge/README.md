@@ -126,6 +126,7 @@ KNOWLEDGE_ENV=dev KNOWLEDGE_DATABASE_URL=... KNOWLEDGE_TOKEN_ORCHESTRATOR=... KN
 | jsonschema / referencing | 4.26.0 / 0.37.0 | MIT / MIT | 契约严格校验；传递依赖 jsonschema-specifications（MIT）、rpds-py（MIT）、attrs（MIT） |
 | mcp / mcp-types | 2.2.0 / 2.2.0 | MIT / MIT | MCP 官方 Python SDK（spec 待人确认 #4）。传递依赖：httpx2 / httpcore2 2.13.1（BSD-3）、sse-starlette 3.5.0（BSD-3）、python-multipart 0.0.32（Apache-2.0）、PyJWT 2.15.1（MIT）、cryptography 50.0.1（Apache-2.0 或 BSD-3）、cffi 2.1.1（MIT-0）、pycparser 3.0（BSD-3）、opentelemetry-api 1.45.0（Apache-2.0）、truststore 0.10.4（MIT）。SDK 的 OAuth、stdio、客户端网络功能本服务不用；只用低层 Server、streamable HTTP 与测试用的进程内客户端 |
 | jieba | 0.42.1 | MIT | 兜底检索与 `node.resolve` 全文检索的中文分词（spec 待人确认 #5）。只有源码包（纯 Python，安装时本地构建），自带词典；没有运行时依赖（导入时若有 setuptools 会用其 `pkg_resources` 读词典，否则按文件路径读）。首次分词在服务私有目录（`KNOWLEDGE_CACHE_DIR`，缺省 `.cache/jieba/`）写一份词典缓存 `jieba.cache`（只含公共词典，不含任何查询），不用系统临时目录 |
+| prometheus-client | 0.26.0 | Apache-2.0 AND BSD-2-Clause（PyPI 元数据；BSD-2 部分是包内附带的 decorator.py） | LT-05 可观测性：`/metrics`（`knowledge/service/obs.py`）；无运行依赖 |
 | pytest（开发） | 9.1.1 | MIT | 单测；传递依赖 pluggy（MIT）、iniconfig（MIT）、packaging（Apache-2.0 或 BSD-2）、Pygments（BSD-2） |
 | pip-tools（只在 .venv 里生成锁文件） | 7.6.1 | BSD-3-Clause | 生成带哈希的 `requirements.lock` / `requirements-dev.lock`（`pip-compile --generate-hashes`）；不是运行依赖，不进锁文件 |
 

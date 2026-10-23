@@ -9,9 +9,11 @@
 import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { withAccount } from '../metering/db.ts';
+import { emit } from '../observability/log.ts';
+import { CONTENT_TYPE, METRICS_PATH, observeHttp, render, trackPool, trackReady, type PoolStats } from '../observability/metrics.ts';
 import { cachedReady, handleHealth, poolReady } from './health.ts';
 import { P } from './problems.ts';
-import { activeRoutes, compile, templateShapes, type Ctx, type Query, type Reply, type Route, type Session, type ShellDeps } from './routes.ts';
+import { activeRoutes, compile, PREFIX, templateShapes, type Ctx, type Query, type Reply, type Route, type Session, type ShellDeps } from './routes.ts';
 import { csrfFor, E164, logHash, rateKey, safeEqual, SESSION_TOKEN } from './secrets.ts';
 
 const MAX_BODY = 16 * 1024;
@@ -63,7 +65,8 @@ export function createShellHandler(deps: ShellDeps): (req: IncomingMessage, res:
                               deps.familyGoals?.enabled === true, deps.monthlyPlan?.enabled === true);
   const table = compile(routes);
   const shapes = templateShapes(routes);
-  const log = deps.log ?? ((line) => console.log(JSON.stringify(line)));
+  // 访问日志（LT-05）：缺省经 observability/log.ts 一行 JSON（ts、level、service）并集中脱敏；测试可注入
+  const log = deps.log ?? ((line) => emit('info', line));
 
   const limit = async (bucket: string, dim: string, value: string): Promise<void> => {
     const rule = deps.config.rate_limits[bucket];
@@ -82,6 +85,7 @@ export function createShellHandler(deps: ShellDeps): (req: IncomingMessage, res:
     const started = Date.now();
     const requestId = randomUUID();
     const record: Record<string, unknown> = { request_id: requestId, route: 'unmatched' };
+    let template = 'unmatched';  // 指标的路由标签：路由表模板，不记原始路径（LT-05）
     const send = (r: Reply) => {
       record['status'] = r.status;
       if (res.headersSent || res.destroyed) return;
@@ -100,6 +104,7 @@ export function createShellHandler(deps: ShellDeps): (req: IncomingMessage, res:
       if (!found) throw new Stop(P.METHOD_NOT_ALLOWED);
       const route: Route = found.c.route;
       record['route'] = `${route.method} ${route.path}`;
+      template = PREFIX + route.path;
       const params: Record<string, string> = {};
       found.c.names.forEach((n, i) => { params[n] = found.m![i + 1]!; });
       if (params['student_id']) record['student'] = logHash(deps.keys, params['student_id']);
@@ -209,20 +214,54 @@ export function createShellHandler(deps: ShellDeps): (req: IncomingMessage, res:
     } finally {
       record['duration_ms'] = Date.now() - started;
       log(record);
+      observeHttp(template, req.method, typeof record['status'] === 'number' ? record['status'] : 500, Date.now() - started);
     }
     return true;
   };
 }
 
-/** BFF 唯一的 HTTP 入口（src/main.ts）：表外路径一律 404；健康端点（LT-03，src/http/health.ts）在路由表之前应答 */
+/** 指标端口上的唯一处理（LT-05 决定记录（续）第 5 条）：只服务 GET /metrics（路径逐字相等），别的方法 405、别的路径 404；
+ *  免会话、不限流、不记访问日志、no-store。业务端口不服务 /metrics */
+export function handleMetrics(req: IncomingMessage, res: ServerResponse): void {
+  const headers = { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' };
+  if ((req.url ?? '') !== METRICS_PATH) {
+    res.writeHead(404, { ...headers, 'content-type': 'application/json' });
+    res.end(JSON.stringify({ status: 'not_found' }));
+    return;
+  }
+  if (req.method !== 'GET') {
+    res.writeHead(405, { ...headers, 'content-type': 'application/json', allow: 'GET' });
+    res.end(JSON.stringify({ status: 'method_not_allowed' }));
+    return;
+  }
+  const body = render();
+  res.writeHead(200, { ...headers, 'content-type': CONTENT_TYPE });
+  res.end(body);
+}
+
+/** 单独的指标监听（src/main.ts 在 BFF_METRICS_PORT 上起）：只服务 GET /metrics */
+export function createMetricsServer(): Server {
+  const server = createServer(handleMetrics);
+  server.requestTimeout = 10_000;
+  server.headersTimeout = 5_000;
+  return server;
+}
+
+/** BFF 唯一的 HTTP 入口（src/main.ts）：表外路径一律 404（含 /metrics：指标只在单独的指标端口）；健康端点（LT-03，src/http/health.ts）在路由表之前应答 */
 export function createShellServer(deps: ShellDeps, opts: { readyCacheMs?: number } = {}): Server {
   const handle = createShellHandler(deps);
-  const ready = cachedReady(() => poolReady(deps.pool), opts.readyCacheMs);
+  let lastReady: boolean | undefined;
+  const ready = cachedReady(() => poolReady(deps.pool), opts.readyCacheMs, Date.now, (ok) => { lastReady = ok; });
+  // 指标（LT-05）：连接池与就绪在采集时现读（就绪取最近一次 /readyz 的结果，不另查库）
+  trackPool(() => deps.pool as unknown as PoolStats);
+  trackReady(() => lastReady);
   const server = createServer((req, res) => {
+    const started = Date.now();
     void handleHealth(req, res, ready).then((done) => (done ? true : handle(req, res))).then((handled) => {
-      if (handled) return;
-      res.writeHead(404, { 'content-type': 'application/problem+json', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
-      res.end(P.NOT_FOUND);
+        if (handled) return;
+        res.writeHead(404, { 'content-type': 'application/problem+json', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+        res.end(P.NOT_FOUND);
+        observeHttp('unmatched', req.method, 404, Date.now() - started);  // 表外路径：不记原始路径
     });
   });
   server.requestTimeout = 30_000;

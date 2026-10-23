@@ -68,9 +68,10 @@ class Loop:
             await asyncio.gather(*pending, return_exceptions=True)
 
 
-async def serve_forever(loop_: Loop, health: Any = None) -> None:
+async def serve_forever(loop_: Loop, health: Any = None, metrics: Any = None) -> None:
     """health：可选的健康监听（scheduler/health.py 的 HealthServer，LT-03）。先起监听，循环开始时标记就绪；
-    收到信号即标记未就绪（不再启动新任务），等正在跑的任务结束后关监听"""
+    收到信号即标记未就绪（不再启动新任务），等正在跑的任务结束后关监听。
+    metrics：可选的指标监听（health.MetricsServer，LT-05）：与健康监听一同起停"""
     stop = asyncio.Event()
     ev = asyncio.get_running_loop()
 
@@ -81,6 +82,8 @@ async def serve_forever(loop_: Loop, health: Any = None) -> None:
     for sig in (signal.SIGTERM, signal.SIGINT):
         with contextlib.suppress(NotImplementedError):
             ev.add_signal_handler(sig, on_signal)
+    if metrics is not None:
+        await metrics.start()
     if health is not None:
         await health.start()
         health.running = True
@@ -89,3 +92,5 @@ async def serve_forever(loop_: Loop, health: Any = None) -> None:
     finally:
         if health is not None:
             await health.stop()
+        if metrics is not None:
+            await metrics.stop()

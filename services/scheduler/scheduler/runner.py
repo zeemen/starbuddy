@@ -214,7 +214,9 @@ class RunResult:
         self.level = "alert" if is_alert(self.outcome, self.counts) else "info"
 
     def log_line(self) -> str:
-        doc = {"event": "job_run", "level": self.level, "job": self.job, "outcome": self.outcome, "exit_code": self.exit_code,
+        # LT-05 统一日志口径：另带 ts（= 结束时刻）与 service；其余字段与清洗规则不变（只有元数据）
+        doc = {"ts": self.finished_at, "service": "scheduler", "event": "job_run", "level": self.level, "job": self.job,
+               "outcome": self.outcome, "exit_code": self.exit_code,
                "child_exit": self.child_exit, "started_at": self.started_at, "finished_at": self.finished_at,
                "duration_ms": self.duration_ms, "counts": self.counts}
         if self.reason:
@@ -284,6 +286,8 @@ class Runner:
     def emit(self, r: RunResult) -> RunResult:
         self.out.write(r.log_line() + "\n")
         self.out.flush()
+        from . import metrics  # LT-05：每轮结果计数（健康监听的 /metrics）；只在运行时导入，配置与时间表的纯函数测试不依赖它
+        metrics.record(r)
         return r
 
     def check(self, job: Job) -> dict[str, str]:

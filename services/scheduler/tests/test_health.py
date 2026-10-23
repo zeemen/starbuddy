@@ -168,6 +168,38 @@ def test_server_and_loop_lifecycle(monkeypatch):
     asyncio.run(go())
 
 
+def test_metrics_server_follows_loop_lifecycle():
+    """LT-05：指标监听与健康监听一同起停；健康端口上 /metrics 404，指标端口上只有 /metrics"""
+    async def db() -> bool:
+        return True
+
+    async def go():
+        srv = health.HealthServer("127.0.0.1", 0, db)
+        msrv = health.MetricsServer("127.0.0.1", 0)
+        run, _, _ = runner()
+        loop_ = Loop({}, run)
+        loop_.next_due = {}
+        release = asyncio.Event()
+
+        async def serve(stop):
+            await release.wait()
+        loop_.serve = serve  # type: ignore[method-assign]
+        task = asyncio.create_task(serve_forever(loop_, srv, msrv))
+        for _ in range(100):
+            if msrv._server is not None and srv.running:
+                break
+            await asyncio.sleep(0.01)
+        mport = msrv.bound_port
+        assert b"200 OK" in (await _http(mport, b"GET /metrics HTTP/1.1\r\nHost: x\r\n\r\n")).split(b"\r\n")[0]
+        assert b"404" in (await _http(mport, b"GET /healthz HTTP/1.1\r\nHost: x\r\n\r\n")).split(b"\r\n")[0]
+        assert b"404" in (await _http(srv.bound_port, b"GET /metrics HTTP/1.1\r\nHost: x\r\n\r\n")).split(b"\r\n")[0]
+        release.set()
+        await asyncio.wait_for(task, 5)
+        with pytest.raises(OSError):
+            await _http(mport, b"GET /metrics HTTP/1.1\r\n\r\n")
+    asyncio.run(go())
+
+
 @pytest.mark.parametrize("extra,msg", [
     ({"SCHEDULER_HEALTH_PORT": "99999"}, "SCHEDULER_HEALTH_PORT"),
     ({"SCHEDULER_HEALTH_PORT": "8793", "SCHEDULER_HOST": "172.28.0.50"}, "只有 staging"),

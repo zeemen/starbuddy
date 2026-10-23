@@ -226,11 +226,11 @@ variable "acr_period_months" {
 
 # ---------------------------------------------------------------- 日志服务（SLS）
 variable "log_retention_days" {
-  description = "日志留存天数：不少于 180 天（《网络安全法》第二十一条：网络日志留存不少于六个月）"
+  description = "日志留存天数：不少于 180 天（《网络安全法》第二十一条：网络日志留存不少于六个月），不多于 365 天（最小必要；LT-05 安全审查）"
   type        = number
   default     = 180
   validation {
-    condition     = var.log_retention_days >= 180
-    error_message = "日志至少留存 180 天。"
+    condition     = var.log_retention_days >= 180 && var.log_retention_days <= 365
+    error_message = "日志留存 180–365 天。"
   }
 }

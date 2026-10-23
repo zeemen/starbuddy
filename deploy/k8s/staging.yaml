@@ -19,6 +19,9 @@
 #   - 出网（ADR 09 §5）：默认拒绝全部出网，只放行集群内、DNS、RDS 5432（只给连库的服务）；模型供应商（LT-02，pending）只给学习服务 Pod，
 #     且出 VPC 时还要过云防火墙 NAT 边界的主机名白名单（deploy/iac/alicloud/egress.tf）；
 #   - 入口：前端经内网负载均衡（只内网 + 办公网 / VPN 白名单访问控制，HTTPS 用内网证书），不公开域名、不建 Ingress。
+#   - 可观测性（LT-05）：六个后端 Pod 带 starbuddy/metrics 标签，GET /metrics 只在单独的指标端口（端口名 metrics，*_METRICS_PORT），
+#     由 ARMS 采集（PodMonitor 与 SLS 日志采集在 deploy/k8s/observability.yaml）；NetworkPolicy metrics-from-collector 只给采集组件放行
+#     指标端口（不放行业务端口）。
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -69,7 +72,7 @@ spec:
   selector: {matchLabels: {app: learning}}
   template:
     metadata:
-      labels: {app: learning, starbuddy/db-client: "true"}
+      labels: {app: learning, starbuddy/db-client: "true", starbuddy/metrics: "true"}
       # 出网白名单占位（LT-02）：只有本 Pod（学习服务的模型路由）可以出网到模型供应商；主机名由人在开通后填写，
       # 须与路由表 allowed_hosts、docs/compliance/vendors.md 一致，并据此在集群出网网关 / FQDN 策略里放行 443（见下方 NetworkPolicy 注释）
       annotations:
@@ -84,7 +87,7 @@ spec:
       containers:
         - name: learning
           image: ACR_REGISTRY/starbuddy/starbuddy-learning@sha256:DIGEST
-          ports: [{containerPort: 8788}]
+          ports: [{name: http, containerPort: 8788}, {name: metrics, containerPort: 9788}]
           env:
             - {name: LEARNING_ENV, value: staging}
             - {name: LEARNING_HOST, valueFrom: {fieldRef: {fieldPath: status.podIP}}}
@@ -110,6 +113,7 @@ spec:
             # 其他路径 404（健康端点只在主监听上）；同 Pod 的适配器经它调模型（适配器只认 https 或回环）。端口须与下面适配器注释里的
             # *_ROUTE_URL 一致（部署测试核对）
             - {name: LEARNING_ROUTE_PORT, value: "8785"}
+            - {name: LEARNING_METRICS_PORT, value: "9788"}  # LT-05：只服务 GET /metrics 的指标监听（业务端口上 /metrics 404）
             # 模型供应商（LT-02，开关矩阵 model_provider 仍 pending）：人开通、填好路由表 staging 节的快照名与主机名、
             # 两处登记改为已批准之后，才解开下面几行（路由客户端令牌一旦设置，学习服务就加载路由表，占位未填会拒绝启动）。
             # 两科适配器另加的几行见各自容器里的注释（ZHIXING_ROUTE_URL / WENLI_ROUTE_URL = http://127.0.0.1:8785）。
@@ -179,7 +183,7 @@ spec:
   replicas: 1
   selector: {matchLabels: {app: knowledge}}
   template:
-    metadata: {labels: {app: knowledge, starbuddy/db-client: "true"}}
+    metadata: {labels: {app: knowledge, starbuddy/db-client: "true", starbuddy/metrics: "true"}}
     spec:
       automountServiceAccountToken: false
       securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
@@ -190,11 +194,12 @@ spec:
       containers:
         - name: knowledge
           image: ACR_REGISTRY/starbuddy/starbuddy-knowledge@sha256:DIGEST
-          ports: [{containerPort: 8790}]
+          ports: [{name: http, containerPort: 8790}, {name: metrics, containerPort: 9790}]
           env:
             - {name: KNOWLEDGE_ENV, value: staging}
             - {name: KNOWLEDGE_HOST, valueFrom: {fieldRef: {fieldPath: status.podIP}}}
             - {name: KNOWLEDGE_PORT, value: "8790"}
+            - {name: KNOWLEDGE_METRICS_PORT, value: "9790"}
             # 契约审查阻断 2：学习服务经 Service 访问，Host 头是 clusterIP——另收这一个地址（= 下面 Service 的 clusterIP，部署测试核对）
             - {name: KNOWLEDGE_EXTRA_HOST, value: "10.96.100.12"}
             - {name: KNOWLEDGE_DATABASE_URL, valueFrom: {secretKeyRef: {name: starbuddy-knowledge, key: database-url}}}
@@ -224,7 +229,7 @@ spec:
   replicas: 1
   selector: {matchLabels: {app: insight}}
   template:
-    metadata: {labels: {app: insight, starbuddy/db-client: "true"}}
+    metadata: {labels: {app: insight, starbuddy/db-client: "true", starbuddy/metrics: "true"}}
     spec:
       automountServiceAccountToken: false
       securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
@@ -235,11 +240,12 @@ spec:
       containers:
         - name: insight
           image: ACR_REGISTRY/starbuddy/starbuddy-insight@sha256:DIGEST
-          ports: [{containerPort: 8791}]
+          ports: [{name: http, containerPort: 8791}, {name: metrics, containerPort: 9791}]
           env:
             - {name: INSIGHT_ENV, value: staging}
             - {name: INSIGHT_HOST, valueFrom: {fieldRef: {fieldPath: status.podIP}}}
             - {name: INSIGHT_PORT, value: "8791"}
+            - {name: INSIGHT_METRICS_PORT, value: "9791"}
             # 契约审查阻断 2：BFF 经 Service 访问，Host 头是 clusterIP——另收这一个地址（= Service 的 clusterIP，部署测试核对）
             - {name: INSIGHT_EXTRA_HOST, value: "10.96.100.14"}
             - {name: INSIGHT_DATABASE_URL, valueFrom: {secretKeyRef: {name: starbuddy-insight, key: database-url}}}
@@ -271,7 +277,7 @@ spec:
   replicas: 1
   selector: {matchLabels: {app: review-console}}
   template:
-    metadata: {labels: {app: review-console, starbuddy/db-client: "true"}}
+    metadata: {labels: {app: review-console, starbuddy/db-client: "true", starbuddy/metrics: "true"}}
     spec:
       automountServiceAccountToken: false
       securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
@@ -281,11 +287,12 @@ spec:
       containers:
         - name: review-console
           image: ACR_REGISTRY/starbuddy/starbuddy-review-console@sha256:DIGEST
-          ports: [{containerPort: 8792}]
+          ports: [{name: http, containerPort: 8792}, {name: metrics, containerPort: 9792}]
           env:
             - {name: REVIEW_CONSOLE_ENV, value: staging}
             - {name: REVIEW_CONSOLE_HOST, valueFrom: {fieldRef: {fieldPath: status.podIP}}}
             - {name: REVIEW_CONSOLE_PORT, value: "8792"}
+            - {name: REVIEW_CONSOLE_METRICS_PORT, value: "9792"}
             # 契约审查阻断 2：前端经 Service 访问，Host 头是 clusterIP——另收这一个地址（= Service 的 clusterIP，部署测试核对）
             - {name: REVIEW_CONSOLE_EXTRA_HOST, value: "10.96.100.13"}
             - {name: REVIEW_CONSOLE_KGE_DATABASE_URL, valueFrom: {secretKeyRef: {name: starbuddy-review-console, key: kge-database-url}}}
@@ -313,7 +320,7 @@ spec:
   strategy: {type: Recreate}
   selector: {matchLabels: {app: bff}}
   template:
-    metadata: {labels: {app: bff, starbuddy/db-client: "true"}}
+    metadata: {labels: {app: bff, starbuddy/db-client: "true", starbuddy/metrics: "true"}}
     spec:
       automountServiceAccountToken: false
       securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
@@ -325,11 +332,12 @@ spec:
       containers:
         - name: bff
           image: ACR_REGISTRY/starbuddy/starbuddy-bff@sha256:DIGEST
-          ports: [{containerPort: 8787}]
+          ports: [{name: http, containerPort: 8787}, {name: metrics, containerPort: 9787}]
           env:
             - {name: STARBUDDY_ENV, value: staging}
             - {name: BFF_HOST, valueFrom: {fieldRef: {fieldPath: status.podIP}}}
             - {name: PORT, value: "8787"}
+            - {name: BFF_METRICS_PORT, value: "9787"}
             - {name: BFF_DATABASE_URL, valueFrom: {secretKeyRef: {name: starbuddy-bff, key: database-url}}}
             - {name: BFF_SHELL_ORIGIN, valueFrom: {configMapKeyRef: {name: starbuddy-staging, key: shell-origin}}}
             - {name: BFF_LOG_HMAC_KEY, valueFrom: {secretKeyRef: {name: starbuddy-bff, key: log-hmac-key}}}
@@ -437,7 +445,7 @@ spec:
   strategy: {type: Recreate}
   selector: {matchLabels: {app: scheduler}}
   template:
-    metadata: {labels: {app: scheduler, starbuddy/db-client: "true"}}
+    metadata: {labels: {app: scheduler, starbuddy/db-client: "true", starbuddy/metrics: "true"}}
     spec:
       automountServiceAccountToken: false
       securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
@@ -449,13 +457,15 @@ spec:
         - name: scheduler
           image: ACR_REGISTRY/starbuddy/starbuddy-scheduler@sha256:DIGEST
           args: ["--schedule", "/run/config/schedule.signed.yaml"]
-          ports: [{containerPort: 8793}]
+          ports: [{name: http, containerPort: 8793}, {name: metrics, containerPort: 9793}]
           env:
             - {name: SCHEDULER_ENV, value: staging}
             - {name: SCHEDULER_DATABASE_URL, valueFrom: {secretKeyRef: {name: starbuddy-scheduler, key: database-url}}}
-            # 健康监听（LT-03，scheduler/health.py）：只服务 /healthz、/readyz，地址是 Pod IP
+            # 健康监听（LT-03，scheduler/health.py）：只服务 /healthz、/readyz（/metrics 在这里 404），地址是 Pod IP；
+            # 指标监听（LT-05）：同一地址另起 SCHEDULER_METRICS_PORT，只服务 GET /metrics
             - {name: SCHEDULER_HOST, valueFrom: {fieldRef: {fieldPath: status.podIP}}}
             - {name: SCHEDULER_HEALTH_PORT, value: "8793"}
+            - {name: SCHEDULER_METRICS_PORT, value: "9793"}
             - {name: INSIGHT_ENV, value: staging}
             - {name: INSIGHT_DATABASE_URL, valueFrom: {secretKeyRef: {name: starbuddy-insight, key: database-url}}}
             - {name: INSIGHT_POLICY, value: /run/config/claims.signed.json}
@@ -509,6 +519,24 @@ spec:
   egress:
     - to: [{ipBlock: {cidr: 10.20.96.0/24}}, {ipBlock: {cidr: 10.20.97.0/24}}]
       ports: [{protocol: TCP, port: 5432}]
+---
+# 指标采集（LT-05，specs/launch-lt05-observability 决定记录（续）第 5 条）：学习、知识、洞察、审核台、BFF、调度器的 GET /metrics 只在
+# 单独的指标端口（端口名 metrics：9788 / 9790 / 9791 / 9792 / 9787 / 9793，只服务这一条路径；业务端口与回环路由监听上的 /metrics 一律 404）。
+# 免鉴权、只在 Pod 内网（命名空间内互访由上面的缺省策略放行，与 /healthz 相同）；命名空间外只放行 ARMS 托管 Prometheus 的
+# 采集组件（ACK 组件 arms-prometheus，deploy/iac/alicloud/ack.tf），且只放行指标端口、不放行业务端口。命名空间与 Pod 标签以 ARMS 控制台
+# 为准，由人在开通后填写（部署测试核对：来源只有这一个命名空间 + Pod 选择器，端口只有各服务的 metrics 端口）。采集配置见 deploy/k8s/observability.yaml。
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: metrics-from-collector, namespace: starbuddy-staging}
+spec:
+  podSelector: {matchLabels: {starbuddy/metrics: "true"}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: "<由人填写：ARMS 采集组件所在命名空间（ACK 托管版常见为 arms-prom）>"}}
+          podSelector: {matchLabels: {app: "<由人填写：ARMS 采集组件的 Pod 标签>"}}
+      ports: [{protocol: TCP, port: 9788}, {protocol: TCP, port: 9790}, {protocol: TCP, port: 9791}, {protocol: TCP, port: 9792},
+              {protocol: TCP, port: 9787}, {protocol: TCP, port: 9793}]
 ---
 # 前端只收内网负载均衡转来的 HTTPS 流量（端口 3000）：来源是 VPC 网段（负载均衡的内网地址；经 VPN 进 VPC 的办公网流量若保留源地址，
 # 由人在这里补上办公网 / VPN 网段，与 IaC 的 office_vpn_cidrs 一致）

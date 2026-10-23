@@ -491,7 +491,7 @@ SM=(
   $'OTP：BFF_HOST 收任意地址\tsrc/http/config.ts\t  if (!privateIpv4(raw)) throw new Error\t  if (false) throw new Error'
   $'OTP：staging 开 starmap_dashed\tsrc/star-map/features.ts\t  if (outside.length > 0) throw new Error(`STARBUDDY_STARMAP\t  if (false) throw new Error(`STARBUDDY_STARMAP'
   # LT-03 健康端点（src/http/health.ts）：这几条跑 tests/health.test.ts（BFFMUT_FILTER=健康：）
-  $'健康：就绪不查库\tsrc/http/server.ts\t  const ready = cachedReady(() => poolReady(deps.pool), opts.readyCacheMs);\t  const ready = async () => true;'
+  $'健康：就绪不查库\tsrc/http/server.ts\t  const ready = cachedReady(() => poolReady(deps.pool), opts.readyCacheMs, Date.now, (ok) => { lastReady = ok; });\t  const ready = async () => { lastReady = true; return true; };'
   $'健康：就绪不限时\tsrc/http/health.ts\t    return await Promise.race([work, timeout]);\t    return await work;'
   $'健康：就绪把非 1 当成功\tsrc/http/health.ts\tr.rows[0]?.[\'ok\'] === 1\tr.rows.length > 0'
   $'健康：存活也查库\tsrc/http/health.ts\t  if (raw === HEALTH_PATH) {\\n    send(200, { status: \'ok\' });\t  if (raw === HEALTH_PATH && (await ready())) {\\n    send(200, { status: \'ok\' });'
@@ -503,7 +503,43 @@ SM=(
   $'健康：出错的连接还回池\tsrc/http/health.ts\t    } catch {\\n      release(true);\t    } catch {\\n      release(false);'
   $'健康：就绪不做 single-flight\tsrc/http/health.ts\t    if (inflight !== undefined) return inflight;\t'
   $'健康：就绪不缓存\tsrc/http/health.ts\t    if (last !== undefined && now() - last.at < ttlMs) return Promise.resolve(last.ok);\t'
-  $'健康：服务不用缓存的就绪检查\tsrc/http/server.ts\t  const ready = cachedReady(() => poolReady(deps.pool), opts.readyCacheMs);\t  const ready = () => poolReady(deps.pool);'
+  $'健康：服务不用缓存的就绪检查\tsrc/http/server.ts\t  const ready = cachedReady(() => poolReady(deps.pool), opts.readyCacheMs, Date.now, (ok) => { lastReady = ok; });\t  const ready = () => poolReady(deps.pool).then((ok) => { lastReady = ok; return ok; });'
+  # LT-05 可观测性（src/observability/、server.ts 的 /metrics 与请求指标、meter.ts 的计量计数）：跑 tests/observability.test.ts
+  # （BFFMUT_FILTER=可观测：）——标签白名单、脱敏、指标端点暴露范围、计量计数
+  $'可观测：标签名不查白名单\tsrc/observability/metrics.ts\t  if (!(LABELS as readonly string[]).includes(name)) throw new Error(`标签 ${name} 不在白名单里`);\t'
+  $'可观测：登记指标不查标签名\tsrc/observability/metrics.ts\t  if (bad.length) throw new Error(`标签 ${bad.join(\',\')} 不在白名单里`);\t'
+  $'可观测：枚举标签收枚举外的取值\tsrc/observability/metrics.ts\t  if (name in ENUMS) return ENUMS[name as keyof typeof ENUMS].has(v) ? v : \'other\';\t  if (name in ENUMS) return v || \'other\';'
+  $'可观测：路由标签收原始路径\tsrc/observability/metrics.ts\t    : ROUTE.test(v) && !IDISH.test(v);\t    : true;'
+  $'可观测：重复登记不拒绝\tsrc/observability/metrics.ts\t  if (families.has(name)) throw new Error(`指标 ${name} 重复登记`);\t'
+  $'可观测：标签值不转义双引号\tsrc/observability/metrics.ts\t.replace(/"/g, \'\\\\"\')\t'
+  $'可观测：HELP 不转义\tsrc/observability/metrics.ts\texport function escapeHelp(s: string): string {\\n  return s\texport function escapeHelp(s: string): string {\\n  return s; return s'
+  $'可观测：直方图桶不累计\tsrc/observability/metrics.ts\t      bs.forEach((b, i) => { if (v <= b) cur.counts[i]! += 1; });\t      { const i = bs.findIndex((b) => v <= b); if (i >= 0) cur.counts[i]! += 1; }'
+  $'可观测：直方图没有 +Inf 桶\tsrc/observability/metrics.ts\t        out.push(`${name}_bucket${labelText(names, s.labels, [\'le\', \'+Inf\'])} ${s.count}`);\t'
+  $'可观测：中间件写指标出错影响请求\tsrc/observability/metrics.ts\t  } catch {\\n    // 标签不合格等：不记这一条\t  } catch (e) {\\n    throw e;'
+  $'可观测：请求指标用原始路径\tsrc/http/server.ts\t      observeHttp(template, req.method,\t      observeHttp(url.pathname, req.method,'
+  $'可观测：表外路径不计\tsrc/http/server.ts\t        observeHttp(\'unmatched\', req.method, 404, Date.now() - started);\t'
+  $'可观测：业务端口也服务 /metrics\tsrc/http/server.ts\tvoid handleHealth(req, res, ready).then((done) => (done ? true : handle(req, res)))\tvoid handleHealth(req, res, ready).then((done) => (done ? true : req.url === METRICS_PATH ? (handleMetrics(req, res), true) : handle(req, res)))'
+  $'可观测：指标端口不限方法\tsrc/http/server.ts\t  if (req.method !== \'GET\') {\\n    res.writeHead(405\t  if (false) {\\n    res.writeHead(405'
+  $'可观测：指标端口按前缀匹配\tsrc/http/server.ts\t  if ((req.url ?? \'\') !== METRICS_PATH) {\t  if (!(req.url ?? \'\').startsWith(METRICS_PATH)) {'
+  $'可观测：指标端口可以缓存\tsrc/http/server.ts\t  const headers = { \'cache-control\': \'no-store\', \'x-content-type-options\': \'nosniff\' };\t  const headers = { \'x-content-type-options\': \'nosniff\' };'
+  $'可观测：staging 缺省不起指标监听\tsrc/observability/metrics.ts\tport = env === \'staging\' ? DEFAULT_METRICS_PORT : null;\tport = null;'
+  $'可观测：指标端口可与业务端口相同\tsrc/observability/metrics.ts\t  if (port !== null && port === mainPort) throw\t  if (false) throw'
+  $'可观测：预留不计数\tsrc/metering/meter.ts\t  observeMeter(\'reserve\', r.outcome);\\n\t\\n'
+  $'可观测：结算不计数\tsrc/metering/meter.ts\t  observeMeter(\'settle\', r.outcome);\\n\t\\n'
+  $'可观测：释放（回滚）不计数\tsrc/metering/meter.ts\t  observeMeter(\'release\', r.outcome);\\n\t\\n'
+  $'可观测：预留计数回到事务里（提交之前）\tsrc/metering/meter.ts\t    return rows[0].r as ReserveResult;\\n  });\\n  observeMeter(\'reserve\', r.outcome);\t    observeMeter(\'reserve\', (rows[0].r as ReserveResult).outcome);\\n    return rows[0].r as ReserveResult;\\n  });'
+  $'可观测：计量计数出错不隔离\tsrc/observability/metrics.ts\t    // 计数失败只丢这一次计数（LT-05 决定记录（续）第 6 条）\t    throw new Error(\'rethrow\');'
+  $'可观测：计量事件计数出错不隔离\tsrc/metering/metrics.ts\t      // 只丢这一次计数\t      throw new Error(\'rethrow\');'
+  $'可观测：冲突（409）不另计\tsrc/observability/metrics.ts\t  if (o === \'conflict\' || o === \'dedup_in_progress\') meterConflict.inc\t  if (false) meterConflict.inc'
+  $'可观测：脱敏不丢禁止字段\tsrc/observability/log.ts\t  return FORBIDDEN_KEY.test(normalizeKey(key));\t  return false;'
+  $'可观测：脱敏不替换手机号\tsrc/observability/log.ts\t  /(?<!\\d)(?:\\+?86[- ]?)?1[3-9]\\d[ -]?\\d{4}[ -]?\\d{4}(?!\\d)/g,\\n\t\\n'
+  $'可观测：手机号不认空格与连字符分隔\tsrc/observability/log.ts\t1[3-9]\\d[ -]?\\d{4}[ -]?\\d{4}(?!\\d)/g\t1[3-9]\\d{9}(?!\\d)/g'
+  $'可观测：正文 UUID 不替换\tsrc/observability/log.ts\t  out = out.replace(UUID_RE, UUID_MARK);\t'
+  $'可观测：键名不先驼峰归一\tsrc/observability/log.ts\t  return String(key).replace(/(?<=[a-z0-9])([A-Z])/g, \'_$1\').replace(/-/g, \'_\').toLowerCase();\t  return String(key).toLowerCase();'
+  $'可观测：顶层字段不过白名单\tsrc/observability/log.ts\t    if (!LOG_FIELDS.has(nk)) continue;\t'
+  $'可观测：哈希字段不核对形状\tsrc/observability/log.ts\t      if (typeof v === \'string\' && HASHED_VALUE.test(v)) out[nk] = v;\t      out[nk] = v;'
+  $'可观测：禁止字段不认 session\tsrc/observability/log.ts\t|otp|dsn|session|name|\t|otp|dsn|name|'
+  $'可观测：访问日志缺省不经脱敏\tsrc/http/server.ts\t  const log = deps.log ?? ((line) => emit(\'info\', line));\t  const log = deps.log ?? ((line) => console.log(JSON.stringify(line)));'
   # LT-03 决定记录（续）第 6 条：staging 连库 TLS（src/http/config.ts、src/main.ts）：跑 tests/shell-startup.test.ts（BFFMUT_FILTER=连库：）
   $'连库：staging 不核对 TLS\tsrc/main.ts\tif (!dbTlsOk(shellDeps.env, url)) {\tif (false) {'
   $'连库：收 verify-ca\tsrc/http/config.ts\tmodes[0] === \'verify-full\'\t[\'verify-full\', \'verify-ca\'].includes(modes[0]!)'
@@ -568,6 +604,7 @@ star_run() {  # $1 副本根目录，$2 变异名（“计量：”开头的跑�
   [[ "${2:-}" == 月度计划：* ]] && tests="tests/monthly-plan-units.test.ts tests/monthly-plan.integration.test.ts tests/shell-openapi.test.ts"
   [[ "${2:-}" == 闸门：* ]] && tests="tests/subject-gate-units.test.ts tests/subject-gate.integration.test.ts tests/shell-openapi.test.ts"
   [[ "${2:-}" == 健康：* ]] && tests="tests/health.test.ts"
+  [[ "${2:-}" == 可观测：* ]] && tests="tests/observability.test.ts"
   [[ "${2:-}" == 连库：* ]] && tests="tests/shell-startup.test.ts"
   [[ "${2:-}" == OTP：* ]] && tests="tests/staging-otp-units.test.ts tests/staging-otp.integration.test.ts tests/shell-startup.test.ts tests/star-map-v1.test.ts"
   out=$( cd "$1/services/bff" && timeout 240 bash "$ROOT/db/tests/pg-ephemeral.sh" -- \
@@ -590,6 +627,7 @@ star_copy() {
   # 月度计划（PLT-14 第 3 步）：模板库与洞察服务同一份文件（services/insight/templates/）；只读用，不改
   [[ "${1:-}" == 月度计划：* ]] && ln -s "$ROOT/services/insight" "$work/services/insight"
   ln -s "$ROOT/services/learning" "$work/services/learning"  # 诊断集成测试起学习服务进程（只读用，不改）
+  ln -s "$ROOT/deploy" "$work/deploy"  # LT-05：tests/observability.test.ts 读指标登记清单（只读用，不改）
   echo "$work"
 }
 work="$(star_copy)"; read -r rc pass <<< "$(star_run "$work")"; rm -rf "$work"
@@ -601,9 +639,11 @@ for spec in "${SM[@]}"; do
   total=$((total + 1))
   work="$(star_copy "$name")"
   unique=0; [[ "$name" == H6：* ]] && unique=1
-  if ! MUT_UNIQUE=$unique MUT_FILE="$work/services/bff/$file" MUT_FROM="$from" MUT_TO="$to" python3 - <<'PYM'
+  if ! MUT_ROOT="$work/services/bff" MUT_UNIQUE=$unique MUT_FILE="$work/services/bff/$file" MUT_FROM="$from" MUT_TO="$to" python3 - <<'PYM'
 import os, sys
 p, a, b = os.environ['MUT_FILE'], os.environ['MUT_FROM'], os.environ['MUT_TO']
+# 变异目标必须是副本里复制出来的文件（不是软链接回主仓的 deploy/、docs/ 等），免得改到主仓
+if os.path.islink(p) or not os.path.realpath(p).startswith(os.path.realpath(os.environ['MUT_ROOT']) + os.sep): sys.exit(1)
 a, b = a.replace('\\n', '\n'), b.replace('\\n', '\n')  # 原文与替换里的 \n 表示换行（多行锚点）
 s = open(p, encoding='utf-8').read()
 if s.count(a) != 1 and os.environ.get('MUT_UNIQUE') == '1': sys.exit(1)  # H6：锚点必须唯一

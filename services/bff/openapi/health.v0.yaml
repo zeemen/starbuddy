@@ -41,6 +41,20 @@ paths:
               schema: {$ref: '#/components/schemas/NotReady'}
         '405':
           description: 不是 GET
+  /metrics:
+    get:
+      operationId: metrics
+      summary: 指标（LT-05；只在单独的指标端口 BFF_METRICS_PORT（staging 9787，与业务监听同一地址），业务端口上的 /metrics 是表外路径、一律 404。Prometheus 文本格式（自写，不用 prom-client），免会话、只在 Pod 内网，k8s NetworkPolicy 只给采集组件放行指标端口）
+      description: 指标端口只服务这一条路径（路径逐字相等、不收查询串）：别的路径 404、别的方法 405；不记访问日志。
+      x-sb-auth: public
+      responses:
+        '200':
+          description: Prometheus 文本格式（只含白名单标签；指标清单见 deploy/observability/metrics-inventory.yaml）
+          content:
+            text/plain:
+              schema: {type: string}
+        '405':
+          description: 不是 GET
 components:
   schemas:
     Alive:

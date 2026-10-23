@@ -11,7 +11,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import practice_mutations as PM  # noqa: E402
 
-TESTS = ["tests/test_staging_env.py", "tests/test_health.py"]  # 后者：LT-03 健康端点
+TESTS = ["tests/test_staging_env.py", "tests/test_health.py",  # 后者：LT-03 健康端点
+         "tests/test_obs.py", "tests/test_route_listener.py"]  # LT-05 指标与日志（标签白名单、脱敏、指标端点暴露范围、指标监听）
+OB, MT = "learning/obs.py", "learning/metrics.py"
 NP, CF, MC, RC, RM = ("learning/netpolicy.py", "learning/config.py", "learning/mastery/config.py", "review_console/config.py",
                       "review_console/__main__.py")
 AP, HL, RA = "learning/app.py", "learning/health.py", "review_console/app.py"
@@ -83,6 +85,54 @@ MUTATIONS: dict[str, list[tuple[str, str, str]]] = {
                             '            if host_name(request.headers.get("host", "")) not in hosts and not private_ipv4(host_name(request.headers.get("host", "")).rsplit(":", 1)[0]):'),
                            (RA, "from learning.netpolicy import STAGING", "from learning.netpolicy import STAGING, private_ipv4")],
     "审核台就绪只看一个池": [(RA, "all([await health.pool_alive(p) for p in pair])", "all([await health.pool_alive(p) for p in pair[:1]])")],
+    # LT-05 可观测性（learning/obs.py、learning/metrics.py；tests/test_obs.py）：标签白名单、脱敏、指标端点暴露范围
+    "指标：标签名不查白名单": [(OB, '    if name not in LABELS:\n        raise ValueError(f"标签 {name} 不在白名单里")',
+                       '    if False:\n        raise ValueError(f"标签 {name} 不在白名单里")')],
+    "指标：登记时不查标签名": [(OB, '    if bad:\n        raise ValueError(f"标签 {bad} 不在白名单里")', '    if False:\n        raise ValueError(f"标签 {bad} 不在白名单里")')],
+    "指标：名字不查 starbuddy_ 前缀": [(OB, "    if not _NAME.fullmatch(name):", "    if False:")],
+    "指标：枚举标签收枚举外的取值": [(OB, '        return v if v in ENUMS[name] else "other"', "        return v or \"other\"")],
+    "指标：枚举外的取值抛错（不记 other）": [(OB, '        return v if v in ENUMS[name] else "other"',
+                                    '        if v not in ENUMS[name]:\n            raise ValueError(name)\n        return v')],
+    "指标：中间件写指标出错影响请求": [(OB, "    except Exception:  # noqa: BLE001\n        pass\n\n\nclass MetricsMiddleware:",
+                             "    except ValueError:\n        pass\n\n\nclass MetricsMiddleware:")],
+    "指标：路由标签收原始路径": [(OB, '"route": lambda: bool(_ROUTE.fullmatch(v)) and not _IDISH.search(v)}', '"route": lambda: True}')],
+    "指标：业务端口仍服务 /metrics": [(OB, '        return JSONResponse({"status": "not_found"}, status_code=404, headers=HEADERS)',
+                               "        from starlette.responses import Response\n"
+                               "        return Response(await scrape(), media_type=CONTENT_TYPE_LATEST, headers=HEADERS)  # type: ignore[return-value]")],
+    "指标：指标端口按前缀匹配": [(OB, '    if scope.get("path") != METRICS_PATH or scope.get("query_string"):',
+                          '    if not str(scope.get("path")).startswith(METRICS_PATH):')],
+    "指标：指标端口不限方法": [(OB, '    elif scope.get("method") != "GET":', "    elif False:")],
+    "指标：指标端口可与业务端口相同": [(OB, "    if port is not None and port in taken:", "    if False:")],
+    "指标：staging 缺省不起指标监听": [(OB, '        port = default if env == "staging" else None', "        port = None")],
+    "指标：学习服务不起指标监听": [("learning/route_listener.py", '    if getattr(settings, "metrics_port", None) is not None:', "    if False:")],
+    "指标：调用记录计数出错影响调用（只吞标签错误）": [(MT, "        except Exception:  # noqa: BLE001 —— 计数出任何错都只丢这一条，不影响调用（决定记录（续）第 6 条）",
+                                        "        except ValueError:")],
+    "指标：计量核对计数出错改变核对结果": [(MT, '    try:\n        METER_CHECK.labels(outcome="allowed" if allowed else "sealed").inc()\n    except Exception:  # noqa: BLE001\n        pass',
+                                 '    METER_CHECK.labels(outcome="allowed" if allowed else "sealed").inc()')],
+    "指标：复核积压失败不缓存（每次采集都打库）": [(MT, "                self._at = self.clock()\n                return", "                return")],
+    "指标：复核积压最早等待不分档": [(MT, "max(age0, coarse_age(float(r[\"oldest\"] or 0.0)))", "max(age0, float(r[\"oldest\"] or 0.0))")],
+    "指标：路由标签用原始路径": [(OB, '    path = getattr(scope.get("route"), "path", None)', '    path = scope.get("path")')],
+    "指标：/metrics 与健康端点也计入请求": [(OB, '    if scope.get("type") != "http" or scope.get("path") in SKIP_PATHS:', '    if scope.get("type") != "http":')],
+    "指标：/metrics 可以缓存": [(OB, 'HEADERS = {"cache-control": "no-store", "x-content-type-options": "nosniff"}',
+                          'HEADERS = {"x-content-type-options": "nosniff"}')],
+    "指标：审核台业务端口的 /metrics 要会话": [(RA, ', ("GET", obs.METRICS_PATH)}', "}")],
+    "审核台不起指标监听": [("review_console/__main__.py", '    return metrics_port(e.get("REVIEW_CONSOLE_METRICS_PORT"), env, DEFAULT_METRICS_PORT,',
+                       '    return None and metrics_port(e.get("REVIEW_CONSOLE_METRICS_PORT"), env, DEFAULT_METRICS_PORT,')],
+    "指标：复核积压不缓存（每次采集都查库）": [(MT, "            if self._at is not None and self.clock() - self._at < BACKLOG_CACHE:", "            if False:")],
+    "指标：复核积压的学科不过白名单": [(MT, 's = obs.label_value("subject", r["subject"])', 's = r["subject"]')],
+    "指标：计量核对不计数": [("learning/meter.py", "    meter_checked(state in basis.allowed)  # LT-05：放行 / 409 计数（只记结果，不记键与学生）\n", "")],
+    "日志：脱敏不丢禁止字段": [(OB, "    return bool(_FORBIDDEN_KEY.fullmatch(normalize_key(key)))", "    return False")],
+    "日志：禁止字段不认 session": [(OB, "|id_?card|id_?number|otp|dsn|session|name|", "|id_?card|id_?number|otp|dsn|name|")],
+    "日志：脱敏不替换手机号": [(OB, '    re.compile(r"(?<!\\d)(?:\\+?86[- ]?)?1[3-9]\\d[ -]?\\d{4}[ -]?\\d{4}(?!\\d)"),\n', "")],
+    "日志：手机号不认空格与连字符分隔": [(OB, r'1[3-9]\d[ -]?\d{4}[ -]?\d{4}(?!\d)', r'1[3-9]\d{9}(?!\d)')],
+    "日志：正文 UUID 不替换": [(OB, "    s = _UUID.sub(UUID_MARK, s)\n", "")],
+    "日志：request_id 也按正文替换": [(OB, '        if nk == "request_id" and isinstance(v, str) and _UUID.fullmatch(v):', "        if False:")],
+    "日志：键名不先驼峰归一": [(OB, '    return re.sub(r"(?<=[a-z0-9])([A-Z])", r"_\\1", str(key)).replace("-", "_").lower()', "    return str(key)")],
+    "日志：顶层字段不过白名单": [(OB, "        if nk not in LOG_FIELDS:\n            continue\n", "")],
+    "日志：脱敏不处理密钥样式长串": [(OB, "        s = _LONG_SECRET.sub(REDACTED, s)", "        pass")],
+    "日志：不截断超长文本": [(OB, '    return s if len(s) <= MAX_TEXT else s[:MAX_TEXT] + "…[truncated]"', "    return s")],
+    "日志：记异常消息": [(OB, '            out["exc_type"] = record.exc_info[0].__name__[:48]', '            out["exc_type"] = str(record.exc_info[1])')],
+    "日志：字段不经白名单与脱敏": [(OB, "        for k, v in log_fields(fields).items():", "        for k, v in fields.items():")],
 }
 
 # 前端启动包装（安全审查 A1、S7、S10）：apps/web/src/lib/serve-env.ts 与 consent-version.ts，断言 apps/web/tests/serve-env.test.ts 能发现

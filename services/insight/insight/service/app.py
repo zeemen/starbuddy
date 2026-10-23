@@ -32,7 +32,7 @@ from ..shared import forbidden_matcher
 from ..sie03_policy import Sie03Policy, load_sie03
 from ..store import InsightStore, assert_insight_role, create_pool
 from ..store_sie03 import Sie03Store
-from . import health
+from . import health, obs
 from .config import Settings, check_db_tls
 from .contract import Contract, contract as default_contract
 from .errors import ServiceError, invalid, unauthenticated
@@ -195,7 +195,7 @@ def create_app(settings: Settings, *, pool: asyncpg.Pool | None = None, contract
     app = FastAPI(title="StarBuddy insight service (internal)", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.insight = state
     # 健康端点（LT-03；services/insight/openapi/health.v0.yaml）：无需鉴权，响应只含状态
-    health.register(app, lambda: health.pool_alive(state.get("ready_pool")))
+    cached = health.register(app, lambda: health.pool_alive(state.get("ready_pool")))
 
     def route(tool: str):
         async def handler(request: Request) -> JSONResponse:
@@ -229,5 +229,8 @@ def create_app(settings: Settings, *, pool: asyncpg.Pool | None = None, contract
 
     # 服务内部接口（不在契约里；接口定义 services/insight/openapi/monthly-plan-internal.v0.yaml）
     register_monthly(app, caller_of=lambda r: caller_for(r.headers.get("authorization"), settings.tokens), read_body=read_body, state=state)
+    # 指标（LT-05，service/obs.py）：请求指标中间件在 Host 校验里层（Host 不对的请求回 400、不计数）；业务端口上的 /metrics 一律 404，
+    # GET /metrics 只在单独的指标端口（INSIGHT_METRICS_PORT，__main__ 经 obs.serve 另起监听）
+    obs.register(app, "insight", pools=lambda: [state.get("ready_pool")], ready=cached)
     app.add_middleware(HostGuard, allowed=allowed_hosts(settings.host, settings.extra_host))
     return app

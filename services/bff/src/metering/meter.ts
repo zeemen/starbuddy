@@ -8,7 +8,8 @@ import type { Pool } from 'pg';
 import { withAccount } from './db.ts';
 import { meteringFingerprint, type MeteredMethod } from './fingerprint.ts';
 import { assertLearningContractVersion, type LearningCall, type LearningOutcome, type LearningReplay, type Problem } from './learning-client.ts';
-import { noopMetrics, type Metrics } from './metrics.ts';
+import { observeMeter } from '../observability/metrics.ts';
+import { promMetrics, type Metrics } from './metrics.ts';
 import { isUuidV4, usageIdFor } from './uuid.ts';
 
 export type ResourceType =
@@ -42,21 +43,27 @@ export type ReserveResult =
 
 export type TerminalResult = { outcome: 'settled' | 'released' | 'conflict'; usage_id: string; state: string; idempotent?: boolean };
 
+// LT-05（决定记录（续）第 6 条）：预留、结算、释放（回滚）的结果编码计数、冲突（对外 409）另计，都在 withAccount 返回之后
+// （事务已提交）才做；observeMeter 吞掉任何异常，计量结果与事务都不受指标影响（只记编码，不记键、学生与额度）
 export async function reserve(pool: Pool, accountId: string, input: ReserveInput): Promise<ReserveResult> {
-  return withAccount(pool, accountId, async (c) => {
+  const r = await withAccount(pool, accountId, async (c) => {
     const { rows } = await c.query(
       'SELECT platform.meter_reserve($1, $2, $3, $4, $5, $6, $7) AS r',
       [input.studentId, input.resourceType, input.idempotencyKey, input.requestFingerprint, input.quantity,
        input.contentFingerprint ?? null, input.sourceMethod]);
     return rows[0].r as ReserveResult;
   });
+  observeMeter('reserve', r.outcome);
+  return r;
 }
 
 export async function settle(pool: Pool, accountId: string, usageId: string, settledQty: number): Promise<TerminalResult> {
-  return withAccount(pool, accountId, async (c) => {
+  const r = await withAccount(pool, accountId, async (c) => {
     const { rows } = await c.query('SELECT platform.meter_settle($1, $2) AS r', [usageId, settledQty]);
     return rows[0].r as TerminalResult;
   });
+  observeMeter('settle', r.outcome);
+  return r;
 }
 
 /** 因届别变化放弃的诊断退回额度（迁移 0049 platform.meter_refund_grade_changed）：库里只认学生本人、只认 abandon_reason = grade_changed 的会话 */
@@ -70,10 +77,12 @@ export async function refundGradeChanged(pool: Pool, accountId: string, usageId:
 }
 
 export async function release(pool: Pool, accountId: string, usageId: string, reason: string): Promise<TerminalResult> {
-  return withAccount(pool, accountId, async (c) => {
+  const r = await withAccount(pool, accountId, async (c) => {
     const { rows } = await c.query('SELECT platform.meter_release($1, $2) AS r', [usageId, reason]);
     return rows[0].r as TerminalResult;
   });
+  observeMeter('release', r.outcome);
+  return r;
 }
 
 // 本冲刺接通 BFF 流程的资源（学习服务只有 grade、diagnose；teach 类资源只实现了数据库函数）。
@@ -120,7 +129,7 @@ export async function meteredCall(deps: MeterDeps, input: MeteredCallInput): Pro
   if (!isUuidV4(input.idempotencyKey)) throw new TypeError('idempotencyKey must be a lowercase UUIDv4');
   const method = METHOD_OF[input.resourceType];
   if (method === undefined) throw new TypeError(`${String(input.resourceType)} is not metered through the BFF in this sprint`);
-  const metrics = deps.metrics ?? noopMetrics;
+  const metrics = deps.metrics ?? promMetrics;
   const usageId = usageIdFor(input.idempotencyKey);
   // 先按 JSON 规范化（Date 等值按 JSON.stringify 的规则转换），计量指纹按这份插件请求体算（算法不变）；发出去时 learning-client
   // 再包成 learning-internal v1 信封 {request, ingest}、把 context.contract_version 写成 1.0.0——信封与版本字段不进指纹（LT-04）

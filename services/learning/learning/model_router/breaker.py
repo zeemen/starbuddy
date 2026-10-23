@@ -46,6 +46,10 @@ class CircuitBreaker:
             return "half_open"
         return "open"
 
+    def snapshot(self) -> dict[tuple[str, str], str]:
+        """（供应商，任务）→ closed / open / half_open；只读，供指标采集（LT-05），不改状态"""
+        return {k: self.state(*k) for k in list(self._states)}
+
     def acquire(self, vendor: str, task: str) -> Ticket | None:
         """关闭时放行；打开时拒绝；冷却结束后只把试探令牌发给一个请求"""
         s = self._get(vendor, task)

@@ -284,6 +284,17 @@ M=(
   $'额外 Host：dev 也能设\tinsight/service/config.py\t    if env != STAGING:\n        raise RuntimeError("INSIGHT_EXTRA_HOST\t    if False:\n        raise RuntimeError("INSIGHT_EXTRA_HOST\ttests/test_staging_env.py'
   $'额外 Host：不进允许列表\tinsight/service/app.py\t    if extra:\n        names.append(extra)\t    pass\ttests/test_staging_env.py'
   $'健康：响应可以缓存\tinsight/service/health.py\tHEADERS = {"cache-control": "no-store", "x-content-type-options": "nosniff"}\tHEADERS = {"x-content-type-options": "nosniff"}\ttests/test_health.py'
+  # LT-05 可观测性（service/obs.py，三处逐字相同；完整用例在学习服务）：指标端点暴露范围、路由模板标签、脱敏
+  $'可观测：不注册请求指标中间件\tinsight/service/app.py\t    obs.register(app, "insight", pools=lambda: [state.get("ready_pool")], ready=cached)\n\t\ttests/test_obs.py'
+  $'可观测：/metrics 可以缓存\tinsight/service/obs.py\tHEADERS = {"cache-control": "no-store", "x-content-type-options": "nosniff"}\tHEADERS = {"x-content-type-options": "nosniff"}\ttests/test_obs.py'
+  $'可观测：业务端口的 /metrics 不回 404\tinsight/service/obs.py\t{"status": "not_found"}, status_code=404, headers=HEADERS)\t{"status": "not_found"}, status_code=200, headers=HEADERS)\ttests/test_obs.py'
+  $'可观测：指标端口按前缀匹配\tinsight/service/obs.py\t    if scope.get("path") != METRICS_PATH or scope.get("query_string"):\t    if not str(scope.get("path")).startswith(METRICS_PATH):\ttests/test_obs.py'
+  $'可观测：不起指标监听\tinsight/service/config.py\t    mport = metrics_port(\t    mport = None and metrics_port(\ttests/test_obs.py'
+  $'可观测：路由标签用原始路径\tinsight/service/obs.py\t    path = getattr(scope.get("route"), "path", None)\t    path = scope.get("path")\ttests/test_obs.py'
+  $'可观测：脱敏不丢禁止字段\tinsight/service/obs.py\t    return bool(_FORBIDDEN_KEY.fullmatch(normalize_key(key)))\t    return False\ttests/test_obs.py'
+  $'可观测：顶层字段不过白名单\tinsight/service/obs.py\t        if nk not in LOG_FIELDS:\n            continue\n\t\ttests/test_obs.py'
+  $'可观测：正文 UUID 不替换\tinsight/service/obs.py\t    s = _UUID.sub(UUID_MARK, s)\n\t\ttests/test_obs.py'
+  $'可观测：脱敏不替换邮箱\tinsight/service/obs.py\t    re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}"),\n\t\ttests/test_obs.py'
 )
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/starbuddy-insight-mut.XXXXXX")"
@@ -296,7 +307,7 @@ copy_tree() {  # $1 目标根目录：services/insight 复制一份，其余软�
   ln -s "$ROOT/services/learning" "$dst/services/learning"
   # 禁用推断扫描（tests/test_forbidden_inference_sie03.py）还要读 BFF 与前端的源码：只读引用
   ln -s "$ROOT/services/bff" "$dst/services/bff"
-  for d in docs db packages apps; do ln -s "$ROOT/$d" "$dst/$d"; done
+  for d in docs db packages apps deploy; do ln -s "$ROOT/$d" "$dst/$d"; done  # deploy：LT-05 指标登记清单（只读）
   mkdir -p "$dst/evals"
   for e in "$ROOT"/evals/*; do
     [ "$(basename "$e")" = "sie-shadow" ] || ln -s "$e" "$dst/evals/$(basename "$e")"
@@ -323,9 +334,12 @@ for entry in "${M[@]}"; do
   total=$((total + 1)); i=$((i + 1))
   dst="$WORK/m$i"; copy_tree "$dst"
   case "$file" in evals/*) mut_file="$dst/$file" ;; *) mut_file="$dst/services/insight/$file" ;; esac
-  if ! MUT_FILE="$mut_file" MUT_ORIG="$orig" MUT_REPL="$repl" "$PY" - <<'PY'
+  if ! MUT_ROOT="$dst" MUT_FILE="$mut_file" MUT_ORIG="$orig" MUT_REPL="$repl" "$PY" - <<'PY'
 import os, sys
 p = os.environ["MUT_FILE"]; o = os.environ["MUT_ORIG"]; r = os.environ["MUT_REPL"]
+# 变异目标必须是副本里复制出来的文件：软链接回主仓的 deploy/ 等（真实路径不在副本里）一律拒绝，免得改到主仓
+if os.path.islink(p) or not os.path.realpath(p).startswith(os.path.realpath(os.environ["MUT_ROOT"]) + os.sep):
+    sys.exit(1)
 s = open(p, encoding="utf-8").read()
 if s.count(o) != 1:
     sys.exit(1)

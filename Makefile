@@ -55,6 +55,16 @@ iac-validate:
 	@bash deploy/scripts/iac-validate.sh; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
 
+# LT-05 告警规则（deploy/observability/alerts.yaml）的 promtool 校验：只在 promtool 已装好时运行（不联网下载），缺失时打印“跳过”
+# （退出码 3：非严格算通过，CONTRACT_STRICT=1 时失败）。结构与指标引用的 Python 校验（O01–O06）随 deploy-check 运行；本机没有 promtool，
+# 所以不接进 check（同 iac-validate 的做法）；有工具的 CI 里单独跑：make obs-promtool
+.PHONY: obs-promtool
+obs-promtool:
+	@if [ ! -x services/learning/.venv/bin/python ]; then echo "obs-promtool: 跳过（没有 services/learning/.venv）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@services/learning/.venv/bin/python -I deploy/observability/check_observability.py deploy/observability --require-promtool; rc=$$?; \
+	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
+
 # LT-01 staging 运行环境：学习服务与审核台后端的 staging 启动校验逐条改坏，断言 tests/test_staging_env.py 能发现（纯函数，约 30 秒）
 staging-mutation:
 	@if $(LEARNING_MISSING); then \

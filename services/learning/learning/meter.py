@@ -22,6 +22,7 @@ from dataclasses import dataclass
 
 from . import store
 from .errors import IngestError
+from .metrics import meter_checked
 
 STATES = frozenset({"reserved", "lapsed", "started_in_time", "settled", "released", "expired", "counted", "none"})
 
@@ -58,5 +59,6 @@ async def require(pool, basis: MeterBasis, *, method: str, ctx: dict) -> None:
     key = basis.key if basis.key is not None else ctx.get("idempotency_key")
     state = await store.meter_check(pool, usage_id=usage, key=key, student_id=ctx.get("student_ref"),
                                     method=basis.method or method)
+    meter_checked(state in basis.allowed)  # LT-05：放行 / 409 计数（只记结果，不记键与学生）
     if state not in basis.allowed:
         raise IngestError(409, "IDEMPOTENCY_KEY_SEALED", SEALED)

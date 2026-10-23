@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 import logging
 import re
 import unicodedata
@@ -24,7 +25,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from . import service
-from learning import health
+from learning import health, obs
 from learning.netpolicy import STAGING, check_db_tls
 
 from .config import FEATURES, PagesSettings, ReviewSettings
@@ -77,7 +78,8 @@ TOKEN = re.compile(r"^[0-9a-f]{64}$")
 # 不需要会话的接口：只有登录
 PUBLIC_ROUTES = {("POST", "/review/v0/auth/login")}
 # 健康端点（LT-03；services/learning/openapi/health.v0.yaml）：不要会话，响应只含状态；仍过 Host 校验
-HEALTH_ROUTES = {("GET", health.HEALTH_PATH), ("GET", health.READY_PATH)}
+# 业务端口上的 /metrics（LT-05，learning/obs.py）同口径放行会话检查，但只回 404（指标只在单独的指标端口 REVIEW_CONSOLE_METRICS_PORT）
+HEALTH_ROUTES = {("GET", health.HEALTH_PATH), ("GET", health.READY_PATH), ("GET", obs.METRICS_PATH)}
 
 
 def session_token(request: Request) -> str | None:
@@ -281,7 +283,7 @@ def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthen
         pair = state.get("ready_pools")
         return pair is not None and all([await health.pool_alive(p) for p in pair])
 
-    health.register(app, ready_probe)
+    cached = health.register(app, ready_probe)
 
     @app.middleware("http")
     async def guard(request: Request, call_next):
@@ -308,7 +310,12 @@ def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthen
             return JSONResponse(e.problem(), status_code=e.status, media_type="application/problem+json")
         finally:
             route = request.scope.get("route")
-            log.info("review %s %s %s %s", request.method, getattr(route, "path", "-"), status, code)
+            # LT-05：统一结构化日志（只有方法、路由模板、状态码、错误码；不记路径参数与请求体）
+            log.info(json.dumps({"event": "review_request", "method": request.method if request.method in obs.METHODS else "other",
+                                 "route": getattr(route, "path", "unmatched"), "status": status, "code": code}, ensure_ascii=False))
+
+    # 指标（LT-05）：GET /metrics 与请求指标；中间件在上面的会话中间件之后加入，处在最外层（Host 不对、未登录被拒的请求也计数）
+    obs.register(app, "review-console", pools=lambda: list(state.get("ready_pools") or ()), ready=cached)
 
     @app.exception_handler(ReviewError)
     async def _review_error(request: Request, e: ReviewError):

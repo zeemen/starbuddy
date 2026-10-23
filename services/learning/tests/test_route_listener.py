@@ -93,18 +93,29 @@ def _staging_env(**extra) -> dict[str, str]:
 def test_staging_starts_loopback_listener_by_default_and_port_is_configurable():
     s = Settings.from_env(_staging_env())
     assert s.route_port == DEFAULT_ROUTE_PORT == 8785
-    assert listeners(s, 8788) == [("10.0.0.5", 8788, False), (LOOPBACK, 8785, True)], "主监听不变，另加回环路由监听"
+    assert listeners(s, 8788) == [("10.0.0.5", 8788, "main"), (LOOPBACK, 8785, "route"), ("10.0.0.5", 9788, "metrics")], \
+        "主监听不变，另加回环路由监听与指标监听（LT-05）"
     s2 = Settings.from_env(_staging_env(LEARNING_ROUTE_PORT="9100"))
-    assert listeners(s2, 8788)[1] == ("127.0.0.1", 9100, True)
+    assert listeners(s2, 8788)[1] == ("127.0.0.1", 9100, "route")
 
 
 @pytest.mark.parametrize("env", ["dev", "test"])
 def test_non_staging_does_not_start_loopback_listener(env):
     base = {"LEARNING_ENV": env, "LEARNING_SERVICE_TOKEN": "s" * 40, "LEARNING_DATABASE_URL": "postgresql://syn@127.0.0.1/syn"}
     s = Settings.from_env(base)
-    assert s.route_port is None and listeners(s, 8788) == [("127.0.0.1", 8788, False)]
+    assert s.route_port is None and listeners(s, 8788) == [("127.0.0.1", 8788, "main")]
     with pytest.raises(RuntimeError, match="只在 staging"):
         Settings.from_env(base | {"LEARNING_ROUTE_PORT": "8785"})
+    # 指标监听（LT-05）：dev / test 只在显式设了 LEARNING_METRICS_PORT 时起
+    s3 = Settings.from_env(base | {"LEARNING_METRICS_PORT": "9999"})
+    assert listeners(s3, 8788) == [("127.0.0.1", 8788, "main"), ("127.0.0.1", 9999, "metrics")]
+
+
+@pytest.mark.parametrize("port", ["8788", "8785", "0", "65536", "09788", "97x", "-1"])
+def test_bad_metrics_port_refuses_to_start(port):
+    """指标端口：规范整数、不与主监听或回环路由监听同端口（LT-05 决定记录（续）第 5 条）"""
+    with pytest.raises(RuntimeError, match="LEARNING_METRICS_PORT"):
+        Settings.from_env(_staging_env(LEARNING_METRICS_PORT=port))
 
 
 @pytest.mark.parametrize("port", ["8788", "80", "0", "65536", "08785", "8785x", "-1", " 8785"])

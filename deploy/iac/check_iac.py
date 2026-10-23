@@ -24,7 +24,7 @@
       模型供应商主机名变量没有缺省值（由人填写）；安全组出公网只开 TCP 443；
       云防火墙没开不能静默放开出网：确认变量 nat_firewall_confirmed 没有缺省值且校验必须为 true，每条 SNAT 都 depends_on
       两类访问控制、并以 var.nat_firewall_confirmed 为前置条件
-  R12 日志留存 ≥ 180 天（《网络安全法》第二十一条）
+  R12 日志留存 180–365 天（下限：《网络安全法》第二十一条；上限：最小必要，LT-05 安全审查）；var.log_retention_days 的校验写明上下限
   R13 版本锁定：terraform 有 required_version；alicloud provider 来源 aliyun/alicloud 且有版本约束；backend 只写部分配置（不含取值）
   R14 ACR 私有：命名空间缺省私有、不自动建仓；仓库私有；没有公网访问控制入口
   R15 网段：VPC、交换机、Service 网段的缺省值都是 RFC 1918，Service 网段不与 VPC 重叠
@@ -35,6 +35,9 @@
   R17 弹性公网 IP 只能绑 NAT 网关（instance_type = Nat，instance_id 引用 alicloud_nat_gateway）
   R18 不建公网负载均衡：SLB 必须 address_type = intranet，ALB / NLB 必须 address_type = Intranet
   R19 RAM 策略与角色信任策略里不出现通配符 *（动作与资源逐个列出）
+  R20 监控与日志采集（LT-05）：ACK 装了 arms-prometheus 与 logtail-ds 两个组件且没有禁用；不在 IaC 里建告警联系人、联系人组、
+      通知策略、机器人（接收人与通知渠道由人在控制台配置，联系方式不进仓库与状态文件）
+  R21 日志索引（LT-05）：日志库索引不建全文索引（没有 full_text 块），字段索引只收白名单字段（LOG_INDEX_FIELDS）；app 日志库必须有索引
 用法：python3 deploy/iac/check_iac.py [目录]   退出码 0 通过；1 有违规；2 目录读不了或解析失败。
 """
 from __future__ import annotations
@@ -287,13 +290,48 @@ FORBIDDEN_TYPES = {
     "alicloud_db_account": "R02 数据库账号不在 Terraform 里建（口令会进状态文件）",
     "alicloud_rds_account": "R02 数据库账号不在 Terraform 里建（口令会进状态文件）",
     "alicloud_kms_secret": "R02 凭据取值不进 Terraform（由人在凭据管家创建）",
+    "alicloud_arms_alert_contact": "R20 告警联系人由人在控制台配置（联系方式不进仓库与状态文件）",
+    "alicloud_arms_alert_contact_group": "R20 告警联系人组由人在控制台配置",
+    "alicloud_arms_dispatch_rule": "R20 告警通知策略由人在控制台配置",
+    "alicloud_arms_alert_robot": "R20 告警机器人（回调地址）由人在控制台配置",
 }
+# R20：ACK 必须装的采集组件（LT-05）
+REQUIRED_ADDONS = ("arms-prometheus", "logtail-ds")
+# R21：日志库字段索引只收这些字段，且必须是结构化日志字段白名单 LOG_FIELDS 的子集（安全审查 B：同一来源——LOG_FIELDS 从学习服务
+# learning/obs.py 的源码里读，三份 Python obs.py 与 BFF log.ts 另由 deploy/tests/test_obs_shared.py 核对逐项相同；内容、标识类字段不可检索）
+LOG_FIELDS_SOURCE = Path(__file__).resolve().parents[2] / "services" / "learning" / "learning" / "obs.py"
+
+
+def _log_fields(path: Path) -> frozenset[str]:
+    """从 obs.py 源码取 ENVELOPE 与 LOG_FIELDS（不导入服务的包：只用 ast 读常量）"""
+    import ast
+    env: tuple[str, ...] = ()
+    extra: tuple[str, ...] = ()
+    for node in ast.parse(path.read_text(encoding="utf-8")).body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            if node.targets[0].id == "ENVELOPE":
+                env = tuple(ast.literal_eval(node.value))
+            elif node.targets[0].id == "LOG_FIELDS" and isinstance(node.value, ast.Call) and node.value.args:
+                arg = node.value.args[0]
+                if isinstance(arg, ast.BinOp) and isinstance(arg.right, ast.Tuple):
+                    extra = tuple(ast.literal_eval(arg.right))
+    if not env or not extra:
+        raise RuntimeError(f"读不到日志字段白名单：{path}")
+    return frozenset(env + extra)
+
+
+LOG_FIELDS = _log_fields(LOG_FIELDS_SOURCE)
+LOG_INDEX_FIELDS = frozenset({"service", "level", "logger", "route", "event", "request_id", "status", "duration_ms", "method", "code",
+                              "outcome", "job", "ts"}) & LOG_FIELDS
+# R12：日志留存的上下限（天）：至少 180 天（《网络安全法》第二十一条），至多 365 天（最小必要，日志里只有元数据也不无限期保留）
+LOG_RETENTION_MIN, LOG_RETENTION_MAX = 180, 365
 # 不支持 tags 参数的资源类型（R08）：逐个登记，新增资源类型不在这里就必须带 tags
 NO_TAGS = {"alicloud_security_group_rule", "alicloud_snat_entry", "alicloud_eip_association", "alicloud_oss_bucket_acl",
            "alicloud_oss_bucket_public_access_block", "alicloud_rds_backup_policy", "alicloud_cr_ee_instance",
            "alicloud_cr_ee_namespace", "alicloud_cr_ee_repo", "alicloud_cr_ee_vpc_endpoint_linked_vpc", "alicloud_log_store",
            "alicloud_kms_alias", "alicloud_ram_policy", "alicloud_ram_role_policy_attachment", "alicloud_slb_acl_entry_attachment",
-           "alicloud_cloud_firewall_nat_firewall_control_policy", "alicloud_vpc_gateway_endpoint_route_table_attachment"}
+           "alicloud_cloud_firewall_nat_firewall_control_policy", "alicloud_vpc_gateway_endpoint_route_table_attachment",
+           "alicloud_log_store_index"}
 # R16：安全组出方向放行规则的白名单（cidr → 允许的 (协议, 端口) 组合；None = 任意）
 EGRESS_FIXED = {"100.100.2.136/32": {("udp", "53/53"), ("tcp", "53/53")}, "100.100.2.138/32": {("udp", "53/53"), ("tcp", "53/53")},
                 "100.100.100.200/32": {("tcp", "80/80")}, "0.0.0.0/0": {("tcp", "443/443")}}
@@ -397,7 +435,8 @@ class Checker:
             return self.findings
         for check in (self.r02_credentials, self.r03_account, self.r04_region, self.r05_ingress, self.r06_rds, self.r07_oss,
                       self.r08_tags, self.r09_kms, self.r10_ack, self.r11_egress, self.r12_logs, self.r13_versions, self.r14_acr,
-                      self.r15_cidrs, self.r16_sg_egress, self.r17_eip, self.r18_lb, self.r19_ram, self.forbidden_types):
+                      self.r15_cidrs, self.r16_sg_egress, self.r17_eip, self.r18_lb, self.r19_ram, self.r20_monitoring,
+                      self.r21_log_index, self.forbidden_types):
             check()
         return self.findings
 
@@ -748,14 +787,52 @@ class Checker:
                 if "*" in raw:
                     self.add("R19", b.file, f"{typ}.{b.labels[1]}：{attr} 里不用通配符 *（动作与资源逐个列出）")
 
+    def r20_monitoring(self) -> None:
+        clusters = self.resources("alicloud_cs_managed_kubernetes")
+        for c in clusters:
+            addons = {a.body.attrs.get("name"): a for a in sub(c.body, "addons")}
+            for need in REQUIRED_ADDONS:
+                a = addons.get(need)
+                if a is None or a.body.attrs.get("disabled") in (True, "true"):
+                    self.add("R20", c.file, f"{c.labels[1]}：必须装采集组件 {need}（且不禁用）")
+
+    def r21_log_index(self) -> None:
+        idx = self.resources("alicloud_log_store_index")
+        app = [x for x in idx if isinstance(x.body.attrs.get("logstore"), Expr)
+               and x.body.attrs["logstore"].raw.strip() == "alicloud_log_store.app.logstore_name"]
+        if self.resources("alicloud_log_store") and not app:
+            self.add("R21", "-", "app 日志库必须有索引（alicloud_log_store_index，只建白名单字段的字段索引）")
+        for x in idx:
+            if sub(x.body, "full_text"):
+                self.add("R21", x.file, f"{x.labels[1]}：不建全文索引（full_text）")
+            fields = sub(x.body, "field_search")
+            if not fields:
+                self.add("R21", x.file, f"{x.labels[1]}：只建字段索引（field_search）")
+            for f in fields:
+                name = f.body.attrs.get("name")
+                if name not in LOG_INDEX_FIELDS:
+                    self.add("R21", x.file, f"{x.labels[1]}：字段索引只收白名单字段（{name!r} 不在 LOG_INDEX_FIELDS）")
+                for nested in ("json_keys",):
+                    if sub(f.body, nested):
+                        self.add("R21", x.file, f"{x.labels[1]}：字段 {name!r} 不展开子字段索引")
+
     def r12_logs(self) -> None:
         stores = self.resources("alicloud_log_store")
         if not stores:
             self.add("R12", "-", "没有日志库")
         for s in stores:
             x = self._num(s.body.attrs.get("retention_period"))
-            if x is None or x < 180:
-                self.add("R12", s.file, f"{s.labels[1]}：日志留存至少 180 天")
+            if x is None or x < LOG_RETENTION_MIN:
+                self.add("R12", s.file, f"{s.labels[1]}：日志留存至少 {LOG_RETENTION_MIN} 天")
+            elif x > LOG_RETENTION_MAX:
+                self.add("R12", s.file, f"{s.labels[1]}：日志留存至多 {LOG_RETENTION_MAX} 天（最小必要）")
+        # 留存变量本身要有上下限校验（tfvars 改了也拦得住）
+        for v in self.blocks:
+            if v.type == "variable" and v.labels and v.labels[0] == "log_retention_days":
+                cond = " ".join(getattr(c.body.attrs.get("condition"), "raw", str(c.body.attrs.get("condition")))
+                                for c in sub(v.body, "validation"))
+                if not re.search(rf">=\s*{LOG_RETENTION_MIN}\b", cond) or not re.search(rf"<=\s*{LOG_RETENTION_MAX}\b", cond):
+                    self.add("R12", v.file, f"var.log_retention_days 必须校验 {LOG_RETENTION_MIN}–{LOG_RETENTION_MAX} 天")
         for c in self.resources("alicloud_cs_managed_kubernetes"):
             t = c.body.attrs.get("control_plane_log_ttl")
             if t is None or (isinstance(t, (str, int)) and int(t) < 180):
@@ -820,7 +897,7 @@ def main(argv: list[str]) -> int:
     if found:
         print(f"iac-check：失败（{len(found)} 条违规）")
         return 1
-    print(f"iac-check：通过（{root.name}：{len(list(root.glob('*.tf')))} 个文件，规则 R01–R19）")
+    print(f"iac-check：通过（{root.name}：{len(list(root.glob('*.tf')))} 个文件，规则 R01–R21）")
     return 0
 
 

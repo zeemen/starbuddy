@@ -25,7 +25,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from . import health
+from . import health, obs
 from .cache import ReadCache
 from .config import Settings, check_db_tls
 from .contract import Contract, contract as default_contract
@@ -202,7 +202,10 @@ def create_app(settings: Settings, *, pool: asyncpg.Pool | None = None, contract
     app = FastAPI(title="StarBuddy knowledge service (internal)", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.knowledge = state
     # 健康端点（LT-03；services/knowledge/openapi/health.v0.yaml）：无需鉴权，响应只含状态；必须在 / 上挂 MCP 之前注册
-    health.register(app, lambda: health.pool_alive(state.get("ready_pool")))
+    cached = health.register(app, lambda: health.pool_alive(state.get("ready_pool")))
+    # 指标（LT-05，service/obs.py）：必须在 / 上挂 MCP 之前注册（业务端口上的 /metrics 一律 404；GET /metrics 只在单独的指标端口
+    # KNOWLEDGE_METRICS_PORT，__main__ 经 obs.serve 另起监听）；MCP 请求按前缀 /mcp 计
+    obs.register(app, "knowledge", pools=lambda: [state.get("ready_pool")], ready=cached, prefixes=(MCP_PATH,))
 
     def route(tool: str):
         async def handler(request: Request) -> JSONResponse:

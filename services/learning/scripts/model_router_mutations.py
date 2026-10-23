@@ -17,13 +17,21 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import practice_mutations as PM  # noqa: E402
 
-TESTS = ["tests/test_model_router.py", "tests/test_model_router_staging.py", "tests/test_model_smoke.py", "tests/test_route_listener.py"]
+TESTS = ["tests/test_model_router.py", "tests/test_model_router_staging.py", "tests/test_model_smoke.py", "tests/test_route_listener.py",
+         "tests/test_obs.py"]  # 后者：LT-05 模型路由指标（调用 / 失败 / 熔断 / 护栏剩余 / 估算成本）
 P = "learning/model_router/"
 CF, RT, PR, BR, BG, LG, RG = (P + "config.py", P + "router.py", P + "providers.py", P + "breaker.py", P + "budget.py", P + "ledger.py",
                               P + "registry.py")
 API, SMOKE, LS, SCF = "learning/route_api.py", "scripts/model_smoke.py", "learning/route_listener.py", "learning/config.py"
 
 MUTATIONS: dict[str, tuple[str, str, str]] = {
+    # LT-05 指标（learning/metrics.py 与熔断、护栏的只读快照；tests/test_obs.py）
+    "指标：熔断快照把半开当关闭": (BR, "return {k: self.state(*k) for k in list(self._states)}",
+                        'return {k: ("closed" if self.state(*k) == "half_open" else self.state(*k)) for k in list(self._states)}'),
+    "指标：护栏剩余不扣已用 token": (BG, "max(0, b.daily_tokens - self._tokens.get(t, 0))", "b.daily_tokens"),
+    "指标：供应商尝试不按结果计（失败看不见）": ("learning/metrics.py", "PROVIDER_CALLS.labels(provider=a.vendor, task=record.task, outcome=a.status).inc()",
+                                 "PROVIDER_CALLS.labels(provider=a.vendor, task=record.task, outcome=\"ok\").inc()"),
+    "指标：失败的尝试也计成本": ("learning/metrics.py", 'ok = [a for a in record.attempts if a.status == "ok"]', "ok = list(record.attempts)[:1]"),
     "运行时不过滤境外（出境第二道防线）": (RT, "return env in SYNTHETIC_ENVS and data_class is DataClass.L0", "return True"),
     "境外只接 L0 改成接到 L1": (RT, "and data_class is DataClass.L0", "and data_class.rank <= 1"),
     "staging 也允许境外": (CF, 'SYNTHETIC_ENVS = frozenset({"dev", "test"})', 'SYNTHETIC_ENVS = frozenset({"dev", "test", "staging"})'),

@@ -77,8 +77,8 @@ MUTATIONS = [
     ("节点盘不加密", "ack.tf", "system_disk_encrypted = true", "system_disk_encrypted = false", "R09"),
     ("Secret 落盘不加密", "ack.tf", "  encryption_provider_key = alicloud_kms_key.main.id\n", "", "R09"),
     ("RDS 云盘不加密", "rds.tf", "  encryption_key           = alicloud_kms_key.main.id\n", "", "R09"),
-    ("日志库不加密", "sls.tf", "    enable       = true\n    encrypt_type = \"default\"\n  }\n}\n\nresource \"alicloud_log_store\" \"audit\"",
-     "    enable       = false\n    encrypt_type = \"default\"\n  }\n}\n\nresource \"alicloud_log_store\" \"audit\"", "R09"),
+    ("日志库不加密", "sls.tf", "    enable       = true\n    encrypt_type = \"default\"\n  }\n}\n\n# LT-05：应用日志",
+     "    enable       = false\n    encrypt_type = \"default\"\n  }\n}\n\n# LT-05：应用日志", "R09"),
     ("API Server 开公网", "ack.tf", "slb_internet_enabled = false", "slb_internet_enabled = true", "R10"),
     ("集群另建 NAT", "ack.tf", "new_nat_gateway      = false", "new_nat_gateway      = true", "R10"),
     ("节点分配公网带宽", "ack.tf", "  install_cloud_monitor = true\n", "  install_cloud_monitor = true\n  internet_max_bandwidth_out = 10\n", "R10"),
@@ -137,7 +137,32 @@ MUTATIONS = [
     ("ACR 仓库公开", "acr.tf", "repo_type   = \"PRIVATE\"", "repo_type   = \"PUBLIC\"", "R14"),
     ("VPC 用公网网段", "variables.tf", "default     = \"10.20.0.0/16\"", "default     = \"47.20.0.0/16\"", "R15"),
     ("Service 网段与 VPC 重叠", "variables.tf", "default     = \"10.96.0.0/16\"", "default     = \"10.20.0.0/16\"", "R15"),
+    # LT-05 监控与日志采集
+    ("ACK 不装 ARMS 采集组件", "ack.tf", "  addons {\n    name = \"arms-prometheus\"\n  }\n", "", "R20"),
+    ("ARMS 采集组件被禁用", "ack.tf", "    name = \"arms-prometheus\"\n", "    name     = \"arms-prometheus\"\n    disabled = true\n", "R20"),
+    ("ACK 不装日志采集组件", "ack.tf", "    name   = \"logtail-ds\"\n", "    name   = \"logtail-ds-off\"\n", "R20"),
+    ("IaC 里建告警联系人", "sls.tf", "resource \"alicloud_log_store\" \"audit\" {",
+     "resource \"alicloud_arms_alert_contact\" \"oncall\" {\n  alert_contact_name = \"x\"\n  email = var.x\n}\n\nresource \"alicloud_log_store\" \"audit\" {", "R20"),
+    ("日志库建全文索引", "sls.tf", "  logstore = alicloud_log_store.app.logstore_name\n",
+     "  logstore = alicloud_log_store.app.logstore_name\n  full_text {\n    case_sensitive = false\n  }\n", "R21"),
+    ("日志索引收作答原文字段", "sls.tf", "    name             = \"route\"", "    name             = \"answer\"", "R21"),
+    ("app 日志库没有索引", "sls.tf", "  logstore = alicloud_log_store.app.logstore_name\n", "  logstore = alicloud_log_store.audit.logstore_name\n", "R21"),
+    # LT-05 安全审查 A：日志留存加上限
+    ("日志留存无限期（3650 天）", "sls.tf", "  retention_period      = var.log_retention_days\n  shard_count           = 2",
+     "  retention_period      = 3650\n  shard_count           = 2", "R12"),
+    ("留存变量不校验上限", "variables.tf", "var.log_retention_days >= 180 && var.log_retention_days <= 365",
+     "var.log_retention_days >= 180", "R12"),
+    ("留存变量缺省超过上限", "variables.tf", "  type        = number\n  default     = 180\n  validation {\n    condition     = var.log_retention_days",
+     "  type        = number\n  default     = 400\n  validation {\n    condition     = var.log_retention_days", "R12"),
 ]
+
+
+def test_log_index_fields_come_from_obs_log_fields():
+    """R21 的索引字段白名单是结构化日志字段白名单（learning/obs.py 的 LOG_FIELDS）的子集，同一来源"""
+    assert check_iac.LOG_FIELDS_SOURCE.name == "obs.py" and "learning" in check_iac.LOG_FIELDS_SOURCE.parts
+    assert check_iac.LOG_INDEX_FIELDS and check_iac.LOG_INDEX_FIELDS <= check_iac.LOG_FIELDS
+    assert {"ts", "level", "service", "route", "request_id"} <= check_iac.LOG_INDEX_FIELDS
+    assert not {"student", "account", "msg", "detail", "note"} & check_iac.LOG_INDEX_FIELDS, "自由文本与标识类字段不建索引"
 
 
 def _mutate(tmp: Path, file: str | None, old: str, new: str) -> Path:

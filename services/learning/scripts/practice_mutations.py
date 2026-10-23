@@ -180,7 +180,7 @@ def _copy(tmp: Path) -> Path:
     root = tmp / "repo"
     dst = root / "services" / "learning"
     shutil.copytree(HERE, dst, ignore=shutil.ignore_patterns("__pycache__", ".venv", ".cache", "*.pyc"))
-    for name in ("db", "adapters", "packages", "evals", "docs"):
+    for name in ("db", "adapters", "packages", "evals", "docs", "deploy"):  # deploy：LT-05 指标登记清单（tests/test_obs.py 只读）
         (root / name).symlink_to(REPO / name)
     return dst
 
@@ -198,6 +198,9 @@ def one(name: str, edits: list[tuple[str, str, str]], tests: list[str]) -> str |
         dst = _copy(Path(t))
         for fname, pattern, replacement in edits:
             f = dst / fname
+            # 变异目标必须在复制出来的 services/learning 里：软链接回主仓的 deploy/ 等一律拒绝（否则会改到主仓文件）
+            if fname.startswith(("deploy/", "../", "/")) or f.is_symlink() or not f.resolve().is_relative_to(dst.resolve()):
+                return f"变异目标不在复制的目录里（{fname}）：{name}"
             text = f.read_text(encoding="utf-8")
             if pattern not in text:
                 return f"变异本身写错（找不到原文）：{name}"

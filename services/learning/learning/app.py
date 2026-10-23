@@ -24,7 +24,7 @@ import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from . import health, mastery_routes, store
+from . import health, mastery_routes, metrics, obs, store
 from .adapter_client import strict_json
 from .config import Settings
 from .contract import UnsupportedContractVersion, internal_contract, plugin_contract
@@ -318,7 +318,7 @@ def create_app(
         # 有路由客户端时才建模型路由：环境从 LEARNING_ENV 读，配置不合规（出境、未批准供应商等）即拒绝启动
         own_router = state["router"] is None and bool(settings.route_clients)
         if own_router:
-            state["router"] = ModelRouter.from_config(load_for_deployment())
+            state["router"] = ModelRouter.from_config(load_for_deployment(), sink=metrics.router_sink())  # 调用记录：日志 + 指标
         # 就绪探针（LT-03）：上面的启动前置全部通过之后才放进连接池；/readyz 只看它在不在、能不能 SELECT 1
         state["ready_pool"] = p
         try:
@@ -342,7 +342,11 @@ def create_app(
         # 契约审查建议 4：0058 被回滚或执行权被收回时不再就绪（传 oid，函数不存在时不报错、直接为假）
         return await p.fetchval(READY_METER_SQL, store.METER_CHECK_FUNCTION) is True
 
-    health.register(app, ready_probe)
+    cached = health.register(app, ready_probe)
+    # 指标（LT-05，learning/obs.py、learning/metrics.py）：业务端口与回环路由监听上的 /metrics 一律 404；
+    # GET /metrics 只在单独的指标端口（LEARNING_METRICS_PORT，route_listener.serve 另起监听，只服务这一条路径）
+    obs.register(app, "learning", pools=lambda: [state.get("ready_pool")], ready=cached)
+    metrics.install(lambda: state.get("router"), lambda: state.get("ready_pool"))
 
     async def handle(method: str, request: Request, version: str) -> JSONResponse:  # 只有 /internal/v1（1.0.0）调用
         started = time.monotonic()

@@ -55,7 +55,8 @@ export async function poolReady(pool: Connectable, timeoutMs = READY_TIMEOUT_MS)
 }
 
 /** 就绪检查的 single-flight + 短缓存：同一时刻只有一次检查在跑，结果在 ttlMs 内复用（探针并发、多副本同时探测时不放大到库） */
-export function cachedReady(check: () => Promise<boolean>, ttlMs = READY_CACHE_MS, now: () => number = Date.now): () => Promise<boolean> {
+export function cachedReady(check: () => Promise<boolean>, ttlMs = READY_CACHE_MS, now: () => number = Date.now,
+                            onResult?: (ok: boolean) => void): () => Promise<boolean> {
   let inflight: Promise<boolean> | undefined;
   let last: { at: number; ok: boolean } | undefined;
   return () => {
@@ -64,6 +65,7 @@ export function cachedReady(check: () => Promise<boolean>, ttlMs = READY_CACHE_M
     inflight = check().catch(() => false).then((ok) => {
       last = { at: now(), ok };
       inflight = undefined;
+      onResult?.(ok);  // LT-05：最近一次结果给指标 starbuddy_ready（采集时不另查库）
       return ok;
     });
     return inflight;

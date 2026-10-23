@@ -1,0 +1,35 @@
+{
+  "title": "StarBuddy staging 学习链路",
+  "uid": "starbuddy-learning-pipeline",
+  "description": "LT-05：BFF → 学习服务 → 洞察 / 知识服务的请求（按路由模板）、复核队列积压、调度任务成败。路由标签只有模板，不含任何学生标识。",
+  "tags": ["starbuddy", "staging", "lt-05", "learning"],
+  "schemaVersion": 39,
+  "editable": true,
+  "time": {"from": "now-24h", "to": "now"},
+  "refresh": "1m",
+  "templating": {"list": [{"name": "datasource", "type": "datasource", "query": "prometheus", "label": "数据源（ARMS Prometheus，由人选择）"}]},
+  "panels": [
+    {"id": 1, "type": "timeseries", "title": "学习服务写入与编排接口（按路由模板、状态码类别）", "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+     "datasource": {"type": "prometheus", "uid": "${datasource}"},
+     "targets": [{"refId": "A", "expr": "sum by (route, status_class) (rate(starbuddy_http_requests_total{service=\"learning\"}[5m]))", "legendFormat": "{{route}} {{status_class}}"}]},
+    {"id": 2, "type": "timeseries", "title": "BFF 壳接口（按路由模板、状态码类别）", "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+     "datasource": {"type": "prometheus", "uid": "${datasource}"},
+     "targets": [{"refId": "A", "expr": "sum by (route, status_class) (rate(starbuddy_http_requests_total{service=\"bff\"}[5m]))", "legendFormat": "{{route}} {{status_class}}"}]},
+    {"id": 3, "type": "timeseries", "title": "洞察服务与知识服务（按路由模板）", "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
+     "datasource": {"type": "prometheus", "uid": "${datasource}"},
+     "targets": [{"refId": "A", "expr": "sum by (service, route) (rate(starbuddy_http_requests_total{service=~\"insight|knowledge\"}[5m]))", "legendFormat": "{{service}} {{route}}"}]},
+    {"id": 4, "type": "timeseries", "title": "复核队列积压（按学科）与最早等待（小时）", "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8},
+     "datasource": {"type": "prometheus", "uid": "${datasource}"},
+     "targets": [
+       {"refId": "A", "expr": "sum by (subject) (starbuddy_review_queue_backlog)", "legendFormat": "{{subject}} 未结案"},
+       {"refId": "B", "expr": "max by (subject) (starbuddy_review_queue_oldest_seconds) / 3600", "legendFormat": "{{subject}} 最早（小时）"}]},
+    {"id": 5, "type": "table", "title": "调度任务近 24 小时结果", "gridPos": {"x": 0, "y": 16, "w": 12, "h": 8},
+     "datasource": {"type": "prometheus", "uid": "${datasource}"},
+     "targets": [{"refId": "A", "expr": "sum by (task, outcome) (increase(starbuddy_scheduler_job_runs_total[24h]))", "legendFormat": "{{task}} {{outcome}}"}]},
+    {"id": 6, "type": "table", "title": "调度任务距最近一次成功（小时）与 p95 耗时（秒）", "gridPos": {"x": 12, "y": 16, "w": 12, "h": 8},
+     "datasource": {"type": "prometheus", "uid": "${datasource}"},
+     "targets": [
+       {"refId": "A", "expr": "(time() - max by (task) (starbuddy_scheduler_job_last_success_timestamp_seconds)) / 3600", "legendFormat": "{{task}}"},
+       {"refId": "B", "expr": "histogram_quantile(0.95, sum by (task, le) (rate(starbuddy_scheduler_job_duration_seconds_bucket[24h])))", "legendFormat": "{{task}}"}]}
+  ]
+}

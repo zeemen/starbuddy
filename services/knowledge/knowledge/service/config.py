@@ -18,6 +18,8 @@
   KNOWLEDGE_HOST                   HTTP 与 MCP 的监听地址，缺省 127.0.0.1；不接受 0.0.0.0、:: 等通配地址
                                    （只在服务内网监听，由平台侧网关转发；需要内网地址时显式配置具体地址）
   KNOWLEDGE_PORT                   缺省 8790（契约 servers）
+  KNOWLEDGE_METRICS_PORT           指标监听端口（LT-05）：同一地址上只服务 GET /metrics；staging 缺省 9790，dev / test 只在设了时起；
+                                   不能与 KNOWLEDGE_PORT 相同（业务端口上的 /metrics 一律 404）
   KNOWLEDGE_READ_CACHE             （PLT-19）公共层只读缓存开关：1 开、0 或不设关（缺省关；关时行为与响应逐字节不变）
   KNOWLEDGE_READ_CACHE_SIZE        缓存条目上限（LRU），缺省 1024，范围 1–10000（见 cache.py）
   KNOWLEDGE_READ_CACHE_MAX_BYTES   缓存总字节上限（按条目 JSON 长度估算，超出按 LRU 淘汰），缺省 64 MiB，范围 64 KiB–1 GiB；
@@ -87,6 +89,7 @@ def parse_extra_host(raw: str | None, env: str) -> str | None:
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8790
+DEFAULT_METRICS_PORT = 9790  # LT-05：staging 的指标监听缺省端口（env-inventory 登记）
 DEFAULT_CACHE_SIZE = 1024
 MAX_CACHE_SIZE = 10_000
 DEFAULT_CACHE_MAX_BYTES = 64 * 1024 * 1024
@@ -143,6 +146,7 @@ class Settings:
     read_cache_max_bytes: int = DEFAULT_CACHE_MAX_BYTES
     read_cache_log_every: int = DEFAULT_CACHE_LOG_EVERY
     extra_host: str | None = None  # LT-03：staging 另收的 Host（Service clusterIP）
+    metrics_port: int | None = None  # LT-05：指标监听端口（None = 不起）
 
     @staticmethod
     def from_env(environ: dict[str, str] | None = None) -> "Settings":
@@ -194,8 +198,10 @@ class Settings:
         host = check_host(e.get("KNOWLEDGE_HOST", DEFAULT_HOST))
         if env == STAGING and host != DEFAULT_HOST and not private_ipv4(host):
             raise RuntimeError("KNOWLEDGE_HOST 在 staging 只能是 127.0.0.1 或内网 IPv4 地址（RFC 1918）")
+        from .obs import metrics_port  # noqa: PLC0415
+        mport = metrics_port(e.get("KNOWLEDGE_METRICS_PORT"), env, DEFAULT_METRICS_PORT, "KNOWLEDGE_METRICS_PORT", int(port_raw))
         return Settings(env=env, database_url=database_url, tokens=tokens, page_snapshot=Path(snap) if snap else None,
-                        host=host, port=int(port_raw),
+                        host=host, port=int(port_raw), metrics_port=mport,
                         page_snapshot_pointer=Path(pointer) if pointer else None, snapshot_hmac_key=key,
                         page_snapshot_root=Path(root) if root else None, read_cache=cache_flag == "1",
                         read_cache_size=size, read_cache_max_bytes=max_bytes, read_cache_log_every=log_every,

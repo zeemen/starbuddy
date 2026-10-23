@@ -66,6 +66,7 @@ ALLOWED_ENVS = ("dev", "test")
 # 命令行任务（learning.jobs）同样收 staging（调度器在 staging 调 mastery-sweep），其余入口仍只收 ALLOWED_ENVS
 SYNTHETIC_KEYWORD_VARS = ("LEARNING_PRACTICE_CONFIG", "LEARNING_RETEST_CONFIG", "LEARNING_TODAY_CONFIG")
 PRESENT_ITEM_SOURCES = ("synthetic", "adapter")  # PLT-12：题面来源
+DEFAULT_METRICS_PORT = 9788  # LT-05：staging 的指标监听缺省端口（env-inventory 登记）
 
 
 def _budget(raw: str | None) -> float:
@@ -140,6 +141,9 @@ class Settings:
     # staging 的回环路由监听端口（LT-02 决定记录（续）第 5 条）：127.0.0.1 上只服务 /internal/v1/model/route；
     # 只在 staging（缺省 8785，LEARNING_ROUTE_PORT 可改）；dev、test 为 None（不起，设了拒绝启动）
     route_port: int | None = None
+    # 指标监听端口（LT-05 决定记录（续）第 5 条）：同一地址上只服务 GET /metrics；staging 缺省 9788（LEARNING_METRICS_PORT 可改），
+    # dev、test 只在设了时起；不能与主监听、回环路由监听同端口
+    metrics_port: int | None = None
 
     @staticmethod
     def from_env(environ: dict[str, str] | None = None) -> "Settings":
@@ -247,6 +251,10 @@ class Settings:
         if snapshot_raw == "1" and not today_cfg:
             raise RuntimeError("LEARNING_TODAY_SNAPSHOT=1 冻结的是今日编排的结果：必须同时设 LEARNING_TODAY_CONFIG")
         route_port = _route_port(e.get("LEARNING_ROUTE_PORT"), e.get("PORT"), env)
+        from .obs import metrics_port  # noqa: PLC0415
+        main_port = int(e["PORT"]) if (e.get("PORT") or "").isdigit() else 8788
+        mport = metrics_port(e.get("LEARNING_METRICS_PORT"), env, DEFAULT_METRICS_PORT, "LEARNING_METRICS_PORT", main_port,
+                             *([route_port] if route_port is not None else []))
         return Settings(env=env, database_url=database_url, service_credential=credential, adapters=adapters,
                         route_clients=route_clients, diagnosis_presenter=presenter, diagnosis_source=source, knowledge=knowledge,
                         diagnosis_targets=targets, diagnosis_map_version=map_version, mastery_configs=mastery_config_paths(e),
@@ -255,7 +263,8 @@ class Settings:
                         profile_page_config=e.get("LEARNING_PROFILE_PAGE_CONFIG") or None, practice_config=practice_cfg,
                         practice_presenter=practice_presenter, practice_ticket_secret=practice_secret,
                         present_item_source=present_source, retest_config=retest_cfg,
-                        today_config=today_cfg, today_snapshot=snapshot_raw == "1", host=host, route_port=route_port)
+                        today_config=today_cfg, today_snapshot=snapshot_raw == "1", host=host, route_port=route_port,
+                        metrics_port=mport)
 
 
 def _route_port(raw: str | None, main_raw: str | None, env: str) -> int | None:

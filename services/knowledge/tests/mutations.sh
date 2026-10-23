@@ -164,7 +164,17 @@ M=(
   $'额外 Host：收任意写法\tknowledge/service/config.py\t    if not private_ipv4(raw):\n        raise RuntimeError("KNOWLEDGE_EXTRA_HOST\t    if False:\n        raise RuntimeError("KNOWLEDGE_EXTRA_HOST\ttests/test_staging_env.py'
   $'额外 Host：不进允许列表\tknowledge/service/mcp_server.py\t    if extra:\n        names.append(extra)\t    pass\ttests/test_staging_env.py'
   $'额外 Host：MCP 的允许列表没带上\tknowledge/service/mcp_server.py\t    hosts = allowed_hosts(host, extra)\t    hosts = allowed_hosts(host)\ttests/test_staging_env.py'
-  $'健康：不注册健康端点（落到 MCP 令牌前置）\tknowledge/service/app.py\t    health.register(app, lambda: health.pool_alive(state.get("ready_pool")))\n\t\ttests/test_health.py'
+  $'健康：不注册健康端点（落到 MCP 令牌前置）\tknowledge/service/app.py\t    cached = health.register(app, lambda: health.pool_alive(state.get("ready_pool")))\n\t    cached = None\n\ttests/test_health.py'
+  # LT-05 可观测性（service/obs.py，三处逐字相同；完整用例在学习服务）：指标端点暴露范围（在 MCP 之前）、路由模板标签、脱敏
+  $'可观测：业务端口的 /metrics 落到 MCP 令牌前置（不在挂载前拦下）\tknowledge/service/app.py\t    obs.register(app, "knowledge", pools=lambda: [state.get("ready_pool")], ready=cached, prefixes=(MCP_PATH,))\n\t\ttests/test_obs.py'
+  $'可观测：MCP 请求不按前缀计\tknowledge/service/app.py\tready=cached, prefixes=(MCP_PATH,))\tready=cached, prefixes=())\ttests/test_obs.py'
+  $'可观测：/metrics 可以缓存\tknowledge/service/obs.py\tHEADERS = {"cache-control": "no-store", "x-content-type-options": "nosniff"}\tHEADERS = {"x-content-type-options": "nosniff"}\ttests/test_obs.py'
+  $'可观测：指标端口不限方法\tknowledge/service/obs.py\t    elif scope.get("method") != "GET":\t    elif False:\ttests/test_obs.py'
+  $'可观测：不起指标监听\tknowledge/service/config.py\t    mport = metrics_port(\t    mport = None and metrics_port(\ttests/test_obs.py'
+  $'可观测：脱敏不丢禁止字段\tknowledge/service/obs.py\t    return bool(_FORBIDDEN_KEY.fullmatch(normalize_key(key)))\t    return False\ttests/test_obs.py'
+  $'可观测：脱敏不替换手机号\tknowledge/service/obs.py\t    re.compile(r"(?<!\\d)(?:\\+?86[- ]?)?1[3-9]\\d[ -]?\\d{4}[ -]?\\d{4}(?!\\d)"),\n\t\ttests/test_obs.py'
+  $'可观测：手机号不认连字符分隔\tknowledge/service/obs.py\t1[3-9]\\d[ -]?\\d{4}[ -]?\\d{4}(?!\\d)\t1[3-9]\\d[ ]?\\d{4}[ ]?\\d{4}(?!\\d)\ttests/test_obs.py'
+  $'可观测：键名不先驼峰归一\tknowledge/service/obs.py\t    return re.sub(r"(?<=[a-z0-9])([A-Z])", r"_\\1", str(key)).replace("-", "_").lower()\t    return str(key).lower()\ttests/test_obs.py'
 )
 
 # 知识服务读工具（PR ②）：需要一次性 Postgres
@@ -228,7 +238,7 @@ copy_tree() {  # $1 目标根目录：services/knowledge 复制一份，其余�
   ln -s "$ROOT/services/learning" "$dst/services/learning"
   # 页面仓库模板复制一份（审查处理的 CI 样例变异要改它）
   (cd "$ROOT/tools/kge-pages-template" && tar -cf - .) | (mkdir -p "$dst/tools/kge-pages-template" && cd "$dst/tools/kge-pages-template" && tar -xf -)
-  for d in docs db packages; do ln -s "$ROOT/$d" "$dst/$d"; done
+  for d in docs db packages deploy; do ln -s "$ROOT/$d" "$dst/$d"; done  # deploy：LT-05 指标登记清单（只读）
   # evals：对照评测（kge-compile）复制一份以便变异，其余软链接回仓库
   mkdir -p "$dst/evals"
   for e in "$ROOT"/evals/*; do
@@ -256,9 +266,12 @@ for entry in "${M[@]}"; do
   total=$((total + 1)); i=$((i + 1))
   dst="$WORK/m$i"; copy_tree "$dst"
   case "$file" in evals/*|tools/*) mut_file="$dst/$file" ;; *) mut_file="$dst/services/knowledge/$file" ;; esac
-  if ! MUT_FILE="$mut_file" MUT_ORIG="$orig" MUT_REPL="$repl" "$PY" - <<'PY'
+  if ! MUT_ROOT="$dst" MUT_FILE="$mut_file" MUT_ORIG="$orig" MUT_REPL="$repl" "$PY" - <<'PY'
 import os, sys
 p = os.environ["MUT_FILE"]; o = os.environ["MUT_ORIG"]; r = os.environ["MUT_REPL"]
+# 变异目标必须是副本里复制出来的文件：软链接回主仓的 deploy/ 等（真实路径不在副本里）一律拒绝，免得改到主仓
+if os.path.islink(p) or not os.path.realpath(p).startswith(os.path.realpath(os.environ["MUT_ROOT"]) + os.sep):
+    sys.exit(1)
 s = open(p, encoding="utf-8").read()
 if s.count(o) != 1:
     sys.exit(1)

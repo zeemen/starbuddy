@@ -36,6 +36,12 @@ resource "alicloud_cs_managed_kubernetes" "main" {
     name   = "logtail-ds"
     config = jsonencode({ IngressDashboardEnabled = "false", sls_project_name = alicloud_log_project.main.project_name })
   }
+  # LT-05（specs/launch-lt05-observability 决定记录第 1 条）：ARMS 托管 Prometheus 的采集组件。采集目标是 deploy/k8s/observability.yaml
+  # 的 PodMonitor（各服务 GET /metrics，免鉴权、只在 Pod 内网；NetworkPolicy metrics-from-collector 只放行本组件）。
+  # 告警规则 deploy/observability/alerts.yaml 由人在 ARMS 控制台导入；通知渠道与接收人由人配置（不在 IaC，不进仓库）。
+  addons {
+    name = "arms-prometheus"
+  }
   addons {
     name = "ack-secret-manager" # 凭据管家 → k8s Secret（只读 starbuddy-staging/ 前缀，kms.tf 的 RAM 角色）
   }

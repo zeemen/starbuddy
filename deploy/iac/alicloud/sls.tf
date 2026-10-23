@@ -24,6 +24,55 @@ resource "alicloud_log_store" "app" {
   }
 }
 
+# LT-05：应用日志是一行一个 JSON（ts、level、service、logger、route、request_id、status、duration_ms…，各服务 obs 模块集中脱敏），
+# 采集配置见 deploy/k8s/observability.yaml（AliyunLogConfig，标准输出 + 标准错误，JSON 展开一层）。这里只给白名单字段建字段索引，
+# **不建全文索引**（R21：没有 full_text 块；字段名只收白名单，作答、内容、手机号、令牌一类字段即使出现也不可检索）。
+resource "alicloud_log_store_index" "app" {
+  project  = alicloud_log_project.main.project_name
+  logstore = alicloud_log_store.app.logstore_name
+
+  field_search {
+    name             = "service"
+    type             = "text"
+    token            = ","
+    enable_analytics = true
+  }
+  field_search {
+    name             = "level"
+    type             = "text"
+    token            = ","
+    enable_analytics = true
+  }
+  field_search {
+    name             = "route"
+    type             = "text"
+    token            = ","
+    enable_analytics = true
+  }
+  field_search {
+    name             = "event"
+    type             = "text"
+    token            = ","
+    enable_analytics = true
+  }
+  field_search {
+    name             = "request_id"
+    type             = "text"
+    token            = ","
+    enable_analytics = false
+  }
+  field_search {
+    name             = "status"
+    type             = "long"
+    enable_analytics = true
+  }
+  field_search {
+    name             = "duration_ms"
+    type             = "long"
+    enable_analytics = true
+  }
+}
+
 resource "alicloud_log_store" "audit" {
   project_name          = alicloud_log_project.main.project_name
   logstore_name         = "audit"

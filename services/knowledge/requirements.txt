@@ -18,3 +18,5 @@ mcp==2.2.0
 mcp-types==2.2.0
 # 兜底检索与 node.resolve 的全文检索（PR ③，spec 待人确认 #5）：中文分词。MIT；只有源码包，安装时本地构建（纯 Python）
 jieba==0.42.1
+# LT-05 可观测性：/metrics（Prometheus 文本格式）。Apache-2.0 AND BSD-2-Clause（附带的 decorator.py），无运行依赖
+prometheus-client==0.26.0

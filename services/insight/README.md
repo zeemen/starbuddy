@@ -100,6 +100,7 @@ INSIGHT_ENV=test INSIGHT_DATABASE_URL=... INSIGHT_TOKEN_ORCHESTRATOR=... .venv/b
 | asyncpg | 0.31.0 | Apache-2.0 | 数据库连接（psycopg 3 为 LGPL-3.0，不引入） |
 | jsonschema / referencing | 4.26.0 / 0.37.0 | MIT / MIT | 契约严格校验；传递依赖 jsonschema-specifications、rpds-py、attrs（MIT） |
 | pyyaml | 6.0.3 | MIT | 契约、字段字典、禁用推断词表 |
+| prometheus-client | 0.26.0 | Apache-2.0 AND BSD-2-Clause（PyPI 元数据；BSD-2 部分是包内附带的 decorator.py） | LT-05 可观测性（用户决定 2026-10-23 新增）：`/metrics`（`insight/service/obs.py`）；调度器经同一锁文件共用；无运行依赖 |
 | pytest（开发） | 9.1.1 | MIT | 测试；传递依赖 pluggy、iniconfig（MIT）、packaging（Apache-2.0 或 BSD-2）、Pygments（BSD-2） |
 | httpx | 0.28.1 | BSD-3-Clause | 调学习服务验证任务接口（KGE-04 第二步 PR 3 起转为运行依赖，与学习服务同版本）；测试里也作进程内 ASGI 客户端；传递依赖 httpcore（BSD-3）、certifi（MPL-2.0，只作 CA 数据，同学习服务的待人确认） |
 

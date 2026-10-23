@@ -3,6 +3,11 @@
 模块：计量 `src/metering/`（2-E，`specs/metering-impl-sprint2/spec.md`）、星图读模块 `src/star-map/`（3-H，`specs/star-map-sprint3/spec.md`）、建档 `src/onboarding/`（SIE-01）、行为事件与探针 `src/events/`（2-L）、统一壳路由表与家庭登录 `src/http/`（4-H H1）。支付不在这里。
 
 - 运行时：Node 22（原生运行 TS，与阿鸦适配器同一工具链）；数据库客户端 `pg`（MIT）。
+- 可观测性（LT-05，`specs/launch-lt05-observability`）：`src/observability/metrics.ts`（自写的 Prometheus 文本格式 0.0.4：计数器、直方图、
+  仪表；HELP 与标签值按规范转义；标签白名单与枚举）与 `src/observability/log.ts`（一行一个 JSON、字段白名单、集中脱敏）。
+  `GET /metrics` 只在单独的指标端口（`BFF_METRICS_PORT`，staging 缺省 9787，与业务监听同一地址；`createMetricsServer`），业务端口上是表外 404。
+  **不引入任何指标依赖**（决定记录（续）第 4 条：不用 `prom-client`，它与传递依赖 `tdigest`、`bintrees`、`@opentelemetry/api` 已从
+  `package.json` 与 `package-lock.json` 移除）；计量计数在事务提交之后、出错只丢这一次计数（第 6 条）。
 - 计量流程：`meteredCall()`——以当前账号预留 → 用同一个 key 调学习服务 → 结算或释放；结果未知时同 key 退避重试。
   数据库侧的授权、加锁、幂等都在迁移 `0009` 的函数里，BFF 只是调用方（设计文档 `docs/design/metering-schema.md` 第 4、5 节）。
 - 定时任务：`runExpiry()`、`runRenewal()`，连接池的登录角色只继承 `starbuddy_scheduler`。

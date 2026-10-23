@@ -9,6 +9,7 @@
 |---|---|
 | [rds-restore-and-migrate-rehearsal.md](rds-restore-and-migrate-rehearsal.md) | 每次执行迁移之前（含 0058）；每月一次备份可恢复性演练 |
 | [rollback.md](rollback.md) | 发布后出问题：应用回滚、迁移回滚（down）、按时间点恢复（PITR） |
+| [weekly-restore-verify.md](weekly-restore-verify.md) | 每周一次：恢复到副本、mark-replica，用 `restore_verify.py` 只读校验行数与校验和、迁移账本，并与上周报告比较（LT-05） |
 
 共同前提：
 - 工具在 VPC 内的运维跳板（或集群里的一次性运维 Pod，镜像来自 ACR、按摘要）上运行：`psql`（16）、`kubectl`、阿里云 CLI；

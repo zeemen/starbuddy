@@ -1,0 +1,198 @@
+# StarBuddy staging 告警规则（LT-05 范围第 3 条，specs/launch-lt05-observability；Prometheus 规则格式，导入阿里云 ARMS 托管 Prometheus）。
+# - 只引用 metrics-inventory.yaml 登记的指标（服务实际注册的 starbuddy_* 与采集侧的 external）：deploy/observability/check_observability.py 核对，
+#   随 make deploy-check；有 promtool 时另跑 promtool check rules。
+# - 全部阈值与持续时间都是**占位缺省，待人签字**（SLO 通过线；annotations.threshold 写明）；告警接收人、通知渠道、值守排班由人在 ARMS
+#   控制台配置（本仓库不含任何联系方式）。severity：critical 立即处理、warning 工作时间处理。
+# - 标签只用白名单（service、route、method、status_class、subject、task、provider、outcome）与采集侧的 namespace / pod / persistentvolumeclaim；
+#   告警里不会出现任何学生、家长、账号标识或内容（指标本身就没有）。
+groups:
+  - name: starbuddy-availability
+    rules:
+      - alert: StarbuddyServiceDown
+        expr: up{namespace="starbuddy-staging"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: 采集不到服务的指标（服务不可用或 /metrics 不通）
+          description: ARMS 连续 2 分钟采不到 {{ $labels.pod }} 指标端口（端口名 metrics）的 /metrics；先看 Pod 状态与 /readyz，再看指标监听是否起来与 NetworkPolicy 的采集器放行。
+          threshold: 占位缺省（for 2m），待人签字
+      - alert: StarbuddyNotReady
+        expr: starbuddy_ready == 0
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: 服务的就绪检查（/readyz）连续失败
+          description: "{{ $labels.service }} 最近一次就绪检查未通过已 5 分钟（库连接、启动前置）；对照 kube_pod_container_status_ready。"
+          threshold: 占位缺省（for 5m），待人签字
+      - alert: StarbuddyPodNotReady
+        expr: kube_pod_container_status_ready{namespace="starbuddy-staging"} == 0
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: 容器就绪探针失败（kube-state-metrics）
+          description: "{{ $labels.pod }} 的就绪探针失败 5 分钟（含三科适配器的 exec TCP 探针）。"
+          threshold: 占位缺省（for 5m），待人签字
+      - alert: StarbuddyHigh5xxRate
+        expr: |
+          sum by (service) (rate(starbuddy_http_requests_total{status_class="5xx"}[5m]))
+            / sum by (service) (rate(starbuddy_http_requests_total[5m])) > 0.05
+        for: 10m
+        labels: {severity: critical}
+        annotations:
+          summary: 5xx 比例过高
+          description: "{{ $labels.service }} 近 5 分钟 5xx 占比超过 5%（按路由模板细分见总览仪表盘）。"
+          threshold: 占位缺省（5%，for 10m），待人签字（SLO 通过线）
+      - alert: StarbuddyHighLatencyP95
+        expr: |
+          histogram_quantile(0.95, sum by (service, le) (rate(starbuddy_http_request_duration_seconds_bucket[5m]))) > 2
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: p95 时延过高
+          description: "{{ $labels.service }} 的 p95 时延超过 2 秒（判分、诊断经模型路由的请求本身较慢，阈值待按路由分组细化）。"
+          threshold: 占位缺省（p95 2 秒，for 10m），待人签字（SLO 通过线）
+      - alert: StarbuddyDbPoolSaturated
+        expr: |
+          (sum by (service) (starbuddy_db_pool_size) / sum by (service) (starbuddy_db_pool_max) >= 0.9)
+            and (sum by (service) (starbuddy_db_pool_idle) == 0)
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: 连接池接近用满
+          description: "{{ $labels.service }} 连接池用到 90% 以上且没有空闲连接已 10 分钟。"
+          threshold: 占位缺省（90%，for 10m），待人签字
+      - alert: StarbuddyBffPoolWaiting
+        expr: starbuddy_db_pool_waiting > 0
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: BFF 有请求在等数据库连接
+          description: BFF 的连接池持续有等待者（max 10，单实例）。
+          threshold: 占位缺省（> 0，for 5m），待人签字
+  - name: starbuddy-model
+    rules:
+      - alert: StarbuddyModelBreakerOpen
+        expr: max by (provider, task) (starbuddy_model_breaker_open) == 1
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: 模型供应商熔断打开
+          description: "{{ $labels.provider }} 的 {{ $labels.task }} 熔断打开或半开已 5 分钟；看备选是否接住（模型与成本仪表盘）。"
+          threshold: 占位缺省（for 5m），待人签字
+      - alert: StarbuddyModelProviderFailureRate
+        expr: |
+          sum by (provider) (rate(starbuddy_model_provider_calls_total{outcome!~"ok|skipped_breaker_open"}[10m]))
+            / sum by (provider) (rate(starbuddy_model_provider_calls_total{outcome!="skipped_breaker_open"}[10m])) > 0.2
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: 模型供应商失败率高
+          description: "{{ $labels.provider }} 近 10 分钟失败（超时、限流、服务端错误等）占比超过 20%。"
+          threshold: 占位缺省（20%，for 10m），待人签字
+      - alert: StarbuddyModelBudgetNearlyExhausted
+        expr: min by (task) (starbuddy_model_budget_remaining_ratio) < 0.1
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: 成本护栏将满
+          description: "{{ $labels.task }} 当日护栏剩余不足 10%（进程内计数、北京时间 0 点清零；到上限后该任务一律 503）。"
+          threshold: 占位缺省（剩余 10%），待人签字
+      - alert: StarbuddyModelBudgetExceeded
+        expr: sum by (task) (increase(starbuddy_model_route_calls_total{outcome="budget_exceeded"}[15m])) > 0
+        for: 0m
+        labels: {severity: critical}
+        annotations:
+          summary: 成本护栏已满，调用被拒
+          description: "{{ $labels.task }} 近 15 分钟有调用因护栏到上限被拒（ROUTE_BUDGET_EXCEEDED）。"
+          threshold: 占位缺省（> 0），待人签字
+      - alert: StarbuddyModelCostSpike
+        expr: sum(increase(starbuddy_model_estimated_cost_cny_total[1h])) > 50
+        for: 0m
+        labels: {severity: warning}
+        annotations:
+          summary: 估算模型成本一小时内超过阈值
+          description: 按路由表单价估算的成本（不参与计量）近 1 小时超过 50 元；没有单价时不计（pricing 为空）。
+          threshold: 占位缺省（50 元 / 小时），待人签字
+  - name: starbuddy-metering
+    rules:
+      - alert: StarbuddyMeterRollbackSpike
+        expr: sum(increase(starbuddy_meter_release_total[15m])) > 20
+        for: 0m
+        labels: {severity: warning}
+        annotations:
+          summary: 计量回滚（释放）异常升高
+          description: 近 15 分钟释放（失败回滚）超过 20 笔：多半是学习服务确定失败（4xx / 410 / 409），对照学习链路仪表盘。
+          threshold: 占位缺省（20 笔 / 15 分钟），待人签字
+      - alert: StarbuddyMeterConflictSpike
+        expr: |
+          sum(increase(starbuddy_meter_conflict_total[15m])) > 10
+            or sum(increase(starbuddy_learning_meter_check_total{outcome="sealed"}[15m])) > 5
+        for: 0m
+        labels: {severity: warning}
+        annotations:
+          summary: 计量 409 异常升高
+          description: BFF 计量冲突（预留 conflict / dedup_in_progress、结算与释放 conflict）或学习服务写入前核对 409（IDEMPOTENCY_KEY_SEALED）偏多。
+          threshold: 占位缺省（BFF 10 次、学习服务 5 次 / 15 分钟），待人签字
+      - alert: StarbuddyMeterResultUnknown
+        expr: sum(increase(starbuddy_meter_events_total{outcome="result_unknown"}[30m])) > 0
+        for: 0m
+        labels: {severity: warning}
+        annotations:
+          summary: 计量结果未知（留给过期任务）
+          description: 重试预算用完仍不知道学习服务的结果；不扣费，留给过期任务处理，需人核对学习服务可用性。
+          threshold: 占位缺省（> 0 / 30 分钟），待人签字
+  - name: starbuddy-review-and-jobs
+    rules:
+      - alert: StarbuddyReviewQueueBacklog
+        expr: sum(starbuddy_review_queue_backlog) > 50 or max(starbuddy_review_queue_oldest_seconds) > 172800
+        for: 30m
+        labels: {severity: warning}
+        annotations:
+          summary: 复核队列积压
+          description: 未结案复核任务超过 50 条，或最早一条等待超过 48 小时。
+          threshold: 占位缺省（50 条或 48 小时，for 30m），待人签字
+      - alert: StarbuddySchedulerJobFailed
+        expr: |
+          sum by (task, outcome) (increase(starbuddy_scheduler_job_runs_total{outcome=~"partial|refused|crashed|timeout|bad_output|lock_error|lock_lost|skipped_running"}[1h])) > 0
+        for: 0m
+        labels: {severity: warning}
+        annotations:
+          summary: 调度任务失败
+          description: "{{ $labels.task }} 近 1 小时有一轮结果为 {{ $labels.outcome }}（按结果编码计；退出码 0 但 stale_estimate > 0 的轮次结果是 ok、不在这里，只在调度器 alert 级别日志里，由 SLS 日志告警另看）。"
+          threshold: 占位缺省（> 0 / 小时），待人签字
+      - alert: StarbuddySchedulerJobStale
+        expr: time() - starbuddy_scheduler_job_last_success_timestamp_seconds > 172800
+        for: 30m
+        labels: {severity: warning}
+        annotations:
+          summary: 调度任务长时间没有成功
+          description: "{{ $labels.task }} 超过 48 小时没有一轮 ok（每周任务按需调大）。"
+          threshold: 占位缺省（48 小时），待人签字
+  - name: starbuddy-infra
+    rules:
+      - alert: StarbuddyCertExpiringSoon
+        expr: probe_ssl_earliest_cert_expiry - time() < 1209600
+        for: 1h
+        labels: {severity: warning}
+        annotations:
+          summary: 内网负载均衡 HTTPS 证书即将到期
+          description: 前端内网 HTTPS 证书（私有 CA 签发）14 天内到期；拨测目标由人在 ARMS 配置，拨测须从 VPC 内网发起（ACK 集群内的拨测探针或内网拨测点），不开公网拨测、不为拨测给内网负载均衡加公网访问。
+          threshold: 占位缺省（14 天），待人签字
+      - alert: StarbuddyDiskLow
+        expr: |
+          kubelet_volume_stats_available_bytes{namespace="starbuddy-staging"}
+            / kubelet_volume_stats_capacity_bytes{namespace="starbuddy-staging"} < 0.15
+        for: 30m
+        labels: {severity: warning}
+        annotations:
+          summary: 持久卷剩余空间不足
+          description: "{{ $labels.persistentvolumeclaim }} 剩余不足 15%（知识快照、BFF 白名单 OTP 审计文件）。RDS 磁盘看云监控（不在本规则）。"
+          threshold: 占位缺省（15%，for 30m），待人签字
+      - alert: StarbuddyContainerRestarting
+        expr: increase(kube_pod_container_status_restarts_total{namespace="starbuddy-staging"}[30m]) > 3
+        for: 0m
+        labels: {severity: warning}
+        annotations:
+          summary: 容器反复重启
+          description: "{{ $labels.pod }} 30 分钟内重启超过 3 次（存活探针失败或进程退出）。"
+          threshold: 占位缺省（3 次 / 30 分钟），待人签字

@@ -7,6 +7,10 @@
 #       required_in_staging（staging 必填）。
 # 名字里的 <SUBJECT> / <CALLER> 是模板（源码里按学科或调用方拼出），测试按模板核对。
 # 核对：deploy/tests/test_env_inventory.py（每个名字在 sources 里真实存在；编排文件只用这里登记的名字；密钥不以明文出现）。
+# LT-05 可观测性（specs/launch-lt05-observability 决定记录（续）第 5 条）：GET /metrics 只在单独的指标端口（*_METRICS_PORT，与业务监听
+# 同一地址，只服务这一条路径；业务端口与回环路由监听上的 /metrics 一律 404），免鉴权、只在 Pod 内网、NetworkPolicy 只给采集组件放行。
+# staging 缺省各不相同（BFF 9787、学习 9788、知识 9790、洞察 9791、审核台 9792、调度器 9793），dev / test 只在设了时起；不能与业务端口相同。
+# 日志格式、字段白名单与脱敏不可配置（一律一行 JSON、集中脱敏）。
 schema: starbuddy-env-inventory/1
 services:
   learning:
@@ -16,6 +20,7 @@ services:
       - {name: LEARNING_ENV, purpose: 运行环境 dev/test/staging, secret: false, default: null, envs: all, required_in_staging: true}
       - {name: LEARNING_HOST, purpose: 监听地址（staging 可设内网 IPv4）, secret: false, default: 127.0.0.1, envs: staging}
       - {name: PORT, purpose: 监听端口, secret: false, default: "8788", envs: all}
+      - {name: LEARNING_METRICS_PORT, purpose: 指标监听端口（LT-05；与 LEARNING_HOST 同一地址，只服务 GET /metrics；staging 缺省 9788，dev / test 只在设了时起；不能与 PORT、LEARNING_ROUTE_PORT 相同）, secret: false, default: "9788", envs: all}
       - {name: LEARNING_ROUTE_PORT, purpose: staging 回环路由监听端口（127.0.0.1 上只服务 /internal/v1/model/route，其他路径 404；两科适配器的 *_ROUTE_URL = http://127.0.0.1:8785，改端口时一起改；不能与 PORT 相同；dev / test 设了拒绝启动）, secret: false, default: "8785", envs: staging}
       - {name: LEARNING_DATABASE_URL, purpose: 连接串（登录角色只继承 starbuddy_learning；口令走 PGPASSFILE 或密钥注入）, secret: true, default: null, envs: all, required_in_staging: true}
       - {name: LEARNING_SERVICE_TOKEN, purpose: BFF → 学习服务令牌（≥ 32 字符）, secret: true, default: null, envs: all, required_in_staging: true}
@@ -54,6 +59,7 @@ services:
       - {name: INSIGHT_ENV, purpose: 运行环境 dev/test/staging, secret: false, default: null, envs: all, required_in_staging: true}
       - {name: INSIGHT_HOST, purpose: 监听地址（staging 只收 127.0.0.1 或内网 IPv4）, secret: false, default: 127.0.0.1, envs: all}
       - {name: INSIGHT_PORT, purpose: 监听端口, secret: false, default: "8791", envs: all}
+      - {name: INSIGHT_METRICS_PORT, purpose: 指标监听端口（LT-05；与 INSIGHT_HOST 同一地址，只服务 GET /metrics；staging 缺省 9791，dev / test 只在设了时起；不能与 INSIGHT_PORT 相同）, secret: false, default: "9791", envs: all}
       - {name: INSIGHT_EXTRA_HOST, purpose: staging 另收的一个 Host（恰好一个 RFC 1918 IPv4 字面量；k8s 里是本服务 Service 的 clusterIP，部署测试核对；dev / test 设了拒绝启动）, secret: false, default: null, envs: staging}
       - {name: INSIGHT_DATABASE_URL, purpose: 连接串（只继承 starbuddy_insight）, secret: true, default: null, envs: all, required_in_staging: true}
       - {name: INSIGHT_TOKEN_<CALLER>, purpose: 调用方令牌（BFF / ORCHESTRATOR）, secret: true, default: null, envs: all, required_in_staging: true}
@@ -74,6 +80,7 @@ services:
       - {name: KNOWLEDGE_ENV, purpose: 运行环境 dev/test/staging, secret: false, default: null, envs: all, required_in_staging: true}
       - {name: KNOWLEDGE_HOST, purpose: 监听地址（staging 只收 127.0.0.1 或内网 IPv4）, secret: false, default: 127.0.0.1, envs: all}
       - {name: KNOWLEDGE_PORT, purpose: 监听端口, secret: false, default: "8790", envs: all}
+      - {name: KNOWLEDGE_METRICS_PORT, purpose: 指标监听端口（LT-05；与 KNOWLEDGE_HOST 同一地址，只服务 GET /metrics；staging 缺省 9790，dev / test 只在设了时起；不能与 KNOWLEDGE_PORT 相同）, secret: false, default: "9790", envs: all}
       - {name: KNOWLEDGE_EXTRA_HOST, purpose: staging 另收的一个 Host（HTTP 与 MCP 共用；恰好一个 RFC 1918 IPv4 字面量；k8s 里是本服务 Service 的 clusterIP，部署测试核对；dev / test 设了拒绝启动）, secret: false, default: null, envs: staging}
       - {name: KNOWLEDGE_DATABASE_URL, purpose: 连接串（只继承 starbuddy_kge_read）, secret: true, default: null, envs: all, required_in_staging: true}
       - {name: KNOWLEDGE_TOKEN_<CALLER>, purpose: 调用方令牌（BFF / ORCHESTRATOR / LEARNING）, secret: true, default: null, envs: all, required_in_staging: true}
@@ -94,7 +101,8 @@ services:
     vars:
       - {name: SCHEDULER_ENV, purpose: 运行环境 dev/test/staging（staging 只收签字时间表）, secret: false, default: null, envs: all, required_in_staging: true}
       - {name: SCHEDULER_DATABASE_URL, purpose: 连接串（只继承 starbuddy_scheduler；staging 另收内网 IPv4，或带 sslmode=verify-full 与 sslrootcert 绝对路径的托管库主机名；就绪探针也用它）, secret: true, default: null, envs: all, required_in_staging: true}
-      - {name: SCHEDULER_HEALTH_PORT, purpose: 健康监听端口（LT-03；只在常驻模式起，只服务 /healthz、/readyz；不设不起监听；staging 编排写 8793）, secret: false, default: null, envs: all}
+      - {name: SCHEDULER_HEALTH_PORT, purpose: 健康监听端口（LT-03；只在常驻模式起，只服务 /healthz、/readyz（/metrics 在这里 404）；不设不起监听；staging 编排写 8793）, secret: false, default: null, envs: all}
+      - {name: SCHEDULER_METRICS_PORT, purpose: 指标监听端口（LT-05；只在常驻模式起，与健康监听同一地址，只服务 GET /metrics；staging 缺省 9793，dev / test 只在设了时起；不能与 SCHEDULER_HEALTH_PORT 相同）, secret: false, default: "9793", envs: all}
       - {name: SCHEDULER_HOST, purpose: 健康监听地址（缺省 127.0.0.1；dev/test 只 127.0.0.1，staging 另收内网 IPv4；设了必须同时设 SCHEDULER_HEALTH_PORT）, secret: false, default: 127.0.0.1, envs: all}
       - {name: STARBUDDY_IMAGE_ENV, purpose: 镜像固化的环境标记（设了须与 SCHEDULER_ENV 一致；不转交子进程）, secret: false, default: null, envs: all}
   review_console:
@@ -103,6 +111,7 @@ services:
     vars:
       - {name: REVIEW_CONSOLE_ENV, purpose: 运行环境 dev/test/staging, secret: false, default: null, envs: all, required_in_staging: true}
       - {name: REVIEW_CONSOLE_HOST, purpose: 监听地址（staging 可设内网 IPv4）, secret: false, default: 127.0.0.1, envs: staging}
+      - {name: REVIEW_CONSOLE_METRICS_PORT, purpose: 指标监听端口（LT-05；与 REVIEW_CONSOLE_HOST 同一地址，只服务 GET /metrics；staging 缺省 9792，dev / test 只在设了时起；不能与 serve --port 相同）, secret: false, default: "9792", envs: all}
       - {name: REVIEW_CONSOLE_EXTRA_HOST, purpose: staging 另收的一个 Host（恰好一个 RFC 1918 IPv4 字面量；k8s 里是本服务 Service 的 clusterIP，部署测试核对；dev / test 设了拒绝启动）, secret: false, default: null, envs: staging}
       - {name: REVIEW_CONSOLE_KGE_DATABASE_URL, purpose: 草稿读写连接串（只继承 starbuddy_kge）, secret: true, default: null, envs: all, required_in_staging: true}
       - {name: REVIEW_CONSOLE_REVIEW_DATABASE_URL, purpose: 签字发布连接串（只继承 starbuddy_review）, secret: true, default: null, envs: all, required_in_staging: true}
@@ -120,6 +129,7 @@ services:
       - {name: STARBUDDY_ENV, purpose: 运行环境 dev/test/staging/pilot/production, secret: false, default: null, envs: all, required_in_staging: true}
       - {name: BFF_HOST, purpose: 监听地址（只 staging 可设内网 IPv4）, secret: false, default: 127.0.0.1, envs: staging}
       - {name: PORT, purpose: 监听端口, secret: false, default: "8787", envs: all}
+      - {name: BFF_METRICS_PORT, purpose: 指标监听端口（LT-05；与 BFF_HOST 同一地址，只服务 GET /metrics；staging 缺省 9787，dev / test 只在设了时起；不能与 PORT 相同）, secret: false, default: "9787", envs: all}
       - {name: BFF_DATABASE_URL, purpose: 连接串（只继承 starbuddy_bff）, secret: true, default: null, envs: all, required_in_staging: true}
       - {name: BFF_SHELL_ORIGIN, purpose: 壳的来源（staging 必须 https）, secret: false, default: null, envs: all, required_in_staging: true}
       - {name: BFF_LOG_HMAC_KEY, purpose: 日志 HMAC 密钥（十六进制 ≥ 32 字节）, secret: true, default: null, envs: all, required_in_staging: true}

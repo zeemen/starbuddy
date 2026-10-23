@@ -20,6 +20,7 @@
 import { closeSync, existsSync, fsyncSync, openSync, readFileSync, statSync, writeSync } from 'node:fs';
 import { createHmac } from 'node:crypto';
 import { hostname } from 'node:os';
+import { emit } from '../observability/log.ts';
 import type { Keys, RunEnv } from './config.ts';
 import { E164, phoneHash } from './secrets.ts';
 import type { SmsSender } from './sms.ts';
@@ -205,7 +206,7 @@ export class StagingOtp {
     this.#lockFile = `${o.auditFile}.lock`;
     this.#keys = o.keys;
     this.#now = o.now ?? Date.now;
-    this.#warn = o.warn ?? ((l) => console.warn(JSON.stringify(l)));
+    this.#warn = o.warn ?? ((l) => emit('warn', l));  // LT-05：一行 JSON、集中脱敏
     this.#holder = o.holder ?? { host: hostname(), pid: process.pid };
     this.#entries = parseEntries(this.#read(o.entriesFile, '条目文件'));
     try {

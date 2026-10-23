@@ -82,6 +82,7 @@ LEARNING_ADAPTER_AYA_URL=http://127.0.0.1:8787 LEARNING_ADAPTER_AYA_TOKEN=... .v
 | httpx | 0.28.1 | BSD-3-Clause |
 | jsonschema | 4.26.0 | MIT |
 | pyyaml | 6.0.3 | MIT |
+| prometheus-client（LT-05，`/metrics`；学习服务与审核台后端，`learning/obs.py`） | 0.26.0 | Apache-2.0 AND BSD-2-Clause（PyPI 元数据 License-Expression；BSD-2 部分是包内附带的 decorator.py）；无运行依赖 |
 | pytest、pytest-asyncio（开发） | 9.1.1、1.4.0 | MIT、Apache-2.0 |
 | rfc3339-validator、six（契约共享库的依赖，见 `packages/contracts/python/pyproject.toml`） | 0.1.4、1.17.0 | MIT、MIT |
 

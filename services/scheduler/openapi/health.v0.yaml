@@ -44,6 +44,18 @@ paths:
               schema: {$ref: '#/components/schemas/NotReady'}
         '405':
           description: 不是 GET
+  /metrics:
+    get:
+      operationId: metrics
+      summary: 指标（LT-05，scheduler/metrics.py；只在单独的指标监听 SCHEDULER_METRICS_PORT（staging 9793，与健康监听同一地址），健康监听上的 /metrics 404。Prometheus 文本格式，免鉴权、只在 Pod 内网，k8s NetworkPolicy 只给采集组件放行指标端口）
+      description: 指标监听只服务这一条路径（路径逐字相等、不收查询串）：别的路径 404、别的方法 405；限制与健康监听相同。
+      security: []
+      responses:
+        '200':
+          description: Prometheus 文本格式（任务名与结果编码、耗时、最近一次成功时刻；清单见 deploy/observability/metrics-inventory.yaml）
+          content:
+            text/plain:
+              schema: {type: string}
 components:
   schemas:
     Alive:

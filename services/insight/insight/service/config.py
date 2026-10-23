@@ -21,6 +21,8 @@
   INSIGHT_MONTHLY_TEMPLATES      月度计划模板库（YAML；缺省 templates/monthly_plan.v0.yaml，未签字只允许 test 环境）
   INSIGHT_HOST                   监听地址，缺省 127.0.0.1；不接受 0.0.0.0、:: 等通配地址（只在服务内网监听，由平台侧网关转发）
   INSIGHT_PORT                   缺省 8791（契约 servers）
+  INSIGHT_METRICS_PORT           指标监听端口（LT-05）：同一地址上只服务 GET /metrics；staging 缺省 9791，dev / test 只在设了时起；
+                                 不能与 INSIGHT_PORT 相同（业务端口上的 /metrics 一律 404）
   INSIGHT_EXTRA_HOST             仅 staging：Host 允许列表另收的一个 RFC 1918 IPv4 字面量（k8s 里填本服务 Service 的 clusterIP；LT-03）
 staging 下 INSIGHT_DATABASE_URL 必须带 sslmode=verify-full&sslrootcert=/run/rds-ca/ca.pem（CA 文件须存在），建池前核对（LT-03）。
 """
@@ -94,6 +96,7 @@ def check_staging_host(host: str) -> str:
     return host
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8791
+DEFAULT_METRICS_PORT = 9791  # LT-05：staging 的指标监听缺省端口（env-inventory 登记）
 _WILDCARD = {"", "*", "0.0.0.0", "::", "[::]", "0:0:0:0:0:0:0:0"}
 
 
@@ -142,6 +145,7 @@ class Settings:
     # 月度计划开关（LT-01 决定记录第 9 条）：dev / test 恒开（行为不变）；staging 只有显式设了 INSIGHT_MONTHLY_PLAN 才开
     monthly_enabled: bool = True
     extra_host: str | None = None  # LT-03：staging 另收的 Host（Service clusterIP）
+    metrics_port: int | None = None  # LT-05：指标监听端口（None = 不起）
 
     @staticmethod
     def from_env(environ: dict[str, str] | None = None) -> "Settings":
@@ -190,7 +194,9 @@ class Settings:
         host = check_host(e.get("INSIGHT_HOST", DEFAULT_HOST))
         if env == STAGING:
             check_staging_host(host)
-        return Settings(env=env, database_url=database_url, tokens=tokens,
+        from .obs import metrics_port  # noqa: PLC0415
+        mport = metrics_port(e.get("INSIGHT_METRICS_PORT"), env, DEFAULT_METRICS_PORT, "INSIGHT_METRICS_PORT", int(port_raw))
+        return Settings(env=env, database_url=database_url, tokens=tokens, metrics_port=mport,
                         policy_path=Path(e.get("INSIGHT_POLICY") or CONFIG_DIR / "claims.synthetic.json"),
                         report_check_path=Path(e.get("INSIGHT_REPORT_CHECK") or CONFIG_DIR / "report-check.synthetic.json"),
                         sie03_path=Path(e.get("INSIGHT_SIE03") or CONFIG_DIR / "sie03.synthetic.json"),

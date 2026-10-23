@@ -248,15 +248,28 @@ async def _expire(today_arg: str | None) -> dict:
     return {"job": "expire-affairs", "today": today.isoformat(), "retired": n}
 
 
-def _serve(port: int) -> None:
-    import uvicorn
+DEFAULT_METRICS_PORT = 9792  # LT-05：staging 的指标监听缺省端口（env-inventory 登记）
 
+
+def metrics_listen_port(env: str, port: int, environ: dict[str, str] | None = None) -> int | None:
+    """指标监听端口（LT-05 决定记录（续）第 5 条）：REVIEW_CONSOLE_METRICS_PORT；staging 缺省 9792，dev / test 只在设了时起；
+    不能与业务端口（--port）相同"""
+    from learning.obs import metrics_port
+    e = os.environ if environ is None else environ
+    return metrics_port(e.get("REVIEW_CONSOLE_METRICS_PORT"), env, DEFAULT_METRICS_PORT, "REVIEW_CONSOLE_METRICS_PORT", port)
+
+
+def _serve(port: int) -> None:
     from .app import create_app
     from .config import ReviewSettings
 
+    from learning.obs import configure_logging, serve
+
     settings = ReviewSettings.from_env()
-    # 监听地址：缺省 127.0.0.1；只有 staging 能经 REVIEW_CONSOLE_HOST 配置内网 IPv4（LT-01 决定记录第 5 条）
-    uvicorn.run(create_app(settings), host=settings.host, port=port, access_log=False, log_level="warning")
+    configure_logging("review-console")  # LT-05：一行一个 JSON，集中脱敏；uvicorn 以 log_config=None 启动，也经这里
+    # 监听地址：缺省 127.0.0.1；只有 staging 能经 REVIEW_CONSOLE_HOST 配置内网 IPv4（LT-01 决定记录第 5 条）；
+    # 指标只在同一地址的单独端口（业务端口上的 /metrics 一律 404）
+    serve(create_app(settings), settings.host, port, metrics_listen_port(settings.env, port), log_level="warning")
 
 
 def main(argv: list[str] | None = None) -> int:

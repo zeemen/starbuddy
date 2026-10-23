@@ -1,0 +1,65 @@
+# staging 的指标与日志采集草案（LT-05 范围第 5 条，specs/launch-lt05-observability 决定记录第 1 条：阿里云 ARMS 托管 Prometheus + SLS）。
+# 由人在开通 ARMS（ACK 组件 arms-prometheus，deploy/iac/alicloud/ack.tf）与 SLS（logtail-ds 组件、sls.tf 的 app 日志库）之后应用；
+# 不含真实地址、账号或凭据，<由人填写…> 为占位。告警规则 deploy/observability/alerts.yaml 与仪表盘 dashboards/*.json 由人在 ARMS 控制台导入；
+# 告警接收人、通知渠道、值守排班由人配置（不进仓库）。
+#   - PodMonitor：采六个后端（带 starbuddy/metrics 标签）的 metrics 端口（单独的指标监听，只服务 GET /metrics；决定记录（续）第 5 条）
+#     GET /metrics，30 秒一次；/metrics 免鉴权、只在 Pod 内网，NetworkPolicy metrics-from-collector（deploy/k8s/staging.yaml）只给采集组件
+#     放行指标端口。只保留本仓库登记的 starbuddy_* 指标族（metricRelabelings keep，deploy/observability/metrics-inventory.yaml）；
+#     不带 honorLabels（采集侧的 namespace / pod 标签不被覆盖）。
+#   - AliyunLogConfig（安全审查 A）：只采六个后端主容器（Pod 标签 starbuddy/metrics=true 且容器名在白名单里：learning、knowledge、
+#     insight、review-console、bff、scheduler）的标准输出与标准错误——适配器、前端与其他容器不采；按 JSON 展开一层（各服务一行一个 JSON、
+#     字段白名单与集中脱敏：services/*/obs.py、services/bff/src/observability/log.ts）；解析失败的行直接丢弃（KeepSourceIfParseError: false，
+#     不把未经白名单的原文写进日志库；择简单者，不另设短留存日志库）。
+#     日志库（app）由 IaC 预建（deploy/iac/alicloud/sls.tf：留存 var.log_retention_days，180–365 天；只建白名单字段索引、不建全文索引，R12 / R21），
+#     这里不写 lifeCycle、不让采集组件建库或改留存。
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: starbuddy-backends
+  namespace: starbuddy-staging
+  labels: {app.kubernetes.io/part-of: starbuddy}
+spec:
+  selector: {matchLabels: {starbuddy/metrics: "true"}}
+  namespaceSelector: {matchNames: [starbuddy-staging]}
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      scheme: http
+      interval: 30s
+      scrapeTimeout: 10s
+      honorLabels: false
+      metricRelabelings:
+        - sourceLabels: [__name__]
+          regex: "starbuddy_.*"
+          action: keep
+---
+apiVersion: log.alibabacloud.com/v1alpha1
+kind: AliyunLogConfig
+metadata:
+  name: starbuddy-staging-app
+  namespace: starbuddy-staging
+spec:
+  project: "<由人填写：IaC 输出 log_project>"
+  logstore: app
+  logtailConfig:
+    inputType: plugin
+    configName: starbuddy-staging-app
+    inputDetail:
+      plugin:
+        inputs:
+          - type: service_docker_stdout
+            detail:
+              Stdout: true
+              Stderr: true
+              IncludeK8sLabel: {starbuddy/metrics: "true"}
+              K8sNamespaceRegex: "^starbuddy-staging$"
+              K8sContainerRegex: "^(learning|knowledge|insight|review-console|bff|scheduler)$"
+        processors:
+          - type: processor_json
+            detail:
+              SourceKey: content
+              KeepSource: false
+              KeepSourceIfParseError: false
+              ExpandDepth: 1
+              ExpandConnector: ""
+              NoKeyError: true

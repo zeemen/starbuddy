@@ -11,3 +11,5 @@ referencing==0.37.0
 pyyaml==6.0.3
 # 调学习服务的验证任务接口（KGE-04 第二步 PR 3，learning-internal 1.1.0）；与学习服务同版本，原为开发依赖
 httpx==0.28.1
+# LT-05 可观测性：/metrics（Prometheus 文本格式；调度器经 -r 共用）。Apache-2.0 AND BSD-2-Clause（附带的 decorator.py），无运行依赖
+prometheus-client==0.26.0

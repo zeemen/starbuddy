@@ -11,6 +11,10 @@
   否则 503 {"status": "not_ready"}。收到 SIGTERM 之后（不再启动新任务）也是 503。库探测并发 1、结果复用 READY_CACHE 秒。
 - 无需鉴权；响应只含状态（不带任务名、下一次运行时刻、版本、错误类别）；探测不记日志；其他路径 404、其他方法 405；
   请求头 8 KiB、读取 2 秒为限；一律 connection: close、no-store。
+- 指标（LT-05 决定记录（续）第 5 条，scheduler/metrics.py）：健康监听**不**服务 /metrics（404）；常驻模式另起只服务 GET /metrics
+  的指标监听 MetricsServer（同一地址，SCHEDULER_METRICS_PORT；staging 缺省 9793，dev / test 只在设了时起；不能与健康端口相同）。
+  Prometheus 文本格式，免鉴权（只在 Pod 内网，NetworkPolicy 只给采集组件放行指标端口）；只含任务名（时间表里的短名字）与结果编码、
+  耗时、最近一次成功时刻，以及最近一次就绪检查的结果（不另查库）。其他路径 404、其他方法 405，限制与健康监听相同。
 """
 from __future__ import annotations
 
@@ -26,8 +30,12 @@ from .config import SERVICES
 
 HEALTH_PATH = "/healthz"
 READY_PATH = "/readyz"
+METRICS_PATH = "/metrics"
+METRICS_TYPE = "text/plain; version=0.0.4; charset=utf-8"
 PORT_VAR = "SCHEDULER_HEALTH_PORT"
 HOST_VAR = "SCHEDULER_HOST"
+METRICS_PORT_VAR = "SCHEDULER_METRICS_PORT"
+DEFAULT_METRICS_PORT = 9793  # LT-05：staging 的指标监听缺省端口（env-inventory 登记）
 READY_TIMEOUT = 3.0
 READY_CACHE = 3.0  # 秒：库探测结果的复用期
 READ_TIMEOUT = 2.0
@@ -62,9 +70,27 @@ def listen_config(environ: Mapping[str, str], env: str) -> tuple[str, int] | Non
     return _listen_host(environ.get(HOST_VAR), env), int(raw_port)
 
 
-def response(status: int, body: dict[str, str]) -> bytes:
-    payload = json.dumps(body, separators=(",", ":")).encode()
-    head = (f"HTTP/1.1 {status} {_REASONS[status]}\r\ncontent-type: application/json\r\ncache-control: no-store\r\n"
+def metrics_config(environ: Mapping[str, str], env: str, health_listen: tuple[str, int] | None) -> tuple[str, int] | None:
+    """指标监听的 (地址, 端口)：SCHEDULER_METRICS_PORT；不设时 staging 用缺省 9793、dev / test 不起。地址与健康监听相同
+    （没起健康监听时按 SCHEDULER_HOST 同一口径）；端口不是 1–65535 的规范整数、与健康端口相同一律拒绝"""
+    raw = environ.get(METRICS_PORT_VAR)
+    if raw is None or raw == "":
+        if env != "staging":
+            return None
+        port = DEFAULT_METRICS_PORT
+    elif not raw.isdigit() or not 1 <= int(raw) <= 65535 or raw != str(int(raw)):
+        raise HealthConfigError(f"{METRICS_PORT_VAR} 必须是 1–65535 的整数")
+    else:
+        port = int(raw)
+    if health_listen is not None and port == health_listen[1]:
+        raise HealthConfigError(f"{METRICS_PORT_VAR} 不能与 {PORT_VAR} 相同")
+    host = health_listen[0] if health_listen is not None else _listen_host(environ.get(HOST_VAR), env)
+    return host, port
+
+
+def response(status: int, body: dict[str, str], *, payload: bytes | None = None, content_type: str = "application/json") -> bytes:
+    payload = json.dumps(body, separators=(",", ":")).encode() if payload is None else payload
+    head = (f"HTTP/1.1 {status} {_REASONS[status]}\r\ncontent-type: {content_type}\r\ncache-control: no-store\r\n"
             f"x-content-type-options: nosniff\r\ncontent-length: {len(payload)}\r\nconnection: close\r\n\r\n")
     return head.encode("ascii") + payload
 
@@ -86,6 +112,64 @@ async def answer(request_line: bytes, probe: Callable[[], Awaitable[bool]]) -> b
     except Exception:  # noqa: BLE001 —— 不区分原因、不回显异常
         ok = False
     return response(200, {"status": "ready"}) if ok else response(503, {"status": "not_ready"})
+
+
+async def answer_metrics(request_line: bytes) -> bytes:
+    """指标监听：只服务 GET /metrics（路径逐字相等，不收查询串、尾斜杠、别名）；别的路径 404、别的方法 405"""
+    parts = request_line.decode("latin-1").rstrip("\r\n").split(" ")
+    if len(parts) != 3 or not parts[2].startswith("HTTP/1."):
+        return response(400, {"status": "bad_request"})
+    method, path, _ = parts
+    if path != METRICS_PATH:
+        return response(404, {"status": "not_found"})
+    if method == "GET":
+        from . import metrics
+        return response(200, {}, payload=metrics.render(), content_type=METRICS_TYPE)
+    return response(405, {"status": "method_not_allowed"})
+
+
+async def _serve_conn(reader: asyncio.StreamReader, writer: asyncio.StreamWriter, respond: Callable[[bytes], Awaitable[bytes]]) -> None:
+    try:
+        head = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), READ_TIMEOUT)
+        if len(head) > MAX_HEAD:
+            raise ValueError("head too large")
+        line = head.split(b"\r\n", 1)[0]
+        writer.write(await respond(line))
+    except (asyncio.TimeoutError, asyncio.IncompleteReadError, asyncio.LimitOverrunError, ValueError):
+        writer.write(response(400, {"status": "bad_request"}))
+    except Exception:  # noqa: BLE001 连接中途断开等：直接关
+        pass
+    finally:
+        with contextlib.suppress(Exception):
+            await writer.drain()
+        writer.close()
+        with contextlib.suppress(Exception):
+            await writer.wait_closed()
+
+
+class MetricsServer:
+    """常驻循环旁的指标监听（LT-05）：只服务 GET /metrics；不记日志"""
+
+    def __init__(self, host: str, port: int) -> None:
+        self.host, self.port = host, port
+        self._server: asyncio.AbstractServer | None = None
+
+    async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        await _serve_conn(reader, writer, answer_metrics)
+
+    async def start(self) -> None:
+        self._server = await asyncio.start_server(self._handle, self.host, self.port, limit=MAX_HEAD)
+
+    @property
+    def bound_port(self) -> int:
+        assert self._server is not None
+        return self._server.sockets[0].getsockname()[1]
+
+    async def stop(self) -> None:
+        if self._server is not None:
+            self._server.close()
+            with contextlib.suppress(Exception):
+                await self._server.wait_closed()
 
 
 class HealthServer:
@@ -114,25 +198,12 @@ class HealthServer:
             return ok and self.running
 
     async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        try:
-            head = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), READ_TIMEOUT)
-            if len(head) > MAX_HEAD:
-                raise ValueError("head too large")
-            line = head.split(b"\r\n", 1)[0]
-            writer.write(await answer(line, self.probe))
-        except (asyncio.TimeoutError, asyncio.IncompleteReadError, asyncio.LimitOverrunError, ValueError):
-            writer.write(response(400, {"status": "bad_request"}))
-        except Exception:  # noqa: BLE001 连接中途断开等：直接关
-            pass
-        finally:
-            with contextlib.suppress(Exception):
-                await writer.drain()
-            writer.close()
-            with contextlib.suppress(Exception):
-                await writer.wait_closed()
+        await _serve_conn(reader, writer, lambda line: answer(line, self.probe))
 
     async def start(self) -> None:
         self._server = await asyncio.start_server(self._handle, self.host, self.port, limit=MAX_HEAD)
+        from . import metrics
+        metrics.obs.track("scheduler", ready=self)  # starbuddy_ready：最近一次就绪检查的结果（_last），采集时不另查库
 
     @property
     def bound_port(self) -> int:

@@ -23,7 +23,8 @@ HERE = Path(__file__).resolve().parents[1]          # services/scheduler
 REPO = HERE.parents[1]
 PY = HERE / ".venv" / "bin" / "python"
 PURE_TESTS = ["tests/test_schedule.py", "tests/test_config.py", "tests/test_runner.py", "tests/test_staging_env.py",  # LT-01 staging
-              "tests/test_health.py"]  # LT-03 健康监听
+              "tests/test_health.py",  # LT-03 健康监听
+              "tests/test_metrics.py"]  # LT-05 指标
 DB_TESTS = ["tests/test_db_e2e.py"]
 S, C, R, L, M = "scheduler/schedule.py", "scheduler/config.py", "scheduler/runner.py", "scheduler/loop.py", "scheduler/__main__.py"
 H = "scheduler/health.py"
@@ -142,7 +143,29 @@ PURE: dict[str, list[tuple[str, str, str]]] = {
     "就绪探测不复用结果": [(H, "            if last is not None and time.monotonic() - last[0] < READY_CACHE:", "            if False:")],
     "就绪回显异常": [(H, "    except Exception:  # noqa: BLE001 —— 不区分原因、不回显异常\n        ok = False\n    return response(200",
                 "    except Exception as e:  # noqa: BLE001\n        return response(503, {\"status\": \"not_ready\", \"error\": str(e)})\n    return response(200")],
-    "健康端点按前缀匹配": [(H, "    if path not in (HEALTH_PATH, READY_PATH):", "    if not path.startswith((HEALTH_PATH, READY_PATH)):")],
+    "健康端点按前缀匹配": [(H, "    if path not in (HEALTH_PATH, READY_PATH):",
+                     "    if not path.startswith((HEALTH_PATH, READY_PATH)):")],
+    # LT-05 指标（tests/test_metrics.py）：任务成败计数、标签白名单、指标端点暴露范围（决定记录（续）第 5、6 条）
+    "健康监听也服务 /metrics": [(H, "    if path not in (HEALTH_PATH, READY_PATH):", "    if path not in (HEALTH_PATH, READY_PATH, METRICS_PATH):"),
+                          (H, "    if path == HEALTH_PATH:\n        return response(200, {\"status\": \"ok\"})",
+                           "    if path == HEALTH_PATH:\n        return response(200, {\"status\": \"ok\"})\n    if path == METRICS_PATH:\n"
+                           "        from . import metrics\n        return response(200, {}, payload=metrics.render(), content_type=METRICS_TYPE)")],
+    "指标监听按前缀匹配（别的路径也应答）": [(H, "    if path != METRICS_PATH:", "    if not path.startswith(METRICS_PATH):")],
+    "指标监听不限方法": [(H, "    if method == \"GET\":\n        from . import metrics", "    if True:\n        from . import metrics")],
+    "指标监听在 staging 缺省不起": [(H, "        if env != \"staging\":\n            return None\n        port = DEFAULT_METRICS_PORT",
+                             "        return None")],
+    "指标端口可与健康端口相同": [(H, "    if health_listen is not None and port == health_listen[1]:", "    if False:")],
+    "指标端口不限范围": [(H, "not 1 <= int(raw) <= 65535", "False")],
+    "指标监听不起": [(L, "    if metrics is not None:\n        await metrics.start()\n", "")],
+    "任务结果计数出错影响调度（只吞标签错误）": [("scheduler/metrics.py", "    except Exception:  # noqa: BLE001 —— 计数出任何错都只丢这一条",
+                                       "    except ValueError:")],
+    "运行器不记指标": [("scheduler/runner.py", "        metrics.record(r)\n", "")],
+    "任务结果不分成败（一律记 ok）": [("scheduler/metrics.py", "RUNS.labels(task=result.job, outcome=result.outcome).inc()",
+                               "RUNS.labels(task=result.job, outcome=\"ok\").inc()")],
+    "失败也刷新最近成功时刻": [("scheduler/metrics.py", "        if result.outcome == \"ok\":\n            LAST_OK", "        if True:\n            LAST_OK")],
+    "指标带上错误摘要标签": [("scheduler/metrics.py", "                   (\"task\", \"outcome\"))", "                   (\"task\", \"outcome\", \"reason\"))"),
+                     ("scheduler/metrics.py", "RUNS.labels(task=result.job, outcome=result.outcome).inc()",
+                      "RUNS.labels(task=result.job, outcome=result.outcome, reason=result.reason).inc()")],
     "健康端点不限方法": [(H, "    if method != \"GET\":", "    if False:")],
     "健康探针连接串不核对本机": [(H, "    check_local_url(\"SCHEDULER_DATABASE_URL\", url, env)\n", "")],
     "收到停止仍就绪": [(L, "        if health is not None:\n            health.running = False\n        stop.set()", "        stop.set()")],
@@ -197,6 +220,9 @@ def one(name: str, edits: list[tuple[str, str, str]], tests: list[str]) -> str |
         dst = _copy(Path(t))
         for rel, orig, repl in edits:
             f = dst / rel
+            # 变异目标必须在复制出来的 services/scheduler 里（不是软链接回主仓的 deploy/ 等）：否则会改到主仓文件
+            if rel.startswith(("deploy/", "../")) or f.is_symlink() or not f.resolve().is_relative_to(dst.resolve()):
+                return f"{name}：变异目标不在复制的目录里（{rel}）"
             src = f.read_text(encoding="utf-8")
             if src.count(orig) != 1:
                 return f"{name}：变异本身写错（原文找不到或不唯一：{rel}）"

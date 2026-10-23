@@ -63,7 +63,8 @@ import pg from 'pg';
 import { httpDiagnosisLearning } from './diagnosis/learning-client.ts';
 import { checkImageEnv, dbTlsOk, isLocalEnv, listenHost, loadAuthConfig, loadKeys, parseRunEnv, RDS_CA_PATH, serviceUrlOk } from './http/config.ts';
 import { parseConsentVersions, type ShellDeps } from './http/routes.ts';
-import { createShellServer } from './http/server.ts';
+import { createMetricsServer, createShellServer } from './http/server.ts';
+import { metricsPort } from './observability/metrics.ts';
 import { createSmsSender } from './http/sms.ts';
 import { StagingOtp } from './http/staging-otp.ts';
 import { loadShellConfig } from './shell/config.ts';
@@ -84,6 +85,10 @@ import { parseFamilyGoalsFeature } from './family/features.ts';
 import { cleanWith, httpMonthlyPlanClient, loadTemplates, parseMonthlyPlanFeature } from './family/monthly-plan.ts';
 import { lexicon, noPromiseLexicon } from './trust/lexicon.ts';
 import { createSubjectGate, decideSubjectGate, loadConcurrencyConfig, parseSubjectGateFeature } from './gate/subject-gate.ts';
+import { emit } from './observability/log.ts';
+
+// 日志（LT-05）：一行一个 JSON、集中脱敏（src/observability/log.ts）；拒绝启动的原因也走这里（标准错误，消息照旧以 bff: 开头）
+const refuse = (msg: string): void => emit('error', { event: 'startup_refused', msg: `bff: ${msg}` });
 
 // 配置不全、环境不认识、非 dev / test 却没有短信供应商：一律拒绝启动（在连数据库之前）
 let shellDeps: Omit<ShellDeps, 'pool'>;
@@ -137,33 +142,41 @@ try {
     // 建了也告警（同 rest.singleInstance 先例）
     const decision = decideSubjectGate(env, gateConfig);
     if (decision.build) shellDeps.subjectGate = createSubjectGate(gateConfig);
-    console.warn(JSON.stringify(decision.warning));
+    emit('warn', decision.warning);
   }
   // 连续使用提醒的计时在进程内（src/shell/rest.ts）：dev / test 以外没声明单实例部署就不启用，并在启动时告警（pilot 前须完成会话表加列迁移）
   if (!isLocalEnv(env) && !shellDeps.shell!.config!.rest.singleInstance) {
-    console.warn(JSON.stringify({ event: 'rest_reminder_disabled', reason: 'in_process_timer_requires_single_instance' }));
+    emit('warn', { event: 'rest_reminder_disabled', reason: 'in_process_timer_requires_single_instance' });
   }
 } catch (e) {
-  console.error(`bff: ${(e as Error).message}`);
+  refuse((e as Error).message);
   process.exit(2);
 }
 
 const url = process.env['BFF_DATABASE_URL'];
 if (!url) {
-  console.error('bff: 需要 BFF_DATABASE_URL');
+  refuse('需要 BFF_DATABASE_URL');
   process.exit(2);
 }
 // LT-03 决定记录（续）第 6 条：staging 的连库串必须 verify-full + 固定 CA（文件存在），建池之前拒绝；消息不带连接串
 if (!dbTlsOk(shellDeps.env, url)) {
-  console.error(`bff: staging 的 BFF_DATABASE_URL 必须带 sslmode=verify-full&sslrootcert=${RDS_CA_PATH}（且该 CA 文件存在）`);
+  refuse(`staging 的 BFF_DATABASE_URL 必须带 sslmode=verify-full&sslrootcert=${RDS_CA_PATH}（且该 CA 文件存在）`);
   process.exit(2);
 }
 const port = Number(process.env['PORT'] ?? 8787);
+// 指标监听（LT-05 决定记录（续）第 5 条）：同一地址上另起只服务 GET /metrics 的端口；业务端口不服务 /metrics
+let mport: number | null = null;
+try {
+  mport = metricsPort(process.env['BFF_METRICS_PORT'], shellDeps.env, port);
+} catch (e) {
+  refuse((e as Error).message);
+  process.exit(2);
+}
 const pool = new pg.Pool({ connectionString: url, max: 10 });
 try {
   await assertBffRole(pool);  // 连接角色配错会让 RLS 整体失效：拒绝启动
 } catch (e) {
-  console.error(`bff: ${(e as Error).message}`);
+  refuse((e as Error).message);
   await pool.end();
   process.exit(2);
 }
@@ -171,7 +184,7 @@ const learningUrl = process.env['BFF_LEARNING_URL'];
 const learningCredential = process.env['BFF_LEARNING_TOKEN'] ?? '';
 if (learningUrl) {
   if (learningCredential.length < 32 || !serviceUrlOk(learningUrl, shellDeps.env)) {
-    console.error('bff: BFF_LEARNING_URL 必须是 https 或本机回环地址（staging 另收内网 IPv4），服务间令牌至少 32 个字符');
+    refuse('BFF_LEARNING_URL 必须是 https 或本机回环地址（staging 另收内网 IPv4），服务间令牌至少 32 个字符');
     await pool.end();
     process.exit(2);
   }
@@ -191,7 +204,7 @@ const insightCredential = process.env['BFF_INSIGHT_TOKEN'] ?? '';
 if (insightUrl) {
   if (insightCredential.length < 32 || insightCredential === learningCredential
       || !serviceUrlOk(insightUrl, shellDeps.env)) {
-    console.error('bff: BFF_INSIGHT_URL 必须是 https 或本机回环地址（staging 另收内网 IPv4），令牌至少 32 个字符且与学习服务令牌不同');
+    refuse('BFF_INSIGHT_URL 必须是 https 或本机回环地址（staging 另收内网 IPv4），令牌至少 32 个字符且与学习服务令牌不同');
     await pool.end();
     process.exit(2);
   }
@@ -203,8 +216,19 @@ if (insightUrl) {
 }
 const server = createShellServer({ ...shellDeps, pool });
 server.listen(port, listenAddr, () => {
-  console.log(JSON.stringify({ event: 'listening', port }));
+  emit('info', { event: 'listening', port });
 });
-const stop = () => server.close(() => void pool.end());
+const metricsServer = mport === null ? null : createMetricsServer();
+metricsServer?.on('error', (e) => {  // 指标端口起不来（端口被占等）：与业务监听一起退出，不带着半套监听运行
+  refuse(`指标监听起不来（${(e as NodeJS.ErrnoException).code ?? 'error'}）`);
+  process.exit(2);
+});
+metricsServer?.listen(mport!, listenAddr, () => {
+  emit('info', { event: 'listening', port: mport });
+});
+const stop = () => {
+  metricsServer?.close();
+  server.close(() => void pool.end());
+};
 process.on('SIGTERM', stop);
 process.on('SIGINT', stop);

@@ -132,12 +132,15 @@ test('cachedReady 单元：并发探测共用一次检查（single-flight），�
   const boom = cachedReady(async () => { throw new Error('x'); }, 3_000, () => clock);
   assert.equal(await boom(), false);
   const src = readFileSync(new URL('../src/http/server.ts', import.meta.url), 'utf8');
-  assert.match(src, /const ready = cachedReady\(\(\) => poolReady\(deps\.pool\), opts\.readyCacheMs\);/, '服务用带缓存的就绪检查');
+  // LT-05：第四个参数把最近一次结果交给指标 starbuddy_ready
+  assert.match(src, /const ready = cachedReady\(\(\) => poolReady\(deps\.pool\), opts\.readyCacheMs, Date\.now, \(ok\) => \{ lastReady = ok; \}\);/,
+    '服务用带缓存的就绪检查');
 });
 
 test('健康端点在路由表之前应答，且不在统一壳路由表与 openapi 的壳接口定义里（health.v0.yaml 单独一份）', () => {
   const src = readFileSync(new URL('../src/http/server.ts', import.meta.url), 'utf8');
   assert.match(src, /handleHealth\(req, res, ready\)\.then\(\(done\) => \(done \? true : handle\(req, res\)\)\)/);
+  assert.ok(!/handleMetrics\(req, res\)\)\)\.then/.test(src), 'LT-05：业务端口不服务 /metrics（只在单独的指标端口）');
   const routes = readFileSync(new URL('../src/http/routes.ts', import.meta.url), 'utf8');
   assert.ok(!/healthz|readyz/.test(routes));
   const spec = readFileSync(new URL('../openapi/health.v0.yaml', import.meta.url), 'utf8');
