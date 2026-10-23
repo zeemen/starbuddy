@@ -31,3 +31,8 @@
 1. 云厂商：阿里云，地域华北 2（北京）。
 2. 容器：托管 K8s（ACK），沿用 LT-01 清单；访问只内网 + VPN / 办公网白名单，不公开域名。
 3. IaC：Terraform（阿里云官方 provider），仅 validate 与静态检查，不 plan / apply；引入前核对许可证（Terraform 本身为 BSL，只作开发工具不分发；若许可证不合则改 OpenTofu 并记录）。
+
+## 决定记录（续，2026-10-23，用户；来自安全与契约审查）
+4. 适配器健康端点撤回：三科适配器不改代码（维持 LT-01 第 5 条），探针退回 exec TCP 连接；前端 `/healthz`、`/readyz` 保留（内网负载均衡需要），补登攻击面清单。
+5. 副本限定：迁移执行器新增“标记副本”子命令（核对服务端地址与显式副本主机）；标签以 `-replica` 结尾时 down / up 也强制 `--replica --replica-host-allow`；演练手册主 / 副分用不同变量名。
+6. 连库 TLS：staging 下学习、洞察、知识、BFF 拒绝不带 `sslmode=verify-full` 与固定 CA 路径 `/run/rds-ca/ca.pem` 的连接串；RDS 侧只允许 hostssl。
