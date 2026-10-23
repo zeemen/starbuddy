@@ -30,3 +30,8 @@
 1. 监控栈：阿里云 ARMS 托管 Prometheus + SLS（同云，新增云服务属必停，开通与告警接收人由人配置）。
 2. 引入 Python `prometheus_client` 与 Node `prom-client`（均 Apache-2.0），锁版本，只装这两个包。
 3. LT-03 待人确认项与 `/tmp` 遗留临时目录：按建议由人处理（临时目录删除被仓库守卫拦截，留待人手动清理）。
+
+## 决定记录（续，2026-10-23，用户；来自安全与契约审查）
+4. BFF 不用 prom-client：自写 Prometheus 文本格式输出（计数器、直方图、仪表），移除 prom-client 及其 3 个传递依赖。Python 保留 `prometheus-client`（许可证实为 Apache-2.0 AND BSD-2-Clause）。
+5. `/metrics` 改为各服务单独指标端口、只服务 `/metrics`，NetworkPolicy 只给采集组件放行该端口；业务端口不再暴露 `/metrics`。
+6. 保留计量计数（属计量逻辑变更，必停）：计数移到事务提交之后，异常隔离不影响计量结果；补“计数抛异常时计量结果不变”的测试与变异，并跑幂等测试。
