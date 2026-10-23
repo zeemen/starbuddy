@@ -193,7 +193,7 @@ M=(
   $'staging 监听地址不限内网\tinsight/service/config.py\t    if host != DEFAULT_HOST and not private_ipv4(host):\t    if False:\ttests/test_staging_env.py'
   $'staging 学习服务地址收任意 http\tinsight/service/config.py\t            staging_private = env == STAGING and m is not None and private_ipv4(m.group(1))\t            staging_private = env == STAGING\ttests/test_staging_env.py'
   $'内网判断放过公网\tinsight/service/config.py\t    return str(ip) == host and any(ip in n for n in _PRIVATE_V4)\t    return True\ttests/test_staging_env.py'
-  $'月度计划在 staging 缺省开\tinsight/service/config.py\t                        monthly_enabled=env in ALLOWED_ENVS or bool(e.get("INSIGHT_MONTHLY_PLAN")))\t                        monthly_enabled=True)\ttests/test_staging_env.py'
+  $'月度计划在 staging 缺省开\tinsight/service/config.py\t                        monthly_enabled=env in ALLOWED_ENVS or bool(e.get("INSIGHT_MONTHLY_PLAN")),\t                        monthly_enabled=True,\ttests/test_staging_env.py'
   $'月度计划关也加载配置\tinsight/service/app.py\t    monthly_on = settings.monthly_enabled or monthly is not None\t    monthly_on = True\ttests/test_staging_env.py'
   $'命令行 staging 连接串收公网\tinsight/jobs_cli.py\t        return local_only(url, env)\t        return url\ttests/test_staging_env.py'
   $'staging 收契约目录覆盖\tinsight/service/config.py\t        if env == STAGING and e.get("INSIGHT_CONTRACT_DIR"):\t        if False:\ttests/test_staging_env.py'
@@ -269,6 +269,21 @@ M=(
   $'月度计划：BFF 的 actor 不在库内再核\tinsight/service/monthly_route.py\t or not await state["verifier"].verify(actor, "guardian", student)):\t or False):\ttests/test_monthly_db.py'
   $'月度计划：接口回多余内容\tinsight/service/monthly_route.py\t"inputs_digest": out.inputs_digest})\t"inputs_digest": out.inputs_digest, "student_id": student})\ttests/test_monthly_db.py'
   $'月度计划：没权益另给一种回答（泄露档位）\tinsight/service/monthly_route.py\t    "unavailable": not_found,\t    "unavailable": lambda: ServiceError(403, "PLAN_NOT_ENTITLED", "x"),\ttests/test_monthly_db.py'
+  # LT-03 健康端点（specs/launch-lt03-cloud-staging 范围第 4 条）：存活不查库、就绪等启动前置并查库、限时、不回显异常
+  $'健康：就绪不等启动前置\tinsight/service/app.py\thealth.pool_alive(state.get("ready_pool")))\thealth.pool_alive(state.get("ready_pool") or pool))\ttests/test_health.py'
+  $'健康：就绪不查库\tinsight/service/health.py\t    return pool is not None and await pool.fetchval("SELECT 1") == 1\t    return pool is not None\ttests/test_health.py'
+  $'健康：就绪不限时\tinsight/service/health.py\t        return await asyncio.wait_for(probe(), timeout) is True\t        return await probe() is True\ttests/test_health.py'
+  $'健康：就绪回显异常\tinsight/service/health.py\t    except Exception:  # noqa: BLE001 —— 连接断开、超时、池已关闭：都只是“没就绪”\n        return False\t    except Exception as e:  # noqa: BLE001\n        raise RuntimeError(str(e))\ttests/test_health.py'
+  $'健康：存活也查库\tinsight/service/health.py\t    async def healthz() -> JSONResponse:\n        return alive()\t    async def healthz() -> JSONResponse:\n        return await ready(probe)\ttests/test_health.py'
+  # LT-03 决定记录（续）第 6 条：staging 连库 TLS；契约审查阻断 2：额外允许 Host（Service clusterIP）
+  $'连库：staging 不查 TLS\tinsight/service/config.py\t    if env == STAGING and not db_tls_ok(url):\t    if False:\ttests/test_staging_env.py'
+  $'连库：CA 不限固定路径\tinsight/service/config.py\t            and q.get("sslrootcert") == [RDS_CA_PATH] and os.path.isfile(RDS_CA_PATH))\t            and os.path.isfile(RDS_CA_PATH))\ttests/test_staging_env.py'
+  $'连库：CA 文件可以不在\tinsight/service/config.py\t            and q.get("sslrootcert") == [RDS_CA_PATH] and os.path.isfile(RDS_CA_PATH))\t            and q.get("sslrootcert") == [RDS_CA_PATH])\ttests/test_staging_env.py'
+  $'连库：启动不查 TLS\tinsight/service/app.py\t        check_db_tls(settings.database_url, settings.env)  # LT-03\t        pass  # LT-03\ttests/test_staging_env.py'
+  $'额外 Host：收任意写法\tinsight/service/config.py\t    if not private_ipv4(raw):\n        raise RuntimeError("INSIGHT_EXTRA_HOST\t    if False:\n        raise RuntimeError("INSIGHT_EXTRA_HOST\ttests/test_staging_env.py'
+  $'额外 Host：dev 也能设\tinsight/service/config.py\t    if env != STAGING:\n        raise RuntimeError("INSIGHT_EXTRA_HOST\t    if False:\n        raise RuntimeError("INSIGHT_EXTRA_HOST\ttests/test_staging_env.py'
+  $'额外 Host：不进允许列表\tinsight/service/app.py\t    if extra:\n        names.append(extra)\t    pass\ttests/test_staging_env.py'
+  $'健康：响应可以缓存\tinsight/service/health.py\tHEADERS = {"cache-control": "no-store", "x-content-type-options": "nosniff"}\tHEADERS = {"x-content-type-options": "nosniff"}\ttests/test_health.py'
 )
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/starbuddy-insight-mut.XXXXXX")"

@@ -1,7 +1,7 @@
 # 洞察服务镜像（LT-01，specs/launch-lt01-deploy-packaging 范围第 1 条）。做法同 services/learning/Dockerfile：
 #   - 基础镜像以摘要给出（ARG PYTHON_IMAGE，没有缺省值；deploy/scripts/build-images.sh 拒绝不带 @sha256 的值；决定记录第 11 条）；
 #   - 第三方包只从带哈希的锁文件装；不带任何密钥、真实数据或运行时配置（判断策略等签字配置在运行时挂载，INSIGHT_POLICY 等指向它）；
-#   - 非 root（uid 10001）、只读根文件系统可运行、TCP 健康检查；上下文是仓库根，忽略规则见同名 .dockerignore（白名单）。
+#   - 非 root（uid 10001）、只读根文件系统可运行、HTTP 健康检查（GET /readyz，LT-03）；上下文是仓库根，忽略规则见同名 .dockerignore（白名单）。
 # 构建：docker build -f deploy/docker/insight.Dockerfile --build-arg PYTHON_IMAGE=<仓库>/python:3.11-slim-bookworm@sha256:<摘要> -t starbuddy-insight:<版本> .
 # 目录结构按仓库保持（/srv/starbuddy 下）：洞察服务按相对位置读 packages/contracts/openapi、docs/design/sie/，并把 services/learning
 # 加进 sys.path 复用学习服务的纯配置模块与审核台命令行的连接核对（insight/shared.py）。
@@ -37,6 +37,7 @@ RUN useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin star
 USER 10001
 WORKDIR /srv/starbuddy/services/insight
 EXPOSE 8791
+# 健康检查（LT-03）：HTTP GET /readyz（Host 头即监听地址，过 HostGuard）
 HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=3 \
-  CMD ["python", "-I", "-c", "import os,socket; socket.create_connection((os.environ.get('INSIGHT_HOST') or '127.0.0.1', int(os.environ.get('INSIGHT_PORT') or 8791)), 2).close()"]
+  CMD ["python", "-I", "-c", "import os,http.client as h; c=h.HTTPConnection(os.environ.get('INSIGHT_HOST') or '127.0.0.1', int(os.environ.get('INSIGHT_PORT') or 8791), timeout=2); c.request('GET', '/readyz'); raise SystemExit(0 if c.getresponse().status == 200 else 1)"]
 CMD ["python", "-m", "insight.service"]

@@ -1,0 +1,60 @@
+openapi: 3.1.0
+# BFF 的健康端点（LT-03 范围第 4 条，specs/launch-lt03-cloud-staging）。不在统一壳路由表（/bff/v0）里，也不在
+# tests/openapi-ops.ts 的 SPEC_FILES 里：只给 k8s / compose 探针用，由 src/http/health.ts 在路由表之前应答（tests/health.test.ts 核对）。
+# 各服务同一口径：services/{learning,insight,knowledge,scheduler}/openapi/health.v0.yaml。
+info:
+  title: StarBuddy BFF health
+  version: 0.1.0
+  description: |
+    无需会话、不限流、不记访问日志；响应只含状态（不带版本、库名、错误类别），一律 no-store、nosniff。
+    路径逐字相等（不收查询串、尾斜杠）；只认 GET。/readyz 借一条连接 SELECT 1，超时即销毁这条连接（查询随之作废）；
+    并发的探测共用一次检查，结果复用 3 秒。
+paths:
+  /healthz:
+    get:
+      operationId: healthz
+      summary: 存活（不访问任何依赖）
+      x-sb-auth: public
+      responses:
+        '200':
+          description: 进程在应答
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Alive'}
+        '405':
+          description: 不是 GET
+  /readyz:
+    get:
+      operationId: readyz
+      summary: 就绪（启动核对已通过、连接池在 2 秒内 SELECT 1）
+      x-sb-auth: public
+      responses:
+        '200':
+          description: 就绪
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Ready'}
+        '503':
+          description: 未就绪（库不可用或超时；不区分原因）
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/NotReady'}
+        '405':
+          description: 不是 GET
+components:
+  schemas:
+    Alive:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties: {status: {const: ok}}
+    Ready:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties: {status: {const: ready}}
+    NotReady:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties: {status: {const: not_ready}}

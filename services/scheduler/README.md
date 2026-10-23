@@ -69,6 +69,9 @@ skipped_locked / skipped_running / dry_run）、`exit_code`、`child_exit`、开
   经事务级连接池（如 PgBouncer transaction 模式）转发时锁会失效，部署时不得走这类连接池。
 - 子进程运行期间每 15 秒对锁连接 `SELECT 1` 探活；连接丢失（锁随之释放）立即杀掉子进程组，记 `lock_lost`。
 - 启动补跑只给周报（`catch_up: true`，配置只允许 weekly）：调度器启动时立即跑一次，已生成的周由子命令幂等兜底；其他任务不补跑，错过的轮次也不补。
+- 健康监听（LT-03，`scheduler/health.py`，接口定义 `openapi/health.v0.yaml`）：常驻模式下设了 `SCHEDULER_HEALTH_PORT` 才起（`SCHEDULER_HOST`
+  缺省 127.0.0.1，staging 另收内网 IPv4）；`GET /healthz` 存活、`GET /readyz` 就绪（循环在跑、收到 SIGTERM 即未就绪，且能用
+  `SCHEDULER_DATABASE_URL` 连库并核对服务端）；无需鉴权、只回状态、不记日志。配置不合格拒绝启动（退出码 2）。
 
 ## 与 BFF 的关系
 

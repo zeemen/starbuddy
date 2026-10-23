@@ -5,7 +5,9 @@ Dockerfile：基础镜像只经无缺省值的 ARG 给出（由构建脚本强�
 编排：除一次性数据库外每个容器只读根文件系统、非 root、去掉全部 capability、禁止提权；不用 host 网络、不开特权；staging 的地址都在合成内网段；
   不出现真实域名（只允许 .invalid 等保留名）。
 清单：每个容器非 root、只读根文件系统、禁止提权、去掉 capability、有资源请求与上限、有探针；镜像以摘要占位；密钥只经 secretKeyRef；
-  不挂 ServiceAccount 令牌；有默认拒绝出网的 NetworkPolicy。"""
+  不挂 ServiceAccount 令牌；有默认拒绝出网的 NetworkPolicy。
+LT-03：k8s 与 compose 探针改 HTTP（/readyz 就绪、/healthz 存活；适配器不改代码，exec TCP 回环 + 启动探针）；镜像来自 ACR 占位；ACK 云盘存储类（KMS 加密）；
+  唯一入口是私网负载均衡（白名单访问控制、HTTPS）；连库的容器挂 RDS CA；Dockerfile 的 HEALTHCHECK 也走 HTTP。"""
 from __future__ import annotations
 
 import ipaddress
@@ -178,7 +180,8 @@ def test_k8s_rules(k8s_docs):
             assert csc["readOnlyRootFilesystem"] is True and csc["allowPrivilegeEscalation"] is False and csc["capabilities"]["drop"] == ["ALL"], where
             assert c["resources"]["requests"] and c["resources"]["limits"], where
             assert c.get("readinessProbe") or c.get("livenessProbe"), where
-            assert re.fullmatch(r"REGISTRY/starbuddy-[a-z-]+@sha256:DIGEST", c["image"]), where
+            # LT-03：镜像只按摘要、来自 ACR 企业版（ACR_REGISTRY 占位 = VPC 端点 + 命名空间 starbuddy）
+            assert re.fullmatch(r"ACR_REGISTRY/starbuddy/starbuddy-[a-z-]+@sha256:DIGEST", c["image"]), where
             for e in c.get("env", []):
                 if SECRETISH.search(e["name"]) or e["name"].endswith("DATABASE_URL"):
                     assert "valueFrom" in e and "secretKeyRef" in e["valueFrom"], f"{where}：{e['name']} 必须经 secretKeyRef"
@@ -193,6 +196,105 @@ def test_k8s_rules(k8s_docs):
     assert any("Egress" in p["spec"]["policyTypes"] and p["spec"]["podSelector"] == {} for p in pols), "缺默认拒绝出网的 NetworkPolicy"
     assert not any(d["kind"] == "Secret" for d in k8s_docs), "仓库里不提交 Secret"
     for s in _all_strings(k8s_docs):
-        if re.fullmatch(r"[a-z.]*k8s\.io/v1", s):  # Kubernetes API 组名，不是部署地址
+        if re.fullmatch(r"[a-z.]*k8s\.io/v1", s) or s in VENDOR_IDS:  # Kubernetes API 组名、云厂商组件名，不是部署地址
             continue
         assert not DOMAIN.search(s), f"清单里出现了真实域名样式的取值 {s[:60]}"
+
+
+# 厂商组件的标识（不是部署地址）：ACK 云盘 CSI 驱动名
+VENDOR_IDS = {"diskplugin.csi.alibabacloud.com"}
+APP_PORTS = {"learning": 8788, "knowledge": 8790, "insight": 8791, "review-console": 8792, "bff": 8787, "web": 3000, "scheduler": 8793}
+
+
+def _deployments(k8s_docs):
+    return {d["metadata"]["name"]: d for d in k8s_docs if d["kind"] == "Deployment"}
+
+
+def test_k8s_http_probes(k8s_docs):
+    """LT-03 范围第 4 条：探针由 TCP 改 HTTP——就绪 /readyz、存活 /healthz，端口是容器端口；只监听回环的适配器用 exec TCP 连接（不改代码）"""
+    for name, d in _deployments(k8s_docs).items():
+        for c in d["spec"]["template"]["spec"]["containers"]:
+            where = f"{name}/{c['name']}"
+            text = repr(c.get("readinessProbe")) + repr(c.get("livenessProbe"))
+            assert "tcpSocket" not in text, f"{where}：探针不再用 TCP"
+            if c["name"].startswith("adapter-"):
+                # 决定记录（续）第 4 条：适配器不改代码，exec TCP 连接回环端口；存活探针有启动探针兜底、周期拉长
+                for p in ("startupProbe", "readinessProbe", "livenessProbe"):
+                    cmd = " ".join(c[p]["exec"]["command"])
+                    assert "require('node:net').connect(Number(process.env.PORT),'127.0.0.1')" in cmd and "/healthz" not in cmd, where
+                assert c["livenessProbe"]["initialDelaySeconds"] >= 30 and c["livenessProbe"]["periodSeconds"] >= 30, where
+                assert c["startupProbe"]["failureThreshold"] * c["startupProbe"]["periodSeconds"] >= 60, where
+                continue
+            port = APP_PORTS[c["name"]]
+            assert [p["containerPort"] for p in c["ports"]] == [port], where
+            assert c["readinessProbe"]["httpGet"] == {"path": "/readyz", "port": port}, where
+            assert c["livenessProbe"]["httpGet"] == {"path": "/healthz", "port": port}, where
+    sched = _deployments(k8s_docs)["scheduler"]["spec"]["template"]["spec"]["containers"][0]
+    env = {e["name"]: e for e in sched["env"]}
+    assert env["SCHEDULER_HEALTH_PORT"]["value"] == str(APP_PORTS["scheduler"])
+    assert env["SCHEDULER_HOST"]["valueFrom"]["fieldRef"]["fieldPath"] == "status.podIP"
+
+
+def test_compose_and_dockerfile_http_healthchecks(compose_staging):
+    """compose（staging）与镜像自带的健康检查也改 HTTP：服务 GET /readyz（监听地址 + 端口与环境一致）；适配器不改（TCP 回环）"""
+    for svc, spec in compose_staging["services"].items():
+        if svc.startswith("adapter-"):
+            assert "healthcheck" not in spec, f"{svc}：用镜像自带的 TCP 检查"
+            continue
+        test = " ".join(spec["healthcheck"]["test"])
+        env = spec["environment"]
+        host = env.get("LEARNING_HOST") or env.get("KNOWLEDGE_HOST") or env.get("INSIGHT_HOST") or env.get("REVIEW_CONSOLE_HOST") \
+            or env.get("BFF_HOST") or env.get("WEB_HOST") or env.get("SCHEDULER_HOST")
+        port = APP_PORTS[svc]
+        assert "/readyz" in test and "socket" not in test and "node:net" not in test, svc
+        assert f"'{host}'" in test and str(port) in test, f"{svc}：健康检查的地址端口与监听不一致"
+    assert compose_staging["services"]["scheduler"]["environment"]["SCHEDULER_HEALTH_PORT"] == str(APP_PORTS["scheduler"])
+    for df in DOCKERFILES:
+        hc = [a for op, a in instructions(df) if op == "HEALTHCHECK"][-1]
+        if df.name == "adapter.Dockerfile":  # 适配器不改代码，仍是 TCP 回环（决定记录（续）第 4 条）
+            assert "node:net" in hc and "127.0.0.1" in hc and "/healthz" not in hc
+            continue
+        assert "socket" not in hc and "node:net" not in hc, df.name
+        assert "/readyz" in hc and "http" in hc, df.name
+
+
+def test_k8s_rds_tls_ca_mounted_for_db_clients(k8s_docs):
+    """RDS 只给主机名：连接串带 sslmode=verify-full&sslrootcert=/run/rds-ca/ca.pem，所以每个连库的容器都只读挂载 CA，并带 db-client 标签
+    （rds-egress 策略据此放行 5432）；不连库的不挂、不带标签"""
+    for name, d in _deployments(k8s_docs).items():
+        pod = d["spec"]["template"]
+        for c in pod["spec"]["containers"]:
+            uses_db = any(e["name"].endswith("DATABASE_URL") for e in c.get("env", []))
+            mounts = {m["name"]: m for m in c.get("volumeMounts", [])}
+            if uses_db:
+                assert mounts.get("rds-ca", {}).get("mountPath") == "/run/rds-ca" and mounts["rds-ca"].get("readOnly") is True, f"{name}/{c['name']}"
+            else:
+                assert "rds-ca" not in mounts, f"{name}/{c['name']}"
+        any_db = any(e["name"].endswith("DATABASE_URL") for c in pod["spec"]["containers"] for e in c.get("env", []))
+        assert (pod["metadata"]["labels"].get("starbuddy/db-client") == "true") is any_db, name
+        vols = {v["name"]: v for v in pod["spec"].get("volumes", [])}
+        if any_db:
+            assert vols["rds-ca"] == {"name": "rds-ca", "configMap": {"name": "starbuddy-rds-ca"}}, name
+
+
+def test_k8s_storage_and_internal_lb(k8s_docs):
+    """ACK 云盘存储类（ESSD、KMS 加密、保留）；唯一的负载均衡是前端的私网负载均衡（白名单访问控制、HTTPS）；没有 Ingress、NodePort"""
+    sc = [d for d in k8s_docs if d["kind"] == "StorageClass"]
+    assert len(sc) == 1
+    sc = sc[0]
+    assert sc["provisioner"] == "diskplugin.csi.alibabacloud.com" and sc["parameters"]["encrypted"] == "true"
+    assert sc["parameters"]["kmsKeyId"].startswith("<由人填写") and sc["reclaimPolicy"] == "Retain"
+    pvcs = [d for d in k8s_docs if d["kind"] == "PersistentVolumeClaim"]
+    claimed = {v["persistentVolumeClaim"]["claimName"] for d in _deployments(k8s_docs).values()
+               for v in d["spec"]["template"]["spec"].get("volumes", []) if "persistentVolumeClaim" in v}
+    assert {p["metadata"]["name"] for p in pvcs} == claimed and all(p["spec"]["storageClassName"] == sc["metadata"]["name"] for p in pvcs)
+    assert not any(d["kind"] == "Ingress" for d in k8s_docs)
+    lbs = [d for d in k8s_docs if d["kind"] == "Service" and d["spec"].get("type") in ("LoadBalancer", "NodePort")]
+    assert [d["metadata"]["name"] for d in lbs] == ["web"] and lbs[0]["spec"]["type"] == "LoadBalancer"
+    ann = lbs[0]["metadata"]["annotations"]
+    pre = "service.beta.kubernetes.io/alibaba-cloud-loadbalancer-"
+    assert ann[pre + "address-type"] == "intranet", "只建私网负载均衡"
+    assert ann[pre + "acl-status"] == "on" and ann[pre + "acl-type"] == "white" and ann[pre + "acl-id"].startswith("<由人填写")
+    assert ann[pre + "protocol-port"] == "https:443" and ann[pre + "cert-id"].startswith("<由人填写")
+    assert ann[pre + "health-check-uri"] == "/readyz"
+    assert lbs[0]["spec"]["ports"] == [{"name": "https", "port": 443, "targetPort": 3000}]

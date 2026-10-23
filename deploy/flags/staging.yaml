@@ -19,6 +19,9 @@
 #     human            还没有开关或口径，待人确认（见 notes）
 # switches 每项：service（bff / web / learning / insight / knowledge / review_console / scheduler）、var（环境变量名）、
 #   value（staging 设的值；null = 不设）、source（定义它的源码文件，测试核对变量名真实存在）。
+# LT-03（阿里云 staging，specs/launch-lt03-cloud-staging）：健康端点（/healthz、/readyz）与 ACK / RDS / 出网白名单都不设开关——
+#   健康端点总是在（调度器的健康监听由 SCHEDULER_HEALTH_PORT 决定，不是功能开关）；矩阵里的开关取值与 staging 环境不变。
+#   model_provider 的出网放行另有一处要人填：deploy/iac/alicloud 的 model_egress_fqdns（与路由表 allowed_hosts 等三处一致）。
 # 测试：deploy/tests/test_flags_matrix.py（名字在源码里、取值被 staging 的解析器接受、关的开关在 staging 不设）
 #       deploy/tests/flags_check.ts（用 BFF 与前端的真实解析函数核对 staging 取值，pilot / 生产仍拒绝或按关）。
 schema: starbuddy-flags/1

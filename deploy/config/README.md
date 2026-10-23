@@ -20,8 +20,11 @@
 - 监听地址：缺省 127.0.0.1；只有 staging 能显式配置为内网 IPv4（RFC 1918 字面量；`LEARNING_HOST`、`INSIGHT_HOST`、`KNOWLEDGE_HOST`、
   `REVIEW_CONSOLE_HOST`、`BFF_HOST`，前端 `WEB_HOST`）。服务间地址：https 或回环；staging 另收内网 IPv4 字面量的 http。不收主机名。
 - 三科适配器不改代码：只监听回环，与学习服务共用网络命名空间（compose `network_mode: service:learning`，k8s 同一个 Pod）。
-- 调度器与其子命令（`insight.scheduled`、`insight.jobs`、`learning.jobs`、`review_console expire-affairs`）在 staging 的连接串与服务端地址
-  只收回环、Unix socket 或内网 IPv4；子命令的运行环境必须也是 staging。
+- 调度器与其子命令（`insight.scheduled`、`insight.jobs`、`learning.jobs`、`review_console expire-affairs`）在 staging 的连接串必须带
+  `sslmode=verify-full&sslrootcert=/run/rds-ca/ca.pem`（固定 CA 路径、文件存在），主机只收回环、内网 IPv4 字面量，或连接前解析出的全部地址
+  都是 RFC 1918 的主机名（不收 Unix socket）；连上之后再核对服务端地址（LT-03，见第 8 节）；子命令的运行环境必须也是 staging。
+- 学习、洞察、知识服务、BFF 与审核台后端在 staging 同样拒绝不带 `sslmode=verify-full` 与固定 CA `/run/rds-ca/ca.pem`（文件存在）的连库串，
+  在建连接池之前拒绝启动（决定记录（续）第 6 条；消息不带连接串）。
 
 ## 3. staging 短信：白名单固定码（决定记录第 2、6 条）
 - `BFF_STAGING_OTP_FILE`（只读挂载，**属于密钥**：含号码与码）：`{"entries":[{"id","phone","code","issued_at","not_after"}]}`；
@@ -56,7 +59,7 @@
 - 前端由 `scripts/serve.ts` 启动包装：先核对运行环境（只 dev / test / staging）、`WEB_HOST`（dev / test 只 127.0.0.1，staging 另收内网 IPv4）、
   端口、镜像标记与 staging 的两份同意版本，通过才起 `next start`（A1）。
 - 全部镜像：非 root（uid 10001）、只读根文件系统可运行（需要写的只有 tmpfs：`/tmp`、知识服务分词缓存、前端 `.next/cache`；BFF 审计卷）、
-  TCP 健康检查（HTTP 健康端点另起）。
+  健康检查：服务 HTTP `GET /readyz`（LT-03，第 9 节）；三科适配器不改代码，仍是 TCP 连接回环端口。
 
 ## 5. 迁移
 `deploy/migrate/migrate.py`：不内置连接串（`MIGRATE_DSN` 或 `--dsn-env` 指定的变量；带口令的连接串拒绝，口令走 `PGPASSFILE`）；
@@ -64,6 +67,12 @@
 `deploy_meta.target`（防连错库）；副本演练只在 `--replica` 且标签以 `-replica` 结尾时可用，且与 `--with-bootstrap` 一样只连 Unix socket 或回环
 （别的副本主机须 `--replica-host-allow` 显式放行，S9）；目标库已有 `platform` schema 却没有 `deploy_meta`（不是本执行器管理的库）时 up / down /
 rehearse 拒绝、plan 只提示。**真实环境执行迁移须人批准**（CLAUDE.md 必停项）。
+- 副本标签（决定记录（续）第 5 条）：从快照恢复出的副本带着主库的标签 `staging`，改成 `staging-replica` 只能用子命令
+  `mark-replica --label staging-replica --replica --replica-host-allow <副本内网主机名> --confirm staging:mark-replica:staging-replica:<服务端地址>`：
+  连接串的每个主机都必须在放行清单里，连上后核对服务端地址（回环或 RFC 1918，且是放行主机名解析出的地址之一），库里的标签必须正是
+  `staging`，只做 `staging → staging-replica` 这一种改动，确认串逐字（含服务端地址，先不带 `--confirm` 运行一次拿到）；不手写 `UPDATE`。
+- 标签以 `-replica` 结尾时，`up` / `down` 也必须带 `--replica --replica-host-allow`（不带就在连库之前拒绝）；手册里主库与副本用不同的变量名
+  （`PRIMARY_DSN` / `REPLICA_DSN`，经 `--dsn-env` 指定），不再共用 `MIGRATE_DSN`。
 
 ## 5.1 学习服务的 learning-internal v1（契约审查 A2；LT-04）
 learning-internal v1 已于 2026-10-20 签字为 1.1.0（specs/launch-lt04-learning-internal-v1），原开发开关 `LEARNING_INTERNAL_V1` 随之删除
@@ -78,8 +87,10 @@ learning-internal v1 已于 2026-10-20 签字为 1.1.0（specs/launch-lt04-learn
 阿鸦的 `AYA_CONTENT_PACK` / `AYA_STEM_OVERLAY`）只在 dev / test；适配器不改代码、自身不区分环境，staging 编排一律不设，由编排测试把关。
 
 ## 6. 校验
-`make deploy-check`：静态校验（Dockerfile、.dockerignore、编排、清单）+ 开关矩阵 + 环境变量清单 + 迁移执行器单测与一次性库上的副本演练；
+`make deploy-check`：静态校验（Dockerfile、.dockerignore、编排、清单）+ 开关矩阵 + 环境变量清单 + 迁移执行器单测与一次性库上的副本演练
++ IaC 草案的静态规则检查（LT-03，`deploy/iac/check_iac.py`）+ 流水线模板静态校验（`deploy/tests/test_ci.py`）；
 `DEPLOY_BUILD=1` 时另加镜像构建（需要能拉到基础镜像）与 `deploy/scripts/compose-smoke.sh` 本机合成全栈冒烟。
+`make iac-validate`：terraform validate、tflint、checkov、tfsec（工具在时才跑，不联网下载；缺失时跳过，严格模式失败；不接进 check）。
 
 ## 7. 模型供应商（LT-02，`specs/launch-lt02-model-provider` 决定记录 2026-10-21）
 仓库里只有变量名与占位：路由表 `services/learning/config/model_routes.yaml` 的 staging 节登记阿里云百炼（`bailian`，主）与火山方舟
@@ -103,7 +114,8 @@ learning-internal v1 已于 2026-10-20 签字为 1.1.0（specs/launch-lt04-learn
    所以 staging 下学习服务另在 `127.0.0.1:LEARNING_ROUTE_PORT`（缺省 8785，编排里显式写 8785，不能与 `PORT` 相同）起一个监听，**只服务**
    `/internal/v1/model/route`，其他路径一律 404；与主监听共用同一个应用与状态（同一份成本护栏计数），主监听不变；dev、test 不起
    （设了 `LEARNING_ROUTE_PORT` 拒绝启动）。改端口时 `LEARNING_ROUTE_PORT` 与两科 `*_ROUTE_URL` 要一起改（`deploy/tests/test_model_provider.py` 核对一致）。
-4. 出网白名单：只给学习服务 Pod 放行两家接入主机名的 443（NetworkPolicy 只认 IP 段，按主机名放行用云厂商出网网关 / NAT 白名单或 FQDN 策略，LT-03 转写）；
+4. 出网白名单：只给学习服务 Pod 放行两家接入主机名的 443（NetworkPolicy 只认 IP 段，按主机名放行在云防火墙 NAT 边界：
+   LT-03 已转写为 `deploy/iac/alicloud/egress.tf`，主机名填进 IaC 变量 `model_egress_fqdns`，与上面三处一致）；
    路由建连前还会核对主机名（`allowed_hosts`，只收 https）。
 5. 人执行冒烟（不进 `make check`、不进 CI，限次）：在有凭据的 staging 执行环境里 `make model-smoke SMOKE_ENV=staging MAX_CALLS=5`——
    每个不同的路由目标（主、备分别算；去重键是 供应商 + 模型 + 版本 + 快照名，现为 5 个）各发一次合成 L0 请求、不重试，
@@ -119,3 +131,63 @@ HTTP 错误、超时、连接失败没有用量可读，只计次数。任务当
 部署侧核对：`deploy/tests/test_model_provider.py`（供应商变量登记为 staging 密钥；`MODEL_*`、路由客户端令牌与 `*_ROUTE_TOKEN` 不论何时都只经
 secretKeyRef / `${…}` 注入；`model_provider` 仍 pending 时编排不设令牌与供应商变量；出网注解只在学习服务 Pod，且是占位或与路由表 `allowed_hosts` 一致；
 回环路由端口在 env-inventory、k8s、compose、本节与编排注释里的 `*_ROUTE_URL` 一致）。
+
+## 8. 阿里云 staging（LT-03，`specs/launch-lt03-cloud-staging` 决定记录 2026-10-21）
+华北 2（北京）、ACK Pro（Terway）、只内网 + VPN / 办公网白名单。基础设施草案 `deploy/iac/alicloud`（Terraform，仅 validate 与静态检查，
+plan / apply 由人执行，步骤见该目录 README）；镜像流水线 `deploy/ci`（构建、SBOM、扫描、签名、推送到 ACR 企业版）；演练手册 `deploy/runbooks`。
+
+**托管 Postgres（RDS）的连接串**（存凭据管家，经 ack-secret-manager 同步成 k8s Secret，只经 `secretKeyRef` 注入）：
+```
+postgresql://<登录角色>@<RDS 内网主机名>:5432/<库名>?sslmode=verify-full&sslrootcert=/run/rds-ca/ca.pem
+```
+- 主机名用 IaC 输出 `rds_private_host`（VPC 内网地址；不建外网连接地址）；连接串整体按密钥处理（含登录角色口令时也只在凭据管家与
+  k8s Secret 里，不进编排文件、镜像与日志；迁移执行器另按第 5 节不收带口令的连接串，口令走 `PGPASSFILE`）；
+- **TLS 与主机名核对**：`sslmode=verify-full`（校验证书链与主机名）+ `sslrootcert`（RDS 的 CA 证书，由人放进 ConfigMap `starbuddy-rds-ca` 的
+  `ca.pem`，连库的容器只读挂载到 `/run/rds-ca`，`deploy/k8s/staging.yaml`）。学习、洞察、知识服务（asyncpg）、BFF（node-postgres）、
+  审核台与调度器都按这个连接串连库；
+- **客户端强制 TLS**（决定记录（续）第 6 条）：staging 下学习、洞察、知识服务、BFF、审核台后端、调度器与其子命令一律拒绝不带
+  `sslmode=verify-full`、或 `sslrootcert` 不是固定路径 `/run/rds-ca/ca.pem`、或该文件不存在的连接串（`sslmode` / `sslrootcert` 各只能出现一次；
+  `require`、`verify-ca`、别的 CA 路径都不收）。服务在建连接池之前拒绝启动，消息只说缺什么、不带连接串。
+- **服务端强制 TLS**：RDS 开 SSL、证书只签内网连接地址、pg_hba 只有 `hostssl` 条目（`deploy/iac/alicloud/rds.tf`，静态规则 R06）——
+  不走 TLS 的连接在服务端就被拒（RDS 系统条目的行为待人核实，演练时用 `sslmode=disable` 从 VPC 内连接必须失败）。
+- **调度器与子命令的主机核对**（补 LT-01 待人确认 6；`review_console/__main__.py` 的 `local_only` / `tls_verified`，调度器与四个子命令共用）：
+  staging 下主机只收回环、RFC 1918 内网 IPv4 字面量，或主机名——主机名在**连接之前由客户端解析一次**，解析结果必须非空且全部是
+  RFC 1918 地址（混有公网地址、解析失败都拒绝）；`hostaddr`、`service`、公网 IP 字面量、Unix socket 一律拒绝；dev / test 照旧只收本机。
+  连接前的这次解析与驱动建连时的解析是两次查询（中间 DNS 变了发现不了），所以**连上之后**还核对服务端地址
+  （`check_server_local`：服务端地址为空（Unix socket；staging 在连接前已拒绝 socket）、回环，或 staging 下的 RFC 1918 内网 IPv4 才收；
+  端口转发到别处、连到公网地址的服务端都会被拒），两道一起才算数。
+  学习、洞察、知识服务与 BFF 的主服务不做主机解析核对（行为不变），只靠上面的 TLS 规则（verify-full 校验证书与主机名）。
+- 迁移执行器在 RDS 副本上演练时用 `--replica-host-allow <副本内网主机名>` 显式放行，副本改标签只用 `mark-replica`（第 5 节，
+  `deploy/runbooks/rds-restore-and-migrate-rehearsal.md`）。
+
+**入口与出网**：前端 Service 是私网负载均衡（`address-type: intranet`、访问控制白名单 = IaC 的 `slb_acl_id`、HTTPS 用私有 CA 签发的内网证书——
+`BFF_SHELL_ORIGIN` 在 staging 必须是 https），不建 Ingress、不公开域名；出网三层：NetworkPolicy（缺省拒绝，连库的服务只放 RDS 5432；
+学习服务的模型出网策略 except 排除 RFC 1918、100.64.0.0/10、169.254.0.0/16）、安全组（出方向白名单：公网只开 TCP 443，阿里云内部网段只开
+内网 DNS、元数据与服务端点）、云防火墙 NAT 边界（只放行 `model_egress_fqdns`；防火墙没开时 SNAT 不建）。
+
+**服务间的 Host 校验**（契约审查阻断 2）：洞察、知识服务与审核台后端有 Host 校验（防 DNS 重绑定）。k8s 里调用方经 Service 的 clusterIP 访问，
+Host 头是 clusterIP，所以三者各有一个 staging 专用的额外允许 Host：`INSIGHT_EXTRA_HOST`、`KNOWLEDGE_EXTRA_HOST`（HTTP 与 MCP 共用）、
+`REVIEW_CONSOLE_EXTRA_HOST`——恰好一个 RFC 1918 IPv4 字面量，k8s 里填本服务 Service 的 clusterIP；dev / test 设了拒绝启动。
+compose 里调用方直接用被调方的固定内网地址（= 监听地址），不需要它。`deploy/tests/test_service_hosts.py` 核对每个调用方 `*_URL` 的主机
+都在被调方的允许列表里（学习服务与 BFF 没有 Host 校验，只核对地址是被调方的 clusterIP 与端口）。
+
+**镜像**：`deploy/k8s/staging.yaml` 里的 `ACR_REGISTRY/starbuddy/starbuddy-<服务>@sha256:DIGEST` 由人按流水线输出的
+`dist/image-digests.txt` 替换（`ACR_REGISTRY` = `<ACR 实例名>-registry-vpc.cn-beijing.cr.aliyuncs.com`，只按摘要部署）。
+
+## 9. 健康端点（LT-03 范围第 4 条）
+| 服务 | 存活 | 就绪（503 = 未就绪） | 接口定义 |
+|---|---|---|---|
+| 学习服务、审核台后端 | `GET /healthz` | `GET /readyz`：lifespan 的启动前置（契约、迁移 0016 / 0037 / 0058 与执行权；审核台两个登录角色）已通过 + 连接池 2 秒内 `SELECT 1`；学习服务每次另核对 0058 的计量函数仍在、本角色仍有执行权（`has_function_privilege`） | `services/learning/openapi/health.v0.yaml` |
+| 洞察服务 | 同上 | 启动前置（策略、词表、SIE-03、月度计划签字配置、登录角色）+ `SELECT 1` | `services/insight/openapi/health.v0.yaml` |
+| 知识服务 | 同上 | 启动前置（契约、只读角色与时区、页面快照核对）+ `SELECT 1` | `services/knowledge/openapi/health.v0.yaml` |
+| 调度器 | 同上（设了 `SCHEDULER_HEALTH_PORT` 才起监听；`--once`、`--dry-run` 不起） | 启动核对通过、循环在跑（收到 SIGTERM 即未就绪）+ 用 `SCHEDULER_DATABASE_URL` 3 秒内连库、核对服务端、`SELECT 1`（每次新建连接、用完即断，并发 1） | `services/scheduler/openapi/health.v0.yaml` |
+| BFF | 同上 | 启动核对通过才起监听 + 2 秒内从连接池借一条连接 `SELECT 1`（超时就销毁这条连接，查询随之作废） | `services/bff/openapi/health.v0.yaml` |
+| 前端 | 同上 | 启动包装同一套环境核对（`src/lib/serve-env.ts`）仍通过；不调 BFF | `apps/web/src/app/{healthz,readyz}/route.ts` |
+| 三科适配器 | 不加端点（不改代码，决定记录（续）第 4 条）：exec TCP 连接 `127.0.0.1:PORT` | 同左 | （插件契约不变） |
+
+口径：无需鉴权；响应只有 `{"status": …}`，不带版本、主机、库名、错误类别；`no-store`；只认 GET、路径逐字相等；探测不逐次记日志；
+并发的探测共用同一次检查（single-flight），结果复用 3 秒（学习、洞察、知识服务三份 `health.py` 代码逐字相同，`deploy/tests/test_health_shared.py`
+核对；BFF 同一口径，调度器并发 1 + 3 秒复用）。洞察、知识服务与审核台仍过 Host 校验：staging 另收显式配置的内网监听地址（k8s 探针经 Pod
+地址访问）与第 8 节的额外允许 Host（调用方经 Service clusterIP 访问）。
+k8s：就绪探针 `/readyz`、存活探针 `/healthz`（存活不依赖库，库抖动只摘流不重启）；适配器只监听回环，用 exec 在容器里做 TCP 连接
+（启动探针兜底启动时间，存活探针 30 秒后开始、30 秒一次）。

@@ -16,6 +16,11 @@
 - rehearse（副本演练）：只在 --replica 且标签以 -replica 结尾时可用，在快照副本上 up → 校验 → down 回到演练前的基线 → 校验 → up → 校验。
 - --with-bootstrap：先执行 db/bootstrap/roles.sql（集群级角色；只用于一次性库或副本，正式环境由人单独执行）。
 - rehearse 与 --with-bootstrap 只连 Unix socket 或回环（安全审查 S9）；别的副本主机须用 --replica-host-allow 显式放行。
+- LT-03 决定记录（续）第 5 条：标签以 -replica 结尾时 up / down / rehearse 都必须同时给 --replica 与 --replica-host-allow；
+  mark-replica 把从 staging 快照恢复的副本改标为 staging-replica：连接串里每个主机都必须在 --replica-host-allow 里，连上后核对
+  服务端地址（回环 / RFC 1918 且是放行主机解析出的地址），库里标签必须正是 staging，确认串带服务端地址、逐字一致：
+    python deploy/migrate/migrate.py mark-replica --target-label staging-replica --replica --replica-host-allow <副本主机> \\
+      --confirm staging:mark-replica:staging-replica:<服务端地址>
 - 目标库已有 platform schema 却没有 deploy_meta 版本表（不是本执行器管理的库）：plan 只提示，up / down / rehearse 拒绝。
 退出码：0 成功；1 执行或校验失败；2 参数、确认或前置核对不通过（未连库或未改库）。
 """
@@ -137,6 +142,51 @@ def dsn_hosts(dsn: str) -> list[str]:
         for m in re.finditer(r"(?:^|\s)(host|hostaddr)\s*=\s*(\S+)", dsn):
             hosts += ["<hostaddr>"] if m.group(1) == "hostaddr" else [h for h in m.group(2).split(",") if h]
     return hosts or ["/"]
+
+
+REPLICA_FROM, REPLICA_TO = "staging", "staging-replica"
+
+
+def replica_flags(action: str, label: str, replica: bool, allow: list[str]) -> None:
+    """LT-03 决定记录（续）第 5 条：标签以 -replica 结尾时，改库的动作（up / down / rehearse / mark-replica）都必须同时给
+    --replica 与至少一个 --replica-host-allow（显式写出副本主机），plan 只读不要求"""
+    if action == "plan":
+        return
+    if (is_replica_label(label) or action == "mark-replica") and not (replica and allow):
+        raise Refused("副本标签的 up / down / rehearse / mark-replica 必须同时给 --replica 与 --replica-host-allow（副本主机）")
+
+
+def strict_replica_hosts(dsn: str, allow: set[str]) -> None:
+    """标记副本：连接串里的每个主机都必须是 --replica-host-allow 显式写出的（不放过回环与缺省 Unix socket）"""
+    hosts = dsn_hosts(dsn)
+    if any(h not in allow for h in hosts):
+        raise Refused("标记副本时连接串里的每个主机都必须在 --replica-host-allow 里显式列出")
+
+
+def check_replica_server(addr: str | None, allow: set[str]) -> str:
+    """标记副本：连上之后核对服务端地址——Unix socket（地址为空）只在放行的全是 socket 目录时接受；否则必须是回环或 RFC 1918
+    内网 IPv4，且是 --replica-host-allow 里的主机（客户端解析出的全部地址之一）。返回写进确认串的地址"""
+    import ipaddress
+    import socket
+    if addr is None or addr == "":
+        if allow and all(h.startswith("/") for h in allow):
+            return "socket"
+        raise Refused("连上的是 Unix socket，但放行的不是 socket 目录")
+    ip = ipaddress.ip_address(addr)
+    private = ip.version == 4 and any(ip in ipaddress.ip_network(n) for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
+    if not (ip.is_loopback or private):
+        raise Refused("连上的服务端不是回环或 RFC 1918 内网地址")
+    resolved: set[str] = set()
+    for h in allow:
+        if h.startswith("/"):
+            continue
+        try:
+            resolved |= {info[4][0] for info in socket.getaddrinfo(h, None)}
+        except OSError:
+            continue
+    if str(ip) not in resolved:
+        raise Refused("连上的服务端地址不是 --replica-host-allow 所列主机的地址")
+    return str(ip)
 
 
 def local_only_hosts(dsn: str, allow: set[str]) -> None:
@@ -291,18 +341,38 @@ def verify(db: Psql, migs: list[Migration], expect_count: int) -> None:
     print(f"校验通过：版本表 {expect_count} 条与仓库一致")
 
 
+def mark_replica(db: Psql, allow: set[str], confirm: str | None) -> int:
+    """把从 staging 快照恢复出的副本改标为 staging-replica（之后才能在它上面演练）。只改 deploy_meta.target 这一行：
+    库里的标签必须正是 staging；连上的服务端地址必须是放行的副本主机；确认串带服务端地址，须逐字一致"""
+    label = target_label(db)
+    if label != REPLICA_FROM:
+        raise Refused(f"mark-replica 只接受库里标签为 {REPLICA_FROM} 的副本（库里是 {label!r}）")
+    rows = db.query("SELECT coalesce(host(inet_server_addr()), '')")
+    addr = check_replica_server(rows[0][0] if rows else None, allow)
+    token = f"{REPLICA_FROM}:mark-replica:{REPLICA_TO}:{addr}"
+    print(f"将把副本（服务端 {addr}）的标签从 {REPLICA_FROM} 改为 {REPLICA_TO}")
+    print(f"确认串：--confirm {token}")
+    if confirm != token:
+        raise Refused("确认串不一致：先核对服务端地址是副本，再以 --confirm 逐字给出确认串")
+    db.execute(f"UPDATE deploy_meta.target SET label = {sql_literal(REPLICA_TO)} WHERE label = {sql_literal(REPLICA_FROM)};")
+    if target_label(db) != REPLICA_TO:
+        raise Failed("改标后核对失败")
+    print(f"已标记副本：{REPLICA_TO}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="migrate", description="StarBuddy 迁移执行器（不内置连接串；执行前须显式确认）")
-    p.add_argument("action", choices=("plan", "up", "down", "rehearse"))
+    p.add_argument("action", choices=("plan", "up", "down", "rehearse", "mark-replica"))
     p.add_argument("--target-label", required=True, help="目标库标签（小写字母、数字、连字符；副本须以 -replica 结尾）")
     p.add_argument("--dsn-env", default="MIGRATE_DSN", help="存放连接串的环境变量名（缺省 MIGRATE_DSN）")
     p.add_argument("--confirm", help="plan 打印的确认串，须逐字一致")
     p.add_argument("--to", help="down：回滚到这个版本（不含），0000 = 全部")
-    p.add_argument("--replica", action="store_true", help="rehearse：声明目标是快照副本或一次性库")
+    p.add_argument("--replica", action="store_true", help="声明目标是快照副本或一次性库（副本标签的 up / down / rehearse / mark-replica 必须给）")
     p.add_argument("--with-bootstrap", action="store_true", help="先执行 db/bootstrap/roles.sql（只用于一次性库或副本）")
     p.add_argument("--psql", help="psql 路径（缺省从 PATH 找）")
     p.add_argument("--replica-host-allow", action="append", default=[], metavar="HOST",
-                   help="rehearse / --with-bootstrap 另外放行的副本主机（缺省只收 Unix socket 与回环；可重复）")
+                   help="副本主机（副本标签的改库动作必须给；rehearse / up / down 另外放行它，mark-replica 只收它；可重复）")
     p.add_argument("--migrations", default=str(MIGRATIONS), help=argparse.SUPPRESS)
     a = p.parse_args(argv)
     try:
@@ -314,11 +384,18 @@ def main(argv: list[str] | None = None) -> int:
             raise Refused("副本演练只在 --replica 且标签以 -replica 结尾时可用")
         if a.with_bootstrap and not (a.replica and is_replica_label(a.target_label)):
             raise Refused("--with-bootstrap 只用于副本或一次性库（--replica 且标签以 -replica 结尾）；正式环境的角色由人单独执行")
+        if a.action == "mark-replica" and a.target_label != REPLICA_TO:
+            raise Refused(f"mark-replica 只把 {REPLICA_FROM} 标签改为 {REPLICA_TO}（--target-label {REPLICA_TO}）")
+        replica_flags(a.action, a.target_label, a.replica, a.replica_host_allow)
         migs = discover(Path(a.migrations))
         dsn = check_dsn(os.environ.get(a.dsn_env, ""))
-        if a.action == "rehearse" or a.with_bootstrap:
+        if a.action == "mark-replica":
+            strict_replica_hosts(dsn, set(a.replica_host_allow))
+        elif a.action == "rehearse" or a.with_bootstrap or (a.action != "plan" and is_replica_label(a.target_label)):
             local_only_hosts(dsn, set(a.replica_host_allow))
         db = Psql(dsn, a.psql)
+        if a.action == "mark-replica":
+            return mark_replica(db, set(a.replica_host_allow), a.confirm)
         if unmanaged(db):
             if a.action != "plan":
                 raise Refused("目标库已有 platform schema 却没有 deploy_meta 版本表：不是本执行器管理的库，拒绝执行（由人决定如何接管）")

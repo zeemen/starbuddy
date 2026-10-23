@@ -14,7 +14,8 @@
 //   staging 下 BFF_LEARNING_URL / BFF_INSIGHT_URL 另收内网 IPv4 的 http。下面各开关标“dev / test”的，LT-01 起 staging 也可打开：
 //   STARBUDDY_TRUST_UI（不含 profile）、STARBUDDY_STARMAP（只 starmap_v1）、STARBUDDY_PRACTICE、STARBUDDY_RETEST_UI、STARBUDDY_TODAY_ORCH
 //   （开关矩阵 deploy/flags/staging.yaml）；pilot、生产设了仍拒绝启动。STARBUDDY_FAMILY_GOALS、STARBUDDY_MONTHLY_PLAN 仍只在 dev / test。
-//   BFF_DATABASE_URL  连接串，登录角色只继承 starbuddy_bff（例如 postgresql://bff_app@/starbuddy_dev?host=/tmp/x）
+//   BFF_DATABASE_URL  连接串，登录角色只继承 starbuddy_bff（例如 postgresql://bff_app@/starbuddy_dev?host=/tmp/x）；
+//                     staging 必须带 sslmode=verify-full&sslrootcert=/run/rds-ca/ca.pem（文件存在），否则建池之前拒绝（LT-03）
 //   PORT              默认 8787
 //   BFF_SHELL_ORIGIN  壳的来源（改变状态的请求 Origin 必须等于它）；dev / test 缺省 http://127.0.0.1:3000
 //   BFF_LOG_HMAC_KEY、BFF_AUTH_SECRET  十六进制、至少 32 字节；dev / test 不设时随机生成，其余环境不设拒绝启动
@@ -60,7 +61,7 @@
 // 诊断的宵禁判断用数据库的计量时钟（platform.meter_guard_status，迁移 0030），BFF 没有自己的时钟开关。
 import pg from 'pg';
 import { httpDiagnosisLearning } from './diagnosis/learning-client.ts';
-import { checkImageEnv, isLocalEnv, listenHost, loadAuthConfig, loadKeys, parseRunEnv, serviceUrlOk } from './http/config.ts';
+import { checkImageEnv, dbTlsOk, isLocalEnv, listenHost, loadAuthConfig, loadKeys, parseRunEnv, RDS_CA_PATH, serviceUrlOk } from './http/config.ts';
 import { parseConsentVersions, type ShellDeps } from './http/routes.ts';
 import { createShellServer } from './http/server.ts';
 import { createSmsSender } from './http/sms.ts';
@@ -150,6 +151,11 @@ try {
 const url = process.env['BFF_DATABASE_URL'];
 if (!url) {
   console.error('bff: 需要 BFF_DATABASE_URL');
+  process.exit(2);
+}
+// LT-03 决定记录（续）第 6 条：staging 的连库串必须 verify-full + 固定 CA（文件存在），建池之前拒绝；消息不带连接串
+if (!dbTlsOk(shellDeps.env, url)) {
+  console.error(`bff: staging 的 BFF_DATABASE_URL 必须带 sslmode=verify-full&sslrootcert=${RDS_CA_PATH}（且该 CA 文件存在）`);
   process.exit(2);
 }
 const port = Number(process.env['PORT'] ?? 8787);

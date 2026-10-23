@@ -2,6 +2,7 @@
 # make deploy-check 的实现（LT-01 范围第 6 条）：
 #   1. deploy/tests：Dockerfile / .dockerignore / 编排 / 清单的静态校验、开关矩阵（含 BFF 与前端真实解析函数、Python 服务真实启动校验）、
 #      环境变量清单、迁移执行器单测；
+#   1b. IaC 草案的静态规则检查（LT-03，deploy/iac/check_iac.py，只用标准库；外部工具的 validate 另在 make iac-validate）；
 #   2. 迁移执行器在一次性本机库上的副本演练（deploy/migrate/rehearse-ephemeral.sh，db/tests/pg-ephemeral.sh 同款实例）；
 #   3. 两份 compose 文件的结构校验（docker compose config；只要 docker 命令行，不要守护进程；取值全部是合成占位）；
 #   4. DEPLOY_BUILD=1 时另加镜像构建（deploy/scripts/build-images.sh，需要能拉到基础镜像）与本机合成全栈冒烟（compose-smoke.sh）。
@@ -18,6 +19,9 @@ if [ -x "$PY" ]; then
 else
   skip "deploy/tests（没有 services/learning/.venv）"
 fi
+
+# LT-03：IaC 草案的静态规则检查（只用标准库；terraform / tflint / checkov / tfsec 另在 make iac-validate，工具在时才跑）
+PYTHONDONTWRITEBYTECODE=1 python3 -I deploy/iac/check_iac.py deploy/iac/alicloud || { echo "deploy-check: 失败（IaC 静态规则检查）"; exit 1; }
 
 PYTHONDONTWRITEBYTECODE=1 PYTHON="${PY:-python3}" bash deploy/migrate/rehearse-ephemeral.sh; rc=$?
 if [ $rc -eq 3 ]; then skip "迁移副本演练（本机没有 Postgres）"; elif [ $rc -ne 0 ]; then echo "deploy-check: 失败（迁移副本演练）"; exit 1; fi

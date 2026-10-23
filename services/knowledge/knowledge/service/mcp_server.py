@@ -63,11 +63,14 @@ def _bare(host: str) -> str:
     return h[1:-1] if h.startswith("[") and h.endswith("]") else h
 
 
-def allowed_hosts(host: str) -> list[str]:
+def allowed_hosts(host: str, extra: str | None = None) -> list[str]:
     """Host 头允许列表（整个应用与 MCP 共用一份）：回环地址只收回环 Host；内网地址只收该地址。
-    写法同 MCP SDK：精确值，或 `<主机>:*`（任意端口）；IPv6 地址加方括号（`[::1]`，不会重复加）"""
+    写法同 MCP SDK：精确值，或 `<主机>:*`（任意端口）；IPv6 地址加方括号（`[::1]`，不会重复加）。
+    extra：staging 另收的一个内网 IPv4（KNOWLEDGE_EXTRA_HOST，本服务 Service 的 clusterIP；LT-03）"""
     h = _bare(host)
     names = ["127.0.0.1", "localhost", "[::1]"] if h in LOOPBACK else [f"[{h}]" if ":" in h else h]
+    if extra:
+        names.append(extra)
     return [x for n in names for x in (n, f"{n}:*")]
 
 
@@ -86,8 +89,8 @@ def host_allowed(value: str | None, allowed: list[str]) -> bool:
     return False
 
 
-def transport_security(host: str) -> TransportSecuritySettings:
+def transport_security(host: str, extra: str | None = None) -> TransportSecuritySettings:
     """DNS 重绑定防护一律开启：Host 允许列表与整个应用相同（allowed_hosts）"""
-    hosts = allowed_hosts(host)
+    hosts = allowed_hosts(host, extra)
     origins = [f"http://{h}" for h in hosts] if _bare(host) in LOOPBACK else []
     return TransportSecuritySettings(enable_dns_rebinding_protection=True, allowed_hosts=hosts, allowed_origins=origins)

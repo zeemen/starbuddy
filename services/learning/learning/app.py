@@ -24,7 +24,7 @@ import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from . import mastery_routes, store
+from . import health, mastery_routes, store
 from .adapter_client import strict_json
 from .config import Settings
 from .contract import UnsupportedContractVersion, internal_contract, plugin_contract
@@ -34,6 +34,7 @@ from .errors import IngestError
 from .mastery import load_config
 from .mastery.profile import ProfilePages, load_profile_config
 from .mastery.recompute import MasteryEngine
+from .netpolicy import check_db_tls
 from .model_router import ModelRouter
 from .model_router.config import load_for_deployment
 from .plan import plan_today
@@ -50,6 +51,9 @@ from .today import config as today_config
 log = logging.getLogger("starbuddy.learning")
 UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
 UUID4_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
+# 就绪探针（LT-03，契约审查建议 4）：0058 的计量核对函数仍在、本角色仍有执行权（传 oid：函数不存在时为假而不是报错）
+READY_METER_SQL = ("SELECT CASE WHEN to_regprocedure($1) IS NULL THEN false"
+                   " ELSE has_function_privilege(current_user, to_regprocedure($1), 'EXECUTE') END")
 # 契约允许 diagnose 带 200 道作答、每道 20000 字（UTF-8 最多约 12 MB），再加 500 条既有证据
 MAX_BODY_BYTES = 16 * 1024 * 1024
 # v0 写入下线（LT-04 决定记录（再续）第 1 条）：410 的标题，不含任何请求内容
@@ -190,6 +194,9 @@ def create_app(
     """pool、transport、model_router、diagnosis_params、mastery、profile、practice_clock、practice_lock_pool、diagnosis_clock 供测试注入；
     不传时按配置创建。注入业务池又开了再练时必须一并注入再练锁池（锁连接不能取自业务池，审查 B2）。"""
     state: dict = {"router": model_router}
+    if pool is None:
+        # LT-03 决定记录（续）第 6 条：staging 连库必须 verify-full + 固定 CA（/run/rds-ca/ca.pem），在建任何连接之前拒绝
+        check_db_tls(settings.database_url, settings.env, "LEARNING_DATABASE_URL")
     if settings.present_item_source == "adapter":
         # PLT-12：题面经适配器 present_item 只在候选契约 1.1.0 打开时可用（配置层已拦一道；这里在建任何连接之前再拦一道）
         from .present_item import require_candidate
@@ -312,9 +319,12 @@ def create_app(
         own_router = state["router"] is None and bool(settings.route_clients)
         if own_router:
             state["router"] = ModelRouter.from_config(load_for_deployment())
+        # 就绪探针（LT-03）：上面的启动前置全部通过之后才放进连接池；/readyz 只看它在不在、能不能 SELECT 1
+        state["ready_pool"] = p
         try:
             yield
         finally:
+            state.pop("ready_pool", None)
             if own_router:
                 await state["router"].aclose()
             await client.aclose()
@@ -324,6 +334,15 @@ def create_app(
                 await p.close()
 
     app = FastAPI(title="StarBuddy learning service (internal)", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+    # 健康端点（LT-03；接口定义 services/learning/openapi/health.v0.yaml）：无需鉴权，响应只含状态
+    async def ready_probe() -> bool:
+        p = state.get("ready_pool")
+        if not await health.pool_alive(p):
+            return False
+        # 契约审查建议 4：0058 被回滚或执行权被收回时不再就绪（传 oid，函数不存在时不报错、直接为假）
+        return await p.fetchval(READY_METER_SQL, store.METER_CHECK_FUNCTION) is True
+
+    health.register(app, ready_probe)
 
     async def handle(method: str, request: Request, version: str) -> JSONResponse:  # 只有 /internal/v1（1.0.0）调用
         started = time.monotonic()

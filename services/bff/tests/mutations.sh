@@ -490,6 +490,26 @@ SM=(
   $'OTP：staging 不核对登记的同意版本\tsrc/http/routes.ts\t  if (env !== \'staging\') return true;\t  return true;'
   $'OTP：BFF_HOST 收任意地址\tsrc/http/config.ts\t  if (!privateIpv4(raw)) throw new Error\t  if (false) throw new Error'
   $'OTP：staging 开 starmap_dashed\tsrc/star-map/features.ts\t  if (outside.length > 0) throw new Error(`STARBUDDY_STARMAP\t  if (false) throw new Error(`STARBUDDY_STARMAP'
+  # LT-03 健康端点（src/http/health.ts）：这几条跑 tests/health.test.ts（BFFMUT_FILTER=健康：）
+  $'健康：就绪不查库\tsrc/http/server.ts\t  const ready = cachedReady(() => poolReady(deps.pool), opts.readyCacheMs);\t  const ready = async () => true;'
+  $'健康：就绪不限时\tsrc/http/health.ts\t    return await Promise.race([work, timeout]);\t    return await work;'
+  $'健康：就绪把非 1 当成功\tsrc/http/health.ts\tr.rows[0]?.[\'ok\'] === 1\tr.rows.length > 0'
+  $'健康：存活也查库\tsrc/http/health.ts\t  if (raw === HEALTH_PATH) {\\n    send(200, { status: \'ok\' });\t  if (raw === HEALTH_PATH && (await ready())) {\\n    send(200, { status: \'ok\' });'
+  $'健康：不限方法\tsrc/http/health.ts\t  if (req.method !== \'GET\') {\t  if (false) {'
+  $'健康：按前缀匹配\tsrc/http/health.ts\t  if (raw !== HEALTH_PATH && raw !== READY_PATH) return false;\t  if (!raw.startsWith(HEALTH_PATH) && !raw.startsWith(READY_PATH)) return false;'
+  $'健康：响应可以缓存\tsrc/http/health.ts\t\'cache-control\': \'no-store\', \t'
+  $'健康：放到路由表之后\tsrc/http/server.ts\tvoid handleHealth(req, res, ready).then((done) => (done ? true : handle(req, res)))\tvoid handle(req, res).then((h) => (h ? true : handleHealth(req, res, ready)))'
+  $'健康：超时不销毁连接\tsrc/http/health.ts\t    timer = setTimeout(() => { finished = true; release(true); resolve(false); }, timeoutMs);\t    timer = setTimeout(() => { finished = true; resolve(false); }, timeoutMs);'
+  $'健康：出错的连接还回池\tsrc/http/health.ts\t    } catch {\\n      release(true);\t    } catch {\\n      release(false);'
+  $'健康：就绪不做 single-flight\tsrc/http/health.ts\t    if (inflight !== undefined) return inflight;\t'
+  $'健康：就绪不缓存\tsrc/http/health.ts\t    if (last !== undefined && now() - last.at < ttlMs) return Promise.resolve(last.ok);\t'
+  $'健康：服务不用缓存的就绪检查\tsrc/http/server.ts\t  const ready = cachedReady(() => poolReady(deps.pool), opts.readyCacheMs);\t  const ready = () => poolReady(deps.pool);'
+  # LT-03 决定记录（续）第 6 条：staging 连库 TLS（src/http/config.ts、src/main.ts）：跑 tests/shell-startup.test.ts（BFFMUT_FILTER=连库：）
+  $'连库：staging 不核对 TLS\tsrc/main.ts\tif (!dbTlsOk(shellDeps.env, url)) {\tif (false) {'
+  $'连库：收 verify-ca\tsrc/http/config.ts\tmodes[0] === \'verify-full\'\t[\'verify-full\', \'verify-ca\'].includes(modes[0]!)'
+  $'连库：CA 不限固定路径\tsrc/http/config.ts\troots.length === 1 && roots[0] === caPath\troots.length === 1'
+  $'连库：CA 文件不存在也收\tsrc/http/config.ts\troots[0] === caPath && exists(caPath)\troots[0] === caPath'
+  $'连库：重复的 sslmode 取第一个\tsrc/http/config.ts\tmodes.length === 1 && modes[0]\tmodes[0]'
 )
 # 副本保持仓库结构（测试按 ../../../ 找仓库根：adapters/aya 的登记脚本、db/seeds 的种子），adapters、db 软链接回仓库。
 # 安全审查阻断 1：原来的副本不保持结构，测试的 before 在任何代码下都失败，变异全部“被发现”却不说明任何问题。
@@ -547,6 +567,8 @@ star_run() {  # $1 副本根目录，$2 变异名（“计量：”开头的跑�
   [[ "${2:-}" == 诉求：* ]] && tests="tests/family-goals-units.test.ts tests/family-goals.integration.test.ts tests/shell-openapi.test.ts"
   [[ "${2:-}" == 月度计划：* ]] && tests="tests/monthly-plan-units.test.ts tests/monthly-plan.integration.test.ts tests/shell-openapi.test.ts"
   [[ "${2:-}" == 闸门：* ]] && tests="tests/subject-gate-units.test.ts tests/subject-gate.integration.test.ts tests/shell-openapi.test.ts"
+  [[ "${2:-}" == 健康：* ]] && tests="tests/health.test.ts"
+  [[ "${2:-}" == 连库：* ]] && tests="tests/shell-startup.test.ts"
   [[ "${2:-}" == OTP：* ]] && tests="tests/staging-otp-units.test.ts tests/staging-otp.integration.test.ts tests/shell-startup.test.ts tests/star-map-v1.test.ts"
   out=$( cd "$1/services/bff" && timeout 240 bash "$ROOT/db/tests/pg-ephemeral.sh" -- \
       node --no-warnings --test --test-concurrency=1 --test-timeout=60000 $tests 2>&1 ); rc=$?

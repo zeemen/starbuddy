@@ -32,7 +32,8 @@ from ..shared import forbidden_matcher
 from ..sie03_policy import Sie03Policy, load_sie03
 from ..store import InsightStore, assert_insight_role, create_pool
 from ..store_sie03 import Sie03Store
-from .config import Settings
+from . import health
+from .config import Settings, check_db_tls
 from .contract import Contract, contract as default_contract
 from .errors import ServiceError, invalid, unauthenticated
 from .monthly_route import register as register_monthly
@@ -94,10 +95,13 @@ def _bare(host: str) -> str:
     return h[1:-1] if h.startswith("[") and h.endswith("]") else h
 
 
-def allowed_hosts(host: str) -> list[str]:
-    """Host 头允许列表：回环地址只收回环 Host；内网地址只收该地址。精确值或 `<主机>:<数字端口>`"""
+def allowed_hosts(host: str, extra: str | None = None) -> list[str]:
+    """Host 头允许列表：回环地址只收回环 Host；内网地址只收该地址。精确值或 `<主机>:<数字端口>`。
+    extra：staging 另收的一个内网 IPv4（INSIGHT_EXTRA_HOST，本服务 Service 的 clusterIP；LT-03）"""
     h = _bare(host)
     names = ["127.0.0.1", "localhost", "[::1]"] if h in LOOPBACK else [f"[{h}]" if ":" in h else h]
+    if extra:
+        names.append(extra)
     return [x for n in names for x in (n, f"{n}:*")]
 
 
@@ -147,6 +151,8 @@ def create_app(settings: Settings, *, pool: asyncpg.Pool | None = None, contract
     guardian（导出与删除，缺省不接线）、monthly / monthly_templates（PLT-14 第 2 步月度计划的配置与模板库）供测试注入；不传时按配置创建。
     注入的池同样要过角色断言"""
     state: dict[str, Any] = {}
+    if pool is None:
+        check_db_tls(settings.database_url, settings.env)  # LT-03 决定记录（续）第 6 条：建池之前拒绝
     the_contract = contract or default_contract()
     the_policy = policy or load_policy(settings.policy_path, env=settings.env)
     check_cfg = load_check_config(settings.report_check_path, env=settings.env)  # 启动即校验；insight.report 与 insight.jobs 使用
@@ -179,6 +185,7 @@ def create_app(settings: Settings, *, pool: asyncpg.Pool | None = None, contract
                                        scheduler=scheduler or default_scheduler(settings.env, settings.learning),
                                        mastery=mastery or DbMasterySource(p),
                                        guardian=guardian, check_cfg=check_cfg))
+            state["ready_pool"] = p  # 就绪探针（LT-03）：角色断言与全部装配通过之后才放进来
             yield
         finally:
             state.clear()
@@ -187,6 +194,8 @@ def create_app(settings: Settings, *, pool: asyncpg.Pool | None = None, contract
 
     app = FastAPI(title="StarBuddy insight service (internal)", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.insight = state
+    # 健康端点（LT-03；services/insight/openapi/health.v0.yaml）：无需鉴权，响应只含状态
+    health.register(app, lambda: health.pool_alive(state.get("ready_pool")))
 
     def route(tool: str):
         async def handler(request: Request) -> JSONResponse:
@@ -220,5 +229,5 @@ def create_app(settings: Settings, *, pool: asyncpg.Pool | None = None, contract
 
     # 服务内部接口（不在契约里；接口定义 services/insight/openapi/monthly-plan-internal.v0.yaml）
     register_monthly(app, caller_of=lambda r: caller_for(r.headers.get("authorization"), settings.tokens), read_body=read_body, state=state)
-    app.add_middleware(HostGuard, allowed=allowed_hosts(settings.host))
+    app.add_middleware(HostGuard, allowed=allowed_hosts(settings.host, settings.extra_host))
     return app

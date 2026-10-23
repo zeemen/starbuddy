@@ -24,6 +24,9 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from . import service
+from learning import health
+from learning.netpolicy import STAGING, check_db_tls
+
 from .config import FEATURES, PagesSettings, ReviewSettings
 from .errors import ReviewError
 from .pages import MR_REVIEW_BASIS
@@ -54,9 +57,27 @@ def host_name(host: str) -> str:
     if host.startswith("["):
         return host[: host.find("]") + 1] if "]" in host else host
     return host.rsplit(":", 1)[0] if host.count(":") == 1 else host
+
+
+def allowed_hosts(settings: ReviewSettings | None) -> frozenset[str]:
+    """Host 头允许列表：本机地址；staging 下另收两个显式配置的内网 IPv4 字面量（LT-03）：
+    - 监听地址 REVIEW_CONSOLE_HOST（Pod IP）：k8s 探针（kubelet 以 Pod IP 作 Host）；
+    - REVIEW_CONSOLE_EXTRA_HOST（本服务 Service 的 clusterIP）：前端经 STARBUDDY_REVIEW_URL=http://<clusterIP>:8792 访问，Host 头是 clusterIP。
+    不收别的内网地址与主机名（DNS 重绑定防护不变）；dev / test 只收本机。"""
+    extra: set[str] = set()
+    if settings is not None and settings.env == STAGING:
+        if settings.host not in LOOPBACK_HOSTS:
+            extra.add(settings.host)
+        if settings.extra_host:
+            extra.add(settings.extra_host)
+    return LOOPBACK_HOSTS | frozenset(extra)
+
+
 TOKEN = re.compile(r"^[0-9a-f]{64}$")
 # 不需要会话的接口：只有登录
 PUBLIC_ROUTES = {("POST", "/review/v0/auth/login")}
+# 健康端点（LT-03；services/learning/openapi/health.v0.yaml）：不要会话，响应只含状态；仍过 Host 校验
+HEALTH_ROUTES = {("GET", health.HEALTH_PATH), ("GET", health.READY_PATH)}
 
 
 def session_token(request: Request) -> str | None:
@@ -229,6 +250,9 @@ def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthen
             kp, rp, own = pools[0], pools[1], False
         else:
             s = settings or ReviewSettings.from_env()
+            # LT-03 决定记录（续）第 6 条：staging 两个连库串都必须 verify-full + 固定 CA，建池之前拒绝
+            check_db_tls(s.kge_database_url, s.env, "REVIEW_CONSOLE_KGE_DATABASE_URL")
+            check_db_tls(s.review_database_url, s.env, "REVIEW_CONSOLE_REVIEW_DATABASE_URL")
             kp = await asyncpg.create_pool(s.kge_database_url, min_size=1, max_size=5)
             rp = await asyncpg.create_pool(s.review_database_url, min_size=1, max_size=3)
             # 登录专用：同一个签字登录角色，单独两条连接，语句 5 秒超时
@@ -241,7 +265,9 @@ def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthen
             settings.pages if settings is not None else (ReviewSettings.from_env().pages if pools is None else None))
         state["spot"] = spot_settings or (settings.spot_check if settings is not None else (
             ReviewSettings.from_env().spot_check if pools is None else None))
+        state["ready_pools"] = (kp, rp)  # 就绪探针（LT-03）：角色核对通过之后才放进来
         yield
+        state.pop("ready_pools", None)
         if own:
             await kp.close()
             await rp.close()
@@ -249,12 +275,21 @@ def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthen
                 await lp.close()
 
     app = FastAPI(lifespan=lifespan, openapi_url=None, docs_url=None, redoc_url=None)
+    hosts = allowed_hosts(settings)
+
+    async def ready_probe() -> bool:
+        pair = state.get("ready_pools")
+        return pair is not None and all([await health.pool_alive(p) for p in pair])
+
+    health.register(app, ready_probe)
 
     @app.middleware("http")
     async def guard(request: Request, call_next):
+        if (request.method, request.url.path) in HEALTH_ROUTES and host_name(request.headers.get("host", "")) in hosts:
+            return await call_next(request)  # 健康端点：不要会话、不记访问日志（探针每 10 秒一次）；Host 不对照常走下面回 421
         status, code = 500, "INTERNAL"
         try:
-            if host_name(request.headers.get("host", "")) not in LOOPBACK_HOSTS:
+            if host_name(request.headers.get("host", "")) not in hosts:
                 raise ReviewError(421, "MISDIRECTED")
             declared = request.headers.get("content-length", "")
             if (declared and (not declared.isdigit() or int(declared) > MAX_BODY_BYTES)) or \

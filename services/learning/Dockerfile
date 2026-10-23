@@ -21,7 +21,7 @@
 #
 # 监听地址：缺省只监听 127.0.0.1；staging 由 LEARNING_HOST 显式配置为容器网络的内网 IPv4（LT-01 决定记录第 1 条）。
 # 三科适配器与本服务共用网络命名空间，经回环互访（决定记录第 5 条）。
-# 健康检查：TCP 探活（连上监听端口即健康；HTTP 健康端点另起，决定记录第 11 条）。
+# 健康检查：HTTP GET /readyz（LT-03 健康端点：/healthz 存活、/readyz 就绪，learning/health.py；原 TCP 探活已替换）。
 ARG PYTHON_IMAGE
 FROM ${PYTHON_IMAGE}
 
@@ -58,6 +58,7 @@ RUN useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin star
 USER 10001
 WORKDIR /srv/starbuddy/services/learning
 EXPOSE 8788
+# 健康检查（LT-03）：HTTP GET /readyz（库连接与启动前置；http.client 直连，不经代理变量）
 HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=3 \
-  CMD ["python", "-I", "-c", "import os,socket; socket.create_connection((os.environ.get('LEARNING_HOST') or '127.0.0.1', int(os.environ.get('PORT') or 8788)), 2).close()"]
+  CMD ["python", "-I", "-c", "import os,http.client as h; c=h.HTTPConnection(os.environ.get('LEARNING_HOST') or '127.0.0.1', int(os.environ.get('PORT') or 8788), timeout=2); c.request('GET', '/readyz'); raise SystemExit(0 if c.getresponse().status == 200 else 1)"]
 CMD ["python", "-m", "learning"]

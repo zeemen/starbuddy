@@ -4,7 +4,7 @@
 #   - 基础镜像以摘要给出（ARG NODE_IMAGE，没有缺省值；deploy/scripts/build-images.sh 拒绝不带 @sha256 的值；决定记录第 11 条）。
 #   - 不带任何密钥、白名单 OTP 条目或审计文件：BFF_LOG_HMAC_KEY 等由运行环境注入，BFF_STAGING_OTP_FILE 只读挂载，
 #     BFF_STAGING_OTP_AUDIT_FILE 写到可写卷（不在根文件系统上）。
-#   - 非 root（uid 10001）、只读根文件系统可运行、TCP 健康检查。上下文是仓库根，忽略规则见同名 .dockerignore（白名单）。
+#   - 非 root（uid 10001）、只读根文件系统可运行、HTTP 健康检查（GET /readyz，LT-03）。上下文是仓库根，忽略规则见同名 .dockerignore（白名单）。
 # BFF 按仓库相对位置读 docs/design/sie/（禁用推断词表）与 services/insight/templates/（月度计划模板库，开关关时不读），镜像里保持同样结构。
 # 构建：docker build -f deploy/docker/bff.Dockerfile --build-arg NODE_IMAGE=<仓库>/node:22-bookworm-slim@sha256:<摘要> -t starbuddy-bff:<版本> .
 ARG NODE_IMAGE
@@ -34,6 +34,7 @@ RUN useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin star
 USER 10001
 WORKDIR /srv/starbuddy/services/bff
 EXPOSE 8787
+# 健康检查（LT-03）：HTTP GET /readyz（连接池 SELECT 1）
 HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=3 \
-  CMD ["node", "-e", "const s=require('node:net').connect(Number(process.env.PORT||8787),process.env.BFF_HOST||'127.0.0.1');s.setTimeout(2000);s.on('connect',()=>{s.end();process.exit(0)});s.on('error',()=>process.exit(1));s.on('timeout',()=>process.exit(1))"]
+  CMD ["node", "-e", "require('node:http').get({host:process.env.BFF_HOST||'127.0.0.1',port:Number(process.env.PORT||8787),path:'/readyz',timeout:2000},(r)=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1)).on('timeout',()=>process.exit(1))"]
 CMD ["node", "--no-warnings", "src/main.ts"]

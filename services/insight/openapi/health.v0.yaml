@@ -1,0 +1,60 @@
+openapi: 3.1.0
+# 洞察服务的健康端点（LT-03 范围第 4 条，specs/launch-lt03-cloud-staging；insight/service/health.py）。
+# 服务内部接口，不在洞察服务契约（packages/contracts/openapi/insight-service.v0.9.yaml）里，本文件不改契约。
+# 各服务同一口径：services/{learning,knowledge,scheduler,bff}/openapi/health.v0.yaml。
+info:
+  title: StarBuddy insight service health
+  version: 0.1.0
+  description: |
+    无需鉴权；仍经整个应用的 Host 允许列表（不在列表回 400；k8s 探针的 Host 是 Pod 地址，即 INSIGHT_HOST）。
+    响应只含状态（不带版本、策略版本、库名、错误类别），一律 no-store、nosniff；探测不逐次记日志。
+    /readyz 的“就绪”= 启动前置（契约、判断策略、首份报告词表、SIE-03 配置、月度计划开关打开时的签字配置与模板库、登录角色断言）
+    已通过，且连接池在 2 秒内完成 SELECT 1。并发的探测共用一次检查，结果复用 3 秒。
+    staging 的 Host 允许列表另含 INSIGHT_EXTRA_HOST（本服务 Service 的 clusterIP，调用方经它访问）。
+servers:
+  - url: http://127.0.0.1:8791
+paths:
+  /healthz:
+    get:
+      operationId: healthz
+      summary: 存活（不访问任何依赖）
+      security: []
+      responses:
+        '200':
+          description: 进程在应答
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Alive'}
+  /readyz:
+    get:
+      operationId: readyz
+      summary: 就绪（启动前置已通过、连接池可用）
+      security: []
+      responses:
+        '200':
+          description: 就绪
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Ready'}
+        '503':
+          description: 未就绪（不区分原因）
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/NotReady'}
+components:
+  schemas:
+    Alive:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties: {status: {const: ok}}
+    Ready:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties: {status: {const: ready}}
+    NotReady:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties: {status: {const: not_ready}}

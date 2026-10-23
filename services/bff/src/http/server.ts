@@ -9,6 +9,7 @@
 import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { withAccount } from '../metering/db.ts';
+import { cachedReady, handleHealth, poolReady } from './health.ts';
 import { P } from './problems.ts';
 import { activeRoutes, compile, templateShapes, type Ctx, type Query, type Reply, type Route, type Session, type ShellDeps } from './routes.ts';
 import { csrfFor, E164, logHash, rateKey, safeEqual, SESSION_TOKEN } from './secrets.ts';
@@ -213,11 +214,12 @@ export function createShellHandler(deps: ShellDeps): (req: IncomingMessage, res:
   };
 }
 
-/** BFF 唯一的 HTTP 入口（src/main.ts）：表外路径一律 404 */
-export function createShellServer(deps: ShellDeps): Server {
+/** BFF 唯一的 HTTP 入口（src/main.ts）：表外路径一律 404；健康端点（LT-03，src/http/health.ts）在路由表之前应答 */
+export function createShellServer(deps: ShellDeps, opts: { readyCacheMs?: number } = {}): Server {
   const handle = createShellHandler(deps);
+  const ready = cachedReady(() => poolReady(deps.pool), opts.readyCacheMs);
   const server = createServer((req, res) => {
-    void handle(req, res).then((handled) => {
+    void handleHealth(req, res, ready).then((done) => (done ? true : handle(req, res))).then((handled) => {
       if (handled) return;
       res.writeHead(404, { 'content-type': 'application/problem+json', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
       res.end(P.NOT_FOUND);

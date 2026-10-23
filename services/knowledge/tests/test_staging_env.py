@@ -49,3 +49,49 @@ def test_staging_refuses_contract_dir_and_image_mismatch():
 
 def test_private_ipv4():
     assert private_ipv4("10.0.0.1") and not private_ipv4("10.0.0.01") and not private_ipv4("172.15.0.1")
+
+
+# ---------------------------------------------------------------- LT-03：连库 TLS（决定记录（续）第 6 条）与额外允许 Host（契约审查阻断 2）
+
+
+def _system_ca() -> str:
+    import os
+    import ssl
+    for p in (ssl.get_default_verify_paths().cafile, "/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-bundle.crt"):
+        if p and os.path.isfile(p):
+            return p
+    pytest.skip("本机没有系统 CA 包")
+
+
+def test_service_db_tls_in_staging(monkeypatch, tmp_path):
+    from knowledge.service import config as cfg
+    from knowledge.service.app import create_app
+    assert cfg.RDS_CA_PATH == "/run/rds-ca/ca.pem"
+    ca = _system_ca()
+    monkeypatch.setattr(cfg, "RDS_CA_PATH", ca)
+    cfg.check_db_tls(f"postgresql://u@pgm-syn.example.invalid:5432/x?sslmode=verify-full&sslrootcert={ca}", "staging")
+    cfg.check_db_tls("postgresql://synthetic@/x", "test")
+    for bad in ("postgresql://u@172.28.0.20/x", f"postgresql://u@172.28.0.20/x?sslmode=require&sslrootcert={ca}",
+                "postgresql://u@172.28.0.20/x?sslmode=verify-full&sslrootcert=/etc/other.pem"):
+        with pytest.raises(RuntimeError, match="verify-full"):
+            cfg.check_db_tls(bad, "staging")
+    with pytest.raises(RuntimeError, match="KNOWLEDGE_DATABASE_URL"):  # 服务启动：建池之前拒绝
+        create_app(Settings.from_env(mk("staging")))
+    monkeypatch.setattr(cfg, "RDS_CA_PATH", str(tmp_path / "missing.pem"))
+    with pytest.raises(RuntimeError, match="verify-full"):
+        cfg.check_db_tls(f"postgresql://u@172.28.0.20/x?sslmode=verify-full&sslrootcert={tmp_path / 'missing.pem'}", "staging")
+
+
+def test_extra_host_service_ip():
+    from knowledge.service.mcp_server import allowed_hosts, host_allowed, transport_security
+    s = Settings.from_env(mk("staging", KNOWLEDGE_HOST="172.28.0.12", KNOWLEDGE_EXTRA_HOST="10.96.100.12"))
+    assert s.extra_host == "10.96.100.12"
+    hosts = allowed_hosts(s.host, s.extra_host)
+    assert host_allowed("10.96.100.12:8790", hosts) and host_allowed("172.28.0.12:8790", hosts)
+    assert not host_allowed("10.96.100.13:8790", hosts)
+    assert "10.96.100.12:*" in transport_security(s.host, s.extra_host).allowed_hosts, "MCP 的 DNS 重绑定防护同一份列表"
+    for bad in ("8.8.8.8", "knowledge", "10.96.100.12:8790", "010.96.100.12"):
+        with pytest.raises(RuntimeError, match="KNOWLEDGE_EXTRA_HOST"):
+            Settings.from_env(mk("staging", KNOWLEDGE_EXTRA_HOST=bad))
+    with pytest.raises(RuntimeError, match="只有 staging"):
+        Settings.from_env(mk("test", KNOWLEDGE_EXTRA_HOST="10.96.100.12"))

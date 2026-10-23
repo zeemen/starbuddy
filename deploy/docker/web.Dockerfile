@@ -5,7 +5,7 @@
 #   - 基础镜像以摘要给出（ARG NODE_IMAGE，没有缺省值；决定记录第 11 条）。Next.js 遥测关闭。
 #   - 只读根文件系统可运行：.next/cache 由编排挂 tmpfs；监听地址由 WEB_HOST 给（staging 为容器网络内网地址），
 #     BFF 地址 STARBUDDY_BFF_URL 在 staging 只收内网地址（src/lib/bff.ts）。
-#   - 非 root（uid 10001）、TCP 健康检查；不带任何密钥（STARBUDDY_PRESENCE_HMAC_KEY 等由运行环境注入）。
+#   - 非 root（uid 10001）、HTTP 健康检查（GET /readyz，LT-03）；不带任何密钥（STARBUDDY_PRESENCE_HMAC_KEY 等由运行环境注入）。
 # 构建：docker build -f deploy/docker/web.Dockerfile --build-arg NODE_IMAGE=<仓库>/node:22-bookworm-slim@sha256:<摘要> -t starbuddy-web:<版本> .
 # 已知：运行阶段保留全部依赖（含开发依赖），保证 next start 能读 next.config.ts；瘦身随部署形态决定（待人确认）。
 ARG NODE_IMAGE
@@ -44,6 +44,7 @@ ENV STARBUDDY_IMAGE_ENV=${STARBUDDY_IMAGE_ENV}
 RUN useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin starbuddy
 USER 10001
 EXPOSE 3000
+# 健康检查（LT-03）：HTTP GET /readyz（启动包装同一套环境核对）
 HEALTHCHECK --interval=15s --timeout=3s --start-period=30s --retries=3 \
-  CMD ["node", "-e", "const s=require('node:net').connect(Number(process.env.PORT||3000),process.env.WEB_HOST||'127.0.0.1');s.setTimeout(2000);s.on('connect',()=>{s.end();process.exit(0)});s.on('error',()=>process.exit(1));s.on('timeout',()=>process.exit(1))"]
+  CMD ["node", "-e", "require('node:http').get({host:process.env.WEB_HOST||'127.0.0.1',port:Number(process.env.PORT||3000),path:'/readyz',timeout:2000},(r)=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1)).on('timeout',()=>process.exit(1))"]
 CMD ["node", "--no-warnings", "scripts/serve.ts"]

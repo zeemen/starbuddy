@@ -1,0 +1,53 @@
+# 云效 Flow 流水线模板（LT-03 范围第 3 条）：在阿里云华北 2 VPC 里的私有构建机上调用 deploy/ci/pipeline.sh。
+# 模板：字段名以云效当时的流水线 YAML 文档为准，由人导入后核对；仓库里只有占位，没有任何凭据、地址或账号。
+# - 构建机：私有构建集群（与 ACR 企业版 VPC 端点同一 VPC），不用公共构建机（源码与镜像不出 VPC）；
+# - 登录 ACR：用云效的 ACR 企业版服务连接（RAM 授权），pipeline.sh 不处理口令；
+# - 变量：ACR_REGISTRY、PYTHON_IMAGE、NODE_IMAGE（ACR 里同步好的基础镜像，按摘要）、TRIVY_DB_REPOSITORY、TRIVY_JAVA_DB_REPOSITORY、SIGN_MODE；
+#   SIGN_MODE 只有 cosign（推送后立即用 COSIGN_PUB_REF 验签；原 acr 模式离线验不了签，已取消）；COSIGN_KEY_REF 指向运行时
+#   从凭据管家挂载的签名私钥文件、COSIGN_PUB_REF 指向验签公钥文件（与 ACK 验签策略同一把），都不进流水线日志；
+# - 触发：只手动触发（staging 发布须人批准），不在合并请求上自动推镜像；
+# - 产物：dist/sbom、dist/scan、dist/image-digests.txt 归档到流水线制品（保留期由人定），不上传公网。
+version: "1.0"
+name: starbuddy-staging-images
+sources:
+  starbuddy:
+    type: codeup
+    name: starbuddy
+    endpoint: "<由人填写：代码仓库地址>"
+    branch: "<由人填写：发布分支>"
+    triggerEvents: []           # 只手动触发
+variables:
+  ACR_REGISTRY: "<由人填写：ACR 实例名>-registry-vpc.cn-beijing.cr.aliyuncs.com/starbuddy"
+  PYTHON_IMAGE: "<由人填写：$ACR_REGISTRY/starbuddy-base-python@sha256:摘要>"
+  NODE_IMAGE: "<由人填写：$ACR_REGISTRY/starbuddy-base-node@sha256:摘要>"
+  TRIVY_DB_REPOSITORY: "<由人填写：ACR 里同步的 trivy 漏洞库镜像>"
+  TRIVY_JAVA_DB_REPOSITORY: "<由人填写：ACR 里同步的 trivy Java 漏洞库镜像>"
+  SIGN_MODE: cosign
+  COSIGN_KEY_REF: "<由人填写：凭据管家挂载的签名私钥文件路径>"
+  COSIGN_PUB_REF: "<由人填写：验签公钥文件路径>"
+stages:
+  build:
+    name: 构建、SBOM、扫描、推送、签名
+    jobs:
+      images:
+        name: staging 镜像
+        runsOn:
+          group: "<由人填写：私有构建集群>"
+        steps:
+          acr_login:
+            name: 登录 ACR（服务连接）
+            step: ACREnterpriseLogin
+            with:
+              serviceConnection: "<由人填写：ACR 企业版服务连接>"
+          pipeline:
+            name: 执行 deploy/ci/pipeline.sh
+            step: Command
+            with:
+              run: bash deploy/ci/pipeline.sh
+          archive:
+            name: 归档 SBOM、扫描结果与摘要
+            step: ArtifactUpload
+            with:
+              uploadType: "<由人填写：私有制品仓库（不开公开访问）>"
+              artifact: staging-images
+              filePath: dist/

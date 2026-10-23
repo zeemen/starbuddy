@@ -25,8 +25,9 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from . import health
 from .cache import ReadCache
-from .config import Settings
+from .config import Settings, check_db_tls
 from .contract import Contract, contract as default_contract
 from .errors import ServiceError, invalid, unauthenticated
 from .mcp_server import allowed_hosts, build_mcp_server, host_allowed, transport_security
@@ -134,6 +135,8 @@ def create_app(settings: Settings, *, pool: asyncpg.Pool | None = None, contract
                pages: PageSnapshot | None = None) -> FastAPI:
     """pool、contract、pages 供测试注入；不传时按配置创建。注入的池同样要过角色断言"""
     state: dict[str, Any] = {}
+    if pool is None:
+        check_db_tls(settings.database_url, settings.env)  # LT-03 决定记录（续）第 6 条：建池之前拒绝
     the_contract = contract or default_contract()
 
     def mcp_caller(ctx: Any) -> str | None:
@@ -150,7 +153,7 @@ def create_app(settings: Settings, *, pool: asyncpg.Pool | None = None, contract
 
     mcp_server = build_mcp_server(_LazyCore(), mcp_caller)  # type: ignore[arg-type]
     mcp_app = mcp_server.streamable_http_app(streamable_http_path=MCP_PATH, json_response=True, stateless_http=True,
-                                             host=settings.host, transport_security=transport_security(settings.host),
+                                             host=settings.host, transport_security=transport_security(settings.host, settings.extra_host),
                                              max_request_body_size=MAX_BODY_BYTES)
 
     @asynccontextmanager
@@ -175,6 +178,7 @@ def create_app(settings: Settings, *, pool: asyncpg.Pool | None = None, contract
                 swapper.install(pages)
             core_holder["core"] = state["core"] = core
             state["snapshot"] = swapper
+            state["ready_pool"] = p  # 就绪探针（LT-03）：角色断言与快照核对通过之后才放进来
             # 总是装 SIGHUP 处理器：没配置指针文件时只记日志（不按缺省动作结束进程）
             hup = False
             try:
@@ -191,11 +195,14 @@ def create_app(settings: Settings, *, pool: asyncpg.Pool | None = None, contract
                 await swapper.drain()  # 等进行中的 reload 做完再关连接池
         finally:
             core_holder.pop("core", None)
+            state.pop("ready_pool", None)
             if own_pool:
                 await p.close()
 
     app = FastAPI(title="StarBuddy knowledge service (internal)", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.knowledge = state
+    # 健康端点（LT-03；services/knowledge/openapi/health.v0.yaml）：无需鉴权，响应只含状态；必须在 / 上挂 MCP 之前注册
+    health.register(app, lambda: health.pool_alive(state.get("ready_pool")))
 
     def route(tool: str):
         async def handler(request: Request) -> JSONResponse:
@@ -220,5 +227,5 @@ def create_app(settings: Settings, *, pool: asyncpg.Pool | None = None, contract
     for spec in the_contract.tools.values():
         app.add_api_route(spec.path, route(spec.name), methods=["POST"])
     app.mount("/", McpAuth(mcp_app, settings.tokens))
-    app.add_middleware(HostGuard, allowed=allowed_hosts(settings.host))
+    app.add_middleware(HostGuard, allowed=allowed_hosts(settings.host, settings.extra_host))
     return app

@@ -91,12 +91,77 @@ def test_private_ipv4():
     assert private_ipv4("192.168.0.1") and not private_ipv4("192.168.000.1") and not private_ipv4("11.0.0.1")
 
 
-def test_scheduled_cli_staging_db_hosts():
-    ok = {"SCHEDULER_ENV": "staging", "SCHEDULER_DATABASE_URL": "postgresql://u@172.28.0.20:5432/x"}
+def _system_ca() -> str:
+    import os
+    import ssl
+    for p in (ssl.get_default_verify_paths().cafile, "/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-bundle.crt"):
+        if p and os.path.isfile(p):
+            return p
+    pytest.skip("本机没有系统 CA 包")
+
+
+@pytest.fixture
+def rds_tls(monkeypatch):
+    """LT-03 决定记录（续）第 6 条：staging 连库必须 verify-full + 固定 CA /run/rds-ca/ca.pem（文件存在）。测试把固定路径换成
+    本机系统 CA 包（只读）：命令行经审核台的 local_only（learning.netpolicy.RDS_CA_PATH），服务经 insight.service.config.RDS_CA_PATH"""
+    import sys
+    from pathlib import Path
+    learning = str(Path(__file__).resolve().parents[2] / "learning")
+    if learning not in sys.path:
+        sys.path.append(learning)
+    from learning import netpolicy
+
+    from insight.service import config as cfg
+    ca = _system_ca()
+    monkeypatch.setattr(netpolicy, "RDS_CA_PATH", ca)
+    monkeypatch.setattr(cfg, "RDS_CA_PATH", ca)
+    return f"sslmode=verify-full&sslrootcert={ca}"
+
+
+def test_service_db_tls_in_staging(rds_tls, monkeypatch, tmp_path):
+    from insight.service import config as cfg
+    from insight.service.app import create_app
+    good = f"postgresql://u@172.28.0.20:5432/x?{rds_tls}"
+    cfg.check_db_tls(good, "staging")
+    cfg.check_db_tls("postgresql://unused", "test")
+    for bad in ("postgresql://u@172.28.0.20/x", f"postgresql://u@172.28.0.20/x?sslmode=require&sslrootcert={cfg.RDS_CA_PATH}",
+                "postgresql://u@172.28.0.20/x?sslmode=verify-full&sslrootcert=/etc/other.pem"):
+        with pytest.raises(RuntimeError, match="verify-full"):
+            cfg.check_db_tls(bad, "staging")
+    with pytest.raises(RuntimeError, match="INSIGHT_DATABASE_URL"):  # 服务启动：建池之前拒绝
+        create_app(Settings.from_env(mk("staging", INSIGHT_DATABASE_URL="postgresql://u@172.28.0.20/x")))
+    monkeypatch.setattr(cfg, "RDS_CA_PATH", str(tmp_path / "missing.pem"))
+    with pytest.raises(RuntimeError, match="verify-full"):
+        cfg.check_db_tls(f"postgresql://u@172.28.0.20/x?sslmode=verify-full&sslrootcert={tmp_path / 'missing.pem'}", "staging")
+
+
+def test_rds_ca_path_fixed():
+    from insight.service import config as cfg
+    assert cfg.RDS_CA_PATH == "/run/rds-ca/ca.pem"
+
+
+def test_extra_host_service_ip():
+    s = Settings.from_env(mk("staging", INSIGHT_HOST="172.28.0.14", INSIGHT_EXTRA_HOST="10.96.100.14"))
+    assert s.extra_host == "10.96.100.14"
+    from insight.service.app import allowed_hosts, host_allowed
+    hosts = allowed_hosts(s.host, s.extra_host)
+    assert host_allowed("10.96.100.14:8791", hosts) and host_allowed("172.28.0.14:8791", hosts)
+    assert not host_allowed("10.96.100.15:8791", hosts)
+    assert Settings.from_env(mk("staging")).extra_host is None
+    for bad in ("8.8.8.8", "insight", "10.96.100.14:8791", "010.96.100.14"):
+        with pytest.raises(RuntimeError, match="INSIGHT_EXTRA_HOST"):
+            Settings.from_env(mk("staging", INSIGHT_EXTRA_HOST=bad))
+    with pytest.raises(RuntimeError, match="只有 staging"):
+        Settings.from_env(mk("test", INSIGHT_EXTRA_HOST="10.96.100.14"))
+
+
+def test_scheduled_cli_staging_db_hosts(rds_tls):
+    ok = {"SCHEDULER_ENV": "staging", "SCHEDULER_DATABASE_URL": f"postgresql://u@172.28.0.20:5432/x?{rds_tls}"}
     assert scheduled.check_env(ok) == ok["SCHEDULER_DATABASE_URL"]
     with pytest.raises(scheduled.CliError):
         scheduled.check_env({**ok, "SCHEDULER_ENV": "test"})  # test 下内网地址照旧拒绝
-    for bad in ("postgresql://u@8.8.8.8/x", "postgresql://u@db.example.invalid/x", "postgresql://u@172.28.0.20/x?hostaddr=8.8.8.8"):
+    for bad in (f"postgresql://u@8.8.8.8/x?{rds_tls}", f"postgresql://u@db.example.invalid/x?{rds_tls}",
+                f"postgresql://u@172.28.0.20/x?{rds_tls}&hostaddr=8.8.8.8", "postgresql://u@172.28.0.20:5432/x"):
         with pytest.raises(scheduled.CliError):
             scheduled.check_env({**ok, "SCHEDULER_DATABASE_URL": bad})
     for env in ("pilot", "production"):
@@ -122,10 +187,13 @@ def test_server_checks_staging():
             asyncio.run(f(_Conn("8.8.8.8"), "staging"))
 
 
-def test_jobs_cli_staging_env(monkeypatch):
+def test_jobs_cli_staging_env(monkeypatch, rds_tls):
     monkeypatch.setenv("INSIGHT_ENV", "staging")
     monkeypatch.setenv("INSIGHT_DATABASE_URL", "postgresql://u@172.28.0.20/x")
-    assert jobs_cli._env() == ("staging", "postgresql://u@172.28.0.20/x")
+    with pytest.raises(jobs_cli.JobError):  # 决定记录（续）第 6 条：没有 TLS 拒绝
+        jobs_cli._env()
+    monkeypatch.setenv("INSIGHT_DATABASE_URL", f"postgresql://u@172.28.0.20/x?{rds_tls}")
+    assert jobs_cli._env() == ("staging", f"postgresql://u@172.28.0.20/x?{rds_tls}")
     monkeypatch.setenv("INSIGHT_ENV", "test")
     with pytest.raises(jobs_cli.JobError):
         jobs_cli._env()

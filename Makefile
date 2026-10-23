@@ -43,9 +43,17 @@ check: contract-test contract-mutation taxonomy-check attack-surface-check sie-d
 # LT-01 部署打包（specs/launch-lt01-deploy-packaging）：镜像与编排的静态校验、开关矩阵、环境变量清单、迁移执行器单测与一次性库上的
 # 副本演练、compose 结构校验（约 10 秒，接进 make check）。DEPLOY_BUILD=1 时另加镜像构建与本机合成全栈冒烟（要能拉基础镜像与 docker
 # 守护进程，耗时长，只单独跑：make deploy-check DEPLOY_BUILD=1 PYTHON_IMAGE=…@sha256:… NODE_IMAGE=…@sha256:… POSTGRES_IMAGE=…）。
-.PHONY: deploy-check staging-mutation
+.PHONY: deploy-check staging-mutation iac-validate
 deploy-check:
 	@CONTRACT_STRICT=$(CONTRACT_STRICT) bash deploy/scripts/deploy-check.sh
+
+# LT-03 IaC 草案（deploy/iac/alicloud）的外部工具检查：terraform（或 tofu）init -backend=false + validate、tflint、checkov、tfsec，
+# 只在工具已装好时运行（不联网下载工具与 provider；provider 须在本地镜像目录 IAC_PLUGIN_DIR），缺失时打印“跳过”（退出码 3：
+# 非严格模式算通过，CONTRACT_STRICT=1 时失败）。不执行 plan / apply。不依赖工具的静态规则检查 deploy/iac/check_iac.py 随 deploy-check 运行。
+# 本机没有这些工具，所以不接进 check（接进 deploy-check 会让严格模式在没有工具的环境里失败）；有工具的 CI 里单独跑：make iac-validate
+iac-validate:
+	@bash deploy/scripts/iac-validate.sh; rc=$$?; \
+	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
 
 # LT-01 staging 运行环境：学习服务与审核台后端的 staging 启动校验逐条改坏，断言 tests/test_staging_env.py 能发现（纯函数，约 30 秒）
 staging-mutation:

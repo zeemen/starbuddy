@@ -8,6 +8,7 @@
 # 都要挂载教研签字的版本（STARBUDDY_SIGNED_CONFIG_DIR，只读）；没有签字配置时洞察服务与调度器按设计拒绝启动。
 # 本机用合成数据跑通全栈请用 deploy/compose/local-test.yaml（test 模式、单网络命名空间）；冒烟脚本 deploy/scripts/compose-smoke.sh。
 # 数据库：staging 用境内托管 Postgres（ADR 10 选项 B），连接串由运行环境注入；这里不起数据库容器。迁移由 deploy/migrate 执行（须人批准）。
+# 健康检查（LT-03）：HTTP GET /readyz（就绪：库连接与启动前置）；调度器另起健康监听 SCHEDULER_HEALTH_PORT。适配器不改代码，用镜像自带的 TCP 回环检查。
 # 开关取值与 deploy/flags/staging.yaml 一致（deploy/tests/test_flags_matrix.py 核对）；变量名都在 deploy/config/env-inventory.yaml 登记
 # （deploy/tests/test_env_inventory.py 核对）。镜像须以 STARBUDDY_IMAGE_ENV=staging 构建（staging 镜像拒绝以 dev / test 运行）。
 
@@ -62,7 +63,7 @@ services:
       # LEARNING_ROUTE_CLIENT_ZHIXING_TOKEN / _WENLI_TOKEN 与 MODEL_*（都用 ${…:?} 从运行环境注入）
       LEARNING_ROUTE_PORT: "8785"
     healthcheck:
-      test: ["CMD", "python", "-I", "-c", "import socket; socket.create_connection(('172.28.0.10', 8788), 2).close()"]
+      test: ["CMD", "python", "-I", "-c", "import http.client as h; c=h.HTTPConnection('172.28.0.10', 8788, timeout=2); c.request('GET', '/readyz'); raise SystemExit(0 if c.getresponse().status == 200 else 1)"]
       interval: 15s
       timeout: 3s
       retries: 5
@@ -124,7 +125,7 @@ services:
       KNOWLEDGE_READ_CACHE: "0"
       KNOWLEDGE_CACHE_DIR: /tmp/knowledge-cache
     healthcheck:
-      test: ["CMD", "python", "-I", "-c", "import socket; socket.create_connection(('172.28.0.12', 8790), 2).close()"]
+      test: ["CMD", "python", "-I", "-c", "import http.client as h; c=h.HTTPConnection('172.28.0.12', 8790, timeout=2); c.request('GET', '/readyz'); raise SystemExit(0 if c.getresponse().status == 200 else 1)"]
       interval: 15s
       timeout: 3s
       retries: 5
@@ -149,7 +150,7 @@ services:
       INSIGHT_LEARNING_URL: http://172.28.0.10:8788
       INSIGHT_LEARNING_TOKEN: ${LEARNING_INSIGHT_CLIENT_TOKEN:?由运行环境注入}
     healthcheck:
-      test: ["CMD", "python", "-I", "-c", "import socket; socket.create_connection(('172.28.0.14', 8791), 2).close()"]
+      test: ["CMD", "python", "-I", "-c", "import http.client as h; c=h.HTTPConnection('172.28.0.14', 8791, timeout=2); c.request('GET', '/readyz'); raise SystemExit(0 if c.getresponse().status == 200 else 1)"]
       interval: 15s
       timeout: 3s
       retries: 5
@@ -169,7 +170,7 @@ services:
       REVIEW_CONSOLE_KGE_DATABASE_URL: ${REVIEW_CONSOLE_KGE_DATABASE_URL:?由运行环境注入}
       REVIEW_CONSOLE_REVIEW_DATABASE_URL: ${REVIEW_CONSOLE_REVIEW_DATABASE_URL:?由运行环境注入}
     healthcheck:
-      test: ["CMD", "python", "-I", "-c", "import socket; socket.create_connection(('172.28.0.13', 8792), 2).close()"]
+      test: ["CMD", "python", "-I", "-c", "import http.client as h; c=h.HTTPConnection('172.28.0.13', 8792, timeout=2); c.request('GET', '/readyz'); raise SystemExit(0 if c.getresponse().status == 200 else 1)"]
       interval: 15s
       timeout: 3s
       retries: 5
@@ -207,7 +208,7 @@ services:
       STARBUDDY_RETEST_UI: retest
       STARBUDDY_TODAY_ORCH: today_orch
     healthcheck:
-      test: ["CMD", "node", "-e", "const s=require('node:net').connect(8787,'172.28.0.30');s.on('connect',()=>{s.end();process.exit(0)});s.on('error',()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "require('node:http').get({host:'172.28.0.30',port:8787,path:'/readyz',timeout:2000},(r)=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1)).on('timeout',()=>process.exit(1))"]
       interval: 15s
       timeout: 3s
       retries: 5
@@ -239,7 +240,7 @@ services:
       STARBUDDY_RETEST_UI: retest
       STARBUDDY_TODAY_ORCH: today_orch
     healthcheck:
-      test: ["CMD", "node", "-e", "const s=require('node:net').connect(3000,'172.28.0.40');s.on('connect',()=>{s.end();process.exit(0)});s.on('error',()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "require('node:http').get({host:'172.28.0.40',port:3000,path:'/readyz',timeout:2000},(r)=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1)).on('timeout',()=>process.exit(1))"]
       interval: 15s
       timeout: 3s
       retries: 5
@@ -259,6 +260,9 @@ services:
     environment:
       SCHEDULER_ENV: staging
       SCHEDULER_DATABASE_URL: ${SCHEDULER_DATABASE_URL:?由运行环境注入}
+      # 健康监听（LT-03，scheduler/health.py）：只服务 /healthz、/readyz
+      SCHEDULER_HOST: 172.28.0.50
+      SCHEDULER_HEALTH_PORT: "8793"
       INSIGHT_ENV: staging
       INSIGHT_DATABASE_URL: ${INSIGHT_DATABASE_URL:?由运行环境注入}
       INSIGHT_POLICY: /run/config/claims.signed.json
@@ -267,6 +271,12 @@ services:
       LEARNING_MASTERY_CONFIG_AYA: /run/config/mastery-aya.signed.json
       REVIEW_CONSOLE_ENV: staging
       REVIEW_CONSOLE_KGE_DATABASE_URL: ${REVIEW_CONSOLE_KGE_DATABASE_URL:?由运行环境注入}
+    healthcheck:
+      test: ["CMD", "/srv/starbuddy/services/insight/.venv/bin/python", "-I", "-c", "import http.client as h; c=h.HTTPConnection('172.28.0.50', 8793, timeout=5); c.request('GET', '/readyz'); raise SystemExit(0 if c.getresponse().status == 200 else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
     depends_on:
       insight: {condition: service_healthy}
 

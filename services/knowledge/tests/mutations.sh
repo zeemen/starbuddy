@@ -151,6 +151,20 @@ M=(
   $'KGE-06：M2 旧版 M1 没有摘要照算\tknowledge/m2.py\t        note = MAP_DIGEST_MISSING if theirs is None else\t        note = None if theirs is None else\ttests/test_m2.py'
   $'KGE-06：M2 不核对 manifest 摘要\tknowledge/m2.py\t    if pages_src is None or theirs_manifest is None or theirs_manifest == pages_src.sha256:\t    if True:\ttests/test_m2.py'
   $'KGE-06：M2 摘要不合格式也收\tknowledge/m2.py\t    if digest is not None and (not isinstance(digest, str) or not SHA256.fullmatch(digest)):\t    if False:\ttests/test_m2.py'
+  # LT-03 健康端点（specs/launch-lt03-cloud-staging 范围第 4 条；假连接池，不连库）
+  $'健康：就绪不等启动前置\tknowledge/service/app.py\thealth.pool_alive(state.get("ready_pool")))\thealth.pool_alive(state.get("ready_pool") or pool))\ttests/test_health.py'
+  $'健康：关闭后仍就绪\tknowledge/service/app.py\t            state.pop("ready_pool", None)\n\t\ttests/test_health.py'
+  $'健康：就绪不查库\tknowledge/service/health.py\t    return pool is not None and await pool.fetchval("SELECT 1") == 1\t    return pool is not None\ttests/test_health.py'
+  $'健康：就绪不限时\tknowledge/service/health.py\t        return await asyncio.wait_for(probe(), timeout) is True\t        return await probe() is True\ttests/test_health.py'
+  $'健康：存活也查库\tknowledge/service/health.py\t    async def healthz() -> JSONResponse:\n        return alive()\t    async def healthz() -> JSONResponse:\n        return await ready(probe)\ttests/test_health.py'
+  # LT-03 决定记录（续）第 6 条：staging 连库 TLS；契约审查阻断 2：额外允许 Host（Service clusterIP）
+  $'连库：staging 不查 TLS\tknowledge/service/config.py\t    if env == STAGING and not db_tls_ok(url):\t    if False:\ttests/test_staging_env.py'
+  $'连库：CA 不限固定路径\tknowledge/service/config.py\t            and q.get("sslrootcert") == [RDS_CA_PATH] and os.path.isfile(RDS_CA_PATH))\t            and os.path.isfile(RDS_CA_PATH))\ttests/test_staging_env.py'
+  $'连库：启动不查 TLS\tknowledge/service/app.py\t        check_db_tls(settings.database_url, settings.env)  # LT-03\t        pass  # LT-03\ttests/test_staging_env.py'
+  $'额外 Host：收任意写法\tknowledge/service/config.py\t    if not private_ipv4(raw):\n        raise RuntimeError("KNOWLEDGE_EXTRA_HOST\t    if False:\n        raise RuntimeError("KNOWLEDGE_EXTRA_HOST\ttests/test_staging_env.py'
+  $'额外 Host：不进允许列表\tknowledge/service/mcp_server.py\t    if extra:\n        names.append(extra)\t    pass\ttests/test_staging_env.py'
+  $'额外 Host：MCP 的允许列表没带上\tknowledge/service/mcp_server.py\t    hosts = allowed_hosts(host, extra)\t    hosts = allowed_hosts(host)\ttests/test_staging_env.py'
+  $'健康：不注册健康端点（落到 MCP 令牌前置）\tknowledge/service/app.py\t    health.register(app, lambda: health.pool_alive(state.get("ready_pool")))\n\t\ttests/test_health.py'
 )
 
 # 知识服务读工具（PR ②）：需要一次性 Postgres
@@ -186,7 +200,7 @@ M_DB=(
   $'审查：部分给分规则的多余键被丢掉\tknowledge/service/tools.py\tset(rule) == {"mode"} and \t\ttests/test_service_db.py'
   $'审查：关键词对象写法被展开\tknowledge/service/tools.py\t    if not isinstance(value, list) or not all(isinstance(w, str) for w in value):\n        raise LossyMapping("keyword_family")\t    if isinstance(value, dict):\n        value = [w for k in sorted(value) for w in value[k]]\ttests/test_service_db.py'
   $'审查：MCP 列出个人层工具\tknowledge/service/mcp_server.py\t    public = {name: t for name, t in contract.tools.items() if name in PUBLIC_TOOLS}\t    public = dict(contract.tools)\ttests/test_service_mcp.py'
-  $'审查：整个应用不校验 Host\tknowledge/service/app.py\t    app.add_middleware(HostGuard, allowed=allowed_hosts(settings.host))\n\t\ttests/test_service_mcp.py'
+  $'审查：整个应用不校验 Host\tknowledge/service/app.py\t    app.add_middleware(HostGuard, allowed=allowed_hosts(settings.host, settings.extra_host))\n\t\ttests/test_service_mcp.py'
   $'审查：node.resolve 不带分词器版本\tknowledge/service/tools.py\t"source_version": f"{graph_source(subject, v)};{tokenizer_source()}"\t"source_version": graph_source(subject, v)\ttests/test_service_db.py'
   $'页面对账：快照导出照发被扣页面的新内容\tknowledge/compiler/snapshot.py\t            if PurePosixPath(name).stem in held:\t            if False:\ttests/test_service_e2e.py'
   $'页面对账：被扣页面不沿用上一份快照\tknowledge/compiler/snapshot.py\t        for pid, (raw, entry) in sorted(carried.items()):\t        for pid, (raw, entry) in sorted({}.items()):\ttests/test_service_e2e.py'

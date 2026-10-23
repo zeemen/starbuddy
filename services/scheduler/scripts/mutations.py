@@ -22,9 +22,11 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parents[1]          # services/scheduler
 REPO = HERE.parents[1]
 PY = HERE / ".venv" / "bin" / "python"
-PURE_TESTS = ["tests/test_schedule.py", "tests/test_config.py", "tests/test_runner.py", "tests/test_staging_env.py"]  # 后者：LT-01 staging
+PURE_TESTS = ["tests/test_schedule.py", "tests/test_config.py", "tests/test_runner.py", "tests/test_staging_env.py",  # LT-01 staging
+              "tests/test_health.py"]  # LT-03 健康监听
 DB_TESTS = ["tests/test_db_e2e.py"]
 S, C, R, L, M = "scheduler/schedule.py", "scheduler/config.py", "scheduler/runner.py", "scheduler/loop.py", "scheduler/__main__.py"
+H = "scheduler/health.py"
 Y = "config/schedule.synthetic.yaml"
 
 PURE: dict[str, list[tuple[str, str, str]]] = {
@@ -128,6 +130,22 @@ PURE: dict[str, list[tuple[str, str, str]]] = {
     "--once 也核对全部任务": [(M, "    for job in selected:\n        try:\n            run.check(job)",
                           "    for job in cfg.jobs.values():\n        try:\n            run.check(job)")],
     "dry-run 列出变量的值": [(M, "\"env\": sorted(child_env(job, env))", "\"env\": sorted(f\"{k}={v}\" for k, v in child_env(job, env).items())")],
+    # LT-03 健康监听（tests/test_health.py）
+    "健康监听配置不合格不按拒绝处理（退出码不是 2）": [(M, "    except (health.HealthConfigError, PreflightError) as e:", "    except PreflightError as e:")],
+    "健康监听端口不限范围": [(H, "not 1 <= int(raw_port) <= 65535", "False")],
+    "健康监听地址不经内网口径": [(H, "    return _listen_host(environ.get(HOST_VAR), env), int(raw_port)",
+                          "    return environ.get(HOST_VAR) or \"127.0.0.1\", int(raw_port)")],
+    "就绪不看循环在不在跑": [(H, "        if not self.running:\n            return False\n        async with self._lock:", "        async with self._lock:"),
+                       (H, "            return ok and self.running", "            return ok")],
+    "就绪不查库": [(H, "            ok = await self.db_probe() is True\n", "            ok = True\n")],
+    "就绪探测不限并发": [(H, "        async with self._lock:", "        async with contextlib.nullcontext():")],
+    "就绪探测不复用结果": [(H, "            if last is not None and time.monotonic() - last[0] < READY_CACHE:", "            if False:")],
+    "就绪回显异常": [(H, "    except Exception:  # noqa: BLE001 —— 不区分原因、不回显异常\n        ok = False\n    return response(200",
+                "    except Exception as e:  # noqa: BLE001\n        return response(503, {\"status\": \"not_ready\", \"error\": str(e)})\n    return response(200")],
+    "健康端点按前缀匹配": [(H, "    if path not in (HEALTH_PATH, READY_PATH):", "    if not path.startswith((HEALTH_PATH, READY_PATH)):")],
+    "健康端点不限方法": [(H, "    if method != \"GET\":", "    if False:")],
+    "健康探针连接串不核对本机": [(H, "    check_local_url(\"SCHEDULER_DATABASE_URL\", url, env)\n", "")],
+    "收到停止仍就绪": [(L, "        if health is not None:\n            health.running = False\n        stop.set()", "        stop.set()")],
 }
 
 DB: dict[str, list[tuple[str, str, str]]] = {

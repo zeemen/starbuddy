@@ -16,10 +16,40 @@ from test_runner import ENV, Locks, job, runner
 
 pytestmark = pytest.mark.anyio
 
-STAGING = {**ENV, "SCHEDULER_ENV": "staging", "SCHEDULER_DATABASE_URL": "postgresql://scheduler_app@172.28.0.20:5432/x",
-           "INSIGHT_ENV": "staging", "INSIGHT_DATABASE_URL": "postgresql://insight_app@172.28.0.20:5432/x",
-           "LEARNING_ENV": "staging", "LEARNING_DATABASE_URL": "postgresql://learning_app@172.28.0.20:5432/x",
-           "REVIEW_CONSOLE_ENV": "staging", "REVIEW_CONSOLE_KGE_DATABASE_URL": "postgresql://kge_app@172.28.0.20/x"}
+def _system_ca() -> str:
+    """LT-03 决定记录（续）第 6 条：staging 连库串必须 verify-full + 固定 CA（/run/rds-ca/ca.pem，文件存在）；测试把固定路径换成
+    本机系统 CA 包（只读；asyncpg 解析连接串时会加载它）"""
+    import os
+    import ssl
+    for p in (ssl.get_default_verify_paths().cafile, "/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-bundle.crt"):
+        if p and os.path.isfile(p):
+            return p
+    return "/nonexistent/ca.pem"
+
+
+CA = _system_ca()
+TLS = f"?sslmode=verify-full&sslrootcert={CA}"
+STAGING = {**ENV, "SCHEDULER_ENV": "staging", "SCHEDULER_DATABASE_URL": f"postgresql://scheduler_app@172.28.0.20:5432/x{TLS}",
+           "INSIGHT_ENV": "staging", "INSIGHT_DATABASE_URL": f"postgresql://insight_app@172.28.0.20:5432/x{TLS}",
+           "LEARNING_ENV": "staging", "LEARNING_DATABASE_URL": f"postgresql://learning_app@172.28.0.20:5432/x{TLS}",
+           "REVIEW_CONSOLE_ENV": "staging", "REVIEW_CONSOLE_KGE_DATABASE_URL": f"postgresql://kge_app@172.28.0.20/x{TLS}"}
+
+
+@pytest.fixture(autouse=True)
+def rds_ca(monkeypatch):
+    from scheduler.runner import _local_checks
+    _local_checks()  # 审核台命令行的核对（learning 包）加进 sys.path
+    from learning import netpolicy
+    if not CA.startswith("/nonexistent"):
+        monkeypatch.setattr(netpolicy, "RDS_CA_PATH", CA)
+
+
+async def test_staging_plain_db_url_refused():
+    """决定记录（续）第 6 条：staging 下没有 TLS（verify-full + 固定 CA）的连接串，启动核对拒绝（不连库）"""
+    lk = Locks()
+    r, o, _ = runner(env={**STAGING, "SCHEDULER_DATABASE_URL": "postgresql://scheduler_app@172.28.0.20:5432/x"}, locks=lk)
+    res = await r.run(job("env"))
+    assert res.outcome == "refused" and not lk.calls
 
 
 def signed_schedule(tmp_path: Path) -> Path:

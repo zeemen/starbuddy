@@ -24,6 +24,9 @@
                                    单条超过它的 1/64（缺省 1 MiB）不入缓存
   KNOWLEDGE_READ_CACHE_LOG_EVERY   每多少次缓存判断打一条计数日志，缺省 1000
   以上数值只收 ASCII 十进制数字，不合格即拒绝启动
+  KNOWLEDGE_EXTRA_HOST             仅 staging：Host 允许列表（含 MCP 的 DNS 重绑定防护）另收的一个 RFC 1918 IPv4 字面量
+                                   （k8s 里填本服务 Service 的 clusterIP；LT-03）
+staging 下 KNOWLEDGE_DATABASE_URL 必须带 sslmode=verify-full&sslrootcert=/run/rds-ca/ca.pem（CA 文件须存在），建池前核对（LT-03）。
 """
 from __future__ import annotations
 
@@ -50,6 +53,38 @@ def private_ipv4(host: str) -> bool:
     except ValueError:
         return False
     return str(ip) == host and any(ip in n for n in _PRIVATE_V4)
+# 连库 TLS（LT-03 决定记录（续）第 6 条；与 learning/netpolicy.py 同一口径，deploy/tests/test_health_shared.py 核对一致）
+RDS_CA_PATH = "/run/rds-ca/ca.pem"
+
+
+def db_tls_ok(url: str) -> bool:
+    """sslmode 恰好一个且为 verify-full、sslrootcert 恰好一个且等于 RDS_CA_PATH，且这个文件存在"""
+    from urllib.parse import parse_qs, urlsplit
+    try:
+        u = urlsplit(url)
+        q = parse_qs(u.query, keep_blank_values=True)
+    except ValueError:
+        return False
+    return (u.scheme in ("postgres", "postgresql") and q.get("sslmode") == ["verify-full"]
+            and q.get("sslrootcert") == [RDS_CA_PATH] and os.path.isfile(RDS_CA_PATH))
+
+
+def check_db_tls(url: str, env: str) -> None:
+    if env == STAGING and not db_tls_ok(url):
+        raise RuntimeError(f"KNOWLEDGE_DATABASE_URL：staging 的连库串必须带 sslmode=verify-full&sslrootcert={RDS_CA_PATH}（且该 CA 文件存在）")
+
+
+def parse_extra_host(raw: str | None, env: str) -> str | None:
+    """KNOWLEDGE_EXTRA_HOST（LT-03 契约审查阻断 2）：仅 staging；只收一个 RFC 1918 IPv4 字面量（k8s 里是本服务 Service 的 clusterIP）"""
+    if raw is None or raw == "":
+        return None
+    if env != STAGING:
+        raise RuntimeError("KNOWLEDGE_EXTRA_HOST 只有 staging 能设")
+    if not private_ipv4(raw):
+        raise RuntimeError("KNOWLEDGE_EXTRA_HOST 只收一个 RFC 1918 内网 IPv4 字面量")
+    return raw
+
+
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8790
 DEFAULT_CACHE_SIZE = 1024
@@ -107,6 +142,7 @@ class Settings:
     read_cache_size: int = DEFAULT_CACHE_SIZE
     read_cache_max_bytes: int = DEFAULT_CACHE_MAX_BYTES
     read_cache_log_every: int = DEFAULT_CACHE_LOG_EVERY
+    extra_host: str | None = None  # LT-03：staging 另收的 Host（Service clusterIP）
 
     @staticmethod
     def from_env(environ: dict[str, str] | None = None) -> "Settings":
@@ -162,7 +198,8 @@ class Settings:
                         host=host, port=int(port_raw),
                         page_snapshot_pointer=Path(pointer) if pointer else None, snapshot_hmac_key=key,
                         page_snapshot_root=Path(root) if root else None, read_cache=cache_flag == "1",
-                        read_cache_size=size, read_cache_max_bytes=max_bytes, read_cache_log_every=log_every)
+                        read_cache_size=size, read_cache_max_bytes=max_bytes, read_cache_log_every=log_every,
+                        extra_host=parse_extra_host(e.get("KNOWLEDGE_EXTRA_HOST"), env))
 
 
 def _bounded_int(e: dict[str, str], name: str, default: int, low: int, high: int) -> int:

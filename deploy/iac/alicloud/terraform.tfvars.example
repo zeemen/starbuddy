@@ -1,0 +1,23 @@
+# 由人填写后另存为 terraform.tfvars（.gitignore 已排除，不提交）。这里只有占位，没有任何真实值。
+# 凭据不放这里：执行 plan / apply 的人经 RAM 角色（STS 临时凭据）提供（README.md 第 3 节）。
+
+k8s_version        = "<由人填写：ACK 控制台可选的集群版本>"
+node_key_pair_name = "<由人填写：ECS 密钥对名称>"
+oss_bucket_name    = "<由人填写：全局唯一的私有桶名>"
+
+# 办公网 / VPN 的来源网段（掩码 /16 及更窄；不收 0.0.0.0/0）
+office_vpn_cidrs = ["<由人填写：办公网或 VPN 网段，例如 x.x.x.x/24>"]
+
+# 模型供应商接入主机名（开通后由人填写；与路由表 allowed_hosts、docs/compliance/vendors.md、k8s 学习服务 Pod 注解一致）
+model_egress_fqdns = []
+
+# 阿里云服务内网端点（ACK 管控、SLS、KMS、STS、OSS）解析出的地址：只在 100.64.0.0/10 里、掩码不宽于 /24；节点安全组只对它们开 TCP 443
+cloud_service_endpoint_cidrs = ["<由人填写：内网端点地址，例如 100.x.x.x/32>"]
+
+# 为 NAT 网关开启 NAT 边界防火墙之后才改成 true；false 时 plan 在变量校验处停下（出网不会被静默放开）
+nat_firewall_confirmed = false
+
+# 可按需覆盖（缺省值见 variables.tf）
+# zone_ids            = ["cn-beijing-h", "cn-beijing-i"]
+# node_instance_types = ["ecs.g7.xlarge"]
+# rds_instance_type   = "pg.n2.2c.2m"

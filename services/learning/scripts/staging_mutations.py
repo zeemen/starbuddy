@@ -11,9 +11,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import practice_mutations as PM  # noqa: E402
 
-TESTS = ["tests/test_staging_env.py"]
+TESTS = ["tests/test_staging_env.py", "tests/test_health.py"]  # 后者：LT-03 健康端点
 NP, CF, MC, RC, RM = ("learning/netpolicy.py", "learning/config.py", "learning/mastery/config.py", "review_console/config.py",
                       "review_console/__main__.py")
+AP, HL, RA = "learning/app.py", "learning/health.py", "review_console/app.py"
 
 MUTATIONS: dict[str, list[tuple[str, str, str]]] = {
     "pilot 也当 staging": [(NP, 'SERVICE_ENVS = LOCAL_ENVS + (STAGING,)', 'SERVICE_ENVS = LOCAL_ENVS + (STAGING, "pilot")')],
@@ -29,13 +30,59 @@ MUTATIONS: dict[str, list[tuple[str, str, str]]] = {
     "适配器地址不经校验": [(CF, "                if not service_url_ok(url, env):", "                if False:")],
     "掌握配置在 pilot 也加载": [(MC, '_need(env in ("dev", TEST_ENV, "staging"),', '_need(env in ("dev", TEST_ENV, "staging", "pilot"),')],
     "审核台监听地址不经校验": [(RC, '        host = listen_host(e.get("REVIEW_CONSOLE_HOST"), env, "REVIEW_CONSOLE_HOST")', '        host = e.get("REVIEW_CONSOLE_HOST") or "127.0.0.1"')],
-    "命令行 staging 连接串不分环境": [(RM, "    if env == STAGING and private_ipv4(host):\n        return True", "    if private_ipv4(host):\n        return True")],
+    "命令行 staging 连接串不分环境": [(RM, "    if env == STAGING:\n        return _staging_host_ok(host)", "    if env == STAGING or private_ipv4(host):\n        return _staging_host_ok(host)")],
     "服务端核对 staging 放过公网": [(RM, "(env == STAGING and private_ipv4(addr))", "(env == STAGING)")],
     # 审查后补（契约 A2、安全 S10）
     "镜像环境标记不查": [(NP, "    if marked is not None and marked != env:", "    if False:")],
     "staging 诊断来源缺省用合成夹具": [(CF, '("knowledge" if env == STAGING else "fixture")', '"fixture"')],
     "对账命令 staging 不核对库主机": [("learning/jobs.py", '    if mode == "staging" and pool is None:\n        check_staging_db_url', '    if False:\n        check_staging_db_url')],
     "对账命令 staging 主机核对放过公网": [("learning/jobs.py", '        local_only(url, "staging")', "        pass")],
+    # LT-03 托管库只给主机名时的连接核对（补 LT-01 待人确认 6；tests/test_staging_env.py）
+    "staging 命令行不要求 TLS": [(RM, "    if env == STAGING and not tls_verified(query):", "    if False:")],
+    "dev 也收托管库主机名": [(RM, "    if host in LOCAL_NAMES or host.startswith(\"/\"):\n        return True",
+                         "    if host in LOCAL_NAMES or host.startswith(\"/\") or _DNS_NAME.fullmatch(host):\n        return True")],
+    "verify-ca / require 也算校验主机名": [(RM, 'return mode == ["verify-full"] and', 'return mode in (["verify-full"], ["verify-ca"], ["require"]) and')],
+    "CA 不限固定路径": [(RM, "roots == [netpolicy.RDS_CA_PATH] and os.path.isfile(netpolicy.RDS_CA_PATH)", "len(roots) == 1 and os.path.isfile(roots[0])")],
+    "CA 文件不存在也收": [(RM, "roots == [netpolicy.RDS_CA_PATH] and os.path.isfile(netpolicy.RDS_CA_PATH)", "roots == [netpolicy.RDS_CA_PATH]")],
+    "主机名不限格式（收裸名字、大写）": [(RM, "    if _DNS_NAME.fullmatch(host) is None:\n        return False\n", "")],
+    "主机名不在连接前解析核对": [(RM, "    return bool(addrs) and all(private_ipv4(a) for a in addrs)", "    return True")],
+    "解析结果混有公网也收": [(RM, "    return bool(addrs) and all(private_ipv4(a) for a in addrs)", "    return bool(addrs) and any(private_ipv4(a) for a in addrs)")],
+    "staging 命令行收 Unix socket": [(RM, "    if env == STAGING:\n        return _staging_host_ok(host)", "    if env == STAGING and not host.startswith(\"/\"):\n        return _staging_host_ok(host)")],
+    # 决定记录（续）第 6 条：服务启动的连库 TLS（netpolicy.check_db_tls，学习服务与审核台后端）
+    "服务连库不要求 verify-full": [(NP, '    return (u.scheme in ("postgres", "postgresql") and q.get("sslmode") == ["verify-full"]',
+                              '    return (u.scheme in ("postgres", "postgresql") and q.get("sslmode") in (["verify-full"], ["require"])')],
+    "服务连库 CA 不限路径": [(NP, "            and q.get(\"sslrootcert\") == [RDS_CA_PATH] and os.path.isfile(RDS_CA_PATH))",
+                         "            and os.path.isfile(RDS_CA_PATH))")],
+    "服务连库 CA 文件可以不在": [(NP, "            and q.get(\"sslrootcert\") == [RDS_CA_PATH] and os.path.isfile(RDS_CA_PATH))",
+                           "            and q.get(\"sslrootcert\") == [RDS_CA_PATH])")],
+    "学习服务启动不查连库 TLS": [(AP, '        check_db_tls(settings.database_url, settings.env, "LEARNING_DATABASE_URL")', "        pass")],
+    "审核台启动不查连库 TLS": [(RA, '            check_db_tls(s.kge_database_url, s.env, "REVIEW_CONSOLE_KGE_DATABASE_URL")\n', "")],
+    # LT-03 健康端点（tests/test_health.py）
+    "就绪不等启动前置": [(AP, '        p = state.get("ready_pool")\n        if not await health.pool_alive(p):',
+                   '        p = state.get("ready_pool") or pool\n        if not await health.pool_alive(p):')],
+    "关闭后仍就绪": [(AP, '            state.pop("ready_pool", None)\n', "")],
+    "就绪不查 0058 执行权": [(AP, "        return await p.fetchval(READY_METER_SQL, store.METER_CHECK_FUNCTION) is True", "        return True")],
+    "就绪查 0058 时函数不存在就报错": [(AP, "THEN false\"\n                   \" ELSE has_function_privilege(current_user, to_regprocedure($1), 'EXECUTE')",
+                                "THEN true\"\n                   \" ELSE has_function_privilege(current_user, to_regprocedure($1), 'EXECUTE')")],
+    "就绪不查库": [(HL, '    return pool is not None and await pool.fetchval("SELECT 1") == 1', "    return pool is not None")],
+    "就绪不限时": [(HL, "        return await asyncio.wait_for(probe(), timeout) is True", "        return await probe() is True")],
+    "就绪回显异常": [(HL, "    except Exception:  # noqa: BLE001 —— 连接断开、超时、池已关闭：都只是“没就绪”\n        return False",
+                "    except Exception as e:  # noqa: BLE001\n        raise RuntimeError(str(e))")],
+    "就绪不做 single-flight": [(HL, "        if self._task is None:\n            self._task = asyncio.ensure_future(self._run())\n"
+                                "        return await asyncio.shield(self._task)", "        return await self._run()")],
+    "就绪不缓存": [(HL, "        if last is not None and self.clock() - last[0] < READY_CACHE:", "        if False:")],
+    "存活也查库": [(HL, "    async def healthz() -> JSONResponse:\n        return alive()",
+               "    async def healthz() -> JSONResponse:\n        return await ready(probe)")],
+    "审核台健康端点不过 Host 校验": [(RA, 'if (request.method, request.url.path) in HEALTH_ROUTES and host_name(request.headers.get("host", "")) in hosts:',
+                          "if (request.method, request.url.path) in HEALTH_ROUTES:")],
+    "审核台 dev 也收监听地址作 Host": [(RA, "    if settings is not None and settings.env == STAGING:", "    if settings is not None:")],
+    "审核台不收 Service 地址作 Host": [(RA, "        if settings.extra_host:\n            extra.add(settings.extra_host)", "        pass")],
+    "审核台额外 Host 收任意写法": [(RC, "    if not private_ipv4(raw):\n        raise RuntimeError(\"REVIEW_CONSOLE_EXTRA_HOST", "    if False:\n        raise RuntimeError(\"REVIEW_CONSOLE_EXTRA_HOST")],
+    "审核台额外 Host dev 也能设": [(RC, "    if env != STAGING:\n        raise RuntimeError(\"REVIEW_CONSOLE_EXTRA_HOST", "    if False:\n        raise RuntimeError(\"REVIEW_CONSOLE_EXTRA_HOST")],
+    "审核台 Host 收任意内网地址": [(RA, '            if host_name(request.headers.get("host", "")) not in hosts:',
+                            '            if host_name(request.headers.get("host", "")) not in hosts and not private_ipv4(host_name(request.headers.get("host", "")).rsplit(":", 1)[0]):'),
+                           (RA, "from learning.netpolicy import STAGING", "from learning.netpolicy import STAGING, private_ipv4")],
+    "审核台就绪只看一个池": [(RA, "all([await health.pool_alive(p) for p in pair])", "all([await health.pool_alive(p) for p in pair[:1]])")],
 }
 
 # 前端启动包装（安全审查 A1、S7、S10）：apps/web/src/lib/serve-env.ts 与 consent-version.ts，断言 apps/web/tests/serve-env.test.ts 能发现

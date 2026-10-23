@@ -112,8 +112,96 @@ def test_rehearse_hosts_local_only(dsn, ok):
 
 def test_rehearse_remote_refused_before_connecting(monkeypatch, capsys):
     monkeypatch.setenv("MIGRATE_DSN", "postgresql://u@10.0.0.5/db")
-    assert M.main(["rehearse", "--target-label", "x-replica", "--replica", "--confirm", "x"]) == 2
+    assert M.main(["rehearse", "--target-label", "x-replica", "--replica", "--replica-host-allow", "10.0.0.9", "--confirm", "x"]) == 2
     assert "Unix socket 或回环" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------- LT-03 决定记录（续）第 5 条：副本限定与标记副本
+
+
+@pytest.mark.parametrize("argv", [
+    ["up", "--target-label", "staging-replica", "--confirm", "x"],
+    ["up", "--target-label", "staging-replica", "--replica", "--confirm", "x"],
+    ["down", "--target-label", "staging-replica", "--to", "0001", "--replica-host-allow", "10.0.0.5", "--confirm", "x"],
+    ["rehearse", "--target-label", "staging-replica", "--replica", "--confirm", "x"],
+    ["mark-replica", "--target-label", "staging-replica", "--replica", "--confirm", "x"],
+    ["mark-replica", "--target-label", "staging", "--replica", "--replica-host-allow", "10.0.0.5", "--confirm", "x"],
+    ["mark-replica", "--target-label", "other-replica", "--replica", "--replica-host-allow", "10.0.0.5", "--confirm", "x"],
+])
+def test_replica_label_needs_replica_flags_before_connecting(argv, monkeypatch, capsys):
+    monkeypatch.setenv("MIGRATE_DSN", "postgresql://u@10.0.0.5/db")
+    monkeypatch.setattr(M, "Psql", lambda *a, **k: pytest.fail("不能连库"))
+    assert M.main(argv) == 2
+    err = capsys.readouterr().err
+    assert "--replica" in err or "staging-replica" in err
+
+
+def test_replica_flags_rule():
+    M.replica_flags("plan", "staging-replica", False, [])  # 只读
+    M.replica_flags("up", "staging", False, [])  # 主实例不要求
+    M.replica_flags("up", "staging-replica", True, ["h"])
+    for action in ("up", "down", "rehearse"):
+        with pytest.raises(M.Refused):
+            M.replica_flags(action, "staging-replica", True, [])
+        with pytest.raises(M.Refused):
+            M.replica_flags(action, "staging-replica", False, ["h"])
+    with pytest.raises(M.Refused):
+        M.replica_flags("mark-replica", "staging-replica", True, [])
+
+
+def test_strict_replica_hosts():
+    M.strict_replica_hosts("postgresql://u@pgm-syn.example.invalid:5432/db", {"pgm-syn.example.invalid"})
+    M.strict_replica_hosts("postgresql://u@/db?host=/tmp/x", {"/tmp/x"})
+    for dsn, allow in [("postgresql://u@localhost/db", {"pgm-syn.example.invalid"}),           # 回环也不放过
+                       ("postgresql://u@/db", {"pgm-syn.example.invalid"}),                     # 缺省 socket
+                       ("postgresql://u@a.example.invalid,b.example.invalid/db", {"a.example.invalid"}),
+                       ("postgresql://u@a.example.invalid/db?hostaddr=10.0.0.5", {"a.example.invalid"})]:
+        with pytest.raises(M.Refused):
+            M.strict_replica_hosts(dsn, allow)
+
+
+def test_check_replica_server():
+    assert M.check_replica_server("10.20.96.7", {"10.20.96.7"}) == "10.20.96.7"
+    assert M.check_replica_server(None, {"/tmp/x"}) == "socket"
+    assert M.check_replica_server("", {"/tmp/x"}) == "socket"
+    for addr, allow in [("10.20.96.8", {"10.20.96.7"}),     # 连到了别的实例
+                        ("47.0.0.1", {"47.0.0.1"}),         # 公网
+                        (None, {"10.20.96.7"}),             # 放行的是主机却走了 socket
+                        ("10.20.96.7", {"/tmp/x"})]:
+        with pytest.raises(M.Refused):
+            M.check_replica_server(addr, allow)
+
+
+class _FakeDb:
+    def __init__(self, label, addr):
+        self.label, self.addr, self.executed = label, addr, []
+
+    def query(self, sql):
+        if "to_regclass('deploy_meta.target')" in sql:
+            return [["t"]]
+        if "FROM deploy_meta.target" in sql:
+            return [[self.label]]
+        if "inet_server_addr" in sql:
+            return [[self.addr]] if self.addr else []
+        raise AssertionError(sql)
+
+    def execute(self, sql):
+        self.executed.append(sql)
+        if "UPDATE deploy_meta.target" in sql:
+            self.label = "staging-replica"
+
+
+def test_mark_replica_flow(capsys):
+    db = _FakeDb("staging", "10.20.96.7")
+    with pytest.raises(M.Refused, match="确认串"):
+        M.mark_replica(db, {"10.20.96.7"}, "staging:mark-replica:staging-replica:10.20.96.9")
+    assert db.executed == [] and "--confirm staging:mark-replica:staging-replica:10.20.96.7" in capsys.readouterr().out
+    assert M.mark_replica(db, {"10.20.96.7"}, "staging:mark-replica:staging-replica:10.20.96.7") == 0
+    assert db.label == "staging-replica" and len(db.executed) == 1 and "WHERE label = 'staging'" in db.executed[0]
+    with pytest.raises(M.Refused, match="只接受"):  # 已标记过、或主实例以外的标签
+        M.mark_replica(db, {"10.20.96.7"}, "staging:mark-replica:staging-replica:10.20.96.7")
+    with pytest.raises(M.Refused):
+        M.mark_replica(_FakeDb("staging", "10.20.96.8"), {"10.20.96.7"}, "x")
 
 
 def test_no_builtin_connection_strings():

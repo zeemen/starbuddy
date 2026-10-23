@@ -40,6 +40,31 @@ def service_url_ok(url: str, env: str) -> bool:
     return bool(m) and private_ipv4(m.group(1))
 
 
+# 连库 TLS（LT-03 决定记录（续）第 6 条）：staging 的连接串必须要求 TLS 并校验证书与主机名，CA 用固定路径（k8s 把 ConfigMap
+# starbuddy-rds-ca 只读挂到这里）；文件不存在同样拒绝。dev / test 不检查。测试可以把 RDS_CA_PATH 换成本机的系统 CA 包。
+RDS_CA_PATH = "/run/rds-ca/ca.pem"
+TLS_REQUIRED = f"staging 的连库串必须带 sslmode=verify-full&sslrootcert={RDS_CA_PATH}（且该 CA 文件存在）"
+
+
+def db_tls_ok(url: str) -> bool:
+    """连接串的查询参数里 sslmode 恰好一个且为 verify-full、sslrootcert 恰好一个且等于 RDS_CA_PATH，且这个文件存在"""
+    import os
+    from urllib.parse import parse_qs, urlsplit
+    try:
+        u = urlsplit(url)
+        q = parse_qs(u.query, keep_blank_values=True)
+    except ValueError:
+        return False
+    return (u.scheme in ("postgres", "postgresql") and q.get("sslmode") == ["verify-full"]
+            and q.get("sslrootcert") == [RDS_CA_PATH] and os.path.isfile(RDS_CA_PATH))
+
+
+def check_db_tls(url: str, env: str, name: str) -> None:
+    """staging 下连接串不合 db_tls_ok 即拒绝启动（信息不带连接串）；其他环境不检查"""
+    if env == STAGING and not db_tls_ok(url):
+        raise RuntimeError(f"{name}：{TLS_REQUIRED}")
+
+
 IMAGE_ENV_VAR = "STARBUDDY_IMAGE_ENV"
 
 

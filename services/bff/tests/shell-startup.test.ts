@@ -37,13 +37,38 @@ const stagingVars = (extra: Record<string, string> = {}) => ({
   BFF_STAGING_OTP_FILE: OTP_FILE, BFF_STAGING_OTP_AUDIT_FILE: join(tmp, `audit-${randomBytes(4).toString('hex')}.jsonl`), ...extra });
 const CONFIG_ERR = /STARBUDDY_|BFF_HOST|BFF_CONSENT|短信|OTP|BFF_AUTH_CONFIG|BFF_SHELL_CONFIG|镜像环境标记/;
 
-test('staging：配了白名单固定码与上线测试开关能过启动校验（之后因连不上数据库才退出）', () => {
-  const r = start(stagingVars({ STARBUDDY_TRUST_UI: 'why,dispute,reconcile,weekly,data_rights,report', STARBUDDY_STARMAP: 'starmap_v1',
-                                STARBUDDY_PRACTICE: 'practice', STARBUDDY_RETEST_UI: 'retest', STARBUDDY_TODAY_ORCH: 'today_orch',
-                                BFF_HOST: '172.28.0.30', STARBUDDY_IMAGE_ENV: 'staging',
-                                BFF_CONSENT_VERSIONS: 'privacy_policy=privacy@2026-10-v1,guardian_consent_under14=guardian-consent@2026-10-v1' }));
-  assert.equal(r.status, 2);
-  assert.doesNotMatch(r.stderr, CONFIG_ERR, r.stderr);
+test('staging：配了白名单固定码与上线测试开关能过配置校验（之后停在连库 TLS 核对：本机没有固定 CA，建池之前拒绝）', () => {
+  const vars = { STARBUDDY_TRUST_UI: 'why,dispute,reconcile,weekly,data_rights,report', STARBUDDY_STARMAP: 'starmap_v1',
+                 STARBUDDY_PRACTICE: 'practice', STARBUDDY_RETEST_UI: 'retest', STARBUDDY_TODAY_ORCH: 'today_orch',
+                 BFF_HOST: '172.28.0.30', STARBUDDY_IMAGE_ENV: 'staging',
+                 BFF_CONSENT_VERSIONS: 'privacy_policy=privacy@2026-10-v1,guardian_consent_under14=guardian-consent@2026-10-v1' };
+  // LT-03 决定记录（续）第 6 条：不带 TLS 的连接串、带了 TLS 但 CA 文件不在固定路径，都在建池之前拒绝，消息不带连接串
+  for (const dbUrl of ['postgresql://bff_app@172.28.0.20/x',
+                       'postgresql://bff_app@172.28.0.20/x?sslmode=verify-full&sslrootcert=/run/rds-ca/ca.pem']) {
+    const r = start(stagingVars({ ...vars, BFF_DATABASE_URL: dbUrl }));
+    assert.equal(r.status, 2);
+    assert.doesNotMatch(r.stderr, CONFIG_ERR, r.stderr);
+    assert.match(r.stderr, /BFF_DATABASE_URL 必须带 sslmode=verify-full&sslrootcert=\/run\/rds-ca\/ca\.pem/, r.stderr);
+    assert.ok(!r.stderr.includes('172.28.0.20'), '不回显连接串');
+  }
+});
+
+test('dbTlsOk 单元：staging 只收 verify-full + 固定 CA 路径（文件存在）；其余环境不核对', async () => {
+  const { dbTlsOk, RDS_CA_PATH } = await import('../src/http/config.ts');
+  assert.equal(RDS_CA_PATH, '/run/rds-ca/ca.pem');
+  const yes = () => true;
+  const ok = `postgresql://bff_app@pgm-syn.example.invalid:5432/x?sslmode=verify-full&sslrootcert=${RDS_CA_PATH}`;
+  assert.equal(dbTlsOk('staging', ok, RDS_CA_PATH, yes), true);
+  assert.equal(dbTlsOk('staging', ok, RDS_CA_PATH, () => false), false, 'CA 文件不存在');
+  for (const bad of ['postgresql://bff_app@172.28.0.20/x', 'postgresql://bff_app@172.28.0.20/x?sslmode=require&sslrootcert=/run/rds-ca/ca.pem',
+                     'postgresql://bff_app@172.28.0.20/x?sslmode=verify-ca&sslrootcert=/run/rds-ca/ca.pem',
+                     'postgresql://bff_app@172.28.0.20/x?sslmode=verify-full&sslrootcert=/etc/other.pem',
+                     'postgresql://bff_app@172.28.0.20/x?sslmode=verify-full',
+                     'postgresql://bff_app@172.28.0.20/x?sslmode=verify-full&sslrootcert=/run/rds-ca/ca.pem&sslmode=disable',
+                     'mysql://bff_app@172.28.0.20/x?sslmode=verify-full&sslrootcert=/run/rds-ca/ca.pem', 'not a url']) {
+    assert.equal(dbTlsOk('staging', bad, RDS_CA_PATH, yes), false, bad);
+  }
+  for (const env of ['dev', 'test'] as const) assert.equal(dbTlsOk(env, 'postgresql://nobody@/none?host=/nonexistent'), true);
 });
 
 test('staging 反例：开发开关、范围外开关、坏的监听地址、合成同意版本、坏的 OTP 文件都拒绝启动', () => {

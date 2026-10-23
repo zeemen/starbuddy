@@ -12,7 +12,7 @@ import asyncio
 import contextlib
 import signal
 from datetime import datetime, timezone
-from typing import Callable, Mapping
+from typing import Any, Callable, Mapping
 
 from .config import Job
 from .runner import EXIT, RunResult, Runner, _iso
@@ -68,10 +68,24 @@ class Loop:
             await asyncio.gather(*pending, return_exceptions=True)
 
 
-async def serve_forever(loop_: Loop) -> None:
+async def serve_forever(loop_: Loop, health: Any = None) -> None:
+    """health：可选的健康监听（scheduler/health.py 的 HealthServer，LT-03）。先起监听，循环开始时标记就绪；
+    收到信号即标记未就绪（不再启动新任务），等正在跑的任务结束后关监听"""
     stop = asyncio.Event()
     ev = asyncio.get_running_loop()
+
+    def on_signal() -> None:
+        if health is not None:
+            health.running = False
+        stop.set()
     for sig in (signal.SIGTERM, signal.SIGINT):
         with contextlib.suppress(NotImplementedError):
-            ev.add_signal_handler(sig, stop.set)
-    await loop_.serve(stop)
+            ev.add_signal_handler(sig, on_signal)
+    if health is not None:
+        await health.start()
+        health.running = True
+    try:
+        await loop_.serve(stop)
+    finally:
+        if health is not None:
+            await health.stop()

@@ -21,6 +21,8 @@
   INSIGHT_MONTHLY_TEMPLATES      月度计划模板库（YAML；缺省 templates/monthly_plan.v0.yaml，未签字只允许 test 环境）
   INSIGHT_HOST                   监听地址，缺省 127.0.0.1；不接受 0.0.0.0、:: 等通配地址（只在服务内网监听，由平台侧网关转发）
   INSIGHT_PORT                   缺省 8791（契约 servers）
+  INSIGHT_EXTRA_HOST             仅 staging：Host 允许列表另收的一个 RFC 1918 IPv4 字面量（k8s 里填本服务 Service 的 clusterIP；LT-03）
+staging 下 INSIGHT_DATABASE_URL 必须带 sslmode=verify-full&sslrootcert=/run/rds-ca/ca.pem（CA 文件须存在），建池前核对（LT-03）。
 """
 from __future__ import annotations
 
@@ -50,6 +52,39 @@ def private_ipv4(host: str) -> bool:
     except ValueError:
         return False
     return str(ip) == host and any(ip in n for n in _PRIVATE_V4)
+
+
+# 连库 TLS（LT-03 决定记录（续）第 6 条；与 learning/netpolicy.py 同一口径，deploy/tests/test_health_shared.py 核对一致）
+RDS_CA_PATH = "/run/rds-ca/ca.pem"
+
+
+def db_tls_ok(url: str) -> bool:
+    """sslmode 恰好一个且为 verify-full、sslrootcert 恰好一个且等于 RDS_CA_PATH，且这个文件存在"""
+    from urllib.parse import parse_qs, urlsplit
+    try:
+        u = urlsplit(url)
+        q = parse_qs(u.query, keep_blank_values=True)
+    except ValueError:
+        return False
+    return (u.scheme in ("postgres", "postgresql") and q.get("sslmode") == ["verify-full"]
+            and q.get("sslrootcert") == [RDS_CA_PATH] and os.path.isfile(RDS_CA_PATH))
+
+
+def check_db_tls(url: str, env: str) -> None:
+    if env == STAGING and not db_tls_ok(url):
+        raise RuntimeError(f"INSIGHT_DATABASE_URL：staging 的连库串必须带 sslmode=verify-full&sslrootcert={RDS_CA_PATH}（且该 CA 文件存在）")
+
+
+def parse_extra_host(raw: str | None, env: str) -> str | None:
+    """INSIGHT_EXTRA_HOST（LT-03 契约审查阻断 2）：仅 staging；只收一个 RFC 1918 IPv4 字面量（k8s 里是本服务 Service 的 clusterIP，
+    调用方经它访问时 Host 头就是它）；不设 = 只认监听地址"""
+    if raw is None or raw == "":
+        return None
+    if env != STAGING:
+        raise RuntimeError("INSIGHT_EXTRA_HOST 只有 staging 能设")
+    if not private_ipv4(raw):
+        raise RuntimeError("INSIGHT_EXTRA_HOST 只收一个 RFC 1918 内网 IPv4 字面量")
+    return raw
 
 
 def check_staging_host(host: str) -> str:
@@ -106,6 +141,7 @@ class Settings:
     learning: tuple[str, str] | None = None  # (学习服务地址, 验证任务接口令牌)；KGE-04 第二步 PR 3
     # 月度计划开关（LT-01 决定记录第 9 条）：dev / test 恒开（行为不变）；staging 只有显式设了 INSIGHT_MONTHLY_PLAN 才开
     monthly_enabled: bool = True
+    extra_host: str | None = None  # LT-03：staging 另收的 Host（Service clusterIP）
 
     @staticmethod
     def from_env(environ: dict[str, str] | None = None) -> "Settings":
@@ -161,4 +197,5 @@ class Settings:
                         monthly_path=Path(e.get("INSIGHT_MONTHLY_PLAN") or CONFIG_DIR / "monthly-plan.synthetic.json"),
                         monthly_templates_path=Path(e.get("INSIGHT_MONTHLY_TEMPLATES") or TEMPLATE_PATH),
                         host=host, port=int(port_raw), learning=learning,
-                        monthly_enabled=env in ALLOWED_ENVS or bool(e.get("INSIGHT_MONTHLY_PLAN")))
+                        monthly_enabled=env in ALLOWED_ENVS or bool(e.get("INSIGHT_MONTHLY_PLAN")),
+                        extra_host=parse_extra_host(e.get("INSIGHT_EXTRA_HOST"), env))

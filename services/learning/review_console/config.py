@@ -24,7 +24,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-from learning.netpolicy import SERVICE_ENVS, check_image_env, listen_host
+from learning.netpolicy import SERVICE_ENVS, STAGING, check_image_env, listen_host, private_ipv4
 
 from .pages import check_mr_url_template
 from .spot_check import SpotCheckSettings
@@ -71,6 +71,7 @@ class ReviewSettings:
     spot_check: SpotCheckSettings | None = None  # 没设种子时为空：抽检接口报错，不用缺省种子
     features: frozenset[str] = frozenset()       # KGE-06：打开的功能（缺省全关）
     host: str = "127.0.0.1"                      # LT-01：监听地址（只有 staging 能改为内网 IPv4）
+    extra_host: str | None = None                # LT-03：staging 另收的 Host（本服务 Service 的 clusterIP，REVIEW_CONSOLE_EXTRA_HOST）
 
     @staticmethod
     def from_env(environ: dict[str, str] | None = None) -> "ReviewSettings":
@@ -87,4 +88,17 @@ class ReviewSettings:
             raise RuntimeError("提交与签字必须用两个不同的数据库登录角色")
         return ReviewSettings(env=env, kge_database_url=kge, review_database_url=review, pages=PagesSettings.from_env(e),
                               spot_check=SpotCheckSettings.from_env(e),
-                              features=parse_features(e.get("REVIEW_CONSOLE_FEATURES", ""), env), host=host)
+                              features=parse_features(e.get("REVIEW_CONSOLE_FEATURES", ""), env), host=host,
+                              extra_host=parse_extra_host(e.get("REVIEW_CONSOLE_EXTRA_HOST"), env))
+
+
+def parse_extra_host(raw: str | None, env: str) -> str | None:
+    """REVIEW_CONSOLE_EXTRA_HOST（LT-03 契约审查阻断 2）：仅 staging；只收一个 RFC 1918 IPv4 字面量（k8s 里是本服务 Service 的
+    clusterIP——前端经它访问时 Host 头就是它）；不设 = 只认回环与监听地址"""
+    if raw is None or raw == "":
+        return None
+    if env != STAGING:
+        raise RuntimeError("REVIEW_CONSOLE_EXTRA_HOST 只有 staging 能设")
+    if not private_ipv4(raw):
+        raise RuntimeError("REVIEW_CONSOLE_EXTRA_HOST 只收一个 RFC 1918 内网 IPv4 字面量")
+    return raw

@@ -147,14 +147,15 @@ def test_internal_v1_switch_is_gone():
                 or "internal_v1_enabled" in p.read_text(encoding="utf-8")]
 
 
-def test_jobs_staging_db_host_check():
+def test_jobs_staging_db_host_check(rds_tls):
     from learning import jobs
-    jobs.check_staging_db_url("postgresql://u@172.28.0.20/x")
-    for bad in ("postgresql://u@8.8.8.8/x", "postgresql://u@db.example.invalid/x"):
+    jobs.check_staging_db_url(f"postgresql://u@172.28.0.20/x?{rds_tls}")
+    for bad in (f"postgresql://u@8.8.8.8/x?{rds_tls}", f"postgresql://u@db.example.invalid/x?{rds_tls}",
+                "postgresql://u@172.28.0.20/x"):  # 最后一条：内网地址但没有 TLS（决定记录（续）第 6 条）
         with pytest.raises(jobs.JobError):
             jobs.check_staging_db_url(bad)
     with pytest.raises(jobs.JobError, match="内网 IPv4"):  # 命令入口：连接前就拒绝（不读掌握配置、不连库）
-        asyncio.run(jobs.run(["mastery-sweep"], {"LEARNING_ENV": "staging", "LEARNING_DATABASE_URL": "postgresql://u@8.8.8.8/x"}))
+        asyncio.run(jobs.run(["mastery-sweep"], {"LEARNING_ENV": "staging", "LEARNING_DATABASE_URL": f"postgresql://u@8.8.8.8/x?{rds_tls}"}))
     asyncio.run(jobs.check_staging_db_server(_Conn("172.28.0.20")))
     with pytest.raises(jobs.JobError):
         asyncio.run(jobs.check_staging_db_server(_Conn("8.8.8.8")))
@@ -247,18 +248,163 @@ def test_review_console_envs():
             ReviewSettings.from_env(review_env(env))
 
 
-def test_local_only_staging_accepts_private_only():
+def test_local_only_staging_accepts_private_only(rds_tls):
     rc_main.local_only("postgresql://syn@127.0.0.1/syn")
     with pytest.raises(SystemExit):
         rc_main.local_only("postgresql://syn@172.28.0.20/syn")
     with pytest.raises(SystemExit):
-        rc_main.local_only("postgresql://syn@172.28.0.20/syn", "dev")
-    rc_main.local_only("postgresql://syn@172.28.0.20:5432/syn", "staging")
-    for bad in ("postgresql://syn@8.8.8.8/syn", "postgresql://syn@db.example.invalid/syn",
-                "postgresql://syn@172.28.0.20/syn?hostaddr=8.8.8.8", "postgresql://syn@172.28.0.20,8.8.8.8/syn",
-                "postgresql://syn@172.28.0.20/syn?host=8.8.8.8"):
+        rc_main.local_only(f"postgresql://syn@172.28.0.20/syn?{rds_tls}", "dev")
+    rc_main.local_only(f"postgresql://syn@172.28.0.20:5432/syn?{rds_tls}", "staging")
+    for bad in (f"postgresql://syn@8.8.8.8/syn?{rds_tls}", f"postgresql://syn@db.example.invalid/syn?{rds_tls}",
+                f"postgresql://syn@172.28.0.20/syn?{rds_tls}&hostaddr=8.8.8.8", f"postgresql://syn@172.28.0.20,8.8.8.8/syn?{rds_tls}",
+                f"postgresql://syn@172.28.0.20/syn?{rds_tls}&host=8.8.8.8",
+                "postgresql://syn@172.28.0.20:5432/syn",                      # 决定记录（续）第 6 条：staging 一律要 TLS
+                f"postgresql://syn@/syn?host=/tmp/x&{rds_tls}"):              # staging 不收 Unix socket（做不了 TLS）
         with pytest.raises(SystemExit):
             rc_main.local_only(bad, "staging")
+
+
+def _system_ca() -> str:
+    """asyncpg 解析 verify-full 连接串时会加载 CA 文件：用本机系统 CA 包（只读，不含任何密钥）代替 /run/rds-ca/ca.pem；没有就跳过"""
+    import os
+    import ssl
+    for p in (ssl.get_default_verify_paths().cafile, "/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-bundle.crt"):
+        if p and os.path.isfile(p):
+            return p
+    pytest.skip("本机没有系统 CA 包")
+
+
+RDS_HOST = "pgm-syn0000.pg.rds.example.invalid"   # 合成的托管库主机名（保留域名；解析由测试替换，不连接）
+MIXED_HOST = "pgm-mixed.pg.rds.example.invalid"   # 合成：解析结果混有公网地址
+PUBLIC_HOST = "pgm-public.pg.rds.example.invalid"  # 合成：解析到公网地址
+# 裸名字、大写、开头连字符也让它们“解析到内网”：拒绝只能来自主机名格式核对，不是解析失败
+FAKE_DNS = {RDS_HOST: ["10.20.96.7"], MIXED_HOST: ["10.20.96.7", "47.0.0.1"], PUBLIC_HOST: ["47.0.0.1"],
+            "db": ["10.20.96.7"], "PGM.EXAMPLE.INVALID": ["10.20.96.7"], "-bad.example.invalid": ["10.20.96.7"]}
+
+
+@pytest.fixture
+def rds_tls(monkeypatch):
+    """固定 CA 路径换成本机系统 CA 包（文件存在），主机名解析换成合成表；返回连接串要带的 TLS 查询参数"""
+    ca = _system_ca()
+    monkeypatch.setattr(netpolicy, "RDS_CA_PATH", ca)
+    monkeypatch.setattr(rc_main, "resolve", lambda host: list(FAKE_DNS.get(host, [])))
+    return f"sslmode=verify-full&sslrootcert={ca}"
+
+
+def test_local_only_staging_hostname_needs_verify_full(rds_tls):
+    """LT-03（补 LT-01 待人确认 6；决定记录（续）第 6 条）：托管 Postgres 只给主机名——staging 下连接串必须 verify-full + 固定 CA（文件存在），
+    主机名在连接前解析，全部地址都必须是内网；dev / test 一律不收；hostaddr、service 照旧拒绝；连上之后仍核对服务端地址（下一条）"""
+    ca = netpolicy.RDS_CA_PATH
+    ok = f"postgresql://syn@{RDS_HOST}:5432/syn?{rds_tls}"
+    assert rc_main.local_only(ok, "staging") == ok
+    rc_main.local_only(f"postgresql://syn@/syn?host={RDS_HOST}&{rds_tls}", "staging")
+    for env in (None, "dev", "test"):
+        with pytest.raises(SystemExit):
+            rc_main.local_only(ok, env)
+    for bad in (
+        f"postgresql://syn@{RDS_HOST}/syn",                                               # 没有 TLS
+        f"postgresql://syn@{RDS_HOST}/syn?sslmode=require&sslrootcert={ca}",              # 不校验主机名
+        f"postgresql://syn@{RDS_HOST}/syn?sslmode=verify-ca&sslrootcert={ca}",
+        f"postgresql://syn@{RDS_HOST}/syn?sslmode=verify-full",                           # 没给 CA
+        f"postgresql://syn@{RDS_HOST}/syn?sslmode=verify-full&sslrootcert=/etc/other-ca.pem",  # 不是固定 CA 路径
+        f"postgresql://syn@{RDS_HOST}/syn?sslmode=verify-full&sslmode=disable&sslrootcert={ca}",  # 两个 sslmode
+        f"postgresql://syn@{RDS_HOST}/syn?{rds_tls}&hostaddr=8.8.8.8",
+        f"postgresql://syn@{RDS_HOST}/syn?{rds_tls}&service=x",
+        f"postgresql://syn@8.8.8.8/syn?{rds_tls}",                                         # 公网 IP 字面量：TLS 也不收
+        f"postgresql://syn@db/syn?{rds_tls}",                                              # 裸名字
+        f"postgresql://syn@{RDS_HOST},8.8.8.8/syn?{rds_tls}",                              # 多主机里混了公网
+        f"postgresql://syn@{RDS_HOST}/syn?{rds_tls}&host=8.8.8.8",
+        f"postgresql://syn@{PUBLIC_HOST}/syn?{rds_tls}",                                   # 主机名解析到公网：连接前就拒
+        f"postgresql://syn@{MIXED_HOST}/syn?{rds_tls}",                                    # 解析结果混有公网
+        f"postgresql://syn@pgm-unknown.pg.rds.example.invalid/syn?{rds_tls}",              # 解析不了
+        f"postgresql://syn@-bad.example.invalid/syn?{rds_tls}",
+        f"postgresql://syn@PGM.EXAMPLE.INVALID/syn?{rds_tls}",                             # 大写（判不出从严）
+    ):
+        with pytest.raises(SystemExit):
+            rc_main.local_only(bad, "staging")
+
+
+def test_local_only_staging_ca_file_must_exist(rds_tls, monkeypatch, tmp_path):
+    missing = str(tmp_path / "ca.pem")
+    monkeypatch.setattr(netpolicy, "RDS_CA_PATH", missing)
+    with pytest.raises(SystemExit):
+        rc_main.local_only(f"postgresql://syn@172.28.0.20/syn?sslmode=verify-full&sslrootcert={missing}", "staging")
+
+
+@pytest.mark.parametrize("q,ok", [
+    ({"sslmode": ["verify-full"], "sslrootcert": ["CA"]}, True),
+    ({"sslmode": ["verify-full"], "sslrootcert": ["CA", "/x"]}, False),
+    ({"sslmode": ["verify-full"]}, False),
+    ({"sslmode": ["require"], "sslrootcert": ["CA"]}, False),
+    ({"sslmode": ["VERIFY-FULL"], "sslrootcert": ["CA"]}, False),
+    ({"sslrootcert": ["CA"]}, False),
+    ({"sslmode": ["verify-full"], "sslrootcert": ["/etc/ssl/other.pem"]}, False),
+])
+def test_tls_verified(q, ok, rds_tls):
+    q = {k: [netpolicy.RDS_CA_PATH if x == "CA" else x for x in v] for k, v in q.items()}
+    assert rc_main.tls_verified(q) is ok
+
+
+def test_tls_verified_other_existing_ca_or_missing_fixed_ca(rds_tls, monkeypatch, tmp_path):
+    """固定 CA 路径之外的文件即使存在也不收；固定路径上的文件不存在也不收（直接核对 tls_verified，不经 asyncpg 解析）"""
+    other = tmp_path / "other.pem"
+    other.write_text("synthetic\n", encoding="utf-8")
+    assert rc_main.tls_verified({"sslmode": ["verify-full"], "sslrootcert": [str(other)]}) is False
+    missing = str(tmp_path / "missing.pem")
+    monkeypatch.setattr(netpolicy, "RDS_CA_PATH", missing)
+    assert rc_main.tls_verified({"sslmode": ["verify-full"], "sslrootcert": [missing]}) is False
+
+
+def test_rds_ca_path_is_fixed():
+    assert netpolicy.RDS_CA_PATH == "/run/rds-ca/ca.pem"
+
+
+def test_check_db_tls_for_services(rds_tls, monkeypatch, tmp_path):
+    """决定记录（续）第 6 条：学习服务（与审核台后端、洞察 / 知识服务同口径）staging 下拒绝不带 verify-full + 固定 CA 的连库串"""
+    good = f"postgresql://u@{RDS_HOST}:5432/x?{rds_tls}"
+    netpolicy.check_db_tls(good, "staging", "X")
+    for env in ("dev", "test"):
+        netpolicy.check_db_tls("postgresql://u@127.0.0.1/x", env, "X")
+    for bad in ("postgresql://u@172.28.0.20/x", f"postgresql://u@{RDS_HOST}/x?sslmode=require&sslrootcert={netpolicy.RDS_CA_PATH}",
+                f"postgresql://u@{RDS_HOST}/x?sslmode=verify-full&sslrootcert=/etc/other.pem", "not-a-url"):
+        with pytest.raises(RuntimeError, match="verify-full"):
+            netpolicy.check_db_tls(bad, "staging", "X")
+    monkeypatch.setattr(netpolicy, "RDS_CA_PATH", str(tmp_path / "missing.pem"))
+    with pytest.raises(RuntimeError, match="verify-full"):
+        netpolicy.check_db_tls(f"postgresql://u@{RDS_HOST}/x?sslmode=verify-full&sslrootcert={tmp_path / 'missing.pem'}", "staging", "X")
+
+
+def test_learning_create_app_refuses_plain_db_url_in_staging(rds_tls):
+    from learning.app import create_app
+    s = Settings.from_env(base("staging", LEARNING_HOST="172.28.0.10"))  # 连库串没有 TLS
+    with pytest.raises(RuntimeError, match="LEARNING_DATABASE_URL"):
+        create_app(s)
+    s2 = Settings.from_env({**base("staging", LEARNING_HOST="172.28.0.10"), "LEARNING_DATABASE_URL": f"postgresql://u@{RDS_HOST}/x?{rds_tls}"})
+    create_app(s2)  # 合规：只构造，不连库
+    create_app(s, pool=_FakePool())  # 注入连接池（测试）不经这道核对
+
+
+def test_review_console_lifespan_refuses_plain_db_url_in_staging(rds_tls):
+    from review_console import app as rc_app
+    s = ReviewSettings.from_env(review_env("staging", REVIEW_CONSOLE_HOST="172.28.0.13"))
+    app = rc_app.create_app(s)
+
+    async def go():
+        async with app.router.lifespan_context(app):
+            pass
+    with pytest.raises(RuntimeError, match="REVIEW_CONSOLE_KGE_DATABASE_URL"):
+        asyncio.run(go())
+
+
+def test_jobs_staging_db_hostname_with_tls(rds_tls):
+    """调度器的 learning.jobs 子命令（同一个 local_only）：staging 下托管库主机名 + verify-full 可用；连上之后服务端仍须是内网"""
+    from learning import jobs
+    jobs.check_staging_db_url(f"postgresql://u@{RDS_HOST}:5432/x?{rds_tls}")
+    with pytest.raises(jobs.JobError):
+        jobs.check_staging_db_url(f"postgresql://u@{RDS_HOST}:5432/x")
+    asyncio.run(jobs.check_staging_db_server(_Conn("10.20.0.15")))  # 托管库在 VPC 里的私网地址
+    with pytest.raises(jobs.JobError):
+        asyncio.run(jobs.check_staging_db_server(_Conn("47.0.0.1")))  # 主机名解析到了公网地址
 
 
 class _Conn:

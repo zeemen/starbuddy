@@ -4,7 +4,7 @@
 #   services/learning/.venv  学习服务的锁 + 契约共享库（learning.jobs mastery-sweep、review_console expire-affairs）
 # 做法同 services/learning/Dockerfile：基础镜像以摘要给出（ARG PYTHON_IMAGE，没有缺省值；决定记录第 11 条）；只从带哈希的锁文件装；
 # 非 root（uid 10001）、只读根文件系统可运行；不带密钥与签字时间表（staging 只收签字时间表，运行时挂载，--schedule 指定）。
-# 调度器不监听端口：健康检查只核对进程与时间表可读（--dry-run 不连库、不起子进程）。
+# 调度器缺省不监听端口；常驻模式设了 SCHEDULER_HEALTH_PORT 时另起只服务 /healthz、/readyz 的健康监听（LT-03，scheduler/health.py）。
 # 构建：docker build -f deploy/docker/scheduler.Dockerfile --build-arg PYTHON_IMAGE=<仓库>/python:3.11-slim-bookworm@sha256:<摘要> -t starbuddy-scheduler:<版本> .
 ARG PYTHON_IMAGE
 FROM ${PYTHON_IMAGE}
@@ -48,6 +48,9 @@ ENV STARBUDDY_IMAGE_ENV=${STARBUDDY_IMAGE_ENV}
 RUN useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin starbuddy
 USER 10001
 WORKDIR /srv/starbuddy/services/scheduler
+# 健康检查（LT-03）：设了 SCHEDULER_HEALTH_PORT（常驻模式的健康监听）就 HTTP GET /readyz；没设只核对进程。
+# 注意 --once、--dry-run 一律不起健康监听：用这个镜像跑一次性任务（例如 k8s Job、compose run）时不要设 SCHEDULER_HEALTH_PORT，
+# 否则健康检查连不上监听、容器被标为 unhealthy（一次性任务本身照常运行与退出）。
 HEALTHCHECK --interval=60s --timeout=10s --start-period=20s --retries=3 \
-  CMD ["/srv/starbuddy/services/insight/.venv/bin/python", "-I", "-c", "import os; os.kill(1, 0)"]
+  CMD ["/srv/starbuddy/services/insight/.venv/bin/python", "-I", "-c", "import os,http.client as h; p=os.environ.get('SCHEDULER_HEALTH_PORT'); c=p and h.HTTPConnection(os.environ.get('SCHEDULER_HOST') or '127.0.0.1', int(p), timeout=5); c and c.request('GET', '/readyz'); raise SystemExit((0 if c.getresponse().status == 200 else 1) if c else (os.kill(1, 0) or 0))"]
 ENTRYPOINT ["/srv/starbuddy/services/insight/.venv/bin/python", "-m", "scheduler"]

@@ -52,14 +52,15 @@ def _parse(argv: list[str]) -> argparse.Namespace:
 
 
 def check_staging_db_url(url: str) -> None:
-    """staging（LT-01 安全审查 S10）：连接串里的全部主机只收回环、Unix socket 或内网 IPv4 字面量（复用审核台命令行的核对）"""
+    """staging（LT-01 安全审查 S10；LT-03 决定记录（续）第 6 条）：复用审核台命令行的核对 local_only——verify-full + 固定 CA，
+    主机只收内网 IPv4 字面量或连接前解析全为内网地址的托管库主机名"""
     from review_console.__main__ import local_only
     if not url:
         raise JobError("缺少 LEARNING_DATABASE_URL")
     try:
         local_only(url, "staging")
     except SystemExit:
-        raise JobError("LEARNING_DATABASE_URL 在 staging 只能指向回环、Unix socket 或内网 IPv4") from None
+        raise JobError("LEARNING_DATABASE_URL 在 staging 必须 verify-full + 固定 CA，且只指向内网 IPv4 或解析全为内网的托管库主机名") from None
 
 
 async def check_staging_db_server(conn) -> None:

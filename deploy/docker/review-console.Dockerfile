@@ -1,6 +1,6 @@
 # 审核台后端镜像（LT-01，决定记录第 5 条；代码在 services/learning/review_console，与学习服务不共用进程、连接角色与路由）。
 # 做法同 services/learning/Dockerfile：基础镜像以摘要给出（ARG PYTHON_IMAGE，没有缺省值）；只从带哈希的锁文件装（与学习服务同一份锁）；
-# 非 root（uid 10001）、只读根文件系统可运行、TCP 健康检查；不带密钥与 staff 凭据（staff 由人用 platform.staff_enroll 建立）。
+# 非 root（uid 10001）、只读根文件系统可运行、HTTP 健康检查（GET /readyz，LT-03）；不带密钥与 staff 凭据（staff 由人用 platform.staff_enroll 建立）。
 # 运行：python -m review_console serve --port <端口>（监听 REVIEW_CONSOLE_HOST，缺省 127.0.0.1；staging 显式配置内网 IPv4）。
 # 构建：docker build -f deploy/docker/review-console.Dockerfile --build-arg PYTHON_IMAGE=<仓库>/python:3.11-slim-bookworm@sha256:<摘要> -t starbuddy-review-console:<版本> .
 ARG PYTHON_IMAGE
@@ -38,6 +38,7 @@ RUN useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin star
 USER 10001
 WORKDIR /srv/starbuddy/services/learning
 EXPOSE 8792
+# 健康检查（LT-03）：HTTP GET /readyz（Host 头即监听地址：回环，或 staging 显式配置的内网监听地址）
 HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=3 \
-  CMD ["python", "-I", "-c", "import os,socket; socket.create_connection((os.environ.get('REVIEW_CONSOLE_HOST') or '127.0.0.1', int(os.environ.get('REVIEW_CONSOLE_PORT') or 8792)), 2).close()"]
+  CMD ["python", "-I", "-c", "import os,http.client as h; c=h.HTTPConnection(os.environ.get('REVIEW_CONSOLE_HOST') or '127.0.0.1', int(os.environ.get('REVIEW_CONSOLE_PORT') or 8792), timeout=2); c.request('GET', '/readyz'); raise SystemExit(0 if c.getresponse().status == 200 else 1)"]
 CMD ["sh", "-c", "exec python -m review_console serve --port \"$REVIEW_CONSOLE_PORT\""]

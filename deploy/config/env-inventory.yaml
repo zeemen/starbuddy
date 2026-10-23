@@ -54,6 +54,7 @@ services:
       - {name: INSIGHT_ENV, purpose: 运行环境 dev/test/staging, secret: false, default: null, envs: all, required_in_staging: true}
       - {name: INSIGHT_HOST, purpose: 监听地址（staging 只收 127.0.0.1 或内网 IPv4）, secret: false, default: 127.0.0.1, envs: all}
       - {name: INSIGHT_PORT, purpose: 监听端口, secret: false, default: "8791", envs: all}
+      - {name: INSIGHT_EXTRA_HOST, purpose: staging 另收的一个 Host（恰好一个 RFC 1918 IPv4 字面量；k8s 里是本服务 Service 的 clusterIP，部署测试核对；dev / test 设了拒绝启动）, secret: false, default: null, envs: staging}
       - {name: INSIGHT_DATABASE_URL, purpose: 连接串（只继承 starbuddy_insight）, secret: true, default: null, envs: all, required_in_staging: true}
       - {name: INSIGHT_TOKEN_<CALLER>, purpose: 调用方令牌（BFF / ORCHESTRATOR）, secret: true, default: null, envs: all, required_in_staging: true}
       - {name: INSIGHT_POLICY, purpose: 判断策略配置（staging 须签字）, secret: false, default: config/claims.synthetic.json, envs: all, required_in_staging: true}
@@ -73,6 +74,7 @@ services:
       - {name: KNOWLEDGE_ENV, purpose: 运行环境 dev/test/staging, secret: false, default: null, envs: all, required_in_staging: true}
       - {name: KNOWLEDGE_HOST, purpose: 监听地址（staging 只收 127.0.0.1 或内网 IPv4）, secret: false, default: 127.0.0.1, envs: all}
       - {name: KNOWLEDGE_PORT, purpose: 监听端口, secret: false, default: "8790", envs: all}
+      - {name: KNOWLEDGE_EXTRA_HOST, purpose: staging 另收的一个 Host（HTTP 与 MCP 共用；恰好一个 RFC 1918 IPv4 字面量；k8s 里是本服务 Service 的 clusterIP，部署测试核对；dev / test 设了拒绝启动）, secret: false, default: null, envs: staging}
       - {name: KNOWLEDGE_DATABASE_URL, purpose: 连接串（只继承 starbuddy_kge_read）, secret: true, default: null, envs: all, required_in_staging: true}
       - {name: KNOWLEDGE_TOKEN_<CALLER>, purpose: 调用方令牌（BFF / ORCHESTRATOR / LEARNING）, secret: true, default: null, envs: all, required_in_staging: true}
       - {name: KNOWLEDGE_PAGE_SNAPSHOT, purpose: 页面快照目录（只读挂载）, secret: false, default: null, envs: all}
@@ -87,10 +89,13 @@ services:
       - {name: KNOWLEDGE_CONTRACT_DIR, purpose: 契约目录覆盖（测试用；staging 设了拒绝启动）, secret: false, default: null, envs: local}
       - {name: STARBUDDY_IMAGE_ENV, purpose: 镜像固化的环境标记（设了须与运行环境一致）, secret: false, default: null, envs: all}
   scheduler:
-    sources: [services/scheduler/scheduler/__main__.py, services/scheduler/scheduler/config.py, services/scheduler/scheduler/runner.py]
+    sources: [services/scheduler/scheduler/__main__.py, services/scheduler/scheduler/config.py, services/scheduler/scheduler/runner.py,
+              services/scheduler/scheduler/health.py]
     vars:
       - {name: SCHEDULER_ENV, purpose: 运行环境 dev/test/staging（staging 只收签字时间表）, secret: false, default: null, envs: all, required_in_staging: true}
-      - {name: SCHEDULER_DATABASE_URL, purpose: 连接串（只继承 starbuddy_scheduler；staging 只收内网 IPv4）, secret: true, default: null, envs: all, required_in_staging: true}
+      - {name: SCHEDULER_DATABASE_URL, purpose: 连接串（只继承 starbuddy_scheduler；staging 另收内网 IPv4，或带 sslmode=verify-full 与 sslrootcert 绝对路径的托管库主机名；就绪探针也用它）, secret: true, default: null, envs: all, required_in_staging: true}
+      - {name: SCHEDULER_HEALTH_PORT, purpose: 健康监听端口（LT-03；只在常驻模式起，只服务 /healthz、/readyz；不设不起监听；staging 编排写 8793）, secret: false, default: null, envs: all}
+      - {name: SCHEDULER_HOST, purpose: 健康监听地址（缺省 127.0.0.1；dev/test 只 127.0.0.1，staging 另收内网 IPv4；设了必须同时设 SCHEDULER_HEALTH_PORT）, secret: false, default: 127.0.0.1, envs: all}
       - {name: STARBUDDY_IMAGE_ENV, purpose: 镜像固化的环境标记（设了须与 SCHEDULER_ENV 一致；不转交子进程）, secret: false, default: null, envs: all}
   review_console:
     sources: [services/learning/review_console/config.py, services/learning/review_console/__main__.py, services/learning/review_console/spot_check.py,
@@ -98,6 +103,7 @@ services:
     vars:
       - {name: REVIEW_CONSOLE_ENV, purpose: 运行环境 dev/test/staging, secret: false, default: null, envs: all, required_in_staging: true}
       - {name: REVIEW_CONSOLE_HOST, purpose: 监听地址（staging 可设内网 IPv4）, secret: false, default: 127.0.0.1, envs: staging}
+      - {name: REVIEW_CONSOLE_EXTRA_HOST, purpose: staging 另收的一个 Host（恰好一个 RFC 1918 IPv4 字面量；k8s 里是本服务 Service 的 clusterIP，部署测试核对；dev / test 设了拒绝启动）, secret: false, default: null, envs: staging}
       - {name: REVIEW_CONSOLE_KGE_DATABASE_URL, purpose: 草稿读写连接串（只继承 starbuddy_kge）, secret: true, default: null, envs: all, required_in_staging: true}
       - {name: REVIEW_CONSOLE_REVIEW_DATABASE_URL, purpose: 签字发布连接串（只继承 starbuddy_review）, secret: true, default: null, envs: all, required_in_staging: true}
       - {name: REVIEW_CONSOLE_FEATURES, purpose: 封测周修订开关（开发开关）, secret: false, default: null, envs: local}

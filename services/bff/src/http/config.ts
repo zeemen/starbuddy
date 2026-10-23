@@ -5,7 +5,7 @@
 //     BFF_TRUST_SECRET（信任界面：删除确认凭据、异议幂等键；SIE-03 PR③）
 //     从环境变量读，十六进制、至少 32 字节，不进仓库；dev / test 不设时启动随机生成（3-H 待人确认 #15），其余环境不设或太短拒绝启动。
 import { createHmac, randomBytes } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 export type RunEnv = 'dev' | 'test' | 'staging' | 'pilot' | 'production';
 const RUN_ENVS: readonly RunEnv[] = ['dev', 'test', 'staging', 'pilot', 'production'];
@@ -35,6 +35,25 @@ export function serviceUrlOk(url: string, env: RunEnv): boolean {
  *  已知局限：运行时同名变量可以覆盖，只防误用 */
 export function checkImageEnv(env: RunEnv, marked: string | undefined): void {
   if (marked !== undefined && marked !== env) throw new Error(`镜像环境标记是 ${marked}，运行环境却是 ${env}：拒绝启动（STARBUDDY_IMAGE_ENV）`);
+}
+
+/** staging 托管库的 CA（LT-03 决定记录（续）第 6 条）：固定路径，由部署以只读卷挂载（deploy/k8s/staging.yaml 的 rds-ca） */
+export const RDS_CA_PATH = '/run/rds-ca/ca.pem';
+
+/** 连库串的 TLS 核对（BFF_DATABASE_URL）：staging 必须 sslmode=verify-full、sslrootcert 恰好是固定 CA 路径且文件存在；
+ *  其余环境不核对（dev / test 连本机一次性库；pilot / 生产在 parseRunEnv 之后另有拒绝）。不合格只回 false，不带连接串 */
+export function dbTlsOk(env: RunEnv, url: string, caPath: string = RDS_CA_PATH, exists: (p: string) => boolean = existsSync): boolean {
+  if (env !== 'staging') return true;
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== 'postgres:' && u.protocol !== 'postgresql:') return false;
+  const modes = u.searchParams.getAll('sslmode');
+  const roots = u.searchParams.getAll('sslrootcert');
+  return modes.length === 1 && modes[0] === 'verify-full' && roots.length === 1 && roots[0] === caPath && exists(caPath);
 }
 
 /** 监听地址（BFF_HOST）：不设 = 127.0.0.1；dev / test 设了只能是 127.0.0.1；staging 只能是 127.0.0.1 或内网 IPv4；pilot / 生产只能是 127.0.0.1 */

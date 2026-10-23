@@ -26,6 +26,7 @@ import argparse
 import asyncio
 import csv
 import os
+import re
 import sys
 
 import asyncpg
@@ -109,15 +110,55 @@ REMOTE_PARAMS = ("hostaddr", "service", "servicefile")
 NOT_LOCAL = "时政下架任务只连本机数据库（localhost、回环地址或 Unix socket）"
 
 
-NOT_PRIVATE = "staging 下只连内网数据库（回环、Unix socket 或 RFC 1918 内网 IPv4 字面量）"
+NOT_PRIVATE = ("staging 下只连托管库：连接串必须 sslmode=verify-full 且 sslrootcert=/run/rds-ca/ca.pem（文件存在），"
+               "主机是 RFC 1918 内网 IPv4 字面量或解析结果全是内网地址的主机名")
+# 托管 Postgres 只给主机名（LT-03，补 LT-01 待人确认 6；决定记录（续）第 6 条）：主机名形如 a.b.c（小写字母、数字、连字符，每段 1–63，
+# 总长 ≤ 253，至少两段，最后一段含字母——排除 IPv4 写法与裸名字）。staging 下：连接串一律要求 TLS（verify-full + 固定 CA）；
+# 主机名在连接前由客户端解析，全部地址都必须是 RFC 1918 内网 IPv4（解析不了、混有公网地址都拒）；连上之后还按 check_server_local
+# 核对服务端地址（解析与连接之间被换了地址也会被拒）。不收 Unix socket（staging 只连托管库，socket 上做不了 TLS）。
+_DNS_NAME = re.compile(r"(?=.{1,253}$)(?:(?!-)[a-z0-9-]{1,63}(?<!-)\.)+(?!-)[a-z0-9-]*[a-z][a-z0-9-]*(?<!-)")
+
+
+def tls_verified(query: dict[str, list[str]]) -> bool:
+    """连接串查询参数要求 TLS 且校验证书链与主机名：sslmode 恰好一个、为 verify-full；sslrootcert 恰好一个、正是固定 CA 路径
+    （learning.netpolicy.RDS_CA_PATH，k8s 从 ConfigMap 只读挂载），且文件存在。require / verify-ca、别的路径、文件缺失一律不算"""
+    import os
+
+    from learning import netpolicy
+    mode, roots = query.get("sslmode", []), query.get("sslrootcert", [])
+    return mode == ["verify-full"] and roots == [netpolicy.RDS_CA_PATH] and os.path.isfile(netpolicy.RDS_CA_PATH)
+
+
+def resolve(host: str) -> list[str]:
+    """连接前在客户端解析主机名（与 asyncpg 同一个系统解析器）；解析不了返回空（测试可替换）"""
+    import socket
+    try:
+        return sorted({info[4][0] for info in socket.getaddrinfo(host, None)})
+    except OSError:
+        return []
+
+
+def _staging_host_ok(host: str) -> bool:
+    """staging：内网 IPv4 字面量，或解析出的全部地址都是内网 IPv4 的主机名（回环也收：只在同机演练时出现）"""
+    import ipaddress
+    if private_ipv4(host):
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        pass
+    if _DNS_NAME.fullmatch(host) is None:
+        return False
+    addrs = resolve(host)
+    return bool(addrs) and all(private_ipv4(a) for a in addrs)
 
 
 def _is_local(host: str, env: str | None = None) -> bool:
-    """本机：localhost、回环、Unix socket。env 为 staging 时（LT-01 决定记录第 5 条）另收内网 IPv4 字面量（不收主机名与公网地址）"""
+    """本机：localhost、回环、Unix socket（dev / test）；staging 见 _staging_host_ok。不收公网 IP 字面量与裸名字"""
     import ipaddress
+    if env == STAGING:
+        return _staging_host_ok(host)
     if host in LOCAL_NAMES or host.startswith("/"):
-        return True
-    if env == STAGING and private_ipv4(host):
         return True
     try:
         return ipaddress.ip_address(host).is_loopback
@@ -155,7 +196,9 @@ def local_only(url: str, env: str | None = None) -> str:
     """时政下架任务只连本地或测试库（规则 9；不接生产调度）。连接串里出现的全部主机——主机部分的每一个（多主机写法按逗号拆）、
     每个 host 查询参数里的每一个——以及 asyncpg 实际解析出的全部地址，任一不是本机（localhost、回环地址、Unix socket 目录）即拒。
     连上之后还要再核对服务端地址（check_server_local）。
-    env 为 staging 时（LT-01 决定记录第 5 条，调度器与其子命令）另收内网 IPv4 字面量；其余口径不变（不收主机名、hostaddr 等）。"""
+    env 为 staging 时（LT-01 决定记录第 5 条，调度器与其子命令；LT-03 决定记录（续）第 6 条）：连接串必须 sslmode=verify-full 且
+    sslrootcert 正是 /run/rds-ca/ca.pem（tls_verified）；主机收内网 IPv4 字面量，或连接前解析出的全部地址都是内网 IPv4 的主机名；
+    不收 Unix socket、hostaddr、service 等。dev / test 照旧只收本机。连上之后照旧核对服务端地址（check_server_local）。"""
     not_local = NOT_PRIVATE if env == STAGING else NOT_LOCAL
     from urllib.parse import parse_qs, urlsplit
     try:
@@ -167,6 +210,8 @@ def local_only(url: str, env: str | None = None) -> str:
         raise SystemExit("REVIEW_CONSOLE_KGE_DATABASE_URL 必须是 postgresql:// 连接串")
     if any(k in query for k in REMOTE_PARAMS):
         raise SystemExit(not_local + "：不接受 hostaddr、service、servicefile 参数")
+    if env == STAGING and not tls_verified(query):
+        raise SystemExit(not_local + "：没有要求 TLS 校验（verify-full + 固定 CA）")
     hosts = _netloc_hosts(u.netloc) + [h for v in query.get("host", []) for h in v.split(",") if h] + _asyncpg_hosts(url)
     if not hosts or any(not _is_local(h, env) for h in hosts):
         raise SystemExit(not_local)
