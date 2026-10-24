@@ -10,7 +10,7 @@ from conftest import DEPLOY
 
 RB = DEPLOY / "runbooks"
 MIGRATE = (DEPLOY / "migrate" / "migrate.py").read_text(encoding="utf-8")
-DOCS = ["README.md", "rds-restore-and-migrate-rehearsal.md", "rollback.md", "weekly-restore-verify.md"]
+DOCS = ["README.md", "rds-restore-and-migrate-rehearsal.md", "rollback.md", "weekly-restore-verify.md", "staging-first-deploy.md"]
 
 
 def text(name: str) -> str:
@@ -250,3 +250,231 @@ def test_rollback_covers_app_migration_pitr_and_iac():
     for must in ("kubectl -n starbuddy-staging set image", "@sha256:", "migrate.py down", "按时间点恢复", "sslmode=verify-full",
                  "删除保护", "Recreate", "/readyz"):
         assert must in t, must
+
+
+# ---------------------------------------------------------------- staging 首次部署与走查手册（LT-01 至 LT-05 串联）
+# 手册里的命令、Makefile 目标、脚本路径、变量名、Terraform 资源地址、k8s 名字、指标与告警名都必须在仓库里真实存在；
+# 改了脚本 / IaC / 清单而没改手册，这里会失败。
+FIRST = "staging-first-deploy.md"
+IAC = DEPLOY / "iac" / "alicloud"
+K8S = (DEPLOY / "k8s" / "staging.yaml").read_text(encoding="utf-8")
+ROOT = DEPLOY.parent
+MAKEFILE = (ROOT / "Makefile").read_text(encoding="utf-8")
+TF = {p.name: p.read_text(encoding="utf-8") for p in sorted(IAC.glob("*.tf"))}
+
+# 不在仓库里定义、由外部工具约定的变量名（逐个写明来源）
+EXTERNAL_VARS = {
+    "ALICLOUD_ACCESS_KEY", "ALICLOUD_SECRET_KEY", "ALICLOUD_SECURITY_TOKEN",  # aliyun/alicloud provider 与 Terraform OSS 后端
+    "ALIBABA_CLOUD_ACCESS_KEY_ID", "ALIBABA_CLOUD_ACCESS_KEY_SECRET", "ALIBABA_CLOUD_SECURITY_TOKEN",  # 同上（新名字）
+    "TF_DATA_DIR", "TF_INPUT",  # Terraform 命令行
+    "COSIGN_PASSWORD",  # cosign 约定的私钥口令变量
+}
+
+
+def first() -> str:
+    return text(FIRST)
+
+
+def code_lines(t: str) -> list[str]:
+    out, inside = [], False
+    for line in t.splitlines():
+        if line.strip().startswith("```"):
+            inside = not inside
+            continue
+        if inside:
+            out.append(line.strip())
+    return out
+
+
+def tf_resources() -> set[str]:
+    return {f"{a}.{b}" for src in TF.values() for a, b in re.findall(r'^resource "(\w+)" "(\w+)"', src, re.M)}
+
+
+def tf_variables() -> dict[str, str]:
+    src = TF["variables.tf"]
+    return {m.group(1): m.group(2) for m in re.finditer(r'^variable "(\w+)" \{(.*?)^\}', src, re.M | re.S)}
+
+
+def test_first_deploy_sections_and_order():
+    t = first()
+    pos = [t.index(f"\n## {i}. ") for i in range(8)]
+    assert pos == sorted(pos), "第 0–7 节齐全且按顺序"
+    phases = ["**阶段 A：网络与 KMS**", "**阶段 B：RDS / OSS / ACR / SLS**", "**阶段 C：ACK**", "**阶段 D：防火墙与 NAT**"]
+    assert [t.index(p) for p in phases] == sorted(t.index(p) for p in phases)
+    steps = ["1. **库连接核对**", "2. **学习服务**", "3. **知识服务、洞察服务**", "4. **调度器**", "5. **BFF**", "6. **前端、审核台后端**"]
+    assert [t.index(s) for s in steps] == sorted(t.index(s) for s in steps)
+    # 0058 先于学习服务：主实例迁移在部署学习服务之前
+    assert t.index("migrate.py up --dsn-env PRIMARY_DSN") < t.index("kubectl apply -f <部署目录>/10-learning.yaml")
+    assert t.index("rehearse --dsn-env REPLICA_DSN") < t.index("migrate.py up --dsn-env PRIMARY_DSN"), "副本演练先于主实例"
+
+
+def test_first_deploy_follows_lt03_decision_7():
+    t = first()
+    for must in ("逐次确认", "不执行 destroy", "OSS 远程后端", "锁表", "不落仓库", "Claude 不读取、不打印其值"):
+        assert must in t, must
+    # 计划审阅清单（必须列出的五项）
+    for must in ("新增 / 修改 / 删除数量", "包年包月或按量计费资源", "安全组与出网规则", "公网暴露检查", "KMS 与 RAM 变更"):
+        assert must in t, must
+    lines = code_lines(t)
+    assert not any("destroy" in ln for ln in lines), "命令里不出现 destroy"
+    tf_lines = [ln for ln in lines if ln.startswith("terraform ")]
+    assert tf_lines and all(ln.startswith("terraform -chdir=deploy/iac/alicloud ") for ln in tf_lines)
+    plans = [ln for ln in tf_lines if " plan " in ln]
+    applies = [ln for ln in tf_lines if " apply " in ln]
+    assert plans and all(re.search(r" -out=<计划目录>/\S+\.tfplan", ln) for ln in plans), "plan 一律 -out 到仓库之外的计划目录"
+    assert applies and all(re.search(r"<计划目录>/\S+\.tfplan$", ln) and "auto-approve" not in ln for ln in applies), "apply 只用已审阅的计划文件"
+    inits = [ln for ln in tf_lines if " init " in ln]
+    assert inits and all("-backend-config=<计划目录>/backend.hcl" in ln for ln in inits)
+
+
+def test_first_deploy_terraform_matches_iac():
+    t = first()
+    # 版本约束与 versions.tf 一致
+    assert '">= 1.6.0, < 2.0.0"' in TF["versions.tf"] and ">= 1.6.0, < 2.0.0" in t
+    assert '"~> 1.230"' in TF["versions.tf"] and "~> 1.230" in t
+    assert 'backend "oss" {}' in TF["versions.tf"]
+    # -backend-config 参数清单：OSS 后端的参数名
+    section = t[t.index("### 1.2"):t.index("### 1.3")]
+    keys = set(re.findall(r"^\| `([a-z_]+)` \|", section, re.M))
+    assert keys == {"bucket", "prefix", "key", "region", "tablestore_endpoint", "tablestore_table", "encrypt", "acl"}, keys
+    # 分阶段的 -target 都是真实资源，且四个阶段合起来恰好覆盖全部资源（每个资源只出现在一个阶段）
+    targets = re.findall(r"-target=(\S+)", t[t.index("### 1.6"):t.index("\n## 2. ")])
+    assert len(targets) == len(set(targets)), "同一资源只在一个阶段创建"
+    assert set(targets) == tf_resources(), sorted(set(targets) ^ tf_resources())
+    # 必填变量（没有缺省值的）与 0.6 第 4 条一致
+    v = tf_variables()
+    required = {n for n, body in v.items() if not re.search(r"^\s*default\s*=", body, re.M)}
+    item = re.search(r"4\. `terraform\.tfvars` 必填项(.*?)\n\n", t, re.S).group(1)
+    assert set(re.findall(r"`([a-z0-9_]+)`", item)) == required, required
+    # 输出名真实存在
+    outputs = set(re.findall(r'^output "(\w+)"', TF["outputs.tf"], re.M))
+    for o in ("kms_key_id", "kms_secrets_key_id", "slb_acl_id", "log_project"):
+        assert f"`{o}`" in t and o in outputs, o
+    assert "rds_private_host" in outputs
+    # 阻断项：确认变量的校验仍是 == true（IaC 改了要同步改手册 0.6 第 1 条）
+    assert "var.nat_firewall_confirmed == true" in v["nat_firewall_confirmed"] and "nat_firewall_confirmed" in t and "R11" in t
+    # 静态检查命令与脚本一致
+    sh = (DEPLOY / "scripts" / "iac-validate.sh").read_text(encoding="utf-8")
+    assert "--skip-download" in sh and "IAC_PLUGIN_DIR" in sh and "CHECKPOINT_DISABLE=1" in sh and "TF_IN_AUTOMATION" in sh
+    assert "python3 -I deploy/iac/check_iac.py deploy/iac/alicloud" in t
+    assert "python3 -I deploy/iac/check_iac.py deploy/iac/alicloud" in (DEPLOY / "scripts" / "deploy-check.sh").read_text(encoding="utf-8")
+
+
+def test_first_deploy_make_targets_scripts_and_paths_exist():
+    t = first()
+    targets = set(re.findall(r"^([a-z][a-z0-9-]*):", MAKEFILE, re.M))
+    used = re.findall(r"make ([a-z][a-z0-9-]*)((?: [A-Z_]+=\S+)*)", t)
+    assert used
+    for target, args in used:
+        assert target in targets, f"Makefile 没有目标 {target}"
+        for var in re.findall(r"([A-Z_]+)=", args):
+            assert var in MAKEFILE or var in (DEPLOY / "scripts" / "iac-validate.sh").read_text(encoding="utf-8"), var
+    paths = set(re.findall(r"\b((?:deploy|db|evals|services)/[A-Za-z0-9_./*-]+)", t))
+    assert len(paths) >= 15
+    for p in paths:
+        p = p.rstrip(".")
+        assert list(ROOT.glob(p)) or (ROOT / p).exists(), f"路径不存在：{p}"
+    # 镜像：流水线入口与验签参数与 pipeline.sh 一致；摘要行数与镜像清单一致
+    pipe = (DEPLOY / "ci" / "pipeline.sh").read_text(encoding="utf-8")
+    assert "bash deploy/ci/pipeline.sh" in t and "bash deploy/ci/pipeline.sh" in (DEPLOY / "ci" / "flow.yaml").read_text(encoding="utf-8")
+    assert "cosign verify --insecure-ignore-tlog=true --key" in pipe and "cosign verify --insecure-ignore-tlog=true --key" in t
+    assert "verify-attestation --insecure-ignore-tlog=true" in pipe and "--type spdxjson" in pipe and "--type spdxjson" in t
+    n = len([ln for ln in (DEPLOY / "ci" / "images.txt").read_text(encoding="utf-8").splitlines() if ln.strip() and not ln.startswith("#")])
+    assert f"恰好 {n} 行" in t and f'-eq {n} ]' in pipe
+    assert "db/bootstrap/roles.sql" in t and "--with-bootstrap" in t and "--to 0009" in t
+
+
+def test_first_deploy_env_var_names_exist():
+    t = first()
+    inv = load_inventory_names()
+    corpus = "\n".join(p.read_text(encoding="utf-8") for p in [
+        *sorted((DEPLOY / "ci").glob("*")), *sorted((DEPLOY / "scripts").glob("*.sh")), DEPLOY / "migrate" / "migrate.py",
+        *[RB / d for d in DOCS if d != FIRST], DEPLOY / "config" / "README.md", *sorted((DEPLOY / "k8s").glob("*.yaml")),
+        DEPLOY / "flags" / "staging.yaml", ROOT / "Makefile", ROOT / "services" / "learning" / "learning" / "config.py"] if p.is_file())
+    names = set(re.findall(r"\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b", t))
+    assert {"PRIMARY_DSN", "REPLICA_DSN", "ACR_REGISTRY", "COSIGN_KEY_REF", "IAC_PLUGIN_DIR", "SMOKE_ENV"} <= names
+    for n in names:
+        ok = n in EXTERNAL_VARS or re.search(rf"\b{n}\b", corpus) or any(re.fullmatch(p, n) for p in inv)
+        assert ok, f"变量名 {n} 在仓库里找不到（也不在外部工具约定的名单里）"
+    # 0.5 表里只写名字：没有 NAME=值 的赋值（占位除外）
+    section = t[t.index("### 0.5"):t.index("### 0.6")]
+    assert not re.search(r"\b[A-Z][A-Z0-9_]+=[^<\s]", section)
+
+
+def load_inventory_names() -> list[str]:
+    import yaml
+    inv = yaml.safe_load((DEPLOY / "config" / "env-inventory.yaml").read_text(encoding="utf-8"))
+    pats = []
+    for svc in inv["services"].values():
+        for v in svc["vars"]:
+            pats.append(re.sub(r"<[A-Z]+>", "[A-Z]+", re.escape(v["name"]).replace(r"\<", "<").replace(r"\>", ">")))
+    return pats
+
+
+def test_first_deploy_k8s_names_match_manifests():
+    t = first()
+    deployments = set(re.findall(r"kind: Deployment\nmetadata: \{name: ([a-z-]+),", K8S))
+    containers = set(re.findall(r"^\s+- name: ([a-z-]+)\n\s+image: ", K8S, re.M))
+    assert deployments == {"learning", "knowledge", "insight", "review-console", "bff", "web", "scheduler"}
+    for d in re.findall(r"deployment/([a-z-]+)", t):
+        assert d in deployments, d
+    for c in re.findall(r" -c ([a-z-]+)", t):
+        assert c in containers, c
+    for a in re.findall(r"-l app=([a-z-]+)", t):
+        assert a in deployments, a
+    # Secret 名与键：与清单 secretKeyRef（含注释里待解开的接线行）和 kms.tf 的凭据名单一致
+    app_secrets = set(re.findall(r'"(starbuddy-[a-z-]+)"', re.search(r"app_secrets = \[(.*?)\]", TF["kms.tf"], re.S).group(1)))
+    table = t[t.index("| Secret | 键 |"):t.index("- 核对（只看名字")]
+    rows = {m.group(1): m.group(2) for m in re.finditer(r"^\| `(starbuddy-[a-z-]+)` \| (.*)\|$", table, re.M)}
+    assert set(rows) == app_secrets, sorted(set(rows) ^ app_secrets)
+    for name, key in re.findall(r"secretKeyRef: \{name: ([a-z-]+), key: ([a-z-]+)\}", K8S):
+        assert f"`{key}`" in rows[name], f"{name}/{key}"
+    for f in re.findall(r"/run/config/([A-Za-z0-9.-]+)", K8S):
+        assert f"`{f}`" in rows["starbuddy-signed-config"], f
+    assert "/run/otp/otp.json" in K8S and "`otp.json`" in rows["starbuddy-staging-otp"]
+    for name, key in re.findall(r"configMapKeyRef: \{name: ([a-z-]+), key: ([a-z-]+)\}", K8S):
+        assert f"`{name}`" in t and f"`{key}`" in t, f"{name}/{key}"
+    assert "configMap: {name: starbuddy-rds-ca}" in K8S and "`starbuddy-rds-ca`" in t and "`ca.pem`" in t
+    assert "-o yaml` / `-o json`" in t and not re.search(r"get secret\S* .*-o (yaml|json)", "\n".join(code_lines(t))), "不读 Secret 取值"
+    # 服务间 readyz：clusterIP 与端口来自清单，覆盖全部有 clusterIP 的 Service
+    svc = set(re.findall(r"clusterIP: (10\.96\.100\.\d+), ports: \[\{port: (\d+),", K8S))
+    urls = set(re.findall(r"http://(10\.96\.100\.\d+):(\d+)/readyz", t))
+    assert urls == svc, sorted(urls ^ svc)
+    # 只用仓库里出现过的网段 / 地址（不写真实地址）
+    ip_corpus = K8S + "\n".join(TF.values()) + (DEPLOY / "config" / "README.md").read_text(encoding="utf-8")
+    for ip in set(re.findall(r"\b\d{1,3}(?:\.\d{1,3}){3}(?:/\d+)?\b", t)):
+        assert ip in ip_corpus, ip
+
+
+def test_first_deploy_flags_metrics_alerts_and_roles_exist(flags):
+    t = first()
+    # 开关矩阵：每个 pending 项都在第 5 节表里，并列出依赖它的每个 id；保持关的 id 都写明
+    section = t[t.index("\n## 5. "):t.index("\n## 6. ")]
+    items = [*flags["subjects"], *flags["features"]]
+    pending: dict[str, set[str]] = {}
+    for it in items:
+        for p in it.get("pending", []):
+            pending.setdefault(p, set()).add(it["id"])
+    assert set(pending) == {"migration_0058", "signed_content", "model_provider", "human"}
+    for p, ids in pending.items():
+        row = re.search(rf"^\| `{p}` \|([^\n]*)$", section, re.M)
+        assert row, p
+        cell = row.group(1).split("|")[0]
+        assert set(re.findall(r"`([a-z_0-9]+)`", cell)) == ids, (p, ids)
+    for it in items:
+        if it["state"] == "off" and not it.get("pending"):
+            assert f"`{it['id']}`" in section, it["id"]
+    # 指标名在登记清单里；数据库角色 / schema 名在 bootstrap 与迁移里
+    import yaml
+    inv = yaml.safe_load((DEPLOY / "observability" / "metrics-inventory.yaml").read_text(encoding="utf-8"))
+    metrics = {m for ms in inv["services"].values() for m in ms}
+    roles = (ROOT / "db" / "bootstrap" / "roles.sql").read_text(encoding="utf-8")
+    m0009 = next((ROOT / "db" / "migrations").glob("0009_*.up.sql")).read_text(encoding="utf-8")
+    for name in set(re.findall(r"\bstarbuddy_[a-z_]+\b", t)):
+        assert name in metrics or f"CREATE ROLE {name} " in roles or name in m0009, name
+    alerts = (DEPLOY / "observability" / "alerts.yaml").read_text(encoding="utf-8")
+    for a in set(re.findall(r"\bStarbuddy[A-Za-z0-9]+\b", t)):
+        assert f"alert: {a}\n" in alerts, a
+    # 0058 的函数签名与迁移一致
+    m0058 = next((ROOT / "db" / "migrations").glob("0058_*.up.sql")).read_text(encoding="utf-8")
+    assert "platform.learning_meter_check(uuid, text, uuid, text)" in m0058 and "platform.learning_meter_check(uuid, text, uuid, text)" in t

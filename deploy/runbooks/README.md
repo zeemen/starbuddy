@@ -7,6 +7,7 @@
 
 | 手册 | 什么时候用 |
 |---|---|
+| [staging-first-deploy.md](staging-first-deploy.md) | staging 第一次全量部署与上线前走查：LT-01 至 LT-05 串成一条顺序（Terraform 分阶段、镜像、副本演练与迁移、k8s 按依赖部署、开关解除、走查、回滚） |
 | [rds-restore-and-migrate-rehearsal.md](rds-restore-and-migrate-rehearsal.md) | 每次执行迁移之前（含 0058）；每月一次备份可恢复性演练 |
 | [rollback.md](rollback.md) | 发布后出问题：应用回滚、迁移回滚（down）、按时间点恢复（PITR） |
 | [weekly-restore-verify.md](weekly-restore-verify.md) | 每周一次：恢复到副本、mark-replica，用 `restore_verify.py` 只读校验行数与校验和、迁移账本，并与上周报告比较（LT-05） |
