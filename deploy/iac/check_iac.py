@@ -22,8 +22,8 @@
   R10 ACK 不开公网：API Server 不开公网负载均衡、不让集群另建 NAT、节点不分配公网带宽
   R11 出网白名单：有 NAT 网关；云防火墙 NAT 边界出方向只放行 var.model_egress_fqdns 的 TCP 443（主机名类型），最后一条拒绝其余全部；
       模型供应商主机名变量没有缺省值（由人填写）；安全组出公网只开 TCP 443；
-      云防火墙没开不能静默放开出网：确认变量 nat_firewall_confirmed 没有缺省值且校验必须为 true，每条 SNAT 都 depends_on
-      两类访问控制、并以 var.nat_firewall_confirmed 为前置条件
+      云防火墙没开不能静默放开出网：确认变量 nat_firewall_confirmed 是 bool、没有缺省值（必须显式给出），每条 SNAT 都 depends_on
+      两类访问控制、并以 var.nat_firewall_confirmed 为前置条件（变量本身不再校验 == true，以便分阶段 apply 前几阶段传 false）
   R12 日志留存 180–365 天（下限：《网络安全法》第二十一条；上限：最小必要，LT-05 安全审查）；var.log_retention_days 的校验写明上下限
   R13 版本锁定：terraform 有 required_version；alicloud provider 来源 aliyun/alicloud 且有版本约束；backend 只写部分配置（不含取值）
   R14 ACR 私有：命名空间缺省私有、不自动建仓；仓库私有；没有公网访问控制入口
@@ -700,9 +700,8 @@ class Checker:
                     self.add("R11", b.file, f"{b.labels[1]}：出公网只开 TCP 443")
         # 云防火墙没开不能静默放开出网（安全审查采纳建议）
         cv = self.variables().get("nat_firewall_confirmed")
-        if cv is None or "default" in cv.body.attrs or not any(
-                "var.nat_firewall_confirmed == true" in getattr(x.body.attrs.get("condition"), "raw", "") for x in sub(cv.body, "validation")):
-            self.add("R11", cv.file if cv else "-", "必须有确认变量 nat_firewall_confirmed（没有缺省值，校验必须为 true）")
+        if cv is None or "default" in cv.body.attrs or getattr(cv.body.attrs.get("type"), "raw", "").strip() != "bool":
+            self.add("R11", cv.file if cv else "-", "必须有确认变量 nat_firewall_confirmed（bool，没有缺省值）")
         snats = self.resources("alicloud_snat_entry")
         if not snats:
             self.add("R11", "-", "没有 SNAT 条目（出网落点）")

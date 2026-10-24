@@ -2,7 +2,8 @@
 # 出方向只放行模型供应商接入主机名的 TCP 443（var.model_egress_fqdns，由人填写，与路由表 allowed_hosts、vendors.md、
 # deploy/k8s 学习服务 Pod 注解三处一致），最后一条拒绝其余全部出网。集群内另有 NetworkPolicy：只有学习服务 Pod 能出网到 443。
 # 前置（由人完成）：开通云防火墙（包年包月）并在控制台为 network.tf 的 NAT 网关开启 NAT 边界防火墙，然后把变量
-# nat_firewall_confirmed 设为 true（没有缺省值；不设或设 false，plan 在变量校验处停下，SNAT 另以它为前置条件，出网不会被静默放开）。
+# nat_firewall_confirmed 设为 true（没有缺省值，必须显式给出；为 false 时每条 SNAT 的前置条件都不通过，出网不会被静默放开；
+# 前几个阶段的 plan 传 false 并用 -target 排除 SNAT，见 deploy/runbooks/staging-first-deploy.md 第 1 节）。
 # 不用 Terraform 开启 NAT 边界防火墙：对应资源（alicloud_cloud_firewall_nat_firewall）的参数与计费方式待人核实，
 # 所以只用“确认变量 + SNAT depends_on 访问控制”两道兜底（见 network.tf 的 alicloud_snat_entry）。
 

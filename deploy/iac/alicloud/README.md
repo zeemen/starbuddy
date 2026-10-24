@@ -52,7 +52,8 @@
   tablestore_endpoint、tablestore_table、encrypt = true；
 - 变量：复制 `terraform.tfvars.example` 为 `terraform.tfvars`（不提交）并填写；其中 `cloud_service_endpoint_cidrs` 按 cn-beijing 的 ACK 管控、
   SLS、KMS、STS、OSS 内网端点解析出的地址填写（只在 100.64.0.0/10 里、掩码不宽于 /24），`nat_firewall_confirmed` 在为 NAT 网关开启
-  NAT 边界防火墙之后才设 true（不设或 false 时 plan 在变量校验处停下；SNAT 另有同一变量的前置条件，出网不会被静默放开）。
+  NAT 边界防火墙并经第二人核实之后才设 true；之前必须显式设 false（变量无缺省值），此时任何 SNAT 都过不了前置条件，出网不会被静默放开；
+  分阶段 apply 见 deploy/runbooks/staging-first-deploy.md 第 1 节。
 
 步骤：
 1. `terraform init -backend-config=backend.hcl`；

@@ -351,8 +351,9 @@ def test_first_deploy_terraform_matches_iac():
     for o in ("kms_key_id", "kms_secrets_key_id", "slb_acl_id", "log_project"):
         assert f"`{o}`" in t and o in outputs, o
     assert "rds_private_host" in outputs
-    # 阻断项：确认变量的校验仍是 == true（IaC 改了要同步改手册 0.6 第 1 条）
-    assert "var.nat_firewall_confirmed == true" in v["nat_firewall_confirmed"] and "nat_firewall_confirmed" in t and "R11" in t
+    # 确认变量：bool、无缺省值、不再有变量级 == true 校验（LT-03 决定记录第 8 条；IaC 改了要同步改手册 0.6 第 1 条）
+    assert "== true" not in v["nat_firewall_confirmed"] and re.search(r"type\s*=\s*bool", v["nat_firewall_confirmed"])
+    assert "-var nat_firewall_confirmed=false" in t and "R11" in t
     # 静态检查命令与脚本一致
     sh = (DEPLOY / "scripts" / "iac-validate.sh").read_text(encoding="utf-8")
     assert "--skip-download" in sh and "IAC_PLUGIN_DIR" in sh and "CHECKPOINT_DISABLE=1" in sh and "TF_IN_AUTOMATION" in sh

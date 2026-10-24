@@ -92,12 +92,10 @@ ACK 首次使用须由主账号在控制台授权容器服务的服务角色（�
 | 集群里各服务 | 见 `deploy/config/env-inventory.yaml` | 密钥类只经 `secretKeyRef`（第 4.1 节的 Secret 表），开关类取值见 `deploy/flags/staging.yaml` |
 
 ### 0.6 开工前的阻断项（不解决不进入第 1 节阶段 A）
-1. **`nat_firewall_confirmed` 与分阶段 apply 冲突**：`variables.tf` 里该变量没有缺省值、且校验要求 `== true`（`check_iac.py` 规则 R11 强制），所以
-   **任何一次 plan（含带 `-target` 的阶段 A–C）在它为 false 时都会在变量校验处停下**；而 NAT 边界防火墙只能在 NAT 网关建好之后开启（阶段 D）。
-   按现有代码只能“在防火墙开启之前就声明已开启”，这违背该变量的本意。建议由人决定：
-   - 推荐：另起 IaC 变更（`[NEEDS-HUMAN]`）——去掉变量级校验、只保留 SNAT 的前置条件（`precondition`），并同步改 R11 与其变异测试；
-   - 或：由人书面接受在阶段 A–C 与 D1 用 `-var nat_firewall_confirmed=true` 且 `-target` 不含 SNAT 与访问控制，D2 之前由第二人在控制台核实防火墙已开启。
-   本手册不替人选择；未决定前不执行阶段 A。
+1. **`nat_firewall_confirmed`（已解决，LT-03 决定记录第 8 条，2026-10-24）**：变量是 bool、没有缺省值（必须显式给出），不再有变量级 `== true`
+   校验（`check_iac.py` 规则 R11 核对）；每条 SNAT 仍以 `var.nat_firewall_confirmed` 为前置条件。阶段 A–C 与 D1 一律传
+   `-var nat_firewall_confirmed=false`（SNAT 不在 `-target` 里，出网保持不通）；D2 之前由人在控制台为 NAT 网关开启 NAT 边界防火墙、
+   第二人核实后才传 `true`。
 2. 许可证：Terraform BSL 1.1 是否接受（否则 OpenTofu，`make iac-validate` 自动识别 `tofu`）。
 3. 包年包月与新增云服务（ACR 企业版、云防火墙、ARMS、SLS）已由人确认计费并开通。
 4. `terraform.tfvars` 必填项已由人准备好（放 `<计划目录>`，不进仓库）：`k8s_version`、`node_key_pair_name`、`oss_bucket_name`、`office_vpn_cidrs`、
@@ -325,8 +323,9 @@ python3 deploy/migrate/migrate.py rehearse --dsn-env REPLICA_DSN --target-label 
 | 前端 | 两份同意书版本与 BFF 一致、`WEB_HOST` 为 Pod IP | 拒绝启动 |
 | 审核台后端 | 两个登录角色 | 拒绝启动 |
 
-清单里 `LEARNING_MASTERY_CONFIG_AYA` 等指向签字配置：**教研签字前**，由人决定是“等签字后再部署对应服务”，还是在部署副本里暂不设该变量
-（该科不写掌握记录、星图无掌握数据）并在变更记录写明；本手册不替人决定（第 5 节 `signed_content`）。
+**教研签字前的部署范围（LT-03 决定记录第 9 条，2026-10-24）**：先部署基础设施、镜像、迁移演练，以及不依赖签字的知识服务、BFF、前端、审核台后端；
+学习服务（含三科适配器）、洞察服务、调度器等签字后再部署，**不放松任何启动校验、不设合成配置**。签字前 BFF 调用学习 / 洞察服务的接口回 503 属预期
+（第 5 节 `signed_content`）。
 
 ### 4.1 凭据管家同步（ack-secret-manager）
 - 在 KMS 凭据管家建凭据，名字 `starbuddy-staging/<Secret 名>`，加密密钥选 `alias/<名前缀>-secrets`（IaC 输出 `kms_secrets_key_id`）；在 ACK 里建

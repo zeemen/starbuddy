@@ -93,12 +93,8 @@ variable "model_egress_fqdns" {
 }
 
 variable "nat_firewall_confirmed" {
-  description = "由人确认：已在云防火墙控制台为 network.tf 的 NAT 网关开启 NAT 边界防火墙（egress.tf 的访问控制只在开启后生效）；没有缺省值"
+  description = "由人确认：已在云防火墙控制台为 network.tf 的 NAT 网关开启 NAT 边界防火墙（egress.tf 的访问控制只在开启后生效）；没有缺省值，必须显式给出。为 false 时任何 SNAT 都过不了前置条件（出网保持不通），分阶段 apply 的前几阶段传 false"
   type        = bool
-  validation {
-    condition     = var.nat_firewall_confirmed == true
-    error_message = "先开启 NAT 边界防火墙，再设 nat_firewall_confirmed = true；没开启时不建 SNAT（出网不能被静默放开）。"
-  }
 }
 
 variable "cloud_service_endpoint_cidrs" {

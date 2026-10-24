@@ -99,6 +99,8 @@ MUTATIONS = [
      "（nat_firewall_confirmed，见 egress.tf）\n  depends_on = [alicloud_eip_association.nat, alicloud_cloud_firewall_nat_firewall_control_policy.model_vendor,\n"
      "                alicloud_cloud_firewall_nat_firewall_control_policy.deny_rest]\n  lifecycle {\n    precondition {\n      condition     = true", "R11"),
     ("云防火墙确认变量给了缺省值", "variables.tf", "  description = \"由人确认：", "  default     = true\n  description = \"由人确认：", "R11"),
+    ("云防火墙确认变量不是 bool", "variables.tf", "分阶段 apply 的前几阶段传 false\"\n  type        = bool",
+     "分阶段 apply 的前几阶段传 false\"\n  type        = string", "R11"),
     ("RDS 的 pg_hba 收不走 TLS 的连接", "rds.tf", "    type        = \"hostssl\"", "    type        = \"host\"", "R06"),
     ("RDS 的 pg_hba 免口令", "rds.tf", "    method      = \"scram-sha-256\"", "    method      = \"trust\"", "R06"),
     ("RDS 没有 pg_hba", "rds.tf", "  pg_hba_conf {\n    type        = \"hostssl\"\n    database    = \"all\"\n    user        = \"all\"\n"
