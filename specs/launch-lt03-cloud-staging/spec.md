@@ -36,3 +36,6 @@
 4. 适配器健康端点撤回：三科适配器不改代码（维持 LT-01 第 5 条），探针退回 exec TCP 连接；前端 `/healthz`、`/readyz` 保留（内网负载均衡需要），补登攻击面清单。
 5. 副本限定：迁移执行器新增“标记副本”子命令（核对服务端地址与显式副本主机）；标签以 `-replica` 结尾时 down / up 也强制 `--replica --replica-host-allow`；演练手册主 / 副分用不同变量名。
 6. 连库 TLS：staging 下学习、洞察、知识、BFF 拒绝不带 `sslmode=verify-full` 与固定 CA 路径 `/run/rds-ca/ca.pem` 的连接串；RDS 侧只允许 hostssl。
+
+## 决定记录（再续，2026-10-24，用户）
+7. 阿里云已开通。用户决定给 Claude 会话受限访问并**允许 apply**（推翻第 3 条“不 plan / apply”）：由用户在云环境设置中放行阿里云与 Terraform 提供方域名、以环境变量配置专用 RAM 子账号凭据（Claude 不读取、不打印其值）；每次 apply 前 Claude 贴出 plan 摘要（资源增删改、计费类资源与预估费用），**经用户逐次确认后才执行**；不执行 destroy（须另行确认）。Terraform 状态不得落在仓库或会话临时目录，使用 OSS 远程后端（私有、版本控制、KMS 加密）并加锁。
