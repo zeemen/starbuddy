@@ -17,6 +17,8 @@
   合成占位只允许 test，未签字的周报配置在 test 以外不生成（jobs.weekly_reports 的守卫）。不触发学情档案页编译（不配学习服务，
   profile_pages 为空，与服务没配学习服务时同一行为）。重复运行同一周不重写；有学生被库里守卫拒收（failed）时退出码 1。
 --all 取“有当前节点键掌握行的全部学生”（platform.mastery_estimate，0028 已授洞察服务只读）。
+LT-06：--all 与点名的学生、周报的候选，都只留库层处理判据 platform.student_processing_allowed 为真的（迁移 0059：已退出内部测试、
+已删除、没有有效同意的学生不再同步、不算指标、不出周报）；判据函数不在时（0059 未执行）不过滤。
 学习服务掌握重算完成后不直接调洞察服务（spec 默认方案第 5 条）；什么时候跑由人接调度（同 4-G 时政下架的做法）。
 
 规则 9：只连本机数据库。连接前核对连接串里的全部主机（复用审核台命令行的 local_only：多主机写法、host 查询参数、
@@ -39,6 +41,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Sequence
 
+from . import processing
 from .policy import CONFIG_DIR, PolicyError, load_check_config, load_policy
 from .service.config import SERVICE_ENVS
 from .shared import forbidden_matcher  # noqa: F401  先导入 shared：把 services/learning 加进 sys.path（复用审核台的本机核对）
@@ -171,6 +174,8 @@ async def _run(cmd: str, students: list[str], all_students: bool, limit: int, we
             await check_server(conn, env)
             if all_students:
                 students = [r["student_id"] for r in await conn.fetch(STUDENTS_SQL)]
+            # 库层处理判据（LT-06 决定记录（续）第 4 条）：--all 与点名的学生都只留判据为真的（已退出、已删除、没有有效同意的不同步、不算指标）
+            students = await processing.keep_allowed(conn, students)
         store = InsightStore(pool)
         if cmd == "sweep":
             return {"job": "sweep", "to_verify": await jobs.sweep(store, limit)}

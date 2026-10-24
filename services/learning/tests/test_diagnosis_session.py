@@ -15,7 +15,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from conftest import CREDENTIAL, meter_row
+from conftest import CREDENTIAL, grant_consents, meter_row
 from conftest import settings as make_settings
 from learning.app import create_app
 from learning.config import AdapterTarget, Settings
@@ -270,6 +270,7 @@ async def new_student(admin) -> str:
         await c.execute("INSERT INTO platform.household (id, created_by_account) VALUES ($1::uuid, $2::uuid)", household, guardian)
         await c.execute("""INSERT INTO platform.student_profile (id, account_id, household_id, grade, region, textbook_version, birth_year_month)
                            VALUES ($1::uuid, $2::uuid, $3::uuid, 9, 'nanjing', 'suke-2024', '2012-03-01')""", sid, acct, household)
+        await grant_consents(c, sid, guardian)
     return sid
 
 
@@ -645,6 +646,7 @@ async def _another_student(admin) -> str:
         await c.execute("INSERT INTO platform.household (id, created_by_account) VALUES ($1::uuid, $2::uuid)", household, guardian)
         await c.execute("""INSERT INTO platform.student_profile (id, account_id, household_id, grade, region, textbook_version, birth_year_month)
                            VALUES ($1::uuid, $2::uuid, $3::uuid, 9, 'nanjing', 'suke-2024', '2012-03-01')""", sid, acct, household)
+        await grant_consents(c, sid, guardian)
     return sid
 
 
@@ -704,6 +706,7 @@ async def cohort_student(admin, grade: int = 8, created_at: str = "2026-10-01 10
                            VALUES ($1::uuid, $2::uuid, $3::uuid, $4, 'nanjing', 'suke-2024', $5::text::timestamptz)""",
                         sid, acct, household, grade, created_at)
         assert await c.fetchval("SELECT exam_cohort FROM platform.student_profile WHERE id = $1::uuid", sid) == 2028 + (8 - grade)
+        await grant_consents(c, sid, guardian)
     return sid
 
 

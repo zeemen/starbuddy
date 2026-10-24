@@ -571,6 +571,21 @@ class ReviewStore:
     async def resolve_task(self, staff: uuid.UUID, task_id: uuid.UUID, code: str) -> None:
         await self._as_staff(staff, lambda c: c.execute("SELECT platform.resolve_review_task($1, $2)", task_id, code))
 
+    # ---------- 内部测试运营（LT-06，迁移 0059；开关 REVIEW_CONSOLE_INTERNAL_TEST）：反馈只读列表与改状态、退出状态。
+    # 只经三个库函数（核对 active staff）；学生只给不透明指针，不给 student_id 与提交者账号；反馈文本只给页面显示，不进日志 ----------
+    async def feedback_list(self, staff: uuid.UUID, status: str | None, limit: int, before: datetime | None,
+                            before_id: uuid.UUID | None) -> list[dict[str, Any]]:
+        rows = await self._as_staff(staff, lambda c: c.fetch(
+            "SELECT * FROM platform.review_feedback_list($1, $2, $3, $4)", status, limit, before, before_id))
+        return [_task_row(dict(r)) for r in rows]
+
+    async def feedback_set_status(self, staff: uuid.UUID, feedback_id: uuid.UUID, status: str) -> str:
+        return await self._as_staff(staff, lambda c: c.fetchval("SELECT platform.review_feedback_set_status($1, $2)", feedback_id, status))
+
+    async def internal_test_exits(self, staff: uuid.UUID, limit: int) -> list[dict[str, Any]]:
+        rows = await self._as_staff(staff, lambda c: c.fetch("SELECT * FROM platform.review_internal_test_exits($1)", limit))
+        return [{**_task_row(dict(r)), "consents_revoked": list(r["consents_revoked"])} for r in rows]
+
 
 def _s(v: Any) -> str | None:
     return None if v is None else str(v)

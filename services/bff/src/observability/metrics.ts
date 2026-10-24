@@ -197,6 +197,9 @@ export const meterReserve = counter('starbuddy_meter_reserve_total', '计量预�
 export const meterSettle = counter('starbuddy_meter_settle_total', '计量结算（meter_settle 的结果编码；事务提交之后计数）', ['outcome']);
 export const meterRelease = counter('starbuddy_meter_release_total', '计量释放即回滚（meter_release 的结果编码；事务提交之后计数）', ['outcome']);
 export const meterConflict = counter('starbuddy_meter_conflict_total', '计量冲突（对外 409；outcome 为哪一步的哪种冲突）', ['outcome']);
+/** LT-06：退出测试作废白名单条目时审计写失败（内存里已作废，但重启从审计恢复时会丢失这次作废）；告警 StarbuddyStagingOtpRevokeAuditFailed */
+export const stagingOtpRevokeAuditFailed = counter('starbuddy_staging_otp_revoke_audit_failed_total',
+  'staging 白名单固定码：退出测试作废条目时审计写失败的次数（内存已作废，重启后会丢失这次作废，需管理员按手册用工具作废）', ['service']);
 export const meterEvents = counter('starbuddy_meter_events_total', '计量事件（少扣、结果未知、重试等，metering/metrics.ts 的事件名）', ['outcome']);
 
 export function statusClass(code: number): string {

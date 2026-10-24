@@ -165,7 +165,9 @@ class _FakePool:
     """lifespan 级核对用的假连接池（契约审查 7）：迁移存在性检查一律回真；不连任何库"""
 
     async def fetchval(self, _sql, *_a):
-        return True
+        from learning import processing
+        # LT-06 处理判据：判据函数“在”，但随机学生的档案不存在，不算被拦（与真实库一致）
+        return _sql != processing.BLOCKED_SQL
 
     async def close(self):
         return None
@@ -243,6 +245,12 @@ def test_review_console_envs():
     # 开发开关在 staging 仍拒绝
     with pytest.raises(RuntimeError, match="REVIEW_CONSOLE_FEATURES"):
         ReviewSettings.from_env(review_env("staging", REVIEW_CONSOLE_FEATURES="tag_worklist"))
+    # LT-06 内部测试运营开关：staging 能开（缺省关），只认 internal_test
+    assert ReviewSettings.from_env(review_env("staging", REVIEW_CONSOLE_HOST="172.28.0.13")).internal_test is False
+    assert ReviewSettings.from_env(review_env("staging", REVIEW_CONSOLE_HOST="172.28.0.13",
+                                              REVIEW_CONSOLE_INTERNAL_TEST="internal_test")).internal_test is True
+    with pytest.raises(RuntimeError, match="REVIEW_CONSOLE_INTERNAL_TEST"):
+        ReviewSettings.from_env(review_env("staging", REVIEW_CONSOLE_HOST="172.28.0.13", REVIEW_CONSOLE_INTERNAL_TEST="tag_worklist"))
     for env in ("pilot", "production", ""):
         with pytest.raises(RuntimeError, match="REVIEW_CONSOLE_ENV"):
             ReviewSettings.from_env(review_env(env))

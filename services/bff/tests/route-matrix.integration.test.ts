@@ -46,8 +46,9 @@ import { createFamily, HAS_DB, setupHarness, type Harness } from './harness.ts';
 import { operations } from './openapi-ops.ts';
 import { callAs, ORIGIN, startShell, type Sess, type ShellHarness } from './shell-harness.ts';
 
-/** 本次部署可能注册的全部路由（信任界面开关全开，H5 星图 v1 开关全开，错题再练开关打开，复测与验证题开关打开，家长诉求与月度计划打开） */
-const ALL: readonly Route[] = activeRoutes(new Set(TRUST_FEATURES), new Set(STAR_MAP_FEATURES), true, true, true, true);
+/** 本次部署可能注册的全部路由（信任界面开关全开，H5 星图 v1 开关全开，错题再练开关打开，复测与验证题开关打开，家长诉求与月度计划打开，
+ *  内部测试运营打开（LT-06：反馈、退出状态、退出测试）） */
+const ALL: readonly Route[] = activeRoutes(new Set(TRUST_FEATURES), new Set(STAR_MAP_FEATURES), true, true, true, true, true);
 const keyOf = (r: Route) => `${r.method} ${r.path}`;
 const OPS = operations();
 const opOf = (r: Route) => OPS.get(`${r.method} ${PREFIX}${r.path}`)!;
@@ -138,6 +139,11 @@ export const SAMPLES: Record<string, Sample> = {
   // 越权请求一次也不能到达）；学生端只给学生本人，不触发生成
   'GET /students/{student_id}/monthly-plan': none,
   'GET /students/{student_id}/my-plan': none,
+  // 内部测试运营（LT-06，开关 internal_test）：反馈给学生本人与有效绑定家长；退出测试的样例不确认（confirm: false），授权通过后回
+  // 403 CONFIRMATION_REQUIRED，阳性对照不会真的让 S 退出（之后的用例都要用 S）
+  'POST /students/{student_id}/feedback': b(() => ({ category: 'malfunction', body: '合成反馈：按钮没有反应', route_template: '/s/[studentId]/today' })),
+  'GET /students/{student_id}/internal-test': none,
+  'POST /students/{student_id}/internal-test/exit': b(() => ({ confirm: false })),
 };
 
 /**
@@ -168,6 +174,7 @@ export const RATE_EXEMPT: Record<string, string> = {
   'GET /students/{student_id}/time-guard': '只读（AA）',
   'GET /students/{student_id}/rest-reminder': '进程内计时，只读（AA）',
   'POST /students/{student_id}/rest-reminder/ack': '进程内计时（AA）',
+  'GET /students/{student_id}/internal-test': '只读一个布尔（是否已退出内部测试，LT-06）',
 };
 
 // ---------------------------------------------------------------- 假的学习服务与洞察服务（计数：越权请求不能到达）
@@ -397,6 +404,7 @@ before(async () => {
     retest: { enabled: true, learning: retestLearning, retryDelaysMs: [1] },
     familyGoals: { enabled: true },
     monthlyPlan: { enabled: true, client: monthlyPlanClient },
+    internalTest: { enabled: true },
   });
   // 会话都在改状态之前拿到（学生会话经 gF 打开学生模式）
   for (const a of [A.gF, A.gO, A.gU, A.gR, A.gD2, A.gX, A.aS, A.aS2, A.aT]) await sess(a);

@@ -17,6 +17,7 @@ from typing import Sequence
 
 import asyncpg
 
+from . import processing
 from .plan_tasks import PLAN_KINDS, PlanRecord, plan_outcome_counts
 from .policy import TEST_ENV, Policy
 from .profile_pages import SUBJECTS as PROFILE_SUBJECTS
@@ -79,13 +80,13 @@ async def objective_facts(conn: asyncpg.Connection, student: str, week_start: da
 
 
 async def students_with_claims(store: InsightStore) -> list[str]:
-    """有对学生或家长可见的非终态节点判断的学生（周报的候选）"""
+    """有对学生或家长可见的非终态节点判断的学生（周报的候选）；只取库层处理判据为真的（LT-06：已退出、已删除、没有有效同意的不出周报）"""
     async with store.pool.acquire() as conn:
         rows = await conn.fetch(
             """SELECT DISTINCT c.student_id::text AS s FROM insight.claim c
                 WHERE c.target_type = 'node' AND c.status IN ('hypothesis', 'established') AND c.expires_at > now()
                   AND c.visibility && ARRAY['student', 'guardian'] ORDER BY 1""")
-    return [r["s"] for r in rows]
+        return await processing.keep_allowed(conn, [r["s"] for r in rows])
 
 
 async def insert_weekly(conn: asyncpg.Connection, student: str, week_start: date, audience: str, result: WeeklyResult,
@@ -169,7 +170,12 @@ async def run_week(store: InsightStore, week_start: date, policy: Policy, weekly
     if env != TEST_ENV and not weekly.signed:
         raise Unavailable("weekly policy is not signed")
     await check_week(store, week_start)
-    targets = list(students) if students is not None else await students_with_claims(store)
+    if students is not None:
+        # 点名的学生同样过库层处理判据（LT-06）：已退出的不生成周报、不触发档案页编译
+        async with store.pool.acquire() as conn:
+            targets = await processing.keep_allowed(conn, list(students))
+    else:
+        targets = await students_with_claims(store)
     outcomes: list[WeeklyOutcome] = []
     ok = failed = 0
     for s in targets:

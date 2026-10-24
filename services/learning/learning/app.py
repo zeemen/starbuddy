@@ -24,7 +24,7 @@ import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from . import health, mastery_routes, metrics, obs, store
+from . import health, mastery_routes, metrics, obs, processing, store
 from .adapter_client import strict_json
 from .config import Settings
 from .contract import UnsupportedContractVersion, internal_contract, plugin_contract
@@ -271,7 +271,10 @@ def create_app(
         # 档案页：不调模型（第一步 #19）；只由会话开始（编排层）与周报（洞察服务）经 ensure 触发，作答与重算不触发
         state["profile"] = profile if profile is not None else (ProfilePages(p, profile_cfg) if profile_cfg is not None else None)
         state["mastery_configs"] = dict(engine.configs) if engine is not None else configs
-        state["service"] = IngestService(settings, p, client, mastery=engine)
+        # LT-06 决定记录（续）第 4 条：库层处理判据（迁移 0059）在就无条件生效——写入与模型处理入口先问库，退出、删除、没有有效同意的学生 404
+        state["pool"] = p
+        state["processing"] = await processing.available(p)
+        state["service"] = IngestService(settings, p, client, mastery=engine, processing=state["processing"])
         state["plan"] = (p, client)
         if settings.diagnosis_presenter == "synthetic":
             try:
@@ -435,6 +438,8 @@ def create_app(
             candidate = body.get("request_id") if isinstance(body, dict) else None
             rid = candidate if isinstance(candidate, str) and UUID_RE.fullmatch(candidate) else None
             pool_, client_ = state["plan"]
+            # 今日计划会调各科适配器（对外调用）：先过库层处理判据
+            await processing.require(pool_, bool(state.get("processing")), body.get("student_ref") if isinstance(body, dict) else None)
             digest, fields = await plan_today(settings, pool_, client_, body)
             record.update(status=200, **fields)
             return JSONResponse(digest)

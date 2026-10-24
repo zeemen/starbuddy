@@ -64,6 +64,11 @@ INSERT INTO platform.student_profile (id, account_id, household_id, grade, regio
 INSERT INTO platform.guardian_student_link (id, guardian_account_id, student_id, granted_via) VALUES
   ('{LINK_A}', '{GA}', '{S1}', 'household_creator');
 INSERT INTO platform.guardian_student_link (guardian_account_id, student_id, granted_via) VALUES ('{GB}', '{S2}', 'household_creator');
+-- 两份同意（合成文本版本）：0059 起周报、指标选人只取 platform.student_processing_allowed 为真的学生（LT-06）
+INSERT INTO platform.consent_record (student_id, guardian_account_id, consent_type, document_version, decision, decided_at)
+  SELECT s, g, t, replace(t, '_', '-') || '@synthetic-0', 'granted', now() - interval '30 days'
+    FROM (VALUES ('{S1}'::uuid, '{GA}'::uuid), ('{S2}'::uuid, '{GB}'::uuid), ('{S3}'::uuid, '{GA}'::uuid)) v(s, g),
+         unnest(ARRAY['privacy_policy', 'guardian_consent_under14']) t;
 -- 迁移 0039 起已发布的内容版本与已准入的题只能经发布闸门产生；洞察服务测试只要它们存在，以复制模式直接写入（同下面的证据）
 SET session_replication_role = replica;
 INSERT INTO platform.curriculum_version (id, region, exam_year, grade, textbook_version, subject, content_version, status, published_at)

@@ -20,7 +20,7 @@ import asyncpg
 import httpx
 
 from . import meter as M
-from . import store
+from . import processing, store
 from .adapter_client import call_adapter
 from .checks import collect_refs, local_id, parse_time, verify
 from .config import Settings
@@ -39,11 +39,13 @@ BUSY_MAX_POLL_SECONDS = 2.0
 
 class IngestService:
     def __init__(self, settings: Settings, pool: asyncpg.Pool, client: httpx.AsyncClient,
-                 mastery: MasteryEngine | None = None) -> None:
+                 mastery: MasteryEngine | None = None, processing: bool = False) -> None:
         self.settings = settings
         self.pool = pool
         self.client = client
         self.mastery = mastery  # 掌握重算（KGE-04 第二步）；None = 不写掌握记录
+        # 库层处理判据（LT-06，迁移 0059）：可用时每笔写入先问库（退出、删除、没有有效同意的学生 404 STUDENT_NOT_FOUND）
+        self.processing = processing
 
     async def _recompute_mastery(self, ctx: dict, summary: dict) -> None:
         """落库事务已提交：另起事务同步重算这次作答涉及的单元（第一步待人确认 #6）。
@@ -164,6 +166,8 @@ class IngestService:
                                await store.map_version_for(self.pool, ctx["subject"], ctx.get("content_version")))
         attempts = [request["attempt"]] if method == "grade" else request["attempts"]
         proposed_ids = [a.get("attempt_id") or str(uuid.uuid4()) for a in attempts]
+        # 写入与判分（调适配器、模型）之前：库层处理判据（LT-06 决定记录（续）第 4 条）
+        await processing.require(self.pool, self.processing, ctx["student_ref"])
 
         # 请求里的题目必须已登记（spec 待人确认 #8：只检查、不自动登记）
         items, _ = await store.registered(self.pool, ctx["subject"], {a["item_ref"] for a in attempts}, set())

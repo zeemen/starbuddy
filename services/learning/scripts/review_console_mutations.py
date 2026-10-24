@@ -6,6 +6,7 @@ tests/test_review_revision.py 能发现。
 只有“测试失败”（退出码 1）算发现。先跑一次不变异的对照组，必须通过。两组：
 - 纯函数：tests/test_review_revision.py 里不连库的用例；
 - 库上：整个 tests/test_review_revision.py，一次性 Postgres（每个变异起一个库）；没有本机 Postgres 时退出码 3（Makefile 决定是否算失败）。
+另两组是 LT-06（specs/launch-lt06-internal-test-ops）：反馈列表、改状态、退出状态与开关，断言 tests/test_review_internal_test.py 能发现。
 """
 from __future__ import annotations
 
@@ -91,6 +92,42 @@ DB: dict[str, list[tuple[str, str, str]]] = {
     "签字进度不看人数": [(SV, 'and s["approvals"] >= pf["required_signers"])', ")")],
 }
 
+# ---------- LT-06 内部成员测试运营（specs/launch-lt06-internal-test-ops）：反馈列表、改状态、退出状态与开关 ----------
+LT6_TEST = "tests/test_review_internal_test.py"
+LT6_PURE_TESTS = [LT6_TEST, "-k", "switch_parsing"]
+LT6_DB_TESTS = [LT6_TEST]
+LT6_PURE: dict[str, list[tuple[str, str, str]]] = {
+    "内测：开关能在 pilot 打开": [(CF, '    if env not in SERVICE_ENVS:\n        raise RuntimeError("REVIEW_CONSOLE_INTERNAL_TEST',
+                            '    if False:\n        raise RuntimeError("REVIEW_CONSOLE_INTERNAL_TEST')],
+    "内测：开关收别的取值": [(CF, "    if v != INTERNAL_TEST_FEATURE:", "    if False:")],
+    "内测：开关缺省开": [(CF, '    if not v:\n        return False\n    if env not in SERVICE_ENVS:',
+                      '    if not v:\n        return True\n    if env not in SERVICE_ENVS:')],
+    "内测：环境变量不接线": [(CF, 'internal_test=parse_internal_test(e.get("REVIEW_CONSOLE_INTERNAL_TEST", ""), env))',
+                         "internal_test=False)")],
+}
+LT6_DB: dict[str, list[tuple[str, str, str]]] = {
+    "内测：开关关着也注册": [(APP, "    if internal_on:", "    if True:")],
+    "内测：注入池时缺省开": [(APP, "(settings.internal_test if settings is not None else False))",
+                         "(settings.internal_test if settings is not None else True))")],
+    "内测：只带 before_id 不报错": [(APP, "or not 1 <= limit <= 200 \\\n                    or (before_id is not None and before is None):",
+                                "or not 1 <= limit <= 200:")],
+    "内测：before 不带时区放过": [(APP, '                raise ReviewError(422, "INVALID_PARAMETER", "before 必须带时区")\n            items = await state["review"].feedback_list(',
+                              '                pass\n            items = await state["review"].feedback_list(')],
+    "内测：游标不带 id": [(APP, 'nxt = {"before": items[-1]["created_at"], "before_id": items[-1]["id"]} if len(items) == limit else None\n            return {"items": items, "next": nxt}\n\n        @app.post("/review/v0/feedback/',
+                       'nxt = {"before": items[-1]["created_at"]} if len(items) == limit else None\n            return {"items": items, "next": nxt}\n\n        @app.post("/review/v0/feedback/')],
+    "内测：列表不给下一页": [(APP, 'nxt = {"before": items[-1]["created_at"], "before_id": items[-1]["id"]} if len(items) == limit else None\n            return {"items": items, "next": nxt}\n\n        @app.post("/review/v0/feedback/',
+                         'nxt = None\n            return {"items": items, "next": nxt}\n\n        @app.post("/review/v0/feedback/')],
+    "内测：列表不经 staff 身份": [(ST, 'rows = await self._as_staff(staff, lambda c: c.fetch(\n            "SELECT * FROM platform.review_feedback_list($1, $2, $3, $4)", status, limit, before, before_id))',
+                              'rows = await self.pool.fetch(\n            "SELECT * FROM platform.review_feedback_list($1, $2, $3, $4)", status, limit, before, before_id)')],
+    "内测：改状态不经 staff 身份": [(ST, 'return await self._as_staff(staff, lambda c: c.fetchval("SELECT platform.review_feedback_set_status($1, $2)", feedback_id, status))',
+                               'return await self.pool.fetchval("SELECT platform.review_feedback_set_status($1, $2)", feedback_id, status)')],
+    "内测：改状态写死 closed": [(APP, "feedback_set_status(request.state.staff, feedback_id, body.status)",
+                             'feedback_set_status(request.state.staff, feedback_id, "closed")')],
+    "内测：退出列表丢掉撤回类型": [(ST, '"consents_revoked": list(r["consents_revoked"])}', '"consents_revoked": []}')],
+    "内测：退出列表不经 staff 身份": [(ST, 'rows = await self._as_staff(staff, lambda c: c.fetch("SELECT * FROM platform.review_internal_test_exits($1)", limit))',
+                                'rows = await self.pool.fetch("SELECT * FROM platform.review_internal_test_exits($1)", limit)')],
+}
+
 
 def group(label: str, mutations: dict[str, list[tuple[str, str, str]]], tests: list[str], workers: int) -> int:
     with tempfile.TemporaryDirectory(prefix="review-mut.") as t:
@@ -115,14 +152,14 @@ def main() -> int:
     if not (HERE / ".venv/bin/python").exists():
         print("review-console-mutation: 跳过（没有安装学习服务依赖）")
         return 3
-    rc = group("纯函数", PURE, PURE_TESTS, 6)
+    rc = group("纯函数", PURE, PURE_TESTS, 6) or group("内测纯函数", LT6_PURE, LT6_PURE_TESTS, 4)
     if rc:
         return rc
     from glob import glob
     if not (os.environ.get("PGBIN") or glob("/usr/lib/postgresql/*/bin/initdb")):
         print("review-console-mutation（库上）：跳过（本机没有 Postgres 服务端）")
         return 3
-    return group("库上", DB, DB_TESTS, 4)
+    return group("库上", DB, DB_TESTS, 4) or group("内测库上", LT6_DB, LT6_DB_TESTS, 4)
 
 
 if __name__ == "__main__":

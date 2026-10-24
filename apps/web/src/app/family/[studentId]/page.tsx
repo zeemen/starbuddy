@@ -6,6 +6,7 @@ import { childLabel, FAMILY_COPY } from '../../../auth/copy.ts';
 import { ResultForm } from '../../../auth/ResultForm.tsx';
 import { GoalsLink } from '../../../family-goals/GoalsLink.tsx';
 import { GuardianPlanLink } from '../../../monthly-plan/PlanLinks.tsx';
+import { ExitedNotice, GuardianInternalTestLinks, internalTestExited } from '../../../internal-test/links.tsx';
 import { fetchBalance, fetchEnrollments, fetchToday } from '../../../lib/shell-api.ts';
 import { BALANCE, ENROLL_RESULT, ENROLLMENT, FAMILY_SHELL, resourceLabel, slotText, SOURCE_LABEL, subjectLabel, TODAY } from '../../../shell/copy.ts';
 import { requireGuardian } from '../../../shell/guard.ts';
@@ -21,8 +22,9 @@ const day = (iso: string): string => new Date(Date.parse(iso) + 8 * 3600_000).to
 export default async function ChildPage({ params }: { params: Promise<{ studentId: string }> }) {
   const { studentId } = await params;
   const ps = await requireGuardian(studentId);
-  const [balance, enrollments, today] = await Promise.all([
-    fetchBalance(ps.session, studentId), fetchEnrollments(ps.session, studentId), fetchToday(ps.session, studentId)]);
+  const [balance, enrollments, today, exited] = await Promise.all([
+    fetchBalance(ps.session, studentId), fetchEnrollments(ps.session, studentId), fetchToday(ps.session, studentId),
+    internalTestExited(ps.session, studentId)]);
   // 只有 404（无权或不存在）走“没有找到”；401 回登录页；其他错误只让对应区块显示“暂时无法获取”，不拖垮整页
   for (const r of [balance, enrollments, today]) {
     if (!r.ok && r.status === 401) redirect('/login');
@@ -38,6 +40,8 @@ export default async function ChildPage({ params }: { params: Promise<{ studentI
     <main data-testid="child-page">
       <p><a href="/family">{FAMILY_SHELL.backToFamily}</a></p>
       <h1>{label}</h1>
+      {/* 内部成员测试（LT-06，开关 internal_test 默认关；关时不渲染、不发请求）：已退出的档案顶部说明 */}
+      <ExitedNotice exited={exited} />
       <p>
         <a href={`/family/${studentId}/star-map`} data-testid="child-star-map">{FAMILY_COPY.starMap}</a>{' · '}
         <a href={timeHref} data-testid="child-time">{FAMILY_SHELL.timeSettings}</a>{' · '}
@@ -46,6 +50,8 @@ export default async function ChildPage({ params }: { params: Promise<{ studentI
         <GoalsLink studentId={studentId} />
         {/* 月度计划（PLT-14 第 3 步，开关 monthly_plan 默认关；关时不渲染任何元素） */}
         <GuardianPlanLink studentId={studentId} />
+        {/* 问题反馈与退出内部测试（LT-06，开关 internal_test 默认关；关时不渲染任何元素） */}
+        <GuardianInternalTestLinks studentId={studentId} exited={exited} />
       </p>
 
       <section aria-labelledby="balance-heading">

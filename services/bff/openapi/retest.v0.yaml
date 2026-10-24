@@ -56,6 +56,7 @@ paths:
         '401': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: TEST_EXITED（档案已退出内部测试，LT-06；internal-test.v0.yaml）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
         '429': { $ref: '#/components/responses/Problem' }
         '503': { description: RETEST_UNAVAILABLE（学习服务没配、没开复测或其他确定失败）、UPSTREAM_UNAVAILABLE（可重试）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
   /bff/v0/students/{student_id}/retest/{subject}/entries/{entry_id}/next:
@@ -254,7 +255,7 @@ components:
         code:
           enum: [UNAUTHENTICATED, FORBIDDEN, CSRF, NOT_FOUND, METHOD_NOT_ALLOWED, TOO_LARGE, UNSUPPORTED_MEDIA_TYPE, INVALID, TOO_MANY_REQUESTS,
                  INTERNAL, IDEMPOTENCY_KEY_REUSED, RETEST_UNAVAILABLE, UPSTREAM_UNAVAILABLE, TICKET_INVALID, TICKET_EXPIRED, INVALID_ANSWER,
-                 RETEST_NOT_DUE, TICKET_USED, KEY_SEALED, QUOTA_UNAVAILABLE, SUBJECT_BUSY]
+                 RETEST_NOT_DUE, TICKET_USED, KEY_SEALED, QUOTA_UNAVAILABLE, SUBJECT_BUSY, TEST_EXITED]
           description: >
             SUBJECT_BUSY（503，PLT-16 分学科并发闸门，开关 STARBUDDY_SUBJECT_GATE 缺省关）：取题、作答在这一科已满且排队已满或排队超时、
             本学生在这一科已到上限；闸门在只读预检与计次之前，本次请求没有新增计量、没有预检，之前已计次的同一张票据重试不再计（且绕过闸门）；

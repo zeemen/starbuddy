@@ -323,6 +323,8 @@ test('学生模式：缺同意不能开；不满 14 另需监护人同意；打�
   // 出生年月为空按不满 14：只有隐私政策同意还不够
   assert.equal((await open(ID.S1, g)).body, P.CONSENT_REQUIRED);
   assert.equal((await consent(g, ID.S1, 'guardian_consent_under14')).status, 201);
+  // 已满 14（S2）：只要隐私政策（内测开关关时的原口径，LT-06 决定记录（续）第 6 条；开关打开时另要两份文书都签，
+  // 见 tests/internal-test.integration.test.ts）
   const s = await open(ID.S2, g);
   assert.equal(s.status, 200);
   assert.equal(s.json.account_kind, 'student');

@@ -14,6 +14,7 @@ from collections import Counter
 from datetime import datetime, timedelta
 from typing import Iterable
 
+from .. import processing
 from ..store import learning_tx
 from . import recompute as R
 from .recompute import MasteryEngine, recompute_student
@@ -23,8 +24,11 @@ async def sweep_students(engine: MasteryEngine, subject: str, now: datetime) -> 
     cfg = engine.config(subject)
     assert cfg is not None
     since = now - timedelta(seconds=cfg["sweep"]["lookback_seconds"])
+    # LT-06 决定记录（续）第 4 条：库层处理判据（迁移 0059）在就过滤——退出、删除、没有有效同意的学生不再重算、衰减、补复测任务
+    gate = await processing.available(engine.pool)
     async with learning_tx(engine.pool) as conn:
         rows = await conn.fetch(
+            ("SELECT u.s FROM (" if gate else "") +
             """SELECT student_id::text FROM platform.attempt
                 WHERE subject = $1::platform.subject AND recorded_at >= $2::timestamptz
                UNION
@@ -35,8 +39,8 @@ async def sweep_students(engine: MasteryEngine, subject: str, now: datetime) -> 
                 WHERE subject = $1::platform.subject AND is_current AND node_id IS NOT NULL
                UNION
                SELECT student_id::text FROM platform.retest_task
-                WHERE subject = $1::platform.subject AND status = 'open' AND reason <> 'verify_self_report'
-               ORDER BY 1""", subject, since)
+                WHERE subject = $1::platform.subject AND status = 'open' AND reason <> 'verify_self_report'"""
+            + (") u(s) WHERE platform.student_processing_allowed(u.s::uuid) ORDER BY 1" if gate else " ORDER BY 1"), subject, since)
     return [r[0] for r in rows]
 
 

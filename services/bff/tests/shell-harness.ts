@@ -56,8 +56,10 @@ let phoneSeq = 0;
 
 export async function startShell(pool: pg.Pool, su: pg.Pool,
                                  extra: Partial<Pick<ShellDeps, 'log' | 'diagnosis' | 'now' | 'shell' | 'trust' | 'starMap' | 'practice' | 'retest'
-                                                     | 'familyGoals' | 'monthlyPlan' | 'subjectGate'>> = {})
+                                                     | 'familyGoals' | 'monthlyPlan' | 'subjectGate' | 'internalTest' | 'exitGuard'>> = {})
   : Promise<ShellHarness> {
+  // 测试库执行了全部迁移（含 0059）：与 main.ts 启动时的核对一致，退出判据缺省生效；测“迁移未执行”时显式传 exitGuard: false
+  extra = { exitGuard: true, ...extra };
   const base0 = loadAuthConfig();
   const config: AuthConfig = { ...base0, rate_limits: Object.fromEntries(Object.entries(base0.rate_limits)
     .map(([k, v]) => [k, { ...v, limit: v.limit * 10_000 }])) };

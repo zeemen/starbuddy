@@ -17,6 +17,14 @@
 //   - 单实例：审计文件旁的锁文件 <审计文件>.lock 记录持有者（主机名、进程号、心跳时间），每 20 秒刷新心跳；启动时发现别的持有者
 //     的心跳在 60 秒内就拒绝启动（安全审查 H2）。
 //   - 应用日志不出现码与号码：告警只写事件名与原因编码；报错信息不带任何配置值。
+//   - 条目与账号对应（LT-06 决定记录（续）第 5 条）：固定码登录成功（consumed）时，审计行另带 account_hmac（家长账号 ID 的带密钥摘要，
+//     不记账号原文），内存里记下“账号 → 号码 HMAC”；启动重放同口径恢复。审计格式向后兼容：没有 account_hmac 的旧行原样核对哈希链
+//     （正文不含这个键），只有带它的行把它算进 mac。
+//   - 作废（LT-06 范围第 4 条）：家长退出测试时，BFF 按库函数给出的家长账号 ID（platform.exit_internal_test：只含已没有别的在测孩子的
+//     有效绑定家长）找到这些账号登录时用过的号码，作废这些号码的全部条目（含未生效、未用的），逐条记 revoked（审计一行一条，带条目 id
+//     与手机号 HMAC）；作废的条目不再签发，重启从审计恢复。没有用固定码登录过的账号对应不上号码，不作废（返回的条数为 0，手册另有处置）。
+//     与 tools/internal-test 的“按批次作废”同一口径：作废后该条目永不再签发，id 不能复用
+//     （工具从条目文件里删掉该批次并记进工具台账；两边的作废都出现在 tools/internal-test 的审计摘要里，事件名都是 revoked）。
 import { closeSync, existsSync, fsyncSync, openSync, readFileSync, statSync, writeSync } from 'node:fs';
 import { createHmac } from 'node:crypto';
 import { hostname } from 'node:os';
@@ -35,11 +43,16 @@ const ENTRY_ID = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const CODE = /^[0-9]{6}$/;
 const ISO_TZ = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/;
 export const AUDIT_EVENTS = ['issued', 'not_whitelisted', 'unavailable', 'consumed', 'verify_failed', 'verify_other', 'locked',
-                             'config_invalid'] as const;
+                             'config_invalid', 'revoked'] as const;
 export type AuditEvent = (typeof AUDIT_EVENTS)[number];
 
 export interface StagingOtpEntry { id: string; phone: string; code: string; issuedAt: number; notAfter: number }
-interface EntryState { issues: number; failures: number; consumed: boolean; locked: boolean }
+interface EntryState { issues: number; failures: number; consumed: boolean; locked: boolean; revoked: boolean }
+const freshState = (): EntryState => ({ issues: 0, failures: 0, consumed: false, locked: false, revoked: false });
+
+/** 家长账号 ID 的带密钥摘要（16 位十六进制，与 phone_hmac 同长）：审计里只记它，不记账号原文 */
+export const accountHmac = (key: Buffer, account: string): string =>
+  createHmac('sha256', key).update(`staging-otp-account\n${account.toLowerCase()}`).digest('hex').slice(0, 16);
 
 /** 审计行的带密钥摘要（BFF_LOG_HMAC_KEY 派生）：链上任何一行被改都对不上，改最后一行也一样；没有密钥伪造不了新行。
  *  已知局限：截掉末尾若干行（截断）本身发现不了——靠 S1（文件缺失拒绝启动）与卷的访问控制兜底，见 deploy/config/README.md */
@@ -79,21 +92,28 @@ export function parseEntries(text: string): StagingOtpEntry[] {
   });
 }
 
-interface AuditBody { at: string; event: AuditEvent; entry: string | null; phone_hmac: string | null; prev: string }
+interface AuditBody { at: string; event: AuditEvent; entry: string | null; phone_hmac: string | null; account_hmac?: string; prev: string }
 interface AuditLine extends AuditBody { mac: string }
+const HMAC16 = /^[0-9a-f]{16}$/;
+const LINE_KEYS = 'at,entry,event,mac,phone_hmac,prev';
+const LINE_KEYS_ACCOUNT = 'account_hmac,at,entry,event,mac,phone_hmac,prev';
 
-/** 一行审计的文本：正文字段固定顺序 + mac（正文与上一行 mac 的带密钥摘要） */
+/** 一行审计的文本：正文字段固定顺序 + mac（正文与上一行 mac 的带密钥摘要）。account_hmac 只在有时写进正文（向后兼容：旧行不变） */
 export function auditLineText(key: Buffer, body: AuditBody): { text: string; mac: string } {
-  const b = { at: body.at, event: body.event, entry: body.entry, phone_hmac: body.phone_hmac, prev: body.prev };
+  const b = { at: body.at, event: body.event, entry: body.entry, phone_hmac: body.phone_hmac,
+              ...(body.account_hmac !== undefined ? { account_hmac: body.account_hmac } : {}), prev: body.prev };
   const mac = lineMac(key, JSON.stringify(b));
   return { text: JSON.stringify({ ...b, mac }), mac };
 }
 
 /** 从审计文件恢复状态：核对哈希链（每行的 prev = 上一行的 mac，mac 按密钥重算）与格式（fail closed）；
- *  返回各条目状态、各号码（HMAC）待核验的条目、链尾 mac */
-export function replayAudit(text: string, key: Buffer): { states: Map<string, EntryState>; pending: Map<string, string>; last: string } {
+ *  返回各条目状态、各号码（HMAC）待核验的条目、账号（HMAC）→ 登录用过的号码（HMAC）、链尾 mac */
+export function replayAudit(text: string, key: Buffer): {
+  states: Map<string, EntryState>; pending: Map<string, string>; accounts: Map<string, Set<string>>; last: string;
+} {
   const out = new Map<string, EntryState>();
   const pending = new Map<string, string>();
+  const accounts = new Map<string, Set<string>>();
   let last = GENESIS;
   const lines = text.split('\n').filter((l) => l !== '');
   lines.forEach((line, i) => {
@@ -103,27 +123,36 @@ export function replayAudit(text: string, key: Buffer): { states: Map<string, En
     } catch {
       throw new Error(`staging OTP 审计文件第 ${i + 1} 行不是合法 JSON`);
     }
+    const keys = typeof a === 'object' && a !== null ? Object.keys(a).sort().join(',') : '';
     if (typeof a !== 'object' || a === null || !(AUDIT_EVENTS as readonly string[]).includes(a.event)
-        || Object.keys(a).sort().join(',') !== 'at,entry,event,mac,phone_hmac,prev' || typeof a.at !== 'string'
+        || (keys !== LINE_KEYS && !(keys === LINE_KEYS_ACCOUNT && a.event === 'consumed')) || typeof a.at !== 'string'
         || (a.entry !== null && (typeof a.entry !== 'string' || !ENTRY_ID.test(a.entry)))
-        || (a.phone_hmac !== null && (typeof a.phone_hmac !== 'string' || !/^[0-9a-f]{16}$/.test(a.phone_hmac)))) {
+        || (a.phone_hmac !== null && (typeof a.phone_hmac !== 'string' || !HMAC16.test(a.phone_hmac)))
+        || (a.account_hmac !== undefined && (typeof a.account_hmac !== 'string' || !HMAC16.test(a.account_hmac) || a.phone_hmac === null))) {
       throw new Error(`staging OTP 审计文件第 ${i + 1} 行格式不对`);
     }
     if (a.prev !== last || auditLineText(key, a).text !== line) throw new Error(`staging OTP 审计文件第 ${i + 1} 行哈希链断开（审计文件被改过）`);
     last = a.mac;
+    if (a.account_hmac !== undefined && a.phone_hmac !== null) {
+      const set = accounts.get(a.account_hmac) ?? new Set<string>();
+      set.add(a.phone_hmac);
+      accounts.set(a.account_hmac, set);
+    }
     if (a.phone_hmac !== null) {
       if (a.event === 'issued' && a.entry !== null) pending.set(a.phone_hmac, a.entry);
       if (['consumed', 'locked', 'not_whitelisted', 'unavailable'].includes(a.event)) pending.delete(a.phone_hmac);
+      if (a.event === 'revoked' && pending.get(a.phone_hmac) === a.entry) pending.delete(a.phone_hmac);
     }
     if (a.entry === null) return;
-    const s = out.get(a.entry) ?? { issues: 0, failures: 0, consumed: false, locked: false };
+    const s = out.get(a.entry) ?? freshState();
     if (a.event === 'issued') s.issues += 1;
     if (a.event === 'verify_failed') s.failures += 1;
     if (a.event === 'consumed') s.consumed = true;
     if (a.event === 'locked') s.locked = true;
+    if (a.event === 'revoked') s.revoked = true;
     out.set(a.entry, s);
   });
-  return { states: out, pending, last };
+  return { states: out, pending, accounts, last };
 }
 
 /** 文件权限核对（安全审查 S2）：条目文件不能对属组或其他用户可写；审计文件属于本进程用户且权限不宽于 0600 */
@@ -195,6 +224,8 @@ export class StagingOtp {
   readonly #state: Map<string, EntryState>;
   /** 号码 HMAC → 最近一次用条目签发的条目 id（核验时据此记成功或失败；启动时从审计恢复） */
   readonly #pending: Map<string, string>;
+  /** 账号 HMAC → 该账号固定码登录成功时用过的号码 HMAC（退出测试按账号作废条目；启动时从审计恢复） */
+  readonly #accounts: Map<string, Set<string>>;
   #last: string;
 
   constructor(o: StagingOtpOptions) {
@@ -228,6 +259,7 @@ export class StagingOtp {
     const replayed = replayAudit(this.#read(o.auditFile, '审计文件'), o.keys.log);
     this.#state = replayed.states;
     this.#pending = replayed.pending;
+    this.#accounts = replayed.accounts;
     this.#last = replayed.last;
     try {
       takeLock(this.#lockFile, now, this.#holder);
@@ -255,17 +287,19 @@ export class StagingOtp {
   }
 
   /** 追加一行审计（带哈希链，fsync；写不了抛错，由调用方决定） */
-  #audit(event: AuditEvent, entry: string | null, phone: string | null): void {
+  #audit(event: AuditEvent, entry: string | null, phone: string | null, account?: string): void {
     const { text, mac } = auditLineText(this.#keys.log, { at: new Date(this.#now()).toISOString(), event, entry,
-                                                          phone_hmac: phone === null ? null : phoneHash(this.#keys, phone), prev: this.#last });
+                                                          phone_hmac: phone === null ? null : phoneHash(this.#keys, phone),
+                                                          ...(account !== undefined ? { account_hmac: accountHmac(this.#keys.log, account) } : {}),
+                                                          prev: this.#last });
     writeDurable(this.#auditFile, text + '\n', 'a');
     this.#last = mac;
   }
 
   /** 写审计，失败只告警（不改响应、不改已做的内存状态） */
-  #auditQuiet(event: AuditEvent, entry: string | null, phone: string | null): void {
+  #auditQuiet(event: AuditEvent, entry: string | null, phone: string | null, account?: string): void {
     try {
-      this.#audit(event, entry, phone);
+      this.#audit(event, entry, phone, account);
     } catch {
       this.#warn({ event: 'staging_otp_audit_write_failed', audit_event: event });
     }
@@ -283,10 +317,38 @@ export class StagingOtp {
   #stateOf(id: string): EntryState {
     let s = this.#state.get(id);
     if (!s) {
-      s = { issues: 0, failures: 0, consumed: false, locked: false };
+      s = freshState();
       this.#state.set(id, s);
     }
     return s;
+  }
+
+  /** 退出测试（LT-06 决定记录（续）第 5 条）：按家长账号 ID 作废——找到这些账号固定码登录成功时用过的号码，作废这些号码的全部条目
+   *  （含已用过、已锁定、未生效、已过期的；已作废的不重复记）。先改内存（之后不再签发、清掉该号码待核验的这一条），再逐条写审计 revoked
+   *  （条目 id + 手机号 HMAC，不记号码、码与账号）；审计写失败只告警并在返回值里标出（内存里仍作废；重启后会丢失这次作废，
+   *  调用方计数告警，管理员按手册用工具按批次作废）。不抛错 */
+  revokeByAccounts(accounts: ReadonlySet<string>): { revoked: number; auditFailed: boolean } {
+    this.#reload();
+    const phones = new Set<string>();
+    for (const a of accounts) for (const p of this.#accounts.get(accountHmac(this.#keys.log, a)) ?? []) phones.add(p);
+    let revoked = 0;
+    let auditFailed = false;
+    for (const e of this.#entries) {
+      if (!phones.has(phoneHash(this.#keys, e.phone))) continue;
+      const s = this.#stateOf(e.id);
+      if (s.revoked) continue;
+      s.revoked = true;
+      const key = phoneHash(this.#keys, e.phone);
+      if (this.#pending.get(key) === e.id) this.#pending.delete(key);
+      revoked += 1;
+      try {
+        this.#audit('revoked', e.id, e.phone);
+      } catch {
+        auditFailed = true;
+        this.#warn({ event: 'staging_otp_audit_write_failed', audit_event: 'revoked' });
+      }
+    }
+    return { revoked, auditFailed };
   }
 
   /** 签发前挑条目：白名单内有有效条目返回码与条目 id（尚未记账，库写成功后调 markIssued），否则 null（调用方用随机码）。
@@ -302,7 +364,7 @@ export class StagingOtp {
       return null;
     }
     const usable = mine
-      .filter((e) => { const s = this.#stateOf(e.id); return !s.consumed && !s.locked && s.issues < MAX_ISSUES && e.issuedAt <= now && now < e.notAfter; })
+      .filter((e) => { const s = this.#stateOf(e.id); return !s.revoked && !s.consumed && !s.locked && s.issues < MAX_ISSUES && e.issuedAt <= now && now < e.notAfter; })
       .sort((a, b) => a.notAfter - b.notAfter);
     const e = usable[0];
     if (!e) {
@@ -321,8 +383,9 @@ export class StagingOtp {
   }
 
   /** 核验结果：只对最近一次用条目签发的号码记账；成功即作废（先内存后审计），失败累计到上限即锁定。
+   *  成功时把条目与登录的家长账号对应（account：会话的账号 ID；记进内存与审计的 account_hmac，退出测试按账号作废用）。
    *  没有待核验条目的号码也写一行审计（同等文件操作）。不抛错：审计写失败只告警，不改登录响应 */
-  onVerify(phone: string, ok: boolean): void {
+  onVerify(phone: string, ok: boolean, account?: string): void {
     const key = phoneHash(this.#keys, phone);
     const id = this.#pending.get(key);
     if (id === undefined) {
@@ -333,7 +396,13 @@ export class StagingOtp {
     if (ok) {
       s.consumed = true;
       this.#pending.delete(key);
-      this.#auditQuiet('consumed', id, phone);
+      if (account !== undefined) {
+        const ah = accountHmac(this.#keys.log, account);
+        const set = this.#accounts.get(ah) ?? new Set<string>();
+        set.add(key);
+        this.#accounts.set(ah, set);
+      }
+      this.#auditQuiet('consumed', id, phone, account);
       return;
     }
     s.failures += 1;

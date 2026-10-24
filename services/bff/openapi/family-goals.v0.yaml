@@ -40,6 +40,7 @@ paths:
               schema: { $ref: '#/components/schemas/GoalView' }
         '401': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
+        '409': { description: TEST_EXITED（档案已退出内部测试，LT-06；internal-test.v0.yaml）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
         '429': { $ref: '#/components/responses/Problem' }
     put:
       x-sb-auth: session
@@ -162,7 +163,7 @@ components:
         status: { type: integer }
         code:
           enum: [UNAUTHENTICATED, CSRF, NOT_FOUND, INVALID, TEXT_NOT_ACCEPTED, SCHOOL_NOT_OPEN_FOR_GRADE, GOAL_GRADE_NOT_SUPPORTED, CONFLICT,
-                 TOO_MANY, TOO_MANY_REQUESTS, UNAVAILABLE, METHOD_NOT_ALLOWED, TOO_LARGE, UNSUPPORTED_MEDIA_TYPE]
+                 TOO_MANY, TOO_MANY_REQUESTS, UNAVAILABLE, METHOD_NOT_ALLOWED, TOO_LARGE, UNSUPPORTED_MEDIA_TYPE, TEST_EXITED]
   responses:
     Problem:
       description: 统一错误体

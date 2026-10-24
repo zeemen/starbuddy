@@ -17,6 +17,7 @@
 #                      白名单批准与 docs/compliance/vendors.md 登记由人完成；完成之前不设路由客户端令牌，模型路由接口回 503
 #                      （设了令牌而占位未填，学习服务拒绝启动）。步骤见 deploy/config/README.md 第 7 节
 #     human            还没有开关或口径，待人确认（见 notes）
+#     migration_0059   待人执行 0059（LT-06 内部成员测试运营：问题反馈表、退出记录表与库函数，草稿，待人在副本演练后执行）
 # switches 每项：service（bff / web / learning / insight / knowledge / review_console / scheduler）、var（环境变量名）、
 #   value（staging 设的值；null = 不设）、source（定义它的源码文件，测试核对变量名真实存在）。
 # LT-03（阿里云 staging，specs/launch-lt03-cloud-staging）：健康端点（/healthz、/readyz）与 ACK / RDS / 出网白名单都不设开关——
@@ -160,6 +161,16 @@ features:
     notes: 进程内状态，多实例须另议（PLT-16 待人确认 #3）；是否在 staging 打开由人定
     switches:
       - {service: bff, var: STARBUDDY_SUBJECT_GATE, value: null, source: services/bff/src/gate/subject-gate.ts}
+  - id: internal_test_ops
+    title: 内部成员测试运营（问题反馈、退出测试与退出状态；LT-06）
+    state: "off"
+    pending: [migration_0059]
+    notes: 依赖迁移 0059（platform.feedback、platform.internal_test_exit 与库函数，草稿，待人在副本演练后执行）；执行之前三处都不设。
+      执行之后由人决定是否打开（三处一起开：BFF、前端、审核台后端；specs/launch-lt06-internal-test-ops、docs/ops/internal-test-runbook.md）
+    switches:
+      - {service: bff, var: STARBUDDY_INTERNAL_TEST, value: null, source: services/bff/src/internal-test/features.ts}
+      - {service: web, var: STARBUDDY_INTERNAL_TEST, value: null, source: apps/web/src/internal-test/features.ts}
+      - {service: review_console, var: REVIEW_CONSOLE_INTERNAL_TEST, value: null, source: services/learning/review_console/config.py}
 
 # 开发开关与合成配置：staging 一律不设（服务启动校验拒绝；deploy/tests 核对这张清单里每个名字都真实存在）
 dev_only:

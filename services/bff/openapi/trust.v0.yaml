@@ -100,6 +100,7 @@ paths:
                         resolved_at: { type: [string, 'null'], format: date-time }
         '401': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
         '429': { $ref: '#/components/responses/Problem' }
   /bff/v0/students/{student_id}/weekly-report:
     get:
@@ -196,6 +197,7 @@ paths:
                                         attempts: { type: integer, minimum: 0, maximum: 99999 }
         '401': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
         '429': { $ref: '#/components/responses/Problem' }
   /bff/v0/students/{student_id}/profile-pages/{subject}:
     get:
@@ -258,6 +260,7 @@ paths:
                                       label: { enum: [preliminary], description: 判断当前是假设（文案属模板） }
         '401': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
         '429': { $ref: '#/components/responses/Problem' }
   /bff/v0/students/{student_id}/first-report:
     get:
@@ -339,6 +342,7 @@ paths:
                             items: { type: string, format: uuid }
         '401': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
         '429': { $ref: '#/components/responses/Problem' }
         '503': { $ref: '#/components/responses/Problem' }
   /bff/v0/students/{student_id}/claims/{claim_id}/explain:
@@ -420,6 +424,7 @@ paths:
                     statement: { required: [confidence_band] }
         '401': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
         '429': { $ref: '#/components/responses/Problem' }
         '503': { $ref: '#/components/responses/Problem' }
   /bff/v0/students/{student_id}/exams:
@@ -543,6 +548,7 @@ paths:
                           frozen: { type: boolean }
         '401': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
         '429': { $ref: '#/components/responses/Problem' }
         '503': { $ref: '#/components/responses/Problem' }
   /bff/v0/students/{student_id}/exams/{exam_id}/reconciliation:
@@ -602,6 +608,7 @@ paths:
                                 confidence_band: { enum: [few_evidence, moderate, strong] }
         '401': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
         '429': { $ref: '#/components/responses/Problem' }
         '503': { $ref: '#/components/responses/Problem' }
   /bff/v0/students/{student_id}/exports:
@@ -858,7 +865,8 @@ components:
         status: { type: integer }
         code:
           enum: [UNAUTHENTICATED, FORBIDDEN, CSRF, NOT_FOUND, METHOD_NOT_ALLOWED, CONFLICT, STATE_CONFLICT, CONFIRMATION_REQUIRED, REAUTH_REQUIRED,
-                 TOO_LARGE, UNSUPPORTED_MEDIA_TYPE, INVALID, TOO_MANY_REQUESTS, TOO_MANY, UNAVAILABLE, INTERNAL]
+                 TOO_LARGE, UNSUPPORTED_MEDIA_TYPE, INVALID, TOO_MANY_REQUESTS, TOO_MANY, UNAVAILABLE, INTERNAL,
+                 TEST_EXITED]  # LT-06：已退出内部测试的档案（数据权利的查看、导出、删除照常可用；internal-test.v0.yaml）
   responses:
     Problem:
       description: 统一错误体（只有错误码）

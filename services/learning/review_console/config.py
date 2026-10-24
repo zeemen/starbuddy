@@ -15,6 +15,9 @@
   REVIEW_CONSOLE_SPOT_CHECK_SEED（必须由人配置，仓库里没有缺省种子；不设则抽检接口回 503 SPOT_CHECK_UNCONFIGURED）
   REVIEW_CONSOLE_SPOT_CHECK_RATIO / REVIEW_CONSOLE_MERGE_WINDOW
 
+内部成员测试运营（LT-06，specs/launch-lt06-internal-test-ops；可选，缺省关；依赖迁移 0059）：
+  REVIEW_CONSOLE_INTERNAL_TEST       internal_test：注册“反馈”只读列表与改状态、退出状态三个接口；dev / test / staging 可开。
+
 封测周修订支持（KGE-06，specs/kge06-weekly-revision；可选，缺省全关）：
   REVIEW_CONSOLE_FEATURES            逗号分隔：tag_worklist（低置信打标候选工作单）、revision_preflight（修订发布预检）。
                                      只在 dev / test 生效（本服务本来就只允许这两个环境）；未知名字拒绝启动。关着时对应接口不注册（404）。
@@ -31,6 +34,20 @@ from .spot_check import SpotCheckSettings
 
 ALLOWED_ENVS = ("dev", "test")  # 开发开关（REVIEW_CONSOLE_FEATURES）与命令行导出仍只认这两个；服务本身另收 staging（SERVICE_ENVS）
 FEATURES = ("tag_worklist", "revision_preflight")
+INTERNAL_TEST_FEATURE = "internal_test"
+
+
+def parse_internal_test(raw: str, env: str) -> bool:
+    """REVIEW_CONSOLE_INTERNAL_TEST（LT-06 内部成员测试运营：反馈只读列表与改状态、退出状态；依赖迁移 0059）。缺省关；
+    只认 internal_test；dev / test / staging 都可开（服务本来就只允许这三个环境），别的取值拒绝启动。关着时三个接口不注册（404）。"""
+    v = raw.strip()
+    if not v:
+        return False
+    if env not in SERVICE_ENVS:
+        raise RuntimeError("REVIEW_CONSOLE_INTERNAL_TEST 只能在 dev / test / staging 打开")
+    if v != INTERNAL_TEST_FEATURE:
+        raise RuntimeError(f"REVIEW_CONSOLE_INTERNAL_TEST 只认 {INTERNAL_TEST_FEATURE}")
+    return True
 
 
 def parse_features(raw: str, env: str) -> frozenset[str]:
@@ -72,6 +89,7 @@ class ReviewSettings:
     features: frozenset[str] = frozenset()       # KGE-06：打开的功能（缺省全关）
     host: str = "127.0.0.1"                      # LT-01：监听地址（只有 staging 能改为内网 IPv4）
     extra_host: str | None = None                # LT-03：staging 另收的 Host（本服务 Service 的 clusterIP，REVIEW_CONSOLE_EXTRA_HOST）
+    internal_test: bool = False                  # LT-06：内部测试运营的反馈与退出状态接口（REVIEW_CONSOLE_INTERNAL_TEST，缺省关）
 
     @staticmethod
     def from_env(environ: dict[str, str] | None = None) -> "ReviewSettings":
@@ -89,7 +107,8 @@ class ReviewSettings:
         return ReviewSettings(env=env, kge_database_url=kge, review_database_url=review, pages=PagesSettings.from_env(e),
                               spot_check=SpotCheckSettings.from_env(e),
                               features=parse_features(e.get("REVIEW_CONSOLE_FEATURES", ""), env), host=host,
-                              extra_host=parse_extra_host(e.get("REVIEW_CONSOLE_EXTRA_HOST"), env))
+                              extra_host=parse_extra_host(e.get("REVIEW_CONSOLE_EXTRA_HOST"), env),
+                              internal_test=parse_internal_test(e.get("REVIEW_CONSOLE_INTERNAL_TEST", ""), env))
 
 
 def parse_extra_host(raw: str | None, env: str) -> str | None:

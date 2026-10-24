@@ -15,6 +15,7 @@ from typing import Awaitable, Callable
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from .. import processing
 from ..diagnosis.api import _body, _keys
 from ..errors import IngestError
 
@@ -22,6 +23,9 @@ log = logging.getLogger("starbuddy.learning.retest")
 
 
 def register(app: FastAPI, authorized: Callable[[Request], bool], state: dict) -> None:
+    # 库层处理判据（LT-06 决定记录（续）第 4 条）：五个接口都先问库（退出、删除、没有有效同意 → 404 STUDENT_NOT_FOUND）
+    allowed = processing.gate(state)
+
     def svc():
         r = state.get("retest")
         if r is None:
@@ -59,6 +63,7 @@ def register(app: FastAPI, authorized: Callable[[Request], bool], state: dict) -
             b = await _body(request)
             _keys(b, {"student_ref", "subject"})
             strings(b, "student_ref", "subject")
+            await allowed(b["student_ref"])
             return 200, await svc().queue(b["student_ref"], b["subject"]), None
         return await run("queue", request, fn)
 
@@ -68,6 +73,7 @@ def register(app: FastAPI, authorized: Callable[[Request], bool], state: dict) -
             b = await _body(request)
             _keys(b, {"student_ref", "subject", "entry_id"})
             strings(b, "student_ref", "subject", "entry_id")
+            await allowed(b["student_ref"])
             return 200, await svc().next(b["student_ref"], b["subject"], b["entry_id"]), None
         return await run("next", request, fn)
 
@@ -77,6 +83,7 @@ def register(app: FastAPI, authorized: Callable[[Request], bool], state: dict) -
             b = await _body(request)
             _keys(b, {"student_ref", "subject", "ticket", "answer", "idempotency_key", "usage_id"})
             strings(b, "student_ref", "subject", "ticket", "idempotency_key", "usage_id")
+            await allowed(b["student_ref"])
             out, replayed = await svc().answer(student=b["student_ref"], subject=b["subject"], ticket=b["ticket"], answer=b["answer"],
                                                key=b["idempotency_key"], usage_id=b["usage_id"])
             return 200, out, {"idempotent-replayed": "true" if replayed else "false"}
@@ -88,6 +95,7 @@ def register(app: FastAPI, authorized: Callable[[Request], bool], state: dict) -
             b = await _body(request)
             _keys(b, {"student_ref", "subject", "ticket"})
             strings(b, "student_ref", "subject", "ticket")
+            await allowed(b["student_ref"])
             return 200, await svc().check(student=b["student_ref"], subject=b["subject"], ticket=b["ticket"]), None
         return await run("check", request, fn)
 
@@ -97,6 +105,7 @@ def register(app: FastAPI, authorized: Callable[[Request], bool], state: dict) -
             b = await _body(request)
             _keys(b, {"student_ref", "subject", "ticket", "idempotency_key", "usage_id"})
             strings(b, "student_ref", "subject", "ticket", "idempotency_key", "usage_id")
+            await allowed(b["student_ref"])
             out = await svc().replay(student=b["student_ref"], subject=b["subject"], ticket=b["ticket"], key=b["idempotency_key"],
                                      usage_id=b["usage_id"])
             return 200, out, {"idempotent-replayed": "true"}

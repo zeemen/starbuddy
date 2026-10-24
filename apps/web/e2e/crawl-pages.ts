@@ -48,6 +48,11 @@ export const CRAWL: Record<string, CrawlPage | Excluded> = {
   // （安全头照样核对）；打开时的页面由 e2e/monthly-plan.spec.ts 核对
   'family/[studentId]/monthly-plan/page.tsx': { who: 'guardian', path: (s) => `/family/${s}/monthly-plan`, status: 404 },
   's/[studentId]/plan/page.tsx': { who: 'student', path: (s) => `/s/${s}/plan`, status: 404 },
+  // 内部成员测试运营（LT-06）：开关 STARBUDDY_INTERNAL_TEST 在爬取的各套里都关，同一地址一律是 404 页（安全头照样核对）；
+  // 打开时的页面由单测 tests/internal-test.test.ts 静态核对（e2e 打开一套待接线，见 specs/launch-lt06-internal-test-ops 待人确认）
+  's/[studentId]/feedback/page.tsx': { who: 'student', path: (s) => `/s/${s}/feedback`, status: 404 },
+  'family/[studentId]/feedback/page.tsx': { who: 'guardian', path: (s) => `/family/${s}/feedback`, status: 404 },
+  'family/[studentId]/exit/page.tsx': { who: 'guardian', path: (s) => `/family/${s}/exit`, status: 404 },
   'family/[studentId]/why/[claimId]/page.tsx': { who: 'guardian', path: (s) => `/family/${s}/why/${NO_ID}`, trustOn: true },
   'family/[studentId]/disputes/page.tsx': { who: 'guardian', path: (s) => `/family/${s}/disputes`, trustOn: true },
   'family/[studentId]/exams/page.tsx': { who: 'guardian', path: (s) => `/family/${s}/exams`, trustOn: true },
@@ -74,6 +79,9 @@ export const CRAWL: Record<string, CrawlPage | Excluded> = {
   'review/spot-checks/page.tsx': { excluded: '审核台（staff 登录，迁移 0020，不在壳内）：与壳同一个 proxy（CSP）与 next.config（安全头），但需要 staff 会话，本爬取不覆盖（PR D 新增；CSP 逐页爬取登记为 lessons H6 待人确认）' },
   // KGE-06（specs/kge06-weekly-revision）：开关默认关（关时 404，e2e/review-kge06-off.spec.ts）；开着时需要 staff 会话，e2e/review-kge06.spec.ts 核对
   'review/tag-candidates/page.tsx': { excluded: '审核台（staff 登录，不在壳内）：KGE-06 低置信工作单，开关 STARBUDDY_REVIEW_FEATURES 默认关；关时 404 由 e2e/review-kge06-off.spec.ts、开时由 e2e/review-kge06.spec.ts 核对（含 axe）' },
+  // LT-06（specs/launch-lt06-internal-test-ops）：开关 STARBUDDY_INTERNAL_TEST 默认关（关时 404）；开着时需要 staff 会话
+  'review/feedback/page.tsx': { excluded: '审核台（staff 登录，不在壳内）：LT-06 内部测试问题反馈，开关 STARBUDDY_INTERNAL_TEST 默认关；关时 404、开关与可见范围由 tests/internal-test.test.ts 静态核对，接口由 services/learning/tests/test_review_internal_test.py 核对' },
+  'review/internal-test/page.tsx': { excluded: '审核台（staff 登录，不在壳内）：LT-06 内部测试退出状态，开关 STARBUDDY_INTERNAL_TEST 默认关；关时 404、开关由 tests/internal-test.test.ts 静态核对，接口由 services/learning/tests/test_review_internal_test.py 核对' },
   'review/map-versions/[id]/preflight/page.tsx': { excluded: '审核台（staff 登录，不在壳内）：KGE-06 修订发布预检，开关 STARBUDDY_REVIEW_FEATURES 默认关；关时 404 由 e2e/review-kge06-off.spec.ts、开时由 e2e/review-kge06.spec.ts 核对（含 axe）' },
 };
 

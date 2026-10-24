@@ -13,6 +13,7 @@ import { SessionBeacon } from '../behavior/SessionBeacon.tsx';
 import { DIANDIAN, NAV, REST } from './copy.ts';
 import { StatusBar } from './StatusBar.tsx';
 import { TrustNav } from '../trust/links.tsx';
+import { StudentFeedbackLink } from '../internal-test/links.tsx';
 
 export type ShellTab = 'today' | 'star-map' | 'learn';
 
@@ -29,6 +30,8 @@ export function StudentShell({ studentId, csrf, balance, rest, path, children }:
           <a href={`${base}/today`} data-testid="nav-today">{NAV.today}</a>
           <a href={`${base}/star-map`} data-testid="nav-star-map">{NAV.starMap}</a>
           <a href={`${base}/learn`} data-testid="nav-learn">{NAV.subjects}</a>
+          {/* 内部成员测试的问题反馈（LT-06，开关 internal_test 默认关；关时不渲染任何元素） */}
+          <StudentFeedbackLink studentId={studentId} path={path} />
         </nav>
         <ResultForm action={logoutAction} labels={FAMILY_RESULT} testId="exit-student-mode" className="shell-form shell-exit">
           <input type="hidden" name="csrf" value={csrf} />

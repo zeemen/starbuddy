@@ -15,7 +15,7 @@ import uuid
 import httpx
 import pytest
 
-from conftest import CREDENTIAL, settings
+from conftest import CREDENTIAL, grant_consents, settings
 from learning.app import create_app
 from learning.contract import internal_contract
 from learning.mastery import parse_config
@@ -86,6 +86,7 @@ async def _new_student(mpools) -> str:
         await c.execute(
             """INSERT INTO platform.student_profile (id, account_id, household_id, grade, region, textbook_version, birth_year_month)
                VALUES ($1::uuid, $2::uuid, $3::uuid, 9, 'nanjing', 'suke-2024', '2012-03-01')""", sid, acct, household)
+        await grant_consents(c, sid, guardian)
     return sid
 
 

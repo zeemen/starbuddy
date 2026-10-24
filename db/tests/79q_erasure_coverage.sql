@@ -314,6 +314,13 @@ BEGIN
       (%L, %L, 1, 'aya', 'practice', 'practice', 'MATH.FUNC.QUAD.GRAPH', 8, %L, NULL),
       (%L, %L, 2, 'aya', 'lesson', 'plan', NULL, 5, NULL, 'prerequisite_of_many') RETURNING 'ok'$f$,
       t.q_id(s, 'today.1'), s, t.q_id(s, 'today.entry'), t.q_id(s, 'today.2'), s));
+  -- 内部测试反馈与退出测试（0059，LT-06）：学生本人一条（学生自述）、家长一条（家长观察），文本都带该学生的内容标记，经 BFF 身份写；
+  -- 随后家长发起退出测试（撤回同意、作废学生会话、写退出记录；退出记录是豁免表，已有数据保留到删除执行）
+  PERFORM t.m_as('starbuddy_bff', acct, format($f$WITH i AS (INSERT INTO platform.feedback (submitter_account_id, student_id, source, category, body,
+      route_template) VALUES (%L, %L, 'student_self_report', 'malfunction', %L, '/s/[studentId]/today')) SELECT 'ok'$f$, acct, s, '合成反馈-' || p_token));
+  PERFORM t.p_bff(g, format($f$WITH i AS (INSERT INTO platform.feedback (submitter_account_id, student_id, source, category, body)
+      VALUES (%L, %L, 'guardian_observation', 'slow', %L)) SELECT 'ok'$f$, g, s, '合成家长反馈-' || p_token));
+  PERFORM t.p_bff(g, format('SELECT newly::text FROM platform.exit_internal_test(%L)', s));
   -- ---- 导出（家长，0035）：导出任务是豁免表
   PERFORM t.p_bff(g, format('SELECT platform.export_student_data(%L)::text', s));
 END $$;
@@ -405,7 +412,7 @@ SELECT t.ok(:'x1_content_after'::jsonb = '{}', '全库扫描：执行后学生 X
 -- ID 标记只剩理由已确认的豁免表（档案骨架、账号、监护绑定、同意、计量、回执、导出审计）；试用领取另列（见下一条）
 SELECT t.ok((SELECT string_agg(k, '、' ORDER BY k) FROM jsonb_object_keys(:'x1_ids_after'::jsonb - 'platform.trial_claim') k)
             = 'platform.account、platform.consent_record、platform.entitlement、platform.erasure_request、platform.export_job、'
-              'platform.guardian_student_link、platform.practice_log、platform.student_profile、platform.subscription、'
+              'platform.guardian_student_link、platform.internal_test_exit、platform.practice_log、platform.student_profile、platform.subscription、'
               'platform.usage_ledger、platform.usage_reservation',
             '全库扫描：执行后学生 X1 的 ID 只出现在理由已确认的豁免表里（实际：'
             || coalesce((SELECT string_agg(k, '、' ORDER BY k) FROM jsonb_object_keys(:'x1_ids_after'::jsonb) k), '无') || '）');

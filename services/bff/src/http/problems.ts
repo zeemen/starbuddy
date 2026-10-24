@@ -40,6 +40,8 @@ export const P = {
   // 或请求方已断开；本次请求没有新增计量，之前已计次或已预留的用同一请求重试不再计，可按 retry-after 原样重试。
   // 与学习服务不可用的 503 UPSTREAM_UNAVAILABLE 区分
   SUBJECT_BUSY: problem(503, 'SUBJECT_BUSY', 'this subject is busy right now, retry later'),
+  // LT-06 内部测试（开关 STARBUDDY_INTERNAL_TEST，缺省关）：档案已退出测试——拒绝一切新写入与触发模型处理的请求（数据权利与退出状态除外）
+  TEST_EXITED: problem(409, 'TEST_EXITED', 'this profile has left the internal test'),
 } as const;
 
 export type ProblemBody = (typeof P)[keyof typeof P];

@@ -22,7 +22,7 @@ import asyncpg
 import httpx
 import pytest
 
-from conftest import (ADAPTER_CREDENTIAL, CREDENTIAL, FIXTURE_SQL, _answer_in_version, fake_grade, grade_body, meter_row,
+from conftest import (ADAPTER_CREDENTIAL, CREDENTIAL, FIXTURE_SQL, _answer_in_version, fake_grade, grade_body, grant_consents, meter_row,
                       register_admin, settings, to_v1_body, unregister_admin)
 from learning.app import create_app
 from learning.config import AdapterTarget
@@ -169,6 +169,7 @@ async def new_student(admin) -> str:
         await c.execute(
             """INSERT INTO platform.student_profile (id, account_id, household_id, grade, region, textbook_version, birth_year_month)
                VALUES ($1::uuid, $2::uuid, $3::uuid, 9, 'nanjing', 'suke-2024', '2012-03-01')""", sid, acct, household)
+        await grant_consents(c, sid, guardian)
     return sid
 
 
@@ -906,6 +907,7 @@ async def test_mastery_identical_with_and_without_practice(api, ppools, student)
         await c.execute("INSERT INTO platform.household (id, created_by_account) VALUES ($1::uuid, $2::uuid)", household, guardian)
         await c.execute("""INSERT INTO platform.student_profile (id, account_id, household_id, grade, region, textbook_version, birth_year_month)
                            VALUES ($1::uuid, $2::uuid, $3::uuid, 9, 'nanjing', 'suke-2024', '2012-03-01')""", b, acct, household)
+        await grant_consents(c, b, guardian)
     await api.grade(student, "SYNP-0001", "41")
     await api.grade(b, "SYNP-0001", "41")
     e = await due_entry(api, student)

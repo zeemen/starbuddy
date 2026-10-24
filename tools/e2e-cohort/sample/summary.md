@@ -29,7 +29,7 @@
 - `events.csv` 5cf29b901add67fab4eb2d9d891ae96ec595c9e8babd7a4d3d79e1b72c555744
 - `nodes.csv` 668290965515c1cb40a1aad4127ae5adce497bc94f01d6a048e197034b46afc6
 - `retests.csv` f9283cf27316e9ea2c1e263f0d88eb8d7ff3d3a28b437d17bf67c8c3ce57a7f4
-- `checks.json` 2a9cdaa396daf2b7fe61f14f867ed34e2aa7aaebd33f15b079aad59e49f084b2
+- `checks.json` ca5351a37f505e7e3013b956318946e3f3d57ccebe5b87da2c887a74b24e1537
 
 ## 星图截图
 

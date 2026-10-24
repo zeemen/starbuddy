@@ -20,8 +20,8 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parents[1]          # services/learning
 REPO = HERE.parents[1]
-TESTS = ["tests/test_internal_v1_guard.py", "tests/test_evidence_attributes.py", "tests/test_v1_replay.py"]
-SV, AT, LM, APP = ("learning/service.py", "learning/attributes.py", "learning/meter.py", "learning/app.py")
+TESTS = ["tests/test_internal_v1_guard.py", "tests/test_evidence_attributes.py", "tests/test_v1_replay.py", "tests/test_processing_gate.py"]
+SV, AT, LM, APP, PR = ("learning/service.py", "learning/attributes.py", "learning/meter.py", "learning/app.py", "learning/processing.py")
 
 # 名字 → [(文件, 原文, 替换为), …]
 MUTATIONS: dict[str, list[tuple[str, str, str]]] = {
@@ -95,6 +95,23 @@ MUTATIONS: dict[str, list[tuple[str, str, str]]] = {
     "夹具不核对库名": [("tests/fixtures/meter_provision.sql", "  IF current_database() !~ '^starbuddy_(dev|test)' THEN\n    RAISE EXCEPTION 'meter_provision.sql:",
                     "  IF false THEN\n    RAISE EXCEPTION 'meter_provision.sql:")],
     "夹具防护失败后继续执行": [("tests/fixtures/meter_provision.sql", "\\set ON_ERROR_STOP on\n", "\\set ON_ERROR_STOP off\n")],
+    # LT-06 决定记录（续）第 4 条：库层处理判据（learning/processing.py 及各入口；tests/test_processing_gate.py）
+    "处理判据：v1 写入不问库": [(SV, '        await processing.require(self.pool, self.processing, ctx["student_ref"])\n', "")],
+    "处理判据：启动时当作不可用": [(APP, '        state["processing"] = await processing.available(p)', '        state["processing"] = False')],
+    "处理判据：今日计划不问库": [(APP, "            await processing.require(pool_, bool(state.get(\"processing\")), body.get(\"student_ref\")",
+                         "            pass  # (pool_, bool(state.get(\"processing\")), body.get(\"student_ref\")")],
+    "处理判据：拦下的判据写反": [(PR, 'AND NOT platform.student_processing_allowed($1::uuid)', 'AND platform.student_processing_allowed($1::uuid)')],
+    "处理判据：拦下不回 404": [(PR, 'raise IngestError(404, "STUDENT_NOT_FOUND", NOT_AVAILABLE)', 'raise IngestError(409, "STUDENT_NOT_FOUND", NOT_AVAILABLE)')],
+    "处理判据：大写 UUID 绕过": [(PR, "    s = student.lower()\n", "    s = student\n    if s != s.lower():\n        return\n")],
+    "处理判据：诊断会话不问库": [("learning/diagnosis/api.py", "    allowed = processing.gate(state)\n",
+                         "    async def allowed(_s):\n        return None\n")],
+    "处理判据：再练不问库": [("learning/practice/api.py", "    allowed = processing.gate(state)\n", "    async def allowed(_s):\n        return None\n")],
+    "处理判据：复测不问库": [("learning/retest/api.py", "    allowed = processing.gate(state)\n", "    async def allowed(_s):\n        return None\n")],
+    "处理判据：档案页与验证任务不问库": [("learning/mastery_routes.py", "    allowed = processing.gate(state)\n",
+                              "    async def allowed(_s):\n        return None\n")],
+    "处理判据：今日编排不问库": [("learning/today/api.py",
+                         '            await processing.require(state.get("pool"), bool(state.get("processing")), body.get("student_ref"))\n', "")],
+    "处理判据：掌握对账选人不过滤": [("learning/mastery/jobs.py", "    gate = await processing.available(engine.pool)", "    gate = False")],
 }
 
 

@@ -72,6 +72,7 @@ services:
     - starbuddy_meter_reserve_total
     - starbuddy_meter_settle_total
     - starbuddy_ready
+    - starbuddy_staging_otp_revoke_audit_failed_total
 external:
   up: Prometheus 自带：每个采集目标是否采到（服务不可用告警）
   kube_pod_container_status_ready: kube-state-metrics（ARMS 托管采集）：容器就绪探针结果

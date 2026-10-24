@@ -114,6 +114,13 @@ class ResolveBody(_Strict):
     resolution_code: str = Field(pattern=BASIS)
 
 
+FEEDBACK_STATUSES = ("new", "triaged", "closed")  # 与 platform.feedback.status 的 CHECK 一致（迁移 0059）
+
+
+class FeedbackStatusBody(_Strict):
+    status: Literal["new", "triaged", "closed"]
+
+
 ADMISSIONS = Literal["source_unverified", "pending_review", "admitted", "rejected"]
 SOURCE_REF = r"^[A-Za-z0-9][A-Za-z0-9._:\-]{0,63}$"  # 与迁移 0039 platform.item.source_ref 一致
 ITEM_ID = r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$"  # 与 platform.skill_local_id 域一致
@@ -222,12 +229,15 @@ _UNSET: Any = object()
 
 def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthenticator | None = None,
                pools: tuple[asyncpg.Pool, asyncpg.Pool] | None = None, pages_settings: PagesSettings | None = _UNSET,
-               spot_settings: SpotCheckSettings | None = None, features: frozenset[str] | None = None) -> FastAPI:
+               spot_settings: SpotCheckSettings | None = None, features: frozenset[str] | None = None,
+               internal_test: bool | None = None) -> FastAPI:
     """pages_settings：编译页面入口的配置；缺省取 settings.pages（测试可直接注入）。spot_settings：事后抽检配置，缺省取 settings.spot_check；
     都没有时抽检接口回 503 SPOT_CHECK_UNCONFIGURED（种子必须由配置给出，仓库里没有缺省种子）。
     features：KGE-06 的功能开关（tag_worklist、revision_preflight），缺省取 settings.features；注入连接池的测试缺省全关。
-    关着的功能不注册接口（404），与开关打开前零差异。"""
+    关着的功能不注册接口（404），与开关打开前零差异。
+    internal_test：LT-06 反馈与退出状态三个接口，缺省取 settings.internal_test；注入连接池的测试缺省关。"""
     state: dict[str, Any] = {}
+    internal_on = bool(internal_test if internal_test is not None else (settings.internal_test if settings is not None else False))
     enabled = frozenset(features if features is not None else (settings.features if settings is not None else frozenset()))
     unknown = enabled - set(FEATURES)
     if unknown:
@@ -594,5 +604,32 @@ def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthen
                     raise ReviewError(422, "INVALID_PARAMETER", "只有改标才指定目标候选")
                 status = await state["review"].decide_tag(staff, candidate_id, "accepted" if body.decision == "accept" else "rejected")
             return {"status": status, "decision": body.decision, "decided_by": str(staff)}
+
+    # ---------- LT-06 内部成员测试运营（specs/launch-lt06-internal-test-ops）：开关默认关，关着不注册（依赖迁移 0059） ----------
+    if internal_on:
+        @app.get("/review/v0/feedback")
+        async def feedback_list(request: Request, status: str | None = None, limit: int = 50,
+                                before: datetime | None = None, before_id: uuid.UUID | None = None):
+            """反馈只读列表：新到旧、(创建时间, id) 游标翻页；学生只给不透明指针。反馈文本只回给页面，不进日志与指标。"""
+            if (status is not None and status not in FEEDBACK_STATUSES) or not 1 <= limit <= 200 \
+                    or (before_id is not None and before is None):
+                raise ReviewError(422, "INVALID_PARAMETER")
+            if before is not None and before.tzinfo is None:
+                raise ReviewError(422, "INVALID_PARAMETER", "before 必须带时区")
+            items = await state["review"].feedback_list(request.state.staff, status, limit, before, before_id)
+            nxt = {"before": items[-1]["created_at"], "before_id": items[-1]["id"]} if len(items) == limit else None
+            return {"items": items, "next": nxt}
+
+        @app.post("/review/v0/feedback/{feedback_id}/status")
+        async def feedback_status(feedback_id: uuid.UUID, body: FeedbackStatusBody, request: Request):
+            """只改状态（new / triaged / closed）；库函数核对 active staff，记改的人与时间。"""
+            return {"status": await state["review"].feedback_set_status(request.state.staff, feedback_id, body.status)}
+
+        @app.get("/review/v0/internal-test/exits")
+        async def internal_test_exits(request: Request, limit: int = 100):
+            """退出测试的档案：退出时间、撤回的同意类型、同意是否仍有效、删除请求状态（学生只给不透明指针）。"""
+            if not 1 <= limit <= 500:
+                raise ReviewError(422, "INVALID_PARAMETER")
+            return {"items": await state["review"].internal_test_exits(request.state.staff, limit)}
 
     return app

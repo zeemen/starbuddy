@@ -32,6 +32,7 @@ paths:
         '401': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
         '405': { $ref: '#/components/responses/Problem' }
+        '409': { description: TEST_EXITED（档案已退出内部测试，LT-06；internal-test.v0.yaml）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
   /bff/v0/students/{student_id}/onboarding/answers:
     parameters:
       - $ref: '#/components/parameters/StudentId'
@@ -228,4 +229,4 @@ components:
         type: { type: string }
         title: { type: string }
         status: { type: integer }
-        code: { type: string, enum: [UNAUTHENTICATED, NOT_FOUND, METHOD_NOT_ALLOWED, INTERNAL, INVALID, TOO_LARGE, UNSUPPORTED_MEDIA_TYPE, CONFLICT, TOO_MANY, CSRF, FORBIDDEN] }
+        code: { type: string, enum: [UNAUTHENTICATED, NOT_FOUND, METHOD_NOT_ALLOWED, INTERNAL, INVALID, TOO_LARGE, UNSUPPORTED_MEDIA_TYPE, CONFLICT, TOO_MANY, CSRF, FORBIDDEN, TEST_EXITED] }

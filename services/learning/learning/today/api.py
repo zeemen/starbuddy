@@ -16,6 +16,7 @@ from typing import Callable
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from .. import processing
 from ..diagnosis.api import _body
 from ..errors import IngestError
 
@@ -36,8 +37,10 @@ def register(app: FastAPI, authorized: Callable[[Request], bool], state: dict) -
         try:
             if not authorized(request):
                 raise IngestError(401, "UNAUTHENTICATED", "missing or invalid service token")
-            t = svc()
-            out = await t.today(await _body(request))
+            body = await _body(request)
+            # 库层处理判据（LT-06 决定记录（续）第 4 条）：编排会调计划、再练、复测（含对外调用）与快照写入，先问库
+            await processing.require(state.get("pool"), bool(state.get("processing")), body.get("student_ref"))
+            out = await svc().today(body)
             record["status"] = 200
             return JSONResponse(out)
         except IngestError as e:

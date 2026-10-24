@@ -149,7 +149,21 @@ async def student(pools) -> str:
                VALUES ($1::uuid, $2::uuid, $3::uuid, 9, 'nanjing', 'suke-2024', '2012-03-01')""",
             sid, acct, household,
         )
+        await grant_consents(c, sid, guardian)
     return sid
+
+
+# LT-06（迁移 0059 platform.student_processing_allowed）：学习服务的写入与模型处理入口只处理有有效同意的学生。
+# 合成学生一律补上两份同意（合成文本版本）；不传家长时新建一个合成家长账号作同意人
+CONSENT_SQL = """INSERT INTO platform.consent_record (student_id, guardian_account_id, consent_type, document_version, decision, decided_at)
+                 SELECT $1::uuid, $2::uuid, t, replace(t, '_', '-') || '@synthetic-0', 'granted', now() - interval '1 day'
+                   FROM unnest(ARRAY['privacy_policy', 'guardian_consent_under14']) t"""
+
+
+async def grant_consents(conn, student: str, guardian: str | None = None) -> None:
+    if guardian is None:
+        guardian = await conn.fetchval("INSERT INTO platform.account (id, kind) VALUES (gen_random_uuid(), 'guardian') RETURNING id::text")
+    await conn.execute(CONSENT_SQL, student, guardian)
 
 
 TABLES = ("evidence_event", "attempt", "grade_result", "error_attribution", "skill_observation")

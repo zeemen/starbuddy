@@ -55,6 +55,13 @@ async def seed_accounts(admin, cohort: Cohort) -> None:
                    SELECT $1::uuid, $2::uuid, 'household_creator'
                     WHERE NOT EXISTS (SELECT 1 FROM platform.guardian_student_link WHERE guardian_account_id = $1::uuid AND student_id = $2::uuid)""",
                 s.guardian_id, s.student_id)
+            # 两份同意（合成文本版本）：0059 起学习服务只处理有有效同意的学生（platform.student_processing_allowed，LT-06）
+            await c.execute(
+                """INSERT INTO platform.consent_record (student_id, guardian_account_id, consent_type, document_version, decision)
+                   SELECT $2::uuid, $1::uuid, t, replace(t, '_', '-') || '@synthetic-0', 'granted'
+                     FROM unnest(ARRAY['privacy_policy', 'guardian_consent_under14']) t
+                    WHERE NOT EXISTS (SELECT 1 FROM platform.consent_record r WHERE r.student_id = $2::uuid AND r.consent_type = t)""",
+                s.guardian_id, s.student_id)
             await c.executemany(
                 "INSERT INTO platform.subject_enrollment (student_id, subject) VALUES ($1::uuid, $2::platform.subject) ON CONFLICT DO NOTHING",
                 [(s.student_id, subj) for subj in s.enrollment])

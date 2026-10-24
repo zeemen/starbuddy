@@ -208,6 +208,86 @@ test('重启恢复：作废、锁定、签发次数与待核验的条目都从�
                 /格式不对/);
 });
 
+const ACC_A = '9a590000-0000-4000-8000-0000000000a1';
+const ACC_B = '9a590000-0000-4000-8000-0000000000b2';
+const ACC_X = '9a590000-0000-4000-8000-0000000000ff';
+
+test('作废（LT-06 退出测试，按账号）：登录成功时条目与账号对应；按账号作废该号码的全部条目（含已用过、未用的），审计逐条记 revoked、不含码、号码与账号；不再签发；重启后仍作废；不重复记', () => {
+  const f = files([entry('a-1', PA, '246810'), entry('a-2', PA, '135790'), entry('b-1', PB, '135791'), entry('c-1', PC, '975310')]);
+  const otp = make(f);
+  assert.equal(issue(otp, PA), '246810');
+  otp.onVerify(PA, true, ACC_A);    // a-1 已用过，PA 对应账号 A
+  assert.equal(issue(otp, PB), '135791');  // b-1 已签发、待核验（PB 还没有登录过，对应不上账号）
+  assert.equal(issue(otp, PC), '975310');
+  otp.onVerify(PC, true, ACC_B);    // c-1 已用过，PC 对应账号 B
+  assert.deepEqual(otp.revokeByAccounts(new Set([ACC_X])), { revoked: 0, auditFailed: false }, '没有登录过的账号对应不上任何条目');
+  assert.equal(issue(otp, PA), '135790');  // a-2 已签发、待核验
+  const r = otp.revokeByAccounts(new Set([ACC_A.toUpperCase()]));
+  assert.deepEqual(r, { revoked: 2, auditFailed: false });
+  otp.onVerify(PA, true, ACC_A);  // 作废前签发的待核验条目已清掉：不再记 consumed
+  assert.equal(otp.stateOf('a-2')?.consumed, false, '作废清掉待核验');
+  for (const id of ['a-1', 'a-2']) assert.equal(otp.stateOf(id)?.revoked, true, id);
+  assert.equal(otp.stateOf('b-1')?.revoked ?? false, false, '别的号码不受影响');
+  assert.equal(otp.stateOf('c-1')?.revoked ?? false, false, '别的账号不受影响');
+  assert.equal(issue(otp, PA), null, '作废后不再签发');
+  assert.deepEqual(otp.revokeByAccounts(new Set([ACC_A])), { revoked: 0, auditFailed: false }, '已作废的不重复记');
+  const text = readFileSync(f.auditFile, 'utf8');
+  const lines = text.trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepEqual(lines.filter((l) => l.event === 'revoked').map((l) => [l.entry, l.phone_hmac]),
+                   [['a-1', phoneHash(keys, PA)], ['a-2', phoneHash(keys, PA)]]);
+  const consumed = lines.filter((l) => l.event === 'consumed');
+  assert.ok(consumed.length === 2 && consumed.every((l) => /^[0-9a-f]{16}$/.test(l.account_hmac)), '登录成功的审计行带账号摘要');
+  assert.ok(lines.filter((l) => l.event !== 'consumed').every((l) => !('account_hmac' in l)), '其余审计行不带账号摘要');
+  assert.ok(!text.includes(PA) && !text.includes('246810') && !text.includes(ACC_A) && !text.includes(ACC_B));
+  // 重启：账号对应从审计恢复，按账号作废照常
+  const again = restart(f);
+  for (const id of ['a-1', 'a-2']) assert.equal(again.stateOf(id)?.revoked, true, `${id} 重启后仍作废`);
+  assert.equal(issue(again, PA), null);
+  assert.deepEqual(again.revokeByAccounts(new Set([ACC_B])), { revoked: 1, auditFailed: false }, '重启后从审计恢复账号对应');
+  assert.equal(again.stateOf('c-1')?.revoked, true);
+});
+
+test('审计格式向后兼容：没有 account_hmac 的旧行照常核对哈希链；account_hmac 只能出现在 consumed 行，改了它哈希链断开', () => {
+  const f = files([entry('a-1', PA, '246810')]);
+  const otp = make(f);
+  issue(otp, PA);
+  otp.onVerify(PA, true);  // 没有账号（旧版行为）：行里没有 account_hmac
+  const text = readFileSync(f.auditFile, 'utf8');
+  assert.ok(!text.includes('account_hmac'));
+  assert.equal(replayAudit(text, keys.log).accounts.size, 0);
+  const g = files([entry('a-1', PA, '246810')]);
+  const o2 = make(g);
+  issue(o2, PA);
+  o2.onVerify(PA, true, ACC_A);
+  const t2 = readFileSync(g.auditFile, 'utf8');
+  assert.equal(replayAudit(t2, keys.log).accounts.size, 1);
+  const lines = t2.trim().split('\n');
+  const last = JSON.parse(lines.at(-1)!) as Record<string, unknown>;
+  const forged = JSON.stringify({ ...last, account_hmac: '0123456789abcdef' });
+  assert.throws(() => replayAudit([...lines.slice(0, -1), forged].join('\n'), keys.log), /哈希链断开/);
+  const wrongEvent = JSON.stringify({ ...JSON.parse(lines[0]!) as Record<string, unknown>, account_hmac: '0123456789abcdef' });
+  assert.throws(() => replayAudit(wrongEvent, keys.log), /格式不对/);
+});
+
+test('作废：审计写失败只告警并标出（内存里仍作废、不抛错）', () => {
+  const f = files([entry('a-1', PA, '246810'), entry('a-2', PA, '135790')]);
+  const warns: Record<string, string>[] = [];
+  const otp = make(f, () => T0, warns);
+  issue(otp, PA);
+  otp.onVerify(PA, true, ACC_A);
+  chmodSync(f.auditFile, 0o400);
+  const root = process.getuid?.() === 0;
+  const r = otp.revokeByAccounts(new Set([ACC_A]));
+  chmodSync(f.auditFile, 0o600);
+  assert.equal(r.revoked, 2);
+  assert.equal(otp.stateOf('a-1')?.revoked, true);
+  assert.equal(otp.stateOf('a-2')?.revoked, true);
+  if (!root) {
+    assert.equal(r.auditFailed, true);
+    assert.ok(warns.some((w) => w['event'] === 'staging_otp_audit_write_failed' && w['audit_event'] === 'revoked'));
+  }
+});
+
 test('条目文件可热更新；坏了保留上一份并记 config_invalid', () => {
   const f = files([entry('a-1', PA, '246810')]);
   const otp = make(f);

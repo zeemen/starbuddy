@@ -112,6 +112,7 @@ platform.evidence_event|evidence_insight_read|SELECT|starbuddy_insight|PERMISSIV
 platform.evidence_event|evidence_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
 platform.evidence_event|evidence_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
 platform.evidence_registry|evidence_registry_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
+platform.feedback|feedback_submit|INSERT|starbuddy_bff|PERMISSIVE|using=-|check=((submitter_account_id = platform.current_account_id()) AND (status = 'new'::text) AND (status_changed_at IS NULL) AND (status_changed_by IS NULL) AND (((source = 'student_self_report'::text) AND platform.is_self_student(student_id)) OR ((source = 'guardian_observation'::text) AND platform.is_linked_guardian(student_id))) AND (NOT platform.internal_test_exited(student_id)))
 platform.grade_dimension|dim_read|SELECT|starbuddy_bff|PERMISSIVE|using=(EXISTS ( SELECT 1
    FROM platform.grade_result g
   WHERE ((g.id = grade_dimension.grade_result_id) AND platform.can_read_student(g.student_id))))|check=-

@@ -67,8 +67,21 @@ def new_student(db) -> dict[str, str]:
       INSERT INTO platform.student_profile (id, account_id, household_id, grade, region, textbook_version, birth_year_month) VALUES
         ('{ids['student']}', '{ids['account']}', '{ids['household']}', 8, 'nanjing', 'bubian-2024', '2013-02-01');
       INSERT INTO platform.guardian_student_link (guardian_account_id, student_id, granted_via) VALUES
-        ('{ids['guardian']}', '{ids['student']}', 'household_creator');""")
+        ('{ids['guardian']}', '{ids['student']}', 'household_creator');
+      -- 两份同意（合成文本版本）：0059 起批量任务只处理 platform.student_processing_allowed 为真的学生（LT-06）
+      INSERT INTO platform.consent_record (student_id, guardian_account_id, consent_type, document_version, decision)
+        SELECT '{ids['student']}', '{ids['guardian']}', t, replace(t, '_', '-') || '@synthetic-0', 'granted'
+          FROM unnest(ARRAY['privacy_policy', 'guardian_consent_under14']) t;""")
     return ids
+
+
+def exit_internal_test(db, ids: dict[str, str]) -> None:
+    """家长让孩子退出内部测试（经 BFF 身份调 platform.exit_internal_test：撤回同意、作废学生会话、写退出记录）"""
+    db.psql(f"""SET ROLE starbuddy_bff;
+      SELECT set_config('app.account_id', '{ids['guardian']}', false);
+      SELECT 1 FROM platform.exit_internal_test('{ids['student']}');
+      SELECT set_config('app.account_id', '', false);
+      RESET ROLE;""")
 
 
 def seed_expired_reservation(db) -> dict[str, str]:

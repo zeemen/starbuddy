@@ -116,6 +116,7 @@ services:
       - {name: REVIEW_CONSOLE_KGE_DATABASE_URL, purpose: 草稿读写连接串（只继承 starbuddy_kge）, secret: true, default: null, envs: all, required_in_staging: true}
       - {name: REVIEW_CONSOLE_REVIEW_DATABASE_URL, purpose: 签字发布连接串（只继承 starbuddy_review）, secret: true, default: null, envs: all, required_in_staging: true}
       - {name: REVIEW_CONSOLE_FEATURES, purpose: 封测周修订开关（开发开关）, secret: false, default: null, envs: local}
+      - {name: REVIEW_CONSOLE_INTERNAL_TEST, purpose: 内部成员测试运营开关（LT-06：反馈只读列表与改状态、退出状态；只认 internal_test；依赖迁移 0059，矩阵 pending）, secret: false, default: null, envs: all}
       - {name: REVIEW_CONSOLE_PAGES_EXPORT, purpose: 编译页面合并记录导出, secret: false, default: null, envs: all}
       - {name: REVIEW_CONSOLE_PAGES_STAFF_MAP, purpose: staff 对应表, secret: false, default: null, envs: all}
       - {name: REVIEW_CONSOLE_PAGES_MR_URL, purpose: 合并请求地址模板, secret: false, default: null, envs: all}
@@ -155,13 +156,14 @@ services:
       - {name: STARBUDDY_FAMILY_GOALS, purpose: 家长诉求开关（只 dev/test）, secret: false, default: null, envs: local}
       - {name: STARBUDDY_MONTHLY_PLAN, purpose: 月度计划开关（只 dev/test）, secret: false, default: null, envs: local}
       - {name: STARBUDDY_SUBJECT_GATE, purpose: 分学科闸门开关, secret: false, default: null, envs: all}
+      - {name: STARBUDDY_INTERNAL_TEST, purpose: 内部成员测试运营开关（LT-06：问题反馈、退出测试与统一退出判据；只认 internal_test；依赖迁移 0059，矩阵 pending；pilot、生产拒绝启动）, secret: false, default: null, envs: all}
       - {name: STARBUDDY_IMAGE_ENV, purpose: 镜像固化的环境标记（设了须与 STARBUDDY_ENV 一致）, secret: false, default: null, envs: all}
   web:
     sources: [apps/web/src/lib/bff.ts, apps/web/src/lib/review.ts, apps/web/src/app/family/shell-actions.ts, apps/web/src/today/plan-mark-server.ts,
               apps/web/src/lib/dev-pages.ts, apps/web/next.config.ts, apps/web/src/shell/features.ts, apps/web/src/star/features.ts,
               apps/web/src/practice/features.ts, apps/web/src/retest/features.ts, apps/web/src/shell/today-orch.ts,
               apps/web/src/monthly-plan/features.ts, apps/web/src/family-goals/features.ts, apps/web/src/lib/review-features.ts,
-              apps/web/src/lib/serve-env.ts, apps/web/src/lib/consent-version.ts]
+              apps/web/src/lib/serve-env.ts, apps/web/src/lib/consent-version.ts, apps/web/src/internal-test/features.ts]
     vars:
       - {name: WEB_HOST, purpose: 监听地址（启动包装核对：dev/test 只 127.0.0.1，staging 另收内网 IPv4）, secret: false, default: 127.0.0.1, envs: all}
       - {name: PORT, purpose: 监听端口, secret: false, default: "3000", envs: all}
@@ -176,6 +178,7 @@ services:
       - {name: STARBUDDY_MONTHLY_PLAN, purpose: 月度计划开关（只 dev/test）, secret: false, default: null, envs: local}
       - {name: STARBUDDY_FAMILY_GOALS, purpose: 家长诉求开关（只 dev/test）, secret: false, default: null, envs: local}
       - {name: STARBUDDY_REVIEW_FEATURES, purpose: 审核台修订开关（开发开关）, secret: false, default: null, envs: local}
+      - {name: STARBUDDY_INTERNAL_TEST, purpose: 内部成员测试运营开关（LT-06：反馈与退出入口、审核台反馈与退出状态页；只认 internal_test；依赖迁移 0059，矩阵 pending）, secret: false, default: null, envs: all}
       - {name: STARBUDDY_ENV, purpose: 运行环境（构建期与运行期一致）, secret: false, default: null, envs: all, required_in_staging: true}
       - {name: STARBUDDY_BFF_URL, purpose: BFF 地址（staging 只收内网地址）, secret: false, default: "http://127.0.0.1:8787", envs: all, required_in_staging: true}
       - {name: STARBUDDY_REVIEW_URL, purpose: 审核台后端地址（staging 另收内网 IPv4）, secret: false, default: "http://127.0.0.1:8790", envs: all}

@@ -42,6 +42,10 @@ INSERT INTO platform.student_profile (id, account_id, household_id, grade, regio
   ('{S5}', '{SA5}', 'd5000000-0000-4000-8000-0000000000d5', 9, 'nanjing', 'bubian-2024', '2012-06-01');
 INSERT INTO platform.guardian_student_link (id, guardian_account_id, student_id, granted_via) VALUES
   ('{LINK_C4}', '{GC}', '{S4}', 'household_creator'), ('{LINK_C5}', '{GC}', '{S5}', 'household_creator');
+-- 两份同意（合成文本版本）：0059 起周报、指标选人只取 platform.student_processing_allowed 为真的学生（LT-06）
+INSERT INTO platform.consent_record (student_id, guardian_account_id, consent_type, document_version, decision, decided_at)
+  SELECT s, '{GC}', t, replace(t, '_', '-') || '@synthetic-0', 'granted', now() - interval '30 days'
+    FROM unnest(ARRAY['{S4}', '{S5}']::uuid[]) s, unnest(ARRAY['privacy_policy', 'guardian_consent_under14']) t;
 SET session_replication_role = replica;
 INSERT INTO platform.evidence_event (evidence_id, occurred_at, student_id, subject, kind, item_id, admission, payload, source_method,
   request_id, request_idempotency_key, evidence_kind, evidence_level, channel, source_type) VALUES

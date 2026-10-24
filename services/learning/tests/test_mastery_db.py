@@ -19,7 +19,7 @@ import asyncpg
 import httpx
 import pytest
 
-from conftest import CREDENTIAL, FIXTURE_SQL, FakeAdapter, env, grade_body, register_admin, settings, to_v1_body, unregister_admin
+from conftest import CREDENTIAL, FIXTURE_SQL, FakeAdapter, env, grade_body, grant_consents, register_admin, settings, to_v1_body, unregister_admin
 from learning import jobs as jobs_cli
 from learning.app import create_app
 from learning.mastery import explain_gates, parse_config, replay, star_lit
@@ -148,6 +148,7 @@ async def student(mpools) -> str:
         await c.execute(
             """INSERT INTO platform.student_profile (id, account_id, household_id, grade, region, textbook_version, birth_year_month)
                VALUES ($1::uuid, $2::uuid, $3::uuid, 9, 'nanjing', 'suke-2024', '2012-03-01')""", sid, acct, household)
+        await grant_consents(c, sid, guardian)
     return sid
 
 
@@ -535,6 +536,7 @@ async def test_not_admitted_capped_then_recompute_item_drops_star(mpools, studen
         await c.execute("INSERT INTO platform.household (id, created_by_account) VALUES ($1::uuid, $2::uuid)", h, g)
         await c.execute("""INSERT INTO platform.student_profile (id, account_id, household_id, grade, region, textbook_version, birth_year_month)
                            VALUES ($1::uuid, $2::uuid, $3::uuid, 9, 'nanjing', 'suke-2024', '2012-03-01')""", other, acct, h)
+        await grant_consents(c, other, g)
     answers = await normal_path(admin, eng, other, upto=4)
     lit = await current(admin, other)
     assert lit["state"] == "transfer"
@@ -621,6 +623,7 @@ async def test_attempt_self_report_confident_same_result(mpools, student):
         await c.execute("INSERT INTO platform.household (id, created_by_account) VALUES ($1::uuid, $2::uuid)", h, g)
         await c.execute("""INSERT INTO platform.student_profile (id, account_id, household_id, grade, region, textbook_version, birth_year_month)
                            VALUES ($1::uuid, $2::uuid, $3::uuid, 9, 'nanjing', 'suke-2024', '2012-03-01')""", other, acct, h)
+        await grant_consents(c, other, g)
     for i in range(3):
         it = await item(admin, "aya", V1, N1, family=f"same-{student[:8]}-{i}")
         await answer(admin, student, "aya", it, T0 + i * HOUR, self_report="confident")

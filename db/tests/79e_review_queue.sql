@@ -181,6 +181,9 @@ SELECT t.throws(format($$SELECT t.as_role('starbuddy_review', %L)$$, format('UPD
                 '42501', '审核台不能直接改任务');
 
 -- ================= 抽检（调度角色） =================
+-- 0059 起抽检只抽“允许处理”的学生（platform.student_processing_allowed：有有效同意、未退出、未删除）：给 S1 补上两份同意（合成版本）
+INSERT INTO platform.consent_record (student_id, guardian_account_id, consent_type, document_version, decision) VALUES
+  (:S1, :gA, 'privacy_policy', 'privacy-policy@syn-79e', 'granted'), (:S1, :gA, 'guardian_consent_under14', 'guardian-consent@syn-79e', 'granted');
 SET ROLE starbuddy_learning;
 INSERT INTO platform.grade_result (student_id, subject, attempt_id, attempt_occurred_at, verdict, rubric_version, score_total, max_total,
   calibrated, confidence, source_version, model_version, verifier_id, verifier_version, human_review_required, semantics, evidence_ids,

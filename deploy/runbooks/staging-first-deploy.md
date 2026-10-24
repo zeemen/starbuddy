@@ -454,6 +454,7 @@ kubectl -n starbuddy-staging get svc,networkpolicy,pvc
 | `signed_content` | `today_plan`、`diagnosis`、`practice`、`retest`、`star_map`、`today_snapshot` | **教研签字**：掌握配置（`mastery-aya`）、再练、复测、今日编排配置与题面来源放进 `starbuddy-signed-config` 后 `kubectl -n starbuddy-staging rollout restart deployment/learning` | 再练 501 `PRACTICE_UNAVAILABLE`、复测 501 `RETEST_UNAVAILABLE`、今日编排 501 `TODAY_UNAVAILABLE`、诊断题面 501；星图不展示未经签字的结论（规则 11） |
 | `model_provider` | `daofa`、`chinese_grading` | **模型供应商开通**：按 `deploy/config/README.md` 第 7 节由人完成开通、协议与登记、填写快照名与 `allowed_hosts`、批准后改 `approved`；建 `starbuddy-model-vendors` 并解开清单里的接线行；IaC 填 `model_egress_fqdns` 并完成第 1 节阶段 D；学习服务 Pod 加 443 出网策略（写法见清单注释） | 模型路由接口 503 `ROUTE_UNAVAILABLE`，道法判分推理与作文批改不可用；超限时 503 且 `detail` 为 `ROUTE_BUDGET_EXCEEDED` |
 | `human` | `chinese_grading` | 由人确认语文“只开批改”的口径（没有专门开关，靠选科与内容范围约束） | 文砺的 diagnose / plan 照常可用 |
+| `migration_0059` | `internal_test_ops` | 副本演练后在主实例执行 0059（LT-06 问题反馈表、退出记录表与库函数）；之后由人决定是否把 BFF、前端的 `STARBUDDY_INTERNAL_TEST` 与审核台后端的 `REVIEW_CONSOLE_INTERNAL_TEST` 一起设为 `internal_test`（步骤见 `docs/ops/internal-test-runbook.md`） | 三处都不设：没有问题反馈、退出测试入口与审核台的反馈、退出状态页（路由不注册，404）；BFF 不做退出判断 |
 
 - `model_provider` 解除后的验证（由人在有凭据的 staging 执行环境，限次）：`make model-smoke SMOKE_ENV=staging MAX_CALLS=5`（只打印状态、耗时、token 与快照名是否一致）；
   点点人设回归按 `evals/persona/README.md` 的 staging 步骤（`compare.py` 必须显式给 `--max-calls`），并跑 `make eval-persona`。

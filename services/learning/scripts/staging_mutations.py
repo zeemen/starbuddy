@@ -81,6 +81,10 @@ MUTATIONS: dict[str, list[tuple[str, str, str]]] = {
     "审核台不收 Service 地址作 Host": [(RA, "        if settings.extra_host:\n            extra.add(settings.extra_host)", "        pass")],
     "审核台额外 Host 收任意写法": [(RC, "    if not private_ipv4(raw):\n        raise RuntimeError(\"REVIEW_CONSOLE_EXTRA_HOST", "    if False:\n        raise RuntimeError(\"REVIEW_CONSOLE_EXTRA_HOST")],
     "审核台额外 Host dev 也能设": [(RC, "    if env != STAGING:\n        raise RuntimeError(\"REVIEW_CONSOLE_EXTRA_HOST", "    if False:\n        raise RuntimeError(\"REVIEW_CONSOLE_EXTRA_HOST")],
+    # LT-06 内部测试运营开关：staging 能开、只认 internal_test
+    "审核台内测开关 staging 打不开": [(RC, '    if env not in SERVICE_ENVS:\n        raise RuntimeError("REVIEW_CONSOLE_INTERNAL_TEST',
+                               '    if env not in ALLOWED_ENVS:\n        raise RuntimeError("REVIEW_CONSOLE_INTERNAL_TEST')],
+    "审核台内测开关收任意取值": [(RC, "    if v != INTERNAL_TEST_FEATURE:", "    if False:")],
     "审核台 Host 收任意内网地址": [(RA, '            if host_name(request.headers.get("host", "")) not in hosts:',
                             '            if host_name(request.headers.get("host", "")) not in hosts and not private_ipv4(host_name(request.headers.get("host", "")).rsplit(":", 1)[0]):'),
                            (RA, "from learning.netpolicy import STAGING", "from learning.netpolicy import STAGING, private_ipv4")],

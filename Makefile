@@ -37,7 +37,7 @@ make-skip-check:
 # 契约检查约 1 秒，改动后也跑一遍
 check-fast: contract-test taxonomy-check attack-surface-check sie-dictionary-check kge-id-check
 
-check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation practice-mutation internal-v1-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona insight-test insight-mutation voice-blind-eval-test release-walkthrough retest-mutation today-mutation scheduler-test scheduler-mutation gate1-test gate1-mutation review-console-mutation kge-chinese-import kge-chinese-mutation knowledge-material-mutation stage-test stage-mutation kge-dedupe-test kge-dedupe-mutation kge-calibrate-test kge-calibrate-mutation cost-dashboard-test cost-dashboard-mutation mock-exam-test mock-exam-mutation kge-irt-test kge-irt-mutation knowledge-cache-mutation knowledge-semantic-test knowledge-semantic-mutation loadtest-test deploy-check staging-mutation
+check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation practice-mutation internal-v1-mutation adapter-client-mutation bff-test bff-mutation internal-test-tool-test conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona insight-test insight-mutation voice-blind-eval-test release-walkthrough retest-mutation today-mutation scheduler-test scheduler-mutation gate1-test gate1-mutation review-console-mutation kge-chinese-import kge-chinese-mutation knowledge-material-mutation stage-test stage-mutation kge-dedupe-test kge-dedupe-mutation kge-calibrate-test kge-calibrate-mutation cost-dashboard-test cost-dashboard-mutation mock-exam-test mock-exam-mutation kge-irt-test kge-irt-mutation knowledge-cache-mutation knowledge-semantic-test knowledge-semantic-mutation loadtest-test deploy-check staging-mutation
 	@echo "check: lint 尚未配置，跳过；其余检查已通过"
 
 # LT-01 部署打包（specs/launch-lt01-deploy-packaging）：镜像与编排的静态校验、开关矩阵、环境变量清单、迁移执行器单测与一次性库上的
@@ -308,6 +308,17 @@ bff-test:
 	@$(call guard,$(BFF_MISSING))cd services/bff && bash ../../db/tests/pg-ephemeral.sh -- node --no-warnings --test --test-concurrency=1 --test-reporter=dot tests/*.test.ts; rc=$$?; \
 	  if [ $$rc -eq 0 ]; then echo "bff-test: 通过（单测 + Gate 0 六类场景集成测试）"; fi; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
+
+# LT-06 内部成员测试的白名单运营工具（tools/internal-test，specs/launch-lt06-internal-test-ops 范围第 1 条）：类型检查 + 单测与端到端
+# （生成、按批次作废、审计摘要；与 BFF StagingOtp 互验）。借用 services/bff 的开发依赖（不另装依赖），约 3 秒；
+# 变异测试在 bff-mutation 的“内测工具：”一组（BFFMUT_FILTER=内测工具 只跑这一组）
+.PHONY: internal-test-tool-test
+internal-test-tool-test:
+	@if $(BFF_MISSING); then \
+	  echo "internal-test-tool-test: 跳过（没有安装依赖；cd services/bff && npm ci）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@$(call guard,$(BFF_MISSING))cd tools/internal-test && ../../services/bff/node_modules/.bin/tsc -p tsconfig.json && echo "internal-test-tool-test: 类型检查通过"
+	@$(call guard,$(BFF_MISSING))cd tools/internal-test && node --no-warnings --test --test-reporter=dot tests/*.test.ts && echo "internal-test-tool-test: 通过"
 
 # BFF 集成测试的变异测试：去掉计量函数里的加锁或并发判断，断言 Gate 0 集成测试能发现（约 10 秒）
 bff-mutation:

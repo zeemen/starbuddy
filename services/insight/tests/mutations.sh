@@ -295,6 +295,12 @@ M=(
   $'可观测：顶层字段不过白名单\tinsight/service/obs.py\t        if nk not in LOG_FIELDS:\n            continue\n\t\ttests/test_obs.py'
   $'可观测：正文 UUID 不替换\tinsight/service/obs.py\t    s = _UUID.sub(UUID_MARK, s)\n\t\ttests/test_obs.py'
   $'可观测：脱敏不替换邮箱\tinsight/service/obs.py\t    re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}"),\n\t\ttests/test_obs.py'
+  # LT-06 决定记录（续）第 4 条：批量任务按库层处理判据选人（insight/processing.py 及其调用点）
+  $'处理判据：周报候选不过滤\tinsight/store_weekly.py\t        return await processing.keep_allowed(conn, [r["s"] for r in rows])\t        return [r["s"] for r in rows]\ttests/test_processing_filter.py'
+  $'处理判据：点名周报不过滤\tinsight/store_weekly.py\t            targets = await processing.keep_allowed(conn, list(students))\t            targets = list(students)\ttests/test_processing_filter.py'
+  $'处理判据：命令行选人不过滤\tinsight/jobs_cli.py\t            students = await processing.keep_allowed(conn, students)\t            pass\ttests/test_processing_filter.py'
+  $'处理判据：过滤不保持原顺序\tinsight/processing.py\tWHERE platform.student_processing_allowed(u.s) ORDER BY u.n\tWHERE platform.student_processing_allowed(u.s) ORDER BY u.s\ttests/test_processing_filter.py'
+  $'处理判据：函数在也当作不可用\tinsight/processing.py\t    if not students or not await available(conn):\t    if True:\ttests/test_processing_filter.py'
 )
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/starbuddy-insight-mut.XXXXXX")"

@@ -5,9 +5,9 @@
 import { readFileSync } from 'node:fs';
 
 /** 接口定义文件（不含 .yaml）：v0 六份 + H5 星图 v1（开关 starmap_v1 后）+ 错题再练（开关 practice 后）+ 复测与验证题（开关 retest 后，KGE-05）
- *  + 家长诉求（开关 family_goals 后，PLT-14）+ 月度计划（开关 monthly_plan 后，PLT-14 第 3 步） */
+ *  + 家长诉求（开关 family_goals 后，PLT-14）+ 月度计划（开关 monthly_plan 后，PLT-14 第 3 步）+ 内部测试运营（开关 internal_test 后，LT-06） */
 export const SPEC_FILES = ['shell.v0', 'star-map.v0', 'onboarding.v0', 'events.v0', 'diagnosis.v0', 'trust.v0', 'star-map.v1', 'practice.v0',
-                           'retest.v0', 'family-goals.v0', 'monthly-plan.v0'] as const;
+                           'retest.v0', 'family-goals.v0', 'monthly-plan.v0', 'internal-test.v0'] as const;
 
 export interface Op { auth: string | null; buckets: string[] | null; notSelf: number | null; statuses: Set<string>; file: string }
 

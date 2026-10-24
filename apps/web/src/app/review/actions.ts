@@ -11,9 +11,10 @@ import {
   isItemId, isNodeId, isResolutionCode, isReviewLevel, isSourceHost, isSourceNote, isSourceRef, isSubject, isTaskId, isVersionId, lines,
   loginRequest, logoutRequest, publishContentVersion, publishScheme, publishVersion, releaseTask, resolveTask, retireContentVersion,
   retireSourceDomain, retireVersion, signAdmission, signChange, signContentVersion, signPage, signPolicyRecord, signScheme, signSpotCheck,
-  signVersion, takeTask, type AdmissionSign, type Result, decideTag, isTagDecision,
+  signVersion, takeTask, type AdmissionSign, type Result, decideTag, isTagDecision, isFeedbackStatus, setFeedbackStatus,
 } from '../../lib/review.ts';
 import { reviewFeatureEnabled } from '../../lib/review-features.ts';
+import { internalTestEnabled } from '../../internal-test/features.ts';
 
 export interface ActionState {
   code: string;
@@ -300,6 +301,20 @@ export async function decideTagAction(_: ActionState | null, f: FormData): Promi
   if (!r.ok) return { code: r.problem.code, detail: r.problem.detail };
   revalidatePath('/review/tag-candidates');
   return { code: r.value.status };
+}
+
+/** LT-06 反馈改状态（new / triaged / closed）。开关关着时不调后端（后端同样不注册接口）；改的人由库记下 */
+export async function feedbackStatusAction(_: ActionState | null, f: FormData): Promise<ActionState> {
+  if (!internalTestEnabled()) return { code: 'NOT_FOUND' };
+  const who = await staff();
+  if (!who) return { code: 'UNAUTHENTICATED' };
+  const id = text(f, 'feedback');
+  const status = text(f, 'status');
+  if (!isVersionId(id) || !isFeedbackStatus(status)) return INVALID;
+  const r = await setFeedbackStatus(who, id, status);
+  if (!r.ok) return { code: r.problem.code, detail: r.problem.detail };
+  revalidatePath('/review/feedback');
+  return { code: 'status_changed' };
 }
 
 export async function signPageAction(_: ActionState | null, f: FormData): Promise<ActionState> {

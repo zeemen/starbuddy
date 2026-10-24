@@ -240,7 +240,9 @@ async def test_reread_filters_snapshot_to_requested_subjects(ppools, plock, stud
 
 
 async def test_erased_student_gets_empty_list_and_no_write(ppools, plock, student):
-    """已执行删除的学生：不写快照、items 为空（snapshot = not_frozen）；冻结之后才删除的，也不再返回快照（安全审查阻断 1）。"""
+    """已执行删除的学生：不写快照；冻结之后才删除的，也不再返回快照（安全审查阻断 1）。
+    0059 起（LT-06 决定记录（续）第 4 条）已删除的学生在库层处理判据上为假：编排入口直接 404 STUDENT_NOT_FOUND，不调计划、再练、复测，
+    也不读快照（判据不可用、即迁移 0059 未执行时，仍走快照层的“已删除返回空列表”，见 test_erased_student_without_gate_gets_empty_list）。"""
     _, admin = ppools
     other = await new_student(admin)
     async with today_api(ppools, plock, snapshot=True) as a:
@@ -249,11 +251,34 @@ async def test_erased_student_gets_empty_list_and_no_write(ppools, plock, studen
         async with admin.acquire() as c:
             await c.execute("UPDATE platform.student_profile SET erased_at = now() WHERE id = ANY($1::uuid[])", [student, other])
         for s in (student, other):
+            r = await a.today(s)
+            assert r.status_code == 404 and r.json()["code"] == "STUDENT_NOT_FOUND", r.text
+            assert s not in r.text
+    assert await rows(admin, student) == []
+    assert len(await rows(admin, other)) == len(frozen["items"])           # 删除后没有新写入（删行由删除执行负责）
+
+
+async def test_erased_student_without_gate_gets_empty_list(ppools, plock, student, monkeypatch):
+    """库层处理判据不可用（迁移 0059 未执行）时：快照层自己的守卫照旧——已执行删除的学生不写快照、items 为空（snapshot = not_frozen）"""
+    from learning import processing
+
+    async def off(_pool):
+        return False
+    monkeypatch.setattr(processing, "available", off)
+    _, admin = ppools
+    other = await new_student(admin)
+    async with today_api(ppools, plock, snapshot=True) as a:
+        frozen = await a.ok(other)
+        clean_on(frozen)
+        assert frozen["items"], "夹具：冻结时有条目"
+        async with admin.acquire() as c:
+            await c.execute("UPDATE platform.student_profile SET erased_at = now() WHERE id = ANY($1::uuid[])", [student, other])
+        for s in (student, other):  # 冻结之后才删除的也不再返回快照
             out = await a.ok(s)
             clean_on(out, frozen=False)
             assert out["items"] == [] and out["truncated_count"] == 0
     assert await rows(admin, student) == []
-    assert len(await rows(admin, other)) == len(frozen["items"])           # 删除后没有新写入（删行由删除执行负责）
+    assert len(await rows(admin, other)) == len(frozen["items"])
 
 
 async def test_unlisted_rationale_code_is_nulled_in_snapshot(ppools, plock, student):

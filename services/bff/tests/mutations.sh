@@ -472,7 +472,7 @@ SM=(
   $'OTP：审计记验证码\tsrc/http/staging-otp.ts\t    this.#auditQuiet(\'issued\', entry, phone);\t    this.#auditQuiet(\'issued\', entry, phone); writeDurable(this.#auditFile, String(this.#entries.find((x) => x.id === entry)?.code), \'a\');'
   $'OTP：重启不恢复作废\tsrc/http/staging-otp.ts\t    if (a.event === \'consumed\') s.consumed = true;\t'
   $'OTP：重启不恢复待核验\tsrc/http/staging-otp.ts\t      if (a.event === \'issued\' && a.entry !== null) pending.set(a.phone_hmac, a.entry);\t'
-  $'OTP：核验不回报结果\tsrc/http/routes.ts\t  ctx.deps.stagingOtp?.onVerify(phone, r?.outcome === \'ok\' && !!r.session_token);\t'
+  $'OTP：核验不回报结果\tsrc/http/routes.ts\t    ctx.deps.stagingOtp.onVerify(phone, ok, account);\t'
   $'OTP：库写之前就记签发账\tsrc/http/staging-otp.ts\t    return { code: e.code, entry: e.id };\t    this.markIssued(phone, e.id); return { code: e.code, entry: e.id };'
   $'OTP：签发不记账\tsrc/http/routes.ts\t  if (picked) ctx.deps.stagingOtp!.markIssued(phone, picked.entry);\t'
   $'OTP：哈希链不核对\tsrc/http/staging-otp.ts\t    if (a.prev !== last || auditLineText(key, a).text !== line) throw new Error\t    if (false) throw new Error'
@@ -481,6 +481,56 @@ SM=(
   $'OTP：条目文件可写也启动\tsrc/http/staging-otp.ts\t  if (em & 0o022) throw new Error\t  if (false) throw new Error'
   $'OTP：审计文件权限不查\tsrc/http/staging-otp.ts\t    if (st.mode & 0o177) throw new Error\t    if (false) throw new Error'
   $'OTP：单实例锁不查\tsrc/http/staging-otp.ts\t    if (fresh && !(held!.host === me.host && held!.pid === me.pid)) {\t    if (false) {'
+  # LT-06 内部成员测试运营（specs/launch-lt06-internal-test-ops）：反馈的来源与字段规则、文本不进日志、退出的二次确认与白名单作废、
+  # 已退出档案的统一判据与例外清单、两份文书、作废的审计与恢复；这几条跑 internal-test 单测与集成、staging OTP 单测、认证集成测试
+  $'内测：反馈来源不按会话（学生也记家长观察）\tsrc/http/internal-test-routes.ts\tconst source = ctx.session!.kind === \'student\' ? \'student_self_report\' : \'guardian_observation\';\tconst source = \'guardian_observation\';'
+  $'内测：反馈文本不限 500 字\tsrc/http/internal-test-routes.ts\t || [...body].length > FEEDBACK_MAX_CHARS\t'
+  $'内测：反馈文本不查控制与格式字符\tsrc/http/internal-test-routes.ts\t || FORBIDDEN_CHARS.test(body)) return null;\t) return null;'
+  $'内测：路由模板不查登记\tsrc/http/internal-test-routes.ts\t || !FEEDBACK_ROUTES.includes(route)\t'
+  $'内测：反馈收未知键\tsrc/http/internal-test-routes.ts\t  if (!b || !Object.keys(b).every((k) => [\'category\', \'body\', \'route_template\'].includes(k))) return null;\t  if (!b) return null;'
+  $'内测：反馈文本记进访问日志\tsrc/http/internal-test-routes.ts\t  ctx.note(\'outcome\', \'recorded\');\t  ctx.note(\'outcome\', \'recorded\'); ctx.note(\'note\', input.body);'
+  $'内测：退出不要二次确认\tsrc/http/internal-test-routes.ts\t      if (!confirmed) throw new NotConfirmed();\t'
+  $'内测：退出先确认后授权（别户得到 403）\tsrc/http/internal-test-routes.ts\t      if (seen.rowCount === 0) return null;\\n      if (!confirmed) throw new NotConfirmed();\t      if (!confirmed) throw new NotConfirmed();\\n      if (seen.rowCount === 0) return null;'
+  $'内测：退出不作废白名单条目\tsrc/http/internal-test-routes.ts\t    const r = ctx.deps.stagingOtp.revokeByAccounts(new Set(row.revoke_accounts));\t    const r = { revoked: 0, auditFailed: false };'
+  $'内测：退出判据挂回内测开关\tsrc/http/internal-test-routes.ts\t  if (deps.exitGuard !== true || !session || !student) return false;\t  if (deps.internalTest?.enabled !== true || deps.exitGuard !== true || !session || !student) return false;'
+  $'内测：退出判据不看判据函数在不在\tsrc/http/internal-test-routes.ts\t  if (deps.exitGuard !== true || !session || !student) return false;\t  if (!session || !student) return false;'
+  $'内测：两份文书不挂内测开关\tsrc/http/routes.ts\t      if (ctx.deps.internalTest?.enabled === true) {\t      if (true) {'
+  $'内测：两份文书开关打开也不查\tsrc/http/routes.ts\t      if (ctx.deps.internalTest?.enabled === true) {\t      if (false) {'
+  $'内测：登录成功不记账号\tsrc/http/routes.ts\t    ctx.deps.stagingOtp.onVerify(phone, ok, account);\t    ctx.deps.stagingOtp.onVerify(phone, ok);'
+  $'内测：按账号作废不看账号（作废全部号码）\tsrc/http/staging-otp.ts\t      if (!phones.has(phoneHash(this.#keys, e.phone))) continue;\t'
+  $'内测：重启不恢复账号对应\tsrc/http/staging-otp.ts\t      accounts.set(a.account_hmac, set);\t'
+  $'内测：审计不带账号摘要\tsrc/http/staging-otp.ts\t                                                          ...(account !== undefined ? { account_hmac: accountHmac(this.#keys.log, account) } : {}),\t'
+  $'内测：旧格式审计行不认\tsrc/http/staging-otp.ts\t(keys !== LINE_KEYS && !(keys === LINE_KEYS_ACCOUNT && a.event === \'consumed\'))\tkeys !== LINE_KEYS_ACCOUNT'
+  $'内测：账号摘要能出现在任意行\tsrc/http/staging-otp.ts\t!(keys === LINE_KEYS_ACCOUNT && a.event === \'consumed\')\t!(keys === LINE_KEYS_ACCOUNT)'
+  $'内测：退出判据不拦\tsrc/http/internal-test-routes.ts\t    return rows[0]?.exited === true;\t    return false;'
+  $'内测：退出判据放过只读请求\tsrc/http/internal-test-routes.ts\t  if (ALLOW_AFTER_EXIT.has(\t  if (route.method === \'GET\' || ALLOW_AFTER_EXIT.has('
+  $'内测：例外清单含今日计划\tsrc/http/internal-test-routes.ts\t  \'GET /students/{student_id}/internal-test\', \'POST\t  \'GET /students/{student_id}/today\', \'GET /students/{student_id}/internal-test\', \'POST'
+  $'内测：服务器不调退出判据\tsrc/http/server.ts\t      if (await exitedGuard(deps, route, session, params[\'student_id\'])) throw new Stop(P.TEST_EXITED);\t'
+  $'内测：开关关也注册路由\tsrc/http/routes.ts\t          ...(internalTest ? INTERNAL_TEST_ROUTES : [])];\t          ...INTERNAL_TEST_ROUTES];'
+  $'内测：开关在生产也收\tsrc/internal-test/features.ts\t  if (!launchFeatureEnv(env)) throw\t  if (false) throw'
+  $'内测：两份文书只看隐私政策\tsrc/http/routes.ts\texport const REQUIRED_CONSENTS = [\'guardian_consent_under14\', \'privacy_policy\'] as const;\texport const REQUIRED_CONSENTS = [\'privacy_policy\'] as const;'
+  $'内测：两份文书不看撤回\tsrc/http/routes.ts\tlatest.some((r) => r.t === t && r.d === \'granted\')\tlatest.some((r) => r.t === t)'
+  $'内测：作废不写审计\tsrc/http/staging-otp.ts\t        this.#audit(\'revoked\', e.id, e.phone);\t'
+  $'内测：重启不恢复作废\tsrc/http/staging-otp.ts\t    if (a.event === \'revoked\') s.revoked = true;\t'
+  $'内测：作废的条目仍签发\tsrc/http/staging-otp.ts\treturn !s.revoked && !s.consumed\treturn !s.consumed'
+  $'内测：作废不清待核验\tsrc/http/staging-otp.ts\t      if (this.#pending.get(key) === e.id) this.#pending.delete(key);\t'
+  # LT-06 白名单运营工具（tools/internal-test，复用本服务的条目解析、审计哈希链与手机号 HMAC）：副本里另复制 tools/internal-test，
+  # 这几条跑工具的单测与端到端（含与 BFF StagingOtp 的互验）
+  $'内测工具：窗口不查 24 小时\t../../tools/internal-test/src/lib.ts\t  if (!Number.isInteger(input.hours) || input.hours < 1 || input.hours > MAX_HOURS) throw\t  if (false) throw'
+  $'内测工具：批次可复用\t../../tools/internal-test/src/lib.ts\t  if ([...input.used].some((id) => re.test(id)) || input.existing.some((e) => re.test(e.id))) {\t  if (false) {'
+  $'内测工具：不核对审计里用过的 id\t../../tools/internal-test/src/lib.ts\t  for (const e of looseAudit(auditText ?? \'\')) if (e.entry !== null) out.add(e.entry);\t'
+  $'内测工具：作废按前缀匹配\t../../tools/internal-test/src/lib.ts\t-[0-9]{3}$`);\t-`);'
+  $'内测工具：台账记号码\t../../tools/internal-test/src/lib.ts\t                                     phone_hmac: ledgerHmac(input.key, e.phone) }));\t                                     phone_hmac: e.phone }));'
+  $'内测工具：台账直接用日志密钥（不派生子密钥）\t../../tools/internal-test/src/lib.ts\t  key ? phoneHash({ log: ledgerKey(key) } as Keys, phone) : null;\t  key ? phoneHash({ log: key } as Keys, phone) : null;'
+  $'内测工具：工单摘要仍带手机号 HMAC\t../../tools/internal-test/src/lib.ts\tevents: forTicket ? events.map(({ entry, event, at }) => ({ entry, event, at })) : events };\tevents };'
+  $'内测工具：不认带账号摘要的审计行\t../../tools/internal-test/src/lib.ts\t && !(keys === \'account_hmac,at,entry,event,mac,phone_hmac,prev\' && a[\'event\'] === \'consumed\'))\t)'
+  $'内测工具：输出文件不强制 0600\t../../tools/internal-test/src/main.ts\t    fchmodSync(fd, 0o600);\t    fchmodSync(fd, 0o644);'
+  $'内测工具：输出文件可覆盖\t../../tools/internal-test/src/main.ts\t    fd = openSync(path, \'wx\', 0o600);\t    fd = openSync(path, \'w\', 0o600);'
+  $'内测工具：摘要不核对哈希链\t../../tools/internal-test/src/lib.ts\t      replayAudit(audit, key);\t      void audit;'
+  $'内测工具：码不用安全随机数\t../../tools/internal-test/src/lib.ts\t  const code = input.code ?? newCode;\t  const code = input.code ?? (() => \'000000\');'
+  $'内测工具：报错带号码\t../../tools/internal-test/src/lib.ts\t行不是 E.164 号码`);\t行不是 E.164 号码 ${p}`);'
+  $'内测工具：密钥文件权限不查\t../../tools/internal-test/src/main.ts\t  if (mode & 0o077) throw\t  if (false) throw'
+  $'内测工具：条目输出到文件\t../../tools/internal-test/src/main.ts\t      emit(out);\\n      io.stderr(`internal-test: 批次 ${batch} 生成\t      emit(out); writeSync(openSync(`${ledgerPath}.entries.json`, \'w\'), out);\\n      io.stderr(`internal-test: 批次 ${batch} 生成'
   $'OTP：非白名单核验不写审计\tsrc/http/staging-otp.ts\t      this.#auditQuiet(\'verify_other\', null, phone);\t'
   $'OTP：同意版本大小写敏感\tsrc/http/routes.ts\t(version.split(\'@\')[1] ?? \'\').toLowerCase().startsWith(\'synthetic-\')\t(version.split(\'@\')[1] ?? \'\').startsWith(\'synthetic-\')'
   $'OTP：镜像环境标记不查\tsrc/http/config.ts\t  if (marked !== undefined && marked !== env) throw new Error\t  if (false) throw new Error'
@@ -607,6 +657,8 @@ star_run() {  # $1 副本根目录，$2 变异名（“计量：”开头的跑�
   [[ "${2:-}" == 可观测：* ]] && tests="tests/observability.test.ts"
   [[ "${2:-}" == 连库：* ]] && tests="tests/shell-startup.test.ts"
   [[ "${2:-}" == OTP：* ]] && tests="tests/staging-otp-units.test.ts tests/staging-otp.integration.test.ts tests/shell-startup.test.ts tests/star-map-v1.test.ts"
+  [[ "${2:-}" == 内测：* ]] && tests="tests/internal-test-units.test.ts tests/internal-test.integration.test.ts tests/staging-otp-units.test.ts tests/auth.integration.test.ts tests/shell-openapi.test.ts"
+  [[ "${2:-}" == 内测工具：* ]] && tests="../../tools/internal-test/tests/internal-test.test.ts"
   out=$( cd "$1/services/bff" && timeout 240 bash "$ROOT/db/tests/pg-ephemeral.sh" -- \
       node --no-warnings --test --test-concurrency=1 --test-timeout=60000 $tests 2>&1 ); rc=$?
   printf '%s\n' "$out" > "$1/run.out"  # H6 的“第一条失败必须是登记的断言”从这里读
@@ -628,6 +680,8 @@ star_copy() {
   [[ "${1:-}" == 月度计划：* ]] && ln -s "$ROOT/services/insight" "$work/services/insight"
   ln -s "$ROOT/services/learning" "$work/services/learning"  # 诊断集成测试起学习服务进程（只读用，不改）
   ln -s "$ROOT/deploy" "$work/deploy"  # LT-05：tests/observability.test.ts 读指标登记清单（只读用，不改）
+  # LT-06：白名单运营工具复用本服务的源码（相对路径 ../../services/bff/src），复制一份进副本，“内测工具：”变异改的是副本里的工具源码
+  mkdir -p "$work/tools" && cp -r "$ROOT/tools/internal-test" "$work/tools/internal-test"
   echo "$work"
 }
 work="$(star_copy)"; read -r rc pass <<< "$(star_run "$work")"; rm -rf "$work"
@@ -639,7 +693,8 @@ for spec in "${SM[@]}"; do
   total=$((total + 1))
   work="$(star_copy "$name")"
   unique=0; [[ "$name" == H6：* ]] && unique=1
-  if ! MUT_ROOT="$work/services/bff" MUT_UNIQUE=$unique MUT_FILE="$work/services/bff/$file" MUT_FROM="$from" MUT_TO="$to" python3 - <<'PYM'
+  # 变异目标只能是副本里复制出来的文件：services/bff 与 tools/internal-test（LT-06）都是复制的，其余目录是软链接回主仓
+  if ! MUT_ROOT="$work" MUT_UNIQUE=$unique MUT_FILE="$work/services/bff/$file" MUT_FROM="$from" MUT_TO="$to" python3 - <<'PYM'
 import os, sys
 p, a, b = os.environ['MUT_FILE'], os.environ['MUT_FROM'], os.environ['MUT_TO']
 # 变异目标必须是副本里复制出来的文件（不是软链接回主仓的 deploy/、docs/ 等），免得改到主仓

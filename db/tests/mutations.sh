@@ -1401,6 +1401,64 @@ M+=(
     IF r.state = ''reserved'' AND r.expires_at > platform.meter_now() THEN'") ALTER FUNCTION $LMC VOLATILE;"
 )
 
+# LT-06 内部成员测试运营（0059 问题反馈与退出测试，specs/launch-lt06-internal-test-ops）：由 79zg 发现（授权类的同时由 80 的快照发现，
+# 清单类的同时由 79p 发现）。DBMUT_FILTER=内测 只跑这一组
+FB_CHECK="submitter_account_id = platform.current_account_id() AND status = 'new' AND status_changed_at IS NULL AND status_changed_by IS NULL"
+FB_STUDENT="(source = 'student_self_report' AND platform.is_self_student(student_id))"
+FB_GUARDIAN="(source = 'guardian_observation' AND platform.is_linked_guardian(student_id))"
+fb_policy() {  # $1 = 新的 WITH CHECK 条件
+  printf "DROP POLICY feedback_submit ON platform.feedback; CREATE POLICY feedback_submit ON platform.feedback FOR INSERT TO starbuddy_bff WITH CHECK (%s);" "$1"
+}
+ITX='platform.exit_internal_test(uuid)'
+ITE='platform.internal_test_exited(uuid)'
+RFL='platform.review_feedback_list(text, integer, timestamp with time zone, uuid)'
+RFS='platform.review_feedback_set_status(uuid, text)'
+RIE='platform.review_internal_test_exits(integer)'
+SPA='platform.student_processing_allowed(uuid)'
+SPOT='platform.review_sample_spot_checks(platform.subject, timestamp with time zone, numeric)'
+M+=(
+  ["内测：反馈不核对提交者"]="$(fb_policy "status = 'new' AND ($FB_STUDENT OR $FB_GUARDIAN) AND NOT platform.internal_test_exited(student_id)")"
+  ["内测：学生自述不核对本人"]="$(fb_policy "$FB_CHECK AND ((source = 'student_self_report' AND student_id IS NOT NULL) OR $FB_GUARDIAN) AND NOT platform.internal_test_exited(student_id)")"
+  ["内测：家长观察不核对绑定"]="$(fb_policy "$FB_CHECK AND ($FB_STUDENT OR (source = 'guardian_observation' AND student_id IS NOT NULL)) AND NOT platform.internal_test_exited(student_id)")"
+  ["内测：家长观察只看能读（学生也能写家长观察）"]="$(fb_policy "$FB_CHECK AND ($FB_STUDENT OR (source = 'guardian_observation' AND platform.can_read_student(student_id))) AND NOT platform.internal_test_exited(student_id)")"
+  ["内测：员工来源经 BFF 能写"]="$(fb_policy "$FB_CHECK AND ($FB_STUDENT OR $FB_GUARDIAN OR source = 'staff') AND NOT coalesce(platform.internal_test_exited(student_id), false)")"
+  ["内测：退出后仍能写反馈"]="$(fb_policy "$FB_CHECK AND ($FB_STUDENT OR $FB_GUARDIAN)")"
+  ["内测：BFF 能设反馈状态"]="GRANT INSERT (status) ON platform.feedback TO starbuddy_bff; $(fb_policy "submitter_account_id = platform.current_account_id() AND ($FB_STUDENT OR $FB_GUARDIAN) AND NOT platform.internal_test_exited(student_id)")"
+  ["内测：BFF 能读反馈"]="GRANT SELECT ON platform.feedback TO starbuddy_bff;"
+  ["内测：反馈文本不限长度"]="ALTER TABLE platform.feedback DROP CONSTRAINT feedback_body_check; ALTER TABLE platform.feedback ADD CONSTRAINT feedback_body_check CHECK (btrim(body, E' \\t\\n\\r') <> '');"
+  ["内测：路由模板收任意文本"]="ALTER TABLE platform.feedback DROP CONSTRAINT feedback_route_template_check;"
+  ["内测：分类收任意文本"]="ALTER TABLE platform.feedback DROP CONSTRAINT feedback_category_check;"
+  ["内测：审核台列表不核对 staff"]="$(afr "$RFL" "'DECLARE v_staff uuid := platform.review_current_staff();'" "'DECLARE v_staff uuid;'")"
+  ["内测：审核台列表给出 student_id"]="$(afr "$RFL" "'ELSE platform.internal_test_ref(f.student_id) END'" "'ELSE f.student_id::text END'")"
+  ["内测：审核台列表用复核队列的指针（两边互通）"]="$(afr "$RFL" "'ELSE platform.internal_test_ref(f.student_id) END'" "'ELSE platform.review_student_ref(f.student_id) END'")"
+  ["内测：审核台列表不按状态筛"]="$(afr "$RFL" "'WHERE (p_status IS NULL OR f.status = p_status)'" "'WHERE (p_status IS NOT NULL OR true)'")"
+  ["内测：改状态不核对 staff"]="$(afr "$RFS" "'DECLARE v_staff uuid := platform.review_current_staff(); v_cur text;'" "'DECLARE v_staff uuid := platform.current_account_id(); v_cur text;'")"
+  ["内测：改状态收任意状态"]="$(afr "$RFS" "'IF p_status IS NULL OR p_status NOT IN (''new'', ''triaged'', ''closed'') THEN'" "'IF p_status IS NULL THEN'")"
+  ["内测：退出状态不核对 staff"]="$(afr "$RIE" "'DECLARE v_staff uuid := platform.review_current_staff();'" "'DECLARE v_staff uuid;'")"
+  ["内测：退出只要能读档案（学生本人也能退出）"]="$(afr "$ITX" "'IF NOT coalesce(platform.is_linked_guardian(p_student), false) THEN'" "'IF NOT coalesce(platform.can_read_student(p_student), false) THEN'")"
+  ["内测：退出不撤回同意"]="$(afr "$ITX" "'FROM latest l WHERE l.d = ''granted'''" "'FROM latest l WHERE false'")"
+  ["内测：退出把已撤回的同意再撤回一次"]="$(afr "$ITX" "'FROM latest l WHERE l.d = ''granted'''" "'FROM latest l'")"
+  ["内测：退出不作废学生会话"]="$(afr "$ITX" "'WHERE account_id = v_account AND revoked_at IS NULL;'" "'WHERE false;'")"
+  ["内测：重复退出不幂等"]="$(afr "$ITX" "'  IF NOT FOUND THEN'" "'  IF true THEN'")"
+  ["内测：退出作废名单含已解除绑定的家长"]="$(afr "$ITX" "'   WHERE l.student_id = p_student AND l.status = ''active'''" "'   WHERE l.student_id = p_student'")"
+  ["内测：退出作废名单不管还有别的在测孩子"]="$(afr "$ITX" "'WHERE o.guardian_account_id = l.guardian_account_id AND'" "'WHERE false AND o.guardian_account_id = l.guardian_account_id AND'")"
+  ["内测：退出作废名单把已退出的兄妹算作在测"]="$(afr "$ITX" "'AND NOT EXISTS (SELECT 1 FROM platform.internal_test_exit ox WHERE ox.student_id = o.student_id)'" "''")"
+  ["内测：处理判据不看退出"]="$(afr "$SPA" "'AND NOT EXISTS (SELECT 1 FROM platform.internal_test_exit x WHERE x.student_id = sp.id)'" "''")"
+  ["内测：处理判据不看删除"]="$(afr "$SPA" "'WHERE sp.id = p_student AND sp.erased_at IS NULL'" "'WHERE sp.id = p_student'")"
+  ["内测：处理判据不看隐私政策撤回"]="$(afr "$SPA" "'WHERE cr.student_id = sp.id AND cr.consent_type = ''privacy_policy'''" "'WHERE cr.student_id = sp.id AND cr.consent_type = ''privacy_policy'' AND cr.decision = ''granted'''")"
+  ["内测：处理判据不看监护人同意"]="$(afr "$SPA" "'cr.consent_type = ''guardian_consent_under14'''" "'cr.consent_type IN (''guardian_consent_under14'', ''privacy_policy'')'")"
+  ["内测：处理判据授给 BFF"]="GRANT EXECUTE ON FUNCTION $SPA TO starbuddy_bff;"
+  ["内测：判分抽检不过滤处理判据"]="$(afr "$SPOT" "'AND platform.student_processing_allowed(g.student_id)'" "'AND true'")"
+  ["内测：已退出仍能再签同意"]="DROP TRIGGER consent_record_exited_guard ON platform.consent_record;"
+  ["内测：再签同意守卫连撤回也拦"]="$(afr 'platform.guard_exited_consent()' "'IF NEW.decision = ''granted'' AND EXISTS'" "'IF EXISTS'")"
+  ["内测：已退出仍能签发学生会话"]="DROP TRIGGER auth_session_exited_guard ON platform.auth_session;"
+  ["内测：函数属主能改同意记录"]="GRANT UPDATE ON platform.consent_record TO starbuddy_authz;"
+  ["内测：学习身份能读反馈"]="GRANT SELECT ON platform.feedback TO starbuddy_learning;"
+  ["内测：退出判据不看授权"]="$(afr "$ITE" "'SELECT coalesce(platform.can_read_student(p_student), false)'" "'SELECT true'")"
+  ["内测：反馈不进删除清单"]="DELETE FROM platform.personal_table_registry WHERE nspname = 'platform' AND relname = 'feedback';"
+  ["内测：删除身份能读反馈文本"]="GRANT SELECT (body) ON platform.feedback TO starbuddy_eraser;"
+)
+
 # 攻击面矩阵补测（specs/household-pentest-sprint3 待人确认 #13 里不需要人决定的几项）：按行的可见性、写矩阵、
 # 复核角色与定时任务角色的函数矩阵。都由 80 本身发现（预期断言登记在下面的 EXPECT）。DBMUT_FILTER=攻击面 一起跑
 M+=(

@@ -14,12 +14,14 @@ import { PRACTICE_ROUTES } from '../src/http/practice-routes.ts';
 import { RETEST_ROUTES } from '../src/http/retest-routes.ts';
 import { FAMILY_GOALS_ROUTES } from '../src/http/family-goals-routes.ts';
 import { MONTHLY_PLAN_ROUTES } from '../src/http/monthly-plan-routes.ts';
+import { ALLOW_AFTER_EXIT, INTERNAL_TEST_ROUTES } from '../src/http/internal-test-routes.ts';
 import { operations, SPEC_FILES } from './openapi-ops.ts';
 
 // 路由表 + 信任界面路由（SIE-03 PR③，按开关注册；接口定义在 openapi/trust.v0.yaml）+ 星图 v1（H5，开关 starmap_v1；openapi/star-map.v1.yaml）
 // + 错题再练（开关 practice；openapi/practice.v0.yaml）+ 复测与验证题（开关 retest；openapi/retest.v0.yaml，KGE-05）
 // + 家长诉求（开关 family_goals；openapi/family-goals.v0.yaml，PLT-14）+ 月度计划（开关 monthly_plan；openapi/monthly-plan.v0.yaml，PLT-14 第 3 步）
-const ALL = [...ROUTES, ...TRUST_ROUTES, ...STAR_MAP_V1_ROUTES, ...PRACTICE_ROUTES, ...RETEST_ROUTES, ...FAMILY_GOALS_ROUTES, ...MONTHLY_PLAN_ROUTES];
+const ALL = [...ROUTES, ...TRUST_ROUTES, ...STAR_MAP_V1_ROUTES, ...PRACTICE_ROUTES, ...RETEST_ROUTES, ...FAMILY_GOALS_ROUTES, ...MONTHLY_PLAN_ROUTES,
+             ...INTERNAL_TEST_ROUTES];
 
 const SPECS = SPEC_FILES.map((n) => readFileSync(new URL(`../openapi/${n}.yaml`, import.meta.url), 'utf8'));
 
@@ -143,6 +145,30 @@ test('月度计划：monthly-plan.v0.yaml 的操作集合恰好等于月度计�
   assert.ok(!/meter_|usage_id|idempotency/.test(src), '月度计划不计量');
 });
 
+test('内部测试运营（LT-06）：internal-test.v0.yaml 的操作集合恰好等于三条路由；不在固定路由表里（只随开关 internal_test 注册）；用到的问题码都在枚举里；退出后可用的例外都是真实路由', async () => {
+  const spec = readFileSync(new URL('../openapi/internal-test.v0.yaml', import.meta.url), 'utf8');
+  assert.deepEqual(operationsOf(spec).sort(), INTERNAL_TEST_ROUTES.map((r) => `${r.method} ${PREFIX}${r.path}`).sort());
+  for (const r of INTERNAL_TEST_ROUTES) assert.ok(!ROUTES.includes(r), r.path);
+  const { P } = await import('../src/http/problems.ts');
+  const src = readFileSync(new URL('../src/http/internal-test-routes.ts', import.meta.url), 'utf8');
+  const enumText = /code:\s*\n\s*enum: \[([^\]]+)\]/.exec(spec)![1]!;
+  const used = [...src.matchAll(/\bP\.([A-Z_]+)/g)].map((m) => m[1]!);
+  assert.ok(used.length >= 4, used.join(','));
+  for (const k of [...used, 'TEST_EXITED', 'UNAUTHENTICATED', 'FORBIDDEN', 'CSRF', 'TOO_MANY', 'METHOD_NOT_ALLOWED']) {
+    const code = (JSON.parse((P as Record<string, string>)[k]!) as { code: string }).code;
+    assert.ok(enumText.includes(code), `${k} → ${code} 不在 internal-test.v0.yaml 的问题码枚举里`);
+  }
+  // 反馈给学生与家长（auth session）；退出状态与退出只给家长；都不计量
+  assert.deepEqual(INTERNAL_TEST_ROUTES.map((r) => `${r.method} ${r.path} ${r.auth}`).sort(),
+                   ['GET /students/{student_id}/internal-test guardian', 'POST /students/{student_id}/feedback session',
+                    'POST /students/{student_id}/internal-test/exit guardian']);
+  assert.ok(!/meter_|usage_id|idempotency/.test(src), '内部测试运营不计量');
+  // 退出后照常可用的路由都真实存在（数据权利、退出状态、退出本身），而且只有这些
+  const keys = new Set(ALL.map((r) => `${r.method} ${r.path}`));
+  for (const k of ALLOW_AFTER_EXIT) assert.ok(keys.has(k), `${k} 不是路由`);
+  for (const k of ALLOW_AFTER_EXIT) assert.ok(/\/(internal-test|erasure|exports)/.test(k), `${k} 不是数据权利或退出`);
+});
+
 test('路径参数只匹配 UUID', () => {
   const c = compile().find((x) => x.route.path === '/students/{student_id}/consents')!;
   assert.ok(c.re.test(`${PREFIX}/students/7b000000-0000-4000-8000-0000000000c1/consents`));
@@ -224,6 +250,29 @@ test('接口定义的 x-sb-auth、x-sb-rate-buckets、x-sb-not-self 与路由表
     assert.equal(op.notSelf !== null, studentOnly, `${k} x-sb-not-self 只在只认学生本人的路由上写`);
     if (op.notSelf !== null) assert.ok(op.notSelf === 403 || op.notSelf === 404, k);
   }
+});
+
+test('退出判据（LT-06，契约审查 B2）：凡带 {student_id}、不在 ALLOW_AFTER_EXIT 的操作都列 409，所在文件的问题码枚举含 TEST_EXITED', () => {
+  const ops = operations();
+  const enumHas = new Map<string, boolean>();
+  for (const name of SPEC_FILES) {
+    const text = readFileSync(new URL(`../openapi/${name}.yaml`, import.meta.url), 'utf8');
+    // 问题码枚举里有 TEST_EXITED；没有枚举、只用描述列出问题码的文件（diagnosis.v0）在描述里写明
+    enumHas.set(`${name}.yaml`, /\bcode:\s*(?:\{[^}]*?enum: \[|\n\s*enum: \[)[^\]]*\bTEST_EXITED\b/.test(text)
+      || /\bcode:\n\s*type: string\n\s*description: >\n(?:\s{12}.*\n)*?\s{12}.*\bTEST_EXITED\b/.test(text));
+  }
+  const missing: string[] = [];
+  let checked = 0;
+  for (const r of ALL) {
+    if (!r.path.includes('{student_id}') || ALLOW_AFTER_EXIT.has(`${r.method} ${r.path}`)) continue;
+    const k = `${r.method} ${PREFIX}${r.path}`;
+    const op = ops.get(k)!;
+    checked += 1;
+    if (!op.statuses.has('409')) missing.push(`${k}（${op.file}）没有 409`);
+    if (!enumHas.get(op.file)) missing.push(`${op.file} 的问题码枚举没有 TEST_EXITED`);
+  }
+  assert.ok(checked >= 40, `检查了 ${checked} 个操作`);
+  assert.deepEqual([...new Set(missing)], []);
 });
 
 test('接口定义的状态码从路由表推出（六份 yaml）：要会话 401；账号类型限定或改变状态 403；带路径参数 404；挂限流桶 429；读请求体 422', () => {

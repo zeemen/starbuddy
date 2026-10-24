@@ -249,6 +249,59 @@ def test_mastery_sweep(db):
     assert q(db, f"SELECT count(*) FROM platform.retest_task WHERE student_id = '{s['student']}'") == tasks
 
 
+def test_exited_students_untouched_by_batch_jobs(db):
+    """LT-06 决定记录（续）第 4 条（跨服务）：家长让孩子退出内部测试之后，判分抽检、掌握对账、中圈指标、周报各跑一轮，
+    这些学生没有任何新行（复核任务、掌握记录、复测任务、指标判断、周报 / 成长手记），周报也不触发档案页编译（无对外调用）；
+    同一轮里没退出的学生照常处理（判据只拦退出的）"""
+    import uuid
+
+    from pginsight import E
+    from support import NODE_A, NODE_B, NODE_C
+    spot, keep = SD.seed_grades(db, "zhixing", 80), SD.seed_grades(db, "zhixing", 80)
+    answer = SD.seed_answer(db)
+    metric = SD.seed_metric_inputs(db)
+    weekly = SD.new_student(db)
+    # 判断同步要求依据是该学生自己的当前掌握行：以超级用户在复制模式下写三条，只为夹具
+    basis = [str(uuid.uuid4()) for _ in range(3)]
+    db.psql("SET session_replication_role = replica;\n" + "\n".join(
+        f"""INSERT INTO platform.mastery_estimate (id, student_id, subject, skill_local_id, state, p_mastery, confidence, algorithm_version,
+              evidence_ids, is_current) VALUES ('{m}', '{weekly['student']}', 'aya', 'SYN-EX-0{i}', 'stable', 0.8, 0.8,
+              'kge-mastery@0.1.0.syn', '{{{E[i]}}}', true);""" for i, m in enumerate(basis)))
+    _sync_claims(db, weekly["student"], [(basis[0], NODE_A, "execute", (0, 1)), (basis[1], NODE_B, "stable", (2, 3, 4)),
+                                         (basis[2], NODE_C, "transfer", (5, 6))])
+    assert int(q(db, f"SELECT count(*) FROM insight.claim WHERE student_id = '{weekly['student']}'")) >= 1, "夹具：退出前已有判断"
+    db.psql(f"""SET session_replication_role = replica;
+        UPDATE insight.claim SET created_at = date_trunc('week', (now() AT TIME ZONE 'Asia/Shanghai') - interval '7 days') AT TIME ZONE 'Asia/Shanghai'
+                                              + interval '2 days'
+         WHERE student_id = '{weekly['student']}' AND template_key = 'syn.math.node_transfer';""")
+    for s in (spot, answer, metric, weekly):
+        SD.exit_internal_test(db, s)
+        assert q(db, f"SELECT platform.student_processing_allowed('{s['student']}')") == "f"
+    claims_before = q(db, f"SELECT count(*) FROM insight.claim WHERE student_id = '{weekly['student']}'")
+    picked = f"FROM platform.grade_result g WHERE g.student_id = '{spot['student']}' AND {PICKED.format(ratio=0.1)}"
+    assert int(q(db, f"SELECT count(*) {picked}")) >= 1, "夹具：没退出的话会被抽中"
+
+    rc, log = once(db, "spot-check")
+    assert (rc, log["outcome"]) == (0, "ok"), log
+    assert q(db, f"SELECT count(*) FROM platform.review_task WHERE student_id = '{spot['student']}'") == "0"
+    assert int(q(db, f"SELECT count(*) FROM platform.review_task WHERE student_id = '{keep['student']}'")) >= 1, "没退出的照常抽"
+
+    rc, log = once(db, "mastery-sweep")
+    assert (rc, log["outcome"]) == (0, "ok"), log
+    assert q(db, f"SELECT count(*) FROM platform.mastery_estimate WHERE student_id = '{answer['student']}'") == "0"
+    assert q(db, f"SELECT count(*) FROM platform.retest_task WHERE student_id = '{answer['student']}'") == "0"
+
+    rc, log = once(db, "metrics")
+    assert (rc, log["outcome"]) == (0, "ok"), log
+    assert q(db, f"SELECT count(*) FROM insight.claim WHERE student_id = '{metric['student']}' AND target_type = 'metric'") == "0"
+
+    rc, log = once(db, "weekly")
+    assert (rc, log["outcome"]) == (0, "ok"), log
+    assert q(db, f"SELECT count(*) FROM insight.weekly_report WHERE student_id = '{weekly['student']}'") == "0"
+    assert q(db, f"SELECT count(*) FROM insight.claim WHERE student_id = '{weekly['student']}'") == claims_before
+    assert log["counts"]["profile_pages"] in ({}, {"ok": 0, "failed": 0}), "周报不触发档案页编译（不调学习服务）"
+
+
 # ---------------------------------------------------------------- 退出码映射（真实子进程）
 def test_refused_identity_mismatch_and_wrong_role(db):
     """连接串的登录角色不是该身份：子进程的角色断言拒绝。insight.scheduled 退出码 2；审核台命令行以 SystemExit / 异常退出（退出码 1），

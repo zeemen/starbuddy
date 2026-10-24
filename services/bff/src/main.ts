@@ -58,6 +58,11 @@
 //                          再练与复测的取题与作答在计量之前按学科（另按学生）取名额，超限回 503 SUBJECT_BUSY（带 retry-after）；
 //                          闸门状态在进程内：dev / test 以外须在配置里声明 single_instance: true 才建闸门，否则不建并告警；建了也告警
 //   BFF_CONCURRENCY_CONFIG dev / test：换一份闸门配置（config/concurrency.json 的格式）；其余环境设了就拒绝启动
+//   STARBUDDY_INTERNAL_TEST 内部成员测试运营的开关（只认 internal_test；src/internal-test/features.ts，LT-06）；缺省关、三条路由不注册；
+//                          dev / test 与 staging 可开（依赖迁移 0059：开关打开而 0059 没执行时拒绝启动），pilot、生产设了就拒绝启动。
+//                          打开时注册问题反馈、退出测试与退出状态，学生模式另要求两份文书都已签。
+//                          已退出档案的统一判据不挂这个开关：启动时库里有 platform.internal_test_exited（0059 已执行）就生效，
+//                          已退出的档案拒绝一切新写入与触发模型处理的请求（数据权利与退出状态除外）
 // 诊断的宵禁判断用数据库的计量时钟（platform.meter_guard_status，迁移 0030），BFF 没有自己的时钟开关。
 import pg from 'pg';
 import { httpDiagnosisLearning } from './diagnosis/learning-client.ts';
@@ -82,6 +87,8 @@ import { httpPracticeLearning } from './practice/learning-client.ts';
 import { parseRetestFeature } from './retest/features.ts';
 import { httpRetestLearning } from './retest/learning-client.ts';
 import { parseFamilyGoalsFeature } from './family/features.ts';
+import { parseInternalTestFeature } from './internal-test/features.ts';
+import { exitGuardAvailable } from './http/internal-test-routes.ts';
 import { cleanWith, httpMonthlyPlanClient, loadTemplates, parseMonthlyPlanFeature } from './family/monthly-plan.ts';
 import { lexicon, noPromiseLexicon } from './trust/lexicon.ts';
 import { createSubjectGate, decideSubjectGate, loadConcurrencyConfig, parseSubjectGateFeature } from './gate/subject-gate.ts';
@@ -103,6 +110,7 @@ try {
   const orchOn = parseTodayOrchFeature(env, process.env['STARBUDDY_TODAY_ORCH']);      // 同上
   const familyGoalsOn = parseFamilyGoalsFeature(env, process.env['STARBUDDY_FAMILY_GOALS']);  // 同上
   const monthlyPlanOn = parseMonthlyPlanFeature(env, process.env['STARBUDDY_MONTHLY_PLAN']);  // 同上
+  const internalTestOn = parseInternalTestFeature(env, process.env['STARBUDDY_INTERNAL_TEST']);  // dev / test / staging；pilot、生产拒绝启动
   if (monthlyPlanOn) {
     try {
       loadTemplates(env, cleanWith(lexicon(), noPromiseLexicon()));  // 模板库与两张词表启动即读一次（fail closed）
@@ -134,7 +142,7 @@ try {
                 shell: { config: shellConfigPath === undefined ? loadShellConfig() : loadShellConfig(shellConfigPath), orch: { enabled: orchOn } },
                 trust: { features: parseTrustFeatures(env, process.env['STARBUDDY_TRUST_UI']) },
                 starMap: { features: starMapFeatures }, practice: { enabled: practiceOn }, retest: { enabled: retestOn },
-                familyGoals: { enabled: familyGoalsOn }, monthlyPlan: { enabled: monthlyPlanOn } };
+                familyGoals: { enabled: familyGoalsOn }, monthlyPlan: { enabled: monthlyPlanOn }, internalTest: { enabled: internalTestOn } };
   // 分学科并发闸门（PLT-16）：开关关时不读配置、不建闸门（与开关上线前逐字节一致）
   if (gateOn) {
     const gateConfig = concurrencyPath === undefined ? loadConcurrencyConfig() : loadConcurrencyConfig(concurrencyPath);
@@ -175,6 +183,9 @@ try {
 const pool = new pg.Pool({ connectionString: url, max: 10 });
 try {
   await assertBffRole(pool);  // 连接角色配错会让 RLS 整体失效：拒绝启动
+  // 已退出档案的统一判据（LT-06 决定记录（续）第 4 条）：迁移 0059 执行之后无条件生效（不挂内测开关）；内测开关打开而 0059 没执行时拒绝启动
+  shellDeps.exitGuard = await exitGuardAvailable((sql, args) => pool.query(sql, args));
+  if (shellDeps.internalTest?.enabled === true && !shellDeps.exitGuard) throw new Error('STARBUDDY_INTERNAL_TEST 需要先执行迁移 0059');
 } catch (e) {
   refuse((e as Error).message);
   await pool.end();

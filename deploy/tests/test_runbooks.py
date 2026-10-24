@@ -456,7 +456,7 @@ def test_first_deploy_flags_metrics_alerts_and_roles_exist(flags):
     for it in items:
         for p in it.get("pending", []):
             pending.setdefault(p, set()).add(it["id"])
-    assert set(pending) == {"migration_0058", "signed_content", "model_provider", "human"}
+    assert set(pending) == {"migration_0058", "migration_0059", "signed_content", "model_provider", "human"}
     for p, ids in pending.items():
         row = re.search(rf"^\| `{p}` \|([^\n]*)$", section, re.M)
         assert row, p

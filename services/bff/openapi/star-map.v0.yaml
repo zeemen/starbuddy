@@ -45,6 +45,11 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }
+        '409':
+          description: TEST_EXITED（档案已退出内部测试，LT-06；internal-test.v0.yaml）
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
         '405':
           description: 只支持 GET
           content:
@@ -110,4 +115,4 @@ components:
         type: { type: string }
         title: { type: string }
         status: { type: integer }
-        code: { type: string, enum: [UNAUTHENTICATED, NOT_FOUND, METHOD_NOT_ALLOWED, INTERNAL] }
+        code: { type: string, enum: [UNAUTHENTICATED, NOT_FOUND, METHOD_NOT_ALLOWED, INTERNAL, TEST_EXITED] }

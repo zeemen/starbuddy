@@ -43,7 +43,8 @@ REQUIRED_ALERTS = {
     "StarbuddyServiceDown": "服务不可用", "StarbuddyNotReady": "就绪失败", "StarbuddyHigh5xxRate": "5xx 率", "StarbuddyHighLatencyP95": "p95 时延",
     "StarbuddyModelBreakerOpen": "模型熔断", "StarbuddyModelBudgetNearlyExhausted": "护栏将满", "StarbuddyMeterRollbackSpike": "计量回滚",
     "StarbuddyMeterConflictSpike": "计量 409", "StarbuddyReviewQueueBacklog": "复核积压", "StarbuddySchedulerJobFailed": "调度失败",
-    "StarbuddyCertExpiringSoon": "证书", "StarbuddyDiskLow": "磁盘"}
+    "StarbuddyCertExpiringSoon": "证书", "StarbuddyDiskLow": "磁盘",
+    "StarbuddyStagingOtpRevokeAuditFailed": "退出测试作废白名单条目的审计写失败（LT-06）"}
 REQUIRED_DASHBOARDS = {"starbuddy-overview": "总览", "starbuddy-model-cost": "模型与成本", "starbuddy-metering": "计量",
                        "starbuddy-learning-pipeline": "学习链路"}
 

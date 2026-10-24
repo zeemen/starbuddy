@@ -1,6 +1,6 @@
 // 统一壳的 HTTP 入口（spec 第 3 节）：node:http，一张路由表（routes.ts），一条固定顺序的中间件链：
 //   请求 ID → 匹配路由（表外 404）→ 读请求体 → 按 IP 限流 → 解析会话 → 按 auth 拦截 → CSRF → 按号码 / 账号 / 会话 /（账号、学生）限流
-//   → withAccount(会话账号) → handler → 统一错误与安全头 → 访问日志
+//   →（开关 internal_test 打开时）已退出档案的统一判据 → withAccount(会话账号) → handler → 统一错误与安全头 → 访问日志
 // 与 spec 第 3 节的顺序差异：限流拆成两段——按 IP 的在解析会话之前；按号码、按账号的要先有请求体或会话，放在 CSRF 之后
 // （记入 specs/unified-shell-sprint4/lessons.md）。
 // 身份只来自会话令牌（请求头 x-sb-session，由 apps/web 从 HttpOnly cookie 转交）经 platform.auth_session_resolve 解析；
@@ -12,6 +12,7 @@ import { withAccount } from '../metering/db.ts';
 import { emit } from '../observability/log.ts';
 import { CONTENT_TYPE, METRICS_PATH, observeHttp, render, trackPool, trackReady, type PoolStats } from '../observability/metrics.ts';
 import { cachedReady, handleHealth, poolReady } from './health.ts';
+import { exitedGuard } from './internal-test-routes.ts';
 import { P } from './problems.ts';
 import { activeRoutes, compile, PREFIX, templateShapes, type Ctx, type Query, type Reply, type Route, type Session, type ShellDeps } from './routes.ts';
 import { csrfFor, E164, logHash, rateKey, safeEqual, SESSION_TOKEN } from './secrets.ts';
@@ -61,8 +62,9 @@ const header = (req: IncomingMessage, name: string): string | null => {
 export function createShellHandler(deps: ShellDeps): (req: IncomingMessage, res: ServerResponse) => Promise<boolean> {
   // 信任界面、星图 v1、错题再练、复测、家长诉求（PLT-14，开关 family_goals）、月度计划（PLT-14 第 3 步，开关 monthly_plan）
   // 开关关闭的路由不注册（表外 404）
+  // 内部成员测试运营（LT-06，开关 internal_test）：反馈、退出测试与退出状态三条路由；已退出档案的统一判据见下方 exitedGuard
   const routes = activeRoutes(deps.trust?.features, deps.starMap?.features, deps.practice?.enabled === true, deps.retest?.enabled === true,
-                              deps.familyGoals?.enabled === true, deps.monthlyPlan?.enabled === true);
+                              deps.familyGoals?.enabled === true, deps.monthlyPlan?.enabled === true, deps.internalTest?.enabled === true);
   const table = compile(routes);
   const shapes = templateShapes(routes);
   // 访问日志（LT-05）：缺省经 observability/log.ts 一行 JSON（ts、level、service）并集中脱敏；测试可注入
@@ -177,6 +179,9 @@ export function createShellHandler(deps: ShellDeps): (req: IncomingMessage, res:
           await limit(r.bucket, 'link', `${session!.accountId}:${params['student_id'] ?? ''}`);
         }
       }
+
+      // 已退出内部测试的档案（LT-06，开关 internal_test）：拒绝一切新写入与触发模型处理的请求，数据权利与退出状态除外
+      if (await exitedGuard(deps, route, session, params['student_id'])) throw new Stop(P.TEST_EXITED);
 
       const note = (k: string, v: string) => { record[k] = v; };
       // 分学科并发闸门（PLT-16，开关打开时才有）：响应写完之前连接就关闭了 → 排队中的请求离队、入闸后计量前不再执行

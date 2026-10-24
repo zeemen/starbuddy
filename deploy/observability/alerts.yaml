@@ -168,6 +168,16 @@ groups:
           summary: 调度任务长时间没有成功
           description: "{{ $labels.task }} 超过 48 小时没有一轮 ok（每周任务按需调大）。"
           threshold: 占位缺省（48 小时），待人签字
+  - name: starbuddy-internal-test
+    rules:
+      - alert: StarbuddyStagingOtpRevokeAuditFailed
+        expr: sum(increase(starbuddy_staging_otp_revoke_audit_failed_total[15m])) > 0
+        for: 0m
+        labels: {severity: critical}
+        annotations:
+          summary: 退出测试作废白名单条目时审计写失败（LT-06）
+          description: 家长退出测试时作废了 staging 白名单固定码条目，但审计文件没写进去；内存里已作废，BFF 重启后会丢失这次作废。按 docs/ops/internal-test-runbook.md 第 7 节处置：用 tools/internal-test 按批次作废该家庭的条目，并检查审计卷是否可写。
+          threshold: 占位缺省（> 0 / 15 分钟），待人签字
   - name: starbuddy-infra
     rules:
       - alert: StarbuddyCertExpiringSoon

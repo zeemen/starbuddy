@@ -20,9 +20,9 @@ from conftest import ROOT
 from names import name_exists, read_sources
 
 FLAG_VARS = {"STARBUDDY_TRUST_UI", "STARBUDDY_STARMAP", "STARBUDDY_PRACTICE", "STARBUDDY_RETEST_UI", "STARBUDDY_TODAY_ORCH",
-             "STARBUDDY_MONTHLY_PLAN", "STARBUDDY_FAMILY_GOALS", "STARBUDDY_SUBJECT_GATE"}
+             "STARBUDDY_MONTHLY_PLAN", "STARBUDDY_FAMILY_GOALS", "STARBUDDY_SUBJECT_GATE", "STARBUDDY_INTERNAL_TEST"}
 REQUIRED_ON = {"math", "daofa", "chinese_grading", "today_plan", "diagnosis", "practice", "retest", "star_map", "trust_ui", "review_console"}
-REQUIRED_OFF = {"english", "mock_exam", "monthly_plan", "stage_whiteboard", "knowledge_read_cache"}
+REQUIRED_OFF = {"english", "mock_exam", "monthly_plan", "stage_whiteboard", "knowledge_read_cache", "internal_test_ops"}
 COVERS = {"weekly_report", "reconcile_card"}
 OFF_VALUES = {"KNOWLEDGE_READ_CACHE": "0", "LEARNING_TODAY_SNAPSHOT": "0"}
 
@@ -44,8 +44,11 @@ def test_structure(flags):
     for e in entries(flags):
         pend = e.get("pending", [])
         assert e["state"] in ("on", "off") and isinstance(pend, list), e["id"]
-        assert set(pend) <= {"signed_content", "migration_0058", "model_provider", "human"}, e["id"]
+        assert set(pend) <= {"signed_content", "migration_0058", "migration_0059", "model_provider", "human"}, e["id"]
         assert "internal_v1" not in pend, e["id"]
+    # LT-06：内部成员测试运营依赖迁移 0059（草稿），执行之前保持关
+    assert by_id["internal_test_ops"]["pending"] == ["migration_0059"]
+    assert {s["var"] for s in by_id["internal_test_ops"]["switches"]} == {"STARBUDDY_INTERNAL_TEST", "REVIEW_CONSOLE_INTERNAL_TEST"}
     # LT-04：learning-internal v1 已签字、开关删除；诊断、再练、复测（以及依赖它们的今日计划）待教研签字内容，
     # 且依赖 v1 写入的各项都标“待人执行 0058”（决定记录（再续）第 4 条：缺 0058 学习服务拒绝启动）
     for i in ("diagnosis", "practice", "retest", "today_plan", "today_snapshot"):
@@ -135,6 +138,9 @@ def test_review_console_and_knowledge_insight_accept_matrix(flags):
     r = _run_py("learning", code, env)
     assert r.returncode == 0 and r.stdout.strip() == "staging", r.stderr
     assert _run_py("learning", code, {**env, "REVIEW_CONSOLE_FEATURES": "tag_worklist"}).returncode != 0
+    # LT-06：0059 执行之后 staging 能开（矩阵里现在不设）；取值写错拒绝启动
+    assert _run_py("learning", code, {**env, "REVIEW_CONSOLE_INTERNAL_TEST": "internal_test"}).returncode == 0
+    assert _run_py("learning", code, {**env, "REVIEW_CONSOLE_INTERNAL_TEST": "on"}).returncode != 0
     kv = {k: v for k, v in _service_values(flags, "knowledge").items() if v is not None}
     code = ("import sys; sys.path.insert(0, '.'); from knowledge.service.config import Settings; s = Settings.from_env(); "
             "print(s.env, s.read_cache)")

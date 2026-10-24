@@ -831,6 +831,7 @@ CREATE FUNCTION t.scheduler_arg(typ regtype) RETURNS text LANGUAGE sql IMMUTABLE
     WHEN 'integer' THEN '10'
     WHEN 'numeric' THEN '0.1::numeric'
     WHEN 'platform.subject' THEN quote_literal('aya') || '::platform.subject'
+    WHEN 'uuid' THEN quote_literal('c1000000-0000-4000-8000-0000000000c1') || '::uuid'  -- 0059 处理判据：夹具学生
     ELSE NULL END $$;
 
 DO $$

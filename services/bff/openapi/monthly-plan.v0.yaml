@@ -43,6 +43,7 @@ paths:
               schema: { $ref: '#/components/schemas/GuardianMonthlyPlan' }
         '401': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
+        '409': { description: TEST_EXITED（档案已退出内部测试，LT-06；internal-test.v0.yaml）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
         '429': { $ref: '#/components/responses/Problem' }
         '503': { $ref: '#/components/responses/Problem' }
   /bff/v0/students/{student_id}/my-plan:
@@ -65,6 +66,7 @@ paths:
         '401': { $ref: '#/components/responses/Problem' }
         '403': { description: 家长会话（FORBIDDEN）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
         '404': { $ref: '#/components/responses/Problem' }
+        '409': { description: TEST_EXITED（档案已退出内部测试，LT-06；internal-test.v0.yaml）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
         '429': { $ref: '#/components/responses/Problem' }
         '503': { $ref: '#/components/responses/Problem' }
 components:
@@ -237,7 +239,7 @@ components:
         title: { type: string }
         status: { type: integer }
         code:
-          enum: [UNAUTHENTICATED, FORBIDDEN, NOT_FOUND, TOO_MANY_REQUESTS, UNAVAILABLE, METHOD_NOT_ALLOWED]
+          enum: [UNAUTHENTICATED, FORBIDDEN, NOT_FOUND, TOO_MANY_REQUESTS, UNAVAILABLE, METHOD_NOT_ALLOWED, TEST_EXITED]
   responses:
     Problem:
       description: 统一错误体

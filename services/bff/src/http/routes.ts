@@ -21,6 +21,8 @@ import { PRACTICE_ROUTES } from './practice-routes.ts';
 import { RETEST_ROUTES } from './retest-routes.ts';
 import { FAMILY_GOALS_ROUTES } from './family-goals-routes.ts';
 import { MONTHLY_PLAN_ROUTES } from './monthly-plan-routes.ts';
+import { INTERNAL_TEST_ROUTES } from './internal-test-routes.ts';
+import { withAccount } from '../metering/db.ts';
 import type { MonthlyPlanClient, TemplateLibrary } from '../family/monthly-plan.ts';
 import type { Lexicon } from '../trust/lexicon.ts';
 import type { PracticeOptions } from '../practice/service.ts';
@@ -96,6 +98,12 @@ export interface ShellDeps {
   consentVersions?: ReadonlySet<string>;
   /** staging 白名单固定码 OTP（BFF_STAGING_OTP_FILE，LT-01 决定记录第 6 条）：配了时签发与核验经它（src/http/staging-otp.ts） */
   stagingOtp?: StagingOtp;
+  /** 内部成员测试运营（internal-test-routes.ts，LT-06）：开关 internal_test（STARBUDDY_INTERNAL_TEST，缺省关）：打开时注册问题反馈、
+   *  退出测试与退出状态三条路由，学生模式另要求两份文书都已签；依赖迁移 0059 */
+  internalTest?: { enabled: boolean };
+  /** 已退出档案的统一判据（server.ts）：库里有 platform.internal_test_exited 且本角色能执行时为 true（main.ts 启动时核对，迁移 0059
+   *  执行之后无条件生效，不挂内测开关；决定记录（续）第 4 条） */
+  exitGuard?: boolean;
 }
 
 export type Query = <R extends QueryResultRow = QueryResultRow>(sql: string, params?: unknown[]) => Promise<{ rows: R[] }>;
@@ -178,7 +186,16 @@ const otpVerify: Handler = async (ctx) => {
     [phone, codeMac(ctx.deps.keys, phone, code), life.absolute_seconds, life.idle_seconds, ctx.presentedToken]);
   const r = rows[0];
   ctx.note('outcome', r?.outcome ?? 'none');
-  ctx.deps.stagingOtp?.onVerify(phone, r?.outcome === 'ok' && !!r.session_token);  // 成功即作废条目，失败计数（只对用条目签发的号码）
+  const ok = r?.outcome === 'ok' && !!r.session_token;
+  if (ctx.deps.stagingOtp) {
+    // 成功即作废条目，失败计数（只对用条目签发的号码）；成功时把条目与登录的家长账号对应（LT-06 决定记录（续）第 5 条：退出测试按账号作废）
+    let account: string | undefined;
+    if (ok) {
+      const { rows: who } = await ctx.q<{ account_id: string }>('SELECT account_id FROM platform.auth_session_resolve($1)', [r!.session_token]);
+      account = who[0]?.account_id;
+    }
+    ctx.deps.stagingOtp.onVerify(phone, ok, account);
+  }
   if (r?.outcome === 'ok' && r.session_token) {
     // 信任界面：删除的二次确认要求本会话近期登录过（src/trust/proof.ts，进程内）
     recentLogins(ctx.deps).record(ctx.deps.keys, r.session_token, (ctx.deps.now ? ctx.deps.now() : new Date()).getTime());
@@ -305,15 +322,32 @@ const recordConsent: Handler = async (ctx) => {
   return json(201, { status: 'recorded' });
 };
 
+/** 两份文书（隐私政策与监护人同意书）都要签（LT-06 范围第 2 条“未签两份文书不能进入学习”）：只在内测开关 internal_test 打开时生效
+ *  （决定记录（续）第 6 条；开关关时保持原口径：库函数 auth_issue_student_session（0029）要隐私政策，不满 14 周岁另要监护人同意）。
+ *  开关打开时，BFF 在同一事务里、库的授权核对通过之后再核一次两份的最新一条都是 granted（同一时刻撤回优先，与 0029 同口径），
+ *  不满足就回滚整个事务（学生会话不签发、家长会话不作废）。 */
+export const REQUIRED_CONSENTS = ['guardian_consent_under14', 'privacy_policy'] as const;
+class ConsentMissing extends Error {}
+
 const openStudentMode: Handler = async (ctx) => {
   const student = ctx.params['student_id']!;
   const life = ctx.deps.config.session.student;
   try {
-    const { rows } = await ctx.q<{ token: string }>('SELECT platform.auth_issue_student_session($1, $2, $3, $4) AS token',
-      [student, ctx.session!.token, life.absolute_seconds, life.idle_seconds]);
-    const token = rows[0]!.token;
+    const token = await withAccount(ctx.deps.pool, ctx.session!.accountId, async (c) => {
+      const { rows } = await c.query<{ token: string }>('SELECT platform.auth_issue_student_session($1, $2, $3, $4) AS token',
+        [student, ctx.session!.token, life.absolute_seconds, life.idle_seconds]);
+      if (ctx.deps.internalTest?.enabled === true) {
+        const { rows: latest } = await c.query<{ t: string; d: string }>(
+          `SELECT DISTINCT ON (cr.consent_type) cr.consent_type AS t, cr.decision AS d FROM platform.consent_record cr
+            WHERE cr.student_id = $1 AND cr.consent_type = ANY ($2::text[])
+            ORDER BY cr.consent_type, cr.decided_at DESC, (cr.decision = 'revoked') DESC`, [student, REQUIRED_CONSENTS]);
+        if (!REQUIRED_CONSENTS.every((t) => latest.some((r) => r.t === t && r.d === 'granted'))) throw new ConsentMissing();
+      }
+      return rows[0]!.token;
+    });
     return json(200, { account_kind: 'student', student_id: student, session_token: token, csrf_token: csrfFor(ctx.deps.keys, token) });
   } catch (e) {
+    if (e instanceof ConsentMissing) return problem(P.CONSENT_REQUIRED);  // 只有库的授权核对通过（已绑定的家长）才走到这一步
     if (pgCode(e) === '42501') return problem(P.NOT_FOUND);  // 未绑定、已解除、学生不存在或停用：同一个 404
     if (pgCode(e) === '55000') return problem(P.CONSENT_REQUIRED);  // 只有已绑定的家长能走到这一步
     throw e;
@@ -337,7 +371,7 @@ export const ROUTES: readonly Route[] = [
     rateLimits: [{ bucket: 'student_create.account.day', dim: 'account' }] },
   { method: 'POST', path: '/students/{student_id}/consents', auth: 'guardian', csrf: 'session', body: true, handler: recordConsent, rateLimits: [] },
   { method: 'POST', path: '/students/{student_id}/student-session', auth: 'guardian', csrf: 'session', body: false, handler: openStudentMode,
-    rateLimits: [{ bucket: 'student_session.account.hour', dim: 'account' }] },
+    ownTx: true, rateLimits: [{ bucket: 'student_session.account.hour', dim: 'account' }] },
   ...FEATURE_ROUTES,
   ...SHELL_ROUTES,
 ];
@@ -345,10 +379,11 @@ export const ROUTES: readonly Route[] = [
 /** 本次部署实际注册的路由：固定路由表 + 已打开开关的信任界面路由 + 星图 v1（starmap_v1）+ 错题再练（practice）+ 复测（retest）
  *  + 家长诉求（family_goals，PLT-14）+ 月度计划（monthly_plan，PLT-14 第 3 步）（开关缺省全关） */
 export function activeRoutes(features: ReadonlySet<TrustFeature> = new Set(), starMap: ReadonlySet<StarMapFeature> = new Set(),
-                             practice = false, retest = false, familyGoals = false, monthlyPlan = false): readonly Route[] {
+                             practice = false, retest = false, familyGoals = false, monthlyPlan = false, internalTest = false): readonly Route[] {
   return [...ROUTES, ...TRUST_ROUTES.filter((r) => r.feature !== undefined && features.has(r.feature)),
           ...(starMap.has('starmap_v1') ? STAR_MAP_V1_ROUTES : []), ...(practice ? PRACTICE_ROUTES : []), ...(retest ? RETEST_ROUTES : []),
-          ...(familyGoals ? FAMILY_GOALS_ROUTES : []), ...(monthlyPlan ? MONTHLY_PLAN_ROUTES : [])];
+          ...(familyGoals ? FAMILY_GOALS_ROUTES : []), ...(monthlyPlan ? MONTHLY_PLAN_ROUTES : []),
+          ...(internalTest ? INTERNAL_TEST_ROUTES : [])];
 }
 
 /** 路由模板编译成正则：路径参数（student_id、session_id、probe_id、claim_id、exam_id、export_job_id、request_id、entry_id）一律只匹配小写 UUID；学科码 {subject} 只匹配小写字母（H4） */

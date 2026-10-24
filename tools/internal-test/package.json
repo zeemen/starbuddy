@@ -1,0 +1,12 @@
+{
+  "name": "@starbuddy/internal-test-tool",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LT-06 内部成员测试的白名单运营工具：生成 staging 白名单固定码条目、按批次作废、导出审计摘要。直接复用 services/bff 的条目解析、审计哈希链与手机号 HMAC，借用 services/bff 的开发依赖（不另装依赖）",
+  "type": "module",
+  "engines": { "node": ">=22.18" },
+  "scripts": {
+    "typecheck": "../../services/bff/node_modules/.bin/tsc -p tsconfig.json",
+    "test": "node --no-warnings --test --test-reporter=dot tests/*.test.ts"
+  }
+}

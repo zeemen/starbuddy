@@ -809,3 +809,62 @@ export const QUEUE_RESULT_LABEL: Record<string, string> = {
 };
 /** 复核任务 id 是 UUID */
 export const isTaskId = isVersionId;
+
+// ---------- 内部成员测试运营（LT-06，specs/launch-lt06-internal-test-ops；开关 STARBUDDY_INTERNAL_TEST，后端 REVIEW_CONSOLE_INTERNAL_TEST）----------
+// 反馈只读列表与改状态、退出状态。学生只有不透明指针（student_ref），没有 student_id 与提交者账号。反馈文本只在页面上显示，不打日志。
+export const FEEDBACK_STATUSES = ['new', 'triaged', 'closed'] as const;
+export type FeedbackStatus = (typeof FEEDBACK_STATUSES)[number];
+export const isFeedbackStatus = (s: unknown): s is FeedbackStatus => typeof s === 'string' && (FEEDBACK_STATUSES as readonly string[]).includes(s);
+export const FEEDBACK_STATUS_LABEL: Record<FeedbackStatus, string> = { new: '新到', triaged: '已分拣', closed: '已关闭' };
+export const FEEDBACK_SOURCE_LABEL: Record<string, string> = {
+  student_self_report: '学生自述', guardian_observation: '家长观察', staff: '员工',
+};
+export const FEEDBACK_CATEGORY_NAME: Record<string, string> = {
+  malfunction: '功能出错', wrong_content: '内容有误', display: '显示问题', slow: '卡顿或很慢', login: '登录问题', suggestion: '建议', other: '其他',
+};
+
+export interface FeedbackRow {
+  id: string;
+  source: string;
+  category: string;
+  body: string;
+  route_template: string | null;
+  status: FeedbackStatus;
+  created_at: string;
+  status_changed_at: string | null;
+  student_ref: string | null;
+}
+
+export interface InternalTestExitRow {
+  student_ref: string;
+  exited_at: string;
+  consents_revoked: string[];
+  consent_active: boolean;
+  sessions_revoked: number;
+  erasure_status: string | null;
+  erased: boolean;
+}
+
+export interface FeedbackFilter { status?: FeedbackStatus; before?: string; before_id?: string }
+
+export function feedbackQuery(f: FeedbackFilter): string {
+  const q = new URLSearchParams({ limit: '50' });
+  if (f.status) q.set('status', f.status);
+  if (f.before && f.before_id) {
+    q.set('before', f.before);
+    q.set('before_id', f.before_id);
+  }
+  return q.toString();
+}
+
+export const listFeedback = (staff: string, f: FeedbackFilter) =>
+  call<{ items: FeedbackRow[]; next: QueueCursor | null }>(staff, 'GET', `/review/v0/feedback?${feedbackQuery(f)}`);
+export const setFeedbackStatus = (staff: string, id: string, status: FeedbackStatus) =>
+  call<{ status: FeedbackStatus }>(staff, 'POST', `/review/v0/feedback/${id}/status`, { status });
+export const listInternalTestExits = (staff: string) =>
+  call<{ items: InternalTestExitRow[] }>(staff, 'GET', '/review/v0/internal-test/exits?limit=200');
+
+export const FEEDBACK_RESULT_LABEL: Record<string, string> = {
+  ...RESULT_LABEL,
+  status_changed: '已改状态', FORBIDDEN: '没有权限（需要在职的 staff 账号）', NOT_FOUND: '反馈不存在', INVALID_PARAMETER: '状态不对',
+};

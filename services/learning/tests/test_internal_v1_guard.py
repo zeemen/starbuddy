@@ -18,7 +18,7 @@ import asyncpg
 import httpx
 import pytest
 
-from conftest import CREDENTIAL, at, counts, diagnose_body, env, grade_body, meter_row, settings, to_v1_body
+from conftest import CREDENTIAL, at, counts, diagnose_body, env, grade_body, grant_consents, meter_row, settings, to_v1_body
 from learning.app import create_app
 from learning.contract import internal_contract
 
@@ -183,6 +183,7 @@ async def _other_student(admin) -> str:
         await c.execute("INSERT INTO platform.household (id, created_by_account) VALUES ($1::uuid, $2::uuid)", household, guardian)
         await c.execute("""INSERT INTO platform.student_profile (id, account_id, household_id, grade, region, textbook_version, birth_year_month)
                            VALUES ($1::uuid, $2::uuid, $3::uuid, 9, 'nanjing', 'suke-2024', '2012-03-01')""", sid, acct, household)
+        await grant_consents(c, sid, guardian)
     return sid
 
 

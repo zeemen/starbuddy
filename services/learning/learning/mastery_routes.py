@@ -33,6 +33,7 @@ from typing import Any, Awaitable, Callable
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from . import processing
 from .contract import internal_contract, knowledge_contract
 from .diagnosis.api import _body
 from .errors import IngestError
@@ -55,6 +56,9 @@ def register(app: FastAPI, *, orchestrator_ok: Callable[[Request], bool], insigh
     """state["plan"] = (pool, client)；state["mastery_configs"]：已校验的掌握配置（学科 → MasteryConfig）；
     state["mastery"]：MasteryEngine 或 None（没有配置任何学科）。"""
     now = clock or (lambda: datetime.now(timezone.utc))
+    # 库层处理判据（LT-06 决定记录（续）第 4 条）：档案页 ensure、建验证任务先问库（退出、删除、没有有效同意 → 404 STUDENT_NOT_FOUND）；
+    # 读取类（掌握、解释、星图节点、档案页 read）与撤销验证任务（只会减少处理）照常
+    allowed = processing.gate(state)
 
     async def run(name: str, request: Request, authorized: Callable[[Request], bool],
                   fn: Callable[[dict], Awaitable[dict]], rid_of: Callable[[dict], Any]) -> JSONResponse:
@@ -115,6 +119,7 @@ def register(app: FastAPI, *, orchestrator_ok: Callable[[Request], bool], insigh
         c = internal_contract(INTERNAL)
         if c.validate("VerificationRequest", body):
             raise IngestError(400, "INVALID_REQUEST", "request does not match the contract")
+        await allowed(body["student_ref"])  # LT-06：建验证任务是新写入，先过库层处理判据
         engine = state.get("mastery")
         if engine is None:
             raise IngestError(409, "MASTERY_UNAVAILABLE", "no mastery configuration for this subject")
@@ -157,6 +162,7 @@ def register(app: FastAPI, *, orchestrator_ok: Callable[[Request], bool], insigh
         # 触发点由令牌决定：编排层只能是会话开始，洞察服务只能是周报
         if body["trigger"] != {"orchestrator": "session_start", "insight": "weekly"}[caller]:
             raise IngestError(403, "CALLER_MISMATCH", "trigger does not match the service token")
+        await allowed(body["student_ref"])  # LT-06：档案页编译是新写入，先过库层处理判据
         try:
             r = await profile_pages().ensure(body["student_ref"], body["subject"], body["trigger"])
         except ProfileUnavailable:

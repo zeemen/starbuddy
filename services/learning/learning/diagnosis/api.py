@@ -14,6 +14,7 @@ from typing import Any, Awaitable, Callable
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from .. import processing
 from ..errors import IngestError
 
 log = logging.getLogger("starbuddy.learning.diagnosis")
@@ -62,6 +63,10 @@ def _int(v: Any) -> bool:
 
 
 def register(app: FastAPI, authorized: Callable[[Request], bool], state: dict) -> None:
+    # 库层处理判据（LT-06 决定记录（续）第 4 条）：开始、探针、作答、暂停、放弃都先问库（退出、删除、没有有效同意 → 404 STUDENT_NOT_FOUND）；
+    # 读当前题（GET）不写也不调模型，照常
+    allowed = processing.gate(state)
+
     def svc():
         d = state.get("diagnosis")
         if d is None:
@@ -96,6 +101,7 @@ def register(app: FastAPI, authorized: Callable[[Request], bool], state: dict) -
             _keys(b, {"student_ref", "subject", "usage_id", "idempotency_key"})
             if not all(isinstance(b[k], str) for k in b):
                 raise IngestError(400, "INVALID_REQUEST", "fields must be strings")
+            await allowed(b["student_ref"])
             r = await svc().start(b["student_ref"].lower(), b["subject"], b["usage_id"].lower(), b["idempotency_key"])
             out = {"session_id": r.session_id, "usage_id": r.usage_id, "status": r.status, "created": r.created}
             return (201 if r.created else 200), out, {"idempotent-replayed": "true" if r.replayed else "false"}
@@ -120,6 +126,7 @@ def register(app: FastAPI, authorized: Callable[[Request], bool], state: dict) -
             ref = [k for k in ("probe_id", "probe_key") if k in b]
             if not (isinstance(b["student_ref"], str) and _int(b["seq"]) and len(ref) == 1 and isinstance(b[ref[0]], str)):
                 raise IngestError(400, "INVALID_REQUEST", "bad field types")
+            await allowed(b["student_ref"])
             out = await svc().probe(b["student_ref"].lower(), session_id.lower(), b["seq"], b.get("probe_id", "").lower() or None,
                                     b.get("probe_key", "").lower() or None)
             return 200, out, {"idempotent-replayed": "true" if out.pop("replayed") else "false"}
@@ -132,6 +139,7 @@ def register(app: FastAPI, authorized: Callable[[Request], bool], state: dict) -
             _keys(b, {"student_ref", "seq", "answer", "elapsed_sec", "idempotency_key"}, {"work"})
             if not (isinstance(b["student_ref"], str) and _int(b["seq"])):
                 raise IngestError(400, "INVALID_REQUEST", "bad field types")
+            await allowed(b["student_ref"])
             out = await svc().answer(b["student_ref"].lower(), session_id.lower(), b["seq"], b["answer"], b.get("work"),
                                      b["elapsed_sec"], b["idempotency_key"])
             return 200, out, {"idempotent-replayed": "true" if out.pop("replayed") else "false"}
@@ -144,6 +152,7 @@ def register(app: FastAPI, authorized: Callable[[Request], bool], state: dict) -
             _keys(b, {"student_ref"}, {"seq", "step_elapsed_sec"})
             if not isinstance(b["student_ref"], str) or ("seq" in b and not _int(b["seq"])):
                 raise IngestError(400, "INVALID_REQUEST", "bad field types")
+            await allowed(b["student_ref"])
             out = await svc().pause(b["student_ref"].lower(), session_id.lower(), b.get("seq"), b.get("step_elapsed_sec"))
             return 200, out, {"idempotent-replayed": "true" if out.pop("replayed") else "false"}
         return await run("pause", request, fn)
@@ -155,6 +164,7 @@ def register(app: FastAPI, authorized: Callable[[Request], bool], state: dict) -
             _keys(b, {"student_ref"})
             if not isinstance(b["student_ref"], str):
                 raise IngestError(400, "INVALID_REQUEST", "bad field types")
+            await allowed(b["student_ref"])
             out = await svc().abandon(b["student_ref"].lower(), session_id.lower())
             return 200, out, {"idempotent-replayed": "true" if out.pop("replayed") else "false"}
         return await run("abandon", request, fn)
