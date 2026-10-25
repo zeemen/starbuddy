@@ -163,7 +163,8 @@ services:
               apps/web/src/lib/dev-pages.ts, apps/web/next.config.ts, apps/web/src/shell/features.ts, apps/web/src/star/features.ts,
               apps/web/src/practice/features.ts, apps/web/src/retest/features.ts, apps/web/src/shell/today-orch.ts,
               apps/web/src/monthly-plan/features.ts, apps/web/src/family-goals/features.ts, apps/web/src/lib/review-features.ts,
-              apps/web/src/lib/serve-env.ts, apps/web/src/lib/consent-version.ts, apps/web/src/internal-test/features.ts]
+              apps/web/src/lib/serve-env.ts, apps/web/src/lib/consent-version.ts, apps/web/src/internal-test/features.ts,
+              apps/web/src/pwa/features.ts, apps/web/src/pwa/build-version.ts]
     vars:
       - {name: WEB_HOST, purpose: 监听地址（启动包装核对：dev/test 只 127.0.0.1，staging 另收内网 IPv4）, secret: false, default: 127.0.0.1, envs: all}
       - {name: PORT, purpose: 监听端口, secret: false, default: "3000", envs: all}
@@ -186,6 +187,7 @@ services:
       - {name: STARBUDDY_CONSENT_VERSION, purpose: 两份文书共用的版本（只 dev/test 的退路；staging 不认，须分别配置）, secret: false, default: synthetic-0, envs: local}
       - {name: STARBUDDY_DEV_PAGES, purpose: 开发专用页面（构建期，开发开关）, secret: false, default: null, envs: local}
       - {name: STARBUDDY_NEXT_DIST_DIR, purpose: 端到端测试构建目录（开发开关）, secret: false, default: null, envs: local}
+      - {name: STARBUDDY_PWA_KILL_SWITCH, purpose: PWA 停用开关（LT-07：只认 1；打开时 /sw.js 发自毁版 Service Worker——清缓存、注销、重新导航，页面不再注册；缺省关）, secret: false, default: null, envs: all}
   adapter-aya:
     sources: [adapters/aya/src/main.ts, adapters/aya/src/content.ts]
     vars:

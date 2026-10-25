@@ -8,6 +8,7 @@ import { currentSession } from '../../lib/review-session.ts';
 import { whoAmI } from '../../lib/review.ts';
 import { reviewFeatureEnabled } from '../../lib/review-features.ts';
 import { internalTestEnabled } from '../../internal-test/features.ts';
+import { ClearingForm } from '../../pwa/ClearingForm.tsx';
 import { logoutAction } from './actions.ts';
 
 export const metadata: Metadata = {
@@ -39,9 +40,9 @@ export default async function ReviewLayout({ children }: { children: ReactNode }
             {internalTest ? <a href="/review/feedback">问题反馈</a> : null}
             {internalTest ? <a href="/review/internal-test">退出状态</a> : null}
             <span data-testid="whoami">{login}</span>{' '}
-            <form action={logoutAction} className="inline-form">
+            <ClearingForm action={logoutAction} className="inline-form">
               <button type="submit">退出</button>
-            </form>
+            </ClearingForm>
           </nav>
         ) : null}
       </header>

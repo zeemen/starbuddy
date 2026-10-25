@@ -12,6 +12,7 @@ export function checkHeaders(h: Record<string, string>, path: string): string {
   expect(csp, path).toContain("frame-ancestors 'none'");
   expect(csp, path).toContain("object-src 'none'");
   expect(csp, path).toContain("base-uri 'none'");
+  expect(csp, path).toContain("worker-src 'self'");  // Service Worker 只许同源（LT-07）
   expect(csp, path).not.toMatch(/unsafe-inline|unsafe-eval/);
   expect(h['cache-control'] ?? '', path).toContain('no-store');
   expect(h['x-content-type-options'], path).toBe('nosniff');

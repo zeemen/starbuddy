@@ -354,3 +354,6 @@
 
     - 不引入 UI 组件库、图表库、CSS 框架；星空布局自己写。
     - MPL-2.0 是否可以接受（只用于测试，不进构建产物）？默认可以。
+
+## 后续变更（2026-10-24）
+- 本文中“不注册 Service Worker / 不做 PWA 离线缓存”的条款已由 specs/launch-lt07-mobile-pwa/spec.md 决定记录取代：只缓存静态壳与构建产物，任何接口、学生数据、页面 HTML 不缓存，登出清缓存，另有停用开关；“不写 localStorage、IndexedDB”与“含学生数据的页面与接口 no-store”仍然有效。

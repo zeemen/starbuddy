@@ -34,6 +34,8 @@ COPY --from=build /srv/starbuddy/apps/web/package.json ./package.json
 COPY --from=build /srv/starbuddy/apps/web/next.config.ts ./next.config.ts
 COPY --from=build /srv/starbuddy/apps/web/node_modules ./node_modules
 COPY --from=build /srv/starbuddy/apps/web/.next ./.next
+# PWA 静态壳（LT-07）：离线固定页与它的样式（Service Worker 预缓存；next start 从 public/ 直接提供，响应头仍走 next.config.ts 与 proxy）
+COPY apps/web/public/offline.html apps/web/public/offline.css ./public/
 # 启动包装（LT-01 安全审查 A1）：先核对运行环境、监听地址、镜像标记与 staging 的同意版本，再起 next start
 COPY apps/web/scripts/serve.ts ./scripts/serve.ts
 COPY apps/web/src/lib/serve-env.ts apps/web/src/lib/consent-version.ts ./src/lib/

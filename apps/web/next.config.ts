@@ -1,7 +1,8 @@
 // Next.js 配置（spec 范围第 1 条）：
 //   - 关闭图片优化：不需要 sharp / libvips（LGPL，ADR 07 待人确认 #2）；package.json 用占位包顶掉 sharp；
 //   - 页面一律不缓存（学习者模型是 L2 数据，ADR 09；统一壳 spec 第 15、16 节）；
-//   - 不注册 Service Worker、不加载境外字体或 CDN（字体用系统字体栈）。
+//   - 不加载境外字体或 CDN（字体用系统字体栈）。Service Worker（LT-07）只缓存静态壳与构建产物，页面、API、学生数据不缓存，
+//     见 src/pwa/ 与 src/app/sw.js/route.ts；/sw.js、manifest、图标与 public/ 的离线页同样走下面的 no-store 与安全头。
 //   - 开发专用页面（文件名 page.dev.tsx：探针演示页 /dev/probe、数学诊断演示页 /dev/diagnosis、符号样张页 /dev/star-glyphs）
 //     只在开发、测试构建里是页面：构建时 STARBUDDY_DEV_PAGES=1 且 STARBUDDY_ENV 为 dev / test（构建期常量，4-H H2；
 //     开发身份桩已删除，演示页走真实会话）才把 .dev.tsx 算作页面扩展名；生产构建里这些路由不存在（tests/build-output.test.ts 核对）。

@@ -9,6 +9,7 @@
 // 不用 <form action>——没有 JS 时表单会整页提交、结果（含凭据）被服务端渲染进 HTML；这里水合之前按钮一律 disabled，没有 JS 就什么也不发生。
 // 凭据不进地址栏、不进 DOM 属性、不写浏览器存储；兑换一次即作废，再点提示重新生成。文字只来自 src/shell/copy.ts（占位）。
 import { useEffect, useState, useTransition } from 'react';
+import { clearPwaCaches } from '../pwa/client.ts';
 import { DATA_RESULT, DATA_RIGHTS } from '../shell/copy.ts';
 import { erasureConfirmAction, erasureRequestAction, exportAction, type ErasureResult, type ExportResult } from './actions.ts';
 
@@ -89,7 +90,10 @@ export function ErasurePanel({ studentId, csrf }: { studentId: string; csrf: str
   });
   const confirm = () => startConfirm(async () => {
     if (!req?.request || !req.token || !understood) return;
-    setConf(await erasureConfirmAction(null, formOf({ student: studentId, csrf, request: req.request, confirm_token: req.token, understood: 'yes' })));
+    const r = await erasureConfirmAction(null, formOf({ student: studentId, csrf, request: req.request, confirm_token: req.token, understood: 'yes' }));
+    // 删除已确认（LT-07）：顺带清掉本站 Service Worker 缓存（只有静态壳与构建产物，不含个人数据；与登出同一口径）
+    if (r.code === 'confirmed') void clearPwaCaches();
+    setConf(r);
   });
   const pendingConfirm = req?.code === 'requested' && req.request && req.token && conf?.code !== 'confirmed';
   return (

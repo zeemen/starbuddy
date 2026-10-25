@@ -6,6 +6,8 @@
 !apps/web/next.config.ts
 !apps/web/tsconfig.json
 !apps/web/src
+!apps/web/public/offline.html
+!apps/web/public/offline.css
 !apps/web/scripts/serve.ts
 !packages/stage/package.json
 !packages/stage/src

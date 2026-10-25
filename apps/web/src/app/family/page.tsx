@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 import { childLabel, FAMILY_COPY, FAMILY_RESULT, GRADE_LABEL, openStudentModeFor, starMapFor } from '../../auth/copy.ts';
 import { ResultForm } from '../../auth/ResultForm.tsx';
 import { currentSession, whoAmI } from '../../lib/shell-auth.ts';
+import { InstallHint } from '../../pwa/InstallHint.tsx';
 import { FAMILY_SHELL, FAMILY_SHELL_RESULT } from '../../shell/copy.ts';
 import { logoutAction, openStudentModeAction } from './actions.ts';
 import { consentAction, createStudentAction } from './shell-actions.ts';
@@ -79,7 +80,8 @@ export default async function FamilyPage() {
           <button type="submit">{FAMILY_SHELL.create}</button>
         </ResultForm>
       </section>
-      <ResultForm action={logoutAction} labels={FAMILY_RESULT} testId="logout">
+      <InstallHint />
+      <ResultForm action={logoutAction} labels={FAMILY_RESULT} testId="logout" clearCachesOnSubmit>
         <input type="hidden" name="csrf" value={csrf} />
         <button type="submit">{FAMILY_COPY.logout}</button>
       </ResultForm>

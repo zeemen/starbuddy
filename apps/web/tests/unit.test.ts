@@ -82,7 +82,8 @@ test('CSP：带本次的 nonce，没有 unsafe-inline；生产不带 unsafe-eval
   const csp = contentSecurityPolicy(n);
   assert.match(csp, new RegExp(`script-src 'self' 'nonce-${n.replace(/[+/=]/g, '\\$&')}' 'strict-dynamic'`));
   assert.ok(csp.includes(`style-src 'self' 'nonce-${n}'`));
-  for (const d of ["frame-ancestors 'none'", "frame-src 'none'", "object-src 'none'", "base-uri 'none'", "form-action 'self'", "connect-src 'self'"]) {
+  for (const d of ["frame-ancestors 'none'", "frame-src 'none'", "object-src 'none'", "base-uri 'none'", "form-action 'self'", "connect-src 'self'",
+                   "worker-src 'self'", "manifest-src 'self'"]) {
     assert.ok(csp.includes(d), d);
   }
   assert.ok(!/unsafe-inline|unsafe-eval|https?:|\*/.test(csp), csp);

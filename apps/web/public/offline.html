@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>{{TODO_COPY:pwa.offline_title}} 现在没有联网</title>
+<link rel="stylesheet" href="/offline.css">
+</head>
+<!-- 离线固定页（LT-07 决定记录第 1 条）：Service Worker 预缓存的静态壳，网络断开时页面导航回到这里。
+     不含脚本、不含任何个人数据；文字与 src/pwa/copy.ts 的 OFFLINE 逐字一致（tests/pwa.test.ts 核对）。 -->
+<body>
+<main data-testid="offline">
+<h1>{{TODO_COPY:pwa.offline_title}} 现在没有联网</h1>
+<p>{{TODO_COPY:pwa.offline_body}} 连上网络后重新打开就可以继续。离线时不显示任何学习记录。</p>
+<p><a href="/login">{{TODO_COPY:pwa.offline_retry}} 重新打开</a></p>
+</main>
+</body>
+</html>

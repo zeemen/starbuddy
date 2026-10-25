@@ -33,7 +33,7 @@ export function StudentShell({ studentId, csrf, balance, rest, path, children }:
           {/* 内部成员测试的问题反馈（LT-06，开关 internal_test 默认关；关时不渲染任何元素） */}
           <StudentFeedbackLink studentId={studentId} path={path} />
         </nav>
-        <ResultForm action={logoutAction} labels={FAMILY_RESULT} testId="exit-student-mode" className="shell-form shell-exit">
+        <ResultForm action={logoutAction} labels={FAMILY_RESULT} testId="exit-student-mode" className="shell-form shell-exit" clearCachesOnSubmit>
           <input type="hidden" name="csrf" value={csrf} />
           <span className="visually-hidden" id="exit-note">{NAV.exitNote}</span>
           <button type="submit" aria-describedby="exit-note">{NAV.exit}</button>

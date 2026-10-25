@@ -271,6 +271,8 @@ c["external_claim_templates"] = ["syn.math.node_mastery@1", "syn.math.node_trans
 json.dump(c, open(sys.argv[2], "w"))' "$ROOT/services/bff/config/shell.json" "$FG_SHELL_CFG"
 FG_BFF_PORT="$(free_port)"
 WEB_FAMILY_PORT="$(free_port)"
+# PWA 停用开关（LT-07 安全审查 1；e2e/pwa-off.spec.ts）：第七个前端，STARBUDDY_PWA_KILL_SWITCH=1，连第一套 BFF（只读登录页，不发写请求）
+WEB_PWA_OFF_PORT="$(free_port)"
 FGLOG="$(mktemp)"
 ( cd "$ROOT/services/bff" || exit 1
   unset STARBUDDY_STARMAP STARBUDDY_TRUST_UI STARBUDDY_PRACTICE STARBUDDY_RETEST_UI STARBUDDY_TODAY_ORCH STARBUDDY_FAMILY_GOALS STARBUDDY_MONTHLY_PLAN  # 其余开关全关：不从调用方环境继承
@@ -333,7 +335,7 @@ export STARBUDDY_BFF_URL="http://127.0.0.1:$BFF_PORT" STARBUDDY_REVIEW_URL="http
   STARBUDDY_STARMAP_BFF_URL="http://127.0.0.1:$SM_BFF_PORT" WEB_STARMAP_PORT \
   STARBUDDY_REPORT_BFF_URL="http://127.0.0.1:$RP_BFF_PORT" WEB_REPORT_PORT \
   STARBUDDY_PRACTICE_BFF_URL="http://127.0.0.1:$PR_BFF_PORT" WEB_PRACTICE_PORT \
-  STARBUDDY_FAMILY_BFF_URL="http://127.0.0.1:$FG_BFF_PORT" WEB_FAMILY_PORT
+  STARBUDDY_FAMILY_BFF_URL="http://127.0.0.1:$FG_BFF_PORT" WEB_FAMILY_PORT WEB_PWA_OFF_PORT
 cd "$WEB"
 # 端到端用测试构建（冲刺 2-L）：开发专用页面（page.dev.tsx：探针、诊断演示页与符号样张页）只在 STARBUDDY_DEV_PAGES=1 且
 # STARBUDDY_ENV=dev/test 构建时才是页面（next.config.ts，构建期常量）。测试构建输出到 .next-e2e、类型检查用 tsconfig.e2e.json，正式的 .next 保持生产构建，
@@ -342,6 +344,9 @@ BLOG="$(mktemp)"
 npx --no-install next build > "$BLOG" 2>&1 || { tail -30 "$BLOG"; rm -f "$BLOG"; exit 1; }
 rm -f "$BLOG"
 set +e
+# LT-07（e2e/pwa.spec.ts）：让 Playwright 也管到 Service Worker 发出的请求（离线模拟 setOffline 对 SW 生效；只有 Chromium 支持）。
+# 只有 pwa.spec.ts 放行 Service Worker，其余用例照旧 serviceWorkers: 'block'，这个开关对它们没有影响。
+export PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS=1
 npx --no-install playwright test "$@"
 rc=$?
 if [ $rc -ne 0 ]; then echo "--- BFF 日志（最后 20 行）"; tail -20 "$LOG"; echo "--- 信任界面 BFF 日志（最后 20 行）"; tail -20 "$TLOG"; echo "--- 审核台后端日志（最后 20 行）"; tail -20 "$RLOG"; echo "--- 学习服务日志（最后 20 行）"; tail -20 "$LLOG"

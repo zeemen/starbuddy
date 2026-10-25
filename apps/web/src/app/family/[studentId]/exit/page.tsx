@@ -33,7 +33,7 @@ export default async function InternalTestExitPage({ params }: { params: Promise
           <ul className="shell-list" data-testid="internal-test-exit-effects">
             {EXIT.effects.map((e) => <li key={e}>{e}</li>)}
           </ul>
-          <ResultForm action={exitInternalTestAction} labels={EXIT_RESULT} testId="internal-test-exit-form">
+          <ResultForm action={exitInternalTestAction} labels={EXIT_RESULT} testId="internal-test-exit-form" clearCachesOnSubmit>
             <input type="hidden" name="student" value={studentId} />
             <input type="hidden" name="csrf" value={ps.session.csrf} />
             <p>

@@ -250,3 +250,36 @@ details.constellation[open] > summary::before { content: "▾" / ""; }
 .report-sentences li { margin: 4px 0; }
 .report-label { font-size: 0.875rem; border: 1px solid var(--rule); border-radius: 4px; padding: 0 4px; }
 .report-sentences li.claim-dashed { list-style: none; margin-left: -20px; border: 1px dashed var(--fg); border-radius: 4px; padding: 4px 8px; }
+
+/* LT-07 移动端（specs/launch-lt07-mobile-pwa 范围第 1 条；e2e/mobile.spec.ts 在 360 / 390 / 412 宽下核对）。只改布局与样式，不改文字。
+   安全区：viewport-fit=cover（src/app/layout.tsx）下，左右与底部留白取 16px 与刘海 / 底部横条安全区的较大者；桌面上 env() 为 0，取值不变。 */
+main { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+.shell-top, .review-header { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+.status-bar, .trust-nav { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+.diandian { right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); }
+.install-hint { margin: 16px 0; }
+.install-hint summary { cursor: pointer; min-height: 44px; padding: 10px 0; }
+
+/* 窄屏（手机竖屏）：长串（含 {{TODO_COPY}} 占位、编号）任意处可折行，表格与弹性布局能收窄到视口内；表单控件不超过容器；
+   点点入口改为排在页面末尾（不再固定在右下角压住内容，软键盘弹出时也不挡输入与提交）；聚焦的输入框滚动时上下留出余量。 */
+@media (max-width: 767px) {
+  body { overflow-wrap: anywhere; }
+  input, select, textarea { max-width: 100%; }
+  input, select, textarea, button { scroll-margin-block: 96px; }
+  .inline-form { flex-wrap: wrap; }
+  .shell-form textarea { max-width: none; }
+  .trust-table th, .trust-table td { padding: 4px; }
+  .diandian { position: static; margin: 16px max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); max-width: none; }
+  .rest-bar { margin-left: max(16px, env(safe-area-inset-left)); margin-right: max(16px, env(safe-area-inset-right)); }
+}
+
+/* 触屏与窄屏：触控目标不小于 44×44（WCAG 2.5.5）。顶栏、点点入口的短文字链接与按钮补足宽度；单独成行的链接（段落或列表项里的唯一元素、
+   孩子行的入口）与所有按钮、下拉框补足高度。句中的行内链接不受影响。 */
+@media (max-width: 767px), (pointer: coarse) {
+  .shell-nav a, .review-header nav a, .trust-nav a { min-width: 44px; justify-content: center; }
+  .diandian summary { min-width: 44px; justify-content: center; }
+  main p > a:only-child, main li > a, main section > a, .child-row a { display: inline-flex; align-items: center; min-height: 44px; min-width: 44px; }
+  main button, main select, .shell-top button { font: inherit; min-height: 44px; min-width: 44px; }
+  main input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]) { font: inherit; min-height: 44px; }
+  main textarea { font: inherit; }
+}

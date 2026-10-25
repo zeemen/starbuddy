@@ -62,6 +62,9 @@ export const CRAWL: Record<string, CrawlPage | Excluded> = {
   // 健康端点（LT-03）：探针用的 JSON 路由，不是页面；只回状态、no-store、不读会话，由 tests/health.test.ts 静态核对
   'healthz/route.ts': { excluded: '存活探针路由（LT-03）：只认 GET、只回 {"status":"ok"}、no-store、不调 BFF 不读会话；tests/health.test.ts 静态核对' },
   'readyz/route.ts': { excluded: '就绪探针路由（LT-03）：只认 GET、只回状态、no-store，按 serve-env 同一套核对；tests/health.test.ts 静态核对' },
+  // PWA（LT-07）：Service Worker 脚本与占位图标，不是页面；安全头（CSP、nosniff、no-store）与内容由 e2e/pwa.spec.ts 核对，源码由 tests/pwa.test.ts 核对
+  'sw.js/route.ts': { excluded: 'Service Worker 脚本（LT-07）：只认 GET、no-store、text/javascript，不读会话；缓存范围由 tests/pwa.test.ts（node:vm 跑真实事件）与 e2e/pwa.spec.ts 核对' },
+  'icons/[file]/route.ts': { excluded: '占位图标 PNG（LT-07）：只认登记的四个文件名、其余 404，不读会话；tests/pwa.test.ts 核对 PNG 结构，e2e/pwa.spec.ts 核对响应头' },
   'family/[studentId]/data/download/route.ts': { excluded: '只认 POST 的下载路由：no-store、附件、nosniff 由 e2e/trust-on.spec.ts 的数据权利用例与 tests/trust.test.ts 核对' },
   'review/page.tsx': { excluded: '审核台（staff 登录，迁移 0020，不在壳内）：与壳同一个 proxy（CSP）与 next.config（安全头），但需要 staff 会话，本爬取不覆盖；e2e/review.spec.ts 只核对 no-store（CSP 逐页爬取登记为 lessons H6 待人确认）' },
   'review/login/page.tsx': { who: 'anon', path: () => '/review/login' },

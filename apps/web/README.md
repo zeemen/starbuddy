@@ -23,7 +23,11 @@
 - 安全头（spec 第 16 节）：`src/proxy.ts` 为每个请求生成 nonce，CSP 不含 `unsafe-inline`（生产构建也不含 `unsafe-eval`）、
   `frame-ancestors 'none'`；staging、pilot、生产另发 HSTS。主题变量是静态文件 `src/app/theme.css`，组件里不写 style 属性。
 - 前端不推算掌握状态，只认 BFF 给的 `display`、`retained`、`needs_verification`（规则 2）。
-- 以下都不做：页面一律 `no-store`，不用 localStorage、IndexedDB，不注册 Service Worker，不加载境外字体或 CDN（ADR 09）。
+- 以下都不做：页面一律 `no-store`，不用 localStorage、IndexedDB，不加载境外字体或 CDN（ADR 09）。
+- PWA（LT-07，`specs/launch-lt07-mobile-pwa` 决定记录）：`/manifest.webmanifest`、占位图标 `/icons/*`（代码生成）、Service Worker `/sw.js`
+  （`src/pwa/`）只缓存静态壳（`public/offline.html` 等）与 `/_next/static` 构建产物，页面 HTML、API、学生数据一律走网络；离线导航回固定离线页；
+  登出、删除确认、退出内测时清缓存；不做推送。停用：设 `STARBUDDY_PWA_KILL_SWITCH=1`（缺省关），`/sw.js` 改发自毁版（删全部缓存、
+  注销、重新导航已打开的页面），页面不再注册、只请已有注册取一次更新。
 - 不装 `sharp`：用 `vendor/no-sharp` 占位包顶替，并关闭图片优化（ADR 07 待人确认 #2）。许可证清单见 `LICENSES.md`。
 - Next.js 遥测一律关闭（`NEXT_TELEMETRY_DISABLED=1`）。
 

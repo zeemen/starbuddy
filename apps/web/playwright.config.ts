@@ -2,7 +2,7 @@
 // 视觉回归的用例带 @visual 标签：make web-test 跑其余用例，make web-visual 只跑 @visual（spec 待人确认 #11）。
 // 两套前端（冲刺 5-H）：trust-off 连开关全关的 BFF，跑除 trust-on.spec.ts 以外的全部用例（含 4-H“信任界面预留”与 trust-off.spec.ts）；
 // trust-on 连 scripts/e2e.sh 起的第二个 BFF（信任界面开关打开），只跑 trust-on.spec.ts。两套共用同一个一次性库与测试构建。
-import { defineConfig } from '@playwright/test';
+import { defineConfig, devices } from '@playwright/test';
 
 // 第三套（H5 星图 v1）：starmap-on 连 scripts/e2e.sh 起的第三个 BFF（STARBUDDY_STARMAP=starmap_v1,starmap_dashed，显示规则把合成星图模板
 // 列进白名单）与第二个学习服务（带合成数学掌握配置），只跑 star-map-v1.spec.ts 与 visual-v1.spec.ts；前端同样打开两个星图开关。
@@ -36,6 +36,35 @@ const familyPort = Number(process.env['WEB_FAMILY_PORT'] ?? 3105);
 const FAMILY_SPECS = /(^|\/)(family-goals|monthly-plan)\.spec\.ts$/;
 // 数据权利用例（导出下载、删除二次确认，标 @data-rights）另在 WebKit 与 Firefox 上跑（安全审查 2）：本机只装了 Chromium，
 // 所以按需打开——STARBUDDY_E2E_BROWSERS=webkit,firefox（需要对应的 Playwright 浏览器二进制；lessons 登记）。
+// LT-07 移动端（specs/launch-lt07-mobile-pwa 范围第 1、5、6 条）：四个移动设备项目（iPhone 13、Pixel 7、360 宽、430 宽）连开关全关的一套前端，跑移动端走查（e2e/mobile.spec.ts，
+// 其中另按 test.use 切到信任界面、星图 v1、错题再练三套的前端）、统一壳核心流程（e2e/shell.spec.ts，含 axe）与移动端视觉回归
+// （e2e/visual-mobile.spec.ts，@visual）。本机只装了 Chromium：iPhone 13 用 Chromium 按其视口、UA、触屏与 isMobile 模拟（WebKit 真机核对
+// 登记为待人确认）；360 宽是常见安卓小屏（视口 360×740）。e2e/pwa.spec.ts（Service Worker）只在 trust-off 跑。
+const MOBILE_SPECS = /(^|\/)(mobile|visual-mobile|shell)\.spec\.ts$/;
+const MOBILE_ONLY_SPECS = /(^|\/)(mobile|visual-mobile)\.spec\.ts$/;
+const MOBILE_DEVICES = [
+  { name: 'mobile-iphone13', use: { ...devices['iPhone 13'], browserName: 'chromium' as const, defaultBrowserType: 'chromium' as const } },
+  { name: 'mobile-pixel7', use: { ...devices['Pixel 7'] } },
+  {
+    name: 'mobile-360',
+    use: {
+      viewport: { width: 360, height: 740 }, screen: { width: 360, height: 800 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true,
+      userAgent: 'Mozilla/5.0 (Linux; Android 13; SYN-360) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36',
+    },
+  },
+  {
+    // 430 宽：大屏 iPhone（Pro Max 一档）的视口，同样用 Chromium 模拟
+    name: 'mobile-430',
+    use: {
+      viewport: { width: 430, height: 739 }, screen: { width: 430, height: 932 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true,
+      browserName: 'chromium' as const,
+      userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+    },
+  },
+];
+// PWA 停用开关（安全审查 1，e2e/pwa-off.spec.ts）：第七个前端打开 STARBUDDY_PWA_KILL_SWITCH=1，连开关全关那一套的 BFF，只跑 pwa-off.spec.ts
+const pwaOffPort = Number(process.env['WEB_PWA_OFF_PORT'] ?? 3106);
+const PWA_OFF_SPECS = /(^|\/)pwa-off\.spec\.ts$/;
 const extraBrowsers = (process.env['STARBUDDY_E2E_BROWSERS'] ?? '').split(',').map((s) => s.trim())
   .filter((b): b is 'webkit' | 'firefox' => b === 'webkit' || b === 'firefox');
 /** 端到端用的合成签名密钥（见下方 serverEnv 的说明；e2e/behavior-events.spec.ts 用它构造 cookie） */
@@ -57,6 +86,8 @@ const serverEnv = {
   STARBUDDY_MONTHLY_PLAN: '',
   // KGE-06 审核台功能开关同样显式关闭：只有 practice-on 的前端另行打开
   STARBUDDY_REVIEW_FEATURES: '',
+  // PWA 停用开关同样显式关闭：只有 pwa-off 的前端另行打开
+  STARBUDDY_PWA_KILL_SWITCH: '',
   STARBUDDY_REVIEW_URL: process.env['STARBUDDY_REVIEW_URL'] ?? 'http://127.0.0.1:8790',
   NEXT_TELEMETRY_DISABLED: '1',
   // 学生壳会话状态 cookie 的签名密钥（SIE-05 PR2）：端到端固定一个合成值，用例才能构造“已超时”“被篡改”的 cookie（e2e/behavior-events.spec.ts）；
@@ -85,12 +116,14 @@ export default defineConfig({
   },
   expect: { toHaveScreenshot: { maxDiffPixelRatio: 0.001, animations: 'disabled' } },
   projects: [
-    { name: 'trust-off', testIgnore: [/trust-on\.spec\.ts$/, STARMAP_SPECS, REPORT_SPECS, PRACTICE_SPECS, FAMILY_SPECS, REVIEW_KGE06_SPECS] },
+    { name: 'trust-off', testIgnore: [/trust-on\.spec\.ts$/, STARMAP_SPECS, REPORT_SPECS, PRACTICE_SPECS, FAMILY_SPECS, REVIEW_KGE06_SPECS, MOBILE_ONLY_SPECS, PWA_OFF_SPECS] },
+    { name: 'pwa-off', testMatch: PWA_OFF_SPECS, use: { baseURL: `http://127.0.0.1:${pwaOffPort}` } },
     { name: 'trust-on', testMatch: /trust-on\.spec\.ts$/, use: { baseURL: `http://127.0.0.1:${trustPort}` } },
     { name: 'starmap-on', testMatch: STARMAP_SPECS, use: { baseURL: `http://127.0.0.1:${starmapPort}` } },
     { name: 'report-on', testMatch: REPORT_SPECS, use: { baseURL: `http://127.0.0.1:${reportPort}` } },
     { name: 'practice-on', testMatch: [PRACTICE_SPECS, REVIEW_KGE06_SPECS], use: { baseURL: `http://127.0.0.1:${practicePort}` } },
     { name: 'family-on', testMatch: FAMILY_SPECS, use: { baseURL: `http://127.0.0.1:${familyPort}` } },
+    ...MOBILE_DEVICES.map((d) => ({ name: d.name, testMatch: MOBILE_SPECS, use: { ...d.use, baseURL: `http://127.0.0.1:${port}` } })),
     ...extraBrowsers.map((b) => ({
       name: `trust-on-${b}`, testMatch: /trust-on\.spec\.ts$/, grep: /@data-rights/,
       use: { baseURL: `http://127.0.0.1:${trustPort}`, browserName: b },
@@ -162,6 +195,17 @@ export default defineConfig({
         STARBUDDY_FAMILY_GOALS: 'family_goals',
         STARBUDDY_MONTHLY_PLAN: 'monthly_plan',
         STARBUDDY_TRUST_UI: 'why',
+      },
+    },
+    {
+      command: `npx --no-install next start -p ${pwaOffPort} -H 127.0.0.1`,
+      url: `http://127.0.0.1:${pwaOffPort}/dev/star-glyphs`,
+      reuseExistingServer: false,
+      timeout: 60_000,
+      env: {
+        ...serverEnv,
+        STARBUDDY_BFF_URL: process.env['STARBUDDY_BFF_URL'] ?? 'http://127.0.0.1:8787',
+        STARBUDDY_PWA_KILL_SWITCH: '1',
       },
     },
   ],
