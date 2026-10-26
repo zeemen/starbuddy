@@ -218,6 +218,13 @@ M=(
   $'周报命令有拒收也退出 0\tinsight/jobs_cli.py\t    return 1 if out["job"] == "weekly" and out["outcomes"]["failed"] else 0\t    return 0\ttests/test_scheduled_cli.py'
   $'周报命令不限周一\tinsight/jobs_cli.py\t    if d.isoweekday() != 1:\t    if False:\ttests/test_scheduled_cli.py'
   $'抽检只处理第一个学科\tinsight/scheduled.py\t        for s in dict.fromkeys(a.subject):\t        for s in list(dict.fromkeys(a.subject))[:1]:\ttests/test_scheduled_cli.py'
+  # PLT 模型调用记录落库（specs/plt-model-call-log，迁移 0060）：调用记录留存删除 model-call-purge
+  $'留存删除一批不满也不停\tinsight/scheduled.py\t        if deleted < batch:  # 一批不满：没有更多到期的行\t        if deleted < 0:\ttests/test_scheduled_cli.py'
+  $'留存删除到了上限不报仍有到期\tinsight/scheduled.py\t    return purged, max_batches, True\t    return purged, max_batches, False\ttests/test_scheduled_cli.py'
+  $'留存删除不核对调度器角色\tinsight/scheduled.py\t    await assert_scheduler_role(conn)\n    purged = 0\t    purged = 0\ttests/test_scheduled_cli.py'
+  $'留存删除时钟不取数据库当前时间\tinsight/scheduled.py\tf"SELECT {PURGE_FUNC}(now(), $1::integer)"\tf"SELECT {PURGE_FUNC}(now() - interval \'1 hour\', $1::integer)"\ttests/test_scheduled_cli.py'
+  $'留存删除批量不限范围\tinsight/scheduled.py\t        if a.cmd == "model-call-purge" and not (1 <= a.batch <= MAX_PURGE_BATCH\t        if False and not (1 <= a.batch <= MAX_PURGE_BATCH\ttests/test_scheduled_cli.py'
+  $'留存删除输出不报删除条数\tinsight/scheduled.py\t            return {"job": a.cmd, "purged": total, "batches": batches, "more_due": more}\t            return {"job": a.cmd, "purged": 0, "batches": batches, "more_due": more}\ttests/test_scheduled_cli.py'
   $'周报生成中的 ValueError 也当周参数错\tinsight/jobs_cli.py\t        raise JobError("周报配置未签字：test 以外不生成") from None\t        raise JobError("周报配置未签字：test 以外不生成") from None\n    except ValueError:\n        raise JobError("周只接受已结束、35 天内的周一") from None\ttests/test_scheduled_cli.py'
   $'周报命令不先核对周参数\tinsight/jobs_cli.py\t        await check_week(store, week)\t        pass\ttests/test_scheduled_cli.py'
   $'周报配置不按运行环境加载\tinsight/jobs_cli.py\t/ "weekly.synthetic.json"), env=env)\t/ "weekly.synthetic.json"), env="test")\ttests/test_scheduled_cli.py'

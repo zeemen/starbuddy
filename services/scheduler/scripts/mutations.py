@@ -51,8 +51,15 @@ PURE: dict[str, list[tuple[str, str, str]]] = {
     # 中圈指标静默重算（SIE-05）：insight 身份放行 metrics，其余未放行的子命令仍拒绝
     "insight 身份不放行 metrics": [(C, "frozenset({\"sweep\", \"weekly\", \"metrics\"})", "frozenset({\"sweep\", \"weekly\"})")],
     "insight 身份连带放行 sync": [(C, "frozenset({\"sweep\", \"weekly\", \"metrics\"})", "frozenset({\"sweep\", \"weekly\", \"metrics\", \"sync\"})")],
-    "调度器身份也放行 metrics": [(C, "frozenset({\"meter-expire\", \"meter-renew\", \"erasures\", \"freeze\", \"spot-check\"})",
-                              "frozenset({\"meter-expire\", \"meter-renew\", \"erasures\", \"freeze\", \"spot-check\", \"metrics\"})")],
+    "调度器身份也放行 metrics": [(C, "frozenset({\"meter-expire\", \"meter-renew\", \"erasures\", \"freeze\", \"spot-check\", \"model-call-purge\"})",
+                              "frozenset({\"meter-expire\", \"meter-renew\", \"erasures\", \"freeze\", \"spot-check\", \"model-call-purge\", \"metrics\"})")],
+    # 模型调用记录留存删除（specs/plt-model-call-log，迁移 0060）：只放行给调度器身份、每日一次、批量 1000
+    "调度器身份不放行留存删除": [(C, "frozenset({\"meter-expire\", \"meter-renew\", \"erasures\", \"freeze\", \"spot-check\", \"model-call-purge\"})",
+                             "frozenset({\"meter-expire\", \"meter-renew\", \"erasures\", \"freeze\", \"spot-check\"})")],
+    "insight 身份也放行留存删除": [(C, "frozenset({\"sweep\", \"weekly\", \"metrics\"})", "frozenset({\"sweep\", \"weekly\", \"metrics\", \"model-call-purge\"})")],
+    "留存删除频率不是每日一次": [(Y, "    schedule: daily 04:10\n    identity: scheduler\n    args: [model-call-purge",
+                             "    schedule: hourly :10\n    identity: scheduler\n    args: [model-call-purge")],
+    "留存删除批量改了": [(Y, "    args: [model-call-purge, --batch, \"1000\"]", "    args: [model-call-purge, --batch, \"10000\"]")],
     "指标重算可以启动补跑": [(C, "CATCH_UP_COMMANDS = frozenset({\"weekly\"})", "CATCH_UP_COMMANDS = frozenset({\"weekly\", \"metrics\"})")],
     "指标重算频率不是每日一次": [(Y, "    schedule: daily 03:20\n    identity: insight\n    args: [metrics, --all, --skip, persistence]",
                              "    schedule: hourly :20\n    identity: insight\n    args: [metrics, --all, --skip, persistence]")],

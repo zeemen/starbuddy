@@ -18,7 +18,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import practice_mutations as PM  # noqa: E402
 
 TESTS = ["tests/test_model_router.py", "tests/test_model_router_staging.py", "tests/test_model_smoke.py", "tests/test_route_listener.py",
-         "tests/test_obs.py"]  # 后者：LT-05 模型路由指标（调用 / 失败 / 熔断 / 护栏剩余 / 估算成本）
+         "tests/test_obs.py",  # LT-05 模型路由指标（调用 / 失败 / 熔断 / 护栏剩余 / 估算成本）
+         "tests/test_model_call_log.py"]  # 调用记录落库（specs/plt-model-call-log；真实库用例在 test_model_call_log_db.py，不进变异）
 P = "learning/model_router/"
 CF, RT, PR, BR, BG, LG, RG = (P + "config.py", P + "router.py", P + "providers.py", P + "breaker.py", P + "budget.py", P + "ledger.py",
                               P + "registry.py")
@@ -112,6 +113,39 @@ MUTATIONS: dict[str, tuple[str, str, str]] = {
     "冒烟不限次": (SMOKE, "if len(targets) > max_calls:", "if False:"),
     "冒烟打印回复原文": (SMOKE, "回复 {len(res.output)} 字", "回复 {res.output}"),
     "冒烟带重试": (SMOKE, "timeout_seconds=cfg.routes[task].timeout_seconds, max_retries=0)", "timeout_seconds=cfg.routes[task].timeout_seconds, max_retries=2)"),
+    # ---- 调用记录落库（specs/plt-model-call-log 决定记录第 2 条；迁移 0060；tests/test_model_call_log.py）----
+    "落库：TeeSink 不隔离异常": (LG, "            try:\n                s.write(record)\n            except Exception:  # noqa: BLE001\n",
+                          "            s.write(record)\n            if False:\n"),
+    "落库：队列不设上限": (LG, "if self._closing or len(self._queue) >= self.max_queue:", "if self._closing:"),
+    "落库：写库失败向上抛": (LG, "        except Exception as e:  # noqa: BLE001 —— 连接断开", "        except ZeroDivisionError as e:  # noqa: BLE001 —— 连接断开"),
+    "落库：写库失败计为已写入": (LG, "_bump(self._on_failed, len(batch))\n", "_bump(self._on_written, len(batch))\n"),
+    "落库：失败日志带异常消息": (LG, '"error_class": type(e).__name__[:48]', '"error_class": str(e)'),
+    "落库：摘要不核对格式（原值能入队）": (LG, 'if not _REF.match(record.usage_ref or "") or not _REF.match(record.idempotency_ref or ""):', "if False:"),
+    "落库：尝试状态不核对": (LG, " or any(a.status not in _ATTEMPT_STATUSES for a in attempts)", ""),
+    "落库：切备按尝试次数算": (LG, "len({a.model_version for a in attempts}) > 1", "len(attempts) > 1"),
+    "落库：失败时取第一次尝试的目标": (LG, "(attempts[-1].model_version if attempts else None)", "(attempts[0].model_version if attempts else None)"),
+    "落库：写入列多一列": (LG, '"idempotency_ref")\nINSERT_SQL', '"idempotency_ref", "reported_model")\nINSERT_SQL'),
+    "落库：不分批": (LG, "range(min(self.batch_size, len(self._queue)))", "range(len(self._queue))"),
+    "落库：写库不限时": (LG, "await asyncio.wait_for(self._write(batch), self.write_timeout)", "await self._write(batch)"),
+    # 改回只限 executemany：池满或库连不上时取连接一直等（审查建议）
+    "落库：取连接不限时（只限写入）": (LG, "await asyncio.wait_for(self._write(batch), self.write_timeout)",
+                           "async with self._pool.acquire() as conn:\n                async with conn.transaction():\n"
+                           "                    await asyncio.wait_for(conn.executemany(INSERT_SQL, batch), self.write_timeout)"),
+    # 路由层模板白名单（审查建议）：不在提示词登记表里的模板也照记进调用记录
+    "落库：模板不核对白名单": (RT, "if SOURCE_VERSION.match(source_version) and req.prompt_template in self._recorded_templates",
+                      "if SOURCE_VERSION.match(source_version)"),
+    "落库：模板白名单多了未登记的名字": (RT, '"wenli-essay-grade", "zhixing-m3-grade"})', '"wenli-essay-grade", "zhixing-m3-grade", "tutor-aya-hint"})'),
+    "落库：自建调用记录池不核对 TLS": ("learning/app.py", "    if pool is None or (settings.model_call_log and call_log_pool is None):",
+                            "    if pool is None:"),
+    "落库：退出时不叫醒刷写": (LG, "            self._wake.set()\n            try:", "            self._wake.clear()\n            try:"),
+    "落库：退出超时正在写的那批不计丢弃": (LG, "_bump(self._on_dropped, len(self._queue) + self._inflight)", "_bump(self._on_dropped, len(self._queue))"),
+    "落库：计数钩子出错外泄": (LG, "    try:\n        hook(n)\n    except Exception:  # noqa: BLE001 —— 计数出错只丢这一次计数\n        pass", "    hook(n)"),
+    "落库：写库失败计数接到丢弃": ("learning/metrics.py", "on_failed=_inc(CALL_LOG_FAILED)", "on_failed=_inc(CALL_LOG_DROPPED)"),
+    "落库：路由落地不带数据库": ("learning/metrics.py", "*([db] if db is not None else [])", ""),
+    "落库：开关收任意值": (SCF, 'if call_log_raw not in ("", "0", "1"):', "if False:"),
+    "落库：开关打开也不核对 0060": ("learning/app.py", "        if settings.model_call_log:\n            try:\n                await check_call_log(p)",
+                           "        if False:\n            try:\n                await check_call_log(p)"),
+    "落库：启动不核对 INSERT 权限": ("learning/app.py", "if not await pool.fetchval(CALL_LOG_GRANT_SQL, list(MODEL_CALL_COLUMNS)):", "if False:"),
 }
 
 

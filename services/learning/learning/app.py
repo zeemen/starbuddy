@@ -37,6 +37,7 @@ from .mastery.recompute import MasteryEngine
 from .netpolicy import check_db_tls
 from .model_router import ModelRouter
 from .model_router.config import load_for_deployment
+from .model_router.ledger import MODEL_CALL_COLUMNS
 from .plan import plan_today
 from .practice import api as practice_api
 from .practice import config as practice_config
@@ -54,6 +55,12 @@ UUID4_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[
 # 就绪探针（LT-03，契约审查建议 4）：0058 的计量核对函数仍在、本角色仍有执行权（传 oid：函数不存在时为假而不是报错）
 READY_METER_SQL = ("SELECT CASE WHEN to_regprocedure($1) IS NULL THEN false"
                    " ELSE has_function_privilege(current_user, to_regprocedure($1), 'EXECUTE') END")
+# 模型调用记录落库（specs/plt-model-call-log，迁移 0060；LEARNING_MODEL_CALL_LOG=1）：启动核对表在、当前登录角色对全部写入列有 INSERT
+CALL_LOG_TABLE_SQL = "SELECT to_regclass('platform.model_call_log') IS NOT NULL"
+CALL_LOG_GRANT_SQL = ("SELECT coalesce(bool_and(has_column_privilege(current_user, 'platform.model_call_log', c, 'INSERT')), false)"
+                      " FROM unnest($1::text[]) c")
+CALL_LOG_POOL_SIZE = 2        # 写调用记录的单独小连接池（后台批量写，不占业务池）
+CALL_LOG_CLOSE_SECONDS = 5.0  # 退出时尽力刷写的时限
 # 契约允许 diagnose 带 200 道作答、每道 20000 字（UTF-8 最多约 12 MB），再加 500 条既有证据
 MAX_BODY_BYTES = 16 * 1024 * 1024
 # v0 写入下线（LT-04 决定记录（再续）第 1 条）：410 的标题，不含任何请求内容
@@ -151,7 +158,16 @@ async def _check_practice_env(pool, synthetic_presenter: bool) -> None:
         raise RuntimeError("错题再练走 generate_variation 与 v1 写入路径：插件契约 1.0.0 在本服务不可用") from None
 
 
-PRACTICE_LOCK_POOL_SIZE = 8   # 再练作答串行锁的连接数上限：同时在判分的再练作答最多这么多，再多的取锁连接超时回 503 BUSY
+async def check_call_log(pool) -> None:
+    """LEARNING_MODEL_CALL_LOG=1 的启动前置：迁移 0060 已执行，且当前登录角色对 platform.model_call_log 的全部写入列有 INSERT
+    （授权没跟上、连错角色同样拒绝启动，不等到第一条记录写库失败才发现）"""
+    if not await pool.fetchval(CALL_LOG_TABLE_SQL):
+        raise RuntimeError("platform.model_call_log is missing: run migration 0060 before enabling LEARNING_MODEL_CALL_LOG")
+    if not await pool.fetchval(CALL_LOG_GRANT_SQL, list(MODEL_CALL_COLUMNS)):
+        raise RuntimeError("platform.model_call_log is not insertable by this role: check the grants of migration 0060")
+
+
+PRACTICE_LOCK_POOL_SIZE = 8  # 再练作答串行锁的连接数上限：同时在判分的再练作答最多这么多，再多的取锁连接超时回 503 BUSY
 
 
 def _practice(settings: Settings, cfg, pool, client: httpx.AsyncClient, ingest: IngestService, clock, lock_pool):
@@ -190,12 +206,14 @@ def create_app(
     practice_clock=None,
     practice_lock_pool: asyncpg.Pool | None = None,
     diagnosis_clock=None,
+    call_log_pool: asyncpg.Pool | None = None,
 ) -> FastAPI:
-    """pool、transport、model_router、diagnosis_params、mastery、profile、practice_clock、practice_lock_pool、diagnosis_clock 供测试注入；
-    不传时按配置创建。注入业务池又开了再练时必须一并注入再练锁池（锁连接不能取自业务池，审查 B2）。"""
+    """pool、transport、model_router、diagnosis_params、mastery、profile、practice_clock、practice_lock_pool、diagnosis_clock、
+    call_log_pool 供测试注入；不传时按配置创建。注入业务池又开了再练时必须一并注入再练锁池（锁连接不能取自业务池，审查 B2）。"""
     state: dict = {"router": model_router}
-    if pool is None:
-        # LT-03 决定记录（续）第 6 条：staging 连库必须 verify-full + 固定 CA（/run/rds-ca/ca.pem），在建任何连接之前拒绝
+    if pool is None or (settings.model_call_log and call_log_pool is None):
+        # LT-03 决定记录（续）第 6 条：staging 连库必须 verify-full + 固定 CA（/run/rds-ca/ca.pem），在建任何连接之前拒绝。
+        # 注入了业务池但开了调用记录落库、没注入调用记录池时，下面会按 LEARNING_DATABASE_URL 自建调用记录池，同样先核对（审查建议）
         check_db_tls(settings.database_url, settings.env, "LEARNING_DATABASE_URL")
     if settings.present_item_source == "adapter":
         # PLT-12：题面经适配器 present_item 只在候选契约 1.1.0 打开时可用（配置层已拦一道；这里在建任何连接之前再拦一道）
@@ -256,6 +274,13 @@ def create_app(
             if own_pool:
                 await p.close()
             raise RuntimeError("platform.learning_meter_check is not executable by this role: check the grants of migration 0058")
+        if settings.model_call_log:
+            try:
+                await check_call_log(p)
+            except RuntimeError:
+                if own_pool:
+                    await p.close()
+                raise
         # trust_env=False：不读 HTTP(S)_PROXY 等环境变量，含学生作答的请求体不会被悄悄送进代理（安全审查 S1）
         client = httpx.AsyncClient(transport=transport, trust_env=False, follow_redirects=False)
         engine = mastery
@@ -320,8 +345,23 @@ def create_app(
             state["today"] = TodayService(settings=settings, cfg=today_cfg, state=state)
         # 有路由客户端时才建模型路由：环境从 LEARNING_ENV 读，配置不合规（出境、未批准供应商等）即拒绝启动
         own_router = state["router"] is None and bool(settings.route_clients)
+        call_log_sink, own_call_log_pool = None, None
         if own_router:
-            state["router"] = ModelRouter.from_config(load_for_deployment(), sink=metrics.router_sink())  # 调用记录：日志 + 指标
+            # 调用记录：日志 + 指标；LEARNING_MODEL_CALL_LOG=1 时另经有界队列异步批量写库（单独的小连接池，不占业务池）
+            if settings.model_call_log:
+                if call_log_pool is None:
+                    own_call_log_pool = await asyncpg.create_pool(settings.database_url, min_size=0, max_size=CALL_LOG_POOL_SIZE)
+                call_log_sink = metrics.db_sink(call_log_pool or own_call_log_pool)
+                call_log_sink.start()
+            try:
+                state["router"] = ModelRouter.from_config(load_for_deployment(), sink=metrics.router_sink(call_log_sink))
+            except BaseException:
+                if call_log_sink is not None:
+                    await call_log_sink.aclose(0.1)
+                if own_call_log_pool is not None:
+                    await own_call_log_pool.close()
+                raise
+        state["call_log"] = call_log_sink
         # 就绪探针（LT-03）：上面的启动前置全部通过之后才放进连接池；/readyz 只看它在不在、能不能 SELECT 1
         state["ready_pool"] = p
         try:
@@ -330,6 +370,10 @@ def create_app(
             state.pop("ready_pool", None)
             if own_router:
                 await state["router"].aclose()
+            if call_log_sink is not None:
+                await call_log_sink.aclose(CALL_LOG_CLOSE_SECONDS)  # 退出时尽力刷写，写不完的计丢弃
+            if own_call_log_pool is not None:
+                await own_call_log_pool.close()
             await client.aclose()
             if own_lock_pool and lock_pool is not None:
                 await lock_pool.close()

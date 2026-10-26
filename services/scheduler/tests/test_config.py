@@ -27,7 +27,12 @@ def test_default_schedule_matches_spec():
         "spot-check": ("daily 02:30", "scheduler", "insight.scheduled", "spot-check"),
         "metrics": ("daily 03:20", "insight", "insight.jobs", "metrics"),
         "weekly": ("weekly mon 03:00", "insight", "insight.jobs", "weekly"),
+        "model-call-purge": ("daily 04:10", "scheduler", "insight.scheduled", "model-call-purge"),
     }
+    # 模型调用记录留存删除（0060，specs/plt-model-call-log）：调度器身份、每批 1000、不补跑；合成时间表里的默认值，签字后才在 staging 启用
+    p = cfg.jobs["model-call-purge"]
+    assert p.args == ("model-call-purge", "--batch", "1000") and p.extra_env == () and p.catch_up is False
+    assert "待人签字" in DOC["jobs"]["model-call-purge"]["$comment"] and "0060" in DOC["jobs"]["model-call-purge"]["$comment"]
     # 中圈指标静默重算（SIE-05）：insight 身份、全部学生、只带判断策略变量，不补跑
     m = cfg.jobs["metrics"]
     # 定时作业暂不重算学习持续性（与迁移 0025 的关系待人确认）：参数校验放行这组参数
@@ -61,6 +66,10 @@ def bad(mut) -> None:
     lambda d: d["jobs"]["metrics"].update(args=["sync", "--all"]),               # 放行 metrics 不等于放行 sync
     lambda d: d["jobs"]["metrics"].update(args=["admission-recompute"]),
     lambda d: d["jobs"]["metrics"].update(identity="scheduler"),                 # 指标重算只授 insight 身份
+    lambda d: d["jobs"]["model-call-purge"].update(identity="insight"),          # 调用记录留存删除只授调度器身份（0060）
+    lambda d: d["jobs"]["model-call-purge"].update(identity="learning"),
+    lambda d: d["jobs"]["model-call-purge"].update(catch_up=True),
+    lambda d: d["jobs"]["model-call-purge"].update(args=["model-call-purge", "--batch", "1000; rm"]),
     lambda d: d["jobs"]["metrics"].update(identity="learning"),
     lambda d: d["jobs"]["metrics"].update(catch_up=True),                        # 只有周报可以启动补跑
     lambda d: d["jobs"]["metrics"].update(env=["INSIGHT_DATABASE_URL"]),
@@ -103,7 +112,7 @@ def test_identity_table_is_fixed():
     }
     # 子命令按身份固定：insight 放行 sweep、weekly 与中圈指标 metrics（SIE-05）；sync、admission-recompute、serve 等仍不放行
     assert {i.name: i.commands for i in IDENTITIES.values()} == {
-        "scheduler": frozenset({"meter-expire", "meter-renew", "erasures", "freeze", "spot-check"}),
+        "scheduler": frozenset({"meter-expire", "meter-renew", "erasures", "freeze", "spot-check", "model-call-purge"}),
         "insight": frozenset({"sweep", "weekly", "metrics"}),
         "learning": frozenset({"mastery-sweep"}),
         "kge": frozenset({"expire-affairs"}),

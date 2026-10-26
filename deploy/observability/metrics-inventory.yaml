@@ -22,6 +22,9 @@ services:
     - starbuddy_model_budget_remaining_calls
     - starbuddy_model_budget_remaining_ratio
     - starbuddy_model_budget_remaining_tokens
+    - starbuddy_model_call_log_dropped_total
+    - starbuddy_model_call_log_failed_total
+    - starbuddy_model_call_log_written_total
     - starbuddy_model_estimated_cost_cny_total
     - starbuddy_model_provider_calls_total
     - starbuddy_model_route_calls_total

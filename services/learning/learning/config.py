@@ -46,6 +46,10 @@
                                  /internal/v1/today 只读、响应与 PLT-11 逐字段一致）；1 = 当天首次读取冻结快照、每条带 task_id，
                                  同日再读返回同一批（写 platform.today_plan_item，启动时核对迁移 0055 已执行）。其他取值拒绝启动；
                                  设了 1 就必须设 LEARNING_TODAY_CONFIG
+  模型调用记录落库（specs/plt-model-call-log，迁移 0060）：
+  LEARNING_MODEL_CALL_LOG        不设或 0 = 关（缺省：调用记录只写结构化日志与指标，与之前一致）；1 = 另经有界队列异步批量写
+                                 platform.model_call_log（单独的小连接池；启动时核对迁移 0060 已执行、当前登录角色对写入列有 INSERT 权限，
+                                 否则拒绝启动）。队列满或写库失败只丢弃并计数告警，不影响路由结果。其他取值拒绝启动
   题面来源（PLT-12，specs/present-item-contract）：
   LEARNING_PRESENT_ITEM_SOURCE   synthetic（缺省：诊断与再练用合成题面，行为与之前逐字节一致）| adapter（经适配器 present_item，
                                  插件契约 1.1.0 候选版；只在 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1 时允许，否则拒绝启动）。只换题面来源：
@@ -144,6 +148,8 @@ class Settings:
     # 指标监听端口（LT-05 决定记录（续）第 5 条）：同一地址上只服务 GET /metrics；staging 缺省 9788（LEARNING_METRICS_PORT 可改），
     # dev、test 只在设了时起；不能与主监听、回环路由监听同端口
     metrics_port: int | None = None
+    # 模型调用记录落库（迁移 0060）：缺省关；打开时调用记录另写 platform.model_call_log（有界队列异步批量）
+    model_call_log: bool = False
 
     @staticmethod
     def from_env(environ: dict[str, str] | None = None) -> "Settings":
@@ -250,6 +256,9 @@ class Settings:
         today_cfg = e.get("LEARNING_TODAY_CONFIG") or None
         if snapshot_raw == "1" and not today_cfg:
             raise RuntimeError("LEARNING_TODAY_SNAPSHOT=1 冻结的是今日编排的结果：必须同时设 LEARNING_TODAY_CONFIG")
+        call_log_raw = e.get("LEARNING_MODEL_CALL_LOG", "")
+        if call_log_raw not in ("", "0", "1"):
+            raise RuntimeError("LEARNING_MODEL_CALL_LOG 只能不设、0 或 1")
         route_port = _route_port(e.get("LEARNING_ROUTE_PORT"), e.get("PORT"), env)
         from .obs import metrics_port  # noqa: PLC0415
         main_port = int(e["PORT"]) if (e.get("PORT") or "").isdigit() else 8788
@@ -264,7 +273,7 @@ class Settings:
                         practice_presenter=practice_presenter, practice_ticket_secret=practice_secret,
                         present_item_source=present_source, retest_config=retest_cfg,
                         today_config=today_cfg, today_snapshot=snapshot_raw == "1", host=host, route_port=route_port,
-                        metrics_port=mport)
+                        metrics_port=mport, model_call_log=call_log_raw == "1")
 
 
 def _route_port(raw: str | None, main_raw: str | None, env: str) -> int | None:

@@ -124,11 +124,14 @@ SELECT t.ok(NOT EXISTS (
 SELECT t.ok((SELECT count(*) FROM pg_proc p WHERE p.proowner = 'starbuddy_eraser'::regrole) = 1
             AND NOT EXISTS (SELECT 1 FROM pg_class c WHERE c.relowner = 'starbuddy_eraser'::regrole),
             '攻击面：删除执行身份 eraser 只拥有删除执行函数一个对象');
--- 只有删除执行函数能删个人层清单里的表：其他函数体里不能出现对清单表的 DELETE，也不能有拼表名的动态 DELETE（SIE-03 安全审查）
+-- 只有删除执行函数能删个人层清单里的表：其他函数体里不能出现对清单表的 DELETE，也不能有拼表名的动态 DELETE（SIE-03 安全审查）。
+-- 唯一例外（0060）：模型调用记录的留存删除 platform.model_call_log_purge 只删它自己那张表里 180 天前的行（不按学生删，只授调度器）
 SELECT t.ok(NOT EXISTS (
   SELECT 1 FROM pg_proc p, platform.personal_table_registry g
    WHERE p.pronamespace IN (SELECT t.app_schemas()) AND p.oid <> 'platform.execute_due_erasures(timestamptz)'::regprocedure
      AND g.strategy = 'delete'
+     AND NOT (p.oid = 'platform.model_call_log_purge(timestamptz, integer)'::regprocedure AND g.nspname = 'platform'
+              AND g.relname = 'model_call_log')
      AND (p.prosrc ~* ('delete\s+from\s+(only\s+)?"?' || g.nspname || '"?\s*\.\s*"?' || g.relname || '"?(\s|;|$)')
           OR p.prosrc ~* 'delete\s+from\s+%[is]')),
   '攻击面：除删除执行函数外，没有函数删除个人层清单里的表');

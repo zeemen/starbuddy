@@ -34,6 +34,7 @@ SCHEDULER_ENV=dev <各身份的变量> .venv/bin/python -m scheduler            
 | spot-check | daily 02:30 | scheduler | `insight.scheduled spot-check`（`platform.review_sample_spot_checks`，比例 0.1，回看 26 小时） |
 | metrics | daily 03:20（频率待人确认，SIE-05） | insight | `insight.jobs metrics --all --skip persistence`（中圈指标静默重算，只写 agent 可见的指标判断；暂不重算学习持续性，与迁移 0025 的关系待人确认） |
 | weekly | weekly mon 03:00（启动时补跑一次） | insight | `insight.jobs weekly`（上一周的周报） |
+| model-call-purge | daily 04:10（默认值，待人签字） | scheduler | `insight.scheduled model-call-purge --batch 1000`（`platform.model_call_log_purge`，迁移 0060：只删 180 天前的模型调用记录，每批一个事务，一批不满即停；到了批次上限退出码 1、下一轮接着删；只删行不删分区）。staging 只收签字时间表，写进 `schedule.signed.yaml` 才启用 |
 
 表达式：`every <N>m`（N 整除 1440）、`hourly[ :MM]`、`daily HH:MM`、`weekly <周几> HH:MM`。
 
@@ -41,7 +42,7 @@ SCHEDULER_ENV=dev <各身份的变量> .venv/bin/python -m scheduler            
 
 | 身份 | 可调用的子命令 | 运行环境变量 | 连接串变量 | 可声明的附加变量（显式白名单） | 子进程“拒绝”退出码 |
 |---|---|---|---|---|---|
-| scheduler | meter-expire、meter-renew、erasures、freeze、spot-check | `SCHEDULER_ENV` | `SCHEDULER_DATABASE_URL`（登录角色只继承 starbuddy_scheduler） | 无 | 2 |
+| scheduler | meter-expire、meter-renew、erasures、freeze、spot-check、model-call-purge | `SCHEDULER_ENV` | `SCHEDULER_DATABASE_URL`（登录角色只继承 starbuddy_scheduler） | 无 | 2 |
 | insight | sweep、weekly、metrics | `INSIGHT_ENV` | `INSIGHT_DATABASE_URL` | `INSIGHT_POLICY`、`INSIGHT_WEEKLY_POLICY`、`INSIGHT_WEEKLY_CHECK` | 2 |
 | learning | mastery-sweep | `LEARNING_ENV` | `LEARNING_DATABASE_URL` | 前缀 `LEARNING_MASTERY_CONFIG_*` | 2 |
 | kge | expire-affairs | `REVIEW_CONSOLE_ENV` | `REVIEW_CONSOLE_KGE_DATABASE_URL` | 无 | 1、2 |

@@ -32,7 +32,7 @@ const SERVICES = new Set(['bff']);
 export const ENUMS: Record<'subject' | 'task' | 'provider' | 'outcome', ReadonlySet<string>> = {
   subject: new Set(['aya', 'zhixing', 'wenli', 'echo', 'other']),
   task: new Set(['T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'meter-expire', 'meter-renew', 'erasures', 'freeze', 'sweep',
-    'mastery-sweep', 'expire-affairs', 'spot-check', 'metrics', 'weekly', 'other']),
+    'mastery-sweep', 'expire-affairs', 'spot-check', 'metrics', 'weekly', 'model-call-purge', 'other']),
   provider: new Set(['bailian', 'ark', 'fake-a', 'fake-b', 'fake-x', 'other']),
   outcome: new Set(['ok', 'other', 'unavailable', 'rejected', 'budget_exceeded', 'error', 'timeout', 'rate_limited', 'server', 'auth',
     'client', 'bad_response', 'skipped_breaker_open', 'allowed', 'sealed', 'partial', 'refused', 'crashed', 'bad_output', 'lock_error',

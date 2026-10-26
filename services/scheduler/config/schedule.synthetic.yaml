@@ -52,6 +52,14 @@ jobs:
     schedule: daily 02:30
     identity: scheduler
     args: [spot-check, --subject, aya, --subject, zhixing, --subject, wenli, --ratio, "0.1", --lookback-hours, "26"]
+  model-call-purge:
+    $comment: >-
+      模型调用记录留存删除（platform.model_call_log_purge，迁移 0060；specs/plt-model-call-log 决定记录第 1 条）：只删 180 天前的行，
+      每批 1000 行一个事务，一批不满即停；到了批次上限退出码 1，下一轮接着删。每日 04:10 为默认值，待人签字：本文件是合成时间表，
+      只在 dev / test 生效；staging 只收签字时间表（schedule.signed.yaml），签字前不启用（0060 也须先由人执行）。
+    schedule: daily 04:10
+    identity: scheduler
+    args: [model-call-purge, --batch, "1000"]
   metrics:
     $comment: >-
       中圈指标静默重算（insight.jobs metrics --all → jobs.recompute_metrics；SIE-05，specs/sie05-silent-metrics）：结果只写

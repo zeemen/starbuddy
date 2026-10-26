@@ -435,13 +435,15 @@ def test_cli_dry_run_lists_plan_without_values(capsys):
     rc, out, err = _cli(["--dry-run"], FULL_ENV, capsys)
     assert rc == 0, err
     plans = [json.loads(ln) for ln in out.splitlines()]
-    assert len(plans) == 10 and all(p["event"] == "plan" and len(p["next"]) == 3 for p in plans)
+    assert len(plans) == 11 and all(p["event"] == "plan" and len(p["next"]) == 3 for p in plans)  # 0060 起含调用记录留存删除
     for v in ("/tmp", "localhost", "127.0.0.1", "/synthetic/", "synthetic", "/opt/evil"):
         assert v not in out
     by = {p["job"]: p for p in plans}
     assert by["mastery-sweep"]["env"] == sorted(set(BASE_ENV) | {"LEARNING_ENV", "LEARNING_DATABASE_URL", "LEARNING_MASTERY_CONFIG_AYA"})
     assert by["weekly"]["next"][0].endswith("03:00:00+08:00")
     assert by["metrics"]["next"][0].endswith("03:20:00+08:00")
+    assert by["model-call-purge"]["next"][0].endswith("04:10:00+08:00")
+    assert by["model-call-purge"]["env"] == sorted(set(BASE_ENV) | {"SCHEDULER_ENV", "SCHEDULER_DATABASE_URL"})
     assert by["metrics"]["env"] == sorted(set(BASE_ENV) | {"INSIGHT_ENV", "INSIGHT_DATABASE_URL", "INSIGHT_POLICY"})
 
 

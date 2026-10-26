@@ -455,6 +455,7 @@ kubectl -n starbuddy-staging get svc,networkpolicy,pvc
 | `model_provider` | `daofa`、`chinese_grading` | **模型供应商开通**：按 `deploy/config/README.md` 第 7 节由人完成开通、协议与登记、填写快照名与 `allowed_hosts`、批准后改 `approved`；建 `starbuddy-model-vendors` 并解开清单里的接线行；IaC 填 `model_egress_fqdns` 并完成第 1 节阶段 D；学习服务 Pod 加 443 出网策略（写法见清单注释） | 模型路由接口 503 `ROUTE_UNAVAILABLE`，道法判分推理与作文批改不可用；超限时 503 且 `detail` 为 `ROUTE_BUDGET_EXCEEDED` |
 | `human` | `chinese_grading` | 由人确认语文“只开批改”的口径（没有专门开关，靠选科与内容范围约束） | 文砺的 diagnose / plan 照常可用 |
 | `migration_0059` | `internal_test_ops` | 副本演练后在主实例执行 0059（LT-06 问题反馈表、退出记录表与库函数）；之后由人决定是否把 BFF、前端的 `STARBUDDY_INTERNAL_TEST` 与审核台后端的 `REVIEW_CONSOLE_INTERNAL_TEST` 一起设为 `internal_test`（步骤见 `docs/ops/internal-test-runbook.md`） | 三处都不设：没有问题反馈、退出测试入口与审核台的反馈、退出状态页（路由不注册，404）；BFF 不做退出判断 |
+| `migration_0060` | `model_call_log` | 副本演练后在主实例执行 0060（模型调用记录表 `platform.model_call_log`、聚合函数 `platform.model_call_stats` 与留存删除函数，specs/plt-model-call-log）；之后由人决定是否把学习服务的 `LEARNING_MODEL_CALL_LOG` 设为 `1`（启动时核对 0060 与 INSERT 权限，不过拒绝启动），并把留存删除任务 `model-call-purge` 写进签字时间表 `schedule.signed.yaml`；打开后看 `starbuddy_model_call_log_written_total` 增长，告警 `StarbuddyModelCallLogWriteFailed`、`StarbuddyModelCallLogDropped` 不响 | 不设：调用记录只写结构化日志与指标（与之前一致），没有可对账的库内记录；运营与成本导出读不到 `platform.model_call_stats` 的数据 |
 
 - `model_provider` 解除后的验证（由人在有凭据的 staging 执行环境，限次）：`make model-smoke SMOKE_ENV=staging MAX_CALLS=5`（只打印状态、耗时、token 与快照名是否一致）；
   点点人设回归按 `evals/persona/README.md` 的 staging 步骤（`compare.py` 必须显式给 `--max-calls`），并跑 `make eval-persona`。

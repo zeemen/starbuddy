@@ -45,6 +45,7 @@ services:
       - {name: LEARNING_RETEST_CONFIG, purpose: 复测配置（同上）, secret: false, default: null, envs: all}
       - {name: LEARNING_TODAY_CONFIG, purpose: 今日编排配置（同上）, secret: false, default: null, envs: all}
       - {name: LEARNING_TODAY_SNAPSHOT, purpose: 今日计划快照 0/1, secret: false, default: "0", envs: all}
+      - {name: LEARNING_MODEL_CALL_LOG, purpose: 模型调用记录落库 0/1（迁移 0060；打开时启动核对表与 INSERT 权限）, secret: false, default: "0", envs: all}
       - {name: LEARNING_DIAGNOSIS_PRESENTER, purpose: 合成题面（只 test）, secret: false, default: null, envs: local}
       - {name: LEARNING_DIAGNOSIS_SOURCE, purpose: fixture（只 test）或 knowledge, secret: false, default: fixture, envs: all}
       - {name: LEARNING_DIAGNOSIS_TARGETS, purpose: knowledge 模式的目标节点, secret: false, default: null, envs: all}

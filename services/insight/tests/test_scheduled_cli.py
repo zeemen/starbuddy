@@ -63,7 +63,9 @@ def test_non_local_url_refused_before_connect(url, no_connect, capsys):
                                   ["spot-check", "--subject", "aya", "--ratio", "0.1", "--lookback-hours", "0"],
                                   ["spot-check", "--subject", "aya", "--ratio", "0.1", "--lookback-hours", "745"],
                                   ["spot-check", "--subject", "aya", "--ratio", "0.1", "--since", "2026-10-01T00:00:00"],
-                                  ["spot-check", "--subject", "aya", "--ratio", "0.1", "--since", "not-a-time"]])
+                                  ["spot-check", "--subject", "aya", "--ratio", "0.1", "--since", "not-a-time"],
+                                  ["model-call-purge", "--batch", "0"], ["model-call-purge", "--batch", "10001"],
+                                  ["model-call-purge", "--max-batches", "0"]])
 def test_bad_arguments(argv, no_connect, capsys):
     assert scheduled.main(argv, GOOD) == 2
     err = capsys.readouterr().err
@@ -115,6 +117,31 @@ async def test_meter_loop_semantics():
     c = FakeConn([7])
     assert await scheduled.sample_spot_checks(c, "wenli", 0.25, lookback_hours=26) == 7
     assert c.calls[0][1] == ("wenli", None, 26, 0.25)
+
+
+@pytest.mark.anyio
+async def test_model_call_purge_loop_semantics():
+    """调用记录留存删除（0060，specs/plt-model-call-log）：时钟取数据库 now()、批量由调用方给，一批不满即停；到了上限 more_due"""
+    c = FakeConn([1000, 1000, 5])
+    assert await scheduled.purge_model_calls(c) == (2005, 3, False)
+    assert all(sql == "SELECT platform.model_call_log_purge(now(), $1::integer)" and args == (1000,) for sql, args in c.calls)
+    c = FakeConn([3, 3, 3])
+    assert await scheduled.purge_model_calls(c, 3, max_batches=2) == (6, 2, True)
+    assert await scheduled.purge_model_calls(FakeConn([0]), 10) == (0, 1, False)
+    with pytest.raises(scheduled.SchedulerRoleError):
+        await scheduled.purge_model_calls(FakeConn([5], role_ok=False))
+    for bad in (0, 10_001):
+        with pytest.raises(ValueError):
+            await scheduled.purge_model_calls(FakeConn([]), bad)
+
+
+def test_model_call_purge_more_due_exit_code(monkeypatch, capsys):
+    async def fake_run(a, url, env=None):
+        assert a.cmd == "model-call-purge" and a.batch == 1000 and a.max_batches == 10_000
+        return {"job": "model-call-purge", "purged": 2000, "batches": 2, "more_due": True}
+    monkeypatch.setattr(scheduled, "_run", fake_run)
+    assert scheduled.main(["model-call-purge"], GOOD) == 1
+    assert json.loads(capsys.readouterr().out)["purged"] == 2000
 
 
 def test_more_due_exit_code(monkeypatch, capsys):
@@ -173,6 +200,38 @@ def test_scheduled_cli_on_local_db(scheddb):
     # 登录角色不是只继承 starbuddy_scheduler：拒绝执行，不带消息原文
     bad = _run("insight.scheduled", "meter-expire", env={**env, "SCHEDULER_DATABASE_URL": _url(db, APP_ROLE)})
     assert bad.returncode == 2 and "执行失败" in bad.stderr and "Traceback" not in bad.stderr
+
+
+MCL_ROW = ("INSERT INTO platform.model_call_log (occurred_at, env, task, data_class, source_version, outcome, attempt_count, fallback,"
+           " attempt_statuses, input_tokens, output_tokens, elapsed_ms, model_mismatch, usage_ref, idempotency_ref)"
+           " VALUES (now() - interval '{age}', 'test', 'T2', 'L1', 'invalid', 'rejected', 0, false, '{{}}', 0, 0, 1, false,"
+           " left(md5('{ref}'), 16), left(md5('idem-{ref}'), 16));")
+
+
+def test_model_call_purge_on_local_db(scheddb):
+    """调用记录留存删除（0060）：只删 180 天前的行、按批；到了批次上限退出码 1、下一轮接着删；输出只有计数"""
+    db = scheddb
+    env = {"SCHEDULER_ENV": "test", "SCHEDULER_DATABASE_URL": _url(db, SCHED_ROLE)}
+    db.psql("SELECT platform.ensure_monthly_partitions('platform.model_call_log', (now() - interval '200 days')::date, 8);"
+            + MCL_ROW.format(age="200 days", ref="syn-purge-old-1") + MCL_ROW.format(age="190 days", ref="syn-purge-old-2")
+            + MCL_ROW.format(age="179 days", ref="syn-purge-keep-1") + MCL_ROW.format(age="1 hour", ref="syn-purge-keep-2"))
+    try:
+        p = _run("insight.scheduled", "model-call-purge", "--batch", "1", "--max-batches", "1", env=env)
+        assert p.returncode == 1, p.stderr
+        assert json.loads(p.stdout) == {"job": "model-call-purge", "purged": 1, "batches": 1, "more_due": True}
+        p = _run("insight.scheduled", "model-call-purge", "--batch", "1", env=env)
+        assert p.returncode == 0, p.stderr
+        assert json.loads(p.stdout) == {"job": "model-call-purge", "purged": 1, "batches": 2, "more_due": False}
+        assert not UUID_ANY.search(p.stdout) and len(p.stdout.splitlines()) == 1
+        left = db.psql("SELECT string_agg(usage_ref, ',' ORDER BY occurred_at) FROM platform.model_call_log"
+                       " WHERE usage_ref IN (left(md5('syn-purge-keep-1'), 16), left(md5('syn-purge-keep-2'), 16),"
+                       " left(md5('syn-purge-old-1'), 16), left(md5('syn-purge-old-2'), 16))").strip()
+        assert left == db.psql("SELECT left(md5('syn-purge-keep-1'), 16) || ',' || left(md5('syn-purge-keep-2'), 16)").strip()
+        p = _run("insight.scheduled", "model-call-purge", env=env)
+        assert p.returncode == 0 and json.loads(p.stdout)["purged"] == 0, p.stderr
+    finally:
+        db.psql("DELETE FROM platform.model_call_log WHERE usage_ref IN (left(md5('syn-purge-keep-1'), 16), left(md5('syn-purge-keep-2'), 16),"
+                " left(md5('syn-purge-old-1'), 16), left(md5('syn-purge-old-2'), 16));")
 
 
 # ---------------------------------------------------------------- insight.jobs weekly

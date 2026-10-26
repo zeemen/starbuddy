@@ -223,6 +223,18 @@ BEGIN
   PERFORM t.p_bff(acct, format('SELECT platform.meter_settle(%L, 1)::text', v_usage));
   v_out := t.p_bff(acct, format('SELECT platform.meter_practice(%L, %L)::text', s, gen_random_uuid()))::jsonb;
   PERFORM t.ok(v_out ->> 'outcome' = 'allowed', format('学生 %s：经 meter_practice 记一次自练（%s）', p_n, v_out));
+  -- ---- 模型调用记录（0060，决定记录（续）第 4 条）：学习服务（starbuddy_learning）按列级授权写两条，usage_ref 分别是上面这次预留与
+  -- 这次自练计次的 usage_id 摘要（与学习服务 ledger.digest 同一口径）；表里没有学生键，删除按谓词经计量记录重算摘要匹配
+  PERFORM t.m_as('starbuddy_learning', NULL, format($f$WITH i AS (INSERT INTO platform.model_call_log (occurred_at, env, task, data_class, subject,
+      vendor, model, model_release, model_version, prompt_template, prompt_version, source_version, outcome, attempt_count, fallback, attempt_statuses,
+      input_tokens, output_tokens, elapsed_ms, model_mismatch, usage_ref, idempotency_ref) VALUES
+      (now(), 'test', 'T2', 'L2', 'aya', 'fake-a', 'fake-chat', '2026-09-01', 'model:fake-a/fake-chat@2026-09-01', 'syn-coverage', '1',
+       'prompt:syn-coverage@1', 'ok', 1, false, '{ok}', 10, 5, 12, false, %L, %L),
+      (now(), 'test', 'T1', 'L2', 'aya', NULL, NULL, NULL, NULL, 'syn-coverage', '1', 'prompt:syn-coverage@1', 'rejected', 0, false, '{}', 0, 0, 1,
+       false, %L, %L)) SELECT 'ok'$f$,
+      left(encode(sha256(convert_to(v_usage::text, 'UTF8')), 'hex'), 16), left(encode(sha256(convert_to('mcl-idem-1-' || p_token, 'UTF8')), 'hex'), 16),
+      (SELECT left(encode(sha256(convert_to(pl.usage_id::text, 'UTF8')), 'hex'), 16) FROM platform.practice_log pl WHERE pl.student_id = s),
+      left(encode(sha256(convert_to('mcl-idem-2-' || p_token, 'UTF8')), 'hex'), 16)));
   -- ---- 洞察层（starbuddy_insight）：判断（含撤回，产生判断历史）、动作记录
   PERFORM t.m_as('starbuddy_insight', NULL, format($f$INSERT INTO insight.claim (id, student_id, subject, target_type, target_id, template_key,
       template_version, value, confidence, evidence_ids, source_type, status, change_reason, visibility, expires_at) VALUES
@@ -406,6 +418,19 @@ SELECT receipt::text AS receipt, scopes::text AS scopes FROM platform.erasure_re
 SELECT t.ok((SELECT count(*) FROM jsonb_each(t.p_counts(:X1::uuid, 'delete')) e WHERE e.value::int <> 0) = 0,
             '学生 X1 在清单全部 delete 表零行（非零：' || coalesce((SELECT string_agg(e.key, '、') FROM jsonb_each(t.p_counts(:X1::uuid, 'delete')) e
                                                                   WHERE e.value::int <> 0), '无') || '）');
+-- 模型调用记录（0060）：表里没有学生键，按计量记录的 usage_id 摘要直接核对（不经清单谓词）：X1 的两条已删，兄弟姐妹 X2 的两条还在
+SELECT t.ok(NOT EXISTS (SELECT 1 FROM platform.model_call_log l
+                         WHERE l.usage_ref IN (SELECT left(encode(sha256(convert_to(r.usage_id::text, 'UTF8')), 'hex'), 16)
+                                                 FROM platform.usage_reservation r WHERE r.student_id = :X1
+                                               UNION SELECT left(encode(sha256(convert_to(p.usage_id::text, 'UTF8')), 'hex'), 16)
+                                                 FROM platform.practice_log p WHERE p.student_id = :X1))
+            AND (SELECT count(*) FROM platform.model_call_log l
+                  WHERE l.usage_ref IN (SELECT left(encode(sha256(convert_to(r.usage_id::text, 'UTF8')), 'hex'), 16)
+                                          FROM platform.usage_reservation r WHERE r.student_id = :X2
+                                        UNION SELECT left(encode(sha256(convert_to(p.usage_id::text, 'UTF8')), 'hex'), 16)
+                                          FROM platform.practice_log p WHERE p.student_id = :X2)) = 2
+            AND (:'receipt'::jsonb ->> 'platform.model_call_log')::int = 2,
+            '模型调用记录：学生 X1 预留与自练计次对应的两条已删（回执记 2 行），兄弟姐妹 X2 的两条还在（计量记录本身是豁免，保留）');
 SELECT t.q_mentions(:'x1_ids'::text[]) AS x1_ids_after, t.q_mentions(:'x1_content'::text[]) AS x1_content_after \gset
 SELECT t.ok(:'x1_content_after'::jsonb = '{}', '全库扫描：执行后学生 X1 的内容标记（文本、幂等键、令牌与摘要、手机号）全库零处（残留：'
             || coalesce((SELECT string_agg(k, '、') FROM jsonb_object_keys(:'x1_content_after'::jsonb) k), '无') || '）');

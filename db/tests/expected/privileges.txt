@@ -305,6 +305,32 @@ col|platform.mastery_estimate.student_id|starbuddy_authz|SELECT|SUPERUSER
 col|platform.mastery_estimate.student_id|starbuddy_eraser|SELECT|SUPERUSER
 col|platform.mastery_estimate.superseded_at|starbuddy_learning|UPDATE|SUPERUSER
 col|platform.mastery_estimate.superseded_by|starbuddy_learning|UPDATE|SUPERUSER
+col|platform.model_call_log.attempt_count|starbuddy_learning|INSERT|SUPERUSER
+col|platform.model_call_log.attempt_statuses|starbuddy_learning|INSERT|SUPERUSER
+col|platform.model_call_log.data_class|starbuddy_learning|INSERT|SUPERUSER
+col|platform.model_call_log.elapsed_ms|starbuddy_learning|INSERT|SUPERUSER
+col|platform.model_call_log.env|starbuddy_learning|INSERT|SUPERUSER
+col|platform.model_call_log.estimated_cost_cny|starbuddy_learning|INSERT|SUPERUSER
+col|platform.model_call_log.fallback|starbuddy_learning|INSERT|SUPERUSER
+col|platform.model_call_log.idempotency_ref|starbuddy_learning|INSERT|SUPERUSER
+col|platform.model_call_log.input_tokens|starbuddy_learning|INSERT|SUPERUSER
+col|platform.model_call_log.model_mismatch|starbuddy_learning|INSERT|SUPERUSER
+col|platform.model_call_log.model_release|starbuddy_learning|INSERT|SUPERUSER
+col|platform.model_call_log.model_version|starbuddy_learning|INSERT|SUPERUSER
+col|platform.model_call_log.model|starbuddy_learning|INSERT|SUPERUSER
+col|platform.model_call_log.occurred_at|starbuddy_learning|INSERT|SUPERUSER
+col|platform.model_call_log.outcome|starbuddy_learning|INSERT|SUPERUSER
+col|platform.model_call_log.output_tokens|starbuddy_learning|INSERT|SUPERUSER
+col|platform.model_call_log.prompt_template|starbuddy_learning|INSERT|SUPERUSER
+col|platform.model_call_log.prompt_version|starbuddy_learning|INSERT|SUPERUSER
+col|platform.model_call_log.source_version|starbuddy_learning|INSERT|SUPERUSER
+col|platform.model_call_log.subject|starbuddy_learning|INSERT|SUPERUSER
+col|platform.model_call_log.task|starbuddy_learning|INSERT|SUPERUSER
+col|platform.model_call_log.usage_ref|starbuddy_eraser|SELECT|SUPERUSER
+col|platform.model_call_log.usage_ref|starbuddy_learning|INSERT|SUPERUSER
+col|platform.model_call_log.vendor|starbuddy_learning|INSERT|SUPERUSER
+col|platform.practice_log.student_id|starbuddy_eraser|SELECT|SUPERUSER
+col|platform.practice_log.usage_id|starbuddy_eraser|SELECT|SUPERUSER
 col|platform.profile_page.check_status|starbuddy_authz|SELECT|SUPERUSER
 col|platform.profile_page.check_status|starbuddy_bff|SELECT|SUPERUSER
 col|platform.profile_page.check_status|starbuddy_learning|UPDATE|SUPERUSER
@@ -436,7 +462,9 @@ col|platform.usage_reservation.source_method|starbuddy_bff|SELECT|SUPERUSER
 col|platform.usage_reservation.state|starbuddy_authz|UPDATE|SUPERUSER
 col|platform.usage_reservation.state|starbuddy_bff|SELECT|SUPERUSER
 col|platform.usage_reservation.student_id|starbuddy_bff|SELECT|SUPERUSER
+col|platform.usage_reservation.student_id|starbuddy_eraser|SELECT|SUPERUSER
 col|platform.usage_reservation.usage_id|starbuddy_bff|SELECT|SUPERUSER
+col|platform.usage_reservation.usage_id|starbuddy_eraser|SELECT|SUPERUSER
 col|policy.admission_line.batch_code|starbuddy_bff|SELECT|SUPERUSER
 col|policy.admission_line.id|starbuddy_bff|SELECT|SUPERUSER
 col|policy.admission_line.line_score|starbuddy_bff|SELECT|SUPERUSER
@@ -821,6 +849,10 @@ func|platform.meter_usage_id(text)|starbuddy_bff|EXECUTE|SUPERUSER
 func|platform.meter_uses_slots(text,platform.plan_tier)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.meter_uuidv5(uuid,text)|starbuddy_authz|EXECUTE|SUPERUSER
 func|platform.meter_uuidv5(uuid,text)|starbuddy_bff|EXECUTE|SUPERUSER
+func|platform.model_call_log_purge(timestamp with time zone,integer)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.model_call_log_purge(timestamp with time zone,integer)|starbuddy_scheduler|EXECUTE|starbuddy_authz
+func|platform.model_call_stats(date,date)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.model_call_stats(date,date)|starbuddy_report|EXECUTE|starbuddy_authz
 func|platform.pause_subject(uuid,platform.subject)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.pause_subject(uuid,platform.subject)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|platform.plan_config_lock_key(text)|starbuddy_authz|EXECUTE|SUPERUSER
@@ -1031,6 +1063,8 @@ owner|platform.meter_student_state(uuid)|starbuddy_authz
 owner|platform.meter_subject_limit(text)|starbuddy_authz
 owner|platform.meter_upgrade(uuid,platform.plan_tier)|starbuddy_authz
 owner|platform.meter_uses_slots(text,platform.plan_tier)|starbuddy_authz
+owner|platform.model_call_log_purge(timestamp with time zone,integer)|starbuddy_authz
+owner|platform.model_call_stats(date,date)|starbuddy_authz
 owner|platform.pause_subject(uuid,platform.subject)|starbuddy_authz
 owner|platform.policy_signoff_record()|starbuddy_authz
 owner|platform.profile_page_statement_v|starbuddy_authz
@@ -1333,6 +1367,9 @@ rel|platform.mastery_estimate|starbuddy_insight|SELECT|SUPERUSER
 rel|platform.mastery_estimate|starbuddy_learning|INSERT|SUPERUSER
 rel|platform.mastery_estimate|starbuddy_learning|SELECT|SUPERUSER
 rel|platform.meter_secret|starbuddy_authz|SELECT|SUPERUSER
+rel|platform.model_call_log|starbuddy_authz|DELETE|SUPERUSER
+rel|platform.model_call_log|starbuddy_authz|SELECT|SUPERUSER
+rel|platform.model_call_log|starbuddy_eraser|DELETE|SUPERUSER
 rel|platform.personal_table_registry|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.personal_table_registry|starbuddy_eraser|SELECT|SUPERUSER
 rel|platform.pilot_household|starbuddy_authz|SELECT|SUPERUSER
@@ -1507,6 +1544,7 @@ schema|platform|starbuddy_insight|USAGE|SUPERUSER
 schema|platform|starbuddy_kge_read|USAGE|SUPERUSER
 schema|platform|starbuddy_kge|USAGE|SUPERUSER
 schema|platform|starbuddy_learning|USAGE|SUPERUSER
+schema|platform|starbuddy_report|USAGE|SUPERUSER
 schema|platform|starbuddy_review|USAGE|SUPERUSER
 schema|platform|starbuddy_scheduler|USAGE|SUPERUSER
 schema|policy|starbuddy_authz|USAGE|SUPERUSER
@@ -1621,6 +1659,8 @@ secdef|platform.meter_student_state(uuid)
 secdef|platform.meter_subject_limit(text)
 secdef|platform.meter_upgrade(uuid,platform.plan_tier)
 secdef|platform.meter_uses_slots(text,platform.plan_tier)
+secdef|platform.model_call_log_purge(timestamp with time zone,integer)
+secdef|platform.model_call_stats(date,date)
 secdef|platform.pause_subject(uuid,platform.subject)
 secdef|platform.policy_signoff_record()
 secdef|platform.publish_content_version(uuid)

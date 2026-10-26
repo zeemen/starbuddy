@@ -108,8 +108,11 @@ SELECT t.ok(NOT EXISTS (
                       'starbuddy_authz']) r
    WHERE has_table_privilege(r, format('%I.%I', g.nspname, g.relname), 'DELETE')
      -- 既有例外（0006）：家长经 BFF 删除自己写的自由文本自述（RLS 限本人）
-     AND NOT (g.nspname = 'platform' AND g.relname = 'guardian_report' AND r = 'starbuddy_bff')),
-  '清单里的表，除 0006 家长删自己的自述外，任何应用角色（含函数属主 authz）都没有 DELETE（删除只经删除执行身份 eraser）');
+     AND NOT (g.nspname = 'platform' AND g.relname = 'guardian_report' AND r = 'starbuddy_bff')
+     -- 0060：模型调用记录的留存删除函数（属主 authz）只删 180 天前的行、不按学生删；按学生删仍只经 eraser
+     AND NOT (g.nspname = 'platform' AND g.relname = 'model_call_log' AND r = 'starbuddy_authz')),
+  '清单里的表，除 0006 家长删自己的自述、0060 调用记录留存删除（属主 authz）外，任何应用角色（含函数属主 authz）都没有 DELETE'
+  '（删除只经删除执行身份 eraser）');
 SELECT t.ok(NOT EXISTS (SELECT 1 FROM platform.personal_table_registry g
                          WHERE (g.strategy = 'delete') <> has_table_privilege('starbuddy_eraser', format('%I.%I', g.nspname, g.relname), 'DELETE')),
             '删除执行身份 eraser 恰好能删清单里的 delete 表，豁免表（含计量）一张都删不了');

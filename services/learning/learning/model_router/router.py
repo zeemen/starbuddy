@@ -24,6 +24,13 @@ _KEY = re.compile(r"^[A-Za-z0-9._:-]{8,128}$")
 _PROMPT = re.compile(r"^[a-z0-9][a-z0-9\-]{0,47}$")
 _PROMPT_VERSION = re.compile(r"^v?\d+(\.\d+){0,3}$")
 SOURCE_VERSION = re.compile(r"^prompt:[a-z0-9][a-z0-9\-]{0,47}@[A-Za-z0-9][A-Za-z0-9._\-]{0,31}$")
+# 调用记录里的提示词模板白名单（specs/plt-model-call-log 审查建议）：模板名是调用方自报的短串，不在登记表里的不进调用记录，
+# 免得借它往留存 180 天的记录里夹带数据。取值与提示词登记表 packages/personas/registry.yaml 的非人设 Prompt
+# （tasks[*].prompts[*].prompt_id）一致，外加学习服务冒烟脚本自己的 model-smoke（scripts/model_smoke.py，不进登记表）；
+# 两边一致由 tests/test_model_call_log.py 核对，登记表新增 Prompt 时同步这里。
+# 只影响调用记录：不在表里的请求照常路由，返回给调用方的 source_version 不变（插件契约字段与适配器行为都不变），
+# 调用记录里的 source_version 记 invalid、模板与版本两列为空。
+RECORDED_PROMPT_TEMPLATES = frozenset({"kge-compile-kp", "model-smoke", "wenli-essay-grade", "zhixing-m3-grade"})
 _SAFE_MODEL = re.compile(r"[^A-Za-z0-9._:/@-]")
 DEFAULT_DEADLINE_MS = 180_000  # 不传 deadline_ms 时的总时限（安全审查建议 10）
 BACKOFF_BASE = 0.2  # 秒；第 n 次重试前等 0.2 × 2^(n-1)，或供应商给的 Retry-After（上限 30 秒）
@@ -43,9 +50,11 @@ def egress_allowed(vendor: Vendor, data_class: DataClass, env: str) -> bool:
 class ModelRouter:
     def __init__(self, config: RouterConfig, providers: Mapping[str, Provider], *, sink: LedgerSink | None = None,
                  clock: Callable[[], float] = time.monotonic, sleep: Callable[[float], Awaitable[None]] | None = None,
-                 wall_clock: Callable[[], float] = time.time) -> None:
+                 wall_clock: Callable[[], float] = time.time,
+                 recorded_prompt_templates: frozenset[str] = RECORDED_PROMPT_TEMPLATES) -> None:
         check_invariants(config)
         self._cfg = config
+        self._recorded_templates = frozenset(recorded_prompt_templates)
         self._providers = dict(providers)
         self._sink = sink or LogSink()
         self._clock = clock
@@ -89,6 +98,9 @@ class ModelRouter:
     async def route(self, req: RouteRequest) -> RouteResult:
         started = self._clock()
         source_version = f"prompt:{req.prompt_template}@{req.prompt_version}"
+        # 调用记录用的 source_version：格式不合或模板不在白名单里记 invalid（返回给调用方的不变）
+        recorded_source = (source_version if SOURCE_VERSION.match(source_version) and req.prompt_template in self._recorded_templates
+                           else "invalid")
         attempts: list[Attempt] = []
         written = False
 
@@ -101,7 +113,7 @@ class ModelRouter:
                 env=self._cfg.env, task=req.task.value, data_class=req.data_class.value,
                 subject=req.subject if req.subject in SUBJECTS else None,
                 usage_ref=digest(req.usage_id or ""), idempotency_ref=digest(req.idempotency_key or ""),
-                source_version=source_version if SOURCE_VERSION.match(source_version) else "invalid",
+                source_version=recorded_source,
                 outcome=outcome, model_version=model_version, attempts=tuple(attempts),
                 input_tokens=usage.input_tokens, output_tokens=usage.output_tokens,
                 elapsed_ms=int((self._clock() - started) * 1000), model_mismatch=mismatch, reported_model=reported,

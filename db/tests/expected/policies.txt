@@ -135,6 +135,7 @@ platform.item|item_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=tr
 platform.mastery_estimate|mastery_insight_read|SELECT|starbuddy_insight|PERMISSIVE|using=true|check=-
 platform.mastery_estimate|mastery_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
 platform.mastery_estimate|mastery_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
+platform.model_call_log|model_call_log_learning_insert|INSERT|starbuddy_learning|PERMISSIVE|using=-|check=((occurred_at >= (now() - '1 day'::interval)) AND (occurred_at <= (now() + '00:05:00'::interval)))
 platform.plan_allowance|plan_allowance_read|SELECT|starbuddy_bff|PERMISSIVE|using=(EXISTS ( SELECT 1
    FROM platform.plan_config c
   WHERE (((c.version)::text = (plan_allowance.config_version)::text) AND (c.status <> 'draft'::text))))|check=-

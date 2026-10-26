@@ -11,7 +11,8 @@
       其余名字必须在 external 里；不收 {__name__=…} 这类绕开名字的写法
   O04 标签：starbuddy_* 指标的匹配器只用标签白名单（直方图另收 le）；external 指标与 by / without / on 只另收采集侧标签
       （namespace、pod、container、persistentvolumeclaim、job、instance）
-  O05 必备告警：服务不可用、就绪失败、5xx 率、p95 时延、模型熔断、护栏将满、计量回滚升高、计量 409 升高、复核积压、调度失败、证书、磁盘
+  O05 必备告警：服务不可用、就绪失败、5xx 率、p95 时延、模型熔断、护栏将满、计量回滚升高、计量 409 升高、复核积压、调度失败、证书、磁盘、
+      退出测试审计写失败、模型调用记录写库失败与队列丢弃
   O06 仪表盘（dashboards/*.json）：合法 JSON，有 title、uid（唯一）、panels；每个 target 有 expr；必备四个：总览、模型与成本、计量、学习链路
 用法：python3 check_observability.py [目录] [--promtool | --require-promtool]
   --promtool：promtool 在就另跑 promtool check rules（缺失打印“跳过”）；--require-promtool：缺失时退出码 3（CI 有工具时用）
@@ -44,7 +45,8 @@ REQUIRED_ALERTS = {
     "StarbuddyModelBreakerOpen": "模型熔断", "StarbuddyModelBudgetNearlyExhausted": "护栏将满", "StarbuddyMeterRollbackSpike": "计量回滚",
     "StarbuddyMeterConflictSpike": "计量 409", "StarbuddyReviewQueueBacklog": "复核积压", "StarbuddySchedulerJobFailed": "调度失败",
     "StarbuddyCertExpiringSoon": "证书", "StarbuddyDiskLow": "磁盘",
-    "StarbuddyStagingOtpRevokeAuditFailed": "退出测试作废白名单条目的审计写失败（LT-06）"}
+    "StarbuddyStagingOtpRevokeAuditFailed": "退出测试作废白名单条目的审计写失败（LT-06）",
+    "StarbuddyModelCallLogWriteFailed": "模型调用记录写库失败（PLT 调用记录落库）", "StarbuddyModelCallLogDropped": "模型调用记录队列满丢弃"}
 REQUIRED_DASHBOARDS = {"starbuddy-overview": "总览", "starbuddy-model-cost": "模型与成本", "starbuddy-metering": "计量",
                        "starbuddy-learning-pipeline": "学习链路"}
 

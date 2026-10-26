@@ -1459,6 +1459,64 @@ M+=(
   ["内测：删除身份能读反馈文本"]="GRANT SELECT (body) ON platform.feedback TO starbuddy_eraser;"
 )
 
+# PLT 模型调用记录落库（0060 platform.model_call_log，specs/plt-model-call-log 决定记录第 1、2 条）：由 79zh 发现（授权类的同时由 80 的快照发现；
+# 攻击面类只由 80 的定时任务函数矩阵发现，登记在下面的攻击面组）。DBMUT_FILTER=调用记录 只跑这一组
+MCS='platform.model_call_stats(date, date)'
+MCP='platform.model_call_log_purge(timestamp with time zone, integer)'
+mcl_policy() {  # $1 = 新的 WITH CHECK 条件
+  printf "DROP POLICY model_call_log_learning_insert ON platform.model_call_log; CREATE POLICY model_call_log_learning_insert ON platform.model_call_log FOR INSERT TO starbuddy_learning WITH CHECK (%s);" "$1"
+}
+M+=(
+  ["调用记录：学习服务能读"]="GRANT SELECT ON platform.model_call_log TO starbuddy_learning; CREATE POLICY t_mcl_read ON platform.model_call_log FOR SELECT TO starbuddy_learning USING (true);"
+  ["调用记录：学习服务能改"]="GRANT UPDATE (input_tokens) ON platform.model_call_log TO starbuddy_learning; CREATE POLICY t_mcl_upd ON platform.model_call_log FOR UPDATE TO starbuddy_learning USING (true) WITH CHECK (true);"
+  ["调用记录：学习服务能删"]="GRANT DELETE ON platform.model_call_log TO starbuddy_learning; CREATE POLICY t_mcl_del ON platform.model_call_log FOR DELETE TO starbuddy_learning USING (true);"
+  ["调用记录：学习服务能自填 recorded_at"]="GRANT INSERT (recorded_at) ON platform.model_call_log TO starbuddy_learning;"
+  ["调用记录：表级 INSERT"]="GRANT INSERT ON platform.model_call_log TO starbuddy_learning;"
+  ["调用记录：不限补写时间"]="$(mcl_policy "true")"
+  ["调用记录：可补写一周前的记录"]="$(mcl_policy "occurred_at >= now() - interval '7 days' AND occurred_at <= now() + interval '5 minutes'")"
+  ["调用记录：可写未来时刻"]="$(mcl_policy "occurred_at >= now() - interval '1 day'")"
+  ["调用记录：不 FORCE RLS"]="ALTER TABLE platform.model_call_log NO FORCE ROW LEVEL SECURITY;"
+  ["调用记录：usage_ref 收原值"]="ALTER TABLE platform.model_call_log DROP CONSTRAINT model_call_log_usage_ref_check;"
+  ["调用记录：尝试状态收任意文本"]="ALTER TABLE platform.model_call_log DROP CONSTRAINT model_call_log_check; ALTER TABLE platform.model_call_log ADD CONSTRAINT model_call_log_check CHECK (cardinality(attempt_statuses) = attempt_count AND array_position(attempt_statuses, NULL) IS NULL);"
+  ["调用记录：尝试状态数可与尝试次数不一致"]="ALTER TABLE platform.model_call_log DROP CONSTRAINT model_call_log_check; ALTER TABLE platform.model_call_log ADD CONSTRAINT model_call_log_check CHECK (attempt_statuses <@ ARRAY['ok', 'timeout', 'rate_limited', 'server', 'auth', 'client', 'bad_response', 'skipped_breaker_open']::text[]);"
+  ["调用记录：供应商收任意文本"]="ALTER TABLE platform.model_call_log DROP CONSTRAINT model_call_log_vendor_check;"
+  ["调用记录：结果收任意编码"]="ALTER TABLE platform.model_call_log DROP CONSTRAINT model_call_log_outcome_check;"
+  ["调用记录：成功可不带 model_version"]="ALTER TABLE platform.model_call_log DROP CONSTRAINT model_call_log_ok_has_model;"
+  ["调用记录：模板可与 source_version 不一致"]="ALTER TABLE platform.model_call_log DROP CONSTRAINT model_call_log_prompt_pair;"
+  ["调用记录：加学生 ID 列"]="ALTER TABLE platform.model_call_log ADD COLUMN student_id uuid;"
+  ["调用记录：加自由文本列"]="ALTER TABLE platform.model_call_log ADD COLUMN note text;"
+  ["调用记录：报表身份能直接读"]="GRANT SELECT ON platform.model_call_log TO starbuddy_report; CREATE POLICY t_mcl_report ON platform.model_call_log FOR SELECT TO starbuddy_report USING (true);"
+  ["调用记录：属主能改表"]="GRANT UPDATE ON platform.model_call_log TO starbuddy_authz;"
+  ["调用记录：分区授权给学习服务"]="GRANT SELECT ON platform.model_call_log_202610 TO starbuddy_learning;"
+  ["调用记录：聚合授给 BFF"]="GRANT EXECUTE ON FUNCTION $MCS TO starbuddy_bff;"
+  ["调用记录：聚合对 PUBLIC 开放"]="GRANT EXECUTE ON FUNCTION $MCS TO PUBLIC;"
+  ["调用记录：聚合改为调用者权限"]="ALTER FUNCTION $MCS SECURITY INVOKER;"
+  ["调用记录：聚合不限跨度"]="$(afr "$MCS" "' OR p_to - p_from > 186'" "''")"
+  ["调用记录：聚合按 UTC 切日"]="$(afr "$MCS" "'SELECT (l.occurred_at AT TIME ZONE ''Asia/Shanghai'')::date AS d'" "'SELECT (l.occurred_at AT TIME ZONE ''UTC'')::date AS d'")"
+  ["调用记录：聚合不数切备"]="$(afr "$MCS" "'count(*) FILTER (WHERE l.fallback)::bigint'" "'0::bigint'")"
+  ["调用记录：聚合不数无单价"]="$(afr "$MCS" "'count(*) FILTER (WHERE l.estimated_cost_cny IS NULL)::bigint'" "'0::bigint'")"
+  ["调用记录：留存删除授给学习服务"]="GRANT EXECUTE ON FUNCTION $MCP TO starbuddy_learning;"
+  ["调用记录：留存删除授给报表身份"]="GRANT EXECUTE ON FUNCTION $MCP TO starbuddy_report;"
+  ["调用记录：留存删除不固定 search_path"]="ALTER FUNCTION $MCP RESET search_path;"
+  ["调用记录：留存删除按 179 天"]="$(afr "$MCP" "'x.occurred_at < p_now - interval ''180 days'''" "'x.occurred_at < p_now - interval ''179 days'''")"
+  ["调用记录：留存删除不限批量"]="$(afr "$MCP" "'ORDER BY x.occurred_at LIMIT p_batch'" "'ORDER BY x.occurred_at'")"
+  ["调用记录：留存删除先删最新的"]="$(afr "$MCP" "'ORDER BY x.occurred_at LIMIT p_batch'" "'ORDER BY x.occurred_at DESC LIMIT p_batch'")"
+  ["调用记录：留存删除时钟不限往前"]="$(afr "$MCP" "' OR p_now < now() - interval ''1 day'''" "''")"
+  ["调用记录：留存删除批量不设上限"]="$(afr "$MCP" "' OR p_batch > 10000'" "''")"
+  # 决定记录（续）第 4–6 条：个人层表清单、报表身份在 platform 下的函数集合、小样本门槛（由 79zh、79p、79q 发现）
+  ["调用记录：不在个人层表清单"]="DELETE FROM platform.personal_table_registry WHERE nspname = 'platform' AND relname = 'model_call_log';"
+  ["调用记录：清单谓词失效"]="UPDATE platform.personal_table_registry SET student_predicate = student_predicate || ' AND false' WHERE nspname = 'platform' AND relname = 'model_call_log';"
+  ["调用记录：清单谓词漏自练计次"]="UPDATE platform.personal_table_registry SET student_predicate = 'usage_ref IN (SELECT left(encode(sha256(convert_to(r.usage_id::text, ''UTF8'')), ''hex''), 16) FROM platform.usage_reservation r WHERE r.student_id = \$1)' WHERE nspname = 'platform' AND relname = 'model_call_log';"
+  ["调用记录：清单谓词摘要截断口径不一致"]="UPDATE platform.personal_table_registry SET student_predicate = replace(student_predicate, '''hex''), 16)', '''hex''), 32)') WHERE nspname = 'platform' AND relname = 'model_call_log';"
+  ["调用记录：删除身份删不了调用记录"]="REVOKE DELETE ON platform.model_call_log FROM starbuddy_eraser;"
+  ["调用记录：删除身份能读计量预留全部列"]="GRANT SELECT ON platform.usage_reservation TO starbuddy_eraser;"
+  ["调用记录：platform 新函数对 PUBLIC 开放"]="CREATE FUNCTION platform.t_mcl_public_probe() RETURNS integer LANGUAGE sql STABLE AS \$f\$ SELECT 1 \$f\$;"
+  ["调用记录：platform 函数授给报表身份"]="GRANT EXECUTE ON FUNCTION platform.can_read_student(uuid) TO starbuddy_report;"
+  ["调用记录：聚合不设小样本门槛"]="$(afr "$MCS" "'g.n >= 5'" "'g.n >= 1'")"
+  ["调用记录：聚合门槛降到 4 次"]="$(afr "$MCS" "'g.n >= 5'" "'g.n >= 4'")"
+  ["调用记录：聚合小样本格子仍给 token"]="$(afr "$MCS" "'CASE WHEN g.n >= 5 THEN g.s_in END'" "'g.s_in'")"
+)
+
 # 攻击面矩阵补测（specs/household-pentest-sprint3 待人确认 #13 里不需要人决定的几项）：按行的可见性、写矩阵、
 # 复核角色与定时任务角色的函数矩阵。都由 80 本身发现（预期断言登记在下面的 EXPECT）。DBMUT_FILTER=攻击面 一起跑
 M+=(
@@ -1470,6 +1528,7 @@ M+=(
   ["攻击面：签字发布认任何有效账号"]="$(afr 'kge.current_staff()' "'a.kind = ''staff'' AND '" "''")"
   ["攻击面：删除执行接受未来时钟"]="$(afr 'platform.execute_due_erasures(timestamp with time zone)' "'p_now > now() OR '" "''")"
   ["攻击面：抽检接受未来起点"]="$(afr 'platform.review_sample_spot_checks(platform.subject, timestamp with time zone, numeric)' "' OR p_since > now()'" "''")"
+  ["攻击面：调用记录留存删除接受未来时钟"]="$(afr 'platform.model_call_log_purge(timestamp with time zone, integer)' "' OR p_now > now() OR '" "' OR '")"
 )
 
 # 并行执行（每个变异各起一个一次性 Postgres，互不影响）；DBMUT_JOBS 控制并发数，默认等于 CPU 核数
@@ -1512,6 +1571,7 @@ declare -A EXPECT=(
   ["攻击面：签字发布认任何有效账号"]="攻击面：复核角色函数矩阵——"
   ["攻击面：删除执行接受未来时钟"]="攻击面：定时任务函数矩阵——"
   ["攻击面：抽检接受未来起点"]="攻击面：定时任务函数矩阵——"
+  ["攻击面：调用记录留存删除接受未来时钟"]="攻击面：定时任务函数矩阵——"
   ["攻击面：届别更正记录对 BFF 可读"]="攻击面：届别更正记录、staff 权限表、来源清单操作记录只有函数属主能写"
   ["攻击面：来源清单函数授给知识服务"]="攻击面：届别更正只授 BFF 与签字身份"
   ["攻击面：届别更正授给学习服务"]="攻击面：届别更正只授 BFF 与签字身份"

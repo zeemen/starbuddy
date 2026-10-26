@@ -137,6 +137,25 @@ def test_spot_check(db):
     assert rc == 0 and log["counts"]["enqueued"] == {"aya": 0, "zhixing": 0, "wenli": 0}
 
 
+def test_model_call_purge(db):
+    """模型调用记录留存删除（0060，specs/plt-model-call-log）：只删 180 天前的行，留存期内的都在；再跑一轮删 0 条"""
+    tag = os.urandom(6).hex()
+    refs = {k: f"left(md5('{tag}-{k}'), 16)" for k in ("old", "keep")}
+    row = ("INSERT INTO platform.model_call_log (occurred_at, env, task, data_class, source_version, outcome, attempt_count, fallback,"
+           " attempt_statuses, input_tokens, output_tokens, elapsed_ms, model_mismatch, usage_ref, idempotency_ref)"
+           " VALUES (now() - interval '{age}', 'test', 'T2', 'L1', 'invalid', 'rejected', 0, false, '{{}}', 0, 0, 1, false, {ref}, {ref});")
+    db.psql("SELECT platform.ensure_monthly_partitions('platform.model_call_log', (now() - interval '200 days')::date, 8);"
+            + row.format(age="200 days", ref=refs["old"]) + row.format(age="179 days", ref=refs["keep"]))
+    rc, log = once(db, "model-call-purge")
+    assert (rc, log["outcome"], log["level"]) == (0, "ok", "info"), log
+    c = log["counts"]
+    assert c["job"] == "model-call-purge" and c["purged"] >= 1 and c["more_due"] is False
+    assert q(db, f"SELECT count(*) FROM platform.model_call_log WHERE usage_ref = {refs['old']}") == "0"
+    assert q(db, f"SELECT count(*) FROM platform.model_call_log WHERE usage_ref = {refs['keep']}") == "1"
+    rc, log = once(db, "model-call-purge")
+    assert rc == 0 and log["counts"]["purged"] == 0
+
+
 def test_expire_affairs(db):
     a = SD.seed_affairs(db)
     rc, log = once(db, "expire-affairs")

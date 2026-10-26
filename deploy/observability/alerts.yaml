@@ -113,6 +113,22 @@ groups:
           summary: 估算模型成本一小时内超过阈值
           description: 按路由表单价估算的成本（不参与计量）近 1 小时超过 50 元；没有单价时不计（pricing 为空）。
           threshold: 占位缺省（50 元 / 小时），待人签字
+      - alert: StarbuddyModelCallLogWriteFailed
+        expr: sum(increase(starbuddy_model_call_log_failed_total[15m])) > 0
+        for: 0m
+        labels: {severity: warning}
+        annotations:
+          summary: 模型调用记录写库失败（platform.model_call_log）
+          description: 学习服务把调用记录写进 platform.model_call_log 失败（连接、超时、约束、权限，或分区没建到当月）；路由不受影响，结构化日志仍是完整兜底，但成本对账会缺这些行。先看学习服务 model_call_log_write_failed 日志的 error_class，再核对 0060 的分区与授权。
+          threshold: 占位缺省（> 0 / 15 分钟），待人签字
+      - alert: StarbuddyModelCallLogDropped
+        expr: sum(increase(starbuddy_model_call_log_dropped_total[15m])) > 0
+        for: 0m
+        labels: {severity: warning}
+        annotations:
+          summary: 模型调用记录队列满被丢弃
+          description: 学习服务的调用记录写库队列满（或退出时限内没刷完）丢弃了记录；路由不受影响，结构化日志仍有完整的一条。持续出现说明写库跟不上调用量或库变慢，对照连接池与写库失败告警。
+          threshold: 占位缺省（> 0 / 15 分钟），待人签字
   - name: starbuddy-metering
     rules:
       - alert: StarbuddyMeterRollbackSpike

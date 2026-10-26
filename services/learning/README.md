@@ -266,8 +266,18 @@ staff 对应表（`kge-pages-staff-map/1`，审核台配置，由人维护，不
   按北京时间自然日、进程内计数（多实例按实例计）；按每次真实的供应商调用计次（含重试与切备）；token 按供应商报告的用量累加（失败的调用只有报告了用量才计，
   HTTP 错误、超时没有用量、只计次数）。到上限抛 `BudgetExceeded`（`RouteUnavailable` 的子类，不再调任何供应商）。`pricing`（元 / 百万 token）只用于调用记录的 `estimated_cost_cny`，缺省为空则不估算；都不改计量与扣次。
 - 供应商地址与 Key 只写环境变量名（例如 `MODEL_FAKE_A_URL`、`MODEL_BAILIAN_URL`），值由部署环境提供。调用记录只含元数据，默认写结构化日志（logger `starbuddy.model_router`）。
-- `make model-router-mutation`：改坏出境过滤、启动校验、地址核对、熔断令牌、契约格式，以及 LT-02 的 staging 口径、占位拒绝、成本护栏、成本估算、登记联动、冒烟限制等
-  staging 回环路由监听等 71 处关键检查，断言测试能发现（只有断言失败算发现；先跑不变异的对照组）。
+- 调用记录落库（specs/plt-model-call-log，迁移 0060）：`LEARNING_MODEL_CALL_LOG=1` 时调用记录另经 `ledger.DbSink` 写 `platform.model_call_log`
+  （缺省关）。只有元数据（供应商 / 模型 / 版本、模板与版本、结果、尝试状态、是否切备、token、估算成本、耗时、`usage_ref` 与幂等摘要），没有提示词、原文、输出与学生 / 账号 ID；
+  写库列与 0060 的列级 INSERT 授权逐列一致（`tests/test_model_call_log.py` 核对）。提示词模板只记白名单里的（`router.RECORDED_PROMPT_TEMPLATES`，与
+  `packages/personas/registry.yaml` 登记的 Prompt 一致，外加冒烟的 `model-smoke`）：不在表里的照常路由、返回的 `source_version` 不变，调用记录里记 `invalid`、
+  模板两列为空。有界队列（1000）异步批量写（每批 100 行一个事务、取连接到提交整段限时 5 秒，单独的 2 连接小池；staging 下自建这个池前同样核对连库 TLS），
+  `write()` 不等库；队列满计丢弃、写库失败只计数并记一行只含行数与异常类名的日志，都不影响路由结果；退出时限时尽力刷写，写不完的计丢弃。
+  `TeeSink` 里单个落地出错不影响其他落地。三个无标签计数 `starbuddy_model_call_log_{written,dropped,failed}_total`，后两个接告警。
+  开关打开时启动核对 0060 已执行、当前登录角色对全部写入列有 INSERT 权限，否则拒绝启动。读取只经 `platform.model_call_stats`（报表身份；少于 5 次调用的格子
+  只给次数）；留存 180 天由调度器 `model-call-purge` 批删；登记在个人层表清单，删除请求按该学生计量记录的 usage_id 摘要一并删除。调用记录不是计量事实，
+  扣次与消耗以 `platform.usage_ledger` 为准。
+- `make model-router-mutation`：改坏出境过滤、启动校验、地址核对、熔断令牌、契约格式，以及 LT-02 的 staging 口径、占位拒绝、成本护栏、成本估算、登记联动、冒烟限制、
+  staging 回环路由监听与调用记录落库（队列上限、异常隔离、批量、限时、刷写、字段核对、模板白名单、启动核对）等 99 处关键检查，断言测试能发现（只有断言失败算发现；先跑不变异的对照组）。
 - `make model-smoke SMOKE_ENV=staging MAX_CALLS=5`（`scripts/model_smoke.py`）：真实模型冒烟，人执行、限次、不进 `make check`；pilot、prod、test 拒绝。
 - staging 回环路由监听（`learning/route_listener.py`，LT-02 决定记录（续）第 5 条）：staging 下另在 `127.0.0.1:LEARNING_ROUTE_PORT`（缺省 8785）
   只服务 `/internal/v1/model/route`（其他路径 404），供同 Pod 的适配器调模型；主监听不变；dev、test 不起。

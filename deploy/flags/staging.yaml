@@ -18,6 +18,8 @@
 #                      （设了令牌而占位未填，学习服务拒绝启动）。步骤见 deploy/config/README.md 第 7 节
 #     human            还没有开关或口径，待人确认（见 notes）
 #     migration_0059   待人执行 0059（LT-06 内部成员测试运营：问题反馈表、退出记录表与库函数，草稿，待人在副本演练后执行）
+#     migration_0060   待人执行 0060（模型调用记录落库 platform.model_call_log、聚合与留存删除函数，草稿，待人在副本演练后执行；
+#                      specs/plt-model-call-log）。开关打开而 0060 不在或学习服务角色没有 INSERT 权限时学习服务拒绝启动
 # switches 每项：service（bff / web / learning / insight / knowledge / review_console / scheduler）、var（环境变量名）、
 #   value（staging 设的值；null = 不设）、source（定义它的源码文件，测试核对变量名真实存在）。
 # LT-03（阿里云 staging，specs/launch-lt03-cloud-staging）：健康端点（/healthz、/readyz）与 ACK / RDS / 出网白名单都不设开关——
@@ -171,6 +173,14 @@ features:
       - {service: bff, var: STARBUDDY_INTERNAL_TEST, value: null, source: services/bff/src/internal-test/features.ts}
       - {service: web, var: STARBUDDY_INTERNAL_TEST, value: null, source: apps/web/src/internal-test/features.ts}
       - {service: review_console, var: REVIEW_CONSOLE_INTERNAL_TEST, value: null, source: services/learning/review_console/config.py}
+  - id: model_call_log
+    title: 模型调用记录落库（platform.model_call_log：成本对账与失败率；只有元数据）
+    state: "off"
+    pending: [migration_0060]
+    notes: 依赖迁移 0060（草稿，待人在副本演练后执行）；执行之前不设（缺省关：调用记录只写结构化日志与指标）。执行之后由人决定是否设为 1；
+      留存删除任务 model-call-purge 另须写进签字时间表（schedule.signed.yaml）才在 staging 启用（specs/plt-model-call-log）
+    switches:
+      - {service: learning, var: LEARNING_MODEL_CALL_LOG, value: null, source: services/learning/learning/config.py}
 
 # 开发开关与合成配置：staging 一律不设（服务启动校验拒绝；deploy/tests 核对这张清单里每个名字都真实存在）
 dev_only:

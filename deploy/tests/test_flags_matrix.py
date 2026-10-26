@@ -22,7 +22,7 @@ from names import name_exists, read_sources
 FLAG_VARS = {"STARBUDDY_TRUST_UI", "STARBUDDY_STARMAP", "STARBUDDY_PRACTICE", "STARBUDDY_RETEST_UI", "STARBUDDY_TODAY_ORCH",
              "STARBUDDY_MONTHLY_PLAN", "STARBUDDY_FAMILY_GOALS", "STARBUDDY_SUBJECT_GATE", "STARBUDDY_INTERNAL_TEST"}
 REQUIRED_ON = {"math", "daofa", "chinese_grading", "today_plan", "diagnosis", "practice", "retest", "star_map", "trust_ui", "review_console"}
-REQUIRED_OFF = {"english", "mock_exam", "monthly_plan", "stage_whiteboard", "knowledge_read_cache", "internal_test_ops"}
+REQUIRED_OFF = {"english", "mock_exam", "monthly_plan", "stage_whiteboard", "knowledge_read_cache", "internal_test_ops", "model_call_log"}
 COVERS = {"weekly_report", "reconcile_card"}
 OFF_VALUES = {"KNOWLEDGE_READ_CACHE": "0", "LEARNING_TODAY_SNAPSHOT": "0"}
 
@@ -44,10 +44,13 @@ def test_structure(flags):
     for e in entries(flags):
         pend = e.get("pending", [])
         assert e["state"] in ("on", "off") and isinstance(pend, list), e["id"]
-        assert set(pend) <= {"signed_content", "migration_0058", "migration_0059", "model_provider", "human"}, e["id"]
+        assert set(pend) <= {"signed_content", "migration_0058", "migration_0059", "migration_0060", "model_provider", "human"}, e["id"]
         assert "internal_v1" not in pend, e["id"]
     # LT-06：内部成员测试运营依赖迁移 0059（草稿），执行之前保持关
     assert by_id["internal_test_ops"]["pending"] == ["migration_0059"]
+    # 模型调用记录落库依赖迁移 0060（草稿，specs/plt-model-call-log），执行之前保持关（不设）
+    assert by_id["model_call_log"]["pending"] == ["migration_0060"]
+    assert [(s["var"], s["value"]) for s in by_id["model_call_log"]["switches"]] == [("LEARNING_MODEL_CALL_LOG", None)]
     assert {s["var"] for s in by_id["internal_test_ops"]["switches"]} == {"STARBUDDY_INTERNAL_TEST", "REVIEW_CONSOLE_INTERNAL_TEST"}
     # LT-04：learning-internal v1 已签字、开关删除；诊断、再练、复测（以及依赖它们的今日计划）待教研签字内容，
     # 且依赖 v1 写入的各项都标“待人执行 0058”（决定记录（再续）第 4 条：缺 0058 学习服务拒绝启动）
@@ -120,10 +123,13 @@ def test_learning_settings_accept_matrix(flags):
            "LEARNING_HOST": "172.28.0.10", "LEARNING_PRACTICE_TICKET_SECRET": SYN["t2"], "LEARNING_ADAPTER_AYA_TOKEN": SYN["t3"],
            "LEARNING_ADAPTER_ZHIXING_TOKEN": SYN["t4"], "LEARNING_ADAPTER_WENLI_TOKEN": SYN["t5"], **vals}
     code = ("import sys; sys.path.insert(0, '.'); from learning.config import Settings; s = Settings.from_env(); "
-            "print(s.env, sorted(s.adapters), s.today_snapshot)")
+            "print(s.env, sorted(s.adapters), s.today_snapshot, s.model_call_log)")
     r = _run_py("learning", code, env)
     assert r.returncode == 0, r.stderr
-    assert r.stdout.split()[0] == "staging" and "echo" not in r.stdout
+    assert r.stdout.split()[0] == "staging" and "echo" not in r.stdout and r.stdout.split()[-1] == "False"
+    # 0060 执行之后 staging 能开（矩阵里现在不设）；取值写错拒绝启动
+    assert _run_py("learning", code, {**env, "LEARNING_MODEL_CALL_LOG": "1"}).stdout.split()[-1] == "True"
+    assert _run_py("learning", code, {**env, "LEARNING_MODEL_CALL_LOG": "on"}).returncode != 0
     for dev in [s for s in flags["dev_only"] if s["service"] == "learning"]:
         r = _run_py("learning", code, {**env, dev["var"]: "synthetic" if "PRESENTER" in dev["var"] else "1"})
         assert r.returncode != 0, f"staging 设 {dev['var']} 没有拒绝"
