@@ -38,6 +38,36 @@ resource "alicloud_db_instance" "main" {
     method      = "scram-sha-256"
     priority_id = 1
   }
+  # 服务端日志不带标识原文（specs/plt-db-log-redaction，规则 R22）：慢查询与报错日志不写绑定参数（学生 ID、usage_id、幂等键），
+  # 报错只写一行（不写 DETAIL：唯一约束冲突的键值、CHECK 失败的整行）；客户端仍收到完整错误。待人核实：控制台是否允许修改、是否需重启
+  parameters {
+    name  = "log_parameter_max_length"
+    value = "0"
+  }
+  parameters {
+    name  = "log_parameter_max_length_on_error"
+    value = "0"
+  }
+  parameters {
+    name  = "log_error_verbosity"
+    value = "terse"
+  }
+  parameters {
+    name  = "log_statement"
+    value = "none"
+  }
+  parameters {
+    name  = "log_duration"
+    value = "off"
+  }
+  parameters {
+    name  = "log_min_duration_sample"
+    value = "-1"
+  }
+  parameters {
+    name  = "log_transaction_sample_rate"
+    value = "0"
+  }
   deletion_protection      = true
   # 迁移 0001–0058 用到 pgcrypto（WITH SCHEMA starbuddy_ext）；由人确认 RDS 允许的扩展清单（README.md 第 5 节）
   tags = local.tags

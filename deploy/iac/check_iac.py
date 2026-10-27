@@ -38,6 +38,10 @@
   R20 监控与日志采集（LT-05）：ACK 装了 arms-prometheus 与 logtail-ds 两个组件且没有禁用；不在 IaC 里建告警联系人、联系人组、
       通知策略、机器人（接收人与通知渠道由人在控制台配置，联系方式不进仓库与状态文件）
   R21 日志索引（LT-05）：日志库索引不建全文索引（没有 full_text 块），字段索引只收白名单字段（LOG_INDEX_FIELDS）；app 日志库必须有索引
+  R22 数据库服务端日志不带标识原文（specs/plt-db-log-redaction）：RDS 用 parameters 固定 log_parameter_max_length = 0、
+      log_parameter_max_length_on_error = 0、log_error_verbosity = terse、log_statement = none、
+      log_duration = off、log_min_duration_sample = -1、log_transaction_sample_rate = 0（名字字面小写、各恰一条、不用 dynamic）；
+      sql_collector_status 不写或为字面值 Disabled；只读实例、参数模板、SLS 采 RDS 审计不在 IaC 里建（FORBIDDEN_TYPES）
 用法：python3 deploy/iac/check_iac.py [目录]   退出码 0 通过；1 有违规；2 目录读不了或解析失败。
 """
 from __future__ import annotations
@@ -283,6 +287,9 @@ OPEN = {"0.0.0.0/0", "::/0", "0.0.0.0"}
 CRED_ATTRS = {"access_key", "secret_key", "security_token", "password", "account_password", "kms_encrypted_password",
               "secret_data", "private_key", "shared_credentials_file", "credentials_uri", "sts_endpoint", "ecs_role_name"}
 FORBIDDEN_TYPES = {
+    "alicloud_db_readonly_instance": "R22 不建只读实例（其 parameters 不受 R22 核对；需要时另起任务并纳入 R22）",
+    "alicloud_rds_parameter_group": "R22 不用参数模板（日志参数只在实例 parameters 里逐条固定）",
+    "alicloud_log_audit": "R22 不经 SLS 采集 RDS 审计日志（完整语句与参数会进日志库）",
     "alicloud_forward_entry": "R05 不建 DNAT（公网进不来）",
     "alicloud_db_connection": "R06 RDS 不建外网连接地址",
     "alicloud_oss_bucket_policy": "R07 OSS 不建桶策略（访问只经 RAM 授权）",
@@ -325,6 +332,17 @@ LOG_INDEX_FIELDS = frozenset({"service", "level", "logger", "route", "event", "r
                               "outcome", "job", "ts"}) & LOG_FIELDS
 # R12：日志留存的上下限（天）：至少 180 天（《网络安全法》第二十一条），至多 365 天（最小必要，日志里只有元数据也不无限期保留）
 LOG_RETENTION_MIN, LOG_RETENTION_MAX = 180, 365
+# R22：RDS 服务端日志参数的固定取值（字符串，与控制台参数值同形）
+RDS_LOG_PARAMETERS = {
+    "log_parameter_max_length": "0",
+    "log_parameter_max_length_on_error": "0",
+    "log_error_verbosity": "terse",
+    "log_statement": "none",
+    "log_duration": "off",
+    "log_min_duration_sample": "-1",
+    "log_transaction_sample_rate": "0",
+}
+
 # 不支持 tags 参数的资源类型（R08）：逐个登记，新增资源类型不在这里就必须带 tags
 NO_TAGS = {"alicloud_security_group_rule", "alicloud_snat_entry", "alicloud_eip_association", "alicloud_oss_bucket_acl",
            "alicloud_oss_bucket_public_access_block", "alicloud_rds_backup_policy", "alicloud_cr_ee_instance",
@@ -436,7 +454,7 @@ class Checker:
         for check in (self.r02_credentials, self.r03_account, self.r04_region, self.r05_ingress, self.r06_rds, self.r07_oss,
                       self.r08_tags, self.r09_kms, self.r10_ack, self.r11_egress, self.r12_logs, self.r13_versions, self.r14_acr,
                       self.r15_cidrs, self.r16_sg_egress, self.r17_eip, self.r18_lb, self.r19_ram, self.r20_monitoring,
-                      self.r21_log_index, self.forbidden_types):
+                      self.r21_log_index, self.r22_rds_logs, self.forbidden_types):
             check()
         return self.findings
 
@@ -815,6 +833,27 @@ class Checker:
                     if sub(f.body, nested):
                         self.add("R21", x.file, f"{x.labels[1]}：字段 {name!r} 不展开子字段索引")
 
+    def r22_rds_logs(self) -> None:
+        for b in self.resources("alicloud_db_instance"):
+            n = b.labels[1]
+            if any(d.labels[:1] == ["parameters"] for d in sub(b.body, "dynamic")):
+                self.add("R22", b.file, f"{n}：parameters 不用 dynamic 块（参数逐条写成字面值，便于核对）")
+            got: dict[str, list[Any]] = {}
+            for x in sub(b.body, "parameters"):
+                raw, val = self.resolve(x.body.attrs.get("name")), self.resolve(x.body.attrs.get("value"))
+                if not isinstance(raw, str) or not isinstance(val, str):
+                    self.add("R22", b.file, f"{n}：parameters 的 name / value 必须是字面字符串")
+                    continue
+                key = raw.strip().lower()
+                if key in RDS_LOG_PARAMETERS and raw != key:
+                    self.add("R22", b.file, f"{n}：参数名 {raw!r} 必须写成小写原样 {key!r}")
+                got.setdefault(key, []).append(val)
+            for k, want in RDS_LOG_PARAMETERS.items():
+                if got.get(k) != [want]:
+                    self.add("R22", b.file, f"{n}：parameters 必须恰有一条 {k} = {want!r}（日志不带绑定参数与 DETAIL），现为 {got.get(k)!r}")
+            if "sql_collector_status" in b.body.attrs and b.body.attrs["sql_collector_status"] != "Disabled":
+                self.add("R22", b.file, f"{n}：不开 SQL 洞察（sql_collector_status 要么不写，要么是字面值 \"Disabled\"），完整语句与参数会进审计日志")
+
     def r12_logs(self) -> None:
         stores = self.resources("alicloud_log_store")
         if not stores:
@@ -896,7 +935,7 @@ def main(argv: list[str]) -> int:
     if found:
         print(f"iac-check：失败（{len(found)} 条违规）")
         return 1
-    print(f"iac-check：通过（{root.name}：{len(list(root.glob('*.tf')))} 个文件，规则 R01–R21）")
+    print(f"iac-check：通过（{root.name}：{len(list(root.glob('*.tf')))} 个文件，规则 R01–R22）")
     return 0
 
 

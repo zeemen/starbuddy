@@ -31,8 +31,10 @@
 | tfsec | MIT（已并入 Trivy，Trivy 为 Apache-2.0） | 可用 |
 
 本机（Claude 的工作环境）没有 terraform / tofu / tflint / checkov / tfsec，也不联网下载（不重装依赖原则），所以：
-- **总是运行**：`deploy/iac/check_iac.py`（只用标准库的 HCL 小解析器 + 21 条规则 R01–R21，随 `make deploy-check`；规则逐条有变异测试 `deploy/tests/test_iac.py`；
-  R20、R21 为 LT-05 新增：采集组件 arms-prometheus / logtail-ds 必须装、告警联系人类资源不进 IaC；日志库不建全文索引、字段索引只收白名单字段）；
+- **总是运行**：`deploy/iac/check_iac.py`（只用标准库的 HCL 小解析器 + 22 条规则 R01–R22，随 `make deploy-check`；规则逐条有变异测试 `deploy/tests/test_iac.py`；
+  R20、R21 为 LT-05 新增：采集组件 arms-prometheus / logtail-ds 必须装、告警联系人类资源不进 IaC；日志库不建全文索引、字段索引只收白名单字段；
+  R22 为 specs/plt-db-log-redaction 新增：RDS 慢查询与报错日志不写绑定参数、报错不写 DETAIL、不记全部语句、不开 SQL 洞察——
+  学生 ID、usage_id、幂等键原文不进数据库服务端日志；须人在控制台核实这七个参数可改、是否需重启）；
 - **工具在时运行**：`make iac-validate`（`deploy/scripts/iac-validate.sh`：`terraform init -backend=false` + `terraform validate`、tflint、checkov、tfsec；
   缺工具打印“跳过”，非严格模式算通过、`CONTRACT_STRICT=1` 时失败）。provider 不联网下载：须由人准备本地镜像目录 `IAC_PLUGIN_DIR`。
 

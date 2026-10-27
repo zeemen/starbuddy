@@ -156,6 +156,21 @@ MUTATIONS = [
      "var.log_retention_days >= 180", "R12"),
     ("留存变量缺省超过上限", "variables.tf", "  type        = number\n  default     = 180\n  validation {\n    condition     = var.log_retention_days",
      "  type        = number\n  default     = 400\n  validation {\n    condition     = var.log_retention_days", "R12"),
+    # 数据库服务端日志不带标识原文（specs/plt-db-log-redaction）
+    ("慢查询日志写绑定参数", "rds.tf", "    name  = \"log_parameter_max_length\"\n    value = \"0\"", "    name  = \"log_parameter_max_length\"\n    value = \"-1\"", "R22"),
+    ("报错日志写绑定参数", "rds.tf", "    name  = \"log_parameter_max_length_on_error\"\n    value = \"0\"", "    name  = \"log_parameter_max_length_on_error\"\n    value = \"64\"", "R22"),
+    ("报错日志写 DETAIL", "rds.tf", "    value = \"terse\"", "    value = \"default\"", "R22"),
+    ("记录全部语句", "rds.tf", "    value = \"none\"", "    value = \"all\"", "R22"),
+    ("缺 log_error_verbosity", "rds.tf", "  parameters {\n    name  = \"log_error_verbosity\"\n    value = \"terse\"\n  }\n", "", "R22"),
+    ("同一参数写两次", "rds.tf", "  parameters {\n    name  = \"log_statement\"", "  parameters {\n    name  = \"log_statement\"\n    value = \"ddl\"\n  }\n  parameters {\n    name  = \"log_statement\"", "R22"),
+    ("参数名大写覆盖", "rds.tf", "  deletion_protection      = true\n", "  parameters {\n    name  = \"LOG_STATEMENT\"\n    value = \"all\"\n  }\n  deletion_protection      = true\n", "R22"),
+    ("参数名引用局部值", "rds.tf", "  deletion_protection      = true\n", "  parameters {\n    name  = local.name\n    value = \"all\"\n  }\n  deletion_protection      = true\n", "R22"),
+    ("dynamic 参数块", "rds.tf", "  deletion_protection      = true\n", "  dynamic \"parameters\" {\n    for_each = var.extra\n    content {\n      name  = parameters.key\n      value = parameters.value\n    }\n  }\n  deletion_protection      = true\n", "R22"),
+    ("打开语句耗时日志", "rds.tf", "    value = \"off\"", "    value = \"on\"", "R22"),
+    ("打开事务采样日志", "rds.tf", "    name  = \"log_transaction_sample_rate\"\n    value = \"0\"", "    name  = \"log_transaction_sample_rate\"\n    value = \"0.5\"", "R22"),
+    ("SQL 洞察用表达式", "rds.tf", "  deletion_protection      = true\n", "  deletion_protection      = true\n  sql_collector_status     = upper(var.x)\n", "R22"),
+    ("建只读实例", "rds.tf", "resource \"alicloud_rds_backup_policy\" \"main\" {", "resource \"alicloud_db_readonly_instance\" \"ro\" {\n  master_db_instance_id = alicloud_db_instance.main.id\n  tags = local.tags\n}\n\nresource \"alicloud_rds_backup_policy\" \"main\" {", "R22"),
+    ("开 SQL 洞察", "rds.tf", "  deletion_protection      = true\n", "  deletion_protection      = true\n  sql_collector_status     = \"Enabled\"\n", "R22"),
 ]
 
 
