@@ -1517,6 +1517,20 @@ M+=(
   ["调用记录：聚合小样本格子仍给 token"]="$(afr "$MCS" "'CASE WHEN g.n >= 5 THEN g.s_in END'" "'g.s_in'")"
 )
 
+# PLT 报错主消息不带个人行标识（0061，specs/plt-db-raise-redaction 范围第 2 条）：由 79zi 发现（逐函数触发的断言与静态扫描）。
+# 前三条与“额度桶核对”把主消息改回带标识（逐函数断言与静态扫描都应发现；60 的子串断言照旧通过，证明不是它们发现的；
+# 额度桶那条的标识是函数参数 p_entitlement、周报那条是记录变量 w.id，证明放宽后的规则抓得到 p_* 与记录变量）；
+# “订阅 DETAIL”只删掉 DETAIL 里的标识；“新触发器”新建一个主消息带学生 ID 的函数（只有静态扫描能发现）。DBMUT_FILTER=报错脱敏 只跑这一组
+M+=(
+  ["报错脱敏：终态流水主消息带回 usage_id"]="$(afr 'platform.guard_ledger_insert()' "'RAISE EXCEPTION ''reservation already has a terminal entry'''" "'RAISE EXCEPTION ''reservation % already has a terminal entry'', NEW.usage_id'")"
+  ["报错脱敏：写入幂等主消息带回幂等键"]="$(afr 'platform.guard_ingest_request()' "'RAISE EXCEPTION ''ingest request already succeeded'''" "'RAISE EXCEPTION ''ingest request %/% already succeeded'', OLD.method, OLD.idempotency_key'")"
+  ["报错脱敏：更正目标主消息带回行 ID"]="$(afr 'platform.check_supersede_target()' "'RAISE EXCEPTION ''invalid supersede target for %'', TG_TABLE_NAME'" "'RAISE EXCEPTION ''invalid supersede target for % %'', TG_TABLE_NAME, OLD.id'")"
+  ["报错脱敏：订阅 DETAIL 不带 ID"]="$(afr 'platform.guard_subscription()' "'DETAIL = format(''subscription %s'', OLD.id)'" "'DETAIL = ''subscription'''")"
+  ["报错脱敏：额度桶核对主消息带回函数参数"]="$(afr 'platform.meter_check_entitlement(uuid)' "'RAISE EXCEPTION ''entitlement counters do not match the ledger'''" "'RAISE EXCEPTION ''entitlement % counters do not match the ledger'', p_entitlement'")"
+  ["报错脱敏：周报抽样主消息带回记录变量 w.id"]="$(afr 'platform.review_sample_weekly_reports(date, numeric, integer)' "'RAISE EXCEPTION ''周报取不到复核任务的学科（所引判断没有学科或已不存在）'''" "'RAISE EXCEPTION ''周报 % 取不到复核任务的学科（所引判断没有学科或已不存在）'', w.id'")"
+  ["报错脱敏：新触发器主消息带学生 ID"]="CREATE FUNCTION insight.t_raise_probe() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, pg_temp AS \$f\$ BEGIN RAISE EXCEPTION 'probe for student %', NEW.student_id USING ERRCODE = 'check_violation'; RETURN NEW; END \$f\$; REVOKE EXECUTE ON FUNCTION insight.t_raise_probe() FROM PUBLIC;"
+)
+
 # 攻击面矩阵补测（specs/household-pentest-sprint3 待人确认 #13 里不需要人决定的几项）：按行的可见性、写矩阵、
 # 复核角色与定时任务角色的函数矩阵。都由 80 本身发现（预期断言登记在下面的 EXPECT）。DBMUT_FILTER=攻击面 一起跑
 M+=(
