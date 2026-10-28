@@ -26,7 +26,7 @@ PRODUCT_READ_WILDCARDS = {
 }
 # 业务桶上允许的配置读取通配（只读桶级配置，不含对象）
 BUCKET_CONFIG_WILDCARD = "oss:GetBucket*"
-SENSITIVE_READS = {"kms:GetSecretValue", "log:GetLogs", "log:GetLogStoreLogs", "log:GetCursorOrData", "log:GetHistograms",
+SENSITIVE_READS = {"kms:GetSecretValue", "kms:Decrypt", "kms:GenerateDataKey", "log:GetLogs", "log:GetLogStoreLogs", "log:GetCursorOrData", "log:GetHistograms",
                    "log:GetContextLogs", "log:PullLogs", "cr:GetAuthorizationToken", "cs:DescribeClusterUserKubeconfig",
                    "ecs:DescribeUserData", "rds:DescribeSQLLogRecords", "rds:DescribeSlowLogRecords", "rds:DescribeErrorLogs",
                    "rds:DescribeBackups", "cs:DescribeClusterAttachScripts", "cs:DescribeClusterCerts",
@@ -46,7 +46,7 @@ DELETES = {"vpc:DeleteVpc", "vpc:DeleteVSwitch", "vpc:DeleteNatGateway", "vpc:De
            "kms:ScheduleKeyDeletion", "kms:DisableKey", "log:DeleteProject", "log:DeleteLogStore", "cr:DeleteNamespace",
            "cr:DeleteRepository", "yundun-cloudfirewall:DeleteNatFirewallControlPolicy", "ram:DeleteRole", "ram:DeletePolicy"}
 # 只能限定到占位资源的动作前缀（资源里不得有整段通配）
-SCOPED = ("oss:", "ots:", "log:Create", "log:Update", "log:Tag", "log:Untag", "kms:Decrypt", "kms:GenerateDataKey", "ram:PassRole")
+SCOPED = ("oss:", "ots:", "log:Create", "log:Update", "log:Tag", "log:Untag", "ram:PassRole")
 PLACEHOLDER_OK = {"acs:oss:*:*:<状态桶名>/<状态前缀>/*", "acs:ram::*:role/aliyuncs*"}
 
 
@@ -130,8 +130,6 @@ def test_business_bucket_has_no_object_actions_and_decrypt_only_state_key():
             res, acts = as_list(s["Resource"]), as_list(s["Action"])
             if any(r.startswith("acs:oss:*:*:<业务桶名>") for r in res):
                 assert all("/" not in r for r in res) and not ({"oss:GetObject", "oss:PutObject", "oss:ListObjects"} & set(acts))
-            if "kms:Decrypt" in acts or "kms:GenerateDataKey" in acts:
-                assert res == ["acs:kms:cn-beijing:*:key/<状态桶 KMS 密钥 ID>"]
             if "ram:PassRole" in acts:
                 assert all(r.startswith("acs:ram::*:role/aliyun") for r in res), "PassRole 只给云服务的服务角色"
 

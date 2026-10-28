@@ -45,11 +45,6 @@
     },
     {
       "Effect": "Allow",
-      "Action": ["kms:GenerateDataKey", "kms:Decrypt"],
-      "Resource": ["acs:kms:cn-beijing:*:key/<状态桶 KMS 密钥 ID>"]
-    },
-    {
-      "Effect": "Allow",
       "Action": ["ots:GetRow", "ots:PutRow", "ots:UpdateRow", "ots:DeleteRow", "ots:DescribeTable"],
       "Resource": ["acs:ots:cn-beijing:*:instance/<OTS 实例名>/table/<锁表名>"]
     },

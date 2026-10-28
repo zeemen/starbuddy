@@ -38,7 +38,7 @@
     {
       "Effect": "Deny",
       "Action": [
-        "kms:GetSecretValue",
+        "kms:GetSecretValue", "kms:Decrypt", "kms:GenerateDataKey",
         "log:GetLogs", "log:GetLogStoreLogs", "log:GetCursorOrData", "log:GetHistograms", "log:GetContextLogs", "log:PullLogs",
         "cr:GetAuthorizationToken",
         "cs:DescribeClusterUserKubeconfig", "cs:DescribeClusterAttachScripts", "cs:DescribeClusterCerts",

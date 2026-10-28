@@ -28,7 +28,7 @@ LT-03 云与镜像、LT-04 learning-internal v1 与迁移 0058、LT-05 可观测
 
 **Terraform 子账号的最小权限策略清单**（由人在 RAM 控制台写成自定义策略，第二人审阅后挂载；动作逐个列出，只读的查询类动作可按产品前缀放行，
 资源尽量限定到 `cn-beijing` 与占位资源名；写类动作不用通配符 `*`——与 `deploy/iac/check_iac.py` 规则 R19 口径不同：R19 管 IaC 里建的策略（动作与资源都不用 `*`），本节的子账号策略里，不支持资源级授权的动作只能写 `Resource: "*"`）。
-策略草案已写成 JSON（占位名替换后粘贴进 RAM 控制台，三条分别建自定义策略，挂给子账号（走 STS 时挂给 `<Terraform RAM 角色>`，见本节末）；动作名以控制台校验为准，报“无效操作”的逐个核实后改草案；`deploy/tests/test_ram_policies.py` 静态核对）：`ram/terraform-allow-infra.json`（网络、ECS、ACK、负载均衡、服务角色 PassRole）、`ram/terraform-allow-data.json`（RDS、OSS 业务桶与状态桶、锁表、KMS、日志、ACR、云防火墙；RAM 只读）、`ram/terraform-deny.json`（删除 / 释放、全部 RAM 写动作、读日志正文 / 镜像仓库登录凭据 / kubeconfig / 实例自定义数据 / 数据库日志与备份下载、公网连接、桶策略与 CORS、账号级阻止公共访问的修改）。状态桶开了 KMS 加密，读写状态需要该密钥的 GenerateDataKey 与 Decrypt，草案只授给状态桶那把密钥。下表是各产品的动作类别：
+策略草案已写成 JSON（占位名替换后粘贴进 RAM 控制台，三条分别建自定义策略，挂给子账号（走 STS 时挂给 `<Terraform RAM 角色>`，见本节末）；动作名以控制台校验为准，报“无效操作”的逐个核实后改草案；`deploy/tests/test_ram_policies.py` 静态核对）：`ram/terraform-allow-infra.json`（网络、ECS、ACK、负载均衡、服务角色 PassRole）、`ram/terraform-allow-data.json`（RDS、OSS 业务桶与状态桶、锁表、KMS、日志、ACR、云防火墙；RAM 只读）、`ram/terraform-deny.json`（删除 / 释放、全部 RAM 写动作、读日志正文 / 镜像仓库登录凭据 / kubeconfig / 实例自定义数据 / 数据库日志与备份下载、公网连接、桶策略与 CORS、账号级阻止公共访问的修改）。状态桶用 OSS 完全托管加密（AES256，LT-03 决定记录第 12 条），子账号不需要也不授任何 KMS 解密动作（Decrypt、GenerateDataKey 显式拒绝）。下表是各产品的动作类别：
 
 | 产品（RAM 动作前缀） | 允许的动作类别 | 对应 IaC 文件 |
 |---|---|---|
@@ -41,7 +41,7 @@ LT-03 云与镜像、LT-04 learning-internal v1 与迁移 0058、LT-05 可观测
 | 容器镜像服务 `cr:` | 企业版实例、命名空间、仓库、VPC 访问端点的创建 / 查询 | `acr.tf` |
 | 云防火墙 `yundun-cloudfirewall:` 或 `cloudfw:`（以控制台为准） | NAT 边界访问控制策略的创建 / 查询 / 修改 | `egress.tf` |
 | 日志服务 `log:` | Project、日志库、索引的创建 / 查询 / 修改 | `sls.tf` |
-| 密钥管理 `kms:` | 主密钥与别名的创建 / 查询 / 打标签、轮转设置；**除状态桶密钥外不给** Decrypt；任何密钥都不给 GetSecretValue | `kms.tf` |
+| 密钥管理 `kms:` | 主密钥与别名的创建 / 查询 / 打标签、轮转设置；**不给** Decrypt、GenerateDataKey、GetSecretValue（显式拒绝） | `kms.tf` |
 | 访问控制 `ram:` | **只读**（Get / List 类，plan 刷新状态用）与容器服务、RDS 加密服务角色的 PassRole；**不给任何写动作**（安全审查 B1：能建策略与角色就能给自己提权）——`kms.tf` 的 `secret_reader` 策略、角色与挂载由人用管理员身份在阶段 R apply | `ack.tf`；`kms.tf` 见阶段 R |
 | 安全令牌 `sts:` | GetCallerIdentity（`data.alicloud_account.current` 取账号 ID）。扮演 `<Terraform RAM 角色>` 时，AssumeRole 只授给该角色的精确 ARN（不挂系统策略 AliyunSTSAssumeRoleAccess） | `providers.tf` |
 | 计费 `bssapi:` | 包年包月下单所需的查询与下单（只 ACR 企业版；云防火墙由人在控制台购买）；`CreateInstance` 能下单任何产品，**阶段 B 完成后由人撤掉** | `acr.tf` |
@@ -55,12 +55,11 @@ apply 会被这条拒绝挡下——这正是要停下来由人决定的情形�
 
 ### 0.2 状态桶与锁表（Terraform 远程后端的引导，由人在控制台创建；不在本目录的 Terraform 里）
 状态桶必须先于第一次 `terraform init` 存在（鸡生蛋问题），所以由人手工创建，**不**交给本目录的 Terraform 管理：
-1. 另建一把 KMS 密钥 `<状态桶 KMS 密钥>`（自动轮转、删除保护；不用 `kms.tf` 里的主密钥——那把要等第 1 节才建）。
-2. OSS 状态桶 `<状态桶名>`：地域 cn-beijing、私有 ACL、阻止公共访问、**版本控制开启**、服务端加密选 KMS（`<状态桶 KMS 密钥>`）、
+1. OSS 状态桶 `<状态桶名>`：地域 cn-beijing、私有 ACL、阻止公共访问、**版本控制开启**、服务端加密选 **OSS 完全托管**（AES256；不用 KMS，免买 KMS 实例，LT-03 决定记录第 12 条）、
    不配公共读与 CORS、不配会删除当前版本的生命周期规则（历史版本可设保留期）；桶策略只放行 `<Terraform RAM 用户>` 与运维管理员；开访问日志。
-3. 表格存储实例 `<OTS 实例名>`（cn-beijing）与锁表 `<锁表名>`：主键只有一列 `LockID`（字符串）；实例的网络访问须允许 Claude 会话所在出口
+2. 表格存储实例 `<OTS 实例名>`（cn-beijing）与锁表 `<锁表名>`：主键只有一列 `LockID`（字符串）；实例的网络访问须允许 Claude 会话所在出口
    （公网访问），并用 RAM 策略只放行 `<Terraform RAM 用户>`。
-4. 第二人核对：桶为私有且版本控制已开、加密为 KMS、锁表主键正确；把桶名、前缀、锁表名写进变更记录（不进仓库）。
+3. 第二人核对：桶为私有且版本控制已开、加密为 OSS 完全托管、锁表主键正确；把桶名、前缀、锁表名写进变更记录（不进仓库）。
 
 ### 0.3 需放行的域名（由用户在 Claude 会话的云环境设置里配置；以 provider 实际访问为准，首次 plan 被拦时按报错补）
 - OpenTofu（LT-03 决定记录第 10 条）：`registry.opentofu.org`；`tofu` 二进制与 aliyun/alicloud provider 的下载跳转地址（`github.com` 发布地址与
