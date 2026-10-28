@@ -37,7 +37,7 @@ ESCALATION = {"ram:CreateUser", "ram:UpdateUser", "ram:CreateAccessKey", "ram:Up
               "ram:AttachPolicyToUser", "ram:AttachPolicyToGroup", "ram:AddUserToGroup", "ram:CreatePolicy", "ram:CreatePolicyVersion",
               "ram:SetDefaultPolicyVersion", "ram:CreateRole", "ram:UpdateRole", "ram:AttachPolicyToRole", "ram:CreateServiceLinkedRole"}
 EXPOSURE = {"rds:AllocateInstancePublicConnection", "oss:PutBucketPolicy", "oss:PutBucketCors", "oss:PutBucketWebsite",
-            "oss:DeleteBucketPublicAccessBlock", "oss:PutPublicAccessBlock", "oss:DeletePublicAccessBlock", "ecs:AllocatePublicIpAddress",
+            "oss:DeleteBucketPublicAccessBlock", "oss:PutPublicAccessBlock", "oss:DeletePublicAccessBlock", "ecs:AllocatePublicIpAddress", "vpc:AssociateEipAddress",
             "rds:ModifySQLCollectorPolicy"}
 DELETES = {"vpc:DeleteVpc", "vpc:DeleteVSwitch", "vpc:DeleteNatGateway", "vpc:DeleteSnatEntry", "vpc:ReleaseEipAddress",
            "vpc:DeleteVpcGatewayEndpoint", "ecs:DeleteSecurityGroup", "ecs:RevokeSecurityGroup", "ecs:RevokeSecurityGroupEgress",
@@ -169,3 +169,6 @@ def test_runbook_points_to_policy_files_and_human_applies_ram():
     stage_a = t.split("**阶段 A：")[1].split("**阶段 B：")[0]
     stage_c = t.split("**阶段 C：")[1].split("**阶段 R：")[0]
     assert "alicloud_ram_" not in stage_a and "alicloud_ram_" not in stage_c, "Claude 执行的阶段不含 RAM 资源"
+    d1 = t.split("# D1：")[1].split("# D1'：")[0]
+    assert "alicloud_eip_association" not in d1 and "-target=alicloud_eip_association.nat" in t.split("# D1'：")[1], "EIP 绑定由人执行"
+    assert "撤掉两条允许策略里的写类语句" in t, "全部阶段完成后撤掉写类策略"

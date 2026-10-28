@@ -18,7 +18,7 @@
         "vpc:CreateVSwitch", "vpc:ModifyVSwitchAttribute",
         "vpc:CreateNatGateway", "vpc:ModifyNatGatewayAttribute",
         "vpc:CreateSnatEntry", "vpc:ModifySnatEntry",
-        "vpc:AllocateEipAddress", "vpc:ModifyEipAddressAttribute", "vpc:AssociateEipAddress",
+        "vpc:AllocateEipAddress", "vpc:ModifyEipAddressAttribute",
         "vpc:CreateVpcGatewayEndpoint", "vpc:UpdateVpcGatewayEndpointAttribute", "vpc:AssociateRouteTablesWithVpcGatewayEndpoint",
         "vpc:TagResources", "vpc:UnTagResources"
       ],

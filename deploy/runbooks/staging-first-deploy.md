@@ -228,8 +228,10 @@ tofu -chdir=deploy/iac/alicloud plan -input=false -lock=true -out=<计划目录>
 
 **阶段 D：防火墙与 NAT**（分两步；供应商主机名未定时可推迟到第 5 节 `model_provider` 解除时再做——staging 其余部分不依赖公网出网）
 ```
-# D1：NAT 网关与 EIP
--target=alicloud_nat_gateway.main -target=alicloud_eip_address.nat -target=alicloud_eip_association.nat
+# D1：NAT 网关与 EIP（Claude 会话）
+-target=alicloud_nat_gateway.main -target=alicloud_eip_address.nat
+# D1'：EIP 绑定（由人用管理员身份执行，同阶段 R 的做法；子账号没有 AssociateEipAddress，防止把 EIP 绑到节点上暴露公网）
+-target=alicloud_eip_association.nat
 # 由人：在云防火墙控制台为这台 NAT 网关开启 NAT 边界防火墙，第二人核实后才把 nat_firewall_confirmed 设为 true（见 0.6 第 1 条）
 # D2：访问控制与 SNAT
 -target=alicloud_cloud_firewall_nat_firewall_control_policy.model_vendor -target=alicloud_cloud_firewall_nat_firewall_control_policy.deny_rest
@@ -237,7 +239,7 @@ tofu -chdir=deploy/iac/alicloud plan -input=false -lock=true -out=<计划目录>
 ```
 验收：没有 DNAT 条目；EIP 只绑 NAT；NAT 边界防火墙开启；访问控制顺序为各供应商主机名（1…n）后接“拒绝其余”；四条 SNAT。出网核对放到第 6 节。
 
-**收尾**：不带 `-target` 的 plan 必须是 `No changes`；`terraform -chdir=deploy/iac/alicloud state list` 的资源与 `*.tf` 一致；状态桶里出现新版本、锁表无残留锁。
+**收尾**：全部阶段验收后，由人从子账号上撤掉两条允许策略里的写类语句（只留查询类与状态桶、锁表的读写，供以后 plan 核对漂移；以后的变更再按需临时挂回、用完即撤；LT-03 决定记录第 11 条）。不带 `-target` 的 plan 必须是 `No changes`；`terraform -chdir=deploy/iac/alicloud state list` 的资源与 `*.tf` 一致；状态桶里出现新版本、锁表无残留锁。
 
 ---
 

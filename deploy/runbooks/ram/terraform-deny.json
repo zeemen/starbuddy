@@ -5,7 +5,7 @@
       "Effect": "Deny",
       "Action": [
         "vpc:DeleteVpc", "vpc:DeleteVSwitch", "vpc:DeleteNatGateway", "vpc:DeleteSnatEntry",
-        "vpc:ReleaseEipAddress", "vpc:UnassociateEipAddress",
+        "vpc:ReleaseEipAddress", "vpc:UnassociateEipAddress", "vpc:AssociateEipAddress",
         "vpc:DeleteVpcGatewayEndpoint", "vpc:DissociateRouteTablesFromVpcGatewayEndpoint",
         "ecs:DeleteSecurityGroup", "ecs:RevokeSecurityGroup", "ecs:RevokeSecurityGroupEgress",
         "ecs:CreateInstance", "ecs:RunInstances", "ecs:AllocatePublicIpAddress",
