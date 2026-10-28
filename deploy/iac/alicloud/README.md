@@ -24,7 +24,7 @@
 
 | 工具 | 许可证 | 结论 |
 |---|---|---|
-| Terraform ≥ 1.6 | BSL 1.1（Business Source License） | 只作开发 / 运维工具在内部本机与 CI 使用、**不分发、不对外提供托管或竞争性服务**，在 BSL 附加使用授权范围内，可用。若法务认为不合，改用 **OpenTofu**（MPL-2.0；本目录写法两者通用，`make iac-validate` 自动识别 `tofu`）——待人确认（见文末） |
+| Terraform ≥ 1.6 | BSL 1.1（Business Source License） | 只作开发 / 运维工具在内部本机与 CI 使用、**不分发、不对外提供托管或竞争性服务**，在 BSL 附加使用授权范围内，可用。**已决定改用 OpenTofu**（MPL-2.0，LT-03 决定记录第 10 条，2026-10-27；本目录写法两者通用，`make iac-validate` 自动识别 `tofu`） |
 | aliyun/alicloud provider | MPL-2.0 | 可用（文件级弱 copyleft；只调用、不修改、不分发） |
 | tflint | MPL-2.0 | 可用（开发工具，不分发） |
 | checkov | Apache-2.0 | 可用 |

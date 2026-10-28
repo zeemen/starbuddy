@@ -41,3 +41,4 @@
 7. 阿里云已开通。用户决定给 Claude 会话受限访问并**允许 apply**（推翻第 3 条“不 plan / apply”）：由用户在云环境设置中放行阿里云与 Terraform 提供方域名、以环境变量配置专用 RAM 子账号凭据（Claude 不读取、不打印其值）；每次 apply 前 Claude 贴出 plan 摘要（资源增删改、计费类资源与预估费用），**经用户逐次确认后才执行**；不执行 destroy（须另行确认）。Terraform 状态不得落在仓库或会话临时目录，使用 OSS 远程后端（私有、版本控制、KMS 加密）并加锁。
 8. `nat_firewall_confirmed` 去掉变量级 `== true` 校验（仍为 bool、无缺省值、必须显式给出），只保留每条 SNAT 上的前置条件；分阶段 apply 前几阶段传 false，D2 之前由人开启 NAT 边界防火墙并经第二人核实后传 true；R11 与变异同步。
 9. 教研签字前先部署基础设施、镜像、迁移演练与不依赖签字的服务（BFF、前端、审核台、知识服务）；学习、洞察、调度器等签字后再部署，不放松任何启动校验。
+10. （2026-10-27，用户）用 OpenTofu（MPL-2.0）执行 IaC，不用 Terraform（BSL 1.1）；放行域名相应改为 `registry.opentofu.org` 与 GitHub 发布地址。Terraform 子账号的最小权限策略写成 JSON 草案（`deploy/runbooks/ram/`，三条：基础设施允许、数据服务允许、显式拒绝），由人替换占位名、在 RAM 控制台校验动作名后挂载。

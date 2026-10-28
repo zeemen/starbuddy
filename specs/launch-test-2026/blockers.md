@@ -6,7 +6,7 @@
 | 截止 | 事项 | 出处 |
 |---|---|---|
 | **W4 前** | **云环境设置：放行 `*.aliyuncs.com`、`registry.terraform.io`、`github.com`、`objects.githubusercontent.com`；配置专用 RAM 子账号凭据变量与 OSS 状态桶 / Tablestore 锁表变量；初始化脚本中按锁文件安装 Playwright 浏览器（`apps/web` 下 `npx --no-install playwright install chromium`）；然后开新会话按 `deploy/runbooks/staging-first-deploy.md` 推进** | LT-03 决定 7 |
-| **W4 前** | **阿里云计费类资源开通：云防火墙、ACR 企业版（包年包月）；Terraform BSL 许可证是否接受（否则 OpenTofu）** | LT-03 待人 1–2 |
+| **W4 前** | **阿里云计费类资源开通：云防火墙、ACR 企业版（包年包月）**（许可证已决定用 OpenTofu） | LT-03 待人 1–2 |
 | **W4** | **迁移 0010–0059：副本演练后执行（0058 先于学习服务；0059 执行后处理判据对所有环境生效、三处内测开关一起打开）；演练中确认 RDS 能否建 BYPASSRLS 角色、装 pgcrypto（不能则必停）** | LT-04 1、LT-06 1、LT-03 3 |
 | W4 | RDS 参数名、OSS 网关终端节点、NAT 边界防火墙开启方式、安全组类型等以控制台核实；`terraform validate` / plan 按报错修正 | LT-03 3–4 |
 | W4 | 日志留存 180 天、OSS 生命周期、RDS 备份保留 14 天的取值；学生 / 账号 HMAC 截断在 SLS 的留存与密钥轮换 | LT-03 6、LT-05 3 |

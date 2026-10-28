@@ -1,0 +1,91 @@
+{
+  "Version": "1",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "rds:Describe*",
+        "kms:Describe*", "kms:List*", "kms:GetKeyPolicy",
+        "log:GetProject", "log:ListProject", "log:GetLogStore", "log:ListLogStores", "log:GetIndex", "log:ListTagResources",
+        "cr:GetInstance", "cr:GetInstanceEndpoint", "cr:GetInstanceVpcEndpoint", "cr:GetNamespace", "cr:GetRepository",
+        "cr:ListInstance", "cr:ListInstanceEndpoint", "cr:ListNamespace", "cr:ListRepository",
+        "yundun-cloudfirewall:Describe*",
+        "ram:Get*", "ram:List*",
+        "sts:GetCallerIdentity"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "rds:CreateDBInstance", "rds:ModifyDBInstanceDescription", "rds:ModifyDBInstanceSpec", "rds:ModifyDBInstanceConnectionString",
+        "rds:ModifySecurityIps", "rds:ModifyDBInstanceSSL", "rds:ModifyPGHbaConfig", "rds:ModifyParameter",
+        "rds:ModifyBackupPolicy", "rds:ModifyDBInstanceDeletionProtection", "rds:ModifyDBInstanceTDE",
+        "rds:TagResources", "rds:UntagResources"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "oss:PutBucket", "oss:GetBucket*", "oss:PutBucketAcl", "oss:PutBucketVersioning", "oss:PutBucketEncryption",
+        "oss:PutBucketLifecycle", "oss:PutBucketPublicAccessBlock", "oss:PutBucketTagging"
+      ],
+      "Resource": ["acs:oss:*:*:<业务桶名>"]
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["oss:ListObjects", "oss:GetBucketInfo"],
+      "Resource": ["acs:oss:*:*:<状态桶名>"]
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["oss:GetObject", "oss:PutObject"],
+      "Resource": ["acs:oss:*:*:<状态桶名>/<状态前缀>/*"]
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["kms:GenerateDataKey", "kms:Decrypt"],
+      "Resource": ["acs:kms:cn-beijing:*:key/<状态桶 KMS 密钥 ID>"]
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["ots:GetRow", "ots:PutRow", "ots:UpdateRow", "ots:DeleteRow", "ots:DescribeTable"],
+      "Resource": ["acs:ots:cn-beijing:*:instance/<OTS 实例名>/table/<锁表名>"]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "kms:CreateKey", "kms:UpdateKeyDescription", "kms:UpdateRotationPolicy", "kms:SetDeletionProtection",
+        "kms:CreateAlias", "kms:UpdateAlias", "kms:TagResource", "kms:UntagResource", "kms:TagResources", "kms:UntagResources"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "log:CreateProject", "log:UpdateProject", "log:CreateLogStore", "log:UpdateLogStore",
+        "log:CreateIndex", "log:UpdateIndex", "log:TagResources", "log:UntagResources"
+      ],
+      "Resource": ["acs:log:cn-beijing:*:project/<日志 Project>", "acs:log:cn-beijing:*:project/<日志 Project>/logstore/app",
+                   "acs:log:cn-beijing:*:project/<日志 Project>/logstore/audit"]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "cr:CreateNamespace", "cr:UpdateNamespace", "cr:CreateRepository", "cr:UpdateRepository",
+        "cr:CreateInstanceVpcEndpointLinkedVpc",
+        "bssapi:CreateInstance", "bssapi:QueryAvailableInstances", "bssapi:GetPayAsYouGoPrice", "bssapi:GetSubscriptionPrice"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "yundun-cloudfirewall:CreateNatFirewallControlPolicy", "yundun-cloudfirewall:ModifyNatFirewallControlPolicy",
+        "yundun-cloudfirewall:ModifyNatFirewallControlPolicyPosition"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

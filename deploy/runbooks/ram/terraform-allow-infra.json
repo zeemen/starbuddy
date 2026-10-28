@@ -1,0 +1,61 @@
+{
+  "Version": "1",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "vpc:Describe*", "vpc:List*", "vpc:Get*",
+        "ecs:Describe*", "ecs:List*",
+        "cs:Describe*", "cs:Get*", "cs:List*",
+        "slb:Describe*", "slb:List*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "vpc:CreateVpc", "vpc:ModifyVpcAttribute",
+        "vpc:CreateVSwitch", "vpc:ModifyVSwitchAttribute",
+        "vpc:CreateNatGateway", "vpc:ModifyNatGatewayAttribute",
+        "vpc:CreateSnatEntry", "vpc:ModifySnatEntry",
+        "vpc:AllocateEipAddress", "vpc:ModifyEipAddressAttribute", "vpc:AssociateEipAddress",
+        "vpc:CreateVpcGatewayEndpoint", "vpc:UpdateVpcGatewayEndpointAttribute", "vpc:AssociateRouteTablesWithVpcGatewayEndpoint",
+        "vpc:TagResources", "vpc:UnTagResources"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ecs:CreateSecurityGroup", "ecs:ModifySecurityGroupAttribute", "ecs:ModifySecurityGroupPolicy",
+        "ecs:AuthorizeSecurityGroup", "ecs:AuthorizeSecurityGroupEgress",
+        "ecs:ModifySecurityGroupRule", "ecs:ModifySecurityGroupEgressRule",
+        "ecs:TagResources", "ecs:UntagResources"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "cs:CreateCluster", "cs:ModifyCluster", "cs:ModifyClusterTags", "cs:UpdateControlPlaneLog",
+        "cs:CreateClusterNodePool", "cs:ModifyClusterNodePool", "cs:ScaleClusterNodePool",
+        "cs:InstallClusterAddons", "cs:ModifyClusterAddon", "cs:UpgradeClusterAddons",
+        "cs:TagResources", "cs:UntagResources"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "slb:CreateAccessControlList", "slb:SetAccessControlListAttribute", "slb:AddAccessControlListEntry",
+        "slb:TagResources", "slb:UntagResources"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["ram:PassRole"],
+      "Resource": ["acs:ram::*:role/aliyuncs*", "acs:ram::*:role/aliyunrdsinstanceencryptiondefaultrole"]
+    }
+  ]
+}

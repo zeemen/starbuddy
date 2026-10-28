@@ -27,7 +27,8 @@ LT-03 云与镜像、LT-04 learning-internal v1 与迁移 0058、LT-05 可观测
 | 运维人员 `<运维 RAM 用户>` | 跳板上的 psql、kubectl、控制台操作 | 扮演运维角色取临时凭据，不落盘、不进命令历史（`HISTCONTROL=ignorespace`） |
 
 **Terraform 子账号的最小权限策略清单**（由人在 RAM 控制台写成自定义策略，第二人审阅后挂载；动作逐个列出，只读的查询类动作可按产品前缀放行，
-资源尽量限定到 `cn-beijing` 与名前缀 `starbuddy-staging`；与 `deploy/iac/check_iac.py` 规则 R19 同一口径：写类动作不用通配符 `*`）：
+资源尽量限定到 `cn-beijing` 与占位资源名；写类动作不用通配符 `*`——与 `deploy/iac/check_iac.py` 规则 R19 口径不同：R19 管 IaC 里建的策略（动作与资源都不用 `*`），本节的子账号策略里，不支持资源级授权的动作只能写 `Resource: "*"`）。
+策略草案已写成 JSON（占位名替换后粘贴进 RAM 控制台，三条分别建自定义策略，挂给子账号（走 STS 时挂给 `<Terraform RAM 角色>`，见本节末）；动作名以控制台校验为准，报“无效操作”的逐个核实后改草案；`deploy/tests/test_ram_policies.py` 静态核对）：`ram/terraform-allow-infra.json`（网络、ECS、ACK、负载均衡、服务角色 PassRole）、`ram/terraform-allow-data.json`（RDS、OSS 业务桶与状态桶、锁表、KMS、日志、ACR、云防火墙；RAM 只读）、`ram/terraform-deny.json`（删除 / 释放、全部 RAM 写动作、读日志正文 / 镜像仓库登录凭据 / kubeconfig / 实例自定义数据 / 数据库日志与备份下载、公网连接、桶策略与 CORS、账号级阻止公共访问的修改）。状态桶开了 KMS 加密，读写状态需要该密钥的 GenerateDataKey 与 Decrypt，草案只授给状态桶那把密钥。下表是各产品的动作类别：
 
 | 产品（RAM 动作前缀） | 允许的动作类别 | 对应 IaC 文件 |
 |---|---|---|
@@ -40,15 +41,17 @@ LT-03 云与镜像、LT-04 learning-internal v1 与迁移 0058、LT-05 可观测
 | 容器镜像服务 `cr:` | 企业版实例、命名空间、仓库、VPC 访问端点的创建 / 查询 | `acr.tf` |
 | 云防火墙 `yundun-cloudfirewall:` 或 `cloudfw:`（以控制台为准） | NAT 边界访问控制策略的创建 / 查询 / 修改 | `egress.tf` |
 | 日志服务 `log:` | Project、日志库、索引的创建 / 查询 / 修改 | `sls.tf` |
-| 密钥管理 `kms:` | 主密钥与别名的创建 / 查询 / 打标签、轮转设置；**不给** Decrypt、GetSecretValue | `kms.tf` |
-| 访问控制 `ram:` | 只限名前缀 `starbuddy-staging-*` 的自定义策略与角色：CreatePolicy、CreateRole、AttachPolicyToRole、Get / List 类；容器服务所需服务角色的 PassRole | `kms.tf`、`ack.tf` |
-| 安全令牌 `sts:` | GetCallerIdentity（`data.alicloud_account.current` 取账号 ID）；扮演 `<Terraform RAM 角色>` 时的 AssumeRole | `providers.tf` |
-| 计费 `bss:` / `bssapi:` | 包年包月下单所需的查询与下单（只 ACR 企业版；云防火墙由人在控制台购买） | `acr.tf` |
+| 密钥管理 `kms:` | 主密钥与别名的创建 / 查询 / 打标签、轮转设置；**除状态桶密钥外不给** Decrypt；任何密钥都不给 GetSecretValue | `kms.tf` |
+| 访问控制 `ram:` | **只读**（Get / List 类，plan 刷新状态用）与容器服务、RDS 加密服务角色的 PassRole；**不给任何写动作**（安全审查 B1：能建策略与角色就能给自己提权）——`kms.tf` 的 `secret_reader` 策略、角色与挂载由人用管理员身份在阶段 R apply | `ack.tf`；`kms.tf` 见阶段 R |
+| 安全令牌 `sts:` | GetCallerIdentity（`data.alicloud_account.current` 取账号 ID）。扮演 `<Terraform RAM 角色>` 时，AssumeRole 只授给该角色的精确 ARN（不挂系统策略 AliyunSTSAssumeRoleAccess） | `providers.tf` |
+| 计费 `bssapi:` | 包年包月下单所需的查询与下单（只 ACR 企业版；云防火墙由人在控制台购买）；`CreateInstance` 能下单任何产品，**阶段 B 完成后由人撤掉** | `acr.tf` |
 
 另加一条**显式拒绝**（防止误删，与“不执行 destroy”一致）：各产品的删除 / 释放类动作（例如释放 RDS 实例、删除集群、删除桶、计划删除 KMS 密钥、
 删除日志 Project、删除 ACR 实例），以及 `ram:` 的创建用户、创建 AccessKey、给用户挂策略（防止提权）。若某次 plan 里的“修改”需要先删后建，
 apply 会被这条拒绝挡下——这正是要停下来由人决定的情形。
-ACK 首次使用须由主账号在控制台授权容器服务的服务角色（一次性，由人完成）。
+一次性授权与账号级设置（由主账号在控制台完成，草案拒绝了 `ram:CreateServiceLinkedRole` 与账号级阻止公共访问的修改）：容器服务的服务角色；RDS 云盘加密（AliyunRDSInstanceEncryptionDefaultRole）与 ECS 云盘加密的服务角色；NAT 网关、ACR VPC 端点、云防火墙首次使用时的服务关联角色；**OSS 账号级阻止公共访问开启**（安全审查 B3：即使桶级设置被改，桶也不能公开）。
+集群建好后（阶段 C 验收后）由人在 ACK 授权管理里收回 Terraform 身份自动获得的集群 RBAC（建集群的身份默认是 cluster-admin），并核实草案已拒绝取 kubeconfig。
+走 STS 时：三条策略挂给 `<Terraform RAM 角色>`，子账号只有扮演该角色的权限；0.2 状态桶的桶策略主体也改成该角色。
 
 ### 0.2 状态桶与锁表（Terraform 远程后端的引导，由人在控制台创建；不在本目录的 Terraform 里）
 状态桶必须先于第一次 `terraform init` 存在（鸡生蛋问题），所以由人手工创建，**不**交给本目录的 Terraform 管理：
@@ -60,8 +63,8 @@ ACK 首次使用须由主账号在控制台授权容器服务的服务角色（�
 4. 第二人核对：桶为私有且版本控制已开、加密为 KMS、锁表主键正确；把桶名、前缀、锁表名写进变更记录（不进仓库）。
 
 ### 0.3 需放行的域名（由用户在 Claude 会话的云环境设置里配置；以 provider 实际访问为准，首次 plan 被拦时按报错补）
-- Terraform：`registry.terraform.io`、`releases.hashicorp.com`（若在会话里装 Terraform）；aliyun/alicloud provider 的下载跳转地址（registry 返回的
-  `github.com` 发布地址与其对象存储）；改用 OpenTofu 时为 `registry.opentofu.org`。版本检查关闭（`CHECKPOINT_DISABLE=1`），不放行 checkpoint。
+- OpenTofu（LT-03 决定记录第 10 条）：`registry.opentofu.org`；`tofu` 二进制与 aliyun/alicloud provider 的下载跳转地址（`github.com` 发布地址与
+  `objects.githubusercontent.com`，可能还有 `release-assets.githubusercontent.com`，以下载时的跳转为准）。初始化脚本直接下载锁定版本的发布包并核对校验和，不用 `get.opentofu.org` 安装脚本。不放行 `registry.terraform.io`、`releases.hashicorp.com`。版本检查关闭（`CHECKPOINT_DISABLE=1`）。
 - 阿里云 OpenAPI（华北 2）：VPC、ECS、ACK（cs）、RDS、KMS、RAM、STS、OSS（含状态桶与业务桶的 `cn-beijing` 端点）、表格存储（`<OTS 实例名>`
   的 `cn-beijing` 端点）、ACR（cr）、云防火墙、日志服务（`cn-beijing` 端点与 `<日志 Project>` 子域）、负载均衡（slb）、计费（bss）、端点发现（location）。
 - 不放行其他公网目的地；模型供应商主机名属于学习服务 Pod 的出网（第 5 节），与 Claude 会话无关。
@@ -83,7 +86,7 @@ ACK 首次使用须由主账号在控制台授权容器服务的服务角色（�
 ### 0.5 需配置的环境变量（**只写名字，不写值**；值只在运行环境与凭据管家里）
 | 在哪里 | 变量名 | 说明 |
 |---|---|---|
-| Claude 会话（Terraform） | `ALICLOUD_ACCESS_KEY`、`ALICLOUD_SECRET_KEY`、`ALICLOUD_SECURITY_TOKEN`（STS 时） | provider 与 OSS 后端都认这组名字；新名字 `ALIBABA_CLOUD_ACCESS_KEY_ID`、`ALIBABA_CLOUD_ACCESS_KEY_SECRET`、`ALIBABA_CLOUD_SECURITY_TOKEN` 后端是否认以所用 Terraform 版本文档为准，**两组不混用** |
+| Claude 会话（Terraform） | `ALICLOUD_ACCESS_KEY`、`ALICLOUD_SECRET_KEY`、`ALICLOUD_SECURITY_TOKEN`（STS 时） | provider 与 OSS 后端都认这组名字；新名字 `ALIBABA_CLOUD_ACCESS_KEY_ID`、`ALIBABA_CLOUD_ACCESS_KEY_SECRET`、`ALIBABA_CLOUD_SECURITY_TOKEN` 后端是否认以所用 OpenTofu 版本文档为准，**两组不混用** |
 | Claude 会话（Terraform） | `TF_DATA_DIR`、`TF_IN_AUTOMATION`、`TF_INPUT`、`CHECKPOINT_DISABLE` | `TF_DATA_DIR` 指向 `<计划目录>/.terraform`，让后端缓存与 provider 不落仓库 |
 | 有工具的校验机 | `IAC_PLUGIN_DIR`、`CONTRACT_STRICT` | `make iac-validate` 的 provider 离线目录与严格模式 |
 | 云效 Flow（镜像） | `ACR_REGISTRY`、`PYTHON_IMAGE`、`NODE_IMAGE`、`IMAGE_TAG`、`TRIVY_DB_REPOSITORY`、`TRIVY_JAVA_DB_REPOSITORY`、`SIGN_MODE`、`COSIGN_KEY_REF`、`COSIGN_PUB_REF`、`COSIGN_PASSWORD` | 前九个见 `deploy/ci/pipeline.sh`；`COSIGN_PASSWORD` 是 cosign 约定的私钥口令变量（只由 CI 注入，不打印） |
@@ -96,17 +99,19 @@ ACK 首次使用须由主账号在控制台授权容器服务的服务角色（�
    校验（`check_iac.py` 规则 R11 核对）；每条 SNAT 仍以 `var.nat_firewall_confirmed` 为前置条件。阶段 A–C 与 D1 一律传
    `-var nat_firewall_confirmed=false`（SNAT 不在 `-target` 里，出网保持不通）；D2 之前由人在控制台为 NAT 网关开启 NAT 边界防火墙、
    第二人核实后才传 `true`。
-2. 许可证：Terraform BSL 1.1 是否接受（否则 OpenTofu，`make iac-validate` 自动识别 `tofu`）。
+2. 许可证（已解决，LT-03 决定记录第 10 条，2026-10-27）：用 OpenTofu（MPL-2.0），不用 Terraform（BSL 1.1）。本手册命令里的 `terraform` 一律换成 `tofu`，
+   子命令与参数相同；`make iac-validate` 自动识别 `tofu`。必填变量可用 `TF_VAR_<变量名>` 环境变量给出（列表写 JSON），此时 plan 不带 `-var-file`。
 3. 包年包月与新增云服务（ACR 企业版、云防火墙、ARMS、SLS）已由人确认计费并开通。
 4. `terraform.tfvars` 必填项已由人准备好（放 `<计划目录>`，不进仓库）：`k8s_version`、`node_key_pair_name`、`oss_bucket_name`、`office_vpn_cidrs`、
    `cloud_service_endpoint_cidrs`（只在 100.64.0.0/10 里、不宽于 /24）、`model_egress_fqdns`（供应商未开通时为空列表）、`nat_firewall_confirmed`。
+5. **OSS 账号级阻止公共访问已由主账号开启、第二人核实**（安全审查 B3：子账号能改桶级阻止公共访问与 ACL，桶不被公开全靠这一层）；0.1 节末的一次性授权已完成；`deploy/runbooks/ram/` 三条策略已替换占位名、在 RAM 控制台校验动作名后挂载。
 
 ---
 
 ## 1. Terraform（Claude 会话执行；每次 apply 前逐次确认）
 
 ### 1.1 版本锁定与工作目录
-- 版本：`versions.tf` 要求 Terraform `>= 1.6.0, < 2.0.0`、provider `aliyun/alicloud ~> 1.230`；首次 init 生成的 `.terraform.lock.hcl`（只含 provider 摘要）
+- 版本：用 OpenTofu 1.x（锁定到具体小版本，由初始化脚本安装）；`versions.tf` 要求 `>= 1.6.0, < 2.0.0`、provider `aliyun/alicloud ~> 1.230`；首次 init 生成的 `.terraform.lock.hcl`（只含 provider 摘要）
   由人另起 PR 提交到 `deploy/iac/alicloud/`，之后每次 init 都带 `-lockfile=readonly`。
 - `<计划目录>`：仓库与会话临时目录**之外**的专用目录（0700），放 `backend.hcl`、`staging.tfvars`、`.terraform/`（经 `TF_DATA_DIR`）与计划文件；
   计划文件含状态快照，apply 后即删，不提交、不上传。命令里的 `<计划目录>` 一律写绝对路径（`-chdir` 会改变相对路径的基准）。
@@ -162,9 +167,10 @@ terraform -chdir=deploy/iac/alicloud show -json <计划目录>/<阶段>.tfplan |
    云防火墙访问控制只放行 `model_egress_fqdns` 的 TCP 443、最后一条拒绝其余；SNAT 只在访问控制之后。
 4. **公网暴露检查**：没有 `alicloud_forward_entry`（DNAT）、没有 RDS 外网连接、没有公网负载均衡、ACK `slb_internet_enabled = false`、节点无公网带宽、
    EIP 只绑 NAT、OSS 私有且阻止公共访问、ACR 没有公网访问入口。
-5. **KMS 与 RAM 变更**：KMS 密钥的轮转与删除保护、别名；`alicloud_ram_policy.secret_reader` 的动作与资源逐个列出（11 个凭据名、只用凭据专用密钥 Decrypt）、
-   `alicloud_ram_role.secret_reader` 的信任主体只是 `kube-system:ack-secret-manager`。
-6. 其他：地域与可用区全部 cn-beijing；标签齐全（R08）；本阶段之外的资源没有出现在计划里。
+5. **会造成破坏或暴露的“修改”**（草案没有拒绝、靠这里核对）：OSS 生命周期规则（不得有删除当前版本的过期规则）与版本控制（不得暂停）、日志库留存（不低于 180 天）、RDS 备份保留期、任何删除保护被关闭、EIP 只绑 NAT 网关、ACK 不开公网 API Server。
+6. **KMS 与 RAM 变更**：KMS 密钥的轮转与删除保护、别名；`alicloud_ram_policy.secret_reader` 的动作与资源逐个列出（11 个凭据名、只用凭据专用密钥 Decrypt）、
+   `alicloud_ram_role.secret_reader` 的信任主体只是 `kube-system:ack-secret-manager`（RAM 资源只在阶段 R 由人 apply；Claude 的计划里出现 RAM 写变更一律停下）。
+7. 其他：地域与可用区全部 cn-beijing；标签齐全（R08）；本阶段之外的资源没有出现在计划里。
 
 ### 1.5 apply（只用已审阅的计划文件）
 ```
@@ -186,10 +192,10 @@ terraform -chdir=deploy/iac/alicloud apply -input=false <计划目录>/<阶段>.
 -target=alicloud_security_group_rule.egress_deny_cloud_internal -target=alicloud_security_group_rule.egress_deny_link_local
 -target=alicloud_security_group_rule.egress_https -target=alicloud_security_group_rule.egress_deny_rest
 -target=alicloud_kms_key.main -target=alicloud_kms_alias.main -target=alicloud_kms_key.secrets -target=alicloud_kms_alias.secrets
--target=alicloud_ram_policy.secret_reader -target=alicloud_slb_acl.office_vpn -target=alicloud_slb_acl_entry_attachment.office_vpn
+-target=alicloud_slb_acl.office_vpn -target=alicloud_slb_acl_entry_attachment.office_vpn
 ```
 验收（控制台或只读查询，第二人复核）：VPC 网段 10.20.0.0/16，六个交换机分在两个可用区；安全组为普通安全组、组内互通 Drop，规则与优先级同 1.4 第 3 条；
-两把 KMS 密钥启用、自动轮转、删除保护；RAM 策略只列 11 个凭据名；访问控制列表只含 `office_vpn_cidrs`。
+两把 KMS 密钥启用、自动轮转、删除保护；访问控制列表只含 `office_vpn_cidrs`。
 
 **阶段 B：RDS / OSS / ACR / SLS**
 ```
@@ -202,15 +208,23 @@ terraform -chdir=deploy/iac/alicloud apply -input=false <计划目录>/<阶段>.
 验收：RDS 只有内网地址、白名单只 VPC 网段、SSL 开启、pg_hba 只有 hostssl、每日备份 + 日志备份（PITR）、删除保护、KMS 云盘加密；OSS 私有、阻止公共访问、
 版本控制、KMS 加密、三条生命周期、网关终端节点策略只放本桶；ACR 实例运行中、命名空间私有、12 个私有仓库、VPC 端点已关联；SLS 的 `app` 与 `audit`
 日志库留存 180 天、服务端加密、`app` 只建白名单字段索引、没有全文索引。
+另核：OSS 账号级阻止公共访问仍开启；ACR 企业版下单完成后，由人从子账号策略里撤掉 `bssapi:CreateInstance`（能下单任何产品）。
 
 **阶段 C：ACK**
 ```
 -target=alicloud_cs_managed_kubernetes.main -target=alicloud_cs_kubernetes_node_pool.default
--target=alicloud_ram_role.secret_reader -target=alicloud_ram_role_policy_attachment.secret_reader
 ```
 验收：API Server 只有内网地址；Terway 且 NetworkPolicy 生效；组件含 `arms-prometheus`、`logtail-ds`、`ack-secret-manager`，nginx-ingress 禁用；Secret 落盘
-KMS 加密；RRSA 开启；节点池节点 Ready、无公网地址、系统盘加密；RAM 角色信任主体正确。**此时还没有 SNAT**：节点初始化与组件镜像拉取若需要公网而失败，
+KMS 加密；RRSA 开启；节点池节点 Ready、无公网地址、系统盘加密。**此时还没有 SNAT**：节点初始化与组件镜像拉取若需要公网而失败，
 停下由人决定（不临时放开出网）。
+
+**阶段 R：RAM（由人用管理员身份执行，不在 Claude 会话里；阶段 C 之后，因为角色信任集群的 OIDC）**
+运维管理员在跳板上用自己的临时凭据、同一个状态后端执行（Terraform 子账号没有 RAM 写权限）：
+```
+tofu -chdir=deploy/iac/alicloud plan -input=false -lock=true -out=<计划目录>/R.tfplan -target=alicloud_ram_policy.secret_reader -target=alicloud_ram_role.secret_reader -target=alicloud_ram_role_policy_attachment.secret_reader
+```
+第二人审阅策略文档（只列 11 个凭据名、只用凭据专用密钥 Decrypt）与信任策略（只信任本集群 OIDC 的 `kube-system:ack-secret-manager`）后再 apply；之后这三个资源的任何变更都走同一流程。
+验收：RAM 策略只列 11 个凭据名；角色信任主体正确；ack-secret-manager 能同步 Secret。
 
 **阶段 D：防火墙与 NAT**（分两步；供应商主机名未定时可推迟到第 5 节 `model_provider` 解除时再做——staging 其余部分不依赖公网出网）
 ```

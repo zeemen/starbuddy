@@ -1,0 +1,55 @@
+{
+  "Version": "1",
+  "Statement": [
+    {
+      "Effect": "Deny",
+      "Action": [
+        "vpc:DeleteVpc", "vpc:DeleteVSwitch", "vpc:DeleteNatGateway", "vpc:DeleteSnatEntry",
+        "vpc:ReleaseEipAddress", "vpc:UnassociateEipAddress",
+        "vpc:DeleteVpcGatewayEndpoint", "vpc:DissociateRouteTablesFromVpcGatewayEndpoint",
+        "ecs:DeleteSecurityGroup", "ecs:RevokeSecurityGroup", "ecs:RevokeSecurityGroupEgress",
+        "ecs:CreateInstance", "ecs:RunInstances", "ecs:AllocatePublicIpAddress",
+        "cs:DeleteCluster", "cs:DeleteClusterNodepool", "cs:DeleteClusterNodes", "cs:RemoveClusterNodes", "cs:RemoveNodePoolNodes",
+        "cs:UnInstallClusterAddons",
+        "slb:DeleteAccessControlList", "slb:RemoveAccessControlListEntry",
+        "rds:DeleteDBInstance", "rds:AllocateInstancePublicConnection", "rds:ModifySQLCollectorPolicy",
+        "oss:DeleteBucket", "oss:DeleteObject", "oss:PutBucketPolicy", "oss:DeleteBucketPolicy",
+        "oss:PutBucketCors", "oss:PutBucketWebsite", "oss:DeleteBucketEncryption", "oss:DeleteBucketLifecycle",
+        "oss:DeleteBucketPublicAccessBlock", "oss:PutPublicAccessBlock", "oss:DeletePublicAccessBlock",
+        "ots:DeleteTable", "ots:DeleteInstance",
+        "kms:ScheduleKeyDeletion", "kms:DisableKey", "kms:DeleteAlias",
+        "log:DeleteProject", "log:DeleteLogStore", "log:DeleteIndex",
+        "cr:DeleteNamespace", "cr:DeleteRepository", "cr:DeleteInstanceVpcEndpointLinkedVpc",
+        "yundun-cloudfirewall:DeleteNatFirewallControlPolicy"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Deny",
+      "Action": [
+        "ram:CreateUser", "ram:UpdateUser", "ram:CreateAccessKey", "ram:UpdateAccessKey", "ram:CreateLoginProfile",
+        "ram:AttachPolicyToUser", "ram:AttachPolicyToGroup", "ram:AddUserToGroup",
+        "ram:CreatePolicy", "ram:CreatePolicyVersion", "ram:SetDefaultPolicyVersion", "ram:DeletePolicyVersion", "ram:DeletePolicy",
+        "ram:CreateRole", "ram:UpdateRole", "ram:DeleteRole", "ram:AttachPolicyToRole", "ram:DetachPolicyFromRole",
+        "ram:CreateServiceLinkedRole"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Deny",
+      "Action": [
+        "kms:GetSecretValue",
+        "log:GetLogs", "log:GetLogStoreLogs", "log:GetCursorOrData", "log:GetHistograms", "log:GetContextLogs", "log:PullLogs",
+        "cr:GetAuthorizationToken",
+        "cs:DescribeClusterUserKubeconfig", "cs:DescribeClusterAttachScripts", "cs:DescribeClusterCerts",
+        "cs:DescribeSubaccountK8sClusterUserConfig", "cs:DescribeExternalAgent",
+        "ecs:DescribeUserData", "ecs:DescribeInvocationResults",
+        "vpc:DescribeSslVpnClientCert", "vpc:DescribeVpnConnection",
+        "rds:DescribeSQLLogRecords", "rds:DescribeSlowLogRecords", "rds:DescribeErrorLogs", "rds:DescribeBackups",
+        "rds:DescribeBinlogFiles", "rds:DescribeLogBackupFiles", "rds:DescribeSQLLogFiles", "rds:DescribeCrossRegionBackups",
+        "rds:DescribeCrossRegionLogBackupFiles"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

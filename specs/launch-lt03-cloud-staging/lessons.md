@@ -30,9 +30,21 @@
 
 ## 待人确认
 1. **开通与执行（由人）**：阿里云账号与计费（云防火墙、ACR 企业版为包年包月）；在有工具的环境执行 `terraform validate` / plan 并按报错修正属性名；填写 tfvars（`cloud_service_endpoint_cidrs`、`model_egress_fqdns`、办公网 / VPN 网段等）；镜像加签与验签配置；前端内网 HTTPS 的私有 CA 证书（与 spec“不做证书”冲突，staging 下 `BFF_SHELL_ORIGIN` 必须 https）。
-2. **许可证**：Terraform BSL 1.1 是否接受（否则 OpenTofu）。
+2. **许可证**：已决定用 OpenTofu（决定记录第 10 条，2026-10-27）。
 3. **RDS**：高权限账号能否建 `BYPASSRLS` 角色、能否在 `starbuddy_ext` 装 pgcrypto（不能则属必停）；`connection_string_prefix`、`ssl_connection_string`、`pg_hba_conf` 参数名与内网域名后缀；自定义 pg_hba 后系统条目是否仍含 host 类型（演练时 `sslmode=disable` 必须失败）。
 4. **网络**：企业级安全组是否确实不支持拒绝规则与优先级（改普通安全组的理由）；OSS 网关终端节点在 cn-beijing 的可用性与写法；NAT 边界防火墙能否由 Terraform 开启；VPN 若保留源地址需补办公网网段；DNS 隧道外泄（CoreDNS 转发白名单）低优先级。
 5. **签名**：ACR 加签所需规格（缺省 Advanced）；cosign 私钥以文件放凭据管家是否接受；本地公钥验签时是否仍联网初始化 TUF 根（需抓包确认）。
 6. **取值**：日志留存 180 天、OSS 生命周期天数、RDS 备份保留 14 天。
 7. **其他**：knowledge-snapshot 用 RWO 云盘，快照写入方式另议；健康端点是否另登其余服务的攻击面条目由安全负责人定；探针不受 NetworkPolicy 拦截须在 staging 演练核对。
+
+## 补记（2026-10-28）：OpenTofu 与 Terraform 子账号策略草案
+- 决定记录第 10 条：用 OpenTofu。`deploy/runbooks/ram/` 三条 RAM 策略草案（基础设施允许、数据服务允许、显式拒绝）与 `deploy/tests/test_ram_policies.py`；手册第 0.1、0.3、0.6 节、1.4 审阅清单、阶段 A / B / C 与新增阶段 R 同步。
+- 安全审查两轮：B1（RAM 写动作可经新策略 / 新角色提权）→ 子账号不授任何 RAM 写动作，`secret_reader` 策略、角色、挂载改为阶段 R 由人用管理员身份 apply；B2 / N1 / N2（查询通配夹带日志正文、镜像登录凭据、kubeconfig、集群接入脚本与证书、数据库日志与备份下载链接）→ 日志、镜像仓库逐个列查询动作，其余敏感读取进拒绝；B3（关桶级阻止公共访问再改 ACL）→ 拒绝账号级阻止的修改，主账号开启账号级阻止列为开工阻断项。测试按产品登记查询通配、展开通配查重叠。
+- 教训：查询类通配不等于只读元数据——各云产品的 Describe / Get 里常夹着数据下载链接与凭据，授通配前要逐产品排查，或干脆逐个列。
+
+### 待人确认（续）
+8. 草案里的动作名、资源 ARN 格式（尤其 OTS、日志、PassRole 的服务角色名）以 RAM 控制台校验为准；首次 plan / apply 报权限不足时按报错逐个补，补的动作同样过测试。
+9. 锁定的 provider 版本读取 `alicloud_cs_managed_kubernetes` 时是否调用证书 / kubeconfig 接口并把客户端私钥写进状态；若会，子账号读状态桶即可绕过拒绝，须换版本或另想办法。
+10. 残余风险：子账号仍可改节点池（自定义数据、扩容）、绑 EIP、放开安全组入方向，直接调 API 不经 plan 审阅。建议 D1 的 EIP 绑定由人执行，全部阶段完成后撤掉写类策略只留只读；是否接受由人定。
+11. 阶段 R 由管理员 apply 的状态与代码，子账号可写状态桶：管理员只从已审阅的提交执行，plan 前核对状态桶版本。
+12. 走 STS 时 `sts:AssumeRole` 的精确 ARN 授权未写成 JSON，由人另建。
