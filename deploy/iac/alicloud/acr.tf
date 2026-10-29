@@ -34,7 +34,7 @@ resource "alicloud_cr_ee_repo" "images" {
   repo_type   = "PRIVATE"
 }
 
-resource "alicloud_cr_ee_vpc_endpoint_linked_vpc" "main" {
+resource "alicloud_cr_vpc_endpoint_linked_vpc" "main" {
   instance_id                      = alicloud_cr_ee_instance.main.id
   vpc_id                           = alicloud_vpc.main.id
   vswitch_id                       = alicloud_vswitch.node[0].id

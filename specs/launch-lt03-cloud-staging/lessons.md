@@ -48,3 +48,15 @@
 10. 残余风险：子账号仍可改节点池（自定义数据、扩容）、绑 EIP、放开安全组入方向，直接调 API 不经 plan 审阅。建议 D1 的 EIP 绑定由人执行，全部阶段完成后撤掉写类策略只留只读；是否接受由人定。
 11. 阶段 R 由管理员 apply 的状态与代码，子账号可写状态桶：管理员只从已审阅的提交执行，plan 前核对状态桶版本。
 12. 走 STS 时 `sts:AssumeRole` 的精确 ARN 授权未写成 JSON，由人另建。
+
+## 补记（2026-10-29）：首次 tofu validate 与开工前只读核对
+- 开工前只读核对：网络（`registry.opentofu.org`、provider 下载、阿里云各 OpenAPI / OSS / OTS 端点）通；子账号凭据有效；但状态桶 `GetBucketInfo` / `ListObjects`、`vpc:DescribeVpcs`、`kms:ListKeys` 全部隐式拒绝——三条 RAM 策略尚未生效（用户去挂载）。状态桶版本控制 / 加密与锁表主键待权限生效后再核。
+- 第一次在有 provider 的环境执行 `tofu validate`（OpenTofu 1.9.0，aliyun/alicloud 1.294.0，`~> 1.230` 解析结果），按 provider 文档修正三处：
+  `alicloud_rds_backup_policy` → `alicloud_db_backup_policy`（属性名不变）；`alicloud_cr_ee_vpc_endpoint_linked_vpc` → `alicloud_cr_vpc_endpoint_linked_vpc`（属性不变）；
+  云防火墙 `domain_resolve_type` 由字符串改为数字 `2`（FQDN 与 DNS 动态解析都用，与原意一致）。手册阶段 B / B2 的 `-target` 与 `check_iac.py`、测试同步。
+- `tofu fmt -check` 原先不过（只差空白），一并格式化；多行列表改为一项一行，变异锚点同步。
+- `make iac-validate IAC_PLUGIN_DIR=<provider 缓存>` 的 validate 通过；tflint、checkov、tfsec 本机没有，仍为跳过。
+
+### 待人确认（续）
+13. provider 1.294.0 在 OpenTofu registry 没有 GPG 公钥，init 提示“跳过签名校验”，只靠锁文件里的哈希；是否接受由人定。`.terraform.lock.hcl` 按手册 1.1 由人另起 PR 提交（只含当前平台 linux_amd64 的哈希，跨平台需 `tofu providers lock -platform=...`）。
+14. `log_backup_retention_period` 大于 `backup_retention_period` 时 provider 会静默改成后者，之后每次 plan 都有差异；当前两者缺省都是 14，tfvars 里改值时保持日志备份 ≤ 数据备份。

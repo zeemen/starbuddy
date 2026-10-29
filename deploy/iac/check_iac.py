@@ -345,8 +345,8 @@ RDS_LOG_PARAMETERS = {
 
 # 不支持 tags 参数的资源类型（R08）：逐个登记，新增资源类型不在这里就必须带 tags
 NO_TAGS = {"alicloud_security_group_rule", "alicloud_snat_entry", "alicloud_eip_association", "alicloud_oss_bucket_acl",
-           "alicloud_oss_bucket_public_access_block", "alicloud_rds_backup_policy", "alicloud_cr_ee_instance",
-           "alicloud_cr_ee_namespace", "alicloud_cr_ee_repo", "alicloud_cr_ee_vpc_endpoint_linked_vpc", "alicloud_log_store",
+           "alicloud_oss_bucket_public_access_block", "alicloud_db_backup_policy", "alicloud_cr_ee_instance",
+           "alicloud_cr_ee_namespace", "alicloud_cr_ee_repo", "alicloud_cr_vpc_endpoint_linked_vpc", "alicloud_log_store",
            "alicloud_kms_alias", "alicloud_ram_policy", "alicloud_ram_role_policy_attachment", "alicloud_slb_acl_entry_attachment",
            "alicloud_cloud_firewall_nat_firewall_control_policy", "alicloud_vpc_gateway_endpoint_route_table_attachment",
            "alicloud_log_store_index"}
@@ -565,10 +565,10 @@ class Checker:
                 self.add("R06", b.file, f"{n}：必须开删除保护")
             if "encryption_key" not in a:
                 self.add("R09", b.file, f"{n}：云盘必须用 KMS 加密（encryption_key）")
-            pol = [p for p in self.resources("alicloud_rds_backup_policy")
+            pol = [p for p in self.resources("alicloud_db_backup_policy")
                    if isinstance(p.body.attrs.get("instance_id"), Expr) and f"alicloud_db_instance.{n}." in p.body.attrs["instance_id"].raw + "."]
             if not pol:
-                self.add("R06", b.file, f"{n}：缺备份策略（alicloud_rds_backup_policy）")
+                self.add("R06", b.file, f"{n}：缺备份策略（alicloud_db_backup_policy）")
             for p in pol:
                 pa = p.body.attrs
                 if pa.get("enable_backup_log") is not True:

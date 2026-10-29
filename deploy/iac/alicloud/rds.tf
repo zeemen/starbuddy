@@ -68,12 +68,12 @@ resource "alicloud_db_instance" "main" {
     name  = "log_transaction_sample_rate"
     value = "0"
   }
-  deletion_protection      = true
+  deletion_protection = true
   # 迁移 0001–0058 用到 pgcrypto（WITH SCHEMA starbuddy_ext）；由人确认 RDS 允许的扩展清单（README.md 第 5 节）
   tags = local.tags
 }
 
-resource "alicloud_rds_backup_policy" "main" {
+resource "alicloud_db_backup_policy" "main" {
   instance_id                 = alicloud_db_instance.main.id
   preferred_backup_period     = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
   preferred_backup_time       = "18:00Z-19:00Z" # 北京时间 02:00–03:00

@@ -198,14 +198,14 @@ terraform -chdir=deploy/iac/alicloud apply -input=false <计划目录>/<阶段>.
 
 **阶段 B：RDS / OSS / ACR / SLS**
 ```
--target=alicloud_db_instance.main -target=alicloud_rds_backup_policy.main
+-target=alicloud_db_instance.main -target=alicloud_db_backup_policy.main
 -target=alicloud_oss_bucket.main -target=alicloud_oss_bucket_acl.main -target=alicloud_oss_bucket_public_access_block.main
 -target=alicloud_vpc_gateway_endpoint.oss -target=alicloud_vpc_gateway_endpoint_route_table_attachment.oss
 -target=alicloud_log_project.main -target=alicloud_log_store.app -target=alicloud_log_store_index.app -target=alicloud_log_store.audit
 # B'：ACR 企业版实例（包年包月、下单即扣费；由人用管理员身份执行，同阶段 R 的做法：子账号没有计费下单权限）
 -target=alicloud_cr_ee_instance.main
 # B2：ACR 命名空间、仓库、VPC 端点（Claude 会话，B' 之后）
--target=alicloud_cr_ee_namespace.main -target=alicloud_cr_ee_repo.images -target=alicloud_cr_ee_vpc_endpoint_linked_vpc.main
+-target=alicloud_cr_ee_namespace.main -target=alicloud_cr_ee_repo.images -target=alicloud_cr_vpc_endpoint_linked_vpc.main
 ```
 验收：RDS 只有内网地址、白名单只 VPC 网段、SSL 开启、pg_hba 只有 hostssl、每日备份 + 日志备份（PITR）、删除保护、KMS 云盘加密；OSS 私有、阻止公共访问、
 版本控制、KMS 加密、三条生命周期、网关终端节点策略只放本桶；ACR 实例运行中、命名空间私有、12 个私有仓库、VPC 端点已关联；SLS 的 `app` 与 `audit`

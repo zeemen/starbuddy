@@ -220,8 +220,11 @@ resource "alicloud_snat_entry" "node" {
   snat_entry_name   = "${local.name}-node-${count.index}"
   # 安全审查采纳建议：云防火墙没开就不能静默放开出网——SNAT 排在白名单与“拒绝其余”两类访问控制之后建
   # （NAT 边界防火墙没开时访问控制建不成，SNAT 也就不会建），且必须由人确认已开启（nat_firewall_confirmed，见 egress.tf）
-  depends_on = [alicloud_eip_association.nat, alicloud_cloud_firewall_nat_firewall_control_policy.model_vendor,
-                alicloud_cloud_firewall_nat_firewall_control_policy.deny_rest]
+  depends_on = [
+    alicloud_eip_association.nat,
+    alicloud_cloud_firewall_nat_firewall_control_policy.model_vendor,
+    alicloud_cloud_firewall_nat_firewall_control_policy.deny_rest,
+  ]
   lifecycle {
     precondition {
       condition     = var.nat_firewall_confirmed
@@ -236,8 +239,11 @@ resource "alicloud_snat_entry" "pod" {
   source_vswitch_id = alicloud_vswitch.pod[count.index].id
   snat_ip           = alicloud_eip_address.nat.ip_address
   snat_entry_name   = "${local.name}-pod-${count.index}"
-  depends_on = [alicloud_eip_association.nat, alicloud_cloud_firewall_nat_firewall_control_policy.model_vendor,
-                alicloud_cloud_firewall_nat_firewall_control_policy.deny_rest]
+  depends_on = [
+    alicloud_eip_association.nat,
+    alicloud_cloud_firewall_nat_firewall_control_policy.model_vendor,
+    alicloud_cloud_firewall_nat_firewall_control_policy.deny_rest,
+  ]
   lifecycle {
     precondition {
       condition     = var.nat_firewall_confirmed

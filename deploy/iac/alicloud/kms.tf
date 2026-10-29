@@ -9,9 +9,19 @@
 
 locals {
   # 与 deploy/k8s/staging.yaml 里 secretKeyRef / secretName 引用的 Secret 名一致（deploy/tests/test_iac.py 核对）
-  app_secrets = ["starbuddy-adapters", "starbuddy-bff", "starbuddy-insight", "starbuddy-knowledge", "starbuddy-learning",
-                 "starbuddy-model-vendors", "starbuddy-review-console", "starbuddy-scheduler", "starbuddy-signed-config",
-                 "starbuddy-staging-otp", "starbuddy-web"]
+  app_secrets = [
+    "starbuddy-adapters",
+    "starbuddy-bff",
+    "starbuddy-insight",
+    "starbuddy-knowledge",
+    "starbuddy-learning",
+    "starbuddy-model-vendors",
+    "starbuddy-review-console",
+    "starbuddy-scheduler",
+    "starbuddy-signed-config",
+    "starbuddy-staging-otp",
+    "starbuddy-web",
+  ]
 }
 
 resource "alicloud_kms_key" "secrets" {
@@ -53,8 +63,8 @@ resource "alicloud_kms_alias" "main" {
 # ack-secret-manager 读凭据管家的最小权限：只读名单内的凭据（starbuddy-staging/<Secret 名>）、只用凭据专用密钥解密；
 # 账号 ID 在 plan 时从数据源取，不写死
 resource "alicloud_ram_policy" "secret_reader" {
-  policy_name     = "${local.name}-secret-reader"
-  description     = "ack-secret-manager 只读名单内的应用凭据"
+  policy_name = "${local.name}-secret-reader"
+  description = "ack-secret-manager 只读名单内的应用凭据"
   policy_document = jsonencode({
     Version = "1"
     Statement = [

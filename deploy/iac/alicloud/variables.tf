@@ -78,7 +78,7 @@ variable "office_vpn_cidrs" {
   description = "可访问内网负载均衡（前端入口）的办公网 / VPN 来源网段，由人填写；不收 0.0.0.0/0，掩码不宽于 /16"
   type        = list(string)
   validation {
-    condition = alltrue([for c in var.office_vpn_cidrs : can(cidrhost(c, 0)) && tonumber(split("/", c)[1]) >= 16 && c != "0.0.0.0/0"])
+    condition     = alltrue([for c in var.office_vpn_cidrs : can(cidrhost(c, 0)) && tonumber(split("/", c)[1]) >= 16 && c != "0.0.0.0/0"])
     error_message = "office_vpn_cidrs 只收掩码 /16 及更窄的网段，不收 0.0.0.0/0。"
   }
 }
@@ -102,7 +102,7 @@ variable "cloud_service_endpoint_cidrs" {
   type        = list(string)
   validation {
     condition = alltrue([for c in var.cloud_service_endpoint_cidrs : can(cidrhost(c, 0)) && tonumber(split("/", c)[1]) >= 24
-                         && cidrsubnet(c, 0, 0) == c && startswith(c, "100.") && tonumber(split(".", c)[1]) >= 64 && tonumber(split(".", c)[1]) <= 127])
+    && cidrsubnet(c, 0, 0) == c && startswith(c, "100.") && tonumber(split(".", c)[1]) >= 64 && tonumber(split(".", c)[1]) <= 127])
     error_message = "cloud_service_endpoint_cidrs 只收 100.64.0.0/10 里、掩码 /24 及更窄的网段。"
   }
 }

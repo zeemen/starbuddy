@@ -17,7 +17,7 @@ resource "alicloud_cloud_firewall_nat_firewall_control_policy" "model_vendor" {
   source                = var.vpc_cidr
   destination_type      = "domain"
   destination           = var.model_egress_fqdns[count.index]
-  domain_resolve_type   = "FQDN_AND_DNS"
+  domain_resolve_type   = 2 # 0 只按 FQDN、1 只按 DNS 动态解析、2 两者都用（provider 1.294 起为数字）
   proto                 = "TCP"
   dest_port_type        = "port"
   dest_port             = "443/443"
