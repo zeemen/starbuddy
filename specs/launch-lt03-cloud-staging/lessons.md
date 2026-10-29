@@ -62,3 +62,9 @@
 14. `log_backup_retention_period` 大于 `backup_retention_period` 时 provider 会静默改成后者，之后每次 plan 都有差异；当前两者缺省都是 14，tfvars 里改值时保持日志备份 ≤ 数据备份。
 15. 不买 KMS 实例后的替代方案（决定记录第 14 条，阶段 B 之前定）：RDS 云盘加密改用服务密钥或不加密、OSS 业务桶改 OSS 完全托管加密（AES256）、ACK Secret 落盘加密与节点系统盘、ESSD 存储类的加密方式、凭据管家（ack-secret-manager）的替代（例如由人在跳板 kubectl 建 Secret）。staging 存放内部家庭（含未成年人）的真实数据，降级部分须写明残余风险，由用户确认。
 16. 首次只读核对时 OSS 返回的拒绝类型是 `ResourceGroupLevelIdentityBasedPolicy`：策略可能挂在了资源组范围；OSS、表格存储等对资源组授权支持不全，子账号策略须按“账号级别”授权。
+
+## 补记（2026-10-29）：阶段 A 已 apply
+- 开工前核对排障：RAM 策略起初没挂到子账号（个人权限为空）；子账号 AK 上有一条“启用但没有白名单”的网络访问限制策略，表现为 OSS 报 AK disabled、其他产品报 `InvalidAccessKeyId.AccessPolicyDenied`，由人禁用该策略后恢复；表格存储实例网络 ACL 起初不放行公网（`OTSAuthFailed`），由人放开；状态桶版本控制由人开启。
+- 用户决定（“按默认”）：`office_vpn_cidrs = []`，阶段 A 不建 `slb_acl` 两个资源（暂无办公网 / VPN；以后改白名单要删条目，子账号被拒绝，届时由人处理）；`cloud_service_endpoint_cidrs` 取会话从公网 DNS 解析出的 cn-beijing 内网端点所在 /24（OSS 内网、SLS 内网、STS 与 ACK 管控、ACK 匿名端点；不含 KMS），阶段 C 之后从 VPC 内复核；`k8s_version`、`node_key_pair_name` 为临时值，阶段 C 之前换真实值。
+- 阶段 A plan：23 新增 / 0 修改 / 0 删除（VPC、6 交换机、普通安全组与 15 条规则；无计费资源），用户确认后只 apply 该计划文件，计划文件已删；验收：状态 23 个资源、同目标重新 plan 为 No changes、状态桶出现 `staging/terraform.tfstate`。
+- 阶段 C 之前由主账号完成容器服务的云资源访问授权（核对时报 `EntityNotExist.Role: aliyuncsdefaultrole`）。
