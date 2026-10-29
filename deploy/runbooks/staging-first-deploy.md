@@ -28,7 +28,7 @@ LT-03 云与镜像、LT-04 learning-internal v1 与迁移 0058、LT-05 可观测
 
 **Terraform 子账号的最小权限策略清单**（由人在 RAM 控制台写成自定义策略，第二人审阅后挂载；动作逐个列出，只读的查询类动作可按产品前缀放行，
 资源尽量限定到 `cn-beijing` 与占位资源名；写类动作不用通配符 `*`——与 `deploy/iac/check_iac.py` 规则 R19 口径不同：R19 管 IaC 里建的策略（动作与资源都不用 `*`），本节的子账号策略里，不支持资源级授权的动作只能写 `Resource: "*"`）。
-策略草案已写成 JSON（占位名替换后粘贴进 RAM 控制台，三条分别建自定义策略，挂给子账号（走 STS 时挂给 `<Terraform RAM 角色>`，见本节末）；动作名以控制台校验为准，报“无效操作”的逐个核实后改草案；`deploy/tests/test_ram_policies.py` 静态核对）：`ram/terraform-allow-infra.json`（网络、ECS、ACK、负载均衡、服务角色 PassRole）、`ram/terraform-allow-data.json`（RDS、OSS 业务桶与状态桶、锁表、KMS、日志、ACR、云防火墙；RAM 只读）、`ram/terraform-deny.json`（删除 / 释放、全部 RAM 写动作、读日志正文 / 镜像仓库登录凭据 / kubeconfig / 实例自定义数据 / 数据库日志与备份下载、公网连接、桶策略与 CORS、账号级阻止公共访问的修改）。状态桶用 OSS 完全托管加密（AES256，LT-03 决定记录第 12 条），子账号不需要也不授任何 KMS 解密动作（Decrypt、GenerateDataKey 显式拒绝）。下表是各产品的动作类别：
+策略草案已写成 JSON（占位名替换后粘贴进 RAM 控制台，三条分别建自定义策略，挂给子账号（走 STS 时挂给 `<Terraform RAM 角色>`，见本节末）；动作名以控制台校验为准，报“无效操作”的逐个核实后改草案；`deploy/tests/test_ram_policies.py` 静态核对）：`ram/terraform-allow-infra.json`（网络、ECS、ACK、负载均衡、服务角色 PassRole）、`ram/terraform-allow-data.json`（RDS、OSS 业务桶与状态桶、锁表、日志、ACR、云防火墙；KMS 与 RAM 只读）、`ram/terraform-deny.json`（删除 / 释放、全部 RAM 写动作、读日志正文 / 镜像仓库登录凭据 / kubeconfig / 实例自定义数据 / 数据库日志与备份下载、公网连接、桶策略与 CORS、账号级阻止公共访问的修改）。状态桶用 OSS 完全托管加密（AES256，LT-03 决定记录第 12 条），子账号不需要也不授任何 KMS 解密动作（Decrypt、GenerateDataKey 显式拒绝）。下表是各产品的动作类别：
 
 | 产品（RAM 动作前缀） | 允许的动作类别 | 对应 IaC 文件 |
 |---|---|---|
@@ -41,7 +41,7 @@ LT-03 云与镜像、LT-04 learning-internal v1 与迁移 0058、LT-05 可观测
 | 容器镜像服务 `cr:` | 企业版实例、命名空间、仓库、VPC 访问端点的创建 / 查询 | `acr.tf` |
 | 云防火墙 `yundun-cloudfirewall:` 或 `cloudfw:`（以控制台为准） | NAT 边界访问控制策略的创建 / 查询 / 修改 | `egress.tf` |
 | 日志服务 `log:` | Project、日志库、索引的创建 / 查询 / 修改 | `sls.tf` |
-| 密钥管理 `kms:` | 主密钥与别名的创建 / 查询 / 打标签、轮转设置；**不给** Decrypt、GenerateDataKey、GetSecretValue（显式拒绝） | `kms.tf` |
+| 密钥管理 `kms:` | **只给查询**（Describe / List）；现阶段不买 KMS 实例、不建自建密钥（LT-03 决定记录第 14 条），不授任何写动作；Decrypt、GenerateDataKey、GetSecretValue 显式拒绝 | `kms.tf`（暂不 apply） |
 | 访问控制 `ram:` | **只读**（Get / List 类，plan 刷新状态用）与容器服务、RDS 加密服务角色的 PassRole；**不给任何写动作**（安全审查 B1：能建策略与角色就能给自己提权）——`kms.tf` 的 `secret_reader` 策略、角色与挂载由人用管理员身份在阶段 R apply | `ack.tf`；`kms.tf` 见阶段 R |
 | 安全令牌 `sts:` | 不授：GetCallerIdentity（`data.alicloud_account.current` 取账号 ID）不需要 RAM 授权。扮演 `<Terraform RAM 角色>` 时，AssumeRole 只授给该角色的精确 ARN（不挂系统策略 AliyunSTSAssumeRoleAccess） | `providers.tf` |
 | 计费 `bss:` / `bssapi:` | **不授**：下单接口能买任何产品；ACR 企业版实例（包年包月）在阶段 B' 由人用管理员身份 apply，云防火墙由人在控制台购买 | `acr.tf` |
@@ -181,7 +181,7 @@ terraform -chdir=deploy/iac/alicloud apply -input=false <计划目录>/<阶段>.
 ### 1.6 分阶段 apply 与每阶段验收（阶段之间都要过 1.4 的审阅与确认）
 `-target` 只用于首次分阶段创建；全部阶段完成后必须做一次**不带 `-target`** 的 plan，结果应为 `No changes`。
 
-**阶段 A：网络与 KMS**
+**阶段 A：网络**（现阶段不买 KMS 实例，两把 KMS 密钥不在本阶段，LT-03 决定记录第 14 条；阶段 B、C 的 RDS、OSS、ACK 目前引用 `alicloud_kms_key.main`，`-target` 会把它一并带进计划，所以阶段 B 之前须先按第 14 条改 IaC）
 ```
 -target=alicloud_vpc.main -target=alicloud_vswitch.node -target=alicloud_vswitch.pod -target=alicloud_vswitch.db
 -target=alicloud_security_group.nodes -target=alicloud_security_group_rule.ingress_vpc -target=alicloud_security_group_rule.egress_vpc
@@ -190,11 +190,16 @@ terraform -chdir=deploy/iac/alicloud apply -input=false <计划目录>/<阶段>.
 -target=alicloud_security_group_rule.egress_metadata -target=alicloud_security_group_rule.egress_cloud_endpoints
 -target=alicloud_security_group_rule.egress_deny_cloud_internal -target=alicloud_security_group_rule.egress_deny_link_local
 -target=alicloud_security_group_rule.egress_https -target=alicloud_security_group_rule.egress_deny_rest
--target=alicloud_kms_key.main -target=alicloud_kms_alias.main -target=alicloud_kms_key.secrets -target=alicloud_kms_alias.secrets
 -target=alicloud_slb_acl.office_vpn -target=alicloud_slb_acl_entry_attachment.office_vpn
 ```
 验收（控制台或只读查询，第二人复核）：VPC 网段 10.20.0.0/16，六个交换机分在两个可用区；安全组为普通安全组、组内互通 Drop，规则与优先级同 1.4 第 3 条；
-两把 KMS 密钥启用、自动轮转、删除保护；访问控制列表只含 `office_vpn_cidrs`。
+访问控制列表只含 `office_vpn_cidrs`；计划里没有任何 `alicloud_kms_*` 资源。
+
+**阶段 K：KMS（暂缓；现阶段不买 KMS 实例，LT-03 决定记录第 14 条）**——买实例或定下替代方案之前不 plan、不 apply 这一组：
+```
+-target=alicloud_kms_key.main -target=alicloud_kms_alias.main -target=alicloud_kms_key.secrets -target=alicloud_kms_alias.secrets
+```
+若以后买实例：子账号临时挂回 KMS 写动作（CreateKey、CreateAlias、UpdateRotationPolicy、SetDeletionProtection、打标签），apply 后撤掉；验收为两把密钥启用、自动轮转、删除保护。
 
 **阶段 B：RDS / OSS / ACR / SLS**
 ```

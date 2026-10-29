@@ -60,3 +60,5 @@
 ### 待人确认（续）
 13. provider 1.294.0 在 OpenTofu registry 没有 GPG 公钥，init 提示“跳过签名校验”，只靠锁文件里的哈希；是否接受由人定。`.terraform.lock.hcl` 按手册 1.1 由人另起 PR 提交（只含当前平台 linux_amd64 的哈希，跨平台需 `tofu providers lock -platform=...`）。
 14. `log_backup_retention_period` 大于 `backup_retention_period` 时 provider 会静默改成后者，之后每次 plan 都有差异；当前两者缺省都是 14，tfvars 里改值时保持日志备份 ≤ 数据备份。
+15. 不买 KMS 实例后的替代方案（决定记录第 14 条，阶段 B 之前定）：RDS 云盘加密改用服务密钥或不加密、OSS 业务桶改 OSS 完全托管加密（AES256）、ACK Secret 落盘加密与节点系统盘、ESSD 存储类的加密方式、凭据管家（ack-secret-manager）的替代（例如由人在跳板 kubectl 建 Secret）。staging 存放内部家庭（含未成年人）的真实数据，降级部分须写明残余风险，由用户确认。
+16. 首次只读核对时 OSS 返回的拒绝类型是 `ResourceGroupLevelIdentityBasedPolicy`：策略可能挂在了资源组范围；OSS、表格存储等对资源组授权支持不全，子账号策略须按“账号级别”授权。

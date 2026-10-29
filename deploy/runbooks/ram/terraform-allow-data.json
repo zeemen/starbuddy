@@ -50,14 +50,6 @@
     {
       "Effect": "Allow",
       "Action": [
-        "kms:CreateKey", "kms:UpdateKeyDescription", "kms:UpdateRotationPolicy", "kms:SetDeletionProtection",
-        "kms:CreateAlias", "kms:UpdateAlias", "kms:TagResource", "kms:UntagResource", "kms:TagResources", "kms:UntagResources"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Effect": "Allow",
-      "Action": [
         "log:CreateProject", "log:UpdateProject", "log:CreateLogStore", "log:UpdateLogStore",
         "log:CreateIndex", "log:UpdateIndex", "log:TagResources", "log:UntagResources"
       ],

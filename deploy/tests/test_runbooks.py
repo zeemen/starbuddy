@@ -299,7 +299,7 @@ def test_first_deploy_sections_and_order():
     t = first()
     pos = [t.index(f"\n## {i}. ") for i in range(8)]
     assert pos == sorted(pos), "第 0–7 节齐全且按顺序"
-    phases = ["**阶段 A：网络与 KMS**", "**阶段 B：RDS / OSS / ACR / SLS**", "**阶段 C：ACK**", "**阶段 D：防火墙与 NAT**"]
+    phases = ["**阶段 A：网络**", "**阶段 B：RDS / OSS / ACR / SLS**", "**阶段 C：ACK**", "**阶段 D：防火墙与 NAT**"]
     assert [t.index(p) for p in phases] == sorted(t.index(p) for p in phases)
     steps = ["1. **库连接核对**", "2. **学习服务**", "3. **知识服务、洞察服务**", "4. **调度器**", "5. **BFF**", "6. **前端、审核台后端**"]
     assert [t.index(s) for s in steps] == sorted(t.index(s) for s in steps)
