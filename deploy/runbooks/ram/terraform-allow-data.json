@@ -10,8 +10,7 @@
         "cr:GetInstance", "cr:GetInstanceEndpoint", "cr:GetInstanceVpcEndpoint", "cr:GetNamespace", "cr:GetRepository",
         "cr:ListInstance", "cr:ListInstanceEndpoint", "cr:ListNamespace", "cr:ListRepository",
         "yundun-cloudfirewall:Describe*",
-        "ram:Get*", "ram:List*",
-        "sts:GetCallerIdentity"
+        "ram:Get*", "ram:List*"
       ],
       "Resource": "*"
     },
@@ -69,8 +68,7 @@
       "Effect": "Allow",
       "Action": [
         "cr:CreateNamespace", "cr:UpdateNamespace", "cr:CreateRepository", "cr:UpdateRepository",
-        "cr:CreateInstanceVpcEndpointLinkedVpc",
-        "bssapi:CreateInstance", "bssapi:QueryAvailableInstances", "bssapi:GetPayAsYouGoPrice", "bssapi:GetSubscriptionPrice"
+        "cr:CreateInstanceVpcEndpointLinkedVpc"
       ],
       "Resource": "*"
     },

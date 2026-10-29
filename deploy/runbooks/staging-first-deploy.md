@@ -43,8 +43,8 @@ LT-03 云与镜像、LT-04 learning-internal v1 与迁移 0058、LT-05 可观测
 | 日志服务 `log:` | Project、日志库、索引的创建 / 查询 / 修改 | `sls.tf` |
 | 密钥管理 `kms:` | 主密钥与别名的创建 / 查询 / 打标签、轮转设置；**不给** Decrypt、GenerateDataKey、GetSecretValue（显式拒绝） | `kms.tf` |
 | 访问控制 `ram:` | **只读**（Get / List 类，plan 刷新状态用）与容器服务、RDS 加密服务角色的 PassRole；**不给任何写动作**（安全审查 B1：能建策略与角色就能给自己提权）——`kms.tf` 的 `secret_reader` 策略、角色与挂载由人用管理员身份在阶段 R apply | `ack.tf`；`kms.tf` 见阶段 R |
-| 安全令牌 `sts:` | GetCallerIdentity（`data.alicloud_account.current` 取账号 ID）。扮演 `<Terraform RAM 角色>` 时，AssumeRole 只授给该角色的精确 ARN（不挂系统策略 AliyunSTSAssumeRoleAccess） | `providers.tf` |
-| 计费 `bssapi:` | 包年包月下单所需的查询与下单（只 ACR 企业版；云防火墙由人在控制台购买）；`CreateInstance` 能下单任何产品，**阶段 B 完成后由人撤掉** | `acr.tf` |
+| 安全令牌 `sts:` | 不授：GetCallerIdentity（`data.alicloud_account.current` 取账号 ID）不需要 RAM 授权。扮演 `<Terraform RAM 角色>` 时，AssumeRole 只授给该角色的精确 ARN（不挂系统策略 AliyunSTSAssumeRoleAccess） | `providers.tf` |
+| 计费 `bss:` / `bssapi:` | **不授**：下单接口能买任何产品；ACR 企业版实例（包年包月）在阶段 B' 由人用管理员身份 apply，云防火墙由人在控制台购买 | `acr.tf` |
 
 另加一条**显式拒绝**（防止误删，与“不执行 destroy”一致）：各产品的删除 / 释放类动作（例如释放 RDS 实例、删除集群、删除桶、计划删除 KMS 密钥、
 删除日志 Project、删除 ACR 实例），以及 `ram:` 的创建用户、创建 AccessKey、给用户挂策略（防止提权）。若某次 plan 里的“修改”需要先删后建，
@@ -201,13 +201,16 @@ terraform -chdir=deploy/iac/alicloud apply -input=false <计划目录>/<阶段>.
 -target=alicloud_db_instance.main -target=alicloud_rds_backup_policy.main
 -target=alicloud_oss_bucket.main -target=alicloud_oss_bucket_acl.main -target=alicloud_oss_bucket_public_access_block.main
 -target=alicloud_vpc_gateway_endpoint.oss -target=alicloud_vpc_gateway_endpoint_route_table_attachment.oss
--target=alicloud_cr_ee_instance.main -target=alicloud_cr_ee_namespace.main -target=alicloud_cr_ee_repo.images -target=alicloud_cr_ee_vpc_endpoint_linked_vpc.main
 -target=alicloud_log_project.main -target=alicloud_log_store.app -target=alicloud_log_store_index.app -target=alicloud_log_store.audit
+# B'：ACR 企业版实例（包年包月、下单即扣费；由人用管理员身份执行，同阶段 R 的做法：子账号没有计费下单权限）
+-target=alicloud_cr_ee_instance.main
+# B2：ACR 命名空间、仓库、VPC 端点（Claude 会话，B' 之后）
+-target=alicloud_cr_ee_namespace.main -target=alicloud_cr_ee_repo.images -target=alicloud_cr_ee_vpc_endpoint_linked_vpc.main
 ```
 验收：RDS 只有内网地址、白名单只 VPC 网段、SSL 开启、pg_hba 只有 hostssl、每日备份 + 日志备份（PITR）、删除保护、KMS 云盘加密；OSS 私有、阻止公共访问、
 版本控制、KMS 加密、三条生命周期、网关终端节点策略只放本桶；ACR 实例运行中、命名空间私有、12 个私有仓库、VPC 端点已关联；SLS 的 `app` 与 `audit`
 日志库留存 180 天、服务端加密、`app` 只建白名单字段索引、没有全文索引。
-另核：OSS 账号级阻止公共访问仍开启；ACR 企业版下单完成后，由人从子账号策略里撤掉 `bssapi:CreateInstance`（能下单任何产品）。
+另核：OSS 账号级阻止公共访问仍开启；子账号策略里没有任何计费下单权限（`bss:` / `bssapi:`）。
 
 **阶段 C：ACK**
 ```

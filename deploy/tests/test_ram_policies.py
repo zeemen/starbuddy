@@ -111,7 +111,8 @@ def test_allow_wildcards_only_registered_read_prefixes():
 def test_no_ram_writes_and_sts_only_identity():
     ram_allowed = {a for a in ALLOWED if a.startswith("ram:")}
     assert ram_allowed <= {"ram:Get*", "ram:List*", "ram:PassRole"}, "子账号不授 RAM 写动作（策略与角色由人用管理员身份 apply）"
-    assert {a for a in ALLOWED if a.startswith("sts:")} == {"sts:GetCallerIdentity"}
+    assert not {a for a in ALLOWED if a.startswith(("sts:", "bss:", "bssapi:", "efc:"))}, \
+        "sts:GetCallerIdentity 不需授权；不授计费下单（ACR 企业版实例由人用管理员身份 apply）"
 
 
 def test_scoped_actions_never_on_wildcard_resources():
@@ -163,7 +164,10 @@ def test_runbook_points_to_policy_files_and_human_applies_ram():
     gate = t.split("### 0.6")[1].split("\n## ")[0]
     assert "账号级阻止公共访问" in gate, "B3 的前提（OSS 账号级阻止公共访问）列为开工阻断项"
     stage_b = t.split("**阶段 B：")[1].split("**阶段 C：")[0]
-    assert "账号级阻止公共访问" in stage_b and "bssapi:CreateInstance" in stage_b, "阶段 B 验收核对账号级阻止并撤掉下单权限"
+    assert "账号级阻止公共访问" in stage_b and "计费下单" in stage_b, "阶段 B 验收核对账号级阻止、子账号无下单权限"
+    b_prime = stage_b.split("# B'：")[1].split("# B2：")[0]
+    assert "-target=alicloud_cr_ee_instance.main" in b_prime and "管理员身份" in b_prime, "ACR 企业版实例由人用管理员身份 apply"
+    assert stage_b.split("# B'：")[0].count("alicloud_cr_ee_instance") == 0
     stage_a = t.split("**阶段 A：")[1].split("**阶段 B：")[0]
     stage_c = t.split("**阶段 C：")[1].split("**阶段 R：")[0]
     assert "alicloud_ram_" not in stage_a and "alicloud_ram_" not in stage_c, "Claude 执行的阶段不含 RAM 资源"
