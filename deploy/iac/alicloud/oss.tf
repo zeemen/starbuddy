@@ -1,4 +1,4 @@
-# 对象存储（OSS）私有桶：页面快照、RDS 逻辑备份导出、日志归档。私有 ACL + 阻止公共访问、KMS 服务端加密、版本控制、生命周期。
+# 对象存储（OSS）私有桶：页面快照、RDS 逻辑备份导出、日志归档。私有 ACL + 阻止公共访问、服务端加密（OSS 完全托管）、版本控制、生命周期。
 # 不开静态网站、不配 CORS、不建公共读策略；访问只经 RAM 授权（集群内经 RRSA，另行授权）；VPC 内经 OSS 网关终端节点访问（只放行本桶）。
 
 resource "alicloud_oss_bucket" "main" {
@@ -7,9 +7,9 @@ resource "alicloud_oss_bucket" "main" {
   redundancy_type = "ZRS"
   force_destroy   = false
 
+  # OSS 完全托管加密（LT-03 决定记录第 15 条：不买 KMS 实例；与状态桶相同）
   server_side_encryption_rule {
-    sse_algorithm     = "KMS"
-    kms_master_key_id = alicloud_kms_key.main.id
+    sse_algorithm = "AES256"
   }
 
   versioning {

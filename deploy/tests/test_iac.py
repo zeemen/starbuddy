@@ -67,16 +67,15 @@ MUTATIONS = [
     ("OSS 配静态网站", "oss.tf", "  versioning {", "  website {\n    index_document = \"index.html\"\n  }\n\n  versioning {", "R07"),
     ("资源缺标签", "network.tf", "  description = \"StarBuddy staging（只内网 / VPN 访问）\"\n  tags        = local.tags\n",
      "  description = \"StarBuddy staging（只内网 / VPN 访问）\"\n", "R08"),
-    ("OSS 不用 KMS 加密", "oss.tf", "    sse_algorithm     = \"KMS\"", "    sse_algorithm     = \"AES256\"", "R09"),
-    ("主密钥不轮转", "kms.tf", "automatic_rotation     = \"Enabled\"\n  rotation_interval      = \"31536000s\"\n  pending_window_in_days = 30\n"
-     "  deletion_protection    = \"Enabled\"\n  status                 = \"Enabled\"\n  tags                   = local.tags\n}\n\nresource \"alicloud_kms_alias\" \"main\"",
-     "automatic_rotation     = \"Disabled\"\n  rotation_interval      = \"31536000s\"\n  pending_window_in_days = 30\n"
-     "  deletion_protection    = \"Enabled\"\n  status                 = \"Enabled\"\n  tags                   = local.tags\n}\n\nresource \"alicloud_kms_alias\" \"main\"", "R09"),
-    ("凭据专用密钥不开删除保护", "kms.tf", "  deletion_protection    = \"Enabled\"\n  status                 = \"Enabled\"\n  tags                   = local.tags\n}\n\nresource \"alicloud_kms_alias\" \"secrets\"",
-     "  deletion_protection    = \"Disabled\"\n  status                 = \"Enabled\"\n  tags                   = local.tags\n}\n\nresource \"alicloud_kms_alias\" \"secrets\"", "R09"),
+    ("OSS 不加密", "oss.tf", "  server_side_encryption_rule {\n    sse_algorithm = \"AES256\"\n  }\n", "", "R09"),
+    ("OSS 选 KMS 却不给主密钥", "oss.tf", "    sse_algorithm = \"AES256\"", "    sse_algorithm = \"KMS\"", "R09"),
+    ("自建主密钥不轮转", "kms.tf", "locals {",
+     "resource \"alicloud_kms_key\" \"x\" {\n  automatic_rotation  = \"Disabled\"\n  deletion_protection = \"Enabled\"\n  tags                = local.tags\n}\n\nlocals {", "R09"),
+    ("自建主密钥不开删除保护", "kms.tf", "locals {",
+     "resource \"alicloud_kms_key\" \"x\" {\n  automatic_rotation  = \"Enabled\"\n  deletion_protection = \"Disabled\"\n  tags                = local.tags\n}\n\nlocals {", "R09"),
     ("节点盘不加密", "ack.tf", "system_disk_encrypted = true", "system_disk_encrypted = false", "R09"),
-    ("Secret 落盘不加密", "ack.tf", "  encryption_provider_key = alicloud_kms_key.main.id\n", "", "R09"),
-    ("RDS 云盘不加密", "rds.tf", "  encryption_key           = alicloud_kms_key.main.id\n", "", "R09"),
+    ("Secret 落盘既不加密也不显式声明", "ack.tf", "  disable_encryption = true\n", "", "R09"),
+    ("RDS 云盘不加密", "rds.tf", "  encryption_key = var.rds_disk_encryption == \"ServiceKey\" ? \"ServiceKey\" : null\n", "", "R09"),
     ("日志库不加密", "sls.tf", "    enable       = true\n    encrypt_type = \"default\"\n  }\n}\n\n# LT-05：应用日志",
      "    enable       = false\n    encrypt_type = \"default\"\n  }\n}\n\n# LT-05：应用日志", "R09"),
     ("API Server 开公网", "ack.tf", "slb_internet_enabled = false", "slb_internet_enabled = true", "R10"),
@@ -129,8 +128,8 @@ MUTATIONS = [
     ("建公网 ALB", "slb.tf", "resource \"alicloud_slb_acl\" \"office_vpn\" {",
      "resource \"alicloud_alb_load_balancer\" \"pub\" {\n  load_balancer_name = \"x\"\n  address_type       = \"Internet\"\n  tags               = local.tags\n}\n\n"
      "resource \"alicloud_slb_acl\" \"office_vpn\" {", "R18"),
-    ("RAM 策略用通配符动作", "kms.tf", "Action   = [\"kms:GetSecretValue\"]", "Action   = [\"kms:*\"]", "R19"),
-    ("RAM 策略凭据用前缀通配", "kms.tf", "secret/${var.name_prefix}-${var.environment}/${s}", "secret/${var.name_prefix}-${var.environment}/*", "R19"),
+    ("RAM 策略用通配符动作", "kms.tf", "Action   = [\"oos:GetSecretParameter\"]", "Action   = [\"oos:*\"]", "R19"),
+    ("RAM 策略凭据用前缀通配", "kms.tf", "secretparameter/${var.name_prefix}-${var.environment}/${s}", "secretparameter/${var.name_prefix}-${var.environment}/*", "R19"),
     ("日志只留 30 天", "sls.tf", "  retention_period      = var.log_retention_days\n  shard_count           = 2",
      "  retention_period      = 30\n  shard_count           = 2", "R12"),
     ("provider 不锁版本", "versions.tf", "      version = \"~> 1.230\"\n", "", "R13"),
@@ -284,7 +283,7 @@ def test_image_list_consistent_with_build_script_and_acr():
 
 
 def test_secret_reader_list_matches_k8s_secrets():
-    """ack-secret-manager 能读的凭据逐个列名（R19 不收通配符）：名单与 k8s 引用的 Secret 名一致；Decrypt 只给凭据专用密钥"""
+    """ack-secret-manager 能读的 OOS 加密参数逐个列名（R19 不收通配符）：名单与 k8s 引用的 Secret 名一致；没有任何 KMS 动作（决定记录第 15 条）"""
     kms = (IAC / "kms.tf").read_text(encoding="utf-8")
     m = re.search(r"app_secrets\s*=\s*\[([^\]]*)\]", kms)
     assert m
@@ -292,7 +291,7 @@ def test_secret_reader_list_matches_k8s_secrets():
     k8s = (DEPLOY / "k8s" / "staging.yaml").read_text(encoding="utf-8")
     used = set(re.findall(r"secretKeyRef: \{name: ([a-z0-9-]+)", k8s)) | set(re.findall(r"secretName: ([a-z0-9-]+)", k8s))
     assert listed == used
-    assert "key/${alicloud_kms_key.secrets.id}" in kms and "key/${alicloud_kms_key.main.id}" not in kms
+    assert '"oos:GetSecretParameter"' in kms and "secretparameter/${var.name_prefix}-${var.environment}/${s}" in kms and '"kms:' not in kms
     assert "ExternalSecret" in kms and "RBAC" in kms, "注明只有部署者能建同步规则"
 
 

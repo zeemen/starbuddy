@@ -68,3 +68,15 @@
 - 用户决定（“按默认”）：`office_vpn_cidrs = []`，阶段 A 不建 `slb_acl` 两个资源（暂无办公网 / VPN；以后改白名单要删条目，子账号被拒绝，届时由人处理）；`cloud_service_endpoint_cidrs` 取会话从公网 DNS 解析出的 cn-beijing 内网端点所在 /24（OSS 内网、SLS 内网、STS 与 ACK 管控、ACK 匿名端点；不含 KMS），阶段 C 之后从 VPC 内复核；`k8s_version`、`node_key_pair_name` 为临时值，阶段 C 之前换真实值。
 - 阶段 A plan：23 新增 / 0 修改 / 0 删除（VPC、6 交换机、普通安全组与 15 条规则；无计费资源），用户确认后只 apply 该计划文件，计划文件已删；验收：状态 23 个资源、同目标重新 plan 为 No changes、状态桶出现 `staging/terraform.tfstate`。
 - 阶段 C 之前由主账号完成容器服务的云资源访问授权（核对时报 `EntityNotExist.Role: aliyuncsdefaultrole`）。
+
+## 补记（2026-10-30）：按决定记录第 15 条改 IaC（不买 KMS 实例）
+- `kms.tf` 移除两把自建密钥与别名，`secret_reader` 改为只有 `oos:GetSecretParameter`（11 个参数 ARN）；`rds.tf` 用变量 `rds_disk_encryption`（deferred → ServiceKey 两步）；
+  `oss.tf` AES256；`ack.tf` `disable_encryption = true`、系统盘不指定 KMS 密钥；`outputs.tf` 去掉两个 KMS 输出；存储类去掉 `kmsKeyId`。
+- `check_iac.py` R06 / R07 / R09 改为“必须加密，可用服务密钥或 AES256”，Secret 落盘要么给密钥要么显式 `disable_encryption = true`；有自建密钥时仍查轮转与删除保护（变异改为临时加一把不合格的密钥）。
+- 手册：阶段 K 改为说明段；阶段 B 加 B-enc；3.1 先核对 RDS 云盘加密；3.3 真实数据门槛；4.1 改 OOS 加密参数；走查只用合成数据。
+
+### 待人确认（续）
+17. `kms-alternatives.md` 里的“需人核实”：RDS / ECS 服务密钥与 OOS 加密参数是否免费、是否需要 KMS 实例；RDS 改服务密钥是否重启、子账号需要的 RDS 动作名（B-enc 首次 plan / apply 按报错补）；
+    读 OOS 加密参数是否还要 KMS 动作（首次同步按报错补，阶段 R 由人改策略）。帮助中心不在会话放行名单，未能核实。
+18. OOS 加密参数的取值长度上限：签字配置文件（8 个）与 `otp.json` 能否放进单个参数；放不下时另定办法（例如拆分或由人 kubectl 手建这两个 Secret）。
+19. cosign 签名私钥原定存凭据管家（`deploy/ci`），不买 KMS 实例期间要另定存放处（例如云效流水线自带的密钥变量）；本次未改 CI 文件。

@@ -11,14 +11,15 @@
   R03 没有真实账号 ID：全文没有 16 位数字、带数字账号的 ARN（账号 ID 只经数据源 alicloud_account 在 plan 时取得）
   R04 地域只能是 cn-beijing：provider 的 region 只引用 var.region，var.region 缺省 cn-beijing 且有校验；任何地域 / 可用区字面量都在华北 2
   R05 没有 0.0.0.0/0 入方向：安全组入方向规则、RDS 白名单、负载均衡访问控制条目都只收内网或变量；没有 DNAT（alicloud_forward_entry）
-  R06 RDS 不开公网：没有外网连接资源（alicloud_db_connection）；PostgreSQL 16、白名单只收内网、KMS 云盘加密、删除保护；
+  R06 RDS 不开公网：没有外网连接资源（alicloud_db_connection）；PostgreSQL 16、白名单只收内网、云盘加密（encryption_key，可为服务密钥）、删除保护；
       有备份策略（每日备份、日志备份即 PITR，两者保留 ≥ 7 天）；
       真正强制 TLS（LT-03 决定记录（续）第 6 条）：ssl_action = Open，SSL 证书签给内网连接地址（connection_string_prefix 与
       ssl_connection_string 同一个前缀 + 内网域名后缀变量，后缀缺省不是外网的），pg_hba 至少一条且全部是 hostssl（来源内网、
       口令认证 scram-sha-256 / md5），没有 host / hostnossl / trust
-  R07 OSS 不公开：私有 ACL、阻止公共访问、KMS 服务端加密、版本控制、生命周期；没有公共读写、桶策略、静态网站、CORS
+  R07 OSS 不公开：私有 ACL、阻止公共访问、服务端加密（KMS 或 OSS 完全托管 AES256）、版本控制、生命周期；没有公共读写、桶策略、静态网站、CORS
   R08 支持标签的资源都带 tags（不支持标签的类型在 NO_TAGS 里逐个登记）
-  R09 KMS 加密开启：主密钥自动轮转与删除保护；节点系统盘 KMS 加密；ACK Secret 落盘加密；日志库服务端加密
+  R09 静态加密开启（LT-03 决定记录第 15 条：不买 KMS 实例时可用服务密钥）：若有自建主密钥则自动轮转与删除保护；节点系统盘与数据盘加密；
+      ACK Secret 落盘要么给 encryption_provider_key，要么显式写 disable_encryption = true（不得省略不写）；日志库服务端加密
   R10 ACK 不开公网：API Server 不开公网负载均衡、不让集群另建 NAT、节点不分配公网带宽
   R11 出网白名单：有 NAT 网关；云防火墙 NAT 边界出方向只放行 var.model_egress_fqdns 的 TCP 443（主机名类型），最后一条拒绝其余全部；
       模型供应商主机名变量没有缺省值（由人填写）；安全组出公网只开 TCP 443；
@@ -564,7 +565,7 @@ class Checker:
             if a.get("deletion_protection") is not True:
                 self.add("R06", b.file, f"{n}：必须开删除保护")
             if "encryption_key" not in a:
-                self.add("R09", b.file, f"{n}：云盘必须用 KMS 加密（encryption_key）")
+                self.add("R09", b.file, f"{n}：云盘必须加密（encryption_key：自建密钥或服务密钥）")
             pol = [p for p in self.resources("alicloud_db_backup_policy")
                    if isinstance(p.body.attrs.get("instance_id"), Expr) and f"alicloud_db_instance.{n}." in p.body.attrs["instance_id"].raw + "."]
             if not pol:
@@ -620,8 +621,9 @@ class Checker:
                 if sub(body, k):
                     self.add("R07", b.file, f"{n}：不配 {k}")
             sse = sub(body, "server_side_encryption_rule")
-            if not sse or sse[0].body.attrs.get("sse_algorithm") != "KMS" or "kms_master_key_id" not in sse[0].body.attrs:
-                self.add("R09", b.file, f"{n}：必须 KMS 服务端加密")
+            alg = sse[0].body.attrs.get("sse_algorithm") if sse else None
+            if alg not in ("KMS", "AES256") or (alg == "KMS" and "kms_master_key_id" not in sse[0].body.attrs):
+                self.add("R09", b.file, f"{n}：必须服务端加密（KMS 带主密钥，或 OSS 完全托管 AES256）")
             ver = sub(body, "versioning")
             if not ver or ver[0].body.attrs.get("status") != "Enabled":
                 self.add("R07", b.file, f"{n}：必须开版本控制")
@@ -645,10 +647,7 @@ class Checker:
                 self.add("R08", b.file, f"{b.labels[0]}.{b.labels[1]}：缺 tags（不支持标签的类型须登记在 NO_TAGS）")
 
     def r09_kms(self) -> None:
-        keys = self.resources("alicloud_kms_key")
-        if not keys:
-            self.add("R09", "-", "没有 KMS 主密钥")
-        for k in keys:
+        for k in self.resources("alicloud_kms_key"):
             a = k.body.attrs
             if a.get("automatic_rotation") != "Enabled":
                 self.add("R09", k.file, f"{k.labels[1]}：必须自动轮转")
@@ -656,14 +655,15 @@ class Checker:
                 self.add("R09", k.file, f"{k.labels[1]}：必须开删除保护")
         for p in self.resources("alicloud_cs_kubernetes_node_pool"):
             a = p.body.attrs
-            if a.get("system_disk_encrypted") is not True or "system_disk_kms_key" not in a:
-                self.add("R09", p.file, f"{p.labels[1]}：节点系统盘必须 KMS 加密")
+            if a.get("system_disk_encrypted") is not True:
+                self.add("R09", p.file, f"{p.labels[1]}：节点系统盘必须加密")
             for d in sub(p.body, "data_disks"):
-                if d.body.attrs.get("encrypted") not in (True, "true") or "kms_key_id" not in d.body.attrs:
-                    self.add("R09", p.file, f"{p.labels[1]}：节点数据盘必须 KMS 加密")
+                if d.body.attrs.get("encrypted") not in (True, "true"):
+                    self.add("R09", p.file, f"{p.labels[1]}：节点数据盘必须加密")
         for c in self.resources("alicloud_cs_managed_kubernetes"):
-            if "encryption_provider_key" not in c.body.attrs:
-                self.add("R09", c.file, f"{c.labels[1]}：K8s Secret 落盘必须 KMS 加密（encryption_provider_key）")
+            a = c.body.attrs
+            if "encryption_provider_key" not in a and a.get("disable_encryption") is not True:
+                self.add("R09", c.file, f"{c.labels[1]}：K8s Secret 落盘要么 KMS 加密（encryption_provider_key），要么显式 disable_encryption = true")
         for s in self.resources("alicloud_log_store"):
             e = sub(s.body, "encrypt_conf")
             if not e or e[0].body.attrs.get("enable") is not True:

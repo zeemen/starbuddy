@@ -313,7 +313,7 @@ def test_first_deploy_follows_lt03_decision_7():
     for must in ("逐次确认", "不执行 destroy", "OSS 远程后端", "锁表", "不落仓库", "Claude 不读取、不打印其值"):
         assert must in t, must
     # 计划审阅清单（必须列出的五项）
-    for must in ("新增 / 修改 / 删除数量", "包年包月或按量计费资源", "安全组与出网规则", "公网暴露检查", "KMS 与 RAM 变更"):
+    for must in ("新增 / 修改 / 删除数量", "包年包月或按量计费资源", "安全组与出网规则", "公网暴露检查", "加密与 RAM 变更"):
         assert must in t, must
     lines = code_lines(t)
     assert not any("destroy" in ln for ln in lines), "命令里不出现 destroy"
@@ -348,7 +348,7 @@ def test_first_deploy_terraform_matches_iac():
     assert set(re.findall(r"`([a-z0-9_]+)`", item)) == required, required
     # 输出名真实存在
     outputs = set(re.findall(r'^output "(\w+)"', TF["outputs.tf"], re.M))
-    for o in ("kms_key_id", "kms_secrets_key_id", "slb_acl_id", "log_project"):
+    for o in ("slb_acl_id", "log_project"):
         assert f"`{o}`" in t and o in outputs, o
     assert "rds_private_host" in outputs
     # 确认变量：bool、无缺省值、不再有变量级 == true 校验（LT-03 决定记录第 8 条；IaC 改了要同步改手册 0.6 第 1 条）

@@ -163,6 +163,15 @@ variable "rds_storage_gb" {
   default     = 100
 }
 
+variable "rds_disk_encryption" {
+  description = "RDS 云盘加密：建实例时传 deferred（PostgreSQL 创建时不收服务密钥），建好后紧接着传 ServiceKey 开启并一直保持（rds.tf）"
+  type        = string
+  validation {
+    condition     = contains(["deferred", "ServiceKey"], var.rds_disk_encryption)
+    error_message = "rds_disk_encryption 只收 deferred（仅建实例那一次）或 ServiceKey。"
+  }
+}
+
 variable "rds_backup_retention_days" {
   description = "数据备份保留天数（≥ 7）"
   type        = number

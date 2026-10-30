@@ -4,9 +4,9 @@
 # 约定：
 #   - 镜像写成 ACR_REGISTRY/starbuddy/starbuddy-<服务>@sha256:DIGEST 占位：ACR_REGISTRY = ACR 企业版的 VPC 端点
 #     （<实例名>-registry-vpc.cn-beijing.cr.aliyuncs.com），DIGEST 由流水线 deploy/ci/pipeline.sh 推送后输出（只按摘要部署）；
-#   - 密钥只经 Secret 引用（secretKeyRef）：Secret 由 ack-secret-manager 从 KMS 凭据管家（starbuddy-staging/ 前缀）同步而来，
+#   - 密钥只经 Secret 引用（secretKeyRef）：Secret 由 ack-secret-manager 从 OOS 加密参数（starbuddy-staging/ 前缀；LT-03 决定记录第 15 条）同步而来，
 #     本仓库不提交任何 Secret 清单与取值；签字配置与白名单 OTP 条目经只读挂载的 Secret / ConfigMap 提供；
-#   - 托管 Postgres（RDS）：连接串（凭据管家）写内网主机名，并带 sslmode=verify-full&sslrootcert=/run/rds-ca/ca.pem——
+#   - 托管 Postgres（RDS）：连接串（OOS 加密参数）写内网主机名，并带 sslmode=verify-full&sslrootcert=/run/rds-ca/ca.pem——
 #     RDS 的 CA 证书由人放进 ConfigMap starbuddy-rds-ca（键 ca.pem），连库的每个容器都只读挂载到 /run/rds-ca
 #     （deploy/config/README.md 第 8 节；调度器与子命令的主机名核对见 review_console/__main__.py 的 tls_verified）；
 #   - 监听地址：staging 各服务显式配置为 Pod IP（downward API status.podIP；Terway 下是 Pod 交换机的 VPC 内网地址）；
@@ -28,7 +28,8 @@ metadata:
   name: starbuddy-staging
   labels: {app.kubernetes.io/part-of: starbuddy, starbuddy/environment: staging}
 ---
-# ---------------------------------------------------------------- 存储类：ACK 云盘（ESSD，KMS 加密，回收策略保留）
+# ---------------------------------------------------------------- 存储类：ACK 云盘（ESSD，加密，回收策略保留）
+# 不买 KMS 实例（LT-03 决定记录第 15 条）：不指定 kmsKeyId，云盘用 ECS 服务密钥加密
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
@@ -40,7 +41,6 @@ parameters:
   performanceLevel: PL1
   fsType: ext4
   encrypted: "true"
-  kmsKeyId: "<由人填写：KMS 主密钥 ID（IaC 输出 kms_key_id）>"
 reclaimPolicy: Retain
 volumeBindingMode: WaitForFirstConsumer
 allowVolumeExpansion: true

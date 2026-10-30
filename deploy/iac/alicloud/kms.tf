@@ -1,9 +1,9 @@
-# 密钥管理（KMS）：一把对称主密钥，加密 RDS 云盘、OSS 服务端加密、节点系统盘与 K8s Secret 落盘（ACK 的 encryption_provider_key）；
-# 另一把只给凭据管家（见下）。
-# 应用密钥（服务间令牌、HMAC 密钥、连接串、模型供应商 Key 等）存 KMS 凭据管家，由人在控制台创建（取值不进 Terraform 状态）；
-# 集群里经 ack-secret-manager（RRSA 授权，见 ack.tf）同步成同名 k8s Secret，Deployment 只经 secretKeyRef 引用（deploy/k8s/staging.yaml）。
-# 安全审查采纳建议：凭据管家另用一把专用主密钥（alicloud_kms_key.secrets；人在控制台创建凭据时选它作加密密钥），
-# ack-secret-manager 只能用它 Decrypt、不能动主密钥；可读的凭据逐个列名（不用通配符 *，规则 R19），名单与 k8s 的 Secret 名一致（部署测试核对）。
+# 应用凭据（LT-03 决定记录第 14、15 条：现阶段不买 KMS 实例，不建自建密钥、不用凭据管家）：
+# 应用密钥（服务间令牌、HMAC 密钥、连接串、模型供应商 Key 等）存 OOS 加密参数（运维编排，阿里云托管密钥加密），由人在控制台创建
+# （取值不进 Terraform 状态与仓库）；集群里经 ack-secret-manager（RRSA 授权，见 ack.tf；同步规则 provider 用 oos）同步成同名 k8s Secret，
+# Deployment 只经 secretKeyRef 引用（deploy/k8s/staging.yaml）。可读的参数逐个列名（不用通配符 *，规则 R19），名单与 k8s 的 Secret 名一致（部署测试核对）。
+# 残余风险（specs/launch-lt03-cloud-staging/kms-alternatives.md 第 7 项）：加密参数的密钥由阿里云托管，没有专用密钥这层隔离；
+# 买了 KMS 实例后再评估切回凭据管家与专用密钥（届时自建密钥另起变更）。
 # 集群内的 RBAC（由人配置，不在本仓库）：只有部署者能在 starbuddy-staging 命名空间创建 / 修改同步规则（ExternalSecret 这一类 CR），
 # 应用的 ServiceAccount 不挂令牌、没有任何 RBAC 权限——否则任何能建同步规则的人都能借 ack-secret-manager 的身份读走名单内的凭据。
 
@@ -24,59 +24,18 @@ locals {
   ]
 }
 
-resource "alicloud_kms_key" "secrets" {
-  description            = "StarBuddy staging 凭据管家专用密钥（只加密应用凭据；ack-secret-manager 只能用它解密）"
-  key_spec               = "Aliyun_AES_256"
-  key_usage              = "ENCRYPT/DECRYPT"
-  protection_level       = "SOFTWARE"
-  automatic_rotation     = "Enabled"
-  rotation_interval      = "31536000s"
-  pending_window_in_days = 30
-  deletion_protection    = "Enabled"
-  status                 = "Enabled"
-  tags                   = local.tags
-}
-
-resource "alicloud_kms_alias" "secrets" {
-  alias_name = "alias/${local.name}-secrets"
-  key_id     = alicloud_kms_key.secrets.id
-}
-
-resource "alicloud_kms_key" "main" {
-  description            = "StarBuddy staging 主密钥（RDS、OSS、节点盘、K8s Secret 落盘加密）"
-  key_spec               = "Aliyun_AES_256"
-  key_usage              = "ENCRYPT/DECRYPT"
-  protection_level       = "SOFTWARE"
-  automatic_rotation     = "Enabled"
-  rotation_interval      = "31536000s"
-  pending_window_in_days = 30
-  deletion_protection    = "Enabled"
-  status                 = "Enabled"
-  tags                   = local.tags
-}
-
-resource "alicloud_kms_alias" "main" {
-  alias_name = "alias/${local.name}"
-  key_id     = alicloud_kms_key.main.id
-}
-
-# ack-secret-manager 读凭据管家的最小权限：只读名单内的凭据（starbuddy-staging/<Secret 名>）、只用凭据专用密钥解密；
-# 账号 ID 在 plan 时从数据源取，不写死
+# ack-secret-manager 读 OOS 加密参数的最小权限：只读名单内的参数（starbuddy-staging/<Secret 名>）；账号 ID 在 plan 时从数据源取，不写死。
+# 读取时是否还要 KMS 动作（加密参数用阿里云托管密钥）以首次同步的报错为准，补的动作同样逐个列资源（lessons 待人确认）
 resource "alicloud_ram_policy" "secret_reader" {
   policy_name = "${local.name}-secret-reader"
-  description = "ack-secret-manager 只读名单内的应用凭据"
+  description = "ack-secret-manager 只读名单内的应用凭据（OOS 加密参数）"
   policy_document = jsonencode({
     Version = "1"
     Statement = [
       {
         Effect   = "Allow"
-        Action   = ["kms:GetSecretValue"]
-        Resource = [for s in local.app_secrets : "acs:kms:${var.region}:${data.alicloud_account.current.id}:secret/${var.name_prefix}-${var.environment}/${s}"]
-      },
-      {
-        Effect   = "Allow"
-        Action   = ["kms:Decrypt"]
-        Resource = ["acs:kms:${var.region}:${data.alicloud_account.current.id}:key/${alicloud_kms_key.secrets.id}"]
+        Action   = ["oos:GetSecretParameter"]
+        Resource = [for s in local.app_secrets : "acs:oos:${var.region}:${data.alicloud_account.current.id}:secretparameter/${var.name_prefix}-${var.environment}/${s}"]
       },
     ]
   })
@@ -84,7 +43,7 @@ resource "alicloud_ram_policy" "secret_reader" {
 
 resource "alicloud_ram_role" "secret_reader" {
   role_name   = "${local.name}-secret-reader"
-  description = "ack-secret-manager 经 RRSA（集群 OIDC）扮演，只读应用凭据"
+  description = "ack-secret-manager 经 RRSA（集群 OIDC）扮演，只读应用凭据（OOS 加密参数）"
   assume_role_policy_document = jsonencode({
     Version = "1"
     Statement = [{

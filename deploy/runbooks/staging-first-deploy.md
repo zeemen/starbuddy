@@ -6,7 +6,7 @@ LT-03 云与镜像、LT-04 learning-internal v1 与迁移 0058、LT-05 可观测
 **谁来做**（LT-03 决定记录第 7 条，2026-10-24）：
 - Claude 会话只做 Terraform：用户在云环境设置里放行域名、以环境变量配置专用 RAM 子账号凭据（Claude 不读取、不打印其值）。
   **每一次 apply 之前，Claude 贴出 plan 摘要（资源增删改数量、计费类资源与预估费用口径），经用户逐次确认后才执行**；不执行 destroy
-  （须另行确认）；状态只在 OSS 远程后端（私有、版本控制、KMS 加密）并加锁，不落仓库、不落会话临时目录。
+  （须另行确认）；状态只在 OSS 远程后端（私有、版本控制、OSS 完全托管加密）并加锁，不落仓库、不落会话临时目录。
 - 其余步骤（VPC 内的数据库、集群、凭据、控制台开通与计费）**由人执行**：一人操作、一人复核关键输出，变更记录留痕（时间、操作人、复核人、结果），
   记录里不写学生数据、不写凭据。
 - 全部 `<…>` 是由人填写的占位；本手册与仓库里**没有任何真实值**（账号 ID、地址、实例名、凭据、证书、手机号）。
@@ -41,7 +41,7 @@ LT-03 云与镜像、LT-04 learning-internal v1 与迁移 0058、LT-05 可观测
 | 容器镜像服务 `cr:` | 企业版实例、命名空间、仓库、VPC 访问端点的创建 / 查询 | `acr.tf` |
 | 云防火墙 `yundun-cloudfirewall:` 或 `cloudfw:`（以控制台为准） | NAT 边界访问控制策略的创建 / 查询 / 修改 | `egress.tf` |
 | 日志服务 `log:` | Project、日志库、索引的创建 / 查询 / 修改 | `sls.tf` |
-| 密钥管理 `kms:` | **只给查询**（Describe / List）；现阶段不买 KMS 实例、不建自建密钥（LT-03 决定记录第 14 条），不授任何写动作；Decrypt、GenerateDataKey、GetSecretValue 显式拒绝 | `kms.tf`（暂不 apply） |
+| 密钥管理 `kms:` | **只给查询**（Describe / List）；现阶段不买 KMS 实例、IaC 不含自建密钥（LT-03 决定记录第 14、15 条），不授任何写动作；Decrypt、GenerateDataKey、GetSecretValue 显式拒绝 | — |
 | 访问控制 `ram:` | **只读**（Get / List 类，plan 刷新状态用）与容器服务、RDS 加密服务角色的 PassRole；**不给任何写动作**（安全审查 B1：能建策略与角色就能给自己提权）——`kms.tf` 的 `secret_reader` 策略、角色与挂载由人用管理员身份在阶段 R apply | `ack.tf`；`kms.tf` 见阶段 R |
 | 安全令牌 `sts:` | 不授：GetCallerIdentity（`data.alicloud_account.current` 取账号 ID）不需要 RAM 授权。扮演 `<Terraform RAM 角色>` 时，AssumeRole 只授给该角色的精确 ARN（不挂系统策略 AliyunSTSAssumeRoleAccess） | `providers.tf` |
 | 计费 `bss:` / `bssapi:` | **不授**：下单接口能买任何产品；ACR 企业版实例（包年包月）在阶段 B' 由人用管理员身份 apply，云防火墙由人在控制台购买 | `acr.tf` |
@@ -78,11 +78,11 @@ apply 会被这条拒绝挡下——这正是要停下来由人决定的情形�
 | 内网负载均衡（web Service 由 ACK 创建，`slb.s1.small`） | 按量 | 第 4 节 | |
 | NAT 网关（Enhanced，PayAsYouGo）+ EIP（PayByTraffic，10 Mbps） | 按量 | 阶段 D | |
 | 云盘（ESSD，PVC 2 × 20Gi） | 按量 | 第 4 节 | 存储类回收策略 Retain：删 PVC 不删盘，盘仍计费 |
-| OSS（业务桶、状态桶）、SLS、KMS（密钥与凭据管家）、表格存储、ARMS 托管 Prometheus | 按量 | 第 0 节起 | ARMS 与 SLS 为新增云服务（必停，LT-05 决定记录第 1 条） |
+| OSS（业务桶、状态桶）、SLS、OOS 加密参数（应用凭据，是否收费待人核实）、表格存储、ARMS 托管 Prometheus | 按量 | 第 0 节起 | ARMS 与 SLS 为新增云服务（必停，LT-05 决定记录第 1 条） |
 
 预估费用由执行者按阿里云价格计算器或各产品询价结果写进 plan 摘要，注明口径（规格、时长、日期）；金额以控制台下单页为准。
 
-### 0.5 需配置的环境变量（**只写名字，不写值**；值只在运行环境与凭据管家里）
+### 0.5 需配置的环境变量（**只写名字，不写值**；值只在运行环境与 OOS 加密参数里）
 | 在哪里 | 变量名 | 说明 |
 |---|---|---|
 | Claude 会话（Terraform） | `ALICLOUD_ACCESS_KEY`、`ALICLOUD_SECRET_KEY`、`ALICLOUD_SECURITY_TOKEN`（STS 时） | provider 与 OSS 后端都认这组名字；新名字 `ALIBABA_CLOUD_ACCESS_KEY_ID`、`ALIBABA_CLOUD_ACCESS_KEY_SECRET`、`ALIBABA_CLOUD_SECURITY_TOKEN` 后端是否认以所用 OpenTofu 版本文档为准，**两组不混用** |
@@ -102,7 +102,7 @@ apply 会被这条拒绝挡下——这正是要停下来由人决定的情形�
    子命令与参数相同；`make iac-validate` 自动识别 `tofu`。必填变量可用 `TF_VAR_<变量名>` 环境变量给出（列表写 JSON），此时 plan 不带 `-var-file`。
 3. 包年包月与新增云服务（ACR 企业版、云防火墙、ARMS、SLS）已由人确认计费并开通。
 4. `terraform.tfvars` 必填项已由人准备好（放 `<计划目录>`，不进仓库）：`k8s_version`、`node_key_pair_name`、`oss_bucket_name`、`office_vpn_cidrs`、
-   `cloud_service_endpoint_cidrs`（只在 100.64.0.0/10 里、不宽于 /24）、`model_egress_fqdns`（供应商未开通时为空列表）、`nat_firewall_confirmed`。
+   `cloud_service_endpoint_cidrs`（只在 100.64.0.0/10 里、不宽于 /24）、`model_egress_fqdns`（供应商未开通时为空列表）、`nat_firewall_confirmed`、`rds_disk_encryption`（建 RDS 实例那一次传 deferred，之后一律传 ServiceKey，见阶段 B-enc）。
 5. **OSS 账号级阻止公共访问已由主账号开启、第二人核实**（安全审查 B3：子账号能改桶级阻止公共访问与 ACL，桶不被公开全靠这一层）；0.1 节末的一次性授权已完成；`deploy/runbooks/ram/` 三条策略已替换占位名、在 RAM 控制台校验动作名后挂载。
 
 ---
@@ -126,7 +126,7 @@ apply 会被这条拒绝挡下——这正是要停下来由人决定的情形�
 | `region` | `cn-beijing` |
 | `tablestore_endpoint` | `https://<OTS 实例名>.cn-beijing.ots.aliyuncs.com` |
 | `tablestore_table` | `<锁表名>` |
-| `encrypt` | `true`（后端自身的服务端加密；KMS 加密靠状态桶的缺省加密，见 0.2） |
+| `encrypt` | `true`（后端自身的服务端加密；另有状态桶的缺省加密 OSS 完全托管，见 0.2） |
 | `acl` | `private` |
 
 ```
@@ -159,7 +159,7 @@ terraform -chdir=deploy/iac/alicloud show -json <计划目录>/<阶段>.tfplan |
 ```
 **plan 摘要（Claude 每次 apply 前贴给用户，用户逐次确认）必须列出**：
 1. **新增 / 修改 / 删除数量**（`Plan: <n> to add, <n> to change, <n> to destroy` 与上面的按动作计数一致）；**删除数必须为 0**，出现 `delete`、
-   `delete/create`、`create/delete`（替换）一律停下，不 apply（RDS、OSS、KMS、ACK 都开了删除保护，见 `rollback.md` 第 4 节）。
+   `delete/create`、`create/delete`（替换）一律停下，不 apply（RDS、OSS、ACK 都开了删除保护，见 `rollback.md` 第 4 节）。
 2. **包年包月或按量计费资源**：逐个列出本次新增的计费类资源（对照 0.4 表）与预估费用口径；出现 `alicloud_cr_ee_instance` 时单独提示“包年包月、下单即扣费”。
 3. **安全组与出网规则**：`alicloud_security_group_rule.*` 的方向、协议、端口、网段与优先级——入方向只收 VPC；出方向只有 VPC、内网 DNS 53、元数据 80、
    `cloud_service_endpoint_cidrs` 的 443、公网 443；100.64.0.0/10 与 169.254.0.0/16 的拒绝排在公网 443 之前，全拒绝在最后；
@@ -167,7 +167,7 @@ terraform -chdir=deploy/iac/alicloud show -json <计划目录>/<阶段>.tfplan |
 4. **公网暴露检查**：没有 `alicloud_forward_entry`（DNAT）、没有 RDS 外网连接、没有公网负载均衡、ACK `slb_internet_enabled = false`、节点无公网带宽、
    EIP 只绑 NAT、OSS 私有且阻止公共访问、ACR 没有公网访问入口。
 5. **会造成破坏或暴露的“修改”**（草案没有拒绝、靠这里核对）：OSS 生命周期规则（不得有删除当前版本的过期规则）与版本控制（不得暂停）、日志库留存（不低于 180 天）、RDS 备份保留期、任何删除保护被关闭、EIP 只绑 NAT 网关、ACK 不开公网 API Server。
-6. **KMS 与 RAM 变更**：KMS 密钥的轮转与删除保护、别名；`alicloud_ram_policy.secret_reader` 的动作与资源逐个列出（11 个凭据名、只用凭据专用密钥 Decrypt）、
+6. **加密与 RAM 变更**：RDS `encryption_key`（阶段 B 建实例时为空，B-enc 改为 `ServiceKey`，之后不得变回）、OSS `sse_algorithm = AES256`、节点系统盘 `system_disk_encrypted = true`、ACK `disable_encryption = true`（LT-03 决定记录第 15 条）；计划里出现 `alicloud_kms_*` 一律停下；`alicloud_ram_policy.secret_reader` 的动作与资源逐个列出（只有 `oos:GetSecretParameter`、11 个加密参数名）、
    `alicloud_ram_role.secret_reader` 的信任主体只是 `kube-system:ack-secret-manager`（RAM 资源只在阶段 R 由人 apply；Claude 的计划里出现 RAM 写变更一律停下）。
 7. 其他：地域与可用区全部 cn-beijing；标签齐全（R08）；本阶段之外的资源没有出现在计划里。
 
@@ -181,7 +181,7 @@ terraform -chdir=deploy/iac/alicloud apply -input=false <计划目录>/<阶段>.
 ### 1.6 分阶段 apply 与每阶段验收（阶段之间都要过 1.4 的审阅与确认）
 `-target` 只用于首次分阶段创建；全部阶段完成后必须做一次**不带 `-target`** 的 plan，结果应为 `No changes`。
 
-**阶段 A：网络**（现阶段不买 KMS 实例，两把 KMS 密钥不在本阶段，LT-03 决定记录第 14 条；阶段 B、C 的 RDS、OSS、ACK 目前引用 `alicloud_kms_key.main`，`-target` 会把它一并带进计划，所以阶段 B 之前须先按第 14 条改 IaC）
+**阶段 A：网络**（现阶段不买 KMS 实例，IaC 不含自建密钥，LT-03 决定记录第 14、15 条）
 ```
 -target=alicloud_vpc.main -target=alicloud_vswitch.node -target=alicloud_vswitch.pod -target=alicloud_vswitch.db
 -target=alicloud_security_group.nodes -target=alicloud_security_group_rule.ingress_vpc -target=alicloud_security_group_rule.egress_vpc
@@ -195,15 +195,16 @@ terraform -chdir=deploy/iac/alicloud apply -input=false <计划目录>/<阶段>.
 验收（控制台或只读查询，第二人复核）：VPC 网段 10.20.0.0/16，六个交换机分在两个可用区；安全组为普通安全组、组内互通 Drop，规则与优先级同 1.4 第 3 条；
 访问控制列表只含 `office_vpn_cidrs`；计划里没有任何 `alicloud_kms_*` 资源。
 
-**阶段 K：KMS（暂缓；现阶段不买 KMS 实例，LT-03 决定记录第 14 条）**——买实例或定下替代方案之前不 plan、不 apply 这一组：
-```
--target=alicloud_kms_key.main -target=alicloud_kms_alias.main -target=alicloud_kms_key.secrets -target=alicloud_kms_alias.secrets
-```
-若以后买实例：子账号临时挂回 KMS 写动作（CreateKey、CreateAlias、UpdateRotationPolicy、SetDeletionProtection、打标签），apply 后撤掉；验收为两把密钥启用、自动轮转、删除保护。
+**KMS（暂缓；LT-03 决定记录第 14、15 条）**：现阶段不买 KMS 实例，IaC 已不含自建密钥；RDS 云盘、节点盘与云盘存储类用各产品的服务密钥，OSS 用 AES256，
+ACK Secret 不做信封加密，应用凭据放 OOS 加密参数（`specs/launch-lt03-cloud-staging/kms-alternatives.md`）。买实例后另起变更：加回自建密钥、
+子账号临时挂回 KMS 写动作（apply 后撤掉）、在已有集群上开启 Secret 落盘加密、RDS 换自建密钥，再评估凭据切回凭据管家。
 
 **阶段 B：RDS / OSS / ACR / SLS**
 ```
 -target=alicloud_db_instance.main -target=alicloud_db_backup_policy.main
+# B-enc：RDS 建好后紧接着单独一次 plan / apply（目标同上一行的 RDS 实例），只把 rds_disk_encryption 由 deferred 改为 ServiceKey
+# （PostgreSQL 创建时不收服务密钥，LT-03 决定记录第 15 条）；计划里只应有 alicloud_db_instance.main 一处修改（encryption_key → ServiceKey），
+# 此时库里没有数据。之后每次 plan 都传 ServiceKey
 -target=alicloud_oss_bucket.main -target=alicloud_oss_bucket_acl.main -target=alicloud_oss_bucket_public_access_block.main
 -target=alicloud_vpc_gateway_endpoint.oss -target=alicloud_vpc_gateway_endpoint_route_table_attachment.oss
 -target=alicloud_log_project.main -target=alicloud_log_store.app -target=alicloud_log_store_index.app -target=alicloud_log_store.audit
@@ -212,8 +213,8 @@ terraform -chdir=deploy/iac/alicloud apply -input=false <计划目录>/<阶段>.
 # B2：ACR 命名空间、仓库、VPC 端点（Claude 会话，B' 之后）
 -target=alicloud_cr_ee_namespace.main -target=alicloud_cr_ee_repo.images -target=alicloud_cr_vpc_endpoint_linked_vpc.main
 ```
-验收：RDS 只有内网地址、白名单只 VPC 网段、SSL 开启、pg_hba 只有 hostssl、每日备份 + 日志备份（PITR）、删除保护、KMS 云盘加密；OSS 私有、阻止公共访问、
-版本控制、KMS 加密、三条生命周期、网关终端节点策略只放本桶；ACR 实例运行中、命名空间私有、12 个私有仓库、VPC 端点已关联；SLS 的 `app` 与 `audit`
+验收：RDS 只有内网地址、白名单只 VPC 网段、SSL 开启、pg_hba 只有 hostssl、每日备份 + 日志备份（PITR）、删除保护、云盘加密已开启（服务密钥，B-enc 之后）；OSS 私有、阻止公共访问、
+版本控制、服务端加密 AES256、三条生命周期、网关终端节点策略只放本桶；ACR 实例运行中、命名空间私有、12 个私有仓库、VPC 端点已关联；SLS 的 `app` 与 `audit`
 日志库留存 180 天、服务端加密、`app` 只建白名单字段索引、没有全文索引。
 另核：OSS 账号级阻止公共访问仍开启；子账号策略里没有任何计费下单权限（`bss:` / `bssapi:`）。
 
@@ -222,7 +223,7 @@ terraform -chdir=deploy/iac/alicloud apply -input=false <计划目录>/<阶段>.
 -target=alicloud_cs_managed_kubernetes.main -target=alicloud_cs_kubernetes_node_pool.default
 ```
 验收：API Server 只有内网地址；Terway 且 NetworkPolicy 生效；组件含 `arms-prometheus`、`logtail-ds`、`ack-secret-manager`，nginx-ingress 禁用；Secret 落盘
-KMS 加密；RRSA 开启；节点池节点 Ready、无公网地址、系统盘加密。**此时还没有 SNAT**：节点初始化与组件镜像拉取若需要公网而失败，
+未做 KMS 信封加密（`disable_encryption`，决定记录第 15 条）；RRSA 开启；节点池节点 Ready、无公网地址、系统盘加密（ECS 服务密钥）。**此时还没有 SNAT**：节点初始化与组件镜像拉取若需要公网而失败，
 停下由人决定（不临时放开出网）。
 
 **阶段 R：RAM（由人用管理员身份执行，不在 Claude 会话里；阶段 C 之后，因为角色信任集群的 OIDC）**
@@ -230,8 +231,8 @@ KMS 加密；RRSA 开启；节点池节点 Ready、无公网地址、系统盘�
 ```
 tofu -chdir=deploy/iac/alicloud plan -input=false -lock=true -out=<计划目录>/R.tfplan -target=alicloud_ram_policy.secret_reader -target=alicloud_ram_role.secret_reader -target=alicloud_ram_role_policy_attachment.secret_reader
 ```
-第二人审阅策略文档（只列 11 个凭据名、只用凭据专用密钥 Decrypt）与信任策略（只信任本集群 OIDC 的 `kube-system:ack-secret-manager`）后再 apply；之后这三个资源的任何变更都走同一流程。
-验收：RAM 策略只列 11 个凭据名；角色信任主体正确；ack-secret-manager 能同步 Secret。
+第二人审阅策略文档（只有 `oos:GetSecretParameter`、只列 11 个加密参数名、没有 KMS 动作）与信任策略（只信任本集群 OIDC 的 `kube-system:ack-secret-manager`）后再 apply；之后这三个资源的任何变更都走同一流程。
+验收：RAM 策略只列 11 个加密参数名；角色信任主体正确；ack-secret-manager 能同步 Secret。
 
 **阶段 D：防火墙与 NAT**（分两步；供应商主机名未定时可推迟到第 5 节 `model_provider` 解除时再做——staging 其余部分不依赖公网出网）
 ```
@@ -252,7 +253,7 @@ tofu -chdir=deploy/iac/alicloud plan -input=false -lock=true -out=<计划目录>
 
 ## 2. 镜像（云效 Flow 私有构建机，由人触发；`deploy/ci/README.md`）
 1. 由人把上游基础镜像同步到 ACR 的 `starbuddy-base-python` / `starbuddy-base-node` 并记下摘要；把 trivy 漏洞库同步到 ACR。
-2. 由人生成 cosign 密钥对：私钥文件存凭据管家（构建时挂载为 `COSIGN_KEY_REF`，口令经 `COSIGN_PASSWORD` 注入），公钥文件为 `COSIGN_PUB_REF`，同一把公钥配进
+2. 由人生成 cosign 密钥对：私钥文件存凭据管家（不买 KMS 实例期间凭据管家不可用，私钥存放方式待人确认，LT-03 lessons；构建时挂载为 `COSIGN_KEY_REF`，口令经 `COSIGN_PASSWORD` 注入），公钥文件为 `COSIGN_PUB_REF`，同一把公钥配进
    ACK 容器安全策略（staging 命名空间只运行本 ACR 实例、带有效签名的镜像）。
 3. 在云效导入 `deploy/ci/flow.yaml`（字段以云效文档为准），填变量（0.5 表），**只手动触发**；流水线执行 `bash deploy/ci/pipeline.sh`：
    构建 → 运行用户 10001 与健康检查核对 → SBOM（syft）→ 扫描（trivy，高危 / 严重或密钥即失败）→ 推送 → cosign 签名与 SBOM 证明 → 本地公钥验签。
@@ -273,10 +274,11 @@ tofu -chdir=deploy/iac/alicloud plan -input=false -lock=true -out=<计划目录>
 主实例迁移完成后，以后每次演练都按 `rds-restore-and-migrate-rehearsal.md` 的标准流程（含 mark-replica）。
 
 ### 3.1 准备
-1. RDS 控制台建高权限账号（口令只在凭据管家与跳板的 `PGPASSFILE`）与业务库 `<库名>`；下载 RDS CA 证书：放进集群 ConfigMap `starbuddy-rds-ca`
+1. **先核对云盘加密已开启**（阶段 B-enc；RDS 控制台“数据安全性”里云盘加密为服务密钥），没开不往下做。
+   RDS 控制台建高权限账号（口令只在 OOS 加密参数与跳板的 `PGPASSFILE`）与业务库 `<库名>`；下载 RDS CA 证书：放进集群 ConfigMap `starbuddy-rds-ca`
    （键 `ca.pem`），跳板上另存 `<CA 路径>`。
 2. 在主实例上发起一次手动数据备份，按 `rds-restore-and-migrate-rehearsal.md` 第 1 节**恢复到新实例**（同一 VPC、数据库交换机、不申请外网地址、
-   只允许 SSL、同一把 KMS 主密钥），记下 `<副本内网主机名>`。
+   只允许 SSL、云盘加密同主实例），记下 `<副本内网主机名>`。
 
 ### 3.2 副本上的核对与演练（`REPLICA_DSN`）
 ```
@@ -312,6 +314,8 @@ python3 deploy/migrate/migrate.py rehearse --dsn-env REPLICA_DSN --target-label 
 - 收尾：释放副本实例，删除跳板上副本那一行 `PGPASSFILE`，`unset REPLICA_DSN`。
 
 ### 3.3 主实例（`PRIMARY_DSN`；须人批准、复核人在场）
+**真实数据门槛（LT-03 决定记录第 15 条）**：不买 KMS 实例期间，staging 只放合成数据；导入内部家庭的真实数据之前，须先买 KMS 实例并切回自建密钥
+（RDS 换自建密钥、开启 ACK Secret 落盘加密、评估凭据切回凭据管家），另行确认。
 1. 集群级角色（每个环境由人执行一次，不属于迁移；迁移 0001 会断言它们存在）：
    ```
    export PRIMARY_DSN='postgresql://<高权限账号>@<主实例内网主机名>:5432/<库名>?sslmode=verify-full&sslrootcert=<CA 路径>'
@@ -328,7 +332,7 @@ python3 deploy/migrate/migrate.py rehearse --dsn-env REPLICA_DSN --target-label 
 3. 登录角色（由人建，口令用 psql 的 `\password` 交互设置，不进命令历史）：每个登录角色**只继承一个**组角色——学习服务 `starbuddy_learning`、洞察服务
    `starbuddy_insight`、知识服务 `starbuddy_kge_read`、审核台两个（`starbuddy_kge`、`starbuddy_review`）、BFF `starbuddy_bff`、调度器 `starbuddy_scheduler`；
    各服务连接串按 `deploy/config/README.md` 第 8 节写成 `postgresql://<登录角色>@<RDS 内网主机名>:5432/<库名>?sslmode=verify-full&sslrootcert=/run/rds-ca/ca.pem`，
-   只存凭据管家（4.1）。
+   只存 OOS 加密参数（4.1）。
 4. 收尾：`unset PRIMARY_DSN`，删除跳板上的 `PGPASSFILE` 行；变更记录写版本核对与执行结果。
 
 ---
@@ -350,9 +354,10 @@ python3 deploy/migrate/migrate.py rehearse --dsn-env REPLICA_DSN --target-label 
 学习服务（含三科适配器）、洞察服务、调度器等签字后再部署，**不放松任何启动校验、不设合成配置**。签字前 BFF 调用学习 / 洞察服务的接口回 503 属预期
 （第 5 节 `signed_content`）。
 
-### 4.1 凭据管家同步（ack-secret-manager）
-- 在 KMS 凭据管家建凭据，名字 `starbuddy-staging/<Secret 名>`，加密密钥选 `alias/<名前缀>-secrets`（IaC 输出 `kms_secrets_key_id`）；在 ACK 里建
-  ack-secret-manager 的同步规则，并用 RBAC 限定只有部署者能在 `starbuddy-staging` 命名空间创建 / 修改同步规则；应用的 ServiceAccount 不挂令牌。
+### 4.1 应用凭据同步（OOS 加密参数 → ack-secret-manager；LT-03 决定记录第 15 条）
+- 在 OOS 控制台（cn-beijing）建加密参数，名字 `starbuddy-staging/<Secret 名>`（`kms.tf` 的 `app_secrets` 名单；取值只在控制台输入，不进仓库与命令历史）；
+  文件类条目（签字配置、`otp.json`）先核对加密参数的取值长度上限，超限时由人另定办法（lessons 待人确认）；在 ACK 里建
+  ack-secret-manager 的同步规则（`SecretStore` 用 `OOS.OOSAuth` 经 RRSA 扮演阶段 R 的角色，`ExternalSecret` 的 provider 写 `oos`），并用 RBAC 限定只有部署者能在 `starbuddy-staging` 命名空间创建 / 修改同步规则；应用的 ServiceAccount 不挂令牌。
 - 同步后的 k8s Secret 名与键（必须与清单的 `secretKeyRef` / `secretName` 一致，与 `kms.tf` 的 `app_secrets` 名单一致）：
 
 | Secret | 键 |
@@ -390,7 +395,7 @@ kubectl -n starbuddy-staging get configmap starbuddy-rds-ca
 
 ### 4.3 部署副本（填占位，不提交）
 1. 把 `deploy/k8s/staging.yaml`、`deploy/k8s/observability.yaml` 复制到跳板的 `<部署目录>`（仓库之外），按 IaC 输出、流水线摘要与 ARMS 控制台填写全部
-   `<由人填写…>`：存储类 `kmsKeyId`（`kms_key_id`）、web Service 的交换机、证书 ID 与 `slb_acl_id`、镜像摘要、NetworkPolicy `metrics-from-collector` 的
+   `<由人填写…>`：web Service 的交换机、证书 ID 与 `slb_acl_id`、镜像摘要、NetworkPolicy `metrics-from-collector` 的
    采集组件命名空间与 Pod 标签、AliyunLogConfig 的 `project`（`log_project`）。学习服务 Pod 的出网注解与模型接线行在 `model_provider` 解除前保持原样。
 2. 再把副本按资源拆成几份：`00-base.yaml`（Namespace、StorageClass、PVC、全部 Service、全部 NetworkPolicy）与 `10-learning.yaml`、`20-knowledge.yaml`、
    `21-insight.yaml`、`30-scheduler.yaml`、`40-bff.yaml`、`50-web.yaml`、`51-review-console.yaml`（各一个 Deployment）。
@@ -487,11 +492,11 @@ kubectl -n starbuddy-staging get svc,networkpolicy,pvc
 
 ---
 
-## 6. 走查（内部成员测试开放前；两人一组，按项记录通过 / 预期不可用 / 失败）
+## 6. 走查（内部成员测试开放前；两人一组，按项记录通过 / 预期不可用 / 失败；不买 KMS 实例期间只用合成数据，见 3.3 真实数据门槛）
 测试账号用内部成员（成年员工）的白名单号码；走查记录不写手机号、验证码与任何学生信息。
 1. **内部访问（VPN）**：经 VPN 打开 `https://<内网访问地址>`，证书由私有 CA 签发且受信；不在 `office_vpn_cidrs` 的来源访问失败；公网无入口
    （`kubectl -n starbuddy-staging get svc web` 只有内网地址；IaC 无 DNAT、无公网负载均衡）。
-2. **OTP 白名单登录**：管理员在凭据管家更新 `starbuddy-staging/starbuddy-staging-otp`（条目窗口 ≤ 24 小时、id 不复用），同步后用白名单号码登录成功；同一条目再次使用失败
+2. **OTP 白名单登录**：管理员在 OOS 加密参数里更新 `starbuddy-staging/starbuddy-staging-otp`（条目窗口 ≤ 24 小时、id 不复用），同步后用白名单号码登录成功；同一条目再次使用失败
    （成功即作废）；非白名单号码的表现与现状一致（不投递）；BFF 应用日志与 SLS 里没有验证码与手机号原文；审计文件行数增加：
    `kubectl -n starbuddy-staging exec deployment/bff -c bff -- wc -l /var/lib/starbuddy/audit/otp-audit.jsonl`。
 3. **同意书版本**：前端展示的两份文书版本与 `starbuddy-staging` ConfigMap 登记一致；家长签署后记录的是登记版本；监护人同意书未签时的行为按产品设计核对，结果以实际为准记录。
@@ -521,6 +526,6 @@ kubectl -n starbuddy-staging get svc,networkpolicy,pvc
 | 第 1 节 Terraform | 某阶段 apply 失败：状态已在远程后端，修正后重新 plan、逐次确认、再 apply（失败的资源会在下一次 plan 里出现）；变更有误：回到上一版 IaC 提交再 plan / apply（`rollback.md` 第 4 节），plan 里出现删除或替换就停下；**不执行 destroy**——要撤掉某个资源，另行写明理由、范围与计费影响，经用户单独确认（包年包月资源下单后不可按量退订）；锁表残留锁只在确认没有进行中的 apply 后由人处理 |
 | 第 2 节镜像 | 不部署未验签的摘要；有问题的版本不填进部署副本，重新从上一版提交触发流水线；已部署的按 `rollback.md` 第 1 节换回上一版摘要 |
 | 第 3 节数据库 | 副本演练失败：主实例不动，释放副本，回到开发修迁移；主实例 up 中途失败：每个迁移单独一个事务，已执行的是前缀，先前向修复，必须回退时先在副本演练 `down --to <版本>`，再按 `rollback.md` 第 2 节在主实例执行（不要 down 0058，学习服务会拒绝启动）；数据被错误改写：`rollback.md` 第 3 节按时间点恢复 |
-| 第 4 节 k8s | 停服务用缩容（`kubectl -n starbuddy-staging scale deployment/<服务> --replicas=0`），不删命名空间与 PVC（存储类 Retain，盘与审计文件要保留）；换回上一版镜像或上一版部署副本按 `rollback.md` 第 1 节；凭据错误在凭据管家改回上一版本，等同步后 `rollout restart` |
+| 第 4 节 k8s | 停服务用缩容（`kubectl -n starbuddy-staging scale deployment/<服务> --replicas=0`），不删命名空间与 PVC（存储类 Retain，盘与审计文件要保留）；换回上一版镜像或上一版部署副本按 `rollback.md` 第 1 节；凭据错误在 OOS 加密参数里改回上一个取值，等同步后 `rollout restart` |
 | 第 5 节开关与内容 | 用上一版部署副本把开关取值改回关（或撤回接线行、撤下供应商密钥），`kubectl apply` 后 `rollout status`；矩阵 PR 同步回退 |
 | 第 6 节走查 | 走查中发现个人信息泄漏风险：先停对外入口（web 缩容到 0），再按事故流程处理；OTP 条目由管理员撤下 |

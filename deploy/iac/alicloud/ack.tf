@@ -1,5 +1,5 @@
 # 托管 K8s（ACK Pro，决定记录第 2 条，沿用 deploy/k8s/staging.yaml）：API Server 不开公网（只经 VPC / VPN 访问），Terway 网络
-# （Pod 直接用 VPC 内网地址，NetworkPolicy 生效），Secret 落盘用 KMS 加密，控制面日志进 SLS，RRSA 给 ack-secret-manager 最小权限。
+# （Pod 直接用 VPC 内网地址，NetworkPolicy 生效），Secret 落盘暂不做 KMS 信封加密（决定记录第 15 条），控制面日志进 SLS，RRSA 给 ack-secret-manager 最小权限。
 
 resource "alicloud_cs_managed_kubernetes" "main" {
   name                 = local.name
@@ -14,8 +14,9 @@ resource "alicloud_cs_managed_kubernetes" "main" {
   security_group_id    = alicloud_security_group.nodes.id
   deletion_protection  = true
   enable_rrsa          = true
-  # Secret 落盘加密（KMS 主密钥）
-  encryption_provider_key = alicloud_kms_key.main.id
+  # Secret 落盘不做 KMS 信封加密（LT-03 决定记录第 15 条 6a：不买 KMS 实例）。补偿：只有部署者能读 starbuddy-staging 的 Secret（RBAC），
+  # 应用 ServiceAccount 不挂令牌，Secret 的权威来源在集群外（OOS 加密参数，kms.tf）。买了 KMS 实例后在本集群上开启（ACK Pro 支持已有集群开启）
+  disable_encryption = true
   # 控制面日志（审计、API Server 等）进 SLS，留存同 log_retention_days
   control_plane_log_project    = alicloud_log_project.main.project_name
   control_plane_log_ttl        = tostring(var.log_retention_days)
@@ -43,7 +44,7 @@ resource "alicloud_cs_managed_kubernetes" "main" {
     name = "arms-prometheus"
   }
   addons {
-    name = "ack-secret-manager" # 凭据管家 → k8s Secret（只读 starbuddy-staging/ 前缀，kms.tf 的 RAM 角色）
+    name = "ack-secret-manager" # OOS 加密参数 → k8s Secret（只读名单内的参数，kms.tf 的 RAM 角色）
   }
   addons {
     name     = "nginx-ingress-controller"
@@ -65,8 +66,7 @@ resource "alicloud_cs_kubernetes_node_pool" "default" {
   # 不给节点分配公网地址（不设 internet_max_bandwidth_out）；出网只经 NAT
   system_disk_category  = "cloud_essd"
   system_disk_size      = 120
-  system_disk_encrypted = true
-  system_disk_kms_key   = alicloud_kms_key.main.id
+  system_disk_encrypted = true # 不指定 system_disk_kms_key：用 ECS 云盘服务密钥（决定记录第 15 条）
   labels {
     key   = "starbuddy/pool"
     value = "default"

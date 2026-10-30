@@ -136,11 +136,11 @@ secretKeyRef / `${…}` 注入；`model_provider` 仍 pending 时编排不设令
 华北 2（北京）、ACK Pro（Terway）、只内网 + VPN / 办公网白名单。基础设施草案 `deploy/iac/alicloud`（Terraform，仅 validate 与静态检查，
 plan / apply 由人执行，步骤见该目录 README）；镜像流水线 `deploy/ci`（构建、SBOM、扫描、签名、推送到 ACR 企业版）；演练手册 `deploy/runbooks`。
 
-**托管 Postgres（RDS）的连接串**（存凭据管家，经 ack-secret-manager 同步成 k8s Secret，只经 `secretKeyRef` 注入）：
+**托管 Postgres（RDS）的连接串**（存 OOS 加密参数，经 ack-secret-manager 同步成 k8s Secret，LT-03 决定记录第 15 条；只经 `secretKeyRef` 注入）：
 ```
 postgresql://<登录角色>@<RDS 内网主机名>:5432/<库名>?sslmode=verify-full&sslrootcert=/run/rds-ca/ca.pem
 ```
-- 主机名用 IaC 输出 `rds_private_host`（VPC 内网地址；不建外网连接地址）；连接串整体按密钥处理（含登录角色口令时也只在凭据管家与
+- 主机名用 IaC 输出 `rds_private_host`（VPC 内网地址；不建外网连接地址）；连接串整体按密钥处理（含登录角色口令时也只在 OOS 加密参数与
   k8s Secret 里，不进编排文件、镜像与日志；迁移执行器另按第 5 节不收带口令的连接串，口令走 `PGPASSFILE`）；
 - **TLS 与主机名核对**：`sslmode=verify-full`（校验证书链与主机名）+ `sslrootcert`（RDS 的 CA 证书，由人放进 ConfigMap `starbuddy-rds-ca` 的
   `ca.pem`，连库的容器只读挂载到 `/run/rds-ca`，`deploy/k8s/staging.yaml`）。学习、洞察、知识服务（asyncpg）、BFF（node-postgres）、

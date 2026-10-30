@@ -29,7 +29,10 @@ resource "alicloud_db_instance" "main" {
   ssl_action               = "Open"
   ssl_connection_string    = "${local.rds_connection_prefix}${var.rds_internal_domain_suffix}" # 证书只签内网地址
   ca_type                  = "aliyun"
-  encryption_key           = alicloud_kms_key.main.id
+  # 云盘加密用 RDS 服务密钥（LT-03 决定记录第 15 条：不买 KMS 实例）。provider 文档：PostgreSQL 创建时 encryption_key 只收自建密钥 ID、
+  # 不收 ServiceKey，所以分两步——阶段 B 建实例传 rds_disk_encryption = "deferred"（空库），紧接着单独 plan / apply 传 "ServiceKey" 开启；
+  # 之后一律传 "ServiceKey"（encryption_key 是 computed，再传 deferred 也不会关闭加密）。执行迁移前核对云盘加密已开启（手册第 3 节）
+  encryption_key = var.rds_disk_encryption == "ServiceKey" ? "ServiceKey" : null
   pg_hba_conf {
     type        = "hostssl"
     database    = "all"

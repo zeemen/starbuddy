@@ -279,12 +279,13 @@ def test_k8s_rds_tls_ca_mounted_for_db_clients(k8s_docs):
 
 
 def test_k8s_storage_and_internal_lb(k8s_docs):
-    """ACK 云盘存储类（ESSD、KMS 加密、保留）；唯一的负载均衡是前端的私网负载均衡（白名单访问控制、HTTPS）；没有 Ingress、NodePort"""
+    """ACK 云盘存储类（ESSD、加密、保留）；唯一的负载均衡是前端的私网负载均衡（白名单访问控制、HTTPS）；没有 Ingress、NodePort"""
     sc = [d for d in k8s_docs if d["kind"] == "StorageClass"]
     assert len(sc) == 1
     sc = sc[0]
     assert sc["provisioner"] == "diskplugin.csi.alibabacloud.com" and sc["parameters"]["encrypted"] == "true"
-    assert sc["parameters"]["kmsKeyId"].startswith("<由人填写") and sc["reclaimPolicy"] == "Retain"
+    # 不买 KMS 实例（LT-03 决定记录第 15 条）：不指定 kmsKeyId，用 ECS 云盘服务密钥加密
+    assert "kmsKeyId" not in sc["parameters"] and sc["reclaimPolicy"] == "Retain"
     pvcs = [d for d in k8s_docs if d["kind"] == "PersistentVolumeClaim"]
     claimed = {v["persistentVolumeClaim"]["claimName"] for d in _deployments(k8s_docs).values()
                for v in d["spec"]["template"]["spec"].get("volumes", []) if "persistentVolumeClaim" in v}

@@ -16,7 +16,7 @@
 | `acr.tf` | ACR 企业版（缺省 Advanced，待人核实）：私有命名空间与仓库（10 个服务镜像 + 2 个基础镜像）、VPC 访问端点 |
 | `egress.tf` | 出网白名单：云防火墙 NAT 边界只放行 `var.model_egress_fqdns` 的 TCP 443，最后一条拒绝其余；`nat_firewall_confirmed` 由人确认 |
 | `sls.tf` | 日志服务：留存 ≥ 180 天、服务端加密、不建全文索引；app 日志库只给白名单字段建字段索引（LT-05，R21）；不记个人信息的口径在应用侧（各服务 obs 模块集中脱敏） |
-| `kms.tf` | KMS 主密钥与凭据管家专用密钥（都自动轮转、删除保护）；ack-secret-manager 的最小权限 RAM 角色（逐个列名的凭据、只用专用密钥 Decrypt，不用通配符） |
+| `kms.tf` | 应用凭据：不买 KMS 实例期间不建自建密钥（LT-03 决定记录第 14、15 条），凭据放 OOS 加密参数；ack-secret-manager 的最小权限 RAM 角色（只有 `oos:GetSecretParameter`、逐个列名的参数，不用通配符；阶段 R 由人 apply） |
 | `slb.tf` | 内网负载均衡的访问控制（办公网 / VPN 网段白名单）；负载均衡本身由 ACK 按 web Service 创建 |
 | `outputs.tf` | 只给执行 apply 的人填部署配置用的标识与内网地址（不提交） |
 
@@ -62,12 +62,12 @@
 2. `terraform plan -out=staging.tfplan`，由第二人审阅（重点：没有公网入口、出网白名单只有模型供应商主机名、RDS 白名单只有 VPC 网段、
    地域全部 cn-beijing、无 DNAT、OSS 私有）；计划文件不提交；
 3. `terraform apply staging.tfplan`；
-4. 按输出填写部署配置（不提交真实值）：`deploy/k8s/staging.yaml` 里的 `<由人填写…>` 占位（内网负载均衡交换机与 `slb_acl_id`、存储类 `kmsKeyId`、
-   镜像仓库 `ACR_REGISTRY`、RDS CA 证书 ConfigMap）、凭据管家里的各服务凭据（连接串用 `rds_private_host`，见 `deploy/config/README.md` 第 8 节）；
-5. 在凭据管家创建应用凭据时选凭据专用密钥（`alias/<名前缀>-secrets`）作加密密钥，名字是 `starbuddy-staging/<Secret 名>`（`kms.tf` 的
+4. 按输出填写部署配置（不提交真实值）：`deploy/k8s/staging.yaml` 里的 `<由人填写…>` 占位（内网负载均衡交换机与 `slb_acl_id`、
+   镜像仓库 `ACR_REGISTRY`、RDS CA 证书 ConfigMap）、OOS 加密参数里的各服务凭据（连接串用 `rds_private_host`，见 `deploy/config/README.md` 第 8 节）；
+5. 在 OOS 控制台创建应用凭据（加密参数），名字是 `starbuddy-staging/<Secret 名>`（`kms.tf` 的
    `app_secrets` 名单，与 `secretKeyRef` 一致）；在 ACK 里建命名空间与 `ack-secret-manager` 的同步规则，并用 RBAC 限定只有部署者能在
    `starbuddy-staging` 命名空间创建 / 修改同步规则（ExternalSecret 这一类 CR）；
-6. 数据库：在 RDS 控制台建高权限账号（口令只在凭据管家），用 `deploy/migrate` 先在快照副本上演练再执行 `db/bootstrap` 与迁移
+6. 数据库：在 RDS 控制台建高权限账号（口令只在 OOS 加密参数），用 `deploy/migrate` 先在快照副本上演练再执行 `db/bootstrap` 与迁移
    （`deploy/runbooks/rds-restore-and-migrate-rehearsal.md`）。
 
 ## 4. 网段与清单的对应（`deploy/tests/test_iac.py` 核对）
