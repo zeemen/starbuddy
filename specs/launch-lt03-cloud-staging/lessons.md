@@ -103,3 +103,7 @@
 - 日志 Project 报错：provider 建完读 `log:GetProjectPolicy` 被拒 → 按 provider 1.294.0 源码一次查全日志资源的读接口，数据策略补 `log:GetProjectPolicy`、`log:GetLogStoreMeteringMode`、`log:ListShards`（只读元数据）。
 - 用户同意后对两个资源执行 `tofu untaint`（只改状态，不动云上资源）。
 - 教训：子账号策略里逐个列出的查询动作，要按 provider 源码里各资源 Read 函数实际调用的接口核对，不能只按 API 文档猜；RDS 参数要先查参数模板确认可改。
+
+## 补记（2026-10-30）：阶段 B 第三次 apply
+- RDS 原地修改完成并只读核对：删除保护开、SSL 开（证书签内网前缀）、pg_hba 只剩 hostssl + scram（阿里云默认的 host replication 0.0.0.0/0 md5 已去掉）、5 个日志参数为目标值；白名单另有阿里云自动加的隐藏组 `hdm_security_ips`（100.104.x.x，数据库自治服务）。日志库 app / audit 与索引建成。
+- 备份策略报 `IncorrectCompressType`（PostgreSQL 云盘不收 "4"）→ `rds.tf` 去掉 `compress_type`（Optional + Computed，用缺省）；用户同意后 untaint 备份策略。

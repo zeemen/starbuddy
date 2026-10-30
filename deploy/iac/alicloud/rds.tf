@@ -75,5 +75,5 @@ resource "alicloud_db_backup_policy" "main" {
   backup_retention_period     = var.rds_backup_retention_days
   enable_backup_log           = true # 日志备份：按时间点恢复（PITR）
   log_backup_retention_period = var.rds_log_backup_retention_days
-  compress_type               = "4"
+  # compress_type 不写：PostgreSQL 云盘实例不收 "4"（2026-10-30 apply 报 IncorrectCompressType），用 RDS 缺省
 }
