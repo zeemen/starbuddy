@@ -90,3 +90,9 @@
 - 建议 S4（子账号策略）→ 去掉 `kms:Describe*` 等查询（IaC 已无 KMS）；拒绝策略与 SENSITIVE_READS 加 OOS 三个读参数动作。**控制台里已挂的两条策略需由人按新文件更新**（拒绝策略多三项、数据策略少三项）。
 - 建议 S6（encryption_key 是否 computed）→ 已用 provider 1.294.0 schema 核实：Optional + Computed。
 - 未处理、待人确认：数据标签 `data-class` 是否在不买 KMS 期间改为 `synthetic-only` 并与 R09 联动（审查 S2 选项二；现已由 `kms_instance` 门槛测试绑定，标签改动会让阶段 A 的 23 个资源出现标签修改）；“合成数据”边界——员工自己的真实手机号能否用于白名单登录走查（手册第 6 节）；白名单条目导入方式（内测手册与 `tools/internal-test` 仍写凭据管家；内测要等 `kms_instance` 解除，届时随凭据去向一并定）。
+
+## 补记（2026-10-30）：阶段 B 首次 apply 失败（没有建出任何资源）
+- OSS：provider 建桶前调 `ListBuckets` 查重名，子账号没有该权限 → 数据策略单独一条 `oss:ListBuckets`（资源只能写账号级 `acs:oss:*:*:*`，只返回桶名），测试只给这一对开例外。
+- RDS：`ServiceLinkedRole.NotExist`，由主账号建 RDS 的服务关联角色（子账号被拒绝 `ram:CreateServiceLinkedRole`）。
+- 日志服务：`AccountNotExist`，账号未开通日志服务，由主账号开通。
+- 计划文件已删；三项处理完后重新 plan、重新确认。教训：手册 0.1 的“一次性授权”清单要在首次 apply 前逐项对照控制台核实，不能只靠 plan——plan 不调用创建接口，发现不了未开通与缺角色。

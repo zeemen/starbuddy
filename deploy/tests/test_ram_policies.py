@@ -121,7 +121,13 @@ def test_scoped_actions_never_on_wildcard_resources():
     for name in ALLOW:
         for s in statements(name):
             res = as_list(s["Resource"])
-            for a in as_list(s["Action"]):
+            acts = as_list(s["Action"])
+            # 唯一例外：provider 建桶前用账号级的 ListBuckets 判断桶名是否已存在（只返回桶名，不含对象）；须单独一条 Statement
+            if acts == ["oss:ListBuckets"]:
+                assert res == ["acs:oss:*:*:*"], f"{name}：ListBuckets 只能单独一条、资源只写账号级"
+                continue
+            assert "oss:ListBuckets" not in acts, f"{name}：ListBuckets 须单独一条 Statement"
+            for a in acts:
                 if a.startswith(SCOPED):
                     for r in res:
                         assert r != "*" and (r in PLACEHOLDER_OK or not re.search(r"(^|[:/])\*$", r)), f"{name}：{a} 的资源 {r} 过宽"

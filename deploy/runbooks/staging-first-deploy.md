@@ -36,7 +36,7 @@ LT-03 云与镜像、LT-04 learning-internal v1 与迁移 0058、LT-05 可观测
 | 云服务器 `ecs:` | 安全组与安全组规则的创建 / 查询 / 修改；密钥对查询（只读）；节点所需的实例与云盘查询 | `network.tf`、`ack.tf` |
 | 容器服务 `cs:` | 托管集群与节点池的创建 / 查询 / 修改、组件安装与查询 | `ack.tf` |
 | 云数据库 `rds:` | 实例创建 / 查询 / 修改、SSL 与 pg_hba 设置、白名单、备份策略 | `rds.tf` |
-| 对象存储 `oss:` | 业务桶的创建与 ACL、阻止公共访问、版本控制、加密、生命周期；**状态桶**的对象读写（GetObject、PutObject、ListObjects，只限状态桶与 `<状态前缀>`） | `oss.tf`、0.2 |
+| 对象存储 `oss:` | 账号级 `ListBuckets`（provider 建桶前查重名，只返回桶名；单独一条 Statement）；业务桶的创建与 ACL、阻止公共访问、版本控制、加密、生命周期；**状态桶**的对象读写（GetObject、PutObject、ListObjects，只限状态桶与 `<状态前缀>`） | `oss.tf`、0.2 |
 | 表格存储 `ots:` | 锁表的行读写（GetRow、PutRow、UpdateRow、DeleteRow——锁释放需要删行，只限锁表）与表查询 | 0.2 |
 | 容器镜像服务 `cr:` | 企业版实例、命名空间、仓库、VPC 访问端点的创建 / 查询 | `acr.tf` |
 | 云防火墙 `yundun-cloudfirewall:` 或 `cloudfw:`（以控制台为准） | NAT 边界访问控制策略的创建 / 查询 / 修改 | `egress.tf` |
@@ -49,7 +49,7 @@ LT-03 云与镜像、LT-04 learning-internal v1 与迁移 0058、LT-05 可观测
 另加一条**显式拒绝**（防止误删，与“不执行 destroy”一致）：各产品的删除 / 释放类动作（例如释放 RDS 实例、删除集群、删除桶、计划删除 KMS 密钥、
 删除日志 Project、删除 ACR 实例），以及 `ram:` 的创建用户、创建 AccessKey、给用户挂策略（防止提权）。若某次 plan 里的“修改”需要先删后建，
 apply 会被这条拒绝挡下——这正是要停下来由人决定的情形。
-一次性授权与账号级设置（由主账号在控制台完成，草案拒绝了 `ram:CreateServiceLinkedRole` 与账号级阻止公共访问的修改）：容器服务的服务角色；RDS 云盘加密（AliyunRDSInstanceEncryptionDefaultRole）与 ECS 云盘加密的服务角色；NAT 网关、ACR VPC 端点、云防火墙首次使用时的服务关联角色；**OSS 账号级阻止公共访问开启**（安全审查 B3：即使桶级设置被改，桶也不能公开）。
+一次性授权与账号级设置（由主账号在控制台完成；首次阶段 B apply 时实际撞到的：RDS 的服务关联角色（`ServiceLinkedRole.NotExist`）、日志服务未开通（`AccountNotExist`）；草案拒绝了 `ram:CreateServiceLinkedRole` 与账号级阻止公共访问的修改）：容器服务的服务角色；RDS 云盘加密（AliyunRDSInstanceEncryptionDefaultRole）与 ECS 云盘加密的服务角色；NAT 网关、ACR VPC 端点、云防火墙首次使用时的服务关联角色；**OSS 账号级阻止公共访问开启**（安全审查 B3：即使桶级设置被改，桶也不能公开）。
 集群建好后（阶段 C 验收后）由人在 ACK 授权管理里收回 Terraform 身份自动获得的集群 RBAC（建集群的身份默认是 cluster-admin），并核实草案已拒绝取 kubeconfig。
 走 STS 时：三条策略挂给 `<Terraform RAM 角色>`，子账号只有扮演该角色的权限；状态桶不配桶策略，不需改动。
 

@@ -33,6 +33,11 @@
     },
     {
       "Effect": "Allow",
+      "Action": ["oss:ListBuckets"],
+      "Resource": ["acs:oss:*:*:*"]
+    },
+    {
+      "Effect": "Allow",
       "Action": ["oss:ListObjects", "oss:GetBucketInfo"],
       "Resource": ["acs:oss:*:*:<状态桶名>"]
     },
