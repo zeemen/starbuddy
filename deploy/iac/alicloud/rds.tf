@@ -52,14 +52,6 @@ resource "alicloud_db_instance" "main" {
     value = "0"
   }
   parameters {
-    name  = "log_error_verbosity"
-    value = "terse"
-  }
-  parameters {
-    name  = "log_statement"
-    value = "none"
-  }
-  parameters {
     name  = "log_duration"
     value = "off"
   }

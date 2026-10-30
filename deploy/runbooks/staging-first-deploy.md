@@ -278,6 +278,10 @@ tofu -chdir=deploy/iac/alicloud plan -input=false -lock=true -out=<计划目录>
 
 ### 3.1 准备
 1. **先核对云盘加密已开启**（阶段 B-enc；RDS 控制台“数据安全性”里云盘加密为服务密钥），没开不往下做。
+   **再核对 RDS 不开放修改的两个日志参数**（`specs/plt-db-log-redaction` 决定记录：IaC 里不写，只能人工核对）：
+   `psql "$PRIMARY_DSN" -X -At -c "SHOW log_statement" -c "SHOW log_error_verbosity" -c "SHOW log_parameter_max_length" -c "SHOW log_parameter_max_length_on_error"`；
+   `log_statement` 只能是 `none` 或 `ddl`（`mod` / `all` 会把写入语句连同数据记进日志），后两项必须是 `0`；不符合就停下，由人向阿里云提工单改为
+   `none` / `terse`，改好前不执行迁移、不部署服务。`log_error_verbosity` 记下实际取值（不是 `terse` 时报错日志会带 DETAIL，可能含字段值），写进变更记录。
    RDS 控制台建高权限账号（口令只在 OOS 加密参数与跳板的 `PGPASSFILE`）与业务库 `<库名>`；下载 RDS CA 证书：放进集群 ConfigMap `starbuddy-rds-ca`
    （键 `ca.pem`），跳板上另存 `<CA 路径>`。
 2. 在主实例上发起一次手动数据备份，按 `rds-restore-and-migrate-rehearsal.md` 第 1 节**恢复到新实例**（同一 VPC、数据库交换机、不申请外网地址、

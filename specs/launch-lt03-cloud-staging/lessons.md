@@ -96,3 +96,10 @@
 - RDS：`ServiceLinkedRole.NotExist`，由主账号建 RDS 的服务关联角色（子账号被拒绝 `ram:CreateServiceLinkedRole`）。
 - 日志服务：`AccountNotExist`，账号未开通日志服务，由主账号开通。
 - 计划文件已删；三项处理完后重新 plan、重新确认。教训：手册 0.1 的“一次性授权”清单要在首次 apply 前逐项对照控制台核实，不能只靠 plan——plan 不调用创建接口，发现不了未开通与缺角色。
+
+## 补记（2026-10-30）：阶段 B 第二次 apply 部分成功
+- 建成：OSS 业务桶、ACL、阻止公共访问、网关终端节点与路由表挂载；RDS 实例（按量计费开始）与日志 Project 建成但报错、被标记 tainted。未建：RDS 备份策略、两个日志库、日志索引。
+- RDS 报错：`log_statement`、`log_error_verbosity` 在 RDS 不开放修改 → 用户决定从 IaC 去掉、迁移前人工核对（`specs/plt-db-log-redaction` 决定记录）。报错时实例的删除保护还没打开、`log_parameter_max_length` 为 -1，下一次 apply 纠正；库里没有数据。
+- 日志 Project 报错：provider 建完读 `log:GetProjectPolicy` 被拒 → 按 provider 1.294.0 源码一次查全日志资源的读接口，数据策略补 `log:GetProjectPolicy`、`log:GetLogStoreMeteringMode`、`log:ListShards`（只读元数据）。
+- 用户同意后对两个资源执行 `tofu untaint`（只改状态，不动云上资源）。
+- 教训：子账号策略里逐个列出的查询动作，要按 provider 源码里各资源 Read 函数实际调用的接口核对，不能只按 API 文档猜；RDS 参数要先查参数模板确认可改。

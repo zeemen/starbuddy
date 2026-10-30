@@ -165,11 +165,12 @@ MUTATIONS = [
     # 数据库服务端日志不带标识原文（specs/plt-db-log-redaction）
     ("慢查询日志写绑定参数", "rds.tf", "    name  = \"log_parameter_max_length\"\n    value = \"0\"", "    name  = \"log_parameter_max_length\"\n    value = \"-1\"", "R22"),
     ("报错日志写绑定参数", "rds.tf", "    name  = \"log_parameter_max_length_on_error\"\n    value = \"0\"", "    name  = \"log_parameter_max_length_on_error\"\n    value = \"64\"", "R22"),
-    ("报错日志写 DETAIL", "rds.tf", "    value = \"terse\"", "    value = \"default\"", "R22"),
-    ("记录全部语句", "rds.tf", "    value = \"none\"", "    value = \"all\"", "R22"),
-    ("缺 log_error_verbosity", "rds.tf", "  parameters {\n    name  = \"log_error_verbosity\"\n    value = \"terse\"\n  }\n", "", "R22"),
-    ("同一参数写两次", "rds.tf", "  parameters {\n    name  = \"log_statement\"", "  parameters {\n    name  = \"log_statement\"\n    value = \"ddl\"\n  }\n  parameters {\n    name  = \"log_statement\"", "R22"),
-    ("参数名大写覆盖", "rds.tf", "  deletion_protection = true\n", "  parameters {\n    name  = \"LOG_STATEMENT\"\n    value = \"all\"\n  }\n  deletion_protection = true\n", "R22"),
+    # RDS 不开放修改的两项（specs/plt-db-log-redaction 决定记录）：写进 parameters 就要被发现
+    ("写不可改的 log_statement", "rds.tf", "  deletion_protection = true\n", "  parameters {\n    name  = \"log_statement\"\n    value = \"none\"\n  }\n  deletion_protection = true\n", "R22"),
+    ("写不可改的 log_error_verbosity", "rds.tf", "  deletion_protection = true\n", "  parameters {\n    name  = \"log_error_verbosity\"\n    value = \"terse\"\n  }\n  deletion_protection = true\n", "R22"),
+    ("缺 log_duration", "rds.tf", "  parameters {\n    name  = \"log_duration\"\n    value = \"off\"\n  }\n", "", "R22"),
+    ("同一参数写两次", "rds.tf", "  parameters {\n    name  = \"log_duration\"", "  parameters {\n    name  = \"log_duration\"\n    value = \"on\"\n  }\n  parameters {\n    name  = \"log_duration\"", "R22"),
+    ("参数名大写覆盖", "rds.tf", "  deletion_protection = true\n", "  parameters {\n    name  = \"LOG_DURATION\"\n    value = \"on\"\n  }\n  deletion_protection = true\n", "R22"),
     ("参数名引用局部值", "rds.tf", "  deletion_protection = true\n", "  parameters {\n    name  = local.name\n    value = \"all\"\n  }\n  deletion_protection = true\n", "R22"),
     ("dynamic 参数块", "rds.tf", "  deletion_protection = true\n", "  dynamic \"parameters\" {\n    for_each = var.extra\n    content {\n      name  = parameters.key\n      value = parameters.value\n    }\n  }\n  deletion_protection = true\n", "R22"),
     ("打开语句耗时日志", "rds.tf", "    value = \"off\"", "    value = \"on\"", "R22"),

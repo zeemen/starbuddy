@@ -22,3 +22,8 @@
 ## 待人确认
 1. RDS 控制台是否允许修改这七个参数（不允许的须改为提工单或接受风险）；参数修改是否需要重启实例。
 2. 关闭 DETAIL 后排障只能看客户端错误（应用日志只记 SQLSTATE 与异常类名），是否可接受。
+
+## 决定记录（2026-10-30，用户；LT-03 阶段 B apply）
+1. RDS PostgreSQL 16 不开放修改 `log_statement` 与 `log_error_verbosity`（参数模板里没有，apply 报 `InvalidParameters.Prohibited`）。按用户选择：从 `rds.tf` 去掉这两项，R22 改为“这两项不得写进 parameters”（`RDS_LOG_UNMODIFIABLE`）；其余 5 项照旧固定。
+   补偿：`deploy/runbooks/staging-first-deploy.md` 3.1 迁移前人工 `SHOW` 核对，`log_statement` 只能是 `none` / `ddl`，否则停下提工单。
+   残余风险：`log_error_verbosity` 不是 `terse` 时，约束冲突等报错日志可能带 DETAIL（含字段值）；不买 KMS 期间 staging 只放合成数据（LT-03 决定记录第 15 条），风险较低，导入真实数据前须复核（可提工单改为 terse）。

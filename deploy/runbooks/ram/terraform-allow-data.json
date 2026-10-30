@@ -6,6 +6,7 @@
       "Action": [
         "rds:Describe*",
         "log:GetProject", "log:ListProject", "log:GetLogStore", "log:ListLogStores", "log:GetIndex", "log:ListTagResources",
+        "log:GetProjectPolicy", "log:GetLogStoreMeteringMode", "log:ListShards",
         "cr:GetInstance", "cr:GetInstanceEndpoint", "cr:GetInstanceVpcEndpoint", "cr:GetNamespace", "cr:GetRepository",
         "cr:ListInstance", "cr:ListInstanceEndpoint", "cr:ListNamespace", "cr:ListRepository",
         "yundun-cloudfirewall:Describe*",

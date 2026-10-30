@@ -40,8 +40,9 @@
       通知策略、机器人（接收人与通知渠道由人在控制台配置，联系方式不进仓库与状态文件）
   R21 日志索引（LT-05）：日志库索引不建全文索引（没有 full_text 块），字段索引只收白名单字段（LOG_INDEX_FIELDS）；app 日志库必须有索引
   R22 数据库服务端日志不带标识原文（specs/plt-db-log-redaction）：RDS 用 parameters 固定 log_parameter_max_length = 0、
-      log_parameter_max_length_on_error = 0、log_error_verbosity = terse、log_statement = none、
+      log_parameter_max_length_on_error = 0、
       log_duration = off、log_min_duration_sample = -1、log_transaction_sample_rate = 0（名字字面小写、各恰一条、不用 dynamic）；
+      RDS 不开放修改的 log_statement、log_error_verbosity 不写（RDS_LOG_UNMODIFIABLE，迁移前人工核对）；
       sql_collector_status 不写或为字面值 Disabled；只读实例、参数模板、SLS 采 RDS 审计不在 IaC 里建（FORBIDDEN_TYPES）
 用法：python3 deploy/iac/check_iac.py [目录]   退出码 0 通过；1 有违规；2 目录读不了或解析失败。
 """
@@ -344,11 +345,12 @@ LOG_INDEX_FIELDS = frozenset({"service", "level", "logger", "route", "event", "r
 # R12：日志留存的上下限（天）：至少 180 天（《网络安全法》第二十一条），至多 365 天（最小必要，日志里只有元数据也不无限期保留）
 LOG_RETENTION_MIN, LOG_RETENTION_MAX = 180, 365
 # R22：RDS 服务端日志参数的固定取值（字符串，与控制台参数值同形）
+# RDS PostgreSQL 16 不开放修改 log_statement、log_error_verbosity（2026-10-30 阶段 B apply 报 InvalidParameters.Prohibited，
+# 参数模板里没有这两项；specs/plt-db-log-redaction 决定记录）：IaC 里不写（写了 apply 必失败），改由手册第 3 节迁移前人工 SHOW 核对
+RDS_LOG_UNMODIFIABLE = {"log_statement", "log_error_verbosity"}
 RDS_LOG_PARAMETERS = {
     "log_parameter_max_length": "0",
     "log_parameter_max_length_on_error": "0",
-    "log_error_verbosity": "terse",
-    "log_statement": "none",
     "log_duration": "off",
     "log_min_duration_sample": "-1",
     "log_transaction_sample_rate": "0",
@@ -870,6 +872,8 @@ class Checker:
                     self.add("R22", b.file, f"{n}：parameters 的 name / value 必须是字面字符串")
                     continue
                 key = raw.strip().lower()
+                if key in RDS_LOG_UNMODIFIABLE:
+                    self.add("R22", b.file, f"{n}：{key} 在 RDS 不开放修改（apply 会报 Prohibited），不写进 parameters，改由手册第 3 节人工核对")
                 if key in RDS_LOG_PARAMETERS and raw != key:
                     self.add("R22", b.file, f"{n}：参数名 {raw!r} 必须写成小写原样 {key!r}")
                 got.setdefault(key, []).append(val)
