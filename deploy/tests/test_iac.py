@@ -76,6 +76,13 @@ MUTATIONS = [
     ("节点盘不加密", "ack.tf", "system_disk_encrypted = true", "system_disk_encrypted = false", "R09"),
     ("Secret 落盘既不加密也不显式声明", "ack.tf", "  disable_encryption = true\n", "", "R09"),
     ("RDS 云盘不加密", "rds.tf", "  encryption_key = var.rds_disk_encryption == \"ServiceKey\" ? \"ServiceKey\" : null\n", "", "R09"),
+    # 安全审查建议 S1 / S2：填空值、永远停在 deferred 都要被发现
+    ("RDS 加密填 null", "rds.tf", "  encryption_key = var.rds_disk_encryption == \"ServiceKey\" ? \"ServiceKey\" : null\n", "  encryption_key = null\n", "R09"),
+    ("RDS 加密填空串", "rds.tf", "  encryption_key = var.rds_disk_encryption == \"ServiceKey\" ? \"ServiceKey\" : null\n", "  encryption_key = \"\"\n", "R09"),
+    ("RDS 加密变量给缺省 deferred", "variables.tf", "variable \"rds_disk_encryption\" {\n", "variable \"rds_disk_encryption\" {\n  default     = \"deferred\"\n", "R09"),
+    ("集群不要求 RDS 已加密", "ack.tf", "      condition     = var.rds_disk_encryption == \"ServiceKey\"\n", "      condition     = true\n", "R09"),
+    ("Secret 落盘密钥填 null", "ack.tf", "  disable_encryption = true\n", "  encryption_provider_key = null\n", "R09"),
+    ("OSS 选 KMS 主密钥填空串", "oss.tf", "    sse_algorithm = \"AES256\"", "    sse_algorithm     = \"KMS\"\n    kms_master_key_id = \"\"", "R09"),
     ("日志库不加密", "sls.tf", "    enable       = true\n    encrypt_type = \"default\"\n  }\n}\n\n# LT-05：应用日志",
      "    enable       = false\n    encrypt_type = \"default\"\n  }\n}\n\n# LT-05：应用日志", "R09"),
     ("API Server 开公网", "ack.tf", "slb_internet_enabled = false", "slb_internet_enabled = true", "R10"),
@@ -291,7 +298,14 @@ def test_secret_reader_list_matches_k8s_secrets():
     k8s = (DEPLOY / "k8s" / "staging.yaml").read_text(encoding="utf-8")
     used = set(re.findall(r"secretKeyRef: \{name: ([a-z0-9-]+)", k8s)) | set(re.findall(r"secretName: ([a-z0-9-]+)", k8s))
     assert listed == used
-    assert '"oos:GetSecretParameter"' in kms and "secretparameter/${var.name_prefix}-${var.environment}/${s}" in kms and '"kms:' not in kms
+    assert "secretparameter/${var.name_prefix}-${var.environment}/${s}" in kms and '"kms:' not in kms
+    # 安全审查建议 S3：动作集合恰好一个、只有一条 Statement；信任条件锁定为本集群 OIDC 与 kube-system:ack-secret-manager
+    policy = kms[kms.index('resource "alicloud_ram_policy" "secret_reader"'):kms.index('resource "alicloud_ram_role" "secret_reader"')]
+    assert re.findall(r"Action\s*=\s*\[([^\]]*)\]", policy) == ['"oos:GetSecretParameter"'] and policy.count("Effect") == 1
+    trust = kms[kms.index('resource "alicloud_ram_role" "secret_reader"'):kms.index('resource "alicloud_ram_role_policy_attachment"')]
+    assert re.search(r'"oidc:sub"\s*=\s*"system:serviceaccount:kube-system:ack-secret-manager"', trust)
+    assert re.search(r'"oidc:aud"\s*=\s*"sts\.aliyuncs\.com"', trust) and "rrsa_oidc_issuer_url" in trust
+    assert "Federated = [alicloud_cs_managed_kubernetes.main.rrsa_metadata[0].ram_oidc_provider_arn]" in trust
     assert "ExternalSecret" in kms and "RBAC" in kms, "注明只有部署者能建同步规则"
 
 

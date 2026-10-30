@@ -1,5 +1,5 @@
 # 托管 Postgres（RDS PostgreSQL 16，高可用；ADR 10 选项 B）：只有 VPC 内网地址（不建外网连接 alicloud_db_connection，规则 R06）、
-# 白名单只收 VPC 网段、云盘用 KMS 主密钥加密、每日数据备份 + 日志备份（按时间点恢复 PITR）、删除保护。
+# 白名单只收 VPC 网段、云盘加密（服务密钥，决定记录第 15 条）、每日数据备份 + 日志备份（按时间点恢复 PITR）、删除保护。
 # 强制 TLS（LT-03 决定记录（续）第 6 条，规则 R06）：
 #   - 服务端：开 SSL（ssl_action = "Open"），证书签给内网连接地址（ssl_connection_string = 内网前缀 + 内网域名后缀）；
 #     pg_hba 只有 hostssl 条目（只收 VPC 网段、口令认证），没有 host / hostnossl——不走 TLS 的连接在服务端就被拒；

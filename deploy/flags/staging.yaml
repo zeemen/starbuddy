@@ -17,6 +17,8 @@
 #                      白名单批准与 docs/compliance/vendors.md 登记由人完成；完成之前不设路由客户端令牌，模型路由接口回 503
 #                      （设了令牌而占位未填，学习服务拒绝启动）。步骤见 deploy/config/README.md 第 7 节
 #     human            还没有开关或口径，待人确认（见 notes）
+#     kms_instance     待买 KMS 实例并切回自建密钥（LT-03 决定记录第 15 条）：不买期间 RDS / 云盘用服务密钥、ACK Secret 落盘不做信封加密，
+#                      staging 只放合成数据；内部成员测试（真实家庭进入）必须等这一项解除（deploy/tests 核对：ack.tf 有 disable_encryption = true 时不能解除）
 #     migration_0059   待人执行 0059（LT-06 内部成员测试运营：问题反馈表、退出记录表与库函数，草稿，待人在副本演练后执行）
 #     migration_0060   待人执行 0060（模型调用记录落库 platform.model_call_log、聚合与留存删除函数，草稿，待人在副本演练后执行；
 #                      specs/plt-model-call-log）。开关打开而 0060 不在或学习服务角色没有 INSERT 权限时学习服务拒绝启动
@@ -166,7 +168,7 @@ features:
   - id: internal_test_ops
     title: 内部成员测试运营（问题反馈、退出测试与退出状态；LT-06）
     state: "off"
-    pending: [migration_0059]
+    pending: [migration_0059, kms_instance]
     notes: 依赖迁移 0059（platform.feedback、platform.internal_test_exit 与库函数，草稿，待人在副本演练后执行）；执行之前三处都不设。
       执行之后由人决定是否打开（三处一起开：BFF、前端、审核台后端；specs/launch-lt06-internal-test-ops、docs/ops/internal-test-runbook.md）
     switches:

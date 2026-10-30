@@ -71,6 +71,16 @@ class Expr:
     raw: str
 
 
+def _kms_ref(v: Any) -> bool:
+    """取值是对自建 KMS 密钥的引用（不收 null、空串或字面量 ID）"""
+    return isinstance(v, Expr) and v.raw.strip().startswith("alicloud_kms_key.")
+
+
+# RDS 云盘加密的两步写法（LT-03 决定记录第 15 条）：只认这一条三元表达式
+RDS_ENC_EXPR = 'var.rds_disk_encryption == "ServiceKey" ? "ServiceKey" : null'
+RDS_ENC_PRECONDITION = 'var.rds_disk_encryption == "ServiceKey"'
+
+
 @dataclass
 class Body:
     attrs: dict[str, Any] = field(default_factory=dict)
@@ -564,8 +574,12 @@ class Checker:
                 self.add("R06", b.file, f"{n}：必须放在 VPC 交换机里")
             if a.get("deletion_protection") is not True:
                 self.add("R06", b.file, f"{n}：必须开删除保护")
-            if "encryption_key" not in a:
-                self.add("R09", b.file, f"{n}：云盘必须加密（encryption_key：自建密钥或服务密钥）")
+            ek = a.get("encryption_key")
+            two_step = isinstance(ek, Expr) and " ".join(ek.raw.split()) == RDS_ENC_EXPR
+            if not (ek == "ServiceKey" or _kms_ref(ek) or two_step):
+                self.add("R09", b.file, f"{n}：云盘必须加密（encryption_key 只收 \"ServiceKey\"、自建密钥引用或两步写法，不收 null / 空串）")
+            if two_step:
+                self._rds_two_step(b)
             pol = [p for p in self.resources("alicloud_db_backup_policy")
                    if isinstance(p.body.attrs.get("instance_id"), Expr) and f"alicloud_db_instance.{n}." in p.body.attrs["instance_id"].raw + "."]
             if not pol:
@@ -622,7 +636,7 @@ class Checker:
                     self.add("R07", b.file, f"{n}：不配 {k}")
             sse = sub(body, "server_side_encryption_rule")
             alg = sse[0].body.attrs.get("sse_algorithm") if sse else None
-            if alg not in ("KMS", "AES256") or (alg == "KMS" and "kms_master_key_id" not in sse[0].body.attrs):
+            if alg not in ("KMS", "AES256") or (alg == "KMS" and not _kms_ref(sse[0].body.attrs.get("kms_master_key_id"))):
                 self.add("R09", b.file, f"{n}：必须服务端加密（KMS 带主密钥，或 OSS 完全托管 AES256）")
             ver = sub(body, "versioning")
             if not ver or ver[0].body.attrs.get("status") != "Enabled":
@@ -640,6 +654,17 @@ class Checker:
             pab = [x for x in self.resources("alicloud_oss_bucket_public_access_block") if refers(x)]
             if not pab or any(x.body.attrs.get("block_public_access") is not True for x in pab):
                 self.add("R07", b.file, f"{n}：必须阻止公共访问（alicloud_oss_bucket_public_access_block）")
+
+    def _rds_two_step(self, rds: Block) -> None:
+        """两步写法不能永远停在 deferred：变量没有缺省值、有取值校验；建 RDS 之后的阶段（ACK 集群）以 ServiceKey 为前置条件"""
+        v = self.variables().get("rds_disk_encryption")
+        cond = " ".join(getattr(x.body.attrs.get("condition"), "raw", "") for x in sub(v.body, "validation")) if v else ""
+        if v is None or "default" in v.body.attrs or "ServiceKey" not in cond or "deferred" not in cond:
+            self.add("R09", v.file if v else rds.file, "rds_disk_encryption 必须没有缺省值，且校验只收 deferred / ServiceKey")
+        for c in self.resources("alicloud_cs_managed_kubernetes"):
+            pre = [p for lc in sub(c.body, "lifecycle") for p in sub(lc.body, "precondition")]
+            if not any(" ".join(getattr(p.body.attrs.get("condition"), "raw", "").split()) == RDS_ENC_PRECONDITION for p in pre):
+                self.add("R09", c.file, f"{c.labels[1]}：必须以 {RDS_ENC_PRECONDITION} 为前置条件（RDS 云盘加密不能停在 deferred）")
 
     def r08_tags(self) -> None:
         for b in self.resources():
@@ -662,7 +687,7 @@ class Checker:
                     self.add("R09", p.file, f"{p.labels[1]}：节点数据盘必须加密")
         for c in self.resources("alicloud_cs_managed_kubernetes"):
             a = c.body.attrs
-            if "encryption_provider_key" not in a and a.get("disable_encryption") is not True:
+            if not _kms_ref(a.get("encryption_provider_key")) and a.get("disable_encryption") is not True:
                 self.add("R09", c.file, f"{c.labels[1]}：K8s Secret 落盘要么 KMS 加密（encryption_provider_key），要么显式 disable_encryption = true")
         for s in self.resources("alicloud_log_store"):
             e = sub(s.body, "encrypt_conf")

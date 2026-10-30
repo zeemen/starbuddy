@@ -50,6 +50,13 @@ resource "alicloud_cs_managed_kubernetes" "main" {
     name     = "nginx-ingress-controller"
     disabled = true # 不对外：前端只经内网负载均衡（deploy/k8s 的 web Service）
   }
+  # RDS 云盘加密不能停在 deferred（rds.tf 两步写法，安全审查建议）：阶段 B-enc 之后的阶段都要传 ServiceKey，否则这里直接失败
+  lifecycle {
+    precondition {
+      condition     = var.rds_disk_encryption == "ServiceKey"
+      error_message = "先完成阶段 B-enc（RDS 云盘加密改为服务密钥），之后的 plan 一律传 rds_disk_encryption = \"ServiceKey\"。"
+    }
+  }
 }
 
 resource "alicloud_cs_kubernetes_node_pool" "default" {

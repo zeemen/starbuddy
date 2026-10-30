@@ -21,12 +21,14 @@ MAX_POLICY_CHARS = 6144  # 阿里云单条自定义策略文档的长度上限
 # 只有这些产品允许查询类通配；其余产品（log、cr、oss 对象、sts…）逐个列动作
 PRODUCT_READ_WILDCARDS = {
     "vpc": {"Describe*", "List*", "Get*"}, "ecs": {"Describe*", "List*"}, "cs": {"Describe*", "Get*", "List*"},
-    "slb": {"Describe*", "List*"}, "rds": {"Describe*"}, "kms": {"Describe*", "List*"}, "yundun-cloudfirewall": {"Describe*"},
+    "slb": {"Describe*", "List*"}, "rds": {"Describe*"}, "yundun-cloudfirewall": {"Describe*"},
     "ram": {"Get*", "List*"},
 }
 # 业务桶上允许的配置读取通配（只读桶级配置，不含对象）
 BUCKET_CONFIG_WILDCARD = "oss:GetBucket*"
-SENSITIVE_READS = {"kms:GetSecretValue", "kms:Decrypt", "kms:GenerateDataKey", "log:GetLogs", "log:GetLogStoreLogs", "log:GetCursorOrData", "log:GetHistograms",
+SENSITIVE_READS = {"kms:GetSecretValue", "kms:Decrypt", "kms:GenerateDataKey",
+                   "oos:GetSecretParameter", "oos:GetSecretParameters", "oos:GetSecretParametersByPath",  # 应用凭据（决定记录第 15 条）
+"log:GetLogs", "log:GetLogStoreLogs", "log:GetCursorOrData", "log:GetHistograms",
                    "log:GetContextLogs", "log:PullLogs", "cr:GetAuthorizationToken", "cs:DescribeClusterUserKubeconfig",
                    "ecs:DescribeUserData", "rds:DescribeSQLLogRecords", "rds:DescribeSlowLogRecords", "rds:DescribeErrorLogs",
                    "rds:DescribeBackups", "cs:DescribeClusterAttachScripts", "cs:DescribeClusterCerts",

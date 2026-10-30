@@ -41,7 +41,7 @@ LT-03 云与镜像、LT-04 learning-internal v1 与迁移 0058、LT-05 可观测
 | 容器镜像服务 `cr:` | 企业版实例、命名空间、仓库、VPC 访问端点的创建 / 查询 | `acr.tf` |
 | 云防火墙 `yundun-cloudfirewall:` 或 `cloudfw:`（以控制台为准） | NAT 边界访问控制策略的创建 / 查询 / 修改 | `egress.tf` |
 | 日志服务 `log:` | Project、日志库、索引的创建 / 查询 / 修改 | `sls.tf` |
-| 密钥管理 `kms:` | **只给查询**（Describe / List）；现阶段不买 KMS 实例、IaC 不含自建密钥（LT-03 决定记录第 14、15 条），不授任何写动作；Decrypt、GenerateDataKey、GetSecretValue 显式拒绝 | — |
+| 密钥管理 `kms:` | **不授任何动作**（IaC 已没有 KMS 资源与数据源，安全审查 S4）；现阶段不买 KMS 实例、IaC 不含自建密钥（LT-03 决定记录第 14、15 条），不授任何写动作；Decrypt、GenerateDataKey、GetSecretValue 显式拒绝 | — |
 | 访问控制 `ram:` | **只读**（Get / List 类，plan 刷新状态用）与容器服务、RDS 加密服务角色的 PassRole；**不给任何写动作**（安全审查 B1：能建策略与角色就能给自己提权）——`kms.tf` 的 `secret_reader` 策略、角色与挂载由人用管理员身份在阶段 R apply | `ack.tf`；`kms.tf` 见阶段 R |
 | 安全令牌 `sts:` | 不授：GetCallerIdentity（`data.alicloud_account.current` 取账号 ID）不需要 RAM 授权。扮演 `<Terraform RAM 角色>` 时，AssumeRole 只授给该角色的精确 ARN（不挂系统策略 AliyunSTSAssumeRoleAccess） | `providers.tf` |
 | 计费 `bss:` / `bssapi:` | **不授**：下单接口能买任何产品；ACR 企业版实例（包年包月）在阶段 B' 由人用管理员身份 apply，云防火墙由人在控制台购买 | `acr.tf` |
@@ -204,7 +204,9 @@ ACK Secret 不做信封加密，应用凭据放 OOS 加密参数（`specs/launch
 -target=alicloud_db_instance.main -target=alicloud_db_backup_policy.main
 # B-enc：RDS 建好后紧接着单独一次 plan / apply（目标同上一行的 RDS 实例），只把 rds_disk_encryption 由 deferred 改为 ServiceKey
 # （PostgreSQL 创建时不收服务密钥，LT-03 决定记录第 15 条）；计划里只应有 alicloud_db_instance.main 一处修改（encryption_key → ServiceKey），
-# 此时库里没有数据。之后每次 plan 都传 ServiceKey
+# 此时库里没有数据。之后每次 plan 都传 ServiceKey（ACK 集群以此为前置条件，传 deferred 时阶段 C 起的 plan 直接失败）。
+# B-enc 若报权限不足：按报错核实 provider 实际调用的 RDS 动作，逐个补进 ram/terraform-allow-data.json 并过测试，不放宽成 rds:Modify*；
+# 若计划显示 RDS 要替换（delete/create），按 1.4 第 1 条停下
 -target=alicloud_oss_bucket.main -target=alicloud_oss_bucket_acl.main -target=alicloud_oss_bucket_public_access_block.main
 -target=alicloud_vpc_gateway_endpoint.oss -target=alicloud_vpc_gateway_endpoint_route_table_attachment.oss
 -target=alicloud_log_project.main -target=alicloud_log_store.app -target=alicloud_log_store_index.app -target=alicloud_log_store.audit
@@ -232,6 +234,7 @@ ACK Secret 不做信封加密，应用凭据放 OOS 加密参数（`specs/launch
 tofu -chdir=deploy/iac/alicloud plan -input=false -lock=true -out=<计划目录>/R.tfplan -target=alicloud_ram_policy.secret_reader -target=alicloud_ram_role.secret_reader -target=alicloud_ram_role_policy_attachment.secret_reader
 ```
 第二人审阅策略文档（只有 `oos:GetSecretParameter`、只列 11 个加密参数名、没有 KMS 动作）与信任策略（只信任本集群 OIDC 的 `kube-system:ack-secret-manager`）后再 apply；之后这三个资源的任何变更都走同一流程。
+首次同步若报还需要 KMS 等动作：只能改 `kms.tf` 后按本阶段由人 apply（补的动作逐个列资源，不用 `Resource: "*"`），不在 RAM 控制台手工加。
 验收：RAM 策略只列 11 个加密参数名；角色信任主体正确；ack-secret-manager 能同步 Secret。
 
 **阶段 D：防火墙与 NAT**（分两步；供应商主机名未定时可推迟到第 5 节 `model_provider` 解除时再做——staging 其余部分不依赖公网出网）
@@ -357,7 +360,23 @@ python3 deploy/migrate/migrate.py rehearse --dsn-env REPLICA_DSN --target-label 
 ### 4.1 应用凭据同步（OOS 加密参数 → ack-secret-manager；LT-03 决定记录第 15 条）
 - 在 OOS 控制台（cn-beijing）建加密参数，名字 `starbuddy-staging/<Secret 名>`（`kms.tf` 的 `app_secrets` 名单；取值只在控制台输入，不进仓库与命令历史）；
   文件类条目（签字配置、`otp.json`）先核对加密参数的取值长度上限，超限时由人另定办法（lessons 待人确认）；在 ACK 里建
-  ack-secret-manager 的同步规则（`SecretStore` 用 `OOS.OOSAuth` 经 RRSA 扮演阶段 R 的角色，`ExternalSecret` 的 provider 写 `oos`），并用 RBAC 限定只有部署者能在 `starbuddy-staging` 命名空间创建 / 修改同步规则；应用的 ServiceAccount 不挂令牌。
+  ack-secret-manager 的同步规则（`SecretStore` 用 `OOS.OOSAuth` 经 RRSA 扮演阶段 R 的角色，`ExternalSecret` 的 provider 写 `oos`）；应用的 ServiceAccount 不挂令牌（清单里 7 个 Deployment 都是 `automountServiceAccountToken: false`）。
+- **集群权限（补偿控制：ACK Secret 落盘不做信封加密，LT-03 决定记录第 15 条 6a；由人在 ACK 授权管理配置）**：
+  - 只有 `<部署者 RAM 身份>` 有集群“管理员”预置角色；其他身份（运维、开发、值守）不授“管理员 / 运维人员 / 开发人员”预置角色（都能读 Secret 或建 Pod），
+    需要时用自定义 ClusterRole：只读 Pod、日志与事件，**不含** `secrets`、`pods` 的创建、`pods/exec`、`deployments` 的修改；
+  - 同步规则的限制覆盖**整个集群**（不只 `starbuddy-staging`）：ack-secret-manager 的角色信任的是控制器自己的 ServiceAccount，任何命名空间里能建
+    同步规则的人都能借它把 11 个参数同步到自己的命名空间——`externalsecrets`、`secretstores`、`clusterexternalsecrets`、`clustersecretstores` 的创建 / 修改只给部署者；
+  - 由人核对系统组件（`arms-prometheus`、`logtail-ds` 等）有没有集群范围读 Secret 的 ClusterRoleBinding，结果写进变更记录；
+  - 核对（对每个非部署者身份 `<身份>` 逐条执行，全部应为 `no`；第 6 节需要 `exec` 的走查项只由部署者执行）：
+    ```
+    kubectl auth can-i get secrets -n starbuddy-staging --as=<身份>
+    kubectl auth can-i list secrets --all-namespaces --as=<身份>
+    kubectl auth can-i create pods -n starbuddy-staging --as=<身份>
+    kubectl auth can-i create pods/exec -n starbuddy-staging --as=<身份>
+    kubectl auth can-i patch deployments -n starbuddy-staging --as=<身份>
+    kubectl auth can-i create externalsecrets.alibabacloud.com --all-namespaces --as=<身份>
+    kubectl auth can-i create secretstores.alibabacloud.com --all-namespaces --as=<身份>
+    ```
 - 同步后的 k8s Secret 名与键（必须与清单的 `secretKeyRef` / `secretName` 一致，与 `kms.tf` 的 `app_secrets` 名单一致）：
 
 | Secret | 键 |
@@ -483,6 +502,7 @@ kubectl -n starbuddy-staging get svc,networkpolicy,pvc
 | `model_provider` | `daofa`、`chinese_grading` | **模型供应商开通**：按 `deploy/config/README.md` 第 7 节由人完成开通、协议与登记、填写快照名与 `allowed_hosts`、批准后改 `approved`；建 `starbuddy-model-vendors` 并解开清单里的接线行；IaC 填 `model_egress_fqdns` 并完成第 1 节阶段 D；学习服务 Pod 加 443 出网策略（写法见清单注释） | 模型路由接口 503 `ROUTE_UNAVAILABLE`，道法判分推理与作文批改不可用；超限时 503 且 `detail` 为 `ROUTE_BUDGET_EXCEEDED` |
 | `human` | `chinese_grading` | 由人确认语文“只开批改”的口径（没有专门开关，靠选科与内容范围约束） | 文砺的 diagnose / plan 照常可用 |
 | `migration_0059` | `internal_test_ops` | 副本演练后在主实例执行 0059（LT-06 问题反馈表、退出记录表与库函数）；之后由人决定是否把 BFF、前端的 `STARBUDDY_INTERNAL_TEST` 与审核台后端的 `REVIEW_CONSOLE_INTERNAL_TEST` 一起设为 `internal_test`（步骤见 `docs/ops/internal-test-runbook.md`） | 三处都不设：没有问题反馈、退出测试入口与审核台的反馈、退出状态页（路由不注册，404）；BFF 不做退出判断 |
+| `kms_instance` | `internal_test_ops` | **真实数据门槛**（LT-03 决定记录第 15 条，见 3.3）：买 KMS 实例、IaC 加回自建密钥，RDS 换自建密钥、ACK 开启 Secret 落盘加密（去掉 `disable_encryption`），评估凭据切回凭据管家，并经用户另行确认 | 内部成员测试不开放；staging 只放合成数据 |
 | `migration_0060` | `model_call_log` | 副本演练后在主实例执行 0060（模型调用记录表 `platform.model_call_log`、聚合函数 `platform.model_call_stats` 与留存删除函数，specs/plt-model-call-log）；之后由人决定是否把学习服务的 `LEARNING_MODEL_CALL_LOG` 设为 `1`（启动时核对 0060 与 INSERT 权限，不过拒绝启动），并把留存删除任务 `model-call-purge` 写进签字时间表 `schedule.signed.yaml`；打开后看 `starbuddy_model_call_log_written_total` 增长，告警 `StarbuddyModelCallLogWriteFailed`、`StarbuddyModelCallLogDropped` 不响 | 不设：调用记录只写结构化日志与指标（与之前一致），没有可对账的库内记录；运营与成本导出读不到 `platform.model_call_stats` 的数据 |
 
 - `model_provider` 解除后的验证（由人在有凭据的 staging 执行环境，限次）：`make model-smoke SMOKE_ENV=staging MAX_CALLS=5`（只打印状态、耗时、token 与快照名是否一致）；

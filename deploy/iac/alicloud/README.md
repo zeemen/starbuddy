@@ -65,8 +65,8 @@
 4. 按输出填写部署配置（不提交真实值）：`deploy/k8s/staging.yaml` 里的 `<由人填写…>` 占位（内网负载均衡交换机与 `slb_acl_id`、
    镜像仓库 `ACR_REGISTRY`、RDS CA 证书 ConfigMap）、OOS 加密参数里的各服务凭据（连接串用 `rds_private_host`，见 `deploy/config/README.md` 第 8 节）；
 5. 在 OOS 控制台创建应用凭据（加密参数），名字是 `starbuddy-staging/<Secret 名>`（`kms.tf` 的
-   `app_secrets` 名单，与 `secretKeyRef` 一致）；在 ACK 里建命名空间与 `ack-secret-manager` 的同步规则，并用 RBAC 限定只有部署者能在
-   `starbuddy-staging` 命名空间创建 / 修改同步规则（ExternalSecret 这一类 CR）；
+   `app_secrets` 名单，与 `secretKeyRef` 一致）；在 ACK 里建命名空间与 `ack-secret-manager` 的同步规则；集群权限按
+   `deploy/runbooks/staging-first-deploy.md` 4.1 配置并逐条核对（全集群只有部署者能建 / 改同步规则，非部署者不能读 Secret、建 Pod、`exec`）；
 6. 数据库：在 RDS 控制台建高权限账号（口令只在 OOS 加密参数），用 `deploy/migrate` 先在快照副本上演练再执行 `db/bootstrap` 与迁移
    （`deploy/runbooks/rds-restore-and-migrate-rehearsal.md`）。
 

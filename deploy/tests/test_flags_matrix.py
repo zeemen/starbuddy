@@ -44,10 +44,10 @@ def test_structure(flags):
     for e in entries(flags):
         pend = e.get("pending", [])
         assert e["state"] in ("on", "off") and isinstance(pend, list), e["id"]
-        assert set(pend) <= {"signed_content", "migration_0058", "migration_0059", "migration_0060", "model_provider", "human"}, e["id"]
+        assert set(pend) <= {"signed_content", "migration_0058", "migration_0059", "migration_0060", "model_provider", "human", "kms_instance"}, e["id"]
         assert "internal_v1" not in pend, e["id"]
     # LT-06：内部成员测试运营依赖迁移 0059（草稿），执行之前保持关
-    assert by_id["internal_test_ops"]["pending"] == ["migration_0059"]
+    assert by_id["internal_test_ops"]["pending"] == ["migration_0059", "kms_instance"]
     # 模型调用记录落库依赖迁移 0060（草稿，specs/plt-model-call-log），执行之前保持关（不设）
     assert by_id["model_call_log"]["pending"] == ["migration_0060"]
     assert [(s["var"], s["value"]) for s in by_id["model_call_log"]["switches"]] == [("LEARNING_MODEL_CALL_LOG", None)]
@@ -184,3 +184,12 @@ def test_compose_and_k8s_flags_match_matrix(flags, compose_staging, k8s_docs):
                 kenv = {e["name"]: e.get("value") for c in d["spec"]["template"]["spec"]["containers"] for e in c["env"]}
         for k, v in want.items():
             assert kenv.get(k) == v, f"k8s {svc} {k}"
+
+
+def test_internal_test_waits_for_kms_while_ack_unencrypted(flags):
+    """LT-03 决定记录第 15 条（安全审查 B1）：ACK Secret 落盘不做信封加密（disable_encryption = true）期间，
+    内部成员测试（真实家庭进入）的 pending 里必须有 kms_instance，不能解除"""
+    ack = (ROOT / "deploy" / "iac" / "alicloud" / "ack.tf").read_text(encoding="utf-8")
+    if re.search(r"^\s*disable_encryption\s*=\s*true\b", ack, re.M):
+        by_id = {e["id"]: e for e in flags["features"]}
+        assert "kms_instance" in by_id["internal_test_ops"].get("pending", [])

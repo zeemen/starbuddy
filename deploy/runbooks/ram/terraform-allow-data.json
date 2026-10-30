@@ -5,7 +5,6 @@
       "Effect": "Allow",
       "Action": [
         "rds:Describe*",
-        "kms:Describe*", "kms:List*", "kms:GetKeyPolicy",
         "log:GetProject", "log:ListProject", "log:GetLogStore", "log:ListLogStores", "log:GetIndex", "log:ListTagResources",
         "cr:GetInstance", "cr:GetInstanceEndpoint", "cr:GetInstanceVpcEndpoint", "cr:GetNamespace", "cr:GetRepository",
         "cr:ListInstance", "cr:ListInstanceEndpoint", "cr:ListNamespace", "cr:ListRepository",

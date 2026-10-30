@@ -12,6 +12,6 @@ locals {
     "app"         = "starbuddy"
     "environment" = var.environment
     "managed-by"  = "terraform"
-    "data-class"  = "personal-minor" # staging 按决定存放内部家庭（含未成年人）的真实数据：按个人信息从严
+    "data-class"  = "personal-minor" # 按个人信息从严；不买 KMS 实例期间只放合成数据（LT-03 决定记录第 15 条），真实数据门槛见手册 3.3
   })
 }

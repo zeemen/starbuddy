@@ -22,7 +22,7 @@ LT-05 范围第 6 条（specs/launch-lt05-observability）：在 `rds-restore-an
   （放在跳板的加密目录里，不进仓库、不发聊天工具）。
 
 ## 1. 恢复到副本并标记
-按 `rds-restore-and-migrate-rehearsal.md` 第 1 节恢复到新实例（同一 VPC、数据库交换机、不申请外网地址、只允许 SSL、同一把 KMS 密钥），
+按 `rds-restore-and-migrate-rehearsal.md` 第 1 节恢复到新实例（同一 VPC、数据库交换机、不申请外网地址、只允许 SSL、云盘加密同主实例（服务密钥），恢复后核对已开启、没开不验证），
 第 2 节核对 `ssl = t` 与服务端地址，然后标记副本（复核人核对确认串里的服务端地址是副本、不是主实例）：
 ```
 export REPLICA_DSN='postgresql://<高权限账号>@<副本内网主机名>:5432/<库名>?sslmode=verify-full&sslrootcert=<CA 路径>'

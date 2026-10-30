@@ -80,3 +80,13 @@
     读 OOS 加密参数是否还要 KMS 动作（首次同步按报错补，阶段 R 由人改策略）。帮助中心不在会话放行名单，未能核实。
 18. OOS 加密参数的取值长度上限：签字配置文件（8 个）与 `otp.json` 能否放进单个参数；放不下时另定办法（例如拆分或由人 kubectl 手建这两个 Secret）。
 19. cosign 签名私钥原定存凭据管家（`deploy/ci`），不买 KMS 实例期间要另定存放处（例如云效流水线自带的密钥变量）；本次未改 CI 文件。
+
+## 补记（2026-10-30）：提交 35ac408 的安全审查与处理
+- 阻断 B1（真实数据门槛能绕过：内测手册没写、措辞只说“导入”）→ `docs/ops/internal-test-runbook.md` 第 0 节加第 7 条硬前置；开关矩阵 `internal_test_ops` 加 pending `kms_instance`，测试核对 `ack.tf` 有 `disable_encryption = true` 时不能解除；手册第 5 节表补一行；`providers.tf` 注释改正。
+- 阻断 B2（ACK 不加密 Secret 后的补偿控制不可执行）→ 手册 4.1 写明集群权限（只部署者是管理员、全集群只部署者能建同步规则）与 `kubectl auth can-i` 逐条核对；系统组件读 Secret 的绑定由人核对。
+- 阻断 B3（恢复 / 回滚手册仍写 KMS，恢复出的新实例没有加密核对）→ `rollback.md`、`rds-restore-and-migrate-rehearsal.md`、`weekly-restore-verify.md` 改为服务密钥并加“核对云盘加密已开启，没开不切换 / 不演练”。
+- 建议 S1 / S2（R09 能被 null、空串、缺省 deferred 绕过）→ R09 只收 `"ServiceKey"`、自建密钥引用或两步三元表达式；变量不得有缺省值；ACK 集群加 `precondition var.rds_disk_encryption == "ServiceKey"`；新增 6 个变异。
+- 建议 S3（secret_reader 测试太松）→ 测试锁定动作集合恰为 `oos:GetSecretParameter`、一条 Statement、信任条件 aud / iss / sub / Federated。
+- 建议 S4（子账号策略）→ 去掉 `kms:Describe*` 等查询（IaC 已无 KMS）；拒绝策略与 SENSITIVE_READS 加 OOS 三个读参数动作。**控制台里已挂的两条策略需由人按新文件更新**（拒绝策略多三项、数据策略少三项）。
+- 建议 S6（encryption_key 是否 computed）→ 已用 provider 1.294.0 schema 核实：Optional + Computed。
+- 未处理、待人确认：数据标签 `data-class` 是否在不买 KMS 期间改为 `synthetic-only` 并与 R09 联动（审查 S2 选项二；现已由 `kms_instance` 门槛测试绑定，标签改动会让阶段 A 的 23 个资源出现标签修改）；“合成数据”边界——员工自己的真实手机号能否用于白名单登录走查（手册第 6 节）；白名单条目导入方式（内测手册与 `tools/internal-test` 仍写凭据管家；内测要等 `kms_instance` 解除，届时随凭据去向一并定）。
