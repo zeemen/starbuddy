@@ -119,3 +119,6 @@
 ## 补记（2026-10-31）：B' 与 B2
 - B'：用户在控制台下单 ACR 企业版，实例 ID 写进本地 tfvars（不进仓库）。只读核对：RUNNING、实例名 starbuddy-staging、公网入口关闭；**规格为基础版（Enterprise_Economy），不是约定的高级版——用户决定接受**（ACR 自带加签用不到，签名与扫描由 cosign / trivy 负责）。续费方式（应为手动）子账号查不到计费信息，由人在控制台核对。
 - B2 第一次：命名空间（私有、不自动建仓）与 12 个私有仓库建成；VPC 端点失败 `RAM_CREATE_ACCESS_CUSTOMER_PRIVATEZONE_SERVICE_LINKED_ROLE_NOT_ALLOWED`——自动建 PrivateZone 解析需要 ACR 访问 PrivateZone 的服务关联角色，由主账号建（子账号被拒绝 `ram:CreateServiceLinkedRole`）。
+- 主账号建出 `AliyunServiceRoleForContainerRegistryAccessCustomerPrivateZone` 后，B2 的 VPC 端点建成：已关联 VPC 状态 RUNNING（地址在 10.20.0.0/16 内），公网入口仍关闭；命名空间私有、不自动建仓，12 个仓库全部 PRIVATE；B2 范围重新 plan 为 No changes。
+- PrivateZone 里的内网解析子账号查不到（没有 pvtz 权限），阶段 C 节点就绪后在节点上解析 `<实例名>-registry-vpc.cn-beijing.cr.aliyuncs.com` 应得到 10.20.x 地址，作为第 4 节拉镜像前的核对项。
+- **阶段 B（含 B'、B-enc、B2）完成。**
