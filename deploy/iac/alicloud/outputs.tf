@@ -25,6 +25,3 @@ output "log_project" {
   value = alicloud_log_project.main.project_name
 }
 
-output "acr_instance_id" {
-  value = alicloud_cr_ee_instance.main.id
-}

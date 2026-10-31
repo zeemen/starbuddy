@@ -217,16 +217,13 @@ variable "oss_expire_days" {
 }
 
 # ---------------------------------------------------------------- 镜像仓库（ACR 企业版）
-variable "acr_instance_type" {
-  description = "ACR 企业版规格（Basic / Standard / Advanced）：缺省 Advanced——支持镜像加签（待人核实）；流水线的发布门槛是 cosign 验签（deploy/ci/README.md 第 4 节）"
+variable "acr_instance_id" {
+  description = "ACR 企业版实例 ID（由人在控制台下单后填写，形如 cri-xxxx；实例不在 IaC 里，LT-03 决定记录第 16 条）"
   type        = string
-  default     = "Advanced"
-}
-
-variable "acr_period_months" {
-  description = "ACR 企业版购买时长（月；包年包月，由人确认计费后再 apply）"
-  type        = number
-  default     = 1
+  validation {
+    condition     = can(regex("^cri-[a-z0-9]+$", var.acr_instance_id))
+    error_message = "acr_instance_id 形如 cri-xxxx。"
+  }
 }
 
 # ---------------------------------------------------------------- 日志服务（SLS）

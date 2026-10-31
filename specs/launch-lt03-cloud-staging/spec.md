@@ -47,3 +47,4 @@
 13. （2026-10-29，用户；RAM 控制台校验）`sts:GetCallerIdentity` 不需授权、`bssapi:` 动作名无效：从策略中删去。子账号不授任何计费下单权限，ACR 企业版实例改为阶段 B' 由人用管理员身份 apply（与阶段 R 同法），命名空间、仓库、VPC 端点仍由 Claude 会话在 B2 apply。
 14. （2026-10-29，用户）现阶段不买 KMS 实例。`kms.tf` 的两把自建密钥与凭据管家暂不建；子账号策略去掉 KMS 写动作（只留查询与显式拒绝）；阶段 A 不含 KMS 目标。`alicloud_kms_key.main` 的使用方（RDS 云盘加密、OSS 业务桶加密、ACK Secret 落盘加密与节点系统盘、ESSD 存储类）与凭据管家的替代方案，在阶段 B 之前由 Claude 起草、用户确认后再改 IaC。
 15. （2026-10-30，用户；`kms-alternatives.md`）按草案建议：RDS 云盘改服务密钥（建实例后紧接着开启）、OSS 业务桶 AES256、节点系统盘与云盘存储类用 ECS 服务密钥、SLS 不变；ACK Secret 落盘选 6a（`disable_encryption = true`，暂不做信封加密）；应用凭据选 7a（OOS 加密参数 + ack-secret-manager）；**真实数据等 KMS**：不买 KMS 实例期间 staging 只放合成数据，导入内部家庭真实数据前须先买实例、切回自建密钥并另行确认。IaC 移除两把自建密钥与别名。
+16. （2026-10-31，用户）ACR 企业版实例移出 IaC：provider 读取实例时调用计费查询 `QueryAvailableInstances`，子账号不授任何计费权限；实例由人用管理员身份在控制台下单与续费（华北 2、高级版、1 个月、手动续费），IaC 只管命名空间、仓库与 VPC 端点，实例 ID 经变量 `acr_instance_id` 传入；`check_iac.py` 把 `alicloud_cr_ee_instance` 列为禁止类型。

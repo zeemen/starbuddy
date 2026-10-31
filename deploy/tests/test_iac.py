@@ -178,6 +178,8 @@ MUTATIONS = [
     ("SQL 洞察用表达式", "rds.tf", "  deletion_protection = true\n", "  deletion_protection = true\n  sql_collector_status     = upper(var.x)\n", "R22"),
     ("建只读实例", "rds.tf", "resource \"alicloud_db_backup_policy\" \"main\" {", "resource \"alicloud_db_readonly_instance\" \"ro\" {\n  master_db_instance_id = alicloud_db_instance.main.id\n  tags = local.tags\n}\n\nresource \"alicloud_db_backup_policy\" \"main\" {", "R22"),
     ("开 SQL 洞察", "rds.tf", "  deletion_protection = true\n", "  deletion_protection = true\n  sql_collector_status     = \"Enabled\"\n", "R22"),
+    # LT-03 决定记录第 16 条：ACR 企业版实例（包年包月）不进 IaC
+    ("ACR 实例加回 IaC", "acr.tf", "locals {", "resource \"alicloud_cr_ee_instance\" \"main\" {\n  payment_type  = \"Subscription\"\n  instance_type = \"Advanced\"\n  instance_name = local.name\n}\n\nlocals {", "R14"),
 ]
 
 

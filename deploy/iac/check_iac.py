@@ -299,6 +299,7 @@ OPEN = {"0.0.0.0/0", "::/0", "0.0.0.0"}
 CRED_ATTRS = {"access_key", "secret_key", "security_token", "password", "account_password", "kms_encrypted_password",
               "secret_data", "private_key", "shared_credentials_file", "credentials_uri", "sts_endpoint", "ecs_role_name"}
 FORBIDDEN_TYPES = {
+    "alicloud_cr_ee_instance": "R14 ACR 企业版实例（包年包月）由人在控制台下单与续费，不进 IaC（LT-03 决定记录第 16 条）",
     "alicloud_db_readonly_instance": "R22 不建只读实例（其 parameters 不受 R22 核对；需要时另起任务并纳入 R22）",
     "alicloud_rds_parameter_group": "R22 不用参数模板（日志参数只在实例 parameters 里逐条固定）",
     "alicloud_log_audit": "R22 不经 SLS 采集 RDS 审计日志（完整语句与参数会进日志库）",

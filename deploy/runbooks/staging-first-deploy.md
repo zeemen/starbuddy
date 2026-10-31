@@ -71,7 +71,7 @@ apply 会被这条拒绝挡下——这正是要停下来由人决定的情形�
 ### 0.4 计费类资源清单（apply 前由人确认计费；**包年包月**须先在控制台确认时长与续费方式）
 | 资源 | 计费方式 | 何时产生 | 提醒 |
 |---|---|---|---|
-| ACR 企业版（`alicloud_cr_ee_instance.main`） | **包年包月**（`acr_period_months` 缺省 1 个月，手动续费） | 第 1 节阶段 B | apply 即下单、不可按量退订；规格缺省 Advanced（待人核实） |
+| ACR 企业版（控制台下单，不进 IaC） | **包年包月**（1 个月、手动续费） | 第 1 节阶段 B | apply 即下单、不可按量退订；规格缺省 Advanced（待人核实） |
 | 云防火墙（含 NAT 边界防火墙） | **包年包月**（不在 Terraform 里，由人在控制台购买并为 NAT 网关开启） | 第 1 节阶段 D 之前 | 没开时 SNAT 不建（`nat_firewall_confirmed`） |
 | RDS PostgreSQL 16 高可用（`alicloud_db_instance.main`） | 按量（Postpaid） | 阶段 B | 副本演练每次另起一个按量实例，用完即释放 |
 | ACK Pro 集群管理费 + 节点 ECS + 系统盘 | 按量 | 阶段 C | `node_count` 缺省 2 |
@@ -102,7 +102,7 @@ apply 会被这条拒绝挡下——这正是要停下来由人决定的情形�
    子命令与参数相同；`make iac-validate` 自动识别 `tofu`。必填变量可用 `TF_VAR_<变量名>` 环境变量给出（列表写 JSON），此时 plan 不带 `-var-file`。
 3. 包年包月与新增云服务（ACR 企业版、云防火墙、ARMS、SLS）已由人确认计费并开通。
 4. `terraform.tfvars` 必填项已由人准备好（放 `<计划目录>`，不进仓库）：`k8s_version`、`node_key_pair_name`、`oss_bucket_name`、`office_vpn_cidrs`、
-   `cloud_service_endpoint_cidrs`（只在 100.64.0.0/10 里、不宽于 /24）、`model_egress_fqdns`（供应商未开通时为空列表）、`nat_firewall_confirmed`、`rds_disk_encryption`（建 RDS 实例那一次传 deferred，之后一律传 ServiceKey，见阶段 B-enc）。
+   `cloud_service_endpoint_cidrs`（只在 100.64.0.0/10 里、不宽于 /24）、`model_egress_fqdns`（供应商未开通时为空列表）、`nat_firewall_confirmed`、`rds_disk_encryption`（建 RDS 实例那一次传 deferred，之后一律传 ServiceKey，见阶段 B-enc）、`acr_instance_id`（B' 由人下单后填写）。
 5. **OSS 账号级阻止公共访问已由主账号开启、第二人核实**（安全审查 B3：子账号能改桶级阻止公共访问与 ACL，桶不被公开全靠这一层）；0.1 节末的一次性授权已完成；`deploy/runbooks/ram/` 三条策略已替换占位名、在 RAM 控制台校验动作名后挂载。
 
 ---
@@ -160,7 +160,7 @@ terraform -chdir=deploy/iac/alicloud show -json <计划目录>/<阶段>.tfplan |
 **plan 摘要（Claude 每次 apply 前贴给用户，用户逐次确认）必须列出**：
 1. **新增 / 修改 / 删除数量**（`Plan: <n> to add, <n> to change, <n> to destroy` 与上面的按动作计数一致）；**删除数必须为 0**，出现 `delete`、
    `delete/create`、`create/delete`（替换）一律停下，不 apply（RDS、OSS、ACK 都开了删除保护，见 `rollback.md` 第 4 节）。
-2. **包年包月或按量计费资源**：逐个列出本次新增的计费类资源（对照 0.4 表）与预估费用口径；出现 `alicloud_cr_ee_instance` 时单独提示“包年包月、下单即扣费”。
+2. **包年包月或按量计费资源**：逐个列出本次新增的计费类资源（对照 0.4 表）与预估费用口径；包年包月资源不在子账号的计划里（ACR 企业版由人在控制台下单）。
 3. **安全组与出网规则**：`alicloud_security_group_rule.*` 的方向、协议、端口、网段与优先级——入方向只收 VPC；出方向只有 VPC、内网 DNS 53、元数据 80、
    `cloud_service_endpoint_cidrs` 的 443、公网 443；100.64.0.0/10 与 169.254.0.0/16 的拒绝排在公网 443 之前，全拒绝在最后；
    云防火墙访问控制只放行 `model_egress_fqdns` 的 TCP 443、最后一条拒绝其余；SNAT 只在访问控制之后。
@@ -212,13 +212,13 @@ ACK Secret 不做信封加密，应用凭据放 OOS 加密参数（`specs/launch
 -target=alicloud_oss_bucket.main -target=alicloud_oss_bucket_acl.main -target=alicloud_oss_bucket_public_access_block.main
 -target=alicloud_vpc_gateway_endpoint.oss -target=alicloud_vpc_gateway_endpoint_route_table_attachment.oss
 -target=alicloud_log_project.main -target=alicloud_log_store.app -target=alicloud_log_store_index.app -target=alicloud_log_store.audit
-# B'：ACR 企业版实例（包年包月、下单即扣费；由人用管理员身份执行，同阶段 R 的做法：子账号没有计费下单权限）
--target=alicloud_cr_ee_instance.main
+# B'：ACR 企业版实例（包年包月、下单即扣费）由人用管理员身份在控制台下单，不进 IaC（LT-03 决定记录第 16 条：provider 读实例要调计费查询，
+# 子账号不碰计费接口）：华北 2、高级版、1 个月、手动续费、实例名 <名前缀>-staging；把实例 ID（cri-…）填进 tfvars 的 acr_instance_id
 # B2：ACR 命名空间、仓库、VPC 端点（Claude 会话，B' 之后）
 -target=alicloud_cr_ee_namespace.main -target=alicloud_cr_ee_repo.images -target=alicloud_cr_vpc_endpoint_linked_vpc.main
 ```
 验收：RDS 只有内网地址、白名单只 VPC 网段、SSL 开启、pg_hba 只有 hostssl、每日备份 + 日志备份（PITR）、删除保护、云盘加密已开启（服务密钥，B-enc 之后）；OSS 私有、阻止公共访问、
-版本控制、服务端加密 AES256、三条生命周期、网关终端节点策略只放本桶；ACR 实例运行中、命名空间私有、12 个私有仓库、VPC 端点已关联；SLS 的 `app` 与 `audit`
+版本控制、服务端加密 AES256、三条生命周期、网关终端节点策略只放本桶；ACR 实例运行中（控制台核对规格与手动续费）、命名空间私有、12 个私有仓库、VPC 端点已关联；SLS 的 `app` 与 `audit`
 日志库留存 180 天、服务端加密、`app` 只建白名单字段索引、没有全文索引。
 另核：OSS 账号级阻止公共访问仍开启；子账号策略里没有任何计费下单权限（`bss:` / `bssapi:`）。
 

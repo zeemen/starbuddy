@@ -174,7 +174,7 @@ def test_runbook_points_to_policy_files_and_human_applies_ram():
     stage_b = t.split("**阶段 B：")[1].split("**阶段 C：")[0]
     assert "账号级阻止公共访问" in stage_b and "计费下单" in stage_b, "阶段 B 验收核对账号级阻止、子账号无下单权限"
     b_prime = stage_b.split("# B'：")[1].split("# B2：")[0]
-    assert "-target=alicloud_cr_ee_instance.main" in b_prime and "管理员身份" in b_prime, "ACR 企业版实例由人用管理员身份 apply"
+    assert "-target=alicloud_cr_ee_instance" not in b_prime and "管理员身份" in b_prime and "控制台" in b_prime, "ACR 企业版实例由人用管理员身份在控制台下单（决定记录第 16 条）"
     assert stage_b.split("# B'：")[0].count("alicloud_cr_ee_instance") == 0
     stage_a = t.split("**阶段 A：")[1].split("**阶段 B：")[0]
     stage_c = t.split("**阶段 C：")[1].split("**阶段 R：")[0]
