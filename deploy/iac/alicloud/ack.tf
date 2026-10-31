@@ -14,6 +14,8 @@ resource "alicloud_cs_managed_kubernetes" "main" {
   security_group_id    = alicloud_security_group.nodes.id
   deletion_protection  = true
   enable_rrsa          = true
+  # 读集群时 provider 会取 kubeconfig；不把客户端证书与私钥写进状态（LT-03 lessons 待人确认第 9 条；子账号另被拒绝取 kubeconfig）
+  skip_set_certificate_authority = true
   # Secret 落盘不做 KMS 信封加密（LT-03 决定记录第 15 条 6a：不买 KMS 实例）。补偿：只有部署者能读 starbuddy-staging 的 Secret（RBAC），
   # 应用 ServiceAccount 不挂令牌，Secret 的权威来源在集群外（OOS 加密参数，kms.tf）。买了 KMS 实例后在本集群上开启（ACK Pro 支持已有集群开启）
   disable_encryption = true
@@ -42,6 +44,8 @@ resource "alicloud_cs_managed_kubernetes" "main" {
   # 告警规则 deploy/observability/alerts.yaml 由人在 ARMS 控制台导入；通知渠道与接收人由人配置（不在 IaC，不进仓库）。
   addons {
     name = "arms-prometheus"
+    # 阶段 C 先不装（LT-03 决定记录第 17 条：没有 NAT 时连不上 ARMS 公网端点），阶段 D 之后 arms_prometheus_enabled 改 true
+    disabled = !var.arms_prometheus_enabled
   }
   addons {
     name = "ack-secret-manager" # OOS 加密参数 → k8s Secret（只读名单内的参数，kms.tf 的 RAM 角色）

@@ -217,6 +217,11 @@ variable "oss_expire_days" {
 }
 
 # ---------------------------------------------------------------- 镜像仓库（ACR 企业版）
+variable "arms_prometheus_enabled" {
+  description = "是否装 ACK 组件 arms-prometheus：阶段 C 传 false（没有 NAT 连不上 ARMS），阶段 D 之后传 true（LT-03 决定记录第 17 条）；没有缺省值，必须显式给出"
+  type        = bool
+}
+
 variable "acr_instance_id" {
   description = "ACR 企业版实例 ID（由人在控制台下单后填写，形如 cri-xxxx；实例不在 IaC 里，LT-03 决定记录第 16 条）"
   type        = string

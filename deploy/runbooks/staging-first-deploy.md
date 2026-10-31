@@ -102,7 +102,7 @@ apply 会被这条拒绝挡下——这正是要停下来由人决定的情形�
    子命令与参数相同；`make iac-validate` 自动识别 `tofu`。必填变量可用 `TF_VAR_<变量名>` 环境变量给出（列表写 JSON），此时 plan 不带 `-var-file`。
 3. 包年包月与新增云服务（ACR 企业版、云防火墙、ARMS、SLS）已由人确认计费并开通。
 4. `terraform.tfvars` 必填项已由人准备好（放 `<计划目录>`，不进仓库）：`k8s_version`、`node_key_pair_name`、`oss_bucket_name`、`office_vpn_cidrs`、
-   `cloud_service_endpoint_cidrs`（只在 100.64.0.0/10 里、不宽于 /24）、`model_egress_fqdns`（供应商未开通时为空列表）、`nat_firewall_confirmed`、`rds_disk_encryption`（建 RDS 实例那一次传 deferred，之后一律传 ServiceKey，见阶段 B-enc）、`acr_instance_id`（B' 由人下单后填写）。
+   `cloud_service_endpoint_cidrs`（只在 100.64.0.0/10 里、不宽于 /24）、`model_egress_fqdns`（供应商未开通时为空列表）、`nat_firewall_confirmed`、`rds_disk_encryption`（建 RDS 实例那一次传 deferred，之后一律传 ServiceKey，见阶段 B-enc）、`acr_instance_id`（B' 由人下单后填写）、`arms_prometheus_enabled`（阶段 D 之前 false）。
 5. **OSS 账号级阻止公共访问已由主账号开启、第二人核实**（安全审查 B3：子账号能改桶级阻止公共访问与 ACL，桶不被公开全靠这一层）；0.1 节末的一次性授权已完成；`deploy/runbooks/ram/` 三条策略已替换占位名、在 RAM 控制台校验动作名后挂载。
 
 ---
@@ -223,11 +223,13 @@ ACK Secret 不做信封加密，应用凭据放 OOS 加密参数（`specs/launch
 日志库留存 180 天、服务端加密、`app` 只建白名单字段索引、没有全文索引。
 另核：OSS 账号级阻止公共访问仍开启；子账号策略里没有任何计费下单权限（`bss:` / `bssapi:`）。
 
-**阶段 C：ACK**
+**阶段 C：ACK**（`arms_prometheus_enabled = false`：没有 NAT 时连不上 ARMS 公网端点，组件先不装，LT-03 决定记录第 17 条；集群以 `rds_disk_encryption = ServiceKey` 为前置条件）
 ```
 -target=alicloud_cs_managed_kubernetes.main -target=alicloud_cs_kubernetes_node_pool.default
 ```
-验收：API Server 只有内网地址；Terway 且 NetworkPolicy 生效；组件含 `arms-prometheus`、`logtail-ds`、`ack-secret-manager`，nginx-ingress 禁用；Secret 落盘
+前置：容器服务的云资源访问授权（主账号）；子账号有 `cs:CheckControlPlaneLogEnable`（provider 读集群时调用，provider 1.294.0 源码核实）。
+验收：API Server 只有内网地址；Terway 且 NetworkPolicy 生效；组件含 `logtail-ds`、`ack-secret-manager`（`arms-prometheus` 到阶段 D 之后再装），nginx-ingress 禁用；
+状态里 `certificate_authority` 为空（`skip_set_certificate_authority = true`）；Secret 落盘
 未做 KMS 信封加密（`disable_encryption`，决定记录第 15 条）；RRSA 开启；节点池节点 Ready、无公网地址、系统盘加密（ECS 服务密钥）。**此时还没有 SNAT**：节点初始化与组件镜像拉取若需要公网而失败，
 停下由人决定（不临时放开出网）。
 
@@ -247,7 +249,7 @@ tofu -chdir=deploy/iac/alicloud plan -input=false -lock=true -out=<计划目录>
 # D1'：EIP 绑定（由人用管理员身份执行，同阶段 R 的做法；子账号没有 AssociateEipAddress，防止把 EIP 绑到节点上暴露公网）
 -target=alicloud_eip_association.nat
 # 由人：在云防火墙控制台为这台 NAT 网关开启 NAT 边界防火墙，第二人核实后才把 nat_firewall_confirmed 设为 true（见 0.6 第 1 条）
-# D2：访问控制与 SNAT
+# D2：访问控制与 SNAT（之后另起一次 plan 把 arms_prometheus_enabled 改 true，装 ARMS 采集组件）
 -target=alicloud_cloud_firewall_nat_firewall_control_policy.model_vendor -target=alicloud_cloud_firewall_nat_firewall_control_policy.deny_rest
 -target=alicloud_snat_entry.node -target=alicloud_snat_entry.pod
 ```

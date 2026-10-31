@@ -124,3 +124,9 @@
 - **阶段 B（含 B'、B-enc、B2）完成。**
 - 决定记录第 17 条落地：安全组新增 3 条出站 443（100.103.99.0/24、100.103.6.0/24、100.100.2.148/32），阶段 A 范围重新 plan 为 No changes。
 - 用户在控制台核对：ACR 企业版实例为手动续费（2026-10-31）。
+
+## 补记（2026-10-31）：阶段 C 准备
+- 用户给出 `k8s_version = 1.32.1-aliyun.1`、`node_key_pair_name = starbuddy-staging-node`（写进本地 tfvars）。
+- 决定记录第 17 条落地：`arms-prometheus` 写成 `disabled = !var.arms_prometheus_enabled`（变量 bool、无缺省），R20 只接受这一种写法；阶段 C 传 false。
+- **待人确认第 9 条的结论**（provider 1.294.0 源码）：读集群时调用 `DescribeClusterKubeConfig`，不设 `skip_set_certificate_authority` 就把客户端证书与私钥写进状态的 `certificate_authority`；被拒绝时只记日志、写空值。已在 `ack.tf` 设 `skip_set_certificate_authority = true`（R10 核对、加变异），与子账号拒绝取 kubeconfig 构成两道防线。
+- 读集群还调用 `CheckControlPlaneLogEnable`（不在 `cs:Describe*/Get*/List*` 里，失败即报错）→ 基础设施策略补 `cs:CheckControlPlaneLogEnable`。

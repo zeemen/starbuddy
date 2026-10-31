@@ -146,8 +146,11 @@ MUTATIONS = [
     ("VPC 用公网网段", "variables.tf", "default     = \"10.20.0.0/16\"", "default     = \"47.20.0.0/16\"", "R15"),
     ("Service 网段与 VPC 重叠", "variables.tf", "default     = \"10.96.0.0/16\"", "default     = \"10.20.0.0/16\"", "R15"),
     # LT-05 监控与日志采集
-    ("ACK 不装 ARMS 采集组件", "ack.tf", "  addons {\n    name = \"arms-prometheus\"\n  }\n", "", "R20"),
-    ("ARMS 采集组件被禁用", "ack.tf", "    name = \"arms-prometheus\"\n", "    name     = \"arms-prometheus\"\n    disabled = true\n", "R20"),
+    ("ACK 不装 ARMS 采集组件", "ack.tf", "    name = \"arms-prometheus\"\n", "    name = \"arms-prometheus-removed\"\n", "R20"),
+    ("ARMS 采集组件被禁用", "ack.tf", "    disabled = !var.arms_prometheus_enabled\n", "    disabled = true\n", "R20"),
+    ("ARMS 开关给了缺省值", "variables.tf", "variable \"arms_prometheus_enabled\" {\n", "variable \"arms_prometheus_enabled\" {\n  default     = false\n", "R20"),
+    ("logtail 被禁用", "ack.tf", "  addons {\n    name   = \"logtail-ds\"\n", "  addons {\n    name     = \"logtail-ds\"\n    disabled = true\n", "R20"),
+    ("证书私钥写进状态", "ack.tf", "  skip_set_certificate_authority = true\n", "", "R10"),
     ("ACK 不装日志采集组件", "ack.tf", "    name   = \"logtail-ds\"\n", "    name   = \"logtail-ds-off\"\n", "R20"),
     ("IaC 里建告警联系人", "sls.tf", "resource \"alicloud_log_store\" \"audit\" {",
      "resource \"alicloud_arms_alert_contact\" \"oncall\" {\n  alert_contact_name = \"x\"\n  email = var.x\n}\n\nresource \"alicloud_log_store\" \"audit\" {", "R20"),

@@ -6,7 +6,7 @@
       "Action": [
         "vpc:Describe*", "vpc:List*", "vpc:Get*",
         "ecs:Describe*", "ecs:List*",
-        "cs:Describe*", "cs:Get*", "cs:List*",
+        "cs:Describe*", "cs:Get*", "cs:List*", "cs:CheckControlPlaneLogEnable",
         "slb:Describe*", "slb:List*"
       ],
       "Resource": "*"

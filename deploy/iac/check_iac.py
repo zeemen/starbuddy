@@ -20,7 +20,7 @@
   R08 支持标签的资源都带 tags（不支持标签的类型在 NO_TAGS 里逐个登记）
   R09 静态加密开启（LT-03 决定记录第 15 条：不买 KMS 实例时可用服务密钥）：若有自建主密钥则自动轮转与删除保护；节点系统盘与数据盘加密；
       ACK Secret 落盘要么给 encryption_provider_key，要么显式写 disable_encryption = true（不得省略不写）；日志库服务端加密
-  R10 ACK 不开公网：API Server 不开公网负载均衡、不让集群另建 NAT、节点不分配公网带宽
+  R10 ACK 不开公网：API Server 不开公网负载均衡、不让集群另建 NAT、节点不分配公网带宽；skip_set_certificate_authority = true（证书私钥不进状态）
   R11 出网白名单：有 NAT 网关；云防火墙 NAT 边界出方向只放行 var.model_egress_fqdns 的 TCP 443（主机名类型），最后一条拒绝其余全部；
       模型供应商主机名变量没有缺省值（由人填写）；安全组出公网只开 TCP 443；
       云防火墙没开不能静默放开出网：确认变量 nat_firewall_confirmed 是 bool、没有缺省值（必须显式给出），每条 SNAT 都 depends_on
@@ -36,7 +36,8 @@
   R17 弹性公网 IP 只能绑 NAT 网关（instance_type = Nat，instance_id 引用 alicloud_nat_gateway）
   R18 不建公网负载均衡：SLB 必须 address_type = intranet，ALB / NLB 必须 address_type = Intranet
   R19 RAM 策略与角色信任策略里不出现通配符 *（动作与资源逐个列出）
-  R20 监控与日志采集（LT-05）：ACK 装了 arms-prometheus 与 logtail-ds 两个组件且没有禁用；不在 IaC 里建告警联系人、联系人组、
+  R20 监控与日志采集（LT-05）：ACK 装了 arms-prometheus 与 logtail-ds 两个组件且没有禁用（唯一例外：arms-prometheus 的
+      disabled 只能写成 !var.arms_prometheus_enabled，变量 bool、没有缺省值，LT-03 决定记录第 17 条）；不在 IaC 里建告警联系人、联系人组、
       通知策略、机器人（接收人与通知渠道由人在控制台配置，联系方式不进仓库与状态文件）
   R21 日志索引（LT-05）：日志库索引不建全文索引（没有 full_text 块），字段索引只收白名单字段（LOG_INDEX_FIELDS）；app 日志库必须有索引
   R22 数据库服务端日志不带标识原文（specs/plt-db-log-redaction）：RDS 用 parameters 固定 log_parameter_max_length = 0、
@@ -707,6 +708,8 @@ class Checker:
                 self.add("R10", c.file, f"{c.labels[1]}：API Server 不开公网（slb_internet_enabled = false）")
             if a.get("new_nat_gateway") is not False:
                 self.add("R10", c.file, f"{c.labels[1]}：不让集群另建 NAT（new_nat_gateway = false，出网走白名单 NAT）")
+            if a.get("skip_set_certificate_authority") is not True:
+                self.add("R10", c.file, f"{c.labels[1]}：skip_set_certificate_authority = true（不把 kubeconfig 的客户端证书与私钥写进状态）")
         for p in self.resources("alicloud_cs_kubernetes_node_pool"):
             bw = self._num(p.body.attrs.get("internet_max_bandwidth_out"))
             if "internet_max_bandwidth_out" in p.body.attrs and (bw is None or bw > 0):
@@ -838,8 +841,15 @@ class Checker:
             addons = {a.body.attrs.get("name"): a for a in sub(c.body, "addons")}
             for need in REQUIRED_ADDONS:
                 a = addons.get(need)
-                if a is None or a.body.attrs.get("disabled") in (True, "true"):
+                dis = a.body.attrs.get("disabled") if a is not None else None
+                staged = (need == "arms-prometheus" and isinstance(dis, Expr)
+                          and dis.raw.replace(" ", "") == "!var.arms_prometheus_enabled" and self._arms_var_ok())
+                if a is None or (dis is not None and dis is not False and not staged):
                     self.add("R20", c.file, f"{c.labels[1]}：必须装采集组件 {need}（且不禁用）")
+
+    def _arms_var_ok(self) -> bool:
+        v = self.variables().get("arms_prometheus_enabled")
+        return v is not None and "default" not in v.body.attrs and getattr(v.body.attrs.get("type"), "raw", "").strip() == "bool"
 
     def r21_log_index(self) -> None:
         idx = self.resources("alicloud_log_store_index")
