@@ -122,3 +122,4 @@
 - 主账号建出 `AliyunServiceRoleForContainerRegistryAccessCustomerPrivateZone` 后，B2 的 VPC 端点建成：已关联 VPC 状态 RUNNING（地址在 10.20.0.0/16 内），公网入口仍关闭；命名空间私有、不自动建仓，12 个仓库全部 PRIVATE；B2 范围重新 plan 为 No changes。
 - PrivateZone 里的内网解析子账号查不到（没有 pvtz 权限），阶段 C 节点就绪后在节点上解析 `<实例名>-registry-vpc.cn-beijing.cr.aliyuncs.com` 应得到 10.20.x 地址，作为第 4 节拉镜像前的核对项。
 - **阶段 B（含 B'、B-enc、B2）完成。**
+- 决定记录第 17 条落地：安全组新增 3 条出站 443（100.103.99.0/24、100.103.6.0/24、100.100.2.148/32），阶段 A 范围重新 plan 为 No changes。
