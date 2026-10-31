@@ -109,3 +109,9 @@
 - 备份策略报 `IncorrectCompressType`（PostgreSQL 云盘不收 "4"）→ `rds.tf` 去掉 `compress_type`（Optional + Computed，用缺省）；用户同意后 untaint 备份策略。
 - 备份策略 apply 完成（14 天、北京时间 02:00–03:00、日志备份 14 天），阶段 B（Claude 部分）重新 plan 为 No changes，云上回读一致。
 - B-enc 前按 provider 源码核实：开启云盘加密走 `ModifyDBInstanceConfig`（ConfigName=encryptionKey），数据策略补 `rds:ModifyDBInstanceConfig`。
+
+## 补记（2026-10-31）：B-enc（RDS 云盘加密）
+- 第一次：`KmsServiceLinkedRoleNotGranted` → 主账号在 RDS 控制台授权，建出 `AliyunRDSInstanceEncryptionDefaultRole`。
+- 第二次：`ModifyDBInstanceConfig` 重试约 30 分钟后 `500 InternalError`（请求 ID 记在会话里，可提工单）。用户同意后改为**在控制台手动开启**（IaC 之外的变更，记录在此）：数据安全性 → 云盘加密 → 服务密钥。
+- 核对：`DescribeDBInstanceEncryptionKey` 为 Enabled、Creator=Rds（服务密钥）；实例恢复 Running、删除保护开；阶段 B 目标重新 plan 为 No changes。tfvars 保持 `rds_disk_encryption = "ServiceKey"`。
+- 阶段 B（Claude 部分）与 B-enc 完成。待办：B'（ACR 企业版实例，包年包月，由人用管理员身份 apply）→ B2 → C（先换 `k8s_version`、`node_key_pair_name` 的真实值）→ R。

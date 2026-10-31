@@ -207,6 +207,8 @@ ACK Secret 不做信封加密，应用凭据放 OOS 加密参数（`specs/launch
 # 此时库里没有数据。之后每次 plan 都传 ServiceKey（ACK 集群以此为前置条件，传 deferred 时阶段 C 起的 plan 直接失败）。
 # B-enc 调用 rds:ModifyDBInstanceConfig（ConfigName=encryptionKey；provider 1.294.0 源码核实，已在数据策略里）；其他权限不足按报错逐个补、过测试，不放宽成 rds:Modify*；
 # 若计划显示 RDS 要替换（delete/create），按 1.4 第 1 条停下
+# 前置（主账号一次性）：RDS 访问 KMS 的授权角色 AliyunRDSInstanceEncryptionDefaultRole（缺了报 KmsServiceLinkedRoleNotGranted）。
+# 首次部署时 ModifyDBInstanceConfig 报 500 InternalError，改由人在控制台“数据安全性 → 云盘加密”选服务密钥开启，之后 plan 为 No changes（provider 对已加密实例的 ServiceKey 不报差异）
 -target=alicloud_oss_bucket.main -target=alicloud_oss_bucket_acl.main -target=alicloud_oss_bucket_public_access_block.main
 -target=alicloud_vpc_gateway_endpoint.oss -target=alicloud_vpc_gateway_endpoint_route_table_attachment.oss
 -target=alicloud_log_project.main -target=alicloud_log_store.app -target=alicloud_log_store_index.app -target=alicloud_log_store.audit
