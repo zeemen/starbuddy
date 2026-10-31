@@ -115,3 +115,7 @@
 - 第二次：`ModifyDBInstanceConfig` 重试约 30 分钟后 `500 InternalError`（请求 ID 记在会话里，可提工单）。用户同意后改为**在控制台手动开启**（IaC 之外的变更，记录在此）：数据安全性 → 云盘加密 → 服务密钥。
 - 核对：`DescribeDBInstanceEncryptionKey` 为 Enabled、Creator=Rds（服务密钥）；实例恢复 Running、删除保护开；阶段 B 目标重新 plan 为 No changes。tfvars 保持 `rds_disk_encryption = "ServiceKey"`。
 - 阶段 B（Claude 部分）与 B-enc 完成。待办：B'（ACR 企业版实例，包年包月，由人用管理员身份 apply）→ B2 → C（先换 `k8s_version`、`node_key_pair_name` 的真实值）→ R。
+
+## 补记（2026-10-31）：B' 与 B2
+- B'：用户在控制台下单 ACR 企业版，实例 ID 写进本地 tfvars（不进仓库）。只读核对：RUNNING、实例名 starbuddy-staging、公网入口关闭；**规格为基础版（Enterprise_Economy），不是约定的高级版——用户决定接受**（ACR 自带加签用不到，签名与扫描由 cosign / trivy 负责）。续费方式（应为手动）子账号查不到计费信息，由人在控制台核对。
+- B2 第一次：命名空间（私有、不自动建仓）与 12 个私有仓库建成；VPC 端点失败 `RAM_CREATE_ACCESS_CUSTOMER_PRIVATEZONE_SERVICE_LINKED_ROLE_NOT_ALLOWED`——自动建 PrivateZone 解析需要 ACR 访问 PrivateZone 的服务关联角色，由主账号建（子账号被拒绝 `ram:CreateServiceLinkedRole`）。

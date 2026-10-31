@@ -215,6 +215,7 @@ ACK Secret 不做信封加密，应用凭据放 OOS 加密参数（`specs/launch
 # B'：ACR 企业版实例（包年包月、下单即扣费）由人用管理员身份在控制台下单，不进 IaC（LT-03 决定记录第 16 条：provider 读实例要调计费查询，
 # 子账号不碰计费接口）：华北 2、高级版、1 个月、手动续费、实例名 <名前缀>-staging；把实例 ID（cri-…）填进 tfvars 的 acr_instance_id
 # B2：ACR 命名空间、仓库、VPC 端点（Claude 会话，B' 之后）
+# 前置（主账号一次性）：ACR 访问云解析 PrivateZone 的服务关联角色（VPC 端点自动建内网解析要用；缺了报 RAM_CREATE_ACCESS_CUSTOMER_PRIVATEZONE_SERVICE_LINKED_ROLE_NOT_ALLOWED）
 -target=alicloud_cr_ee_namespace.main -target=alicloud_cr_ee_repo.images -target=alicloud_cr_vpc_endpoint_linked_vpc.main
 ```
 验收：RDS 只有内网地址、白名单只 VPC 网段、SSL 开启、pg_hba 只有 hostssl、每日备份 + 日志备份（PITR）、删除保护、云盘加密已开启（服务密钥，B-enc 之后）；OSS 私有、阻止公共访问、
