@@ -107,3 +107,5 @@
 ## 补记（2026-10-30）：阶段 B 第三次 apply
 - RDS 原地修改完成并只读核对：删除保护开、SSL 开（证书签内网前缀）、pg_hba 只剩 hostssl + scram（阿里云默认的 host replication 0.0.0.0/0 md5 已去掉）、5 个日志参数为目标值；白名单另有阿里云自动加的隐藏组 `hdm_security_ips`（100.104.x.x，数据库自治服务）。日志库 app / audit 与索引建成。
 - 备份策略报 `IncorrectCompressType`（PostgreSQL 云盘不收 "4"）→ `rds.tf` 去掉 `compress_type`（Optional + Computed，用缺省）；用户同意后 untaint 备份策略。
+- 备份策略 apply 完成（14 天、北京时间 02:00–03:00、日志备份 14 天），阶段 B（Claude 部分）重新 plan 为 No changes，云上回读一致。
+- B-enc 前按 provider 源码核实：开启云盘加密走 `ModifyDBInstanceConfig`（ConfigName=encryptionKey），数据策略补 `rds:ModifyDBInstanceConfig`。

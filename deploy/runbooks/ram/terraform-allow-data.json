@@ -20,6 +20,7 @@
         "rds:CreateDBInstance", "rds:ModifyDBInstanceDescription", "rds:ModifyDBInstanceSpec", "rds:ModifyDBInstanceConnectionString",
         "rds:ModifySecurityIps", "rds:ModifyDBInstanceSSL", "rds:ModifyPGHbaConfig", "rds:ModifyParameter",
         "rds:ModifyBackupPolicy", "rds:ModifyDBInstanceDeletionProtection", "rds:ModifyDBInstanceTDE",
+        "rds:ModifyDBInstanceConfig",
         "rds:TagResources", "rds:UntagResources"
       ],
       "Resource": "*"

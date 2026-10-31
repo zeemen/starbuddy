@@ -205,7 +205,7 @@ ACK Secret 不做信封加密，应用凭据放 OOS 加密参数（`specs/launch
 # B-enc：RDS 建好后紧接着单独一次 plan / apply（目标同上一行的 RDS 实例），只把 rds_disk_encryption 由 deferred 改为 ServiceKey
 # （PostgreSQL 创建时不收服务密钥，LT-03 决定记录第 15 条）；计划里只应有 alicloud_db_instance.main 一处修改（encryption_key → ServiceKey），
 # 此时库里没有数据。之后每次 plan 都传 ServiceKey（ACK 集群以此为前置条件，传 deferred 时阶段 C 起的 plan 直接失败）。
-# B-enc 若报权限不足：按报错核实 provider 实际调用的 RDS 动作，逐个补进 ram/terraform-allow-data.json 并过测试，不放宽成 rds:Modify*；
+# B-enc 调用 rds:ModifyDBInstanceConfig（ConfigName=encryptionKey；provider 1.294.0 源码核实，已在数据策略里）；其他权限不足按报错逐个补、过测试，不放宽成 rds:Modify*；
 # 若计划显示 RDS 要替换（delete/create），按 1.4 第 1 条停下
 -target=alicloud_oss_bucket.main -target=alicloud_oss_bucket_acl.main -target=alicloud_oss_bucket_public_access_block.main
 -target=alicloud_vpc_gateway_endpoint.oss -target=alicloud_vpc_gateway_endpoint_route_table_attachment.oss
