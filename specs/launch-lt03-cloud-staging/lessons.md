@@ -130,3 +130,10 @@
 - 决定记录第 17 条落地：`arms-prometheus` 写成 `disabled = !var.arms_prometheus_enabled`（变量 bool、无缺省），R20 只接受这一种写法；阶段 C 传 false。
 - **待人确认第 9 条的结论**（provider 1.294.0 源码）：读集群时调用 `DescribeClusterKubeConfig`，不设 `skip_set_certificate_authority` 就把客户端证书与私钥写进状态的 `certificate_authority`；被拒绝时只记日志、写空值。已在 `ack.tf` 设 `skip_set_certificate_authority = true`（R10 核对、加变异），与子账号拒绝取 kubeconfig 构成两道防线。
 - 读集群还调用 `CheckControlPlaneLogEnable`（不在 `cs:Describe*/Get*/List*` 里，失败即报错）→ 基础设施策略补 `cs:CheckControlPlaneLogEnable`。
+
+## 补记（2026-11-01）：阶段 C 首次 apply 与知识底座变更
+- 阶段 C 首次 apply 报 `ErrorNotEnabled: please enable cskpro container service`：账号未开通 ACK Pro 版（“云资源访问授权”不等于开通）。没有建出任何资源、没有计费；由主账号开通后重新 plan。
+- 用户告知：产品的知识与内容底座改由 WeKnora 承担，并引入“知识库供应链中台”（代码在用户本机，会话暂时看不到）。用户决定 staging 基础设施继续搭；**第 4 节部署时知识服务（knowledge）暂缓**，等规格与 ADR 定下 WeKnora / 中台与 KGE 的分工、接口（packages/contracts，必停）、模型供应商与数据出境、公共层与个人层边界（规则 13）以及 staging 容量之后再定。
+
+### 待人确认（续）
+20. WeKnora 与知识库供应链中台：规格与 ADR 待起草（需要能读到中台代码：推到 GitHub 或经 Remote Control 共享）；staging 节点规格（现为 2 × ecs.g7.xlarge）是否足以同时承载 WeKnora 及其依赖，待评估。
