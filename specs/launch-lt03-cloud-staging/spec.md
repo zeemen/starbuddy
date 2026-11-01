@@ -49,3 +49,4 @@
 15. （2026-10-30，用户；`kms-alternatives.md`）按草案建议：RDS 云盘改服务密钥（建实例后紧接着开启）、OSS 业务桶 AES256、节点系统盘与云盘存储类用 ECS 服务密钥、SLS 不变；ACK Secret 落盘选 6a（`disable_encryption = true`，暂不做信封加密）；应用凭据选 7a（OOS 加密参数 + ack-secret-manager）；**真实数据等 KMS**：不买 KMS 实例期间 staging 只放合成数据，导入内部家庭真实数据前须先买实例、切回自建密钥并另行确认。IaC 移除两把自建密钥与别名。
 16. （2026-10-31，用户）ACR 企业版实例移出 IaC：provider 读取实例时调用计费查询 `QueryAvailableInstances`，子账号不授任何计费权限；实例由人用管理员身份在控制台下单与续费（华北 2、高级版、1 个月、手动续费），IaC 只管命名空间、仓库与 VPC 端点，实例 ID 经变量 `acr_instance_id` 传入；`check_iac.py` 把 `alicloud_cr_ee_instance` 列为禁止类型。
 17. （2026-10-31，用户）阶段 C 之前放宽节点出站白名单：`cloud_service_endpoint_cidrs` 加 `100.103.99.0/24`（ACK 系统镜像 VPC 仓库）、`100.103.6.0/24`（阿里云公共镜像 VPC 仓库，同段含 KMS 内网端点，未使用）、`100.100.2.148/32`（软件源），只开 TCP 443；集群建好后从 VPC 内复核解析。`arms-prometheus` 组件在阶段 C 若因没有 NAT 而失败，先挂起，阶段 D（NAT + 云防火墙）之后再处理，其余组件失败仍按手册停下。
+18. （2026-11-01，用户）测试阶段暂时不建 ACK 集群（阶段 C 暂缓）：ACK Pro 已开通、阶段 C 的 plan 已核对（新增 2、删除 0），计划文件已删；恢复时重新 plan、重新确认。阶段 R、D 与第 4 节部署随之暂缓。已建资源（网络、RDS、OSS、日志、ACR）保留。

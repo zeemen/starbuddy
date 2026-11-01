@@ -137,3 +137,5 @@
 
 ### 待人确认（续）
 20. WeKnora 与知识库供应链中台：规格与 ADR 待起草（需要能读到中台代码：推到 GitHub 或经 Remote Control 共享）；staging 节点规格（现为 2 × ecs.g7.xlarge）是否足以同时承载 WeKnora 及其依赖，待评估。
+- 用户在控制台开通 ACK Pro（经“创建集群”页的依赖检查，未在控制台建集群；只读核对北京地域集群列表为空）。阶段 C 重新 plan 为新增 2、删除 0。
+- 用户决定测试阶段暂不建集群（决定记录第 18 条），计划文件已删。tfvars 里 `k8s_version = 1.36.2-aliyun.1`、`node_key_pair_name`、`arms_prometheus_enabled = false` 保留，恢复时直接重新 plan。
