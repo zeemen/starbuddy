@@ -6,6 +6,8 @@
 
 **2026-10-09：ADR 01–15 全部已采纳**——用户在对话中确认按评审包（`docs/reviews/adr-review-pack.md`）默认建议采纳，签字人“用户（对话确认）”。没有默认、仍需讨论的 42 条及采纳明细见 `docs/reviews/decisions-2026-10-09.md`。各 ADR 正文（含“决定（待签字）”小标题）未改，只改文件头状态；迁移草稿签字不等于执行。
 
+**2026-11-02：ADR 16 已采纳**——用户在对话中签字（“ADR 由我签字”）。其中涉及的契约扩展、迁移、供应商登记仍按各自的必停流程单独确认。
+
 | 编号 | 标题 | 状态 | 建议决策人 | 依赖 | 必停项 | 评审顺序 |
 |---|---|---|---|---|---|---|
 | [01](01-bff-and-learning-service.md) | BFF（TypeScript）与学科服务（FastAPI）分工 | 已采纳（2026-10-09，用户在对话中确认按评审包默认建议） | 技术负责人 | — | — | 3 |
@@ -35,7 +37,7 @@
 
 | 编号 | 标题 | 状态 | 必停项 |
 |---|---|---|---|
-| [16](16-standard-knowledge-base-weknora.md) | 标准知识库由 WeKnora 运行，知识库供应链中台负责加工，KGE 保留骨架与闸门 | 草稿（待签字；边界与默认值用户已在对话中确认，`specs/kb-weknora-integration/spec.md`） | 是（第三方服务、模型供应商、契约、题目全文存放） |
+| [16](16-standard-knowledge-base-weknora.md) | 标准知识库由 WeKnora 运行，知识库供应链中台负责加工，KGE 保留骨架与闸门 | 已采纳（2026-11-02，用户签字；决定记录见 `specs/kb-weknora-integration/spec.md`） | 是（第三方服务、模型供应商、契约、题目全文存放） |
 
 另外，v2.0 要求的 schema 从一个（platform.*）变成三个（platform.* / kge.* / insight.*），ADR 02“共库分 schema”需要补一节说明个人层表放哪一个 schema（#3：默认留在 platform.*，W2 Schema v0.9 评审时定；2026-10-09 已按默认采纳，留在 platform.*）。kge 一节已作为草稿增补在 ADR 02 末尾（specs/kge-schema-v0.9），随迁移 0011 / 0012 一起评审。
 
