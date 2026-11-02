@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import uuid
 from datetime import timedelta
@@ -49,7 +50,10 @@ async def templates(mpools):
 @pytest.fixture
 async def pages(mpools, templates):
     app_pool, _ = mpools
-    return PF.ProfilePages(app_pool, PF.synthetic_profile_config())
+    # 这些用例测编译、一致性检查与读取，不测计时：默认预算放宽到 10 秒，免得慢机器（CI）上超时退回纯模板。
+    # 超时行为由 test_budget_exceeded_returns_template_only_without_writing 显式传 budget 单独测。
+    cfg = PF.synthetic_profile_config()
+    return PF.ProfilePages(app_pool, dataclasses.replace(cfg, budgets={k: 10.0 for k in cfg.budgets}))
 
 
 async def put_claim(admin, student: str, key: str = "syn.mastery.stable", status: str = "established", *, gate: str = "stable",
