@@ -19,7 +19,8 @@ concurrency:
 jobs:
   make-check:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    # 全量检查（除数据库变异测试）已超过 30 分钟；数据库变异测试另由下面的 db-mutation 分片任务并行跑
+    timeout-minutes: 120
     env:
       NEXT_TELEMETRY_DISABLED: "1"   # Next.js 默认会向境外发匿名遥测（ADR 09）
     steps:
@@ -77,8 +78,8 @@ jobs:
       # 报告作为 Gate 0“最近一次运行报告”上传（spec 设计要点 6、待人确认 #11、#12）；不需要任何密钥。
       # eval-persona 与 check 放在同一次 make 里：eval-persona 先跑（写报告），check 依赖它时同一次 make 不再重跑，
       # 家族级回归只跑一遍（W13 技术债 T08，specs/tech-debt-batch1；原先单独一步再加 make check 里一遍，共两遍）
-      - name: 人设回归与报告（冲刺 3-F）+ make check（严格模式）
-        run: make eval-persona check CONTRACT_STRICT=1 PYTHON=.venv-contracts/bin/python PGBIN=/usr/lib/postgresql/16/bin PERSONA_REPORT_DIR=${{ runner.temp }}/persona-report
+      - name: 人设回归与报告（冲刺 3-F）+ make check-core（严格模式；db-mutation 在分片任务里）
+        run: make eval-persona check-core CONTRACT_STRICT=1 PYTHON=.venv-contracts/bin/python PGBIN=/usr/lib/postgresql/16/bin PERSONA_REPORT_DIR=${{ runner.temp }}/persona-report
 
       - name: 上传人设回归报告（保留 90 天）
         if: always()
@@ -88,3 +89,36 @@ jobs:
           path: ${{ runner.temp }}/persona-report/
           retention-days: 90
           if-no-files-found: warn
+
+  # 数据库变异测试（db/tests/mutations.sh，1251 个变异，单机全跑约 3 小时）拆成 12 个分片并行：
+  # 分片按变异名排序后取模，12 个分片合起来正好覆盖全部，一个都不跳过；任何一片失败整个检查就失败。
+  db-mutation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: PostgreSQL 16（只用来起本机一次性实例）
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q postgresql-16
+          sudo systemctl stop postgresql || true
+
+      # 79p 用 Python 读字段字典（YAML），需要装了 PyYAML 的解释器
+      - name: 契约检查依赖（含 PyYAML）
+        run: |
+          python -m venv .venv-contracts
+          .venv-contracts/bin/pip install -q -r packages/contracts/requirements-dev.txt
+
+      - name: 数据库变异测试（分片 ${{ matrix.shard }}/12，严格模式）
+        run: make db-mutation CONTRACT_STRICT=1 PYTHON=.venv-contracts/bin/python PGBIN=/usr/lib/postgresql/16/bin DBMUT_SHARD=${{ matrix.shard }}/12

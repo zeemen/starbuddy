@@ -1,5 +1,5 @@
 # 未实现的目标明确打印“跳过”，不得伪装为通过。
-.PHONY: check-fast check contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test current-affair-expire model-router-mutation diagnosis-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-visual kge-inventory kge-inventory-test kge-import kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test sie-dictionary-check kge-id-check knowledge-test knowledge-mutation kge-compile-eval-test eval-persona eval-grade persona-registry-check persona-guard-test persona-lock persona-record insight-test insight-mutation release-walkthrough kge-dedupe-test kge-dedupe-mutation kge-calibrate-test kge-calibrate-mutation cost-dashboard-test cost-dashboard-mutation kge-irt-test kge-irt-mutation
+.PHONY: check-fast check check-core contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test current-affair-expire model-router-mutation diagnosis-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-visual kge-inventory kge-inventory-test kge-import kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test sie-dictionary-check kge-id-check knowledge-test knowledge-mutation kge-compile-eval-test eval-persona eval-grade persona-registry-check persona-guard-test persona-lock persona-record insight-test insight-mutation release-walkthrough kge-dedupe-test kge-dedupe-mutation kge-calibrate-test kge-calibrate-mutation cost-dashboard-test cost-dashboard-mutation kge-irt-test kge-irt-mutation
 
 # 可指向装了 packages/contracts/requirements-dev.txt 的解释器，例如 make check PYTHON=.venv/bin/python
 PYTHON ?= python3
@@ -37,7 +37,11 @@ make-skip-check:
 # 契约检查约 1 秒，改动后也跑一遍
 check-fast: contract-test taxonomy-check attack-surface-check sie-dictionary-check kge-id-check
 
-check: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation practice-mutation internal-v1-mutation adapter-client-mutation bff-test bff-mutation internal-test-tool-test conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona insight-test insight-mutation voice-blind-eval-test release-walkthrough retest-mutation today-mutation scheduler-test scheduler-mutation gate1-test gate1-mutation review-console-mutation kge-chinese-import kge-chinese-mutation knowledge-material-mutation stage-test stage-mutation kge-dedupe-test kge-dedupe-mutation kge-calibrate-test kge-calibrate-mutation cost-dashboard-test cost-dashboard-mutation mock-exam-test mock-exam-mutation kge-irt-test kge-irt-mutation knowledge-cache-mutation knowledge-semantic-test knowledge-semantic-mutation loadtest-test deploy-check staging-mutation
+# check-core：除 db-mutation 以外的全部检查。CI 把 db-mutation 拆成分片并行跑（.github/workflows/check.yml），
+# 主任务只跑 check-core；本地 make check 仍然一次跑全部。
+check-core: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation practice-mutation internal-v1-mutation adapter-client-mutation bff-test bff-mutation internal-test-tool-test conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona insight-test insight-mutation voice-blind-eval-test release-walkthrough retest-mutation today-mutation scheduler-test scheduler-mutation gate1-test gate1-mutation review-console-mutation kge-chinese-import kge-chinese-mutation knowledge-material-mutation stage-test stage-mutation kge-dedupe-test kge-dedupe-mutation kge-calibrate-test kge-calibrate-mutation cost-dashboard-test cost-dashboard-mutation mock-exam-test mock-exam-mutation kge-irt-test kge-irt-mutation knowledge-cache-mutation knowledge-semantic-test knowledge-semantic-mutation loadtest-test deploy-check staging-mutation
+
+check: check-core db-mutation
 	@echo "check: lint 尚未配置，跳过；其余检查已通过"
 
 # LT-01 部署打包（specs/launch-lt01-deploy-packaging）：镜像与编排的静态校验、开关矩阵、环境变量清单、迁移执行器单测与一次性库上的
@@ -95,12 +99,12 @@ kge-id-check:
 # 迁移与 RLS：在一次性的本地 Postgres 上跑 up → down → up 与 RLS / 约束测试（约 3 秒）
 # 只连本机临时实例，不连接任何共享或生产库（CLAUDE.md 规则 9）
 db-test:
-	@bash db/tests/run.sh; rc=$$?; \
+	@PYTHON="$(PYTHON)" bash db/tests/run.sh; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
 
 # 数据库变异测试：逐条放宽 RLS 或约束，断言测试能发现（并行执行，约 1–2 分钟）
 db-mutation:
-	@bash db/tests/mutations.sh; rc=$$?; \
+	@PYTHON="$(PYTHON)" bash db/tests/mutations.sh; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
 
 # 阿鸦适配器：类型检查 + 单测（契约、验证器、映射、泄露、幂等、HTTP）。端到端在 learning-test 里

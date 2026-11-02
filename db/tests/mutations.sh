@@ -1622,6 +1622,21 @@ run_one() {  # $1 序号，$2 名字
 if [ -n "${DBMUT_FILTER:-}" ]; then
   for name in "${!M[@]}"; do [[ "$name" == "$DBMUT_FILTER"* ]] || unset "M[$name]"; done
 fi
+# DBMUT_SHARD=<k>/<n>：名字按字节序排序后，只跑第 k、k+n、k+2n…个变异（CI 分片用；k 取 1…n 的 n 个分片合起来正好覆盖全部）
+SHARD_NOTE=""
+if [ -n "${DBMUT_SHARD:-}" ]; then
+  if ! [[ "$DBMUT_SHARD" =~ ^([1-9][0-9]*)/([1-9][0-9]*)$ ]] || [ "${BASH_REMATCH[1]}" -gt "${BASH_REMATCH[2]}" ]; then
+    echo "db-mutation: 失败（DBMUT_SHARD 应为 k/n，且 1 ≤ k ≤ n，收到 $DBMUT_SHARD）"; exit 1
+  fi
+  shard_k="${BASH_REMATCH[1]}"; shard_n="${BASH_REMATCH[2]}"; j=0
+  while IFS= read -r name; do
+    [ $((j % shard_n)) -eq $((shard_k - 1)) ] || unset "M[$name]"
+    j=$((j + 1))
+  done < <(printf '%s\n' "${!M[@]}" | LC_ALL=C sort)
+  SHARD_NOTE="分片 $DBMUT_SHARD，"
+fi
+# DBMUT_LIST=1：只列出本次会跑的变异名（核对分片覆盖用），不起数据库
+if [ "${DBMUT_LIST:-}" = "1" ]; then printf '%s\n' "${!M[@]}" | LC_ALL=C sort; exit 0; fi
 i=0
 for name in "${!M[@]}"; do
   i=$((i + 1))
@@ -1639,4 +1654,4 @@ while IFS=$'\t' read -r rc name idx; do
 done < <(cat "$RES"/[0-9]*)
 if [ "$total" -ne "${#M[@]}" ]; then echo "db-mutation: 失败（只收到 $total/${#M[@]} 个结果）"; exit 1; fi
 if [ $missed -gt 0 ]; then echo "db-mutation: 失败，$missed/$total 个变异没有被发现"; exit 1; fi
-echo "db-mutation: 通过（$total 个变异全部被发现）"
+echo "db-mutation: 通过（${SHARD_NOTE}$total 个变异全部被发现）"

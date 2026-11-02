@@ -72,7 +72,7 @@ SELECT t.ok(NOT EXISTS (SELECT 1 FROM platform.personal_table_registry WHERE nsp
 SELECT t.ok((SELECT array_agg(DISTINCT erase_scope ORDER BY erase_scope) FROM platform.personal_table_registry WHERE strategy = 'delete')
             = '{claim_ledger,evidence,facts,inference,reports}', '删除表都映射到契约回执 scopes（uploads 待上传管道建表）');
 -- 导出列必须是字段字典里对家长可见的字段（安全审查 N1）；另有通用元数据列与两张家长本人记录的表单列理由
-\set dict_guardian_cols `python3 -c "import yaml,json,sys; d=yaml.safe_load(open(sys.argv[1])); o=set(); [o.update([v for v in ((f['storage'].values() if isinstance(f['storage'],dict) else [f['storage']]) ) ] + ([f['source_column']] if f.get('source_column') else [])) for f in d['fields'] if 'guardian' in f['visibility']]; print(json.dumps(sorted(o)))" :testdir/../../docs/design/sie/field-dictionary.v0.9.yaml`
+\set dict_guardian_cols `:pybin -c "import yaml,json,sys; d=yaml.safe_load(open(sys.argv[1])); o=set(); [o.update([v for v in ((f['storage'].values() if isinstance(f['storage'],dict) else [f['storage']]) ) ] + ([f['source_column']] if f.get('source_column') else [])) for f in d['fields'] if 'guardian' in f['visibility']]; print(json.dumps(sorted(o)))" :testdir/../../docs/design/sie/field-dictionary.v0.9.yaml`
 SELECT t.ok(jsonb_array_length(:'dict_guardian_cols'::jsonb) >= 10, '读到字段字典里对家长可见的落库列');
 CREATE TABLE t.export_col_ok (col text PRIMARY KEY, reason text NOT NULL);
 INSERT INTO t.export_col_ok VALUES

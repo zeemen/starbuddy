@@ -7,9 +7,21 @@
 # 退出码：0 通过；1 失败；3 本机没有 Postgres（由 Makefile 决定是否算失败）。
 set -euo pipefail
 
+# 79p 用 Python 读字段字典（YAML）：用 make 传入的 PYTHON（CI 是装了 PyYAML 的 .venv-contracts），
+# 不依赖系统 python3 恰好装了 PyYAML；读不了就直接失败，不让空值变成“json 格式错误”。
+DBTEST_PY="${PYTHON:-python3}"
+case "$DBTEST_PY" in
+  */*) DBTEST_PY="$(cd "$(dirname "$DBTEST_PY")" && pwd)/$(basename "$DBTEST_PY")" ;;
+  *) DBTEST_PY="$(command -v "$DBTEST_PY" || true)" ;;
+esac
 # 启动、停止一次性实例的公共部分与 BFF 集成测试共用（db/tests/pg-ephemeral.sh）
 . "$(dirname "$0")/pg-ephemeral.sh"
 pg_ephemeral_start || exit $?
+# 放在起实例之后：本机没有 Postgres 时仍按退出码 3 处理（由 Makefile 决定是否算失败）
+if [ -z "$DBTEST_PY" ] || ! "$DBTEST_PY" -c 'import yaml' 2>/dev/null; then
+  echo "db-test: 失败（${PYTHON:-python3} 不能 import yaml；请用 make db-test PYTHON=<装了 PyYAML 的解释器>）"
+  exit 1
+fi
 
 mapfile -t UPS < <(ls "$ROOT"/db/migrations/*.up.sql | sort)
 mapfile -t DOWNS < <(ls "$ROOT"/db/migrations/*.down.sql | sort -r)
@@ -72,7 +84,7 @@ fi
 apply_mutation
 
 OUT="$WORK/tests.out"
-if ! cat "$ROOT"/db/tests/[0-9]*.sql | psql_run -v testdir="$ROOT/db/tests" -v expecteddir="$ROOT/db/tests/expected" > "$OUT" 2>&1; then
+if ! cat "$ROOT"/db/tests/[0-9]*.sql | psql_run -v testdir="$ROOT/db/tests" -v expecteddir="$ROOT/db/tests/expected" -v pybin="$DBTEST_PY" > "$OUT" 2>&1; then
   grep -E 'FAIL|ERROR' "$OUT" | head -20
   echo "db-test: 失败"
   exit 1
