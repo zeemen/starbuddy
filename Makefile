@@ -1,5 +1,5 @@
 # 未实现的目标明确打印“跳过”，不得伪装为通过。
-.PHONY: check-fast check check-core check-group-persona check-group-contracts check-group-aya check-group-adapters check-group-learning-a check-group-learning-b check-group-bff-web check-group-kge-tools check-group-knowledge check-group-insight contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test current-affair-expire model-router-mutation diagnosis-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-visual kge-inventory kge-inventory-test kge-import kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test sie-dictionary-check kge-id-check knowledge-test knowledge-mutation kge-compile-eval-test eval-persona eval-grade persona-registry-check persona-guard-test persona-lock persona-record insight-test insight-mutation release-walkthrough kge-dedupe-test kge-dedupe-mutation kge-calibrate-test kge-calibrate-mutation cost-dashboard-test cost-dashboard-mutation kge-irt-test kge-irt-mutation
+.PHONY: check-fast check check-core check-group-persona check-group-contracts check-group-aya check-group-adapters check-group-learning-a check-group-learning-b check-group-bff-web check-group-kge-tools check-group-kge-model check-group-knowledge check-group-insight contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test current-affair-expire model-router-mutation diagnosis-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-visual kge-inventory kge-inventory-test kge-import kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test sie-dictionary-check kge-id-check knowledge-test knowledge-mutation kge-compile-eval-test eval-persona eval-grade persona-registry-check persona-guard-test persona-lock persona-record insight-test insight-mutation release-walkthrough kge-dedupe-test kge-dedupe-mutation kge-calibrate-test kge-calibrate-mutation cost-dashboard-test cost-dashboard-mutation kge-irt-test kge-irt-mutation
 
 # 可指向装了 packages/contracts/requirements-dev.txt 的解释器，例如 make check PYTHON=.venv/bin/python
 PYTHON ?= python3
@@ -37,7 +37,7 @@ make-skip-check:
 # 契约检查约 1 秒，改动后也跑一遍
 check-fast: contract-test taxonomy-check attack-surface-check sie-dictionary-check kge-id-check
 
-# check-core：除 db-mutation 以外的全部检查，按模块分成 10 组；CI 每组一个任务并行跑（.github/workflows/check.yml），
+# check-core：除 db-mutation 以外的全部检查，按模块分成 11 组；CI 每组一个任务并行跑（.github/workflows/check.yml），
 # db-mutation 另按分片并行。check-core 就是这些组的并集：新检查必须放进某一组，否则进不了 check。
 # 本地 make check 仍然一次跑全部。
 CHECK_GROUP_PERSONA := eval-persona persona-registry-check persona-guard-test voice-blind-eval-test
@@ -47,10 +47,11 @@ CHECK_GROUP_ADAPTERS := adapter-zhixing-test adapter-wenli-test adapter-client-m
 CHECK_GROUP_LEARNING_A := learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation practice-mutation
 CHECK_GROUP_LEARNING_B := internal-v1-mutation retest-mutation today-mutation review-console-mutation release-walkthrough loadtest-test cost-dashboard-test cost-dashboard-mutation mock-exam-test mock-exam-mutation deploy-check staging-mutation
 CHECK_GROUP_BFF_WEB := bff-test bff-mutation internal-test-tool-test web-test stage-test stage-mutation
-CHECK_GROUP_KGE_TOOLS := kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test kge-chinese-import kge-chinese-mutation kge-dedupe-test kge-dedupe-mutation kge-calibrate-test kge-calibrate-mutation kge-irt-test kge-irt-mutation
+CHECK_GROUP_KGE_TOOLS := kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test kge-chinese-import kge-chinese-mutation kge-dedupe-test kge-dedupe-mutation
+CHECK_GROUP_KGE_MODEL := kge-calibrate-test kge-calibrate-mutation kge-irt-test kge-irt-mutation
 CHECK_GROUP_KNOWLEDGE := knowledge-test knowledge-mutation kge-compile-eval-test knowledge-material-mutation knowledge-cache-mutation knowledge-semantic-test knowledge-semantic-mutation
 CHECK_GROUP_INSIGHT := insight-test insight-mutation scheduler-test scheduler-mutation gate1-test gate1-mutation
-check-core: $(CHECK_GROUP_PERSONA) $(CHECK_GROUP_CONTRACTS) $(CHECK_GROUP_AYA) $(CHECK_GROUP_ADAPTERS) $(CHECK_GROUP_LEARNING_A) $(CHECK_GROUP_LEARNING_B) $(CHECK_GROUP_BFF_WEB) $(CHECK_GROUP_KGE_TOOLS) $(CHECK_GROUP_KNOWLEDGE) $(CHECK_GROUP_INSIGHT)
+check-core: $(CHECK_GROUP_PERSONA) $(CHECK_GROUP_CONTRACTS) $(CHECK_GROUP_AYA) $(CHECK_GROUP_ADAPTERS) $(CHECK_GROUP_LEARNING_A) $(CHECK_GROUP_LEARNING_B) $(CHECK_GROUP_BFF_WEB) $(CHECK_GROUP_KGE_TOOLS) $(CHECK_GROUP_KGE_MODEL) $(CHECK_GROUP_KNOWLEDGE) $(CHECK_GROUP_INSIGHT)
 
 check-group-persona: $(CHECK_GROUP_PERSONA)
 check-group-contracts: $(CHECK_GROUP_CONTRACTS)
@@ -60,6 +61,7 @@ check-group-learning-a: $(CHECK_GROUP_LEARNING_A)
 check-group-learning-b: $(CHECK_GROUP_LEARNING_B)
 check-group-bff-web: $(CHECK_GROUP_BFF_WEB)
 check-group-kge-tools: $(CHECK_GROUP_KGE_TOOLS)
+check-group-kge-model: $(CHECK_GROUP_KGE_MODEL)
 check-group-knowledge: $(CHECK_GROUP_KNOWLEDGE)
 check-group-insight: $(CHECK_GROUP_INSIGHT)
 

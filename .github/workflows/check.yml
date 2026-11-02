@@ -17,15 +17,15 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # 全量检查（除数据库变异测试）单机已超过 1 小时，按 Makefile 的 check-group-* 分成 10 组并行；
-  # check-core 就是这 10 组的并集（Makefile 里定义），新检查必须放进某一组才进得了 check，不会被漏掉。
+  # 全量检查（除数据库变异测试）单机已超过 1 小时，按 Makefile 的 check-group-* 分成 11 组并行；
+  # check-core 就是这 11 组的并集（Makefile 里定义），新检查必须放进某一组才进得了 check，不会被漏掉。
   make-check:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
-        group: [persona, contracts, aya, adapters, learning-a, learning-b, bff-web, kge-tools, knowledge, insight]
+        group: [persona, contracts, aya, adapters, learning-a, learning-b, bff-web, kge-tools, kge-model, knowledge, insight]
     env:
       NEXT_TELEMETRY_DISABLED: "1"   # Next.js 默认会向境外发匿名遥测（ADR 09）
     steps:
