@@ -445,6 +445,9 @@ attack-surface-check:
 # 用花括号成组：原先 `! [ a ] && [ b ]` 里的 ! 只取反前一半，两个都没装时不跳过（T04 一并修）
 WEB_DEPS_OK = { [ -d apps/web/node_modules/next ] && [ -d services/bff/node_modules/pg ]; }
 WEB_MISSING = ! $(WEB_DEPS_OK)
+# 前端单测里的禁语扫描与禁用推断词表检查直接调用 python3（要 PyYAML）：把 make 指定的 PYTHON 所在目录放到 PATH 最前，
+# 让 python3 指向它（CI 是 .venv-contracts），不依赖系统 python3 恰好装了 PyYAML
+PY_ON_PATH = $(if $(findstring /,$(PYTHON)),PATH="$(abspath $(dir $(PYTHON))):$$PATH" ,)
 web-test:
 	@if $(WEB_MISSING); then \
 	  echo "web-test: 跳过（没有安装依赖；cd apps/web && npm ci，cd services/bff && npm ci）"; \
@@ -456,7 +459,7 @@ web-test:
 	  echo "web-test: 构建产物里还有开发 staff 身份桩"; exit 1; fi; echo "web-test: 构建产物里没有开发 staff 身份桩"
 	@$(call guard,$(WEB_MISSING))if grep -rlE 'x-dev-account-id|sb_dev_account|STARBUDDY_DEV_AUTH|/dev/login|/dev/session|/dev/star-glyphs|SYNTHETIC_ACCOUNTS' apps/web/.next --exclude-dir=cache >/dev/null 2>&1; then \
 	  echo "web-test: 生产构建产物里还有开发身份桩或开发专用页面（4-H H2）"; exit 1; fi; echo "web-test: 生产构建产物里没有开发身份桩与开发专用页面"
-	@$(call guard,$(WEB_MISSING))cd apps/web && node --no-warnings --test --test-reporter=dot tests/*.test.ts && echo "web-test: 单测与静态检查通过"
+	@$(call guard,$(WEB_MISSING))cd apps/web && $(PY_ON_PATH)node --no-warnings --test --test-reporter=dot tests/*.test.ts && echo "web-test: 单测与静态检查通过"
 	@$(call guard,$(WEB_MISSING))bash apps/web/scripts/e2e.sh --grep-invert @visual --reporter=dot; rc=$$?; \
 	  if [ $$rc -eq 0 ]; then echo "web-test: 端到端通过"; fi; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
