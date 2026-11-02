@@ -1,5 +1,5 @@
 # 未实现的目标明确打印“跳过”，不得伪装为通过。
-.PHONY: check-fast check check-core contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test current-affair-expire model-router-mutation diagnosis-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-visual kge-inventory kge-inventory-test kge-import kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test sie-dictionary-check kge-id-check knowledge-test knowledge-mutation kge-compile-eval-test eval-persona eval-grade persona-registry-check persona-guard-test persona-lock persona-record insight-test insight-mutation release-walkthrough kge-dedupe-test kge-dedupe-mutation kge-calibrate-test kge-calibrate-mutation cost-dashboard-test cost-dashboard-mutation kge-irt-test kge-irt-mutation
+.PHONY: check-fast check check-core check-group-persona check-group-contracts check-group-aya check-group-adapters check-group-learning-a check-group-learning-b check-group-bff-web check-group-kge-tools check-group-knowledge check-group-insight contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test current-affair-expire model-router-mutation diagnosis-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-visual kge-inventory kge-inventory-test kge-import kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test sie-dictionary-check kge-id-check knowledge-test knowledge-mutation kge-compile-eval-test eval-persona eval-grade persona-registry-check persona-guard-test persona-lock persona-record insight-test insight-mutation release-walkthrough kge-dedupe-test kge-dedupe-mutation kge-calibrate-test kge-calibrate-mutation cost-dashboard-test cost-dashboard-mutation kge-irt-test kge-irt-mutation
 
 # 可指向装了 packages/contracts/requirements-dev.txt 的解释器，例如 make check PYTHON=.venv/bin/python
 PYTHON ?= python3
@@ -37,9 +37,31 @@ make-skip-check:
 # 契约检查约 1 秒，改动后也跑一遍
 check-fast: contract-test taxonomy-check attack-surface-check sie-dictionary-check kge-id-check
 
-# check-core：除 db-mutation 以外的全部检查。CI 把 db-mutation 拆成分片并行跑（.github/workflows/check.yml），
-# 主任务只跑 check-core；本地 make check 仍然一次跑全部。
-check-core: contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check db-test adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation practice-mutation internal-v1-mutation adapter-client-mutation bff-test bff-mutation internal-test-tool-test conformance conformance-mutation pentest-env-test web-test kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test knowledge-test knowledge-mutation kge-compile-eval-test persona-registry-check persona-guard-test eval-persona insight-test insight-mutation voice-blind-eval-test release-walkthrough retest-mutation today-mutation scheduler-test scheduler-mutation gate1-test gate1-mutation review-console-mutation kge-chinese-import kge-chinese-mutation knowledge-material-mutation stage-test stage-mutation kge-dedupe-test kge-dedupe-mutation kge-calibrate-test kge-calibrate-mutation cost-dashboard-test cost-dashboard-mutation mock-exam-test mock-exam-mutation kge-irt-test kge-irt-mutation knowledge-cache-mutation knowledge-semantic-test knowledge-semantic-mutation loadtest-test deploy-check staging-mutation
+# check-core：除 db-mutation 以外的全部检查，按模块分成 10 组；CI 每组一个任务并行跑（.github/workflows/check.yml），
+# db-mutation 另按分片并行。check-core 就是这些组的并集：新检查必须放进某一组，否则进不了 check。
+# 本地 make check 仍然一次跑全部。
+CHECK_GROUP_PERSONA := eval-persona persona-registry-check persona-guard-test voice-blind-eval-test
+CHECK_GROUP_CONTRACTS := contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check conformance conformance-mutation db-test pentest-env-test
+CHECK_GROUP_AYA := adapter-aya-test adapter-aya-mutation
+CHECK_GROUP_ADAPTERS := adapter-zhixing-test adapter-wenli-test adapter-client-mutation zhixing-rubric-check daofa-grading-eval-test
+CHECK_GROUP_LEARNING_A := learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation practice-mutation
+CHECK_GROUP_LEARNING_B := internal-v1-mutation retest-mutation today-mutation review-console-mutation release-walkthrough loadtest-test cost-dashboard-test cost-dashboard-mutation mock-exam-test mock-exam-mutation deploy-check staging-mutation
+CHECK_GROUP_BFF_WEB := bff-test bff-mutation internal-test-tool-test web-test stage-test stage-mutation
+CHECK_GROUP_KGE_TOOLS := kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test kge-chinese-import kge-chinese-mutation kge-dedupe-test kge-dedupe-mutation kge-calibrate-test kge-calibrate-mutation kge-irt-test kge-irt-mutation
+CHECK_GROUP_KNOWLEDGE := knowledge-test knowledge-mutation kge-compile-eval-test knowledge-material-mutation knowledge-cache-mutation knowledge-semantic-test knowledge-semantic-mutation
+CHECK_GROUP_INSIGHT := insight-test insight-mutation scheduler-test scheduler-mutation gate1-test gate1-mutation
+check-core: $(CHECK_GROUP_PERSONA) $(CHECK_GROUP_CONTRACTS) $(CHECK_GROUP_AYA) $(CHECK_GROUP_ADAPTERS) $(CHECK_GROUP_LEARNING_A) $(CHECK_GROUP_LEARNING_B) $(CHECK_GROUP_BFF_WEB) $(CHECK_GROUP_KGE_TOOLS) $(CHECK_GROUP_KNOWLEDGE) $(CHECK_GROUP_INSIGHT)
+
+check-group-persona: $(CHECK_GROUP_PERSONA)
+check-group-contracts: $(CHECK_GROUP_CONTRACTS)
+check-group-aya: $(CHECK_GROUP_AYA)
+check-group-adapters: $(CHECK_GROUP_ADAPTERS)
+check-group-learning-a: $(CHECK_GROUP_LEARNING_A)
+check-group-learning-b: $(CHECK_GROUP_LEARNING_B)
+check-group-bff-web: $(CHECK_GROUP_BFF_WEB)
+check-group-kge-tools: $(CHECK_GROUP_KGE_TOOLS)
+check-group-knowledge: $(CHECK_GROUP_KNOWLEDGE)
+check-group-insight: $(CHECK_GROUP_INSIGHT)
 
 check: check-core db-mutation
 	@echo "check: lint 尚未配置，跳过；其余检查已通过"
@@ -485,7 +507,7 @@ kge-coverage-test:
 
 # KGE-02 打标评测脚本（kappa、Top-1）：只在合成夹具上证明计算正确；教研金标到位后另用 --enforce 验收
 kge-tagging-eval-test:
-	@cd evals/kge-tagging && PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -m unittest discover -s tests -q && echo "kge-tagging-eval-test: 通过"
+	@cd evals/kge-tagging && PYTHONDONTWRITEBYTECODE=1 $(if $(findstring /,$(PYTHON)),$(abspath $(PYTHON)),$(PYTHON)) -m unittest discover -s tests -q && echo "kge-tagging-eval-test: 通过"
 
 # 单测（tests/import.test.ts）随 kge-inventory-test 的 tests/*.test.ts 一起跑；这里只跑库上验证。
 # 道法部分（冲刺 4-K）作为前置目标一起跑（同一次 make 里不重复执行）
@@ -522,7 +544,7 @@ zhixing-rubric-check:
 # 道法采分点判分一致率（冲刺 4-K 设计要点 6）：逐点一致率、逐题总分一致率、失分归因混淆表在合成夹具上与手算一致（只用标准库）。
 # 教研金标到位后另用 --enforce 验收（evals/daofa-grading/README.md），不进 make check
 daofa-grading-eval-test:
-	@cd evals/daofa-grading && PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -m unittest discover -s tests -q && echo "daofa-grading-eval-test: 通过"
+	@cd evals/daofa-grading && PYTHONDONTWRITEBYTECODE=1 $(if $(findstring /,$(PYTHON)),$(abspath $(PYTHON)),$(PYTHON)) -m unittest discover -s tests -q && echo "daofa-grading-eval-test: 通过"
 
 # 对本机 legacy 只读副本生成真实报告，写到 specs/kge-00-asset-inventory/report/（不进 make check；只读 legacy，不连库）。
 # 并入库模式输出：make kge-inventory DB_OUTPUT="wenli=path/to/db-output-wenli.txt aya=..."

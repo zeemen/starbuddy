@@ -17,10 +17,15 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # 全量检查（除数据库变异测试）单机已超过 1 小时，按 Makefile 的 check-group-* 分成 10 组并行；
+  # check-core 就是这 10 组的并集（Makefile 里定义），新检查必须放进某一组才进得了 check，不会被漏掉。
   make-check:
     runs-on: ubuntu-24.04
-    # 全量检查（除数据库变异测试）已超过 30 分钟；数据库变异测试另由下面的 db-mutation 分片任务并行跑
-    timeout-minutes: 120
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [persona, contracts, aya, adapters, learning-a, learning-b, bff-web, kge-tools, knowledge, insight]
     env:
       NEXT_TELEMETRY_DISABLED: "1"   # Next.js 默认会向境外发匿名遥测（ADR 09）
     steps:
@@ -43,46 +48,23 @@ jobs:
           sudo apt-get install -y -q postgresql-16
           sudo systemctl stop postgresql || true
 
-      - name: 契约检查与一致性测试的依赖
-        run: |
-          python -m venv .venv-contracts
-          .venv-contracts/bin/pip install -q -r packages/contracts/requirements-dev.txt
+      # 全部依赖按仓库锁文件安装（Python pip --require-hashes、Node npm ci），与本地开发同一个脚本（W13 技术债 T06）；
+      # 各组共用，避免哪一组缺依赖被跳过（严格模式下跳过即失败）
+      - name: 开发依赖（scripts/bootstrap-deps.sh，按锁文件）
+        run: PY_BOOT=python bash scripts/bootstrap-deps.sh
 
-      # 第三方依赖只从带哈希的锁文件装；契约共享库是本地包，不在锁里，--no-deps 单独装（W13 技术债 T06）
-      - name: 学习服务依赖
-        working-directory: services/learning
-        run: |
-          python -m venv .venv
-          .venv/bin/pip install -q --require-hashes -r requirements-dev.lock
-          .venv/bin/pip install -q --no-deps -e ../../packages/contracts/python
-
-      - name: 阿鸦适配器依赖
-        working-directory: adapters/aya
-        run: npm ci --no-audit --no-fund
-
-      - name: KGE-00 盘点工具依赖（只有 typescript 与 @types/node）
-        working-directory: tools/kge-inventory
-        run: npm ci --no-audit --no-fund --ignore-scripts
-
-      - name: BFF 依赖
-        working-directory: services/bff
-        run: npm ci --no-audit --no-fund
-
-      - name: 统一壳前端依赖与 Playwright 浏览器（冲刺 3-H；浏览器只处理合成数据，spec 待人确认 #11）
+      - name: Playwright 浏览器（冲刺 3-H；浏览器只处理合成数据，spec 待人确认 #11）
+        if: matrix.group == 'bff-web'
         working-directory: apps/web
-        run: |
-          npm ci --no-audit --no-fund
-          npx --no-install playwright install --with-deps chromium
+        run: npx --no-install playwright install --with-deps chromium
 
-      # 人设回归每次都跑（不靠 paths 过滤）：Prompt、禁语表、人设规格有变更时报告标“人设变更”，缺录音或录音过期严格模式失败。
-      # 报告作为 Gate 0“最近一次运行报告”上传（spec 设计要点 6、待人确认 #11、#12）；不需要任何密钥。
-      # eval-persona 与 check 放在同一次 make 里：eval-persona 先跑（写报告），check 依赖它时同一次 make 不再重跑，
-      # 家族级回归只跑一遍（W13 技术债 T08，specs/tech-debt-batch1；原先单独一步再加 make check 里一遍，共两遍）
-      - name: 人设回归与报告（冲刺 3-F）+ make check-core（严格模式；db-mutation 在分片任务里）
-        run: make eval-persona check-core CONTRACT_STRICT=1 PYTHON=.venv-contracts/bin/python PGBIN=/usr/lib/postgresql/16/bin PERSONA_REPORT_DIR=${{ runner.temp }}/persona-report
+      # 人设回归每次都跑（不靠 paths 过滤），在 persona 组：Prompt、禁语表、人设规格有变更时报告标“人设变更”，
+      # 缺录音或录音过期严格模式失败。报告作为 Gate 0“最近一次运行报告”上传（spec 设计要点 6、待人确认 #11、#12）；不需要任何密钥。
+      - name: make check-group-${{ matrix.group }}（严格模式）
+        run: make check-group-${{ matrix.group }} CONTRACT_STRICT=1 PYTHON=.venv-contracts/bin/python PGBIN=/usr/lib/postgresql/16/bin PERSONA_REPORT_DIR=${{ runner.temp }}/persona-report
 
       - name: 上传人设回归报告（保留 90 天）
-        if: always()
+        if: always() && matrix.group == 'persona'
         uses: actions/upload-artifact@v4
         with:
           name: persona-report

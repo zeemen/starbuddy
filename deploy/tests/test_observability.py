@@ -17,7 +17,7 @@ import sys
 import pytest
 import yaml
 
-from conftest import DEPLOY, ROOT
+from conftest import DEPLOY, ROOT, make_check_targets
 
 OBS = DEPLOY / "observability"
 _spec = importlib.util.spec_from_file_location("check_observability", OBS / "check_observability.py")
@@ -107,8 +107,8 @@ def test_wired_into_deploy_check_and_make():
     assert "deploy/observability/check_observability.py deploy/observability --promtool" in sh
     make = (ROOT / "Makefile").read_text(encoding="utf-8")
     assert "obs-promtool:" in make and "--require-promtool" in make
-    check_line = next(ln for ln in make.splitlines() if ln.startswith("check: "))
-    assert "obs-promtool" not in check_line and "deploy-check" in check_line
+    targets = make_check_targets()
+    assert "obs-promtool" not in targets and "deploy-check" in targets
 
 
 def test_alert_thresholds_are_placeholders_and_no_contacts():

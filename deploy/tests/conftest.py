@@ -40,3 +40,28 @@ def compose_local():
 @pytest.fixture(scope="session")
 def k8s_docs():
     return [d for d in yaml.safe_load_all((DEPLOY / "k8s" / "staging.yaml").read_text(encoding="utf-8")) if d]
+
+
+def make_check_targets() -> set[str]:
+    """make check 实际包含的全部目标：check 的依赖里的 $(VAR) 与 check-core 都按 Makefile 展开（check-core 由 CHECK_GROUP_* 组成）。"""
+    import re
+
+    make = (ROOT / "Makefile").read_text(encoding="utf-8")
+    variables = dict(re.findall(r"^([A-Z0-9_]+) := (.*)$", make, re.M))
+
+    def deps(target: str) -> list[str]:
+        m = re.search(rf"^{re.escape(target)}:(.*)$", make, re.M)
+        return m.group(1).split() if m else []
+
+    out: set[str] = set()
+    todo = deps("check")
+    while todo:
+        t = todo.pop()
+        v = re.fullmatch(r"\$\(([A-Z0-9_]+)\)", t)
+        if v:
+            todo.extend(variables[v.group(1)].split())
+        elif t == "check-core":
+            todo.extend(deps("check-core"))
+        else:
+            out.add(t)
+    return out
