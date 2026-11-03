@@ -1,0 +1,7 @@
+# 合成准入记录（冲刺 5-K M2 夹具，多项未达标场景）：留出集 2 / 100 = 2%（严格小于才达到）、影子评审 1 人、同意流程未上线、C 级约束测试未通过；安全测试未填。
+format: kge-m2-attestation/1
+subject: aya
+shadow_review: {reviewers: 1, weeks_covered: 5, weeks_required: 5}
+holdout: {untaggable: 2, total: 100, executor_role: 教研负责人, signed: true}
+c_level: {status: failed, evidence: [evidence/c-level-note.txt]}
+guardian: {deletion_e2e: passed, consent_flow: not_live, evidence: [evidence/sie03-deletion-e2e.txt]}

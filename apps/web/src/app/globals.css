@@ -34,6 +34,76 @@ a { color: inherit; }
   width: 100%;
 }
 .sky-field > .star { justify-self: center; align-self: center; }
+/* 星空接近正方形：列数 = ceil(√星数)，宽度 = 列数 × 24px。CSP 不允许内联样式（H2），按 data-cols 预先写好
+   （src/star/layout.ts 的 skyColumnsCss 生成，tests/unit.test.ts 核对） */
+/* sky-cols:start */
+.sky-field[data-cols="1"] { max-width: 24px; }
+.sky-field[data-cols="2"] { max-width: 48px; }
+.sky-field[data-cols="3"] { max-width: 72px; }
+.sky-field[data-cols="4"] { max-width: 96px; }
+.sky-field[data-cols="5"] { max-width: 120px; }
+.sky-field[data-cols="6"] { max-width: 144px; }
+.sky-field[data-cols="7"] { max-width: 168px; }
+.sky-field[data-cols="8"] { max-width: 192px; }
+.sky-field[data-cols="9"] { max-width: 216px; }
+.sky-field[data-cols="10"] { max-width: 240px; }
+.sky-field[data-cols="11"] { max-width: 264px; }
+.sky-field[data-cols="12"] { max-width: 288px; }
+.sky-field[data-cols="13"] { max-width: 312px; }
+.sky-field[data-cols="14"] { max-width: 336px; }
+.sky-field[data-cols="15"] { max-width: 360px; }
+.sky-field[data-cols="16"] { max-width: 384px; }
+.sky-field[data-cols="17"] { max-width: 408px; }
+.sky-field[data-cols="18"] { max-width: 432px; }
+.sky-field[data-cols="19"] { max-width: 456px; }
+.sky-field[data-cols="20"] { max-width: 480px; }
+.sky-field[data-cols="21"] { max-width: 504px; }
+.sky-field[data-cols="22"] { max-width: 528px; }
+.sky-field[data-cols="23"] { max-width: 552px; }
+.sky-field[data-cols="24"] { max-width: 576px; }
+.sky-field[data-cols="25"] { max-width: 600px; }
+.sky-field[data-cols="26"] { max-width: 624px; }
+.sky-field[data-cols="27"] { max-width: 648px; }
+.sky-field[data-cols="28"] { max-width: 672px; }
+.sky-field[data-cols="29"] { max-width: 696px; }
+.sky-field[data-cols="30"] { max-width: 720px; }
+.sky-field[data-cols="31"] { max-width: 744px; }
+.sky-field[data-cols="32"] { max-width: 768px; }
+.sky-field[data-cols="33"] { max-width: 792px; }
+.sky-field[data-cols="34"] { max-width: 816px; }
+.sky-field[data-cols="35"] { max-width: 840px; }
+.sky-field[data-cols="36"] { max-width: 864px; }
+.sky-field[data-cols="37"] { max-width: 888px; }
+.sky-field[data-cols="38"] { max-width: 912px; }
+.sky-field[data-cols="39"] { max-width: 936px; }
+.sky-field[data-cols="40"] { max-width: 960px; }
+.sky-field[data-cols="41"] { max-width: 984px; }
+.sky-field[data-cols="42"] { max-width: 1008px; }
+.sky-field[data-cols="43"] { max-width: 1032px; }
+.sky-field[data-cols="44"] { max-width: 1056px; }
+.sky-field[data-cols="45"] { max-width: 1080px; }
+.sky-field[data-cols="46"] { max-width: 1104px; }
+.sky-field[data-cols="47"] { max-width: 1128px; }
+.sky-field[data-cols="48"] { max-width: 1152px; }
+.sky-field[data-cols="49"] { max-width: 1176px; }
+.sky-field[data-cols="50"] { max-width: 1200px; }
+.sky-field[data-cols="51"] { max-width: 1224px; }
+.sky-field[data-cols="52"] { max-width: 1248px; }
+.sky-field[data-cols="53"] { max-width: 1272px; }
+.sky-field[data-cols="54"] { max-width: 1296px; }
+.sky-field[data-cols="55"] { max-width: 1320px; }
+.sky-field[data-cols="56"] { max-width: 1344px; }
+.sky-field[data-cols="57"] { max-width: 1368px; }
+.sky-field[data-cols="58"] { max-width: 1392px; }
+.sky-field[data-cols="59"] { max-width: 1416px; }
+.sky-field[data-cols="60"] { max-width: 1440px; }
+.sky-field[data-cols="61"] { max-width: 1464px; }
+.sky-field[data-cols="62"] { max-width: 1488px; }
+.sky-field[data-cols="63"] { max-width: 1512px; }
+.sky-field[data-cols="64"] { max-width: 1536px; }
+/* sky-cols:end */
+/* 半亮裁剪区的 <svg> 不占位置（原来是内联样式） */
+.star-defs { position: absolute; }
 
 .sky-list { margin-top: 12px; }
 .sky-list summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; }
@@ -45,6 +115,15 @@ a { color: inherit; }
 .glyph-table { border-collapse: collapse; }
 .glyph-table th, .glyph-table td { padding: 12px 16px; text-align: center; border-bottom: 1px solid var(--rule); }
 .glyph-panel { padding: 16px; border-radius: 8px; margin-bottom: 16px; background: var(--bg); color: var(--fg); }
+
+/* 舞台样张（/dev/stage，packages/stage 的白板只用 currentColor，颜色由这里给） */
+.stage-frame { color: var(--fg); border: 1px solid var(--rule); border-radius: 8px; margin: 8px 0; }
+.stage-frame-mobile { max-width: 400px; }
+.stage-svg { display: block; width: 100%; height: auto; }
+.stage-layouts { display: flex; gap: 16px; border: none; padding: 0; margin: 0; }
+.stage-layouts label { display: flex; align-items: center; gap: 4px; min-height: 44px; }
+.stage-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.stage-controls button, .stage-controls select { font: inherit; min-height: 44px; min-width: 88px; }
 
 /* 点亮：描边外发光 0 → 6 线宽 → 0，1.2 秒，一次，不循环（视觉规范第五章） */
 @keyframes star-light-up {
@@ -61,3 +140,146 @@ a { color: inherit; }
 
 .login-list { list-style: none; padding: 0; }
 .login-list a { display: flex; align-items: center; min-height: 44px; }
+
+/* 审核台（staff 专用）：表格、风险标签（颜色之外一定有文字）、表单与结果提示 */
+.review-header { max-width: 960px; margin: 0 auto; padding: 8px 16px; border-bottom: 1px solid var(--rule); display: flex; gap: 16px; align-items: center; justify-content: space-between; }
+.review-header nav a, .review-tabs a { display: inline-flex; align-items: center; min-height: 44px; margin-right: 12px; }
+.review-tabs a[aria-current="page"] { font-weight: 700; text-decoration: none; }
+.table-scroll { overflow-x: auto; }
+.review-table { border-collapse: collapse; width: 100%; font-size: 0.875rem; margin: 8px 0; }
+.review-table th, .review-table td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+.review-table caption { text-align: left; color: var(--muted); padding: 4px 0; }
+.risk { display: inline-block; padding: 0 6px; border: 1px solid currentColor; border-radius: 4px; }
+.risk-high { font-weight: 700; }
+.review-form { margin: 12px 0; }
+.review-form textarea { width: 100%; font: inherit; }
+.review-form button, .review-form select, .review-form input { font: inherit; min-height: 44px; }
+.review-result { min-height: 1.5em; }
+.review-result.error { font-weight: 700; }
+.review-list { list-style: none; padding: 0; }
+.payload { font-size: 0.8rem; white-space: pre-wrap; }
+.review-work { font-size: 0.9rem; white-space: pre-wrap; }
+.node-editor summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; }
+.inline-form { display: inline; }
+
+/* “能做对吗”探针（冲刺 2-L）：按钮至少 44px 高，便于触屏；不用颜色区分选项（不暗示对错） */
+.probe-question { font-size: 1.125rem; }
+.probe-options { display: flex; flex-wrap: wrap; gap: 8px; }
+.probe-options button { font: inherit; min-height: 44px; min-width: 88px; }
+
+/* 数学自适应诊断组件（SIE-02a） */
+.diagnosis { max-width: 720px; }
+.diagnosis-timer { font-variant-numeric: tabular-nums; }
+.diagnosis-field { display: flex; flex-direction: column; gap: 4px; }
+.diagnosis-field textarea, .diagnosis-field input { font: inherit; padding: 8px; min-height: 44px; }
+.diagnosis-options { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--rule); padding: 8px 12px; }
+/* PLT-12 受限富文本题面（src/shell/RichItem.tsx）：公式用纯文本排版，图片只显示说明 */
+.item-rich p { margin: 0 0 8px; }
+.item-math { font-family: "Times New Roman", serif; font-style: italic; white-space: nowrap; }
+.item-figure { border: 1px dashed var(--rule); padding: 0 4px; }
+.diagnosis-options label { min-height: 44px; display: flex; align-items: center; gap: 8px; }
+.diagnosis-actions button { font: inherit; min-height: 44px; min-width: 88px; }
+
+/* 统一壳登录与学生模式入口（4-H H1） */
+.shell-form { margin: 12px 0; }
+.shell-form label { display: block; margin-bottom: 4px; }
+.shell-form input { font: inherit; min-height: 44px; display: block; margin-bottom: 4px; }
+.shell-form button { font: inherit; min-height: 44px; min-width: 44px; }
+.shell-result { min-height: 1.5em; }
+.shell-list { list-style: none; padding: 0; }
+
+/* 统一壳（4-H H4）：顶栏、状态条、休息提醒条、今日任务、点点入口占位。点点入口只是文字按钮，不配任何角色形象 */
+.shell-top { max-width: 960px; margin: 0 auto; padding: 8px 16px; border-bottom: 1px solid var(--rule); display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; }
+.shell-nav a { display: inline-flex; align-items: center; min-height: 44px; margin-right: 16px; }
+.shell-exit { margin: 0; }
+.shell-exit .shell-result:empty { display: none; }
+.status-bar, .rest-bar { max-width: 960px; margin: 8px auto 0; padding: 0 16px; }
+.status-bar { list-style: none; display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--muted); }
+.rest-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; border: 1px solid var(--rule); border-radius: 4px; padding: 8px 16px; }
+.inline-form { display: inline-flex; align-items: center; gap: 8px; margin: 0; }
+.task-list { padding-left: 1.25em; }
+.task { margin: 8px 0; }
+.task-kind { font-weight: 700; }
+.task-reason { margin: 4px 0 0; }
+.diandian { position: fixed; right: 16px; bottom: 16px; background: var(--bg); border: 1px solid var(--rule); border-radius: 8px; padding: 4px 12px; max-width: 240px; }
+.diandian summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.child-row { margin: 8px 0; }
+.shell-form select { font: inherit; min-height: 44px; display: block; margin-bottom: 4px; }
+
+/* 信任界面（冲刺 5-H）：入口行、“为什么”的证据表、考试与对账卡、家长数据权利。触控目标不小于 44px */
+.trust-nav { max-width: 960px; margin: 8px auto 0; padding: 0 16px; display: flex; flex-wrap: wrap; gap: 0 16px; }
+.trust-nav a, .trust-link { display: inline-flex; align-items: center; min-height: 44px; }
+.trust-table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+.trust-table th, .trust-table td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+.shell-form textarea { font: inherit; display: block; width: 100%; max-width: 480px; margin-bottom: 4px; }
+.checkbox-row { display: flex; align-items: center; gap: 8px; min-height: 44px; }
+.checkbox-row input { width: 24px; height: 24px; min-height: 0; margin: 0; }
+.reconcile-card { border: 1px solid var(--rule); border-radius: 4px; padding: 8px 16px; }
+.erasure-item { border-bottom: 1px solid var(--rule); padding: 8px 0; }
+
+/* H5 星图 v1（开关 starmap_v1，默认关；只用 v1 自己的类名，v0 的 .sky / .sky-field 不受影响）：
+   左边是各科星空（领域为星座、主题为子群），右边是能力视图侧栏占位；窄屏时侧栏排到下面。16px 的星放在 24px 的格子里，按容器宽度折行 */
+.starmap-v1 { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+@media (min-width: 768px) { .starmap-v1 { grid-template-columns: minmax(0, 1fr) 200px; } }
+.starmap-v1-skies { min-width: 0; }
+.sky-v1 h3 { font-size: 1.0625rem; margin: 16px 0 4px; }
+.sky-v1 h4 { font-size: 0.9375rem; font-weight: 400; margin: 8px 0 2px; color: var(--muted); }
+.sky-statement { margin: 4px 0; }
+.constellation { border-left: 1px solid var(--rule); padding-left: 12px; margin: 8px 0; }
+details.constellation > summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; }
+details.constellation > summary > h3 { margin: 0; display: inline; }
+/* 收起 / 展开的标记（display: flex 的 summary 没有默认三角）；替代文字为空，读屏不读符号，展开状态由 details 自己报告 */
+details.constellation > summary::before { content: "▸" / ""; margin-right: 6px; color: var(--muted); }
+details.constellation[open] > summary::before { content: "▾" / ""; }
+.star-count { font-size: 0.875rem; font-weight: 400; color: var(--muted); }
+.topic-field { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; }
+.star-slot { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; }
+.next-checks { list-style: none; margin: 2px 0 0; padding: 0; font-size: 0.875rem; color: var(--muted); }
+.skill-view { border: 1px solid var(--rule); border-radius: 4px; padding: 8px 12px; align-self: start; }
+.skill-view h2 { font-size: 1rem; margin: 0 0 4px; }
+.skill-view p { margin: 0; }
+
+/* 错题再练（specs/practice-loop-stage1 PR 4，开关 practice）：列表沿用 .trust-table；入口与按钮触控目标不小于 44px；不用颜色区分对错 */
+.practice-table a, .practice-item a, [data-testid="practice-entry"], [data-testid="practice-back"] { display: inline-flex; align-items: center; min-height: 44px; }
+.practice-item { max-width: 720px; }
+
+/* 首份报告开发演示页（SIE-02b 第二步 PR 2，开关 report）：顶部提示语框、“初步判断”标签、待验证虚线；类名只在演示页使用 */
+.report-notice { border: 1px solid var(--rule); border-radius: 4px; padding: 8px 16px; }
+.report-sentences { padding-left: 20px; }
+.report-sentences li { margin: 4px 0; }
+.report-label { font-size: 0.875rem; border: 1px solid var(--rule); border-radius: 4px; padding: 0 4px; }
+.report-sentences li.claim-dashed { list-style: none; margin-left: -20px; border: 1px dashed var(--fg); border-radius: 4px; padding: 4px 8px; }
+
+/* LT-07 移动端（specs/launch-lt07-mobile-pwa 范围第 1 条；e2e/mobile.spec.ts 在 360 / 390 / 412 宽下核对）。只改布局与样式，不改文字。
+   安全区：viewport-fit=cover（src/app/layout.tsx）下，左右与底部留白取 16px 与刘海 / 底部横条安全区的较大者；桌面上 env() 为 0，取值不变。 */
+main { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+.shell-top, .review-header { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+.status-bar, .trust-nav { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+.diandian { right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); }
+.install-hint { margin: 16px 0; }
+.install-hint summary { cursor: pointer; min-height: 44px; padding: 10px 0; }
+
+/* 窄屏（手机竖屏）：长串（含 {{TODO_COPY}} 占位、编号）任意处可折行，表格与弹性布局能收窄到视口内；表单控件不超过容器；
+   点点入口改为排在页面末尾（不再固定在右下角压住内容，软键盘弹出时也不挡输入与提交）；聚焦的输入框滚动时上下留出余量。 */
+@media (max-width: 767px) {
+  body { overflow-wrap: anywhere; }
+  input, select, textarea { max-width: 100%; }
+  input, select, textarea, button { scroll-margin-block: 96px; }
+  .inline-form { flex-wrap: wrap; }
+  .shell-form textarea { max-width: none; }
+  .trust-table th, .trust-table td { padding: 4px; }
+  .diandian { position: static; margin: 16px max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); max-width: none; }
+  .rest-bar { margin-left: max(16px, env(safe-area-inset-left)); margin-right: max(16px, env(safe-area-inset-right)); }
+}
+
+/* 触屏与窄屏：触控目标不小于 44×44（WCAG 2.5.5）。顶栏、点点入口的短文字链接与按钮补足宽度；单独成行的链接（段落或列表项里的唯一元素、
+   孩子行的入口）与所有按钮、下拉框补足高度。句中的行内链接不受影响。 */
+@media (max-width: 767px), (pointer: coarse) {
+  .shell-nav a, .review-header nav a, .trust-nav a { min-width: 44px; justify-content: center; }
+  .diandian summary { min-width: 44px; justify-content: center; }
+  main p > a:only-child, main li > a, main section > a, .child-row a { display: inline-flex; align-items: center; min-height: 44px; min-width: 44px; }
+  main button, main select, .shell-top button { font: inherit; min-height: 44px; min-width: 44px; }
+  main input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]) { font: inherit; min-height: 44px; }
+  main textarea { font: inherit; }
+}

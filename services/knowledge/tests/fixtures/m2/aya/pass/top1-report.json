@@ -1,0 +1,26 @@
+{
+  "candidate_source": "打标报告里的 candidates",
+  "extra": 0,
+  "gold_items": 20,
+  "gold_unplaceable": 0,
+  "map_version": "0.9.0",
+  "missing": 0,
+  "passed": true,
+  "scored": 20,
+  "subject": "aya",
+  "thresholds": {
+    "top1": {
+      "passed": true,
+      "rule": ">= 0.9",
+      "value": 0.95
+    },
+    "unplaceable_rate": {
+      "passed": true,
+      "rule": "< 0.02",
+      "value": 0.0
+    }
+  },
+  "top1": 0.95,
+  "top3_recall": 1.0,
+  "unplaceable_rate": 0.0
+}

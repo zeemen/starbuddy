@@ -1,0 +1,9 @@
+{
+ "format": "starbuddy-mock-exam-subjects/1",
+ "pending_human_confirmation": true,
+ "note": "待人确认：平台学科码（产品命名空间）→ 考情库学科码（policy.subject_code，迁移 0013）与学科目录码（platform.subject_catalog.code，迁移 0015）。两边对道法的写法不同：0013 用 morality_law，subject_catalog 用 politics（product = zhixing）。学科目录建成统一主键后改为外键，不再在这里手写。",
+ "subjects": {
+  "aya": {"policy_subject": "math", "catalog_code": "math"},
+  "zhixing": {"policy_subject": "morality_law", "catalog_code": "politics"}
+ }
+}

@@ -1,0 +1,323 @@
+{
+ "config": {
+  "config_version": "signed-1.0.0",
+  "fingerprint": "293adf43a779554c",
+  "signed_at": "2026-10-14",
+  "signed_by": "项目负责人（代表 SIE 负责人、教研、产品三方；2026-10-14 在开发会话中确认）",
+  "signoff": "已签字"
+ },
+ "generator": "gate1-evidence@0.2.0",
+ "inputs": {
+  "claims_policy": {
+   "config_version": "syn-0.1.0",
+   "fingerprint": "ba3f2e6989c4527b",
+   "signed": false,
+   "synthetic": true
+  },
+  "metrics_algorithm": "algo:sie-middle-metrics@0.1.0",
+  "predict_algorithm": "algo:sie-predict@0.1.0",
+  "reconcile_algorithm": "algo:sie-reconcile@0.1.0",
+  "sie03_policy": {
+   "config_version": "syn-0.1.0",
+   "fingerprint": "f9a8eb9eeed5fa5a",
+   "signed": false,
+   "synthetic": true
+  }
+ },
+ "items": [
+  {
+   "condition": "各科批改与教师一致率达标，发布阻断指标无超阈值",
+   "gate_judgement": "无法自动判断（需人）",
+   "id": "G1-1",
+   "reason": "本管线不计算，只引用既有评测或文档位置",
+   "references": [
+    "docs/plan/完整方案-v1.1.html:643（可信度发布阻断六项：批改与教师一致率、验证器拦截率、不确定度标注率、代写拦截率、引用幻觉率、人设禁语触发率）",
+    "evals/daofa-grading（道法采分点一致率评测，make daofa-grading-eval-test）",
+    "Makefile 的 eval-grade（各科判分评测入口，目前打印“evals 尚未建立，跳过”）",
+    "make eval-persona（人设回归，禁语触发）",
+    "教师一致率需要真实教师标注，本管线不生成"
+   ]
+  },
+  {
+   "condition": "试点用户 8 周延迟复测改善，且续用",
+   "gate_judgement": "无法自动判断（需人）",
+   "id": "G1-2",
+   "reason": "合成数据，不是试点结论；方法与阈值已签字（2026-10-14，tools/gate1-evidence/config.unsigned.json），但合成队列上的报表结果即使达到签字阈值也不构成 Gate 1 判定，Gate 1 判定由人基于真实试点数据作出",
+   "report": {
+    "continuation": {
+     "censored": 0,
+     "continued": 32,
+     "enrolled": 40,
+     "evaluable": 40,
+     "min_enrolled_students": 20,
+     "min_rate": 0.6,
+     "never_used_evaluable": 2,
+     "rate": 0.8,
+     "result": "meets_unsigned_threshold"
+    },
+    "improvement": {
+     "first_accuracy": 0.4941,
+     "mean_delta": 0.0918,
+     "min_items_per_round": 8,
+     "min_paired_students": 20,
+     "paired_students": 32,
+     "result": "meets_unsigned_threshold",
+     "share_improved": 0.625,
+     "week8_accuracy": 0.5859
+    },
+    "result": "meets_unsigned_threshold"
+   },
+   "result": "meets_unsigned_threshold"
+  },
+  {
+   "condition": "至少两轮学校考试对账，预测区间覆盖率接近名义值（80% 区间落在 70%–90%），误差较首轮下降",
+   "gate_judgement": "无法自动判断（需人）",
+   "id": "G1-3",
+   "reason": "合成数据，不是试点结论；方法与阈值已签字（2026-10-14，tools/gate1-evidence/config.unsigned.json），但合成队列上的报表结果即使达到签字阈值也不构成 Gate 1 判定，Gate 1 判定由人基于真实试点数据作出",
+   "report": {
+    "comparisons": [
+     {
+      "coverage_change": -0.0041,
+      "mae_change": 0.0095,
+      "mae_relative_change": 0.1178,
+      "round": "r2",
+      "vs": "r1"
+     },
+     {
+      "coverage_change": -0.1916,
+      "mae_change": 0.0288,
+      "mae_relative_change": 0.3552,
+      "round": "r3",
+      "vs": "r1"
+     }
+    ],
+    "coverage_range": [
+     0.7,
+     0.9
+    ],
+    "mae_decreased_vs_first": false,
+    "min_records_per_round": 30,
+    "min_rounds": 2,
+    "min_students_per_round": 20,
+    "nominal": 0.8,
+    "result": "below_unsigned_threshold",
+    "rounds": [
+     {
+      "above": 24,
+      "below": 3,
+      "bias": 0.0578,
+      "coverage": 0.6447,
+      "coverage_within": false,
+      "exam_type": "monthly",
+      "inside": 49,
+      "mae": 0.081,
+      "n": 76,
+      "result": "below_unsigned_threshold",
+      "round": "r1",
+      "students": 38
+     },
+     {
+      "above": 21,
+      "below": 2,
+      "bias": 0.0601,
+      "coverage": 0.6406,
+      "coverage_within": false,
+      "exam_type": "mock1",
+      "inside": 41,
+      "mae": 0.0906,
+      "n": 64,
+      "result": "below_unsigned_threshold",
+      "round": "r2",
+      "students": 32
+     },
+     {
+      "above": 34,
+      "below": 1,
+      "bias": 0.0979,
+      "coverage": 0.4531,
+      "coverage_within": false,
+      "exam_type": "mock2",
+      "inside": 29,
+      "mae": 0.1098,
+      "n": 64,
+      "result": "below_unsigned_threshold",
+      "round": "r3",
+      "students": 32
+     }
+    ],
+    "sufficient_rounds": 3
+   },
+   "result": "below_unsigned_threshold"
+  },
+  {
+   "condition": "至少两个中圈指标通过效度检验并上线（“上线”不在本管线范围：可见范围与 validated 状态由人决定）",
+   "gate_judgement": "无法自动判断（需人）",
+   "id": "G1-4",
+   "reason": "合成数据，不是试点结论；方法与阈值已签字（2026-10-14，tools/gate1-evidence/config.unsigned.json），但合成队列上的报表结果即使达到签字阈值也不构成 Gate 1 判定，Gate 1 判定由人基于真实试点数据作出",
+   "report": {
+    "aggregation": "per_student_mean",
+    "measure_week": 6,
+    "method": "pearson",
+    "metrics": [
+     {
+      "counts_toward_gate": true,
+      "expected_direction": "positive",
+      "metric": "independent_solve_rate",
+      "observed_direction": "positive",
+      "outcome": "week8_retest_accuracy",
+      "r": 0.4653,
+      "result": "meets_unsigned_threshold",
+      "students": 30
+     },
+     {
+      "counts_toward_gate": true,
+      "expected_direction": "negative",
+      "metric": "hint_dependency",
+      "observed_direction": "positive",
+      "outcome": "week8_retest_accuracy",
+      "r": 0.2395,
+      "result": "below_unsigned_threshold",
+      "students": 29
+     },
+     {
+      "counts_toward_gate": true,
+      "expected_direction": "positive",
+      "metric": "transfer_gap",
+      "observed_direction": "negative",
+      "outcome": "last_exam_fraction",
+      "r": -0.1757,
+      "result": "below_unsigned_threshold",
+      "students": 29
+     },
+     {
+      "counts_toward_gate": true,
+      "expected_direction": "positive",
+      "metric": "retention_rate",
+      "observed_direction": "positive",
+      "outcome": "last_exam_fraction",
+      "r": 0.3754,
+      "result": "meets_unsigned_threshold",
+      "students": 32
+     },
+     {
+      "counts_toward_gate": false,
+      "expected_direction": "negative",
+      "metric": "self_assessment_calibration",
+      "observed_direction": "negative",
+      "outcome": "last_exam_fraction",
+      "r": -0.2475,
+      "result": "below_unsigned_threshold",
+      "students": 29
+     },
+     {
+      "counts_toward_gate": false,
+      "expected_direction": "positive",
+      "metric": "plan_completion_rate",
+      "observed_direction": "negative",
+      "outcome": "week8_retest_accuracy",
+      "r": -0.0325,
+      "result": "below_unsigned_threshold",
+      "students": 32
+     },
+     {
+      "counts_toward_gate": false,
+      "expected_direction": "negative",
+      "metric": "reading_question_error_share",
+      "observed_direction": "negative",
+      "outcome": "last_exam_fraction",
+      "r": -0.3369,
+      "result": "meets_unsigned_threshold",
+      "students": 29
+     },
+     {
+      "counts_toward_gate": false,
+      "expected_direction": "positive",
+      "metric": "persistence",
+      "observed_direction": "positive",
+      "outcome": "week8_retest_accuracy",
+      "r": 0.0596,
+      "result": "below_unsigned_threshold",
+      "students": 32
+     }
+    ],
+    "min_abs_r": 0.3,
+    "min_metrics_passing": 2,
+    "min_students": 20,
+    "observational_meeting": 1,
+    "passing": 2,
+    "result": "meets_unsigned_threshold"
+   },
+   "result": "meets_unsigned_threshold"
+  },
+  {
+   "condition": "四科通过分科验收（完整方案 5.9），含知识切片与画像两项",
+   "gate_judgement": "无法自动判断（需人）",
+   "id": "G1-5",
+   "reason": "本管线不计算，只引用既有评测或文档位置",
+   "references": [
+    "docs/plan/完整方案-v1.1.html:498（5.9 分科验收）",
+    "docs/gates/gate-0-evidence.md（H4 知识切片、H5 画像底线的既有判定）"
+   ]
+  },
+  {
+   "condition": "合规路径明确",
+   "gate_judgement": "无法自动判断（需人）",
+   "id": "G1-6",
+   "reason": "本管线不计算，只引用既有评测或文档位置",
+   "references": [
+    "docs/plan/完整方案-v1.1.html:623（未成年人、安全与上线前决策）",
+    "docs/compliance/vendors.md",
+    "docs/gates/human-checklist.md"
+   ]
+  },
+  {
+   "condition": "画像误差的群体公平性检查（分组误差差异；只用合成的非敏感分组键）",
+   "gate_judgement": "无法自动判断（需人）",
+   "id": "G1-附加",
+   "reason": "合成数据，不是试点结论；方法与阈值已签字（2026-10-14，tools/gate1-evidence/config.unsigned.json），但合成队列上的报表结果即使达到签字阈值也不构成 Gate 1 判定，Gate 1 判定由人基于真实试点数据作出",
+   "report": {
+    "keys": [
+     {
+      "bias_gap": 0.0011,
+      "group_key": "wave",
+      "groups": {
+       "a": 120,
+       "b": 84
+      },
+      "mae_gap": 0.0136,
+      "max_bias_gap": 0.05,
+      "max_mae_gap": 0.05,
+      "min_records_per_group": 10,
+      "min_students_per_group": 10,
+      "result": "meets_unsigned_threshold",
+      "students": {
+       "a": 20,
+       "b": 18
+      }
+     },
+     {
+      "bias_gap": 0.0072,
+      "group_key": "grade",
+      "groups": {
+       "8": 78,
+       "9": 126
+      },
+      "mae_gap": 0.0041,
+      "max_bias_gap": 0.05,
+      "max_mae_gap": 0.05,
+      "min_records_per_group": 10,
+      "min_students_per_group": 10,
+      "result": "meets_unsigned_threshold",
+      "students": {
+       "8": 13,
+       "9": 25
+      }
+     }
+    ],
+    "result": "meets_unsigned_threshold"
+   },
+   "result": "meets_unsigned_threshold"
+  }
+ ],
+ "notice": "合成，不是试点结论"
+}

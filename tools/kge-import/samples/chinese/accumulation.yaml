@@ -1,0 +1,117 @@
+# 合成样例（合成、非教材内容）：语文积累与运用领域的素材网。KGE-07 第一步（specs/kge07-chinese-slice）在一次性测试库证明导入流程用。
+# 篇目、词条、名著要素、在地文化素材的名称、释义要点、例句、册、课、页码全部由工程起草，不对应任何真实篇目、实词虚词或教材注释；
+# 素材节点不带认知层次、不进前置依赖图，只用关联（related）与易混（confusable）边。不含学生数据。
+format: kge-chinese-domain/1
+synthetic: true
+notice: 合成、非教材内容：素材名称、释义要点、例句与页码均为工程起草的占位
+subject: wenli
+domain:
+  id: CHN.SYN_ACC
+  name: （合成）积累与运用领域
+topics:
+  - id: CHN.SYN_ACC.SYN_PASSAGE
+    name: （合成）必背篇目
+    nodes:
+      - id: CHN.SYN_ACC.SYN_PASSAGE.PASSAGE_A
+        kind: material
+        name: （合成）篇目甲
+        includes:
+          - （合成）释义要点：篇目甲的大意占位
+        examples:
+          - （合成）例句占位：篇目甲的默写题位
+        projections:
+          - edition: syn-tb-2024
+            edition_year: 2024
+            volume: （合成）册甲
+            chapter: （合成）第3课
+            page_from: 12
+            page_to: 13
+      - id: CHN.SYN_ACC.SYN_PASSAGE.PASSAGE_B
+        kind: material
+        name: （合成）篇目乙
+        includes:
+          - （合成）释义要点：篇目乙的大意占位
+        examples:
+          - （合成）例句占位：篇目乙的默写题位
+        projections:
+          - edition: syn-tb-2024
+            edition_year: 2024
+            volume: （合成）册乙
+            chapter: （合成）第7课
+            page_from: 40
+            page_to: 41
+  - id: CHN.SYN_ACC.SYN_WORD
+    name: （合成）文言词条
+    nodes:
+      - id: CHN.SYN_ACC.SYN_WORD.WORD_A
+        kind: material
+        name: （合成）词条甲
+        includes:
+          - （合成）释义要点：词条甲的义项占位
+        examples:
+          - （合成）例句占位：含词条甲的合成句
+        projections:
+          - edition: syn-tb-2024
+            edition_year: 2024
+            volume: （合成）册甲
+            chapter: （合成）第3课
+            page_from: 12
+            page_to: 12
+      - id: CHN.SYN_ACC.SYN_WORD.WORD_B
+        kind: material
+        name: （合成）词条乙
+        includes:
+          - （合成）释义要点：词条乙的义项占位
+        examples:
+          - （合成）例句占位：含词条乙的合成句
+        projections:
+          - edition: syn-tb-2024
+            edition_year: 2024
+            volume: （合成）册乙
+            chapter: （合成）第7课
+            page_from: 40
+            page_to: 40
+      - id: CHN.SYN_ACC.SYN_WORD.FUNC_A
+        kind: material
+        name: （合成）虚词甲
+        includes:
+          - （合成）释义要点：虚词甲的用法占位
+        projections:
+          - edition: syn-tb-2024
+            edition_year: 2024
+            volume: （合成）册乙
+            chapter: （合成）第8课
+            page_from: 45
+            page_to: 45
+  - id: CHN.SYN_ACC.SYN_CLASSIC
+    name: （合成）名著要素
+    nodes:
+      - id: CHN.SYN_ACC.SYN_CLASSIC.BOOK_A_PLOT
+        kind: material
+        name: （合成）名著甲的情节人物要素
+        includes:
+          - （合成）释义要点：名著甲的人物关系占位
+  - id: CHN.SYN_ACC.SYN_LOCAL
+    name: （合成）在地文化拓展素材
+    nodes:
+      - id: CHN.SYN_ACC.SYN_LOCAL.LOCAL_A
+        kind: material
+        name: （合成）在地文化素材甲
+        scope: exam_ext
+        includes:
+          - （合成）释义要点：情境命题用的拓展素材占位
+relations:
+  # 易混项（素材卡“易混项”）：同类素材之间，无方向
+  - from: CHN.SYN_ACC.SYN_PASSAGE.PASSAGE_A
+    to: CHN.SYN_ACC.SYN_PASSAGE.PASSAGE_B
+    type: confusable
+  - from: CHN.SYN_ACC.SYN_WORD.WORD_A
+    to: CHN.SYN_ACC.SYN_WORD.WORD_B
+    type: confusable
+  # 素材与能力点只用关联边（素材不进前置依赖图）
+  - from: CHN.SYN_ACC.SYN_WORD.WORD_A
+    to: CHN.SYN_READ.SYN_CLASSICAL.WORD_INFER_L1
+    type: related
+  - from: CHN.SYN_ACC.SYN_LOCAL.LOCAL_A
+    to: CHN.SYN_ACC.SYN_PASSAGE.PASSAGE_A
+    type: related

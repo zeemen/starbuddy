@@ -1,0 +1,29 @@
+{
+  "title": "StarBuddy staging 计量",
+  "uid": "starbuddy-metering",
+  "description": "LT-05：BFF 计量预留 / 结算 / 释放（回滚）/ 冲突（409）与计量事件，学习服务写入前的计量核对（放行 / 409）。只有结果编码，不含 usage_id、幂等键、学生与额度。",
+  "tags": ["starbuddy", "staging", "lt-05", "metering"],
+  "schemaVersion": 39,
+  "editable": true,
+  "time": {"from": "now-24h", "to": "now"},
+  "refresh": "1m",
+  "templating": {"list": [{"name": "datasource", "type": "datasource", "query": "prometheus", "label": "数据源（ARMS Prometheus，由人选择）"}]},
+  "panels": [
+    {"id": 1, "type": "timeseries", "title": "预留（按结果）", "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+     "datasource": {"type": "prometheus", "uid": "${datasource}"},
+     "targets": [{"refId": "A", "expr": "sum by (outcome) (increase(starbuddy_meter_reserve_total[15m]))", "legendFormat": "{{outcome}}"}]},
+    {"id": 2, "type": "timeseries", "title": "结算与释放（回滚）", "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+     "datasource": {"type": "prometheus", "uid": "${datasource}"},
+     "targets": [
+       {"refId": "A", "expr": "sum by (outcome) (increase(starbuddy_meter_settle_total[15m]))", "legendFormat": "结算 {{outcome}}"},
+       {"refId": "B", "expr": "sum by (outcome) (increase(starbuddy_meter_release_total[15m]))", "legendFormat": "释放 {{outcome}}"}]},
+    {"id": 3, "type": "timeseries", "title": "计量 409（BFF 冲突与学习服务写入前核对）", "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
+     "datasource": {"type": "prometheus", "uid": "${datasource}"},
+     "targets": [
+       {"refId": "A", "expr": "sum by (outcome) (increase(starbuddy_meter_conflict_total[15m]))", "legendFormat": "BFF {{outcome}}"},
+       {"refId": "B", "expr": "sum by (outcome) (increase(starbuddy_learning_meter_check_total[15m]))", "legendFormat": "学习服务 {{outcome}}"}]},
+    {"id": 4, "type": "timeseries", "title": "计量事件（少扣、结果未知、重试）", "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8},
+     "datasource": {"type": "prometheus", "uid": "${datasource}"},
+     "targets": [{"refId": "A", "expr": "sum by (outcome) (increase(starbuddy_meter_events_total[1h]))", "legendFormat": "{{outcome}}"}]}
+  ]
+}

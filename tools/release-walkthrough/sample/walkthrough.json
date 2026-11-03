@@ -1,0 +1,172 @@
+{
+ "content_version_id": "<uuid-1>",
+ "format": "release-walkthrough/1",
+ "note": "合成走查：合成 staff、合成数学地图、合成来源编号；一次性本地库，不是 pilot 发布记录",
+ "steps": [
+  {
+   "staff": [
+    "5f7a0000-0000-4000-8000-0000000000a1",
+    "5f7a0000-0000-4000-8000-0000000000a2"
+   ],
+   "step": "staff_login"
+  },
+  {
+   "map_version_id": "c0a70000-0000-4000-8000-0000000000a7",
+   "published": true,
+   "required_signers": 2,
+   "step": "map_publish",
+   "validation": [
+    [
+     "few_items",
+     "warning"
+    ]
+   ],
+   "version": "1.0.0"
+  },
+  {
+   "items": 721,
+   "map_version_id": "c0a70000-0000-4000-8000-0000000000a7",
+   "six_segment": "nanjing/2027/9/suke-2024/aya/0.1.0",
+   "skill_nodes": 959,
+   "step": "content_register"
+  },
+  {
+   "changes": 1681,
+   "checks": [
+    [
+     "no_published_scheme",
+     "warning"
+    ]
+   ],
+   "publisher": "5f7a0000-0000-4000-8000-0000000000a2",
+   "signer": "5f7a0000-0000-4000-8000-0000000000a1",
+   "six_segment": "nanjing/2027/9/suke-2024/aya/0.1.0",
+   "step": "content_publish"
+  },
+  {
+   "applied": 1,
+   "from": "source_unverified",
+   "item_id": "Q-ALG-U01-D-001",
+   "step": "admission_change",
+   "to": "pending_review"
+  },
+  {
+   "applied": 1,
+   "from": "pending_review",
+   "item_id": "Q-ALG-U01-D-001",
+   "step": "admission_change",
+   "to": "admitted"
+  },
+  {
+   "applied": 1,
+   "from": "source_unverified",
+   "item_id": "Q-ALG-U01-D-002",
+   "step": "admission_change",
+   "to": "pending_review"
+  },
+  {
+   "applied": 1,
+   "from": "source_unverified",
+   "item_id": "Q-ALG-U01-R-001",
+   "step": "admission_change",
+   "to": "rejected"
+  },
+  {
+   "applied": 1,
+   "from": "source_unverified",
+   "item_id": "Q-ALG-U02-D-001",
+   "step": "admission_change",
+   "to": "pending_review"
+  },
+  {
+   "applied": 1,
+   "from": "source_unverified",
+   "item_id": "Q-ALG-U02-D-002",
+   "step": "admission_change",
+   "to": "pending_review"
+  },
+  {
+   "applied": 1,
+   "from": "pending_review",
+   "item_id": "Q-ALG-U02-D-002",
+   "step": "admission_change",
+   "to": "admitted"
+  },
+  {
+   "applied": 1,
+   "from": "admitted",
+   "item_id": "Q-ALG-U02-D-002",
+   "step": "admission_change",
+   "to": "rejected"
+  },
+  {
+   "line_actions": [
+    [
+     "admission",
+     "apply"
+    ],
+    [
+     "admission",
+     "review"
+    ],
+    [
+     "content_version",
+     "publish"
+    ],
+    [
+     "content_version",
+     "review"
+    ],
+    [
+     "map",
+     "publish"
+    ],
+    [
+     "map",
+     "review"
+    ]
+   ],
+   "rows": 21,
+   "step": "version_record"
+  },
+  {
+   "decisions": 4,
+   "exported": {
+    "admitted": 1,
+    "pending_review": 1,
+    "rejected": 2
+   },
+   "note": "准入决定导出：nanjing/2027/9/suke-2024/aya/0.1.0（published）平台 721 道题 → 4 条决定 {\"admitted\": 1, \"pending_review\": 1, \"rejected\": 2}；pending_review 回到缺省 1 道；<export-ref-1>",
+   "pending_review_as_default": [
+    "Q-ALG-U02-D-001"
+   ],
+   "step": "admission_export"
+  },
+  {
+   "admission": {
+    "admitted": 1,
+    "pending_review": 1,
+    "rejected": 2,
+    "source_unverified": 717
+   },
+   "admission_decisions": {
+    "decisions": 4,
+    "digest": "sha256:<sha256-1>",
+    "export_ref": "<export-ref-1>",
+    "exported_at": "<time>",
+    "format": "aya-admission-decisions/1"
+   },
+   "hint_scan_flagged": 0,
+   "pack_version": "0.3.0-0ed2fe4.d<pack-digest-1>",
+   "step": "pack_rebuild"
+  },
+  {
+   "ok": true,
+   "same": 720,
+   "step": "pack_verify",
+   "stricter": 1,
+   "violations": 0
+  }
+ ],
+ "subject": "aya"
+}

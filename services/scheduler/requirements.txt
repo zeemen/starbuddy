@@ -1,0 +1,5 @@
+# 调度器（services/scheduler，PLT-13 第一步）运行依赖：不新增任何包（ADR 10：不引入 Redis、Arq、托管队列）。
+# 自身只直接用 asyncpg（咨询锁与连上后的服务端地址核对）与 PyYAML（时间表）；启动核对复用审核台命令行的
+# local_only / check_server_local（services/learning/review_console/__main__.py），它的导入链需要洞察服务同一组包，
+# 所以版本与洞察服务逐字相同（许可证已核，见 services/insight/README.md；规则 10）。
+-r ../insight/requirements.txt

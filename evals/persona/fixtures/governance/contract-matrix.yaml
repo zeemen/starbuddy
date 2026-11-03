@@ -1,0 +1,16 @@
+# 合成角色的合同对照表（测试夹具）
+version: 0.0.1
+reviewed: false
+personas:
+  syn-tutor:
+    contracts:
+      1: { spec: "合成 §1", cases: ["static:one_per_subject"] }
+      2: { spec: "合成 §2", cases: [SYN-REC-001] }
+      3: { spec: "合成 §3", cases: [SYN-REC-001] }
+      4: { spec: "合成 §4", cases: [SYN-REC-001] }
+      5: { spec: "合成 §5", cases: [SYN-REC-001] }
+      6: { spec: "合成 §6", cases: [SYN-REC-001] }
+      7: { spec: "合成 §7", cases: [SYN-REC-001] }
+      8: { spec: "合成 §8", cases: [SYN-REC-001] }
+      9: { spec: "合成 §9", cases: ["static:registry"] }
+      10: { spec: "合成 §10", cases: [SYN-REC-001] }

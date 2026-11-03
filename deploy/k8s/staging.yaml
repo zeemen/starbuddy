@@ -1,0 +1,551 @@
+# staging 清单（LT-01 范围第 3 条起草；LT-03 按选定厂商转写：阿里云华北 2、ACK Pro + Terway，specs/launch-lt03-cloud-staging 决定记录）。
+# Deployment / Service / 探针 / 资源限制 / NetworkPolicy / 存储类 / 内网负载均衡。基础设施在 deploy/iac/alicloud（由人 apply）。
+# 不写真实地址、域名、实例 ID、镜像仓库或凭据（规则 8、9）：所有厂商侧的取值是 <由人填写…> 占位或 IaC 输出，由人填写后再部署。
+# 约定：
+#   - 镜像写成 ACR_REGISTRY/starbuddy/starbuddy-<服务>@sha256:DIGEST 占位：ACR_REGISTRY = ACR 企业版的 VPC 端点
+#     （<实例名>-registry-vpc.cn-beijing.cr.aliyuncs.com），DIGEST 由流水线 deploy/ci/pipeline.sh 推送后输出（只按摘要部署）；
+#   - 密钥只经 Secret 引用（secretKeyRef）：Secret 由 ack-secret-manager 从 OOS 加密参数（starbuddy-staging/ 前缀；LT-03 决定记录第 15 条）同步而来，
+#     本仓库不提交任何 Secret 清单与取值；签字配置与白名单 OTP 条目经只读挂载的 Secret / ConfigMap 提供；
+#   - 托管 Postgres（RDS）：连接串（OOS 加密参数）写内网主机名，并带 sslmode=verify-full&sslrootcert=/run/rds-ca/ca.pem——
+#     RDS 的 CA 证书由人放进 ConfigMap starbuddy-rds-ca（键 ca.pem），连库的每个容器都只读挂载到 /run/rds-ca
+#     （deploy/config/README.md 第 8 节；调度器与子命令的主机名核对见 review_console/__main__.py 的 tls_verified）；
+#   - 监听地址：staging 各服务显式配置为 Pod IP（downward API status.podIP；Terway 下是 Pod 交换机的 VPC 内网地址）；
+#     服务间地址只收内网 IPv4 字面量，所以 Service 显式指定 clusterIP（10.96.100.x，在 IaC 的 Service 网段 10.96.0.0/16 内，部署测试核对）；
+#   - 学习服务与三科适配器在同一个 Pod（共用网络命名空间，经回环互访；LT-01 决定记录第 5 条）；
+#   - 每个容器：非 root、只读根文件系统、禁止提权、去掉全部 capability、RuntimeDefault seccomp、不挂 ServiceAccount 令牌；
+#   - 探针（LT-03）：HTTP——就绪 GET /readyz（库连接与启动前置），存活 GET /healthz（不访问依赖）；三科适配器不改代码、只监听回环，
+#     用 exec 在容器里 TCP 连接 127.0.0.1:PORT（加启动探针）；调度器另起健康监听（SCHEDULER_HEALTH_PORT）。kubelet 探针来自本节点，
+#     NetworkPolicy 不拦（演练核对项，见 deploy/runbooks/README.md）；
+#   - 出网（ADR 09 §5）：默认拒绝全部出网，只放行集群内、DNS、RDS 5432（只给连库的服务）；模型供应商（LT-02，pending）只给学习服务 Pod，
+#     且出 VPC 时还要过云防火墙 NAT 边界的主机名白名单（deploy/iac/alicloud/egress.tf）；
+#   - 入口：前端经内网负载均衡（只内网 + 办公网 / VPN 白名单访问控制，HTTPS 用内网证书），不公开域名、不建 Ingress。
+#   - 可观测性（LT-05）：六个后端 Pod 带 starbuddy/metrics 标签，GET /metrics 只在单独的指标端口（端口名 metrics，*_METRICS_PORT），
+#     由 ARMS 采集（PodMonitor 与 SLS 日志采集在 deploy/k8s/observability.yaml）；NetworkPolicy metrics-from-collector 只给采集组件放行
+#     指标端口（不放行业务端口）。
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: starbuddy-staging
+  labels: {app.kubernetes.io/part-of: starbuddy, starbuddy/environment: staging}
+---
+# ---------------------------------------------------------------- 存储类：ACK 云盘（ESSD，加密，回收策略保留）
+# 不买 KMS 实例（LT-03 决定记录第 15 条）：不指定 kmsKeyId，云盘用 ECS 服务密钥加密
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: starbuddy-essd-encrypted
+  labels: {app.kubernetes.io/part-of: starbuddy}
+provisioner: diskplugin.csi.alibabacloud.com
+parameters:
+  type: cloud_essd
+  performanceLevel: PL1
+  fsType: ext4
+  encrypted: "true"
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+---
+# 知识服务的页面快照（只读挂载；快照由发布流程写入，不经知识服务）
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: knowledge-snapshot, namespace: starbuddy-staging}
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: starbuddy-essd-encrypted
+  resources: {requests: {storage: 20Gi}}
+---
+# BFF 白名单 OTP 审计文件（可写卷，单实例；云盘最小 20Gi）
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: bff-otp-audit, namespace: starbuddy-staging}
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: starbuddy-essd-encrypted
+  resources: {requests: {storage: 20Gi}}
+---
+# ---------------------------------------------------------------- 学习服务 + 三科适配器（同一个 Pod）
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: learning, namespace: starbuddy-staging, labels: {app: learning}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: learning}}
+  template:
+    metadata:
+      labels: {app: learning, starbuddy/db-client: "true", starbuddy/metrics: "true"}
+      # 出网白名单占位（LT-02）：只有本 Pod（学习服务的模型路由）可以出网到模型供应商；主机名由人在开通后填写，
+      # 须与路由表 allowed_hosts、docs/compliance/vendors.md 一致，并据此在集群出网网关 / FQDN 策略里放行 443（见下方 NetworkPolicy 注释）
+      annotations:
+        starbuddy/model-egress-hosts: "<由人填写：MODEL_BAILIAN_URL、MODEL_ARK_URL 的主机名，见 deploy/config/README.md 第 7 节>"
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      volumes:
+        - {name: signed-config, secret: {secretName: starbuddy-signed-config}}
+        - {name: rds-ca, configMap: {name: starbuddy-rds-ca}}
+        - {name: tmp, emptyDir: {medium: Memory, sizeLimit: 16Mi}}
+      containers:
+        - name: learning
+          image: ACR_REGISTRY/starbuddy/starbuddy-learning@sha256:DIGEST
+          ports: [{name: http, containerPort: 8788}, {name: metrics, containerPort: 9788}]
+          env:
+            - {name: LEARNING_ENV, value: staging}
+            - {name: LEARNING_HOST, valueFrom: {fieldRef: {fieldPath: status.podIP}}}
+            - {name: PORT, value: "8788"}
+            - {name: LEARNING_DATABASE_URL, valueFrom: {secretKeyRef: {name: starbuddy-learning, key: database-url}}}
+            - {name: LEARNING_SERVICE_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-learning, key: service-token}}}
+            - {name: LEARNING_ADAPTER_AYA_URL, value: "http://127.0.0.1:8781"}
+            - {name: LEARNING_ADAPTER_AYA_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-adapters, key: aya-token}}}
+            - {name: LEARNING_ADAPTER_ZHIXING_URL, value: "http://127.0.0.1:8782"}
+            - {name: LEARNING_ADAPTER_ZHIXING_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-adapters, key: zhixing-token}}}
+            - {name: LEARNING_ADAPTER_WENLI_URL, value: "http://127.0.0.1:8783"}
+            - {name: LEARNING_ADAPTER_WENLI_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-adapters, key: wenli-token}}}
+            - {name: LEARNING_KNOWLEDGE_URL, value: "http://10.96.100.12:8790"}
+            - {name: LEARNING_KNOWLEDGE_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-knowledge, key: learning-token}}}
+            - {name: LEARNING_INSIGHT_CLIENT_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-learning, key: insight-client-token}}}
+            - {name: LEARNING_MASTERY_CONFIG_AYA, value: /run/config/mastery-aya.signed.json}
+            - {name: LEARNING_PRACTICE_CONFIG, value: /run/config/practice.signed.json}
+            - {name: LEARNING_PRACTICE_TICKET_SECRET, valueFrom: {secretKeyRef: {name: starbuddy-learning, key: practice-ticket-secret}}}
+            - {name: LEARNING_RETEST_CONFIG, value: /run/config/retest.signed.json}
+            - {name: LEARNING_TODAY_CONFIG, value: /run/config/today.signed.json}
+            - {name: LEARNING_TODAY_SNAPSHOT, value: "0"}
+            # 回环路由监听（LT-02 决定记录（续）第 5 条）：staging 下学习服务另在 127.0.0.1:8785 只服务 /internal/v1/model/route，
+            # 其他路径 404（健康端点只在主监听上）；同 Pod 的适配器经它调模型（适配器只认 https 或回环）。端口须与下面适配器注释里的
+            # *_ROUTE_URL 一致（部署测试核对）
+            - {name: LEARNING_ROUTE_PORT, value: "8785"}
+            - {name: LEARNING_METRICS_PORT, value: "9788"}  # LT-05：只服务 GET /metrics 的指标监听（业务端口上 /metrics 404）
+            # 模型供应商（LT-02，开关矩阵 model_provider 仍 pending）：人开通、填好路由表 staging 节的快照名与主机名、
+            # 两处登记改为已批准之后，才解开下面几行（路由客户端令牌一旦设置，学习服务就加载路由表，占位未填会拒绝启动）。
+            # 两科适配器另加的几行见各自容器里的注释（ZHIXING_ROUTE_URL / WENLI_ROUTE_URL = http://127.0.0.1:8785）。
+            # - {name: MODEL_BAILIAN_URL, valueFrom: {secretKeyRef: {name: starbuddy-model-vendors, key: bailian-url}}}
+            # - {name: MODEL_BAILIAN_API_KEY, valueFrom: {secretKeyRef: {name: starbuddy-model-vendors, key: bailian-api-key}}}
+            # - {name: MODEL_ARK_URL, valueFrom: {secretKeyRef: {name: starbuddy-model-vendors, key: ark-url}}}
+            # - {name: MODEL_ARK_API_KEY, valueFrom: {secretKeyRef: {name: starbuddy-model-vendors, key: ark-api-key}}}
+            # - {name: LEARNING_ROUTE_CLIENT_ZHIXING_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-learning, key: route-client-zhixing}}}
+            # - {name: LEARNING_ROUTE_CLIENT_WENLI_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-learning, key: route-client-wenli}}}
+          volumeMounts:
+            - {name: signed-config, mountPath: /run/config, readOnly: true}
+            - {name: rds-ca, mountPath: /run/rds-ca, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+          readinessProbe: {httpGet: {path: /readyz, port: 8788}, periodSeconds: 10, timeoutSeconds: 3}
+          livenessProbe: {httpGet: {path: /healthz, port: 8788}, initialDelaySeconds: 20, periodSeconds: 20, timeoutSeconds: 3, failureThreshold: 3}
+          resources: {requests: {cpu: 250m, memory: 384Mi}, limits: {cpu: "1", memory: 768Mi}}
+          securityContext: &csc {readOnlyRootFilesystem: true, allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+        - name: adapter-aya
+          image: ACR_REGISTRY/starbuddy/starbuddy-adapter-aya@sha256:DIGEST
+          env:
+            - {name: PORT, value: "8781"}
+            - {name: AYA_ADAPTER_SERVICE_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-adapters, key: aya-token}}}
+          # 适配器不改代码、只监听回环（LT-03 决定记录（续）第 4 条）：exec 在容器里 TCP 连接 127.0.0.1:PORT（与 adapter.Dockerfile 同一写法）。
+          # 启动探针兜住加载内容包的时间；存活探针等启动探针通过后才开始、周期拉长，避免启动慢被误杀
+          startupProbe: &adapterstartup {exec: {command: &adaptertcp ["node", "-e", "const s=require('node:net').connect(Number(process.env.PORT),'127.0.0.1');s.setTimeout(2000);s.on('connect',()=>{s.end();process.exit(0)});s.on('error',()=>process.exit(1));s.on('timeout',()=>process.exit(1))"]}, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 24}
+          readinessProbe: &adapterready {exec: {command: *adaptertcp}, periodSeconds: 10, timeoutSeconds: 3}
+          livenessProbe: &adapterlive {exec: {command: *adaptertcp}, initialDelaySeconds: 30, periodSeconds: 30, timeoutSeconds: 3, failureThreshold: 3}
+          resources: &adapterres {requests: {cpu: 50m, memory: 128Mi}, limits: {cpu: 500m, memory: 256Mi}}
+          securityContext: *csc
+        - name: adapter-zhixing
+          image: ACR_REGISTRY/starbuddy/starbuddy-adapter-zhixing@sha256:DIGEST
+          env:
+            - {name: PORT, value: "8782"}
+            - {name: ZHIXING_ADAPTER_SERVICE_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-adapters, key: zhixing-token}}}
+            # 模型路由（LT-02，model_provider 解开 pending 后再设）：学习服务的回环路由监听
+            # - {name: ZHIXING_ROUTE_URL, value: "http://127.0.0.1:8785"}
+            # - {name: ZHIXING_ROUTE_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-learning, key: route-client-zhixing}}}
+          startupProbe: *adapterstartup
+          readinessProbe: *adapterready
+          livenessProbe: *adapterlive
+          resources: *adapterres
+          securityContext: *csc
+        - name: adapter-wenli
+          image: ACR_REGISTRY/starbuddy/starbuddy-adapter-wenli@sha256:DIGEST
+          env:
+            - {name: PORT, value: "8783"}
+            - {name: WENLI_ADAPTER_SERVICE_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-adapters, key: wenli-token}}}
+            # 模型路由（LT-02，model_provider 解开 pending 后再设）：学习服务的回环路由监听
+            # - {name: WENLI_ROUTE_URL, value: "http://127.0.0.1:8785"}
+            # - {name: WENLI_ROUTE_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-learning, key: route-client-wenli}}}
+          startupProbe: *adapterstartup
+          readinessProbe: *adapterready
+          livenessProbe: *adapterlive
+          resources: *adapterres
+          securityContext: *csc
+---
+apiVersion: v1
+kind: Service
+metadata: {name: learning, namespace: starbuddy-staging}
+spec: {selector: {app: learning}, clusterIP: 10.96.100.10, ports: [{port: 8788, targetPort: 8788}]}
+---
+# ---------------------------------------------------------------- 知识服务
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: knowledge, namespace: starbuddy-staging, labels: {app: knowledge}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: knowledge}}
+  template:
+    metadata: {labels: {app: knowledge, starbuddy/db-client: "true", starbuddy/metrics: "true"}}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      volumes:
+        - {name: snapshot, persistentVolumeClaim: {claimName: knowledge-snapshot, readOnly: true}}
+        - {name: rds-ca, configMap: {name: starbuddy-rds-ca}}
+        - {name: tmp, emptyDir: {medium: Memory, sizeLimit: 64Mi}}
+      containers:
+        - name: knowledge
+          image: ACR_REGISTRY/starbuddy/starbuddy-knowledge@sha256:DIGEST
+          ports: [{name: http, containerPort: 8790}, {name: metrics, containerPort: 9790}]
+          env:
+            - {name: KNOWLEDGE_ENV, value: staging}
+            - {name: KNOWLEDGE_HOST, valueFrom: {fieldRef: {fieldPath: status.podIP}}}
+            - {name: KNOWLEDGE_PORT, value: "8790"}
+            - {name: KNOWLEDGE_METRICS_PORT, value: "9790"}
+            # 契约审查阻断 2：学习服务经 Service 访问，Host 头是 clusterIP——另收这一个地址（= 下面 Service 的 clusterIP，部署测试核对）
+            - {name: KNOWLEDGE_EXTRA_HOST, value: "10.96.100.12"}
+            - {name: KNOWLEDGE_DATABASE_URL, valueFrom: {secretKeyRef: {name: starbuddy-knowledge, key: database-url}}}
+            - {name: KNOWLEDGE_TOKEN_LEARNING, valueFrom: {secretKeyRef: {name: starbuddy-knowledge, key: learning-token}}}
+            - {name: KNOWLEDGE_PAGE_SNAPSHOT, value: /run/snapshot}
+            - {name: KNOWLEDGE_READ_CACHE, value: "0"}
+            - {name: KNOWLEDGE_CACHE_DIR, value: /tmp/knowledge-cache}
+          volumeMounts:
+            - {name: snapshot, mountPath: /run/snapshot, readOnly: true}
+            - {name: rds-ca, mountPath: /run/rds-ca, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+          readinessProbe: {httpGet: {path: /readyz, port: 8790}, periodSeconds: 10, timeoutSeconds: 3}
+          livenessProbe: {httpGet: {path: /healthz, port: 8790}, initialDelaySeconds: 30, periodSeconds: 20, timeoutSeconds: 3, failureThreshold: 3}
+          resources: {requests: {cpu: 250m, memory: 384Mi}, limits: {cpu: "1", memory: 768Mi}}
+          securityContext: {readOnlyRootFilesystem: true, allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: knowledge, namespace: starbuddy-staging}
+spec: {selector: {app: knowledge}, clusterIP: 10.96.100.12, ports: [{port: 8790, targetPort: 8790}]}
+---
+# ---------------------------------------------------------------- 洞察服务
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: insight, namespace: starbuddy-staging, labels: {app: insight}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: insight}}
+  template:
+    metadata: {labels: {app: insight, starbuddy/db-client: "true", starbuddy/metrics: "true"}}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      volumes:
+        - {name: signed-config, secret: {secretName: starbuddy-signed-config}}
+        - {name: rds-ca, configMap: {name: starbuddy-rds-ca}}
+        - {name: tmp, emptyDir: {medium: Memory, sizeLimit: 16Mi}}
+      containers:
+        - name: insight
+          image: ACR_REGISTRY/starbuddy/starbuddy-insight@sha256:DIGEST
+          ports: [{name: http, containerPort: 8791}, {name: metrics, containerPort: 9791}]
+          env:
+            - {name: INSIGHT_ENV, value: staging}
+            - {name: INSIGHT_HOST, valueFrom: {fieldRef: {fieldPath: status.podIP}}}
+            - {name: INSIGHT_PORT, value: "8791"}
+            - {name: INSIGHT_METRICS_PORT, value: "9791"}
+            # 契约审查阻断 2：BFF 经 Service 访问，Host 头是 clusterIP——另收这一个地址（= Service 的 clusterIP，部署测试核对）
+            - {name: INSIGHT_EXTRA_HOST, value: "10.96.100.14"}
+            - {name: INSIGHT_DATABASE_URL, valueFrom: {secretKeyRef: {name: starbuddy-insight, key: database-url}}}
+            - {name: INSIGHT_TOKEN_BFF, valueFrom: {secretKeyRef: {name: starbuddy-insight, key: bff-token}}}
+            - {name: INSIGHT_POLICY, value: /run/config/claims.signed.json}
+            - {name: INSIGHT_REPORT_CHECK, value: /run/config/report-check.signed.json}
+            - {name: INSIGHT_SIE03, value: /run/config/sie03.signed.json}
+            - {name: INSIGHT_LEARNING_URL, value: "http://10.96.100.10:8788"}
+            - {name: INSIGHT_LEARNING_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-learning, key: insight-client-token}}}
+          volumeMounts:
+            - {name: signed-config, mountPath: /run/config, readOnly: true}
+            - {name: rds-ca, mountPath: /run/rds-ca, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+          readinessProbe: {httpGet: {path: /readyz, port: 8791}, periodSeconds: 10, timeoutSeconds: 3}
+          livenessProbe: {httpGet: {path: /healthz, port: 8791}, initialDelaySeconds: 20, periodSeconds: 20, timeoutSeconds: 3, failureThreshold: 3}
+          resources: {requests: {cpu: 250m, memory: 384Mi}, limits: {cpu: "1", memory: 768Mi}}
+          securityContext: {readOnlyRootFilesystem: true, allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: insight, namespace: starbuddy-staging}
+spec: {selector: {app: insight}, clusterIP: 10.96.100.14, ports: [{port: 8791, targetPort: 8791}]}
+---
+# ---------------------------------------------------------------- 审核台后端
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: review-console, namespace: starbuddy-staging, labels: {app: review-console}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: review-console}}
+  template:
+    metadata: {labels: {app: review-console, starbuddy/db-client: "true", starbuddy/metrics: "true"}}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      volumes:
+        - {name: rds-ca, configMap: {name: starbuddy-rds-ca}}
+        - {name: tmp, emptyDir: {medium: Memory, sizeLimit: 16Mi}}
+      containers:
+        - name: review-console
+          image: ACR_REGISTRY/starbuddy/starbuddy-review-console@sha256:DIGEST
+          ports: [{name: http, containerPort: 8792}, {name: metrics, containerPort: 9792}]
+          env:
+            - {name: REVIEW_CONSOLE_ENV, value: staging}
+            - {name: REVIEW_CONSOLE_HOST, valueFrom: {fieldRef: {fieldPath: status.podIP}}}
+            - {name: REVIEW_CONSOLE_PORT, value: "8792"}
+            - {name: REVIEW_CONSOLE_METRICS_PORT, value: "9792"}
+            # 契约审查阻断 2：前端经 Service 访问，Host 头是 clusterIP——另收这一个地址（= Service 的 clusterIP，部署测试核对）
+            - {name: REVIEW_CONSOLE_EXTRA_HOST, value: "10.96.100.13"}
+            - {name: REVIEW_CONSOLE_KGE_DATABASE_URL, valueFrom: {secretKeyRef: {name: starbuddy-review-console, key: kge-database-url}}}
+            - {name: REVIEW_CONSOLE_REVIEW_DATABASE_URL, valueFrom: {secretKeyRef: {name: starbuddy-review-console, key: review-database-url}}}
+          volumeMounts:
+            - {name: rds-ca, mountPath: /run/rds-ca, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+          # 探针的 Host 头是 Pod 地址：审核台在 staging 另收显式配置的监听地址与 REVIEW_CONSOLE_EXTRA_HOST（LT-03，review_console/app.py allowed_hosts）
+          readinessProbe: {httpGet: {path: /readyz, port: 8792}, periodSeconds: 10, timeoutSeconds: 3}
+          livenessProbe: {httpGet: {path: /healthz, port: 8792}, initialDelaySeconds: 20, periodSeconds: 20, timeoutSeconds: 3, failureThreshold: 3}
+          resources: {requests: {cpu: 100m, memory: 256Mi}, limits: {cpu: 500m, memory: 512Mi}}
+          securityContext: {readOnlyRootFilesystem: true, allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: review-console, namespace: starbuddy-staging}
+spec: {selector: {app: review-console}, clusterIP: 10.96.100.13, ports: [{port: 8792, targetPort: 8792}]}
+---
+# ---------------------------------------------------------------- BFF（单实例：白名单 OTP 状态、连续使用提醒在进程内，见 lessons）
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: bff, namespace: starbuddy-staging, labels: {app: bff}}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app: bff}}
+  template:
+    metadata: {labels: {app: bff, starbuddy/db-client: "true", starbuddy/metrics: "true"}}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      volumes:
+        - {name: otp, secret: {secretName: starbuddy-staging-otp, defaultMode: 0400}}
+        - {name: audit, persistentVolumeClaim: {claimName: bff-otp-audit}}
+        - {name: rds-ca, configMap: {name: starbuddy-rds-ca}}
+        - {name: tmp, emptyDir: {medium: Memory, sizeLimit: 16Mi}}
+      containers:
+        - name: bff
+          image: ACR_REGISTRY/starbuddy/starbuddy-bff@sha256:DIGEST
+          ports: [{name: http, containerPort: 8787}, {name: metrics, containerPort: 9787}]
+          env:
+            - {name: STARBUDDY_ENV, value: staging}
+            - {name: BFF_HOST, valueFrom: {fieldRef: {fieldPath: status.podIP}}}
+            - {name: PORT, value: "8787"}
+            - {name: BFF_METRICS_PORT, value: "9787"}
+            - {name: BFF_DATABASE_URL, valueFrom: {secretKeyRef: {name: starbuddy-bff, key: database-url}}}
+            - {name: BFF_SHELL_ORIGIN, valueFrom: {configMapKeyRef: {name: starbuddy-staging, key: shell-origin}}}
+            - {name: BFF_LOG_HMAC_KEY, valueFrom: {secretKeyRef: {name: starbuddy-bff, key: log-hmac-key}}}
+            - {name: BFF_AUTH_SECRET, valueFrom: {secretKeyRef: {name: starbuddy-bff, key: auth-secret}}}
+            - {name: BFF_TRUST_SECRET, valueFrom: {secretKeyRef: {name: starbuddy-bff, key: trust-secret}}}
+            # 只在网关覆盖 X-Forwarded-For、BFF 只对前端开放时才能改为 1（发布检查项，安全审查 S5）
+            - {name: BFF_TRUST_CLIENT_IP, value: "0"}
+            - {name: BFF_LEARNING_URL, value: "http://10.96.100.10:8788"}
+            - {name: BFF_LEARNING_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-learning, key: service-token}}}
+            - {name: BFF_INSIGHT_URL, value: "http://10.96.100.14:8791"}
+            - {name: BFF_INSIGHT_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-insight, key: bff-token}}}
+            - {name: BFF_STAGING_OTP_FILE, value: /run/otp/otp.json}
+            - {name: BFF_STAGING_OTP_AUDIT_FILE, value: /var/lib/starbuddy/audit/otp-audit.jsonl}
+            - {name: BFF_CONSENT_VERSIONS, valueFrom: {configMapKeyRef: {name: starbuddy-staging, key: consent-versions}}}
+            - {name: STARBUDDY_TRUST_UI, value: "why,dispute,reconcile,weekly,data_rights,report"}
+            - {name: STARBUDDY_STARMAP, value: starmap_v1}
+            - {name: STARBUDDY_PRACTICE, value: practice}
+            - {name: STARBUDDY_RETEST_UI, value: retest}
+            - {name: STARBUDDY_TODAY_ORCH, value: today_orch}
+          volumeMounts:
+            - {name: otp, mountPath: /run/otp, readOnly: true}
+            - {name: audit, mountPath: /var/lib/starbuddy/audit}
+            - {name: rds-ca, mountPath: /run/rds-ca, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+          readinessProbe: {httpGet: {path: /readyz, port: 8787}, periodSeconds: 10, timeoutSeconds: 3}
+          livenessProbe: {httpGet: {path: /healthz, port: 8787}, initialDelaySeconds: 20, periodSeconds: 20, timeoutSeconds: 3, failureThreshold: 3}
+          resources: {requests: {cpu: 250m, memory: 256Mi}, limits: {cpu: "1", memory: 512Mi}}
+          securityContext: {readOnlyRootFilesystem: true, allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: bff, namespace: starbuddy-staging}
+spec: {selector: {app: bff}, clusterIP: 10.96.100.30, ports: [{port: 8787, targetPort: 8787}]}
+---
+# ---------------------------------------------------------------- 前端（入口：内网负载均衡 + 办公网 / VPN 白名单；不公开域名）
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: web, namespace: starbuddy-staging, labels: {app: web}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: web}}
+  template:
+    metadata: {labels: {app: web}}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      volumes:
+        - {name: tmp, emptyDir: {medium: Memory, sizeLimit: 16Mi}}
+        - {name: next-cache, emptyDir: {medium: Memory, sizeLimit: 64Mi}}
+      containers:
+        - name: web
+          image: ACR_REGISTRY/starbuddy/starbuddy-web@sha256:DIGEST
+          ports: [{containerPort: 3000}]
+          env:
+            - {name: STARBUDDY_ENV, value: staging}
+            - {name: WEB_HOST, valueFrom: {fieldRef: {fieldPath: status.podIP}}}
+            - {name: PORT, value: "3000"}
+            - {name: STARBUDDY_BFF_URL, value: "http://10.96.100.30:8787"}
+            - {name: STARBUDDY_REVIEW_URL, value: "http://10.96.100.13:8792"}
+            - {name: STARBUDDY_PRESENCE_HMAC_KEY, valueFrom: {secretKeyRef: {name: starbuddy-web, key: presence-hmac-key}}}
+            - {name: STARBUDDY_CONSENT_VERSION_PRIVACY, valueFrom: {configMapKeyRef: {name: starbuddy-staging, key: consent-version-privacy}}}
+            - {name: STARBUDDY_CONSENT_VERSION_GUARDIAN, valueFrom: {configMapKeyRef: {name: starbuddy-staging, key: consent-version-guardian}}}
+            - {name: STARBUDDY_TRUST_UI, value: "why,dispute,reconcile,weekly,data_rights,report"}
+            - {name: STARBUDDY_STARMAP, value: starmap_v1}
+            - {name: STARBUDDY_PRACTICE, value: practice}
+            - {name: STARBUDDY_RETEST_UI, value: retest}
+            - {name: STARBUDDY_TODAY_ORCH, value: today_orch}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            - {name: next-cache, mountPath: /srv/starbuddy/apps/web/.next/cache}
+          readinessProbe: {httpGet: {path: /readyz, port: 3000}, periodSeconds: 10, timeoutSeconds: 3}
+          livenessProbe: {httpGet: {path: /healthz, port: 3000}, initialDelaySeconds: 30, periodSeconds: 20, timeoutSeconds: 3, failureThreshold: 3}
+          resources: {requests: {cpu: 250m, memory: 384Mi}, limits: {cpu: "1", memory: 768Mi}}
+          securityContext: {readOnlyRootFilesystem: true, allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+---
+# 前端入口：ACK 按注解建**私网**负载均衡（只有 VPC 内网地址），监听 HTTPS 443（内网证书：私有 CA 签发，由人上传到证书服务后填 ID；
+# BFF_SHELL_ORIGIN 在 staging 必须是 https），访问控制白名单 = IaC 的 slb_acl_id（办公网 / VPN 网段）。不建 Ingress、不公开域名。
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: starbuddy-staging
+  annotations:
+    service.beta.kubernetes.io/alibaba-cloud-loadbalancer-address-type: "intranet"
+    service.beta.kubernetes.io/alibaba-cloud-loadbalancer-vswitch-id: "<由人填写：节点交换机 ID（IaC）>"
+    service.beta.kubernetes.io/alibaba-cloud-loadbalancer-spec: "slb.s1.small"
+    service.beta.kubernetes.io/alibaba-cloud-loadbalancer-protocol-port: "https:443"
+    service.beta.kubernetes.io/alibaba-cloud-loadbalancer-cert-id: "<由人填写：内网证书 ID（私有 CA 签发）>"
+    service.beta.kubernetes.io/alibaba-cloud-loadbalancer-acl-status: "on"
+    service.beta.kubernetes.io/alibaba-cloud-loadbalancer-acl-type: "white"
+    service.beta.kubernetes.io/alibaba-cloud-loadbalancer-acl-id: "<由人填写：IaC 输出 slb_acl_id>"
+    service.beta.kubernetes.io/alibaba-cloud-loadbalancer-health-check-type: "http"
+    service.beta.kubernetes.io/alibaba-cloud-loadbalancer-health-check-uri: "/readyz"
+spec:
+  type: LoadBalancer
+  selector: {app: web}
+  ports: [{name: https, port: 443, targetPort: 3000}]
+---
+# ---------------------------------------------------------------- 调度器（单实例；只收签字时间表）
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: scheduler, namespace: starbuddy-staging, labels: {app: scheduler}}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app: scheduler}}
+  template:
+    metadata: {labels: {app: scheduler, starbuddy/db-client: "true", starbuddy/metrics: "true"}}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      volumes:
+        - {name: signed-config, secret: {secretName: starbuddy-signed-config}}
+        - {name: rds-ca, configMap: {name: starbuddy-rds-ca}}
+        - {name: tmp, emptyDir: {medium: Memory, sizeLimit: 16Mi}}
+      containers:
+        - name: scheduler
+          image: ACR_REGISTRY/starbuddy/starbuddy-scheduler@sha256:DIGEST
+          args: ["--schedule", "/run/config/schedule.signed.yaml"]
+          ports: [{name: http, containerPort: 8793}, {name: metrics, containerPort: 9793}]
+          env:
+            - {name: SCHEDULER_ENV, value: staging}
+            - {name: SCHEDULER_DATABASE_URL, valueFrom: {secretKeyRef: {name: starbuddy-scheduler, key: database-url}}}
+            # 健康监听（LT-03，scheduler/health.py）：只服务 /healthz、/readyz（/metrics 在这里 404），地址是 Pod IP；
+            # 指标监听（LT-05）：同一地址另起 SCHEDULER_METRICS_PORT，只服务 GET /metrics
+            - {name: SCHEDULER_HOST, valueFrom: {fieldRef: {fieldPath: status.podIP}}}
+            - {name: SCHEDULER_HEALTH_PORT, value: "8793"}
+            - {name: SCHEDULER_METRICS_PORT, value: "9793"}
+            - {name: INSIGHT_ENV, value: staging}
+            - {name: INSIGHT_DATABASE_URL, valueFrom: {secretKeyRef: {name: starbuddy-insight, key: database-url}}}
+            - {name: INSIGHT_POLICY, value: /run/config/claims.signed.json}
+            - {name: LEARNING_ENV, value: staging}
+            - {name: LEARNING_DATABASE_URL, valueFrom: {secretKeyRef: {name: starbuddy-learning, key: database-url}}}
+            - {name: LEARNING_MASTERY_CONFIG_AYA, value: /run/config/mastery-aya.signed.json}
+            - {name: REVIEW_CONSOLE_ENV, value: staging}
+            - {name: REVIEW_CONSOLE_KGE_DATABASE_URL, valueFrom: {secretKeyRef: {name: starbuddy-review-console, key: kge-database-url}}}
+          volumeMounts:
+            - {name: signed-config, mountPath: /run/config, readOnly: true}
+            - {name: rds-ca, mountPath: /run/rds-ca, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+          readinessProbe: {httpGet: {path: /readyz, port: 8793}, periodSeconds: 30, timeoutSeconds: 5}
+          livenessProbe: {httpGet: {path: /healthz, port: 8793}, initialDelaySeconds: 20, periodSeconds: 60, timeoutSeconds: 5, failureThreshold: 3}
+          resources: {requests: {cpu: 100m, memory: 256Mi}, limits: {cpu: 500m, memory: 512Mi}}
+          securityContext: {readOnlyRootFilesystem: true, allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+---
+# ---------------------------------------------------------------- 出网白名单（ADR 09 §5）：默认拒绝出网，只放行集群内与 DNS
+# 托管 Postgres：下一条策略只给带 starbuddy/db-client 标签的 Pod 放行 RDS 所在交换机（IaC db_vswitch_cidrs）的 5432。
+# 模型供应商（LT-02，pending）：只给 app=learning 的 Pod 另加一条出网策略，目标是下面两家的接入主机名（由人填写，四处一致：
+#   路由表 allowed_hosts、docs/compliance/vendors.md、learning Pod 注解 starbuddy/model-egress-hosts、IaC 的 model_egress_fqdns）：
+#   - 阿里云百炼：<由人填写：百炼 OpenAI 兼容接入的主机名>   端口 443
+#   - 火山方舟：  <由人填写：方舟 OpenAI 兼容接入的主机名>   端口 443
+#   NetworkPolicy 只认 IP 段：解开 pending 时由人加一条“app=learning 出网 TCP 443”的策略，写法固定为（安全审查 B1：except 必须排除
+#   内网与阿里云内部服务网段——这些去向不经 NAT，也就不过云防火墙的主机名白名单；部署测试核对这段注释）：
+#     - to: [{ipBlock: {cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16]}}]
+#       ports: [{protocol: TCP, port: 443}]
+#   按主机名的收窄在云防火墙 NAT 边界（deploy/iac/alicloud/egress.tf，LT-03 转写）；路由在建连前还会再核一次主机名
+#   （providers.check_endpoint），三道都要有。
+# 境外地址一律不放行；白名单外的出网须被拦截（发布检查项）。
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny-egress, namespace: starbuddy-staging}
+spec:
+  podSelector: {}
+  policyTypes: [Egress, Ingress]
+  ingress:
+    - from: [{podSelector: {}}]
+  egress:
+    - to: [{podSelector: {}}]
+    - to: [{namespaceSelector: {}, podSelector: {matchLabels: {k8s-app: kube-dns}}}]
+      ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
+---
+# 连库的服务出网到 RDS（只 5432、只数据库交换机网段；与 deploy/iac/alicloud/variables.tf 的 db_vswitch_cidrs 一致，部署测试核对）
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: rds-egress, namespace: starbuddy-staging}
+spec:
+  podSelector: {matchLabels: {starbuddy/db-client: "true"}}
+  policyTypes: [Egress]
+  egress:
+    - to: [{ipBlock: {cidr: 10.20.96.0/24}}, {ipBlock: {cidr: 10.20.97.0/24}}]
+      ports: [{protocol: TCP, port: 5432}]
+---
+# 指标采集（LT-05，specs/launch-lt05-observability 决定记录（续）第 5 条）：学习、知识、洞察、审核台、BFF、调度器的 GET /metrics 只在
+# 单独的指标端口（端口名 metrics：9788 / 9790 / 9791 / 9792 / 9787 / 9793，只服务这一条路径；业务端口与回环路由监听上的 /metrics 一律 404）。
+# 免鉴权、只在 Pod 内网（命名空间内互访由上面的缺省策略放行，与 /healthz 相同）；命名空间外只放行 ARMS 托管 Prometheus 的
+# 采集组件（ACK 组件 arms-prometheus，deploy/iac/alicloud/ack.tf），且只放行指标端口、不放行业务端口。命名空间与 Pod 标签以 ARMS 控制台
+# 为准，由人在开通后填写（部署测试核对：来源只有这一个命名空间 + Pod 选择器，端口只有各服务的 metrics 端口）。采集配置见 deploy/k8s/observability.yaml。
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: metrics-from-collector, namespace: starbuddy-staging}
+spec:
+  podSelector: {matchLabels: {starbuddy/metrics: "true"}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: "<由人填写：ARMS 采集组件所在命名空间（ACK 托管版常见为 arms-prom）>"}}
+          podSelector: {matchLabels: {app: "<由人填写：ARMS 采集组件的 Pod 标签>"}}
+      ports: [{protocol: TCP, port: 9788}, {protocol: TCP, port: 9790}, {protocol: TCP, port: 9791}, {protocol: TCP, port: 9792},
+              {protocol: TCP, port: 9787}, {protocol: TCP, port: 9793}]
+---
+# 前端只收内网负载均衡转来的 HTTPS 流量（端口 3000）：来源是 VPC 网段（负载均衡的内网地址；经 VPN 进 VPC 的办公网流量若保留源地址，
+# 由人在这里补上办公网 / VPN 网段，与 IaC 的 office_vpn_cidrs 一致）
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: web-ingress-from-slb, namespace: starbuddy-staging}
+spec:
+  podSelector: {matchLabels: {app: web}}
+  policyTypes: [Ingress]
+  ingress:
+    - from: [{ipBlock: {cidr: 10.20.0.0/16}}]
+      ports: [{protocol: TCP, port: 3000}]

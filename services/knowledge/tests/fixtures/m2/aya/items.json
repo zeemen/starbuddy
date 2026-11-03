@@ -1,0 +1,70 @@
+{
+  "format": "kge-m2-items/1",
+  "subject": "aya",
+  "map_version": "0.9.0",
+  "items": [
+    {
+      "item_id": "SYN-M2-01",
+      "main_node_id": "MATH.SYN.EQ.TRANSPOSE",
+      "cognitive_level": "understand",
+      "admission": "admitted",
+      "tag_review_status": "approved"
+    },
+    {
+      "item_id": "SYN-M2-02",
+      "main_node_id": "MATH.SYN.EQ.TRANSPOSE",
+      "cognitive_level": "apply",
+      "admission": "admitted",
+      "tag_review_status": "approved"
+    },
+    {
+      "item_id": "SYN-M2-03",
+      "main_node_id": "MATH.SYN.EQ.LINEAR",
+      "cognitive_level": "understand",
+      "admission": "admitted",
+      "tag_review_status": "approved"
+    },
+    {
+      "item_id": "SYN-M2-04",
+      "main_node_id": "MATH.SYN.EQ.LINEAR",
+      "cognitive_level": "apply",
+      "admission": "admitted",
+      "tag_review_status": "approved"
+    },
+    {
+      "item_id": "SYN-M2-05",
+      "main_node_id": "MATH.SYN.EQ.APPLY",
+      "cognitive_level": "apply",
+      "admission": "admitted",
+      "tag_review_status": "approved"
+    },
+    {
+      "item_id": "SYN-M2-06",
+      "main_node_id": "MATH.SYN.EXPR.SQUARE_DIFF",
+      "cognitive_level": "understand",
+      "admission": "admitted",
+      "tag_review_status": "approved"
+    },
+    {
+      "item_id": "SYN-M2-07",
+      "main_node_id": "MATH.SYN.EXPR.SQUARE_DIFF",
+      "cognitive_level": "apply",
+      "admission": "admitted",
+      "tag_review_status": "approved"
+    },
+    {
+      "item_id": "SYN-M2-08",
+      "main_node_id": "MATH.SYN.EXPR.SQUARE_DIFF",
+      "cognitive_level": "apply",
+      "admission": "pending_review",
+      "tag_review_status": "approved"
+    },
+    {
+      "item_id": "SYN-M2-09",
+      "main_node_id": "MATH.SYN.EQ.LINEAR",
+      "cognitive_level": null,
+      "admission": "admitted",
+      "tag_review_status": "approved"
+    }
+  ]
+}

@@ -1,0 +1,280 @@
+# BFF ↔ 统一壳前端的复测与验证题接口（specs/retest-delivery-kge05/spec.md 范围第 4、5 条）。
+# 服务内部接口，不是学科插件契约，不放 packages/contracts（与 practice.v0.yaml 同一做法）。
+# 后面接的是学习服务的内部接口 services/learning/openapi/retest-internal.v0.yaml（只认 BFF 的服务间令牌）。
+openapi: 3.1.0
+info:
+  title: StarBuddy BFF · retest and verification (v0, prototype)
+  version: 0.1.0
+  description: >
+    学生本人的复测与验证题：一科到期的复测与验证条目列表、为一个条目取一道题、提交作答。
+    挂在功能开关 retest 上，默认关闭：关闭时三条路由都不注册，与表外路径同一个 404（STARBUDDY_RETEST_UI=retest，只在 dev / test）。
+    只认学生本人（x-sb-auth: student）：家长会话在任何查询之前 403；兄妹、另一户学生、不存在的学生、路径参数不合法一律同一个 404
+    （x-sb-not-self: 404），越权请求不到达学习服务、不计次。学科码 {subject} 同错题再练：math、politics、chinese（学习服务默认不开，404）。
+    返回给前端的只有条目 ID、知识节点与认知层次、条目类别（kind：retest 复测 / verify 验证）、状态、题面、判分结论与条目新状态（due / done）；
+    不含掌握、置信度、证据 ID、错因、任务原因、空原因编码、题目引用、答案与解析，也不含任何对学生的结论（CLAUDE.md 规则 3、11）。
+    条目说明只用前端的固定文案占位；“做完”只表示这一条不再出题，不是掌握结论。
+    票据：BFF 加密封装的不透明串（sbr1.），绑定当前学生；与错题再练的 sbp1 票据互相不通用。票据里有 BFF 生成的幂等键（每张票据一个）。
+    计量（规则 4；spec 范围第 2 条，计量口径 [NEEDS-HUMAN]）：只有作答计次，默认沿用错题再练的口径——题库自练 platform.meter_practice
+    （迁移 0015：付费与试用不限次，留存态每天 5 次，与错题再练合计；开始即计数、没有释放，不扣 AI 额度）；列表与取题不计次。
+    复测与验证题扣不扣额度未定（specs/mastery-estimate-sprint4 #21），待人确认。
+    本地拒绝不计次：请求体不合格、学科码不认识、不是本人、票据伪造或换学生或换学科或拿再练票据来答（422 TICKET_INVALID）、
+    作答形状不合题型（422 INVALID_ANSWER）、票据已过期（410，留 30 秒余量）、宵禁（402 reason = curfew）、额度不足（402）。
+    计次之前另调学习服务的只读预检（条目仍到期、票据未用）：不通过（409 RETEST_NOT_DUE、409 TICKET_USED、410、503）不计次（审查意见 2）。
+    预检之后学习服务仍拒绝的（两次调用之间条目变了等）已计一次：409 RETEST_NOT_DUE、409 TICKET_USED、409 KEY_SEALED、410、422 INVALID_ANSWER、503。
+    宵禁中，已计过次的票据只找回原结果（学习服务只读接口，不执行、不封存，响应头 idempotent-replayed: true），找不到仍 402 curfew。
+    同一张票据重试不再计次，学习服务按幂等返回原结果（响应头 idempotent-replayed: true）。
+    宵禁同错题再练：取题与作答 402 QUOTA_UNAVAILABLE reason = curfew；列表不挡。学习服务调用在结果未知时由 BFF 重试，整体总时限 45 秒。
+    身份只来自会话（请求头 x-sb-session）；改变状态的请求另要 Origin 等于壳的来源、带与会话绑定的 x-csrf-token（见 shell.v0.yaml）。
+    限流：三条路由与错题再练共用每会话桶 practice.session.minute（config/auth.json，每分钟 60 次，两类合计）。请求体上限 16 KB。
+servers:
+  - url: http://127.0.0.1:8787
+paths:
+  /bff/v0/students/{student_id}/retest/{subject}:
+    parameters:
+      - $ref: '#/components/parameters/StudentId'
+      - $ref: '#/components/parameters/Subject'
+      - $ref: '#/components/parameters/Session'
+    get:
+      x-sb-auth: student
+      x-sb-rate-buckets: [practice.session.minute]
+      x-sb-not-self: 404
+      operationId: getRetestQueue
+      description: 学生一科到期、未做完的复测与验证条目（到期早的在前）。只读，不计次，宵禁不挡。
+      responses:
+        '200':
+          description: 条目列表
+          headers: { Cache-Control: { schema: { const: no-store } } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [subject, entries]
+                properties:
+                  subject: { type: string }
+                  entries: { type: array, items: { $ref: '#/components/schemas/Entry' } }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: TEST_EXITED（档案已退出内部测试，LT-06；internal-test.v0.yaml）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+        '429': { $ref: '#/components/responses/Problem' }
+        '503': { description: RETEST_UNAVAILABLE（学习服务没配、没开复测或其他确定失败）、UPSTREAM_UNAVAILABLE（可重试）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+  /bff/v0/students/{student_id}/retest/{subject}/entries/{entry_id}/next:
+    parameters:
+      - $ref: '#/components/parameters/StudentId'
+      - $ref: '#/components/parameters/Subject'
+      - $ref: '#/components/parameters/EntryId'
+      - $ref: '#/components/parameters/Session'
+    post:
+      x-sb-auth: student
+      x-sb-rate-buckets: [practice.session.minute]
+      x-sb-not-self: 404
+      operationId: nextRetestItem
+      description: >
+        为一个到期的条目出一道题（只出学生在这个知识点没做过的题目族）：题面与不透明票据。没有合格候选时 200 status = unavailable
+        （不生成新题，不转原因编码）。不读请求体，不计次。宵禁中 402 reason = curfew，不调学习服务。
+      responses:
+        '200':
+          description: 一道题，或这一轮不可用
+          headers: { Cache-Control: { schema: { const: no-store } } }
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { $ref: '#/components/schemas/NextReady' }
+                  - { $ref: '#/components/schemas/NextUnavailable' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '402':
+          description: 宵禁（reason = curfew）；不调学习服务
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/QuotaProblem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: RETEST_NOT_DUE（这一条已做完）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+        '429': { $ref: '#/components/responses/Problem' }
+        '503': { description: RETEST_UNAVAILABLE（确定失败，不必重试）、UPSTREAM_UNAVAILABLE（可重试）、SUBJECT_BUSY（分学科并发闸门被拒，带 retry-after，稍后重试）,
+                 headers: { retry-after: { description: 只在 SUBJECT_BUSY 时有：建议多少秒后重试, schema: { type: integer, minimum: 1 } } },
+                 content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+  /bff/v0/students/{student_id}/retest/{subject}/answer:
+    parameters:
+      - $ref: '#/components/parameters/StudentId'
+      - $ref: '#/components/parameters/Subject'
+      - $ref: '#/components/parameters/Session'
+    post:
+      x-sb-auth: student
+      x-sb-rate-buckets: [practice.session.minute]
+      x-sb-not-self: 404
+      operationId: answerRetest
+      description: >
+        提交复测或验证题作答（默认按题库自练计次一次；幂等键在票据里，同一张票据重试不再计次）。作答用途（复测 / 验证）由服务端按任务
+        决定，前端不能指定。判分只来自验证器或确定性 Rubric，经学习服务落库，掌握与复测任务由 KGE-04 重算；这里只回判分结论与条目新状态。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AnswerInput' }
+      responses:
+        '200':
+          description: 作答已记录（响应头 idempotent-replayed 标明是否同一键重放）
+          headers:
+            idempotent-replayed: { schema: { enum: ['true', 'false'] } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnswerResult' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '402':
+          description: 宵禁（curfew）或计次被拒（no_entitlement、daily_limit_reached），reason 给出编码；不计次、不调学习服务
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/QuotaProblem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: >
+            RETEST_NOT_DUE、TICKET_USED、KEY_SEALED：学习服务拒绝，已计一次（同一张票据再提交不再计次）。
+            IDEMPOTENCY_KEY_REUSED 只在计量库判定幂等键冲突时出现（不计次）。
+          content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } }
+        '410': { description: TICKET_EXPIRED（本地判过期时不计次；学习服务判过期时已计一次）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+        '413': { $ref: '#/components/responses/Problem' }
+        '415': { $ref: '#/components/responses/Problem' }
+        '422': { description: INVALID、TICKET_INVALID、INVALID_ANSWER（本地判定的不计次；学习服务判 INVALID_ANSWER 时已计一次）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+        '429': { $ref: '#/components/responses/Problem' }
+        '503': { description: RETEST_UNAVAILABLE（确定失败，已计一次）、UPSTREAM_UNAVAILABLE（结果未知，已计一次：用同一张票据重试，不会再计次）、SUBJECT_BUSY（分学科并发闸门被拒：本次请求没有新增计量，之前已计次的同一张票据重试不再计、也不再被闸门拒；带 retry-after，稍后用同一张票据、原样的作答重试）,
+                 headers: { retry-after: { description: 只在 SUBJECT_BUSY 时有：建议多少秒后重试, schema: { type: integer, minimum: 1 } } },
+                 content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+components:
+  parameters:
+    StudentId:
+      name: student_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Subject:
+      name: subject
+      in: path
+      required: true
+      schema: { enum: [math, politics, chinese] }
+    EntryId:
+      name: entry_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Session:
+      name: x-sb-session
+      in: header
+      required: true
+      description: 会话令牌（64 位十六进制），不进 URL 与日志
+      schema: { type: string, pattern: '^[0-9a-f]{64}$' }
+  schemas:
+    Entry:
+      type: object
+      additionalProperties: false
+      required: [entry_id, node_id, cognitive_level, kind, status]
+      properties:
+        entry_id: { type: string, format: uuid }
+        node_id: { type: string, description: 知识节点（公共知识层的 ID，不是对学生的判断） }
+        cognitive_level: { enum: [know, understand, apply, synthesize] }
+        kind: { enum: [retest, verify], description: 条目类别（复测 / 验证），只用来选固定文案占位；不给任务原因 }
+        status: { enum: [due, unavailable], description: unavailable = 这一条暂时没有可出的题（原因编码不转） }
+    NextReady:
+      type: object
+      additionalProperties: false
+      required: [status, entry_id, kind, item, ticket, expires_at]
+      properties:
+        status: { const: ready }
+        entry_id: { type: string, format: uuid }
+        kind: { enum: [retest, verify] }
+        item:
+          type: object
+          additionalProperties: false
+          required: [format, stem]
+          properties:
+            format: { enum: [single, multi, fill] }
+            stem: { type: string }
+            options:
+              type: array
+              items: { type: object, additionalProperties: false, required: [key, text], properties: { key: { type: string, pattern: '^[A-Za-z0-9]{1,8}$' }, text: { type: string } } }
+            rich:
+              type: object
+              description: PLT-12 受限富文本题面，形状与白名单同 practice.v0.yaml（src/item-rich.ts）；不合格就不给 rich，题目照常以纯文字出。
+              additionalProperties: false
+              required: [stem]
+              properties:
+                stem: { type: array, minItems: 1, maxItems: 20, items: { type: object } }
+                options: { type: array, maxItems: 10, items: { type: object } }
+        ticket: { type: string, pattern: '^sbr1\.[A-Za-z0-9_-]+$', maxLength: 2400, description: 不透明票据（含 BFF 生成的幂等键），作答时原样带回 }
+        expires_at: { type: string, format: date-time }
+    NextUnavailable:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { const: unavailable }
+    AnswerInput:
+      type: object
+      additionalProperties: false
+      required: [ticket, answer]
+      description: 不收幂等键（在票据里）、usage_id、数量、资源类型、学生、purpose、channel：带了即 422 INVALID
+      properties:
+        ticket: { type: string, pattern: '^sbr1\.', maxLength: 2400 }
+        answer:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [text]
+              properties: { text: { type: string, minLength: 1, maxLength: 200 } }
+            - type: object
+              additionalProperties: false
+              required: [choice]
+              properties:
+                choice: { type: array, minItems: 1, maxItems: 8, uniqueItems: true, items: { type: string, pattern: '^[A-Za-z0-9]{1,8}$' } }
+    AnswerResult:
+      type: object
+      additionalProperties: false
+      required: [verdict, entry]
+      properties:
+        verdict:
+          enum: [correct, incorrect, partial, needs_review, not_applicable]
+          description: 判分结论（验证器或 Rubric，规则 3）；pending_review 时不是定论
+        pending_review: { const: true, description: 只在判分待人工复核时出现 }
+        entry:
+          type: object
+          additionalProperties: false
+          required: [entry_id, status]
+          properties:
+            entry_id: { type: string, format: uuid }
+            status: { enum: [due, done], description: due = 这一条还可以再取一道；done = 不再出题（不是掌握结论） }
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        code:
+          enum: [UNAUTHENTICATED, FORBIDDEN, CSRF, NOT_FOUND, METHOD_NOT_ALLOWED, TOO_LARGE, UNSUPPORTED_MEDIA_TYPE, INVALID, TOO_MANY_REQUESTS,
+                 INTERNAL, IDEMPOTENCY_KEY_REUSED, RETEST_UNAVAILABLE, UPSTREAM_UNAVAILABLE, TICKET_INVALID, TICKET_EXPIRED, INVALID_ANSWER,
+                 RETEST_NOT_DUE, TICKET_USED, KEY_SEALED, QUOTA_UNAVAILABLE, SUBJECT_BUSY, TEST_EXITED]
+          description: >
+            SUBJECT_BUSY（503，PLT-16 分学科并发闸门，开关 STARBUDDY_SUBJECT_GATE 缺省关）：取题、作答在这一科已满且排队已满或排队超时、
+            本学生在这一科已到上限；闸门在只读预检与计次之前，本次请求没有新增计量、没有预检，之前已计次的同一张票据重试不再计（且绕过闸门）；
+            带 retry-after（秒），稍后用同一张票据、原样的作答重试。
+    QuotaProblem:
+      allOf:
+        - $ref: '#/components/schemas/Problem'
+        - type: object
+          required: [reason]
+          properties:
+            reason: { enum: [curfew, no_entitlement, daily_limit_reached] }
+  responses:
+    Problem:
+      description: 错误（problem+json；只有错误码，不回显作答、票据与内部细节）
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: 不是本人、学生或条目不存在、学科码不认识、路径参数不合法、开关关闭（同一个 404）
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

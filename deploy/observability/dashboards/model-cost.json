@@ -1,0 +1,36 @@
+{
+  "title": "StarBuddy staging 模型与成本",
+  "uid": "starbuddy-model-cost",
+  "description": "LT-05：模型路由调用 / 失败 / 熔断 / 成本护栏剩余 / 估算成本（学习服务 learning/metrics.py）。估算成本只是路由表单价 × 供应商报告的 token，不参与计量；护栏为进程内计数、北京时间 0 点清零。",
+  "tags": ["starbuddy", "staging", "lt-05", "model"],
+  "schemaVersion": 39,
+  "editable": true,
+  "time": {"from": "now-24h", "to": "now"},
+  "refresh": "1m",
+  "templating": {"list": [{"name": "datasource", "type": "datasource", "query": "prometheus", "label": "数据源（ARMS Prometheus，由人选择）"}]},
+  "panels": [
+    {"id": 1, "type": "timeseries", "title": "路由调用（按任务、结果）", "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+     "datasource": {"type": "prometheus", "uid": "${datasource}"},
+     "targets": [{"refId": "A", "expr": "sum by (task, outcome) (rate(starbuddy_model_route_calls_total[5m]))", "legendFormat": "{{task}} {{outcome}}"}]},
+    {"id": 2, "type": "timeseries", "title": "供应商尝试（按供应商、结果；含重试与切备）", "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+     "datasource": {"type": "prometheus", "uid": "${datasource}"},
+     "targets": [{"refId": "A", "expr": "sum by (provider, outcome) (rate(starbuddy_model_provider_calls_total[5m]))", "legendFormat": "{{provider}} {{outcome}}"}]},
+    {"id": 3, "type": "timeseries", "title": "供应商失败率", "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
+     "datasource": {"type": "prometheus", "uid": "${datasource}"},
+     "targets": [{"refId": "A", "expr": "sum by (provider) (rate(starbuddy_model_provider_calls_total{outcome!~\"ok|skipped_breaker_open\"}[10m])) / sum by (provider) (rate(starbuddy_model_provider_calls_total{outcome!=\"skipped_breaker_open\"}[10m]))", "legendFormat": "{{provider}}"}]},
+    {"id": 4, "type": "state-timeline", "title": "熔断（1 打开或半开）", "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8},
+     "datasource": {"type": "prometheus", "uid": "${datasource}"},
+     "targets": [{"refId": "A", "expr": "max by (provider, task) (starbuddy_model_breaker_open)", "legendFormat": "{{provider}} {{task}}"}]},
+    {"id": 5, "type": "bargauge", "title": "成本护栏当日剩余比例（阈值 10% 为占位）", "gridPos": {"x": 0, "y": 16, "w": 8, "h": 8},
+     "datasource": {"type": "prometheus", "uid": "${datasource}"},
+     "targets": [{"refId": "A", "expr": "min by (task) (starbuddy_model_budget_remaining_ratio)", "legendFormat": "{{task}}"}]},
+    {"id": 6, "type": "table", "title": "成本护栏当日剩余（次数 / token）", "gridPos": {"x": 8, "y": 16, "w": 8, "h": 8},
+     "datasource": {"type": "prometheus", "uid": "${datasource}"},
+     "targets": [
+       {"refId": "A", "expr": "min by (task) (starbuddy_model_budget_remaining_calls)", "legendFormat": "{{task}} 次数"},
+       {"refId": "B", "expr": "min by (task) (starbuddy_model_budget_remaining_tokens)", "legendFormat": "{{task}} token"}]},
+    {"id": 7, "type": "timeseries", "title": "估算成本（元 / 小时，按供应商、任务）", "gridPos": {"x": 16, "y": 16, "w": 8, "h": 8},
+     "datasource": {"type": "prometheus", "uid": "${datasource}"},
+     "targets": [{"refId": "A", "expr": "sum by (provider, task) (increase(starbuddy_model_estimated_cost_cny_total[1h]))", "legendFormat": "{{provider}} {{task}}"}]}
+  ]
+}

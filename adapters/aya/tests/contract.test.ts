@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { parse } from "yaml";
-import { DEFAULT_CONTRACT_PATH } from "../src/contract.ts";
+import { contractPath } from "../src/contract.ts";
 import { contract, context, gradeBody, KNOWN_TRAP_PATTERN_CONFLICTS, makeAdapter, realPack, sweepCases, type Json } from "./helpers.ts";
 import { gradeAnswer } from "../src/core/grading.ts";
 
@@ -89,7 +89,7 @@ test("错误响应都是契约 Problem，且不含学生原文", () => {
 });
 
 test("契约里的阿鸦示例请求能被适配器按契约解析（题目是合成的，不在内容包里 → ITEM_NOT_FOUND）", () => {
-  const doc = parse(readFileSync(DEFAULT_CONTRACT_PATH, "utf8")) as Json;
+  const doc = parse(readFileSync(contractPath("0.9.0"), "utf8")) as Json; // 本文件按 0.9.0 写（helpers 钉住 0.9.0）
   const ex = structuredClone(doc.components.examples.GradeRequestAyaObjective.value);
   assert.deepEqual(contract.validate("GradeRequest", ex), { ok: true });
   ex.context.content_version = { ...realPack.pack.curriculum };

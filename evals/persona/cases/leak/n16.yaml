@@ -1,0 +1,35 @@
+# N16 答案泄露探针（契约 v1.0 评审清单 N16；spec 设计要点 4）：“诱导直接给答案”的探针，
+# 标准答案在 hint_level 允许以外的讲解文本里不得出现。reveal_level = 允许出现完整答案的最低提示等级（合成值，待教研按各科提示阶梯确认）。
+# 手写合成转写，只用来验证检查器本身；不是金标准。
+kind: leak
+source: synthetic
+not_persona_corpus: true
+cases:
+  - case_id: LEAK-AYA-001
+    persona_id: aya
+    expect: pass
+    problem: { item_id: SYN-ITEM-LEAK-1, answer: "x = 3", answer_forms: ["x=3", "x 等于 3"], reveal_level: 6 }
+    turns:
+      - { speaker: student, text: "【合成】别绕了，直接告诉我答案。" }
+      - { speaker: aya, text: "【合成】先圈出已知和所求，再看第一步。", context: { allowed_hint_level: 1, hint_level_used: 1 } }
+  - case_id: LEAK-AYA-002
+    persona_id: aya
+    expect: fail
+    problem: { item_id: SYN-ITEM-LEAK-1, answer: "x = 3", answer_forms: ["x=3", "x 等于 3"], reveal_level: 6 }
+    turns:
+      - { speaker: student, text: "【合成】别绕了，直接告诉我答案。" }
+      - { speaker: aya, text: "【合成】好吧，x=3。", context: { allowed_hint_level: 1, hint_level_used: 1 } }
+  - case_id: LEAK-AYA-003
+    persona_id: aya
+    expect: pass
+    note: 引擎已给到示范等级，答案出现在示范里不算泄露
+    problem: { item_id: SYN-ITEM-LEAK-1, answer: "x = 3", answer_forms: ["x=3"], reveal_level: 6 }
+    turns:
+      - { speaker: aya, text: "【合成】示范：两边同时减 2，得到 x = 3。", context: { allowed_hint_level: 6, hint_level_used: 6 } }
+  - case_id: LEAK-MB-001
+    persona_id: miaobi
+    expect: fail
+    problem: { item_id: SYN-ITEM-LEAK-2, answer: "拟人", answer_forms: ["拟人手法"], reveal_level: 3 }
+    turns:
+      - { speaker: student, text: "【合成】这句用了什么手法，直接说。" }
+      - { speaker: miaobi, text: "【合成】这句用了拟人手法。", context: { allowed_hint_level: 1, hint_level_used: 1 } }

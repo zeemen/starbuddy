@@ -1,0 +1,54 @@
+# 道法观点地图模板（冲刺 4-K，specs/kge-daofa-slice-sprint4/spec.md 设计要点 1、2）。
+# 教研按本模板填写 content/daofa/<领域>.yaml（放内容仓或执行人目录，不在本仓）；本仓只放模板、校验器与合成样例（samples/daofa/）。
+# 校验：node src/daofa/main.ts map --domain <文件> --version <主.次.修订> --out <目录>（通过才生成草稿地图版本的种子）。
+#
+# 填写规则（校验器会拦）：
+#   - 层级：领域（domain，2 段 ID）→ 大概念（big_concepts，主题层，3 段）→ 观点（viewpoints，知识节点层，4 段，kind 固定为 viewpoint）。
+#     ID 全大写，MORAL. 开头，段内只用大写字母、数字、下划线（docs/design/kge/id-and-segments.md）；上一级就是去掉最后一段。
+#   - 观点必须写在某个大概念的 viewpoints 里，不能直接挂在领域下。
+#   - name 写自写概括（≤ 128 字），**不得摘抄教材原句**；不得出现 quote、原句、原文、摘抄一类的字段（法务确认前不入库，decisions #5）。
+#   - 教材投影只写版次、册、章、页码范围；原句不写。投影导入后是“未核对”，经页码抽样核验（page-sample / page-backfill）后才可能标“已核对”。
+#   - 观点之间以关联为主：relations 默认 type: related（无方向，同一对只写一条）。不硬凑前置边；
+#     确需前置时写 type: prerequisite，并写 explicit_prerequisite: true 与 basis（教研依据），前置边不能成环、不能是传递边。
+#   - 发布前（kge.validate_map_version）每个观点都要有：includes、excludes、examples（合成题或题目 ID，不贴学生作答）、cognitive_levels，
+#     以及至少一条边或一条教材投影（否则报 orphan）。
+#   - 不写任何学生数据（规则 13）。
+format: kge-daofa-domain/1
+synthetic: false            # 真实内容填 false；合成样例必须 true，且 notice 写明“合成、非教材内容”
+notice: 由道法教研填写；观点为自写概括，不含教材原句
+subject: zhixing            # 只收道法（道法与历史分库，decisions #13）
+domain:
+  id: MORAL.LAW             # 试点：法律领域（spec 待人确认 #3）
+  name: 法律
+big_concepts:
+  - id: MORAL.LAW.XXX       # 大概念（主题层）
+    name: 大概念名称（自写）
+    legacy_code: m1         # 可选：知行大概念的旧短编码（m1、xr1），进 kge.id_migration（rule = manual）
+    viewpoints:
+      - id: MORAL.LAW.XXX.YYY
+        name: 观点的自写概括（不得摘抄教材原句）
+        cognitive_levels: [understand, apply]   # know / understand / apply / synthesize
+        scope: required     # required / elective / edition_ext / exam_ext / enrichment
+        includes:
+          - 包含：这个观点管到哪里（自写）
+        excludes:
+          - 不包含：容易混进来但属于别的观点的内容（自写）
+        examples:
+          - 典型题例：合成题或题目 ID
+        projections:
+          - edition: bubian-2024   # 版次编码，与 platform.curriculum_version.textbook_version 同一套
+            edition_year: 2024
+            volume: 八年级下册
+            chapter: 第一单元
+            page_from: 1
+            page_to: 2
+relations:
+  - from: MORAL.LAW.XXX.YYY
+    to: MORAL.LAW.XXX.ZZZ
+    type: related
+  # 确需前置（少见）：
+  # - from: MORAL.LAW.XXX.YYY
+  #   to: MORAL.LAW.XXX.ZZZ
+  #   type: prerequisite
+  #   explicit_prerequisite: true
+  #   basis: 教研依据（自写，≤ 256 字）

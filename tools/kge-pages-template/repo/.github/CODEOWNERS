@@ -1,0 +1,10 @@
+# 路径审核规则（BRANCH_PROTECTION.md 第 13 条）：CI、工作流、地图快照、人设词表与本文件的改动必须由平台负责人审核。
+# @ORG/kge-platform-owners 是占位，按实际的平台负责人团队替换；并在分支保护里打开“要求代码所有者审核”。
+# GitLab：同一份内容放到仓库根目录或 .gitlab/CODEOWNERS，并在受保护分支里打开“需要代码所有者批准”。
+/ci/              @ORG/kge-platform-owners
+/.github/         @ORG/kge-platform-owners
+/.gitlab/         @ORG/kge-platform-owners
+/.gitlab-ci.yml   @ORG/kge-platform-owners
+/snapshots/       @ORG/kge-platform-owners
+/lexicon/         @ORG/kge-platform-owners
+/CODEOWNERS       @ORG/kge-platform-owners

@@ -34,7 +34,7 @@ class EphemeralPG:
         if self.root:
             shutil.chown(self.work, "postgres")
         os.chmod(self.work, 0o700)
-        self.db = "learning_test"
+        self.db = "starbuddy_test"  # 与合成种子、诊断合成题面的库名核对一致（starbuddy_(dev|test)）
 
     def _as_pg(self, *args: str, **kw) -> subprocess.CompletedProcess:
         cmd = (["runuser", "-u", "postgres", "--"] if self.root else []) + list(args)

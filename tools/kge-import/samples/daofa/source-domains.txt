@@ -1,0 +1,3 @@
+# 合成样例：虚构的来源主机名（.example 保留域名），不是任何真实白名单。真实清单由人从 policy.source_domain 导出。
+news.synthetic-source.example
+gov.synthetic-source.example

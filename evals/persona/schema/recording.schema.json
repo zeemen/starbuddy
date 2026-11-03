@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://starbuddy.invalid/evals/persona/recording.schema.json",
+  "title": "人设回归录音（persona-recording/1，冲刺 3-F spec 设计要点 6 第 2 层）",
+  "description": "一次真实模型对话的完整转写（输入全是合成数据，数据级别 L0）。由持有 dev 密钥的人本地执行 make persona-record 生成，随 PR 提交、由人审 diff；CI 只回放。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "persona_id", "case_id", "prompt_fingerprints", "prompt_versions", "case_fingerprint", "model_version", "params",
+               "recorded_by", "recorded_at", "data_level", "synthetic", "transcript"],
+  "properties": {
+    "format": { "const": "persona-recording/1" },
+    "persona_id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+    "case_id": { "type": "string", "pattern": "^[A-Z][A-Z0-9-]*$" },
+    "prompt_fingerprints": {
+      "description": "该角色全部登记 Prompt 在录制时的指纹（prompt_id → sha256:…），与登记表按同一规范化计算",
+      "type": "object", "minProperties": 1,
+      "additionalProperties": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+    },
+    "prompt_versions": { "type": "object", "minProperties": 1, "additionalProperties": { "type": "string" } },
+    "case_fingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "model_version": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "params": { "type": "object", "description": "生成参数（温度、最大长度等），不含任何凭据" },
+    "recorded_by": { "type": "string", "minLength": 1, "maxLength": 60, "description": "录制人（角色或工号，不写手机号、邮箱）" },
+    "recorded_at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+    "data_level": { "const": "L0" },
+    "synthetic": { "type": "boolean", "description": "true = 为测试回放框架手写的合成录音，不是模型输出" },
+    "transcript": {
+      "type": "array", "minItems": 2, "maxItems": 80,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["speaker", "text"],
+        "properties": {
+          "speaker": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "text": { "type": "string", "maxLength": 4000 },
+          "fields": { "type": "object" },
+          "context": { "type": "object" },
+          "segment": { "type": "string" },
+          "emotion_signal": { "type": "boolean" },
+          "asks_identity": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}

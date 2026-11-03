@@ -3,6 +3,11 @@
 - pg：会话级的一次性本地 Postgres，已执行角色 bootstrap 与全部迁移，并登记了几道合成题
 - fake_adapter：按契约形状返回结果的假适配器（httpx.MockTransport），可以篡改结果、注入错误、计数
 - api：进程内的学习服务（FastAPI + ASGITransport），连接用只继承 starbuddy_learning 的登录角色
+- 计量（LT-04）：/internal/v1 写入前学习服务经 0058 的 platform.learning_meter_check 核对计量。生产里预留与计次由 BFF 建；
+  这里的测试不经 BFF，所以自动夹具 meter_provisioned 在每次核对前由测试库里的 learningtest.provision_meter（fixtures/meter_provision.sql）
+  按核对依据代建一笔（直接写入与诊断会话：预留中的预留；再练、复测：自练计次），核对本身仍是真实函数。
+  代建一律经超级用户连接池（register_admin 登记的、与应用池同一个测试库的 admin 池）：夹具函数不授给 starbuddy_learning，
+  学习服务角色自己不能造预留（安全审查阻断）。测核对本身的用例标 @pytest.mark.real_meter，不代建，记录由用例自己写（meter_row）。
 """
 from __future__ import annotations
 
@@ -11,16 +16,21 @@ import copy
 import json
 import os
 import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 import asyncpg
 import httpx
 import pytest
 
+from pathlib import Path
+
+from learning import meter as learning_meter
 from learning.app import create_app
 from learning.config import AdapterTarget, Settings
 from pgharness import LOGIN_ROLE, EphemeralPG
 
+METER_PROVISION_SQL = (Path(__file__).resolve().parent / "fixtures/meter_provision.sql").read_text(encoding="utf-8")
 CREDENTIAL = "synthetic-bff-to-learning-credential-0001"
 ADAPTER_CREDENTIAL = "synthetic-learning-to-adapter-credential-01"
 NS = uuid.UUID("5b8e1c52-0000-4000-8000-000000000000")
@@ -32,11 +42,73 @@ VALUES ('e0000000-0000-4000-8000-0000000000e0', 'nanjing', 2027, 9, 'syn-2024', 
 INSERT INTO platform.skill_node (subject, local_id, curriculum_version_id, label_code) VALUES
   ('aya', 'K-SYN-0001', 'e0000000-0000-4000-8000-0000000000e0', 'K-SYN-0001'),
   ('aya', 'K-SYN-0002', 'e0000000-0000-4000-8000-0000000000e0', 'K-SYN-0002');
-INSERT INTO platform.item (subject, item_id, curriculum_version_id, skill_local_id, admission, admitted_at) VALUES
-  ('aya', 'SYN-UNV', 'e0000000-0000-4000-8000-0000000000e0', 'K-SYN-0001', 'source_unverified', NULL),
-  ('aya', 'SYN-ADM', 'e0000000-0000-4000-8000-0000000000e0', 'K-SYN-0001', 'admitted', now()),
-  ('aya', 'SYN-UNV2', 'e0000000-0000-4000-8000-0000000000e0', 'K-SYN-0002', 'source_unverified', NULL);
-"""
+INSERT INTO platform.item (subject, item_id, curriculum_version_id, skill_local_id, admission, source_ref, source_type, license_status) VALUES
+  ('aya', 'SYN-UNV', 'e0000000-0000-4000-8000-0000000000e0', 'K-SYN-0001', 'source_unverified', NULL, 'unknown', 'unverified'),
+  ('aya', 'SYN-ADM', 'e0000000-0000-4000-8000-0000000000e0', 'K-SYN-0001', 'pending_review', 'SYN-SRC-0001', 'self_authored', 'cleared'),
+  ('aya', 'SYN-UNV2', 'e0000000-0000-4000-8000-0000000000e0', 'K-SYN-0002', 'source_unverified', NULL, 'unknown', 'unverified');
+-- 准入只能经发布闸门（迁移 0039）：合成 staff 签准入审核并执行，SYN-ADM 升为 admitted
+INSERT INTO platform.account (id, kind) VALUES ('5b8e1c52-0000-4000-8000-0000000005f1', 'staff');
+SET ROLE starbuddy_review;
+SELECT set_config('app.account_id', '5b8e1c52-0000-4000-8000-0000000005f1', false);
+SELECT platform.change_admission(ARRAY[platform.sign_admission('aya', 'SYN-ADM', 'admitted', 'approved', 'Q2', NULL, NULL, 'cleared',
+                                                               platform.item_admission_digest('aya', 'SYN-ADM'), 'test_fixture')]);
+SELECT set_config('app.account_id', '', false);
+RESET ROLE;
+""" + METER_PROVISION_SQL
+
+_REAL_REQUIRE = learning_meter.require
+# 应用池（learning_app，只继承 starbuddy_learning）→ 同一测试库的超级用户池；代建只经后者（夹具函数不授学习服务角色）
+_ADMIN_FOR: dict[int, asyncpg.Pool] = {}
+
+
+def register_admin(app_pool, admin) -> None:
+    _ADMIN_FOR[id(app_pool)] = admin
+
+
+def unregister_admin(app_pool) -> None:
+    _ADMIN_FOR.pop(id(app_pool), None)
+
+
+class MeterProvision:
+    """代建开关：on = True 时每次核对前代建；用例可在准备数据之后关掉（meter_provisioned.on = False）再测真实核对。"""
+
+    def __init__(self, on: bool) -> None:
+        self.on = on
+
+    async def require(self, pool, basis, *, method, ctx):
+        """先在测试库里按核对依据代建计量记录（BFF 的那一步，经该库的超级用户池），再以学习服务的应用池走真实核对。
+        应用池没有登记 admin 池或代建失败（库里没有夹具函数、参数不是 UUID 等）就跳过，交给真实核对判定（none → 409）。"""
+        admin = _ADMIN_FOR.get(id(pool))
+        if self.on and admin is not None:
+            usage = basis.usage_id if basis.usage_id is not None else ctx.get("usage_id")
+            key = basis.key if basis.key is not None else ctx.get("idempotency_key")
+            try:
+                async with admin.acquire() as conn:
+                    await conn.execute("SELECT learningtest.provision_meter($1::text::uuid, $2, $3::text::uuid, $4, $5)",
+                                       usage, key, ctx.get("student_ref"), basis.method or method, "counted" in basis.allowed)
+            except Exception:  # noqa: BLE001
+                pass
+        await _REAL_REQUIRE(pool, basis, method=method, ctx=ctx)
+
+
+@pytest.fixture(autouse=True)
+def meter_provisioned(request, monkeypatch) -> MeterProvision:
+    p = MeterProvision(on=request.node.get_closest_marker("real_meter") is None)
+    monkeypatch.setattr(learning_meter, "require", p.require)
+    return p
+
+
+async def meter_row(admin, *, usage_id: str, key: str, student: str, method: str = "grade", state: str = "reserved") -> None:
+    """real_meter 用例写计量记录：state = reserved / lapsed / settled / released / expired（预留）或 counted（自练计次）。
+    lapsed 与 expired 的预留有效期在过去（9 分钟前到 1 分钟前，与过期任务的真实前提一致）；其余的有效期从现在起 10 分钟。"""
+    async with admin.acquire() as c:
+        if state == "counted":
+            await c.execute("SELECT learningtest.provision_meter($1::uuid, $2, $3::uuid, $4, true)", usage_id, key, student, method)
+            return
+        await c.execute("SELECT learningtest.provision_meter($1::uuid, $2, $3::uuid, $4, false, $5)", usage_id, key, student, method,
+                        state in ("lapsed", "expired"))
+        if state not in ("reserved", "lapsed"):
+            await c.execute("SELECT learningtest.set_reservation($1::uuid, $2)", usage_id, state)
 
 
 @pytest.fixture(scope="session")
@@ -57,7 +129,9 @@ def pg():
 async def pools(pg):
     app_pool = await asyncpg.create_pool(**pg.dsn(LOGIN_ROLE), min_size=1, max_size=30)
     admin = await asyncpg.create_pool(**pg.dsn("postgres"), min_size=1, max_size=3)
+    register_admin(app_pool, admin)
     yield app_pool, admin
+    unregister_admin(app_pool)
     await app_pool.close()
     await admin.close()
 
@@ -75,7 +149,21 @@ async def student(pools) -> str:
                VALUES ($1::uuid, $2::uuid, $3::uuid, 9, 'nanjing', 'suke-2024', '2012-03-01')""",
             sid, acct, household,
         )
+        await grant_consents(c, sid, guardian)
     return sid
+
+
+# LT-06（迁移 0059 platform.student_processing_allowed）：学习服务的写入与模型处理入口只处理有有效同意的学生。
+# 合成学生一律补上两份同意（合成文本版本）；不传家长时新建一个合成家长账号作同意人
+CONSENT_SQL = """INSERT INTO platform.consent_record (student_id, guardian_account_id, consent_type, document_version, decision, decided_at)
+                 SELECT $1::uuid, $2::uuid, t, replace(t, '_', '-') || '@synthetic-0', 'granted', now() - interval '1 day'
+                   FROM unnest(ARRAY['privacy_policy', 'guardian_consent_under14']) t"""
+
+
+async def grant_consents(conn, student: str, guardian: str | None = None) -> None:
+    if guardian is None:
+        guardian = await conn.fetchval("INSERT INTO platform.account (id, kind) VALUES (gen_random_uuid(), 'guardian') RETURNING id::text")
+    await conn.execute(CONSENT_SQL, student, guardian)
 
 
 TABLES = ("evidence_event", "attempt", "grade_result", "error_attribution", "skill_observation")
@@ -160,6 +248,22 @@ def fake_diagnose(body: dict, admission: str) -> dict:
             "model_version": "algo:aya-diag@0.1.0"}
 
 
+RESPONSE_EVIDENCE_KINDS = ("response_text", "response_choice", "asr_transcription")
+
+
+def _answer_in_version(body: dict, out: dict) -> dict:
+    """按请求声明的契约版本应答；v1.0 下作答类证据带 attempt_id（评审 N3）。"""
+    version = body["context"]["contract_version"]
+    out["contract_version"] = version
+    if version != "0.9.0":
+        attempts = [body["attempt"]] if "attempt" in body else body["attempts"]
+        by_ref = {(a["item_ref"], a["occurred_at"]): a["attempt_id"] for a in attempts}
+        for e in out["evidence"]:
+            if e["kind"] in RESPONSE_EVIDENCE_KINDS:
+                e["attempt_id"] = by_ref[(e["item_ref"], e["occurred_at"])]
+    return out
+
+
 class FakeAdapter:
     """按契约形状返回；可以篡改（mutate）、改状态码（status）、延时（delay）、先失败几次（fail_first）。"""
 
@@ -185,6 +289,7 @@ class FakeAdapter:
             return httpx.Response(self.status, json=self.problem or {})
         method = request.url.path.rsplit("/", 1)[-1]
         out = fake_grade(body, self.admission) if method == "grade" else fake_diagnose(body, self.admission)
+        out = _answer_in_version(body, out)
         if self.mutate:
             out = self.mutate(copy.deepcopy(out)) or out
         # 原样编码（允许 NaN），模拟有缺陷的适配器
@@ -213,6 +318,59 @@ async def api(pools, fake_adapter):
             yield client
 
 
+class InProcessResponse:
+    """进程内调用的结果：取 httpx.Response 常用的那几样（status_code、json()、text、headers）。"""
+
+    def __init__(self, status_code: int, body: dict, headers: dict | None = None) -> None:
+        self.status_code = status_code
+        self._body = body
+        self.headers = headers or {}
+
+    def json(self) -> dict:
+        return copy.deepcopy(self._body)
+
+    @property
+    def text(self) -> str:
+        return json.dumps(self._body, ensure_ascii=False)
+
+
+@asynccontextmanager
+async def legacy_v0(app_pool, fake_adapter: FakeAdapter, **over):
+    """插件契约 0.9.0 的写入，进程内调用（LT-04 决定记录（再续）第 1 条：/internal/v0 写入已从 HTTP 下线，一律 410）。
+    v0 / v1 共用的写入核心（幂等、租约、落库映射、平台核对）仍按 0.9.0 请求体测；错误映射与 app.handle 相同
+    （IngestError → 问题体；其余异常 → 500 INTERNAL、可重试）。0.9.0 不核对计量（不经 /internal/v1）。"""
+    from learning.app import UUID_RE
+    from learning.errors import IngestError
+    from learning.service import IngestService
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(fake_adapter.handler), trust_env=False, follow_redirects=False)
+    svc = IngestService(settings(**over), app_pool, client)
+
+    async def call(method: str, body: object) -> InProcessResponse:
+        wire = json.loads(json.dumps(body))  # 与 HTTP 一样拿到一份独立的请求体
+        ctx = wire.get("context") if isinstance(wire, dict) else None
+        rid = ctx.get("request_id") if isinstance(ctx, dict) else None
+        rid = rid if isinstance(rid, str) and UUID_RE.fullmatch(rid) else None
+        try:
+            summary, replayed = await svc.ingest(method, wire, "0.9.0")
+            return InProcessResponse(200, summary, {"idempotent-replayed": "true" if replayed else "false"})
+        except IngestError as e:
+            return InProcessResponse(e.status, e.problem(rid))
+        except Exception:  # noqa: BLE001
+            return InProcessResponse(500, IngestError(500, "INTERNAL", "internal error", retryable=True).problem(rid))
+    try:
+        yield call
+    finally:
+        await client.aclose()
+
+
+@pytest.fixture
+async def v0(pools, fake_adapter):
+    """进程内的 0.9.0 写入（见 legacy_v0）：v0(method, body) → InProcessResponse。"""
+    async with legacy_v0(pools[0], fake_adapter) as call:
+        yield call
+
+
 _seq = [0]
 
 
@@ -231,6 +389,20 @@ def grade_body(student_id: str, item: str = "SYN-UNV", text: str = "41", **over)
     }
     body.update(over)
     return body
+
+
+def to_v1_body(body: dict) -> dict:
+    """同一作答的 v1.0 写法：契约版本 1.0.0、UUIDv4 幂等键、平台生成的 attempt_id。"""
+    b = copy.deepcopy(body)
+    b["context"].update(contract_version="1.0.0", idempotency_key=str(uuid.uuid4()))
+    for a in [b["attempt"]] if "attempt" in b else b["attempts"]:
+        a["attempt_id"] = str(uuid.uuid4())
+    return b
+
+
+def env(request: dict, **ingest) -> dict:
+    """learning-internal v1 的信封：插件请求加平台侧作答上下文（缺省键盘作答）。"""
+    return {"request": request, "ingest": {"channel": "keypad", **ingest}}
 
 
 def diagnose_body(student_id: str, attempts: list[dict]) -> dict:

@@ -1,0 +1,208 @@
+# BFF ↔ 统一壳前端的星图 v1 接口（冲刺 4-H H5，specs/star-map-v1-h5/spec.md 第 5 节；统一壳 spec 第 7.2、8 节）。
+# 服务内部接口，不是学科插件契约，不放 packages/contracts。v0（star-map.v0.yaml）保留到切换完成。
+openapi: 3.1.0
+info:
+  title: StarBuddy BFF · star map (v1, behind feature flag starmap_v1)
+  version: 0.1.0-draft
+  description: >
+    星 = 该科当前已发布地图版本中 status = active、level = node 的知识节点，按领域、主题分组（领域与主题不成星）；
+    星态由学习服务给（`POST /internal/v1/star-map/nodes`），BFF 不聚合认知层次、不算门槛。
+    **判断先于展示**：一颗星只有当它上面有一条“知识掌握”维度的判断——受众可见（学生看 student、家长看 guardian，RLS claim_front_read）、
+    状态为成立或假设、模板在对外白名单里、判断的依据等于学习服务给的当前掌握记录——才按掌握状态画（三态与“保持”外圈）并带 claim_id；
+    否则是中性底星（只有 node_id、name、display = neutral；不带任何星态、文字或判断 ID）。“知识迁移”维度的判断不画星，只用于迁移摘要。
+    待验证（to_verify）的判断：开关 starmap_dashed 关闭时按中性底星；打开时画虚线并给下一次验证任务的日期，不带结论文字。
+    文字（星数说明、迁移摘要）只取洞察服务 insight.explain 的 RenderedStatement.text，带 claim_id 与 confidence_band；
+    单页最多 10 条，超时或不可用时不显示（对应字段不出现）。
+    在读但没有已发布地图的学科 status = building（“地图建设中”）；英语与 planned 学科不出现；已暂停的学科不出现。
+    学习服务 409 MASTERY_UNAVAILABLE、不可用、或其地图版本 / 星集合与 BFF 读到的不一致时，该科星全部中性。
+    能力视图侧栏只有占位（skill_view.status = coming_soon），不发数据请求。
+    授权：学生本人或已绑定的有效家长（platform.can_read_student）；未授权与学生不存在返回同一个 404，且不调用学习服务。
+    响应不含 p_mastery、confidence、evidence_ids、state、star_lit、basis_id。身份只来自会话（请求头 x-sb-session）。
+    开关 starmap_v1 关闭（缺省）时本路由不注册，与表外路径同一个 404。
+servers:
+  - url: http://127.0.0.1:8787
+paths:
+  /bff/v0/students/{student_id}/star-map/v1:
+    get:
+      x-sb-auth: session
+      x-sb-rate-buckets: []
+      operationId: getStarMapV1
+      parameters:
+        - name: student_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: x-sb-session
+          in: header
+          required: true
+          description: 会话令牌（64 位十六进制），不进 URL 与日志
+          schema: { type: string, pattern: '^[0-9a-f]{64}$' }
+      responses:
+        '200':
+          description: 星图 v1
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StarMapV1' }
+        '401':
+          description: 未登录
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '404':
+          description: 学生不存在、当前账号无权查看（两者不区分），或开关 starmap_v1 关闭（路由未注册）
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '409':
+          description: TEST_EXITED（档案已退出内部测试，LT-06；internal-test.v0.yaml）
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '405':
+          description: 只支持 GET
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '500':
+          description: 内部错误（响应不含任何数据或异常消息）
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+components:
+  schemas:
+    StarMapV1:
+      type: object
+      additionalProperties: false
+      required: [student_id, generated_at, skill_view, skies]
+      properties:
+        student_id: { type: string, format: uuid }
+        generated_at: { type: string, format: date-time }
+        skill_view:
+          type: object
+          additionalProperties: false
+          description: 能力视图侧栏占位（统一壳待人确认 #8：字段字典 inner.g4.skill_view 只给 agent，签字前为空）
+          required: [status]
+          properties:
+            status: { type: string, const: coming_soon }
+        skies:
+          type: array
+          description: 每个在读学科一片星空（按 math、chinese、politics 排序）；没有在读学科时为空数组
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/SkyBuilding'
+              - $ref: '#/components/schemas/Sky'
+    SubjectCode:
+      type: string
+      description: 学科目录编码（platform.subject_catalog.code）；英语不出现
+      enum: [math, chinese, politics]
+    SkyBuilding:
+      type: object
+      additionalProperties: false
+      description: 在读但没有已发布地图（“地图建设中”）
+      required: [subject, status]
+      properties:
+        subject: { $ref: '#/components/schemas/SubjectCode' }
+        status: { type: string, const: building }
+    Sky:
+      type: object
+      additionalProperties: false
+      required: [subject, status, map_version, domains]
+      properties:
+        subject: { $ref: '#/components/schemas/SubjectCode' }
+        status: { type: string, const: ok }
+        map_version: { type: string, pattern: '^\d{1,3}\.\d{1,3}\.\d{1,4}$' }
+        domains:
+          type: array
+          items: { $ref: '#/components/schemas/Domain' }
+        summary:
+          description: 星数说明：只在该科有一条画了星的“知识掌握”判断且取到其陈述时出现
+          $ref: '#/components/schemas/Statement'
+        transfer_summary:
+          description: 迁移摘要：只在该科有一条依据对得上的“知识迁移”判断且取到其陈述时出现
+          $ref: '#/components/schemas/Statement'
+    Domain:
+      type: object
+      additionalProperties: false
+      required: [domain_id, name, topics]
+      properties:
+        domain_id: { $ref: '#/components/schemas/NodeId' }
+        name: { type: [string, 'null'] }
+        topics:
+          type: array
+          items: { $ref: '#/components/schemas/Topic' }
+    Topic:
+      type: object
+      additionalProperties: false
+      required: [topic_id, name, stars]
+      properties:
+        topic_id: { $ref: '#/components/schemas/NodeId' }
+        name: { type: [string, 'null'] }
+        stars:
+          type: array
+          description: 按 node_id 排序
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/NeutralStar'
+              - $ref: '#/components/schemas/PaintedStar'
+              - $ref: '#/components/schemas/DashedStar'
+    NodeId:
+      type: string
+      pattern: '^[A-Z][A-Z0-9]{1,9}(\.[A-Z0-9][A-Z0-9_]{0,31}){1,4}$'
+    NeutralStar:
+      type: object
+      additionalProperties: false
+      description: 中性底星（没有匹配的判断、学习服务不可用或 409）：不亮、不暗、不带任何星态、文字或判断 ID
+      required: [node_id, name, display]
+      properties:
+        node_id: { $ref: '#/components/schemas/NodeId' }
+        name: { type: string }
+        display: { type: string, const: neutral }
+    PaintedStar:
+      type: object
+      additionalProperties: false
+      description: 有匹配的“知识掌握”判断：按学习服务给的状态画三态（unseen / understand → unlit；execute / stable → half；transfer / retain → lit）
+      required: [node_id, name, display, retained, claim_id]
+      properties:
+        node_id: { $ref: '#/components/schemas/NodeId' }
+        name: { type: string }
+        display: { type: string, enum: [unlit, half, lit] }
+        retained: { type: boolean, description: 状态为 retain（亮星的“保持”外圈） }
+        claim_id: { type: string, format: uuid }
+    DashedStar:
+      type: object
+      additionalProperties: false
+      description: 只在开关 starmap_dashed 打开时出现：待验证的判断画虚线，不带结论文字
+      required: [node_id, name, display, claim_id, next_check]
+      properties:
+        node_id: { $ref: '#/components/schemas/NodeId' }
+        name: { type: string }
+        display: { type: string, const: dashed }
+        claim_id: { type: string, format: uuid }
+        next_check:
+          description: 下一次验证任务（该节点最早一条未关闭的 platform.retest_task，只给上海时区日期）；没有时为 null
+          oneOf:
+            - type: 'null'
+            - type: object
+              additionalProperties: false
+              required: [due_on]
+              properties:
+                due_on: { type: string, format: date }
+    Statement:
+      type: object
+      additionalProperties: false
+      description: 洞察服务渲染的一句陈述（insight.explain 的 RenderedStatement，只保留这三个字段）；前端渲染为带 data-claim-id 的元素
+      required: [claim_id, text, confidence_band]
+      properties:
+        claim_id: { type: string, format: uuid }
+        text: { type: string, minLength: 1, maxLength: 300 }
+        confidence_band: { type: string, enum: [few_evidence, moderate, strong] }
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        code: { type: string, enum: [UNAUTHENTICATED, NOT_FOUND, METHOD_NOT_ALLOWED, INTERNAL, TEST_EXITED] }

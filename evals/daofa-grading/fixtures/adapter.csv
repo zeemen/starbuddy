@@ -1,0 +1,12 @@
+# 合成、非金标：适配器逐点判分结果的格式样例（流程样例），全部编造，不是任何真实判分输出。
+response_id,item_id,point_id,score,attribution
+SYN-R-01,synthetic-m3-01,p1,2,
+SYN-R-01,synthetic-m3-01,p2,1,dingwei_cuo
+SYN-R-01,synthetic-m3-01,p3,2,
+SYN-R-02,synthetic-m3-01,p1,1,zhuanhua_cuo
+SYN-R-02,synthetic-m3-01,p2,2,
+SYN-R-02,synthetic-m3-01,p3,1,zhuanhua_cuo
+SYN-R-03,synthetic-m3-03,p1,2,
+SYN-R-04,synthetic-m3-04,p1,1,guifan_cuo
+SYN-R-04,synthetic-m3-04,p2,1,guifan_cuo
+SYN-R-05,synthetic-m3-04,p1,2,

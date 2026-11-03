@@ -1,0 +1,172 @@
+# BFF ↔ 统一壳前端的家长诉求接口（specs/family-goals-monthly-plan/spec.md 第 1 步，PLT-14；迁移 0053）。
+# 服务内部接口，不是学科插件契约，不放 packages/contracts（与 practice.v0.yaml 同一做法）。
+openapi: 3.1.0
+info:
+  title: StarBuddy BFF · family goals (v0, prototype)
+  version: 0.1.0
+  description: >
+    家长读写自己对一个孩子的诉求：关注学科（最多 2 科，限在读学科码）、分科目标分（学校考试口径：月考 / 期中 / 期末的分科分，
+    0 至该科满分，可不填）、关注学校（只能引用招录库已复核发布、在办、同地区的学校；按当前年级只有初三可设）、补充说明（1–200 字）。
+    挂在功能开关 family_goals 上，默认关闭：关闭时两条路由都不注册，与表外路径同一个 404（STARBUDDY_FAMILY_GOALS=family_goals，只在 dev / test）。
+    可见范围（spec 用户确认的口径 1）：学生看不到。路由 auth = session，学生会话在请求体错误、CSRF、限流与任何查询之前一律 404
+    （与“不存在”逐字节相同：非法请求体、命中词表、缺 CSRF、超限流的学生请求同样 404）；
+    家长的授权在库里按 guardian_student_link 核对当前账号：别家家长、已解除绑定、不存在的学生、档案已删除同一个 404。
+    每位家长只读写自己写的诉求（两位家长各存各的，不合并）；每次提交是新的一版，旧版保留（history）。
+    存为家长自述（source_type = guardian），与学生自述、客观成绩分表存；不进学生模型，不产生任何关于学生的陈述（规则 6、11、12）。
+    补充说明经禁用推断词表过滤（docs/design/sie/forbidden-inference.v0.yaml）：命中 422 TEXT_NOT_ACCEPTED，不存；
+    词表读不到时 503 UNAVAILABLE，不存。换行、零宽等隐形字符（Unicode Cc、Cf、Zl、Zp）422。
+    不计量（诉求收集不是消耗类请求，规则 4 不适用）。
+    身份只来自会话（请求头 x-sb-session）；改变状态的请求另要 Origin 等于壳的来源、带与会话绑定的 x-csrf-token（见 shell.v0.yaml）。
+    限流：读按每会话桶 family_goals.session.minute；写按（家长，孩子）一对 family_goals_write.link.hour 与家长账号 family_goals_write.account.hour
+    （config/auth.json）；库里另有同一家长对同一孩子 24 小时 20 版的写入上限（429 TOO_MANY）。请求体上限 16 KB。
+servers:
+  - url: http://127.0.0.1:8787
+paths:
+  /bff/v0/students/{student_id}/family-goals:
+    parameters:
+      - $ref: '#/components/parameters/StudentId'
+      - $ref: '#/components/parameters/Session'
+    get:
+      x-sb-auth: session
+      x-sb-rate-buckets: [family_goals.session.minute]
+      operationId: getFamilyGoals
+      description: 家长读自己写的当前诉求与最近 20 版历史，以及表单需要的事实（能否设学校、在读学科、可选学校）。
+      responses:
+        '200':
+          description: 本人的诉求
+          headers: { Cache-Control: { schema: { const: no-store } } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GoalView' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { description: TEST_EXITED（档案已退出内部测试，LT-06；internal-test.v0.yaml）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+        '429': { $ref: '#/components/responses/Problem' }
+    put:
+      x-sb-auth: session
+      x-sb-rate-buckets: [family_goals_write.link.hour, family_goals_write.account.hour]
+      operationId: putFamilyGoals
+      description: 提交一版诉求（整体替换本人的当前版；旧版保留为历史）。四个键都必须给，未知键 422。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GoalInput' }
+      responses:
+        '200':
+          description: 已保存为新的一版
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [version]
+                properties:
+                  version: { type: integer, minimum: 1 }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { description: CSRF（Origin 或 x-csrf-token 不对）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { description: SCHOOL_NOT_OPEN_FOR_GRADE（初一初二不能设学校）、GOAL_GRADE_NOT_SUPPORTED（当前年级不在 7–9，未入学或已毕业）、CONFLICT（并发提交，重试）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+        '422': { description: INVALID（形状不合、学科不在读、学校不可选、补充说明超长或含隐形字符）、TEXT_NOT_ACCEPTED（补充说明命中禁用推断词表，不存）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+        '429': { $ref: '#/components/responses/Problem' }
+        '503': { description: UNAVAILABLE（禁用推断词表读不到，fail closed，不存）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+components:
+  parameters:
+    StudentId:
+      name: student_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Session:
+      name: x-sb-session
+      in: header
+      required: true
+      description: 会话令牌（64 位十六进制），不进 URL 与日志
+      schema: { type: string, pattern: '^[0-9a-f]{64}$' }
+  schemas:
+    Subject: { enum: [wenli, aya, zhixing, echo], description: 平台学科码（platform.subject） }
+    TargetScore:
+      type: object
+      additionalProperties: false
+      required: [subject, full_score, target_score]
+      properties:
+        subject: { $ref: '#/components/schemas/Subject' }
+        full_score: { type: number, exclusiveMinimum: 0, maximum: 300, multipleOf: 0.1, description: 该科学校考试满分 }
+        target_score: { type: number, minimum: 0, multipleOf: 0.1, description: 目标分，不超过满分 }
+    GoalInput:
+      type: object
+      additionalProperties: false
+      required: [focus_subjects, target_scores, school_id, note]
+      properties:
+        focus_subjects: { type: array, maxItems: 2, uniqueItems: true, items: { $ref: '#/components/schemas/Subject' } }
+        target_scores: { type: array, maxItems: 4, items: { $ref: '#/components/schemas/TargetScore' } }
+        school_id: { type: [string, 'null'], format: uuid }
+        note: { type: [string, 'null'], maxLength: 200, description: 首尾空白去掉后为空按不填；不含 Unicode Cc、Cf、Zl、Zp }
+    GoalCurrent:
+      type: object
+      additionalProperties: false
+      required: [version, focus_subjects, target_scores, school, note, source_type, created_at]
+      properties:
+        version: { type: integer, minimum: 1 }
+        focus_subjects: { type: array, items: { $ref: '#/components/schemas/Subject' } }
+        target_scores: { type: array, items: { $ref: '#/components/schemas/TargetScore' } }
+        school:
+          oneOf:
+            - { type: 'null' }
+            - type: object
+              additionalProperties: false
+              required: [id, public_name]
+              properties:
+                id: { type: string, format: uuid }
+                public_name: { type: [string, 'null'] }
+        note: { type: [string, 'null'] }
+        source_type: { const: guardian }
+        created_at: { type: string, format: date-time }
+    GoalHistory:
+      type: object
+      additionalProperties: false
+      required: [version, focus_subjects, target_scores, school_id, note, created_at, superseded_at]
+      properties:
+        version: { type: integer, minimum: 1 }
+        focus_subjects: { type: array, items: { $ref: '#/components/schemas/Subject' } }
+        target_scores: { type: array, items: { $ref: '#/components/schemas/TargetScore' } }
+        school_id: { type: [string, 'null'], format: uuid }
+        note: { type: [string, 'null'] }
+        created_at: { type: string, format: date-time }
+        superseded_at: { type: string, format: date-time }
+    GoalView:
+      type: object
+      additionalProperties: false
+      required: [grade, can_set_school, enrolled_subjects, school_options, current, history]
+      properties:
+        grade: { type: [integer, 'null'], minimum: 7, maximum: 9, description: 按届别推算的当前年级；不在 7–9 为 null }
+        can_set_school: { type: boolean }
+        enrolled_subjects: { type: array, items: { $ref: '#/components/schemas/Subject' } }
+        school_options:
+          type: array
+          maxItems: 300
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, public_name]
+            properties:
+              id: { type: string, format: uuid }
+              public_name: { type: string }
+        current: { oneOf: [{ type: 'null' }, { $ref: '#/components/schemas/GoalCurrent' }] }
+        history: { type: array, maxItems: 20, items: { $ref: '#/components/schemas/GoalHistory' } }
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        code:
+          enum: [UNAUTHENTICATED, CSRF, NOT_FOUND, INVALID, TEXT_NOT_ACCEPTED, SCHOOL_NOT_OPEN_FOR_GRADE, GOAL_GRADE_NOT_SUPPORTED, CONFLICT,
+                 TOO_MANY, TOO_MANY_REQUESTS, UNAVAILABLE, METHOD_NOT_ALLOWED, TOO_LARGE, UNSUPPORTED_MEDIA_TYPE, TEST_EXITED]
+  responses:
+    Problem:
+      description: 统一错误体
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

@@ -1,0 +1,27 @@
+# 样例：托管平台选 GitLab 时，改名为仓库根目录的 .gitlab-ci.yml（平台待 ADR 12 #1）。
+# 在“合并请求必须流水线成功”里启用（BRANCH_PROTECTION.md 第 3 条）。
+#
+# 安全要点（BRANCH_PROTECTION.md 第 13–18 条）：
+# - 本任务不引用任何 CI/CD 变量里的凭据；受保护变量只在受保护分支与标签上暴露，合并请求流水线拿不到。
+#   GitLab 每个任务都带 CI_JOB_TOKEN，无法去掉：在“设置 → CI/CD → 作业令牌权限”里把访问范围限定为本项目，不加任何白名单。
+# - 检查工具取固定版本的预构建只读制品（main 里的 ci/install-tools.sh + ci/kge-tools.pin：先核 sha256，依赖 pip --require-hashes）。
+# - lint.sh、地图快照、人设词表、上一审核版一律取自 main（git worktree 检出，不执行合并请求里的任何脚本）；合并请求头部只用 pages/。
+# - 镜像按 digest 固定；下面的 0000… 是占位，启用前必须替换为所选镜像的 sha256 digest。
+# - .gitlab-ci.yml 本身来自合并请求的源分支：必须由平台负责人审核（CODEOWNERS）；平台支持时把“CI/CD 配置文件”指向受保护的
+#   中心项目里的文件（例如 kge-lint.yml@<组>/<中心项目>），或用流水线执行策略，合并请求改不到它。
+kge-lint:
+  image: python:3.11-slim@sha256:0000000000000000000000000000000000000000000000000000000000000000
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  variables:
+    GIT_DEPTH: "0"
+  script:
+    - apt-get update -qq && apt-get install -y -qq git curl > /dev/null
+    - git -c core.hooksPath=/dev/null fetch --no-tags origin "+refs/heads/main:refs/remotes/origin/main"
+    - git -c core.hooksPath=/dev/null worktree add --detach .kge-main refs/remotes/origin/main
+    - bash .kge-main/ci/install-tools.sh "$CI_PROJECT_DIR/.kge-tools"
+    - KNOWLEDGE_DIR="$CI_PROJECT_DIR/.kge-tools/services/knowledge" HEAD_PAGES_DIR="$CI_PROJECT_DIR/pages"
+      LINT_REPORT="$CI_PROJECT_DIR/lint-report.json" CI=true bash .kge-main/ci/lint.sh
+  artifacts:
+    when: always
+    paths: [lint-report.json]

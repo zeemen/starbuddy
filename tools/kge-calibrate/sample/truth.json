@@ -1,0 +1,99 @@
+{
+  "$comment": "合成队列埋入的结构（只含公共层节点 ID 与错因编码）：用于检验召回与误报，不是任何真实数据。",
+  "hidden": [
+    [
+      "MATH.CALIB.T2.N4",
+      "MATH.CALIB.T2.N5"
+    ],
+    [
+      "MATH.CALIB.T3.N6",
+      "MATH.CALIB.T3.N7"
+    ]
+  ],
+  "holds": [
+    [
+      "MATH.CALIB.T1.N1",
+      "MATH.CALIB.T1.N2"
+    ],
+    [
+      "MATH.CALIB.T1.N2",
+      "MATH.CALIB.T1.N3"
+    ],
+    [
+      "MATH.CALIB.T2.N1",
+      "MATH.CALIB.T2.N2"
+    ],
+    [
+      "MATH.CALIB.T3.N1",
+      "MATH.CALIB.T3.N2"
+    ],
+    [
+      "MATH.CALIB.T3.N1",
+      "MATH.CALIB.T3.N3"
+    ],
+    [
+      "MATH.CALIB.T2.N2",
+      "MATH.CALIB.T4.N5"
+    ]
+  ],
+  "not_holds": [
+    [
+      "MATH.CALIB.T1.N3",
+      "MATH.CALIB.T1.N4"
+    ],
+    [
+      "MATH.CALIB.T2.N1",
+      "MATH.CALIB.T2.N3"
+    ],
+    [
+      "MATH.CALIB.T4.N1",
+      "MATH.CALIB.T4.N2"
+    ]
+  ],
+  "pitfall_covered": [
+    [
+      "MATH.CALIB.T5.N2",
+      "biaoda_cuowu"
+    ]
+  ],
+  "pitfall_excluded": [
+    [
+      "MATH.CALIB.T5.N6",
+      "fenlei_yilou"
+    ],
+    [
+      "MATH.CALIB.T5.N6",
+      "xinli_xiguan"
+    ]
+  ],
+  "pitfall_uncovered": [
+    [
+      "MATH.CALIB.T5.N1",
+      "shijian_wenti"
+    ]
+  ],
+  "pitfall_unmapped": [
+    [
+      "MATH.CALIB.T5.N7",
+      "fangfa_cuowu"
+    ]
+  ],
+  "seed": 20261016,
+  "split": [
+    "MATH.CALIB.T5.N4"
+  ],
+  "step2_students": 1200,
+  "students": 600,
+  "tiers": [
+    "MATH.CALIB.T5.N5"
+  ],
+  "unclassifiable": [
+    "MATH.CALIB.T5.N3"
+  ],
+  "weak_true": [
+    [
+      "MATH.CALIB.T3.N4",
+      "MATH.CALIB.T3.N5"
+    ]
+  ]
+}

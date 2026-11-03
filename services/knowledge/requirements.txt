@@ -1,0 +1,22 @@
+# 运行时依赖（许可证已核，见 README.md；规则 10）
+# SymPy 用于程序体检的等式验算；mpmath 是 SymPy 的依赖
+sympy==1.14.0
+mpmath==1.3.0
+pyyaml==6.0.3
+# 全量重编经模型路由（services/learning/learning/model_router）调用，路由的供应商适配器依赖 httpx
+httpx==0.28.1
+# 知识服务读工具（PR ②）：HTTP（FastAPI）、只读数据库连接（asyncpg；psycopg 3 为 LGPL-3.0，按规则 10 不引入）、
+# 契约严格校验（jsonschema + referencing）、MCP（官方 Python SDK，MIT；mcp-types 为其类型包）。版本与学习服务一致
+fastapi==0.141.1
+starlette==1.7.0
+pydantic==2.13.5
+uvicorn==0.54.0
+asyncpg==0.31.0
+jsonschema==4.26.0
+referencing==0.37.0
+mcp==2.2.0
+mcp-types==2.2.0
+# 兜底检索与 node.resolve 的全文检索（PR ③，spec 待人确认 #5）：中文分词。MIT；只有源码包，安装时本地构建（纯 Python）
+jieba==0.42.1
+# LT-05 可观测性：/metrics（Prometheus 文本格式）。Apache-2.0 AND BSD-2-Clause（附带的 decorator.py），无运行依赖
+prometheus-client==0.26.0

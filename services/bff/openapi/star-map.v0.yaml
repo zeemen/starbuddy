@@ -7,24 +7,26 @@ info:
   description: >
     学生本人或已绑定的有效家长读取学生的星图。授权完全由数据库 RLS（can_read_student）决定；
     未授权与学生不存在返回同一个 404，响应体逐字节相同。只返回三态展示数据，不返回 p_mastery、
-    confidence、evidence_ids、algorithm_version。本冲刺的身份来源是开发桩（x-dev-account-id，
-    只在 STARBUDDY_DEV_AUTH=1 且只监听 loopback 时生效），4-H 用真实会话替换。
+    confidence、evidence_ids、algorithm_version。身份只来自会话（请求头 x-sb-session；4-H H2 起挂在统一壳路由表上，
+    开发身份桩已删除）。
 servers:
   - url: http://127.0.0.1:8787
 paths:
   /bff/v0/students/{student_id}/star-map:
     get:
+      x-sb-auth: session
+      x-sb-rate-buckets: []
       operationId: getStarMap
       parameters:
         - name: student_id
           in: path
           required: true
           schema: { type: string, format: uuid }
-        - name: x-dev-account-id
+        - name: x-sb-session
           in: header
-          required: false
-          description: 开发身份桩（仅开发环境）；4-H 删除
-          schema: { type: string, format: uuid }
+          required: true
+          description: 会话令牌（64 位十六进制），不进 URL 与日志
+          schema: { type: string, pattern: '^[0-9a-f]{64}$' }
       responses:
         '200':
           description: 星图
@@ -40,6 +42,11 @@ paths:
               schema: { $ref: '#/components/schemas/Problem' }
         '404':
           description: 学生不存在，或当前账号无权查看（两者不区分）
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '409':
+          description: TEST_EXITED（档案已退出内部测试，LT-06；internal-test.v0.yaml）
           content:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }
@@ -108,4 +115,4 @@ components:
         type: { type: string }
         title: { type: string }
         status: { type: integer }
-        code: { type: string, enum: [UNAUTHENTICATED, NOT_FOUND, METHOD_NOT_ALLOWED, INTERNAL] }
+        code: { type: string, enum: [UNAUTHENTICATED, NOT_FOUND, METHOD_NOT_ALLOWED, INTERNAL, TEST_EXITED] }

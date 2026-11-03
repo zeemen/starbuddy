@@ -1,0 +1,10 @@
+# 状态、计划、本地 provider 缓存与真实变量一律不进仓库（deploy/iac/check_iac.py 规则 R01 另行核对）
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+!terraform.tfvars.example
+crash.log
+override.tf
+*_override.tf

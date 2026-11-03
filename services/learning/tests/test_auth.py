@@ -12,7 +12,8 @@ from learning.contract import internal_contract
 
 from conftest import ADAPTER_CREDENTIAL, CREDENTIAL, settings
 
-ROUTES = ("/internal/v0/grade", "/internal/v0/diagnose")
+# v0 写入已下线（LT-04 决定记录（再续）第 1 条，一律 410，见 test_internal_v1_guard.py）：写入接口只剩 /internal/v1
+ROUTES = ("/internal/v1/grade", "/internal/v1/diagnose")
 
 # 每一项都必须被拒绝：缺失、错误、前缀或后缀、大小写、多空格、别的方案、超长、混用的令牌
 BAD_HEADERS: dict[str, str | None] = {
@@ -68,7 +69,7 @@ async def test_bad_token_is_rejected_without_reading_body(bare_api, route, label
     assert r.status_code == 401, (label, r.status_code)
     problem = r.json()
     assert problem["code"] == "UNAUTHENTICATED"
-    assert internal_contract().validate("Problem", problem) == []
+    assert internal_contract("1.0.0").validate("Problem", problem) == []
     assert consumed == [], f"{label}：鉴权失败时仍读了请求体"
     # 响应里不回显任何令牌内容
     assert CREDENTIAL not in r.text and ADAPTER_CREDENTIAL not in r.text
@@ -82,7 +83,7 @@ async def test_body_read_detector_works_with_valid_token(bare_api):
         consumed.append(1)
         yield b"{not json"
 
-    r = await bare_api.post("/internal/v0/grade", content=body(),
+    r = await bare_api.post("/internal/v1/grade", content=body(),
                             headers={"authorization": f"Bearer {CREDENTIAL}", "content-type": "application/json"})
     assert r.status_code == 400 and consumed == [1]
 
@@ -91,4 +92,5 @@ async def test_unknown_routes_and_methods_do_not_expose_docs(bare_api):
     # 关掉了 /docs、/openapi.json；GET 业务路由不是可用方法
     for path in ("/docs", "/redoc", "/openapi.json"):
         assert (await bare_api.get(path)).status_code == 404
-    assert (await bare_api.get("/internal/v0/grade", headers={"authorization": f"Bearer {CREDENTIAL}"})).status_code == 405
+    for path in ("/internal/v1/grade", "/internal/v0/grade"):
+        assert (await bare_api.get(path, headers={"authorization": f"Bearer {CREDENTIAL}"})).status_code == 405

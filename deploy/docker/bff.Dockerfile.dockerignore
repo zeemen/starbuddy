@@ -1,0 +1,15 @@
+# deploy/docker/bff.Dockerfile 专用（白名单；上下文是仓库根目录）。node_modules 不进上下文，镜像里按锁文件重新安装。
+*
+!services/bff/package.json
+!services/bff/package-lock.json
+!services/bff/config
+!services/bff/src
+!services/insight/templates
+!docs/design/sie/sie_lexicon.py
+!docs/design/sie/forbidden-inference.v0.yaml
+!docs/design/sie/no-promise.v0.draft.yaml
+**/node_modules
+**/.env*
+**/tests
+**/fixtures
+legacy

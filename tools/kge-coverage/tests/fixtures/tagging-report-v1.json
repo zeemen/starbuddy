@@ -1,0 +1,22 @@
+{
+  "warning": "（合成）含假实现，不得执行：只用来核对报表忽略追加字段",
+  "format": "kge-tagging-report/1",
+  "format_doc": "tools/kge-import/src/items/report-types.ts",
+  "subject": "aya",
+  "map_version": { "id": "00000000-0000-4000-8000-00000000c0de", "version": "9.9.9-syn", "imported_chapters": ["syn"] },
+  "counts": {
+    "items_total": 5,
+    "candidates_all_by_layer": { "rule": 4, "vector": 2, "model": 0 },
+    "candidate_rows_by_layer": { "rule": 1, "vector": 2, "model": 0 }
+  },
+  "families": [],
+  "items": [
+    { "item_id": "SYN-R-001", "chapter": "syn", "route": "topic", "in_scope": true, "status": "item_tag", "grade": "A", "main_node_id": "MATH.SYN.SYN_A.K_SYN_0001", "node_ids": ["MATH.SYN.SYN_A.K_SYN_0001"], "confidence": 0.9, "layer": "rule", "over_cap": false, "b_reasons": [], "six_segments": null, "family_code": null, "registered": true,
+      "candidates": [{ "node_id": "MATH.SYN.SYN_A.K_SYN_0001", "role": "main", "layer": "rule", "confidence": 0.9, "reason_code": "syn_rule", "tagger_version": "kge-tagger-rule@0.0.0", "model_version": null }],
+      "tag_basis": [{ "layer": "rule", "version": "kge-tagger-rule@0.0.0" }, { "layer": "model", "version": "model:fake/syn-tagger@0.0.0" }] },
+    { "item_id": "SYN-R-002", "chapter": "syn", "route": "topic", "in_scope": true, "status": "candidate", "grade": "B", "main_node_id": "MATH.SYN.SYN_A.K_SYN_0002", "node_ids": ["MATH.SYN.SYN_A.K_SYN_0002", "MATH.SYN.SYN_B.S_SYN_0003", "MATH.SYN.SYN_B.M_SYN_0004"], "confidence": 0.6, "layer": "vector", "over_cap": true, "b_reasons": ["over_cap"], "six_segments": null, "family_code": null, "registered": true, "candidates": [], "tag_basis": [] },
+    { "item_id": "SYN-R-003", "chapter": "syn", "route": "topic", "in_scope": true, "status": "untaggable", "grade": null, "main_node_id": null, "node_ids": [], "confidence": null, "layer": null, "over_cap": false, "b_reasons": [], "six_segments": null, "family_code": null, "registered": true, "candidates": [] },
+    { "item_id": "SYN-R-004", "chapter": "zzz", "route": "id_prefix", "in_scope": false, "status": "out_of_scope", "grade": null, "main_node_id": null, "node_ids": [], "confidence": null, "layer": null, "over_cap": false, "b_reasons": [], "six_segments": null, "family_code": null, "registered": null, "candidates": [] },
+    { "item_id": "SYN-R-005", "chapter": "syn", "route": "topic", "in_scope": true, "status": "item_tag", "grade": "A", "main_node_id": "MATH.SYN.SYN_B.S_SYN_0003", "node_ids": ["MATH.SYN.SYN_B.S_SYN_0003"], "confidence": 0.9, "layer": "rule", "over_cap": false, "b_reasons": [], "six_segments": null, "family_code": null, "registered": true, "candidates": [], "tag_basis": [{ "layer": "rule", "version": "kge-tagger-rule@0.0.0" }] }
+  ]
+}

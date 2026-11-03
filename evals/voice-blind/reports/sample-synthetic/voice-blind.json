@@ -1,0 +1,1993 @@
+{
+  "asr": {
+    "VA": [
+      {
+        "del": 0,
+        "group": "zh",
+        "ins": 0,
+        "metric": "cer",
+        "missing": 0,
+        "n": 14,
+        "rate": {
+          "ci_high": 0.0,
+          "ci_low": 0.0,
+          "n": 14,
+          "value": 0.0
+        },
+        "sub": 0,
+        "units": 163
+      },
+      {
+        "del": 0,
+        "group": "zh/accent=standard",
+        "ins": 0,
+        "metric": "cer",
+        "missing": 0,
+        "n": 6,
+        "rate": {
+          "ci_high": 0.0,
+          "ci_low": 0.0,
+          "n": 6,
+          "value": 0.0
+        },
+        "sub": 0,
+        "units": 65
+      },
+      {
+        "del": 0,
+        "group": "zh/accent=nanjing",
+        "ins": 0,
+        "metric": "cer",
+        "missing": 0,
+        "n": 6,
+        "rate": {
+          "ci_high": 0.0,
+          "ci_low": 0.0,
+          "n": 6,
+          "value": 0.0
+        },
+        "sub": 0,
+        "units": 74
+      },
+      {
+        "del": 0,
+        "group": "zh/accent=other",
+        "ins": 0,
+        "metric": "cer",
+        "missing": 0,
+        "n": 2,
+        "rate": {
+          "ci_high": 0.0,
+          "ci_low": 0.0,
+          "n": 2,
+          "value": 0.0
+        },
+        "sub": 0,
+        "units": 24
+      },
+      {
+        "del": 0,
+        "group": "zh/noise=quiet",
+        "ins": 0,
+        "metric": "cer",
+        "missing": 0,
+        "n": 7,
+        "rate": {
+          "ci_high": 0.0,
+          "ci_low": 0.0,
+          "n": 7,
+          "value": 0.0
+        },
+        "sub": 0,
+        "units": 84
+      },
+      {
+        "del": 0,
+        "group": "zh/noise=classroom",
+        "ins": 0,
+        "metric": "cer",
+        "missing": 0,
+        "n": 4,
+        "rate": {
+          "ci_high": 0.0,
+          "ci_low": 0.0,
+          "n": 4,
+          "value": 0.0
+        },
+        "sub": 0,
+        "units": 38
+      },
+      {
+        "del": 0,
+        "group": "zh/noise=outdoor",
+        "ins": 0,
+        "metric": "cer",
+        "missing": 0,
+        "n": 3,
+        "rate": {
+          "ci_high": 0.0,
+          "ci_low": 0.0,
+          "n": 3,
+          "value": 0.0
+        },
+        "sub": 0,
+        "units": 41
+      },
+      {
+        "del": 0,
+        "group": "en",
+        "ins": 0,
+        "metric": "wer",
+        "missing": 0,
+        "n": 10,
+        "rate": {
+          "ci_high": 0.0,
+          "ci_low": 0.0,
+          "n": 10,
+          "value": 0.0
+        },
+        "sub": 0,
+        "units": 72
+      },
+      {
+        "del": 0,
+        "group": "en/accent=standard",
+        "ins": 0,
+        "metric": "wer",
+        "missing": 0,
+        "n": 4,
+        "rate": {
+          "ci_high": 0.0,
+          "ci_low": 0.0,
+          "n": 4,
+          "value": 0.0
+        },
+        "sub": 0,
+        "units": 28
+      },
+      {
+        "del": 0,
+        "group": "en/accent=nanjing",
+        "ins": 0,
+        "metric": "wer",
+        "missing": 0,
+        "n": 4,
+        "rate": {
+          "ci_high": 0.0,
+          "ci_low": 0.0,
+          "n": 4,
+          "value": 0.0
+        },
+        "sub": 0,
+        "units": 28
+      },
+      {
+        "del": 0,
+        "group": "en/accent=other",
+        "ins": 0,
+        "metric": "wer",
+        "missing": 0,
+        "n": 2,
+        "rate": {
+          "ci_high": 0.0,
+          "ci_low": 0.0,
+          "n": 2,
+          "value": 0.0
+        },
+        "sub": 0,
+        "units": 16
+      },
+      {
+        "del": 0,
+        "group": "en/noise=quiet",
+        "ins": 0,
+        "metric": "wer",
+        "missing": 0,
+        "n": 5,
+        "rate": {
+          "ci_high": 0.0,
+          "ci_low": 0.0,
+          "n": 5,
+          "value": 0.0
+        },
+        "sub": 0,
+        "units": 37
+      },
+      {
+        "del": 0,
+        "group": "en/noise=classroom",
+        "ins": 0,
+        "metric": "wer",
+        "missing": 0,
+        "n": 3,
+        "rate": {
+          "ci_high": 0.0,
+          "ci_low": 0.0,
+          "n": 3,
+          "value": 0.0
+        },
+        "sub": 0,
+        "units": 23
+      },
+      {
+        "del": 0,
+        "group": "en/noise=outdoor",
+        "ins": 0,
+        "metric": "wer",
+        "missing": 0,
+        "n": 2,
+        "rate": {
+          "ci_high": 0.0,
+          "ci_low": 0.0,
+          "n": 2,
+          "value": 0.0
+        },
+        "sub": 0,
+        "units": 12
+      }
+    ],
+    "VB": [
+      {
+        "del": 5,
+        "group": "zh",
+        "ins": 6,
+        "metric": "cer",
+        "missing": 0,
+        "n": 14,
+        "rate": {
+          "ci_high": 0.22093,
+          "ci_low": 0.125,
+          "n": 14,
+          "value": 0.171779
+        },
+        "sub": 17,
+        "units": 163
+      },
+      {
+        "del": 1,
+        "group": "zh/accent=standard",
+        "ins": 1,
+        "metric": "cer",
+        "missing": 0,
+        "n": 6,
+        "rate": {
+          "ci_high": 0.215385,
+          "ci_low": 0.083333,
+          "n": 6,
+          "value": 0.153846
+        },
+        "sub": 8,
+        "units": 65
+      },
+      {
+        "del": 3,
+        "group": "zh/accent=nanjing",
+        "ins": 4,
+        "metric": "cer",
+        "missing": 0,
+        "n": 6,
+        "rate": {
+          "ci_high": 0.28169,
+          "ci_low": 0.109589,
+          "n": 6,
+          "value": 0.189189
+        },
+        "sub": 7,
+        "units": 74
+      },
+      {
+        "del": 1,
+        "group": "zh/accent=other",
+        "ins": 1,
+        "metric": "cer",
+        "missing": 0,
+        "n": 2,
+        "rate": {
+          "ci_high": 0.230769,
+          "ci_low": 0.090909,
+          "n": 2,
+          "value": 0.166667
+        },
+        "sub": 2,
+        "units": 24
+      },
+      {
+        "del": 5,
+        "group": "zh/noise=quiet",
+        "ins": 3,
+        "metric": "cer",
+        "missing": 0,
+        "n": 7,
+        "rate": {
+          "ci_high": 0.280488,
+          "ci_low": 0.116883,
+          "n": 7,
+          "value": 0.202381
+        },
+        "sub": 9,
+        "units": 84
+      },
+      {
+        "del": 0,
+        "group": "zh/noise=classroom",
+        "ins": 2,
+        "metric": "cer",
+        "missing": 0,
+        "n": 4,
+        "rate": {
+          "ci_high": 0.25,
+          "ci_low": 0.142857,
+          "n": 4,
+          "value": 0.184211
+        },
+        "sub": 5,
+        "units": 38
+      },
+      {
+        "del": 0,
+        "group": "zh/noise=outdoor",
+        "ins": 1,
+        "metric": "cer",
+        "missing": 0,
+        "n": 3,
+        "rate": {
+          "ci_high": 0.117647,
+          "ci_low": 0.076923,
+          "n": 3,
+          "value": 0.097561
+        },
+        "sub": 3,
+        "units": 41
+      },
+      {
+        "del": 0,
+        "group": "en",
+        "ins": 4,
+        "metric": "wer",
+        "missing": 0,
+        "n": 10,
+        "rate": {
+          "ci_high": 0.393939,
+          "ci_low": 0.150685,
+          "n": 10,
+          "value": 0.263889
+        },
+        "sub": 15,
+        "units": 72
+      },
+      {
+        "del": 0,
+        "group": "en/accent=standard",
+        "ins": 2,
+        "metric": "wer",
+        "missing": 0,
+        "n": 4,
+        "rate": {
+          "ci_high": 0.37037,
+          "ci_low": 0.037037,
+          "n": 4,
+          "value": 0.178571
+        },
+        "sub": 3,
+        "units": 28
+      },
+      {
+        "del": 0,
+        "group": "en/accent=nanjing",
+        "ins": 2,
+        "metric": "wer",
+        "missing": 0,
+        "n": 4,
+        "rate": {
+          "ci_high": 0.538462,
+          "ci_low": 0.107143,
+          "n": 4,
+          "value": 0.321429
+        },
+        "sub": 7,
+        "units": 28
+      },
+      {
+        "del": 0,
+        "group": "en/accent=other",
+        "ins": 0,
+        "metric": "wer",
+        "missing": 0,
+        "n": 2,
+        "rate": {
+          "ci_high": 0.428571,
+          "ci_low": 0.222222,
+          "n": 2,
+          "value": 0.3125
+        },
+        "sub": 5,
+        "units": 16
+      },
+      {
+        "del": 0,
+        "group": "en/noise=quiet",
+        "ins": 1,
+        "metric": "wer",
+        "missing": 0,
+        "n": 5,
+        "rate": {
+          "ci_high": 0.305556,
+          "ci_low": 0.055556,
+          "n": 5,
+          "value": 0.189189
+        },
+        "sub": 6,
+        "units": 37
+      },
+      {
+        "del": 0,
+        "group": "en/noise=classroom",
+        "ins": 0,
+        "metric": "wer",
+        "missing": 0,
+        "n": 3,
+        "rate": {
+          "ci_high": 0.428571,
+          "ci_low": 0.0,
+          "n": 3,
+          "value": 0.217391
+        },
+        "sub": 5,
+        "units": 23
+      },
+      {
+        "del": 0,
+        "group": "en/noise=outdoor",
+        "ins": 3,
+        "metric": "wer",
+        "missing": 0,
+        "n": 2,
+        "rate": {
+          "ci_high": 0.666667,
+          "ci_low": 0.5,
+          "n": 2,
+          "value": 0.583333
+        },
+        "sub": 4,
+        "units": 12
+      }
+    ],
+    "VC": [
+      {
+        "del": 0,
+        "group": "zh",
+        "ins": 0,
+        "metric": "cer",
+        "missing": 0,
+        "n": 14,
+        "rate": {
+          "ci_high": 0.295455,
+          "ci_low": 0.10929,
+          "n": 14,
+          "value": 0.202454
+        },
+        "sub": 33,
+        "units": 163
+      },
+      {
+        "del": 0,
+        "group": "zh/accent=standard",
+        "ins": 0,
+        "metric": "cer",
+        "missing": 0,
+        "n": 6,
+        "rate": {
+          "ci_high": 0.0,
+          "ci_low": 0.0,
+          "n": 6,
+          "value": 0.0
+        },
+        "sub": 0,
+        "units": 65
+      },
+      {
+        "del": 0,
+        "group": "zh/accent=nanjing",
+        "ins": 0,
+        "metric": "cer",
+        "missing": 0,
+        "n": 6,
+        "rate": {
+          "ci_high": 0.352113,
+          "ci_low": 0.324324,
+          "n": 6,
+          "value": 0.337838
+        },
+        "sub": 25,
+        "units": 74
+      },
+      {
+        "del": 0,
+        "group": "zh/accent=other",
+        "ins": 0,
+        "metric": "cer",
+        "missing": 0,
+        "n": 2,
+        "rate": {
+          "ci_high": 0.363636,
+          "ci_low": 0.307692,
+          "n": 2,
+          "value": 0.333333
+        },
+        "sub": 8,
+        "units": 24
+      },
+      {
+        "del": 0,
+        "group": "zh/noise=quiet",
+        "ins": 0,
+        "metric": "cer",
+        "missing": 0,
+        "n": 7,
+        "rate": {
+          "ci_high": 0.3,
+          "ci_low": 0.054054,
+          "n": 7,
+          "value": 0.190476
+        },
+        "sub": 16,
+        "units": 84
+      },
+      {
+        "del": 0,
+        "group": "zh/noise=classroom",
+        "ins": 0,
+        "metric": "cer",
+        "missing": 0,
+        "n": 4,
+        "rate": {
+          "ci_high": 0.357143,
+          "ci_low": 0.0,
+          "n": 4,
+          "value": 0.236842
+        },
+        "sub": 9,
+        "units": 38
+      },
+      {
+        "del": 0,
+        "group": "zh/noise=outdoor",
+        "ins": 0,
+        "metric": "cer",
+        "missing": 0,
+        "n": 3,
+        "rate": {
+          "ci_high": 0.363636,
+          "ci_low": 0.0,
+          "n": 3,
+          "value": 0.195122
+        },
+        "sub": 8,
+        "units": 41
+      },
+      {
+        "del": 0,
+        "group": "en",
+        "ins": 0,
+        "metric": "wer",
+        "missing": 0,
+        "n": 10,
+        "rate": {
+          "ci_high": 0.295775,
+          "ci_low": 0.085714,
+          "n": 10,
+          "value": 0.194444
+        },
+        "sub": 14,
+        "units": 72
+      },
+      {
+        "del": 0,
+        "group": "en/accent=standard",
+        "ins": 0,
+        "metric": "wer",
+        "missing": 0,
+        "n": 4,
+        "rate": {
+          "ci_high": 0.0,
+          "ci_low": 0.0,
+          "n": 4,
+          "value": 0.0
+        },
+        "sub": 0,
+        "units": 28
+      },
+      {
+        "del": 0,
+        "group": "en/accent=nanjing",
+        "ins": 0,
+        "metric": "wer",
+        "missing": 0,
+        "n": 4,
+        "rate": {
+          "ci_high": 0.357143,
+          "ci_low": 0.285714,
+          "n": 4,
+          "value": 0.321429
+        },
+        "sub": 9,
+        "units": 28
+      },
+      {
+        "del": 0,
+        "group": "en/accent=other",
+        "ins": 0,
+        "metric": "wer",
+        "missing": 0,
+        "n": 2,
+        "rate": {
+          "ci_high": 0.333333,
+          "ci_low": 0.285714,
+          "n": 2,
+          "value": 0.3125
+        },
+        "sub": 5,
+        "units": 16
+      },
+      {
+        "del": 0,
+        "group": "en/noise=quiet",
+        "ins": 0,
+        "metric": "wer",
+        "missing": 0,
+        "n": 5,
+        "rate": {
+          "ci_high": 0.324324,
+          "ci_low": 0.05,
+          "n": 5,
+          "value": 0.189189
+        },
+        "sub": 7,
+        "units": 37
+      },
+      {
+        "del": 0,
+        "group": "en/noise=classroom",
+        "ins": 0,
+        "metric": "wer",
+        "missing": 0,
+        "n": 3,
+        "rate": {
+          "ci_high": 0.333333,
+          "ci_low": 0.0,
+          "n": 3,
+          "value": 0.217391
+        },
+        "sub": 5,
+        "units": 23
+      },
+      {
+        "del": 0,
+        "group": "en/noise=outdoor",
+        "ins": 0,
+        "metric": "wer",
+        "missing": 0,
+        "n": 2,
+        "rate": {
+          "ci_high": 0.333333,
+          "ci_low": 0.0,
+          "n": 2,
+          "value": 0.166667
+        },
+        "sub": 2,
+        "units": 12
+      }
+    ]
+  },
+  "blind": {
+    "codes": [
+      "VA",
+      "VB",
+      "VC"
+    ],
+    "key_sha256": "bfd2a044a8109fd6bbaf6ff3c3b180d760db4d1f4405890c75fb209b69a7d78b"
+  },
+  "config": {
+    "en_norm": {
+      "keep_apostrophe": true,
+      "lowercase": true,
+      "nfkc": true,
+      "split_hyphen": true,
+      "strip_punct": true
+    },
+    "quantile": "最近秩（排序后取第 ceil(p·n) 个）",
+    "statistics": {
+      "level": 0.95,
+      "method": "按样本有放回重抽的自助法（百分位，最近秩）",
+      "resamples": 1000,
+      "seed": "voice-blind/1"
+    },
+    "zh_norm": {
+      "latin_as_word": false,
+      "lowercase": true,
+      "nfkc": true,
+      "strip_punct": true
+    }
+  },
+  "format": "voice-blind-report/1",
+  "framework": "voice-blind@0.1.0",
+  "inputs": {
+    "audio_seconds": 76.4,
+    "by_lang": {
+      "en": 10,
+      "zh": 14
+    },
+    "expert_annotated": 11,
+    "manifest_sha256": "3a3eebcab7cd37623d24da284a629d6ddb1bdb8c6844c8c58d42a820ad48bac7",
+    "samples": 24
+  },
+  "latency": {
+    "VA": [
+      {
+        "first_token_s_p50": {
+          "ci_high": 0.3805,
+          "ci_low": 0.3373,
+          "n": 24,
+          "value": 0.3486
+        },
+        "first_token_s_p95": {
+          "ci_high": 0.4,
+          "ci_low": 0.3834,
+          "n": 24,
+          "value": 0.3973
+        },
+        "group": "all",
+        "n": 24,
+        "rtf_overall": 0.224772,
+        "rtf_p50": {
+          "ci_high": 0.232607,
+          "ci_low": 0.214944,
+          "n": 24,
+          "value": 0.2235
+        },
+        "rtf_p95": {
+          "ci_high": 0.249658,
+          "ci_low": 0.234,
+          "n": 24,
+          "value": 0.249545
+        }
+      },
+      {
+        "first_token_s_p50": {
+          "ci_high": 0.3866,
+          "ci_low": 0.3429,
+          "n": 14,
+          "value": 0.3716
+        },
+        "first_token_s_p95": {
+          "ci_high": 0.4,
+          "ci_low": 0.3866,
+          "n": 14,
+          "value": 0.4
+        },
+        "group": "zh",
+        "n": 14,
+        "rtf_overall": 0.225052,
+        "rtf_p50": {
+          "ci_high": 0.228419,
+          "ci_low": 0.213967,
+          "n": 14,
+          "value": 0.2235
+        },
+        "rtf_p95": {
+          "ci_high": 0.249658,
+          "ci_low": 0.235121,
+          "n": 14,
+          "value": 0.249658
+        }
+      },
+      {
+        "first_token_s_p50": {
+          "ci_high": 0.3741,
+          "ci_low": 0.3122,
+          "n": 10,
+          "value": 0.3388
+        },
+        "first_token_s_p95": {
+          "ci_high": 0.3973,
+          "ci_low": 0.3486,
+          "n": 10,
+          "value": 0.3973
+        },
+        "group": "en",
+        "n": 10,
+        "rtf_overall": 0.224289,
+        "rtf_p50": {
+          "ci_high": 0.233042,
+          "ci_low": 0.211318,
+          "n": 10,
+          "value": 0.22268
+        },
+        "rtf_p95": {
+          "ci_high": 0.243967,
+          "ci_low": 0.233042,
+          "n": 10,
+          "value": 0.243967
+        }
+      }
+    ],
+    "VB": [
+      {
+        "first_token_s_p50": {
+          "ci_high": 0.5883,
+          "ci_low": 0.4299,
+          "n": 24,
+          "value": 0.4829
+        },
+        "first_token_s_p95": {
+          "ci_high": 2.5958,
+          "ci_low": 0.6964,
+          "n": 24,
+          "value": 2.3443
+        },
+        "group": "all",
+        "n": 24,
+        "rtf_overall": 0.550287,
+        "rtf_p50": {
+          "ci_high": 0.661091,
+          "ci_low": 0.485732,
+          "n": 24,
+          "value": 0.5403
+        },
+        "rtf_p95": {
+          "ci_high": 1.116333,
+          "ci_low": 0.7244,
+          "n": 24,
+          "value": 0.786606
+        }
+      },
+      {
+        "first_token_s_p50": {
+          "ci_high": 0.6964,
+          "ci_low": 0.5597,
+          "n": 14,
+          "value": 0.5793
+        },
+        "first_token_s_p95": {
+          "ci_high": 2.5958,
+          "ci_low": 0.7032,
+          "n": 14,
+          "value": 2.5958
+        },
+        "group": "zh",
+        "n": 14,
+        "rtf_overall": 0.563789,
+        "rtf_p50": {
+          "ci_high": 0.719692,
+          "ci_low": 0.485732,
+          "n": 14,
+          "value": 0.5403
+        },
+        "rtf_p95": {
+          "ci_high": 0.786606,
+          "ci_low": 0.7244,
+          "n": 14,
+          "value": 0.786606
+        }
+      },
+      {
+        "first_token_s_p50": {
+          "ci_high": 0.4322,
+          "ci_low": 0.3299,
+          "n": 10,
+          "value": 0.3565
+        },
+        "first_token_s_p95": {
+          "ci_high": 2.3443,
+          "ci_low": 0.4322,
+          "n": 10,
+          "value": 2.3443
+        },
+        "group": "en",
+        "n": 10,
+        "rtf_overall": 0.526946,
+        "rtf_p50": {
+          "ci_high": 0.602607,
+          "ci_low": 0.335472,
+          "n": 10,
+          "value": 0.492818
+        },
+        "rtf_p95": {
+          "ci_high": 1.116333,
+          "ci_low": 0.60256,
+          "n": 10,
+          "value": 1.116333
+        }
+      }
+    ],
+    "VC": [
+      {
+        "first_token_s_p50": {
+          "ci_high": 0.5598,
+          "ci_low": 0.4918,
+          "n": 24,
+          "value": 0.5481
+        },
+        "first_token_s_p95": {
+          "ci_high": 0.5991,
+          "ci_low": 0.5702,
+          "n": 24,
+          "value": 0.5963
+        },
+        "group": "all",
+        "n": 24,
+        "rtf_overall": 0.341924,
+        "rtf_p50": {
+          "ci_high": 0.348433,
+          "ci_low": 0.3295,
+          "n": 24,
+          "value": 0.339629
+        },
+        "rtf_p95": {
+          "ci_high": 0.393483,
+          "ci_low": 0.362875,
+          "n": 24,
+          "value": 0.383833
+        }
+      },
+      {
+        "first_token_s_p50": {
+          "ci_high": 0.5702,
+          "ci_low": 0.4918,
+          "n": 14,
+          "value": 0.5098
+        },
+        "first_token_s_p95": {
+          "ci_high": 0.5991,
+          "ci_low": 0.5702,
+          "n": 14,
+          "value": 0.5991
+        },
+        "group": "zh",
+        "n": 14,
+        "rtf_overall": 0.336256,
+        "rtf_p50": {
+          "ci_high": 0.343115,
+          "ci_low": 0.325021,
+          "n": 14,
+          "value": 0.330852
+        },
+        "rtf_p95": {
+          "ci_high": 0.374727,
+          "ci_low": 0.3468,
+          "n": 14,
+          "value": 0.374727
+        }
+      },
+      {
+        "first_token_s_p50": {
+          "ci_high": 0.5614,
+          "ci_low": 0.487,
+          "n": 10,
+          "value": 0.5561
+        },
+        "first_token_s_p95": {
+          "ci_high": 0.5835,
+          "ci_low": 0.5612,
+          "n": 10,
+          "value": 0.5835
+        },
+        "group": "en",
+        "n": 10,
+        "rtf_overall": 0.351721,
+        "rtf_p50": {
+          "ci_high": 0.367944,
+          "ci_low": 0.33432,
+          "n": 10,
+          "value": 0.344591
+        },
+        "rtf_p95": {
+          "ci_high": 0.393483,
+          "ci_low": 0.367944,
+          "n": 10,
+          "value": 0.393483
+        }
+      }
+    ]
+  },
+  "notices": [
+    "流程样例，不是评测结论：清单与三家供应商都是合成数据，只证明脚本流程与指标计算。",
+    "本报告只给数据、不设通过线，选型由人定（spec 待人确认 #5）。"
+  ],
+  "pron": {
+    "VA": [
+      {
+        "error_precision": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 4,
+          "value": 1.0
+        },
+        "error_recall": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 4,
+          "value": 1.0
+        },
+        "expert_errors": 5,
+        "group": "zh",
+        "missing": 0,
+        "n": 4,
+        "phone_accuracy": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 4,
+          "value": 1.0
+        },
+        "phones": 46,
+        "sentence_pearson": {
+          "ci_high": 1.0,
+          "ci_low": 0.987932,
+          "n": 4,
+          "value": 0.993683
+        },
+        "sentence_spearman": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 4,
+          "value": 1.0
+        }
+      },
+      {
+        "error_precision": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 2,
+          "value": 1.0
+        },
+        "error_recall": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 2,
+          "value": 1.0
+        },
+        "expert_errors": 1,
+        "group": "zh/accent=standard",
+        "missing": 0,
+        "n": 2,
+        "phone_accuracy": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 2,
+          "value": 1.0
+        },
+        "phones": 24,
+        "sentence_pearson": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 2,
+          "value": 1.0
+        },
+        "sentence_spearman": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 2,
+          "value": 1.0
+        }
+      },
+      {
+        "error_precision": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 2,
+          "value": 1.0
+        },
+        "error_recall": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 2,
+          "value": 1.0
+        },
+        "expert_errors": 4,
+        "group": "zh/accent=nanjing",
+        "missing": 0,
+        "n": 2,
+        "phone_accuracy": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 2,
+          "value": 1.0
+        },
+        "phones": 22,
+        "sentence_pearson": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 2,
+          "value": 1.0
+        },
+        "sentence_spearman": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 2,
+          "value": 1.0
+        }
+      },
+      {
+        "error_precision": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 7,
+          "value": 1.0
+        },
+        "error_recall": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 7,
+          "value": 1.0
+        },
+        "expert_errors": 12,
+        "group": "en",
+        "missing": 0,
+        "n": 7,
+        "phone_accuracy": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 7,
+          "value": 1.0
+        },
+        "phones": 93,
+        "sentence_pearson": {
+          "ci_high": 0.999912,
+          "ci_low": 0.952022,
+          "n": 7,
+          "value": 0.994109
+        },
+        "sentence_spearman": {
+          "ci_high": 1.0,
+          "ci_low": 0.916515,
+          "n": 7,
+          "value": 0.991031
+        }
+      },
+      {
+        "error_precision": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 3,
+          "value": 1.0
+        },
+        "error_recall": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 3,
+          "value": 1.0
+        },
+        "expert_errors": 3,
+        "group": "en/accent=standard",
+        "missing": 0,
+        "n": 3,
+        "phone_accuracy": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 3,
+          "value": 1.0
+        },
+        "phones": 39,
+        "sentence_pearson": {
+          "ci_high": 1.0,
+          "ci_low": 0.997574,
+          "n": 3,
+          "value": 0.997574
+        },
+        "sentence_spearman": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 3,
+          "value": 1.0
+        }
+      },
+      {
+        "error_precision": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 3,
+          "value": 1.0
+        },
+        "error_recall": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 3,
+          "value": 1.0
+        },
+        "expert_errors": 7,
+        "group": "en/accent=nanjing",
+        "missing": 0,
+        "n": 3,
+        "phone_accuracy": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 3,
+          "value": 1.0
+        },
+        "phones": 41,
+        "sentence_pearson": {
+          "ci_high": 1.0,
+          "ci_low": 0.802955,
+          "n": 3,
+          "value": 0.802955
+        },
+        "sentence_spearman": {
+          "ci_high": 1.0,
+          "ci_low": 0.866025,
+          "n": 3,
+          "value": 0.866025
+        }
+      },
+      {
+        "error_precision": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 1,
+          "value": 1.0
+        },
+        "error_recall": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 1,
+          "value": 1.0
+        },
+        "expert_errors": 2,
+        "group": "en/accent=other",
+        "missing": 0,
+        "n": 1,
+        "phone_accuracy": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 1,
+          "value": 1.0
+        },
+        "phones": 13,
+        "sentence_pearson": {
+          "ci_high": null,
+          "ci_low": null,
+          "n": 1,
+          "value": null
+        },
+        "sentence_spearman": {
+          "ci_high": null,
+          "ci_low": null,
+          "n": 1,
+          "value": null
+        }
+      }
+    ],
+    "VB": [
+      {
+        "error_precision": {
+          "ci_high": 0.666667,
+          "ci_low": 0.25,
+          "n": 4,
+          "value": 0.416667
+        },
+        "error_recall": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 4,
+          "value": 1.0
+        },
+        "expert_errors": 5,
+        "group": "zh",
+        "missing": 0,
+        "n": 4,
+        "phone_accuracy": {
+          "ci_high": 0.979167,
+          "ci_low": 0.727273,
+          "n": 4,
+          "value": 0.847826
+        },
+        "phones": 46,
+        "sentence_pearson": {
+          "ci_high": 1.0,
+          "ci_low": -1.0,
+          "n": 4,
+          "value": 0.758598
+        },
+        "sentence_spearman": {
+          "ci_high": 1.0,
+          "ci_low": -1.0,
+          "n": 4,
+          "value": 0.6
+        }
+      },
+      {
+        "error_precision": {
+          "ci_high": 0.25,
+          "ci_low": 0.25,
+          "n": 2,
+          "value": 0.25
+        },
+        "error_recall": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 2,
+          "value": 1.0
+        },
+        "expert_errors": 1,
+        "group": "zh/accent=standard",
+        "missing": 0,
+        "n": 2,
+        "phone_accuracy": {
+          "ci_high": 1.0,
+          "ci_low": 0.75,
+          "n": 2,
+          "value": 0.875
+        },
+        "phones": 24,
+        "sentence_pearson": {
+          "ci_high": -1.0,
+          "ci_low": -1.0,
+          "n": 2,
+          "value": -1.0
+        },
+        "sentence_spearman": {
+          "ci_high": -1.0,
+          "ci_low": -1.0,
+          "n": 2,
+          "value": -1.0
+        }
+      },
+      {
+        "error_precision": {
+          "ci_high": 0.666667,
+          "ci_low": 0.4,
+          "n": 2,
+          "value": 0.5
+        },
+        "error_recall": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 2,
+          "value": 1.0
+        },
+        "expert_errors": 4,
+        "group": "zh/accent=nanjing",
+        "missing": 0,
+        "n": 2,
+        "phone_accuracy": {
+          "ci_high": 0.916667,
+          "ci_low": 0.7,
+          "n": 2,
+          "value": 0.818182
+        },
+        "phones": 22,
+        "sentence_pearson": {
+          "ci_high": -1.0,
+          "ci_low": -1.0,
+          "n": 2,
+          "value": -1.0
+        },
+        "sentence_spearman": {
+          "ci_high": -1.0,
+          "ci_low": -1.0,
+          "n": 2,
+          "value": -1.0
+        }
+      },
+      {
+        "error_precision": {
+          "ci_high": 0.65,
+          "ci_low": 0.315789,
+          "n": 7,
+          "value": 0.454545
+        },
+        "error_recall": {
+          "ci_high": 1.0,
+          "ci_low": 0.666667,
+          "n": 7,
+          "value": 0.833333
+        },
+        "expert_errors": 12,
+        "group": "en",
+        "missing": 0,
+        "n": 7,
+        "phone_accuracy": {
+          "ci_high": 0.910112,
+          "ci_low": 0.8,
+          "n": 7,
+          "value": 0.849462
+        },
+        "phones": 93,
+        "sentence_pearson": {
+          "ci_high": 0.894046,
+          "ci_low": -0.293103,
+          "n": 7,
+          "value": 0.483574
+        },
+        "sentence_spearman": {
+          "ci_high": 0.960784,
+          "ci_low": -0.215686,
+          "n": 7,
+          "value": 0.535714
+        }
+      },
+      {
+        "error_precision": {
+          "ci_high": 1.0,
+          "ci_low": 0.2,
+          "n": 3,
+          "value": 0.375
+        },
+        "error_recall": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 3,
+          "value": 1.0
+        },
+        "expert_errors": 3,
+        "group": "en/accent=standard",
+        "missing": 0,
+        "n": 3,
+        "phone_accuracy": {
+          "ci_high": 1.0,
+          "ci_low": 0.8,
+          "n": 3,
+          "value": 0.871795
+        },
+        "phones": 39,
+        "sentence_pearson": {
+          "ci_high": 1.0,
+          "ci_low": -1.0,
+          "n": 3,
+          "value": 0.565145
+        },
+        "sentence_spearman": {
+          "ci_high": 1.0,
+          "ci_low": -1.0,
+          "n": 3,
+          "value": 0.5
+        }
+      },
+      {
+        "error_precision": {
+          "ci_high": 1.0,
+          "ci_low": 0.333333,
+          "n": 3,
+          "value": 0.555556
+        },
+        "error_recall": {
+          "ci_high": 1.0,
+          "ci_low": 0.5,
+          "n": 3,
+          "value": 0.714286
+        },
+        "expert_errors": 7,
+        "group": "en/accent=nanjing",
+        "missing": 0,
+        "n": 3,
+        "phone_accuracy": {
+          "ci_high": 0.933333,
+          "ci_low": 0.769231,
+          "n": 3,
+          "value": 0.853659
+        },
+        "phones": 41,
+        "sentence_pearson": {
+          "ci_high": -0.972572,
+          "ci_low": -1.0,
+          "n": 3,
+          "value": -0.972572
+        },
+        "sentence_spearman": {
+          "ci_high": -1.0,
+          "ci_low": -1.0,
+          "n": 3,
+          "value": -1.0
+        }
+      },
+      {
+        "error_precision": {
+          "ci_high": 0.4,
+          "ci_low": 0.4,
+          "n": 1,
+          "value": 0.4
+        },
+        "error_recall": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 1,
+          "value": 1.0
+        },
+        "expert_errors": 2,
+        "group": "en/accent=other",
+        "missing": 0,
+        "n": 1,
+        "phone_accuracy": {
+          "ci_high": 0.769231,
+          "ci_low": 0.769231,
+          "n": 1,
+          "value": 0.769231
+        },
+        "phones": 13,
+        "sentence_pearson": {
+          "ci_high": null,
+          "ci_low": null,
+          "n": 1,
+          "value": null
+        },
+        "sentence_spearman": {
+          "ci_high": null,
+          "ci_low": null,
+          "n": 1,
+          "value": null
+        }
+      }
+    ],
+    "VC": [
+      {
+        "error_precision": {
+          "ci_high": 1.0,
+          "ci_low": 0.5,
+          "n": 4,
+          "value": 0.625
+        },
+        "error_recall": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 4,
+          "value": 1.0
+        },
+        "expert_errors": 5,
+        "group": "zh",
+        "missing": 0,
+        "n": 4,
+        "phone_accuracy": {
+          "ci_high": 1.0,
+          "ci_low": 0.863636,
+          "n": 4,
+          "value": 0.934783
+        },
+        "phones": 46,
+        "sentence_pearson": {
+          "ci_high": 1.0,
+          "ci_low": 0.995831,
+          "n": 4,
+          "value": 0.997834
+        },
+        "sentence_spearman": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 4,
+          "value": 1.0
+        }
+      },
+      {
+        "error_precision": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 2,
+          "value": 1.0
+        },
+        "error_recall": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 2,
+          "value": 1.0
+        },
+        "expert_errors": 1,
+        "group": "zh/accent=standard",
+        "missing": 0,
+        "n": 2,
+        "phone_accuracy": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 2,
+          "value": 1.0
+        },
+        "phones": 24,
+        "sentence_pearson": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 2,
+          "value": 1.0
+        },
+        "sentence_spearman": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 2,
+          "value": 1.0
+        }
+      },
+      {
+        "error_precision": {
+          "ci_high": 0.666667,
+          "ci_low": 0.5,
+          "n": 2,
+          "value": 0.571429
+        },
+        "error_recall": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 2,
+          "value": 1.0
+        },
+        "expert_errors": 4,
+        "group": "zh/accent=nanjing",
+        "missing": 0,
+        "n": 2,
+        "phone_accuracy": {
+          "ci_high": 0.9,
+          "ci_low": 0.833333,
+          "n": 2,
+          "value": 0.863636
+        },
+        "phones": 22,
+        "sentence_pearson": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 2,
+          "value": 1.0
+        },
+        "sentence_spearman": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 2,
+          "value": 1.0
+        }
+      },
+      {
+        "error_precision": {
+          "ci_high": 0.833333,
+          "ci_low": 0.575758,
+          "n": 7,
+          "value": 0.666667
+        },
+        "error_recall": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 7,
+          "value": 1.0
+        },
+        "expert_errors": 12,
+        "group": "en",
+        "missing": 0,
+        "n": 7,
+        "phone_accuracy": {
+          "ci_high": 0.978495,
+          "ci_low": 0.892473,
+          "n": 7,
+          "value": 0.935484
+        },
+        "phones": 93,
+        "sentence_pearson": {
+          "ci_high": 0.99681,
+          "ci_low": 0.890847,
+          "n": 7,
+          "value": 0.964834
+        },
+        "sentence_spearman": {
+          "ci_high": 1.0,
+          "ci_low": 0.698113,
+          "n": 7,
+          "value": 0.964286
+        }
+      },
+      {
+        "error_precision": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 3,
+          "value": 1.0
+        },
+        "error_recall": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 3,
+          "value": 1.0
+        },
+        "expert_errors": 3,
+        "group": "en/accent=standard",
+        "missing": 0,
+        "n": 3,
+        "phone_accuracy": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 3,
+          "value": 1.0
+        },
+        "phones": 39,
+        "sentence_pearson": {
+          "ci_high": 1.0,
+          "ci_low": 0.979364,
+          "n": 3,
+          "value": 0.979364
+        },
+        "sentence_spearman": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 3,
+          "value": 1.0
+        }
+      },
+      {
+        "error_precision": {
+          "ci_high": 0.666667,
+          "ci_low": 0.5,
+          "n": 3,
+          "value": 0.583333
+        },
+        "error_recall": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 3,
+          "value": 1.0
+        },
+        "expert_errors": 7,
+        "group": "en/accent=nanjing",
+        "missing": 0,
+        "n": 3,
+        "phone_accuracy": {
+          "ci_high": 0.923077,
+          "ci_low": 0.846154,
+          "n": 3,
+          "value": 0.878049
+        },
+        "phones": 41,
+        "sentence_pearson": {
+          "ci_high": 1.0,
+          "ci_low": -1.0,
+          "n": 3,
+          "value": 0.70672
+        },
+        "sentence_spearman": {
+          "ci_high": 1.0,
+          "ci_low": -1.0,
+          "n": 3,
+          "value": 0.5
+        }
+      },
+      {
+        "error_precision": {
+          "ci_high": 0.666667,
+          "ci_low": 0.666667,
+          "n": 1,
+          "value": 0.666667
+        },
+        "error_recall": {
+          "ci_high": 1.0,
+          "ci_low": 1.0,
+          "n": 1,
+          "value": 1.0
+        },
+        "expert_errors": 2,
+        "group": "en/accent=other",
+        "missing": 0,
+        "n": 1,
+        "phone_accuracy": {
+          "ci_high": 0.923077,
+          "ci_low": 0.923077,
+          "n": 1,
+          "value": 0.923077
+        },
+        "phones": 13,
+        "sentence_pearson": {
+          "ci_high": null,
+          "ci_low": null,
+          "n": 1,
+          "value": null
+        },
+        "sentence_spearman": {
+          "ci_high": null,
+          "ci_low": null,
+          "n": 1,
+          "value": null
+        }
+      }
+    ]
+  },
+  "samples": [
+    {
+      "accent": "standard",
+      "expert": true,
+      "id": "EN-001",
+      "lang": "en",
+      "noise": "quiet",
+      "task": "read"
+    },
+    {
+      "accent": "standard",
+      "expert": true,
+      "id": "EN-002",
+      "lang": "en",
+      "noise": "classroom",
+      "task": "dialogue"
+    },
+    {
+      "accent": "standard",
+      "expert": false,
+      "id": "EN-003",
+      "lang": "en",
+      "noise": "outdoor",
+      "task": "dialogue"
+    },
+    {
+      "accent": "standard",
+      "expert": true,
+      "id": "EN-004",
+      "lang": "en",
+      "noise": "quiet",
+      "task": "read"
+    },
+    {
+      "accent": "nanjing",
+      "expert": true,
+      "id": "EN-101",
+      "lang": "en",
+      "noise": "quiet",
+      "task": "read"
+    },
+    {
+      "accent": "nanjing",
+      "expert": true,
+      "id": "EN-102",
+      "lang": "en",
+      "noise": "classroom",
+      "task": "read"
+    },
+    {
+      "accent": "nanjing",
+      "expert": false,
+      "id": "EN-103",
+      "lang": "en",
+      "noise": "outdoor",
+      "task": "dialogue"
+    },
+    {
+      "accent": "nanjing",
+      "expert": true,
+      "id": "EN-104",
+      "lang": "en",
+      "noise": "quiet",
+      "task": "read"
+    },
+    {
+      "accent": "other",
+      "expert": false,
+      "id": "EN-201",
+      "lang": "en",
+      "noise": "classroom",
+      "task": "dialogue"
+    },
+    {
+      "accent": "other",
+      "expert": true,
+      "id": "EN-202",
+      "lang": "en",
+      "noise": "quiet",
+      "task": "read"
+    },
+    {
+      "accent": "standard",
+      "expert": true,
+      "id": "ZH-001",
+      "lang": "zh",
+      "noise": "quiet",
+      "task": "read"
+    },
+    {
+      "accent": "standard",
+      "expert": true,
+      "id": "ZH-002",
+      "lang": "zh",
+      "noise": "classroom",
+      "task": "read"
+    },
+    {
+      "accent": "standard",
+      "expert": false,
+      "id": "ZH-003",
+      "lang": "zh",
+      "noise": "quiet",
+      "task": "dialogue"
+    },
+    {
+      "accent": "standard",
+      "expert": false,
+      "id": "ZH-004",
+      "lang": "zh",
+      "noise": "outdoor",
+      "task": "dialogue"
+    },
+    {
+      "accent": "standard",
+      "expert": false,
+      "id": "ZH-005",
+      "lang": "zh",
+      "noise": "classroom",
+      "task": "dialogue"
+    },
+    {
+      "accent": "standard",
+      "expert": false,
+      "id": "ZH-006",
+      "lang": "zh",
+      "noise": "quiet",
+      "task": "read"
+    },
+    {
+      "accent": "nanjing",
+      "expert": false,
+      "id": "ZH-101",
+      "lang": "zh",
+      "noise": "quiet",
+      "task": "dialogue"
+    },
+    {
+      "accent": "nanjing",
+      "expert": true,
+      "id": "ZH-102",
+      "lang": "zh",
+      "noise": "classroom",
+      "task": "read"
+    },
+    {
+      "accent": "nanjing",
+      "expert": false,
+      "id": "ZH-103",
+      "lang": "zh",
+      "noise": "outdoor",
+      "task": "dialogue"
+    },
+    {
+      "accent": "nanjing",
+      "expert": true,
+      "id": "ZH-104",
+      "lang": "zh",
+      "noise": "quiet",
+      "task": "read"
+    },
+    {
+      "accent": "nanjing",
+      "expert": false,
+      "id": "ZH-105",
+      "lang": "zh",
+      "noise": "classroom",
+      "task": "read"
+    },
+    {
+      "accent": "nanjing",
+      "expert": false,
+      "id": "ZH-106",
+      "lang": "zh",
+      "noise": "quiet",
+      "task": "dialogue"
+    },
+    {
+      "accent": "other",
+      "expert": false,
+      "id": "ZH-201",
+      "lang": "zh",
+      "noise": "quiet",
+      "task": "read"
+    },
+    {
+      "accent": "other",
+      "expert": false,
+      "id": "ZH-202",
+      "lang": "zh",
+      "noise": "outdoor",
+      "task": "dialogue"
+    }
+  ],
+  "small_groups": [
+    "en",
+    "en/accent=nanjing",
+    "en/accent=other",
+    "en/accent=standard",
+    "en/noise=classroom",
+    "en/noise=outdoor",
+    "en/noise=quiet",
+    "zh",
+    "zh/accent=nanjing",
+    "zh/accent=other",
+    "zh/accent=standard",
+    "zh/noise=classroom",
+    "zh/noise=outdoor",
+    "zh/noise=quiet"
+  ],
+  "synthetic": true
+}

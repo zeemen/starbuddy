@@ -1,0 +1,9 @@
+{
+  "format": "starbuddy-today-config/1",
+  "synthetic": true,
+  "signed_by": null,
+  "signed_at": null,
+  "default_budget_minutes": 25,
+  "source_priority": ["retest", "practice", "plan"],
+  "entry_minutes": {"retest": 6, "verify": 4, "practice": 7}
+}

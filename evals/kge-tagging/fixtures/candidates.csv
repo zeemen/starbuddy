@@ -1,0 +1,7 @@
+item_id,node_id,role,layer,confidence,grade,status
+SYN-G-01,MATH.SYN.SYN_A.K_SYN_0001,main,rule,0.9,A,open
+SYN-G-03,MATH.SYN.SYN_A.K_SYN_0002,main,rule,0.9,B,open
+SYN-G-03,MATH.SYN.SYN_A.K_SYN_0001,main,vector,0.6,B,open
+SYN-G-07,MATH.SYN.SYN_B.S_SYN_0003,main,model,0.5,B,open
+SYN-G-07,MATH.SYN.SYN_B.S_SYN_0003,main,rule,0.2,B,open
+SYN-G-07,MATH.SYN.SYN_B.M_SYN_0004,secondary,rule,0.99,B,open

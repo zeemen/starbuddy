@@ -1,0 +1,321 @@
+// 届别为真相源（specs/policy-decisions-v0.9.1 第 1 节，PR2）的 BFF 部分：
+//   - 年级读点改读 platform.current_grade(届别, 请求时钟)：GET /me 的 children[].grade、选科的学科目录（按年级筛）；
+//     时钟是 BFF 注入的 deps.now（不依赖墙钟），跨 9 月 1 日（北京时间）切学年；已毕业（不在 7–9）为 null；存下的建档年级不再被读；
+//   - 家长届别更正入口 POST /students/{id}/exam-cohort：只经 platform.correct_exam_cohort（绑定家长、每次 ±1、更正后当前年级 7–9、
+//     来源记家长自述、写更正记录）；未绑定与不存在同一个 404；步长与越界 422；频控按（家长账号、学生）成对，每天 3 次。
+// 一次性 Postgres（db/tests/pg-ephemeral.sh），BFF 登录角色只继承 starbuddy_bff，真实会话与真实 RLS。全部合成数据（规则 8）。
+// 更正函数在库里用 clock_timestamp() 核对“更正后当前年级在 7–9”：更正用例的学生按墙钟建档（推算届别也按墙钟），与库的核对同一时间轴。
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import { after, before, test } from 'node:test';
+import { loadAuthConfig } from '../src/http/config.ts';
+import { P } from '../src/http/problems.ts';
+import { withAccount } from '../src/metering/db.ts';
+import { HAS_DB, setupHarness, type Harness } from './harness.ts';
+import { callAs, startShell, type ShellHarness } from './shell-harness.ts';
+
+const BUCKET = 'cohort_correction.link.day';
+const ACCOUNT_BUCKET = 'cohort_correction.account.day';
+const SEP1_2027 = Date.parse('2027-08-31T16:00:00Z');  // 北京时间 2027-09-01 00:00
+let h: Harness;
+let shell: ShellHarness;
+let nowMs = Date.now();
+const logs: Record<string, unknown>[] = [];
+
+async function account(kind: 'guardian' | 'student'): Promise<string> {
+  const id = randomUUID();
+  await h.su.query(`INSERT INTO platform.account (id, kind) VALUES ($1, $2)`, [id, kind]);
+  return id;
+}
+/** 家长 g 的家庭里建一个孩子；createdAt 为空时按墙钟建档（库里按建档时刻与建档年级推算届别） */
+async function kid(g: string, household: string, grade: number, createdAt: string | null = null): Promise<string> {
+  const id = randomUUID();
+  const acct = await account('student');
+  await h.su.query(`INSERT INTO platform.student_profile (id, account_id, household_id, grade, region, created_at)
+                    VALUES ($1, $2, $3, $4, 'nanjing', coalesce($5::timestamptz, now()))`, [id, acct, household, grade, createdAt]);
+  await h.su.query(`INSERT INTO platform.guardian_student_link (guardian_account_id, student_id, granted_via) VALUES ($1, $2, 'household_creator')`, [g, id]);
+  return id;
+}
+async function family(): Promise<{ g: string; household: string }> {
+  const g = await account('guardian');
+  const household = randomUUID();
+  await h.su.query(`INSERT INTO platform.household (id, created_by_account) VALUES ($1, $2)`, [household, g]);
+  return { g, household };
+}
+const cohortOf = async (s: string): Promise<{ exam_cohort: number; source: string; grade: number }> =>
+  (await h.su.query(`SELECT exam_cohort, exam_cohort_source AS source, grade FROM platform.student_profile WHERE id = $1`, [s])).rows[0];
+const dbGrade = async (cohort: number, at: number): Promise<number | null> =>
+  (await h.su.query(`SELECT platform.current_grade($1::smallint, $2::timestamptz) AS g`, [cohort, new Date(at)])).rows[0].g;
+const me = async (g: string) => callAs(shell.base, 'GET', '/me', await shell.sessionFor(g));
+const correct = async (g: string, s: string, body: unknown) => callAs(shell.base, 'POST', `/students/${s}/exam-cohort`, await shell.sessionFor(g), body);
+
+before(async () => {
+  if (!HAS_DB) return;
+  h = await setupHarness();
+  shell = await startShell(h.bff, h.su, { log: (l) => logs.push(l), now: () => new Date(nowMs) });
+});
+
+after(async () => {
+  if (!HAS_DB) return;
+  await shell.close();
+  await h.close();
+});
+
+test('年级读点：/me 的年级由届别按注入的请求时钟推算，跨 9 月 1 日加一，已毕业为 null；不读存下的建档年级', { skip: !HAS_DB }, async () => {
+  const F = await family();
+  // 建档于 2026-10-01（北京时间）：八年级 → 届别 2028，九年级 → 届别 2027
+  const k8 = await kid(F.g, F.household, 8, '2026-10-01T10:00:00+08:00');
+  const k9 = await kid(F.g, F.household, 9, '2026-10-01T10:00:00+08:00');
+  assert.deepEqual([(await cohortOf(k8)).exam_cohort, (await cohortOf(k9)).exam_cohort], [2028, 2027]);
+  const grades = async () => Object.fromEntries((await me(F.g)).body.children.map((c: { student_id: string; grade: number | null }) => [c.student_id, c.grade]));
+  nowMs = SEP1_2027 - 1000;  // 北京时间 2027-08-31 23:59:59
+  assert.deepEqual(await grades(), { [k8]: 8, [k9]: 9 });
+  nowMs = SEP1_2027;         // 北京时间 2027-09-01 00:00:00
+  assert.deepEqual(await grades(), { [k8]: 9, [k9]: null }, '跨 9 月 1 日：八年级升九年级，九年级毕业（null，孩子照常列出）');
+  // 存下的建档年级（8 / 9）不变，也不被读：改掉它，/me 的年级不变
+  await h.su.query(`UPDATE platform.student_profile SET grade = 7 WHERE id = ANY ($1::uuid[])`, [[k8, k9]]);
+  assert.deepEqual(await grades(), { [k8]: 9, [k9]: null });
+  // 届别更正后（迁移执行者直接改届别与来源，模拟客服更正）：/me 立即按新届别推算
+  await h.su.query(`UPDATE platform.student_profile SET exam_cohort = 2029, exam_cohort_source = 'staff_correction' WHERE id = $1`, [k8]);
+  assert.deepEqual(await grades(), { [k8]: 8, [k9]: null });
+  // 学生本人的 /me 同样带按届别与请求时钟推算的年级（PR3：今日计划处据此显示“不在初中年级”）；不读存下的建档年级
+  const studentMe = async (s: string) => {
+    const acct = (await h.su.query(`SELECT account_id FROM platform.student_profile WHERE id = $1`, [s])).rows[0].account_id as string;
+    return (await callAs(shell.base, 'GET', '/me', await shell.sessionFor(acct))).body;
+  };
+  assert.deepEqual(await studentMe(k8), { account_kind: 'student', student_id: k8, grade: 8 });
+  assert.deepEqual(await studentMe(k9), { account_kind: 'student', student_id: k9, grade: null });
+  nowMs = SEP1_2027 - 1000;
+  assert.deepEqual(await studentMe(k9), { account_kind: 'student', student_id: k9, grade: 9 }, '跨 9 月 1 日之前还是九年级');
+  nowMs = Date.now();
+});
+
+test('年级读点：选科的学科目录按推算的当前年级筛（跨 9 月 1 日变化）；已毕业没有可选学科', { skip: !HAS_DB }, async () => {
+  const F = await family();
+  const k8 = await kid(F.g, F.household, 8, '2026-10-01T10:00:00+08:00');
+  const k9 = await kid(F.g, F.household, 9, '2026-10-01T10:00:00+08:00');
+  const subjects = async (s: string) => {
+    const r = await callAs(shell.base, 'GET', `/students/${s}/enrollments`, await shell.sessionFor(F.g));
+    assert.equal(r.status, 200, r.text);
+    return r.body.subjects.map((x: { subject: string }) => x.subject).sort();
+  };
+  // 只在测试库里临时把道法改成只适用九年级，看出目录确实按当前年级筛
+  const { rows: [{ grades: saved }] } = await h.su.query(`SELECT grades::int[] AS grades FROM platform.subject_catalog WHERE code = 'politics'`);
+  await h.su.query(`UPDATE platform.subject_catalog SET grades = '{9}' WHERE code = 'politics'`);
+  try {
+    nowMs = SEP1_2027 - 1000;
+    const before8 = await subjects(k8);
+    assert.ok(!before8.includes('politics') && before8.length > 0, before8.join(','));
+    assert.ok((await subjects(k9)).includes('politics'));
+    nowMs = SEP1_2027;
+    assert.ok((await subjects(k8)).includes('politics'), '升入九年级后目录里有只适用九年级的学科');
+    assert.deepEqual(await subjects(k9), [], '已毕业：没有可选学科');
+  } finally {
+    await h.su.query(`UPDATE platform.subject_catalog SET grades = $1::smallint[] WHERE code = 'politics'`, [saved]);
+    nowMs = Date.now();
+  }
+});
+
+test('不在初中年级（PR3 #10）：选科仍列出已开通、已暂停的学科，只能暂停，新选 409 GRADE_OUT_OF_RANGE；今日计划不排学科；别家仍是 404', { skip: !HAS_DB }, async () => {
+  const F = await family();
+  const k9 = await kid(F.g, F.household, 9, '2026-10-01T10:00:00+08:00');  // 届别 2027：北京时间 2027-09-01 起毕业
+  await h.su.query(`INSERT INTO platform.subject_enrollment (student_id, subject, status) VALUES ($1, 'aya', 'active'), ($1, 'wenli', 'paused')`, [k9]);
+  const sess = await shell.sessionFor(F.g);
+  const list = async () => {
+    const r = await callAs(shell.base, 'GET', `/students/${k9}/enrollments`, sess);
+    assert.equal(r.status, 200, r.text);
+    return r.body as { can_enroll: boolean; subjects: { subject: string; enrollment: string | null }[] };
+  };
+  const today = async () => {
+    const r = await callAs(shell.base, 'GET', `/students/${k9}/today`, sess);
+    assert.equal(r.status, 200, r.text);
+    return (r.body.subjects as { subject: string }[]).map((x) => x.subject);
+  };
+  try {
+    nowMs = SEP1_2027 - 1000;  // 还是九年级：照常可选，今日计划排在读的学科（学习服务没接，status = unavailable）
+    const before = await list();
+    assert.equal(before.can_enroll, true);
+    assert.ok(before.subjects.some((x) => x.enrollment === null), '九年级时目录里有未开通的学科');
+    assert.deepEqual(await today(), ['math']);
+    nowMs = SEP1_2027;         // 已毕业
+    const after = await list();
+    assert.equal(after.can_enroll, false);
+    assert.deepEqual(after.subjects.map((x) => `${x.subject}:${x.enrollment}`).sort(), ['chinese:paused', 'math:active'],
+                     '只列已开通、已暂停的学科（家长看得到、能暂停），不列可新选的');
+    for (const code of ['politics', 'math', 'chinese']) {
+      const r = await callAs(shell.base, 'POST', `/students/${k9}/enrollments/${code}`, sess);
+      assert.equal(r.status, 409, `${code}: ${r.text}`);
+      assert.equal(r.text, P.GRADE_OUT_OF_RANGE, '新选（含重新开通已暂停的）一律明确的 409');
+    }
+    assert.deepEqual(await today(), [], '今日计划不排这类学生的学科');
+    const paused = await callAs(shell.base, 'POST', `/students/${k9}/enrollments/math/pause`, sess);
+    assert.equal(paused.status, 200, paused.text);
+    assert.equal(paused.body.outcome, 'paused', '已开通的学科可以暂停');
+    assert.deepEqual((await list()).subjects.map((x) => `${x.subject}:${x.enrollment}`).sort(), ['chinese:paused', 'math:paused']);
+    const { rows: [{ n }] } = await h.su.query(`SELECT count(*)::int AS n FROM platform.subject_enrollment WHERE student_id = $1 AND status = 'active'`, [k9]);
+    assert.equal(n, 0, '被拒的新选没有写入');
+    // 别家的家长：先按无权与不存在同一个 404，不因年级先回 409（不暴露这个孩子是否已毕业）
+    const other = await family();
+    const r = await callAs(shell.base, 'POST', `/students/${k9}/enrollments/math`, await shell.sessionFor(other.g));
+    assert.equal(r.status, 404, r.text);
+    assert.equal(r.text, P.NOT_FOUND);
+  } finally {
+    nowMs = Date.now();
+  }
+});
+
+test('不在初中年级的库层兜底（PR4，迁移 0051）：BFF 前置检查放行时库函数按计量时钟再核年级，拒绝映射成同一个 409；库函数未授权先 42501、暂停不受影响', { skip: !HAS_DB }, async () => {
+  const F = await family();
+  const O = await family();
+  const k9 = await kid(F.g, F.household, 9, '2026-10-01T10:00:00+08:00');  // 届别 2027：北京时间 2027-09-01 起毕业
+  await h.su.query(`INSERT INTO platform.subject_enrollment (student_id, subject, status) VALUES ($1, 'aya', 'active'), ($1, 'wenli', 'paused')`, [k9]);
+  const sess = await shell.sessionFor(F.g);
+  const savedClock = h.clockMs();
+  /** 直接以 BFF 登录角色调库函数（绕过 BFF 的前置检查），返回 outcome 或 SQLSTATE:消息 */
+  const direct = async (account: string, fn: 'enroll_subject' | 'pause_subject', student: string, subject: string): Promise<string> => {
+    try {
+      return await withAccount(h.bff, account, async (c) =>
+        String((await c.query<{ r: { outcome: string } }>(`SELECT platform.${fn}($1, $2::platform.subject) AS r`, [student, subject])).rows[0]!.r.outcome));
+    } catch (e) {
+      const err = e as { code?: string; message?: string };
+      return `${err.code}:${err.message}`;
+    }
+  };
+  try {
+    // BFF 请求时钟：北京时间 2027-08-31 23:59:59（还是九年级，前置检查放行）；库的计量时钟：2027-09-01 00:00（已毕业）
+    nowMs = SEP1_2027 - 1000;
+    await h.setClock(SEP1_2027 - 1000);
+    const ok = await callAs(shell.base, 'POST', `/students/${k9}/enrollments/chinese`, sess);
+    assert.equal(ok.status, 200, ok.text);
+    assert.equal(ok.body.outcome, 'no_subscription', '两边都还是九年级：库函数过了年级核对，按订阅判断（这个孩子没有订阅）');
+    await h.setClock(SEP1_2027);
+    for (const code of ['chinese', 'math']) {
+      const r = await callAs(shell.base, 'POST', `/students/${k9}/enrollments/${code}`, sess);
+      assert.equal(r.status, 409, `${code}: ${r.text}`);
+      assert.equal(r.text, P.GRADE_OUT_OF_RANGE, '库层拒绝与 BFF 前置检查是同一个 409（重新开通已暂停的、已开通的都一样）');
+    }
+    // 直接调库函数：绑定家长 55000 GRADE_OUT_OF_RANGE；别家家长与不存在的学生先按授权 42501（不泄露年级）；暂停照常
+    assert.equal(await direct(F.g, 'enroll_subject', k9, 'wenli'), '55000:GRADE_OUT_OF_RANGE');
+    assert.equal(await direct(O.g, 'enroll_subject', k9, 'wenli'), '42501:not permitted', '别家家长：先拒授权，不回年级错误');
+    assert.equal(await direct(O.g, 'enroll_subject', randomUUID(), 'wenli'), '42501:not permitted');
+    assert.equal(await direct(F.g, 'pause_subject', k9, 'aya'), 'paused', '已开通的学科照常可以暂停');
+    const { rows } = await h.su.query(`SELECT subject::text || ':' || status::text AS s FROM platform.subject_enrollment WHERE student_id = $1 ORDER BY subject::text`, [k9]);
+    assert.deepEqual(rows.map((x) => x.s), ['aya:paused', 'wenli:paused'], '被拒的开通没有写入');
+    // 经 BFF 的别家家长仍是 404（不因年级先回 409）
+    const other = await callAs(shell.base, 'POST', `/students/${k9}/enrollments/chinese`, await shell.sessionFor(O.g));
+    assert.equal(other.status, 404, other.text);
+    assert.equal(other.text, P.NOT_FOUND);
+    // 档案已删除（PR4 安全审查）：两边都还是九年级时，绑定家长直接调库函数也是 42501（与未授权相同），状态不变
+    await h.setClock(SEP1_2027 - 1000);
+    await h.su.query(`UPDATE platform.student_profile SET erased_at = now() WHERE id = $1`, [k9]);
+    assert.equal(await direct(F.g, 'enroll_subject', k9, 'wenli'), '42501:not permitted', '已删除的档案不能再选科');
+    const { rows: after } = await h.su.query(`SELECT count(*)::int AS n FROM platform.subject_enrollment WHERE student_id = $1 AND status = 'active'`, [k9]);
+    assert.equal(after[0].n, 0);
+  } finally {
+    nowMs = Date.now();
+    await h.setClock(savedClock);
+  }
+});
+
+test('届别更正：只经 correct_exam_cohort；绑定家长每次 ±1，来源记家长自述并写更正记录；步长不对、越界、请求体不合格 422；未绑定与不存在同一个 404', { skip: !HAS_DB }, async () => {
+  nowMs = Date.now();
+  const F = await family();
+  const O = await family();
+  const s = await kid(F.g, F.household, 8);  // 按墙钟建档：推算届别与库里更正时的核对同一时间轴
+  const c0 = (await cohortOf(s)).exam_cohort;
+  assert.equal((await cohortOf(s)).source, 'derived');
+  for (const body of [{}, { exam_cohort: String(c0 + 1) }, { exam_cohort: c0 + 0.5 }, { exam_cohort: 2014 }, { exam_cohort: 2101 },
+                      { exam_cohort: c0 + 1, grade: 7 }, { exam_cohort: c0 + 1, source: 'staff_correction' }]) {
+    const r = await correct(F.g, s, body);
+    assert.equal(r.status, 422, JSON.stringify(body));
+    assert.equal(r.text, P.INVALID);
+  }
+  assert.equal((await correct(F.g, s, { exam_cohort: c0 + 2 })).text, P.INVALID, '一次跨两届');
+  assert.equal((await cohortOf(s)).exam_cohort, c0, '拒绝的请求没有改届别');
+  // +1（晚一届 = 低一个年级）：成功，返回新届别与按请求时钟推算的年级
+  const ok = await correct(F.g, s, { exam_cohort: c0 + 1 });
+  assert.equal(ok.status, 200, ok.text);
+  assert.deepEqual(ok.body, { student_id: s, exam_cohort: c0 + 1, grade: await dbGrade(c0 + 1, nowMs) });
+  assert.deepEqual(await cohortOf(s), { exam_cohort: c0 + 1, source: 'guardian_report', grade: 8 }, '来源记家长自述；建档年级不变');
+  const { rows: changes } = await h.su.query(
+    `SELECT old_cohort, new_cohort, source, changed_by FROM platform.exam_cohort_change WHERE student_id = $1 ORDER BY changed_at`, [s]);
+  assert.deepEqual(changes, [{ old_cohort: c0, new_cohort: c0 + 1, source: 'guardian_report', changed_by: F.g }]);
+  // /me 立即按新届别推算
+  assert.equal((await me(F.g)).body.children.find((c: { student_id: string }) => c.student_id === s).grade, await dbGrade(c0 + 1, nowMs));
+  // 同一个值重复提交：步长为 0，拒绝（不会连改两次）；再晚一届：当前年级低于七年级，越界拒绝
+  assert.equal((await correct(F.g, s, { exam_cohort: c0 + 1 })).text, P.INVALID);
+  assert.equal((await correct(F.g, s, { exam_cohort: c0 + 2 })).text, P.INVALID, '更正后当前年级不在 7–9');
+  assert.equal((await cohortOf(s)).exam_cohort, c0 + 1);
+  // 另一户家长、不存在的学生：同一个 404，逐字节相同；没有写更正记录
+  const missing = await correct(O.g, randomUUID(), { exam_cohort: c0 });
+  assert.equal(missing.status, 404);
+  assert.equal(missing.text, P.NOT_FOUND);
+  const other = await correct(O.g, s, { exam_cohort: c0 });
+  assert.equal(other.status, missing.status);
+  assert.equal(other.text, missing.text);
+  assert.equal((await cohortOf(s)).exam_cohort, c0 + 1);
+  // 未登录 401（学生会话 403 与 CSRF 由 route-matrix 的授权矩阵从路由表统一测）
+  const anon = await callAs(shell.base, 'POST', `/students/${s}/exam-cohort`, null, { exam_cohort: c0 });
+  assert.equal(anon.status, 401);
+  // 改回（-1）：仍是家长自述，第二条记录
+  assert.equal((await correct(F.g, s, { exam_cohort: c0 })).status, 200);
+  const { rows: [{ n }] } = await h.su.query(`SELECT count(*)::int AS n FROM platform.exam_cohort_change WHERE student_id = $1`, [s]);
+  assert.equal(n, 2);
+  // 访问日志只记结果枚举，不记届别与年级
+  const line = logs.filter((l) => l['route'] === 'POST /students/{student_id}/exam-cohort' && l['status'] === 200).at(-1)!;
+  assert.equal(line['outcome'], 'corrected');
+  assert.deepEqual(Object.keys(line).filter((k) => /cohort|grade/.test(k)), []);
+});
+
+test('届别更正频控：每个（家长账号、学生）每天 3 次（config/auth.json），超限 429；同一孩子的另一位家长、同一家长的另一个孩子各自计数', { skip: !HAS_DB }, async () => {
+  const rule = loadAuthConfig().rate_limits[BUCKET]!;
+  assert.deepEqual(rule, { window_seconds: 86400, limit: 3 }, '阈值保守：每天 3 次');
+  const saved = shell.config.rate_limits[BUCKET]!;
+  shell.config.rate_limits[BUCKET] = { ...rule };  // 测试 harness 默认放宽阈值，这里按配置原值测
+  try {
+    const F = await family();
+    const s1 = await kid(F.g, F.household, 8);
+    const s2 = await kid(F.g, F.household, 8);
+    const g2 = await account('guardian');
+    await h.su.query(`INSERT INTO platform.guardian_student_link (guardian_account_id, student_id, granted_via) VALUES ($1, $2, 'invite')`, [g2, s1]);
+    const bad = { exam_cohort: 2015 };  // 步长不对（422）：失败的请求同样计数
+    for (let i = 0; i < 3; i++) assert.equal((await correct(F.g, s1, bad)).status, 422, `第 ${i + 1} 次`);
+    const over = await correct(F.g, s1, { exam_cohort: (await cohortOf(s1)).exam_cohort + 1 });
+    assert.equal(over.status, 429);
+    assert.equal(over.text, P.TOO_MANY);
+    assert.equal((await cohortOf(s1)).source, 'derived', '429 时没有更正');
+    assert.equal((await correct(g2, s1, bad)).status, 422, '同一孩子的另一位家长单独计数（无权的家长也不能替别人把次数用光）');
+    assert.equal((await correct(F.g, s2, bad)).status, 422, '同一家长的另一个孩子单独计数');
+  } finally {
+    shell.config.rate_limits[BUCKET] = saved;
+  }
+});
+
+test('届别更正频控：每个家长账号每天总共 10 次（cohort_correction.account.day），换着学生 ID 试探超出总量后 429；别的家长不受影响', { skip: !HAS_DB }, async () => {
+  const total = loadAuthConfig().rate_limits[ACCOUNT_BUCKET]!;
+  assert.deepEqual(total, { window_seconds: 86400, limit: 10 }, '总量上限：每天 10 次');
+  const saved = { link: shell.config.rate_limits[BUCKET]!, account: shell.config.rate_limits[ACCOUNT_BUCKET]! };
+  shell.config.rate_limits[BUCKET] = loadAuthConfig().rate_limits[BUCKET]!;
+  shell.config.rate_limits[ACCOUNT_BUCKET] = { ...total };
+  try {
+    const F = await family();
+    const O = await family();
+    const own = await kid(F.g, F.household, 8);
+    // 每次换一个学生 ID（不存在的学生：404，单看成对的桶永远到不了上限）
+    for (let i = 0; i < total.limit; i++) {
+      const r = await correct(F.g, randomUUID(), { exam_cohort: 2015 });
+      assert.equal(r.status, 404, `第 ${i + 1} 次`);
+    }
+    const over = await correct(F.g, randomUUID(), { exam_cohort: 2015 });
+    assert.equal(over.status, 429);
+    assert.equal(over.text, P.TOO_MANY);
+    // 超出总量后，自己孩子的合法更正也被挡（429 在 handler 之前，没有更正）
+    const mine = await correct(F.g, own, { exam_cohort: (await cohortOf(own)).exam_cohort + 1 });
+    assert.equal(mine.status, 429);
+    assert.equal((await cohortOf(own)).source, 'derived');
+    assert.equal((await correct(O.g, randomUUID(), { exam_cohort: 2015 })).status, 404, '别的家长账号单独计数');
+  } finally {
+    shell.config.rate_limits[BUCKET] = saved.link;
+    shell.config.rate_limits[ACCOUNT_BUCKET] = saved.account;
+  }
+});

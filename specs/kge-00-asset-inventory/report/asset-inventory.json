@@ -1,0 +1,3256 @@
+{
+ "meta": {
+  "tool": "tools/kge-inventory",
+  "toolVersion": "0.1.0",
+  "legacy": [
+   {
+    "name": "aya",
+    "root": "legacy/aya",
+    "commit": "0ed2fe45b13248737df47f1614b205e727ce29c6",
+    "clean": true,
+    "commits": 1
+   },
+   {
+    "name": "wenli",
+    "root": "legacy/wenli",
+    "commit": "67d5e8f1aa5d1f015ed306f37d1d3652e8aece06",
+    "clean": true,
+    "commits": 1
+   }
+  ]
+ },
+ "subjects": [
+  {
+   "subject": "math",
+   "sources": [
+    "content/topics.ts",
+    "content/sprint/index.ts",
+    "content/abilities.ts",
+    "lib/types.ts",
+    "db/schema.sql"
+   ],
+   "groups": [
+    {
+     "title": "节点",
+     "findings": [
+      {
+       "key": "math.topics",
+       "label": "专题（章）数",
+       "value": 32
+      },
+      {
+       "key": "math.nodes.raw",
+       "label": "节点定义数（未去重）",
+       "value": 959
+      },
+      {
+       "key": "math.nodes",
+       "label": "节点数（按 ID 去重）",
+       "value": 959
+      },
+      {
+       "key": "math.nodes.duplicate_ids",
+       "label": "重复定义的节点 ID",
+       "value": 0
+      },
+      {
+       "key": "math.nodes.by_kind",
+       "label": "按类型计数",
+       "value": "C 14，K 322，M 159，P 152，S 312"
+      }
+     ]
+    },
+    {
+     "title": "节点字段（对照 KGE knowledge_node）",
+     "findings": [
+      {
+       "key": "math.kge_field.includes",
+       "label": "KGE 字段 includes（包含什么）",
+       "value": "无，可推导（0/959）",
+       "note": "core（核心内容）可作参考，不是边界说明"
+      },
+      {
+       "key": "math.kge_field.excludes",
+       "label": "KGE 字段 excludes（不包含什么）",
+       "value": "无（0/959）"
+      },
+      {
+       "key": "math.kge_field.examples",
+       "label": "KGE 字段 examples（典型题例）",
+       "value": "无，可推导（0/959）",
+       "note": "可由“以该节点为主考点的题目”推出"
+      },
+      {
+       "key": "math.kge_field.scope",
+       "label": "KGE 字段 scope（范围属性）",
+       "value": "无（0/959）"
+      },
+      {
+       "key": "math.kge_field.cognitive_levels",
+       "label": "KGE 字段 cognitive_levels（认知层次）",
+       "value": "无（0/959）"
+      },
+      {
+       "key": "math.kge_field.error_type",
+       "label": "KGE 字段 error_type（易错节点的错因类型）",
+       "value": "无，可推导（0/959）",
+       "note": "易错信息只在题目选项的陷阱码里，可反查"
+      },
+      {
+       "key": "math.kge_field.map_version",
+       "label": "KGE 字段 map_version（地图版本）",
+       "value": "无（0/959）"
+      },
+      {
+       "key": "math.field_empty.name",
+       "label": "legacy 字段 name 为空的节点",
+       "value": "0（0.0%）"
+      },
+      {
+       "key": "math.field_empty.cluster",
+       "label": "legacy 字段 cluster 为空的节点",
+       "value": "0（0.0%）"
+      },
+      {
+       "key": "math.field_empty.core",
+       "label": "legacy 字段 core 为空的节点",
+       "value": "0（0.0%）"
+      },
+      {
+       "key": "math.field_empty.prerequisites",
+       "label": "legacy 字段 prerequisites 为空的节点",
+       "value": "4（0.4%）",
+       "samples": [
+        "K-FUN-0910",
+        "P-FUN-0912",
+        "P-FUN-0914",
+        "P-FUN-0915"
+       ]
+      },
+      {
+       "key": "math.field_empty.abilities",
+       "label": "legacy 字段 abilities 为空的节点",
+       "value": "0（0.0%）"
+      },
+      {
+       "key": "math.field_empty.evidence",
+       "label": "legacy 字段 evidence 为空的节点",
+       "value": "0（0.0%）"
+      }
+     ]
+    },
+    {
+     "title": "前置边与图结构",
+     "findings": [
+      {
+       "key": "math.prereq.total",
+       "label": "前置条目总数",
+       "value": 1198
+      },
+      {
+       "key": "math.prereq.id_edges",
+       "label": "可解析为节点 ID 的前置边",
+       "value": 1041
+      },
+      {
+       "key": "math.prereq.text",
+       "label": "自然语言前置（不能自动连边）",
+       "value": 156,
+       "samples": [
+        "一元一次方程",
+        "一元一次方程中等式的基本性质（七年级上册）",
+        "一元一次方程应用题中设未知数的方法（七年级上册）",
+        "一元一次方程的定义",
+        "一元一次方程的概念（七上）",
+        "一元一次方程的概念（七年级上册）",
+        "一元一次方程的解法（七上）",
+        "一次方程建模",
+        "七年级平移与轴对称经验",
+        "七年级数据的收集与整理"
+       ],
+       "note": "按默认只列出，不做候选映射（spec 待人确认 #6）"
+      },
+      {
+       "key": "math.prereq.dangling",
+       "label": "形似 ID 但不存在的前置（悬空边）",
+       "value": 1,
+       "samples": [
+        "S-SIM-0925 ← P-SIM-0920"
+       ]
+      },
+      {
+       "key": "math.prereq.strength",
+       "label": "前置是否区分强弱",
+       "value": "否（字段只有 ID 或文字列表）"
+      },
+      {
+       "key": "math.graph.cycles",
+       "label": "环（强连通分量，样例列出环内节点）",
+       "value": 1,
+       "samples": [
+        "K-PRF-1207、K-PRF-1211"
+       ]
+      },
+      {
+       "key": "math.graph.transitive",
+       "label": "传递边（可由其他路径推出的直连前置）",
+       "value": 74,
+       "samples": [
+        "K-APP-0804 → S-APP-0808",
+        "K-APP-0811 → M-APP-0815",
+        "K-APP-0819 → S-APP-0823",
+        "K-APP-0831 → M-APP-0837",
+        "K-EQU-0913 → S-EQU-0917",
+        "K-EQU-0913 → S-FUN-0941",
+        "K-FRAC-1005 → S-FRAC-1007",
+        "K-FRAC-1013 → S-FRAC-1015",
+        "K-PAR-0901 → S-PAR-0903",
+        "K-PAR-0911 → P-PAR-0915"
+       ]
+      },
+      {
+       "key": "math.graph.orphans",
+       "label": "孤点（无可解析边、也没有题目引用）",
+       "value": 4,
+       "samples": [
+        "P-SIM-0912",
+        "S-EQU-0907",
+        "S-EQU-0955",
+        "S-FUN-0911"
+       ]
+      }
+     ]
+    },
+    {
+     "title": "题库",
+     "findings": [
+      {
+       "key": "math.items",
+       "label": "题目数（按 ID 去重）",
+       "value": 721
+      },
+      {
+       "key": "math.items.topic",
+       "label": "其中属于专题的题目",
+       "value": 693
+      },
+      {
+       "key": "math.items.sprint",
+       "label": "其中压轴专项题（不属于任何专题）",
+       "value": 28
+      },
+      {
+       "key": "math.items.duplicate_ids",
+       "label": "重复定义的题目 ID",
+       "value": 0
+      },
+      {
+       "key": "math.items.by_usage",
+       "label": "按用途计数（D 诊断 / P 探针 / L 训练 / T 迁移 / R 复测）",
+       "value": "D 419，L 28，P 29，R 126，T 119"
+      },
+      {
+       "key": "math.items.by_format",
+       "label": "按作答形式计数",
+       "value": "fill 338，multi 14，single 369"
+      },
+      {
+       "key": "math.items.node_refs",
+       "label": "题目引用节点次数（主 / 辅 / 前置）",
+       "value": 2421
+      },
+      {
+       "key": "math.items.node_refs_unresolved",
+       "label": "引用了不存在节点的次数",
+       "value": 97,
+       "samples": [
+        "Q-APP-U01-D-001 → 数据的收集与整理",
+        "Q-APP-U01-D-003 → 频率与频数",
+        "Q-APP-U02-D-001 → 数据的集中趋势（平均数、中位数、众数）",
+        "Q-APP-U02-D-002 → 加权平均数",
+        "Q-APP-U04-D-001 → 等可能条件下的概率",
+        "Q-APP-U05-D-001 → 用频率估计概率",
+        "Q-APP-U06-D-001 → 等可能条件下的概率",
+        "Q-APP-U06-D-002 → 对照实验思想",
+        "Q-CIR-U02-D-001 → 勾股定理",
+        "Q-CIR-U02-R-001 → 勾股定理"
+       ]
+      },
+      {
+       "key": "math.items.difficulty",
+       "label": "带八维难度向量的题目",
+       "value": "721/721",
+       "note": "KGE 建议改为各因子分级后加权求和作为先验难度"
+      },
+      {
+       "key": "math.nodes.main_zero",
+       "label": "没有任何题目以它为主考点的节点",
+       "value": "507（52.9%）"
+      },
+      {
+       "key": "math.nodes.main_lt3",
+       "label": "以它为主考点的题目少于 3 道的节点（粒度“可独立诊断”初筛信号）",
+       "value": "887（92.5%）",
+       "note": "只作信号，不判断粒度是否合格（spec 待人确认 #2）"
+      }
+     ]
+    },
+    {
+     "title": "六段标识、版权与审核状态",
+     "findings": [
+      {
+       "key": "math.item.six.region",
+       "label": "题目字段 region",
+       "value": "0/721"
+      },
+      {
+       "key": "math.item.six.exam_year",
+       "label": "题目字段 exam_year",
+       "value": "0/721"
+      },
+      {
+       "key": "math.item.six.grade",
+       "label": "题目字段 grade",
+       "value": "0/721"
+      },
+      {
+       "key": "math.item.six.textbook_version",
+       "label": "题目字段 textbook_version",
+       "value": "0/721"
+      },
+      {
+       "key": "math.item.six.subject",
+       "label": "题目字段 subject",
+       "value": "0/721"
+      },
+      {
+       "key": "math.item.six.content_version",
+       "label": "题目字段 content_version",
+       "value": "0/721"
+      },
+      {
+       "key": "math.item.six.derivable",
+       "label": "可从所属专题的章节标签推出年级与教材版本的题目",
+       "value": "693/721",
+       "note": "章节标签形如“苏科版九上 · 第1章”；压轴专项题不属于任何专题"
+      },
+      {
+       "key": "math.item.field.license",
+       "label": "题目字段 license（版权 / 来源）",
+       "value": "0/721"
+      },
+      {
+       "key": "math.item.field.copyright",
+       "label": "题目字段 copyright（版权 / 来源）",
+       "value": "0/721"
+      },
+      {
+       "key": "math.item.field.source",
+       "label": "题目字段 source（版权 / 来源）",
+       "value": "0/721"
+      },
+      {
+       "key": "math.item.field.sourceKind",
+       "label": "题目字段 sourceKind（版权 / 来源）",
+       "value": "0/721"
+      },
+      {
+       "key": "math.item.review_status",
+       "label": "审核状态分布",
+       "value": "Q1 721"
+      }
+     ]
+    },
+    {
+     "title": "九年级“函数”主题（封测切片起点）",
+     "findings": [
+      {
+       "key": "math.g9fn.topics",
+       "label": "九年级且属于“函数”板块的专题",
+       "value": "fun 二次函数（苏科版九下 · 第5章）"
+      },
+      {
+       "key": "math.g9fn.nodes",
+       "label": "节点数",
+       "value": 45
+      },
+      {
+       "key": "math.g9fn.items",
+       "label": "题目数",
+       "value": 24
+      },
+      {
+       "key": "math.g9fn.main_lt3",
+       "label": "主考点题目少于 3 道的节点",
+       "value": "39/45",
+       "samples": [
+        "C-FUN-0909",
+        "C-FUN-0948",
+        "C-FUN-0956",
+        "C-FUN-GEO",
+        "C-FUN-OPT",
+        "C-FUN-RNG",
+        "K-FUN-0901",
+        "K-FUN-0902",
+        "K-FUN-0903",
+        "K-FUN-0904"
+       ]
+      },
+      {
+       "key": "math.fn_all.topics",
+       "label": "“函数”板块全部专题（七至九年级）",
+       "value": "fun 二次函数（苏科版九下 · 第5章）；lin 一次函数（苏科版八上 · 第6章）；inv 反比例函数（苏科版八下 · 第11章）"
+      }
+     ]
+    },
+    {
+     "title": "错因：十二类根因与陷阱码",
+     "findings": [
+      {
+       "key": "math.root_causes",
+       "label": "根因类数",
+       "value": 12
+      },
+      {
+       "key": "math.traps",
+       "label": "陷阱码数",
+       "value": 429
+      },
+      {
+       "key": "math.traps.bad_root",
+       "label": "根因不在十二类里的陷阱码",
+       "value": 0
+      },
+      {
+       "key": "math.traps.used",
+       "label": "被题目引用的陷阱码",
+       "value": "398/429（92.8%）"
+      },
+      {
+       "key": "math.traps.unknown_refs",
+       "label": "题目引用了不存在的陷阱码",
+       "value": 0
+      },
+      {
+       "key": "math.pitfall_nodes",
+       "label": "易错节点（KGE pitfall 类型）",
+       "value": 0,
+       "note": "legacy 节点类型里没有易错节点；易错信息只在陷阱码上"
+      }
+     ]
+    },
+    {
+     "title": "100 能力点（能力视图 skill_node 的来源）",
+     "findings": [
+      {
+       "key": "math.grid.boards",
+       "label": "板块数 × 能力维度数",
+       "value": "10 × 10 = 100"
+      },
+      {
+       "key": "math.grid.ability_codes",
+       "label": "章节能力代码数（映射到能力维度）",
+       "value": 11
+      },
+      {
+       "key": "math.grid.standalone_data",
+       "label": "是否有独立的 100 点数据",
+       "value": "否（由两个常量相乘，节点与题目经能力代码映射）"
+      },
+      {
+       "key": "math.grid.cells_with_nodes",
+       "label": "有节点挂靠的格子",
+       "value": "68/100"
+      },
+      {
+       "key": "math.grid.cells_with_items",
+       "label": "有题目挂靠的格子",
+       "value": "66/100"
+      },
+      {
+       "key": "math.grid.empty",
+       "label": "既无节点也无题目的格子",
+       "value": 32,
+       "samples": [
+        "三角形×几何直观",
+        "三角形×数据分析",
+        "三角形×空间观念",
+        "函数×几何直观",
+        "函数×数据分析",
+        "函数×空间观念",
+        "四边形×几何直观",
+        "四边形×探究创新",
+        "四边形×数学建模",
+        "四边形×数据分析"
+       ]
+      },
+      {
+       "key": "math.grid.unknown_codes",
+       "label": "节点上不存在的能力代码",
+       "value": 0
+      }
+     ]
+    },
+    {
+     "title": "旧编码并存",
+     "findings": [
+      {
+       "key": "math.codes.node_id_style",
+       "label": "节点 ID 形如“类型-簇-编号”（如 K-FUN-0901）",
+       "value": "956/959"
+      },
+      {
+       "key": "math.codes.kge_style",
+       "label": "已是 KGE 命名“学科.领域.主题.节点”的节点",
+       "value": "0/959",
+       "note": "全部要进 id_migration 迁移表"
+      },
+      {
+       "key": "math.codes.kind_vs_type",
+       "label": "实际节点类型不在 lib/types.ts NodeKind 里",
+       "value": "C",
+       "note": "NodeKind = K | M | P | S"
+      },
+      {
+       "key": "math.codes.kind_vs_db",
+       "label": "实际节点类型不在 db/schema.sql 的 kind 约束里",
+       "value": "C",
+       "note": "约束 = K, M, P, S（该表代码未使用）"
+      },
+      {
+       "key": "math.codes.node_vs_ability",
+       "label": "与能力代码同名的节点 ID",
+       "value": 0
+      },
+      {
+       "key": "math.codes.levels",
+       "label": "“能力五层级”定义",
+       "value": "未找到；最接近的是掌握五门槛 MASTERY_GATES",
+       "note": "KGE：题目层用课标四级，五道门槛保留为掌握状态"
+      }
+     ]
+    }
+   ],
+   "loadErrors": []
+  },
+  {
+   "subject": "chinese",
+   "sources": [
+    "packages/shared/lib/domain/ability.ts",
+    "packages/shared/lib/domain/error-types.ts",
+    "packages/shared/lib/domain/reading-error-tags.ts",
+    "packages/shared/lib/domain/classical-catalog.ts",
+    "packages/shared/lib/domain/writing-syllabus.ts",
+    "packages/shared/lib/domain/reading-methods.ts",
+    "packages/shared/lib/prompts/essay-rubric.ts",
+    "data/catalog.json",
+    "data/corpus_candidates.json",
+    "content/reading/错因标签.json",
+    "supabase/migrations/*.sql"
+   ],
+   "groups": [
+    {
+     "title": "能力坐标：28 点与旧 20 格",
+     "findings": [
+      {
+       "key": "chn.grid.domains",
+       "label": "能力域数",
+       "value": 7
+      },
+      {
+       "key": "chn.grid.levels",
+       "label": "等级数",
+       "value": 4
+      },
+      {
+       "key": "chn.grid.cells",
+       "label": "能力格数（域 × 级）",
+       "value": 28
+      },
+      {
+       "key": "chn.grid.db_enum_match",
+       "label": "与迁移里的 domain_t / level_t 枚举一致",
+       "value": "是",
+       "note": "domain_t = D1,D2,D3,D4,D5,D6,D7；level_t = L1,L2,L3,L4"
+      },
+      {
+       "key": "chn.grid.legacy20",
+       "label": "提到旧 20 格（5 × 4）的文件",
+       "value": 0,
+       "note": "只能查当前快照；库里是否有 20 格编码的数据见库模式"
+      },
+      {
+       "key": "chn.ability_kp",
+       "label": "“能力 × 文本类型 × 题型”能力点数据",
+       "value": "未找到"
+      }
+     ]
+    },
+    {
+     "title": "篇目与素材",
+     "findings": [
+      {
+       "key": "chn.catalog.rows",
+       "label": "data/catalog.json 篇目数",
+       "value": 237,
+       "note": "字段：author、genre、grade、parent、section、seq、title、volume"
+      },
+      {
+       "key": "chn.corpus.rows",
+       "label": "data/corpus_candidates.json 篇目数",
+       "value": 109,
+       "note": "字段：author、genre、grade、raw、title、volume"
+      },
+      {
+       "key": "chn.classical.rows",
+       "label": "classical-catalog.ts 文言与诗词条目数",
+       "value": 55
+      },
+      {
+       "key": "chn.catalog.overlap",
+       "label": "三份清单按标题的交集（catalog∩corpus / catalog∩classical / corpus∩classical）",
+       "value": "106 / 40 / 33"
+      },
+      {
+       "key": "chn.catalog.pages",
+       "label": "篇目清单里的页码字段",
+       "value": "无（三份清单都没有册-课-页）"
+      },
+      {
+       "key": "chn.must_recite.static",
+       "label": "静态清单里标“必背”的字段",
+       "value": "无"
+      },
+      {
+       "key": "chn.must_recite.db",
+       "label": "迁移里定义 must_recite 列的文件",
+       "value": 1,
+       "samples": [
+        "supabase/migrations/0003_knowledge_base.sql"
+       ],
+       "note": "85 篇必背只能在库里查，见库模式"
+      },
+      {
+       "key": "chn.shici",
+       "label": "120 实词清单",
+       "value": "未找到清单（只有关键字命中，需人工核实）",
+       "samples": [
+        "data/chunks.json",
+        "data/notes_chunks.json",
+        "packages/shared/lib/domain/ability.ts",
+        "packages/shared/lib/domain/badges.ts",
+        "packages/shared/lib/domain/classical-reflow.test.ts",
+        "packages/shared/lib/domain/classical-reflow.ts",
+        "packages/shared/lib/domain/classical.test.ts",
+        "packages/shared/lib/domain/classical.ts",
+        "packages/shared/lib/domain/error-types.ts",
+        "packages/shared/lib/domain/reading-types.ts"
+       ],
+       "note": "查过：data、content、packages/shared/lib/domain、supabase"
+      },
+      {
+       "key": "chn.xuci",
+       "label": "18 虚词清单",
+       "value": "未找到清单（只有关键字命中，需人工核实）",
+       "samples": [
+        "data/chunks.json",
+        "data/corpus_candidates.json",
+        "data/notes_chunks.json",
+        "packages/shared/lib/domain/ability.ts",
+        "packages/shared/lib/domain/badges.ts",
+        "packages/shared/lib/domain/error-types.ts",
+        "packages/shared/lib/domain/reading-types.ts"
+       ],
+       "note": "查过：data、content、packages/shared/lib/domain、supabase"
+      },
+      {
+       "key": "chn.unit_intro",
+       "label": "34 个单元导语阅读方法",
+       "value": "未找到",
+       "note": "查过：data、content、packages/shared/lib/domain、supabase"
+      }
+     ]
+    },
+    {
+     "title": "写作单元与阅读方法",
+     "findings": [
+      {
+       "key": "chn.writing.units",
+       "label": "写作单元数",
+       "value": 35,
+       "note": "字段：code、engine、grade、line、method、order、semester、title"
+      },
+      {
+       "key": "chn.writing.pages",
+       "label": "写作单元的页码字段",
+       "value": "无"
+      },
+      {
+       "key": "chn.reading_methods",
+       "label": "阅读方法卡数（reading-methods.ts）",
+       "value": 6
+      }
+     ]
+    },
+    {
+     "title": "判分依据与错因",
+     "findings": [
+      {
+       "key": "chn.essay_rubric",
+       "label": "作文五维量表",
+       "value": "有（以 prompt 字符串形式存在）",
+       "note": "没有版本号，判分结果无法绑定量表版本"
+      },
+      {
+       "key": "chn.reading_scoring_points",
+       "label": "阅读采分点的静态资产",
+       "value": "无，由模型生成 grade_focus",
+       "samples": [
+        "packages/shared/lib/domain/schemas.ts",
+        "packages/shared/lib/prompts/reading.ts"
+       ]
+      },
+      {
+       "key": "chn.error_types",
+       "label": "中文六类错因",
+       "value": "知识性、审题性、定位性、思维性、表达规范性、策略时间性"
+      },
+      {
+       "key": "chn.error_types.db_match",
+       "label": "与迁移枚举 error_t 一致",
+       "value": "是"
+      },
+      {
+       "key": "chn.reading_tags",
+       "label": "阅读错因标签数 / 大类数",
+       "value": "15 / 6"
+      },
+      {
+       "key": "chn.reading_tags.mapping",
+       "label": "标签能映射回中文六类的比例",
+       "value": "15/15（100.0%）"
+      },
+      {
+       "key": "chn.reading_tags.ts_vs_json",
+       "label": "TS 标签与 错因标签.json 的差异（仅 TS / 仅 JSON）",
+       "value": "0 / 0",
+       "note": "JSON 版本 1.0"
+      }
+     ]
+    }
+   ],
+   "loadErrors": []
+  },
+  {
+   "subject": "moral",
+   "sources": [
+    "packages/shared/lib/domain/daofa-knowledge-map.ts",
+    "packages/shared/lib/domain/daofa-question-bank.ts",
+    "apps/daofa/app/news/page.tsx"
+   ],
+   "groups": [
+    {
+     "title": "大概念节点与页码",
+     "findings": [
+      {
+       "key": "moral.domains",
+       "label": "领域数（含读本）",
+       "value": 5,
+       "note": "心理与道德 7；法律（宪法为核心） 8；国情与国策 8；责任与担当 7；习近平新时代中国特色社会主义思想·学生读本 6"
+      },
+      {
+       "key": "moral.nodes",
+       "label": "节点数",
+       "value": 36
+      },
+      {
+       "key": "moral.nodes.textbook",
+       "label": "其中统编教材节点",
+       "value": 30
+      },
+      {
+       "key": "moral.nodes.reader",
+       "label": "其中《学生读本》节点",
+       "value": 6
+      },
+      {
+       "key": "moral.pages.present",
+       "label": "统编节点有页码",
+       "value": "30/30"
+      },
+      {
+       "key": "moral.pages.parsable",
+       "label": "页码能解析为页码区间",
+       "value": "30/30"
+      },
+      {
+       "key": "moral.pages.approx",
+       "label": "源文件注明页码是近似值",
+       "value": "是"
+      },
+      {
+       "key": "moral.pages.pending",
+       "label": "页码为“待核”的节点",
+       "value": 6,
+       "samples": [
+        "xr1",
+        "xr2",
+        "xr3",
+        "xr4",
+        "xr5",
+        "xr6"
+       ]
+      },
+      {
+       "key": "moral.pages.book",
+       "label": "统编节点标了册别（七上…九下）",
+       "value": "30/30"
+      },
+      {
+       "key": "moral.pages.edition_bound",
+       "label": "绑定教材版次 / 印次的节点",
+       "value": "0/36",
+       "note": "KGE：页码与原句一律进教材投影表 textbook_projection，按版次核对"
+      },
+      {
+       "key": "moral.needs_review",
+       "label": "标记 needs_review（待特级教师审校）的节点",
+       "value": 6,
+       "samples": [
+        "xr1",
+        "xr2",
+        "xr3",
+        "xr4",
+        "xr5",
+        "xr6"
+       ]
+      },
+      {
+       "key": "moral.phrases.empty",
+       "label": "教材规范表述为空的节点",
+       "value": 6,
+       "samples": [
+        "xr1",
+        "xr2",
+        "xr3",
+        "xr4",
+        "xr5",
+        "xr6"
+       ]
+      },
+      {
+       "key": "moral.mount.questions",
+       "label": "节点挂载：高频设问",
+       "value": "无"
+      },
+      {
+       "key": "moral.mount.answer_phrases",
+       "label": "节点挂载：答题话术",
+       "value": "无"
+      },
+      {
+       "key": "moral.mount.exam_refs",
+       "label": "节点挂载：真题回链",
+       "value": "无"
+      },
+      {
+       "key": "moral.edges",
+       "label": "节点间关系（前置 / 关联）",
+       "value": "无"
+      }
+     ]
+    },
+    {
+     "title": "采分点 Rubric",
+     "findings": [
+      {
+       "key": "moral.items",
+       "label": "带 Rubric 的静态题目数",
+       "value": 2
+      },
+      {
+       "key": "moral.points",
+       "label": "采分点数",
+       "value": 6
+      },
+      {
+       "key": "moral.points.point_id",
+       "label": "采分点字段 point_id",
+       "value": "6/6"
+      },
+      {
+       "key": "moral.points.score_value",
+       "label": "采分点字段 score_value",
+       "value": "6/6"
+      },
+      {
+       "key": "moral.points.subject_dimension",
+       "label": "采分点字段 subject_dimension",
+       "value": "6/6"
+      },
+      {
+       "key": "moral.points.core_keywords",
+       "label": "采分点字段 core_keywords",
+       "value": "6/6"
+      },
+      {
+       "key": "moral.points.required_logic",
+       "label": "采分点字段 required_logic",
+       "value": "6/6"
+      },
+      {
+       "key": "moral.points.material_linkage",
+       "label": "采分点字段 material_linkage",
+       "value": "4/6"
+      },
+      {
+       "key": "moral.points.partial_credit_rule",
+       "label": "采分点字段 partial_credit_rule",
+       "value": "6/6"
+      },
+      {
+       "key": "moral.points.common_errors",
+       "label": "采分点字段 common_errors",
+       "value": "6/6"
+      },
+      {
+       "key": "moral.rubric_version",
+       "label": "带 rubric_version 的题目",
+       "value": "0/2"
+      },
+      {
+       "key": "moral.items.node_refs_unresolved",
+       "label": "题目引用了不存在的节点",
+       "value": 0
+      },
+      {
+       "key": "moral.nodes.unreferenced",
+       "label": "没有任何静态题目引用的节点",
+       "value": "32/36（88.9%）",
+       "samples": [
+        "l1",
+        "l2",
+        "l3",
+        "l4",
+        "l5",
+        "l7",
+        "l8",
+        "m1",
+        "m2",
+        "m3"
+       ],
+       "note": "节点间没有边，这里的“孤点”只看题目引用；AI 生成题在库表 daofa_item，见库模式"
+      }
+     ]
+    },
+    {
+     "title": "时政条目",
+     "findings": [
+      {
+       "key": "moral.news",
+       "label": "时政种子条目数（news 页常量 SEED_NEWS）",
+       "value": 2
+      },
+      {
+       "key": "moral.news.validity",
+       "label": "时政条目有生效 / 失效字段",
+       "value": "无"
+      },
+      {
+       "key": "moral.news.stored",
+       "label": "时政条目是否入库",
+       "value": "否（写在页面常量里）"
+      }
+     ]
+    },
+    {
+     "title": "《学生读本》",
+     "findings": [
+      {
+       "key": "moral.reader.nodes",
+       "label": "读本节点数",
+       "value": 6,
+       "samples": [
+        "xr1 以人民为中心的发展思想",
+        "xr2 全过程人民民主",
+        "xr3 全面依法治国·宪法法律至上",
+        "xr4 铸牢中华民族共同体意识",
+        "xr5 生态文明·建设美丽中国",
+        "xr6 推动构建人类命运共同体"
+       ]
+      },
+      {
+       "key": "moral.reader.pages",
+       "label": "读本节点有可用页码",
+       "value": "0/6"
+      },
+      {
+       "key": "moral.reader.phrases",
+       "label": "读本节点有规范表述",
+       "value": "0/6"
+      },
+      {
+       "key": "moral.reader.files",
+       "label": "文件名含“读本”的文件（任意类型）",
+       "value": 1,
+       "samples": [
+        "apps/daofa/docs/学生读本节点填充指南.md"
+       ]
+      },
+      {
+       "key": "moral.reader.verdict",
+       "label": "结论",
+       "value": "未入库（只有脚手架节点，没有原文、页码与规范表述）"
+      }
+     ]
+    }
+   ],
+   "loadErrors": []
+  }
+ ],
+ "answers": [
+  {
+   "question": "counts",
+   "subject": "math",
+   "answer": "节点 959（C 14 / K 322 / M 159 / P 152 / S 312）；题目 721；Rubric：无独立 Rubric，判分靠答案与 429 个陷阱码"
+  },
+  {
+   "question": "missing_fields",
+   "subject": "math",
+   "answer": "KGE 节点字段 includes / excludes / scope / cognitive_levels / map_version 全部缺失；题目六段标识 region 0/721、exam_year 0/721、grade 0/721、textbook_version 0/721、subject 0/721、content_version 0/721；前置不分强弱"
+  },
+  {
+   "question": "orphans_cycles",
+   "subject": "math",
+   "answer": "环 1 个；孤点 4 个；传递边 74 条；另有自然语言前置 156 条、悬空边 1 条无法参与计算；507 个节点没有任何以它为主考点的题目"
+  },
+  {
+   "question": "legacy_codes",
+   "subject": "math",
+   "answer": "没有节点使用 KGE 命名（0/959），全部要进迁移表；其中 956 个形如 K-FUN-0901，其余 3 个另有格式；题目里有 97 处用自然语言而不是节点 ID 引用节点；节点类型 C 不在 NodeKind 定义中、C 不在未使用的 knowledge_nodes 表约束中；没有“能力五层级”数据"
+  },
+  {
+   "question": "counts",
+   "subject": "chinese",
+   "answer": "能力格 28（7 域 × 4 级）；可打标能力点 0；篇目清单 237 / 109 / 55 条；写作单元 35；题目：仓库里没有静态题库，见库模式；Rubric：作文五维量表 1 份（prompt 字符串），阅读采分点无静态资产"
+  },
+  {
+   "question": "missing_fields",
+   "subject": "chinese",
+   "answer": "篇目与写作单元都没有册-课-页；静态清单没有“必背”标记；作文量表没有版本号；120 实词、18 虚词、34 个单元导语都没有找到清单"
+  },
+  {
+   "question": "orphans_cycles",
+   "subject": "chinese",
+   "answer": "不适用：语文现有资产是能力坐标与素材清单，没有节点间关系，也就没有环与孤点"
+  },
+  {
+   "question": "legacy_codes",
+   "subject": "chinese",
+   "answer": "旧 20 格：当前快照里没有提到（仓库只有 1 个提交，查不到历史；库里见库模式）；错因两套命名并存（中文六类 + 15 个英文阅读标签），映射完整率 100.0%"
+  },
+  {
+   "question": "counts",
+   "subject": "moral",
+   "answer": "节点 36（统编 30，读本 6，5 个领域）；静态题目 2；采分点 6；AI 生成题与其 Rubric 在库表 daofa_item，见库模式"
+  },
+  {
+   "question": "missing_fields",
+   "subject": "moral",
+   "answer": "没有版次 / 印次（0/36）；没有高频设问、答题话术、真题回链挂载；Rubric 没有 rubric_version（0/2）；时政没有生效 / 失效日期；6 个节点的规范表述为空"
+  },
+  {
+   "question": "orphans_cycles",
+   "subject": "moral",
+   "answer": "节点间没有任何边，不存在环；没有静态题目引用的节点 32/36"
+  },
+  {
+   "question": "legacy_codes",
+   "subject": "moral",
+   "answer": "节点 ID 是短编码（如 l1、l2、l3），0/36 个使用 KGE 的 MORAL.* 命名，需要迁移表；失分归因四类（审题 / 定位 / 转化 / 规范）与平台七大类的映射见 docs/mapping/error-taxonomy.md"
+  },
+  {
+   "question": "moral_pages_edition",
+   "subject": "moral",
+   "answer": "否：36 个节点里绑定版次 / 印次的 0 个；统编节点有页码 30/30，源文件注明为近似值；读本节点页码“待核” 6 个"
+  },
+  {
+   "question": "reader_ingested",
+   "subject": "moral",
+   "answer": "未入库（只有脚手架节点，没有原文、页码与规范表述）；读本节点 6 个"
+  }
+ ],
+ "blockers": [
+  {
+   "id": "math-node-list",
+   "subject": "math",
+   "problem": "知识图谱节点清单的实际完成度未知，不能以 100 能力点代替诊断单元",
+   "verdict": "节点清单是实物：32 个专题、959 个节点、1041 条可解析前置边，覆盖七至九年级苏科版；但前置边有 156 条自然语言、74 条传递边，且节点缺少包含 / 不包含 / 范围 / 认知层次字段。全部节点中 507 个没有以它为主考点的题目；九年级“函数”主题 45 个节点中 39 个主考点题目少于 3 道。可作为 KGE-01 导入的起点，拆解、必要性检验与试标注仍需教研完成",
+   "evidence": [
+    "math.nodes",
+    "math.prereq.text",
+    "math.graph.transitive",
+    "math.nodes.main_zero",
+    "math.g9fn.main_lt3"
+   ]
+  },
+  {
+   "id": "chinese-ability-kp",
+   "subject": "chinese",
+   "problem": "28 点尚未下钻为可打标的能力点",
+   "verdict": "确认：仓库里只有 28 格能力坐标、阅读题型与错因标签，没有“能力 × 文本类型 × 题型”的能力点数据；“积累与运用”素材网的 120 实词、18 虚词、34 个单元导语也没有找到清单，85 篇必背只能在库里查",
+   "evidence": [
+    "chn.grid.cells",
+    "chn.ability_kp",
+    "chn.shici",
+    "chn.xuci",
+    "chn.unit_intro",
+    "chn.must_recite.db"
+   ]
+  },
+  {
+   "id": "moral-pages-edition",
+   "subject": "moral",
+   "problem": "页码索引未绑定教材版次与印次",
+   "verdict": "确认：0/36 个节点绑定版次；页码是写在节点上的字符串，源文件注明为近似值，能解析为区间的 30/30。迁移时须进入 textbook_projection 并由教研抽样核对",
+   "evidence": [
+    "moral.pages.edition_bound",
+    "moral.pages.parsable",
+    "moral.pages.approx"
+   ]
+  },
+  {
+   "id": "moral-reader",
+   "subject": "moral",
+   "problem": "《学生读本》属于考查范围但尚未入库",
+   "verdict": "确认：未入库（只有脚手架节点，没有原文、页码与规范表述）。仓库里文件名含“读本”的文件 1 个（见 moral.reader.files 样例，需人工确认其中有无原文）",
+   "evidence": [
+    "moral.reader.nodes",
+    "moral.reader.pages",
+    "moral.reader.files"
+   ]
+  }
+ ],
+ "conclusions": [
+  {
+   "subject": "chinese",
+   "source": "packages/shared/lib/domain/schemas.ts",
+   "symbol": "DiagnoseResultSchema",
+   "kind": "zod",
+   "algorithm": "含模型调用",
+   "algorithmBasis": "被含模型调用的文件使用：apps/student/app/api/diagnose/route.ts",
+   "hasEvidenceRef": false,
+   "hasConfidence": true,
+   "fields": [
+    {
+     "subject": "chinese",
+     "source": "packages/shared/lib/domain/schemas.ts",
+     "symbol": "DiagnoseResultSchema",
+     "field": "student_label",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": "层级标签（规则 12：不贴层级标签）"
+    },
+    {
+     "subject": "chinese",
+     "source": "packages/shared/lib/domain/schemas.ts",
+     "symbol": "DiagnoseResultSchema",
+     "field": "board_focus",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "packages/shared/lib/domain/schemas.ts",
+     "symbol": "DiagnoseResultSchema",
+     "field": "total_lost",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "packages/shared/lib/domain/schemas.ts",
+     "symbol": "DiagnoseResultSchema",
+     "field": "quick_recover",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "packages/shared/lib/domain/schemas.ts",
+     "symbol": "DiagnoseResultSchema",
+     "field": "question_count",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "packages/shared/lib/domain/schemas.ts",
+     "symbol": "DiagnoseResultSchema",
+     "field": "rank_range",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": "排名 / 位次（SIE：不展示同伴比较，外部考试只记排名信息）"
+    },
+    {
+     "subject": "chinese",
+     "source": "packages/shared/lib/domain/schemas.ts",
+     "symbol": "DiagnoseResultSchema",
+     "field": "ability",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "packages/shared/lib/domain/schemas.ts",
+     "symbol": "DiagnoseResultSchema",
+     "field": "errors",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "packages/shared/lib/domain/schemas.ts",
+     "symbol": "DiagnoseResultSchema",
+     "field": "priorities",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "packages/shared/lib/domain/schemas.ts",
+     "symbol": "DiagnoseResultSchema",
+     "field": "teacher_note",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "packages/shared/lib/domain/schemas.ts",
+     "symbol": "DiagnoseResultSchema",
+     "field": "uncertainty_note",
+     "evidenceRef": false,
+     "confidence": true,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "packages/shared/lib/domain/schemas.ts",
+     "symbol": "DiagnoseResultSchema",
+     "field": "data_confidence",
+     "evidenceRef": false,
+     "confidence": true,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "packages/shared/lib/domain/schemas.ts",
+     "symbol": "DiagnoseResultSchema",
+     "field": "process_profile",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    }
+   ]
+  },
+  {
+   "subject": "chinese",
+   "source": "packages/shared/lib/domain/schemas.ts",
+   "symbol": "GradeResultSchema",
+   "kind": "zod",
+   "algorithm": "含模型调用",
+   "algorithmBasis": "被含模型调用的文件使用：apps/student/app/api/essays/grade/route.ts",
+   "hasEvidenceRef": false,
+   "hasConfidence": true,
+   "fields": [
+    {
+     "subject": "chinese",
+     "source": "packages/shared/lib/domain/schemas.ts",
+     "symbol": "GradeResultSchema",
+     "field": "band",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "packages/shared/lib/domain/schemas.ts",
+     "symbol": "GradeResultSchema",
+     "field": "est_score",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "packages/shared/lib/domain/schemas.ts",
+     "symbol": "GradeResultSchema",
+     "field": "score_range",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "packages/shared/lib/domain/schemas.ts",
+     "symbol": "GradeResultSchema",
+     "field": "dims",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "packages/shared/lib/domain/schemas.ts",
+     "symbol": "GradeResultSchema",
+     "field": "marks",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "packages/shared/lib/domain/schemas.ts",
+     "symbol": "GradeResultSchema",
+     "field": "upgrade",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "packages/shared/lib/domain/schemas.ts",
+     "symbol": "GradeResultSchema",
+     "field": "needs_human_review",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "packages/shared/lib/domain/schemas.ts",
+     "symbol": "GradeResultSchema",
+     "field": "uncertainty_note",
+     "evidenceRef": false,
+     "confidence": true,
+     "forbidden": null
+    }
+   ]
+  },
+  {
+   "subject": "chinese",
+   "source": "packages/shared/lib/domain/schemas.ts",
+   "symbol": "ParentReportSchema",
+   "kind": "zod",
+   "algorithm": "含模型调用",
+   "algorithmBasis": "被含模型调用的文件使用：apps/parent/app/api/report/weekly/route.ts",
+   "hasEvidenceRef": false,
+   "hasConfidence": false,
+   "fields": [
+    {
+     "subject": "chinese",
+     "source": "packages/shared/lib/domain/schemas.ts",
+     "symbol": "ParentReportSchema",
+     "field": "overview",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "packages/shared/lib/domain/schemas.ts",
+     "symbol": "ParentReportSchema",
+     "field": "abilityChange",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "packages/shared/lib/domain/schemas.ts",
+     "symbol": "ParentReportSchema",
+     "field": "weakPoints",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "packages/shared/lib/domain/schemas.ts",
+     "symbol": "ParentReportSchema",
+     "field": "familyAdvice",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    }
+   ]
+  },
+  {
+   "subject": "chinese",
+   "source": "packages/shared/lib/domain/schemas.ts",
+   "symbol": "PlanResultSchema",
+   "kind": "zod",
+   "algorithm": "含模型调用",
+   "algorithmBasis": "被含模型调用的文件使用：apps/student/app/api/plan/route.ts",
+   "hasEvidenceRef": false,
+   "hasConfidence": false,
+   "fields": [
+    {
+     "subject": "chinese",
+     "source": "packages/shared/lib/domain/schemas.ts",
+     "symbol": "PlanResultSchema",
+     "field": "stages",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "packages/shared/lib/domain/schemas.ts",
+     "symbol": "PlanResultSchema",
+     "field": "priorities",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "packages/shared/lib/domain/schemas.ts",
+     "symbol": "PlanResultSchema",
+     "field": "est_gain",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    }
+   ]
+  },
+  {
+   "subject": "chinese",
+   "source": "supabase/migrations",
+   "symbol": "ability_state",
+   "kind": "table",
+   "algorithm": "未判断（库表）",
+   "algorithmBasis": "写入方要看应用代码",
+   "hasEvidenceRef": false,
+   "hasConfidence": true,
+   "fields": [
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "ability_state",
+     "field": "id",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "ability_state",
+     "field": "student_id",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "ability_state",
+     "field": "domain",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "ability_state",
+     "field": "level",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "ability_state",
+     "field": "mastery",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "ability_state",
+     "field": "updated_at",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "ability_state",
+     "field": "data_confidence",
+     "evidenceRef": false,
+     "confidence": true,
+     "forbidden": null
+    }
+   ]
+  },
+  {
+   "subject": "chinese",
+   "source": "supabase/migrations",
+   "symbol": "mastery_snapshot",
+   "kind": "table",
+   "algorithm": "未判断（库表）",
+   "algorithmBasis": "写入方要看应用代码",
+   "hasEvidenceRef": false,
+   "hasConfidence": false,
+   "fields": [
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "mastery_snapshot",
+     "field": "id",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "mastery_snapshot",
+     "field": "student_id",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "mastery_snapshot",
+     "field": "snap_date",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "mastery_snapshot",
+     "field": "avg_mastery",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "mastery_snapshot",
+     "field": "by_domain",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "mastery_snapshot",
+     "field": "created_at",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    }
+   ]
+  },
+  {
+   "subject": "chinese",
+   "source": "supabase/migrations",
+   "symbol": "parent_report",
+   "kind": "table",
+   "algorithm": "未判断（库表）",
+   "algorithmBasis": "写入方要看应用代码",
+   "hasEvidenceRef": false,
+   "hasConfidence": false,
+   "fields": [
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "parent_report",
+     "field": "id",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "parent_report",
+     "field": "student_id",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "parent_report",
+     "field": "report_date",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "parent_report",
+     "field": "week_start",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "parent_report",
+     "field": "week_end",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "parent_report",
+     "field": "metrics",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "parent_report",
+     "field": "overview",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "parent_report",
+     "field": "ability_change",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "parent_report",
+     "field": "weak_points",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "parent_report",
+     "field": "family_advice",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "parent_report",
+     "field": "created_at",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    }
+   ]
+  },
+  {
+   "subject": "chinese",
+   "source": "supabase/migrations",
+   "symbol": "point_mastery",
+   "kind": "table",
+   "algorithm": "未判断（库表）",
+   "algorithmBasis": "写入方要看应用代码",
+   "hasEvidenceRef": false,
+   "hasConfidence": false,
+   "fields": [
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "point_mastery",
+     "field": "student_id",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "point_mastery",
+     "field": "point_id",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "point_mastery",
+     "field": "mastery",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "point_mastery",
+     "field": "attempts",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "point_mastery",
+     "field": "last_score_rate",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "point_mastery",
+     "field": "mastered",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "point_mastery",
+     "field": "mastered_at",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "point_mastery",
+     "field": "updated_at",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "point_mastery",
+     "field": "alpha",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "point_mastery",
+     "field": "beta",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "point_mastery",
+     "field": "review_stage",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "point_mastery",
+     "field": "next_review_at",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "point_mastery",
+     "field": "last_attempt_at",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    }
+   ]
+  },
+  {
+   "subject": "chinese",
+   "source": "supabase/migrations",
+   "symbol": "profiles",
+   "kind": "table",
+   "algorithm": "未判断（库表）",
+   "algorithmBasis": "写入方要看应用代码",
+   "hasEvidenceRef": false,
+   "hasConfidence": false,
+   "fields": [
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "profiles",
+     "field": "segment",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": "层级标签（规则 12：不贴层级标签）"
+    }
+   ]
+  },
+  {
+   "subject": "chinese",
+   "source": "supabase/migrations",
+   "symbol": "stage_report",
+   "kind": "table",
+   "algorithm": "未判断（库表）",
+   "algorithmBasis": "写入方要看应用代码",
+   "hasEvidenceRef": false,
+   "hasConfidence": false,
+   "fields": [
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "stage_report",
+     "field": "id",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "stage_report",
+     "field": "student_id",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "stage_report",
+     "field": "stage_start",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "stage_report",
+     "field": "stage_end",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "stage_report",
+     "field": "metrics",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "stage_report",
+     "field": "headline",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "stage_report",
+     "field": "parent_narrative",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "stage_report",
+     "field": "student_narrative",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "stage_report",
+     "field": "created_at",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    }
+   ]
+  },
+  {
+   "subject": "chinese",
+   "source": "supabase/migrations",
+   "symbol": "student_seg_t",
+   "kind": "enum",
+   "algorithm": "未判断（枚举）",
+   "algorithmBasis": "学生分型的取值",
+   "hasEvidenceRef": false,
+   "hasConfidence": false,
+   "fields": [
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "student_seg_t",
+     "field": "基础薄弱",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": "层级标签（规则 12：不贴层级标签）"
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "student_seg_t",
+     "field": "中等提升",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": "层级标签（规则 12：不贴层级标签）"
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "student_seg_t",
+     "field": "高分冲刺",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": "层级标签（规则 12：不贴层级标签）"
+    },
+    {
+     "subject": "chinese",
+     "source": "supabase/migrations",
+     "symbol": "student_seg_t",
+     "field": "目标校冲刺",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": "层级标签（规则 12：不贴层级标签）"
+    }
+   ]
+  },
+  {
+   "subject": "math",
+   "source": "lib/calibration.ts",
+   "symbol": "CalibrationState",
+   "kind": "interface",
+   "algorithm": "规则（纯函数）",
+   "algorithmBasis": "所在文件没有模型调用",
+   "hasEvidenceRef": true,
+   "hasConfidence": true,
+   "fields": [
+    {
+     "subject": "math",
+     "source": "lib/calibration.ts",
+     "symbol": "CalibrationState",
+     "field": "evidence",
+     "evidenceRef": true,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/calibration.ts",
+     "symbol": "CalibrationState",
+     "field": "theta",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/calibration.ts",
+     "symbol": "CalibrationState",
+     "field": "consistency",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/calibration.ts",
+     "symbol": "CalibrationState",
+     "field": "confidence",
+     "evidenceRef": false,
+     "confidence": true,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/calibration.ts",
+     "symbol": "CalibrationState",
+     "field": "abilityBand",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": "层级标签（规则 12：不贴层级标签）"
+    },
+    {
+     "subject": "math",
+     "source": "lib/calibration.ts",
+     "symbol": "CalibrationState",
+     "field": "difficultyBand",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/calibration.ts",
+     "symbol": "CalibrationState",
+     "field": "settled",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/calibration.ts",
+     "symbol": "CalibrationState",
+     "field": "note",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    }
+   ]
+  },
+  {
+   "subject": "math",
+   "source": "lib/consultation.ts",
+   "symbol": "Consultation",
+   "kind": "interface",
+   "algorithm": "规则（纯函数）",
+   "algorithmBasis": "所在文件没有模型调用",
+   "hasEvidenceRef": false,
+   "hasConfidence": false,
+   "fields": [
+    {
+     "subject": "math",
+     "source": "lib/consultation.ts",
+     "symbol": "Consultation",
+     "field": "hasData",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/consultation.ts",
+     "symbol": "Consultation",
+     "field": "estScore",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/consultation.ts",
+     "symbol": "Consultation",
+     "field": "estLow",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/consultation.ts",
+     "symbol": "Consultation",
+     "field": "estHigh",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/consultation.ts",
+     "symbol": "Consultation",
+     "field": "basis",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/consultation.ts",
+     "symbol": "Consultation",
+     "field": "band",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/consultation.ts",
+     "symbol": "Consultation",
+     "field": "round",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/consultation.ts",
+     "symbol": "Consultation",
+     "field": "is120",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/consultation.ts",
+     "symbol": "Consultation",
+     "field": "progression",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/consultation.ts",
+     "symbol": "Consultation",
+     "field": "weakMethods",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/consultation.ts",
+     "symbol": "Consultation",
+     "field": "gateSummary",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/consultation.ts",
+     "symbol": "Consultation",
+     "field": "pathwayAdvice",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/consultation.ts",
+     "symbol": "Consultation",
+     "field": "findings",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    }
+   ]
+  },
+  {
+   "subject": "math",
+   "source": "lib/evaluation.ts",
+   "symbol": "EvalDimension",
+   "kind": "interface",
+   "algorithm": "规则（纯函数）",
+   "algorithmBasis": "所在文件没有模型调用",
+   "hasEvidenceRef": true,
+   "hasConfidence": false,
+   "fields": [
+    {
+     "subject": "math",
+     "source": "lib/evaluation.ts",
+     "symbol": "EvalDimension",
+     "field": "key",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/evaluation.ts",
+     "symbol": "EvalDimension",
+     "field": "name",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/evaluation.ts",
+     "symbol": "EvalDimension",
+     "field": "score",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/evaluation.ts",
+     "symbol": "EvalDimension",
+     "field": "level",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/evaluation.ts",
+     "symbol": "EvalDimension",
+     "field": "evidence",
+     "evidenceRef": true,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/evaluation.ts",
+     "symbol": "EvalDimension",
+     "field": "summary",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    }
+   ]
+  },
+  {
+   "subject": "math",
+   "source": "lib/exam.ts",
+   "symbol": "ExamAnalysis",
+   "kind": "interface",
+   "algorithm": "规则（纯函数）",
+   "algorithmBasis": "所在文件没有模型调用",
+   "hasEvidenceRef": false,
+   "hasConfidence": false,
+   "fields": [
+    {
+     "subject": "math",
+     "source": "lib/exam.ts",
+     "symbol": "ExamAnalysis",
+     "field": "total",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/exam.ts",
+     "symbol": "ExamAnalysis",
+     "field": "correct",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/exam.ts",
+     "symbol": "ExamAnalysis",
+     "field": "rate",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/exam.ts",
+     "symbol": "ExamAnalysis",
+     "field": "scoreLow",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/exam.ts",
+     "symbol": "ExamAnalysis",
+     "field": "scoreHigh",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/exam.ts",
+     "symbol": "ExamAnalysis",
+     "field": "byBoard",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/exam.ts",
+     "symbol": "ExamAnalysis",
+     "field": "overtime",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/exam.ts",
+     "symbol": "ExamAnalysis",
+     "field": "skippedCount",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/exam.ts",
+     "symbol": "ExamAnalysis",
+     "field": "knowledgeIssues",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/exam.ts",
+     "symbol": "ExamAnalysis",
+     "field": "strategyIssues",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/exam.ts",
+     "symbol": "ExamAnalysis",
+     "field": "stabilityIssues",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/exam.ts",
+     "symbol": "ExamAnalysis",
+     "field": "strengths",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    }
+   ]
+  },
+  {
+   "subject": "math",
+   "source": "lib/teacher.ts",
+   "symbol": "ModuleImbalance",
+   "kind": "interface",
+   "algorithm": "规则（纯函数）",
+   "algorithmBasis": "所在文件没有模型调用",
+   "hasEvidenceRef": false,
+   "hasConfidence": false,
+   "fields": [
+    {
+     "subject": "math",
+     "source": "lib/teacher.ts",
+     "symbol": "ModuleImbalance",
+     "field": "board",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/teacher.ts",
+     "symbol": "ModuleImbalance",
+     "field": "strongDim",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/teacher.ts",
+     "symbol": "ModuleImbalance",
+     "field": "strongScore",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/teacher.ts",
+     "symbol": "ModuleImbalance",
+     "field": "weakDim",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/teacher.ts",
+     "symbol": "ModuleImbalance",
+     "field": "weakScore",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/teacher.ts",
+     "symbol": "ModuleImbalance",
+     "field": "gap",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/teacher.ts",
+     "symbol": "ModuleImbalance",
+     "field": "intervention",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    }
+   ]
+  },
+  {
+   "subject": "math",
+   "source": "lib/teacher.ts",
+   "symbol": "TeacherReport",
+   "kind": "interface",
+   "algorithm": "规则（纯函数）",
+   "algorithmBasis": "所在文件没有模型调用",
+   "hasEvidenceRef": false,
+   "hasConfidence": false,
+   "fields": [
+    {
+     "subject": "math",
+     "source": "lib/teacher.ts",
+     "symbol": "TeacherReport",
+     "field": "hasData",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/teacher.ts",
+     "symbol": "TeacherReport",
+     "field": "totalAttempts",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/teacher.ts",
+     "symbol": "TeacherReport",
+     "field": "gateDistribution",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/teacher.ts",
+     "symbol": "TeacherReport",
+     "field": "imbalances",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/teacher.ts",
+     "symbol": "TeacherReport",
+     "field": "confidentErrors",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/teacher.ts",
+     "symbol": "TeacherReport",
+     "field": "rootCauses",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/teacher.ts",
+     "symbol": "TeacherReport",
+     "field": "weakHotPoints",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/teacher.ts",
+     "symbol": "TeacherReport",
+     "field": "diagnosis",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    }
+   ]
+  },
+  {
+   "subject": "math",
+   "source": "lib/trends.ts",
+   "symbol": "TrendPoint",
+   "kind": "interface",
+   "algorithm": "规则（纯函数）",
+   "algorithmBasis": "所在文件没有模型调用",
+   "hasEvidenceRef": false,
+   "hasConfidence": false,
+   "fields": [
+    {
+     "subject": "math",
+     "source": "lib/trends.ts",
+     "symbol": "TrendPoint",
+     "field": "label",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/trends.ts",
+     "symbol": "TrendPoint",
+     "field": "at",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/trends.ts",
+     "symbol": "TrendPoint",
+     "field": "stableCount",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/trends.ts",
+     "symbol": "TrendPoint",
+     "field": "correctRate",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/trends.ts",
+     "symbol": "TrendPoint",
+     "field": "abilityAvg",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/trends.ts",
+     "symbol": "TrendPoint",
+     "field": "attempts",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    }
+   ]
+  },
+  {
+   "subject": "math",
+   "source": "lib/types.ts",
+   "symbol": "NodeMastery",
+   "kind": "interface",
+   "algorithm": "规则（纯函数）",
+   "algorithmBasis": "所在文件没有模型调用",
+   "hasEvidenceRef": false,
+   "hasConfidence": false,
+   "fields": [
+    {
+     "subject": "math",
+     "source": "lib/types.ts",
+     "symbol": "NodeMastery",
+     "field": "nodeId",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/types.ts",
+     "symbol": "NodeMastery",
+     "field": "p",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/types.ts",
+     "symbol": "NodeMastery",
+     "field": "attempts",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/types.ts",
+     "symbol": "NodeMastery",
+     "field": "correct",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/types.ts",
+     "symbol": "NodeMastery",
+     "field": "gate",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    }
+   ]
+  },
+  {
+   "subject": "math",
+   "source": "lib/types.ts",
+   "symbol": "StudentProfile",
+   "kind": "interface",
+   "algorithm": "规则（纯函数）",
+   "algorithmBasis": "所在文件没有模型调用",
+   "hasEvidenceRef": false,
+   "hasConfidence": false,
+   "fields": [
+    {
+     "subject": "math",
+     "source": "lib/types.ts",
+     "symbol": "StudentProfile",
+     "field": "createdAt",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/types.ts",
+     "symbol": "StudentProfile",
+     "field": "updatedAt",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/types.ts",
+     "symbol": "StudentProfile",
+     "field": "intake",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/types.ts",
+     "symbol": "StudentProfile",
+     "field": "attempts",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/types.ts",
+     "symbol": "StudentProfile",
+     "field": "exams",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/types.ts",
+     "symbol": "StudentProfile",
+     "field": "nodeMastery",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/types.ts",
+     "symbol": "StudentProfile",
+     "field": "abilityScores",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/types.ts",
+     "symbol": "StudentProfile",
+     "field": "rootCauseCounts",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/types.ts",
+     "symbol": "StudentProfile",
+     "field": "parentGate",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    }
+   ]
+  },
+  {
+   "subject": "math",
+   "source": "lib/weekly.ts",
+   "symbol": "WeeklyReport",
+   "kind": "interface",
+   "algorithm": "规则（纯函数）",
+   "algorithmBasis": "所在文件没有模型调用",
+   "hasEvidenceRef": false,
+   "hasConfidence": false,
+   "fields": [
+    {
+     "subject": "math",
+     "source": "lib/weekly.ts",
+     "symbol": "WeeklyReport",
+     "field": "weekStart",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/weekly.ts",
+     "symbol": "WeeklyReport",
+     "field": "weekEnd",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/weekly.ts",
+     "symbol": "WeeklyReport",
+     "field": "hasActivity",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/weekly.ts",
+     "symbol": "WeeklyReport",
+     "field": "retained",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/weekly.ts",
+     "symbol": "WeeklyReport",
+     "field": "newlyMastered",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/weekly.ts",
+     "symbol": "WeeklyReport",
+     "field": "activity",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/weekly.ts",
+     "symbol": "WeeklyReport",
+     "field": "activeDays",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/weekly.ts",
+     "symbol": "WeeklyReport",
+     "field": "difficulties",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/weekly.ts",
+     "symbol": "WeeklyReport",
+     "field": "comparison",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/weekly.ts",
+     "symbol": "WeeklyReport",
+     "field": "nextGoals",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "math",
+     "source": "lib/weekly.ts",
+     "symbol": "WeeklyReport",
+     "field": "parentSupport",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    }
+   ]
+  },
+  {
+   "subject": "moral",
+   "source": "packages/shared/lib/domain/daofa-diagnosis.ts",
+   "symbol": "AbilityRow",
+   "kind": "interface",
+   "algorithm": "规则（纯函数）",
+   "algorithmBasis": "所在文件没有模型调用",
+   "hasEvidenceRef": false,
+   "hasConfidence": false,
+   "fields": [
+    {
+     "subject": "moral",
+     "source": "packages/shared/lib/domain/daofa-diagnosis.ts",
+     "symbol": "AbilityRow",
+     "field": "dimension",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "moral",
+     "source": "packages/shared/lib/domain/daofa-diagnosis.ts",
+     "symbol": "AbilityRow",
+     "field": "avg_rate",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "moral",
+     "source": "packages/shared/lib/domain/daofa-diagnosis.ts",
+     "symbol": "AbilityRow",
+     "field": "sample_count",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    }
+   ]
+  },
+  {
+   "subject": "moral",
+   "source": "packages/shared/lib/domain/daofa-diagnosis.ts",
+   "symbol": "DiagnosisDimension",
+   "kind": "interface",
+   "algorithm": "规则（纯函数）",
+   "algorithmBasis": "所在文件没有模型调用",
+   "hasEvidenceRef": false,
+   "hasConfidence": false,
+   "fields": [
+    {
+     "subject": "moral",
+     "source": "packages/shared/lib/domain/daofa-diagnosis.ts",
+     "symbol": "DiagnosisDimension",
+     "field": "key",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "moral",
+     "source": "packages/shared/lib/domain/daofa-diagnosis.ts",
+     "symbol": "DiagnosisDimension",
+     "field": "short",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "moral",
+     "source": "packages/shared/lib/domain/daofa-diagnosis.ts",
+     "symbol": "DiagnosisDimension",
+     "field": "desc",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "moral",
+     "source": "packages/shared/lib/domain/daofa-diagnosis.ts",
+     "symbol": "DiagnosisDimension",
+     "field": "rate",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "moral",
+     "source": "packages/shared/lib/domain/daofa-diagnosis.ts",
+     "symbol": "DiagnosisDimension",
+     "field": "mastery",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "moral",
+     "source": "packages/shared/lib/domain/daofa-diagnosis.ts",
+     "symbol": "DiagnosisDimension",
+     "field": "sampleCount",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    }
+   ]
+  },
+  {
+   "subject": "moral",
+   "source": "packages/shared/lib/domain/daofa-diagnosis.ts",
+   "symbol": "M5Diagnosis",
+   "kind": "interface",
+   "algorithm": "规则（纯函数）",
+   "algorithmBasis": "所在文件没有模型调用",
+   "hasEvidenceRef": false,
+   "hasConfidence": false,
+   "fields": [
+    {
+     "subject": "moral",
+     "source": "packages/shared/lib/domain/daofa-diagnosis.ts",
+     "symbol": "M5Diagnosis",
+     "field": "dimensions",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "moral",
+     "source": "packages/shared/lib/domain/daofa-diagnosis.ts",
+     "symbol": "M5Diagnosis",
+     "field": "overallRate",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "moral",
+     "source": "packages/shared/lib/domain/daofa-diagnosis.ts",
+     "symbol": "M5Diagnosis",
+     "field": "weakest",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "moral",
+     "source": "packages/shared/lib/domain/daofa-diagnosis.ts",
+     "symbol": "M5Diagnosis",
+     "field": "recommendations",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "moral",
+     "source": "packages/shared/lib/domain/daofa-diagnosis.ts",
+     "symbol": "M5Diagnosis",
+     "field": "parentSummary",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "moral",
+     "source": "packages/shared/lib/domain/daofa-diagnosis.ts",
+     "symbol": "M5Diagnosis",
+     "field": "hasData",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    }
+   ]
+  },
+  {
+   "subject": "moral",
+   "source": "packages/shared/lib/domain/daofa-diagnosis.ts",
+   "symbol": "Recommendation",
+   "kind": "interface",
+   "algorithm": "规则（纯函数）",
+   "algorithmBasis": "所在文件没有模型调用",
+   "hasEvidenceRef": false,
+   "hasConfidence": false,
+   "fields": [
+    {
+     "subject": "moral",
+     "source": "packages/shared/lib/domain/daofa-diagnosis.ts",
+     "symbol": "Recommendation",
+     "field": "dimension",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "moral",
+     "source": "packages/shared/lib/domain/daofa-diagnosis.ts",
+     "symbol": "Recommendation",
+     "field": "why",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "moral",
+     "source": "packages/shared/lib/domain/daofa-diagnosis.ts",
+     "symbol": "Recommendation",
+     "field": "action",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    }
+   ]
+  },
+  {
+   "subject": "moral",
+   "source": "supabase/migrations",
+   "symbol": "daofa_ability",
+   "kind": "table",
+   "algorithm": "未判断（库表）",
+   "algorithmBasis": "写入方要看应用代码",
+   "hasEvidenceRef": false,
+   "hasConfidence": false,
+   "fields": [
+    {
+     "subject": "moral",
+     "source": "supabase/migrations",
+     "symbol": "daofa_ability",
+     "field": "id",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "moral",
+     "source": "supabase/migrations",
+     "symbol": "daofa_ability",
+     "field": "student_id",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "moral",
+     "source": "supabase/migrations",
+     "symbol": "daofa_ability",
+     "field": "dimension",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "moral",
+     "source": "supabase/migrations",
+     "symbol": "daofa_ability",
+     "field": "avg_rate",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "moral",
+     "source": "supabase/migrations",
+     "symbol": "daofa_ability",
+     "field": "sample_count",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "moral",
+     "source": "supabase/migrations",
+     "symbol": "daofa_ability",
+     "field": "updated_at",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    }
+   ]
+  },
+  {
+   "subject": "moral",
+   "source": "supabase/migrations",
+   "symbol": "daofa_submission",
+   "kind": "table",
+   "algorithm": "未判断（库表）",
+   "algorithmBasis": "写入方要看应用代码",
+   "hasEvidenceRef": true,
+   "hasConfidence": false,
+   "fields": [
+    {
+     "subject": "moral",
+     "source": "supabase/migrations",
+     "symbol": "daofa_submission",
+     "field": "id",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "moral",
+     "source": "supabase/migrations",
+     "symbol": "daofa_submission",
+     "field": "student_id",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "moral",
+     "source": "supabase/migrations",
+     "symbol": "daofa_submission",
+     "field": "question_id",
+     "evidenceRef": true,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "moral",
+     "source": "supabase/migrations",
+     "symbol": "daofa_submission",
+     "field": "persona",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "moral",
+     "source": "supabase/migrations",
+     "symbol": "daofa_submission",
+     "field": "answer_text",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "moral",
+     "source": "supabase/migrations",
+     "symbol": "daofa_submission",
+     "field": "image_path",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "moral",
+     "source": "supabase/migrations",
+     "symbol": "daofa_submission",
+     "field": "graded_json",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "moral",
+     "source": "supabase/migrations",
+     "symbol": "daofa_submission",
+     "field": "total_score",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "moral",
+     "source": "supabase/migrations",
+     "symbol": "daofa_submission",
+     "field": "needs_human_review",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "moral",
+     "source": "supabase/migrations",
+     "symbol": "daofa_submission",
+     "field": "model",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    },
+    {
+     "subject": "moral",
+     "source": "supabase/migrations",
+     "symbol": "daofa_submission",
+     "field": "created_at",
+     "evidenceRef": false,
+     "confidence": false,
+     "forbidden": null
+    }
+   ]
+  }
+ ],
+ "db": {
+  "provided": false,
+  "rows": [],
+  "rejected": 0
+ }
+}

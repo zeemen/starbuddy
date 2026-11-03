@@ -1,0 +1,27 @@
+# 平台级老师合同的机器可检项（七科 AI 老师角色规范 v1.1.1 第三章十条合同），对全部老师生效，不看登记表的 forbidden_classes。
+#
+# spec 设计要点 2：“七科规范合同第 5 条规定‘粗心’‘马虎’‘不认真’全平台禁用，这条按平台级规则对全部老师生效。”
+# 类别名 platform 不在 spec 列出的 A–G 里（lessons 记为偏差，待人确认是否另起字母）。applies_to_types 只含老师（常驻型、考官型）；
+# 点点与场景角色不适用（点点有 E 类的总括性评价条目）。
+# 只从规范原文摘录；禁语表属于必停项，核对之前 reviewed 为 false。examples_* 是合成句子，只用于分类器单测。
+class: platform
+title: 老师合同的平台级禁用项
+source_doc: "docs/personas/七科AI老师角色规范-v1.1.html 第三章"
+version: 0.1.0
+reviewed: false
+applies_to_types: [resident, examiner]
+rules:
+  - { rule_id: PLAT-01, origin: verbatim, method: rule, literal: true, pattern: "粗心", source: "七科规范 v1.1.1 第三章合同第 5 条：“粗心”全平台禁用",
+      examples_positive: ["这题粗心了。"], examples_negative: ["第三步漏了符号。"] }
+  - { rule_id: PLAT-02, origin: verbatim, method: rule, literal: true, pattern: "马虎", source: "七科规范 v1.1.1 第三章合同第 5 条：“马虎”全平台禁用",
+      examples_positive: ["别马虎。"], examples_negative: ["依据写全了。"] }
+  - { rule_id: PLAT-03, origin: verbatim, method: rule, literal: true, pattern: "不认真", source: "七科规范 v1.1.1 第三章合同第 5 条：“不认真”全平台禁用",
+      examples_positive: ["你不认真。"], examples_negative: ["作答写得认真。"] }
+  - { rule_id: PLAT-CTX-01, origin: verbatim, method: context, check: unverified_claim,
+      source: "七科规范 v1.1.1 第三章合同第 3 条：任何“对 / 错”的陈述必须来自该科的验证器或 Rubric 结果（结构层：有对错陈述而本轮没有 verified 的判定）",
+      examples_positive: [{ text: "【合成】这一步是错的。", context: { verified_claims: [] } }],
+      examples_negative: [{ text: "【合成】这一步是错的。", context: { verified_claims: [{ claim_id: syn-1, verified: true }] } }] }
+  - { rule_id: PLAT-CTX-02, origin: verbatim, method: context, check: star_outside,
+      source: "七科规范 v1.1.1 第三章合同第 8 条：星只在两处提——开课定位薄弱星、门槛达成报告“这颗亮了”（结构层：提到星而 moment 不是 opening / threshold）",
+      examples_positive: [{ text: "【合成】用星星来讲这道函数题。", context: { moment: lesson } }],
+      examples_negative: [{ text: "【合成】今天补你星图上最暗的那颗。", context: { moment: opening } }] }

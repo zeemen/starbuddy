@@ -1,0 +1,260 @@
+{
+  "format": "zhixing-content-pack/1",
+  "pack_name": "zhixing-synthetic",
+  "pack_version": "0.1.0",
+  "synthetic": true,
+  "notice": "合成内容、非真题：材料、设问、采分点与常见失分形态均由工程起草（spec 待人确认 #4），人物与地名均为虚构，不来自任何真实试卷或真实学生作答；待教研抽查与替换。",
+  "curriculum": {
+    "region": "nanjing",
+    "exam_year": 2027,
+    "grade": 9,
+    "textbook_version": "bubian-2024",
+    "subject": "zhixing",
+    "content_version": "0.1.0"
+  },
+  "nodes": [
+    { "id": "syn-dim-shenti", "dimension": "shenti", "attribution": "shenti_cuo" },
+    { "id": "syn-dim-dingwei", "dimension": "dingwei", "attribution": "dingwei_cuo" },
+    { "id": "syn-dim-zhuanhua", "dimension": "zhuanhua", "attribution": "zhuanhua_cuo" },
+    { "id": "syn-dim-guifan", "dimension": "guifan", "attribution": "guifan_cuo" },
+    { "id": "syn-dim-shizheng", "dimension": "shizheng", "attribution": null }
+  ],
+  "items": [
+    {
+      "id": "synthetic-m3-01",
+      "discipline": "daofa",
+      "synthetic": true,
+      "admission": "pending_review",
+      "rubric_version": "zhixing-synthetic@0.1.0",
+      "total_score": 6,
+      "title": "（合成题）共享书架议事",
+      "grade_scope": "九年级上册",
+      "material_text": "（合成材料，人物与地名均为虚构）青禾小区的楼道里堆放杂物，存在消防隐患。业委会召集居民代表、物业人员和社区网格员召开议事会，大家提出把闲置楼道改造成“共享书架”。经过两轮讨论和表决，居民共同制定了《楼道共享书架管理约定》并张贴公示，楼道杂物减少，邻里交流增多。",
+      "prompt_question": "结合材料，运用所学知识，说明青禾小区这一做法的意义。",
+      "points": [
+        {
+          "point_id": "p1",
+          "score": 2,
+          "subject_dimension": "citizen",
+          "skill_node": "syn-dim-zhuanhua",
+          "node_ids": ["MORAL.SYN.CIVIC.DEMOCRATIC_PARTICIPATION"],
+          "keyword_family": {
+            "core": ["参与民主决策", "行使民主权利", "参与民主生活"],
+            "accepted": ["民主参与", "表达意愿"],
+            "colloquial": ["大家一起商量", "一起开会讨论"]
+          },
+          "required_logic": null,
+          "material_linkage": "需指出居民议事、讨论表决是公民参与民主生活的具体做法",
+          "partial_credit_rule": { "mode": "stepwise", "allowed_scores": [0, 1, 2], "description": "只写出民主权利而未结合议事过程的，给 1 分" },
+          "common_errors": [
+            { "type": "zhuanhua_cuo", "pattern": "只复述召开议事会、讨论表决的经过", "note": "停留在叙述材料，未上升为参与民主生活的学科表述" }
+          ]
+        },
+        {
+          "point_id": "p2",
+          "score": 2,
+          "subject_dimension": "grassroots",
+          "skill_node": "syn-dim-dingwei",
+          "node_ids": ["MORAL.SYN.CIVIC.GRASSROOTS_AUTONOMY"],
+          "keyword_family": {
+            "core": ["基层群众自治", "协商民主"],
+            "accepted": ["居民自治", "民主协商"],
+            "colloquial": ["小区自己管自己"]
+          },
+          "required_logic": null,
+          "material_linkage": null,
+          "partial_credit_rule": { "mode": "stepwise", "allowed_scores": [0, 1, 2], "description": "只写到自治或协商之一但表述不完整的，给 1 分" },
+          "common_errors": [
+            { "type": "dingwei_cuo", "pattern": "把居民议事答成人民代表大会制度", "note": "挂接到错误的制度知识点" }
+          ]
+        },
+        {
+          "point_id": "p3",
+          "score": 2,
+          "subject_dimension": "society",
+          "skill_node": "syn-dim-guifan",
+          "node_ids": ["MORAL.SYN.SOCIETY.RULE_AWARENESS"],
+          "keyword_family": {
+            "core": ["增强规则意识", "促进社区和谐"],
+            "accepted": ["遵守约定", "邻里和谐"],
+            "colloquial": ["大家关系变好了"]
+          },
+          "required_logic": "由共同制定约定推出规则意识增强、社区更加和谐",
+          "material_linkage": null,
+          "partial_credit_rule": { "mode": "stepwise", "allowed_scores": [0, 1, 2], "description": "只写结果未写规则意识的，给 1 分" },
+          "common_errors": [
+            { "type": "guifan_cuo", "pattern": "用口语描述关系变好，未使用学科术语", "note": "意思接近但表述不规范" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "synthetic-m3-02",
+      "discipline": "daofa",
+      "synthetic": true,
+      "admission": "pending_review",
+      "rubric_version": "zhixing-synthetic@0.1.0",
+      "total_score": 6,
+      "title": "（合成题）旧物修补站",
+      "grade_scope": "八年级上册",
+      "material_text": "（合成材料，人物与地名均为虚构）晨光中学的同学们利用周末在社区开设“旧物修补站”，为居民免费修补书包、雨伞和小家电，并把修好的闲置物品捐给有需要的家庭。一个学期下来，修补站共服务居民两百余人次。",
+      "prompt_question": "结合材料，谈谈同学们的行为体现了哪些道德与法治课所学的道理。",
+      "points": [
+        {
+          "point_id": "p1",
+          "score": 2,
+          "subject_dimension": "responsibility",
+          "skill_node": "syn-dim-zhuanhua",
+          "node_ids": ["MORAL.SYN.SOCIETY.SOCIAL_RESPONSIBILITY"],
+          "keyword_family": {
+            "core": ["承担社会责任", "积极参与社会公益"],
+            "accepted": ["关爱社会", "服务社会"],
+            "colloquial": ["帮大家修东西"]
+          },
+          "required_logic": null,
+          "material_linkage": "需把开设修补站、免费服务居民与承担社会责任联系起来",
+          "partial_credit_rule": { "mode": "stepwise", "allowed_scores": [0, 1, 2], "description": "只写服务社会未结合材料的，给 1 分" },
+          "common_errors": [
+            { "type": "zhuanhua_cuo", "pattern": "只罗列修补了哪些物品", "note": "只叙事不提炼" }
+          ]
+        },
+        {
+          "point_id": "p2",
+          "score": 2,
+          "subject_dimension": "value",
+          "skill_node": "syn-dim-guifan",
+          "node_ids": ["MORAL.SYN.LIFE.VALUE_DEDICATION"],
+          "keyword_family": {
+            "core": ["在奉献中实现人生价值", "奉献社会"],
+            "accepted": ["实现自身价值"],
+            "colloquial": ["觉得自己很有用"]
+          },
+          "required_logic": null,
+          "material_linkage": null,
+          "partial_credit_rule": { "mode": "stepwise", "allowed_scores": [0, 1, 2], "description": "表述不完整的，给 1 分" },
+          "common_errors": [
+            { "type": "guifan_cuo", "pattern": "用个人感受代替学科表述", "note": "意思接近但术语不对" }
+          ]
+        },
+        {
+          "point_id": "p3",
+          "score": 2,
+          "subject_dimension": "resource",
+          "skill_node": "syn-dim-dingwei",
+          "node_ids": ["MORAL.SYN.NATION.RESOURCE_CONSERVATION"],
+          "keyword_family": {
+            "core": ["节约资源", "绿色生活方式"],
+            "accepted": ["保护环境", "循环利用"],
+            "colloquial": ["东西不浪费"]
+          },
+          "required_logic": null,
+          "material_linkage": null,
+          "partial_credit_rule": { "mode": "stepwise", "allowed_scores": [0, 1, 2], "description": "只写不浪费的，给 1 分" },
+          "common_errors": [
+            { "type": "shenti_cuo", "pattern": "答成修补技术如何提高", "note": "偏离设问所问的道理" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "synthetic-m3-03",
+      "discipline": "daofa",
+      "synthetic": true,
+      "admission": "pending_review",
+      "rubric_version": "zhixing-synthetic@0.1.0",
+      "total_score": 4,
+      "title": "（合成题）竹编工作坊",
+      "grade_scope": "九年级上册",
+      "material_text": "（合成材料，人物与地名均为虚构）云溪村的手艺人把传统竹编与现代设计结合，开发出竹编台灯、竹编文具等新产品，并开设工作坊向青少年传授技艺，村里的竹编产品受到越来越多游客喜爱。",
+      "prompt_question": "结合材料，分析云溪村做法的积极意义。",
+      "points": [
+        {
+          "point_id": "p1",
+          "score": 2,
+          "subject_dimension": "culture",
+          "skill_node": "syn-dim-dingwei",
+          "node_ids": ["MORAL.SYN.CULTURE.CULTURAL_CONFIDENCE"],
+          "keyword_family": {
+            "core": ["坚定文化自信", "传承中华优秀传统文化"],
+            "accepted": ["传承传统文化", "弘扬传统文化"],
+            "colloquial": ["把老手艺教下去"]
+          },
+          "required_logic": null,
+          "material_linkage": "需结合开设工作坊传授技艺",
+          "partial_credit_rule": { "mode": "stepwise", "allowed_scores": [0, 1, 2], "description": "只写传承未写文化自信的，给 1 分" },
+          "common_errors": [
+            { "type": "dingwei_cuo", "pattern": "答成科技创新是第一动力", "note": "知识点挂接偏离" }
+          ]
+        },
+        {
+          "point_id": "p2",
+          "score": 2,
+          "subject_dimension": "innovation",
+          "skill_node": "syn-dim-zhuanhua",
+          "node_ids": ["MORAL.SYN.CULTURE.CREATIVE_TRANSFORMATION"],
+          "keyword_family": {
+            "core": ["推动文化创造性转化", "创新性发展"],
+            "accepted": ["创新发展", "守正创新"],
+            "colloquial": ["做出了新东西"]
+          },
+          "required_logic": "由竹编与现代设计结合推出创造性转化、创新性发展",
+          "material_linkage": null,
+          "partial_credit_rule": { "mode": "stepwise", "allowed_scores": [0, 1, 2], "description": "只写创新未说明与传统结合的，给 1 分" },
+          "common_errors": [
+            { "type": "zhuanhua_cuo", "pattern": "只列举开发了哪些新产品", "note": "只叙事不提炼" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "synthetic-m3-04",
+      "discipline": "daofa",
+      "synthetic": true,
+      "admission": "pending_review",
+      "rubric_version": "zhixing-synthetic@0.1.0",
+      "total_score": 4,
+      "title": "（合成题）网络保护宣传周",
+      "grade_scope": "七年级下册",
+      "material_text": "（合成材料，人物与地名均为虚构）新桥市开展未成年人网络保护宣传周，市网信部门与学校联合开设网络安全课堂，家长学校讲解如何设置防沉迷模式，多家平台上线青少年模式并限制夜间使用时长。",
+      "prompt_question": "结合材料，说明新桥市的做法如何体现对未成年人的保护。",
+      "points": [
+        {
+          "point_id": "p1",
+          "score": 2,
+          "subject_dimension": "law",
+          "skill_node": "syn-dim-shizheng",
+          "node_ids": ["MORAL.SYN.LAW.MINOR_ONLINE_PROTECTION"],
+          "keyword_family": {
+            "core": ["网络保护", "未成年人特殊保护"],
+            "accepted": ["保护未成年人上网安全"],
+            "colloquial": ["不让小孩一直上网"]
+          },
+          "required_logic": null,
+          "material_linkage": "需结合平台上线青少年模式、限制夜间时长",
+          "partial_credit_rule": { "mode": "stepwise", "allowed_scores": [0, 1, 2], "description": "只写保护未写网络保护的，给 1 分" },
+          "common_errors": [
+            { "type": "shenti_cuo", "pattern": "答成青少年应当自觉远离网络", "note": "设问问的是保护做法，答成个人自律" }
+          ]
+        },
+        {
+          "point_id": "p2",
+          "score": 2,
+          "subject_dimension": "cooperation",
+          "skill_node": "syn-dim-guifan",
+          "node_ids": ["MORAL.SYN.LAW.MINOR_PROTECTION_PARTIES"],
+          "keyword_family": {
+            "core": ["家庭保护", "学校保护", "政府保护"],
+            "accepted": ["各方共同保护"],
+            "colloquial": ["大家都在管"]
+          },
+          "required_logic": "由多方参与推出形成保护合力",
+          "material_linkage": null,
+          "partial_credit_rule": { "mode": "stepwise", "allowed_scores": [0, 1, 2], "description": "只写出一种保护主体的，给 1 分" },
+          "common_errors": [
+            { "type": "guifan_cuo", "pattern": "用口语概括多方参与", "note": "意思接近但术语不对" }
+          ]
+        }
+      ]
+    }
+  ]
+}

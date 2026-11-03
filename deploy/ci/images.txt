@@ -1,0 +1,12 @@
+# 镜像清单（LT-03 范围第 3 条）：镜像短名  Dockerfile  基础镜像变量  额外构建参数
+# 与 deploy/scripts/build-images.sh、deploy/iac/alicloud/acr.tf 的仓库清单一致（deploy/tests/test_iac.py、test_ci.py 核对）。
+learning         services/learning/Dockerfile            PYTHON_IMAGE  -
+insight          deploy/docker/insight.Dockerfile        PYTHON_IMAGE  -
+knowledge        deploy/docker/knowledge.Dockerfile      PYTHON_IMAGE  -
+scheduler        deploy/docker/scheduler.Dockerfile      PYTHON_IMAGE  -
+review-console   deploy/docker/review-console.Dockerfile PYTHON_IMAGE  -
+bff              deploy/docker/bff.Dockerfile            NODE_IMAGE    -
+adapter-aya      deploy/docker/adapter.Dockerfile        NODE_IMAGE    ADAPTER=aya
+adapter-zhixing  deploy/docker/adapter.Dockerfile        NODE_IMAGE    ADAPTER=zhixing
+adapter-wenli    deploy/docker/adapter.Dockerfile        NODE_IMAGE    ADAPTER=wenli
+web              deploy/docker/web.Dockerfile            NODE_IMAGE    -

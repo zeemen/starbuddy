@@ -1,0 +1,284 @@
+# staging 编排草案（LT-01 范围第 3 条）：本机可起、与 staging 同一拓扑与启动校验（STARBUDDY_ENV / *_ENV = staging），
+# 用于验证镜像、依赖顺序与 staging 启动校验。不绑定任何云厂商；不写任何真实地址、域名、凭据（规则 8、9）。
+#
+# 取值全部来自运行它的人的环境变量（${VAR:?…} 缺了就拒绝启动），文件里没有任何密钥或连接串；镜像必须以摘要或明确的版本标签给出。
+# 网络：一个合成的内网网段 172.28.0.0/24（RFC 1918），每个服务显式配置内网地址（决定记录第 1、5 条：staging 显式配置、只收内网地址）。
+# 三科适配器与学习服务共用网络命名空间（network_mode: service:learning），经回环互访（决定记录第 5 条，适配器不改代码）。
+# staging 拒绝合成配置：洞察服务的判断策略、首份报告词表、SIE-03 配置，调度器的时间表，学习服务的掌握 / 再练 / 复测 / 今日配置，
+# 都要挂载教研签字的版本（STARBUDDY_SIGNED_CONFIG_DIR，只读）；没有签字配置时洞察服务与调度器按设计拒绝启动。
+# 本机用合成数据跑通全栈请用 deploy/compose/local-test.yaml（test 模式、单网络命名空间）；冒烟脚本 deploy/scripts/compose-smoke.sh。
+# 数据库：staging 用境内托管 Postgres（ADR 10 选项 B），连接串由运行环境注入；这里不起数据库容器。迁移由 deploy/migrate 执行（须人批准）。
+# 健康检查（LT-03）：HTTP GET /readyz（就绪：库连接与启动前置）；调度器另起健康监听 SCHEDULER_HEALTH_PORT。适配器不改代码，用镜像自带的 TCP 回环检查。
+# 开关取值与 deploy/flags/staging.yaml 一致（deploy/tests/test_flags_matrix.py 核对）；变量名都在 deploy/config/env-inventory.yaml 登记
+# （deploy/tests/test_env_inventory.py 核对）。镜像须以 STARBUDDY_IMAGE_ENV=staging 构建（staging 镜像拒绝以 dev / test 运行）。
+
+x-hardening: &hardening
+  read_only: true
+  user: "10001:10001"
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
+  tmpfs: ["/tmp:size=16m,mode=1777"]
+
+name: starbuddy-staging
+
+networks:
+  sbnet:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
+
+services:
+  learning:
+    <<: *hardening
+    image: ${STARBUDDY_REGISTRY:?镜像仓库}/starbuddy-learning:${STARBUDDY_IMAGE_TAG:?镜像版本}
+    networks:
+      sbnet: {ipv4_address: 172.28.0.10}
+    volumes:
+      - ${STARBUDDY_SIGNED_CONFIG_DIR:?签字配置目录}:/run/config:ro
+    environment:
+      LEARNING_ENV: staging
+      LEARNING_HOST: 172.28.0.10
+      PORT: "8788"
+      LEARNING_DATABASE_URL: ${LEARNING_DATABASE_URL:?由运行环境注入}
+      LEARNING_SERVICE_TOKEN: ${LEARNING_SERVICE_TOKEN:?由运行环境注入}
+      LEARNING_ADAPTER_AYA_URL: http://127.0.0.1:8781
+      LEARNING_ADAPTER_AYA_TOKEN: ${AYA_ADAPTER_SERVICE_TOKEN:?由运行环境注入}
+      LEARNING_ADAPTER_ZHIXING_URL: http://127.0.0.1:8782
+      LEARNING_ADAPTER_ZHIXING_TOKEN: ${ZHIXING_ADAPTER_SERVICE_TOKEN:?由运行环境注入}
+      LEARNING_ADAPTER_WENLI_URL: http://127.0.0.1:8783
+      LEARNING_ADAPTER_WENLI_TOKEN: ${WENLI_ADAPTER_SERVICE_TOKEN:?由运行环境注入}
+      LEARNING_KNOWLEDGE_URL: http://172.28.0.12:8790
+      LEARNING_KNOWLEDGE_TOKEN: ${KNOWLEDGE_TOKEN_LEARNING:?由运行环境注入}
+      LEARNING_INSIGHT_CLIENT_TOKEN: ${LEARNING_INSIGHT_CLIENT_TOKEN:?由运行环境注入}
+      LEARNING_MASTERY_CONFIG_AYA: /run/config/mastery-aya.signed.json
+      LEARNING_PRACTICE_CONFIG: /run/config/practice.signed.json
+      LEARNING_PRACTICE_TICKET_SECRET: ${LEARNING_PRACTICE_TICKET_SECRET:?由运行环境注入}
+      LEARNING_RETEST_CONFIG: /run/config/retest.signed.json
+      LEARNING_TODAY_CONFIG: /run/config/today.signed.json
+      LEARNING_TODAY_SNAPSHOT: "0"
+      # 回环路由监听（LT-02 决定记录（续）第 5 条）：127.0.0.1:8785 只服务 /internal/v1/model/route，其他路径 404；
+      # 共用网络命名空间的适配器经它调模型。模型供应商开通（model_provider 解开 pending）后才另设
+      # LEARNING_ROUTE_CLIENT_ZHIXING_TOKEN / _WENLI_TOKEN 与 MODEL_*（都用 ${…:?} 从运行环境注入）
+      LEARNING_ROUTE_PORT: "8785"
+    healthcheck:
+      test: ["CMD", "python", "-I", "-c", "import http.client as h; c=h.HTTPConnection('172.28.0.10', 8788, timeout=2); c.request('GET', '/readyz'); raise SystemExit(0 if c.getresponse().status == 200 else 1)"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    depends_on:
+      knowledge: {condition: service_healthy}
+
+  adapter-aya:
+    <<: *hardening
+    image: ${STARBUDDY_REGISTRY:?镜像仓库}/starbuddy-adapter-aya:${STARBUDDY_IMAGE_TAG:?镜像版本}
+    network_mode: service:learning
+    environment:
+      PORT: "8781"
+      AYA_ADAPTER_SERVICE_TOKEN: ${AYA_ADAPTER_SERVICE_TOKEN:?由运行环境注入}
+    depends_on:
+      learning: {condition: service_started}
+
+  adapter-zhixing:
+    <<: *hardening
+    image: ${STARBUDDY_REGISTRY:?镜像仓库}/starbuddy-adapter-zhixing:${STARBUDDY_IMAGE_TAG:?镜像版本}
+    network_mode: service:learning
+    environment:
+      PORT: "8782"
+      ZHIXING_ADAPTER_SERVICE_TOKEN: ${ZHIXING_ADAPTER_SERVICE_TOKEN:?由运行环境注入}
+      # 模型路由（LT-02）：model_provider 解开 pending 后再设；不设时 grade 回 503、其他方法照常
+      #   ZHIXING_ROUTE_URL: http://127.0.0.1:8785                       （学习服务的回环路由监听）
+      #   ZHIXING_ROUTE_TOKEN: ${ZHIXING_ROUTE_TOKEN:?由运行环境注入}       （与 LEARNING_ROUTE_CLIENT_ZHIXING_TOKEN 同值）
+    depends_on:
+      learning: {condition: service_started}
+
+  adapter-wenli:
+    <<: *hardening
+    image: ${STARBUDDY_REGISTRY:?镜像仓库}/starbuddy-adapter-wenli:${STARBUDDY_IMAGE_TAG:?镜像版本}
+    network_mode: service:learning
+    environment:
+      PORT: "8783"
+      WENLI_ADAPTER_SERVICE_TOKEN: ${WENLI_ADAPTER_SERVICE_TOKEN:?由运行环境注入}
+      # 模型路由（LT-02）：model_provider 解开 pending 后再设
+      #   WENLI_ROUTE_URL: http://127.0.0.1:8785                         （学习服务的回环路由监听）
+      #   WENLI_ROUTE_TOKEN: ${WENLI_ROUTE_TOKEN:?由运行环境注入}           （与 LEARNING_ROUTE_CLIENT_WENLI_TOKEN 同值）
+    depends_on:
+      learning: {condition: service_started}
+
+  knowledge:
+    <<: *hardening
+    image: ${STARBUDDY_REGISTRY:?镜像仓库}/starbuddy-knowledge:${STARBUDDY_IMAGE_TAG:?镜像版本}
+    networks:
+      sbnet: {ipv4_address: 172.28.0.12}
+    volumes:
+      - ${STARBUDDY_PAGE_SNAPSHOT_DIR:?页面快照目录}:/run/snapshot:ro
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    environment:
+      KNOWLEDGE_ENV: staging
+      KNOWLEDGE_HOST: 172.28.0.12
+      KNOWLEDGE_PORT: "8790"
+      KNOWLEDGE_DATABASE_URL: ${KNOWLEDGE_DATABASE_URL:?由运行环境注入}
+      KNOWLEDGE_TOKEN_LEARNING: ${KNOWLEDGE_TOKEN_LEARNING:?由运行环境注入}
+      KNOWLEDGE_PAGE_SNAPSHOT: /run/snapshot
+      KNOWLEDGE_READ_CACHE: "0"
+      KNOWLEDGE_CACHE_DIR: /tmp/knowledge-cache
+    healthcheck:
+      test: ["CMD", "python", "-I", "-c", "import http.client as h; c=h.HTTPConnection('172.28.0.12', 8790, timeout=2); c.request('GET', '/readyz'); raise SystemExit(0 if c.getresponse().status == 200 else 1)"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  insight:
+    <<: *hardening
+    image: ${STARBUDDY_REGISTRY:?镜像仓库}/starbuddy-insight:${STARBUDDY_IMAGE_TAG:?镜像版本}
+    networks:
+      sbnet: {ipv4_address: 172.28.0.14}
+    volumes:
+      - ${STARBUDDY_SIGNED_CONFIG_DIR:?签字配置目录}:/run/config:ro
+    environment:
+      INSIGHT_ENV: staging
+      INSIGHT_HOST: 172.28.0.14
+      INSIGHT_PORT: "8791"
+      INSIGHT_DATABASE_URL: ${INSIGHT_DATABASE_URL:?由运行环境注入}
+      INSIGHT_TOKEN_BFF: ${INSIGHT_TOKEN_BFF:?由运行环境注入}
+      INSIGHT_POLICY: /run/config/claims.signed.json
+      INSIGHT_REPORT_CHECK: /run/config/report-check.signed.json
+      INSIGHT_SIE03: /run/config/sie03.signed.json
+      INSIGHT_LEARNING_URL: http://172.28.0.10:8788
+      INSIGHT_LEARNING_TOKEN: ${LEARNING_INSIGHT_CLIENT_TOKEN:?由运行环境注入}
+    healthcheck:
+      test: ["CMD", "python", "-I", "-c", "import http.client as h; c=h.HTTPConnection('172.28.0.14', 8791, timeout=2); c.request('GET', '/readyz'); raise SystemExit(0 if c.getresponse().status == 200 else 1)"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    depends_on:
+      learning: {condition: service_healthy}
+
+  review-console:
+    <<: *hardening
+    image: ${STARBUDDY_REGISTRY:?镜像仓库}/starbuddy-review-console:${STARBUDDY_IMAGE_TAG:?镜像版本}
+    networks:
+      sbnet: {ipv4_address: 172.28.0.13}
+    environment:
+      REVIEW_CONSOLE_ENV: staging
+      REVIEW_CONSOLE_HOST: 172.28.0.13
+      REVIEW_CONSOLE_PORT: "8792"
+      REVIEW_CONSOLE_KGE_DATABASE_URL: ${REVIEW_CONSOLE_KGE_DATABASE_URL:?由运行环境注入}
+      REVIEW_CONSOLE_REVIEW_DATABASE_URL: ${REVIEW_CONSOLE_REVIEW_DATABASE_URL:?由运行环境注入}
+    healthcheck:
+      test: ["CMD", "python", "-I", "-c", "import http.client as h; c=h.HTTPConnection('172.28.0.13', 8792, timeout=2); c.request('GET', '/readyz'); raise SystemExit(0 if c.getresponse().status == 200 else 1)"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+
+  bff:
+    <<: *hardening
+    image: ${STARBUDDY_REGISTRY:?镜像仓库}/starbuddy-bff:${STARBUDDY_IMAGE_TAG:?镜像版本}
+    networks:
+      sbnet: {ipv4_address: 172.28.0.30}
+    volumes:
+      - ${STARBUDDY_OTP_DIR:?白名单固定码目录（只读）}:/run/otp:ro
+      - bff-audit:/var/lib/starbuddy/audit
+    environment:
+      STARBUDDY_ENV: staging
+      BFF_HOST: 172.28.0.30
+      PORT: "8787"
+      BFF_DATABASE_URL: ${BFF_DATABASE_URL:?由运行环境注入}
+      BFF_SHELL_ORIGIN: ${BFF_SHELL_ORIGIN:?壳的来源（https，内部测试地址）}
+      BFF_LOG_HMAC_KEY: ${BFF_LOG_HMAC_KEY:?由运行环境注入}
+      BFF_AUTH_SECRET: ${BFF_AUTH_SECRET:?由运行环境注入}
+      BFF_TRUST_SECRET: ${BFF_TRUST_SECRET:?由运行环境注入}
+      # 只在网关覆盖 X-Forwarded-For、BFF 只对前端开放时才能打开（发布检查项，安全审查 S5）；缺省 0
+      BFF_TRUST_CLIENT_IP: "0"
+      BFF_LEARNING_URL: http://172.28.0.10:8788
+      BFF_LEARNING_TOKEN: ${LEARNING_SERVICE_TOKEN:?由运行环境注入}
+      BFF_INSIGHT_URL: http://172.28.0.14:8791
+      BFF_INSIGHT_TOKEN: ${INSIGHT_TOKEN_BFF:?由运行环境注入}
+      BFF_STAGING_OTP_FILE: /run/otp/otp.json
+      BFF_STAGING_OTP_AUDIT_FILE: /var/lib/starbuddy/audit/otp-audit.jsonl
+      BFF_CONSENT_VERSIONS: ${BFF_CONSENT_VERSIONS:?由人登记的同意文本版本}
+      STARBUDDY_TRUST_UI: why,dispute,reconcile,weekly,data_rights,report
+      STARBUDDY_STARMAP: starmap_v1
+      STARBUDDY_PRACTICE: practice
+      STARBUDDY_RETEST_UI: retest
+      STARBUDDY_TODAY_ORCH: today_orch
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('node:http').get({host:'172.28.0.30',port:8787,path:'/readyz',timeout:2000},(r)=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1)).on('timeout',()=>process.exit(1))"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    depends_on:
+      learning: {condition: service_healthy}
+      insight: {condition: service_healthy}
+
+  web:
+    <<: *hardening
+    image: ${STARBUDDY_REGISTRY:?镜像仓库}/starbuddy-web:${STARBUDDY_IMAGE_TAG:?镜像版本}
+    networks:
+      sbnet: {ipv4_address: 172.28.0.40}
+    tmpfs: ["/tmp:size=16m,mode=1777", "/srv/starbuddy/apps/web/.next/cache:size=64m,uid=10001"]
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      STARBUDDY_ENV: staging
+      WEB_HOST: 172.28.0.40
+      PORT: "3000"
+      STARBUDDY_BFF_URL: http://172.28.0.30:8787
+      STARBUDDY_REVIEW_URL: http://172.28.0.13:8792
+      STARBUDDY_PRESENCE_HMAC_KEY: ${STARBUDDY_PRESENCE_HMAC_KEY:?由运行环境注入}
+      STARBUDDY_CONSENT_VERSION_PRIVACY: ${STARBUDDY_CONSENT_VERSION_PRIVACY:?隐私政策版本（与 BFF_CONSENT_VERSIONS 登记的一致）}
+      STARBUDDY_CONSENT_VERSION_GUARDIAN: ${STARBUDDY_CONSENT_VERSION_GUARDIAN:?监护人同意书版本（与 BFF_CONSENT_VERSIONS 登记的一致）}
+      STARBUDDY_TRUST_UI: why,dispute,reconcile,weekly,data_rights,report
+      STARBUDDY_STARMAP: starmap_v1
+      STARBUDDY_PRACTICE: practice
+      STARBUDDY_RETEST_UI: retest
+      STARBUDDY_TODAY_ORCH: today_orch
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('node:http').get({host:'172.28.0.40',port:3000,path:'/readyz',timeout:2000},(r)=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1)).on('timeout',()=>process.exit(1))"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      bff: {condition: service_healthy}
+      review-console: {condition: service_healthy}
+
+  scheduler:
+    <<: *hardening
+    image: ${STARBUDDY_REGISTRY:?镜像仓库}/starbuddy-scheduler:${STARBUDDY_IMAGE_TAG:?镜像版本}
+    networks:
+      sbnet: {ipv4_address: 172.28.0.50}
+    volumes:
+      - ${STARBUDDY_SIGNED_CONFIG_DIR:?签字配置目录}:/run/config:ro
+    command: ["--schedule", "/run/config/schedule.signed.yaml"]
+    environment:
+      SCHEDULER_ENV: staging
+      SCHEDULER_DATABASE_URL: ${SCHEDULER_DATABASE_URL:?由运行环境注入}
+      # 健康监听（LT-03，scheduler/health.py）：只服务 /healthz、/readyz
+      SCHEDULER_HOST: 172.28.0.50
+      SCHEDULER_HEALTH_PORT: "8793"
+      INSIGHT_ENV: staging
+      INSIGHT_DATABASE_URL: ${INSIGHT_DATABASE_URL:?由运行环境注入}
+      INSIGHT_POLICY: /run/config/claims.signed.json
+      LEARNING_ENV: staging
+      LEARNING_DATABASE_URL: ${LEARNING_DATABASE_URL:?由运行环境注入}
+      LEARNING_MASTERY_CONFIG_AYA: /run/config/mastery-aya.signed.json
+      REVIEW_CONSOLE_ENV: staging
+      REVIEW_CONSOLE_KGE_DATABASE_URL: ${REVIEW_CONSOLE_KGE_DATABASE_URL:?由运行环境注入}
+    healthcheck:
+      test: ["CMD", "/srv/starbuddy/services/insight/.venv/bin/python", "-I", "-c", "import http.client as h; c=h.HTTPConnection('172.28.0.50', 8793, timeout=5); c.request('GET', '/readyz'); raise SystemExit(0 if c.getresponse().status == 200 else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    depends_on:
+      insight: {condition: service_healthy}
+
+volumes:
+  bff-audit: {}

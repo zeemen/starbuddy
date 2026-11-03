@@ -1,0 +1,50 @@
+# 合成登记表（测试夹具，冲刺 3-F）：登记表、Prompt、规格书、用例与录音全部是合成的，只用来证明人设治理组件本身能工作；
+# 不是任何角色的人设 Prompt、不是人设语料、不是金标准，录音标 synthetic: true、不是模型输出。锁文件不入库：测试先在临时目录里运行 lock 建立基线。
+version: 0.0.1
+reviewed: false
+lexicon: packages/personas/forbidden/manifest.yaml
+lock: evals/persona/fixtures/governance/prompts.lock
+eval:
+  cases_dir: evals/persona/fixtures/governance/cases
+  recordings_dir: evals/persona/fixtures/governance/recordings
+  contract_matrix: evals/persona/fixtures/governance/contract-matrix.yaml
+scan:
+  dirs: [adapters]
+  exclude_dirs: [node_modules, __pycache__]
+type_labels: {}
+surfaces: {}
+subjects:
+  math: { name: 数学, aliases: [数学] }
+  chinese: { name: 语文, aliases: [语文] }
+personas:
+  - persona_id: syn-tutor
+    display_name: 合成导师
+    type: resident
+    subject: math
+    status: active
+    spec_doc: evals/persona/fixtures/governance/spec-synthetic.md
+    spec_version: V0.0
+    forbidden_classes: [A, B, C, D, E, "F:math"]
+    prompts:
+      - { prompt_id: syn-tutor-main, path: evals/persona/fixtures/governance/prompts/syn-tutor.prompt.md, prompt_version: 1.0.0 }
+    address_terms: {}
+    catchphrases: []
+    metaphor_set: [合成甲]
+    setting_elements: []
+    disclosure: { text: "我是 AI 扮演的合成导师", source: "合成夹具" }
+    referral: { text: "这个我帮不上，值得找班主任或者心理老师、家长聊聊。我们先回到这道题。", source: "合成夹具" }
+  - persona_id: syn-npc
+    display_name: 合成路人
+    type: scene
+    subject: chinese
+    status: active
+    spec_doc: evals/persona/fixtures/governance/spec-synthetic.md
+    spec_version: V0.0
+    forbidden_classes: [A, B, C, D, E]
+    prompts:
+      - { prompt_id: syn-npc-card, path: evals/persona/fixtures/governance/prompts/syn-npc.prompt.md, prompt_version: 0.1.0 }
+    address_terms: {}
+    catchphrases: []
+    metaphor_set: [合成乙]
+    setting_elements: []
+tasks: []

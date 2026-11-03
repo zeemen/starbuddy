@@ -1,0 +1,130 @@
+# 平台模型路由表（冲刺 1-F，specs/model-router-sprint1/spec.md；ADR 04 正文与增补，草稿待签字）。
+# 路由键 = 任务类型（T1–T9）× 数据级别（L0–L3）。调用方不指定模型；换供应商只改这里。
+#
+# dev、test 两节只有本地假供应商（fake-a、fake-b 走本机 HTTP 桩，fake-x 模拟境外）。
+# staging 节（LT-02，specs/launch-lt02-model-provider 决定记录第 1–4 条）：登记阿里云百炼（主）与火山方舟（备，含方舟托管的 DeepSeek），
+#   只写变量名与占位；开通、密钥、快照名、接入主机名、白名单批准由人完成（新增模型供应商属必停项，PR 首行 [NEEDS-HUMAN]）。
+#   占位未填、whitelist 不是 approved、缺 allowed_hosts、api_name 不带日期或版本号时，staging 拒绝启动（与 pilot 同口径）。
+# pilot、prod 仍为空。真实供应商须先在 docs/compliance/vendors.md 登记且状态与这里一致（tests/test_model_router_staging.py 核对）。
+# pilot、prod、staging 启动时校验：不出境、只用已批准的供应商、锁定快照、主备不同厂商或平台。
+# 地址与 Key 只写环境变量名，值不进仓库；allowed_hosts 登记地址允许的主机名，启动时核对（staging、pilot、prod 必填且只接受 https）。
+# 版本与模型名必须写成带引号的字符串（YAML 会把 1.10 读成 1.1、把日期读成 date）；staging、pilot、prod 必须显式写带版本的 api_name。
+# 成本护栏（可选，每个环境一节）：budgets 按任务配每日（UTC+8 自然日）调用次数与 token 上限，路由层进程内计数（多实例按实例计），
+#   超限返回确定性错误（内部接口 503 ROUTE_UNAVAILABLE，detail = ROUTE_BUDGET_EXCEEDED）；pricing 是单价表（元 / 百万 token，
+#   键为 <供应商>/<模型>），只用于调用记录里的成本估算，缺省为空则不估算。两者都不改计量与扣次规则。
+version: 1
+defaults:
+  # 待人确认 #5 的默认值，接真实供应商后再调
+  timeout_seconds: { T1: 20, T2: 60, T8: 120, default: 30 }
+  max_retries: 2
+  breaker: { failure_threshold: 5, cooldown_seconds: 30 }
+
+environments:
+  dev: &synthetic
+    vendors:
+      fake-a:
+        org: fake-org-a
+        platform: fake-platform-a
+        residency: domestic
+        protocol: openai_compat
+        whitelist: test_only
+        base_url_env: MODEL_FAKE_A_URL
+        allowed_hosts: [127.0.0.1, localhost]
+      fake-b:
+        org: fake-org-b
+        platform: fake-platform-b
+        residency: domestic
+        protocol: openai_compat
+        whitelist: test_only
+        base_url_env: MODEL_FAKE_B_URL
+        allowed_hosts: [127.0.0.1, localhost]
+      fake-x:
+        # 模拟境外供应商：dev、test 只接 L0（合成数据，ADR 09 第 5 条、spec 待人确认 #3）
+        org: fake-org-x
+        platform: fake-platform-x
+        residency: foreign
+        protocol: openai_compat
+        whitelist: test_only
+        base_url_env: MODEL_FAKE_X_URL
+        allowed_hosts: [127.0.0.1, localhost]
+    routes:
+      T1:
+        data_classes: [L0, L1, L2]
+        primary: { vendor: fake-a, model: fake-chat, version: "2026-09-01" }
+        backup: { vendor: fake-b, model: fake-chat, version: "2026-09-01" }
+      T2:
+        data_classes: [L0, L1, L2]
+        primary: { vendor: fake-a, model: fake-reasoner, version: "2026-09-01", params: { temperature: 0 } }
+        backup: { vendor: fake-b, model: fake-reasoner, version: "2026-09-01", params: { temperature: 0 } }
+      T4:
+        data_classes: [L0, L1, L2]
+        primary: { vendor: fake-a, model: fake-chat, version: "2026-09-01" }
+        backup: { vendor: fake-b, model: fake-chat, version: "2026-09-01" }
+      T8:
+        # 后台批量只处理内容（L0）：主选可以是模拟境外供应商
+        data_classes: [L0]
+        primary: { vendor: fake-x, model: fake-batch, version: "2026-09-01" }
+        backup: { vendor: fake-a, model: fake-chat, version: "2026-09-01" }
+      T9:
+        data_classes: [L0, L1, L2, L3]
+        primary: { vendor: fake-b, model: fake-guard, version: "2026-09-01" }
+        backup: { vendor: fake-a, model: fake-guard, version: "2026-09-01" }
+  test: *synthetic
+  staging:
+    # 尖括号内是占位，由人在开通后按控制台实际值填写；带着任何占位 staging 都拒绝启动（见 deploy/config/README.md 第 7 节）
+    vendors:
+      bailian:
+        # 阿里云百炼（主平台，Qwen3.8 系列）
+        org: alibaba-cloud
+        platform: bailian
+        residency: domestic
+        protocol: openai_compat
+        whitelist: pending  # 人批准并在 vendors.md 登记为“已批准”后改为 approved
+        base_url_env: MODEL_BAILIAN_URL
+        api_key_env: MODEL_BAILIAN_API_KEY
+        allowed_hosts: ["<由人填写：百炼 OpenAI 兼容接入的主机名>"]
+      ark:
+        # 火山方舟（第二平台：豆包 2.1、方舟托管的 DeepSeek）
+        org: volcengine
+        platform: ark
+        residency: domestic
+        protocol: openai_compat
+        whitelist: pending
+        base_url_env: MODEL_ARK_URL
+        api_key_env: MODEL_ARK_API_KEY
+        allowed_hosts: ["<由人填写：方舟 OpenAI 兼容接入的主机名>"]
+    # version 与 api_name 都由人按控制台的带日期快照填写：version 是快照日期或版本号（进 model_version），
+    # api_name 是发给供应商的快照名（必须自带日期或版本号）。思考 / 非思考按所选快照区分（params 只收推理参数，
+    # 若供应商要求另传开关参数须改 params 白名单，待人确认）。T9 守卫本期不接云内容安全，保持现有自建规则（不配路由）。
+    routes:
+      T1:
+        # 教学对话：主 Qwen3.8-Flash（非思考），备 豆包 2.1 Turbo
+        data_classes: [L0, L1, L2]
+        primary: { vendor: bailian, model: qwen3.8-flash, version: "<由人填写：快照日期或版本号>", api_name: "<由人填写的带日期快照名>" }
+        backup: { vendor: ark, model: doubao-2.1-turbo, version: "<由人填写：快照日期或版本号>", api_name: "<由人填写的带日期快照名>" }
+      T2:
+        # 判分推理：主 Qwen3.8-Max（思考），备 DeepSeek V4.1-Flash（方舟托管，思考）
+        data_classes: [L0, L1, L2]
+        primary: { vendor: bailian, model: qwen3.8-max, version: "<由人填写：快照日期或版本号>", api_name: "<由人填写的带日期快照名>", params: { temperature: 0 } }
+        backup: { vendor: ark, model: deepseek-v4.1-flash, version: "<由人填写：快照日期或版本号>", api_name: "<由人填写的带日期快照名>", params: { temperature: 0 } }
+      T4:
+        # 作文批改：主 Qwen3.8-Max，备 豆包 2.1 Pro
+        data_classes: [L0, L1, L2]
+        primary: { vendor: bailian, model: qwen3.8-max, version: "<由人填写：快照日期或版本号>", api_name: "<由人填写的带日期快照名>" }
+        backup: { vendor: ark, model: doubao-2.1-pro, version: "<由人填写：快照日期或版本号>", api_name: "<由人填写的带日期快照名>" }
+      T8:
+        # 后台批量（只处理内容 L0）：主 DeepSeek V4.1-Flash（方舟），备 Qwen3.8-Flash
+        data_classes: [L0]
+        primary: { vendor: ark, model: deepseek-v4.1-flash, version: "<由人填写：快照日期或版本号>", api_name: "<由人填写的带日期快照名>" }
+        backup: { vendor: bailian, model: qwen3.8-flash, version: "<由人填写：快照日期或版本号>", api_name: "<由人填写的带日期快照名>" }
+    # 成本护栏：staging 缺省小额度（内部成员测试用），由人按预算调整；每个已配路由的任务都要有一项（测试核对）
+    budgets:
+      T1: { daily_calls: 300, daily_tokens: 600000 }
+      T2: { daily_calls: 200, daily_tokens: 800000 }
+      T4: { daily_calls: 100, daily_tokens: 400000 }
+      T8: { daily_calls: 100, daily_tokens: 1000000 }
+    # 单价表（元 / 百万 token）由人按合同填写，例如 bailian/qwen3.8-max: { input_per_million: <数>, output_per_million: <数> }；
+    # 缺省为空：调用记录的 estimated_cost_cny 为空（不估算）
+    pricing: {}
+  pilot: {}
+  prod: {}

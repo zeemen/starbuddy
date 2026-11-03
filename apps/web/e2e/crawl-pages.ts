@@ -1,0 +1,109 @@
+// 安全头爬取的页面登记（4-H H6，第二轮 7.6：爬遍壳内全部路由）。纯数据，不引用 Playwright：
+// tests/headers-crawl.test.ts 核对 src/app 下的每个 page.tsx / route.ts 都在这里登记（新增页面不登记就失败），
+// e2e/headers.spec.ts（开关全关的一套）与 e2e/trust-on.spec.ts（开关打开的一套）按它逐页核对 CSP、no-store 等安全头。
+// 键 = src/app 下的文件路径；who = 用谁的会话打开（anon / student / guardian），trustOn = 只在开关打开的一套里有内容
+// （开关全关的一套里同一地址是 404 页，安全头照样核对）；excluded = 不在壳的爬取里，写明理由与别处的覆盖。
+
+export const S1 = '5a000000-0000-4000-8000-0000000000c1';  // 开关全关的一套：合成学生 S1（家长 gS）
+export const GT = '5d000000-0000-4000-8000-0000000000c1';  // 开关打开的一套：合成学生 GT（家长 gH）
+const NO_ID = '00000000-0000-4000-8000-0000000000f0';      // 不存在的判断 / 考试编号（页面显示“暂时无法获取”或 404）
+
+/**
+ * final：重定向后的最终地址（缺省 = path）；status：最终响应的状态码（缺省 200）。trustOn 的页面在开关全关的一套里一律 404、不重定向。
+ */
+export interface CrawlPage {
+  who: 'anon' | 'student' | 'guardian'; path: (student: string) => string; trustOn?: true; final?: (student: string) => string; status?: number;
+  /** 错题再练（specs/practice-loop-stage1 PR 4）：只在 practice 开关打开的一套（practice-on）里有内容，其余各套一律 404 页 */
+  practiceOn?: true;
+}
+export interface Excluded { excluded: string }
+
+export const CRAWL: Record<string, CrawlPage | Excluded> = {
+  'login/page.tsx': { who: 'anon', path: () => '/login' },
+  'student/page.tsx': { who: 'student', path: () => '/student', final: (s) => `/s/${s}/today` },
+  'onboarding/[studentId]/page.tsx': { who: 'student', path: (s) => `/onboarding/${s}` },
+  's/[studentId]/today/page.tsx': { who: 'student', path: (s) => `/s/${s}/today` },
+  's/[studentId]/learn/page.tsx': { who: 'student', path: (s) => `/s/${s}/learn` },
+  's/[studentId]/learn/[subject]/page.tsx': { who: 'student', path: (s) => `/s/${s}/learn/math` },
+  's/[studentId]/star-map/page.tsx': { who: 'student', path: (s) => `/s/${s}/star-map` },
+  's/[studentId]/presence/route.ts': { excluded: '只认 POST 的会话起止路由（SIE-05 PR2）：一律 204、no-store、不回内容；同源与 CSRF 核对由 tests/behavior.test.ts 静态核对，写入与越权由 e2e/behavior-events.spec.ts 核对' },
+  's/[studentId]/learn/[subject]/practice/page.tsx': { who: 'student', path: (s) => `/s/${s}/learn/math/practice`, practiceOn: true },
+  's/[studentId]/learn/[subject]/practice/[entryId]/page.tsx': { who: 'student', path: (s) => `/s/${s}/learn/math/practice/${NO_ID}`, practiceOn: true },
+  // 复测与验证题（specs/retest-delivery-kge05）：开关 STARBUDDY_RETEST_UI 只在 practice-on 一套里打开，所以同样按 practiceOn 登记
+  's/[studentId]/learn/[subject]/retest/page.tsx': { who: 'student', path: (s) => `/s/${s}/learn/math/retest`, practiceOn: true },
+  's/[studentId]/learn/[subject]/retest/[entryId]/page.tsx': { who: 'student', path: (s) => `/s/${s}/learn/math/retest/${NO_ID}`, practiceOn: true },
+  's/[studentId]/why/[claimId]/page.tsx': { who: 'student', path: (s) => `/s/${s}/why/${NO_ID}`, trustOn: true },
+  's/[studentId]/disputes/page.tsx': { who: 'student', path: (s) => `/s/${s}/disputes`, trustOn: true },
+  's/[studentId]/exams/page.tsx': { who: 'student', path: (s) => `/s/${s}/exams`, trustOn: true },
+  's/[studentId]/exams/[examId]/page.tsx': { who: 'student', path: (s) => `/s/${s}/exams/${NO_ID}`, trustOn: true },
+  's/[studentId]/weekly/page.tsx': { who: 'student', path: (s) => `/s/${s}/weekly`, trustOn: true },
+  'family/page.tsx': { who: 'guardian', path: () => '/family' },
+  'family/[studentId]/page.tsx': { who: 'guardian', path: (s) => `/family/${s}` },
+  'family/[studentId]/star-map/page.tsx': { who: 'guardian', path: (s) => `/family/${s}/star-map` },
+  'family/[studentId]/time/page.tsx': { who: 'guardian', path: (s) => `/family/${s}/time` },
+  // 家长诉求（PLT-14 第 1 步）：开关 STARBUDDY_FAMILY_GOALS 在现有各套里都关，同一地址一律是 404 页（安全头照样核对）；
+  // 打开开关的一套要等 playwright.config.ts / scripts/e2e.sh 接线（PLT-11 正在改这两个文件，已报告）
+  'family/[studentId]/goals/page.tsx': { who: 'guardian', path: (s) => `/family/${s}/goals`, status: 404 },
+  // 月度计划（PLT-14 第 3 步）：开关 STARBUDDY_MONTHLY_PLAN 只在 family-on 一套打开（不在安全头爬取里），爬取的两套里同一地址一律是 404 页
+  // （安全头照样核对）；打开时的页面由 e2e/monthly-plan.spec.ts 核对
+  'family/[studentId]/monthly-plan/page.tsx': { who: 'guardian', path: (s) => `/family/${s}/monthly-plan`, status: 404 },
+  's/[studentId]/plan/page.tsx': { who: 'student', path: (s) => `/s/${s}/plan`, status: 404 },
+  // 内部成员测试运营（LT-06）：开关 STARBUDDY_INTERNAL_TEST 在爬取的各套里都关，同一地址一律是 404 页（安全头照样核对）；
+  // 打开时的页面由单测 tests/internal-test.test.ts 静态核对（e2e 打开一套待接线，见 specs/launch-lt06-internal-test-ops 待人确认）
+  's/[studentId]/feedback/page.tsx': { who: 'student', path: (s) => `/s/${s}/feedback`, status: 404 },
+  'family/[studentId]/feedback/page.tsx': { who: 'guardian', path: (s) => `/family/${s}/feedback`, status: 404 },
+  'family/[studentId]/exit/page.tsx': { who: 'guardian', path: (s) => `/family/${s}/exit`, status: 404 },
+  'family/[studentId]/why/[claimId]/page.tsx': { who: 'guardian', path: (s) => `/family/${s}/why/${NO_ID}`, trustOn: true },
+  'family/[studentId]/disputes/page.tsx': { who: 'guardian', path: (s) => `/family/${s}/disputes`, trustOn: true },
+  'family/[studentId]/exams/page.tsx': { who: 'guardian', path: (s) => `/family/${s}/exams`, trustOn: true },
+  'family/[studentId]/exams/[examId]/page.tsx': { who: 'guardian', path: (s) => `/family/${s}/exams/${NO_ID}`, trustOn: true },
+  'family/[studentId]/weekly/page.tsx': { who: 'guardian', path: (s) => `/family/${s}/weekly`, trustOn: true },
+  'family/[studentId]/data/page.tsx': { who: 'guardian', path: (s) => `/family/${s}/data`, trustOn: true },
+  // 健康端点（LT-03）：探针用的 JSON 路由，不是页面；只回状态、no-store、不读会话，由 tests/health.test.ts 静态核对
+  'healthz/route.ts': { excluded: '存活探针路由（LT-03）：只认 GET、只回 {"status":"ok"}、no-store、不调 BFF 不读会话；tests/health.test.ts 静态核对' },
+  'readyz/route.ts': { excluded: '就绪探针路由（LT-03）：只认 GET、只回状态、no-store，按 serve-env 同一套核对；tests/health.test.ts 静态核对' },
+  // PWA（LT-07）：Service Worker 脚本与占位图标，不是页面；安全头（CSP、nosniff、no-store）与内容由 e2e/pwa.spec.ts 核对，源码由 tests/pwa.test.ts 核对
+  'sw.js/route.ts': { excluded: 'Service Worker 脚本（LT-07）：只认 GET、no-store、text/javascript，不读会话；缓存范围由 tests/pwa.test.ts（node:vm 跑真实事件）与 e2e/pwa.spec.ts 核对' },
+  'icons/[file]/route.ts': { excluded: '占位图标 PNG（LT-07）：只认登记的四个文件名、其余 404，不读会话；tests/pwa.test.ts 核对 PNG 结构，e2e/pwa.spec.ts 核对响应头' },
+  'family/[studentId]/data/download/route.ts': { excluded: '只认 POST 的下载路由：no-store、附件、nosniff 由 e2e/trust-on.spec.ts 的数据权利用例与 tests/trust.test.ts 核对' },
+  'review/page.tsx': { excluded: '审核台（staff 登录，迁移 0020，不在壳内）：与壳同一个 proxy（CSP）与 next.config（安全头），但需要 staff 会话，本爬取不覆盖；e2e/review.spec.ts 只核对 no-store（CSP 逐页爬取登记为 lessons H6 待人确认）' },
+  'review/login/page.tsx': { who: 'anon', path: () => '/review/login' },
+  'review/queue/page.tsx': { excluded: '审核台（staff 登录，迁移 0020，不在壳内）：与壳同一个 proxy（CSP）与 next.config（安全头），但需要 staff 会话，本爬取不覆盖；e2e/review.spec.ts 只核对 no-store（CSP 逐页爬取登记为 lessons H6 待人确认）' },
+  'review/queue/[id]/page.tsx': { excluded: '审核台（staff 登录，迁移 0020，不在壳内）：与壳同一个 proxy（CSP）与 next.config（安全头），但需要 staff 会话，本爬取不覆盖；e2e/review.spec.ts 只核对 no-store（CSP 逐页爬取登记为 lessons H6 待人确认）' },
+  'review/pages/page.tsx': { excluded: '审核台（staff 登录，迁移 0020，不在壳内）：与壳同一个 proxy（CSP）与 next.config（安全头），但需要 staff 会话，本爬取不覆盖；e2e/review.spec.ts 只核对 no-store（CSP 逐页爬取登记为 lessons H6 待人确认）' },
+  'review/records/page.tsx': { excluded: '审核台（staff 登录，迁移 0020，不在壳内）：与壳同一个 proxy（CSP）与 next.config（安全头），但需要 staff 会话，本爬取不覆盖；e2e/review.spec.ts 只核对 no-store（CSP 逐页爬取登记为 lessons H6 待人确认）' },
+  'review/map-versions/[id]/page.tsx': { excluded: '审核台（staff 登录，迁移 0020，不在壳内）：与壳同一个 proxy（CSP）与 next.config（安全头），但需要 staff 会话，本爬取不覆盖；e2e/review.spec.ts 只核对 no-store（CSP 逐页爬取登记为 lessons H6 待人确认）' },
+  // 冲刺 4 · G 流第二部分 PR D 新增的审核台页面：同上，staff 会话，本爬取不覆盖
+  'review/content/page.tsx': { excluded: '审核台（staff 登录，迁移 0020，不在壳内）：与壳同一个 proxy（CSP）与 next.config（安全头），但需要 staff 会话，本爬取不覆盖（PR D 新增；CSP 逐页爬取登记为 lessons H6 待人确认）' },
+  'review/content/[id]/page.tsx': { excluded: '审核台（staff 登录，迁移 0020，不在壳内）：与壳同一个 proxy（CSP）与 next.config（安全头），但需要 staff 会话，本爬取不覆盖（PR D 新增；CSP 逐页爬取登记为 lessons H6 待人确认）' },
+  'review/policy/page.tsx': { excluded: '审核台（staff 登录，迁移 0020，不在壳内）：与壳同一个 proxy（CSP）与 next.config（安全头），但需要 staff 会话，本爬取不覆盖（PR D 新增；CSP 逐页爬取登记为 lessons H6 待人确认）' },
+  'review/policy/[id]/page.tsx': { excluded: '审核台（staff 登录，迁移 0020，不在壳内）：与壳同一个 proxy（CSP）与 next.config（安全头），但需要 staff 会话，本爬取不覆盖（PR D 新增；CSP 逐页爬取登记为 lessons H6 待人确认）' },
+  'review/policy/sources/page.tsx': { excluded: '审核台（staff 登录，迁移 0020，不在壳内）：与壳同一个 proxy（CSP）与 next.config（安全头），但需要 staff 会话，本爬取不覆盖；e2e/review.spec.ts 核对 no-store、403、DOM 泄露与 axe（考情 v0.9 待定事项 PR2 新增）' },
+  'review/spot-checks/page.tsx': { excluded: '审核台（staff 登录，迁移 0020，不在壳内）：与壳同一个 proxy（CSP）与 next.config（安全头），但需要 staff 会话，本爬取不覆盖（PR D 新增；CSP 逐页爬取登记为 lessons H6 待人确认）' },
+  // KGE-06（specs/kge06-weekly-revision）：开关默认关（关时 404，e2e/review-kge06-off.spec.ts）；开着时需要 staff 会话，e2e/review-kge06.spec.ts 核对
+  'review/tag-candidates/page.tsx': { excluded: '审核台（staff 登录，不在壳内）：KGE-06 低置信工作单，开关 STARBUDDY_REVIEW_FEATURES 默认关；关时 404 由 e2e/review-kge06-off.spec.ts、开时由 e2e/review-kge06.spec.ts 核对（含 axe）' },
+  // LT-06（specs/launch-lt06-internal-test-ops）：开关 STARBUDDY_INTERNAL_TEST 默认关（关时 404）；开着时需要 staff 会话
+  'review/feedback/page.tsx': { excluded: '审核台（staff 登录，不在壳内）：LT-06 内部测试问题反馈，开关 STARBUDDY_INTERNAL_TEST 默认关；关时 404、开关与可见范围由 tests/internal-test.test.ts 静态核对，接口由 services/learning/tests/test_review_internal_test.py 核对' },
+  'review/internal-test/page.tsx': { excluded: '审核台（staff 登录，不在壳内）：LT-06 内部测试退出状态，开关 STARBUDDY_INTERNAL_TEST 默认关；关时 404、开关由 tests/internal-test.test.ts 静态核对，接口由 services/learning/tests/test_review_internal_test.py 核对' },
+  'review/map-versions/[id]/preflight/page.tsx': { excluded: '审核台（staff 登录，不在壳内）：KGE-06 修订发布预检，开关 STARBUDDY_REVIEW_FEATURES 默认关；关时 404 由 e2e/review-kge06-off.spec.ts、开时由 e2e/review-kge06.spec.ts 核对（含 axe）' },
+};
+
+/** 不对应 src/app 文件、但也要核对的地址：404 页、开发构建里的符号样张页 */
+export const EXTRA_ANON: { path: string; status: number }[] = [{ path: '/no-such-page', status: 404 }, { path: '/dev/star-glyphs', status: 200 }];
+
+/** 一次爬取的目标：地址、最终状态码、重定向后的最终路径 */
+export interface CrawlTarget { path: string; status: number; final: string }
+
+/**
+ * 某个身份要爬的页面；trustOn = 当前这一套的信任界面开关是否打开（关时信任界面页面是 404 页）；
+ * practiceOn = 当前这一套的错题再练开关是否打开（只有 practice-on 一套打开；关时再练页面是 404 页）
+ */
+export function targets(who: CrawlPage['who'], student: string, trustOn: boolean, onlyTrust = false, practiceOn = false): CrawlTarget[] {
+  return Object.values(CRAWL)
+    .filter((p): p is CrawlPage => 'who' in p && p.who === who && (!onlyTrust || p.trustOn === true))
+    .map((p) => {
+      const path = p.path(student);
+      const off = (p.trustOn === true && !trustOn) || (p.practiceOn === true && !practiceOn);
+      return { path, status: off ? 404 : p.status ?? 200, final: off ? path : (p.final?.(student) ?? path) };
+    });
+}

@@ -1,0 +1,75 @@
+openapi: 3.1.0
+# 调度器的健康端点（LT-03 范围第 4 条，specs/launch-lt03-cloud-staging；scheduler/health.py）。调度器没有别的 HTTP 接口：
+# 只在常驻模式、且设了 SCHEDULER_HEALTH_PORT 时另起这个极小监听（SCHEDULER_HOST：缺省 127.0.0.1，staging 另收内网 IPv4）。
+# 各服务同一口径：services/{learning,insight,knowledge,bff}/openapi/health.v0.yaml。
+info:
+  title: StarBuddy scheduler health
+  version: 0.1.0
+  description: |
+    无需鉴权；响应只含状态（不带任务名、下一次运行时刻、版本、错误类别），一律 no-store、nosniff、connection: close；探测不记日志。
+    路径逐字相等（不收查询串、尾斜杠），其他路径 404、其他方法 405；请求头 8 KiB、读取 2 秒为限（超了 400）。
+    /readyz 的“就绪”= 启动核对（时间表、各任务变量与连接串、子进程解释器、健康监听配置）已通过、常驻循环在跑（收到 SIGTERM 后即未就绪），
+    且能在 3 秒内用 SCHEDULER_DATABASE_URL 连上库、核对服务端地址并 SELECT 1（每次新建连接、用完即断；并发 1，结果复用 3 秒）。
+servers:
+  - url: http://127.0.0.1:8793
+paths:
+  /healthz:
+    get:
+      operationId: healthz
+      summary: 存活（不访问任何依赖）
+      security: []
+      responses:
+        '200':
+          description: 进程在应答
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Alive'}
+        '405':
+          description: 不是 GET
+  /readyz:
+    get:
+      operationId: readyz
+      summary: 就绪（启动核对通过、循环在跑、能连上库）
+      security: []
+      responses:
+        '200':
+          description: 就绪
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Ready'}
+        '503':
+          description: 未就绪（不区分原因）
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/NotReady'}
+        '405':
+          description: 不是 GET
+  /metrics:
+    get:
+      operationId: metrics
+      summary: 指标（LT-05，scheduler/metrics.py；只在单独的指标监听 SCHEDULER_METRICS_PORT（staging 9793，与健康监听同一地址），健康监听上的 /metrics 404。Prometheus 文本格式，免鉴权、只在 Pod 内网，k8s NetworkPolicy 只给采集组件放行指标端口）
+      description: 指标监听只服务这一条路径（路径逐字相等、不收查询串）：别的路径 404、别的方法 405；限制与健康监听相同。
+      security: []
+      responses:
+        '200':
+          description: Prometheus 文本格式（任务名与结果编码、耗时、最近一次成功时刻；清单见 deploy/observability/metrics-inventory.yaml）
+          content:
+            text/plain:
+              schema: {type: string}
+components:
+  schemas:
+    Alive:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties: {status: {const: ok}}
+    Ready:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties: {status: {const: ready}}
+    NotReady:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties: {status: {const: not_ready}}

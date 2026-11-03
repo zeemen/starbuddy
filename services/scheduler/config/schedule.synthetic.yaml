@@ -1,0 +1,82 @@
+$comment: >-
+  合成默认值，非签字值（PLT-13 第一步，specs/scheduler-plt13/spec.md 默认设计第 3 条）。全部频率、钟点、批量、抽检比例与回看窗口都是
+  默认值，待人签字（计量、删除执行、复测与掌握对账的调度频率属必停类）。只用于 SCHEDULER_ENV=dev / test 的本机库，不接生产调度。
+  每小时任务错开分钟，避免同一时刻集中启动；每天 02:30 的四个任务身份不同、各自一个子进程与连接，可以同时跑。
+  抽检比例 0.1 沿用迁移 0023 的待人确认 #2 默认；回看 26 小时比一天多 2 小时，与上一轮重叠的部分由库函数去重（已进队的不再进）。
+  月度计划每月 1 日生成本步不做（需要“有权益学生清单”的读取入口，另起）。
+schema_version: starbuddy-schedule/0.1
+synthetic: true
+signed_by: ""
+signed_at: ""
+timezone: Asia/Shanghai
+jobs:
+  meter-expire:
+    $comment: 计量预留过期释放（platform.meter_expire_due，0009）；资源类型的预留时长最短 10 分钟
+    schedule: every 5m
+    identity: scheduler
+    args: [meter-expire, --batch, "50"]
+  meter-renew:
+    $comment: 订阅续期与到期（platform.meter_renew_due，0015）
+    schedule: "hourly :07"
+    identity: scheduler
+    args: [meter-renew, --batch, "50"]
+  erasures:
+    $comment: 删除请求执行（platform.execute_due_erasures，0035）；冷静期满后 24 小时内执行靠这个频率保证
+    schedule: "hourly :17"
+    identity: scheduler
+    args: [erasures]
+  freeze:
+    $comment: 考前预测冻结（insight.freeze_due_predictions，0034）；考试当天零点（上海）之后尽快
+    schedule: "hourly :01"
+    identity: scheduler
+    args: [freeze]
+  sweep:
+    $comment: 判断到期扫描（insight.jobs sweep）
+    schedule: daily 02:30
+    identity: insight
+    args: [sweep]
+    env: [INSIGHT_POLICY]
+  mastery-sweep:
+    $comment: 掌握对账（learning.jobs mastery-sweep）；有失败单元或 stale_estimate 时退出码 1，记 alert
+    schedule: daily 02:30
+    identity: learning
+    args: [mastery-sweep]
+    env: [LEARNING_MASTERY_CONFIG_*]
+  expire-affairs:
+    $comment: 时政过期下架（review_console expire-affairs，0043）；缺省北京时间今天
+    schedule: daily 02:30
+    identity: kge
+    args: [expire-affairs]
+  spot-check:
+    $comment: 判分抽检进统一复核队列（platform.review_sample_spot_checks，0023）；英语（echo）已搁置，不抽
+    schedule: daily 02:30
+    identity: scheduler
+    args: [spot-check, --subject, aya, --subject, zhixing, --subject, wenli, --ratio, "0.1", --lookback-hours, "26"]
+  model-call-purge:
+    $comment: >-
+      模型调用记录留存删除（platform.model_call_log_purge，迁移 0060；specs/plt-model-call-log 决定记录第 1 条）：只删 180 天前的行，
+      每批 1000 行一个事务，一批不满即停；到了批次上限退出码 1，下一轮接着删。每日 04:10 为默认值，待人签字：本文件是合成时间表，
+      只在 dev / test 生效；staging 只收签字时间表（schedule.signed.yaml），签字前不启用（0060 也须先由人执行）。
+    schedule: daily 04:10
+    identity: scheduler
+    args: [model-call-purge, --batch, "1000"]
+  metrics:
+    $comment: >-
+      中圈指标静默重算（insight.jobs metrics --all → jobs.recompute_metrics；SIE-05，specs/sie05-silent-metrics）：结果只写
+      visibility = {agent} 的指标判断，状态只到“假设”；--all 取有当前节点键掌握行的学生，所以排在 02:30 掌握对账之后。
+      频率每日一次、03:20 为默认值，待人确认（spec 待人确认 #1）。
+      --skip persistence：定时作业暂不重算学习持续性（它用会话时间戳计活跃日，与迁移 0025“时间戳只用于降负触发、不做作息分析”
+      的关系待人确认，spec 待人确认 #3）；已有的持续性判断不动、照常到期。
+    schedule: daily 03:20
+    identity: insight
+    args: [metrics, --all, --skip, persistence]
+    env: [INSIGHT_POLICY]
+  weekly:
+    $comment: >-
+      上一周的家长周报与学生成长手记（insight.jobs weekly → jobs.weekly_reports）；周报配置未签字时 test 以外不生成。
+      catch_up：调度器启动时补跑一次（周一 03:00 错过时补上一周；已生成的不重写，由子命令幂等兜底）；其他任务不补跑
+    schedule: weekly mon 03:00
+    identity: insight
+    args: [weekly]
+    catch_up: true
+    env: [INSIGHT_POLICY, INSIGHT_WEEKLY_POLICY, INSIGHT_WEEKLY_CHECK]

@@ -1,0 +1,25 @@
+# 点点后处理 v0 的替代句（冲刺 3-I，specs/diandian-consistency-r2-sprint3/spec.md 设计要点 1）。
+# 规则：替代句只能逐字取自规格原文（origin: verbatim，注明文件与章节；加载时逐字核对原文，找不到就拒绝加载），
+# 规格里没有现成句子的一律用占位（origin: placeholder，形如 {{NAME}}），报告标“替代句待人设负责人提供”。
+# 本文件不是人设语料：工程不在这里写任何新句子（写新的安全回复 / 披露 / 转介话术是必停项）。
+# 替换或新增句子须由人设负责人提供并签字，走 [NEEDS-HUMAN]。
+version: 0.1.0
+reviewed: false
+replacements:
+  disclosure:
+    use: 首轮对话缺 AI 身份披露时，加在回复最前面
+    origin: verbatim
+    text: "先说清楚：我是AI扮演的陪练角色，不是真人学长学姐。但我会尽量像一个真正陪你备考的搭子一样，帮你把这门课拿下。"
+    source_file: "docs/subjects/zhixing-备考搭子规格书-V1.0（已被点点替代）.md"
+    section: "§4.1 首次使用：AI身份披露（点点 V1.2 第一章、§2.1 绝对边界、第四章“原样继承”4.1）"
+  referral:
+    use: 学生这一轮出现情感信号时，整段回复换成转介句，并置结构字段 referral = true
+    origin: verbatim
+    text: "这个我可能帮不了你，但这事儿值得找信得过的人聊聊——学校心理老师、班主任，或者家里人。要不我们先回到刚才那道题？"
+    source_file: "docs/subjects/zhixing-备考搭子规格书-V1.0（已被点点替代）.md"
+    section: "§4.9 情感信号处理（点点 V1.2 第一章、第四章“原样继承”4.9）"
+  safe_reply:
+    use: 回复命中点点适用的禁语 A–E 类时，整段回复换成它
+    origin: placeholder
+    text: "{{SAFE_REPLY}}"
+    note: 点点 V1.2 与备考搭子 V1.0 都没有“拦截后的替代回复”原句；替代句待人设负责人提供

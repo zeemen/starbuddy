@@ -1,0 +1,17 @@
+{
+  "name": "@starbuddy/kge-coverage",
+  "version": "0.1.0",
+  "private": true,
+  "description": "KGE-02：覆盖矩阵报表（只读地图导入产物与打标报告，生成 report/coverage-<版本>.md 与 .csv）",
+  "type": "module",
+  "engines": { "node": ">=22.18" },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --no-warnings --test --test-reporter=dot tests/*.test.ts",
+    "coverage": "node --no-warnings src/main.ts"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.4",
+    "typescript": "5.9.3"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "$comment": "合成占位，非教研签字值，禁止用于任何非测试环境。档案页一致性检查的程度词表、结论词表、固定衔接短语表与人设词表待数学教研与 SIE 负责人起草、产品负责人审核（待人确认 #20），人设词表取自 docs/personas/ 属人审项；这里的词与模板键都是合成的，只供 tests/test_mastery_consistency.py 使用。",
+  "schema_version": "kge-profile-check/0.1",
+  "synthetic": true,
+  "signed_by": "",
+  "signed_at": "",
+  "degree_words": {"尚不稳定": 1, "有待巩固": 1, "薄弱": 2, "很薄弱": 3, "明显薄弱": 3},
+  "template_degrees": {"syn.mastery.unstable": 1, "syn.mastery.weak": 2, "syn.mastery.stable": 0, "syn.progress.recent": 0},
+  "conclusion_words": ["掌握", "稳定", "熟练", "进步", "优秀", "扎实"],
+  "template_conclusions": {"syn.mastery.stable": ["掌握", "稳定"], "syn.progress.recent": ["进步"]},
+  "connective_phrases": ["先看这一节", "接下来", "另外", "最近一段时间", "下一步"],
+  "persona_terms": ["点点", "阿鸦", "妙笔"]
+}

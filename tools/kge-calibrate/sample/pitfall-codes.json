@@ -1,0 +1,19 @@
+{
+  "format": "kge-calibrate-pitfall-codes/1",
+  "map_version": "0.1.0",
+  "pitfalls": {
+    "MATH.CALIB.T5.N4.SLIP1": [
+      "tuili_cuowu"
+    ],
+    "MATH.CALIB.T5.N4.SLIP2": [
+      "zhishi_queshi"
+    ],
+    "MATH.CALIB.T5.P1": [
+      "biaoda_cuowu"
+    ],
+    "MATH.CALIB.T5.P3": [
+      "shenti_cuowu"
+    ]
+  },
+  "subject": "aya"
+}

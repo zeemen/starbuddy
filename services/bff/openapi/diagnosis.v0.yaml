@@ -1,0 +1,395 @@
+# BFF ↔ 统一壳前端的数学自适应诊断接口（SIE-02a，specs/sie-02a-math-diagnosis/spec.md 设计要点 5）。
+# 服务内部接口，不是学科插件契约，不放 packages/contracts（与 events.v0.yaml、onboarding.v0.yaml 同一做法）。
+openapi: 3.1.0
+info:
+  title: StarBuddy BFF · adaptive math diagnosis (v0, prototype)
+  version: 0.1.0
+  description: >
+    学生本人做数学基线诊断：开始 / 续做、取当前题、提交“能做对吗”探针、提交作答、暂停、放弃。
+    只认学生本人：家长、其他学生、学生或会话不存在一律同一个 403（与 events.v0.yaml 同一套错误码）；未登录 401。
+    返回给前端的只有题面、步骤序号、题型与进度（已用秒数、上限、题数），不含答案、题号、知识节点、选题理由与对错；
+    诊断不产生任何对学生、家长可见的结论（CLAUDE.md 规则 3、11）。判分只来自阿鸦验证器，经学习服务落库。
+    计量（规则 4）：开始时以学生身份预留一次 diagnosis_full（幂等键即请求的 idempotency_key，usage_id 由键派生，迁移 0009），
+    第一道题判分成功即结算（之后放弃不退）；放弃时只有还没答过题才释放；学习服务确定拒绝时释放；
+    已有未结束的会话时“开始”即续做同一个会话，不另占额度（续做当场结束也结算）；
+    学习服务结果未知时回 503 且不释放，同一请求重试会找回同一笔预留与同一个会话。
+    宵禁（北京时间，家长设定或缺省 22:00–06:00）：开始、续做、取当前题（进行中时）、探针、作答都回 402 reason = curfew，
+    并把进行中的会话置为暂停。
+    幂等：开始按 idempotency_key；探针的写入键由（会话、步骤序号）派生，同一步只认第一次（请求里的 idempotency_key 只做格式核对）；
+    作答按 idempotency_key（记到步骤上）：同键或同内容重放回原结果，键不同且内容不同 409 ANSWER_CONFLICT；
+    暂停、放弃以（会话、步骤序号）为幂等锚点；同一步重放不重复判分、不重复写证据，响应头 `idempotent-replayed: true`。
+    过程题、讲解题的作答中断后重试，须带同一段原文重放（服务端不缓存原文）。
+    题面在契约 present_item 签字前只有测试环境的合成题面（学习服务 LEARNING_ENV=test）。
+    身份只来自会话（请求头 x-sb-session，由 apps/web 从 HttpOnly cookie 转交；4-H H2 起挂在统一壳路由表上，开发身份桩已删除）；改变状态的请求另要 Origin 等于壳的来源、带与会话绑定的 x-csrf-token（见 shell.v0.yaml）。请求体上限 16 KB。
+servers:
+  - url: http://127.0.0.1:8787
+paths:
+  /bff/v0/students/{student_id}/diagnosis/sessions:
+    parameters:
+      - $ref: '#/components/parameters/StudentId'
+      - $ref: '#/components/parameters/Session'
+    post:
+      x-sb-auth: student
+      x-sb-rate-buckets: [diagnosis.session.minute]
+      x-sb-not-self: 403
+      operationId: startDiagnosis
+      description: 开始诊断；已有未结束（进行中或暂停）的会话时续做它。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartInput' }
+      responses:
+        '200': { $ref: '#/components/responses/Session' }
+        '201': { $ref: '#/components/responses/Session' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+        '402':
+          description: 额度不可用（用完、没有权益、宵禁、留存态等），reason 给出编码
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/QuotaProblem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '413': { $ref: '#/components/responses/Problem' }
+        '415': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '404': { description: 无权、不存在或路径参数不合法（同一个 404）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+  /bff/v0/students/{student_id}/diagnosis/sessions/{session_id}:
+    parameters:
+      - $ref: '#/components/parameters/StudentId'
+      - $ref: '#/components/parameters/SessionId'
+      - $ref: '#/components/parameters/Session'
+    get:
+      x-sb-auth: student
+      x-sb-rate-buckets: [diagnosis.session.minute]
+      x-sb-not-self: 403
+      operationId: getDiagnosisCurrent
+      description: >
+        当前题与进度。会话结束时 step 为空；结束页不给结论：作答过过程题（process_tasks 为真）时说“完成了，老师会看你的过程”，
+        否则（例如放弃、没有选出过程题）用中性文案。
+      responses:
+        '200':
+          description: 当前状态
+          headers: { Cache-Control: { schema: { const: no-store } } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionView' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+        '402':
+          description: 宵禁时段（reason = curfew），进行中的会话已置为暂停
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/QuotaProblem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '404': { description: 无权、不存在或路径参数不合法（同一个 404）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+  /bff/v0/students/{student_id}/diagnosis/sessions/{session_id}/probe:
+    parameters:
+      - $ref: '#/components/parameters/StudentId'
+      - $ref: '#/components/parameters/SessionId'
+      - $ref: '#/components/parameters/Session'
+    post:
+      x-sb-auth: student
+      x-sb-rate-buckets: [diagnosis.session.minute]
+      x-sb-not-self: 403
+      operationId: postDiagnosisProbe
+      description: 当前题出题前的“这道题你觉得能做对吗？”（跳过不调用）。写 insight.confidence_probe（学生自述），作答后自动关联作答。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProbeInput' }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+        '402':
+          description: 宵禁时段（reason = curfew），进行中的会话已置为暂停
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/QuotaProblem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '404': { description: 无权、不存在或路径参数不合法（同一个 404）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+  /bff/v0/students/{student_id}/diagnosis/sessions/{session_id}/answer:
+    parameters:
+      - $ref: '#/components/parameters/StudentId'
+      - $ref: '#/components/parameters/SessionId'
+      - $ref: '#/components/parameters/Session'
+    post:
+      x-sb-auth: student
+      x-sb-rate-buckets: [diagnosis.session.minute]
+      x-sb-not-self: 403
+      operationId: postDiagnosisAnswer
+      description: >
+        提交当前题的作答。判分只来自验证器，结果不返回（只回会话状态）。过程题（process）与讲解题（explain）另带 work（写出的全过程 /
+        用自己的话讲给老师听），整段进统一复核队列。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AnswerInput' }
+      responses:
+        '200': { $ref: '#/components/responses/Status' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+        '402':
+          description: 宵禁时段（reason = curfew），进行中的会话已置为暂停
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/QuotaProblem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '404': { description: 无权、不存在或路径参数不合法（同一个 404）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+  /bff/v0/students/{student_id}/diagnosis/sessions/{session_id}/pause:
+    parameters:
+      - $ref: '#/components/parameters/StudentId'
+      - $ref: '#/components/parameters/SessionId'
+      - $ref: '#/components/parameters/Session'
+    post:
+      x-sb-auth: student
+      x-sb-rate-buckets: [diagnosis.session.minute]
+      x-sb-not-self: 403
+      operationId: pauseDiagnosis
+      description: 暂停（可跨天续做）。带上当前题已用秒数，续做时接着算；暂停期间不计时。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PauseInput' }
+      responses:
+        '200': { $ref: '#/components/responses/Status' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+        '404': { description: 无权、不存在或路径参数不合法（同一个 404）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+  /bff/v0/students/{student_id}/diagnosis/sessions/{session_id}/abandon:
+    parameters:
+      - $ref: '#/components/parameters/StudentId'
+      - $ref: '#/components/parameters/SessionId'
+      - $ref: '#/components/parameters/Session'
+    post:
+      x-sb-auth: student
+      x-sb-rate-buckets: [diagnosis.session.minute]
+      x-sb-not-self: 403
+      operationId: abandonDiagnosis
+      description: >
+        放弃本次诊断：还没答过题时释放开始时的额度预留，答过题不退；之后可以重新开始。
+        例外（迁移 0049）：会话中途届别被改（续做、取题、作答回 409 SESSION_INCONSISTENT、reason = grade_changed）时放弃，
+        即使答过题也退回额度（库里按学习服务记在会话上的放弃原因核对；重放不重复退）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AbandonInput' }
+      responses:
+        '200': { $ref: '#/components/responses/Status' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+        '404': { description: 无权、不存在或路径参数不合法（同一个 404）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+components:
+  parameters:
+    StudentId:
+      name: student_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    SessionId:
+      name: session_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Session:
+      name: x-sb-session
+      in: header
+      required: true
+      description: 会话令牌（64 位十六进制），不进 URL 与日志
+      schema: { type: string, pattern: '^[0-9a-f]{64}$' }
+  schemas:
+    Key: { type: string, pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' }
+    Seq: { type: integer, minimum: 1, maximum: 100 }
+    StartInput:
+      type: object
+      additionalProperties: false
+      required: [subject, idempotency_key]
+      properties:
+        subject: { const: aya, description: 试点期只有数学（阿鸦）的二次函数主题（待人确认 #1）。 }
+        idempotency_key: { $ref: '#/components/schemas/Key' }
+    ProbeInput:
+      type: object
+      additionalProperties: false
+      required: [seq, prediction, asked_at, idempotency_key]
+      properties:
+        seq: { $ref: '#/components/schemas/Seq' }
+        prediction: { enum: [yes, no, unsure] }
+        asked_at: { type: string, format: date-time }
+        idempotency_key: { $ref: '#/components/schemas/Key' }
+    AnswerInput:
+      type: object
+      additionalProperties: false
+      required: [seq, answer, elapsed_sec, idempotency_key]
+      properties:
+        seq: { $ref: '#/components/schemas/Seq' }
+        answer:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [text]
+              properties: { text: { type: string, minLength: 1, maxLength: 200 } }
+            - type: object
+              additionalProperties: false
+              required: [choice]
+              properties:
+                choice: { type: array, minItems: 1, maxItems: 8, uniqueItems: true, items: { type: string, pattern: '^[A-Z]$' } }
+        work: { type: string, minLength: 1, maxLength: 20000, description: 只给过程题与讲解题；自适应题带了回 422。 }
+        elapsed_sec: { type: integer, minimum: 0, maximum: 7200, description: 这道题实际作答用时（不含暂停），累计进会话用时。 }
+        idempotency_key: { $ref: '#/components/schemas/Key' }
+    PauseInput:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key]
+      properties:
+        seq: { $ref: '#/components/schemas/Seq' }
+        step_elapsed_sec: { type: integer, minimum: 0, maximum: 7200 }
+        idempotency_key: { $ref: '#/components/schemas/Key' }
+    AbandonInput:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key]
+      properties:
+        idempotency_key: { $ref: '#/components/schemas/Key' }
+    SessionView:
+      type: object
+      additionalProperties: false
+      required: [session_id, status, elapsed_sec, time_budget_sec, item_count, item_limit, process_tasks, step]
+      properties:
+        session_id: { type: string, format: uuid }
+        status: { enum: [active, paused, finished, abandoned] }
+        elapsed_sec: { type: integer, minimum: 0 }
+        time_budget_sec: { type: integer, description: 缺省 2100（35 分钟，待人确认 #4）。 }
+        item_count: { type: integer, minimum: 0 }
+        item_limit: { type: integer, description: 缺省 20。 }
+        process_tasks: { type: boolean, description: 本次是否作答过过程题或讲解题（结束页选文案用；不是对学生的结论）。 }
+        step:
+          oneOf:
+            - type: 'null'
+            - type: object
+              additionalProperties: false
+              required: [seq, kind, item, probe_recorded, step_elapsed_sec]
+              properties:
+                seq: { $ref: '#/components/schemas/Seq' }
+                kind: { enum: [adaptive, process, explain], description: process = 写出全过程；explain = 用自己的话讲给老师听。 }
+                probe_recorded: { type: boolean }
+                step_elapsed_sec: { type: integer, minimum: 0, description: 这道题暂停前已用的秒数。 }
+                item:
+                  type: object
+                  additionalProperties: false
+                  required: [format, stem]
+                  properties:
+                    format: { enum: [single, multi, fill] }
+                    stem: { type: string }
+                    options:
+                      type: array
+                      items:
+                        type: object
+                        additionalProperties: false
+                        required: [key, text]
+                        properties: { key: { type: string }, text: { type: string } }
+                    rich:
+                      type: object
+                      description: |
+                        PLT-12：受限富文本题面（插件契约 1.1.0 候选版 present_item；学习服务 LEARNING_PRESENT_ITEM_SOURCE=adapter 时才有，签字前只在测试里）。
+                        段落里只有文字、行内公式（LaTeX 源码）、图片引用（对象存储引用）三种片段；BFF 按 src/item-rich.ts 白名单重建后才转，
+                        重建不过（多余字段、HTML 标签、不可见或双向控制字符、危险公式命令、非对象存储图片、总字数超过 8000）就不转 rich，
+                        题目照常以纯文字题面出（前端只显示纯文字 stem；与再练同一口径）。形状同学习服务 diagnosis-internal.v0.yaml 的 RichItem。
+                        不含答案、解析、采分点。
+                      additionalProperties: false
+                      required: [stem]
+                      properties:
+                        stem: { type: array, minItems: 1, maxItems: 20, items: { type: object } }
+                        options: { type: array, maxItems: 10, items: { type: object } }
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        code:
+          type: string
+          description: >
+            UNAUTHENTICATED、FORBIDDEN、INVALID、IDEMPOTENCY_KEY_REUSED、STEP_NOT_CURRENT（会话已推进，重新取当前题）、
+            INVALID_STATE（例如暂停中作答）、ANSWER_CONFLICT（同一步已用别的答案作答）、SESSION_INCONSISTENT、KEY_EXPIRED / KEY_FAILED_PREVIOUSLY（换新键重新开始）、
+            NO_TARGETS、TOO_MANY、UPSTREAM_UNAVAILABLE（同一请求重试）、DIAGNOSIS_UNAVAILABLE。
+            TOO_MANY_REQUESTS（429，PLT-16 审查补的每会话桶 diagnosis.session.minute，六个操作都挂，阈值待人确认）。
+            SUBJECT_BUSY（503，PLT-16 分学科并发闸门，开关 STARBUDDY_SUBJECT_GATE 缺省关）：开始、取当前题、探针、作答在这一科已满且排队已满
+            或排队超时、本学生在这一科已到上限；本次请求没有新增计量，之前已预留的用同一请求重试不再计；带 retry-after（秒），稍后用同一请求重试。
+            SESSION_INCONSISTENT 且 reason = grade_changed（迁移 0049）：会话中途届别被改、建立时刻的年级变了；带该学生自己的 session_id，
+            前端“重新开始”：POST …/{session_id}/abandon 放弃这个会话（这类放弃即使答过题也退回额度，重放不重复退），再开始新会话。
+            TEST_EXITED（409，LT-06）：档案已退出内部测试，六个操作一律拒绝、不计量、不调学习服务（internal-test.v0.yaml）。
+        reason: { enum: [grade_changed], description: 只在 409 SESSION_INCONSISTENT 由会话中途届别被改引起时出现 }
+        session_id: { type: string, format: uuid, description: 同上；只会是本次请求所针对、已核对归属的该学生自己的会话 }
+    QuotaProblem:
+      allOf:
+        - $ref: '#/components/schemas/Problem'
+        - type: object
+          required: [reason]
+          properties:
+            reason: { enum: [insufficient, no_entitlement, daily_cap_reached, curfew, curfew_soon, retained_no_ai, dedup_in_progress] }
+  responses:
+    Session:
+      description: 会话 ID 与状态（201 新建；200 续做或同一幂等键重放，响应头 idempotent-replayed 标明是否重放）
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [session_id, status]
+            properties:
+              session_id: { type: string, format: uuid }
+              status: { enum: [active, paused, finished, abandoned] }
+    Status:
+      description: 会话状态（作答后不回对错）
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [status]
+            properties:
+              status: { enum: [active, paused, finished, abandoned] }
+    Ok:
+      description: 已记录（或同一步已有探针，只认第一次）
+      content:
+        application/json:
+          schema: { type: object, additionalProperties: false, required: [status], properties: { status: { const: ok } } }
+    Problem:
+      description: 错误（不回显请求内容）
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unavailable:
+      description: >
+        UPSTREAM_UNAVAILABLE（学习服务结果未知，同一请求重试）、DIAGNOSIS_UNAVAILABLE；
+        SUBJECT_BUSY（PLT-16 分学科并发闸门，开关缺省关）：这一科已满且排队已满或排队超时、本学生在这一科已到上限，带 retry-after（秒）；
+        本次请求没有新增计量，之前已预留的用同一请求重试不再计（同一幂等键已预留的开始绕过闸门）。
+      headers:
+        retry-after: { description: 只在 SUBJECT_BUSY 时有：建议多少秒后重试, schema: { type: integer, minimum: 1 } }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

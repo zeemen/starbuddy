@@ -1,0 +1,5 @@
+# 合成准入记录（冲刺 5-K M2 夹具，缺输入场景）：留出集未签字、影子评审排班只覆盖 3 / 5 周；其余各节未填（报“待填”）。
+format: kge-m2-attestation/1
+subject: zhixing
+shadow_review: {reviewers: 2, weeks_covered: 3, weeks_required: 5}
+holdout: {untaggable: 0, total: 80, executor_role: 教研负责人, signed: false}

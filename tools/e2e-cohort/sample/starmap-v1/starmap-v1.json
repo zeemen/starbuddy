@@ -1,0 +1,68 @@
+{
+ "status": "captured",
+ "enabled": false,
+ "notice": "未启用：星图 v1 挂在开关 starmap_v1 / starmap_dashed 后（默认关），只在 test 环境、合成数据下截取；不是内测结论，不替换 v0 截图",
+ "page_version": "星图 v1（H5，开关 starmap_v1 + starmap_dashed，test 环境）",
+ "data": "db/seeds/dev/star-map-v1-synthetic.sql（合成家庭 HV：V1 学生端与家长端）；合成数学地图 0.9.0 与合成掌握配置，均未经教研签字",
+ "login": "真实会话：+999 合成号码 → 短信捕获桩 → 家长首页；学生视角经家长“打开学生模式”",
+ "browser": "Playwright Chromium（本机）",
+ "viewport": {
+  "width": 1024,
+  "height": 768
+ },
+ "device_scale_factor": 1,
+ "full_page": true,
+ "image": {
+  "type": "png"
+ },
+ "captured_at_commit": {
+  "commit": "66d7e304ed87514b68e42e7c3708024c6afa5ec3",
+  "worktree_dirty": true
+ },
+ "shots": [
+  {
+   "name": "V1-student",
+   "path": "/s/{student_id}/star-map",
+   "file": "V1-student.png",
+   "bytes": 86566,
+   "file_sha256": "03ed2a49671445211e49864a09a8c712867433504f7f92e334d4b1e6d3511ce4",
+   "pixel_sha256": "136221d5ccf32ac0b16f83a5b9f6d3ecb3bff7b7d0fc81ba0fc21eb5a026358c",
+   "pixel_size": {
+    "width": 1024,
+    "height": 1245
+   },
+   "dom": {
+    "stars": {
+     "lit": 2,
+     "half": 1,
+     "unlit": 1,
+     "neutral": 114,
+     "dashed": 1
+    },
+    "claim_id_elements": 6
+   }
+  },
+  {
+   "name": "V1-guardian",
+   "path": "/family/{student_id}/star-map",
+   "file": "V1-guardian.png",
+   "bytes": 77755,
+   "file_sha256": "46015e102fa6b7800f01c45cd0254dd775ec4c0a57ebbb6a9c3976ea611dd337",
+   "pixel_sha256": "ccab0f3c7b54692bc5b5cb0bd305ba6951ec2901f2d4855fa7150f1a6860b064",
+   "pixel_size": {
+    "width": 1024,
+    "height": 1150
+   },
+   "dom": {
+    "stars": {
+     "lit": 3,
+     "half": 1,
+     "unlit": 1,
+     "neutral": 113,
+     "dashed": 1
+    },
+    "claim_id_elements": 7
+   }
+  }
+ ]
+}

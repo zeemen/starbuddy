@@ -1,0 +1,57 @@
+{
+  "map_version": "0.0.1",
+  "items": [
+    {
+      "item_id": "SYN-D-01",
+      "main_node_id": "MORAL.LAW.SYN_BC_A.VP_A1",
+      "node_ids": []
+    },
+    {
+      "item_id": "SYN-D-02",
+      "main_node_id": "MORAL.LAW.SYN_BC_A.VP_A1",
+      "node_ids": []
+    },
+    {
+      "item_id": "SYN-D-03",
+      "main_node_id": "MORAL.LAW.SYN_BC_A.VP_A2",
+      "node_ids": [
+        "MORAL.LAW.SYN_BC_A.VP_A1"
+      ]
+    },
+    {
+      "item_id": "SYN-D-04",
+      "main_node_id": "MORAL.LAW.SYN_BC_A.VP_A1",
+      "node_ids": []
+    },
+    {
+      "item_id": "SYN-D-05",
+      "main_node_id": "MORAL.LAW.SYN_BC_A.VP_A2",
+      "node_ids": []
+    },
+    {
+      "item_id": "SYN-D-06",
+      "main_node_id": "MORAL.LAW.SYN_BC_A.VP_A2",
+      "node_ids": []
+    },
+    {
+      "item_id": "SYN-D-07",
+      "main_node_id": "MORAL.LAW.SYN_BC_A.VP_A2",
+      "node_ids": []
+    },
+    {
+      "item_id": "SYN-D-08",
+      "main_node_id": "MORAL.LAW.SYN_BC_B.VP_B1",
+      "node_ids": []
+    },
+    {
+      "item_id": "SYN-D-09",
+      "main_node_id": "MORAL.LAW.SYN_BC_B.VP_B1",
+      "node_ids": []
+    },
+    {
+      "item_id": "SYN-D-10",
+      "main_node_id": null,
+      "node_ids": []
+    }
+  ]
+}

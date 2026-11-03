@@ -41,7 +41,7 @@ async def _post(client: httpx.AsyncClient, url: str, body: dict, headers: dict, 
 
 
 async def call_adapter(client: httpx.AsyncClient, target: AdapterTarget, method: str, body: dict, timeout: float) -> dict:
-    """timeout 是单次调用的上限；整个调用（含一次重试）的总预算是 2 × timeout，用 asyncio.timeout 兜住，
+    """timeout 是单次调用的上限；整个调用（含一次重试）的总预算是 2 × timeout + 1 秒，用 asyncio.timeout 兜住，
     因为 httpx 的 timeout 只管单次读写，适配器每隔一会儿送一点数据就能一直拖着（安全审查 S6）。"""
     try:
         async with asyncio.timeout(2 * timeout + 1):
@@ -88,6 +88,7 @@ async def _call(client: httpx.AsyncClient, target: AdapterTarget, method: str, b
             "adapter rejected the request" if client_error else "adapter failed",
             retryable=retryable,
             upstream_code=upstream_code,
+            upstream_status=status,
         )
         if not retryable:
             raise err

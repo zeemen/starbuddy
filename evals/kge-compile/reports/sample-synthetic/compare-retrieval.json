@@ -1,0 +1,348 @@
+{
+  "delta_page_first_minus_chunk": {
+    "accuracy": 0.0833,
+    "consistency_mean": 0.022,
+    "context_tokens_mean_ratio": 1.6259
+  },
+  "format": "kge-compare-retrieval/1",
+  "inputs": {
+    "chunks": 55,
+    "gold_sha256": "c3655a5fac76c7075e21d922b393b30a8185d34dd6c6f16edd99b10ccd145c9c",
+    "map_version": "0.9.0",
+    "page_snapshot_commit": "83b8dcf06089443a06cd289e776f7ae597ed3156",
+    "questions": 12,
+    "subject": "aya"
+  },
+  "method": {
+    "judge": "all_points",
+    "retrieval_version": "algo:kge-retrieval@0.1.0",
+    "runs": 2,
+    "token_estimate": "每个汉字 1、每串连续字母数字 1、其余每个非空白符号 1",
+    "tokenizer_version": "jieba-0.42.1+search-nohmm+sw1"
+  },
+  "notices": [
+    "流程样例，不是评测结论：金标为合成数据，只证明脚本流程与指标计算。",
+    "题量 12 少于 50（spec 待人确认 #8 的默认下限），不足以支撑 M1 结论。"
+  ],
+  "questions": [
+    {
+      "chunk": {
+        "consistency": 1.0,
+        "context_chars": 111,
+        "context_tokens": 102,
+        "correct": true,
+        "node_hit": true,
+        "points_covered": 5,
+        "points_total": 5,
+        "segments": 5
+      },
+      "id": "SYN-Q01",
+      "page_first": {
+        "consistency": 1.0,
+        "context_chars": 282,
+        "context_tokens": 244,
+        "correct": true,
+        "fallback": null,
+        "node_hit": true,
+        "points_covered": 5,
+        "points_total": 5,
+        "segments": 5
+      }
+    },
+    {
+      "chunk": {
+        "consistency": 1.0,
+        "context_chars": 87,
+        "context_tokens": 76,
+        "correct": false,
+        "node_hit": false,
+        "points_covered": 0,
+        "points_total": 2,
+        "segments": 5
+      },
+      "id": "SYN-Q02",
+      "page_first": {
+        "consistency": 0.75,
+        "context_chars": 282,
+        "context_tokens": 244,
+        "correct": true,
+        "fallback": null,
+        "node_hit": true,
+        "points_covered": 2,
+        "points_total": 2,
+        "segments": 5
+      }
+    },
+    {
+      "chunk": {
+        "consistency": 1.0,
+        "context_chars": 137,
+        "context_tokens": 131,
+        "correct": true,
+        "node_hit": true,
+        "points_covered": 1,
+        "points_total": 1,
+        "segments": 4
+      },
+      "id": "SYN-Q03",
+      "page_first": {
+        "consistency": 1.0,
+        "context_chars": 98,
+        "context_tokens": 94,
+        "correct": true,
+        "fallback": "no_node",
+        "node_hit": false,
+        "points_covered": 1,
+        "points_total": 1,
+        "segments": 3
+      }
+    },
+    {
+      "chunk": {
+        "consistency": 0.8667,
+        "context_chars": 94,
+        "context_tokens": 84,
+        "correct": true,
+        "node_hit": true,
+        "points_covered": 2,
+        "points_total": 2,
+        "segments": 5
+      },
+      "id": "SYN-Q04",
+      "page_first": {
+        "consistency": 1.0,
+        "context_chars": 251,
+        "context_tokens": 215,
+        "correct": true,
+        "fallback": null,
+        "node_hit": true,
+        "points_covered": 2,
+        "points_total": 2,
+        "segments": 5
+      }
+    },
+    {
+      "chunk": {
+        "consistency": 0.619,
+        "context_chars": 89,
+        "context_tokens": 79,
+        "correct": true,
+        "node_hit": true,
+        "points_covered": 1,
+        "points_total": 1,
+        "segments": 5
+      },
+      "id": "SYN-Q05",
+      "page_first": {
+        "consistency": 0.75,
+        "context_chars": 307,
+        "context_tokens": 263,
+        "correct": true,
+        "fallback": "page_low_coverage",
+        "node_hit": true,
+        "points_covered": 1,
+        "points_total": 1,
+        "segments": 8
+      }
+    },
+    {
+      "chunk": {
+        "consistency": 1.0,
+        "context_chars": 122,
+        "context_tokens": 109,
+        "correct": true,
+        "node_hit": true,
+        "points_covered": 2,
+        "points_total": 2,
+        "segments": 5
+      },
+      "id": "SYN-Q06",
+      "page_first": {
+        "consistency": 1.0,
+        "context_chars": 85,
+        "context_tokens": 78,
+        "correct": true,
+        "fallback": "no_node",
+        "node_hit": false,
+        "points_covered": 2,
+        "points_total": 2,
+        "segments": 3
+      }
+    },
+    {
+      "chunk": {
+        "consistency": 1.0,
+        "context_chars": 110,
+        "context_tokens": 100,
+        "correct": true,
+        "node_hit": true,
+        "points_covered": 2,
+        "points_total": 2,
+        "segments": 5
+      },
+      "id": "SYN-Q07",
+      "page_first": {
+        "consistency": 1.0,
+        "context_chars": 67,
+        "context_tokens": 63,
+        "correct": true,
+        "fallback": "no_node",
+        "node_hit": false,
+        "points_covered": 2,
+        "points_total": 2,
+        "segments": 3
+      }
+    },
+    {
+      "chunk": {
+        "consistency": 1.0,
+        "context_chars": 140,
+        "context_tokens": 128,
+        "correct": true,
+        "node_hit": true,
+        "points_covered": 1,
+        "points_total": 1,
+        "segments": 5
+      },
+      "id": "SYN-Q08",
+      "page_first": {
+        "consistency": 1.0,
+        "context_chars": 81,
+        "context_tokens": 73,
+        "correct": true,
+        "fallback": "no_node",
+        "node_hit": false,
+        "points_covered": 1,
+        "points_total": 1,
+        "segments": 3
+      }
+    },
+    {
+      "chunk": {
+        "consistency": 0.5,
+        "context_chars": 134,
+        "context_tokens": 122,
+        "correct": true,
+        "node_hit": true,
+        "points_covered": 1,
+        "points_total": 1,
+        "segments": 5
+      },
+      "id": "SYN-Q09",
+      "page_first": {
+        "consistency": 0.75,
+        "context_chars": 287,
+        "context_tokens": 237,
+        "correct": true,
+        "fallback": null,
+        "node_hit": true,
+        "points_covered": 1,
+        "points_total": 1,
+        "segments": 5
+      }
+    },
+    {
+      "chunk": {
+        "consistency": 1.0,
+        "context_chars": 132,
+        "context_tokens": 121,
+        "correct": true,
+        "node_hit": true,
+        "points_covered": 1,
+        "points_total": 1,
+        "segments": 5
+      },
+      "id": "SYN-Q10",
+      "page_first": {
+        "consistency": 1.0,
+        "context_chars": 287,
+        "context_tokens": 237,
+        "correct": true,
+        "fallback": null,
+        "node_hit": true,
+        "points_covered": 1,
+        "points_total": 1,
+        "segments": 5
+      }
+    },
+    {
+      "chunk": {
+        "consistency": 1.0,
+        "context_chars": 138,
+        "context_tokens": 127,
+        "correct": true,
+        "node_hit": true,
+        "points_covered": 2,
+        "points_total": 2,
+        "segments": 5
+      },
+      "id": "SYN-Q11",
+      "page_first": {
+        "consistency": 1.0,
+        "context_chars": 138,
+        "context_tokens": 127,
+        "correct": true,
+        "fallback": "no_page",
+        "node_hit": true,
+        "points_covered": 2,
+        "points_total": 2,
+        "segments": 5
+      }
+    },
+    {
+      "chunk": {
+        "consistency": 1.0,
+        "context_chars": 132,
+        "context_tokens": 120,
+        "correct": true,
+        "node_hit": true,
+        "points_covered": 2,
+        "points_total": 2,
+        "segments": 5
+      },
+      "id": "SYN-Q12",
+      "page_first": {
+        "consistency": 1.0,
+        "context_chars": 287,
+        "context_tokens": 237,
+        "correct": true,
+        "fallback": null,
+        "node_hit": true,
+        "points_covered": 2,
+        "points_total": 2,
+        "segments": 5
+      }
+    }
+  ],
+  "summary": {
+    "chunk": {
+      "accuracy": 0.9167,
+      "consistency_mean": 0.9155,
+      "context_chars_mean": 118.8333,
+      "context_tokens_max": 131,
+      "context_tokens_mean": 108.25,
+      "correct": 11,
+      "node_hit_rate": 0.9167,
+      "point_coverage": 0.9091,
+      "questions": 12
+    },
+    "page_first": {
+      "accuracy": 1.0,
+      "consistency_mean": 0.9375,
+      "context_chars_mean": 204.3333,
+      "context_tokens_max": 263,
+      "context_tokens_mean": 176.0,
+      "correct": 12,
+      "fallback": {
+        "low_confidence": 0,
+        "no_node": 4,
+        "no_page": 1,
+        "page_low_coverage": 1
+      },
+      "node_hit_rate": 0.6667,
+      "point_coverage": 1.0,
+      "questions": 12
+    }
+  },
+  "synthetic": true
+}

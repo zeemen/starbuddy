@@ -1,0 +1,902 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>魁星点斗 StarBuddy · 知识与成长引擎（KGE）最终技术方案与开发计划 V1.1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700;900&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --night:#1E2A44;      /* 夜靛：正文标题 */
+  --ink:#27324A;
+  --ink-2:#4B566C;
+  --ink-3:#737D8F;
+  --paper:#EDF0EC;      /* 冷宣：底 */
+  --panel:#F6F7F4;
+  --panel-2:#E3E7E2;
+  --rule:#C7CDC6;
+  --gold:#A87C22;       /* 星光金：已点亮 / 决断 */
+  --gold-soft:#F1E6CB;
+  --stone:#2F6B78;      /* 石青：结构 */
+  --stone-soft:#DCEAEC;
+  --cinnabar:#A8432F;   /* 朱批：检查发现的问题 */
+  --cinnabar-soft:#F3DFD9;
+  --dim:#B6BDC6;
+  --serif:'Noto Serif SC','Songti SC','STSong',serif;
+  --sans:'Noto Sans SC','PingFang SC','Microsoft YaHei',system-ui,sans-serif;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --night:#E6E9F0;--ink:#D5DAE4;--ink-2:#AEB6C4;--ink-3:#8A93A3;
+    --paper:#141B2A;--panel:#1B2436;--panel-2:#222C40;--rule:#35405A;
+    --gold:#D9AE55;--gold-soft:#3A3120;--stone:#6FB2BF;--stone-soft:#1D3339;
+    --cinnabar:#E07A63;--cinnabar-soft:#3A2420;--dim:#48526A;
+  }
+}
+:root[data-theme="dark"]{
+  --night:#E6E9F0;--ink:#D5DAE4;--ink-2:#AEB6C4;--ink-3:#8A93A3;
+  --paper:#141B2A;--panel:#1B2436;--panel-2:#222C40;--rule:#35405A;
+  --gold:#D9AE55;--gold-soft:#3A3120;--stone:#6FB2BF;--stone-soft:#1D3339;
+  --cinnabar:#E07A63;--cinnabar-soft:#3A2420;--dim:#48526A;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px);scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.85;-webkit-font-smoothing:antialiased}
+.page{max-width:1120px;margin:0 auto;padding:0 28px 80px}
+a{color:var(--stone)}
+a:focus-visible,button:focus-visible{outline:2px solid var(--gold);outline-offset:3px}
+h1,h2,h3,h4{font-family:var(--serif);color:var(--night);line-height:1.35;margin:0}
+p{margin:0 0 14px}
+strong{color:var(--night);font-weight:700}
+
+/* masthead */
+.mast{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:36px;align-items:center;padding:56px 0 40px;border-bottom:2px solid var(--night)}
+.docno{font-size:13px;color:var(--ink-3);margin-bottom:18px}
+.mast h1{font-size:clamp(30px,4.2vw,48px);font-weight:900;letter-spacing:.02em}
+.mast .sub{font-family:var(--serif);font-size:clamp(17px,1.9vw,21px);color:var(--ink-2);margin:16px 0 22px;font-weight:500}
+.meta{display:grid;grid-template-columns:auto 1fr;gap:4px 16px;font-size:13.5px;color:var(--ink-2)}
+.meta b{color:var(--ink-3);font-weight:500}
+.hero-fig svg{width:100%;height:auto;display:block}
+
+/* sections with margin numbers */
+section{display:grid;grid-template-columns:150px minmax(0,1fr);gap:32px;padding:46px 0;border-bottom:1px solid var(--rule)}
+.margin{position:sticky;top:18px;align-self:start;font-family:var(--serif);color:var(--ink-3);font-size:14px;line-height:1.5}
+.margin .n{display:block;font-size:40px;font-weight:900;color:var(--stone);line-height:1;margin-bottom:6px}
+.body{min-width:0;max-width:880px}
+.body>h2{font-size:clamp(23px,2.6vw,29px);font-weight:900;margin-bottom:18px}
+.body h3{font-size:19px;font-weight:700;margin:30px 0 10px;color:var(--night)}
+.body h4{font-size:16px;font-weight:700;margin:20px 0 6px;color:var(--stone)}
+.lead{font-size:17px;color:var(--ink-2)}
+
+/* decision list on the summary */
+.decisions{counter-reset:d;margin:8px 0 0;padding:0;list-style:none}
+.decisions li{counter-increment:d;position:relative;padding:14px 0 14px 54px;border-top:1px solid var(--rule)}
+.decisions li:first-child{border-top:0}
+.decisions li::before{content:counter(d);position:absolute;left:0;top:12px;width:36px;height:36px;border-radius:50%;background:var(--gold-soft);color:var(--gold);font-family:var(--serif);font-weight:900;font-size:18px;display:flex;align-items:center;justify-content:center}
+.decisions li strong{display:block;font-family:var(--serif);font-size:17.5px;margin-bottom:3px}
+.decisions li span{color:var(--ink-2);font-size:15px}
+
+/* tables */
+.tbl{overflow-x:auto;margin:16px 0 20px;border:1px solid var(--rule);background:var(--panel)}
+table{border-collapse:collapse;width:100%;min-width:640px;font-size:14px;line-height:1.65}
+th{background:var(--panel-2);color:var(--night);text-align:left;font-weight:700;padding:10px 12px;vertical-align:bottom;border-bottom:1px solid var(--rule)}
+td{padding:10px 12px;border-top:1px solid var(--rule);vertical-align:top}
+td:first-child{font-weight:500;color:var(--night)}
+code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.88em;background:var(--panel-2);padding:1px 5px;border-radius:3px;color:var(--ink)}
+pre{background:var(--panel);border:1px solid var(--rule);padding:16px 18px;overflow-x:auto;font-size:12.8px;line-height:1.6;margin:14px 0 20px}
+pre code{background:none;padding:0}
+
+/* verdict tags */
+.v{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:10px;white-space:nowrap}
+.v.adopt{background:var(--gold-soft);color:var(--gold)}
+.v.mod{background:var(--stone-soft);color:var(--stone)}
+.v.defer{background:var(--panel-2);color:var(--ink-3)}
+.v.reject{background:var(--cinnabar-soft);color:var(--cinnabar)}
+.v.block{background:var(--cinnabar);color:#fff}
+.v.major{background:var(--cinnabar-soft);color:var(--cinnabar)}
+.v.minor{background:var(--panel-2);color:var(--ink-2)}
+
+/* callouts */
+.note{border-left:3px solid var(--stone);background:var(--panel);padding:14px 18px;margin:18px 0;font-size:15px}
+.note.gold{border-left-color:var(--gold);background:var(--gold-soft)}
+.note.red{border-left-color:var(--cinnabar);background:var(--cinnabar-soft)}
+.note p:last-child{margin:0}
+
+/* figures */
+figure{margin:20px 0 24px;background:var(--panel);border:1px solid var(--rule);padding:20px}
+figure svg{display:block;width:100%;height:auto}
+figcaption{font-size:13px;color:var(--ink-3);margin-top:12px}
+.svg-t{font-family:var(--sans)}
+
+/* subject audit cards */
+.subject{border:1px solid var(--rule);background:var(--panel);margin:22px 0;padding:20px 22px}
+.subject h3{margin-top:0;display:flex;gap:12px;align-items:baseline;flex-wrap:wrap}
+.subject h3 small{font-family:var(--sans);font-size:13px;font-weight:500;color:var(--ink-3)}
+.find{margin:10px 0 0;padding:0;list-style:none}
+.find li{padding:10px 0;border-top:1px dashed var(--rule);font-size:14.5px}
+.find li:first-child{border-top:0}
+.find .v{margin-right:8px}
+
+.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.card{border:1px solid var(--rule);background:var(--panel);padding:16px 18px}
+.card h4{margin-top:0}
+.card p{font-size:14.5px;color:var(--ink-2);margin:0}
+
+.foot{font-size:13px;color:var(--ink-3);padding-top:30px}
+.print{position:fixed;right:max(18px,env(safe-area-inset-right,0px));bottom:calc(18px + env(safe-area-inset-bottom,0px));background:var(--night);color:var(--paper);border:0;border-radius:22px;padding:10px 18px;font-family:var(--sans);font-size:14px;cursor:pointer}
+
+@media (max-width:820px){
+  .mast{grid-template-columns:1fr;padding-top:36px}
+  section{grid-template-columns:1fr;gap:10px}
+  .margin{position:static}
+  .margin .n{display:inline;font-size:26px;margin-right:8px}
+  .two{grid-template-columns:1fr}
+  .page{padding:0 18px 70px}
+}
+@media print{
+  .print{display:none}
+  body{background:#fff}
+  section{break-inside:auto;padding:26px 0}
+  .margin{position:static}
+  figure,.subject,.tbl{break-inside:avoid}
+}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="mast">
+  <div>
+    <div class="docno">huabo.ai 中考教育产品线 · 平台核心技术方案 · HB-EDU-2026-0927-01</div>
+    <h1>知识与成长引擎<br>最终技术方案与开发计划</h1>
+    <p class="sub">魁星点斗 StarBuddy AI 一对一学习平台的共享知识底座：知识地图、动态知识库与学生成长层，一次整合，按切片建成，带着成长通道进入测试。</p>
+    <div class="meta">
+      <b>版本</b><span>V1.1 · 2026-09-27（V1.0 同日发布；本版修订编译层 9 处，见附录修订记录）</span>
+      <b>整合来源</b><span>知识库与知识地图方案 20 份（见附录）+《产品系统架构与技术实施蓝图》V2.0 +《平台产品规划》v1.2 + 文砺 / 阿鸦 / 知行既有设计稿</span>
+      <b>替代关系</b><span>本文取代此前各份知识库方案及 V1.0，作为 Claude Code 开发与教研建设的唯一依据；与蓝图 V2.0 的对象命名保持一致</span>
+      <b>密级</b><span>内部</span>
+    </div>
+  </div>
+  <div class="hero-fig" aria-hidden="false">
+    <svg viewBox="0 0 440 360" role="img" aria-label="七科星图：数学、语文、道法三片星座已有资产被点亮，其余四科暗星待建">
+      <rect x="0" y="0" width="440" height="360" fill="var(--panel)"/>
+      <circle cx="220" cy="180" r="160" fill="none" stroke="var(--rule)" stroke-width="1"/>
+      <circle cx="220" cy="180" r="100" fill="none" stroke="var(--rule)" stroke-width="1" stroke-dasharray="3 5"/>
+      <line x1="220" y1="14" x2="220" y2="346" stroke="var(--rule)" stroke-width=".8"/>
+      <line x1="54" y1="180" x2="386" y2="180" stroke="var(--rule)" stroke-width=".8"/>
+      <!-- 数学 lit -->
+      <g stroke="var(--gold)" stroke-width="1.6" fill="none">
+        <polyline points="118,92 150,70 188,84 176,122 138,130 118,92"/>
+        <line x1="176" y1="122" x2="206" y2="146"/>
+      </g>
+      <g fill="var(--gold)"><circle cx="118" cy="92" r="5"/><circle cx="150" cy="70" r="6"/><circle cx="188" cy="84" r="4.5"/><circle cx="176" cy="122" r="5.5"/><circle cx="138" cy="130" r="4"/><circle cx="206" cy="146" r="4"/></g>
+      <text class="svg-t" x="128" y="58" font-size="14" font-weight="700" fill="var(--night)">数学 · 阿鸦</text>
+      <!-- 语文 lit -->
+      <g stroke="var(--gold)" stroke-width="1.6" fill="none"><polyline points="262,70 300,62 330,88 314,124 280,118"/><line x1="300" y1="62" x2="314" y2="124"/></g>
+      <g fill="var(--gold)"><circle cx="262" cy="70" r="4.5"/><circle cx="300" cy="62" r="6"/><circle cx="330" cy="88" r="5"/><circle cx="314" cy="124" r="5"/><circle cx="280" cy="118" r="4"/></g>
+      <text class="svg-t" x="270" y="48" font-size="14" font-weight="700" fill="var(--night)">语文 · 文砺</text>
+      <!-- 道法 lit -->
+      <g stroke="var(--gold)" stroke-width="1.6" fill="none"><line x1="318" y1="214" x2="352" y2="236"/><line x1="318" y1="214" x2="300" y2="252"/><line x1="318" y1="214" x2="344" y2="190"/><line x1="318" y1="214" x2="286" y2="206"/></g>
+      <g fill="var(--gold)"><circle cx="318" cy="214" r="6.5"/><circle cx="352" cy="236" r="4"/><circle cx="300" cy="252" r="4"/><circle cx="344" cy="190" r="4"/><circle cx="286" cy="206" r="4"/></g>
+      <text class="svg-t" x="300" y="280" font-size="14" font-weight="700" fill="var(--night)">道法 · 知行</text>
+      <!-- dim -->
+      <g fill="var(--dim)"><circle cx="100" cy="220" r="4"/><circle cx="126" cy="246" r="3.5"/><circle cx="92" cy="262" r="3"/>
+        <circle cx="170" cy="290" r="4"/><circle cx="200" cy="312" r="3.5"/><circle cx="150" cy="316" r="3"/>
+        <circle cx="236" cy="258" r="4"/><circle cx="258" cy="296" r="3.5"/>
+        <circle cx="72" cy="150" r="3.5"/><circle cx="84" cy="176" r="3"/></g>
+      <g font-size="12.5" fill="var(--ink-3)" class="svg-t"><text x="58" y="286">英语</text><text x="170" y="340">物理</text><text x="244" y="322">化学</text><text x="40" y="140">历史</text></g>
+      <text class="svg-t" x="338" y="330" font-size="12" fill="var(--ink-3)">亮星：已有资产</text>
+      <text class="svg-t" x="338" y="348" font-size="12" fill="var(--ink-3)">暗星：待建学科</text>
+    </svg>
+  </div>
+</header>
+
+<!-- 0 结论 -->
+<section id="s0">
+  <div class="margin"><span class="n">〇</span>结论</div>
+  <div class="body">
+    <h2>六条决断</h2>
+    <p class="lead">二十份方案在大方向上高度一致：课标为锚、多版本投影、图谱引导检索、题目与作答分离、审核后才成长。分歧集中在存储选型、粒度、层级数、检索方式和更新节奏上。本文逐项裁定，并把三科已有的知识资产接进同一副骨架。</p>
+    <ol class="decisions">
+      <li><strong>建"知识与成长引擎"（KGE），不另起一个知识库产品</strong><span>它是蓝图 V2.0 中"学习者模型 / 诊断 / 内容检索"三块共享引擎的具体实现，七科与点点共用。上线测试前不追求"完整的动态成长系统"，而是建一个<em>范围收窄、成长通道已经接好</em>的最小引擎，带着它进入封测；成长本身在测试中发生。</span></li>
+      <li><strong>一副骨架、四层内容、一个个人层</strong><span>知识地图骨架负责 ID、关系、投影与版本；内容按原始层 → 原子层 → 编译层 → 服务层组织。借用 LLM Wiki 的"编译"思路，但做四项改造：原子为准、页面为用、骨架定结构、教研控发布。</span></li>
+      <li><strong>知识地图分三种学科型，不让语文、道法照搬数学</strong><span>结构型（数学、物理、化学）用前置依赖 DAG；能力阶梯＋素材型（语文、英语）用能力节点加独立素材网；观点定位型（道法、历史）用"大概念 → 观点 → 教材原句投影"加采分点。</span></li>
+      <li><strong>三科既有资产映射接入，不重写</strong><span>阿鸦的知识图谱做数学主干，100 能力点降为能力视图；文砺 28 点下钻为"能力×文本类型×题型"，85 篇必背等素材独立成网；知行的采分点 Rubric 直接成为原子层核心资产，30 个大概念下钻为观点节点。检查发现的 21 项问题见第七章。</span></li>
+      <li><strong>沿用现有技术栈，首期不引入专用图库、向量库和流式计算</strong><span>Supabase Postgres + pgvector + Storage、Python Worker、Git 页面仓库即可支撑单学科数千节点的规模；Neo4j、Milvus、Elasticsearch、Flink 只在出现可测量瓶颈时引入。学生数据生产环境部署境内。</span></li>
+      <li><strong>30 周、15 个双周冲刺，按门验收</strong><span>第 8 周数学切片底座验收，第 12 周三科切片达到封测准入，第 18 周形成内测结论，第 28 周成长机制常态化后进入公测准入评审。周数是估算，是否过门以指标为准。</span></li>
+    </ol>
+  </div>
+</section>
+
+<!-- 1 整合 -->
+<section id="s1">
+  <div class="margin"><span class="n">一</span>方案整合</div>
+  <div class="body">
+    <h2>二十份方案的取舍</h2>
+    <p>来源按作者模型分为 cc（Claude）、gpt、ds（DeepSeek）、db（豆包）、dp、gg（Gemini）、qw（千问）几组，另有已迭代到 v1.1 的成长型知识系统方案。下表只列对最终方案有影响的思路。</p>
+
+    <h3>各方案的共识，直接采纳</h3>
+    <div class="tbl"><table>
+      <tr><th style="width:26%">思路</th><th style="width:22%">主要来源</th><th>在最终方案中的位置</th></tr>
+      <tr><td>课标为根的统一知识 ID，教材版本与地区考情作为投影</td><td>全部方案</td><td>第三章骨架；换教材、换地区只改投影</td></tr>
+      <tr><td>题目与作答分离：题目层可沉淀共享，作答永远私有</td><td>cc v1.0、ds、db、gpt V2</td><td>第五章成长边界，第一原则</td></tr>
+      <tr><td>同卷识别（文本指纹 + 版面指纹）复用解析，只单独处理手写作答</td><td>cc、ds、gg、docx、dp</td><td>第五章上传管道；成本控制主手段</td></tr>
+      <tr><td>AI 提议、教研确认、版本发布；拆分合并保留旧→新 ID 映射</td><td>cc v1.0、gpt V2、ds</td><td>第五章地图迭代，第四章发布闸门</td></tr>
+      <tr><td>粒度六条判定标准与"包含 / 不包含 / 题例"描述</td><td>cc 粒度方案</td><td>第三章粒度规则</td></tr>
+      <tr><td>多源三角验证、覆盖矩阵、留出集盲测（无处可标率 &lt; 2%）</td><td>cc 粒度方案、db</td><td>第八章质量门槛；第九章 M1/M2</td></tr>
+      <tr><td>区分独立答对、提示后答对、迁移成功、延迟复测</td><td>gpt、从头开始方案、蓝图</td><td>第六章证据类型</td></tr>
+      <tr><td>数学公式与计算用 SymPy 校验，不信任模型文本</td><td>ds LLM Wiki 分析、cc、中台方案</td><td>第四章体检、第八章验证器</td></tr>
+    </table></div>
+
+    <h3>分歧与裁定</h3>
+    <div class="tbl"><table>
+      <tr><th style="width:18%">议题</th><th style="width:34%">各方案主张</th><th style="width:12%">裁定</th><th>理由</th></tr>
+      <tr><td>图谱存储</td><td>Neo4j（dp、gpt）、NebulaGraph（qw、docx、db）、Postgres 关系表（cc、中台、gpt V2）</td><td><span class="v adopt">Postgres</span></td><td>单学科节点在数千量级，前置追溯用递归查询足够；图、题、画像同库便于事务与行级隔离。多跳查询 p95 超标时再引入 Neo4j。</td></tr>
+      <tr><td>向量检索</td><td>Milvus（qw、docx、db、gg）、pgvector（cc、中台、gpt V2、蓝图）</td><td><span class="v adopt">pgvector</span></td><td>向量只用于知识点识别、相似题与兜底检索（第四章），不是主检索路径，规模不需要独立向量库。</td></tr>
+      <tr><td>检索方式</td><td>切块 RAG（多数）、GraphRAG（gpt V2、ds、gg、dp）、LLM Wiki 页面（cc v1.1、ds）</td><td><span class="v mod">页面优先</span></td><td>讲解、方法、易错、考情是高复用综合知识，预编译为审核过的页面，讲法一致、可审、可缓存。原子补充事实，向量兜底。</td></tr>
+      <tr><td>知识点粒度</td><td>一节课 40–45 分钟（dp）、10–20 分钟可讲清（cc）</td><td><span class="v adopt">10–20 分钟</span></td><td>与蓝图"每次 10–20 分钟微闭环"一致；40 分钟单元内错因不同质，诊断无法指导行动。</td></tr>
+      <tr><td>层级数</td><td>四层（dp、docx）、五层（中台）、六级 L1–L6（gpt）</td><td><span class="v mod">四层 + 细目</span></td><td>领域 → 主题/单元 → 知识节点 → 细目。gpt 的 L6"技能"大多是同一知识点的不同掌握层次，用认知层次表达，不另建节点。</td></tr>
+      <tr><td>认知层次</td><td>Bloom 六级（docx）、课标行为动词四级（cc）、阿鸦能力五层级</td><td><span class="v adopt">课标四级</span></td><td>知道 / 理解 / 运用 / 综合，与课标"了解、理解、掌握、运用"一一对应，教研可直接判定。Bloom 高三级在初中题目上难以稳定区分。</td></tr>
+      <tr><td>地图更新节奏</td><td>Flink/Kafka 分钟级更新边权（qw）、定期版本发布（cc、gpt V2）</td><td><span class="v reject">否决实时改图</span></td><td>学生画像可以实时，公共骨架不行。分钟级自动改边权绕过审核闸门，也让同一学生的诊断前后不可比。修订周发、次版本月发、主版本学期发。</td></tr>
+      <tr><td>个人资料升权</td><td>学生上传经多人确认后升至 L1 甚至 L0（qw）</td><td><span class="v reject">否决</span></td><td>只有去标识化的<em>题目</em>经审核后可进入原子层；作答、笔记、错因记录永不进入公共层。群体数据只以聚合统计回流，且设最小人数门槛。</td></tr>
+      <tr><td>主要信号入口</td><td>拍照上传试卷为主（多数方案）</td><td><span class="v mod">原生测评为主</span></td><td>文砺已在实践中验证整卷 OCR 不够可靠，改为原生自适应测评为主、结构化自报为辅、单题拍照带置信门为第三通道。平台沿用这一结论。</td></tr>
+      <tr><td>上传贡献换积分</td><td>docx</td><td><span class="v defer">暂缓</span></td><td>涉及未成年人激励与试卷版权，待法律意见后再议。</td></tr>
+      <tr><td>用户修正每周自动微调 OCR</td><td>docx</td><td><span class="v defer">暂缓</span></td><td>训练数据含学生笔迹，需单独授权与合规评估；先用第三方 OCR 加人工核对。</td></tr>
+      <tr><td>深度知识追踪（DKT）</td><td>gg</td><td><span class="v defer">暂缓</span></td><td>起步用可解释的规则加简化 BKT，数据足够后试点 IRT；DKT 只在预测明显更准且仍能给证据解释时评估。</td></tr>
+    </table></div>
+  </div>
+</section>
+
+<!-- 2 架构 -->
+<section id="s2">
+  <div class="margin"><span class="n">二</span>总体架构</div>
+  <div class="body">
+    <h2>一副骨架、四层内容、一个个人层</h2>
+    <figure>
+      <svg viewBox="0 0 1000 600" role="img" aria-label="KGE 总体架构：左侧四层公共内容，右侧知识地图骨架，下方个人层与两个成长飞轮">
+        <defs>
+          <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--ink-3)"/></marker>
+          <marker id="arg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--gold)"/></marker>
+        </defs>
+        <g class="svg-t">
+          <!-- service -->
+          <rect x="30" y="24" width="660" height="70" fill="var(--night)"/>
+          <text x="48" y="52" font-size="17" font-weight="700" fill="var(--paper)">服务层 · 知识服务（MCP 工具）与学科插件 API</text>
+          <text x="48" y="78" font-size="13.5" fill="var(--paper)" opacity=".85">diagnose · plan · teach · grade · generate_variation · report　｜　页面优先 · 原子补充 · 向量兜底</text>
+          <!-- compile -->
+          <rect x="30" y="114" width="660" height="92" fill="var(--gold-soft)" stroke="var(--gold)" stroke-width="1.5"/>
+          <text x="48" y="142" font-size="17" font-weight="700" fill="var(--night)">编译层 · 公共知识页</text>
+          <text x="48" y="168" font-size="13.5" fill="var(--ink-2)">知识点页 · 方法页 · 易错页 · 观点页（道法/历史）· 素材卡（语文/英语）· 单元综述 · 考情页 · 版本差异页</text>
+          <text x="48" y="192" font-size="13.5" fill="var(--gold)" font-weight="700">LLM 起草，教研按风险分级发布；页面可随时从原子层重建</text>
+          <!-- atom -->
+          <rect x="30" y="226" width="660" height="92" fill="var(--stone-soft)" stroke="var(--stone)" stroke-width="1.5"/>
+          <text x="48" y="254" font-size="17" font-weight="700" fill="var(--night)">原子层 · 经校验的事实</text>
+          <text x="48" y="280" font-size="13.5" fill="var(--ink-2)">课标条目 · 题目与题目族 · 评分点 / 采分点 Rubric · 标准解答 · 易错实例（去标识）</text>
+          <text x="48" y="304" font-size="13.5" fill="var(--ink-2)">考情统计（聚合、≥20 人）· 时政条目（带生效与失效日期）· 素材条目</text>
+          <!-- raw -->
+          <rect x="30" y="338" width="660" height="66" fill="var(--panel-2)" stroke="var(--rule)" stroke-width="1.5"/>
+          <text x="48" y="366" font-size="17" font-weight="700" fill="var(--night)">原始层 · 只读</text>
+          <text x="48" y="390" font-size="13.5" fill="var(--ink-2)">课程标准 · 教材（按版次）· 考试说明 · 真题 · 授权资源 · 上传原件（按用户隔离、设过期）</text>
+          <!-- arrows up -->
+          <line x1="600" y1="338" x2="600" y2="320" stroke="var(--ink-3)" stroke-width="1.5" marker-end="url(#ar)"/>
+          <line x1="600" y1="226" x2="600" y2="208" stroke="var(--ink-3)" stroke-width="1.5" marker-end="url(#ar)"/>
+          <line x1="600" y1="114" x2="600" y2="96" stroke="var(--ink-3)" stroke-width="1.5" marker-end="url(#ar)"/>
+          <text x="612" y="334" font-size="12" fill="var(--ink-3)">编入</text>
+          <text x="612" y="222" font-size="12" fill="var(--ink-3)">编译</text>
+          <text x="612" y="110" font-size="12" fill="var(--ink-3)">查阅</text>
+          <!-- skeleton -->
+          <rect x="716" y="24" width="254" height="380" fill="var(--panel)" stroke="var(--night)" stroke-width="2"/>
+          <text x="734" y="54" font-size="17" font-weight="700" fill="var(--night)">知识地图骨架</text>
+          <g font-size="13.5" fill="var(--ink-2)">
+            <text x="734" y="84">稳定节点 ID（LLM 不可命名）</text>
+            <text x="734" y="108">节点类型：知识点 · 观点 · 素材</text>
+            <text x="734" y="128">　　　　　方法 · 易错 · 考点</text>
+            <text x="734" y="152">类型化关系：前置（强/弱）</text>
+            <text x="734" y="172">　包含 · 关联 · 易混 · 用法</text>
+            <text x="734" y="196">教材版本投影（版次 · 页码）</text>
+            <text x="734" y="220">地区考情投影（按考试年份）</text>
+            <text x="734" y="244">范围属性：必修 / 选学 / 拓展</text>
+            <text x="734" y="268">版本：主.次.修订 + ID 迁移表</text>
+          </g>
+          <!-- mini dag -->
+          <g stroke="var(--stone)" stroke-width="1.4" fill="none"><line x1="770" y1="320" x2="820" y2="300"/><line x1="770" y1="320" x2="820" y2="350"/><line x1="820" y1="300" x2="880" y2="322"/><line x1="820" y1="350" x2="880" y2="322"/><line x1="880" y1="322" x2="930" y2="322"/></g>
+          <g fill="var(--stone)"><circle cx="770" cy="320" r="6"/><circle cx="820" cy="300" r="6"/><circle cx="820" cy="350" r="6"/><circle cx="880" cy="322" r="6"/><circle cx="930" cy="322" r="6"/></g>
+          <text x="734" y="390" font-size="12" fill="var(--ink-3)">页面 ID = 节点 ID；结构段由骨架渲染</text>
+          <line x1="716" y1="160" x2="692" y2="160" stroke="var(--night)" stroke-width="1.5" stroke-dasharray="4 3"/>
+          <line x1="716" y1="272" x2="692" y2="272" stroke="var(--night)" stroke-width="1.5" stroke-dasharray="4 3"/>
+          <!-- personal -->
+          <rect x="30" y="432" width="940" height="92" fill="var(--panel)" stroke="var(--cinnabar)" stroke-width="1.5"/>
+          <text x="48" y="460" font-size="17" font-weight="700" fill="var(--night)">个人层 · 按学生行级隔离，不参与任何公共编译，随账户删除</text>
+          <g font-size="14" fill="var(--ink)">
+            <rect x="48" y="474" width="160" height="36" fill="var(--paper)" stroke="var(--rule)"/><text x="128" y="497" text-anchor="middle">作答 · 证据事件</text>
+            <rect x="240" y="474" width="190" height="36" fill="var(--paper)" stroke="var(--rule)"/><text x="335" y="497" text-anchor="middle">掌握估计 · 五道门槛</text>
+            <rect x="462" y="474" width="160" height="36" fill="var(--paper)" stroke="var(--rule)"/><text x="542" y="497" text-anchor="middle">学情档案页</text>
+            <rect x="654" y="474" width="140" height="36" fill="var(--gold-soft)" stroke="var(--gold)"/><text x="724" y="497" text-anchor="middle">星图 · 周报</text>
+          </g>
+          <line x1="208" y1="492" x2="236" y2="492" stroke="var(--ink-3)" stroke-width="1.5" marker-end="url(#ar)"/>
+          <line x1="430" y1="492" x2="458" y2="492" stroke="var(--ink-3)" stroke-width="1.5" marker-end="url(#ar)"/>
+          <line x1="622" y1="492" x2="650" y2="492" stroke="var(--ink-3)" stroke-width="1.5" marker-end="url(#ar)"/>
+          <path d="M880,472 C880,440 940,440 940,406" fill="none" stroke="var(--gold)" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arg)"/>
+          <text x="818" y="498" font-size="12.5" fill="var(--gold)">聚合统计 → 地图变更候选</text>
+          <!-- flywheels -->
+          <text x="30" y="556" font-size="14" font-weight="700" fill="var(--stone)">内容飞轮</text>
+          <text x="108" y="556" font-size="13.5" fill="var(--ink-2)">上传 → 解析 → 同卷识别 → 题目去重 → 打标 → 候选池 → 审核 → 原子层</text>
+          <text x="30" y="584" font-size="14" font-weight="700" fill="var(--gold)">认知飞轮</text>
+          <text x="108" y="584" font-size="13.5" fill="var(--ink-2)">作答 → 证据 → 掌握 → 服务更准 → 有效作答更多；聚合后校准骨架（经闸门）</text>
+        </g>
+      </svg>
+      <figcaption>图 1　KGE 总体架构。结构来自骨架，事实来自原子，讲法来自页面，学生状态来自证据。</figcaption>
+    </figure>
+
+    <h3>六条设计原则</h3>
+    <div class="tbl"><table>
+      <tr><th style="width:24%">原则</th><th>含义与约束</th></tr>
+      <tr><td>题目与作答分离</td><td>一张上传试卷拆成试卷、题目、作答三类实体。前两类去标识、审核后可复用；作答只属于学生本人。知识库只在题目层成长，画像只在作答层成长。</td></tr>
+      <tr><td>原子为准，页面为用</td><td>判分与诊断依据来自原子层；讲解与理解的载体是编译页。两者冲突以原子为准。页面可以重建，这是纠错与回滚的底线；重建分两种，见第四章。</td></tr>
+      <tr><td>骨架定结构</td><td>节点 ID、关系、投影、版本只由骨架维护。页面挂在节点上，"前置与后续""在你的教材中""地区考情"等结构段由系统渲染，模型只写叙述段。</td></tr>
+      <tr><td>成长必经闸门</td><td>自动化负责发现与提议，人负责确认与发布。新题入原子层、新节点入骨架、关系调整都走"候选 → 证据包 → 审核 → 版本发布"。</td></tr>
+      <tr><td>结论可追溯</td><td>每个掌握判断、每条建议都能追溯到具体题目、步骤、时间与地图版本。系统必须能回答"为什么你认为我的二次函数薄弱"。</td></tr>
+      <tr><td>讲解不覆盖判分</td><td>继承蓝图与角色规范：老师人设只包装呈现，对错来自验证器或 Rubric，掌握与星亮只由引擎判定。</td></tr>
+    </table></div>
+  </div>
+</section>
+
+<!-- 3 知识地图 -->
+<section id="s3">
+  <div class="margin"><span class="n">三</span>知识地图</div>
+  <div class="body">
+    <h2>统一骨架，三种学科型</h2>
+    <p>所有学科共用同一套节点表、关系表、投影表和版本机制；差别在于每科以哪类节点作为诊断主单元，以及用哪些关系组织它们。</p>
+
+    <h3>层级与节点类型</h3>
+    <p>层级统一为 <strong>学科 → 领域 → 主题/单元 → 知识节点 → 细目</strong>。知识节点是诊断主单元，进入掌握度计算；领域与主题由下层聚合得出，用于导航和报告；细目只作证据标签（例如"平移时 h 的符号判断"），通常由易错点承担，不单独计算掌握度。</p>
+    <div class="tbl"><table>
+      <tr><th style="width:15%">节点类型</th><th style="width:30%">说明</th><th style="width:20%">主要学科</th><th>是否计掌握度</th></tr>
+      <tr><td>知识点 kp</td><td>概念、法则或可操作技能；10–20 分钟可讲清</td><td>数学、物理、化学</td><td>是（× 认知层次）</td></tr>
+      <tr><td>能力点 ability_kp</td><td>能力 × 文本类型 × 题型，如"记叙文中人物形象分析"</td><td>语文、英语</td><td>是（× 认知层次）</td></tr>
+      <tr><td>观点 viewpoint</td><td>教材中可被引用作答的核心观点，绑定教材原句投影</td><td>道法、历史</td><td>是（× 认知层次）</td></tr>
+      <tr><td>素材 material</td><td>必背篇目、文言实词虚词、字音字形、名著要素、词汇</td><td>语文、英语</td><td>用记忆曲线单独追踪</td></tr>
+      <tr><td>方法 method</td><td>跨知识点复用的思想方法，如配方法、数形结合、证据定位</td><td>全部</td><td>否，记录迁移证据</td></tr>
+      <tr><td>易错 pitfall</td><td>必须写"在作答中表现为什么样子"的识别特征，并标注错因类型</td><td>全部</td><td>否，作为错因证据</td></tr>
+      <tr><td>考点 exam_point</td><td>综合题的组合考法，关联多个已有节点；不为综合题新建知识点</td><td>全部</td><td>否，用于出题与考情</td></tr>
+    </table></div>
+
+    <figure>
+      <svg viewBox="0 0 1000 330" role="img" aria-label="三种学科型知识地图示意">
+        <g class="svg-t">
+          <!-- panel 1 -->
+          <rect x="10" y="10" width="316" height="310" fill="var(--panel)" stroke="var(--rule)"/>
+          <text x="28" y="40" font-size="16" font-weight="700" fill="var(--night)">结构型</text>
+          <text x="28" y="62" font-size="13" fill="var(--ink-3)">数学 · 物理 · 化学</text>
+          <g stroke="var(--stone)" stroke-width="1.6"><line x1="60" y1="120" x2="140" y2="100" marker-end="url(#ar)"/><line x1="60" y1="190" x2="140" y2="210" marker-end="url(#ar)"/><line x1="160" y1="100" x2="240" y2="150" marker-end="url(#ar)"/><line x1="160" y1="210" x2="240" y2="160" marker-end="url(#ar)"/><line x1="60" y1="120" x2="140" y2="205"/></g>
+          <g fill="var(--stone)"><circle cx="52" cy="120" r="9"/><circle cx="52" cy="190" r="9"/><circle cx="150" cy="100" r="9"/><circle cx="150" cy="210" r="9"/><circle cx="252" cy="155" r="11"/></g>
+          <text x="28" y="262" font-size="13" fill="var(--ink-2)">主单元：知识点 × 认知层次</text>
+          <text x="28" y="284" font-size="13" fill="var(--ink-2)">核心边：强前置（必要性检验）</text>
+          <text x="28" y="306" font-size="13" fill="var(--ink-2)">诊断：沿前置逆向溯源找根因</text>
+          <!-- panel 2 -->
+          <rect x="342" y="10" width="316" height="310" fill="var(--panel)" stroke="var(--rule)"/>
+          <text x="360" y="40" font-size="16" font-weight="700" fill="var(--night)">能力阶梯 ＋ 素材型</text>
+          <text x="360" y="62" font-size="13" fill="var(--ink-3)">语文 · 英语</text>
+          <g stroke="var(--stone)" stroke-width="2"><line x1="380" y1="90" x2="380" y2="230"/><line x1="460" y1="90" x2="460" y2="230"/></g>
+          <g stroke="var(--stone)" stroke-width="1.6"><line x1="380" y1="210" x2="460" y2="210"/><line x1="380" y1="175" x2="460" y2="175"/><line x1="380" y1="140" x2="460" y2="140"/><line x1="380" y1="105" x2="460" y2="105"/></g>
+          <g font-size="11.5" fill="var(--ink-3)"><text x="468" y="214">知道</text><text x="468" y="179">理解</text><text x="468" y="144">运用</text><text x="468" y="109">综合</text></g>
+          <g fill="var(--gold-soft)" stroke="var(--gold)" stroke-width="1">
+            <rect x="530" y="92" width="18" height="18"/><rect x="554" y="92" width="18" height="18"/><rect x="578" y="92" width="18" height="18"/><rect x="602" y="92" width="18" height="18"/>
+            <rect x="530" y="116" width="18" height="18"/><rect x="554" y="116" width="18" height="18"/><rect x="578" y="116" width="18" height="18"/><rect x="602" y="116" width="18" height="18"/>
+            <rect x="530" y="140" width="18" height="18"/><rect x="554" y="140" width="18" height="18"/><rect x="578" y="140" width="18" height="18"/><rect x="602" y="140" width="18" height="18"/>
+            <rect x="530" y="164" width="18" height="18"/><rect x="554" y="164" width="18" height="18"/><rect x="578" y="164" width="18" height="18"/></g>
+          <text x="530" y="206" font-size="12" fill="var(--gold)">素材网</text>
+          <text x="530" y="224" font-size="11.5" fill="var(--ink-3)">记忆曲线追踪</text>
+          <text x="360" y="262" font-size="13" fill="var(--ink-2)">主单元：能力 × 文本类型 × 题型</text>
+          <text x="360" y="284" font-size="13" fill="var(--ink-2)">核心边：层次递进；前置弱，不硬凑</text>
+          <text x="360" y="306" font-size="13" fill="var(--ink-2)">素材不进依赖图，单独排复习</text>
+          <!-- panel 3 -->
+          <rect x="674" y="10" width="316" height="310" fill="var(--panel)" stroke="var(--rule)"/>
+          <text x="692" y="40" font-size="16" font-weight="700" fill="var(--night)">观点定位型</text>
+          <text x="692" y="62" font-size="13" fill="var(--ink-3)">道法 · 历史</text>
+          <g stroke="var(--stone)" stroke-width="1.4"><line x1="830" y1="160" x2="760" y2="110"/><line x1="830" y1="160" x2="900" y2="110"/><line x1="830" y1="160" x2="760" y2="210"/><line x1="830" y1="160" x2="900" y2="210"/></g>
+          <circle cx="830" cy="160" r="20" fill="var(--stone)"/><text x="830" y="165" font-size="12" fill="var(--paper)" text-anchor="middle">大概念</text>
+          <g fill="var(--stone-soft)" stroke="var(--stone)"><circle cx="760" cy="110" r="11"/><circle cx="900" cy="110" r="11"/><circle cx="760" cy="210" r="11"/><circle cx="900" cy="210" r="11"/></g>
+          <g fill="var(--panel-2)" stroke="var(--ink-3)"><rect x="704" y="88" width="30" height="22"/><rect x="928" y="88" width="30" height="22"/><rect x="704" y="210" width="30" height="22"/></g>
+          <g stroke="var(--ink-3)" stroke-dasharray="3 3"><line x1="734" y1="100" x2="749" y2="108"/><line x1="928" y1="100" x2="911" y2="108"/><line x1="734" y1="220" x2="749" y2="212"/></g>
+          <text x="692" y="262" font-size="13" fill="var(--ink-2)">主单元：观点 × 认知层次</text>
+          <text x="692" y="284" font-size="13" fill="var(--ink-2)">核心边：关联；原句与页码走教材投影</text>
+          <text x="692" y="306" font-size="13" fill="var(--ink-2)">判分：采分点 Rubric；时政带有效期</text>
+        </g>
+      </svg>
+      <figcaption>图 2　三种学科型。同一张节点表，不同的主单元与关系组织方式。</figcaption>
+    </figure>
+
+    <h3>三根轴，不能混用</h3>
+    <p>此前三科各自发明了"层级""梯度""门槛"，名称重叠（数学里"理解""迁移"同时出现在能力五层级和五道门槛里）。最终方案把它们拆成三根独立的轴：</p>
+    <div class="tbl"><table>
+      <tr><th style="width:18%">轴</th><th style="width:22%">描述的对象</th><th style="width:26%">取值</th><th>用途</th></tr>
+      <tr><td>认知层次</td><td>题目与节点要求</td><td>知道 · 理解 · 运用 · 综合（对应课标动词）</td><td>打标、出题递进；诊断单元是"节点 × 层次"</td></tr>
+      <tr><td>掌握状态</td><td>某学生在某节点上</td><td>理解 → 执行 → 稳定 → 迁移 → 保持（五道门槛）</td><td>星亮 = 进入"迁移"；门槛条件由各科教研配置</td></tr>
+      <tr><td>能力视图</td><td>学科能力坐标</td><td>阿鸦 100 点、文砺 28 点、知行五维等（skill_node）</td><td>由节点证据按标签聚合；星图与家长报告的呈现层</td></tr>
+    </table></div>
+
+    <h3>粒度与边界规则</h3>
+    <p>候选节点逐条过六条标准：可独立诊断（能出至少 3 道以它为主考点的题）、可独立教学（10–20 分钟讲清）、有明确分界、错因同质、证据可支撑（学习期间自然产生不少于 5 次作答）、教师共识。前三条定性必过，后三条用试标注与数据校验。每个节点入库必须写清<strong>包含什么、不包含什么、典型题例</strong>。</p>
+    <p>先问"这是不是同一知识的不同掌握程度"，是就用认知层次表达，不拆节点。前置关系用必要性检验（不会 A 是否一定做不对 B 的某一步），只连直接前置，传递关系由图计算。每个节点标注范围属性：课标必修、课标选学、版本拓展、考情拓展、拓展提高；拓展提高默认不出现在学习计划和出题中。</p>
+  </div>
+</section>
+
+<!-- 4 知识库 -->
+<section id="s4">
+  <div class="margin"><span class="n">四</span>知识库</div>
+  <div class="body">
+    <h2>原子层与编译层</h2>
+    <p>原子层存"经过校验的事实"，编译层存"组织好的讲法"。题库留在原子层，因为数量大、需要精确过滤；讲解、方法、易错、考情这些综合知识编译成页面，替代此前方案中"讲解库、方法库、易错库、考情库"四个切块检索分区。</p>
+
+    <h3>页面体系</h3>
+    <div class="tbl"><table>
+      <tr><th style="width:15%">页面</th><th style="width:18%">挂载节点</th><th style="width:34%">编译来源</th><th>主要读者</th></tr>
+      <tr><td>知识点页</td><td>kp / ability_kp</td><td>课标条目、教材投影、例题、评分点、考情统计</td><td>讲解、错题精解、出题</td></tr>
+      <tr><td>观点页</td><td>viewpoint</td><td>教材原句与页码投影、高频设问、答题话术、真题回链、采分点关键词族</td><td>道法 / 历史讲解、开卷定位、方圆与春秋判分引用</td></tr>
+      <tr><td>素材卡</td><td>material</td><td>篇目或词条原文、释义、例句、出处（册-课-页）、易混项</td><td>语文积累训练、记忆复习调度</td></tr>
+      <tr><td>方法页</td><td>method</td><td>使用该方法的节点与题目族</td><td>举一反三、迁移训练</td></tr>
+      <tr><td>易错页</td><td>pitfall</td><td>去标识易错实例、识别特征、纠正思路</td><td>判分、错题精解、点点"AI 同学"剧本</td></tr>
+      <tr><td>单元综述页</td><td>主题 / 单元</td><td>下属节点页</td><td>学习计划、复习课</td></tr>
+      <tr><td>考情页</td><td>地区 × 学科 × 考试年份</td><td>考试说明、真题统计、分值结构</td><td>学习计划 ROI、个性化测试</td></tr>
+      <tr><td>版本差异页</td><td>学科 × 教材版本</td><td>各版本投影差异</td><td>课程匹配、转学学生</td></tr>
+    </table></div>
+    <p>每个页面有三种段落：<strong>锁定段</strong>（定义、课标要求，教研确认后重编不可改写）、<strong>渲染段</strong>（前置与后续、教材位置与<em>教材原句</em>、地区权重，由骨架和投影生成）、<strong>叙述段</strong>（讲解要点、类比、高频设问与答题结构，由模型编译、教研审核）。一个页面服务所有版本与地区，读取时按学生的教材和地区渲染视图，而不是为每个版本各编一份。</p>
+    <div class="note"><p><strong>V1.1 修订 · 教材原句不锁在页面里。</strong>教材原句与页码随版次和印次变化，一律存在教材投影表，按学生所用版次渲染进页面。锁定与核对发生在投影记录上（<code>quote_text</code> + <code>verified_by</code>），而不是页面正文。道法观点页因此可以跨版次复用，换版只需更新投影。</p></div>
+    <div class="note"><p><strong>V1.1 修订 · 页面人设中立。</strong>同一个页面会被阿鸦、妙笔、点点、方圆等不同角色读取。页面一律使用中性的教研口吻，不写任何角色的比喻体系、口头禅或称呼；人设话术只在讲解生成时由各角色的外层加上。编纂规范中的文风规则只约束适龄性（用词、句长、禁用表述），不引用角色规范。</p></div>
+    <h3>两种重建</h3>
+    <div class="tbl"><table>
+      <tr><th style="width:18%">类型</th><th style="width:40%">做什么</th><th>发布</th></tr>
+      <tr><td>渲染重建</td><td>从原子与骨架重新生成结构段和渲染段；已审核的叙述段原样保留</td><td>按低风险处理，程序体检通过即发布</td></tr>
+      <tr><td>全量重编</td><td>叙述段也由模型重写（原子大改、编纂规范变更、发现错误复利时）</td><td>按高风险处理，必须教研重新审核；旧版本在新版发布前继续服务</td></tr>
+    </table></div>
+
+    <h3>五个操作</h3>
+    <div class="tbl"><table>
+      <tr><th style="width:14%">操作</th><th style="width:26%">触发</th><th>做什么</th></tr>
+      <tr><td>编入</td><td>新原子入库：考试说明、真题、审核通过的上传题、确认的易错模式</td><td>通过"页面—原子"引用表找出受影响页面，写入编译队列</td></tr>
+      <tr><td>编译</td><td>编译队列，按影响与风险排序</td><td>按学科编纂规范增量重编受影响段落，锁定段不动，记录所引原子的哈希</td></tr>
+      <tr><td>体检</td><td>每次编译后；每日全量</td><td>程序层先跑：失效链接、孤立页、缺引用、模板违规、过期、SymPy 校验；语义层随后：与原子冲突、跨页矛盾、版本差异误判、超纲、适龄文风、角色语言混入。跨页矛盾只比对骨架相邻页面（前置、易混、同属一个主题）与本次编译受影响的页面，不做全量两两比对</td></tr>
+      <tr><td>发布</td><td>体检通过</td><td>按风险分级：自动发布、抽检、必审；低风险改动进合并窗口，每个页面每天最多发布一次</td></tr>
+      <tr><td>查阅</td><td>Agent 服务请求</td><td>定位节点 → 读已发布页面并渲染学生视图 → 按需查原子 → 叠加学情档案 → 带引用生成</td></tr>
+    </table></div>
+
+    <h3>分级发布闸门</h3>
+    <div class="tbl"><table>
+      <tr><th style="width:12%">风险</th><th style="width:48%">改动类型</th><th>发布方式</th></tr>
+      <tr><td>低</td><td>新增题目族引用、考情数值更新、渲染段变化、错别字</td><td>程序体检通过后进入每日合并窗口统一发布，事后按比例抽检</td></tr>
+      <tr><td>中</td><td>讲解要点、方法说明、易错纠正话术改写</td><td>语义体检通过后进入抽检队列，先以"新版试用"小流量发布</td></tr>
+      <tr><td>高</td><td>定义与课标要求、评分点与判分依据、前置关系表述、教材投影中的原句与页码、编纂规范变更、全量重编</td><td>必须教研审核；结构性变更两人确认</td></tr>
+    </table></div>
+    <p>审核界面的核心是差异对比：教研看到的是"改了哪几句、依据哪些新原子、体检结果如何"，不是整页新稿。</p>
+
+    <h3>检索路径</h3>
+    <p>① 识别节点（规则 + 向量）→ ② 读已发布页面，按教材与地区渲染 → ③ 沿骨架扩展前置、方法、易错页 → ④ 按需查原子（题目族、评分点、采分点）→ ⑤ 读学情档案页 → 生成带页面与原子引用的回答。所有检索都先经过"学科 + 教材版本 + 年级 + 地区 + 地图版本 + 权限"结构化过滤。向量检索只用于第①步和找不到页面时兜底，兜底命中记为"应补页面"信号进入编入队列。</p>
+    <p><strong>不回写查询结果。</strong>原始 LLM Wiki 会把查询答案存成新页面；本方案中学生对话与 Agent 回答一律不写入公共层，只以"兜底命中""诊断不准确反馈"等信号进入编入队列，由教研决定是否补页。</p>
+  </div>
+</section>
+
+<!-- 5 成长 -->
+<section id="s5">
+  <div class="margin"><span class="n">五</span>动态成长</div>
+  <div class="body">
+    <h2>成长从哪里来，受什么约束</h2>
+
+    <h3>三条信号通道</h3>
+    <div class="tbl"><table>
+      <tr><th style="width:22%">通道</th><th style="width:22%">地位</th><th>说明</th></tr>
+      <tr><td>平台内原生作答</td><td>主通道</td><td>诊断测评、练习、变式、复测都在平台内完成，题目与版本已知，证据最干净。</td></tr>
+      <tr><td>结构化自报与成绩录入</td><td>次通道</td><td>近期考试原始分、满分、范围、自评薄弱点；只作先验，不直接生成掌握结论。</td></tr>
+      <tr><td>拍照 / PDF 上传</td><td>第三通道</td><td>以单题和规整试卷起步，置信门控；C 级内容先请学生核对，确认前不生成薄弱结论。</td></tr>
+    </table></div>
+
+    <h3>上传管道与质量分级</h3>
+    <p>采集 → 预处理（矫正、去阴影）→ 版面切分（印刷题目、手写作答、老师批改三种笔迹分开）→ 分类型识别（文字、公式转 LaTeX、几何图保留原图并生成结构描述）→ 题目与作答拆分 → 同卷识别（文本 SimHash + 版面 pHash，宁严勿松）→ 题目去重（规范题 <code>canonical_item_id</code> 与题目族 <code>item_family_id</code>）→ 打标 → 质量分级。</p>
+    <div class="tbl"><table>
+      <tr><th style="width:12%">等级</th><th style="width:40%">判定</th><th style="width:24%">个人层</th><th>公共候选池</th></tr>
+      <tr><td>A 可信</td><td>识别与打标高置信，同卷命中或答案完整</td><td>立即用于诊断</td><td>进入抽检</td></tr>
+      <tr><td>B 基本可信</td><td>识别高置信，缺标准答案或打标中置信</td><td>可用，结论标"待确认"</td><td>AI 生成答案后进审核</td></tr>
+      <tr><td>C 需核对</td><td>模糊、遮挡、歧义</td><td>先请学生核对</td><td>不进入</td></tr>
+      <tr><td>D 不可用</td><td>严重模糊或非学习资料</td><td>提示重新上传</td><td>不进入</td></tr>
+    </table></div>
+
+    <h3>共享边界</h3>
+    <p>只有题目层（题干、答案、解析、标签）可共享。原卷图片不对他人展示；学校试卷默认只在"已上传同卷的学生"之间复用解析，进入全体公共题库另按版权策略判断，优先采用改编、自编与授权来源。聚合统计设最小人数门槛（同一题少于 20 人作答不展示得分率）。</p>
+
+    <h3>地图迭代信号</h3>
+    <div class="tbl"><table>
+      <tr><th style="width:26%">信号</th><th style="width:34%">来源</th><th>可能的变更</th></tr>
+      <tr><td>打标失败聚集</td><td>低置信打标题目聚类成簇</td><td>新增节点，或补充"包含"说明；综合题优先新增考点</td></tr>
+      <tr><td>错因无法归类</td><td>错题剖析反复出现的新错误模式</td><td>新增易错点</td></tr>
+      <tr><td>前置不成立</td><td>A 未掌握者在 B 上并不显著更差</td><td>削弱或删除前置边</td></tr>
+      <tr><td>隐藏依赖</td><td>未连边的两节点掌握度高度相关</td><td>新增前置边候选</td></tr>
+      <tr><td>节点内部分化</td><td>同节点题目表现两极分化，或错因聚成两群</td><td>拆分节点</td></tr>
+      <tr><td>体检问题</td><td>孤立页、跨页矛盾、兜底检索命中</td><td>合并冗余节点、澄清边界、补页面</td></tr>
+      <tr><td>考情变化</td><td>新考试说明、新真题、上传卷考点分布</td><td>更新地区投影权重与题位</td></tr>
+    </table></div>
+    <p>变更流程：系统生成带证据包的候选 → 教研在审核台确认、修改或驳回（结构性变更两人确认）→ 发布前自动影响分析（哪些题目标签重算、哪些学生画像受影响）→ 版本发布 → 按旧→新 ID 映射迁移证据，无法可靠迁移的掌握度标为"待复测"。版本号为"主.次.修订"：修订按周、次版本按月、主版本按学期并尽量避开学期中。</p>
+  </div>
+</section>
+
+<!-- 6 学生层 -->
+<section id="s6">
+  <div class="margin"><span class="n">六</span>学生层</div>
+  <div class="body">
+    <h2>证据、掌握与学情档案</h2>
+    <h3>学习事件</h3>
+    <p>所有影响画像的行为统一为不可覆盖的学习事件（<code>evidence_event</code>），记录题目版本、地图版本、步骤级判定、错因、提示等级、耗时和来源。画像由事件计算得出，模型升级后可重放重算。事件区分四类证据：独立答对、提示后答对、迁移成功（同题目族跨情境或跨章）、延迟复测；来源权重为正式考试 &gt; 平台诊断 &gt; 日常练习 &gt; 对话表现，作为参数上线后校准。</p>
+
+    <h3>掌握估计</h3>
+    <div class="tbl"><table>
+      <tr><th style="width:24%">对象</th><th style="width:36%">起步模型</th><th>升级条件</th></tr>
+      <tr><td>知识点 / 能力点 / 观点</td><td>规则门槛 + 简化 BKT，按"节点 × 层次"计算；五道门槛状态机</td><td>题目参数与作答量足够后试点 IRT 校准难度与区分度</td></tr>
+      <tr><td>素材（语文、英语）</td><td>FSRS 间隔复习，记忆稳定度与可提取性</td><td>学生自评不准时以 FSRS 参数稳健性为主</td></tr>
+      <tr><td>能力视图（skill_node）</td><td>由节点证据按能力标签加权聚合</td><td>聚合权重由各科教研配置</td></tr>
+      <tr><td>跨科学习力</td><td>错因大类在至少两科都有明确证据才生成指标</td><td>不做人格或心理推断</td></tr>
+    </table></div>
+    <p>星亮默认门槛：不同题型多次独立正确、提示依赖低、间隔复测通过；由各科教研配置，防止"刷同题点亮"。长期无新证据时降低置信度而不是清零掌握度，由复习调度处理。不同考试原始分不直接比较，只记录满分、范围、难度与排名信息；七八年级 100 分制与九年级 120 分制分别归一。</p>
+
+    <h3>学情档案页</h3>
+    <p>每个学生每科一页，内容包括当前阶段、已稳定掌握、正在攻克、根因线索、最近进步、下一步。它是《学生洞察引擎》判断账本的可读视图，自身不产生新结论。V1.1 对它的生成方式做了三项修订：</p>
+    <div class="tbl"><table>
+      <tr><th style="width:18%">修订</th><th style="width:44%">做法</th><th>原因</th></tr>
+      <tr><td>模板渲染为主</td><td>每条结论句由判断账本中的判断按模板直接生成；模型只负责排序、分组与衔接语，不写结论</td><td>自由撰写可能"引用了但写歪了"，把"尚不稳定"写成"不会"，或夹带语气推断</td></tr>
+      <tr><td>引用判断 ID</td><td>每条陈述引用判断 ID（判断再引用证据），不直接引用证据事件</td><td>与洞察引擎统一，一处可追溯、可撤回</td></tr>
+      <tr><td>惰性编译</td><td>会话开始时若档案页落后于判断账本才重编；周报生成时编一次；两次之间 Agent 直接读判断账本的上下文包</td><td>按每次作答触发重编，成本与规模不匹配，且大部分重编无人读取</td></tr>
+    </table></div>
+    <p>体检增加"陈述—判断一致性"检查：逐句比对衔接语与所引判断的状态和数值，出现程度升级（如"不稳定"变"薄弱"）或新增结论即阻断。只写学习事实，不写性格、情绪、家庭推断，不写"你不擅长数学"式的定性判断。Agent 读完整版，学生看到"星图旁的成长手记"，家长看到蓝图规定的证据与建议视图。档案页只存在数据库个人层，永不进入 Git 页面仓库，编译只用境内已备案模型。</p>
+  </div>
+</section>
+
+<!-- 7 三科检查 -->
+<section id="s7">
+  <div class="margin"><span class="n">七</span>三科资产检查</div>
+  <div class="body">
+    <h2>数学、语文、道法：检查与利用</h2>
+    <p class="lead">原则沿用平台规划："不重写、适配接入"。每科先把已有资产映射到骨架，再按粒度与覆盖规则补建。检查共发现 21 项问题：阻断封测 4 项、重要 11 项、一般 6 项。</p>
+    <div class="note red"><p><strong>检查范围说明：</strong>本章依据项目文档与各科既往设计稿（阿鸦产品方案与规格书、文砺 v1–v3 与妙笔规格书、知行 PRD V1.1 与 Rubric 规范、平台规划 v1.2、OpenMAIC 融合分析）检查的是资产的<em>定义与结构</em>。各科 Supabase 库中实际录入了多少节点、题目和 Rubric，本次无法直接读取，列为第九章 S0 冲刺的盘点任务 KGE-00，由 Claude Code 用脚本逐项核验后回填本章。</p></div>
+
+    <!-- 数学 -->
+    <div class="subject">
+      <h3>数学 · 阿鸦 <small>结构型 · 南京 · 苏科版 · 七至九年级</small></h3>
+      <div class="tbl"><table>
+        <tr><th style="width:24%">既有资产</th><th style="width:36%">检查结论</th><th>在 KGE 中的去向</th></tr>
+        <tr><td>知识图谱（五图谱之一）：领域 → 年级学期 → 单元 → 概念 → 法则 → 方法 → 题型，节点九字段</td><td>字段设计完整，"一次函数拆 8 个节点"的示例粒度合适；前置未区分强弱，未约束只连直接前置</td><td>数学骨架主干。九字段映射：前置/后续 → 边；基础/中考要求 → 认知层次；常见错误 → 易错节点；关联能力 → skill 标签；掌握证据 → 门槛配置</td></tr>
+        <tr><td>双轴 10 板块 × 10 能力 = 100 能力点</td><td>是能力坐标，不是知识点；"函数"一个板块覆盖七至九年级，过粗，不能作为诊断单元</td><td>降为能力视图 skill_node，由知识点证据聚合；星图的"数学星座"仍可按 100 点呈现</td></tr>
+        <tr><td>能力五层级（识别 / 理解 / 执行 / 迁移 / 综合）</td><td>与五道门槛、课标动词三套并存，"理解""迁移"重名</td><td>题目层用课标四级；五道门槛保留为掌握状态；五层级退役，旧数据按映射表迁移</td></tr>
+        <tr><td>十二类思想方法</td><td>可直接使用</td><td>方法节点网，<code>uses_method</code> 连到知识点；阿鸦"规律碎片"由方法节点迁移证据触发</td></tr>
+        <tr><td>题型与考试图谱：题目元数据十余字段</td><td>字段丰富，已含版权与审核状态；缺内容资产六段标识</td><td>原子层 item；补齐 region / exam_year / grade / textbook_version / subject / content_version</td></tr>
+        <tr><td>难度 = 七因子连乘</td><td>连乘会让尺度随因子数急剧放大，难以校准</td><td>改为各因子分级后加权求和作为先验难度，IRT 校准后替换</td></tr>
+        <tr><td>十二类错误根因</td><td>可用；缺与易错点的层级关系</td><td>作为错因枚举；每个易错节点必须标注属于哪一类</td></tr>
+        <tr><td>四类题库、五道门槛、0–6 级提示、七种讲法</td><td>与平台已对齐</td><td>题库入原子层；门槛进掌握状态机；提示与讲法留在学科包，讲法素材编译进知识点页叙述段</td></tr>
+      </table></div>
+      <ul class="find">
+        <li><span class="v block">阻断</span>知识图谱节点清单的实际完成度未知。封测切片（九年级"函数"主题起步，扩至九年级全册）必须在 S2 前完成课标拆解、试标注与覆盖矩阵，不能以 100 能力点代替。</li>
+        <li><span class="v major">重要</span>前置关系需按必要性检验重审，删除传递边，强弱分开；否则溯源会重复计分。</li>
+        <li><span class="v major">重要</span>十个能力维度与课标九项核心素养不一一对应（"概念理解""综合迁移""探究创新"非课标素养，"模型观念""应用意识"无直接对应）。保留产品维度，但每个维度增加 <code>curriculum_refs</code> 映射，满足"严格依据课标"的对外说明。</li>
+        <li><span class="v major">重要</span>十个板块与课标四领域不同构（"图形变换与坐标"单列，"综合实践"作为板块）。板块作为主题层视图挂在课标领域之下，不作骨架层级。</li>
+        <li><span class="v minor">一般</span>七八年级满分 100、九年级 120，考试轨迹需分别归一，旧报告模板中若有跨年级直接比较需修正。</li>
+      </ul>
+    </div>
+
+    <!-- 语文 -->
+    <div class="subject">
+      <h3>语文 · 文砺 <small>能力阶梯 ＋ 素材型 · 统编版全国通用</small></h3>
+      <div class="tbl"><table>
+        <tr><th style="width:24%">既有资产</th><th style="width:36%">检查结论</th><th>在 KGE 中的去向</th></tr>
+        <tr><td>七域 × 四级 = 28 子能力点（D1 积累·语基、D2 古诗文、D3 现代文阅读、D4 名著、D5 表达写作，v2 扩至七域）</td><td>能力格，粒度过粗：D3 只有 4 格，却对应卷面 32–36% 的阅读分值</td><td>28 点保留为 skill_node 能力视图；下钻为能力点 ability_kp，如"D3·推断赏析 × 记叙文 × 人物形象分析"</td></tr>
+        <tr><td>85 篇必背、120 实词、18 虚词已入库</td><td>是素材，不适合进依赖图</td><td>素材节点 + 素材卡页面，FSRS 调度复习，教材投影标注册-课-页</td></tr>
+        <tr><td>34 个单元导语提取的阅读方法；写作单元页码；口语交际四单元</td><td>一手提取，质量高</td><td>方法节点（阅读方法、写作方法）；页码进统编教材投影</td></tr>
+        <tr><td>阅读四引擎、写作四引擎、引擎五口语交际</td><td>是教学流程，不是知识结构</td><td>留在学科包；其中文体知识与答题结构编译为能力点页叙述段</td></tr>
+        <tr><td>作文五维量表（主观维带不确定度）、阅读采分点</td><td>可直接作为判分依据</td><td>原子层评分点；不确定度字段保留，主观维不进入高置信掌握计算</td></tr>
+        <tr><td>六类错因</td><td>v1 与 v2 命名不一致（v1：知识 / 审题 / 思维 / 表达 / 规范 / 心态策略；v2：知识 / 审题 / 定位 / 思维 / 表达规范 / 策略时间）</td><td>统一为 v2 六类；旧"表达""规范"合并为"表达规范"，"定位"为新增，需复核旧记录</td></tr>
+        <tr><td>OCR 降级为第三通道的架构决策</td><td>已被实践验证</td><td>上升为平台规则（第五章）</td></tr>
+      </table></div>
+      <ul class="find">
+        <li><span class="v block">阻断</span>28 点尚未下钻为可打标的能力点，无法做题目打标与覆盖检验。封测切片建议"积累与运用"素材网全量 + D3 记叙文 / 散文一个文体的能力点，按"能力 × 文本类型 × 题型"拆分并完成试标注。</li>
+        <li><span class="v major">重要</span>v1 的 5 × 4 = 20 格与 v2 的 7 × 4 = 28 点编码可能在代码或数据中并存，需盘点并建立编码迁移表。</li>
+        <li><span class="v major">重要</span>能力点之间前置关系弱，不应照搬数学 DAG。以层次递进边与"关联"边为主，教研只审明确的强前置（例如"文言实词推断"对"文言翻译"）。</li>
+        <li><span class="v minor">一般</span>名著阅读兼有素材（情节人物）与能力（专题探究、方法迁移）两面，需拆成素材节点与能力点两部分，避免掌握度混算。</li>
+        <li><span class="v minor">一般</span>南京在地文化语料用于情境命题，属拓展素材，范围属性标"考情拓展"，不进入必修覆盖统计。</li>
+      </ul>
+    </div>
+
+    <!-- 道法 -->
+    <div class="subject">
+      <h3>道法 · 知行 <small>观点定位型 · 统编版六册 · 开卷</small></h3>
+      <div class="tbl"><table>
+        <tr><th style="width:24%">既有资产</th><th style="width:36%">检查结论</th><th>在 KGE 中的去向</th></tr>
+        <tr><td>四领域（心理与道德 / 法律 / 国情国策 / 责任担当）约 30 个大概念，每个挂页码索引、高频设问、答题话术、真题回链</td><td>30 个大概念适合作主题层；对诊断和开卷定位偏粗，需下钻到观点</td><td>大概念为主题节点；下钻为观点节点。四类挂载恰好对应观点页的四个段落：页码（渲染段）、设问与话术（叙述段）、真题回链（原子引用）</td></tr>
+        <tr><td>采分点 Rubric 规范：point_id、分值、主体维度、关键词族三档、required_logic、material_linkage、部分命中规则、常见失分</td><td>三科中最成熟的原子资产，结构可直接落库</td><td>原子层 <code>scoring_point</code>；关键词族挂到观点节点；方圆判分只引用此结构</td></tr>
+        <tr><td>四类失分归因（审题 / 定位 / 转化 / 规范）</td><td>与五维能力（审题、定位、转化、规范、时政敏感度）对应清楚</td><td>四类为错因枚举，五维为 skill_node 能力视图</td></tr>
+        <tr><td>时政—教材挂接流水线（官方小册子 + 白名单源）</td><td>流程完整；条目缺失效机制</td><td>原子层时政条目，必带生效与失效日期；过期由体检自动下架，不进骨架</td></tr>
+        <tr><td>F11 分支决策情境卡</td><td>是教学形态</td><td>留在学科包，引用观点节点</td></tr>
+      </table></div>
+      <ul class="find">
+        <li><span class="v block">阻断</span>页码索引必须绑定具体版次与印次。直接挂在节点上，换版即全部错位，对开卷定位是致命错误。迁移时一律进入教材投影表，并由教研抽样核对。</li>
+        <li><span class="v block">阻断</span>《习近平新时代中国特色社会主义思想学生读本·初中》属于南京考查范围，但尚未入库。这是课标与考情覆盖缺口，覆盖矩阵会直接报出，封测前须补齐，或在封测范围中明确排除相应内容。</li>
+        <li><span class="v major">重要</span>观点之间以"关联"为主，避免为了能做路径规划而硬凑前置关系；学习路径改用"领域权重 × 失分 × 可提升"排序。</li>
+        <li><span class="v major">重要</span>Rubric 需补 <code>rubric_version</code> 与内容资产六段标识，判分结果绑定版本，才能在 Rubric 修订后重算受影响报告。</li>
+        <li><span class="v minor">一般</span>历史（知行·史）将复用同一型骨架与采分点结构，但老师与 Rubric 独立（春秋）。命名空间从一开始分开：<code>MORAL.*</code> 与 <code>HIST.*</code>。</li>
+      </ul>
+    </div>
+
+    <h3>跨科统一</h3>
+    <ul class="find">
+      <li><span class="v major">重要</span>平台已定的错因跨科大类（审题、定位 / 信息、表达规范、运算 / 语法、策略时间）缺少"知识 / 概念"类：阿鸦的概念错误与知识缺失、文砺的知识性错因无处归属。补为第六个大类。</li>
+      <li><span class="v major">重要</span>"定位"一词在语文指找原文依据，在道法指找教材页码。大类同名可保留，但学科错因编码需区分 <code>CHN.LOCATE_TEXT</code> 与 <code>MORAL.LOCATE_BOOK</code>，避免跨科指标误并。</li>
+      <li><span class="v major">重要</span>三科题目与内容都缺统一的六段标识和审核状态字段，迁移时一次补齐。</li>
+      <li><span class="v major">重要</span>三科各自的 Supabase schema（<code>wenli.*</code>、<code>aya.*</code>、<code>zhixing.*</code>）按融合方案先共库分 schema；KGE 表放 <code>kge.*</code>，学科 schema 通过适配器读写，不直接改 KGE 表。</li>
+      <li><span class="v minor">一般</span>三科"三次复盘 / 五道门槛 / 复测"统一映射为 0 / 3 / 14 天复测事件与门槛状态机，沿用融合方案已定规则。</li>
+      <li><span class="v minor">一般</span>ID 命名统一为 <code>学科.领域.主题.节点</code>，如 <code>MATH.FUNC.QUAD.VERTEX_FORM</code>、<code>CHN.READ.NARR.CHARACTER</code>、<code>MORAL.LAW.CONST.SUPREME</code>；各科旧 ID 进迁移表。</li>
+    </ul>
+
+    <h3>统一词汇表</h3>
+    <div class="tbl"><table>
+      <tr><th style="width:16%">平台概念</th><th style="width:21%">数学旧称</th><th style="width:21%">语文旧称</th><th style="width:21%">道法旧称</th><th>KGE 对象</th></tr>
+      <tr><td>诊断主单元</td><td>知识图谱节点</td><td>（28 格下钻）</td><td>大概念下的观点</td><td><code>knowledge_node</code></td></tr>
+      <tr><td>能力视图</td><td>100 能力点</td><td>28 子能力点</td><td>五维能力</td><td><code>skill_node</code></td></tr>
+      <tr><td>认知层次</td><td>能力五层级</td><td>L1–L4 梯度</td><td>—</td><td><code>cognitive_level</code></td></tr>
+      <tr><td>掌握状态</td><td>五道门槛</td><td>三次复盘</td><td>复测</td><td><code>mastery_estimate.gate</code></td></tr>
+      <tr><td>错因</td><td>十二类根因</td><td>六类错因</td><td>四类归因</td><td><code>error_attribution</code>（学科码 + 大类）</td></tr>
+      <tr><td>判分依据</td><td>验证器 + 评分点</td><td>五维量表 + 阅读采分点</td><td>采分点 Rubric</td><td><code>scoring_point</code> + <code>rubric_version</code></td></tr>
+    </table></div>
+  </div>
+</section>
+
+<!-- 8 技术 -->
+<section id="s8">
+  <div class="margin"><span class="n">八</span>技术方案</div>
+  <div class="body">
+    <h2>选型、数据模型与接口</h2>
+    <h3>技术选型</h3>
+    <div class="tbl"><table>
+      <tr><th style="width:17%">组件</th><th style="width:33%">首期</th><th style="width:28%">升级触发条件</th><th>首期不用</th></tr>
+      <tr><td>主数据库</td><td>PostgreSQL：开发期 Supabase，内测与生产用境内云托管 PG（同样支持 pgvector）</td><td>读压力超标 → 读副本；事件表按月分区</td><td>—</td></tr>
+      <tr><td>图关系</td><td>关系表 + 递归查询；发布时做环检测与直接前置校验</td><td>多跳查询 p95 &gt; 200ms 且持续</td><td>Neo4j、NebulaGraph</td></tr>
+      <tr><td>向量</td><td>pgvector（HNSW），BGE-M3 向量，bge-reranker 精排</td><td>候选集超千万或过滤后召回达不到测评集目标</td><td>Milvus</td></tr>
+      <tr><td>全文</td><td>应用层 jieba 分词 + tsvector</td><td>题干检索质量或并发不达标</td><td>Elasticsearch / OpenSearch</td></tr>
+      <tr><td>编译层</td><td>试点期：Markdown 页面存 Git 仓库，主分支保护，CI 程序体检不通过不能合并；教研只通过合并请求网页界面或最简审核台修改，不在本地直接提交；产品化期迁入 <code>kge.wiki_page</code></td><td>多学科并行、周变更量超出合并请求审核能力</td><td>—</td></tr>
+      <tr><td>解析与编译</td><td>Python Worker（Railway 开发期）：OpenCV 预处理、MinerU 版面与公式、PaddleOCR 印刷与手写；编译器同栈</td><td>上传峰值排队超时 → 独立 GPU 推理节点</td><td>自训 OCR 模型</td></tr>
+      <tr><td>任务与事件</td><td>Postgres 事件表 + 队列（Redis + Arq）</td><td>事件量使分析查询影响线上 → ClickHouse 承接分析</td><td>Kafka、Flink</td></tr>
+      <tr><td>验证</td><td>SymPy 等价判定，KaTeX 渲染；几何规则引擎沿用阿鸦方案</td><td>—</td><td>—</td></tr>
+      <tr><td>模型</td><td>模型路由：面向学生的线上推理与学情档案编译用境内已备案模型；离线公共知识构建与审核辅助可用 Claude</td><td>按任务质量与成本切换</td><td>学生个人信息默认调用境外 API</td></tr>
+      <tr><td>观测评测</td><td>Langfuse 自托管；金标集与回归测试，每次地图或模型变更前必跑</td><td>—</td><td>—</td></tr>
+    </table></div>
+
+    <h3>核心数据模型（kge schema）</h3>
+    <p>对象命名沿用蓝图 V2.0。以下为结构草案，字段在 S0 冻结。</p>
+<pre><code>-- 版本与课标
+curriculum_version(id, subject, standard_year, map_version, status)          -- 地图版本 主.次.修订
+curriculum_item(id, subject, domain, text, verb_level, source_ref)            -- 课标条目原子
+
+-- 骨架
+knowledge_node(id, subject, kind,            -- kp | ability_kp | viewpoint | material | method | pitfall | exam_point
+  domain_id, topic_id, name, includes, excludes, examples,
+  scope,                                      -- required | elective | edition_ext | exam_ext | enrichment
+  cognitive_levels text[], error_type,        -- pitfall 必填错因类型
+  map_version, status)
+knowledge_edge(from_id, to_id, type,          -- prerequisite | part_of | related | confusable | uses_method | has_pitfall | aligned_to
+  strength, evidence_ref, map_version, status)
+textbook_projection(node_id, edition, edition_year, printing, volume, chapter, page_from, page_to,
+  quote_text, quote_hash, verified_by, verified_at, mapping_state)            -- 原句在此锁定与核对（V1.1）
+region_projection(node_id, region, exam_year, weight, typical_slots, style_tags, source_ref)
+skill_node(id, subject, local_id, name, curriculum_refs)                      -- 各科能力视图
+skill_link(node_id, skill_id, weight)
+id_migration(old_id, new_id, change_id, rule)                                 -- 拆分 / 合并迁移
+
+-- 原子
+item(id, canonical_id, family_id, stem jsonb, answer jsonb, solution jsonb,
+  main_node, node_ids text[], cognitive_level, difficulty_prior, irt_params jsonb,
+  region, exam_year, grade, textbook_version, content_version,              -- 六段标识（含 subject）
+  source_kind, license_state, quality_grade, review_status)
+scoring_point(id, item_id, rubric_version, score, node_ids text[],
+  subject_dimension, keyword_family jsonb, required_logic, material_linkage,
+  partial_credit_rule jsonb, common_errors jsonb)
+paper(id, fingerprint_text, fingerprint_layout, region, grade, subject, exam_type, full_score, share_scope)
+current_affair(id, node_ids, source, valid_from, valid_until, review_status) -- 道法时政
+
+-- 编译层
+wiki_page(id, scope, student_id, page_type, subject, version, status, risk_level, rebuild_kind,  -- render | full（V1.1）
+  frontmatter jsonb, body_md, locked_sections text[], map_version, schema_version)
+page_source(page_id, page_version, atom_type, atom_id, atom_hash)
+compile_job(id, page_id, reason, trigger_ref, priority, status)
+lint_issue(id, page_id, page_version, layer, check_type, severity, detail jsonb, status)
+
+-- 个人层（全部启用 RLS）
+attempt(id, student_id, item_id, paper_id, answer_raw jsonb, step_judgement jsonb,
+  hint_level, source, ocr_confidence, confirmed_by_user, map_version, created_at)
+evidence_event(id, student_id, node_id, cognitive_level, attempt_id, step_ref,
+  correct, evidence_kind,                     -- independent | hinted | transfer | delayed_retest
+  error_code, weight, map_version, created_at)
+mastery_estimate(student_id, node_id, level, p_mastery, confidence, gate, next_review_at, model_version)
+
+-- 成长治理
+map_change(id, change_type, payload jsonb, evidence_pack jsonb, confidence, status, reviewers, target_version)
+content_review(id, object_type, object_id, risk_level, diff jsonb, decision, reviewer, decided_at)</code></pre>
+
+    <h3>知识服务接口</h3>
+    <p>各科 Agent 与点点只通过知识服务访问知识，不直连数据库。知识服务同时以 MCP 工具暴露给编排层，并作为蓝图"统一学科插件 API"的下层依赖。</p>
+    <div class="tbl"><table>
+      <tr><th style="width:32%">工具</th><th style="width:38%">返回</th><th>被哪个插件方法使用</th></tr>
+      <tr><td><code>node.resolve(text | image)</code></td><td>候选节点 + 置信度</td><td>diagnose、grade</td></tr>
+      <tr><td><code>node.get(id, edition, region)</code></td><td>节点、投影视图、范围属性</td><td>teach、plan</td></tr>
+      <tr><td><code>node.path(id, direction)</code></td><td>前置链 / 后续链（仅强前置）</td><td>diagnose、plan</td></tr>
+      <tr><td><code>page.get(id, view)</code></td><td>已发布页面，按学生教材与地区渲染</td><td>teach、report</td></tr>
+      <tr><td><code>item.search / item.similar</code></td><td>审核过的题目、题目族变式</td><td>generate_variation、plan</td></tr>
+      <tr><td><code>rubric.get(item_id)</code></td><td>评分点 / 采分点结构 + 版本</td><td>grade</td></tr>
+      <tr><td><code>evidence.write(event)</code></td><td>事件 ID（画像由成长引擎计算，Agent 不直接改掌握度）</td><td>grade、teach</td></tr>
+      <tr><td><code>mastery.get / mastery.explain</code></td><td>掌握状态与证据链</td><td>plan、report、点点复盘</td></tr>
+    </table></div>
+    <p>所有返回统一带 <code>result · evidence_ids · confidence · source_version · model_version · human_review_required</code>，与融合方案一致；<code>human_review_required</code> 为真时进入共用的教研复核队列。</p>
+
+    <h3>部署与数据流向</h3>
+    <p>开发环境沿用 Supabase、Railway、Vercel，只放公共知识、合成数据和授权样本。内测与生产部署在境内云。公共知识从构建环境经版本发布单向同步到生产；生产中的个人数据不回流开发环境，聚合统计以脱敏报表回流教研。</p>
+
+    <h3>质量门槛总表</h3>
+    <div class="tbl"><table>
+      <tr><th style="width:14%">环节</th><th style="width:44%">指标</th><th style="width:22%">门槛（起点值）</th><th>检验时机</th></tr>
+      <tr><td>粒度</td><td>两位教师主考点标注一致率</td><td>kappa ≥ 0.7</td><td>试标注</td></tr>
+      <tr><td>粒度</td><td>小题平均标注节点数</td><td>1–3 个</td><td>试标注</td></tr>
+      <tr><td>覆盖</td><td>课标条目承接率 / 启用教材版本小节与例题映射率</td><td>100% / 100%</td><td>覆盖矩阵</td></tr>
+      <tr><td>覆盖</td><td>留出集无处可标率</td><td>&lt; 2%</td><td>盲测</td></tr>
+      <tr><td>内容</td><td>核心节点各层次均有题目与已发布页面</td><td>≥ 95%</td><td>发布前</td></tr>
+      <tr><td>编译</td><td>事实性段落原子引用完整率 / 程序体检阻断问题</td><td>100% / 0</td><td>每次编译</td></tr>
+      <tr><td>编译</td><td>页面优先 vs 切块检索对照：金标问答正确率、同题讲法一致性、单次上下文成本</td><td>正确率不低于切块路径，一致性与成本明显更优</td><td>M1 前一次，此后每季度</td></tr>
+      <tr><td>档案页</td><td>陈述—判断一致性检查通过率；角色语言混入数</td><td>100% / 0</td><td>每次编译</td></tr>
+      <tr><td>打标</td><td>主考点 Top-1 准确率（金标集）</td><td>≥ 90%</td><td>每次发版</td></tr>
+      <tr><td>判分</td><td>与教师一致率：客观题 / 数学步骤 / 道法采分点</td><td>≥ 99% / ≥ 90% / ≥ 90%</td><td>每周抽检</td></tr>
+      <tr><td>解析</td><td>题目切分 / 印刷识别 / 手写关键步骤识别；同卷识别准确率</td><td>≥ 95% / ≥ 98% / ≥ 90%；≥ 99%</td><td>每周</td></tr>
+      <tr><td>诊断</td><td>结论可追溯到证据的比例</td><td>100%（硬约束）</td><td>持续</td></tr>
+      <tr><td>诊断</td><td>掌握度对下次作答的预测 AUC；"诊断不准确"反馈率</td><td>内测后定基线</td><td>每月</td></tr>
+    </table></div>
+  </div>
+</section>
+
+<!-- 9 开发计划 -->
+<section id="s9">
+  <div class="margin"><span class="n">九</span>开发计划</div>
+  <div class="body">
+    <h2>30 周，15 个冲刺，5 道门</h2>
+    <p>三条排期原则：先切片后扩面，通道先于规模，按门验收不按日历。Claude Code 负责全部工程；知识地图、金标集、Rubric 与高风险页面的审核是教研工作，无法由工程替代，排期按两条线并行。</p>
+
+    <figure>
+      <svg viewBox="0 0 1000 400" role="img" aria-label="30 周开发甘特图与五个里程碑">
+        <g class="svg-t">
+          <g font-size="12" fill="var(--ink-3)">
+            <text x="190" y="26">W1</text><text x="320" y="26">W6</text><text x="450" y="26">W11</text><text x="580" y="26">W16</text><text x="710" y="26">W21</text><text x="840" y="26">W26</text><text x="946" y="26">W30</text>
+          </g>
+          <g stroke="var(--rule)" stroke-width="1">
+            <line x1="190" y1="34" x2="190" y2="360"/><line x1="320" y1="34" x2="320" y2="360"/><line x1="450" y1="34" x2="450" y2="360"/><line x1="580" y1="34" x2="580" y2="360"/><line x1="710" y1="34" x2="710" y2="360"/><line x1="840" y1="34" x2="840" y2="360"/><line x1="970" y1="34" x2="970" y2="360"/>
+          </g>
+          <g font-size="13.5" fill="var(--night)">
+            <text x="10" y="64">0 准备与盘点</text>
+            <text x="10" y="106">1 引擎核心 + 数学切片</text>
+            <text x="10" y="148">2 编译层与知识服务</text>
+            <text x="10" y="190">3 个人层 + 道法切片</text>
+            <text x="10" y="232">4 语文切片 + 上传通道</text>
+            <text x="10" y="274">5 封闭内测</text>
+            <text x="10" y="316">6 成长常态化与扩面</text>
+            <text x="10" y="352">7 新学科接入准备</text>
+          </g>
+          <rect x="190" y="48" width="52" height="24" fill="var(--night)"/>
+          <rect x="242" y="90" width="104" height="24" fill="var(--stone)"/>
+          <rect x="320" y="132" width="78" height="24" fill="var(--stone)"/>
+          <rect x="398" y="174" width="78" height="24" fill="var(--stone)"/>
+          <rect x="424" y="216" width="78" height="24" fill="var(--stone)"/>
+          <rect x="502" y="258" width="156" height="24" fill="var(--gold)"/>
+          <rect x="658" y="300" width="260" height="24" fill="var(--stone)" opacity=".75"/>
+          <rect x="918" y="336" width="52" height="24" fill="var(--dim)"/>
+          <g fill="var(--gold)" stroke="var(--paper)" stroke-width="2">
+            <path d="M242,370 l9,9 l-9,9 l-9,-9z"/><path d="M398,370 l9,9 l-9,9 l-9,-9z"/><path d="M502,370 l9,9 l-9,9 l-9,-9z"/><path d="M658,370 l9,9 l-9,9 l-9,-9z"/><path d="M918,370 l9,9 l-9,9 l-9,-9z"/>
+          </g>
+          <g font-size="12" fill="var(--night)" font-weight="700">
+            <text x="222" y="398">M0</text><text x="378" y="398">M1</text><text x="482" y="398">M2</text><text x="638" y="398">M3</text><text x="898" y="398">M4</text>
+          </g>
+        </g>
+      </svg>
+      <figcaption>图 3　参考排期。M0 范围冻结（W2）· M1 数学切片底座（W8）· M2 封测准入（W12）· M3 内测结论（W18）· M4 公测准入（W28）。</figcaption>
+    </figure>
+
+    <h3>冲刺计划</h3>
+    <div class="tbl"><table>
+      <tr><th style="width:9%">冲刺</th><th style="width:30%">工程（Claude Code 任务包）</th><th style="width:30%">教研与人工</th><th>验收</th></tr>
+      <tr><td>S0<br>W1–2</td><td>KGE-00 资产盘点脚本：三科 schema 表清单、节点 / 题目 / Rubric 计数、字段缺失、孤点、环、旧编码并存检查；kge schema v1 迁移草案；ID 与六段标识规范</td><td>确认三科封测切片范围；划定并封存留出集（外地区当年中考卷、南京区模拟卷）；合规清单与法律咨询启动</td><td><strong>M0</strong>：盘点报告回填第七章；Schema 与事件格式冻结；留出集封存记录</td></tr>
+      <tr><td>S1<br>W3–4</td><td>KGE-01 骨架：版本、节点、边、投影、迁移表；发布前校验（环、传递边、孤点、包含 / 不包含必填）；审核台 v0（能改、能审、能发布、差异对比）</td><td>数学"函数"主题课标拆解；导入阿鸦知识图谱并按必要性检验重审前置</td><td>骨架服务可用；函数主题节点初稿入库</td></tr>
+      <tr><td>S2<br>W5–6</td><td>KGE-02 原子层：阿鸦四类题库导入并补六段标识；打标服务（规则 + 向量 + 模型，低置信队列）；覆盖矩阵报表</td><td>两位教师独立试标注约 100 题；分歧讨论转为节点描述；金标集定稿；扩至九年级全册</td><td>kappa ≥ 0.7；打标 Top-1 ≥ 90%</td></tr>
+      <tr><td>S3<br>W7–8</td><td>KGE-03 编译层：数学编纂规范 v1（人设中立）与页面模板；编译器 Worker（两种重建、合并窗口）；程序体检 + SymPy；Git 页面仓库、主分支保护与 CI；页面优先检索并保留切块兜底；对照评测脚本；MCP 知识服务</td><td>编纂规范签发；高风险页面审核；留出集盲测；对照评测金标问答</td><td><strong>M1</strong>：课标承接 100%、无处可标 &lt; 2%、知识点页发布率 100%、体检零阻断；页面优先对照评测达标（未达标则以切块检索为主路径进入封测，编译层继续迭代）</td></tr>
+      <tr><td>S4<br>W9–10</td><td>KGE-04 个人层：事件、五门槛状态机、简化 BKT、学情档案页模板渲染 + 惰性编译 + 陈述—判断一致性检查（境内模型）、RLS 与删除；道法适配：大概念 → 观点、页码与原句进教材投影（<code>quote_text</code> 核对）、Rubric 入 <code>scoring_point</code>、时政有效期</td><td>道法切片（法律领域起步）观点下钻与原句核对；页码抽样核验；《学生读本》入库或明确排除</td><td>证据链可追溯；道法采分点判分一致率抽检 ≥ 90%</td></tr>
+      <tr><td>S5<br>W11–12</td><td>KGE-05 语文适配：素材节点 + FSRS；D3 记叙文 / 散文能力点；错因编码迁移；三科插件适配器接入 KGE；上传通道 v1（单题 OCR、置信门、学生核对界面）；"诊断不准确"反馈入口；安全与隔离测试</td><td>语文能力点试标注；素材卡审核；三科影子评审教师到位</td><td><strong>M2 封测准入</strong>：三科切片各自过粒度与覆盖门槛；C 级内容不生成结论；监护人同意与删除可用；安全测试通过</td></tr>
+      <tr><td>S6–S8<br>W13–18</td><td>封测支持：每周修订发布、低置信队列工具、指标看板；同卷识别与题目族上线</td><td>数十至一百名学生，覆盖不同学校与成绩段；影子评审比对诊断与判分；处理地图变更候选</td><td><strong>M3</strong>：指标基线形成；判分一致率达标；影子评审"基本准确"达到预设目标；关键问题清单关闭</td></tr>
+      <tr><td>S9–S13<br>W19–28</td><td>语义体检；事件驱动自动编入；风险分级自动分流；地图数据校准（前置检验、隐藏依赖、易错聚类）；聚合统计视图；页面迁入数据库审核台 v1；数据够时试点 IRT</td><td>扩面：数学七八年级、道法全四领域、语文阅读四文体与名著；周修订、月次版本节奏固化</td><td><strong>M4 公测准入</strong>：成长机制稳定运行满一个月；至少一次数据驱动的次版本发布；指标较基线改善；合规复核完成</td></tr>
+      <tr><td>S14<br>W29–30</td><td>英语、历史编纂规范模板；接入检查清单</td><td>历史（复用观点定位型）与英语（能力阶梯＋素材型）教研启动</td><td>新学科以编纂规范就绪为接入前提</td></tr>
+    </table></div>
+
+    <h3>最少人力配置</h3>
+    <div class="tbl"><table>
+      <tr><th style="width:24%">角色</th><th style="width:12%">人数</th><th>职责</th></tr>
+      <tr><td>产品负责人</td><td>1</td><td>范围、验收、封测组织；审核台易用性把关</td></tr>
+      <tr><td>学科教研</td><td>数学 2、语文 1–2、道法 1</td><td>拆解与审核、金标集、Rubric、高风险页面、影子评审</td></tr>
+      <tr><td>工程（Claude Code 主导）</td><td>1 名工程监督</td><td>任务包下发、迁移与 Schema 变更人工复核、回归测试集维护、生产部署</td></tr>
+      <tr><td>审核与标注支持</td><td>兼职若干</td><td>低置信队列、识别抽检、页码核对</td></tr>
+    </table></div>
+    <p>教研是这个系统里最容易被低估的角色。知识地图的质量与成长闸门的效率，最终取决于教研投入和审核台是否好用。</p>
+
+    <h3>风险与应对</h3>
+    <div class="tbl"><table>
+      <tr><th style="width:24%">风险</th><th>应对</th></tr>
+      <tr><td>三科旧数据实际质量不明</td><td>S0 盘点先行，按盘点结果调整 S1–S5 工作量；不假设旧数据可直接用</td></tr>
+      <tr><td>教研审核成为瓶颈</td><td>风险分级发布；候选按影响排序；审核看差异不看全文；按产能调节编译节奏</td></tr>
+      <tr><td>编译漂移与错误复利</td><td>增量编译只改受影响段落；锁定段；原子为准可重建；按引用表批量回滚</td></tr>
+      <tr><td>冷启动数据不足</td><td>可解释的简化模型与专家先验；诊断测评主动收集证据；内测重点积累数据</td></tr>
+      <tr><td>手写识别不足</td><td>原生测评为主通道；C 级核对；步骤级识别只用于有把握的部分</td></tr>
+      <tr><td>工程全部由 Claude Code 完成的质量风险</td><td>Schema 与事件格式冻结后变更需人工批准；每个任务包附验收测试；金标集回归每次必跑；数据迁移先在副本演练</td></tr>
+      <tr><td>版权与合规</td><td>原卷不公开展示；学校卷同卷者间复用；学科类 AI 一对一服务的分类认定取得具体意见后再收费</td></tr>
+    </table></div>
+
+    <h3>需要拍板的五件事</h3>
+    <div class="tbl"><table>
+      <tr><th style="width:4%">#</th><th style="width:40%">事项</th><th>建议</th></tr>
+      <tr><td>1</td><td>三科封测切片范围</td><td>数学：九年级（函数主题先行）；道法：法律领域先行；语文：积累与运用素材网 + 记叙文 / 散文阅读</td></tr>
+      <tr><td>2</td><td>留出集来源</td><td>其他地区当年中考卷 + 南京区级模拟卷，S0 封存，构建团队不接触</td></tr>
+      <tr><td>3</td><td>境内云与线上模型</td><td>S5 前确定，以便内测环境部署与学情档案编译</td></tr>
+      <tr><td>4</td><td>教研人员到位</td><td>S1 开工前至少数学 1 名、道法 1 名到位</td></tr>
+      <tr><td>5</td><td>《学生读本》处理</td><td>封测前入库，或在封测范围中明确排除并告知用户</td></tr>
+    </table></div>
+  </div>
+</section>
+
+<!-- 附录 -->
+<section id="s10">
+  <div class="margin"><span class="n">附</span>来源</div>
+  <div class="body">
+    <h2>整合的输入文档</h2>
+    <div class="tbl"><table>
+      <tr><th style="width:52%">文档</th><th>主要贡献</th></tr>
+      <tr><td>成长型知识系统 v1.0 / v1.1（引入 LLM Wiki 编译层）</td><td>三层两飞轮、上传管道、编译层、学情档案页、36 周计划</td></tr>
+      <tr><td>知识点粒度与覆盖完整性方案（cc / gpt）</td><td>六条粒度标准、覆盖五维、留出集盲测、范围属性</td></tr>
+      <tr><td>知识地图具体设计方案（cc / gpt）</td><td>骨架、三类挂载、两种投影、必要性检验、星图呈现</td></tr>
+      <tr><td>动态成长 RAG 知识库技术方案 V2 / 教育知识中台 V1.0</td><td>五级资源体系、四级去重、质量门禁、关系类型、MVP 选型原则</td></tr>
+      <tr><td>从头开始动态成长的知识库系统（html / cc）</td><td>双引擎定位；"成长通道先接好，成长在测试中发生"</td></tr>
+      <tr><td>底层知识库 LLM Wiki 与 RAG 结构（ds）</td><td>编译器与解释器之分；学科知识与学生画像分层</td></tr>
+      <tr><td>生长型知识库（ds / db / gg / qw）</td><td>冲突检测、候选聚类、工单化迭代；实时流式与个人升权两项被否决</td></tr>
+      <tr><td>知识地图与动态知识库建设方案（dp / db / cc / docx）、课标驱动 RAG 完整方案</td><td>课标层四层模型、考点实体、置信度驱动、跨版本对齐工作台</td></tr>
+      <tr><td>《产品系统架构与技术实施蓝图》V2.0、《平台产品规划》v1.2、OpenMAIC 融合分析</td><td>对象命名、插件 API、发布闸门、跨科错因大类、共库分 schema</td></tr>
+      <tr><td>阿鸦产品方案与 Persona V1.1、文砺 v1–v3 与妙笔规格书、知行 PRD V1.1 与 Rubric 规范</td><td>第七章检查对象</td></tr>
+    </table></div>
+    <p class="foot">魁星点斗 StarBuddy · 知识与成长引擎（KGE）最终技术方案与开发计划 V1.1 · 2026-09-27。门槛、排期与人力为建议起点，封闭内测结束后按实际数据修订。涉及法律合规的内容以专业法律意见为准。</p>
+  </div>
+</section>
+
+<section id="s11">
+  <div class="margin"><span class="n">附</span>修订记录</div>
+  <div class="body">
+    <h2>V1.1 修订：LLM Wiki 编译层检查</h2>
+    <p>对照 Karpathy LLM Wiki 原始模式与本方案的实际用法检查后，修订以下 9 处。排期不变，工作量并入 S3 与 S4。</p>
+    <div class="tbl"><table>
+      <tr><th style="width:5%">#</th><th style="width:9%">级别</th><th style="width:40%">问题</th><th>修订</th></tr>
+      <tr><td>1</td><td><span class="v block">高</span></td><td>学情档案页由模型自由撰写，体检只查有无引用，查不出曲解</td><td>模板渲染为主，模型只写衔接语；新增陈述—判断一致性检查（第六章）</td></tr>
+      <tr><td>2</td><td><span class="v block">高</span></td><td>档案页按每次证据事件重编，成本与规模不匹配</td><td>惰性编译：会话开始时过期才重编，周报时编一次（第六章）</td></tr>
+      <tr><td>3</td><td><span class="v block">高</span></td><td>观点页把教材原句列为锁定段，与按版次渲染矛盾</td><td>原句移入教材投影表锁定与核对，页面中为渲染段（第四章、数据模型）</td></tr>
+      <tr><td>4</td><td><span class="v major">中</span></td><td>"页面可整体重建"会冲掉已审叙述段</td><td>区分渲染重建与全量重编，后者按高风险重审（第二、四章）</td></tr>
+      <tr><td>5</td><td><span class="v major">中</span></td><td>跨页矛盾全量两两比对不可扩展</td><td>只比对骨架相邻页与本次受影响页（第四章）</td></tr>
+      <tr><td>6</td><td><span class="v major">中</span></td><td>页面文风引用角色规范，多角色共用时串味</td><td>页面人设中立，人设在讲解生成时加上；体检拦截角色语言（第四章）</td></tr>
+      <tr><td>7</td><td><span class="v major">中</span></td><td>上传题入库触发低风险自动发布，可能造成编译风暴</td><td>低风险改动每日合并窗口，每页每天最多发布一次（第四章）</td></tr>
+      <tr><td>8</td><td><span class="v major">中</span></td><td>缺少页面优先与切块检索的对照验证</td><td>S3 增加对照评测并作为 M1 验收项，未达标时切块检索为主路径（第八、九章）</td></tr>
+      <tr><td>9</td><td><span class="v minor">低</span></td><td>试点期教研本地编辑 Git 可能绕过体检</td><td>主分支保护，教研只经网页界面修改（第八章）</td></tr>
+      <tr><td>—</td><td><span class="v minor">补充</span></td><td>未写明是否沿用原模式"查询结果回写成页"</td><td>明确不回写，只转为补页信号（第四章）</td></tr>
+    </table></div>
+    <p>同步修订：《学生洞察引擎》V1.1 中档案页的生成与引用规则与本版一致。</p>
+  </div>
+</section>
+
+</div>
+<button class="print" onclick="window.print()">打印 / 保存为 PDF</button>
+</body>
+</html>

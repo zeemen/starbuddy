@@ -1,0 +1,19 @@
+{
+  "attribution_agree": 3,
+  "attribution_agreement": 0.75,
+  "attribution_points": 4,
+  "confusion": [],
+  "extra": 0,
+  "item_agree": 4,
+  "item_total_agreement": 0.8,
+  "items": 5,
+  "label": "金标",
+  "missing": 0,
+  "point_agree": 17,
+  "point_agreement": 0.85,
+  "points": 20,
+  "threshold": {
+    "passed": false,
+    "point_agreement_min": 0.9
+  }
+}

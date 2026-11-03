@@ -1,0 +1,11 @@
+# 禁语词表清单（冲刺 3-F，specs/persona-governance-sprint3/spec.md 设计要点 2“词表收拢”）。
+# packages/personas/forbidden/ 是禁语词表的唯一真相源：点点评分器、guard 分类器、KGE-03 页面人设中立检查都从这里读。
+# version 是整套词表的 lexicon_version（写进 guard 的每条命中与人设回归报告）；任何一个类文件改了都要升这里的版本（persona-registry-check 核对）。
+# 禁语表属于必停项：首个 PR 首行 [NEEDS-HUMAN]，人设负责人与教研签字之前 reviewed 为 false。
+version: 0.3.0
+reviewed: false
+files: [A.yaml, B.yaml, C.yaml, D.yaml, E.yaml, F-math.yaml, F-chinese.yaml, G.yaml, platform.yaml]
+patterns: ../patterns/diandian.yaml
+# 旧位置：只为前端文案单测保留一个版本周期（它用行解析读 forbidden 段，前端改为调用 guard 后删除；lessons“待前端接入”）。
+# 内容必须与本目录的 A–E 类和 patterns 逐条一致，由 packages/personas/tests/test_guard.py 核对。
+legacy_mirror: evals/persona/diandian/lexicon/forbidden.yaml

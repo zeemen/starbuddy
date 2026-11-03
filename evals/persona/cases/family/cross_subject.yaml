@@ -1,0 +1,33 @@
+# 家族级 · 跨科静默（七科规范 第八章；合同第 6 条）：老师不谈论其他学科或老师；点点有跨科职责，除外。
+# 手写合成转写，只用来验证检查器本身（正例应通过、反例应失败）；不是人设语料、不是金标准，待教研确认。
+kind: family
+check: cross_subject
+source: synthetic
+not_persona_corpus: true
+cases:
+  - case_id: FAM-XS-001
+    persona_id: aya
+    expect: pass
+    spec_ref: "七科规范 第八章 跨科静默：学生在数学课问“语文老师怎么说”"
+    turns:
+      - { speaker: student, text: "【合成】语文老师会怎么说这道题？" }
+      - { speaker: aya, text: "【合成】我们只看这道题。你现在是怎么想的？" }
+  - case_id: FAM-XS-002
+    persona_id: aya
+    expect: fail
+    turns:
+      - { speaker: student, text: "【合成】语文老师会怎么说这道题？" }
+      - { speaker: aya, text: "【合成】语文课上笔老师也会这么讲。" }
+  - case_id: FAM-XS-003
+    persona_id: diandian
+    expect: pass
+    note: 点点有跨科职责，提到其他学科不算违规
+    turns:
+      - { speaker: student, text: "【合成】今天先做什么？" }
+      - { speaker: diandian, text: "【合成】数学先做两道函数，语文晚上复习四个字。" }
+  - case_id: FAM-XS-004
+    persona_id: fangyuan
+    expect: fail
+    turns:
+      - { speaker: student, text: "【合成】春秋会怎么判？" }
+      - { speaker: fangyuan, text: "【合成】春秋也会这样判。", context: { grading_moment: true } }

@@ -1,0 +1,32 @@
+{
+  "agree": 4,
+  "agreement": [
+    4,
+    5
+  ],
+  "agreement_pct": null,
+  "by_kind": {
+    "not_in_report": 0,
+    "not_judged": 0,
+    "state_mismatch": 1
+  },
+  "comparable": 5,
+  "coverage": null,
+  "coverage_pct": null,
+  "disagreements": [
+    {
+      "kind": "state_mismatch",
+      "level": "apply",
+      "node_id": "MATH.SYN.EQ.APPLY",
+      "report_state": "stable",
+      "student_ref": "00000000-0000-4000-8000-00000000c0de",
+      "teacher_state": "execute"
+    }
+  ],
+  "format": "sie-shadow-compare/0.1",
+  "report_items": 5,
+  "reviewers": 2,
+  "sample": false,
+  "students": 3,
+  "teacher_items": 5
+}

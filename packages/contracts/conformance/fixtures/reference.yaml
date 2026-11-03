@@ -38,3 +38,17 @@ cases:
       - {item_ref: "zhixing:REF-1", response: {text: "12"}, self_report: guessed}
       - {item_ref: "zhixing:REF-2", response: {text: "ba"}}
     expect: {outcomes: [demonstrated, not_demonstrated], max_confidence: [0.3, null]}
+  # v1.1 present_item（PLT-12）：只在契约 1.1.0 下跑（since）。secrets 是这道题的答案：题面任何位置都不许出现
+  - id: present-fill-with-formula
+    method: present_item
+    since: 1.1.0
+    body: {item_ref: "zhixing:REF-1"}
+    conflict_body: {item_ref: "zhixing:REF-2"}
+    secrets: ["12"]
+    expect: {content_state: complete, item_type: fill_blank, license_state: original}
+  - id: present-single-choice
+    method: present_item
+    since: 1.1.0
+    body: {item_ref: "zhixing:REF-2"}
+    conflict_body: {item_ref: "zhixing:REF-1"}
+    expect: {content_state: complete, item_type: single_choice}

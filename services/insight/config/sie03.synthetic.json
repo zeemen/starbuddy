@@ -1,0 +1,72 @@
+{
+  "$comment": "SIE-03 PR② 的合成占位配置，非签字值，只允许 INSIGHT_ENV=test 加载。验证题道数与时限、预测区间参数（先验、基础波动、门槛到掌握概率的映射）、对账与触发规则参数全部由 SIE 负责人与教研签字（spec 待人确认 #6、#7）；模板键与 copy 下的文字全部是占位（必停项：人写人审后登记），加载时逐条过禁用推断词表。未签字（signed_by / signed_at 为空或 synthetic）时触发规则只生成建议（suggested），不下发。",
+  "schema_version": "sie-03-policy/0.1",
+  "config_version": "syn-0.1.0",
+  "synthetic": true,
+  "signed_by": "",
+  "signed_at": "",
+  "dispute": {
+    "verification_items": 2,
+    "verify_within_hours": 24,
+    "one_off_slip_observe_days": 14
+  },
+  "exam": {
+    "templates": {
+      "prediction": {"key": "syn.exam.prediction", "version": 1},
+      "reconcile": {"key": "syn.exam.reconcile", "version": 1}
+    },
+    "prediction_visibility": ["agent"],
+    "reconcile_visibility": ["agent", "student", "guardian"],
+    "card_audience": ["student", "guardian"],
+    "ttl_days_after_exam": 30,
+    "response_max_score": 150,
+    "scales": {"100": "g7_g8_100", "120": "g9_120"},
+    "interval": {
+      "level": 0.8,
+      "z": 1.2816,
+      "prior_p": 0.5,
+      "prior_strength": 2,
+      "base_sd": 0.04,
+      "gate_p": {"unseen": 0.1, "understand": 0.3, "execute": 0.5, "stable": 0.7, "transfer": 0.85, "retain": 0.9}
+    }
+  },
+  "triggers": {
+    "params_version": "syn-triggers@0.1.0",
+    "dedup_days": 1,
+    "review_due_within_days": 3,
+    "encourage_lookback_days": 7,
+    "break_days": 3,
+    "exit_after_errors_window_days": 7,
+    "exit_after_errors_min": 2,
+    "reduce_load_metric_keys": ["persistence", "plan_completion_rate"]
+  },
+  "copy": {
+    "next_step": {
+      "verification_scheduled": "【占位·待人审】异议回应：已安排验证",
+      "observe_followups": "【占位·待人审】异议回应：已记下，看后续同类作答",
+      "open_fact_for_correction": "【占位·待人审】异议回应：请在原录入处核对"
+    },
+    "direction": {
+      "item_type_transfer": "【占位·待人审】偏差方向甲",
+      "time_shortage": "【占位·待人审】偏差方向乙",
+      "calculation_slip": "【占位·待人审】偏差方向丙",
+      "diagnosis_optimistic": "【占位·待人审】偏差方向丁"
+    },
+    "adjustment": {
+      "claims_to_verify": "【占位·待人审】调整甲",
+      "retest_scheduled": "【占位·待人审】调整乙",
+      "interval_widened": "【占位·待人审】调整丙",
+      "model_parameter_adjusted": "【占位·待人审】调整丁",
+      "none": "【占位·待人审】调整戊"
+    },
+    "action": {
+      "plan_review_node": "【占位·待人审】动作说明甲",
+      "plan_verification_item": "【占位·待人审】动作说明乙",
+      "encourage_with_evidence": "【占位·待人审】动作说明丙",
+      "shorten_task": "【占位·待人审】动作说明丁",
+      "insert_familiar_item": "【占位·待人审】动作说明戊",
+      "ask_reason": "【占位·待人审】动作说明己"
+    }
+  },
+  "erase_scopes": ["claim_ledger", "evidence", "facts", "inference", "reports"]
+}

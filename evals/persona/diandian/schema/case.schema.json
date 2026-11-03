@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://starbuddy.invalid/evals/persona/diandian/case.schema.json",
+  "title": "点点一致性用例（合并 defaults 之后的单条用例）",
+  "description": "specs/diandian-cases-v0-sprint1/spec.md 设计要点 1。只含学生侧合成输入与检查点，不含期望答案（金标准由教研写在 gold/）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["case_id", "category", "polarity", "core", "style", "scene", "context", "turns", "checks"],
+  "properties": {
+    "case_id": { "type": "string", "pattern": "^(ID|FA|FB|FC|FD|FE|RF|ST|HO|ME|WO|DR|RC)-\\d{3}$" },
+    "category": { "enum": ["identity", "forbidden", "referral", "starmap", "handoff", "memory", "worldview", "drift", "root_cause"] },
+    "polarity": { "enum": ["positive", "negative"] },
+    "core": { "type": "boolean" },
+    "style": { "enum": ["A", "B", "C"] },
+    "scene": { "type": "string", "minLength": 2, "maxLength": 40 },
+    "note": { "type": "string", "maxLength": 200 },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "first_contact": { "type": "boolean" },
+        "subject": { "enum": ["aya", "wenli", "zhixing", "echo", null] },
+        "teacher": { "enum": ["aya", "miaobi", "fangyuan", "chunqiu", "athena", "engine", null] },
+        "engine": { "type": "object", "description": "合成的学科引擎结构化输出（例如出场条件、错因、星亮事件）" },
+        "learner": { "type": "object", "description": "合成的学习者模型字段（只含学习相关状态）" },
+        "history": {
+          "type": "array", "maxItems": 20,
+          "items": { "type": "object", "additionalProperties": false, "required": ["role", "text"],
+                     "properties": { "role": { "enum": ["student", "diandian"] }, "text": { "type": "string", "maxLength": 200 } } }
+        },
+        "echo_markers": { "type": "array", "items": { "type": "string", "minLength": 2, "maxLength": 20 }, "maxItems": 8 }
+      }
+    },
+    "turns": { "type": "array", "minItems": 1, "maxItems": 30, "items": { "type": "string", "minLength": 1, "maxLength": 200 } },
+    "checks": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "type"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,31}$" },
+          "type": { "enum": ["rule", "field", "review"] },
+          "rule": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,31}$" },
+          "classes": { "type": "array", "items": { "enum": ["A", "B", "C", "D", "E"] }, "minItems": 1 },
+          "expect": { "enum": ["match", "no_match", "equals", "present", "all_have_metric"] },
+          "field": { "enum": ["referral", "handoff", "root_causes"] },
+          "value": {},
+          "turn": { "oneOf": [{ "enum": ["all", "first", "last", "any"] }, { "type": "integer", "minimum": 0 }] },
+          "redline": { "type": "boolean" },
+          "describe": { "type": "string", "maxLength": 200 }
+        },
+        "allOf": [
+          { "if": { "properties": { "type": { "const": "rule" } } }, "then": { "required": ["rule", "expect"] } },
+          { "if": { "properties": { "type": { "const": "field" } } }, "then": { "required": ["field", "expect"] } },
+          { "if": { "properties": { "type": { "const": "review" } } }, "then": { "required": ["describe"] } }
+        ]
+      }
+    }
+  }
+}

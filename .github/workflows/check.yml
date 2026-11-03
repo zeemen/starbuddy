@@ -3,10 +3,13 @@
 # 只用合成数据与本机一次性 Postgres；不需要、也不配置任何密钥（CLAUDE.md 规则 8、9）。
 name: check
 
+# PR 上只跑轻量检查（各组去掉 *-mutation，不跑 db-mutation）；合并到 main 与手动触发（workflow_dispatch）时跑全量，
+# 含全部变异测试（2026-11-03 用户决定：控制 Actions 用量）。本地 make check 不变，仍跑全部。
 on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -17,15 +20,22 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # 全量检查（除数据库变异测试）单机已超过 1 小时，按 Makefile 的 check-group-* 分成 11 组并行；
+  # check-core 就是这 11 组的并集（Makefile 里定义），新检查必须放进某一组才进得了 check，不会被漏掉。
   make-check:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [persona, contracts, aya, adapters, learning-a, learning-b, bff-web, kge-tools, kge-model, knowledge, insight]
     env:
       NEXT_TELEMETRY_DISABLED: "1"   # Next.js 默认会向境外发匿名遥测（ADR 09）
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false   # 仓库令牌不写进 .git/config（安全审查 S3）
+          fetch-depth: 0               # 人设回归要算 merge-base 与基线提交（冲刺 3-F，spec 待人确认 #11）
 
       - uses: actions/setup-python@v5
         with:
@@ -41,30 +51,61 @@ jobs:
           sudo apt-get install -y -q postgresql-16
           sudo systemctl stop postgresql || true
 
-      - name: 契约检查与一致性测试的依赖
+      # 全部依赖按仓库锁文件安装（Python pip --require-hashes、Node npm ci），与本地开发同一个脚本（W13 技术债 T06）；
+      # 各组共用，避免哪一组缺依赖被跳过（严格模式下跳过即失败）
+      - name: 开发依赖（scripts/bootstrap-deps.sh，按锁文件）
+        run: PY_BOOT=python bash scripts/bootstrap-deps.sh
+
+      - name: Playwright 浏览器（冲刺 3-H；浏览器只处理合成数据，spec 待人确认 #11）
+        if: matrix.group == 'bff-web'
+        working-directory: apps/web
+        run: npx --no-install playwright install --with-deps chromium
+
+      # 人设回归每次都跑（不靠 paths 过滤），在 persona 组：Prompt、禁语表、人设规格有变更时报告标“人设变更”，
+      # 缺录音或录音过期严格模式失败。报告作为 Gate 0“最近一次运行报告”上传（spec 设计要点 6、待人确认 #11、#12）；不需要任何密钥。
+      - name: make check-group-${{ matrix.group }}${{ github.event_name == 'pull_request' && '-light' || '' }}（严格模式）
+        run: make check-group-${{ matrix.group }}${{ github.event_name == 'pull_request' && '-light' || '' }} CONTRACT_STRICT=1 PYTHON=.venv-contracts/bin/python PGBIN=/usr/lib/postgresql/16/bin PERSONA_REPORT_DIR=${{ runner.temp }}/persona-report
+
+      - name: 上传人设回归报告（保留 90 天）
+        if: always() && matrix.group == 'persona'
+        uses: actions/upload-artifact@v4
+        with:
+          name: persona-report
+          path: ${{ runner.temp }}/persona-report/
+          retention-days: 90
+          if-no-files-found: warn
+
+  # 数据库变异测试（db/tests/mutations.sh，1251 个变异，单机全跑约 3 小时）拆成 12 个分片并行：
+  # 分片按变异名排序后取模，12 个分片合起来正好覆盖全部，一个都不跳过；任何一片失败整个检查就失败。
+  db-mutation:
+    # 变异测试：PR 上不跑，合并到 main 与手动触发时跑
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: PostgreSQL 16（只用来起本机一次性实例）
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q postgresql-16
+          sudo systemctl stop postgresql || true
+
+      # 79p 用 Python 读字段字典（YAML），需要装了 PyYAML 的解释器
+      - name: 契约检查依赖（含 PyYAML）
         run: |
           python -m venv .venv-contracts
           .venv-contracts/bin/pip install -q -r packages/contracts/requirements-dev.txt
 
-      - name: 学习服务依赖
-        working-directory: services/learning
-        run: |
-          python -m venv .venv
-          .venv/bin/pip install -q -r requirements-dev.txt
-
-      - name: 阿鸦适配器依赖
-        working-directory: adapters/aya
-        run: npm ci --no-audit --no-fund
-
-      - name: BFF 依赖
-        working-directory: services/bff
-        run: npm ci --no-audit --no-fund
-
-      - name: 统一壳前端依赖与 Playwright 浏览器（冲刺 3-H；浏览器只处理合成数据，spec 待人确认 #11）
-        working-directory: apps/web
-        run: |
-          npm ci --no-audit --no-fund
-          npx --no-install playwright install --with-deps chromium
-
-      - name: make check（严格模式）
-        run: make check CONTRACT_STRICT=1 PYTHON=.venv-contracts/bin/python PGBIN=/usr/lib/postgresql/16/bin
+      - name: 数据库变异测试（分片 ${{ matrix.shard }}/12，严格模式）
+        run: make db-mutation CONTRACT_STRICT=1 PYTHON=.venv-contracts/bin/python PGBIN=/usr/lib/postgresql/16/bin DBMUT_SHARD=${{ matrix.shard }}/12

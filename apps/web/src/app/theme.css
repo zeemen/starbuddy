@@ -1,0 +1,31 @@
+/* 页面主题变量（静态文件，由 src/lib/theme.ts 的 THEME_CSS 生成，tests/unit.test.ts 核对两者一致）。
+   4-H H2：CSP 不允许内联样式，根布局不再输出内联 <style>，改为静态 CSS（lessons：内联样式二选一）。 */
+
+:root { color-scheme: light dark; }
+:root, [data-theme="light"] {
+  --bg: #F4F3EE;
+  --fg: #1F2A44;
+  --muted: #4A5163;
+  --rule: #C9CBD1;
+  --star-stroke: #1F2A44;
+  --star-stroke-unlit: #7F8490;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+  --bg: #1F2A44;
+  --fg: #F4F3EE;
+  --muted: #C4C7CE;
+  --rule: #3A4560;
+  --star-stroke: #9FA3AA;
+  --star-stroke-unlit: #8C9099;
+  }
+}
+[data-theme="dark"] {
+  --bg: #1F2A44;
+  --fg: #F4F3EE;
+  --muted: #C4C7CE;
+  --rule: #3A4560;
+  --star-stroke: #9FA3AA;
+  --star-stroke-unlit: #8C9099;
+}
+

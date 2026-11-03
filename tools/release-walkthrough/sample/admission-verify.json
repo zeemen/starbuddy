@@ -1,0 +1,13 @@
+{
+ "format": "aya-admission-verify/1",
+ "items": 721,
+ "note": null,
+ "ok": true,
+ "pack_version": "0.3.0-0ed2fe4.d<pack-digest-1>",
+ "same": 720,
+ "six_segment": "nanjing/2027/9/suke-2024/aya/0.1.0",
+ "status": "published",
+ "stricter": 1,
+ "violation_count": 0,
+ "violations": []
+}

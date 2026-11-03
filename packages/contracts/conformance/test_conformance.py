@@ -5,7 +5,8 @@
 
 范围说明（README“检查边界”）：
 - 六个方法都做契约 schema 校验、坏请求、幂等；
-- 平台侧核对与泄露检查目前只覆盖 grade、diagnose（共享库只实现了这两个方法的规则）；
+- 平台侧核对与泄露检查目前只覆盖 grade、diagnose（共享库只实现了这两个方法的规则），以及 v1.1 的 present_item
+  （题面白名单、答案类字段名、答案类秘密、不产生证据；starbuddy_contract.present）；
 - 异步：适配器返回 202 时按契约轮询 /jobs/{job_id}，用任务结果继续校验。
 """
 from __future__ import annotations
@@ -18,12 +19,14 @@ from starbuddy_contract.checks import SUPPORTED_METHODS, ContractViolation, veri
 from starbuddy_contract.contract import CONTRACT_VERSION, plugin_contract
 from support import (
     METERED,
+    STUDENT,
     RESPONSE_SCHEMA,
     SUBJECTS,
     attempts_of,
     build_request,
     conflict_variant,
     leak_problems,
+    present_problems,
     string_leaves,
     student_inputs,
 )
@@ -90,14 +93,20 @@ def _negatives(method: str, subject: str):
     def setc(k, v):
         return lambda b: b["context"].__setitem__(k, v)
 
-    yield "no_idempotency_key", drop("idempotency_key")
+    present = method == "present_item"
+    if not present:  # v1.1 PresentItemContext 的幂等键可选、允许 L1、不带 student_ref
+        yield "no_idempotency_key", drop("idempotency_key")
     yield "short_idempotency_key", setc("idempotency_key", "short")
     if method in METERED:
         yield "no_usage_id", drop("usage_id")
     yield "wrong_contract_version", setc("contract_version", "0.8.0")
     yield "data_class_L0", setc("data_class", "L0")
-    yield "data_class_L1", setc("data_class", "L1")
-    yield "student_ref_not_uuid", setc("student_ref", "not-a-uuid")
+    if not present:
+        yield "data_class_L1", setc("data_class", "L1")
+        yield "student_ref_not_uuid", setc("student_ref", "not-a-uuid")
+    else:
+        # 题面与学生无关：带学生 ID 的题面请求必须拒绝（PresentItemContext 不允许 student_ref）
+        yield "student_ref_on_present", setc("student_ref", STUDENT)
 
     def wrong_subject(b):
         b["context"]["subject"] = other
@@ -105,6 +114,10 @@ def _negatives(method: str, subject: str):
             b["context"]["content_version"]["subject"] = other
     yield "wrong_subject", wrong_subject
     yield "extra_top_level_field", lambda b: b.__setitem__("commentary", "free text")
+    if method == "present_item":
+        # v1.1：题面只读、不计量，带了计量 ID 的请求必须拒绝（契约 PresentItemRequest.context 不允许 usage_id）
+        yield "usage_id_on_read_only", setc("usage_id", "00000000-0000-4000-8000-00000000b7ff")
+        yield "answer_field_requested", lambda b: b.__setitem__("include_answer", True)
 
 
 def test_bad_requests_are_rejected(request, client, capabilities, fx, method_case):
@@ -142,6 +155,16 @@ def test_case(request, client, capabilities, fx, case):
     first, resp, _job = client.invoke(method, body)
     assert resp is not None, f"返回 {first.status}"
     assert plugin_contract().validate(RESPONSE_SCHEMA[method], resp) == []
+    if method == "present_item":
+        # v1.1（PLT-12）：题面的平台侧白名单、答案类字段与秘密、不产生证据；题面与请求的题目一致；夹具里的期望编码
+        assert resp["result"]["item_ref"] == body["item_ref"], "题面不是请求的那道题"
+        problems = present_problems(resp, secrets=fx.secrets, answer_secrets=[str(s) for s in case.get("secrets", [])])
+        assert problems == []
+        exp = case.get("expect", {})
+        for k in ("content_state", "item_type", "license_state"):
+            if k in exp:
+                assert resp["result"][k] == exp[k], f"题面的 {k} 与夹具不一致"
+        return
     if method not in SUPPORTED_METHODS:
         return  # 平台侧核对与泄露检查尚未覆盖这个方法（README“检查边界”）
     try:
@@ -184,6 +207,17 @@ def test_idempotency(request, client, capabilities, fx, method_case):
         pytest.skip("未实现")
     _tag(request, method)
     body = build_request(fx, method_case)
+    if method == "present_item":
+        # 只读：不要求幂等键、不进适配器幂等缓存（不做冲突检测）。同一版本的题面逐字节不变（PresentedItem.item_version），
+        # 带不带幂等键、换不换 request_id 结果都一样
+        _, r1, _ = client.invoke(method, body)
+        assert r1 is not None
+        keyed = copy.deepcopy(body)
+        keyed["context"]["idempotency_key"] = "00000000-0000-4000-8000-00000000c7ff"
+        keyed["context"]["request_id"] = "00000000-0000-4000-8000-00000000abce"
+        _, r2, _ = client.invoke(method, keyed)
+        assert r2 is not None and r2 == r1, "同一道题、同一内容版本，两次取到的题面不一致"
+        return
     f1, r1, job1 = client.invoke(method, body)
     assert r1 is not None, f"返回 {f1.status}"
     f2, r2, job2 = client.invoke(method, body)

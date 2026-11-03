@@ -1,0 +1,27 @@
+{
+  "$comment": "合成占位，非人审值，禁止用于任何非测试环境。学情档案页的“判断模板 → 六节”归属与固定衔接短语（每节一条，必须出自一致性检查配置的 connective_phrases）待数学教研与 SIE 负责人起草、产品负责人审核（第一步待人确认 #20，与程度词表同级管理，必停）。这里的模板键都是合成的，只供 tests/test_mastery_profile*.py 与洞察服务的联调测试使用。",
+  "schema_version": "kge-profile-page/0.1",
+  "config_version": "syn-0.1.0",
+  "synthetic": true,
+  "signed_by": "",
+  "signed_at": "",
+  "subjects": ["aya"],
+  "check_config": "profile-check.synthetic.json",
+  "sections": {
+    "syn.mastery.stable": {"section": "mastered"},
+    "syn.mastery.unstable": {"section": "working_on"},
+    "syn.mastery.weak": {"section": "working_on"},
+    "syn.progress.recent": {"section": "recent_progress"},
+    "syn.mastery.node": {"by_gate": {"transfer": "mastered", "retain": "mastered"}, "default": "working_on"}
+  },
+  "connectives": {
+    "current_stage": "先看这一节",
+    "mastered": "另外",
+    "working_on": "接下来",
+    "root_cause": "另外",
+    "recent_progress": "最近一段时间",
+    "next_step": "下一步"
+  },
+  "max_per_section": 30,
+  "budget_ms": {"session_start": 800, "weekly": 5000}
+}

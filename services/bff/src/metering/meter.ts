@@ -2,17 +2,24 @@
 //   确定成功 → meter_settle；确定失败 → meter_release；
 //   结果未知 → 用同一个 key 退避重试，直到确定或用完预算（预留剩余时间的一半）；仍不确定就不结算，留给过期任务。
 // 同 key 重试（existing）：reserved 继续同一笔；settled 拿学习服务的重放结果，不再扣；
-// released 返回“之前已失败”；expired 仍用原 key 拿重放结果，不扣费（spec 待人确认 #6）。
+// released 返回“之前已失败”；expired 只调重放接口（只查不执行，specs/plugin-api-v1.0-step2）：有结果 → 不扣费返回；
+// 没有 → 学习服务封存这个 key，前端换新 key 重新预留；这样不会出现一次没有预留的执行（评审 N17）。
 import type { Pool } from 'pg';
 import { withAccount } from './db.ts';
 import { meteringFingerprint, type MeteredMethod } from './fingerprint.ts';
-import type { LearningCall, LearningOutcome, Problem } from './learning-client.ts';
-import { noopMetrics, type Metrics } from './metrics.ts';
+import { assertLearningContractVersion, type LearningCall, type LearningOutcome, type LearningReplay, type Problem } from './learning-client.ts';
+import { observeMeter } from '../observability/metrics.ts';
+import { promMetrics, type Metrics } from './metrics.ts';
 import { isUuidV4, usageIdFor } from './uuid.ts';
 
 export type ResourceType =
   | 'diagnosis_screen' | 'diagnosis_full' | 'mock_exam' | 'mistake_analysis'
-  | 'lesson_whiteboard' | 'voice_realtime' | 'ai_active_time';
+  | 'lesson_whiteboard' | 'voice_realtime' | 'ai_active_time'
+  // 0015：不对应插件方法，由 BFF 自己发起（上传经 meter_reserve_upload，按页折算）
+  | 'upload' | 'storage_bytes' | 'deep_report';
+
+// 0015 的拒绝原因：留存态不调用 AI；宵禁时段；分钟类资源超过当日上限（规格书 V1.2 §3、§7、§12.2）
+export type GuardRejection = 'retained_no_ai' | 'curfew' | 'curfew_soon' | 'daily_cap_reached';
 
 export interface ReserveInput {
   studentId: string;
@@ -30,32 +37,52 @@ export type ReserveResult =
   | { outcome: 'existing'; usage_id: string; state: 'reserved' | 'settled' | 'released' | 'expired';
       reserved_qty: number; settled_qty: number | null; expires_at: string; dedup_of: string | null }
   | { outcome: 'insufficient'; remaining: number }
-  | { outcome: 'conflict' | 'dedup_in_progress' | 'no_entitlement' };
+  | { outcome: 'daily_cap_reached'; remaining_today: number }
+  | { outcome: 'curfew_soon'; minutes_until_curfew: number }
+  | { outcome: 'conflict' | 'dedup_in_progress' | 'no_entitlement' | 'retained_no_ai' | 'curfew' };
 
 export type TerminalResult = { outcome: 'settled' | 'released' | 'conflict'; usage_id: string; state: string; idempotent?: boolean };
 
+// LT-05（决定记录（续）第 6 条）：预留、结算、释放（回滚）的结果编码计数、冲突（对外 409）另计，都在 withAccount 返回之后
+// （事务已提交）才做；observeMeter 吞掉任何异常，计量结果与事务都不受指标影响（只记编码，不记键、学生与额度）
 export async function reserve(pool: Pool, accountId: string, input: ReserveInput): Promise<ReserveResult> {
-  return withAccount(pool, accountId, async (c) => {
+  const r = await withAccount(pool, accountId, async (c) => {
     const { rows } = await c.query(
       'SELECT platform.meter_reserve($1, $2, $3, $4, $5, $6, $7) AS r',
       [input.studentId, input.resourceType, input.idempotencyKey, input.requestFingerprint, input.quantity,
        input.contentFingerprint ?? null, input.sourceMethod]);
     return rows[0].r as ReserveResult;
   });
+  observeMeter('reserve', r.outcome);
+  return r;
 }
 
 export async function settle(pool: Pool, accountId: string, usageId: string, settledQty: number): Promise<TerminalResult> {
-  return withAccount(pool, accountId, async (c) => {
+  const r = await withAccount(pool, accountId, async (c) => {
     const { rows } = await c.query('SELECT platform.meter_settle($1, $2) AS r', [usageId, settledQty]);
     return rows[0].r as TerminalResult;
+  });
+  observeMeter('settle', r.outcome);
+  return r;
+}
+
+/** 因届别变化放弃的诊断退回额度（迁移 0049 platform.meter_refund_grade_changed）：库里只认学生本人、只认 abandon_reason = grade_changed 的会话 */
+export type RefundResult = { outcome: 'refunded' | 'released' | 'conflict'; usage_id: string; state: string; idempotent?: boolean;
+                             quantity?: number; reason?: string };
+export async function refundGradeChanged(pool: Pool, accountId: string, usageId: string): Promise<RefundResult> {
+  return withAccount(pool, accountId, async (c) => {
+    const { rows } = await c.query('SELECT platform.meter_refund_grade_changed($1) AS r', [usageId]);
+    return rows[0].r as RefundResult;
   });
 }
 
 export async function release(pool: Pool, accountId: string, usageId: string, reason: string): Promise<TerminalResult> {
-  return withAccount(pool, accountId, async (c) => {
+  const r = await withAccount(pool, accountId, async (c) => {
     const { rows } = await c.query('SELECT platform.meter_release($1, $2) AS r', [usageId, reason]);
     return rows[0].r as TerminalResult;
   });
+  observeMeter('release', r.outcome);
+  return r;
 }
 
 // 本冲刺接通 BFF 流程的资源（学习服务只有 grade、diagnose；teach 类资源只实现了数据库函数）。
@@ -78,6 +105,7 @@ export interface MeteredCallInput {
 export interface MeterDeps {
   pool: Pool;
   learning: LearningCall;
+  replay: LearningReplay;         // 预留过期后只查询、不执行
   metrics?: Metrics;
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;             // 与数据库计量时钟同一时间轴（测试里注入）
@@ -91,7 +119,9 @@ export type MeteredCallResult =
   | { status: 'expired_retry_with_new_key'; usageId: string; problem: Problem }
   | { status: 'unknown'; usageId: string }
   | { status: 'insufficient'; remaining: number }
-  | { status: 'conflict' | 'dedup_in_progress' | 'no_entitlement' };
+  | { status: 'daily_cap_reached'; remainingToday: number }
+  | { status: 'curfew_soon'; minutesUntilCurfew: number }
+  | { status: 'conflict' | 'dedup_in_progress' | 'no_entitlement' | 'retained_no_ai' | 'curfew' };
 
 const DEFAULT_DELAYS = [1000, 2000, 4000, 8000];
 
@@ -99,12 +129,16 @@ export async function meteredCall(deps: MeterDeps, input: MeteredCallInput): Pro
   if (!isUuidV4(input.idempotencyKey)) throw new TypeError('idempotencyKey must be a lowercase UUIDv4');
   const method = METHOD_OF[input.resourceType];
   if (method === undefined) throw new TypeError(`${String(input.resourceType)} is not metered through the BFF in this sprint`);
-  const metrics = deps.metrics ?? noopMetrics;
+  const metrics = deps.metrics ?? promMetrics;
   const usageId = usageIdFor(input.idempotencyKey);
-  // 按实际发出去的 JSON 处理（Date 等值先按 JSON.stringify 的规则转换），指纹与请求体一致
+  // 先按 JSON 规范化（Date 等值按 JSON.stringify 的规则转换），计量指纹按这份插件请求体算（算法不变）；发出去时 learning-client
+  // 再包成 learning-internal v1 信封 {request, ingest}、把 context.contract_version 写成 1.0.0——信封与版本字段不进指纹（LT-04）
   const body = JSON.parse(JSON.stringify(input.body)) as Record<string, unknown>;
   const given = (body['context'] ?? {}) as Record<string, unknown>;
-  // 扣谁的额度，就只能写谁的学习记录：学习服务以 student_ref 为准且不再核对（安全审查阻断 A）
+  // 契约版本只能缺省或 1.0.0：在预留之前拒绝（不扣额度、不留预留），而不是发出去后被学习服务 400
+  assertLearningContractVersion(given);
+  // 扣谁的额度，就只能写谁的学习记录：学习服务以 student_ref 为准（安全审查阻断 A）；LT-04 起学习服务写入前还按计量账本
+  // 核对 usage_id + 幂等键 + 学生（迁移 0058），但这里仍是第一道关：不一致在预留之前就拒绝
   if (given['student_ref'] !== undefined && given['student_ref'] !== input.studentId) {
     throw new TypeError('context.student_ref must equal the metered student');
   }
@@ -122,26 +156,28 @@ export async function meteredCall(deps: MeterDeps, input: MeteredCallInput): Pro
   switch (r.outcome) {
     case 'insufficient':
       return { status: 'insufficient', remaining: r.remaining };
+    case 'daily_cap_reached':
+      return { status: 'daily_cap_reached', remainingToday: r.remaining_today };
+    case 'curfew_soon':
+      return { status: 'curfew_soon', minutesUntilCurfew: r.minutes_until_curfew };
     case 'conflict':
     case 'dedup_in_progress':
     case 'no_entitlement':
+    case 'retained_no_ai':
+    case 'curfew':
       return { status: r.outcome };
   }
   if (r.usage_id !== usageId) throw new Error('usage_id derived by the database does not match the BFF');
 
   if (r.outcome === 'existing' && r.state !== 'reserved') {
     if (r.state === 'released') return { status: 'failed_previously', usageId };
-    // settled：之前已经扣过；expired：过期不扣费。两种都用原 key 拿学习服务的重放结果，不再预留
+    if (r.state === 'expired') return replayAfterExpiry(deps, method, input.studentId, usageId, input.idempotencyKey, r.dedup_of, metrics);
+    // settled：之前已经扣过，用原 key 拿学习服务的重放结果，不再预留
     const replay = await callWithRetry(deps, method, body, r.expires_at, metrics);
     if (replay.kind === 'success') {
-      if (r.state === 'expired') metrics.increment(replay.replayed ? 'replay_after_expiry' : 'reexecuted_without_reservation');
-      return { status: 'ok', usageId, charged: r.state === 'settled', replay: true, dedup: r.dedup_of !== null, result: replay.body };
+      return { status: 'ok', usageId, charged: true, replay: true, dedup: r.dedup_of !== null, result: replay.body };
     }
-    if (replay.kind === 'failure') {
-      return r.state === 'expired'
-        ? { status: 'expired_retry_with_new_key', usageId, problem: replay.problem }
-        : { status: 'failed', usageId, httpStatus: replay.status, problem: replay.problem };
-    }
+    if (replay.kind === 'failure') return { status: 'failed', usageId, httpStatus: replay.status, problem: replay.problem };
     metrics.increment('result_unknown');
     return { status: 'unknown', usageId };
   }
@@ -162,6 +198,22 @@ export async function meteredCall(deps: MeterDeps, input: MeteredCallInput): Pro
   if (outcome.kind === 'failure') {
     await release(deps.pool, input.accountId, usageId, 'upstream_rejected');
     return { status: 'failed', usageId, httpStatus: outcome.status, problem: outcome.problem };
+  }
+  metrics.increment('result_unknown');
+  return { status: 'unknown', usageId };
+}
+
+// 预留已过期：不再发原请求（那会是一次没有预留的执行），只查询重放接口
+async function replayAfterExpiry(deps: MeterDeps, method: MeteredMethod, studentId: string, usageId: string, key: string,
+                                 dedupOf: string | null, metrics: Metrics): Promise<MeteredCallResult> {
+  const out = await deps.replay(method, key, studentId, usageId);
+  if (out.kind === 'found') {
+    metrics.increment('replay_after_expiry');
+    return { status: 'ok', usageId, charged: false, replay: true, dedup: dedupOf !== null, result: out.body };
+  }
+  if (out.kind === 'not_found') {
+    metrics.increment('sealed_after_expiry');
+    return { status: 'expired_retry_with_new_key', usageId, problem: out.problem };
   }
   metrics.increment('result_unknown');
   return { status: 'unknown', usageId };

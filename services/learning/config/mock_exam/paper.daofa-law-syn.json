@@ -1,0 +1,33 @@
+{
+ "format": "starbuddy-mock-paper/1",
+ "paper_id": "SYN-MOCK-DAOFA-LAW-01",
+ "subject": "zhixing",
+ "version": "0.1.0",
+ "full_score": 60,
+ "duration_minutes": 60,
+ "source": "synthetic",
+ "synthetic": true,
+ "notice": "合成样例卷（PLT-18 第一步）：道法法律领域。仓库现有合成夹具里法律领域的题号不足一张卷，题号一律为明确标注的合成号 SYN-MOCK-LAW-*（不对应任何真实题目），节点映射指向合成法律领域样例 tools/kge-import/samples/daofa/law.yaml 的合成观点；不含题目原文、材料、答案与采分点；分值与分节为工程起草的占位，待教研组卷替换；题型码 material_analysis 等是工程占位词表。",
+ "sections": [
+  {"name": "一、单项选择题（合成）", "items": [
+   {"item_id": "SYN-MOCK-LAW-S01", "paper_score": 2, "question_type_code": "single_choice"},
+   {"item_id": "SYN-MOCK-LAW-S02", "paper_score": 2, "question_type_code": "single_choice"},
+   {"item_id": "SYN-MOCK-LAW-S03", "paper_score": 2, "question_type_code": "single_choice"},
+   {"item_id": "SYN-MOCK-LAW-S04", "paper_score": 2, "question_type_code": "single_choice"},
+   {"item_id": "SYN-MOCK-LAW-S05", "paper_score": 2, "question_type_code": "single_choice"},
+   {"item_id": "SYN-MOCK-LAW-S06", "paper_score": 2, "question_type_code": "single_choice"},
+   {"item_id": "SYN-MOCK-LAW-S07", "paper_score": 2, "question_type_code": "single_choice"},
+   {"item_id": "SYN-MOCK-LAW-S08", "paper_score": 2, "question_type_code": "single_choice"},
+   {"item_id": "SYN-MOCK-LAW-S09", "paper_score": 2, "question_type_code": "single_choice"},
+   {"item_id": "SYN-MOCK-LAW-S10", "paper_score": 2, "question_type_code": "single_choice"},
+   {"item_id": "SYN-MOCK-LAW-S11", "paper_score": 2, "question_type_code": "single_choice"},
+   {"item_id": "SYN-MOCK-LAW-S12", "paper_score": 2, "question_type_code": "single_choice"}
+  ]},
+  {"name": "二、非选择题（合成）", "items": [
+   {"item_id": "SYN-MOCK-LAW-M01", "paper_score": 9, "question_type_code": "material_analysis"},
+   {"item_id": "SYN-MOCK-LAW-M02", "paper_score": 9, "question_type_code": "material_analysis"},
+   {"item_id": "SYN-MOCK-LAW-M03", "paper_score": 9, "question_type_code": "material_analysis"},
+   {"item_id": "SYN-MOCK-LAW-M04", "paper_score": 9, "question_type_code": "material_analysis"}
+  ]}
+ ]
+}

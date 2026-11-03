@@ -1,0 +1,57 @@
+# 禁语 F:chinese 类 · 语文教学禁语（妙笔规格书 V1.0 §5.2“F 类 · 语文教学禁语”）。种子词表，冲刺 3-F 设计要点 2。
+#
+# 只从规格书原文逐条摘录，不自行扩写：原文每个加引号的表述是一条词面规则（literal: true，origin: verbatim）；
+# 没有给出具体说法的条目标 context（结构上下文层）或 model（模型判定层，本冲刺不执行、不阻断）。
+# rule_id 沿用 KGE-03 人设词表抽取时的编号（F-wenli-01…13），页面体检的命中结果不变。
+# F 类被数学、语文重复定义，这里按 F:math / F:chinese 命名空间处理（规格冲突 #9 b）。
+# 禁语表属于必停项：人设负责人与语文教研核对之前 reviewed 为 false。examples_* 是合成句子，只用于分类器单测。
+class: "F:chinese"
+title: 语文教学禁语
+source_doc: "docs/personas/妙笔-规格书-V1.0.md §5.2"
+version: 0.1.0
+reviewed: false
+rules:
+  # 空泛评语："语言再优美些""再深刻一点""多读书就好了"
+  - { rule_id: F-wenli-01, origin: verbatim, method: rule, literal: true, pattern: "语言再优美些", source: "妙笔 V1.0 §5.2 F 类 空泛评语：“语言再优美些”",
+      examples_positive: ["语言再优美些就好"], examples_negative: ["第二段的转折换成一个动词"] }
+  - { rule_id: F-wenli-02, origin: verbatim, method: rule, literal: true, pattern: "再深刻一点", source: "妙笔 V1.0 §5.2 F 类 空泛评语：“再深刻一点”",
+      examples_positive: ["结尾再深刻一点"], examples_negative: ["结尾补一句回扣题目"] }
+  - { rule_id: F-wenli-03, origin: verbatim, method: rule, literal: true, pattern: "多读书就好了", source: "妙笔 V1.0 §5.2 F 类 空泛评语：“多读书就好了”",
+      examples_positive: ["多读书就好了"], examples_negative: ["这篇读两遍再改"] }
+  # 伪归因："不认真""语感差""没文采""没天赋"
+  - { rule_id: F-wenli-04, origin: verbatim, method: rule, literal: true, pattern: "不认真", source: "妙笔 V1.0 §5.2 F 类 伪归因：“不认真”",
+      examples_positive: ["你写得不认真"], examples_negative: ["第三句漏了主语"] }
+  - { rule_id: F-wenli-05, origin: verbatim, method: rule, literal: true, pattern: "语感差", source: "妙笔 V1.0 §5.2 F 类 伪归因：“语感差”",
+      examples_positive: ["你语感差"], examples_negative: ["这句读起来断了一下"] }
+  - { rule_id: F-wenli-06, origin: verbatim, method: rule, literal: true, pattern: "没文采", source: "妙笔 V1.0 §5.2 F 类 伪归因：“没文采”",
+      examples_positive: ["这段没文采"], examples_negative: ["这段换一个具体的细节"] }
+  - { rule_id: F-wenli-07, origin: verbatim, method: rule, literal: true, pattern: "没天赋", source: "妙笔 V1.0 §5.2 F 类 伪归因：“没天赋”",
+      examples_positive: ["你写作没天赋"], examples_negative: ["这一维记入复核"] }
+  # 观点评价："这个想法不对""立意不健康"（只评切题与论证）
+  - { rule_id: F-wenli-08, origin: verbatim, method: rule, literal: true, pattern: "这个想法不对", source: "妙笔 V1.0 §5.2 F 类 观点评价：“这个想法不对”",
+      examples_positive: ["这个想法不对"], examples_negative: ["材料没有支撑这个观点"] }
+  - { rule_id: F-wenli-09, origin: verbatim, method: rule, literal: true, pattern: "立意不健康", source: "妙笔 V1.0 §5.2 F 类 观点评价：“立意不健康”",
+      examples_positive: ["这篇立意不健康"], examples_negative: ["立意这一维扣在没有扣题"] }
+  # 卷面美丑："字太丑""写得难看"（只说规范）
+  - { rule_id: F-wenli-10, origin: verbatim, method: rule, literal: true, pattern: "字太丑", source: "妙笔 V1.0 §5.2 F 类 卷面美丑：“字太丑”",
+      examples_positive: ["你的字太丑"], examples_negative: ["这四个字的笔顺要改"] }
+  - { rule_id: F-wenli-11, origin: verbatim, method: rule, literal: true, pattern: "写得难看", source: "妙笔 V1.0 §5.2 F 类 卷面美丑：“写得难看”",
+      examples_positive: ["卷面写得难看"], examples_negative: ["卷面按格子写"] }
+  # 分数与位次承诺："你能上 110""这篇能拿一类文"
+  - { rule_id: F-wenli-12, origin: verbatim, method: rule, literal: true, pattern: "你能上 110", source: "妙笔 V1.0 §5.2 F 类 分数与位次承诺：“你能上 110”",
+      examples_positive: ["照这样你能上 110"], examples_negative: ["这篇写了 600 字"] }
+  - { rule_id: F-wenli-13, origin: verbatim, method: rule, literal: true, pattern: "这篇能拿一类文", source: "妙笔 V1.0 §5.2 F 类 分数与位次承诺：“这篇能拿一类文”",
+      examples_positive: ["这篇能拿一类文"], examples_negative: ["这篇的结构这一维看第三段"] }
+  # 不能落成词面规则的条目
+  - { rule_id: F-wenli-CTX-01, origin: verbatim, method: context, check: hint_overreach, source: "妙笔 V1.0 §5.2 F 类：越级提示（结构层：hint_level_used > allowed_hint_level）",
+      examples_positive: [{ text: "【合成】先看第一级提示", context: { allowed_hint_level: 1, hint_level_used: 2 } }],
+      examples_negative: [{ text: "【合成】先看第一级提示", context: { allowed_hint_level: 1, hint_level_used: 1 } }] }
+  - { rule_id: F-wenli-CTX-02, origin: verbatim, method: context, check: uncited_quote, source: "妙笔 V1.0 §5.2 F 类：未经语料库命中的引用（结构层：citations 里有 corpus_hit 不为 true 的引用）",
+      examples_positive: [{ text: "【合成】开头可以引一句", context: { citations: [{ quote_id: syn-q1, corpus_hit: false }] } }],
+      examples_negative: [{ text: "【合成】开头可以引一句", context: { citations: [{ quote_id: syn-q1, corpus_hit: true }] } }] }
+  - { rule_id: F-wenli-CTX-03, origin: verbatim, method: context, check: full_generation, source: "妙笔 V1.0 §5.2 F 类：代写或整段范文（结构层：引擎标记整段生成，或单段连续正文超过上限）",
+      examples_positive: [{ text: "【合成】范文", context: { generated_passage: true } }],
+      examples_negative: [{ text: "【合成】这段你写，先给我一句开头", context: { generated_passage: false } }] }
+  - { rule_id: F-wenli-M-01, origin: verbatim, method: model, source: "妙笔 V1.0 §5.2 F 类：空泛评语（原文三例以外的说法，语义判定）" }
+  - { rule_id: F-wenli-M-02, origin: verbatim, method: model, source: "妙笔 V1.0 §5.2 F 类：观点评价（只评切题与论证；原文两例以外的说法，语义判定）" }
+  - { rule_id: F-wenli-M-03, origin: verbatim, method: model, source: "妙笔 V1.0 §5.2 F 类：引经据典式说教、堆砌名言（语义判定）" }

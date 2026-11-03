@@ -12,8 +12,12 @@ const fill = (answer: string[], extra: Partial<PackItem> = {}): PackItem => ({
   format: "fill",
   answer,
   mainNodes: ["K-SYN-0001"],
+  usage: "D",
+  estMinutes: 1,
+  hintPath: ["（合成）提示"],
   reviewStatus: "Q1",
   admission: "source_unverified",
+  source: { source_ref: null, source_type: "unknown", license_status: "unverified" },
   ...extra,
 });
 

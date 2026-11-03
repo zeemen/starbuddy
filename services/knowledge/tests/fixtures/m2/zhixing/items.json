@@ -1,0 +1,49 @@
+{
+  "format": "kge-m2-items/1",
+  "subject": "zhixing",
+  "map_version": "0.3.0",
+  "items": [
+    {
+      "item_id": "SYN-D2-01",
+      "main_node_id": "MORAL.SYN.LAW.RIGHTS",
+      "cognitive_level": "understand",
+      "admission": "admitted",
+      "tag_review_status": "approved"
+    },
+    {
+      "item_id": "SYN-D2-02",
+      "main_node_id": "MORAL.SYN.LAW.RIGHTS",
+      "cognitive_level": "apply",
+      "admission": "admitted",
+      "tag_review_status": "approved"
+    },
+    {
+      "item_id": "SYN-D2-03",
+      "main_node_id": "MORAL.SYN.LAW.DUTIES",
+      "cognitive_level": "understand",
+      "admission": "admitted",
+      "tag_review_status": "approved"
+    },
+    {
+      "item_id": "SYN-D2-04",
+      "main_node_id": "MORAL.SYN.LAW.RULE",
+      "cognitive_level": "know",
+      "admission": "admitted",
+      "tag_review_status": "approved"
+    },
+    {
+      "item_id": "SYN-D2-05",
+      "main_node_id": "MORAL.SYN.LAW.RULE",
+      "cognitive_level": "apply",
+      "admission": "admitted",
+      "tag_review_status": "approved"
+    },
+    {
+      "item_id": "SYN-D2-06",
+      "main_node_id": "MORAL.SYN.LAW.EXTRA",
+      "cognitive_level": "understand",
+      "admission": "rejected",
+      "tag_review_status": "approved"
+    }
+  ]
+}

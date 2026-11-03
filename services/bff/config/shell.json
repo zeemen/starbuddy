@@ -1,0 +1,18 @@
+{
+  "_doc": "统一壳页面与读路由的显示规则（specs/unified-shell-sprint4/spec.md 第 6、8、9、10 节，H4）。BFF 与测试读同一份；dev / test 可用 BFF_SHELL_CONFIG 换一份（其余环境设了就拒绝启动）。external_claim_templates 与 rationale_templates 都属画像可见范围（改动是必停项，由人登记；空表示壳内不显示任何判断陈述）。",
+  "rationale_codes": {
+    "_doc": "content：内容类（只描述题目或知识点，不描述学生），显示固定短句，不带判断 ID。about_student：关于学生类，只有目标节点上有该受众可见、成立或假设、在白名单里、且在 rationale_templates 里对这个编码登记过的模板的判断时，才显示该判断的陈述。两张表都没有的编码不显示理由（宁可不显示）。表随代码评审；分类由产品确认（spec 需要人提供的输入）。",
+    "content": ["high_exam_weight", "prerequisite_of_many"],
+    "about_student": ["retest_scheduled", "retest_due", "weak_mastery"]
+  },
+  "external_claim_templates": [],
+  "rationale_templates": {},
+  "_doc_star_map": "H5 星图 v1（specs/star-map-v1-h5，挂在开关 starmap_v1 后，默认关）：timeout_ms 是 BFF 调学习服务 star-map/nodes 的单次时限；mastery_templates / transfer_templates 把白名单里的模板分到“知识掌握”（画星、星数说明）与“知识迁移”（只用于迁移摘要位）两维，必须是 external_claim_templates 的子集且互不相交。两张表属画像可见范围（必停，由人登记；空表示星全部是中性底星、不显示星数说明与迁移摘要）。",
+  "star_map": { "timeout_ms": 3000, "mastery_templates": [], "transfer_templates": [] },
+  "explain": { "max_per_page": 10, "timeout_ms": 1500, "concurrency": 4, "page_deadline_ms": 3000 },
+  "plan": { "timeout_ms": 8000 },
+  "rest_reminder": { "continuous_minutes": 40, "break_minutes": 10, "single_instance": false },
+  "curfew_near_minutes": 30,
+  "_doc_meter_defaults": "计量缺省值的唯一出处（BFF 与前端都不写死）：默认宵禁与留存态每天自练次数。platform.meter_guard_status 目前不返回这两个值（它们写在 0015 的函数体里），改函数属必停项，见 lessons H4 待人确认；在那之前必须与 0015 保持一致（tests/shell-units.test.ts 核对）。",
+  "meter_defaults": { "curfew_start": "22:00", "curfew_end": "06:00", "retained_daily_practice": 5 }
+}

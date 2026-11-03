@@ -1,0 +1,683 @@
+{
+ "assumptions": [
+  {
+   "calls_per_unit": 0,
+   "note": "验证器判分，不调模型（adapters/aya）",
+   "resource": "mistake_analysis",
+   "subject": "aya",
+   "task": null
+  },
+  {
+   "calls_per_unit": 0,
+   "note": "自适应诊断由学习服务的诊断引擎与验证器完成，不调模型",
+   "resource": "diagnosis_full",
+   "subject": "aya",
+   "task": null
+  },
+  {
+   "calls_per_unit": 1.0,
+   "note": "每分钟 1 轮教学对话（假设；讲解尚无适配器实现）",
+   "resource": "ai_active_time",
+   "subject": "aya",
+   "task": "T1"
+  },
+  {
+   "calls_per_unit": 1.0,
+   "note": "每轮对话 1 次守卫（假设）",
+   "resource": "ai_active_time",
+   "subject": "aya",
+   "task": "T9"
+  },
+  {
+   "calls_per_unit": 1.0,
+   "note": "语音分钟全部计入本科（假设）",
+   "resource": "voice_realtime",
+   "subject": "aya",
+   "task": "voice"
+  },
+  {
+   "calls_per_unit": 0.3,
+   "note": "批改中作文占 30%（假设），客观题不调模型",
+   "resource": "mistake_analysis",
+   "subject": "wenli",
+   "task": "T4"
+  },
+  {
+   "calls_per_unit": 0,
+   "note": "诊断为客观题，不调模型",
+   "resource": "diagnosis_full",
+   "subject": "wenli",
+   "task": null
+  },
+  {
+   "calls_per_unit": 1.0,
+   "note": "每分钟 1 轮教学对话（假设）",
+   "resource": "ai_active_time",
+   "subject": "wenli",
+   "task": "T1"
+  },
+  {
+   "calls_per_unit": 1.0,
+   "note": "每轮对话 1 次守卫（假设）",
+   "resource": "ai_active_time",
+   "subject": "wenli",
+   "task": "T9"
+  },
+  {
+   "calls_per_unit": 1.0,
+   "note": "语音分钟全部计入本科（假设）",
+   "resource": "voice_realtime",
+   "subject": "wenli",
+   "task": "voice"
+  },
+  {
+   "calls_per_unit": 0.5,
+   "note": "批改中主观题占 50%（假设），客观题不调模型",
+   "resource": "mistake_analysis",
+   "subject": "zhixing",
+   "task": "T2"
+  },
+  {
+   "calls_per_unit": 0,
+   "note": "诊断只收过程模式，不调模型",
+   "resource": "diagnosis_full",
+   "subject": "zhixing",
+   "task": null
+  },
+  {
+   "calls_per_unit": 1.0,
+   "note": "每分钟 1 轮教学对话（假设）",
+   "resource": "ai_active_time",
+   "subject": "zhixing",
+   "task": "T1"
+  },
+  {
+   "calls_per_unit": 1.0,
+   "note": "每轮对话 1 次守卫（假设）",
+   "resource": "ai_active_time",
+   "subject": "zhixing",
+   "task": "T9"
+  },
+  {
+   "calls_per_unit": 1.0,
+   "note": "语音分钟全部计入本科（假设）",
+   "resource": "voice_realtime",
+   "subject": "zhixing",
+   "task": "voice"
+  }
+ ],
+ "banner": "合成估算：示例价、非真实会话数据",
+ "currency": "CNY",
+ "example_prices": true,
+ "prices_ref": {
+  "T1": {
+   "input": 2.0,
+   "model": "模型代号甲-对话",
+   "output": 8.0,
+   "vendor": "供应商代号甲"
+  },
+  "T2": {
+   "input": 4.0,
+   "model": "模型代号甲-推理",
+   "output": 16.0,
+   "vendor": "供应商代号甲"
+  },
+  "T4": {
+   "input": 2.0,
+   "model": "模型代号甲-对话",
+   "output": 8.0,
+   "vendor": "供应商代号甲"
+  },
+  "T9": {
+   "input": 0.8,
+   "model": "模型代号乙-守卫",
+   "output": 2.0,
+   "vendor": "供应商代号乙"
+  }
+ },
+ "quota_config": "v12-pilot@1",
+ "records": {
+  "ok": 20,
+  "total": 20
+ },
+ "sensitivity": [
+  {
+   "p50": 2.1816,
+   "p90": 3.6359999999999997,
+   "scenario": "price_x0.5",
+   "subject": "aya",
+   "tier": "basic"
+  },
+  {
+   "p50": 6.5448,
+   "p90": 10.908,
+   "scenario": "price_x1.5",
+   "subject": "aya",
+   "tier": "basic"
+  },
+  {
+   "p50": 5.4648,
+   "p90": 9.108,
+   "scenario": "tokens_x1.5",
+   "subject": "aya",
+   "tier": "basic"
+  },
+  {
+   "p50": 4.3632,
+   "p90": 7.271999999999999,
+   "scenario": "price_x0.5",
+   "subject": "aya",
+   "tier": "plus"
+  },
+  {
+   "p50": 13.0896,
+   "p90": 21.816,
+   "scenario": "price_x1.5",
+   "subject": "aya",
+   "tier": "plus"
+  },
+  {
+   "p50": 10.9296,
+   "p90": 18.216,
+   "scenario": "tokens_x1.5",
+   "subject": "aya",
+   "tier": "plus"
+  },
+  {
+   "p50": 9.8064,
+   "p90": 16.344,
+   "scenario": "price_x0.5",
+   "subject": "aya",
+   "tier": "pro"
+  },
+  {
+   "p50": 29.4192,
+   "p90": 49.032,
+   "scenario": "price_x1.5",
+   "subject": "aya",
+   "tier": "pro"
+  },
+  {
+   "p50": 24.019199999999998,
+   "p90": 40.032,
+   "scenario": "tokens_x1.5",
+   "subject": "aya",
+   "tier": "pro"
+  },
+  {
+   "p50": 18.07056,
+   "p90": 30.1176,
+   "scenario": "price_x0.5",
+   "subject": "aya",
+   "tier": "max"
+  },
+  {
+   "p50": 54.211679999999994,
+   "p90": 90.3528,
+   "scenario": "price_x1.5",
+   "subject": "aya",
+   "tier": "max"
+  },
+  {
+   "p50": 43.41168,
+   "p90": 72.3528,
+   "scenario": "tokens_x1.5",
+   "subject": "aya",
+   "tier": "max"
+  },
+  {
+   "p50": 2.2118810399999997,
+   "p90": 3.6864684,
+   "scenario": "price_x0.5",
+   "subject": "wenli",
+   "tier": "basic"
+  },
+  {
+   "p50": 6.63564312,
+   "p90": 11.0594052,
+   "scenario": "price_x1.5",
+   "subject": "wenli",
+   "tier": "basic"
+  },
+  {
+   "p50": 5.555643120000001,
+   "p90": 9.2594052,
+   "scenario": "tokens_x1.5",
+   "subject": "wenli",
+   "tier": "basic"
+  },
+  {
+   "p50": 4.4389026000000005,
+   "p90": 7.398171,
+   "scenario": "price_x0.5",
+   "subject": "wenli",
+   "tier": "plus"
+  },
+  {
+   "p50": 13.3167078,
+   "p90": 22.194513,
+   "scenario": "price_x1.5",
+   "subject": "wenli",
+   "tier": "plus"
+  },
+  {
+   "p50": 11.1567078,
+   "p90": 18.594513,
+   "scenario": "tokens_x1.5",
+   "subject": "wenli",
+   "tier": "plus"
+  },
+  {
+   "p50": 10.008273599999999,
+   "p90": 16.680456,
+   "scenario": "price_x0.5",
+   "subject": "wenli",
+   "tier": "pro"
+  },
+  {
+   "p50": 30.0248208,
+   "p90": 50.041368,
+   "scenario": "price_x1.5",
+   "subject": "wenli",
+   "tier": "pro"
+  },
+  {
+   "p50": 24.624820800000002,
+   "p90": 41.041368,
+   "scenario": "tokens_x1.5",
+   "subject": "wenli",
+   "tier": "pro"
+  },
+  {
+   "p50": 18.4743072,
+   "p90": 30.790512,
+   "scenario": "price_x0.5",
+   "subject": "wenli",
+   "tier": "max"
+  },
+  {
+   "p50": 55.422921599999995,
+   "p90": 92.37153599999999,
+   "scenario": "price_x1.5",
+   "subject": "wenli",
+   "tier": "max"
+  },
+  {
+   "p50": 44.6229216,
+   "p90": 74.37153599999999,
+   "scenario": "tokens_x1.5",
+   "subject": "wenli",
+   "tier": "max"
+  },
+  {
+   "p50": 2.2696487999999997,
+   "p90": 3.7827479999999998,
+   "scenario": "price_x0.5",
+   "subject": "zhixing",
+   "tier": "basic"
+  },
+  {
+   "p50": 6.8089464,
+   "p90": 11.348244,
+   "scenario": "price_x1.5",
+   "subject": "zhixing",
+   "tier": "basic"
+  },
+  {
+   "p50": 5.7289464,
+   "p90": 9.548244,
+   "scenario": "tokens_x1.5",
+   "subject": "zhixing",
+   "tier": "basic"
+  },
+  {
+   "p50": 4.583322,
+   "p90": 7.63887,
+   "scenario": "price_x0.5",
+   "subject": "zhixing",
+   "tier": "plus"
+  },
+  {
+   "p50": 13.749966,
+   "p90": 22.91661,
+   "scenario": "price_x1.5",
+   "subject": "zhixing",
+   "tier": "plus"
+  },
+  {
+   "p50": 11.589966,
+   "p90": 19.316609999999997,
+   "scenario": "tokens_x1.5",
+   "subject": "zhixing",
+   "tier": "plus"
+  },
+  {
+   "p50": 10.393391999999999,
+   "p90": 17.322319999999998,
+   "scenario": "price_x0.5",
+   "subject": "zhixing",
+   "tier": "pro"
+  },
+  {
+   "p50": 31.180176,
+   "p90": 51.96696,
+   "scenario": "price_x1.5",
+   "subject": "zhixing",
+   "tier": "pro"
+  },
+  {
+   "p50": 25.780175999999997,
+   "p90": 42.96696,
+   "scenario": "tokens_x1.5",
+   "subject": "zhixing",
+   "tier": "pro"
+  },
+  {
+   "p50": 19.244543999999998,
+   "p90": 32.07424,
+   "scenario": "price_x0.5",
+   "subject": "zhixing",
+   "tier": "max"
+  },
+  {
+   "p50": 57.73363199999999,
+   "p90": 96.22272,
+   "scenario": "price_x1.5",
+   "subject": "zhixing",
+   "tier": "max"
+  },
+  {
+   "p50": 46.933631999999996,
+   "p90": 78.22272,
+   "scenario": "tokens_x1.5",
+   "subject": "zhixing",
+   "tier": "max"
+  }
+ ],
+ "table": [
+  {
+   "by_level": {
+    "0.3": 2.1816,
+    "0.6": 4.3632,
+    "1": 7.271999999999999
+   },
+   "label": "数学（阿鸦）",
+   "p50": 4.3632,
+   "p90": 7.271999999999999,
+   "status": "ok",
+   "subject": "aya",
+   "tier": "basic"
+  },
+  {
+   "by_level": {
+    "0.3": 4.3632,
+    "0.6": 8.7264,
+    "1": 14.543999999999999
+   },
+   "label": "数学（阿鸦）",
+   "p50": 8.7264,
+   "p90": 14.543999999999999,
+   "status": "ok",
+   "subject": "aya",
+   "tier": "plus"
+  },
+  {
+   "by_level": {
+    "0.3": 9.8064,
+    "0.6": 19.6128,
+    "1": 32.688
+   },
+   "label": "数学（阿鸦）",
+   "p50": 19.6128,
+   "p90": 32.688,
+   "status": "ok",
+   "subject": "aya",
+   "tier": "pro"
+  },
+  {
+   "by_level": {
+    "0.3": 18.07056,
+    "0.6": 36.14112,
+    "1": 60.2352
+   },
+   "label": "数学（阿鸦）",
+   "p50": 36.14112,
+   "p90": 60.2352,
+   "status": "ok",
+   "subject": "aya",
+   "tier": "max"
+  },
+  {
+   "by_level": {
+    "0.3": 2.2118810399999997,
+    "0.6": 4.4237620799999995,
+    "1": 7.3729368
+   },
+   "label": "语文（文砺）",
+   "p50": 4.4237620799999995,
+   "p90": 7.3729368,
+   "status": "ok",
+   "subject": "wenli",
+   "tier": "basic"
+  },
+  {
+   "by_level": {
+    "0.3": 4.4389026000000005,
+    "0.6": 8.877805200000001,
+    "1": 14.796342
+   },
+   "label": "语文（文砺）",
+   "p50": 8.877805200000001,
+   "p90": 14.796342,
+   "status": "ok",
+   "subject": "wenli",
+   "tier": "plus"
+  },
+  {
+   "by_level": {
+    "0.3": 10.008273599999999,
+    "0.6": 20.016547199999998,
+    "1": 33.360912
+   },
+   "label": "语文（文砺）",
+   "p50": 20.016547199999998,
+   "p90": 33.360912,
+   "status": "ok",
+   "subject": "wenli",
+   "tier": "pro"
+  },
+  {
+   "by_level": {
+    "0.3": 18.4743072,
+    "0.6": 36.9486144,
+    "1": 61.581024
+   },
+   "label": "语文（文砺）",
+   "p50": 36.9486144,
+   "p90": 61.581024,
+   "status": "ok",
+   "subject": "wenli",
+   "tier": "max"
+  },
+  {
+   "by_level": {
+    "0.3": 2.2696487999999997,
+    "0.6": 4.539297599999999,
+    "1": 7.5654959999999996
+   },
+   "label": "道法（知行）",
+   "p50": 4.539297599999999,
+   "p90": 7.5654959999999996,
+   "status": "ok",
+   "subject": "zhixing",
+   "tier": "basic"
+  },
+  {
+   "by_level": {
+    "0.3": 4.583322,
+    "0.6": 9.166644,
+    "1": 15.27774
+   },
+   "label": "道法（知行）",
+   "p50": 9.166644,
+   "p90": 15.27774,
+   "status": "ok",
+   "subject": "zhixing",
+   "tier": "plus"
+  },
+  {
+   "by_level": {
+    "0.3": 10.393391999999999,
+    "0.6": 20.786783999999997,
+    "1": 34.644639999999995
+   },
+   "label": "道法（知行）",
+   "p50": 20.786783999999997,
+   "p90": 34.644639999999995,
+   "status": "ok",
+   "subject": "zhixing",
+   "tier": "pro"
+  },
+  {
+   "by_level": {
+    "0.3": 19.244543999999998,
+    "0.6": 38.489087999999995,
+    "1": 64.14848
+   },
+   "label": "道法（知行）",
+   "p50": 38.489087999999995,
+   "p90": 64.14848,
+   "status": "ok",
+   "subject": "zhixing",
+   "tier": "max"
+  },
+  {
+   "label": "英语（回声）",
+   "status": "搁置，无数据",
+   "subject": "echo"
+  }
+ ],
+ "token_sources": [
+  {
+   "calls_observed": 0,
+   "input_tokens": 1800.0,
+   "output_tokens": 250.0,
+   "per_call_cost": 0.0056,
+   "price_ref": {
+    "model": "模型代号甲-对话",
+    "vendor": "供应商代号甲"
+   },
+   "source": "可配置分布（假设）",
+   "subject": "aya",
+   "task": "T1"
+  },
+  {
+   "calls_observed": 0,
+   "input_tokens": 600.0,
+   "output_tokens": 20.0,
+   "per_call_cost": 0.00052,
+   "price_ref": {
+    "model": "模型代号乙-守卫",
+    "vendor": "供应商代号乙"
+   },
+   "source": "可配置分布（假设）",
+   "subject": "aya",
+   "task": "T9"
+  },
+  {
+   "calls_observed": 10,
+   "input_tokens": 1235.8,
+   "output_tokens": 392.0,
+   "per_call_cost": 0.005608,
+   "price_ref": {
+    "model": "模型代号甲-对话",
+    "vendor": "供应商代号甲"
+   },
+   "source": "合成回放（假供应商按提示字符数估算 token）",
+   "subject": "wenli",
+   "task": "T4"
+  },
+  {
+   "calls_observed": 0,
+   "input_tokens": 1800.0,
+   "output_tokens": 250.0,
+   "per_call_cost": 0.0056,
+   "price_ref": {
+    "model": "模型代号甲-对话",
+    "vendor": "供应商代号甲"
+   },
+   "source": "可配置分布（假设）",
+   "subject": "wenli",
+   "task": "T1"
+  },
+  {
+   "calls_observed": 0,
+   "input_tokens": 600.0,
+   "output_tokens": 20.0,
+   "per_call_cost": 0.00052,
+   "price_ref": {
+    "model": "模型代号乙-守卫",
+    "vendor": "供应商代号乙"
+   },
+   "source": "可配置分布（假设）",
+   "subject": "wenli",
+   "task": "T9"
+  },
+  {
+   "calls_observed": 10,
+   "input_tokens": 1563.4,
+   "output_tokens": 220.6,
+   "per_call_cost": 0.009783,
+   "price_ref": {
+    "model": "模型代号甲-推理",
+    "vendor": "供应商代号甲"
+   },
+   "source": "合成回放（假供应商按提示字符数估算 token）",
+   "subject": "zhixing",
+   "task": "T2"
+  },
+  {
+   "calls_observed": 0,
+   "input_tokens": 1800.0,
+   "output_tokens": 250.0,
+   "per_call_cost": 0.0056,
+   "price_ref": {
+    "model": "模型代号甲-对话",
+    "vendor": "供应商代号甲"
+   },
+   "source": "可配置分布（假设）",
+   "subject": "zhixing",
+   "task": "T1"
+  },
+  {
+   "calls_observed": 0,
+   "input_tokens": 600.0,
+   "output_tokens": 20.0,
+   "per_call_cost": 0.00052,
+   "price_ref": {
+    "model": "模型代号乙-守卫",
+    "vendor": "供应商代号乙"
+   },
+   "source": "可配置分布（假设）",
+   "subject": "zhixing",
+   "task": "T9"
+  }
+ ],
+ "utilization": {
+  "levels": [
+   0.3,
+   0.6,
+   1.0
+  ],
+  "weights": [
+   1.0,
+   1.0,
+   1.0
+  ]
+ },
+ "voice_price_ref": {
+  "model": "模型代号丙-语音",
+  "price": 0.06,
+  "vendor": "供应商代号丙"
+ }
+}

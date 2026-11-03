@@ -1,0 +1,507 @@
+{
+ "arrivals": 22,
+ "arrivals_by_journey": {
+  "meter": 2,
+  "parent": 10,
+  "student": 10
+ },
+ "banner": "本机基线，不代表生产容量",
+ "db": {
+  "activity": {
+   "by_role": {
+    "bff_app": {
+     "max_active": 1,
+     "max_connections": 6,
+     "max_lock_wait": 0
+    },
+    "learning_app": {
+     "max_active": 1,
+     "max_connections": 4,
+     "max_lock_wait": 0
+    }
+   },
+   "samples": 42
+  },
+  "pool_note": "学习服务 asyncpg 池 max 10（learning/app.py）、BFF pg 池 max 10（services/bff/src/main.ts）；批改经计量驱动桩运行 BFF meteredCall，另用 bff_app 池 max 20；计量旅程另用 bff_app 池 max 20",
+  "stat_statements": true,
+  "top_queries": [
+   {
+    "calls": 46,
+    "max_ms": 48.7,
+    "mean_ms": 8.9,
+    "query": "SELECT platform.meter_reserve($1, $2, $3, $4, $5, $6, $7) AS r",
+    "role": "bff_app",
+    "total_ms": 409.6
+   },
+   {
+    "calls": 44,
+    "max_ms": 22.3,
+    "mean_ms": 3.94,
+    "query": "SELECT platform.meter_settle($1::uuid, $2::numeric)",
+    "role": "bff_app",
+    "total_ms": 173.4
+   },
+   {
+    "calls": 20,
+    "max_ms": 42.2,
+    "mean_ms": 6.0,
+    "query": "SELECT e.subject::text AS subject, e.status AS enrollment_status, n.local_id, n.label_code, m.state::text AS state, m.confidence::text AS confidence FROM platform.subject_enrollment e JOIN platform.sk",
+    "role": "bff_app",
+    "total_ms": 120.0
+   },
+   {
+    "calls": 40,
+    "max_ms": 7.5,
+    "mean_ms": 2.44,
+    "query": "SELECT platform.meter_guard_status($1::uuid) AS g",
+    "role": "bff_app",
+    "total_ms": 97.6
+   },
+   {
+    "calls": 10,
+    "max_ms": 23.8,
+    "mean_ms": 8.25,
+    "query": "SELECT resource_type, unit, source, period_end, remaining FROM platform.entitlement_balance WHERE student_id = $1 ORDER BY resource_type, source, period_end",
+    "role": "bff_app",
+    "total_ms": 82.5
+   },
+   {
+    "calls": 110,
+    "max_ms": 2.8,
+    "mean_ms": 0.43,
+    "query": "SELECT account_id, account_kind::text AS account_kind, origin FROM platform.auth_session_resolve($1)",
+    "role": "bff_app",
+    "total_ms": 47.2
+   },
+   {
+    "calls": 120,
+    "max_ms": 3.0,
+    "mean_ms": 0.27,
+    "query": "SELECT platform.auth_rate_hit($1, $2, $3, $4) AS ok",
+    "role": "bff_app",
+    "total_ms": 32.4
+   },
+   {
+    "calls": 20,
+    "max_ms": 4.8,
+    "mean_ms": 1.19,
+    "query": "SELECT outcome, session_token FROM platform.auth_otp_login($1, $2, $3, $4, $5)",
+    "role": "bff_app",
+    "total_ms": 23.9
+   },
+   {
+    "calls": 2,
+    "max_ms": 15.8,
+    "mean_ms": 10.07,
+    "query": "SELECT platform.meter_release($1::uuid, $2)",
+    "role": "bff_app",
+    "total_ms": 20.1
+   },
+   {
+    "calls": 10,
+    "max_ms": 8.1,
+    "mean_ms": 1.91,
+    "query": "SELECT platform.auth_issue_student_session($1, $2, $3, $4) AS token",
+    "role": "bff_app",
+    "total_ms": 19.1
+   }
+  ]
+ },
+ "endpoints": {
+  "diagnose.answer": {
+   "codes": {
+    "200": 10
+   },
+   "count": 10,
+   "error_rate": 0.0,
+   "errors": 0,
+   "max_ms": 300.7,
+   "p50_ms": 106.3,
+   "p95_ms": 300.7,
+   "p99_ms": 300.7,
+   "rejected": 0,
+   "throughput_rps": 0.473
+  },
+  "diagnose.current": {
+   "codes": {
+    "200": 10
+   },
+   "count": 10,
+   "error_rate": 0.0,
+   "errors": 0,
+   "max_ms": 63.3,
+   "p50_ms": 26.8,
+   "p95_ms": 63.3,
+   "p99_ms": 63.3,
+   "rejected": 0,
+   "throughput_rps": 0.473
+  },
+  "diagnose.pause": {
+   "codes": {
+    "200": 10
+   },
+   "count": 10,
+   "error_rate": 0.0,
+   "errors": 0,
+   "max_ms": 28.7,
+   "p50_ms": 19.3,
+   "p95_ms": 28.7,
+   "p99_ms": 28.7,
+   "rejected": 0,
+   "throughput_rps": 0.473
+  },
+  "diagnose.start": {
+   "codes": {
+    "201": 10
+   },
+   "count": 10,
+   "error_rate": 0.0,
+   "errors": 0,
+   "max_ms": 110.4,
+   "p50_ms": 39.2,
+   "p95_ms": 110.4,
+   "p99_ms": 110.4,
+   "rejected": 0,
+   "throughput_rps": 0.473
+  },
+  "grade.aya": {
+   "codes": {
+    "ok": 10
+   },
+   "count": 10,
+   "error_rate": 0.0,
+   "errors": 0,
+   "max_ms": 268.2,
+   "p50_ms": 75.9,
+   "p95_ms": 268.2,
+   "p99_ms": 268.2,
+   "rejected": 0,
+   "throughput_rps": 0.473
+  },
+  "grade.wenli": {
+   "codes": {
+    "ok": 10
+   },
+   "count": 10,
+   "error_rate": 0.0,
+   "errors": 0,
+   "max_ms": 1499.0,
+   "p50_ms": 538.9,
+   "p95_ms": 1499.0,
+   "p99_ms": 1499.0,
+   "rejected": 0,
+   "throughput_rps": 0.473
+  },
+  "grade.zhixing": {
+   "codes": {
+    "ok": 10
+   },
+   "count": 10,
+   "error_rate": 0.0,
+   "errors": 0,
+   "max_ms": 1516.2,
+   "p50_ms": 408.4,
+   "p95_ms": 1516.2,
+   "p99_ms": 1516.2,
+   "rejected": 0,
+   "throughput_rps": 0.473
+  },
+  "login.otp_request": {
+   "codes": {
+    "202": 20
+   },
+   "count": 20,
+   "error_rate": 0.0,
+   "errors": 0,
+   "max_ms": 45.0,
+   "p50_ms": 16.9,
+   "p95_ms": 45.0,
+   "p99_ms": 45.0,
+   "rejected": 0,
+   "throughput_rps": 0.945
+  },
+  "login.otp_verify": {
+   "codes": {
+    "200": 20
+   },
+   "count": 20,
+   "error_rate": 0.0,
+   "errors": 0,
+   "max_ms": 26.6,
+   "p50_ms": 10.7,
+   "p95_ms": 19.3,
+   "p99_ms": 26.6,
+   "rejected": 0,
+   "throughput_rps": 0.945
+  },
+  "login.student_session": {
+   "codes": {
+    "200": 10
+   },
+   "count": 10,
+   "error_rate": 0.0,
+   "errors": 0,
+   "max_ms": 77.2,
+   "p50_ms": 13.6,
+   "p95_ms": 77.2,
+   "p99_ms": 77.2,
+   "rejected": 0,
+   "throughput_rps": 0.473
+  },
+  "meter.release": {
+   "codes": {
+    "outcome:released": 2
+   },
+   "count": 2,
+   "error_rate": 0.0,
+   "errors": 0,
+   "max_ms": 24.6,
+   "p50_ms": 11.1,
+   "p95_ms": 24.6,
+   "p99_ms": 24.6,
+   "rejected": 0,
+   "throughput_rps": 0.095
+  },
+  "meter.reserve": {
+   "codes": {
+    "outcome:reserved": 2
+   },
+   "count": 2,
+   "error_rate": 0.0,
+   "errors": 0,
+   "max_ms": 28.2,
+   "p50_ms": 20.8,
+   "p95_ms": 28.2,
+   "p99_ms": 28.2,
+   "rejected": 0,
+   "throughput_rps": 0.095
+  },
+  "meter.reserve_pair": {
+   "codes": {
+    "outcome:existing": 2,
+    "outcome:reserved": 2
+   },
+   "count": 4,
+   "error_rate": 0.0,
+   "errors": 0,
+   "max_ms": 29.7,
+   "p50_ms": 25.2,
+   "p95_ms": 29.7,
+   "p99_ms": 29.7,
+   "rejected": 0,
+   "throughput_rps": 0.189
+  },
+  "meter.settle": {
+   "codes": {
+    "outcome:settled": 2
+   },
+   "count": 2,
+   "error_rate": 0.0,
+   "errors": 0,
+   "max_ms": 25.2,
+   "p50_ms": 10.5,
+   "p95_ms": 25.2,
+   "p99_ms": 25.2,
+   "rejected": 0,
+   "throughput_rps": 0.095
+  },
+  "meter.settle_repeat": {
+   "codes": {
+    "outcome:settled": 2
+   },
+   "count": 2,
+   "error_rate": 0.0,
+   "errors": 0,
+   "max_ms": 6.9,
+   "p50_ms": 4.1,
+   "p95_ms": 6.9,
+   "p99_ms": 6.9,
+   "rejected": 0,
+   "throughput_rps": 0.095
+  },
+  "parent.child_balance": {
+   "codes": {
+    "200": 10
+   },
+   "count": 10,
+   "error_rate": 0.0,
+   "errors": 0,
+   "max_ms": 43.4,
+   "p50_ms": 19.5,
+   "p95_ms": 43.4,
+   "p99_ms": 43.4,
+   "rejected": 0,
+   "throughput_rps": 0.473
+  },
+  "parent.child_enrollments": {
+   "codes": {
+    "200": 10
+   },
+   "count": 10,
+   "error_rate": 0.0,
+   "errors": 0,
+   "max_ms": 32.3,
+   "p50_ms": 23.0,
+   "p95_ms": 32.3,
+   "p99_ms": 32.3,
+   "rejected": 0,
+   "throughput_rps": 0.473
+  },
+  "parent.child_star_map": {
+   "codes": {
+    "200": 10
+   },
+   "count": 10,
+   "error_rate": 0.0,
+   "errors": 0,
+   "max_ms": 91.9,
+   "p50_ms": 21.7,
+   "p95_ms": 91.9,
+   "p99_ms": 91.9,
+   "rejected": 0,
+   "throughput_rps": 0.473
+  },
+  "parent.children": {
+   "codes": {
+    "200": 10
+   },
+   "count": 10,
+   "error_rate": 0.0,
+   "errors": 0,
+   "max_ms": 32.7,
+   "p50_ms": 14.2,
+   "p95_ms": 32.7,
+   "p99_ms": 32.7,
+   "rejected": 0,
+   "throughput_rps": 0.473
+  },
+  "star_map": {
+   "codes": {
+    "200": 10
+   },
+   "count": 10,
+   "error_rate": 0.0,
+   "errors": 0,
+   "max_ms": 25.3,
+   "p50_ms": 19.4,
+   "p95_ms": 25.3,
+   "p99_ms": 25.3,
+   "rejected": 0,
+   "throughput_rps": 0.473
+  },
+  "today": {
+   "codes": {
+    "200": 10
+   },
+   "count": 10,
+   "error_rate": 0.0,
+   "errors": 0,
+   "max_ms": 790.0,
+   "p50_ms": 60.5,
+   "p95_ms": 790.0,
+   "p99_ms": 790.0,
+   "rejected": 0,
+   "throughput_rps": 0.473
+  }
+ },
+ "executed_digest": "3cd4b8e5ba08775a98c04ce039d7be2bc9672967bd262406f55051af1620db8f",
+ "faults": {},
+ "metering": {
+  "bucket_reserved": 0,
+  "expired": 0,
+  "expired_by_job": 0,
+  "reconciliation_rows": 0,
+  "released": 2,
+  "reservations": 44,
+  "settled": 42,
+  "settled_qty": 46,
+  "skew": "3 hours",
+  "still_reserved": 0,
+  "unbalanced": 0,
+  "zero_leak": true
+ },
+ "model_calls": {
+  "by_outcome": {
+   "ok": 20
+  },
+  "by_subject_task": {
+   "wenli/T4": 10,
+   "zhixing/T2": 10
+  },
+  "total": 20
+ },
+ "plan_digest": "3cd4b8e5ba08775a98c04ce039d7be2bc9672967bd262406f55051af1620db8f",
+ "profile": {
+  "mean_session_s": 6.0,
+  "mix": [
+   {
+    "journey": "student",
+    "weight": 0.6
+   },
+   {
+    "journey": "parent",
+    "weight": 0.25
+   },
+   {
+    "journey": "meter",
+    "weight": 0.15
+   }
+  ],
+  "seed": 20260930,
+  "stages": [
+   {
+    "concurrency": 5,
+    "duration_s": 10.0
+   },
+   {
+    "concurrency": 10,
+    "duration_s": 10.0
+   }
+  ],
+  "think_mean_s": 0.2
+ },
+ "provider": {
+  "counts": {
+   "代号A（境内，主）": {
+    "ok": 20
+   }
+  },
+  "median_ms": 300.0,
+  "p90_ms": 900.0
+ },
+ "queue_wait_p95_ms": 0.021916999685345218,
+ "retry_scale": 1.0,
+ "scale_note": "小规模样例：small 档（5 → 10 并发 × 各 10 s，种子 20260930）在开发机上生成，只演示报告口径；完整分阶段 10 → 50 → 100 → 200 用 make loadtest-baseline LOADTEST_STAGES=full LOADTEST_ARGS=--i-know，由执行人在本机另跑。",
+ "seeded": {
+  "families": 22,
+  "pilot": 6
+ },
+ "skipped": {},
+ "stages": [
+  {
+   "count": 66,
+   "error_rate": 0.0,
+   "errors": 0,
+   "max_ms": 1516.2,
+   "p50_ms": 25.2,
+   "p95_ms": 747.6,
+   "p99_ms": 1516.2,
+   "seconds": 10.0,
+   "stage": 0,
+   "throughput_rps": 6.6
+  },
+  {
+   "count": 126,
+   "error_rate": 0.0,
+   "errors": 0,
+   "max_ms": 1499.0,
+   "p50_ms": 24.3,
+   "p95_ms": 408.4,
+   "p99_ms": 1148.1,
+   "seconds": 11.16,
+   "stage": 1,
+   "throughput_rps": 11.293
+  }
+ ],
+ "wall_seconds": 21.16
+}

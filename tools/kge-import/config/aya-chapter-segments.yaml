@@ -1,0 +1,212 @@
+# 阿鸦章节 → 六段标识映射表（KGE-02 设计要点 1；spec 待人确认 #2）
+# 状态：待教研核对。由 KGE-02 按 legacy/aya/content/topics.ts 的 chapterLabel 机械起草，未经教研确认，不是结论。
+# 用途：tools/kge-import 按题目所在章节推出年级、册次、教材；推出的六段只写进 tagging-report.json，
+#       items.sql 不写 platform.curriculum_version（那是内容登记脚本的事）。
+# 规则：
+#   - label 必须与 legacy 的 chapterLabel 逐字一致，不一致时导入器报进工作单（防止映射表与 legacy 漂移）；
+#   - 不在本表里的章节、压轴专项（sprint，没有章节）推不出六段，进工作单；
+#   - 一题出现在多个年级的章节时，只登记首次出现（年级、册次最早）的那个。
+# 待教研核对的点：
+#   - defaults 的 region / exam_year / content_version 沿用内容包（adapters/aya/content/pack.json）的整包常量，
+#     登记时是猜的；exam_year 对七、八年级内容是否应按届别区分，待定；
+#   - textbook_version 统一写 suke-2024（苏科版），教材修订年份待核对；
+#   - term：upper = 上册，lower = 下册。
+version: 1
+defaults:
+  region: nanjing
+  exam_year: 2027
+  subject: aya
+  content_version: 0.1.0
+chapters:
+  mus:
+    label: "苏科版七上 · 第1章"  # 数学与我们同行
+    grade: 7
+    term: upper
+    chapter: 1
+    textbook_version: suke-2024
+  rat:
+    label: "苏科版七上 · 第2章"  # 有理数
+    grade: 7
+    term: upper
+    chapter: 2
+    textbook_version: suke-2024
+  alg:
+    label: "苏科版七上 · 第3章"  # 代数式
+    grade: 7
+    term: upper
+    chapter: 3
+    textbook_version: suke-2024
+  leq:
+    label: "苏科版七上 · 第4章"  # 一元一次方程
+    grade: 7
+    term: upper
+    chapter: 4
+    textbook_version: suke-2024
+  fig:
+    label: "苏科版七上 · 第5章"  # 走进图形世界
+    grade: 7
+    term: upper
+    chapter: 5
+    textbook_version: suke-2024
+  pln:
+    label: "苏科版七上 · 第6章"  # 平面图形的认识（一）
+    grade: 7
+    term: upper
+    chapter: 6
+    textbook_version: suke-2024
+  pow:
+    label: "苏科版七下 · 第7章"  # 幂的运算
+    grade: 7
+    term: lower
+    chapter: 7
+    textbook_version: suke-2024
+  mul:
+    label: "苏科版七下 · 第8章"  # 整式乘法
+    grade: 7
+    term: lower
+    chapter: 8
+    textbook_version: suke-2024
+  trf:
+    label: "苏科版七下 · 第9章"  # 图形的变换
+    grade: 7
+    term: lower
+    chapter: 9
+    textbook_version: suke-2024
+  sle:
+    label: "苏科版七下 · 第10章"  # 二元一次方程组
+    grade: 7
+    term: lower
+    chapter: 10
+    textbook_version: suke-2024
+  ineq:
+    label: "苏科版七下 · 第11章"  # 一元一次不等式
+    grade: 7
+    term: lower
+    chapter: 11
+    textbook_version: suke-2024
+  prf:
+    label: "苏科版七下 · 第12章"  # 定义、命题、证明
+    grade: 7
+    term: lower
+    chapter: 12
+    textbook_version: suke-2024
+  cgt:
+    label: "苏科版八上 · 第1章"  # 全等三角形
+    grade: 8
+    term: upper
+    chapter: 1
+    textbook_version: suke-2024
+  axs:
+    label: "苏科版八上 · 第2章"  # 轴对称图形
+    grade: 8
+    term: upper
+    chapter: 2
+    textbook_version: suke-2024
+  pyt:
+    label: "苏科版八上 · 第3章"  # 勾股定理
+    grade: 8
+    term: upper
+    chapter: 3
+    textbook_version: suke-2024
+  real:
+    label: "苏科版八上 · 第4章"  # 实数
+    grade: 8
+    term: upper
+    chapter: 4
+    textbook_version: suke-2024
+  crd:
+    label: "苏科版八上 · 第5章"  # 平面直角坐标系
+    grade: 8
+    term: upper
+    chapter: 5
+    textbook_version: suke-2024
+  lin:
+    label: "苏科版八上 · 第6章"  # 一次函数
+    grade: 8
+    term: upper
+    chapter: 6
+    textbook_version: suke-2024
+  dce:
+    label: "苏科版八下 · 第7章"  # 数据的收集、整理、描述
+    grade: 8
+    term: lower
+    chapter: 7
+    textbook_version: suke-2024
+  prc:
+    label: "苏科版八下 · 第8章"  # 认识概率
+    grade: 8
+    term: lower
+    chapter: 8
+    textbook_version: suke-2024
+  par:
+    label: "苏科版八下 · 第9章"  # 中心对称图形——平行四边形
+    grade: 8
+    term: lower
+    chapter: 9
+    textbook_version: suke-2024
+  frac:
+    label: "苏科版八下 · 第10章"  # 分式
+    grade: 8
+    term: lower
+    chapter: 10
+    textbook_version: suke-2024
+  inv:
+    label: "苏科版八下 · 第11章"  # 反比例函数
+    grade: 8
+    term: lower
+    chapter: 11
+    textbook_version: suke-2024
+  rad:
+    label: "苏科版八下 · 第12章"  # 二次根式
+    grade: 8
+    term: lower
+    chapter: 12
+    textbook_version: suke-2024
+  equ:
+    label: "苏科版九上 · 第1章"  # 一元二次方程
+    grade: 9
+    term: upper
+    chapter: 1
+    textbook_version: suke-2024
+  cir:
+    label: "苏科版九上 · 第2章"  # 对称图形——圆
+    grade: 9
+    term: upper
+    chapter: 2
+    textbook_version: suke-2024
+  sta:
+    label: "苏科版九上 · 第3章"  # 数据的集中趋势和离散程度
+    grade: 9
+    term: upper
+    chapter: 3
+    textbook_version: suke-2024
+  prb:
+    label: "苏科版九上 · 第4章"  # 等可能条件下的概率
+    grade: 9
+    term: upper
+    chapter: 4
+    textbook_version: suke-2024
+  fun:
+    label: "苏科版九下 · 第5章"  # 二次函数
+    grade: 9
+    term: lower
+    chapter: 5
+    textbook_version: suke-2024
+  sim:
+    label: "苏科版九下 · 第6章"  # 图形的相似
+    grade: 9
+    term: lower
+    chapter: 6
+    textbook_version: suke-2024
+  trg:
+    label: "苏科版九下 · 第7章"  # 锐角三角函数
+    grade: 9
+    term: lower
+    chapter: 7
+    textbook_version: suke-2024
+  app:
+    label: "苏科版九下 · 第8章"  # 统计和概率的简单应用
+    grade: 9
+    term: lower
+    chapter: 8
+    textbook_version: suke-2024

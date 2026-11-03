@@ -3,8 +3,9 @@
 //   - 计量时钟：把 platform.meter_now() 换成读 bfftest.clock 的版本，只在测试库里做
 //   - 已发布的测试额度配置 bfftest-plan@1（照抄种子 ch8-hypothesis@1）
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import pg from 'pg';
-import type { LearningCall, LearningOutcome } from '../src/metering/learning-client.ts';
+import type { LearningCall, LearningOutcome, LearningReplay } from '../src/metering/learning-client.ts';
 import type { MeteringMetric, Metrics } from '../src/metering/metrics.ts';
 
 export const HAS_DB = Boolean(process.env['PGHOST']);
@@ -22,6 +23,43 @@ export interface Harness {
 }
 
 let clock = T0;
+
+// 合成内容版本的发布（只在一次性测试库）：先登记草稿，再以合成 staff 经 4-G 发布闸门的签字函数发布（迁移 0039）。
+// 发布函数 pg_temp.syn_publish_content 定义在 db/seeds/dev/syn-publish-content.sql；pg_temp 函数只在一个会话里有效，所以定义与调用在同一条连接上。
+export const SYN_PUBLISH_SQL = readFileSync(new URL('../../../db/seeds/dev/syn-publish-content.sql', import.meta.url), 'utf8');
+
+/** 在一条连接上先定义合成发布函数，再执行 fn（用完断开，会话级函数不带回连接池） */
+export async function withSynPublish<T>(su: pg.Pool, fn: (c: pg.PoolClient) => Promise<T>): Promise<T> {
+  const c = await su.connect();
+  try {
+    await c.query(SYN_PUBLISH_SQL);
+    return await fn(c);
+  } finally {
+    c.release(true);
+  }
+}
+
+/** 把某学科登记脚本登记的内容版本（有能力点、仍是草稿的）发布出来：一次性测试库里 BFF 才看得到这些能力点 */
+export async function publishRegisteredContent(su: pg.Pool, subject: string): Promise<void> {
+  await withSynPublish(su, (c) => c.query(`SELECT pg_temp.syn_publish_content(v.id) FROM platform.curriculum_version v
+                                            WHERE v.status = 'draft'
+                                              AND v.id IN (SELECT n.curriculum_version_id FROM platform.skill_node n WHERE n.subject = $1::platform.subject)`,
+                                          [subject]));
+}
+
+/** 给还没有已发布课程版本的学科各登记并发布一份合成内容版本（nanjing / 2027 / 9 / bubian-2024 / 0.1.0） */
+export async function publishSyntheticContent(su: pg.Pool, subjects: string[]): Promise<void> {
+  await su.query(`INSERT INTO platform.curriculum_version (region, exam_year, grade, textbook_version, subject, content_version)
+                  SELECT 'nanjing', 2027, 9, 'bubian-2024', s::platform.subject, '0.1.0'
+                    FROM unnest($1::text[]) s
+                   WHERE NOT EXISTS (SELECT 1 FROM platform.curriculum_version c WHERE c.subject = s::platform.subject AND c.status = 'published')
+                  ON CONFLICT (region, exam_year, grade, textbook_version, subject, content_version) DO NOTHING`, [subjects]);
+  await withSynPublish(su, (c) => c.query(`SELECT pg_temp.syn_publish_content(v.id)
+                                             FROM platform.curriculum_version v
+                                            WHERE v.subject::text = ANY ($1::text[]) AND v.region = 'nanjing' AND v.exam_year = 2027 AND v.grade = 9
+                                              AND v.textbook_version = 'bubian-2024' AND v.content_version = '0.1.0' AND v.status = 'draft'
+                                            ORDER BY v.subject`, [subjects]));
+}
 
 export async function setupHarness(): Promise<Harness> {
   const su = new pg.Pool({ user: 'postgres', max: 5 });
@@ -51,11 +89,9 @@ export async function setupHarness(): Promise<Harness> {
                     SELECT $1, tier, feature_code, value_code FROM platform.plan_feature WHERE config_version = 'ch8-hypothesis@1'`, [CONFIG]);
     await su.query(`UPDATE platform.plan_config SET status = 'published', published_at = now() WHERE version = $1`, [CONFIG]);
   }
-  // 选科只能选已上线（有已发布课程版本）的学科：阿鸦、文砺
-  await su.query(`INSERT INTO platform.curriculum_version (region, exam_year, grade, textbook_version, subject, content_version, status, published_at)
-                  SELECT 'nanjing', 2027, 9, 'bubian-2024', s::platform.subject, '0.1.0', 'published', now()
-                    FROM unnest(ARRAY['aya', 'wenli']) s
-                   WHERE NOT EXISTS (SELECT 1 FROM platform.curriculum_version c WHERE c.subject = s::platform.subject AND c.status = 'published')`);
+  // 选科只能选已上线（有已发布课程版本）的学科：阿鸦、文砺。迁移 0039 起先登记草稿，再以合成 staff 经签字函数发布
+  // （同 db/seeds/dev/star-map-synthetic.sql；数学须指向已发布地图，库里没有就建空的合成占位地图，发布后即撤下）
+  await publishSyntheticContent(su, ['aya', 'wenli']);
   const bff = new pg.Pool({ user: 'bff_app', max: 40 });
   const scheduler = new pg.Pool({ user: 'scheduler_app', max: 5 });
   const setClock = async (ms: number) => {
@@ -143,10 +179,15 @@ export function gradeBody(studentId: string, itemRef = 'aya:synthetic-0301-07', 
   };
 }
 
-// 假学习服务：按 key 记住首次成功的结果（学习服务的幂等），脚本决定每次调用的结果
+// 假学习服务：按 key 记住首次成功的结果（学习服务的幂等），脚本决定每次调用的结果；
+// 重放接口只查不执行：没有结果时封存 key，之后同 key 的原请求 409 IDEMPOTENCY_KEY_SEALED；学生或 usage_id 对不上时 404 但不封存
 export class FakeLearning {
   calls: { method: string; key: string; usageId: string }[] = [];
+  replays: { method: string; key: string; studentRef: string; usageId: string }[] = [];
+  sealed = new Set<string>();
+  busy = false;
   private done = new Map<string, LearningOutcome>();
+  private owner = new Map<string, { studentRef: string; usageId: string }>();
   private script: (attempt: number, key: string) => LearningOutcome | Promise<LearningOutcome>;
   constructor(script: (attempt: number, key: string) => LearningOutcome | Promise<LearningOutcome> =
                 () => ({ kind: 'success', status: 200, body: { verdict: 'correct' }, replayed: false })) {
@@ -163,12 +204,28 @@ export class FakeLearning {
     this.lastBody = body;
     const ctx = body['context'] as { idempotency_key: string; usage_id: string };
     this.calls.push({ method, key: ctx.idempotency_key, usageId: ctx.usage_id });
+    if (this.sealed.has(ctx.idempotency_key)) {
+      return { kind: 'failure', status: 409, problem: { code: 'IDEMPOTENCY_KEY_SEALED', retryable: false } };
+    }
+    this.owner.set(ctx.idempotency_key, { studentRef: (body['context'] as { student_ref: string }).student_ref, usageId: ctx.usage_id });
     const prior = this.done.get(ctx.idempotency_key);
     if (prior) return { ...prior, replayed: true } as LearningOutcome;
     const attempt = this.calls.filter((c) => c.key === ctx.idempotency_key).length;
     const out = await this.script(attempt, ctx.idempotency_key);
     if (out.kind === 'success') this.done.set(ctx.idempotency_key, out);
     return out;
+  };
+
+  readonly replay: LearningReplay = async (method, key, studentRef, usageId) => {
+    this.replays.push({ method, key, studentRef, usageId });
+    const notFound = { kind: 'not_found' as const, problem: { code: 'REPLAY_NOT_FOUND', retryable: false } };
+    if (this.busy) return { kind: 'busy' };
+    const o = this.owner.get(key);
+    if (o && (o.studentRef !== studentRef || o.usageId !== usageId)) return notFound;
+    const prior = this.done.get(key);
+    if (prior?.kind === 'success') return { kind: 'found', body: prior.body };
+    this.sealed.add(key);
+    return notFound;
   };
 
   callsFor(k: string): number {

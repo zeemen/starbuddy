@@ -1,0 +1,362 @@
+{
+ "browser": "本机 Chromium（PLAYWRIGHT_BROWSERS_PATH，不下载）",
+ "captured_at_commit": {
+  "commit": "aa7373259271d63df7de69a1f527610997729c9d",
+  "worktree_dirty": true
+ },
+ "device_scale_factor": 1,
+ "full_page": true,
+ "image": {
+  "quality": 60,
+  "type": "jpeg"
+ },
+ "login": "真实会话：+999 合成号码 → 短信捕获桩 → 家长首页；学生视角经家长“打开学生模式”",
+ "node_identity": "BFF 星图 JSON 的 skill（科目:local_id）；页面 DOM 只核对行数、三态与保持计数",
+ "notice": "合成联调，不是内测结论",
+ "page_version": "星图 v0（3-H），掌握未写库，无点亮星；H5 合入后重截",
+ "pages": {
+  "bff": "/bff/v0/students/{student_id}/star-map（同一会话）",
+  "guardian": "/family/{student_id}/star-map",
+  "student": "/s/{student_id}/star-map"
+ },
+ "reconciliation": {
+  "ok": true,
+  "problems": []
+ },
+ "reconciliation_rule": [
+  {
+   "rule": "1 星空科目 = 库里该学生 active 选科（有已登记能力点的科目），严格相等",
+   "v0": "有效（按学生）"
+  },
+  {
+   "rule": "2 页面 DOM 与同一会话的 BFF 星图 JSON 一致（星数、三态、保持）",
+   "v0": "有效（页面渲染与接口一致）"
+  },
+  {
+   "rule": "3 JSON 节点 = 该科已登记能力点，label_code 与登记表一致",
+   "v0": "与学生无关（每名学生相同）"
+  },
+  {
+   "rule": "4 该学生该科证据节点 ⊆ 页面节点",
+   "v0": "与学生无关（页面 = 全部已登记能力点，任何证据节点都在其中）"
+  },
+  {
+   "rule": "5 带状态的星 ⊆ 该学生该科证据节点",
+   "v0": "空真（没有带状态的星）；H5 或掌握写库后生效，届时须重截"
+  },
+  {
+   "rule": "6 掌握未写库：带状态的星 = 0",
+   "v0": "有效（状态断言，与学生无关）"
+  },
+  {
+   "rule": "7 同一会话打开未绑定学生的星图页与 BFF 星图接口都是 404",
+   "v0": "有效（按会话）"
+  },
+  {
+   "rule": "8 家长视角与同一学生的学生视角逐颗一致",
+   "v0": "有效"
+  }
+ ],
+ "registered_nodes": {
+  "by_subject": {
+   "aya": 959,
+   "wenli": 10,
+   "zhixing": 5
+  },
+  "content_versions": {
+   "aya": [
+    "0.1.0"
+   ],
+   "wenli": [
+    "0.1.0"
+   ],
+   "zhixing": [
+    "0.1.0"
+   ]
+  },
+  "source": "公共登记表 platform.skill_node（联结 platform.curriculum_version 取 content_version），一次性库管理员连接只读查询"
+ },
+ "selection_rule": "按作答模式顺序（全对、系统性缺口、刷同题、提示依赖、中断）取前 N 种模式，每种取标签最小的合成学生，学生视角各 1 张；家长视角另截第一名选中学生的家长 1 张；跨学生 404 检查用标签最小的、不同家庭的合成学生",
+ "shots": [
+  {
+   "cross_student": {
+    "bff_status": 404,
+    "other_label": "S03",
+    "other_student_id": "8460914b-4a92-406e-a10d-61ec2086beca",
+    "page_path": "/s/8460914b-4a92-406e-a10d-61ec2086beca/star-map",
+    "page_status": 404
+   },
+   "file": "S01-student.jpg",
+   "kind": "student",
+   "label": "S01",
+   "name": "S01-student",
+   "page_path": "/s/5a209818-99e0-4514-b4c2-8aa5ba6118e0/star-map",
+   "pattern": "all_correct",
+   "reconcile_ok": true,
+   "reconcile_problems": [],
+   "skies": [
+    {
+     "evidence_nodes": 4,
+     "evidence_nodes_on_page": 4,
+     "half": 0,
+     "lit": 0,
+     "needs_verification": 0,
+     "registered_nodes": 959,
+     "retained": 0,
+     "stars_total": 959,
+     "stateful_stars": 0,
+     "subject": "aya",
+     "unlit": 959
+    },
+    {
+     "evidence_nodes": 4,
+     "evidence_nodes_on_page": 4,
+     "half": 0,
+     "lit": 0,
+     "needs_verification": 0,
+     "registered_nodes": 10,
+     "retained": 0,
+     "stars_total": 10,
+     "stateful_stars": 0,
+     "subject": "wenli",
+     "unlit": 10
+    },
+    {
+     "evidence_nodes": 3,
+     "evidence_nodes_on_page": 3,
+     "half": 0,
+     "lit": 0,
+     "needs_verification": 0,
+     "registered_nodes": 5,
+     "retained": 0,
+     "stars_total": 5,
+     "stateful_stars": 0,
+     "subject": "zhixing",
+     "unlit": 5
+    }
+   ],
+   "student_id": "5a209818-99e0-4514-b4c2-8aa5ba6118e0",
+   "volatile": {
+    "bytes": 116958,
+    "file_sha256": "0dc4a2e8c640288b98611e2885f9567606a5dfd4c3b9897138473a55b968a638",
+    "pixel_sha256": "c5ea9052582126ee6eea637e3cad4d41386275b28f8253670cca9683b66a4c56",
+    "pixel_size": {
+     "height": 1433,
+     "width": 1024
+    }
+   }
+  },
+  {
+   "cross_student": {
+    "bff_status": 404,
+    "other_label": "S03",
+    "other_student_id": "8460914b-4a92-406e-a10d-61ec2086beca",
+    "page_path": "/s/8460914b-4a92-406e-a10d-61ec2086beca/star-map",
+    "page_status": 404
+   },
+   "file": "S02-student.jpg",
+   "kind": "student",
+   "label": "S02",
+   "name": "S02-student",
+   "page_path": "/s/3bf24db4-929b-414b-87df-7bc68cd08717/star-map",
+   "pattern": "systematic_gap",
+   "reconcile_ok": true,
+   "reconcile_problems": [],
+   "skies": [
+    {
+     "evidence_nodes": 5,
+     "evidence_nodes_on_page": 5,
+     "half": 0,
+     "lit": 0,
+     "needs_verification": 0,
+     "registered_nodes": 959,
+     "retained": 0,
+     "stars_total": 959,
+     "stateful_stars": 0,
+     "subject": "aya",
+     "unlit": 959
+    },
+    {
+     "evidence_nodes": 4,
+     "evidence_nodes_on_page": 4,
+     "half": 0,
+     "lit": 0,
+     "needs_verification": 0,
+     "registered_nodes": 10,
+     "retained": 0,
+     "stars_total": 10,
+     "stateful_stars": 0,
+     "subject": "wenli",
+     "unlit": 10
+    },
+    {
+     "evidence_nodes": 1,
+     "evidence_nodes_on_page": 1,
+     "half": 0,
+     "lit": 0,
+     "needs_verification": 0,
+     "registered_nodes": 5,
+     "retained": 0,
+     "stars_total": 5,
+     "stateful_stars": 0,
+     "subject": "zhixing",
+     "unlit": 5
+    }
+   ],
+   "student_id": "3bf24db4-929b-414b-87df-7bc68cd08717",
+   "volatile": {
+    "bytes": 116958,
+    "file_sha256": "0dc4a2e8c640288b98611e2885f9567606a5dfd4c3b9897138473a55b968a638",
+    "pixel_sha256": "c5ea9052582126ee6eea637e3cad4d41386275b28f8253670cca9683b66a4c56",
+    "pixel_size": {
+     "height": 1433,
+     "width": 1024
+    }
+   }
+  },
+  {
+   "cross_student": {
+    "bff_status": 404,
+    "other_label": "S01",
+    "other_student_id": "5a209818-99e0-4514-b4c2-8aa5ba6118e0",
+    "page_path": "/s/5a209818-99e0-4514-b4c2-8aa5ba6118e0/star-map",
+    "page_status": 404
+   },
+   "file": "S03-student.jpg",
+   "kind": "student",
+   "label": "S03",
+   "name": "S03-student",
+   "page_path": "/s/8460914b-4a92-406e-a10d-61ec2086beca/star-map",
+   "pattern": "same_item_repeat",
+   "reconcile_ok": true,
+   "reconcile_problems": [],
+   "skies": [
+    {
+     "evidence_nodes": 4,
+     "evidence_nodes_on_page": 4,
+     "half": 0,
+     "lit": 0,
+     "needs_verification": 0,
+     "registered_nodes": 959,
+     "retained": 0,
+     "stars_total": 959,
+     "stateful_stars": 0,
+     "subject": "aya",
+     "unlit": 959
+    },
+    {
+     "evidence_nodes": 3,
+     "evidence_nodes_on_page": 3,
+     "half": 0,
+     "lit": 0,
+     "needs_verification": 0,
+     "registered_nodes": 10,
+     "retained": 0,
+     "stars_total": 10,
+     "stateful_stars": 0,
+     "subject": "wenli",
+     "unlit": 10
+    },
+    {
+     "evidence_nodes": 3,
+     "evidence_nodes_on_page": 3,
+     "half": 0,
+     "lit": 0,
+     "needs_verification": 0,
+     "registered_nodes": 5,
+     "retained": 0,
+     "stars_total": 5,
+     "stateful_stars": 0,
+     "subject": "zhixing",
+     "unlit": 5
+    }
+   ],
+   "student_id": "8460914b-4a92-406e-a10d-61ec2086beca",
+   "volatile": {
+    "bytes": 116958,
+    "file_sha256": "0dc4a2e8c640288b98611e2885f9567606a5dfd4c3b9897138473a55b968a638",
+    "pixel_sha256": "c5ea9052582126ee6eea637e3cad4d41386275b28f8253670cca9683b66a4c56",
+    "pixel_size": {
+     "height": 1433,
+     "width": 1024
+    }
+   }
+  },
+  {
+   "cross_student": {
+    "bff_status": 404,
+    "other_label": "S03",
+    "other_student_id": "8460914b-4a92-406e-a10d-61ec2086beca",
+    "page_path": "/family/8460914b-4a92-406e-a10d-61ec2086beca/star-map",
+    "page_status": 404
+   },
+   "file": "S01-guardian.jpg",
+   "kind": "guardian",
+   "label": "S01",
+   "name": "S01-guardian",
+   "page_path": "/family/5a209818-99e0-4514-b4c2-8aa5ba6118e0/star-map",
+   "pattern": "all_correct",
+   "reconcile_ok": true,
+   "reconcile_problems": [],
+   "skies": [
+    {
+     "evidence_nodes": 4,
+     "evidence_nodes_on_page": 4,
+     "half": 0,
+     "lit": 0,
+     "needs_verification": 0,
+     "registered_nodes": 959,
+     "retained": 0,
+     "stars_total": 959,
+     "stateful_stars": 0,
+     "subject": "aya",
+     "unlit": 959
+    },
+    {
+     "evidence_nodes": 4,
+     "evidence_nodes_on_page": 4,
+     "half": 0,
+     "lit": 0,
+     "needs_verification": 0,
+     "registered_nodes": 10,
+     "retained": 0,
+     "stars_total": 10,
+     "stateful_stars": 0,
+     "subject": "wenli",
+     "unlit": 10
+    },
+    {
+     "evidence_nodes": 3,
+     "evidence_nodes_on_page": 3,
+     "half": 0,
+     "lit": 0,
+     "needs_verification": 0,
+     "registered_nodes": 5,
+     "retained": 0,
+     "stars_total": 5,
+     "stateful_stars": 0,
+     "subject": "zhixing",
+     "unlit": 5
+    }
+   ],
+   "student_id": "5a209818-99e0-4514-b4c2-8aa5ba6118e0",
+   "volatile": {
+    "bytes": 106445,
+    "file_sha256": "cec997e59df98027304e2221224e22b1c6bef1871acbb7ea9bb1bd1a7c40cc59",
+    "pixel_sha256": "c490e89317c8dcf9cb1dbf9f400552f94aa299c1b3a180e58ef7a8b2983d169a",
+    "pixel_size": {
+     "height": 1339,
+     "width": 1024
+    }
+   }
+  }
+ ],
+ "status": "captured",
+ "students_requested": 3,
+ "viewport": {
+  "height": 768,
+  "width": 1024
+ },
+ "volatile_fields": "shots[].volatile（截图字节、文件与像素 SHA-256、像素尺寸）不要求确定性；其余字段同一代码确定",
+ "what_it_proves": "v0 截图只证明真实会话 + RLS 能打开该学生页（打不开未绑定学生的页）、星空等于在读科目；硬1 的同一学生模型主要由 events.csv、nodes.csv、checks.json 证明，截图只作辅证"
+}

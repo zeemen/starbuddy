@@ -1,0 +1,13 @@
+{
+  "$comment": "合成占位，非签字值，只允许 INSIGHT_ENV=test 加载（格式与 services/learning/config/mastery/profile-check.synthetic.json 相同，由 learning.mastery.consistency.parse_check_config 校验）。首份报告的陈述—判断一致性检查词表：程度词、结论词、固定衔接短语与人设词表待数学教研与 SIE 负责人起草、产品负责人审核（spec 待人确认 #3；KGE-04 待人确认 #20）。模板键是合成的，与 config/claims.synthetic.json 对应。",
+  "schema_version": "kge-profile-check/0.1",
+  "synthetic": true,
+  "signed_by": "",
+  "signed_at": "",
+  "degree_words": {"尚不稳定": 1, "有待巩固": 1, "薄弱": 2, "很薄弱": 3, "明显薄弱": 3},
+  "template_degrees": {"syn.math.node_mastery": 1, "syn.math.node_transfer": 0},
+  "conclusion_words": ["掌握", "稳定", "熟练", "进步", "优秀", "扎实"],
+  "template_conclusions": {"syn.math.node_mastery": ["掌握"], "syn.math.node_transfer": ["掌握", "稳定"]},
+  "connective_phrases": ["【占位衔接·甲】", "【占位衔接·乙】"],
+  "persona_terms": ["点点", "阿鸦", "妙笔"]
+}

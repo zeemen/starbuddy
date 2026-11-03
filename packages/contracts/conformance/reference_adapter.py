@@ -60,8 +60,28 @@ FAULTS = {
     "bad_capabilities": ("能力声明的契约版本不对", "test_capabilities_match_contract"),
     "no_auth": ("不校验服务间令牌", "test_requires_service_credential"),
     "async_new_job_id": ("异步模式下，同 key 重试返回新的 job_id", "test_idempotency"),
+    # v1.1 present_item（PLT-12）：只在契约 1.1.0 下有意义（mutation.py 按 FAULT_CONTRACT 设版本）
+    "present_answer_field": ("题面结果夹带答案字段", "test_case"),
+    "present_leaks_answer": ("题面内容里写出答案", "test_case"),
+    "present_with_evidence": ("题面产生证据", "test_case"),
+    "present_wrong_item": ("返回的不是请求的那道题", "test_case"),
+    "present_accepts_usage": ("题面请求带计量 ID 也照常应答", "test_bad_requests_are_rejected"),
+    "present_accepts_student": ("题面请求带学生 ID 也照常应答", "test_bad_requests_are_rejected"),
+    "present_nondeterministic": ("同一道题两次取到的题面不一样", "test_idempotency"),
 }
 ASYNC_FAULTS = {"async_new_job_id"}  # 这些违约只在异步模式下有意义
+# 只在某个契约版本下才有意义的违约 → 版本（mutation.py 只以这个版本运行一致性测试；不在这里的违约 0.9.0 与 1.0.0 两版都跑）
+FAULT_CONTRACT = {f: "1.1.0" for f in FAULTS if f.startswith("present_")}
+# 合成题面（规则 8）：与 ITEMS 同号；REF-1 是填空（题面里有公式），REF-2 是单选
+PRESENT = {
+    "REF-1": {"item_type": "fill_blank", "stem": [{"type": "paragraph", "runs": [
+        {"type": "text", "text": "（合成题面）计算 "}, {"type": "math", "latex": "3\\times 4"}, {"type": "text", "text": "。"}]}],
+        "answer_format": {"kind": "expression", "max_length": 200}},
+    "REF-2": {"item_type": "single_choice", "stem": [{"type": "paragraph", "runs": [{"type": "text", "text": "（合成题面）选出正确的一项。"}]}],
+              "options": [{"key": "A", "content": [{"type": "text", "text": "（合成）甲"}]},
+                          {"key": "B", "content": [{"type": "text", "text": "（合成）乙"}]}],
+              "answer_format": {"kind": "choice", "min_choices": 1, "max_choices": 1}},
+}
 
 
 def _problem(status: int, code: str, title: str, detail: str | None = None) -> dict:
@@ -115,6 +135,8 @@ class ReferenceAdapter:
                   "admission": admission}
         text = it["answer"] if self.fault == "fabricated_text" else a["response"].get("text", "")
         resp = {"evidence_id": self._id(key, fp, f"{i}:r"), "kind": "response_text", **common, "payload": {"text": text}}
+        if CONTRACT_VERSION != "0.9.0" and "attempt_id" in a:  # v1.0：作答类证据指回所属作答（评审 N3）
+            resp["attempt_id"] = a["attempt_id"]
         trace = {"evidence_id": self._id(key, fp, f"{i}:t"), "kind": "verifier_trace", **common,
                  "payload": {"sampled_points": 0, "agreeing_points": 0, "reason_codes": []}}
         return resp, trace, it
@@ -179,10 +201,33 @@ class ReferenceAdapter:
         return {**self._envelope(evidence, [], min(o["confidence"] for o in obs)),
                 "model_version": "algo:ref-diag@1.0.0", "result": {"observations": obs, "error_attributions": []}}
 
+    def present_item(self, body, key, fp):
+        """v1.1 题面（只读、同步）：按白名单从合成题面拼出结果；不产生证据。"""
+        ref = body["item_ref"]
+        item_id = ref.split(":", 1)[1]
+        p = copy.deepcopy(PRESENT[item_id])
+        result = {"item_ref": ref if self.fault != "present_wrong_item" else f"{self.subject}:REF-9",
+                  "item_version": "ref-pack@1.0.0" if self.fault != "present_nondeterministic" else f"ref-pack@1.0.0-{uuid.uuid4().hex[:12]}", "item_type": p["item_type"], "content_state": "complete",
+                  "stem": p["stem"], **({"options": p["options"]} if "options" in p else {}),
+                  "answer_format": p["answer_format"], "license_state": "original"}
+        if self.fault == "present_answer_field":
+            result["answer"] = [ITEMS[item_id]["answer"]]
+        if self.fault == "present_leaks_answer":
+            result["stem"][0]["runs"].append({"type": "text", "text": ITEMS[item_id]["answer"]})
+        admitted = ITEMS[item_id]["admission"] == "admitted"
+        env = {"contract_version": CONTRACT_VERSION, "result": result, "evidence_ids": [], "confidence": 1,
+               "source_version": "algo:ref-present@1.0.0;items:ref-pack@1.0.0", "model_version": "algo:ref-present@1.0.0",
+               "human_review_required": False, "semantics": "formal" if admitted else "practice"}
+        if self.fault == "present_with_evidence":
+            env["evidence_ids"] = [self._id(key, fp, "present")]
+        return env
+
     def capabilities(self):
         m = {k: {"implemented": False} for k in ("diagnose", "plan", "teach", "grade", "generate_variation", "report")}
         m["grade"] = {"implemented": True, "async": self.asynchronous}
         m["diagnose"] = {"implemented": True, "async": self.asynchronous}
+        if CONTRACT_VERSION == "1.1.0":  # v1.1 的能力声明逐一声明七个方法；题面只读、同步
+            m["present_item"] = {"implemented": True, "async": False}
         return {"subject": self.subject, "adapter_version": "1.0.0",
                 "contract_version": "0.8.0" if self.fault == "bad_capabilities" else CONTRACT_VERSION, "methods": m}
 
@@ -205,7 +250,8 @@ class ReferenceAdapter:
             return 200, job
         if verb != "POST":
             return 404, _problem(404, "INVALID_REQUEST", "unknown route")
-        if name not in ("grade", "diagnose"):
+        served = ("grade", "diagnose", "present_item") if CONTRACT_VERSION == "1.1.0" else ("grade", "diagnose")
+        if name not in served:
             if self.fault == "unimplemented_200":
                 return 200, {}
             return 501, _problem(501, "METHOD_NOT_IMPLEMENTED", f"{name} is not implemented")
@@ -214,7 +260,14 @@ class ReferenceAdapter:
         except ValueError:
             return 400, _problem(400, "INVALID_REQUEST", "invalid JSON")
         if self.fault != "accepts_bad_request":
-            errs = plugin_contract().validate("GradeRequest" if name == "grade" else "DiagnoseRequest", body)
+            schema = {"grade": "GradeRequest", "diagnose": "DiagnoseRequest", "present_item": "PresentItemRequest"}[name]
+            checked = body
+            lax = {"present_accepts_usage": "usage_id", "present_accepts_student": "student_ref"}.get(self.fault or "")
+            if lax and isinstance(body, dict) and isinstance(body.get("context"), dict):
+                checked = {**body, "context": {k: v for k, v in body["context"].items() if k != lax}}
+            errs = plugin_contract().validate(schema, checked)
+            if not errs and name == "present_item" and body["item_ref"].split(":", 1)[1] not in PRESENT:
+                return 404, _problem(404, "ITEM_NOT_FOUND", "item_ref is not in the reference pack")
             if errs or body["context"]["subject"] != self.subject:
                 attempts = [body["attempt"]] if "attempt" in body else body.get("attempts", [])
                 text = next((a.get("response", {}).get("text") for a in attempts if a.get("response", {}).get("text")), "")
@@ -231,14 +284,16 @@ class ReferenceAdapter:
         b = copy.deepcopy(body)
         b.get("context", {}).pop("request_id", None)
         fp = hashlib.sha256(_canonical(b).encode()).hexdigest()
+        if name == "present_item":  # 只读：不进幂等缓存、不做冲突检测（PresentItemContext）
+            return 200, self.present_item(body, key, fp)
         with self.lock:
             prev = self.seen.setdefault(f"{name}|{key}", fp)
         if prev != fp and self.fault != "no_conflict":
             if self.fault == "conflict_not_problem":
                 return 409, {"error": "conflict"}
             return 409, _problem(409, "IDEMPOTENCY_CONFLICT", "idempotency_key was used with a different request body")
-        result = (self.grade if name == "grade" else self.diagnose)(body, key, fp)
-        if not self.asynchronous:
+        result = {"grade": self.grade, "diagnose": self.diagnose, "present_item": self.present_item}[name](body, key, fp)
+        if not self.asynchronous or name == "present_item":
             return 200, result
         # 异步：同 key 同请求体返回同一个 job_id（契约 JobAccepted）
         job_id = str(uuid.uuid4()) if self.fault == "async_new_job_id" else self._id(key, fp, "job")

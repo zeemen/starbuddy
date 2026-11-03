@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://starbuddy.invalid/evals/persona/report.schema.json",
+  "title": "人设回归报告（persona-report/1，冲刺 3-F spec 设计要点 7）",
+  "description": "make eval-persona 写出的 persona-report.json；CI 以 artifact 上传，保留 90 天，作为 Gate 0“最近一次运行报告”。只含合成用例的编号与位置，不含回复原文。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "run_id", "generated_at", "commit", "base_commit", "baseline_note", "trigger", "role", "strict", "changed", "versions",
+               "results", "forbidden_hits", "method_share", "recordings", "selftest", "spec_conflicts", "exemptions", "static_findings", "conclusion"],
+  "$defs": {
+    "rate": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+    "delta": { "type": ["number", "null"], "minimum": -1, "maximum": 1 },
+    "row": {
+      "type": "object", "additionalProperties": false,
+      "required": ["total", "passed", "failed", "not_run", "pass_rate", "baseline_pass_rate", "delta"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 }, "passed": { "type": "integer", "minimum": 0 },
+        "failed": { "type": "integer", "minimum": 0 }, "not_run": { "type": "integer", "minimum": 0 },
+        "pass_rate": { "$ref": "#/$defs/rate" }, "baseline_pass_rate": { "$ref": "#/$defs/rate" }, "delta": { "$ref": "#/$defs/delta" }
+      }
+    },
+    "categories": {
+      "type": "object", "additionalProperties": false,
+      "required": ["identity", "forbidden", "referral", "protocol", "starmap", "cross_subject", "metaphor",
+                   "family_contract", "family_role_types", "family_cross_subject", "family_naming", "family_metaphor", "family_mode",
+                   "family_referral", "drift", "leak"],
+      "properties": {
+        "identity": { "$ref": "#/$defs/row", "description": "身份披露（persona-evaluator 七项）" },
+        "forbidden": { "$ref": "#/$defs/row", "description": "禁语 A–G" },
+        "referral": { "$ref": "#/$defs/row", "description": "转介话术" },
+        "protocol": { "$ref": "#/$defs/row", "description": "出场协议" },
+        "starmap": { "$ref": "#/$defs/row", "description": "星图话术" },
+        "cross_subject": { "$ref": "#/$defs/row", "description": "跨科静默" },
+        "metaphor": { "$ref": "#/$defs/row", "description": "比喻隔离" },
+        "family_contract": { "$ref": "#/$defs/row" }, "family_role_types": { "$ref": "#/$defs/row" },
+        "family_cross_subject": { "$ref": "#/$defs/row" }, "family_naming": { "$ref": "#/$defs/row" },
+        "family_metaphor": { "$ref": "#/$defs/row" }, "family_mode": { "$ref": "#/$defs/row" },
+        "family_referral": { "$ref": "#/$defs/row" }, "drift": { "$ref": "#/$defs/row" }, "leak": { "$ref": "#/$defs/row", "description": "N16 答案泄露" }
+      }
+    }
+  },
+  "properties": {
+    "format": { "const": "persona-report/1" },
+    "run_id": { "type": "string", "minLength": 1 },
+    "generated_at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$" },
+    "commit": { "type": "string" },
+    "base_commit": { "type": ["string", "null"] },
+    "baseline_note": { "type": "string" },
+    "trigger": { "enum": ["pr", "main", "manual"] },
+    "role": { "type": ["string", "null"] },
+    "strict": { "type": "boolean" },
+    "changed": {
+      "type": "object", "additionalProperties": false,
+      "required": ["persona_change", "prompts", "specs", "personas", "paths", "source"],
+      "properties": {
+        "persona_change": { "type": "boolean" },
+        "prompts": { "type": "array", "items": { "type": "string" } },
+        "specs": { "type": "array", "items": { "type": "string" } },
+        "personas": { "type": "array", "items": { "type": "string" } },
+        "paths": { "type": "array", "items": { "type": "string" } },
+        "source": { "type": "string" }
+      }
+    },
+    "versions": {
+      "type": "object", "additionalProperties": false,
+      "required": ["registry_version", "lexicon_version", "lexicon_reviewed", "guard_version", "cases_version"],
+      "properties": {
+        "registry_version": { "type": "string" }, "lexicon_version": { "type": "string" }, "lexicon_reviewed": { "type": "boolean" },
+        "guard_version": { "type": "string" }, "cases_version": { "type": "string" }
+      }
+    },
+    "results": { "type": "object", "additionalProperties": { "$ref": "#/$defs/categories" } },
+    "forbidden_hits": {
+      "type": "object", "additionalProperties": false, "required": ["total", "by_class", "items"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "by_class": { "type": "object", "additionalProperties": { "type": "integer" } },
+        "items": { "type": "array", "items": {
+          "type": "object", "additionalProperties": false,
+          "required": ["persona_id", "case_id", "turn", "class", "rule_id", "span", "method"],
+          "properties": {
+            "persona_id": { "type": "string" }, "case_id": { "type": "string" }, "turn": { "type": "integer" },
+            "class": { "type": "string" }, "rule_id": { "type": "string" },
+            "span": { "type": "array", "items": { "type": "integer" }, "minItems": 2, "maxItems": 2 },
+            "method": { "enum": ["rule", "context", "model"] }
+          } } }
+      }
+    },
+    "method_share": {
+      "type": "object", "required": ["rule", "context", "replay", "model", "human"],
+      "additionalProperties": { "type": "integer", "minimum": 0 }
+    },
+    "recordings": {
+      "type": "object", "additionalProperties": false, "required": ["valid", "outdated", "missing", "invalid", "items"],
+      "properties": {
+        "valid": { "type": "integer" }, "outdated": { "type": "integer" }, "missing": { "type": "integer" }, "invalid": { "type": "integer" },
+        "items": { "type": "array", "items": {
+          "type": "object", "required": ["persona_id", "case_id", "path", "status"],
+          "properties": {
+            "persona_id": { "type": "string" }, "case_id": { "type": "string" }, "path": { "type": "string" },
+            "status": { "enum": ["valid", "outdated", "missing", "invalid"] }, "reason": { "type": "string" },
+            "model_version": { "type": "string" }
+          } } }
+      }
+    },
+    "selftest": {
+      "type": "object", "required": ["total", "passed", "by_check", "mismatches"],
+      "properties": { "total": { "type": "integer" }, "passed": { "type": "integer" }, "by_check": { "type": "object" }, "mismatches": { "type": "array" } }
+    },
+    "spec_conflicts": { "type": "array", "items": {
+      "type": "object", "required": ["id", "detail"],
+      "properties": { "id": { "type": "string" }, "persona_id": { "type": ["string", "null"] }, "detail": { "type": "string" } } } },
+    "exemptions": { "type": "array", "items": { "type": "string" } },
+    "static_findings": { "type": "array", "items": { "type": "object", "required": ["check", "persona_id", "reason", "method"] } },
+    "conclusion": {
+      "type": "object", "additionalProperties": false, "required": ["status", "reasons"],
+      "properties": { "status": { "enum": ["pass", "fail", "not_run"] }, "reasons": { "type": "array", "items": { "type": "string" } } }
+    }
+  }
+}

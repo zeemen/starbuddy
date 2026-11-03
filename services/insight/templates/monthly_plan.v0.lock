@@ -1,0 +1,5 @@
+{
+  "$comment": "月度计划模板库 monthly_plan.v0.yaml 的钉死文件（PLT-14 第 3 步审查）：template_version 与原文字节的 SHA-256。洞察服务（insight/monthly.py load_templates）与 BFF（services/bff/src/family/monthly-plan.ts loadTemplates）加载时都核对，任何一项不一致拒绝加载。模板库内容改了必须同时改版本号与本文件，并经人审（文案人写人审）。",
+  "template_version": "syn-tpl-0.1.0",
+  "sha256": "84043783e44a1e702a117060f436366cede92f7a18b20802353107190b19940b"
+}

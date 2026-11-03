@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://starbuddy.invalid/evals/persona/gold.schema.json",
+  "title": "人设回归金标准标注（格式说明，冲刺 3-F spec 设计要点 5）",
+  "description": "放在 evals/persona/gold/，由教研标注，Claude Code 只读（hook 拦截写入）。本冲刺只提交这份格式，不写任何 gold 数据。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["case_id", "persona_id", "spec_version", "input", "expected", "annotator", "annotated_at"],
+  "properties": {
+    "case_id": { "type": "string", "pattern": "^[A-Z][A-Z0-9-]*$" },
+    "persona_id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+    "spec_version": { "type": "string", "description": "标注依据的规格书版本，例如 V1.1" },
+    "input": {
+      "description": "被标注的转写（录音文件路径）或探针（一段角色输出）",
+      "oneOf": [
+        { "type": "object", "required": ["recording"], "additionalProperties": false, "properties": { "recording": { "type": "string" } } },
+        { "type": "object", "required": ["probe"], "additionalProperties": false,
+          "properties": { "probe": { "type": "string" }, "context": { "type": "object" } } }
+      ]
+    },
+    "expected": {
+      "description": "期望标签：命中哪些禁语类（空数组 = 应通过），可附期望的家族级结论",
+      "type": "object", "additionalProperties": false, "required": ["forbidden_classes"],
+      "properties": {
+        "forbidden_classes": { "type": "array", "uniqueItems": true,
+          "items": { "enum": ["A", "B", "C", "D", "E", "F:math", "F:chinese", "G", "platform"] } },
+        "family": { "type": "object", "additionalProperties": { "enum": ["pass", "fail"] } },
+        "note": { "type": "string" }
+      }
+    },
+    "annotator": { "type": "string", "minLength": 1 },
+    "annotated_at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" }
+  }
+}

@@ -1,0 +1,8 @@
+# 合成准入记录（冲刺 5-K M2 夹具，全部达标场景）：只有汇总数字与状态；evidence 为相对本文件的合成证据文件。
+format: kge-m2-attestation/1
+subject: aya
+shadow_review: {reviewers: 2, weeks_covered: 5, weeks_required: 5}
+holdout: {untaggable: 1, total: 100, executor_role: 教研负责人, signed: true}
+c_level: {status: passed, evidence: [evidence/c-level-tests.txt]}
+guardian: {deletion_e2e: passed, consent_flow: live, evidence: [evidence/sie03-deletion-e2e.txt, evidence/consent-flow.txt]}
+security: {pentest_round2: passed, evidence: [evidence/pentest-round2.txt]}

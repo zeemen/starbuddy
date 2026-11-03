@@ -1,0 +1,49 @@
+{
+  "agree": 4,
+  "agreement": [
+    4,
+    5
+  ],
+  "agreement_pct": "80.0%",
+  "by_kind": {
+    "not_in_report": 1,
+    "not_judged": 1,
+    "state_mismatch": 1
+  },
+  "comparable": 5,
+  "coverage": [
+    5,
+    6
+  ],
+  "coverage_pct": "83.3%",
+  "disagreements": [
+    {
+      "kind": "state_mismatch",
+      "level": "apply",
+      "node_id": "MATH.SYN.EQ.APPLY",
+      "report_state": "stable",
+      "student_ref": "00000000-0000-4000-8000-00000000a001",
+      "teacher_state": "execute"
+    },
+    {
+      "kind": "not_judged",
+      "level": "understand",
+      "node_id": "MATH.SYN.EQ.APPLY",
+      "report_state": "understand",
+      "student_ref": "00000000-0000-4000-8000-00000000a002"
+    },
+    {
+      "kind": "not_in_report",
+      "level": "apply",
+      "node_id": "MATH.SYN.EXPR.SQUARE_DIFF",
+      "student_ref": "00000000-0000-4000-8000-00000000a002",
+      "teacher_state": "execute"
+    }
+  ],
+  "format": "sie-shadow-compare/0.1",
+  "report_items": 6,
+  "reviewers": 2,
+  "sample": true,
+  "students": 3,
+  "teacher_items": 6
+}

@@ -1,0 +1,9 @@
+# 点点跨模型一致性二轮的验收口径（冲刺 3-I，specs/diandian-consistency-r2-sprint3/spec.md 设计要点 3、待人确认 #4）。
+# 判定：红线全过 且 每家核心通过率 ≥ core_floor 且 核心通过率两两差的最大绝对值 ≤ max_core_diff_pp → “达到验收口径”，否则 → “需选替代方案”。
+# 工具只给判定，结论由人定（Gate 0）。改这里的数值属于验收口径变更，由人设负责人确认。
+version: 1
+core_floor: 0.90            # 核心通过率下限（默认 90%，待人设负责人确认）
+max_core_diff_pp: 5.0       # 核心通过率两两差上限（百分点；开发计划 v2.0 冲刺 3 I 流验收）
+redline_max: 0              # 红线必须 100% 通过
+verdict_basis: prompt_plus_post   # 判定按哪组数字：prompt_plus_post（实际下发给学生的输出）；另一组只作参考，两组都报
+max_revisions: 3            # 最多三次修订

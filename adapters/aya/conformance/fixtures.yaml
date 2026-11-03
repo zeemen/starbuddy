@@ -301,3 +301,201 @@ cases:
       - {item_ref: "aya:Q-AXS-U02-D-001", response: {text: "6"}, self_report: unsure}                         # 标准答案 3；答错（陷阱 E-AXS-006）
     expect:
       outcomes: [demonstrated, not_demonstrated]
+
+  # ================= 冲刺 4-D：plan、teach、generate_variation、report（契约 v1.0 候选版） =================
+  # 依据：specs/adapter-aya-methods-sprint4/spec.md「设计要点」第 5 节夹具表；plugin-api.v1.0.yaml 请求 schema。
+  # 编写方：**实现会话在写实现之前**按 spec 与契约编写（spec 要求独立会话编写，本任务没有独立会话可用；
+  # 偏差记在 specs/adapter-aya-methods-sprint4/lessons.md，待独立会话或该科负责人复核）。
+  # 通用一致性测试对这四个方法只查 schema、坏请求与幂等（README“检查边界”），所以这里不写 expect；
+  # 内容断言在 adapters/aya/tests/ 的单测里。每条都给 conflict_body（同 key 的另一个请求体）。
+  # 这些用例只适用于 1.0.0：0.9.0 那次运行用 fixtures.v0.9.yaml（本文件去掉四个新方法后的副本，有漂移测试）。
+  # 时间一律带时区；学生、请求、判断 ID 都是合成的固定 UUID（规则 8）。
+
+  # ---------------- plan ----------------
+  - id: plan-retest-practice-with-path
+    method: plan
+    body:
+      mastery:
+        - {skill_node: "aya:P-LEQ-0409", state: execute, p_mastery: 0.45}
+        - {skill_node: "aya:P-INV-1123", state: stable, p_mastery: 0.85, next_retest_at: "2026-10-12T08:00:00+08:00"}
+        - {skill_node: "aya:S-FUN-0934", state: understand}
+        - {skill_node: "aya:P-MUL-0812", state: unseen}
+      constraints: {time_budget_minutes: 40}
+      learner_context:
+        - {field_id: inner.g3.node_mastery, source_type: inferred, value: execute,
+           claim_id: 00000000-0000-4000-8000-0000000004f1, evidence_ids: [00000000-0000-4000-8000-0000000004e1]}
+      node_path:
+        - {from_id: MA.ALG.SYN_0001, to_id: MA.ALG.SYN_0002, depth: 1}
+      exam_config: {cohort: 2027, full_score: 120, duration_minutes: 120, question_type_codes: [single_choice, fill_blank]}
+    conflict_body:
+      constraints: {time_budget_minutes: 20}
+
+  - id: plan-empty-mastery
+    method: plan
+    body:
+      mastery: []
+    conflict_body:
+      mastery:
+        - {skill_node: "aya:P-LEQ-0409", state: execute}
+
+  # ---------------- teach ----------------
+  - id: teach-hint-level-2
+    method: teach
+    body:
+      mode: hint
+      skill_node: "aya:P-MUL-0812"
+      item_ref: "aya:Q-MUL-U03-D-001"
+      allowed_hint_level: 2
+      persona: {persona_id: aya, prompt_version: 1.1.0}
+      conversation:
+        - {turn_id: 00000000-0000-4000-8000-0000000004c1, role: student, content: "（合成示例）这一步不会展开。"}
+    conflict_body:
+      allowed_hint_level: 1
+
+  - id: teach-hint-cap-6
+    method: teach
+    body:
+      mode: hint
+      skill_node: "aya:P-LEQ-0409"
+      item_ref: "aya:Q-LEQ-U02-D-002"
+      allowed_hint_level: 6
+      persona: {persona_id: aya, prompt_version: 1.1.0}
+    conflict_body:
+      allowed_hint_level: 5
+
+  - id: teach-lesson-with-page
+    method: teach
+    body:
+      mode: lesson
+      skill_node: "aya:P-MUL-0812"
+      allowed_hint_level: 0
+      persona: {persona_id: aya, prompt_version: 1.1.0}
+      knowledge_page:
+        page_id: ma.alg.synthetic_0001
+        page_version: 1.0.0
+        body_md: "（合成示例）多项式乘法：用分配律逐项相乘。\n\n（合成示例）再合并同类项。"
+        atom_refs: ["node:MA.ALG.SYN_0001"]
+    conflict_body:
+      knowledge_page:
+        page_id: ma.alg.synthetic_0001
+        page_version: 1.0.1
+        body_md: "（合成示例）多项式乘法：用分配律逐项相乘。"
+        atom_refs: ["node:MA.ALG.SYN_0001"]
+
+  # ---------------- generate_variation ----------------
+  # 721 道题全部未准入，按 spec 一律返回空结果；空结果的原因由单测断言
+  - id: variation-by-source-item
+    method: generate_variation
+    body:
+      source_item_ref: "aya:Q-LEQ-U02-D-002"
+      count: 3
+      exclude_item_refs: ["aya:Q-LEQ-U02-D-002"]
+    conflict_body:
+      count: 2
+
+  - id: variation-with-item-family
+    method: generate_variation
+    body:
+      source_item_ref: "aya:Q-FUN-U06-D-001"
+      count: 2
+      exclude_item_refs: ["aya:Q-FUN-U06-D-001"]
+      item_family:
+        - {item_ref: "aya:Q-FUN-U06-R-001", main_node_id: MA.FUN.SYN_0001, prior_difficulty: 0.4, license_state: unverified}
+      exam_config: {cohort: 2027, full_score: 120}
+    conflict_body:
+      count: 1
+
+  - id: variation-unknown-skill-node
+    method: generate_variation
+    body:
+      skill_node: "aya:K-SYN-9999"
+      count: 2
+    conflict_body:
+      count: 3
+
+  # ---------------- report ----------------
+  - id: report-parent
+    method: report
+    body:
+      window: {from: "2026-10-05T00:00:00+08:00", to: "2026-10-12T00:00:00+08:00"}
+      audience: parent
+      evidence:
+        - evidence_id: 00000000-0000-4000-8000-0000000004e1
+          attempt_id: 00000000-0000-4000-8000-0000000004a1
+          kind: response_text
+          occurred_at: "2026-10-08T19:30:00+08:00"
+          item_ref: "aya:Q-MUL-U03-D-001"
+          skill_node: "aya:P-MUL-0812"
+          admission: source_unverified
+          payload: {text: "x^2-5x-6"}
+        - evidence_id: 00000000-0000-4000-8000-0000000004e2
+          attempt_id: 00000000-0000-4000-8000-0000000004a1
+          kind: verifier_trace
+          occurred_at: "2026-10-08T19:30:00+08:00"
+          item_ref: "aya:Q-MUL-U03-D-001"
+          skill_node: "aya:P-MUL-0812"
+          admission: source_unverified
+          payload: {sampled_points: 8, agreeing_points: 0, reason_codes: []}
+      error_attributions:
+        - skill_node: "aya:P-MUL-0812"
+          subject_category: yunsuan_cuowu
+          cross_subject_category: computation_or_grammar
+          confidence: 0.8
+          evidence_ids: [00000000-0000-4000-8000-0000000004e1]
+          algorithm_version: aya-trap-attr@0.1.0-tax0.9.0
+      mastery_history:
+        - {skill_node: "aya:P-MUL-0812", state: understand, at: "2026-10-01T20:00:00+08:00"}
+        - {skill_node: "aya:P-MUL-0812", state: execute, at: "2026-10-09T20:00:00+08:00"}
+      learner_context:
+        - {field_id: outer.g1.weekly_available_time, source_type: self, value: 300}
+    conflict_body:
+      audience: student
+
+  - id: report-no-evidence
+    method: report
+    body:
+      window: {from: "2026-10-05T00:00:00+08:00", to: "2026-10-12T00:00:00+08:00"}
+      audience: student
+      evidence: []
+    conflict_body:
+      audience: teacher
+
+  # ---------------- present_item（契约 1.1.0 候选版，PLT-12；since 使它只在 1.1.0 下跑） ----------------
+  # 真实内容包不收录题干（版权未核），所以三种题型都是 withheld：只有题型、选项键与作答格式。
+  # secrets 是这道题的标准答案，题面任何位置都不许出现。注意：本段由实现 present_item 的同一会话起草，待独立会话复核。
+  - id: present-single-withheld
+    method: present_item
+    since: 1.1.0
+    body: {item_ref: "aya:Q-ALG-U01-D-001"}
+    conflict_body: {item_ref: "aya:Q-ALG-U02-R-001"}
+    expect: {content_state: withheld, item_type: single_choice, license_state: unverified}
+
+  - id: present-multi-withheld
+    method: present_item
+    since: 1.1.0
+    body: {item_ref: "aya:Q-ALG-U02-R-001"}
+    conflict_body: {item_ref: "aya:Q-ALG-U01-D-001"}
+    expect: {content_state: withheld, item_type: multi_choice}
+
+  - id: present-fill-withheld
+    method: present_item
+    since: 1.1.0
+    body: {item_ref: "aya:Q-ALG-U01-D-002"}
+    conflict_body: {item_ref: "aya:Q-ALG-U01-D-001"}
+    secrets: ["4n+16", "16+4n"]
+    expect: {content_state: withheld, item_type: fill_blank}
+
+  # 下面两条要求适配器带题面叠加文件启动（Makefile 的 1.1.0 那一遍：--stem-overlay conformance/stems.synthetic.json）：
+  # 叠加文件给这两道题加了合成题面，所以是 complete；secrets 是填空题的标准答案，题面任何位置都不许出现
+  - id: present-fill-complete
+    method: present_item
+    since: 1.1.0
+    body: {item_ref: "aya:Q-ALG-U04-D-003"}
+    secrets: ["5x^2+2x", "5x²+2x"]
+    expect: {content_state: complete, item_type: fill_blank, license_state: unverified}
+
+  - id: present-single-complete
+    method: present_item
+    since: 1.1.0
+    body: {item_ref: "aya:Q-ALG-U01-R-001"}
+    expect: {content_state: complete, item_type: single_choice, license_state: unverified}

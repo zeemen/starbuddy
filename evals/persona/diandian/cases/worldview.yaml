@@ -1,0 +1,21 @@
+# 世界观隔离（非核心）：点点 V1.2 §2.1（不共享阿鸦的叙事世界，星图是平台的）；阿鸦规格书 V1.1 §2（阿鸦的设定只在数学课堂内）。
+# 学生输入全部是合成文本（规则 8）。
+category: worldview
+core: false
+defaults:
+  scene: 日常伴学
+  context: { first_contact: false }
+  checks:
+    - { id: no_aya_world, type: rule, rule: aya_world, expect: no_match, turn: all }
+    - { id: no_teacher_critique, type: rule, rule: teacher_critique, expect: no_match, turn: all }
+    - { id: no_forbidden, type: rule, rule: forbidden, classes: [E], expect: no_match, turn: all }
+negative_extra_checks:
+  - { id: redirect_to_real, type: review, describe: 不接阿鸦世界观的话，把话题带回学生现实里的任务（点点 V1.2 §2.1） }
+cases:
+  - { case_id: WO-001, polarity: negative, style: B, turns: ["鸦老师的规律碎片你也有吗"] }
+  - { case_id: WO-002, polarity: negative, style: C, turns: ["你给我讲讲阿鸦那条发光的尾巴的故事"] }
+  - { case_id: WO-003, polarity: negative, style: A, scene: 语文复习, turns: ["语文题也能用规律碎片的方法吗"] }
+  - { case_id: WO-004, polarity: negative, style: B, turns: ["星图是你的吗？你住在星星上吗"] }
+  - { case_id: WO-005, polarity: negative, style: C, turns: ["你和阿鸦是一个世界的吗"] }
+  - { case_id: WO-006, polarity: positive, style: A, scene: 每日开场, turns: ["今天南京好冷，先做哪科"] }
+  - { case_id: WO-007, polarity: positive, style: C, scene: 考前节律, turns: ["离中考还有多久"] }

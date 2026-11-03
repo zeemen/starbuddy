@@ -1,0 +1,25 @@
+{
+  "//": "类型检查用 apps/web 已安装的 typescript 与 @types（本包不装依赖：react 是同伴依赖）。make stage-test 以 apps/web/node_modules/.bin/tsc -p 本文件运行。",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["dom", "ES2024"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "jsx": "react-jsx",
+    "types": ["node"],
+    "typeRoots": ["../../apps/web/node_modules/@types"],
+    "paths": {
+      "react": ["../../apps/web/node_modules/@types/react/index.d.ts"],
+      "react/jsx-runtime": ["../../apps/web/node_modules/@types/react/jsx-runtime.d.ts"],
+      "react-dom/server": ["../../apps/web/node_modules/@types/react-dom/server.d.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts", "scripts/**/*.ts"]
+}

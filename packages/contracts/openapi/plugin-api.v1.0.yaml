@@ -1,0 +1,2202 @@
+openapi: 3.1.0
+info:
+  title: StarBuddy 学科插件 API
+  version: 1.0.0
+  summary: 四科适配器（及后续三科）实现的唯一硬接口。
+  description: |
+    状态：**v1.0 候选版，待评审签字**（`specs/plugin-api-v1.0/spec.md`；评审清单
+    `specs/contract-conformance-sprint1/v1.0-review.md` 每项的“默认结论”）。签字前按候选版对待。
+    起草依据：v0.9（`plugin-api.v0.9.yaml`）、完整方案 v1.1、KGE V1.1、SIE V1.1、技术蓝图 v2.1 专章、
+    ADR 01/03/04/06/09/11/13/15。
+
+    ## 相对 v0.9 的破坏性变更（迁移期：v0.9 保留到冲刺 2 结束，W6）
+    - 作答类证据（`response_text`、`response_choice`、`asr_transcription`）必须带 `attempt_id`；
+      `AttemptInput.attempt_id` 改为必填（评审 N3、N4）。
+    - grade、diagnose、teach、generate_variation、plan 请求里的 `item_ref` / `skill_node` 前缀必须与 `context.subject` 一致
+      （N7；道法只约束 `item_ref`；report 的历史数据由平台选取，不约束）。
+    - `idempotency_key` 必须是小写 UUIDv4（安全审查：键会出现在日志与重放路径里）。
+    - 时间字段必须是带时区的 RFC 3339（`Timestamp`，N10）。
+    - `ReportFields.forecast` 移除：考试预测只由洞察服务 `insight.predict` 提供，只给编排层（sie-#2）。
+    - `TeachResult.verified_claims` 改名 `verified_statements`（sie-#4，避免与判断账本的“判断”混淆）。
+    - `ScoringPoint.point_id` 只允许小写，与采分点、判分维度同一写法（svc-#7）。
+    - `EvidencePayloadSignal.signal_code` 拒收 `voiceprint`、`face`、`gaze`、`emotion` 开头的编码（svc-#9；CLAUDE.md 规则 12）。
+    - 选择题选项、`latex`、`mhchem` 有字符与命令约束（不能夹带自由文本）。
+    - 废弃（迁移期仍接受）：`AttemptInput.response.image_ref`、`transcript_ref`、`DiagnoseRequest.paper_image_refs`
+      （ADR 15：适配器不接触原图与转写原件）。
+
+    ## 结果未知与重试（N8、N18）
+    `Problem.retryable = true` 表示**结果未知**：平台必须用同一个 `idempotency_key` 重试，按重试结果结算或回滚。
+    5xx 一律按结果未知处理，`retryable: false` 只对 4xx 有意义。
+
+    ## 约定（N13、N14、N15）
+    - 未实现的方法返回 501 `METHOD_NOT_IMPLEMENTED`；错误体一律 `application/problem+json`。
+    - 判断“同一请求体”时不比较 `context.request_id`。同 key 冲突检测由平台（学习服务）负责，适配器尽力而为。
+    - 证据只记一次，推断可以多次：同一个 `evidence_id` 被不同请求引用时，平台只落库一次。
+    - 超时：grade 10 秒、diagnose 30 秒，其余方法 30 秒；超时按结果未知处理。
+
+    ## 判分与注册表（N2、N5、N6；kge-#1–#4）
+    - `rule_ref` 以平台注册表为准：采分点型 Rubric 以公共知识层采分点（`kge.scoring_point`）为准，验证器型以
+      `capabilities.verifiers` 做弱校验；不在注册表里的一律按模型判分处理。
+    - 总分 = 各维度分的加权和，权重由 Rubric 定；各维之和的上限取同一（题目，rubric_version）下采分点分值之和，平台校验。
+    - 采分点型 Rubric 的判分维度 `dimension_id` 取对应采分点的 `point_id`。
+    - `source_version` 的地图段写作 `graph:<学科>-map@x.y.z`，与知识地图版本对应。
+    - `verdict = needs_review` 时维度分为 null 表示“待复核”，不是永久排除。
+
+    ## 与两个核心、考情库、输入通道的衔接（svc-#1–#6、pol-#1、svc-#2/kge-#5、ADR 15）
+    - 编排层把平台侧数据放进请求（`learner_context`、`scoring_points`、`knowledge_page`、`node_path`、`item_family`、
+      `exam_config`，均为可选），适配器**不**直接调用知识服务、洞察服务，也不读考情库（CLAUDE.md 规则 1）。
+    - 证据的等级（A / B / C）、输入通道、作答情境（`evidence_kind`）、地图版本由平台按请求上下文与输入通道补齐，
+      证据草稿不带这些字段。C 级证据照常判分，但平台不写入学习者模型。
+    - 判分请求可以带作答证据引用 `answer_evidence_ref` 与 `evidence_level`；作答内容为平台归一化后的形态。
+
+    ## 判断账本（CLAUDE.md 规则 11；sie-#1、sie-#3）
+    适配器输出的是字段与证据引用，不是对学生的陈述。`report` 的 `trend`、`highlight_codes` 不直接展示给学生家长，
+    面向学生家长的结论句由洞察服务按判断模板生成；`teach` 的讲解只讲内容，不写关于学生的判断。
+
+    ## 调用方向
+    平台学习服务（`services/learning`）调用适配器。适配器**不得**直接读写 `platform.*` 表
+    （CLAUDE.md 规则 1；ADR 01 第 1 条）。适配器需要的学习者状态由平台在请求里传入；
+    适配器产生的证据与推断放在响应里，由学习服务落库。
+
+    ## 证据 ID 的来源
+    适配器在响应的 `evidence` 数组里给出证据草稿，每条带适配器生成的 UUID `evidence_id`。
+    学习服务按这个 ID 落库为 `evidence_event`。因此响应里 `evidence_ids`（信封级）以及
+    `result` 内各处引用的 evidence_id，必须指向：本响应 `evidence` 数组里的条目，或者
+    请求里传入的既有证据 ID。其他 ID 一律视为契约违规。
+
+    ## 判分溯源（CLAUDE.md 规则 3）
+    判分只能来自验证器或 Rubric。`grade` 的结果里**没有任何自由文本字段**；评语、讲解、
+    人设话术由人设层另行生成，不得覆盖或改写分数。
+
+    ## 计量（CLAUDE.md 规则 4；ADR 06）
+    消耗类方法（`diagnose`、`grade`、`teach`）的 `context.usage_id` 与 `context.idempotency_key`
+    必填。平台在调用适配器之前已完成预留；适配器只需要把这两个值原样用于幂等与日志，
+    不自行扣费。非消耗类方法（`plan`、`generate_variation`、`report`）的 `usage_id` 可省略，
+    但 `idempotency_key` 仍然必填，保证重试安全。
+
+    ## 数据级别（ADR 04 / 09）
+    每个请求都声明 `context.data_class`。适配器内部如需调用模型，必须经平台模型路由，
+    并原样传递 `data_class`；不得自行持有模型供应商的 Key 或 BaseURL（ADR 04 第 1 条）。
+  license:
+    name: 内部，未授权对外
+    identifier: LicenseRef-StarBuddy-Internal
+servers:
+  - url: https://{adapter_host}/plugin/v0
+    description: 各科适配器服务。平台按 subject 路由到对应的适配器。路径不随契约版本变化，版本以 `contract_version` 协商（迁移期同一路径可接两个版本）。
+    variables:
+      adapter_host:
+        default: adapter.dev.invalid
+security:
+  - platformServiceToken: []
+tags:
+  - name: methods
+    description: 六个学科方法。
+  - name: jobs
+    description: 异步任务查询（diagnose、grade 可以异步）。
+  - name: meta
+    description: 适配器能力声明，用于契约覆盖率统计（Gate 0 软条件）。
+
+paths:
+  /capabilities:
+    get:
+      tags: [meta]
+      operationId: getCapabilities
+      summary: 声明本适配器实现了哪些方法、契约版本与算法版本
+      responses:
+        '200':
+          description: 能力声明
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Capabilities' }
+              examples:
+                aya:
+                  $ref: '#/components/examples/CapabilitiesAya'
+        default: { $ref: '#/components/responses/Error' }
+
+  /diagnose:
+    post:
+      tags: [methods]
+      operationId: diagnose
+      summary: 诊断：把作答证据映射为能力点观测与错因归因（消耗类，可异步）
+      description: |
+        输出的是**观测与推断**，不是掌握度。掌握度只由平台 `mastery_estimate` 计算
+        （CLAUDE.md 规则 2）。“全市位次区间”“预计提分”不得出现在诊断结果里，只能出现在
+        `report` 的预测字段中（wenli adapter-design §1）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DiagnoseRequest' }
+            examples:
+              wenli_paper:
+                $ref: '#/components/examples/DiagnoseRequestWenliPaper'
+              aya_with_context:
+                $ref: '#/components/examples/DiagnoseRequestAyaWithContext'
+      responses:
+        '200':
+          description: 同步完成
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DiagnoseResponse' }
+              examples:
+                wenli_paper:
+                  $ref: '#/components/examples/DiagnoseResponseWenliPaper'
+        '202': { $ref: '#/components/responses/JobAccepted' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /plan:
+    post:
+      tags: [methods]
+      operationId: plan
+      summary: 计划：输出学科内的候选任务与优先级（非消耗类）
+      description: |
+        只输出**学科处方**（候选任务、目标能力点、优先级、前置关系）。跨科日程编排归平台与点点
+        （aya、wenli、zhixing adapter-design §1）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PlanRequest' }
+            examples:
+              aya:
+                $ref: '#/components/examples/PlanRequestAya'
+      responses:
+        '200':
+          description: 计划结果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlanResponse' }
+              examples:
+                aya:
+                  $ref: '#/components/examples/PlanResponseAya'
+        default: { $ref: '#/components/responses/Error' }
+
+  /teach:
+    post:
+      tags: [methods]
+      operationId: teach
+      summary: 教学：按平台给定的提示等级输出结构化教学片段（消耗类）
+      description: |
+        提示等级上限由平台决定（`allowed_hint_level`），适配器不得超过；客户端不能直接指定
+        （aya inventory §4：原产品由客户端决定提示等级）。对话历史由平台从自己的存储中提供，
+        不接受客户端拼接的历史（echo inventory §4：可伪造 assistant 轮次）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TeachRequest' }
+            examples:
+              aya_hint:
+                $ref: '#/components/examples/TeachRequestAya'
+              aya_lesson_with_page:
+                $ref: '#/components/examples/TeachRequestAyaWithPage'
+      responses:
+        '200':
+          description: 教学片段
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TeachResponse' }
+              examples:
+                aya_hint:
+                  $ref: '#/components/examples/TeachResponseAya'
+        default: { $ref: '#/components/responses/Error' }
+
+  /grade:
+    post:
+      tags: [methods]
+      operationId: grade
+      summary: 判分：由验证器或 Rubric 给出结构化判分（消耗类，可异步）
+      description: |
+        - 主观维度（作文、阅读、道法 M3 主观题、英语 LLM 判分）：confidence 取低值，
+          并置 `human_review_required = true`（wenli A2、zhixing A2、echo adapter-design §1）。
+        - 确定性验证器（选择题 key 比对、道法 M2 定位、阿鸦验证器 v0）：给出高置信；
+          验证器遇到边界情况时不下对错结论，返回 `verdict = needs_review`（aya adapter-design §2）。
+        - 契约 v0.9 / v1 的 zhixing 只接道法判分，不含历史（zhixing #13/A5）。
+        - 维度分可以为 `null`（英语 D 维发音，评测供应商到位前；echo A3），此时总分必须在
+          `score.excluded_dimensions` 里列出被排除的维度。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GradeRequest' }
+            examples:
+              aya_objective:
+                $ref: '#/components/examples/GradeRequestAyaObjective'
+              aya_with_context:
+                $ref: '#/components/examples/GradeRequestAyaWithContext'
+              aya_geometry:
+                $ref: '#/components/examples/GradeRequestAyaGeometry'
+              echo_async:
+                $ref: '#/components/examples/GradeRequestEchoTranscript'
+              wenli_essay:
+                $ref: '#/components/examples/GradeRequestWenliEssay'
+      responses:
+        '200':
+          description: 同步判分完成
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GradeResponse' }
+              examples:
+                aya_objective:
+                  $ref: '#/components/examples/GradeResponseAyaObjective'
+                wenli_essay_subjective:
+                  $ref: '#/components/examples/GradeResponseWenliEssay'
+        '202': { $ref: '#/components/responses/JobAccepted' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /generate_variation:
+    post:
+      tags: [methods]
+      operationId: generateVariation
+      summary: 变式：从已审题库中选出同能力点、同错因的候选题（非消耗类）
+      description: |
+        契约 v1 语义是**选题，不是生成**（aya #9、wenli #6/A5、zhixing、echo 一致）。
+        候选必须已准入（`admission = admitted`）。没有合格候选时返回空数组并给出 `empty_reason`，
+        **不得生成新题**。生成器另立项，其产出只能进入平台 content_review。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GenerateVariationRequest' }
+            examples:
+              zhixing:
+                $ref: '#/components/examples/GenerateVariationRequestZhixing'
+              aya_family:
+                $ref: '#/components/examples/GenerateVariationRequestAyaFamily'
+      responses:
+        '200':
+          description: 选题结果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenerateVariationResponse' }
+              examples:
+                zhixing_empty:
+                  $ref: '#/components/examples/GenerateVariationResponseZhixingEmpty'
+        default: { $ref: '#/components/responses/Error' }
+
+  /report:
+    post:
+      tags: [methods]
+      operationId: report
+      summary: 报告：按时间窗提供学科字段，由平台报告引擎合成（非消耗类）
+      description: |
+        适配器只提供结构化字段，不输出叙事文本。字段中不得出现排名、同伴比较或逐句对话
+        （开发计划 冲刺 5-H：家长版不含逐句对话与同伴比较）。预测类字段只能基于已准入内容，
+        准入内容不够时必须省略（aya、wenli adapter-design §1）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReportRequest' }
+            examples:
+              wenli_parent:
+                $ref: '#/components/examples/ReportRequestWenliParent'
+      responses:
+        '200':
+          description: 报告字段
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReportResponse' }
+              examples:
+                wenli_parent:
+                  $ref: '#/components/examples/ReportResponseWenliParent'
+        default: { $ref: '#/components/responses/Error' }
+
+  /jobs/{job_id}:
+    get:
+      tags: [jobs]
+      operationId: getJob
+      summary: 查询异步任务状态与结果（轮询）
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: 任务状态
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JobStatus' }
+        default: { $ref: '#/components/responses/Error' }
+
+components:
+  securitySchemes:
+    platformServiceToken:
+      type: http
+      scheme: bearer
+      description: 平台学习服务到适配器的服务间令牌。学生与家长的身份不经过适配器。
+
+  responses:
+    JobAccepted:
+      description: 已受理为异步任务。平台用 `GET /jobs/{job_id}` 轮询。
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/JobAccepted' }
+          examples:
+            echo_grade:
+              $ref: '#/components/examples/JobAcceptedEcho'
+    Error:
+      description: 统一错误体（RFC 9457 Problem Details 扩展）
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          examples:
+            unauthenticated:
+              $ref: '#/components/examples/ProblemUnauthenticated'
+            mode_not_supported:
+              $ref: '#/components/examples/ProblemModeNotSupported'
+
+  schemas:
+    # ---------- 公共类型 ----------
+    Subject:
+      type: string
+      description: 学科命名空间。v0.9 只列四科，新增学科是非破坏性变更（spec 待人确认 #4）。
+      enum: [wenli, aya, zhixing, echo]
+
+    DataClass:
+      type: string
+      description: 数据级别，定义见 ADR 09 §2。L2 及以上只能路由到境内模型（ADR 04）。
+      enum: [L0, L1, L2, L3]
+
+    Method:
+      type: string
+      enum: [diagnose, plan, teach, grade, generate_variation, report]
+
+    SkillNodeRef:
+      type: string
+      description: 能力点引用，格式 `subject:local_id`。各科保留自己的坐标系（完整方案 5.5）。
+      pattern: '^(wenli|aya|zhixing|echo):[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$'
+      examples: ['aya:K-QF-0301', 'wenli:R3-L2']
+
+    ItemRef:
+      type: string
+      description: 题目引用，格式 `subject:item_id`。
+      pattern: '^(wenli|aya|zhixing|echo):[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$'
+
+    EvidenceId:
+      type: string
+      format: uuid
+
+    Timestamp:
+      type: string
+      format: date-time
+      description: 带时区的 RFC 3339 时间（v1.0 评审 N10：不依赖 format 校验插件，也不接受 `epoch` 之类的值）。
+      pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}:\d{2})$'
+
+    ContentVersion:
+      type: object
+      description: 内容六段标识（完整方案 5.5；开发计划 冲刺 4-G）。
+      required: [region, exam_year, grade, textbook_version, subject, content_version]
+      additionalProperties: false
+      properties:
+        region: { type: string, pattern: '^[a-z][a-z0-9\-]{1,31}$', examples: ['nanjing'] }
+        exam_year: { type: integer, minimum: 2026, maximum: 2100 }
+        grade: { type: integer, minimum: 7, maximum: 9, description: 年级（初一 = 7）。 }
+        textbook_version: { type: string, pattern: '^[a-z0-9][a-z0-9\-]{1,31}$', examples: ['bubian-2024'] }
+        subject: { $ref: '#/components/schemas/Subject' }
+        content_version: { type: string, pattern: '^\d+\.\d+\.\d+$' }
+
+    Admission:
+      type: string
+      description: |
+        内容准入状态。只有 `admitted` 的内容产生的证据可以推动星亮门槛；其他状态的证据
+        可以记录，但必须带这个标记（aya adapter-design §1、§3.1）。
+      enum: [admitted, pending_review, source_unverified, rejected]
+
+    Semantics:
+      type: string
+      description: |
+        结果的效力。`formal` 可以计入正式测评与掌握门槛；`practice` 只作练习与演示，
+        不产生正式测评结果（aya adapter-design §1：Q1 题在教研过审前只能 practice）。
+      enum: [formal, practice]
+
+    CrossSubjectErrorCategory:
+      type: string
+      description: |
+        错因跨科七大类（开发计划 冲刺 0 W2：审题 / 定位信息 / 思维方法 / 运算语法 / 表达规范 /
+        策略时间 / 知识）。映射表 v0.9 待教研签字，签字前枚举值可能调整。
+      enum:
+        - reading_the_question
+        - locating_information
+        - thinking_method
+        - computation_or_grammar
+        - expression_convention
+        - strategy_and_time
+        - knowledge
+
+    ReviewReason:
+      type: string
+      description: 进入统一复核队列的原因（完整方案 5.4 返回字段行；spec 范围第 6 条）。
+      enum:
+        - subjective_dimension
+        - low_confidence
+        - verifier_boundary_case
+        - content_not_admitted
+        - ocr_low_confidence
+        - dimension_unavailable
+        - student_appeal
+        - spot_check
+        - double_grading_disagreement
+        - full_score_second_review
+
+    ModelVersion:
+      type: string
+      description: |
+        产生本结果的模型或算法。模型调用写 `model:<供应商>/<模型>@<版本>`，由平台模型路由回传；
+        确定性算法写 `algo:<名称>@<版本>`；两者都用到时写模型的那一个，算法版本写进
+        `source_version`。禁止写 `routed` 之类不可追溯的值（wenli KD-04、zhixing KD-07）。
+        `@` 后写模型的快照版本（带日期或版本号），不写会漂移的“最新版”别名（评审 v09-#5；ADR 04 增补第 4 条）。
+      pattern: '^(model:[a-z0-9\-]+/[A-Za-z0-9._\-]+@[A-Za-z0-9._\-]+|algo:[A-Za-z0-9._\-]+@[A-Za-z0-9._\-]+)$'
+      examples: ['algo:aya-symbolic-ts@0.1.0', 'model:dashscope/qwen-plus@2026-09']
+
+    VersionedName:
+      type: string
+      description: 带版本的名称，`名称@版本`。只允许编码字符，不能写自然语言。
+      pattern: '^[a-z0-9][a-z0-9\-]{0,47}@[A-Za-z0-9][A-Za-z0-9._\-]{0,31}$'
+      examples: ['wenli-attr@0.1.0']
+
+    SourceVersion:
+      type: string
+      description: |
+        产生本结果所用的内容与规则版本，用 `;` 分隔多个 `类别:名称@版本`，例如
+        `rubric:wenli-essay-5d@1.2.0;prompt:wenli-grade@0.4.1;items:nanjing-2027-9@1.0.0`。
+        类别限定为 rubric / verifier / prompt / items / algo / graph。只允许编码字符。
+      pattern: '^(rubric|verifier|prompt|items|algo|graph):[a-z0-9][a-z0-9\-]{0,47}@[A-Za-z0-9][A-Za-z0-9._\-]{0,31}(;(rubric|verifier|prompt|items|algo|graph):[a-z0-9][a-z0-9\-]{0,47}@[A-Za-z0-9][A-Za-z0-9._\-]{0,31}){0,7}$'
+
+    Uncertainty:
+      type: object
+      description: 可选的不确定区间，承接文砺 `uncertainty_note`（spec 待人确认 #1）。
+      required: [low, high]
+      additionalProperties: false
+      properties:
+        low: { type: number }
+        high: { type: number }
+
+    ExamConfig:
+      type: object
+      description: |
+        学生届别的考试配置，由编排层按 `platform.student_profile.exam_cohort` 读已发布的考情方案（policy.subject_config）
+        后放进请求（评审 pol-#1）。适配器不读考情库，也不在包内写死满分、时长。
+      required: [cohort, full_score]
+      additionalProperties: false
+      properties:
+        cohort: { type: integer, minimum: 2015, maximum: 2100 }
+        full_score: { type: integer, minimum: 1, maximum: 300 }
+        duration_minutes: { type: integer, minimum: 1, maximum: 300 }
+        question_type_codes:
+          type: array
+          maxItems: 32
+          items: { type: string, pattern: '^[a-z0-9_]{1,48}$' }
+
+    # ---------- 请求上下文 ----------
+    RequestContext:
+      type: object
+      description: 每个方法请求都带的上下文。
+      required: [request_id, subject, student_ref, data_class, idempotency_key, contract_version]
+      additionalProperties: false
+      properties:
+        request_id: { type: string, format: uuid }
+        contract_version:
+          type: string
+          description: 调用方按照哪个契约版本组装请求。
+          const: 1.0.0
+        subject: { $ref: '#/components/schemas/Subject' }
+        student_ref:
+          type: string
+          format: uuid
+          pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+          description: 平台学生 ID（小写 UUID，不依赖 format 校验，评审 N13）。**不得**携带手机号、姓名、学校等个人信息。
+        data_class:
+          description: |
+            插件请求都带 `student_ref`，能关联到具体学生，所以最低是 L2（ADR 09 §2）。
+            照片、语音、心理相关内容为 L3。声明低于实际级别时平台拒绝（ADR 04 第 2 条）。
+          allOf:
+            - $ref: '#/components/schemas/DataClass'
+            - enum: [L2, L3]
+        usage_id:
+          type: string
+          format: uuid
+          description: 计量预留 ID。消耗类方法必填（ADR 06）。
+        idempotency_key:
+          type: string
+          pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+          description: |
+            小写 UUIDv4（v1.0 起，安全审查：键会出现在日志与重放路径里，不能携带任何可读信息）。
+            重试时保持不变。同一个 key 配不同的请求体，返回 `IDEMPOTENCY_CONFLICT`；比较请求体时不含 `request_id`。
+            冲突检测由平台负责，适配器尽力而为（评审 N13、N14）。
+        content_version: { $ref: '#/components/schemas/ContentVersion' }
+
+    MeteredContext:
+      description: 消耗类方法的上下文：`usage_id` 必填。
+      allOf:
+        - $ref: '#/components/schemas/RequestContext'
+        - required: [usage_id]
+
+    # ---------- 证据 ----------
+    EvidenceDraft:
+      type: object
+      description: |
+        适配器产生的证据草稿，由学习服务落库为 `evidence_event`（ADR 01）。原始证据与推断分开：
+        这里只放**观察到的事实**（作答、转写、命中的采分点片段），推断放在各方法的 result 里。
+        语音只存评测结果与特征，不存原始音频（完整方案 5.5）。
+      required: [evidence_id, kind, occurred_at, admission, payload]
+      additionalProperties: false
+      properties:
+        evidence_id: { $ref: '#/components/schemas/EvidenceId' }
+        attempt_id:
+          type: string
+          format: uuid
+          description: 这条证据属于哪道作答（请求里 `AttemptInput.attempt_id`）。作答类证据必填（v1.0 评审 N3）。
+        kind:
+          type: string
+          description: |
+            `speech_features` 是语音评测结果与特征（不含原始音频，完整方案 5.5；对应 5.4 英语“语音表现信号”）。
+          enum:
+            - response_text
+            - response_choice
+            - ocr_transcription
+            - asr_transcription
+            - scoring_point_span
+            - verifier_trace
+            - interaction_signal
+            - speech_features
+        occurred_at:
+          description: 事件自身的发生时间，重试时保持不变（ADR 05 第 2 条）。
+          $ref: '#/components/schemas/Timestamp'
+        item_ref: { $ref: '#/components/schemas/ItemRef' }
+        skill_node: { $ref: '#/components/schemas/SkillNodeRef' }
+        admission: { $ref: '#/components/schemas/Admission' }
+        payload:
+          description: |
+            按 kind 区分的结构化内容，**不允许任意字段**。`text` 只能是学生作答或转写的原文
+            （作答证据），不能是评语；平台的人设与评测回归会抽检这一点。游戏化数值（XP、成就）
+            和掌握度不能写进证据（echo #12/A6；CLAUDE.md 规则 2）。
+          oneOf:
+            - $ref: '#/components/schemas/EvidencePayloadText'
+            - $ref: '#/components/schemas/EvidencePayloadSpan'
+            - $ref: '#/components/schemas/EvidencePayloadChoice'
+            - $ref: '#/components/schemas/EvidencePayloadVerifierTrace'
+            - $ref: '#/components/schemas/EvidencePayloadSignal'
+        media_ref:
+          type: string
+          description: 对象存储中的引用（照片、转写来源）。不得是公网可直接访问的 URL。
+          pattern: '^objstore://[a-z0-9][a-z0-9/_.\-]{0,255}$'
+      allOf:
+        - description: 作答类证据必须指出属于哪道作答（v1.0 评审 N3）。
+          if: { properties: { kind: { enum: [response_text, response_choice, asr_transcription] } }, required: [kind] }
+          then: { required: [attempt_id] }
+        - if: { properties: { kind: { enum: [response_text, ocr_transcription, asr_transcription] } }, required: [kind] }
+          then: { properties: { payload: { $ref: '#/components/schemas/EvidencePayloadText' } } }
+        - if: { properties: { kind: { const: scoring_point_span } }, required: [kind] }
+          then: { properties: { payload: { $ref: '#/components/schemas/EvidencePayloadSpan' } } }
+        - if: { properties: { kind: { const: response_choice } }, required: [kind] }
+          then: { properties: { payload: { $ref: '#/components/schemas/EvidencePayloadChoice' } } }
+        - if: { properties: { kind: { const: verifier_trace } }, required: [kind] }
+          then: { properties: { payload: { $ref: '#/components/schemas/EvidencePayloadVerifierTrace' } } }
+        - if: { properties: { kind: { enum: [interaction_signal, speech_features] } }, required: [kind] }
+          then: { properties: { payload: { $ref: '#/components/schemas/EvidencePayloadSignal' } } }
+
+    EvidenceRecord:
+      description: |
+        平台在请求里传给适配器的既有证据（内容来自 `platform.evidence_event`）。适配器只在本次请求内使用，
+        **不得**在学科私有表里保存副本（CLAUDE.md 规则 2）。结构与 EvidenceDraft 相同。
+      $ref: '#/components/schemas/EvidenceDraft'
+
+    EvidencePayloadText:
+      type: object
+      required: [text]
+      additionalProperties: false
+      properties:
+        text: { type: string, maxLength: 20000, description: 学生作答或转写原文（只来自学生，不能是适配器写的内容）。 }
+
+    EvidencePayloadSpan:
+      type: object
+      description: 采分点命中的片段：引用学生原文证据的偏移，不复制文本（防止适配器借片段写评语）。
+      required: [source_evidence_id, span_start, span_end]
+      additionalProperties: false
+      properties:
+        source_evidence_id: { $ref: '#/components/schemas/EvidenceId' }
+        span_start: { type: integer, minimum: 0 }
+        span_end: { type: integer, minimum: 0 }
+
+    EvidencePayloadChoice:
+      type: object
+      required: [choice]
+      additionalProperties: false
+      properties:
+        choice: { type: array, minItems: 1, items: { type: string, pattern: '^[A-Za-z0-9]{1,8}$' } }
+
+    EvidencePayloadVerifierTrace:
+      type: object
+      required: [sampled_points, agreeing_points]
+      additionalProperties: false
+      properties:
+        sampled_points: { type: integer, minimum: 0 }
+        agreeing_points: { type: integer, minimum: 0 }
+        reason_codes: { type: array, items: { $ref: '#/components/schemas/VerifierReasonCode' } }
+
+    EvidencePayloadSignal:
+      type: object
+      required: [signal_code]
+      additionalProperties: false
+      properties:
+        signal_code:
+          type: string
+          description: |
+            信号编码。禁止 `xp_`、`achievement_`、`mastery_` 前缀：游戏化数值与掌握度不进证据（echo #12/A6；CLAUDE.md 规则 2）。
+            禁止任何一段（按下划线分隔）是声纹、语音身份、面部、眼动、情绪类词根：不用声纹、面部、眼动做推断，
+            不记录情绪状态（v1.0 评审 svc-#9；规则 12）。按分段匹配，`facet_count` 这类不受影响，`eye_gaze`、`x_emotion` 被拒。
+          pattern: '^(?!xp_|achievement_|mastery_)(?!(?:[a-z0-9]+_)*(?:voiceprint|voice|speaker|face|facial|gaze|eye|eyes|iris|emotion|emotional|mood|affect|affective)(?:_|$))[a-z0-9_]{1,48}$'
+        value: { type: number }
+
+    VerifierReasonCode:
+      type: string
+      description: 验证器边界情况原因码（aya adapter-design §2；是否冻结为枚举见 spec 待人确认 #6）。
+      enum:
+        - trig_or_multiletter_function
+        - equation_or_inequality_solving
+        - proof_or_multi_answer
+        - parse_failure
+        - sampling_insufficient
+        - no_reference_answer
+
+    # ---------- 统一返回信封 ----------
+    PluginResultBase:
+      type: object
+      description: |
+        所有方法统一返回的信封（完整方案 5.4“返回字段”）。六个字段必填；
+        `human_review_required = true` 时 `review_reasons` 必须非空。
+      required:
+        - result
+        - evidence_ids
+        - confidence
+        - source_version
+        - model_version
+        - human_review_required
+        - contract_version
+        - semantics
+      properties:
+        contract_version: { type: string, const: 1.0.0 }
+        result: {}
+        evidence_ids:
+          type: array
+          items: { $ref: '#/components/schemas/EvidenceId' }
+          uniqueItems: true
+        evidence:
+          type: array
+          description: 本次新产生的证据草稿。
+          items: { $ref: '#/components/schemas/EvidenceDraft' }
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: |
+            结果整体的置信度。口径：确定性验证器且无边界情况 = 1.0；主观维度 ≤ 0.5
+            （具体上限待评审，spec 待人确认 #1）。
+        uncertainty: { $ref: '#/components/schemas/Uncertainty' }
+        source_version: { $ref: '#/components/schemas/SourceVersion' }
+        model_version: { $ref: '#/components/schemas/ModelVersion' }
+        human_review_required: { type: boolean }
+        review_reasons:
+          type: array
+          items: { $ref: '#/components/schemas/ReviewReason' }
+          uniqueItems: true
+        semantics:
+          description: |
+            适配器声明的结果效力。**平台侧规则**：平台按结果引用的全部证据（请求里的 EvidenceRecord
+            加本次草稿）的 admission 重新判定 semantics；适配器声明的只能比平台判定的更严，不能更松。
+            复核完成前，`human_review_required = true` 的结果不计入正式测评，也不推动掌握门槛与星亮
+            （评审第三节结论；ADR 11）。schema 只能约束本次草稿，下面的条件是其中一部分。
+          $ref: '#/components/schemas/Semantics'
+      allOf:
+        - description: human_review_required 为真时必须给出原因。
+          if: { properties: { human_review_required: { const: true } }, required: [human_review_required] }
+          then:
+            required: [review_reasons]
+            properties: { review_reasons: { minItems: 1 } }
+        - description: |
+            任何一条证据未准入 → 结果只能是 practice，并进复核（aya #3/#11、wenli 3.1）。
+          if:
+            required: [evidence]
+            properties:
+              evidence:
+                contains:
+                  required: [admission]
+                  properties: { admission: { not: { const: admitted } } }
+          then:
+            properties:
+              semantics: { const: practice }
+              human_review_required: { const: true }
+              review_reasons: { contains: { const: content_not_admitted } }
+
+    ErrorAttribution:
+      type: object
+      description: 错因归因：同时带学科分类与跨科大类（完整方案 5.5；CLAUDE.md 规则 6）。
+      required: [subject_category, cross_subject_category, confidence, evidence_ids, algorithm_version]
+      additionalProperties: false
+      properties:
+        skill_node: { $ref: '#/components/schemas/SkillNodeRef' }
+        subject_category:
+          type: string
+          description: 学科内错因编码（文砺六类、阿鸦十二类、知行四类、英语三维）。
+          pattern: '^[a-z0-9_\-]{1,48}$'
+        cross_subject_category: { $ref: '#/components/schemas/CrossSubjectErrorCategory' }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        evidence_ids:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/EvidenceId' }
+        algorithm_version: { $ref: '#/components/schemas/VersionedName' }
+
+    # ---------- diagnose ----------
+    AttemptInput:
+      type: object
+      description: |
+        一次作答。`response` 按形态多选一。v1.0 起作答内容是平台归一化后的形态（ADR 15）：
+        `latex`（数学）、`mhchem`（化学）、`semantic`（作图语义）；`image_ref`、`transcript_ref` 已废弃，
+        迁移期后删除，适配器不接触原图与转写原件。
+      required: [attempt_id, item_ref, occurred_at, response]
+      additionalProperties: false
+      properties:
+        attempt_id:
+          type: string
+          format: uuid
+          description: 由平台生成并传入，重试时不变；适配器原样使用，并写进这道作答产生的证据（v1.0 评审 N3、N4）。
+        item_ref: { $ref: '#/components/schemas/ItemRef' }
+        occurred_at: { $ref: '#/components/schemas/Timestamp' }
+        response:
+          type: object
+          additionalProperties: false
+          minProperties: 1
+          maxProperties: 1
+          properties:
+            text: { type: string, maxLength: 20000 }
+            choice: { type: array, minItems: 1, maxItems: 16, items: { type: string, pattern: '^[A-Za-z0-9]{1,8}$' } }
+            latex:
+              type: string
+              maxLength: 20000
+              description: 平台归一化后的数学表达（数学键盘、画布、拍照识别的校正结果）。只允许可打印 ASCII，不允许 `\text` 类命令夹带文字。
+              pattern: '^(?!.*\\(?:text|mbox|mathrm|operatorname|textrm|textbf|textit|verb))[\x20-\x7E]{1,20000}$'
+            mhchem:
+              type: string
+              maxLength: 4000
+              description: 平台归一化后的化学式或方程式。只允许可打印 ASCII，不允许 `\text` 类命令。
+              pattern: '^(?!.*\\(?:text|mbox|mathrm|operatorname|textrm|textbf|textit|verb))[\x20-\x7E]{1,4000}$'
+            semantic:
+              type: array
+              description: 作图语义（几何辅助线、受力图等），由平台作图组件产出。
+              maxItems: 64
+              items:
+                type: object
+                required: [op, args]
+                additionalProperties: false
+                properties:
+                  op: { type: string, pattern: '^[a-z][a-z_]{0,31}$' }
+                  args: { type: array, maxItems: 8, items: { type: string, pattern: '^[A-Za-z0-9_''.]{1,16}$' } }
+            image_ref: { type: string, deprecated: true, pattern: '^objstore://[a-z0-9][a-z0-9/_.\-]{0,255}$' }
+            transcript_ref: { type: string, deprecated: true, pattern: '^objstore://[a-z0-9][a-z0-9/_.\-]{0,255}$' }
+        elapsed_sec: { type: integer, minimum: 0 }
+        hint_level_used: { type: integer, minimum: 0, maximum: 6 }
+        self_report:
+          type: string
+          description: 学生自评。“猜的”会降权（aya adapter-design §1）。
+          enum: [confident, unsure, guessed]
+
+    DiagnoseRequest:
+      type: object
+      required: [context, mode]
+      additionalProperties: false
+      properties:
+        context: { $ref: '#/components/schemas/MeteredContext' }
+        mode:
+          type: string
+          description: |
+            `intake` 入口诊断；`paper` 整卷诊断（如文砺 M1 试卷 OCR）；`gap_test` 查缺；
+            `process` 过程诊断（如知行 F1 + F3 反推过程四步）。
+          enum: [intake, paper, gap_test, process]
+        attempts:
+          type: array
+          items: { $ref: '#/components/schemas/AttemptInput' }
+          maxItems: 200
+        paper_image_refs:
+          type: array
+          deprecated: true
+          description: |
+            整卷照片（mode = paper）。**v1.0 废弃**（ADR 15：适配器不接触原图）：迁移期后由平台输入通道识别整卷，
+            以带 `attempt_id` 的归一化作答放进 `attempts`。OCR 低置信时先请学生确认题目再判分（完整方案第六章）。
+          items: { type: string, pattern: '^objstore://[a-z0-9][a-z0-9/_.\-]{0,255}$' }
+          maxItems: 20
+        prior_evidence:
+          type: array
+          description: 平台提供的既有证据内容。适配器不自行查库（CLAUDE.md 规则 1）。
+          maxItems: 500
+          items: { $ref: '#/components/schemas/EvidenceRecord' }
+        learner_context:
+          type: array
+          description: |
+            编排层按任务裁剪的画像上下文（洞察服务 `insight.context` 的条目；推断条目带 `claim_id`，评审 svc-#1）。
+            适配器只在本次请求内使用，不保存副本，也不直接调用洞察服务。
+          maxItems: 200
+          items: { $ref: './insight-service.v0.9.yaml#/components/schemas/ContextEntry' }
+        node_path:
+          type: array
+          description: 编排层从知识服务 `node.path` 取的前置路径（评审 svc-#6）。
+          maxItems: 200
+          items: { $ref: './knowledge-service.v0.9.yaml#/components/schemas/PathStep' }
+      anyOf:
+        - required: [attempts]
+        - required: [paper_image_refs]
+      allOf:
+        - description: 请求学科为 wenli 时，引用前缀必须一致（评审 N7）。
+          if: { properties: { context: { properties: { subject: { const: wenli } }, required: [subject] } }, required: [context] }
+          then:
+            allOf:
+              - { properties: { attempts: { items: { properties: { item_ref: { pattern: '^wenli:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } } } } }
+        - description: 请求学科为 aya 时，引用前缀必须一致（评审 N7）。
+          if: { properties: { context: { properties: { subject: { const: aya } }, required: [subject] } }, required: [context] }
+          then:
+            allOf:
+              - { properties: { attempts: { items: { properties: { item_ref: { pattern: '^aya:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } } } } }
+        - description: 请求学科为 zhixing 时，引用前缀必须一致（评审 N7）。
+          if: { properties: { context: { properties: { subject: { const: zhixing } }, required: [subject] } }, required: [context] }
+          then:
+            allOf:
+              - { properties: { attempts: { items: { properties: { item_ref: { pattern: '^zhixing:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } } } } }
+        - description: 请求学科为 echo 时，引用前缀必须一致（评审 N7）。
+          if: { properties: { context: { properties: { subject: { const: echo } }, required: [subject] } }, required: [context] }
+          then:
+            allOf:
+              - { properties: { attempts: { items: { properties: { item_ref: { pattern: '^echo:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } } } } }
+
+    SkillObservation:
+      type: object
+      description: 对某个能力点的一次观测（不是掌握度）。
+      required: [skill_node, outcome, confidence, evidence_ids, algorithm_version]
+      additionalProperties: false
+      properties:
+        skill_node: { $ref: '#/components/schemas/SkillNodeRef' }
+        outcome: { type: string, enum: [demonstrated, not_demonstrated, partial, inconclusive] }
+        local_level:
+          type: string
+          description: 学科内等级编码（例如文砺 28 点里的“级”），由学科自己解释。只作观测，不是掌握度。
+          pattern: '^[A-Za-z0-9_\-]{1,16}$'
+        algorithm_version: { $ref: '#/components/schemas/VersionedName' }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        evidence_ids:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/EvidenceId' }
+
+    DiagnoseResult:
+      type: object
+      required: [observations, error_attributions]
+      additionalProperties: false
+      properties:
+        observations:
+          type: array
+          items: { $ref: '#/components/schemas/SkillObservation' }
+        error_attributions:
+          type: array
+          items: { $ref: '#/components/schemas/ErrorAttribution' }
+        ocr_confirmation_required:
+          type: array
+          description: 需要学生先确认题面的题目（OCR 低置信）。非空时整体 human_review_required 可以为假，但这些题不得判分。
+          items: { $ref: '#/components/schemas/ItemRef' }
+
+    DiagnoseResponse:
+      description: 信封之外不允许任何字段（防止在顶层夹带讲解或评语文本）。
+      unevaluatedProperties: false
+      allOf:
+        - $ref: '#/components/schemas/PluginResultBase'
+        - properties:
+            result: { $ref: '#/components/schemas/DiagnoseResult' }
+
+    # ---------- plan ----------
+    MasterySnapshot:
+      type: object
+      description: 平台提供的只读掌握状态（门槛映射见完整方案 5.5）。
+      required: [skill_node, state]
+      additionalProperties: false
+      properties:
+        skill_node: { $ref: '#/components/schemas/SkillNodeRef' }
+        state: { type: string, enum: [unseen, understand, execute, stable, transfer, retain] }
+        p_mastery: { type: number, minimum: 0, maximum: 1 }
+        next_retest_at: { $ref: '#/components/schemas/Timestamp' }
+
+    PlanRequest:
+      type: object
+      required: [context, mastery]
+      additionalProperties: false
+      properties:
+        context: { $ref: '#/components/schemas/RequestContext' }
+        mastery:
+          type: array
+          items: { $ref: '#/components/schemas/MasterySnapshot' }
+        constraints:
+          type: object
+          additionalProperties: false
+          properties:
+            time_budget_minutes: { type: integer, minimum: 1, maximum: 600 }
+            exam_date: { type: string, format: date }
+            focus_skill_nodes:
+              type: array
+              items: { $ref: '#/components/schemas/SkillNodeRef' }
+        learner_context:
+          type: array
+          description: |
+            编排层按任务裁剪的画像上下文（洞察服务 `insight.context` 的条目；推断条目带 `claim_id`，评审 svc-#1）。
+            适配器只在本次请求内使用，不保存副本，也不直接调用洞察服务。
+          maxItems: 200
+          items: { $ref: './insight-service.v0.9.yaml#/components/schemas/ContextEntry' }
+        node_path:
+          type: array
+          description: 编排层从知识服务 `node.path` 取的前置路径（评审 svc-#6）。
+          maxItems: 200
+          items: { $ref: './knowledge-service.v0.9.yaml#/components/schemas/PathStep' }
+        exam_config: { $ref: '#/components/schemas/ExamConfig' }
+
+      allOf:
+        - description: 请求学科为 wenli 时，引用前缀必须一致（评审 N7）。
+          if: { properties: { context: { properties: { subject: { const: wenli } }, required: [subject] } }, required: [context] }
+          then:
+            allOf:
+              - { properties: { mastery: { items: { properties: { skill_node: { pattern: '^wenli:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } } } } }
+              - { properties: { constraints: { properties: { focus_skill_nodes: { items: { pattern: '^wenli:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } } } } }
+        - description: 请求学科为 aya 时，引用前缀必须一致（评审 N7）。
+          if: { properties: { context: { properties: { subject: { const: aya } }, required: [subject] } }, required: [context] }
+          then:
+            allOf:
+              - { properties: { mastery: { items: { properties: { skill_node: { pattern: '^aya:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } } } } }
+              - { properties: { constraints: { properties: { focus_skill_nodes: { items: { pattern: '^aya:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } } } } }
+        - description: 请求学科为 echo 时，引用前缀必须一致（评审 N7）。
+          if: { properties: { context: { properties: { subject: { const: echo } }, required: [subject] } }, required: [context] }
+          then:
+            allOf:
+              - { properties: { mastery: { items: { properties: { skill_node: { pattern: '^echo:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } } } } }
+              - { properties: { constraints: { properties: { focus_skill_nodes: { items: { pattern: '^echo:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } } } } }
+
+    PlanTask:
+      type: object
+      required: [task_id, kind, skill_nodes, priority, estimated_minutes, rationale_code]
+      additionalProperties: false
+      properties:
+        task_id: { type: string, format: uuid }
+        kind: { type: string, enum: [diagnose, practice, review, lesson, retest, mock_exam] }
+        skill_nodes:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/SkillNodeRef' }
+        item_refs:
+          type: array
+          items: { $ref: '#/components/schemas/ItemRef' }
+        priority: { type: number, minimum: 0, maximum: 1 }
+        estimated_minutes: { type: integer, minimum: 1 }
+        prerequisite_task_ids:
+          type: array
+          items: { type: string, format: uuid }
+        rationale_code:
+          type: string
+          description: 选择理由的编码（例如 `high_exam_weight`、`retest_due`），叙述文字由平台生成。
+          pattern: '^[a-z0-9_]{1,48}$'
+
+    PlanResult:
+      type: object
+      required: [tasks]
+      additionalProperties: false
+      properties:
+        tasks:
+          type: array
+          items: { $ref: '#/components/schemas/PlanTask' }
+
+    PlanResponse:
+      description: 信封之外不允许任何字段（防止在顶层夹带讲解或评语文本）。
+      unevaluatedProperties: false
+      allOf:
+        - $ref: '#/components/schemas/PluginResultBase'
+        - properties:
+            result: { $ref: '#/components/schemas/PlanResult' }
+
+    # ---------- teach ----------
+    ConversationTurn:
+      type: object
+      required: [role, content, turn_id]
+      additionalProperties: false
+      properties:
+        turn_id: { type: string, format: uuid }
+        role: { type: string, enum: [student, tutor] }
+        content: { type: string, maxLength: 4000 }
+
+    TeachRequest:
+      type: object
+      required: [context, mode, skill_node, allowed_hint_level, persona]
+      additionalProperties: false
+      properties:
+        context: { $ref: '#/components/schemas/MeteredContext' }
+        mode:
+          type: string
+          description: |
+            `hint` 练习中的提示，计入 AI 陪练时长（资源 `ai_active_time`）；`lesson` 讲评课 / 白板，按节计量
+            （资源 `lesson_whiteboard`）；实时语音另计 `voice_realtime`（评审 v09-#2；计量 v2）。不拆成两个操作。
+          enum: [hint, lesson]
+        skill_node: { $ref: '#/components/schemas/SkillNodeRef' }
+        item_ref: { $ref: '#/components/schemas/ItemRef' }
+        allowed_hint_level:
+          type: integer
+          minimum: 0
+          maximum: 6
+          description: 平台决定的提示等级上限，适配器输出不得超过。
+        persona:
+          type: object
+          description: 由平台指定的人设与其 Prompt 版本。人设变更属于必停项（CLAUDE.md）。
+          required: [persona_id, prompt_version]
+          additionalProperties: false
+          properties:
+            persona_id:
+              type: string
+              description: teach 只由常驻型老师或点点主持；考官型（方圆、雅典娜）不在 teach 内（完整方案 5.4）。
+              enum: [aya, miaobi, diandian]
+            prompt_version: { type: string, pattern: '^\d+\.\d+\.\d+$' }
+        conversation:
+          type: array
+          description: 平台从自己的存储中取出的对话历史，不接受客户端拼接。
+          maxItems: 40
+          items: { $ref: '#/components/schemas/ConversationTurn' }
+        recent_evidence:
+          type: array
+          description: 平台提供的近期证据内容。
+          maxItems: 100
+          items: { $ref: '#/components/schemas/EvidenceRecord' }
+        knowledge_page:
+          description: 编排层从知识服务 `page.get` 取的已发布知识页面（公共层内容，评审 svc-#6）。
+          $ref: './knowledge-service.v0.9.yaml#/components/schemas/PageGetResponse/allOf/1/properties/result'
+      allOf:
+        - description: 请求学科为 wenli 时，引用前缀必须一致（评审 N7）。
+          if: { properties: { context: { properties: { subject: { const: wenli } }, required: [subject] } }, required: [context] }
+          then:
+            allOf:
+              - { properties: { item_ref: { pattern: '^wenli:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } }
+              - { properties: { skill_node: { pattern: '^wenli:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } }
+        - description: 请求学科为 aya 时，引用前缀必须一致（评审 N7）。
+          if: { properties: { context: { properties: { subject: { const: aya } }, required: [subject] } }, required: [context] }
+          then:
+            allOf:
+              - { properties: { item_ref: { pattern: '^aya:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } }
+              - { properties: { skill_node: { pattern: '^aya:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } }
+        - description: 请求学科为 zhixing 时，引用前缀必须一致（评审 N7）。
+          if: { properties: { context: { properties: { subject: { const: zhixing } }, required: [subject] } }, required: [context] }
+          then:
+            allOf:
+              - { properties: { item_ref: { pattern: '^zhixing:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } }
+        - description: 请求学科为 echo 时，引用前缀必须一致（评审 N7）。
+          if: { properties: { context: { properties: { subject: { const: echo } }, required: [subject] } }, required: [context] }
+          then:
+            allOf:
+              - { properties: { item_ref: { pattern: '^echo:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } }
+              - { properties: { skill_node: { pattern: '^echo:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } }
+
+    TeachSegment:
+      type: object
+      description: 讲解只讲内容，不写关于学生的判断（“你最近……”这类陈述须由洞察服务按判断模板生成；评审 sie-#3）。
+      required: [type]
+      additionalProperties: false
+      properties:
+        type: { type: string, enum: [text, formula, whiteboard_dsl, item_ref] }
+        text: { type: string, maxLength: 4000 }
+        latex: { type: string, maxLength: 2000 }
+        dsl: { type: object, description: 讲解 DSL（ADR 07；内容需经发布闸门）。, additionalProperties: true }
+        dsl_version: { type: string, pattern: '^\d+\.\d+\.\d+$' }
+        item_ref: { $ref: '#/components/schemas/ItemRef' }
+
+    TeachResult:
+      type: object
+      required: [segments, hint_level_used, ai_disclosure_shown]
+      additionalProperties: false
+      properties:
+        segments:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/TeachSegment' }
+        hint_level_used: { type: integer, minimum: 0, maximum: 6 }
+        ai_disclosure_shown:
+          type: boolean
+          description: 本轮是否包含 AI 身份披露（完整方案第十一章：首次对话必须声明 AI 扮演）。
+        referral_triggered:
+          type: boolean
+          description: 是否触发了转介话术（超出学习范畴的情绪困扰）。触发时平台记录并通知。
+        verified_statements:
+          type: array
+          description: |
+            讲解中的数值结论经验证器核验的结果（如阿鸦教练数值核验）。v0.9 叫 `verified_claims`，
+            v1.0 改名，避免与判断账本的“判断”混淆（评审 sie-#4）。这里是数学断言，不是关于学生的陈述。
+          items:
+            type: object
+            required: [statement, verdict]
+            additionalProperties: false
+            properties:
+              statement: { type: string, maxLength: 500 }
+              verdict: { type: string, enum: [verified, refuted, not_checked] }
+
+    TeachResponse:
+      description: 信封之外不允许任何字段（防止在顶层夹带讲解或评语文本）。
+      unevaluatedProperties: false
+      allOf:
+        - $ref: '#/components/schemas/PluginResultBase'
+        - properties:
+            result: { $ref: '#/components/schemas/TeachResult' }
+
+    # ---------- grade ----------
+    GradeRequest:
+      type: object
+      required: [context, attempt, rubric_version]
+      additionalProperties: false
+      properties:
+        context:
+          description: 消耗类上下文；grade 还要求 `content_version` 必填（题目与 Rubric 版本可追溯）。
+          allOf:
+            - $ref: '#/components/schemas/MeteredContext'
+            - required: [content_version]
+        attempt: { $ref: '#/components/schemas/AttemptInput' }
+        rubric_version:
+          description: 使用的 Rubric 或验证器规则版本。结果里的 `result.rubric_version` 必须与它相同（平台侧校验）。
+          $ref: '#/components/schemas/VersionedName'
+        appeal:
+          type: boolean
+          description: 是否由学生申诉触发的重判。为真时结果必须进入复核（review_reasons 含 student_appeal）。
+          default: false
+        scoring_points:
+          type: array
+          description: 编排层按 `rubric.get` 取的采分点（评审 svc-#5、kge-#1）；维度 `dimension_id` 取采分点的 `point_id`。
+          maxItems: 64
+          items: { $ref: './knowledge-service.v0.9.yaml#/components/schemas/ScoringPointView' }
+        answer_evidence_ref:
+          type: string
+          format: uuid
+          description: 平台侧作答证据的引用（ADR 15）。原始输出、校正日志、确认记录留在平台，适配器只拿归一化内容。
+        evidence_level:
+          type: string
+          description: 作答证据等级（技术蓝图 v2.1 2.1）。C 级照常判分，但平台不写入学习者模型。
+          enum: [A, B, C]
+        exam_config: { $ref: '#/components/schemas/ExamConfig' }
+      allOf:
+        - description: 请求学科为 wenli 时，引用前缀必须一致（评审 N7）。
+          if: { properties: { context: { properties: { subject: { const: wenli } }, required: [subject] } }, required: [context] }
+          then:
+            allOf:
+              - { properties: { attempt: { properties: { item_ref: { pattern: '^wenli:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } } } }
+        - description: 请求学科为 aya 时，引用前缀必须一致（评审 N7）。
+          if: { properties: { context: { properties: { subject: { const: aya } }, required: [subject] } }, required: [context] }
+          then:
+            allOf:
+              - { properties: { attempt: { properties: { item_ref: { pattern: '^aya:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } } } }
+        - description: 请求学科为 zhixing 时，引用前缀必须一致（评审 N7）。
+          if: { properties: { context: { properties: { subject: { const: zhixing } }, required: [subject] } }, required: [context] }
+          then:
+            allOf:
+              - { properties: { attempt: { properties: { item_ref: { pattern: '^zhixing:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } } } }
+        - description: 请求学科为 echo 时，引用前缀必须一致（评审 N7）。
+          if: { properties: { context: { properties: { subject: { const: echo } }, required: [subject] } }, required: [context] }
+          then:
+            allOf:
+              - { properties: { attempt: { properties: { item_ref: { pattern: '^echo:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } } } }
+
+    DimensionScore:
+      type: object
+      required: [dimension_id, score, max_score, judged_by, subjective, confidence, evidence_ids]
+      additionalProperties: false
+      properties:
+        dimension_id: { type: string, pattern: '^[a-z0-9_\-]{1,48}$' }
+        score:
+          type: [number, 'null']
+          minimum: 0
+          description: 为 null 表示该维不可用（例如英语 D 维发音），不得计入总分。不得超过 max_score（平台侧校验）。
+        max_score: { type: number, exclusiveMinimum: 0 }
+        judged_by:
+          type: string
+          description: |
+            `verifier` 确定性验证器；`rubric_rule` 规则判分（如 key 比对、M2 定位）；
+            `rubric_model` 模型按 Rubric 判分——模型判分一律视为主观维度。
+          enum: [verifier, rubric_rule, rubric_model]
+        subjective: { type: boolean, description: 是否主观维度。 }
+        rule_ref:
+          description: |
+            已登记到平台 Rubric / 验证器注册表的规则或验证器（`名称@版本`）。`judged_by` 为 verifier 或
+            rubric_rule 时必填，平台据此对照注册表核实；不在注册表里的一律按模型判分处理。
+          $ref: '#/components/schemas/VersionedName'
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        uncertainty: { $ref: '#/components/schemas/Uncertainty' }
+        evidence_ids:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/EvidenceId' }
+      allOf:
+        - description: 模型判分一律是主观维度（wenli A2、zhixing A2、echo adapter-design §1）。
+          if: { properties: { judged_by: { const: rubric_model } }, required: [judged_by] }
+          then: { properties: { subjective: { const: true } } }
+        - description: 验证器或规则判分必须带已登记的规则引用。
+          if: { properties: { judged_by: { enum: [verifier, rubric_rule] } }, required: [judged_by] }
+          then: { required: [rule_ref] }
+        - description: 主观维度一律低置信，上限 0.5（spec 待人确认 #1 的默认值）。
+          if: { properties: { subjective: { const: true } }, required: [subjective] }
+          then: { properties: { confidence: { maximum: 0.5 } } }
+
+    ScoringPoint:
+      type: object
+      description: 采分点逐点判定（知行 F3、阿鸦过程题）。
+      required: [point_id, achieved, evidence_ids]
+      additionalProperties: false
+      properties:
+        point_id: { type: string, pattern: '^[a-z0-9_\-]{1,48}$', description: 与公共知识层采分点、判分维度同一写法（v1.0 评审 svc-#7）。 }
+        achieved: { type: [boolean, 'null'], description: null 表示无法判定、待复核。 }
+        points_awarded: { type: number, minimum: 0 }
+        evidence_ids:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/EvidenceId' }
+
+    GradeResult:
+      type: object
+      description: 结构化判分。**没有任何自由文本字段**（CLAUDE.md 规则 3）。
+      required: [verdict, score, dimensions, rubric_version]
+      additionalProperties: false
+      properties:
+        verdict:
+          type: string
+          description: 验证器遇到边界情况时返回 `needs_review`，不下对错结论（aya adapter-design §2）。
+          enum: [correct, incorrect, partial, needs_review, not_applicable]
+        rubric_version:
+          description: 实际使用的 Rubric 或验证器版本，必须等于请求里的 `rubric_version`。
+          $ref: '#/components/schemas/VersionedName'
+        score:
+          type: object
+          required: [total, max_total, calibrated]
+          additionalProperties: false
+          properties:
+            total: { type: [number, 'null'], minimum: 0 }
+            max_total: { type: number, exclusiveMinimum: 0 }
+            excluded_dimensions:
+              type: array
+              description: 因分数为 null 而未计入总分的维度（echo A3）。
+              items: { type: string, pattern: '^[a-z0-9_\-]{1,48}$' }
+              uniqueItems: true
+            calibrated:
+              type: boolean
+              description: 权重是否已经过金标准校准。未校准时为 false，由平台标注“未校准”（echo adapter-design §1）。
+        dimensions:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/DimensionScore' }
+        scoring_points:
+          type: array
+          items: { $ref: '#/components/schemas/ScoringPoint' }
+        error_attributions:
+          type: array
+          items: { $ref: '#/components/schemas/ErrorAttribution' }
+        verifier:
+          type: object
+          required: [verifier_id, version, reason_codes]
+          additionalProperties: false
+          properties:
+            verifier_id: { type: string, pattern: '^[a-z0-9][a-z0-9\-]{0,47}$', examples: ['aya-symbolic-ts'] }
+            version: { type: string, pattern: '^\d+\.\d+\.\d+$' }
+            reason_codes:
+              type: array
+              items: { $ref: '#/components/schemas/VerifierReasonCode' }
+      allOf:
+        - description: 有维度由验证器判定时，必须给出验证器对象。
+          if:
+            required: [dimensions]
+            properties: { dimensions: { contains: { required: [judged_by], properties: { judged_by: { const: verifier } } } } }
+          then: { required: [verifier] }
+        - description: 有维度分为 null 时，总分必须列出被排除的维度（echo A3）。
+          if:
+            required: [dimensions]
+            properties: { dimensions: { contains: { required: [score], properties: { score: { type: 'null' } } } } }
+          then:
+            properties: { score: { required: [excluded_dimensions], properties: { excluded_dimensions: { minItems: 1 } } } }
+
+    GradeResponse:
+      description: |
+        信封之外不允许任何字段（防止在顶层夹带讲解或评语文本）。另外在结构上强制四科已定的复核规则：
+        主观维度、验证器边界情况、维度不可用、申诉，都必须 `human_review_required = true`。
+        grade 必须带新证据（至少是这次作答本身），溯源才能闭环。
+      unevaluatedProperties: false
+      allOf:
+        - $ref: '#/components/schemas/PluginResultBase'
+        - required: [evidence]
+          properties:
+            result: { $ref: '#/components/schemas/GradeResult' }
+            evidence_ids: { minItems: 1 }
+            evidence: { minItems: 1 }
+        - description: 含主观维度 → 复核，原因含 subjective_dimension，整体置信度 ≤ 0.5。
+          if:
+            properties:
+              result:
+                required: [dimensions]
+                properties: { dimensions: { contains: { required: [subjective], properties: { subjective: { const: true } } } } }
+          then:
+            properties:
+              human_review_required: { const: true }
+              review_reasons: { contains: { const: subjective_dimension } }
+              confidence: { maximum: 0.5 }
+        - description: verdict = needs_review → 复核，原因含 verifier_boundary_case。
+          if:
+            properties: { result: { required: [verdict], properties: { verdict: { const: needs_review } } } }
+          then:
+            properties:
+              human_review_required: { const: true }
+              review_reasons: { contains: { const: verifier_boundary_case } }
+        - description: 验证器报了边界情况原因码 → 复核，原因含 verifier_boundary_case（aya decisions #10）。
+          if:
+            properties:
+              result:
+                required: [verifier]
+                properties: { verifier: { required: [reason_codes], properties: { reason_codes: { minItems: 1 } } } }
+          then:
+            properties:
+              human_review_required: { const: true }
+              review_reasons: { contains: { const: verifier_boundary_case } }
+        - description: verdict = needs_review 时整体低置信（aya adapter-design §2“confidence 置低”）。
+          if:
+            properties: { result: { required: [verdict], properties: { verdict: { const: needs_review } } } }
+          then:
+            properties: { confidence: { maximum: 0.5 } }
+        - description: 有采分点无法判定（achieved = null）→ 复核。
+          if:
+            properties:
+              result:
+                required: [scoring_points]
+                properties: { scoring_points: { contains: { required: [achieved], properties: { achieved: { type: 'null' } } } } }
+          then:
+            properties: { human_review_required: { const: true } }
+        - description: 有维度分为 null → 复核，原因含 dimension_unavailable。
+          if:
+            properties:
+              result:
+                required: [dimensions]
+                properties: { dimensions: { contains: { required: [score], properties: { score: { type: 'null' } } } } }
+          then:
+            properties:
+              human_review_required: { const: true }
+              review_reasons: { contains: { const: dimension_unavailable } }
+
+    # ---------- generate_variation ----------
+    GenerateVariationRequest:
+      type: object
+      required: [context, count]
+      additionalProperties: false
+      properties:
+        context: { $ref: '#/components/schemas/RequestContext' }
+        source_item_ref: { $ref: '#/components/schemas/ItemRef' }
+        skill_node: { $ref: '#/components/schemas/SkillNodeRef' }
+        subject_error_category: { type: string, pattern: '^[a-z0-9_\-]{1,48}$' }
+        count: { type: integer, minimum: 1, maximum: 20 }
+        exclude_item_refs:
+          type: array
+          description: 已做过的题（错题重练不重推原题，aya README 设计红线）。
+          items: { $ref: '#/components/schemas/ItemRef' }
+        item_family:
+          type: array
+          description: 编排层从知识服务 `item.similar` 取的同族候选题标签（评审 svc-#6）；适配器从中选题，不生成新题。
+          maxItems: 50
+          items: { $ref: './knowledge-service.v0.9.yaml#/components/schemas/ItemTagView' }
+        exam_config: { $ref: '#/components/schemas/ExamConfig' }
+      anyOf:
+        - required: [source_item_ref]
+        - required: [skill_node]
+      allOf:
+        - description: 请求学科为 wenli 时，引用前缀必须一致（评审 N7）。
+          if: { properties: { context: { properties: { subject: { const: wenli } }, required: [subject] } }, required: [context] }
+          then:
+            allOf:
+              - { properties: { source_item_ref: { pattern: '^wenli:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } }
+              - { properties: { skill_node: { pattern: '^wenli:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } }
+              - { properties: { exclude_item_refs: { items: { pattern: '^wenli:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } } }
+        - description: 请求学科为 aya 时，引用前缀必须一致（评审 N7）。
+          if: { properties: { context: { properties: { subject: { const: aya } }, required: [subject] } }, required: [context] }
+          then:
+            allOf:
+              - { properties: { source_item_ref: { pattern: '^aya:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } }
+              - { properties: { skill_node: { pattern: '^aya:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } }
+              - { properties: { exclude_item_refs: { items: { pattern: '^aya:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } } }
+        - description: 请求学科为 zhixing 时，引用前缀必须一致（评审 N7）。
+          if: { properties: { context: { properties: { subject: { const: zhixing } }, required: [subject] } }, required: [context] }
+          then:
+            allOf:
+              - { properties: { source_item_ref: { pattern: '^zhixing:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } }
+              - { properties: { exclude_item_refs: { items: { pattern: '^zhixing:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } } }
+        - description: 请求学科为 echo 时，引用前缀必须一致（评审 N7）。
+          if: { properties: { context: { properties: { subject: { const: echo } }, required: [subject] } }, required: [context] }
+          then:
+            allOf:
+              - { properties: { source_item_ref: { pattern: '^echo:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } }
+              - { properties: { skill_node: { pattern: '^echo:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } }
+              - { properties: { exclude_item_refs: { items: { pattern: '^echo:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } } }
+
+    VariationCandidate:
+      type: object
+      required: [item_ref, admission, content_version, match]
+      additionalProperties: false
+      properties:
+        item_ref: { $ref: '#/components/schemas/ItemRef' }
+        admission:
+          description: 契约 v1 只允许返回已准入的题。
+          const: admitted
+        content_version: { $ref: '#/components/schemas/ContentVersion' }
+        match:
+          type: object
+          description: 至少同能力点或同错因之一（四科 decisions：同节点、同错因选题）。
+          required: [same_skill_node, same_error_category]
+          additionalProperties: false
+          properties:
+            same_skill_node: { type: boolean }
+            same_error_category: { type: boolean }
+          anyOf:
+            - properties: { same_skill_node: { const: true } }
+            - properties: { same_error_category: { const: true } }
+        difficulty: { type: number, minimum: 0, maximum: 1 }
+
+    GenerateVariationResult:
+      type: object
+      required: [candidates]
+      additionalProperties: false
+      properties:
+        candidates:
+          type: array
+          items: { $ref: '#/components/schemas/VariationCandidate' }
+        empty_reason:
+          type: string
+          description: candidates 为空时必填。
+          enum: [no_admitted_candidate, all_excluded, skill_node_unknown, subject_not_supported]
+      if:
+        properties:
+          candidates: { maxItems: 0 }
+      then:
+        required: [empty_reason]
+
+    GenerateVariationResponse:
+      description: 信封之外不允许任何字段（防止在顶层夹带讲解或评语文本）。
+      unevaluatedProperties: false
+      allOf:
+        - $ref: '#/components/schemas/PluginResultBase'
+        - properties:
+            result: { $ref: '#/components/schemas/GenerateVariationResult' }
+
+    # ---------- report ----------
+    ReportRequest:
+      type: object
+      required: [context, window, audience]
+      additionalProperties: false
+      properties:
+        context: { $ref: '#/components/schemas/RequestContext' }
+        window:
+          type: object
+          required: [from, to]
+          additionalProperties: false
+          properties:
+            from: { $ref: '#/components/schemas/Timestamp' }
+            to: { $ref: '#/components/schemas/Timestamp' }
+        audience: { type: string, enum: [student, parent, teacher] }
+        evidence:
+          type: array
+          description: 平台在时间窗内选出的证据内容。适配器不自行查库，也不保存副本（CLAUDE.md 规则 1、2）。
+          maxItems: 2000
+          items: { $ref: '#/components/schemas/EvidenceRecord' }
+        error_attributions:
+          type: array
+          description: 平台在时间窗内的错因记录。
+          items: { $ref: '#/components/schemas/ErrorAttribution' }
+        learner_context:
+          type: array
+          description: |
+            编排层按任务裁剪的画像上下文（洞察服务 `insight.context` 的条目；推断条目带 `claim_id`，评审 svc-#1）。
+            适配器只在本次请求内使用，不保存副本，也不直接调用洞察服务。
+          maxItems: 200
+          items: { $ref: './insight-service.v0.9.yaml#/components/schemas/ContextEntry' }
+        mastery_history:
+          type: array
+          description: 平台掌握度时间序列（用于计算 trend）。
+          items:
+            type: object
+            required: [skill_node, state, at]
+            additionalProperties: false
+            properties:
+              skill_node: { $ref: '#/components/schemas/SkillNodeRef' }
+              state: { type: string, enum: [unseen, understand, execute, stable, transfer, retain] }
+              p_mastery: { type: number, minimum: 0, maximum: 1 }
+              at: { $ref: '#/components/schemas/Timestamp' }
+
+    ReportFields:
+      type: object
+      description: |
+        学科字段，平台报告引擎据此合成周报。**不得**包含排名、百分位、同伴比较、逐句对话；
+        本 schema 用 `additionalProperties: false` 在结构上禁止这类字段。
+        v1.0 移除了 v0.9 的 `forecast`：考试预测只由洞察服务 `insight.predict` 提供，只给编排层（评审 sie-#2）。
+      required: [skill_summary, error_distribution]
+      additionalProperties: false
+      properties:
+        skill_summary:
+          type: array
+          items:
+            type: object
+            required: [skill_node, trend]
+            additionalProperties: false
+            properties:
+              skill_node: { $ref: '#/components/schemas/SkillNodeRef' }
+              trend: { type: string, enum: [up, flat, down, new] }
+              attempts: { type: integer, minimum: 0 }
+        error_distribution:
+          type: array
+          items:
+            type: object
+            required: [cross_subject_category, count]
+            additionalProperties: false
+            properties:
+              cross_subject_category: { $ref: '#/components/schemas/CrossSubjectErrorCategory' }
+              subject_category: { type: string, pattern: '^[a-z0-9_\-]{1,48}$' }
+              count: { type: integer, minimum: 0 }
+        highlight_codes:
+          type: array
+          description: |
+            亮点与关注点编码。不直接展示给学生家长：面向学生家长的结论句由洞察服务按判断模板生成（评审 sie-#1）。
+          items: { type: string, pattern: '^[a-z0-9_]{1,48}$' }
+
+    ReportResponse:
+      description: 信封之外不允许任何字段（防止在顶层夹带讲解或评语文本）。
+      unevaluatedProperties: false
+      allOf:
+        - $ref: '#/components/schemas/PluginResultBase'
+        - properties:
+            result: { $ref: '#/components/schemas/ReportFields' }
+
+    # ---------- 异步任务 ----------
+    JobAccepted:
+      type: object
+      description: |
+        同一个 `idempotency_key` 重试时，必须返回同一个 `job_id`；任务完成后结果里的 evidence_id
+        也必须相同（ADR 05 第 2 条）。计量在任务成功时结算、失败时回滚，平台凭 `usage_id` 对账（ADR 06）。
+      required: [job_id, method, status, poll_after_ms, usage_id, idempotency_key]
+      additionalProperties: false
+      properties:
+        job_id: { type: string, format: uuid }
+        method: { type: string, enum: [diagnose, grade] }
+        status: { const: queued }
+        poll_after_ms: { type: integer, minimum: 200, maximum: 60000 }
+        usage_id: { type: string, format: uuid }
+        idempotency_key: { type: string, pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' }
+
+    JobStatus:
+      type: object
+      required: [job_id, method, status, usage_id]
+      additionalProperties: false
+      properties:
+        job_id: { type: string, format: uuid }
+        method: { type: string, enum: [diagnose, grade] }
+        status: { type: string, enum: [queued, running, succeeded, failed] }
+        usage_id: { type: string, format: uuid }
+        poll_after_ms: { type: integer, minimum: 200, maximum: 60000 }
+        response:
+          description: 只有 status = succeeded 时出现；类型与 method 绑定。
+        error: { $ref: '#/components/schemas/Problem' }
+      allOf:
+        - if: { properties: { status: { const: succeeded } }, required: [status] }
+          then: { required: [response] }
+          else: { not: { required: [response] } }
+        - if: { properties: { status: { const: failed } }, required: [status] }
+          then: { required: [error] }
+          else: { not: { required: [error] } }
+        - if: { properties: { method: { const: grade } }, required: [method] }
+          then: { properties: { response: { $ref: '#/components/schemas/GradeResponse' } } }
+        - if: { properties: { method: { const: diagnose } }, required: [method] }
+          then: { properties: { response: { $ref: '#/components/schemas/DiagnoseResponse' } } }
+
+    # ---------- 能力声明 ----------
+    Capabilities:
+      type: object
+      required: [subject, adapter_version, contract_version, methods]
+      additionalProperties: false
+      properties:
+        subject: { $ref: '#/components/schemas/Subject' }
+        adapter_version: { type: string, pattern: '^\d+\.\d+\.\d+$' }
+        contract_version: { type: string, const: 1.0.0 }
+        methods:
+          type: object
+          description: 六个方法逐一声明。Gate 0 契约覆盖率按这里统计（阿鸦 6/6、知行与文砺 ≥ 5/6、开口成章 ≥ 4/6）。
+          required: [diagnose, plan, teach, grade, generate_variation, report]
+          additionalProperties: false
+          properties:
+            diagnose: { $ref: '#/components/schemas/MethodCapability' }
+            plan: { $ref: '#/components/schemas/MethodCapability' }
+            teach: { $ref: '#/components/schemas/MethodCapability' }
+            grade: { $ref: '#/components/schemas/MethodCapability' }
+            generate_variation: { $ref: '#/components/schemas/MethodCapability' }
+            report: { $ref: '#/components/schemas/MethodCapability' }
+        verifiers:
+          type: array
+          items:
+            type: object
+            required: [verifier_id, version]
+            additionalProperties: false
+            properties:
+              verifier_id: { type: string, pattern: '^[a-z0-9][a-z0-9\-]{0,47}$' }
+              version: { type: string, pattern: '^\d+\.\d+\.\d+$' }
+
+    MethodCapability:
+      type: object
+      required: [implemented]
+      additionalProperties: false
+      properties:
+        implemented: { type: boolean }
+        async: { type: boolean, default: false }
+        notes_code:
+          type: string
+          description: 例如 `history_grading_excluded`（zhixing）、`pronunciation_dimension_null`（echo）。
+          pattern: '^[a-z0-9_]{1,48}$'
+
+    # ---------- 错误 ----------
+    Problem:
+      type: object
+      required: [type, title, status, code, retryable]
+      additionalProperties: false
+      properties:
+        type: { type: string, format: uri-reference }
+        title: { type: string, maxLength: 120, description: 简短的错误标题，不得包含学生原文。 }
+        status: { type: integer, minimum: 400, maximum: 599 }
+        detail:
+          type: string
+          description: 面向开发者的说明。**不得**包含上游模型响应原文、学生作答原文或堆栈（zhixing inventory §1.6）。
+          maxLength: 500
+        code:
+          type: string
+          description: |
+            `DISCIPLINE_NOT_SUPPORTED`：学科内的分支不在本版本范围内，例如 zhixing 的历史判分
+            （契约 v1 只接道法，zhixing #13/A5）。
+            `MODE_NOT_SUPPORTED`（422）：适配器不支持该模式或输入形态（例如拍照、`paper` / `process` 诊断；评审 N9）。
+            `UNAUTHENTICATED`（401）：服务间令牌缺失或无效（评审 N1）。
+            `METHOD_NOT_IMPLEMENTED`：返回 501（评审 N13）。
+          enum:
+            - INVALID_REQUEST
+            - CONTRACT_VERSION_UNSUPPORTED
+            - SUBJECT_MISMATCH
+            - METHOD_NOT_IMPLEMENTED
+            - CONTENT_VERSION_NOT_FOUND
+            - ITEM_NOT_FOUND
+            - DATA_CLASS_VIOLATION
+            - IDEMPOTENCY_CONFLICT
+            - USAGE_MISSING
+            - UPSTREAM_TIMEOUT
+            - UPSTREAM_UNAVAILABLE
+            - RATE_LIMITED
+            - JOB_NOT_FOUND
+            - DISCIPLINE_NOT_SUPPORTED
+            - MODE_NOT_SUPPORTED
+            - UNAUTHENTICATED
+            - INTERNAL
+        retryable:
+          type: boolean
+          description: |
+            为真表示结果未知：平台必须用**同一个** idempotency_key 重试，按重试结果结算或回滚，不扣第二次（完整方案 5.8；
+            评审 N8）。5xx 一律按结果未知处理，`retryable: false` 只对 4xx 有意义（评审 N18）。
+        request_id: { type: string, format: uuid }
+
+  examples:
+    # 全部为合成数据（CLAUDE.md 规则 8）。UUID 为固定的示例值。
+    CapabilitiesAya:
+      value:
+        subject: aya
+        adapter_version: 0.1.0
+        contract_version: 1.0.0
+        methods:
+          diagnose: { implemented: true, async: false }
+          plan: { implemented: true }
+          teach: { implemented: false }
+          grade: { implemented: true, async: false }
+          generate_variation: { implemented: true }
+          report: { implemented: true }
+        verifiers:
+          - { verifier_id: aya-symbolic-ts, version: 0.1.0 }
+
+    DiagnoseRequestWenliPaper:
+      value:
+        context:
+          request_id: 00000000-0000-4000-8000-000000000101
+          contract_version: 1.0.0
+          subject: wenli
+          student_ref: 00000000-0000-4000-8000-00000000a001
+          data_class: L3
+          usage_id: 00000000-0000-4000-8000-00000000b001
+          idempotency_key: 00000000-0000-4000-8000-00000000c101
+          content_version:
+            region: nanjing
+            exam_year: 2027
+            grade: 9
+            textbook_version: bubian-2024
+            subject: wenli
+            content_version: 0.1.0
+        mode: paper
+        paper_image_refs: ['objstore://synthetic/wenli/paper-0001-p1.jpg']
+
+    DiagnoseResponseWenliPaper:
+      value:
+        contract_version: 1.0.0
+        result:
+          observations:
+            - skill_node: 'wenli:R3-L2'
+              outcome: not_demonstrated
+              confidence: 0.4
+              evidence_ids: [00000000-0000-4000-8000-00000000e001]
+              algorithm_version: wenli-attr@0.1.0
+          error_attributions:
+            - skill_node: 'wenli:R3-L2'
+              subject_category: shenti
+              cross_subject_category: reading_the_question
+              confidence: 0.4
+              evidence_ids: [00000000-0000-4000-8000-00000000e001]
+              algorithm_version: wenli-attr@0.1.0
+          ocr_confirmation_required: ['wenli:synthetic-q07']
+        evidence:
+          - evidence_id: 00000000-0000-4000-8000-00000000e001
+            kind: ocr_transcription
+            occurred_at: '2026-10-08T10:00:00+08:00'
+            item_ref: 'wenli:synthetic-q05'
+            skill_node: 'wenli:R3-L2'
+            admission: pending_review
+            payload: { text: '（合成示例）作答转写文本' }
+            media_ref: 'objstore://synthetic/wenli/paper-0001-p1.jpg'
+        evidence_ids: [00000000-0000-4000-8000-00000000e001]
+        confidence: 0.4
+        source_version: 'prompt:wenli-diagnose@0.1.0;items:nanjing-2027-9@0.1.0'
+        model_version: 'model:dashscope/qwen-vl-max@2026-09'
+        human_review_required: true
+        review_reasons: [content_not_admitted, ocr_low_confidence]
+        semantics: practice
+
+    PlanRequestAya:
+      value:
+        context:
+          request_id: 00000000-0000-4000-8000-000000000201
+          contract_version: 1.0.0
+          subject: aya
+          student_ref: 00000000-0000-4000-8000-00000000a002
+          data_class: L2
+          idempotency_key: 00000000-0000-4000-8000-00000000c201
+        mastery:
+          - { skill_node: 'aya:K-QF-0301', state: execute, p_mastery: 0.55 }
+          - { skill_node: 'aya:K-QE-0102', state: stable, p_mastery: 0.8, next_retest_at: '2026-10-11T08:00:00+08:00' }
+        constraints: { time_budget_minutes: 30 }
+        learner_context:
+          - { field_id: inner.g3.node_mastery, source_type: inferred, value: execute,
+              claim_id: 00000000-0000-4000-8000-0000000000f7, evidence_ids: [00000000-0000-4000-8000-00000000e401] }
+        exam_config: { cohort: 2027, full_score: 120, duration_minutes: 120 }
+
+    PlanResponseAya:
+      value:
+        contract_version: 1.0.0
+        result:
+          tasks:
+            - task_id: 00000000-0000-4000-8000-0000000000d1
+              kind: retest
+              skill_nodes: ['aya:K-QE-0102']
+              priority: 0.9
+              estimated_minutes: 10
+              rationale_code: retest_due
+            - task_id: 00000000-0000-4000-8000-0000000000d2
+              kind: practice
+              skill_nodes: ['aya:K-QF-0301']
+              priority: 0.7
+              estimated_minutes: 20
+              rationale_code: high_exam_weight
+        evidence_ids: []
+        confidence: 1.0
+        source_version: 'algo:aya-priority@0.1.0'
+        model_version: 'algo:aya-priority@0.1.0'
+        human_review_required: false
+        semantics: formal
+
+    TeachRequestAya:
+      value:
+        context:
+          request_id: 00000000-0000-4000-8000-000000000301
+          contract_version: 1.0.0
+          subject: aya
+          student_ref: 00000000-0000-4000-8000-00000000a002
+          data_class: L2
+          usage_id: 00000000-0000-4000-8000-00000000b003
+          idempotency_key: 00000000-0000-4000-8000-00000000c301
+        mode: hint
+        skill_node: 'aya:K-QF-0301'
+        item_ref: 'aya:synthetic-0301-07'
+        allowed_hint_level: 2
+        persona: { persona_id: aya, prompt_version: 1.1.0 }
+        conversation:
+          - turn_id: 00000000-0000-4000-8000-0000000000c1
+            role: student
+            content: （合成示例）这一步我不知道怎么配方。
+
+    TeachResponseAya:
+      value:
+        contract_version: 1.0.0
+        result:
+          segments:
+            - type: text
+              text: （合成示例）先看二次项系数，把它提出来试试？
+          hint_level_used: 2
+          ai_disclosure_shown: false
+          referral_triggered: false
+          verified_statements:
+            - { statement: '（合成示例）2(x-1) 展开等于 2x-2', verdict: verified }
+        evidence_ids: []
+        confidence: 0.6
+        source_version: 'prompt:aya-coach@1.1.0'
+        model_version: 'model:deepseek/deepseek-chat@2026-09'
+        human_review_required: false
+        semantics: formal
+
+    GradeRequestAyaObjective:
+      value:
+        context:
+          request_id: 00000000-0000-4000-8000-000000000401
+          contract_version: 1.0.0
+          subject: aya
+          student_ref: 00000000-0000-4000-8000-00000000a002
+          data_class: L2
+          usage_id: 00000000-0000-4000-8000-00000000b004
+          idempotency_key: 00000000-0000-4000-8000-00000000c401
+          content_version:
+            region: nanjing
+            exam_year: 2027
+            grade: 9
+            textbook_version: bubian-2024
+            subject: aya
+            content_version: 0.1.0
+        attempt:
+          attempt_id: 00000000-0000-4000-8000-0000000000a1
+          item_ref: 'aya:synthetic-0301-07'
+          occurred_at: '2026-10-08T19:30:00+08:00'
+          response: { text: '2(x-1)' }
+          elapsed_sec: 95
+          hint_level_used: 0
+        rubric_version: aya-symbolic-ts@0.1.0
+
+    DiagnoseRequestAyaWithContext:
+      value:
+        context:
+          request_id: 00000000-0000-4000-8000-000000000102
+          contract_version: 1.0.0
+          subject: aya
+          student_ref: 00000000-0000-4000-8000-00000000a002
+          data_class: L2
+          usage_id: 00000000-0000-4000-8000-00000000b002
+          idempotency_key: 00000000-0000-4000-8000-00000000c102
+        mode: gap_test
+        attempts:
+          - attempt_id: 00000000-0000-4000-8000-0000000000a6
+            item_ref: 'aya:synthetic-0301-07'
+            occurred_at: '2026-10-12T19:00:00+08:00'
+            response: { latex: '2(x-1)' }
+        learner_context:
+          - { field_id: inner.g3.node_mastery, source_type: inferred, value: understand,
+              claim_id: 00000000-0000-4000-8000-0000000000f8, evidence_ids: [00000000-0000-4000-8000-00000000e401] }
+        node_path:
+          - { from_id: MA.ALG.EXP_0001, to_id: MA.ALG.EXP_0002, depth: 1 }
+
+    TeachRequestAyaWithPage:
+      value:
+        context:
+          request_id: 00000000-0000-4000-8000-000000000302
+          contract_version: 1.0.0
+          subject: aya
+          student_ref: 00000000-0000-4000-8000-00000000a002
+          data_class: L2
+          usage_id: 00000000-0000-4000-8000-00000000b009
+          idempotency_key: 00000000-0000-4000-8000-00000000c302
+        mode: lesson
+        skill_node: 'aya:K-QF-0301'
+        allowed_hint_level: 4
+        persona: { persona_id: aya, prompt_version: 1.1.0 }
+        knowledge_page:
+          page_id: ma.alg.exp_0001
+          page_version: 1.0.0
+          body_md: '（合成示例）配方法：把二次三项式写成完全平方加常数。'
+          atom_refs: ['node:MA.ALG.EXP_0001']
+
+    ProblemUnauthenticated:
+      value: { type: 'about:blank', title: 服务令牌无效, status: 401, code: UNAUTHENTICATED, retryable: false }
+
+    ProblemModeNotSupported:
+      value: { type: 'about:blank', title: 不支持的诊断模式, status: 422, code: MODE_NOT_SUPPORTED, retryable: false }
+
+    GradeResponseAyaObjective:
+      value:
+        contract_version: 1.0.0
+        result:
+          verdict: correct
+          rubric_version: aya-symbolic-ts@0.1.0
+          score: { total: 1, max_total: 1, calibrated: true }
+          dimensions:
+            - dimension_id: answer
+              score: 1
+              max_score: 1
+              judged_by: verifier
+              subjective: false
+              rule_ref: aya-symbolic-ts@0.1.0
+              confidence: 1.0
+              evidence_ids: [00000000-0000-4000-8000-00000000e401]
+          verifier: { verifier_id: aya-symbolic-ts, version: 0.1.0, reason_codes: [] }
+        evidence:
+          - evidence_id: 00000000-0000-4000-8000-00000000e401
+            kind: verifier_trace
+            occurred_at: '2026-10-08T19:30:00+08:00'
+            item_ref: 'aya:synthetic-0301-07'
+            skill_node: 'aya:K-QF-0301'
+            admission: admitted
+            payload: { sampled_points: 8, agreeing_points: 8 }
+        evidence_ids: [00000000-0000-4000-8000-00000000e401]
+        confidence: 1.0
+        source_version: 'rubric:aya-symbolic-ts@0.1.0;items:nanjing-2027-9@0.1.0'
+        model_version: 'algo:aya-symbolic-ts@0.1.0'
+        human_review_required: false
+        semantics: formal
+
+    GradeRequestAyaWithContext:
+      value:
+        context:
+          request_id: 00000000-0000-4000-8000-000000000404
+          contract_version: 1.0.0
+          subject: aya
+          student_ref: 00000000-0000-4000-8000-00000000a002
+          data_class: L2
+          usage_id: 00000000-0000-4000-8000-00000000b007
+          idempotency_key: 00000000-0000-4000-8000-00000000c404
+          content_version:
+            region: nanjing
+            exam_year: 2027
+            grade: 9
+            textbook_version: bubian-2024
+            subject: aya
+            content_version: 0.1.0
+        attempt:
+          attempt_id: 00000000-0000-4000-8000-0000000000a4
+          item_ref: 'aya:synthetic-0301-08'
+          occurred_at: '2026-10-12T19:30:00+08:00'
+          response: { latex: '2(x-1)' }
+        rubric_version: aya-process-points@0.1.0
+        answer_evidence_ref: 00000000-0000-4000-8000-0000000000ae
+        evidence_level: B
+        scoring_points:
+          - { point_id: factor_out, score: 1, node_ids: ['MA.ALG.EXP_0001'], partial_credit: all_or_nothing }
+        exam_config: { cohort: 2027, full_score: 120, duration_minutes: 120 }
+
+    GradeRequestAyaGeometry:
+      value:
+        context:
+          request_id: 00000000-0000-4000-8000-000000000405
+          contract_version: 1.0.0
+          subject: aya
+          student_ref: 00000000-0000-4000-8000-00000000a002
+          data_class: L2
+          usage_id: 00000000-0000-4000-8000-00000000b008
+          idempotency_key: 00000000-0000-4000-8000-00000000c405
+          content_version:
+            region: nanjing
+            exam_year: 2027
+            grade: 9
+            textbook_version: bubian-2024
+            subject: aya
+            content_version: 0.1.0
+        attempt:
+          attempt_id: 00000000-0000-4000-8000-0000000000a5
+          item_ref: 'aya:synthetic-geo-12'
+          occurred_at: '2026-10-12T20:10:00+08:00'
+          response:
+            semantic:
+              - { op: perpendicular, args: [A, BC, H] }
+              - { op: connect, args: [A, D] }
+        rubric_version: aya-geometry-points@0.1.0
+        evidence_level: A
+
+    GradeRequestWenliEssay:
+      value:
+        context:
+          request_id: 00000000-0000-4000-8000-000000000403
+          contract_version: 1.0.0
+          subject: wenli
+          student_ref: 00000000-0000-4000-8000-00000000a001
+          data_class: L2
+          usage_id: 00000000-0000-4000-8000-00000000b006
+          idempotency_key: 00000000-0000-4000-8000-00000000c403
+          content_version:
+            region: nanjing
+            exam_year: 2027
+            grade: 9
+            textbook_version: bubian-2024
+            subject: wenli
+            content_version: 0.1.0
+        attempt:
+          attempt_id: 00000000-0000-4000-8000-0000000000a2
+          item_ref: 'wenli:synthetic-essay-01'
+          occurred_at: '2026-10-10T20:00:00+08:00'
+          response: { text: '（合成示例）一篇作文的正文。' }
+        rubric_version: wenli-essay-5d@1.2.0
+
+    GradeResponseWenliEssay:
+      value:
+        contract_version: 1.0.0
+        result:
+          verdict: partial
+          rubric_version: wenli-essay-5d@1.2.0
+          score: { total: 38, max_total: 50, calibrated: false }
+          dimensions:
+            - dimension_id: structure
+              score: 8
+              max_score: 10
+              judged_by: rubric_model
+              subjective: true
+              confidence: 0.4
+              uncertainty: { low: 7, high: 9 }
+              evidence_ids: [00000000-0000-4000-8000-00000000e403]
+            - dimension_id: convention
+              score: 9
+              max_score: 10
+              judged_by: rubric_rule
+              subjective: false
+              rule_ref: wenli-convention-rules@1.0.0
+              confidence: 0.9
+              evidence_ids: [00000000-0000-4000-8000-00000000e403]
+        evidence:
+          - evidence_id: 00000000-0000-4000-8000-00000000e403
+            attempt_id: 00000000-0000-4000-8000-0000000000a2
+            kind: response_text
+            occurred_at: '2026-10-10T20:00:00+08:00'
+            item_ref: 'wenli:synthetic-essay-01'
+            admission: admitted
+            payload: { text: '（合成示例）一篇作文的正文。' }
+        evidence_ids: [00000000-0000-4000-8000-00000000e403]
+        confidence: 0.4
+        uncertainty: { low: 35, high: 41 }
+        source_version: 'rubric:wenli-essay-5d@1.2.0;prompt:wenli-grade@0.4.1;items:nanjing-2027-9@0.1.0'
+        model_version: 'model:deepseek/deepseek-chat@2026-09'
+        human_review_required: true
+        review_reasons: [subjective_dimension]
+        semantics: formal
+
+    JobAcceptedEcho:
+      value:
+        job_id: 00000000-0000-4000-8000-0000000000f1
+        method: grade
+        status: queued
+        poll_after_ms: 2000
+        usage_id: 00000000-0000-4000-8000-00000000b005
+        idempotency_key: 00000000-0000-4000-8000-00000000c402
+
+    GradeRequestEchoTranscript:
+      value:
+        context:
+          request_id: 00000000-0000-4000-8000-000000000402
+          contract_version: 1.0.0
+          subject: echo
+          student_ref: 00000000-0000-4000-8000-00000000a003
+          data_class: L2
+          usage_id: 00000000-0000-4000-8000-00000000b005
+          idempotency_key: 00000000-0000-4000-8000-00000000c402
+          content_version:
+            region: nanjing
+            exam_year: 2027
+            grade: 9
+            textbook_version: bubian-2024
+            subject: echo
+            content_version: 0.1.0
+        attempt:
+          attempt_id: 00000000-0000-4000-8000-0000000000a3
+          item_ref: 'echo:synthetic-topic-u1-02'
+          occurred_at: '2026-10-09T18:00:00+08:00'
+          response: { text: '（合成示例）口语转写文本。' }
+        rubric_version: echo-topic-brief@1.0.0
+
+    GenerateVariationRequestZhixing:
+      value:
+        context:
+          request_id: 00000000-0000-4000-8000-000000000501
+          contract_version: 1.0.0
+          subject: zhixing
+          student_ref: 00000000-0000-4000-8000-00000000a004
+          data_class: L2
+          idempotency_key: 00000000-0000-4000-8000-00000000c501
+        source_item_ref: 'zhixing:synthetic-m3-01'
+        subject_error_category: locate
+        count: 3
+        exclude_item_refs: ['zhixing:synthetic-m3-01']
+
+    GenerateVariationRequestAyaFamily:
+      value:
+        context:
+          request_id: 00000000-0000-4000-8000-000000000502
+          contract_version: 1.0.0
+          subject: aya
+          student_ref: 00000000-0000-4000-8000-00000000a002
+          data_class: L2
+          idempotency_key: 00000000-0000-4000-8000-00000000c502
+        source_item_ref: 'aya:synthetic-0301-07'
+        count: 2
+        exclude_item_refs: ['aya:synthetic-0301-07']
+        item_family:
+          - { item_ref: 'aya:synthetic-0301-08', main_node_id: MA.ALG.EXP_0001, prior_difficulty: 0.4, license_state: original }
+        exam_config: { cohort: 2027, full_score: 120 }
+
+    GenerateVariationResponseZhixingEmpty:
+      value:
+        contract_version: 1.0.0
+        result:
+          candidates: []
+          empty_reason: no_admitted_candidate
+        evidence_ids: []
+        confidence: 1.0
+        source_version: 'algo:zhixing-item-select@0.1.0;items:nanjing-2027-9@0.1.0'
+        model_version: 'algo:zhixing-item-select@0.1.0'
+        human_review_required: false
+        semantics: formal
+
+    ReportRequestWenliParent:
+      value:
+        context:
+          request_id: 00000000-0000-4000-8000-000000000601
+          contract_version: 1.0.0
+          subject: wenli
+          student_ref: 00000000-0000-4000-8000-00000000a001
+          data_class: L2
+          idempotency_key: 00000000-0000-4000-8000-00000000c601
+        window: { from: '2026-10-05T00:00:00+08:00', to: '2026-10-12T00:00:00+08:00' }
+        audience: parent
+        evidence:
+          - evidence_id: 00000000-0000-4000-8000-00000000e001
+            kind: ocr_transcription
+            occurred_at: '2026-10-08T10:00:00+08:00'
+            item_ref: 'wenli:synthetic-q05'
+            skill_node: 'wenli:R3-L2'
+            admission: pending_review
+            payload: { text: '（合成示例）作答转写文本' }
+        error_attributions:
+          - skill_node: 'wenli:R3-L2'
+            subject_category: shenti
+            cross_subject_category: reading_the_question
+            confidence: 0.4
+            evidence_ids: [00000000-0000-4000-8000-00000000e001]
+            algorithm_version: wenli-attr@0.1.0
+        learner_context:
+          - { field_id: outer.g1.weekly_available_time, source_type: self, value: 300 }
+
+    ReportResponseWenliParent:
+      value:
+        contract_version: 1.0.0
+        result:
+          skill_summary:
+            - { skill_node: 'wenli:R3-L2', trend: new, attempts: 1 }
+          error_distribution:
+            - { cross_subject_category: reading_the_question, subject_category: shenti, count: 1 }
+          highlight_codes: [first_paper_diagnosed]
+        evidence_ids: [00000000-0000-4000-8000-00000000e001]
+        confidence: 0.4
+        source_version: 'algo:wenli-report@0.1.0'
+        model_version: 'algo:wenli-report@0.1.0'
+        human_review_required: false
+        semantics: practice

@@ -1,0 +1,703 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>魁星点斗 StarBuddy · 学生洞察引擎：用户画像技术栈、方案与开发计划 V1.1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700;900&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --night:#1E2A44;      /* 夜靛：正文标题 */
+  --ink:#27324A;
+  --ink-2:#4B566C;
+  --ink-3:#737D8F;
+  --paper:#EDF0EC;      /* 冷宣：底 */
+  --panel:#F6F7F4;
+  --panel-2:#E3E7E2;
+  --rule:#C7CDC6;
+  --gold:#A87C22;       /* 星光金：已点亮 / 决断 */
+  --gold-soft:#F1E6CB;
+  --stone:#2F6B78;      /* 石青：结构 */
+  --stone-soft:#DCEAEC;
+  --cinnabar:#A8432F;   /* 朱批：检查发现的问题 */
+  --cinnabar-soft:#F3DFD9;
+  --dim:#B6BDC6;
+  --serif:'Noto Serif SC','Songti SC','STSong',serif;
+  --sans:'Noto Sans SC','PingFang SC','Microsoft YaHei',system-ui,sans-serif;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --night:#E6E9F0;--ink:#D5DAE4;--ink-2:#AEB6C4;--ink-3:#8A93A3;
+    --paper:#141B2A;--panel:#1B2436;--panel-2:#222C40;--rule:#35405A;
+    --gold:#D9AE55;--gold-soft:#3A3120;--stone:#6FB2BF;--stone-soft:#1D3339;
+    --cinnabar:#E07A63;--cinnabar-soft:#3A2420;--dim:#48526A;
+  }
+}
+:root[data-theme="dark"]{
+  --night:#E6E9F0;--ink:#D5DAE4;--ink-2:#AEB6C4;--ink-3:#8A93A3;
+  --paper:#141B2A;--panel:#1B2436;--panel-2:#222C40;--rule:#35405A;
+  --gold:#D9AE55;--gold-soft:#3A3120;--stone:#6FB2BF;--stone-soft:#1D3339;
+  --cinnabar:#E07A63;--cinnabar-soft:#3A2420;--dim:#48526A;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px);scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.85;-webkit-font-smoothing:antialiased}
+.page{max-width:1120px;margin:0 auto;padding:0 28px 80px}
+a{color:var(--stone)}
+a:focus-visible,button:focus-visible{outline:2px solid var(--gold);outline-offset:3px}
+h1,h2,h3,h4{font-family:var(--serif);color:var(--night);line-height:1.35;margin:0}
+p{margin:0 0 14px}
+strong{color:var(--night);font-weight:700}
+
+/* masthead */
+.mast{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:36px;align-items:center;padding:56px 0 40px;border-bottom:2px solid var(--night)}
+.docno{font-size:13px;color:var(--ink-3);margin-bottom:18px}
+.mast h1{font-size:clamp(30px,4.2vw,48px);font-weight:900;letter-spacing:.02em}
+.mast .sub{font-family:var(--serif);font-size:clamp(17px,1.9vw,21px);color:var(--ink-2);margin:16px 0 22px;font-weight:500}
+.meta{display:grid;grid-template-columns:auto 1fr;gap:4px 16px;font-size:13.5px;color:var(--ink-2)}
+.meta b{color:var(--ink-3);font-weight:500}
+.hero-fig svg{width:100%;height:auto;display:block}
+
+/* sections with margin numbers */
+section{display:grid;grid-template-columns:150px minmax(0,1fr);gap:32px;padding:46px 0;border-bottom:1px solid var(--rule)}
+.margin{position:sticky;top:18px;align-self:start;font-family:var(--serif);color:var(--ink-3);font-size:14px;line-height:1.5}
+.margin .n{display:block;font-size:40px;font-weight:900;color:var(--stone);line-height:1;margin-bottom:6px}
+.body{min-width:0;max-width:880px}
+.body>h2{font-size:clamp(23px,2.6vw,29px);font-weight:900;margin-bottom:18px}
+.body h3{font-size:19px;font-weight:700;margin:30px 0 10px;color:var(--night)}
+.body h4{font-size:16px;font-weight:700;margin:20px 0 6px;color:var(--stone)}
+.lead{font-size:17px;color:var(--ink-2)}
+
+/* decision list on the summary */
+.decisions{counter-reset:d;margin:8px 0 0;padding:0;list-style:none}
+.decisions li{counter-increment:d;position:relative;padding:14px 0 14px 54px;border-top:1px solid var(--rule)}
+.decisions li:first-child{border-top:0}
+.decisions li::before{content:counter(d);position:absolute;left:0;top:12px;width:36px;height:36px;border-radius:50%;background:var(--gold-soft);color:var(--gold);font-family:var(--serif);font-weight:900;font-size:18px;display:flex;align-items:center;justify-content:center}
+.decisions li strong{display:block;font-family:var(--serif);font-size:17.5px;margin-bottom:3px}
+.decisions li span{color:var(--ink-2);font-size:15px}
+
+/* tables */
+.tbl{overflow-x:auto;margin:16px 0 20px;border:1px solid var(--rule);background:var(--panel)}
+table{border-collapse:collapse;width:100%;min-width:640px;font-size:14px;line-height:1.65}
+th{background:var(--panel-2);color:var(--night);text-align:left;font-weight:700;padding:10px 12px;vertical-align:bottom;border-bottom:1px solid var(--rule)}
+td{padding:10px 12px;border-top:1px solid var(--rule);vertical-align:top}
+td:first-child{font-weight:500;color:var(--night)}
+code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.88em;background:var(--panel-2);padding:1px 5px;border-radius:3px;color:var(--ink)}
+pre{background:var(--panel);border:1px solid var(--rule);padding:16px 18px;overflow-x:auto;font-size:12.8px;line-height:1.6;margin:14px 0 20px}
+pre code{background:none;padding:0}
+
+/* verdict tags */
+.v{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:10px;white-space:nowrap}
+.v.adopt{background:var(--gold-soft);color:var(--gold)}
+.v.mod{background:var(--stone-soft);color:var(--stone)}
+.v.defer{background:var(--panel-2);color:var(--ink-3)}
+.v.reject{background:var(--cinnabar-soft);color:var(--cinnabar)}
+.v.block{background:var(--cinnabar);color:#fff}
+.v.major{background:var(--cinnabar-soft);color:var(--cinnabar)}
+.v.minor{background:var(--panel-2);color:var(--ink-2)}
+
+/* callouts */
+.note{border-left:3px solid var(--stone);background:var(--panel);padding:14px 18px;margin:18px 0;font-size:15px}
+.note.gold{border-left-color:var(--gold);background:var(--gold-soft)}
+.note.red{border-left-color:var(--cinnabar);background:var(--cinnabar-soft)}
+.note p:last-child{margin:0}
+
+/* figures */
+figure{margin:20px 0 24px;background:var(--panel);border:1px solid var(--rule);padding:20px}
+figure svg{display:block;width:100%;height:auto}
+figcaption{font-size:13px;color:var(--ink-3);margin-top:12px}
+.svg-t{font-family:var(--sans)}
+
+/* subject audit cards */
+.subject{border:1px solid var(--rule);background:var(--panel);margin:22px 0;padding:20px 22px}
+.subject h3{margin-top:0;display:flex;gap:12px;align-items:baseline;flex-wrap:wrap}
+.subject h3 small{font-family:var(--sans);font-size:13px;font-weight:500;color:var(--ink-3)}
+.find{margin:10px 0 0;padding:0;list-style:none}
+.find li{padding:10px 0;border-top:1px dashed var(--rule);font-size:14.5px}
+.find li:first-child{border-top:0}
+.find .v{margin-right:8px}
+
+.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.card{border:1px solid var(--rule);background:var(--panel);padding:16px 18px}
+.card h4{margin-top:0}
+.card p{font-size:14.5px;color:var(--ink-2);margin:0}
+
+.foot{font-size:13px;color:var(--ink-3);padding-top:30px}
+.print{position:fixed;right:max(18px,env(safe-area-inset-right,0px));bottom:calc(18px + env(safe-area-inset-bottom,0px));background:var(--night);color:var(--paper);border:0;border-radius:22px;padding:10px 18px;font-family:var(--sans);font-size:14px;cursor:pointer}
+
+@media (max-width:820px){
+  .mast{grid-template-columns:1fr;padding-top:36px}
+  section{grid-template-columns:1fr;gap:10px}
+  .margin{position:static}
+  .margin .n{display:inline;font-size:26px;margin-right:8px}
+  .two{grid-template-columns:1fr}
+  .page{padding:0 18px 70px}
+}
+@media print{
+  .print{display:none}
+  body{background:#fff}
+  section{break-inside:auto;padding:26px 0}
+  .margin{position:static}
+  figure,.subject,.tbl{break-inside:avoid}
+}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+</style></head>
+<body>
+<div class="page">
+
+<header class="mast">
+  <div>
+    <div class="docno">huabo.ai 中考教育产品线 · 平台核心技术方案 · HB-EDU-2026-0927-02</div>
+    <h1>学生洞察引擎<br>用户画像的技术栈、方案与开发计划</h1>
+    <p class="sub">把"平台认识这个学生"做成一本可以查账的账：每一个判断都有证据、有置信度、能被质疑、会被校准，并且学生和家长看得见它在变准。</p>
+    <div class="meta">
+      <b>版本</b><span>V1.1 · 2026-09-27（同步 KGE V1.1 的档案页修订）</span>
+      <b>整合来源</b><span>画像与学情方案 8 份、市场与一对一 Agent 分析 8 份、《学生全景学习画像方案》V1.0、《产品开发完整方案》v1.0、《知识与成长引擎（KGE）》V1.1</span>
+      <b>与 KGE 的关系</b><span>KGE 负责"教什么"与证据、掌握度的底层计算；本文负责"这个学生是谁、平台凭什么这样认为、怎样让他和家长相信"。两文共用同一个 30 周排期</span>
+      <b>密级</b><span>内部</span>
+    </div>
+  </div>
+  <div class="hero-fig">
+    <svg viewBox="0 0 440 380" role="img" aria-label="一条画像判断卡片：结论、置信度、证据与两个按钮">
+      <rect x="0" y="0" width="440" height="380" fill="var(--panel)"/>
+      <rect x="28" y="28" width="384" height="324" fill="var(--paper)" stroke="var(--rule)"/>
+      <text class="svg-t" x="48" y="62" font-size="12.5" fill="var(--ink-3)">数学 · 顶点式与图像平移 · 综合层</text>
+      <text class="svg-t" x="48" y="94" font-size="20" font-weight="700" fill="var(--night)">正在攻克，尚未稳定</text>
+      <text class="svg-t" x="48" y="126" font-size="12.5" fill="var(--ink-2)">置信度</text>
+      <rect x="104" y="116" width="170" height="10" rx="5" fill="var(--panel-2)"/>
+      <rect x="104" y="116" width="110" height="10" rx="5" fill="var(--stone)"/>
+      <text class="svg-t" x="286" y="126" font-size="12.5" fill="var(--ink-2)">中 · 共 6 条证据</text>
+      <line x1="48" y1="146" x2="392" y2="146" stroke="var(--rule)"/>
+      <g class="svg-t" font-size="13" fill="var(--ink)">
+        <circle cx="56" cy="170" r="5" fill="var(--gold)"/><text x="70" y="175">11-12 独立做对 2 道基础题</text>
+        <circle cx="56" cy="198" r="5" fill="var(--cinnabar)"/><text x="70" y="203">11-14 月考第 23 题 平移方向符号错</text>
+        <circle cx="56" cy="226" r="5" fill="var(--cinnabar)"/><text x="70" y="231">11-16 综合题 提示 3 级后做对</text>
+        <circle cx="56" cy="254" r="5" fill="var(--ink-3)"/><text x="70" y="259">下次验证：11-21 延迟复测</text>
+      </g>
+      <rect x="48" y="286" width="150" height="40" rx="20" fill="var(--night)"/>
+      <text class="svg-t" x="123" y="311" font-size="14" fill="var(--paper)" text-anchor="middle">为什么这样判断</text>
+      <rect x="214" y="286" width="150" height="40" rx="20" fill="none" stroke="var(--night)" stroke-width="1.5"/>
+      <text class="svg-t" x="289" y="311" font-size="14" fill="var(--night)" text-anchor="middle">我不同意</text>
+    </svg>
+  </div>
+</header>
+
+<!-- 0 -->
+<section id="s0">
+  <div class="margin"><span class="n">〇</span>结论</div>
+  <div class="body">
+    <h2>六条决断</h2>
+    <p class="lead">十几份方案对"要了解学生什么"已经列得足够多，差别不在清单长短，而在三件事：判断如何保证准，准不准如何被看见，错了如何被纠正。用户信任恰恰来自这三件事。本文据此裁定。</p>
+    <ol class="decisions">
+      <li><strong>画像的基本单位是"带证据的判断"，不是分数或标签</strong><span>平台对学生的每一句认识都存为一条判断（claim）：结论、置信度、证据、模型版本、有效期、状态。星图、六维、周报、点点的每一句"你最近……"都只是判断的不同视图。这是可解释、可纠正、可审计三件事的共同底座。</span></li>
+      <li><strong>三层数据、四种来源，永不混算</strong><span>事实层（作答、成绩、上传）、证据层（从事实提取的信号）、推断层（掌握度、学习力、预测）分开存；每条数据标明来源是客观记录、学生自述、家长观察还是模型推断。学生与家长说法不同时两边都保存，落差本身是信号，不取平均。</span></li>
+      <li><strong>结构沿用"三圈"学习者模型，九层画像作为字段分组落入其中</strong><span>内圈是各科能力（由 KGE 计算），中圈是跨科学习力，外圈是家庭与环境。六维画像是跨三圈的呈现视图，不合成一个总分，每一维附证据量与置信度，只和"一个月前的自己"比。</span></li>
+      <li><strong>用外部考试给画像"对账"，把准确度变成家长看得见的东西</strong><span>每次学校月考、期中、期末前，系统冻结一份分数区间预测；成绩上传后公开比对命中与否，并说明据此修正了什么。预测区间覆盖率与误差是整套画像的第一质量指标。</span></li>
+      <li><strong>划清不推断的边界</strong><span>不用摄像头、微表情、眼动推断情绪与专注；不做智力、记忆力、人格、心理测评；不用"视觉型 / 听觉型"固定学习风格；不给学生贴"基础薄弱型"之类的层级标签。能观察的只记学习相关行为，偏好只记学生本人说过的和在具体知识点上实际奏效的讲法。</span></li>
+      <li><strong>先把两维做准，其余先采数据后上线</strong><span>数学的"知识掌握"与"知识迁移"最先对学生和家长展示；学习策略、自主学习、表达应用、学习持续性先静默采集，某一指标的预测效度通过验证后才开放展示。开发与 KGE 同步 30 周，第 12 周随三科切片进入封测。</span></li>
+    </ol>
+  </div>
+</section>
+
+<!-- 1 -->
+<section id="s1">
+  <div class="margin"><span class="n">一</span>方案整合</div>
+  <div class="body">
+    <h2>十七份材料的取舍</h2>
+    <p>来源分两组：画像与学情方案（全方位学情洞察、分学段采集清单两版、六维画像、多源采集、全方位画像两版、学生全景画像 V1.0），以及市场与 Agent 思路（cc、claude、gpt、db、dp、kimi、qw 七份）。市场分析的共同结论是：行业的短板不在题库，而在"记忆是账本不是模型""诊断停在知识点""家长端是监控台"。本方案正对这三点。</p>
+
+    <h3>共识，直接采纳</h3>
+    <div class="tbl"><table>
+      <tr><th style="width:30%">思路</th><th style="width:22%">主要来源</th><th>落点</th></tr>
+      <tr><td>画像而非聊天记录是数据核心</td><td>六维画像、全方位画像、V1.0、dp</td><td>第三章；聊天只作为证据来源之一</td></tr>
+      <tr><td>区分"提示下暂时答对"与"独立掌握"，按提示等级给证据加权</td><td>六维画像、cc、全方位画像</td><td>第五章证据权重表</td></tr>
+      <tr><td>画像是带置信度的假设，可追溯、学生可申辩</td><td>cc、V1.0</td><td>第五章判断账本；第八章异议流程</td></tr>
+      <tr><td>学校考试作为外部锚点校准画像</td><td>cc、V1.0（考后评估"此前判断哪里不准"）</td><td>第五章预测与对账；第十章首要指标</td></tr>
+      <tr><td>自我评估准确度：做题前预估能否做对</td><td>cc、多源采集</td><td>第五章中圈指标；成本低、价值高</td></tr>
+      <tr><td>资料非强制，缺资料用线上诊断兜底；最近资料优先</td><td>分学段清单、V1.0</td><td>第四章采集清单</td></tr>
+      <tr><td>学生、家长、客观数据分别保存，落差即信号</td><td>cc、V1.0</td><td>第三章来源标注；第六章冲突处理</td></tr>
+      <tr><td>鼓励必须基于证据，不做空泛表扬</td><td>cc、全方位学情洞察、多源采集</td><td>第七章触发规则</td></tr>
+      <tr><td>家长看证据与建议，不看逐句对话</td><td>db、完整方案</td><td>第八章三端视图</td></tr>
+    </table></div>
+
+    <h3>分歧与裁定</h3>
+    <div class="tbl"><table>
+      <tr><th style="width:18%">议题</th><th style="width:32%">主张与来源</th><th style="width:13%">裁定</th><th>理由</th></tr>
+      <tr><td>情绪与专注识别</td><td>摄像头看草稿与微表情、眼动追踪、语调识别挫败（qw、全方位画像引述的研究）</td><td><span class="v reject">否决</span></td><td>未成年人生物特征与持续监控的合规和信任代价远大于收益；V1.0 也已明确不以摄像头推断情绪。只记"连错后退出""跳过率上升"等学习行为。</td></tr>
+      <tr><td>心理与能力测评</td><td>记忆力、理解力、专注力、抗压能力、畏难情绪测评（全方位学情洞察）</td><td><span class="v reject">否决</span></td><td>超出学习辅导边界，且测验结果易被当作固定标签。改为从作答行为观测可操作的学习力指标。</td></tr>
+      <tr><td>学生分层标签</td><td>基础薄弱型 / 中等稳重型 / 培优型 / 尖子型（全方位学情洞察）；基础薄弱 / 中等 / 培优（db）</td><td><span class="v reject">否决</span></td><td>标签会固化预期。对内按知识点状态选内容，对外只描述具体节点的进展。</td></tr>
+      <tr><td>学习风格匹配</td><td>视觉型 / 叙事型 / 形式化型偏好模型（dp、qw）</td><td><span class="v mod">改造</span></td><td>以固定学习风格匹配讲法缺乏可靠证据。改记"讲法响应"：在具体知识点上，哪种讲法之后学生独立做对了，这是可检验的经验记录。</td></tr>
+      <tr><td>兴趣与性格记忆</td><td>记住喜欢篮球、读《三体》用于出题（qw）；记录性格（db）</td><td><span class="v mod">收窄</span></td><td>只存学生本人主动说出、可随时删除的兴趣，用于情境包装；不记性格，不从行为推断兴趣。</td></tr>
+      <tr><td>知识追踪模型</td><td>DKT（多源采集）、神经-IRT 与 MAML 冷启动（全方位画像）、BKT（多数）</td><td><span class="v adopt">BKT 起步</span></td><td>沿用 KGE：规则 + 简化 BKT，提示等级调节证据权重；数据足够后试点 IRT。深度模型只在预测更准且仍能给证据解释时评估。</td></tr>
+      <tr><td>冷启动先验</td><td>同年级同层次群体均值（cc）；人口学特征先验（全方位画像）</td><td><span class="v mod">改造</span></td><td>用年级与教材进度作先验，置信度设低；不用学校层次、家庭等人口学特征做个体先验，避免把群体差异写成个人预期。</td></tr>
+      <tr><td>采集范围</td><td>小学、初中、高中分学段清单</td><td><span class="v mod">收窄</span></td><td>本平台只做初中七至九年级；小学与高中清单存档，不进入首期。</td></tr>
+      <tr><td>主要入口</td><td>拍照上传试卷是冷启动最高密度信号（全方位画像）</td><td><span class="v mod">原生测评为主</span></td><td>上传信号密度高但噪声也高，文砺已验证整卷 OCR 不稳。沿用 KGE 三通道：原生测评为主，自报为辅，上传第三通道带置信门。上传用于先验与外部锚点，不单独生成薄弱结论。</td></tr>
+      <tr><td>本地优先与联邦学习</td><td>端侧识别、联邦学习（全方位画像、qw）</td><td><span class="v defer">暂缓</span></td><td>首期服务端境内部署加行级隔离即可满足；端侧与联邦学习工程成本高，待规模化阶段评估。</td></tr>
+      <tr><td>多 Agent 分工</td><td>画像 Agent 独立于教学 Agent（全方位画像）；诊断 / 规划 / 陪伴 / 评估四 Agent（V1.0）</td><td><span class="v adopt">采纳并收紧</span></td><td>画像更新由确定性的洞察服务执行，教学 Agent 只能写证据事件、只能读画像，不能直接改结论；这比"再加一个 Agent"更可控。</td></tr>
+    </table></div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section id="s2">
+  <div class="margin"><span class="n">二</span>可信画像</div>
+  <div class="body">
+    <h2>信任来自四个可检验的性质</h2>
+    <p>用户说"平台懂我"，拆开是四件可以设计、可以度量的事。每一个设计决定都要回答它服务哪一项。</p>
+    <div class="two">
+      <div class="card"><h4>准</h4><p>判断能预测学生接下来的表现：下一次作答、延迟复测、学校考试。用预测误差衡量，而不是用"看起来合理"衡量。</p></div>
+      <div class="card"><h4>可解释</h4><p>任何判断都能展开成具体证据：哪道题、哪一步、哪天、提示到第几级。系统能回答"为什么你认为我二次函数薄弱"。</p></div>
+      <div class="card"><h4>可纠正</h4><p>学生和家长能质疑判断，系统用一道验证题或一次事实更正回应，并记录结果。判断会因新证据被推翻，也会过期。</p></div>
+      <div class="card"><h4>可见</h4><p>进步以证据呈现给学生和家长：哪颗星何时点亮、依据是什么、平台上次预测准不准。看得见的变化，才会让人相信这是一对一。</p></div>
+    </div>
+
+    <h3>七条设计原则</h3>
+    <div class="tbl"><table>
+      <tr><th style="width:24%">原则</th><th>约束</th></tr>
+      <tr><td>判断先于展示</td><td>界面上出现的任何关于学生的陈述，必须对应判断账本中一条状态为"成立"或"假设"的判断；没有判断就不能说。</td></tr>
+      <tr><td>来源标注</td><td>每条数据带来源类型：客观记录、学生自述、家长观察、模型推断。报告中推断性陈述必须显示置信度。</td></tr>
+      <tr><td>证据分级</td><td>独立作答、延迟复测、迁移题的证据权重高于提示后答对和对话表现（第五章）。</td></tr>
+      <tr><td>会过期</td><td>长期没有新证据的判断，置信度按时间下降，到期转为"待验证"，而不是永久保留旧结论。</td></tr>
+      <tr><td>只写学习事实</td><td>不写性格、情绪、智力、家庭推断；"你不擅长数学"一类定性判断在账本层就被禁止。</td></tr>
+      <tr><td>写入与读取分离</td><td>学科 Agent、点点只能写证据事件、读画像视图；判断的创建与更新由洞察服务执行，模型版本可回放。</td></tr>
+      <tr><td>最少必要</td><td>只采集对教学决策有用的信息；真实姓名、精确学校班级、住址不默认必填；家庭圈全部可选且家长可删。</td></tr>
+    </table></div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section id="s3">
+  <div class="margin"><span class="n">三</span>画像结构</div>
+  <div class="body">
+    <h2>三圈、九组、一本判断账</h2>
+    <p>《产品开发完整方案》定下的三层学习者模型是骨架；《学生全景画像》V1.0 的九层是字段清单。两者合并如下，九层全部落进三圈，不另设层级。</p>
+    <div class="tbl"><table>
+      <tr><th style="width:14%">圈</th><th style="width:26%">字段组（原九层）</th><th style="width:30%">主要内容</th><th>主要来源 · 维护者</th></tr>
+      <tr><td rowspan="3">内圈<br>学科能力</td><td>② 学业水平与历史成绩</td><td>考试记录（满分、范围、难度、排名）、分数轨迹、预测区间</td><td>成绩录入、上传 · 洞察服务</td></tr>
+      <tr><td>③ 学科知识掌握</td><td>节点 × 层次的掌握状态、五道门槛、错因、复习时间</td><td>作答证据 · KGE 计算</td></tr>
+      <tr><td>④ 核心学习能力（学科内）</td><td>各科能力视图：阿鸦 100 点、文砺 28 点、知行五维；迁移差</td><td>节点证据聚合 · KGE</td></tr>
+      <tr><td rowspan="3">中圈<br>跨科学习力</td><td>⑤ 学习行为与习惯</td><td>计划完成率、复习执行、求助方式、使用节律</td><td>行为事件 · 洞察服务</td></tr>
+      <tr><td>⑦ 学习策略与认知特点</td><td>独立解题率、提示依赖度、自评校准、检查习惯、审题类错因占比</td><td>作答过程 · 洞察服务</td></tr>
+      <tr><td>⑥ 学习动力与兴趣</td><td>学生自述目标、主动发起学习次数、中断后恢复；本人说出的兴趣</td><td>自述 + 行为 · 学生可改</td></tr>
+      <tr><td rowspan="2">外圈<br>家庭与环境</td><td>① 基础身份与学习环境</td><td>年级、地区、教材版本、可用时间、设备、校外补习（自愿）</td><td>建档表单 · 学生与家长</td></tr>
+      <tr><td>⑧ 家庭与外部支持</td><td>陪读方式、作息、家长期望与可配合程度</td><td>家长端 · 家长可见可删</td></tr>
+      <tr><td>贯穿</td><td>⑨ 成长轨迹与目标</td><td>目标、阶段干预、复测结果、每周快照、点亮记录</td><td>快照 + 干预日志 · 洞察服务</td></tr>
+    </table></div>
+
+    <h3>六维画像的位置</h3>
+    <p>六维是给学生和家长看的呈现视图，跨圈取数，不存为独立分数：</p>
+    <div class="tbl"><table>
+      <tr><th style="width:16%">维度</th><th style="width:40%">取自</th><th style="width:22%">首期状态</th><th>呈现方式</th></tr>
+      <tr><td>知识掌握</td><td>内圈节点掌握状态加权汇总（KGE）</td><td><span class="v adopt">数学首发</span></td><td>已点亮 / 正在攻克 / 待验证的星数与变化</td></tr>
+      <tr><td>知识迁移</td><td>迁移差：变式与跨章题独立正确率减母题独立正确率</td><td><span class="v adopt">数学首发</span></td><td>"会做原题"与"换个样子也会"的对比</td></tr>
+      <tr><td>学习策略</td><td>提示依赖度、自评校准、检查习惯、审题类错因</td><td><span class="v defer">静默采集</span></td><td>效度验证后以具体习惯呈现，不给总分</td></tr>
+      <tr><td>自主学习</td><td>主动发起学习、计划自主完成率、自主订正复测</td><td><span class="v defer">静默采集</span></td><td>同上</td></tr>
+      <tr><td>表达应用</td><td>"讲给老师听"评分、主观题过程分、作文与口语量表</td><td><span class="v defer">静默采集</span></td><td>各科分开呈现</td></tr>
+      <tr><td>学习持续性</td><td>周活跃天数、中断后恢复率、难题坚持时长</td><td><span class="v defer">静默采集</span></td><td>只呈现与自己过去相比的变化</td></tr>
+    </table></div>
+
+    <h3>判断账本（claim ledger）</h3>
+    <p>所有推断性认识统一存为判断。字段：主体（学生、学科、节点或指标）、结论文本模板、数值（如掌握概率、区间）、置信度、证据 ID 列表、来源类型、模型版本、创建与到期时间、状态、可见范围（Agent / 学生 / 家长）。状态流转见图 2。事实数据（考试记录、表单）不进账本，但可以被判断引用为证据。</p>
+  </div>
+</section>
+
+<!-- 4 -->
+<section id="s4">
+  <div class="margin"><span class="n">四</span>数据采集</div>
+  <div class="body">
+    <h2>四类来源与初中采集清单</h2>
+    <figure>
+      <svg viewBox="0 0 1000 468" role="img" aria-label="洞察引擎总体结构：四类来源进入事实层、证据层、推断层，编译为三种视图，驱动行动，并由外部考试与行动结果回流校准">
+        <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--ink-3)"/></marker>
+        <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--gold)"/></marker></defs>
+        <g class="svg-t">
+          <g font-size="14">
+            <rect x="20" y="30" width="170" height="64" fill="var(--stone-soft)" stroke="var(--stone)"/><text x="36" y="56" font-weight="700" fill="var(--night)">平台内作答</text><text x="36" y="80" font-size="12.5" fill="var(--ink-2)">诊断·练习·复测·讲述</text>
+            <rect x="20" y="108" width="170" height="64" fill="var(--panel-2)" stroke="var(--rule)"/><text x="36" y="134" font-weight="700" fill="var(--night)">学习行为</text><text x="36" y="158" font-size="12.5" fill="var(--ink-2)">计划·会话·求助·中断</text>
+            <rect x="20" y="186" width="170" height="64" fill="var(--panel-2)" stroke="var(--rule)"/><text x="36" y="212" font-weight="700" fill="var(--night)">外部学业资料</text><text x="36" y="236" font-size="12.5" fill="var(--ink-2)">成绩·试卷·作业·评语</text>
+            <rect x="20" y="264" width="170" height="64" fill="var(--panel-2)" stroke="var(--rule)"/><text x="36" y="290" font-weight="700" fill="var(--night)">自述与观察</text><text x="36" y="314" font-size="12.5" fill="var(--ink-2)">学生问卷·家长问卷</text>
+          </g>
+          <line x1="190" y1="180" x2="232" y2="180" stroke="var(--ink-3)" stroke-width="1.5" marker-end="url(#a)"/>
+          <rect x="236" y="30" width="150" height="298" fill="var(--panel)" stroke="var(--night)" stroke-width="1.5"/>
+          <text x="252" y="58" font-size="15" font-weight="700" fill="var(--night)">事实层</text>
+          <g font-size="12.5" fill="var(--ink-2)"><text x="252" y="84">attempt</text><text x="252" y="106">exam_record</text><text x="252" y="128">behavior_event</text><text x="252" y="150">self_report</text><text x="252" y="172">guardian_report</text><text x="252" y="206">每条带来源类型</text><text x="252" y="226">与采集时间</text></g>
+          <line x1="386" y1="180" x2="428" y2="180" stroke="var(--ink-3)" stroke-width="1.5" marker-end="url(#a)"/>
+          <rect x="432" y="30" width="150" height="298" fill="var(--panel)" stroke="var(--night)" stroke-width="1.5"/>
+          <text x="448" y="58" font-size="15" font-weight="700" fill="var(--night)">证据层</text>
+          <g font-size="12.5" fill="var(--ink-2)"><text x="448" y="84">evidence_event</text><text x="448" y="106">（KGE）</text><text x="448" y="134">独立 / 提示后</text><text x="448" y="156">迁移 / 延迟复测</text><text x="448" y="184">错因 · 提示等级</text><text x="448" y="206">时效权重</text></g>
+          <line x1="582" y1="180" x2="624" y2="180" stroke="var(--ink-3)" stroke-width="1.5" marker-end="url(#a)"/>
+          <rect x="628" y="30" width="170" height="298" fill="var(--gold-soft)" stroke="var(--gold)" stroke-width="1.5"/>
+          <text x="644" y="58" font-size="15" font-weight="700" fill="var(--night)">推断层 · 判断账本</text>
+          <g font-size="12.5" fill="var(--ink-2)"><text x="644" y="86">掌握状态（KGE）</text><text x="644" y="110">学习力指标</text><text x="644" y="134">考试预测区间</text><text x="644" y="158">讲法响应</text><text x="644" y="190">置信度 · 证据</text><text x="644" y="212">模型版本 · 到期</text><text x="644" y="234">状态</text></g>
+          <line x1="798" y1="180" x2="840" y2="180" stroke="var(--ink-3)" stroke-width="1.5" marker-end="url(#a)"/>
+          <g font-size="13.5">
+            <rect x="844" y="30" width="140" height="84" fill="var(--night)"/><text x="858" y="60" font-weight="700" fill="var(--paper)">Agent 上下文包</text><text x="858" y="84" font-size="12" fill="var(--paper)" opacity=".85">学情档案页</text><text x="858" y="102" font-size="12" fill="var(--paper)" opacity=".85">按任务裁剪</text>
+            <rect x="844" y="134" width="140" height="84" fill="var(--panel)" stroke="var(--gold)"/><text x="858" y="164" font-weight="700" fill="var(--night)">学生视图</text><text x="858" y="188" font-size="12" fill="var(--ink-2)">星图·成长手记</text>
+            <rect x="844" y="238" width="140" height="90" fill="var(--panel)" stroke="var(--stone)"/><text x="858" y="268" font-weight="700" fill="var(--night)">家长视图</text><text x="858" y="292" font-size="12" fill="var(--ink-2)">周报·预测对账</text><text x="858" y="310" font-size="12" fill="var(--ink-2)">一件配合建议</text>
+          </g>
+          <!-- action -->
+          <rect x="680" y="372" width="304" height="56" fill="var(--panel)" stroke="var(--rule)"/>
+          <text x="696" y="396" font-size="15" font-weight="700" fill="var(--night)">行动层</text>
+          <text x="696" y="418" font-size="12.5" fill="var(--ink-2)">提醒 · 处方 · 证据化鼓励 · 降负 · 验证题</text>
+          <line x1="914" y1="328" x2="914" y2="368" stroke="var(--ink-3)" stroke-width="1.5" marker-end="url(#a)"/>
+          <polyline points="680,392 150,392 150,334" fill="none" stroke="var(--ink-3)" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#a)"/>
+          <text x="330" y="386" font-size="12" fill="var(--ink-3)">行动结果作为新作答与行为回到事实层</text>
+          <polyline points="60,330 60,452 640,452 640,334" fill="none" stroke="var(--gold)" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#ag)"/>
+          <text x="76" y="444" font-size="12.5" fill="var(--gold)" font-weight="700">校准环：学校考试 → 与冻结的预测对账 → 修正参数与判断</text>
+        </g>
+      </svg>
+      <figcaption>图 1　洞察引擎总体结构。前三层在 KGE 个人层之上扩展；校准环是本方案新增的关键回路。</figcaption>
+    </figure>
+
+    <h3>初中采集清单</h3>
+    <p>标记：<strong>必填</strong>（建档表单）、<strong>建议</strong>（价值高，可跳过）、<strong>可选</strong>。旧资料找不到直接跳过，缺资料时用线上诊断兜底，任何一项都不阻断建档。</p>
+    <div class="tbl"><table>
+      <tr><th style="width:14%">时机</th><th style="width:12%">级别</th><th style="width:44%">内容</th><th>写入</th></tr>
+      <tr><td rowspan="3">建档</td><td>必填</td><td>年级、地区、各科教材版本、最想改善的学科、近期目标、每周可用时间；学习方式偏好（一步步引导 / 先讲再练 / 多独立尝试 / 闯关）</td><td>外圈；偏好为学生自述</td></tr>
+      <tr><td>建议</td><td>最近一次大考成绩（原始分、满分、大致排名区间）；最近 1–2 份带批改的试卷；学生自评痛点（概念、拆题、审题、时间、不会写）</td><td>考试记录；自述判断</td></tr>
+      <tr><td>可选</td><td>家长问卷（作息、陪读方式、期望与可配合程度）；错题本、作业、教师评语；校外补习情况</td><td>外圈家长层；上传原件</td></tr>
+      <tr><td rowspan="2">周期</td><td>建议</td><td>月考、期中、期末、九年级一模二模后：成绩 + 整卷批改试卷；考前录入考试范围与日期以冻结预测</td><td>考试记录；对账</td></tr>
+      <tr><td>可选</td><td>近期专项练习、订正后的错题</td><td>上传原件</td></tr>
+      <tr><td>持续</td><td>自动</td><td>平台内全部作答与学习行为；做题前"能做对吗"一问（每次诊断与部分练习）</td><td>作答、行为事件</td></tr>
+    </table></div>
+    <p>提醒节奏：月考与期中期末后主动提示上传，平时每 3–4 周最多提醒一次；九年级模考结束立即提示。提示文案固定一句核心：带老师批改痕迹的材料更有用，找不到的旧资料不用翻。</p>
+
+    <h3>冷启动：三阶段建档</h3>
+    <div class="tbl"><table>
+      <tr><th style="width:18%">阶段</th><th style="width:16%">时长</th><th style="width:40%">做什么</th><th>产出</th></tr>
+      <tr><td>建立基本认识</td><td>约 5 分钟</td><td>家长授权与账号关联、建档表单；可跳过、可返回、家长端可独立填写</td><td>可立即学习；先验只来自年级与教材进度，置信度低</td></tr>
+      <tr><td>建立学业基线</td><td>首周，每科 ≤ 35 分钟，可分次</td><td>资料先验（若有上传）→ 自适应诊断（沿前置向下追溯断点，高置信节点跳过，每题前问一句"能做对吗"）→ 过程观察任务（2–3 道写全过程，其中一道讲给老师听）</td><td>首份画像报告：明确标注"初步判断，两周内会变准"</td></tr>
+      <tr><td>形成真实画像</td><td>2–4 周</td><td>真实教学、独立练习、延迟复测逐步校准；在合适时机补问未了解的信息</td><td>判断由"假设"进入"成立"；第一次学校考试对账</td></tr>
+    </table></div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section id="s5">
+  <div class="margin"><span class="n">五</span>推断模型</div>
+  <div class="body">
+    <h2>判断是怎么算出来的</h2>
+
+    <h3>证据权重</h3>
+    <p>掌握状态的计算在 KGE（规则 + 简化 BKT + 五道门槛）。洞察引擎规定每类证据对掌握与置信度的影响方向，作为 KGE 的参数输入：</p>
+    <div class="tbl"><table>
+      <tr><th style="width:34%">证据</th><th style="width:30%">掌握</th><th>置信度</th></tr>
+      <tr><td>独立做对（无提示）</td><td>明显上调</td><td>上调</td></tr>
+      <tr><td>低级提示（各科阶梯前 1/3）后做对</td><td>小幅上调</td><td>小幅上调</td></tr>
+      <tr><td>高级提示或看过讲解后做对</td><td>不变，记"辅导有进展"，自动安排无提示变式</td><td>不变</td></tr>
+      <tr><td>变式或跨章题独立做对</td><td>明显上调，并计入迁移</td><td>明显上调</td></tr>
+      <tr><td>间隔 ≥ 7 天的延迟复测做对</td><td>明显上调，修正个体遗忘参数</td><td>明显上调</td></tr>
+      <tr><td>独立做错</td><td>按错因类型下调</td><td>上调（错误也是确定证据）</td></tr>
+      <tr><td>上传试卷中识别为 C 级的作答</td><td>不参与，待学生核对</td><td>不参与</td></tr>
+      <tr><td>学生自述"我会了"</td><td>不改变，触发验证题</td><td>不改变</td></tr>
+    </table></div>
+    <p>时效：三个月前的外部试卷权重逐步下调，一学期以前只作为趋势参考；平台内证据随时间降低的是置信度而非掌握本身，由复习调度安排复测。</p>
+
+    <h3>中圈学习力指标</h3>
+    <p>每个指标都有可复算的定义、最低样本量和效度检验方法；未过效度检验的指标只供 Agent 内部使用，不对学生家长展示。</p>
+    <div class="tbl"><table>
+      <tr><th style="width:15%">指标</th><th style="width:38%">定义</th><th style="width:17%">最低样本</th><th>效度检验</th></tr>
+      <tr><td>独立解题率</td><td>无提示首次作答正确数 ÷ 无提示首次作答数；按学科、认知层次，滚动 14 天</td><td>每层 ≥ 10 题</td><td>与延迟复测结果相关</td></tr>
+      <tr><td>提示依赖度</td><td>完成一题所用最高提示等级，按各科阶梯长度归一后取均值；看趋势</td><td>≥ 15 题</td><td>下降是否伴随独立解题率上升</td></tr>
+      <tr><td>迁移差</td><td>变式与跨章题独立正确率 − 同节点母题独立正确率</td><td>两类各 ≥ 10 题</td><td>预测综合题得分</td></tr>
+      <tr><td>自评校准</td><td>做题前"能做对吗"与实际结果的 Brier 分数，及偏差方向（高估 / 低估）</td><td>≥ 20 次</td><td>与考试预测偏差方向一致性</td></tr>
+      <tr><td>保持率</td><td>间隔 ≥ 7 天的复测做对 ÷ 应复测</td><td>≥ 8 次</td><td>预测学校考试同节点得分</td></tr>
+      <tr><td>计划完成率</td><td>完成任务 ÷ 计划任务（以学生调整后的计划为准）</td><td>≥ 2 周</td><td>与后续进步相关（观察用）</td></tr>
+      <tr><td>审题类错因占比</td><td>审题大类错因 ÷ 全部错因；跨科指标须至少两科各有 ≥ 5 条</td><td>见定义</td><td>针对训练后是否下降</td></tr>
+      <tr><td>持续性</td><td>周活跃天数；中断 ≥ 3 天后 7 天内恢复的比例</td><td>≥ 4 周</td><td>观察用，不参与评价</td></tr>
+    </table></div>
+
+    <h3>考试预测与对账</h3>
+    <p>学生或家长录入考试范围与日期后，系统按"范围内节点的掌握状态 × 地区考情权重 × 题型"估算分数区间（默认 80% 区间，证据少则区间宽），并在考试当天零点冻结存档。成绩上传后生成对账卡：落在区间内还是外、偏差来自哪些节点、平台据此改了什么。偏差分析固定检查四个方向：题型迁移、时间不足、计算失误、此前诊断偏乐观。七八年级 100 分制与九年级 120 分制分别计算，跨试卷只比较相对区间，不制造精确能力分。</p>
+
+    <h3>讲法响应</h3>
+    <p>在具体知识点上，记录学生在哪种讲法（语言解释、图形直观、生活情境、公式推导、例题归纳、错误对比、一题多解）之后首次独立做对。累计到一定次数后，教学 Agent 在同类节点上优先选用该讲法，但保留一定比例轮换，避免过早锁定。它替代"视觉型 / 听觉型"一类固定风格标签。</p>
+
+    <h3>判断的生命周期</h3>
+    <figure>
+      <svg viewBox="0 0 1000 250" role="img" aria-label="判断状态：假设、成立、待验证、推翻、撤回">
+        <defs><marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--ink-3)"/></marker></defs>
+        <g class="svg-t">
+          <rect x="30" y="90" width="150" height="60" rx="30" fill="var(--panel-2)" stroke="var(--ink-3)"/><text x="105" y="126" font-size="16" font-weight="700" text-anchor="middle" fill="var(--night)">假设</text>
+          <rect x="330" y="90" width="150" height="60" rx="30" fill="var(--gold-soft)" stroke="var(--gold)" stroke-width="1.5"/><text x="405" y="126" font-size="16" font-weight="700" text-anchor="middle" fill="var(--night)">成立</text>
+          <rect x="630" y="90" width="150" height="60" rx="30" fill="var(--stone-soft)" stroke="var(--stone)"/><text x="705" y="126" font-size="16" font-weight="700" text-anchor="middle" fill="var(--night)">待验证</text>
+          <rect x="840" y="20" width="130" height="50" rx="25" fill="var(--cinnabar-soft)" stroke="var(--cinnabar)"/><text x="905" y="51" font-size="15" font-weight="700" text-anchor="middle" fill="var(--night)">推翻</text>
+          <rect x="840" y="170" width="130" height="50" rx="25" fill="var(--panel)" stroke="var(--rule)"/><text x="905" y="201" font-size="15" font-weight="700" text-anchor="middle" fill="var(--night)">撤回</text>
+          <line x1="180" y1="120" x2="326" y2="120" stroke="var(--ink-3)" stroke-width="1.5" marker-end="url(#b)"/>
+          <text x="196" y="108" font-size="12.5" fill="var(--ink-2)">证据量与置信度达标</text>
+          <line x1="480" y1="120" x2="626" y2="120" stroke="var(--ink-3)" stroke-width="1.5" marker-end="url(#b)"/>
+          <text x="492" y="108" font-size="12.5" fill="var(--ink-2)">到期 · 异议 · 考试偏差</text>
+          <path d="M705,150 C705,220 405,220 405,154" fill="none" stroke="var(--ink-3)" stroke-width="1.5" marker-end="url(#b)"/>
+          <text x="470" y="214" font-size="12.5" fill="var(--ink-2)">验证题支持原判断</text>
+          <line x1="780" y1="108" x2="838" y2="60" stroke="var(--ink-3)" stroke-width="1.5" marker-end="url(#b)"/>
+          <text x="742" y="66" font-size="12.5" fill="var(--ink-2)">验证不支持</text>
+          <line x1="780" y1="134" x2="838" y2="180" stroke="var(--ink-3)" stroke-width="1.5" marker-end="url(#b)"/>
+          <text x="734" y="186" font-size="12.5" fill="var(--ink-2)">依据的事实被更正</text>
+          <text x="30" y="40" font-size="12.5" fill="var(--ink-3)">推翻与撤回的判断保留在账本中（不对学生展示），用于模型评估与审计</text>
+        </g>
+      </svg>
+      <figcaption>图 2　判断状态机。"假设"阶段对学生显示为"初步判断"，对家长附置信度说明。</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- 6 -->
+<section id="s6">
+  <div class="margin"><span class="n">六</span>动态更新</div>
+  <div class="body">
+    <h2>什么时候更新什么</h2>
+    <div class="tbl"><table>
+      <tr><th style="width:16%">节奏</th><th style="width:48%">工作</th><th>执行</th></tr>
+      <tr><td>每次作答后</td><td>写证据事件 → 更新节点掌握与门槛 → 相关判断重算置信度 → 必要时安排验证题</td><td>KGE + 洞察服务，秒级</td></tr>
+      <tr><td>每次会话后</td><td>生成会话摘要：涉及节点、卡点、奏效的讲法、下次从哪里继续；只记学习约定与能力变化</td><td>编排层写入档案页</td></tr>
+      <tr><td>每天</td><td>判断到期扫描；复习与验证题排程；触发规则评估（第七章）</td><td>定时任务</td></tr>
+      <tr><td>每周</td><td>画像快照；中圈指标重算；学生成长手记与家长周报</td><td>定时任务 + 审核抽检</td></tr>
+      <tr><td>每月</td><td>分科小复评（10–15 分钟）；指标效度与预测校准复核；跨科时间分配调整</td><td>洞察服务 + 教研</td></tr>
+      <tr><td>学校考试后</td><td>对账卡；偏差归因；修正个体参数，偏差系统性出现时上报模型评估</td><td>洞察服务</td></tr>
+      <tr><td>学生或家长修改</td><td>目标、可用时间、偏好、兴趣即时生效；自述变更不改客观判断</td><td>表单</td></tr>
+    </table></div>
+
+    <h3>冲突处理</h3>
+    <div class="tbl"><table>
+      <tr><th style="width:32%">情形</th><th>处理</th></tr>
+      <tr><td>自述"几何不好"，客观证据显示几何得分率高</td><td>两边保存；判断为"客观掌握较好、信心偏低"，教学多呈现对比证据，家长报告不写"孩子判断错了"</td></tr>
+      <tr><td>家长认为"粗心"，错因显示为概念缺口</td><td>保存家长观察；周报说明证据并给一道可以在家一起看的题，不直接否定家长</td></tr>
+      <tr><td>平台练习显示已掌握，学校考试同节点失分</td><td>判断转"待验证"；按四个方向做偏差分析；不机械叠加新数据</td></tr>
+      <tr><td>学生多日未完成计划</td><td>先询问原因并给调整选项（任务太难、学校作业多、考试冲突），不生成"缺乏自律"类判断</td></tr>
+    </table></div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section id="s7">
+  <div class="margin"><span class="n">七</span>从画像到行动</div>
+  <div class="body">
+    <h2>提醒、改进、鼓励与降负</h2>
+    <p>画像的价值只在于改变下一步教学。触发规则由规划引擎评估，学科老师与点点按各自规格书执行；点点只引用学习者模型字段，不自行归纳"共性根因"（《点点规格书》V1.2 既有规则）。</p>
+    <div class="tbl"><table>
+      <tr><th style="width:12%">类型</th><th style="width:40%">触发</th><th>动作</th></tr>
+      <tr><td rowspan="3">提醒</td><td>节点到复习时间；验证题待做</td><td>放入今日计划，不单独推送</td></tr>
+      <tr><td>距学校考试 14 天</td><td>请录入考试范围；按"考情权重 × 当前缺口 × 可提升"重排计划</td></tr>
+      <tr><td>同一错因一周内 ≥ 3 次</td><td>老师在下一课开场点明，并给出对应处方</td></tr>
+      <tr><td rowspan="2">改进</td><td>错因：计算 / 方法选择 / 前置缺失 / 审题</td><td>限时专项 / 同题多解对比 / 回退补前置 / 圈画条件训练</td></tr>
+      <tr><td>提示后做对率明显高于独立做对率</td><td>增加无提示练习，提示阶梯起点上调</td></tr>
+      <tr><td rowspan="2">鼓励</td><td>节点从"需提示"跨到"独立做对"；迁移题首次独立做对；星点亮；考试超出预测区间</td><td>具体到证据的一句话，例如"这周你独立做对了 5 道分类讨论，三周前还需要提示"</td></tr>
+      <tr><td>自评偏低的学生</td><td>更多呈现"你比自己以为的更好"的对比证据</td></tr>
+      <tr><td rowspan="2">降负</td><td>连续中断 ≥ 3 天；连错后退出率上升</td><td>缩短任务、插入熟悉题、询问原因；不追加任务</td></tr>
+      <tr><td>学生主动说出与学习无关的情绪困扰</td><td>按角色规范转介家长与老师，不检索、不复述、不写入画像</td></tr>
+    </table></div>
+    <div class="note gold"><p><strong>鼓励的两条红线：</strong>没有证据不夸；不送星、不"帮"门槛通过。自评偏高的学生多安排自检，但语气保持支持性。</p></div>
+  </div>
+</section>
+
+<!-- 8 -->
+<section id="s8">
+  <div class="margin"><span class="n">八</span>信任界面</div>
+  <div class="body">
+    <h2>学生、家长、Agent 各看到什么</h2>
+    <div class="tbl"><table>
+      <tr><th style="width:12%">读者</th><th style="width:44%">看到</th><th>看不到</th></tr>
+      <tr><td>学生</td><td>学科星图与每颗星的"为什么"；成长手记（本周点亮了什么、正在攻克什么、下一步）；六维中已上线维度与一个月前的自己对比；"我不同意"入口</td><td>排名、同伴比较、能力等级标签、家长问卷内容、家长评价</td></tr>
+      <tr><td>家长</td><td>本周进展、当前卡点、一条具体配合建议；考前预测与考后对账；错因趋势；画像全部数据的查看、导出与删除</td><td>孩子逐句对话；无置信度的推断</td></tr>
+      <tr><td>学科 Agent</td><td>按任务裁剪的上下文包：本科学情档案页 + 相关节点证据 + 必要的中圈指标 + 学生本人偏好</td><td>家庭圈详情、其他学科私密对话；仅在跨科证据充分时看到跨科指标</td></tr>
+      <tr><td>教研与运营</td><td>去标识的聚合指标、复核队列中的具体判断</td><td>可识别的学生身份（复核按最小授权临时开放）</td></tr>
+    </table></div>
+
+    <h3>"我不同意"的三条路</h3>
+    <div class="tbl"><table>
+      <tr><th style="width:24%">学生选择</th><th style="width:44%">系统动作</th><th>结果写入</th></tr>
+      <tr><td>我其实会</td><td>24 小时内推送 2 道无提示验证题（含 1 道变式）</td><td>支持则原判断撤销并上调；不支持则展示新证据，语气平和</td></tr>
+      <tr><td>那次是粗心</td><td>接受记录，不立即改判；观察后续同类作答是否重复出现同一错误</td><td>重复出现则判断保留并提示"可能不只是粗心"</td></tr>
+      <tr><td>识别错了 / 分数录错了</td><td>打开原始事实供更正</td><td>依据该事实的判断全部撤回重算</td></tr>
+    </table></div>
+    <p>异议本身是有价值的信号：它校准模型，也让学生练习"评估自己理解程度"这一元认知能力。家长端同样可对报告中的判断提出疑问，走相同流程。</p>
+
+    <h3>让"变准"被看见</h3>
+    <p>家长端设"平台判断准不准"卡片：累计展示考前预测的命中情况与最近一次偏差说明。命中率不高时也如实展示，并写明改了什么。这张卡片是对家长最直接的信任建立方式，也是对产品团队最直接的压力。</p>
+  </div>
+</section>
+
+<!-- 9 -->
+<section id="s9">
+  <div class="margin"><span class="n">九</span>技术栈</div>
+  <div class="body">
+    <h2>组件、数据模型与接口</h2>
+    <div class="tbl"><table>
+      <tr><th style="width:18%">组件</th><th style="width:44%">首期实现</th><th>说明</th></tr>
+      <tr><td>洞察服务</td><td>Python（FastAPI）服务，与 KGE 编译器同栈；判断计算为确定性规则 + 统计模型，模型版本化</td><td>唯一能写判断账本的组件</td></tr>
+      <tr><td>数据存储</td><td>PostgreSQL <code>insight.*</code> schema，与 <code>kge.*</code> 同库；全部个人表启用 RLS；敏感字段加密</td><td>开发期 Supabase，内测与生产境内云</td></tr>
+      <tr><td>事件与调度</td><td>沿用 KGE 事件表与队列（Redis + Arq）；每日 / 每周定时任务</td><td>事件量大后分析迁 ClickHouse</td></tr>
+      <tr><td>上传解析</td><td>复用 KGE 上传管道与 A–D 质量分级；考试记录单独结构化（满分、范围、难度、排名）</td><td>C 级不参与判断</td></tr>
+      <tr><td>档案页编译</td><td>模板渲染为主：结论句由判断按模板生成，模型只写排序与衔接语；惰性编译（会话开始时过期才重编、周报时编一次）；每条陈述引用判断 ID；个人层只用境内已备案模型</td><td>体检检查无引用陈述、陈述—判断一致性（程度升级或新增结论即阻断）、禁用词与角色语言</td></tr>
+      <tr><td>上下文包</td><td>按任务类型的字段白名单 + token 预算裁剪</td><td>最少必要上下文</td></tr>
+      <tr><td>前端</td><td>Next.js 学生端星图、成长手记、异议流程；家长端周报、对账卡、数据管理</td><td>并入平台统一壳</td></tr>
+      <tr><td>评测</td><td>离线回放：用历史事件重算画像，比较模型版本的预测指标；Langfuse 追踪 Agent 引用</td><td>每次模型变更前必跑</td></tr>
+    </table></div>
+
+    <h3>数据模型增量（insight schema）</h3>
+    <p>与 KGE 的 <code>attempt</code>、<code>evidence_event</code>、<code>mastery_estimate</code>、<code>wiki_page</code> 以及蓝图的 <code>household</code>、<code>guardian_student_link</code>、<code>consent_record</code> 共用，下面只列新增。</p>
+<pre><code>-- 事实层
+exam_record(id, student_id, subject, exam_type, exam_date, full_score, raw_score,
+  scope_node_ids text[], difficulty_note, rank_band, source,             -- upload | manual
+  confirmed_by, created_at)
+behavior_event(id, student_id, kind,          -- session_start | session_end | plan_done | plan_skip | exit_after_errors | appeal ...
+  payload jsonb, created_at)
+self_report(id, student_id, field, value jsonb, created_at, superseded_at)          -- 学生自述：目标、痛点、偏好、兴趣
+guardian_report(id, student_id, guardian_id, field, value jsonb, created_at, superseded_at)
+confidence_probe(id, student_id, item_id, predicted_correct bool, actual_correct bool, created_at)  -- 做题前"能做对吗"
+
+-- 推断层
+claim(id, student_id, subject, target_type, target_id,  -- node | metric | exam | preference
+  template_key, value jsonb, confidence, evidence_ids uuid[], source_type,  -- inferred | self | guardian | objective
+  model_version, status,                        -- hypothesis | established | to_verify | refuted | withdrawn
+  visibility text[], created_at, expires_at, updated_at)
+claim_history(claim_id, from_status, to_status, reason, evidence_ids, at)
+learner_metric(student_id, metric_key, subject, window, value, sample_n, valid bool, model_version, computed_at)
+exam_prediction(id, student_id, exam_record_id, low, high, level, basis jsonb, frozen_at,
+  hit bool, error, deviation_analysis jsonb)
+teaching_response(student_id, node_id, method, successes, trials, updated_at)          -- 讲法响应
+
+-- 交互与治理
+dispute(id, student_id, raised_by, claim_id, kind,    -- i_know | careless | data_error
+  verification_item_ids, outcome, resolved_at)
+intervention_log(id, student_id, rule_key, action, claim_ids, outcome_ref, created_at)
+profile_snapshot(student_id, week, payload jsonb)     -- 每周快照，成长轨迹来源
+purpose_grant(student_id, purpose, granted_by, granted_at, revoked_at)                  -- 用途级授权</code></pre>
+
+    <h3>接口</h3>
+    <div class="tbl"><table>
+      <tr><th style="width:34%">工具</th><th style="width:36%">返回</th><th>调用方</th></tr>
+      <tr><td><code>insight.context(student, task)</code></td><td>按任务裁剪的上下文包，附判断 ID</td><td>各科 Agent、点点</td></tr>
+      <tr><td><code>insight.claims(student, filter)</code></td><td>判断列表与状态</td><td>规划、报告</td></tr>
+      <tr><td><code>insight.explain(claim_id)</code></td><td>结论、证据链、置信度说明</td><td>学生端、家长端、Agent</td></tr>
+      <tr><td><code>insight.dispute(claim_id, kind)</code></td><td>异议单与验证题安排</td><td>学生端、家长端</td></tr>
+      <tr><td><code>insight.predict(exam)</code> / <code>insight.reconcile(exam)</code></td><td>冻结预测 / 对账卡</td><td>学生端、家长端</td></tr>
+      <tr><td><code>insight.record(event)</code></td><td>事件 ID（行为、自述、家长观察）</td><td>前端、编排层</td></tr>
+      <tr><td><code>insight.export / insight.erase(student)</code></td><td>全量导出；删除回执</td><td>家长端</td></tr>
+    </table></div>
+    <p>蓝图的学科插件方法 <code>diagnose</code>、<code>plan</code>、<code>report</code> 通过这些工具读画像；<code>grade</code>、<code>teach</code> 只经 KGE 的 <code>evidence.write</code> 写证据，不直接调用 <code>insight</code> 的写接口。</p>
+  </div>
+</section>
+
+<!-- 10 -->
+<section id="s10">
+  <div class="margin"><span class="n">十</span>质量与边界</div>
+  <div class="body">
+    <h2>用指标守住"准"，用规则守住边界</h2>
+    <div class="tbl"><table>
+      <tr><th style="width:14%">性质</th><th style="width:48%">指标</th><th style="width:20%">门槛（起点）</th><th>时机</th></tr>
+      <tr><td>准</td><td>学校考试预测区间覆盖率（名义 80%）</td><td>70%–90%，并逐期接近 80%</td><td>每次考后</td></tr>
+      <tr><td>准</td><td>预测中值与实际分数平均绝对误差</td><td>封测后定基线，持续下降</td><td>每月</td></tr>
+      <tr><td>准</td><td>掌握状态对下一次独立作答的预测 AUC；延迟复测与诊断一致率</td><td>封测后定基线</td><td>每月</td></tr>
+      <tr><td>准</td><td>不同学校、不同基础学生群体的预测误差差异</td><td>无显著系统性偏差</td><td>每季度</td></tr>
+      <tr><td>可解释</td><td>对学生家长可见的陈述中带判断引用的比例</td><td>100%（硬约束）</td><td>每次编译</td></tr>
+      <tr><td>可解释</td><td>档案页与周报陈述—判断一致性检查通过率</td><td>100%（阻断发布）</td><td>每次编译</td></tr>
+      <tr><td>可纠正</td><td>"我其实会"异议 24 小时内推送验证题；事实更正后相关判断重算</td><td>≥ 95% / 100%</td><td>每周</td></tr>
+      <tr><td>可见</td><td>家长周报打开率；家长"判断基本准确"主观评价；8 周续用</td><td>封测后定基线</td><td>每月</td></tr>
+      <tr><td>边界</td><td>禁用推断触发数（人格、情绪诊断、智力、家庭推断出现在任何视图中）</td><td>0（阻断发布）</td><td>每次编译与抽检</td></tr>
+      <tr><td>边界</td><td>家长删除请求生效</td><td>按合规方案时限；删除覆盖个人层全部表与档案页</td><td>每次</td></tr>
+    </table></div>
+
+    <h3>不推断清单</h3>
+    <p>以下内容不进入判断账本，也不出现在任何视图中：智力或天赋高低；人格与性格类型；心理健康状态或诊断；情绪状态的持续推断（只记学生本人主动表达的学习相关感受，且不复述）；家庭经济与关系推断；基于摄像头、面部、眼动、声纹的任何推断；从同学校、同地区群体推给个人的预期。</p>
+
+    <h3>授权与用途</h3>
+    <p>未满十四周岁学生的个人信息处理取得监护人同意，统一由家长授权开户。用途分项授权：个人辅导（必要）、平台服务改进中的去标识统计（单独同意）、任何模型训练（默认不用，另行设计合法依据与同意）。上传原图在解析与核对完成后按保留期限删除，保留结构化结果；家长可查看、导出、更正、删除全部个人数据。上线前以专业法律意见为准。</p>
+  </div>
+</section>
+
+<!-- 11 -->
+<section id="s11">
+  <div class="margin"><span class="n">十一</span>开发计划</div>
+  <div class="body">
+    <h2>与 KGE 同一排期，两条线并行</h2>
+    <p>洞察引擎依赖 KGE 的证据事件与掌握计算（KGE S4 交付），因此前 8 周以建档、事实层与账本 Schema 为主，第 9 周起与 KGE 个人层合流。维度按"采集 → 内部使用 → 效度验证 → 对外展示"四步逐个上线。</p>
+    <figure>
+      <svg viewBox="0 0 1000 350" role="img" aria-label="洞察引擎与 KGE 并行的 30 周排期">
+        <g class="svg-t">
+          <g font-size="12" fill="var(--ink-3)"><text x="190" y="26">W1</text><text x="320" y="26">W6</text><text x="450" y="26">W11</text><text x="580" y="26">W16</text><text x="710" y="26">W21</text><text x="840" y="26">W26</text><text x="946" y="26">W30</text></g>
+          <g stroke="var(--rule)"><line x1="190" y1="34" x2="190" y2="310"/><line x1="320" y1="34" x2="320" y2="310"/><line x1="450" y1="34" x2="450" y2="310"/><line x1="580" y1="34" x2="580" y2="310"/><line x1="710" y1="34" x2="710" y2="310"/><line x1="840" y1="34" x2="840" y2="310"/><line x1="970" y1="34" x2="970" y2="310"/></g>
+          <g font-size="13.5" fill="var(--night)">
+            <text x="10" y="62">KGE 主线（参照）</text>
+            <text x="10" y="104">0 字段字典与授权</text>
+            <text x="10" y="146">1 建档与事实层</text>
+            <text x="10" y="188">2 首份画像</text>
+            <text x="10" y="230">3 账本·异议·对账</text>
+            <text x="10" y="272">4 封测校准</text>
+            <text x="10" y="306">5 维度扩展与通识</text>
+          </g>
+          <rect x="190" y="48" width="780" height="20" fill="var(--panel-2)" stroke="var(--rule)"/>
+          <text x="398" y="63" font-size="11.5" fill="var(--ink-3)">M1 W8 · M2 W12 · M3 W18 · M4 W28</text>
+          <rect x="190" y="90" width="52" height="22" fill="var(--night)"/>
+          <rect x="242" y="132" width="104" height="22" fill="var(--stone)"/>
+          <rect x="346" y="174" width="104" height="22" fill="var(--stone)"/>
+          <rect x="450" y="216" width="52" height="22" fill="var(--gold)"/>
+          <rect x="502" y="258" width="156" height="22" fill="var(--gold)" opacity=".8"/>
+          <rect x="658" y="292" width="312" height="22" fill="var(--stone)" opacity=".75"/>
+          <g fill="var(--gold)" stroke="var(--paper)" stroke-width="2"><path d="M502,320 l8,8 l-8,8 l-8,-8z"/><path d="M658,320 l8,8 l-8,8 l-8,-8z"/><path d="M918,320 l8,8 l-8,8 l-8,-8z"/></g>
+          <g font-size="12" font-weight="700" fill="var(--night)"><text x="486" y="348">封测</text><text x="640" y="348">结论</text><text x="900" y="348">公测</text></g>
+        </g>
+      </svg>
+      <figcaption>图 3　洞察引擎排期，与 KGE 的 M2 封测准入（W12）、M3 内测结论（W18）、M4 公测准入（W28）对齐。</figcaption>
+    </figure>
+
+    <div class="tbl"><table>
+      <tr><th style="width:10%">冲刺</th><th style="width:32%">工程任务包（Claude Code）</th><th style="width:28%">产品、教研与合规</th><th>验收</th></tr>
+      <tr><td>S0<br>W1–2</td><td>SIE-00：字段字典（三圈九组、来源类型、可见范围）；判断账本与状态机 Schema；禁用推断词表</td><td>指标定义书；监护人同意与用途分项授权方案；法律咨询</td><td>Schema 与字段字典冻结</td></tr>
+      <tr><td>S1–S2<br>W3–6</td><td>SIE-01：5 分钟建档（学生、家长端分别填写）、授权记录；<code>exam_record</code> 与成绩录入；自述与家长观察分表；行为事件埋点</td><td>建档问题与文案（可跳过、可返回）；三科影子评审教师招募</td><td>建档完成率与时长测试；家庭隔离测试</td></tr>
+      <tr><td>S3–S4<br>W7–10</td><td>SIE-02：数学自适应诊断（依赖 KGE 骨架）、"能做对吗"探针、过程观察任务；首份画像报告；<code>claim</code> 计算接入 KGE 掌握状态；<code>insight.explain</code></td><td>首份报告模板（学生版、家长版）；影子评审比对诊断结论</td><td>每条可见陈述有判断引用；诊断与影子评审一致率达到预设目标</td></tr>
+      <tr><td>S5<br>W11–12</td><td>SIE-03：异议三条路与验证题；考前预测冻结与对账卡；星图"为什么"；家长周报 v0；触发规则 v1（提醒、证据化鼓励、降负）；导出与删除</td><td>对账卡与周报文案审核；道法、语文首份报告字段</td><td><strong>随 M2 封测准入</strong>：禁用推断 0；删除覆盖全表；异议流程端到端可用</td></tr>
+      <tr><td>S6–S8<br>W13–18</td><td>封测支持：指标看板、离线回放评测、预测校准分析；中圈指标 v1 静默计算</td><td>收集至少一轮学校考试对账；学生与家长访谈"信不信这个判断"</td><td><strong>随 M3</strong>：预测覆盖率与误差基线；家长主观信任基线；问题清单关闭</td></tr>
+      <tr><td>S9–S13<br>W19–28</td><td>中圈指标效度检验与分批上线；讲法响应；个体遗忘参数；跨科审题力（≥ 两科证据）；外圈家庭层与通识课触发；公平性分组检查；IRT 试点接入</td><td>学习策略、自主学习维度的呈现方式设计；家长学院触发规则审核</td><td><strong>随 M4</strong>：至少两个中圈指标通过效度检验并上线；覆盖率接近名义值；群体误差无系统偏差</td></tr>
+      <tr><td>S14<br>W29–30</td><td>英语、历史接入上下文包白名单；每月复评流程固化</td><td>年度画像回顾的产品形态</td><td>新学科接入检查清单</td></tr>
+    </table></div>
+
+    <h3>风险与应对</h3>
+    <div class="tbl"><table>
+      <tr><th style="width:26%">风险</th><th>应对</th></tr>
+      <tr><td>对账暴露预测不准，反伤信任</td><td>区间随证据量变宽；首月标注"平台正在认识你"；如实展示并说明修正，用透明换信任</td></tr>
+      <tr><td>学生不愿上传、不愿录入考试</td><td>不上传也能用；对账卡作为录入的直接回报；家长端代录</td></tr>
+      <tr><td>异议被用来"刷掉"真实薄弱点</td><td>只有验证题能改判；"粗心"只记录不改判</td></tr>
+      <tr><td>画像字段膨胀、采集负担加重</td><td>字段字典准入：新增字段须说明它改变哪个教学决策</td></tr>
+      <tr><td>冷启动期判断少、界面空</td><td>以"待验证"和下一步验证任务填充，而不是用群体数据冒充个人判断</td></tr>
+      <tr><td>Claude Code 实现偏离规则</td><td>禁用推断与"无引用陈述"做成自动化测试；账本写入只开放给洞察服务</td></tr>
+    </table></div>
+
+    <h3>需要拍板的四件事</h3>
+    <div class="tbl"><table>
+      <tr><th style="width:4%">#</th><th style="width:40%">事项</th><th>建议</th></tr>
+      <tr><td>1</td><td>家长端是否公开"判断准不准"对账卡</td><td>公开；这是本方案信任设计的核心</td></tr>
+      <tr><td>2</td><td>首发对外展示的维度</td><td>仅数学的知识掌握与知识迁移；其余静默采集</td></tr>
+      <tr><td>3</td><td>上传原图保留期限</td><td>解析与核对完成后按合规方案到期删除，保留结构化结果</td></tr>
+      <tr><td>4</td><td>去标识数据用于服务改进的授权方式</td><td>单独勾选同意，默认不开启模型训练用途</td></tr>
+    </table></div>
+  </div>
+</section>
+
+<section id="s12">
+  <div class="margin"><span class="n">附</span>来源</div>
+  <div class="body">
+    <h2>整合的输入文档</h2>
+    <div class="tbl"><table>
+      <tr><th style="width:50%">文档</th><th>主要贡献</th></tr>
+      <tr><td>学生全方位画像解决方案（cc 版、另一版）</td><td>四层画像、带置信度的假设、证据权重表、外部锚点校准、自评准确度、冷启动三步；画像 Agent 与教学分离</td></tr>
+      <tr><td>学生全景学习画像与成长档案系统 V1.0</td><td>九层画像、三阶段入学、四级诊断、考后反查判断、不以摄像头推断情绪</td></tr>
+      <tr><td>学生学习水平和能力画像（六维）</td><td>六维结构；"暂时答对"与"已经掌握"之分；节点字段</td></tr>
+      <tr><td>多源数据采集与解析体系；全方位学情洞察方案</td><td>即时反向质询、提示依赖跟踪；更新节奏；其中心理与能力测评、分层标签被否决</td></tr>
+      <tr><td>分学段学情资料采集清单（两版）</td><td>必填 / 建议 / 可选分级、缺资料兜底、提醒节奏（取初中部分）</td></tr>
+      <tr><td>市场分析与一对一 Agent 思路（cc、claude、gpt、db、dp、kimi、qw）</td><td>行业短板、独立解题率为北极星、家长端从监控到合作、防抄闸门；qw 的摄像头情绪识别被否决</td></tr>
+      <tr><td>《产品开发完整方案》v1.0、《KGE》V1.0</td><td>三层学习者模型、数据分离、证据事件与掌握计算、学情档案页、排期</td></tr>
+    </table></div>
+    <p class="foot">魁星点斗 StarBuddy · 学生洞察引擎 V1.1 · 2026-09-27（V1.1：档案页改为模板渲染与惰性编译，与 KGE V1.1 一致）。指标门槛与排期为建议起点，封测后按实际数据修订。涉及未成年人个人信息的内容以专业法律意见为准。</p>
+  </div>
+</section>
+
+</div>
+<button class="print" onclick="window.print()">打印 / 保存为 PDF</button>
+</body>
+</html>

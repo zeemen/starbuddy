@@ -1,0 +1,20 @@
+{
+  "template_version": "syn-tpl-0.1.0",
+  "signed": false,
+  "fingerprint": "84043783e44a1e702a117060f436366cede92f7a18b20802353107190b19940b",
+  "templates": {
+    "monthly_plan.guardian.exam_month_routine": {"copy": "{{TODO_COPY:monthly_plan.guardian.exam_month_routine}}", "vars": ["exam_count"]},
+    "monthly_plan.guardian.mini_review_dates": {"copy": "{{TODO_COPY:monthly_plan.guardian.mini_review_dates}}", "vars": ["mini_review_count"]},
+    "monthly_plan.guardian.quiet_time_for_retests": {"copy": "{{TODO_COPY:monthly_plan.guardian.quiet_time_for_retests}}",
+                                                     "vars": ["retest_count", "sessions_per_week", "minutes_per_session"]},
+    "monthly_plan.guardian.weekly_rhythm_support": {"copy": "{{TODO_COPY:monthly_plan.guardian.weekly_rhythm_support}}",
+                                                    "vars": ["sessions_per_week", "minutes_per_session"]},
+    "monthly_plan.review.last_month": {"copy": "{{TODO_COPY:monthly_plan.review.last_month}}", "vars": ["planned_nodes"]},
+    "monthly_plan.review.lit": {"copy": "{{TODO_COPY:monthly_plan.review.lit}}", "vars": ["subject", "node_id"]},
+    "monthly_plan.review.score_gap": {"copy": "{{TODO_COPY:monthly_plan.review.score_gap}}", "vars": ["subject", "gap_band"]},
+    "monthly_plan.student.mini_review": {"copy": "{{TODO_COPY:monthly_plan.student.mini_review}}", "vars": ["subject", "date"]},
+    "monthly_plan.student.priority_node": {"copy": "{{TODO_COPY:monthly_plan.student.priority_node}}", "vars": ["subject", "node_id", "cognitive_level"]},
+    "monthly_plan.student.retests": {"copy": "{{TODO_COPY:monthly_plan.student.retests}}", "vars": ["count"]},
+    "monthly_plan.student.weekly_rhythm": {"copy": "{{TODO_COPY:monthly_plan.student.weekly_rhythm}}", "vars": ["sessions_per_week", "minutes_per_session"]}
+  }
+}

@@ -1,20 +1,123 @@
+insight.behavior_event|behavior_event_service_read|SELECT|starbuddy_insight,starbuddy_learning|PERMISSIVE|using=true|check=-
+insight.claim_history|history_insight_read|SELECT|starbuddy_insight|PERMISSIVE|using=true|check=-
+insight.claim_template|template_insight_read|SELECT|starbuddy_insight|PERMISSIVE|using=(status = ANY (ARRAY['approved'::text, 'retired'::text]))|check=-
+insight.claim_template|template_read|SELECT|starbuddy_bff,starbuddy_learning|PERMISSIVE|using=(status = 'approved'::text)|check=-
+insight.claim|claim_agent_read|SELECT|starbuddy_learning|PERMISSIVE|using=((status = ANY (ARRAY['hypothesis'::insight.claim_status, 'established'::insight.claim_status, 'to_verify'::insight.claim_status])) AND (expires_at > now()) AND ('agent'::text = ANY (visibility)) AND (EXISTS ( SELECT 1
+   FROM insight.claim_template t
+  WHERE ((t.template_key = claim.template_key) AND (t.version = claim.template_version)))))|check=-
+insight.claim|claim_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=((status = ANY (ARRAY['hypothesis'::insight.claim_status, 'established'::insight.claim_status, 'to_verify'::insight.claim_status])) AND (expires_at > now()) AND (EXISTS ( SELECT 1
+   FROM insight.claim_template t
+  WHERE ((t.template_key = claim.template_key) AND (t.version = claim.template_version)))) AND ((platform.is_self_student(student_id) AND ('student'::text = ANY (visibility))) OR (platform.is_linked_guardian(student_id) AND ('guardian'::text = ANY (visibility)))))|check=-
+insight.claim|claim_insight|ALL|starbuddy_insight|PERMISSIVE|using=true|check=true
+insight.confidence_probe|confidence_probe_service_read|SELECT|starbuddy_insight,starbuddy_learning|PERMISSIVE|using=true|check=-
+insight.dispute|dispute_insight_read|SELECT|starbuddy_insight|PERMISSIVE|using=true|check=-
+insight.dispute|dispute_insight_update|UPDATE|starbuddy_insight|PERMISSIVE|using=true|check=true
+insight.dispute|dispute_raiser_read|SELECT|starbuddy_bff|PERMISSIVE|using=((raised_by = platform.current_account_id()) AND platform.can_read_student(student_id))|check=-
+insight.exam_prediction|exam_prediction_insight|ALL|starbuddy_insight|PERMISSIVE|using=true|check=true
+insight.exam_reconciliation|exam_reconciliation_insight|ALL|starbuddy_insight|PERMISSIVE|using=true|check=true
+insight.exam_record|exam_record_service_read|SELECT|starbuddy_insight,starbuddy_learning|PERMISSIVE|using=true|check=-
+insight.guardian_report|guardian_report_service_read|SELECT|starbuddy_insight,starbuddy_learning|PERMISSIVE|using=true|check=-
+insight.intervention_log|intervention_insight|ALL|starbuddy_insight|PERMISSIVE|using=true|check=true
+insight.intervention_log|intervention_learning_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
+insight.intervention_rule_signoff|rule_signoff_insight_read|SELECT|starbuddy_insight|PERMISSIVE|using=true|check=-
+insight.onboarding_progress|onboarding_progress_service_read|SELECT|starbuddy_insight|PERMISSIVE|using=true|check=-
+insight.self_report|self_report_service_read|SELECT|starbuddy_insight,starbuddy_learning|PERMISSIVE|using=true|check=-
+insight.weekly_report|weekly_report_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=((status = 'generated'::text) AND (((audience = 'student'::text) AND platform.is_self_student(student_id)) OR ((audience = 'guardian'::text) AND platform.is_linked_guardian(student_id))))|check=-
+insight.weekly_report|weekly_report_insight|ALL|starbuddy_insight|PERMISSIVE|using=true|check=true
+kge.content_review|content_review_kge_read|SELECT|starbuddy_kge|PERMISSIVE|using=true|check=-
+kge.content_review|content_review_kge_submit|INSERT|starbuddy_kge|PERMISSIVE|using=-|check=((decision = 'pending'::text) AND (digest IS NULL) AND (action = 'review'::text))
+kge.content_review|content_review_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
+kge.current_affair|current_affair_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
+kge.current_affair|current_affair_reader|SELECT|starbuddy_kge_read|PERMISSIVE|using=((review_status = 'published'::text) AND kge.reader_version_published(map_version_id) AND (CURRENT_DATE >= valid_from) AND (CURRENT_DATE < valid_until))|check=-
+kge.current_affair|current_affair_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
+kge.curriculum_item|curriculum_item_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
+kge.curriculum_item|curriculum_item_reader|SELECT|starbuddy_kge_read|PERMISSIVE|using=true|check=-
+kge.curriculum_item|curriculum_item_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
+kge.id_migration|id_migration_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
+kge.id_migration|id_migration_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
+kge.item_family|item_family_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
+kge.item_family|item_family_reader|SELECT|starbuddy_kge_read|PERMISSIVE|using=kge.reader_version_published(map_version_id)|check=-
+kge.item_family|item_family_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
+kge.item_tag|item_tag_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
+kge.item_tag|item_tag_reader|SELECT|starbuddy_kge_read|PERMISSIVE|using=((tag_review_status = 'approved'::text) AND kge.reader_version_published(map_version_id))|check=-
+kge.item_tag|item_tag_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
+kge.knowledge_edge|edge_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=((status = 'active'::text) AND (EXISTS ( SELECT 1
+   FROM kge.map_version v
+  WHERE ((v.id = knowledge_edge.map_version_id) AND (v.status = 'published'::text)))) AND (EXISTS ( SELECT 1
+   FROM kge.map_version v
+  WHERE ((v.id = knowledge_edge.to_map_version_id) AND (v.status = 'published'::text)))))|check=-
+kge.knowledge_edge|edge_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
+kge.knowledge_edge|edge_reader|SELECT|starbuddy_kge_read|PERMISSIVE|using=((status = 'active'::text) AND kge.reader_version_published(map_version_id) AND kge.reader_version_published(to_map_version_id))|check=-
+kge.knowledge_edge|edge_read|SELECT|starbuddy_insight,starbuddy_learning|PERMISSIVE|using=true|check=-
+kge.knowledge_node|node_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=((status = 'active'::text) AND (EXISTS ( SELECT 1
+   FROM kge.map_version v
+  WHERE ((v.id = knowledge_node.map_version_id) AND (v.status = 'published'::text)))))|check=-
+kge.knowledge_node|node_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
+kge.knowledge_node|node_reader|SELECT|starbuddy_kge_read|PERMISSIVE|using=((status = 'active'::text) AND kge.reader_version_published(map_version_id))|check=-
+kge.knowledge_node|node_read|SELECT|starbuddy_insight,starbuddy_learning|PERMISSIVE|using=true|check=-
+kge.map_change|map_change_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
+kge.map_change|map_change_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
+kge.map_version|map_version_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=(status = 'published'::text)|check=-
+kge.map_version|map_version_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
+kge.map_version|map_version_reader|SELECT|starbuddy_kge_read|PERMISSIVE|using=(status = 'published'::text)|check=-
+kge.map_version|map_version_read|SELECT|starbuddy_insight,starbuddy_learning|PERMISSIVE|using=true|check=-
+kge.region_projection|region_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=((EXISTS ( SELECT 1
+   FROM kge.map_version v
+  WHERE ((v.id = region_projection.map_version_id) AND (v.status = 'published'::text)))) AND (EXISTS ( SELECT 1
+   FROM kge.knowledge_node n
+  WHERE ((n.map_version_id = region_projection.map_version_id) AND ((n.id)::text = (region_projection.node_id)::text) AND (n.status = 'active'::text)))))|check=-
+kge.region_projection|region_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
+kge.region_projection|region_reader|SELECT|starbuddy_kge_read|PERMISSIVE|using=(kge.reader_version_published(map_version_id) AND (EXISTS ( SELECT 1
+   FROM kge.knowledge_node n
+  WHERE ((n.map_version_id = region_projection.map_version_id) AND ((n.id)::text = (region_projection.node_id)::text) AND (n.status = 'active'::text)))))|check=-
+kge.region_projection|region_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
+kge.scoring_point|scoring_point_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
+kge.scoring_point|scoring_point_reader|SELECT|starbuddy_kge_read|PERMISSIVE|using=kge.reader_version_published(map_version_id)|check=-
+kge.scoring_point|scoring_point_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
+kge.skill_link|skill_link_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
+kge.skill_link|skill_link_reader|SELECT|starbuddy_kge_read|PERMISSIVE|using=kge.reader_version_published(map_version_id)|check=-
+kge.skill_link|skill_link_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
+kge.tag_candidate|tag_candidate_kge_read|SELECT|starbuddy_kge|PERMISSIVE|using=true|check=-
+kge.tag_candidate|tag_candidate_kge_submit|INSERT|starbuddy_kge|PERMISSIVE|using=-|check=((status = 'open'::text) AND (decided_at IS NULL))
+kge.textbook_projection|textbook_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=((mapping_state = 'verified'::text) AND (EXISTS ( SELECT 1
+   FROM kge.map_version v
+  WHERE ((v.id = textbook_projection.map_version_id) AND (v.status = 'published'::text)))) AND (EXISTS ( SELECT 1
+   FROM kge.knowledge_node n
+  WHERE ((n.map_version_id = textbook_projection.map_version_id) AND ((n.id)::text = (textbook_projection.node_id)::text) AND (n.status = 'active'::text)))))|check=-
+kge.textbook_projection|textbook_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
+kge.textbook_projection|textbook_reader|SELECT|starbuddy_kge_read|PERMISSIVE|using=((mapping_state = 'verified'::text) AND kge.reader_version_published(map_version_id) AND (EXISTS ( SELECT 1
+   FROM kge.knowledge_node n
+  WHERE ((n.map_version_id = textbook_projection.map_version_id) AND ((n.id)::text = (textbook_projection.node_id)::text) AND (n.status = 'active'::text)))))|check=-
+kge.textbook_projection|textbook_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
 platform.account|account_self_read|SELECT|starbuddy_bff|PERMISSIVE|using=(id = platform.current_account_id())|check=-
+platform.attempt|attempt_insight_read|SELECT|starbuddy_insight|PERMISSIVE|using=true|check=-
 platform.attempt|attempt_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
 platform.attempt|attempt_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
 platform.consent_record|consent_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
 platform.consent_record|consent_write|INSERT|starbuddy_bff|PERMISSIVE|using=-|check=((guardian_account_id = platform.current_account_id()) AND platform.is_linked_guardian(student_id))
 platform.curriculum_version|cv_public_read|SELECT|starbuddy_bff|PERMISSIVE|using=(status = 'published'::text)|check=-
 platform.curriculum_version|cv_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
+platform.diagnosis_session|diagnosis_session_learning|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
+platform.diagnosis_session|diagnosis_session_self|SELECT|starbuddy_bff|PERMISSIVE|using=platform.is_self_student(student_id)|check=-
+platform.diagnosis_step|diagnosis_step_learning|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
+platform.diagnosis_step|diagnosis_step_self|SELECT|starbuddy_bff|PERMISSIVE|using=(EXISTS ( SELECT 1
+   FROM platform.diagnosis_session s
+  WHERE ((s.id = diagnosis_step.session_id) AND platform.is_self_student(s.student_id))))|check=-
 platform.entitlement|entitlement_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
+platform.erasure_request|erasure_request_guardian_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.is_linked_guardian(student_id)|check=-
 platform.error_attribution|attr_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
 platform.error_attribution|attr_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
+platform.error_attribution|attribution_insight_read|SELECT|starbuddy_insight|PERMISSIVE|using=true|check=-
+platform.evidence_event|evidence_insight_read|SELECT|starbuddy_insight|PERMISSIVE|using=true|check=-
 platform.evidence_event|evidence_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
 platform.evidence_event|evidence_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
 platform.evidence_registry|evidence_registry_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
+platform.feedback|feedback_submit|INSERT|starbuddy_bff|PERMISSIVE|using=-|check=((submitter_account_id = platform.current_account_id()) AND (status = 'new'::text) AND (status_changed_at IS NULL) AND (status_changed_by IS NULL) AND (((source = 'student_self_report'::text) AND platform.is_self_student(student_id)) OR ((source = 'guardian_observation'::text) AND platform.is_linked_guardian(student_id))) AND (NOT platform.internal_test_exited(student_id)))
 platform.grade_dimension|dim_read|SELECT|starbuddy_bff|PERMISSIVE|using=(EXISTS ( SELECT 1
    FROM platform.grade_result g
   WHERE ((g.id = grade_dimension.grade_result_id) AND platform.can_read_student(g.student_id))))|check=-
 platform.grade_dimension|dim_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
+platform.grade_result|grade_insight_read|SELECT|starbuddy_insight|PERMISSIVE|using=true|check=-
 platform.grade_result|grade_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
 platform.grade_result|grade_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
 platform.guardian_report|greport_delete|DELETE|starbuddy_bff|PERMISSIVE|using=(guardian_account_id = platform.current_account_id())|check=-
@@ -25,10 +128,14 @@ platform.guardian_student_link|link_read|SELECT|starbuddy_bff|PERMISSIVE|using=(
 platform.guardian_student_link|link_revoke|UPDATE|starbuddy_bff|PERMISSIVE|using=((status = 'active'::text) AND (((guardian_account_id = platform.current_account_id()) AND platform.is_active_guardian()) OR platform.is_self_student(student_id)))|check=(status = 'revoked'::text)
 platform.household|household_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_household(id)|check=-
 platform.ingest_request|ingest_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
-platform.item|item_read|SELECT|starbuddy_bff|PERMISSIVE|using=(admission = 'admitted'::platform.admission)|check=-
+platform.item|item_read|SELECT|starbuddy_bff|PERMISSIVE|using=((admission = 'admitted'::platform.admission) AND (EXISTS ( SELECT 1
+   FROM platform.curriculum_version v
+  WHERE ((v.id = item.curriculum_version_id) AND (v.status = 'published'::text)))))|check=-
 platform.item|item_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
+platform.mastery_estimate|mastery_insight_read|SELECT|starbuddy_insight|PERMISSIVE|using=true|check=-
 platform.mastery_estimate|mastery_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
 platform.mastery_estimate|mastery_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
+platform.model_call_log|model_call_log_learning_insert|INSERT|starbuddy_learning|PERMISSIVE|using=-|check=((occurred_at >= (now() - '1 day'::interval)) AND (occurred_at <= (now() + '00:05:00'::interval)))
 platform.plan_allowance|plan_allowance_read|SELECT|starbuddy_bff|PERMISSIVE|using=(EXISTS ( SELECT 1
    FROM platform.plan_config c
   WHERE (((c.version)::text = (plan_allowance.config_version)::text) AND (c.status <> 'draft'::text))))|check=-
@@ -36,18 +143,73 @@ platform.plan_config|plan_config_read|SELECT|starbuddy_bff|PERMISSIVE|using=(sta
 platform.plan_feature|plan_feature_read|SELECT|starbuddy_bff|PERMISSIVE|using=(EXISTS ( SELECT 1
    FROM platform.plan_config c
   WHERE (((c.version)::text = (plan_feature.config_version)::text) AND (c.status <> 'draft'::text))))|check=-
+platform.practice_log|practice_log_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
+platform.profile_page_check|profile_page_check_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
+platform.profile_page|profile_page_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
+platform.profile_page|profile_page_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
+platform.replay_seal|replay_seal_insert|INSERT|starbuddy_learning|PERMISSIVE|using=-|check=true
+platform.replay_seal|replay_seal_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
 platform.resource_type|resource_type_read|SELECT|starbuddy_bff|PERMISSIVE|using=true|check=-
-platform.review_task|review_service_open|INSERT|starbuddy_learning|PERMISSIVE|using=-|check=((status = 'open'::text) AND (resolved_at IS NULL) AND (resolved_by_account IS NULL))
+platform.retest_task|retest_task_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
+platform.retest_task|retest_task_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
+platform.review_resolution_code|resolution_code_read|SELECT|starbuddy_review|PERMISSIVE|using=true|check=-
+platform.review_task|review_service_open|INSERT|starbuddy_learning|PERMISSIVE|using=-|check=((status = 'open'::text) AND (resolved_at IS NULL) AND (resolved_by_account IS NULL) AND (assigned_to IS NULL) AND (assigned_at IS NULL) AND (NOT ('profile_dispute'::text = ANY ((reasons)::text[]))) AND (((source_kind = 'grade_result'::text) AND (NOT ('process_observation'::text = ANY ((reasons)::text[]))) AND (EXISTS ( SELECT 1
+   FROM platform.grade_result g
+  WHERE ((g.id = review_task.source_id) AND (g.student_id = review_task.student_id) AND (g.subject = review_task.subject) AND ((review_task.reasons)::text[] <@ (g.review_reasons)::text[]))))) OR ((source_kind = 'diagnosis_step'::text) AND ((reasons)::text[] = ARRAY['process_observation'::text]) AND (EXISTS ( SELECT 1
+   FROM (platform.diagnosis_step st
+     JOIN platform.diagnosis_session s ON ((s.id = st.session_id)))
+  WHERE ((st.id = review_task.source_id) AND (st.kind = ANY (ARRAY['process'::text, 'explain'::text])) AND (st.status = 'answered'::text) AND (s.student_id = review_task.student_id) AND (s.subject = review_task.subject)))))))
 platform.review_task|review_service_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
-platform.review_task|review_staff_read|SELECT|starbuddy_review|PERMISSIVE|using=true|check=-
-platform.skill_node|skill_node_read|SELECT|starbuddy_bff|PERMISSIVE|using=true|check=-
+platform.skill_node|skill_node_read|SELECT|starbuddy_bff|PERMISSIVE|using=(EXISTS ( SELECT 1
+   FROM platform.curriculum_version v
+  WHERE ((v.id = skill_node.curriculum_version_id) AND (v.status = 'published'::text))))|check=-
 platform.skill_node|skill_node_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
 platform.skill_observation|obs_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
 platform.skill_observation|obs_service|ALL|starbuddy_learning|PERMISSIVE|using=true|check=true
+platform.skill_observation|observation_insight_read|SELECT|starbuddy_insight|PERMISSIVE|using=true|check=-
+platform.staff_permission|staff_permission_self_read|SELECT|starbuddy_review|PERMISSIVE|using=(staff_id = platform.current_account_id())|check=-
 platform.student_profile|student_profile_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(id)|check=-
 platform.student_profile|student_profile_service_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
+platform.student_subject_textbook|textbook_service_read|SELECT|starbuddy_insight,starbuddy_learning|PERMISSIVE|using=true|check=-
+platform.student_time_guard|student_time_guard_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
+platform.subject_catalog|subject_catalog_read|SELECT|starbuddy_bff|PERMISSIVE|using=true|check=-
 platform.subject_enrollment|enrollment_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
 platform.subject_enrollment|enrollment_service_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
 platform.subscription|subscription_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
+platform.today_plan_item|today_plan_item_read|SELECT|starbuddy_bff|PERMISSIVE|using=(platform.can_read_student(student_id) AND (plan_date = ((now() AT TIME ZONE 'Asia/Shanghai'::text))::date))|check=-
+platform.today_plan_item|today_plan_item_service_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
+platform.today_plan_item|today_plan_item_service_write|INSERT|starbuddy_learning|PERMISSIVE|using=-|check=true
 platform.usage_ledger|usage_ledger_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
 platform.usage_reservation|usage_reservation_read|SELECT|starbuddy_bff|PERMISSIVE|using=platform.can_read_student(student_id)|check=-
+policy.admission_line_control_line_archive|control_line_archive_read|SELECT|starbuddy_kge,starbuddy_learning|PERMISSIVE|using=true|check=-
+policy.admission_line|admission_line_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=(status = 'published'::policy.pub_status)|check=-
+policy.admission_line|admission_line_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
+policy.admission_line|admission_line_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
+policy.admission_rule|admission_rule_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=(EXISTS ( SELECT 1
+   FROM policy.exam_scheme s
+  WHERE ((s.id = admission_rule.scheme_id) AND (s.status = ANY (ARRAY['published'::policy.pub_status, 'retired'::policy.pub_status])))))|check=-
+policy.admission_rule|admission_rule_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
+policy.admission_rule|admission_rule_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
+policy.control_line|control_line_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=(status = 'published'::policy.pub_status)|check=-
+policy.control_line|control_line_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
+policy.control_line|control_line_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
+policy.exam_scheme|exam_scheme_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=(status = ANY (ARRAY['published'::policy.pub_status, 'retired'::policy.pub_status]))|check=-
+policy.exam_scheme|exam_scheme_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
+policy.exam_scheme|exam_scheme_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
+policy.school|school_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=(review_status = 'published'::policy.pub_status)|check=-
+policy.school|school_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
+policy.school|school_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
+policy.source_document|source_document_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=(status = ANY (ARRAY['published'::policy.pub_status, 'retired'::policy.pub_status]))|check=-
+policy.source_document|source_document_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
+policy.source_document|source_document_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
+policy.source_domain|source_domain_read|SELECT|starbuddy_kge,starbuddy_learning|PERMISSIVE|using=true|check=-
+policy.subject_config|subject_config_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=(EXISTS ( SELECT 1
+   FROM policy.exam_scheme s
+  WHERE ((s.id = subject_config.scheme_id) AND (s.status = ANY (ARRAY['published'::policy.pub_status, 'retired'::policy.pub_status])))))|check=-
+policy.subject_config|subject_config_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
+policy.subject_config|subject_config_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-
+policy.transition_rule|transition_rule_front_read|SELECT|starbuddy_bff|PERMISSIVE|using=(EXISTS ( SELECT 1
+   FROM policy.exam_scheme s
+  WHERE ((s.id = transition_rule.scheme_id) AND (s.status = ANY (ARRAY['published'::policy.pub_status, 'retired'::policy.pub_status])))))|check=-
+policy.transition_rule|transition_rule_kge|ALL|starbuddy_kge|PERMISSIVE|using=true|check=true
+policy.transition_rule|transition_rule_read|SELECT|starbuddy_learning|PERMISSIVE|using=true|check=-

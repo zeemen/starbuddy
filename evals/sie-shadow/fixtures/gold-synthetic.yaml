@@ -1,0 +1,20 @@
+# 合成、非金标：影子评审教师判断的格式样例（真实金标由教研提交到 evals/sie-shadow/gold/，只读；构建方不创建、不修改）。
+# 评审人只写编码，不写姓名；学生只写平台学生 ID（占位）。
+format: sie-shadow-gold/0.1
+synthetic: true
+students:
+  - student_ref: 00000000-0000-4000-8000-00000000a001
+    reviewer: syn-teacher-01
+    judgments:
+      - {node_id: MATH.SYN.EQ.LINEAR, level: apply, state: execute}
+      - {node_id: MATH.SYN.EQ.APPLY, level: apply, state: execute}
+      - {node_id: MATH.SYN.EQ.TRANSPOSE, level: understand, state: transfer}
+  - student_ref: 00000000-0000-4000-8000-00000000a002
+    reviewer: syn-teacher-02
+    judgments:
+      - {node_id: MATH.SYN.EQ.LINEAR, level: apply, state: stable}
+      - {node_id: MATH.SYN.EXPR.SQUARE_DIFF, level: apply, state: execute}
+  - student_ref: 00000000-0000-4000-8000-00000000a003
+    reviewer: syn-teacher-01
+    judgments:
+      - {node_id: MATH.SYN.EQ.LINEAR, level: apply, state: execute}

@@ -1,0 +1,19 @@
+{
+  "format": "kge-semantic-scope/1",
+  "synthetic": true,
+  "note": "合成样例（KGE-11 测试夹具）：只演示格式与检查行为，不是课标范围的正式词表；正式版由教研提供（spec 待人确认 #2）",
+  "subjects": {
+    "aya": {
+      "stages": ["junior"],
+      "terms": [
+        {"term": "合成高阶导数", "stage": "senior"},
+        {"term": "合成复数域", "stage": "senior"},
+        {"term": "合成矩阵", "stage": "college"},
+        {"term": "合成代入法", "stage": "junior"}
+      ],
+      "node_allow": {
+        "MATH.SYN.EXPR.SQUARE_DIFF": ["合成复数域"]
+      }
+    }
+  }
+}

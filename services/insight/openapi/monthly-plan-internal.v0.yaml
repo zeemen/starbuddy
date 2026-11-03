@@ -1,0 +1,85 @@
+# 洞察服务的月度计划生成内部接口（specs/family-goals-monthly-plan/step2-spec.md 默认设计 2）。只供编排层（调度）与 BFF 调用。
+# 放在服务目录而不是 packages/contracts：本任务不改契约（CLAUDE.md 必停项），沿用学习服务今日计划、复测、再练内部接口的先例。
+openapi: 3.1.0
+info:
+  title: StarBuddy insight service · monthly plan generation (internal, v0 draft)
+  version: 0.1.0
+  description: >
+    为一名学生生成本月（上海时区）的月度计划快照并落库（迁移 0054 草稿 insight.monthly_plan，经 insight.save_monthly_plan）。
+    处理顺序：请求体 → BFF 代表家长时在库内再核 actor（insight.verify_actor，0044，与 insight-service 契约“调用方、受众与代表谁”同一口径）→
+    月份须是本月 → 已有本月快照先返回（status = exists，不写新行）→ 再查权益（学生当前主订阅配置的 weekly_report 取值含 monthly）→ 生成落库。
+    不泄露存在性与套餐档位：BFF 没带 actor、actor 不是该学生的有效绑定家长、档案不存在或已删除、没有权益，一律同一个回答
+    （404，code = CONTENT_VERSION_NOT_FOUND，正文相同）；不写行、不计量（自动月报不计次）。
+    结果只回状态、快照 ID、月份、生成时间与输入摘要，不回快照内容：家长与学生只经 0054 的两个视图函数（insight.monthly_plan_guardian_view、
+    insight.monthly_plan_student_view，只授 BFF）按受众读取，学生读不到家长注意事项、回顾与诉求。
+    鉴权：Bearer 服务间令牌，编排层或 BFF 的令牌（洞察服务的 INSIGHT_TOKEN_ORCHESTRATOR / INSIGHT_TOKEN_BFF）；编排层不带 actor（带了 400），
+    BFF 必须带 actor。请求体上限 64 KB，拒绝未知键、NaN、重复键；Host 头须在允许列表里。
+servers:
+  - url: http://127.0.0.1:8791
+security:
+  - serviceToken: []
+paths:
+  /internal/v1/monthly-plan/generate:
+    post:
+      operationId: monthlyPlanGenerate
+      description: 生成本月的月度计划快照（幂等：已有快照先返回，再查权益）。不调模型、不计量。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [student_id, month]
+              properties:
+                student_id: { type: string, format: uuid, pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', description: 小写 UUID }
+                month: { type: string, pattern: '^20[2-9][0-9]-(0[1-9]|1[0-2])$', description: 年月（YYYY-MM），只能是本月（上海时区） }
+                actor:
+                  description: BFF 必带（代表的家长账号，在库内再核为有效绑定家长）；编排层不得带
+                  type: object
+                  additionalProperties: false
+                  required: [role, actor_ref]
+                  properties:
+                    role: { const: guardian }
+                    actor_ref: { type: string, format: uuid }
+      responses:
+        '200':
+          description: 已生成或已有（幂等）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MonthlyPlanResult' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { description: 'CONTENT_VERSION_NOT_FOUND：actor 再核不通过、档案不存在或已删除、没有权益（同一个回答）', $ref: '#/components/responses/Problem' }
+        '409': { description: MONTH_NOT_CURRENT（月份不是本月）或 PLAN_REJECTED（库里守卫拒收，可重试）, $ref: '#/components/responses/Problem' }
+        '413': { $ref: '#/components/responses/Problem' }
+        '501': { description: 'METHOD_NOT_IMPLEMENTED：月度计划没有启用（staging 没配 INSIGHT_MONTHLY_PLAN 时不加载配置与模板库，LT-01 决定记录第 9 条）', $ref: '#/components/responses/Problem' }
+components:
+  securitySchemes:
+    serviceToken: { type: http, scheme: bearer }
+  schemas:
+    MonthlyPlanResult:
+      type: object
+      additionalProperties: false
+      required: [status, plan_id, month, generated_at, inputs_digest]
+      properties:
+        status: { enum: [generated, exists] }
+        plan_id: { type: string, format: uuid }
+        month: { type: string, pattern: '^20[2-9][0-9]-(0[1-9]|1[0-2])$' }
+        generated_at: { type: string, minLength: 10, maxLength: 40 }
+        inputs_digest: { type: string, pattern: '^[0-9a-f]{64}$', description: 生成输入的规范化 JSON 的 SHA-256（重放核对用） }
+    Problem:
+      type: object
+      required: [type, title, status, code, retryable]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        code: { enum: [INVALID_REQUEST, CONTENT_VERSION_NOT_FOUND, MONTH_NOT_CURRENT, PLAN_REJECTED, METHOD_NOT_IMPLEMENTED, INTERNAL] }
+        retryable: { type: boolean }
+  responses:
+    Problem:
+      description: 错误（problem+json）
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

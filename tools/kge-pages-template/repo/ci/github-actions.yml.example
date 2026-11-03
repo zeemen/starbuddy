@@ -1,0 +1,59 @@
+# 样例：托管平台选 GitHub 时，改名为 .github/workflows/kge-lint.yml（平台待 ADR 12 #1）。
+# 任务名“kge-lint”要设为分支保护的必须通过检查（BRANCH_PROTECTION.md 第 3 条）。
+#
+# 安全要点（BRANCH_PROTECTION.md 第 13–18 条）：
+# - 触发器只用 pull_request：它不向合并请求暴露 secrets，GITHUB_TOKEN 按下面的 permissions 只读。
+#   不得改用 pull_request_target 检出或运行头部代码（它带着目标仓库的写权限与 secrets）。
+# - 本任务不引用任何 secrets 或凭据；两次检出都 persist-credentials: false。检查工具取固定版本的预构建只读制品
+#   （main 里的 ci/install-tools.sh + ci/kge-tools.pin：先核 sha256，依赖 pip --require-hashes）。
+# - lint.sh、地图快照、人设词表、上一审核版一律取自 main 的检出；合并请求头部只取 pages/，其余头部文件一概不用、不执行。
+# - 每个 action 固定到完整提交 SHA。下面的 0000… 是占位，启用前必须替换为该 action 某一发布版的提交 SHA（注释里写版本号）。
+# - pull_request 事件运行的是合并请求里的这份工作流文件：.github/ 必须由平台负责人审核（CODEOWNERS）；平台支持时，
+#   改用组织级规则集的“必需工作流”（工作流放在受保护的中心仓库），合并请求改不到它。
+name: kge-lint
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  kge-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: 检出 main（lint.sh、地图快照、词表、上一审核版都从这里取）
+        uses: actions/checkout@0000000000000000000000000000000000000000 # 占位：替换为 actions/checkout 发布版的完整提交 SHA
+        with:
+          ref: main
+          path: main
+          persist-credentials: false
+      - name: 检出合并请求头部（只取 pages/）
+        uses: actions/checkout@0000000000000000000000000000000000000000 # 占位：同上
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: head
+          persist-credentials: false
+          sparse-checkout: /pages/
+          sparse-checkout-cone-mode: false
+      - name: 只保留头部的 pages/
+        run: |
+          mkdir -p "$RUNNER_TEMP/head"
+          cp -R head/pages "$RUNNER_TEMP/head/pages"
+          rm -rf head
+      - uses: actions/setup-python@0000000000000000000000000000000000000000 # 占位：替换为 actions/setup-python 发布版的完整提交 SHA
+        with:
+          python-version: "3.11"
+      - name: 安装检查工具（固定版本制品，无凭据）
+        run: bash main/ci/install-tools.sh "$RUNNER_TEMP/kge-tools"
+      - name: 程序体检
+        run: bash main/ci/lint.sh
+        env:
+          KNOWLEDGE_DIR: ${{ runner.temp }}/kge-tools/services/knowledge
+          HEAD_PAGES_DIR: ${{ runner.temp }}/head/pages
+          LINT_REPORT: ${{ runner.temp }}/lint-report.json
+          CI: "true"
+      - uses: actions/upload-artifact@0000000000000000000000000000000000000000 # 占位：替换为 actions/upload-artifact 发布版的完整提交 SHA
+        if: always()
+        with:
+          name: lint-report
+          path: ${{ runner.temp }}/lint-report.json

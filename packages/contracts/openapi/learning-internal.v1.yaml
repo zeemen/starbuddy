@@ -1,0 +1,1246 @@
+openapi: 3.1.0
+info:
+  title: StarBuddy 学习服务内部 API（BFF → 学习服务）
+  version: 1.1.0
+  summary: 冲刺 1-C 写入接口；1.1.0 加掌握读取与验证任务（KGE-04 第二步）。只供平台内部服务调用，学生与家长不能直接访问。
+  x-signoff:
+    signed_by: 用户（代表技术负责人）
+    date: '2026-10-20'
+    status: signed
+    version: 1.1.0
+    record: specs/launch-lt04-learning-internal-v1/spec.md（签字与决定记录）
+  description: |
+    状态：**已签字，1.1.0 正式版**（2026-10-20，用户代表技术负责人；`specs/launch-lt04-learning-internal-v1/spec.md`，见 `info.x-signoff`）。
+    之后任何改动走契约变更（必停）。起草依据 `specs/plugin-api-v1.0/spec.md`、评审清单 N17、N18。
+    v0（`learning-internal.v0.yaml`）的写入已于签字后下线（`/internal/v0/grade`、`/internal/v0/diagnose` 一律 410；
+    specs/launch-lt04-learning-internal-v1 决定记录（再续）第 1 条），写入只经本契约。
+
+    相对 v0：请求体改为信封（插件 API v1.0 的 `GradeRequest` / `DiagnoseRequest` 加平台侧的 `IngestContext`）；
+    新增只查询、不执行的重放接口（N17）；写明 5xx 一律是结果未知（N18）；摘要带证据等级与是否写入学习者模型。
+    冲刺 4-H 另加非消耗类的今日计划 `POST /internal/v1/plan`（specs/unified-shell-sprint4/spec.md 第 6 节），随 1.1.0 一并签字。
+
+    ## 1.1.0（KGE-04 第二步 PR 3，specs/kge-04-mastery-step2/spec.md 第 3 节；2026-10-20 随本契约签字）
+    非破坏性：只新增四个接口、两个令牌方案与 Problem 的三个错误码，已有接口与 schema 不变。
+    - `POST /internal/v1/mastery/get`、`POST /internal/v1/mastery/explain`：请求与响应**直接引用** `knowledge-service.v0.9.yaml` 的
+      `MasteryGetRequest / MasteryGetResponse`、`MasteryExplainRequest / MasteryExplainResponse`（形状逐字照搬，信封五字段齐全，
+      `contract_version` 仍是知识服务形状的 0.9.0）。知识服务的 `/v0/mastery.*` 继续回 501（第二步待人确认 #2）。
+      只给编排层（编排层专用令牌 `orchestratorServiceToken`；BFF 服务令牌与洞察服务令牌一律 401；`context.caller` 必须与令牌身份一致，
+      即 `orchestrator`，否则 403 `CALLER_MISMATCH`）。结果是推断：
+      对学生、家长的任何陈述仍须经洞察服务的判断（规则 11），本接口不对前端开放。
+    - `POST /internal/v1/verification`：SIE-03“我其实会”建平台内验证任务（`retest_task.reason = verify_self_report`），
+      只建任务、不改掌握；同一异议重复调用返回同一条任务。只接受洞察服务令牌（`insightServiceToken`），BFF 令牌一律 401。
+      返回任务 ID 与 `item.similar` 选题入口所需的节点与层次，**不返回题目内容**（第二步待人确认 #3）。
+    - `POST /internal/v1/verification/cancel`：洞察服务写异议的事务在建任务之后回滚时的补偿，按任务 ID + 学生撤销 open 的自述验证任务；
+      幂等、不改掌握；只接受洞察服务令牌。
+    - （KGE-04 第二步 PR 4，在 1.1.0 签字前追加，非破坏性）`POST /internal/v1/profile-page/ensure` 与
+      `POST /internal/v1/profile-page/read`：学情档案页的惰性编译与 Agent 版读取（第一步 spec 第 14 节）。ensure 接受编排层令牌
+      （`trigger = session_start`）或洞察服务令牌（`trigger = weekly`，周报生成前），令牌与触发点不符 403 `CALLER_MISMATCH`；
+      read 只接受编排层令牌。新增 Problem 码 `PROFILE_UNAVAILABLE`。不调模型；BFF 令牌一律 401。
+    - （冲刺 4-H H5 星图 v1 PR 1，specs/star-map-v1-h5/spec.md 第 2 节；在 1.1.0 签字前追加，非破坏性）
+      `POST /internal/v1/star-map/nodes`：当前已发布地图里每颗星（知识节点）的星态，只认 BFF 服务令牌（`bffServiceToken`；
+      编排层、洞察服务令牌一律 401）。只有 `node_id`、`state`、`star_lit`、`basis_id`，**不含** `p_mastery`、`confidence`、证据 ID
+      与各层次明细（schema 用 `additionalProperties: false` 保证）。地图未发布为 200 `status = no_map`；`MASTERY_UNAVAILABLE` 的用途扩大到本接口。
+
+    请求体是信封 `{ request, ingest }`：`request` 是学科插件 API v1.0 的 `GradeRequest` / `DiagnoseRequest`
+    （`plugin-api.v1.0.yaml`），原样转发给适配器；`ingest` 是平台侧的作答上下文（输入通道），只由学习服务使用，
+    不转发给适配器（ADR 15；specs/evidence-attributes-sprint1）。证据等级与用途（purpose）由学习服务推导，不接受调用方自报：
+    直接经本接口写入的用途只能是 practice；非键盘通道在平台确认记录上线前一律 400 `INVALID_REQUEST`（见 `IngestContext`）。
+    BFF 在调用前已完成鉴权、家长授权、选科（subject_enrollment）与同意（consent）检查，以及计量预留
+    （ADR 01 第 4 条、ADR 06）。学习服务不重复做鉴权、授权、选科与同意检查；计量方面，学习服务不预留、不结算，
+    但签字后（LT-04）写入前按计量账本只读核对 BFF 的预留（见“计量”最后一条），对不上即拒绝。学习服务调用对应学科的适配器，
+    按平台规则核对结果，在一个事务里幂等地写入学习者模型，然后返回**平台摘要**，不原样转发适配器响应。
+
+    ## 幂等
+    - 同一个 `request.context.idempotency_key` 与同一请求体（含 `ingest`，不含 `request_id`）重试：返回同一摘要，
+      响应头 `idempotent-replayed: true`，不再调用适配器、不写任何行。
+    - 同一个 key 配不同请求体：409 `IDEMPOTENCY_CONFLICT`。
+    - 并发到达的同 key 请求只执行一次，其余等它完成后拿到同一结果。
+
+    ## 计量
+    学习服务不预留、不结算（ADR 06）。BFF 按本接口的结果结算：
+    - 200：结算。
+    - 4xx 且 `retryable: false`：结果确定没有写入，回滚。
+    - **5xx 一律是结果未知**，不论 `retryable` 取值（评审 N18）；`retryable: true` 的 4xx（`BUSY` 等）与 BFF 自己超时同样是结果未知。
+      原来那次执行可能随后成功落库。BFF 不能直接回滚，必须用**同一个** `idempotency_key` 重试，按重试的结果结算或回滚
+      （安全审查 S7；ADR 06）。
+    - 计量预留过期后，BFF 先用重放接口（`GET /internal/v1/replay/{method}/{idempotency_key}`）查结果，只查不执行：
+      已写入就拿回摘要且不扣费；没有记录或失败过，重放接口**同时封存这个 key**，之后以它到达的原请求一律返回
+      409 `IDEMPOTENCY_KEY_SEALED`、不执行，BFF 再换新 key 重新预留。这样晚到的原请求不会在没有预留的情况下执行，
+      同一次作答也不会写两遍（评审 N17；安全审查、契约审查必须改）。
+    - 签字后的写入防护（LT-04）：grade、diagnose 只接受 BFF 服务令牌；学习服务写入前按计量账本核对 `request.context.usage_id`、
+      `idempotency_key`、学生与方法（只读核对，不预留、不结算），对不上（含没带 `usage_id`）时返回 409 `IDEMPOTENCY_KEY_SEALED`：
+      **该幂等键无有效计量，不可写入**（`retryable: false`，不调适配器、不落库，BFF 按确定失败释放）；同一个 key 已成功写入的重放不受影响。
+  license:
+    name: 内部，未授权对外
+    identifier: LicenseRef-StarBuddy-Internal
+servers:
+  - url: http://127.0.0.1:8788
+    description: 学习服务只监听本机，由平台侧网关转发。
+security:
+  - bffServiceToken: []
+
+paths:
+  /internal/v1/grade:
+    post:
+      operationId: ingestGrade
+      summary: 判分并写入学习者模型
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GradeIngest' }
+            examples:
+              keypad: { $ref: '#/components/examples/GradeIngestKeypad' }
+      responses:
+        '200':
+          description: 已写入（或重放已写入的结果）
+          headers:
+            idempotent-replayed: { schema: { type: string, enum: ['true', 'false'] } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GradeSummary' }
+              examples:
+                levelC: { $ref: '#/components/examples/GradeSummaryLevelC' }
+        default: { $ref: '#/components/responses/Problem' }
+  /internal/v1/diagnose:
+    post:
+      operationId: ingestDiagnose
+      summary: 诊断并写入学习者模型（冲刺 1 只支持带 attempts 的同步诊断）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DiagnoseIngest' }
+            examples:
+              canvasC: { $ref: '#/components/examples/DiagnoseIngestCanvasC' }
+      responses:
+        '200':
+          description: 已写入（或重放已写入的结果）
+          headers:
+            idempotent-replayed: { schema: { type: string, enum: ['true', 'false'] } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DiagnoseSummary' }
+              examples:
+                levelC: { $ref: '#/components/examples/DiagnoseSummaryLevelC' }
+        default: { $ref: '#/components/responses/Problem' }
+  /internal/v1/replay/{method}/{idempotency_key}:
+    get:
+      operationId: replayResult
+      summary: 只查询、不执行：按方法与幂等键返回已有结果（评审 N17）
+      description: |
+        不调用适配器，不写任何行。已成功写入 → 200 与原摘要（响应头 `idempotent-replayed: true`）；
+        没有记录，或之前的执行确定失败 → 404 `REPLAY_NOT_FOUND`，并封存这个 key（见“计量”）；
+        同 key 的执行仍在进行 → 409 `BUSY`（结果未知，稍后再查）。
+        必须带 `student_ref` 与 `usage_id`：与原请求不一致时和“没有记录”同样返回 404，不透露 key 是否存在，也不封存别人的 key。
+        只供 BFF 以服务令牌调用，**禁止**经网关对客户端开放。
+      parameters:
+        - { name: method, in: path, required: true, schema: { type: string, enum: [grade, diagnose] } }
+        - name: idempotency_key
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' }
+        - { name: student_ref, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: usage_id, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: 已写入的结果
+          headers:
+            idempotent-replayed: { schema: { type: string, enum: ['true'] } }
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/GradeSummary'
+                  - $ref: '#/components/schemas/DiagnoseSummary'
+        default: { $ref: '#/components/responses/Problem' }
+  /internal/v1/plan:
+    post:
+      operationId: planToday
+      summary: 今日计划（按科并列；冲刺 4-H 统一壳，specs/unified-shell-sprint4/spec.md 第 6 节）
+      description: |
+        非消耗类：不计量、不写任何表、计划不落库，每次现算。
+
+        BFF 已按会话与档案授权确定学生，并从已选科目里给出要排的学科（`subjects`）。学习服务对每一科：
+        读该生当前的掌握快照（平台掌握状态，规则 2；`next_retest_at` 按 KGE-04 的复测调度），组装插件 API v1.0 的
+        `PlanRequest` 调该科适配器的 `/plan`，按契约校验结果，再把能力点（`skill_nodes`）经已发布地图版本的
+        `kge.skill_link` 换算成知识节点 ID（BFF 读不到 `skill_link`）。
+
+        响应只含学科、任务类型、目标知识节点、优先级、预计分钟与 `rationale_code`；**不含** `p_mastery`、`confidence`、
+        `evidence_ids`、`learner_context` 的任何条目（schema 用 `additionalProperties: false` 保证）。推荐理由的文字由平台按判断生成
+        （规则 11），不在本接口。
+
+        某一科没有配置适配器、适配器 501、超时、结果不合契约（含 `estimated_minutes` 超过 600，不截断）时，这一科
+        `status = unavailable` 且 `tasks` 为空，不影响其他科；整个请求仍是 200。
+        `plan` 按插件 API v1.0（2026-10-09 签字）实现。learning-internal v1 签字（1.1.0，2026-10-20）之后不再有任何开关挡住 `plan`
+        （签字前的候选版开关与 `LEARNING_INTERNAL_V1` 都已不用）：配置了适配器的学科照常调用，其余按上一段返回 `unavailable`。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PlanQuery' }
+            examples:
+              today: { $ref: '#/components/examples/PlanQueryToday' }
+      responses:
+        '200':
+          description: 各科的候选任务（按优先级从高到低）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlanDigest' }
+              examples:
+                today: { $ref: '#/components/examples/PlanDigestToday' }
+        default: { $ref: '#/components/responses/Problem' }
+  /internal/v1/model/route:
+    post:
+      operationId: routeModelCall
+      summary: 各科适配器调用模型的唯一入口（平台模型路由；specs/adapter-zhixing-sprint2 设计要点 5）
+      description: |
+        适配器不持有任何模型供应商的地址或 Key（ADR 04 第 1 条），由这里交给平台模型路由：调用方声明任务类型与数据级别，
+        路由按配置选主备、超时重试与熔断；生产与试点环境不出境。令牌按学科发放并绑定学科，`subject` 必须与令牌一致（否则 403）。
+        响应里的 `output` 是模型原文，只回给调用它的适配器；学习服务的日志不记 `messages` 与 `output`。
+        调用方负责把 `usage_id`、`idempotency_key` 与计量预留对应上；本接口不预留、不结算，也不按幂等键去重（lessons）。
+      security:
+        - routeClientToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ModelRouteRequest' }
+            examples:
+              zhixingGrade: { $ref: '#/components/examples/ModelRouteRequestZhixing' }
+      responses:
+        '200':
+          description: 模型输出与可追溯的版本
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ModelRouteResponse' }
+              examples:
+                zhixingGrade: { $ref: '#/components/examples/ModelRouteResponseZhixing' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /internal/v1/mastery/get:
+    post:
+      operationId: masteryGet
+      summary: 节点 × 层次的掌握状态（形状照搬 knowledge-service v0.9 的 mastery.get；1.1.0）
+      description: |
+        只读，不计量、不写任何表。只接受编排层令牌（`orchestratorServiceToken`），`context.caller`
+        必须是 `orchestrator`。读 `platform.mastery_estimate` 的节点键当前记录，
+        只认当前已发布地图里有效的节点与层次（改名、合并、拆分、撤下的旧单元不出现）。每个请求节点按其在当前地图里的
+        全部认知层次各回一行：没有记录的层次 `gate = unseen`、不带 `p_mastery` 与 `next_review_at`；不在任何当前地图里的节点不回。
+        `star_lit` 是节点的星亮，按该科掌握配置的 `star_level_rule` 计算（星亮层次的门槛到“迁移”及以上），同一节点各行取值相同；
+        没有可用配置的学科一律 false。
+        信封：`evidence_ids` = 各行引用证据的并集；`confidence` = 各行置信度的最小值（没有记录时为 0）；
+        `source_version` 带算法版本与地图版本段；`model_version` 为 `algo:kge-mastery@<算法版本>`；`human_review_required = false`。
+        不存在的学生与没有记录的学生回同样的结果（全部 unseen），不暴露存在性。
+      security:
+        - orchestratorServiceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: './knowledge-service.v0.9.yaml#/components/schemas/MasteryGetRequest' }
+            examples:
+              basic: { $ref: '#/components/examples/MasteryGetRequestOrchestrator' }
+      responses:
+        '200':
+          description: 掌握状态、门槛与下次复测时间
+          content:
+            application/json:
+              schema: { $ref: './knowledge-service.v0.9.yaml#/components/schemas/MasteryGetResponse' }
+              examples:
+                basic: { $ref: '#/components/examples/MasteryGetResponseExecute' }
+        default: { $ref: '#/components/responses/Problem' }
+  /internal/v1/mastery/explain:
+    post:
+      operationId: masteryExplain
+      summary: 某节点掌握状态的证据链（形状照搬 knowledge-service v0.9 的 mastery.explain；1.1.0）
+      description: |
+        只读。证据链 = 该节点各层次当前记录引用的证据（按服务器记录时间排序，去重），每条带
+        `evidence_kind`（作答情境）、`evidence_level`（生效等级：旧证据与未准入内容上的证据按 B）、`weight`（这条证据对掌握的更新强度，
+        ∈ [0, 1]；按读取时的配置与证据重放得出，当前已不计入的记 0）、`hint_level`（提示等级，契约上限 5，平台阶梯 6 级记 5）。
+        门槛条件的编码与数值只在服务内（第一步 #17），不经本接口外露。
+        信封同 `mastery/get`；节点没有记录时 `chain` 为空、`confidence` 为 0。只接受编排层令牌。
+      security:
+        - orchestratorServiceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: './knowledge-service.v0.9.yaml#/components/schemas/MasteryExplainRequest' }
+            examples:
+              basic: { $ref: '#/components/examples/MasteryExplainRequestOrchestrator' }
+      responses:
+        '200':
+          description: 证据链
+          content:
+            application/json:
+              schema: { $ref: './knowledge-service.v0.9.yaml#/components/schemas/MasteryExplainResponse' }
+              examples:
+                basic: { $ref: '#/components/examples/MasteryExplainResponseExecute' }
+        default: { $ref: '#/components/responses/Problem' }
+  /internal/v1/verification:
+    post:
+      operationId: scheduleVerification
+      summary: “我其实会”的平台内验证任务（SIE-03 → KGE-04；1.1.0）
+      description: |
+        建一条 `platform.retest_task`（`reason = verify_self_report`），不改掌握记录
+        （只有之后做题产生的证据会改）。幂等：同一 `dispute_ref` 与单元重复调用返回同一条任务；该单元已有开着的自述验证任务时返回那一条
+        （每单元每种原因最多一条 open）。
+        **学生由谁定**：学习服务没有读 `insight.dispute` 的权限（迁移 0032 未授），不能由异议记录反查学生；
+        改为只接受洞察服务令牌（`insightServiceToken`，与 BFF 服务令牌不同、不能互换），`student_ref` 由洞察服务从异议记录
+        （`insight.dispute.student_id`）取出后附带——BFF 与客户端没有途径指定学生（第二步 lessons PR 3 待人确认）。
+        `item_count` 是 `item.similar` 要选的验证题道数（不落库，原样回显）；题目由编排层经知识服务选，本接口不返回题目内容。
+        学科没有可用掌握配置、单元不在当前已发布地图里：409 `MASTERY_UNAVAILABLE`（不重试）。
+      security:
+        - insightServiceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VerificationRequest' }
+            examples:
+              iKnow: { $ref: '#/components/examples/VerificationRequestIKnow' }
+      responses:
+        '200':
+          description: 验证任务（新建或已有的那一条）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerificationTask' }
+              examples:
+                created: { $ref: '#/components/examples/VerificationTaskCreated' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /internal/v1/verification/cancel:
+    post:
+      operationId: cancelVerification
+      summary: 撤销一条自述验证任务（洞察服务事务回滚时的补偿；1.1.0）
+      description: |
+        洞察服务在写异议的事务里调 `/internal/v1/verification` 建任务；该事务随后回滚时，任务会留在
+        open、没有异议引用。洞察服务回滚后尽力调本接口撤销（失败只记计数，不影响异议的返回）。
+        按 `task_id` + `student_ref` 撤销 `status = open` 且 `reason = verify_self_report` 的任务（置 cancelled），不改掌握记录。
+        幂等：已撤销或已关闭的任务返回现状、`cancelled = false`。任务不存在、不属于该学生或不是自述验证任务：同一个 404 `TASK_NOT_FOUND`。
+        只接受洞察服务令牌（`insightServiceToken`）。
+      security:
+        - insightServiceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VerificationCancelRequest' }
+            examples:
+              rollback: { $ref: '#/components/examples/VerificationCancelRequestRollback' }
+      responses:
+        '200':
+          description: 撤销结果（本次撤销，或已有的现状）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerificationCancelResult' }
+              examples:
+                cancelled: { $ref: '#/components/examples/VerificationCancelResultCancelled' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /internal/v1/profile-page/ensure:
+    post:
+      operationId: ensureProfilePage
+      summary: 学情档案页的惰性编译（会话开始、周报；1.1.0，KGE-04 第二步 PR 4）
+      description: |
+        判断没变（`claims_digest` 与该生该科的全部候选判断一致）就不重编（`unchanged`）；变了就按判断模板渲染、
+        加固定衔接短语、跑陈述—判断一致性检查，通过为 `compiled`，不通过降级为纯模板版本并记一条阻断记录（`blocked_fallback`）；
+        没有候选判断也没有页时不写（`empty`）；超出时间预算或编译失败不写库、不报错（`template_only`：read 此时返回纯模板版本），不阻塞会话与周报。
+        作答与掌握重算不触发编译。不调任何模型。
+        鉴权：编排层令牌（`orchestratorServiceToken`）只能以 `trigger = session_start` 调用；洞察服务令牌（`insightServiceToken`）只能以
+        `trigger = weekly` 调用；不符 403 `CALLER_MISMATCH`。学科没有档案页配置：409 `PROFILE_UNAVAILABLE`。
+        响应没有判断、文字与学生 ID。不存在的学生与没有判断的学生同为 `empty`。
+      security:
+        - orchestratorServiceToken: []
+        - insightServiceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProfilePageEnsureRequest' }
+            examples:
+              session: { $ref: '#/components/examples/ProfilePageEnsureSessionStart' }
+      responses:
+        '200':
+          description: 编译结果（只有编码、检查状态与时间）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProfilePageEnsureResult' }
+              examples:
+                compiled: { $ref: '#/components/examples/ProfilePageEnsureCompiled' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /internal/v1/profile-page/read:
+    post:
+      operationId: readProfilePage
+      summary: 学情档案页 Agent 完整版（读取时按判断现状重核后渲染；1.1.0，KGE-04 第二步 PR 4）
+      description: |
+        只读，不编译、不写库。每次读取都按判断现状重核（Agent 可见、状态、模板键与版本、模板仍已审核）后
+        按判断模板渲染：被推翻、撤回、过期、转待验证的陈述消失，消失了陈述的那一节不显示衔接语。页的摘要与现状不一致（判断变了还没重编）或没有页时，
+        由现有判断直接渲染纯模板版本（`variant = template_only`，没有衔接语）。
+        陈述只来自成立或假设的判断（规则 11），每条带 `claim_id`；待验证判断只作为待办引用（`todo`，没有文字）。
+        结果是 Agent 版，只接受编排层令牌；学生与家长视图由 BFF 经 `platform.profile_page_statement_v` 读（不含待办）。
+      security:
+        - orchestratorServiceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProfilePageReadRequest' }
+            examples:
+              basic: { $ref: '#/components/examples/ProfilePageReadBasic' }
+      responses:
+        '200':
+          description: 档案页（六节）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProfilePage' }
+              examples:
+                compiled: { $ref: '#/components/examples/ProfilePageCompiled' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /internal/v1/star-map/nodes:
+    post:
+      operationId: starMapNodes
+      summary: 星图 v1 的节点星态（BFF 读；1.1.0，冲刺 4-H H5 PR 1）
+      description: |
+        只读，不计量、不写任何表。只接受 BFF 服务令牌（`bffServiceToken`），编排层与洞察服务令牌一律 401；
+        请求体 `caller` 必须是 `bff`（与令牌身份一致），否则 403 `CALLER_MISMATCH`。BFF 已按会话与档案授权确定学生（规则 5）。
+        **星** = 该科当前已发布地图版本中**全部** `status = active`、`level = node` 的知识节点（统一壳 spec 待人确认 #9 默认；
+        领域、主题、细目不成星，撤下的节点与旧版本节点不出现）。按 `node_id` 排序。
+        其中只有 `kind` 参与掌握计算（`kp`、`ability_kp`、`viewpoint`）且带认知层次的节点有星态；其余节点（`material`、`method`、`pitfall`、
+        `exam_point` 等，或没有认知层次）一律 `state = unseen`、`star_lit = false`、`basis_id = null`。每颗星：
+        - `state`：决定星亮的那个认知层次上的门槛（platform.mastery_state）。层次按该科掌握配置的 `star_level_rule`：
+          `star_level` 取配置给该节点的层次，未配置取节点最高层次（配置的层次不在节点层次里则没有决定层次，记 `unseen`）；
+          `all_levels` 取门槛最低的层次（同级取低层次）。该层次没有当前记录为 `unseen`；
+        - `star_lit`：与 `mastery/get` 的同名字段同一实现（星亮层次的门槛到“迁移”及以上），与 `state ∈ {transfer, retain}` 恒等；
+        - `basis_id`：决定 `state` 的那条当前掌握记录（`platform.mastery_estimate.id`，`is_current`）；没有记录为 null。
+          BFF 用它核对判断的 `basis_id`（统一壳 spec 7.2 节条件 3），不一致即画中性底星。
+        **不返回** `p_mastery`、`confidence`、证据 ID、各层次明细与下次复测时间（关于学生的陈述须经判断，规则 11）。
+        该科没有已发布地图：200、`status = no_map`、`map_version = null`、`nodes` 为空（BFF 显示“地图建设中”）。
+        地图已发布但该科没有可用（已加载）的掌握配置：409 `MASTERY_UNAVAILABLE`（不重试；同验证任务的惯例）。
+        不存在的学生与没有记录的学生回同样的结果（全部 unseen），不暴露存在性。
+      security:
+        - bffServiceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StarMapNodesRequest' }
+            examples:
+              basic: { $ref: '#/components/examples/StarMapNodesRequestBff' }
+      responses:
+        '200':
+          description: 节点星态（或“无地图”）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StarMapNodes' }
+              examples:
+                ok: { $ref: '#/components/examples/StarMapNodesOk' }
+                noMap: { $ref: '#/components/examples/StarMapNodesNoMap' }
+        default: { $ref: '#/components/responses/Problem' }
+
+components:
+  securitySchemes:
+    bffServiceToken:
+      type: http
+      scheme: bearer
+      description: BFF 到学习服务的服务间令牌（顶层缺省；`/internal/v1/star-map/nodes` 显式只认它）。
+    routeClientToken:
+      type: http
+      scheme: bearer
+      description: 各科适配器到学习服务模型路由接口的令牌（LEARNING_ROUTE_CLIENT_<SUBJECT>_TOKEN），按学科发放、绑定学科，与服务间令牌不同。
+    insightServiceToken:
+      type: http
+      scheme: bearer
+      description: 洞察服务到学习服务的令牌（LEARNING_INSIGHT_CLIENT_TOKEN），只对 `/internal/v1/verification`、`/verification/cancel` 与 `/profile-page/ensure`（只能周报触发）有效；与其他令牌各不相同。
+    orchestratorServiceToken:
+      type: http
+      scheme: bearer
+      description: 编排层到学习服务的令牌（LEARNING_ORCHESTRATOR_CLIENT_TOKEN），只对 `/internal/v1/mastery/get`、`/mastery/explain`、`/profile-page/ensure`（只能会话开始触发）与 `/profile-page/read` 有效；与其他令牌各不相同。
+
+  responses:
+    Problem:
+      description: 统一错误体
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  examples:
+    MasteryGetRequestOrchestrator:
+      summary: 编排层读一个节点的掌握状态（合成学生）
+      value:
+        context:
+          request_id: 00000000-0000-4000-8000-000000000601
+          contract_version: 0.9.0
+          caller: orchestrator
+          data_class: L2
+          student_ref: 00000000-0000-4000-8000-00000000a002
+        node_ids: [MATH.SYN.FUNC.VERTEX]
+    MasteryGetResponseExecute:
+      summary: 两个层次：apply 到“执行”、understand 没有记录；星未亮
+      value:
+        contract_version: 0.9.0
+        result:
+          states:
+            - node_id: MATH.SYN.FUNC.VERTEX
+              cognitive_level: understand
+              gate: unseen
+              star_lit: false
+            - node_id: MATH.SYN.FUNC.VERTEX
+              cognitive_level: apply
+              gate: execute
+              p_mastery: 0.64
+              star_lit: false
+              next_review_at: '2026-10-16T08:00:00Z'
+        evidence_ids: [00000000-0000-4000-8000-00000000e601, 00000000-0000-4000-8000-00000000e602]
+        confidence: 0.42
+        source_version: 'algo:kge-mastery@0.1.0.syn-0.1.0.0a1b2c3d;graph:aya-map@0.1.0'
+        model_version: 'algo:kge-mastery@0.1.0'
+        human_review_required: false
+    MasteryExplainRequestOrchestrator:
+      summary: 编排层读一个节点的证据链（合成学生）
+      value:
+        context:
+          request_id: 00000000-0000-4000-8000-000000000602
+          contract_version: 0.9.0
+          caller: orchestrator
+          data_class: L2
+          student_ref: 00000000-0000-4000-8000-00000000a002
+        node_id: MATH.SYN.FUNC.VERTEX
+    MasteryExplainResponseExecute:
+      summary: 两条独立做对的证据（A 级）
+      value:
+        contract_version: 0.9.0
+        result:
+          node_id: MATH.SYN.FUNC.VERTEX
+          chain:
+            - evidence_id: 00000000-0000-4000-8000-00000000e601
+              occurred_at: '2026-10-09T08:00:00Z'
+              evidence_kind: independent
+              evidence_level: A
+              weight: 0.72
+              hint_level: 0
+            - evidence_id: 00000000-0000-4000-8000-00000000e602
+              occurred_at: '2026-10-09T08:10:00Z'
+              evidence_kind: independent
+              evidence_level: A
+              weight: 0.72
+              hint_level: 0
+        evidence_ids: [00000000-0000-4000-8000-00000000e601, 00000000-0000-4000-8000-00000000e602]
+        confidence: 0.42
+        source_version: 'algo:kge-mastery@0.1.0.syn-0.1.0.0a1b2c3d;graph:aya-map@0.1.0'
+        model_version: 'algo:kge-mastery@0.1.0'
+        human_review_required: false
+    VerificationRequestIKnow:
+      summary: 洞察服务为一条“我其实会”异议建验证任务（学生取自异议记录）
+      value:
+        request_id: 00000000-0000-4000-8000-000000000603
+        dispute_ref: 00000000-0000-4000-8000-00000000f101
+        student_ref: 00000000-0000-4000-8000-00000000a002
+        subject: aya
+        node_id: MATH.SYN.FUNC.VERTEX
+        cognitive_level: apply
+        reason: verify_self_report
+        item_count: 2
+    VerificationTaskCreated:
+      summary: 新建的验证任务：只有任务 ID、节点、层次、状态与时间，没有题目
+      value:
+        task_id: 00000000-0000-4000-8000-00000000d601
+        node_id: MATH.SYN.FUNC.VERTEX
+        cognitive_level: apply
+        status: open
+        due_at: '2026-10-09T08:00:00Z'
+        item_count: 2
+        created: true
+    VerificationCancelRequestRollback:
+      summary: 洞察服务写异议的事务回滚后撤销刚建的验证任务
+      value:
+        request_id: 00000000-0000-4000-8000-000000000604
+        task_id: 00000000-0000-4000-8000-00000000d601
+        student_ref: 00000000-0000-4000-8000-00000000a002
+    VerificationCancelResultCancelled:
+      summary: 本次撤销
+      value:
+        task_id: 00000000-0000-4000-8000-00000000d601
+        status: cancelled
+        cancelled: true
+    ProfilePageEnsureSessionStart:
+      summary: 编排层在会话开始时确保档案页是最新的
+      value:
+        request_id: 00000000-0000-4000-8000-000000000701
+        student_ref: 00000000-0000-4000-8000-00000000a002
+        subject: aya
+        trigger: session_start
+    ProfilePageEnsureCompiled:
+      summary: 判断变了，重编一次并通过一致性检查
+      value:
+        subject: aya
+        outcome: compiled
+        check_status: passed
+        compiled_at: '2026-10-02T08:00:00Z'
+        compiler_version: kge-profile@0.1.0
+    ProfilePageReadBasic:
+      summary: 编排层读 Agent 完整版
+      value:
+        request_id: 00000000-0000-4000-8000-000000000702
+        student_ref: 00000000-0000-4000-8000-00000000a002
+        subject: aya
+    ProfilePageCompiled:
+      summary: 已编译版本：陈述按判断模板渲染（合成占位文字），待办只有引用
+      value:
+        subject: aya
+        variant: compiled
+        profile_page_id: 00000000-0000-4000-8000-00000000b701
+        check_status: passed
+        compiled_at: '2026-10-02T08:00:00Z'
+        compiler_version: kge-profile@0.1.0
+        sections:
+          - { key: current_stage, connective: '', statements: [], todo: [] }
+          - key: mastered
+            connective: 另外
+            statements:
+              - claim_id: 00000000-0000-4000-8000-00000000c701
+                template_key: syn.mastery.stable
+                template_version: 1
+                status: established
+                text: （合成模板）MATH.SYN.FUNC.VERTEX
+            todo: []
+          - key: working_on
+            connective: ''
+            statements: []
+            todo:
+              - { claim_id: 00000000-0000-4000-8000-00000000c702, template_key: syn.mastery.unstable, template_version: 1 }
+          - { key: root_cause, connective: '', statements: [], todo: [] }
+          - { key: recent_progress, connective: '', statements: [], todo: [] }
+          - { key: next_step, connective: '', statements: [], todo: [] }
+    StarMapNodesRequestBff:
+      summary: BFF 读合成学生的数学星图星态
+      value:
+        request_id: 00000000-0000-4000-8000-000000000801
+        caller: bff
+        student_ref: 00000000-0000-4000-8000-00000000a002
+        subject: aya
+    StarMapNodesOk:
+      summary: 四颗星：一颗亮（星亮层次到“迁移”）、一颗“执行”、一颗没有记录、一颗方法节点（不参与掌握计算，恒为 unseen）
+      value:
+        subject: aya
+        status: ok
+        map_version: 1.0.0
+        nodes:
+          - { node_id: MATH.SYN.FUNC.AXIS, state: unseen, star_lit: false, basis_id: null }
+          - { node_id: MATH.SYN.FUNC.METHOD, state: unseen, star_lit: false, basis_id: null }
+          - { node_id: MATH.SYN.FUNC.ROOTS, state: execute, star_lit: false, basis_id: 00000000-0000-4000-8000-00000000d801 }
+          - { node_id: MATH.SYN.FUNC.VERTEX, state: transfer, star_lit: true, basis_id: 00000000-0000-4000-8000-00000000d802 }
+    StarMapNodesNoMap:
+      summary: 该科还没有已发布地图（BFF 显示“地图建设中”）
+      value:
+        subject: wenli
+        status: no_map
+        map_version: null
+        nodes: []
+    PlanQueryToday:
+      summary: 统一壳“今日”页：数学与语文两科（合成学生）
+      value:
+        request_id: 00000000-0000-4000-8000-000000000501
+        student_ref: 00000000-0000-4000-8000-00000000a002
+        subjects: [aya, wenli]
+    PlanDigestToday:
+      summary: 数学两条任务（一条复测、一条练习）；语文适配器不可用
+      value:
+        subjects:
+          - subject: aya
+            status: ok
+            tasks:
+              - kind: retest
+                target_node_ids: [MATH.SYN.FUNC.VERTEX]
+                priority: 0.9
+                estimated_minutes: 10
+                rationale_code: retest_scheduled
+              - kind: practice
+                target_node_ids: []
+                priority: 0.7
+                estimated_minutes: 20
+                rationale_code: high_exam_weight
+          - subject: wenli
+            status: unavailable
+            tasks: []
+    ModelRouteRequestZhixing:
+      summary: 知行适配器的逐点判分调用（合成作答）
+      value:
+        task: T2
+        data_class: L2
+        subject: zhixing
+        prompt_template: zhixing-m3-grade
+        prompt_version: 0.2.0
+        messages:
+          - { role: system, content: （合成）判分说明与采分点 }
+          - { role: user, content: （合成）居民参与民主决策，体现了居民自治。 }
+        usage_id: 00000000-0000-4000-8000-00000000b010
+        idempotency_key: 00000000-0000-4000-8000-00000000c010
+        deadline_ms: 9000
+    ModelRouteResponseZhixing:
+      summary: 模型输出（调用方按自己的 schema 校验）与可追溯的版本
+      value:
+        output: '{"points": []}'
+        model_version: model:fake-a/fake-reasoner@2026-09-01
+        source_version: prompt:zhixing-m3-grade@0.2.0
+        model_mismatch: false
+    GradeIngestKeypad:
+      summary: 键盘作答、练习用途：证据记 A 级、独立作答
+      value:
+        request:
+          context:
+            request_id: 00000000-0000-4000-8000-000000000401
+            contract_version: 1.0.0
+            subject: aya
+            student_ref: 00000000-0000-4000-8000-00000000a002
+            data_class: L2
+            usage_id: 00000000-0000-4000-8000-00000000b004
+            idempotency_key: 00000000-0000-4000-8000-00000000c401
+            content_version:
+              region: nanjing
+              exam_year: 2027
+              grade: 9
+              textbook_version: bubian-2024
+              subject: aya
+              content_version: 0.1.0
+          attempt:
+            attempt_id: 00000000-0000-4000-8000-0000000000a1
+            item_ref: 'aya:synthetic-0301-07'
+            occurred_at: '2026-10-08T19:30:00+08:00'
+            response: { text: '2(x-1)' }
+            elapsed_sec: 95
+            hint_level_used: 0
+          rubric_version: aya-symbolic-ts@0.1.0
+        ingest: { channel: keypad, purpose: practice }
+    GradeSummaryLevelC:
+      summary: 申诉中的作答：记 C 级，批改照常返回，不写入学习者模型
+      value:
+        method: grade
+        subject: aya
+        attempt_ids: [00000000-0000-4000-8000-0000000000a1]
+        evidence_ids: [00000000-0000-4000-8000-00000000e401, 00000000-0000-4000-8000-00000000e402]
+        semantics: practice
+        human_review_required: true
+        error_categories: []
+        evidence_level: C
+        learner_model_updated: false
+        grade_result_id: 00000000-0000-4000-8000-00000000f401
+        verdict: incorrect
+
+    DiagnoseIngestCanvasC:
+      summary: 键盘作答的诊断（示例名沿用旧名）：证据等级由学习服务推导为 A；非键盘通道在平台确认记录上线前一律 400
+      value:
+        request:
+          context:
+            request_id: 00000000-0000-4000-8000-000000000402
+            contract_version: 1.0.0
+            subject: aya
+            student_ref: 00000000-0000-4000-8000-00000000a002
+            data_class: L2
+            usage_id: 00000000-0000-4000-8000-00000000b005
+            idempotency_key: 00000000-0000-4000-8000-00000000c402
+          mode: intake
+          attempts:
+            - attempt_id: 00000000-0000-4000-8000-0000000000a2
+              item_ref: 'aya:synthetic-0301-07'
+              occurred_at: '2026-10-08T19:30:00+08:00'
+              response: { text: '2(x-1)' }
+              hint_level_used: 0
+        ingest: { channel: keypad }
+    DiagnoseSummaryLevelC:
+      summary: 键盘作答的诊断结果（示例名沿用旧名）：记 A 级，写入学习者模型
+      value:
+        method: diagnose
+        subject: aya
+        attempt_ids: [00000000-0000-4000-8000-0000000000a2]
+        evidence_ids: [00000000-0000-4000-8000-00000000e403]
+        semantics: practice
+        human_review_required: true
+        error_categories: []
+        evidence_level: A
+        learner_model_updated: true
+        observation_count: 1
+
+  schemas:
+    Uuid: { type: string, format: uuid }
+    IngestContext:
+      type: object
+      description: |
+        平台侧的作答上下文（specs/evidence-attributes-sprint1；签字后口径见 specs/launch-lt04-learning-internal-v1 决定记录（续）第 3 条）。
+        **证据等级与用途（purpose）由学习服务推导，不接受调用方自报**；学习服务据此补齐证据的作答情境、证据等级、输入通道：
+        - `purpose`：直接经本接口写入的用途只能是 `practice`（缺省；给出其他值 400 `INVALID_REQUEST`）；复测、迁移检验的用途
+          只由学习服务内部按票据（复测锚点）写入，不经本接口；
+        - `evidence_kind`：用过提示（`hint_level_used > 0`，或适配器证据里有 `hint_opened` 信号）→ `hinted`；
+          作答没报 `hint_level_used` → 空（交给掌握计算按保守口径）；否则 `purpose = retest` → `delayed_retest`，
+          `transfer_check` → `transfer`，其余 `independent`；
+        - `evidence_level`：由学习服务推导——`channel = keypad` 记 A，`request.appeal = true` 一律记 C（ADR 15“申诉中”）；
+          调用方自报等级（grade 的 `request.evidence_level`、diagnose 的本对象 `evidence_level`）一律 400；
+        - **非键盘通道（canvas、voice、photo）在平台确认记录上线前一律 400 `INVALID_REQUEST`**（定级须有平台侧的回显 / 复述确认记录，
+          学习服务目前无从核实；`request.answer_evidence_ref` 不再作为放行依据）；
+        - C 级证据照常写入证据、作答与判分结果（批改要展示），但不写能力观察与错因（不进入学习者模型），
+          摘要里 `error_categories` 为空、`observation_count` 为 0（没有落库的结论不出现在摘要里，规则 11），
+          也不能作为之后请求的 `prior_evidence`（422）；键盘通道的结果里出现识别转写证据 → 502。
+      required: [channel]
+      additionalProperties: false
+      properties:
+        channel: { type: string, enum: [keypad, canvas, voice, photo], description: 输入通道（ADR 15）。平台确认记录上线前只接受 keypad，其余 400。 }
+        purpose:
+          type: string
+          enum: [practice, retest, transfer_check]
+          default: practice
+          description: 这次作答的用途，由学习服务推导；直接经本接口写入只能是 practice（缺省），给出其他值 400。
+        evidence_level: { type: string, enum: [A, B, C], description: 由学习服务推导，调用方不得给出（给出即 400）。 }
+    GradeIngest:
+      type: object
+      required: [request, ingest]
+      additionalProperties: false
+      properties:
+        request: { $ref: './plugin-api.v1.0.yaml#/components/schemas/GradeRequest' }
+        ingest:
+          description: 证据等级由学习服务推导：ingest 里不能给（同一事实只有一处，契约审查建议 7），`request.evidence_level` 给出也 400。
+          allOf:
+            - $ref: '#/components/schemas/IngestContext'
+            - not: { required: [evidence_level] }
+    DiagnoseIngest:
+      type: object
+      required: [request, ingest]
+      additionalProperties: false
+      properties:
+        request: { $ref: './plugin-api.v1.0.yaml#/components/schemas/DiagnoseRequest' }
+        ingest: { $ref: '#/components/schemas/IngestContext' }
+    SummaryBase:
+      type: object
+      description: 平台摘要：只有 ID 与编码，不含作答、答案、维度分（spec 待人确认 #6）。
+      required: [method, subject, attempt_ids, evidence_ids, semantics, human_review_required, error_categories]
+      properties:
+        method: { type: string, enum: [grade, diagnose] }
+        subject: { type: string, enum: [wenli, aya, zhixing, echo] }
+        attempt_ids: { type: array, minItems: 1, items: { $ref: '#/components/schemas/Uuid' } }
+        evidence_ids: { type: array, minItems: 1, items: { $ref: '#/components/schemas/Uuid' } }
+        semantics:
+          type: string
+          enum: [formal, practice]
+          description: 平台判定的效力（按平台登记的准入状态，只会比适配器声明的更严）。
+        human_review_required: { type: boolean }
+        error_categories:
+          type: array
+          description: 本次错因的跨科大类（去重）。
+          items:
+            type: string
+            enum: [reading_the_question, locating_information, thinking_method, computation_or_grammar,
+                   expression_convention, strategy_and_time, knowledge]
+        evidence_level:
+          type: string
+          enum: [A, B, C]
+          description: 本次证据的等级（平台补齐）。经 `/internal/v1` 写入的结果必带；重放 `/internal/v0` 写入的结果时没有这个字段与下一个字段。
+        learner_model_updated:
+          type: boolean
+          description: 是否写入了能力观察与错因。C 级证据为 false：只展示批改，不进入学习者模型（ADR 15）。
+    GradeSummary:
+      unevaluatedProperties: false
+      allOf:
+        - $ref: '#/components/schemas/SummaryBase'
+        - required: [grade_result_id, verdict]
+          properties:
+            method: { const: grade }
+            grade_result_id: { $ref: '#/components/schemas/Uuid' }
+            verdict: { type: string, enum: [correct, incorrect, partial, needs_review, not_applicable] }
+    DiagnoseSummary:
+      unevaluatedProperties: false
+      allOf:
+        - $ref: '#/components/schemas/SummaryBase'
+        - required: [observation_count]
+          properties:
+            method: { const: diagnose }
+            observation_count: { type: integer, minimum: 0 }
+    PlanQuery:
+      type: object
+      description: BFF → 学习服务：今日计划要排的学生与学科。只有平台学生 ID，不带任何个人信息，也不带掌握快照（由学习服务自己读）。
+      required: [request_id, student_ref, subjects]
+      additionalProperties: false
+      properties:
+        request_id: { $ref: '#/components/schemas/Uuid' }
+        student_ref:
+          type: string
+          format: uuid
+          pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        subjects:
+          type: array
+          description: 已选且在读的学科（产品命名空间）。英语搁置，不在枚举里（对照文档决定 #1）。
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items: { type: string, enum: [wenli, aya, zhixing] }
+        time_budget_minutes: { type: integer, minimum: 1, maximum: 600 }
+    PlanDigestTask:
+      type: object
+      description: 平台摘要里的一条任务。没有掌握概率、置信度、证据 ID、画像上下文（规则 11：关于学生的推断不经本接口外露）。
+      required: [kind, target_node_ids, priority, estimated_minutes, rationale_code]
+      additionalProperties: false
+      properties:
+        kind: { type: string, enum: [diagnose, practice, review, lesson, retest, mock_exam] }
+        target_node_ids:
+          type: array
+          description: 目标知识节点（已发布地图版本）；能力点在地图里没有对应时为空，由前端显示中性标题。
+          maxItems: 16
+          uniqueItems: true
+          items: { $ref: './knowledge-service.v0.9.yaml#/components/schemas/NodeId' }
+        priority: { type: number, minimum: 0, maximum: 1 }
+        estimated_minutes: { type: integer, minimum: 1, maximum: 600 }
+        rationale_code: { type: string, pattern: '^[a-z0-9_]{1,48}$' }
+    PlanDigestSubject:
+      type: object
+      required: [subject, status, tasks]
+      additionalProperties: false
+      properties:
+        subject: { type: string, enum: [wenli, aya, zhixing] }
+        status:
+          type: string
+          enum: [ok, unavailable]
+          description: unavailable：没有配置适配器、适配器 501、超时或结果不合契约（这一科显示“今天暂无安排”）。
+        tasks:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/PlanDigestTask' }
+      allOf:
+        - description: 不可用的学科没有任务
+          if: { properties: { status: { const: unavailable } }, required: [status] }
+          then: { properties: { tasks: { maxItems: 0 } } }
+    PlanDigest:
+      type: object
+      required: [subjects]
+      additionalProperties: false
+      properties:
+        subjects:
+          type: array
+          description: 与请求的 subjects 同序，每科一项。
+          minItems: 1
+          maxItems: 3
+          items: { $ref: '#/components/schemas/PlanDigestSubject' }
+    ModelRouteRequest:
+      type: object
+      additionalProperties: false
+      required: [task, data_class, subject, prompt_template, prompt_version, messages, usage_id, idempotency_key]
+      properties:
+        task: { type: string, enum: [T1, T2, T3, T4, T5, T6, T7, T8, T9], description: 九类任务（ADR 04 增补）；骨架只支持对话类 T1–T4、T8、T9 }
+        data_class: { type: string, enum: [L0, L1, L2, L3], description: 数据级别（ADR 09）；学生作答原文是 L2 }
+        subject: { type: string, enum: [wenli, aya, zhixing, echo] }
+        prompt_template: { type: string, pattern: '^[a-z0-9][a-z0-9\-]{0,47}$' }
+        prompt_version: { type: string, pattern: '^v?\d+(\.\d+){0,3}$' }
+        messages:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            type: object
+            additionalProperties: false
+            required: [role, content]
+            properties:
+              role: { type: string, enum: [system, user, assistant] }
+              content: { type: string, maxLength: 20000 }
+        usage_id: { type: string, format: uuid }
+        idempotency_key: { type: string, pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' }
+        deadline_ms: { type: integer, minimum: 1, maximum: 60000 }
+    ModelRouteResponse:
+      type: object
+      additionalProperties: false
+      required: [output, model_version, source_version, model_mismatch]
+      properties:
+        output: { type: string, description: 模型原文；调用方必须按自己的 schema 校验，判分只能来自验证器或 Rubric（规则 3） }
+        model_version: { type: string, pattern: '^model:[a-z0-9\-]+/[A-Za-z0-9._\-]+@[A-Za-z0-9._\-]+$' }
+        source_version: { type: string, pattern: '^prompt:[a-z0-9][a-z0-9\-]{0,47}@[A-Za-z0-9][A-Za-z0-9._\-]{0,31}$' }
+        model_mismatch: { type: boolean, description: 供应商报告的模型名与配置的快照名不一致；判分类调用方应转人工复核 }
+    VerificationRequest:
+      type: object
+      description: |
+        洞察服务 → 学习服务：为一条“我其实会”异议建验证任务。`student_ref` 由洞察服务从异议记录取出（见路径说明），
+        只经洞察服务令牌接受。不带题目、作答或任何个人信息。
+      required: [request_id, dispute_ref, student_ref, subject, node_id, cognitive_level, reason, item_count]
+      additionalProperties: false
+      properties:
+        request_id: { $ref: '#/components/schemas/Uuid' }
+        dispute_ref:
+          description: insight.dispute.id（迁移 0032）；幂等键的一部分。
+          type: string
+          format: uuid
+        student_ref:
+          type: string
+          format: uuid
+          pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        subject:
+          type: string
+          description: 有掌握计算的学科（英语搁置，不在枚举里）。
+          enum: [wenli, aya, zhixing]
+        node_id: { $ref: './knowledge-service.v0.9.yaml#/components/schemas/NodeId' }
+        cognitive_level: { $ref: './knowledge-service.v0.9.yaml#/components/schemas/CognitiveLevel' }
+        reason:
+          type: string
+          const: verify_self_report
+          description: 只建自述验证任务；复测轮等其他原因只由掌握重算产生。
+        item_count: { type: integer, minimum: 1, maximum: 5, description: 要选的验证题道数（0032 与 SIE 第八章：1–5 道）。 }
+    VerificationTask:
+      type: object
+      description: 验证任务（platform.retest_task 的一条）。没有题目、答案或任何作答内容。
+      required: [task_id, node_id, cognitive_level, status, due_at, item_count, created]
+      additionalProperties: false
+      properties:
+        task_id: { $ref: '#/components/schemas/Uuid' }
+        node_id: { $ref: './knowledge-service.v0.9.yaml#/components/schemas/NodeId' }
+        cognitive_level: { $ref: './knowledge-service.v0.9.yaml#/components/schemas/CognitiveLevel' }
+        status: { type: string, enum: [open, passed, failed, cancelled] }
+        due_at: { type: string, format: date-time }
+        item_count: { type: integer, minimum: 1, maximum: 5 }
+        created: { type: boolean, description: 本次新建为 true；返回已有任务为 false。 }
+    VerificationCancelRequest:
+      type: object
+      description: 洞察服务 → 学习服务：撤销一条自述验证任务。学生与建任务时附带的一致（取自异议记录）。
+      required: [request_id, task_id, student_ref]
+      additionalProperties: false
+      properties:
+        request_id: { $ref: '#/components/schemas/Uuid' }
+        task_id: { $ref: '#/components/schemas/Uuid' }
+        student_ref:
+          type: string
+          format: uuid
+          pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    VerificationCancelResult:
+      type: object
+      required: [task_id, status, cancelled]
+      additionalProperties: false
+      properties:
+        task_id: { $ref: '#/components/schemas/Uuid' }
+        status: { type: string, enum: [open, passed, failed, cancelled] }
+        cancelled: { type: boolean, description: 本次撤销为 true；已撤销或已关闭的任务为 false（幂等）。 }
+    ProfileSubject:
+      type: string
+      description: 有档案页的学科（英语搁置，不在枚举里）。
+      enum: [wenli, aya, zhixing]
+    ProfileSectionKey:
+      type: string
+      description: 档案页固定六节（迁移 0037 的编码）：当前阶段、已稳定掌握、正在攻克、根因线索、最近进步、下一步。
+      enum: [current_stage, mastered, working_on, root_cause, recent_progress, next_step]
+    ClaimRef:
+      type: object
+      description: 判断引用（判断再引用证据）；没有文字。
+      required: [claim_id, template_key, template_version]
+      additionalProperties: false
+      properties:
+        claim_id: { $ref: '#/components/schemas/Uuid' }
+        template_key: { type: string, pattern: '^[a-z][a-z0-9_]*(\.[a-z0-9_]+){1,4}$', maxLength: 64 }
+        template_version: { type: integer, minimum: 1, maximum: 999999 }
+    ProfileStatement:
+      type: object
+      description: 一条陈述：由成立或假设的判断按其模板渲染（与洞察服务 RenderedStatement 同一套规则），必须带 claim_id（规则 11）。
+      required: [claim_id, template_key, template_version, status, text]
+      additionalProperties: false
+      properties:
+        claim_id: { $ref: '#/components/schemas/Uuid' }
+        template_key: { type: string, pattern: '^[a-z][a-z0-9_]*(\.[a-z0-9_]+){1,4}$', maxLength: 64 }
+        template_version: { type: integer, minimum: 1, maximum: 999999 }
+        status: { type: string, enum: [hypothesis, established], description: 待验证的判断不作陈述，只进 todo。 }
+        text: { type: string, minLength: 1, maxLength: 300 }
+    ProfileSection:
+      type: object
+      required: [key, connective, statements, todo]
+      additionalProperties: false
+      properties:
+        key: { $ref: '#/components/schemas/ProfileSectionKey' }
+        connective:
+          type: string
+          maxLength: 60
+          pattern: '^[^0-9０-９]*$'
+          description: 固定衔接短语表里的一条（人审）；没有陈述、有陈述消失、降级或纯模板版本时为空串。不含数字。
+        statements: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/ProfileStatement' } }
+        todo:
+          type: array
+          maxItems: 30
+          description: Agent 版待办：待验证的判断（只有引用，不作陈述）。
+          items: { $ref: '#/components/schemas/ClaimRef' }
+    ProfilePageEnsureRequest:
+      type: object
+      required: [request_id, student_ref, subject, trigger]
+      additionalProperties: false
+      properties:
+        request_id: { $ref: '#/components/schemas/Uuid' }
+        student_ref:
+          type: string
+          format: uuid
+          pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        subject: { $ref: '#/components/schemas/ProfileSubject' }
+        trigger:
+          type: string
+          enum: [session_start, weekly]
+          description: 只有两个触发点（第一步 spec 第 14 节）；必须与令牌身份一致（编排层 = session_start，洞察服务 = weekly）。
+    ProfilePageEnsureResult:
+      type: object
+      description: 编译结果。没有判断、文字与学生 ID。
+      required: [subject, outcome, check_status, compiled_at, compiler_version]
+      additionalProperties: false
+      properties:
+        subject: { $ref: '#/components/schemas/ProfileSubject' }
+        outcome:
+          type: string
+          enum: [unchanged, compiled, blocked_fallback, empty, template_only]
+          description: unchanged 判断没变不重编；compiled 重编并通过检查；blocked_fallback 检查不过、降级为纯模板版本并记阻断；
+            empty 没有可用判断、不写；template_only 超出时间预算或失败、不写库（read 返回纯模板版本）。
+        check_status: { type: [string, 'null'], enum: [passed, blocked_fallback, null] }
+        compiled_at: { type: [string, 'null'], format: date-time }
+        compiler_version: { type: string, pattern: '^[a-z0-9][a-z0-9\-]{0,47}@[A-Za-z0-9][A-Za-z0-9._\-]{0,31}$' }
+    ProfilePageReadRequest:
+      type: object
+      required: [request_id, student_ref, subject]
+      additionalProperties: false
+      properties:
+        request_id: { $ref: '#/components/schemas/Uuid' }
+        student_ref:
+          type: string
+          format: uuid
+          pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        subject: { $ref: '#/components/schemas/ProfileSubject' }
+    ProfilePage:
+      type: object
+      description: 学情档案页 Agent 完整版（固定六节，按 key 顺序）。除陈述的 text（判断模板渲染）与衔接短语外没有自由文本；没有模型版本（不调模型）。
+      required: [subject, variant, profile_page_id, check_status, compiled_at, compiler_version, sections]
+      additionalProperties: false
+      properties:
+        subject: { $ref: '#/components/schemas/ProfileSubject' }
+        variant:
+          type: string
+          enum: [compiled, template_only]
+          description: compiled = 已编译版本（读取时已重核）；template_only = 没有页或页已过时，由现有判断直接渲染（没有衔接语）。
+        profile_page_id: { type: [string, 'null'], format: uuid }
+        check_status: { type: [string, 'null'], enum: [passed, blocked_fallback, null] }
+        compiled_at: { type: [string, 'null'], format: date-time }
+        compiler_version: { type: string, pattern: '^[a-z0-9][a-z0-9\-]{0,47}@[A-Za-z0-9][A-Za-z0-9._\-]{0,31}$' }
+        sections:
+          type: array
+          minItems: 6
+          maxItems: 6
+          items: { $ref: '#/components/schemas/ProfileSection' }
+      allOf:
+        - description: 纯模板版本没有页 ID、检查状态与编译时间
+          if: { properties: { variant: { const: template_only } }, required: [variant] }
+          then: { properties: { profile_page_id: { type: 'null' }, check_status: { type: 'null' }, compiled_at: { type: 'null' } } }
+        - description: 已编译版本必须有页 ID、检查状态与编译时间
+          if: { properties: { variant: { const: compiled } }, required: [variant] }
+          then: { properties: { profile_page_id: { type: string }, check_status: { type: string }, compiled_at: { type: string } } }
+    StarMapSubject:
+      type: string
+      description: 有星图的学科（英语搁置，不在枚举里）。
+      enum: [wenli, aya, zhixing]
+    StarMapNodesRequest:
+      type: object
+      description: BFF → 学习服务：某学生某科的星态。只有平台学生 ID，不带任何个人信息与掌握快照。
+      required: [request_id, caller, student_ref, subject]
+      additionalProperties: false
+      properties:
+        request_id: { $ref: '#/components/schemas/Uuid' }
+        caller:
+          type: string
+          enum: [bff, orchestrator, insight]
+          description: 服务身份；必须与令牌一致（本接口只认 bff，不符 403 `CALLER_MISMATCH`）。
+        student_ref:
+          type: string
+          format: uuid
+          pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        subject: { $ref: '#/components/schemas/StarMapSubject' }
+    StarMapNode:
+      type: object
+      description: 一颗星的星态。没有掌握概率、置信度、证据 ID 与各层次明细（规则 11）。
+      required: [node_id, state, star_lit, basis_id]
+      additionalProperties: false
+      properties:
+        node_id: { $ref: './knowledge-service.v0.9.yaml#/components/schemas/NodeId' }
+        state:
+          type: string
+          description: 决定星亮的那个认知层次上的门槛（platform.mastery_state）；没有当前记录为 unseen。
+          enum: [unseen, understand, execute, stable, transfer, retain]
+        star_lit: { type: boolean, description: 星亮（与 mastery/get 同一实现）；当且仅当 state 是 transfer 或 retain。 }
+        basis_id:
+          type: [string, 'null']
+          format: uuid
+          description: 决定 state 的当前掌握记录（platform.mastery_estimate.id）；没有记录为 null。
+      allOf:
+        - description: 没有掌握记录的星是 unseen
+          if: { properties: { basis_id: { type: 'null' } }, required: [basis_id] }
+          then: { properties: { state: { const: unseen } } }
+        - description: 星亮当且仅当星态到迁移及以上
+          if: { properties: { state: { enum: [transfer, retain] } }, required: [state] }
+          then: { properties: { star_lit: { const: true } } }
+          else: { properties: { star_lit: { const: false } } }
+    StarMapNodes:
+      type: object
+      description: 当前已发布地图版本里每颗星的星态（按 node_id 排序）；没有已发布地图时 status = no_map。
+      required: [subject, status, map_version, nodes]
+      additionalProperties: false
+      properties:
+        subject: { $ref: '#/components/schemas/StarMapSubject' }
+        status:
+          type: string
+          enum: [ok, no_map]
+          description: ok = 有已发布地图；no_map = 该科没有已发布地图（BFF 显示“地图建设中”）。
+        map_version:
+          description: 当前已发布地图版本号（kge.map_version.version）；no_map 时为 null。
+          oneOf:
+            - $ref: './knowledge-service.v0.9.yaml#/components/schemas/MapVersion'
+            - type: 'null'
+        nodes:
+          type: array
+          maxItems: 5000
+          items: { $ref: '#/components/schemas/StarMapNode' }
+      allOf:
+        - description: 没有地图就没有版本号与星
+          if: { properties: { status: { const: no_map } }, required: [status] }
+          then: { properties: { map_version: { type: 'null' }, nodes: { maxItems: 0 } } }
+        - description: 有地图必须给版本号
+          if: { properties: { status: { const: ok } }, required: [status] }
+          then: { properties: { map_version: { type: string } } }
+    Problem:
+      type: object
+      required: [type, title, status, code, retryable]
+      additionalProperties: false
+      properties:
+        type: { type: string, format: uri-reference }
+        title: { type: string, maxLength: 120, description: 不得包含学生原文。 }
+        status: { type: integer, minimum: 400, maximum: 599 }
+        detail:
+          type: string
+          maxLength: 500
+          description: 面向开发者的编码化说明。不得包含学生作答、答案或数据库报错原文。
+        code:
+          type: string
+          enum:
+            - INVALID_REQUEST
+            - UNAUTHENTICATED
+            - SUBJECT_NOT_SUPPORTED
+            - STUDENT_NOT_FOUND
+            - CONTENT_NOT_REGISTERED
+            - IDEMPOTENCY_CONFLICT
+            - BUSY  # 同 key 的另一请求仍在执行；响应头 retry-after
+            - ATTEMPT_ID_CONFLICT  # BFF 带来的 attempt_id 已被另一请求用过
+            - UPSTREAM_REJECTED
+            - UPSTREAM_UNAVAILABLE
+            - UPSTREAM_TIMEOUT
+            - ASYNC_NOT_SUPPORTED
+            - ADAPTER_RESULT_REJECTED
+            - REPLAY_NOT_FOUND  # 重放接口：没有记录或之前确定失败，同时封存该 key（评审 N17）
+            - IDEMPOTENCY_KEY_SEALED  # 该 key 已被重放接口封存，原请求不再执行；或该幂等键无有效计量，不可写入（LT-04 计量核对，见“计量”）
+            - SUBJECT_MISMATCH  # 模型路由接口：请求的学科与路由客户端令牌绑定的学科不一致
+            - ROUTE_REJECTED  # 模型路由接口：任务、数据级别或计量字段不合要求（不重试）
+            - ROUTE_UNAVAILABLE  # 模型路由接口：没有数据级别允许的可用供应商（可稍后重试）
+            - CALLER_MISMATCH  # 1.1.0 掌握读取：请求体 context.caller 与令牌不一致（403）
+            - MASTERY_UNAVAILABLE  # 1.1.0 验证任务：学科没有可用掌握配置或单元不在当前已发布地图里；星图节点：地图已发布但没有可用掌握配置（409，不重试）
+            - TASK_NOT_FOUND  # 1.1.0 撤销验证任务：任务不存在、不属于该学生或不是自述验证任务（404）
+            - PROFILE_UNAVAILABLE  # 1.1.0（PR 4）档案页：没有档案页配置、该科不在配置里或没有已发布地图（409，不重试）
+            - INTERNAL
+        upstream_code:
+          type: string
+          description: 适配器返回的 Problem.code（UPSTREAM_REJECTED 时），例如 ITEM_NOT_FOUND。
+          pattern: '^[A-Z][A-Z0-9_]{0,47}$'
+        retryable:
+          type: boolean
+          description: 为真时 BFF 可用同一个 idempotency_key 重试。只对 4xx 有意义：5xx 一律是结果未知（评审 N18）。
+        request_id: { $ref: '#/components/schemas/Uuid' }

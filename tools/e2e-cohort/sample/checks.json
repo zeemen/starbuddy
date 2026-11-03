@@ -1,0 +1,208 @@
+{
+ "checks": [
+  {
+   "detail": {
+    "by_subject_method_purpose": {
+     "aya/diagnose/practice": 20,
+     "aya/grade/practice": 36,
+     "wenli/diagnose/practice": 20,
+     "wenli/grade/practice": 16,
+     "zhixing/grade/practice": 20
+    },
+    "calls": 112,
+    "failed": []
+   },
+   "name": "all_calls_succeeded",
+   "passed": true
+  },
+  {
+   "detail": {
+    "adapters": [
+     "aya",
+     "wenli",
+     "zhixing"
+    ],
+    "db_drivers_in_package_json": {},
+    "env_leaks": []
+   },
+   "name": "adapters_have_no_db_or_vendor_config",
+   "passed": true
+  },
+  {
+   "detail": {
+    "evidence_lost": [],
+    "evidence_unexpected": [],
+    "missing_subjects": [],
+    "students": 20,
+    "students_with_all_core_subjects": 20,
+    "unexpected_subjects": []
+   },
+   "name": "coexistence",
+   "passed": true
+  },
+  {
+   "detail": {
+    "needles": 710,
+    "personal_tables_not_in_registry": [],
+    "registry": "checked",
+    "schemas": [
+     "insight",
+     "kge",
+     "platform",
+     "policy"
+    ],
+    "student_key_columns_outside_personal_layer": [],
+    "student_values_outside_personal_layer": [],
+    "subject_named_tables_in_personal_layer": [],
+    "tables_outside_personal_layer": 28
+   },
+   "name": "no_private_copies",
+   "passed": true
+  },
+  {
+   "detail": {
+    "unbacked_active_links": 0
+   },
+   "name": "guardian_links_backed",
+   "passed": true
+  },
+  {
+   "detail": {
+    "grade_responses": 72,
+    "incomplete": []
+   },
+   "name": "grade_envelope_provenance",
+   "passed": true
+  },
+  {
+   "detail": {
+    "by_subject": {
+     "aya": 36,
+     "wenli": 16,
+     "zhixing": 20
+    },
+    "evidence_not_same_student_subject": 0,
+    "grade_results": 72,
+    "incomplete": 0
+   },
+   "name": "grade_rows_provenance",
+   "passed": true
+  },
+  {
+   "detail": {
+    "evidence_without_task": [],
+    "failed_or_unmarked": 0,
+    "interrupted_with_retest": [],
+    "mastery": {
+     "config": "synthetic-test（未签字）+ rung0_min_gap_seconds = 0",
+     "evidence_counted": 0,
+     "excluded_reasons": {
+      "no_grade": 80,
+      "pending_review": 36
+     },
+     "map": "合成联调地图（2 个节点，层次 apply）",
+     "node_key_records": 0,
+     "replay_gates": {
+      "none": 40
+     },
+     "retest_tasks": {},
+     "subject": "aya",
+     "subjects_without_config": [
+      "wenli",
+      "zhixing"
+     ],
+     "units": 40
+    },
+    "no_item": 0,
+    "not_reached": {
+     "evidence_counted": 0,
+     "node_key_records": 0,
+     "note": "没有复测轮任务就不执行复测（不编造）；原因见 mastery.excluded_reasons（例如内容未准入 → 判分待复核 → pending_review 不计入）",
+     "retest_round_tasks": 0,
+     "top_excluded_reason": "no_grade"
+    },
+    "note": "KGE-04 第二步真实调度：grade 落库后同步重算掌握、同一事务建复测轮任务；联调把时钟推进到 due_at 后执行，执行经同一 grade 契约接口，ingest.purpose = retest",
+    "reached": false,
+    "reached_count": 0,
+    "retest_calls": 0,
+    "retest_round_tasks": 0,
+    "scheduler": "retest_task",
+    "students_with_retest_evidence": 0
+   },
+   "name": "retest_via_retest_task",
+   "passed": true
+  },
+  {
+   "detail": {
+    "anonymous_variants": [
+     "empty_account",
+     "unset_account"
+    ],
+    "guardians_checked": 16,
+    "guardians_with_multiple_children": 4,
+    "students_checked": 20,
+    "table_source": "registry",
+    "tables_bff_cannot_read": 38,
+    "tables_compared": 29,
+    "tables_not_comparable_column_privilege": [],
+    "tables_skipped_no_privilege": [],
+    "unlinked_guardians_checked": 1,
+    "violations": []
+   },
+   "name": "isolation_rls",
+   "passed": true
+  },
+  {
+   "detail": {
+    "adapter_calls_during_rerun": 0,
+    "counts": {
+     "attempt": 212,
+     "error_attribution": 43,
+     "evidence_event": 426,
+     "evidence_registry": 426,
+     "grade_dimension": 183,
+     "grade_result": 72,
+     "ingest_request": 112,
+     "practice_log": 0,
+     "skill_observation": 140,
+     "usage_ledger": 0,
+     "usage_reservation": 112
+    },
+    "delta": {},
+    "every_request_has_usage_id_and_idempotency_key": true,
+    "replayed": 112,
+    "rerun_requests": 112
+   },
+   "name": "rerun_zero_new_rows",
+   "passed": true
+  },
+  {
+   "detail": {
+    "compared": 112
+   },
+   "name": "rerun_same_result",
+   "passed": true
+  },
+  {
+   "detail": {
+    "active_users": [
+     "learning_app",
+     "postgres"
+    ],
+    "allowed": [
+     "learning_app",
+     "postgres"
+    ],
+    "logged_users": [
+     "learning_app",
+     "postgres"
+    ],
+    "unexpected": []
+   },
+   "name": "db_clients_only_learning_and_admin",
+   "passed": true
+  }
+ ],
+ "notice": "合成联调，不是内测结论",
+ "passed": true
+}

@@ -1,0 +1,42 @@
+{
+ "adapters": {
+  "aya": {
+   "adapter_version": "0.2.0",
+   "capabilities_contract_version": "1.0.0",
+   "content_pack": "aya-pack@0.3.0-0ed2fe4"
+  },
+  "wenli": {
+   "adapter_version": "0.1.0",
+   "capabilities_contract_version": "1.0.0",
+   "content_pack": "wenli-synthetic@0.1.0"
+  },
+  "zhixing": {
+   "adapter_version": "0.1.0",
+   "capabilities_contract_version": "1.0.0",
+   "content_pack": "zhixing-synthetic@0.1.0"
+  }
+ },
+ "cohort": {
+  "digest": "a5fb4f31fb52a42fa924e94cc998359c0e137b11d79033e52ad46792fc97ab37",
+  "generator": "e2e-cohort@0.1.0",
+  "seed": 20260930,
+  "students": 20
+ },
+ "commit": "f3fbda0d0c0ec006cf0abd5756c8f20cc28422af",
+ "contracts": {
+  "learning-internal": "1.1.0",
+  "plugin-api": "1.0.0",
+  "request_contract_version": "1.0.0"
+ },
+ "english": "未纳入（开口成章适配器已搁置，specs/adapter-echo-sprint3/lessons.md）",
+ "model_route": "test 环境假供应商（合成判定），不是任何真实模型",
+ "notice": "合成联调，不是内测结论",
+ "retest_scheduler": "retest_task（KGE-04 第二步真实调度；联调合成掌握配置：数学 synthetic-test 未签字、rung0 间隔 0，知行与文砺不配置）",
+ "starmap_screenshot": {
+  "how": "make gate0-evidence GATE0_STARMAP=1 时生成（status = captured / failed）；未带时不截图、不删已有截图",
+  "page_version": "星图 v0（3-H），掌握未写库，无点亮星；H5 合入后重截",
+  "provenance": "starmap/provenance.md",
+  "record": "starmap/starmap.json"
+ },
+ "worktree_dirty": true
+}

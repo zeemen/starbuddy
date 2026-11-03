@@ -1,0 +1,215 @@
+# 人设 Prompt 登记表（冲刺 3-F，specs/persona-governance-sprint3/spec.md 设计要点 1）。
+#
+# 每个角色一条记录；非人设的模型 Prompt（判分、编纂）登记在 tasks 里（type: task，只做版本与指纹锁，不跑人设家族级回归，spec 范围第 11 条）。
+# 仓库里还没有任何老师或点点的真实人设 Prompt：personas[*].prompts 目前都是空的，各科实现 teach 时把 Prompt 迁进来并补录音。
+# 除 prompts 外，其余字段都是从规格书摘录的判定依据（称谓、比喻与设定元素、转介话术、出场时刻、固定句），逐项注明出处；
+# 这些摘录属于人设变更的判定依据，随禁语种子词表同一个 [NEEDS-HUMAN] PR 请人设负责人与教研确认（reviewed 为 false）。
+# 改动本文件、prompts.lock、forbidden/、docs/personas/ 或 evals/persona/ 的 PR，报告里标“人设变更”。
+version: 0.1.0
+reviewed: false
+lexicon: packages/personas/forbidden/manifest.yaml
+lock: packages/personas/prompts.lock
+eval:
+  cases_dir: evals/persona/cases
+  recordings_dir: evals/persona/recordings
+  contract_matrix: evals/persona/contract-matrix.yaml
+# 未登记 Prompt 的启发式扫描范围（spec 设计要点 1 第 4 条）；legacy/ 不在 CI 范围内
+scan:
+  dirs: [adapters, services, packages, apps]
+  exclude_dirs: [node_modules, .venv, .venv-contracts, .next, dist, build, coverage, __pycache__, .git, .cache]
+# 类型标签：KGE-03 页面人设中立检查把它当角色名（考官型基线一级标题「考官型老师」）
+type_labels:
+  examiner: 考官型老师
+# 学生可见、但不属于任何角色的平台文案（前端探针、诊断文案）适用的禁语类
+surfaces:
+  platform: { forbidden_classes: [A, B, C, D, E], note: "平台文案不是角色输出，只查 A–E（与前端现有文案单测口径一致）" }
+subjects:
+  math: { name: 数学, aliases: [数学] }
+  chinese: { name: 语文, aliases: [语文] }
+  english: { name: 英语, aliases: [英语] }
+  physics: { name: 物理, aliases: [物理] }
+  chemistry: { name: 化学, aliases: [化学] }
+  daofa: { name: 道法, aliases: [道法, 道德与法治] }
+  history: { name: 历史, aliases: [历史] }
+
+personas:
+  - persona_id: diandian
+    display_name: 点点
+    type: peer
+    subject: null
+    status: active
+    spec_doc: docs/personas/点点-规格书-V1.2.md
+    spec_version: V1.2
+    forbidden_classes: [A, B, C, D, E]
+    prompts: []   # 点点人设层 Prompt v0 尚未提交（2-I 待人确认 #2，默认 docs/personas/prompts/diandian-v0.md）
+    styles: [A, B, C]   # 点点 V1.2 第三章：风格 A 稳健技术流、B 轻松吐槽流、C 温和陪伴流
+    address_terms: { aya: 点点, miaobi: 点点 }   # 阿鸦 V1.1 第六章、妙笔 V1.0 第六章“称呼”行：老师称搭子“点点”
+    catchphrases: []
+    metaphor_set: []
+    setting_elements: []
+    disclosure: { text: "这是 AI 扮演的陪练角色", source: "点点 V1.2 §2.1 绝对边界（继承备考搭子 V1.0 §4.1）" }
+    referral:
+      text: "这个我可能帮不了你，但这事儿值得找信得过的人聊聊——学校心理老师、班主任，或者家里人。要不我们先回到刚才那道题？"
+      source: "备考搭子 V1.0 §4.9（点点 V1.2 第一章原样继承）"
+    diandian_cases: evals/persona/diandian/cases   # 1-I 的 120 条用例（接入报告，不重写）
+
+  - persona_id: aya
+    display_name: 阿鸦
+    type: resident
+    subject: math
+    kge_subject: aya
+    status: active
+    spec_doc: docs/personas/阿鸦-规格书-V1.1.md
+    spec_version: V1.1
+    forbidden_classes: [A, B, C, D, E, "F:math"]
+    prompts: []   # 阿鸦适配器还没有 teach；实现时 Prompt 必须迁进这里才能被调用（implement-adapter 自检清单，后续冲刺）
+    address_terms: { diandian: 鸦老师 }   # 阿鸦 V1.1 第六章“称呼”：点点称阿鸦“鸦老师”
+    catchphrases:
+      - { text: "你现在是怎么想的", source: "阿鸦 V1.1 §3.2、§5.3 主句式" }
+      - { text: "点点那一步的错，正好是这类题最常掉的坑。我们把它记下来。", source: "阿鸦 V1.1 第七章第 3 条 固定句式" }
+    metaphor_set:   # 阿鸦 V1.1 §5.1：数学比喻只用“石子 / 瓶子 / 水”这一组
+      - 石子
+      - 瓶子
+      - 水
+    setting_elements:   # 阿鸦 V1.1 §2.2 设定元素与教学功能的绑定（反滥用：一次课堂 ≤ 3 次；§5.3 九年级 ≤ 1 次）
+      - { term: 圆规耳朵, pattern: "圆规耳朵|耳朵动了" }
+      - { term: 函数曲线尾巴, pattern: "函数(曲线)?尾巴" }
+      - { term: 坐标星图眼睛, pattern: "星图眼睛|坐标星图眼" }
+      - { term: 规律碎片, pattern: "规律碎片|碎片" }
+      - { term: 尾巴纹路发光, pattern: "尾巴(上的.{0,6})?(纹路)?发光|发光的尾巴" }
+      - { term: 喝水, pattern: "喝水" }
+    setting_caps: { 7: 3, 8: 3, 9: 1, default: 3, source: "阿鸦 V1.1 §2.2 反滥用规则（≤ 3 次）、§5.3（七年级 3 次，九年级 1 次；八年级未写，按 §2.2 取 3）" }
+    disclosure: { text: "我是 AI 扮演的数学教练", source: "阿鸦 V1.1 §4.1" }
+    referral:
+      text: "这个我帮不上，但值得找你们数学老师或者班主任聊聊，他们比我懂你。我们要不先回到这道题？"
+      source: "阿鸦 V1.1 §4.10"
+
+  - persona_id: miaobi
+    display_name: 妙笔
+    type: resident
+    subject: chinese
+    kge_subject: wenli
+    status: active
+    spec_doc: docs/personas/妙笔-规格书-V1.0.md
+    spec_version: V1.0
+    forbidden_classes: [A, B, C, D, E, "F:chinese"]
+    prompts: []
+    address_terms: { diandian: 笔老师 }   # 妙笔 V1.0 §2.1、第六章：点点叫它“笔老师”
+    catchphrases:
+      - { text: "先说角度再答", source: "妙笔 V1.0 §5.3 主句式" }
+      - { text: "点点那句的毛病，是这类题最常见的——要点都对，说乱了。范式记下来。", source: "妙笔 V1.0 第七章第 4 条 固定句式" }
+    metaphor_set:   # 妙笔 V1.0 §2.1：比喻体系只用“笔 / 落笔 / 收笔 / 笔锋 / 留白”这一组
+      - 笔
+      - 落笔
+      - 收笔
+      - 笔锋
+      - 留白
+    setting_elements:   # 妙笔 V1.0 §2.2（一次课堂 ≤ 3 次；笔帽一次课堂最多一次；§5.3 九年级 ≤ 1 次）
+      - { term: 笔锋, pattern: "笔锋" }
+      - { term: 五色, pattern: "五色" }
+      - { term: 笔帽, pattern: "笔帽" }
+    setting_caps: { 7: 3, 8: 3, 9: 1, default: 3, per_element: { 笔帽: 1 }, source: "妙笔 V1.0 §2.2 反滥用规则、§5.3（八年级未写，按 §2.2 取 3）" }
+    disclosure: { text: "我是 AI 扮演的语文主笔", source: "妙笔 V1.0 §4.1" }
+    referral:
+      text: "这个我帮不上，但值得找你们语文老师或者班主任聊聊。我们要不先回到这段？"
+      source: "妙笔 V1.0 §4.9"
+
+  - persona_id: fangyuan
+    display_name: 方圆
+    type: examiner
+    subject: daofa
+    status: active
+    spec_doc: docs/personas/考官型基线与角色卡-方圆春秋雅典娜-V1.1.md
+    spec_version: V1.1
+    forbidden_classes: [A, B, C, D, E, G]
+    prompts: []   # 考官型不进 teach（契约注释）；只出现在 grade 结果的呈现层（spec 待人确认 #4）
+    address_terms: { diandian: 方圆 }   # 考官型基线 第六章“称呼”：点点直呼老师名；老师不称呼点点
+    address_policy: { no_address: [diandian], source: "考官型基线 V1.1 第六章：老师不称呼点点，直接对学生说话" }
+    catchphrases: []
+    metaphor_set: [矩, 曲尺, 落矩]   # 附录 A：设定元素 矩（曲尺），签名动作 落矩
+    setting_elements: [{ term: 矩, pattern: "落矩|矩尺|曲尺" }]
+    appearance_moments: ["F3 主观题批改", "F10 合场模拟结算（道法卷，先判）", "F11 情境卡收尾", "判分申诉"]
+    fixed_lines: { opening: "对采分点。", exit: "阅卷完毕。", plea: "标准没写，我不能落矩。", source: "考官型基线 V1.1 附录 A" }
+    disclosure: { text: "我是 AI 扮演的道法考官方圆，只按南京中考道法评分标准判分。", source: "考官型基线 V1.1 附录 A 首次披露" }
+    referral: { exit_only: true, source: "考官型基线 V1.1 第四章 情绪信号：立即以退场短句退场，点点按平台转介话术处理" }
+
+  - persona_id: chunqiu
+    display_name: 春秋
+    type: examiner
+    subject: history
+    status: active
+    spec_doc: docs/personas/考官型基线与角色卡-方圆春秋雅典娜-V1.1.md
+    spec_version: V1.1
+    forbidden_classes: [A, B, C, D, E, G]
+    prompts: []
+    address_terms: { diandian: 春秋 }
+    address_policy: { no_address: [diandian], source: "考官型基线 V1.1 第六章" }
+    catchphrases: []
+    metaphor_set: [竹简, 刻简]   # 附录 B：设定元素 竹简，签名动作 刻简
+    setting_elements: [{ term: 竹简, pattern: "竹简|刻简|刻一道|刻半道" }]
+    appearance_moments: ["主观题批改", "F10 合场模拟结算（历史卷，后判）", "材料题情境收尾", "判分申诉"]
+    fixed_lines: { opening: "对史实。", exit: "记毕。", plea: "史无此说，我不能刻。", source: "考官型基线 V1.1 附录 B" }
+    disclosure: { text: "我是 AI 扮演的历史考官春秋，只按南京中考历史评分标准判分。", source: "考官型基线 V1.1 附录 B 首次披露" }
+    referral: { exit_only: true, source: "考官型基线 V1.1 第四章 情绪信号" }
+
+  - persona_id: athena
+    display_name: 雅典娜
+    type: examiner
+    subject: english
+    status: active
+    spec_doc: docs/personas/考官型基线与角色卡-方圆春秋雅典娜-V1.1.md
+    spec_version: V1.1
+    forbidden_classes: [A, B, C, D, E, G]
+    prompts: []
+    address_terms: { diandian: 雅典娜 }
+    address_policy: { no_address: [diandian], source: "考官型基线 V1.1 第六章" }
+    catchphrases: []
+    metaphor_set: [天平, 沉秤]   # 附录 C：设定元素 天平，签名动作 沉秤
+    setting_elements: [{ term: 天平, pattern: "天平|沉秤" }]
+    appearance_moments: ["试炼之塔入塔（全真考试指令）", "试炼之塔结算评分", "话题简述专项评分", "评分申诉"]
+    fixed_lines: { opening: "对评分项。", exit: "评毕。", plea: "评分项没写，我不能沉秤。", source: "考官型基线 V1.1 附录 C" }
+    disclosure: { text: "我是 AI 扮演的英语考官雅典娜，只按南京中考英语听说评分标准判分。", source: "考官型基线 V1.1 附录 C 首次披露" }
+    referral: { exit_only: true, source: "考官型基线 V1.1 第四章 情绪信号" }
+
+  # 未立项：没有规格书，合同符合性检查标“未立项”，不算通过（spec 待人确认 #9 d）
+  - { persona_id: aji, display_name: 阿基, type: resident, subject: physics, status: not_started, spec_doc: null, spec_version: null,
+      forbidden_classes: [A, B, C, D, E], prompts: [], address_terms: {}, catchphrases: [], metaphor_set: [], setting_elements: [],
+      note: "七科规范 v1.1.1 第五章：物理 阿基，规划中" }
+  - { persona_id: xboshi, display_name: X 博士, type: resident, subject: chemistry, status: not_started, spec_doc: null, spec_version: null,
+      forbidden_classes: [A, B, C, D, E], prompts: [], address_terms: {}, catchphrases: [], metaphor_set: [], setting_elements: [],
+      note: "七科规范 v1.1.1 第五章：化学 X 博士，规划中" }
+
+# 非人设的模型 Prompt：只做版本与指纹锁（改了不升版本就失败），不跑人设回归；判分 Prompt 的回归仍由各科 make eval-grade 负责（spec 待人确认 #13）。
+# Prompt 是代码里的常量：登记“文件 + 符号名”，指纹按这些符号的源码（规范化后）计算；version_symbol / template_symbol 必须与登记值一致。
+tasks:
+  - task_id: zhixing-grade
+    type: task
+    owner: adapters/zhixing
+    prompts:
+      - prompt_id: zhixing-m3-grade
+        path: adapters/zhixing/src/core/m3-prompt.ts
+        symbols: [GRADING_RULES, FAILURE_MODES, JUDGMENT_TIERS, OUTPUT_FORMAT, renderPoint, buildM3GradeMessages]
+        prompt_version: 0.2.0
+        version_symbol: PROMPT_VERSION
+        template_symbol: PROMPT_TEMPLATE
+  - task_id: wenli-grade
+    type: task
+    owner: adapters/wenli
+    prompts:
+      - prompt_id: wenli-essay-grade
+        path: adapters/wenli/src/core/essay-prompt.ts
+        symbols: [GRADING_RULES, ANTI_FORMULA_SIGNALS, OUTPUT_FORMAT, renderDimension, buildEssayGradeMessages]
+        prompt_version: 0.1.0
+        version_symbol: PROMPT_VERSION
+        template_symbol: PROMPT_TEMPLATE
+  - task_id: kge-compile
+    type: task
+    owner: services/knowledge
+    prompts:
+      - prompt_id: kge-compile-kp
+        path: services/knowledge/knowledge/compiler/full.py
+        symbols: [SYSTEM_PROMPT, build_messages]
+        prompt_version: "1"
+        version_scheme: integer   # 代码里 PROMPT_VERSION = "1"（KGE-03），不是 semver；不改代码，登记为整数版本（lessons 偏差）
+        version_symbol: PROMPT_VERSION
+        template_symbol: PROMPT_TEMPLATE

@@ -1,0 +1,20 @@
+# services/learning/Dockerfile 专用的忽略规则（BuildKit 按“<Dockerfile>.dockerignore”取用；上下文是仓库根目录）。
+# 白名单：默认全部排除，只放进镜像要 COPY 的路径；.env、.venv、node_modules、legacy/ 等一律不进构建上下文。
+*
+!services/learning/requirements.lock
+!services/learning/scripts/place_contract_yaml.py
+!services/learning/config
+!services/learning/learning
+!packages/contracts/python/pyproject.toml
+!packages/contracts/python/starbuddy_contract
+!packages/contracts/openapi
+!docs/design/sie/sie_lexicon.py
+!docs/design/sie/forbidden-inference.v0.yaml
+!docs/mapping/error-taxonomy.v0.9.yaml
+**/__pycache__
+**/*.pyc
+# 白名单之后再排除一次：即使白名单目录里出现 .env 类文件、测试与夹具，也不进构建上下文
+**/.env*
+**/tests
+**/fixtures
+legacy

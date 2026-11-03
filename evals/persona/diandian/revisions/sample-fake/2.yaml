@@ -1,0 +1,16 @@
+# 流程样例（假供应商），不是真实修订：证明“某项下降 → 不采纳”的判定。fake_profiles 只在 test 环境有效，
+# 用来模拟“Prompt 改到 v1 之后，总是合规的那家在星图类上变差”；这里没有任何 Prompt 正文。
+version: 1
+revision: 2
+hypothesis: 假设 Prompt v1 收紧开场白能减少随机失败；样例里它让星图话术下降，应判不采纳
+target: prompt
+before:
+  prompt: { version: "0" }
+  postproc: diandian-post@0.1.0
+after:
+  prompt: { version: "1" }
+  postproc: diandian-post@0.1.0
+fake_profiles:
+  after:
+    fake-compliant: fail_category:starmap
+signoff: { persona_owner: "", date: "" }

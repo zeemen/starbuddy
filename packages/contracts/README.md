@@ -5,16 +5,23 @@
 
 | 文件 | 说明 |
 |---|---|
-| `openapi/plugin-api.v0.9.yaml` | OpenAPI 3.1 草稿 v0.9（待评审） |
+| `openapi/plugin-api.v0.9.yaml` | OpenAPI 3.1 v0.9（迁移期旧版，须显式指定） |
+| `openapi/plugin-api.v1.0.yaml` | **v1.0（2026-10-09 签字，缺省版本）**，见下文“版本策略” |
 | `scripts/check_contract.py` | 契约检查：OpenAPI 合法性、示例符合 schema 且证据引用闭合、反例集、验收标准的结构化检查 |
 | `tests/counterexamples.py` | 反例集：每个反例都必须被 schema 拒绝。新增规则时同时新增反例 |
 | `tests/test_mutations.py` | 变异测试：把契约故意改坏，断言检查能发现，证明每条规则都在起作用 |
-| `openapi/learning-internal.v0.yaml` | 学习服务内部 API（BFF → 学习服务），草稿 |
+| `openapi/plugin-api.v1.1.yaml` | **v1.1 候选版（PLT-12，待签字）**：以 v1.0 为底只做增量，新增只读方法 `present_item`（受限富文本题面，不含答案、解析、采分点、Rubric；不产生证据、不计量）。“只做增量”由 `check_contract.py` 的 `check_v11_additive` 逐项断言；反例在 `tests/counterexamples_v11.py`，变异在 `tests/test_mutations.py` 的 `V11_MUTATIONS`；签字前只在测试里用（`STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1`） |
+| `python/starbuddy_contract/present.py` | 题面的平台侧白名单（逐字段重建、答案类字段名黑名单、不可见与双向控制字符、题面总字数 ≤ 8000）：学习服务、一致性测试、契约检查共用这一份 |
+| `openapi/learning-internal.v0.yaml` | 学习服务内部 API v0（BFF → 学习服务）：**写入已下线**，`/internal/v0/grade`、`/internal/v0/diagnose` 一律 410（LT-04 决定记录（再续）第 1 条）；其余内容留作追溯 |
+| `openapi/learning-internal.v1.yaml` | 学习服务内部 API v1（信封写入、重放接口、模型路由、冲刺 4-H 的今日计划 `POST /internal/v1/plan`），2026-10-20 签字为 1.1.0 正式版（LT-04，`info.x-signoff`）；签字前挡住写入与 plan 的开关 `LEARNING_INTERNAL_V1` 已删除，写入改由 BFF 服务身份 + 计量核对把关、证据等级与用途由学习服务推导（见 `services/learning/README.md`）。1.1.0 的内容（KGE-04 第二步 PR 3 起追加，随这次签字一并冻结）含 `POST /internal/v1/mastery/get`、`/mastery/explain`（请求与响应直接引用知识服务 v0.9 的 schema）与 `POST /internal/v1/verification`（只接受洞察服务令牌，不返回题目）等；检查在 `check_contract.py` 的 `INTERNAL_V1_COUNTER` / `INTERNAL_V1_REFS`，变异在 `test_mutations.py` 的 `INTERNAL_MUTATIONS` |
+| `openapi/knowledge-service.v0.9.yaml` | 知识服务 API（KGE 第八章十个工具），草稿 v0.9。公共层读知识、题目、采分点；个人层写证据、读掌握 |
+| `openapi/insight-service.v0.9.yaml` | 洞察服务 API（SIE 第九章九个工具，另加 SIE-02b 第二步追加的首份报告 `insight.report`），草稿 v0.9。画像视图、判断解释、异议、预测与对账、事实记录、导出与删除 |
+| `scripts/check_services.py` | 两份服务契约的检查（`check_contract.py` 默认运行时一起调用）；反例在 `tests/service_counterexamples.py`，变异在 `tests/test_mutations.py` 的 `SERVICE_MUTATIONS` |
 | `python/starbuddy_contract/` | 共享库：契约加载与校验、平台侧核对规则。学习服务与一致性测试共用（冲刺 1-A） |
 | `conformance/` | 与学科无关的一致性测试：对运行中的适配器跑同一套测试，输出 Gate 0 覆盖率。见 `conformance/README.md` |
 | `requirements-dev.txt` | 检查脚本与一致性测试的依赖（许可证已核，见文件头注释） |
 
-起草计划与验收标准：`specs/contracts-plugin-api-v0.9/spec.md`。
+起草计划与验收标准：`specs/contracts-plugin-api-v0.9/spec.md`；两份服务契约见 `specs/service-openapi-v0.9/spec.md`。
 
 ## 运行检查
 
@@ -34,6 +41,16 @@ make conformance-mutation PYTHON=.venv/bin/python  # 一致性测试的变异测
 - **非破坏性变更**（升次版本号）：新增可选字段、新增枚举值（例如新学科、新错因编码）、新增方法。
 - **破坏性变更**（升主版本号）：删除字段或枚举值、把可选改成必填、收紧取值范围、改变字段语义。
 - v0.x 期间允许破坏性变更，但每次都要在 PR 描述里列出影响到的适配器。W4 冻结为 v1.0 之后，破坏性变更必须有迁移期。
+- **v1.0**（`openapi/plugin-api.v1.0.yaml`，2026-09-28 起草；**2026-10-09 签字**，61 项按默认结论采纳，
+  `docs/reviews/decisions-2026-10-09.md` 第五节）：相对 v0.9 的破坏性变更列在文件的 `info.description` 里，
+  每条都有“v0.9 接受、v1.0 拒绝”的用例（`tests/counterexamples_v1.py`）。签字后（`specs/contract-v1.0-signoff`）：
+  共享库缺省版本与三科适配器的 `DEFAULT_CONTRACT_VERSION` 都是 1.0.0，1.0.0 不再是候选版，不需要 `STARBUDDY_ALLOW_CANDIDATE_CONTRACT`。
+  **迁移期**：v0.9 保留为旧版（终点另定，删除前先把两份服务契约改指 v1.0），期间学习服务同时接受两个版本；适配器路径不变，
+  以 `contract_version` 协商。共享库按环境变量 `STARBUDDY_CONTRACT_VERSION` 选版本（缺省 1.0.0；0.9.0 须显式指定）。
+  `learning-internal.v1.yaml` 与之配套（新增重放接口），已于 2026-10-20 签字为 1.1.0（LT-04，`info.x-signoff`）；学习服务的开关
+  `LEARNING_INTERNAL_V1` 随之删除，/internal/v1 写入改由 BFF 服务身份 + 计量核对把关。`insight-service` 契约仍待签字。
+- **候选版开关**：共享库 `CANDIDATE_VERSIONS` 与三科 `CANDIDATE_CONTRACT_VERSIONS` 里的版本签字前只在测试与演练里用，
+  需显式设 `STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1`（适配器另可用 `--allow-candidate-contract`）。目前只有 v1.1（1.1.0）是候选版。
 - 契约测试**由契约生成**，不由写适配器的同一个会话手写（ClaudeCode 执行方案 第六章）。
 
 ## 设计要点（评审时请重点看）
@@ -46,6 +63,23 @@ make conformance-mutation PYTHON=.venv/bin/python  # 一致性测试的变异测
 5. **可追溯**。`model_version` 必须是 `model:供应商/模型@版本` 或 `algo:名称@版本`，不允许 `routed` 这类值。
 6. **数据级别**。每个请求都带 `data_class`，插件请求都能关联到学生，所以只允许 L2 或 L3（ADR 09 §2）。适配器如果要调用模型，必须经平台模型路由（ADR 04）。
 7. **异步**。`diagnose`、`grade` 可以返回 `202 + job_id`，平台轮询 `GET /jobs/{job_id}`。受理时回传 `usage_id` 和 `idempotency_key`；同一个 key 重试返回同一个 job_id。任务结果的类型与 method 绑定，只有 succeeded 状态才带结果。
+
+## 两份服务契约的要点（v0.9）
+- **统一信封**：每个 200 响应都带 `result`、`evidence_ids`、`confidence`、`source_version`、`model_version`、`human_review_required`、`contract_version`，信封外不允许额外字段（KGE 第八章）。
+- **工具即接口**：路径 `POST /v0/<工具名>`，`operationId` 为工具名（点换成下划线）；清单与 KGE / SIE 文档逐一对应，多一个少一个都算失败。KGE-03 的 MCP 工具由同一份契约生成。
+- **公共层不含个人数据**：知识服务的 `node.*`、`page.*`、`item.*`、`rubric.*` 请求不带学生标识，请求与响应的字段名里没有学生、作答、账号、家长等个人层字段（规则 13）。题干、答案、解析不经知识服务返回。
+- **判断先于展示**：洞察服务里面向学生家长的文字只有 `RenderedStatement`，必须带 `claim_id`，状态只能是假设、成立、待验证（待验证画虚线）；除此之外没有自由文本（规则 11）。
+- **不做名次与概率**：洞察服务的请求与响应里没有名次、百分位、概率类字段与取值（平台规划 v1.3 §3）。
+- **证据等级**：`evidence.write` 只接受 A、B 两级，拍照只能是 B 级；C 级不进学习者模型（技术蓝图 v2.1 §2.1）。
+- **幂等与计量**：写入类工具必须带 `idempotency_key`；两份契约都不带 `usage_id`，计量在插件请求与 BFF 层。
+- **词表与字段字典**：两份契约的描述、枚举、示例、属性名、`const` / `default` 都过禁用推断词表（`docs/design/sie/sie_lexicon.py`，编码里的 `_ . -` 换成空格再查）；洞察服务示例里的字段必须在 SIE 字段字典里，来源与受众要符合字典登记。
+- **无约束文本的判定**：字符串必须有 enum / const、允许的 format（uuid、date、date-time、uri-reference），或者不能接受任意文字的 pattern（用含空格与中文的探针验证）；没有类型的 `{}`、没有字段清单的对象、`unevaluatedProperties: true`、`prefixItems`、内联二进制一律报错。
+
+## 结构上表达不了、由平台侧校验的规则（服务契约）
+- `rubric.get` 响应的 `rubric_version` 等于请求里的 `rubric_version`。
+- 预测区间 `low ≤ high ≤ 满分`。
+- 对象（判断、考试记录）属于请求的 `student_ref`；不属于时与“不存在”响应相同。
+- 上下文包与记录里的来源、受众，与字段字典为该字段登记的来源、可见范围一致（示例由检查脚本核对，运行时由洞察服务强制）。
 
 ## 结构上表达不了、由平台侧校验的规则
 - 分数不超过满分；总分与各维之和一致。

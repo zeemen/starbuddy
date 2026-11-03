@@ -1,0 +1,240 @@
+{
+  "format": "kge-daofa-snapshot/1",
+  "subject": "zhixing",
+  "map_version_id": "00000000-0000-4000-8000-00000000da0f",
+  "version": "9.9.9",
+  "nodes": [
+    {
+      "id": "MORAL.ECO",
+      "level": "domain",
+      "parent_id": null,
+      "kind": null,
+      "name": "（合成）领域乙",
+      "cognitive_levels": [],
+      "status": "active"
+    },
+    {
+      "id": "MORAL.ECO.T1",
+      "level": "topic",
+      "parent_id": "MORAL.ECO",
+      "kind": null,
+      "name": "（合成）大概念丙",
+      "cognitive_levels": [],
+      "status": "active"
+    },
+    {
+      "id": "MORAL.ECO.T1.W1",
+      "level": "node",
+      "parent_id": "MORAL.ECO.T1",
+      "kind": "viewpoint",
+      "name": "（合成）观点丙一",
+      "cognitive_levels": [
+        "apply",
+        "synthesize"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "MORAL.LAW",
+      "level": "domain",
+      "parent_id": null,
+      "kind": null,
+      "name": "（合成）领域甲",
+      "cognitive_levels": [],
+      "status": "active"
+    },
+    {
+      "id": "MORAL.LAW.BC1",
+      "level": "topic",
+      "parent_id": "MORAL.LAW",
+      "kind": null,
+      "name": "（合成）大概念甲",
+      "cognitive_levels": [],
+      "status": "active"
+    },
+    {
+      "id": "MORAL.LAW.BC1.V1",
+      "level": "node",
+      "parent_id": "MORAL.LAW.BC1",
+      "kind": "viewpoint",
+      "name": "（合成）观点甲一",
+      "cognitive_levels": [
+        "know",
+        "understand"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "MORAL.LAW.BC1.V2",
+      "level": "node",
+      "parent_id": "MORAL.LAW.BC1",
+      "kind": "viewpoint",
+      "name": "（合成）观点甲二",
+      "cognitive_levels": [],
+      "status": "active"
+    },
+    {
+      "id": "MORAL.LAW.BC1.V3",
+      "level": "node",
+      "parent_id": "MORAL.LAW.BC1",
+      "kind": "viewpoint",
+      "name": "（合成）停用观点",
+      "cognitive_levels": [
+        "apply"
+      ],
+      "status": "deprecated"
+    },
+    {
+      "id": "MORAL.LAW.BC2",
+      "level": "topic",
+      "parent_id": "MORAL.LAW",
+      "kind": null,
+      "name": "（合成）大概念乙（没有观点）",
+      "cognitive_levels": [],
+      "status": "active"
+    }
+  ],
+  "edges": [
+    {
+      "from_id": "MORAL.ECO.T1.W1",
+      "to_id": "MORAL.LAW.BC1.V2",
+      "type": "prerequisite"
+    },
+    {
+      "from_id": "MORAL.LAW.BC1.V1",
+      "to_id": "MORAL.ECO.T1.W1",
+      "type": "related"
+    },
+    {
+      "from_id": "MORAL.LAW.BC1.V1",
+      "to_id": "MORAL.LAW.BC1.V2",
+      "type": "related"
+    }
+  ],
+  "projections": [
+    {
+      "id": "00000000-0000-4000-8000-0000000000a1",
+      "node_id": "MORAL.LAW.BC1.V1",
+      "edition": "syn-ed-2024",
+      "edition_year": 2024,
+      "volume": "（合成）册",
+      "chapter": "（合成）章",
+      "page_from": 1,
+      "page_to": 1,
+      "mapping_state": "verified"
+    },
+    {
+      "id": "00000000-0000-4000-8000-0000000000a2",
+      "node_id": "MORAL.LAW.BC1.V1",
+      "edition": "syn-ed-2024",
+      "edition_year": 2024,
+      "volume": "（合成）册",
+      "chapter": "（合成）章",
+      "page_from": 2,
+      "page_to": 2,
+      "mapping_state": "unverified"
+    },
+    {
+      "id": "00000000-0000-4000-8000-0000000000a3",
+      "node_id": "MORAL.LAW.BC1.V2",
+      "edition": "syn-ed-2024",
+      "edition_year": 2024,
+      "volume": "（合成）册",
+      "chapter": "（合成）章",
+      "page_from": 3,
+      "page_to": 3,
+      "mapping_state": "disputed"
+    },
+    {
+      "id": "00000000-0000-4000-8000-0000000000a4",
+      "node_id": "MORAL.ECO.T1.W1",
+      "edition": "syn-ed-2024",
+      "edition_year": 2024,
+      "volume": "（合成）册",
+      "chapter": "（合成）章",
+      "page_from": 4,
+      "page_to": 4,
+      "mapping_state": "verified"
+    },
+    {
+      "id": "00000000-0000-4000-8000-0000000000a5",
+      "node_id": "MORAL.LAW.BC1.V3",
+      "edition": "syn-ed-2024",
+      "edition_year": 2024,
+      "volume": "（合成）册",
+      "chapter": "（合成）章",
+      "page_from": 5,
+      "page_to": 5,
+      "mapping_state": "verified"
+    }
+  ],
+  "scoring_points": [
+    {
+      "item_id": "SYN-I1",
+      "rubric_version": "syn@1",
+      "point_id": "p1",
+      "score": 2,
+      "node_ids": [
+        "MORAL.LAW.BC1.V1"
+      ]
+    },
+    {
+      "item_id": "SYN-I1",
+      "rubric_version": "syn@1",
+      "point_id": "p2",
+      "score": 2,
+      "node_ids": [
+        "MORAL.LAW.BC1.V1",
+        "MORAL.ECO.T1.W1"
+      ]
+    },
+    {
+      "item_id": "SYN-I2",
+      "rubric_version": "syn@1",
+      "point_id": "p1",
+      "score": 1,
+      "node_ids": [
+        "MORAL.ECO.T1.W1"
+      ]
+    },
+    {
+      "item_id": "SYN-I3",
+      "rubric_version": "syn@1",
+      "point_id": "p1",
+      "score": 1,
+      "node_ids": [
+        "MORAL.LAW.BC1.V3"
+      ]
+    }
+  ],
+  "current_affairs": [
+    {
+      "id": "00000000-0000-4000-8000-0000000000c1",
+      "node_ids": [
+        "MORAL.LAW.BC1.V1"
+      ],
+      "valid_from": "2026-01-01",
+      "valid_until": "2026-12-31",
+      "review_status": "published"
+    },
+    {
+      "id": "00000000-0000-4000-8000-0000000000c2",
+      "node_ids": [
+        "MORAL.LAW.BC1.V1",
+        "MORAL.LAW.BC1.V2"
+      ],
+      "valid_from": "2026-01-01",
+      "valid_until": "2026-12-31",
+      "review_status": "retired"
+    },
+    {
+      "id": "00000000-0000-4000-8000-0000000000c3",
+      "node_ids": [
+        "MORAL.ECO.T1.W1"
+      ],
+      "valid_from": "2026-01-01",
+      "valid_until": "2026-12-31",
+      "review_status": "pending"
+    }
+  ]
+}

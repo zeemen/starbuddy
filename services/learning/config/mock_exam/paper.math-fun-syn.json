@@ -1,0 +1,45 @@
+{
+ "format": "starbuddy-mock-paper/1",
+ "paper_id": "SYN-MOCK-MATH-FUN-01",
+ "subject": "aya",
+ "version": "0.1.0",
+ "full_score": 120,
+ "duration_minutes": 120,
+ "source": "synthetic",
+ "synthetic": true,
+ "notice": "合成样例卷（PLT-18 第一步）：九年级函数主题，题目 ID 借用合成诊断夹具 learning/diagnosis/fixtures/quad-synthetic.json 已登记的题号，只作卷结构与计分的槽位；不含题目原文、答案与解析；分值与分节为工程起草的占位，待教研组卷替换；题型码是工程占位词表。",
+ "sections": [
+  {"name": "一、选择题（合成）", "items": [
+   {"item_id": "Q-FUN-U01-T-002", "paper_score": 3, "question_type_code": "single_choice"},
+   {"item_id": "Q-FUN-U03-L-003", "paper_score": 3, "question_type_code": "single_choice"},
+   {"item_id": "Q-FUN-U03-P-002", "paper_score": 3, "question_type_code": "single_choice"},
+   {"item_id": "Q-FUN-U04-D-001", "paper_score": 3, "question_type_code": "single_choice"},
+   {"item_id": "Q-FUN-U05-P-003", "paper_score": 3, "question_type_code": "single_choice"},
+   {"item_id": "Q-FUN-U06-D-001", "paper_score": 3, "question_type_code": "single_choice"},
+   {"item_id": "Q-FUN-U06-R-001", "paper_score": 3, "question_type_code": "single_choice"},
+   {"item_id": "Q-FUN-U06-T-002", "paper_score": 3, "question_type_code": "single_choice"},
+   {"item_id": "Q-FUN-U07-D-001", "paper_score": 3, "question_type_code": "single_choice"},
+   {"item_id": "Q-FUN-U07-R-001", "paper_score": 3, "question_type_code": "single_choice"}
+  ]},
+  {"name": "二、填空题（合成）", "items": [
+   {"item_id": "Q-FUN-U07-P-004", "paper_score": 3, "question_type_code": "fill_blank"},
+   {"item_id": "Q-FUN-U10-D-001", "paper_score": 3, "question_type_code": "fill_blank"},
+   {"item_id": "Q-FUN-U11-D-001", "paper_score": 3, "question_type_code": "fill_blank"},
+   {"item_id": "Q-FUN-U11-R-001", "paper_score": 3, "question_type_code": "fill_blank"},
+   {"item_id": "Q-FUN-U13-D-001", "paper_score": 3, "question_type_code": "fill_blank"},
+   {"item_id": "Q-FUN-U13-L-002", "paper_score": 3, "question_type_code": "fill_blank"},
+   {"item_id": "Q-FUN-U13-R-001", "paper_score": 3, "question_type_code": "fill_blank"},
+   {"item_id": "Q-FUN-U13-T-003", "paper_score": 3, "question_type_code": "fill_blank"},
+   {"item_id": "Q-FUN-U14-D-001", "paper_score": 3, "question_type_code": "fill_blank"},
+   {"item_id": "Q-SPR-DP-C1", "paper_score": 3, "question_type_code": "fill_blank"}
+  ]},
+  {"name": "三、综合题（合成）", "items": [
+   {"item_id": "Q-SPR-DP-S1", "paper_score": 10, "question_type_code": "fill_blank"},
+   {"item_id": "Q-SPR-DP-S4", "paper_score": 10, "question_type_code": "fill_blank"},
+   {"item_id": "Q-SPR-DP-V1", "paper_score": 10, "question_type_code": "fill_blank"},
+   {"item_id": "Q-SPR-QF-C1", "paper_score": 10, "question_type_code": "fill_blank"},
+   {"item_id": "Q-SPR-QF-S1", "paper_score": 10, "question_type_code": "fill_blank"},
+   {"item_id": "Q-SPR-QF-S3", "paper_score": 10, "question_type_code": "fill_blank"}
+  ]}
+ ]
+}

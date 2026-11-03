@@ -1,0 +1,58 @@
+# 月度计划模板库 v0（PLT-14 第 2 步，specs/family-goals-monthly-plan/step2-spec.md 默认设计 6）
+# 状态：草稿、合成占位，只允许 INSIGHT_ENV=test 加载。所有文案都是 {{TODO_COPY:monthly_plan.*}} 占位，由人写人审后才能填
+# （CLAUDE.md 必停项：判断模板与话术；spec“文字全部固定模板按条件填空，不调模型；文案由人写人审”）。
+# 规则（services/insight/insight/monthly.py 的 parse_templates 加载时校验，不合格拒绝加载）：
+#   - 未签字时每条文案必须恰好是与模板键一致的占位；签字后可以是人写的文字（1–120 字）；
+#   - 全部文案过禁用推断词表（docs/design/sie/forbidden-inference.v0.yaml）与“名次 / 概率 / 承诺”词表（docs/design/sie/no-promise.v0.draft.yaml）；
+#   - 关于学生的陈述（priority_node、lit、score_gap）只能与所引判断一起出现，计划条目只陈述“做什么”，不陈述学生“是什么”；
+#   - 家长注意事项只描述家长可做的安排，不评价孩子；条件（when）与变量（vars）只用计划事实：
+#     retest_count、sessions_per_week、minutes_per_session、exam_in_month、exam_count、mini_review_count、priority_count；
+#     按顺序取满足条件的前 3 条（配置 max_guardian_notes），when 为空表示总是满足。
+format: sie-monthly-plan-templates/0.1
+template_version: syn-tpl-0.1.0
+status: draft
+synthetic: true
+signed_by: ""
+signed_at: ""
+student:
+  # 快照里的 position 只是计划里的先后，不得渲染为名次（“第 N 名”“排第 N”之类）；需要时只按顺序排列展示
+  priority_node:
+    copy: "{{TODO_COPY:monthly_plan.student.priority_node}}"
+    vars: [subject, node_id, cognitive_level]
+  weekly_rhythm:
+    copy: "{{TODO_COPY:monthly_plan.student.weekly_rhythm}}"
+    vars: [sessions_per_week, minutes_per_session]
+  retests:
+    copy: "{{TODO_COPY:monthly_plan.student.retests}}"
+    vars: [count]
+  mini_review:
+    copy: "{{TODO_COPY:monthly_plan.student.mini_review}}"
+    vars: [subject, date]
+review:
+  last_month:
+    copy: "{{TODO_COPY:monthly_plan.review.last_month}}"
+    vars: [planned_nodes]
+  lit:
+    copy: "{{TODO_COPY:monthly_plan.review.lit}}"
+    vars: [subject, node_id]
+  # 分差只有 5 分一档的区间（家长视图读时现算的 gap_band：low–high，或已达到），不渲染成绩、目标分或精确分差，与下一步同屏
+  score_gap:
+    copy: "{{TODO_COPY:monthly_plan.review.score_gap}}"
+    vars: [subject, gap_band]
+guardian:
+  - key: quiet_time_for_retests
+    copy: "{{TODO_COPY:monthly_plan.guardian.quiet_time_for_retests}}"
+    when: {retest_count_min: 1}
+    vars: [retest_count, sessions_per_week, minutes_per_session]
+  - key: exam_month_routine
+    copy: "{{TODO_COPY:monthly_plan.guardian.exam_month_routine}}"
+    when: {exam_in_month: true}
+    vars: [exam_count]
+  - key: mini_review_dates
+    copy: "{{TODO_COPY:monthly_plan.guardian.mini_review_dates}}"
+    when: {mini_review_count_min: 1}
+    vars: [mini_review_count]
+  - key: weekly_rhythm_support
+    copy: "{{TODO_COPY:monthly_plan.guardian.weekly_rhythm_support}}"
+    when: {}
+    vars: [sessions_per_week, minutes_per_session]

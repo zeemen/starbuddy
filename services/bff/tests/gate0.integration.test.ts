@@ -1,6 +1,7 @@
 // Gate 0 六类计量场景（spec 第 5 节、开发计划冲刺 2-E 验收）：真实的多连接 Postgres + 假学习服务。
 // 每个场景之后断言两个对账视图为零行（计数 = 流水与预留）。
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { after, before, describe, test } from 'node:test';
 import { runExpiry, runRenewal } from '../src/metering/jobs.ts';
 import { meteredCall, reserve, settle, type MeterDeps } from '../src/metering/meter.ts';
@@ -22,7 +23,7 @@ describe('Gate 0 计量场景', { skip: HAS_DB ? false : '没有 PGHOST（make b
 
   function deps(learning: FakeLearning, metrics = new CountingMetrics()): MeterDeps {
     // 退避时“睡眠”就是推进计量时钟：数据库与 BFF 看到同一条时间轴
-    return { pool: h.bff, learning: learning.call, metrics, now: h.clockMs, sleep: (ms) => h.advance(ms) };
+    return { pool: h.bff, learning: learning.call, replay: learning.replay, metrics, now: h.clockMs, sleep: (ms) => h.advance(ms) };
   }
 
   test('场景 1：并发扣同一额度——额度只剩 1，20 个连接同时预留，恰好 1 个成功', async () => {
@@ -166,7 +167,7 @@ describe('Gate 0 计量场景', { skip: HAS_DB ? false : '没有 PGHOST（make b
     assert.ok(await ledgerConsistent(h));
   });
 
-  test('场景 5：过期后迟到的成功不扣费；过期后同 key 重试拿重放结果', async () => {
+  test('场景 5：过期后迟到的成功不扣费；过期后同 key 重试只调重放接口', async () => {
     const fam = await createFamily(h, { source: 'pilot_virtual' });
     const s = fam.students[0]!;
     const k = key();
@@ -184,19 +185,73 @@ describe('Gate 0 计量场景', { skip: HAS_DB ? false : '没有 PGHOST（make b
     assert.equal(metrics.get('late_success_after_expiry'), 1);
     assert.deepEqual(await counters(h, s.id, 'diagnosis_full'), { granted: 6, reserved: 0, settled: 0 });
 
+    const callsBefore = slow.calls.length;
     const replay = await meteredCall(deps(slow, metrics), input);
     assert.deepEqual([replay.status, replay.status === 'ok' && replay.replay, replay.status === 'ok' && replay.charged], ['ok', true, false]);
     assert.equal(metrics.get('replay_after_expiry'), 1);
-    assert.equal(slow.calls.at(-1)?.key, k, '过期后重试，学习服务收到的仍是原 key');
+    assert.equal(slow.calls.length, callsBefore, '过期后不再发原请求');
+    assert.deepEqual(slow.replays.at(-1), { method: 'diagnose', key: k, studentRef: s.id, usageId: usageIdFor(k) },
+                     '重放按原 key、学生、usage_id 查询');
     assert.equal((await reservationsByStudent(h, s.id)).length, 1, '过期后重试不重新预留');
-
-    // 学习服务那边没有这个 key 的成功记录（之前失败过）：过期后同 key 会被重新执行一次，不扣费、单独记指标（N17 缺口）
-    const fresh = new FakeLearning();
-    const reexec = await meteredCall(deps(fresh, metrics), input);
-    assert.deepEqual([reexec.status, reexec.status === 'ok' && reexec.charged], ['ok', false]);
-    assert.equal(metrics.get('reexecuted_without_reservation'), 1);
     assert.deepEqual(await counters(h, s.id, 'diagnosis_full'), { granted: 6, reserved: 0, settled: 0 });
     assert.ok(await ledgerConsistent(h));
+  });
+
+  test('场景 5：过期后重放没有结果——key 被封存，晚到的原请求被拒，前端换新 key 重新预留并扣费', async () => {
+    const fam = await createFamily(h, { source: 'pilot_virtual' });
+    const s = fam.students[0]!;
+    const k = key();
+    const metrics = new CountingMetrics();
+    const input = { accountId: s.account, studentId: s.id, resourceType: 'diagnosis_full' as const,
+                    idempotencyKey: k, body: { context: { subject: 'aya', student_ref: s.id }, attempts: [] } };
+    const down = new FakeLearning(() => UNAVAILABLE);
+    assert.equal((await meteredCall(deps(down, metrics), input)).status, 'unknown');
+    await h.advance(11 * MIN);
+    await runExpiry(h.scheduler);
+
+    // 学习服务那边这个 key 没有成功记录：重放 404 并封存，BFF 不发原请求
+    const learning = new FakeLearning();
+    const r = await meteredCall(deps(learning, metrics), input);
+    assert.equal(r.status, 'expired_retry_with_new_key');
+    assert.equal(metrics.get('sealed_after_expiry'), 1);
+    assert.equal(learning.calls.length, 0, '没有预留的执行为 0');
+    assert.ok(learning.sealed.has(k));
+    // 之前卡在路上的原请求此时才到学习服务：被封存拒绝
+    const lateOriginal = await learning.call('diagnose', { context: { idempotency_key: k, usage_id: usageIdFor(k), student_ref: s.id } });
+    assert.ok(lateOriginal.kind === 'failure' && lateOriginal.problem.code === 'IDEMPOTENCY_KEY_SEALED');
+    assert.deepEqual(await counters(h, s.id, 'diagnosis_full'), { granted: 6, reserved: 0, settled: 0 });
+
+    // 前端换新 key：重新预留、执行、扣费
+    const k2 = key();
+    const fresh = await meteredCall(deps(learning, metrics), { ...input, idempotencyKey: k2 });
+    assert.deepEqual([fresh.status, fresh.status === 'ok' && fresh.charged], ['ok', true]);
+    assert.deepEqual(await counters(h, s.id, 'diagnosis_full'), { granted: 6, reserved: 0, settled: 1 });
+    assert.ok(await ledgerConsistent(h));
+  });
+
+  test('场景 5：过期后重放参数对不上不封存；同 key 仍在执行时结果未知', async () => {
+    const fam = await createFamily(h, { source: 'pilot_virtual' });
+    const s = fam.students[0]!;
+    const k = key();
+    const metrics = new CountingMetrics();
+    const learning = new FakeLearning();
+    // 另一个学生先用过这个 key（学习服务里记录的学生不同）
+    await learning.call('grade', { context: { idempotency_key: k, usage_id: usageIdFor(k), student_ref: randomUUID() } });
+    const r0 = await learning.replay('grade', k, s.id, usageIdFor(k));
+    assert.equal(r0.kind, 'not_found');
+    assert.ok(!learning.sealed.has(k), '参数对不上：不替别人封存');
+
+    const input = { accountId: s.account, studentId: s.id, resourceType: 'diagnosis_full' as const,
+                    idempotencyKey: key(), body: { context: { subject: 'aya', student_ref: s.id }, attempts: [] } };
+    const down = new FakeLearning(() => UNAVAILABLE);
+    await meteredCall(deps(down, metrics), input);
+    await h.advance(11 * MIN);
+    await runExpiry(h.scheduler);
+    down.busy = true;
+    const busy = await meteredCall(deps(down, metrics), input);
+    assert.equal(busy.status, 'unknown', '重放 BUSY：结果未知，不换 key、不扣费');
+    assert.ok(!down.sealed.has(input.idempotencyKey));
+    assert.deepEqual(await counters(h, s.id, 'diagnosis_full'), { granted: 6, reserved: 0, settled: 0 });
   });
 
   test('场景 5：过期任务与结算并发——到期的只会被过期、未到期的只会被结算，不死锁、不出错', async () => {
@@ -300,9 +355,32 @@ describe('Gate 0 计量场景', { skip: HAS_DB ? false : '没有 PGHOST（make b
     assert.equal((fake.lastBody?.['context'] as { student_ref: string }).student_ref, s.id, '没给 student_ref 时由 BFF 补上被扣费的学生');
   });
 
-  test('选科并发：基础会员同时选两科，只有一科成功', async () => {
-    const fam = await createFamily(h, { source: 'trial' });
+  test('契约版本：调用方给了 1.0.0 以外的 contract_version，在预留之前 TypeError（不扣额度、不留预留、不调学习服务）', async () => {
+    const fam = await createFamily(h, { source: 'pilot_virtual' });
     const s = fam.students[0]!;
+    const fake = new FakeLearning();
+    for (const v of ['0.9.0', '1.1.0']) {
+      await assert.rejects(meteredCall(deps(fake), {
+        accountId: s.account, studentId: s.id, resourceType: 'diagnosis_full', idempotencyKey: key(),
+        body: { context: { subject: 'aya', contract_version: v }, attempts: [] },
+      }), TypeError, v);
+    }
+    assert.equal(fake.calls.length, 0);
+    assert.equal((await reservationsByStudent(h, s.id)).length, 0, '没有留下任何预留');
+    for (const context of [{ subject: 'aya' }, { subject: 'aya', contract_version: '1.0.0' }]) {
+      const ok = await meteredCall(deps(fake), {
+        accountId: s.account, studentId: s.id, resourceType: 'diagnosis_full', idempotencyKey: key(), body: { context, attempts: [] },
+      });
+      assert.equal(ok.status, 'ok', '缺省或 1.0.0 照常预留与调用');
+    }
+    assert.ok(await ledgerConsistent(h));
+  });
+
+  test('选科并发：基础会员同时选两科，只有一科成功', async () => {
+    // 已上线学科在目录里是 beta，只对试点开放（0015）：用试点家庭，档位改成 basic（只能开 1 科）
+    const fam = await createFamily(h, { source: 'pilot_virtual' });
+    const s = fam.students[0]!;
+    await h.su.query(`UPDATE platform.subscription SET tier = 'basic' WHERE student_id = $1 AND status = 'active'`, [s.id]);
     const enroll = async (subject: string) => {
       const c = await h.bff.connect();
       try {
@@ -323,11 +401,122 @@ describe('Gate 0 计量场景', { skip: HAS_DB ? false : '没有 PGHOST（make b
   });
 
   test('续期：周期结束后定时任务按配置发放下一周期', async () => {
-    const fam = await createFamily(h, { source: 'trial' });
+    const fam = await createFamily(h, { source: 'pilot_virtual' });
     const s = fam.students[0]!;
     await h.advance(31 * 24 * HOUR);
     assert.ok(await runRenewal(h.scheduler) >= 1);
-    assert.deepEqual(await counters(h, s.id, 'diagnosis_full'), { granted: 1, reserved: 0, settled: 0 });
+    assert.deepEqual(await counters(h, s.id, 'diagnosis_full'), { granted: 6, reserved: 0, settled: 0 });
     assert.ok(await ledgerConsistent(h));
+  });
+
+  // 把计量时钟推到下一个上海时间 10:00（UTC 02:00），避开宵禁
+  async function toDaytime(): Promise<void> {
+    const d = new Date(h.clockMs());
+    let t = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 2, 0, 0);
+    if (t <= h.clockMs()) t += 24 * HOUR;
+    await h.setClock(t);
+  }
+  async function asAccount<T>(account: string, sql: string, params: unknown[]): Promise<T> {
+    const c = await h.bff.connect();
+    try {
+      await c.query('BEGIN');
+      await c.query("SELECT set_config('app.account_id', $1, true)", [account]);
+      const { rows } = await c.query(sql, params);
+      await c.query('SELECT pg_sleep(0.02)');  // 让并发事务重叠
+      await c.query('COMMIT');
+      return rows[0].r as T;
+    } finally {
+      c.release();
+    }
+  }
+  const reserveMinutes = (s: { id: string; account: string }, k: string, qty: number) => reserve(h.bff, s.account, {
+    studentId: s.id, resourceType: 'ai_active_time', idempotencyKey: k,
+    requestFingerprint: meteringFingerprint('grade', { k }), quantity: qty, sourceMethod: 'grade',
+  });
+
+  test('单日上限并发（0015）：20 笔各 30 分钟同时预留，上限 180 分钟，恰好 6 笔成功', async () => {
+    await toDaytime();
+    const fam = await createFamily(h, { source: 'pilot_virtual' });
+    const s = fam.students[0]!;
+    const results = await Promise.all(Array.from({ length: 20 }, () => reserveMinutes(s, key(), 30)));
+    assert.equal(results.filter((r) => r.outcome === 'reserved').length, 6);
+    assert.equal(results.filter((r) => r.outcome === 'daily_cap_reached').length, 14);
+    assert.ok(await ledgerConsistent(h));
+  });
+
+  test('单日上限附近的同 key 并发重试（0015）：都拿到同一笔预留，不被上限拒绝', async () => {
+    await toDaytime();
+    const fam = await createFamily(h, { source: 'pilot_virtual' });
+    const s = fam.students[0]!;
+    for (let i = 0; i < 5; i++) assert.equal((await reserveMinutes(s, key(), 30)).outcome, 'reserved');
+    const k = key();
+    const results = await Promise.all(Array.from({ length: 10 }, () => reserveMinutes(s, k, 30)));
+    assert.deepEqual([...new Set(results.map((r) => r.outcome))].sort().filter((o) => o !== 'existing'), ['reserved']);
+    assert.equal((await reservationsByStudent(h, s.id)).length, 6);
+  });
+
+  test('留存态自练并发（0015）：10 次同时自练，恰好 5 次放行', async () => {
+    await toDaytime();
+    const fam = await createFamily(h, { source: 'trial' });
+    const s = fam.students[0]!;
+    await h.advance(14 * 24 * HOUR + 1000);
+    await runRenewal(h.scheduler);
+    await toDaytime();
+    const results = await Promise.all(Array.from({ length: 10 }, () =>
+      asAccount<{ outcome: string }>(s.account, 'SELECT platform.meter_practice($1, $2) AS r', [s.id, key()])));
+    assert.equal(results.filter((r) => r.outcome === 'allowed').length, 5);
+    assert.equal(results.filter((r) => r.outcome === 'daily_limit_reached').length, 5);
+  });
+
+  test('试用领取并发（0015）：同一家庭两个孩子同时开试用，只有一个成功', async () => {
+    const fam = await createFamily(h, { source: 'pilot_virtual' });
+    const guardian = fam.guardian;
+    const kids = [randomUUID(), randomUUID()];
+    const household = randomUUID();
+    await h.su.query(`INSERT INTO platform.household (id, created_by_account) VALUES ($1, $2)`, [household, guardian]);
+    for (const id of kids) {
+      const account = randomUUID();
+      await h.su.query(`INSERT INTO platform.account (id, kind) VALUES ($1, 'student')`, [account]);
+      await h.su.query(`INSERT INTO platform.student_profile (id, account_id, household_id, grade, region) VALUES ($1, $2, $3, 9, 'nanjing')`,
+                       [id, account, household]);
+      await h.su.query(`INSERT INTO platform.guardian_student_link (guardian_account_id, student_id, granted_via)
+                        VALUES ($1, $2, 'household_creator')`, [guardian, id]);
+    }
+    const results = await Promise.all(kids.map((id) =>
+      asAccount<{ outcome: string }>(guardian, 'SELECT platform.meter_open_subscription($1, $2) AS r', [id, 'trial'])));
+    assert.deepEqual(results.map((r) => r.outcome).sort(), ['opened', 'trial_already_claimed']);
+  });
+
+  test('试用 14 天到期不续期；留存态的计量请求被拒，不调学习服务（0015）', async () => {
+    const fam = await createFamily(h, { source: 'trial' });
+    const s = fam.students[0]!;
+    await h.advance(14 * 24 * HOUR + 1000);
+    assert.ok(await runRenewal(h.scheduler) >= 1);
+    const fake = new FakeLearning();
+    const r = await meteredCall(deps(fake), {
+      accountId: s.account, studentId: s.id, resourceType: 'diagnosis_full', idempotencyKey: key(),
+      body: { context: { subject: 'aya', student_ref: s.id }, attempts: [] },
+    });
+    assert.deepEqual(r, { status: 'retained_no_ai' });
+    assert.equal(fake.calls.length, 0);
+    assert.ok(await ledgerConsistent(h));
+  });
+
+  test('宵禁时段的计量请求被拒，不调学习服务（0015）', async () => {
+    const fam = await createFamily(h, { source: 'pilot_virtual' });
+    const s = fam.students[0]!;
+    const start = h.clockMs();
+    // 推进到上海时间 23:00（UTC 15:00）
+    const d = new Date(start);
+    const target = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 15, 0, 0) + (d.getUTCHours() >= 15 ? 24 * HOUR : 0);
+    await h.setClock(target);
+    const fake = new FakeLearning();
+    const r = await meteredCall(deps(fake), {
+      accountId: s.account, studentId: s.id, resourceType: 'diagnosis_full', idempotencyKey: key(),
+      body: { context: { subject: 'aya', student_ref: s.id }, attempts: [] },
+    });
+    assert.deepEqual(r, { status: 'curfew' });
+    assert.equal(fake.calls.length, 0);
+    assert.equal((await reservationsByStudent(h, s.id)).length, 0);
   });
 });

@@ -1,0 +1,75 @@
+openapi: 3.1.0
+# 学习服务与审核台后端的健康端点（LT-03 范围第 4 条，specs/launch-lt03-cloud-staging；learning/health.py）。
+# 服务内部接口，不是学科契约（learning-internal 的契约在 packages/contracts，本文件不进契约、不改契约）。
+# 两个服务同一份定义：学习服务（主监听；staging 的回环路由监听不服务这两条路径）与审核台后端（review_console：仍经 Host 校验，
+# staging 另收显式配置的内网监听地址；不要 staff 会话）。各服务同一口径：services/{insight,knowledge,scheduler,bff}/openapi/health.v0.yaml。
+info:
+  title: StarBuddy learning service / review console health
+  version: 0.1.0
+  description: |
+    无需鉴权；响应只含状态（不带版本、主机名、库名、迁移号、错误类别或耗时），一律 no-store、nosniff；探测不逐次记日志。
+    /readyz 的“就绪”= 启动前置已在 lifespan 里核对通过（学习服务：契约加载、迁移 0016 / 0037 / 0058 与执行权、配置；
+    审核台：两个登录角色），且连接池在 2 秒内完成 SELECT 1（审核台两个池都要可用）；学习服务每次另核对 0058 的计量函数仍在、
+    本角色仍有执行权。并发的探测共用一次检查，结果复用 3 秒。
+servers:
+  - url: http://127.0.0.1:8788
+    description: 学习服务（staging 为 Pod 内网地址，LEARNING_HOST）
+  - url: http://127.0.0.1:8792
+    description: 审核台后端（staging 为 Pod 内网地址，REVIEW_CONSOLE_HOST）
+paths:
+  /healthz:
+    get:
+      operationId: healthz
+      summary: 存活（不访问任何依赖）
+      security: []
+      responses:
+        '200':
+          description: 进程在应答
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Alive'}
+  /readyz:
+    get:
+      operationId: readyz
+      summary: 就绪（启动前置已通过、连接池可用）
+      security: []
+      responses:
+        '200':
+          description: 就绪
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Ready'}
+        '503':
+          description: 未就绪（启动未完成、已在关闭、库不可用或超时；不区分原因）
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/NotReady'}
+  /metrics:
+    get:
+      operationId: metrics
+      summary: 指标（LT-05，learning/obs.py；只在单独的指标端口——学习服务 LEARNING_METRICS_PORT（staging 9788）、审核台 REVIEW_CONSOLE_METRICS_PORT（staging 9792），与业务监听同一地址；业务端口与回环路由监听上的 /metrics 一律 404。Prometheus 文本格式，免鉴权、只在 Pod 内网，k8s NetworkPolicy 只给采集组件放行指标端口）
+      description: 指标端口只服务这一条路径（路径逐字相等、不收查询串）：别的路径 404、别的方法 405；不记访问日志。
+      security: []
+      responses:
+        '200':
+          description: Prometheus 文本格式（只含白名单标签；指标清单见 deploy/observability/metrics-inventory.yaml）
+          content:
+            text/plain:
+              schema: {type: string}
+components:
+  schemas:
+    Alive:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties: {status: {const: ok}}
+    Ready:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties: {status: {const: ready}}
+    NotReady:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties: {status: {const: not_ready}}

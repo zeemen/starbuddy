@@ -3,7 +3,7 @@
 // 16px 的星不做单独点击（触控目标不到 44px），逐颗详情在列表里。
 import { skySummaryLabel, statusText, subjectName } from '../lib/labels.ts';
 import type { Sky } from '../lib/star-map.ts';
-import { orderStars, squareColumns, STAR_PITCH, STAR_SIZE } from './layout.ts';
+import { MAX_COLS, orderStars, squareColumns, STAR_SIZE } from './layout.ts';
 import { Star } from './Star.tsx';
 
 export function StarSky({ sky }: { sky: Sky }) {
@@ -19,7 +19,7 @@ export function StarSky({ sky }: { sky: Sky }) {
         data-summary-lit={sky.summary.lit}
         data-summary-half={sky.summary.half}
         data-summary-unlit={sky.summary.unlit}
-        style={{ maxWidth: `${squareColumns(stars.length) * STAR_PITCH}px` }}
+        data-cols={Math.min(squareColumns(stars.length), MAX_COLS)}
       >
         {stars.map((s) => (
           <Star key={s.skill} display={s.display} retained={s.retained} size={STAR_SIZE} />

@@ -1,0 +1,32 @@
+# 家族级 · 命名格式（七科规范 第四章命名规则、第八章）：称谓按登记表 address_terms；叠字只有点点；考官型不称呼点点。
+# 手写合成转写，只用来验证检查器本身；不是人设语料、不是金标准。
+kind: family
+check: naming
+source: synthetic
+not_persona_corpus: true
+cases:
+  - case_id: FAM-NM-001
+    persona_id: diandian
+    expect: pass
+    spec_ref: "点点 V1.2 §4.5：学生没发现 → 交还老师“我也不确定，鸦老师你看？”"
+    turns:
+      - { speaker: student, text: "【合成】我没看出来哪里不对。" }
+      - { speaker: diandian, text: "我也不确定，鸦老师你看？" }
+  - case_id: FAM-NM-002
+    persona_id: diandian
+    expect: fail
+    turns:
+      - { speaker: student, text: "【合成】我没看出来哪里不对。" }
+      - { speaker: diandian, text: "【合成】我也不确定，阿鸦你看？" }
+  - case_id: FAM-NM-003
+    persona_id: fangyuan
+    expect: fail
+    note: 考官型不称呼点点（考官型基线 第六章）
+    turns:
+      - { speaker: fangyuan, text: "【合成】点点先退下。对采分点。", context: { grading_moment: true } }
+  - case_id: FAM-NM-004
+    persona_id: diandian
+    expect: fail
+    note: 叠字格式只能是点点
+    turns:
+      - { speaker: diandian, text: "【合成】等笔笔来看这一段。" }

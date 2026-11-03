@@ -1,0 +1,20 @@
+/* 离线固定页的样式（LT-07）：与 src/app/theme.css 同一组颜色（宣白、鸦青），系统字体栈，不引外部资源。 */
+:root { color-scheme: light dark; --bg: #F4F3EE; --fg: #1F2A44; }
+@media (prefers-color-scheme: dark) { :root { --bg: #1F2A44; --fg: #F4F3EE; } }
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, -apple-system, "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+}
+main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+}
+h1 { font-size: 1.5rem; margin: 0 0 8px; }
+a { color: inherit; display: inline-flex; align-items: center; min-height: 44px; }

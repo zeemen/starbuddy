@@ -1,0 +1,991 @@
+openapi: 3.1.0
+info:
+  title: StarBuddy 知识服务 API（KGE）
+  version: 0.9.0
+  summary: 知识地图、题目与采分点、证据写入与掌握读取。平台内部接口，学生与家长不能直接访问。
+  description: |
+    状态：**草稿 v0.9，待评审**（specs/service-openapi-v0.9/spec.md；W2 评审，W4 与学科插件 API 一起冻结 v1.0）。
+
+    十个工具与 KGE V1.1 第八章“知识服务接口”一一对应，`operationId` 即工具名（点换成下划线）。
+    KGE-03 的 MCP 工具由本文件生成，不另写一套。
+
+    ## 统一信封
+    每个 200 响应都带 `result`、`evidence_ids`、`confidence`、`source_version`、`model_version`、
+    `human_review_required`（KGE 第八章），另加 `contract_version`；信封外不允许额外字段。
+    纯公共知识的读取：`evidence_ids` 为空、`confidence` 为 1、`model_version` 为 `algo:kge-<工具>@x.y.z`，
+    `source_version` 带地图版本段（例如 `graph:math-map@1.2.3`）。
+
+    ## 两层
+    - **公共层**（`node.*`、`page.*`、`item.*`、`rubric.*`）：只读 `kge.*` 已发布的内容，请求与响应都不带学生标识
+      （CLAUDE.md 规则 13）。题干、答案、解析不经本接口返回（kge schema v0.9 待人确认 #3）。
+    - **个人层**（`evidence.write`、`mastery.*`）：过渡期由学习服务实现（ADR 01：学习服务是个人层唯一写入方）。
+      调用方是平台编排层与学习服务，**不是适配器**（spec 待人确认 #1）：适配器仍按学科插件 API 在响应里返回证据草稿。
+
+    ## 证据等级（技术蓝图 v2.1 §2.1）
+    `evidence.write` 只接受 A、B 两级。C 级（低置信未确认、外部题、申诉中）不进学习者模型，schema 里没有这个取值。
+    拍照通道只能是 B 级。“只有 A 级能点亮星”“B 级权重”属于掌握计算（必停项），不在本契约里写数值。
+
+    ## 鉴权、幂等、计量
+    - 只接受平台内部服务令牌；`caller` 由服务从令牌取，请求体里的值必须与令牌一致，否则 403。学生与家长的请求由 BFF 先按档案授权（规则 5）。
+    - 个人层工具只给编排层与学习服务（`caller` 没有 `bff`）：`mastery.*` 的结果是推断，对学生家长的任何陈述仍要经洞察服务的判断（规则 11）。
+    - `evidence.write` 必须带 `idempotency_key`：同 key 同体返回原结果，同 key 异体返回 409 `IDEMPOTENCY_CONFLICT`；
+      key 的作用域是“调用方 + 工具 + 学生”。
+    - 本接口不计次，所以没有 `usage_id`：调用由已计量的插件请求或 BFF 会话触发，计量仍在那一层（规则 4）。
+    - `node.resolve` 的输入文本可能来自学生：只给编排层调用，数据级别固定为 L2，只用境内已备案模型；
+      服务不落库、不记录输入文本，不回流公共层或编译层；低置信进复核队列时只带候选节点，不带原文（规则 13、ADR 04）。
+
+    ## 错误与日志
+    - 无权访问与对象不存在返回同一个 404，`code` 与 `title` 相同，不带 `detail`；`detail` 里永远不出现 `student_ref` 等标识。
+    - 服务日志只记 `request_id`、`caller` 与工具名，不记请求体里的 `text`、`payload` 与 `student_ref`。
+  license:
+    name: 内部，未授权对外
+    identifier: LicenseRef-StarBuddy-Internal
+servers:
+  - url: http://127.0.0.1:8790
+    description: 只监听本机，由平台侧网关转发。部署位置另行决定（spec 待人确认 #3）。
+security:
+  - platformServiceToken: []
+
+paths:
+  /v0/node.resolve:
+    post:
+      operationId: node_resolve
+      summary: 把一段文本解析为候选知识节点
+      description: 图片输入只在上传通道（KGE-05）之后支持，且只接受平台上传通道产出的引用（spec 待人确认 #7）。v0.9 只收文本。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NodeResolveRequest' }
+            examples: { basic: { $ref: '#/components/examples/NodeResolveRequest' } }
+      responses:
+        '200':
+          description: 候选节点，按置信度从高到低
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NodeResolveResponse' }
+              examples: { basic: { $ref: '#/components/examples/NodeResolveResponse' } }
+        default: { $ref: '#/components/responses/Problem' }
+  /v0/node.get:
+    post:
+      operationId: node_get
+      summary: 读取一个知识节点及其投影视图
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NodeGetRequest' }
+            examples: { basic: { $ref: '#/components/examples/NodeGetRequest' } }
+      responses:
+        '200':
+          description: 节点、范围属性、认知层次、已核对的教材投影与地区权重
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NodeGetResponse' }
+              examples: { basic: { $ref: '#/components/examples/NodeGetResponse' } }
+        default: { $ref: '#/components/responses/Problem' }
+  /v0/node.path:
+    post:
+      operationId: node_path
+      summary: 前置链或后续链（只走强前置边）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NodePathRequest' }
+            examples: { basic: { $ref: '#/components/examples/NodePathRequest' } }
+      responses:
+        '200':
+          description: 按深度排列的边
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NodePathResponse' }
+              examples: { basic: { $ref: '#/components/examples/NodePathResponse' } }
+        default: { $ref: '#/components/responses/Problem' }
+  /v0/page.get:
+    post:
+      operationId: page_get
+      summary: 读取已发布的知识页面（按教材与地区渲染）
+      description: 编译层（KGE-03）建成前返回 501 `METHOD_NOT_IMPLEMENTED`（spec 待人确认 #4）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PageGetRequest' }
+            examples: { basic: { $ref: '#/components/examples/PageGetRequest' } }
+      responses:
+        '200':
+          description: 已发布页面
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PageGetResponse' }
+              examples: { basic: { $ref: '#/components/examples/PageGetResponse' } }
+        '501': { $ref: '#/components/responses/Problem' }
+        default: { $ref: '#/components/responses/Problem' }
+  /v0/item.search:
+    post:
+      operationId: item_search
+      summary: 按节点、认知层次、难度检索已审核的题目（只返回引用与标签）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ItemSearchRequest' }
+            examples: { basic: { $ref: '#/components/examples/ItemSearchRequest' } }
+      responses:
+        '200':
+          description: 题目引用与标签，不含题干与答案
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ItemSearchResponse' }
+              examples: { basic: { $ref: '#/components/examples/ItemSearchResponse' } }
+        default: { $ref: '#/components/responses/Problem' }
+  /v0/item.similar:
+    post:
+      operationId: item_similar
+      summary: 同题目族或相似题
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ItemSimilarRequest' }
+            examples: { basic: { $ref: '#/components/examples/ItemSimilarRequest' } }
+      responses:
+        '200':
+          description: 题目引用与关系
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ItemSimilarResponse' }
+              examples: { basic: { $ref: '#/components/examples/ItemSimilarResponse' } }
+        default: { $ref: '#/components/responses/Problem' }
+  /v0/rubric.get:
+    post:
+      operationId: rubric_get
+      summary: 题目某个 Rubric 版本的采分点结构
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RubricGetRequest' }
+            examples: { basic: { $ref: '#/components/examples/RubricGetRequest' } }
+      responses:
+        '200':
+          description: 采分点，与 kge.scoring_point 一一对应
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RubricGetResponse' }
+              examples: { basic: { $ref: '#/components/examples/RubricGetResponse' } }
+        default: { $ref: '#/components/responses/Problem' }
+  /v0/evidence.write:
+    post:
+      operationId: evidence_write
+      summary: 写入证据事件（只接受 A、B 两级）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EvidenceWriteRequest' }
+            examples: { basic: { $ref: '#/components/examples/EvidenceWriteRequest' } }
+      responses:
+        '200':
+          description: 已写入（或重放已写入的结果）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EvidenceWriteResponse' }
+              examples: { basic: { $ref: '#/components/examples/EvidenceWriteResponse' } }
+        default: { $ref: '#/components/responses/Problem' }
+  /v0/mastery.get:
+    post:
+      operationId: mastery_get
+      summary: 节点 × 层次的掌握状态
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MasteryGetRequest' }
+            examples: { basic: { $ref: '#/components/examples/MasteryGetRequest' } }
+      responses:
+        '200':
+          description: 掌握状态、门槛与下次复测时间
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MasteryGetResponse' }
+              examples: { basic: { $ref: '#/components/examples/MasteryGetResponse' } }
+        default: { $ref: '#/components/responses/Problem' }
+  /v0/mastery.explain:
+    post:
+      operationId: mastery_explain
+      summary: 某节点掌握状态的证据链
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MasteryExplainRequest' }
+            examples: { basic: { $ref: '#/components/examples/MasteryExplainRequest' } }
+      responses:
+        '200':
+          description: 证据链
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MasteryExplainResponse' }
+              examples: { basic: { $ref: '#/components/examples/MasteryExplainResponse' } }
+        default: { $ref: '#/components/responses/Problem' }
+
+components:
+  securitySchemes:
+    platformServiceToken:
+      type: http
+      scheme: bearer
+      description: 平台内部服务令牌，按调用方类别（bff、orchestrator、learning）签发。
+
+  responses:
+    Problem:
+      description: 统一错误体（与学科插件 API 相同）
+      content:
+        application/problem+json:
+          schema: { $ref: './plugin-api.v0.9.yaml#/components/schemas/Problem' }
+
+  schemas:
+    # ---------- 公共类型 ----------
+    NodeId:
+      type: string
+      description: 知识节点 ID，与 kge.node_id 域的正则一致（docs/design/kge/id-and-segments.md；kge-id-check 比对）。
+      pattern: '^[A-Z][A-Z0-9]{1,9}(\.[A-Z0-9][A-Z0-9_]{0,31}){1,4}$'
+    MapVersion:
+      type: string
+      description: 地图版本号 主.次.修订（kge.map_version.version）。
+      pattern: '^\d{1,3}\.\d{1,3}\.\d{1,4}$'
+    NodeLevel: { type: string, enum: [domain, topic, node, detail] }
+    NodeKind: { type: string, enum: [kp, ability_kp, viewpoint, material, method, pitfall, exam_point] }
+    NodeScope: { type: string, enum: [required, elective, edition_ext, exam_ext, enrichment] }
+    CognitiveLevel:
+      type: string
+      description: 课标四级：知道、理解、运用、综合。
+      enum: [know, understand, apply, synthesize]
+    EdgeType: { type: string, enum: [prerequisite, part_of, related, confusable, uses_method, has_pitfall, aligned_to] }
+    Region: { type: string, pattern: '^[a-z][a-z0-9\-]{1,31}$' }
+    Edition: { type: string, description: 教材版次，与 textbook_version 同一套编码。, pattern: '^[a-z0-9][a-z0-9\-]{1,31}$' }
+    Confidence: { type: number, minimum: 0, maximum: 1 }
+
+    # ---------- 请求上下文 ----------
+    PublicContext:
+      type: object
+      description: 公共层请求的上下文。**不带学生标识**（规则 13）。
+      required: [request_id, contract_version, caller, data_class]
+      additionalProperties: false
+      properties:
+        request_id: { type: string, format: uuid }
+        contract_version: { type: string, const: 0.9.0 }
+        caller: { type: string, enum: [bff, orchestrator, learning] }
+        data_class:
+          description: 公共知识是 L1；`node.resolve` 的输入文本可能来自学生，按 L2。
+          allOf:
+            - $ref: './plugin-api.v0.9.yaml#/components/schemas/DataClass'
+            - enum: [L1, L2]
+        map_version: { $ref: '#/components/schemas/MapVersion' }
+    ResolveContext:
+      description: node.resolve 的上下文：只给编排层，输入文本按 L2 处理。
+      allOf:
+        - $ref: '#/components/schemas/PublicContext'
+        - properties: { caller: { const: orchestrator }, data_class: { const: L2 } }
+    StudentContext:
+      type: object
+      description: 个人层请求的上下文。`student_ref` 只能是平台学生 ID，不得携带手机号、姓名、学校。
+      required: [request_id, contract_version, caller, data_class, student_ref]
+      additionalProperties: false
+      properties:
+        request_id: { type: string, format: uuid }
+        contract_version: { type: string, const: 0.9.0 }
+        caller: { type: string, enum: [orchestrator, learning] }
+        data_class:
+          allOf:
+            - $ref: './plugin-api.v0.9.yaml#/components/schemas/DataClass'
+            - enum: [L2, L3]
+        student_ref: { type: string, format: uuid }
+        idempotency_key: { type: string, minLength: 16, maxLength: 128, pattern: '^[A-Za-z0-9][A-Za-z0-9_.:\-]{15,127}$' }
+    WriteContext:
+      description: 写入类工具的上下文：`idempotency_key` 必填。
+      allOf:
+        - $ref: '#/components/schemas/StudentContext'
+        - required: [idempotency_key]
+
+    # ---------- 统一信封 ----------
+    ServiceResultBase:
+      type: object
+      description: KGE 第八章的统一返回字段。`human_review_required = true` 时 `review_reasons` 必须非空。
+      required: [result, evidence_ids, confidence, source_version, model_version, human_review_required, contract_version]
+      properties:
+        contract_version: { type: string, const: 0.9.0 }
+        result: {}
+        evidence_ids:
+          type: array
+          items: { type: string, format: uuid }
+          uniqueItems: true
+        confidence: { $ref: '#/components/schemas/Confidence' }
+        source_version: { $ref: './plugin-api.v0.9.yaml#/components/schemas/SourceVersion' }
+        model_version: { $ref: './plugin-api.v0.9.yaml#/components/schemas/ModelVersion' }
+        human_review_required: { type: boolean }
+        review_reasons:
+          type: array
+          items: { $ref: './plugin-api.v0.9.yaml#/components/schemas/ReviewReason' }
+          uniqueItems: true
+      allOf:
+        - description: 需要复核时必须给出原因
+          if: { properties: { human_review_required: { const: true } }, required: [human_review_required] }
+          then: { required: [review_reasons], properties: { review_reasons: { minItems: 1 } } }
+
+    # ---------- node.resolve ----------
+    NodeResolveRequest:
+      type: object
+      required: [context, subject, text]
+      additionalProperties: false
+      properties:
+        context: { $ref: '#/components/schemas/ResolveContext' }
+        subject: { $ref: './plugin-api.v0.9.yaml#/components/schemas/Subject' }
+        text: { type: string, minLength: 1, maxLength: 2000, description: 待解析的文本（题目片段或学生的问题）。 }
+        max_candidates: { type: integer, minimum: 1, maximum: 10, default: 5 }
+    NodeCandidate:
+      type: object
+      required: [node_id, level, confidence]
+      additionalProperties: false
+      properties:
+        node_id: { $ref: '#/components/schemas/NodeId' }
+        level: { $ref: '#/components/schemas/NodeLevel' }
+        kind: { $ref: '#/components/schemas/NodeKind' }
+        confidence: { $ref: '#/components/schemas/Confidence' }
+    NodeResolveResponse:
+      allOf:
+        - $ref: '#/components/schemas/ServiceResultBase'
+        - properties:
+            evidence_ids: { maxItems: 0, description: 公共层不引用任何学生证据。 }
+            result:
+              type: object
+              required: [map_version, candidates]
+              additionalProperties: false
+              properties:
+                map_version: { $ref: '#/components/schemas/MapVersion' }
+                candidates: { type: array, maxItems: 10, items: { $ref: '#/components/schemas/NodeCandidate' } }
+      unevaluatedProperties: false
+
+    # ---------- node.get ----------
+    NodeGetRequest:
+      type: object
+      required: [context, node_id]
+      additionalProperties: false
+      properties:
+        context: { $ref: '#/components/schemas/PublicContext' }
+        node_id: { $ref: '#/components/schemas/NodeId' }
+        edition: { $ref: '#/components/schemas/Edition' }
+        region: { $ref: '#/components/schemas/Region' }
+    NodeView:
+      type: object
+      description: 公共层节点视图（kge.knowledge_node）。名称与边界文字是教研审核过的内容，不是关于学生的陈述。
+      required: [node_id, map_version, level, name, scope, cognitive_levels, includes, excludes]
+      additionalProperties: false
+      properties:
+        node_id: { $ref: '#/components/schemas/NodeId' }
+        map_version: { $ref: '#/components/schemas/MapVersion' }
+        level: { $ref: '#/components/schemas/NodeLevel' }
+        kind: { $ref: '#/components/schemas/NodeKind' }
+        name: { type: string, maxLength: 128 }
+        scope: { $ref: '#/components/schemas/NodeScope' }
+        cognitive_levels: { type: array, uniqueItems: true, items: { $ref: '#/components/schemas/CognitiveLevel' } }
+        includes: { type: array, maxItems: 32, items: { type: string, maxLength: 200 } }
+        excludes: { type: array, maxItems: 32, items: { type: string, maxLength: 200 } }
+        error_type: { $ref: './plugin-api.v0.9.yaml#/components/schemas/CrossSubjectErrorCategory' }
+    TextbookProjection:
+      type: object
+      description: 只返回已核对（verified）的投影；原句哈希由库计算（kge.textbook_projection.quote_hash）。
+      required: [edition, edition_year, volume, chapter, page_from, page_to]
+      additionalProperties: false
+      properties:
+        edition: { $ref: '#/components/schemas/Edition' }
+        edition_year: { type: integer, minimum: 2000, maximum: 2100 }
+        volume: { type: string, maxLength: 32 }
+        chapter: { type: string, maxLength: 64 }
+        page_from: { type: integer, minimum: 1 }
+        page_to: { type: integer, minimum: 1 }
+        quote_text: { type: string, maxLength: 500 }
+        quote_hash: { type: string, pattern: '^[0-9a-f]{64}$' }
+    RegionWeight:
+      type: object
+      required: [region, exam_year, weight]
+      additionalProperties: false
+      properties:
+        region: { $ref: '#/components/schemas/Region' }
+        exam_year: { type: integer, minimum: 2015, maximum: 2100 }
+        weight: { type: number, minimum: 0, maximum: 1 }
+        typical_slots: { type: array, maxItems: 16, items: { type: string, maxLength: 64 } }
+    NodeGetResponse:
+      allOf:
+        - $ref: '#/components/schemas/ServiceResultBase'
+        - properties:
+            evidence_ids: { maxItems: 0, description: 公共层不引用任何学生证据。 }
+            result:
+              type: object
+              required: [node, textbook_projections, region_weights]
+              additionalProperties: false
+              properties:
+                node: { $ref: '#/components/schemas/NodeView' }
+                textbook_projections: { type: array, maxItems: 16, items: { $ref: '#/components/schemas/TextbookProjection' } }
+                region_weights: { type: array, maxItems: 16, items: { $ref: '#/components/schemas/RegionWeight' } }
+      unevaluatedProperties: false
+
+    # ---------- node.path ----------
+    NodePathRequest:
+      type: object
+      required: [context, node_id, direction]
+      additionalProperties: false
+      properties:
+        context: { $ref: '#/components/schemas/PublicContext' }
+        node_id: { $ref: '#/components/schemas/NodeId' }
+        direction: { type: string, description: up = 前置链，down = 后续链。, enum: [up, down] }
+        max_depth: { type: integer, minimum: 1, maximum: 10, default: 3 }
+    PathStep:
+      type: object
+      required: [from_id, to_id, depth]
+      additionalProperties: false
+      properties:
+        from_id: { $ref: '#/components/schemas/NodeId' }
+        to_id: { $ref: '#/components/schemas/NodeId' }
+        depth: { type: integer, minimum: 1, maximum: 10 }
+    NodePathResponse:
+      allOf:
+        - $ref: '#/components/schemas/ServiceResultBase'
+        - properties:
+            evidence_ids: { maxItems: 0, description: 公共层不引用任何学生证据。 }
+            result:
+              type: object
+              required: [root, direction, steps]
+              additionalProperties: false
+              properties:
+                root: { $ref: '#/components/schemas/NodeId' }
+                direction: { type: string, enum: [up, down] }
+                steps: { type: array, maxItems: 500, items: { $ref: '#/components/schemas/PathStep' } }
+      unevaluatedProperties: false
+
+    # ---------- page.get ----------
+    PageId: { type: string, pattern: '^[a-z0-9][a-z0-9_.\-]{0,127}$' }
+    PageGetRequest:
+      type: object
+      required: [context, page_id]
+      additionalProperties: false
+      properties:
+        context: { $ref: '#/components/schemas/PublicContext' }
+        page_id: { $ref: '#/components/schemas/PageId' }
+        edition: { $ref: '#/components/schemas/Edition' }
+        region: { $ref: '#/components/schemas/Region' }
+    PageGetResponse:
+      allOf:
+        - $ref: '#/components/schemas/ServiceResultBase'
+        - properties:
+            evidence_ids: { maxItems: 0, description: 公共层不引用任何学生证据。 }
+            result:
+              type: object
+              description: 公共知识页面。学情档案页属于个人层，不经本工具返回（规则 13）。
+              required: [page_id, page_version, body_md, atom_refs]
+              additionalProperties: false
+              properties:
+                page_id: { $ref: '#/components/schemas/PageId' }
+                page_version: { type: string, pattern: '^\d+\.\d+\.\d+$' }
+                body_md: { type: string, maxLength: 20000, description: 已发布页面正文（公共知识内容）。 }
+                atom_refs:
+                  type: array
+                  maxItems: 200
+                  items: { type: string, pattern: '^(node|item|scoring_point|current_affair|textbook_projection):[A-Za-z0-9][A-Za-z0-9_.:\-]{0,127}$' }
+      unevaluatedProperties: false
+
+    # ---------- item.search / item.similar ----------
+    ItemTagView:
+      type: object
+      description: 题目引用与标签（kge.item_tag）。题干、答案、解析不在这里，由调用方从学科内容包取。
+      required: [item_ref, main_node_id, license_state]
+      additionalProperties: false
+      properties:
+        item_ref: { $ref: './plugin-api.v0.9.yaml#/components/schemas/ItemRef' }
+        main_node_id: { $ref: '#/components/schemas/NodeId' }
+        node_ids: { type: array, maxItems: 16, items: { $ref: '#/components/schemas/NodeId' } }
+        cognitive_level: { $ref: '#/components/schemas/CognitiveLevel' }
+        prior_difficulty: { type: number, minimum: 0, maximum: 1 }
+        family_code: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' }
+        license_state: { type: string, enum: [unverified, licensed, original, public, restricted] }
+    ItemSearchRequest:
+      type: object
+      required: [context, subject]
+      additionalProperties: false
+      properties:
+        context: { $ref: '#/components/schemas/PublicContext' }
+        subject: { $ref: './plugin-api.v0.9.yaml#/components/schemas/Subject' }
+        node_id: { $ref: '#/components/schemas/NodeId' }
+        cognitive_level: { $ref: '#/components/schemas/CognitiveLevel' }
+        difficulty_min: { type: number, minimum: 0, maximum: 1 }
+        difficulty_max: { type: number, minimum: 0, maximum: 1 }
+        family_code: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' }
+        limit: { type: integer, minimum: 1, maximum: 50, default: 20 }
+    ItemSearchResponse:
+      allOf:
+        - $ref: '#/components/schemas/ServiceResultBase'
+        - properties:
+            evidence_ids: { maxItems: 0, description: 公共层不引用任何学生证据。 }
+            result:
+              type: object
+              required: [items]
+              additionalProperties: false
+              properties:
+                items: { type: array, maxItems: 50, items: { $ref: '#/components/schemas/ItemTagView' } }
+      unevaluatedProperties: false
+    ItemSimilarRequest:
+      type: object
+      required: [context, item_ref]
+      additionalProperties: false
+      properties:
+        context: { $ref: '#/components/schemas/PublicContext' }
+        item_ref: { $ref: './plugin-api.v0.9.yaml#/components/schemas/ItemRef' }
+        limit: { type: integer, minimum: 1, maximum: 20, default: 5 }
+    ItemSimilarResponse:
+      allOf:
+        - $ref: '#/components/schemas/ServiceResultBase'
+        - properties:
+            evidence_ids: { maxItems: 0, description: 公共层不引用任何学生证据。 }
+            result:
+              type: object
+              required: [items]
+              additionalProperties: false
+              properties:
+                items:
+                  type: array
+                  maxItems: 20
+                  items:
+                    type: object
+                    required: [item, relation]
+                    additionalProperties: false
+                    properties:
+                      item: { $ref: '#/components/schemas/ItemTagView' }
+                      relation: { type: string, enum: [same_family, similar] }
+      unevaluatedProperties: false
+
+    # ---------- rubric.get ----------
+    RubricGetRequest:
+      type: object
+      required: [context, item_ref, rubric_version]
+      additionalProperties: false
+      properties:
+        context: { $ref: '#/components/schemas/PublicContext' }
+        item_ref: { $ref: './plugin-api.v0.9.yaml#/components/schemas/ItemRef' }
+        rubric_version: { $ref: './plugin-api.v0.9.yaml#/components/schemas/VersionedName' }
+    ScoringPointView:
+      type: object
+      description: 采分点（kge.scoring_point）。`point_id` 与判分维度 `dimension_id` 同一写法（v1.0-review kge-#1）。
+      required: [point_id, score, node_ids, partial_credit]
+      additionalProperties: false
+      properties:
+        point_id: { type: string, pattern: '^[a-z0-9_\-]{1,48}$' }
+        score: { type: number, exclusiveMinimum: 0, maximum: 999 }
+        node_ids: { type: array, minItems: 1, maxItems: 8, items: { $ref: '#/components/schemas/NodeId' } }
+        subject_dimension: { type: string, pattern: '^[a-z0-9_\-]{1,64}$' }
+        keyword_family: { type: array, maxItems: 32, items: { type: string, maxLength: 64 } }
+        partial_credit: { type: string, enum: [all_or_nothing, proportional, stepwise] }
+    RubricGetResponse:
+      allOf:
+        - $ref: '#/components/schemas/ServiceResultBase'
+        - properties:
+            evidence_ids: { maxItems: 0, description: 公共层不引用任何学生证据。 }
+            result:
+              type: object
+              required: [item_ref, rubric_version, map_version, points]
+              additionalProperties: false
+              properties:
+                item_ref: { $ref: './plugin-api.v0.9.yaml#/components/schemas/ItemRef' }
+                map_version: { $ref: '#/components/schemas/MapVersion' }
+                rubric_version: { $ref: './plugin-api.v0.9.yaml#/components/schemas/VersionedName' }
+                points: { type: array, minItems: 1, maxItems: 30, items: { $ref: '#/components/schemas/ScoringPointView' } }
+      unevaluatedProperties: false
+
+    # ---------- evidence.write ----------
+    EvidenceLevel:
+      type: string
+      description: |
+        证据等级（技术蓝图 v2.1 §2.1）。只有 A、B 能写入；C 级不进学习者模型，所以不是可选值。
+      enum: [A, B]
+    InputChannel: { type: string, enum: [keypad, canvas, voice, photo] }
+    EvidenceWriteItem:
+      type: object
+      required: [draft, evidence_level, channel]
+      additionalProperties: false
+      properties:
+        draft: { $ref: './plugin-api.v0.9.yaml#/components/schemas/EvidenceDraft' }
+        evidence_level: { $ref: '#/components/schemas/EvidenceLevel' }
+        channel: { $ref: '#/components/schemas/InputChannel' }
+        answer_evidence_ref:
+          type: string
+          description: 平台侧作答证据（含原图切片、识别原文与校正日志）的引用；本接口不传这些内容。
+          pattern: '^ae:[A-Za-z0-9][A-Za-z0-9_\-]{7,63}$'
+        evidence_kind: { type: string, enum: [independent, hinted, transfer, delayed_retest] }
+        node_id: { $ref: '#/components/schemas/NodeId' }
+        map_version: { $ref: '#/components/schemas/MapVersion' }
+        cognitive_level: { $ref: '#/components/schemas/CognitiveLevel' }
+        confirmed:
+          type: boolean
+          description: 画布经逐行回显、语音经复述，由学生确认过（技术蓝图 v2.1 §4.2、§5.2）。
+      allOf:
+        - description: 拍照通道只能是 B 级（只有平台内独立作答才可能是 A 级）
+          if: { properties: { channel: { const: photo } }, required: [channel] }
+          then: { properties: { evidence_level: { const: B } } }
+        - description: 识别转写只能来自对应的通道（OCR 来自拍照，ASR 来自语音），不能改填通道绕开等级
+          if: { properties: { draft: { properties: { kind: { const: ocr_transcription } }, required: [kind] } }, required: [draft] }
+          then: { properties: { channel: { const: photo } } }
+        - description: 语音转写只能来自语音通道
+          if: { properties: { draft: { properties: { kind: { const: asr_transcription } }, required: [kind] } }, required: [draft] }
+          then: { properties: { channel: { const: voice } } }
+        - description: 拍照证据必须匹配到题库题（外部题最高 C 级，不写入）
+          if: { properties: { channel: { const: photo } }, required: [channel] }
+          then: { properties: { draft: { required: [item_ref] } } }
+        - description: 画布与语音只有经学生确认后才是 A 级
+          if:
+            properties: { channel: { enum: [canvas, voice] }, evidence_level: { const: A } }
+            required: [channel, evidence_level]
+          then: { required: [confirmed], properties: { confirmed: { const: true } } }
+        - description: 未准入内容上的作答不能是 A 级（不能点亮星）
+          if: { properties: { draft: { properties: { admission: { not: { const: admitted } } }, required: [admission] } }, required: [draft] }
+          then: { properties: { evidence_level: { const: B } } }
+    EvidenceWriteRequest:
+      type: object
+      required: [context, evidences]
+      additionalProperties: false
+      properties:
+        context: { $ref: '#/components/schemas/WriteContext' }
+        evidences: { type: array, minItems: 1, maxItems: 50, items: { $ref: '#/components/schemas/EvidenceWriteItem' } }
+      allOf:
+        - description: 照片、语音或带原始素材引用的证据是 L3（ADR 09 §2）
+          if:
+            properties:
+              evidences:
+                contains:
+                  anyOf:
+                    - { properties: { channel: { enum: [photo, voice] } }, required: [channel] }
+                    - { properties: { draft: { required: [media_ref] } }, required: [draft] }
+            required: [evidences]
+          then: { properties: { context: { properties: { data_class: { const: L3 } } } } }
+    EvidenceWriteResponse:
+      allOf:
+        - $ref: '#/components/schemas/ServiceResultBase'
+        - properties:
+            result:
+              type: object
+              required: [written]
+              additionalProperties: false
+              properties:
+                written:
+                  type: array
+                  maxItems: 50
+                  items:
+                    type: object
+                    required: [evidence_id, status]
+                    additionalProperties: false
+                    properties:
+                      evidence_id: { type: string, format: uuid }
+                      status: { type: string, enum: [written, replayed] }
+      unevaluatedProperties: false
+
+    # ---------- mastery.get / mastery.explain ----------
+    MasteryGetRequest:
+      type: object
+      required: [context, node_ids]
+      additionalProperties: false
+      properties:
+        context: { $ref: '#/components/schemas/StudentContext' }
+        node_ids: { type: array, minItems: 1, maxItems: 100, items: { $ref: '#/components/schemas/NodeId' } }
+    MasteryState:
+      type: object
+      required: [node_id, cognitive_level, gate, star_lit]
+      additionalProperties: false
+      properties:
+        node_id: { $ref: '#/components/schemas/NodeId' }
+        cognitive_level: { $ref: '#/components/schemas/CognitiveLevel' }
+        gate:
+          type: string
+          description: 五道门槛加 unseen（platform.mastery_state）。
+          enum: [unseen, understand, execute, stable, transfer, retain]
+        p_mastery: { type: number, minimum: 0, maximum: 1 }
+        star_lit: { type: boolean, description: 掌握进入“迁移”门槛（星亮）。 }
+        next_review_at: { type: string, format: date-time }
+    MasteryGetResponse:
+      allOf:
+        - $ref: '#/components/schemas/ServiceResultBase'
+        - properties:
+            result:
+              type: object
+              required: [states]
+              additionalProperties: false
+              properties:
+                states: { type: array, maxItems: 400, items: { $ref: '#/components/schemas/MasteryState' } }
+      unevaluatedProperties: false
+    MasteryExplainRequest:
+      type: object
+      required: [context, node_id]
+      additionalProperties: false
+      properties:
+        context: { $ref: '#/components/schemas/StudentContext' }
+        node_id: { $ref: '#/components/schemas/NodeId' }
+    EvidenceLink:
+      type: object
+      required: [evidence_id, occurred_at, evidence_level, weight]
+      additionalProperties: false
+      properties:
+        evidence_id: { type: string, format: uuid }
+        occurred_at: { type: string, format: date-time }
+        evidence_kind: { type: string, enum: [independent, hinted, transfer, delayed_retest] }
+        evidence_level: { $ref: '#/components/schemas/EvidenceLevel' }
+        weight: { type: number, minimum: 0, maximum: 1 }
+        hint_level: { type: integer, minimum: 0, maximum: 5 }
+    MasteryExplainResponse:
+      allOf:
+        - $ref: '#/components/schemas/ServiceResultBase'
+        - properties:
+            result:
+              type: object
+              required: [node_id, chain]
+              additionalProperties: false
+              properties:
+                node_id: { $ref: '#/components/schemas/NodeId' }
+                chain: { type: array, maxItems: 200, items: { $ref: '#/components/schemas/EvidenceLink' } }
+      unevaluatedProperties: false
+
+  examples:
+    NodeResolveRequest:
+      value:
+        context: { request_id: 00000000-0000-4000-8000-00000000c001, contract_version: 0.9.0, caller: orchestrator, data_class: L2 }
+        subject: aya
+        text: 合成文本：把一般式配方成顶点式
+    NodeResolveResponse:
+      value:
+        contract_version: 0.9.0
+        result:
+          map_version: 0.1.0
+          candidates:
+            - { node_id: MATH.FUNC.QUAD.VERTEX_FORM, level: node, kind: kp, confidence: 0.82 }
+            - { node_id: MATH.FUNC.QUAD.GRAPH, level: node, kind: kp, confidence: 0.31 }
+        evidence_ids: []
+        confidence: 0.82
+        source_version: 'graph:math-map@0.1.0'
+        model_version: 'algo:kge-node-resolve@0.1.0'
+        human_review_required: false
+    NodeGetRequest:
+      value:
+        context: { request_id: 00000000-0000-4000-8000-00000000c002, contract_version: 0.9.0, caller: bff, data_class: L1 }
+        node_id: MATH.FUNC.QUAD.VERTEX_FORM
+        edition: bubian-2024
+        region: nanjing
+    NodeGetResponse:
+      value:
+        contract_version: 0.9.0
+        result:
+          node:
+            node_id: MATH.FUNC.QUAD.VERTEX_FORM
+            map_version: 0.1.0
+            level: node
+            kind: kp
+            name: 合成节点：顶点式
+            scope: required
+            cognitive_levels: [understand, apply]
+            includes: [合成边界：配方化顶点式]
+            excludes: [合成边界：一般式求根]
+          textbook_projections:
+            - edition: bubian-2024
+              edition_year: 2024
+              volume: 九上
+              chapter: 合成章节
+              page_from: 32
+              page_to: 34
+              quote_text: 合成原句
+              quote_hash: '0000000000000000000000000000000000000000000000000000000000000000'
+          region_weights:
+            - { region: nanjing, exam_year: 2027, weight: 0.3, typical_slots: [合成题位] }
+        evidence_ids: []
+        confidence: 1
+        source_version: 'graph:math-map@0.1.0'
+        model_version: 'algo:kge-node-get@0.1.0'
+        human_review_required: false
+    NodePathRequest:
+      value:
+        context: { request_id: 00000000-0000-4000-8000-00000000c003, contract_version: 0.9.0, caller: orchestrator, data_class: L1 }
+        node_id: MATH.FUNC.QUAD.GRAPH
+        direction: up
+        max_depth: 2
+    NodePathResponse:
+      value:
+        contract_version: 0.9.0
+        result:
+          root: MATH.FUNC.QUAD.GRAPH
+          direction: up
+          steps:
+            - { from_id: MATH.FUNC.QUAD.VERTEX_FORM, to_id: MATH.FUNC.QUAD.GRAPH, depth: 1 }
+        evidence_ids: []
+        confidence: 1
+        source_version: 'graph:math-map@0.1.0'
+        model_version: 'algo:kge-node-path@0.1.0'
+        human_review_required: false
+    PageGetRequest:
+      value:
+        context: { request_id: 00000000-0000-4000-8000-00000000c004, contract_version: 0.9.0, caller: orchestrator, data_class: L1 }
+        page_id: math.func.quad.vertex-form
+        edition: bubian-2024
+        region: nanjing
+    PageGetResponse:
+      value:
+        contract_version: 0.9.0
+        result:
+          page_id: math.func.quad.vertex-form
+          page_version: 0.1.0
+          body_md: 合成页面正文
+          atom_refs: ['node:MATH.FUNC.QUAD.VERTEX_FORM']
+        evidence_ids: []
+        confidence: 1
+        source_version: 'graph:math-map@0.1.0'
+        model_version: 'algo:kge-page-get@0.1.0'
+        human_review_required: false
+    ItemSearchRequest:
+      value:
+        context: { request_id: 00000000-0000-4000-8000-00000000c005, contract_version: 0.9.0, caller: orchestrator, data_class: L1 }
+        subject: aya
+        node_id: MATH.FUNC.QUAD.VERTEX_FORM
+        cognitive_level: apply
+        limit: 5
+    ItemSearchResponse:
+      value:
+        contract_version: 0.9.0
+        result:
+          items:
+            - item_ref: 'aya:synthetic-0301-07'
+              main_node_id: MATH.FUNC.QUAD.VERTEX_FORM
+              node_ids: [MATH.FUNC.QUAD.GRAPH]
+              cognitive_level: apply
+              prior_difficulty: 0.4
+              family_code: quad-vertex
+              license_state: original
+        evidence_ids: []
+        confidence: 1
+        source_version: 'graph:math-map@0.1.0;items:nanjing-2027-9@0.1.0'
+        model_version: 'algo:kge-item-search@0.1.0'
+        human_review_required: false
+    ItemSimilarRequest:
+      value:
+        context: { request_id: 00000000-0000-4000-8000-00000000c006, contract_version: 0.9.0, caller: orchestrator, data_class: L1 }
+        item_ref: 'aya:synthetic-0301-07'
+    ItemSimilarResponse:
+      value:
+        contract_version: 0.9.0
+        result:
+          items:
+            - item: { item_ref: 'aya:synthetic-0301-08', main_node_id: MATH.FUNC.QUAD.VERTEX_FORM, family_code: quad-vertex, license_state: original }
+              relation: same_family
+        evidence_ids: []
+        confidence: 1
+        source_version: 'items:nanjing-2027-9@0.1.0'
+        model_version: 'algo:kge-item-similar@0.1.0'
+        human_review_required: false
+    RubricGetRequest:
+      value:
+        context: { request_id: 00000000-0000-4000-8000-00000000c007, contract_version: 0.9.0, caller: learning, data_class: L1 }
+        item_ref: 'aya:synthetic-0301-07'
+        rubric_version: aya-quad-rubric@0.1.0
+    RubricGetResponse:
+      value:
+        contract_version: 0.9.0
+        result:
+          item_ref: 'aya:synthetic-0301-07'
+          rubric_version: aya-quad-rubric@0.1.0
+          map_version: 0.1.0
+          points:
+            - { point_id: vertex, score: 2, node_ids: [MATH.FUNC.QUAD.VERTEX_FORM], partial_credit: all_or_nothing }
+            - { point_id: axis, score: 1, node_ids: [MATH.FUNC.QUAD.GRAPH], partial_credit: all_or_nothing }
+        evidence_ids: []
+        confidence: 1
+        source_version: 'rubric:aya-quad-rubric@0.1.0;graph:math-map@0.1.0'
+        model_version: 'algo:kge-rubric-get@0.1.0'
+        human_review_required: false
+    EvidenceWriteRequest:
+      value:
+        context:
+          request_id: 00000000-0000-4000-8000-00000000c008
+          contract_version: 0.9.0
+          caller: learning
+          data_class: L2
+          student_ref: 00000000-0000-4000-8000-00000000a001
+          idempotency_key: synthetic-evidence-write-0001
+        evidences:
+          - draft:
+              evidence_id: 00000000-0000-4000-8000-00000000e101
+              kind: response_text
+              occurred_at: '2026-10-09T08:00:00Z'
+              item_ref: 'aya:synthetic-0301-07'
+              admission: admitted
+              payload: { text: 'y=(x-1)^2+2' }
+            evidence_level: A
+            channel: keypad
+            evidence_kind: independent
+            node_id: MATH.FUNC.QUAD.VERTEX_FORM
+            map_version: 0.1.0
+            cognitive_level: apply
+    EvidenceWriteResponse:
+      value:
+        contract_version: 0.9.0
+        result:
+          written:
+            - { evidence_id: 00000000-0000-4000-8000-00000000e101, status: written }
+        evidence_ids: [00000000-0000-4000-8000-00000000e101]
+        confidence: 1
+        source_version: 'algo:kge-evidence-write@0.1.0'
+        model_version: 'algo:kge-evidence-write@0.1.0'
+        human_review_required: false
+    MasteryGetRequest:
+      value:
+        context:
+          request_id: 00000000-0000-4000-8000-00000000c009
+          contract_version: 0.9.0
+          caller: orchestrator
+          data_class: L2
+          student_ref: 00000000-0000-4000-8000-00000000a001
+        node_ids: [MATH.FUNC.QUAD.VERTEX_FORM]
+    MasteryGetResponse:
+      value:
+        contract_version: 0.9.0
+        result:
+          states:
+            - node_id: MATH.FUNC.QUAD.VERTEX_FORM
+              cognitive_level: apply
+              gate: execute
+              p_mastery: 0.64
+              star_lit: false
+              next_review_at: '2026-10-16T08:00:00Z'
+        evidence_ids: [00000000-0000-4000-8000-00000000e101]
+        confidence: 0.6
+        source_version: 'algo:kge-mastery@0.1.0;graph:math-map@0.1.0'
+        model_version: 'algo:bkt-simple@0.1.0'
+        human_review_required: false
+    MasteryExplainRequest:
+      value:
+        context:
+          request_id: 00000000-0000-4000-8000-00000000c010
+          contract_version: 0.9.0
+          caller: orchestrator
+          data_class: L2
+          student_ref: 00000000-0000-4000-8000-00000000a001
+        node_id: MATH.FUNC.QUAD.VERTEX_FORM
+    MasteryExplainResponse:
+      value:
+        contract_version: 0.9.0
+        result:
+          node_id: MATH.FUNC.QUAD.VERTEX_FORM
+          chain:
+            - evidence_id: 00000000-0000-4000-8000-00000000e101
+              occurred_at: '2026-10-09T08:00:00Z'
+              evidence_kind: independent
+              evidence_level: A
+              weight: 1
+              hint_level: 0
+        evidence_ids: [00000000-0000-4000-8000-00000000e101]
+        confidence: 0.6
+        source_version: 'algo:kge-mastery@0.1.0'
+        model_version: 'algo:bkt-simple@0.1.0'
+        human_review_required: false

@@ -1,0 +1,248 @@
+# BFF ↔ 统一壳前端的月度计划接口（specs/family-goals-monthly-plan/step3-spec.md，PLT-14 第 3 步；快照由洞察服务生成，迁移 0054 草稿）。
+# 服务内部接口，不是学科插件契约，不放 packages/contracts（与 family-goals.v0.yaml 同一做法）。
+openapi: 3.1.0
+info:
+  title: StarBuddy BFF · monthly plan (v0, prototype)
+  version: 0.1.0
+  description: >
+    家长读本月（上海时区，按数据库时钟）的月度计划（学习计划、家长注意事项、上月回顾与分差区间）；学生本人只读学习计划一段。
+    挂在功能开关 monthly_plan 上，默认关闭：关闭时两条路由都不注册，与表外路径同一个 404（STARBUDDY_MONTHLY_PLAN=monthly_plan，只在 dev / test）。
+    不计量（权益规格书：Pro / Max 自动月报，不计次）。
+    家长端：路由 auth = session，学生会话在请求体、CSRF、限流与任何查询之前一律 404（与“不存在”逐字节相同）；先按本人会话确认是有效绑定家长
+    （guardian_student_link），别家、已解除绑定、不存在、档案已删除同一个 404。本月没有快照时 BFF 调洞察服务生成（caller = bff，带 actor =
+    当前家长账号，洞察服务库内再核；同学生同月只生成一次），再经 insight.monthly_plan_guardian_view 读。洞察服务对没有权益（以及 actor 再核
+    不通过、档案不存在）只有一个统一回答，BFF 已先确认绑定，所以按没有权益处理：entitled = false、plan = null，不带任何别的信息。
+    学生端：auth = student，家长会话 403；兄妹、另一户学生、不存在 404。只经 insight.monthly_plan_student_view 读学习计划；本月没有快照时
+    不触发生成，plan = null。学生端响应里没有家长注意事项、回顾、分差、诉求与关注学科系数。
+    文字：快照只有模板键与变量，BFF 按模板库（services/insight/templates/monthly_plan.v0.yaml，与洞察服务同一份文件）渲染；占位文案
+    （{{TODO_COPY:monthly_plan.*}}，未签字）渲染为“占位｜变量值…”。成品句子过禁用推断词表与“名次 / 概率 / 承诺”词表，命中的那一条不出。
+    关于学生的句子（优先知识点、上月点亮、分差）带 claim_id（所引判断成立或假设、未过期、对该受众可见，由视图读时再核；模板须在对外白名单里）。
+    不返回计划里的先后编号（数组顺序即先后）、优先级数值、成绩与目标分（分差只有 5 分一档的区间）。
+    503 UNAVAILABLE：洞察服务不可用或没配、模板库或词表读不到（模板库加载时另与钉死文件 monthly_plan.v0.lock 核对版本与原文指纹）、
+    快照的模板版本与 BFF 读到的模板库不一致、快照形状不对、按家长账号计的生成桶 monthly_plan_generate.account.hour 用完（不调洞察服务）。
+    洞察服务对（学生、家长、月份）回过“不可用”后，BFF 进程内 5 分钟内不再问，直接 entitled = false（不计生成桶）。
+    生成中途解除绑定（生成后的二次读取不通过）：404，与“不存在”相同。
+servers:
+  - url: http://127.0.0.1:8787
+paths:
+  /bff/v0/students/{student_id}/monthly-plan:
+    parameters:
+      - $ref: '#/components/parameters/StudentId'
+      - $ref: '#/components/parameters/Session'
+    get:
+      x-sb-auth: session
+      x-sb-rate-buckets: [monthly_plan.session.minute]
+      operationId: getMonthlyPlan
+      description: 家长读本月的月度计划；本月没有快照时先请洞察服务生成（幂等）。
+      responses:
+        '200':
+          description: 本月的月度计划，或没有权益
+          headers: { Cache-Control: { schema: { const: no-store } } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GuardianMonthlyPlan' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { description: TEST_EXITED（档案已退出内部测试，LT-06；internal-test.v0.yaml）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+        '429': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/my-plan:
+    parameters:
+      - $ref: '#/components/parameters/StudentId'
+      - $ref: '#/components/parameters/Session'
+    get:
+      x-sb-auth: student
+      x-sb-not-self: 404
+      x-sb-rate-buckets: [monthly_plan.session.minute]
+      operationId: getMyPlan
+      description: 学生本人读本月的学习计划（不触发生成）。
+      responses:
+        '200':
+          description: 本月的学习计划；本月还没有生成时 plan 为 null
+          headers: { Cache-Control: { schema: { const: no-store } } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StudentMonthlyPlan' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { description: 家长会话（FORBIDDEN）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { description: TEST_EXITED（档案已退出内部测试，LT-06；internal-test.v0.yaml）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+        '429': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+components:
+  parameters:
+    StudentId:
+      name: student_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Session:
+      name: x-sb-session
+      in: header
+      required: true
+      description: 会话令牌（64 位十六进制），不进 URL 与日志
+      schema: { type: string, pattern: '^[0-9a-f]{64}$' }
+  schemas:
+    Subject: { enum: [wenli, aya, zhixing, echo], description: 平台学科码（platform.subject） }
+    Month: { type: string, pattern: '^20[2-9][0-9]-(0[1-9]|1[0-2])$' }
+    Day: { type: string, format: date }
+    Text: { type: string, minLength: 1, maxLength: 400, description: BFF 按模板库渲染的成品句子；超过 400 码位的那一条不出（不截断） }
+    ClaimLine:
+      type: object
+      additionalProperties: false
+      required: [claim_id, subject, text]
+      properties:
+        claim_id: { type: string, format: uuid, description: 句子所引判断（前端以 data-claim-id 渲染，“为什么 / 我不同意”入口） }
+        subject: { $ref: '#/components/schemas/Subject' }
+        text: { $ref: '#/components/schemas/Text' }
+    StudentPlan:
+      type: object
+      additionalProperties: false
+      required: [priority_nodes, weekly_rhythm, retests, mini_reviews]
+      properties:
+        priority_nodes: { type: array, maxItems: 20, items: { $ref: '#/components/schemas/ClaimLine' }, description: 本月优先知识点（数组顺序即计划里的先后，不是名次） }
+        weekly_rhythm:
+          oneOf:
+            - { type: 'null' }
+            - type: object
+              additionalProperties: false
+              required: [sessions_per_week, minutes_per_session, text]
+              properties:
+                sessions_per_week: { type: integer, minimum: 1, maximum: 7 }
+                minutes_per_session: { type: integer, minimum: 1, maximum: 120 }
+                text: { $ref: '#/components/schemas/Text' }
+        retests:
+          oneOf:
+            - { type: 'null' }
+            - type: object
+              additionalProperties: false
+              required: [count, dates, by_subject, text]
+              properties:
+                count: { type: integer, minimum: 0, maximum: 999 }
+                dates: { type: array, maxItems: 31, items: { $ref: '#/components/schemas/Day' } }
+                by_subject:
+                  type: array
+                  maxItems: 8
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [subject, count]
+                    properties:
+                      subject: { $ref: '#/components/schemas/Subject' }
+                      count: { type: integer, minimum: 1 }
+                text: { $ref: '#/components/schemas/Text' }
+        mini_reviews:
+          type: array
+          maxItems: 8
+          items:
+            type: object
+            additionalProperties: false
+            required: [subject, date, text]
+            properties:
+              subject: { $ref: '#/components/schemas/Subject' }
+              date: { $ref: '#/components/schemas/Day' }
+              text: { $ref: '#/components/schemas/Text' }
+    GapBand:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [reached]
+          properties: { reached: { const: true } }
+        - type: object
+          additionalProperties: false
+          required: [reached, low, high]
+          properties:
+            reached: { const: false }
+            low: { type: integer, minimum: 0, multipleOf: 5 }
+            high: { type: integer, minimum: 5, multipleOf: 5, description: low + 5 }
+    GuardianPlan:
+      type: object
+      additionalProperties: false
+      required: [generated_at, student_plan, guardian_notes, review]
+      properties:
+        generated_at: { type: string, format: date-time }
+        student_plan: { $ref: '#/components/schemas/StudentPlan' }
+        guardian_notes:
+          type: array
+          maxItems: 3
+          items: { type: object, additionalProperties: false, required: [text], properties: { text: { $ref: '#/components/schemas/Text' } } }
+        review:
+          type: object
+          additionalProperties: false
+          required: [last_month, score_gaps]
+          properties:
+            last_month:
+              oneOf:
+                - { type: 'null' }
+                - type: object
+                  additionalProperties: false
+                  required: [month, planned_nodes, text, lit]
+                  properties:
+                    month: { $ref: '#/components/schemas/Month' }
+                    planned_nodes: { type: integer, minimum: 0, maximum: 20 }
+                    text: { $ref: '#/components/schemas/Text' }
+                    lit: { type: array, maxItems: 20, items: { $ref: '#/components/schemas/ClaimLine' } }
+            score_gaps:
+              type: array
+              maxItems: 16
+              items:
+                type: object
+                additionalProperties: false
+                required: [claim_id, subject, exam_type, exam_date, gap_band, text]
+                properties:
+                  claim_id: { type: string, format: uuid }
+                  subject: { $ref: '#/components/schemas/Subject' }
+                  exam_type: { enum: [monthly, midterm, final, mock1, mock2, other] }
+                  exam_date: { $ref: '#/components/schemas/Day' }
+                  gap_band: { $ref: '#/components/schemas/GapBand' }
+                  text: { $ref: '#/components/schemas/Text' }
+    GuardianMonthlyPlan:
+      description: entitled = true 时 plan 一定非空；entitled = false 时 plan 为 null（前端显示升级说明占位）
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [student_id, month, entitled, plan]
+          properties:
+            student_id: { type: string, format: uuid }
+            month: { $ref: '#/components/schemas/Month' }
+            entitled: { const: true }
+            plan: { $ref: '#/components/schemas/GuardianPlan' }
+        - type: object
+          additionalProperties: false
+          required: [student_id, month, entitled, plan]
+          properties:
+            student_id: { type: string, format: uuid }
+            month: { $ref: '#/components/schemas/Month' }
+            entitled: { const: false }
+            plan: { type: 'null' }
+    StudentMonthlyPlan:
+      type: object
+      additionalProperties: false
+      required: [student_id, month, plan]
+      properties:
+        student_id: { type: string, format: uuid }
+        month: { $ref: '#/components/schemas/Month' }
+        plan:
+          oneOf:
+            - { type: 'null' }
+            - type: object
+              additionalProperties: false
+              required: [generated_at, student_plan]
+              properties:
+                generated_at: { type: string, format: date-time }
+                student_plan: { $ref: '#/components/schemas/StudentPlan' }
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        code:
+          enum: [UNAUTHENTICATED, FORBIDDEN, NOT_FOUND, TOO_MANY_REQUESTS, UNAVAILABLE, METHOD_NOT_ALLOWED, TEST_EXITED]
+  responses:
+    Problem:
+      description: 统一错误体
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

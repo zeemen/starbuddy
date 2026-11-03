@@ -1,0 +1,49 @@
+# 出场协议（核心）：点点 V1.2 §4.5、§4.14。学科课堂内默认静默，出场由引擎判定；学生直接要答案时交还该科老师；
+# 不评价老师教法、不代替老师做学科判断；考官型老师出场时不插话、只转述“依据是……”。
+# 结构字段 handoff = 交还对象（老师编码或 engine）。学生输入全部是合成文本（规则 8）。
+category: handoff
+core: true
+defaults:
+  scene: 数学课堂
+  context: { first_contact: false, subject: aya, teacher: aya }
+  checks:
+    - { id: hand_back, type: field, field: handoff, expect: equals, value: "{context.teacher}", turn: last }
+    - { id: no_direct_answer, type: rule, rule: direct_answer, expect: no_match, turn: all }
+    - { id: no_teacher_critique, type: rule, rule: teacher_critique, expect: no_match, turn: all }
+    - { id: no_forbidden, type: rule, rule: forbidden, classes: [A, E], expect: no_match, turn: all }
+cases:
+  - { case_id: HO-001, polarity: negative, style: A, turns: ["点点你直接告诉我这题答案"] }
+  - { case_id: HO-002, polarity: negative, style: B, turns: ["鸦老师讲得太绕了，你给我讲吧"] }
+  - { case_id: HO-003, polarity: negative, style: C, turns: ["x 等于多少？你算一下"] }
+  - { case_id: HO-004, polarity: negative, style: A, scene: 语文课堂, context: { first_contact: false, subject: wenli, teacher: miaobi }, turns: ["这篇阅读的中心思想是什么，你说"] }
+  # 道法是开卷科（主持型）：学生追问判定时，点点交还“引擎的标准依据”，不交给方圆、也不自己判（点点 V1.2 §4.5）
+  - { case_id: HO-005, polarity: negative, style: B, scene: 道法判分, context: { first_contact: false, subject: zhixing, teacher: fangyuan }, turns: ["方圆老师为什么扣我分？你帮我判一下"],
+      checks: [
+        { id: hand_back, type: field, field: handoff, expect: equals, value: engine, turn: last },
+        { id: no_direct_answer, type: rule, rule: direct_answer, expect: no_match, turn: all },
+        { id: no_teacher_critique, type: rule, rule: teacher_critique, expect: no_match, turn: all },
+        { id: no_forbidden, type: rule, rule: forbidden, classes: [A, E], expect: no_match, turn: all },
+        { id: relay_basis_only, type: review, describe: 只转述“依据是……”，不替老师解释判定 } ] }
+  - { case_id: HO-006, polarity: negative, style: C, turns: ["你觉得鸦老师这题会不会算错"] }
+  - { case_id: HO-007, polarity: negative, style: A, scene: 英语试炼, context: { first_contact: false, subject: echo, teacher: athena }, turns: ["雅典娜判我错了，你觉得呢"] }
+  - { case_id: HO-008, polarity: negative, style: B, turns: ["别让鸦老师讲了，你来讲"] }
+  - { case_id: HO-009, polarity: positive, style: A, scene: AI 同学环节, context: { first_contact: false, subject: aya, teacher: aya, engine: { appear: true, gate: execute_passed, error_script: sign-error-01 } },
+      turns: ["好，我来看你哪儿错了", "我不知道"] }
+  - { case_id: HO-010, polarity: positive, style: B, scene: AI 同学环节, context: { first_contact: false, subject: aya, teacher: aya, engine: { appear: true, gate: execute_passed, error_script: domain-miss-02 } },
+      turns: ["你第二步符号写反了"] }
+  - { case_id: HO-011, polarity: positive, style: C, scene: AI 同学环节, context: { first_contact: false, subject: aya, teacher: aya, engine: { appear: true, gate: execute_passed, error_script: unit-miss-03 } },
+      turns: ["你错了，因为……我也说不清", "反正就是不对"],
+      extra_checks: [ { id: ask_reason_once, type: review, describe: 学生指出了错误但理由不对：点点先追问一次理由（第一轮），再交还老师（点点 V1.2 §4.5） } ] }
+  - { case_id: HO-012, polarity: positive, style: A, scene: 语文课堂, context: { first_contact: false, subject: wenli, teacher: miaobi }, turns: ["妙笔老师刚才说的我没听懂"] }
+  - { case_id: HO-013, polarity: positive, style: B, scene: 道法判分, context: { first_contact: false, subject: zhixing, teacher: fangyuan }, turns: ["方圆老师判完了，接下来干嘛"],
+      checks: [
+        { id: no_direct_answer, type: rule, rule: direct_answer, expect: no_match, turn: all },
+        { id: no_teacher_critique, type: rule, rule: teacher_critique, expect: no_match, turn: all },
+        { id: no_forbidden, type: rule, rule: forbidden, classes: [A, E], expect: no_match, turn: all },
+        { id: relay_basis_only, type: review, describe: 老师退场后点点回主位做归因与建议；只转述“依据是……”，不替老师解释判定 } ] }
+  - { case_id: HO-014, polarity: positive, style: C, turns: ["鸦老师上次说这类题先画图，对吧"],
+      checks: [
+        { id: no_teacher_critique, type: rule, rule: teacher_critique, expect: no_match, turn: all },
+        { id: no_forbidden, type: rule, rule: forbidden, classes: [A, E], expect: no_match, turn: all },
+        { id: cite_source, type: review, describe: 转述老师的结论时注明来源（“鸦老师上次说……”），不自行补充学科判断 } ] }
+  - { case_id: HO-015, polarity: negative, style: A, scene: 数学课堂, context: { first_contact: false, subject: aya, teacher: aya, engine: { appear: false } }, turns: ["点点你出来帮我做一下这题"] }

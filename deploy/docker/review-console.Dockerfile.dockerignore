@@ -1,0 +1,19 @@
+# deploy/docker/review-console.Dockerfile 专用（白名单；上下文是仓库根目录）。
+*
+!services/learning/requirements.lock
+!packages/contracts/python/pyproject.toml
+!packages/contracts/python/starbuddy_contract
+!packages/contracts/openapi
+!services/learning/scripts/place_contract_yaml.py
+!docs/design/sie/sie_lexicon.py
+!docs/design/sie/forbidden-inference.v0.yaml
+!docs/mapping/error-taxonomy.v0.9.yaml
+!services/learning/config
+!services/learning/learning
+!services/learning/review_console
+**/__pycache__
+**/*.pyc
+**/.env*
+**/tests
+**/fixtures
+legacy

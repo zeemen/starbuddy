@@ -1,0 +1,9 @@
+{
+  "_doc": "分学科并发闸门（PLT-16 第一步，specs/subject-concurrency-plt16/spec.md）：只在开关 STARBUDDY_SUBJECT_GATE=subject_gate 打开时读。按学习服务的学科码（aya 数学、zhixing 道法、wenli 语文）各自独立计数：max_inflight 同时在处理的请求上限，max_queue 有界排队长度（0 = 不排队，满了直接拒），queue_timeout_ms 排队最长等待（10–10000，超时按被拒处理），retry_after_s 被拒时 503 SUBJECT_BUSY 的 retry-after 秒数，per_student_max 同一学生在这一科“在处理 + 排队”的上限（超出直接拒、不进公共队列；学生 ID 只作进程内计数键，不进日志）。数值全部是合成默认值，待人确认（spec 待人确认 #1）。single_instance：闸门状态在进程内，dev / test 以外须显式声明 true（单实例部署）才建闸门，否则不建并启动告警（同 shell.json 的 rest_reminder.single_instance 先例）；多实例部署前须改为共享状态或按实例比例配置（待人确认 #3）。BFF 与测试读同一份；dev / test 可用 BFF_CONCURRENCY_CONFIG 换一份（其余环境设了就拒绝启动）。",
+  "single_instance": false,
+  "subjects": {
+    "aya": { "max_inflight": 8, "max_queue": 16, "queue_timeout_ms": 2000, "retry_after_s": 2, "per_student_max": 2 },
+    "zhixing": { "max_inflight": 8, "max_queue": 16, "queue_timeout_ms": 2000, "retry_after_s": 2, "per_student_max": 2 },
+    "wenli": { "max_inflight": 8, "max_queue": 16, "queue_timeout_ms": 2000, "retry_after_s": 2, "per_student_max": 2 }
+  }
+}

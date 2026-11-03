@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:starbuddy:stage-dsl:0.1.0",
+  "title": "讲解 DSL v0.1.0（packages/stage）",
+  "description": "白板讲解脚本的结构。本 schema 只表达静态结构；以下动态规则只由确定性校验器 src/validate.ts 核对：元素 id 全文唯一（擦掉后也不能复用）、步骤 id 唯一、坐标在画布内（文字按估算宽度）、高亮与擦除只能指向白板上现有的元素、speaker 只能给 roles 里的角色、公式能排版成纯文本且排版后不超过单行上限、文字不含不可见字符 / HTML / 链接与脚本写法、全部动作合计不超过 500。内容需经发布闸门（ADR 07 决定 5）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["dsl_version", "title", "canvas", "roles", "steps"],
+  "properties": {
+    "dsl_version": { "const": "0.1.0" },
+    "title": { "type": "string", "minLength": 1, "maxLength": 40 },
+    "canvas": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height"],
+      "properties": {
+        "width": { "type": "integer", "minimum": 320, "maximum": 1920 },
+        "height": { "type": "integer", "minimum": 180, "maximum": 1080 }
+      }
+    },
+    "roles": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": { "enum": ["teacher", "buddy"] },
+      "contains": { "const": "teacher" }
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": { "$ref": "#/$defs/step" }
+    }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,31}$" },
+    "coord": { "type": "integer" },
+    "size": { "enum": ["sm", "md", "lg"] },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "actions"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "actions": { "type": "array", "minItems": 1, "maxItems": 20, "items": { "$ref": "#/$defs/action" } }
+      }
+    },
+    "action": {
+      "oneOf": [
+        { "$ref": "#/$defs/write_text" },
+        { "$ref": "#/$defs/write_formula" },
+        { "$ref": "#/$defs/draw_line" },
+        { "$ref": "#/$defs/draw_shape" },
+        { "$ref": "#/$defs/highlight" },
+        { "$ref": "#/$defs/clear" },
+        { "$ref": "#/$defs/speaker" }
+      ]
+    },
+    "write_text": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "x", "y", "text"],
+      "properties": {
+        "type": { "const": "write_text" },
+        "id": { "$ref": "#/$defs/id" },
+        "x": { "$ref": "#/$defs/coord" },
+        "y": { "$ref": "#/$defs/coord" },
+        "text": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "size": { "$ref": "#/$defs/size" }
+      }
+    },
+    "write_formula": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "x", "y", "latex"],
+      "properties": {
+        "type": { "const": "write_formula" },
+        "id": { "$ref": "#/$defs/id" },
+        "x": { "$ref": "#/$defs/coord" },
+        "y": { "$ref": "#/$defs/coord" },
+        "latex": { "type": "string", "minLength": 1, "maxLength": 200, "pattern": "^[\\x20-\\x7E]+$" },
+        "size": { "$ref": "#/$defs/size" }
+      }
+    },
+    "draw_line": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "x1", "y1", "x2", "y2"],
+      "properties": {
+        "type": { "const": "draw_line" },
+        "id": { "$ref": "#/$defs/id" },
+        "x1": { "$ref": "#/$defs/coord" },
+        "y1": { "$ref": "#/$defs/coord" },
+        "x2": { "$ref": "#/$defs/coord" },
+        "y2": { "$ref": "#/$defs/coord" },
+        "dashed": { "type": "boolean" }
+      }
+    },
+    "draw_shape": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "shape", "x", "y", "w", "h"],
+      "properties": {
+        "type": { "const": "draw_shape" },
+        "id": { "$ref": "#/$defs/id" },
+        "shape": { "enum": ["rect", "ellipse"] },
+        "x": { "$ref": "#/$defs/coord" },
+        "y": { "$ref": "#/$defs/coord" },
+        "w": { "type": "integer", "minimum": 1 },
+        "h": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "highlight": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "target"],
+      "properties": {
+        "type": { "const": "highlight" },
+        "id": { "$ref": "#/$defs/id" },
+        "target": { "$ref": "#/$defs/id" }
+      }
+    },
+    "clear": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "clear" },
+        "targets": { "type": "array", "minItems": 1, "maxItems": 50, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } }
+      }
+    },
+    "speaker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "role"],
+      "properties": {
+        "type": { "const": "speaker" },
+        "role": { "enum": ["teacher", "buddy", "none"] }
+      }
+    }
+  }
+}

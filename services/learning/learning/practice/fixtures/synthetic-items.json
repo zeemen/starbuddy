@@ -1,0 +1,20 @@
+{
+ "format": "starbuddy-practice-items/1",
+ "note": "合成题面（错题再练 PR 2）：题号在 SYNP-* 命名空间，题面是占位文字，不含答案、解析、节点与错因。grading 是合成标注的判分方式（validator / deterministic_rubric / model_rubric；选题只出前两种客观题）。只在 LEARNING_ENV=test 时可加载；present_item 契约签字后接真实题面（SIE-02a 待人确认 #2）。",
+ "items": [
+  {"subject": "aya", "item_id": "SYNP-0001", "format": "fill", "stem": "（合成题面 1）请填写结果。", "rubric_version": "aya-symbolic-ts@0.1.0", "grading": "validator"},
+  {"subject": "aya", "item_id": "SYNP-0002", "format": "fill", "stem": "（合成题面 2）请填写结果。", "rubric_version": "aya-symbolic-ts@0.1.0", "grading": "validator"},
+  {"subject": "aya", "item_id": "SYNP-0003", "format": "fill", "stem": "（合成题面 3）请填写结果。", "rubric_version": "aya-symbolic-ts@0.1.0", "grading": "validator"},
+  {"subject": "aya", "item_id": "SYNP-0004", "format": "fill", "stem": "（合成题面 4）请填写结果。", "rubric_version": "aya-symbolic-ts@0.1.0", "grading": "deterministic_rubric"},
+  {"subject": "aya", "item_id": "SYNP-0005", "format": "fill", "stem": "（合成题面 5）请填写结果。", "rubric_version": "aya-symbolic-ts@0.1.0", "grading": "validator"},
+  {"subject": "aya", "item_id": "SYNP-0006", "format": "fill", "stem": "（合成题面 6）请填写结果。", "rubric_version": "aya-symbolic-ts@0.1.0", "grading": "validator"},
+  {"subject": "aya", "item_id": "SYNP-0007", "format": "fill", "stem": "（合成题面 7）请填写结果。", "rubric_version": "aya-symbolic-ts@0.1.0", "grading": "validator"},
+  {"subject": "aya", "item_id": "SYNP-0008", "format": "fill", "stem": "（合成题面 8）请填写结果。", "rubric_version": "aya-symbolic-ts@0.1.0", "grading": "validator"},
+  {"subject": "aya", "item_id": "SYNP-0009", "format": "fill", "stem": "（合成题面 9）请填写结果。", "rubric_version": "aya-symbolic-ts@0.1.0", "grading": "validator"},
+  {"subject": "aya", "item_id": "SYNP-0010", "format": "fill", "stem": "（合成题面 10）请填写结果。", "rubric_version": "aya-symbolic-ts@0.1.0", "grading": "validator"},
+  {"subject": "aya", "item_id": "SYNP-0011", "format": "single", "stem": "（合成题面 11）请选择一项。",
+   "options": [{"key": "A", "text": "（选项甲）"}, {"key": "B", "text": "（选项乙）"}], "rubric_version": "aya-symbolic-ts@0.1.0", "grading": "validator"},
+  {"subject": "aya", "item_id": "SYNP-0012", "format": "fill", "stem": "（合成题面 12）请填写结果。", "rubric_version": "aya-symbolic-ts@0.1.0", "grading": "validator"},
+  {"subject": "aya", "item_id": "SYNP-0013", "format": "fill", "stem": "（合成题面 13）请简述理由。", "rubric_version": "aya-open-rubric@0.1.0", "grading": "model_rubric"}
+ ]
+}

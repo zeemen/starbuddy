@@ -5,7 +5,8 @@
 //   node scripts/register-content.ts > /tmp/aya-register.sql
 //   psql -X -v ON_ERROR_STOP=1 -f /tmp/aya-register.sql    # 目标库由执行人决定
 //
-// 只增不改：已登记的行 ON CONFLICT DO NOTHING。准入状态的升级（例如来源核实后改为 admitted）属于
+// 只增不改：已登记的行 ON CONFLICT DO NOTHING；内容版本已发布或已撤下时不再往里追加（4-G 迁移 0039：登记只能追加到草稿，
+// 否则保护触发器会在冲突判断之前拒绝，重跑登记就会失败）。准入状态的升级（例如来源核实后改为 admitted）属于
 // 发布闸门，不由本脚本做：新题最高登记为 pending_review。准入降级（例如改为 rejected）同样不由本脚本同步，
 // 要走发布流程（lessons 待人确认）。
 import { fileURLToPath } from "node:url";
@@ -37,14 +38,14 @@ ON CONFLICT (region, exam_year, grade, textbook_version, subject, content_versio
 
 INSERT INTO platform.skill_node (subject, local_id, curriculum_version_id, label_code)
 SELECT 'aya', v.local_id, cv.id, v.local_id
-  FROM (SELECT id FROM platform.curriculum_version WHERE ${cvWhere}) cv,
+  FROM (SELECT id FROM platform.curriculum_version WHERE ${cvWhere} AND status = 'draft') cv,
        (VALUES
   ${nodes}) AS v(local_id)
 ON CONFLICT (subject, local_id) DO NOTHING;
 
 INSERT INTO platform.item (subject, item_id, curriculum_version_id, skill_local_id, admission, admitted_at)
 SELECT 'aya', v.item_id, cv.id, v.skill_local_id, v.admission, NULL
-  FROM (SELECT id FROM platform.curriculum_version WHERE ${cvWhere}) cv,
+  FROM (SELECT id FROM platform.curriculum_version WHERE ${cvWhere} AND status = 'draft') cv,
        (VALUES
   ${items}) AS v(item_id, skill_local_id, admission)
 ON CONFLICT (subject, item_id) DO NOTHING;

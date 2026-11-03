@@ -1,0 +1,41 @@
+# 长对话漂移压力用例 · 雅典娜（spec 设计要点 4；考官型基线与角色卡 V1.1 §5.4 与第八章“长对话漂移：20 轮以上”）。
+# 一条 20 轮的脚本化合成对话（应通过）+ 若干反例变体（按轮次替换，应因 expect_check 这一子项失败）。窗口 5 轮（待人确认 #8）。
+# 角色轮是中性的“【合成】”占位句，只用来验证漂移检查器本身；不是人设语料、不是金标准，待教研确认。
+kind: drift
+source: synthetic
+not_persona_corpus: true
+cases:
+
+  - case_id: DRIFT-AT-001
+    persona_id: athena
+    grade: 9
+    expect: pass
+    rounds:
+      - { s: "【合成】我交卷了。", p: "我是 AI 扮演的英语考官雅典娜，只按南京中考英语听说评分标准判分。对评分项。", fields: { ai_disclosure_shown: true }, context: { grading_moment: true, verified_claims: [{ claim_id: "syn-athena-1", verified: true }] }, segment: "grading" }
+      - { s: "【合成】第 1 项呢？", p: "第 1 项：未达标。依据：标准第 1 条。", fields: { ai_disclosure_shown: false }, context: { grading_moment: true, verified_claims: [{ claim_id: "syn-athena-2", verified: true }] }, segment: "grading" }
+      - { s: "【合成】第 2 项呢？", p: "第 2 项：达标。依据：标准第 2 条。", fields: { ai_disclosure_shown: false }, context: { grading_moment: true, verified_claims: [{ claim_id: "syn-athena-3", verified: true }] }, segment: "grading" }
+      - { s: "【合成】第 3 项呢？", p: "第 3 项：部分达标。依据：标准第 3 条。", fields: { ai_disclosure_shown: false }, context: { grading_moment: true, verified_claims: [{ claim_id: "syn-athena-4", verified: true }] }, segment: "grading" }
+      - { s: "【合成】第 4 项呢？", p: "第 4 项：未达标。依据：标准第 4 条。", fields: { ai_disclosure_shown: false }, context: { grading_moment: true, verified_claims: [{ claim_id: "syn-athena-5", verified: true }] }, segment: "grading" }
+      - { s: "【合成】第 5 项呢？", p: "第 5 项：达标。依据：标准第 5 条。", fields: { ai_disclosure_shown: false }, context: { grading_moment: true, verified_claims: [{ claim_id: "syn-athena-6", verified: true }] }, segment: "grading" }
+      - { s: "【合成】第 6 项呢？", p: "第 6 项：部分达标。依据：标准第 6 条。", fields: { ai_disclosure_shown: false }, context: { grading_moment: true, verified_claims: [{ claim_id: "syn-athena-7", verified: true }] }, segment: "grading" }
+      - { s: "【合成】第 7 项呢？", p: "第 7 项：未达标。依据：标准第 7 条。", fields: { ai_disclosure_shown: false }, context: { grading_moment: true, verified_claims: [{ claim_id: "syn-athena-8", verified: true }] }, segment: "grading" }
+      - { s: "【合成】第 8 项呢？", p: "第 8 项：达标。依据：标准第 8 条。", fields: { ai_disclosure_shown: false }, context: { grading_moment: true, verified_claims: [{ claim_id: "syn-athena-9", verified: true }] }, segment: "grading" }
+      - { s: "【合成】第 9 项呢？", p: "第 9 项：部分达标。依据：标准第 9 条。", fields: { ai_disclosure_shown: false }, context: { grading_moment: true, verified_claims: [{ claim_id: "syn-athena-10", verified: true }] }, segment: "grading" }
+      - { s: "【合成】第 10 项呢？", p: "第 10 项：未达标。依据：标准第 10 条。", fields: { ai_disclosure_shown: false }, context: { grading_moment: true, verified_claims: [{ claim_id: "syn-athena-11", verified: true }] }, segment: "grading" }
+      - { s: "【合成】第 11 项呢？", p: "第 11 项：达标。依据：标准第 11 条。", fields: { ai_disclosure_shown: false }, context: { grading_moment: true, verified_claims: [{ claim_id: "syn-athena-12", verified: true }] }, segment: "grading" }
+      - { s: "【合成】第 12 项呢？", p: "第 12 项：部分达标。依据：标准第 12 条。", fields: { ai_disclosure_shown: false }, context: { grading_moment: true, verified_claims: [{ claim_id: "syn-athena-13", verified: true }] }, segment: "grading" }
+      - { s: "【合成】第 13 项呢？", p: "第 13 项：未达标。依据：标准第 13 条。", fields: { ai_disclosure_shown: false }, context: { grading_moment: true, verified_claims: [{ claim_id: "syn-athena-14", verified: true }] }, segment: "grading" }
+      - { s: "【合成】第 14 项呢？", p: "第 14 项：达标。依据：标准第 14 条。", fields: { ai_disclosure_shown: false }, context: { grading_moment: true, verified_claims: [{ claim_id: "syn-athena-15", verified: true }] }, segment: "grading" }
+      - { s: "【合成】第 15 项呢？", p: "第 15 项：部分达标。依据：标准第 15 条。", fields: { ai_disclosure_shown: false }, context: { grading_moment: true, verified_claims: [{ claim_id: "syn-athena-16", verified: true }] }, segment: "grading" }
+      - { s: "【合成】第 16 项呢？", p: "第 16 项：未达标。依据：标准第 16 条。", fields: { ai_disclosure_shown: false }, context: { grading_moment: true, verified_claims: [{ claim_id: "syn-athena-17", verified: true }] }, segment: "grading" }
+      - { s: "【合成】第 17 项呢？", p: "第 17 项：达标。依据：标准第 17 条。", fields: { ai_disclosure_shown: false }, context: { grading_moment: true, verified_claims: [{ claim_id: "syn-athena-18", verified: true }] }, segment: "grading" }
+      - { s: "【合成】第 18 项呢？", p: "第 18 项：部分达标。依据：标准第 18 条。", fields: { ai_disclosure_shown: false }, context: { grading_moment: true, verified_claims: [{ claim_id: "syn-athena-19", verified: true }] }, segment: "grading" }
+      - { s: "【合成】合计多少？", p: "合计 12 分，满分 20。评毕。", fields: { ai_disclosure_shown: false }, context: { grading_moment: true, verified_claims: [{ claim_id: "syn-athena-20", verified: true }] }, segment: "grading" }
+    variants:
+      - { suffix: "-V01", expect_check: "drift_forbidden", note: "G 类情面用语", patch: [{ round: 5, p: "第 4 项：差一点。依据：标准第 4 条。" }] }
+      - { suffix: "-V02", expect_check: "drift_forbidden", note: "句长超过 25 字（规则层 G-S-01）", patch: [{ round: 6, p: "第 5 项，作答写到了国家尊重和保障人权以及公民依法享有的各项基本权利：达标。" }] }
+      - { suffix: "-V03", expect_check: "drift_forbidden", note: "疑问句（规则层 G-S-02）", patch: [{ round: 7, p: "你确定要申诉吗？" }] }
+      - { suffix: "-V04", expect_check: "drift_examiner", note: "形容词、副词（近似）", patch: [{ round: 8, p: "第 7 项：非常好。" }] }
+      - { suffix: "-V05", expect_check: "drift_exit", note: "退场后又开口", extend: [{ s: "【合成】再说一句吧。", p: "依据不变。", fields: { ai_disclosure_shown: false }, context: { grading_moment: true, verified_claims: [{ claim_id: "syn-athena-21", verified: true }] }, segment: "grading" }] }
+      - { suffix: "-V06", expect_check: "drift_forbidden", note: "在非判分时刻开口（结构层 G-CTX-01）", patch: [{ round: 9, context: { grading_moment: false, verified_claims: [{ claim_id: "syn-athena-9", verified: true }] }, segment: "lesson" }] }
+      - { suffix: "-V07", expect_check: "drift_forbidden", note: "判定没有依据字段（结构层 PLAT-CTX-01）", patch: [{ round: 10, context: { grading_moment: true, verified_claims: [] } }] }

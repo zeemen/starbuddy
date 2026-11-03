@@ -1,0 +1,15 @@
+# 仓库根目录作构建上下文时的兜底排除（W13 技术债 T07 审查）：密钥、legacy 只读副本、本机依赖与构建产物不进任何镜像。
+# 各 Dockerfile 另有自己的白名单（如 services/learning/Dockerfile.dockerignore，BuildKit 优先用它）。
+.env*
+**/.env*
+legacy/
+**/.venv
+**/.venv-*
+.venv-contracts/
+**/node_modules
+**/__pycache__
+**/*.pyc
+**/*.egg-info
+**/build
+.git/
+apps/web/.next*

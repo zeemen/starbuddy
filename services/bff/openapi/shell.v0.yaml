@@ -1,0 +1,760 @@
+# BFF ↔ 统一壳前端（apps/web 服务端）的接口：家庭登录与会话（specs/unified-shell-sprint4/spec.md 第 2、3、16、17 节，H1）。
+# 服务内部接口，不是学科插件契约，不放 packages/contracts（与 star-map.v0.yaml 同一做法）。
+# H1：认证、会话、/me、建档、同意、打开学生模式；H4：选科、今日计划、额度与时长、时长设置、连续使用提醒
+# （services/bff/src/http/routes.ts 与 shell-routes.ts，tests/shell-openapi.test.ts 断言两边一致）。
+# 路由表里没有调用 insight.dispute / reconcile / export / erase 的路由；冲刺 5 信任界面的异议、考试、导出删除接口在 trust.v0.yaml，
+# 挂在功能开关上（默认关，关闭时不注册）。
+openapi: 3.1.0
+info:
+  title: StarBuddy BFF · shell (v0)
+  version: 0.1.0
+  description: >
+    浏览器不直连 BFF：apps/web 的服务端把 HttpOnly cookie 里的会话令牌放进请求头 x-sb-session 转交，
+    BFF 经 platform.auth_session_resolve 解析出账号，身份只来自会话；请求参数、请求体、请求头里的 account_id 一律不读。
+    授权在数据库（RLS 与迁移 0029 的 SECURITY DEFINER 函数）：路径里的 student_id 只作查询条件，未授权与不存在返回同一个 404，
+    响应体与响应头逐字节相同。改变状态的请求：Origin 必须恰好是壳的来源；有会话的另带与会话绑定的 x-csrf-token（登录与打开学生模式时下发）。
+    超过限流阈值一律同一个 429（不区分原因）；阈值在 services/bff/config/auth.json。响应一律 Cache-Control: no-store、
+    X-Content-Type-Options: nosniff，不发任何 CORS 头。错误体只有错误码。
+servers:
+  - url: http://127.0.0.1:8787
+paths:
+  /bff/v0/auth/otp/request:
+    post:
+      x-sb-auth: public
+      x-sb-rate-buckets: [otp_request.ip.hour, otp_request.phone.minute, otp_request.phone.day]
+      operationId: requestLoginCode
+      description: >
+        发登录验证码（6 位，5 分钟有效，错 5 次作废）。无论号码是否注册都返回同一个 202 与同一个响应体。
+        限流：每号每分钟 1 次、每号每天 10 次、每 IP 每小时 30 次。4-H 只有短信捕获桩（dev / test），不给真实号码发短信。
+        staging（LT-01）：不接短信厂商，白名单号码用管理员线下按人下发的固定码（一次性、每条目签发 ≤ 3 次、失败 ≤ 5 次锁定），
+        其余号码签发随机码且不投递；响应与上面完全相同。pilot、生产没有短信供应商，BFF 不启动。
+      parameters: [{ $ref: '#/components/parameters/Origin' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [phone]
+              properties:
+                phone: { $ref: '#/components/schemas/Phone' }
+      responses:
+        '202':
+          description: 已受理（与号码是否注册无关）
+          content:
+            application/json:
+              schema: { type: object, required: [status], properties: { status: { const: accepted } } }
+        '403': { $ref: '#/components/responses/Problem' }
+        '413': { $ref: '#/components/responses/Problem' }
+        '415': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+  /bff/v0/auth/otp/verify:
+    post:
+      x-sb-auth: public
+      x-sb-rate-buckets: [otp_verify.ip.hour, otp_verify.phone.quarter]
+      operationId: verifyLoginCode
+      description: >
+        核对验证码并登录家长账号（没有就注册）。码错、过期、用过、换号、格式不对、账号停用一律同一个 401 LOGIN_FAILED；
+        码对了但同一号码有多个家长账号（历史数据）时 409 CONTACT_SUPPORT，不登录。请求头带着本设备旧会话令牌时，登录成功后旧令牌作废。
+        限流：每号每 15 分钟 10 次、每 IP 每小时 60 次。
+      parameters:
+        - $ref: '#/components/parameters/Origin'
+        - $ref: '#/components/parameters/OptionalSession'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [phone, code]
+              properties:
+                phone: { $ref: '#/components/schemas/Phone' }
+                code: { type: string, pattern: '^[0-9]{6}$' }
+      responses:
+        '200':
+          description: 家长会话（apps/web 写进 HttpOnly cookie，不交给浏览器脚本）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IssuedSession' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+  /bff/v0/auth/logout:
+    post:
+      x-sb-auth: session
+      x-sb-rate-buckets: []
+      operationId: logout
+      description: 作废本会话。
+      parameters: [{ $ref: '#/components/parameters/Session' }, { $ref: '#/components/parameters/Origin' }, { $ref: '#/components/parameters/Csrf' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /bff/v0/auth/logout-all:
+    post:
+      x-sb-auth: session
+      x-sb-rate-buckets: []
+      operationId: logoutAll
+      description: 退出所有设备：作废本账号的全部会话。
+      parameters: [{ $ref: '#/components/parameters/Session' }, { $ref: '#/components/parameters/Origin' }, { $ref: '#/components/parameters/Csrf' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /bff/v0/me:
+    get:
+      x-sb-auth: session
+      x-sb-rate-buckets: []
+      operationId: me
+      description: 账号类型；家长返回已绑定孩子（档案 ID 与当前年级（由届别推算），没有姓名）；学生返回自己的 student_id。
+      parameters: [{ $ref: '#/components/parameters/Session' }]
+      responses:
+        '200':
+          description: 当前账号
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    additionalProperties: false
+                    required: [account_kind, children]
+                    properties:
+                      account_kind: { const: guardian }
+                      children:
+                        type: array
+                        items:
+                          type: object
+                          additionalProperties: false
+                          required: [student_id, grade]
+                          properties:
+                            student_id: { type: string, format: uuid }
+                            grade:
+                              type: [integer, 'null']
+                              minimum: 7
+                              maximum: 9
+                              description: >
+                                当前年级（由届别推算：platform.current_grade(届别, 请求时刻)，9 月 1 日切学年；迁移 0045 起不读建档年级）。
+                                不在 7–9（不在初中年级）时为 null
+                  - type: object
+                    additionalProperties: false
+                    required: [account_kind, student_id, grade]
+                    properties:
+                      account_kind: { const: student }
+                      student_id: { type: [string, 'null'], format: uuid }
+                      grade:
+                        type: [integer, 'null']
+                        minimum: 7
+                        maximum: 9
+                        description: 学生本人的当前年级（同上，由届别推算）；不在 7–9 时为 null，今日计划处显示“不在初中年级，今日计划暂不安排”
+        '401': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students:
+    post:
+      x-sb-auth: guardian
+      x-sb-rate-buckets: [student_create.account.day]
+      operationId: createStudent
+      description: 家长建档（platform.create_student）：建在自己创建的家庭里，没有就新建。只收年级、地区、教材版本、出生年月。限流：每家长账号每天 5 次。
+      parameters: [{ $ref: '#/components/parameters/Session' }, { $ref: '#/components/parameters/Origin' }, { $ref: '#/components/parameters/Csrf' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [grade, region]
+              properties:
+                grade:
+                  type: integer
+                  minimum: 7
+                  maximum: 9
+                  description: 建档年级，学年从 9 月 1 日起算，暑假填刚读完的年级（只用来推算中考届别；之后的年级由届别推算，迁移 0045）
+                region: { type: string, pattern: '^[a-z][a-z0-9-]{1,31}$' }
+                textbook_version: { type: [string, 'null'], pattern: '^[a-z0-9][a-z0-9-]{1,31}$' }
+                birth_year_month: { type: [string, 'null'], pattern: '^(19|20)[0-9]{2}-(0[1-9]|1[0-2])$' }
+      responses:
+        '201':
+          description: 已建档
+          content:
+            application/json:
+              schema: { type: object, required: [student_id], properties: { student_id: { type: string, format: uuid } } }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/consents:
+    post:
+      x-sb-auth: guardian
+      x-sb-rate-buckets: []
+      operationId: recordConsent
+      description: >
+        已绑定的家长写同意记录（只追加，撤回也是一条新记录）。合成版本号（…@synthetic-*，不区分大小写）只在 dev / test 可用；
+        staging 只收由人登记的真实版本（BFF_CONSENT_VERSIONS 的 同意类型=文本版本，没登记的一律 422；LT-01 决定记录第 10 条）；
+        pilot 与生产在合规交付前记不了同意，也就打不开学生模式（待人确认 #13）。
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/Session'
+        - $ref: '#/components/parameters/Origin'
+        - $ref: '#/components/parameters/Csrf'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [consent_type, document_version, decision]
+              properties:
+                consent_type: { enum: [privacy_policy, guardian_consent_under14, voice_processing, pilot_participation] }
+                document_version: { type: string, pattern: '^[a-z0-9][a-z0-9-]{0,47}@[A-Za-z0-9][A-Za-z0-9._-]{0,31}$' }
+                decision: { enum: [granted, revoked] }
+      responses:
+        '201':
+          description: 已记录
+          content:
+            application/json:
+              schema: { type: object, required: [status], properties: { status: { const: recorded } } }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/student-session:
+    post:
+      x-sb-auth: guardian
+      x-sb-rate-buckets: [student_session.account.hour]
+      operationId: openStudentMode
+      description: >
+        家长在本设备打开学生模式（PLT-01 之前的过渡入口，待人确认 #1）：要求家长对该学生有有效绑定，否则与“学生不存在”同一个 404；
+        缺同意（隐私政策；不满 14 周岁或出生年月为空另需监护人同意）409 CONSENT_REQUIRED。内部成员测试开关打开时
+        （STARBUDDY_INTERNAL_TEST=internal_test，LT-06 决定记录（续）第 6 条）不论年龄都要隐私政策与监护人同意书两份都已签，否则同样
+        409 CONSENT_REQUIRED（整笔回滚：学生会话不签发、家长会话不作废）；开关关时保持上面的原口径。已退出内部测试的档案 409 TEST_EXITED。
+        成功时家长的会话作废，返回学生会话；回家长模式要重新短信验证。限流：每家长账号每小时 20 次。
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/Session'
+        - $ref: '#/components/parameters/Origin'
+        - $ref: '#/components/parameters/Csrf'
+      responses:
+        '200':
+          description: 学生会话（apps/web 用它替换本设备的家长会话 cookie）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/IssuedSession'
+                  - type: object
+                    required: [student_id]
+                    properties:
+                      account_kind: { const: student }
+                      student_id: { type: string, format: uuid }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+  # ---------------------------------------------------------------- H4：选科、今日计划、额度与时长、时长设置、连续使用提醒
+  /bff/v0/students/{student_id}/enrollments:
+    get:
+      x-sb-auth: session
+      x-sb-rate-buckets: []
+      operationId: listEnrollments
+      description: >
+        学科目录（只列适用于该生年级、非 planned 的学科；英语搁置期间不出现）与选科状态；学生与已绑定家长都能读（学生端只读）。
+        rules 是当前主订阅配置的口径（core_subjects / elective_slots，或旧配置的 max_active_subjects），只做展示；
+        open 为假时界面显示“暂未开放”（beta 只对试点订阅开放、没有已发布内容版本）。能不能选由 enroll_subject 判断，BFF 不算上限。
+        年级按届别与请求时钟推算（迁移 0045）；不在 7–9（未入学或已毕业）时 can_enroll 为假，列表只含已开通、已暂停的学科（只能暂停，
+        新选回 409 GRADE_OUT_OF_RANGE；specs/policy-decisions-v0.9.1 PR3 #10）。
+      parameters: [{ $ref: '#/components/parameters/StudentId' }, { $ref: '#/components/parameters/Session' }]
+      responses:
+        '200':
+          description: 学科目录与选科状态
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [student_id, can_enroll, rules, subjects]
+                properties:
+                  student_id: { type: string, format: uuid }
+                  can_enroll: { type: boolean, description: 当前年级在 7–9 时为真；为假时只能暂停已开通的学科 }
+                  rules:
+                    type: [object, 'null']
+                    additionalProperties: false
+                    properties:
+                      core_subjects: { type: [string, 'null'], enum: [pick_one, all_launched, null] }
+                      elective_slots: { type: [string, 'null'] }
+                      max_active_subjects: { type: [string, 'null'] }
+                  subjects:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [subject, is_core, catalog_status, open, enrollment]
+                      properties:
+                        subject: { $ref: '#/components/schemas/SubjectCode' }
+                        is_core: { type: boolean }
+                        catalog_status: { enum: [beta, live] }
+                        open: { type: boolean }
+                        enrollment: { enum: [active, paused, null] }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/enrollments/{subject}:
+    post:
+      x-sb-auth: guardian
+      x-sb-rate-buckets: []
+      operationId: enrollSubject
+      description: >
+        家长开通一科（platform.enroll_subject；默认只有家长能选科，待人确认 #7）。outcome 与数据库函数一一对应：
+        enrolled（带 slot、limit）、already_active、limit_reached（带 slot、limit）、change_next_period、no_subscription、not_launched。
+        学生会话 403；未绑定与不存在、英语等不可选的学科码同一个 404。当前年级不在 7–9（未入学或已毕业）时 409 GRADE_OUT_OF_RANGE
+        （前置检查不调 enroll_subject；库函数同样核对年级（迁移 0051），拒绝时也是这个 409；已开通的学科仍可暂停）。
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/Subject'
+        - $ref: '#/components/parameters/Session'
+        - $ref: '#/components/parameters/Origin'
+        - $ref: '#/components/parameters/Csrf'
+      responses:
+        '200': { $ref: '#/components/responses/SubjectOutcome' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/enrollments/{subject}/pause:
+    post:
+      x-sb-auth: guardian
+      x-sb-rate-buckets: []
+      operationId: pauseSubject
+      description: 家长暂停（换下）一科（platform.pause_subject）：paused、not_active、change_limit_reached。
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/Subject'
+        - $ref: '#/components/parameters/Session'
+        - $ref: '#/components/parameters/Origin'
+        - $ref: '#/components/parameters/Csrf'
+      responses:
+        '200': { $ref: '#/components/responses/SubjectOutcome' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/today:
+    get:
+      x-sb-auth: session
+      x-sb-rate-buckets: [today.session.minute]
+      operationId: today
+      description: >
+        今日计划（spec 第 6 节）：按在读学科并列（不是跨科编排），每科按 priority 从高到低。当前年级不在 7–9（未入学或已毕业）时不排任何学科
+        （subjects 为空，不调学习服务；specs/policy-decisions-v0.9.1 PR3 #10）。BFF 调学习服务 POST /internal/v1/plan
+        （契约变更待签字）；某科不可用时 status = unavailable（界面“今天暂无安排”），不影响其他科。非消耗类，不计量，计划不落库。限流：每会话每分钟 20 次（today.session.minute）；判断陈述并行取（并发上限、整页总时限，超时的句子不显示）。
+        推荐理由（规则 11）：内容类编码 → {kind: content, code}，显示固定短句，不带 claim_id；其余编码（含映射表外的）只有在目标节点上
+        有该受众可见、成立或假设、模板在对外白名单里的判断时才给 {kind: claim, claim_id, text, confidence_band}，text 只取洞察服务
+        insight.explain 返回的 RenderedStatement.text；否则 rationale 为 null。响应里没有 p_mastery、confidence、evidence_ids、learner_context。
+        跨科编排（PLT-11，specs/today-plan-orchestration-plt11）：开关 STARBUDDY_TODAY_ORCH=today_orch（只在 dev / test，缺省关）打开时，
+        学生本人的响应另带 ordered；这时 BFF 只调 /internal/v1/today（每页只排一次计划），按科的 subjects 用它附带的各科计划构造
+        （与 /internal/v1/plan 同一套处理，对同一数据逐字段一致）。开关关、家长会话时只调 /internal/v1/plan，没有 ordered 这个键，
+        响应与开关上线前逐字段一致。
+        ordered 来自学习服务 POST /internal/v1/today（services/learning/openapi/today-internal.v0.yaml，只读汇总：各科计划、错题再练与
+        复测的 due 条目；去重、来源优先级、学科轮转、按时间预算截断），学习服务不可用时为 null。推荐理由只沿用按科任务已决定的那一条
+        （同一学科、类别、节点、理由编码）：内容类固定短句或已显示的判断陈述；复测与再练条目为 null；不新增关于学生的陈述。
+        今日计划快照（PLT-15 PR2，specs/today-plan-snapshot-plt15）：学习服务开了快照（LEARNING_TODAY_SNAPSHOT）时 ordered 另带 snapshot；
+        frozen 时每条带 task_id（当天快照行 ID，即行为事件 plan_done / plan_skip 的 plan_task_id，前端据此显示“完成”“先跳过”），
+        not_frozen 时条目不带 task_id（前端不显示按钮）；学习服务没开快照时两者都没有，响应与之前逐字段一致。
+        ordered 只给学生本人，家长会话没有 ordered，也就没有 task_id 与 snapshot。task_id 是否属于该生当天（或前一天）的快照由写入事件时的
+        库函数核对（迁移 0056），BFF 这里只透出。
+      parameters: [{ $ref: '#/components/parameters/StudentId' }, { $ref: '#/components/parameters/Session' }]
+      responses:
+        '200':
+          description: 今日计划
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [student_id, subjects]
+                properties:
+                  student_id: { type: string, format: uuid }
+                  subjects:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [subject, status, tasks]
+                      properties:
+                        subject: { $ref: '#/components/schemas/SubjectCode' }
+                        status: { enum: [ok, unavailable] }
+                        tasks:
+                          type: array
+                          items:
+                            type: object
+                            additionalProperties: false
+                            required: [kind, node_id, node_name, priority, estimated_minutes, rationale]
+                            properties:
+                              kind: { enum: [diagnose, practice, review, lesson, retest, mock_exam] }
+                              node_id: { type: [string, 'null'] }
+                              node_name: { type: [string, 'null'], description: 已发布地图的知识节点名；拿不到时为空，界面显示中性标题 }
+                              priority: { type: number, minimum: 0, maximum: 1 }
+                              estimated_minutes: { type: integer, minimum: 1 }
+                              rationale:
+                                oneOf:
+                                  - type: 'null'
+                                  - type: object
+                                    additionalProperties: false
+                                    required: [kind, code]
+                                    properties: { kind: { const: content }, code: { type: string } }
+                                  - $ref: '#/components/schemas/ClaimStatement'
+                  ordered:
+                    description: 只在开关 today_orch 打开且是学生本人时出现；学习服务不可用时为 null
+                    oneOf:
+                      - type: 'null'
+                      - type: object
+                        additionalProperties: false
+                        required: [items, truncated_count, partial]
+                        properties:
+                          items:
+                            type: array
+                            items:
+                              type: object
+                              additionalProperties: false
+                              required: [subject, kind, node_id, node_name, estimated_minutes, source, entry_id, rationale]
+                              properties:
+                                subject: { $ref: '#/components/schemas/SubjectCode' }
+                                kind: { enum: [retest, verify, practice, diagnose, review, lesson, mock_exam] }
+                                node_id: { type: [string, 'null'] }
+                                node_name: { type: [string, 'null'], description: 已发布地图的知识节点名；拿不到时为空，界面显示中性标题 }
+                                estimated_minutes: { type: integer, minimum: 1 }
+                                source: { enum: [retest, practice, plan], description: 决定“去做”链到复测页、再练页还是科目页 }
+                                entry_id: { type: [string, 'null'], format: uuid, description: 复测、再练条目的 ID（去做的链接用）；计划任务为空 }
+                                task_id:
+                                  type: string
+                                  format: uuid
+                                  description: 今日计划快照的任务 ID（PLT-15）；只在 snapshot = frozen 时出现，且每条都有；用于写 plan_done / plan_skip
+                                rationale:
+                                  oneOf:
+                                    - type: 'null'
+                                    - type: object
+                                      additionalProperties: false
+                                      required: [kind, code]
+                                      properties: { kind: { const: content }, code: { type: string } }
+                                    - $ref: '#/components/schemas/ClaimStatement'
+                          truncated_count: { type: integer, minimum: 0, description: 按时间预算截掉的条数 }
+                          partial: { type: boolean, description: 有启用了的来源（某科的计划、再练或复测）失败、已跳过；未启用的来源不算 }
+                          snapshot:
+                            enum: [frozen, not_frozen]
+                            description: >
+                              今日计划快照状态（PLT-15）：只在学习服务开了快照时出现。frozen = 条目取自当天快照、每条带 task_id；
+                              not_frozen = 这次没冻结（有来源失败、没有条目等），条目不带 task_id，前端不显示“完成”“先跳过”
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '429': { description: 超过限流（同一个 429，不分原因）, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+  /bff/v0/students/{student_id}/balance:
+    get:
+      x-sb-auth: session
+      x-sb-rate-buckets: []
+      operationId: balance
+      description: >
+        额度与时长状态（spec 第 9 节）：时长数值全部来自 platform.meter_guard_status（迁移 0030），BFF 不重算单日上限、宵禁、已用分钟；
+        额度来自 platform.entitlement_balance（RLS：学生看自己，家长看已绑定孩子）。学生端同一资源合并成一行，家长端另有分来源明细。
+        trial_days_left 按上海时区的自然日由试用周期结束时间算；curfew_near 的阈值在 config/shell.json；practice_daily_limit（留存态每天自练次数）
+        meter_guard_status 不返回，取自 config/shell.json 的 meter_defaults（单处，与 0015 一致）。只读：不预留、不结算，不收任何数量参数。
+      parameters: [{ $ref: '#/components/parameters/StudentId' }, { $ref: '#/components/parameters/Session' }]
+      responses:
+        '200':
+          description: 额度与时长
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [student_id, state, as_of, trial_ends_at, trial_days_left, practice_remaining_today, practice_daily_limit, time, balances]
+                properties:
+                  student_id: { type: string, format: uuid }
+                  state: { enum: [trialing, active, grace, retained, none] }
+                  as_of: { type: string, format: date-time }
+                  trial_ends_at: { type: [string, 'null'], format: date-time }
+                  trial_days_left: { type: [integer, 'null'], minimum: 0 }
+                  practice_remaining_today: { type: [integer, 'null'], minimum: 0 }
+                  practice_daily_limit: { type: integer, minimum: 0 }
+                  time:
+                    type: object
+                    additionalProperties: false
+                    required: [plan_daily_cap, daily_cap, minutes_used_today, minutes_remaining_today, curfew_start, curfew_end,
+                               in_curfew, minutes_until_curfew, curfew_near, daily_cap_reached]
+                    properties:
+                      plan_daily_cap: { type: integer }
+                      daily_cap: { type: integer }
+                      minutes_used_today: { type: number }
+                      minutes_remaining_today: { type: number }
+                      curfew_start: { type: string, pattern: '^[0-2][0-9]:[0-5][0-9]$' }
+                      curfew_end: { type: string, pattern: '^[0-2][0-9]:[0-5][0-9]$' }
+                      in_curfew: { type: boolean }
+                      minutes_until_curfew: { type: integer }
+                      curfew_near: { type: boolean, description: 距休息时间不超过配置分钟数（显示规则，不是计量的 curfew_soon 拒绝原因） }
+                      daily_cap_reached: { type: boolean }
+                  balances:
+                    type: array
+                    items:
+                      type: object
+                      required: [resource_type, unit, remaining, period_end]
+                      properties:
+                        resource_type: { type: string }
+                        unit: { enum: [count, minute, byte] }
+                        remaining: { type: number, minimum: 0 }
+                        period_end: { type: string, format: date-time }
+                        sources:
+                          description: 只在家长端出现
+                          type: array
+                          items:
+                            type: object
+                            required: [source, remaining, period_end]
+                            properties:
+                              source: { enum: [trial, pilot_virtual, paid, addon] }
+                              remaining: { type: number }
+                              period_end: { type: string, format: date-time }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/time-guard:
+    get:
+      x-sb-auth: session
+      x-sb-rate-buckets: []
+      operationId: getTimeGuard
+      description: 单日上限与宵禁的当前设置（学生只读）。不返回设置人。档位上限与默认宵禁（config/shell.json 的 meter_defaults，单处）作为界面上的边界。
+      parameters: [{ $ref: '#/components/parameters/StudentId' }, { $ref: '#/components/parameters/Session' }]
+      responses:
+        '200':
+          description: 时长设置
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [student_id, daily_cap_minutes, plan_daily_cap, effective_daily_cap, custom_curfew, curfew_start, curfew_end, default_curfew]
+                properties:
+                  student_id: { type: string, format: uuid }
+                  daily_cap_minutes: { type: [integer, 'null'], description: 家长设的上限；为空表示按档位上限 }
+                  plan_daily_cap: { type: integer }
+                  effective_daily_cap: { type: integer }
+                  custom_curfew: { type: boolean }
+                  curfew_start: { type: string }
+                  curfew_end: { type: string }
+                  default_curfew:
+                    type: object
+                    additionalProperties: false
+                    required: [start, end]
+                    properties: { start: { type: string, pattern: '^[0-2][0-9]:[0-5][0-9]$' }, end: { type: string, pattern: '^[0-2][0-9]:[0-5][0-9]$' } }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+    put:
+      x-sb-auth: guardian
+      x-sb-rate-buckets: [time_guard.account.hour]
+      operationId: setTimeGuard
+      description: >
+        家长调单日上限与宵禁（platform.set_time_guard）：上限只能在 0 到档位上限之间；宵禁只能收紧（必须覆盖默认时段）。
+        outcome：saved（带生效上限 daily_cap）、cap_above_plan（带 plan_cap，数据库值不变）、curfew_must_cover_default。
+        学生会话 403。限流：每家长账号每小时 20 次。
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/Session'
+        - $ref: '#/components/parameters/Origin'
+        - $ref: '#/components/parameters/Csrf'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [daily_cap_minutes, curfew_start, curfew_end]
+              properties:
+                daily_cap_minutes: { type: [integer, 'null'], minimum: 0, maximum: 1440 }
+                curfew_start: { type: [string, 'null'], pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$' }
+                curfew_end: { type: [string, 'null'], pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$' }
+      responses:
+        '200':
+          description: 结果
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [outcome]
+                properties:
+                  outcome: { enum: [saved, cap_above_plan, curfew_must_cover_default] }
+                  daily_cap: { type: integer }
+                  plan_cap: { type: integer }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/exam-cohort:
+    post:
+      x-sb-auth: guardian
+      x-sb-rate-buckets: [cohort_correction.link.day, cohort_correction.account.day]
+      operationId: correctExamCohort
+      description: >
+        家长更正孩子的中考届别（specs/policy-decisions-v0.9.1 第 1 节；迁移 0045 platform.correct_exam_cohort）。届别是档案的事实，
+        年级由它推算。授权在库里：必须是该学生的有效绑定家长（guardian_student_link），来源记为家长自述（guardian_report），
+        每次只能 ±1（相对当前存下的届别），更正后当前年级必须在 7–9，同时写一条届别更正记录。
+        请求体给更正后的届别（绝对值，重复提交同一个值第二次因步长不对被拒）。未绑定、学生不存在、已删除一律同一个 404；
+        步长不是 ±1 或更正后不在 7–9 → 422。学生会话 403。限流：每个家长账号对每个孩子每天 3 次（按账号与学生成对计数），
+        另外每个家长账号每天总共 10 次（换着学生 ID 试探也受限）。
+        暂无前端入口。
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/Session'
+        - $ref: '#/components/parameters/Origin'
+        - $ref: '#/components/parameters/Csrf'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [exam_cohort]
+              properties:
+                exam_cohort: { type: integer, minimum: 2015, maximum: 2100, description: 更正后的中考届别（中考年份） }
+      responses:
+        '200':
+          description: 已更正
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [student_id, exam_cohort, grade]
+                properties:
+                  student_id: { type: string, format: uuid }
+                  exam_cohort: { type: integer }
+                  grade: { type: [integer, 'null'], minimum: 7, maximum: 9, description: 按更正后的届别推算的当前年级 }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '413': { $ref: '#/components/responses/Problem' }
+        '415': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/rest-reminder:
+    get:
+      x-sb-auth: student
+      x-sb-rate-buckets: []
+      x-sb-not-self: 404
+      operationId: restReminder
+      description: >
+        连续使用提醒（spec 第 10 节）：学生会话连续使用达到阈值（config/shell.json，默认 40 分钟）时 show 为真，建议休息 10 分钟；
+        只提醒不锁定。两次壳内请求之间停了 ≥ 建议休息分钟数视为休息过，从头计。计时以 BFF 为准，前端不存储。只给学生本人。
+      parameters: [{ $ref: '#/components/parameters/StudentId' }, { $ref: '#/components/parameters/Session' }]
+      responses:
+        '200': { $ref: '#/components/responses/RestView' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /bff/v0/students/{student_id}/rest-reminder/ack:
+    post:
+      x-sb-auth: student
+      x-sb-rate-buckets: []
+      x-sb-not-self: 404
+      operationId: ackRestReminder
+      description: 学生确认休息：连续使用从现在起重新计。
+      parameters:
+        - $ref: '#/components/parameters/StudentId'
+        - $ref: '#/components/parameters/Session'
+        - $ref: '#/components/parameters/Origin'
+        - $ref: '#/components/parameters/Csrf'
+      responses:
+        '200': { $ref: '#/components/responses/RestView' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+components:
+  parameters:
+    StudentId: { name: student_id, in: path, required: true, schema: { type: string, format: uuid } }
+    Subject: { name: subject, in: path, required: true, description: 学科目录的学科码（英语搁置，不可选）, schema: { $ref: '#/components/schemas/SubjectCode' } }
+    Session: { name: x-sb-session, in: header, required: true, description: 会话令牌（64 位十六进制），不进 URL 与日志, schema: { type: string, pattern: '^[0-9a-f]{64}$' } }
+    OptionalSession: { name: x-sb-session, in: header, required: false, description: 本设备原来的会话令牌（登录成功后作废）, schema: { type: string, pattern: '^[0-9a-f]{64}$' } }
+    Csrf: { name: x-csrf-token, in: header, required: true, description: 与会话绑定的 CSRF 令牌（双重提交：apps/web 核对表单与 cookie 一致后转交）, schema: { type: string, pattern: '^[0-9a-f]{64}$' } }
+    Origin: { name: origin, in: header, required: true, description: 浏览器请求的 Origin，由 apps/web 原样转交；必须恰好等于壳的来源, schema: { type: string } }
+  schemas:
+    SubjectCode: { enum: [math, chinese, politics], description: 学科目录（platform.subject_catalog）的学科码；调函数时换成产品命名空间 }
+    ClaimStatement:
+      type: object
+      description: 关于学生的一句话（规则 11）：text 只取洞察服务的 RenderedStatement.text，必须带 claim_id；家长端与置信度说明一起显示
+      additionalProperties: false
+      required: [kind, claim_id, text, confidence_band]
+      properties:
+        kind: { const: claim }
+        claim_id: { type: string, format: uuid }
+        text: { type: string, minLength: 1, maxLength: 300 }
+        confidence_band: { enum: [few_evidence, moderate, strong] }
+    Phone: { type: string, pattern: '^\+[1-9][0-9]{6,14}$', description: E.164；只用于登录家长账号（规则 5） }
+    IssuedSession:
+      type: object
+      required: [account_kind, session_token, csrf_token]
+      properties:
+        account_kind: { enum: [guardian, student] }
+        session_token: { type: string, pattern: '^[0-9a-f]{64}$' }
+        csrf_token: { type: string, pattern: '^[0-9a-f]{64}$' }
+    Problem:
+      type: object
+      additionalProperties: false
+      required: [type, title, status, code]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        code:
+          enum: [UNAUTHENTICATED, LOGIN_FAILED, FORBIDDEN, CSRF, NOT_FOUND, METHOD_NOT_ALLOWED, CONTACT_SUPPORT, CONSENT_REQUIRED,
+                 TOO_LARGE, UNSUPPORTED_MEDIA_TYPE, INVALID, TOO_MANY_REQUESTS, INTERNAL, GRADE_OUT_OF_RANGE,
+                 TEST_EXITED]  # LT-06：已退出内部测试的档案，带 {student_id} 的操作（数据权利与退出状态除外）一律 409（internal-test.v0.yaml）
+  responses:
+    SubjectOutcome:
+      description: 选科函数的结果（一一映射成界面状态）
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [outcome]
+            properties:
+              outcome: { enum: [enrolled, already_active, limit_reached, change_next_period, no_subscription, not_launched, paused, not_active, change_limit_reached] }
+              slot: { enum: [core, elective] }
+              limit: { type: [integer, 'null'] }
+              max_active_subjects: { type: integer }
+    RestView:
+      description: 连续使用提醒
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [enabled, show, continuous_minutes, threshold_minutes, suggest_break_minutes]
+            properties:
+              enabled: { type: boolean, description: 计时在进程内；dev / test 以外只有配置声明单实例部署才启用 }
+              show: { type: boolean }
+              continuous_minutes: { type: integer, minimum: 0 }
+              threshold_minutes: { type: integer }
+              suggest_break_minutes: { type: integer }
+    Ok:
+      description: 完成
+      content:
+        application/json:
+          schema: { type: object, required: [status], properties: { status: { const: ok } } }
+    Problem:
+      description: 错误（只有错误码，不回显输入、堆栈、SQL）
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
