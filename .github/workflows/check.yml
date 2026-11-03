@@ -3,10 +3,13 @@
 # 只用合成数据与本机一次性 Postgres；不需要、也不配置任何密钥（CLAUDE.md 规则 8、9）。
 name: check
 
+# PR 上只跑轻量检查（各组去掉 *-mutation，不跑 db-mutation）；合并到 main 与手动触发（workflow_dispatch）时跑全量，
+# 含全部变异测试（2026-11-03 用户决定：控制 Actions 用量）。本地 make check 不变，仍跑全部。
 on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -60,8 +63,8 @@ jobs:
 
       # 人设回归每次都跑（不靠 paths 过滤），在 persona 组：Prompt、禁语表、人设规格有变更时报告标“人设变更”，
       # 缺录音或录音过期严格模式失败。报告作为 Gate 0“最近一次运行报告”上传（spec 设计要点 6、待人确认 #11、#12）；不需要任何密钥。
-      - name: make check-group-${{ matrix.group }}（严格模式）
-        run: make check-group-${{ matrix.group }} CONTRACT_STRICT=1 PYTHON=.venv-contracts/bin/python PGBIN=/usr/lib/postgresql/16/bin PERSONA_REPORT_DIR=${{ runner.temp }}/persona-report
+      - name: make check-group-${{ matrix.group }}${{ github.event_name == 'pull_request' && '-light' || '' }}（严格模式）
+        run: make check-group-${{ matrix.group }}${{ github.event_name == 'pull_request' && '-light' || '' }} CONTRACT_STRICT=1 PYTHON=.venv-contracts/bin/python PGBIN=/usr/lib/postgresql/16/bin PERSONA_REPORT_DIR=${{ runner.temp }}/persona-report
 
       - name: 上传人设回归报告（保留 90 天）
         if: always() && matrix.group == 'persona'
@@ -75,6 +78,8 @@ jobs:
   # 数据库变异测试（db/tests/mutations.sh，1251 个变异，单机全跑约 3 小时）拆成 12 个分片并行：
   # 分片按变异名排序后取模，12 个分片合起来正好覆盖全部，一个都不跳过；任何一片失败整个检查就失败。
   db-mutation:
+    # 变异测试：PR 上不跑，合并到 main 与手动触发时跑
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:

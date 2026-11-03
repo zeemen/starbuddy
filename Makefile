@@ -1,5 +1,5 @@
 # 未实现的目标明确打印“跳过”，不得伪装为通过。
-.PHONY: check-fast check check-core weknora-probe-test check-group-persona check-group-contracts check-group-aya check-group-adapters check-group-learning-a check-group-learning-b check-group-bff-web check-group-kge-tools check-group-kge-model check-group-knowledge check-group-insight contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test current-affair-expire model-router-mutation diagnosis-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-visual kge-inventory kge-inventory-test kge-import kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test sie-dictionary-check kge-id-check knowledge-test knowledge-mutation kge-compile-eval-test eval-persona eval-grade persona-registry-check persona-guard-test persona-lock persona-record insight-test insight-mutation release-walkthrough kge-dedupe-test kge-dedupe-mutation kge-calibrate-test kge-calibrate-mutation cost-dashboard-test cost-dashboard-mutation kge-irt-test kge-irt-mutation
+.PHONY: check-fast check check-core check-group-persona-light check-group-contracts-light check-group-aya-light check-group-adapters-light check-group-learning-a-light check-group-learning-b-light check-group-bff-web-light check-group-kge-tools-light check-group-kge-model-light check-group-knowledge-light check-group-insight-light check-light weknora-probe-test check-group-persona check-group-contracts check-group-aya check-group-adapters check-group-learning-a check-group-learning-b check-group-bff-web check-group-kge-tools check-group-kge-model check-group-knowledge check-group-insight contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test current-affair-expire model-router-mutation diagnosis-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-visual kge-inventory kge-inventory-test kge-import kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test sie-dictionary-check kge-id-check knowledge-test knowledge-mutation kge-compile-eval-test eval-persona eval-grade persona-registry-check persona-guard-test persona-lock persona-record insight-test insight-mutation release-walkthrough kge-dedupe-test kge-dedupe-mutation kge-calibrate-test kge-calibrate-mutation cost-dashboard-test cost-dashboard-mutation kge-irt-test kge-irt-mutation
 
 # 可指向装了 packages/contracts/requirements-dev.txt 的解释器，例如 make check PYTHON=.venv/bin/python
 PYTHON ?= python3
@@ -64,6 +64,21 @@ check-group-kge-tools: $(CHECK_GROUP_KGE_TOOLS)
 check-group-kge-model: $(CHECK_GROUP_KGE_MODEL)
 check-group-knowledge: $(CHECK_GROUP_KNOWLEDGE)
 check-group-insight: $(CHECK_GROUP_INSIGHT)
+
+# 轻量检查（PR 上跑，.github/workflows/check.yml）：每组去掉名字以 -mutation 结尾的变异测试；db-mutation 也不在其中。
+# 变异测试在合并到 main（push）或手动触发时跑全量。本地 make check 仍跑全部；make check-light 跑轻量那一份。
+check-group-persona-light: $(filter-out %-mutation,$(CHECK_GROUP_PERSONA))
+check-group-contracts-light: $(filter-out %-mutation,$(CHECK_GROUP_CONTRACTS))
+check-group-aya-light: $(filter-out %-mutation,$(CHECK_GROUP_AYA))
+check-group-adapters-light: $(filter-out %-mutation,$(CHECK_GROUP_ADAPTERS))
+check-group-learning-a-light: $(filter-out %-mutation,$(CHECK_GROUP_LEARNING_A))
+check-group-learning-b-light: $(filter-out %-mutation,$(CHECK_GROUP_LEARNING_B))
+check-group-bff-web-light: $(filter-out %-mutation,$(CHECK_GROUP_BFF_WEB))
+check-group-kge-tools-light: $(filter-out %-mutation,$(CHECK_GROUP_KGE_TOOLS))
+check-group-kge-model-light: $(filter-out %-mutation,$(CHECK_GROUP_KGE_MODEL))
+check-group-knowledge-light: $(filter-out %-mutation,$(CHECK_GROUP_KNOWLEDGE))
+check-group-insight-light: $(filter-out %-mutation,$(CHECK_GROUP_INSIGHT))
+check-light: $(filter-out %-mutation,$(CHECK_GROUP_PERSONA)) $(filter-out %-mutation,$(CHECK_GROUP_CONTRACTS)) $(filter-out %-mutation,$(CHECK_GROUP_AYA)) $(filter-out %-mutation,$(CHECK_GROUP_ADAPTERS)) $(filter-out %-mutation,$(CHECK_GROUP_LEARNING_A)) $(filter-out %-mutation,$(CHECK_GROUP_LEARNING_B)) $(filter-out %-mutation,$(CHECK_GROUP_BFF_WEB)) $(filter-out %-mutation,$(CHECK_GROUP_KGE_TOOLS)) $(filter-out %-mutation,$(CHECK_GROUP_KGE_MODEL)) $(filter-out %-mutation,$(CHECK_GROUP_KNOWLEDGE)) $(filter-out %-mutation,$(CHECK_GROUP_INSIGHT))
 
 check: check-core db-mutation
 	@echo "check: lint 尚未配置，跳过；其余检查已通过"
