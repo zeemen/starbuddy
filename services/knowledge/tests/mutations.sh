@@ -96,6 +96,9 @@ M=(
   $'对照评测：报告带出问题原文\tevals/kge-compile/compare_retrieval.py\t        row: dict[str, Any] = {"id": q.id}\t        row: dict[str, Any] = {"id": q.id, "q": q.question}\tevals/kge-compile/tests/test_compare.py'
   $'对照评测：token 估算按字母逐个计\tevals/kge-compile/compare_retrieval.py\t|[0-9A-Za-z]+|\t|[0-9A-Za-z]|\tevals/kge-compile/tests/test_compare.py'
   $'对照评测：主问题只取一次\tevals/kge-compile/compare_retrieval.py\t[r.lookup(q.question) for _ in range(runs)]\t[r.lookup(q.question) for _ in range(1)]\tevals/kge-compile/tests/test_compare.py'
+  # WeKnora 路径（specs/kb-weknora-integration/weknora-validation-plan.md V12）
+  $'WeKnora 路径：检索不按本次运行的标签过滤\tevals/kge-compile/weknora_path.py\ttag_ids=[self.wc.tag_id] if self.wc.tag_id else ()\ttag_ids=()\tevals/kge-compile/tests/test_weknora_path.py'
+  $'WeKnora 路径：结束时不删除导入的文档\tevals/kge-compile/compare_retrieval.py\t        if not args.weknora_keep:\n            wc.cleanup()\t        if False:\n            wc.cleanup()\tevals/kge-compile/tests/test_weknora_path.py'
   # 审查处理（specs/kge-03-compile-layer/lessons.md“审查处理”）
   $'审查：正文个人信息只扫剥掉引用后的文字\tknowledge/lint/checks.py\tif pat.search(text) or pat.search(stripped)]\tif pat.search(stripped)]\ttests/test_lint.py'
   $'审查：头部值不扫个人信息\tknowledge/lint/checks.py\t    for where, text in header_strings(page.header):\t    for where, text in []:\ttests/test_lint.py'
@@ -238,6 +241,7 @@ copy_tree() {  # $1 目标根目录：services/knowledge 复制一份，其余�
   ln -s "$ROOT/services/learning" "$dst/services/learning"
   # 页面仓库模板复制一份（审查处理的 CI 样例变异要改它）
   (cd "$ROOT/tools/kge-pages-template" && tar -cf - .) | (mkdir -p "$dst/tools/kge-pages-template" && cd "$dst/tools/kge-pages-template" && tar -xf -)
+  ln -s "$ROOT/tools/weknora-probe" "$dst/tools/weknora-probe"  # 对照评测的 WeKnora 路径用它的客户端与模拟服务（只读）
   for d in docs db packages deploy; do ln -s "$ROOT/$d" "$dst/$d"; done  # deploy：LT-05 指标登记清单（只读）
   # evals：对照评测（kge-compile）复制一份以便变异，其余软链接回仓库
   mkdir -p "$dst/evals"

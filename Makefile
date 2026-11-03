@@ -1,5 +1,5 @@
 # 未实现的目标明确打印“跳过”，不得伪装为通过。
-.PHONY: check-fast check check-core check-group-persona check-group-contracts check-group-aya check-group-adapters check-group-learning-a check-group-learning-b check-group-bff-web check-group-kge-tools check-group-kge-model check-group-knowledge check-group-insight contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test current-affair-expire model-router-mutation diagnosis-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-visual kge-inventory kge-inventory-test kge-import kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test sie-dictionary-check kge-id-check knowledge-test knowledge-mutation kge-compile-eval-test eval-persona eval-grade persona-registry-check persona-guard-test persona-lock persona-record insight-test insight-mutation release-walkthrough kge-dedupe-test kge-dedupe-mutation kge-calibrate-test kge-calibrate-mutation cost-dashboard-test cost-dashboard-mutation kge-irt-test kge-irt-mutation
+.PHONY: check-fast check check-core weknora-probe-test check-group-persona check-group-contracts check-group-aya check-group-adapters check-group-learning-a check-group-learning-b check-group-bff-web check-group-kge-tools check-group-kge-model check-group-knowledge check-group-insight contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test current-affair-expire model-router-mutation diagnosis-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-visual kge-inventory kge-inventory-test kge-import kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test sie-dictionary-check kge-id-check knowledge-test knowledge-mutation kge-compile-eval-test eval-persona eval-grade persona-registry-check persona-guard-test persona-lock persona-record insight-test insight-mutation release-walkthrough kge-dedupe-test kge-dedupe-mutation kge-calibrate-test kge-calibrate-mutation cost-dashboard-test cost-dashboard-mutation kge-irt-test kge-irt-mutation
 
 # 可指向装了 packages/contracts/requirements-dev.txt 的解释器，例如 make check PYTHON=.venv/bin/python
 PYTHON ?= python3
@@ -49,7 +49,7 @@ CHECK_GROUP_LEARNING_B := internal-v1-mutation retest-mutation today-mutation re
 CHECK_GROUP_BFF_WEB := bff-test bff-mutation internal-test-tool-test web-test stage-test stage-mutation
 CHECK_GROUP_KGE_TOOLS := kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test kge-chinese-import kge-chinese-mutation kge-dedupe-test kge-dedupe-mutation
 CHECK_GROUP_KGE_MODEL := kge-calibrate-test kge-calibrate-mutation kge-irt-test kge-irt-mutation
-CHECK_GROUP_KNOWLEDGE := knowledge-test knowledge-mutation kge-compile-eval-test knowledge-material-mutation knowledge-cache-mutation knowledge-semantic-test knowledge-semantic-mutation
+CHECK_GROUP_KNOWLEDGE := knowledge-test knowledge-mutation kge-compile-eval-test knowledge-material-mutation knowledge-cache-mutation knowledge-semantic-test knowledge-semantic-mutation weknora-probe-test
 CHECK_GROUP_INSIGHT := insight-test insight-mutation scheduler-test scheduler-mutation gate1-test gate1-mutation
 check-core: $(CHECK_GROUP_PERSONA) $(CHECK_GROUP_CONTRACTS) $(CHECK_GROUP_AYA) $(CHECK_GROUP_ADAPTERS) $(CHECK_GROUP_LEARNING_A) $(CHECK_GROUP_LEARNING_B) $(CHECK_GROUP_BFF_WEB) $(CHECK_GROUP_KGE_TOOLS) $(CHECK_GROUP_KGE_MODEL) $(CHECK_GROUP_KNOWLEDGE) $(CHECK_GROUP_INSIGHT)
 
@@ -595,6 +595,15 @@ kge-m2:
 # KGE-03 PR ③ 对照评测（evals/kge-compile）：页面优先 vs 切块检索的指标与手算一致、确定性输出、报告只含汇总与题目 ID、
 # 合成样例报告与夹具是最新的。用知识服务的 venv（需要 jieba 与 knowledge 包）；缺依赖时非严格跳过、严格失败
 KGE_COMPILE_EVAL_MISSING = [ ! -x services/knowledge/.venv/bin/pytest ] || ! services/knowledge/.venv/bin/python -c "import jieba, yaml" 2>/dev/null
+# WeKnora 技术验证探针（specs/kb-weknora-integration/weknora-validation-plan.md）：对进程内的模拟 WeKnora 跑全部探针，
+# 并证明打开缺陷开关时对应探针判失败。只用标准库 + pytest，不联网（模拟服务只监听 127.0.0.1）。真实运行见 tools/weknora-probe/README.md
+WEKNORA_PROBE_MISSING = ! $(PYTHON) -c "import pytest" 2>/dev/null
+weknora-probe-test:
+	@if $(WEKNORA_PROBE_MISSING); then \
+	  echo "weknora-probe-test: 跳过（$(PYTHON) 没有 pytest；用 PYTHON=.venv-contracts/bin/python）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@$(call guard,$(WEKNORA_PROBE_MISSING))cd tools/weknora-probe && PYTHONDONTWRITEBYTECODE=1 $(if $(findstring /,$(PYTHON)),$(abspath $(PYTHON)),$(PYTHON)) -m pytest -q && echo "weknora-probe-test: 通过"
+
 kge-compile-eval-test:
 	@if $(KGE_COMPILE_EVAL_MISSING); then \
 	  echo "kge-compile-eval-test: 跳过（没有安装依赖；见 services/knowledge/README.md）"; \

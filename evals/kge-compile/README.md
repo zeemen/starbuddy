@@ -19,6 +19,16 @@ KGE V1.1 第九章：“页面优先 vs 切块检索对照：金标问答正确�
 
 两条路径用同一份语料、同一个分词器，结果确定。
 
+## 第三条路径：WeKnora（技术验证计划 V12，可选）
+`--weknora` 时多跑一条路径（`weknora_path.py`）：把同一份公共层切块逐块导入 **WeKnora 测试知识库**（标题 `sbeval-<run_id>-<切块键>`，
+打本次运行专用的标签），只按这个标签检索，取前 `--weknora-top-k`（缺省 5）条，再按标题里的切块键换回原来源，所以“同题讲法一致性”
+与另两条路径同口径。结束时删除导入的文档与标签（`--weknora-keep` 保留）。
+- 地址与密钥从环境变量读：`WEKNORA_TARGET=test`、`WEKNORA_BASE_URL`、`WEKNORA_API_KEY`、`WEKNORA_KB_ID`（同 `tools/weknora-probe/README.md`），
+  不是测试目标就拒绝运行；报告不含地址、密钥与原文。
+- 报告多一列 WeKnora，多一行“WeKnora − 切块”，method 里记 top_k、导入切块数与认不出来源的结果条数；不加 `--weknora` 时报告与原来逐字节相同。
+- 数字只对那次的 WeKnora 配置（嵌入、重排模型）成立；第一阶段用自部署开源模型（验证计划已定事项第 2 条），百炼获批后重跑。结论由人定。
+- 测试（`tests/test_weknora_path.py`）对模拟 WeKnora 只核对流程与报告，数字没有意义。
+
 ## 指标
 | 指标 | 算法 |
 |---|---|

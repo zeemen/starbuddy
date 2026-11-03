@@ -16,7 +16,10 @@
 金标 `synthetic: true` 时报告头标注“流程样例，不是评测结论”。M1 结论由人定（未达标则以切块检索为主路径进入封测）。
 
     services/knowledge/.venv/bin/python evals/kge-compile/compare_retrieval.py --gold <金标.yaml> \
-        --map-snapshot <地图快照> --page-snapshot <页面快照目录> --out <输出目录> [--judge all_points] [--runs 2]
+        --map-snapshot <地图快照> --page-snapshot <页面快照目录> --out <输出目录> [--judge all_points] [--runs 2] \
+        [--weknora [--weknora-kb <测试库 ID>] [--weknora-top-k 5] [--weknora-keep]]
+--weknora：多跑一条 WeKnora 路径（weknora_path.py）：同一份切块导入测试知识库后检索。地址与密钥从环境变量读
+（WEKNORA_TARGET=test、WEKNORA_BASE_URL、WEKNORA_API_KEY、WEKNORA_KB_ID，见 tools/weknora-probe/README.md）；结束时删除导入的文档。
 退出码：0 生成成功；2 参数或输入错误（消息只含字段名与题号，不含题目原文）。
 """
 from __future__ import annotations
@@ -51,10 +54,14 @@ from knowledge.service.pages import SnapshotLoadError, load_snapshot_dir  # noqa
 GOLD_FORMAT = "kge-gold-qa/1"
 REPORT_FORMAT = "kge-compare-retrieval/1"
 PATHS = ("page_first", "chunk")
+WEKNORA = "weknora"                       # 第三条路径（weknora_path.py，技术验证计划 V12）；只在给了 --weknora 时出现
+LABELS = {"page_first": "页面优先", "chunk": "切块检索", WEKNORA: "WeKnora"}
 MIN_REAL_QUESTIONS = 50
 QID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$")
 SAMPLE_NOTICE = "流程样例，不是评测结论：金标为合成数据，只证明脚本流程与指标计算。"
 REAL_NOTICE = "M1 结论由人定：页面优先未达标时，以切块检索为主路径进入封测（KGE V1.1 第九章）。"
+WEKNORA_NOTICE = ("WeKnora 路径（技术验证计划 V12）：同一份公共层切块导入测试知识库后检索；结果取决于 WeKnora 的嵌入、重排模型与配置，"
+                  "报告里的数字只对这次的配置成立，结论由人定。")
 _NORM_DROP = re.compile(r"[\s　，。、；：！？,.;:!?（）()《》“”\"'【】\[\]—\-·…]+")
 _TOKEN = re.compile(r"[㐀-䶿一-鿿]|[0-9A-Za-z]+|[^\s0-9A-Za-z㐀-䶿一-鿿]")
 
@@ -185,8 +192,9 @@ def _mean(xs: Sequence[Fraction | int]) -> Fraction:
 
 
 def evaluate(gold: Gold, corpus: Corpus, *, judge: str = "all_points", runs: int = 2,
-             retrievers: Mapping[str, Any] | None = None) -> dict[str, Any]:
-    """retrievers 只给测试注入（手算核对汇总）；缺省为两条真实路径"""
+             retrievers: Mapping[str, Any] | None = None, weknora_method: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """retrievers 缺省为两条本地路径；给了 "weknora" 键时多一条 WeKnora 路径（weknora_method 记进报告的 method）。
+    测试也用 retrievers 注入预设的上下文包（手算核对汇总）"""
     if judge not in JUDGES:
         raise GoldError(f"未登记的判定规则：{judge}")
     if runs < 2:
@@ -194,12 +202,13 @@ def evaluate(gold: Gold, corpus: Corpus, *, judge: str = "all_points", runs: int
     fn = JUDGES[judge]
     if retrievers is None:
         retrievers = {"page_first": PageFirstRetriever(corpus), "chunk": ChunkRetriever(corpus)}
+    paths = PATHS + ((WEKNORA,) if WEKNORA in retrievers else ())
     rows: list[dict[str, Any]] = []
     agg: dict[str, dict[str, list]] = {p: {"correct": [], "covered": [], "total": [], "cons": [], "tok": [], "chars": [],
-                                           "hit": [], "fallback": []} for p in PATHS}
+                                           "hit": [], "fallback": []} for p in paths}
     for q in gold.questions:
         row: dict[str, Any] = {"id": q.id}
-        for path in PATHS:
+        for path in paths:
             r = retrievers[path]
             packs = [r.lookup(q.question) for _ in range(runs)] + [r.lookup(p) for p in q.paraphrases]
             main = packs[0]
@@ -221,7 +230,7 @@ def evaluate(gold: Gold, corpus: Corpus, *, judge: str = "all_points", runs: int
             row[path] = cell
         rows.append(row)
     summary: dict[str, Any] = {}
-    for path in PATHS:
+    for path in paths:
         a = agg[path]
         n = len(a["correct"])
         s = {"questions": n, "correct": sum(a["correct"]), "accuracy": _dec(Fraction(sum(a["correct"]), n)),
@@ -240,6 +249,18 @@ def evaluate(gold: Gold, corpus: Corpus, *, judge: str = "all_points", runs: int
     notices = [SAMPLE_NOTICE] if gold.synthetic else [REAL_NOTICE]
     if len(gold.questions) < MIN_REAL_QUESTIONS:
         notices.append(f"题量 {len(gold.questions)} 少于 {MIN_REAL_QUESTIONS}（spec 待人确认 #8 的默认下限），不足以支撑 M1 结论。")
+    extra: dict[str, Any] = {}
+    if WEKNORA in summary:
+        notices.append(WEKNORA_NOTICE)
+        wk = summary[WEKNORA]
+        extra["delta_weknora_minus_chunk"] = {
+            "accuracy": round(wk["accuracy"] - ch["accuracy"], 4),
+            "consistency_mean": round(wk["consistency_mean"] - ch["consistency_mean"], 4),
+            "context_tokens_mean_ratio": round(wk["context_tokens_mean"] / ch["context_tokens_mean"], 4) if ch["context_tokens_mean"] else None}
+    method = {"judge": judge, "runs": runs, "retrieval_version": RETRIEVAL_VERSION, "tokenizer_version": TOKENIZER_VERSION,
+              "token_estimate": "每个汉字 1、每串连续字母数字 1、其余每个非空白符号 1"}
+    if WEKNORA in summary:
+        method[WEKNORA] = dict(weknora_method or {})
     return {
         "format": REPORT_FORMAT,
         "synthetic": gold.synthetic,
@@ -247,10 +268,10 @@ def evaluate(gold: Gold, corpus: Corpus, *, judge: str = "all_points", runs: int
         "inputs": {"gold_sha256": gold.digest, "questions": len(gold.questions), "map_version": corpus.atoms.map_version,
                    "subject": corpus.atoms.subject, "page_snapshot_commit": corpus.pages.commit if corpus.pages else None,
                    "chunks": len(corpus.chunks)},
-        "method": {"judge": judge, "runs": runs, "retrieval_version": RETRIEVAL_VERSION, "tokenizer_version": TOKENIZER_VERSION,
-                   "token_estimate": "每个汉字 1、每串连续字母数字 1、其余每个非空白符号 1"},
+        "method": method,
         "summary": summary,
         "delta_page_first_minus_chunk": delta,
+        **extra,
         "questions": rows,
     }
 
@@ -267,31 +288,44 @@ def _fmt(v: Any) -> str:
 
 def render_markdown(rep: Mapping[str, Any]) -> str:
     inp, m, s = rep["inputs"], rep["method"], rep["summary"]
-    title = "# 对照评测：页面优先 vs 切块检索" + ("（流程样例）" if rep["synthetic"] else "")
+    paths = [p for p in PATHS + (WEKNORA,) if p in s]
+    wk = WEKNORA in s
+    title = "# 对照评测：页面优先 vs 切块检索" + (" vs WeKnora" if wk else "") + ("（流程样例）" if rep["synthetic"] else "")
     lines = [title, ""] + [f"> {n}" for n in rep["notices"]] + [""]
     lines += [f"- 金标：{inp['questions']} 题，sha256 {inp['gold_sha256'][:16]}…；合成：{_fmt(rep['synthetic'])}",
               f"- 语料：{inp['subject']} 地图 {inp['map_version']}；页面快照 {_fmt(inp['page_snapshot_commit'])}；切块 {inp['chunks']} 块",
               f"- 方法：判定规则 {m['judge']}；主问题重复 {m['runs']} 次；{m['retrieval_version']}；分词 {m['tokenizer_version']}",
-              f"- token 估算：{m['token_estimate']}", "",
-              "## 汇总", "", "| 指标 | 页面优先 | 切块检索 |", "|---|---|---|"]
+              f"- token 估算：{m['token_estimate']}"]
+    if wk:
+        lines.append("- WeKnora：" + "；".join(f"{k} {_fmt(v)}" for k, v in sorted(m[WEKNORA].items())))
+    lines += ["", "## 汇总", "", "| 指标 | " + " | ".join(LABELS[p] for p in paths) + " |", "|---" * (len(paths) + 1) + "|"]
     labels = [("正确率", "accuracy"), ("正确题数", "correct"), ("要点覆盖率", "point_coverage"), ("讲法一致性（平均 Jaccard）", "consistency_mean"),
               ("上下文 token（平均）", "context_tokens_mean"), ("上下文 token（最大）", "context_tokens_max"),
               ("上下文字符（平均）", "context_chars_mean"), ("定位命中率", "node_hit_rate")]
     for label, k in labels:
-        lines.append(f"| {label} | {_fmt(s['page_first'][k])} | {_fmt(s['chunk'][k])} |")
+        lines.append(f"| {label} | " + " | ".join(_fmt(s[p][k]) for p in paths) + " |")
     d = rep["delta_page_first_minus_chunk"]
     lines += ["", f"- 页面优先 − 切块：正确率 {d['accuracy']:+.4f}；一致性 {d['consistency_mean']:+.4f}；"
-                  f"平均 token 之比 {_fmt(d['context_tokens_mean_ratio'])}",
-              "- 页面优先的兜底次数：" + "、".join(f"{k} {v}" for k, v in s["page_first"]["fallback"].items()),
+                  f"平均 token 之比 {_fmt(d['context_tokens_mean_ratio'])}"]
+    if wk:
+        w = rep["delta_weknora_minus_chunk"]
+        lines.append(f"- WeKnora − 切块：正确率 {w['accuracy']:+.4f}；一致性 {w['consistency_mean']:+.4f}；"
+                     f"平均 token 之比 {_fmt(w['context_tokens_mean_ratio'])}")
+    heads = {"page_first": ["页面优先：正确", "要点", "一致性", "token", "兜底"], "chunk": ["切块：正确", "要点", "一致性", "token"],
+             WEKNORA: ["WeKnora：正确", "要点", "一致性", "token"]}
+    cols = [h for p in paths for h in heads[p]]
+    lines += ["- 页面优先的兜底次数：" + "、".join(f"{k} {v}" for k, v in s["page_first"]["fallback"].items()),
               "- KGE 第九章的口径：正确率不低于切块路径，一致性与成本明显更优。是否达到由人判断。", "",
               "## 逐题（只列题目 ID）", "",
-              "| 题目 ID | 页面优先：正确 | 要点 | 一致性 | token | 兜底 | 切块：正确 | 要点 | 一致性 | token |",
-              "|---|---|---|---|---|---|---|---|---|---|"]
+              "| 题目 ID | " + " | ".join(cols) + " |", "|---" * (len(cols) + 1) + "|"]
     for r in rep["questions"]:
-        a, b = r["page_first"], r["chunk"]
-        lines.append(f"| {r['id']} | {_fmt(a['correct'])} | {a['points_covered']}/{a['points_total']} | {_fmt(a['consistency'])} | "
-                     f"{a['context_tokens']} | {_fmt(a['fallback'])} | {_fmt(b['correct'])} | {b['points_covered']}/{b['points_total']} | "
-                     f"{_fmt(b['consistency'])} | {b['context_tokens']} |")
+        cells = [r["id"]]
+        for p in paths:
+            a = r[p]
+            cells += [_fmt(a["correct"]), f"{a['points_covered']}/{a['points_total']}", _fmt(a["consistency"]), str(a["context_tokens"])]
+            if p == "page_first":
+                cells.append(_fmt(a["fallback"]))
+        lines.append("| " + " | ".join(cells) + " |")
     lines.append("")
     return "\n".join(lines)
 
@@ -305,7 +339,40 @@ def write_report(rep: Mapping[str, Any], out: str | Path) -> tuple[Path, Path]:
     return md, js
 
 
-def main(argv: list[str] | None = None) -> int:
+def _evaluate_with_weknora(gold: Gold, corpus: Corpus, args: argparse.Namespace,
+                           env: Mapping[str, str] | None) -> dict[str, Any]:
+    import os
+
+    from weknora_path import WeKnoraCorpus, WeKnoraRetriever
+    from weknora_probe.client import ConfigError, WeKnoraClient, WeKnoraError
+
+    e = os.environ if env is None else env
+    try:
+        client = WeKnoraClient.from_env(e)
+    except ConfigError as err:
+        raise ValueError(str(err)) from None
+    kb = args.weknora_kb or e.get("WEKNORA_KB_ID", "").strip()
+    if not kb:
+        raise ValueError("缺少测试知识库 ID（--weknora-kb 或 WEKNORA_KB_ID）")
+    wc = WeKnoraCorpus(client, kb, corpus)
+    try:
+        if not wc.ingest(index_timeout=args.weknora_index_timeout):
+            raise ValueError("导入测试库的切块在超时内没有全部建好索引")
+        wr = WeKnoraRetriever(wc, top_k=args.weknora_top_k)
+        retrievers = {"page_first": PageFirstRetriever(corpus), "chunk": ChunkRetriever(corpus), WEKNORA: wr}
+        rep = evaluate(gold, corpus, judge=args.judge, runs=args.runs, retrievers=retrievers,
+                       weknora_method={"target": "test", "top_k": args.weknora_top_k, "filter": "本次运行的标签",
+                                       "ingested_chunks": len(corpus.chunks)})
+        rep["method"][WEKNORA]["unmapped_hits"] = wr.unmapped
+        return rep
+    except WeKnoraError as err:
+        raise ValueError(f"WeKnora 调用失败：{err}") from None
+    finally:
+        if not args.weknora_keep:
+            wc.cleanup()
+
+
+def main(argv: list[str] | None = None, env: Mapping[str, str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="对照评测：页面优先 vs 切块检索（KGE-03）")
     ap.add_argument("--gold", required=True, help="金标问答 YAML（format: kge-gold-qa/1）")
     ap.add_argument("--map-snapshot", required=True, help="已发布地图版本的快照（knowledge.atoms 格式）")
@@ -313,12 +380,21 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", required=True, help="报告输出目录")
     ap.add_argument("--judge", default="all_points", help=f"判定规则：{'、'.join(JUDGES)}")
     ap.add_argument("--runs", type=int, default=2, help="主问题重复取回次数（≥ 2）")
+    ap.add_argument("--weknora", action="store_true", help="多跑一条 WeKnora 路径（只对测试知识库）")
+    ap.add_argument("--weknora-kb", help="测试知识库 ID；缺省读 WEKNORA_KB_ID")
+    ap.add_argument("--weknora-top-k", type=int, default=5, help="WeKnora 路径取前几条（缺省 5，与切块路径一致）")
+    ap.add_argument("--weknora-index-timeout", type=float, default=600.0, help="等待建索引的秒数")
+    ap.add_argument("--weknora-keep", action="store_true", help="不删除导入测试库的文档（便于人工查看）")
     args = ap.parse_args(argv)
     try:
         gold = load_gold(args.gold)
         atoms = load_snapshot(args.map_snapshot)
         pages = load_snapshot_dir(args.page_snapshot) if args.page_snapshot else None
-        rep = evaluate(gold, Corpus(pages, atoms), judge=args.judge, runs=args.runs)
+        corpus = Corpus(pages, atoms)
+        if args.weknora:
+            rep = _evaluate_with_weknora(gold, corpus, args, env)
+        else:
+            rep = evaluate(gold, corpus, judge=args.judge, runs=args.runs)
         md, js = write_report(rep, args.out)
     except (GoldError, SnapshotError, SnapshotLoadError, OSError, ValueError) as e:
         print(f"对照评测无法运行：{e}", file=sys.stderr)
