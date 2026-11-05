@@ -3,13 +3,44 @@
 # 只用合成数据与本机一次性 Postgres；不需要、也不配置任何密钥（CLAUDE.md 规则 8、9）。
 name: check
 
-# PR 上只跑轻量检查（各组去掉 *-mutation，不跑 db-mutation）；合并到 main 与手动触发（workflow_dispatch）时跑全量，
-# 含全部变异测试（2026-11-03 用户决定：控制 Actions 用量）。本地 make check 不变，仍跑全部。
+# ── 计费口径（2026-11-03 账户额度被用光后重订，specs/ci-compute-diet）───────────────────────────────
+# GitHub 按【每个 job 各自的分钟数】计费，不是整次运行的墙上时间。所以“多开并行 job”只买墙上时间，
+# 一分钱都省不下来：db-mutation 拆 12 片，墙上 21 分钟，账单仍是 12×21≈259 分钟。
+# 要省钱只有两条路：少跑一些东西，或让同样的东西跑得更快。这里走第一条——按事件分成两份：
+#
+#   事件                     跑什么                                    计费分钟（实测基数见下）
+#   ───────────────────────  ────────────────────────────────────────  ──────────────────
+#   pull_request             各组 -light（去掉全部 *-mutation）          ≈ 76
+#   push 到 main             各组 -light（同上）                        ≈ 76
+#   workflow_dispatch        默认只跑 *-mutation + db-mutation          ≈ 478
+#     （scope=light / full 可手动选别的）                               （full ≈ 554）
+#
+# -light 与 -mutation 在 Makefile 里用同一个模式互补切分，对每一组都有
+#   check-group-X-light ∪ check-group-X-mutation = check-group-X，
+# 所以两份合起来仍是全量，没有任何检查掉出去。
+#
+# ★ 代价（明说，不藏）：变异测试不再守护每一次推送与合并。
+#   main 上的每个提交只有 -light 把关；*-mutation（28 个目标）与 db-mutation（1251 个变异）
+#   要靠手动触发（Actions → check → Run workflow）。
+#   风险：判分、掌握计算、计量加锁、RLS 这些只由变异测试发现的回归，可能在 main 上躺到下一次手动跑才暴露。
+#   因此约定：改动 db/migrations、判分与掌握计算、计量与权益、RLS 与权限策略时，
+#   合并前必须手动跑一次 scope=mutation（另见 CLAUDE.md“必须停下来请人确认的变更”）。
+#
+# 为什么不做依赖缓存：实测 bootstrap-deps.sh 每个 job 只花 60–96 秒（11 个 job 合计约 13 分钟，
+# 占 554 分钟的 2.4%），依赖树很小（npm 90 个包、Python 约 110 个包）。缓存 12 个目录的恢复时间
+# 和装一遍差不多，省不下来还多一套缓存键要维护，所以不加。
+# ───────────────────────────────────────────────────────────────────────────────────────
 on:
   pull_request:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      scope:
+        description: "跑哪一份：mutation=只跑变异测试（默认）、light=只跑轻量、full=两者都跑"
+        type: choice
+        default: mutation
+        options: [mutation, light, full]
 
 permissions:
   contents: read
@@ -19,14 +50,24 @@ concurrency:
   # 只取消同一 PR 的旧运行；主干上的每次推送都要跑完（安全审查 N7）
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+env:
+  # 非手动触发（PR 与 push 到 main）一律只跑轻量那一份
+  SUITE: ${{ github.event_name == 'workflow_dispatch' && inputs.scope || 'light' }}
+
 jobs:
-  # 全量检查（除数据库变异测试）单机已超过 1 小时，按 Makefile 的 check-group-* 分成 11 组并行；
-  # check-core 就是这 11 组的并集（Makefile 里定义），新检查必须放进某一组才进得了 check，不会被漏掉。
+  # 按 Makefile 的 check-group-* 分成 11 组并行；check-core 就是这 11 组的并集（Makefile 里定义），
+  # 新检查必须放进某一组才进得了 check，不会被漏掉。
   make-check:
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    # 轻量那一份实测最慢的一组（persona）约 17 分钟，45 分钟留了 2.6 倍余量；
+    # 变异那一份最慢的一组（bff-web 的 bff-mutation）约 56 分钟，给 90 分钟。
+    # 卡死的 job 会一直烧额度到超时为止，所以超时要贴着实测值给，不要一律 90。
+    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && 90 || 45 }}
     strategy:
-      fail-fast: false
+      # PR 上一组失败就取消其余各组：本月 10 次运行里 6 次是失败的，失败时早停能把一次运行
+      # 从 ≈76 分钟压到 ≈33 分钟。代价是一次只看到第一个失败的组，修完要再推一次才看到下一个。
+      # push 到 main 与手动触发不早停（要一次看全所有问题）。
+      fail-fast: ${{ github.event_name == 'pull_request' }}
       matrix:
         group: [persona, contracts, aya, adapters, learning-a, learning-b, bff-web, kge-tools, kge-model, knowledge, insight]
     env:
@@ -63,8 +104,19 @@ jobs:
 
       # 人设回归每次都跑（不靠 paths 过滤），在 persona 组：Prompt、禁语表、人设规格有变更时报告标“人设变更”，
       # 缺录音或录音过期严格模式失败。报告作为 Gate 0“最近一次运行报告”上传（spec 设计要点 6、待人确认 #11、#12）；不需要任何密钥。
-      - name: make check-group-${{ matrix.group }}${{ github.event_name == 'pull_request' && '-light' || '' }}（严格模式）
-        run: make check-group-${{ matrix.group }}${{ github.event_name == 'pull_request' && '-light' || '' }} CONTRACT_STRICT=1 PYTHON=.venv-contracts/bin/python PGBIN=/usr/lib/postgresql/16/bin PERSONA_REPORT_DIR=${{ runner.temp }}/persona-report
+      # SUITE=full 时跑整组（后缀为空）；否则跑 -light 或 -mutation 那一份。
+      - name: make check-group-${{ matrix.group }}（${{ github.event_name == 'workflow_dispatch' && inputs.scope || 'light' }}，严格模式）
+        run: |
+          # 注意：不能写成 [ "$SUITE" != full ] && suffix=...——GitHub 的 run 用 bash -e 跑，
+          # SUITE=full 时那行整体返回 1，会把这一步直接判失败。
+          suffix="-$SUITE"
+          if [ "$SUITE" = "full" ]; then suffix=""; fi
+          echo "本次跑：make check-group-${{ matrix.group }}$suffix"
+          make "check-group-${{ matrix.group }}$suffix" \
+            CONTRACT_STRICT=1 \
+            PYTHON=.venv-contracts/bin/python \
+            PGBIN=/usr/lib/postgresql/16/bin \
+            PERSONA_REPORT_DIR=${{ runner.temp }}/persona-report
 
       - name: 上传人设回归报告（保留 90 天）
         if: always() && matrix.group == 'persona'
@@ -75,11 +127,13 @@ jobs:
           retention-days: 90
           if-no-files-found: warn
 
-  # 数据库变异测试（db/tests/mutations.sh，1251 个变异，单机全跑约 3 小时）拆成 12 个分片并行：
+  # 数据库变异测试（db/tests/mutations.sh，1251 个变异）：只在手动触发且 scope 为 mutation / full 时跑。
+  # 这个脚本自己已经按 nproc 并行（DBMUT_JOBS，见 mutations.sh），所以 12 个分片买到的是墙上时间
+  # （21 分钟 vs 单机 229 分钟），计费分钟并不因为分片而减少（12×21.6≈259，单机≈229；分片多花约 30 分钟的
+  # 启动开销）。分片保留 12 个：这一份现在只在发布前手动跑，那时等 21 分钟比等 3.8 小时值得。
   # 分片按变异名排序后取模，12 个分片合起来正好覆盖全部，一个都不跳过；任何一片失败整个检查就失败。
   db-mutation:
-    # 变异测试：PR 上不跑，合并到 main 与手动触发时跑
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'workflow_dispatch' && (inputs.scope == 'mutation' || inputs.scope == 'full')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
