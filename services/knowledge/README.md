@@ -65,6 +65,13 @@ make knowledge-cache-mutation                                                # P
 ```
 
 ```bash
+# 节点表导出（KGE-12 A，specs/kge-12-weknora-integration）：给知识库供应链中台打 KGE 节点 ID 用（中台需求单附录 A.2）。
+# 只出已发布版本的生效节点与已核对投影，不带教材原句；--publishers 是教研给的“版本编码 → 出版社全称”对照表（可选）
+.venv/bin/python -m knowledge.export.node_table --map-snapshot tests/fixtures/map-v1.yaml --out /tmp/kge-node-table [--publishers <对照表.yaml>]
+# 输出 node-table.jsonl、node-table.csv、node-table.manifest.json（行数与 sha256）；同样输入逐字节相同。退出码：0 成功；2 参数或输入错误
+```
+
+```bash
 # 导出已发布页面快照（合并窗口时对页面仓库主分支的指定提交执行；只读 Git 对象，不改工作区、不访问远程）
 .venv/bin/python -m knowledge.compiler.snapshot --repo /path/to/kge-pages --commit main --out /srv/kge/snapshots/<提交号> [--branch main] \
   --hold-report /path/to/reconcile.json --previous /srv/kge/snapshots/<上一份>   # 开发时可用 --no-hold-report（见上“页面对账”）

@@ -96,6 +96,12 @@ M=(
   $'对照评测：报告带出问题原文\tevals/kge-compile/compare_retrieval.py\t        row: dict[str, Any] = {"id": q.id}\t        row: dict[str, Any] = {"id": q.id, "q": q.question}\tevals/kge-compile/tests/test_compare.py'
   $'对照评测：token 估算按字母逐个计\tevals/kge-compile/compare_retrieval.py\t|[0-9A-Za-z]+|\t|[0-9A-Za-z]|\tevals/kge-compile/tests/test_compare.py'
   $'对照评测：主问题只取一次\tevals/kge-compile/compare_retrieval.py\t[r.lookup(q.question) for _ in range(runs)]\t[r.lookup(q.question) for _ in range(1)]\tevals/kge-compile/tests/test_compare.py'
+  # 节点表导出（specs/kge-12-weknora-integration A）
+  $'节点表：未核对的投影也导出\tknowledge/export/node_table.py\ta.record.get("mapping_state") == "verified" and \t\ttests/test_export_node_table.py'
+  $'节点表：撤下的节点也导出\tknowledge/export/node_table.py\tnodes = [a for a in snap.of_type("node") if a.record.get("status", "active") == "active"]\tnodes = list(snap.of_type("node"))\ttests/test_export_node_table.py'
+  $'节点表：带出教材原句\tknowledge/export/node_table.py\t"page_from": rec["page_from"], "page_to": rec["page_to"]}\t"page_from": rec["page_from"], "page_to": rec["page_to"], "quote_text": rec.get("quote_text")}\ttests/test_export_node_table.py'
+  $'节点表：出版社对照表缺编码不报错\tknowledge/export/node_table.py\t        if missing:\n            raise ExportError\t        if False:\n            raise ExportError\ttests/test_export_node_table.py'
+  $'节点表：草稿版本也导出\tknowledge/export/node_table.py\t    if snap.status != "published":\t    if False:\ttests/test_export_node_table.py'
   # WeKnora 路径（specs/kb-weknora-integration/weknora-validation-plan.md V12）
   $'WeKnora 路径：检索不按本次运行的标签过滤\tevals/kge-compile/weknora_path.py\ttag_ids=[self.wc.tag_id] if self.wc.tag_id else ()\ttag_ids=()\tevals/kge-compile/tests/test_weknora_path.py'
   $'WeKnora 路径：结束时不删除导入的文档\tevals/kge-compile/compare_retrieval.py\t        if not args.weknora_keep:\n            wc.cleanup()\t        if False:\n            wc.cleanup()\tevals/kge-compile/tests/test_weknora_path.py'
