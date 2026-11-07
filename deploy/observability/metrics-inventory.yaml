@@ -51,6 +51,7 @@ services:
     - starbuddy_db_pool_size
     - starbuddy_http_request_duration_seconds
     - starbuddy_http_requests_total
+    - starbuddy_knowledge_weknora_similar_total
     - starbuddy_ready
   scheduler:
     - starbuddy_db_pool_idle

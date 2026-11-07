@@ -25,6 +25,7 @@ from ..retrieval.resolver import CombinedResolver
 from ..retrieval.tokenize import TOKENIZER_VERSION
 from .resolve import LOW_CONFIDENCE, RESOLVER_VERSION, Resolver
 from ..weknora import SIMILAR_MODEL, UpstreamError
+from . import obs
 
 if TYPE_CHECKING:  # 开关关时不导入 WeKnora 客户端（KGE-12 C）
     from ..weknora.backend import WeKnoraBackend
@@ -42,6 +43,14 @@ ALLOWED_CALLERS: dict[str, frozenset[str]] = {
     "mastery.explain": frozenset({"orchestrator", "learning"}),
 }
 PARTIAL_CREDIT = ("all_or_nothing", "proportional", "stepwise")
+# KGE-12 C（lessons 待人确认第 6 条）：开了 WeKnora 后端时 item.similar 的去向。WeKnora 出错时退回 SQL，对学生无感，所以要靠这个计数发现故障
+# （deploy/observability/alerts.yaml 的 StarbuddyKnowledgeWeKnoraFallback）。outcome 沿用共享枚举：
+# ok = WeKnora 给的候选；unavailable / timeout = WeKnora 出错或超时、退回 SQL；bad_response = 取不到题目正文；
+# rejected = 允许清单装不下；other = 题目没交付进 WeKnora。开关关时不计
+WEKNORA_SIMILAR = obs.counter("starbuddy_knowledge_weknora_similar_total",
+                              "开了 WeKnora 后端时 item.similar 的去向（ok 为 WeKnora 候选；unavailable、timeout 为出错退回 SQL）",
+                              ("subject", "outcome"))
+SIMILAR_OUTCOME = {"not_delivered": "other", "no_content": "bad_response", "too_broad": "rejected"}
 MAX_PROJECTIONS = 16
 
 
@@ -330,9 +339,11 @@ class ToolCore:
         if self.weknora is not None:
             try:
                 sim = await self.weknora.similar_items(body["item_ref"], limit)
-            except UpstreamError:
+            except UpstreamError as e:
                 backend = "sql_fallback"  # WeKnora 不可用：退回 SQL 实现（lessons 待人确认第 6 条）
+                WEKNORA_SIMILAR.labels(subject=subject, outcome="timeout" if e.timeout else "unavailable").inc()
             else:
+                WEKNORA_SIMILAR.labels(subject=subject, outcome="ok" if sim.refs is not None else SIMILAR_OUTCOME.get(sim.reason, "other")).inc()
                 if sim.refs is not None:
                     return await self._similar_from_weknora(subject, v, me, sim.refs, limit, sim.dropped,
                                                             self.weknora.manifest.source_version)

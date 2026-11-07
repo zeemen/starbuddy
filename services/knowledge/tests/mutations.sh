@@ -249,8 +249,9 @@ M_DB=(
   $'KGE-06：切换不替换已有快照（仍服务旧快照）\tknowledge/service/hotswap.py\t        self.core.pages = snap  # 一次引用赋值\t        self.core.pages = self.core.pages or snap  # 一次引用赋值\ttests/test_hotswap.py'
   # WeKnora 后端（库上，specs/kge-12-weknora-integration C）
   $'WeKnora：候选题不经打标审核核对\tknowledge/service/reader.py\tt.item_id::text = ANY($3::text[])\n                                        AND {_APPROVED}\tt.item_id::text = ANY($3::text[])\ttests/test_weknora_backend.py'
-  $'WeKnora：出错不退回 SQL\tknowledge/service/tools.py\t            except UpstreamError:\n                backend = "sql_fallback"\t            except ZeroDivisionError:\n                backend = "sql_fallback"\ttests/test_weknora_backend.py'
+  $'WeKnora：出错不退回 SQL\tknowledge/service/tools.py\t            except UpstreamError as e:\n                backend = "sql_fallback"\t            except ZeroDivisionError as e:\n                backend = "sql_fallback"\ttests/test_weknora_backend.py'
   $'WeKnora：开关关时日志也带 backend\tknowledge/service/tools.py\t        if backend is not None:\n            meta["backend"] = backend\t        meta["backend"] = backend or "sql"\ttests/test_weknora_backend.py'
+  $'WeKnora：出错退回 SQL 时不计数（告警看不到）\tknowledge/service/tools.py\t                WEKNORA_SIMILAR.labels(subject=subject, outcome="timeout" if e.timeout else "unavailable").inc()\t                pass\ttests/test_weknora_backend.py'
   $'WeKnora：相似题不按题族标 relation\tknowledge/service/tools.py\tsame = me["family_id"] is not None and r["family_id"] == me["family_id"]\tsame = False\ttests/test_weknora_backend.py'
 )
 if [ "$HAVE_PG" = "1" ]; then M+=("${M_DB[@]}"); else echo "knowledge-mutation: 本机没有 Postgres，知识服务的 ${#M_DB[@]} 条变异跳过"; fi

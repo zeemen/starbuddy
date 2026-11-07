@@ -288,6 +288,11 @@ def test_build_weknora_requires_test_target_and_valid_manifest(world, monkeypatc
 
 
 # ---------- 库上：item.similar 开关开 / 关 ----------
+def similar_count(subject: str, outcome: str) -> float:
+    from knowledge.service import obs
+    return obs.REGISTRY.get_sample_value("starbuddy_knowledge_weknora_similar_total", {"subject": subject, "outcome": outcome}) or 0.0
+
+
 async def test_item_similar_with_weknora_rechecks_tags_in_db(world, kgedb, caplog):
     from svc import call, ctx, running_app
     fk, ids, path = world
@@ -307,6 +312,7 @@ async def test_item_similar_with_weknora_rechecks_tags_in_db(world, kgedb, caplo
         assert on["result"]["items"][0] == off["result"]["items"][0]          # 题目视图与 SQL 实现同一份
         logs = [json.loads(m) for m in caplog.messages if m.startswith("{") and '"item.similar"' in m]
         assert logs[-1]["backend"] == "weknora" and "合成题目" not in caplog.text
+    assert similar_count("aya", "ok") >= 1
 
 
 async def test_item_similar_not_delivered_uses_sql_unchanged(world, kgedb, caplog):
@@ -320,11 +326,13 @@ async def test_item_similar_not_delivered_uses_sql_unchanged(world, kgedb, caplo
     body = {"context": ctx(), "item_ref": "aya:SYN-I2"}
     async with running_app(kgedb) as client:
         off = (await call(client, "item.similar", copy.deepcopy(body))).json()
+    before_other = similar_count("aya", "other")
     async with running_app(kgedb, weknora=b) as client:
         on = (await call(client, "item.similar", copy.deepcopy(body))).json()
     assert {k: v for k, v in on.items()} == {k: v for k, v in off.items()}
     logs = [json.loads(m) for m in caplog.messages if m.startswith("{") and '"item.similar"' in m]
     assert "backend" not in logs[0] and logs[-1]["backend"] == "sql_not_delivered"
+    assert similar_count("aya", "other") == before_other + 1
 
 
 async def test_item_similar_falls_back_to_sql_when_weknora_is_down(world, kgedb, caplog):
@@ -336,11 +344,13 @@ async def test_item_similar_falls_back_to_sql_when_weknora_is_down(world, kgedb,
     body = {"context": ctx(), "item_ref": "aya:SYN-I1"}
     async with running_app(kgedb) as client:
         off = (await call(client, "item.similar", copy.deepcopy(body))).json()
+    before_unavailable = similar_count("aya", "unavailable")
     async with running_app(kgedb, weknora=b) as client:
         on = (await call(client, "item.similar", copy.deepcopy(body))).json()
     assert on["result"] == off["result"] and on["source_version"] == off["source_version"] and on["model_version"] == off["model_version"]
     logs = [json.loads(m) for m in caplog.messages if m.startswith("{") and '"item.similar"' in m]
     assert logs[-1]["backend"] == "sql_fallback" and "backend" not in logs[0]
+    assert similar_count("aya", "unavailable") == before_unavailable + 1   # 计数（告警 StarbuddyKnowledgeWeKnoraFallback）
 
 
 async def test_items_by_ids_sql_filters_without_rls(kgedb):
