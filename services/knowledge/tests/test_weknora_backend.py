@@ -367,3 +367,54 @@ async def test_items_by_ids_sql_filters_without_rls(kgedb):
         assert await r.items_by_ids(v.id, "zhixing", ["SYN-I1"]) == [] and await r.items_by_ids(v.id, "aya", []) == []
     finally:
         await pool.close()
+
+
+# ---------- 库上：standard.search 经 HTTP（契约 v0.10，2026-11-07 签字） ----------
+async def test_standard_search_over_http_conforms_and_hides_query(world, kgedb, caplog):
+    from knowledge.service.contract import contract
+    from svc import call, running_app
+    fk, ids, path = world
+    caplog.set_level(logging.DEBUG)
+    body = request(content_types=["textbook_section", "compiled_page", "item"])
+    async with running_app(kgedb, weknora=backend_for(fk, path)) as client:
+        r = await call(client, "standard.search", copy.deepcopy(body), "orchestrator")
+        assert r.status_code == 200, r.text
+        out = r.json()
+        assert contract().validate("StandardSearchResponse", out) == [] and out["contract_version"] == "0.10.0"
+        assert {h["weknora_id"] for h in out["result"]["hits"]} == {ids["tb1"], ids["page1"], ids["exam1"]}
+        assert out["source_version"] == "items:syn-std-kb@20261107.1" and out["evidence_ids"] == []
+        r = await call(client, "standard.search", {**copy.deepcopy(body), "context": {**body["context"], "caller": "bff"}}, "bff")
+        assert r.status_code == 200
+        bad = copy.deepcopy(body)
+        del bad["filters"]["province"]
+        r = await call(client, "standard.search", bad, "orchestrator")
+        assert r.status_code == 400 and r.json()["code"] == "INVALID_REQUEST"   # 缺必填维度：不检索
+    logs = [json.loads(m) for m in caplog.messages if m.startswith("{") and '"standard.search"' in m]
+    assert logs[0]["backend"] == "weknora" and logs[0]["status"] == 200
+    assert QUERY not in caplog.text and "一次函数图像经过哪几个象限" not in caplog.text and "合成正文" not in caplog.text
+
+
+async def test_standard_search_errors_map_to_problems(world, kgedb):
+    import socket
+
+    from svc import call, running_app
+    fk, ids, path = world
+    b = backend_for(fk, path)
+    narrow = WeKnoraBackend(b.client, b.manifest, AllowlistStrategy(b.manifest, max_ids=1))
+    async with running_app(kgedb, weknora=narrow) as client:
+        r = await call(client, "standard.search", request(), "orchestrator")
+        assert r.status_code == 400 and r.json()["code"] == "INVALID_REQUEST"          # 允许清单装不下：不退化成全库检索
+    down = backend_for(fk, path)
+    down.client.base_url = "http://127.0.0.1:9"
+    async with running_app(kgedb, weknora=down) as client:
+        r = await call(client, "standard.search", request(), "orchestrator")
+        assert r.status_code == 503 and r.json()["code"] == "UPSTREAM_UNAVAILABLE" and r.json()["retryable"] is True
+    with socket.socket() as hang:                 # 只 listen 不应答：读超时
+        hang.bind(("127.0.0.1", 0))
+        hang.listen(1)
+        slow = backend_for(fk, path)
+        slow.client.base_url = f"http://127.0.0.1:{hang.getsockname()[1]}"
+        slow.client.timeout = 0.3
+        async with running_app(kgedb, weknora=slow) as client:
+            r = await call(client, "standard.search", request(), "orchestrator")
+            assert r.status_code == 504 and r.json()["code"] == "UPSTREAM_TIMEOUT"

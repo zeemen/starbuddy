@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""知识服务契约 v0.10 候选版的检查（specs/kge-12-weknora-integration/spec.md 第一节 B；ADR 16 第 3.2 节）。
+"""知识服务契约 v0.10（2026-11-07 签字）的检查（specs/kge-12-weknora-integration/spec.md 第一节 B；ADR 16 第 3.2 节）。
 
 由 check_contract.py 在默认运行时一起调用；变异测试见 tests/test_mutations.py 的 V010_MUTATIONS。v0.9 的全部检查照旧由
 check_services.py 做；这里只管 v0.10 多出来的部分，并证明它“只做增量”：
@@ -69,6 +69,9 @@ def _bump(node):
 def check_additive(v09: dict, v010: dict, errors: list[str]) -> None:
     if v010.get("info", {}).get("version") != VERSION:
         errors.append(f"v0.10 的 info.version 应为 {VERSION}，实为 {v010.get('info', {}).get('version')}")
+    so = v010.get("info", {}).get("x-signoff") or {}
+    if so.get("status") != "signed" or so.get("version") != VERSION or not so.get("date") or not so.get("signed_by"):
+        errors.append("v0.10 已签字（2026-11-07）：info.x-signoff 必须有 signed_by、date、status: signed、version: 0.10.0")
     b = _bump(v09)
     s9, s10 = b["components"]["schemas"], v010["components"]["schemas"]
     for name, sch in s9.items():
@@ -205,7 +208,7 @@ def run_v010_checks(v09: dict | None = None, v010: dict | None = None) -> list[s
 def summary(v010: dict) -> str:
     sys.path.insert(0, str(HERE.parent / "tests"))
     from counterexamples_v010 import V010_CASES  # noqa: PLC0415
-    return (f"知识服务 v0.10 候选版合法、只做增量（v0.9 的 schema / 路径 / 示例逐项不变，只多 standard.search），"
+    return (f"知识服务 v0.10（已签字）合法、只做增量（v0.9 的 schema / 路径 / 示例逐项不变，只多 standard.search），"
             f"{len(NEW_EXAMPLES)} 个新示例符合 schema、{len(V010_CASES)} 个反例全部被拒绝")
 
 

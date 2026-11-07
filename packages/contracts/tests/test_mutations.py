@@ -465,6 +465,8 @@ V010_MUTATIONS = {
     "示例不符合 schema": assign(f"{SE}.StandardSearchResponse.value.result.hits.0.score", 2),
     "示例含手机号": assign(f"{SE}.StandardSearchResponse.value.result.hits.0.text", "合成正文 13812345678"),
     "删掉空结果示例": delete(f"{SE}.StandardSearchResponseEmpty"),
+    "删掉签字记录": delete("info.x-signoff"),
+    "签字记录写成待签": assign("info.x-signoff.status", "draft"),
 }
 
 
@@ -661,7 +663,7 @@ def main() -> int:
             print(f"  - {m}")
         return 1
     print(f"mutation-test: 通过（{total} 个变异全部被发现，其中服务契约 {len(SERVICE_MUTATIONS)} 个、允许清单 {len(ALLOWLIST_MUTATIONS)} 个、v1.0 {len(V1_MUTATIONS)} 个、"
-          f"v1.1 候选版（present_item）{len(V11_MUTATIONS)} 个、知识服务 v0.10 候选版（standard.search）{len(V010_MUTATIONS)} 个、learning-internal v1 {len(INTERNAL_MUTATIONS)} 个）")
+          f"v1.1 候选版（present_item）{len(V11_MUTATIONS)} 个、知识服务 v0.10（standard.search）{len(V010_MUTATIONS)} 个、learning-internal v1 {len(INTERNAL_MUTATIONS)} 个）")
     return 0
 
 

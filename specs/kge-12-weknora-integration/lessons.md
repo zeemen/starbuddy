@@ -69,7 +69,10 @@
    - **已定（2026-11-07）**：按现在的做法，V11 核对后再改映射。
 10. **standard.search 何时对外**：已实现并按 v0.10 的 schema 测过，但服务端仍按 v0.9 建路由。v0.10 签字后，把知识服务的契约切到 v0.10、
     在 ToolCore 里接上 standard.search（调用方 bff、orchestrator），另开 PR。
-    - **已定（2026-11-07）**：v0.10 签字后另开 PR。
+    - **已做（2026-11-07）**：v0.10 签字；知识服务切到 v0.10（`service/contract.py` 同时载入 v0.9，按请求的 contract_version 选契约），`ToolCore.standard_search` 接上 WeKnora 后端（开关关 501、允许清单装不下 400、WeKnora 出错 503、超时 504）；MCP 多一个 standard_search。
 11. **允许清单装不下相似题**：相似题的允许集合是“同学科的全部已交付题”，题库一大就会超过 2000 个文档 ID 的上限；现在超了就走 SQL
     （访问日志记 `sql_too_broad`），不回 500。真正解决要等技术验证 V07 定过滤策略（组合标签或按学科分库就不需要传 ID 列表）。
     - **已定（2026-11-07）**：先走 SQL，等 V07。
+12. **v0.9 何时下线**：知识服务现在同时接受 0.9.0 与 0.10.0。学习服务（`services/learning/learning/contract.py`）、BFF 仍发 0.9.0，
+    行为不变。建议：调用方要用 standard.search 时再各自切到 0.10.0；全部切完后另开 PR 去掉 v0.9（知识服务的 LEGACY_VERSIONS 清空），
+    在那之前 v0.9 原文件不动。

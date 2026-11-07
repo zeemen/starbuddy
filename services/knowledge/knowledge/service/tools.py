@@ -25,6 +25,7 @@ from ..retrieval.resolver import CombinedResolver
 from ..retrieval.tokenize import TOKENIZER_VERSION
 from .resolve import LOW_CONFIDENCE, RESOLVER_VERSION, Resolver
 from ..weknora import SIMILAR_MODEL, UpstreamError
+from ..weknora.filters import FilterTooBroad
 from . import obs
 
 if TYPE_CHECKING:  # 开关关时不导入 WeKnora 客户端（KGE-12 C）
@@ -39,6 +40,7 @@ ALLOWED_CALLERS: dict[str, frozenset[str]] = {
     "node.resolve": frozenset({"orchestrator"}),
     "node.get": PUBLIC_CALLERS, "node.path": PUBLIC_CALLERS, "page.get": PUBLIC_CALLERS, "item.search": PUBLIC_CALLERS,
     "item.similar": PUBLIC_CALLERS, "rubric.get": PUBLIC_CALLERS,
+    "standard.search": frozenset({"bff", "orchestrator"}),  # 契约 v0.10 StandardSearchContext
     "evidence.write": frozenset({"orchestrator", "learning"}), "mastery.get": frozenset({"orchestrator", "learning"}),
     "mastery.explain": frozenset({"orchestrator", "learning"}),
 }
@@ -77,6 +79,7 @@ class ToolCore:
         self.handlers: dict[str, Callable[[dict], Awaitable[tuple[dict, dict]]]] = {
             "node.resolve": self.node_resolve, "node.get": self.node_get, "node.path": self.node_path, "page.get": self.page_get,
             "item.search": self.item_search, "item.similar": self.item_similar, "rubric.get": self.rubric_get,
+            "standard.search": self.standard_search,
         }
 
     async def call(self, tool: str, body: Any, caller: str | None) -> tuple[int, dict]:
@@ -115,11 +118,16 @@ class ToolCore:
         if not isinstance(body, dict) or not isinstance(body.get("context"), dict):
             raise invalid("request body must be an object with context")
         ctx = body["context"]
-        if "contract_version" in ctx and ctx["contract_version"] != CONTRACT_VERSION:
+        # 迁移期 0.9.0 与 0.10.0 并存：按请求声明的版本选契约校验，响应回同一个版本（缺版本时按当前版本校验，schema 回 400）
+        contract = self.contract.for_version(ctx.get("contract_version", CONTRACT_VERSION))
+        if contract is None:
             raise ServiceError(400, "CONTRACT_VERSION_UNSUPPORTED", "contract version is not supported")
+        spec = contract.tools.get(tool)
+        if spec is None:  # standard.search 只在 0.10.0 下有
+            raise ServiceError(400, "CONTRACT_VERSION_UNSUPPORTED", "this tool requires a newer contract version")
         if ctx.get("caller") != caller:
             raise forbidden("context.caller does not match the service token")
-        errors = self.contract.validate(spec.request_schema, body)
+        errors = contract.validate(spec.request_schema, body)
         if errors:
             raise invalid("request does not conform to the contract", "; ".join(errors)[:500])
         if self.cache is not None and tool in CACHED_TOOLS:
@@ -130,13 +138,13 @@ class ToolCore:
             for k in ("backend", "weknora_dropped"):
                 if k in meta:
                     record[k] = meta[k]
-        envelope = {"contract_version": CONTRACT_VERSION, "result": result, "evidence_ids": [],
+        envelope = {"contract_version": contract.version, "result": result, "evidence_ids": [],
                     "confidence": meta.get("confidence", 1), "source_version": meta["source_version"],
                     "model_version": meta.get("model_version", f"algo:kge-{tool.replace('.', '-')}@{ALGO_VERSION}"),
                     "human_review_required": bool(meta.get("review_reasons"))}
         if meta.get("review_reasons"):
             envelope["review_reasons"] = list(meta["review_reasons"])
-        bad = self.contract.validate(spec.response_schema, envelope)
+        bad = contract.validate(spec.response_schema, envelope)
         if bad:
             log.error(json.dumps({"tool": tool, "response_contract_errors": bad[:20]}, ensure_ascii=False))
             raise internal()
@@ -374,6 +382,26 @@ class ToolCore:
         if dropped:
             meta["weknora_dropped"] = dropped
         return {"items": items}, meta
+
+    async def standard_search(self, body: dict) -> tuple[dict, dict]:
+        """契约 v0.10 的标准知识检索（KGE-12；ADR 16 第 3.2 节）：经 WeKnora 后端（knowledge/weknora/backend.py）。
+        开关关时回 501；过滤条件命中的文档超过允许清单上限回 400（不退化成全库检索）；WeKnora 出错回 503、超时回 504（可重试）。
+        查询文本不进日志（访问日志只记 request_id、caller、工具名、状态码，另有 backend 与被丢掉的允许集合外命中数）"""
+        if self.weknora is None:
+            raise ServiceError(501, "METHOD_NOT_IMPLEMENTED", "standard search backend is not enabled")
+        try:
+            result, meta = await self.weknora.standard_search(body)
+        except FilterTooBroad:
+            raise invalid("filters match too many documents; narrow them") from None
+        except UpstreamError as e:
+            if e.timeout:
+                raise ServiceError(504, "UPSTREAM_TIMEOUT", "knowledge base timed out", retryable=True) from None
+            raise ServiceError(503, "UPSTREAM_UNAVAILABLE", "knowledge base is unavailable", retryable=True) from None
+        dropped = meta.pop("dropped", 0)
+        meta["backend"] = "weknora"
+        if dropped:
+            meta["weknora_dropped"] = dropped
+        return result, meta
 
     async def rubric_get(self, body: dict) -> tuple[dict, dict]:
         subject, item_id = self._item_ref(body["item_ref"])

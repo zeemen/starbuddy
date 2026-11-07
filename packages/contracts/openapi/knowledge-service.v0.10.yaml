@@ -3,8 +3,14 @@ info:
   title: StarBuddy 知识服务 API（KGE）
   version: 0.10.0
   summary: 知识地图、题目与采分点、证据写入与掌握读取。平台内部接口，学生与家长不能直接访问。
+  x-signoff:
+    signed_by: 用户
+    date: '2026-11-07'
+    status: signed
+    version: 0.10.0
   description: |
-    状态：**v0.10 候选版，待人确认**（specs/kge-12-weknora-integration/spec.md 第一节 B；ADR 16 第 3.2 节）。
+    状态：**已签字，0.10.0**（2026-11-07，用户；specs/kge-12-weknora-integration/spec.md 第一节 B 与决定记录第 10 条，见 `info.x-signoff`）。
+    之后任何改动走契约变更（必停）。迁移期知识服务同时接受 0.9.0 与 0.10.0（按请求的 contract_version 选契约校验）。
     **只做增量**：v0.9 的 10 个工具、schema、示例逐项不变（只把三处契约版本常量改成 0.10.0），只多一个
     `standard.search`（标准知识检索，由知识服务转发到 WeKnora）。契约检查 check_knowledge_v010.py 证明这一点。
     v0.9 原文件不动，迁移期两份并存（同插件 API v1.0 / v1.1 的做法）。

@@ -197,6 +197,8 @@ M=(
   $'WeKnora：清单的未定义字段不拒绝\tknowledge/weknora/manifest.py\t    if unknown:\n        raise ManifestError\t    if False:\n        raise ManifestError\ttests/test_weknora_backend.py'
   $'WeKnora：清单不核对 item_ref 的学科\tknowledge/weknora/manifest.py\tif item_ref is not None and item_ref.split(":", 1)[0] != subject:\tif False:\ttests/test_weknora_backend.py'
   $'WeKnora：开关缺省开\tknowledge/service/config.py\twk_flag = e.get("KNOWLEDGE_WEKNORA_BACKEND", "0")\twk_flag = e.get("KNOWLEDGE_WEKNORA_BACKEND", "1")\ttests/test_weknora_backend.py'
+  # 契约 v0.10 签字后接上 standard.search
+  $'v0.10：standard.search 允许学习服务调用\tknowledge/service/tools.py\t    "standard.search": frozenset({"bff", "orchestrator"}),\t    "standard.search": PUBLIC_CALLERS,\ttests/test_service_unit.py'
 )
 
 # 知识服务读工具（PR ②）：需要一次性 Postgres
@@ -206,8 +208,8 @@ M_DB=(
   $'知识服务：放过待审与驳回的标签\tknowledge/service/reader.py\t_APPROVED = "t.tag_review_status = \'approved\'"\t_APPROVED = "true"\ttests/test_service_db.py'
   $'知识服务：node.path 走弱前置边\tknowledge/service/reader.py\tAND type = \'prerequisite\' AND strength = \'strong\' AND\tAND type = \'prerequisite\' AND\ttests/test_service_db.py'
   $'知识服务：不核对请求体 caller 与令牌\tknowledge/service/tools.py\t        if ctx.get("caller") != caller:\t        if False:\ttests/test_service_contract.py tests/test_service_mcp.py'
-  $'知识服务：跳过请求校验\tknowledge/service/tools.py\t        errors = self.contract.validate(spec.request_schema, body)\t        errors = []\ttests/test_service_contract.py'
-  $'知识服务：跳过响应校验\tknowledge/service/tools.py\t        bad = self.contract.validate(spec.response_schema, envelope)\t        bad = []\ttests/test_service_db.py'
+  $'知识服务：跳过请求校验\tknowledge/service/tools.py\t        errors = contract.validate(spec.request_schema, body)\t        errors = []\ttests/test_service_contract.py'
+  $'知识服务：跳过响应校验\tknowledge/service/tools.py\t        bad = contract.validate(spec.response_schema, envelope)\t        bad = []\ttests/test_service_db.py'
   $'知识服务：请求的 map_version 指向非发布版本也放过\tknowledge/service/tools.py\t        if v is None or ("map_version" in ctx and ctx["map_version"] != v.version):\t        if v is None:\ttests/test_service_db.py tests/test_service_e2e.py'
   $'知识服务：个人层工具不回 501\tknowledge/service/tools.py\t        if tool in PERSONAL_TOOLS:\t        if False:\ttests/test_service_contract.py'
   $'知识服务：以超级用户连接不报错\tknowledge/service/reader.py\t    if row["rolsuper"]:\t    if False:\ttests/test_service_db.py'
@@ -253,6 +255,12 @@ M_DB=(
   $'WeKnora：开关关时日志也带 backend\tknowledge/service/tools.py\t        if backend is not None:\n            meta["backend"] = backend\t        meta["backend"] = backend or "sql"\ttests/test_weknora_backend.py'
   $'WeKnora：出错退回 SQL 时不计数（告警看不到）\tknowledge/service/tools.py\t                WEKNORA_SIMILAR.labels(subject=subject, outcome="timeout" if e.timeout else "unavailable").inc()\t                pass\ttests/test_weknora_backend.py'
   $'WeKnora：相似题不按题族标 relation\tknowledge/service/tools.py\tsame = me["family_id"] is not None and r["family_id"] == me["family_id"]\tsame = False\ttests/test_weknora_backend.py'
+  # 契约 v0.10 签字后接上 standard.search（库上）
+  $'v0.10：响应总回当前版本（0.9.0 的调用方拿到 0.10.0）\tknowledge/service/tools.py\tenvelope = {"contract_version": contract.version,\tenvelope = {"contract_version": CONTRACT_VERSION,\ttests/test_service_contract.py'
+  $'v0.10：0.9.0 的请求按 v0.10 校验\tknowledge/service/tools.py\tcontract = self.contract.for_version(ctx.get("contract_version", CONTRACT_VERSION))\tcontract = self.contract\ttests/test_service_contract.py'
+  $'v0.10：standard.search 出错回 500\tknowledge/service/tools.py\t        except UpstreamError as e:\n            if e.timeout:\t        except ZeroDivisionError as e:\n            if e.timeout:\ttests/test_weknora_backend.py'
+  $'v0.10：standard.search 超时也回 503\tknowledge/service/tools.py\t            if e.timeout:\n                raise ServiceError(504\t            if False:\n                raise ServiceError(504\ttests/test_weknora_backend.py'
+  $'v0.10：允许清单装不下时回 500\tknowledge/service/tools.py\t        except FilterTooBroad:\n            raise invalid(\t        except ZeroDivisionError:\n            raise invalid(\ttests/test_weknora_backend.py'
 )
 if [ "$HAVE_PG" = "1" ]; then M+=("${M_DB[@]}"); else echo "knowledge-mutation: 本机没有 Postgres，知识服务的 ${#M_DB[@]} 条变异跳过"; fi
 
