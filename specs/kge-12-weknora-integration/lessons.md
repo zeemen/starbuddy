@@ -76,3 +76,4 @@
 12. **v0.9 何时下线**：知识服务现在同时接受 0.9.0 与 0.10.0。学习服务（`services/learning/learning/contract.py`）、BFF 仍发 0.9.0，
     行为不变。建议：调用方要用 standard.search 时再各自切到 0.10.0；全部切完后另开 PR 去掉 v0.9（知识服务的 LEGACY_VERSIONS 清空），
     在那之前 v0.9 原文件不动。
+    - **已定（2026-11-07）**：按建议，见 spec.md 决定记录第 11 条。
