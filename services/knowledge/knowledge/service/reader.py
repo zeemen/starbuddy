@@ -182,6 +182,17 @@ class KgeReader:
                                          WHERE t.map_version_id = $1 AND t.subject::text = $2 AND t.item_id = $3
                                            AND {_APPROVED}""", version_id, subject, item_id)
 
+    async def items_by_ids(self, version_id: Any, subject: str, item_ids: list[str]) -> list[asyncpg.Record]:
+        """KGE-12 C：WeKnora 给出的候选题，按已发布版本、打标审核通过再核对一遍（与 item_search 同一组条件）；顺序由调用方按候选排"""
+        if not item_ids:
+            return []
+        async with self.pool.acquire() as c:
+            return await c.fetch(f"""SELECT {_ITEM_COLS} FROM kge.item_tag t
+                                      LEFT JOIN kge.item_family f ON f.map_version_id = t.map_version_id AND f.id = t.family_id
+                                      WHERE t.map_version_id = $1 AND t.subject::text = $2 AND t.item_id::text = ANY($3::text[])
+                                        AND {_APPROVED}
+                                      ORDER BY t.item_id""", version_id, subject, list(item_ids))
+
     async def item_similar(self, version_id: Any, subject: str, item_id: str, family_id: Any, main_node_id: str,
                            limit: int) -> list[asyncpg.Record]:
         async with self.pool.acquire() as c:

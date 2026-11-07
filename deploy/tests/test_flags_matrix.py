@@ -22,9 +22,10 @@ from names import name_exists, read_sources
 FLAG_VARS = {"STARBUDDY_TRUST_UI", "STARBUDDY_STARMAP", "STARBUDDY_PRACTICE", "STARBUDDY_RETEST_UI", "STARBUDDY_TODAY_ORCH",
              "STARBUDDY_MONTHLY_PLAN", "STARBUDDY_FAMILY_GOALS", "STARBUDDY_SUBJECT_GATE", "STARBUDDY_INTERNAL_TEST"}
 REQUIRED_ON = {"math", "daofa", "chinese_grading", "today_plan", "diagnosis", "practice", "retest", "star_map", "trust_ui", "review_console"}
-REQUIRED_OFF = {"english", "mock_exam", "monthly_plan", "stage_whiteboard", "knowledge_read_cache", "internal_test_ops", "model_call_log"}
+REQUIRED_OFF = {"english", "mock_exam", "monthly_plan", "stage_whiteboard", "knowledge_read_cache", "internal_test_ops", "model_call_log",
+                "knowledge_weknora_backend"}
 COVERS = {"weekly_report", "reconcile_card"}
-OFF_VALUES = {"KNOWLEDGE_READ_CACHE": "0", "LEARNING_TODAY_SNAPSHOT": "0"}
+OFF_VALUES = {"KNOWLEDGE_READ_CACHE": "0", "LEARNING_TODAY_SNAPSHOT": "0", "KNOWLEDGE_WEKNORA_BACKEND": "0"}
 
 
 def entries(flags):

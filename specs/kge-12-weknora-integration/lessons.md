@@ -19,6 +19,17 @@
   知道 WeKnora 实际需要什么再加，现在不预先加。
 - 服务端仍按 v0.9 运行（`services/knowledge/knowledge/service/contract.py` 读 v0.9）；v0.10 签字前不接进服务，C 的 WeKnora 后端开关默认关。
 
+## C 知识服务的 WeKnora 后端（2026-11-07，开关缺省关）
+- 代码：`services/knowledge/knowledge/weknora/`（manifest.py 交付清单、filters.py 过滤策略、client.py 导入 tools/weknora-probe 的客户端、
+  backend.py 相似题与 standard.search）；`service/tools.py` 的 item.similar 加 WeKnora 分支，`service/reader.py` 加 `items_by_ids`，
+  `service/config.py` 加 `KNOWLEDGE_WEKNORA_BACKEND`（缺省 0）、`_MANIFEST`、`_TIMEOUT_MS`。开关关时不导入 WeKnora 客户端，原有 644 个测试不变地通过。
+- ID 映射：WeKnora 文档 ID →（交付清单）中台内容 ID →（交付清单的 item_ref）题目引用 →（kge.item_tag）已发布、审核通过再核对。
+  WeKnora 只给候选与排序，题目视图仍由 SQL 生成，与 SQL 实现同一份。
+- 过滤：只实现“允许清单”（spec 决定记录第 4 条）；命中回来再核对是否在允许集合里，模拟 WeKnora 打开 ignore_filters 缺陷时也只出允许的文档。
+  允许集合为空时不调 WeKnora（不退化成全库检索），超过 2000 个文档时报错不检索。
+- 查询文本不进日志与异常（测试用 caplog 核对）；访问日志只多 `backend` 与 `weknora_dropped` 两个字段，且只在开关开时有。
+- 测试：`tests/test_weknora_backend.py`（25 个，含库上 4 个）；变异 16 条进 `tests/mutations.sh`（12 条不需库、4 条库上）。
+
 ## 待人确认
 1. **ID 迁移表怎么导出**：迁移记录在 `kge.id_migration`，不在公共层快照里；知识服务的只读角色 `starbuddy_kge_read` 没有这张表的
    SELECT 权限，而且只能看到已发布的那一个版本（看不到旧版本）。可选：
@@ -33,3 +44,23 @@
    - 考试类型枚举 `zhongkao`、`gaokao`、`midterm`、`final`、`other`；
    - 内容类型六种：教材小节、知识点、题目、试卷、参考资料（`reference`）、编译页（需求单附录 A.1 的 content_type 加上编译页）；
    - `top_k` 1–20，缺省 5；查询文本至多 500 字；命中正文至多 4000 字。
+   - **已定（2026-11-07）**：全部按草案，见 spec.md 决定记录第 8 条。
+4. **题目引用从哪里来**：ADR 16 第 3.4 节说 platform.item 的 source_ref 记 WeKnora 与中台内容 ID，但知识服务的只读角色读不到 platform.item
+   （迁移 0026 只授 kge.*）。现在的做法：同步步骤（未做，随中台交付清单接口 ZT-08 一起）按 source_ref 对好题目引用，写进交付清单文件，
+   知识服务只读这份文件（同页面快照）；命中的题仍经 kge.item_tag 核对。另一做法是新迁移给只读角色授权读 platform.item 的
+   (subject, item_id, source_ref)——迁移与权限变更，必停。**建议先用清单文件**，等 ZT-08 定稿再看要不要改。
+5. **条目上缺的维度怎么算**：试卷题、教辅往往没有出版社、版本、学期。现在把条目上缺的这三项当“不适用”（不排除），请求给了考试年份、地区、
+   类型或节点时条目必须有且相等。是否合适要教研看（例如“苏科版八上”的请求是否该带出没有版本信息的南京中考题）。
+6. **WeKnora 出错时 item.similar 怎么办**：现在退回 SQL 实现（结果与开关关时相同，访问日志记 `sql_fallback`）。另一做法是回 503
+   UPSTREAM_UNAVAILABLE。退回 SQL 对学生无感，但会掩盖 WeKnora 故障，要靠日志与指标发现。**建议退回 SQL，并在开开关前加一个计数指标**。
+7. **镜像**：deploy/docker/knowledge.Dockerfile 的白名单只有 services/knowledge/knowledge，没有 tools/weknora-probe。开关关时不需要；
+   集群恢复、要在 staging 打开开关之前，随部署改动一起加（或把客户端挪进 packages/ 做成共享包）。
+8. **item.search 没有改**：v0.9 的 item.search 只有结构化过滤、没有查询文本，WeKnora 帮不上忙，开关开时仍走 SQL。要“按文字搜题”，
+   需要在 v0.10 给 item.search 加可选的 query 字段（契约变更），或直接用 standard.search（content_types 选 item）。**建议用 standard.search**，
+   item.search 保持结构化过滤。
+9. **相似题的查询文本**：用题目本身在 WeKnora 里的正文（`GET /knowledge/:id` 的 content）。真实 WeKnora 的这个接口是否返回正文未核对
+   （技术验证 V11）；取不到正文时走 SQL（访问日志记 `sql_no_content`）。
+10. **standard.search 何时对外**：已实现并按 v0.10 的 schema 测过，但服务端仍按 v0.9 建路由。v0.10 签字后，把知识服务的契约切到 v0.10、
+    在 ToolCore 里接上 standard.search（调用方 bff、orchestrator），另开 PR。
+11. **允许清单装不下相似题**：相似题的允许集合是“同学科的全部已交付题”，题库一大就会超过 2000 个文档 ID 的上限；现在超了就走 SQL
+    （访问日志记 `sql_too_broad`），不回 500。真正解决要等技术验证 V07 定过滤策略（组合标签或按学科分库就不需要传 ID 列表）。

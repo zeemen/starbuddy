@@ -184,6 +184,19 @@ M=(
   $'可观测：脱敏不替换手机号\tknowledge/service/obs.py\t    re.compile(r"(?<!\\d)(?:\\+?86[- ]?)?1[3-9]\\d[ -]?\\d{4}[ -]?\\d{4}(?!\\d)"),\n\t\ttests/test_obs.py'
   $'可观测：手机号不认连字符分隔\tknowledge/service/obs.py\t1[3-9]\\d[ -]?\\d{4}[ -]?\\d{4}(?!\\d)\t1[3-9]\\d[ ]?\\d{4}[ ]?\\d{4}(?!\\d)\ttests/test_obs.py'
   $'可观测：键名不先驼峰归一\tknowledge/service/obs.py\t    return re.sub(r"(?<=[a-z0-9])([A-Z])", r"_\\1", str(key)).replace("-", "_").lower()\t    return str(key).lower()\ttests/test_obs.py'
+  # WeKnora 后端（specs/kge-12-weknora-integration C）
+  $'WeKnora：不核对命中是否在允许集合里\tknowledge/weknora/filters.py\tif weknora_id is None or weknora_id not in plan.knowledge_ids:\tif weknora_id is None:\ttests/test_weknora_backend.py'
+  $'WeKnora：条目缺出版社时也排除\tknowledge/weknora/filters.py\tif k in filters and getattr(e, k) is not None and getattr(e, k) != filters[k]:\tif k in filters and getattr(e, k) != filters[k]:\ttests/test_weknora_backend.py'
+  $'WeKnora：不按出版社过滤\tknowledge/weknora/filters.py\tNOT_APPLICABLE_WHEN_MISSING = ("publisher", "edition", "semester")\tNOT_APPLICABLE_WHEN_MISSING = ("edition", "semester")\ttests/test_weknora_backend.py'
+  $'WeKnora：已取代的条目也参与检索\tknowledge/weknora/filters.py\tif not e.active or e.content_type not in content_types:\tif e.content_type not in content_types:\ttests/test_weknora_backend.py'
+  $'WeKnora：相似题的允许清单超上限时回 500 而不是走 SQL\tknowledge/weknora/backend.py\t        except FilterTooBroad:  # 一个学科\t        except ZeroDivisionError:  # 一个学科\ttests/test_weknora_backend.py'
+  $'WeKnora：允许清单超上限不报错\tknowledge/weknora/filters.py\tif len(ids) > self.max_ids:\tif False:\ttests/test_weknora_backend.py'
+  $'WeKnora：允许清单为空仍检索（退化成全库检索）\tknowledge/weknora/backend.py\t        if not plan.empty:\n            res = await self._search(body\t        if True:\n            res = await self._search(body\ttests/test_weknora_backend.py'
+  $'WeKnora：命中的中台内容 ID 写成 WeKnora ID\tknowledge/weknora/backend.py\thit: dict[str, Any] = {"content_id": e.content_id,\thit: dict[str, Any] = {"content_id": e.weknora_id,\ttests/test_weknora_backend.py'
+  $'WeKnora：相似题不排除自己\tknowledge/weknora/backend.py\texclude=[me.weknora_id])\t)\ttests/test_weknora_backend.py'
+  $'WeKnora：清单的未定义字段不拒绝\tknowledge/weknora/manifest.py\t    if unknown:\n        raise ManifestError\t    if False:\n        raise ManifestError\ttests/test_weknora_backend.py'
+  $'WeKnora：清单不核对 item_ref 的学科\tknowledge/weknora/manifest.py\tif item_ref is not None and item_ref.split(":", 1)[0] != subject:\tif False:\ttests/test_weknora_backend.py'
+  $'WeKnora：开关缺省开\tknowledge/service/config.py\twk_flag = e.get("KNOWLEDGE_WEKNORA_BACKEND", "0")\twk_flag = e.get("KNOWLEDGE_WEKNORA_BACKEND", "1")\ttests/test_weknora_backend.py'
 )
 
 # 知识服务读工具（PR ②）：需要一次性 Postgres
@@ -234,6 +247,11 @@ M_DB=(
   $'KGE-06：关停不等进行中的 reload\tknowledge/service/app.py\t                await swapper.drain()\t                pass\ttests/test_hotswap.py'
   $'KGE-06：没配置指针文件时 SIGHUP 也排 reload\tknowledge/service/hotswap.py\t        if self.pointer is None:\n            log.warning\t        if False:\n            log.warning\ttests/test_hotswap.py'
   $'KGE-06：切换不替换已有快照（仍服务旧快照）\tknowledge/service/hotswap.py\t        self.core.pages = snap  # 一次引用赋值\t        self.core.pages = self.core.pages or snap  # 一次引用赋值\ttests/test_hotswap.py'
+  # WeKnora 后端（库上，specs/kge-12-weknora-integration C）
+  $'WeKnora：候选题不经打标审核核对\tknowledge/service/reader.py\tt.item_id::text = ANY($3::text[])\n                                        AND {_APPROVED}\tt.item_id::text = ANY($3::text[])\ttests/test_weknora_backend.py'
+  $'WeKnora：出错不退回 SQL\tknowledge/service/tools.py\t            except UpstreamError:\n                backend = "sql_fallback"\t            except ZeroDivisionError:\n                backend = "sql_fallback"\ttests/test_weknora_backend.py'
+  $'WeKnora：开关关时日志也带 backend\tknowledge/service/tools.py\t        if backend is not None:\n            meta["backend"] = backend\t        meta["backend"] = backend or "sql"\ttests/test_weknora_backend.py'
+  $'WeKnora：相似题不按题族标 relation\tknowledge/service/tools.py\tsame = me["family_id"] is not None and r["family_id"] == me["family_id"]\tsame = False\ttests/test_weknora_backend.py'
 )
 if [ "$HAVE_PG" = "1" ]; then M+=("${M_DB[@]}"); else echo "knowledge-mutation: 本机没有 Postgres，知识服务的 ${#M_DB[@]} 条变异跳过"; fi
 

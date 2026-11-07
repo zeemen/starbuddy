@@ -516,7 +516,7 @@ kubectl -n starbuddy-staging get svc,networkpolicy,pvc
 
 - `model_provider` 解除后的验证（由人在有凭据的 staging 执行环境，限次）：`make model-smoke SMOKE_ENV=staging MAX_CALLS=5`（只打印状态、耗时、token 与快照名是否一致）；
   点点人设回归按 `evals/persona/README.md` 的 staging 步骤（`compare.py` 必须显式给 `--max-calls`），并跑 `make eval-persona`。
-- 保持关、不解除：`english`、`mock_exam`、`monthly_plan`、`stage_whiteboard`、`knowledge_read_cache`、`family_goals`、`subject_gate`；`dev_only` 一律不设。
+- 保持关、不解除：`english`、`mock_exam`、`monthly_plan`、`stage_whiteboard`、`knowledge_read_cache`、`knowledge_weknora_backend`（WeKnora 未部署、技术验证未做）、`family_goals`、`subject_gate`；`dev_only` 一律不设。
 - 公共知识层内容（地图、题库、页面快照）只经审核台由教研签字发布；个人层数据永不进入公共层（规则 13）。
 
 ---

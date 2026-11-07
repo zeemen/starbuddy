@@ -13,7 +13,7 @@ import json
 import logging
 import re
 import time
-from typing import Any, Awaitable, Callable
+from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from ..nodeid import SUBJECT_PREFIX
 from .cache import CACHED_TOOLS, ReadCache, cacheable
@@ -24,6 +24,10 @@ from .reader import KgeReader, MapVersionRow, jsonb, node_record, projection_rec
 from ..retrieval.resolver import CombinedResolver
 from ..retrieval.tokenize import TOKENIZER_VERSION
 from .resolve import LOW_CONFIDENCE, RESOLVER_VERSION, Resolver
+from ..weknora import SIMILAR_MODEL, UpstreamError
+
+if TYPE_CHECKING:  # 开关关时不导入 WeKnora 客户端（KGE-12 C）
+    from ..weknora.backend import WeKnoraBackend
 
 log = logging.getLogger("starbuddy.knowledge")
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
@@ -53,8 +57,10 @@ def tokenizer_source(version: str = TOKENIZER_VERSION) -> str:
 
 class ToolCore:
     def __init__(self, reader: KgeReader, contract: Contract, pages: PageSnapshot | None = None,
-                 resolver: Resolver | None = None, cache: ReadCache | None = None) -> None:
+                 resolver: Resolver | None = None, cache: ReadCache | None = None,
+                 weknora: "WeKnoraBackend | None" = None) -> None:
         self.reader = reader
+        self.weknora = weknora  # KGE-12 C：None = 开关关（缺省），item.similar 走 SQL，响应与日志都与原来相同
         self.contract = contract
         self.pages = pages
         self.cache = cache  # PLT-19：None = 缓存关（缺省）
@@ -111,6 +117,10 @@ class ToolCore:
             result, meta = await self._cached(tool, body, self.cache, {} if record is None else record)
         else:
             result, meta = await self.handlers[tool](body)
+        if record is not None:  # KGE-12 C：只在开了 WeKnora 后端时有（开关关时访问日志字段不变）；不记查询文本
+            for k in ("backend", "weknora_dropped"):
+                if k in meta:
+                    record[k] = meta[k]
         envelope = {"contract_version": CONTRACT_VERSION, "result": result, "evidence_ids": [],
                     "confidence": meta.get("confidence", 1), "source_version": meta["source_version"],
                     "model_version": meta.get("model_version", f"algo:kge-{tool.replace('.', '-')}@{ALGO_VERSION}"),
@@ -315,9 +325,44 @@ class ToolCore:
         me = await self.reader.item(v.id, subject, item_id)
         if me is None:
             raise not_found("ITEM_NOT_FOUND")
-        rows = await self.reader.item_similar(v.id, subject, item_id, me["family_id"], me["main_node_id"], int(body.get("limit", 5)))
+        limit = int(body.get("limit", 5))
+        backend: str | None = None
+        if self.weknora is not None:
+            try:
+                sim = await self.weknora.similar_items(body["item_ref"], limit)
+            except UpstreamError:
+                backend = "sql_fallback"  # WeKnora 不可用：退回 SQL 实现（lessons 待人确认第 6 条）
+            else:
+                if sim.refs is not None:
+                    return await self._similar_from_weknora(subject, v, me, sim.refs, limit, sim.dropped,
+                                                            self.weknora.manifest.source_version)
+                backend = f"sql_{sim.reason}"
+        rows = await self.reader.item_similar(v.id, subject, item_id, me["family_id"], me["main_node_id"], limit)
         items = [{"item": self._item_view(r), "relation": "same_family" if r["same_family"] else "similar"} for r in rows]
-        return {"items": items}, {"source_version": graph_source(subject, v)}
+        meta: dict[str, Any] = {"source_version": graph_source(subject, v)}
+        if backend is not None:
+            meta["backend"] = backend
+        return {"items": items}, meta
+
+    async def _similar_from_weknora(self, subject: str, v: MapVersionRow, me: Any, refs: list[str], limit: int,
+                                    dropped: int, kb_source: str) -> tuple[dict, dict]:
+        """WeKnora 给的候选按 WeKnora 的顺序，再经 kge.item_tag 核对（已发布版本、审核通过、同学科）；relation 按题族算"""
+        ids = [r.partition(":")[2] for r in refs if r.partition(":")[0] == subject]
+        rows = {r["item_id"]: r for r in await self.reader.items_by_ids(v.id, subject, ids)}
+        items = []
+        for i in ids:
+            r = rows.get(i)
+            if r is None or i == me["item_id"]:
+                continue
+            same = me["family_id"] is not None and r["family_id"] == me["family_id"]
+            items.append({"item": self._item_view(r), "relation": "same_family" if same else "similar"})
+            if len(items) >= limit:
+                break
+        meta: dict[str, Any] = {"source_version": f"{graph_source(subject, v)};{kb_source}",
+                                "model_version": SIMILAR_MODEL, "backend": "weknora"}
+        if dropped:
+            meta["weknora_dropped"] = dropped
+        return {"items": items}, meta
 
     async def rubric_get(self, body: dict) -> tuple[dict, dict]:
         subject, item_id = self._item_ref(body["item_ref"])

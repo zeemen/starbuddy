@@ -93,6 +93,9 @@ services:
       - {name: KNOWLEDGE_READ_CACHE_SIZE, purpose: 缓存条目上限, secret: false, default: "1024", envs: all}
       - {name: KNOWLEDGE_READ_CACHE_MAX_BYTES, purpose: 缓存字节上限, secret: false, default: "67108864", envs: all}
       - {name: KNOWLEDGE_READ_CACHE_LOG_EVERY, purpose: 缓存计数日志间隔, secret: false, default: "1000", envs: all}
+      - {name: KNOWLEDGE_WEKNORA_BACKEND, purpose: WeKnora 后端开关（KGE-12 C；上线测试关；开时还要 tools/weknora-probe 的客户端与 WEKNORA_* 三个变量，镜像暂未带）, secret: false, default: "0", envs: all}
+      - {name: KNOWLEDGE_WEKNORA_MANIFEST, purpose: WeKnora 交付清单文件（开关开时必填，绝对路径，只读挂载）, secret: false, default: null, envs: all}
+      - {name: KNOWLEDGE_WEKNORA_TIMEOUT_MS, purpose: 向 WeKnora 单次请求的超时（100–30000）, secret: false, default: "3000", envs: all}
       - {name: KNOWLEDGE_CACHE_DIR, purpose: 分词器缓存目录（只读根文件系统下挂 tmpfs）, secret: false, default: /tmp/knowledge-cache, envs: all}
       - {name: KNOWLEDGE_CONTRACT_DIR, purpose: 契约目录覆盖（测试用；staging 设了拒绝启动）, secret: false, default: null, envs: local}
       - {name: STARBUDDY_IMAGE_ENV, purpose: 镜像固化的环境标记（设了须与运行环境一致）, secret: false, default: null, envs: all}
