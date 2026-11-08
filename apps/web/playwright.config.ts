@@ -113,6 +113,9 @@ export default defineConfig({
     deviceScaleFactor: 1,
     colorScheme: 'light',
     serviceWorkers: 'block',
+    // 本机浏览器与锁定的 @playwright/test 版本不配套时（例如云端会话预装的 Chromium），用 PW_CHROMIUM_EXECUTABLE 指定可执行文件；
+    // 不设时按 Playwright 自带的浏览器（CI 照旧 playwright install）。只给 Chromium 用：Firefox / WebKit 的几套在下面清掉
+    ...(process.env['PW_CHROMIUM_EXECUTABLE'] ? { launchOptions: { executablePath: process.env['PW_CHROMIUM_EXECUTABLE'] } } : {}),
   },
   expect: { toHaveScreenshot: { maxDiffPixelRatio: 0.001, animations: 'disabled' } },
   projects: [
@@ -126,7 +129,7 @@ export default defineConfig({
     ...MOBILE_DEVICES.map((d) => ({ name: d.name, testMatch: MOBILE_SPECS, use: { ...d.use, baseURL: `http://127.0.0.1:${port}` } })),
     ...extraBrowsers.map((b) => ({
       name: `trust-on-${b}`, testMatch: /trust-on\.spec\.ts$/, grep: /@data-rights/,
-      use: { baseURL: `http://127.0.0.1:${trustPort}`, browserName: b },
+      use: { baseURL: `http://127.0.0.1:${trustPort}`, browserName: b, launchOptions: {} },
     })),
   ],
   webServer: [

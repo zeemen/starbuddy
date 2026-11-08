@@ -11,6 +11,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { ALL_SHELL_COPY, FIRST_REPORT } from '../src/shell/copy.ts';
 import { expectNoDomLeak } from './dom-leak.ts';
 import { cookieSession, loginGuardian, loginStudent, REPORT_BASE, REPORT_BFF } from './session.ts';
+import { crawlClaimBinding, ledger } from './claim-binding.ts';
 
 const R1 = '5c000000-0000-4000-8000-0000000000c1';
 const R2 = '5c000000-0000-4000-8000-0000000000c2';
@@ -145,4 +146,15 @@ test('@visual 首份报告 学生版（light）', async ({ page }) => {
   await page.goto(demo(R1, C.ver));
   await expect(page.locator('[data-report-verify]')).toBeVisible();
   await expect(page).toHaveScreenshot('first-report-student-light.png', { fullPage: true });
+});
+
+
+test('陈述—判断一致性（T21）：首份报告的每句都挂着账本里 R1 可展示的判断；待验证的只画虚线；R2 页面上没有 R1 的判断', async ({ page }) => {
+  const claims = ledger();
+  await loginGuardian(page, 'gR');
+  const seen = await crawlClaimBinding(page, R1, [demo(R1), demo(R1, C.ver), demo(R1, C.est)], claims);
+  expect([...seen]).toEqual(expect.arrayContaining([C.est, C.hyp, C.tra]));   // 阳性对照
+  await crawlClaimBinding(page, R2, [demo(R2)], claims);
+  await loginStudent(page, R1);
+  await crawlClaimBinding(page, R1, [demo(R1), demo(R1, C.ver)], claims);
 });

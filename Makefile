@@ -1,5 +1,5 @@
 # 未实现的目标明确打印“跳过”，不得伪装为通过。
-.PHONY: check-mutation check-group-persona-mutation check-group-contracts-mutation check-group-aya-mutation check-group-adapters-mutation check-group-learning-a-mutation check-group-learning-b-mutation check-group-bff-web-mutation check-group-kge-tools-mutation check-group-kge-model-mutation check-group-knowledge-mutation check-group-insight-mutation check-fast check check-core check-group-persona-light check-group-contracts-light check-group-aya-light check-group-adapters-light check-group-learning-a-light check-group-learning-b-light check-group-bff-web-light check-group-kge-tools-light check-group-kge-model-light check-group-knowledge-light check-group-insight-light check-light weknora-probe-test check-group-persona check-group-contracts check-group-aya check-group-adapters check-group-learning-a check-group-learning-b check-group-bff-web check-group-kge-tools check-group-kge-model check-group-knowledge check-group-insight contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test current-affair-expire model-router-mutation diagnosis-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-visual kge-inventory kge-inventory-test kge-import kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test sie-dictionary-check kge-id-check knowledge-test knowledge-mutation kge-compile-eval-test eval-persona eval-grade persona-registry-check persona-guard-test persona-lock persona-record insight-test insight-mutation release-walkthrough kge-dedupe-test kge-dedupe-mutation kge-calibrate-test kge-calibrate-mutation cost-dashboard-test cost-dashboard-mutation kge-irt-test kge-irt-mutation
+.PHONY: check-mutation check-group-persona-mutation check-group-contracts-mutation check-group-aya-mutation check-group-adapters-mutation check-group-learning-a-mutation check-group-learning-b-mutation check-group-bff-web-mutation check-group-kge-tools-mutation check-group-kge-model-mutation check-group-knowledge-mutation check-group-insight-mutation check-fast check check-core check-group-persona-light check-group-contracts-light check-group-aya-light check-group-adapters-light check-group-learning-a-light check-group-learning-b-light check-group-bff-web-light check-group-kge-tools-light check-group-kge-model-light check-group-knowledge-light check-group-insight-light check-light weknora-probe-test check-group-persona check-group-contracts check-group-aya check-group-adapters check-group-learning-a check-group-learning-b check-group-bff-web check-group-kge-tools check-group-kge-model check-group-knowledge check-group-insight contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test current-affair-expire model-router-mutation diagnosis-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-claims-mutation web-visual kge-inventory kge-inventory-test kge-import kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test sie-dictionary-check kge-id-check knowledge-test knowledge-mutation kge-compile-eval-test eval-persona eval-grade persona-registry-check persona-guard-test persona-lock persona-record insight-test insight-mutation release-walkthrough kge-dedupe-test kge-dedupe-mutation kge-calibrate-test kge-calibrate-mutation cost-dashboard-test cost-dashboard-mutation kge-irt-test kge-irt-mutation
 
 # 可指向装了 packages/contracts/requirements-dev.txt 的解释器，例如 make check PYTHON=.venv/bin/python
 PYTHON ?= python3
@@ -46,7 +46,7 @@ CHECK_GROUP_AYA := adapter-aya-test adapter-aya-mutation
 CHECK_GROUP_ADAPTERS := adapter-zhixing-test adapter-wenli-test adapter-client-mutation zhixing-rubric-check daofa-grading-eval-test
 CHECK_GROUP_LEARNING_A := learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation practice-mutation
 CHECK_GROUP_LEARNING_B := internal-v1-mutation retest-mutation today-mutation review-console-mutation release-walkthrough loadtest-test cost-dashboard-test cost-dashboard-mutation mock-exam-test mock-exam-mutation deploy-check staging-mutation
-CHECK_GROUP_BFF_WEB := bff-test bff-mutation internal-test-tool-test web-test stage-test stage-mutation
+CHECK_GROUP_BFF_WEB := bff-test bff-mutation internal-test-tool-test web-test web-claims-mutation stage-test stage-mutation
 CHECK_GROUP_KGE_TOOLS := kge-inventory-test kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test kge-chinese-import kge-chinese-mutation kge-dedupe-test kge-dedupe-mutation
 CHECK_GROUP_KGE_MODEL := kge-calibrate-test kge-calibrate-mutation kge-irt-test kge-irt-mutation
 CHECK_GROUP_KNOWLEDGE := knowledge-test knowledge-mutation kge-compile-eval-test knowledge-material-mutation knowledge-cache-mutation knowledge-semantic-test knowledge-semantic-mutation weknora-probe-test
@@ -495,9 +495,18 @@ web-test:
 	  echo "web-test: 构建产物里还有开发 staff 身份桩"; exit 1; fi; echo "web-test: 构建产物里没有开发 staff 身份桩"
 	@$(call guard,$(WEB_MISSING))if grep -rlE 'x-dev-account-id|sb_dev_account|STARBUDDY_DEV_AUTH|/dev/login|/dev/session|/dev/star-glyphs|SYNTHETIC_ACCOUNTS' apps/web/.next --exclude-dir=cache >/dev/null 2>&1; then \
 	  echo "web-test: 生产构建产物里还有开发身份桩或开发专用页面（4-H H2）"; exit 1; fi; echo "web-test: 生产构建产物里没有开发身份桩与开发专用页面"
+	@$(call guard,$(WEB_MISSING))if grep -rlE 'data:(image|font)/' apps/web/.next/static apps/web/.next/server --include='*.js' --include='*.css' --include='*.html' >/dev/null 2>&1; then \
+	  echo "web-test: 构建产物里有 data: 图片或字体（CSP 的 img-src / font-src 不许 data:，T46）"; exit 1; fi; echo "web-test: 构建产物里没有 data: 图片与字体"
 	@$(call guard,$(WEB_MISSING))cd apps/web && $(PY_ON_PATH)node --no-warnings --test --test-reporter=dot tests/*.test.ts && echo "web-test: 单测与静态检查通过"
 	@$(call guard,$(WEB_MISSING))bash apps/web/scripts/e2e.sh --grep-invert @visual --reporter=dot; rc=$$?; \
 	  if [ $$rc -eq 0 ]; then echo "web-test: 端到端通过"; fi; \
+	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
+
+# 陈述—判断一致性爬取（T21，specs/tech-debt-batch2）的变异测试：每条变异都重新构建端到端前端，单条几分钟；只在变异组里（CI 手动触发）。
+web-claims-mutation:
+	@if $(WEB_MISSING); then echo "web-claims-mutation: 跳过（没有安装依赖）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
+	@$(call guard,$(WEB_MISSING))bash apps/web/scripts/claims-mutation.sh; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
 
 # 视觉回归（@visual）：与已提交的基线比较，差异像素 ≤ 0.1%。基线要在固定版本的容器与浏览器里生成，

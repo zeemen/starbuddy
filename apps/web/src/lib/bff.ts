@@ -28,7 +28,18 @@ export function bffBaseUrl(env: Env = process.env): string {
   return u.origin;
 }
 
-/** 浏览器请求的 Origin 与客户端地址（按原样转交 BFF 核对；这里不做判断） */
+/**
+ * 转交给 BFF 的客户端地址（T46，specs/tech-debt-batch2）：只在 WEB_TRUST_CLIENT_IP=1 时转交，且只取网关覆盖写入的 X-Real-IP；
+ * 不取 X-Forwarded-For（第一段可被客户端伪造）。缺省不转交（BFF 在 staging 也默认不信，BFF_TRUST_CLIENT_IP=0）。
+ * 打开它是发布检查项：网关必须覆盖写 X-Real-IP，前端只对网关开放（deploy/config/README.md S5）。
+ */
+export function clientIpFor(get: (name: string) => string | null, env: Env = process.env): string | null {
+  if (env['WEB_TRUST_CLIENT_IP'] !== '1') return null;
+  const ip = get('x-real-ip')?.trim() ?? '';
+  return ip && ip.length <= 64 && /^[0-9A-Fa-f:.]+$/.test(ip) ? ip : null;
+}
+
+/** 浏览器请求的 Origin 与客户端地址（转交 BFF 核对；这里不判断身份） */
 export async function requestMeta(): Promise<Record<string, string>> {
   // 按需加载：本文件的地址白名单与只读请求在单测里直接引用（Node 解析不了 next/headers 的包内路径）
   const { headers } = await import('next/headers');
@@ -36,8 +47,8 @@ export async function requestMeta(): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
   const origin = h.get('origin');
   if (origin) out['origin'] = origin;
-  const ip = h.get('x-forwarded-for')?.split(',')[0]?.trim() || h.get('x-real-ip') || '';
-  if (ip && ip.length <= 64) out['x-sb-client-ip'] = ip;
+  const ip = clientIpFor((n) => h.get(n));
+  if (ip) out['x-sb-client-ip'] = ip;
   return out;
 }
 

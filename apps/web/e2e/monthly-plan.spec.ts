@@ -13,6 +13,7 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { expectNoDomLeak } from './dom-leak.ts';
 import { cookieSession, FAMILY_BFF, loginGuardian, loginStudent } from './session.ts';
+import { crawlClaimBinding, ledger } from './claim-binding.ts';
 
 const M1 = '57540000-0000-4000-8000-0000000000c1';
 const M2 = '57540000-0000-4000-8000-0000000000c2';
@@ -138,4 +139,15 @@ test('学生端还没有生成本月计划时：空状态，不触发生成', as
   await expectStudentOnlyPlan(page);
   await axe(page);
   await expectNoDomLeak(page, { forbidden: [...GUARDIAN_ONLY] });
+});
+
+
+test('陈述—判断一致性（T21）：月度计划家长页与学生“本月计划”页，每句都挂着账本里本人可展示的判断', async ({ page }) => {
+  const claims = ledger();
+  await loginGuardian(page, 'gM');
+  const seen = await crawlClaimBinding(page, M1, [`/family/${M1}/monthly-plan`, `/family/${M1}`], claims);
+  expect(seen.size, '阳性对照：月度计划里确实有挂判断的句子').toBeGreaterThan(0);
+  await crawlClaimBinding(page, M2, [`/family/${M2}/monthly-plan`], claims);
+  await loginStudent(page, M1);
+  await crawlClaimBinding(page, M1, [`/s/${M1}/plan`, `/s/${M1}/today`], claims);
 });

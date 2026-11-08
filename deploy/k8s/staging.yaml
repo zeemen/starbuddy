@@ -396,6 +396,7 @@ spec:
             - {name: WEB_HOST, valueFrom: {fieldRef: {fieldPath: status.podIP}}}
             - {name: PORT, value: "3000"}
             - {name: STARBUDDY_BFF_URL, value: "http://10.96.100.30:8787"}
+            - {name: WEB_TRUST_CLIENT_IP, value: "0"}
             - {name: STARBUDDY_REVIEW_URL, value: "http://10.96.100.13:8792"}
             - {name: STARBUDDY_PRESENCE_HMAC_KEY, valueFrom: {secretKeyRef: {name: starbuddy-web, key: presence-hmac-key}}}
             - {name: STARBUDDY_CONSENT_VERSION_PRIVACY, valueFrom: {configMapKeyRef: {name: starbuddy-staging, key: consent-version-privacy}}}

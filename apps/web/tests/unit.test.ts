@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { existsSync, readFileSync } from 'node:fs';
-import { bffBaseUrl } from '../src/lib/bff.ts';
+import { bffBaseUrl, clientIpFor } from '../src/lib/bff.ts';
 import { contentSecurityPolicy, HSTS, hstsEnabled, newNonce } from '../src/lib/csp.ts';
 import { devRuntimeAllowed } from '../src/lib/dev-pages.ts';
 import { skySummaryLabel, statusText, subjectName } from '../src/lib/labels.ts';
@@ -86,6 +86,7 @@ test('CSP：带本次的 nonce，没有 unsafe-inline；生产不带 unsafe-eval
                    "worker-src 'self'", "manifest-src 'self'"]) {
     assert.ok(csp.includes(d), d);
   }
+  assert.ok(csp.split('; ').includes("img-src 'self'") && !/data:/.test(csp), 'T46：图片只许同源，不许 data:');
   assert.ok(!/unsafe-inline|unsafe-eval|https?:|\*/.test(csp), csp);
   assert.ok(contentSecurityPolicy(n, { dev: true }).includes("'unsafe-eval'"));
   assert.throws(() => contentSecurityPolicy("x' 'unsafe-inline"));
@@ -114,5 +115,20 @@ test('没有登录或学生 ID 不是 UUID 时不请求 BFF', async () => {
     assert.ok(isUuid('5a000000-0000-4000-8000-0000000000c1'));
   } finally {
     globalThis.fetch = orig;
+  }
+});
+
+
+test('T46：客户端地址缺省不转交；开了只取网关写入的 X-Real-IP，不取可伪造的 X-Forwarded-For', () => {
+  const h = (m: Record<string, string>) => (n: string) => m[n] ?? null;
+  const both = h({ 'x-forwarded-for': '203.0.113.9, 10.0.0.1', 'x-real-ip': '198.51.100.7' });
+  assert.equal(clientIpFor(both, {}), null);
+  assert.equal(clientIpFor(both, { WEB_TRUST_CLIENT_IP: '0' }), null);
+  assert.equal(clientIpFor(both, { WEB_TRUST_CLIENT_IP: 'true' }), null);
+  assert.equal(clientIpFor(both, { WEB_TRUST_CLIENT_IP: '1' }), '198.51.100.7');
+  assert.equal(clientIpFor(h({ 'x-forwarded-for': '203.0.113.9' }), { WEB_TRUST_CLIENT_IP: '1' }), null);
+  assert.equal(clientIpFor(h({ 'x-real-ip': '2001:db8::1' }), { WEB_TRUST_CLIENT_IP: '1' }), '2001:db8::1');
+  for (const bad of ['', '1.2.3.4\r\nx-evil: 1', '<script>', 'a'.repeat(65)]) {
+    assert.equal(clientIpFor(h({ 'x-real-ip': bad }), { WEB_TRUST_CLIENT_IP: '1' }), null, bad);
   }
 });

@@ -12,6 +12,7 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { ALL_SHELL_COPY } from '../src/shell/copy.ts';
 import { targets } from './crawl-pages.ts';
+import { crawlClaimBinding, ledger, weeklyTexts } from './claim-binding.ts';
 import { domLeaks, expectNoDomLeak, FORBIDDEN_CODES } from './dom-leak.ts';
 import { crawl } from './headers-check.ts';
 import { loginGuardian, loginStudent, TRUST_BASE } from './session.ts';
@@ -357,4 +358,22 @@ test('安全头（第二轮 7.6，H6）：开关打开时信任界面的全部�
   await crawl(page, targets('student', GT, true, true));
   await loginGuardian(page, 'gH');
   await crawl(page, targets('guardian', GT, true, true));
+});
+
+
+test('陈述—判断一致性的全站爬取（T21）：学生与家长的全部页面，每个 data-claim-id 都是账本里本人可展示的判断；推翻、撤回与别人的判断不出现；句子都挂在判断上', async ({ page }) => {
+  const claims = ledger();
+  // 种子里 GT 的四条：f1 成立、f2 假设（周报里显示），f3 已推翻、f4 已撤回（周报快照里还留着句子，读取时必须被挡掉）
+  const refuted = '5d000000-0000-4000-8000-0000000000f3';
+  const withdrawn = '5d000000-0000-4000-8000-0000000000f4';
+  expect(claims.get(refuted)?.status).toBe('refuted');
+  expect(claims.get(withdrawn)?.status).toBe('withdrawn');
+  expect(claims.get('5d000000-0000-4000-8000-0000000000f5')?.status).toBe('to_verify');  // f5：只靠 BFF 的再核挡掉（RLS 放行待验证）
+  const pages = (who: 'student' | 'guardian') => targets(who, GT, true).filter((t) => t.status === 200).map((t) => t.path);
+  await loginStudent(page, GT);
+  const seenStudent = await crawlClaimBinding(page, GT, pages('student'), claims, weeklyTexts(GT, 'student'));
+  await loginGuardian(page, 'gH');
+  const seenGuardian = await crawlClaimBinding(page, GT, pages('guardian'), claims, weeklyTexts(GT, 'guardian'));
+  // 阳性对照：确实爬到了带判断的页面（周报的两句），核对不是空转
+  for (const seen of [seenStudent, seenGuardian]) expect([...seen].sort()).toEqual(expect.arrayContaining(WEEKLY_CLAIMS));
 });

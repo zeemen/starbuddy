@@ -185,6 +185,7 @@ services:
       - {name: STARBUDDY_REVIEW_FEATURES, purpose: 审核台修订开关（开发开关）, secret: false, default: null, envs: local}
       - {name: STARBUDDY_INTERNAL_TEST, purpose: 内部成员测试运营开关（LT-06：反馈与退出入口、审核台反馈与退出状态页；只认 internal_test；依赖迁移 0059，矩阵 pending）, secret: false, default: null, envs: all}
       - {name: STARBUDDY_ENV, purpose: 运行环境（构建期与运行期一致）, secret: false, default: null, envs: all, required_in_staging: true}
+      - {name: WEB_TRUST_CLIENT_IP, purpose: 转交客户端地址给 BFF（T46；只认 1，开时只取网关覆盖写入的 X-Real-IP；发布检查项 S5）, secret: false, default: "0", envs: all}
       - {name: STARBUDDY_BFF_URL, purpose: BFF 地址（staging 只收内网地址）, secret: false, default: "http://127.0.0.1:8787", envs: all, required_in_staging: true}
       - {name: STARBUDDY_REVIEW_URL, purpose: 审核台后端地址（staging 另收内网 IPv4）, secret: false, default: "http://127.0.0.1:8790", envs: all}
       - {name: STARBUDDY_PRESENCE_HMAC_KEY, purpose: 在场标记 HMAC 密钥（staging 必填）, secret: true, default: null, envs: all, required_in_staging: true}

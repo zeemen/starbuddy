@@ -11,6 +11,7 @@ import { ALL_SHELL_COPY, STAR_DISPLAY_V1 } from '../src/shell/copy.ts';
 import { targets } from './crawl-pages.ts';
 import { crawl } from './headers-check.ts';
 import { cookieSession, loginGuardian, loginStudent, openAs, STARMAP_BASE, STARMAP_BFF } from './session.ts';
+import { crawlClaimBinding, ledger } from './claim-binding.ts';
 
 const V1 = '5e000000-0000-4000-8000-0000000000c1';
 const V2 = '5e000000-0000-4000-8000-0000000000c2';
@@ -200,4 +201,15 @@ test('星图页的安全头与 nonce（开关打开的一套）；手机宽度�
   }
   await loginGuardian(page, 'gV');
   await crawl(page, targets('guardian', V1, false).filter((t) => t.path.endsWith('/star-map')));
+});
+
+
+test('陈述—判断一致性（T21）：星图 v1 的星与说明都挂着账本里本人可展示的判断；待验证的星只画虚线；兄妹页面上没有对方的判断', async ({ page }) => {
+  const claims = ledger();
+  await loginStudent(page, V1);
+  const seen = await crawlClaimBinding(page, V1, [studentMap(V1), `/s/${V1}/today`], claims);
+  expect(seen.size, '阳性对照：星图上确实有挂判断的星').toBeGreaterThan(0);
+  await loginGuardian(page, 'gV');
+  await crawlClaimBinding(page, V1, [familyMap(V1), `/family/${V1}`], claims);
+  await crawlClaimBinding(page, V2, [familyMap(V2), `/family/${V2}`], claims);
 });
