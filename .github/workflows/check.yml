@@ -41,6 +41,10 @@ on:
         type: choice
         default: mutation
         options: [mutation, light, full]
+      extra_browsers:
+        description: "另在 WebKit、Firefox 上跑数据权利用例（W13 T22；只装这两个浏览器、只跑两个 @data-rights 用例，约 20 分钟；缺省不跑）"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -126,6 +130,45 @@ jobs:
           path: ${{ runner.temp }}/persona-report/
           retention-days: 90
           if-no-files-found: warn
+
+  # WebKit、Firefox 上的数据权利用例（W13 T22，specs/tech-debt-batch3 E）：只在手动触发且勾选 extra_browsers 时跑，与 scope 无关。
+  # playwright.config.ts 按 STARBUDDY_E2E_BROWSERS 加 trust-on-webkit / trust-on-firefox 两个项目（只收 @data-rights）；
+  # 这里只跑这两个项目，chromium 的端到端仍在 bff-web 组里。只用合成数据，不需要任何密钥。
+  extra-browsers:
+    if: github.event_name == 'workflow_dispatch' && inputs.extra_browsers
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      STARBUDDY_E2E_BROWSERS: webkit,firefox
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: PostgreSQL 16（只用来起本机一次性实例）
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q postgresql-16
+          sudo systemctl stop postgresql || true
+
+      - name: 开发依赖（scripts/bootstrap-deps.sh，按锁文件）
+        run: PY_BOOT=python bash scripts/bootstrap-deps.sh
+
+      - name: Playwright 浏览器（WebKit、Firefox）
+        working-directory: apps/web
+        run: npx --no-install playwright install --with-deps webkit firefox
+
+      - name: 数据权利用例（WebKit、Firefox，严格模式）
+        run: PGBIN=/usr/lib/postgresql/16/bin CONTRACT_STRICT=1 bash apps/web/scripts/e2e.sh --project=trust-on-webkit --project=trust-on-firefox --reporter=line
 
   # 数据库变异测试（db/tests/mutations.sh，1251 个变异）：只在手动触发且 scope 为 mutation / full 时跑。
   # 这个脚本自己已经按 nproc 并行（DBMUT_JOBS，见 mutations.sh），所以 12 个分片买到的是墙上时间

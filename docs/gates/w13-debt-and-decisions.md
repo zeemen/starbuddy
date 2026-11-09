@@ -307,6 +307,29 @@
 | T51 | 点点用例覆盖缺口（双层架构、风格串味、情境角色边界、出场协议若干、记忆两类）；回复入库口径统一 | `specs/diandian-cases-v0-sprint1/lessons.md:44-45,49` | 人设回归覆盖 | 2 月 |
 | T52 | 错因映射签字后各科适配器按表填写 `cross_subject_category`；ADR 14 签字后模板补两节 | `docs/mapping/error-taxonomy.md:110-112`；`specs/adr-11-15/lessons.md:25` | 跨科错因 | 1 月 |
 
+### 2026-11-09 核对（上表写于 10 月初，之后未逐行更新；本节以文件与提交为准，上表不改行，便于对照）
+
+“已完成”指本仓库内的工作已做完；“人”指要教研、法务、产品、签字或真实集群；“停”指剩余部分碰 CLAUDE.md 必停清单。
+
+| 编号 | 现状 | 剩余 / 卡在 | 依据 |
+|---|---|---|---|
+| T04、T06–T09、T19、T20 | 已完成 | — | `specs/tech-debt-batch1/` |
+| T05 | 已完成（主体） | 变异组（scope=mutation，约 500 计费分钟）拆分后尚未在 CI 跑过，由人决定何时触发；Actions 固定提交哈希（另一条） | CI run 42564677313；`specs/contract-conformance-sprint1/lessons.md` 第 47 行附注 |
+| T12 | 已完成 | 迁移 0058 由人执行 | `specs/tech-debt-batch2/spec.md` |
+| T18、T41 | 已完成（迁移草稿 0062、0063） | 副本演练后由人执行；调度时间表随签字 | `specs/plt23-data-maintenance/` |
+| T21、T46 | 已完成 | — | `specs/tech-debt-batch2/` |
+| T47、T49 | 已完成 | staging 新增 `session-token`；安全负责人过目 | `specs/plt24-auth-tightening/` |
+| T10 | 已完成 | — | `tools/e2e-cohort/sample/run_metadata.json`（`worktree_dirty: false`） |
+| T17 | 部分完成 | 函数越权矩阵已扩到全部应用 schema；部署后角色继承巡检（H2）〔人：真实集群〕 | `db/tests/80_attack_surface.sql` 第六节；`specs/tech-debt-batch3/` |
+| T01 | 部分完成 | 第二部分（0039、0042、准入导出与走查）已做，发布门禁拒收非严格或带标记的 C9 检查；各科真实签字的版本记录〔人〕 | `specs/release-gate-sprint4/lessons.md`；`specs/tech-debt-batch3/` |
+| T15 | 部分完成 | 发布门禁部分已做；C9 词表来源〔停〕；plan、teach 跳过 rejected 题〔人：方法行为变更〕 | 同上 |
+| T22 | 部分完成 | CI 手动开关 `extra_browsers` 已加；首次运行由人触发 | `.github/workflows/check.yml` 的 extra-browsers |
+| T26 | 部分完成 | 词表检查并入 `sie-dictionary-check`、删去多余构建；403 / 404 口径〔人〕；探针关联窗口在 0025〔停〕 | `Makefile` |
+| T34 | 部分完成 | 判分转写脚本已写；采分点挂观点的约束〔停〕；道法打标并入 item_tag〔人〕 | `evals/daofa-grading/transcribe.py` |
+| T52 | 部分完成 | 模板已补“输入契约”“禁止修改的范围”；错因映射签字〔人〕 | `specs/_template/spec.md` |
+| T24、T27、T30、T33、T38 | 部分完成 | 均卡在签字或人（ADR 11 / 13、契约 1.1.0、指标频率、留出集执行人、通过线） | 各自来源 lessons |
+| T02、T03、T11、T13、T14、T16、T23、T25、T28、T29、T31、T32、T35–T37、T39、T40、T42–T45、T48、T50、T51 | 未做 | T11 方向已定（迁到 `tools/content-register/`，下批做）；T13 地图版本核对、T35 前端类型生成可做但排后；其余卡在人或必停 | `specs/tech-debt-batch3/spec.md` 第二节 |
+
 ---
 
 ## 四、环境与部署前置

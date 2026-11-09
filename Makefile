@@ -149,6 +149,9 @@ taxonomy-check:
 # SIE 画像字段字典与禁用推断词表（specs/sie-00-field-dictionary/spec.md）：8 项检查、17 个反例、词表正反例、人读版一致，约 1 秒
 sie-dictionary-check:
 	$(call run_contract,docs/design/sie/check_field_dictionary.py)
+	@# 行为事件与探针的编码过禁用推断词表（W13 T26：与字段词典同一处检查；脚本解析 BFF 的 events.v0.yaml，仍放在 BFF 目录）
+	$(call run_contract,services/bff/scripts/check_event_lexicon.py)
+	$(call run_contract,services/bff/scripts/check_event_lexicon.py --self-test)
 
 # 节点 ID 规范：文档正则、例子、学科前缀与迁移 0011 一致（只用标准库）
 kge-id-check:
@@ -514,7 +517,7 @@ web-claims-mutation:
 web-visual:
 	@if $(WEB_MISSING); then echo "web-visual: 跳过（没有安装依赖）"; \
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
-	@$(call guard,$(WEB_MISSING))cd apps/web && NEXT_TELEMETRY_DISABLED=1 npx --no-install next build > /dev/null
+	@# e2e.sh 自己做测试构建（.next-e2e），这里不再先做一次生产构建（W13 T26，specs/behavior-events-sprint2/lessons.md 第 49 行）
 	@$(call guard,$(WEB_MISSING))bash apps/web/scripts/e2e.sh --grep @visual $(if $(filter 1,$(UPDATE)),--update-snapshots,)
 
 # KGE-00 知识资产盘点（specs/kge-00-asset-inventory/spec.md）。

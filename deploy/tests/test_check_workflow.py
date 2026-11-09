@@ -100,3 +100,21 @@ def test_light_and_mutation_split_each_group_exactly():
     assert mutations and light and "eval-persona" in light       # 人设回归每次都跑（规则 7）
     assert " ".join(rule("check-light")) == " ".join(f"$(filter-out %-mutation,$({v}))" for v in gv)
     assert " ".join(rule("check-mutation")) == " ".join(f"$(filter %-mutation,$({v}))" for v in gv)
+
+
+def test_extra_browsers_job_only_on_manual_opt_in():
+    """W13 T22（specs/tech-debt-batch3 E）：WebKit、Firefox 的数据权利用例只在手动触发且勾选 extra_browsers 时跑；只装这两个浏览器、
+    只跑 playwright.config.ts 的两个 @data-rights 项目；PR 与 push 到 main 不受影响。"""
+    on = WORKFLOW.get("on", WORKFLOW.get(True))
+    extra = on["workflow_dispatch"]["inputs"]["extra_browsers"]
+    assert extra["type"] == "boolean" and extra["default"] is False
+    job = WORKFLOW["jobs"]["extra-browsers"]
+    assert job["if"] == "github.event_name == 'workflow_dispatch' && inputs.extra_browsers"
+    assert job["env"]["STARBUDDY_E2E_BROWSERS"] == "webkit,firefox"
+    runs = [s.get("run", "") for s in job["steps"]]
+    assert any("playwright install --with-deps webkit firefox" in r for r in runs)
+    assert not any("chromium" in r for r in runs)
+    e2e = [r for r in runs if "e2e.sh" in r]
+    assert len(e2e) == 1 and "--project=trust-on-webkit" in e2e[0] and "--project=trust-on-firefox" in e2e[0]
+    config = (ROOT / "apps/web/playwright.config.ts").read_text(encoding="utf-8")
+    assert "name: `trust-on-${b}`" in config and "grep: /@data-rights/" in config
