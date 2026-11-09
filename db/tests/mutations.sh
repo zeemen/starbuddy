@@ -1533,6 +1533,23 @@ M+=(
 
 # 攻击面矩阵补测（specs/household-pentest-sprint3 待人确认 #13 里不需要人决定的几项）：按行的可见性、写矩阵、
 # 复核角色与定时任务角色的函数矩阵。都由 80 本身发现（预期断言登记在下面的 EXPECT）。DBMUT_FILTER=攻击面 一起跑
+# PLT-23 数据维护（0062 分区续建、0063 保留期清理，specs/plt23-data-maintenance）：由 79zj 发现（授权类的同时由 80 的快照、50 号测试发现；
+# 时钟类的同时由 80 的定时任务函数矩阵发现，登记在下面的攻击面组）。DBMUT_FILTER=数据维护 只跑这一组
+EPA='platform.ensure_partitions_ahead(timestamp with time zone)'
+RBE='insight.retention_purge_behavior_event(timestamp with time zone, integer)'
+RSE='platform.retention_purge_auth_session(timestamp with time zone, integer)'
+RIR='platform.retention_purge_ingest_request(timestamp with time zone, integer)'
+M+=(
+  ["数据维护：续建授给学习服务"]="GRANT EXECUTE ON FUNCTION $EPA TO starbuddy_learning;"
+  ["数据维护：续建只建当月"]="$(afr "$EPA" "', v_from, 7)'" "', v_from, 1)'")"
+  ["数据维护：清理授给学习服务"]="GRANT EXECUTE ON FUNCTION $RSE TO starbuddy_learning;"
+  ["数据维护：行为事件保留期缩短一天"]="$(afr "$RBE" "'''180 days'''" "'''179 days'''")"
+  ["数据维护：会话清理不看空闲超时"]="$(afr "$RSE" "'x.last_seen_at + x.idle_timeout, '" "''")"
+  ["数据维护：写入幂等清理删掉进行中的请求"]="$(afr "$RIR" "'AND (x.status <> ''pending'' OR x.lease_until < p_now - interval ''30 days'')'" "''")"
+  ["数据维护：清理不限批量"]="$(afr 'platform.retention_args_ok(timestamp with time zone, integer)' "'p_batch > 10000'" "'false'")"
+  ["数据维护：函数属主能读写入幂等的学生列"]="GRANT SELECT (student_id) ON platform.ingest_request TO starbuddy_authz;"
+)
+
 M+=(
   ["攻击面：周报不分受众"]="DROP POLICY weekly_report_front_read ON insight.weekly_report; CREATE POLICY weekly_report_front_read ON insight.weekly_report FOR SELECT TO starbuddy_bff USING (status = 'generated' AND platform.can_read_student(student_id));"
   ["攻击面：家长看得到同一学生其他家长的绑定"]="DROP POLICY link_read ON platform.guardian_student_link; CREATE POLICY link_read ON platform.guardian_student_link FOR SELECT TO starbuddy_bff USING ((guardian_account_id = platform.current_account_id() AND platform.is_active_guardian()) OR platform.is_self_student(student_id) OR platform.is_linked_guardian(student_id));"
@@ -1543,6 +1560,9 @@ M+=(
   ["攻击面：删除执行接受未来时钟"]="$(afr 'platform.execute_due_erasures(timestamp with time zone)' "'p_now > now() OR '" "''")"
   ["攻击面：抽检接受未来起点"]="$(afr 'platform.review_sample_spot_checks(platform.subject, timestamp with time zone, numeric)' "' OR p_since > now()'" "''")"
   ["攻击面：调用记录留存删除接受未来时钟"]="$(afr 'platform.model_call_log_purge(timestamp with time zone, integer)' "' OR p_now > now() OR '" "' OR '")"
+  ["攻击面：分区续建接受未来时钟"]="$(afr 'platform.ensure_partitions_ahead(timestamp with time zone)' "' OR p_now > now() OR '" "' OR '")"
+  ["攻击面：保留期清理接受未来时钟"]="$(afr 'platform.retention_args_ok(timestamp with time zone, integer)' "' OR p_now > now() OR '" "' OR '")"
+  ["攻击面：分区续建属主换成别的角色"]="ALTER FUNCTION platform.ensure_partitions_ahead(timestamp with time zone) OWNER TO starbuddy_kge;"
 )
 
 # 并行执行（每个变异各起一个一次性 Postgres，互不影响）；DBMUT_JOBS 控制并发数，默认等于 CPU 核数
@@ -1586,6 +1606,9 @@ declare -A EXPECT=(
   ["攻击面：删除执行接受未来时钟"]="攻击面：定时任务函数矩阵——"
   ["攻击面：抽检接受未来起点"]="攻击面：定时任务函数矩阵——"
   ["攻击面：调用记录留存删除接受未来时钟"]="攻击面：定时任务函数矩阵——"
+  ["攻击面：分区续建接受未来时钟"]="攻击面：定时任务函数矩阵——"
+  ["攻击面：保留期清理接受未来时钟"]="攻击面：定时任务函数矩阵——"
+  ["攻击面：分区续建属主换成别的角色"]="攻击面：每个 SECURITY DEFINER 函数属主是 authz"
   ["攻击面：届别更正记录对 BFF 可读"]="攻击面：届别更正记录、staff 权限表、来源清单操作记录只有函数属主能写"
   ["攻击面：来源清单函数授给知识服务"]="攻击面：届别更正只授 BFF 与签字身份"
   ["攻击面：届别更正授给学习服务"]="攻击面：届别更正只授 BFF 与签字身份"

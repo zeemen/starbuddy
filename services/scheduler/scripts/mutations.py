@@ -51,11 +51,12 @@ PURE: dict[str, list[tuple[str, str, str]]] = {
     # 中圈指标静默重算（SIE-05）：insight 身份放行 metrics，其余未放行的子命令仍拒绝
     "insight 身份不放行 metrics": [(C, "frozenset({\"sweep\", \"weekly\", \"metrics\"})", "frozenset({\"sweep\", \"weekly\"})")],
     "insight 身份连带放行 sync": [(C, "frozenset({\"sweep\", \"weekly\", \"metrics\"})", "frozenset({\"sweep\", \"weekly\", \"metrics\", \"sync\"})")],
-    "调度器身份也放行 metrics": [(C, "frozenset({\"meter-expire\", \"meter-renew\", \"erasures\", \"freeze\", \"spot-check\", \"model-call-purge\"})",
-                              "frozenset({\"meter-expire\", \"meter-renew\", \"erasures\", \"freeze\", \"spot-check\", \"model-call-purge\", \"metrics\"})")],
+    "调度器身份也放行 metrics": [(C, "\"partition-ensure\", \"retention-purge\"})", "\"partition-ensure\", \"retention-purge\", \"metrics\"})")],
     # 模型调用记录留存删除（specs/plt-model-call-log，迁移 0060）：只放行给调度器身份、每日一次、批量 1000
-    "调度器身份不放行留存删除": [(C, "frozenset({\"meter-expire\", \"meter-renew\", \"erasures\", \"freeze\", \"spot-check\", \"model-call-purge\"})",
-                             "frozenset({\"meter-expire\", \"meter-renew\", \"erasures\", \"freeze\", \"spot-check\"})")],
+    "调度器身份不放行留存删除": [(C, "\"spot-check\", \"model-call-purge\",", "\"spot-check\",")],
+    # 分区续建与保留期清理（specs/plt23-data-maintenance，迁移 0062、0063）：只放行给调度器身份
+    "调度器身份不放行分区续建": [(C, "\"partition-ensure\", \"retention-purge\"})", "\"retention-purge\"})")],
+    "调度器身份不放行保留期清理": [(C, "\"partition-ensure\", \"retention-purge\"})", "\"partition-ensure\"})")],
     "insight 身份也放行留存删除": [(C, "frozenset({\"sweep\", \"weekly\", \"metrics\"})", "frozenset({\"sweep\", \"weekly\", \"metrics\", \"model-call-purge\"})")],
     "留存删除频率不是每日一次": [(Y, "    schedule: daily 04:10\n    identity: scheduler\n    args: [model-call-purge",
                              "    schedule: hourly :10\n    identity: scheduler\n    args: [model-call-purge")],

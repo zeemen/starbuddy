@@ -117,10 +117,21 @@ SELECT t.ok(NOT EXISTS (
   SELECT 1 FROM pg_proc p
    WHERE p.pronamespace IN (SELECT t.app_schemas()) AND p.prosecdef
      AND (NOT (pg_get_userbyid(p.proowner) = 'starbuddy_authz'
-               OR (pg_get_userbyid(p.proowner) = 'starbuddy_eraser' AND p.oid = 'platform.execute_due_erasures(timestamptz)'::regprocedure))
+               OR (pg_get_userbyid(p.proowner) = 'starbuddy_eraser' AND p.oid = 'platform.execute_due_erasures(timestamptz)'::regprocedure)
+               -- 0062（PLT-23）唯一例外：分区续建要父表属主权限，属主就是四张按月分区父表的属主（迁移执行者）；父表写死、只建不删、只授调度器
+               OR (p.oid = 'platform.ensure_partitions_ahead(timestamptz)'::regprocedure
+                   AND p.proowner = (SELECT c.relowner FROM pg_class c WHERE c.oid = 'platform.evidence_event'::regclass)
+                   AND (SELECT count(DISTINCT c.relowner) FROM pg_class c
+                         WHERE c.oid IN ('platform.evidence_event'::regclass, 'platform.attempt'::regclass, 'platform.usage_ledger'::regclass,
+                                         'platform.model_call_log'::regclass)) = 1))
           OR NOT coalesce((SELECT bool_or(cfg ~ '^search_path=.*pg_temp$') FROM unnest(p.proconfig) cfg), false)
           OR has_function_privilege('public', p.oid, 'EXECUTE'))),
-  '攻击面：每个 SECURITY DEFINER 函数属主是 authz（删除执行函数属主是 eraser）、search_path 固定且以 pg_temp 结尾、PUBLIC 不能执行');
+  '攻击面：每个 SECURITY DEFINER 函数属主是 authz（删除执行函数属主是 eraser；0062 分区续建属主是四张分区父表的属主）、'
+  'search_path 固定且以 pg_temp 结尾、PUBLIC 不能执行');
+SELECT t.ok((SELECT count(*) FROM pg_proc p WHERE p.pronamespace IN (SELECT t.app_schemas()) AND p.prosecdef
+              AND pg_get_userbyid(p.proowner) NOT IN ('starbuddy_authz', 'starbuddy_eraser')) = 1
+            AND (SELECT pronargs FROM pg_proc WHERE oid = 'platform.ensure_partitions_ahead(timestamptz)'::regprocedure) = 1,
+            '攻击面：不属 authz / eraser 的 SECURITY DEFINER 函数恰好一个（0062 分区续建），只收一个时钟参数（不收表名）');
 SELECT t.ok((SELECT count(*) FROM pg_proc p WHERE p.proowner = 'starbuddy_eraser'::regrole) = 1
             AND NOT EXISTS (SELECT 1 FROM pg_class c WHERE c.relowner = 'starbuddy_eraser'::regrole),
             '攻击面：删除执行身份 eraser 只拥有删除执行函数一个对象');
@@ -132,6 +143,10 @@ SELECT t.ok(NOT EXISTS (
      AND g.strategy = 'delete'
      AND NOT (p.oid = 'platform.model_call_log_purge(timestamptz, integer)'::regprocedure AND g.nspname = 'platform'
               AND g.relname = 'model_call_log')
+     -- 0063（PLT-23）：保留期清理各自只删自己那张表里超过保留期的行（不按学生删，只授调度器）
+     AND NOT (p.oid = 'platform.retention_purge_ingest_request(timestamptz, integer)'::regprocedure AND g.nspname = 'platform' AND g.relname = 'ingest_request')
+     AND NOT (p.oid = 'platform.retention_purge_auth_session(timestamptz, integer)'::regprocedure AND g.nspname = 'platform' AND g.relname = 'auth_session')
+     AND NOT (p.oid = 'insight.retention_purge_behavior_event(timestamptz, integer)'::regprocedure AND g.nspname = 'insight' AND g.relname = 'behavior_event')
      AND (p.prosrc ~* ('delete\s+from\s+(only\s+)?"?' || g.nspname || '"?\s*\.\s*"?' || g.relname || '"?(\s|;|$)')
           OR p.prosrc ~* 'delete\s+from\s+%[is]')),
   '攻击面：除删除执行函数外，没有函数删除个人层清单里的表');

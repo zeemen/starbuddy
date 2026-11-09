@@ -223,7 +223,12 @@ M=(
   $'留存删除到了上限不报仍有到期\tinsight/scheduled.py\t    return purged, max_batches, True\t    return purged, max_batches, False\ttests/test_scheduled_cli.py'
   $'留存删除不核对调度器角色\tinsight/scheduled.py\t    await assert_scheduler_role(conn)\n    purged = 0\t    purged = 0\ttests/test_scheduled_cli.py'
   $'留存删除时钟不取数据库当前时间\tinsight/scheduled.py\tf"SELECT {PURGE_FUNC}(now(), $1::integer)"\tf"SELECT {PURGE_FUNC}(now() - interval \'1 hour\', $1::integer)"\ttests/test_scheduled_cli.py'
-  $'留存删除批量不限范围\tinsight/scheduled.py\t        if a.cmd == "model-call-purge" and not (1 <= a.batch <= MAX_PURGE_BATCH\t        if False and not (1 <= a.batch <= MAX_PURGE_BATCH\ttests/test_scheduled_cli.py'
+  $'留存删除批量不限范围\tinsight/scheduled.py\t        if a.cmd in ("model-call-purge", "retention-purge") and not (1 <= a.batch <= MAX_PURGE_BATCH\t        if False and not (1 <= a.batch <= MAX_PURGE_BATCH\ttests/test_scheduled_cli.py'
+  # PLT-23 数据维护（specs/plt23-data-maintenance，迁移 0062、0063）：partition-ensure、retention-purge
+  $'分区续建告警门槛放宽\tinsight/scheduled.py\tMIN_MONTHS_AHEAD = 3 \tMIN_MONTHS_AHEAD = 0 \ttests/test_scheduled_cli.py'
+  $'分区续建告警不影响退出码\tinsight/scheduled.py\t    return 1 if out.get("more_due") or out.get("alert") else 0\t    return 1 if out.get("more_due") else 0\ttests/test_scheduled_cli.py'
+  $'保留期清理少清一张表\tinsight/scheduled.py\t    "auth_session": "platform.retention_purge_auth_session",\n\t\ttests/test_scheduled_cli.py'
+  $'保留期清理到了上限不报仍有到期\tinsight/scheduled.py\t            more = True\t            more = False\ttests/test_scheduled_cli.py'
   $'留存删除输出不报删除条数\tinsight/scheduled.py\t            return {"job": a.cmd, "purged": total, "batches": batches, "more_due": more}\t            return {"job": a.cmd, "purged": 0, "batches": batches, "more_due": more}\ttests/test_scheduled_cli.py'
   $'周报生成中的 ValueError 也当周参数错\tinsight/jobs_cli.py\t        raise JobError("周报配置未签字：test 以外不生成") from None\t        raise JobError("周报配置未签字：test 以外不生成") from None\n    except ValueError:\n        raise JobError("周只接受已结束、35 天内的周一") from None\ttests/test_scheduled_cli.py'
   $'周报命令不先核对周参数\tinsight/jobs_cli.py\t        await check_week(store, week)\t        pass\ttests/test_scheduled_cli.py'

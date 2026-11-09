@@ -341,6 +341,11 @@ python3 deploy/migrate/migrate.py rehearse --dsn-env REPLICA_DSN --target-label 
    psql "$PRIMARY_DSN" -X -c "SELECT has_function_privilege('starbuddy_learning', 'platform.learning_meter_check(uuid, text, uuid, text)', 'EXECUTE')"
    ```
    标签为 `staging`、版本与副本演练一致、执行权为 t。
+   分区水位（0062，PLT-23）：四张按月分区表都要建到“当月 + 6 个月”以后，否则先以调度器身份跑一次 `python -m insight.scheduled partition-ensure`
+   （或签字时间表里的 `partition-ensure` 任务）再核对；0062 的续建函数属主是本次执行迁移的高权限账号，迁移只能由同一个账号执行：
+   ```
+   psql "$PRIMARY_DSN" -X -c "SELECT parent, last_month FROM platform.partition_horizon()"
+   ```
 3. 登录角色（由人建，口令用 psql 的 `\password` 交互设置，不进命令历史）：每个登录角色**只继承一个**组角色——学习服务 `starbuddy_learning`、洞察服务
    `starbuddy_insight`、知识服务 `starbuddy_kge_read`、审核台两个（`starbuddy_kge`、`starbuddy_review`）、BFF `starbuddy_bff`、调度器 `starbuddy_scheduler`；
    各服务连接串按 `deploy/config/README.md` 第 8 节写成 `postgresql://<登录角色>@<RDS 内网主机名>:5432/<库名>?sslmode=verify-full&sslrootcert=/run/rds-ca/ca.pem`，
