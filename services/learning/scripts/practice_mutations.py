@@ -119,8 +119,8 @@ DB: dict[str, list[tuple[str, str, str]]] = {
     "复测标记不读": [(ST, 'and t["due_at"] <= now)', "and False)")],
     "作答通道不读（拍照也算键盘）": [(ST, "channel=channels.get(r.attempt_id)", 'channel="keypad"')],
     "鉴权不查": [(API, "if not authorized(request):", "if False:")],
-    "也认编排层令牌": [(APP, 'practice_api.register(app, lambda r: _bearer_ok(r.headers.get("authorization"), settings.service_credential), state)',
-                    'practice_api.register(app, lambda r: _bearer_ok(r.headers.get("authorization"), settings.service_credential) or '
+    "也认编排层令牌": [(APP, '    practice_api.register(app, session_ok, state)',
+                    '    practice_api.register(app, lambda r: session_ok(r) or '
                     '_bearer_ok(r.headers.get("authorization"), settings.orchestrator_client_credential or "-"), state)')],
     "请求可以给 purpose、channel": [(API, '_keys(b, {"student_ref", "subject", "ticket", "answer", "idempotency_key", "usage_id"})',
                                   '_keys(b, {"student_ref", "subject", "ticket", "answer", "idempotency_key", "usage_id"}, '

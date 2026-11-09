@@ -396,7 +396,7 @@ python3 deploy/migrate/migrate.py rehearse --dsn-env REPLICA_DSN --target-label 
 
 | Secret | 键 |
 |---|---|
-| `starbuddy-learning` | `database-url`、`service-token`、`insight-client-token`、`practice-ticket-secret`（模型供应商开通后另加 `route-client-zhixing`、`route-client-wenli`） |
+| `starbuddy-learning` | `database-url`、`service-token`、`session-token`（PLT-24：BFF → 学习服务会话令牌，学习服务与 BFF 共用这一项）、`insight-client-token`、`practice-ticket-secret`（模型供应商开通后另加 `route-client-zhixing`、`route-client-wenli`） |
 | `starbuddy-adapters` | `aya-token`、`zhixing-token`、`wenli-token` |
 | `starbuddy-knowledge` | `database-url`、`learning-token` |
 | `starbuddy-insight` | `database-url`、`bff-token` |

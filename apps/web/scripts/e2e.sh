@@ -66,6 +66,7 @@ AYA_PORT="$(free_port)"
 LEARNING_PORT="$(free_port)"
 AYA_CRED="$(python3 -c 'import secrets; print(secrets.token_hex(24))')"
 SVC_CRED="$(python3 -c 'import secrets; print(secrets.token_hex(24))')"
+SESS_CRED="$(python3 -c 'import secrets; print(secrets.token_hex(24))')"  # PLT-24：学习服务会话令牌（诊断、再练、复测、今日编排）
 LLOG="$(mktemp)"
 # 服务间凭据只经环境变量传：在子 shell 里 export 再 exec，不出现在任何进程的命令行（argv）里（安全审查 S8）。
 # 诊断作答走 learning-internal v1 写入路径（2026-10-20 签字，LT-04 删除了 LEARNING_INTERNAL_V1）；插件契约 1.0.0 已签字
@@ -80,7 +81,7 @@ AYA_PID=$!
   db_url="postgresql://learning_app@/starbuddy_test?host=$PGHOST"
   while read -r v; do unset "$v" 2>/dev/null || true; done < <(compgen -e)
   export PATH="$keep_path" LEARNING_ENV=test PORT="$LEARNING_PORT" LEARNING_DIAGNOSIS_PRESENTER=synthetic \
-    LEARNING_DATABASE_URL="$db_url" LEARNING_SERVICE_TOKEN="$SVC_CRED" \
+    LEARNING_DATABASE_URL="$db_url" LEARNING_SERVICE_TOKEN="$SVC_CRED" LEARNING_SESSION_TOKEN="$SESS_CRED" \
     LEARNING_ADAPTER_AYA_URL="http://127.0.0.1:$AYA_PORT" LEARNING_ADAPTER_AYA_TOKEN="$AYA_CRED"
   exec "$PY" -m learning ) > "$LLOG" 2>&1 < /dev/null &
 LEARNING_PID=$!
@@ -105,7 +106,7 @@ PY
 ( cd "$ROOT/services/bff" || exit 1
   unset STARBUDDY_STARMAP STARBUDDY_PRACTICE STARBUDDY_RETEST_UI STARBUDDY_TODAY_ORCH STARBUDDY_FAMILY_GOALS STARBUDDY_MONTHLY_PLAN  # 星图、错题再练、复测、跨科编排开关全关（v0）：不从调用方环境继承
   export BFF_DATABASE_URL="postgresql://bff_app@/starbuddy_test?host=$PGHOST" PORT="$BFF_PORT" BFF_AUTH_CONFIG="$AUTH_CFG" \
-    BFF_LEARNING_URL="http://127.0.0.1:$LEARNING_PORT" BFF_LEARNING_TOKEN="$SVC_CRED" \
+    BFF_LEARNING_URL="http://127.0.0.1:$LEARNING_PORT" BFF_LEARNING_TOKEN="$SVC_CRED" BFF_LEARNING_SESSION_TOKEN="$SESS_CRED" \
     STARBUDDY_ENV=test BFF_SHELL_ORIGIN="http://127.0.0.1:$WEB_PORT" BFF_SMS_CAPTURE_FILE="$SMS_INBOX"
   exec node --no-warnings src/main.ts ) > "$LOG" 2>&1 < /dev/null &
 BFF_PID=$!
@@ -127,7 +128,7 @@ PY
 ( cd "$ROOT/services/bff" || exit 1
   unset STARBUDDY_STARMAP STARBUDDY_PRACTICE STARBUDDY_RETEST_UI STARBUDDY_TODAY_ORCH STARBUDDY_FAMILY_GOALS STARBUDDY_MONTHLY_PLAN  # 星图、错题再练、复测、跨科编排开关全关（v0）：不从调用方环境继承
   export BFF_DATABASE_URL="postgresql://bff_app@/starbuddy_test?host=$PGHOST" PORT="$TRUST_BFF_PORT" BFF_AUTH_CONFIG="$AUTH_CFG" \
-    BFF_LEARNING_URL="http://127.0.0.1:$LEARNING_PORT" BFF_LEARNING_TOKEN="$SVC_CRED" \
+    BFF_LEARNING_URL="http://127.0.0.1:$LEARNING_PORT" BFF_LEARNING_TOKEN="$SVC_CRED" BFF_LEARNING_SESSION_TOKEN="$SESS_CRED" \
     STARBUDDY_ENV=test BFF_SHELL_ORIGIN="http://127.0.0.1:$WEB_TRUST_PORT" BFF_SMS_CAPTURE_FILE="$SMS_INBOX" \
     STARBUDDY_TRUST_UI=dispute,reconcile,weekly,data_rights BFF_SHELL_CONFIG="$TRUST_SHELL_CFG"
   exec node --no-warnings src/main.ts ) > "$TLOG" 2>&1 < /dev/null &
@@ -149,7 +150,7 @@ SMLOG="$(mktemp)"
   db_url="postgresql://learning_app@/starbuddy_test?host=$PGHOST"
   while read -r v; do unset "$v" 2>/dev/null || true; done < <(compgen -e)
   export PATH="$keep_path" LEARNING_ENV=test PORT="$SM_LEARNING_PORT" LEARNING_DIAGNOSIS_PRESENTER=synthetic \
-    LEARNING_DATABASE_URL="$db_url" LEARNING_SERVICE_TOKEN="$SVC_CRED" \
+    LEARNING_DATABASE_URL="$db_url" LEARNING_SERVICE_TOKEN="$SVC_CRED" LEARNING_SESSION_TOKEN="$SESS_CRED" \
     LEARNING_ADAPTER_AYA_URL="http://127.0.0.1:$AYA_PORT" LEARNING_ADAPTER_AYA_TOKEN="$AYA_CRED" \
     LEARNING_MASTERY_CONFIG_AYA=config/mastery/synthetic-test.json
   exec "$PY" -m learning ) > "$SMLLOG" 2>&1 < /dev/null &
@@ -166,7 +167,7 @@ PY
 ( cd "$ROOT/services/bff" || exit 1
   unset STARBUDDY_PRACTICE STARBUDDY_RETEST_UI STARBUDDY_TODAY_ORCH STARBUDDY_FAMILY_GOALS STARBUDDY_MONTHLY_PLAN  # 错题再练、复测、跨科编排开关关：不从调用方环境继承
   export BFF_DATABASE_URL="postgresql://bff_app@/starbuddy_test?host=$PGHOST" PORT="$SM_BFF_PORT" BFF_AUTH_CONFIG="$AUTH_CFG" \
-    BFF_LEARNING_URL="http://127.0.0.1:$SM_LEARNING_PORT" BFF_LEARNING_TOKEN="$SVC_CRED" \
+    BFF_LEARNING_URL="http://127.0.0.1:$SM_LEARNING_PORT" BFF_LEARNING_TOKEN="$SVC_CRED" BFF_LEARNING_SESSION_TOKEN="$SESS_CRED" \
     STARBUDDY_ENV=test BFF_SHELL_ORIGIN="http://127.0.0.1:$WEB_STARMAP_PORT" BFF_SMS_CAPTURE_FILE="$SMS_INBOX" \
     STARBUDDY_STARMAP=starmap_v1,starmap_dashed BFF_SHELL_CONFIG="$SM_SHELL_CFG"
   exec node --no-warnings src/main.ts ) > "$SMLOG" 2>&1 < /dev/null &
@@ -219,19 +220,20 @@ FL_PORT="$(free_port)"
 PR_BFF_PORT="$(free_port)"
 WEB_PRACTICE_PORT="$(free_port)"
 FL_CRED="$(python3 -c 'import secrets; print(secrets.token_hex(24))')"
+FL_WRITE_CRED="$(python3 -c 'import secrets; print(secrets.token_hex(24))')"
 FLLOG="$(mktemp)"
 PRLOG="$(mktemp)"
 # 桩的请求记录（每个请求一行 {"method","path"}，不含请求体与令牌）：端到端从这里读行数，核对开关关时桩收到 0 个请求；只有本用户可读，结束时删除
 FL_REQLOG="$(mktemp)"
 chmod 600 "$FL_REQLOG"
 export SB_FAKE_LEARNING_LOG="$FL_REQLOG"
-( export FAKE_LEARNING_PORT="$FL_PORT" FAKE_LEARNING_TOKEN="$FL_CRED" FAKE_LEARNING_REQUEST_LOG="$FL_REQLOG"
+( export FAKE_LEARNING_PORT="$FL_PORT" FAKE_LEARNING_TOKEN="$FL_CRED" FAKE_LEARNING_WRITE_TOKEN="$FL_WRITE_CRED" FAKE_LEARNING_REQUEST_LOG="$FL_REQLOG"
   exec node --no-warnings "$WEB/scripts/fake-learning-practice.ts" ) > "$FLLOG" 2>&1 < /dev/null &
 FL_PID=$!
 ( cd "$ROOT/services/bff" || exit 1
   unset STARBUDDY_STARMAP STARBUDDY_TRUST_UI STARBUDDY_FAMILY_GOALS STARBUDDY_MONTHLY_PLAN  # 星图、信任界面、家长诉求开关全关：不从调用方环境继承
   export BFF_DATABASE_URL="postgresql://bff_app@/starbuddy_test?host=$PGHOST" PORT="$PR_BFF_PORT" BFF_AUTH_CONFIG="$AUTH_CFG" \
-    BFF_LEARNING_URL="http://127.0.0.1:$FL_PORT" BFF_LEARNING_TOKEN="$FL_CRED" \
+    BFF_LEARNING_URL="http://127.0.0.1:$FL_PORT" BFF_LEARNING_TOKEN="$FL_WRITE_CRED" BFF_LEARNING_SESSION_TOKEN="$FL_CRED" \
     STARBUDDY_ENV=test BFF_SHELL_ORIGIN="http://127.0.0.1:$WEB_PRACTICE_PORT" BFF_SMS_CAPTURE_FILE="$SMS_INBOX" \
     STARBUDDY_PRACTICE=practice STARBUDDY_RETEST_UI=retest STARBUDDY_TODAY_ORCH=today_orch
   exec node --no-warnings src/main.ts ) > "$PRLOG" 2>&1 < /dev/null &
@@ -277,7 +279,7 @@ FGLOG="$(mktemp)"
 ( cd "$ROOT/services/bff" || exit 1
   unset STARBUDDY_STARMAP STARBUDDY_TRUST_UI STARBUDDY_PRACTICE STARBUDDY_RETEST_UI STARBUDDY_TODAY_ORCH STARBUDDY_FAMILY_GOALS STARBUDDY_MONTHLY_PLAN  # 其余开关全关：不从调用方环境继承
   export BFF_DATABASE_URL="postgresql://bff_app@/starbuddy_test?host=$PGHOST" PORT="$FG_BFF_PORT" BFF_AUTH_CONFIG="$AUTH_CFG" \
-    BFF_LEARNING_URL="http://127.0.0.1:$LEARNING_PORT" BFF_LEARNING_TOKEN="$SVC_CRED" \
+    BFF_LEARNING_URL="http://127.0.0.1:$LEARNING_PORT" BFF_LEARNING_TOKEN="$SVC_CRED" BFF_LEARNING_SESSION_TOKEN="$SESS_CRED" \
     STARBUDDY_ENV=test BFF_SHELL_ORIGIN="http://127.0.0.1:$WEB_FAMILY_PORT" BFF_SMS_CAPTURE_FILE="$SMS_INBOX" \
     STARBUDDY_FAMILY_GOALS=family_goals STARBUDDY_MONTHLY_PLAN=monthly_plan STARBUDDY_TRUST_UI=why BFF_SHELL_CONFIG="$FG_SHELL_CFG" \
     BFF_INSIGHT_URL="http://127.0.0.1:$IN_PORT" BFF_INSIGHT_TOKEN="$IN_CRED"

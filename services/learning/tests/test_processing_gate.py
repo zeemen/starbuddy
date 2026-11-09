@@ -12,7 +12,7 @@ import uuid
 import httpx
 import pytest
 
-from conftest import CREDENTIAL, counts, env, grade_body, settings, to_v1_body
+from conftest import CREDENTIAL, SESSION_CREDENTIAL, counts, env, grade_body, settings, to_v1_body
 from learning import processing
 from learning.app import create_app
 
@@ -20,6 +20,7 @@ ORCH = "synthetic-orchestrator-to-learning-credential-01"
 INSIGHT = "synthetic-insight-to-learning-credential-000001"
 NOTHING = {"evidence_event": 0, "attempt": 0, "grade_result": 0, "grade_dimension": 0, "error_attribution": 0, "skill_observation": 0}
 AUTH = {"authorization": f"Bearer {CREDENTIAL}"}
+SESSION_AUTH = {"authorization": f"Bearer {SESSION_CREDENTIAL}"}
 
 
 async def exit_student(admin, student: str) -> None:
@@ -55,23 +56,23 @@ def _requests(student: str) -> list[tuple[str, dict, dict]]:
     key = str(uuid.uuid4())
     usage = str(uuid.uuid4())
     return [
-        ("/internal/v1/diagnosis/sessions", {"student_ref": student, "subject": "aya", "usage_id": usage, "idempotency_key": key}, AUTH),
-        (f"/internal/v1/diagnosis/sessions/{sid}/probe", {"student_ref": student, "seq": 1, "probe_key": key}, AUTH),
+        ("/internal/v1/diagnosis/sessions", {"student_ref": student, "subject": "aya", "usage_id": usage, "idempotency_key": key}, SESSION_AUTH),
+        (f"/internal/v1/diagnosis/sessions/{sid}/probe", {"student_ref": student, "seq": 1, "probe_key": key}, SESSION_AUTH),
         (f"/internal/v1/diagnosis/sessions/{sid}/answer",
-         {"student_ref": student, "seq": 1, "answer": "42", "elapsed_sec": 30, "idempotency_key": key}, AUTH),
-        (f"/internal/v1/diagnosis/sessions/{sid}/pause", {"student_ref": student}, AUTH),
-        (f"/internal/v1/diagnosis/sessions/{sid}/abandon", {"student_ref": student}, AUTH),
-        ("/internal/v1/practice/queue", {"student_ref": student, "subject": "aya"}, AUTH),
-        ("/internal/v1/practice/next", {"student_ref": student, "subject": "aya", "entry_id": sid}, AUTH),
+         {"student_ref": student, "seq": 1, "answer": "42", "elapsed_sec": 30, "idempotency_key": key}, SESSION_AUTH),
+        (f"/internal/v1/diagnosis/sessions/{sid}/pause", {"student_ref": student}, SESSION_AUTH),
+        (f"/internal/v1/diagnosis/sessions/{sid}/abandon", {"student_ref": student}, SESSION_AUTH),
+        ("/internal/v1/practice/queue", {"student_ref": student, "subject": "aya"}, SESSION_AUTH),
+        ("/internal/v1/practice/next", {"student_ref": student, "subject": "aya", "entry_id": sid}, SESSION_AUTH),
         ("/internal/v1/practice/answer", {"student_ref": student, "subject": "aya", "ticket": "t", "answer": "42", "idempotency_key": key,
-                                          "usage_id": usage}, AUTH),
-        ("/internal/v1/retest/queue", {"student_ref": student, "subject": "aya"}, AUTH),
-        ("/internal/v1/retest/next", {"student_ref": student, "subject": "aya", "entry_id": sid}, AUTH),
+                                          "usage_id": usage}, SESSION_AUTH),
+        ("/internal/v1/retest/queue", {"student_ref": student, "subject": "aya"}, SESSION_AUTH),
+        ("/internal/v1/retest/next", {"student_ref": student, "subject": "aya", "entry_id": sid}, SESSION_AUTH),
         ("/internal/v1/retest/answer", {"student_ref": student, "subject": "aya", "ticket": "t", "answer": "42", "idempotency_key": key,
-                                        "usage_id": usage}, AUTH),
-        ("/internal/v1/retest/check", {"student_ref": student, "subject": "aya", "ticket": "t"}, AUTH),
-        ("/internal/v1/retest/replay", {"student_ref": student, "subject": "aya", "ticket": "t", "idempotency_key": key, "usage_id": usage}, AUTH),
-        ("/internal/v1/today", {"student_ref": student}, AUTH),
+                                        "usage_id": usage}, SESSION_AUTH),
+        ("/internal/v1/retest/check", {"student_ref": student, "subject": "aya", "ticket": "t"}, SESSION_AUTH),
+        ("/internal/v1/retest/replay", {"student_ref": student, "subject": "aya", "ticket": "t", "idempotency_key": key, "usage_id": usage}, SESSION_AUTH),
+        ("/internal/v1/today", {"student_ref": student}, SESSION_AUTH),
         ("/internal/v1/plan", {"student_ref": student}, AUTH),
         ("/internal/v1/profile-page/ensure", {"request_id": str(uuid.uuid4()), "student_ref": student, "subject": "aya", "trigger": "session_start"},
          {"authorization": f"Bearer {ORCH}"}),

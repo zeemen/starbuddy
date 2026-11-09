@@ -1,6 +1,6 @@
 """今日计划跨科编排的内部接口（只供 BFF 调用；接口定义 services/learning/openapi/today-internal.v0.yaml，不进 packages/contracts）。
 
-鉴权、请求体限制与日志同复测与再练（retest/api.py）：Bearer 服务间令牌（只认 BFF 的 LEARNING_SERVICE_TOKEN），64 KB 上限，
+鉴权、请求体限制与日志同复测与再练（retest/api.py）：Bearer 服务间令牌（只认 BFF 的会话令牌 LEARNING_SESSION_TOKEN，PLT-24），64 KB 上限，
 拒绝 NaN 与重复键，未知键一律 400。日志只记接口名、状态码、错误码、耗时，不记请求体与学生 ID。
 没配 LEARNING_TODAY_CONFIG（或未签字配置出现在 test / dev 以外）时一律 501 TODAY_UNAVAILABLE（learning-internal v1 已签字，
 不再另设开关，LT-04）。

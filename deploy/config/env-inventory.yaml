@@ -23,7 +23,8 @@ services:
       - {name: LEARNING_METRICS_PORT, purpose: 指标监听端口（LT-05；与 LEARNING_HOST 同一地址，只服务 GET /metrics；staging 缺省 9788，dev / test 只在设了时起；不能与 PORT、LEARNING_ROUTE_PORT 相同）, secret: false, default: "9788", envs: all}
       - {name: LEARNING_ROUTE_PORT, purpose: staging 回环路由监听端口（127.0.0.1 上只服务 /internal/v1/model/route，其他路径 404；两科适配器的 *_ROUTE_URL = http://127.0.0.1:8785，改端口时一起改；不能与 PORT 相同；dev / test 设了拒绝启动）, secret: false, default: "8785", envs: staging}
       - {name: LEARNING_DATABASE_URL, purpose: 连接串（登录角色只继承 starbuddy_learning；口令走 PGPASSFILE 或密钥注入）, secret: true, default: null, envs: all, required_in_staging: true}
-      - {name: LEARNING_SERVICE_TOKEN, purpose: BFF → 学习服务令牌（≥ 32 字符）, secret: true, default: null, envs: all, required_in_staging: true}
+      - {name: LEARNING_SERVICE_TOKEN, purpose: BFF → 学习服务写入令牌（≥ 32 字符；契约 v1 的写入、重放、今日计划、星图）, secret: true, default: null, envs: all, required_in_staging: true}
+      - {name: LEARNING_SESSION_TOKEN, purpose: BFF → 学习服务会话令牌（≥ 32 字符、与其他令牌都不同；只开诊断、错题再练、复测、今日编排，PLT-24；dev / test 不设时这四组接口 401）, secret: true, default: null, envs: all, required_in_staging: true}
       - {name: LEARNING_ADAPTER_<SUBJECT>_URL, purpose: 适配器地址（同网络命名空间回环）, secret: false, default: null, envs: all}
       - {name: LEARNING_ADAPTER_<SUBJECT>_TOKEN, purpose: 学习服务 → 适配器令牌, secret: true, default: null, envs: all}
       - {name: LEARNING_ROUTE_CLIENT_<SUBJECT>_TOKEN, purpose: 适配器 → 模型路由接口令牌（知行、文砺两科；设了即按 LEARNING_ENV 加载路由表，staging 占位未填时拒绝启动，所以人填好快照名与主机名、批准之前不设）, secret: true, default: null, envs: all}
@@ -142,7 +143,8 @@ services:
       - {name: BFF_TRUST_SECRET, purpose: 信任界面密钥, secret: true, default: null, envs: all, required_in_staging: true}
       - {name: BFF_TRUST_CLIENT_IP, purpose: 取前端转交的客户端 IP, secret: false, default: null, envs: all}
       - {name: BFF_LEARNING_URL, purpose: 学习服务地址, secret: false, default: null, envs: all}
-      - {name: BFF_LEARNING_TOKEN, purpose: BFF → 学习服务令牌, secret: true, default: null, envs: all}
+      - {name: BFF_LEARNING_TOKEN, purpose: BFF → 学习服务写入令牌（今日计划、星图）, secret: true, default: null, envs: all}
+      - {name: BFF_LEARNING_SESSION_TOKEN, purpose: BFF → 学习服务会话令牌（诊断、错题再练、复测、今日编排；配了 BFF_LEARNING_URL 而缺它、或与写入令牌相同即拒绝启动，PLT-24）, secret: true, default: null, envs: all}
       - {name: BFF_INSIGHT_URL, purpose: 洞察服务地址, secret: false, default: null, envs: all}
       - {name: BFF_INSIGHT_TOKEN, purpose: caller=bff 的洞察服务令牌, secret: true, default: null, envs: all}
       - {name: BFF_STAGING_OTP_FILE, purpose: 白名单固定码条目文件的路径（文件本身属密钥：含号码与码，从密钥管理只读挂载）, secret: false, default: null, envs: staging, required_in_staging: true}

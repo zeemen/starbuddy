@@ -24,8 +24,10 @@
 //   BFF_SMS_CAPTURE_FILE   dev / test：捕获的验证码另写到这个文件（端到端测试读）
 //   BFF_AUTH_CONFIG        dev / test：换一份阈值配置（端到端一次要登录很多次，放宽限流）；其余环境设了就拒绝启动，
 //                          一律用 config/auth.json
-//   BFF_LEARNING_URL / BFF_LEARNING_TOKEN  学习服务地址（https 或本机回环）与服务间令牌（≥ 32 字符）；不设时诊断接口 503、
+//   BFF_LEARNING_URL / BFF_LEARNING_TOKEN  学习服务地址（https 或本机回环）与写入令牌（≥ 32 字符，今日计划、星图）；不设时诊断接口 503、
 //                          今日计划每一科“今天暂无安排”
+//   BFF_LEARNING_SESSION_TOKEN  学习服务会话令牌（≥ 32 字符、与写入令牌不同；诊断、错题再练、复测、今日编排，PLT-24）；
+//                          配了 BFF_LEARNING_URL 而缺它就拒绝启动
 //   BFF_INSIGHT_URL / BFF_INSIGHT_TOKEN    洞察服务地址（https 或本机回环）与 caller=bff 的令牌（≥ 32 字符）；不设时壳内不显示任何判断陈述
 //   BFF_SHELL_CONFIG       dev / test：换一份壳的显示规则（config/shell.json 的格式）；其余环境设了就拒绝启动
 //   STARBUDDY_TRUST_UI     dev / test：打开信任界面的 BFF 路由，逗号分隔（完整清单见 src/trust/features.ts）：
@@ -66,7 +68,7 @@
 // 诊断的宵禁判断用数据库的计量时钟（platform.meter_guard_status，迁移 0030），BFF 没有自己的时钟开关。
 import pg from 'pg';
 import { httpDiagnosisLearning } from './diagnosis/learning-client.ts';
-import { checkImageEnv, dbTlsOk, isLocalEnv, listenHost, loadAuthConfig, loadKeys, parseRunEnv, RDS_CA_PATH, serviceUrlOk } from './http/config.ts';
+import { checkImageEnv, dbTlsOk, isLocalEnv, learningTokens, listenHost, loadAuthConfig, loadKeys, parseRunEnv, RDS_CA_PATH, serviceUrlOk } from './http/config.ts';
 import { parseConsentVersions, type ShellDeps } from './http/routes.ts';
 import { createMetricsServer, createShellServer } from './http/server.ts';
 import { metricsPort } from './observability/metrics.ts';
@@ -191,31 +193,34 @@ try {
   await pool.end();
   process.exit(2);
 }
-const learningUrl = process.env['BFF_LEARNING_URL'];
-const learningCredential = process.env['BFF_LEARNING_TOKEN'] ?? '';
-if (learningUrl) {
-  if (learningCredential.length < 32 || !serviceUrlOk(learningUrl, shellDeps.env)) {
-    refuse('BFF_LEARNING_URL 必须是 https 或本机回环地址（staging 另收内网 IPv4），服务间令牌至少 32 个字符');
-    await pool.end();
-    process.exit(2);
-  }
-  shellDeps.diagnosis = { learning: httpDiagnosisLearning({ baseUrl: learningUrl, token: learningCredential }) };
+let learning: ReturnType<typeof learningTokens> = null;
+try {
+  learning = learningTokens(shellDeps.env);
+} catch (e) {
+  refuse((e as Error).message);
+  await pool.end();
+  process.exit(2);
+}
+if (learning) {
+  // PLT-24：会话令牌只给诊断、错题再练、复测、今日编排；写入令牌只给今日计划与星图（契约 v1 的 bffServiceToken）
+  const { url: learningUrl, write: learningCredential, session: learningSession } = learning;
+  shellDeps.diagnosis = { learning: httpDiagnosisLearning({ baseUrl: learningUrl, token: learningSession }) };
   shellDeps.shell!.plan = httpPlanClient({ baseUrl: learningUrl, token: learningCredential, timeoutMs: shellDeps.shell!.config!.plan.timeoutMs });
   if (shellDeps.shell!.orch!.enabled) {
-    shellDeps.shell!.orch!.client = httpTodayOrchClient({ baseUrl: learningUrl, token: learningCredential, timeoutMs: shellDeps.shell!.config!.plan.timeoutMs });
+    shellDeps.shell!.orch!.client = httpTodayOrchClient({ baseUrl: learningUrl, token: learningSession, timeoutMs: shellDeps.shell!.config!.plan.timeoutMs });
   }
   if (shellDeps.starMap!.features!.has('starmap_v1')) {
     shellDeps.starMap!.nodes = httpStarMapClient({ baseUrl: learningUrl, token: learningCredential, timeoutMs: shellDeps.shell!.config!.starMap.timeoutMs });
   }
-  if (shellDeps.practice!.enabled) shellDeps.practice!.learning = httpPracticeLearning({ baseUrl: learningUrl, token: learningCredential });
-  if (shellDeps.retest!.enabled) shellDeps.retest!.learning = httpRetestLearning({ baseUrl: learningUrl, token: learningCredential });
+  if (shellDeps.practice!.enabled) shellDeps.practice!.learning = httpPracticeLearning({ baseUrl: learningUrl, token: learningSession });
+  if (shellDeps.retest!.enabled) shellDeps.retest!.learning = httpRetestLearning({ baseUrl: learningUrl, token: learningSession });
 }
 const insightUrl = process.env['BFF_INSIGHT_URL'];
 const insightCredential = process.env['BFF_INSIGHT_TOKEN'] ?? '';
 if (insightUrl) {
-  if (insightCredential.length < 32 || insightCredential === learningCredential
+  if (insightCredential.length < 32 || insightCredential === learning?.write || insightCredential === learning?.session
       || !serviceUrlOk(insightUrl, shellDeps.env)) {
-    refuse('BFF_INSIGHT_URL 必须是 https 或本机回环地址（staging 另收内网 IPv4），令牌至少 32 个字符且与学习服务令牌不同');
+    refuse('BFF_INSIGHT_URL 必须是 https 或本机回环地址（staging 另收内网 IPv4），令牌至少 32 个字符且与学习服务的两枚令牌都不同');
     await pool.end();
     process.exit(2);
   }

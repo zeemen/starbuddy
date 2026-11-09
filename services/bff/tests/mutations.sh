@@ -596,6 +596,17 @@ SM=(
   $'连库：CA 不限固定路径\tsrc/http/config.ts\troots.length === 1 && roots[0] === caPath\troots.length === 1'
   $'连库：CA 文件不存在也收\tsrc/http/config.ts\troots[0] === caPath && exists(caPath)\troots[0] === caPath'
   $'连库：重复的 sslmode 取第一个\tsrc/http/config.ts\tmodes.length === 1 && modes[0]\tmodes[0]'
+  # PLT-24（T49）：BFF → 学习服务两枚令牌（src/http/config.ts、src/main.ts）：跑 tests/learning-tokens.test.ts（BFFMUT_FILTER=令牌：）
+  $'H6：学生会话用家长时长\tsrc/http/routes.ts\t  const life = ctx.deps.config.session.student;\t  const life = ctx.deps.config.session.guardian;'
+  $'令牌：两枚相同也收\tsrc/http/config.ts\t  if (session === write) throw\t  if (false) throw'
+  $'令牌：会话令牌长度不查\tsrc/http/config.ts\t  if (session.length < 32) throw\t  if (false) throw'
+  $'令牌：缺会话令牌退回写入令牌\tsrc/http/config.ts\t  const session = vars[\'BFF_LEARNING_SESSION_TOKEN\'] ?? \'\';\t  const session = vars[\'BFF_LEARNING_SESSION_TOKEN\'] || vars[\'BFF_LEARNING_TOKEN\'] || \'\';'
+  $'令牌：诊断客户端用写入令牌\tsrc/main.ts\thttpDiagnosisLearning({ baseUrl: learningUrl, token: learningSession })\thttpDiagnosisLearning({ baseUrl: learningUrl, token: learningCredential })'
+  $'令牌：再练客户端用写入令牌\tsrc/main.ts\thttpPracticeLearning({ baseUrl: learningUrl, token: learningSession })\thttpPracticeLearning({ baseUrl: learningUrl, token: learningCredential })'
+  $'令牌：复测客户端用写入令牌\tsrc/main.ts\thttpRetestLearning({ baseUrl: learningUrl, token: learningSession })\thttpRetestLearning({ baseUrl: learningUrl, token: learningCredential })'
+  $'令牌：今日编排客户端用写入令牌\tsrc/main.ts\thttpTodayOrchClient({ baseUrl: learningUrl, token: learningSession,\thttpTodayOrchClient({ baseUrl: learningUrl, token: learningCredential,'
+  $'令牌：计划客户端用会话令牌\tsrc/main.ts\thttpPlanClient({ baseUrl: learningUrl, token: learningCredential,\thttpPlanClient({ baseUrl: learningUrl, token: learningSession,'
+  $'令牌：洞察令牌可与会话令牌相同\tsrc/main.ts\t || insightCredential === learning?.session\t'
 )
 # 副本保持仓库结构（测试按 ../../../ 找仓库根：adapters/aya 的登记脚本、db/seeds 的种子），adapters、db 软链接回仓库。
 # 安全审查阻断 1：原来的副本不保持结构，测试的 before 在任何代码下都失败，变异全部“被发现”却不说明任何问题。
@@ -617,6 +628,7 @@ declare -A EXPECT_H6=(
   ["H6：按账号限流的键每次不同"]="H6 限流|"
   ["H6：限流按原因返回不同错误"]="H6 限流|POST /auth/otp/request otp_request.phone.minute："
   ["H6：响应可以缓存"]="H6 授权矩阵|no-store"
+  ["H6：学生会话用家长时长"]="PLT-24 学生会话|学生空闲 1 小时"
   ["H6：响应带 CORS 放行头"]="H6 授权矩阵|没有 CORS 头"
   ["H6：诊断开始收前端带来的字段"]="H6 计量入口（静态）|诊断开始拒收"
   ["H6：诊断失败不释放预留"]="H6 计量入口（集成）|学习服务确定失败时预留被释放"
@@ -656,6 +668,7 @@ star_run() {  # $1 副本根目录，$2 变异名（“计量：”开头的跑�
   [[ "${2:-}" == 健康：* ]] && tests="tests/health.test.ts"
   [[ "${2:-}" == 可观测：* ]] && tests="tests/observability.test.ts"
   [[ "${2:-}" == 连库：* ]] && tests="tests/shell-startup.test.ts"
+  [[ "${2:-}" == 令牌：* ]] && tests="tests/learning-tokens.test.ts"
   [[ "${2:-}" == OTP：* ]] && tests="tests/staging-otp-units.test.ts tests/staging-otp.integration.test.ts tests/shell-startup.test.ts tests/star-map-v1.test.ts"
   [[ "${2:-}" == 内测：* ]] && tests="tests/internal-test-units.test.ts tests/internal-test.integration.test.ts tests/staging-otp-units.test.ts tests/auth.integration.test.ts tests/shell-openapi.test.ts"
   [[ "${2:-}" == 内测工具：* ]] && tests="../../tools/internal-test/tests/internal-test.test.ts"

@@ -15,7 +15,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from conftest import CREDENTIAL, grant_consents, meter_row
+from conftest import SESSION_CREDENTIAL, CREDENTIAL, grant_consents, meter_row
 from conftest import settings as make_settings
 from learning.app import create_app
 from learning.config import AdapterTarget, Settings
@@ -59,7 +59,7 @@ async def dapi(pools, aya_v1):
     app = create_app(s, pool=app_pool)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://learning.test", timeout=60) as c:
-            c.headers["authorization"] = f"Bearer {CREDENTIAL}"
+            c.headers["authorization"] = f"Bearer {SESSION_CREDENTIAL}"
             yield c
 
 
@@ -406,7 +406,8 @@ def test_synthetic_presenter_refused_outside_test_env():
 async def test_diagnosis_unavailable_without_presenter(api, student):
     """没配合成题面（例如 dev 环境）：诊断接口一律 501，不出题。"""
     r = await api.post("/internal/v1/diagnosis/sessions", json={"student_ref": student, "subject": "aya", "usage_id": str(uuid.uuid4()),
-                                                                 "idempotency_key": str(uuid.uuid4())})
+                                                                 "idempotency_key": str(uuid.uuid4())},
+                       headers={"authorization": f"Bearer {SESSION_CREDENTIAL}"})  # 诊断只认会话令牌（PLT-24）
     assert r.status_code == 501 and r.json()["code"] == "DIAGNOSIS_UNAVAILABLE"
 
 
@@ -717,7 +718,7 @@ async def test_grade_from_cohort_with_injected_clock(pools, aya_v1):
     app = create_app(s, pool=app_pool, diagnosis_clock=lambda: now["t"])
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://learning.test", timeout=60) as c:
-            c.headers["authorization"] = f"Bearer {CREDENTIAL}"
+            c.headers["authorization"] = f"Bearer {SESSION_CREDENTIAL}"
             stu = await cohort_student(admin)
             # 2027-08-31 23:59:59（北京时间）还是八年级：夹具没有八年级目标；存下的建档年级（8）不再被读
             r = await start(c, stu)
@@ -760,7 +761,7 @@ async def test_cohort_corrected_mid_session_grade_still_in_range(pools, aya_v1):
     app = create_app(s, pool=app_pool, diagnosis_clock=lambda: SEP1_2027)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://learning.test", timeout=60) as c:
-            c.headers["authorization"] = f"Bearer {CREDENTIAL}"
+            c.headers["authorization"] = f"Bearer {SESSION_CREDENTIAL}"
             stu = await cohort_student(admin)          # 届别 2028：2027-09-01 起九年级
             r = await start(c, stu)
             assert r.status_code == 201, r.text
@@ -807,7 +808,7 @@ async def test_ordinary_abandon_has_no_reason(pools, aya_v1):
     app = create_app(s, pool=app_pool, diagnosis_clock=lambda: SEP1_2027)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://learning.test", timeout=60) as c:
-            c.headers["authorization"] = f"Bearer {CREDENTIAL}"
+            c.headers["authorization"] = f"Bearer {SESSION_CREDENTIAL}"
             stu = await cohort_student(admin)
             sid = (await start(c, stu)).json()["session_id"]
             r = await c.post(f"/internal/v1/diagnosis/sessions/{sid}/abandon", json={"student_ref": stu})
@@ -824,7 +825,7 @@ async def test_cohort_corrected_mid_session_legacy_session(pools, aya_v1):
     app = create_app(s, pool=app_pool, diagnosis_clock=lambda: SEP1_2027)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://learning.test", timeout=60) as c:
-            c.headers["authorization"] = f"Bearer {CREDENTIAL}"
+            c.headers["authorization"] = f"Bearer {SESSION_CREDENTIAL}"
             stu = await cohort_student(admin)
             r = await start(c, stu)
             assert r.status_code == 201, r.text
@@ -914,7 +915,7 @@ async def dapi_with(pools):
         ctx = app.router.lifespan_context(app)
         await ctx.__aenter__()
         c = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://learning.test", timeout=60)
-        c.headers["authorization"] = f"Bearer {CREDENTIAL}"
+        c.headers["authorization"] = f"Bearer {SESSION_CREDENTIAL}"
         opened.append((ctx, c))
         return c
     yield make

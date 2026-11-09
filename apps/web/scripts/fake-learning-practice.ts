@@ -1,5 +1,5 @@
 // 端到端用的合成学习服务桩（specs/practice-loop-stage1 PR 4：错题再练学生端页面，e2e/practice.spec.ts）：只在 scripts/e2e.sh 的一次性环境里起，
-// 只监听 127.0.0.1，只认 BFF 的服务间令牌（FAKE_LEARNING_TOKEN，每次随机生成、只经环境变量传）。
+// 只监听 127.0.0.1，只认 BFF 的服务间令牌（会话令牌 FAKE_LEARNING_TOKEN、写入令牌 FAKE_LEARNING_WRITE_TOKEN，PLT-24；每次随机生成、只经环境变量传）。
 // 只实现错题再练的三个内部接口（services/learning/openapi/practice-internal.v0.yaml）：queue、next、answer，按该文件的响应形状返回；
 // 另实现复测与验证题的内部接口（retest-internal.v0.yaml，specs/retest-delivery-kge05：queue、next、answer 与只读的 check、replay，
 // 剧本见文件后部）与今日计划跨科编排的只读接口（today-internal.v0.yaml，PLT-11：/internal/v1/today，剧本见文件后部）；
@@ -23,10 +23,12 @@ import { createServer, type IncomingMessage } from 'node:http';
 import { randomBytes } from 'node:crypto';
 
 const PORT = Number(process.env['FAKE_LEARNING_PORT'] ?? 0);
+// PLT-24：同真实学习服务，再练、复测、今日编排只认会话令牌（FAKE_LEARNING_TOKEN）；写入令牌（FAKE_LEARNING_WRITE_TOKEN）只到其余路径（一律 501）
 const TOKEN = process.env['FAKE_LEARNING_TOKEN'] ?? '';
+const WRITE_TOKEN = process.env['FAKE_LEARNING_WRITE_TOKEN'] ?? '';
 const REQUEST_LOG = process.env['FAKE_LEARNING_REQUEST_LOG'] ?? '';
-if (!PORT || TOKEN.length < 32) {
-  console.error('fake-learning-practice: 需要 FAKE_LEARNING_PORT 与至少 32 个字符的 FAKE_LEARNING_TOKEN');
+if (!PORT || TOKEN.length < 32 || WRITE_TOKEN.length < 32 || WRITE_TOKEN === TOKEN) {
+  console.error('fake-learning-practice: 需要 FAKE_LEARNING_PORT 与两枚互不相同、至少 32 个字符的 FAKE_LEARNING_TOKEN、FAKE_LEARNING_WRITE_TOKEN');
   process.exit(2);
 }
 
@@ -332,7 +334,9 @@ createServer((req, res) => {
     let out: { status: number; body: unknown; replayed?: boolean };
     const path = req.url ?? '';
     if (REQUEST_LOG) appendFileSync(REQUEST_LOG, `${JSON.stringify({ method: req.method ?? '', path: path.slice(0, 200) })}\n`);
-    if (req.headers['authorization'] !== `Bearer ${TOKEN}`) out = problem(401, 'UNAUTHENTICATED');
+    const sessionPath = /^\/internal\/v1\/(diagnosis|practice|retest|today)(\/|\?|$)/.test(path);  // 与学习服务的四组会话接口一致
+    const auth = req.headers['authorization'];
+    if (auth !== `Bearer ${sessionPath ? TOKEN : WRITE_TOKEN}`) out = problem(401, 'UNAUTHENTICATED');
     else if (req.method === 'POST' && path === '/internal/v1/today') {
       const b = await readBody(req);
       out = b ? today(b) : problem(400, 'INVALID_REQUEST');

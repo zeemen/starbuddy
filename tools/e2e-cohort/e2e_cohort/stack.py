@@ -41,6 +41,7 @@ ADAPTERS = ROOT / "adapters"
 METER_PROVISION_SQL = ROOT / "services/learning/tests/fixtures/meter_provision.sql"
 SUBJECTS = ("aya", "wenli", "zhixing")
 LEARNING_CREDENTIAL = "synthetic-bff-to-learning-cohort-credential-01"
+LEARNING_SESSION_CREDENTIAL = "synthetic-bff-to-learning-cohort-session-cred-1"  # PLT-24：诊断、再练、复测、今日编排
 ADAPTER_TOKENS = {s: f"synthetic-learning-to-{s}-cohort-credential-0001" for s in SUBJECTS}
 ROUTE_TOKENS = {s: f"synthetic-{s}-to-learning-cohort-route-token-0001" for s in ("wenli", "zhixing")}
 ENV_PREFIX = {"aya": "AYA", "wenli": "WENLI", "zhixing": "ZHIXING"}

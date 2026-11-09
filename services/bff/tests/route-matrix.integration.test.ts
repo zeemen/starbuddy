@@ -1002,3 +1002,34 @@ test('H6 会话：空闲 24 小时与绝对 7 天后（注入时钟），家长�
   // 本测试把会话时钟推到了几天之后：后面没有别的测试用这些会话
   shell.forget(A.gO);
 });
+
+test('PLT-24 学生会话：空闲 1 小时、最长 12 小时（注入时钟）后每条路由 401；同一时刻家长会话照旧', { skip: !HAS_DB }, async () => {
+  const cfg = loadAuthConfig();
+  assert.deepEqual(cfg.session.student, { absolute_seconds: 12 * 3600, idle_seconds: 3600 });
+  // 打开学生模式会作废打开它的那个家长会话（同一设备切换）：每次另登录一个家长会话来开；g 是另一台设备上的家长会话，只用来核对家长时长
+  const g = await login(A.gO);
+  const kidOf = async (): Promise<Sess> => {
+    const k = await callAs(shell.base, 'POST', `/students/${A.T}/student-session`, await login(A.gO));
+    assert.equal(k.status, 200, k.text);
+    return { token: k.body.session_token, csrf: k.body.csrf_token };
+  };
+  // 空闲：差一分钟到 1 小时时用一次仍有效；之后空闲满 1 小时 + 1 秒失效
+  const idle = await kidOf();
+  await setAuthClock(`now + make_interval(secs => ${cfg.session.student.idle_seconds - 60})`);
+  assert.equal((await call('GET', '/me', idle)).status, 200, '空闲不到 1 小时');
+  await setAuthClock(`now + make_interval(secs => ${cfg.session.student.idle_seconds + 1})`);
+  await sweep401(idle.token, '学生空闲 1 小时');
+  assert.equal((await call('GET', '/me', g)).status, 200, '家长会话（空闲 24 小时）不受影响');
+  // 绝对时长：一直在用（每 50 分钟一次），满 12 小时仍失效；家长会话同一时间线照旧有效
+  const abs = await kidOf();
+  const steps = Math.ceil(cfg.session.student.absolute_seconds / 3000) - 1;
+  for (let i = 0; i < steps; i++) {
+    await setAuthClock(`now + interval '50 minutes'`);
+    assert.equal((await call('GET', '/me', abs)).status, 200, `学生一直在用：第 ${i + 1} 次`);
+    assert.equal((await call('GET', '/me', g)).status, 200, `家长一直在用：第 ${i + 1} 次`);
+  }
+  await setAuthClock(`now + interval '50 minutes'`);
+  await sweep401(abs.token, '学生满 12 小时');
+  assert.equal((await call('GET', '/me', g)).status, 200, '家长会话（最长 7 天）照旧');
+  shell.forget(A.gO);
+});

@@ -108,8 +108,8 @@ DB: dict[str, list[tuple[str, str, str]]] = {
     # 开关与鉴权
     "鉴权不查": [(API, "if not authorized(request):", "if False:")],
     "没配今日编排也服务": [(API, "        if t is None:\n            raise IngestError(501", "        if False:\n            raise IngestError(501")],
-    "也认编排层令牌": [(APP, 'today_api.register(app, lambda r: _bearer_ok(r.headers.get("authorization"), settings.service_credential), state)',
-                    'today_api.register(app, lambda r: _bearer_ok(r.headers.get("authorization"), settings.service_credential) or '
+    "也认编排层令牌": [(APP, '    today_api.register(app, session_ok, state)',
+                    '    today_api.register(app, lambda r: session_ok(r) or '
                     '_bearer_ok(r.headers.get("authorization"), settings.orchestrator_client_credential or "-"), state)')],
     "未配置也启动": [(APP, "        if today_cfg is not None:\n", "        if True:\n")],
     # 今日计划快照（PLT-15 PR1，specs/today-plan-snapshot-plt15）：开关、冻结与同日再读、失败、启动核对、配置

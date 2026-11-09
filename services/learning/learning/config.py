@@ -6,7 +6,9 @@
   LEARNING_HOST                  监听地址，缺省 127.0.0.1；只有 staging 能设为内网 IPv4（RFC 1918），dev / test 设别的值拒绝启动
   服务间地址（适配器、知识服务）：https 或本机回环的 http；staging 另收内网 IPv4 字面量的 http（learning/netpolicy.py）
   LEARNING_DATABASE_URL          asyncpg 连接串；登录角色只继承 starbuddy_learning
-  LEARNING_SERVICE_TOKEN         BFF → 学习服务的服务间令牌（≥ 32 字符）
+  LEARNING_SERVICE_TOKEN         BFF → 学习服务的写入令牌（≥ 32 字符）：契约 learning-internal v1 的写入、重放、今日计划、星图
+  LEARNING_SESSION_TOKEN         BFF → 学习服务的会话令牌（≥ 32 字符，PLT-24 / T49）：只开诊断、错题再练、复测、今日编排四组接口；
+                                 与写入令牌必须不同。不设时这四组接口一律 401（同编排层、洞察服务令牌的口径）；staging 必须设
   LEARNING_ADAPTER_<SUBJECT>_URL    例如 LEARNING_ADAPTER_AYA_URL=http://127.0.0.1:8787
   LEARNING_ADAPTER_<SUBJECT>_TOKEN  学习服务 → 该科适配器的服务间令牌
   LEARNING_ROUTE_CLIENT_<SUBJECT>_TOKEN  该科适配器 → 学习服务内部模型路由接口的令牌（≥ 32 字符，令牌绑定学科；不设即该科不能调模型）
@@ -126,6 +128,8 @@ class Settings:
     insight_client_credential: str | None = field(default=None, repr=False)
     # 编排层 → 掌握读取的令牌（只对 /internal/v1/mastery/*）；None = 掌握读取不接受任何调用
     orchestrator_client_credential: str | None = field(default=None, repr=False)
+    # PLT-24（T49）：BFF 的会话令牌，只开诊断、再练、复测、今日编排；None = 这四组接口一律 401
+    session_credential: str | None = field(default=None, repr=False)
     # 学情档案页配置文件路径（KGE-04 第二步 PR 4）；None = 档案页接口不可用
     profile_page_config: str | None = None
     # 错题再练（specs/practice-loop-stage1）：配置（synthetic 或路径；None = 接口 501）、题面提供者、票据密钥
@@ -171,6 +175,11 @@ class Settings:
         credential = e.get("LEARNING_SERVICE_TOKEN", "")
         if len(credential) < 32:
             raise RuntimeError("LEARNING_SERVICE_TOKEN 缺失或少于 32 个字符")
+        session_tok = e.get("LEARNING_SESSION_TOKEN") or None
+        if session_tok is not None and len(session_tok) < 32:
+            raise RuntimeError("LEARNING_SESSION_TOKEN 少于 32 个字符")
+        if session_tok is None and env == STAGING:
+            raise RuntimeError("staging 必须设 LEARNING_SESSION_TOKEN（诊断、再练、复测、今日编排只认会话令牌，PLT-24）")
         database_url = e.get("LEARNING_DATABASE_URL", "")
         if not database_url:
             raise RuntimeError("缺少 LEARNING_DATABASE_URL")
@@ -245,11 +254,11 @@ class Settings:
         orch_tok = e.get("LEARNING_ORCHESTRATOR_CLIENT_TOKEN") or None
         if orch_tok is not None and len(orch_tok) < 32:
             raise RuntimeError("LEARNING_ORCHESTRATOR_CLIENT_TOKEN 少于 32 个字符")
-        tokens = [credential, *(a.credential for a in adapters.values()), *route_clients.values(),
+        tokens = [credential, *([session_tok] if session_tok else []), *(a.credential for a in adapters.values()), *route_clients.values(),
                   *([knowledge.credential] if knowledge else []), *([insight_tok] if insight_tok else []),
                   *([orch_tok] if orch_tok else []), *([practice_secret] if practice_secret else [])]
         if len(set(tokens)) != len(tokens):
-            raise RuntimeError("服务间令牌、适配器令牌、路由客户端令牌、知识服务令牌、洞察服务与编排层客户端令牌、再练票据密钥必须各不相同")
+            raise RuntimeError("写入与会话令牌、适配器令牌、路由客户端令牌、知识服务令牌、洞察服务与编排层客户端令牌、再练票据密钥必须各不相同")
         snapshot_raw = e.get("LEARNING_TODAY_SNAPSHOT", "")
         if snapshot_raw not in ("", "0", "1"):
             raise RuntimeError("LEARNING_TODAY_SNAPSHOT 只能不设、0 或 1")
@@ -268,7 +277,7 @@ class Settings:
                         route_clients=route_clients, diagnosis_presenter=presenter, diagnosis_source=source, knowledge=knowledge,
                         diagnosis_targets=targets, diagnosis_map_version=map_version, mastery_configs=mastery_config_paths(e),
                         mastery_sync_budget_seconds=_budget(e.get("LEARNING_MASTERY_SYNC_BUDGET_SECONDS")),
-                        insight_client_credential=insight_tok, orchestrator_client_credential=orch_tok,
+                        insight_client_credential=insight_tok, orchestrator_client_credential=orch_tok, session_credential=session_tok,
                         profile_page_config=e.get("LEARNING_PROFILE_PAGE_CONFIG") or None, practice_config=practice_cfg,
                         practice_presenter=practice_presenter, practice_ticket_secret=practice_secret,
                         present_item_source=present_source, retest_config=retest_cfg,
