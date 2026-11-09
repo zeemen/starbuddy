@@ -1,6 +1,6 @@
 # PLT-24 · 鉴权收紧：拆分 BFF → 学习服务的服务间令牌，定学生会话时长与两处鉴权口径（W13 技术债 T49、T47）· 规格草稿
 
-- 状态：**已确认（2026-11-09，用户“按建议，默认值都同意，开始实现”）**：第六节待人确认 1–5 全部按默认。实现记录见 lessons.md。
+- 状态：**已确认（2026-11-09，用户“按建议，默认值都同意，开始实现”）**：第六节待人确认 1–5 全部按默认。实现记录见 lessons.md；实现后的待人确认 1–3 于 2026-11-09 确认（见 lessons.md 末节，会话令牌未配置时 401）。
 - 编号：PLT-24 为仓库排队号（PLT-23 之后）。
 - 依据：`docs/gates/w13-debt-and-decisions.md` T47、T49；`specs/sie-02a-math-diagnosis/lessons.md` 第 14 条（安全审查 S7）；
   `specs/unified-shell-sprint4/lessons.md` 待人确认 C、E、H；`specs/household-pentest-round2/spec.md` N3、N2；ADR 06（计量与服务间调用）；
