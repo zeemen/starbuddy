@@ -40,6 +40,13 @@
   `route-matrix.integration.test.ts` 新增“PLT-24 学生会话”：注入时钟，空闲差一分钟仍有效、满 1 小时 + 1 秒每条路由 401；一直在用（每 50 分钟）
   满 12 小时每条路由 401；同一时间线上另一台设备的家长会话始终有效。`auth.integration.test.ts` 的配置断言补学生时长。
 - `deploy-check`（318 项 + iac / observability / migrate-rehearse / compose 结构）、`attack-surface-check`（74 条、539 条引用）通过。
+- 提交 f006316 之后补记（本机）：学习服务变异组 practice（35 + 25 + 39）、retest（24 + 34）、today（24 + 46）、diagnosis（52）、
+  internal-v1（39）、mastery（77 + 54）全部被发现；`pentest-env-test`（含三条新的令牌混用核对）、`loadtest-test`、`e2e-cohort`、
+  洞察服务 `test_kge04_db.py` 通过。
+- 端到端（`e2e.sh --grep-invert @visual`，本机要 `PW_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium-1243/chrome-linux64/chrome`，
+  否则锁定的 Playwright 找不到 headless_shell、全部失败）：178 项中 174 通过、1 跳过；星图“手机宽度与 200% 缩放”一例在与变异组同时跑时
+  `page.goto` 超时，单独重跑通过；glyphs DPR 2 两例失败是本机 Chromium 1243 的已知环境差异（tech-debt-batch2 记录：旧代码同样失败），与本任务无关。
+- 端到端的学习服务桩（`apps/web/scripts/fake-learning-practice.ts`）在补跑时修正：诊断接口也按会话令牌核对（与真实服务四组一致）。
 
 ## 与 spec 的偏差
 1. **学习服务未配会话令牌时**：spec 写“四组接口回 503（与没有配置学习服务一致）”。实现是 **401**（与没带令牌同一个响应）：
