@@ -342,7 +342,8 @@ python3 deploy/migrate/migrate.py rehearse --dsn-env REPLICA_DSN --target-label 
    ```
    标签为 `staging`、版本与副本演练一致、执行权为 t。
    分区水位（0062，PLT-23）：四张按月分区表都要建到“当月 + 6 个月”以后，否则先以调度器身份跑一次 `python -m insight.scheduled partition-ensure`
-   （或签字时间表里的 `partition-ensure` 任务）再核对；0062 的续建函数属主是本次执行迁移的高权限账号，迁移只能由同一个账号执行：
+   （或签字时间表里的 `partition-ensure` 任务）再核对；0062 的续建函数属主是本次执行迁移的高权限账号，迁移只能由同一个账号执行；
+   签字时间表 `schedule.signed.yaml` 须含 `partition-ensure`（每日 03:10）与 `retention-purge`（每日 03:40，`--batch 1000`）两个任务（PLT-23，2026-11-09 签字）：
    ```
    psql "$PRIMARY_DSN" -X -c "SELECT parent, last_month FROM platform.partition_horizon()"
    ```
