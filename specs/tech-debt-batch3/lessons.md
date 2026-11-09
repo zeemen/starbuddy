@@ -49,8 +49,9 @@ C9 检查一律拒收；CI 的变异组与额外浏览器由人决定何时手�
 - `docs/gates/w13-debt-and-decisions.md` 第三节表后加“2026-11-09 核对”一节（逐项现状、卡在人还是必停、依据）。
 
 ## 测试结果（本机）
-- 见提交说明；db-test 全量、db 攻击面相关变异、review-console-mutation 新组、release-walkthrough（与样例一致）、admission_export 75 项、
-  deploy 的 workflow 测试、sie-dictionary-check、daofa-grading-eval-test、attack-surface-check。
+- db-test 全量（63 个迁移 up / down / up，3327 项断言）通过；库上攻击面变异组（`DBMUT_FILTER=攻击面`）49 个全部按登记的断言被发现。
+- review-console-mutation“发布门禁 C9”组 5 条全部被发现；admission_export 75 项；release-walkthrough 与样例一致；release-walkthrough 单测 6 项。
+- deploy 的 workflow 测试 7 项、sie-dictionary-check、daofa-grading-eval-test（11 项）、attack-surface-check（74 条、539 条引用）、make e2e-cohort 通过。
 
 ## 与 spec 的偏差
 1. **E**：spec 写“playwright 配置加 webkit、firefox 两个项目”。配置早已支持（`STARBUDDY_E2E_BROWSERS`），只补了 CI 开关与 job，没改配置。
