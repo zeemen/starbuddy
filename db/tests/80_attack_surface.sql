@@ -323,6 +323,9 @@ INSERT INTO t.visibility_exempt VALUES
   ('policy.control_line', '招录库，指标生控制线（0047），只看已发布行；复核时间列不授予');
 -- BFF 可执行、但不进函数越权矩阵的 SECURITY DEFINER 函数：没有“另一户的对象”可以作为参数，逐个写明由哪里覆盖
 CREATE TABLE t.function_matrix_exempt (sig text PRIMARY KEY, reason text NOT NULL);
+-- 函数越权矩阵里“无权返回 NULL”的只读视图函数（T17，specs/tech-debt-batch3）：对另一户与不存在的对象都必须返回 NULL（不是 42501），
+-- 不泄露存在性；逐个登记，新增的视图函数不登记就按 42501 口径核对
+CREATE TABLE t.function_matrix_null_ok (sig text PRIMARY KEY, reason text NOT NULL);
 INSERT INTO t.function_matrix_exempt VALUES
   ('platform.is_active_guardian()', '没有参数，只看当前账号自身状态'),
   ('platform.redeem_guardian_invite(text)', '参数是邀请码；20_rls_household 的兑换断言（攻击面 D1、D2、D4）'),
@@ -348,6 +351,11 @@ INSERT INTO t.function_matrix_exempt VALUES
   ('insight.submit_guardian_goal(uuid,platform.subject[],jsonb,uuid,text)',
    '第二个 uuid 是关注学校（policy.school，公共层）；授权先于取值核对，别家、学生本人、已解除绑定与不存在的学生同样 42501：'
    '79zb_guardian_goal 的“按绑定授权”与“别家家长带非法取值：先按授权拒绝”');
+INSERT INTO t.function_matrix_null_ok VALUES
+  ('insight.onboarding_view(uuid)', '建档视图（0022 / 0034）：无权或不存在一律返回 NULL；79d_onboarding 的逐条断言'),
+  ('insight.guardian_goal_view(uuid)', '家长诉求视图（0053）：无权或不存在一律返回 NULL；79zb_guardian_goal'),
+  ('insight.monthly_plan_guardian_view(uuid,date)', '月度计划家长视图（0054）：无权或不存在一律返回 NULL；79zc_monthly_plan'),
+  ('insight.monthly_plan_student_view(uuid,date)', '月度计划学生视图（0054）：只认学生本人，无权或不存在一律返回 NULL；79zc_monthly_plan');
 
 CREATE FUNCTION t.readable_students(acc uuid) RETURNS uuid[] LANGUAGE sql STABLE AS $$
   SELECT coalesce(array_agg(DISTINCT s.id ORDER BY s.id), '{}')
@@ -540,6 +548,10 @@ CREATE FUNCTION t.dummy_arg(typ regtype) RETURNS text LANGUAGE sql IMMUTABLE AS 
     WHEN 'interval' THEN quote_literal('1 day') || '::interval'
     WHEN 'platform.subject' THEN quote_literal('aya') || '::platform.subject'
     WHEN 'time without time zone' THEN quote_literal('22:00') || '::time'
+    -- insight 下的函数（T17，specs/tech-debt-batch3）：jsonb、数组参数取最简合法值
+    WHEN 'jsonb' THEN quote_literal('{}') || '::jsonb'
+    WHEN 'text[]' THEN quote_literal('{}') || '::text[]'
+    WHEN 'platform.subject[]' THEN 'ARRAY[' || quote_literal('aya') || ']::platform.subject[]'
     ELSE NULL END $$;
 
 -- 结果含 SQLSTATE、消息、DETAIL、HINT：任何一项因“对象存在”而不同，都算泄露存在性（安全审查建议 2）
@@ -575,10 +587,12 @@ BEGIN
     FOR f IN SELECT p.oid, p.oid::regprocedure AS sig, p.proname, p.proargnames[1] AS first_arg, p.proargtypes,
                     p.prorettype = 'boolean'::regtype AS is_bool
                FROM pg_proc p
-              WHERE p.pronamespace = 'platform'::regnamespace AND p.prosecdef AND p.pronargs >= 1
+              WHERE p.pronamespace IN (SELECT t.app_schemas()) AND p.prosecdef AND p.pronargs >= 1  -- T17：不只 platform（insight 等同样进矩阵）
                 AND has_function_privilege('starbuddy_bff', p.oid, 'EXECUTE')
                 AND p.proargnames[1] IN ('p_student', 'p_usage', 'p_household')
-              ORDER BY p.proname LOOP
+                AND p.proargtypes[0] = 'uuid'::regtype
+                AND (SELECT count(*) FROM unnest(p.proargtypes::oid[]) u WHERE u = 'uuid'::regtype) = 1
+              ORDER BY p.oid::regprocedure::text LOOP
       v_target := CASE f.first_arg
         WHEN 'p_student' THEN (SELECT s.id FROM platform.student_profile s
                                 WHERE NOT s.id = ANY (t.readable_students(attacker.id)) ORDER BY s.id LIMIT 1)
@@ -609,6 +623,10 @@ BEGIN
       v_calls := v_calls + 1;
       IF v_other IS DISTINCT FROM v_missing THEN
         v_fail := v_fail || format('%s 以 %s 调用：另一户 → %s；不存在 → %s', f.sig, attacker.id, v_other, v_missing);
+      ELSIF EXISTS (SELECT 1 FROM t.function_matrix_null_ok n WHERE n.sig = f.sig::text) THEN
+        IF v_other <> 'returned:null' THEN
+          v_fail := v_fail || format('%s 以 %s 调用另一户：%s（应为 NULL）', f.sig, attacker.id, v_other);
+        END IF;
       ELSIF f.is_bool AND v_other <> 'returned:false' THEN
         v_fail := v_fail || format('%s 以 %s 调用另一户：%s（应为 false）', f.sig, attacker.id, v_other);
       ELSIF NOT f.is_bool AND v_other NOT LIKE '42501:%' THEN
@@ -631,8 +649,8 @@ BEGIN
      AND NOT EXISTS (SELECT 1 FROM t.function_matrix_exempt e WHERE e.sig = p.oid::regprocedure::text);
   PERFORM t.ok(v_missing = '', format('攻击面：BFF 可执行的 SECURITY DEFINER 函数要么在函数越权矩阵里，要么登记了豁免理由（未登记：%s）',
                                       v_missing));
-  PERFORM t.ok(cardinality(v_fail) = 0, format('攻击面：函数越权矩阵——对另一户的对象与不存在的对象结果相同且被拒绝（%s 处不一致）',
-                                             cardinality(v_fail)));
+  PERFORM t.ok(cardinality(v_fail) = 0, format('攻击面：函数越权矩阵——对另一户的对象与不存在的对象结果相同且被拒绝（%s 处不一致）%s',
+                                             cardinality(v_fail), coalesce('：' || array_to_string(v_fail[1:3], '；'), '')));
 END $$;
 
 -- ================= 七、跨家庭写矩阵（A2、A5；安全审查建议 3） =================

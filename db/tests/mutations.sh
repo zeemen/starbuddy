@@ -314,6 +314,13 @@ declare -A M=(
      ALTER FUNCTION platform.peek_exists(uuid) OWNER TO starbuddy_authz;
      REVOKE ALL ON FUNCTION platform.peek_exists(uuid) FROM PUBLIC;
      GRANT EXECUTE ON FUNCTION platform.peek_exists(uuid) TO starbuddy_bff;"
+  # T17（specs/tech-debt-batch3）：函数越权矩阵扩到 insight 等全部应用 schema，“无权返回 NULL”的视图函数逐个登记
+  ["攻击面：insight 新函数对另一户返回数据"]="CREATE FUNCTION insight.peek_grade(p_student uuid) RETURNS smallint
+     LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, platform, pg_temp AS \$\$
+     SELECT grade FROM platform.student_profile WHERE id = p_student \$\$;
+     ALTER FUNCTION insight.peek_grade(uuid) OWNER TO starbuddy_authz;
+     REVOKE ALL ON FUNCTION insight.peek_grade(uuid) FROM PUBLIC;
+     GRANT EXECUTE ON FUNCTION insight.peek_grade(uuid) TO starbuddy_bff;"
   ["攻击面：物化视图授权给 BFF"]="CREATE MATERIALIZED VIEW platform.pentest_mv AS SELECT id FROM platform.student_profile; GRANT SELECT ON platform.pentest_mv TO starbuddy_bff;"
   ["攻击面：新函数的学生参数换个名字躲过越权矩阵"]="CREATE FUNCTION platform.peek_student(p_student_id uuid) RETURNS smallint
      LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, platform, pg_temp AS \$\$
@@ -600,6 +607,10 @@ declare -A M=(
 afr() {  # 函数定义里的文本替换（与 services/bff/tests/mutations.sh 的 fr 相同）；找不到模式时让变异本身失败
   printf "DO \$\$ DECLARE d text := pg_get_functiondef('%s'::regprocedure); BEGIN IF position(%s IN d) = 0 THEN RAISE EXCEPTION 'pattern not found'; END IF; EXECUTE replace(d, %s, %s); END \$\$;" "$1" "$2" "$2" "$3"
 }
+# T17：登记为“无权返回 NULL”的视图函数被改成对另一户返回数据（80 号函数越权矩阵发现）
+M+=(
+  ["攻击面：返回 NULL 的视图函数对另一户返回数据"]="$(afr 'insight.guardian_goal_view(uuid)' "'IF p_student IS NULL OR NOT platform.is_linked_guardian(p_student) THEN'" "'IF p_student IS NULL OR NOT EXISTS (SELECT 1 FROM platform.student_profile x WHERE x.id = p_student) THEN'")"
+)
 AI='platform.auth_otp_issue(text, bytea, integer, integer)'
 AL='platform.auth_otp_login(text, bytea, integer, integer, text)'
 AR='platform.auth_session_resolve(text)'
@@ -1594,6 +1605,8 @@ declare -A EXPECT=(
   ["攻击面：登录角色同时继承定时任务与 BFF"]="攻击面：没有角色同时继承两个应用角色"
   ["攻击面：函数经 DETAIL 泄露学生是否存在"]="攻击面：函数越权矩阵——"
   ["攻击面：物化视图授权给 BFF"]="攻击面：物化视图与外部表"
+  ["攻击面：insight 新函数对另一户返回数据"]="攻击面：函数越权矩阵——"
+  ["攻击面：返回 NULL 的视图函数对另一户返回数据"]="攻击面：函数越权矩阵——"
   ["攻击面：新函数的学生参数换个名字躲过越权矩阵"]="攻击面：BFF 可执行的 SECURITY DEFINER 函数要么在函数越权矩阵里"
   ["攻击面：新函数删除个人层表"]="攻击面：除删除执行函数外，没有函数删除个人层清单里的表"
   ["攻击面：删除执行身份有成员"]="攻击面：starbuddy_eraser 没有任何成员"

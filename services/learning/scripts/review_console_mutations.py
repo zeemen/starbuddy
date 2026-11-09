@@ -129,6 +129,19 @@ LT6_DB: dict[str, list[tuple[str, str, str]]] = {
 }
 
 
+# 发布门禁的 C9 检查（specs/tech-debt-batch3 B，review_console/admission_export.py 的 verify）：断言 tests/test_admission_export.py 不连库的用例能发现
+AX_TESTS = ["tests/test_admission_export.py", "-k", "hint_scan"]
+AX = "review_console/admission_export.py"
+AX_PURE: dict[str, list[tuple[str, str, str]]] = {
+    "C9 非严格模式也放行": [(AX, 'or mode != "strict" or not isinstance(flagged, list):', 'or not isinstance(flagged, list):')],
+    "C9 检查项不核对": [(AX, 'scan.get("check") != "C9" or ', '')],
+    "C9 标记的题不列": [(AX, '        scan_problems.append({"item_id": iid, "pack": None, "platform": None, "reason": "hint_scan_flagged"})',
+                     '        pass')],
+    "C9 问题不计入不合格": [(AX, "    violations = scan_problems + violations\n", "")],
+    "缺 C9 检查当严格零标记": [(AX, '    scan = pack.get("hint_scan")\n',
+                          '    scan = pack.get("hint_scan") or {"check": "C9", "mode": "strict", "flagged_items": []}\n')],
+}
+
 def group(label: str, mutations: dict[str, list[tuple[str, str, str]]], tests: list[str], workers: int) -> int:
     with tempfile.TemporaryDirectory(prefix="review-mut.") as t:
         rc, out = PM._run(PM._copy(Path(t)), tests)
@@ -152,7 +165,8 @@ def main() -> int:
     if not (HERE / ".venv/bin/python").exists():
         print("review-console-mutation: 跳过（没有安装学习服务依赖）")
         return 3
-    rc = group("纯函数", PURE, PURE_TESTS, 6) or group("内测纯函数", LT6_PURE, LT6_PURE_TESTS, 4)
+    rc = (group("纯函数", PURE, PURE_TESTS, 6) or group("内测纯函数", LT6_PURE, LT6_PURE_TESTS, 4)
+          or group("发布门禁 C9", AX_PURE, AX_TESTS, 5))
     if rc:
         return rc
     from glob import glob
