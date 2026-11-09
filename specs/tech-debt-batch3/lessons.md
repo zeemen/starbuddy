@@ -67,7 +67,7 @@ C9 检查一律拒收；CI 的变异组与额外浏览器由人决定何时手�
 2. **T05 残留**：变异组（scope=mutation，约 500 计费分钟）何时跑，由你定；建议在 PLT-23 的迁移草稿与 PLT-24 合并前各跑一次（规则：改迁移、RLS、鉴权前手动跑）。
 
 ## 待人确认的结论（2026-11-09，用户“按建议，待人确认都同意”）
-1. T22 首次运行：已手动触发 check（scope=light、extra_browsers=true），run 42637392388（提交 `914932b`）；结果见下。
+1. T22 首次运行：已手动触发 check（scope=light、extra_browsers=true），run 42637392388（提交 `914932b`）：**extra-browsers 通过**——WebKit、Firefox 上两个 @data-rights 用例共 4 项全部通过（24 秒，日志核对过确实运行）；同一次运行的 11 个 light 分组也全部通过。
 2. T05 残留：变异组（scope=mutation）在 PLT-23、PLT-24 合并前各跑一次；本批不触发。
 
 ## 后续：T11 内容登记脚本迁到 `tools/content-register/`（待人确认 #4 的方向，2026-11-09 实施）
@@ -79,4 +79,4 @@ C9 检查一律拒收；CI 的变异组与额外浏览器由人决定何时手�
   三个脚本只引用本科 `src/content.ts`），`make content-register-test` 并入 adapters 分组。阿鸦变异脚本的副本里复制 `tools/content-register/aya.ts`。
 - 没有改 CLAUDE.md：规则 1 的字面冲突靠搬位置消除，说明写在 `tools/content-register/README.md`。
 - 测试：三科 adapter-*-test、adapter-aya-mutation、content-register-test、学习服务三科端到端、BFF 四个集成测试、release-walkthrough、
-  kge-items-test、kge-daofa-import-test、kge-inventory-test、loadtest-test、e2e-cohort 通过（结果见提交说明）。
+  kge-items-test、kge-daofa-import-test、kge-inventory-test、loadtest-test、e2e-cohort 通过；adapter-aya-mutation 86/86 被发现。
