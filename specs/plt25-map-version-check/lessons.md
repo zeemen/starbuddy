@@ -21,8 +21,8 @@
   match（证据记绑定的地图）；absent、unbound 照常写入；别科地图名在未绑定时也拒收。`tests/test_plan.py` 新增 4 例（absent、match、
   两种 mismatch：返回不变、计数加一）。
 - `internal-v1-mutation` 新增 7 条（不比版本号、不核名称、两个地图段放过、不一致只记计数、写入不按绑定核对、计划也拒收、计划不计数），
-  测试列表加 `test_map_version_check.py` 与 `test_plan.py`。结果见提交说明。
-- 学习服务全量、`test_obs`、`test_obs_shared`、observability-check、BFF 可观测测试与类型检查通过。
+  测试列表加 `test_map_version_check.py` 与 `test_plan.py`。本机 46 个变异全部被发现。
+- 学习服务全量（3992 项通过、2 项预期失败）、`test_obs`、`test_obs_shared`、observability-check、BFF 可观测测试与类型检查通过。
 
 ## 与 spec 的偏差
 1. **plan 比对的对象**：spec 写“同样的判定”。plan 请求没有内容版本（只有学生与学科），没有“绑定的地图”可比；实现为与该科全部已发布的地图版本比
