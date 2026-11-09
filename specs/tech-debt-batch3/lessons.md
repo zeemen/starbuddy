@@ -65,3 +65,18 @@ C9 检查一律拒收；CI 的变异组与额外浏览器由人决定何时手�
 ## 待人确认
 1. **T22 首次运行**：在 Actions → check → Run workflow 勾选 `extra_browsers`（scope 选 light），约 20–30 分钟；失败时结果补记在这里。
 2. **T05 残留**：变异组（scope=mutation，约 500 计费分钟）何时跑，由你定；建议在 PLT-23 的迁移草稿与 PLT-24 合并前各跑一次（规则：改迁移、RLS、鉴权前手动跑）。
+
+## 待人确认的结论（2026-11-09，用户“按建议，待人确认都同意”）
+1. T22 首次运行：已手动触发 check（scope=light、extra_browsers=true），run 42637392388（提交 `914932b`）；结果见下。
+2. T05 残留：变异组（scope=mutation）在 PLT-23、PLT-24 合并前各跑一次；本批不触发。
+
+## 后续：T11 内容登记脚本迁到 `tools/content-register/`（待人确认 #4 的方向，2026-11-09 实施）
+- `git mv adapters/{aya,wenli,zhixing}/scripts/register-content.ts tools/content-register/{aya,wenli,zhixing}.ts`；只改了引用路径与文件头，生成的 SQL 逐字节不变。
+  `tools/content-register/package.json`（`type: module`，没有依赖）；类型检查仍由各科 `tsconfig.json` 的 include 带上本科那一个文件。
+- 调用点全部改到新位置：BFF 四个集成测试、学习服务三个端到端测试、e2e-cohort 栈、loadtest、release-walkthrough、kge-import 两个库上测试、
+  `apps/web/scripts/e2e.sh`、各科 `npm run register:sql`；注释与种子、README 里的路径同步（迁移 0039 的注释不动）。
+- 守护：`tools/content-register/tests/placement.test.ts`（适配器目录里除测试、内容包、一致性夹具外没有 `INSERT/UPDATE/DELETE … platform.`；
+  三个脚本只引用本科 `src/content.ts`），`make content-register-test` 并入 adapters 分组。阿鸦变异脚本的副本里复制 `tools/content-register/aya.ts`。
+- 没有改 CLAUDE.md：规则 1 的字面冲突靠搬位置消除，说明写在 `tools/content-register/README.md`。
+- 测试：三科 adapter-*-test、adapter-aya-mutation、content-register-test、学习服务三科端到端、BFF 四个集成测试、release-walkthrough、
+  kge-items-test、kge-daofa-import-test、kge-inventory-test、loadtest-test、e2e-cohort 通过（结果见提交说明）。

@@ -9,7 +9,7 @@
     "start": "node src/main.ts",
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --test --test-reporter=dot tests/*.test.ts",
-    "register:sql": "node scripts/register-content.ts"
+    "register:sql": "node ../../tools/content-register/zhixing.ts"
   },
   "dependencies": {
     "ajv": "8.20.0",

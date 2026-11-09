@@ -60,7 +60,7 @@ content/pack.json   由 legacy 生成的内容包（格式 3）：判分字段 +
 scripts/build-content-pack.ts    从 legacy 生成内容包（legacy 有未提交改动时拒绝）
 scripts/rebuild-content-pack.ts  按准入决定重建内容包（不需要 legacy；只改准入与来源，重做 C9）
 scripts/pack-cli.ts              两个构建脚本共用的收尾：决定文件 → 重建 → C9 → 校验 → 写文件
-scripts/register-content.ts      输出内容登记 SQL（课程版本、能力点、题目），只增不改
+（内容登记 SQL 的生成已迁到 tools/content-register/aya.ts，W13 T11；npm run register:sql 照旧可用）
 scripts/mutations.ts             四个新方法与内容包格式 3 的变异测试（make adapter-aya-mutation）
 conformance/fixtures.yaml      一致性测试夹具（1.0.0，六个方法）；fixtures.v0.9.yaml 是去掉四个新方法的副本（0.9.0 那一遍用）
 tests/           单测。端到端（学习服务 → 本适配器 → 平台库）在 services/learning/tests/test_e2e_aya.py

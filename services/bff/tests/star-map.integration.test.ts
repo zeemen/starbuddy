@@ -52,7 +52,7 @@ before(async () => {
     END IF; END $$;`);
   const seeded = await su.query(`SELECT 1 FROM platform.household WHERE id = '5a000000-0000-4000-8000-0000000000d1'`);
   if (seeded.rowCount === 0) {
-    const register = execFileSync(process.execPath, ['--no-warnings', 'scripts/register-content.ts'],
+    const register = execFileSync(process.execPath, ['--no-warnings', '../../tools/content-register/aya.ts'],
       { cwd: new URL('adapters/aya/', ROOT), encoding: 'utf8', maxBuffer: 16 << 20 });
     await su.query(register);
     const seeder = await su.connect();

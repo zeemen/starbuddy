@@ -63,10 +63,10 @@ def _port() -> int:
 
 
 def register_content(pg) -> None:
-    """各科内容登记：适配器脚本生成的 SQL（只增不改）。psql 以管理员连接，先 SET ROLE starbuddy_learning，
+    """各科内容登记：tools/content-register 生成的 SQL（只增不改）。psql 以管理员连接，先 SET ROLE starbuddy_learning，
     整段 SQL 都以学习服务角色执行（脚本自身的 SET LOCAL ROLE 也是同一角色），不借管理员权限写入。"""
     for s in SUBJECTS:
-        sql = subprocess.run(["node", "--no-warnings", "scripts/register-content.ts"], cwd=ADAPTERS / s,
+        sql = subprocess.run(["node", "--no-warnings", f"../../tools/content-register/{s}.ts"], cwd=ADAPTERS / s,
                              check=True, capture_output=True).stdout
         pg.psql("SET ROLE starbuddy_learning;\n" + sql.decode())
 

@@ -30,7 +30,7 @@ psql -X -q -v ON_ERROR_STOP=1 -c "CREATE ROLE bff_app LOGIN IN ROLE starbuddy_bf
 psql -X -q -v ON_ERROR_STOP=1 -c "DO \$do\$ BEGIN EXECUTE format(\$f\$CREATE OR REPLACE FUNCTION platform.meter_now() RETURNS timestamptz
   LANGUAGE sql STABLE SET search_path = pg_catalog AS \$b\$ SELECT now() + %L::interval \$b\$\$f\$,
   ((date_trunc('day', now() AT TIME ZONE 'Asia/Shanghai') + interval '10 hours') AT TIME ZONE 'Asia/Shanghai') - now()); END \$do\$" >/dev/null
-node --no-warnings "$ROOT/adapters/aya/scripts/register-content.ts" | psql -X -q -v ON_ERROR_STOP=1 >/dev/null
+node --no-warnings "$ROOT/tools/content-register/aya.ts" | psql -X -q -v ON_ERROR_STOP=1 >/dev/null
 # 4-G 迁移 0039 起 BFF 只看已发布内容版本的能力视图：在这个一次性测试库里把登记的阿鸦内容版本以合成 staff 经签字函数发布
 # （种子不发布真实登记的内容；发布函数见 db/seeds/dev/syn-publish-content.sql）
 PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -q -v ON_ERROR_STOP=1 -f "$ROOT/db/seeds/dev/syn-publish-content.sql" \

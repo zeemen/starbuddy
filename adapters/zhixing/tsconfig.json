@@ -11,5 +11,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["src", "scripts", "tests", "conformance"]
+  "include": ["src", "scripts", "tests", "conformance", "../../tools/content-register/zhixing.ts"]
 }

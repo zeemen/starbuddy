@@ -43,7 +43,7 @@ check-fast: contract-test taxonomy-check attack-surface-check sie-dictionary-che
 CHECK_GROUP_PERSONA := eval-persona persona-registry-check persona-guard-test voice-blind-eval-test
 CHECK_GROUP_CONTRACTS := contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check conformance conformance-mutation db-test pentest-env-test
 CHECK_GROUP_AYA := adapter-aya-test adapter-aya-mutation
-CHECK_GROUP_ADAPTERS := adapter-zhixing-test adapter-wenli-test adapter-client-mutation zhixing-rubric-check daofa-grading-eval-test
+CHECK_GROUP_ADAPTERS := adapter-zhixing-test adapter-wenli-test adapter-client-mutation zhixing-rubric-check daofa-grading-eval-test content-register-test
 CHECK_GROUP_LEARNING_A := learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation practice-mutation
 CHECK_GROUP_LEARNING_B := internal-v1-mutation retest-mutation today-mutation review-console-mutation release-walkthrough loadtest-test cost-dashboard-test cost-dashboard-mutation mock-exam-test mock-exam-mutation deploy-check staging-mutation
 CHECK_GROUP_BFF_WEB := bff-test bff-mutation internal-test-tool-test web-test web-claims-mutation stage-test stage-mutation
@@ -196,6 +196,11 @@ adapter-zhixing-test:
 
 # 文砺（语文）适配器（ADP-语文-01，specs/adapter-wenli-sprint2）：类型检查 + 单测（作文后处理、客观题确定性判分、通道加权、plan、路由客户端、幂等、禁语与供应商信息扫描）
 # 依赖需先在 adapters/wenli 下 npm ci；没装时非严格模式打印“跳过”
+# 三科内容登记脚本的位置守护（W13 T11，tools/content-register/）：适配器目录里没有写平台表的代码，登记脚本只引用本科内容包加载代码
+.PHONY: content-register-test
+content-register-test:
+	@cd tools/content-register && node --no-warnings --test --test-reporter=dot tests/*.test.ts && echo "content-register-test: 通过"
+
 adapter-wenli-test:
 	@if $(WENLI_MISSING); then \
 	  echo "adapter-wenli-test: 跳过（没有安装依赖；cd adapters/wenli && npm ci）"; \

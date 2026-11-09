@@ -76,7 +76,7 @@ describe('数学自适应诊断（BFF 学生端）', { skip: READY ? false : '�
     END $$;`);
     const registered = await h.su.query(`SELECT 1 FROM platform.item WHERE subject = 'aya' AND item_id = 'Q-FUN-U01-T-002'`);
     if (registered.rowCount === 0) {
-      await h.su.query(execFileSync(process.execPath, ['--no-warnings', 'scripts/register-content.ts'], { cwd: AYA, encoding: 'utf8',
+      await h.su.query(execFileSync(process.execPath, ['--no-warnings', '../../tools/content-register/aya.ts'], { cwd: AYA, encoding: 'utf8',
                                                                                                          maxBuffer: 16 << 20 }));
     }
     const ayaPort = await freePort();

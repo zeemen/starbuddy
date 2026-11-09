@@ -103,7 +103,7 @@ def zhixing_adapter(pg, route_endpoint):
         if os.environ.get("LEARNING_TEST_STRICT") == "1":
             pytest.fail(why)
         pytest.skip(why)
-    sql = subprocess.run(["node", "--no-warnings", "scripts/register-content.ts"], cwd=ZX, check=True, capture_output=True).stdout
+    sql = subprocess.run(["node", "--no-warnings", "../../tools/content-register/zhixing.ts"], cwd=ZX, check=True, capture_output=True).stdout
     pg.psql(sql.decode())
     port = _port()
     env = {"PATH": os.environ["PATH"], "ZHIXING_ADAPTER_SERVICE_TOKEN": ZX_ADAPTER, "PORT": str(port),

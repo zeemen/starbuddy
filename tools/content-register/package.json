@@ -1,0 +1,6 @@
+{
+  "name": "starbuddy-content-register",
+  "private": true,
+  "type": "module",
+  "description": "三科内容登记 SQL（W13 T11）；没有依赖，用各科适配器自己的 typescript 做类型检查"
+}

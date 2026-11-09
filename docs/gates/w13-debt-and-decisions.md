@@ -320,6 +320,7 @@
 | T21、T46 | 已完成 | — | `specs/tech-debt-batch2/` |
 | T47、T49 | 已完成 | staging 新增 `session-token`；安全负责人过目 | `specs/plt24-auth-tightening/` |
 | T10 | 已完成 | — | `tools/e2e-cohort/sample/run_metadata.json`（`worktree_dirty: false`） |
+| T11 | 已完成 | — | 登记脚本迁到 `tools/content-register/`；`tools/content-register/tests/placement.test.ts` |
 | T17 | 部分完成 | 函数越权矩阵已扩到全部应用 schema；部署后角色继承巡检（H2）〔人：真实集群〕 | `db/tests/80_attack_surface.sql` 第六节；`specs/tech-debt-batch3/` |
 | T01 | 部分完成 | 第二部分（0039、0042、准入导出与走查）已做，发布门禁拒收非严格或带标记的 C9 检查；各科真实签字的版本记录〔人〕 | `specs/release-gate-sprint4/lessons.md`；`specs/tech-debt-batch3/` |
 | T15 | 部分完成 | 发布门禁部分已做；C9 词表来源〔停〕；plan、teach 跳过 rejected 题〔人：方法行为变更〕 | 同上 |
@@ -328,7 +329,7 @@
 | T34 | 部分完成 | 判分转写脚本已写；采分点挂观点的约束〔停〕；道法打标并入 item_tag〔人〕 | `evals/daofa-grading/transcribe.py` |
 | T52 | 部分完成 | 模板已补“输入契约”“禁止修改的范围”；错因映射签字〔人〕 | `specs/_template/spec.md` |
 | T24、T27、T30、T33、T38 | 部分完成 | 均卡在签字或人（ADR 11 / 13、契约 1.1.0、指标频率、留出集执行人、通过线） | 各自来源 lessons |
-| T02、T03、T11、T13、T14、T16、T23、T25、T28、T29、T31、T32、T35–T37、T39、T40、T42–T45、T48、T50、T51 | 未做 | T11 方向已定（迁到 `tools/content-register/`，下批做）；T13 地图版本核对、T35 前端类型生成可做但排后；其余卡在人或必停 | `specs/tech-debt-batch3/spec.md` 第二节 |
+| T02、T03、T13、T14、T16、T23、T25、T28、T29、T31、T32、T35–T37、T39、T40、T42–T45、T48、T50、T51 | 未做 | T13 地图版本核对、T35 前端类型生成可做但排后；其余卡在人或必停 | `specs/tech-debt-batch3/spec.md` 第二节 |
 
 ---
 
