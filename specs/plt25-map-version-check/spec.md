@@ -1,6 +1,6 @@
 # PLT-25 · 地图版本交叉核对（W13 技术债 T13）· 规格草稿
 
-- 状态：**草稿，待人确认**（第六节）。
+- 状态：**已确认（2026-11-09，用户“按建议，默认值都同意，开始实现”）**：第六节待人确认 1–4 全部按默认。实现记录见 lessons.md。
 - 编号：PLT-25 为仓库排队号（PLT-24 之后）。
 - 依据：`docs/gates/w13-debt-and-decisions.md` T13；`specs/evidence-attributes-sprint1/lessons.md` 待人确认第 4、6、10 条（契约审查建议 8、10，安全审查建议 4）；
   插件契约 v1.0 第 41 行（`source_version` 的地图段写作 `graph:<学科>-map@x.y.z`，与知识地图版本对应）与 `SourceVersion` 定义；

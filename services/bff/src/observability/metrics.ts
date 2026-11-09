@@ -40,7 +40,8 @@ export const ENUMS: Record<'subject' | 'task' | 'provider' | 'outcome', Readonly
     'lock_lost', 'skipped_locked', 'skipped_running', 'dry_run', 'reserved', 'dedup', 'existing', 'insufficient', 'daily_cap_reached',
     'curfew_soon', 'conflict', 'dedup_in_progress', 'no_entitlement', 'retained_no_ai', 'curfew', 'settled', 'released', 'refunded',
     'unknown', 'reserve_conflict', 'reserve_dedup_in_progress', 'settle_conflict', 'release_conflict', 'late_success_after_expiry',
-    'replay_after_expiry', 'sealed_after_expiry', 'success_after_release', 'result_unknown', 'learning_retry']),
+    'replay_after_expiry', 'sealed_after_expiry', 'success_after_release', 'result_unknown', 'learning_retry',
+    'match', 'mismatch', 'unbound', 'absent']),
 };
 const NAME = /^starbuddy_[a-z][a-z0-9_]{2,80}$/;
 const ROUTE = /^(?:unmatched|\/[A-Za-z0-9_./{}-]{0,120})$/;

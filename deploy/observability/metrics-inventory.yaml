@@ -17,7 +17,9 @@ services:
     - starbuddy_db_pool_size
     - starbuddy_http_request_duration_seconds
     - starbuddy_http_requests_total
+    - starbuddy_learning_map_version_check_total
     - starbuddy_learning_meter_check_total
+    - starbuddy_learning_plan_map_version_check_total
     - starbuddy_model_breaker_open
     - starbuddy_model_budget_remaining_calls
     - starbuddy_model_budget_remaining_ratio
