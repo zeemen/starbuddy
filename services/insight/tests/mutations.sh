@@ -210,7 +210,7 @@ M=(
   $'调度器命令行的服务端核对失效\tinsight/scheduled.py\t        await check_server_local(conn, env)\t        pass\ttests/test_scheduled_cli.py'
   $'调度器命令行连上后不核对服务端\tinsight/scheduled.py\t        await check_server(conn, env)\n        if a.cmd == "freeze":\t        if a.cmd == "freeze":\ttests/test_scheduled_cli.py'  $'计量循环一批不满也不停\tinsight/scheduled.py\t        if n < batch:\t        if n < 0:\ttests/test_scheduled_cli.py'
   $'计量循环到了上限不报仍有到期\tinsight/scheduled.py\t    return total, max_batches, True\t    return total, max_batches, False\ttests/test_scheduled_cli.py'
-  $'仍有到期时退出码不是 1\tinsight/scheduled.py\t    return 1 if out.get("more_due") else 0\t    return 0\ttests/test_scheduled_cli.py'
+  $'仍有到期时退出码不是 1\tinsight/scheduled.py\t    return 1 if out.get("more_due") or out.get("alert") else 0\t    return 1 if out.get("alert") else 0\ttests/test_scheduled_cli.py'
   $'计量循环不核对调度器角色\tinsight/scheduled.py\t    await assert_scheduler_role(conn)\n    total = 0\t    total = 0\ttests/test_scheduled_cli.py'
   $'抽检不用调用方给的比例\tinsight/scheduled.py\tlookback_hours, ratio))\tlookback_hours, 0.5))\ttests/test_scheduled_cli.py'
   $'抽检回看小时数不限范围\tinsight/scheduled.py\t            if a.lookback_hours is not None and not 1 <= a.lookback_hours <= MAX_LOOKBACK_HOURS:\t            if False:\ttests/test_scheduled_cli.py'
