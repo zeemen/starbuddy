@@ -19,6 +19,13 @@
   可选改必填而不重新导出）进 `review-console-mutation` 的“请求体导出”组。学习服务变异脚本的副本另软链 `apps/`（只读，读导出文件）。
 - 顺带：仓库根 `.gitignore` 补 `node_modules/`。
 
+## 测试结果（本机）
+- 前端单测全量、`next build`、tsc 通过；`review-requests.test.ts` 2 项、`review-requests-mutations.test.ts` 对照组 + 6 条变异全部通过。
+- `make web-test`（`PW_CHROMIUM_EXECUTABLE` 指本机 Chromium 1243）：端到端 177 项中 175 通过；失败的 2 项是 glyphs DPR 2（light、dark），
+  本机 Chromium 的已知环境差异（tech-debt-batch2 记录：旧代码同样失败），与本任务无关；审核台页面的用例全部通过。
+- `review-console-mutation` 全组：纯函数 19、内测纯函数 4、发布门禁 C9 5、请求体导出 3、库上 17、内测库上 11，全部被发现。
+- 学习服务 `test_review_requests_export.py` 2 项通过。
+
 ## 与 spec 的偏差
 1. **枚举口径**：spec 写“前端必须是同一组字面量”。实现为“前端取值是后端枚举的子集、且不能是宽泛的 string”：审核台的学科下拉只有三科
   （搁置的英语 `echo` 后端仍接受，前端不出现），要求逐字相同会逼前端加一个不可用的选项。
