@@ -202,7 +202,9 @@ test('PR2：签字的考情记录类型与后端 RecordSignBody 一致（含控�
   const records = readFileSync(new URL('../src/app/review/records/page.tsx', import.meta.url), 'utf8');
   assert.ok(records.includes("control_line: '控制线'"));
   const actions = readFileSync(new URL('../src/app/review/actions.ts', import.meta.url), 'utf8');
-  assert.ok(actions.includes('POLICY_RECORD_TYPES as readonly string[]).includes(type)'), '签字表单按同一份类型清单校验');
+  assert.ok(actions.includes('!isPolicyRecordType(type)'), '签字表单按同一份类型清单校验');
+  const lib = readFileSync(new URL('../src/lib/review.ts', import.meta.url), 'utf8');
+  assert.ok(lib.includes('(POLICY_RECORD_TYPES as readonly string[]).includes(s)'), 'isPolicyRecordType 用的就是 POLICY_RECORD_TYPES（W13 T35 起改为类型守卫）');
 });
 
 test('PR2：官方来源清单表单校验、结果提示与权限提示；提示里没有内部编码；页面把主机名放在 data-value 里、说明旁有个人信息提示', () => {

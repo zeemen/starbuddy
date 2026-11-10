@@ -1,0 +1,448 @@
+{
+ "_notice": "由 services/learning/scripts/export_review_requests.py 从审核台后端的 OpenAPI 导出，不要手改（W13 T35）",
+ "routes": {
+  "PATCH /review/v0/map-versions/{version_id}/nodes/{node_id}": {
+   "cognitive_levels": {
+    "enum": null,
+    "items": {
+     "enum": [
+      "apply",
+      "know",
+      "synthesize",
+      "understand"
+     ],
+     "type": "string"
+    },
+    "nullable": true,
+    "required": false,
+    "type": "array"
+   },
+   "examples": {
+    "enum": null,
+    "items": {
+     "enum": null,
+     "type": "string"
+    },
+    "nullable": true,
+    "required": false,
+    "type": "array"
+   },
+   "excludes": {
+    "enum": null,
+    "items": {
+     "enum": null,
+     "type": "string"
+    },
+    "nullable": true,
+    "required": false,
+    "type": "array"
+   },
+   "expected_digest": {
+    "enum": null,
+    "nullable": false,
+    "required": true,
+    "type": "string"
+   },
+   "includes": {
+    "enum": null,
+    "items": {
+     "enum": null,
+     "type": "string"
+    },
+    "nullable": true,
+    "required": false,
+    "type": "array"
+   },
+   "name": {
+    "enum": null,
+    "nullable": true,
+    "required": false,
+    "type": "string"
+   },
+   "scope": {
+    "enum": [
+     "edition_ext",
+     "elective",
+     "enrichment",
+     "exam_ext",
+     "required"
+    ],
+    "nullable": true,
+    "required": false,
+    "type": "string"
+   }
+  },
+  "POST /review/v0/admission/apply": {
+   "review_ids": {
+    "enum": null,
+    "items": {
+     "enum": null,
+     "type": "string"
+    },
+    "nullable": false,
+    "required": true,
+    "type": "array"
+   }
+  },
+  "POST /review/v0/admission/sign": {
+   "basis_code": {
+    "enum": null,
+    "nullable": true,
+    "required": false,
+    "type": "string"
+   },
+   "decision": {
+    "enum": [
+     "approved",
+     "rejected"
+    ],
+    "nullable": false,
+    "required": true,
+    "type": "string"
+   },
+   "expected_digest": {
+    "enum": null,
+    "nullable": false,
+    "required": true,
+    "type": "string"
+   },
+   "item_id": {
+    "enum": null,
+    "nullable": false,
+    "required": true,
+    "type": "string"
+   },
+   "license_status": {
+    "enum": [
+     "cleared",
+     "denied",
+     "unverified"
+    ],
+    "nullable": true,
+    "required": false,
+    "type": "string"
+   },
+   "review_level": {
+    "enum": null,
+    "nullable": true,
+    "required": false,
+    "type": "string"
+   },
+   "source_ref": {
+    "enum": null,
+    "nullable": true,
+    "required": false,
+    "type": "string"
+   },
+   "source_type": {
+    "enum": [
+     "adapted",
+     "exam_paper",
+     "reference_book",
+     "self_authored",
+     "textbook",
+     "unknown"
+    ],
+    "nullable": true,
+    "required": false,
+    "type": "string"
+   },
+   "subject": {
+    "enum": [
+     "aya",
+     "echo",
+     "wenli",
+     "zhixing"
+    ],
+    "nullable": false,
+    "required": true,
+    "type": "string"
+   },
+   "to_admission": {
+    "enum": [
+     "admitted",
+     "pending_review",
+     "rejected",
+     "source_unverified"
+    ],
+    "nullable": false,
+    "required": true,
+    "type": "string"
+   }
+  },
+  "POST /review/v0/auth/login": {
+   "code": {
+    "enum": null,
+    "nullable": false,
+    "required": true,
+    "type": "string"
+   },
+   "login_name": {
+    "enum": null,
+    "nullable": false,
+    "required": true,
+    "type": "string"
+   },
+   "password": {
+    "enum": null,
+    "nullable": false,
+    "required": true,
+    "type": "string"
+   }
+  },
+  "POST /review/v0/content-versions/{cv}/publish": {
+   "expected_digest": {
+    "enum": null,
+    "nullable": false,
+    "required": true,
+    "type": "string"
+   }
+  },
+  "POST /review/v0/content-versions/{cv}/retire": {
+   "basis_code": {
+    "enum": null,
+    "nullable": false,
+    "required": true,
+    "type": "string"
+   }
+  },
+  "POST /review/v0/content-versions/{cv}/sign": {
+   "basis_code": {
+    "enum": null,
+    "nullable": true,
+    "required": false,
+    "type": "string"
+   },
+   "decision": {
+    "enum": [
+     "approved",
+     "rejected"
+    ],
+    "nullable": false,
+    "required": true,
+    "type": "string"
+   },
+   "expected_digest": {
+    "enum": null,
+    "nullable": false,
+    "required": true,
+    "type": "string"
+   }
+  },
+  "POST /review/v0/feedback/{feedback_id}/status": {
+   "status": {
+    "enum": [
+     "closed",
+     "new",
+     "triaged"
+    ],
+    "nullable": false,
+    "required": true,
+    "type": "string"
+   }
+  },
+  "POST /review/v0/map-changes/{change_id}/sign": {
+   "decision": {
+    "enum": [
+     "approved",
+     "rejected"
+    ],
+    "nullable": false,
+    "required": true,
+    "type": "string"
+   },
+   "expected_digest": {
+    "enum": null,
+    "nullable": false,
+    "required": true,
+    "type": "string"
+   }
+  },
+  "POST /review/v0/map-versions/{version_id}/publish": {
+   "expected_digest": {
+    "enum": null,
+    "nullable": false,
+    "required": true,
+    "type": "string"
+   }
+  },
+  "POST /review/v0/map-versions/{version_id}/retire": {
+   "basis_code": {
+    "enum": null,
+    "nullable": false,
+    "required": true,
+    "type": "string"
+   }
+  },
+  "POST /review/v0/map-versions/{version_id}/sign": {
+   "basis_code": {
+    "enum": null,
+    "nullable": true,
+    "required": false,
+    "type": "string"
+   },
+   "decision": {
+    "enum": [
+     "approved",
+     "rejected"
+    ],
+    "nullable": false,
+    "required": true,
+    "type": "string"
+   },
+   "expected_digest": {
+    "enum": null,
+    "nullable": false,
+    "required": true,
+    "type": "string"
+   }
+  },
+  "POST /review/v0/pages/sign": {
+   "decision": {
+    "enum": [
+     "approved",
+     "rejected"
+    ],
+    "nullable": false,
+    "required": true,
+    "type": "string"
+   },
+   "page_commit": {
+    "enum": null,
+    "nullable": false,
+    "required": true,
+    "type": "string"
+   },
+   "page_id": {
+    "enum": null,
+    "nullable": false,
+    "required": true,
+    "type": "string"
+   }
+  },
+  "POST /review/v0/policy/records/{object_id}/sign": {
+   "decision": {
+    "enum": [
+     "approved",
+     "rejected"
+    ],
+    "nullable": false,
+    "required": true,
+    "type": "string"
+   },
+   "expected_digest": {
+    "enum": null,
+    "nullable": false,
+    "required": true,
+    "type": "string"
+   },
+   "object_type": {
+    "enum": [
+     "admission_line",
+     "control_line",
+     "school",
+     "source_document"
+    ],
+    "nullable": false,
+    "required": true,
+    "type": "string"
+   }
+  },
+  "POST /review/v0/policy/schemes/{scheme}/publish": {
+   "expected_digest": {
+    "enum": null,
+    "nullable": false,
+    "required": true,
+    "type": "string"
+   }
+  },
+  "POST /review/v0/policy/schemes/{scheme}/sign": {
+   "decision": {
+    "enum": [
+     "approved",
+     "rejected"
+    ],
+    "nullable": false,
+    "required": true,
+    "type": "string"
+   },
+   "expected_digest": {
+    "enum": null,
+    "nullable": false,
+    "required": true,
+    "type": "string"
+   }
+  },
+  "POST /review/v0/policy/sources": {
+   "host": {
+    "enum": null,
+    "nullable": false,
+    "required": true,
+    "type": "string"
+   },
+   "note": {
+    "enum": null,
+    "nullable": false,
+    "required": true,
+    "type": "string"
+   }
+  },
+  "POST /review/v0/policy/sources/retire": {
+   "host": {
+    "enum": null,
+    "nullable": false,
+    "required": true,
+    "type": "string"
+   }
+  },
+  "POST /review/v0/queue/{task_id}/resolve": {
+   "resolution_code": {
+    "enum": null,
+    "nullable": false,
+    "required": true,
+    "type": "string"
+   }
+  },
+  "POST /review/v0/spot-checks/sign": {
+   "decision": {
+    "enum": [
+     "approved",
+     "rejected"
+    ],
+    "nullable": false,
+    "required": true,
+    "type": "string"
+   },
+   "page_commit": {
+    "enum": null,
+    "nullable": false,
+    "required": true,
+    "type": "string"
+   },
+   "page_id": {
+    "enum": null,
+    "nullable": false,
+    "required": true,
+    "type": "string"
+   }
+  },
+  "POST /review/v0/tag-candidates/{candidate_id}/decide": {
+   "decision": {
+    "enum": [
+     "accept",
+     "reject",
+     "relabel"
+    ],
+    "nullable": false,
+    "required": true,
+    "type": "string"
+   },
+   "target_id": {
+    "enum": null,
+    "nullable": true,
+    "required": false,
+    "type": "string"
+   }
+  }
+ }
+}

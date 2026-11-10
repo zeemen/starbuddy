@@ -180,7 +180,7 @@ def _copy(tmp: Path) -> Path:
     root = tmp / "repo"
     dst = root / "services" / "learning"
     shutil.copytree(HERE, dst, ignore=shutil.ignore_patterns("__pycache__", ".venv", ".cache", "*.pyc"))
-    for name in ("db", "adapters", "packages", "evals", "docs", "deploy"):  # deploy：LT-05 指标登记清单（tests/test_obs.py 只读）
+    for name in ("db", "adapters", "packages", "evals", "docs", "deploy", "apps"):  # deploy：LT-05 指标登记清单（tests/test_obs.py 只读）；apps：T35 请求体导出文件（只读）
         (root / name).symlink_to(REPO / name)
     return dst
 

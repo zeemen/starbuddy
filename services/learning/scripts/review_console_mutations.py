@@ -142,6 +142,15 @@ AX_PURE: dict[str, list[tuple[str, str, str]]] = {
                           '    scan = pack.get("hint_scan") or {"check": "C9", "mode": "strict", "flagged_items": []}\n')],
 }
 
+# 请求体导出（W13 T35，specs/review-console-types-t35）：后端改了请求体模型而没重新导出，tests/test_review_requests_export.py 必须发现
+RQ_TESTS = ["tests/test_review_requests_export.py"]
+RQ_APP = "review_console/app.py"
+RQ_PURE: dict[str, list[tuple[str, str, str]]] = {
+    "签字请求加必填字段不导出": [(RQ_APP, "class SignBody(_Strict):\n    decision:", "class SignBody(_Strict):\n    reason: str\n    decision:")],
+    "反馈状态枚举加取值不导出": [(RQ_APP, 'status: Literal["new", "triaged", "closed"]', 'status: Literal["new", "triaged", "closed", "reopened"]')],
+    "可选字段改必填不导出": [(RQ_APP, "    target_id: uuid.UUID | None = None", "    target_id: uuid.UUID")],
+}
+
 def group(label: str, mutations: dict[str, list[tuple[str, str, str]]], tests: list[str], workers: int) -> int:
     with tempfile.TemporaryDirectory(prefix="review-mut.") as t:
         rc, out = PM._run(PM._copy(Path(t)), tests)
@@ -166,7 +175,7 @@ def main() -> int:
         print("review-console-mutation: 跳过（没有安装学习服务依赖）")
         return 3
     rc = (group("纯函数", PURE, PURE_TESTS, 6) or group("内测纯函数", LT6_PURE, LT6_PURE_TESTS, 4)
-          or group("发布门禁 C9", AX_PURE, AX_TESTS, 5))
+          or group("发布门禁 C9", AX_PURE, AX_TESTS, 5) or group("请求体导出", RQ_PURE, RQ_TESTS, 3))
     if rc:
         return rc
     from glob import glob

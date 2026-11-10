@@ -218,27 +218,28 @@ export interface ContentView {
 export const listContentVersions = (staff: string, subject: SubjectCode) =>
   call<{ items: ContentVersionRow[] }>(staff, 'GET', `/review/v0/content-versions?subject=${subject}`);
 export const getContentView = (staff: string, id: string) => call<ContentView>(staff, 'GET', `/review/v0/content-versions/${id}/diff`);
-export const signContentVersion = (staff: string, id: string, body: { decision: string; basis_code?: string; expected_digest: string }) =>
-  call<{ review_id: string }>(staff, 'POST', `/review/v0/content-versions/${id}/sign`, body);
-export const publishContentVersion = (staff: string, id: string, body: { expected_digest: string }) =>
-  call<{ published_at: string }>(staff, 'POST', `/review/v0/content-versions/${id}/publish`, body);
-export const retireContentVersion = (staff: string, id: string, body: { basis_code: string }) =>
-  call<{ status: string }>(staff, 'POST', `/review/v0/content-versions/${id}/retire`, body);
+export const signContentVersion = (staff: string, id: string, body: ReviewRequests['POST /review/v0/content-versions/{cv}/sign']) =>
+  send<{ review_id: string }>(staff, 'POST /review/v0/content-versions/{cv}/sign', `/review/v0/content-versions/${id}/sign`, body);
+export const publishContentVersion = (staff: string, id: string, body: ReviewRequests['POST /review/v0/content-versions/{cv}/publish']) =>
+  send<{ published_at: string }>(staff, 'POST /review/v0/content-versions/{cv}/publish', `/review/v0/content-versions/${id}/publish`, body);
+export const retireContentVersion = (staff: string, id: string, body: ReviewRequests['POST /review/v0/content-versions/{cv}/retire']) =>
+  send<{ status: string }>(staff, 'POST /review/v0/content-versions/{cv}/retire', `/review/v0/content-versions/${id}/retire`, body);
 export interface AdmissionSign {
   subject: SubjectCode;
   item_id: string;
-  to_admission: string;
-  decision: string;
+  to_admission: (typeof ADMISSIONS)[number];
+  decision: Decision;
   review_level?: string;
   source_ref?: string;
-  source_type?: string;
-  license_status?: string;
+  source_type?: (typeof SOURCE_TYPES)[number];
+  license_status?: (typeof LICENSE_STATUSES)[number];
   expected_digest: string;
   basis_code?: string;
 }
-export const signAdmission = (staff: string, body: AdmissionSign) => call<{ review_id: string }>(staff, 'POST', '/review/v0/admission/sign', body);
+export const signAdmission = (staff: string, body: AdmissionSign) =>
+  send<{ review_id: string }>(staff, 'POST /review/v0/admission/sign', '/review/v0/admission/sign', body);
 export const applyAdmission = (staff: string, review_ids: string[]) =>
-  call<{ applied: number; recompute_since: string; recompute: string }>(staff, 'POST', '/review/v0/admission/apply', { review_ids });
+  send<{ applied: number; recompute_since: string; recompute: string }>(staff, 'POST /review/v0/admission/apply', '/review/v0/admission/apply', { review_ids });
 
 export const ADMISSIONS = ['source_unverified', 'pending_review', 'admitted', 'rejected'] as const;
 export const ADMISSION_LABEL: Record<string, string> = {
@@ -246,6 +247,10 @@ export const ADMISSION_LABEL: Record<string, string> = {
 };
 export const SOURCE_TYPES = ['unknown', 'self_authored', 'adapted', 'textbook', 'exam_paper', 'reference_book'] as const;
 export const LICENSE_STATUSES = ['unverified', 'cleared', 'denied'] as const;
+const oneOf = <T extends string>(list: readonly T[]) => (s: unknown): s is T => typeof s === 'string' && (list as readonly string[]).includes(s);
+export const isAdmission = oneOf(ADMISSIONS);
+export const isSourceType = oneOf(SOURCE_TYPES);
+export const isLicenseStatus = oneOf(LICENSE_STATUSES);
 /** 与迁移 0039 platform.item.source_ref、platform.skill_local_id 一致 */
 export const isSourceRef = (s: string): boolean => /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/.test(s);
 export const isItemId = (s: string): boolean => /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(s);
@@ -263,6 +268,8 @@ export interface SchemeRow {
 
 /** 审核台能签字的考情记录类型（方案另走签字 + 发布）；control_line：指标生控制线（迁移 0047 单独建表） */
 export const POLICY_RECORD_TYPES = ['source_document', 'admission_line', 'school', 'control_line'] as const;
+export const isPolicyRecordType = (s: unknown): s is (typeof POLICY_RECORD_TYPES)[number] =>
+  typeof s === 'string' && (POLICY_RECORD_TYPES as readonly string[]).includes(s);
 
 export interface PolicyDraft {
   object_type: (typeof POLICY_RECORD_TYPES)[number];
@@ -291,12 +298,12 @@ export const isCity = (s: string): boolean => /^[a-z][a-z0-9-]{1,31}$/.test(s);
 export const listPolicy = (staff: string, city?: string) =>
   call<{ schemes: SchemeRow[]; drafts: PolicyDraft[] }>(staff, 'GET', `/review/v0/policy${city ? `?city=${city}` : ''}`);
 export const getPolicyView = (staff: string, id: string) => call<PolicyView>(staff, 'GET', `/review/v0/policy/schemes/${id}`);
-export const signScheme = (staff: string, id: string, body: { decision: string; expected_digest: string }) =>
-  call<{ approvals: number }>(staff, 'POST', `/review/v0/policy/schemes/${id}/sign`, body);
-export const publishScheme = (staff: string, id: string, body: { expected_digest: string }) =>
-  call<{ published_at: string }>(staff, 'POST', `/review/v0/policy/schemes/${id}/publish`, body);
-export const signPolicyRecord = (staff: string, id: string, body: { object_type: string; decision: string; expected_digest: string }) =>
-  call<{ status: string }>(staff, 'POST', `/review/v0/policy/records/${id}/sign`, body);
+export const signScheme = (staff: string, id: string, body: ReviewRequests['POST /review/v0/policy/schemes/{scheme}/sign']) =>
+  send<{ approvals: number }>(staff, 'POST /review/v0/policy/schemes/{scheme}/sign', `/review/v0/policy/schemes/${id}/sign`, body);
+export const publishScheme = (staff: string, id: string, body: ReviewRequests['POST /review/v0/policy/schemes/{scheme}/publish']) =>
+  send<{ published_at: string }>(staff, 'POST /review/v0/policy/schemes/{scheme}/publish', `/review/v0/policy/schemes/${id}/publish`, body);
+export const signPolicyRecord = (staff: string, id: string, body: ReviewRequests['POST /review/v0/policy/records/{object_id}/sign']) =>
+  send<{ status: string }>(staff, 'POST /review/v0/policy/records/{object_id}/sign', `/review/v0/policy/records/${id}/sign`, body);
 export const POLICY_OBJECT_LABEL: Record<string, string> = {
   source_document: '来源文件', exam_scheme: '方案', admission_line: '招录行', school: '学校', control_line: '控制线',
   scheme: '方案', total: '计分总分', subject: '科目', batch: '批次', transition: '过渡规则',
@@ -311,10 +318,10 @@ export interface SourceDomain {
   added_at: string;
 }
 export const listSourceDomains = (staff: string) => call<{ items: SourceDomain[] }>(staff, 'GET', '/review/v0/policy/sources');
-export const addSourceDomain = (staff: string, body: { host: string; note: string }) =>
-  call<{ host: string; status: string }>(staff, 'POST', '/review/v0/policy/sources', body);
-export const retireSourceDomain = (staff: string, body: { host: string }) =>
-  call<{ host: string; status: string }>(staff, 'POST', '/review/v0/policy/sources/retire', body);
+export const addSourceDomain = (staff: string, body: ReviewRequests['POST /review/v0/policy/sources']) =>
+  send<{ host: string; status: string }>(staff, 'POST /review/v0/policy/sources', '/review/v0/policy/sources', body);
+export const retireSourceDomain = (staff: string, body: ReviewRequests['POST /review/v0/policy/sources/retire']) =>
+  send<{ host: string; status: string }>(staff, 'POST /review/v0/policy/sources/retire', '/review/v0/policy/sources/retire', body);
 /** 表单里的主机名：只收 ASCII 的域名字符（国际化域名填 punycode，xn--…），1–253 字；去首尾空白、小写、结尾的点由库里规范化 */
 export const isSourceHost = (s: string): boolean => /^[A-Za-z0-9.-]{1,253}\.?$/.test(s.trim()) && s.trim().length > 0;
 /** 说明里不许出现的 Unicode 类别：控制字符（Cc，含 C1）、格式字符（Cf，含 U+202E 方向覆盖与零宽字符）、行分隔符、段分隔符 */
@@ -328,8 +335,8 @@ export const SOURCE_STATUS_LABEL: Record<string, string> = { active: '在用', r
 
 // ---------- 编译页面签字与低风险事后抽检（冲刺 4，spec 第 2、6 节） ----------
 export const isCommit = (s: string): boolean => /^[0-9a-f]{40}$/.test(s);
-export const signPage = (staff: string, body: { page_id: string; page_commit: string; decision: string }) =>
-  call<{ review_id: string; risk_level: string }>(staff, 'POST', '/review/v0/pages/sign', body);
+export const signPage = (staff: string, body: ReviewRequests['POST /review/v0/pages/sign']) =>
+  send<{ review_id: string; risk_level: string }>(staff, 'POST /review/v0/pages/sign', '/review/v0/pages/sign', body);
 
 export interface SpotCheckView {
   configured: boolean;
@@ -345,8 +352,8 @@ export interface SpotCheckView {
 export const isDay = (s: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(`${s}T00:00:00Z`));
 export const getSpotChecks = (staff: string, day?: string) =>
   call<SpotCheckView>(staff, 'GET', `/review/v0/spot-checks${day ? `?day=${day}` : ''}`);
-export const signSpotCheck = (staff: string, body: { page_id: string; page_commit: string; decision: string }) =>
-  call<{ review_id: string }>(staff, 'POST', '/review/v0/spot-checks/sign', body);
+export const signSpotCheck = (staff: string, body: ReviewRequests['POST /review/v0/spot-checks/sign']) =>
+  send<{ review_id: string }>(staff, 'POST /review/v0/spot-checks/sign', '/review/v0/spot-checks/sign', body);
 
 // ---------- 编译页面（冲刺 3，spec 第 6 节）：待审合并请求与对账状态；审核在托管平台网页上做，这里只读、只给链接 ----------
 export interface PageEntry {
@@ -469,7 +476,7 @@ async function call<T>(session: string | null, method: string, path: string, bod
 }
 
 export const loginRequest = (login_name: string, password: string, code: string) =>
-  call<{ token: string }>(null, 'POST', '/review/v0/auth/login', { login_name, password, code });
+  send<{ token: string }>(null, 'POST /review/v0/auth/login', '/review/v0/auth/login', { login_name, password, code });
 export const logoutRequest = (session: string) => call<{ status: string }>(session, 'POST', '/review/v0/auth/logout');
 export const whoAmI = (session: string) => call<{ account_id: string; login_name: string | null }>(session, 'GET', '/review/v0/auth/me');
 export const listVersions = (staff: string, subject: SubjectCode) =>
@@ -477,16 +484,16 @@ export const listVersions = (staff: string, subject: SubjectCode) =>
 export const getDiff = (staff: string, id: string) => call<DiffView>(staff, 'GET', `/review/v0/map-versions/${id}/diff`);
 export const getRecords = (staff: string, subject: SubjectCode) =>
   call<{ items: RecordRow[] }>(staff, 'GET', `/review/v0/records?subject=${subject}`);
-export const editNode = (staff: string, id: string, node: string, body: Record<string, unknown>) =>
-  call<{ digest: string }>(staff, 'PATCH', `/review/v0/map-versions/${id}/nodes/${node}`, body);
-export const signVersion = (staff: string, id: string, body: { decision: string; basis_code?: string; expected_digest: string }) =>
-  call<{ review_id: string }>(staff, 'POST', `/review/v0/map-versions/${id}/sign`, body);
-export const signChange = (staff: string, change: string, body: { decision: string; expected_digest: string }) =>
-  call<{ status: string }>(staff, 'POST', `/review/v0/map-changes/${change}/sign`, body);
-export const publishVersion = (staff: string, id: string, body: { expected_digest: string }) =>
-  call<{ published_at: string }>(staff, 'POST', `/review/v0/map-versions/${id}/publish`, body);
-export const retireVersion = (staff: string, id: string, body: { basis_code: string }) =>
-  call<{ status: string }>(staff, 'POST', `/review/v0/map-versions/${id}/retire`, body);
+export const editNode = (staff: string, id: string, node: string, body: NodeEditReq) =>
+  send<{ digest: string }>(staff, 'PATCH /review/v0/map-versions/{version_id}/nodes/{node_id}', `/review/v0/map-versions/${id}/nodes/${node}`, body);
+export const signVersion = (staff: string, id: string, body: ReviewRequests['POST /review/v0/map-versions/{version_id}/sign']) =>
+  send<{ review_id: string }>(staff, 'POST /review/v0/map-versions/{version_id}/sign', `/review/v0/map-versions/${id}/sign`, body);
+export const signChange = (staff: string, change: string, body: ReviewRequests['POST /review/v0/map-changes/{change_id}/sign']) =>
+  send<{ status: string }>(staff, 'POST /review/v0/map-changes/{change_id}/sign', `/review/v0/map-changes/${change}/sign`, body);
+export const publishVersion = (staff: string, id: string, body: ReviewRequests['POST /review/v0/map-versions/{version_id}/publish']) =>
+  send<{ published_at: string }>(staff, 'POST /review/v0/map-versions/{version_id}/publish', `/review/v0/map-versions/${id}/publish`, body);
+export const retireVersion = (staff: string, id: string, body: ReviewRequests['POST /review/v0/map-versions/{version_id}/retire']) =>
+  send<{ status: string }>(staff, 'POST /review/v0/map-versions/{version_id}/retire', `/review/v0/map-versions/${id}/retire`, body);
 
 /** 表单里一行一条（包含、不包含、典型题例）：去掉首尾空白与空行 */
 export const lines = (s: string): string[] => s.split(/\r?\n/).map((x) => x.trim()).filter((x) => x.length > 0);
@@ -590,8 +597,9 @@ export function worklistQuery(f: { subject: SubjectCode; map_version_id?: string
 }
 export const listTagCandidates = (staff: string, f: Parameters<typeof worklistQuery>[0]) =>
   call<TagWorklist>(staff, 'GET', `/review/v0/tag-candidates?${worklistQuery(f)}`);
-export const decideTag = (staff: string, id: string, body: { decision: TagDecision; target_id?: string }) =>
-  call<{ status: 'written' | 'recorded'; decision: TagDecision; decided_by: string }>(staff, 'POST', `/review/v0/tag-candidates/${id}/decide`, body);
+export const decideTag = (staff: string, id: string, body: ReviewRequests['POST /review/v0/tag-candidates/{candidate_id}/decide']) =>
+  send<{ status: 'written' | 'recorded'; decision: TagDecision; decided_by: string }>(staff, 'POST /review/v0/tag-candidates/{candidate_id}/decide',
+    `/review/v0/tag-candidates/${id}/decide`, body);
 
 export const ROLE_LABEL: Record<string, string> = { main: '主考点', secondary: '次要节点' };
 export const LAYER_LABEL: Record<string, string> = { rule: '规则层', vector: '向量层', model: '模型层' };
@@ -767,12 +775,65 @@ export const isCursor = (s: string): boolean =>
 
 export const queue = (staff: string, f: QueueFilter) =>
   call<{ items: QueueItem[]; next: QueueCursor | null }>(staff, 'GET', `/review/v0/queue?${queueQuery({ limit: 50, ...f })}`);
+// ---------- 请求体（W13 T35，specs/review-console-types-t35）----------
+// 审核台后端每个带请求体的接口在这里登记一次：键是“方法 路径模板”（与后端 OpenAPI 相同），值是请求体。
+// tests/review-requests.test.ts 用 TypeScript 编译器 API 读这个接口，与后端导出的 review-api.requests.json 逐项比较
+// （接口集合、字段集合、必填、枚举）；带请求体的调用一律经 send()，路径与模板对不上同样失败。
+export const DECISIONS = ['approved', 'rejected'] as const;
+export type Decision = (typeof DECISIONS)[number];
+export const isDecision = (s: unknown): s is Decision => typeof s === 'string' && (DECISIONS as readonly string[]).includes(s);
+export const COGNITIVE_LEVELS = ['know', 'understand', 'apply', 'synthesize'] as const;
+export const NODE_SCOPES = ['required', 'elective', 'edition_ext', 'exam_ext', 'enrichment'] as const;
+interface SignReq { decision: Decision; basis_code?: string; expected_digest: string }
+interface DigestReq { expected_digest: string }
+interface DecisionDigestReq { decision: Decision; expected_digest: string }
+interface BasisReq { basis_code: string }
+interface PageSignReq { page_id: string; page_commit: string; decision: Decision }
+export interface NodeEditReq {
+  expected_digest: string;
+  name?: string;
+  includes?: string[];
+  excludes?: string[];
+  examples?: string[];
+  cognitive_levels?: (typeof COGNITIVE_LEVELS)[number][];
+  scope?: (typeof NODE_SCOPES)[number];
+}
+export interface ReviewRequests {
+  'POST /review/v0/auth/login': { login_name: string; password: string; code: string };
+  'PATCH /review/v0/map-versions/{version_id}/nodes/{node_id}': NodeEditReq;
+  'POST /review/v0/map-versions/{version_id}/sign': SignReq;
+  'POST /review/v0/map-changes/{change_id}/sign': DecisionDigestReq;
+  'POST /review/v0/map-versions/{version_id}/publish': DigestReq;
+  'POST /review/v0/map-versions/{version_id}/retire': BasisReq;
+  'POST /review/v0/content-versions/{cv}/sign': SignReq;
+  'POST /review/v0/content-versions/{cv}/publish': DigestReq;
+  'POST /review/v0/content-versions/{cv}/retire': BasisReq;
+  'POST /review/v0/admission/sign': AdmissionSign;
+  'POST /review/v0/admission/apply': { review_ids: string[] };
+  'POST /review/v0/policy/schemes/{scheme}/sign': DecisionDigestReq;
+  'POST /review/v0/policy/schemes/{scheme}/publish': DigestReq;
+  'POST /review/v0/policy/records/{object_id}/sign': { object_type: (typeof POLICY_RECORD_TYPES)[number]; decision: Decision; expected_digest: string };
+  'POST /review/v0/policy/sources': { host: string; note: string };
+  'POST /review/v0/policy/sources/retire': { host: string };
+  'POST /review/v0/pages/sign': PageSignReq;
+  'POST /review/v0/spot-checks/sign': PageSignReq;
+  'POST /review/v0/queue/{task_id}/resolve': { resolution_code: string };
+  'POST /review/v0/tag-candidates/{candidate_id}/decide': { decision: TagDecision; target_id?: string };
+  'POST /review/v0/feedback/{feedback_id}/status': { status: FeedbackStatus };
+}
+type Route = keyof ReviewRequests;
+
+/** 带请求体的调用：route 是 ReviewRequests 的键，path 是填好参数的实际路径（静态测试核对两者对得上） */
+function send<T, K extends Route = Route>(session: string | null, route: K, path: string, body: ReviewRequests[K]): Promise<Result<T>> {
+  return call<T>(session, route.slice(0, route.indexOf(' ')), path, body);
+}
+
 export const queueTask = (staff: string, id: string) => call<QueueTask>(staff, 'GET', `/review/v0/queue/${id}`);
 export const resolutionCodes = (staff: string) => call<{ items: ResolutionCode[] }>(staff, 'GET', '/review/v0/queue/resolution-codes');
 export const takeTask = (staff: string, id: string) => call<{ status: string }>(staff, 'POST', `/review/v0/queue/${id}/take`);
 export const releaseTask = (staff: string, id: string) => call<{ status: string }>(staff, 'POST', `/review/v0/queue/${id}/release`);
 export const resolveTask = (staff: string, id: string, resolution_code: string) =>
-  call<{ status: string }>(staff, 'POST', `/review/v0/queue/${id}/resolve`, { resolution_code });
+  send<{ status: string }>(staff, 'POST /review/v0/queue/{task_id}/resolve', `/review/v0/queue/${id}/resolve`, { resolution_code });
 
 /** 复核原因（platform.review_reason） */
 export const QUEUE_REASON_LABEL: Record<QueueReason, string> = {
@@ -860,7 +921,7 @@ export function feedbackQuery(f: FeedbackFilter): string {
 export const listFeedback = (staff: string, f: FeedbackFilter) =>
   call<{ items: FeedbackRow[]; next: QueueCursor | null }>(staff, 'GET', `/review/v0/feedback?${feedbackQuery(f)}`);
 export const setFeedbackStatus = (staff: string, id: string, status: FeedbackStatus) =>
-  call<{ status: FeedbackStatus }>(staff, 'POST', `/review/v0/feedback/${id}/status`, { status });
+  send<{ status: FeedbackStatus }>(staff, 'POST /review/v0/feedback/{feedback_id}/status', `/review/v0/feedback/${id}/status`, { status });
 export const listInternalTestExits = (staff: string) =>
   call<{ items: InternalTestExitRow[] }>(staff, 'GET', '/review/v0/internal-test/exits?limit=200');
 
