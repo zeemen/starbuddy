@@ -56,7 +56,8 @@
 - `make review-console-mutation` 八组全部被发现：纯函数 19、内测纯函数 4、发布门禁 C9 5、请求体导出 3、响应导出 2、库上 17、内测库上 11、
   响应模型库上 2（这一组第一次的对照组没过：`test_review_pages.py` 有一条要读知识服务代码、变异的临时副本里没有，改为只跑
   `test_review_console.py`、“多拼一个键”放到地图差异视图上之后单独重跑通过）。
-- `make web-test`（端到端）：运行中，结果另记。
+- `make web-test`（`PW_CHROMIUM_EXECUTABLE` 指本机 Chromium 1243）：端到端 180 项中 177 通过、1 跳过；失败的 2 项是 glyphs DPR 2（light、dark），
+  本机 Chromium 的已知环境差异（tech-debt-batch2 记录，旧代码同样失败），与本任务无关；审核台页面的用例全部通过。
 
 ## 经验
 - 响应校验与请求校验方向相反：请求体“前端可以更窄”，响应“前端必须覆盖全部取值”。照搬请求体的口径会让核对放过真问题。
