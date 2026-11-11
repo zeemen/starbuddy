@@ -160,12 +160,16 @@ RS_PURE: dict[str, list[tuple[str, str, str]]] = {
     "响应模型删字段不导出": [(RS, "    scope: str\n    cognitive_levels: list[str]\n    error_type: str | None\n",
                          "    scope: str\n    cognitive_levels: list[str]\n")],
     "响应枚举加取值不导出": [(RS, 'Level = Literal["low", "medium", "high"]', 'Level = Literal["low", "medium", "high", "critical"]')],
+    # 复核任务来源（specs/review-task-source-models）
+    "来源模型删字段不导出": [(RS, "    rubric_version: str\n    source_version: str\n    model_version: str\n",
+                         "    rubric_version: str\n    model_version: str\n")],
 }
-RS_DB_TESTS = ["tests/test_review_console.py", "tests/test_review_responses_enums.py"]  # test_review_pages.py 有一条要读知识服务代码，临时副本里没有
+RS_DB_TESTS = ["tests/test_review_console.py", "tests/test_review_responses_enums.py", "tests/test_review_queue.py"]  # test_review_pages.py 有一条要读知识服务代码，临时副本里没有
 RS_DB: dict[str, list[tuple[str, str, str]]] = {
     "服务层多拼一个键": [(SV, '        "signoffs": signoffs,\n    })', '        "signoffs": signoffs,\n        "debug": True,\n    })')],
     "有时不给的字段改必填": [(RS, "    rubric_version: str = None", "    rubric_version: str")],
     "响应枚举漏掉库里的取值": [(RS, ', "diagnosis_step", "weekly_report"]', ', "diagnosis_step"]')],
+    "来源种类与模型对错": [(RS, '"claim": ClaimSource,', '"claim": GradeSource,')],
 }
 
 
