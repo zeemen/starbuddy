@@ -20,7 +20,7 @@ from typing import Any, Literal, Protocol
 
 import asyncpg
 from fastapi import FastAPI, Request
-from fastapi.exceptions import RequestValidationError
+from fastapi.exceptions import RequestValidationError, ResponseValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -31,10 +31,17 @@ from learning.netpolicy import STAGING, check_db_tls
 from .config import FEATURES, PagesSettings, ReviewSettings
 from .errors import ReviewError
 from .pages import MR_REVIEW_BASIS
+from .responses import ROUTES as RESPONSES
 from .spot_check import SPOT_CHECK_BASIS, SpotCheckSettings
 from .store import KgeStore, ReviewStore, check_roles, db_error
 
 log = logging.getLogger("starbuddy.review_console")
+
+
+def _resp(route: str) -> dict[str, Any]:
+    """每个接口的响应模型（review_console/responses.py 的 ROUTES）；漏登记的接口在建应用时就报 KeyError。
+    exclude_unset：只输出服务层给了的键（与挂模型之前的输出逐字相同）。"""
+    return {"response_model": RESPONSES[route], "response_model_exclude_unset": True}
 SUBJECTS = ("wenli", "aya", "zhixing", "echo")
 DIGEST = r"^[0-9a-f]{64}$"
 BASIS = r"^[a-z0-9_]{1,48}$"
@@ -340,6 +347,14 @@ def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthen
     async def _pg_interface(request: Request, e: asyncpg.InterfaceError):
         return JSONResponse(ReviewError(500, "INTERNAL").problem(), status_code=500, media_type="application/problem+json")
 
+    @app.exception_handler(ResponseValidationError)
+    async def _bad_response(request: Request, e: ResponseValidationError):
+        # 返回值与响应模型不符（多出的键、缺字段、类型或枚举不对；specs/review-console-responses）：只记路由模板与出错位置、类型，不记值
+        route = getattr(request.scope.get("route"), "path", "unmatched")
+        where = sorted({(".".join(str(x) for x in err.get("loc", ())[1:]), err.get("type", "")) for err in e.errors()})[:20]
+        log.error(json.dumps({"event": "review_response_invalid", "route": route, "errors": [f"{w} {t}" for w, t in where]}, ensure_ascii=False))
+        return JSONResponse(ReviewError(500, "INTERNAL").problem(), status_code=500, media_type="application/problem+json")
+
     @app.exception_handler(RequestValidationError)
     async def _invalid(request: Request, e: RequestValidationError):
         # 不回显请求内容
@@ -350,7 +365,7 @@ def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthen
             raise ReviewError(422, "INVALID_PARAMETER", "未知学科")
         return subject
 
-    @app.post("/review/v0/auth/login")
+    @app.post("/review/v0/auth/login", **_resp("POST /review/v0/auth/login"))
     async def login(body: LoginBody):
         # 失败一律同一个 401：不区分没有这个人、口令错、码错、已锁定、账号停用（库里就不区分）
         token = await state["review"].login(body.login_name, body.password, body.code)
@@ -358,53 +373,53 @@ def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthen
             raise ReviewError(401, "LOGIN_FAILED")
         return {"token": token}
 
-    @app.post("/review/v0/auth/logout")
+    @app.post("/review/v0/auth/logout", **_resp("POST /review/v0/auth/logout"))
     async def logout(request: Request):
         token = session_token(request)
         if token is not None:
             await state["review"].logout(token)
         return {"status": "logged_out"}
 
-    @app.get("/review/v0/auth/me")
+    @app.get("/review/v0/auth/me", **_resp("GET /review/v0/auth/me"))
     async def me(request: Request):
         return {"account_id": str(request.state.staff), "login_name": getattr(request.state, "login_name", None)}
 
-    @app.get("/review/v0/map-versions")
+    @app.get("/review/v0/map-versions", **_resp("GET /review/v0/map-versions"))
     async def list_versions(subject: str):
         from .snapshot import norm
         return {"items": norm(await state["kge"].list_versions(_subject(subject)))}
 
-    @app.get("/review/v0/map-versions/{version_id}/diff")
+    @app.get("/review/v0/map-versions/{version_id}/diff", **_resp("GET /review/v0/map-versions/{version_id}/diff"))
     async def diff(version_id: uuid.UUID):
         return await service.diff_view(state["kge"], version_id)
 
-    @app.patch("/review/v0/map-versions/{version_id}/nodes/{node_id}")
+    @app.patch("/review/v0/map-versions/{version_id}/nodes/{node_id}", **_resp("PATCH /review/v0/map-versions/{version_id}/nodes/{node_id}"))
     async def edit_node(version_id: uuid.UUID, node_id: str, body: NodeEdit):
         if not NODE_ID.match(node_id):
             raise ReviewError(422, "INVALID_PARAMETER", "节点 ID 格式不对")
         return {"digest": await state["kge"].edit_node(version_id, node_id, body.fields(), body.expected_digest)}
 
-    @app.post("/review/v0/map-versions/{version_id}/sign")
+    @app.post("/review/v0/map-versions/{version_id}/sign", **_resp("POST /review/v0/map-versions/{version_id}/sign"))
     async def sign(version_id: uuid.UUID, body: SignBody, request: Request):
         rid = await state["review"].sign_version(request.state.staff, version_id, body.decision, body.basis_code, body.expected_digest)
         return {"review_id": str(rid)}
 
-    @app.post("/review/v0/map-changes/{change_id}/sign")
+    @app.post("/review/v0/map-changes/{change_id}/sign", **_resp("POST /review/v0/map-changes/{change_id}/sign"))
     async def sign_change(change_id: uuid.UUID, body: ChangeSignBody, request: Request):
         return {"status": await state["review"].sign_change(request.state.staff, change_id, body.decision, body.expected_digest)}
 
-    @app.post("/review/v0/map-versions/{version_id}/publish")
+    @app.post("/review/v0/map-versions/{version_id}/publish", **_resp("POST /review/v0/map-versions/{version_id}/publish"))
     async def publish(version_id: uuid.UUID, body: PublishBody, request: Request):
         at = await state["review"].publish(request.state.staff, version_id, body.expected_digest)
         return {"published_at": at.isoformat()}
 
-    @app.post("/review/v0/map-versions/{version_id}/retire")
+    @app.post("/review/v0/map-versions/{version_id}/retire", **_resp("POST /review/v0/map-versions/{version_id}/retire"))
     async def retire(version_id: uuid.UUID, body: RetireBody, request: Request):
         await state["review"].retire(request.state.staff, version_id, body.basis_code)
         return {"status": "retired"}
 
     # ---------- 统一复核队列（冲刺 2-G） ----------
-    @app.get("/review/v0/queue")
+    @app.get("/review/v0/queue", **_resp("GET /review/v0/queue"))
     async def queue(request: Request, subject: str | None = None, status: str | None = None, reason: str | None = None,
                     limit: int = 50, before: datetime | None = None, before_id: uuid.UUID | None = None):
         if subject is not None:
@@ -419,35 +434,35 @@ def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthen
         nxt = {"before": items[-1]["created_at"], "before_id": items[-1]["id"]} if len(items) == limit else None
         return {"items": items, "next": nxt}
 
-    @app.get("/review/v0/queue/resolution-codes")
+    @app.get("/review/v0/queue/resolution-codes", **_resp("GET /review/v0/queue/resolution-codes"))
     async def resolution_codes(request: Request):
         return {"items": await state["review"].resolution_codes(request.state.staff)}
 
-    @app.get("/review/v0/queue/{task_id}")
+    @app.get("/review/v0/queue/{task_id}", **_resp("GET /review/v0/queue/{task_id}"))
     async def queue_task(task_id: uuid.UUID, request: Request):
         return await state["review"].task_detail(request.state.staff, task_id)
 
-    @app.post("/review/v0/queue/{task_id}/take")
+    @app.post("/review/v0/queue/{task_id}/take", **_resp("POST /review/v0/queue/{task_id}/take"))
     async def take(task_id: uuid.UUID, request: Request):
         await state["review"].take_task(request.state.staff, task_id)
         return {"status": "in_progress"}
 
-    @app.post("/review/v0/queue/{task_id}/release")
+    @app.post("/review/v0/queue/{task_id}/release", **_resp("POST /review/v0/queue/{task_id}/release"))
     async def release(task_id: uuid.UUID, request: Request):
         await state["review"].release_task(request.state.staff, task_id)
         return {"status": "open"}
 
-    @app.post("/review/v0/queue/{task_id}/resolve")
+    @app.post("/review/v0/queue/{task_id}/resolve", **_resp("POST /review/v0/queue/{task_id}/resolve"))
     async def resolve_task(task_id: uuid.UUID, body: ResolveBody, request: Request):
         await state["review"].resolve_task(request.state.staff, task_id, body.resolution_code)
         return {"status": "resolved"}
 
     # ---------- 编译页面（冲刺 3）：只读，列待审合并请求与对账状态，链接到托管平台网页 ----------
-    @app.get("/review/v0/pages")
+    @app.get("/review/v0/pages", **_resp("GET /review/v0/pages"))
     async def pages_list():
         return await service.pages_view(state["kge"], state["pages"])
 
-    @app.post("/review/v0/pages/sign")
+    @app.post("/review/v0/pages/sign", **_resp("POST /review/v0/pages/sign"))
     async def sign_page(body: PageSignBody, request: Request):
         """页面签字入口（PR A 待人确认 1 的默认：审核人在审核台逐个签）：只能签托管平台导出里某个合并请求的头提交，
         风险取合并请求上的标注；同一账号对同一页面同一提交只能签一次（库函数核对）。"""
@@ -457,7 +472,7 @@ def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthen
         return {"review_id": str(rid), "risk_level": mr.risk}
 
     # ---------- 低风险合并窗口的事后抽检（冲刺 4，spec 第 2 节）：固定种子抽样，结果记页面审核记录（依据 spot_check） ----------
-    @app.get("/review/v0/spot-checks")
+    @app.get("/review/v0/spot-checks", **_resp("GET /review/v0/spot-checks"))
     async def spot_checks(day: dt.date | None = None):
         today = dt.datetime.now(dt.timezone(dt.timedelta(hours=8))).date()
         d = day or today
@@ -465,7 +480,7 @@ def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthen
             raise ReviewError(422, "INVALID_PARAMETER", "不能抽检将来的日期")
         return await service.spot_check_view(state["kge"], state["pages"], state["spot"], d)
 
-    @app.post("/review/v0/spot-checks/sign")
+    @app.post("/review/v0/spot-checks/sign", **_resp("POST /review/v0/spot-checks/sign"))
     async def spot_check_sign(body: PageSignBody, request: Request):
         mr = service.spot_check_target(state["pages"], body.page_id, body.page_commit)
         service.check_not_author(state["pages"], mr, request.state.staff)  # 提交方不能抽检自己的合并
@@ -473,35 +488,35 @@ def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthen
         return {"review_id": str(rid)}
 
     # ---------- 内容版本与题目准入（冲刺 4，spec 第 7 节；迁移 0039、0042） ----------
-    @app.get("/review/v0/content-versions")
+    @app.get("/review/v0/content-versions", **_resp("GET /review/v0/content-versions"))
     async def content_versions(subject: str):
         return await service.content_versions_view(state["kge"], _subject(subject))
 
-    @app.get("/review/v0/content-versions/{cv}/diff")
+    @app.get("/review/v0/content-versions/{cv}/diff", **_resp("GET /review/v0/content-versions/{cv}/diff"))
     async def content_diff(cv: uuid.UUID):
         return await service.content_view(state["kge"], cv)
 
-    @app.post("/review/v0/content-versions/{cv}/sign")
+    @app.post("/review/v0/content-versions/{cv}/sign", **_resp("POST /review/v0/content-versions/{cv}/sign"))
     async def content_sign(cv: uuid.UUID, body: SignBody, request: Request):
         rid = await state["review"].sign_content_version(request.state.staff, cv, body.decision, body.basis_code, body.expected_digest)
         return {"review_id": str(rid)}
 
-    @app.post("/review/v0/content-versions/{cv}/publish")
+    @app.post("/review/v0/content-versions/{cv}/publish", **_resp("POST /review/v0/content-versions/{cv}/publish"))
     async def content_publish(cv: uuid.UUID, body: PublishBody, request: Request):
         at = await state["review"].publish_content_version(request.state.staff, cv, body.expected_digest)
         return {"published_at": at.isoformat()}
 
-    @app.post("/review/v0/content-versions/{cv}/retire")
+    @app.post("/review/v0/content-versions/{cv}/retire", **_resp("POST /review/v0/content-versions/{cv}/retire"))
     async def content_retire(cv: uuid.UUID, body: RetireBody, request: Request):
         await state["review"].retire_content_version(request.state.staff, cv, body.basis_code)
         return {"status": "retired"}
 
-    @app.post("/review/v0/admission/sign")
+    @app.post("/review/v0/admission/sign", **_resp("POST /review/v0/admission/sign"))
     async def admission_sign(body: AdmissionSignBody, request: Request):
         rid = await state["review"].sign_admission(request.state.staff, body.model_dump())
         return {"review_id": str(rid)}
 
-    @app.post("/review/v0/admission/apply")
+    @app.post("/review/v0/admission/apply", **_resp("POST /review/v0/admission/apply"))
     async def admission_apply(body: AdmissionApplyBody, request: Request):
         """执行准入变化（platform.change_admission）。之后的掌握重算由学习服务按执行记录做（KGE-04 learning.mastery.recompute.recompute_item）：
         审核台的两个库身份都不能写个人层，所以这里不直接重算，只返回重算的起点；学习服务以
@@ -511,26 +526,26 @@ def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthen
                 "recompute": "python -m learning.jobs admission-recompute --since " + since.isoformat()}
 
     # ---------- 考情政策线（冲刺 4，spec 第 8 节；迁移 0041） ----------
-    @app.get("/review/v0/policy")
+    @app.get("/review/v0/policy", **_resp("GET /review/v0/policy"))
     async def policy_list(city: str | None = None):
         if city is not None and not re.fullmatch(CITY, city):
             raise ReviewError(422, "INVALID_PARAMETER", "城市编码格式不对")
         return await service.policy_list_view(state["kge"], city)
 
-    @app.get("/review/v0/policy/schemes/{scheme}")
+    @app.get("/review/v0/policy/schemes/{scheme}", **_resp("GET /review/v0/policy/schemes/{scheme}"))
     async def policy_scheme(scheme: uuid.UUID):
         return await service.policy_view(state["kge"], scheme)
 
-    @app.post("/review/v0/policy/schemes/{scheme}/sign")
+    @app.post("/review/v0/policy/schemes/{scheme}/sign", **_resp("POST /review/v0/policy/schemes/{scheme}/sign"))
     async def policy_scheme_sign(scheme: uuid.UUID, body: ChangeSignBody, request: Request):
         return {"approvals": await state["review"].sign_scheme(request.state.staff, scheme, body.decision, body.expected_digest)}
 
-    @app.post("/review/v0/policy/schemes/{scheme}/publish")
+    @app.post("/review/v0/policy/schemes/{scheme}/publish", **_resp("POST /review/v0/policy/schemes/{scheme}/publish"))
     async def policy_scheme_publish(scheme: uuid.UUID, body: PublishBody, request: Request):
         at = await state["review"].publish_scheme(request.state.staff, scheme, body.expected_digest)
         return {"published_at": at.isoformat()}
 
-    @app.post("/review/v0/policy/records/{object_id}/sign")
+    @app.post("/review/v0/policy/records/{object_id}/sign", **_resp("POST /review/v0/policy/records/{object_id}/sign"))
     async def policy_record_sign(object_id: uuid.UUID, body: RecordSignBody, request: Request):
         st = await state["review"].sign_record(request.state.staff, body.object_type, object_id, body.decision, body.expected_digest)
         return {"status": st}
@@ -545,13 +560,13 @@ def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthen
             raise ReviewError(403, "SOURCE_ADMIN_REQUIRED")
         return staff
 
-    @app.get("/review/v0/policy/sources")
+    @app.get("/review/v0/policy/sources", **_resp("GET /review/v0/policy/sources"))
     async def policy_sources(request: Request):
         await _source_admin(request)
         from .snapshot import norm
         return {"items": norm(await state["kge"].source_domains())}
 
-    @app.post("/review/v0/policy/sources")
+    @app.post("/review/v0/policy/sources", **_resp("POST /review/v0/policy/sources"))
     async def policy_source_add(body: SourceAddBody, request: Request):
         staff = await _source_admin(request)
         note = body.note.strip()
@@ -560,25 +575,25 @@ def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthen
         host = await state["review"].add_source_domain(staff, body.host, note)
         return {"host": host, "status": "active"}
 
-    @app.post("/review/v0/policy/sources/retire")
+    @app.post("/review/v0/policy/sources/retire", **_resp("POST /review/v0/policy/sources/retire"))
     async def policy_source_retire(body: SourceRetireBody, request: Request):
         staff = await _source_admin(request)
         host = await state["review"].retire_source_domain(staff, body.host)
         return {"host": host, "status": "retired"}
 
-    @app.get("/review/v0/records")
+    @app.get("/review/v0/records", **_resp("GET /review/v0/records"))
     async def records(subject: str):
         return {"items": await service.version_record(state["kge"], _subject(subject))}
 
     # ---------- KGE-06 封测周修订支持（specs/kge06-weekly-revision）：开关默认关，关着不注册 ----------
     if "revision_preflight" in enabled:
-        @app.get("/review/v0/map-versions/{version_id}/preflight")
+        @app.get("/review/v0/map-versions/{version_id}/preflight", **_resp("GET /review/v0/map-versions/{version_id}/preflight"))
         async def preflight(version_id: uuid.UUID):
             """修订发布预检：结构性 / 非结构性、应升的版本号段、要几人签、版本号是否合发布规则。只给建议，不签字、不发布。"""
             return await service.preflight_view(state["kge"], version_id)
 
     if "tag_worklist" in enabled:
-        @app.get("/review/v0/tag-candidates")
+        @app.get("/review/v0/tag-candidates", **_resp("GET /review/v0/tag-candidates"))
         async def tag_candidates(subject: str, map_version_id: uuid.UUID | None = None, limit: int = 50,
                                  after_confidence: Decimal | None = None, after_id: uuid.UUID | None = None):
             """低置信工作单：待处理的打标候选（经知识服务身份读，0024 授权），置信度升序、游标翻页。"""
@@ -589,7 +604,7 @@ def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthen
             after = (after_confidence, after_id) if after_id is not None else None
             return await service.worklist_view(state["kge"], _subject(subject), map_version_id, limit, after)
 
-        @app.post("/review/v0/tag-candidates/{candidate_id}/decide")
+        @app.post("/review/v0/tag-candidates/{candidate_id}/decide", **_resp("POST /review/v0/tag-candidates/{candidate_id}/decide"))
         async def tag_decide(candidate_id: uuid.UUID, body: TagDecideBody, request: Request):
             """接受 / 驳回 / 改标。结论只经签字身份调 kge.decide_tag_candidate（库里核对 active staff，处理人记进
             platform.tag_candidate_signoff）；改标先经知识服务身份核对两条候选同版本同题同角色、都待处理。"""
@@ -607,7 +622,7 @@ def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthen
 
     # ---------- LT-06 内部成员测试运营（specs/launch-lt06-internal-test-ops）：开关默认关，关着不注册（依赖迁移 0059） ----------
     if internal_on:
-        @app.get("/review/v0/feedback")
+        @app.get("/review/v0/feedback", **_resp("GET /review/v0/feedback"))
         async def feedback_list(request: Request, status: str | None = None, limit: int = 50,
                                 before: datetime | None = None, before_id: uuid.UUID | None = None):
             """反馈只读列表：新到旧、(创建时间, id) 游标翻页；学生只给不透明指针。反馈文本只回给页面，不进日志与指标。"""
@@ -620,12 +635,12 @@ def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthen
             nxt = {"before": items[-1]["created_at"], "before_id": items[-1]["id"]} if len(items) == limit else None
             return {"items": items, "next": nxt}
 
-        @app.post("/review/v0/feedback/{feedback_id}/status")
+        @app.post("/review/v0/feedback/{feedback_id}/status", **_resp("POST /review/v0/feedback/{feedback_id}/status"))
         async def feedback_status(feedback_id: uuid.UUID, body: FeedbackStatusBody, request: Request):
             """只改状态（new / triaged / closed）；库函数核对 active staff，记改的人与时间。"""
             return {"status": await state["review"].feedback_set_status(request.state.staff, feedback_id, body.status)}
 
-        @app.get("/review/v0/internal-test/exits")
+        @app.get("/review/v0/internal-test/exits", **_resp("GET /review/v0/internal-test/exits"))
         async def internal_test_exits(request: Request, limit: int = 100):
             """退出测试的档案：退出时间、撤回的同意类型、同意是否仍有效、删除请求状态（学生只给不透明指针）。"""
             if not 1 <= limit <= 500:
