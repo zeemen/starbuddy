@@ -11,8 +11,8 @@
 
 | 优先 | 事项 | 出处 |
 |---|---|---|
-| **1** | **审阅并合并分支 `claude/busy-edison-5365e8`**（目前没开 PR）。其中两类提交首行是 `[NEEDS-HUMAN]`：PLT-23（迁移草稿 0062、0063）、PLT-24（服务间鉴权） | 各提交说明 |
-| **2** | **合并前在 Actions 手动跑一次 `scope=mutation`**（约 500 计费分钟；变异组拆分后还没在 CI 跑过）。约定：改迁移、RLS、鉴权、计量的 PR 合并前都跑 | `specs/tech-debt-batch3/lessons.md` 末节 |
+| **1** | **审阅并合并分支 `claude/busy-edison-5365e8`**（PR zeemen/starbuddy#28）。其中两类提交首行是 `[NEEDS-HUMAN]`：PLT-23（迁移草稿 0062、0063）、PLT-24（服务间鉴权） | 各提交说明 |
+| ~~2~~ | ~~合并前在 Actions 手动跑一次 `scope=mutation`~~：**已跑（2026-11-11，run 42976770389，提交 `22b07d3`，24 个 job 全部通过）**。之后再有改迁移、RLS、鉴权、计量的提交进 PR，合并前要再跑 | `specs/tech-debt-batch3/lessons.md` 末节 |
 | 3 | 合并进默认分支后 SessionStart 钩子才生效 | `blockers.md` 第一节 |
 | 4 | GitHub Actions 固定到提交哈希（防供应链） | `specs/contract-conformance-sprint1/lessons.md` 第 3 条 |
 | 5 | 契约测试依赖是否补带哈希的锁文件 | `blockers.md` 第一节 |
