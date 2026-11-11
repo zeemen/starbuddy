@@ -33,8 +33,9 @@ const once = (text: string, from: string, to: string): string => {
 
 const MUTATIONS: [string, () => [string, string]][] = [
   ['前端多一个字段', () => [once(SRC, "interface DigestReq { expected_digest: string }", "interface DigestReq { expected_digest: string; note?: string }"), JSON_TEXT]],
-  ['前端把枚举写成 string', () => [once(SRC, "  'POST /review/v0/feedback/{feedback_id}/status': { status: FeedbackStatus };",
-                                       "  'POST /review/v0/feedback/{feedback_id}/status': { status: string };"), JSON_TEXT]],
+  // 原文带上前一行：ReviewResponses 里有一行相同的反馈状态（specs/review-console-responses）
+  ['前端把枚举写成 string', () => [once(SRC, "target_id?: string };\n  'POST /review/v0/feedback/{feedback_id}/status': { status: FeedbackStatus };",
+                                       "target_id?: string };\n  'POST /review/v0/feedback/{feedback_id}/status': { status: string };"), JSON_TEXT]],
   ['前端必填写成可选', () => [once(SRC, "interface BasisReq { basis_code: string }", "interface BasisReq { basis_code?: string }"), JSON_TEXT]],
   ['前端少登记一个接口', () => [once(SRC, "  'POST /review/v0/policy/sources/retire': { host: string };\n", ""), JSON_TEXT]],
   ['调用路径与模板不符', () => [once(SRC, "`/review/v0/map-versions/${id}/retire`, body);", "`/review/v0/map-versions/${id}/retired`, body);"), JSON_TEXT]],

@@ -83,7 +83,7 @@ test('ReviewRequests 与后端导出的请求体一致：接口、字段、必�
 
 test('带请求体的调用都经 send()，路径与路由模板对得上；不再直接用 call() 发请求体', () => {
   const src = readFileSync(SRC, 'utf8');
-  const sends = [...src.matchAll(/send<[^(]*>\(\s*(?:staff|null),\s*'([A-Z]+ [^']+)',\s*(`[^`]*`|'[^']*')/g)];
+  const sends = [...src.matchAll(/\bsend(?:<[^(]*>)?\(\s*(?:staff|null),\s*'([A-Z]+ [^']+)',\s*(`[^`]*`|'[^']*')/g)];
   assert.ok(sends.length >= Object.keys(BACKEND).length, `send() 调用只找到 ${sends.length} 处`);
   const used = new Set<string>();
   for (const [, route, rawPath] of sends) {
