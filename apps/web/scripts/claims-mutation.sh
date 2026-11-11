@@ -18,6 +18,8 @@ M=(
   $'“为什么”页结论不带 data-claim-id\tapps/web/src/trust/WhyPage.tsx\t<span data-claim-id={st.claim_id}>{st.text}</span>\t<span>{st.text}</span>\ttrust-on'
   $'“为什么”页读取不可用时仍显示异议入口\tapps/web/src/trust/WhyPage.tsx\t{view && trustEnabled(\'dispute\')\n        ? <DisputePanel studentId={studentId} claimId={view.claim_id}\t{trustEnabled(\'dispute\')\n        ? <DisputePanel studentId={studentId} claimId={view?.claim_id ?? claimId}\ttrust-on'
   $'“为什么”页把待验证画成实心结论（前端不看画法）\tapps/web/src/trust/WhyPage.tsx\t{st.display === \'solid\' && st.text !== null\t{st.status !== \'refuted\'\ttrust-on'
+  $'异议表单的 data-testid 带异议类型编码（dispute-i_know）\tapps/web/src/trust/WhyPage.tsx\ttestId={`dispute-${kind.replaceAll(\'_\', \'-\')}`}\ttestId={`dispute-${kind}`}\ttrust-on'
+  $'结果区 data-code 不经 domCodes 改写（下一步编码进 DOM）\tapps/web/src/auth/ResultForm.tsx\tdata-code={state ? (domCodes && Object.hasOwn(domCodes, state.code) ? domCodes[state.code] : state.code) : \'\'}\tdata-code={state?.code ?? \'\'}\ttrust-on'
   $'家长多出只给学生的异议路\tapps/web/src/trust/view.ts\taudience === \'student\' ? [...DISPUTE_KINDS] : DISPUTE_KINDS.filter((k) => k !== \'one_off_slip\')\t[...DISPUTE_KINDS]\ttrust-on'
   $'星图把待验证的判断画成实心星\tservices/bff/src/star-map/v1.ts\tconst solid = mastery.find((c) => SOLID.has(c.status));\tconst solid = mastery.find((c) => SOLID.has(c.status) || c.status === \'to_verify\');\tstarmap-on'
 )
