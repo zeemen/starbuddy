@@ -3503,10 +3503,463 @@
      "type": "boolean"
     },
     "source": {
+     "cases": {
+      "claim": {
+       "enum": null,
+       "fields": {
+        "confidence": {
+         "enum": null,
+         "nullable": false,
+         "required": true,
+         "type": "number"
+        },
+        "created_at": {
+         "enum": null,
+         "nullable": false,
+         "required": true,
+         "type": "string"
+        },
+        "evidence_ids": {
+         "enum": null,
+         "items": {
+          "enum": null,
+          "nullable": false,
+          "type": "string"
+         },
+         "nullable": false,
+         "required": true,
+         "type": "array"
+        },
+        "model_version": {
+         "enum": null,
+         "nullable": true,
+         "required": true,
+         "type": "string"
+        },
+        "source_type": {
+         "enum": [
+          "guardian",
+          "inferred",
+          "objective",
+          "self"
+         ],
+         "nullable": false,
+         "required": true,
+         "type": "string"
+        },
+        "status": {
+         "enum": [
+          "established",
+          "hypothesis",
+          "refuted",
+          "to_verify",
+          "withdrawn"
+         ],
+         "nullable": false,
+         "required": true,
+         "type": "string"
+        },
+        "target_type": {
+         "enum": [
+          "exam",
+          "metric",
+          "node",
+          "preference",
+          "skill"
+         ],
+         "nullable": false,
+         "required": true,
+         "type": "string"
+        },
+        "template_key": {
+         "enum": null,
+         "nullable": false,
+         "required": true,
+         "type": "string"
+        },
+        "template_version": {
+         "enum": null,
+         "nullable": false,
+         "required": true,
+         "type": "integer"
+        }
+       },
+       "nullable": false,
+       "type": "object"
+      },
+      "diagnosis_step": {
+       "enum": null,
+       "fields": {
+        "answered_at": {
+         "enum": null,
+         "nullable": true,
+         "required": true,
+         "type": "string"
+        },
+        "evidence_ids": {
+         "enum": null,
+         "items": {
+          "enum": null,
+          "nullable": false,
+          "type": "string"
+         },
+         "nullable": true,
+         "required": true,
+         "type": "array"
+        },
+        "grade_result_id": {
+         "enum": null,
+         "nullable": true,
+         "required": true,
+         "type": "string"
+        },
+        "item_id": {
+         "enum": null,
+         "nullable": true,
+         "required": true,
+         "type": "string"
+        },
+        "kind": {
+         "enum": [
+          "adaptive",
+          "explain",
+          "process"
+         ],
+         "nullable": false,
+         "required": true,
+         "type": "string"
+        },
+        "node_id": {
+         "enum": null,
+         "nullable": false,
+         "required": true,
+         "type": "string"
+        },
+        "verdict": {
+         "enum": [
+          "correct",
+          "incorrect",
+          "needs_review",
+          "not_applicable",
+          "partial"
+         ],
+         "nullable": true,
+         "required": true,
+         "type": "string"
+        },
+        "work_evidence_id": {
+         "enum": null,
+         "nullable": true,
+         "required": true,
+         "type": "string"
+        }
+       },
+       "nullable": false,
+       "type": "object"
+      },
+      "error_attribution": null,
+      "grade_result": {
+       "enum": null,
+       "fields": {
+        "calibrated": {
+         "enum": null,
+         "nullable": false,
+         "required": true,
+         "type": "boolean"
+        },
+        "confidence": {
+         "enum": null,
+         "nullable": false,
+         "required": true,
+         "type": "number"
+        },
+        "created_at": {
+         "enum": null,
+         "nullable": false,
+         "required": true,
+         "type": "string"
+        },
+        "dimensions": {
+         "enum": null,
+         "items": {
+          "enum": null,
+          "fields": {
+           "confidence": {
+            "enum": null,
+            "nullable": false,
+            "required": true,
+            "type": "number"
+           },
+           "dimension_id": {
+            "enum": null,
+            "nullable": false,
+            "required": true,
+            "type": "string"
+           },
+           "evidence_ids": {
+            "enum": null,
+            "items": {
+             "enum": null,
+             "nullable": false,
+             "type": "string"
+            },
+            "nullable": false,
+            "required": true,
+            "type": "array"
+           },
+           "judged_by": {
+            "enum": [
+             "rubric_model",
+             "rubric_rule",
+             "verifier"
+            ],
+            "nullable": false,
+            "required": true,
+            "type": "string"
+           },
+           "max_score": {
+            "enum": null,
+            "nullable": false,
+            "required": true,
+            "type": "number"
+           },
+           "rule_ref": {
+            "enum": null,
+            "nullable": true,
+            "required": true,
+            "type": "string"
+           },
+           "score": {
+            "enum": null,
+            "nullable": true,
+            "required": true,
+            "type": "number"
+           },
+           "subjective": {
+            "enum": null,
+            "nullable": false,
+            "required": true,
+            "type": "boolean"
+           }
+          },
+          "nullable": false,
+          "type": "object"
+         },
+         "nullable": false,
+         "required": true,
+         "type": "array"
+        },
+        "evidence_ids": {
+         "enum": null,
+         "items": {
+          "enum": null,
+          "nullable": false,
+          "type": "string"
+         },
+         "nullable": false,
+         "required": true,
+         "type": "array"
+        },
+        "max_total": {
+         "enum": null,
+         "nullable": false,
+         "required": true,
+         "type": "number"
+        },
+        "model_version": {
+         "enum": null,
+         "nullable": false,
+         "required": true,
+         "type": "string"
+        },
+        "review_reasons": {
+         "enum": null,
+         "items": {
+          "enum": null,
+          "nullable": false,
+          "type": "string"
+         },
+         "nullable": false,
+         "required": true,
+         "type": "array"
+        },
+        "rubric_version": {
+         "enum": null,
+         "nullable": false,
+         "required": true,
+         "type": "string"
+        },
+        "score_total": {
+         "enum": null,
+         "nullable": true,
+         "required": true,
+         "type": "number"
+        },
+        "source_version": {
+         "enum": null,
+         "nullable": false,
+         "required": true,
+         "type": "string"
+        },
+        "superseded": {
+         "enum": null,
+         "nullable": false,
+         "required": true,
+         "type": "boolean"
+        },
+        "verdict": {
+         "enum": [
+          "correct",
+          "incorrect",
+          "needs_review",
+          "not_applicable",
+          "partial"
+         ],
+         "nullable": false,
+         "required": true,
+         "type": "string"
+        }
+       },
+       "nullable": false,
+       "type": "object"
+      },
+      "skill_observation": null,
+      "weekly_report": {
+       "enum": null,
+       "fields": {
+        "algorithm_version": {
+         "enum": null,
+         "nullable": false,
+         "required": true,
+         "type": "string"
+        },
+        "audience": {
+         "enum": [
+          "guardian",
+          "student"
+         ],
+         "nullable": false,
+         "required": true,
+         "type": "string"
+        },
+        "generated_at": {
+         "enum": null,
+         "nullable": false,
+         "required": true,
+         "type": "string"
+        },
+        "policy_version": {
+         "enum": null,
+         "nullable": false,
+         "required": true,
+         "type": "string"
+        },
+        "sentences": {
+         "enum": null,
+         "items": {
+          "enum": null,
+          "fields": {
+           "claim_id": {
+            "enum": null,
+            "nullable": false,
+            "required": true,
+            "type": "string"
+           },
+           "claim_revision": {
+            "enum": null,
+            "nullable": false,
+            "required": true,
+            "type": "string"
+           },
+           "confidence_band": {
+            "enum": [
+             "few_evidence",
+             "moderate",
+             "strong"
+            ],
+            "nullable": false,
+            "required": false,
+            "type": "string"
+           },
+           "label": {
+            "enum": [
+             "preliminary"
+            ],
+            "nullable": false,
+            "required": false,
+            "type": "string"
+           },
+           "section": {
+            "enum": [
+             "lit",
+             "next",
+             "prediction",
+             "progress",
+             "stuck",
+             "suggestion",
+             "working_on"
+            ],
+            "nullable": false,
+            "required": true,
+            "type": "string"
+           },
+           "template_key": {
+            "enum": null,
+            "nullable": false,
+            "required": true,
+            "type": "string"
+           },
+           "template_version": {
+            "enum": null,
+            "nullable": false,
+            "required": true,
+            "type": "integer"
+           },
+           "text": {
+            "enum": null,
+            "nullable": false,
+            "required": true,
+            "type": "string"
+           }
+          },
+          "nullable": false,
+          "type": "object"
+         },
+         "nullable": false,
+         "required": true,
+         "type": "array"
+        },
+        "status": {
+         "enum": [
+          "generated",
+          "withheld"
+         ],
+         "nullable": false,
+         "required": true,
+         "type": "string"
+        },
+        "week_end": {
+         "enum": null,
+         "nullable": false,
+         "required": true,
+         "type": "string"
+        },
+        "week_start": {
+         "enum": null,
+         "nullable": false,
+         "required": true,
+         "type": "string"
+        }
+       },
+       "nullable": false,
+       "type": "object"
+      }
+     },
      "enum": null,
      "nullable": true,
      "required": true,
-     "type": "any"
+     "tag": "source_kind",
+     "type": "tagged"
     },
     "source_id": {
      "enum": null,

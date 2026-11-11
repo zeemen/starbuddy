@@ -1,6 +1,7 @@
 """统一复核队列（冲刺 2-G）：学习服务写判分时同一事务进队、申诉进队、抽检与画像异议入队、审核台闭环。全部合成数据。"""
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -151,3 +152,40 @@ async def test_spot_check_and_profile_dispute(api, pools, pg, student, fake_adap
         assert done["source"]["template_key"] == "syn.queue.node" and "value" not in done["source"]
         async with admin.acquire() as c:
             assert await c.fetchval("SELECT status::text FROM insight.claim WHERE id = $1::uuid", claim) == "hypothesis"
+
+
+async def test_weekly_report_spot_check_detail(pools, pg, student):
+    """周报抽检（0036）：洞察服务的抽样把一份已生成的周报放进队列；详情的来源是周报快照，且通过响应模型
+    （specs/review-task-source-models：每个来源种类至少一次详情 2xx）。周报与判断都是合成数据，由超级用户写入。"""
+    _, admin = pools
+    claim = str(uuid.uuid4())
+    async with console(pg) as client:  # 建好洞察服务的登录角色
+        async with admin.acquire() as c:
+            await c.execute("""INSERT INTO insight.claim_template (template_key, version, target_type, max_visibility, max_ttl,
+                                 text_template, status, reviewed_by, reviewed_at)
+                               VALUES ('syn.queue.weekly', 1, 'node', '{agent,guardian}', '30 days', '【合成】周报句模板', 'approved', 'test-reviewer', now())
+                               ON CONFLICT DO NOTHING""")
+            await c.execute("""INSERT INTO insight.claim (id, student_id, subject, target_type, target_id, template_key, template_version,
+                                 confidence, source_type, status, change_reason, visibility, expires_at)
+                               VALUES ($1::uuid, $2::uuid, 'aya', 'node', 'K-SYN-0001', 'syn.queue.weekly', 1, 0.7, 'objective',
+                                       'established', 'created', '{agent,guardian}', now() + interval '10 days')""", claim, student)
+            week = await c.fetchval("""SELECT (now() AT TIME ZONE 'Asia/Shanghai')::date - (extract(isodow FROM (now() AT TIME ZONE 'Asia/Shanghai')::date)::int - 1) - 7""")
+            sentences = [{"claim_id": claim, "template_key": "syn.queue.weekly", "template_version": 1, "section": "progress",
+                          "text": "【合成】本周进展的一句话", "confidence_band": "moderate"}]
+            objective = {"source_type": "objective", "usage_minutes": 0, "plan_done": 0, "plan_skipped": 0, "subjects": []}
+            report = await c.fetchval(
+                """INSERT INTO insight.weekly_report (student_id, week_start, week_end, audience, status, sentences, objective,
+                                                      algorithm_version, policy_version)
+                   VALUES ($1::uuid, $2::date, $2::date + 6, 'guardian', 'generated', $3::jsonb, $4::jsonb, 'sie-weekly@0.1.1', 'syn-weekly-policy')
+                   RETURNING id::text""", student, week, json.dumps(sentences), json.dumps(objective))
+        ins = await asyncpg.connect(**pg.dsn("rq_insight_app"))
+        try:
+            await ins.fetchval("SELECT platform.review_sample_weekly_reports($1, 0.5, 5)", week)
+        finally:
+            await ins.close()
+        done = await close_loop(client, source_id=report, student_id=student, subject="aya", expect_reasons={"spot_check"},
+                                code="weekly_report_ok", wrong_code="upheld")
+        src = done["source"]
+        assert done["source_kind"] == "weekly_report" and src["audience"] == "guardian" and src["status"] == "generated"
+        assert [s["claim_id"] for s in src["sentences"]] == [claim] and src["sentences"][0]["claim_revision"]
+        assert "objective" not in src and "student_id" not in src  # 抽检不给客观栏；学生只给不透明指针

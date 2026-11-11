@@ -49,3 +49,21 @@ def test_loose_model_is_refused(monkeypatch):
 
     with pytest.raises(SystemExit, match="不是严格模型"):
         X._node(Outer.model_json_schema(mode="validation"), Outer.model_json_schema(mode="validation")["$defs"], "x")
+
+
+def test_task_source_is_tagged_by_source_kind():
+    """复核任务的来源按 source_kind 分支（specs/review-task-source-models）：有来源的四种各一个结构，能力观察与错因归因必须为空"""
+    src = X.export()["routes"]["GET /review/v0/queue/{task_id}"]["fields"]["source"]
+    assert src["type"] == "tagged" and src["tag"] == "source_kind" and src["nullable"] is True
+    assert sorted(k for k, v in src["cases"].items() if v is None) == ["error_attribution", "skill_observation"]
+    claim = src["cases"]["claim"]["fields"]
+    assert claim["template_version"]["type"] == "integer" and claim["model_version"]["nullable"] is True
+    assert src["cases"]["grade_result"]["fields"]["model_version"]["nullable"] is False
+    sentence = src["cases"]["weekly_report"]["fields"]["sentences"]["items"]["fields"]
+    assert sentence["label"] == {"required": False, "type": "string", "nullable": False, "enum": ["preliminary"]}
+
+
+def test_tag_cases_must_match_tag_enum():
+    node = {"fields": {"source_kind": {"enum": ["a", "b"]}, "source": {"required": True, "nullable": True}}}
+    with pytest.raises(SystemExit, match="分支"):
+        X._tagged(node, "source", "source_kind", {"a": None}, "x")

@@ -29,6 +29,16 @@ CASES = [
     ("kge", "tag_candidate", "grade", R.TagCandidate, "grade", "equal"),
     ("policy", "exam_scheme", "status", R.SchemeRow, "status", "equal"),
     ("policy", "source_domain", "status", R.SourceDomain, "status", "equal"),
+    # 复核任务的来源快照（specs/review-task-source-models）
+    ("platform", "grade_result", "verdict", R.GradeSource, "verdict", "equal"),
+    ("platform", "grade_result", "verdict", R.DiagnosisStepSource, "verdict", "equal"),
+    ("platform", "grade_dimension", "judged_by", R.GradeDimensionSource, "judged_by", "equal"),
+    ("platform", "diagnosis_step", "kind", R.DiagnosisStepSource, "kind", "equal"),
+    ("insight", "claim", "target_type", R.ClaimSource, "target_type", "equal"),
+    ("insight", "claim", "status", R.ClaimSource, "status", "equal"),
+    ("insight", "claim", "source_type", R.ClaimSource, "source_type", "equal"),
+    ("insight", "weekly_report", "audience", R.WeeklyReportSource, "audience", "equal"),
+    ("insight", "weekly_report", "status", R.WeeklyReportSource, "status", "equal"),
 ]
 
 
@@ -67,7 +77,7 @@ async def db_values(admin, schema: str, table: str, column: str) -> set[str]:
     return vals
 
 
-@pytest.mark.parametrize("schema,table,column,model,field,mode", CASES, ids=[f"{c[0]}.{c[1]}.{c[2]}" for c in CASES])
+@pytest.mark.parametrize("schema,table,column,model,field,mode", CASES, ids=[f"{c[0]}.{c[1]}.{c[2]}-{c[3].__name__}" for c in CASES])
 async def test_response_literal_matches_db_constraint(pools, schema, table, column, model, field, mode):
     _, admin = pools
     db = await db_values(admin, schema, table, column)

@@ -10,9 +10,9 @@
 """
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 Level = Literal["low", "medium", "high"]
 Decision = Literal["approved", "rejected"]
@@ -663,10 +663,108 @@ class QueueList(_M):
     next: Cursor | None
 
 
+# 复核任务的来源快照（platform.review_task_detail，0036 的最新定义；specs/review-task-source-models）：按 source_kind 各一种结构，
+# 能力观察与错因归因没有分支（source 为空）。可空按基表列的 NOT NULL 与库函数里的 LEFT JOIN。
+class GradeDimensionSource(_M):
+    dimension_id: str
+    score: float | None
+    max_score: float
+    judged_by: Literal["verifier", "rubric_rule", "rubric_model"]
+    subjective: bool
+    rule_ref: str | None
+    confidence: float
+    evidence_ids: list[str]
+
+
+class GradeSource(_M):
+    verdict: Literal["correct", "incorrect", "partial", "needs_review", "not_applicable"]
+    score_total: float | None
+    max_total: float
+    confidence: float
+    calibrated: bool
+    rubric_version: str
+    source_version: str
+    model_version: str
+    review_reasons: list[str]
+    evidence_ids: list[str]
+    superseded: bool
+    created_at: str
+    dimensions: list[GradeDimensionSource]
+
+
+class DiagnosisStepSource(_M):
+    """诊断步骤（0027）：结论与证据来自 LEFT JOIN 的判分，没有判分时为空；不给过程原文（审核台按证据 ID 另取，授权待人确认）"""
+    kind: Literal["adaptive", "process", "explain"]
+    node_id: str
+    item_id: str | None
+    grade_result_id: str | None
+    work_evidence_id: str | None
+    evidence_ids: list[str] | None
+    verdict: Literal["correct", "incorrect", "partial", "needs_review", "not_applicable"] | None
+    answered_at: str | None
+
+
+class ClaimSource(_M):
+    template_key: str
+    template_version: int
+    target_type: Literal["node", "skill", "metric", "exam", "preference"]
+    status: Literal["hypothesis", "established", "to_verify", "refuted", "withdrawn"]
+    confidence: float
+    source_type: Literal["inferred", "self", "guardian", "objective"]
+    model_version: str | None
+    evidence_ids: list[str]
+    created_at: str
+
+
+class WeeklySentence(_M):
+    """周报的一句（insight.valid_weekly_sentences 的键白名单）：claim_revision 由写入守卫盖上；label 只给假设；置信度分档只在家长版"""
+    claim_id: str
+    template_key: str
+    template_version: int
+    section: Literal["lit", "working_on", "next", "progress", "stuck", "suggestion", "prediction"]
+    text: str
+    claim_revision: str
+    label: Literal["preliminary"] = None
+    confidence_band: Literal["few_evidence", "moderate", "strong"] = None
+
+
+class WeeklyReportSource(_M):
+    audience: Literal["student", "guardian"]
+    week_start: str
+    week_end: str
+    status: Literal["generated", "withheld"]
+    sentences: list[WeeklySentence]
+    algorithm_version: str
+    policy_version: str
+    generated_at: str
+
+
+# 来源种类 → 来源模型（None：库函数不给来源）。导出与前端核对按这张表展开成分支结构
+SOURCE_BY_KIND: dict[str, type[_M] | None] = {
+    "grade_result": GradeSource, "diagnosis_step": DiagnosisStepSource, "claim": ClaimSource, "weekly_report": WeeklyReportSource,
+    "skill_observation": None, "error_attribution": None,
+}
+
+
 class QueueTask(QueueItem):
-    """platform.review_task_detail 的 JSON：列表行再加是否本人结案与来源快照（按来源种类结构不同，这里不展开）"""
+    """platform.review_task_detail 的 JSON：列表行再加是否本人结案与来源快照；来源按 source_kind 校验（SOURCE_BY_KIND）"""
     resolved_by_me: bool
     source: dict[str, Any] | None
+
+    # 导出脚本据此把 source 展开成按 source_kind 分支的结构
+    TAGGED: ClassVar[dict[str, tuple[str, dict[str, type[_M] | None]]]] = {"source": ("source_kind", SOURCE_BY_KIND)}
+
+    @model_validator(mode="after")
+    def _source_matches_kind(self) -> QueueTask:
+        model = SOURCE_BY_KIND[self.source_kind]
+        if model is None:
+            if self.source is not None:
+                raise ValueError(f"来源种类 {self.source_kind} 不该有来源快照")
+        elif self.source is None:
+            raise ValueError(f"来源种类 {self.source_kind} 缺来源快照")
+        else:
+            model.model_validate(self.source)
+        return self
 
 
 class ResolutionCode(_M):

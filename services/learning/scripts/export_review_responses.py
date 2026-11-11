@@ -2,8 +2,9 @@
 
 从 review_console/responses.py 的 ROUTES（每个接口的响应模型）生成 JSON schema（校验模式：带默认值的字段是“可以不给”，与路由的
 response_model_exclude_unset 一致；序列化模式会把它们标成必填，不用），归一成递归结构：
-  节点 = { "type": string | integer | number | boolean | array | object | map | any, "nullable": bool, "enum": [...] | null,
-          "items": 节点（array）, "fields": { 名: { "required": bool, ...节点 } }（object）, "values": 节点（map） }
+  节点 = { "type": string | integer | number | boolean | array | object | map | any | tagged, "nullable": bool, "enum": [...] | null,
+          "items": 节点（array）, "fields": { 名: { "required": bool, ...节点 } }（object）, "values": 节点（map），
+          "tag": 字段名, "cases": { 取值: 节点 | null }（tagged：随同一对象里另一字段的取值分支，见 _tagged） }
 写到 apps/web/src/lib/review-api.responses.json（提交进仓库）。前端测试 apps/web/tests/review-responses.test.ts 拿它与 review.ts 的
 ReviewResponses 递归比较；学习服务测试 tests/test_review_responses_export.py 核对提交的文件就是现在导出的结果。
 导出前核对：应用（全部功能打开）注册的接口集合与 ROUTES 相同，每个模型都是 extra="forbid"。
@@ -61,6 +62,23 @@ def _node(schema: dict[str, Any], defs: dict[str, Any], where: str) -> dict[str,
     raise SystemExit(f"{where}：认不出的 schema {schema}")
 
 
+def _tagged(node: dict[str, Any], field: str, tag: str, cases: dict[str, Any], where: str) -> dict[str, Any]:
+    """按另一字段（tag）分支的字段（复核任务的 source 按 source_kind，specs/review-task-source-models）：
+    { "type": "tagged", "tag": 字段名, "cases": { 取值: 节点 | null（这一支必须为空） } }；分支集合须与 tag 字段的枚举相同。"""
+    tag_enum = node["fields"][tag]["enum"]
+    if sorted(cases) != tag_enum:
+        raise SystemExit(f"{where}：分支 {sorted(cases)} 与 {tag} 的枚举 {tag_enum} 不同")
+    out: dict[str, Any] = {}
+    for value, model in sorted(cases.items()):
+        if model is None:
+            out[value] = None
+            continue
+        schema = model.model_json_schema(mode="validation")
+        out[value] = _node(schema, schema.get("$defs", {}), f"{where}[{tag}={value}]")
+    f = node["fields"][field]
+    return {"required": f["required"], "type": "tagged", "nullable": f["nullable"], "enum": None, "tag": tag, "cases": out}
+
+
 def export() -> dict[str, Any]:
     from review_console.app import create_app
     from review_console.config import FEATURES
@@ -72,7 +90,10 @@ def export() -> dict[str, Any]:
     routes: dict[str, Any] = {}
     for route, model in sorted(ROUTES.items()):
         schema = model.model_json_schema(mode="validation")
-        routes[route] = _node(schema, schema.get("$defs", {}), route)
+        node = _node(schema, schema.get("$defs", {}), route)
+        for field, (tag, cases) in getattr(model, "TAGGED", {}).items():
+            node["fields"][field] = _tagged(node, field, tag, cases, f"{route}.{field}")
+        routes[route] = node
     return {"_notice": NOTICE, "routes": routes}
 
 
