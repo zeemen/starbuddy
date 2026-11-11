@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { notFound, redirect } from 'next/navigation';
 import { ResultForm } from '../auth/ResultForm.tsx';
 import { fetchWhy } from '../lib/trust-api.ts';
-import { CONFIDENCE_BAND, DISPUTE, DISPUTE_KIND, DISPUTE_RESULT, EVIDENCE_LEVEL, EVIDENCE_SOURCE, TRUST, WHY, WHY_STATUS } from '../shell/copy.ts';
+import { CONFIDENCE_BAND, DISPUTE, DISPUTE_KIND, DISPUTE_NEXT_DOM, DISPUTE_RESULT, EVIDENCE_LEVEL, EVIDENCE_SOURCE, TRUST, WHY, WHY_STATUS } from '../shell/copy.ts';
 import { trustEnabled } from '../shell/features.ts';
 import { requireGuardian, requireOwnStudent, requireTrust } from '../shell/guard.ts';
 import { raiseDisputeAction } from './actions.ts';
@@ -69,14 +69,15 @@ function ClaimExplain({ view, audience }: { view: WhyView; audience: Audience })
   );
 }
 
-/** “我不同意”的三条路：每条一张表单（学生本人三条，家长两条）；结果只显示下一步编码映射的占位文案 */
+/** “我不同意”的三条路：每条一张表单（学生本人三条，家长两条）；结果只显示下一步编码映射的占位文案。
+ *  测试定位用的 data-testid 写成短横线（dispute-i-know）：异议类型编码原样（i_know）不进 DOM；结果的下一步编码也只给序号（DISPUTE_NEXT_DOM）（e2e/dom-leak.ts，specs/why-page-e2e 发现） */
 function DisputePanel({ studentId, claimId, audience, csrf }: { studentId: string; claimId: string; audience: Audience; csrf: string }) {
   const base = sideBase(audience, studentId);
   return (
     <section aria-labelledby="dispute-heading" data-testid="dispute-panel">
       <h2 id="dispute-heading">{DISPUTE.heading}</h2>
       {disputeKindsFor(audience).map((kind) => (
-        <ResultForm key={kind} action={raiseDisputeAction} labels={DISPUTE_RESULT} testId={`dispute-${kind}`} className="shell-form">
+        <ResultForm key={kind} action={raiseDisputeAction} labels={DISPUTE_RESULT} domCodes={DISPUTE_NEXT_DOM} testId={`dispute-${kind.replaceAll('_', '-')}`} className="shell-form">
           <input type="hidden" name="student" value={studentId} />
           <input type="hidden" name="claim" value={claimId} />
           <input type="hidden" name="kind" value={kind} />

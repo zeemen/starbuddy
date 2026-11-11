@@ -112,10 +112,18 @@ PY
 BFF_PID=$!
 # 信任界面开关打开的第二套（冲刺 5-H，e2e/trust-on.spec.ts）：同一个一次性库上另起一个 BFF（STARBUDDY_TRUST_UI 打开 dispute / reconcile /
 # weekly / data_rights，只在 STARBUDDY_ENV=test 生效）与一个前端（playwright.config.ts 的第二个 webServer，STARBUDDY_TRUST_UI 另含 why）。
-# 原来这一套开关全关，4-H“信任界面预留”验收与 e2e/trust-off.spec.ts 在它上面跑。没有洞察服务：异议提交 503，预测与对账卡读取 503。
+# 原来这一套开关全关，4-H“信任界面预留”验收与 e2e/trust-off.spec.ts 在它上面跑。
+# 洞察服务接一个合成桩（scripts/fake-insight.ts 的另一个实例，specs/why-page-e2e）：“为什么”页的单条解释与异议提交走桩
+# （GT 的六条合成判断，令牌每次随机生成、只经环境变量传）；预测与对账卡的读取 BFF 没有契约工具，仍是 503。
 TRUST_BFF_PORT="$(free_port)"
 WEB_TRUST_PORT="$(free_port)"
 TLOG="$(mktemp)"
+TFI_PORT="$(free_port)"
+TFI_CRED="$(python3 -c 'import secrets; print(secrets.token_hex(24))')"
+TFILOG="$(mktemp)"
+( export FAKE_INSIGHT_PORT="$TFI_PORT" FAKE_INSIGHT_TOKEN="$TFI_CRED"
+  exec node --no-warnings "$WEB/scripts/fake-insight.ts" ) > "$TFILOG" 2>&1 < /dev/null &
+TFI_PID=$!
 # 周报页要显示判断句：第二个 BFF 用一份把周报合成模板列进对外白名单的显示规则（BFF_SHELL_CONFIG 只在 STARBUDDY_ENV=test 认；画像可见范围
 # 的正式白名单仍是 config/shell.json 的空表，必停项）
 TRUST_SHELL_CFG="$(mktemp --suffix=.json)"
@@ -130,10 +138,11 @@ PY
   export BFF_DATABASE_URL="postgresql://bff_app@/starbuddy_test?host=$PGHOST" PORT="$TRUST_BFF_PORT" BFF_AUTH_CONFIG="$AUTH_CFG" \
     BFF_LEARNING_URL="http://127.0.0.1:$LEARNING_PORT" BFF_LEARNING_TOKEN="$SVC_CRED" BFF_LEARNING_SESSION_TOKEN="$SESS_CRED" \
     STARBUDDY_ENV=test BFF_SHELL_ORIGIN="http://127.0.0.1:$WEB_TRUST_PORT" BFF_SMS_CAPTURE_FILE="$SMS_INBOX" \
-    STARBUDDY_TRUST_UI=dispute,reconcile,weekly,data_rights BFF_SHELL_CONFIG="$TRUST_SHELL_CFG"
+    STARBUDDY_TRUST_UI=dispute,reconcile,weekly,data_rights,why BFF_SHELL_CONFIG="$TRUST_SHELL_CFG" \
+    BFF_INSIGHT_URL="http://127.0.0.1:$TFI_PORT" BFF_INSIGHT_TOKEN="$TFI_CRED"
   exec node --no-warnings src/main.ts ) > "$TLOG" 2>&1 < /dev/null &
 TRUST_BFF_PID=$!
-trap 'kill "$BFF_PID" "$TRUST_BFF_PID" "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true; rm -f "$LOG" "$TLOG" "$LLOG" "$SMS_INBOX" "$AUTH_CFG" "$TRUST_SHELL_CFG"' EXIT
+trap 'kill "$BFF_PID" "$TRUST_BFF_PID" "$TFI_PID" "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true; rm -f "$LOG" "$TLOG" "$TFILOG" "$LLOG" "$SMS_INBOX" "$AUTH_CFG" "$TRUST_SHELL_CFG"' EXIT
 # H5 星图 v1 开关打开的第三套（e2e/star-map-v1.spec.ts、e2e/visual-v1.spec.ts，playwright.config.ts 的 starmap-on 项目）：
 #   - 第二个学习服务：同一个一次性库，另带合成数学掌握配置（config/mastery/synthetic-test.json，只在 LEARNING_ENV=test 认），
 #     给星图接口 star-map/nodes 用；第一个学习服务不带掌握配置（诊断等端到端的行为不变）；
@@ -172,7 +181,7 @@ PY
     STARBUDDY_STARMAP=starmap_v1,starmap_dashed BFF_SHELL_CONFIG="$SM_SHELL_CFG"
   exec node --no-warnings src/main.ts ) > "$SMLOG" 2>&1 < /dev/null &
 SM_BFF_PID=$!
-trap 'kill "$BFF_PID" "$TRUST_BFF_PID" "$SM_BFF_PID" "$SM_LEARNING_PID" "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true; rm -f "$LOG" "$TLOG" "$SMLOG" "$LLOG" "$SMLLOG" "$SMS_INBOX" "$AUTH_CFG" "$TRUST_SHELL_CFG" "$SM_SHELL_CFG"' EXIT
+trap 'kill "$BFF_PID" "$TRUST_BFF_PID" "$TFI_PID" "$SM_BFF_PID" "$SM_LEARNING_PID" "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true; rm -f "$LOG" "$TLOG" "$TFILOG" "$SMLOG" "$LLOG" "$SMLLOG" "$SMS_INBOX" "$AUTH_CFG" "$TRUST_SHELL_CFG" "$SM_SHELL_CFG"' EXIT
 # SIE-02b 第二步 PR 2 首份报告开发演示页（e2e/first-report.spec.ts，playwright.config.ts 的 report-on 项目）：
 #   - 合成家庭 HR 与 R1 的四条合成判断（db/seeds/dev/first-report-synthetic.sql）；
 #   - 合成洞察服务桩（scripts/fake-insight.ts，只实现 insight.report / insight.explain，按契约信封返回 R1 的合成报告与解释；令牌每次随机生成，
@@ -203,7 +212,7 @@ PY
     STARBUDDY_TRUST_UI=report,why BFF_SHELL_CONFIG="$RP_SHELL_CFG" BFF_INSIGHT_URL="http://127.0.0.1:$FI_PORT" BFF_INSIGHT_TOKEN="$FI_CRED"
   exec node --no-warnings src/main.ts ) > "$RPLOG" 2>&1 < /dev/null &
 RP_BFF_PID=$!
-trap 'kill "$BFF_PID" "$TRUST_BFF_PID" "$SM_BFF_PID" "$SM_LEARNING_PID" "$RP_BFF_PID" "$FI_PID" "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true; rm -f "$LOG" "$TLOG" "$SMLOG" "$RPLOG" "$FILOG" "$LLOG" "$SMLLOG" "$SMS_INBOX" "$AUTH_CFG" "$TRUST_SHELL_CFG" "$SM_SHELL_CFG" "$RP_SHELL_CFG"' EXIT
+trap 'kill "$BFF_PID" "$TRUST_BFF_PID" "$TFI_PID" "$SM_BFF_PID" "$SM_LEARNING_PID" "$RP_BFF_PID" "$FI_PID" "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true; rm -f "$LOG" "$TLOG" "$TFILOG" "$SMLOG" "$RPLOG" "$FILOG" "$LLOG" "$SMLLOG" "$SMS_INBOX" "$AUTH_CFG" "$TRUST_SHELL_CFG" "$SM_SHELL_CFG" "$RP_SHELL_CFG"' EXIT
 # 错题再练学生端页面（specs/practice-loop-stage1 PR 4；e2e/practice.spec.ts，playwright.config.ts 的 practice-on 项目）：
 #   - 合成家庭 HP 与 P1、P2（宵禁）、P3（没有权益）（db/seeds/dev/practice-synthetic.sql，在统一壳种子之后执行）；
 #   - 合成学习服务桩（scripts/fake-learning-practice.ts，只监听 127.0.0.1，只实现 practice 的三个内部接口，按固定剧本返回合成条目、题面与判分；
@@ -285,9 +294,9 @@ FGLOG="$(mktemp)"
     BFF_INSIGHT_URL="http://127.0.0.1:$IN_PORT" BFF_INSIGHT_TOKEN="$IN_CRED"
   exec node --no-warnings src/main.ts ) > "$FGLOG" 2>&1 < /dev/null &
 FG_BFF_PID=$!
-trap 'kill "$BFF_PID" "$TRUST_BFF_PID" "$SM_BFF_PID" "$SM_LEARNING_PID" "$RP_BFF_PID" "$FI_PID" "$PR_BFF_PID" "$FL_PID" "$FG_BFF_PID" "$IN_PID" "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true; rm -f "$LOG" "$TLOG" "$SMLOG" "$RPLOG" "$FILOG" "$PRLOG" "$FLLOG" "$FL_REQLOG" "$FGLOG" "$INLOG" "$LLOG" "$SMLLOG" "$SMS_INBOX" "$AUTH_CFG" "$TRUST_SHELL_CFG" "$SM_SHELL_CFG" "$RP_SHELL_CFG" "$FG_SHELL_CFG"' EXIT
+trap 'kill "$BFF_PID" "$TRUST_BFF_PID" "$TFI_PID" "$SM_BFF_PID" "$SM_LEARNING_PID" "$RP_BFF_PID" "$FI_PID" "$PR_BFF_PID" "$FL_PID" "$FG_BFF_PID" "$IN_PID" "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true; rm -f "$LOG" "$TLOG" "$TFILOG" "$SMLOG" "$RPLOG" "$FILOG" "$PRLOG" "$FLLOG" "$FL_REQLOG" "$FGLOG" "$INLOG" "$LLOG" "$SMLLOG" "$SMS_INBOX" "$AUTH_CFG" "$TRUST_SHELL_CFG" "$SM_SHELL_CFG" "$RP_SHELL_CFG" "$FG_SHELL_CFG"' EXIT
 for _ in $(seq 1 80); do
-  python3 -c "import socket,sys; ok=all(socket.socket().connect_ex(('127.0.0.1', p)) == 0 for p in ($BFF_PORT, $TRUST_BFF_PORT, $SM_BFF_PORT, $SM_LEARNING_PORT, $RP_BFF_PORT, $FI_PORT, $PR_BFF_PORT, $FL_PORT, $FG_BFF_PORT, $IN_PORT)); sys.exit(0 if ok else 1)" && break
+  python3 -c "import socket,sys; ok=all(socket.socket().connect_ex(('127.0.0.1', p)) == 0 for p in ($BFF_PORT, $TRUST_BFF_PORT, $TFI_PORT, $SM_BFF_PORT, $SM_LEARNING_PORT, $RP_BFF_PORT, $FI_PORT, $PR_BFF_PORT, $FL_PORT, $FG_BFF_PORT, $IN_PORT)); sys.exit(0 if ok else 1)" && break
   sleep 0.25
 done
 

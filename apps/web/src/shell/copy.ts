@@ -284,6 +284,10 @@ export const DISPUTE_RESULT: Record<string, string> = {
   UNAVAILABLE: T('trust.unavailable', '暂时无法获取'),
   INTERNAL: T('trust.error.internal', '暂时无法完成，请稍后再试'),
 };
+/** 下一步编码在 DOM 里只给序号（data-code="next-1"），编码本身不进页面（specs/why-page-e2e；序号与占位键 dispute.next.N 对应） */
+export const DISPUTE_NEXT_DOM: Record<string, string> = {
+  verification_scheduled: 'next-1', observe_followups: 'next-2', open_fact_for_correction: 'next-3',
+};
 export const DISPUTE_STATUS: Record<string, string> = {
   open: T('dispute.status.1'), verifying: T('dispute.status.2'), resolved_supported: T('dispute.status.3'),
   resolved_unsupported: T('dispute.status.4'), fact_corrected: T('dispute.status.5'), rejected: T('dispute.status.6'),

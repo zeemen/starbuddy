@@ -14,6 +14,11 @@ M=(
   $'BFF 周报不再核判断状态（转为待验证的句子以实心结论露出；推翻、撤回由库的 RLS 另挡）\tservices/bff/src/http/trust-routes.ts\tAND c.status IN (\'hypothesis\', \'established\') AND c.target_type = \'node\'\tAND c.target_type = \'node\'\ttrust-on'
   $'周报句子不带 data-claim-id\tapps/web/src/trust/WeeklyPage.tsx\t<span data-claim-id={s.claim_id}>{s.text}</span>\t<span>{s.text}</span>\ttrust-on'
   $'周报句子抄进说明属性（不带判断 ID）\tapps/web/src/trust/WeeklyPage.tsx\t<span data-claim-id={s.claim_id}>{s.text}</span>\t<span data-claim-id={s.claim_id}>{s.text}</span><span aria-label={s.text} />\ttrust-on'
+  # “为什么”页（specs/why-page-e2e）：e2e/trust-on.spec.ts 的“为什么”页两条与 T21 爬取
+  $'“为什么”页结论不带 data-claim-id\tapps/web/src/trust/WhyPage.tsx\t<span data-claim-id={st.claim_id}>{st.text}</span>\t<span>{st.text}</span>\ttrust-on'
+  $'“为什么”页读取不可用时仍显示异议入口\tapps/web/src/trust/WhyPage.tsx\t{view && trustEnabled(\'dispute\')\n        ? <DisputePanel studentId={studentId} claimId={view.claim_id}\t{trustEnabled(\'dispute\')\n        ? <DisputePanel studentId={studentId} claimId={view?.claim_id ?? claimId}\ttrust-on'
+  $'“为什么”页把待验证画成实心结论（前端不看画法）\tapps/web/src/trust/WhyPage.tsx\t{st.display === \'solid\' && st.text !== null\t{st.status !== \'refuted\'\ttrust-on'
+  $'家长多出只给学生的异议路\tapps/web/src/trust/view.ts\taudience === \'student\' ? [...DISPUTE_KINDS] : DISPUTE_KINDS.filter((k) => k !== \'one_off_slip\')\t[...DISPUTE_KINDS]\ttrust-on'
   $'星图把待验证的判断画成实心星\tservices/bff/src/star-map/v1.ts\tconst solid = mastery.find((c) => SOLID.has(c.status));\tconst solid = mastery.find((c) => SOLID.has(c.status) || c.status === \'to_verify\');\tstarmap-on'
 )
 

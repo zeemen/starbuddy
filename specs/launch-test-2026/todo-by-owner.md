@@ -75,5 +75,5 @@
 | 1 月 | 试用到期当天显示、今日计划超时阈值、`insight.explain` 限频阈值 | W13 T45 |
 
 ## 七、可选 / 后续（不阻塞 12 月）
-`blockers.md` 第六节各项；审核台响应类型的核对（要先给后端补响应模型，另起任务）；端到端接上假洞察服务的 explain 与预测后补全“为什么”页的陈述—判断爬取
-（`specs/tech-debt-batch2/lessons.md` 末节）。
+`blockers.md` 第六节各项；审核台响应类型的核对（要先给后端补响应模型，另起任务）；考试预测与对账卡的端到端（要先补契约 `insight.predict` / `insight.reconcile` 给 BFF，必停；
+“为什么”页那一半已于 2026-11-11 补齐，`specs/why-page-e2e/`）。

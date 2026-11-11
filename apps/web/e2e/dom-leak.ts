@@ -14,7 +14,7 @@ import { expect, type Page } from '@playwright/test';
 import { FAMILY_RESULT } from '../src/auth/copy.ts';
 import { FAMILY_GOALS_RESULT } from '../src/family-goals/copy.ts';
 import {
-  ADJUSTMENT, CONFIDENCE_BAND, DATA_RESULT, DEVIATION_DIRECTION, DISPUTE_KIND, DISPUTE_RESULT, DISPUTE_STATUS, ERASURE_CANCEL_REASON, ERASURE_SCOPE,
+  ADJUSTMENT, CONFIDENCE_BAND, DATA_RESULT, DEVIATION_DIRECTION, DISPUTE_KIND, DISPUTE_NEXT_DOM, DISPUTE_RESULT, DISPUTE_STATUS, ERASURE_CANCEL_REASON, ERASURE_SCOPE,
   ERASURE_STATUS, EXAM_RESULT, EXAM_SUBJECT, FIRST_REPORT_SECTION, PRACTICE_ERROR, RESOURCE_LABEL, SUBJECT_LABEL, TASK_KIND, WEEKLY_SECTION, WEEKLY_SOURCE, WHY_STATUS,
 } from '../src/shell/copy.ts';
 import { TRUST_FEATURES } from '../src/shell/features.ts';
@@ -70,10 +70,10 @@ export const ATTRS: Record<string, Rule> = {
   'source-type': ['objective', 'self'],                               // 周报：使用记录 objective、学生自己标记的计划栏 self（0057）
   'weekly-objective': [''], 'weekly-self-marked': [''], 'report-verify': [''],
   display: ['solid', 'dashed'],
-  // 表单结果码（BFF 错误码与本地结果；异议的下一步编码不放行）
+  // 表单结果码（BFF 错误码与本地结果；异议的下一步编码不放行，只放行它的序号 next-1…3）
   // （家长诉求页的结果码 FAMILY_GOALS_RESULT，PLT-14 第 1 步）
   code: ['', ...new Set([...keys(DISPUTE_RESULT), ...keys(EXAM_RESULT), ...keys(DATA_RESULT), ...keys(FAMILY_RESULT),
-                         ...keys(FAMILY_GOALS_RESULT)])].filter((k) => !FORBIDDEN_SET.has(k)),
+                         ...keys(FAMILY_GOALS_RESULT), ...Object.values(DISPUTE_NEXT_DOM)])].filter((k) => !FORBIDDEN_SET.has(k)),
   state: [...keys(ERASURE_STATUS), 'trialing', 'active', 'grace', 'retained', 'none'],
   frozen: BOOL, within: BOOL, 'pending-review': BOOL, retained: BOOL,
   'direction-index': /^[1-4]$/,                                        // 偏差方向只给序号，编码不进 DOM

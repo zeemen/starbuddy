@@ -44,7 +44,10 @@ INSERT INTO insight.claim (id, student_id, subject, target_type, target_id, temp
   ('5d000000-0000-4000-8000-0000000000f4', '5d000000-0000-4000-8000-0000000000c1', 'aya', 'node', 'MATH.FUNC.QUAD.VERTEX',
    'syn.weekly.node_mastery', 1, '{"gate": "execute"}', 0.8, 'objective', 'established', 'created', '{agent,student,guardian}', now() + interval '30 days'),
   ('5d000000-0000-4000-8000-0000000000f5', '5d000000-0000-4000-8000-0000000000c1', 'aya', 'node', 'MATH.FUNC.QUAD.SHIFT',
-   'syn.weekly.node_mastery', 1, '{"gate": "transfer"}', 0.8, 'objective', 'established', 'created', '{agent,student,guardian}', now() + interval '30 days');
+   'syn.weekly.node_mastery', 1, '{"gate": "transfer"}', 0.8, 'objective', 'established', 'created', '{agent,student,guardian}', now() + interval '30 days'),
+  -- f6（specs/why-page-e2e）：不进周报；端到端的假洞察服务对它的 insight.explain 回 503，核对“为什么”页的读取不可用降级
+  ('5d000000-0000-4000-8000-0000000000f6', '5d000000-0000-4000-8000-0000000000c1', 'aya', 'node', 'MATH.FUNC.QUAD.DOMAIN',
+   'syn.weekly.node_mastery', 1, '{"gate": "execute"}', 0.6, 'objective', 'established', 'created', '{agent,student,guardian}', now() + interval '30 days');
 INSERT INTO insight.weekly_report (student_id, week_start, week_end, audience, status, sentences, objective, algorithm_version, policy_version)
 SELECT '5d000000-0000-4000-8000-0000000000c1', w, w + 6, a, 'generated',
        jsonb_build_array(
