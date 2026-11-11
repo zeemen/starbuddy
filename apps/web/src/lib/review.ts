@@ -764,7 +764,8 @@ export interface GradeSource {
 
 export interface ClaimSource {
   template_key: string;
-  template_version: string;
+  /** 整数（insight.claim.template_version） */
+  template_version: number;
   target_type: string;
   status: string;
   confidence: number;
@@ -775,24 +776,51 @@ export interface ClaimSource {
 }
 
 /** 诊断步骤（0027 过程观察）：步骤引用、判分引用与过程原文证据的引用（work_evidence_id）。
- *  审核台后端的库角色目前读不到证据表，原文显示“待授权”（specs/sie-02a-math-diagnosis/lessons.md 待人确认） */
+ *  库函数不给过程原文（审核台后端的库角色读不到证据表），页面显示“待授权”（specs/sie-02a-math-diagnosis/lessons.md 待人确认）；
+ *  进复核队列的只有 process / explain，adaptive 是库里的第三种步骤（类型与库约束一致） */
 export interface DiagnosisStepSource {
-  kind: 'process' | 'explain';
+  kind: 'adaptive' | 'process' | 'explain';
   node_id: string;
   item_id: string | null;
   grade_result_id: string | null;
   work_evidence_id: string | null;
-  /** 过程原文（审核台后端取到时才有；授权前恒为空） */
-  work_text?: string | null;
   evidence_ids: string[] | null;
   verdict: string | null;
   answered_at: string | null;
 }
 
-export interface QueueTask extends QueueItem {
-  resolved_by_me: boolean;
-  source: GradeSource | ClaimSource | DiagnosisStepSource | null;
+/** 周报的一句（insight.valid_weekly_sentences）：label 只给假设；置信度分档只在家长版 */
+export interface WeeklySentence {
+  claim_id: string;
+  template_key: string;
+  template_version: number;
+  section: 'lit' | 'working_on' | 'next' | 'progress' | 'stuck' | 'suggestion' | 'prediction';
+  text: string;
+  claim_revision: string;
+  label?: 'preliminary';
+  confidence_band?: 'few_evidence' | 'moderate' | 'strong';
 }
+
+/** 周报抽检（0036）的来源：受众、周、渲染句、算法与策略版本（不给客观栏）。页面暂不展开（specs/review-task-source-models 待人确认 2） */
+export interface WeeklyReportSource {
+  audience: 'student' | 'guardian';
+  week_start: string;
+  week_end: string;
+  status: 'generated' | 'withheld';
+  sentences: WeeklySentence[];
+  algorithm_version: string;
+  policy_version: string;
+  generated_at: string;
+}
+
+/** 复核任务详情：来源的结构随 source_kind 定（后端 responses.SOURCE_BY_KIND）；能力观察与错因归因没有来源 */
+type QueueTaskOf<K extends SourceKind, S> = Omit<QueueItem, 'source_kind'> & { source_kind: K; resolved_by_me: boolean; source: S };
+export type QueueTask =
+  | QueueTaskOf<'grade_result', GradeSource>
+  | QueueTaskOf<'diagnosis_step', DiagnosisStepSource>
+  | QueueTaskOf<'claim', ClaimSource>
+  | QueueTaskOf<'weekly_report', WeeklyReportSource>
+  | QueueTaskOf<'skill_observation' | 'error_attribution', null>;
 
 export interface ResolutionCode {
   code: string;

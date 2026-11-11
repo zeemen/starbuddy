@@ -4,7 +4,7 @@
 //   标量种类一致（integer / number 都对 number）；数组比元素；map（dict[str, T]）对 Record<string, T>；
 //   枚举：后端有枚举时前端要么是宽泛的 string，要么是取值完全相同的字面量联合（响应是前端接收，取值少了就漏处理，多了是过期）；
 //   后端没有枚举时前端不能写成字面量联合（前端以为窄，后端并不保证）。
-//   后端 any（差异的旧值 / 新值、变更单签字内容、复核任务来源快照）不往下比。
+//   后端 any（差异的旧值 / 新值、变更单签字内容）不往下比；复核任务的来源按 source_kind 分支（tagged），前端须是同样分支的联合类型。
 // 另核对：所有调用都经 send() / fetchRoute()，路径与路由模板对得上；不再有 call<T>() 直接调用。
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -17,13 +17,18 @@ const SRC = process.env['REVIEW_RESPONSES_SRC'] ?? `${WEB}src/lib/review.ts`;
 const JSON_PATH = process.env['REVIEW_RESPONSES_JSON'] ?? `${WEB}src/lib/review-api.responses.json`;
 
 interface Node {
-  type: 'string' | 'integer' | 'number' | 'boolean' | 'array' | 'object' | 'map' | 'any';
+  /** null 只出现在 tagged 的分支里（这一支的字段必须为空） */
+  type: 'string' | 'integer' | 'number' | 'boolean' | 'array' | 'object' | 'map' | 'any' | 'tagged' | 'null';
   nullable: boolean;
   enum: string[] | null;
   items?: Node;
   values?: Node;
   fields?: Record<string, Node & { required: boolean }>;
+  /** tagged：随同一对象里 tag 字段的取值分支（复核任务的 source 按 source_kind，specs/review-task-source-models） */
+  tag?: string;
+  cases?: Record<string, Node | null>;
 }
+type Field = Node & { required: boolean };
 const BACKEND = (JSON.parse(readFileSync(JSON_PATH, 'utf8')) as { routes: Record<string, Node> }).routes;
 
 function program(): { checker: ts.TypeChecker; decl: ts.InterfaceDeclaration } {
@@ -42,6 +47,10 @@ function compare(checker: ts.TypeChecker, t: ts.Type, b: Node, where: string, ou
   const hasNull = parts.some((x) => x.flags & ts.TypeFlags.Null);
   const core = parts.filter((x) => !(x.flags & (ts.TypeFlags.Null | ts.TypeFlags.Undefined)));
   if (b.type === 'any') return;  // 自由结构：不往下比
+  if (b.type === 'null') {
+    if (core.length > 0 || !hasNull) out.push(`${where}：这一支后端恒为空，前端应为 null，现为 ${checker.typeToString(t)}`);
+    return;
+  }
   if (hasNull !== b.nullable) out.push(`${where}：可空不一致（后端 nullable=${b.nullable}）`);
   if (core.length === 0) { out.push(`${where}：前端只有 null`); return; }
   if (core.some((x) => x.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown))) {
@@ -81,25 +90,58 @@ function compare(checker: ts.TypeChecker, t: ts.Type, b: Node, where: string, ou
       return;
     }
     case 'object': {
+      const tagged = Object.entries(b.fields!).find(([, f]) => f.type === 'tagged');
+      if (tagged) { compareTagged(checker, core, b.fields!, tagged[0], tagged[1], where, out); return; }
       if (core.length !== 1 || !(core[0]!.flags & ts.TypeFlags.Object) || checker.isArrayType(core[0]!)) {
         out.push(`${where}：后端是对象，前端是 ${checker.typeToString(t)}`);
         return;
       }
-      const props = checker.getPropertiesOfType(core[0]!);
-      const front = new Set(props.map((p) => p.name));
-      const back = new Set(Object.keys(b.fields!));
-      for (const n of back) if (!front.has(n)) out.push(`${where}.${n}：前端缺这个字段`);
-      for (const n of front) if (!back.has(n)) out.push(`${where}.${n}：后端没有这个字段`);
-      for (const p of props) {
-        const f = b.fields![p.name];
-        if (!f) continue;
-        const optional = (p.flags & ts.SymbolFlags.Optional) !== 0;
-        if (optional === f.required) out.push(`${where}.${p.name}：必填不一致（后端 required=${f.required}）`);
-        compare(checker, checker.getTypeOfSymbol(p), f, `${where}.${p.name}`, out);  // 可选带来的 undefined 在 compare 里去掉
-      }
+      compareObject(checker, core[0]!, b.fields!, where, out);
       return;
     }
+    case 'tagged':
+      out.push(`${where}：分支字段只能出现在对象里`);
+      return;
   }
+}
+
+/** 对象逐字段比；skip 是只核对有无与必填、不比类型的字段（tagged 分支里的 tag 字段，取值另核） */
+function compareObject(checker: ts.TypeChecker, t: ts.Type, fields: Record<string, Field>, where: string, out: string[], skip?: string): void {
+  const props = checker.getPropertiesOfType(t);
+  const front = new Set(props.map((p) => p.name));
+  const back = new Set(Object.keys(fields));
+  for (const n of back) if (!front.has(n)) out.push(`${where}.${n}：前端缺这个字段`);
+  for (const n of front) if (!back.has(n)) out.push(`${where}.${n}：后端没有这个字段`);
+  for (const p of props) {
+    const f = fields[p.name];
+    if (!f) continue;
+    const optional = (p.flags & ts.SymbolFlags.Optional) !== 0;
+    if (optional === f.required) out.push(`${where}.${p.name}：必填不一致（后端 required=${f.required}）`);
+    if (p.name !== skip) compare(checker, checker.getTypeOfSymbol(p), f, `${where}.${p.name}`, out);  // 可选带来的 undefined 在 compare 里去掉
+  }
+}
+
+/** 按 tag 分支的对象：前端必须是联合类型，每一支的 tag 是字面量，各支的 tag 取值合起来恰好是后端的分支集合，
+ *  每一支按“其余字段 + 这一支的分支字段”逐字段比 */
+function compareTagged(checker: ts.TypeChecker, members: ts.Type[], fields: Record<string, Field>, field: string, tf: Field,
+                       where: string, out: string[]): void {
+  const tag = tf.tag!;
+  const covered = new Set<string>();
+  for (const m of members) {
+    const sym = checker.getPropertyOfType(m, tag);
+    const tt = sym ? checker.getTypeOfSymbol(sym) : undefined;
+    const values = tt ? (tt.isUnion() ? tt.types : [tt]).filter((x) => x.isStringLiteral()).map((x) => (x as ts.StringLiteralType).value) : [];
+    if (values.length === 0) { out.push(`${where}：联合的一支没有 ${tag} 字面量（${checker.typeToString(m)}）`); continue; }
+    for (const v of values) {
+      if (covered.has(v)) out.push(`${where}[${tag}=${v}]：前端有重复的分支`);
+      covered.add(v);
+      if (!Object.hasOwn(tf.cases!, v)) { out.push(`${where}[${tag}=${v}]：后端没有这个分支`); continue; }
+      const c = tf.cases![v]!;
+      const branch: Field = c === null ? { required: tf.required, type: 'null', nullable: true, enum: null } : { ...c, required: tf.required };
+      compareObject(checker, m, { ...fields, [field]: branch }, `${where}[${tag}=${v}]`, out, tag);
+    }
+  }
+  for (const v of Object.keys(tf.cases!)) if (!covered.has(v)) out.push(`${where}[${tag}=${v}]：前端没有这个分支`);
 }
 
 function differences(): string[] {

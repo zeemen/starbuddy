@@ -39,6 +39,11 @@ const MUTATIONS: [string, () => [string, string]][] = [
   ['后端没有枚举，前端写成字面量联合', () => [once(SRC, '  id: string;\n  level: string;\n  parent_id', "  id: string;\n  level: 'leaf' | 'branch';\n  parent_id"), JSON_TEXT]],
   ['少登记一个接口', () => [once(SRC, "  'POST /review/v0/queue/{task_id}/release': StatusOut;\n", ''), JSON_TEXT]],
   ['调用路径与模板不符', () => [once(SRC, '`/review/v0/queue/${id}/release`', '`/review/v0/queue/${id}/released`'), JSON_TEXT]],
+  // 复核任务来源按 source_kind 分支（specs/review-task-source-models）
+  ['来源某一支少字段', () => [once(SRC, '  policy_version: string;\n  generated_at: string;\n}', '  policy_version: string;\n}'), JSON_TEXT]],
+  ['来源某一支可空写错', () => [once(SRC, '  source_type: string;\n  model_version: string | null;', '  source_type: string;\n  model_version: string;'), JSON_TEXT]],
+  ['来源少一个分支', () => [once(SRC, "  | QueueTaskOf<'weekly_report', WeeklyReportSource>\n", ''), JSON_TEXT]],
+  ['恒为空的分支写成有来源', () => [once(SRC, "QueueTaskOf<'skill_observation' | 'error_attribution', null>", "QueueTaskOf<'skill_observation' | 'error_attribution', GradeSource>"), JSON_TEXT]],
   ['导出文件过期（后端加了必填字段）', () => {
     const doc = JSON.parse(JSON_TEXT) as { routes: Record<string, { fields: Record<string, unknown> }> };
     doc.routes['POST /review/v0/pages/sign']!.fields['reason'] = { required: true, type: 'string', nullable: false, enum: null };
