@@ -1,0 +1,4486 @@
+{
+ "_notice": "由 services/learning/scripts/export_review_responses.py 从审核台响应模型导出，不要手改（specs/review-console-responses）",
+ "routes": {
+  "GET /review/v0/auth/me": {
+   "enum": null,
+   "fields": {
+    "account_id": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    },
+    "login_name": {
+     "enum": null,
+     "nullable": true,
+     "required": true,
+     "type": "string"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "GET /review/v0/content-versions": {
+   "enum": null,
+   "fields": {
+    "items": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "fields": {
+       "content_version": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "exam_year": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "integer"
+       },
+       "grade": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "integer"
+       },
+       "id": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "items": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "integer"
+       },
+       "map_version_id": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "published_at": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "region": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "retired_at": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "six_segment": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "skill_nodes": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "integer"
+       },
+       "status": {
+        "enum": [
+         "draft",
+         "published",
+         "retired"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "subject": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "textbook_version": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       }
+      },
+      "nullable": false,
+      "type": "object"
+     },
+     "nullable": false,
+     "required": true,
+     "type": "array"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "GET /review/v0/content-versions/{cv}/diff": {
+   "enum": null,
+   "fields": {
+    "base_version": {
+     "enum": null,
+     "fields": {
+      "content_version": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "id": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "status": {
+       "enum": [
+        "draft",
+        "published",
+        "retired"
+       ],
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      }
+     },
+     "nullable": true,
+     "required": true,
+     "type": "object"
+    },
+    "changes": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "fields": {
+       "field": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "key": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "new": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "any"
+       },
+       "object": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "old": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "any"
+       },
+       "op": {
+        "enum": [
+         "added",
+         "changed",
+         "deprecated",
+         "reactivated",
+         "removed"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "risk": {
+        "enum": null,
+        "fields": {
+         "level": {
+          "enum": [
+           "high",
+           "low",
+           "medium"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+         },
+         "reason": {
+          "enum": null,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+         },
+         "review_level": {
+          "enum": [
+           "high",
+           "low",
+           "medium"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+         },
+         "structural": {
+          "enum": null,
+          "nullable": false,
+          "required": true,
+          "type": "boolean"
+         }
+        },
+        "nullable": false,
+        "required": true,
+        "type": "object"
+       }
+      },
+      "nullable": false,
+      "type": "object"
+     },
+     "nullable": false,
+     "required": true,
+     "type": "array"
+    },
+    "checks": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "fields": {
+       "check_name": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "detail": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "severity": {
+        "enum": [
+         "error",
+         "warning"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       }
+      },
+      "nullable": false,
+      "type": "object"
+     },
+     "nullable": false,
+     "required": true,
+     "type": "array"
+    },
+    "digest": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    },
+    "items": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "fields": {
+       "admission": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "admission_digest": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "item_id": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "license_status": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "skill_local_id": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "source_ref": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "source_type": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       }
+      },
+      "nullable": false,
+      "type": "object"
+     },
+     "nullable": false,
+     "required": true,
+     "type": "array"
+    },
+    "map_version": {
+     "enum": null,
+     "fields": {
+      "id": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "status": {
+       "enum": [
+        "draft",
+        "published",
+        "retired"
+       ],
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "subject": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "version": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      }
+     },
+     "nullable": true,
+     "required": true,
+     "type": "object"
+    },
+    "pending_admissions": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "fields": {
+       "action": {
+        "enum": [
+         "apply",
+         "publish",
+         "retire",
+         "review"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "affected_rubric_versions": {
+        "enum": null,
+        "items": {
+         "enum": null,
+         "nullable": false,
+         "type": "string"
+        },
+        "nullable": true,
+        "required": true,
+        "type": "array"
+       },
+       "applies_review_id": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "basis_code": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "content_version": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "curriculum_version_id": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "decided_at": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "decision": {
+        "enum": [
+         "approved",
+         "rejected"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "digest": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "exam_year": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "integer"
+       },
+       "from_admission": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "grade": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "integer"
+       },
+       "id": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "item_id": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "line": {
+        "enum": [
+         "admission",
+         "content_version"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "map_version_id": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "region": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "review_level": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "signer": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "textbook_version": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "to_admission": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       }
+      },
+      "nullable": false,
+      "type": "object"
+     },
+     "nullable": false,
+     "required": true,
+     "type": "array"
+    },
+    "records": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "fields": {
+       "action": {
+        "enum": [
+         "apply",
+         "publish",
+         "retire",
+         "review"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "affected_rubric_versions": {
+        "enum": null,
+        "items": {
+         "enum": null,
+         "nullable": false,
+         "type": "string"
+        },
+        "nullable": true,
+        "required": true,
+        "type": "array"
+       },
+       "applies_review_id": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "basis_code": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "content_version": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "curriculum_version_id": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "decided_at": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "decision": {
+        "enum": [
+         "approved",
+         "rejected"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "digest": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "exam_year": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "integer"
+       },
+       "from_admission": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "grade": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "integer"
+       },
+       "id": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "item_id": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "line": {
+        "enum": [
+         "admission",
+         "content_version"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "map_version_id": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "region": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "review_level": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "signer": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "textbook_version": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "to_admission": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       }
+      },
+      "nullable": false,
+      "type": "object"
+     },
+     "nullable": false,
+     "required": true,
+     "type": "array"
+    },
+    "summary": {
+     "enum": null,
+     "fields": {
+      "admission_changes": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "integer"
+      },
+      "counts": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "map",
+       "values": {
+        "enum": null,
+        "nullable": false,
+        "type": "integer"
+       }
+      },
+      "latest_decision": {
+       "enum": [
+        "approved",
+        "rejected"
+       ],
+       "nullable": true,
+       "required": true,
+       "type": "string"
+      },
+      "latest_matches": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "boolean"
+      },
+      "level": {
+       "enum": [
+        "high",
+        "low",
+        "medium"
+       ],
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "ready": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "boolean"
+      },
+      "required_signers": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "integer"
+      },
+      "review_level": {
+       "enum": [
+        "high",
+        "low",
+        "medium"
+       ],
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      }
+     },
+     "nullable": false,
+     "required": true,
+     "type": "object"
+    },
+    "version": {
+     "enum": null,
+     "fields": {
+      "content_version": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "exam_year": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "integer"
+      },
+      "grade": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "integer"
+      },
+      "id": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "map_version_id": {
+       "enum": null,
+       "nullable": true,
+       "required": true,
+       "type": "string"
+      },
+      "published_at": {
+       "enum": null,
+       "nullable": true,
+       "required": true,
+       "type": "string"
+      },
+      "region": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "retired_at": {
+       "enum": null,
+       "nullable": true,
+       "required": true,
+       "type": "string"
+      },
+      "six_segment": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "status": {
+       "enum": [
+        "draft",
+        "published",
+        "retired"
+       ],
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "subject": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "textbook_version": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      }
+     },
+     "nullable": false,
+     "required": true,
+     "type": "object"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "GET /review/v0/feedback": {
+   "enum": null,
+   "fields": {
+    "items": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "fields": {
+       "body": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "category": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "created_at": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "id": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "route_template": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "source": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "status": {
+        "enum": [
+         "closed",
+         "new",
+         "triaged"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "status_changed_at": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "student_ref": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       }
+      },
+      "nullable": false,
+      "type": "object"
+     },
+     "nullable": false,
+     "required": true,
+     "type": "array"
+    },
+    "next": {
+     "enum": null,
+     "fields": {
+      "before": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "before_id": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      }
+     },
+     "nullable": true,
+     "required": true,
+     "type": "object"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "GET /review/v0/internal-test/exits": {
+   "enum": null,
+   "fields": {
+    "items": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "fields": {
+       "consent_active": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "boolean"
+       },
+       "consents_revoked": {
+        "enum": null,
+        "items": {
+         "enum": null,
+         "nullable": false,
+         "type": "string"
+        },
+        "nullable": false,
+        "required": true,
+        "type": "array"
+       },
+       "erased": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "boolean"
+       },
+       "erasure_status": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "exited_at": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "sessions_revoked": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "integer"
+       },
+       "student_ref": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       }
+      },
+      "nullable": false,
+      "type": "object"
+     },
+     "nullable": false,
+     "required": true,
+     "type": "array"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "GET /review/v0/map-versions": {
+   "enum": null,
+   "fields": {
+    "items": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "fields": {
+       "created_at": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "id": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "published_at": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "standard_year": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "integer"
+       },
+       "status": {
+        "enum": [
+         "draft",
+         "published",
+         "retired"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "subject": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "version": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       }
+      },
+      "nullable": false,
+      "type": "object"
+     },
+     "nullable": false,
+     "required": true,
+     "type": "array"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "GET /review/v0/map-versions/{version_id}/diff": {
+   "enum": null,
+   "fields": {
+    "base_version": {
+     "enum": null,
+     "nullable": true,
+     "required": true,
+     "type": "string"
+    },
+    "base_version_id": {
+     "enum": null,
+     "nullable": true,
+     "required": true,
+     "type": "string"
+    },
+    "change_requests": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "fields": {
+       "change_type": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "created_at": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "digest": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "id": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "risk": {
+        "enum": null,
+        "fields": {
+         "level": {
+          "enum": [
+           "high",
+           "low",
+           "medium"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+         },
+         "reason": {
+          "enum": null,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+         },
+         "review_level": {
+          "enum": [
+           "high",
+           "low",
+           "medium"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+         },
+         "structural": {
+          "enum": null,
+          "nullable": false,
+          "required": true,
+          "type": "boolean"
+         }
+        },
+        "nullable": false,
+        "required": true,
+        "type": "object"
+       },
+       "signed_content": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "any"
+       },
+       "status": {
+        "enum": [
+         "applied",
+         "approved",
+         "proposed",
+         "rejected"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       }
+      },
+      "nullable": false,
+      "type": "object"
+     },
+     "nullable": false,
+     "required": true,
+     "type": "array"
+    },
+    "changes": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "fields": {
+       "field": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "issues": {
+        "enum": null,
+        "items": {
+         "enum": null,
+         "fields": {
+          "check_name": {
+           "enum": null,
+           "nullable": false,
+           "required": true,
+           "type": "string"
+          },
+          "detail": {
+           "enum": null,
+           "nullable": false,
+           "required": true,
+           "type": "string"
+          },
+          "object_id": {
+           "enum": null,
+           "nullable": false,
+           "required": true,
+           "type": "string"
+          },
+          "severity": {
+           "enum": [
+            "error",
+            "warning"
+           ],
+           "nullable": false,
+           "required": true,
+           "type": "string"
+          }
+         },
+         "nullable": false,
+         "type": "object"
+        },
+        "nullable": false,
+        "required": true,
+        "type": "array"
+       },
+       "key": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "new": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "any"
+       },
+       "object": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "old": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "any"
+       },
+       "op": {
+        "enum": [
+         "added",
+         "changed",
+         "deprecated",
+         "reactivated",
+         "removed"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "risk": {
+        "enum": null,
+        "fields": {
+         "level": {
+          "enum": [
+           "high",
+           "low",
+           "medium"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+         },
+         "reason": {
+          "enum": null,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+         },
+         "review_level": {
+          "enum": [
+           "high",
+           "low",
+           "medium"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+         },
+         "structural": {
+          "enum": null,
+          "nullable": false,
+          "required": true,
+          "type": "boolean"
+         }
+        },
+        "nullable": false,
+        "required": true,
+        "type": "object"
+       },
+       "rubric_version": {
+        "enum": null,
+        "nullable": false,
+        "required": false,
+        "type": "string"
+       }
+      },
+      "nullable": false,
+      "type": "object"
+     },
+     "nullable": false,
+     "required": true,
+     "type": "array"
+    },
+    "digest": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    },
+    "impact": {
+     "enum": null,
+     "fields": {
+      "item_tags": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "integer"
+      },
+      "scoring_points": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "integer"
+      }
+     },
+     "nullable": false,
+     "required": true,
+     "type": "object"
+    },
+    "nodes": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "fields": {
+       "cognitive_levels": {
+        "enum": null,
+        "items": {
+         "enum": null,
+         "nullable": false,
+         "type": "string"
+        },
+        "nullable": false,
+        "required": true,
+        "type": "array"
+       },
+       "error_type": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "examples": {
+        "enum": null,
+        "items": {
+         "enum": null,
+         "nullable": false,
+         "type": "string"
+        },
+        "nullable": false,
+        "required": true,
+        "type": "array"
+       },
+       "excludes": {
+        "enum": null,
+        "items": {
+         "enum": null,
+         "nullable": false,
+         "type": "string"
+        },
+        "nullable": false,
+        "required": true,
+        "type": "array"
+       },
+       "id": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "includes": {
+        "enum": null,
+        "items": {
+         "enum": null,
+         "nullable": false,
+         "type": "string"
+        },
+        "nullable": false,
+        "required": true,
+        "type": "array"
+       },
+       "kind": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "level": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "name": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "parent_id": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "scope": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "status": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       }
+      },
+      "nullable": false,
+      "type": "object"
+     },
+     "nullable": false,
+     "required": true,
+     "type": "array"
+    },
+    "signoffs": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "fields": {
+       "action": {
+        "enum": [
+         "publish",
+         "retire",
+         "review"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "basis_code": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "decided_at": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "decision": {
+        "enum": [
+         "approved",
+         "rejected"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "digest": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "map_version_id": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "risk_level": {
+        "enum": [
+         "high",
+         "low",
+         "medium"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "signer": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "version": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       }
+      },
+      "nullable": false,
+      "type": "object"
+     },
+     "nullable": false,
+     "required": true,
+     "type": "array"
+    },
+    "summary": {
+     "enum": null,
+     "fields": {
+      "approvals": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "integer"
+      },
+      "counts": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "map",
+       "values": {
+        "enum": null,
+        "nullable": false,
+        "type": "integer"
+       }
+      },
+      "latest_decision": {
+       "enum": [
+        "approved",
+        "rejected"
+       ],
+       "nullable": true,
+       "required": true,
+       "type": "string"
+      },
+      "latest_matches": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "boolean"
+      },
+      "level": {
+       "enum": [
+        "high",
+        "low",
+        "medium"
+       ],
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "required_signers": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "integer"
+      },
+      "review_level": {
+       "enum": [
+        "high",
+        "low",
+        "medium"
+       ],
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "structural": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "boolean"
+      }
+     },
+     "nullable": false,
+     "required": true,
+     "type": "object"
+    },
+    "unattached_issues": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "fields": {
+       "check_name": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "detail": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "object_id": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "severity": {
+        "enum": [
+         "error",
+         "warning"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       }
+      },
+      "nullable": false,
+      "type": "object"
+     },
+     "nullable": false,
+     "required": true,
+     "type": "array"
+    },
+    "validation": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "fields": {
+       "check_name": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "detail": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "object_id": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "severity": {
+        "enum": [
+         "error",
+         "warning"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       }
+      },
+      "nullable": false,
+      "type": "object"
+     },
+     "nullable": false,
+     "required": true,
+     "type": "array"
+    },
+    "version": {
+     "enum": null,
+     "fields": {
+      "created_at": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "id": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "published_at": {
+       "enum": null,
+       "nullable": true,
+       "required": true,
+       "type": "string"
+      },
+      "standard_year": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "integer"
+      },
+      "status": {
+       "enum": [
+        "draft",
+        "published",
+        "retired"
+       ],
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "subject": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "version": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      }
+     },
+     "nullable": false,
+     "required": true,
+     "type": "object"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "GET /review/v0/map-versions/{version_id}/preflight": {
+   "enum": null,
+   "fields": {
+    "advice": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "fields": {
+       "code": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "detail": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       }
+      },
+      "nullable": false,
+      "type": "object"
+     },
+     "nullable": false,
+     "required": true,
+     "type": "array"
+    },
+    "base_version": {
+     "enum": null,
+     "nullable": true,
+     "required": true,
+     "type": "string"
+    },
+    "base_version_id": {
+     "enum": null,
+     "nullable": true,
+     "required": true,
+     "type": "string"
+    },
+    "bump": {
+     "enum": [
+      "initial",
+      "minor",
+      "patch"
+     ],
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    },
+    "counts": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "map",
+     "values": {
+      "enum": null,
+      "nullable": false,
+      "type": "integer"
+     }
+    },
+    "digest": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    },
+    "draft_version": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    },
+    "impact": {
+     "enum": null,
+     "fields": {
+      "item_tags": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "integer"
+      },
+      "scoring_points": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "integer"
+      }
+     },
+     "nullable": false,
+     "required": true,
+     "type": "object"
+    },
+    "latest_version": {
+     "enum": null,
+     "nullable": true,
+     "required": true,
+     "type": "string"
+    },
+    "note": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    },
+    "problems": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "fields": {
+       "code": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "detail": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       }
+      },
+      "nullable": false,
+      "type": "object"
+     },
+     "nullable": false,
+     "required": true,
+     "type": "array"
+    },
+    "required_signers": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "integer"
+    },
+    "risk_level": {
+     "enum": [
+      "high",
+      "low",
+      "medium"
+     ],
+     "nullable": true,
+     "required": true,
+     "type": "string"
+    },
+    "signoff": {
+     "enum": null,
+     "fields": {
+      "approvals": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "integer"
+      },
+      "enough": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "boolean"
+      },
+      "latest_decision": {
+       "enum": [
+        "approved",
+        "rejected"
+       ],
+       "nullable": true,
+       "required": true,
+       "type": "string"
+      },
+      "latest_matches": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "boolean"
+      },
+      "required": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "integer"
+      }
+     },
+     "nullable": false,
+     "required": true,
+     "type": "object"
+    },
+    "structural": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "boolean"
+    },
+    "structural_reasons": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "fields": {
+       "key": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "object": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "op": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "reason": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "source": {
+        "enum": [
+         "change_request",
+         "diff"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       }
+      },
+      "nullable": false,
+      "type": "object"
+     },
+     "nullable": false,
+     "required": true,
+     "type": "array"
+    },
+    "suggested_version": {
+     "enum": null,
+     "nullable": true,
+     "required": true,
+     "type": "string"
+    },
+    "validation_errors": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "integer"
+    },
+    "version": {
+     "enum": null,
+     "fields": {
+      "created_at": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "id": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "published_at": {
+       "enum": null,
+       "nullable": true,
+       "required": true,
+       "type": "string"
+      },
+      "standard_year": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "integer"
+      },
+      "status": {
+       "enum": [
+        "draft",
+        "published",
+        "retired"
+       ],
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "subject": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "version": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      }
+     },
+     "nullable": false,
+     "required": true,
+     "type": "object"
+    },
+    "version_ok": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "boolean"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "GET /review/v0/pages": {
+   "enum": null,
+   "fields": {
+    "branch": {
+     "enum": null,
+     "nullable": false,
+     "required": false,
+     "type": "string"
+    },
+    "configured": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "boolean"
+    },
+    "exported_at": {
+     "enum": null,
+     "nullable": false,
+     "required": false,
+     "type": "string"
+    },
+    "format": {
+     "enum": null,
+     "nullable": false,
+     "required": false,
+     "type": "string"
+    },
+    "held_pages": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "nullable": false,
+      "type": "string"
+     },
+     "nullable": false,
+     "required": false,
+     "type": "array"
+    },
+    "merged": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "fields": {
+       "approvals_platform": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "integer"
+       },
+       "approvals_review": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "integer"
+       },
+       "head_commit": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "merge_commit": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "mr_id": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "page_id": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "problems": {
+        "enum": null,
+        "items": {
+         "enum": null,
+         "nullable": false,
+         "type": "string"
+        },
+        "nullable": false,
+        "required": false,
+        "type": "array"
+       },
+       "required": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "integer"
+       },
+       "risk": {
+        "enum": [
+         "high",
+         "low",
+         "medium"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "state": {
+        "enum": [
+         "merged",
+         "open"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "status": {
+        "enum": [
+         "failed",
+         "ok"
+        ],
+        "nullable": false,
+        "required": false,
+        "type": "string"
+       },
+       "url": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       }
+      },
+      "nullable": false,
+      "type": "object"
+     },
+     "nullable": false,
+     "required": false,
+     "type": "array"
+    },
+    "ok": {
+     "enum": null,
+     "nullable": false,
+     "required": false,
+     "type": "boolean"
+    },
+    "orphans": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "fields": {
+       "blocking": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "boolean"
+       },
+       "page_commit": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "page_id": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "problems": {
+        "enum": null,
+        "items": {
+         "enum": null,
+         "nullable": false,
+         "type": "string"
+        },
+        "nullable": false,
+        "required": true,
+        "type": "array"
+       },
+       "records": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "integer"
+       }
+      },
+      "nullable": false,
+      "type": "object"
+     },
+     "nullable": false,
+     "required": false,
+     "type": "array"
+    },
+    "pending": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "fields": {
+       "approvals_platform": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "integer"
+       },
+       "approvals_review": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "integer"
+       },
+       "head_commit": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "merge_commit": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "mr_id": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "page_id": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "problems": {
+        "enum": null,
+        "items": {
+         "enum": null,
+         "nullable": false,
+         "type": "string"
+        },
+        "nullable": false,
+        "required": false,
+        "type": "array"
+       },
+       "required": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "integer"
+       },
+       "risk": {
+        "enum": [
+         "high",
+         "low",
+         "medium"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "state": {
+        "enum": [
+         "merged",
+         "open"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "status": {
+        "enum": [
+         "failed",
+         "ok"
+        ],
+        "nullable": false,
+        "required": false,
+        "type": "string"
+       },
+       "url": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       }
+      },
+      "nullable": false,
+      "type": "object"
+     },
+     "nullable": false,
+     "required": false,
+     "type": "array"
+    },
+    "repository": {
+     "enum": null,
+     "nullable": false,
+     "required": false,
+     "type": "string"
+    },
+    "superseded": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "fields": {
+       "head_commit": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "merge_commit": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "mr_id": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "page_id": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       }
+      },
+      "nullable": false,
+      "type": "object"
+     },
+     "nullable": false,
+     "required": false,
+     "type": "array"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "GET /review/v0/policy": {
+   "enum": null,
+   "fields": {
+    "drafts": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "fields": {
+       "approvals": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "integer"
+       },
+       "city": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "cohort": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "integer"
+       },
+       "digest": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "id": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "label": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "object_type": {
+        "enum": [
+         "admission_line",
+         "control_line",
+         "school",
+         "source_document"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       }
+      },
+      "nullable": false,
+      "type": "object"
+     },
+     "nullable": false,
+     "required": true,
+     "type": "array"
+    },
+    "schemes": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "fields": {
+       "city": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "cohort": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "integer"
+       },
+       "created_at": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "id": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "published_at": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "source_document_id": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "status": {
+        "enum": [
+         "draft",
+         "published",
+         "retired"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "version": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       }
+      },
+      "nullable": false,
+      "type": "object"
+     },
+     "nullable": false,
+     "required": true,
+     "type": "array"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "GET /review/v0/policy/schemes/{scheme}": {
+   "enum": null,
+   "fields": {
+    "batches": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "fields": {
+       "batch_code": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "batch_order": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "integer"
+       },
+       "control_line_basis": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "track": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       }
+      },
+      "nullable": false,
+      "type": "object"
+     },
+     "nullable": false,
+     "required": true,
+     "type": "array"
+    },
+    "diff_previous_cohort": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "fields": {
+       "field": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "key": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "new": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "any"
+       },
+       "object": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "old": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "any"
+       },
+       "op": {
+        "enum": [
+         "added",
+         "changed",
+         "deprecated",
+         "reactivated",
+         "removed"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "risk": {
+        "enum": null,
+        "fields": {
+         "level": {
+          "enum": [
+           "high",
+           "low",
+           "medium"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+         },
+         "reason": {
+          "enum": null,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+         },
+         "review_level": {
+          "enum": [
+           "high",
+           "low",
+           "medium"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+         },
+         "structural": {
+          "enum": null,
+          "nullable": false,
+          "required": true,
+          "type": "boolean"
+         }
+        },
+        "nullable": false,
+        "required": true,
+        "type": "object"
+       }
+      },
+      "nullable": false,
+      "type": "object"
+     },
+     "nullable": false,
+     "required": true,
+     "type": "array"
+    },
+    "diff_previous_version": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "fields": {
+       "field": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "key": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "new": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "any"
+       },
+       "object": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "old": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "any"
+       },
+       "op": {
+        "enum": [
+         "added",
+         "changed",
+         "deprecated",
+         "reactivated",
+         "removed"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "risk": {
+        "enum": null,
+        "fields": {
+         "level": {
+          "enum": [
+           "high",
+           "low",
+           "medium"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+         },
+         "reason": {
+          "enum": null,
+          "nullable": false,
+          "required": true,
+          "type": "string"
+         },
+         "review_level": {
+          "enum": [
+           "high",
+           "low",
+           "medium"
+          ],
+          "nullable": false,
+          "required": true,
+          "type": "string"
+         },
+         "structural": {
+          "enum": null,
+          "nullable": false,
+          "required": true,
+          "type": "boolean"
+         }
+        },
+        "nullable": false,
+        "required": true,
+        "type": "object"
+       }
+      },
+      "nullable": false,
+      "type": "object"
+     },
+     "nullable": false,
+     "required": true,
+     "type": "array"
+    },
+    "digest": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    },
+    "previous_cohort": {
+     "enum": null,
+     "fields": {
+      "city": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "cohort": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "integer"
+      },
+      "id": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "published_at": {
+       "enum": null,
+       "nullable": true,
+       "required": true,
+       "type": "string"
+      },
+      "source_document_id": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "status": {
+       "enum": [
+        "draft",
+        "published",
+        "retired"
+       ],
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "version": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      }
+     },
+     "nullable": true,
+     "required": true,
+     "type": "object"
+    },
+    "previous_version": {
+     "enum": null,
+     "fields": {
+      "city": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "cohort": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "integer"
+      },
+      "id": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "published_at": {
+       "enum": null,
+       "nullable": true,
+       "required": true,
+       "type": "string"
+      },
+      "source_document_id": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "status": {
+       "enum": [
+        "draft",
+        "published",
+        "retired"
+       ],
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "version": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      }
+     },
+     "nullable": true,
+     "required": true,
+     "type": "object"
+    },
+    "records": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "fields": {
+       "action": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "city": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "cohort": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "integer"
+       },
+       "decision": {
+        "enum": [
+         "approved",
+         "rejected"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "digest": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "object_id": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "object_type": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "signed_at": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "signer": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "version": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       }
+      },
+      "nullable": false,
+      "type": "object"
+     },
+     "nullable": false,
+     "required": true,
+     "type": "array"
+    },
+    "scheme": {
+     "enum": null,
+     "fields": {
+      "city": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "cohort": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "integer"
+      },
+      "id": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "published_at": {
+       "enum": null,
+       "nullable": true,
+       "required": true,
+       "type": "string"
+      },
+      "source_document_id": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "status": {
+       "enum": [
+        "draft",
+        "published",
+        "retired"
+       ],
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "version": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      }
+     },
+     "nullable": false,
+     "required": true,
+     "type": "object"
+    },
+    "subjects": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "fields": {
+       "combined_group": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "duration_minutes": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "integer"
+       },
+       "eligibility_effect": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "exam_form": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "exam_month": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "integer"
+       },
+       "full_score": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "proposition": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "scored": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "boolean"
+       },
+       "subject": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "taken_in_grade": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "integer"
+       }
+      },
+      "nullable": false,
+      "type": "object"
+     },
+     "nullable": false,
+     "required": true,
+     "type": "array"
+    },
+    "summary": {
+     "enum": null,
+     "fields": {
+      "approvals": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "integer"
+      },
+      "counts": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "map",
+       "values": {
+        "enum": null,
+        "nullable": false,
+        "type": "integer"
+       }
+      },
+      "level": {
+       "enum": [
+        "high",
+        "low",
+        "medium"
+       ],
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "required_signers": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "integer"
+      },
+      "review_level": {
+       "enum": [
+        "high",
+        "low",
+        "medium"
+       ],
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      }
+     },
+     "nullable": false,
+     "required": true,
+     "type": "object"
+    },
+    "total": {
+     "enum": null,
+     "nullable": true,
+     "required": true,
+     "type": "string"
+    },
+    "transitions": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "fields": {
+       "change_kind": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "replaces_scheme_id": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       }
+      },
+      "nullable": false,
+      "type": "object"
+     },
+     "nullable": false,
+     "required": true,
+     "type": "array"
+    },
+    "validation": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "fields": {
+       "check_name": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "detail": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "object_id": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "severity": {
+        "enum": [
+         "error",
+         "warning"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       }
+      },
+      "nullable": false,
+      "type": "object"
+     },
+     "nullable": false,
+     "required": true,
+     "type": "array"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "GET /review/v0/policy/sources": {
+   "enum": null,
+   "fields": {
+    "items": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "fields": {
+       "added_at": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "host": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "issuer": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "status": {
+        "enum": [
+         "active",
+         "retired"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       }
+      },
+      "nullable": false,
+      "type": "object"
+     },
+     "nullable": false,
+     "required": true,
+     "type": "array"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "GET /review/v0/queue": {
+   "enum": null,
+   "fields": {
+    "items": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "fields": {
+       "assigned": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "boolean"
+       },
+       "assigned_at": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "assigned_to_me": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "boolean"
+       },
+       "created_at": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "id": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "reasons": {
+        "enum": null,
+        "items": {
+         "enum": null,
+         "nullable": false,
+         "type": "string"
+        },
+        "nullable": false,
+        "required": true,
+        "type": "array"
+       },
+       "resolution_code": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "resolved_at": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "source_id": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "source_kind": {
+        "enum": [
+         "claim",
+         "diagnosis_step",
+         "error_attribution",
+         "grade_result",
+         "skill_observation"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "status": {
+        "enum": [
+         "in_progress",
+         "open",
+         "resolved"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "student_ref": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "subject": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       }
+      },
+      "nullable": false,
+      "type": "object"
+     },
+     "nullable": false,
+     "required": true,
+     "type": "array"
+    },
+    "next": {
+     "enum": null,
+     "fields": {
+      "before": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "before_id": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      }
+     },
+     "nullable": true,
+     "required": true,
+     "type": "object"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "GET /review/v0/queue/resolution-codes": {
+   "enum": null,
+   "fields": {
+    "items": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "fields": {
+       "applies_to": {
+        "enum": null,
+        "items": {
+         "enum": null,
+         "nullable": false,
+         "type": "string"
+        },
+        "nullable": false,
+        "required": true,
+        "type": "array"
+       },
+       "code": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "label": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       }
+      },
+      "nullable": false,
+      "type": "object"
+     },
+     "nullable": false,
+     "required": true,
+     "type": "array"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "GET /review/v0/queue/{task_id}": {
+   "enum": null,
+   "fields": {
+    "assigned": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "boolean"
+    },
+    "assigned_at": {
+     "enum": null,
+     "nullable": true,
+     "required": true,
+     "type": "string"
+    },
+    "assigned_to_me": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "boolean"
+    },
+    "created_at": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    },
+    "id": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    },
+    "reasons": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "nullable": false,
+      "type": "string"
+     },
+     "nullable": false,
+     "required": true,
+     "type": "array"
+    },
+    "resolution_code": {
+     "enum": null,
+     "nullable": true,
+     "required": true,
+     "type": "string"
+    },
+    "resolved_at": {
+     "enum": null,
+     "nullable": true,
+     "required": true,
+     "type": "string"
+    },
+    "resolved_by_me": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "boolean"
+    },
+    "source": {
+     "enum": null,
+     "nullable": true,
+     "required": true,
+     "type": "any"
+    },
+    "source_id": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    },
+    "source_kind": {
+     "enum": [
+      "claim",
+      "diagnosis_step",
+      "error_attribution",
+      "grade_result",
+      "skill_observation"
+     ],
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    },
+    "status": {
+     "enum": [
+      "in_progress",
+      "open",
+      "resolved"
+     ],
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    },
+    "student_ref": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    },
+    "subject": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "GET /review/v0/records": {
+   "enum": null,
+   "fields": {
+    "items": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "fields": {
+       "action": {
+        "enum": [
+         "apply",
+         "publish",
+         "retire",
+         "review"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "admission_review_level": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "basis_code": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "city": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "cohort": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "integer"
+       },
+       "content_map_version_id": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "content_version_id": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "decided_at": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "decision": {
+        "enum": [
+         "approved",
+         "rejected"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "digest": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "from_admission": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "item_id": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "line": {
+        "enum": [
+         "admission",
+         "content_version",
+         "map",
+         "page",
+         "policy"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "map_version_id": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "page_commit": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "page_id": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "policy_object": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "policy_object_id": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "policy_version": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "risk_level": {
+        "enum": [
+         "high",
+         "low",
+         "medium"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "rubric_versions": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "signer": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "six_segment": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "to_admission": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "validation_errors": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "integer"
+       },
+       "validation_warnings": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "integer"
+       },
+       "version": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       }
+      },
+      "nullable": false,
+      "type": "object"
+     },
+     "nullable": false,
+     "required": true,
+     "type": "array"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "GET /review/v0/spot-checks": {
+   "enum": null,
+   "fields": {
+    "basis_code": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    },
+    "candidates": {
+     "enum": null,
+     "nullable": false,
+     "required": false,
+     "type": "integer"
+    },
+    "configured": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "boolean"
+    },
+    "day": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    },
+    "ratio": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "number"
+    },
+    "sampled": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "fields": {
+       "checks": {
+        "enum": null,
+        "items": {
+         "enum": null,
+         "fields": {
+          "decided_at": {
+           "enum": null,
+           "nullable": false,
+           "required": true,
+           "type": "string"
+          },
+          "decision": {
+           "enum": [
+            "approved",
+            "rejected"
+           ],
+           "nullable": false,
+           "required": true,
+           "type": "string"
+          },
+          "signer": {
+           "enum": null,
+           "nullable": false,
+           "required": true,
+           "type": "string"
+          }
+         },
+         "nullable": false,
+         "type": "object"
+        },
+        "nullable": false,
+        "required": true,
+        "type": "array"
+       },
+       "head_commit": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "mr_id": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "page_id": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "url": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       }
+      },
+      "nullable": false,
+      "type": "object"
+     },
+     "nullable": false,
+     "required": false,
+     "type": "array"
+    },
+    "warnings": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "nullable": false,
+      "type": "string"
+     },
+     "nullable": false,
+     "required": true,
+     "type": "array"
+    },
+    "window": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "GET /review/v0/tag-candidates": {
+   "enum": null,
+   "fields": {
+    "items": {
+     "enum": null,
+     "items": {
+      "enum": null,
+      "fields": {
+       "alternatives": {
+        "enum": null,
+        "items": {
+         "enum": null,
+         "fields": {
+          "confidence": {
+           "enum": null,
+           "nullable": false,
+           "required": true,
+           "type": "string"
+          },
+          "id": {
+           "enum": null,
+           "nullable": false,
+           "required": true,
+           "type": "string"
+          },
+          "layer": {
+           "enum": null,
+           "nullable": false,
+           "required": true,
+           "type": "string"
+          },
+          "node_id": {
+           "enum": null,
+           "nullable": false,
+           "required": true,
+           "type": "string"
+          },
+          "node_name": {
+           "enum": null,
+           "nullable": true,
+           "required": true,
+           "type": "string"
+          }
+         },
+         "nullable": false,
+         "type": "object"
+        },
+        "nullable": false,
+        "required": true,
+        "type": "array"
+       },
+       "confidence": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "created_at": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "grade": {
+        "enum": [
+         "A",
+         "B"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "id": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "item_id": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "item_source_kind": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "layer": {
+        "enum": [
+         "model",
+         "rule",
+         "vector"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "map_status": {
+        "enum": [
+         "draft",
+         "published",
+         "retired"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "map_version_id": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "model_version": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "node_id": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "node_level": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "node_name": {
+        "enum": null,
+        "nullable": true,
+        "required": true,
+        "type": "string"
+       },
+       "reason_code": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "role": {
+        "enum": [
+         "main",
+         "secondary"
+        ],
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "status": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "subject": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "tagger_version": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       },
+       "version": {
+        "enum": null,
+        "nullable": false,
+        "required": true,
+        "type": "string"
+       }
+      },
+      "nullable": false,
+      "type": "object"
+     },
+     "nullable": false,
+     "required": true,
+     "type": "array"
+    },
+    "next": {
+     "enum": null,
+     "fields": {
+      "after_confidence": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      },
+      "after_id": {
+       "enum": null,
+       "nullable": false,
+       "required": true,
+       "type": "string"
+      }
+     },
+     "nullable": true,
+     "required": true,
+     "type": "object"
+    },
+    "open_total": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "integer"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "PATCH /review/v0/map-versions/{version_id}/nodes/{node_id}": {
+   "enum": null,
+   "fields": {
+    "digest": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "POST /review/v0/admission/apply": {
+   "enum": null,
+   "fields": {
+    "applied": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "integer"
+    },
+    "recompute": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    },
+    "recompute_since": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "POST /review/v0/admission/sign": {
+   "enum": null,
+   "fields": {
+    "review_id": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "POST /review/v0/auth/login": {
+   "enum": null,
+   "fields": {
+    "token": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "POST /review/v0/auth/logout": {
+   "enum": null,
+   "fields": {
+    "status": {
+     "enum": [
+      "logged_out"
+     ],
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "POST /review/v0/content-versions/{cv}/publish": {
+   "enum": null,
+   "fields": {
+    "published_at": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "POST /review/v0/content-versions/{cv}/retire": {
+   "enum": null,
+   "fields": {
+    "status": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "POST /review/v0/content-versions/{cv}/sign": {
+   "enum": null,
+   "fields": {
+    "review_id": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "POST /review/v0/feedback/{feedback_id}/status": {
+   "enum": null,
+   "fields": {
+    "status": {
+     "enum": [
+      "closed",
+      "new",
+      "triaged"
+     ],
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "POST /review/v0/map-changes/{change_id}/sign": {
+   "enum": null,
+   "fields": {
+    "status": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "POST /review/v0/map-versions/{version_id}/publish": {
+   "enum": null,
+   "fields": {
+    "published_at": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "POST /review/v0/map-versions/{version_id}/retire": {
+   "enum": null,
+   "fields": {
+    "status": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "POST /review/v0/map-versions/{version_id}/sign": {
+   "enum": null,
+   "fields": {
+    "review_id": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "POST /review/v0/pages/sign": {
+   "enum": null,
+   "fields": {
+    "review_id": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    },
+    "risk_level": {
+     "enum": [
+      "high",
+      "low",
+      "medium"
+     ],
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "POST /review/v0/policy/records/{object_id}/sign": {
+   "enum": null,
+   "fields": {
+    "status": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "POST /review/v0/policy/schemes/{scheme}/publish": {
+   "enum": null,
+   "fields": {
+    "published_at": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "POST /review/v0/policy/schemes/{scheme}/sign": {
+   "enum": null,
+   "fields": {
+    "approvals": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "integer"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "POST /review/v0/policy/sources": {
+   "enum": null,
+   "fields": {
+    "host": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    },
+    "status": {
+     "enum": [
+      "active",
+      "retired"
+     ],
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "POST /review/v0/policy/sources/retire": {
+   "enum": null,
+   "fields": {
+    "host": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    },
+    "status": {
+     "enum": [
+      "active",
+      "retired"
+     ],
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "POST /review/v0/queue/{task_id}/release": {
+   "enum": null,
+   "fields": {
+    "status": {
+     "enum": [
+      "in_progress",
+      "open",
+      "resolved"
+     ],
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "POST /review/v0/queue/{task_id}/resolve": {
+   "enum": null,
+   "fields": {
+    "status": {
+     "enum": [
+      "in_progress",
+      "open",
+      "resolved"
+     ],
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "POST /review/v0/queue/{task_id}/take": {
+   "enum": null,
+   "fields": {
+    "status": {
+     "enum": [
+      "in_progress",
+      "open",
+      "resolved"
+     ],
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "POST /review/v0/spot-checks/sign": {
+   "enum": null,
+   "fields": {
+    "review_id": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  },
+  "POST /review/v0/tag-candidates/{candidate_id}/decide": {
+   "enum": null,
+   "fields": {
+    "decided_by": {
+     "enum": null,
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    },
+    "decision": {
+     "enum": [
+      "accept",
+      "reject",
+      "relabel"
+     ],
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    },
+    "status": {
+     "enum": [
+      "recorded",
+      "written"
+     ],
+     "nullable": false,
+     "required": true,
+     "type": "string"
+    }
+   },
+   "nullable": false,
+   "type": "object"
+  }
+ }
+}
