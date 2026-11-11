@@ -161,10 +161,11 @@ RS_PURE: dict[str, list[tuple[str, str, str]]] = {
                          "    scope: str\n    cognitive_levels: list[str]\n")],
     "响应枚举加取值不导出": [(RS, 'Level = Literal["low", "medium", "high"]', 'Level = Literal["low", "medium", "high", "critical"]')],
 }
-RS_DB_TESTS = ["tests/test_review_console.py"]  # test_review_pages.py 有一条要读知识服务代码，临时副本里没有
+RS_DB_TESTS = ["tests/test_review_console.py", "tests/test_review_responses_enums.py"]  # test_review_pages.py 有一条要读知识服务代码，临时副本里没有
 RS_DB: dict[str, list[tuple[str, str, str]]] = {
     "服务层多拼一个键": [(SV, '        "signoffs": signoffs,\n    })', '        "signoffs": signoffs,\n        "debug": True,\n    })')],
     "有时不给的字段改必填": [(RS, "    rubric_version: str = None", "    rubric_version: str")],
+    "响应枚举漏掉库里的取值": [(RS, ', "diagnosis_step", "weekly_report"]', ', "diagnosis_step"]')],
 }
 
 

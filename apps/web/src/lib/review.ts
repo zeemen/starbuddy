@@ -717,7 +717,7 @@ export type QueueReason = (typeof QUEUE_REASONS)[number];
 export const isQueueReason = (s: string): s is QueueReason => (QUEUE_REASONS as readonly string[]).includes(s);
 /** 结案码与后端白名单表的格式一致（码是否在白名单、是否适用由库函数核对） */
 export const isResolutionCode = (s: string): boolean => /^[a-z0-9_]{1,48}$/.test(s);
-export type SourceKind = 'grade_result' | 'skill_observation' | 'error_attribution' | 'claim' | 'diagnosis_step';
+export type SourceKind = 'grade_result' | 'skill_observation' | 'error_attribution' | 'claim' | 'diagnosis_step' | 'weekly_report';
 
 export interface QueueItem {
   id: string;
@@ -963,7 +963,7 @@ export const QUEUE_REASON_LABEL: Record<QueueReason, string> = {
 export const QUEUE_STATUS_LABEL: Record<QueueStatus, string> = { open: '待处理', in_progress: '处理中', resolved: '已结案' };
 export const SOURCE_KIND_LABEL: Record<SourceKind, string> = {
   grade_result: '判分', skill_observation: '能力观察', error_attribution: '错因归因', claim: '判断（画像异议）',
-  diagnosis_step: '诊断步骤（过程观察）',
+  diagnosis_step: '诊断步骤（过程观察）', weekly_report: '周报（抽检）',
 };
 export const JUDGED_BY_LABEL: Record<string, string> = { verifier: '验证器', rubric_rule: 'Rubric 规则', rubric_model: 'Rubric 模型' };
 export const VERDICT_LABEL: Record<string, string> = {

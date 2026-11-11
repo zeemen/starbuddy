@@ -638,7 +638,8 @@ class SpotCheckView(_M):
 # ---------------------------------------------------------------- 复核队列
 
 QueueStatus = Literal["open", "in_progress", "resolved"]
-SourceKind = Literal["grade_result", "skill_observation", "error_attribution", "claim", "diagnosis_step"]
+# 与 platform.review_task 的 source_kind CHECK 一致（0036 加了周报抽检；tests/test_review_responses_enums.py 连库核对）
+SourceKind = Literal["grade_result", "skill_observation", "error_attribution", "claim", "diagnosis_step", "weekly_report"]
 
 
 class QueueItem(_M):
