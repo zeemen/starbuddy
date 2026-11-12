@@ -540,6 +540,12 @@ SM=(
   $'OTP：staging 不核对登记的同意版本\tsrc/http/routes.ts\t  if (env !== \'staging\') return true;\t  return true;'
   $'OTP：BFF_HOST 收任意地址\tsrc/http/config.ts\t  if (!privateIpv4(raw)) throw new Error\t  if (false) throw new Error'
   $'OTP：staging 开 starmap_dashed\tsrc/star-map/features.ts\t  if (outside.length > 0) throw new Error(`STARBUDDY_STARMAP\t  if (false) throw new Error(`STARBUDDY_STARMAP'
+  # 前端白名单与取值出处（specs/web-bff-enum-drift）：这几条跑 tests/enum-drift.integration.test.ts（BFFMUT_FILTER=枚举：）；
+  # 副本里另复制 apps/web/src 与 packages/contracts/openapi，变异改的是副本
+  $'枚举：前端白名单少一个取值\t../../apps/web/src/trust/view.ts\t\'fact_corrected\', \'rejected\', \'withdrawn\'];\t\'fact_corrected\', \'rejected\'];'
+  $'枚举：前端白名单多一个取值\t../../apps/web/src/trust/view.ts\t\'mock2\', \'other\'] as const;\t\'mock2\', \'quiz\', \'other\'] as const;'
+  $'枚举：出处多一个取值（契约）\t../../packages/contracts/openapi/insight-service.v0.9.yaml\t                  description: 置信度说明的编码，由前端按模板展示。\\n                  enum: [few_evidence, moderate, strong]\t                  description: 置信度说明的编码，由前端按模板展示。\\n                  enum: [few_evidence, moderate, strong, very_strong]'
+  $'枚举：BFF 转写的常量与契约不一致\tsrc/trust/clients.ts\t\'calculation_slip\', \'diagnosis_optimistic\'] as const;\t\'calculation_slip\'] as const;'
   # LT-03 健康端点（src/http/health.ts）：这几条跑 tests/health.test.ts（BFFMUT_FILTER=健康：）
   $'健康：就绪不查库\tsrc/http/server.ts\t  const ready = cachedReady(() => poolReady(deps.pool), opts.readyCacheMs, Date.now, (ok) => { lastReady = ok; });\t  const ready = async () => { lastReady = true; return true; };'
   $'健康：就绪不限时\tsrc/http/health.ts\t    return await Promise.race([work, timeout]);\t    return await work;'
@@ -666,6 +672,7 @@ star_run() {  # $1 副本根目录，$2 变异名（“计量：”开头的跑�
   [[ "${2:-}" == 月度计划：* ]] && tests="tests/monthly-plan-units.test.ts tests/monthly-plan.integration.test.ts tests/shell-openapi.test.ts"
   [[ "${2:-}" == 闸门：* ]] && tests="tests/subject-gate-units.test.ts tests/subject-gate.integration.test.ts tests/shell-openapi.test.ts"
   [[ "${2:-}" == 健康：* ]] && tests="tests/health.test.ts"
+  [[ "${2:-}" == 枚举：* ]] && tests="tests/enum-drift.integration.test.ts"
   [[ "${2:-}" == 可观测：* ]] && tests="tests/observability.test.ts"
   [[ "${2:-}" == 连库：* ]] && tests="tests/shell-startup.test.ts"
   [[ "${2:-}" == 令牌：* ]] && tests="tests/learning-tokens.test.ts"
@@ -695,6 +702,11 @@ star_copy() {
   ln -s "$ROOT/deploy" "$work/deploy"  # LT-05：tests/observability.test.ts 读指标登记清单（只读用，不改）
   # LT-06：白名单运营工具复用本服务的源码（相对路径 ../../services/bff/src），复制一份进副本，“内测工具：”变异改的是副本里的工具源码
   mkdir -p "$work/tools" && cp -r "$ROOT/tools/internal-test" "$work/tools/internal-test"
+  # 前端白名单与取值出处（specs/web-bff-enum-drift）：“枚举：”变异改副本里的前端白名单与契约，这两处复制、不链接
+  if [[ "${1:-}" == 枚举：* ]]; then
+    mkdir -p "$work/apps/web" "$work/packages/contracts"
+    cp -r "$ROOT/apps/web/src" "$work/apps/web/src"; cp -r "$ROOT/packages/contracts/openapi" "$work/packages/contracts/openapi"
+  fi
   echo "$work"
 }
 work="$(star_copy)"; read -r rc pass <<< "$(star_run "$work")"; rm -rf "$work"

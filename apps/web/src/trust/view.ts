@@ -13,7 +13,7 @@ const isIso = (v: unknown): v is string => typeof v === 'string' && ISO.test(v) 
 
 export type Audience = 'student' | 'guardian';
 export type Band = 'few_evidence' | 'moderate' | 'strong';
-const BANDS: readonly string[] = ['few_evidence', 'moderate', 'strong'];
+export const BANDS: readonly string[] = ['few_evidence', 'moderate', 'strong'];
 
 // ---------------------------------------------------------------- “为什么”
 
@@ -24,7 +24,7 @@ export interface WhyStatement {
 export interface WhyEvidence { occurred_at: string; source_type: 'objective' | 'self' | 'guardian' | 'inferred'; evidence_level: 'A' | 'B' | null; node_id: string | null }
 export interface WhyView { claim_id: string; statement: WhyStatement; evidence: WhyEvidence[]; source_version: string | null }
 
-const SOURCES: readonly string[] = ['objective', 'self', 'guardian', 'inferred'];
+export const SOURCES: readonly string[] = ['objective', 'self', 'guardian', 'inferred'];
 
 /**
  * “为什么”的响应（BFF GET …/claims/{claim_id}/explain，openapi/trust.v0.yaml getClaimExplain；按契约 InsightExplainResponse 取子集）：
@@ -81,7 +81,7 @@ export const newIdempotencyKey = (uuid: string): string => `web.${uuid}`;
 export const IDEMPOTENCY_KEY = /^[A-Za-z0-9][A-Za-z0-9_.:-]{15,127}$/;
 
 export interface DisputeRow { dispute_id: string; claim_id: string; kind: DisputeKind; status: string; created_at: string; resolved_at: string | null }
-const DISPUTE_STATUSES: readonly string[] = ['open', 'verifying', 'resolved_supported', 'resolved_unsupported', 'fact_corrected', 'rejected', 'withdrawn'];
+export const DISPUTE_STATUSES: readonly string[] = ['open', 'verifying', 'resolved_supported', 'resolved_unsupported', 'fact_corrected', 'rejected', 'withdrawn'];
 
 /** 异议列表：只挑编码列；结论码（result_code）不显示（没有文案，也不能把编码直接给人看） */
 export function pickDisputes(raw: unknown): DisputeRow[] | null {
@@ -259,7 +259,7 @@ export interface ErasureRow {
   request_id: string; state: 'awaiting_confirm' | 'cooling_off' | 'cancelled' | 'executed'; requested_at: string;
   cooling_off_until: string | null; cancel_reason: string | null; receipt: { tables: [string, number][]; scopes: string[] } | null;
 }
-const SCOPES: readonly string[] = ['claim_ledger', 'facts', 'evidence', 'inference', 'reports', 'uploads'];
+export const SCOPES: readonly string[] = ['claim_ledger', 'facts', 'evidence', 'inference', 'reports', 'uploads'];
 /** 撤回原因只认契约枚举（trust.v0.yaml cancel_reason），别的一律当作没有 */
 export const CANCEL_REASONS = ['guardian', 'link_revoked', 'confirm_expired'] as const;
 const TABLE = /^[a-z_][a-z0-9_]{0,62}(\.[a-z_][a-z0-9_]{0,62})?$/;
