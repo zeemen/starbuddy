@@ -18,6 +18,7 @@ from typing import Any
 import asyncpg
 import httpx
 
+from . import map_check, metrics, store
 from .adapter_client import call_adapter
 from .config import Settings
 from .contract import UnsupportedContractVersion, internal_contract, plugin_contract
@@ -122,6 +123,16 @@ async def _one_subject(settings: Settings, pool: asyncpg.Pool, client: httpx.Asy
         return unavailable
     if data.get("contract_version") != PLAN_CONTRACT or contract.validate("PlanResponse", data):
         return unavailable
+    # 地图版本交叉核对（PLT-25 待人确认 #3）：计划不写证据，只计数、不改返回；plan 没有内容版本，与该科已发布的地图版本比
+    if map_check.graph_segments(data.get("source_version")):
+        try:
+            published = await store.published_map_versions(pool, subject)
+        except (asyncpg.PostgresError, OSError):  # 只为计数：读不到已发布版本不影响计划
+            published = None
+        outcome = map_check.classify(subject, data.get("source_version"), published)
+    else:
+        outcome = "absent"
+    metrics.PLAN_MAP_VERSION_CHECK.labels(outcome=outcome).inc()
     tasks = data["result"]["tasks"]
     # 平台摘要的预计分钟上限是 600（契约 PlanDigestTask）：超出说明适配器结果不可信，整科按不可用处理，不截断成看似合理的值
     if any(int(t["estimated_minutes"]) > 600 for t in tasks):

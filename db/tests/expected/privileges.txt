@@ -286,9 +286,14 @@ col|platform.guardian_student_link.guardian_account_id|starbuddy_eraser|SELECT|S
 col|platform.guardian_student_link.status|starbuddy_bff|UPDATE|SUPERUSER
 col|platform.guardian_student_link.status|starbuddy_eraser|SELECT|SUPERUSER
 col|platform.guardian_student_link.student_id|starbuddy_eraser|SELECT|SUPERUSER
+col|platform.ingest_request.created_at|starbuddy_authz|SELECT|SUPERUSER
 col|platform.ingest_request.error_code|starbuddy_learning|UPDATE|SUPERUSER
+col|platform.ingest_request.idempotency_key|starbuddy_authz|SELECT|SUPERUSER
 col|platform.ingest_request.lease_token|starbuddy_learning|UPDATE|SUPERUSER
+col|platform.ingest_request.lease_until|starbuddy_authz|SELECT|SUPERUSER
 col|platform.ingest_request.lease_until|starbuddy_learning|UPDATE|SUPERUSER
+col|platform.ingest_request.method|starbuddy_authz|SELECT|SUPERUSER
+col|platform.ingest_request.status|starbuddy_authz|SELECT|SUPERUSER
 col|platform.ingest_request.status|starbuddy_learning|UPDATE|SUPERUSER
 col|platform.ingest_request.student_id|starbuddy_eraser|SELECT|SUPERUSER
 col|platform.ingest_request.summary|starbuddy_learning|UPDATE|SUPERUSER
@@ -598,6 +603,8 @@ func|insight.record_confidence_probe(uuid,platform.subject,text,text,timestamp w
 func|insight.record_confidence_probe(uuid,platform.subject,text,text,timestamp with time zone,uuid)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|insight.record_onboarding_step(uuid,text,text)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|insight.record_onboarding_step(uuid,text,text)|starbuddy_bff|EXECUTE|starbuddy_authz
+func|insight.retention_purge_behavior_event(timestamp with time zone,integer)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|insight.retention_purge_behavior_event(timestamp with time zone,integer)|starbuddy_scheduler|EXECUTE|starbuddy_authz
 func|insight.save_monthly_plan(uuid,date,jsonb)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|insight.save_monthly_plan(uuid,date,jsonb)|starbuddy_insight|EXECUTE|starbuddy_authz
 func|insight.submit_exam_plan(uuid,platform.subject,text,date,numeric,text[])|starbuddy_authz|EXECUTE|starbuddy_authz
@@ -765,6 +772,7 @@ func|platform.enqueue_claim_dispute(uuid)|starbuddy_authz|EXECUTE|starbuddy_auth
 func|platform.enqueue_claim_dispute(uuid)|starbuddy_insight|EXECUTE|starbuddy_authz
 func|platform.enroll_subject(uuid,platform.subject)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.enroll_subject(uuid,platform.subject)|starbuddy_bff|EXECUTE|starbuddy_authz
+func|platform.ensure_partitions_ahead(timestamp with time zone)|starbuddy_scheduler|EXECUTE|SUPERUSER
 func|platform.erasure_in_progress(uuid)|starbuddy_eraser|EXECUTE|SUPERUSER
 func|platform.evidence_payload_ok(text,jsonb)|PUBLIC|EXECUTE|SUPERUSER
 func|platform.evidence_source_type(text)|starbuddy_learning|EXECUTE|SUPERUSER
@@ -853,6 +861,7 @@ func|platform.model_call_log_purge(timestamp with time zone,integer)|starbuddy_a
 func|platform.model_call_log_purge(timestamp with time zone,integer)|starbuddy_scheduler|EXECUTE|starbuddy_authz
 func|platform.model_call_stats(date,date)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.model_call_stats(date,date)|starbuddy_report|EXECUTE|starbuddy_authz
+func|platform.partition_horizon()|starbuddy_scheduler|EXECUTE|SUPERUSER
 func|platform.pause_subject(uuid,platform.subject)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.pause_subject(uuid,platform.subject)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|platform.plan_config_lock_key(text)|starbuddy_authz|EXECUTE|SUPERUSER
@@ -871,6 +880,15 @@ func|platform.request_erasure(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.request_erasure(uuid)|starbuddy_bff|EXECUTE|starbuddy_authz
 func|platform.resolve_review_task(uuid,text)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.resolve_review_task(uuid,text)|starbuddy_review|EXECUTE|starbuddy_authz
+func|platform.retention_args_ok(timestamp with time zone,integer)|starbuddy_authz|EXECUTE|SUPERUSER
+func|platform.retention_purge_auth_otp(timestamp with time zone,integer)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.retention_purge_auth_otp(timestamp with time zone,integer)|starbuddy_scheduler|EXECUTE|starbuddy_authz
+func|platform.retention_purge_auth_rate_counter(timestamp with time zone,integer)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.retention_purge_auth_rate_counter(timestamp with time zone,integer)|starbuddy_scheduler|EXECUTE|starbuddy_authz
+func|platform.retention_purge_auth_session(timestamp with time zone,integer)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.retention_purge_auth_session(timestamp with time zone,integer)|starbuddy_scheduler|EXECUTE|starbuddy_authz
+func|platform.retention_purge_ingest_request(timestamp with time zone,integer)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.retention_purge_ingest_request(timestamp with time zone,integer)|starbuddy_scheduler|EXECUTE|starbuddy_authz
 func|platform.retire_content_version(uuid,text)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.retire_content_version(uuid,text)|starbuddy_review|EXECUTE|starbuddy_authz
 func|platform.review_current_staff()|starbuddy_authz|EXECUTE|SUPERUSER
@@ -978,6 +996,7 @@ owner|insight.raise_dispute(uuid,text,uuid,uuid,text,uuid)|starbuddy_authz
 owner|insight.record_behavior_event(uuid,text,jsonb,timestamp with time zone,uuid)|starbuddy_authz
 owner|insight.record_confidence_probe(uuid,platform.subject,text,text,timestamp with time zone,uuid)|starbuddy_authz
 owner|insight.record_onboarding_step(uuid,text,text)|starbuddy_authz
+owner|insight.retention_purge_behavior_event(timestamp with time zone,integer)|starbuddy_authz
 owner|insight.save_monthly_plan(uuid,date,jsonb)|starbuddy_authz
 owner|insight.submit_exam_plan(uuid,platform.subject,text,date,numeric,text[])|starbuddy_authz
 owner|insight.submit_exam_record(uuid,platform.subject,text,date,numeric,numeric,text,text,text)|starbuddy_authz
@@ -1074,6 +1093,10 @@ owner|platform.release_record_export(platform.subject)|starbuddy_authz
 owner|platform.release_review_task(uuid)|starbuddy_authz
 owner|platform.request_erasure(uuid)|starbuddy_authz
 owner|platform.resolve_review_task(uuid,text)|starbuddy_authz
+owner|platform.retention_purge_auth_otp(timestamp with time zone,integer)|starbuddy_authz
+owner|platform.retention_purge_auth_rate_counter(timestamp with time zone,integer)|starbuddy_authz
+owner|platform.retention_purge_auth_session(timestamp with time zone,integer)|starbuddy_authz
+owner|platform.retention_purge_ingest_request(timestamp with time zone,integer)|starbuddy_authz
 owner|platform.retire_content_version(uuid,text)|starbuddy_authz
 owner|platform.review_feedback_list(text,integer,timestamp with time zone,uuid)|starbuddy_authz
 owner|platform.review_feedback_set_status(uuid,text)|starbuddy_authz
@@ -1101,6 +1124,7 @@ owner|policy.publish_scheme(uuid)|starbuddy_authz
 owner|policy.retire_source_domain(text)|starbuddy_authz
 owner|policy.sign_record(text,uuid,text,text)|starbuddy_authz
 owner|policy.sign_scheme(uuid,text,text)|starbuddy_authz
+rel|insight.behavior_event|starbuddy_authz|DELETE|SUPERUSER
 rel|insight.behavior_event|starbuddy_authz|INSERT|SUPERUSER
 rel|insight.behavior_event|starbuddy_authz|SELECT|SUPERUSER
 rel|insight.behavior_event|starbuddy_eraser|DELETE|SUPERUSER
@@ -1269,6 +1293,7 @@ rel|platform.attempt|starbuddy_bff|SELECT|SUPERUSER
 rel|platform.attempt|starbuddy_eraser|DELETE|SUPERUSER
 rel|platform.attempt|starbuddy_learning|INSERT|SUPERUSER
 rel|platform.attempt|starbuddy_learning|SELECT|SUPERUSER
+rel|platform.auth_otp_challenge|starbuddy_authz|DELETE|SUPERUSER
 rel|platform.auth_otp_challenge|starbuddy_authz|INSERT|SUPERUSER
 rel|platform.auth_otp_challenge|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.auth_otp_challenge|starbuddy_authz|UPDATE|SUPERUSER
@@ -1276,6 +1301,7 @@ rel|platform.auth_rate_counter|starbuddy_authz|DELETE|SUPERUSER
 rel|platform.auth_rate_counter|starbuddy_authz|INSERT|SUPERUSER
 rel|platform.auth_rate_counter|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.auth_rate_counter|starbuddy_authz|UPDATE|SUPERUSER
+rel|platform.auth_session|starbuddy_authz|DELETE|SUPERUSER
 rel|platform.auth_session|starbuddy_authz|INSERT|SUPERUSER
 rel|platform.auth_session|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.auth_session|starbuddy_authz|UPDATE|SUPERUSER
@@ -1349,6 +1375,7 @@ rel|platform.guardian_student_link|starbuddy_bff|SELECT|SUPERUSER
 rel|platform.household|starbuddy_authz|INSERT|SUPERUSER
 rel|platform.household|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.household|starbuddy_bff|SELECT|SUPERUSER
+rel|platform.ingest_request|starbuddy_authz|DELETE|SUPERUSER
 rel|platform.ingest_request|starbuddy_eraser|DELETE|SUPERUSER
 rel|platform.ingest_request|starbuddy_learning|INSERT|SUPERUSER
 rel|platform.ingest_request|starbuddy_learning|SELECT|SUPERUSER
@@ -1574,6 +1601,7 @@ secdef|insight.raise_dispute(uuid,text,uuid,uuid,text,uuid)
 secdef|insight.record_behavior_event(uuid,text,jsonb,timestamp with time zone,uuid)
 secdef|insight.record_confidence_probe(uuid,platform.subject,text,text,timestamp with time zone,uuid)
 secdef|insight.record_onboarding_step(uuid,text,text)
+secdef|insight.retention_purge_behavior_event(timestamp with time zone,integer)
 secdef|insight.save_monthly_plan(uuid,date,jsonb)
 secdef|insight.submit_exam_plan(uuid,platform.subject,text,date,numeric,text[])
 secdef|insight.submit_exam_record(uuid,platform.subject,text,date,numeric,numeric,text,text,text)
@@ -1616,6 +1644,7 @@ secdef|platform.create_guardian_invite(uuid,interval)
 secdef|platform.create_student(uuid,smallint,text,text,date)
 secdef|platform.enqueue_claim_dispute(uuid)
 secdef|platform.enroll_subject(uuid,platform.subject)
+secdef|platform.ensure_partitions_ahead(timestamp with time zone)
 secdef|platform.execute_due_erasures(timestamp with time zone)
 secdef|platform.exit_internal_test(uuid)
 secdef|platform.export_student_data(uuid)
@@ -1669,6 +1698,10 @@ secdef|platform.release_record_export(platform.subject)
 secdef|platform.release_review_task(uuid)
 secdef|platform.request_erasure(uuid)
 secdef|platform.resolve_review_task(uuid,text)
+secdef|platform.retention_purge_auth_otp(timestamp with time zone,integer)
+secdef|platform.retention_purge_auth_rate_counter(timestamp with time zone,integer)
+secdef|platform.retention_purge_auth_session(timestamp with time zone,integer)
+secdef|platform.retention_purge_ingest_request(timestamp with time zone,integer)
 secdef|platform.retire_content_version(uuid,text)
 secdef|platform.review_feedback_list(text,integer,timestamp with time zone,uuid)
 secdef|platform.review_feedback_set_status(uuid,text)

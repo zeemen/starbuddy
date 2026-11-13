@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # KGE-02 题库导入种子的库上验证（specs/kge-02-atoms-tagging/spec.md 验收第 1、3 条），只用本机一次性 Postgres（规则 9）。
-# 第一段不需要 legacy：执行全部迁移 → 阿鸦内容登记（adapters/aya/scripts/register-content.ts）→ KGE-01 地图种子 → 本任务的 items.sql；
+# 第一段不需要 legacy：执行全部迁移 → 阿鸦内容登记（tools/content-register/aya.ts）→ KGE-01 地图种子 → 本任务的 items.sql；
 #   核对题组、打标、候选的行数与 tagging-report.json 一致，候选全部待处理、以知识服务身份写入。
 # 第二段需要 legacy/aya：以 --rules-only-a 重新生成到临时目录并执行，证明写 item_tag 的路径也能通过 0024 的约束（source_kind = legacy、tag_basis）；
 #   再以 --vector --model（假实现）生成并执行，证明含假实现的 SQL 执行即报错、什么都不写。没有 legacy 时打印“跳过”。
@@ -24,7 +24,7 @@ q() { as_pg "$PGBIN/psql" -h "$WORK" -U postgres -d starbuddy_test -X -At -v ON_
 report() { node -e 'const r=require(process.argv[1]);const v=process.argv[2].split(".").reduce((o,k)=>o[k],r);console.log(v)' "$1" "$2"; }
 
 # 题目登记（platform.item）与地图版本种子
-(cd "$REPO/adapters/aya" && node --no-warnings scripts/register-content.ts) | psql_run >/dev/null
+(cd "$REPO/adapters/aya" && node --no-warnings ../../tools/content-register/aya.ts) | psql_run >/dev/null
 psql_run < "$MAP/import.sql" >/dev/null
 
 # ---------- 第一段：仓库里的种子 ----------

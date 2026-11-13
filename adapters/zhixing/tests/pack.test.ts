@@ -1,7 +1,7 @@
 // 内容包与登记脚本：合成、非真题；一律 pending_review；采分点字段对齐 KGE kge.scoring_point；登记 SQL 只增不改。
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { registeredAdmission, registrationSql } from "../scripts/register-content.ts";
+import { registeredAdmission, registrationSql } from "../../../tools/content-register/zhixing.ts";
 import { readFileSync } from "node:fs";
 import { indexPack, itemNodes, KGE_NODE_ID, partialCreditProblems, VERSIONED_NAME } from "../src/content.ts";
 import { leaves, realPack } from "./helpers.ts";

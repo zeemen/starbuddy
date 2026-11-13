@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { registeredAdmission, registrationSql } from "../scripts/register-content.ts";
+import { registeredAdmission, registrationSql } from "../../../tools/content-register/wenli.ts";
 import { indexPack, KGE_NODE_ID, VERSIONED_NAME } from "../src/content.ts";
 import { leaves, realPack } from "./helpers.ts";
 

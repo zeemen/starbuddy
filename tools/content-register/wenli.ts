@@ -1,14 +1,16 @@
-// 内容登记脚本（spec 设计要点 1；写法同 adapters/zhixing/scripts/register-content.ts）：把内容包里的课程版本、合成能力格（能力视图节点）、
+// 位置（W13 T11，specs/tech-debt-batch3 待人确认 #4）：内容登记生成写 platform.* 的 SQL，属于平台运维工具，不是适配器运行时，
+// 所以放在 tools/content-register/，不放在 adapters/wenli/（CLAUDE.md 规则 1：适配器不直接读写平台表）。只读适配器的内容包加载代码。
+// 内容登记脚本（spec 设计要点 1；写法同 tools/content-register/zhixing.ts）：把内容包里的课程版本、合成能力格（能力视图节点）、
 // 客观题与作文题登记进 platform.curriculum_version / skill_node / item。证据表对题目有外键，不登记就写不进去。
 //
 // 只输出 SQL，不连接任何数据库（CLAUDE.md 规则 9）。目标库由执行人决定（pilot 与生产由人执行）：
-//   node scripts/register-content.ts > /tmp/wenli-register.sql
+//   node tools/content-register/wenli.ts > /tmp/wenli-register.sql   # 在仓库根目录；或 cd adapters/wenli && npm run register:sql
 //   psql -X -v ON_ERROR_STOP=1 -f /tmp/wenli-register.sql
 //
 // 只增不改：已登记的行 ON CONFLICT DO NOTHING。题目一律登记为 pending_review：准入由教研在审核台做（发布闸门），
 // 不由本脚本做。量表与字数规则（rubric_version、rule_ref）只随判分结果落库（platform.grade_dimension），平台目前没有注册表，不在这里登记。
 import { fileURLToPath } from "node:url";
-import { loadPack, type Admission, type LoadedPack } from "../src/content.ts";
+import { loadPack, type Admission, type LoadedPack } from "../../adapters/wenli/src/content.ts";
 
 /** 登记时的准入状态：一律 pending_review；已被拒的保持 rejected（只会更严） */
 export const registeredAdmission = (a: Admission): Admission => (a === "rejected" ? "rejected" : "pending_review");

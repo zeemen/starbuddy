@@ -19,7 +19,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from conftest import ADAPTER_CREDENTIAL, CREDENTIAL, grade_body, meter_row, to_v1_body
+from conftest import WRITE_AUTH, SESSION_CREDENTIAL, ADAPTER_CREDENTIAL, CREDENTIAL, grade_body, meter_row, to_v1_body
 from learning import meter as METER
 from learning.app import create_app
 from learning.mastery import parse_config
@@ -114,7 +114,7 @@ class RApi:
         if purpose not in (None, "practice"):
             summary, _ = await self.svc.practice.ingest.ingest("grade", {"request": b, "ingest": ingest}, "1.0.0", meter=METER.COUNTED)
             return summary
-        r = await self.c.post("/internal/v1/grade", json={"request": b, "ingest": ingest})
+        r = await self.c.post("/internal/v1/grade", json={"request": b, "ingest": ingest}, headers=WRITE_AUTH)
         assert r.status_code == 200, r.text
         return r.json()
 
@@ -137,7 +137,7 @@ async def api(ppools, plock):
     app, fakes = await open_api(app_pool, plock, eng=eng)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://learning.test") as c:
-            c.headers["authorization"] = f"Bearer {CREDENTIAL}"
+            c.headers["authorization"] = f"Bearer {SESSION_CREDENTIAL}"
             yield RApi(c, fakes, eng)
 
 
@@ -429,7 +429,7 @@ async def test_idempotent_replay(api, ppools, student):
     r = await api.answer(student, tok, "42")                                            # 同一张票据换一个键：任务已关
     assert r.status_code == 409 and r.json()["code"] == "RETEST_NOT_DUE"
     assert await counts(admin, student) == c1
-    rp = await api.c.get(f"/internal/v1/replay/grade/{key}", params={"student_ref": student, "usage_id": usage})
+    rp = await api.c.get(f"/internal/v1/replay/grade/{key}", params={"student_ref": student, "usage_id": usage}, headers=WRITE_AUTH)
     assert rp.status_code == 200 and rp.json()["verdict"] == "correct"
 
 
@@ -532,7 +532,7 @@ async def test_followup_off_by_default_and_on_by_config(ppools, plock, student, 
         app, fakes = await open_api(app_pool, plock, eng=eng, retest_config=spec)
         async with app.router.lifespan_context(app):
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://learning.test") as c:
-                c.headers["authorization"] = f"Bearer {CREDENTIAL}"
+                c.headers["authorization"] = f"Bearer {SESSION_CREDENTIAL}"
                 a = RApi(c, fakes, eng)
                 if name == "off":
                     await a.grade(student, "SYNP-0003", "42")          # 一道独立做对：到“理解”，有当前掌握记录
@@ -567,7 +567,7 @@ async def test_only_bff_token(api, student):
                                              "idempotency_key": str(uuid.uuid4()), "usage_id": str(uuid.uuid4())})]
     for path, body in paths:
         for header in ("", f"Bearer {ORCH}", f"Bearer {INSIGHT}", f"Bearer {ADAPTER_CREDENTIAL}", f"Bearer {KNOWLEDGE.credential}",
-                       f"Bearer {SECRET}", f"Bearer {CREDENTIAL}x", CREDENTIAL):
+                       f"Bearer {SECRET}", f"Bearer {SESSION_CREDENTIAL}x", SESSION_CREDENTIAL, f"Bearer {CREDENTIAL}"):
             r = await api.c.post(path, json=body, headers={"authorization": header})
             assert r.status_code == 401 and r.json()["code"] == "UNAUTHENTICATED", (path, header)
     assert (await api.queue(student)).status_code == 200
@@ -581,7 +581,7 @@ async def test_not_configured(ppools, plock, student):
         app, fakes = await open_api(app_pool, plock, **over)
         async with app.router.lifespan_context(app):
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://learning.test") as c:
-                c.headers["authorization"] = f"Bearer {CREDENTIAL}"
+                c.headers["authorization"] = f"Bearer {SESSION_CREDENTIAL}"
                 a = RApi(c, fakes, None)
                 got = ((await a.queue(student)).status_code, (await a.next(student, str(uuid.uuid4()))).status_code,
                        (await a.answer(student, "x")).status_code)

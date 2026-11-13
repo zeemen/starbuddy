@@ -1,6 +1,6 @@
 -- 统一壳 H4（壳页面与读路由）的合成种子：只给开发库与一次性测试库用，不由迁移执行，不能用于 pilot 或生产（CLAUDE.md 规则 8、9）。
 -- apps/web/scripts/e2e.sh 在一次性测试库里执行它（审查后从 services/bff/scripts/ 挪到这里，请人审）。
--- 前提：已执行全部迁移、阿鸦内容登记（adapters/aya/scripts/register-content.ts 的 SQL）。
+-- 前提：已执行全部迁移、阿鸦内容登记（tools/content-register/aya.ts 的 SQL）。
 -- 用法（以迁移执行者身份；只能执行一次；文件自带事务）：
 --   PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -v ON_ERROR_STOP=1 -f db/seeds/dev/syn-publish-content.sql -f db/seeds/dev/shell-synthetic.sql
 --

@@ -1,8 +1,10 @@
+// 位置（W13 T11，specs/tech-debt-batch3 待人确认 #4）：内容登记生成写 platform.* 的 SQL，属于平台运维工具，不是适配器运行时，
+// 所以放在 tools/content-register/，不放在 adapters/aya/（CLAUDE.md 规则 1：适配器不直接读写平台表）。只读适配器的内容包加载代码。
 // 内容登记脚本（spec 范围第 4 条；待人确认 #5）：把内容包里的课程版本、能力点、题目登记进
 // platform.curriculum_version / skill_node / item。证据表对题目有外键，不登记就写不进去。
 //
 // 只输出 SQL，不连接任何数据库（CLAUDE.md 规则 9）。执行方：开发库由 Claude Code 执行；pilot 与生产由人执行。
-//   node scripts/register-content.ts > /tmp/aya-register.sql
+//   node tools/content-register/aya.ts > /tmp/aya-register.sql   # 在仓库根目录；或 cd adapters/aya && npm run register:sql
 //   psql -X -v ON_ERROR_STOP=1 -f /tmp/aya-register.sql    # 目标库由执行人决定
 //
 // 只增不改：已登记的行 ON CONFLICT DO NOTHING；内容版本已发布或已撤下时不再往里追加（4-G 迁移 0039：登记只能追加到草稿，
@@ -10,7 +12,7 @@
 // 发布闸门，不由本脚本做：新题最高登记为 pending_review。准入降级（例如改为 rejected）同样不由本脚本同步，
 // 要走发布流程（lessons 待人确认）。
 import { fileURLToPath } from "node:url";
-import { loadPack, type Admission, type LoadedPack } from "../src/content.ts";
+import { loadPack, type Admission, type LoadedPack } from "../../adapters/aya/src/content.ts";
 
 /** 登记时的准入状态：内容包说 admitted 也只登记为 pending_review（准入升级属于发布闸门） */
 export const registeredAdmission = (a: Admission): Admission => (a === "admitted" ? "pending_review" : a);

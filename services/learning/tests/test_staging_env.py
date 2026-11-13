@@ -19,13 +19,14 @@ from review_console import __main__ as rc_main
 from review_console.config import ReviewSettings
 
 CRED = "s" * 40
+SESSION_CRED = "q" * 40
 ADAPTER_CRED = "a" * 40
 KNOW_CRED = "k" * 40
 TICKET = "t" * 40
 
 
 def base(env: str, **extra: str) -> dict[str, str]:
-    e = {"LEARNING_ENV": env, "LEARNING_SERVICE_TOKEN": CRED, "LEARNING_DATABASE_URL": "postgresql://syn@127.0.0.1/syn"}
+    e = {"LEARNING_ENV": env, "LEARNING_SERVICE_TOKEN": CRED, "LEARNING_SESSION_TOKEN": SESSION_CRED, "LEARNING_DATABASE_URL": "postgresql://syn@127.0.0.1/syn"}
     e.update(extra)
     return e
 
@@ -200,7 +201,7 @@ def test_staging_lifespan_with_matrix_flags_starts_and_modules_are_501(tmp_path)
     async def go():
         async with app.router.lifespan_context(app):
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://learning.test") as c:
-                c.headers["authorization"] = f"Bearer {CRED}"
+                c.headers["authorization"] = f"Bearer {SESSION_CRED}"  # 今日编排、再练、复测只认会话令牌（PLT-24）
                 body = {"request_id": str(uuid.uuid4()), "student_ref": str(uuid.uuid4()), "subjects": ["aya"]}
                 r = await c.post("/internal/v1/today", json=body)
                 assert r.status_code == 501 and r.json()["code"] == "TODAY_UNAVAILABLE", r.text
@@ -431,3 +432,14 @@ def test_check_server_local_staging():
     asyncio.run(rc_main.check_server_local(_Conn("172.28.0.20"), "staging"))
     with pytest.raises(SystemExit):
         asyncio.run(rc_main.check_server_local(_Conn("8.8.8.8"), "staging"))
+
+
+def test_staging_refuses_without_session_token():
+    """PLT-24：staging 缺会话令牌即拒绝启动（诊断、再练、复测、今日编排只认会话令牌）；test 下可以不配（四组接口 401）"""
+    e = base("staging")
+    del e["LEARNING_SESSION_TOKEN"]
+    with pytest.raises(RuntimeError, match="staging 必须设 LEARNING_SESSION_TOKEN"):
+        Settings.from_env(e)
+    e = base("test")
+    del e["LEARNING_SESSION_TOKEN"]
+    assert Settings.from_env(e).session_credential is None

@@ -1,6 +1,6 @@
 """复测与验证题的内部接口（只供 BFF 调用；接口定义 services/learning/openapi/retest-internal.v0.yaml，不进 packages/contracts）。
 
-鉴权、请求体限制与日志同错题再练（practice/api.py）：Bearer 服务间令牌（只认 BFF 的 LEARNING_SERVICE_TOKEN），64 KB 上限，
+鉴权、请求体限制与日志同错题再练（practice/api.py）：Bearer 服务间令牌（只认 BFF 的会话令牌 LEARNING_SESSION_TOKEN，PLT-24），64 KB 上限，
 拒绝 NaN 与重复键，未知键一律 400（purpose、channel、hint_level_used 由服务端写，请求里给了即 400）。日志不记请求体与学生 ID。
 只查不执行的重放：结果未知时 BFF 用既有的 GET /internal/v1/replay/grade/{key}；另有两个只读接口（审查意见 2）：
 check（计次前预检条目仍到期、票据未用）与 replay（宵禁时按票据与键只找回原结果，不执行、不封存）。

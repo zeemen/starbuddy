@@ -2,7 +2,7 @@
 两名合成教研经审核台后端（进程内，默认的 staff 登录会话认证，真实口令 + TOTP 登录）走完：
 
   1. 地图版本：合成数学地图 1.0.0（知识服务身份 starbuddy_kge 建草稿）→ 两名 staff 看差异、签字 → 发布；
-  2. 内容版本登记：阿鸦内容包的登记 SQL（adapters/aya/scripts/register-content.ts，以学习服务身份 starbuddy_learning 执行，只增不改），
+  2. 内容版本登记：阿鸦内容包的登记 SQL（tools/content-register/aya.ts，以学习服务身份 starbuddy_learning 执行，只增不改），
      草稿指向第 1 步的地图版本；
   3. 内容版本签字与发布（审核台接口，签字人回传看到的摘要）；
   4. 准入变更：5 道题经“签字 → 执行”走到 admitted / pending_review（来源已核与未核各一）/ rejected，以及 admitted 后降为 rejected；
@@ -117,7 +117,7 @@ def _seed(pg) -> None:
 
 
 def _register(pg) -> None:
-    sql = subprocess.run(["node", "--no-warnings", "scripts/register-content.ts"], cwd=AYA, check=True, capture_output=True).stdout.decode()
+    sql = subprocess.run(["node", "--no-warnings", "../../tools/content-register/aya.ts"], cwd=AYA, check=True, capture_output=True).stdout.decode()
     pg.psql("SET ROLE starbuddy_learning;\n" + sql)
     # 草稿指向已发布的合成地图版本（学习服务对草稿的 map_version_id 有列级 UPDATE，0039）
     pg.psql(f"SET ROLE starbuddy_learning;\nUPDATE platform.curriculum_version SET map_version_id = '{MAP_ID}'"

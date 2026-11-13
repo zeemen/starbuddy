@@ -1,8 +1,8 @@
 """契约一致性（spec 验收：知识服务读工具通过严格契约一致性测试；个人层三个工具回 501）。
 
 packages/contracts/conformance 只覆盖学科插件 API（对运行中的适配器），没有服务契约的一致性机制，所以在这里实现：
-每个工具的正例请求与响应、反例请求与错误体，都用 knowledge-service.v0.9.yaml 严格校验（additionalProperties、枚举、长度、
-格式）。需要一次性 Postgres；严格模式（CONTRACT_STRICT=1）下没有 Postgres 直接失败，不跳过。
+每个工具的正例请求与响应、反例请求与错误体，都用知识服务契约严格校验（additionalProperties、枚举、长度、格式）：
+当前版本 v0.10（2026-11-07 签字）与迁移期的 v0.9 各跑一遍——0.9.0 的请求按 v0.9 校验、响应回 0.9.0。需要一次性 Postgres；严格模式（CONTRACT_STRICT=1）下没有 Postgres 直接失败，不跳过。
 鉴权：只接受契约允许的调用方令牌；学生与家长没有令牌。
 """
 from __future__ import annotations
@@ -12,7 +12,7 @@ import json
 
 import pytest
 
-from knowledge.service.contract import PERSONAL_TOOLS, PUBLIC_TOOLS, contract
+from knowledge.service.contract import CONTRACT_VERSION, PERSONAL_TOOLS, PUBLIC_TOOLS, V09_PUBLIC_TOOLS, contract
 from knowledge.service.pages import load_snapshot_dir
 from knowledge.service.reader import DbAtomSource
 from pgkge import APP_ROLE, APPLY, LINEAR, TRANSPOSE
@@ -20,26 +20,29 @@ from svc import CREDS, auth, build_pages, call, running_app, write_snapshot_dir
 
 pytestmark = pytest.mark.anyio
 C = contract()
-EXAMPLES = C.doc["components"]["examples"]
+VERSIONS = ("0.10.0", "0.9.0")
 SUBST = {"MATH.FUNC.QUAD.VERTEX_FORM": LINEAR, "MATH.FUNC.QUAD.GRAPH": APPLY, "aya:synthetic-0301-07": "aya:SYN-I1",
          "aya-quad-rubric@0.1.0": "syn-rubric@0.1.0", "bubian-2024": "syn-ed-a", "nanjing": "syn-region",
          "math.func.quad.vertex-form": "math.syn.eq.linear"}
 
 
-def example_request(tool: str) -> dict:
-    """契约示例请求，把示例里的节点、题目、版次换成合成库里的编码"""
-    raw = json.dumps(EXAMPLES[C.tools[tool].request_schema]["value"], ensure_ascii=False)
+def example_request(tool: str, version: str = CONTRACT_VERSION) -> dict:
+    """契约示例请求（按版本取那一份契约的示例），把示例里的节点、题目、版次换成合成库里的编码"""
+    c = C.for_version(version)
+    raw = json.dumps(c.doc["components"]["examples"][c.tools[tool].request_schema]["value"], ensure_ascii=False)
     for a, b in SUBST.items():
         raw = raw.replace(a, b)
     return json.loads(raw)
 
 
-def check(tool: str, r) -> dict:
+def check(tool: str, r, version: str = CONTRACT_VERSION) -> dict:
+    """200 的信封按请求的那个版本校验，且回同一个版本"""
     body = r.json()
     if r.status_code == 200:
+        c = C.for_version(version)
         assert r.headers["content-type"].startswith("application/json")
-        assert C.validate(C.tools[tool].response_schema, body) == [], (tool, body)
-        assert body["evidence_ids"] == [] and body["contract_version"] == "0.9.0"
+        assert c.validate(c.tools[tool].response_schema, body) == [], (tool, body)
+        assert body["evidence_ids"] == [] and body["contract_version"] == version
     else:
         assert r.headers["content-type"].startswith("application/problem+json")
         assert C.problem_errors(body) == [], (tool, body)
@@ -54,13 +57,40 @@ def pages_snapshot(kgedb, tmp_path_factory):
     return load_snapshot_dir(d)
 
 
-async def test_every_public_tool_example_conforms(kgedb, pages_snapshot):
+@pytest.mark.parametrize("version", VERSIONS)
+async def test_every_public_tool_example_conforms(kgedb, pages_snapshot, version):
+    """v0.9 的七个公共工具在两个版本下都按各自的契约通过（standard.search 要 WeKnora，见 test_weknora_backend.py）"""
     async with running_app(kgedb, pages=pages_snapshot) as client:
-        for tool in sorted(PUBLIC_TOOLS):
-            body = example_request(tool)
+        for tool in sorted(V09_PUBLIC_TOOLS):
+            body = example_request(tool, version)
+            assert body["context"]["contract_version"] == version
             r = await call(client, tool, body, body["context"]["caller"])
             assert r.status_code == 200, (tool, r.text)
-            check(tool, r)
+            check(tool, r, version)
+
+
+async def test_versions_answer_identically_except_the_version_field(kgedb, pages_snapshot):
+    """迁移期：同一请求用 0.9.0 与 0.10.0 发，结果只差信封里的 contract_version"""
+    async with running_app(kgedb, pages=pages_snapshot) as client:
+        for tool in sorted(V09_PUBLIC_TOOLS):
+            b10 = example_request(tool, "0.10.0")
+            b9 = copy.deepcopy(b10)
+            b9["context"]["contract_version"] = "0.9.0"
+            r10, r9 = (await call(client, tool, b10, b10["context"]["caller"])).json(), (await call(client, tool, b9, b9["context"]["caller"])).json()
+            assert {**r9, "contract_version": "0.10.0"} == r10, tool
+
+
+async def test_standard_search_needs_v010_and_the_backend(kgedb):
+    async with running_app(kgedb) as client:
+        body = example_request("standard.search")
+        r = await call(client, "standard.search", body, "orchestrator")
+        assert r.status_code == 501 and check("standard.search", r)["code"] == "METHOD_NOT_IMPLEMENTED"   # 开关关
+        old = copy.deepcopy(body)
+        old["context"]["contract_version"] = "0.9.0"
+        r = await call(client, "standard.search", old, "orchestrator")
+        assert r.status_code == 400 and check("standard.search", r)["code"] == "CONTRACT_VERSION_UNSUPPORTED"
+        r = await call(client, "standard.search", {**body, "context": {**body["context"], "caller": "learning"}}, "learning")
+        assert r.status_code == 403   # 学习服务不调
 
 
 async def test_personal_tools_return_501(kgedb):
@@ -112,6 +142,14 @@ def _bad_requests(tool: str) -> list[tuple[str, dict, int, str]]:
         mut("Rubric 版本写成自然语言", lambda b: b.__setitem__("rubric_version", "第一版"))
     if tool == "page.get":
         mut("页面 ID 大写", lambda b: b.__setitem__("page_id", "MATH.SYN.EQ.LINEAR"))
+    if tool == "standard.search":
+        for dim in ("subject", "grade", "province", "publisher", "edition", "semester"):
+            mut(f"缺过滤维度 {dim}", lambda b, d=dim: b["filters"].pop(d))
+        mut("数据级别必须 L2", lambda b: b["context"].__setitem__("data_class", "L1"))
+        mut("查询为空", lambda b: b.__setitem__("query", ""))
+        mut("查询超长", lambda b: b.__setitem__("query", "长" * 501))
+        mut("top_k 越界", lambda b: b.__setitem__("top_k", 21))
+        mut("内容类型为空", lambda b: b.__setitem__("content_types", []))
     return out
 
 

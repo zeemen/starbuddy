@@ -87,6 +87,11 @@ async def close_loop(client: httpx.AsyncClient, *, source_id: str, student_id: s
     assert (await client.post(f"/review/v0/queue/{tid}/resolve", json={"resolution_code": code},
                               headers=as_staff(STAFF_A))).status_code == 409  # 没领取不能结案
     assert (await client.post(f"/review/v0/queue/{tid}/take", headers=as_staff(STAFF_A))).status_code == 200
+    # 放回队列再领（specs/review-console-responses：每个接口至少一次 2xx 经过响应模型）
+    r = await client.post(f"/review/v0/queue/{tid}/release", headers=as_staff(STAFF_A))
+    assert r.status_code == 200 and r.json() == {"status": "open"}, r.text
+    assert (await client.get(f"/review/v0/queue/{tid}", headers=as_staff(STAFF_A))).json()["assigned"] is False
+    assert (await client.post(f"/review/v0/queue/{tid}/take", headers=as_staff(STAFF_A))).status_code == 200
     r = await client.post(f"/review/v0/queue/{tid}/take", headers=as_staff(STAFF_B))
     assert r.status_code == 409 and r.json()["code"] == "RULE_VIOLATION"
     assert (await client.post(f"/review/v0/queue/{tid}/resolve", json={"resolution_code": code},

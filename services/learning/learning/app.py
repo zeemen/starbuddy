@@ -426,13 +426,17 @@ def create_app(
             record["duration_ms"] = round((time.monotonic() - started) * 1000)
             log.info(json.dumps(record, ensure_ascii=False))
 
-    diagnosis_api.register(app, lambda r: _bearer_ok(r.headers.get("authorization"), settings.service_credential), state)
-    # 错题再练（specs/practice-loop-stage1 第 4 节）：只认 BFF 服务令牌；编排层、洞察服务、路由客户端令牌一律 401
-    practice_api.register(app, lambda r: _bearer_ok(r.headers.get("authorization"), settings.service_credential), state)
-    # 复测与验证题（KGE-05）：同再练，只认 BFF 服务令牌
-    retest_api.register(app, lambda r: _bearer_ok(r.headers.get("authorization"), settings.service_credential), state)
-    # 今日计划跨科编排（PLT-11）：同再练，只认 BFF 服务令牌
-    today_api.register(app, lambda r: _bearer_ok(r.headers.get("authorization"), settings.service_credential), state)
+    # PLT-24（T49）：诊断、错题再练、复测、今日编排四组只认 BFF 的会话令牌（LEARNING_SESSION_TOKEN）；写入令牌、编排层、洞察服务、
+    # 路由客户端令牌一律 401；会话令牌没配置时这四组一律 401。写入令牌只开契约 v1 的写入、重放、今日计划与星图
+    session_token = settings.session_credential
+
+    def session_ok(r: Request) -> bool:
+        return session_token is not None and _bearer_ok(r.headers.get("authorization"), session_token)
+
+    diagnosis_api.register(app, session_ok, state)
+    practice_api.register(app, session_ok, state)      # 错题再练（specs/practice-loop-stage1 第 4 节）
+    retest_api.register(app, session_ok, state)        # 复测与验证题（KGE-05）
+    today_api.register(app, session_ok, state)         # 今日计划跨科编排（PLT-11）
     # learning-internal 1.1.0（KGE-04 第二步 PR 3）：掌握读取只认编排层令牌；验证任务与撤销只认洞察服务令牌（未配置即一律 401）；
     # BFF 服务令牌对这四个接口一律 401；档案页 ensure 认编排层（会话开始）与洞察服务（周报），read 只认编排层（PR 4）；
     # 星图节点星态只认 BFF 服务令牌（H5 星图 v1 PR 1）

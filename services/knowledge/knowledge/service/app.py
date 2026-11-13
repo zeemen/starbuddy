@@ -131,12 +131,28 @@ class HostGuard:
         await self.app(scope, receive, send)
 
 
+def build_weknora(settings: Settings) -> Any:
+    """KGE-12 C：按配置建 WeKnora 后端（客户端读 WEKNORA_* 环境变量，要求 WEKNORA_TARGET=test）。失败一律拒绝启动，消息不含密钥"""
+    from ..weknora.backend import WeKnoraBackend  # noqa: PLC0415（开关关时不导入）
+    from ..weknora.client import ConfigError, WeKnoraClient  # noqa: PLC0415
+    from ..weknora.manifest import ManifestError, load_manifest  # noqa: PLC0415
+    try:
+        client = WeKnoraClient.from_env()
+        manifest = load_manifest(settings.weknora_manifest)  # type: ignore[arg-type]
+    except (ConfigError, ManifestError) as e:
+        raise RuntimeError(f"WeKnora 后端配置不合格：{e}") from None
+    client.timeout = settings.weknora_timeout_ms / 1000
+    return WeKnoraBackend(client, manifest)
+
+
 def create_app(settings: Settings, *, pool: asyncpg.Pool | None = None, contract: Contract | None = None,
-               pages: PageSnapshot | None = None) -> FastAPI:
-    """pool、contract、pages 供测试注入；不传时按配置创建。注入的池同样要过角色断言"""
+               pages: PageSnapshot | None = None, weknora: Any = None) -> FastAPI:
+    """pool、contract、pages、weknora（WeKnoraBackend）供测试注入；不传时按配置创建。注入的池同样要过角色断言"""
     state: dict[str, Any] = {}
     if pool is None:
         check_db_tls(settings.database_url, settings.env)  # LT-03 决定记录（续）第 6 条：建池之前拒绝
+    if weknora is None and settings.weknora_backend:
+        weknora = build_weknora(settings)  # KGE-12 C：开关开时才导入客户端；清单或环境不合格即拒绝启动
     the_contract = contract or default_contract()
 
     def mcp_caller(ctx: Any) -> str | None:
@@ -167,7 +183,7 @@ def create_app(settings: Settings, *, pool: asyncpg.Pool | None = None, contract
             # PLT-19：公共层只读缓存，缺省关（settings.read_cache）；计数在 app.state.knowledge["cache"]（进程内，不新增对外接口）
             cache = ReadCache(size=settings.read_cache_size, max_bytes=settings.read_cache_max_bytes,
                               log_every=settings.read_cache_log_every) if settings.read_cache else None
-            core = ToolCore(KgeReader(p), the_contract, pages, cache=cache)
+            core = ToolCore(KgeReader(p), the_contract, pages, cache=cache, weknora=weknora)
             state["cache"] = cache
             # KGE-06：快照经热切换器载入（启动时失败即拒绝启动；运行中 SIGHUP 重读指针文件，失败保留旧快照并计数）
             swapper = SnapshotSwapper(core, verifier_for(settings.snapshot_hmac_key), settings.page_snapshot_pointer,

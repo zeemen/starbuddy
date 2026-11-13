@@ -162,6 +162,10 @@ function copyTree(): { root: string; dst: string } {
   for (const f of ["tsconfig.json", "package.json"]) cpSync(join(HERE, f), join(dst, f));
   for (const d of ["content", "conformance", "scripts", "node_modules"]) symlinkSync(join(HERE, d), join(dst, d));
   for (const d of ["packages", "docs"]) symlinkSync(join(REPO, d), join(root, "repo", d));
+  // 内容登记脚本已迁到 tools/content-register/（W13 T11）：复制进副本（不软链），它引用的内容包加载代码才是副本里改过的那份
+  const reg = join(root, "repo/tools/content-register");
+  mkdirSync(reg, { recursive: true });
+  for (const f of ["aya.ts", "package.json"]) cpSync(join(REPO, "tools/content-register", f), join(reg, f));
   return { root, dst };
 }
 

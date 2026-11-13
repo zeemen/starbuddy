@@ -96,6 +96,12 @@ M=(
   $'对照评测：报告带出问题原文\tevals/kge-compile/compare_retrieval.py\t        row: dict[str, Any] = {"id": q.id}\t        row: dict[str, Any] = {"id": q.id, "q": q.question}\tevals/kge-compile/tests/test_compare.py'
   $'对照评测：token 估算按字母逐个计\tevals/kge-compile/compare_retrieval.py\t|[0-9A-Za-z]+|\t|[0-9A-Za-z]|\tevals/kge-compile/tests/test_compare.py'
   $'对照评测：主问题只取一次\tevals/kge-compile/compare_retrieval.py\t[r.lookup(q.question) for _ in range(runs)]\t[r.lookup(q.question) for _ in range(1)]\tevals/kge-compile/tests/test_compare.py'
+  # 节点表导出（specs/kge-12-weknora-integration A）
+  $'节点表：未核对的投影也导出\tknowledge/export/node_table.py\ta.record.get("mapping_state") == "verified" and \t\ttests/test_export_node_table.py'
+  $'节点表：撤下的节点也导出\tknowledge/export/node_table.py\tnodes = [a for a in snap.of_type("node") if a.record.get("status", "active") == "active"]\tnodes = list(snap.of_type("node"))\ttests/test_export_node_table.py'
+  $'节点表：带出教材原句\tknowledge/export/node_table.py\t"page_from": rec["page_from"], "page_to": rec["page_to"]}\t"page_from": rec["page_from"], "page_to": rec["page_to"], "quote_text": rec.get("quote_text")}\ttests/test_export_node_table.py'
+  $'节点表：出版社对照表缺编码不报错\tknowledge/export/node_table.py\t        if missing:\n            raise ExportError\t        if False:\n            raise ExportError\ttests/test_export_node_table.py'
+  $'节点表：草稿版本也导出\tknowledge/export/node_table.py\t    if snap.status != "published":\t    if False:\ttests/test_export_node_table.py'
   # WeKnora 路径（specs/kb-weknora-integration/weknora-validation-plan.md V12）
   $'WeKnora 路径：检索不按本次运行的标签过滤\tevals/kge-compile/weknora_path.py\ttag_ids=[self.wc.tag_id] if self.wc.tag_id else ()\ttag_ids=()\tevals/kge-compile/tests/test_weknora_path.py'
   $'WeKnora 路径：结束时不删除导入的文档\tevals/kge-compile/compare_retrieval.py\t        if not args.weknora_keep:\n            wc.cleanup()\t        if False:\n            wc.cleanup()\tevals/kge-compile/tests/test_weknora_path.py'
@@ -178,6 +184,21 @@ M=(
   $'可观测：脱敏不替换手机号\tknowledge/service/obs.py\t    re.compile(r"(?<!\\d)(?:\\+?86[- ]?)?1[3-9]\\d[ -]?\\d{4}[ -]?\\d{4}(?!\\d)"),\n\t\ttests/test_obs.py'
   $'可观测：手机号不认连字符分隔\tknowledge/service/obs.py\t1[3-9]\\d[ -]?\\d{4}[ -]?\\d{4}(?!\\d)\t1[3-9]\\d[ ]?\\d{4}[ ]?\\d{4}(?!\\d)\ttests/test_obs.py'
   $'可观测：键名不先驼峰归一\tknowledge/service/obs.py\t    return re.sub(r"(?<=[a-z0-9])([A-Z])", r"_\\1", str(key)).replace("-", "_").lower()\t    return str(key).lower()\ttests/test_obs.py'
+  # WeKnora 后端（specs/kge-12-weknora-integration C）
+  $'WeKnora：不核对命中是否在允许集合里\tknowledge/weknora/filters.py\tif weknora_id is None or weknora_id not in plan.knowledge_ids:\tif weknora_id is None:\ttests/test_weknora_backend.py'
+  $'WeKnora：条目缺出版社时也排除\tknowledge/weknora/filters.py\tif k in filters and getattr(e, k) is not None and getattr(e, k) != filters[k]:\tif k in filters and getattr(e, k) != filters[k]:\ttests/test_weknora_backend.py'
+  $'WeKnora：不按出版社过滤\tknowledge/weknora/filters.py\tNOT_APPLICABLE_WHEN_MISSING = ("publisher", "edition", "semester")\tNOT_APPLICABLE_WHEN_MISSING = ("edition", "semester")\ttests/test_weknora_backend.py'
+  $'WeKnora：已取代的条目也参与检索\tknowledge/weknora/filters.py\tif not e.active or e.content_type not in content_types:\tif e.content_type not in content_types:\ttests/test_weknora_backend.py'
+  $'WeKnora：相似题的允许清单超上限时回 500 而不是走 SQL\tknowledge/weknora/backend.py\t        except FilterTooBroad:  # 一个学科\t        except ZeroDivisionError:  # 一个学科\ttests/test_weknora_backend.py'
+  $'WeKnora：允许清单超上限不报错\tknowledge/weknora/filters.py\tif len(ids) > self.max_ids:\tif False:\ttests/test_weknora_backend.py'
+  $'WeKnora：允许清单为空仍检索（退化成全库检索）\tknowledge/weknora/backend.py\t        if not plan.empty:\n            res = await self._search(body\t        if True:\n            res = await self._search(body\ttests/test_weknora_backend.py'
+  $'WeKnora：命中的中台内容 ID 写成 WeKnora ID\tknowledge/weknora/backend.py\thit: dict[str, Any] = {"content_id": e.content_id,\thit: dict[str, Any] = {"content_id": e.weknora_id,\ttests/test_weknora_backend.py'
+  $'WeKnora：相似题不排除自己\tknowledge/weknora/backend.py\texclude=[me.weknora_id])\t)\ttests/test_weknora_backend.py'
+  $'WeKnora：清单的未定义字段不拒绝\tknowledge/weknora/manifest.py\t    if unknown:\n        raise ManifestError\t    if False:\n        raise ManifestError\ttests/test_weknora_backend.py'
+  $'WeKnora：清单不核对 item_ref 的学科\tknowledge/weknora/manifest.py\tif item_ref is not None and item_ref.split(":", 1)[0] != subject:\tif False:\ttests/test_weknora_backend.py'
+  $'WeKnora：开关缺省开\tknowledge/service/config.py\twk_flag = e.get("KNOWLEDGE_WEKNORA_BACKEND", "0")\twk_flag = e.get("KNOWLEDGE_WEKNORA_BACKEND", "1")\ttests/test_weknora_backend.py'
+  # 契约 v0.10 签字后接上 standard.search
+  $'v0.10：standard.search 允许学习服务调用\tknowledge/service/tools.py\t    "standard.search": frozenset({"bff", "orchestrator"}),\t    "standard.search": PUBLIC_CALLERS,\ttests/test_service_unit.py'
 )
 
 # 知识服务读工具（PR ②）：需要一次性 Postgres
@@ -187,8 +208,8 @@ M_DB=(
   $'知识服务：放过待审与驳回的标签\tknowledge/service/reader.py\t_APPROVED = "t.tag_review_status = \'approved\'"\t_APPROVED = "true"\ttests/test_service_db.py'
   $'知识服务：node.path 走弱前置边\tknowledge/service/reader.py\tAND type = \'prerequisite\' AND strength = \'strong\' AND\tAND type = \'prerequisite\' AND\ttests/test_service_db.py'
   $'知识服务：不核对请求体 caller 与令牌\tknowledge/service/tools.py\t        if ctx.get("caller") != caller:\t        if False:\ttests/test_service_contract.py tests/test_service_mcp.py'
-  $'知识服务：跳过请求校验\tknowledge/service/tools.py\t        errors = self.contract.validate(spec.request_schema, body)\t        errors = []\ttests/test_service_contract.py'
-  $'知识服务：跳过响应校验\tknowledge/service/tools.py\t        bad = self.contract.validate(spec.response_schema, envelope)\t        bad = []\ttests/test_service_db.py'
+  $'知识服务：跳过请求校验\tknowledge/service/tools.py\t        errors = contract.validate(spec.request_schema, body)\t        errors = []\ttests/test_service_contract.py'
+  $'知识服务：跳过响应校验\tknowledge/service/tools.py\t        bad = contract.validate(spec.response_schema, envelope)\t        bad = []\ttests/test_service_db.py'
   $'知识服务：请求的 map_version 指向非发布版本也放过\tknowledge/service/tools.py\t        if v is None or ("map_version" in ctx and ctx["map_version"] != v.version):\t        if v is None:\ttests/test_service_db.py tests/test_service_e2e.py'
   $'知识服务：个人层工具不回 501\tknowledge/service/tools.py\t        if tool in PERSONAL_TOOLS:\t        if False:\ttests/test_service_contract.py'
   $'知识服务：以超级用户连接不报错\tknowledge/service/reader.py\t    if row["rolsuper"]:\t    if False:\ttests/test_service_db.py'
@@ -228,6 +249,18 @@ M_DB=(
   $'KGE-06：关停不等进行中的 reload\tknowledge/service/app.py\t                await swapper.drain()\t                pass\ttests/test_hotswap.py'
   $'KGE-06：没配置指针文件时 SIGHUP 也排 reload\tknowledge/service/hotswap.py\t        if self.pointer is None:\n            log.warning\t        if False:\n            log.warning\ttests/test_hotswap.py'
   $'KGE-06：切换不替换已有快照（仍服务旧快照）\tknowledge/service/hotswap.py\t        self.core.pages = snap  # 一次引用赋值\t        self.core.pages = self.core.pages or snap  # 一次引用赋值\ttests/test_hotswap.py'
+  # WeKnora 后端（库上，specs/kge-12-weknora-integration C）
+  $'WeKnora：候选题不经打标审核核对\tknowledge/service/reader.py\tt.item_id::text = ANY($3::text[])\n                                        AND {_APPROVED}\tt.item_id::text = ANY($3::text[])\ttests/test_weknora_backend.py'
+  $'WeKnora：出错不退回 SQL\tknowledge/service/tools.py\t            except UpstreamError as e:\n                backend = "sql_fallback"\t            except ZeroDivisionError as e:\n                backend = "sql_fallback"\ttests/test_weknora_backend.py'
+  $'WeKnora：开关关时日志也带 backend\tknowledge/service/tools.py\t        if backend is not None:\n            meta["backend"] = backend\t        meta["backend"] = backend or "sql"\ttests/test_weknora_backend.py'
+  $'WeKnora：出错退回 SQL 时不计数（告警看不到）\tknowledge/service/tools.py\t                WEKNORA_SIMILAR.labels(subject=subject, outcome="timeout" if e.timeout else "unavailable").inc()\t                pass\ttests/test_weknora_backend.py'
+  $'WeKnora：相似题不按题族标 relation\tknowledge/service/tools.py\tsame = me["family_id"] is not None and r["family_id"] == me["family_id"]\tsame = False\ttests/test_weknora_backend.py'
+  # 契约 v0.10 签字后接上 standard.search（库上）
+  $'v0.10：响应总回当前版本（0.9.0 的调用方拿到 0.10.0）\tknowledge/service/tools.py\tenvelope = {"contract_version": contract.version,\tenvelope = {"contract_version": CONTRACT_VERSION,\ttests/test_service_contract.py'
+  $'v0.10：0.9.0 的请求按 v0.10 校验\tknowledge/service/tools.py\tcontract = self.contract.for_version(ctx.get("contract_version", CONTRACT_VERSION))\tcontract = self.contract\ttests/test_service_contract.py'
+  $'v0.10：standard.search 出错回 500\tknowledge/service/tools.py\t        except UpstreamError as e:\n            if e.timeout:\t        except ZeroDivisionError as e:\n            if e.timeout:\ttests/test_weknora_backend.py'
+  $'v0.10：standard.search 超时也回 503\tknowledge/service/tools.py\t            if e.timeout:\n                raise ServiceError(504\t            if False:\n                raise ServiceError(504\ttests/test_weknora_backend.py'
+  $'v0.10：允许清单装不下时回 500\tknowledge/service/tools.py\t        except FilterTooBroad:\n            raise invalid(\t        except ZeroDivisionError:\n            raise invalid(\ttests/test_weknora_backend.py'
 )
 if [ "$HAVE_PG" = "1" ]; then M+=("${M_DB[@]}"); else echo "knowledge-mutation: 本机没有 Postgres，知识服务的 ${#M_DB[@]} 条变异跳过"; fi
 

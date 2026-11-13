@@ -435,7 +435,7 @@ def test_cli_dry_run_lists_plan_without_values(capsys):
     rc, out, err = _cli(["--dry-run"], FULL_ENV, capsys)
     assert rc == 0, err
     plans = [json.loads(ln) for ln in out.splitlines()]
-    assert len(plans) == 11 and all(p["event"] == "plan" and len(p["next"]) == 3 for p in plans)  # 0060 起含调用记录留存删除
+    assert len(plans) == 13 and all(p["event"] == "plan" and len(p["next"]) == 3 for p in plans)  # 0060 起含调用记录留存删除，0062 / 0063 起含续建与清理
     for v in ("/tmp", "localhost", "127.0.0.1", "/synthetic/", "synthetic", "/opt/evil"):
         assert v not in out
     by = {p["job"]: p for p in plans}

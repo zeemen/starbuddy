@@ -32,10 +32,10 @@ def ctx(caller: str = "orchestrator", data_class: str = "L1", **extra: Any) -> d
 
 
 @asynccontextmanager
-async def running_app(db, *, pages: PageSnapshot | None = None, role: str = APP_ROLE,
+async def running_app(db, *, pages: PageSnapshot | None = None, role: str = APP_ROLE, weknora: Any = None,
                       **settings_kw: Any) -> AsyncIterator[httpx.AsyncClient]:
     pool = await create_reader_pool(**db.connect_kwargs(role))
-    app = create_app(settings(**settings_kw), pool=pool, pages=pages)
+    app = create_app(settings(**settings_kw), pool=pool, pages=pages, weknora=weknora)
     try:
         async with app.router.lifespan_context(app):
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=BASE) as client:

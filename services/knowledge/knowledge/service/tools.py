@@ -13,7 +13,7 @@ import json
 import logging
 import re
 import time
-from typing import Any, Awaitable, Callable
+from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from ..nodeid import SUBJECT_PREFIX
 from .cache import CACHED_TOOLS, ReadCache, cacheable
@@ -24,6 +24,12 @@ from .reader import KgeReader, MapVersionRow, jsonb, node_record, projection_rec
 from ..retrieval.resolver import CombinedResolver
 from ..retrieval.tokenize import TOKENIZER_VERSION
 from .resolve import LOW_CONFIDENCE, RESOLVER_VERSION, Resolver
+from ..weknora import SIMILAR_MODEL, UpstreamError
+from ..weknora.filters import FilterTooBroad
+from . import obs
+
+if TYPE_CHECKING:  # 开关关时不导入 WeKnora 客户端（KGE-12 C）
+    from ..weknora.backend import WeKnoraBackend
 
 log = logging.getLogger("starbuddy.knowledge")
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
@@ -34,10 +40,19 @@ ALLOWED_CALLERS: dict[str, frozenset[str]] = {
     "node.resolve": frozenset({"orchestrator"}),
     "node.get": PUBLIC_CALLERS, "node.path": PUBLIC_CALLERS, "page.get": PUBLIC_CALLERS, "item.search": PUBLIC_CALLERS,
     "item.similar": PUBLIC_CALLERS, "rubric.get": PUBLIC_CALLERS,
+    "standard.search": frozenset({"bff", "orchestrator"}),  # 契约 v0.10 StandardSearchContext
     "evidence.write": frozenset({"orchestrator", "learning"}), "mastery.get": frozenset({"orchestrator", "learning"}),
     "mastery.explain": frozenset({"orchestrator", "learning"}),
 }
 PARTIAL_CREDIT = ("all_or_nothing", "proportional", "stepwise")
+# KGE-12 C（lessons 待人确认第 6 条）：开了 WeKnora 后端时 item.similar 的去向。WeKnora 出错时退回 SQL，对学生无感，所以要靠这个计数发现故障
+# （deploy/observability/alerts.yaml 的 StarbuddyKnowledgeWeKnoraFallback）。outcome 沿用共享枚举：
+# ok = WeKnora 给的候选；unavailable / timeout = WeKnora 出错或超时、退回 SQL；bad_response = 取不到题目正文；
+# rejected = 允许清单装不下；other = 题目没交付进 WeKnora。开关关时不计
+WEKNORA_SIMILAR = obs.counter("starbuddy_knowledge_weknora_similar_total",
+                              "开了 WeKnora 后端时 item.similar 的去向（ok 为 WeKnora 候选；unavailable、timeout 为出错退回 SQL）",
+                              ("subject", "outcome"))
+SIMILAR_OUTCOME = {"not_delivered": "other", "no_content": "bad_response", "too_broad": "rejected"}
 MAX_PROJECTIONS = 16
 
 
@@ -53,8 +68,10 @@ def tokenizer_source(version: str = TOKENIZER_VERSION) -> str:
 
 class ToolCore:
     def __init__(self, reader: KgeReader, contract: Contract, pages: PageSnapshot | None = None,
-                 resolver: Resolver | None = None, cache: ReadCache | None = None) -> None:
+                 resolver: Resolver | None = None, cache: ReadCache | None = None,
+                 weknora: "WeKnoraBackend | None" = None) -> None:
         self.reader = reader
+        self.weknora = weknora  # KGE-12 C：None = 开关关（缺省），item.similar 走 SQL，响应与日志都与原来相同
         self.contract = contract
         self.pages = pages
         self.cache = cache  # PLT-19：None = 缓存关（缺省）
@@ -62,6 +79,7 @@ class ToolCore:
         self.handlers: dict[str, Callable[[dict], Awaitable[tuple[dict, dict]]]] = {
             "node.resolve": self.node_resolve, "node.get": self.node_get, "node.path": self.node_path, "page.get": self.page_get,
             "item.search": self.item_search, "item.similar": self.item_similar, "rubric.get": self.rubric_get,
+            "standard.search": self.standard_search,
         }
 
     async def call(self, tool: str, body: Any, caller: str | None) -> tuple[int, dict]:
@@ -100,24 +118,33 @@ class ToolCore:
         if not isinstance(body, dict) or not isinstance(body.get("context"), dict):
             raise invalid("request body must be an object with context")
         ctx = body["context"]
-        if "contract_version" in ctx and ctx["contract_version"] != CONTRACT_VERSION:
+        # 迁移期 0.9.0 与 0.10.0 并存：按请求声明的版本选契约校验，响应回同一个版本（缺版本时按当前版本校验，schema 回 400）
+        contract = self.contract.for_version(ctx.get("contract_version", CONTRACT_VERSION))
+        if contract is None:
             raise ServiceError(400, "CONTRACT_VERSION_UNSUPPORTED", "contract version is not supported")
+        spec = contract.tools.get(tool)
+        if spec is None:  # standard.search 只在 0.10.0 下有
+            raise ServiceError(400, "CONTRACT_VERSION_UNSUPPORTED", "this tool requires a newer contract version")
         if ctx.get("caller") != caller:
             raise forbidden("context.caller does not match the service token")
-        errors = self.contract.validate(spec.request_schema, body)
+        errors = contract.validate(spec.request_schema, body)
         if errors:
             raise invalid("request does not conform to the contract", "; ".join(errors)[:500])
         if self.cache is not None and tool in CACHED_TOOLS:
             result, meta = await self._cached(tool, body, self.cache, {} if record is None else record)
         else:
             result, meta = await self.handlers[tool](body)
-        envelope = {"contract_version": CONTRACT_VERSION, "result": result, "evidence_ids": [],
+        if record is not None:  # KGE-12 C：只在开了 WeKnora 后端时有（开关关时访问日志字段不变）；不记查询文本
+            for k in ("backend", "weknora_dropped"):
+                if k in meta:
+                    record[k] = meta[k]
+        envelope = {"contract_version": contract.version, "result": result, "evidence_ids": [],
                     "confidence": meta.get("confidence", 1), "source_version": meta["source_version"],
                     "model_version": meta.get("model_version", f"algo:kge-{tool.replace('.', '-')}@{ALGO_VERSION}"),
                     "human_review_required": bool(meta.get("review_reasons"))}
         if meta.get("review_reasons"):
             envelope["review_reasons"] = list(meta["review_reasons"])
-        bad = self.contract.validate(spec.response_schema, envelope)
+        bad = contract.validate(spec.response_schema, envelope)
         if bad:
             log.error(json.dumps({"tool": tool, "response_contract_errors": bad[:20]}, ensure_ascii=False))
             raise internal()
@@ -315,9 +342,66 @@ class ToolCore:
         me = await self.reader.item(v.id, subject, item_id)
         if me is None:
             raise not_found("ITEM_NOT_FOUND")
-        rows = await self.reader.item_similar(v.id, subject, item_id, me["family_id"], me["main_node_id"], int(body.get("limit", 5)))
+        limit = int(body.get("limit", 5))
+        backend: str | None = None
+        if self.weknora is not None:
+            try:
+                sim = await self.weknora.similar_items(body["item_ref"], limit)
+            except UpstreamError as e:
+                backend = "sql_fallback"  # WeKnora 不可用：退回 SQL 实现（lessons 待人确认第 6 条）
+                WEKNORA_SIMILAR.labels(subject=subject, outcome="timeout" if e.timeout else "unavailable").inc()
+            else:
+                WEKNORA_SIMILAR.labels(subject=subject, outcome="ok" if sim.refs is not None else SIMILAR_OUTCOME.get(sim.reason, "other")).inc()
+                if sim.refs is not None:
+                    return await self._similar_from_weknora(subject, v, me, sim.refs, limit, sim.dropped,
+                                                            self.weknora.manifest.source_version)
+                backend = f"sql_{sim.reason}"
+        rows = await self.reader.item_similar(v.id, subject, item_id, me["family_id"], me["main_node_id"], limit)
         items = [{"item": self._item_view(r), "relation": "same_family" if r["same_family"] else "similar"} for r in rows]
-        return {"items": items}, {"source_version": graph_source(subject, v)}
+        meta: dict[str, Any] = {"source_version": graph_source(subject, v)}
+        if backend is not None:
+            meta["backend"] = backend
+        return {"items": items}, meta
+
+    async def _similar_from_weknora(self, subject: str, v: MapVersionRow, me: Any, refs: list[str], limit: int,
+                                    dropped: int, kb_source: str) -> tuple[dict, dict]:
+        """WeKnora 给的候选按 WeKnora 的顺序，再经 kge.item_tag 核对（已发布版本、审核通过、同学科）；relation 按题族算"""
+        ids = [r.partition(":")[2] for r in refs if r.partition(":")[0] == subject]
+        rows = {r["item_id"]: r for r in await self.reader.items_by_ids(v.id, subject, ids)}
+        items = []
+        for i in ids:
+            r = rows.get(i)
+            if r is None or i == me["item_id"]:
+                continue
+            same = me["family_id"] is not None and r["family_id"] == me["family_id"]
+            items.append({"item": self._item_view(r), "relation": "same_family" if same else "similar"})
+            if len(items) >= limit:
+                break
+        meta: dict[str, Any] = {"source_version": f"{graph_source(subject, v)};{kb_source}",
+                                "model_version": SIMILAR_MODEL, "backend": "weknora"}
+        if dropped:
+            meta["weknora_dropped"] = dropped
+        return {"items": items}, meta
+
+    async def standard_search(self, body: dict) -> tuple[dict, dict]:
+        """契约 v0.10 的标准知识检索（KGE-12；ADR 16 第 3.2 节）：经 WeKnora 后端（knowledge/weknora/backend.py）。
+        开关关时回 501；过滤条件命中的文档超过允许清单上限回 400（不退化成全库检索）；WeKnora 出错回 503、超时回 504（可重试）。
+        查询文本不进日志（访问日志只记 request_id、caller、工具名、状态码，另有 backend 与被丢掉的允许集合外命中数）"""
+        if self.weknora is None:
+            raise ServiceError(501, "METHOD_NOT_IMPLEMENTED", "standard search backend is not enabled")
+        try:
+            result, meta = await self.weknora.standard_search(body)
+        except FilterTooBroad:
+            raise invalid("filters match too many documents; narrow them") from None
+        except UpstreamError as e:
+            if e.timeout:
+                raise ServiceError(504, "UPSTREAM_TIMEOUT", "knowledge base timed out", retryable=True) from None
+            raise ServiceError(503, "UPSTREAM_UNAVAILABLE", "knowledge base is unavailable", retryable=True) from None
+        dropped = meta.pop("dropped", 0)
+        meta["backend"] = "weknora"
+        if dropped:
+            meta["weknora_dropped"] = dropped
+        return result, meta
 
     async def rubric_get(self, body: dict) -> tuple[dict, dict]:
         subject, item_id = self._item_ref(body["item_ref"])

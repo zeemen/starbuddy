@@ -163,6 +163,7 @@ test('阈值与时长读 config/auth.json，与 spec 默认一致（待人确认
   const c = loadAuthConfig();
   assert.deepEqual(c.otp, { ttl_seconds: 300, max_attempts: 5 });
   assert.deepEqual(c.session.guardian, { absolute_seconds: 7 * 86400, idle_seconds: 86400 });
+  assert.deepEqual(c.session.student, { absolute_seconds: 12 * 3600, idle_seconds: 3600 }, 'PLT-24（T47）：学生会话最长 12 小时、空闲 1 小时');
   assert.equal(c.rate_limits['otp_request.phone.minute']!.limit, 1);
   assert.equal(c.rate_limits['otp_request.phone.day']!.limit, 10);
   assert.equal(c.rate_limits['otp_request.ip.hour']!.limit, 30);

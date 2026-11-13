@@ -94,6 +94,7 @@ spec:
             - {name: PORT, value: "8788"}
             - {name: LEARNING_DATABASE_URL, valueFrom: {secretKeyRef: {name: starbuddy-learning, key: database-url}}}
             - {name: LEARNING_SERVICE_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-learning, key: service-token}}}
+            - {name: LEARNING_SESSION_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-learning, key: session-token}}}
             - {name: LEARNING_ADAPTER_AYA_URL, value: "http://127.0.0.1:8781"}
             - {name: LEARNING_ADAPTER_AYA_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-adapters, key: aya-token}}}
             - {name: LEARNING_ADAPTER_ZHIXING_URL, value: "http://127.0.0.1:8782"}
@@ -347,6 +348,7 @@ spec:
             - {name: BFF_TRUST_CLIENT_IP, value: "0"}
             - {name: BFF_LEARNING_URL, value: "http://10.96.100.10:8788"}
             - {name: BFF_LEARNING_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-learning, key: service-token}}}
+            - {name: BFF_LEARNING_SESSION_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-learning, key: session-token}}}
             - {name: BFF_INSIGHT_URL, value: "http://10.96.100.14:8791"}
             - {name: BFF_INSIGHT_TOKEN, valueFrom: {secretKeyRef: {name: starbuddy-insight, key: bff-token}}}
             - {name: BFF_STAGING_OTP_FILE, value: /run/otp/otp.json}
@@ -396,6 +398,7 @@ spec:
             - {name: WEB_HOST, valueFrom: {fieldRef: {fieldPath: status.podIP}}}
             - {name: PORT, value: "3000"}
             - {name: STARBUDDY_BFF_URL, value: "http://10.96.100.30:8787"}
+            - {name: WEB_TRUST_CLIENT_IP, value: "0"}
             - {name: STARBUDDY_REVIEW_URL, value: "http://10.96.100.13:8792"}
             - {name: STARBUDDY_PRESENCE_HMAC_KEY, valueFrom: {secretKeyRef: {name: starbuddy-web, key: presence-hmac-key}}}
             - {name: STARBUDDY_CONSENT_VERSION_PRIVACY, valueFrom: {configMapKeyRef: {name: starbuddy-staging, key: consent-version-privacy}}}

@@ -1,7 +1,7 @@
 // 内容包与登记脚本。
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { registeredAdmission, registrationSql } from "../scripts/register-content.ts";
+import { registeredAdmission, registrationSql } from "../../../tools/content-register/aya.ts";
 import { indexPack } from "../src/content.ts";
 import { keysOf, realPack } from "./helpers.ts";
 

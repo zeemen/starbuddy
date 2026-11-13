@@ -1,6 +1,6 @@
 """错题再练的内部接口（只供 BFF 调用；接口定义 services/learning/openapi/practice-internal.v0.yaml）。
 
-鉴权与诊断接口同一做法：Bearer 服务间令牌（只认 BFF 的 LEARNING_SERVICE_TOKEN；编排层、洞察服务、路由客户端令牌一律 401），
+鉴权与诊断接口同一做法：Bearer 服务间令牌（只认 BFF 的会话令牌 LEARNING_SESSION_TOKEN，PLT-24；写入令牌、编排层、洞察服务、路由客户端令牌一律 401），
 sha256 后常量时间比较。请求体限 64 KB，JSON 拒绝 NaN 与重复键，未知键一律 400（purpose、channel 由服务端写，请求里给了即 400）。
 日志只记接口名、状态码、错误码、耗时，不记请求体（作答、票据）与学生 ID。学习服务不认学生身份：BFF 负责“只认学生本人”。
 只查不执行的重放不另建：BFF 用既有的 GET /internal/v1/replay/grade/{key}（作答的 idempotency_key 就是判分请求的键）。

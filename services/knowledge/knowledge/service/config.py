@@ -26,6 +26,12 @@
                                    单条超过它的 1/64（缺省 1 MiB）不入缓存
   KNOWLEDGE_READ_CACHE_LOG_EVERY   每多少次缓存判断打一条计数日志，缺省 1000
   以上数值只收 ASCII 十进制数字，不合格即拒绝启动
+  KNOWLEDGE_WEKNORA_BACKEND        （KGE-12 C）WeKnora 后端开关（knowledge.weknora_backend）：1 开、0 或不设关（缺省关；关时不导入
+                                   WeKnora 客户端，item.similar 走 SQL，响应与访问日志逐字节不变）
+  KNOWLEDGE_WEKNORA_MANIFEST       开关开时必填（绝对路径）：交付清单（knowledge/weknora/manifest.py），启动时校验，不合格拒绝启动
+  KNOWLEDGE_WEKNORA_TIMEOUT_MS     开关开时向 WeKnora 单次请求的超时，缺省 3000，范围 100–30000
+  WEKNORA_BASE_URL、WEKNORA_API_KEY、WEKNORA_TARGET   开关开时由 tools/weknora-probe 的客户端读：只读检索密钥；
+                                   WEKNORA_TARGET 必须是 test（只连测试知识库，ADR 16 第 3.4b 节）
   KNOWLEDGE_EXTRA_HOST             仅 staging：Host 允许列表（含 MCP 的 DNS 重绑定防护）另收的一个 RFC 1918 IPv4 字面量
                                    （k8s 里填本服务 Service 的 clusterIP；LT-03）
 staging 下 KNOWLEDGE_DATABASE_URL 必须带 sslmode=verify-full&sslrootcert=/run/rds-ca/ca.pem（CA 文件须存在），建池前核对（LT-03）。
@@ -96,6 +102,7 @@ DEFAULT_CACHE_MAX_BYTES = 64 * 1024 * 1024
 MIN_CACHE_MAX_BYTES = 64 * 1024
 MAX_CACHE_MAX_BYTES = 1024 * 1024 * 1024
 DEFAULT_CACHE_LOG_EVERY = 1000
+DEFAULT_WEKNORA_TIMEOUT_MS = 3000
 MAX_CACHE_LOG_EVERY = 10_000_000
 _WILDCARD = {"", "*", "0.0.0.0", "::", "[::]", "0:0:0:0:0:0:0:0"}
 
@@ -147,6 +154,9 @@ class Settings:
     read_cache_log_every: int = DEFAULT_CACHE_LOG_EVERY
     extra_host: str | None = None  # LT-03：staging 另收的 Host（Service clusterIP）
     metrics_port: int | None = None  # LT-05：指标监听端口（None = 不起）
+    weknora_backend: bool = False  # KGE-12 C：缺省关
+    weknora_manifest: Path | None = None
+    weknora_timeout_ms: int = DEFAULT_WEKNORA_TIMEOUT_MS
 
     @staticmethod
     def from_env(environ: dict[str, str] | None = None) -> "Settings":
@@ -195,6 +205,13 @@ class Settings:
         size = _bounded_int(e, "KNOWLEDGE_READ_CACHE_SIZE", DEFAULT_CACHE_SIZE, 1, MAX_CACHE_SIZE)
         max_bytes = _bounded_int(e, "KNOWLEDGE_READ_CACHE_MAX_BYTES", DEFAULT_CACHE_MAX_BYTES, MIN_CACHE_MAX_BYTES, MAX_CACHE_MAX_BYTES)
         log_every = _bounded_int(e, "KNOWLEDGE_READ_CACHE_LOG_EVERY", DEFAULT_CACHE_LOG_EVERY, 1, MAX_CACHE_LOG_EVERY)
+        wk_flag = e.get("KNOWLEDGE_WEKNORA_BACKEND", "0")
+        if wk_flag not in ("0", "1"):
+            raise RuntimeError("KNOWLEDGE_WEKNORA_BACKEND 只能是 0 或 1")
+        wk_manifest = e.get("KNOWLEDGE_WEKNORA_MANIFEST") or None
+        if wk_flag == "1" and (wk_manifest is None or not os.path.isabs(wk_manifest)):
+            raise RuntimeError("开了 KNOWLEDGE_WEKNORA_BACKEND 就必须设 KNOWLEDGE_WEKNORA_MANIFEST（绝对路径）")
+        wk_timeout = _bounded_int(e, "KNOWLEDGE_WEKNORA_TIMEOUT_MS", DEFAULT_WEKNORA_TIMEOUT_MS, 100, 30_000)
         host = check_host(e.get("KNOWLEDGE_HOST", DEFAULT_HOST))
         if env == STAGING and host != DEFAULT_HOST and not private_ipv4(host):
             raise RuntimeError("KNOWLEDGE_HOST 在 staging 只能是 127.0.0.1 或内网 IPv4 地址（RFC 1918）")
@@ -205,7 +222,9 @@ class Settings:
                         page_snapshot_pointer=Path(pointer) if pointer else None, snapshot_hmac_key=key,
                         page_snapshot_root=Path(root) if root else None, read_cache=cache_flag == "1",
                         read_cache_size=size, read_cache_max_bytes=max_bytes, read_cache_log_every=log_every,
-                        extra_host=parse_extra_host(e.get("KNOWLEDGE_EXTRA_HOST"), env))
+                        extra_host=parse_extra_host(e.get("KNOWLEDGE_EXTRA_HOST"), env),
+                        weknora_backend=wk_flag == "1", weknora_manifest=Path(wk_manifest) if wk_flag == "1" else None,
+                        weknora_timeout_ms=wk_timeout)
 
 
 def _bounded_int(e: dict[str, str], name: str, default: int, low: int, high: int) -> int:

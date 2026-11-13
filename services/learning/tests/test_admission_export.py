@@ -147,8 +147,35 @@ def test_check_unpublished_version_caps_at_source_unverified(status):
     assert [v["reason"] for v in bad["violations"]] == ["more_lenient_than_platform"]
 
 
+STRICT_SCAN = {"check": "C9", "mode": "strict", "flagged_items": []}
+
+
 def pk(items, **over) -> dict:
-    return {"format": "aya-content-pack/3", "curriculum": CUR, "pack_version": "x", "items": items, **over}
+    return {"format": "aya-content-pack/3", "curriculum": CUR, "pack_version": "x", "items": items, "hint_scan": STRICT_SCAN, **over}
+
+
+@pytest.mark.parametrize("scan,want", [
+    ({"check": "C9", "mode": "flag", "flagged_items": []}, [(None, "hint_scan_not_strict")]),
+    ({"check": "C9", "mode": "flag", "flagged_items": ["SYN-ADX-2", "SYN-ADX-1"]},
+     [(None, "hint_scan_not_strict"), ("SYN-ADX-1", "hint_scan_flagged"), ("SYN-ADX-2", "hint_scan_flagged")]),
+    ({"check": "C9", "mode": "strict", "flagged_items": ["SYN-ADX-1"]}, [("SYN-ADX-1", "hint_scan_flagged")]),
+    ({"check": "C8", "mode": "strict", "flagged_items": []}, [(None, "hint_scan_not_strict")]),
+    ({"check": "C9", "mode": "strict"}, [(None, "hint_scan_not_strict")]),
+    (None, [(None, "hint_scan_not_strict")]),
+])
+def test_check_refuses_non_strict_or_flagged_hint_scan(scan, want):
+    """T01 / T15（specs/tech-debt-batch3 B）：C9 检查不是严格模式、或有被标记的题，verify 不合格（只列题号，不输出提示文本）；
+    准入逐题比较照常进行（同一份报告里两类都列）。"""
+    s = snap([item("SYN-ADX-1", "admitted", SRC), item("SYN-ADX-2", "pending_review")])
+    items = [{"id": "SYN-ADX-1", "admission": "admitted", "hint": "不应出现在报告里的提示原文"},
+             {"id": "SYN-ADX-2", "admission": "pending_review"}]
+    p = pk(items, hint_scan=scan) if scan is not None else {k: v for k, v in pk(items).items() if k != "hint_scan"}
+    r = ax.check_not_more_lenient(p, s)
+    assert not r["ok"] and r["violation_count"] == len(want)
+    assert [(v["item_id"], v["reason"]) for v in r["violations"]] == want
+    assert "提示原文" not in ax.dumps(r)
+    ok = ax.check_not_more_lenient(pk(items), s)
+    assert ok["ok"] and ok["hint_scan"] == {"mode": "strict", "flagged_count": 0}
 
 
 # ---------- 输入校验：比较、读库之前就拒（InputError，命令行退出码 2，不打堆栈） ----------
@@ -420,13 +447,18 @@ def test_db_export_draft_refused_then_published(pg, adx, monkeypatch, capsys):
     assert ax.main(["export", "--pack", str(adx / "pack.json"), "--out", str(out)]) == 2
     assert ax.main(["export", "--pack", str(adx / "pack.json"), "--out", str(out), "--replace"]) == 0
     # 核对：按决定重建后的样子不比平台宽；把 pending_review 的题写成 admitted 就不合格
-    rebuilt = {"format": "aya-content-pack/3", "curriculum": CUR, "pack_version": "x",
+    rebuilt = {"format": "aya-content-pack/3", "curriculum": CUR, "pack_version": "x", "hint_scan": STRICT_SCAN,
                "items": [{"id": d["item_id"], "admission": d["admission"]} for d in f["decisions"]]
                + [{"id": "SYN-ADX-2", "admission": "source_unverified"}, {"id": "SYN-ADX-4", "admission": "source_unverified"}]}
     (adx / "rebuilt.json").write_text(json.dumps(rebuilt), encoding="utf-8")
     capsys.readouterr()
     assert ax.main(["verify", "--pack", str(adx / "rebuilt.json")]) == 0
     assert json.loads(capsys.readouterr().out)["ok"]
+    # 发布门禁（specs/tech-debt-batch3 B）：同一份内容包，C9 检查改成非严格模式且带标记 → 不合格
+    (adx / "rebuilt-flag.json").write_text(json.dumps({**rebuilt, "hint_scan": {"check": "C9", "mode": "flag", "flagged_items": ["SYN-ADX-1"]}}),
+                                           encoding="utf-8")
+    assert ax.main(["verify", "--pack", str(adx / "rebuilt-flag.json")]) == 1
+    assert [v["reason"] for v in json.loads(capsys.readouterr().out)["violations"]] == ["hint_scan_not_strict", "hint_scan_flagged"]
     rebuilt["items"][2]["admission"] = "admitted"
     (adx / "rebuilt.json").write_text(json.dumps(rebuilt), encoding="utf-8")
     assert ax.main(["verify", "--pack", str(adx / "rebuilt.json")]) == 1

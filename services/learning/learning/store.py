@@ -355,6 +355,21 @@ async def map_version_for(pool, subject: str, content_version: dict | None) -> s
         )
 
 
+async def map_version_number(pool, map_version_id: str | None) -> str | None:
+    """绑定的地图版本号（kge.map_version.version，PLT-25 交叉核对用）；没有绑定为空。"""
+    if not map_version_id:
+        return None
+    async with learning_tx(pool) as conn:
+        return await conn.fetchval("SELECT version FROM kge.map_version WHERE id = $1::uuid", map_version_id)
+
+
+async def published_map_versions(pool, subject: str) -> list[str]:
+    """该科全部已发布的地图版本号（PLT-25：plan 没有内容版本，只能与已发布的比）。"""
+    rows = await pool.fetch("SELECT version FROM kge.map_version WHERE subject = $1::platform.subject AND status = 'published'",
+                            subject)
+    return [r["version"] for r in rows]
+
+
 async def persist(pool, *, method, key, lease_token, request, response, verified, attempt_ids, summary_base,
                   attrs: Attributes = V0) -> dict:
     """一个事务写完全部行，并把幂等记录推进到 succeeded。返回结果摘要。

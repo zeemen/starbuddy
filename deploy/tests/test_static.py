@@ -149,6 +149,7 @@ def test_compose_hardening(name, compose_staging, compose_local):
         assert not DOMAIN.search(s), f"{name}：出现了真实域名样式的取值 {s[:60]}"
     if name == "staging":
         assert doc["services"]["bff"]["environment"]["BFF_TRUST_CLIENT_IP"] == "0", "S5：网关核对之前不信任转交的客户端 IP"
+        assert doc["services"]["web"]["environment"]["WEB_TRUST_CLIENT_IP"] == "0", "S5（T46）：网关核对之前前端不转交客户端 IP"
         net = ipaddress.ip_network(doc["networks"]["sbnet"]["ipam"]["config"][0]["subnet"])
         assert net.is_private
         for svc, spec in doc["services"].items():
@@ -188,6 +189,9 @@ def test_k8s_rules(k8s_docs):
     bff = next(d for d in deployments if d["metadata"]["name"] == "bff")
     benv = {e["name"]: e.get("value") for e in bff["spec"]["template"]["spec"]["containers"][0]["env"]}
     assert benv["BFF_TRUST_CLIENT_IP"] == "0", "S5：网关核对之前不信任转交的客户端 IP"
+    web = next(d for d in deployments if d["metadata"]["name"] == "web")
+    wenv = {e["name"]: e.get("value") for e in web["spec"]["template"]["spec"]["containers"][0]["env"]}
+    assert wenv["WEB_TRUST_CLIENT_IP"] == "0", "S5（T46）：网关核对之前前端不转交客户端 IP"
     services = {d["metadata"]["name"]: d for d in k8s_docs if d["kind"] == "Service"}
     for name, svc in services.items():
         if "clusterIP" in svc["spec"]:

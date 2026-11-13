@@ -1009,6 +1009,12 @@ def main() -> int:
         service_docs = check_services.load_all()
         errors.extend(check_services.run_service_checks(service_docs))
         service_summary = check_services.summary(service_docs)
+        # 知识服务 v0.10 候选版（KGE-12 B：standard.search，只做增量）
+        import check_knowledge_v010  # noqa: PLC0415
+
+        v09_doc, v010_doc = check_knowledge_v010.load_docs()
+        errors.extend(check_knowledge_v010.run_v010_checks(v09_doc, v010_doc))
+        service_summary += "；" + check_knowledge_v010.summary(v010_doc)
     if errors:
         print(f"contract-test: 失败（{len(errors)} 项）")
         for e in errors:

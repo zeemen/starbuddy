@@ -136,7 +136,7 @@ src/contract.ts              直接加载契约 YAML，ajv 校验请求与响应
 src/content.ts / taxonomy.ts 内容包加载与完整性检查 / 错因映射表（docs/mapping/error-taxonomy.v0.9.yaml）
 src/server.ts / main.ts      node:http，服务间令牌，路径前缀 /plugin/v0 / 启动入口
 src/startup.ts               启动前检查：不走代理、两个服务间令牌不同
-scripts/register-content.ts  输出内容登记 SQL（题目一律 pending_review，只增不改）
+（内容登记 SQL 的生成已迁到 tools/content-register/zhixing.ts，W13 T11；题目一律 pending_review，只增不改；npm run register:sql 照旧可用）
 tests/                       单测（node --test）；tests/route-stub.ts 是路由接口的本机 HTTP 桩
 conformance/fixtures.yaml    一致性测试夹具；conformance/harness.ts 是一致性测试专用启动器（起路由桩再加载 src/main.ts）
 ```

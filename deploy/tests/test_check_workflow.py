@@ -6,8 +6,10 @@ CI 把 make check 拆成并行任务：check-core 按 check-group-* 分 11 组�
 - check-core 恰好由各组的 CHECK_GROUP_* 变量组成，check = check-core + db-mutation；
 - 各组之间没有重复的检查目标；
 - db-mutation 的分片编号是 1…N 连续，DBMUT_SHARD 的分母就是 N；
-- PR 上只跑轻量检查（各组的 check-group-<组名>-light = 该组去掉 *-mutation），db-mutation 只在合并到 main 与手动触发时跑；
-  非 PR 事件仍跑全量（2026-11-03 用户决定）。"""
+- PR 与 push 到 main 只跑轻量检查（各组的 check-group-<组名>-light = 该组去掉 *-mutation）；变异测试（各组的
+  check-group-<组名>-mutation 与 db-mutation）只在手动触发（workflow_dispatch，scope = mutation / full）时跑
+  （2026-11-03 用户决定 PR 只跑轻量；PR #27、specs/ci-compute-diet 把 push 到 main 也改为只跑轻量）；
+- 对每一组，-light 与 -mutation 两份恰好互补，合起来就是整组，没有检查掉出去。"""
 from __future__ import annotations
 
 import re
@@ -26,22 +28,30 @@ def rule(target: str) -> list[str]:
     return m.group(1).split()
 
 
+SUFFIXES = ("-light", "-mutation")
+
+
+def full_groups() -> list[str]:
+    """Makefile 里的整组 check-group-<组名>（不含 -light、-mutation 两份）"""
+    return [n for n in re.findall(r"^check-group-([a-z0-9-]+):", MAKEFILE, re.M) if not n.endswith(SUFFIXES)]
+
+
 def group_vars() -> dict[str, list[str]]:
     return {v: deps.split() for v, deps in re.findall(r"^(CHECK_GROUP_[A-Z0-9_]+) := (.*)$", MAKEFILE, re.M)}
 
 
 def test_matrix_groups_match_makefile_groups():
     matrix = WORKFLOW["jobs"]["make-check"]["strategy"]["matrix"]["group"]
-    defined = [n for n in re.findall(r"^check-group-([a-z0-9-]+):", MAKEFILE, re.M) if not n.endswith("-light")]
     assert len(matrix) == len(set(matrix))
-    assert sorted(matrix) == sorted(defined)
+    assert sorted(matrix) == sorted(full_groups())
     run = " ".join(step.get("run", "") for step in WORKFLOW["jobs"]["make-check"]["steps"])
-    assert "make check-group-${{ matrix.group }}${{ github.event_name == 'pull_request' && '-light' || '' }} CONTRACT_STRICT=1" in run
+    assert 'make "check-group-${{ matrix.group }}$suffix"' in run and "CONTRACT_STRICT=1" in run
+    assert 'suffix="-$SUITE"' in run and 'if [ "$SUITE" = "full" ]; then suffix=""; fi' in run
 
 
 def test_check_core_is_exactly_the_union_of_groups():
     gv = group_vars()
-    full = [n for n in re.findall(r"^check-group-([a-z0-9-]+):", MAKEFILE, re.M) if not n.endswith("-light")]
+    full = full_groups()
     assert len(gv) == len(full)
     assert rule("check-core") == [f"$({v})" for v in gv]
     for name in full:
@@ -61,24 +71,50 @@ def test_db_mutation_shards_cover_one_to_n():
     assert "CONTRACT_STRICT=1" in run
 
 
-def test_every_job_fails_independently():
-    for name in ("make-check", "db-mutation"):
-        assert WORKFLOW["jobs"][name]["strategy"]["fail-fast"] is False
+def test_fail_fast_only_on_pull_requests():
+    # PR 上一组失败即早停（省计费分钟）；push 到 main 与手动触发要一次看全，不早停
+    assert WORKFLOW["jobs"]["make-check"]["strategy"]["fail-fast"] == "${{ github.event_name == 'pull_request' }}"
+    assert WORKFLOW["jobs"]["db-mutation"]["strategy"]["fail-fast"] is False
 
 
-def test_triggers_and_light_split():
+def test_triggers_and_suite_split():
     on = WORKFLOW.get("on", WORKFLOW.get(True))     # PyYAML 把键 on 读成 True
     assert set(on) == {"pull_request", "push", "workflow_dispatch"} and on["push"]["branches"] == ["main"]
-    assert WORKFLOW["jobs"]["db-mutation"]["if"] == "github.event_name != 'pull_request'"
+    scope = on["workflow_dispatch"]["inputs"]["scope"]
+    assert scope["default"] == "mutation" and scope["options"] == ["mutation", "light", "full"]
+    # 非手动触发（PR、push 到 main）一律只跑轻量
+    assert WORKFLOW["env"]["SUITE"] == "${{ github.event_name == 'workflow_dispatch' && inputs.scope || 'light' }}"
+    assert WORKFLOW["jobs"]["db-mutation"]["if"] == (
+        "github.event_name == 'workflow_dispatch' && (inputs.scope == 'mutation' || inputs.scope == 'full')")
     assert "if" not in WORKFLOW["jobs"]["make-check"]
+
+
+def test_light_and_mutation_split_each_group_exactly():
     gv = group_vars()
-    for name in re.findall(r"^check-group-([a-z0-9-]+):", MAKEFILE, re.M):
-        if name.endswith("-light"):
-            continue
+    for name in full_groups():
         var = f"CHECK_GROUP_{name.upper().replace('-', '_')}"
         assert " ".join(rule(f"check-group-{name}-light")) == f"$(filter-out %-mutation,$({var}))", name
+        assert " ".join(rule(f"check-group-{name}-mutation")) == f"$(filter %-mutation,$({var}))", name
     light = [t for deps in gv.values() for t in deps if not t.endswith("-mutation")]
     mutations = [t for deps in gv.values() for t in deps if t.endswith("-mutation")]
     assert mutations and light and "eval-persona" in light       # 人设回归每次都跑（规则 7）
     assert " ".join(rule("check-light")) == " ".join(f"$(filter-out %-mutation,$({v}))" for v in gv)
+    assert " ".join(rule("check-mutation")) == " ".join(f"$(filter %-mutation,$({v}))" for v in gv)
 
+
+def test_extra_browsers_job_only_on_manual_opt_in():
+    """W13 T22（specs/tech-debt-batch3 E）：WebKit、Firefox 的数据权利用例只在手动触发且勾选 extra_browsers 时跑；只装这两个浏览器、
+    只跑 playwright.config.ts 的两个 @data-rights 项目；PR 与 push 到 main 不受影响。"""
+    on = WORKFLOW.get("on", WORKFLOW.get(True))
+    extra = on["workflow_dispatch"]["inputs"]["extra_browsers"]
+    assert extra["type"] == "boolean" and extra["default"] is False
+    job = WORKFLOW["jobs"]["extra-browsers"]
+    assert job["if"] == "github.event_name == 'workflow_dispatch' && inputs.extra_browsers"
+    assert job["env"]["STARBUDDY_E2E_BROWSERS"] == "webkit,firefox"
+    runs = [s.get("run", "") for s in job["steps"]]
+    assert any("playwright install --with-deps webkit firefox" in r for r in runs)
+    assert not any("chromium" in r for r in runs)
+    e2e = [r for r in runs if "e2e.sh" in r]
+    assert len(e2e) == 1 and "--project=trust-on-webkit" in e2e[0] and "--project=trust-on-firefox" in e2e[0]
+    config = (ROOT / "apps/web/playwright.config.ts").read_text(encoding="utf-8")
+    assert "name: `trust-on-${b}`" in config and "grep: /@data-rights/" in config

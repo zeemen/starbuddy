@@ -16,7 +16,7 @@ import asyncpg
 import httpx
 import pytest
 
-from conftest import CREDENTIAL
+from conftest import SESSION_CREDENTIAL, CREDENTIAL
 from test_practice_service import candidate_contract, new_student, no_forbidden, plock, ppg, ppools, reset_clock  # noqa: F401
 from test_retest_service import engine
 from test_today_service import (FORBIDDEN_KEYS, N1, N3, TApi, _validator, db_digest, keys_in, open_api, scenario,  # noqa: F401
@@ -33,7 +33,7 @@ async def today_api(ppools, plock, *, snapshot: bool, with_engine: bool = True, 
     app, fakes = await open_api(app_pool, plock, eng, today_snapshot=snapshot, **over)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://learning.test") as c:
-            c.headers["authorization"] = f"Bearer {CREDENTIAL}"
+            c.headers["authorization"] = f"Bearer {SESSION_CREDENTIAL}"
             yield TApi(c, fakes, eng)
 
 

@@ -220,3 +220,18 @@ async def test_plan_works_without_any_switch(plan_api, student, monkeypatch):
     assert r.status_code == 200, r.text
     assert r.json()["subjects"][0]["status"] == "ok"
     assert len(adapter.requests) == 1 and adapter.requests[0]["context"]["contract_version"] == "1.0.0"
+
+
+@pytest.mark.parametrize("graph,outcome", [(None, "absent"), ("graph:aya-map@0.0.9", "match"), ("graph:aya-map@7.7.7", "mismatch"),
+                                           ("graph:wenli-map@0.0.9", "mismatch")])
+async def test_plan_map_version_check_only_counts(plan_api, student, graph, outcome):
+    """PLT-25 待人确认 #3：今日计划的地图版本核对只计数（与该科已发布的地图 0.0.9 比），不改返回、不拒收"""
+    from learning import metrics
+    client, adapter = plan_api
+    if graph:
+        adapter.mutate = lambda out: {**out, "source_version": out["source_version"] + ";" + graph}
+    counter = metrics.PLAN_MAP_VERSION_CHECK._m.labels(outcome=outcome)
+    before = counter._value.get()
+    r = await client.post("/internal/v1/plan", json=query(student, ("aya",)))
+    assert r.status_code == 200 and r.json()["subjects"][0]["status"] == "ok", r.text
+    assert counter._value.get() == before + 1

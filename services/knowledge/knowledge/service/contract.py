@@ -1,4 +1,7 @@
-"""知识服务契约的加载与严格校验（packages/contracts/openapi/knowledge-service.v0.9.yaml）。
+"""知识服务契约的加载与严格校验（packages/contracts/openapi/knowledge-service.v0.10.yaml，迁移期另带 v0.9）。
+
+v0.10（2026-11-07 签字，KGE-12）只比 v0.9 多 standard.search。迁移期两份并存：请求按 context.contract_version 选契约校验，
+响应信封回同一个版本（0.9.0 的调用方——学习服务、BFF——行为与原来逐字节相同）；standard.search 只在 0.10.0 下有。
 
 工具清单从契约的 paths 生成（路径 /v0/<工具名>、operationId、请求与 200 响应的 schema），不在代码里另抄一份；
 HTTP 与 MCP 共用这里的校验。错误只报实例路径与关键字，不带实例数据（node.resolve 的 text 可能来自学生）。
@@ -20,11 +23,15 @@ from referencing.jsonschema import DRAFT202012
 
 ROOT = Path(__file__).resolve().parents[4]
 OPENAPI = Path(os.environ.get("KNOWLEDGE_CONTRACT_DIR") or ROOT / "packages" / "contracts" / "openapi")
-CONTRACT_FILE = "knowledge-service.v0.9.yaml"
+CONTRACT_FILES = {"0.10.0": "knowledge-service.v0.10.yaml", "0.9.0": "knowledge-service.v0.9.yaml"}
+CONTRACT_VERSION = "0.10.0"           # 当前版本（MCP 的 inputSchema、工具清单按它）
+LEGACY_VERSIONS = ("0.9.0",)          # 迁移期仍接受的旧版本（何时下线见 specs/kge-12-weknora-integration/lessons.md）
+CONTRACT_FILE = CONTRACT_FILES[CONTRACT_VERSION]
 PLUGIN_FILE = "plugin-api.v0.9.yaml"
-CONTRACT_VERSION = "0.9.0"
-PUBLIC_TOOLS = ("node.resolve", "node.get", "node.path", "page.get", "item.search", "item.similar", "rubric.get")
+V09_PUBLIC_TOOLS = ("node.resolve", "node.get", "node.path", "page.get", "item.search", "item.similar", "rubric.get")
+PUBLIC_TOOLS = V09_PUBLIC_TOOLS + ("standard.search",)
 PERSONAL_TOOLS = ("evidence.write", "mastery.get", "mastery.explain")
+TOOLS_BY_VERSION = {"0.10.0": frozenset(PUBLIC_TOOLS + PERSONAL_TOOLS), "0.9.0": frozenset(V09_PUBLIC_TOOLS + PERSONAL_TOOLS)}
 
 
 @dataclass(frozen=True)
@@ -38,22 +45,38 @@ class ToolSpec:
 
 
 class Contract:
-    def __init__(self, openapi_dir: Path = OPENAPI) -> None:
-        self.path = (openapi_dir / CONTRACT_FILE).resolve()
+    def __init__(self, openapi_dir: Path = OPENAPI, version: str = CONTRACT_VERSION, *, legacy: bool = True) -> None:
+        """version：这一份校验哪个版本；legacy：当前版本另带迁移期的旧版本（for_version 取用）"""
+        if version not in CONTRACT_FILES:
+            raise RuntimeError(f"知识服务不实现契约版本 {version}")
+        self.expected_version = version
+        self.path = (openapi_dir / CONTRACT_FILES[version]).resolve()
         self.doc = yaml.safe_load(self.path.read_text(encoding="utf-8"))
         plugin_path = (openapi_dir / PLUGIN_FILE).resolve()
         self.plugin_doc = yaml.safe_load(plugin_path.read_text(encoding="utf-8"))
         self.uri = self.path.as_uri()
         self.plugin_uri = plugin_path.as_uri()
         self.version = str(self.doc["info"]["version"])
-        if self.version != CONTRACT_VERSION:
-            raise RuntimeError(f"知识服务契约版本 {self.version} 与实现的 {CONTRACT_VERSION} 不一致")
+        if self.version != version:
+            raise RuntimeError(f"知识服务契约版本 {self.version} 与实现的 {version} 不一致")
         self.registry = Registry().with_resources([
             (self.uri, Resource.from_contents(self.doc, default_specification=DRAFT202012)),
             (self.plugin_uri, Resource.from_contents(self.plugin_doc, default_specification=DRAFT202012)),
         ])
         self._validators: dict[str, Draft202012Validator] = {}
         self.tools = self._tools()
+        self._by_version: dict[str, Contract] = {version: self}
+        if legacy and version == CONTRACT_VERSION:
+            for old in LEGACY_VERSIONS:
+                self._by_version[old] = Contract(openapi_dir, old, legacy=False)
+
+    def for_version(self, version: Any) -> "Contract | None":
+        """请求的 context.contract_version 对应的契约（不支持的版本回 None）"""
+        return self._by_version.get(version) if isinstance(version, str) else None
+
+    @property
+    def versions(self) -> tuple[str, ...]:
+        return tuple(sorted(self._by_version))
 
     def _tools(self) -> dict[str, ToolSpec]:
         out: dict[str, ToolSpec] = {}
@@ -65,7 +88,7 @@ class Contract:
             if op["operationId"] != name.replace(".", "_"):
                 raise RuntimeError(f"契约里 {path} 的 operationId 与工具名不对应")
             out[name] = ToolSpec(name, op["operationId"], path, str(op.get("summary", "")), req, resp)
-        if set(out) != set(PUBLIC_TOOLS) | set(PERSONAL_TOOLS):
+        if set(out) != TOOLS_BY_VERSION[self.expected_version]:
             raise RuntimeError("契约的工具清单与实现不一致")
         return out
 

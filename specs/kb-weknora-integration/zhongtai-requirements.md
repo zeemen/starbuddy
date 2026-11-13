@@ -325,9 +325,13 @@
 | `signoff_id` | 教研签字记录编号（不放签字人姓名） | 生产库必填 |
 
 ### A.2 StarBuddy 提供的节点表
-- 每行：`node_id`、`map_version`、`subject`、`name`、`aliases`、`parent_node_id`、`node_type`、教材投影（出版社、版本、册、章、页码，可以有多条）。
-- 另附 ID 迁移表：`old_node_id`、`new_node_id`、`map_version_from`、`map_version_to`。
-- 格式：CSV 或 JSON Lines，UTF-8，随地图版本发布。
+- 2026-11-06 已实现导出（`python -m knowledge.export.node_table`，KGE-12 A），格式 `kge-node-table/1`：
+  - 每行：`node_id`、`map_version`、`subject`、`name`、`aliases`、`parent_node_id`、`level`（domain / topic / node）、`kind`、
+    `taggable`（只有 level = node 的节点可以打标）、`includes`、`excludes`、`cognitive_levels`，以及 `textbook_projections`
+    （每条：`edition` 版本编码、`publisher` 出版社全称、`edition_year`、`volume`、`chapter`、`page_from`、`page_to`；可以多条）；
+  - 只含已发布版本的生效节点与已核对的教材投影；`aliases` 目前为空数组（地图里没有别名）；`publisher` 由教研提供的对照表填写，没给对照表时为 null；
+  - 文件：`node-table.jsonl`、`node-table.csv`（投影一列为 JSON）、`node-table.manifest.json`（行数与 sha256）；UTF-8，随地图版本发布。
+- 另附 ID 迁移表：`old_node_id`、`new_node_id`、`map_version_from`、`map_version_to`。**尚未实现**：每科目前只有一个已发布版本，地图升版时才需要（见 `specs/kge-12-weknora-integration/lessons.md`）。
 
 ### A.3 判分候选包
 - 每道题一条：`content_id`、`content_version`、`kge_node_ids`、`item_type`、标准答案（客观题）或采分点列表（主观题：要点、分值、判定说明）、来源字段、`signoff_id`。

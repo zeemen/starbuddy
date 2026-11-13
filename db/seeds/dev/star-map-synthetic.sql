@@ -2,7 +2,7 @@
 -- 不能用于 pilot 或生产（CLAUDE.md 规则 8、9）。全部是合成数据：没有姓名、学校、手机号。
 --
 -- 前提：已执行全部迁移，并已跑过阿鸦内容登记（959 个能力点）：
---   node adapters/aya/scripts/register-content.ts > /tmp/aya-register.sql && psql -f /tmp/aya-register.sql
+--   node tools/content-register/aya.ts > /tmp/aya-register.sql && psql -f /tmp/aya-register.sql
 -- 用法（以迁移执行者身份；只能执行一次；文件自带事务，不要再加 -1）：
 --   PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -v ON_ERROR_STOP=1 -f db/seeds/dev/syn-publish-content.sql -f db/seeds/dev/star-map-synthetic.sql
 --   不设 starbuddy.allow_synthetic_seed=on、或库名不是 starbuddy_dev* / starbuddy_test* 时直接报错：防止误跑到开发库以外
@@ -42,7 +42,7 @@ BEGIN
     RAISE EXCEPTION '先在同一会话里执行 db/seeds/dev/syn-publish-content.sql（定义合成发布函数）';
   END IF;
   IF (SELECT count(*) FROM platform.skill_node WHERE subject = 'aya') < 8 THEN
-    RAISE EXCEPTION '没有登记阿鸦能力点：先执行 adapters/aya/scripts/register-content.ts 生成的 SQL';
+    RAISE EXCEPTION '没有登记阿鸦能力点：先执行 tools/content-register/aya.ts 生成的 SQL';
   END IF;
 END $$;
 
@@ -162,7 +162,7 @@ SELECT '5a000000-0000-4000-8000-0000000000e7', '5a000000-0000-4000-8000-00000000
   FROM syn_aya_node WHERE n = 7;
 
 -- ---------- 发布本种子自己的合成知行内容版本（4-G 迁移 0039 起：先登记草稿，再经签字函数发布；BFF 只看已发布版本的能力视图） ----------
--- 只发布本种子登记的合成版本；adapters/aya/scripts/register-content.ts 登记的阿鸦内容版本不由种子发布（真实内容的发布是人的决定），
+-- 只发布本种子登记的合成版本；tools/content-register/aya.ts 登记的阿鸦内容版本不由种子发布（真实内容的发布是人的决定），
 -- 一次性测试环境（apps/web/scripts/e2e.sh、BFF 集成测试）在登记后另行调用 pg_temp.syn_publish_content 发布。
 -- 函数由 db/seeds/dev/syn-publish-content.sql 定义（同一会话里先执行）。
 RESET ROLE;

@@ -116,8 +116,8 @@ DB: dict[str, list[tuple[str, str, str]]] = {
     "列表不按学生过滤任务": [(ST, "WHERE student_id = $1::uuid AND subject = $2::platform.subject AND status = 'open' AND reason",
                           "WHERE $1::uuid IS NOT NULL AND subject = $2::platform.subject AND status = 'open' AND reason")],
     "鉴权不查": [(API, "if not authorized(request):", "if False:")],
-    "也认编排层令牌": [(APP, 'retest_api.register(app, lambda r: _bearer_ok(r.headers.get("authorization"), settings.service_credential), state)',
-                    'retest_api.register(app, lambda r: _bearer_ok(r.headers.get("authorization"), settings.service_credential) or '
+    "也认编排层令牌": [(APP, '    retest_api.register(app, session_ok, state)',
+                    '    retest_api.register(app, lambda r: session_ok(r) or '
                     '_bearer_ok(r.headers.get("authorization"), settings.orchestrator_client_credential or "-"), state)')],
     "未配置也启动复测": [(APP, "            if retest_cfg is not None:\n", "            if True:\n")],
 }

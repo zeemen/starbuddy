@@ -20,11 +20,23 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parents[1]          # services/learning
 REPO = HERE.parents[1]
-TESTS = ["tests/test_internal_v1_guard.py", "tests/test_evidence_attributes.py", "tests/test_v1_replay.py", "tests/test_processing_gate.py"]
+TESTS = ["tests/test_internal_v1_guard.py", "tests/test_evidence_attributes.py", "tests/test_v1_replay.py", "tests/test_processing_gate.py",
+         "tests/test_map_version_check.py", "tests/test_plan.py"]  # 后两个：PLT-25 地图版本交叉核对
 SV, AT, LM, APP, PR = ("learning/service.py", "learning/attributes.py", "learning/meter.py", "learning/app.py", "learning/processing.py")
+MC, PL = "learning/map_check.py", "learning/plan.py"
 
 # 名字 → [(文件, 原文, 替换为), …]
 MUTATIONS: dict[str, list[tuple[str, str, str]]] = {
+    # PLT-25 地图版本交叉核对（learning/map_check.py、service.py、plan.py）
+    "地图版本不比版本号": [(MC, '    return "match" if version in platform_versions else "mismatch"', '    return "match"')],
+    "地图名称不核对本科": [(MC, '    if name != f"{subject}-map" or not version:', '    if not version:')],
+    "两个地图段也放过": [(MC, "    if len(segs) > 1:\n        return \"mismatch\"\n", "")],
+    "地图不一致只记计数": [(SV, '        if outcome == "mismatch":\n            raise IngestError(502, "ADAPTER_RESULT_REJECTED"',
+                        '        if False:\n            raise IngestError(502, "ADAPTER_RESULT_REJECTED"')],
+    "写入不按绑定的地图核对": [(SV, '[bound] if bound else None)', 'None)')],
+    "今日计划不一致也拒收": [(PL, "    metrics.PLAN_MAP_VERSION_CHECK.labels(outcome=outcome).inc()\n",
+                         "    metrics.PLAN_MAP_VERSION_CHECK.labels(outcome=outcome).inc()\n    if outcome == \"mismatch\":\n        return unavailable\n")],
+    "今日计划不计数": [(PL, "    metrics.PLAN_MAP_VERSION_CHECK.labels(outcome=outcome).inc()\n", "")],
     # 计量核对
     "v1 写入不核对计量": [(SV, "                    await M.require(self.pool, meter, method=method, ctx=ctx)\n", "                    pass\n")],
     "直接写入也放行已结算": [(LM, 'DIRECT = MeterBasis(frozenset({"reserved"}))', 'DIRECT = MeterBasis(frozenset({"reserved", "settled"}))')],

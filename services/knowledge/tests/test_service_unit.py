@@ -82,8 +82,10 @@ def test_allowed_callers_match_contract_enums():
     personal = set(schemas["StudentContext"]["properties"]["caller"]["enum"])
     resolve = {schemas["ResolveContext"]["allOf"][1]["properties"]["caller"]["const"]}
     assert ALLOWED_CALLERS["node.resolve"] == resolve == {"orchestrator"}
+    search = set(schemas["StandardSearchContext"]["allOf"][1]["properties"]["caller"]["enum"])
+    assert ALLOWED_CALLERS["standard.search"] == search == {"bff", "orchestrator"}   # v0.10：学习服务不调
     for t in PUBLIC_TOOLS:
-        if t != "node.resolve":
+        if t not in ("node.resolve", "standard.search"):
             assert ALLOWED_CALLERS[t] == public
     for t in PERSONAL_TOOLS:
         assert ALLOWED_CALLERS[t] == personal and "bff" not in ALLOWED_CALLERS[t]

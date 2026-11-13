@@ -28,7 +28,14 @@ def test_default_schedule_matches_spec():
         "metrics": ("daily 03:20", "insight", "insight.jobs", "metrics"),
         "weekly": ("weekly mon 03:00", "insight", "insight.jobs", "weekly"),
         "model-call-purge": ("daily 04:10", "scheduler", "insight.scheduled", "model-call-purge"),
+        "partition-ensure": ("daily 03:10", "scheduler", "insight.scheduled", "partition-ensure"),
+        "retention-purge": ("daily 03:40", "scheduler", "insight.scheduled", "retention-purge"),
     }
+    # 分区续建与保留期清理（0062、0063，specs/plt23-data-maintenance）：调度器身份、不补跑；合成时间表里的默认值，签字后才在 staging 启用
+    for name, args in (("partition-ensure", ("partition-ensure",)), ("retention-purge", ("retention-purge", "--batch", "1000"))):
+        assert cfg.jobs[name].args == args and cfg.jobs[name].extra_env == () and cfg.jobs[name].catch_up is False
+        assert "待人签字" in DOC["jobs"][name]["$comment"]
+    assert "0062" in DOC["jobs"]["partition-ensure"]["$comment"] and "0063" in DOC["jobs"]["retention-purge"]["$comment"]
     # 模型调用记录留存删除（0060，specs/plt-model-call-log）：调度器身份、每批 1000、不补跑；合成时间表里的默认值，签字后才在 staging 启用
     p = cfg.jobs["model-call-purge"]
     assert p.args == ("model-call-purge", "--batch", "1000") and p.extra_env == () and p.catch_up is False
@@ -70,6 +77,11 @@ def bad(mut) -> None:
     lambda d: d["jobs"]["model-call-purge"].update(identity="learning"),
     lambda d: d["jobs"]["model-call-purge"].update(catch_up=True),
     lambda d: d["jobs"]["model-call-purge"].update(args=["model-call-purge", "--batch", "1000; rm"]),
+    lambda d: d["jobs"]["partition-ensure"].update(identity="insight"),          # 分区续建只授调度器身份（0062）
+    lambda d: d["jobs"]["partition-ensure"].update(identity="kge"),
+    lambda d: d["jobs"]["retention-purge"].update(identity="learning"),          # 保留期清理只授调度器身份（0063）
+    lambda d: d["jobs"]["retention-purge"].update(catch_up=True),
+    lambda d: d["jobs"]["retention-purge"].update(args=["retention-purge", "--batch", "1000 && x"]),
     lambda d: d["jobs"]["metrics"].update(identity="learning"),
     lambda d: d["jobs"]["metrics"].update(catch_up=True),                        # 只有周报可以启动补跑
     lambda d: d["jobs"]["metrics"].update(env=["INSIGHT_DATABASE_URL"]),
@@ -112,7 +124,8 @@ def test_identity_table_is_fixed():
     }
     # 子命令按身份固定：insight 放行 sweep、weekly 与中圈指标 metrics（SIE-05）；sync、admission-recompute、serve 等仍不放行
     assert {i.name: i.commands for i in IDENTITIES.values()} == {
-        "scheduler": frozenset({"meter-expire", "meter-renew", "erasures", "freeze", "spot-check", "model-call-purge"}),
+        "scheduler": frozenset({"meter-expire", "meter-renew", "erasures", "freeze", "spot-check", "model-call-purge",
+                                "partition-ensure", "retention-purge"}),
         "insight": frozenset({"sweep", "weekly", "metrics"}),
         "learning": frozenset({"mastery-sweep"}),
         "kge": frozenset({"expire-affairs"}),

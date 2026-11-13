@@ -1,7 +1,9 @@
 // 端到端用的合成洞察服务桩（SIE-02b 第二步 PR 2：首份报告开发演示页，e2e/first-report.spec.ts）：只在 scripts/e2e.sh 的一次性环境里起，
 // 只监听 127.0.0.1，只认 BFF 的服务间令牌（FAKE_INSIGHT_TOKEN，每次随机生成、只经环境变量传）。
-// 只实现 insight.report 与 insight.explain 两个工具，返回契约（packages/contracts/openapi/insight-service.v0.9.yaml）形状的统一信封：
-// 学生 R1（db/seeds/dev/first-report-synthetic.sql）的四条合成判断；其余学生、判断一律 404（与“没有报告”“无权”同一个），其他工具 501。
+// 只实现 insight.report、insight.explain 与 insight.dispute 三个工具，返回契约（packages/contracts/openapi/insight-service.v0.9.yaml）形状的统一信封：
+// 学生 R1（db/seeds/dev/first-report-synthetic.sql）的四条合成判断（报告与解释）；学生 GT（db/seeds/dev/weekly-synthetic.sql）的六条合成判断
+// （解释与异议，specs/why-page-e2e：f1 成立、f2 假设、f3 已推翻、f4 已撤回、f5 待验证；f6 的解释故意回 503，核对读取不可用的降级）。
+// 其余学生、判断一律 404（与“没有报告”“无权”同一个），其他工具 501。异议只按契约形状受理（不落库、不模拟洞察服务的二次授权核对）。
 // 信封外层故意带上 confidence、evidence_ids、source_version、model_version：端到端断言它们不出现在页面上（BFF 只转发 result）。
 // 不是洞察服务的实现：真实的报告生成、两道检查与授权再核对（0044）在 services/insight，有它自己的测试；文字全是明显占位。
 // 桩不模拟 0044 insight.verify_actor（不查库、不核对 actor 与学生的绑定是否有效）：只核对请求形状——student_ref 必须是 UUID；
@@ -32,6 +34,28 @@ const CLAIMS: Claim[] = [
 ];
 const EVIDENCE = '5c000000-0000-4000-8000-000000000301';
 
+// GT 的六条（与周报种子同一组判断 ID、模板与状态；状态以库为准，BFF 会再核一次，不一致即 503）
+const GT = '5d000000-0000-4000-8000-0000000000c1';
+const TPL_W = 'syn.weekly.node_mastery';
+const GT_CLAIMS: (Omit<Claim, 'status'> & { status: Claim['status'] | 'refuted' | 'withdrawn' })[] = [
+  { id: '5d000000-0000-4000-8000-0000000000f1', template: TPL_W, status: 'established', band: 'strong', node: 'MATH.FUNC.QUAD.GRAPH',
+    text: '【占位模板·未审核】MATH.FUNC.QUAD.GRAPH｜transfer' },
+  { id: '5d000000-0000-4000-8000-0000000000f2', template: TPL_W, status: 'hypothesis', band: 'few_evidence', node: 'MATH.FUNC.QUAD.AXIS',
+    text: '【占位模板·未审核】MATH.FUNC.QUAD.AXIS｜execute' },
+  { id: '5d000000-0000-4000-8000-0000000000f3', template: TPL_W, status: 'refuted', band: 'moderate', node: 'MATH.FUNC.QUAD.ROOTS',
+    text: '【占位模板·未审核】MATH.FUNC.QUAD.ROOTS｜transfer' },
+  { id: '5d000000-0000-4000-8000-0000000000f4', template: TPL_W, status: 'withdrawn', band: 'moderate', node: 'MATH.FUNC.QUAD.VERTEX',
+    text: '【占位模板·未审核】MATH.FUNC.QUAD.VERTEX｜execute' },
+  { id: '5d000000-0000-4000-8000-0000000000f5', template: TPL_W, status: 'to_verify', band: 'moderate', node: 'MATH.FUNC.QUAD.SHIFT',
+    text: '【占位模板·未审核】MATH.FUNC.QUAD.SHIFT｜transfer' },
+  { id: '5d000000-0000-4000-8000-0000000000f6', template: TPL_W, status: 'established', band: 'moderate', node: 'MATH.FUNC.QUAD.DOMAIN',
+    text: '【占位模板·未审核】MATH.FUNC.QUAD.DOMAIN｜execute' },
+];
+const GT_OUTAGE = '5d000000-0000-4000-8000-0000000000f6';
+const DISPUTABLE = new Set(['established', 'hypothesis']);
+const NEXT_STEP: Record<string, string> = { i_know: 'verification_scheduled', one_off_slip: 'observe_followups', data_error: 'open_fact_for_correction' };
+let disputeSeq = 0;
+
 const envelope = (result: unknown) => ({
   contract_version: '0.9.0', result, evidence_ids: [EVIDENCE], confidence: 0.4,
   source_version: 'algo:sie-report-fake@0.1.0', model_version: 'algo:sie-report-fake@0.1.0', human_review_required: false,
@@ -53,7 +77,7 @@ function report(audience: 'student' | 'guardian') {
   };
 }
 
-function explain(c: Claim) {
+function explain(c: Pick<Claim, 'id' | 'template' | 'status' | 'band' | 'node' | 'text'>) {
   return {
     statement: { claim_id: c.id, template_key: c.template, template_version: 1, status: c.status, display: c.status === 'to_verify' ? 'dashed' : 'solid',
                  text: c.text, confidence_band: c.band },
@@ -84,7 +108,9 @@ createServer((req, res) => {
   void (async () => {
     let out: { status: number; body: unknown };
     if (req.headers['authorization'] !== `Bearer ${TOKEN}`) out = problem(401, 'UNAUTHENTICATED');
-    else if (req.method !== 'POST' || (req.url !== '/v0/insight.report' && req.url !== '/v0/insight.explain')) out = problem(501, 'NOT_IMPLEMENTED');
+    else if (req.method !== 'POST' || !['/v0/insight.report', '/v0/insight.explain', '/v0/insight.dispute'].includes(req.url ?? '')) {
+      out = problem(501, 'NOT_IMPLEMENTED');
+    }
     else {
       const b = await readBody(req);
       const ctx = b?.['context'] as Record<string, unknown> | undefined;
@@ -95,7 +121,29 @@ createServer((req, res) => {
           || typeof ctx['student_ref'] !== 'string' || !UUID.test(ctx['student_ref'])
           || (audience === 'guardian' && (typeof actor['link_id'] !== 'string' || !UUID.test(actor['link_id'])))) {
         out = problem(400, 'INVALID_REQUEST');
-      } else if (ctx['student_ref'] !== R1) {
+      } else if (ctx['student_ref'] === GT) {
+        const c = GT_CLAIMS.find((x) => x.id === b?.['claim_id']);
+        if (req.url === '/v0/insight.report' || !c) out = problem(404, 'NOT_FOUND');
+        else if (req.url === '/v0/insight.explain') {
+          // 已推翻、已撤回与不存在同一个 404（BFF 在库里先挡，到不了这里）；f6 回 503
+          out = c.id === GT_OUTAGE ? problem(503, 'UPSTREAM_UNAVAILABLE')
+            : c.status === 'refuted' || c.status === 'withdrawn' ? problem(404, 'NOT_FOUND')
+            : { status: 200, body: envelope(explain(c as Claim)) };
+        } else {
+          const kind = b?.['kind'];
+          const step = typeof kind === 'string' ? NEXT_STEP[kind] : undefined;
+          if (!step || typeof ctx['idempotency_key'] !== 'string') out = problem(400, 'INVALID_REQUEST');
+          else if (!DISPUTABLE.has(c.status)) out = problem(409, 'STATE_CONFLICT');
+          else {
+            disputeSeq += 1;
+            const result: Record<string, string> = {
+              dispute_id: `5d0d0000-0000-4000-8000-${String(disputeSeq).padStart(12, '0')}`, next_step: step };
+            if (step === 'verification_scheduled') result['verify_by'] = new Date(Date.now() + 7 * 86_400_000).toISOString();
+            if (step === 'open_fact_for_correction') result['fact_ref'] = 'attempt:syn-fact-000001';
+            out = { status: 200, body: envelope(result) };
+          }
+        }
+      } else if (ctx['student_ref'] !== R1 || req.url === '/v0/insight.dispute') {
         out = problem(404, 'NOT_FOUND');
       } else if (req.url === '/v0/insight.report') {
         out = { status: 200, body: envelope(report(audience)) };

@@ -54,7 +54,8 @@ STATUS_CLASSES = frozenset({"1xx", "2xx", "3xx", "4xx", "5xx"})
 ENUMS: dict[str, frozenset[str]] = {
     "subject": frozenset({"aya", "zhixing", "wenli", "echo", "other"}),
     "task": frozenset({"T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9", "meter-expire", "meter-renew", "erasures", "freeze", "sweep",
-                       "mastery-sweep", "expire-affairs", "spot-check", "metrics", "weekly", "model-call-purge", "other"}),
+                       "mastery-sweep", "expire-affairs", "spot-check", "metrics", "weekly", "model-call-purge", "partition-ensure",
+                       "retention-purge", "other"}),
     "provider": frozenset({"bailian", "ark", "fake-a", "fake-b", "fake-x", "other"}),
     "outcome": frozenset({"ok", "other", "unavailable", "rejected", "budget_exceeded", "error", "timeout", "rate_limited", "server", "auth",
                           "client", "bad_response", "skipped_breaker_open", "allowed", "sealed", "partial", "refused", "crashed",
@@ -63,7 +64,7 @@ ENUMS: dict[str, frozenset[str]] = {
                           "no_entitlement", "retained_no_ai", "curfew", "settled", "released", "refunded", "unknown",
                           "reserve_conflict", "reserve_dedup_in_progress", "settle_conflict", "release_conflict",
                           "late_success_after_expiry", "replay_after_expiry", "sealed_after_expiry", "success_after_release",
-                          "result_unknown", "learning_retry"}),
+                          "result_unknown", "learning_retry", "match", "mismatch", "unbound", "absent"}),
 }
 LATENCY_BUCKETS = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0)
 _NAME = re.compile(r"^starbuddy_[a-z][a-z0-9_]{2,80}$")

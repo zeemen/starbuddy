@@ -7,6 +7,7 @@ tests/test_review_revision.py 能发现。
 - 纯函数：tests/test_review_revision.py 里不连库的用例；
 - 库上：整个 tests/test_review_revision.py，一次性 Postgres（每个变异起一个库）；没有本机 Postgres 时退出码 3（Makefile 决定是否算失败）。
 另两组是 LT-06（specs/launch-lt06-internal-test-ops）：反馈列表、改状态、退出状态与开关，断言 tests/test_review_internal_test.py 能发现。
+响应模型两组（specs/review-console-responses）：导出过期（纯函数）与服务层、模型对不上（库上，响应校验 500）。
 """
 from __future__ import annotations
 
@@ -129,6 +130,49 @@ LT6_DB: dict[str, list[tuple[str, str, str]]] = {
 }
 
 
+# 发布门禁的 C9 检查（specs/tech-debt-batch3 B，review_console/admission_export.py 的 verify）：断言 tests/test_admission_export.py 不连库的用例能发现
+AX_TESTS = ["tests/test_admission_export.py", "-k", "hint_scan"]
+AX = "review_console/admission_export.py"
+AX_PURE: dict[str, list[tuple[str, str, str]]] = {
+    "C9 非严格模式也放行": [(AX, 'or mode != "strict" or not isinstance(flagged, list):', 'or not isinstance(flagged, list):')],
+    "C9 检查项不核对": [(AX, 'scan.get("check") != "C9" or ', '')],
+    "C9 标记的题不列": [(AX, '        scan_problems.append({"item_id": iid, "pack": None, "platform": None, "reason": "hint_scan_flagged"})',
+                     '        pass')],
+    "C9 问题不计入不合格": [(AX, "    violations = scan_problems + violations\n", "")],
+    "缺 C9 检查当严格零标记": [(AX, '    scan = pack.get("hint_scan")\n',
+                          '    scan = pack.get("hint_scan") or {"check": "C9", "mode": "strict", "flagged_items": []}\n')],
+}
+
+# 请求体导出（W13 T35，specs/review-console-types-t35）：后端改了请求体模型而没重新导出，tests/test_review_requests_export.py 必须发现
+RQ_TESTS = ["tests/test_review_requests_export.py"]
+RQ_APP = "review_console/app.py"
+RQ_PURE: dict[str, list[tuple[str, str, str]]] = {
+    "签字请求加必填字段不导出": [(RQ_APP, "class SignBody(_Strict):\n    decision:", "class SignBody(_Strict):\n    reason: str\n    decision:")],
+    "反馈状态枚举加取值不导出": [(RQ_APP, 'status: Literal["new", "triaged", "closed"]', 'status: Literal["new", "triaged", "closed", "reopened"]')],
+    "可选字段改必填不导出": [(RQ_APP, "    target_id: uuid.UUID | None = None", "    target_id: uuid.UUID")],
+}
+
+# 响应模型（specs/review-console-responses）：导出过期由 tests/test_review_responses_export.py 发现；服务层与模型对不上由库上的审核台测试发现
+# （响应校验 500）
+RS_TESTS = ["tests/test_review_responses_export.py"]
+RS = "review_console/responses.py"
+RS_PURE: dict[str, list[tuple[str, str, str]]] = {
+    "响应模型删字段不导出": [(RS, "    scope: str\n    cognitive_levels: list[str]\n    error_type: str | None\n",
+                         "    scope: str\n    cognitive_levels: list[str]\n")],
+    "响应枚举加取值不导出": [(RS, 'Level = Literal["low", "medium", "high"]', 'Level = Literal["low", "medium", "high", "critical"]')],
+    # 复核任务来源（specs/review-task-source-models）
+    "来源模型删字段不导出": [(RS, "    rubric_version: str\n    source_version: str\n    model_version: str\n",
+                         "    rubric_version: str\n    model_version: str\n")],
+}
+RS_DB_TESTS = ["tests/test_review_console.py", "tests/test_review_responses_enums.py", "tests/test_review_queue.py"]  # test_review_pages.py 有一条要读知识服务代码，临时副本里没有
+RS_DB: dict[str, list[tuple[str, str, str]]] = {
+    "服务层多拼一个键": [(SV, '        "signoffs": signoffs,\n    })', '        "signoffs": signoffs,\n        "debug": True,\n    })')],
+    "有时不给的字段改必填": [(RS, "    rubric_version: str = None", "    rubric_version: str")],
+    "响应枚举漏掉库里的取值": [(RS, ', "diagnosis_step", "weekly_report"]', ', "diagnosis_step"]')],
+    "来源种类与模型对错": [(RS, '"claim": ClaimSource,', '"claim": GradeSource,')],
+}
+
+
 def group(label: str, mutations: dict[str, list[tuple[str, str, str]]], tests: list[str], workers: int) -> int:
     with tempfile.TemporaryDirectory(prefix="review-mut.") as t:
         rc, out = PM._run(PM._copy(Path(t)), tests)
@@ -152,14 +196,17 @@ def main() -> int:
     if not (HERE / ".venv/bin/python").exists():
         print("review-console-mutation: 跳过（没有安装学习服务依赖）")
         return 3
-    rc = group("纯函数", PURE, PURE_TESTS, 6) or group("内测纯函数", LT6_PURE, LT6_PURE_TESTS, 4)
+    rc = (group("纯函数", PURE, PURE_TESTS, 6) or group("内测纯函数", LT6_PURE, LT6_PURE_TESTS, 4)
+          or group("发布门禁 C9", AX_PURE, AX_TESTS, 5) or group("请求体导出", RQ_PURE, RQ_TESTS, 3)
+          or group("响应导出", RS_PURE, RS_TESTS, 2))
     if rc:
         return rc
     from glob import glob
     if not (os.environ.get("PGBIN") or glob("/usr/lib/postgresql/*/bin/initdb")):
         print("review-console-mutation（库上）：跳过（本机没有 Postgres 服务端）")
         return 3
-    return group("库上", DB, DB_TESTS, 4) or group("内测库上", LT6_DB, LT6_DB_TESTS, 4)
+    return (group("库上", DB, DB_TESTS, 4) or group("内测库上", LT6_DB, LT6_DB_TESTS, 4)
+            or group("响应模型库上", RS_DB, RS_DB_TESTS, 2))
 
 
 if __name__ == "__main__":
