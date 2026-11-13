@@ -1,7 +1,7 @@
 // 前端白名单与取值出处的一致性（specs/web-bff-enum-drift）。
 // 前端把 BFF 的返回当 unknown，再经 pick* 按白名单收窄（apps/web/src/trust/view.ts、practice/view.ts、retest/view.ts）：出处多了一个取值，
 // 前端不报错，只把整块内容静默降级成“暂时无法获取”或丢掉那一条。这里逐行登记“前端白名单 ↔ 出处”并比对：
-//   出处三种——库（schema.表.列：单列 CHECK 里的字面量，或枚举类型；或库函数体里写死的列表）、契约（openapi 文件里锚点之后的第一个 enum）、
+//   出处——库（schema.表.列：单列 CHECK 里的字面量，或枚举类型；或库函数体里写死的列表）、契约（openapi 文件里锚点之后的第一个 enum）、
 //   BFF 常量（BFF 自己推导或转写的取值）。另核对 BFF 转写的常量与契约 / 库一致。
 // 口径：默认相同；有意更窄的登记 subset 与原因；前端比出处宽一律不允许。
 // 前端模块用计算出来的路径动态导入：只取运行时的值，不让 BFF 的 tsconfig 去类型检查前端文件（两边的严格选项不同）。
@@ -12,10 +12,13 @@ import pg from 'pg';
 import { ENTRY_STATUSES as BFF_PRACTICE_ENTRY, AFTER_STATUSES as BFF_PRACTICE_AFTER, SOURCES as BFF_PRACTICE_SOURCES, VERDICTS as BFF_VERDICTS } from '../src/practice/service.ts';
 import { AFTER_STATUSES as BFF_RETEST_AFTER, ENTRY_STATUSES as BFF_RETEST_ENTRY, KINDS as BFF_RETEST_KINDS } from '../src/retest/service.ts';
 import { ADJUSTMENTS as BFF_ADJUSTMENTS, DIRECTIONS as BFF_DIRECTIONS, DISPUTE_KINDS as BFF_DISPUTE_KINDS, NEXT_STEPS as BFF_NEXT_STEPS } from '../src/trust/clients.ts';
+import { EVENT_KINDS as BFF_EVENT_KINDS } from '../src/events/query.ts';
+import { DISPLAY as BFF_STAR_DISPLAY } from '../src/star-map/display-state.ts';
 import { HAS_DB } from './harness.ts';
 
 const ROOT = new URL('../../../', import.meta.url).pathname;
 const CONTRACT = 'packages/contracts/openapi/insight-service.v0.9.yaml';
+const BFF_SHELL = 'services/bff/openapi/shell.v0.yaml';
 
 type Source =
   | { db: [schema: string, table: string, column: string] }
@@ -115,6 +118,18 @@ export const ROWS: Row[] = [
   { name: '复测任务种类', values: () => web(R, 'KINDS'), source: { bff: BFF_RETEST_KINDS, where: 'services/bff/src/retest/service.ts' } },
   { name: '复测条目状态', values: () => web(R, 'ENTRY_STATUSES'), source: { bff: BFF_RETEST_ENTRY, where: 'services/bff/src/retest/service.ts' } },
   { name: '复测作答后状态', values: () => web(R, 'AFTER_STATUSES'), source: { bff: BFF_RETEST_AFTER, where: 'services/bff/src/retest/service.ts' } },
+  // ---- 其余页面（同一张表加行，specs/web-bff-enum-drift lessons“补记”）
+  { name: '月度计划学科', values: () => web('monthly-plan/student-view.ts', 'PLAN_SUBJECTS'), source: { db: ['insight', 'exam_record', 'subject'] },
+    subset: '英语（echo）搁置，不进月度计划' },
+  { name: '月度计划（家长）考试类型', values: () => web('monthly-plan/guardian-view.ts', 'EXAM_TYPES'), source: { db: ['insight', 'exam_record', 'exam_type'] } },
+  { name: '星图 v1 显示科目', values: () => web('star/v1-view.ts', 'SHOWN_SUBJECTS'), source: { contract: [BFF_SHELL, '    SubjectCode: { enum: [math, chinese, politics]'] } },
+  { name: '星图 v1 点亮状态', values: () => web('star/v1-view.ts', 'PAINTED'),
+    source: { bff: [...new Set(Object.values(BFF_STAR_DISPLAY))], where: 'services/bff/src/star-map/display-state.ts' } },
+  { name: '首份报告置信度分档', values: () => web('trust/report-view.ts', 'BANDS'), source: { contract: [CONTRACT, 'description: 置信度说明的编码，由前端按模板展示。'] } },
+  { name: '首份报告段落', values: () => web('trust/report-view.ts', 'SECTION_KEYS'),
+    source: { contract: [CONTRACT, 'key: { type: string, enum: [node_mastery, node_transfer] }'] } },
+  { name: '今日计划标记动作', values: () => web('today/plan-mark.ts', 'PLAN_ACTIONS'), source: { bff: BFF_EVENT_KINDS, where: 'services/bff/src/events/query.ts' },
+    subset: '页面只标完成 / 跳过；会话开始与结束由壳自动上报' },
   // ---- BFF 转写的常量与它的出处
   { name: 'BFF 异议类型', values: fixed(BFF_DISPUTE_KINDS), source: { contract: [CONTRACT, 'i_know = 我其实会'] } },
   { name: 'BFF 异议的下一步', values: fixed(BFF_NEXT_STEPS), source: { contract: [CONTRACT, 'verification_scheduled：已安排验证题'] } },

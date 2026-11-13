@@ -3,7 +3,7 @@
 // 没有权益时 entitled = false、plan = null（页面显示升级说明占位）。
 import { isDay, isMonth, isSubject, obj, pickClaimLine, pickStudentPlan, type ClaimLine, type StudentPlan } from './student-view.ts';
 
-const EXAM_TYPES: readonly string[] = ['monthly', 'midterm', 'final', 'mock1', 'mock2', 'other'];
+export const EXAM_TYPES: readonly string[] = ['monthly', 'midterm', 'final', 'mock1', 'mock2', 'other'];
 const text = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '' && v.length <= 400;
 const int = (v: unknown, lo: number, hi: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= lo && v <= hi;
 const list = (v: unknown, max: number): unknown[] => (Array.isArray(v) ? v.slice(0, max) : []);

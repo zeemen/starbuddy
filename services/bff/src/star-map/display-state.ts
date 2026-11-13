@@ -14,7 +14,7 @@ export interface StarDisplay {
 /** confidence 低于它时标“待验证”（只在列表与详情显示文字，星的三态不变） */
 export const VERIFY_BELOW = 0.5;
 
-const DISPLAY: Record<MasteryState, Display> = {
+export const DISPLAY: Record<MasteryState, Display> = {
   unseen: 'unlit',
   understand: 'unlit',
   execute: 'half',

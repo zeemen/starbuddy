@@ -30,6 +30,14 @@
   补了这层映射的核对：`services/insight/tests/test_sie03_units.py::test_exam_type_mapping_covers_migration_0022`——映射的值合起来恰好是 0022 的取值、
   每个库值只归一个契约值，月度计划直接按库值读成绩的常量也与库相同（契约一侧原有测试已核对映射的键等于契约枚举）；`insight-mutation` 加一条“考试类型映射漏掉二模”。
 
+## 补记（2026-11-13）：其余页面加行
+spec 第二节第 3 条“壳、建档、星图等其余页面的白名单，有需要时照同一张表加行”：补 7 行——月度计划学科（库 `platform.subject` 的子集：英语搁置）、
+月度计划家长版的考试类型（库）、星图 v1 显示科目（BFF 接口定义 `shell.v0.yaml` 的 `SubjectCode`）、星图 v1 点亮状态（BFF `star-map/display-state.ts`
+的“掌握状态 → 显示”映射表的值集）、首份报告的置信度分档与段落（契约）、今日计划的标记动作（BFF 行为事件种类的子集：页面只标完成 / 跳过，
+会话开始与结束由壳自动上报）。登记表共 36 行，全部一致。只加导出：前端 `monthly-plan/guardian-view.ts` 的考试类型、`star/v1-view.ts` 的点亮状态、
+`trust/report-view.ts` 的置信度分档与段落；BFF `star-map/display-state.ts` 的映射表。前端单测 250 项、tsc、BFF tsc 通过。
+其余前端文件里的 `includes` 多是功能开关、路由与 Cookie 解析，不收窄 BFF 返回值，不登记。
+
 ## 与 spec 的偏差
 1. **改了前端与 BFF 的源码**（spec 写“只加测试、不改前端”）：四组前端白名单原来没有导出、BFF 有两组取值写在判断条件里，测试引用不到。
    只加导出或提成具名常量，逻辑不变；比“读源码文本再解析”可靠。

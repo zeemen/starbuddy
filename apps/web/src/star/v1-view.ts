@@ -10,7 +10,7 @@ export const SHOWN_SUBJECTS = ['math', 'chinese', 'politics'] as const;
 /** 单屏星数上限：超过就按领域折叠 */
 export const FOLD_THRESHOLD = 120;
 
-const PAINTED: readonly string[] = ['unlit', 'half', 'lit'];
+export const PAINTED: readonly string[] = ['unlit', 'half', 'lit'];
 
 export type ViewStar =
   | { kind: 'neutral'; node_id: string; name: string }
