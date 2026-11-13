@@ -22,6 +22,8 @@ if [ "$HAVE_PG" != "1" ]; then echo "insight-mutation: 跳过（本机没有 Pos
 # 每条：名字<TAB>文件（相对 services/insight；以 evals/ 开头的相对仓库根）<TAB>原文<TAB>替换为<TAB>测试文件（空格分隔；
 # 以 evals/sie-shadow/ 开头的在副本的 evals/sie-shadow 目录下跑）
 M=(
+  # 契约 exam_type（mock）→ 0022 exam_record（mock1 / mock2）的映射漏一个库值（specs/web-bff-enum-drift lessons 更正）
+  $'考试类型映射漏掉二模\tinsight/predict.py\t"mock": ("mock1", "mock2")\t"mock": ("mock1",)\ttests/test_sie03_units.py'
   # 判断生命周期（spec 设计要点 2）
   $'未签字也能成立\tinsight/claims.py\t    return (policy.signed and GATE_RANK\t    return (True and GATE_RANK\ttests/test_claims.py tests/test_properties.py'
   $'未签字策略被当作已签字\tinsight/policy.py\t    signed = bool(doc["signed_by"].strip() and doc["signed_at"].strip()) and not doc["synthetic"]\t    signed = True\ttests/test_policy.py tests/test_claims.py'

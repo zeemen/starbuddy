@@ -22,9 +22,13 @@
 
 ## 核对结果
 - 29 行全部一致（2026-11-12）：眼下没有漂移。
-- **契约与库不一致（不在本任务范围，待人确认）**：`insight-service.v0.9.yaml` 第 609 行 `insight.predict` 入参的 `exam_type` 是
-  `[monthly, midterm, final, mock, other]`，库里 `insight.exam_record.exam_type` 与前端、BFF 都是 `mock1`、`mock2`（0022）。
-  BFF 不调 `insight.predict`（契约 v0.9 只给编排层），眼下不出错；编排层按库里的记录调预测时 `mock1` 会被契约拒收。改契约是必停项。
+- ~~契约与库不一致~~ **更正（2026-11-13）**：`insight-service.v0.9.yaml` 第 609 行 `insight.predict` 的 `exam_type` 是 `mock`，库里是 `mock1`、`mock2`——
+  这是有意设计，不是漂移：契约的 `mock` 表示“模考（不分一模二模）”，洞察服务 `insight/predict.py` 的 `EXAM_TYPES` 把它对应到库里两个值，
+  同一天两场模考都有时回 400（`specs/sie-03-dispute-reconcile/lessons.md` 契约差异第 3 条早有记录）。当时只比了契约与库、没看洞察服务的映射，误报。
+  用户 2026-11-13 定的“在编排层做映射”即：编排层调 `insight.predict` 时把 `mock1`、`mock2` 都按 `mock` 传，由洞察服务对应回去；不改契约。
+  目前还没有编排层的调用方（学习服务里没有调 `insight.predict` 的代码），所以没有要改的调用代码。
+  补了这层映射的核对：`services/insight/tests/test_sie03_units.py::test_exam_type_mapping_covers_migration_0022`——映射的值合起来恰好是 0022 的取值、
+  每个库值只归一个契约值，月度计划直接按库值读成绩的常量也与库相同（契约一侧原有测试已核对映射的键等于契约枚举）；`insight-mutation` 加一条“考试类型映射漏掉二模”。
 
 ## 与 spec 的偏差
 1. **改了前端与 BFF 的源码**（spec 写“只加测试、不改前端”）：四组前端白名单原来没有导出、BFF 有两组取值写在判断条件里，测试引用不到。
@@ -42,4 +46,4 @@
 - 变异脚本的副本只复制被改的目录：新增一类变异时，先手动跑一次“不改的副本”对照，免得环境缺东西被误算成“发现”。
 
 ## 待人确认
-1. 上面“核对结果”第 2 条：`insight.predict` 的 `exam_type` 枚举与库不一致，是改契约（`mock` → `mock1`、`mock2`）还是在编排层映射？改契约须按必停流程。
+- 无。原第 1 条（`insight.predict` 的 `exam_type`）已定（2026-11-13，在编排层映射，不改契约），见“核对结果”第 2 条的更正。
