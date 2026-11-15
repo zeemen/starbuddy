@@ -164,6 +164,12 @@ RS_PURE: dict[str, list[tuple[str, str, str]]] = {
     "来源模型删字段不导出": [(RS, "    rubric_version: str\n    source_version: str\n    model_version: str\n",
                          "    rubric_version: str\n    model_version: str\n")],
 }
+# 错误码导出（specs/review-console-error-codes）：后端加了错误码而没重新导出，tests/test_review_errors_export.py 必须发现
+ER_TESTS = ["tests/test_review_errors_export.py"]
+ER_PURE: dict[str, list[tuple[str, str, str]]] = {
+    "新增错误码不导出": [(APP, 'raise ReviewError(413, "TOO_LARGE")', 'raise ReviewError(413, "PAYLOAD_TOO_LARGE")')],
+    "库错误映射加码不导出": [(ST, '"55P03": (409, "BUSY")}', '"55P03": (409, "BUSY"), "40001": (409, "RETRY")}')],
+}
 RS_DB_TESTS = ["tests/test_review_console.py", "tests/test_review_responses_enums.py", "tests/test_review_queue.py"]  # test_review_pages.py 有一条要读知识服务代码，临时副本里没有
 RS_DB: dict[str, list[tuple[str, str, str]]] = {
     "服务层多拼一个键": [(SV, '        "signoffs": signoffs,\n    })', '        "signoffs": signoffs,\n        "debug": True,\n    })')],
@@ -198,7 +204,7 @@ def main() -> int:
         return 3
     rc = (group("纯函数", PURE, PURE_TESTS, 6) or group("内测纯函数", LT6_PURE, LT6_PURE_TESTS, 4)
           or group("发布门禁 C9", AX_PURE, AX_TESTS, 5) or group("请求体导出", RQ_PURE, RQ_TESTS, 3)
-          or group("响应导出", RS_PURE, RS_TESTS, 2))
+          or group("响应导出", RS_PURE, RS_TESTS, 2) or group("错误码导出", ER_PURE, ER_TESTS, 2))
     if rc:
         return rc
     from glob import glob

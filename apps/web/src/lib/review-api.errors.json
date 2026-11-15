@@ -1,0 +1,62 @@
+{
+ "_notice": "由 services/learning/scripts/export_review_errors.py 从审核台后端源码与库错误映射导出，不要手改（specs/review-console-error-codes）",
+ "codes": {
+  "AUTHOR_UNKNOWN": [
+   409
+  ],
+  "BUSY": [
+   409
+  ],
+  "CONFLICT": [
+   409
+  ],
+  "DIGEST_CHANGED": [
+   409
+  ],
+  "FORBIDDEN": [
+   403
+  ],
+  "INTERNAL": [
+   500
+  ],
+  "INVALID_PARAMETER": [
+   422
+  ],
+  "INVALID_REFERENCE": [
+   422
+  ],
+  "LOGIN_FAILED": [
+   401
+  ],
+  "MISDIRECTED": [
+   421
+  ],
+  "NOT_FOUND": [
+   404
+  ],
+  "PAGES_EXPORT_UNAVAILABLE": [
+   503
+  ],
+  "PUBLISH_FAILED_UNSIGNED": [
+   409
+  ],
+  "RULE_VIOLATION": [
+   409
+  ],
+  "SELF_SIGN": [
+   409
+  ],
+  "SOURCE_ADMIN_REQUIRED": [
+   403
+  ],
+  "SPOT_CHECK_UNCONFIGURED": [
+   503
+  ],
+  "TOO_LARGE": [
+   413
+  ],
+  "UNAUTHENTICATED": [
+   401
+  ]
+ }
+}

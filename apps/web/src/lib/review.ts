@@ -501,7 +501,7 @@ export function reviewBaseUrl(env: Record<string, string | undefined> = process.
 }
 
 /** 只有这几类错误显示后端给的说明（库里写好的规则文字，只含公共层对象），并截到 200 字；其余只显示错误码对应的中文 */
-const DETAIL_CODES = new Set(['RULE_VIOLATION', 'DIGEST_CHANGED', 'INVALID_PARAMETER', 'NOT_FOUND', 'PUBLISH_FAILED_UNSIGNED']);
+export const DETAIL_CODES = new Set(['RULE_VIOLATION', 'DIGEST_CHANGED', 'INVALID_PARAMETER', 'NOT_FOUND', 'PUBLISH_FAILED_UNSIGNED']);
 const CALL_TIMEOUT_MS = 10_000;
 
 export function problemFrom(status: number, data: unknown): Problem {
@@ -601,6 +601,8 @@ export const RESULT_LABEL: Record<string, string> = {
   SOURCE_ADMIN_REQUIRED: '没有维护官方来源清单的权限（需要由数据库管理员授予）',
   // 等锁超时（迁移 0052：来源清单的新增与下线最多等 5 秒，例如有来源文件正在登记）
   BUSY: '正被占用，请稍后重试',
+  // 后端每个错误码都要有提示（tests/review-errors.test.ts 与 review-api.errors.json 核对，specs/review-console-error-codes）
+  TOO_LARGE: '提交的内容太长了，请删减后再试', MISDIRECTED: '请求地址不对，请联系技术负责人',
 };
 // ---------- KGE-06 封测周修订支持（specs/kge06-weekly-revision）：低置信打标候选工作单、修订发布预检（开关见 review-features.ts） ----------
 export interface TagCandidateAlt {
