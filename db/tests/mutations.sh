@@ -1559,6 +1559,9 @@ M+=(
   ["数据维护：写入幂等清理删掉进行中的请求"]="$(afr "$RIR" "'AND (x.status <> ''pending'' OR x.lease_until < p_now - interval ''30 days'')'" "''")"
   ["数据维护：清理不限批量"]="$(afr 'platform.retention_args_ok(timestamp with time zone, integer)' "'p_batch > 10000'" "'false'")"
   ["数据维护：函数属主能读写入幂等的学生列"]="GRANT SELECT (student_id) ON platform.ingest_request TO starbuddy_authz;"
+  # 合并前安全审查（specs/launch-test-2026/pr28-review-notes.md S1、S2）：续建的锁等待上限、函数体钉死
+  ["数据维护：续建不设锁等待上限"]="ALTER FUNCTION $EPA RESET lock_timeout;"
+  ["数据维护：续建函数体被改（调用记录多建一个月）"]="$(afr "$EPA" "'''platform.model_call_log''::regclass, v_from, 7)'" "'''platform.model_call_log''::regclass, v_from, 8)'")"
 )
 
 M+=(

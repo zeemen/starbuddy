@@ -12,6 +12,9 @@
 --   - 父表写死为四张（不收表名参数）；只建“p_now 所在的 UTC 月起共 7 个月”（当月 + 往后 6 个月）里缺的分区，不删、不改已有分区；
 --   - p_now 只能在数据库 now() 往前 1 天之内、不能晚于 now()（与 0060 留存函数同口径），越界 22023；
 --   - 时区固定 UTC（分区边界是 UTC 月初，同 0004 / 0008 / 0060 的初始分区）；search_path 固定、以 pg_temp 结尾；
+--   - 锁等待上限 3 秒（lock_timeout，只在函数执行期间生效）：建分区要对父表加 ACCESS EXCLUSIVE 锁、持有到提交，父表上有长查询或长事务时
+--     续建会排队、排队期间父表的写入全被堵住；超时就以 55P03 失败（调度任务退出码非零、告警），第二天重跑——窗口还余 6 个月
+--     （specs/launch-test-2026/pr28-review-notes.md S1）；
 --   - 建出的分区不授任何权限（只经父表访问；父表的 RLS 与授权照旧，攻击面 J1）；
 --   - 只授 starbuddy_scheduler；返回新建分区数。
 --   待人确认（lessons 第 1 条）：是否改为专用的“分区属主”角色（只拥有四张父表），把这个函数的权限收窄到这四张表。
@@ -21,6 +24,7 @@
 
 CREATE FUNCTION platform.ensure_partitions_ahead(p_now timestamptz) RETURNS integer
   LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, platform, pg_temp SET TimeZone = 'UTC'
+  SET lock_timeout = '3s'
   AS $$
 DECLARE
   v_from date;

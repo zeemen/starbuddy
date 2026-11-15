@@ -28,8 +28,9 @@ SELECT t.ok((SELECT count(*) FROM pg_proc p WHERE p.oid = 'platform.ensure_parti
                AND (SELECT count(DISTINCT c.relowner) FROM pg_class c
                      WHERE c.oid IN ('platform.evidence_event'::regclass, 'platform.attempt'::regclass, 'platform.usage_ledger'::regclass,
                                      'platform.model_call_log'::regclass)) = 1
-               AND 'search_path=pg_catalog, platform, pg_temp' = ANY (p.proconfig) AND 'TimeZone=UTC' = ANY (p.proconfig)) = 1,
-            '续建：SECURITY DEFINER，属主就是四张父表的属主，search_path 固定、时区 UTC');
+               AND 'search_path=pg_catalog, platform, pg_temp' = ANY (p.proconfig) AND 'TimeZone=UTC' = ANY (p.proconfig)
+               AND 'lock_timeout=3s' = ANY (p.proconfig)) = 1,
+            '续建：SECURITY DEFINER，属主就是四张父表的属主，search_path 固定、时区 UTC、锁等待上限 3 秒');
 SELECT t.ok(NOT (SELECT prosecdef FROM pg_proc WHERE oid = 'platform.partition_horizon()'::regprocedure),
             '分区水位只读系统目录：SECURITY INVOKER');
 SELECT t.ok((SELECT array_agg(r.role ORDER BY r.role) FROM unnest(ARRAY['starbuddy_bff', 'starbuddy_learning', 'starbuddy_review', 'starbuddy_scheduler',

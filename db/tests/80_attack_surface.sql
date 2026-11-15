@@ -958,3 +958,12 @@ SELECT t.ok(NOT EXISTS (
    WHERE NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.prosecdef AND p.oid::regprocedure::text = e.sig
                        AND has_function_privilege(e.role, p.oid, 'EXECUTE'))),
   '攻击面：函数矩阵的豁免登记都对应该角色可执行的现有 SECURITY DEFINER 函数');
+
+-- 0062 这个例外的函数体钉死（放在文件末尾：改函数体的攻击面变异要先被各自登记的断言发现，db/tests/mutations.sh 的 EXPECT；specs/launch-test-2026/pr28-review-notes.md S2）：它以父表属主身份执行，以后哪个迁移用 CREATE OR REPLACE
+-- 改了函数体（例如多建一张表、收表名参数），这里失败，逼着改动的人更新摘要、评审重看。“属主不是超级用户”要等专用分区属主角色定下来
+-- （同上 H2；测试库的迁移执行者就是超级用户），暂不断言。
+SELECT t.ok((SELECT md5(prosrc) FROM pg_proc WHERE oid = 'platform.ensure_partitions_ahead(timestamptz)'::regprocedure)
+              = '9645e56305cd778e42af6ae4fcbb86b7'
+            AND (SELECT proconfig FROM pg_proc WHERE oid = 'platform.ensure_partitions_ahead(timestamptz)'::regprocedure)
+              = '{"search_path=pg_catalog, platform, pg_temp",TimeZone=UTC,lock_timeout=3s}',
+            '攻击面：0062 分区续建（唯一不属 authz / eraser 的 SECURITY DEFINER 函数）的函数体与配置是评审过的那一版');

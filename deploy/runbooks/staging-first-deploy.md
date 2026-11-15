@@ -503,6 +503,18 @@ kubectl -n starbuddy-staging get svc,networkpolicy,pvc
    ```
    kubectl apply -f <部署目录>/observability.yaml
    ```
+9. **按旧时长签发的学生会话**（PLT-24 把学生会话改为最长 12 小时、空闲 1 小时，`services/bff/config/auth.json`；时长在签发时写进每一行会话，
+   改配置只影响新会话，`specs/launch-test-2026/pr28-review-notes.md` S3）。**首次部署的库是新建的，这一步应查到 0 行、直接跳过**；
+   只有这个环境在 PLT-24 之前跑过旧版本 BFF、签发过学生会话时才需要处理。先只读核对（跳板，`PRIMARY_DSN`，同第 3 节）：
+   ```
+   psql "$PRIMARY_DSN" -X -c "SELECT count(*) FROM platform.auth_session WHERE origin = 'guardian_handoff' AND revoked_at IS NULL AND expires_at > now() AND (idle_timeout > interval '1 hour' OR expires_at - created_at > interval '12 hours')"
+   ```
+   不为 0 时，**须人批准、复核人在场**，让这些会话失效（学生回到家长那里重新打开学生模式即可；没有专门的失效原因，用 `logout_all`，
+   加新原因要改迁移）：
+   ```
+   psql "$PRIMARY_DSN" -X -1 -c "UPDATE platform.auth_session SET revoked_at = now(), revoked_reason = 'logout_all' WHERE origin = 'guardian_handoff' AND revoked_at IS NULL AND expires_at > now() AND (idle_timeout > interval '1 hour' OR expires_at - created_at > interval '12 hours')"
+   ```
+   以后再改 `auth.json` 的会话时长时，同样按这一步处理。
 
 ---
 
