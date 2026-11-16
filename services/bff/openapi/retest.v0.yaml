@@ -170,10 +170,11 @@ components:
     Entry:
       type: object
       additionalProperties: false
-      required: [entry_id, node_id, cognitive_level, kind, status]
+      required: [entry_id, node_id, node_name, cognitive_level, kind, status]
       properties:
         entry_id: { type: string, format: uuid }
         node_id: { type: string, description: 知识节点（公共知识层的 ID，不是对学生的判断） }
+        node_name: { type: [string, 'null'], description: 已发布地图的知识节点名（与今日计划同一口径）；拿不到时为空，界面显示编号 }
         cognitive_level: { enum: [know, understand, apply, synthesize] }
         kind: { enum: [retest, verify], description: 条目类别（复测 / 验证），只用来选固定文案占位；不给任务原因 }
         status: { enum: [due, unavailable], description: unavailable = 这一条暂时没有可出的题（原因编码不转） }

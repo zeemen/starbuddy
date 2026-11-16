@@ -141,8 +141,9 @@ describe('错题再练（BFF 学生端路由与计量）', { skip: HAS_DB ? fals
     const r = await callAs(shell.base, 'GET', qPath(F.S), await sess(F.aS));
     assert.equal(r.status, 200, r.text);
     assert.equal(r.body.subject, 'math');
-    assert.deepEqual(Object.keys(r.body.entries[0]).sort(), ['cognitive_level', 'empty_reason', 'entry_id', 'max_rounds', 'next_round_at', 'node_id', 'round',
-                                                             'source', 'status']);
+    assert.deepEqual(Object.keys(r.body.entries[0]).sort(), ['cognitive_level', 'empty_reason', 'entry_id', 'max_rounds', 'next_round_at', 'node_id',
+                                                             'node_name', 'round', 'source', 'status']);
+    assert.equal(r.body.entries[0].node_name, null, '合成节点不在已发布地图里：没有名称（specs/practice-retest-list-polish）');
     for (const banned of ['source_item_ref', 'SYN-PR-ITEM', 'retest_due', 'same_family', 'mastery', 'confidence', 'evidence', 'error', F.S]) {
       assert.ok(!r.text.includes(banned), `列表不含 ${banned}`);
     }

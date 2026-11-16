@@ -142,7 +142,8 @@ describe('复测与验证题（BFF 学生端路由与计量）', { skip: HAS_DB 
     assert.equal(r.status, 200, r.text);
     assert.equal(r.body.subject, 'math');
     assert.deepEqual(r.body.entries.map((e: Record<string, unknown>) => Object.keys(e).sort()),
-                     [['cognitive_level', 'entry_id', 'kind', 'node_id', 'status'], ['cognitive_level', 'entry_id', 'kind', 'node_id', 'status']]);
+                     [['cognitive_level', 'entry_id', 'kind', 'node_id', 'node_name', 'status'], ['cognitive_level', 'entry_id', 'kind', 'node_id', 'node_name', 'status']]);
+    assert.deepEqual(r.body.entries.map((e: Record<string, unknown>) => e['node_name']), [null, null], '合成节点不在已发布地图里：没有名称');
     assert.deepEqual(r.body.entries.map((e: Record<string, unknown>) => [e['kind'], e['status']]), [['retest', 'due'], ['verify', 'unavailable']]);
     for (const leak of ['p_mastery', 'confidence', 'evidence', 'error', 'reason', 'scheduled', 'no_new_family']) assert.ok(!r.text.includes(leak), leak);
     assert.deepEqual(sent.at(-1), { op: 'queue', student: F.S, subject: 'aya' });

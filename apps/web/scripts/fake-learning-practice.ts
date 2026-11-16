@@ -59,9 +59,11 @@ function entry(n: string, node: string, status: Status, play: Entry['play'], ext
 
 const STATE: Record<string, Entry[]> = {
   [P1]: [
+    // 102、103 与复测 404 用合成数学地图 0.9.0（已发布，db/seeds/dev/star-map-v1-synthetic.sql）里的节点：列表显示节点名；其余不在任何地图里，显示编号
+    // （specs/practice-retest-list-polish）
     entry('101', 'MATH.SYN.P1.N1', 'due', { format: 'single', correct: ['B'], next: 'ready', answer: 'grade' }),
-    entry('102', 'MATH.SYN.P1.N2', 'waiting', {}, { round: 2, next_round_at: LATER }),
-    entry('103', 'MATH.SYN.P1.N3', 'closed', {}, { cognitive_level: 'understand' }),
+    entry('102', 'MATH.SV1A.T1.N002', 'waiting', {}, { round: 2, next_round_at: LATER }),
+    entry('103', 'MATH.SV1A.T1.N003', 'closed', {}, { cognitive_level: 'understand' }),
     entry('104', 'MATH.SYN.P1.N4', 'exhausted', {}, { round: 3 }),
     entry('105', 'MATH.SYN.P1.N5', 'unavailable', {}, { empty_reason: 'no_admitted_candidate', cognitive_level: 'know' }),
     entry('106', 'MATH.SYN.P1.N6', 'due', { format: 'fill', next: 'ready', answer: 'pending' }, { source: 'hint_followup', cognitive_level: 'synthesize' }),
@@ -212,7 +214,7 @@ const RETEST: Record<string, RetestEntry[]> = {
     { entry_id: id('402'), node_id: 'MATH.SYN.P1.R2', kind: 'verify', status: 'due', reason: 'verify_self_report', empty_reason: null,
       play: { format: 'fill', next: 'ready', answer: 'pending' } },
     { entry_id: id('403'), node_id: 'MATH.SYN.P1.R3', kind: 'verify', status: 'unavailable', reason: 'verify_in_platform', empty_reason: 'no_new_family', play: {} },
-    { entry_id: id('404'), node_id: 'MATH.SYN.P1.R4', kind: 'retest', status: 'due', reason: 'decay', empty_reason: null, play: { next: 'unavailable' } },
+    { entry_id: id('404'), node_id: 'MATH.SV1A.T1.N004', kind: 'retest', status: 'due', reason: 'decay', empty_reason: null, play: { next: 'unavailable' } },
   ],
 };
 const RETEST_TICKETS = new Map<string, { student: string; subject: string; entry: string; expiresAt: number }>();

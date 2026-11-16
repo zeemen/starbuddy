@@ -33,6 +33,7 @@ import { withAccount } from '../metering/db.ts';
 import { usageIdFor } from '../metering/uuid.ts';
 import { P } from '../http/problems.ts';
 import type { Reply } from '../http/routes.ts';
+import { nodeNamesOrEmpty } from '../node-names.ts';
 import { pickRich, type RichItem } from '../item-rich.ts';
 import type { PracticeLearning, PracticeOutcome } from './learning-client.ts';
 import { MAX_SEALED, openTicket, sealTicket, SEALED_PREFIX, type ItemFormat, type OpenedTicket } from './ticket.ts';
@@ -325,7 +326,10 @@ export async function practiceQueue(deps: PracticeDeps, account: string, student
   if (!isRecord(body) || !Array.isArray(body['entries'])) return UPSTREAM_UNAVAILABLE;
   const entries = body['entries'].map(pickEntry);
   if (entries.some((e) => e === null)) return UPSTREAM_UNAVAILABLE;  // 形状不对整页不给（不挑着给一部分）
-  return json(200, { subject: code, entries });
+  // 知识点名（已发布地图，与今日计划同一口径）：取不到时为 null，列表照常返回（specs/practice-retest-list-polish）
+  const picked = entries as Record<string, unknown>[];
+  const names = await nodeNamesOrEmpty(deps.pool, account, picked.map((e) => e['node_id'] as string), deps.note);
+  return json(200, { subject: code, entries: picked.map((e) => ({ ...e, node_name: names.get(e['node_id'] as string) ?? null })) });
 }
 
 export async function practiceNext(deps: PracticeDeps, account: string, student: string, code: string, entry: string): Promise<Reply> {

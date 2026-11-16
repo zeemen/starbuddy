@@ -100,6 +100,37 @@ test('学生本人：科目页有入口 → 列表只有类别占位与状态 �
   expect(off).toEqual([]);
 });
 
+
+/** 手机宽度（specs/practice-retest-list-polish）：没有横向滚动；每行一张卡片（tr 是块级），每格前的列名就是表头那一条文案 */
+async function cardLayout(page: Page, table: string, labels: readonly string[]): Promise<void> {
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow, '没有横向滚动').toBeLessThanOrEqual(0);
+  const got = await page.locator(`[data-testid="${table}"] tbody tr`).first().evaluate((tr) => ({
+    display: getComputedStyle(tr).display,
+    labels: Array.from(tr.querySelectorAll('td')).map((td) => getComputedStyle(td, '::before').content.replace(/^"|"$/g, '')),
+    header: getComputedStyle(tr.closest('table')!.querySelector('thead')!).position,
+  }));
+  expect(got.display).toBe('block');
+  expect(got.labels).toEqual([...labels]);
+  expect(got.header, '表头视觉隐藏（留给读屏软件）').toBe('absolute');
+}
+
+test('知识点名与手机卡片排列：已发布地图里的节点显示名称，其余显示编号；390 宽按卡片排列、无横向滚动、无障碍不退化', async ({ page }) => {
+  await loginStudent(page, P1);
+  await page.goto(list(P1));
+  const row = (entry: string) => page.locator(`tr[data-entry-id="${entry}"]`);
+  await expect(row(R('404')).locator('[data-value="node-name"]')).toHaveText('（合成）知识点 004');
+  expect(await page.content(), '有名称的条目，编号不进页面').not.toContain('MATH.SV1A.T1.N004');
+  await expect(row(R('402')).locator('[data-value="node"]')).toHaveText('MATH.SYN.P1.R2');
+  for (const width of [360, 390, 430]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto(list(P1));
+    await cardLayout(page, 'retest-entries', [RETEST.colKind, RETEST.colNode, RETEST.colLevel, RETEST.colStatus]);
+  }
+  await onlyCopy(page);
+  await axe(page);
+});
+
 test('验证题待复核：只显示“等待复核”，不显示判分结论；条目仍可再做一道。无题可出：只显示占位，不显示原因', async ({ page }) => {
   await loginStudent(page, P1);
   await page.goto(item(P1, R('402')));

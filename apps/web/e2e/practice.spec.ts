@@ -112,6 +112,42 @@ test('学生本人：科目页有入口 → 列表只陈述再练状态 → 取�
   expect(off).toEqual([]);
 });
 
+
+/** 手机宽度（specs/practice-retest-list-polish）：没有横向滚动；每行一张卡片（tr 是块级），每格前的列名就是表头那一条文案 */
+async function cardLayout(page: Page, table: string, labels: readonly string[]): Promise<void> {
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow, '没有横向滚动').toBeLessThanOrEqual(0);
+  const got = await page.locator(`[data-testid="${table}"] tbody tr`).first().evaluate((tr) => ({
+    display: getComputedStyle(tr).display,
+    labels: Array.from(tr.querySelectorAll('td')).map((td) => getComputedStyle(td, '::before').content.replace(/^"|"$/g, '')),
+    header: getComputedStyle(tr.closest('table')!.querySelector('thead')!).position,
+  }));
+  expect(got.display).toBe('block');
+  expect(got.labels).toEqual([...labels]);
+  expect(got.header, '表头视觉隐藏（留给读屏软件）').toBe('absolute');
+}
+
+test('知识点名与手机卡片排列：已发布地图里的节点显示名称（编号不进页面），其余显示编号；390 宽按卡片排列、无横向滚动、无障碍不退化', async ({ page }) => {
+  await loginStudent(page, P1);
+  await page.goto(list(P1));
+  // 102、103 的节点在合成数学地图 0.9.0（已发布）里：显示名称；101 不在任何地图里：显示编号
+  await expect(row(page, E('102')).locator('[data-value="node-name"]')).toHaveText('（合成）知识点 002');
+  await expect(row(page, E('103')).locator('[data-value="node-name"]')).toHaveText('（合成）知识点 003');
+  await expect(row(page, E('102')).locator('[data-value="node"]')).toHaveCount(0);
+  expect(await page.content(), '有名称的条目，编号不进页面').not.toContain('MATH.SV1A.T1.N002');
+  await expect(row(page, E('101')).locator('[data-value="node"]')).toHaveText('MATH.SYN.P1.N1');
+  await expect(row(page, E('101')).locator('[data-value="node-name"]')).toHaveCount(0);
+  const desktop = await row(page, E('101')).evaluate((tr) => getComputedStyle(tr).display);
+  expect(desktop, '桌面仍是表格排列').toBe('table-row');
+  for (const width of [360, 390, 430]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto(list(P1));
+    await cardLayout(page, 'practice-entries', [PRACTICE.colSource, PRACTICE.colNode, PRACTICE.colLevel, PRACTICE.colStatus, PRACTICE.colRound]);
+  }
+  await onlyCopy(page);
+  await axe(page);
+});
+
 test('再练做错：结果未知时作答控件禁用，用同一张票据原样再提交首次作答 → 判错，条目等下一轮（显示开放时间）', async ({ page }) => {
   await loginStudent(page, P1);
   await page.goto(item(P1, E('10b')));

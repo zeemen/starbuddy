@@ -10,8 +10,8 @@ name: check
 #
 #   事件                     跑什么                                    计费分钟（实测基数见下）
 #   ───────────────────────  ────────────────────────────────────────  ──────────────────
-#   pull_request             各组 -light（去掉全部 *-mutation）+ cjk-path  ≈ 76 + 8
-#   push 到 main             各组 -light（同上）+ cjk-path               ≈ 76 + 8
+#   pull_request             各组 -light（去掉全部 *-mutation）+ cjk-path  ≈ 76 + 5
+#   push 到 main             各组 -light（同上）+ cjk-path               ≈ 76 + 5
 #   workflow_dispatch        默认只跑 *-mutation + db-mutation          ≈ 478
 #     （scope=light / full 可手动选别的）                               （full ≈ 554）
 #
@@ -173,7 +173,7 @@ jobs:
   # 中文目录回归（内测前整改待确认第 2 条，specs/launch-test-2026/prelaunch-fixes.md）：开发者本机的仓库在含中文的目录里，
   # 把 URL 的 pathname 当文件路径、手拼 file:// 这类问题只在那样的目录里出现（tools/path-url-check 只拦常见写法）。
   # 仓库直接检出到含中文的路径（不另外复制），跑 make cjk-path-test：与文件路径有关的单测类目标，不含变异与端到端。
-  # PR 与 push 到 main 跑；手动触发只在 scope 为 light / full 时跑。实测约 8 分钟（其中依赖安装约 1.5 分钟）。
+  # PR 与 push 到 main 跑；手动触发只在 scope 为 light / full 时跑。实测约 5 分钟（run 43820076356：依赖安装约 1.3 分钟、测试约 3 分钟）。
   cjk-path:
     if: github.event_name != 'workflow_dispatch' || inputs.scope != 'mutation'
     runs-on: ubuntu-24.04

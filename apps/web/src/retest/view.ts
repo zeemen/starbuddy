@@ -4,7 +4,7 @@
 // 唯一的例外是知识节点编号：不合前端口径时只隐藏这一行的编号。题面的挑选与再练同一份（src/practice/view.ts 的 pickNext 口径）。
 import type { RetestApi } from '../lib/retest-api.ts';
 import { pickRich, type RichItem } from '../lib/rich-item.ts';
-import { LEVELS, NODE_ID, uiError as practiceUiError, UUID, VERDICTS, type ItemView, type UiError } from '../practice/view.ts';
+import { LEVELS, NODE_ID, pickNodeName, uiError as practiceUiError, UUID, VERDICTS, type ItemView, type UiError } from '../practice/view.ts';
 
 export { UUID };
 const TICKET = /^sbr1\.[A-Za-z0-9_-]+$/;
@@ -14,7 +14,7 @@ export const ENTRY_STATUSES = ['due', 'unavailable'] as const;
 export const AFTER_STATUSES = ['due', 'done'] as const;
 
 export interface RetestEntryView {
-  entry_id: string; node_id: string | null; cognitive_level: (typeof LEVELS)[number]; kind: (typeof KINDS)[number];
+  entry_id: string; node_id: string | null; node_name: string | null; cognitive_level: (typeof LEVELS)[number]; kind: (typeof KINDS)[number];
   status: (typeof ENTRY_STATUSES)[number];
 }
 export interface RetestReadyView { entry_id: string; kind: (typeof KINDS)[number]; item: ItemView; ticket: string }
@@ -30,12 +30,12 @@ const oneOf = <T extends string>(xs: readonly T[], v: unknown): v is T => typeof
 
 function pickEntry(e: unknown): RetestEntryView | null {
   if (!isRecord(e)) return null;
-  const { entry_id, node_id, cognitive_level, kind, status } = e;
+  const { entry_id, node_id, node_name, cognitive_level, kind, status } = e;
   if (typeof entry_id !== 'string' || !UUID.test(entry_id) || !oneOf(LEVELS, cognitive_level) || !oneOf(KINDS, kind) || !oneOf(ENTRY_STATUSES, status)) {
     return null;
   }
   const node = typeof node_id === 'string' && NODE_ID.test(node_id) ? node_id : null;
-  return { entry_id, node_id: node, cognitive_level, kind, status };
+  return { entry_id, node_id: node, node_name: node ? pickNodeName(node_name) : null, cognitive_level, kind, status };
 }
 
 /** 列表：每条只取这些字段 */

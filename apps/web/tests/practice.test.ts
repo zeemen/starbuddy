@@ -18,7 +18,7 @@ import {
 } from '../src/shell/copy.ts';
 import { isPracticeSubject, PRACTICE_SUBJECTS, practiceEnabled } from '../src/practice/features.ts';
 import {
-  AFTER_STATUSES, ENTRY_STATUSES, keepsTicket, LEVELS, needsNewItem, pickAnswer, pickNext, pickQueue, resubmitsSnapshot, shanghaiMinute, uiError, VERDICTS,
+  AFTER_STATUSES, ENTRY_STATUSES, keepsTicket, LEVELS, needsNewItem, pickAnswer, pickNodeName, pickNext, pickQueue, resubmitsSnapshot, shanghaiMinute, uiError, VERDICTS,
   type UiError,
 } from '../src/practice/view.ts';
 
@@ -126,7 +126,7 @@ test('列表：每条只取白名单字段，内部字段（原题引用、复�
   const out = pickQueue(raw)!;
   assert.equal(out.length, 3);
   for (const e of out) {
-    assert.deepEqual(Object.keys(e).sort(), ['cognitive_level', 'entry_id', 'max_rounds', 'next_round_at', 'node_id', 'round', 'source', 'status']);
+    assert.deepEqual(Object.keys(e).sort(), ['cognitive_level', 'entry_id', 'max_rounds', 'next_round_at', 'node_id', 'node_name', 'round', 'source', 'status']);
   }
   assert.ok(!JSON.stringify(out).includes('no_admitted_candidate'));
   for (const bad of [{ status: 'mastered' }, { cognitive_level: 'genius' }, { source: 'careless' }, { round: 0 },
@@ -143,12 +143,48 @@ test('列表：知识节点编号不合前端口径时只隐藏这一行的编�
     assert.ok(out, String(node));
     assert.equal(out.length, 2);
     assert.equal(out[0]!.node_id, 'MATH.SYN.N1');
-    assert.deepEqual(out[1], { entry_id: E2, node_id: null, cognitive_level: 'apply', source: 'wrong', status: 'waiting', round: 2, max_rounds: 3,
-                               next_round_at: '2026-12-01T10:00:00+08:00' }, String(node));
+    assert.deepEqual(out[1], { entry_id: E2, node_id: null, node_name: null, cognitive_level: 'apply', source: 'wrong', status: 'waiting', round: 2,
+                               max_rounds: 3, next_round_at: '2026-12-01T10:00:00+08:00' }, String(node));
   }
   const pages = code(read('src/practice/PracticePages.tsx'));
-  assert.match(pages, /\{e\.node_id \? <span data-value="node">\{e\.node_id\}<\/span> : null\}/);
+  assert.match(pages, /\{e\.node_name \? <span data-value="node-name">\{e\.node_name\}<\/span>\s*: e\.node_id \? <span data-value="node">\{e\.node_id\}<\/span> : null\}/);
   assert.ok(!/data-entry-source/.test(pages), '条目来源不另放进 DOM 属性');
+});
+
+test('列表：知识点名（specs/practice-retest-list-polish）——有名称用名称；名称不合格（空、过长、含控制字符、不是字符串）或编号不合口径时为 null', () => {
+  const one = (o: Record<string, unknown>) => pickQueue({ entries: [wireEntry(o)] })![0]!;
+  assert.equal(one({ node_name: '（合成）一次函数的图像' }).node_name, '（合成）一次函数的图像');
+  for (const bad of ['', 'x'.repeat(101), '名称\n换行', '\u0000', 42, null, undefined, ['数组']]) {
+    const e = one({ node_name: bad });
+    assert.equal(e.node_name, null, JSON.stringify(bad));
+    assert.equal(e.node_id, 'MATH.SYN.N1', '名称不合格只影响名称，不影响编号与这一行');
+  }
+  assert.equal(one({ node_id: 'bad node', node_name: '（合成）名称' }).node_name, null, '编号不合口径时名称也不显示');
+  assert.equal(pickNodeName('x'.repeat(100)), 'x'.repeat(100));
+});
+
+test('列表在手机宽度按卡片排列：每格带列名（data-label 取表头同一条文案），显式 role 保住表格语义；样式只在 767px 以下生效', () => {
+  for (const [file, cols] of [['src/practice/PracticePages.tsx', ['colSource', 'colNode', 'colLevel', 'colStatus', 'colRound']],
+                               ['src/retest/RetestPages.tsx', ['colKind', 'colNode', 'colLevel', 'colStatus']]] as const) {
+    const page = code(read(file));
+    assert.match(page, /className="trust-table practice-table card-table"[^>]*role="table"/, file);
+    assert.match(page, /<thead role="rowgroup">/, file);
+    assert.match(page, /<tbody role="rowgroup">/, file);
+    const prefix = file.includes('practice') ? 'PRACTICE' : 'RETEST';
+    for (const c of cols) {
+      assert.match(page, new RegExp(`<th scope="col" role="columnheader">\\{${prefix}\\.${c}\\}</th>`), `${file} 表头 ${c}`);
+      assert.match(page, new RegExp(`<td role="cell" data-label=\\{${prefix}\\.${c}\\}>`), `${file} 格子 ${c}`);
+    }
+    assert.equal((page.match(/<td role="cell" data-label=/g) ?? []).length, cols.length, `${file}：每个格子都带列名`);
+  }
+  const css = read('src/app/globals.css');
+  const narrow = css.slice(css.indexOf('@media (max-width: 767px) {'));
+  const block = narrow.slice(0, narrow.indexOf('\n}\n'));
+  for (const rule of ['.card-table thead {', '.card-table, .card-table tbody, .card-table tr, .card-table td { display: block;',
+                      '.card-table td::before { content: attr(data-label);']) {
+    assert.ok(block.includes(rule), `窄屏样式里有 ${rule}`);
+  }
+  assert.equal(css.replace(block, '').includes('.card-table'), false, '卡片样式只在窄屏生效');
 });
 
 test('取题：只取题面（format、stem、options）与票据；题目引用与同族标记丢弃；不可用时不带空原因编码；条目对不上或票据不对整题不给', () => {

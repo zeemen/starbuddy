@@ -84,8 +84,14 @@ test('列表白名单：只取条目 ID、节点、层次、类别与状态；�
   const wire = (o: Record<string, unknown> = {}) => ({ entry_id: E1, node_id: 'MATH.SYN.N1', cognitive_level: 'apply', kind: 'retest', status: 'due',
                                                        reason: 'scheduled', empty_reason: null, p_mastery: 0.5, ...o });
   const out = pickRetestQueue({ subject: 'math', entries: [wire(), wire({ kind: 'verify', status: 'unavailable', node_id: 'bad node' })] })!;
-  assert.deepEqual(out, [{ entry_id: E1, node_id: 'MATH.SYN.N1', cognitive_level: 'apply', kind: 'retest', status: 'due' },
-                         { entry_id: E1, node_id: null, cognitive_level: 'apply', kind: 'verify', status: 'unavailable' }]);
+  assert.deepEqual(out, [{ entry_id: E1, node_id: 'MATH.SYN.N1', node_name: null, cognitive_level: 'apply', kind: 'retest', status: 'due' },
+                         { entry_id: E1, node_id: null, node_name: null, cognitive_level: 'apply', kind: 'verify', status: 'unavailable' }]);
+  // 知识点名（specs/practice-retest-list-polish）：有名称用名称；编号不合口径时名称也不显示；名称不合格当作没有
+  const named = pickRetestQueue({ entries: [wire({ node_name: '（合成）名称' }), wire({ node_id: 'bad node', node_name: '（合成）名称' }),
+                                            wire({ node_name: 'x'.repeat(101) })] })!;
+  assert.deepEqual(named.map((e) => e.node_name), ['（合成）名称', null, null]);
+  const page = code(read('src/retest/RetestPages.tsx'));
+  assert.match(page, /\{e\.node_name \? <span data-value="node-name">\{e\.node_name\}<\/span>\s*: e\.node_id \? <span data-value="node">\{e\.node_id\}<\/span> : null\}/);
   for (const bad of [{ kind: 'scheduled' }, { status: 'done' }, { entry_id: 'x' }, { cognitive_level: 'genius' }]) {
     assert.equal(pickRetestQueue({ entries: [wire(bad)] }), null, JSON.stringify(bad));
   }
