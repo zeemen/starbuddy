@@ -4,13 +4,14 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, realpathSync, writeFileSync, existsSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { gitMeta } from "./legacy.ts";
 import type { DbOutputRow, Inventory } from "./model.ts";
 import { longCjkRuns, renderConclusionsMd, renderInventoryMd, renderJson } from "./report.ts";
 import { allowedOutputKeys } from "./sqlcheck.ts";
 
-const TOOL_DIR = new URL("..", import.meta.url).pathname;
+const TOOL_DIR = fileURLToPath(new URL("..", import.meta.url));
 
 /** 隔离子进程的启动参数：只读 legacy 与本工具目录，不给写文件与起子进程的权限（Node 22 的权限模型不管网络） */
 export function isolatedArgs(ayaRoot: string, wenliRoot: string, script: string, args: string[] = []): string[] {
@@ -95,7 +96,7 @@ export async function buildInventory(ayaRoot: string, wenliRoot: string, dbFiles
 }
 
 async function main(): Promise<number> {
-  const here = new URL("../../..", import.meta.url).pathname;
+  const here = fileURLToPath(new URL("../../..", import.meta.url));
   const { values } = parseArgs({
     options: {
       aya: { type: "string", default: join(here, "legacy/aya") },
@@ -156,6 +157,7 @@ async function main(): Promise<number> {
   return 0;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// 按 file: URL 比较（目录名含中文时 import.meta.url 是百分号编码的，直接拼 file:// 永远不相等）
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
   process.exitCode = await main();
 }

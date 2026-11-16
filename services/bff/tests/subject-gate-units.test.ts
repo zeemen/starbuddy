@@ -9,6 +9,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { subjectBusy as diagnosisBusy, withRetry as diagnosisRetry } from '../src/diagnosis/service.ts';
 import {
   busyHeaders, CONCURRENCY_CONFIG_PATH, createSubjectGate, decideSubjectGate, GATE_SUBJECTS, loadConcurrencyConfig, parseSubjectGateFeature,
@@ -371,7 +372,7 @@ test('开关：只认 subject_gate；没设或空为关；不认识的取值拒�
 
 // ---------------------------------------------------------------- 启动检查（子进程，连不上数据库才退出）
 
-const MAIN = new URL('../src/main.ts', import.meta.url).pathname;
+const MAIN = fileURLToPath(new URL('../src/main.ts', import.meta.url));
 const hex = () => randomBytes(32).toString('hex');
 function start(vars: Record<string, string>): { status: number | null; stderr: string } {
   const r = spawnSync(process.execPath, ['--no-warnings', MAIN], {

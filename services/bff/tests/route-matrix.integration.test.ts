@@ -21,6 +21,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { after, before, test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import type { DiagnosisLearning, DiagOutcome, StartBody } from '../src/diagnosis/learning-client.ts';
 import { parseStart } from '../src/diagnosis/service.ts';
@@ -779,7 +780,7 @@ test('H6 限流（从路由表断言）：每个桶都在 config/auth.json、名
 
 const srcFiles = (dir: URL): string[] => readdirSync(dir).flatMap((n) => {
   const u = new URL(n, dir);
-  return statSync(u).isDirectory() ? srcFiles(new URL(`${n}/`, dir)) : n.endsWith('.ts') ? [u.pathname] : [];
+  return statSync(u).isDirectory() ? srcFiles(new URL(`${n}/`, dir)) : n.endsWith('.ts') ? [fileURLToPath(u)] : [];
 });
 
 /** 允许调用消耗类计量函数的文件（第二轮 7.7）：新增消耗类入口要在这里登记，并补 H6 的计量用例 */

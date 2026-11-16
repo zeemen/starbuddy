@@ -7,7 +7,9 @@
 // 前端模块用计算出来的路径动态导入：只取运行时的值，不让 BFF 的 tsconfig 去类型检查前端文件（两边的严格选项不同）。
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { after, before, test } from 'node:test';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import pg from 'pg';
 import { ENTRY_STATUSES as BFF_PRACTICE_ENTRY, AFTER_STATUSES as BFF_PRACTICE_AFTER, SOURCES as BFF_PRACTICE_SOURCES, VERDICTS as BFF_VERDICTS } from '../src/practice/service.ts';
 import { AFTER_STATUSES as BFF_RETEST_AFTER, ENTRY_STATUSES as BFF_RETEST_ENTRY, KINDS as BFF_RETEST_KINDS } from '../src/retest/service.ts';
@@ -16,7 +18,7 @@ import { EVENT_KINDS as BFF_EVENT_KINDS } from '../src/events/query.ts';
 import { DISPLAY as BFF_STAR_DISPLAY } from '../src/star-map/display-state.ts';
 import { HAS_DB } from './harness.ts';
 
-const ROOT = new URL('../../../', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const CONTRACT = 'packages/contracts/openapi/insight-service.v0.9.yaml';
 const BFF_SHELL = 'services/bff/openapi/shell.v0.yaml';
 
@@ -33,7 +35,7 @@ interface Row {
 }
 
 const web = async (path: string, name: string, key?: string): Promise<readonly string[]> => {
-  const mod = (await import(`${ROOT}apps/web/src/${path}`)) as Record<string, unknown>;
+  const mod = (await import(pathToFileURL(join(ROOT, 'apps/web/src', path)).href)) as Record<string, unknown>;
   const v = key === undefined ? mod[name] : (mod[name] as Record<string, unknown>)[key];
   assert.ok(Array.isArray(v), `apps/web/src/${path} 没有导出数组 ${name}${key ? `.${key}` : ''}`);
   return v as string[];

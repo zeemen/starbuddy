@@ -13,12 +13,12 @@
 // 同一 legacy 提交、同一决定文件、同一词表：两次生成逐字节相同（规范化序列化，不读时钟）。
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { PACK_FORMAT, type ContentPack, type PackItem, type SkillLinks } from "../src/content.ts";
 import { DEFAULT_SOURCE, packVersionFor } from "../src/pack/admission.ts";
 import { finishPack, packCliOptions, runCli } from "./pack-cli.ts";
 
-const HERE = new URL(".", import.meta.url).pathname;
+const HERE = fileURLToPath(new URL(".", import.meta.url));
 const ROOT = process.env.AYA_LEGACY_ROOT ?? resolve(HERE, "../../../legacy/aya");
 process.env.AYA_LEGACY_ROOT = ROOT;
 

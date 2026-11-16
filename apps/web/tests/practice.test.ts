@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import {
   ALL_PRACTICE_COPY, ALL_SHELL_COPY, PRACTICE, PRACTICE_AFTER, PRACTICE_ERROR, PRACTICE_LEVEL, PRACTICE_SOURCE, PRACTICE_STATUS, PRACTICE_VERDICT,
 } from '../src/shell/copy.ts';
@@ -21,7 +22,7 @@ import {
   type UiError,
 } from '../src/practice/view.ts';
 
-const WEB = new URL('..', import.meta.url).pathname;
+const WEB = fileURLToPath(new URL('..', import.meta.url));
 const files = (dir: string): string[] => readdirSync(dir).flatMap((n) => {
   const p = join(dir, n);
   return statSync(p).isDirectory() ? files(p) : [p];

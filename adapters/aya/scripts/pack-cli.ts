@@ -9,13 +9,14 @@
 //   --out <文件>          输出路径，默认 content/pack.json
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import type { ContentPack } from "../src/content.ts";
 import { indexPack } from "../src/content.ts";
 import { applyAdmissionDecisions, parseAdmissionDecisions, serializePack } from "../src/pack/admission.ts";
 import { enforceHintScan, scanHints, type HintScanMode } from "../src/pack/hint-scan.ts";
 
-const HERE = new URL(".", import.meta.url).pathname;
+const HERE = fileURLToPath(new URL(".", import.meta.url));
 export const DEFAULT_OUT = resolve(HERE, "../content/pack.json");
 export const DEFAULT_DECISIONS = resolve(HERE, "../content/admission-decisions.json");
 

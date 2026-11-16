@@ -8,12 +8,13 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { pageExtensionsFor, repoRoot, turbopackRootFor } from '../next.config.ts';
 import * as web from '../src/lib/rich-item.ts';
 import { STAGE_INVALID_SAMPLE, STAGE_SAMPLE } from '../src/stage/sample.ts';
 import * as stage from '../../../packages/stage/src/index.ts';
 
-const WEB = new URL('..', import.meta.url).pathname;
+const WEB = fileURLToPath(new URL('..', import.meta.url));
 const read = (p: string) => readFileSync(join(WEB, p), 'utf8');
 const files = (dir: string): string[] => readdirSync(dir).flatMap((n) => {
   const p = join(dir, n);
@@ -84,7 +85,7 @@ test('Turbopack 根目录只在包含开发页的构建里放到仓库根', () =
   assert.equal(turbopackRootFor({ STARBUDDY_DEV_PAGES: '1', STARBUDDY_ENV: 'staging' }), undefined);
   assert.equal(turbopackRootFor({ STARBUDDY_ENV: 'test' }), undefined);
   assert.equal(turbopackRootFor({ STARBUDDY_DEV_PAGES: '1', STARBUDDY_ENV: 'test' }), repoRoot());
-  assert.equal(repoRoot(), new URL('../../..', import.meta.url).pathname.replace(/\/$/, ''));
+  assert.equal(repoRoot(), fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, ''));
   assert.equal(repoRoot(WEB), repoRoot());
 });
 

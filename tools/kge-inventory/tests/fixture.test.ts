@@ -4,11 +4,12 @@ import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { buildInventory } from "../src/main.ts";
 import type { Inventory } from "../src/model.ts";
 import { longCjkRuns, renderConclusionsMd, renderInventoryMd, renderJson } from "../src/report.ts";
 
-const FIX = new URL("./fixtures/", import.meta.url).pathname;
+const FIX = fileURLToPath(new URL("./fixtures/", import.meta.url));
 const AYA = join(FIX, "aya");
 const WENLI = join(FIX, "wenli");
 

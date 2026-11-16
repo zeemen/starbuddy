@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 import { ADAPTER_VERSION, createAdapter, type LogRecord } from "../src/adapter.ts";
 import { contractPath, type ContractValidator } from "../src/contract.ts";
@@ -170,7 +171,7 @@ test("四个方法的日志只含白名单字段；learner_context 与对话内�
 // ---------- 静态检查 ----------
 const walk = (d: string): string[] =>
   readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(`${d}/${e.name}`) : [`${d}/${e.name}`]));
-const SRC = new URL("../src", import.meta.url).pathname;
+const SRC = fileURLToPath(new URL("../src", import.meta.url));
 const stripComments = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`])\/\/.*$/gm, "$1");
 
 test("四个方法的代码不读系统时钟（不调用 Date.now / new Date() / performance.now）", () => {

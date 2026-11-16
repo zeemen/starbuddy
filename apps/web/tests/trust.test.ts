@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import {
   ADJUSTMENT, ALL_SHELL_COPY, ALL_TRUST_COPY, DATA_RIGHTS, DEVIATION_DIRECTION, DISPUTE_KIND, DISPUTE_RESULT, DISPUTE_STATUS, ERASURE_SCOPE,
   ERASURE_STATUS, EVIDENCE_LEVEL, EVIDENCE_SOURCE, WEEKLY_SECTION, WEEKLY_SOURCE, WHY_STATUS,
@@ -17,7 +18,7 @@ import {
   parseScore, pickDisputes, pickErasures, pickPrediction, pickReconciliation, pickWeekly, pickWhy, defaultFullScore,
 } from '../src/trust/view.ts';
 
-const WEB = new URL('..', import.meta.url).pathname;
+const WEB = fileURLToPath(new URL('..', import.meta.url));
 const files = (dir: string): string[] => readdirSync(dir).flatMap((n) => {
   const p = join(dir, n);
   return statSync(p).isDirectory() ? files(p) : [p];

@@ -11,14 +11,15 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { createServer as netServer, type AddressInfo } from 'node:net';
 import { after, before, describe, test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { httpDiagnosisLearning, type DiagnosisLearning } from '../src/diagnosis/learning-client.ts';
 import { fetchAs, startShell, type ShellHarness } from './shell-harness.ts';
 import { counters, createFamily, HAS_DB, ledgerConsistent, reservationsByStudent, setupHarness, type Harness } from './harness.ts';
 
 const ROOT = new URL('../../../', import.meta.url);
-const LEARNING = new URL('services/learning/', ROOT).pathname;
+const LEARNING = fileURLToPath(new URL('services/learning/', ROOT));
 const PY = `${LEARNING}.venv/bin/python`;
-const AYA = new URL('adapters/aya/', ROOT).pathname;
+const AYA = fileURLToPath(new URL('adapters/aya/', ROOT));
 const READY = HAS_DB && existsSync(PY) && existsSync(`${AYA}node_modules/ajv`);
 const SERVICE_CRED = `synthetic-bff-to-learning-${randomUUID()}`;
 const SESSION_CRED = `synthetic-bff-to-learning-session-${randomUUID()}`;  // PLT-24：诊断只认会话令牌

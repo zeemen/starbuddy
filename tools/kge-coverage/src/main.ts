@@ -9,6 +9,7 @@
 // 1 输入不一致或格式不对；2 参数不对。
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { computeCoverage, CoverageError, type Scope } from "./coverage.ts";
 import {
@@ -111,6 +112,7 @@ function chineseMain(snapshot: string | undefined, focus: string, outDir: string
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// 按 file: URL 比较（目录名含中文时 import.meta.url 是百分号编码的，直接拼 file:// 永远不相等）
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
   process.exitCode = main();
 }

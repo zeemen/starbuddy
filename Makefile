@@ -1,5 +1,5 @@
 # 未实现的目标明确打印“跳过”，不得伪装为通过。
-.PHONY: check-mutation check-group-persona-mutation check-group-contracts-mutation check-group-aya-mutation check-group-adapters-mutation check-group-learning-a-mutation check-group-learning-b-mutation check-group-bff-web-mutation check-group-kge-tools-mutation check-group-kge-model-mutation check-group-knowledge-mutation check-group-insight-mutation check-fast check check-core check-group-persona-light check-group-contracts-light check-group-aya-light check-group-adapters-light check-group-learning-a-light check-group-learning-b-light check-group-bff-web-light check-group-kge-tools-light check-group-kge-model-light check-group-knowledge-light check-group-insight-light check-light weknora-probe-test check-group-persona check-group-contracts check-group-aya check-group-adapters check-group-learning-a check-group-learning-b check-group-bff-web check-group-kge-tools check-group-kge-model check-group-knowledge check-group-insight contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test current-affair-expire model-router-mutation diagnosis-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-claims-mutation web-visual kge-inventory kge-inventory-test kge-import kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test sie-dictionary-check kge-id-check knowledge-test knowledge-mutation kge-compile-eval-test eval-persona eval-grade persona-registry-check persona-guard-test persona-lock persona-record insight-test insight-mutation release-walkthrough kge-dedupe-test kge-dedupe-mutation kge-calibrate-test kge-calibrate-mutation cost-dashboard-test cost-dashboard-mutation kge-irt-test kge-irt-mutation
+.PHONY: check-mutation check-group-persona-mutation check-group-contracts-mutation check-group-aya-mutation check-group-adapters-mutation check-group-learning-a-mutation check-group-learning-b-mutation check-group-bff-web-mutation check-group-kge-tools-mutation check-group-kge-model-mutation check-group-knowledge-mutation check-group-insight-mutation check-fast check check-core check-group-persona-light check-group-contracts-light check-group-aya-light check-group-adapters-light check-group-learning-a-light check-group-learning-b-light check-group-bff-web-light check-group-kge-tools-light check-group-kge-model-light check-group-knowledge-light check-group-insight-light check-light weknora-probe-test check-group-persona check-group-contracts check-group-aya check-group-adapters check-group-learning-a check-group-learning-b check-group-bff-web check-group-kge-tools check-group-kge-model check-group-knowledge check-group-insight contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test current-affair-expire model-router-mutation diagnosis-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-claims-mutation web-visual kge-inventory kge-inventory-test kge-import kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test sie-dictionary-check kge-id-check path-url-check knowledge-test knowledge-mutation kge-compile-eval-test eval-persona eval-grade persona-registry-check persona-guard-test persona-lock persona-record insight-test insight-mutation release-walkthrough kge-dedupe-test kge-dedupe-mutation kge-calibrate-test kge-calibrate-mutation cost-dashboard-test cost-dashboard-mutation kge-irt-test kge-irt-mutation
 
 # 可指向装了 packages/contracts/requirements-dev.txt 的解释器，例如 make check PYTHON=.venv/bin/python
 PYTHON ?= python3
@@ -35,13 +35,13 @@ make-skip-check:
 	@bash tools/make-skip-check/check.sh
 
 # 契约检查约 1 秒，改动后也跑一遍
-check-fast: contract-test taxonomy-check attack-surface-check sie-dictionary-check kge-id-check
+check-fast: contract-test taxonomy-check attack-surface-check sie-dictionary-check kge-id-check path-url-check
 
 # check-core：除 db-mutation 以外的全部检查，按模块分成 11 组；CI 每组一个任务并行跑（.github/workflows/check.yml），
 # db-mutation 另按分片并行。check-core 就是这些组的并集：新检查必须放进某一组，否则进不了 check。
 # 本地 make check 仍然一次跑全部。
 CHECK_GROUP_PERSONA := eval-persona persona-registry-check persona-guard-test voice-blind-eval-test
-CHECK_GROUP_CONTRACTS := contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check conformance conformance-mutation db-test pentest-env-test
+CHECK_GROUP_CONTRACTS := contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check path-url-check conformance conformance-mutation db-test pentest-env-test
 CHECK_GROUP_AYA := adapter-aya-test adapter-aya-mutation
 CHECK_GROUP_ADAPTERS := adapter-zhixing-test adapter-wenli-test adapter-client-mutation zhixing-rubric-check daofa-grading-eval-test content-register-test
 CHECK_GROUP_LEARNING_A := learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation practice-mutation
@@ -156,6 +156,11 @@ sie-dictionary-check:
 # 节点 ID 规范：文档正则、例子、学科前缀与迁移 0011 一致（只用标准库）
 kge-id-check:
 	$(PYTHON) docs/design/kge/check_node_id.py
+
+# 文件 URL 转路径（内测前整改 P2）：不许把 URL 的 pathname 当文件路径、不许手拼 file:// URL（目录名含中文时出错），约 1 秒
+path-url-check:
+	@$(PYTHON) tools/path-url-check/check.py --self-test
+	@$(PYTHON) tools/path-url-check/check.py
 
 # 迁移与 RLS：在一次性的本地 Postgres 上跑 up → down → up 与 RLS / 约束测试（约 3 秒）
 # 只连本机临时实例，不连接任何共享或生产库（CLAUDE.md 规则 9）

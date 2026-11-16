@@ -7,6 +7,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { indexPack, type ContentPack } from "../src/content.ts";
 import {
   applyAdmissionDecisions,
@@ -17,7 +18,7 @@ import {
 } from "../src/pack/admission.ts";
 import { contextV1, gradeBody, makeAdapter, makeAdapterV1, realPack, synReviewId, syntheticDecisionFile, type Json } from "./helpers.ts";
 
-const HERE = new URL("..", import.meta.url).pathname;
+const HERE = fileURLToPath(new URL("..", import.meta.url));
 const PACK_PATH = join(HERE, "content/pack.json");
 const base = realPack.pack;
 const ids = new Set(base.items.map((i) => i.id));

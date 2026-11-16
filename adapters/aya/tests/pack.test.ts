@@ -1,6 +1,7 @@
 // 内容包与登记脚本。
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { registeredAdmission, registrationSql } from "../../../tools/content-register/aya.ts";
 import { indexPack } from "../src/content.ts";
 import { keysOf, realPack } from "./helpers.ts";
@@ -81,7 +82,7 @@ test("适配器源码不引用测试代码、不连数据库（规则 1）", asy
   const { readdirSync, readFileSync } = await import("node:fs");
   const walk = (d: string): string[] =>
     readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(`${d}/${e.name}`) : [`${d}/${e.name}`]));
-  for (const f of walk(new URL("../src", import.meta.url).pathname)) {
+  for (const f of walk(fileURLToPath(new URL("../src", import.meta.url)))) {
     const src = readFileSync(f, "utf8");
     assert.doesNotMatch(src, /from\s+"[^"]*tests\//, f);
     assert.doesNotMatch(src, /from\s+"(pg|postgres|@supabase\/[^"]*)"/, f);

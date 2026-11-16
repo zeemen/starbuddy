@@ -6,9 +6,10 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 
-const WEB = new URL('..', import.meta.url).pathname;
+const WEB = fileURLToPath(new URL('..', import.meta.url));
 // 变异测试（tests/review-requests-mutations.test.ts）把改坏的副本放在临时目录，经这两个变量指过去；平时就是仓库里的文件
 const SRC = process.env['REVIEW_REQUESTS_SRC'] ?? `${WEB}src/lib/review.ts`;
 const JSON_PATH = process.env['REVIEW_REQUESTS_JSON'] ?? `${WEB}src/lib/review-api.requests.json`;

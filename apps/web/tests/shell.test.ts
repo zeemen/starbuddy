@@ -10,12 +10,13 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { ALL_SHELL_COPY, CONFIDENCE_BAND, DATA_RIGHTS, ENROLL_RESULT, ENROLLMENT, STAR_DISPLAY_V1, TODAY, TRUST_SLOT } from '../src/shell/copy.ts';
 import { DENIAL_COPY } from '../src/shell/denials.ts';
 import { TRUST_FEATURES, trustEnabled, trustFeatures } from '../src/shell/features.ts';
 import { SUBJECT_MODULES, subjectModule, visibleSubjects } from '../src/subjects/registry.ts';
 
-const WEB = new URL('..', import.meta.url).pathname;
+const WEB = fileURLToPath(new URL('..', import.meta.url));
 const ROOT = join(WEB, '..', '..');
 const files = (dir: string): string[] => readdirSync(dir).flatMap((n) => {
   const p = join(dir, n);

@@ -9,9 +9,10 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 
-const WEB = new URL('..', import.meta.url).pathname;
+const WEB = fileURLToPath(new URL('..', import.meta.url));
 // 变异测试（tests/review-responses-mutations.test.ts）经这两个变量指到改坏的副本；平时就是仓库里的文件
 const SRC = process.env['REVIEW_RESPONSES_SRC'] ?? `${WEB}src/lib/review.ts`;
 const JSON_PATH = process.env['REVIEW_RESPONSES_JSON'] ?? `${WEB}src/lib/review-api.responses.json`;

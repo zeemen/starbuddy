@@ -11,8 +11,9 @@ import { spawn } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const HERE = resolve(new URL(".", import.meta.url).pathname, "..");
+const HERE = resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
 const REPO = resolve(HERE, "../..");
 const TESTS = [
   "tests/plan.test.ts",

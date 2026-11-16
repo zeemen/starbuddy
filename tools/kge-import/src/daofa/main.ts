@@ -15,6 +15,7 @@
 // 退出码：0 成功；1 校验失败或判定不通过；2 参数不对。
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import type { ContentPack } from "../../../../adapters/zhixing/src/content.ts";
 import { expiryReport, parseAffairs, parseSourceDomains, renderAffairsSql, renderExpiry, snapshotAffairs, DEFAULT_WARN_DAYS } from "./affairs.ts";
@@ -220,6 +221,7 @@ export function main(argv = process.argv.slice(2)): number {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// 按 file: URL 比较（目录名含中文时 import.meta.url 是百分号编码的，直接拼 file:// 永远不相等）
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
   process.exitCode = main();
 }

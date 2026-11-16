@@ -6,6 +6,7 @@
 // 失败即关闭（fail closed）：解释器不可用、guard 报错、结果条数对不上，一律抛错，不当成“没有命中”。
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ContentPack } from "../content.ts";
 
 export const HINT_SCAN_FORMAT = "aya-hint-scan/1";
@@ -71,7 +72,7 @@ export function hintTexts(pack: Pick<ContentPack, "items">): HintText[] {
     .flatMap((it) => it.hintPath.map((text, level) => ({ item_id: it.id, level, text })));
 }
 
-const REPO_ROOT = resolve(new URL(".", import.meta.url).pathname, "../../../..");
+const REPO_ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "../../../..");
 
 /** 默认的扫描器：本仓 packages/personas 的 guard 命令行（PYTHON 环境变量可指定解释器，默认 python3） */
 export function guardRunner(opts: { python?: string; repoRoot?: string } = {}): GuardRunner {

@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import {
   ALL_RETEST_COPY, ALL_SHELL_COPY, RETEST, RETEST_AFTER, RETEST_ERROR, RETEST_KIND, RETEST_LEVEL, RETEST_STATUS, RETEST_VERDICT,
 } from '../src/shell/copy.ts';
@@ -16,7 +17,7 @@ import { isRetestSubject, RETEST_SUBJECTS, retestEnabled } from '../src/retest/f
 import { AFTER_STATUSES, ENTRY_STATUSES, KINDS, pickRetestAnswer, pickRetestNext, pickRetestQueue, retestUiError } from '../src/retest/view.ts';
 import { LEVELS, VERDICTS } from '../src/practice/view.ts';
 
-const WEB = new URL('..', import.meta.url).pathname;
+const WEB = fileURLToPath(new URL('..', import.meta.url));
 const files = (dir: string): string[] => readdirSync(dir).flatMap((n) => {
   const p = join(dir, n);
   return statSync(p).isDirectory() ? files(p) : [p];

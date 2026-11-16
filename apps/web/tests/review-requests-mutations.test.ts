@@ -6,8 +6,9 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
-const WEB = new URL('..', import.meta.url).pathname;
+const WEB = fileURLToPath(new URL('..', import.meta.url));
 const SRC = readFileSync(`${WEB}src/lib/review.ts`, 'utf8');
 const JSON_TEXT = readFileSync(`${WEB}src/lib/review-api.requests.json`, 'utf8');
 

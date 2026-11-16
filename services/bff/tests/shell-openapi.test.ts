@@ -7,6 +7,7 @@ import * as fs from 'node:fs';
 import { readFileSync } from 'node:fs';
 const require_fs = () => fs;
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { compile, PREFIX, ROUTES } from '../src/http/routes.ts';
 import { TRUST_ROUTES } from '../src/http/trust-routes.ts';
 import { STAR_MAP_V1_ROUTES } from '../src/http/star-map-v1-routes.ts';
@@ -180,7 +181,7 @@ test('开发身份桩已删除：源码与接口定义里没有 x-dev-account-id
   const { readdirSync, statSync } = require_fs();
   const walk = (dir: URL): string[] => readdirSync(dir).flatMap((n: string) => {
     const u = new URL(n, dir);
-    return statSync(u).isDirectory() ? walk(new URL(`${n}/`, dir)) : [u.pathname];
+    return statSync(u).isDirectory() ? walk(new URL(`${n}/`, dir)) : [fileURLToPath(u)];
   });
   const files = [...walk(new URL('../src/', import.meta.url)), ...walk(new URL('../openapi/', import.meta.url))];
   for (const f of files) {

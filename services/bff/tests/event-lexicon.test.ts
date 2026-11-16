@@ -11,9 +11,10 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { EVENT_KINDS, PREDICTIONS, SESSION_ENTRIES, validPayload } from '../src/events/query.ts';
 
-const BFF = new URL('..', import.meta.url).pathname;
+const BFF = fileURLToPath(new URL('..', import.meta.url));
 const ROOT = join(BFF, '..', '..');
 const SCRIPT = join(BFF, 'scripts', 'check_event_lexicon.py');
 const OPENAPI = join(BFF, 'openapi', 'events.v0.yaml');

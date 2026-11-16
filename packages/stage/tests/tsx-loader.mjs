@@ -3,7 +3,7 @@
 //   - load：.tsx 用 apps/web 已锁版本的 typescript 转成 ESM（jsx: react-jsx），其余文件交回 Node 默认处理（.ts 由 Node 剥离类型）。
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 // 变异脚本（scripts/mutations.ts）把本包复制到临时目录里跑，用 STAGE_WEB_ROOT 指回仓库里的 apps/web
 const WEB = process.env['STAGE_WEB_ROOT']
@@ -23,7 +23,7 @@ export async function load(url, context, next) {
   if (!url.startsWith('file:') || !url.endsWith('.tsx')) return next(url, context);
   const src = await readFile(new URL(url), 'utf8');
   const out = ts.transpileModule(src, {
-    fileName: new URL(url).pathname,
+    fileName: fileURLToPath(url),
     compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022, verbatimModuleSyntax: false },
   });
   return { format: 'module', source: out.outputText, shortCircuit: true };
