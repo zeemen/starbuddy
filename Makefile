@@ -162,6 +162,22 @@ path-url-check:
 	@$(PYTHON) tools/path-url-check/check.py --self-test
 	@$(PYTHON) tools/path-url-check/check.py
 
+# 中文目录回归（内测前整改待确认第 2 条，specs/launch-test-2026/prelaunch-fixes.md）：仓库检出在路径含中文的目录里时，
+# 跑与文件路径有关的单测类目标（不含变异与端到端）。目录不含非 ASCII 字符时直接失败（测不到要测的东西）。
+# 不进 check-core：本机多半不在中文目录；CI 另有一个任务 cjk-path 专门检出到中文目录跑它（.github/workflows/check.yml）。
+CJK_PATH_TARGETS := path-url-check bff-test internal-test-tool-test stage-test adapter-aya-test content-register-test \
+  kge-inventory-test kge-import-test kge-coverage-test kge-dedupe-test
+.PHONY: cjk-path-test
+cjk-path-test:
+	@python3 -c 'import os, sys; sys.exit(0 if any(ord(c) > 127 for c in os.getcwd()) else 1)' || \
+	  { echo "cjk-path-test: 当前目录不含中文（$(CURDIR)），测不到中文路径问题；把仓库检出到含中文的目录再跑"; exit 1; }
+	@$(MAKE) --no-print-directory $(CJK_PATH_TARGETS)
+	@if $(WEB_MISSING); then echo "cjk-path-test: 前端没有安装依赖"; exit 1; fi
+	@cd apps/web && NEXT_TELEMETRY_DISABLED=1 npx --no-install next build > .next-build.log 2>&1 || { tail -30 .next-build.log; rm -f .next-build.log; exit 1; }; \
+	  rm -f .next-build.log
+	@cd apps/web && $(PY_ON_PATH)node --no-warnings --test --test-reporter=dot tests/*.test.ts
+	@echo "cjk-path-test: 通过（目录 $(CURDIR)）"
+
 # 迁移与 RLS：在一次性的本地 Postgres 上跑 up → down → up 与 RLS / 约束测试（约 3 秒）
 # 只连本机临时实例，不连接任何共享或生产库（CLAUDE.md 规则 9）
 db-test:

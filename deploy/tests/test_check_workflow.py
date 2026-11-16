@@ -118,3 +118,21 @@ def test_extra_browsers_job_only_on_manual_opt_in():
     assert len(e2e) == 1 and "--project=trust-on-webkit" in e2e[0] and "--project=trust-on-firefox" in e2e[0]
     config = (ROOT / "apps/web/playwright.config.ts").read_text(encoding="utf-8")
     assert "name: `trust-on-${b}`" in config and "grep: /@data-rights/" in config
+
+
+def test_cjk_path_job_checks_out_under_a_non_ascii_directory():
+    """内测前整改待确认第 2 条（specs/launch-test-2026/prelaunch-fixes.md）：cjk-path 把仓库检出到含中文的目录，
+    在那里跑 make cjk-path-test；PR 与 push 到 main 跑，手动触发只在 scope 不是 mutation 时跑。"""
+    job = WORKFLOW["jobs"]["cjk-path"]
+    assert job["if"] == "github.event_name != 'workflow_dispatch' || inputs.scope != 'mutation'"
+    checkout = next(s for s in job["steps"] if str(s.get("uses", "")).startswith("actions/checkout@"))
+    path = checkout["with"]["path"]
+    assert any(ord(c) > 127 for c in path), "检出目录要含非 ASCII 字符"
+    assert checkout["with"]["persist-credentials"] is False
+    assert job["defaults"]["run"]["working-directory"] == path
+    runs = [s.get("run", "") for s in job["steps"]]
+    make = [r for r in runs if "make cjk-path-test" in r]
+    assert len(make) == 1 and "CONTRACT_STRICT=1" in make[0]
+    # 目标本身：目录不含非 ASCII 字符时失败；不在 check-core 里（本机多半测不到）
+    assert "cjk-path-test" not in " ".join(rule("check-core")) and "CJK_PATH_TARGETS" not in " ".join(group_vars())
+    assert "ord(c) > 127" in MAKEFILE.split("\ncjk-path-test:", 1)[1].split("\n\n", 1)[0]

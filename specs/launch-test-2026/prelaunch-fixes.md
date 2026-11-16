@@ -39,8 +39,15 @@
   静态检查：`src` 下服务端直接调 `fetch` 的文件必须带 `AbortSignal.timeout` 并 try/catch（`bff.ts`、Service Worker、`events.ts` 除外，理由写在测试里）。
   手工变异 7 条（去掉 catch、去掉超时、改回直接 fetch、断连当 404、建档断连抛出、信任界面码变了、自练客户端去掉超时）都被发现。
 
-## 待人确认
-1. **今日计划页 BFF 不可达时显示“没有找到”**：`today/page.tsx` 对非 401 的失败一律 `notFound()`（原有行为，断连现在也稳定走这里）。是否改成“暂时无法获取”的提示？
-   改的是学生可见页面的文案与分支，需产品定；本次未改。
-2. **中文目录的端到端防线**：静态检查是按行的正则，只拦常见写法。要彻底防住，可在 CI 加一个任务：把仓库检出到含中文的目录跑一遍单测（约多 10 分钟）。是否加？
+## 待人确认（2026-11-16 用户“按建议，待确认第 1、2 条都做”）
+1. **今日计划页 BFF 不可达时显示“没有找到”——已改**：`today/page.tsx` 现在 401 回登录，403 / 404 仍走“没有找到”，其余失败
+   （BFF 不可达、超时、5xx）显示“暂时无法获取。”。文案复用家长孩子页今日区块的同一条（`BALANCE.unavailable`），不新增文案；
+   `tests/shell.test.ts` 加静态检查（非 401 的失败不能一律当成“没有找到”）。
+2. **中文目录的 CI 防线——已加**：`make cjk-path-test`（目录不含非 ASCII 字符时直接失败；不进 check-core）跑与文件路径有关的
+   单测类目标：path-url-check、bff-test、internal-test-tool-test、stage-test、adapter-aya-test、content-register-test、
+   kge-inventory / import / coverage / dedupe 四个工具，以及前端构建与单测。CI 新任务 `cjk-path` 把仓库直接检出到 `升学教育产品/starbuddy`
+   跑它（PR 与 push 到 main；手动触发只在 scope 不是 mutation 时），`deploy/tests/test_check_workflow.py` 钉住任务结构。
+   本机在中文目录里模拟：全部通过，约 3 分钟（不含依赖安装）。另验证：把一处路径改成静态检查拦不到的写法（`.href.slice(7)`），
+   静态检查放行，中文目录里的单测报 ENOENT——这道防线确实比静态检查多拦一层。
+   本机模拟时前端依赖若是软链接进来的，`next build`（Turbopack）会拒绝指向仓库外的链接；CI 里 `npm ci` 真装，不受影响。
 3. **`events.ts` 的 `post` 仍把网络异常抛给调用方**：真实页面只经 `postEventQuietly`（接住并计为 `network`），只有开发探针页（`/dev/probe`，生产构建里没有）没接住。维持现状。
