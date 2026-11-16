@@ -1,8 +1,7 @@
 // 家庭登录与会话的 BFF 客户端（接口 services/bff/openapi/shell.v0.yaml）：只在服务端调用（服务端组件与 server action）。
 // 浏览器只和本前端通信，不直连 BFF。前端不判断身份与授权：只把 HttpOnly cookie 里的会话令牌放进 x-sb-session 转交，
 // 改变状态的请求再带上浏览器请求的 Origin 与（核对过“表单 = cookie”的）CSRF 令牌。
-import { cookies } from 'next/headers';
-import { bffBaseUrl, requestMeta } from './bff.ts';
+import { bffBaseUrl, bffFetch, requestMeta } from './bff.ts';
 import { csrfCookieName, isHex64, sessionCookieName } from './session-cookie.ts';
 
 export interface Problem { status: number; code: string }
@@ -15,6 +14,8 @@ export type Me = { account_kind: 'guardian'; children: { student_id: string; gra
 
 /** 当前请求带的会话令牌与 CSRF 令牌（格式不对当作没有）；是否有效由 BFF 解析 */
 export async function currentSession(): Promise<{ token: string; csrf: string | null } | null> {
+  // 按需加载（与 bff.ts 的 requestMeta 相同）：本文件的 BFF 调用在单测里直接引用，Node 解析不了 next/headers 的包内路径
+  const { cookies } = await import('next/headers');
   const jar = await cookies();
   const token = jar.get(sessionCookieName())?.value;
   const csrf = jar.get(csrfCookieName())?.value;
@@ -26,12 +27,13 @@ async function call<T>(method: 'GET' | 'POST', path: string, o: { token?: string
   if (o.token) hdr['x-sb-session'] = o.token;
   if (o.csrf) hdr['x-csrf-token'] = o.csrf;
   if (o.body !== undefined) hdr['content-type'] = 'application/json';
-  const r = await fetch(`${bffBaseUrl()}/bff/v0${path}`, {
+  const r = await bffFetch(`${bffBaseUrl()}/bff/v0${path}`, {
     method, headers: hdr, body: o.body === undefined ? undefined : JSON.stringify(o.body), cache: 'no-store', redirect: 'error',
   });
-  const text = await r.text();
+  // BFF 断连或超时：按 503 INTERNAL 返回，登录页与家长首页进各自已有的“暂时无法完成，请稍后再试”（内测前整改 P2）
+  if (r === null) return { ok: false, problem: { status: 503, code: 'INTERNAL' } };
   let json: unknown = null;
-  try { json = JSON.parse(text); } catch { /* 非 JSON：按错误处理 */ }
+  try { json = JSON.parse(r.text); } catch { /* 非 JSON：按错误处理 */ }
   if (r.ok) return { ok: true, value: json as T };
   const code = json && typeof json === 'object' && typeof (json as { code?: unknown }).code === 'string' ? (json as { code: string }).code : 'INTERNAL';
   return { ok: false, problem: { status: r.status, code } };

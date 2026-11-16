@@ -1,7 +1,7 @@
 // 统一壳 H4 页面的 BFF 客户端（接口 services/bff/openapi/shell.v0.yaml）：只在服务端调用（服务端组件与 server action）。
 // 浏览器不直连 BFF。身份只来自会话（HttpOnly cookie 转交成 x-sb-session）；改变状态的请求另带 Origin 与 CSRF 令牌（bffHeaders）。
 // 前端不判断授权、不算额度与时长：数值全部由 BFF 给（BFF 再取自数据库），这里只转交。
-import { bffBaseUrl, bffHeaders, type BffSession } from './bff.ts';
+import { bffBaseUrl, bffFetch, bffHeaders, type BffSession } from './bff.ts';
 
 export type Api<T> = { ok: true; value: T } | { ok: false; status: number; code: string };
 
@@ -9,12 +9,13 @@ async function call<T>(s: BffSession, method: 'GET' | 'POST' | 'PUT', path: stri
   const write = method !== 'GET';
   const headers: Record<string, string> = await bffHeaders(s, write);
   if (body !== undefined) headers['content-type'] = 'application/json';
-  const r = await fetch(`${bffBaseUrl()}/bff/v0${path}`, {
+  const r = await bffFetch(`${bffBaseUrl()}/bff/v0${path}`, {
     method, headers, body: body === undefined ? undefined : JSON.stringify(body), cache: 'no-store', redirect: 'error',
   });
-  const text = await r.text();
+  // BFF 断连或超时：按 503 INTERNAL 返回，今日计划、选科等页面进各自已有的失败提示（内测前整改 P2）
+  if (r === null) return { ok: false, status: 503, code: 'INTERNAL' };
   let json: unknown = null;
-  try { json = JSON.parse(text); } catch { /* 非 JSON：按错误处理 */ }
+  try { json = JSON.parse(r.text); } catch { /* 非 JSON：按错误处理 */ }
   if (r.ok) return { ok: true, value: json as T };
   const code = json && typeof json === 'object' && typeof (json as { code?: unknown }).code === 'string' ? (json as { code: string }).code : 'INTERNAL';
   return { ok: false, status: r.status, code };

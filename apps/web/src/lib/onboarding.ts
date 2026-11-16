@@ -1,7 +1,7 @@
 // 建档（SIE-01，specs/sie-01-onboarding/spec.md 设计要点 3）：步骤定义与 BFF 客户端（只在服务端调用）。
 // 学生版与家长版分开；每页一题，都能跳过、返回。选项编码与库里 insight.valid_report_value 一致；文案是占位，待教研定稿。
 // 前端不判断身份与授权：BFF 经库函数按当前账号核对，并按身份裁剪返回内容（互不可见）。
-import { bffBaseUrl, bffHeaders, type BffSession } from './bff.ts';
+import { bffBaseUrl, bffFetch, bffHeaders, type BffSession } from './bff.ts';
 import { isUuid } from './star-map.ts';
 
 export type Role = 'self' | 'guardian';
@@ -71,15 +71,16 @@ type Result<T> = { ok: true; value: T } | { ok: false; status: number };
 
 async function call<T>(account: BffSession, method: string, student: string, sub: string, body?: unknown): Promise<Result<T>> {
   if (!isUuid(student)) return { ok: false, status: 404 };
-  const r = await fetch(`${bffBaseUrl()}/bff/v0/students/${student}/onboarding${sub}`, {
+  const r = await bffFetch(`${bffBaseUrl()}/bff/v0/students/${student}/onboarding${sub}`, {
     method,
     headers: { ...(await bffHeaders(account, method !== 'GET')), ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
     body: body === undefined ? undefined : JSON.stringify(body),
     cache: 'no-store',
-    signal: AbortSignal.timeout(10_000),
   });
+  // 断连、超时、读体中断（内测前整改 P2：原来超时有、异常没接住）：按 503 返回，走调用方已有的失败分支
+  if (r === null) return { ok: false, status: 503 };
   if (!r.ok) return { ok: false, status: r.status };
-  return { ok: true, value: (await r.json()) as T };
+  try { return { ok: true, value: JSON.parse(r.text) as T }; } catch { return { ok: false, status: 502 }; }
 }
 
 export const getOnboarding = (account: BffSession, student: string) => call<OnboardingView>(account, 'GET', student, '');

@@ -280,7 +280,9 @@ test('每个信任界面页面先过开关闸门（读会话之前）；下载�
   const api = code(read('src/lib/trust-api.ts'));
   assert.match(api, /async function call<T>\(feature: TrustFeature[^]*?\{\n\s+if \(!trustEnabled\(feature\)\) return OFF;/);
   assert.match(api, /downloadExport[^]*?\{\n\s+if \(!trustEnabled\('data_rights'\)\)/);
-  assert.equal(api.match(/fetch\(/g)?.length, 2, '只有 call 与 downloadExport 两处请求');
+  // 请求都经 bff.ts 的 bffFetch（明确超时、断连不抛出，内测前整改 P2），不直接调 fetch
+  assert.equal(api.match(/\bbffFetch\(/g)?.length, 2, '只有 call 与 downloadExport 两处请求');
+  assert.equal(api.match(/(^|[^.\w])fetch\(/gm), null, 'trust-api 不直接调 fetch');
   // 其余源码不直连信任界面的 BFF 路由（只经 trust-api）
   for (const f of src.filter((x) => /\.(tsx?)$/.test(x.path) && x.path !== 'src/lib/trust-api.ts')) {
     assert.ok(!/\/(claims\/[^'"`]*\/(explain|disputes)|exports|erasure|weekly-report)\b|\/exams\/[^'"`]*\/(score|prediction|reconciliation)/.test(code(f.text)), f.path);

@@ -56,3 +56,24 @@ export async function requestMeta(): Promise<Record<string, string>> {
 export async function bffHeaders(s: BffSession, write: boolean): Promise<Record<string, string>> {
   return { ...(write ? await requestMeta() : {}), 'x-sb-session': s.token, ...(write ? { 'x-csrf-token': s.csrf } : {}) };
 }
+
+/** 调 BFF 的超时（毫秒，连同读响应体）：与审核台客户端（review.ts）一致 */
+export const BFF_TIMEOUT_MS = 10_000;
+
+/** BFF 的一次应答：状态码与响应体文本（响应体已读完） */
+export interface BffReply { status: number; ok: boolean; text: string }
+
+/**
+ * 调 BFF 的共用底层（内测前整改 P2）：每次请求都带明确超时；BFF 断连、拒绝连接、超时、读响应体中断一律返回 null，
+ * 由调用方映射成各自已有的失败结果，页面照常进它的失败提示分支（原来直接调 fetch：断连时抛出异常，慢响应等底层超时）。
+ * 地址由调用方先算好再传进来：BFF 地址配置错误（bffBaseUrl 抛出）不在这里吞掉。
+ */
+export async function bffFetch(url: string, init: Omit<RequestInit, 'signal'>, timeoutMs: number = BFF_TIMEOUT_MS): Promise<BffReply | null> {
+  try {
+    const r = await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+    const text = await r.text();
+    return { status: r.status, ok: r.ok, text };
+  } catch {
+    return null;
+  }
+}
