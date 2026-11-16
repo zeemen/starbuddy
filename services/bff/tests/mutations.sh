@@ -613,6 +613,9 @@ SM=(
   $'令牌：今日编排客户端用写入令牌\tsrc/main.ts\thttpTodayOrchClient({ baseUrl: learningUrl, token: learningSession,\thttpTodayOrchClient({ baseUrl: learningUrl, token: learningCredential,'
   $'令牌：计划客户端用会话令牌\tsrc/main.ts\thttpPlanClient({ baseUrl: learningUrl, token: learningCredential,\thttpPlanClient({ baseUrl: learningUrl, token: learningSession,'
   $'令牌：洞察令牌可与会话令牌相同\tsrc/main.ts\t || insightCredential === learning?.session\t'
+  # 内测前整改 P1（畸形请求不得让进程退出，src/http/server.ts）：跑 tests/malformed-request.test.ts（BFFMUT_FILTER=畸形请求：）
+  $'畸形请求：路径解析不兜底\tsrc/http/server.ts\t    } catch {\\n      return false;\\n    }\\n    const hit = table\t    } catch (e) {\\n      throw e;\\n    }\\n    const hit = table'
+  $'畸形请求：处理链不兜底\tsrc/http/server.ts\t    }).catch((e: unknown) => {\\n\t    }).catch((e: unknown) => {\\n      throw e;\\n'
 )
 # 副本保持仓库结构（测试按 ../../../ 找仓库根：adapters/aya 的登记脚本、db/seeds 的种子），adapters、db 软链接回仓库。
 # 安全审查阻断 1：原来的副本不保持结构，测试的 before 在任何代码下都失败，变异全部“被发现”却不说明任何问题。
@@ -676,6 +679,7 @@ star_run() {  # $1 副本根目录，$2 变异名（“计量：”开头的跑�
   [[ "${2:-}" == 可观测：* ]] && tests="tests/observability.test.ts"
   [[ "${2:-}" == 连库：* ]] && tests="tests/shell-startup.test.ts"
   [[ "${2:-}" == 令牌：* ]] && tests="tests/learning-tokens.test.ts"
+  [[ "${2:-}" == 畸形请求：* ]] && tests="tests/malformed-request.test.ts"
   [[ "${2:-}" == OTP：* ]] && tests="tests/staging-otp-units.test.ts tests/staging-otp.integration.test.ts tests/shell-startup.test.ts tests/star-map-v1.test.ts"
   [[ "${2:-}" == 内测：* ]] && tests="tests/internal-test-units.test.ts tests/internal-test.integration.test.ts tests/staging-otp-units.test.ts tests/auth.integration.test.ts tests/shell-openapi.test.ts"
   [[ "${2:-}" == 内测工具：* ]] && tests="../../tools/internal-test/tests/internal-test.test.ts"
