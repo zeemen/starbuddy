@@ -50,7 +50,19 @@ PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -q -v ON_ERROR_STOP=1 -
 AYA_COUNT="$(psql -X -At -c "SELECT count(*) FROM platform.skill_node WHERE subject = 'aya'")"
 export AYA_COUNT
 
-free_port() { python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()'; }
+# 取空闲端口。前端的端口要等 Playwright 起服务时才占用，先分出去的端口在那之前没被占着，后面再取可能取到同一个
+# （CI 出现过洞察服务与前端撞在同一个端口，EADDRINUSE）。所以记下分出去的每个端口，取到重复的就重取。
+# free_port 在 $(...) 子 shell 里跑，记录放文件里
+PORTS_HANDED="$(mktemp)"
+free_port() {
+  local p _
+  for _ in $(seq 1 50); do
+    p="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
+    if ! grep -qx "$p" "$PORTS_HANDED"; then echo "$p" >> "$PORTS_HANDED"; echo "$p"; return 0; fi
+  done
+  echo "e2e: 50 次都取到已分出去的端口" >&2
+  return 1
+}
 BFF_PORT="$(free_port)"
 WEB_PORT="$(free_port)"
 LOG="$(mktemp)"
@@ -330,7 +342,7 @@ ENVDTS="$(mktemp)"
 if [ -f "$WEB/next-env.d.ts" ]; then cp "$WEB/next-env.d.ts" "$ENVDTS"; else rm -f "$ENVDTS"; fi
 cleanup() {
   kill "$BFF_PID" "$TRUST_BFF_PID" "$SM_BFF_PID" "$SM_LEARNING_PID" "$RP_BFF_PID" "$FI_PID" "$PR_BFF_PID" "$FL_PID" "$FG_BFF_PID" "$IN_PID" "$REVIEW_PID" "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true
-  rm -f "$LOG" "$TLOG" "$SMLOG" "$RPLOG" "$FILOG" "$PRLOG" "$FLLOG" "$FL_REQLOG" "$FGLOG" "$INLOG" "$RLOG" "$LLOG" "$SMLLOG" "$SMS_INBOX" "$AUTH_CFG" "$TRUST_SHELL_CFG" "$SM_SHELL_CFG" "$RP_SHELL_CFG" "$FG_SHELL_CFG"
+  rm -f "$PORTS_HANDED" "$LOG" "$TLOG" "$SMLOG" "$RPLOG" "$FILOG" "$PRLOG" "$FLLOG" "$FL_REQLOG" "$FGLOG" "$INLOG" "$RLOG" "$LLOG" "$SMLLOG" "$SMS_INBOX" "$AUTH_CFG" "$TRUST_SHELL_CFG" "$SM_SHELL_CFG" "$RP_SHELL_CFG" "$FG_SHELL_CFG"
   if [ -f "$ENVDTS" ]; then cp "$ENVDTS" "$WEB/next-env.d.ts"; rm -f "$ENVDTS"; else rm -f "$WEB/next-env.d.ts"; fi
   rm -rf "${WEB:?}/.next-e2e"
 }
