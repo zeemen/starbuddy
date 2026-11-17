@@ -75,6 +75,19 @@ test('公式的纯文本排版：常见命令换成符号、上下标换成上�
   for (const [src, want] of cases) assert.equal(latexToText(src), want, src);
 });
 
+test('原型链上的名字（toString、constructor 等）不算认得的命令：排版返回 null，整道题的 rich 不合格（stage-whiteboard-step1 lessons 第 8 条）', async () => {
+  const PROTO = ['toString', 'constructor', 'hasOwnProperty', 'valueOf', 'isPrototypeOf', 'propertyIsEnumerable', 'toLocaleString'];
+  for (const name of PROTO) {
+    assert.equal(latexToText(`\\${name}`), null, name);
+    assert.equal(latexToText(`x^{\\${name}}`), null, `上标里的 ${name}`);
+    assert.equal(pickRich(para([{ type: 'math', latex: `\\${name}` }]), []), null, `pickRich ${name}`);
+    assert.ok(!LATEX_COMMANDS.includes(name), `命令表不含 ${name}`);
+  }
+  // BFF 那一侧（src/item-rich.ts）按 Set 查，同样拒绝
+  const bff = await import('../../../services/bff/src/item-rich.ts');
+  for (const name of PROTO) assert.ok(!bff.LATEX_COMMANDS.includes(name), `BFF 命令表不含 ${name}`);
+});
+
 const render = (el: unknown) => renderToStaticMarkup(el as Parameters<typeof renderToStaticMarkup>[0]);
 
 test('组件渲染：段落与片段都是文本节点（尖括号转义），公式排版后显示，图片只显示说明；没有答案类字段名与内部编码', () => {
