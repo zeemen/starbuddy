@@ -26,6 +26,12 @@
 ## 与 spec 的差异
 - 无。
 
+## 补记：漏跑了跨模块测试（2026-11-17）
+- 洞察服务的禁用推断测试（`services/insight/tests/test_forbidden_inference_sie03.py` 的 `test_render_scan_counterexample`）
+  往 `DisputesPage.tsx` 里按 `<td>{DISPUTE_KIND[d.kind]}</td>` 精确匹配注入反例；格子加了 role 与 data-label 后注入点不存在，CI 的 insight 组 13 条失败。
+  本机只跑了前端与 trust-on 端到端，没跑 `make insight-test`。已把注入点改成新的格子写法，13 个反例仍全部被扫描报出。
+- 教训：改 `apps/web/src` 下的页面前，先 `grep -rn 文件名 services packages tools` 查其他模块的测试有没有读这个文件的源码。
+
 ## 待人确认
 - 无新增。数据导出回执、周报学科栏仍是表格（列少）；证据表里的知识点仍显示编号（换名称要动洞察服务契约，见
   `specs/practice-retest-list-polish/lessons.md` 待人确认第 3 条）。
