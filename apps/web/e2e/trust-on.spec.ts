@@ -9,9 +9,10 @@
 //     data-value（数字、日期、编号）里——关于学生的句子都带 claim_id；
 //   - 页面上不出现异议类型、偏差方向的编码原文；整页的文本节点与 data-* 属性过 dom-leak.ts 的内部编码核对
 //     （判断状态码、原因码、错因编码、模板键、证据 ID、掌握数值等；data-* 只放行登记过的属性与取值）。
+import { execFileSync } from 'node:child_process';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
-import { ALL_SHELL_COPY } from '../src/shell/copy.ts';
+import { ALL_SHELL_COPY, DISPUTE, WHY } from '../src/shell/copy.ts';
 import { targets } from './crawl-pages.ts';
 import { crawlClaimBinding, ledger, weeklyTexts } from './claim-binding.ts';
 import { domLeaks, expectNoDomLeak, FORBIDDEN_CODES } from './dom-leak.ts';
@@ -446,4 +447,51 @@ test('陈述—判断一致性的全站爬取（T21）：学生与家长的全�
   const seenGuardian = await crawlClaimBinding(page, GT, pages('guardian'), claims, weeklyTexts(GT, 'guardian'));
   // 阳性对照：确实爬到了带判断的页面（周报的两句），核对不是空转
   for (const seen of [seenStudent, seenGuardian]) expect([...seen].sort()).toEqual(expect.arrayContaining([...WEEKLY_CLAIMS, F(5)]));
+});
+
+
+// ---------------------------------------------------------------- 手机宽度的卡片排列（specs/trust-tables-mobile）
+/** 每行每格的文字（列名由 ::before 显示，不在 innerText 里）：桌面与手机宽度下必须逐格相同（规则 11：只改布局，不改陈述） */
+const cellTexts = (page: Page, table: string) => page.locator(`[data-testid="${table}"] tbody tr`).evaluateAll((trs) =>
+  trs.map((tr) => Array.from(tr.querySelectorAll('td')).map((td) => (td as HTMLElement).innerText.trim())));
+
+async function cardsMatchDesktop(page: Page, path: string, table: string, labels: readonly string[]): Promise<void> {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(path);
+  const desktop = await cellTexts(page, table);
+  expect(desktop.length, `${table} 有行`).toBeGreaterThan(0);
+  expect(await page.locator(`[data-testid="${table}"] tbody tr`).first().evaluate((tr) => getComputedStyle(tr).display)).toBe('table-row');
+  for (const width of [360, 390, 430]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto(path);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), `${width} 宽无横向滚动`).toBeLessThanOrEqual(0);
+    const got = await page.locator(`[data-testid="${table}"] tbody tr`).first().evaluate((tr) => ({
+      display: getComputedStyle(tr).display,
+      labels: Array.from(tr.querySelectorAll('td')).map((td) => getComputedStyle(td, '::before').content.replace(/^"|"$/g, '')),
+    }));
+    expect(got.display).toBe('block');
+    expect(got.labels).toEqual([...labels]);
+    expect(await cellTexts(page, table), `${width} 宽下每格文字与桌面相同`).toEqual(desktop);
+  }
+  await onlyCopyOrClaims(page);
+  await expectNoDomLeak(page);
+  await axe(page);
+}
+
+test('证据表与异议表：手机宽度按卡片排列、无横向滚动，每格带列名，格子文字与桌面逐格相同（specs/trust-tables-mobile）', async ({ page }) => {
+  // 异议列表直接读库（端到端的洞察服务是桩，提交不写库）：给 GT 插两条家长提出的合成异议（一条进行中、一条已处理）。
+  // 放在本文件最后：前面的用例断言过异议列表为空
+  const D = (n: number) => `5d000000-0000-4000-8000-00000000d0${n}0`;
+  execFileSync('psql', ['-X', '-q', '-v', 'ON_ERROR_STOP=1', '-c', `SET session_replication_role = replica;
+    INSERT INTO insight.dispute (id, student_id, claim_id, raised_by, raised_by_role, source_type, kind, status, resolved_at, result_note_code, created_at)
+    VALUES ('${D(1)}', '${GT}', '${F(1)}', '5d000000-0000-4000-8000-0000000000a1', 'guardian', 'guardian', 'i_know', 'open', NULL, NULL, now() - interval '2 days'),
+           ('${D(2)}', '${GT}', '${F(2)}', '5d000000-0000-4000-8000-0000000000a1', 'guardian', 'guardian', 'i_know', 'rejected',
+            now() - interval '1 day', 'no_basis', now() - interval '5 days')
+    ON CONFLICT (id) DO NOTHING;`]);
+  await loginGuardian(page, 'gH');
+  await cardsMatchDesktop(page, `/family/${GT}/why/${F(1)}`, 'why-evidence', [WHY.colTime, WHY.colKind, WHY.colLevel, WHY.colNode]);
+  await cardsMatchDesktop(page, `/family/${GT}/disputes`, 'disputes',
+    [DISPUTE.colKind, DISPUTE.colStatus, DISPUTE.colCreated, DISPUTE.colResolved, DISPUTE.colClaim]);
+  await loginStudent(page, GT);
+  await cardsMatchDesktop(page, `/s/${GT}/why/${F(1)}`, 'why-evidence', [WHY.colTime, WHY.colKind, WHY.colLevel, WHY.colNode]);
 });

@@ -48,17 +48,22 @@ function ClaimExplain({ view, audience }: { view: WhyView; audience: Audience })
       </p>
       <h2 id="why-evidence">{WHY.evidenceHeading}</h2>
       {view.evidence.length === 0 ? <p className="muted">{WHY.evidenceEmpty}</p> : (
-        <table className="trust-table" data-testid="why-evidence">
-          <thead>
-            <tr><th scope="col">{WHY.colTime}</th><th scope="col">{WHY.colKind}</th><th scope="col">{WHY.colLevel}</th><th scope="col">{WHY.colNode}</th></tr>
+        // 手机宽度下按卡片排列（globals.css 的 .card-table；每格前带列名，取表头同一条文案）：只改布局，格子里的文字不变（规则 11，
+        // specs/trust-tables-mobile）
+        <table className="trust-table card-table" data-testid="why-evidence" role="table">
+          <thead role="rowgroup">
+            <tr role="row">
+              <th scope="col" role="columnheader">{WHY.colTime}</th><th scope="col" role="columnheader">{WHY.colKind}</th>
+              <th scope="col" role="columnheader">{WHY.colLevel}</th><th scope="col" role="columnheader">{WHY.colNode}</th>
+            </tr>
           </thead>
-          <tbody>
+          <tbody role="rowgroup">
             {view.evidence.map((e, i) => (
-              <tr key={i}>
-                <td><span data-value="date">{shanghaiDay(e.occurred_at)}</span></td>
-                <td>{EVIDENCE_SOURCE[e.source_type]}</td>
-                <td>{e.evidence_level ? EVIDENCE_LEVEL[e.evidence_level] : null}</td>
-                <td>{e.node_id ? <span data-value="node">{e.node_id}</span> : null}</td>
+              <tr key={i} role="row">
+                <td role="cell" data-label={WHY.colTime}><span data-value="date">{shanghaiDay(e.occurred_at)}</span></td>
+                <td role="cell" data-label={WHY.colKind}>{EVIDENCE_SOURCE[e.source_type]}</td>
+                <td role="cell" data-label={WHY.colLevel}>{e.evidence_level ? EVIDENCE_LEVEL[e.evidence_level] : null}</td>
+                <td role="cell" data-label={WHY.colNode}>{e.node_id ? <span data-value="node">{e.node_id}</span> : null}</td>
               </tr>
             ))}
           </tbody>

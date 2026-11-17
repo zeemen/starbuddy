@@ -393,3 +393,28 @@ test('异议出错码补 CONFLICT；偏差方向序号取 DEVIATION_DIRECTIONS�
   for (const ok of [`/s/${C2}/why/${C1}`, `/s/${C2}/exams/${P1}`, `/s/${C2}/exams`, `/s/${C2}/disputes`, `/s/${C2}/weekly`, `/s/${C2}/today`]) assert.ok(back.test(ok), ok);
   for (const bad of [`/s/${C2}/why`, `/s/${C2}/exams/x`, `/s/${C2}/data`, `//evil/${C1}`]) assert.ok(!back.test(bad), bad);
 });
+
+test('证据表与异议表在手机宽度按卡片排列（specs/trust-tables-mobile）：每格带列名（data-label 取表头同一条文案），显式 role；格子内容与改前相同', () => {
+  for (const [file, prefix, cols] of [['src/trust/WhyPage.tsx', 'WHY', ['colTime', 'colKind', 'colLevel', 'colNode']],
+                                       ['src/trust/DisputesPage.tsx', 'DISPUTE', ['colKind', 'colStatus', 'colCreated', 'colResolved', 'colClaim']]] as const) {
+    const page = code(read(file));
+    assert.match(page, /className="trust-table card-table" data-testid="(why-evidence|disputes)" role="table"/, file);
+    for (const c of cols) {
+      assert.match(page, new RegExp(`<th scope="col" role="columnheader">\\{${prefix}\\.${c}\\}</th>`), `${file} 表头 ${c}`);
+      assert.match(page, new RegExp(`<td role="cell" data-label=\\{${prefix}\\.${c}\\}>`), `${file} 格子 ${c}`);
+    }
+    assert.equal((page.match(/<td role="cell" data-label=/g) ?? []).length, cols.length, `${file}：每个格子都带列名`);
+  }
+  // 格子内容不变（规则 11：只改布局）：证据表的四格、异议表的五格与改前同一组表达式
+  const why = code(read('src/trust/WhyPage.tsx'));
+  for (const cell of ['<span data-value="date">{shanghaiDay(e.occurred_at)}</span>', '{EVIDENCE_SOURCE[e.source_type]}',
+                      '{e.evidence_level ? EVIDENCE_LEVEL[e.evidence_level] : null}', '{e.node_id ? <span data-value="node">{e.node_id}</span> : null}']) {
+    assert.ok(why.includes(cell), cell);
+  }
+  const disputes = code(read('src/trust/DisputesPage.tsx'));
+  for (const cell of ['{DISPUTE_KIND[d.kind]}', '{DISPUTE_STATUS[d.status]}', '<span data-value="date">{shanghaiDay(d.created_at)}</span>',
+                      '{d.resolved_at ? <span data-value="date">{shanghaiDay(d.resolved_at)}</span> : null}',
+                      "{trustEnabled('why') ? <a href={`${base}/why/${d.claim_id}`}>{DISPUTE.openClaim}</a> : null}"]) {
+    assert.ok(disputes.includes(cell), cell);
+  }
+});

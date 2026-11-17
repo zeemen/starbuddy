@@ -23,21 +23,23 @@ export async function DisputesPage({ studentId, audience }: { studentId: string;
       <h1>{DISPUTE.listHeading}</h1>
       {!rows ? <p className="muted" data-unavailable="disputes">{TRUST.unavailable}</p>
         : rows.length === 0 ? <p className="muted" data-testid="disputes-empty">{DISPUTE.empty}</p> : (
-          <table className="trust-table" data-testid="disputes">
-            <thead>
-              <tr>
-                <th scope="col">{DISPUTE.colKind}</th><th scope="col">{DISPUTE.colStatus}</th>
-                <th scope="col">{DISPUTE.colCreated}</th><th scope="col">{DISPUTE.colResolved}</th><th scope="col">{DISPUTE.colClaim}</th>
+          // 手机宽度下按卡片排列（同“为什么”的证据表）：只改布局，格子里的文字不变（规则 11，specs/trust-tables-mobile）
+          <table className="trust-table card-table" data-testid="disputes" role="table">
+            <thead role="rowgroup">
+              <tr role="row">
+                <th scope="col" role="columnheader">{DISPUTE.colKind}</th><th scope="col" role="columnheader">{DISPUTE.colStatus}</th>
+                <th scope="col" role="columnheader">{DISPUTE.colCreated}</th><th scope="col" role="columnheader">{DISPUTE.colResolved}</th>
+                <th scope="col" role="columnheader">{DISPUTE.colClaim}</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody role="rowgroup">
               {rows.map((d) => (
-                <tr key={d.dispute_id} data-dispute-status={d.status}>
-                  <td>{DISPUTE_KIND[d.kind]}</td>
-                  <td>{DISPUTE_STATUS[d.status]}</td>
-                  <td><span data-value="date">{shanghaiDay(d.created_at)}</span></td>
-                  <td>{d.resolved_at ? <span data-value="date">{shanghaiDay(d.resolved_at)}</span> : null}</td>
-                  <td>{trustEnabled('why') ? <a href={`${base}/why/${d.claim_id}`}>{DISPUTE.openClaim}</a> : null}</td>
+                <tr key={d.dispute_id} data-dispute-status={d.status} role="row">
+                  <td role="cell" data-label={DISPUTE.colKind}>{DISPUTE_KIND[d.kind]}</td>
+                  <td role="cell" data-label={DISPUTE.colStatus}>{DISPUTE_STATUS[d.status]}</td>
+                  <td role="cell" data-label={DISPUTE.colCreated}><span data-value="date">{shanghaiDay(d.created_at)}</span></td>
+                  <td role="cell" data-label={DISPUTE.colResolved}>{d.resolved_at ? <span data-value="date">{shanghaiDay(d.resolved_at)}</span> : null}</td>
+                  <td role="cell" data-label={DISPUTE.colClaim}>{trustEnabled('why') ? <a href={`${base}/why/${d.claim_id}`}>{DISPUTE.openClaim}</a> : null}</td>
                 </tr>
               ))}
             </tbody>

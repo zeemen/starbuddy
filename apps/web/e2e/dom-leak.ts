@@ -16,7 +16,7 @@ import { FAMILY_GOALS_RESULT } from '../src/family-goals/copy.ts';
 import {
   ADJUSTMENT, CONFIDENCE_BAND, DATA_RESULT, DEVIATION_DIRECTION, DISPUTE_KIND, DISPUTE_NEXT_DOM, DISPUTE_RESULT, DISPUTE_STATUS, ERASURE_CANCEL_REASON, ERASURE_SCOPE,
   ERASURE_STATUS, EXAM_RESULT, EXAM_SUBJECT, FIRST_REPORT_SECTION, PRACTICE, PRACTICE_ERROR, RESOURCE_LABEL, RETEST, SUBJECT_LABEL, TASK_KIND, WEEKLY_SECTION,
-  WEEKLY_SOURCE, WHY_STATUS,
+  WEEKLY_SOURCE, WHY, WHY_STATUS, DISPUTE,
 } from '../src/shell/copy.ts';
 import { TRUST_FEATURES } from '../src/shell/features.ts';
 import { ENTRY_STATUSES, SOURCES, VERDICTS } from '../src/practice/view.ts';
@@ -90,8 +90,11 @@ export const ATTRS: Record<string, Rule> = {
   phase: ['loading', 'item', 'result', 'empty', 'stopped'],
   format: ['single', 'multi', 'fill'],
   // 手机上按卡片排列时每格前的列名（specs/practice-retest-list-polish）：只许是再练、复测列表表头的同一条文案
+  // 信任界面的证据表与异议表（specs/trust-tables-mobile）同样只许表头文案
   label: [PRACTICE.colSource, PRACTICE.colNode, PRACTICE.colLevel, PRACTICE.colStatus, PRACTICE.colRound,
-          RETEST.colKind, RETEST.colNode, RETEST.colLevel, RETEST.colStatus],
+          RETEST.colKind, RETEST.colNode, RETEST.colLevel, RETEST.colStatus,
+          WHY.colTime, WHY.colKind, WHY.colLevel, WHY.colNode,
+          DISPUTE.colKind, DISPUTE.colStatus, DISPUTE.colCreated, DISPUTE.colResolved, DISPUTE.colClaim],
 };
 
 export interface LeakOptions {
