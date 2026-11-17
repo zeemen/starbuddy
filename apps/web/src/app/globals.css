@@ -275,6 +275,7 @@ main { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16
   .card-table tr { border: 1px solid var(--rule); border-radius: 8px; padding: 8px 12px; margin: 0 0 12px; }
   .card-table td { border-bottom: none; padding: 4px 0; }
   .card-table td::before { content: attr(data-label); display: block; font-size: 0.875rem; color: var(--muted); }
+  .card-table td > a { display: inline-flex; align-items: center; min-height: 44px; }  /* 格子里单独的链接（异议表的“查看”）补足触控高度 */
   .diandian { position: static; margin: 16px max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); max-width: none; }
   .rest-bar { margin-left: max(16px, env(safe-area-inset-left)); margin-right: max(16px, env(safe-area-inset-right)); }
 }
