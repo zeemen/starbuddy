@@ -619,6 +619,11 @@ SM=(
   $'节点名：取名失败时列表失败\tsrc/node-names.ts\t  } catch {\\n    note?.(\'node_names_unavailable\');\t  } catch (e) {\\n    throw e;\\n    note?.(\'node_names_unavailable\');'
   $'节点名：再练列表不带名称\tsrc/practice/service.ts\tnode_name: names.get(e[\'node_id\'] as string) ?? null\tnode_name: null'
   $'节点名：复测列表不带名称\tsrc/retest/service.ts\tnode_name: names.get(e[\'node_id\'] as string) ?? null\tnode_name: null'
+  # 处理请求的连接池的超时（specs/db-call-timeouts，src/http/db-pool.ts）：跑 tests/db-timeouts.test.ts（BFFMUT_FILTER=数据库超时：）
+  $'数据库超时：不设语句超时\tsrc/http/db-pool.ts\t    statement_timeout: t.statementTimeoutMs,\t'
+  $'数据库超时：取连接不设上限\tsrc/http/db-pool.ts\t    connectionTimeoutMillis: t.connectionTimeoutMillis,\t'
+  $'数据库超时：不设事务闲置超时\tsrc/http/db-pool.ts\t    idle_in_transaction_session_timeout: t.idleInTransactionMs,\t'
+  $'数据库超时：main 不用这份配置\tsrc/main.ts\tnew pg.Pool(requestPoolConfig(url, 10))\tnew pg.Pool({ connectionString: url, max: 10 })'
   # 内测前整改 P1（畸形请求不得让进程退出，src/http/server.ts）：跑 tests/malformed-request.test.ts（BFFMUT_FILTER=畸形请求：）
   $'畸形请求：路径解析不兜底\tsrc/http/server.ts\t    } catch {\\n      return false;\\n    }\\n    const hit = table\t    } catch (e) {\\n      throw e;\\n    }\\n    const hit = table'
   $'畸形请求：处理链不兜底\tsrc/http/server.ts\t    }).catch((e: unknown) => {\\n\t    }).catch((e: unknown) => {\\n      throw e;\\n'
@@ -687,6 +692,7 @@ star_run() {  # $1 副本根目录，$2 变异名（“计量：”开头的跑�
   [[ "${2:-}" == 令牌：* ]] && tests="tests/learning-tokens.test.ts"
   [[ "${2:-}" == 畸形请求：* ]] && tests="tests/malformed-request.test.ts"
   [[ "${2:-}" == 节点名：* ]] && tests="tests/node-names.test.ts tests/node-names.integration.test.ts"
+  [[ "${2:-}" == 数据库超时：* ]] && tests="tests/db-timeouts.test.ts"
   [[ "${2:-}" == OTP：* ]] && tests="tests/staging-otp-units.test.ts tests/staging-otp.integration.test.ts tests/shell-startup.test.ts tests/star-map-v1.test.ts"
   [[ "${2:-}" == 内测：* ]] && tests="tests/internal-test-units.test.ts tests/internal-test.integration.test.ts tests/staging-otp-units.test.ts tests/auth.integration.test.ts tests/shell-openapi.test.ts"
   [[ "${2:-}" == 内测工具：* ]] && tests="../../tools/internal-test/tests/internal-test.test.ts"

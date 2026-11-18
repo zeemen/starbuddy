@@ -69,6 +69,7 @@
 import pg from 'pg';
 import { httpDiagnosisLearning } from './diagnosis/learning-client.ts';
 import { checkImageEnv, dbTlsOk, isLocalEnv, learningTokens, listenHost, loadAuthConfig, loadKeys, parseRunEnv, RDS_CA_PATH, serviceUrlOk } from './http/config.ts';
+import { requestPoolConfig } from './http/db-pool.ts';
 import { parseConsentVersions, type ShellDeps } from './http/routes.ts';
 import { createMetricsServer, createShellServer } from './http/server.ts';
 import { metricsPort } from './observability/metrics.ts';
@@ -182,7 +183,8 @@ try {
   refuse((e as Error).message);
   process.exit(2);
 }
-const pool = new pg.Pool({ connectionString: url, max: 10 });
+// 超时与兜底（specs/db-call-timeouts）：取连接 3 秒、语句 10 秒、事务闲置 15 秒（src/http/db-pool.ts）
+const pool = new pg.Pool(requestPoolConfig(url, 10));
 try {
   await assertBffRole(pool);  // 连接角色配错会让 RLS 整体失效：拒绝启动
   // 已退出档案的统一判据（LT-06 决定记录（续）第 4 条）：迁移 0059 执行之后无条件生效（不挂内测开关）；内测开关打开而 0059 没执行时拒绝启动

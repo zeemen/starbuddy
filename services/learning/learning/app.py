@@ -28,6 +28,7 @@ from . import health, mastery_routes, metrics, obs, processing, store
 from .adapter_client import strict_json
 from .config import Settings
 from .contract import UnsupportedContractVersion, internal_contract, plugin_contract
+from .db_timeouts import request_pool_kwargs
 from .diagnosis import api as diagnosis_api
 from .diagnosis.engine import Params as DiagnosisParams
 from .errors import IngestError
@@ -258,7 +259,8 @@ def create_app(
         internal_contract()
         internal_contract("1.0.0")  # v1 信封契约（安全审查建议 9：文件缺失时启动即失败）
         own_pool = pool is None
-        p = pool or await asyncpg.create_pool(settings.database_url, min_size=1, max_size=10)
+        # 超时与兜底（specs/db-call-timeouts）：语句 10 秒、事务闲置 15 秒；三个处理请求的池同一口径
+        p = pool or await asyncpg.create_pool(settings.database_url, min_size=1, max_size=10, **request_pool_kwargs())
         # 迁移 0016 必须先于本版本执行：v0、v1 写入都要查封存表（安全审查必须改 1）
         if not await p.fetchval("SELECT to_regclass('platform.replay_seal') IS NOT NULL"):
             if own_pool:
@@ -323,7 +325,8 @@ def create_app(
                 raise
             if lock_pool is None:
                 # 作答串行锁的独立小连接池（审查 B2）：会话级咨询锁要握到判分结束，放在业务池里会与 ingest 争连接而互相等死
-                lock_pool = await asyncpg.create_pool(settings.database_url, min_size=0, max_size=PRACTICE_LOCK_POOL_SIZE)
+                lock_pool = await asyncpg.create_pool(settings.database_url, min_size=0, max_size=PRACTICE_LOCK_POOL_SIZE,
+                                                      **request_pool_kwargs())
                 own_lock_pool = True
             state["practice"] = _practice(settings, practice_cfg, p, client, state["service"], practice_clock, lock_pool)
             if retest_cfg is not None:
@@ -350,7 +353,8 @@ def create_app(
             # 调用记录：日志 + 指标；LEARNING_MODEL_CALL_LOG=1 时另经有界队列异步批量写库（单独的小连接池，不占业务池）
             if settings.model_call_log:
                 if call_log_pool is None:
-                    own_call_log_pool = await asyncpg.create_pool(settings.database_url, min_size=0, max_size=CALL_LOG_POOL_SIZE)
+                    own_call_log_pool = await asyncpg.create_pool(settings.database_url, min_size=0, max_size=CALL_LOG_POOL_SIZE,
+                                                                  **request_pool_kwargs())
                 call_log_sink = metrics.db_sink(call_log_pool or own_call_log_pool)
                 call_log_sink.start()
             try:

@@ -22,6 +22,7 @@ from typing import Any, Mapping, Sequence
 import asyncpg
 
 from .claims import ClaimRow, MasteryRow, Op, TemplateInfo, _expiry, _fields_from, plan_node_claims, unit_of
+from .db_timeouts import request_pool_kwargs
 from .dispute import i_know_outcome
 from .metrics import (ActivityFact, AttemptFact, ErrorFact, MetricInputs, MetricResult, PlanFact, ProbeFact, compute_metrics,
                       plan_metric_claims)
@@ -78,9 +79,11 @@ async def assert_insight_role(conn: asyncpg.Connection) -> None:
         raise RoleError(f"{ROLE} 的属性不安全")
 
 
-async def create_pool(dsn: str | None = None, **connect: Any) -> asyncpg.Pool:
-    """建池并断言角色安全；不满足即关闭池并报错（fail closed）"""
-    pool = await asyncpg.create_pool(dsn, min_size=1, max_size=10, init=_init_connection, server_settings=SERVER_SETTINGS, **connect)
+async def create_pool(dsn: str | None = None, *, request_timeouts: bool = False, **connect: Any) -> asyncpg.Pool:
+    """建池并断言角色安全；不满足即关闭池并报错（fail closed）。
+    request_timeouts=True：处理请求的池加语句与事务闲置超时（specs/db-call-timeouts）；命令行任务（jobs_cli）不加，它们有长查询"""
+    timeouts = request_pool_kwargs(**SERVER_SETTINGS) if request_timeouts else {"server_settings": SERVER_SETTINGS}
+    pool = await asyncpg.create_pool(dsn, min_size=1, max_size=10, init=_init_connection, **timeouts, **connect)
     try:
         async with pool.acquire() as conn:
             await assert_insight_role(conn)
