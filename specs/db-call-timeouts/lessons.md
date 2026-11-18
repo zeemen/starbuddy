@@ -38,3 +38,12 @@
    `ALTER ROLE <应用登录角色> SET statement_timeout = '30s'`、`idle_in_transaction_session_timeout = '60s'`；调度器与迁移执行者的角色不设
    （它们有长查询，分区维护另有 `lock_timeout`）。
 2. **审核台后端与知识服务**是否按同一口径补（见差异第 2 条）。
+
+## 补做：审核台后端与知识服务（2026-11-18，用户“按建议，继续其他开发工作”，即 lessons 待人确认第 2 条按建议补上）
+- 审核台后端（`learning/review_console/app.py`）：知识层池、审核池带同一组超时（复用 `learning.db_timeouts`，审核台镜像本来就带 `learning` 包）；
+  登录专用池保留原有的 5 秒语句超时，不变。事务块里没有网络调用（同上的语法树扫描）。
+- 知识服务（`knowledge/db_timeouts.py`）：`create_reader_pool(..., request_timeouts=True)` 只在 `service/app.py` 打开；编译器整图读取
+  （`reader.DbAtomSource`）不开。原有的 `default_transaction_read_only = on` 等设置照常带上。
+- 测试：学习服务 `tests/test_db_timeouts.py` 加审核台三个池的核对（4 项）；知识服务 `tests/test_db_timeouts.py`（2 项，真实库 `SHOW` 核对）；
+  `make knowledge-test`（678 项）、`make learning-test`（4031 项）通过；端到端审核台两组 9 项通过。
+- 至此五个服务处理请求的池都已加上；上面“差异第 2 条”与“待人确认第 2 条”关闭。仍待人定的只有 RDS 参数组的全局兜底（待人确认第 1 条）。

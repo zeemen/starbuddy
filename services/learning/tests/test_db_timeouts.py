@@ -44,3 +44,13 @@ async def test_settings_reach_the_connection(pg):
             assert await c.fetchval("SHOW idle_in_transaction_session_timeout") == "15s"
     finally:
         await pool.close()
+
+
+def test_review_console_pools_have_timeouts():
+    """审核台后端（同一代码目录、单独进程）：知识层池与审核池带同一组超时；登录专用池保留原有的 5 秒语句超时"""
+    calls = _create_pool_calls(Path(__file__).resolve().parents[1] / "review_console" / "app.py")
+    assert len(calls) == 3
+    with_timeouts = [c for c in calls if "request_pool_kwargs()" in ast.unparse(c)]
+    assert len(with_timeouts) == 2, [ast.unparse(c) for c in calls]
+    login = [c for c in calls if c not in with_timeouts]
+    assert "'statement_timeout': '5000'" in ast.unparse(login[0])

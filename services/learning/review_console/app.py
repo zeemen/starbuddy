@@ -26,6 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from . import service
 from learning import health, obs
+from learning.db_timeouts import request_pool_kwargs
 from learning.netpolicy import STAGING, check_db_tls
 
 from .config import FEATURES, PagesSettings, ReviewSettings
@@ -272,8 +273,9 @@ def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthen
             # LT-03 决定记录（续）第 6 条：staging 两个连库串都必须 verify-full + 固定 CA，建池之前拒绝
             check_db_tls(s.kge_database_url, s.env, "REVIEW_CONSOLE_KGE_DATABASE_URL")
             check_db_tls(s.review_database_url, s.env, "REVIEW_CONSOLE_REVIEW_DATABASE_URL")
-            kp = await asyncpg.create_pool(s.kge_database_url, min_size=1, max_size=5)
-            rp = await asyncpg.create_pool(s.review_database_url, min_size=1, max_size=3)
+            # 超时与兜底（specs/db-call-timeouts，与学习服务同一组数值）：语句 10 秒、事务闲置 15 秒；登录专用池另有 5 秒语句超时，不变
+            kp = await asyncpg.create_pool(s.kge_database_url, min_size=1, max_size=5, **request_pool_kwargs())
+            rp = await asyncpg.create_pool(s.review_database_url, min_size=1, max_size=3, **request_pool_kwargs())
             # 登录专用：同一个签字登录角色，单独两条连接，语句 5 秒超时
             lp = await asyncpg.create_pool(s.review_database_url, min_size=1, max_size=2,
                                            server_settings={"statement_timeout": "5000"})
