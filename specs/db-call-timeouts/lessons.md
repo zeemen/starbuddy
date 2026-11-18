@@ -24,7 +24,7 @@
 - BFF 变异 4 条“数据库超时：”（不设语句超时、取连接不设上限、不设事务闲置超时、main 不用这份配置），全部被发现。
 - 学习服务 `tests/test_db_timeouts.py`（3 项）、洞察服务 `tests/test_db_timeouts.py`（2 项）：数值钉住；服务进程的池都带、命令行任务不带
   （语法树检查）；真实库上 `SHOW statement_timeout` 为 10s、`SHOW idle_in_transaction_session_timeout` 为 15s，命令行池仍为 0。
-- `make bff-test`、`make insight-test`、`make learning-test`（含计量幂等测试）通过；端到端全量见下。
+- `make bff-test`、`make insight-test`、`make learning-test`（4030 项，含计量幂等测试）通过；端到端全量 180 / 183 通过（1 跳过；失败的 2 项是 glyphs DPR 2，本机 Chromium 与锁定版本不同的已知环境差异，与本改动无关）。
 
 ## 与 spec 的差异
 1. **Python 两个服务没加“取连接等待上限”**：spec 写“取连接用 `pool.acquire(timeout=3)`”。实际有 40 处 `pool.acquire()`，逐处改动面太大；
