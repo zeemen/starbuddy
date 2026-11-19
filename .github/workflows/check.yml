@@ -46,6 +46,9 @@ on:
         type: boolean
         default: false
 
+# 第三方 Actions 一律固定到提交哈希（specs/ci-supply-chain-pins）：标签可以被改指向别的提交，哈希不能。注释写对应的版本，
+# 升级时同时改哈希与注释（查法：git ls-remote --tags https://github.com/actions/<名字>，取版本标签剥离后的提交）；
+# deploy/tests/test_check_workflow.py 核对每个 uses 都是 40 位哈希并带版本注释。
 permissions:
   contents: read
 
@@ -77,16 +80,16 @@ jobs:
     env:
       NEXT_TELEMETRY_DISABLED: "1"   # Next.js 默认会向境外发匿名遥测（ADR 09）
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false   # 仓库令牌不写进 .git/config（安全审查 S3）
           fetch-depth: 0               # 人设回归要算 merge-base 与基线提交（冲刺 3-F，spec 待人确认 #11）
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.11"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"
 
@@ -124,7 +127,7 @@ jobs:
 
       - name: 上传人设回归报告（保留 90 天）
         if: always() && matrix.group == 'persona'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: persona-report
           path: ${{ runner.temp }}/persona-report/
@@ -142,15 +145,15 @@ jobs:
       NEXT_TELEMETRY_DISABLED: "1"
       STARBUDDY_E2E_BROWSERS: webkit,firefox
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.11"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"
 
@@ -184,16 +187,16 @@ jobs:
       run:
         working-directory: 升学教育产品/starbuddy
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
           path: 升学教育产品/starbuddy
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.11"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"
 
@@ -223,11 +226,11 @@ jobs:
       matrix:
         shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.11"
 
@@ -241,7 +244,7 @@ jobs:
       - name: 契约检查依赖（含 PyYAML）
         run: |
           python -m venv .venv-contracts
-          .venv-contracts/bin/pip install -q -r packages/contracts/requirements-dev.txt
+          .venv-contracts/bin/pip install -q --require-hashes -r packages/contracts/requirements-dev.lock
 
       - name: 数据库变异测试（分片 ${{ matrix.shard }}/12，严格模式）
         run: make db-mutation CONTRACT_STRICT=1 PYTHON=.venv-contracts/bin/python PGBIN=/usr/lib/postgresql/16/bin DBMUT_SHARD=${{ matrix.shard }}/12

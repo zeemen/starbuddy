@@ -1,6 +1,6 @@
 # CI 与契约检查依赖的供应链固定 · 规格草稿
 
-- 状态：**草稿，待人确认**（第五节）。
+- 状态：**已确认（2026-11-19，用户“按建议，默认值都同意，开始实现”）**：第五节三条都按默认。实现记录与差异见 lessons.md。
 - 来源：`specs/launch-test-2026/todo-by-owner.md` 第一节（技术负责人）第 4 条“GitHub Actions 固定到提交哈希（防供应链）”
   （出处 `specs/contract-conformance-sprint1/lessons.md` 第 3 条）与第 5 条“契约测试依赖是否补带哈希的锁文件”（`blockers.md` 第一节）。
 - **涉及必停项**：在 `packages/contracts/` 下新增锁文件（“packages/contracts 的任何变更”）。提交首行标 `[NEEDS-HUMAN]`。

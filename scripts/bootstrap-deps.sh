@@ -4,8 +4,8 @@
 # 原则（CLAUDE.md 规则 10、W13 技术债 T06）：
 #   - 只按仓库已有的锁文件安装：Python 一律 pip install --require-hashes -r <锁文件>，Node 一律 npm ci（按 package-lock.json）；
 #     不升级、不新增依赖，不下载锁文件以外的东西。
-#   - 唯一例外是 .venv-contracts：packages/contracts/requirements-dev.txt 没有带哈希的锁文件，按 CI（.github/workflows/check.yml）
-#     同样的命令 pip install -r 安装（直接依赖已锁版本，传递依赖由 pip 解析）。
+#   - .venv-contracts 同样按带哈希的锁文件 packages/contracts/requirements-dev.lock 安装（2026-11-18 起，specs/ci-supply-chain-pins；
+#     此前按 requirements-dev.txt 装、传递依赖不锁），与 CI（.github/workflows/check.yml）同一条命令。
 #   - 幂等：每一步把所用锁文件的 sha256 记在安装目录里（.venv*/.bootstrap-stamp、node_modules/.bootstrap-stamp），
 #     锁文件没变且目录完整时跳过；锁文件变了就整目录重建。
 #   - 失败即停，并打印是哪一步。
@@ -88,13 +88,13 @@ py_locked() { # <服务目录> [额外：contracts-editable]
 }
 
 py_contracts() {
-  local req="packages/contracts/requirements-dev.txt"
+  local req="packages/contracts/requirements-dev.lock"
   local digest; digest="$(lock_digest "$req")"
   STEP=".venv-contracts：创建"
   if venv_setup ".venv-contracts" "$digest"; then
-    STEP=".venv-contracts：pip install -r $req（与 CI 相同；该文件没有哈希锁）"
+    STEP=".venv-contracts：pip install --require-hashes -r $req（与 CI 相同，specs/ci-supply-chain-pins）"
     log "$STEP"
-    .venv-contracts/bin/pip install -q --disable-pip-version-check -r "$req"
+    .venv-contracts/bin/pip install -q --disable-pip-version-check --require-hashes -r "$req"
     echo "$digest" > ".venv-contracts/.bootstrap-stamp"
   fi
 }

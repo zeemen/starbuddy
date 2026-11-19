@@ -1,7 +1,7 @@
 # 未实现的目标明确打印“跳过”，不得伪装为通过。
 .PHONY: check-mutation check-group-persona-mutation check-group-contracts-mutation check-group-aya-mutation check-group-adapters-mutation check-group-learning-a-mutation check-group-learning-b-mutation check-group-bff-web-mutation check-group-kge-tools-mutation check-group-kge-model-mutation check-group-knowledge-mutation check-group-insight-mutation check-fast check check-core check-group-persona-light check-group-contracts-light check-group-aya-light check-group-adapters-light check-group-learning-a-light check-group-learning-b-light check-group-bff-web-light check-group-kge-tools-light check-group-kge-model-light check-group-knowledge-light check-group-insight-light check-light weknora-probe-test check-group-persona check-group-contracts check-group-aya check-group-adapters check-group-learning-a check-group-learning-b check-group-bff-web check-group-kge-tools check-group-kge-model check-group-knowledge check-group-insight contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test current-affair-expire model-router-mutation diagnosis-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-claims-mutation web-visual kge-inventory kge-inventory-test kge-import kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test sie-dictionary-check kge-id-check path-url-check knowledge-test knowledge-mutation kge-compile-eval-test eval-persona eval-grade persona-registry-check persona-guard-test persona-lock persona-record insight-test insight-mutation release-walkthrough kge-dedupe-test kge-dedupe-mutation kge-calibrate-test kge-calibrate-mutation cost-dashboard-test cost-dashboard-mutation kge-irt-test kge-irt-mutation
 
-# 可指向装了 packages/contracts/requirements-dev.txt 的解释器，例如 make check PYTHON=.venv/bin/python
+# 可指向按 packages/contracts/requirements-dev.lock 装好的解释器（--require-hashes），例如 make check PYTHON=.venv-contracts/bin/python
 PYTHON ?= python3
 export PYTHONDONTWRITEBYTECODE = 1
 # CI 里设 CONTRACT_STRICT=1：缺依赖（Python 依赖或本机 Postgres）直接失败，不允许“跳过”变绿
@@ -421,7 +421,7 @@ bff-mutation:
 
 # 契约一致性测试（冲刺 1-A）：共享核对库单测；同一套测试跑参考假适配器（同步、异步）与阿鸦适配器（约 10 秒）
 # 覆盖率报告写到 $(CONFORMANCE_REPORT_DIR)/conformance-<学科>.json，供 Gate 0 统计
-# 需要 packages/contracts/requirements-dev.txt；阿鸦部分还需要 adapters/aya 已 npm ci
+# 需要按 packages/contracts/requirements-dev.lock 装的依赖；阿鸦部分还需要 adapters/aya 已 npm ci
 CONFORMANCE_REPORT_DIR ?= $(or $(TMPDIR),/tmp)
 conformance:
 	$(call run_contract,-m pytest -q -p no:cacheprovider packages/contracts/python/tests)

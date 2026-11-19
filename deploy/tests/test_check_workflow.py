@@ -136,3 +136,42 @@ def test_cjk_path_job_checks_out_under_a_non_ascii_directory():
     # 目标本身：目录不含非 ASCII 字符时失败；不在 check-core 里（本机多半测不到）
     assert "cjk-path-test" not in " ".join(rule("check-core")) and "CJK_PATH_TARGETS" not in " ".join(group_vars())
     assert "ord(c) > 127" in MAKEFILE.split("\ncjk-path-test:", 1)[1].split("\n\n", 1)[0]
+
+
+def test_actions_are_pinned_to_commit_hashes():
+    """第三方 Actions 一律固定到 40 位提交哈希，并在同一行注释对应版本（specs/ci-supply-chain-pins）；不许出现标签或分支"""
+    text = (ROOT / ".github/workflows/check.yml").read_text(encoding="utf-8")
+    lines = [ln for ln in text.splitlines() if re.match(r"^\s*(-\s*)?uses:", ln)]
+    assert len(lines) >= 12, "uses 行数对不上，扫描写错了"
+    for ln in lines:
+        assert re.match(r"^\s*(-\s*)?uses:\s*[\w.-]+/[\w.-]+@[0-9a-f]{40}\s+#\s*v\d+\.\d+\.\d+\s*$", ln), ln
+    # 解析出的 uses 值（YAML 去掉注释）也只能是 owner/repo@哈希
+    uses = [s["uses"] for job in WORKFLOW["jobs"].values() for s in job.get("steps", []) if "uses" in s]
+    assert len(uses) == len(lines)
+    for u in uses:
+        assert re.fullmatch(r"[\w.-]+/[\w.-]+@[0-9a-f]{40}", u), u
+
+
+def test_contracts_dev_deps_install_from_hashed_lock():
+    """契约检查依赖（.venv-contracts）按带哈希的锁文件装（specs/ci-supply-chain-pins）：锁覆盖 requirements-dev.txt 的全部直接依赖、
+    每个包都带哈希；CI 与 scripts/bootstrap-deps.sh 都用 --require-hashes 装这份锁，不再直接装 requirements-dev.txt"""
+    req = (ROOT / "packages/contracts/requirements-dev.txt").read_text(encoding="utf-8")
+    lock = (ROOT / "packages/contracts/requirements-dev.lock").read_text(encoding="utf-8")
+    norm = lambda n: re.sub(r"[-_.]+", "-", n).lower()
+    direct = {norm(m.group(1)) for m in re.finditer(r"^([A-Za-z0-9_.-]+)\s*(?:==|>=|<|~=)", req, re.M)}
+    pinned: dict[str, int] = {}
+    current = None
+    for line in lock.splitlines():
+        m = re.match(r"^([A-Za-z0-9_.-]+)==\S+", line)
+        if m:
+            current = norm(m.group(1))
+            pinned[current] = 0
+        elif current and re.search(r"--hash=sha256:[0-9a-f]{64}", line):
+            pinned[current] += 1
+    assert direct and direct <= set(pinned), f"锁文件缺直接依赖：{direct - set(pinned)}"
+    assert all(n > 0 for n in pinned.values()), [k for k, n in pinned.items() if n == 0]
+    ci = (ROOT / ".github/workflows/check.yml").read_text(encoding="utf-8")
+    boot = (ROOT / "scripts/bootstrap-deps.sh").read_text(encoding="utf-8")
+    assert ".venv-contracts/bin/pip install -q --require-hashes -r packages/contracts/requirements-dev.lock" in ci
+    assert "-r packages/contracts/requirements-dev.txt" not in ci
+    assert 'local req="packages/contracts/requirements-dev.lock"' in boot and '--require-hashes -r "$req"' in boot
