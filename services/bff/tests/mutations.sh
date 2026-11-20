@@ -624,6 +624,10 @@ SM=(
   $'数据库超时：取连接不设上限\tsrc/http/db-pool.ts\t    connectionTimeoutMillis: t.connectionTimeoutMillis,\t'
   $'数据库超时：不设事务闲置超时\tsrc/http/db-pool.ts\t    idle_in_transaction_session_timeout: t.idleInTransactionMs,\t'
   $'数据库超时：main 不用这份配置\tsrc/main.ts\tnew pg.Pool(requestPoolConfig(url, 10))\tnew pg.Pool({ connectionString: url, max: 10 })'
+  # 闸门的日志字段与定时汇总（specs/gate-log-fields）：跑 tests/gate-log-fields.test.ts（BFFMUT_FILTER=闸门日志：）
+  $'闸门日志：白名单漏 gate_subject\tsrc/observability/log.ts\t  \'gate\', \'gate_subject\', \'gate_queue_ms\'\t  \'gate\', \'gate_queue_ms\''
+  $'闸门日志：汇总不带计数\tsrc/gate/subject-gate.ts\tcounts: statsForLog(gate.stats())\tcounts: {}'
+  $'闸门日志：汇总按原名写计数\tsrc/gate/subject-gate.ts\tcounts: statsForLog(gate.stats())\tcounts: gate.stats()'
   # 内测前整改 P1（畸形请求不得让进程退出，src/http/server.ts）：跑 tests/malformed-request.test.ts（BFFMUT_FILTER=畸形请求：）
   $'畸形请求：路径解析不兜底\tsrc/http/server.ts\t    } catch {\\n      return false;\\n    }\\n    const hit = table\t    } catch (e) {\\n      throw e;\\n    }\\n    const hit = table'
   $'畸形请求：处理链不兜底\tsrc/http/server.ts\t    }).catch((e: unknown) => {\\n\t    }).catch((e: unknown) => {\\n      throw e;\\n'
@@ -693,6 +697,7 @@ star_run() {  # $1 副本根目录，$2 变异名（“计量：”开头的跑�
   [[ "${2:-}" == 畸形请求：* ]] && tests="tests/malformed-request.test.ts"
   [[ "${2:-}" == 节点名：* ]] && tests="tests/node-names.test.ts tests/node-names.integration.test.ts"
   [[ "${2:-}" == 数据库超时：* ]] && tests="tests/db-timeouts.test.ts"
+  [[ "${2:-}" == 闸门日志：* ]] && tests="tests/gate-log-fields.test.ts"
   [[ "${2:-}" == OTP：* ]] && tests="tests/staging-otp-units.test.ts tests/staging-otp.integration.test.ts tests/shell-startup.test.ts tests/star-map-v1.test.ts"
   [[ "${2:-}" == 内测：* ]] && tests="tests/internal-test-units.test.ts tests/internal-test.integration.test.ts tests/staging-otp-units.test.ts tests/auth.integration.test.ts tests/shell-openapi.test.ts"
   [[ "${2:-}" == 内测工具：* ]] && tests="../../tools/internal-test/tests/internal-test.test.ts"

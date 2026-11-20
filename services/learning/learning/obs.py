@@ -370,7 +370,9 @@ LOG_FIELDS = frozenset(ENVELOPE + (
     "ready", "job", "child_exit", "exit_code", "started_at", "finished_at", "port", "audit_event", "account_kind", "dropped_statements",
     "explain", "export_job", "export_store", "generate", "guardian_op", "human_review_required", "lexicon", "lexicon_hits",
     "monthly_plan", "policy_version", "prediction", "reconciliation", "report", "route_group", "sms", "star_nodes",
-    "star_nodes_mismatch", "star_statements", "template_fingerprint", "weekly"))
+    "star_nodes_mismatch", "star_statements", "template_fingerprint", "weekly",
+    # 分学科闸门（BFF，specs/gate-log-fields）：取值都是固定枚举（结果、学科码、排队分档、被拒原因）
+    "gate", "gate_subject", "gate_queue_ms", "gate_reason"))
 # 嵌套结构里这些键整项丢掉（键名不区分大小写、先驼峰归一；带前缀的同样算，例如 guardian_phone、student_name、ocr_text、photo_url）
 _FORBIDDEN_KEY = re.compile(r"(?i)^(?:.*_)?(password|passwd|secret|token|api_?key|authorization|cookie|credential|phone|mobile|email"
                             r"|id_?card|id_?number|otp|dsn|session|name|nickname|texts?|messages?|content|body|raw|answers?|prompt|output"

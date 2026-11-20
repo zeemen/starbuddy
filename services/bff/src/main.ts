@@ -94,7 +94,7 @@ import { parseInternalTestFeature } from './internal-test/features.ts';
 import { exitGuardAvailable } from './http/internal-test-routes.ts';
 import { cleanWith, httpMonthlyPlanClient, loadTemplates, parseMonthlyPlanFeature } from './family/monthly-plan.ts';
 import { lexicon, noPromiseLexicon } from './trust/lexicon.ts';
-import { createSubjectGate, decideSubjectGate, loadConcurrencyConfig, parseSubjectGateFeature } from './gate/subject-gate.ts';
+import { createSubjectGate, decideSubjectGate, loadConcurrencyConfig, parseSubjectGateFeature, startGateStatsLog } from './gate/subject-gate.ts';
 import { emit } from './observability/log.ts';
 
 // 日志（LT-05）：一行一个 JSON、集中脱敏（src/observability/log.ts）；拒绝启动的原因也走这里（标准错误，消息照旧以 bff: 开头）
@@ -152,7 +152,11 @@ try {
     // 闸门的占用与队列在进程内：多实例部署时每个实例各算各的（spec 待人确认 #3）。dev / test 以外没声明 single_instance 就不建并告警，
     // 建了也告警（同 rest.singleInstance 先例）
     const decision = decideSubjectGate(env, gateConfig);
-    if (decision.build) shellDeps.subjectGate = createSubjectGate(gateConfig);
+    if (decision.build) {
+      shellDeps.subjectGate = createSubjectGate(gateConfig);
+      // 每 60 秒一行各科占用与累计计数（specs/gate-log-fields）：stats() 原来只在进程内
+      startGateStatsLog(shellDeps.subjectGate, (r) => emit('info', r));
+    }
     emit('warn', decision.warning);
   }
   // 连续使用提醒的计时在进程内（src/shell/rest.ts）：dev / test 以外没声明单实例部署就不启用，并在启动时告警（pilot 前须完成会话表加列迁移）

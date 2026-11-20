@@ -21,7 +21,9 @@ export const LOG_FIELDS: ReadonlySet<string> = new Set([...ENVELOPE,
   'ready', 'job', 'child_exit', 'exit_code', 'started_at', 'finished_at', 'port', 'audit_event', 'account_kind', 'dropped_statements',
   'explain', 'export_job', 'export_store', 'generate', 'guardian_op', 'human_review_required', 'lexicon', 'lexicon_hits',
   'monthly_plan', 'policy_version', 'prediction', 'reconciliation', 'report', 'route_group', 'sms', 'star_nodes',
-  'star_nodes_mismatch', 'star_statements', 'template_fingerprint', 'weekly']);
+  'star_nodes_mismatch', 'star_statements', 'template_fingerprint', 'weekly',
+  // 分学科闸门（src/gate/subject-gate.ts，specs/gate-log-fields）：取值都是固定枚举（结果、学科码、排队分档、被拒原因）
+  'gate', 'gate_subject', 'gate_queue_ms', 'gate_reason']);
 /** BFF 访问日志里的学生、账号：带密钥 HMAC 截断（不是标识原文）；只收 16 位小写十六进制 */
 export const HASHED_FIELDS: ReadonlySet<string> = new Set(['student', 'account']);
 const HASHED_VALUE = /^[0-9a-f]{16}$/;
