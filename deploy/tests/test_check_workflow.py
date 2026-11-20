@@ -152,6 +152,32 @@ def test_actions_are_pinned_to_commit_hashes():
         assert re.fullmatch(r"[\w.-]+/[\w.-]+@[0-9a-f]{40}", u), u
 
 
+# 各 Action 最早用 Node 24 运行时的大版本（2026-11-19 读各版本 action.yml 的 runs.using 核对，specs/ci-actions-node24）
+MIN_NODE24_MAJOR = {"actions/checkout": 5, "actions/setup-python": 6, "actions/setup-node": 5, "actions/upload-artifact": 6}
+
+
+def test_actions_not_below_node24_majors():
+    """版本注释的大版本号不低于最早用 Node 24 的版本，防止退回 node20 的旧版本（specs/ci-actions-node24）"""
+    text = (ROOT / ".github/workflows/check.yml").read_text(encoding="utf-8")
+    seen = set()
+    for m in re.finditer(r"uses:\s*(actions/[\w.-]+)@[0-9a-f]{40}\s+#\s*v(\d+)\.", text):
+        name, major = m.group(1), int(m.group(2))
+        assert name in MIN_NODE24_MAJOR, f"{name} 没登记最低大版本：先核对它的 runs.using 再加进表"
+        assert major >= MIN_NODE24_MAJOR[name], f"{name} v{major} 低于 Node 24 的最低版本 v{MIN_NODE24_MAJOR[name]}"
+        seen.add(name)
+    assert seen == set(MIN_NODE24_MAJOR), seen
+
+
+def test_setup_node_disables_auto_cache():
+    """setup-node v5 起没给 cache 就自动开缓存；本仓不加缓存（check.yml 文件头），每处都要显式关掉"""
+    steps = [s for job in WORKFLOW["jobs"].values() for s in job.get("steps", [])
+             if str(s.get("uses", "")).startswith("actions/setup-node@")]
+    assert steps, "没找到 setup-node，扫描写错了"
+    for s in steps:
+        assert s.get("with", {}).get("package-manager-cache") is False, s
+        assert "cache" not in s.get("with", {}), s
+
+
 def test_contracts_dev_deps_install_from_hashed_lock():
     """契约检查依赖（.venv-contracts）按带哈希的锁文件装（specs/ci-supply-chain-pins）：锁覆盖 requirements-dev.txt 的全部直接依赖、
     每个包都带哈希；CI 与 scripts/bootstrap-deps.sh 都用 --require-hashes 装这份锁，不再直接装 requirements-dev.txt"""

@@ -1,6 +1,6 @@
 # CI 的 Actions 升级到 Node 24 原生的大版本 · 规格草稿
 
-- 状态：**草稿（2026-11-19），等人确认第五节**。
+- 状态：**已确认（2026-11-20，用户“按建议，默认值都同意，开始实现”）**：第五节三条都按默认。实现记录见 lessons.md。
 - 来源：`specs/launch-test-2026/todo-by-owner.md` 第一节第 7 条；`specs/ci-supply-chain-pins/` 只做了固定、没有升级（spec 第三节“不做”）。
 - 不涉及必停项：只改 `.github/workflows/check.yml` 与它的结构测试 `deploy/tests/test_check_workflow.py`，不改依赖、契约、迁移、权限、计量。
 

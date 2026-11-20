@@ -19,7 +19,7 @@
 | 3 | 合并进默认分支后 SessionStart 钩子才生效 | `blockers.md` 第一节 |
 | ~~4~~ | ~~GitHub Actions 固定到提交哈希（防供应链）~~：**已做（2026-11-19，`5e67e9a`）**，12 处 `uses:` 固定到提交哈希并有测试钉住 | `specs/ci-supply-chain-pins/` **〔11-19〕** |
 | ~~5~~ | ~~契约测试依赖是否补带哈希的锁文件~~：**已做（2026-11-19，`5e67e9a`）**，`packages/contracts/requirements-dev.lock`，CI 与安装脚本按哈希装 | 同上 **〔11-19〕** |
-| 7 | Actions 升级到 Node 24 原生的新大版本（CI 日志里的 Node 20 弃用提示）：另起一项，升级时同时改哈希与版本注释 | `specs/ci-supply-chain-pins/lessons.md` **〔11-19〕** |
+| ~~7~~ | ~~Actions 升级到 Node 24 原生的新大版本~~：**已做（2026-11-20）**，四个 Action 都升到 v7 并仍固定哈希，setup-node 显式关自动缓存 | `specs/ci-actions-node24/` **〔11-19〕** |
 | 8 | 计量负责人知情：处理请求的数据库连接池加了语句 10 秒、事务闲置 15 秒超时，计量事务超时会整体回滚、走已有失败路径（已测：预留超时不留预留、同一幂等键重试只一笔） | `specs/db-call-timeouts/lessons.md` **〔11-19〕** |
 | 6 | WeKnora 与知识库供应链中台的规格与 ADR（要能读到中台代码：推到 GitHub 或经 Remote Control 共享）；staging 节点规格够不够跑 WeKnora | `specs/launch-lt03-cloud-staging/lessons.md` 第 20 条 |
 
