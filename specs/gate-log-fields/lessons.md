@@ -20,7 +20,9 @@
 2. 静态检查只扫两参数写法；单参数的 `deps.note?.('事件名')`（再练、复测、诊断的计量过程记录）是另一条通路，不在这次范围。
 
 ## 验证
-- 见提交说明。
+- 本机六项全部通过：`make check-fast`、`make deploy-check`（含 `test_obs_shared.py`）、`make bff-test`（类型检查 + 单测 + 集成）、
+  `make learning-test`（4031 项，2 项预期失败标记）、`make insight-test`、`make knowledge-test`。
+- `BFFMUT_FILTER=闸门日志：` 的 3 条变异全部被发现。
 
 ## 待人确认
 1. **安全负责人知情**：日志白名单（安全审查 B）多了四个字段，取值全是代码里的固定枚举：`gate` 是 admitted / queued / rejected / bypassed，
