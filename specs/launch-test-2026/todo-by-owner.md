@@ -84,5 +84,5 @@
 
 ## 七、可选 / 后续（不阻塞 12 月）
 信任界面“为什么”证据表、考试对账卡里的知识点仍显示编号（换名称要动洞察服务契约，必停）**〔11-19〕**；
-`blockers.md` 第六节各项；审核台响应类型的核对（要先给后端补响应模型，另起任务）；考试预测与对账卡的端到端（要先补契约 `insight.predict` / `insight.reconcile` 给 BFF，必停；
+`blockers.md` 第六节各项；~~审核台响应类型的核对~~（已做，`specs/review-console-responses/`）**〔11-20〕**；考试预测与对账卡的端到端（要先补契约 `insight.predict` / `insight.reconcile` 给 BFF，必停；
 “为什么”页那一半已于 2026-11-11 补齐，`specs/why-page-e2e/`）。
