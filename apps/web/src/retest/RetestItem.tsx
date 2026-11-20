@@ -9,6 +9,8 @@ import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 
 import type { Answer } from '../lib/diagnosis.ts';
 import { RETEST as C, RETEST_AFTER, RETEST_ERROR, RETEST_VERDICT } from '../shell/copy.ts';
 import { RichParagraphs, RichRuns } from '../shell/RichItem.tsx';
+import { cooldownMs } from '../lib/retry-after.ts';
+import { useCooldown } from '../practice/use-cooldown.ts';
 import { keepsTicket, needsNewItem, resubmitsSnapshot, type UiError } from '../practice/view.ts';
 import { answerRetestAction, nextRetestAction } from './actions.ts';
 import type { RetestAnswerView, RetestReadyView } from './view.ts';
@@ -22,6 +24,8 @@ export function RetestItem({ csrf, student, subject, entry, listHref }: { csrf: 
   const [result, setResult] = useState<RetestAnswerView | null>(null);
   const [error, setError] = useState<UiError | null>(null);
   const [busy, setBusy] = useState(false);
+  // 作答被闸门拒或被限流后，提交按钮按 retry-after 冷却（specs/retry-after-cooldown）；冷却结束只恢复按钮，不自动重发
+  const { cooling, start: startCooldown, clear: clearCooldown } = useCooldown();
   const [text, setText] = useState('');
   const [choice, setChoice] = useState<string[]>([]);
   const [message, setMessage] = useState('');
@@ -33,6 +37,7 @@ export function RetestItem({ csrf, student, subject, entry, listHref }: { csrf: 
     setPhase('loading');
     sent.current = null;
     setError(null); setMessage(''); setResult(null); setReady(null); setText(''); setChoice([]);
+    clearCooldown();
     const r = await nextRetestAction(csrf, student, subject, entry);
     if (r.kind === 'ready') {
       setReady(r.ready);
@@ -43,7 +48,7 @@ export function RetestItem({ csrf, student, subject, entry, listHref }: { csrf: 
       setError(r.error);
       setPhase('stopped');
     }
-  }, [csrf, student, subject, entry]);
+  }, [csrf, student, subject, entry, clearCooldown]);
 
   useEffect(() => {
     if (started.current) return;
@@ -57,7 +62,7 @@ export function RetestItem({ csrf, student, subject, entry, listHref }: { csrf: 
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!ready || busy) return;
+    if (!ready || busy || cooling) return;
     const answer: Answer | null = sent.current
       ?? (ready.item.format === 'fill' ? (text.trim() ? { text: text.trim() } : null) : (choice.length ? { choice: [...choice] } : null));
     if (!answer) return setMessage(C.needAnswer);
@@ -75,6 +80,7 @@ export function RetestItem({ csrf, student, subject, entry, listHref }: { csrf: 
       }
       setMessage('');
       setError(r.error);
+      if (r.error === 'rate_limited') startCooldown(cooldownMs(r.retryAfterSec));
       if (!resubmitsSnapshot(r.error)) sent.current = null;
       if (!keepsTicket(r.error) && !needsNewItem(r.error)) setPhase('stopped');
     } finally {
@@ -124,7 +130,7 @@ export function RetestItem({ csrf, student, subject, entry, listHref }: { csrf: 
             {error && needsNewItem(error) ? (
               <button type="button" onClick={() => void load()} data-testid="retest-new-item">{C.newItem}</button>
             ) : (
-              <button type="submit" disabled={busy} data-testid="retest-submit">{locked ? C.retry : C.submit}</button>
+              <button type="submit" disabled={busy || cooling} data-cooldown={cooling ? 'on' : 'off'} data-testid="retest-submit">{locked ? C.retry : C.submit}</button>
             )}
           </p>
         </form>

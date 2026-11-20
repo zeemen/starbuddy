@@ -240,6 +240,16 @@ PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -q -v ON_ERROR_STOP=1 -
 FL_PORT="$(free_port)"
 PR_BFF_PORT="$(free_port)"
 WEB_PRACTICE_PORT="$(free_port)"
+# 作答被拒后的冷却（specs/retry-after-cooldown；e2e/practice.spec.ts）：第五个 BFF 打开分学科闸门（STARBUDDY_SUBJECT_GATE），
+# 换一份测试配置（BFF_CONCURRENCY_CONFIG 只在 test 认）：每科每生同时 1 个、retry-after 1 秒，其余同 config/concurrency.json。
+# 端到端串行（workers 1），平时同一学生同一科不会有并发请求；只有冷却那条用例故意开两页、让第二页的作答被拒。
+PR_GATE_CFG="$(mktemp --suffix=.json)"
+python3 -c 'import json, sys
+c = json.load(open(sys.argv[1]))
+for v in c["subjects"].values():
+    v["per_student_max"] = 1
+    v["retry_after_s"] = 1
+json.dump(c, open(sys.argv[2], "w"))' "$ROOT/services/bff/config/concurrency.json" "$PR_GATE_CFG"
 FL_CRED="$(python3 -c 'import secrets; print(secrets.token_hex(24))')"
 FL_WRITE_CRED="$(python3 -c 'import secrets; print(secrets.token_hex(24))')"
 FLLOG="$(mktemp)"
@@ -256,7 +266,8 @@ FL_PID=$!
   export BFF_DATABASE_URL="postgresql://bff_app@/starbuddy_test?host=$PGHOST" PORT="$PR_BFF_PORT" BFF_AUTH_CONFIG="$AUTH_CFG" \
     BFF_LEARNING_URL="http://127.0.0.1:$FL_PORT" BFF_LEARNING_TOKEN="$FL_WRITE_CRED" BFF_LEARNING_SESSION_TOKEN="$FL_CRED" \
     STARBUDDY_ENV=test BFF_SHELL_ORIGIN="http://127.0.0.1:$WEB_PRACTICE_PORT" BFF_SMS_CAPTURE_FILE="$SMS_INBOX" \
-    STARBUDDY_PRACTICE=practice STARBUDDY_RETEST_UI=retest STARBUDDY_TODAY_ORCH=today_orch
+    STARBUDDY_PRACTICE=practice STARBUDDY_RETEST_UI=retest STARBUDDY_TODAY_ORCH=today_orch \
+    STARBUDDY_SUBJECT_GATE=subject_gate BFF_CONCURRENCY_CONFIG="$PR_GATE_CFG"
   exec node --no-warnings src/main.ts ) > "$PRLOG" 2>&1 < /dev/null &
 PR_BFF_PID=$!
 # 家长诉求（PLT-14 第 1 步；e2e/family-goals.spec.ts，playwright.config.ts 的 family-on 项目）：
@@ -306,7 +317,7 @@ FGLOG="$(mktemp)"
     BFF_INSIGHT_URL="http://127.0.0.1:$IN_PORT" BFF_INSIGHT_TOKEN="$IN_CRED"
   exec node --no-warnings src/main.ts ) > "$FGLOG" 2>&1 < /dev/null &
 FG_BFF_PID=$!
-trap 'kill "$BFF_PID" "$TRUST_BFF_PID" "$TFI_PID" "$SM_BFF_PID" "$SM_LEARNING_PID" "$RP_BFF_PID" "$FI_PID" "$PR_BFF_PID" "$FL_PID" "$FG_BFF_PID" "$IN_PID" "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true; rm -f "$LOG" "$TLOG" "$TFILOG" "$SMLOG" "$RPLOG" "$FILOG" "$PRLOG" "$FLLOG" "$FL_REQLOG" "$FGLOG" "$INLOG" "$LLOG" "$SMLLOG" "$SMS_INBOX" "$AUTH_CFG" "$TRUST_SHELL_CFG" "$SM_SHELL_CFG" "$RP_SHELL_CFG" "$FG_SHELL_CFG"' EXIT
+trap 'kill "$BFF_PID" "$TRUST_BFF_PID" "$TFI_PID" "$SM_BFF_PID" "$SM_LEARNING_PID" "$RP_BFF_PID" "$FI_PID" "$PR_BFF_PID" "$FL_PID" "$FG_BFF_PID" "$IN_PID" "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true; rm -f "$LOG" "$TLOG" "$TFILOG" "$SMLOG" "$RPLOG" "$FILOG" "$PRLOG" "$FLLOG" "$FL_REQLOG" "$FGLOG" "$INLOG" "$LLOG" "$SMLLOG" "$SMS_INBOX" "$AUTH_CFG" "$TRUST_SHELL_CFG" "$SM_SHELL_CFG" "$RP_SHELL_CFG" "$FG_SHELL_CFG" "$PR_GATE_CFG"' EXIT
 for _ in $(seq 1 80); do
   python3 -c "import socket,sys; ok=all(socket.socket().connect_ex(('127.0.0.1', p)) == 0 for p in ($BFF_PORT, $TRUST_BFF_PORT, $TFI_PORT, $SM_BFF_PORT, $SM_LEARNING_PORT, $RP_BFF_PORT, $FI_PORT, $PR_BFF_PORT, $FL_PORT, $FG_BFF_PORT, $IN_PORT)); sys.exit(0 if ok else 1)" && break
   sleep 0.25
@@ -342,7 +353,7 @@ ENVDTS="$(mktemp)"
 if [ -f "$WEB/next-env.d.ts" ]; then cp "$WEB/next-env.d.ts" "$ENVDTS"; else rm -f "$ENVDTS"; fi
 cleanup() {
   kill "$BFF_PID" "$TRUST_BFF_PID" "$SM_BFF_PID" "$SM_LEARNING_PID" "$RP_BFF_PID" "$FI_PID" "$PR_BFF_PID" "$FL_PID" "$FG_BFF_PID" "$IN_PID" "$REVIEW_PID" "$AYA_PID" "$LEARNING_PID" 2>/dev/null || true
-  rm -f "$PORTS_HANDED" "$LOG" "$TLOG" "$SMLOG" "$RPLOG" "$FILOG" "$PRLOG" "$FLLOG" "$FL_REQLOG" "$FGLOG" "$INLOG" "$RLOG" "$LLOG" "$SMLLOG" "$SMS_INBOX" "$AUTH_CFG" "$TRUST_SHELL_CFG" "$SM_SHELL_CFG" "$RP_SHELL_CFG" "$FG_SHELL_CFG"
+  rm -f "$PORTS_HANDED" "$LOG" "$TLOG" "$SMLOG" "$RPLOG" "$FILOG" "$PRLOG" "$FLLOG" "$FL_REQLOG" "$FGLOG" "$INLOG" "$RLOG" "$LLOG" "$SMLLOG" "$SMS_INBOX" "$AUTH_CFG" "$TRUST_SHELL_CFG" "$SM_SHELL_CFG" "$RP_SHELL_CFG" "$FG_SHELL_CFG" "$PR_GATE_CFG"
   if [ -f "$ENVDTS" ]; then cp "$ENVDTS" "$WEB/next-env.d.ts"; rm -f "$ENVDTS"; else rm -f "$WEB/next-env.d.ts"; fi
   rm -rf "${WEB:?}/.next-e2e"
 }

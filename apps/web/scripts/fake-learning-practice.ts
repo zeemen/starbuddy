@@ -327,6 +327,8 @@ function today(b: Record<string, unknown>) {
   return { status: 200, body: { snapshot, items, truncated_count: b['student_ref'] === P1 ? 2 : 0, budget_minutes: 30, sources, plan } };
 }
 
+const SLOW_ANSWER = 'SLOW-SYN';
+const SLOW_MS = 3_000;
 const PRACTICE_PATHS = ['/internal/v1/practice/queue', '/internal/v1/practice/next', '/internal/v1/practice/answer'];
 const RETEST_PATHS = ['/internal/v1/retest/queue', '/internal/v1/retest/next', '/internal/v1/retest/answer', '/internal/v1/retest/check',
                       '/internal/v1/retest/replay'];
@@ -347,6 +349,9 @@ createServer((req, res) => {
     } else {
       const b = await readBody(req);
       const retest = RETEST_PATHS.includes(path);
+      // 作答被拒后的冷却（specs/retry-after-cooldown）：填空作答 SLOW-SYN 让桩晚 3 秒才答，第一页占着闸门名额时第二页的作答被 BFF 拒
+      const given = b && typeof b['answer'] === 'object' && b['answer'] !== null ? (b['answer'] as Record<string, unknown>)['text'] : undefined;
+      if (path === '/internal/v1/practice/answer' && given === SLOW_ANSWER) await new Promise((r) => setTimeout(r, SLOW_MS));
       out = !b ? problem(400, 'INVALID_REQUEST')
         : path.endsWith('/check') ? rcheck(b) : path.endsWith('/replay') ? rreplay(b)
         : path.endsWith('/queue') ? (retest ? rqueue(b) : queue(b)) : path.endsWith('/next') ? (retest ? rnext(b) : next(b)) : (retest ? ranswer(b) : answer(b));

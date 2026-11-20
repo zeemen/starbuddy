@@ -89,6 +89,7 @@ export const ATTRS: Record<string, Rule> = {
   error: ['', ...keys(PRACTICE_ERROR), 'not_found', 'login'],
   phase: ['loading', 'item', 'result', 'empty', 'stopped'],
   format: ['single', 'multi', 'fill'],
+  cooldown: ['on', 'off'],                                             // 作答被拒后提交按钮在不在冷却（specs/retry-after-cooldown）
   // 手机上按卡片排列时每格前的列名（specs/practice-retest-list-polish）：只许是再练、复测列表表头的同一条文案
   // 信任界面的证据表与异议表（specs/trust-tables-mobile）同样只许表头文案
   label: [PRACTICE.colSource, PRACTICE.colNode, PRACTICE.colLevel, PRACTICE.colStatus, PRACTICE.colRound,

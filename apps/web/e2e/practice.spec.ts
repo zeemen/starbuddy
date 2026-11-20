@@ -193,6 +193,43 @@ test('待复核：只显示“等待复核”，不显示判分结论；条目�
   await axe(page);
 });
 
+test('作答被闸门拒：提交按钮按 retry-after 冷却，冷却完由学生再点，用同一张票据提交成功（specs/retry-after-cooldown）', async ({ page }) => {
+  // 第五个 BFF 的闸门测试配置：每科每生同时 1 个、retry-after 1 秒（scripts/e2e.sh）。桩对填空作答 SLOW-SYN 晚 3 秒才答：
+  // 第一页占着本学生在数学的唯一名额，第二页的作答被 BFF 拒（503 SUBJECT_BUSY，不到桩）
+  await loginStudent(page, P1);
+  const other = await page.context().newPage();
+  await page.goto(item(P1, E('106')));
+  await other.goto(item(P1, E('106')));
+  await expect(itemSection(page)).toHaveAttribute('data-phase', 'item');
+  await expect(itemSection(other)).toHaveAttribute('data-phase', 'item');
+  await page.getByLabel(/答案/).fill('SLOW-SYN');
+  await other.getByLabel(/答案/).fill('合成作答');
+  const before = fakeLearningRequests();
+  await page.getByTestId('practice-submit').click();
+  await expect.poll(() => fakeLearningRequests(), { message: '第一页的作答已到桩（占着名额）' }).toBeGreaterThan(before);
+  const atStub = fakeLearningRequests();
+  const btn = other.getByTestId('practice-submit');
+  await btn.click();
+  await expect(itemSection(other)).toHaveAttribute('data-error', 'rate_limited');
+  const t0 = Date.now();
+  await expect(btn).toHaveAttribute('data-cooldown', 'on');
+  await expect(btn).toBeDisabled();
+  await expect(btn).toHaveText(PRACTICE.retry);
+  await expect(other.getByTestId('practice-status')).toHaveText(PRACTICE_ERROR['rate_limited']!);
+  await expect(other.getByLabel(/答案/)).toBeDisabled();  // 留着票据，原样重发首次作答
+  await btn.click({ force: true });                        // 冷却中点了也不发请求
+  await onlyCopy(other);
+  await axe(other);
+  await expect(btn).toHaveAttribute('data-cooldown', 'off', { timeout: 5_000 });
+  expect(Date.now() - t0, '按 retry-after（1 秒）冷却').toBeGreaterThanOrEqual(700);
+  await expect(btn).toBeEnabled();
+  await expect(page.getByTestId('practice-result')).toHaveAttribute('data-pending-review', 'true', { timeout: 10_000 });
+  expect(fakeLearningRequests(), '被拒与冷却中的点击都没到桩').toBe(atStub);
+  await btn.click();                                       // 冷却结束不自动重发：学生自己点
+  await expect(other.getByTestId('practice-result')).toHaveAttribute('data-pending-review', 'true');
+  await other.close();
+});
+
 test('409、410、503 与无候选：各自的提示；过期票据要换一道题', async ({ page }) => {
   await loginStudent(page, P1);
   // 409：出题之后条目变了（学习服务拒绝）
