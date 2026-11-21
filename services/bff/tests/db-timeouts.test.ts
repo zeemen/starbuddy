@@ -9,6 +9,7 @@ import pg from 'pg';
 import { DB_TIMEOUTS, requestPoolConfig } from '../src/http/db-pool.ts';
 import { createSubjectGate, GATE_SUBJECTS, loadConcurrencyConfig, withSubjectSlot } from '../src/gate/subject-gate.ts';
 import { meteringFingerprint } from '../src/metering/fingerprint.ts';
+import { withAccount } from '../src/metering/db.ts';
 import { reserve } from '../src/metering/meter.ts';
 import { counters, createFamily, HAS_DB, key, ledgerConsistent, reservationsByStudent, setupHarness, type Harness } from './harness.ts';
 
@@ -57,15 +58,35 @@ test('取连接上限：池满时按时失败，不排队到底', { skip: !HAS_D
   again.release();
 });
 
-test('事务闲置：事务开着却不发语句超过时限，库端断开连接（锁与连接都放出来）', { skip: !HAS_DB }, async () => {
-  const p = pool(2, { idleInTransactionMs: 300 });
+test('事务闲置：经 withAccount 的事务闲置超时，库端断开连接；进程不退出、连接被销毁、池照常可用（合并前安全审查第 1 条）', { skip: !HAS_DB }, async () => {
+  // 不给借出的连接手动挂 error 监听：走生产路径（src/metering/db.ts 自己挂）。没有那个监听时，库端断开的 error 是未捕获异常，整个测试进程退出
+  const p = new pg.Pool(requestPoolConfig(undefined, 2, { idleInTransactionMs: 300 }));
+  pools.push(p);
+  await assert.rejects(withAccount(p, 'syn-account', async (c) => {
+    await new Promise((r) => setTimeout(r, 900));  // 事务开着、不发语句，超过闲置时限
+    return c.query('SELECT 1');
+  }));
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(p.totalCount, 0, '断开的连接已销毁，没还回池里');
+  const ok = await withAccount(p, 'syn-account', async (c) => (await c.query('SELECT 1 AS ok')).rows[0].ok);
+  assert.equal(ok, 1, '之后的请求照常');
+});
+
+test('withAccount 不给连接越挂越多的 error 监听：还回池里之前摘掉', { skip: !HAS_DB }, async () => {
+  const p = new pg.Pool(requestPoolConfig(undefined, 1));
+  pools.push(p);
+  for (let i = 0; i < 20; i++) await withAccount(p, 'syn-account', async (c) => c.query('SELECT 1'));
   const c = await p.connect();
-  c.on('error', () => {});
-  await c.query('BEGIN');
-  await new Promise((r) => setTimeout(r, 900));
-  await assert.rejects(c.query('SELECT 1'));
-  c.release(true);
-  assert.equal((await p.query('SELECT 1 AS ok')).rows[0].ok, 1, '断开的连接销毁后池照常可用');
+  try {
+    assert.equal(c.listenerCount('error'), 0, '借出时只剩调用方自己的监听（这里没有）');
+  } finally {
+    c.release();
+  }
+});
+
+test('main.ts 给连接池挂了 error 监听（空闲连接被库端断开时不让进程退出）', () => {
+  const main = readFileSync(fileURLToPath(new URL('../src/main.ts', import.meta.url)), 'utf8');
+  assert.match(main, /pool\.on\('error', \(e: Error & \{ code\?: unknown \}\) => \{\n\s+emit\('warn', \{ event: 'db_pool_idle_client_error'/);
 });
 
 test('数据库超时之后，分学科闸门的名额照常归还：同一科下一个请求立即拿到名额', { skip: !HAS_DB }, async () => {

@@ -110,3 +110,12 @@ test('学生、账号的散列与知识点不同行：有 student / account 时�
   assert.equal(badHash['student'], undefined, '不合格的散列本来就丢掉');
   assert.equal(badHash['node_id'], 'MATH.SYN.P1.N1');
 });
+
+test('访问日志不按请求记知识点：note / observe 不得用 node_id、cognitive_level（PR 28 合并前安全审查第 7 条，规则 13）', () => {
+  const bad: string[] = [];
+  for (const f of files(join(BFF, 'src'))) {
+    const t = readFileSync(f, 'utf8');
+    for (const m of t.matchAll(/\b(?:note|observe)\??\.?\(\s*'(node_id|cognitive_level)'/g)) bad.push(`${m[1]}（${relative(BFF, f)}）`);
+  }
+  assert.deepEqual(bad, [], '访问日志带账号散列：按请求记知识点就成了某账号的学习轨迹');
+});

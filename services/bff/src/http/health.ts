@@ -16,6 +16,9 @@ export const READY_CACHE_MS = 3000;
 export interface ReadyClient {
   query: (sql: string) => Promise<{ rows: Array<Record<string, unknown>> }>;
   release: (destroy?: boolean | Error) => void;
+  /** 真实连接都有；借出期间库端断开时接住 error，免得成为未捕获异常（同 src/metering/db.ts） */
+  on?: (event: 'error', fn: (e: Error) => void) => unknown;
+  off?: (event: 'error', fn: (e: Error) => void) => unknown;
 }
 export interface Connectable { connect: () => Promise<ReadyClient> }
 
@@ -27,9 +30,11 @@ export async function poolReady(pool: Connectable, timeoutMs = READY_TIMEOUT_MS)
   let finished = false;
   let client: ReadyClient | undefined;
   let released = false;
+  const onError = (): void => { /* 就绪检查借出期间库端断开：下面的查询照常失败、销毁连接 */ };
   const release = (destroy: boolean) => {
     if (client === undefined || released) return;
     released = true;
+    if (!destroy) client.off?.('error', onError);  // 还回池里的连接摘掉监听，免得每次检查多挂一个
     try { client.release(destroy); } catch { /* 释放失败不影响结果 */ }
   };
   const timeout = new Promise<boolean>((resolve) => {
@@ -37,6 +42,7 @@ export async function poolReady(pool: Connectable, timeoutMs = READY_TIMEOUT_MS)
   });
   const work = (async () => {
     client = await pool.connect();
+    client.on?.('error', onError);
     if (finished) { release(true); return false; }  // 借到连接时已超时：直接销毁
     try {
       const r = await client.query('SELECT 1 AS ok');

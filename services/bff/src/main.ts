@@ -189,6 +189,10 @@ try {
 }
 // 超时与兜底（specs/db-call-timeouts）：取连接 3 秒、语句 10 秒、事务闲置 15 秒（src/http/db-pool.ts）
 const pool = new pg.Pool(requestPoolConfig(url, 10));
+// 池里空闲的连接被库端断开（RDS 重启、主备切换、网络重置）时池会发 error：不监听就是未捕获异常、进程退出。只记事件名与错误码，池自己丢掉这条连接
+pool.on('error', (e: Error & { code?: unknown }) => {
+  emit('warn', { event: 'db_pool_idle_client_error', ...(typeof e.code === 'string' && /^[0-9A-Z]{5}$/.test(e.code) ? { sqlstate: e.code } : {}) });
+});
 try {
   await assertBffRole(pool);  // 连接角色配错会让 RLS 整体失效：拒绝启动
   // 已退出档案的统一判据（LT-06 决定记录（续）第 4 条）：迁移 0059 执行之后无条件生效（不挂内测开关）；内测开关打开而 0059 没执行时拒绝启动

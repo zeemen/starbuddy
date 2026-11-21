@@ -153,3 +153,11 @@ test('静态：服务端直接调 fetch 的文件，要么就是 bff.ts，要么
   assert.ok(checked >= 5, `检查到的直接调 fetch 的文件太少（${checked}），扫描写错了`);
   assert.deepEqual(bad, [], '这些文件直接调 fetch 却没有明确超时或没有接住异常；改用 src/lib/bff.ts 的 bffFetch');
 });
+
+test('导出包下载单独给 60 秒（凭据一兑换就作废，不能按通用的 10 秒在读响应体时超时；PR 28 合并前安全审查第 4 条）', async () => {
+  const src = readFileSync(join(WEB, 'src/lib/trust-api.ts'), 'utf8');
+  assert.match(src, /export const EXPORT_DOWNLOAD_TIMEOUT_MS = 60_000;/);
+  const fn = src.slice(src.indexOf('export async function downloadExport('));
+  assert.match(fn.slice(0, fn.indexOf('\n}\n')), /\}, EXPORT_DOWNLOAD_TIMEOUT_MS\);/, 'downloadExport 把时限传给 bffFetch');
+  assert.ok(60_000 > BFF_TIMEOUT_MS);
+});

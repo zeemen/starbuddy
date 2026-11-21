@@ -78,6 +78,12 @@ export const confirmErasure = (s: BffSession, student: string, request: string, 
 export const cancelErasure = (s: BffSession, student: string, request: string) =>
   call<{ request_id: string; status: string }>('data_rights', s, 'POST', `${S(student)}/erasure/${request}/cancel`);
 
+/**
+ * 导出包下载的时限（PR 28 合并前安全审查第 4 条）：凭据在 BFF 一兑换就作废，包大或网络慢时按通用的 10 秒（src/lib/bff.ts）可能在读响应体时超时，
+ * 家长只能重新发起导出。下载单独给 60 秒
+ */
+export const EXPORT_DOWNLOAD_TIMEOUT_MS = 60_000;
+
 /** 兑换一次性下载凭据：原样取回导出包（JSON 文本），不解析、不缓存；凭据不对、已用过、过期一律 404 */
 export async function downloadExport(s: BffSession, student: string, job: string, downloadRef: string)
   : Promise<{ ok: true; body: string } | { ok: false; status: number }> {
@@ -85,7 +91,7 @@ export async function downloadExport(s: BffSession, student: string, job: string
   const headers: Record<string, string> = { ...(await bffHeaders(s, true)), 'content-type': 'application/json' };
   const r = await bffFetch(`${bffBaseUrl()}/bff/v0${S(student)}/exports/${job}/download`, {
     method: 'POST', headers, body: JSON.stringify({ download_ref: downloadRef }), cache: 'no-store', redirect: 'error',
-  });
+  }, EXPORT_DOWNLOAD_TIMEOUT_MS);
   if (r === null) return { ok: false, status: 503 };
   return r.ok ? { ok: true, body: r.text } : { ok: false, status: r.status };
 }

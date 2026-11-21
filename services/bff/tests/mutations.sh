@@ -624,6 +624,9 @@ SM=(
   $'数据库超时：取连接不设上限\tsrc/http/db-pool.ts\t    connectionTimeoutMillis: t.connectionTimeoutMillis,\t'
   $'数据库超时：不设事务闲置超时\tsrc/http/db-pool.ts\t    idle_in_transaction_session_timeout: t.idleInTransactionMs,\t'
   $'数据库超时：main 不用这份配置\tsrc/main.ts\tnew pg.Pool(requestPoolConfig(url, 10))\tnew pg.Pool({ connectionString: url, max: 10 })'
+  $'数据库超时：借出的连接不监听 error\tsrc/metering/db.ts\t  client.on?.(\'error\', onError);\t'
+  $'数据库超时：还回池前不摘监听\tsrc/metering/db.ts\t    if (!broken) client.off?.(\'error\', onError);\n\t\n'
+  $'数据库超时：池不监听 error\tsrc/main.ts\tpool.on(\'error\', (e: Error & { code?: unknown }) => {\tpool.once(\'connect\', (e: Error & { code?: unknown }) => {'
   # 闸门的日志字段与定时汇总（specs/gate-log-fields）：跑 tests/gate-log-fields.test.ts（BFFMUT_FILTER=闸门日志：）
   $'闸门日志：白名单漏 gate_subject\tsrc/observability/log.ts\t  \'gate\', \'gate_subject\', \'gate_queue_ms\'\t  \'gate\', \'gate_queue_ms\''
   $'闸门日志：汇总不带计数\tsrc/gate/subject-gate.ts\tcounts: statsForLog(gate.stats())\tcounts: {}'
