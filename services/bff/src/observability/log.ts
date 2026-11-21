@@ -92,8 +92,14 @@ export function logFields(record: Record<string, unknown>): Record<string, unkno
     if (!LOG_FIELDS.has(nk)) continue;
     out[nk] = nk === 'request_id' && typeof v === 'string' && UUID_FULL.test(v) ? v : scrub(v, nk, 1);
   }
+  // 学生、账号的散列与知识点不同行（specs/log-field-audit 契约检查建议 1，规则 13）：同一行既有 student / account 又有 node_id、
+  // cognitive_level，就等于把“哪个学生在哪个知识点上”写进了日志，个人层的学习事实不进日志。有散列时丢掉知识点两项
+  if ('student' in out || 'account' in out) for (const k of NOT_WITH_PERSON) delete out[k];
   return out;
 }
+
+/** 不与学生、账号散列同行的字段（logFields 末尾执行） */
+export const NOT_WITH_PERSON: readonly string[] = ['node_id', 'cognitive_level'];
 
 export type Level = 'info' | 'warn' | 'error';
 

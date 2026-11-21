@@ -29,3 +29,12 @@
    `cognitive_level`（四个固定取值）。`node_id` 只出现在掌握重算单元失败的告警里，同一行没有学生标识。
 2. 检查扫不到动态拼出的键（例如 `record.update(**fields)`、学习服务 `plan_today` 返回的 `fields`）；这几处的键来自代码里的固定集合，目前都在白名单里，
    以后改动时请留意。
+
+## 合并前契约检查的两条建议（2026-11-21，用户“按建议，两条建议都做”）
+1. **BFF 的学生散列与知识点不同行**：`services/bff/src/observability/log.ts` 的 `logFields` 末尾加一条规则：一行里有 `student` 或 `account`
+   （散列）时，丢掉 `node_id`、`cognitive_level`（`NOT_WITH_PERSON`）。这样以后即使有人在同一行写出“学生散列 + 知识点”，生产日志里也只剩散列，
+   个人层的学习事实不进日志（规则 13）。测试：`tests/gate-log-fields.test.ts` 新增两条（这条规则本身；BFF 直接调用 `emit` / `#warn` / `warning:`
+   写的字典字面量的键都在白名单里）；变异“闸门日志：学生散列与知识点同行”被发现（这一组 4 条全部被发现）。
+2. **`node_name` 的兼容口径**：`openapi/practice.v0.yaml`、`retest.v0.yaml` 的字段说明写明“本版 BFF 一定带这个键（可为空），更早的 BFF 不带，
+   客户端须把缺键当作空处理”。前端单测补“缺键”的用例（再练；复测原有用例的桩本来就不带这个键，补了注释）。
+- 验证：前端单测 273 项、BFF 相关四个测试文件 45 项、`make check-fast` 通过。

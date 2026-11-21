@@ -161,6 +161,12 @@ test('列表：知识点名（specs/practice-retest-list-polish）——有名�
   }
   assert.equal(one({ node_id: 'bad node', node_name: '（合成）名称' }).node_name, null, '编号不合口径时名称也不显示');
   assert.equal(pickNodeName('x'.repeat(100)), 'x'.repeat(100));
+  // 更早的 BFF 不带 node_name 这个键（接口定义里写明）：缺键当作空，这一行照常
+  const { node_name: _drop, ...old } = wireEntry({}) as Record<string, unknown>;
+  assert.ok(!('node_name' in old));
+  const e = pickQueue({ entries: [old] })![0]!;
+  assert.equal(e.node_name, null, '缺键当作空');
+  assert.equal(e.node_id, 'MATH.SYN.N1', '其余字段不受影响');
 });
 
 test('列表在手机宽度按卡片排列：每格带列名（data-label 取表头同一条文案），显式 role 保住表格语义；样式只在 767px 以下生效', () => {

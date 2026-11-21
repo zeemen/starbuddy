@@ -75,3 +75,38 @@ test('定时汇总：每 60 秒一行 subject_gate_stats，counts 只有各科�
   assert.equal(timers[0]!.stopped, true);
   if (g.ok) g.release();
 });
+
+test('直接调用 emit 写的键也都在白名单里（specs/log-field-audit 契约检查建议 1）', () => {
+  const missing: string[] = [];
+  let seen = 0;
+  for (const f of files(join(BFF, 'src'))) {
+    const t = readFileSync(f, 'utf8');
+    // emit('级别', {...})、staging OTP 的 #warn({...})、闸门启动告警的 warning: {...}（都直接交给 emit）
+    for (const m of t.matchAll(/(?:\bemit\(\s*'(?:info|warn|error)'\s*,\s*|#warn\(\s*|\bwarning:\s*)\{([^}]*)\}/g)) {
+      for (const k of m[1]!.matchAll(/(?:^|[,{]\s*)([a-zA-Z_]+)\s*:/g)) {
+        seen += 1;
+        const nk = k[1]!.replace(/(?<=[a-z0-9])([A-Z])/g, '_$1').toLowerCase();
+        if (!LOG_FIELDS.has(nk) && !HASHED_FIELDS.has(nk)) missing.push(`${nk}（${relative(BFF, f)}）`);
+      }
+    }
+  }
+  assert.ok(seen >= 6, `扫描到了 emit 的键（${seen}）`);
+  assert.deepEqual(missing, [], '这些键在生产日志里会被整项丢掉');
+});
+
+test('学生、账号的散列与知识点不同行：有 student / account 时丢掉 node_id、cognitive_level（规则 13）', () => {
+  const h = 'a'.repeat(16);
+  const withStudent = JSON.parse(format('info', { event: 'x', student: h, node_id: 'MATH.SYN.P1.N1', cognitive_level: 'apply', status: 200 })) as Record<string, unknown>;
+  assert.equal(withStudent['student'], h);
+  assert.equal(withStudent['node_id'], undefined);
+  assert.equal(withStudent['cognitive_level'], undefined);
+  assert.equal(withStudent['status'], 200, '其余字段不受影响');
+  const withAccount = JSON.parse(format('info', { event: 'x', account: h, node_id: 'MATH.SYN.P1.N1' })) as Record<string, unknown>;
+  assert.equal(withAccount['node_id'], undefined);
+  const alone = JSON.parse(format('info', { event: 'x', node_id: 'MATH.SYN.P1.N1', cognitive_level: 'apply' })) as Record<string, unknown>;
+  assert.equal(alone['node_id'], 'MATH.SYN.P1.N1', '没有学生、账号时照常保留');
+  assert.equal(alone['cognitive_level'], 'apply');
+  const badHash = JSON.parse(format('info', { event: 'x', student: 'not-a-hash', node_id: 'MATH.SYN.P1.N1' })) as Record<string, unknown>;
+  assert.equal(badHash['student'], undefined, '不合格的散列本来就丢掉');
+  assert.equal(badHash['node_id'], 'MATH.SYN.P1.N1');
+});

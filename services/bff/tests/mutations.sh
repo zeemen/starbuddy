@@ -628,6 +628,7 @@ SM=(
   $'闸门日志：白名单漏 gate_subject\tsrc/observability/log.ts\t  \'gate\', \'gate_subject\', \'gate_queue_ms\'\t  \'gate\', \'gate_queue_ms\''
   $'闸门日志：汇总不带计数\tsrc/gate/subject-gate.ts\tcounts: statsForLog(gate.stats())\tcounts: {}'
   $'闸门日志：汇总按原名写计数\tsrc/gate/subject-gate.ts\tcounts: statsForLog(gate.stats())\tcounts: gate.stats()'
+  $'闸门日志：学生散列与知识点同行\tsrc/observability/log.ts\t  if (\'student\' in out || \'account\' in out) for (const k of NOT_WITH_PERSON) delete out[k];\t'
   # 内测前整改 P1（畸形请求不得让进程退出，src/http/server.ts）：跑 tests/malformed-request.test.ts（BFFMUT_FILTER=畸形请求：）
   $'畸形请求：路径解析不兜底\tsrc/http/server.ts\t    } catch {\\n      return false;\\n    }\\n    const hit = table\t    } catch (e) {\\n      throw e;\\n    }\\n    const hit = table'
   $'畸形请求：处理链不兜底\tsrc/http/server.ts\t    }).catch((e: unknown) => {\\n\t    }).catch((e: unknown) => {\\n      throw e;\\n'

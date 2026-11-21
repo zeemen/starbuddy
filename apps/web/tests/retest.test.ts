@@ -83,6 +83,7 @@ test('开关关时 BFF 客户端不发任何请求（按 404 返回）；打开�
 test('列表白名单：只取条目 ID、节点、层次、类别与状态；任务原因、空原因编码、掌握等丢弃；节点编号不合口径只隐藏那一格；形状不对整页不给', () => {
   const wire = (o: Record<string, unknown> = {}) => ({ entry_id: E1, node_id: 'MATH.SYN.N1', cognitive_level: 'apply', kind: 'retest', status: 'due',
                                                        reason: 'scheduled', empty_reason: null, p_mastery: 0.5, ...o });
+  // wire() 不带 node_name 这个键（更早的 BFF 就是这样）：缺键当作空
   const out = pickRetestQueue({ subject: 'math', entries: [wire(), wire({ kind: 'verify', status: 'unavailable', node_id: 'bad node' })] })!;
   assert.deepEqual(out, [{ entry_id: E1, node_id: 'MATH.SYN.N1', node_name: null, cognitive_level: 'apply', kind: 'retest', status: 'due' },
                          { entry_id: E1, node_id: null, node_name: null, cognitive_level: 'apply', kind: 'verify', status: 'unavailable' }]);
