@@ -27,7 +27,7 @@
 ## 运行检查
 
 ```bash
-python3 -m venv .venv && .venv/bin/pip install -r packages/contracts/requirements-dev.txt
+python3 -m venv .venv && .venv/bin/pip install --require-hashes -r packages/contracts/requirements-dev.lock  # 与 CI、scripts/bootstrap-deps.sh 相同；改了 requirements-dev.txt 要重新生成锁
 make contract-test PYTHON=.venv/bin/python      # 约 1 秒，check-fast 也会跑
 make contract-mutation PYTHON=.venv/bin/python  # 约 15 秒，make check 会跑
 make conformance PYTHON=.venv/bin/python        # 一致性测试：参考假适配器与阿鸦（约 5 秒）
