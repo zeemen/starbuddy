@@ -354,7 +354,7 @@ def create_app(settings: ReviewSettings | None = None, authenticate: StaffAuthen
         # 返回值与响应模型不符（多出的键、缺字段、类型或枚举不对；specs/review-console-responses）：只记路由模板与出错位置、类型，不记值
         route = getattr(request.scope.get("route"), "path", "unmatched")
         where = sorted({(".".join(str(x) for x in err.get("loc", ())[1:]), err.get("type", "")) for err in e.errors()})[:20]
-        log.error(json.dumps({"event": "review_response_invalid", "route": route, "errors": [f"{w} {t}" for w, t in where]}, ensure_ascii=False))
+        log.error(json.dumps({"event": "review_response_invalid", "route": route, "detail": [f"{w} {t}" for w, t in where]}, ensure_ascii=False))
         return JSONResponse(ReviewError(500, "INTERNAL").problem(), status_code=500, media_type="application/problem+json")
 
     @app.exception_handler(RequestValidationError)

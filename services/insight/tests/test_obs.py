@@ -104,3 +104,60 @@ def test_source_log_calls_carry_no_forbidden_fields():
                         bad += [(p.name, k.value) for k in d.keys
                                 if isinstance(k, ast.Constant) and isinstance(k.value, str) and obs.forbidden_key(k.value)]
     assert bad == [], f"日志里出现了禁止字段：{bad}"
+
+
+def test_actor_verifier_unavailable_logs_an_event():
+    """specs/log-field-audit：授权核对函数不可用（迁移未执行或没权限）时，日志经真实格式化后有事件名与错误类别，不再只剩 error_class"""
+    import io
+    import logging
+
+    import asyncpg
+
+    from insight.service import tools
+
+    class Conn:
+        async def fetchval(self, *a):
+            raise asyncpg.UndefinedFunctionError("insight.verify_actor")
+
+    class Acq:
+        async def __aenter__(self):
+            return Conn()
+
+        async def __aexit__(self, *a):
+            return False
+
+    class Pool:
+        def acquire(self):
+            return Acq()
+
+    buf = io.StringIO()
+    h = logging.StreamHandler(buf)
+    h.setFormatter(obs.JsonFormatter("insight"))
+    tools.log.addHandler(h)
+    try:
+        sid = "59000000-0000-4000-8000-0000000000c1"
+        ok = asyncio.run(tools.DbActorVerifier(Pool()).verify({"role": "student", "actor_ref": sid}, "student", sid))
+    finally:
+        tools.log.removeHandler(h)
+    assert ok is False
+    d = json.loads(buf.getvalue().splitlines()[-1])
+    assert d["event"] == "actor_verifier_unavailable" and d["error_class"] == "UndefinedFunctionError"
+    assert sid not in buf.getvalue()
+
+
+def test_tool_call_log_keeps_caller():
+    """工具调用日志的 caller（文件头写明要记）经真实格式化后保留"""
+    import io
+    import logging
+    buf = io.StringIO()
+    h = logging.StreamHandler(buf)
+    h.setFormatter(obs.JsonFormatter("insight"))
+    lg = logging.getLogger("starbuddy.insight.test_caller")
+    lg.addHandler(h)
+    lg.setLevel(logging.INFO)
+    try:
+        lg.info(json.dumps({"tool": "insight.explain", "caller": "bff", "status": 200}))
+    finally:
+        lg.removeHandler(h)
+    d = json.loads(buf.getvalue().splitlines()[-1])
+    assert d["caller"] == "bff" and d["tool"] == "insight.explain"
