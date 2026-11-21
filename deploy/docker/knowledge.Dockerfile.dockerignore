@@ -1,6 +1,7 @@
 # deploy/docker/knowledge.Dockerfile 专用（白名单；上下文是仓库根目录）。
 *
 !services/knowledge/requirements.lock
+!services/knowledge/build-requirements.lock
 !services/knowledge/knowledge
 !packages/contracts/openapi
 **/__pycache__

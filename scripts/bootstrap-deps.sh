@@ -19,7 +19,8 @@
 set -euo pipefail
 
 # Python 一律按锁文件、只装预编译包（PR 28 合并前安全审查 N6）：锁里同时有预编译包与源码包的哈希，缺预编译包时 pip 会退回
-# 构建源码包，而构建依赖不校验哈希。jieba（知识服务）只发布源码包，单独放开；它的构建依赖（setuptools）仍不校验哈希，见 specs/log-field-audit/lessons.md
+# 构建源码包，而构建依赖不校验哈希。jieba（知识服务）只发布源码包，单独放开；它的构建依赖 setuptools 先按
+# build-requirements.lock 的哈希装好，再以 --no-build-isolation 构建，不另下载（specs/jieba-hashed-build）
 PIP_LOCKED=(--require-hashes --only-binary=:all: --no-binary=jieba)
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -75,13 +76,21 @@ py_locked() { # <服务目录> [额外：contracts-editable]
     deps+=("$dir/$ref")
   done < <(sed -n 's/^-r[[:space:]]\{1,\}//p' "$lock")
   [ -n "$extra" ] && deps+=("packages/contracts/python/pyproject.toml")
+  # 有源码包要构建的服务（知识服务的 jieba）另有构建依赖锁：先装它，主锁再关掉构建隔离（specs/jieba-hashed-build）
+  local build_lock="$dir/build-requirements.lock" no_iso=()
+  if [ -f "$build_lock" ]; then deps+=("$build_lock"); no_iso=(--no-build-isolation); fi
   local digest; digest="$(lock_digest "${deps[@]}")"
 
   STEP="$dir：创建 .venv"
   if venv_setup "$dir/.venv" "$digest"; then
+    if [ -f "$build_lock" ]; then
+      STEP="$dir：pip install --require-hashes --only-binary=:all: -r build-requirements.lock（构建依赖）"
+      log "$STEP"
+      (cd "$dir" && .venv/bin/pip install -q --disable-pip-version-check --require-hashes --only-binary=:all: -r build-requirements.lock)
+    fi
     STEP="$dir：pip install --require-hashes --only-binary=:all: -r requirements-dev.lock"
     log "$STEP"
-    (cd "$dir" && .venv/bin/pip install -q --disable-pip-version-check "${PIP_LOCKED[@]}" -r requirements-dev.lock)
+    (cd "$dir" && .venv/bin/pip install -q --disable-pip-version-check "${PIP_LOCKED[@]}" "${no_iso[@]}" -r requirements-dev.lock)
     if [ -n "$extra" ]; then
       STEP="$dir：pip install --no-deps -e ../../packages/contracts/python"
       log "$STEP"

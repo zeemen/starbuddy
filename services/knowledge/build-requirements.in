@@ -1,0 +1,2 @@
+# jieba（只发布源码包、没有 pyproject.toml）构建时用的 setuptools：先按哈希装好，再以 --no-build-isolation 构建（specs/jieba-hashed-build）
+setuptools

@@ -17,8 +17,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /srv/starbuddy
 
-COPY services/knowledge/requirements.lock services/knowledge/requirements.lock
-RUN python -m pip install --require-hashes --only-binary=:all: --no-binary=jieba -r services/knowledge/requirements.lock  # jieba 只有源码包
+COPY services/knowledge/requirements.lock services/knowledge/build-requirements.lock services/knowledge/
+# jieba 只有源码包：先按哈希装构建用的 setuptools，再关掉构建隔离构建 jieba，构建依赖不另下载（specs/jieba-hashed-build）
+RUN python -m pip install --require-hashes --only-binary=:all: -r services/knowledge/build-requirements.lock \
+ && python -m pip install --require-hashes --only-binary=:all: --no-binary=jieba --no-build-isolation -r services/knowledge/requirements.lock
 
 COPY packages/contracts/openapi packages/contracts/openapi
 COPY services/knowledge/knowledge services/knowledge/knowledge
