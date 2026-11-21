@@ -21,7 +21,8 @@
   收窄后加了一条对应的正例。
 
 ## 验证
-- 见提交说明。
+- 本机六项全部通过：`make check-fast`（含新的 `log-field-check`）、`make deploy-check`（四份白名单逐项相同）、`make bff-test`、
+  `make learning-test`、`make insight-test`、`make knowledge-test`。
 
 ## 待人确认
 1. **安全负责人知情**：日志白名单（安全审查 B）多了 `caller`（调用方枚举）、`node_id`（公共知识层节点编码，不是个人数据）、
