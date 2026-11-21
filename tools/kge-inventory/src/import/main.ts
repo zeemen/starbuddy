@@ -4,7 +4,7 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { isolatedArgs } from "../main.ts";
 import { build, checkLegacy, ImportError, type LegacyNode, type Overrides } from "./build.ts";
@@ -54,6 +54,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// 按 file: URL 比较（目录名含中文时 import.meta.url 是百分号编码的，直接拼 file:// 永远不相等）
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
   process.exitCode = await main();
 }

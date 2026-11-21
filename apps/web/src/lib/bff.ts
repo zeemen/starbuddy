@@ -28,7 +28,18 @@ export function bffBaseUrl(env: Env = process.env): string {
   return u.origin;
 }
 
-/** 浏览器请求的 Origin 与客户端地址（按原样转交 BFF 核对；这里不做判断） */
+/**
+ * 转交给 BFF 的客户端地址（T46，specs/tech-debt-batch2）：只在 WEB_TRUST_CLIENT_IP=1 时转交，且只取网关覆盖写入的 X-Real-IP；
+ * 不取 X-Forwarded-For（第一段可被客户端伪造）。缺省不转交（BFF 在 staging 也默认不信，BFF_TRUST_CLIENT_IP=0）。
+ * 打开它是发布检查项：网关必须覆盖写 X-Real-IP，前端只对网关开放（deploy/config/README.md S5）。
+ */
+export function clientIpFor(get: (name: string) => string | null, env: Env = process.env): string | null {
+  if (env['WEB_TRUST_CLIENT_IP'] !== '1') return null;
+  const ip = get('x-real-ip')?.trim() ?? '';
+  return ip && ip.length <= 64 && /^[0-9A-Fa-f:.]+$/.test(ip) ? ip : null;
+}
+
+/** 浏览器请求的 Origin 与客户端地址（转交 BFF 核对；这里不判断身份） */
 export async function requestMeta(): Promise<Record<string, string>> {
   // 按需加载：本文件的地址白名单与只读请求在单测里直接引用（Node 解析不了 next/headers 的包内路径）
   const { headers } = await import('next/headers');
@@ -36,12 +47,33 @@ export async function requestMeta(): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
   const origin = h.get('origin');
   if (origin) out['origin'] = origin;
-  const ip = h.get('x-forwarded-for')?.split(',')[0]?.trim() || h.get('x-real-ip') || '';
-  if (ip && ip.length <= 64) out['x-sb-client-ip'] = ip;
+  const ip = clientIpFor((n) => h.get(n));
+  if (ip) out['x-sb-client-ip'] = ip;
   return out;
 }
 
 /** 以会话身份调 BFF 的请求头；改变状态的请求（write）另带 Origin、客户端地址与 CSRF 令牌 */
 export async function bffHeaders(s: BffSession, write: boolean): Promise<Record<string, string>> {
   return { ...(write ? await requestMeta() : {}), 'x-sb-session': s.token, ...(write ? { 'x-csrf-token': s.csrf } : {}) };
+}
+
+/** 调 BFF 的超时（毫秒，连同读响应体）：与审核台客户端（review.ts）一致 */
+export const BFF_TIMEOUT_MS = 10_000;
+
+/** BFF 的一次应答：状态码与响应体文本（响应体已读完） */
+export interface BffReply { status: number; ok: boolean; text: string }
+
+/**
+ * 调 BFF 的共用底层（内测前整改 P2）：每次请求都带明确超时；BFF 断连、拒绝连接、超时、读响应体中断一律返回 null，
+ * 由调用方映射成各自已有的失败结果，页面照常进它的失败提示分支（原来直接调 fetch：断连时抛出异常，慢响应等底层超时）。
+ * 地址由调用方先算好再传进来：BFF 地址配置错误（bffBaseUrl 抛出）不在这里吞掉。
+ */
+export async function bffFetch(url: string, init: Omit<RequestInit, 'signal'>, timeoutMs: number = BFF_TIMEOUT_MS): Promise<BffReply | null> {
+  try {
+    const r = await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+    const text = await r.text();
+    return { status: r.status, ok: r.ok, text };
+  } catch {
+    return null;
+  }
 }

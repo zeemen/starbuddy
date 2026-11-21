@@ -10,13 +10,14 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { alive, decide, endOf, entryOf, HEARTBEAT_SEC, IDLE_SEC, isEntry, MAX_AGE_SEC, type Presence } from '../src/behavior/presence.ts';
 import {
   PRESENCE_KEY_ENV, presenceCookieName, presenceCookieOptions, presenceKey, signPresence, verifyPresence, type SignContext,
 } from '../src/behavior/presence-server.ts';
 import { ALL_SHELL_COPY } from '../src/shell/copy.ts';
 
-const WEB = new URL('..', import.meta.url).pathname;
+const WEB = fileURLToPath(new URL('..', import.meta.url));
 const files = (dir: string): string[] => readdirSync(dir).flatMap((n) => {
   const p = join(dir, n);
   return statSync(p).isDirectory() ? files(p) : [p];

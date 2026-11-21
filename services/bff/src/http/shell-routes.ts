@@ -17,6 +17,7 @@ import type { OrderedList } from '../shell/today-orch.ts';
 import { linkIdFor, nodeClaims, resolveStatements, templateRef, type ShownStatement, type StatementJob } from '../shell/statements.ts';
 import { P } from './problems.ts';
 import { isLocalEnv, type RunEnv } from './config.ts';
+import { publishedNodeNames } from '../node-names.ts';
 import type { Ctx, Handler, Query, Reply, Route, ShellDeps } from './routes.ts';
 import { rateKey } from './secrets.ts';
 
@@ -198,10 +199,7 @@ const today: Handler = async (ctx) => {
   // 三、节点名与判断（RLS 下读，受众由会话决定）
   const { names, claims } = await withAccount(deps.pool, s.accountId, async (c) => {
     const q: Query = (sql, p) => c.query(sql, p);
-    const { rows } = nodeIds.length === 0 ? { rows: [] as { id: string; name: string }[] } : await q<{ id: string; name: string }>(
-      `SELECT n.id, n.name FROM kge.knowledge_node n JOIN kge.map_version v ON v.id = n.map_version_id
-        WHERE v.status = 'published' AND n.status = 'active' AND n.id = ANY ($1::text[])`, [nodeIds]);
-    return { names: new Map(rows.map((r) => [r.id, r.name])), claims: await nodeClaims(q, cfg, id, audience, claimNodes) };
+    return { names: await publishedNodeNames(q, nodeIds), claims: await nodeClaims(q, cfg, id, audience, claimNodes) };
   });
   const codeOf = new Map(first.subjects.map((r) => [r.product, r.code]));
   const jobs: StatementJob[] = [];

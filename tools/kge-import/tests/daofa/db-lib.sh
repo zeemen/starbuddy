@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 冲刺 4-K 道法切片库上测试的公共部分（被 source）：起一次性 Postgres（只监听 Unix socket，结束即删，规则 9）、执行全部迁移，
-# 登记合成内容包（adapters/zhixing/scripts/register-content.ts）、两个合成 staff 账号、合成的时政来源主机（.example 保留域名），
+# 登记合成内容包（tools/content-register/zhixing.ts）、两个合成 staff 账号、合成的时政来源主机（.example 保留域名），
 # 并提供生成与执行合成样例的函数。全部合成数据（规则 8）。退出码 3 = 本机没有 Postgres。
 HERE_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TOOL="$(cd "$HERE_LIB/../.." && pwd)"
@@ -18,7 +18,7 @@ daofa_db_start() {  # 成功 0；没有 Postgres 返回 3；其余失败返回 1
   apply "$ROOT/db/bootstrap/roles.sql" || return 1
   mapfile -t UPS < <(ls "$ROOT"/db/migrations/*.up.sql | sort)
   apply "${UPS[@]}" || return 1
-  (cd "$REPO/adapters/zhixing" && node --no-warnings scripts/register-content.ts) | psql_run >/dev/null || return 1
+  (cd "$REPO/adapters/zhixing" && node --no-warnings ../../tools/content-register/zhixing.ts) | psql_run >/dev/null || return 1
   psql_run -1 >/dev/null <<SQL || return 1
 INSERT INTO platform.account (id, kind) VALUES ('$STAFF', 'staff'), ('$STAFF2', 'staff');
 INSERT INTO policy.source_domain (host, issuer, added_by) VALUES

@@ -33,7 +33,7 @@ def _check(tool: str, res) -> dict:
     if res.is_error:
         assert C.problem_errors(body) == [], body
     else:
-        assert C.validate(C.tools[tool].response_schema, body) == [], body
+        assert C.for_version(body["contract_version"]).validate(C.tools[tool].response_schema, body) == [], body
     return body
 
 
@@ -43,8 +43,8 @@ async def test_mcp_tools_are_contract_operations(kgedb):
         server = build_mcp_server(core, lambda _ctx: "orchestrator")
         async with Client(server) as client:
             tools = (await client.list_tools()).tools
-        # 只列公共层 7 个工具；个人层三个在 MCP 不暴露（HTTP 仍回契约的 501）
-        assert [t.name for t in tools] == sorted(C.tools[t].operation_id for t in PUBLIC_TOOLS) and len(tools) == 7
+        # 只列公共层 8 个工具（v0.10 多了 standard_search）；个人层三个在 MCP 不暴露（HTTP 仍回契约的 501）
+        assert [t.name for t in tools] == sorted(C.tools[t].operation_id for t in PUBLIC_TOOLS) and len(tools) == 8
         assert not {C.tools[t].operation_id for t in PERSONAL_TOOLS} & {t.name for t in tools}
         for t in tools:
             spec = C.by_operation_id(t.name)
@@ -58,7 +58,7 @@ async def test_mcp_matches_http_and_validates_the_same(kgedb):
     try:
         server = build_mcp_server(core, lambda _ctx: "orchestrator")
         async with Client(server) as client, running_app(kgedb) as http:
-            for tool in sorted(set(PUBLIC_TOOLS) - {"page.get"}):
+            for tool in sorted(set(PUBLIC_TOOLS) - {"page.get", "standard.search"}):
                 body = example_request(tool)
                 body["context"]["caller"] = "orchestrator"
                 res = await client.call_tool(C.tools[tool].operation_id, body)
@@ -73,6 +73,11 @@ async def test_mcp_matches_http_and_validates_the_same(kgedb):
                     assert got["status"] == http_status, (tool, name)
             res = await client.call_tool("page_get", example_request("page.get") | {"context": ctx()})
             assert res.is_error and _check("page.get", res)["code"] == "METHOD_NOT_IMPLEMENTED"
+            # standard.search：没开 WeKnora 后端时 MCP 与 HTTP 都回 501（开了的情况见 test_weknora_backend.py）
+            sb = example_request("standard.search")
+            res = await client.call_tool("standard_search", sb)
+            assert res.is_error and _check("standard.search", res)["code"] == "METHOD_NOT_IMPLEMENTED"
+            assert (await call(http, "standard.search", sb, "orchestrator")).status_code == 501
             for tool in PERSONAL_TOOLS:  # MCP 不接个人层工具：与未知工具同一个 404；HTTP 仍是 501
                 res = await client.call_tool(C.tools[tool].operation_id, example_request(tool))
                 assert res.is_error and _check(tool, res)["status"] == 404
@@ -112,7 +117,7 @@ async def test_mcp_over_http_requires_token_and_loopback_host(kgedb):
         async with httpx2.AsyncClient(transport=transport, headers={"authorization": f"Bearer {CREDS['orchestrator']}"}) as hc:
             async with Client(streamable_http_client(url, http_client=hc)) as client:
                 names = [t.name for t in (await client.list_tools()).tools]
-                assert "node_get" in names and len(names) == 7 and "evidence_write" not in names
+                assert "node_get" in names and len(names) == 8 and "evidence_write" not in names
                 res = await client.call_tool("node_get", {"context": ctx("orchestrator"), "node_id": LINEAR})
                 assert not res.is_error and res.structured_content["result"]["node"]["node_id"] == LINEAR
                 res = await client.call_tool("node_get", {"context": ctx("bff"), "node_id": LINEAR})

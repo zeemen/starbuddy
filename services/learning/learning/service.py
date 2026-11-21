@@ -20,7 +20,7 @@ import asyncpg
 import httpx
 
 from . import meter as M
-from . import processing, store
+from . import map_check, metrics, processing, store
 from .adapter_client import call_adapter
 from .checks import collect_refs, local_id, parse_time, verify
 from .config import Settings
@@ -245,6 +245,13 @@ class IngestService:
         if attrs.channel == "keypad" and any(e["kind"] in ("ocr_transcription", "asr_transcription") for e in verified.evidence):
             raise IngestError(502, "ADAPTER_RESULT_REJECTED", "adapter result rejected by platform checks",
                               detail="recognition evidence on keypad channel")
+        # 地图版本交叉核对（PLT-25）：适配器自报的 graph: 段必须与证据将要记的地图版本一致；不一致不落库（确定失败，同上）
+        bound = await store.map_version_number(self.pool, attrs.map_version_id) if attrs.map_version_id else None
+        outcome = map_check.classify(ctx["subject"], response.get("source_version"), [bound] if bound else None)
+        metrics.MAP_VERSION_CHECK.labels(outcome=outcome).inc()
+        if outcome == "mismatch":
+            raise IngestError(502, "ADAPTER_RESULT_REJECTED", "adapter result rejected by platform checks",
+                              detail="map version mismatch")
         base = self._summary_base(method, forward, response, verified, c.attempt_ids)
         if versioned:  # v0 摘要没有这两个字段（learning-internal.v0 不改）
             base.update(evidence_level=attrs.evidence_level, learner_model_updated=attrs.learner_model_updated)

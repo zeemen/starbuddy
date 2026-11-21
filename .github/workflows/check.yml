@@ -10,8 +10,8 @@ name: check
 #
 #   事件                     跑什么                                    计费分钟（实测基数见下）
 #   ───────────────────────  ────────────────────────────────────────  ──────────────────
-#   pull_request             各组 -light（去掉全部 *-mutation）          ≈ 76
-#   push 到 main             各组 -light（同上）                        ≈ 76
+#   pull_request             各组 -light（去掉全部 *-mutation）+ cjk-path  ≈ 76 + 5
+#   push 到 main             各组 -light（同上）+ cjk-path               ≈ 76 + 5
 #   workflow_dispatch        默认只跑 *-mutation + db-mutation          ≈ 478
 #     （scope=light / full 可手动选别的）                               （full ≈ 554）
 #
@@ -41,7 +41,14 @@ on:
         type: choice
         default: mutation
         options: [mutation, light, full]
+      extra_browsers:
+        description: "另在 WebKit、Firefox 上跑数据权利用例（W13 T22；只装这两个浏览器、只跑两个 @data-rights 用例，约 20 分钟；缺省不跑）"
+        type: boolean
+        default: false
 
+# 第三方 Actions 一律固定到提交哈希（specs/ci-supply-chain-pins）：标签可以被改指向别的提交，哈希不能。注释写对应的版本，
+# 升级时同时改哈希与注释（查法：git ls-remote --tags https://github.com/actions/<名字>，取版本标签剥离后的提交）；
+# deploy/tests/test_check_workflow.py 核对每个 uses 都是 40 位哈希并带版本注释，且不低于 Node 24 运行时的大版本（specs/ci-actions-node24）。
 permissions:
   contents: read
 
@@ -73,18 +80,19 @@ jobs:
     env:
       NEXT_TELEMETRY_DISABLED: "1"   # Next.js 默认会向境外发匿名遥测（ADR 09）
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false   # 仓库令牌不写进 .git/config（安全审查 S3）
           fetch-depth: 0               # 人设回归要算 merge-base 与基线提交（冲刺 3-F，spec 待人确认 #11）
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.11"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
+          package-manager-cache: false   # v5 起不给 cache 就按包管理器自动开缓存；本仓不加缓存（见文件头），也少一个投毒入口
 
       - name: PostgreSQL 16（只用来起本机一次性实例）
         run: |
@@ -120,12 +128,92 @@ jobs:
 
       - name: 上传人设回归报告（保留 90 天）
         if: always() && matrix.group == 'persona'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: persona-report
           path: ${{ runner.temp }}/persona-report/
           retention-days: 90
           if-no-files-found: warn
+
+  # WebKit、Firefox 上的数据权利用例（W13 T22，specs/tech-debt-batch3 E）：只在手动触发且勾选 extra_browsers 时跑，与 scope 无关。
+  # playwright.config.ts 按 STARBUDDY_E2E_BROWSERS 加 trust-on-webkit / trust-on-firefox 两个项目（只收 @data-rights）；
+  # 这里只跑这两个项目，chromium 的端到端仍在 bff-web 组里。只用合成数据，不需要任何密钥。
+  extra-browsers:
+    if: github.event_name == 'workflow_dispatch' && inputs.extra_browsers
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      STARBUDDY_E2E_BROWSERS: webkit,firefox
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          package-manager-cache: false   # v5 起不给 cache 就按包管理器自动开缓存；本仓不加缓存（见文件头），也少一个投毒入口
+
+      - name: PostgreSQL 16（只用来起本机一次性实例）
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q postgresql-16
+          sudo systemctl stop postgresql || true
+
+      - name: 开发依赖（scripts/bootstrap-deps.sh，按锁文件）
+        run: PY_BOOT=python bash scripts/bootstrap-deps.sh
+
+      - name: Playwright 浏览器（WebKit、Firefox）
+        working-directory: apps/web
+        run: npx --no-install playwright install --with-deps webkit firefox
+
+      - name: 数据权利用例（WebKit、Firefox，严格模式）
+        run: PGBIN=/usr/lib/postgresql/16/bin CONTRACT_STRICT=1 bash apps/web/scripts/e2e.sh --project=trust-on-webkit --project=trust-on-firefox --reporter=line
+
+  # 中文目录回归（内测前整改待确认第 2 条，specs/launch-test-2026/prelaunch-fixes.md）：开发者本机的仓库在含中文的目录里，
+  # 把 URL 的 pathname 当文件路径、手拼 file:// 这类问题只在那样的目录里出现（tools/path-url-check 只拦常见写法）。
+  # 仓库直接检出到含中文的路径（不另外复制），跑 make cjk-path-test：与文件路径有关的单测类目标，不含变异与端到端。
+  # PR 与 push 到 main 跑；手动触发只在 scope 为 light / full 时跑。实测约 5 分钟（run 43820076356：依赖安装约 1.3 分钟、测试约 3 分钟）。
+  cjk-path:
+    if: github.event_name != 'workflow_dispatch' || inputs.scope != 'mutation'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    defaults:
+      run:
+        working-directory: 升学教育产品/starbuddy
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: 升学教育产品/starbuddy
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          package-manager-cache: false   # v5 起不给 cache 就按包管理器自动开缓存；本仓不加缓存（见文件头），也少一个投毒入口
+
+      - name: PostgreSQL 16（只用来起本机一次性实例）
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q postgresql-16
+          sudo systemctl stop postgresql || true
+
+      - name: 开发依赖（scripts/bootstrap-deps.sh，按锁文件）
+        run: PY_BOOT=python bash scripts/bootstrap-deps.sh
+
+      - name: make cjk-path-test（检出目录含中文，严格模式）
+        run: make cjk-path-test CONTRACT_STRICT=1 PYTHON=.venv-contracts/bin/python PGBIN=/usr/lib/postgresql/16/bin
 
   # 数据库变异测试（db/tests/mutations.sh，1251 个变异）：只在手动触发且 scope 为 mutation / full 时跑。
   # 这个脚本自己已经按 nproc 并行（DBMUT_JOBS，见 mutations.sh），所以 12 个分片买到的是墙上时间
@@ -141,11 +229,11 @@ jobs:
       matrix:
         shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.11"
 
@@ -159,7 +247,7 @@ jobs:
       - name: 契约检查依赖（含 PyYAML）
         run: |
           python -m venv .venv-contracts
-          .venv-contracts/bin/pip install -q -r packages/contracts/requirements-dev.txt
+          .venv-contracts/bin/pip install -q --require-hashes --only-binary=:all: -r packages/contracts/requirements-dev.lock
 
       - name: 数据库变异测试（分片 ${{ matrix.shard }}/12，严格模式）
         run: make db-mutation CONTRACT_STRICT=1 PYTHON=.venv-contracts/bin/python PGBIN=/usr/lib/postgresql/16/bin DBMUT_SHARD=${{ matrix.shard }}/12

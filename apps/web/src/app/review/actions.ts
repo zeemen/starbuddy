@@ -7,7 +7,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { currentSession, staffCookieName, staffCookieOptions } from '../../lib/review-session.ts';
 import {
-  ADMISSIONS, LICENSE_STATUSES, POLICY_RECORD_TYPES, SOURCE_TYPES, addSourceDomain, applyAdmission, editNode, isBasis, isCommit, isDigest,
+  addSourceDomain, isAdmission, isDecision, isLicenseStatus, isPolicyRecordType, isSourceType, applyAdmission, editNode, isBasis, isCommit, isDigest,
   isItemId, isNodeId, isResolutionCode, isReviewLevel, isSourceHost, isSourceNote, isSourceRef, isSubject, isTaskId, isVersionId, lines,
   loginRequest, logoutRequest, publishContentVersion, publishScheme, publishVersion, releaseTask, resolveTask, retireContentVersion,
   retireSourceDomain, retireVersion, signAdmission, signChange, signContentVersion, signPage, signPolicyRecord, signScheme, signSpotCheck,
@@ -85,7 +85,7 @@ export async function signVersionAction(_: ActionState | null, f: FormData): Pro
   const digest = text(f, 'expected_digest');
   const decision = text(f, 'decision');
   const basis = text(f, 'basis_code');
-  if (!isVersionId(version) || !isDigest(digest) || !['approved', 'rejected'].includes(decision) || (basis !== '' && !isBasis(basis))) {
+  if (!isVersionId(version) || !isDigest(digest) || !isDecision(decision) || (basis !== '' && !isBasis(basis))) {
     return INVALID;
   }
   const body = { decision, expected_digest: digest, ...(basis ? { basis_code: basis } : {}) };
@@ -99,7 +99,7 @@ export async function signChangeAction(_: ActionState | null, f: FormData): Prom
   const change = text(f, 'change');
   const digest = text(f, 'expected_digest');
   const decision = text(f, 'decision');
-  if (!isVersionId(version) || !isVersionId(change) || !isDigest(digest) || !['approved', 'rejected'].includes(decision)) return INVALID;
+  if (!isVersionId(version) || !isVersionId(change) || !isDigest(digest) || !isDecision(decision)) return INVALID;
   return done(await signChange(who, change, { decision, expected_digest: digest }), 'change_signed', version);
 }
 
@@ -163,7 +163,6 @@ function doneAt<T>(r: Result<T>, okCode: string, ...paths: string[]): ActionStat
   for (const p of paths) revalidatePath(p);
   return { code: okCode };
 }
-const DECISIONS = ['approved', 'rejected'];
 
 export async function signContentAction(_: ActionState | null, f: FormData): Promise<ActionState> {
   const who = await staff();
@@ -172,7 +171,7 @@ export async function signContentAction(_: ActionState | null, f: FormData): Pro
   const digest = text(f, 'expected_digest');
   const decision = text(f, 'decision');
   const basis = text(f, 'basis_code');
-  if (!isVersionId(id) || !isDigest(digest) || !DECISIONS.includes(decision) || (basis !== '' && !isBasis(basis))) return INVALID;
+  if (!isVersionId(id) || !isDigest(digest) || !isDecision(decision) || (basis !== '' && !isBasis(basis))) return INVALID;
   const body = { decision, expected_digest: digest, ...(basis ? { basis_code: basis } : {}) };
   return doneAt(await signContentVersion(who, id, body), 'signed', `/review/content/${id}`);
 }
@@ -213,10 +212,10 @@ export async function signAdmissionAction(_: ActionState | null, f: FormData): P
   const ref = opt(f, 'source_ref');
   const type = opt(f, 'source_type');
   const license = opt(f, 'license_status');
-  if (!isVersionId(cv) || !isSubject(subject) || !isItemId(item) || !(ADMISSIONS as readonly string[]).includes(to)
-      || !DECISIONS.includes(decision) || !isDigest(digest) || (level !== undefined && !isReviewLevel(level))
-      || (ref !== undefined && !isSourceRef(ref)) || (type !== undefined && !(SOURCE_TYPES as readonly string[]).includes(type))
-      || (license !== undefined && !(LICENSE_STATUSES as readonly string[]).includes(license))) {
+  if (!isVersionId(cv) || !isSubject(subject) || !isItemId(item) || !isAdmission(to)
+      || !isDecision(decision) || !isDigest(digest) || (level !== undefined && !isReviewLevel(level))
+      || (ref !== undefined && !isSourceRef(ref)) || (type !== undefined && !isSourceType(type))
+      || (license !== undefined && !isLicenseStatus(license))) {
     return INVALID;
   }
   const body: AdmissionSign = { subject, item_id: item, to_admission: to, decision, expected_digest: digest,
@@ -240,7 +239,7 @@ export async function signSchemeAction(_: ActionState | null, f: FormData): Prom
   const id = text(f, 'scheme');
   const digest = text(f, 'expected_digest');
   const decision = text(f, 'decision');
-  if (!isVersionId(id) || !isDigest(digest) || !DECISIONS.includes(decision)) return INVALID;
+  if (!isVersionId(id) || !isDigest(digest) || !isDecision(decision)) return INVALID;
   return doneAt(await signScheme(who, id, { decision, expected_digest: digest }), 'signed', `/review/policy/${id}`);
 }
 
@@ -261,7 +260,7 @@ export async function signPolicyRecordAction(_: ActionState | null, f: FormData)
   const digest = text(f, 'expected_digest');
   const decision = text(f, 'decision');
   // 来源文件、招录行、学校，以及迁移 0047 起的控制线（control_line）
-  if (!isVersionId(id) || !(POLICY_RECORD_TYPES as readonly string[]).includes(type) || !isDigest(digest) || !DECISIONS.includes(decision)) {
+  if (!isVersionId(id) || !isPolicyRecordType(type) || !isDigest(digest) || !isDecision(decision)) {
     return INVALID;
   }
   return doneAt(await signPolicyRecord(who, id, { object_type: type, decision, expected_digest: digest }), 'signed', '/review/policy');
@@ -323,7 +322,7 @@ export async function signPageAction(_: ActionState | null, f: FormData): Promis
   const page = text(f, 'page_id');
   const commit = text(f, 'page_commit');
   const decision = text(f, 'decision');
-  if (!isNodeId(page) || !isCommit(commit) || !DECISIONS.includes(decision)) return INVALID;
+  if (!isNodeId(page) || !isCommit(commit) || !isDecision(decision)) return INVALID;
   return doneAt(await signPage(who, { page_id: page, page_commit: commit, decision }), 'signed', '/review/pages');
 }
 
@@ -333,6 +332,6 @@ export async function spotCheckAction(_: ActionState | null, f: FormData): Promi
   const page = text(f, 'page_id');
   const commit = text(f, 'page_commit');
   const decision = text(f, 'decision');
-  if (!isNodeId(page) || !isCommit(commit) || !DECISIONS.includes(decision)) return INVALID;
+  if (!isNodeId(page) || !isCommit(commit) || !isDecision(decision)) return INVALID;
   return doneAt(await signSpotCheck(who, { page_id: page, page_commit: commit, decision }), 'recorded', '/review/spot-checks', '/review/pages');
 }

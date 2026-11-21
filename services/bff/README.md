@@ -30,7 +30,8 @@
     宵禁时段（计量只读函数 `platform.meter_guard_status` 的 `in_curfew`，迁移 0030，与 `meter_reserve` 同一口径、同一计量时钟；
     BFF 不自算宵禁）续做、取题、探针、作答回 402 `curfew` 并暂停会话。
     探针经 2-L 库函数写入（幂等键由会话与步骤派生）并在作答后关联。
-  - 学习服务地址与令牌：`BFF_LEARNING_URL`、`BFF_LEARNING_TOKEN`（不设时诊断接口 503）。
+  - 学习服务地址与令牌：`BFF_LEARNING_URL`、`BFF_LEARNING_TOKEN`（写入令牌：今日计划、星图）、`BFF_LEARNING_SESSION_TOKEN`
+    （会话令牌：诊断、错题再练、复测、今日编排；与写入令牌不同，PLT-24）。不设地址时诊断接口 503；设了地址而缺任何一枚即拒绝启动。
 
 - 统一壳 H4 读路由（`src/http/shell-routes.ts`、`src/shell/`；`config/shell.json`）：选科（目录读取、家长开通 / 暂停，只经 `enroll_subject` / `pause_subject`）、
   今日计划（经学习服务 `POST /internal/v1/plan`；推荐理由只取洞察服务 `insight.explain` 的 `RenderedStatement.text`，对外模板白名单为空时不显示）、

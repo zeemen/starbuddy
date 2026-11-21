@@ -7,11 +7,12 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { allDiagnosisCopy, DIAGNOSIS_COPY, formatDuration } from '../src/diagnosis/copy.ts';
 import { failure, pickView, restartSession, type DiagnosisView } from '../src/lib/diagnosis.ts';
 import { CLASSES, loadForbidden, ruleLineCount } from './forbidden-lexicon.ts';
 
-const WEB = new URL('..', import.meta.url).pathname;
+const WEB = fileURLToPath(new URL('..', import.meta.url));
 
 test('诊断文案不命中禁语表（禁语表能读出来且确实能命中）', () => {
   const rules = loadForbidden();

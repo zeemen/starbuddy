@@ -8,7 +8,7 @@
 // 退出码：0 成功；1 输入或校验失败；2 参数不对（含 --out 不合要求）。
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { loadBank } from "../../kge-import/src/legacy-items.ts";
 import { DEFAULT_CONFIG } from "./config.ts";
@@ -105,6 +105,7 @@ export function main(argv = process.argv.slice(2)): number {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// 按 file: URL 比较（目录名含中文时 import.meta.url 是百分号编码的，直接拼 file:// 永远不相等）
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
   process.exitCode = main();
 }

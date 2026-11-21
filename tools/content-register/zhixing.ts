@@ -1,14 +1,16 @@
-// 内容登记脚本（spec 设计要点 2；写法同 adapters/aya/scripts/register-content.ts）：把内容包里的课程版本、能力视图节点、
+// 位置（W13 T11，specs/tech-debt-batch3 待人确认 #4）：内容登记生成写 platform.* 的 SQL，属于平台运维工具，不是适配器运行时，
+// 所以放在 tools/content-register/，不放在 adapters/zhixing/（CLAUDE.md 规则 1：适配器不直接读写平台表）。只读适配器的内容包加载代码。
+// 内容登记脚本（spec 设计要点 2；写法同 tools/content-register/aya.ts）：把内容包里的课程版本、能力视图节点、
 // 题目登记进 platform.curriculum_version / skill_node / item。证据表对题目有外键，不登记就写不进去。
 //
 // 只输出 SQL，不连接任何数据库（CLAUDE.md 规则 9）。目标库由执行人决定（pilot 与生产由人执行）：
-//   node scripts/register-content.ts > /tmp/zhixing-register.sql
+//   node tools/content-register/zhixing.ts > /tmp/zhixing-register.sql   # 在仓库根目录；或 cd adapters/zhixing && npm run register:sql
 //   psql -X -v ON_ERROR_STOP=1 -f /tmp/zhixing-register.sql
 //
 // 只增不改：已登记的行 ON CONFLICT DO NOTHING。题目一律登记为 pending_review：准入由教研在审核台做（发布闸门），
 // 不由本脚本做。采分点不在这里登记（道法 Rubric 入 kge.scoring_point 属于 KGE S4，spec“不做”）。
 import { fileURLToPath } from "node:url";
-import { itemNodes, loadPack, type Admission, type LoadedPack } from "../src/content.ts";
+import { itemNodes, loadPack, type Admission, type LoadedPack } from "../../adapters/zhixing/src/content.ts";
 
 /** 登记时的准入状态：一律 pending_review；已被拒的保持 rejected（只会更严） */
 export const registeredAdmission = (a: Admission): Admission => (a === "rejected" ? "rejected" : "pending_review");

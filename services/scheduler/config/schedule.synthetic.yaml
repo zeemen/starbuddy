@@ -60,6 +60,22 @@ jobs:
     schedule: daily 04:10
     identity: scheduler
     args: [model-call-purge, --batch, "1000"]
+  partition-ensure:
+    $comment: >-
+      分区续建（platform.ensure_partitions_ahead，迁移 0062；specs/plt23-data-maintenance）：给四张按月分区表补建当月起 7 个月里缺的分区，
+      之后任何一张表剩余不足 3 个月即退出码 1（记 alert）。每日 03:10 为默认值，待人签字：本文件是合成时间表，只在 dev / test 生效；
+      staging 只收签字时间表（schedule.signed.yaml），签字前不启用（0062 也须先由人执行）。
+    schedule: daily 03:10
+    identity: scheduler
+    args: [partition-ensure]
+  retention-purge:
+    $comment: >-
+      过程数据保留期清理（五个 retention_purge_* 函数，迁移 0063；specs/plt23-data-maintenance）：写入幂等 30 天、验证码过期后 1 天、
+      会话失效后 30 天、限流计数 2 天、行为事件 180 天（保留期写在库函数里，须与隐私政策一致）；每张表每批 1000 行一个事务，一批不满即停；
+      到了批次上限退出码 1，下一轮接着删。每日 03:40 为默认值，待人签字（同上，签字前不启用，0063 须先由人执行）。
+    schedule: daily 03:40
+    identity: scheduler
+    args: [retention-purge, --batch, "1000"]
   metrics:
     $comment: >-
       中圈指标静默重算（insight.jobs metrics --all → jobs.recompute_metrics；SIE-05，specs/sie05-silent-metrics）：结果只写

@@ -26,3 +26,4 @@
 6. 公式仍为纯文本排版；引入 KaTeX（MIT）需另走依赖许可审批（present-item lessons #5）。
 7. 不在本步：契约给 `TeachSegment.dsl` 定结构、适配器输出 `whiteboard_dsl`、讲解台词与角色出场规则（人设）、`lesson_mode` 分档与 `lesson_whiteboard` 扣次（计量）、DSL 发布闸门与教研审核、插话转实时（模型），均属必停另起。
 8. 子代理顺带发现 `apps/web/src/lib/rich-item.ts` 的 `latexToText` 用 `name in SYMBOL` 判断命令，原型链名字（`\toString` 等）会输出函数源码且被放行；已建议另起任务修复并核对 BFF 同类实现。
+   **已修（2026-11-17）**：复现 `latexToText('\toString')` 返回 `function toString() { [native code] }`；改为 `Object.hasOwn(SYMBOL, name)`，`tests/rich-item.test.ts` 加 7 个原型链名字（排版返回 null、`pickRich` 整体拒绝、命令表不含）。BFF `src/item-rich.ts` 按 `Set` 查，本来就拒绝，测试一并核对。全仓按 `x in 常量表` 查过：另一处 `services/bff/src/observability/metrics.ts` 的 `name in ENUMS` 之前已过标签白名单，不受影响。

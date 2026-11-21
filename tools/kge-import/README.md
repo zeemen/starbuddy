@@ -47,7 +47,7 @@ node --no-warnings src/main.ts --aya ../../legacy/aya --map ../../db/seeds/kge/a
   - `kge.tag_candidate`：其余在已导入主题里、有候选的题，去重后的全部候选，`item_source_kind = legacy`（教研接受主考点候选写回 item_tag 时沿用；
     `id`、`status`、`created_at` 用默认值）；
   - 不写 `platform.curriculum_version`（六段由内容登记脚本负责）；不含题干、答案、解析。
-  - 执行前提：迁移 0011、0019、0024；地图版本种子已执行；题目已由 `adapters/aya/scripts/register-content.ts` 登记。
+  - 执行前提：迁移 0011、0019、0024；地图版本种子已执行；题目已由 `tools/content-register/aya.ts` 登记。
 - `worklist.md`：教研工作单——推不出六段的题、落在未导入主题的题（计数与 ID）、自然语言引用对不上节点的题（附 legacy 同名 / 相近节点建议）、
   无处可标的题、A 级但不能写 item_tag 的题、节点数超上限的题、未登记的题、未生成的题组等。
 - `tagging-report.json`：格式 `kge-tagging-report/1`，类型定义在 `src/items/report-types.ts`（`TaggingReport`，覆盖矩阵报表按它读）。

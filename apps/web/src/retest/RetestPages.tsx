@@ -35,20 +35,22 @@ export async function RetestListPage({ studentId, subject }: { studentId: string
       {!entries ? <p className="muted" data-unavailable="retest">{RETEST.unavailable}</p>
         : entries.length === 0 ? <p className="muted" data-testid="retest-list-empty">{RETEST.empty}</p> : (
           <div className="table-scroll">
-            <table className="trust-table practice-table" data-testid="retest-entries">
-              <thead>
-                <tr>
-                  <th scope="col">{RETEST.colKind}</th><th scope="col">{RETEST.colNode}</th><th scope="col">{RETEST.colLevel}</th>
-                  <th scope="col">{RETEST.colStatus}</th>
+            {/* 手机宽度下按卡片排列（同错题再练列表，globals.css 的 .card-table）。specs/practice-retest-list-polish */}
+            <table className="trust-table practice-table card-table" data-testid="retest-entries" role="table">
+              <thead role="rowgroup">
+                <tr role="row">
+                  <th scope="col" role="columnheader">{RETEST.colKind}</th><th scope="col" role="columnheader">{RETEST.colNode}</th>
+                  <th scope="col" role="columnheader">{RETEST.colLevel}</th><th scope="col" role="columnheader">{RETEST.colStatus}</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody role="rowgroup">
                 {entries.map((e) => (
-                  <tr key={e.entry_id} data-entry-id={e.entry_id} data-entry-status={e.status}>
-                    <td>{RETEST_KIND[e.kind]}</td>
-                    <td>{e.node_id ? <span data-value="node">{e.node_id}</span> : null}</td>
-                    <td>{RETEST_LEVEL[e.cognitive_level]}</td>
-                    <td>
+                  <tr key={e.entry_id} data-entry-id={e.entry_id} data-entry-status={e.status} role="row">
+                    <td role="cell" data-label={RETEST.colKind}>{RETEST_KIND[e.kind]}</td>
+                    <td role="cell" data-label={RETEST.colNode}>{e.node_name ? <span data-value="node-name">{e.node_name}</span>
+                      : e.node_id ? <span data-value="node">{e.node_id}</span> : null}</td>
+                    <td role="cell" data-label={RETEST.colLevel}>{RETEST_LEVEL[e.cognitive_level]}</td>
+                    <td role="cell" data-label={RETEST.colStatus}>
                       {e.status === 'due' ? (
                         <a href={`${listPath(studentId, subject)}/${e.entry_id}`} data-testid="retest-start">{RETEST.start}</a>
                       ) : <span>{RETEST_STATUS[e.status]}</span>}

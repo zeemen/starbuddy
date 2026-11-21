@@ -1,7 +1,7 @@
 // 星图 v1 的数据：类型与 BFF 客户端（只在服务端调用；浏览器不直连 BFF）。响应结构见 services/bff/openapi/star-map.v1.yaml。
 // 星 = 已发布地图里的知识节点，按领域（星座）、主题（子群）分组；判断先于展示——前端只用 BFF 给的 display / retained / claim_id，
 // 不自己推算掌握状态，也不补任何关于学生的文字（规则 2、11）。只在开关 starmap_v1 打开时调用（src/star/features.ts）。
-import { bffBaseUrl, bffHeaders, type BffSession } from './bff.ts';
+import { bffBaseUrl, bffFetch, bffHeaders, type BffSession } from './bff.ts';
 import { isUuid } from './star-map.ts';
 
 export type PaintedDisplay = 'unlit' | 'half' | 'lit';
@@ -41,12 +41,14 @@ export const starMapV1Path = (studentId: string): string => `/bff/v0/students/${
 export async function fetchStarMapV1(studentId: string, session: BffSession | null): Promise<StarMapV1Result> {
   if (!session) return { kind: 'unauthenticated' };
   if (!isUuid(studentId)) return { kind: 'not-found' };
-  const r = await fetch(`${bffBaseUrl()}${starMapV1Path(studentId)}`, {
+  const r = await bffFetch(`${bffBaseUrl()}${starMapV1Path(studentId)}`, {
     headers: await bffHeaders(session, false),
     cache: 'no-store',
   });
+  // 断连、超时（内测前整改 P2：原来没有明确超时）与 5xx 同一个分支：抛错，进页面已有的错误页
+  if (r === null) throw new Error('star map v1 request failed: unavailable');
   if (r.status === 401) return { kind: 'unauthenticated' };
   if (r.status === 404) return { kind: 'not-found' };
   if (!r.ok) throw new Error(`star map v1 request failed: ${r.status}`);
-  return { kind: 'ok', map: (await r.json()) as StarMapV1 };
+  return { kind: 'ok', map: JSON.parse(r.text) as StarMapV1 };
 }

@@ -11,7 +11,8 @@ import { isPracticeSubject, practiceEnabled } from './features.ts';
 import { pickAnswer, pickNext, uiError, UUID, type AnswerView, type NextView, type UiError } from './view.ts';
 
 export type NextOutcome = NextView | { kind: 'error'; error: UiError };
-export type AnswerOutcome = { kind: 'result'; result: AnswerView } | { kind: 'error'; error: UiError };
+/** retryAfterSec：只在作答被限流（rate_limited）时带，BFF 给的 retry-after 秒数，没有为 null（specs/retry-after-cooldown） */
+export type AnswerOutcome = { kind: 'result'; result: AnswerView } | { kind: 'error'; error: UiError; retryAfterSec?: number | null };
 
 const TICKET = /^sbp1\.[A-Za-z0-9_-]{1,2395}$/;
 
@@ -52,7 +53,10 @@ export async function answerPracticeAction(csrf: string, student: string, subjec
   if (typeof ticket !== 'string' || !TICKET.test(ticket)) return err('ticket_used');
   if (!isAnswer(answer)) return err('invalid_answer');
   const r = await answerPractice(b.s, b.student, b.subject, ticket, answer);
-  if (!r.ok) return err(uiError(r, 'answer'));
+  if (!r.ok) {
+    const e = uiError(r, 'answer');
+    return e === 'rate_limited' ? { kind: 'error', error: e, retryAfterSec: r.retryAfterSec ?? null } : err(e);
+  }
   const result = pickAnswer(r.value, entry);
   return result ? { kind: 'result', result } : err('unavailable');
 }

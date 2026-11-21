@@ -341,6 +341,12 @@ python3 deploy/migrate/migrate.py rehearse --dsn-env REPLICA_DSN --target-label 
    psql "$PRIMARY_DSN" -X -c "SELECT has_function_privilege('starbuddy_learning', 'platform.learning_meter_check(uuid, text, uuid, text)', 'EXECUTE')"
    ```
    标签为 `staging`、版本与副本演练一致、执行权为 t。
+   分区水位（0062，PLT-23）：四张按月分区表都要建到“当月 + 6 个月”以后，否则先以调度器身份跑一次 `python -m insight.scheduled partition-ensure`
+   （或签字时间表里的 `partition-ensure` 任务）再核对；0062 的续建函数属主是本次执行迁移的高权限账号，迁移只能由同一个账号执行；
+   签字时间表 `schedule.signed.yaml` 须含 `partition-ensure`（每日 03:10）与 `retention-purge`（每日 03:40，`--batch 1000`）两个任务（PLT-23，2026-11-09 签字）：
+   ```
+   psql "$PRIMARY_DSN" -X -c "SELECT parent, last_month FROM platform.partition_horizon()"
+   ```
 3. 登录角色（由人建，口令用 psql 的 `\password` 交互设置，不进命令历史）：每个登录角色**只继承一个**组角色——学习服务 `starbuddy_learning`、洞察服务
    `starbuddy_insight`、知识服务 `starbuddy_kge_read`、审核台两个（`starbuddy_kge`、`starbuddy_review`）、BFF `starbuddy_bff`、调度器 `starbuddy_scheduler`；
    各服务连接串按 `deploy/config/README.md` 第 8 节写成 `postgresql://<登录角色>@<RDS 内网主机名>:5432/<库名>?sslmode=verify-full&sslrootcert=/run/rds-ca/ca.pem`，
@@ -390,7 +396,7 @@ python3 deploy/migrate/migrate.py rehearse --dsn-env REPLICA_DSN --target-label 
 
 | Secret | 键 |
 |---|---|
-| `starbuddy-learning` | `database-url`、`service-token`、`insight-client-token`、`practice-ticket-secret`（模型供应商开通后另加 `route-client-zhixing`、`route-client-wenli`） |
+| `starbuddy-learning` | `database-url`、`service-token`、`session-token`（PLT-24：BFF → 学习服务会话令牌，学习服务与 BFF 共用这一项）、`insight-client-token`、`practice-ticket-secret`（模型供应商开通后另加 `route-client-zhixing`、`route-client-wenli`） |
 | `starbuddy-adapters` | `aya-token`、`zhixing-token`、`wenli-token` |
 | `starbuddy-knowledge` | `database-url`、`learning-token` |
 | `starbuddy-insight` | `database-url`、`bff-token` |
@@ -497,6 +503,18 @@ kubectl -n starbuddy-staging get svc,networkpolicy,pvc
    ```
    kubectl apply -f <部署目录>/observability.yaml
    ```
+9. **按旧时长签发的学生会话**（PLT-24 把学生会话改为最长 12 小时、空闲 1 小时，`services/bff/config/auth.json`；时长在签发时写进每一行会话，
+   改配置只影响新会话，`specs/launch-test-2026/pr28-review-notes.md` S3）。**首次部署的库是新建的，这一步应查到 0 行、直接跳过**；
+   只有这个环境在 PLT-24 之前跑过旧版本 BFF、签发过学生会话时才需要处理。先只读核对（跳板，`PRIMARY_DSN`，同第 3 节）：
+   ```
+   psql "$PRIMARY_DSN" -X -c "SELECT count(*) FROM platform.auth_session WHERE origin = 'guardian_handoff' AND revoked_at IS NULL AND expires_at > now() AND (idle_timeout > interval '1 hour' OR expires_at - created_at > interval '12 hours')"
+   ```
+   不为 0 时，**须人批准、复核人在场**，让这些会话失效（学生回到家长那里重新打开学生模式即可；没有专门的失效原因，用 `logout_all`，
+   加新原因要改迁移）：
+   ```
+   psql "$PRIMARY_DSN" -X -1 -c "UPDATE platform.auth_session SET revoked_at = now(), revoked_reason = 'logout_all' WHERE origin = 'guardian_handoff' AND revoked_at IS NULL AND expires_at > now() AND (idle_timeout > interval '1 hour' OR expires_at - created_at > interval '12 hours')"
+   ```
+   以后再改 `auth.json` 的会话时长时，同样按这一步处理。
 
 ---
 
@@ -516,7 +534,7 @@ kubectl -n starbuddy-staging get svc,networkpolicy,pvc
 
 - `model_provider` 解除后的验证（由人在有凭据的 staging 执行环境，限次）：`make model-smoke SMOKE_ENV=staging MAX_CALLS=5`（只打印状态、耗时、token 与快照名是否一致）；
   点点人设回归按 `evals/persona/README.md` 的 staging 步骤（`compare.py` 必须显式给 `--max-calls`），并跑 `make eval-persona`。
-- 保持关、不解除：`english`、`mock_exam`、`monthly_plan`、`stage_whiteboard`、`knowledge_read_cache`、`family_goals`、`subject_gate`；`dev_only` 一律不设。
+- 保持关、不解除：`english`、`mock_exam`、`monthly_plan`、`stage_whiteboard`、`knowledge_read_cache`、`knowledge_weknora_backend`（WeKnora 未部署、技术验证未做）、`family_goals`、`subject_gate`；`dev_only` 一律不设。
 - 公共知识层内容（地图、题库、页面快照）只经审核台由教研签字发布；个人层数据永不进入公共层（规则 13）。
 
 ---

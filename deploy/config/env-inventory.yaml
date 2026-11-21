@@ -23,7 +23,8 @@ services:
       - {name: LEARNING_METRICS_PORT, purpose: 指标监听端口（LT-05；与 LEARNING_HOST 同一地址，只服务 GET /metrics；staging 缺省 9788，dev / test 只在设了时起；不能与 PORT、LEARNING_ROUTE_PORT 相同）, secret: false, default: "9788", envs: all}
       - {name: LEARNING_ROUTE_PORT, purpose: staging 回环路由监听端口（127.0.0.1 上只服务 /internal/v1/model/route，其他路径 404；两科适配器的 *_ROUTE_URL = http://127.0.0.1:8785，改端口时一起改；不能与 PORT 相同；dev / test 设了拒绝启动）, secret: false, default: "8785", envs: staging}
       - {name: LEARNING_DATABASE_URL, purpose: 连接串（登录角色只继承 starbuddy_learning；口令走 PGPASSFILE 或密钥注入）, secret: true, default: null, envs: all, required_in_staging: true}
-      - {name: LEARNING_SERVICE_TOKEN, purpose: BFF → 学习服务令牌（≥ 32 字符）, secret: true, default: null, envs: all, required_in_staging: true}
+      - {name: LEARNING_SERVICE_TOKEN, purpose: BFF → 学习服务写入令牌（≥ 32 字符；契约 v1 的写入、重放、今日计划、星图）, secret: true, default: null, envs: all, required_in_staging: true}
+      - {name: LEARNING_SESSION_TOKEN, purpose: BFF → 学习服务会话令牌（≥ 32 字符、与其他令牌都不同；只开诊断、错题再练、复测、今日编排，PLT-24；dev / test 不设时这四组接口 401）, secret: true, default: null, envs: all, required_in_staging: true}
       - {name: LEARNING_ADAPTER_<SUBJECT>_URL, purpose: 适配器地址（同网络命名空间回环）, secret: false, default: null, envs: all}
       - {name: LEARNING_ADAPTER_<SUBJECT>_TOKEN, purpose: 学习服务 → 适配器令牌, secret: true, default: null, envs: all}
       - {name: LEARNING_ROUTE_CLIENT_<SUBJECT>_TOKEN, purpose: 适配器 → 模型路由接口令牌（知行、文砺两科；设了即按 LEARNING_ENV 加载路由表，staging 占位未填时拒绝启动，所以人填好快照名与主机名、批准之前不设）, secret: true, default: null, envs: all}
@@ -93,6 +94,9 @@ services:
       - {name: KNOWLEDGE_READ_CACHE_SIZE, purpose: 缓存条目上限, secret: false, default: "1024", envs: all}
       - {name: KNOWLEDGE_READ_CACHE_MAX_BYTES, purpose: 缓存字节上限, secret: false, default: "67108864", envs: all}
       - {name: KNOWLEDGE_READ_CACHE_LOG_EVERY, purpose: 缓存计数日志间隔, secret: false, default: "1000", envs: all}
+      - {name: KNOWLEDGE_WEKNORA_BACKEND, purpose: WeKnora 后端开关（KGE-12 C；上线测试关；开时还要 tools/weknora-probe 的客户端与 WEKNORA_* 三个变量，镜像暂未带）, secret: false, default: "0", envs: all}
+      - {name: KNOWLEDGE_WEKNORA_MANIFEST, purpose: WeKnora 交付清单文件（开关开时必填，绝对路径，只读挂载）, secret: false, default: null, envs: all}
+      - {name: KNOWLEDGE_WEKNORA_TIMEOUT_MS, purpose: 向 WeKnora 单次请求的超时（100–30000）, secret: false, default: "3000", envs: all}
       - {name: KNOWLEDGE_CACHE_DIR, purpose: 分词器缓存目录（只读根文件系统下挂 tmpfs）, secret: false, default: /tmp/knowledge-cache, envs: all}
       - {name: KNOWLEDGE_CONTRACT_DIR, purpose: 契约目录覆盖（测试用；staging 设了拒绝启动）, secret: false, default: null, envs: local}
       - {name: STARBUDDY_IMAGE_ENV, purpose: 镜像固化的环境标记（设了须与运行环境一致）, secret: false, default: null, envs: all}
@@ -139,7 +143,8 @@ services:
       - {name: BFF_TRUST_SECRET, purpose: 信任界面密钥, secret: true, default: null, envs: all, required_in_staging: true}
       - {name: BFF_TRUST_CLIENT_IP, purpose: 取前端转交的客户端 IP, secret: false, default: null, envs: all}
       - {name: BFF_LEARNING_URL, purpose: 学习服务地址, secret: false, default: null, envs: all}
-      - {name: BFF_LEARNING_TOKEN, purpose: BFF → 学习服务令牌, secret: true, default: null, envs: all}
+      - {name: BFF_LEARNING_TOKEN, purpose: BFF → 学习服务写入令牌（今日计划、星图）, secret: true, default: null, envs: all}
+      - {name: BFF_LEARNING_SESSION_TOKEN, purpose: BFF → 学习服务会话令牌（诊断、错题再练、复测、今日编排；配了 BFF_LEARNING_URL 而缺它、或与写入令牌相同即拒绝启动，PLT-24）, secret: true, default: null, envs: all}
       - {name: BFF_INSIGHT_URL, purpose: 洞察服务地址, secret: false, default: null, envs: all}
       - {name: BFF_INSIGHT_TOKEN, purpose: caller=bff 的洞察服务令牌, secret: true, default: null, envs: all}
       - {name: BFF_STAGING_OTP_FILE, purpose: 白名单固定码条目文件的路径（文件本身属密钥：含号码与码，从密钥管理只读挂载）, secret: false, default: null, envs: staging, required_in_staging: true}
@@ -182,6 +187,7 @@ services:
       - {name: STARBUDDY_REVIEW_FEATURES, purpose: 审核台修订开关（开发开关）, secret: false, default: null, envs: local}
       - {name: STARBUDDY_INTERNAL_TEST, purpose: 内部成员测试运营开关（LT-06：反馈与退出入口、审核台反馈与退出状态页；只认 internal_test；依赖迁移 0059，矩阵 pending）, secret: false, default: null, envs: all}
       - {name: STARBUDDY_ENV, purpose: 运行环境（构建期与运行期一致）, secret: false, default: null, envs: all, required_in_staging: true}
+      - {name: WEB_TRUST_CLIENT_IP, purpose: 转交客户端地址给 BFF（T46；只认 1，开时只取网关覆盖写入的 X-Real-IP；发布检查项 S5）, secret: false, default: "0", envs: all}
       - {name: STARBUDDY_BFF_URL, purpose: BFF 地址（staging 只收内网地址）, secret: false, default: "http://127.0.0.1:8787", envs: all, required_in_staging: true}
       - {name: STARBUDDY_REVIEW_URL, purpose: 审核台后端地址（staging 另收内网 IPv4）, secret: false, default: "http://127.0.0.1:8790", envs: all}
       - {name: STARBUDDY_PRESENCE_HMAC_KEY, purpose: 在场标记 HMAC 密钥（staging 必填）, secret: true, default: null, envs: all, required_in_staging: true}

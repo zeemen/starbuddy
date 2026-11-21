@@ -167,7 +167,7 @@ def create_app(settings: Settings, *, pool: asyncpg.Pool | None = None, contract
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         own_pool = pool is None
-        p = pool or await create_pool(settings.database_url)
+        p = pool or await create_pool(settings.database_url, request_timeouts=True)  # 语句与事务闲置超时（specs/db-call-timeouts）
         try:
             if not own_pool:
                 async with p.acquire() as c:

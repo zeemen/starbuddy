@@ -164,7 +164,7 @@ export function latexToText(s: string): string | null {
         if (ti === null || ta === null) return null;
         out += `${ti}√(${ta})`;
         i = j;
-      } else if (name in SYMBOL) {
+      } else if (Object.hasOwn(SYMBOL, name)) {                   // 只认表里自己的键：`in` 会把 toString 等原型链名字当成命令
         out += SYMBOL[name];
       } else if (/^[A-Za-z]+$/.test(name)) {
         return null;                                                // 认不出的命令：不渲染

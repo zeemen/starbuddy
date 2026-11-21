@@ -404,6 +404,72 @@ V11_MUTATIONS = {
 }
 
 
+# ---------- 知识服务 v0.10 候选版（KGE-12 B：standard.search，specs/kge-12-weknora-integration/spec.md 验收 B） ----------
+SH = f"{S}.StandardHit"
+SF = f"{S}.StandardFilters"
+SR = f"{S}.StandardSearchRequest"
+SX = f"{S}.StandardSearchContext.allOf.1.properties"
+SE = "components.examples"
+
+
+def _op(doc, path):
+    """路径名里有点（/v0/standard.search），不能走按点分隔的 _get"""
+    return doc["paths"][path]["post"]
+
+
+V010_MUTATIONS = {
+    # 先过滤后检索
+    "过滤条件不要求省份": lambda d: _get(d, f"{SF}.required").remove("province"),
+    "过滤条件不要求学期": lambda d: _get(d, f"{SF}.required").remove("semester"),
+    "过滤条件放开多余字段": delete(f"{SF}.additionalProperties"),
+    "请求不要求过滤条件": lambda d: _get(d, f"{SR}.required").remove("filters"),
+    "请求放开多余字段": assign(f"{SR}.additionalProperties", True),
+    "top_k 不设上限": delete(f"{SR}.properties.top_k.maximum"),
+    "检索文本不设长度上限": delete(f"{SR}.properties.query.maxLength"),
+    # 公共层上下文、L2
+    "上下文数据级别改成 L1": assign(f"{SX}.data_class.const", "L1"),
+    "上下文不固定数据级别": delete(f"{SX}.data_class"),
+    "上下文允许学习服务调用": assign(f"{SX}.caller.enum", ["bff", "orchestrator", "learning"]),
+    "上下文改用个人层上下文": assign(f"{S}.StandardSearchContext.allOf.0.$ref", "#/components/schemas/StudentContext"),
+    # 响应与命中
+    "响应允许引用学生证据": delete(f"{S}.StandardSearchResponse.allOf.1.properties.evidence_ids"),
+    "响应信封外放开字段": delete(f"{S}.StandardSearchResponse.unevaluatedProperties"),
+    "命中条数不设上限": delete(f"{S}.StandardSearchResponse.allOf.1.properties.result.properties.hits.maxItems"),
+    "命中放开多余字段": assign(f"{SH}.additionalProperties", True),
+    "命中不要求中台内容 ID": lambda d: _get(d, f"{SH}.required").remove("content_id"),
+    "命中加 answer 字段（受约束的编码，自由文本扫描看不出来）": assign(f"{SH}.properties.answer",
+                                                          {"type": "string", "pattern": "^[A-D]$"}),
+    "命中加 student_ref": assign(f"{SH}.properties.student_ref", {"type": "string", "format": "uuid"}),
+    "命中加无约束文本": assign(f"{SH}.properties.note", {"type": "string"}),
+    "来源加无约束文本": assign(f"{S}.StandardSource.properties.remark", {"type": "string"}),
+    "请求加无约束文本": assign(f"{SR}.properties.hint", {"type": "string"}),
+    # 路径
+    "standard.search 换了 operationId": lambda d: _op(d, "/v0/standard.search").__setitem__("operationId", "search_standard"),
+    "standard.search 另设鉴权": lambda d: _op(d, "/v0/standard.search").__setitem__("security", []),
+    "standard.search 响应换成别的 schema": lambda d: _op(d, "/v0/standard.search")["responses"]["200"]["content"][
+        "application/json"]["schema"].__setitem__("$ref", "#/components/schemas/ItemSearchResponse"),
+    "删掉 standard.search 路径": lambda d: d["paths"].pop("/v0/standard.search"),
+    "新增未登记的路径": lambda d: d["paths"].__setitem__("/v0/standard.write", copy.deepcopy(d["paths"]["/v0/standard.search"])),
+    # 只做增量
+    "v0.10 改动了 v0.9 的 schema": assign(f"{S}.ItemSearchRequest.properties.limit.maximum", 100),
+    "v0.10 删掉了 v0.9 的 schema": delete(f"{S}.RubricGetRequest"),
+    "v0.10 改动了 v0.9 的路径": lambda d: _op(d, "/v0/item.search").__setitem__("operationId", "item_search_v2"),
+    "v0.10 改动了 v0.9 的示例": assign(f"{SE}.ItemSearchRequest.value.limit", 7),
+    "v0.10 改动了 components.responses": lambda d: d["components"]["responses"].__setitem__(
+        "Teapot", {"description": "合成"}),
+    "v0.10 改动了 servers": lambda d: d.__setitem__("servers", [{"url": "https://example.invalid"}]),
+    "信封版本停在 0.9.0": assign(f"{S}.ServiceResultBase.properties.contract_version.const", "0.9.0"),
+    "info.version 停在 0.9.0": assign("info.version", "0.9.0"),
+    "新增未登记的 schema": assign(f"{S}.StandardRawChunk", {"type": "object"}),
+    # 示例
+    "示例不符合 schema": assign(f"{SE}.StandardSearchResponse.value.result.hits.0.score", 2),
+    "示例含手机号": assign(f"{SE}.StandardSearchResponse.value.result.hits.0.text", "合成正文 13812345678"),
+    "删掉空结果示例": delete(f"{SE}.StandardSearchResponseEmpty"),
+    "删掉签字记录": delete("info.x-signoff"),
+    "签字记录写成待签": assign("info.x-signoff.status", "draft"),
+}
+
+
 # ---------- 学习服务内部 API v1（1.1.0：掌握读取与验证任务，KGE-04 第二步 PR 3） ----------
 P = "paths"
 INTERNAL_MUTATIONS = {
@@ -554,6 +620,22 @@ def main() -> int:
         if not [e for e in errs if "OpenAPI 3.1 校验失败" not in e and "无法完成" not in e]:
             missed.append(f"v1.1：{name}")
 
+    import check_knowledge_v010 as kv  # noqa: PLC0415
+
+    v09_k, v010_base = kv.load_docs()
+    v010_baseline = kv.run_v010_checks(v09_k, v010_base)
+    if v010_baseline:
+        print("mutation-test: 知识服务 v0.10 候选版基线本身就不通过，先修契约：")
+        for e in v010_baseline:
+            print(f"  - {e}")
+        return 1
+    for name, mutate in V010_MUTATIONS.items():
+        doc = copy.deepcopy(v010_base)
+        mutate(doc)
+        errs = kv.run_v010_checks(v09_k, doc)
+        if not [e for e in errs if "OpenAPI 3.1 校验失败" not in e and "无法完成" not in e]:
+            missed.append(f"知识服务 v0.10：{name}")
+
     internal_base = cc.load(cc.INTERNAL_SPECS[1])
     internal_baseline: list[str] = []
     cc._check_internal_v1_examples(internal_baseline, copy.deepcopy(internal_base))
@@ -574,14 +656,14 @@ def main() -> int:
             missed.append(f"learning-internal v1：{name}")
 
     total = (len(MUTATIONS) + len(SERVICE_MUTATIONS) + len(ALLOWLIST_MUTATIONS) + len(V1_MUTATIONS) + len(V11_MUTATIONS)
-             + len(INTERNAL_MUTATIONS))
+             + len(V010_MUTATIONS) + len(INTERNAL_MUTATIONS))
     if missed:
         print(f"mutation-test: 失败，{len(missed)}/{total} 个变异没有被发现：")
         for m in missed:
             print(f"  - {m}")
         return 1
     print(f"mutation-test: 通过（{total} 个变异全部被发现，其中服务契约 {len(SERVICE_MUTATIONS)} 个、允许清单 {len(ALLOWLIST_MUTATIONS)} 个、v1.0 {len(V1_MUTATIONS)} 个、"
-          f"v1.1 候选版（present_item）{len(V11_MUTATIONS)} 个、learning-internal v1 {len(INTERNAL_MUTATIONS)} 个）")
+          f"v1.1 候选版（present_item）{len(V11_MUTATIONS)} 个、知识服务 v0.10（standard.search）{len(V010_MUTATIONS)} 个、learning-internal v1 {len(INTERNAL_MUTATIONS)} 个）")
     return 0
 
 

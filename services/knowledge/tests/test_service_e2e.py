@@ -204,7 +204,7 @@ async def test_page_get_renders_by_edition_and_region(kgedb, page_repo, tmp_path
             r = await call(client, "page.get", {"context": ctx(), "page_id": "math.syn.eq.linear", **kw})
             body = r.json()
             assert r.status_code == 200, body
-            assert C.validate("PageGetResponse", body) == []
+            assert C.for_version(body["contract_version"]).validate("PageGetResponse", body) == []
             return body
 
         a = await page(edition="syn-ed-a", region="syn-region")

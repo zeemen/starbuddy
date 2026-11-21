@@ -7,11 +7,12 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { devPagesEnabled, distDirFor, E2E_DIST_DIR, pageExtensionsFor } from '../next.config.ts';
 import { DEMO_COPY, PREDICTION_OPTIONS, PROBE_COPY } from '../src/probe/copy.ts';
 import { CLASSES, loadForbidden, ruleLineCount } from './forbidden-lexicon.ts';
 
-const WEB = new URL('..', import.meta.url).pathname;
+const WEB = fileURLToPath(new URL('..', import.meta.url));
 
 const COPY: string[] = [
   PROBE_COPY.question, PROBE_COPY.skip, ...PREDICTION_OPTIONS.map((o) => o.label),

@@ -9,10 +9,11 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { ALL_AUTH_COPY, childLabel } from '../src/auth/copy.ts';
 import { csrfCookieName, isHex64, normalizePhone, sessionCookieName, sessionCookieOptions } from '../src/lib/session-cookie.ts';
 
-const WEB = new URL('..', import.meta.url).pathname;
+const WEB = fileURLToPath(new URL('..', import.meta.url));
 const ROOT = join(WEB, '..', '..');
 
 function files(dir: string): string[] {

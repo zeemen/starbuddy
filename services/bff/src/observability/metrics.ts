@@ -32,14 +32,16 @@ const SERVICES = new Set(['bff']);
 export const ENUMS: Record<'subject' | 'task' | 'provider' | 'outcome', ReadonlySet<string>> = {
   subject: new Set(['aya', 'zhixing', 'wenli', 'echo', 'other']),
   task: new Set(['T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'meter-expire', 'meter-renew', 'erasures', 'freeze', 'sweep',
-    'mastery-sweep', 'expire-affairs', 'spot-check', 'metrics', 'weekly', 'model-call-purge', 'other']),
+    'mastery-sweep', 'expire-affairs', 'spot-check', 'metrics', 'weekly', 'model-call-purge', 'partition-ensure',
+    'retention-purge', 'other']),
   provider: new Set(['bailian', 'ark', 'fake-a', 'fake-b', 'fake-x', 'other']),
   outcome: new Set(['ok', 'other', 'unavailable', 'rejected', 'budget_exceeded', 'error', 'timeout', 'rate_limited', 'server', 'auth',
     'client', 'bad_response', 'skipped_breaker_open', 'allowed', 'sealed', 'partial', 'refused', 'crashed', 'bad_output', 'lock_error',
     'lock_lost', 'skipped_locked', 'skipped_running', 'dry_run', 'reserved', 'dedup', 'existing', 'insufficient', 'daily_cap_reached',
     'curfew_soon', 'conflict', 'dedup_in_progress', 'no_entitlement', 'retained_no_ai', 'curfew', 'settled', 'released', 'refunded',
     'unknown', 'reserve_conflict', 'reserve_dedup_in_progress', 'settle_conflict', 'release_conflict', 'late_success_after_expiry',
-    'replay_after_expiry', 'sealed_after_expiry', 'success_after_release', 'result_unknown', 'learning_retry']),
+    'replay_after_expiry', 'sealed_after_expiry', 'success_after_release', 'result_unknown', 'learning_retry',
+    'match', 'mismatch', 'unbound', 'absent']),
 };
 const NAME = /^starbuddy_[a-z][a-z0-9_]{2,80}$/;
 const ROUTE = /^(?:unmatched|\/[A-Za-z0-9_./{}-]{0,120})$/;

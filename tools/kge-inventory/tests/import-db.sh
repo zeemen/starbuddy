@@ -31,7 +31,7 @@ sign_publish() {
 }
 report() { node -e 'const r=require(process.argv[1]);const v=r[process.argv[2]];console.log(Array.isArray(v)?v.join("\n"):v)' "$1" "$2"; }
 
-# 能力视图：登记阿鸦 fun 专题的 skill_node（与 adapters/aya/scripts/register-content.ts 同一套 local_id；只收合法编码）
+# 能力视图：登记阿鸦 fun 专题的 skill_node（与 tools/content-register/aya.ts 同一套 local_id；只收合法编码）
 {
   echo "INSERT INTO platform.curriculum_version (id, region, exam_year, grade, textbook_version, subject, content_version) VALUES ('e0000000-0000-4000-8000-0000000000f1', 'nanjing', 2027, 9, 'suke-2024', 'aya', '0.9.9');"
   node -e 'const p=require(process.argv[1]);console.log(p.nodes.map(n=>n.id).filter(i=>i.includes("-FUN-")).join("\n"))' "$REPO/adapters/aya/content/pack.json" \

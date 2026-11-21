@@ -172,10 +172,11 @@ components:
     Entry:
       type: object
       additionalProperties: false
-      required: [entry_id, node_id, cognitive_level, source, status, round, max_rounds, next_round_at, empty_reason]
+      required: [entry_id, node_id, node_name, cognitive_level, source, status, round, max_rounds, next_round_at, empty_reason]
       properties:
         entry_id: { type: string, format: uuid }
         node_id: { type: string, description: 知识节点（公共知识层的 ID，不是对学生的判断） }
+        node_name: { type: [string, 'null'], description: 已发布地图的知识节点名（与今日计划同一口径）；拿不到时为空，界面显示编号。2026-11-16 新增：本版 BFF 一定带这个键（可为空），更早的 BFF 不带——客户端须把缺键当作空处理，不要按本定义严格校验旧响应（specs/practice-retest-list-polish） }
         cognitive_level: { enum: [know, understand, apply, synthesize] }
         source: { enum: [wrong, hint_followup], description: 这个条目来自做错的题，或提示后做对之后的无提示再练 }
         status: { enum: [due, waiting, closed, exhausted, unavailable], description: closed 只是再练状态（“已做对”），不是掌握结论 }

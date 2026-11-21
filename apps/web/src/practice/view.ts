@@ -22,8 +22,8 @@ export type EntryStatus = (typeof ENTRY_STATUSES)[number];
 export type AfterStatus = (typeof AFTER_STATUSES)[number];
 
 export interface EntryView {
-  /** 不合 NODE_ID 时为 null：页面只隐藏这一行的编号 */
-  entry_id: string; node_id: string | null; cognitive_level: (typeof LEVELS)[number]; source: (typeof SOURCES)[number]; status: EntryStatus;
+  /** 不合 NODE_ID 时为 null：页面只隐藏这一行的编号。node_name：已发布地图的节点名（BFF 给，拿不到为 null，页面退回显示编号） */
+  entry_id: string; node_id: string | null; node_name: string | null; cognitive_level: (typeof LEVELS)[number]; source: (typeof SOURCES)[number]; status: EntryStatus;
   round: number; max_rounds: number; next_round_at: string | null;
 }
 /** rich：PLT-12 受限富文本题面（只在学习服务开了 present_item 题面来源时有；src/lib/rich-item.ts） */
@@ -41,16 +41,22 @@ const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isInt
 const isTime = (v: unknown): v is string => typeof v === 'string' && RFC3339.test(v) && Number.isFinite(Date.parse(v));
 const oneOf = <T extends string>(xs: readonly T[], v: unknown): v is T => typeof v === 'string' && (xs as readonly string[]).includes(v);
 
+/** 知识点名（specs/practice-retest-list-polish）：1–100 个字符、不含控制字符才用；否则当作没有（只影响这一行显示编号，不影响整页） */
+export function pickNodeName(v: unknown): string | null {
+  return typeof v === 'string' && v.length >= 1 && v.length <= 100 && !/[\u0000-\u001f\u007f]/.test(v) ? v : null;
+}
+
 function pickEntry(e: unknown): EntryView | null {
   if (!isRecord(e)) return null;
-  const { entry_id, node_id, cognitive_level, source, status, round, max_rounds, next_round_at } = e;
+  const { entry_id, node_id, node_name, cognitive_level, source, status, round, max_rounds, next_round_at } = e;
   if (typeof entry_id !== 'string' || !UUID.test(entry_id)
       || !oneOf(LEVELS, cognitive_level) || !oneOf(SOURCES, source) || !oneOf(ENTRY_STATUSES, status) || !isInt(round) || !isInt(max_rounds)
       || (next_round_at !== null && !isTime(next_round_at))) {
     return null;
   }
   const node = typeof node_id === 'string' && NODE_ID.test(node_id) ? node_id : null;
-  return { entry_id, node_id: node, cognitive_level, source, status, round, max_rounds, next_round_at: next_round_at as string | null };
+  return { entry_id, node_id: node, node_name: node ? pickNodeName(node_name) : null, cognitive_level, source, status, round, max_rounds,
+           next_round_at: next_round_at as string | null };
 }
 
 /** 列表：每条只取这些字段；empty_reason 等编码不上页面 */

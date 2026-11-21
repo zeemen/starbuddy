@@ -11,7 +11,8 @@ import { isRetestSubject, retestEnabled } from './features.ts';
 import { pickRetestAnswer, pickRetestNext, retestUiError, UUID, type RetestAnswerView, type RetestNextView } from './view.ts';
 
 export type RetestNextOutcome = RetestNextView | { kind: 'error'; error: UiError };
-export type RetestAnswerOutcome = { kind: 'result'; result: RetestAnswerView } | { kind: 'error'; error: UiError };
+/** retryAfterSec：只在作答被限流（rate_limited）时带，BFF 给的 retry-after 秒数，没有为 null（specs/retry-after-cooldown） */
+export type RetestAnswerOutcome = { kind: 'result'; result: RetestAnswerView } | { kind: 'error'; error: UiError; retryAfterSec?: number | null };
 
 const TICKET = /^sbr1\.[A-Za-z0-9_-]{1,2395}$/;
 
@@ -52,7 +53,10 @@ export async function answerRetestAction(csrf: string, student: string, subject:
   if (typeof ticket !== 'string' || !TICKET.test(ticket)) return err('ticket_used');
   if (!isAnswer(answer)) return err('invalid_answer');
   const r = await answerRetest(b.s, b.student, b.subject, ticket, answer);
-  if (!r.ok) return err(retestUiError(r, 'answer'));
+  if (!r.ok) {
+    const e = retestUiError(r, 'answer');
+    return e === 'rate_limited' ? { kind: 'error', error: e, retryAfterSec: r.retryAfterSec ?? null } : err(e);
+  }
   const result = pickRetestAnswer(r.value, entry);
   return result ? { kind: 'result', result } : err('unavailable');
 }

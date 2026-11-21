@@ -19,6 +19,7 @@
 import { withSubjectSlot, type GateObserve, type SubjectGate } from '../gate/subject-gate.ts';
 import { P } from '../http/problems.ts';
 import type { Reply } from '../http/routes.ts';
+import { nodeNamesOrEmpty } from '../node-names.ts';
 import { pickRich, type RichItem } from '../item-rich.ts';
 import { usageIdFor } from '../metering/uuid.ts';
 import {
@@ -200,7 +201,10 @@ export async function retestQueue(deps: RetestDeps, account: string, student: st
   if (!isRecord(body) || !Array.isArray(body['entries'])) return UPSTREAM_UNAVAILABLE;
   const entries = body['entries'].map(pickRetestEntry);
   if (entries.some((e) => e === null)) return UPSTREAM_UNAVAILABLE;  // 形状不对整页不给
-  return json(200, { subject: code, entries });
+  // 知识点名（已发布地图，与今日计划同一口径）：取不到时为 null，列表照常返回（specs/practice-retest-list-polish）
+  const picked = entries as Record<string, unknown>[];
+  const names = await nodeNamesOrEmpty(deps.pool, account, picked.map((e) => e['node_id'] as string), deps.note);
+  return json(200, { subject: code, entries: picked.map((e) => ({ ...e, node_name: names.get(e['node_id'] as string) ?? null })) });
 }
 
 export async function retestNext(deps: RetestDeps, account: string, student: string, code: string, entry: string): Promise<Reply> {

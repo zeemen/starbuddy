@@ -22,7 +22,7 @@ import asyncpg
 import httpx
 import pytest
 
-from conftest import (ADAPTER_CREDENTIAL, CREDENTIAL, FIXTURE_SQL, _answer_in_version, fake_grade, grade_body, grant_consents, meter_row,
+from conftest import (WRITE_AUTH, SESSION_CREDENTIAL, ADAPTER_CREDENTIAL, CREDENTIAL, FIXTURE_SQL, _answer_in_version, fake_grade, grade_body, grant_consents, meter_row,
                       register_admin, settings, to_v1_body, unregister_admin)
 from learning.app import create_app
 from learning.config import AdapterTarget
@@ -346,7 +346,7 @@ class Api:
         b["context"]["content_version"] = dict(CV)
         b["attempt"]["hint_level_used"] = hint
         b["attempt"]["occurred_at"] = clock().isoformat()
-        r = await self.c.post("/internal/v1/grade", json={"request": b, "ingest": {"channel": "keypad"}})
+        r = await self.c.post("/internal/v1/grade", json={"request": b, "ingest": {"channel": "keypad"}}, headers=WRITE_AUTH)
         assert r.status_code == 200, r.text
         return r.json()
 
@@ -364,7 +364,7 @@ async def api(ppools, plock):
     app, fakes = await make_api(app_pool, plock, mastery=engine(app_pool))
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://learning.test") as c:
-            c.headers["authorization"] = f"Bearer {CREDENTIAL}"
+            c.headers["authorization"] = f"Bearer {SESSION_CREDENTIAL}"
             yield Api(c, fakes, app)
 
 
@@ -491,7 +491,7 @@ async def test_photo_wrong_does_not_enter(api, ppools, student):
     b["context"]["content_version"] = dict(CV)
     b["attempt"]["occurred_at"] = clock().isoformat()
     b["evidence_level"] = "B"
-    r = await api.c.post("/internal/v1/grade", json={"request": b, "ingest": {"channel": "photo"}})
+    r = await api.c.post("/internal/v1/grade", json={"request": b, "ingest": {"channel": "photo"}}, headers=WRITE_AUTH)
     assert r.status_code == 400 and r.json()["code"] == "INVALID_REQUEST"
     async with admin.acquire() as c:
         assert await c.fetchval("SELECT count(*) FROM platform.attempt WHERE student_id = $1::uuid", student) == 0
@@ -620,7 +620,7 @@ async def test_idempotent_replay(api, ppools, student):
     assert r.status_code == 409 and r.json()["code"] == "PRACTICE_NOT_DUE"
     assert await counts(admin, student) == c1
     # 只查不执行的重放：既有的 GET /internal/v1/replay/grade/{key}
-    rp = await api.c.get(f"/internal/v1/replay/grade/{key}", params={"student_ref": student, "usage_id": usage})
+    rp = await api.c.get(f"/internal/v1/replay/grade/{key}", params={"student_ref": student, "usage_id": usage}, headers=WRITE_AUTH)
     assert rp.status_code == 200 and rp.json()["verdict"] == "incorrect"
 
 
@@ -674,7 +674,7 @@ async def test_small_pool_concurrent_answers_do_not_hang(ppg, ppools, plock):
         app, fakes = await make_api(small, plock, mastery=engine(small))
         async with app.router.lifespan_context(app):
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://learning.test") as c:
-                c.headers["authorization"] = f"Bearer {CREDENTIAL}"
+                c.headers["authorization"] = f"Bearer {SESSION_CREDENTIAL}"
                 a = Api(c, fakes, app)
                 toks = []
                 for _ in range(3):
@@ -815,7 +815,7 @@ async def test_recompute_failure_does_not_affect_answer(ppools, plock, student):
     app, fakes = await make_api(app_pool, plock, mastery=eng)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://learning.test") as c:
-            c.headers["authorization"] = f"Bearer {CREDENTIAL}"
+            c.headers["authorization"] = f"Bearer {SESSION_CREDENTIAL}"
             a = Api(c, fakes, app)
             await a.grade(student, "SYNP-0001", "41")
             failed = eng.stats["failed"]
@@ -941,7 +941,7 @@ async def test_only_bff_token(api, student):
                                                "idempotency_key": str(uuid.uuid4()), "usage_id": str(uuid.uuid4())})]
     for path, body in paths:
         for header in ("", f"Bearer {ORCH}", f"Bearer {INSIGHT}", f"Bearer {ADAPTER_CREDENTIAL}", f"Bearer {KNOWLEDGE.credential}",
-                       f"Bearer {SECRET}", f"Bearer {CREDENTIAL}x", CREDENTIAL):
+                       f"Bearer {SECRET}", f"Bearer {SESSION_CREDENTIAL}x", SESSION_CREDENTIAL, f"Bearer {CREDENTIAL}"):
             r = await api.c.post(path, json=body, headers={"authorization": header})
             assert r.status_code == 401 and r.json()["code"] == "UNAUTHENTICATED", (path, header)
     assert (await api.queue(student)).status_code == 200
@@ -953,7 +953,7 @@ async def test_not_configured_and_no_presenter(ppools, plock, student):
         app, fakes = await make_api(app_pool, plock, **over)
         async with app.router.lifespan_context(app):
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://learning.test") as c:
-                c.headers["authorization"] = f"Bearer {CREDENTIAL}"
+                c.headers["authorization"] = f"Bearer {SESSION_CREDENTIAL}"
                 a = Api(c, fakes, app)
                 got = ((await a.queue(student)).status_code, (await a.next(student, str(uuid.uuid4()))).status_code,
                        (await a.answer(student, "x")).status_code)
@@ -1097,7 +1097,7 @@ async def api_with(ppools, plock):
         ctx = app.router.lifespan_context(app)
         await ctx.__aenter__()
         c = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://learning.test")
-        c.headers["authorization"] = f"Bearer {CREDENTIAL}"
+        c.headers["authorization"] = f"Bearer {SESSION_CREDENTIAL}"
         opened.append((ctx, c))
         return Api(c, fakes, app)
     yield make

@@ -119,7 +119,8 @@ async def test_no_draft_retired_unverified_or_pending_content_via_any_tool(kgedb
     assert by.count(("node.get", 404)) == 3 and ("rubric.get", 404) in by and by.count(("item.similar", 404)) == 2
     for tool, status, body in responses:
         spec = C.tools[tool]
-        assert (C.validate(spec.response_schema, body) if status == 200 else C.problem_errors(body)) == []
+        # ctx() 发的是 0.9.0（迁移期仍接受）：按回来的那个版本的契约校验
+        assert (C.for_version(body["contract_version"]).validate(spec.response_schema, body) if status == 200 else C.problem_errors(body)) == []
         if status == 404:
             assert body["title"] == body["code"] and "detail" not in body
 

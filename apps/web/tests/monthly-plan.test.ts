@@ -9,13 +9,14 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { monthlyPlanEnabled } from '../src/monthly-plan/features.ts';
 import { MONTHLY_PLAN } from '../src/monthly-plan/guardian-copy.ts';
 import { pickGuardianPlan } from '../src/monthly-plan/guardian-view.ts';
 import { MY_PLAN, PLAN_SECTION } from '../src/monthly-plan/student-copy.ts';
 import { pickMyPlan, pickStudentPlan } from '../src/monthly-plan/student-view.ts';
 
-const WEB = new URL('..', import.meta.url).pathname;
+const WEB = fileURLToPath(new URL('..', import.meta.url));
 const ROOT = join(WEB, '..', '..');
 const code = (t: string) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\{\/\*[\s\S]*?\*\/\}/g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 const read = (p: string) => readFileSync(join(WEB, p), 'utf8');

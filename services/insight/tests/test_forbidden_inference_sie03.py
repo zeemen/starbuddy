@@ -417,7 +417,8 @@ def test_every_code_has_a_placeholder_mapping():
 def test_render_scan_counterexample(snippet):
     """反例：往真实页面源码里注入一处编码原文渲染（只在内存里），扫描必须报出来"""
     src = read(TRUST_DIR / "DisputesPage.tsx")
-    injected = src.replace("<td>{DISPUTE_KIND[d.kind]}</td>", snippet)
+    # 注入点：异议表“类型”那一格（手机卡片排列起带 role 与 data-label，specs/trust-tables-mobile）
+    injected = src.replace('<td role="cell" data-label={DISPUTE.colKind}>{DISPUTE_KIND[d.kind]}</td>', snippet)
     assert injected != src, "注入点不存在"
     assert render_leaks(injected, raw_codes()), snippet
 

@@ -8,9 +8,10 @@ import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 
-const NEXT = new URL('../.next', import.meta.url).pathname;
+const NEXT = fileURLToPath(new URL('../.next', import.meta.url));
 const BUILT = existsSync(join(NEXT, 'BUILD_ID'));
 
 /** 预算（字节，gzip 后）。占位，待签字 */

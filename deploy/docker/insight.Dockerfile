@@ -18,7 +18,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /srv/starbuddy
 
 COPY services/insight/requirements.lock services/insight/requirements.lock
-RUN python -m pip install --require-hashes -r services/insight/requirements.lock
+RUN python -m pip install --require-hashes --only-binary=:all: -r services/insight/requirements.lock
 
 COPY packages/contracts/openapi packages/contracts/openapi
 COPY docs/design/sie/sie_lexicon.py docs/design/sie/forbidden-inference.v0.yaml docs/design/sie/field-dictionary.v0.9.yaml docs/design/sie/no-promise.v0.draft.yaml docs/design/sie/

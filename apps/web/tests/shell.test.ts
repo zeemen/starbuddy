@@ -10,12 +10,13 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { ALL_SHELL_COPY, CONFIDENCE_BAND, DATA_RIGHTS, ENROLL_RESULT, ENROLLMENT, STAR_DISPLAY_V1, TODAY, TRUST_SLOT } from '../src/shell/copy.ts';
 import { DENIAL_COPY } from '../src/shell/denials.ts';
 import { TRUST_FEATURES, trustEnabled, trustFeatures } from '../src/shell/features.ts';
 import { SUBJECT_MODULES, subjectModule, visibleSubjects } from '../src/subjects/registry.ts';
 
-const WEB = new URL('..', import.meta.url).pathname;
+const WEB = fileURLToPath(new URL('..', import.meta.url));
 const ROOT = join(WEB, '..', '..');
 const files = (dir: string): string[] => readdirSync(dir).flatMap((n) => {
   const p = join(dir, n);
@@ -154,6 +155,13 @@ test('数据权利页：导出说明写明 grade 是建档年级、当前年级�
   assert.ok(DATA_RIGHTS.exportGradeNote.startsWith('{{TODO_COPY:data.export.grade}}'), DATA_RIGHTS.exportGradeNote);
   assert.match(DATA_RIGHTS.exportGradeNote, /导出中的 grade 为建档时填写的年级；当前年级由届别推算。/);
   assert.match(readFileSync(join(WEB, 'src/trust/DataRightsPage.tsx'), 'utf8'), /\{DATA_RIGHTS\.exportGradeNote\}/);
+});
+
+test('学生今日页：401 回登录，403 / 404 走“没有找到”，其他失败（BFF 不可达、超时、5xx）显示“暂时无法获取”（内测前整改）', () => {
+  const page = code(readFileSync(join(WEB, 'src/app/s/[studentId]/today/page.tsx'), 'utf8'));
+  assert.match(page, /if \(r\.status === 401\) redirect\('\/login'\);\n\s+if \(r\.status === 403 \|\| r\.status === 404\) notFound\(\);/);
+  assert.match(page, /data-unavailable="today">\{BALANCE\.unavailable\}/);
+  assert.ok(!/if \(r\.status === 401\) redirect\('\/login'\);\n\s+notFound\(\);/.test(page), '非 401 的失败不能一律当成“没有找到”');
 });
 
 test('家长孩子页：只有 404 走“没有找到”，其他错误各区块显示“暂时无法获取”；开通按钮不按 open 隐藏（审查第 4、5 条）', () => {

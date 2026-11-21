@@ -22,7 +22,7 @@
   "seed": 20260930,
   "students": 20
  },
- "commit": "f3fbda0d0c0ec006cf0abd5756c8f20cc28422af",
+ "commit": "cce6263f5c7d461c6dba581ce3a04d5a9d27ea45",
  "contracts": {
   "learning-internal": "1.1.0",
   "plugin-api": "1.0.0",
@@ -38,5 +38,5 @@
   "provenance": "starmap/provenance.md",
   "record": "starmap/starmap.json"
  },
- "worktree_dirty": true
+ "worktree_dirty": false
 }

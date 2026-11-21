@@ -22,9 +22,10 @@ from names import name_exists, read_sources
 FLAG_VARS = {"STARBUDDY_TRUST_UI", "STARBUDDY_STARMAP", "STARBUDDY_PRACTICE", "STARBUDDY_RETEST_UI", "STARBUDDY_TODAY_ORCH",
              "STARBUDDY_MONTHLY_PLAN", "STARBUDDY_FAMILY_GOALS", "STARBUDDY_SUBJECT_GATE", "STARBUDDY_INTERNAL_TEST"}
 REQUIRED_ON = {"math", "daofa", "chinese_grading", "today_plan", "diagnosis", "practice", "retest", "star_map", "trust_ui", "review_console"}
-REQUIRED_OFF = {"english", "mock_exam", "monthly_plan", "stage_whiteboard", "knowledge_read_cache", "internal_test_ops", "model_call_log"}
+REQUIRED_OFF = {"english", "mock_exam", "monthly_plan", "stage_whiteboard", "knowledge_read_cache", "internal_test_ops", "model_call_log",
+                "knowledge_weknora_backend"}
 COVERS = {"weekly_report", "reconcile_card"}
-OFF_VALUES = {"KNOWLEDGE_READ_CACHE": "0", "LEARNING_TODAY_SNAPSHOT": "0"}
+OFF_VALUES = {"KNOWLEDGE_READ_CACHE": "0", "LEARNING_TODAY_SNAPSHOT": "0", "KNOWLEDGE_WEKNORA_BACKEND": "0"}
 
 
 def entries(flags):
@@ -114,12 +115,12 @@ def _run_py(venv_service: str, code: str, env: dict) -> subprocess.CompletedProc
                           capture_output=True, text=True, timeout=60)
 
 
-SYN = {"t1": "a" * 40, "t2": "b" * 40, "t3": "c" * 40, "t4": "d" * 40, "t5": "e" * 40, "t6": "f" * 40}
+SYN = {"t1": "a" * 40, "t2": "b" * 40, "t3": "c" * 40, "t4": "d" * 40, "t5": "e" * 40, "t6": "f" * 40, "t7": "g" * 40}
 
 
 def test_learning_settings_accept_matrix(flags):
     vals = {k: v for k, v in _service_values(flags, "learning").items() if v is not None}
-    env = {"LEARNING_ENV": "staging", "LEARNING_SERVICE_TOKEN": SYN["t1"], "LEARNING_DATABASE_URL": "postgresql://syn@172.28.0.20/syn",
+    env = {"LEARNING_ENV": "staging", "LEARNING_SERVICE_TOKEN": SYN["t1"], "LEARNING_SESSION_TOKEN": SYN["t7"], "LEARNING_DATABASE_URL": "postgresql://syn@172.28.0.20/syn",
            "LEARNING_HOST": "172.28.0.10", "LEARNING_PRACTICE_TICKET_SECRET": SYN["t2"], "LEARNING_ADAPTER_AYA_TOKEN": SYN["t3"],
            "LEARNING_ADAPTER_ZHIXING_TOKEN": SYN["t4"], "LEARNING_ADAPTER_WENLI_TOKEN": SYN["t5"], **vals}
     code = ("import sys; sys.path.insert(0, '.'); from learning.config import Settings; s = Settings.from_env(); "

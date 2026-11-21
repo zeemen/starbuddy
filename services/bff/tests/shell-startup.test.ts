@@ -7,8 +7,9 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
-const MAIN = new URL('../src/main.ts', import.meta.url).pathname;
+const MAIN = fileURLToPath(new URL('../src/main.ts', import.meta.url));
 const hex = () => randomBytes(32).toString('hex');
 
 function start(vars: Record<string, string>): { status: number | null; stderr: string } {

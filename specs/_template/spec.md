@@ -10,6 +10,12 @@
 - 做：
 - 不做：
 
+## 输入契约
+本任务依赖的契约、schema、ADR 与数据的版本（ADR 14 第 3 节）。例如：plugin-api 1.0.0、learning-internal 1.1.0、迁移 00xx、ADR 13 草稿、教研签字的配置文件与版本。
+
+## 禁止修改的范围
+本任务不得改动的目录或文件（与 CLAUDE.md 规则、必停清单一致）。例如：`packages/contracts/`、`db/migrations/`、`evals/` 下的金标数据、人设 Prompt 与语料。
+
 ## 验收标准（可测试）
 - [ ]
 - [ ]

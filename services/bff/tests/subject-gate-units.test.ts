@@ -9,6 +9,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { subjectBusy as diagnosisBusy, withRetry as diagnosisRetry } from '../src/diagnosis/service.ts';
 import {
   busyHeaders, CONCURRENCY_CONFIG_PATH, createSubjectGate, decideSubjectGate, GATE_SUBJECTS, loadConcurrencyConfig, parseSubjectGateFeature,
@@ -231,7 +232,7 @@ test('withSubjectSlot：闸门为空（开关关）时直接执行、什么也�
 
   const gate = createSubjectGate(cfg({ maxInflight: 1, maxQueue: 0, retryAfterSec: 5 }), fakeClock());
   assert.equal(await withSubjectSlot(gate, req, busy, async () => 'ok'), 'ok');
-  assert.deepEqual(notes, [['gate_subject', 'aya'], ['gate', 'admitted'], ['gate_queue_ms', '0']]);
+  assert.deepEqual(notes, [['gate_subject', 'aya'], ['gate_result', 'admitted'], ['gate_queue_ms', '0']]);
   assert.equal(gate.stats().aya.inflight, 0, '成功后释放');
   await assert.rejects(withSubjectSlot(gate, req, busy, async () => { throw new Error('upstream'); }), /upstream/);
   assert.equal(gate.stats().aya.inflight, 0, '抛错也释放');
@@ -243,11 +244,11 @@ test('withSubjectSlot：闸门为空（开关关）时直接执行、什么也�
   let ran = false;
   assert.equal(await withSubjectSlot(gate, req, busy, async () => { ran = true; return 'x'; }), 'busy:5');
   assert.equal(ran, false, '被拒时不执行（计量都在 fn 里，所以被拒的请求本次没有新增计量）');
-  assert.deepEqual(notes, [['gate_subject', 'aya'], ['gate', 'rejected'], ['gate_queue_ms', '0'], ['gate_reason', 'full']]);
+  assert.deepEqual(notes, [['gate_subject', 'aya'], ['gate_result', 'rejected'], ['gate_queue_ms', '0'], ['gate_reason', 'full']]);
   // 已计量的重试绕过闸门：满了也执行，不占名额
   notes.length = 0;
   assert.equal(await withSubjectSlot(gate, { ...req, bypass: true }, busy, async () => 'replayed'), 'replayed');
-  assert.deepEqual(notes, [['gate_subject', 'aya'], ['gate', 'bypassed']]);
+  assert.deepEqual(notes, [['gate_subject', 'aya'], ['gate_result', 'bypassed']]);
   assert.equal(gate.stats().aya.inflight, 1, '绕过的请求不占名额');
   held.release();
   // 只记学科码与枚举值：不含任何 ID
@@ -282,14 +283,14 @@ test('withSubjectSlot：排队后放行记 queued 与分档；排队超时记 re
   clock.advance(250);
   held.release();
   assert.equal(await p, 'done');
-  assert.deepEqual(notes, ['gate_subject=aya', 'gate=queued', 'gate_queue_ms=lt500']);
+  assert.deepEqual(notes, ['gate_subject=aya', 'gate_result=queued', 'gate_queue_ms=lt500']);
   const held2 = ok(await acq(gate));
   notes.length = 0;
   const q = withSubjectSlot(gate, req, (s) => `busy:${s}`, async () => 'never');
   await tick();
   clock.advance(1000);
   assert.equal(await q, 'busy:2');
-  assert.deepEqual(notes, ['gate_subject=aya', 'gate=rejected', 'gate_queue_ms=lt2000', 'gate_reason=timeout']);
+  assert.deepEqual(notes, ['gate_subject=aya', 'gate_result=rejected', 'gate_queue_ms=lt2000', 'gate_reason=timeout']);
   held2.release();
 });
 
@@ -371,7 +372,7 @@ test('开关：只认 subject_gate；没设或空为关；不认识的取值拒�
 
 // ---------------------------------------------------------------- 启动检查（子进程，连不上数据库才退出）
 
-const MAIN = new URL('../src/main.ts', import.meta.url).pathname;
+const MAIN = fileURLToPath(new URL('../src/main.ts', import.meta.url));
 const hex = () => randomBytes(32).toString('hex');
 function start(vars: Record<string, string>): { status: number | null; stderr: string } {
   const r = spawnSync(process.execPath, ['--no-warnings', MAIN], {

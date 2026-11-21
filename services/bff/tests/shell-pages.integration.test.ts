@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { after, before, test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import type pg from 'pg';
 import { activeRoutes, ROUTES } from '../src/http/routes.ts';
 import { loadShellConfig, type ShellConfig } from '../src/shell/config.ts';
@@ -523,7 +524,7 @@ test('连续使用提醒：可注入时钟下连续 40 分钟出现；停 10 分
 
 const srcFiles = (dir: URL): string[] => readdirSync(dir).flatMap((n) => {
   const u = new URL(n, dir);
-  return statSync(u).isDirectory() ? srcFiles(new URL(`${n}/`, dir)) : [u.pathname];
+  return statSync(u).isDirectory() ? srcFiles(new URL(`${n}/`, dir)) : [fileURLToPath(u)];
 });
 
 // SIE-03 PR③ 起，异议、考试、导出删除的路由挂在信任界面开关上（src/http/trust-routes.ts），开关缺省全关：

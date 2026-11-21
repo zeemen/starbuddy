@@ -269,6 +269,13 @@ main { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16
   .inline-form { flex-wrap: wrap; }
   .shell-form textarea { max-width: none; }
   .trust-table th, .trust-table td { padding: 4px; }
+  /* 卡片排列（specs/practice-retest-list-polish）：错题再练、复测列表每行一张卡片，每格前带列名（data-label）；表头视觉隐藏、留给读屏 */
+  .card-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .card-table, .card-table tbody, .card-table tr, .card-table td { display: block; width: 100%; }
+  .card-table tr { border: 1px solid var(--rule); border-radius: 8px; padding: 8px 12px; margin: 0 0 12px; }
+  .card-table td { border-bottom: none; padding: 4px 0; }
+  .card-table td::before { content: attr(data-label); display: block; font-size: 0.875rem; color: var(--muted); }
+  .card-table td > a { display: inline-flex; align-items: center; min-height: 44px; }  /* 格子里单独的链接（异议表的“查看”）补足触控高度 */
   .diandian { position: static; margin: 16px max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); max-width: none; }
   .rest-bar { margin-left: max(16px, env(safe-area-inset-left)); margin-right: max(16px, env(safe-area-inset-right)); }
 }

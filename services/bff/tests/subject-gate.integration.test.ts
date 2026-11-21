@@ -363,9 +363,9 @@ describe('分学科并发闸门（BFF 路由集成）', { skip: HAS_DB ? false :
     assert.equal((await first).status, 200);
     assert.equal((await queued).status, 200, '排队的在名额释放后放行');
     const mine = logsOn.slice(mark).filter((x) => x['gate_subject'] === 'zhixing');
-    assert.deepEqual(mine.map((x) => x['gate']).sort(), ['admitted', 'queued', 'rejected']);
-    assert.equal(mine.find((x) => x['gate'] === 'rejected')!['gate_reason'], 'full');
-    assert.match(String(mine.find((x) => x['gate'] === 'queued')!['gate_queue_ms']), /^(lt100|lt500|lt2000)$/);
+    assert.deepEqual(mine.map((x) => x['gate_result']).sort(), ['admitted', 'queued', 'rejected']);
+    assert.equal(mine.find((x) => x['gate_result'] === 'rejected')!['gate_reason'], 'full');
+    assert.match(String(mine.find((x) => x['gate_result'] === 'queued')!['gate_queue_ms']), /^(lt100|lt500|lt2000)$/);
     idle();
     // 排队超时（1000 ms）：占着的一直不放，排队的按被拒
     const l2 = hold('practice.next', 'zhixing');
@@ -374,7 +374,7 @@ describe('分学科并发闸门（BFF 路由集成）', { skip: HAS_DB ? false :
     const mark2 = logsOn.length;
     busyOk(await callAs(on.base, 'POST', nPath('practice', b.id, 'politics'), await on.sessionFor(b.account)), '3', '排队超时');
     const t = logsOn.slice(mark2).find((x) => x['gate_subject'] === 'zhixing')!;
-    assert.deepEqual([t['gate'], t['gate_reason'], t['gate_queue_ms']], ['rejected', 'timeout', 'lt2000']);
+    assert.deepEqual([t['gate_result'], t['gate_reason'], t['gate_queue_ms']], ['rejected', 'timeout', 'lt2000']);
     l2.gate.resolve();
     assert.equal((await slow).status, 200);
     idle();
@@ -385,10 +385,10 @@ describe('分学科并发闸门（BFF 路由集成）', { skip: HAS_DB ? false :
     assert.ok(gated.length >= 5);
     for (const x of gated) {
       assert.ok(['aya', 'zhixing', 'wenli'].includes(String(x['gate_subject'])));
-      assert.ok(['admitted', 'queued', 'rejected', 'bypassed'].includes(String(x['gate'])));
-      if (x['gate'] === 'bypassed') assert.equal(x['gate_queue_ms'], undefined, '绕过闸门的不排队');
+      assert.ok(['admitted', 'queued', 'rejected', 'bypassed'].includes(String(x['gate_result'])));
+      if (x['gate_result'] === 'bypassed') assert.equal(x['gate_queue_ms'], undefined, '绕过闸门的不排队');
       else assert.match(String(x['gate_queue_ms']), /^(0|lt100|lt500|lt2000|ge2000)$/);
-      if (x['gate'] === 'rejected') assert.ok(['full', 'timeout', 'per_student', 'aborted'].includes(String(x['gate_reason'])));
+      if (x['gate_result'] === 'rejected') assert.ok(['full', 'timeout', 'per_student', 'aborted'].includes(String(x['gate_reason'])));
       else assert.equal(x['gate_reason'], undefined);
     }
     const text = JSON.stringify(logsOn);
@@ -459,7 +459,7 @@ describe('分学科并发闸门（BFF 路由集成）', { skip: HAS_DB ? false :
     assert.equal(await practiceLog(a.id), before + 2, '重试不再计次');
     assert.equal((await reservationsByStudent(h, d.id)).length, 1, '重放不另预留');
     const mine = logsOn.slice(mark).filter((x) => x['gate_subject'] === 'aya');
-    assert.deepEqual(mine.map((x) => x['gate']), ['bypassed', 'bypassed', 'bypassed']);
+    assert.deepEqual(mine.map((x) => x['gate_result']), ['bypassed', 'bypassed', 'bypassed']);
     // 对照：新的作答（没计过次）仍被拒
     const fresh = await ticket(on, 'practice', S[2]!).catch(() => null);
     assert.equal(fresh, null, '数学占满时新取题也被拒（ticket 取不到）');

@@ -37,20 +37,24 @@ export async function PracticeListPage({ studentId, subject }: { studentId: stri
       {!entries ? <p className="muted" data-unavailable="practice">{PRACTICE.unavailable}</p>
         : entries.length === 0 ? <p className="muted" data-testid="practice-list-empty">{PRACTICE.empty}</p> : (
           <div className="table-scroll">
-            <table className="trust-table practice-table" data-testid="practice-entries">
-              <thead>
-                <tr>
-                  <th scope="col">{PRACTICE.colSource}</th><th scope="col">{PRACTICE.colNode}</th><th scope="col">{PRACTICE.colLevel}</th>
-                  <th scope="col">{PRACTICE.colStatus}</th><th scope="col">{PRACTICE.colRound}</th>
+            {/* 手机宽度下按卡片排列（globals.css 的 .card-table）：每格前带列名（data-label，取表头同一条文案）；
+                显式 role 保住读屏软件的表格语义（display: block 会让部分浏览器丢掉表格角色）。specs/practice-retest-list-polish */}
+            <table className="trust-table practice-table card-table" data-testid="practice-entries" role="table">
+              <thead role="rowgroup">
+                <tr role="row">
+                  <th scope="col" role="columnheader">{PRACTICE.colSource}</th><th scope="col" role="columnheader">{PRACTICE.colNode}</th>
+                  <th scope="col" role="columnheader">{PRACTICE.colLevel}</th><th scope="col" role="columnheader">{PRACTICE.colStatus}</th>
+                  <th scope="col" role="columnheader">{PRACTICE.colRound}</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody role="rowgroup">
                 {entries.map((e) => (
-                  <tr key={e.entry_id} data-entry-id={e.entry_id} data-entry-status={e.status}>
-                    <td>{PRACTICE_SOURCE[e.source]}</td>
-                    <td>{e.node_id ? <span data-value="node">{e.node_id}</span> : null}</td>
-                    <td>{PRACTICE_LEVEL[e.cognitive_level]}</td>
-                    <td>
+                  <tr key={e.entry_id} data-entry-id={e.entry_id} data-entry-status={e.status} role="row">
+                    <td role="cell" data-label={PRACTICE.colSource}>{PRACTICE_SOURCE[e.source]}</td>
+                    <td role="cell" data-label={PRACTICE.colNode}>{e.node_name ? <span data-value="node-name">{e.node_name}</span>
+                      : e.node_id ? <span data-value="node">{e.node_id}</span> : null}</td>
+                    <td role="cell" data-label={PRACTICE.colLevel}>{PRACTICE_LEVEL[e.cognitive_level]}</td>
+                    <td role="cell" data-label={PRACTICE.colStatus}>
                       {e.status === 'due' ? (
                         <a href={`${listPath(studentId, subject)}/${e.entry_id}`} data-testid="practice-start">{PRACTICE.start}</a>
                       ) : <span>{PRACTICE_STATUS[e.status]}</span>}
@@ -60,7 +64,7 @@ export async function PracticeListPage({ studentId, subject }: { studentId: stri
                         </>
                       ) : null}
                     </td>
-                    <td>
+                    <td role="cell" data-label={PRACTICE.colRound}>
                       <span data-value="round">{e.round}</span>{' '}<span className="muted">{PRACTICE.roundOf}</span>{' '}<span data-value="max-rounds">{e.max_rounds}</span>
                     </td>
                   </tr>

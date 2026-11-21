@@ -6,7 +6,7 @@
 // 本月计划入口（PLT-14 第 3 步，开关 monthly_plan 默认关）：打开时标题下多一条“本月计划”链接（只链到学习计划）；关时零差异。
 import { notFound, redirect } from 'next/navigation';
 import { fetchToday } from '../../../../lib/shell-api.ts';
-import { subjectLabel, TODAY, TODAY_ORCH } from '../../../../shell/copy.ts';
+import { BALANCE, subjectLabel, TODAY, TODAY_ORCH } from '../../../../shell/copy.ts';
 import { requireStudent } from '../../../../shell/guard.ts';
 import { TaskList } from '../../../../shell/TaskList.tsx';
 import { todayOrchEnabled } from '../../../../shell/today-orch.ts';
@@ -24,7 +24,15 @@ export default async function TodayPage({ params }: { params: Promise<{ studentI
   const r = await fetchToday(ps.session, studentId);
   if (!r.ok) {
     if (r.status === 401) redirect('/login');
-    notFound();
+    if (r.status === 403 || r.status === 404) notFound();
+    // BFF 不可达、超时或出错（5xx、bffFetch 的 503）：显示“暂时无法获取”，不当成“没有找到”（内测前整改待确认第 1 条；
+    // 文案与家长孩子页的今日区块同一条）
+    return (
+      <main data-testid="today">
+        <h1>{TODAY.title}</h1>
+        <p className="muted" data-unavailable="today">{BALANCE.unavailable}</p>
+      </main>
+    );
   }
   const sections = r.value.subjects;
   // 当前年级（/me，BFF 按届别推算）不在 7–9：今日计划不排学科，说明原因而不是“还没有在读的科目”（PR3）

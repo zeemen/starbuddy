@@ -29,7 +29,7 @@ info:
 servers:
   - url: http://127.0.0.1:8788
 security:
-  - serviceToken: []
+  - bffSessionToken: []
 paths:
   /internal/v1/retest/queue:
     post:
@@ -199,7 +199,10 @@ paths:
         '503': { description: BUSY（连接池忙），可重试 }
 components:
   securitySchemes:
-    serviceToken: { type: http, scheme: bearer }
+    bffSessionToken:  # PLT-24（T49）：BFF 的会话令牌（LEARNING_SESSION_TOKEN / BFF_LEARNING_SESSION_TOKEN）；写入令牌与其他调用方的令牌一律 401
+      type: http
+      scheme: bearer
+      description: BFF → 学习服务会话令牌，只开诊断、错题再练、复测、今日编排四组接口；与契约 learning-internal v1 的 bffServiceToken 不是同一枚。
   schemas:
     Entry:
       type: object

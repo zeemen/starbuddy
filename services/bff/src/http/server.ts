@@ -79,7 +79,14 @@ export function createShellHandler(deps: ShellDeps): (req: IncomingMessage, res:
   };
 
   return async (req, res) => {
-    const url = new URL(req.url ?? '/', 'http://bff.invalid');
+    // 解析不了的请求目标（例如 `//[/`：被当成主机名解析）按表外处理，与“不存在”同一个 404；原来这里在 try 之外抛出，
+    // 未处理的拒绝让进程退出（内测前整改 P1，tests/malformed-request.test.ts）
+    let url: URL;
+    try {
+      url = new URL(req.url ?? '/', 'http://bff.invalid');
+    } catch {
+      return false;
+    }
     const hit = table.map((c) => ({ c, m: c.re.exec(url.pathname) })).filter((x) => x.m !== null);
     const inTable = hit.length > 0 || shapes.some((s) => s.test(url.pathname));
     if (!inTable) return false;
@@ -267,6 +274,17 @@ export function createShellServer(deps: ShellDeps, opts: { readyCacheMs?: number
         res.writeHead(404, { 'content-type': 'application/problem+json', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
         res.end(P.NOT_FOUND);
         observeHttp('unmatched', req.method, 404, Date.now() - started);  // 表外路径：不记原始路径
+    }).catch((e: unknown) => {
+      // 兜底（内测前整改 P1）：处理链里任何未预期的异常都不能变成未处理的拒绝（那会让进程退出）；回统一的 500，
+      // 日志只记错误类别，不记路径、请求头与请求体
+      emit('error', { event: 'unhandled_request_error', exc_type: e instanceof Error ? e.name : typeof e });
+      if (!res.headersSent && !res.destroyed) {
+        res.writeHead(500, { 'content-type': 'application/problem+json', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+        res.end(P.INTERNAL);
+      } else if (!res.destroyed) {
+        res.destroy();
+      }
+      observeHttp('unmatched', req.method, 500, Date.now() - started);
     });
   });
   server.requestTimeout = 30_000;

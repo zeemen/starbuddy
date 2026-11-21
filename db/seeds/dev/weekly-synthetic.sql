@@ -7,6 +7,9 @@
 -- 内容（全部合成，文本是明显占位，不是真实文案）：
 --   - 判断模板 syn.weekly.node_mastery@1（已审核，合成占位；以迁移执行者身份模拟人工登记）；
 --   - GT 的两条知识节点判断（一条成立、一条假设，对学生、家长可见），以洞察服务身份写入（0010 的守卫照常核对）；
+--   - GT 另两条判断（T21，specs/tech-debt-batch2）：周报生成时是成立，之后一条经待验证被推翻（refuted）、一条事实更正后撤回（withdrawn）。
+--     周报快照里仍留着这两句：BFF 读周报时逐句在库里再核判断，这两句不得出现在任何页面（e2e/claim-binding.ts 核对）；
+--     第五条 f5 生成时成立、之后到期转为待验证：库的 RLS 仍让 BFF 读到待验证的判断，只靠 BFF 的再核（周报只收成立、假设）挡掉它；
 --   - GT 上一周（只收已结束的周）一份学生版成长手记、一份家长版周报（以洞察服务身份写入，0036 的守卫逐句核对判断），客观栏来源 objective，
 --     计划计数在 self_marked 栏、来源 self（0057 新形状，sie-weekly@0.2.0）；再前一周同样两份旧形状（sie-weekly@0.1.0），BFF 只取最近一周。
 -- 端到端的第二个 BFF 用一份把 syn.weekly.node_mastery@1 列进对外白名单的显示规则（scripts/e2e.sh 生成，只在这个一次性环境）。
@@ -35,7 +38,16 @@ INSERT INTO insight.claim (id, student_id, subject, target_type, target_id, temp
   ('5d000000-0000-4000-8000-0000000000f1', '5d000000-0000-4000-8000-0000000000c1', 'aya', 'node', 'MATH.FUNC.QUAD.GRAPH',
    'syn.weekly.node_mastery', 1, '{"gate": "transfer"}', 0.8, 'objective', 'established', 'created', '{agent,student,guardian}', now() + interval '30 days'),
   ('5d000000-0000-4000-8000-0000000000f2', '5d000000-0000-4000-8000-0000000000c1', 'aya', 'node', 'MATH.FUNC.QUAD.AXIS',
-   'syn.weekly.node_mastery', 1, '{"gate": "execute"}', 0.5, 'objective', 'hypothesis', 'created', '{agent,student,guardian}', now() + interval '30 days');
+   'syn.weekly.node_mastery', 1, '{"gate": "execute"}', 0.5, 'objective', 'hypothesis', 'created', '{agent,student,guardian}', now() + interval '30 days'),
+  ('5d000000-0000-4000-8000-0000000000f3', '5d000000-0000-4000-8000-0000000000c1', 'aya', 'node', 'MATH.FUNC.QUAD.ROOTS',
+   'syn.weekly.node_mastery', 1, '{"gate": "transfer"}', 0.8, 'objective', 'established', 'created', '{agent,student,guardian}', now() + interval '30 days'),
+  ('5d000000-0000-4000-8000-0000000000f4', '5d000000-0000-4000-8000-0000000000c1', 'aya', 'node', 'MATH.FUNC.QUAD.VERTEX',
+   'syn.weekly.node_mastery', 1, '{"gate": "execute"}', 0.8, 'objective', 'established', 'created', '{agent,student,guardian}', now() + interval '30 days'),
+  ('5d000000-0000-4000-8000-0000000000f5', '5d000000-0000-4000-8000-0000000000c1', 'aya', 'node', 'MATH.FUNC.QUAD.SHIFT',
+   'syn.weekly.node_mastery', 1, '{"gate": "transfer"}', 0.8, 'objective', 'established', 'created', '{agent,student,guardian}', now() + interval '30 days'),
+  -- f6（specs/why-page-e2e）：不进周报；端到端的假洞察服务对它的 insight.explain 回 503，核对“为什么”页的读取不可用降级
+  ('5d000000-0000-4000-8000-0000000000f6', '5d000000-0000-4000-8000-0000000000c1', 'aya', 'node', 'MATH.FUNC.QUAD.DOMAIN',
+   'syn.weekly.node_mastery', 1, '{"gate": "execute"}', 0.6, 'objective', 'established', 'created', '{agent,student,guardian}', now() + interval '30 days');
 INSERT INTO insight.weekly_report (student_id, week_start, week_end, audience, status, sentences, objective, algorithm_version, policy_version)
 SELECT '5d000000-0000-4000-8000-0000000000c1', w, w + 6, a, 'generated',
        jsonb_build_array(
@@ -46,7 +58,20 @@ SELECT '5d000000-0000-4000-8000-0000000000c1', w, w + 6, a, 'generated',
          jsonb_build_object('claim_id', '5d000000-0000-4000-8000-0000000000f2', 'template_key', 'syn.weekly.node_mastery', 'template_version', 1,
                             'section', CASE a WHEN 'student' THEN 'working_on' ELSE 'stuck' END,
                             'text', '【占位模板·未审核】MATH.FUNC.QUAD.AXIS｜execute', 'label', 'preliminary')
-           || CASE a WHEN 'guardian' THEN '{"confidence_band": "moderate"}'::jsonb ELSE '{}'::jsonb END),
+           || CASE a WHEN 'guardian' THEN '{"confidence_band": "moderate"}'::jsonb ELSE '{}'::jsonb END,
+         -- T21：生成时成立、之后被推翻 / 撤回的两句（快照里留着，读取时必须被再核挡掉）
+         jsonb_build_object('claim_id', '5d000000-0000-4000-8000-0000000000f3', 'template_key', 'syn.weekly.node_mastery', 'template_version', 1,
+                            'section', CASE a WHEN 'student' THEN 'lit' ELSE 'progress' END,
+                            'text', '【占位模板·未审核】MATH.FUNC.QUAD.ROOTS｜transfer')
+           || CASE a WHEN 'guardian' THEN '{"confidence_band": "strong"}'::jsonb ELSE '{}'::jsonb END,
+         jsonb_build_object('claim_id', '5d000000-0000-4000-8000-0000000000f4', 'template_key', 'syn.weekly.node_mastery', 'template_version', 1,
+                            'section', CASE a WHEN 'student' THEN 'lit' ELSE 'progress' END,
+                            'text', '【占位模板·未审核】MATH.FUNC.QUAD.VERTEX｜execute')
+           || CASE a WHEN 'guardian' THEN '{"confidence_band": "strong"}'::jsonb ELSE '{}'::jsonb END,
+         jsonb_build_object('claim_id', '5d000000-0000-4000-8000-0000000000f5', 'template_key', 'syn.weekly.node_mastery', 'template_version', 1,
+                            'section', CASE a WHEN 'student' THEN 'lit' ELSE 'progress' END,
+                            'text', '【占位模板·未审核】MATH.FUNC.QUAD.SHIFT｜transfer')
+           || CASE a WHEN 'guardian' THEN '{"confidence_band": "strong"}'::jsonb ELSE '{}'::jsonb END),
        x.objective, x.version, 'syn-weekly-seed'
   FROM (SELECT date_trunc('week', (now() AT TIME ZONE 'Asia/Shanghai')::date)::date - 7 AS w,
                -- 上一周：新形状（PLT-15 PR3，0057，sie-weekly@0.2.0）——计划完成 / 跳过在 self_marked 栏、来源 self
@@ -58,6 +83,11 @@ SELECT '5d000000-0000-4000-8000-0000000000c1', w, w + 6, a, 'generated',
                '{"source_type": "objective", "usage_minutes": 95, "plan_done": 4, "plan_skipped": 1,
                  "subjects": [{"subject": "aya", "practice_minutes": 60, "attempts": 18}]}'::jsonb, 'sie-weekly@0.1.0') x,
        unnest(ARRAY['student', 'guardian']) a;
+-- T21：周报生成之后，一条判断经待验证被推翻、一条事实更正后撤回（0010 的状态流转照常核对）
+UPDATE insight.claim SET status = 'to_verify', change_reason = 'expired' WHERE id = '5d000000-0000-4000-8000-0000000000f3';
+UPDATE insight.claim SET status = 'refuted', change_reason = 'verification_refuted' WHERE id = '5d000000-0000-4000-8000-0000000000f3';
+UPDATE insight.claim SET status = 'withdrawn', change_reason = 'fact_corrected' WHERE id = '5d000000-0000-4000-8000-0000000000f4';
+UPDATE insight.claim SET status = 'to_verify', change_reason = 'expired' WHERE id = '5d000000-0000-4000-8000-0000000000f5';
 RESET ROLE;
 
 COMMIT;

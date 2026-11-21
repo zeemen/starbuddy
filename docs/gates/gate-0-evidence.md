@@ -110,7 +110,7 @@
 | 核心节点页面发布率 100% | `services/knowledge/knowledge/m2.py`（`f9b90e2`）；道法 viewpoint 节点挂不了页面（`specs/kge-m2-gate-sprint5/lessons.md` 偏离 #3 / A1；w13 B11）；道法教材投影在现 schema 上写不成 verified，只读角色看不到任何道法投影（w13 B10）；核心节点清单待教研签字（A2、A5）；审核台同一 staff 可自改自签自发（w13 B12）。没有真实 M2 报表。 | 不满足 |
 | 道法采分点一致率 ≥ 90% | `evals/daofa-grading/grading.py`（`359d9ef`），`fixtures/` 为“合成、非金标”，报告标“流程样例”。 | 不满足（未产出） |
 
-`make kge-m2` 需执行人给真实输入，不进 `make check`；`services/knowledge/tests/test_m2.py` 只证明合成夹具上的计算流程。M1 报告无快照摘要（w13 T33）。
+`make kge-m2` 需执行人给真实输入，不进 `make check`；`services/knowledge/tests/test_m2.py` 只证明合成夹具上的计算流程。M1 报告无快照摘要（w13 T33）。（2026-11-09 更正：快照摘要已补，`specs/kge06-weekly-revision/lessons.md` 第 9 行；T33 只剩留出集执行人。）
 
 ---
 
@@ -144,13 +144,13 @@
 
 `evals/kge-compile/compare_retrieval.py`；仅有 `evals/kge-compile/reports/sample-synthetic/compare-retrieval.md`（`1cf75ef`），报告头“**流程样例，不是评测结论**”，12 题合成金标，少于 50 题下限。`evals/kge-compile/gold` 不存在（w13 B08）。没有真实结论报告，也没有“未达标以切块检索为主路径”的书面决定。
 
-### S3a · 人设家族级回归在 CI 中运行　判定：**无法自动判断（需人：附 CI run 与 persona-report 产物）**
+### S3a · 人设家族级回归在 CI 中运行　判定：**CI 已运行（2026-11-09），回归内容仍不含录音（见下）**
 
-`.github/workflows/check.yml`（`efa45aa`）第 77 行配置了 `make eval-persona CONTRACT_STRICT=1 PERSONA_REPORT_DIR=…` 并上传 `persona-report`。仓库内看不到 CI 实际运行记录与产物（CI 首次真实运行未核验，w13 T05；CI 中跑两遍，w13 T08）。本地 `make check` 中 eval-persona 通过，但输出为“**录音 有效 0 / 过期 0 / 缺失 0**”——当前没有任何录音参与回归，回归只覆盖评分器自检与治理检查，不含真实或录制的模型回复。
+`.github/workflows/check.yml`（`efa45aa`）第 77 行配置了 `make eval-persona CONTRACT_STRICT=1 PERSONA_REPORT_DIR=…` 并上传 `persona-report`。仓库内看不到 CI 实际运行记录与产物（CI 首次真实运行未核验，w13 T05；CI 中跑两遍，w13 T08）。（2026-11-09 补：手动触发的 check run 42564677313（提交 `32e445b`）persona 分组通过，产物 `persona-report`（artifact 13650799039，sha256:55a94c55…f3b2ff，保留到 2027-02-07）；T05 主体已核验。）本地 `make check` 中 eval-persona 通过，但输出为“**录音 有效 0 / 过期 0 / 缺失 0**”——当前没有任何录音参与回归，回归只覆盖评分器自检与治理检查，不含真实或录制的模型回复。
 
 ### S3b · 发布闸门三科各有一个版本（原“四科”）　判定：**不满足**
 
-`specs/release-gate-sprint4/`：冲刺 4 只完成第一部分（阿鸦内容包格式 3 与提示原文 C9 检查），`platform.publish_content_version` / `change_admission`（第二部分）未实现，迁移中无该函数；没有任何一科的经闸门内容版本记录（w13 T01）。英语搁置不计。
+`specs/release-gate-sprint4/`：冲刺 4 只完成第一部分（阿鸦内容包格式 3 与提示原文 C9 检查），`platform.publish_content_version` / `change_admission`（第二部分）未实现，迁移中无该函数（2026-11-09 更正：第二部分已在迁移 0039（草稿）实现，发布门禁另拒收非严格或带标记的 C9 检查，见 `specs/tech-debt-batch3`；判定仍以各科真实签字的版本记录为准）；没有任何一科的经闸门内容版本记录（w13 T01）。英语搁置不计。
 
 ### S4 · 监管分类意见；境内试点环境　判定：**无法自动判断（需人）**
 

@@ -17,7 +17,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from conftest import ADAPTER_CREDENTIAL, CREDENTIAL
+from conftest import WRITE_AUTH, SESSION_CREDENTIAL, ADAPTER_CREDENTIAL, CREDENTIAL
 from learning.app import create_app
 from test_practice_service import (INSIGHT, KNOWLEDGE, N1, N2, N3, ORCH, PV, SECRET, Fakes, candidate_contract, clock,  # noqa: F401
                                    new_student, no_forbidden, plock, ppg, ppools, practice_settings, reset_clock)
@@ -100,7 +100,7 @@ class TApi:
         b = to_v1_body(grade_body(student, item=item, text=text))
         b["context"]["content_version"] = dict(CV)
         b["attempt"]["occurred_at"] = clock().isoformat()
-        r = await self.c.post("/internal/v1/grade", json={"request": b, "ingest": {"channel": "keypad"}})
+        r = await self.c.post("/internal/v1/grade", json={"request": b, "ingest": {"channel": "keypad"}}, headers=WRITE_AUTH)
         assert r.status_code == 200, r.text
 
 
@@ -122,7 +122,7 @@ async def api(ppools, plock):
     app, fakes = await open_api(app_pool, plock, eng)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://learning.test") as c:
-            c.headers["authorization"] = f"Bearer {CREDENTIAL}"
+            c.headers["authorization"] = f"Bearer {SESSION_CREDENTIAL}"
             yield TApi(c, fakes, eng)
 
 
@@ -227,7 +227,7 @@ async def test_merges_three_sources_with_dedupe_and_priority(api, ppools, studen
     # 计划不传预算（与 /internal/v1/plan 同一请求，BFF 按科 sections 用同一份）；截断只在跨科汇总里做
     assert "constraints" not in sent and "usage_id" not in sent["context"]
     # 附带的各科计划与 /internal/v1/plan 对同一数据逐字段一致
-    r = await api.c.post("/internal/v1/plan", json={"request_id": str(uuid.uuid4()), "student_ref": student, "subjects": ["aya", "zhixing"]})
+    r = await api.c.post("/internal/v1/plan", json={"request_id": str(uuid.uuid4()), "student_ref": student, "subjects": ["aya", "zhixing"]}, headers=WRITE_AUTH)
     assert r.status_code == 200 and out["plan"] == r.json(), (out["plan"], r.text)
     assert out["plan"]["subjects"][0]["tasks"][0] == {"kind": "retest", "target_node_ids": [N1], "priority": 0.9, "estimated_minutes": 10,
                                                       "rationale_code": "retest_scheduled"}
@@ -259,7 +259,7 @@ async def test_subject_rotation_within_source(ppools, plock, student):
          "rationale_code": f"syn_code_{k}"} for k in range(3)]
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://learning.test") as c:
-            c.headers["authorization"] = f"Bearer {CREDENTIAL}"
+            c.headers["authorization"] = f"Bearer {SESSION_CREDENTIAL}"
             a = TApi(c, fakes, None)
             for order in (("zhixing", "aya"), ("aya", "zhixing")):
                 before = fakes.calls.get("plan", 0)
@@ -351,7 +351,7 @@ async def test_modules_not_started_are_source_disabled(ppools, plock, student):
     app, fakes = await open_api(app_pool, plock, None, **NO_PRACTICE)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://learning.test") as c:
-            c.headers["authorization"] = f"Bearer {CREDENTIAL}"
+            c.headers["authorization"] = f"Bearer {SESSION_CREDENTIAL}"
             out = await TApi(c, fakes, None).ok(student)
     clean(out)
     assert {s["source"]: s["status"] for s in out["sources"]} == {"retest": "source_disabled", "practice": "source_disabled", "plan": "ok"}
@@ -370,7 +370,7 @@ async def test_not_configured_is_501(ppools, plock, student):
     app, fakes = await open_api(app_pool, plock, None, today_config=None)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://learning.test") as c:
-            c.headers["authorization"] = f"Bearer {CREDENTIAL}"
+            c.headers["authorization"] = f"Bearer {SESSION_CREDENTIAL}"
             a = TApi(c, fakes, None)
             r = await a.today(student)
             assert r.status_code == 501 and r.json()["code"] == "TODAY_UNAVAILABLE", r.text
@@ -385,7 +385,7 @@ async def test_configured_without_any_switch_serves(ppools, plock, student, monk
     app, fakes = await open_api(app_pool, plock, None, **NO_PRACTICE)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://learning.test") as c:
-            c.headers["authorization"] = f"Bearer {CREDENTIAL}"
+            c.headers["authorization"] = f"Bearer {SESSION_CREDENTIAL}"
             r = await TApi(c, fakes, None).today(student)
             assert r.status_code == 200, r.text
 
@@ -403,14 +403,14 @@ async def test_unsigned_config_outside_test_dev_disables_module(ppools, plock, m
     app, fakes = await open_api(app_pool, plock, None, env="dev", today_config=str(FIXTURE), **NO_PRACTICE)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://learning.test") as c:
-            c.headers["authorization"] = f"Bearer {CREDENTIAL}"
+            c.headers["authorization"] = f"Bearer {SESSION_CREDENTIAL}"
             r = await c.post("/internal/v1/today", json={"request_id": str(uuid.uuid4()), "student_ref": str(uuid.uuid4()), "subjects": ["aya"]})
             assert r.status_code == 501 and r.json()["code"] == "TODAY_UNAVAILABLE"
 
 
 async def test_only_bff_token(api, student):
     for header in ("", f"Bearer {ORCH}", f"Bearer {INSIGHT}", f"Bearer {ADAPTER_CREDENTIAL}", f"Bearer {KNOWLEDGE.credential}",
-                   f"Bearer {SECRET}", f"Bearer {CREDENTIAL}x", CREDENTIAL):
+                   f"Bearer {SECRET}", f"Bearer {SESSION_CREDENTIAL}x", SESSION_CREDENTIAL, f"Bearer {CREDENTIAL}"):
         r = await api.c.post("/internal/v1/today", json={"request_id": str(uuid.uuid4()), "student_ref": student, "subjects": ["aya"]},
                              headers={"authorization": header})
         assert r.status_code == 401 and r.json()["code"] == "UNAUTHENTICATED", header

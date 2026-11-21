@@ -1,7 +1,7 @@
 -- KGE-02 阿鸦题库导入（生成文件，勿手改）：地图版本 aya 0.1.0（ee911eb8-51b3-454e-85c0-fdb6c7e501e1）上的题组、打标草稿与低置信候选
 -- 由 tools/kge-import 生成；文件自带事务，在演练库用 psql -X -v ON_ERROR_STOP=1 执行。不含题干、答案、解析，不含任何学生数据。
 -- 前置：迁移 0011、0019、0024 已执行；地图版本种子（db/seeds/kge/aya-<专题>-<版本>/import.sql）已执行；
---       题目已由 adapters/aya/scripts/register-content.ts 登记进 platform.item（item_tag / tag_candidate 对它有外键）。
+--       题目已由 tools/content-register/aya.ts 登记进 platform.item（item_tag / tag_candidate 对它有外键）。
 -- 六段标识不在这里写（platform.curriculum_version 由登记脚本负责）；每题推出的六段见同目录 tagging-report.json。
 -- 打标层：rule；A 级 0 题写 item_tag（待审草稿），候选 69 行进低置信队列。
 -- item_tag 与 tag_candidate 的题目来源一律 'legacy'（迁移 0024）；item_tag.tag_basis 记 A 级结论依据的每一层及其版本。

@@ -30,6 +30,13 @@ COST = obs.counter("starbuddy_model_estimated_cost_cny_total", "估算成本（�
                    ("provider", "task"))
 METER_CHECK = obs.counter("starbuddy_learning_meter_check_total", "写入前的计量核对（allowed 放行；sealed 即 409 IDEMPOTENCY_KEY_SEALED）",
                           ("outcome",))
+# 地图版本交叉核对（PLT-25，learning/map_check.py）：outcome = match / mismatch / unbound / absent。写入（grade、diagnose）mismatch 即拒收；
+# 今日计划只计数（另一个指标族，不与写入混在一起）
+MAP_VERSION_CHECK = obs.counter("starbuddy_learning_map_version_check_total",
+                                "写入前的地图版本核对（适配器 source_version 的 graph: 段与内容版本绑定的地图比对；mismatch 即 502 拒收）",
+                                ("outcome",))
+PLAN_MAP_VERSION_CHECK = obs.counter("starbuddy_learning_plan_map_version_check_total",
+                                     "今日计划的地图版本核对（与该科已发布的地图版本比对；只计数、不拒收）", ("outcome",))
 # 调用记录落库（specs/plt-model-call-log 范围第 4 条，迁移 0060）：无标签，只数行
 CALL_LOG_WRITTEN = obs.counter("starbuddy_model_call_log_written_total", "调用记录已写入 platform.model_call_log 的行数")
 CALL_LOG_DROPPED = obs.counter("starbuddy_model_call_log_dropped_total",

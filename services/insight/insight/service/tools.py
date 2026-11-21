@@ -134,7 +134,7 @@ class DbActorVerifier:
             async with self.pool.acquire() as conn:
                 ok = await conn.fetchval("SELECT insight.verify_actor($1::uuid, $2::text, $3::uuid)", ref, audience, student)
         except (asyncpg.UndefinedFunctionError, asyncpg.InsufficientPrivilegeError) as e:
-            log.error(json.dumps({"actor_verifier": "unavailable", "error_class": type(e).__name__[:48]}, ensure_ascii=False))
+            log.error(json.dumps({"event": "actor_verifier_unavailable", "error_class": type(e).__name__[:48]}, ensure_ascii=False))
             return False
         return ok is True
 

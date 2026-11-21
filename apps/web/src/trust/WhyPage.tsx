@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { notFound, redirect } from 'next/navigation';
 import { ResultForm } from '../auth/ResultForm.tsx';
 import { fetchWhy } from '../lib/trust-api.ts';
-import { CONFIDENCE_BAND, DISPUTE, DISPUTE_KIND, DISPUTE_RESULT, EVIDENCE_LEVEL, EVIDENCE_SOURCE, TRUST, WHY, WHY_STATUS } from '../shell/copy.ts';
+import { CONFIDENCE_BAND, DISPUTE, DISPUTE_KIND, DISPUTE_NEXT_DOM, DISPUTE_RESULT, EVIDENCE_LEVEL, EVIDENCE_SOURCE, TRUST, WHY, WHY_STATUS } from '../shell/copy.ts';
 import { trustEnabled } from '../shell/features.ts';
 import { requireGuardian, requireOwnStudent, requireTrust } from '../shell/guard.ts';
 import { raiseDisputeAction } from './actions.ts';
@@ -48,17 +48,22 @@ function ClaimExplain({ view, audience }: { view: WhyView; audience: Audience })
       </p>
       <h2 id="why-evidence">{WHY.evidenceHeading}</h2>
       {view.evidence.length === 0 ? <p className="muted">{WHY.evidenceEmpty}</p> : (
-        <table className="trust-table" data-testid="why-evidence">
-          <thead>
-            <tr><th scope="col">{WHY.colTime}</th><th scope="col">{WHY.colKind}</th><th scope="col">{WHY.colLevel}</th><th scope="col">{WHY.colNode}</th></tr>
+        // 手机宽度下按卡片排列（globals.css 的 .card-table；每格前带列名，取表头同一条文案）：只改布局，格子里的文字不变（规则 11，
+        // specs/trust-tables-mobile）
+        <table className="trust-table card-table" data-testid="why-evidence" role="table">
+          <thead role="rowgroup">
+            <tr role="row">
+              <th scope="col" role="columnheader">{WHY.colTime}</th><th scope="col" role="columnheader">{WHY.colKind}</th>
+              <th scope="col" role="columnheader">{WHY.colLevel}</th><th scope="col" role="columnheader">{WHY.colNode}</th>
+            </tr>
           </thead>
-          <tbody>
+          <tbody role="rowgroup">
             {view.evidence.map((e, i) => (
-              <tr key={i}>
-                <td><span data-value="date">{shanghaiDay(e.occurred_at)}</span></td>
-                <td>{EVIDENCE_SOURCE[e.source_type]}</td>
-                <td>{e.evidence_level ? EVIDENCE_LEVEL[e.evidence_level] : null}</td>
-                <td>{e.node_id ? <span data-value="node">{e.node_id}</span> : null}</td>
+              <tr key={i} role="row">
+                <td role="cell" data-label={WHY.colTime}><span data-value="date">{shanghaiDay(e.occurred_at)}</span></td>
+                <td role="cell" data-label={WHY.colKind}>{EVIDENCE_SOURCE[e.source_type]}</td>
+                <td role="cell" data-label={WHY.colLevel}>{e.evidence_level ? EVIDENCE_LEVEL[e.evidence_level] : null}</td>
+                <td role="cell" data-label={WHY.colNode}>{e.node_id ? <span data-value="node">{e.node_id}</span> : null}</td>
               </tr>
             ))}
           </tbody>
@@ -69,14 +74,15 @@ function ClaimExplain({ view, audience }: { view: WhyView; audience: Audience })
   );
 }
 
-/** “我不同意”的三条路：每条一张表单（学生本人三条，家长两条）；结果只显示下一步编码映射的占位文案 */
+/** “我不同意”的三条路：每条一张表单（学生本人三条，家长两条）；结果只显示下一步编码映射的占位文案。
+ *  测试定位用的 data-testid 写成短横线（dispute-i-know）：异议类型编码原样（i_know）不进 DOM；结果的下一步编码也只给序号（DISPUTE_NEXT_DOM）（e2e/dom-leak.ts，specs/why-page-e2e 发现） */
 function DisputePanel({ studentId, claimId, audience, csrf }: { studentId: string; claimId: string; audience: Audience; csrf: string }) {
   const base = sideBase(audience, studentId);
   return (
     <section aria-labelledby="dispute-heading" data-testid="dispute-panel">
       <h2 id="dispute-heading">{DISPUTE.heading}</h2>
       {disputeKindsFor(audience).map((kind) => (
-        <ResultForm key={kind} action={raiseDisputeAction} labels={DISPUTE_RESULT} testId={`dispute-${kind}`} className="shell-form">
+        <ResultForm key={kind} action={raiseDisputeAction} labels={DISPUTE_RESULT} domCodes={DISPUTE_NEXT_DOM} testId={`dispute-${kind.replaceAll('_', '-')}`} className="shell-form">
           <input type="hidden" name="student" value={studentId} />
           <input type="hidden" name="claim" value={claimId} />
           <input type="hidden" name="kind" value={kind} />

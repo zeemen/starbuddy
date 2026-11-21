@@ -106,6 +106,21 @@ def test_code_sets_match_contract():
     assert set(EXAM_TYPES) == set(C.doc["components"]["schemas"]["ExamSpec"]["properties"]["exam_type"]["enum"])
 
 
+def test_exam_type_mapping_covers_migration_0022():
+    """契约的 exam_type（mock 不分一模二模）→ 库里 0022 exam_record.exam_type 的映射（predict.EXAM_TYPES）：值合起来恰好是库里的取值、
+    每个库值只归一个契约值。编排层调 insight.predict 时把 mock1 / mock2 都按 mock 传（specs/web-bff-enum-drift lessons 更正）；
+    库里加了考试类型而映射没跟上，预测就会漏掉这类考试。月度计划直接按库值读成绩（monthly.EXAM_TYPES），也须与库相同。"""
+    from insight.monthly import EXAM_TYPES as MONTHLY_EXAM_TYPES
+    sql = (MIG / "0022_insight__onboarding.up.sql").read_text(encoding="utf-8")
+    m = re.search(r"exam_type\s+text NOT NULL CHECK \(exam_type IN \(([^)]*)\)\)", sql)
+    assert m, "0022 里找不到 exam_type 的 CHECK（迁移改写了，先更新这里的模式）"
+    db = set(re.findall(r"'([^']*)'", m.group(1)))
+    mapped = [v for vs in EXAM_TYPES.values() for v in vs]
+    assert set(mapped) == db, f"映射的库值 {sorted(mapped)} 与 0022 的 {sorted(db)} 不同"
+    assert len(mapped) == len(set(mapped)), "有库值同时归到两个契约值"
+    assert set(MONTHLY_EXAM_TYPES) == db
+
+
 def test_dispute_steps_match_migration_0032():
     sql = (MIG / "0032_insight__dispute.up.sql").read_text(encoding="utf-8")
     body = sql.split("CREATE FUNCTION insight.dispute_step_allowed", 1)[1].split(") t(k, f, s, c)", 1)[0]

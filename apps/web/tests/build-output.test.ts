@@ -7,8 +7,9 @@ import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
-const NEXT = new URL('../.next', import.meta.url).pathname;
+const NEXT = fileURLToPath(new URL('../.next', import.meta.url));
 const BUILT = existsSync(join(NEXT, 'BUILD_ID'));
 /** 打包器把非 ASCII 字符串写成反斜杠 u 加四位小写十六进制的写法 */
 const escapeUnicode = (s: string): string =>

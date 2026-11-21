@@ -4,8 +4,9 @@
 // 这里只取 rule_id 与双引号里的 pattern（按 JSON 字符串转义还原）；类别取文件名，并核对与 rule_id 前缀一致。
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const WEB = new URL('..', import.meta.url).pathname;
+const WEB = fileURLToPath(new URL('..', import.meta.url));
 export const FORBIDDEN_DIR = join(WEB, '..', '..', 'packages', 'personas', 'forbidden');
 /** 前端文案查的类别：A–E（与 guard 的 `--persona platform` 口径一致；F、G 与 platform 类不在这里查）。 */
 export const CLASSES = ['A', 'B', 'C', 'D', 'E'] as const;

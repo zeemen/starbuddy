@@ -108,7 +108,7 @@ def wenli_adapter(pg, route_endpoint):
         if os.environ.get("LEARNING_TEST_STRICT") == "1":
             pytest.fail(why)
         pytest.skip(why)
-    sql = subprocess.run(["node", "--no-warnings", "scripts/register-content.ts"], cwd=WL, check=True, capture_output=True).stdout
+    sql = subprocess.run(["node", "--no-warnings", "../../tools/content-register/wenli.ts"], cwd=WL, check=True, capture_output=True).stdout
     pg.psql(sql.decode())
     port = _port()
     env = {"PATH": os.environ["PATH"], "WENLI_ADAPTER_SERVICE_TOKEN": WL_ADAPTER, "PORT": str(port),

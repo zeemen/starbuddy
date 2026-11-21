@@ -33,6 +33,7 @@ import { withAccount } from '../metering/db.ts';
 import { usageIdFor } from '../metering/uuid.ts';
 import { P } from '../http/problems.ts';
 import type { Reply } from '../http/routes.ts';
+import { nodeNamesOrEmpty } from '../node-names.ts';
 import { pickRich, type RichItem } from '../item-rich.ts';
 import type { PracticeLearning, PracticeOutcome } from './learning-client.ts';
 import { MAX_SEALED, openTicket, sealTicket, SEALED_PREFIX, type ItemFormat, type OpenedTicket } from './ticket.ts';
@@ -247,16 +248,21 @@ export function fromFailure(f: { status: number; problem: { code?: string } }, o
 const replayHeader = (replayed: boolean) => ({ 'idempotent-replayed': replayed ? 'true' : 'false' });
 
 // ---------- 响应白名单 ----------
-const ENTRY_STATUSES = ['due', 'waiting', 'closed', 'exhausted', 'unavailable'];
+// 前端 apps/web/src/practice/view.ts 的白名单与这几组逐字核对（tests/enum-drift.integration.test.ts，specs/web-bff-enum-drift）
+export const ENTRY_STATUSES = ['due', 'waiting', 'closed', 'exhausted', 'unavailable'] as const;
+/** 作答后的条目状态（不会是 unavailable） */
+export const AFTER_STATUSES = ['due', 'waiting', 'closed', 'exhausted'] as const;
+export const SOURCES = ['wrong', 'hint_followup'] as const;
 const LEVELS = ['know', 'understand', 'apply', 'synthesize'];
+const oneOf = (xs: readonly string[], v: unknown): boolean => typeof v === 'string' && xs.includes(v);
 
 /** 条目：只挑这些字段；原题引用、复测标记、同族限定标记与任何多出来的字段不转 */
 export function pickEntry(e: unknown): Record<string, unknown> | null {
   if (!isRecord(e)) return null;
   const { entry_id, node_id, cognitive_level, source, status, round, max_rounds, next_round_at, empty_reason } = e;
   if (typeof entry_id !== 'string' || !UUID.test(entry_id) || typeof node_id !== 'string' || node_id === '' || node_id.length > 128
-      || typeof cognitive_level !== 'string' || !LEVELS.includes(cognitive_level) || (source !== 'wrong' && source !== 'hint_followup')
-      || typeof status !== 'string' || !ENTRY_STATUSES.includes(status) || !isInt(round, 1, 1000) || !isInt(max_rounds, 1, 1000)
+      || typeof cognitive_level !== 'string' || !LEVELS.includes(cognitive_level) || !oneOf(SOURCES, source)
+      || !oneOf(ENTRY_STATUSES, status) || !isInt(round, 1, 1000) || !isInt(max_rounds, 1, 1000)
       || (next_round_at !== null && !isTime(next_round_at))
       || (empty_reason !== null && (typeof empty_reason !== 'string' || !CODE.test(empty_reason)))) {
     return null;
@@ -299,7 +305,7 @@ export function pickAnswer(v: unknown): Record<string, unknown> | null {
   if (!isRecord(v) || !(VERDICTS as readonly unknown[]).includes(v['verdict']) || !isRecord(v['entry'])) return null;
   const e = v['entry'];
   const { entry_id, status, round, next_round_at } = e;
-  if (typeof entry_id !== 'string' || !UUID.test(entry_id) || typeof status !== 'string' || !['due', 'waiting', 'closed', 'exhausted'].includes(status)
+  if (typeof entry_id !== 'string' || !UUID.test(entry_id) || !oneOf(AFTER_STATUSES, status)
       || !isInt(round, 1, 1000) || (next_round_at !== null && !isTime(next_round_at))) {
     return null;
   }
@@ -320,7 +326,10 @@ export async function practiceQueue(deps: PracticeDeps, account: string, student
   if (!isRecord(body) || !Array.isArray(body['entries'])) return UPSTREAM_UNAVAILABLE;
   const entries = body['entries'].map(pickEntry);
   if (entries.some((e) => e === null)) return UPSTREAM_UNAVAILABLE;  // 形状不对整页不给（不挑着给一部分）
-  return json(200, { subject: code, entries });
+  // 知识点名（已发布地图，与今日计划同一口径）：取不到时为 null，列表照常返回（specs/practice-retest-list-polish）
+  const picked = entries as Record<string, unknown>[];
+  const names = await nodeNamesOrEmpty(deps.pool, account, picked.map((e) => e['node_id'] as string), deps.note);
+  return json(200, { subject: code, entries: picked.map((e) => ({ ...e, node_name: names.get(e['node_id'] as string) ?? null })) });
 }
 
 export async function practiceNext(deps: PracticeDeps, account: string, student: string, code: string, entry: string): Promise<Reply> {

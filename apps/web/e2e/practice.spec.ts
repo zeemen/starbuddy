@@ -112,6 +112,42 @@ test('学生本人：科目页有入口 → 列表只陈述再练状态 → 取�
   expect(off).toEqual([]);
 });
 
+
+/** 手机宽度（specs/practice-retest-list-polish）：没有横向滚动；每行一张卡片（tr 是块级），每格前的列名就是表头那一条文案 */
+async function cardLayout(page: Page, table: string, labels: readonly string[]): Promise<void> {
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow, '没有横向滚动').toBeLessThanOrEqual(0);
+  const got = await page.locator(`[data-testid="${table}"] tbody tr`).first().evaluate((tr) => ({
+    display: getComputedStyle(tr).display,
+    labels: Array.from(tr.querySelectorAll('td')).map((td) => getComputedStyle(td, '::before').content.replace(/^"|"$/g, '')),
+    header: getComputedStyle(tr.closest('table')!.querySelector('thead')!).position,
+  }));
+  expect(got.display).toBe('block');
+  expect(got.labels).toEqual([...labels]);
+  expect(got.header, '表头视觉隐藏（留给读屏软件）').toBe('absolute');
+}
+
+test('知识点名与手机卡片排列：已发布地图里的节点显示名称（编号不进页面），其余显示编号；390 宽按卡片排列、无横向滚动、无障碍不退化', async ({ page }) => {
+  await loginStudent(page, P1);
+  await page.goto(list(P1));
+  // 102、103 的节点在合成数学地图 0.9.0（已发布）里：显示名称；101 不在任何地图里：显示编号
+  await expect(row(page, E('102')).locator('[data-value="node-name"]')).toHaveText('（合成）知识点 002');
+  await expect(row(page, E('103')).locator('[data-value="node-name"]')).toHaveText('（合成）知识点 003');
+  await expect(row(page, E('102')).locator('[data-value="node"]')).toHaveCount(0);
+  expect(await page.content(), '有名称的条目，编号不进页面').not.toContain('MATH.SV1A.T1.N002');
+  await expect(row(page, E('101')).locator('[data-value="node"]')).toHaveText('MATH.SYN.P1.N1');
+  await expect(row(page, E('101')).locator('[data-value="node-name"]')).toHaveCount(0);
+  const desktop = await row(page, E('101')).evaluate((tr) => getComputedStyle(tr).display);
+  expect(desktop, '桌面仍是表格排列').toBe('table-row');
+  for (const width of [360, 390, 430]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto(list(P1));
+    await cardLayout(page, 'practice-entries', [PRACTICE.colSource, PRACTICE.colNode, PRACTICE.colLevel, PRACTICE.colStatus, PRACTICE.colRound]);
+  }
+  await onlyCopy(page);
+  await axe(page);
+});
+
 test('再练做错：结果未知时作答控件禁用，用同一张票据原样再提交首次作答 → 判错，条目等下一轮（显示开放时间）', async ({ page }) => {
   await loginStudent(page, P1);
   await page.goto(item(P1, E('10b')));
@@ -155,6 +191,43 @@ test('待复核：只显示“等待复核”，不显示判分结论；条目�
   await expect(page.getByTestId('practice-another')).toBeVisible();
   await onlyCopy(page);
   await axe(page);
+});
+
+test('作答被闸门拒：提交按钮按 retry-after 冷却，冷却完由学生再点，用同一张票据提交成功（specs/retry-after-cooldown）', async ({ page }) => {
+  // 第五个 BFF 的闸门测试配置：每科每生同时 1 个、retry-after 1 秒（scripts/e2e.sh）。桩对填空作答 SLOW-SYN 晚 3 秒才答：
+  // 第一页占着本学生在数学的唯一名额，第二页的作答被 BFF 拒（503 SUBJECT_BUSY，不到桩）
+  await loginStudent(page, P1);
+  const other = await page.context().newPage();
+  await page.goto(item(P1, E('106')));
+  await other.goto(item(P1, E('106')));
+  await expect(itemSection(page)).toHaveAttribute('data-phase', 'item');
+  await expect(itemSection(other)).toHaveAttribute('data-phase', 'item');
+  await page.getByLabel(/答案/).fill('SLOW-SYN');
+  await other.getByLabel(/答案/).fill('合成作答');
+  const before = fakeLearningRequests();
+  await page.getByTestId('practice-submit').click();
+  await expect.poll(() => fakeLearningRequests(), { message: '第一页的作答已到桩（占着名额）' }).toBeGreaterThan(before);
+  const atStub = fakeLearningRequests();
+  const btn = other.getByTestId('practice-submit');
+  await btn.click();
+  await expect(itemSection(other)).toHaveAttribute('data-error', 'rate_limited');
+  const t0 = Date.now();
+  await expect(btn).toHaveAttribute('data-cooldown', 'on');
+  await expect(btn).toBeDisabled();
+  await expect(btn).toHaveText(PRACTICE.retry);
+  await expect(other.getByTestId('practice-status')).toHaveText(PRACTICE_ERROR['rate_limited']!);
+  await expect(other.getByLabel(/答案/)).toBeDisabled();  // 留着票据，原样重发首次作答
+  await btn.click({ force: true });                        // 冷却中点了也不发请求
+  await onlyCopy(other);
+  await axe(other);
+  await expect(btn).toHaveAttribute('data-cooldown', 'off', { timeout: 5_000 });
+  expect(Date.now() - t0, '按 retry-after（1 秒）冷却').toBeGreaterThanOrEqual(700);
+  await expect(btn).toBeEnabled();
+  await expect(page.getByTestId('practice-result')).toHaveAttribute('data-pending-review', 'true', { timeout: 10_000 });
+  expect(fakeLearningRequests(), '被拒与冷却中的点击都没到桩').toBe(atStub);
+  await btn.click();                                       // 冷却结束不自动重发：学生自己点
+  await expect(other.getByTestId('practice-result')).toHaveAttribute('data-pending-review', 'true');
+  await other.close();
 });
 
 test('409、410、503 与无候选：各自的提示；过期票据要换一道题', async ({ page }) => {

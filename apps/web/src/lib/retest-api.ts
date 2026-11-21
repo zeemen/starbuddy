@@ -6,6 +6,7 @@ import { isRetestSubject, retestEnabled } from '../retest/features.ts';
 import { bffBaseUrl, bffHeaders, type BffSession } from './bff.ts';
 import type { Answer } from './diagnosis.ts';
 import type { PracticeApi } from './practice-api.ts';
+import { parseRetryAfter } from './retry-after.ts';
 import { isUuid } from './star-map.ts';
 
 export type RetestApi<T> = PracticeApi<T>;
@@ -32,7 +33,8 @@ async function call<T>(s: BffSession, student: string, subject: string, method: 
   if (r.ok) return { ok: true, value: json as T };
   const field = (k: string): string | null => json && typeof json === 'object' && typeof (json as Record<string, unknown>)[k] === 'string'
     ? (json as Record<string, string>)[k]! : null;
-  return { ok: false, status: r.status, code: field('code') ?? 'INTERNAL', reason: field('reason') };
+  const retryAfterSec = parseRetryAfter(r.headers.get('retry-after'));  // 只在合口径时出现（specs/retry-after-cooldown）
+  return { ok: false, status: r.status, code: field('code') ?? 'INTERNAL', reason: field('reason'), ...(retryAfterSec === null ? {} : { retryAfterSec }) };
 }
 
 /** 一科到期的复测与验证条目（只读，不计次，宵禁不挡） */

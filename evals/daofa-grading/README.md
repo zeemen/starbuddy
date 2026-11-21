@@ -8,7 +8,8 @@
 |---|---|---|
 | `grading.py` | 逐点判定一致率（主指标）、逐题总分一致率、失分归因一致率与混淆表 | 工程 |
 | `fixtures/` | **合成、非金标**的格式样例（回应 `SYN-R-*`，题目取合成内容包），报告标“流程样例” | 工程 |
-| `tests/` | 与手算一致的单测（手算写在注释里） | 工程 |
+| `transcribe.py` | 把适配器 `grade` 返回转写成上面的 CSV（W13 T34） | 工程 |
+| `tests/` | 与手算一致的单测（手算写在注释里）；转写脚本的单测 | 工程 |
 | `gold/` | 教师逐点标注（至少 50 题，道法教研提供）。**只由教研提交，只读**；本任务不创建 | **只能教研写** |
 
 ## 输入格式（教师标注与适配器判分同一格式）
@@ -44,4 +45,4 @@ python3 grading.py --gold gold/<文件>.csv --adapter <适配器判分>.csv --pa
 ```
 
 退出码：0 算完（未加 `--enforce` 时未达标也是 0）；`--enforce` 且逐点一致率未达标为 1；输入错误为 2。
-适配器判分 CSV 由适配器 `grade` 返回的逐维度结果转写（`dimension_id` = 采分点 `point_id`）；转写脚本随真实判分评测另起任务。
+适配器判分 CSV 由适配器 `grade` 返回的逐维度结果转写（`dimension_id` = 采分点 `point_id`）：`python3 transcribe.py --in <grades.jsonl> --out <adapter.csv>`（每行 `{"response_id", "item_id", "grade"}`；错因按证据编号对到维度；未判定的点不写，评测按缺点计；只写 ID 与分数。W13 T34）。

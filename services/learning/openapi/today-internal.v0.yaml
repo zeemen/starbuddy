@@ -37,7 +37,7 @@ info:
 servers:
   - url: http://127.0.0.1:8788
 security:
-  - serviceToken: []
+  - bffSessionToken: []
 paths:
   /internal/v1/today:
     post:
@@ -76,7 +76,10 @@ paths:
         '503': { description: TODAY_SNAPSHOT_UNAVAILABLE（只在 LEARNING_TODAY_SNAPSHOT=1 时；快照读写失败，可重试） }
 components:
   securitySchemes:
-    serviceToken: { type: http, scheme: bearer }
+    bffSessionToken:  # PLT-24（T49）：BFF 的会话令牌（LEARNING_SESSION_TOKEN / BFF_LEARNING_SESSION_TOKEN）；写入令牌与其他调用方的令牌一律 401
+      type: http
+      scheme: bearer
+      description: BFF → 学习服务会话令牌，只开诊断、错题再练、复测、今日编排四组接口；与契约 learning-internal v1 的 bffServiceToken 不是同一枚。
   schemas:
     TodayItem:
       type: object

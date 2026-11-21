@@ -31,6 +31,22 @@ export function serviceUrlOk(url: string, env: RunEnv): boolean {
   return m !== null && privateIpv4(m[1]!);
 }
 
+/** BFF → 学习服务的两枚令牌（PLT-24 / T49）：写入令牌 BFF_LEARNING_TOKEN 只给契约 v1 的路由（今日计划、星图），
+ *  会话令牌 BFF_LEARNING_SESSION_TOKEN 只给诊断、错题再练、复测、今日编排四个客户端。配了 BFF_LEARNING_URL 时两枚都必须有、
+ *  各 ≥ 32 字符、互不相同；返回 null 表示没配学习服务（诊断 503、今日计划“暂无安排”）。消息不带令牌取值。 */
+export function learningTokens(env: RunEnv, vars: Record<string, string | undefined> = process.env):
+    { url: string; write: string; session: string } | null {
+  const url = vars['BFF_LEARNING_URL'];
+  if (!url) return null;
+  const write = vars['BFF_LEARNING_TOKEN'] ?? '';
+  const session = vars['BFF_LEARNING_SESSION_TOKEN'] ?? '';
+  if (!serviceUrlOk(url, env)) throw new Error('BFF_LEARNING_URL 必须是 https 或本机回环地址（staging 另收内网 IPv4）');
+  if (write.length < 32) throw new Error('BFF_LEARNING_TOKEN（学习服务写入令牌）至少 32 个字符');
+  if (session.length < 32) throw new Error('BFF_LEARNING_SESSION_TOKEN（学习服务会话令牌：诊断、再练、复测、今日编排）至少 32 个字符');
+  if (session === write) throw new Error('BFF_LEARNING_SESSION_TOKEN 必须与 BFF_LEARNING_TOKEN 不同');
+  return { url, write, session };
+}
+
 /** 镜像固化的环境标记（STARBUDDY_IMAGE_ENV，LT-01 安全审查 S10）：设了就必须与运行环境一致（staging 镜像拒绝 dev / test 运行）；
  *  已知局限：运行时同名变量可以覆盖，只防误用 */
 export function checkImageEnv(env: RunEnv, marked: string | undefined): void {

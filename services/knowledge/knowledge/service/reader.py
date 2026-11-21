@@ -21,6 +21,7 @@ from typing import Any, Sequence
 
 import asyncpg
 
+from ..db_timeouts import request_pool_kwargs
 from ..atoms import Snapshot, parse_snapshot
 from ..nodeid import SUBJECT_PREFIX
 
@@ -83,9 +84,11 @@ async def assert_reader_role(conn: asyncpg.Connection) -> None:
         raise ReaderRoleError("连接的时区必须是 Asia/Shanghai（时政有效期按北京时间）")
 
 
-async def create_reader_pool(dsn: str | None = None, **connect: Any) -> asyncpg.Pool:
-    """建池并断言角色安全；不满足即关闭池并报错（fail closed）"""
-    pool = await asyncpg.create_pool(dsn, min_size=1, max_size=10, init=_init_connection, server_settings=SERVER_SETTINGS, **connect)
+async def create_reader_pool(dsn: str | None = None, *, request_timeouts: bool = False, **connect: Any) -> asyncpg.Pool:
+    """建池并断言角色安全；不满足即关闭池并报错（fail closed）。
+    request_timeouts=True：处理请求的池加语句与事务闲置超时（specs/db-call-timeouts）；编译器整图读取不加"""
+    settings = request_pool_kwargs(**SERVER_SETTINGS) if request_timeouts else {"server_settings": SERVER_SETTINGS}
+    pool = await asyncpg.create_pool(dsn, min_size=1, max_size=10, init=_init_connection, **settings, **connect)
     try:
         async with pool.acquire() as conn:
             await assert_reader_role(conn)
@@ -181,6 +184,17 @@ class KgeReader:
                                          LEFT JOIN kge.item_family f ON f.map_version_id = t.map_version_id AND f.id = t.family_id
                                          WHERE t.map_version_id = $1 AND t.subject::text = $2 AND t.item_id = $3
                                            AND {_APPROVED}""", version_id, subject, item_id)
+
+    async def items_by_ids(self, version_id: Any, subject: str, item_ids: list[str]) -> list[asyncpg.Record]:
+        """KGE-12 C：WeKnora 给出的候选题，按已发布版本、打标审核通过再核对一遍（与 item_search 同一组条件）；顺序由调用方按候选排"""
+        if not item_ids:
+            return []
+        async with self.pool.acquire() as c:
+            return await c.fetch(f"""SELECT {_ITEM_COLS} FROM kge.item_tag t
+                                      LEFT JOIN kge.item_family f ON f.map_version_id = t.map_version_id AND f.id = t.family_id
+                                      WHERE t.map_version_id = $1 AND t.subject::text = $2 AND t.item_id::text = ANY($3::text[])
+                                        AND {_APPROVED}
+                                      ORDER BY t.item_id""", version_id, subject, list(item_ids))
 
     async def item_similar(self, version_id: Any, subject: str, item_id: str, family_id: Any, main_node_id: str,
                            limit: int) -> list[asyncpg.Record]:

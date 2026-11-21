@@ -5,7 +5,7 @@
 -- 借号做法是临时的：诊断的合成题面借用阿鸦内容包里已登记的题号（只作验证器判分的槽位，节点在 MATH.SYN.* 合成命名空间）。
 -- 插件 API present_item 签字、真实题库接入后，删掉借号的合成题面与本种子里对阿鸦题目登记的前置检查（lessons 待人确认 #1）。
 --
--- 前提：已执行全部迁移与阿鸦内容登记（node adapters/aya/scripts/register-content.ts 的 SQL）。
+-- 前提：已执行全部迁移与阿鸦内容登记（node tools/content-register/aya.ts 的 SQL）。
 -- 用法（以迁移执行者身份；只能执行一次；文件自带事务，不要再加 -1）：
 --   PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -v ON_ERROR_STOP=1 -f db/seeds/dev/diagnosis-synthetic.sql
 --
@@ -27,7 +27,7 @@ BEGIN
     RAISE EXCEPTION '诊断合成种子已经执行过（只能执行一次）';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM platform.item WHERE subject = 'aya' AND item_id = 'Q-FUN-U01-T-002') THEN
-    RAISE EXCEPTION '没有登记阿鸦题目：先执行 adapters/aya/scripts/register-content.ts 生成的 SQL';
+    RAISE EXCEPTION '没有登记阿鸦题目：先执行 tools/content-register/aya.ts 生成的 SQL';
   END IF;
 END $$;
 

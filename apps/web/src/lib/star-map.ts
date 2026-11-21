@@ -1,7 +1,7 @@
 // 星图数据：类型与 BFF 客户端（只在服务端调用；浏览器不直连 BFF、数据库或学习服务，spec 第 1 节）。
 // 前端只用 BFF 给的 display / retained / needs_verification，不自己推算掌握状态（规则 2）。
 // 响应结构见 services/bff/openapi/star-map.v0.yaml。身份只来自会话（H2）。
-import { bffBaseUrl, bffHeaders, type BffSession } from './bff.ts';
+import { bffBaseUrl, bffFetch, bffHeaders, type BffSession } from './bff.ts';
 export type Display = 'unlit' | 'half' | 'lit';
 
 export interface Star {
@@ -34,12 +34,14 @@ export const isUuid = (s: string): boolean => UUID_RE.test(s);
 export async function fetchStarMap(studentId: string, session: BffSession | null): Promise<StarMapResult> {
   if (!session) return { kind: 'unauthenticated' };
   if (!isUuid(studentId)) return { kind: 'not-found' };
-  const r = await fetch(`${bffBaseUrl()}/bff/v0/students/${studentId}/star-map`, {
+  const r = await bffFetch(`${bffBaseUrl()}/bff/v0/students/${studentId}/star-map`, {
     headers: await bffHeaders(session, false),
     cache: 'no-store',
   });
+  // 断连、超时（内测前整改 P2：原来没有明确超时）与 5xx 同一个分支：抛错，进页面已有的错误页
+  if (r === null) throw new Error('star map request failed: unavailable');
   if (r.status === 401) return { kind: 'unauthenticated' };
   if (r.status === 404) return { kind: 'not-found' };
   if (!r.ok) throw new Error(`star map request failed: ${r.status}`);
-  return { kind: 'ok', map: (await r.json()) as StarMap };
+  return { kind: 'ok', map: JSON.parse(r.text) as StarMap };
 }

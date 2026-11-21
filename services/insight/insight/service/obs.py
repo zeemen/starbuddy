@@ -35,7 +35,8 @@ STATUS_CLASSES = frozenset({"1xx", "2xx", "3xx", "4xx", "5xx"})
 ENUMS: dict[str, frozenset[str]] = {
     "subject": frozenset({"aya", "zhixing", "wenli", "echo", "other"}),
     "task": frozenset({"T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9", "meter-expire", "meter-renew", "erasures", "freeze", "sweep",
-                       "mastery-sweep", "expire-affairs", "spot-check", "metrics", "weekly", "model-call-purge", "other"}),
+                       "mastery-sweep", "expire-affairs", "spot-check", "metrics", "weekly", "model-call-purge", "partition-ensure",
+                       "retention-purge", "other"}),
     "provider": frozenset({"bailian", "ark", "fake-a", "fake-b", "fake-x", "other"}),
     "outcome": frozenset({"ok", "other", "unavailable", "rejected", "budget_exceeded", "error", "timeout", "rate_limited", "server", "auth",
                           "client", "bad_response", "skipped_breaker_open", "allowed", "sealed", "partial", "refused", "crashed",
@@ -44,7 +45,7 @@ ENUMS: dict[str, frozenset[str]] = {
                           "no_entitlement", "retained_no_ai", "curfew", "settled", "released", "refunded", "unknown",
                           "reserve_conflict", "reserve_dedup_in_progress", "settle_conflict", "release_conflict",
                           "late_success_after_expiry", "replay_after_expiry", "sealed_after_expiry", "success_after_release",
-                          "result_unknown", "learning_retry"}),
+                          "result_unknown", "learning_retry", "match", "mismatch", "unbound", "absent"}),
 }
 LATENCY_BUCKETS = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0)
 _NAME = re.compile(r"^starbuddy_[a-z][a-z0-9_]{2,80}$")
@@ -350,7 +351,12 @@ LOG_FIELDS = frozenset(ENVELOPE + (
     "ready", "job", "child_exit", "exit_code", "started_at", "finished_at", "port", "audit_event", "account_kind", "dropped_statements",
     "explain", "export_job", "export_store", "generate", "guardian_op", "human_review_required", "lexicon", "lexicon_hits",
     "monthly_plan", "policy_version", "prediction", "reconciliation", "report", "route_group", "sms", "star_nodes",
-    "star_nodes_mismatch", "star_statements", "template_fingerprint", "weekly"))
+    "star_nodes_mismatch", "star_statements", "template_fingerprint", "weekly",
+    # 分学科闸门（BFF，specs/gate-log-fields）：取值都是固定枚举（结果、学科码、排队分档、被拒原因）；
+    # 结果叫 gate_result：学习服务里的 gate 是学生在某节点上的掌握门槛状态，不放行（PR 28 合并前安全审查 N2）
+    "gate_result", "gate_subject", "gate_queue_ms", "gate_reason",
+    # 调用方枚举、公共知识层节点编码与认知层级（specs/log-field-audit）：不是个人数据
+    "caller", "node_id", "cognitive_level"))
 # 嵌套结构里这些键整项丢掉（键名不区分大小写、先驼峰归一；带前缀的同样算，例如 guardian_phone、student_name、ocr_text、photo_url）
 _FORBIDDEN_KEY = re.compile(r"(?i)^(?:.*_)?(password|passwd|secret|token|api_?key|authorization|cookie|credential|phone|mobile|email"
                             r"|id_?card|id_?number|otp|dsn|session|name|nickname|texts?|messages?|content|body|raw|answers?|prompt|output"

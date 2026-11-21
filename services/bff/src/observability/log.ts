@@ -21,7 +21,12 @@ export const LOG_FIELDS: ReadonlySet<string> = new Set([...ENVELOPE,
   'ready', 'job', 'child_exit', 'exit_code', 'started_at', 'finished_at', 'port', 'audit_event', 'account_kind', 'dropped_statements',
   'explain', 'export_job', 'export_store', 'generate', 'guardian_op', 'human_review_required', 'lexicon', 'lexicon_hits',
   'monthly_plan', 'policy_version', 'prediction', 'reconciliation', 'report', 'route_group', 'sms', 'star_nodes',
-  'star_nodes_mismatch', 'star_statements', 'template_fingerprint', 'weekly']);
+  'star_nodes_mismatch', 'star_statements', 'template_fingerprint', 'weekly',
+  // 分学科闸门（src/gate/subject-gate.ts，specs/gate-log-fields）：取值都是固定枚举（结果、学科码、排队分档、被拒原因）。
+  // 结果叫 gate_result 不叫 gate：学习服务里的 gate 是学生在某节点上的掌握门槛状态，白名单不放行那个名字（PR 28 合并前安全审查 N2）
+  'gate_result', 'gate_subject', 'gate_queue_ms', 'gate_reason',
+  // 调用方枚举、公共知识层节点编码与认知层级（specs/log-field-audit）：不是个人数据
+  'caller', 'node_id', 'cognitive_level']);
 /** BFF 访问日志里的学生、账号：带密钥 HMAC 截断（不是标识原文）；只收 16 位小写十六进制 */
 export const HASHED_FIELDS: ReadonlySet<string> = new Set(['student', 'account']);
 const HASHED_VALUE = /^[0-9a-f]{16}$/;
@@ -88,8 +93,14 @@ export function logFields(record: Record<string, unknown>): Record<string, unkno
     if (!LOG_FIELDS.has(nk)) continue;
     out[nk] = nk === 'request_id' && typeof v === 'string' && UUID_FULL.test(v) ? v : scrub(v, nk, 1);
   }
+  // 学生、账号的散列与知识点不同行（specs/log-field-audit 契约检查建议 1，规则 13）：同一行既有 student / account 又有 node_id、
+  // cognitive_level，就等于把“哪个学生在哪个知识点上”写进了日志，个人层的学习事实不进日志。有散列时丢掉知识点两项
+  if ('student' in out || 'account' in out) for (const k of NOT_WITH_PERSON) delete out[k];
   return out;
 }
+
+/** 不与学生、账号散列同行的字段（logFields 末尾执行） */
+export const NOT_WITH_PERSON: readonly string[] = ['node_id', 'cognitive_level'];
 
 export type Level = 'info' | 'warn' | 'error';
 

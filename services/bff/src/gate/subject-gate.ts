@@ -254,18 +254,18 @@ export async function withSubjectSlot<R>(gate: SubjectGate | undefined, req: Slo
   const observe = req.observe;
   observe?.('gate_subject', req.subject);
   if (req.bypass === true) {
-    observe?.('gate', 'bypassed');
+    observe?.('gate_result', 'bypassed');
     return fn();
   }
   const g = await gate.acquire(req.subject, { student: req.student, ...(req.signal ? { signal: req.signal } : {}) });
   if (g.ok && req.signal?.aborted) {
     g.release();
-    observe?.('gate', 'rejected');
+    observe?.('gate_result', 'rejected');
     observe?.('gate_queue_ms', queueBucket(g.waitedMs));
     observe?.('gate_reason', 'aborted');
     return busy(1);
   }
-  observe?.('gate', g.ok ? g.result : 'rejected');
+  observe?.('gate_result', g.ok ? g.result : 'rejected');
   observe?.('gate_queue_ms', queueBucket(g.waitedMs));
   if (!g.ok) {
     observe?.('gate_reason', g.reason);
@@ -276,4 +276,33 @@ export async function withSubjectSlot<R>(gate: SubjectGate | undefined, req: Slo
   } finally {
     g.release();
   }
+}
+
+/** 定时汇总的间隔（specs/gate-log-fields 待人确认第 1 条） */
+export const GATE_STATS_INTERVAL_MS = 60_000;
+
+export interface StatsTimer { every: (fn: () => void, ms: number) => unknown; stop: (t: unknown) => void }
+const REAL_TIMER: StatsTimer = {
+  every: (fn, ms) => { const t = setInterval(fn, ms); t.unref(); return t; },  // unref：不挡进程退出
+  stop: (t) => clearInterval(t as ReturnType<typeof setInterval>),
+};
+
+/**
+ * 闸门打开时按间隔写一行 event: subject_gate_stats，把 stats() 放进登记过的 counts 字段（按学科：当前在处理、排队与各项累计计数）。
+ * 只有数字，不含学生与请求信息；write 由调用方给（生产是 emit('info', …)，经日志白名单）。返回停止函数。
+ */
+export function startGateStatsLog(gate: SubjectGate, write: (record: Record<string, unknown>) => void,
+                                  intervalMs = GATE_STATS_INTERVAL_MS, timer: StatsTimer = REAL_TIMER): () => void {
+  const t = timer.every(() => write({ event: 'subject_gate_stats', counts: statsForLog(gate.stats()) }), intervalMs);
+  return () => timer.stop(t);
+}
+
+/**
+ * 写进日志的计数：rejected_per_student 改名 rejected_own_limit。日志的嵌套字段规则把以 _student 结尾的键当成学生标识整项丢掉
+ * （src/observability/log.ts 的 FORBIDDEN_KEY），原名写进去会少这一项；stats() 本身不改名
+ */
+export function statsForLog(st: Record<GateSubject, LaneStats>): Record<string, Record<string, number>> {
+  const out: Record<string, Record<string, number>> = {};
+  for (const [s, { rejected_per_student, ...rest }] of Object.entries(st)) out[s] = { ...rest, rejected_own_limit: rejected_per_student };
+  return out;
 }

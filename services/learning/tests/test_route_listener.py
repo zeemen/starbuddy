@@ -84,7 +84,7 @@ async def test_loopback_wrapper_does_not_run_app_lifespan():
 
 
 def _staging_env(**extra) -> dict[str, str]:
-    e = {"LEARNING_ENV": "staging", "LEARNING_SERVICE_TOKEN": "s" * 40, "LEARNING_DATABASE_URL": "postgresql://syn@127.0.0.1/syn",
+    e = {"LEARNING_ENV": "staging", "LEARNING_SERVICE_TOKEN": "s" * 40, "LEARNING_SESSION_TOKEN": "q" * 40, "LEARNING_DATABASE_URL": "postgresql://syn@127.0.0.1/syn",
          "LEARNING_HOST": "10.0.0.5"}
     e.update(extra)
     return e
@@ -101,7 +101,7 @@ def test_staging_starts_loopback_listener_by_default_and_port_is_configurable():
 
 @pytest.mark.parametrize("env", ["dev", "test"])
 def test_non_staging_does_not_start_loopback_listener(env):
-    base = {"LEARNING_ENV": env, "LEARNING_SERVICE_TOKEN": "s" * 40, "LEARNING_DATABASE_URL": "postgresql://syn@127.0.0.1/syn"}
+    base = {"LEARNING_ENV": env, "LEARNING_SERVICE_TOKEN": "s" * 40, "LEARNING_SESSION_TOKEN": "q" * 40, "LEARNING_DATABASE_URL": "postgresql://syn@127.0.0.1/syn"}
     s = Settings.from_env(base)
     assert s.route_port is None and listeners(s, 8788) == [("127.0.0.1", 8788, "main")]
     with pytest.raises(RuntimeError, match="只在 staging"):

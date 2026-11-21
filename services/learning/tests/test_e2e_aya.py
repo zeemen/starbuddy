@@ -1,6 +1,6 @@
 """端到端（spec 验收）：学习服务 → 阿鸦适配器（真实 HTTP 进程）→ 平台库。
 
-阿鸦的内容用 adapters/aya/scripts/register-content.ts 生成的 SQL 登记；适配器用 node 直接运行 TS 源码。
+阿鸦的内容用 tools/content-register/aya.ts 生成的 SQL 登记；适配器用 node 直接运行 TS 源码。
 没有 node 或没装阿鸦依赖时跳过（LEARNING_TEST_STRICT=1 时失败）。
 """
 from __future__ import annotations
@@ -42,7 +42,7 @@ def aya_adapter(pg):
         if os.environ.get("LEARNING_TEST_STRICT") == "1":
             pytest.fail(why)
         pytest.skip(why)
-    sql = subprocess.run(["node", "--no-warnings", "scripts/register-content.ts"], cwd=AYA, check=True, capture_output=True).stdout
+    sql = subprocess.run(["node", "--no-warnings", "../../tools/content-register/aya.ts"], cwd=AYA, check=True, capture_output=True).stdout
     pg.psql(sql.decode())
     pg.psql(sql.decode())  # 重复执行：只增不改，不应重复登记（原阿鸦 e2e 的断言迁到这里）
     with socket.socket() as s:

@@ -12,7 +12,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import practice_mutations as PM  # noqa: E402
 
 TESTS = ["tests/test_staging_env.py", "tests/test_health.py",  # 后者：LT-03 健康端点
-         "tests/test_obs.py", "tests/test_route_listener.py"]  # LT-05 指标与日志（标签白名单、脱敏、指标端点暴露范围、指标监听）
+         "tests/test_obs.py", "tests/test_route_listener.py",
+         "tests/test_token_matrix.py"]  # LT-05 指标与日志（标签白名单、脱敏、指标端点暴露范围、指标监听）；PLT-24 路由 × 令牌矩阵
 OB, MT = "learning/obs.py", "learning/metrics.py"
 NP, CF, MC, RC, RM = ("learning/netpolicy.py", "learning/config.py", "learning/mastery/config.py", "review_console/config.py",
                       "review_console/__main__.py")
@@ -137,6 +138,23 @@ MUTATIONS: dict[str, list[tuple[str, str, str]]] = {
     "日志：不截断超长文本": [(OB, '    return s if len(s) <= MAX_TEXT else s[:MAX_TEXT] + "…[truncated]"', "    return s")],
     "日志：记异常消息": [(OB, '            out["exc_type"] = record.exc_info[0].__name__[:48]', '            out["exc_type"] = str(record.exc_info[1])')],
     "日志：字段不经白名单与脱敏": [(OB, "        for k, v in log_fields(fields).items():", "        for k, v in fields.items():")],
+    # PLT-24（T49）：BFF → 学习服务两枚令牌按路由分组（tests/test_token_matrix.py、tests/test_staging_env.py）
+    "会话接口也收写入令牌": [(AP, "        return session_token is not None and _bearer_ok(r.headers.get(\"authorization\"), session_token)",
+                         "        return _bearer_ok(r.headers.get(\"authorization\"), session_token or \"\") or _bearer_ok(r.headers.get(\"authorization\"), settings.service_credential)")],
+    "诊断改认写入令牌": [(AP, "    diagnosis_api.register(app, session_ok, state)",
+                       "    diagnosis_api.register(app, lambda r: _bearer_ok(r.headers.get(\"authorization\"), settings.service_credential), state)")],
+    "今日编排改认写入令牌": [(AP, "    today_api.register(app, session_ok, state)",
+                         "    today_api.register(app, lambda r: _bearer_ok(r.headers.get(\"authorization\"), settings.service_credential), state)")],
+    "再练改认写入令牌": [(AP, "    practice_api.register(app, session_ok, state)",
+                       "    practice_api.register(app, lambda r: _bearer_ok(r.headers.get(\"authorization\"), settings.service_credential), state)")],
+    "复测改认写入令牌": [(AP, "    retest_api.register(app, session_ok, state)",
+                       "    retest_api.register(app, lambda r: _bearer_ok(r.headers.get(\"authorization\"), settings.service_credential), state)")],
+    "写入也收会话令牌": [(AP, "            if not _bearer_ok(request.headers.get(\"authorization\"), settings.service_credential):\n                raise IngestError(401, \"UNAUTHENTICATED\", \"missing or invalid service token\")\n            raw = await _read_limited(request)",
+                       "            if not (_bearer_ok(request.headers.get(\"authorization\"), settings.service_credential) or _bearer_ok(request.headers.get(\"authorization\"), settings.session_credential or \"\")):\n                raise IngestError(401, \"UNAUTHENTICATED\", \"missing or invalid service token\")\n            raw = await _read_limited(request)")],
+    "会话令牌长度不查": [(CF, "        if session_tok is not None and len(session_tok) < 32:", "        if False:")],
+    "staging 不要求会话令牌": [(CF, "        if session_tok is None and env == STAGING:", "        if False:")],
+    "会话令牌不参与互不相同核对": [(CF, "        tokens = [credential, *([session_tok] if session_tok else []),", "        tokens = [credential,")],
+    "会话令牌不读进配置": [(CF, "session_credential=session_tok,", "session_credential=None,")],
 }
 
 # 前端启动包装（安全审查 A1、S7、S10）：apps/web/src/lib/serve-env.ts 与 consent-version.ts，断言 apps/web/tests/serve-env.test.ts 能发现

@@ -1,5 +1,9 @@
 {
  "format": "aya-admission-verify/1",
+ "hint_scan": {
+  "flagged_count": 0,
+  "mode": "strict"
+ },
  "items": 721,
  "note": null,
  "ok": true,

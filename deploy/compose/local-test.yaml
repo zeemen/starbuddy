@@ -61,6 +61,7 @@ services:
       PORT: "8788"
       LEARNING_DATABASE_URL: postgresql://local_learning@127.0.0.1:5432/starbuddy_local
       LEARNING_SERVICE_TOKEN: ${LEARNING_SERVICE_TOKEN:?}
+      LEARNING_SESSION_TOKEN: ${LEARNING_SESSION_TOKEN:?}
       LEARNING_ADAPTER_AYA_URL: http://127.0.0.1:8781
       LEARNING_ADAPTER_AYA_TOKEN: ${AYA_ADAPTER_SERVICE_TOKEN:?}
       LEARNING_ADAPTER_ZHIXING_URL: http://127.0.0.1:8782
@@ -130,6 +131,7 @@ services:
       BFF_SMS_CAPTURE_FILE: /var/lib/starbuddy/audit/sms-capture.jsonl
       BFF_LEARNING_URL: http://127.0.0.1:8788
       BFF_LEARNING_TOKEN: ${LEARNING_SERVICE_TOKEN:?}
+      BFF_LEARNING_SESSION_TOKEN: ${LEARNING_SESSION_TOKEN:?}
       BFF_INSIGHT_URL: http://127.0.0.1:8791
       BFF_INSIGHT_TOKEN: ${INSIGHT_TOKEN_BFF:?}
       STARBUDDY_TRUST_UI: why,dispute,reconcile,weekly,data_rights,report

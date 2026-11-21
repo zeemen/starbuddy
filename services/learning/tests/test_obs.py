@@ -636,3 +636,47 @@ def test_source_log_calls_carry_no_forbidden_fields():
     bad = [(str(p.relative_to(SVC)), k) for base in ("learning", "review_console") for p, k in _logged_keys(SVC / base) if obs.forbidden_key(k)]
     assert bad == [], f"日志里出现了禁止字段：{bad}"
     assert obs.forbidden_key("answer") and obs.forbidden_key("guardian_phone") and not obs.forbidden_key("input_tokens")
+
+
+def test_log_field_audit_fields_survive_the_formatter():
+    """specs/log-field-audit：caller、node_id、cognitive_level 与闸门四个字段经真实 JsonFormatter 后保留；改用已登记字段的几处照常输出"""
+    d = _log("starbuddy.test.audit", json.dumps({"event": "x", "caller": "bff", "node_id": "MATH.SYN.P1.N1", "cognitive_level": "apply",
+                                                  "gate_result": "rejected", "gate_subject": "aya", "gate_queue_ms": "lt100", "gate_reason": "full"}))
+    for k, v in (("caller", "bff"), ("node_id", "MATH.SYN.P1.N1"), ("cognitive_level", "apply"), ("gate_result", "rejected"),
+                 ("gate_subject", "aya"), ("gate_queue_ms", "lt100"), ("gate_reason", "full")):
+        assert d.get(k) == v, k
+    d = _log("starbuddy.test.audit", json.dumps({"event": "model_call_log_write_failed", "items": 3, "error_class": "RuntimeError"}))
+    assert d["items"] == 3 and d["error_class"] == "RuntimeError"
+    d = _log("starbuddy.test.audit", json.dumps({"event": "review_response_invalid", "route": "/x", "detail": ["items.0.code missing"]}))
+    assert d["detail"] == ["items.0.code missing"]
+
+
+def test_unit_log_keeps_node_and_level():
+    """掌握重算单元失败的告警（mastery/recompute.py 的 _unit_log）：经真实格式化后看得到节点与认知层级"""
+    from learning.mastery import recompute
+    buf = io.StringIO()
+    h = logging.StreamHandler(buf)
+    h.setFormatter(obs.JsonFormatter("learning"))
+    recompute.log.addHandler(h)
+    try:
+        unit = type("U", (), {"node_id": "MATH.SYN.P1.N1", "cognitive_level": "apply"})()
+        recompute._unit_log("mastery_unit_failed", "aya", unit, RuntimeError("x"))
+    finally:
+        recompute.log.removeHandler(h)
+    d = json.loads(buf.getvalue().splitlines()[-1])
+    assert d["event"] == "mastery_unit_failed" and d["node_id"] == "MATH.SYN.P1.N1" and d["cognitive_level"] == "apply"
+    assert d["error_class"] == "RuntimeError"
+
+
+def test_mastery_gate_is_not_logged():
+    """学习服务里的 gate 是学生在某节点上的掌握门槛状态（mastery/api.py）：不在日志白名单里，误写进日志也被整项丢掉（PR 28 合并前安全审查 N2）"""
+    assert "gate" not in obs.LOG_FIELDS
+    d = _log("starbuddy.test.audit", json.dumps({"event": "x", "node_id": "MATH.SYN.P1.N1", "cognitive_level": "apply", "gate": "transfer"}))
+    assert "gate" not in d and d["node_id"] == "MATH.SYN.P1.N1"
+
+
+def test_mastery_gate_is_not_logged():
+    """学习服务里的 gate 是学生在某节点上的掌握门槛状态（mastery/api.py）：不在日志白名单里，误写进日志也被整项丢掉（PR 28 合并前安全审查 N2）"""
+    assert "gate" not in obs.LOG_FIELDS
+    d = _log("starbuddy.test.audit", json.dumps({"event": "x", "node_id": "MATH.SYN.P1.N1", "cognitive_level": "apply", "gate": "transfer"}))
+    assert "gate" not in d and d["node_id"] == "MATH.SYN.P1.N1"

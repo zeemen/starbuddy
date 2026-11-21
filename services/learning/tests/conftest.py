@@ -32,6 +32,10 @@ from pgharness import LOGIN_ROLE, EphemeralPG
 
 METER_PROVISION_SQL = (Path(__file__).resolve().parent / "fixtures/meter_provision.sql").read_text(encoding="utf-8")
 CREDENTIAL = "synthetic-bff-to-learning-credential-0001"
+# PLT-24（T49）：BFF 的会话令牌，只开诊断、再练、复测、今日编排四组接口（写入令牌 CREDENTIAL 对它们一律 401）
+SESSION_CREDENTIAL = "synthetic-bff-to-learning-session-cred-01"
+# 调契约 v1 的写入、重放、计划、星图时显式带写入令牌（会话类测试的客户端缺省带的是会话令牌）
+WRITE_AUTH = {"authorization": f"Bearer {CREDENTIAL}"}
 ADAPTER_CREDENTIAL = "synthetic-learning-to-adapter-credential-01"
 NS = uuid.UUID("5b8e1c52-0000-4000-8000-000000000000")
 CV = {"region": "nanjing", "exam_year": 2027, "grade": 9, "textbook_version": "suke-2024", "subject": "aya", "content_version": "0.1.0"}
@@ -302,7 +306,7 @@ def fake_adapter() -> FakeAdapter:
 
 
 def settings(**over) -> Settings:
-    base = dict(env="test", database_url="unused", service_credential=CREDENTIAL,
+    base = dict(env="test", database_url="unused", service_credential=CREDENTIAL, session_credential=SESSION_CREDENTIAL,
                 adapters={"aya": AdapterTarget("http://aya-adapter.invalid", ADAPTER_CREDENTIAL)})
     base.update(over)
     return Settings(**base)

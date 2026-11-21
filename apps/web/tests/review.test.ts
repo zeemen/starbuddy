@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { isLoopbackHost } from '../src/lib/dev-pages.ts';
 import {
   assignmentLabel, isBasis, PAGE_PROBLEM_LABEL, pageProblemLabel, safeHttpsUrl, isCursor, isDigest, isNodeId, isQueueReason, isQueueStatus, isResolutionCode, isSubject, isTaskId, isVersionId, lines,
@@ -72,7 +73,7 @@ test('结果提示覆盖后端的全部错误码', () => {
 });
 
 test('开发 staff 身份桩已删除（前后端源码里都找不到）', () => {
-  const root = new URL('../../../', import.meta.url).pathname;
+  const root = fileURLToPath(new URL('../../../', import.meta.url));
   assert.ok(!existsSync(join(root, 'apps/web/src/dev/staff.ts')));
   assert.ok(!existsSync(join(root, 'services/learning/review_console/devauth.py')));
   const files = (dir: string): string[] => readdirSync(dir).flatMap((n) => {
@@ -88,7 +89,7 @@ test('开发 staff 身份桩已删除（前后端源码里都找不到）', () =
 // ---------- 统一复核队列（specs/review-queue-sprint2 设计要点 2） ----------
 test('复核队列：原因码、状态、来源类型都有中文标签，与后端枚举一致', () => {
   // 与 services/learning/review_console/app.py 的 QUEUE_REASONS / QUEUE_STATUSES、迁移 0023 的 source_kind 一致
-  const root = new URL('../../../', import.meta.url).pathname;
+  const root = fileURLToPath(new URL('../../../', import.meta.url));
   const app = readFileSync(join(root, 'services/learning/review_console/app.py'), 'utf8');
   const tuple = (name: string): string[] => {
     const m = new RegExp(`${name} = \\(([^)]*)\\)`, 's').exec(app);
@@ -106,7 +107,7 @@ test('复核队列：原因码、状态、来源类型都有中文标签，与�
 });
 
 test('编译页面：对账问题码都有中文说明（与后端 pages.py 一致）；托管平台链接只认 https', () => {
-  const root = new URL('../../../', import.meta.url).pathname;
+  const root = fileURLToPath(new URL('../../../', import.meta.url));
   const src = readFileSync(join(root, 'services/learning/review_console/pages.py'), 'utf8');
   const codes = new Set([...src.matchAll(/(?:problems\.append\(|"problems": \[)"([a-z_]+)"/g)].map((m) => m[1]!));
   assert.ok(codes.size >= 6, [...codes].join(','));
@@ -151,7 +152,7 @@ test('复核队列：结案码格式、任务 id；成功与错误提示齐全�
 
 // ---------- 冲刺 4 · G 流第二部分 PR D：内容版本、考情、页面签字与事后抽检 ----------
 test('PR D：风险理由码都有中文说明（与后端 risk.py 一致），新错误码有提示、发布失败回滚的说明透传', () => {
-  const root = new URL('../../../', import.meta.url).pathname;
+  const root = fileURLToPath(new URL('../../../', import.meta.url));
   const risk = readFileSync(join(root, 'services/learning/review_console/risk.py'), 'utf8');
   const reasons = new Set([...risk.matchAll(/Risk\("(?:low|medium|high)", "([a-z_]+)"/g)].map((m) => m[1]!));
   for (const m of risk.matchAll(/: "(policy_[a-z_]+|content_[a-z_]+)"/g)) reasons.add(m[1]!);
@@ -184,7 +185,7 @@ test('PR D：准入、考情、抽检表单字段校验与后端一致', () => {
     assert.ok(Object.hasOwn(POLICY_OBJECT_LABEL, k), k);
   }
   // 与迁移 0039 的来源类型、授权状态枚举一致
-  const root = new URL('../../../', import.meta.url).pathname;
+  const root = fileURLToPath(new URL('../../../', import.meta.url));
   const mig = readFileSync(join(root, 'db/migrations/0039_platform__content_release.up.sql'), 'utf8');
   for (const t of SOURCE_TYPES) assert.ok(mig.includes(`'${t}'`), t);
   for (const t of LICENSE_STATUSES) assert.ok(mig.includes(`'${t}'`), t);
@@ -192,7 +193,7 @@ test('PR D：准入、考情、抽检表单字段校验与后端一致', () => {
 
 // ---------- 考情 v0.9 待定事项 PR2（specs/policy-decisions-v0.9.1）：控制线签字、官方来源清单 ----------
 test('PR2：签字的考情记录类型与后端 RecordSignBody 一致（含控制线），都有中文标签；记录页认控制线', () => {
-  const root = new URL('../../../', import.meta.url).pathname;
+  const root = fileURLToPath(new URL('../../../', import.meta.url));
   const app = readFileSync(join(root, 'services/learning/review_console/app.py'), 'utf8');
   const m = /class RecordSignBody[\s\S]*?object_type: Literal\[([^\]]+)\]/.exec(app);
   assert.ok(m);
@@ -202,7 +203,9 @@ test('PR2：签字的考情记录类型与后端 RecordSignBody 一致（含控�
   const records = readFileSync(new URL('../src/app/review/records/page.tsx', import.meta.url), 'utf8');
   assert.ok(records.includes("control_line: '控制线'"));
   const actions = readFileSync(new URL('../src/app/review/actions.ts', import.meta.url), 'utf8');
-  assert.ok(actions.includes('POLICY_RECORD_TYPES as readonly string[]).includes(type)'), '签字表单按同一份类型清单校验');
+  assert.ok(actions.includes('!isPolicyRecordType(type)'), '签字表单按同一份类型清单校验');
+  const lib = readFileSync(new URL('../src/lib/review.ts', import.meta.url), 'utf8');
+  assert.ok(lib.includes('(POLICY_RECORD_TYPES as readonly string[]).includes(s)'), 'isPolicyRecordType 用的就是 POLICY_RECORD_TYPES（W13 T35 起改为类型守卫）');
 });
 
 test('PR2：官方来源清单表单校验、结果提示与权限提示；提示里没有内部编码；页面把主机名放在 data-value 里、说明旁有个人信息提示', () => {

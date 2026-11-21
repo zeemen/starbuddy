@@ -2,9 +2,10 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { isolatedArgs } from "../src/main.ts";
 
-const FIX = new URL("./fixtures/", import.meta.url).pathname;
+const FIX = fileURLToPath(new URL("./fixtures/", import.meta.url));
 
 test("隔离子进程：写文件与起子进程被拒，环境变量为空", () => {
   const out = execFileSync(process.execPath, isolatedArgs(`${FIX}aya`, `${FIX}wenli`, `${FIX}escape-probe.ts`), {

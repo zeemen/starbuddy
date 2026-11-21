@@ -129,6 +129,14 @@ groups:
           summary: 模型调用记录队列满被丢弃
           description: 学习服务的调用记录写库队列满（或退出时限内没刷完）丢弃了记录；路由不受影响，结构化日志仍有完整的一条。持续出现说明写库跟不上调用量或库变慢，对照连接池与写库失败告警。
           threshold: 占位缺省（> 0 / 15 分钟），待人签字
+      - alert: StarbuddyKnowledgeWeKnoraFallback
+        expr: sum(increase(starbuddy_knowledge_weknora_similar_total{outcome=~"unavailable|timeout"}[15m])) > 0
+        for: 0m
+        labels: {severity: warning}
+        annotations:
+          summary: 知识服务找相似题时 WeKnora 出错，已退回 SQL
+          description: 开了 WeKnora 后端（KNOWLEDGE_WEKNORA_BACKEND=1）时，item.similar 调 WeKnora 出错或超时，退回 SQL 实现；学生无感，但相似题不再来自 WeKnora。先看知识服务访问日志里 backend = sql_fallback 的请求，再核对 WeKnora 的可用性与只读检索密钥（specs/kge-12-weknora-integration/lessons.md 待人确认第 6 条）。
+          threshold: 占位缺省（> 0 / 15 分钟），待人签字
   - name: starbuddy-metering
     rules:
       - alert: StarbuddyMeterRollbackSpike

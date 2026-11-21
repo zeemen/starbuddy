@@ -9,12 +9,13 @@ import { spawnSync } from 'node:child_process';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { FAMILY_GOALS, FAMILY_GOALS_RESULT } from '../src/family-goals/copy.ts';
 import { familyGoalsEnabled } from '../src/family-goals/features.ts';
 import { goalBodyFromForm } from '../src/family-goals/form.ts';
 import { pickGoalsView } from '../src/family-goals/view.ts';
 
-const WEB = new URL('..', import.meta.url).pathname;
+const WEB = fileURLToPath(new URL('..', import.meta.url));
 const ROOT = join(WEB, '..', '..');
 const files = (dir: string): string[] => readdirSync(dir).flatMap((n) => {
   const p = join(dir, n);

@@ -67,7 +67,7 @@ v0 写入已下线（410）；插件契约 0.9.0 的写入核心只剩进程内�
 python3 -m venv .venv && .venv/bin/pip install --require-hashes -r requirements-dev.lock   # 在本目录执行；带哈希的锁文件
 .venv/bin/pip install --no-deps -e ../../packages/contracts/python   # 契约共享库（本地包，不在锁里；它的依赖已在锁里）
 make learning-test          # 在仓库根目录：单测 + 幂等与核对测试 + 端到端（需要本机 PostgreSQL 16 与 node）
-LEARNING_ENV=dev LEARNING_DATABASE_URL=... LEARNING_SERVICE_TOKEN=... \
+LEARNING_ENV=dev LEARNING_DATABASE_URL=... LEARNING_SERVICE_TOKEN=... LEARNING_SESSION_TOKEN=... \
 LEARNING_ADAPTER_AYA_URL=http://127.0.0.1:8787 LEARNING_ADAPTER_AYA_TOKEN=... .venv/bin/python -m learning
 ```
 `LEARNING_ENV` 只能是 `dev` 或 `test`：冲刺 1 不连接 pilot 或生产（CLAUDE.md 规则 9）。数据库登录角色只能继承 `starbuddy_learning`。

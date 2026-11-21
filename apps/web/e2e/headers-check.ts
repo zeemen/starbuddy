@@ -13,6 +13,7 @@ export function checkHeaders(h: Record<string, string>, path: string): string {
   expect(csp, path).toContain("object-src 'none'");
   expect(csp, path).toContain("base-uri 'none'");
   expect(csp, path).toContain("worker-src 'self'");  // Service Worker 只许同源（LT-07）
+  expect(csp, `${path} 图片只许同源，不许 data:（T46）`).toMatch(/(?:^|; )img-src 'self'(?:;|$)/);
   expect(csp, path).not.toMatch(/unsafe-inline|unsafe-eval/);
   expect(h['cache-control'] ?? '', path).toContain('no-store');
   expect(h['x-content-type-options'], path).toBe('nosniff');
@@ -33,6 +34,7 @@ export function checkHtml(html: string, nonce: string, path: string) {
   // 资源同源：src、href、action、srcset、poster、data 不指向别的来源（含协议相对地址 //host），样式里不 url(http…)
   expect(html, `${path} 资源同源`).not.toMatch(/\s(?:src|href|action|srcset|poster|data|formaction)="\s*(?:[a-z][a-z0-9+.-]*:)?\/\//i);
   expect(html, `${path} 样式不引外部资源`).not.toMatch(/url\(\s*['"]?\s*(?:https?:)?\/\//i);
+  expect(html, `${path} 没有 data: 资源（T46）`).not.toMatch(/(?:\s(?:src|srcset|href|poster|data)="|url\(\s*['"]?)\s*data:/i);
 }
 
 /** 逐页打开并核对：状态码与重定向后的最终路径与登记一致；每个请求一个新的 nonce；没有 CSP 违规。结束后移除控制台监听 */

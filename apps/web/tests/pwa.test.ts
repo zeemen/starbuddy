@@ -9,6 +9,7 @@ import { mkdtempSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import { inflateSync } from 'node:zlib';
 import { distDirFor } from '../next.config.ts';
@@ -27,7 +28,7 @@ import { readdirSync } from 'node:fs';
 import { installOs, isWeChat } from '../src/pwa/ua.ts';
 import { loadForbidden } from './forbidden-lexicon.ts';
 
-const WEB = new URL('..', import.meta.url).pathname;
+const WEB = fileURLToPath(new URL('..', import.meta.url));
 const ROOT = join(WEB, '..', '..');
 const ORIGIN = 'https://web.synthetic.invalid';
 const V = 'synthetic-build-1';

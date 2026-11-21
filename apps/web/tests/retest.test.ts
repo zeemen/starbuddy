@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import {
   ALL_RETEST_COPY, ALL_SHELL_COPY, RETEST, RETEST_AFTER, RETEST_ERROR, RETEST_KIND, RETEST_LEVEL, RETEST_STATUS, RETEST_VERDICT,
 } from '../src/shell/copy.ts';
@@ -16,7 +17,7 @@ import { isRetestSubject, RETEST_SUBJECTS, retestEnabled } from '../src/retest/f
 import { AFTER_STATUSES, ENTRY_STATUSES, KINDS, pickRetestAnswer, pickRetestNext, pickRetestQueue, retestUiError } from '../src/retest/view.ts';
 import { LEVELS, VERDICTS } from '../src/practice/view.ts';
 
-const WEB = new URL('..', import.meta.url).pathname;
+const WEB = fileURLToPath(new URL('..', import.meta.url));
 const files = (dir: string): string[] => readdirSync(dir).flatMap((n) => {
   const p = join(dir, n);
   return statSync(p).isDirectory() ? files(p) : [p];
@@ -82,9 +83,16 @@ test('开关关时 BFF 客户端不发任何请求（按 404 返回）；打开�
 test('列表白名单：只取条目 ID、节点、层次、类别与状态；任务原因、空原因编码、掌握等丢弃；节点编号不合口径只隐藏那一格；形状不对整页不给', () => {
   const wire = (o: Record<string, unknown> = {}) => ({ entry_id: E1, node_id: 'MATH.SYN.N1', cognitive_level: 'apply', kind: 'retest', status: 'due',
                                                        reason: 'scheduled', empty_reason: null, p_mastery: 0.5, ...o });
+  // wire() 不带 node_name 这个键（更早的 BFF 就是这样）：缺键当作空
   const out = pickRetestQueue({ subject: 'math', entries: [wire(), wire({ kind: 'verify', status: 'unavailable', node_id: 'bad node' })] })!;
-  assert.deepEqual(out, [{ entry_id: E1, node_id: 'MATH.SYN.N1', cognitive_level: 'apply', kind: 'retest', status: 'due' },
-                         { entry_id: E1, node_id: null, cognitive_level: 'apply', kind: 'verify', status: 'unavailable' }]);
+  assert.deepEqual(out, [{ entry_id: E1, node_id: 'MATH.SYN.N1', node_name: null, cognitive_level: 'apply', kind: 'retest', status: 'due' },
+                         { entry_id: E1, node_id: null, node_name: null, cognitive_level: 'apply', kind: 'verify', status: 'unavailable' }]);
+  // 知识点名（specs/practice-retest-list-polish）：有名称用名称；编号不合口径时名称也不显示；名称不合格当作没有
+  const named = pickRetestQueue({ entries: [wire({ node_name: '（合成）名称' }), wire({ node_id: 'bad node', node_name: '（合成）名称' }),
+                                            wire({ node_name: 'x'.repeat(101) })] })!;
+  assert.deepEqual(named.map((e) => e.node_name), ['（合成）名称', null, null]);
+  const page = code(read('src/retest/RetestPages.tsx'));
+  assert.match(page, /\{e\.node_name \? <span data-value="node-name">\{e\.node_name\}<\/span>\s*: e\.node_id \? <span data-value="node">\{e\.node_id\}<\/span> : null\}/);
   for (const bad of [{ kind: 'scheduled' }, { status: 'done' }, { entry_id: 'x' }, { cognitive_level: 'genius' }]) {
     assert.equal(pickRetestQueue({ entries: [wire(bad)] }), null, JSON.stringify(bad));
   }

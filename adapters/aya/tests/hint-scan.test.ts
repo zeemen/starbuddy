@@ -4,11 +4,12 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { indexPack, type ContentPack, type PackItem } from "../src/content.ts";
 import { enforceHintScan, guardRunner, hintTexts, scanHints, type GuardRunner } from "../src/pack/hint-scan.ts";
 import { realPack, syntheticPack } from "./helpers.ts";
 
-const HERE = new URL("..", import.meta.url).pathname;
+const HERE = fileURLToPath(new URL("..", import.meta.url));
 const PY = process.env.PYTHON ?? "python3";
 const guardOk =
   spawnSync(PY, ["-c", "import personas.guard"], { cwd: join(HERE, "../.."), env: { ...process.env, PYTHONPATH: join(HERE, "../../packages") } }).status === 0;

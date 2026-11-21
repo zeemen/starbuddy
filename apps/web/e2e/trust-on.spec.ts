@@ -1,5 +1,6 @@
 // 冲刺 5-H 信任界面：开关打开的一套（playwright.config.ts 的 trust-on 项目；前端 why / dispute / reconcile / weekly / data_rights，
-// 第二个 BFF dispute / reconcile / weekly / data_rights；没有洞察服务，预测与对账卡读取 503、“为什么”的 BFF 读取路由还没有）。
+// 第二个 BFF dispute / reconcile / weekly / data_rights / why；洞察服务是合成桩（GT 的六条判断的解释与异议受理，specs/why-page-e2e），
+// 预测与对账卡 BFF 没有契约工具，读取仍 503）。
 // 周报：GT 本周的学生版与家长版来自 db/seeds/dev/weekly-synthetic.sql（两条合成判断），第二个 BFF 的对外白名单只列这个合成模板。
 // 全程真实会话（短信捕获桩读码），合成家庭 HG（db/seeds/dev/shell-synthetic.sql）：家长 gH，孩子 GT 试用、GR 留存、GP 试点。
 // 每页都核对：
@@ -8,10 +9,12 @@
 //     data-value（数字、日期、编号）里——关于学生的句子都带 claim_id；
 //   - 页面上不出现异议类型、偏差方向的编码原文；整页的文本节点与 data-* 属性过 dom-leak.ts 的内部编码核对
 //     （判断状态码、原因码、错因编码、模板键、证据 ID、掌握数值等；data-* 只放行登记过的属性与取值）。
+import { execFileSync } from 'node:child_process';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
-import { ALL_SHELL_COPY } from '../src/shell/copy.ts';
+import { ALL_SHELL_COPY, DISPUTE, WHY } from '../src/shell/copy.ts';
 import { targets } from './crawl-pages.ts';
+import { crawlClaimBinding, ledger, weeklyTexts } from './claim-binding.ts';
 import { domLeaks, expectNoDomLeak, FORBIDDEN_CODES } from './dom-leak.ts';
 import { crawl } from './headers-check.ts';
 import { loginGuardian, loginStudent, TRUST_BASE } from './session.ts';
@@ -62,7 +65,7 @@ function watchOrigin(page: Page): string[] {
 /** 上海时区的 N 天后（考试日期须在今天起一年内） */
 const dayAfter = (n: number): string => new Date(Date.now() + 8 * 3600_000 + n * 86_400_000).toISOString().slice(0, 10);
 
-test('学生：入口行、异议状态页、“为什么”（读取通道未接：暂时无法获取，不显示异议按钮）', async ({ page }) => {
+test('学生：入口行、异议状态页、“为什么”（不存在的判断：暂时无法获取，不显示异议按钮）', async ({ page }) => {
   const off = watchOrigin(page);
   await loginStudent(page, GT);
   const nav = page.locator('[data-trust-nav="student"]');
@@ -357,4 +360,138 @@ test('安全头（第二轮 7.6，H6）：开关打开时信任界面的全部�
   await crawl(page, targets('student', GT, true, true));
   await loginGuardian(page, 'gH');
   await crawl(page, targets('guardian', GT, true, true));
+});
+
+
+// ---------------------------------------------------------------- “为什么”页（specs/why-page-e2e，T21 遗留）
+const F = (n: number) => `5d000000-0000-4000-8000-0000000000f${n}`;
+const F_TEXT: Record<number, string> = {
+  1: '【占位模板·未审核】MATH.FUNC.QUAD.GRAPH｜transfer', 2: '【占位模板·未审核】MATH.FUNC.QUAD.AXIS｜execute',
+  3: '【占位模板·未审核】MATH.FUNC.QUAD.ROOTS｜transfer', 4: '【占位模板·未审核】MATH.FUNC.QUAD.VERTEX｜execute',
+  5: '【占位模板·未审核】MATH.FUNC.QUAD.SHIFT｜transfer', 6: '【占位模板·未审核】MATH.FUNC.QUAD.DOMAIN｜execute',
+};
+
+/** 成立、假设：结论挂在判断上；待验证：只画虚线、不出结论文字；推翻、撤回与读取不可用：暂时无法获取、没有判断、没有异议按钮 */
+async function expectWhy(page: Page, side: 's' | 'family', n: number, want: 'solid' | 'dashed' | 'none'): Promise<void> {
+  await page.goto(`/${side}/${GT}/why/${F(n)}`);
+  await expect(page.getByTestId('why-page')).toBeVisible();
+  const html = await page.content();
+  if (want === 'none') {
+    await expect(page.locator('[data-unavailable="why"]')).toBeVisible();
+    await expect(page.locator('[data-claim-id]')).toHaveCount(0);
+    await expect(page.getByTestId('dispute-panel')).toHaveCount(0);
+    expect(html.includes(F_TEXT[n]!), `f${n} 的句子不出现`).toBe(false);
+    return;
+  }
+  await expect(page.locator('section.why')).toHaveAttribute('data-claim-id', F(n));
+  if (want === 'solid') {
+    await expect(page.locator(`p.claim-text [data-claim-id="${F(n)}"]`)).toHaveText(F_TEXT[n]!);
+  } else {
+    await expect(page.locator('p.claim-text')).toHaveCount(0);
+    expect(html.includes(F_TEXT[n]!), `待验证 f${n} 的结论文字不出 BFF`).toBe(false);
+  }
+  await expect(page.getByTestId('why-evidence')).toBeVisible();
+  await onlyCopyOrClaims(page);
+  await axe(page);
+}
+
+test('“为什么”页（T21 遗留，specs/why-page-e2e）：学生看成立、假设、待验证；推翻、撤回、读取不可用一律暂时无法获取；异议提交走到下一步', async ({ page }) => {
+  const off = watchOrigin(page);
+  await loginStudent(page, GT);
+  await expectWhy(page, 's', 1, 'solid');
+  await expect(page.locator('[data-confidence]')).toHaveCount(0);  // 学生受众没有置信度分档
+  await expect(page.locator('[data-testid^="dispute-"] button')).toHaveCount(3);  // 学生本人三条路
+  await expectWhy(page, 's', 2, 'solid');
+  await page.getByTestId('dispute-one-off-slip').getByRole('button').click();
+  await expect(page.getByTestId('dispute-one-off-slip').locator('[role="status"]')).toHaveAttribute('data-code', 'next-2');
+  await page.getByTestId('dispute-i-know').getByRole('button').click();
+  await expect(page.getByTestId('dispute-i-know').locator('[role="status"]')).toHaveAttribute('data-code', 'next-1');
+  await onlyCopyOrClaims(page);
+  await expectWhy(page, 's', 5, 'dashed');
+  for (const n of [3, 4, 6]) await expectWhy(page, 's', n, 'none');
+  expect(off).toEqual([]);
+});
+
+test('“为什么”页（T21 遗留，specs/why-page-e2e）：家长另看置信度分档、只有两条异议路；推翻、撤回、读取不可用同样暂时无法获取', async ({ page }) => {
+  const off = watchOrigin(page);
+  await loginGuardian(page, 'gH');
+  await expectWhy(page, 'family', 1, 'solid');
+  await expect(page.locator('[data-confidence="strong"]')).toHaveCount(1);
+  await expect(page.locator('[data-testid^="dispute-"] button')).toHaveCount(2);  // 家长没有“只是一次失误”
+  await expect(page.getByTestId('dispute-one-off-slip')).toHaveCount(0);
+  await page.getByTestId('dispute-data-error').getByRole('button').click();
+  await expect(page.getByTestId('dispute-data-error').locator('[role="status"]')).toHaveAttribute('data-code', 'next-3');
+  await onlyCopyOrClaims(page);
+  await expectWhy(page, 'family', 2, 'solid');
+  await expect(page.locator('[data-confidence="few_evidence"]')).toHaveCount(1);
+  await expectWhy(page, 'family', 5, 'dashed');
+  for (const n of [3, 4, 6]) await expectWhy(page, 'family', n, 'none');
+  expect(off).toEqual([]);
+});
+
+test('陈述—判断一致性的全站爬取（T21）：学生与家长的全部页面，每个 data-claim-id 都是账本里本人可展示的判断；推翻、撤回与别人的判断不出现；句子都挂在判断上', async ({ page }) => {
+  const claims = ledger();
+  // 种子里 GT 的四条：f1 成立、f2 假设（周报里显示），f3 已推翻、f4 已撤回（周报快照里还留着句子，读取时必须被挡掉）
+  const refuted = '5d000000-0000-4000-8000-0000000000f3';
+  const withdrawn = '5d000000-0000-4000-8000-0000000000f4';
+  expect(claims.get(refuted)?.status).toBe('refuted');
+  expect(claims.get(withdrawn)?.status).toBe('withdrawn');
+  expect(claims.get('5d000000-0000-4000-8000-0000000000f5')?.status).toBe('to_verify');  // f5：只靠 BFF 的再核挡掉（RLS 放行待验证）
+  // “为什么”页另用真实判断 ID 走一遍（specs/why-page-e2e）：成立 f1、假设 f2、待验证 f5；推翻、撤回的 ID 会出现在地址里，另由上面的用例核对
+  const why = (who: 'student' | 'guardian') => [1, 2, 5].map((n) => `/${who === 'student' ? 's' : 'family'}/${GT}/why/${F(n)}`);
+  const pages = (who: 'student' | 'guardian') =>
+    [...targets(who, GT, true).filter((t) => t.status === 200).map((t) => t.path), ...why(who)];
+  await loginStudent(page, GT);
+  const seenStudent = await crawlClaimBinding(page, GT, pages('student'), claims, weeklyTexts(GT, 'student'));
+  await loginGuardian(page, 'gH');
+  const seenGuardian = await crawlClaimBinding(page, GT, pages('guardian'), claims, weeklyTexts(GT, 'guardian'));
+  // 阳性对照：确实爬到了带判断的页面（周报的两句），核对不是空转
+  for (const seen of [seenStudent, seenGuardian]) expect([...seen].sort()).toEqual(expect.arrayContaining([...WEEKLY_CLAIMS, F(5)]));
+});
+
+
+// ---------------------------------------------------------------- 手机宽度的卡片排列（specs/trust-tables-mobile）
+/** 每行每格的文字（列名由 ::before 显示，不在 innerText 里）：桌面与手机宽度下必须逐格相同（规则 11：只改布局，不改陈述） */
+const cellTexts = (page: Page, table: string) => page.locator(`[data-testid="${table}"] tbody tr`).evaluateAll((trs) =>
+  trs.map((tr) => Array.from(tr.querySelectorAll('td')).map((td) => (td as HTMLElement).innerText.trim())));
+
+async function cardsMatchDesktop(page: Page, path: string, table: string, labels: readonly string[]): Promise<void> {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(path);
+  const desktop = await cellTexts(page, table);
+  expect(desktop.length, `${table} 有行`).toBeGreaterThan(0);
+  expect(await page.locator(`[data-testid="${table}"] tbody tr`).first().evaluate((tr) => getComputedStyle(tr).display)).toBe('table-row');
+  for (const width of [360, 390, 430]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto(path);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), `${width} 宽无横向滚动`).toBeLessThanOrEqual(0);
+    const got = await page.locator(`[data-testid="${table}"] tbody tr`).first().evaluate((tr) => ({
+      display: getComputedStyle(tr).display,
+      labels: Array.from(tr.querySelectorAll('td')).map((td) => getComputedStyle(td, '::before').content.replace(/^"|"$/g, '')),
+    }));
+    expect(got.display).toBe('block');
+    expect(got.labels).toEqual([...labels]);
+    expect(await cellTexts(page, table), `${width} 宽下每格文字与桌面相同`).toEqual(desktop);
+  }
+  await onlyCopyOrClaims(page);
+  await expectNoDomLeak(page);
+  await axe(page);
+}
+
+test('证据表与异议表：手机宽度按卡片排列、无横向滚动，每格带列名，格子文字与桌面逐格相同（specs/trust-tables-mobile）', async ({ page }) => {
+  // 异议列表直接读库（端到端的洞察服务是桩，提交不写库）：给 GT 插两条家长提出的合成异议（一条进行中、一条已处理）。
+  // 放在本文件最后：前面的用例断言过异议列表为空
+  const D = (n: number) => `5d000000-0000-4000-8000-00000000d0${n}0`;
+  execFileSync('psql', ['-X', '-q', '-v', 'ON_ERROR_STOP=1', '-c', `SET session_replication_role = replica;
+    INSERT INTO insight.dispute (id, student_id, claim_id, raised_by, raised_by_role, source_type, kind, status, resolved_at, result_note_code, created_at)
+    VALUES ('${D(1)}', '${GT}', '${F(1)}', '5d000000-0000-4000-8000-0000000000a1', 'guardian', 'guardian', 'i_know', 'open', NULL, NULL, now() - interval '2 days'),
+           ('${D(2)}', '${GT}', '${F(2)}', '5d000000-0000-4000-8000-0000000000a1', 'guardian', 'guardian', 'i_know', 'rejected',
+            now() - interval '1 day', 'no_basis', now() - interval '5 days')
+    ON CONFLICT (id) DO NOTHING;`]);
+  await loginGuardian(page, 'gH');
+  await cardsMatchDesktop(page, `/family/${GT}/why/${F(1)}`, 'why-evidence', [WHY.colTime, WHY.colKind, WHY.colLevel, WHY.colNode]);
+  await cardsMatchDesktop(page, `/family/${GT}/disputes`, 'disputes',
+    [DISPUTE.colKind, DISPUTE.colStatus, DISPUTE.colCreated, DISPUTE.colResolved, DISPUTE.colClaim]);
+  await loginStudent(page, GT);
+  await cardsMatchDesktop(page, `/s/${GT}/why/${F(1)}`, 'why-evidence', [WHY.colTime, WHY.colKind, WHY.colLevel, WHY.colNode]);
 });

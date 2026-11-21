@@ -28,6 +28,7 @@ from . import health, mastery_routes, metrics, obs, processing, store
 from .adapter_client import strict_json
 from .config import Settings
 from .contract import UnsupportedContractVersion, internal_contract, plugin_contract
+from .db_timeouts import request_pool_kwargs
 from .diagnosis import api as diagnosis_api
 from .diagnosis.engine import Params as DiagnosisParams
 from .errors import IngestError
@@ -258,7 +259,8 @@ def create_app(
         internal_contract()
         internal_contract("1.0.0")  # v1 信封契约（安全审查建议 9：文件缺失时启动即失败）
         own_pool = pool is None
-        p = pool or await asyncpg.create_pool(settings.database_url, min_size=1, max_size=10)
+        # 超时与兜底（specs/db-call-timeouts）：语句 10 秒、事务闲置 15 秒；三个处理请求的池同一口径
+        p = pool or await asyncpg.create_pool(settings.database_url, min_size=1, max_size=10, **request_pool_kwargs())
         # 迁移 0016 必须先于本版本执行：v0、v1 写入都要查封存表（安全审查必须改 1）
         if not await p.fetchval("SELECT to_regclass('platform.replay_seal') IS NOT NULL"):
             if own_pool:
@@ -323,7 +325,8 @@ def create_app(
                 raise
             if lock_pool is None:
                 # 作答串行锁的独立小连接池（审查 B2）：会话级咨询锁要握到判分结束，放在业务池里会与 ingest 争连接而互相等死
-                lock_pool = await asyncpg.create_pool(settings.database_url, min_size=0, max_size=PRACTICE_LOCK_POOL_SIZE)
+                lock_pool = await asyncpg.create_pool(settings.database_url, min_size=0, max_size=PRACTICE_LOCK_POOL_SIZE,
+                                                      **request_pool_kwargs())
                 own_lock_pool = True
             state["practice"] = _practice(settings, practice_cfg, p, client, state["service"], practice_clock, lock_pool)
             if retest_cfg is not None:
@@ -350,7 +353,8 @@ def create_app(
             # 调用记录：日志 + 指标；LEARNING_MODEL_CALL_LOG=1 时另经有界队列异步批量写库（单独的小连接池，不占业务池）
             if settings.model_call_log:
                 if call_log_pool is None:
-                    own_call_log_pool = await asyncpg.create_pool(settings.database_url, min_size=0, max_size=CALL_LOG_POOL_SIZE)
+                    own_call_log_pool = await asyncpg.create_pool(settings.database_url, min_size=0, max_size=CALL_LOG_POOL_SIZE,
+                                                                  **request_pool_kwargs())
                 call_log_sink = metrics.db_sink(call_log_pool or own_call_log_pool)
                 call_log_sink.start()
             try:
@@ -426,13 +430,17 @@ def create_app(
             record["duration_ms"] = round((time.monotonic() - started) * 1000)
             log.info(json.dumps(record, ensure_ascii=False))
 
-    diagnosis_api.register(app, lambda r: _bearer_ok(r.headers.get("authorization"), settings.service_credential), state)
-    # 错题再练（specs/practice-loop-stage1 第 4 节）：只认 BFF 服务令牌；编排层、洞察服务、路由客户端令牌一律 401
-    practice_api.register(app, lambda r: _bearer_ok(r.headers.get("authorization"), settings.service_credential), state)
-    # 复测与验证题（KGE-05）：同再练，只认 BFF 服务令牌
-    retest_api.register(app, lambda r: _bearer_ok(r.headers.get("authorization"), settings.service_credential), state)
-    # 今日计划跨科编排（PLT-11）：同再练，只认 BFF 服务令牌
-    today_api.register(app, lambda r: _bearer_ok(r.headers.get("authorization"), settings.service_credential), state)
+    # PLT-24（T49）：诊断、错题再练、复测、今日编排四组只认 BFF 的会话令牌（LEARNING_SESSION_TOKEN）；写入令牌、编排层、洞察服务、
+    # 路由客户端令牌一律 401；会话令牌没配置时这四组一律 401。写入令牌只开契约 v1 的写入、重放、今日计划与星图
+    session_token = settings.session_credential
+
+    def session_ok(r: Request) -> bool:
+        return session_token is not None and _bearer_ok(r.headers.get("authorization"), session_token)
+
+    diagnosis_api.register(app, session_ok, state)
+    practice_api.register(app, session_ok, state)      # 错题再练（specs/practice-loop-stage1 第 4 节）
+    retest_api.register(app, session_ok, state)        # 复测与验证题（KGE-05）
+    today_api.register(app, session_ok, state)         # 今日计划跨科编排（PLT-11）
     # learning-internal 1.1.0（KGE-04 第二步 PR 3）：掌握读取只认编排层令牌；验证任务与撤销只认洞察服务令牌（未配置即一律 401）；
     # BFF 服务令牌对这四个接口一律 401；档案页 ensure 认编排层（会话开始）与洞察服务（周报），read 只认编排层（PR 4）；
     # 星图节点星态只认 BFF 服务令牌（H5 星图 v1 PR 1）

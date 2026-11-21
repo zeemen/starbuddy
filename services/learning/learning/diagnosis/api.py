@@ -1,6 +1,6 @@
 """诊断会话的内部接口（只供 BFF 调用；接口定义 services/learning/openapi/diagnosis-internal.v0.yaml）。
 
-鉴权与既有内部接口同一做法：Bearer 服务间令牌，sha256 后常量时间比较。请求体限 64 KB，JSON 拒绝 NaN 与重复键，
+鉴权与既有内部接口同一做法：Bearer 服务间令牌（只认 BFF 的会话令牌 LEARNING_SESSION_TOKEN，PLT-24），sha256 后常量时间比较。请求体限 64 KB，JSON 拒绝 NaN 与重复键，
 未知键一律 400。日志只记接口名、状态码、错误码、耗时，不记请求体（作答、书写原文）与学生 ID。
 学习服务不认学生身份：BFF 负责“只认学生本人”，这里只核对会话属于请求里的 student_ref（不属于与不存在同样 404）。
 """

@@ -79,9 +79,8 @@ function DiagnosisStepView({ d }: { d: DiagnosisStepSource }) {
         <li>过程原文证据 {d.work_evidence_id ? <code data-testid="work-evidence-id">{d.work_evidence_id}</code> : '—'}</li>
       </ul>
       <h3>{d.kind === 'process' ? '学生写的过程' : '学生讲给老师听的内容'}</h3>
-      {typeof d.work_text === 'string'
-        ? <pre className="review-work" data-testid="work-text">{d.work_text}</pre>
-        : <p className="muted" data-testid="work-text-pending">原文待授权：审核台暂时读不到过程原文（需人确认授权方式后开放），可先按证据 ID 记录。</p>}
+      {/* 库函数不给过程原文（specs/review-task-source-models）：授权方式定下来之前一律显示待授权 */}
+      <p className="muted" data-testid="work-text-pending">原文待授权：审核台暂时读不到过程原文（需人确认授权方式后开放），可先按证据 ID 记录。</p>
       <p className="muted">过程部分不自动评分；结案只记“已看过程并记录”或“无需处理”，不改分、不改掌握。</p>
     </section>
   );
@@ -146,7 +145,6 @@ export default async function QueueTaskPage({ params }: { params: Promise<{ id: 
   const t = r.value;
   const codes = rc.ok ? rc.value.items : null;
   const subjectName = SUBJECTS.find((s) => s.code === t.subject)?.name ?? t.subject;
-  const src = t.source;
   return (
     <main>
       <h1>复核任务（{QUEUE_STATUS_LABEL[t.status] ?? t.status}）</h1>
@@ -161,10 +159,10 @@ export default async function QueueTaskPage({ params }: { params: Promise<{ id: 
             {' '}· 创建于 {formatTime(t.created_at)}{t.assigned_at ? ` · 领取于 ${formatTime(t.assigned_at)}` : ''}</li>
         </ul>
       </section>
-      {src === null ? <p className="muted">来源对象暂无可显示的结构化内容</p>
-        : t.source_kind === 'grade_result' ? <GradeView g={src as GradeSource} />
-        : t.source_kind === 'claim' ? <ClaimView c={src as ClaimSource} />
-        : t.source_kind === 'diagnosis_step' ? <DiagnosisStepView d={src as DiagnosisStepSource} /> : null}
+      {t.source_kind === 'grade_result' ? <GradeView g={t.source} />
+        : t.source_kind === 'claim' ? <ClaimView c={t.source} />
+        : t.source_kind === 'diagnosis_step' ? <DiagnosisStepView d={t.source} />
+        : <p className="muted">来源对象暂无可显示的结构化内容</p>}
       <section aria-labelledby="h-actions">
         <h2 id="h-actions">处理</h2>
         <Actions t={t} codes={codes} />

@@ -60,13 +60,21 @@ SELECT t.ok(
                                        'insight.freeze_due_predictions(timestamptz)'::regprocedure,
                                        'platform.execute_due_erasures(timestamptz)'::regprocedure,
                                        'platform.student_processing_allowed(uuid)'::regprocedure,
-                                       'platform.model_call_log_purge(timestamptz, integer)'::regprocedure))
+                                       'platform.model_call_log_purge(timestamptz, integer)'::regprocedure,
+                                       -- 0062 分区续建、0063 保留期清理（PLT-23）
+                                       'platform.ensure_partitions_ahead(timestamptz)'::regprocedure,
+                                       'platform.retention_purge_ingest_request(timestamptz, integer)'::regprocedure,
+                                       'platform.retention_purge_auth_otp(timestamptz, integer)'::regprocedure,
+                                       'platform.retention_purge_auth_session(timestamptz, integer)'::regprocedure,
+                                       'platform.retention_purge_auth_rate_counter(timestamptz, integer)'::regprocedure,
+                                       'insight.retention_purge_behavior_event(timestamptz, integer)'::regprocedure))
   AND NOT (SELECT bool_or(has_function_privilege('starbuddy_scheduler', f, 'EXECUTE')) FROM unnest(ARRAY[
      'platform.meter_reserve(uuid, text, text, text, numeric, text, text)', 'platform.meter_settle(uuid, numeric)',
      'platform.meter_release(uuid, text)', 'platform.meter_open_subscription(uuid, text)',
      'platform.enroll_subject(uuid, platform.subject)', 'platform.pause_subject(uuid, platform.subject)',
      'platform.meter_check_entitlement(uuid)', 'platform.meter_grant_period(uuid)']::regprocedure[]) f),
-  '定时任务角色只能调用过期、续期与抽检（0023），以及冻结预测（0034）、执行删除请求（0035）、只读的处理判据（0059）与调用记录留存删除（0060）');
+  '定时任务角色只能调用过期、续期与抽检（0023），以及冻结预测（0034）、执行删除请求（0035）、只读的处理判据（0059）、调用记录留存删除（0060）、'
+  '分区续建（0062）与五个保留期清理（0063）');
 SELECT t.ok(NOT EXISTS (
   SELECT 1 FROM unnest(ARRAY['starbuddy_learning', 'starbuddy_review']) r(role)
    CROSS JOIN (SELECT p.oid FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace

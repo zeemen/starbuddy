@@ -140,7 +140,7 @@ Authorization: Bearer {WENLI_ROUTE_TOKEN}
 - 10 个合成能力格（5 个域 × L1–L2，替代 legacy 28 格）：ID 为 `CHN.SYN.D<n>_L<m>`，符合 `kge.node_id`（迁移 0011，CHN 命名空间），
   同时是平台能力视图节点的 `local_id`；域带合成的 ROI 权重。
 全部 `pending_review`，没有真实学生、学校、手机号（规则 8）。加载时做完整性检查，不合格拒绝启动。
-`scripts/register-content.ts` 只输出登记 SQL（课程版本、能力格、题目；只增不改，题目一律 pending_review）。
+`tools/content-register/wenli.ts`（W13 T11 从本目录迁出）只输出登记 SQL（课程版本、能力格、题目；只增不改，题目一律 pending_review）。
 
 ## 边界
 - **不读写任何平台表**（规则 1）；**判分只来自量表与确定性规则**（规则 3）；**不输出掌握度**（规则 2）；不写关于学生的陈述（规则 11）。
@@ -159,7 +159,7 @@ src/adapter.ts                 方法实现与字段映射
 src/route-client.ts            学习服务内部模型路由接口的客户端（同知行，任务 T4）
 src/contract.ts / content.ts   契约加载与 ajv 校验（fail closed）/ 内容包加载与完整性检查
 src/server.ts / main.ts / startup.ts   node:http 与服务间令牌 / 启动入口 / 启动前检查（不走代理、两个令牌不同）
-scripts/register-content.ts    输出内容登记 SQL
+（内容登记 SQL：tools/content-register/wenli.ts；npm run register:sql 照旧可用）
 tests/                         单测（node --test）；tests/route-stub.ts 是路由接口的本机 HTTP 桩（档位桩判定器）
 conformance/                   一致性测试夹具与专用启动器（起路由桩再加载 src/main.ts）
 ```

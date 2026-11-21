@@ -347,3 +347,93 @@ def test_weekly_on_local_db(insightdb):
     this_monday = insightdb.psql("SELECT date_trunc('week', (now() AT TIME ZONE 'Asia/Shanghai')::date)::date").strip()
     p = _run("insight.jobs", "weekly", "--week-start", this_monday, env=env)
     assert p.returncode == 2 and "已结束" in p.stderr
+
+
+class FakeHorizonConn(FakeConn):
+    """分区续建的假连接：fetchval 返回新建分区数，fetch 返回水位（表 → 剩余月数）"""
+
+    def __init__(self, created, ahead, role_ok: bool = True) -> None:
+        super().__init__([created], role_ok)
+        self.ahead = ahead
+
+    async def fetch(self, sql, *args):
+        self.calls.append((sql, args))
+        return [{"parent": k, "ahead": v} for k, v in sorted(self.ahead.items())]
+
+
+@pytest.mark.anyio
+async def test_partition_ensure_semantics():
+    """分区续建（0062，PLT-23）：时钟取数据库 now()；续建后任何一张表剩余不足 3 个月（或缺表）就告警"""
+    full = {"attempt": 13, "evidence_event": 13, "model_call_log": 13, "usage_ledger": 13}
+    c = FakeHorizonConn(0, full)
+    r = await scheduled.ensure_partitions(c)
+    assert r == {"created": 0, "months_ahead": full, "short": []}
+    assert c.calls[0][0] == "SELECT platform.ensure_partitions_ahead(now())" and "platform.partition_horizon()" in c.calls[1][0]
+    r = await scheduled.ensure_partitions(FakeHorizonConn(4, {**full, "usage_ledger": 2}))
+    assert r["created"] == 4 and r["short"] == ["usage_ledger"]
+    r = await scheduled.ensure_partitions(FakeHorizonConn(0, {k: v for k, v in full.items() if k != "attempt"}))
+    assert r["short"] == ["attempt"]                                  # 水位里少了一张表也算不足
+    r = await scheduled.ensure_partitions(FakeHorizonConn(0, {**full, "attempt": None}))
+    assert r["short"] == ["attempt"]                                  # 一个分区都没有
+    with pytest.raises(scheduled.SchedulerRoleError):
+        await scheduled.ensure_partitions(FakeHorizonConn(0, full, role_ok=False))
+
+
+@pytest.mark.anyio
+async def test_retention_purge_loop_semantics():
+    """保留期清理（0063，PLT-23）：五张表依次、每张表一批不满即停；任何一张表到了批次上限 more_due"""
+    c = FakeConn([1000, 5, 0, 3, 0, 1000, 7])
+    per, batches, more = await scheduled.purge_retention(c)
+    assert per == {"ingest_request": 1005, "auth_otp_challenge": 0, "auth_session": 3, "auth_rate_counter": 0, "behavior_event": 1007}
+    assert batches == 7 and more is False
+    funcs = [sql.split("(")[0].removeprefix("SELECT ") for sql, _ in c.calls]
+    assert funcs == ["platform.retention_purge_ingest_request"] * 2 + ["platform.retention_purge_auth_otp", "platform.retention_purge_auth_session",
+                     "platform.retention_purge_auth_rate_counter"] + ["insight.retention_purge_behavior_event"] * 2
+    assert all(sql.endswith("(now(), $1::integer)") and args == (1000,) for sql, args in c.calls)
+    per, batches, more = await scheduled.purge_retention(FakeConn([3, 3, 0, 0, 0, 0]), 3, max_batches=2)
+    assert per["ingest_request"] == 6 and more is True                # 第一张表到了上限，其余照常清理
+    with pytest.raises(scheduled.SchedulerRoleError):
+        await scheduled.purge_retention(FakeConn([5], role_ok=False))
+    for bad in (0, 10_001):
+        with pytest.raises(ValueError):
+            await scheduled.purge_retention(FakeConn([]), bad)
+
+
+def test_partition_alert_and_retention_more_due_exit_code(monkeypatch, capsys):
+    async def fake_run(a, url, env=None):
+        if a.cmd == "partition-ensure":
+            return {"job": a.cmd, "created": 0, "months_ahead": {}, "short": ["usage_ledger"], "alert": True}
+        assert a.cmd == "retention-purge" and a.batch == 1000 and a.max_batches == 10_000
+        return {"job": a.cmd, "purged": {"behavior_event": 1}, "batches": 6, "more_due": False}
+    monkeypatch.setattr(scheduled, "_run", fake_run)
+    assert scheduled.main(["partition-ensure"], GOOD) == 1
+    assert json.loads(capsys.readouterr().out)["short"] == ["usage_ledger"]
+    assert scheduled.main(["retention-purge"], GOOD) == 0
+    for argv in (["retention-purge", "--batch", "0"], ["retention-purge", "--batch", "10001"], ["retention-purge", "--max-batches", "0"]):
+        assert scheduled.main(argv, GOOD) == 2
+
+
+def test_data_maintenance_on_local_db(scheddb):
+    """分区续建与保留期清理（0062、0063）在一次性库上：水位至少到当月 + 6；只删超过保留期的过程数据；输出只有计数"""
+    db = scheddb
+    env = {"SCHEDULER_ENV": "test", "SCHEDULER_DATABASE_URL": _url(db, SCHED_ROLE)}
+    p = _run("insight.scheduled", "partition-ensure", env=env)
+    assert p.returncode == 0, p.stderr
+    out = json.loads(p.stdout)
+    assert out["job"] == "partition-ensure" and out["short"] == [] and out["alert"] is False
+    assert sorted(out["months_ahead"]) == ["attempt", "evidence_event", "model_call_log", "usage_ledger"]
+    assert all(v >= 6 for v in out["months_ahead"].values())
+    db.psql("INSERT INTO platform.auth_rate_counter (bucket, key_digest, window_start, hits) VALUES"
+            " ('syn.dm.day', sha256('syn-dm-old'), now() - interval '3 days', 1), ('syn.dm.day', sha256('syn-dm-new'), now() - interval '1 hour', 1);")
+    try:
+        p = _run("insight.scheduled", "retention-purge", "--batch", "1", env=env)
+        assert p.returncode == 0, p.stderr
+        out = json.loads(p.stdout)
+        assert out["job"] == "retention-purge" and out["purged"]["auth_rate_counter"] >= 1 and out["more_due"] is False
+        assert sorted(out["purged"]) == ["auth_otp_challenge", "auth_rate_counter", "auth_session", "behavior_event", "ingest_request"]
+        assert not UUID_ANY.search(p.stdout) and len(p.stdout.splitlines()) == 1
+        left = db.psql("SELECT count(*) FILTER (WHERE key_digest = sha256('syn-dm-old')) || ',' || count(*) FILTER (WHERE key_digest = sha256('syn-dm-new'))"
+                       " FROM platform.auth_rate_counter WHERE bucket = 'syn.dm.day'").strip()
+        assert left == "0,1"
+    finally:
+        db.psql("DELETE FROM platform.auth_rate_counter WHERE bucket = 'syn.dm.day';")

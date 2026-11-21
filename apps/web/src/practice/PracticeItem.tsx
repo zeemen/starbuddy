@@ -13,6 +13,8 @@ import type { Answer } from '../lib/diagnosis.ts';
 import { PRACTICE as C, PRACTICE_AFTER, PRACTICE_ERROR, PRACTICE_VERDICT } from '../shell/copy.ts';
 import { RichParagraphs, RichRuns } from '../shell/RichItem.tsx';
 import { answerPracticeAction, nextPracticeAction } from './actions.ts';
+import { cooldownMs } from '../lib/retry-after.ts';
+import { useCooldown } from './use-cooldown.ts';
 import { keepsTicket, needsNewItem, resubmitsSnapshot, shanghaiMinute, type AnswerView, type ReadyView, type UiError } from './view.ts';
 
 type Phase = 'loading' | 'item' | 'result' | 'empty' | 'stopped';
@@ -24,6 +26,8 @@ export function PracticeItem({ csrf, student, subject, entry, listHref }: { csrf
   const [result, setResult] = useState<AnswerView | null>(null);
   const [error, setError] = useState<UiError | null>(null);
   const [busy, setBusy] = useState(false);
+  // 作答被闸门拒或被限流后，提交按钮按 retry-after 冷却（specs/retry-after-cooldown）；冷却结束只恢复按钮，不自动重发
+  const { cooling, start: startCooldown, clear: clearCooldown } = useCooldown();
   const [text, setText] = useState('');
   const [choice, setChoice] = useState<string[]>([]);
   const [message, setMessage] = useState('');
@@ -36,6 +40,7 @@ export function PracticeItem({ csrf, student, subject, entry, listHref }: { csrf
     setPhase('loading');
     sent.current = null;
     setError(null); setMessage(''); setResult(null); setReady(null); setText(''); setChoice([]);
+    clearCooldown();
     const r = await nextPracticeAction(csrf, student, subject, entry);
     if (r.kind === 'ready') {
       setReady(r.ready);
@@ -46,7 +51,7 @@ export function PracticeItem({ csrf, student, subject, entry, listHref }: { csrf
       setError(r.error);
       setPhase('stopped');
     }
-  }, [csrf, student, subject, entry]);
+  }, [csrf, student, subject, entry, clearCooldown]);
 
   useEffect(() => {
     if (started.current) return;
@@ -60,7 +65,7 @@ export function PracticeItem({ csrf, student, subject, entry, listHref }: { csrf
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!ready || busy) return;
+    if (!ready || busy || cooling) return;
     const answer: Answer | null = sent.current
       ?? (ready.item.format === 'fill' ? (text.trim() ? { text: text.trim() } : null) : (choice.length ? { choice: [...choice] } : null));
     if (!answer) return setMessage(C.needAnswer);
@@ -78,6 +83,7 @@ export function PracticeItem({ csrf, student, subject, entry, listHref }: { csrf
       }
       setMessage('');
       setError(r.error);
+      if (r.error === 'rate_limited') startCooldown(cooldownMs(r.retryAfterSec));
       // 只有结果未知与限流要原样再发；作答形状不对时放开控件，让学生改了再交
       if (!resubmitsSnapshot(r.error)) sent.current = null;
       if (!keepsTicket(r.error) && !needsNewItem(r.error)) setPhase('stopped');
@@ -129,7 +135,7 @@ export function PracticeItem({ csrf, student, subject, entry, listHref }: { csrf
             {error && needsNewItem(error) ? (
               <button type="button" onClick={() => void load()} data-testid="practice-new-item">{C.newItem}</button>
             ) : (
-              <button type="submit" disabled={busy} data-testid="practice-submit">{locked ? C.retry : C.submit}</button>
+              <button type="submit" disabled={busy || cooling} data-cooldown={cooling ? 'on' : 'off'} data-testid="practice-submit">{locked ? C.retry : C.submit}</button>
             )}
           </p>
         </form>

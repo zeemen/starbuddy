@@ -35,12 +35,16 @@ function edgeDistance(x: number, y: number): number {
   return best;
 }
 
-/** 截取一颗星（含四周边距），在浏览器里解码成灰度数组 */
+/**
+ * 截取一颗星（含四周边距），在浏览器里解码成灰度数组。解码放在同一上下文里另开的空白页（about:blank，没有 CSP）：
+ * 应用页面的 CSP 不许 data: 图片（T46，img-src 'self'），截图不能在应用页面里当 data: 图片解码
+ */
 async function grab(page: Page, selector: string, dpr: number) {
   const box = (await page.locator(selector).boundingBox())!;
   const clip = { x: box.x - MARGIN, y: box.y - MARGIN, width: SIZE + 2 * MARGIN, height: SIZE + 2 * MARGIN };
   const png = await page.screenshot({ clip, animations: 'disabled' });
-  const gray: number[] = await page.evaluate(async (b64) => {
+  const scratch = await page.context().newPage();
+  const gray: number[] = await scratch.evaluate(async (b64) => {
     const img = new Image();
     img.src = `data:image/png;base64,${b64}`;
     await img.decode();
@@ -52,7 +56,7 @@ async function grab(page: Page, selector: string, dpr: number) {
     const out: number[] = [];
     for (let i = 0; i < d.length; i += 4) out.push(0.299 * d[i]! + 0.587 * d[i + 1]! + 0.114 * d[i + 2]!);
     return out;
-  }, png.toString('base64'));
+  }, png.toString('base64')).finally(() => scratch.close());
   const w = Math.round(clip.width * dpr);
   return { gray, w, h: gray.length / w };
 }

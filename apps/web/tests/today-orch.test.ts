@@ -8,13 +8,14 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { ALL_SHELL_COPY, ALL_TODAY_ORCH_COPY, TODAY_MARK, TODAY_ORCH, TODAY_ORCH_KIND, WEEKLY } from '../src/shell/copy.ts';
 import { todayOrchEnabled } from '../src/shell/today-orch.ts';
 import { goHref } from '../src/today/orch.ts';
 import { isPlanAction, PLAN_ACTIONS, showPlanMarks } from '../src/today/plan-mark.ts';
 import { planMarkKey, planMarkTicket, verifyPlanMarkTicket } from '../src/today/plan-mark-server.ts';
 
-const WEB = new URL('..', import.meta.url).pathname;
+const WEB = fileURLToPath(new URL('..', import.meta.url));
 const files = (dir: string): string[] => readdirSync(dir).flatMap((n) => {
   const p = join(dir, n);
   return statSync(p).isDirectory() ? files(p) : [p];

@@ -12,6 +12,11 @@ PLT-13 第一步（specs/scheduler-plt13）补了同一身份的另外三个入�
 PLT 模型调用记录落库（specs/plt-model-call-log 决定记录第 1 条，迁移 0060）补了第四个入口：
 - 调用记录留存删除 platform.model_call_log_purge（只授 starbuddy_scheduler）：只删 180 天前的行，时钟取数据库 now()；
   小批量循环（每批一个事务，批量 1–10000），一批不满即停，与计量循环同一语义。只删行、不删分区（删空的旧分区由人在分区维护时处理）。
+PLT-23 数据维护（specs/plt23-data-maintenance，迁移 0062、0063）补了第五、第六个入口：
+- 分区续建 platform.ensure_partitions_ahead（只授 starbuddy_scheduler）：四张按月分区表补建当月起 7 个月里缺的分区；
+  之后读 platform.partition_horizon，任何一张表已建到的最后一个月不足“当月 + 3 个月”就退出码 1（告警；正常情况下续建后是当月 + 6）；
+- 保留期清理（五个 retention_purge_* 函数，只授 starbuddy_scheduler）：写入幂等 30 天、验证码过期后 1 天、会话失效后 30 天、
+  限流计数 2 天、行为事件 180 天（保留期写在库函数里，这里不另设）；每张表小批量循环、一批不满即停，同上。
 命令行（services/scheduler 按时间表以子进程调用；也可手动，只连本机数据库）：
 
   SCHEDULER_ENV=dev SCHEDULER_DATABASE_URL=postgresql://...@localhost/... python -m insight.scheduled freeze
@@ -20,10 +25,13 @@ PLT 模型调用记录落库（specs/plt-model-call-log 决定记录第 1 条，
   ... python -m insight.scheduled meter-renew [--batch 50]
   ... python -m insight.scheduled spot-check --subject aya [--subject wenli ...] --ratio 0.1 (--lookback-hours 26 | --since <ISO 8601>)
   ... python -m insight.scheduled model-call-purge [--batch 1000]
+  ... python -m insight.scheduled partition-ensure
+  ... python -m insight.scheduled retention-purge [--batch 1000]
 
 规则 9：SCHEDULER_ENV 只收 dev、test；连接前核对连接串里的全部主机、连上之后核对服务端地址（复用审核台命令行的 local_only /
 check_server_local，同 insight.jobs）；连接的登录角色断言同上。输出一行 JSON，只有计数，不含学生 ID。
-退出码：0 正常；1 计量循环或留存删除到了批次上限仍有到期（下一轮接着处理）；2 参数、环境、本机核对或库拒绝。
+退出码：0 正常；1 计量循环或留存删除到了批次上限仍有到期（下一轮接着处理），或分区续建后仍有表剩余不足 3 个月；
+2 参数、环境、本机核对或库拒绝。
 """
 from __future__ import annotations
 
@@ -149,6 +157,56 @@ async def purge_model_calls(conn: asyncpg.Connection, batch: int = 1000, max_bat
     return purged, max_batches, True
 
 
+# ---------- 分区续建（0062 platform.ensure_partitions_ahead）与保留期清理（0063） ----------
+PARTITION_FUNC = "platform.ensure_partitions_ahead"
+HORIZON_FUNC = "platform.partition_horizon"
+MIN_MONTHS_AHEAD = 3                             # 续建之后，任何一张表已建到的最后一个月不足“当月 + 3 个月”即告警（spec 默认）
+PARTITIONED = ("attempt", "evidence_event", "model_call_log", "usage_ledger")
+# 表 → 库函数（保留期写在库函数里：写入幂等 30 天、验证码过期后 1 天、会话失效后 30 天、限流计数 2 天、行为事件 180 天）
+RETENTION_FUNCS = {
+    "ingest_request": "platform.retention_purge_ingest_request",
+    "auth_otp_challenge": "platform.retention_purge_auth_otp",
+    "auth_session": "platform.retention_purge_auth_session",
+    "auth_rate_counter": "platform.retention_purge_auth_rate_counter",
+    "behavior_event": "insight.retention_purge_behavior_event",
+}
+
+
+async def ensure_partitions(conn: asyncpg.Connection) -> dict[str, Any]:
+    """补建四张分区表当月起 7 个月里缺的分区，再读水位。返回 created、months_ahead（表 → 月数）与 short（不足 3 个月或缺的表）"""
+    await assert_scheduler_role(conn)
+    created = int(await conn.fetchval(f"SELECT {PARTITION_FUNC}(now())"))
+    rows = await conn.fetch(f"SELECT h.parent, ((extract(year FROM h.last_month) - extract(year FROM n.m)) * 12"
+                            f" + extract(month FROM h.last_month) - extract(month FROM n.m))::integer AS ahead"
+                            f" FROM {HORIZON_FUNC}() h, (SELECT (date_trunc('month', now() AT TIME ZONE 'UTC'))::date AS m) n"
+                            f" ORDER BY h.parent")
+    ahead = {str(r["parent"]): (None if r["ahead"] is None else int(r["ahead"])) for r in rows}
+    short = sorted(t for t in PARTITIONED if ahead.get(t) is None or ahead[t] < MIN_MONTHS_AHEAD)
+    return {"created": created, "months_ahead": ahead, "short": short}
+
+
+async def purge_retention(conn: asyncpg.Connection, batch: int = 1000, max_batches: int = 10_000) -> tuple[dict[str, int], int, bool]:
+    """五张表依次清理：每张表每批一个事务、一批不满即停。返回（表 → 删除条数, 总批次数, 是否有表到了批次上限仍可能有到期）"""
+    if not 1 <= batch <= MAX_PURGE_BATCH or max_batches < 1:
+        raise ValueError("batch must be 1-10000 and max_batches positive")
+    await assert_scheduler_role(conn)
+    out: dict[str, int] = {}
+    batches = 0
+    more = False
+    for table, func in RETENTION_FUNCS.items():
+        purged = 0
+        for _ in range(max_batches):
+            deleted = int(await conn.fetchval(f"SELECT {func}(now(), $1::integer)", batch))
+            purged += deleted
+            batches += 1
+            if deleted < batch:  # 一批不满：这张表没有更多到期的行
+                break
+        else:
+            more = True
+        out[table] = purged
+    return out, batches, more
+
+
 # ---------- 命令行 ----------
 ENV_VAR, URL_VAR = "SCHEDULER_ENV", "SCHEDULER_DATABASE_URL"
 # staging：LT-01 决定记录第 5 条（调度器连库按同一口径放开：连接串与服务端只收本机或内网 IPv4 字面量）
@@ -222,6 +280,10 @@ def _parse(argv: Sequence[str] | None) -> argparse.Namespace:
     mp = sub.add_parser("model-call-purge", help="模型调用记录留存删除（platform.model_call_log_purge，只删 180 天前的）")
     mp.add_argument("--batch", type=int, default=1000, help=f"每批条数（1–{MAX_PURGE_BATCH}，每批一个事务）")
     mp.add_argument("--max-batches", type=int, default=10_000, help="本轮最多批次（到了上限仍有到期时退出码 1，下一轮接着处理）")
+    sub.add_parser("partition-ensure", help="分区续建（platform.ensure_partitions_ahead）；续建后仍有表剩余不足 3 个月时退出码 1")
+    rp = sub.add_parser("retention-purge", help="过程数据保留期清理（五个 retention_purge_* 函数）")
+    rp.add_argument("--batch", type=int, default=1000, help=f"每批条数（1–{MAX_PURGE_BATCH}，每批一个事务）")
+    rp.add_argument("--max-batches", type=int, default=10_000, help="每张表本轮最多批次（到了上限仍有到期时退出码 1，下一轮接着处理）")
     sc = sub.add_parser("spot-check", help="判分抽检进统一复核队列（platform.review_sample_spot_checks）")
     sc.add_argument("--subject", action="append", required=True, choices=SUBJECTS)
     sc.add_argument("--ratio", type=float, required=True, help="抽检比例 (0, 0.5]（库函数核对）；没有代码缺省值，由时间表给")
@@ -246,6 +308,12 @@ async def _run(a: argparse.Namespace, url: str, env: str | None = None) -> dict[
         if a.cmd == "model-call-purge":
             total, batches, more = await purge_model_calls(conn, a.batch, a.max_batches)
             return {"job": a.cmd, "purged": total, "batches": batches, "more_due": more}
+        if a.cmd == "partition-ensure":
+            r = await ensure_partitions(conn)
+            return {"job": a.cmd, "created": r["created"], "months_ahead": r["months_ahead"], "short": r["short"], "alert": bool(r["short"])}
+        if a.cmd == "retention-purge":
+            per, batches, more = await purge_retention(conn, a.batch, a.max_batches)
+            return {"job": a.cmd, "purged": per, "batches": batches, "more_due": more}
         since = _since(a.since)
         enqueued = {}
         for s in dict.fromkeys(a.subject):
@@ -260,7 +328,7 @@ def main(argv: Sequence[str] | None = None, environ: dict[str, str] | None = Non
     try:
         if a.cmd in METER_FUNCS and not (1 <= a.batch <= MAX_BATCH and 1 <= a.max_batches <= 1_000_000):
             raise CliError("--batch 必须在 1–1000 之间，--max-batches 必须在 1–1000000 之间")
-        if a.cmd == "model-call-purge" and not (1 <= a.batch <= MAX_PURGE_BATCH and 1 <= a.max_batches <= 1_000_000):
+        if a.cmd in ("model-call-purge", "retention-purge") and not (1 <= a.batch <= MAX_PURGE_BATCH and 1 <= a.max_batches <= 1_000_000):
             raise CliError(f"--batch 必须在 1–{MAX_PURGE_BATCH} 之间，--max-batches 必须在 1–1000000 之间")
         if a.cmd == "spot-check":
             if a.lookback_hours is not None and not 1 <= a.lookback_hours <= MAX_LOOKBACK_HOURS:
@@ -277,7 +345,7 @@ def main(argv: Sequence[str] | None = None, environ: dict[str, str] | None = Non
         print(f"insight.scheduled：执行失败（{type(e).__name__}{' ' + state if state else ''}）", file=sys.stderr)
         return 2
     sys.stdout.write(json.dumps(out, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n")
-    return 1 if out.get("more_due") else 0
+    return 1 if out.get("more_due") or out.get("alert") else 0
 
 
 if __name__ == "__main__":

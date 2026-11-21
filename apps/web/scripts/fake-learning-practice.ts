@@ -1,5 +1,5 @@
 // 端到端用的合成学习服务桩（specs/practice-loop-stage1 PR 4：错题再练学生端页面，e2e/practice.spec.ts）：只在 scripts/e2e.sh 的一次性环境里起，
-// 只监听 127.0.0.1，只认 BFF 的服务间令牌（FAKE_LEARNING_TOKEN，每次随机生成、只经环境变量传）。
+// 只监听 127.0.0.1，只认 BFF 的服务间令牌（会话令牌 FAKE_LEARNING_TOKEN、写入令牌 FAKE_LEARNING_WRITE_TOKEN，PLT-24；每次随机生成、只经环境变量传）。
 // 只实现错题再练的三个内部接口（services/learning/openapi/practice-internal.v0.yaml）：queue、next、answer，按该文件的响应形状返回；
 // 另实现复测与验证题的内部接口（retest-internal.v0.yaml，specs/retest-delivery-kge05：queue、next、answer 与只读的 check、replay，
 // 剧本见文件后部）与今日计划跨科编排的只读接口（today-internal.v0.yaml，PLT-11：/internal/v1/today，剧本见文件后部）；
@@ -23,10 +23,12 @@ import { createServer, type IncomingMessage } from 'node:http';
 import { randomBytes } from 'node:crypto';
 
 const PORT = Number(process.env['FAKE_LEARNING_PORT'] ?? 0);
+// PLT-24：同真实学习服务，再练、复测、今日编排只认会话令牌（FAKE_LEARNING_TOKEN）；写入令牌（FAKE_LEARNING_WRITE_TOKEN）只到其余路径（一律 501）
 const TOKEN = process.env['FAKE_LEARNING_TOKEN'] ?? '';
+const WRITE_TOKEN = process.env['FAKE_LEARNING_WRITE_TOKEN'] ?? '';
 const REQUEST_LOG = process.env['FAKE_LEARNING_REQUEST_LOG'] ?? '';
-if (!PORT || TOKEN.length < 32) {
-  console.error('fake-learning-practice: 需要 FAKE_LEARNING_PORT 与至少 32 个字符的 FAKE_LEARNING_TOKEN');
+if (!PORT || TOKEN.length < 32 || WRITE_TOKEN.length < 32 || WRITE_TOKEN === TOKEN) {
+  console.error('fake-learning-practice: 需要 FAKE_LEARNING_PORT 与两枚互不相同、至少 32 个字符的 FAKE_LEARNING_TOKEN、FAKE_LEARNING_WRITE_TOKEN');
   process.exit(2);
 }
 
@@ -57,9 +59,11 @@ function entry(n: string, node: string, status: Status, play: Entry['play'], ext
 
 const STATE: Record<string, Entry[]> = {
   [P1]: [
+    // 102、103 与复测 404 用合成数学地图 0.9.0（已发布，db/seeds/dev/star-map-v1-synthetic.sql）里的节点：列表显示节点名；其余不在任何地图里，显示编号
+    // （specs/practice-retest-list-polish）
     entry('101', 'MATH.SYN.P1.N1', 'due', { format: 'single', correct: ['B'], next: 'ready', answer: 'grade' }),
-    entry('102', 'MATH.SYN.P1.N2', 'waiting', {}, { round: 2, next_round_at: LATER }),
-    entry('103', 'MATH.SYN.P1.N3', 'closed', {}, { cognitive_level: 'understand' }),
+    entry('102', 'MATH.SV1A.T1.N002', 'waiting', {}, { round: 2, next_round_at: LATER }),
+    entry('103', 'MATH.SV1A.T1.N003', 'closed', {}, { cognitive_level: 'understand' }),
     entry('104', 'MATH.SYN.P1.N4', 'exhausted', {}, { round: 3 }),
     entry('105', 'MATH.SYN.P1.N5', 'unavailable', {}, { empty_reason: 'no_admitted_candidate', cognitive_level: 'know' }),
     entry('106', 'MATH.SYN.P1.N6', 'due', { format: 'fill', next: 'ready', answer: 'pending' }, { source: 'hint_followup', cognitive_level: 'synthesize' }),
@@ -210,7 +214,7 @@ const RETEST: Record<string, RetestEntry[]> = {
     { entry_id: id('402'), node_id: 'MATH.SYN.P1.R2', kind: 'verify', status: 'due', reason: 'verify_self_report', empty_reason: null,
       play: { format: 'fill', next: 'ready', answer: 'pending' } },
     { entry_id: id('403'), node_id: 'MATH.SYN.P1.R3', kind: 'verify', status: 'unavailable', reason: 'verify_in_platform', empty_reason: 'no_new_family', play: {} },
-    { entry_id: id('404'), node_id: 'MATH.SYN.P1.R4', kind: 'retest', status: 'due', reason: 'decay', empty_reason: null, play: { next: 'unavailable' } },
+    { entry_id: id('404'), node_id: 'MATH.SV1A.T1.N004', kind: 'retest', status: 'due', reason: 'decay', empty_reason: null, play: { next: 'unavailable' } },
   ],
 };
 const RETEST_TICKETS = new Map<string, { student: string; subject: string; entry: string; expiresAt: number }>();
@@ -323,6 +327,8 @@ function today(b: Record<string, unknown>) {
   return { status: 200, body: { snapshot, items, truncated_count: b['student_ref'] === P1 ? 2 : 0, budget_minutes: 30, sources, plan } };
 }
 
+const SLOW_ANSWER = 'SLOW-SYN';
+const SLOW_MS = 3_000;
 const PRACTICE_PATHS = ['/internal/v1/practice/queue', '/internal/v1/practice/next', '/internal/v1/practice/answer'];
 const RETEST_PATHS = ['/internal/v1/retest/queue', '/internal/v1/retest/next', '/internal/v1/retest/answer', '/internal/v1/retest/check',
                       '/internal/v1/retest/replay'];
@@ -332,7 +338,9 @@ createServer((req, res) => {
     let out: { status: number; body: unknown; replayed?: boolean };
     const path = req.url ?? '';
     if (REQUEST_LOG) appendFileSync(REQUEST_LOG, `${JSON.stringify({ method: req.method ?? '', path: path.slice(0, 200) })}\n`);
-    if (req.headers['authorization'] !== `Bearer ${TOKEN}`) out = problem(401, 'UNAUTHENTICATED');
+    const sessionPath = /^\/internal\/v1\/(diagnosis|practice|retest|today)(\/|\?|$)/.test(path);  // 与学习服务的四组会话接口一致
+    const auth = req.headers['authorization'];
+    if (auth !== `Bearer ${sessionPath ? TOKEN : WRITE_TOKEN}`) out = problem(401, 'UNAUTHENTICATED');
     else if (req.method === 'POST' && path === '/internal/v1/today') {
       const b = await readBody(req);
       out = b ? today(b) : problem(400, 'INVALID_REQUEST');
@@ -341,6 +349,9 @@ createServer((req, res) => {
     } else {
       const b = await readBody(req);
       const retest = RETEST_PATHS.includes(path);
+      // 作答被拒后的冷却（specs/retry-after-cooldown）：填空作答 SLOW-SYN 让桩晚 3 秒才答，第一页占着闸门名额时第二页的作答被 BFF 拒
+      const given = b && typeof b['answer'] === 'object' && b['answer'] !== null ? (b['answer'] as Record<string, unknown>)['text'] : undefined;
+      if (path === '/internal/v1/practice/answer' && given === SLOW_ANSWER) await new Promise((r) => setTimeout(r, SLOW_MS));
       out = !b ? problem(400, 'INVALID_REQUEST')
         : path.endsWith('/check') ? rcheck(b) : path.endsWith('/replay') ? rreplay(b)
         : path.endsWith('/queue') ? (retest ? rqueue(b) : queue(b)) : path.endsWith('/next') ? (retest ? rnext(b) : next(b)) : (retest ? ranswer(b) : answer(b));

@@ -45,6 +45,8 @@
    阿鸦自己的单测覆盖了全部六类。是否要求夹具也补齐？如果要补，需要该科负责人给出期望。
 3. **GitHub Actions 用版本标签**（`actions/checkout@v4` 等），没有固定到提交哈希，因为在当前会话里无法核实哈希。建议仓库管理员固定到提交哈希，防范供应链风险。
 4. **CI 还没真正跑过**：本会话只能在本地模拟严格模式。PR 推送后第一次运行的结果要看一下。尤其是 Ubuntu 24.04 上 `apt install postgresql-16`，以及非 root 用户下的一次性 Postgres。
+   （2026-11-09 已核验：手动触发的 check（light，严格模式）run 42564677313，提交 `32e445b`，11 个分组全部通过；contracts 分组的 db-test 在
+   Ubuntu 24.04 上装 postgresql-16、以非 root 起一次性库。变异组（scope=mutation）拆分后尚未在 CI 跑过，由人决定何时触发；Actions 固定提交哈希仍是第 3 条。）
 5. **学习服务的安装方式改了**：`requirements.txt` 现在包含 `-e ../../packages/contracts/python`（运行时依赖），要在 `services/learning` 目录下执行。已有的 `.venv` 需要补装一次：`.venv/bin/pip install -e ../../packages/contracts/python`。
 6. **一致性测试里的“坏请求”只覆盖上下文层面的违约**，没有覆盖各方法 body 内部的字段。例如 grade 缺 `rubric_version` 这类，靠契约 schema 在适配器侧拦。要不要按 schema 自动生成更多反例，可以在 v1.0 之后再加。
 7. **v1.0 评审清单**（`v1.0-review.md`）列了 16 项新问题（N1–N16）、10 项 v0.9 待人确认、12 项 v0.9 留给评审决定的事项。评审会的时间和参会人待定。

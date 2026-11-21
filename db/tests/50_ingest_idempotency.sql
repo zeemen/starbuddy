@@ -48,6 +48,9 @@ RESET ROLE;
 
 SET ROLE starbuddy_authz;
 SELECT t.throws($$SELECT * FROM platform.ingest_request$$, '42501', '授权函数属主读不到写入幂等表');
+-- 0063（PLT-23）：保留期清理只给 authz 五列（主键、创建时间、状态、租约到期），学生、attempt_id、指纹、结果摘要仍读不到
+SELECT t.throws($$SELECT student_id FROM platform.ingest_request$$, '42501', '授权函数属主读不到写入幂等表的学生列');
+SELECT t.throws($$SELECT summary, attempt_ids, request_fingerprint FROM platform.ingest_request$$, '42501', '授权函数属主读不到写入幂等表的结果与指纹');
 SELECT t.throws($$SELECT * FROM platform.evidence_registry$$, '42501', '授权函数属主读不到证据登记表');
 RESET ROLE;
 

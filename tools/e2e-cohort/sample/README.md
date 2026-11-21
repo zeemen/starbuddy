@@ -20,3 +20,7 @@ v0 页面画的是各科全部已登记能力点、全部是中性底星，页�
 
 **何时重截**：只在星图页面改版时（如 H5 星图 v1、掌握写库后）用 `make gate0-evidence GATE0_OUT=tools/e2e-cohort/sample GATE0_STARMAP=1` 重截；
 其余变更用不带 `GATE0_STARMAP=1` 的命令重生样例，`starmap/` 保留不删，`provenance.md` 会标“截图沿用”。
+
+**在干净的工作区重生**（W13 T10）：`run_metadata.json` 的 `commit` 与 `worktree_dirty` 记生成时的提交与工作区状态。重生时用
+`git worktree add --detach <目录> HEAD`（依赖目录用符号链接接回，不计入 `--untracked-files=no` 的状态），在那里跑上面的命令，
+再把输出拷回本目录，保证 `worktree_dirty` 为 false、`commit` 可查。2026-11-09 在提交 `cce6263` 的干净工作区重生：除这两项外与原样例逐字节相同。

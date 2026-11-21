@@ -10,11 +10,12 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { ALL_TRUST_COPY, FIRST_REPORT, FIRST_REPORT_SECTION } from '../src/shell/copy.ts';
 import { trustFeatures } from '../src/shell/features.ts';
 import { MAX_VERIFY, parseVerifyIds, pickFirstReport, pickVerify } from '../src/trust/report-view.ts';
 
-const WEB = new URL('..', import.meta.url).pathname;
+const WEB = fileURLToPath(new URL('..', import.meta.url));
 const read = (p: string) => readFileSync(join(WEB, p), 'utf8');
 const code = (t: string) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\{\/\*[\s\S]*?\*\/\}/g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 

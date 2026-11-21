@@ -30,7 +30,7 @@ from pathlib import Path
 import asyncpg
 import httpx
 
-from e2e_cohort.stack import ADAPTER_TOKENS, LEARNING_CREDENTIAL, ROUTE_TOKENS, _adapter_env, adapters, register_content
+from e2e_cohort.stack import ADAPTER_TOKENS, LEARNING_CREDENTIAL, LEARNING_SESSION_CREDENTIAL, ROUTE_TOKENS, _adapter_env, adapters, register_content
 from pgharness import LOGIN_ROLE, EphemeralPG
 
 from . import dbstats, harness, seed, writepath
@@ -222,6 +222,7 @@ async def local_stack(*, seed_value: int, students: int, provider_median_ms: flo
             db_url = f"postgresql://{LOGIN_ROLE}@/{pg.db}?host={pg.work}"
             lenv = env_base | {
                 "LEARNING_ENV": "test", "PORT": str(lport), "LEARNING_DATABASE_URL": db_url, "LEARNING_SERVICE_TOKEN": LEARNING_CREDENTIAL,
+                "LEARNING_SESSION_TOKEN": LEARNING_SESSION_CREDENTIAL,
                 "LEARNING_DIAGNOSIS_PRESENTER": "synthetic",
                 "MODEL_FAKE_A_URL": f"{provider_url}/fake-a", "MODEL_FAKE_B_URL": f"{provider_url}/fake-b",
                 "MODEL_FAKE_X_URL": f"{provider_url}/fake-x",
@@ -252,7 +253,8 @@ async def local_stack(*, seed_value: int, students: int, provider_median_ms: flo
             relaxed_auth_config(auth_cfg)
             benv = env_base | {
                 "BFF_DATABASE_URL": f"postgresql://bff_app@/{pg.db}?host={pg.work}", "PORT": str(bport), "BFF_AUTH_CONFIG": str(auth_cfg),
-                "BFF_LEARNING_URL": learning_url, "BFF_LEARNING_TOKEN": LEARNING_CREDENTIAL, "STARBUDDY_ENV": "test",
+                "BFF_LEARNING_URL": learning_url, "BFF_LEARNING_TOKEN": LEARNING_CREDENTIAL,
+                "BFF_LEARNING_SESSION_TOKEN": LEARNING_SESSION_CREDENTIAL, "STARBUDDY_ENV": "test",
                 "BFF_SHELL_ORIGIN": shell_origin, "BFF_SMS_CAPTURE_FILE": str(sms),
             }
             if subject_gate:

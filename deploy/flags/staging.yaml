@@ -147,6 +147,12 @@ features:
     state: "off"
     switches:
       - {service: knowledge, var: KNOWLEDGE_READ_CACHE, value: "0", source: services/knowledge/knowledge/service/config.py}
+  - id: knowledge_weknora_backend
+    title: 知识服务的 WeKnora 后端（KGE-12 C）
+    state: "off"
+    notes: WeKnora 随集群暂缓未部署；开之前要先过技术验证（V07、V11、V17）并给镜像带上客户端
+    switches:
+      - {service: knowledge, var: KNOWLEDGE_WEKNORA_BACKEND, value: "0", source: services/knowledge/knowledge/service/config.py}
   - id: family_goals
     title: 家长诉求（不在上线测试范围）
     state: "off"

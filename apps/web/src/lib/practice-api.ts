@@ -5,11 +5,15 @@
 // 作答请求体只有 {ticket, answer}：幂等键在 BFF 封装的不透明票据里，usage_id、purpose、channel 都不由前端给。
 import { isPracticeSubject, practiceEnabled } from '../practice/features.ts';
 import { bffBaseUrl, bffHeaders, type BffSession } from './bff.ts';
+import { parseRetryAfter } from './retry-after.ts';
 import type { Answer } from './diagnosis.ts';
 import { isUuid } from './star-map.ts';
 
-/** reason：402 时 BFF 给的原因编码（curfew、no_entitlement、daily_limit_reached） */
-export type PracticeApi<T> = { ok: true; value: T } | { ok: false; status: number; code: string; reason: string | null };
+/**
+ * reason：402 时 BFF 给的原因编码（curfew、no_entitlement、daily_limit_reached）；
+ * retryAfterSec：响应带合口径的 retry-after 时的秒数（src/lib/retry-after.ts），没有时不出现
+ */
+export type PracticeApi<T> = { ok: true; value: T } | { ok: false; status: number; code: string; reason: string | null; retryAfterSec?: number };
 
 const OFF = { ok: false, status: 404, code: 'NOT_FOUND', reason: null } as const;
 
@@ -35,7 +39,8 @@ async function call<T>(s: BffSession, student: string, subject: string, method: 
   if (r.ok) return { ok: true, value: json as T };
   const field = (k: string): string | null => json && typeof json === 'object' && typeof (json as Record<string, unknown>)[k] === 'string'
     ? (json as Record<string, string>)[k]! : null;
-  return { ok: false, status: r.status, code: field('code') ?? 'INTERNAL', reason: field('reason') };
+  const retryAfterSec = parseRetryAfter(r.headers.get('retry-after'));  // 只在合口径时出现（specs/retry-after-cooldown）
+  return { ok: false, status: r.status, code: field('code') ?? 'INTERNAL', reason: field('reason'), ...(retryAfterSec === null ? {} : { retryAfterSec }) };
 }
 
 /** 一科的错题条目（只读，不计次，宵禁不挡） */

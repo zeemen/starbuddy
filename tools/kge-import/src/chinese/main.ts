@@ -5,6 +5,7 @@
 // 退出码：0 成功；1 校验失败；2 参数不对。
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { buildMap, parseDomain } from "./map.ts";
 import { renderMapSeed, stableJson } from "./seed.ts";
@@ -60,6 +61,7 @@ export function main(argv = process.argv.slice(2)): number {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// 按 file: URL 比较（目录名含中文时 import.meta.url 是百分号编码的，直接拼 file:// 永远不相等）
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
   process.exitCode = main();
 }

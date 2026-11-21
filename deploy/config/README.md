@@ -48,6 +48,7 @@
 - 同意文本（S6、S7）：staging 只收由人登记的真实版本 `BFF_CONSENT_VERSIONS=privacy_policy=privacy-policy@<版本>,guardian_consent_under14=guardian-consent@<版本>`；
   前端两份文书分别配置 `STARBUDDY_CONSENT_VERSION_PRIVACY`、`STARBUDDY_CONSENT_VERSION_GUARDIAN`（与 BFF 登记的一致），staging 没配齐或是合成版本
   启动即拒绝，写入前两条都确认可用才写；合成版本（`synthetic-*`，不区分大小写）staging 拒绝（决定记录第 10 条）。
+- `WEB_TRUST_CLIENT_IP`（T46）：编排里缺省 `0`，前端不转交客户端地址；改为 `1` 时只取网关覆盖写入的 `X-Real-IP`，不取 `X-Forwarded-For`——与下一条一起是**发布检查项**（S5）。
 - `BFF_TRUST_CLIENT_IP`：编排里缺省 `0`；只有网关覆盖 `X-Forwarded-For`、BFF 只对前端开放时才能改为 `1`——**发布检查项**（S5）。
 
 ## 4. 镜像与基础镜像

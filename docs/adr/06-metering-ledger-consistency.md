@@ -86,3 +86,21 @@
 2. “AI 互动有效时长”的计时口径由谁定义？（例如空闲超过多少秒不计）
 3. 预留的默认过期时间：草案建议按资源类型的 p99 处理时长的 2 倍，例如诊断 p95 目标是 90 秒，预留过期可以设 10 分钟。
 4. 阶段 1 的试点不收费（开发计划 M5：虚拟额度），是否仍然全量走账本？草案建议全量走，这样才能验证单位经济。
+
+---
+
+## 增补（2026-11-09，PLT-24 / T49）：BFF → 学习服务的服务间令牌按能力分组
+
+只登记事实（与 0060 等增补同例），不改本 ADR 的计量决定。依据：`specs/plt24-auth-tightening/spec.md` 第一节（默认做法，2026-11-09 确认）、
+`specs/sie-02a-math-diagnosis/lessons.md` 第 14 条（安全审查 S7）。
+
+- 原来 BFF 只有一枚学习服务令牌，同时打开证据写入与重放、四组按会话走的接口和只读的今日计划、星图；任何一处泄露就等于拿到了证据写入。
+- 现在两枚，学习服务按路由分组核对，另一枚一律 401（与没带令牌逐字节相同）：
+
+  | 令牌 | 学习服务 / BFF 变量 | 只打开 |
+  |---|---|---|
+  | 写入令牌 | `LEARNING_SERVICE_TOKEN` / `BFF_LEARNING_TOKEN` | 签字契约 learning-internal v1 的 `bffServiceToken` 全部路由：`/internal/v1/grade`、`/diagnose`、`/replay/{method}/{key}`、`/plan`、`/star-map/nodes` |
+  | 会话令牌 | `LEARNING_SESSION_TOKEN` / `BFF_LEARNING_SESSION_TOKEN` | 服务自有的四组接口：诊断、错题再练、复测、今日编排（`services/learning/openapi/*-internal.v0.yaml` 的 `bffSessionToken`） |
+
+- 计量口径不变：会话类接口内部的证据写入与扣次仍按本 ADR 第 3 节（预留 → 结算 / 回滚、同 key 幂等）；拆分只缩小“写入令牌”能做的事。
+- 签字契约不动；三枚令牌（只读入口再单独一枚）要改契约，登记为以后的选项。令牌轮换自动化、mTLS 不在本增补。

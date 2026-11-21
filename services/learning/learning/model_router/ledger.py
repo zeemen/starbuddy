@@ -96,7 +96,7 @@ class TeeSink:
                 s.write(record)
             except Exception:  # noqa: BLE001
                 try:
-                    log.warning(json.dumps({"event": "ledger_sink_failed", "sink": type(s).__name__[:48]}))
+                    log.warning(json.dumps({"event": "ledger_sink_failed", "detail": type(s).__name__[:48]}))
                 except Exception:  # noqa: BLE001 —— 日志本身也坏了：放弃这一行，不影响调用
                     pass
 
@@ -271,7 +271,7 @@ class DbSink:
             self._inflight = 0
             _bump(self._on_failed, len(batch))
             try:
-                log.warning(json.dumps({"event": "model_call_log_write_failed", "rows": len(batch), "error_class": type(e).__name__[:48]}))
+                log.warning(json.dumps({"event": "model_call_log_write_failed", "items": len(batch), "error_class": type(e).__name__[:48]}))
             except Exception:  # noqa: BLE001
                 pass
         else:

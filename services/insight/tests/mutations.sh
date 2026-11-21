@@ -22,6 +22,8 @@ if [ "$HAVE_PG" != "1" ]; then echo "insight-mutation: 跳过（本机没有 Pos
 # 每条：名字<TAB>文件（相对 services/insight；以 evals/ 开头的相对仓库根）<TAB>原文<TAB>替换为<TAB>测试文件（空格分隔；
 # 以 evals/sie-shadow/ 开头的在副本的 evals/sie-shadow 目录下跑）
 M=(
+  # 契约 exam_type（mock）→ 0022 exam_record（mock1 / mock2）的映射漏一个库值（specs/web-bff-enum-drift lessons 更正）
+  $'考试类型映射漏掉二模\tinsight/predict.py\t"mock": ("mock1", "mock2")\t"mock": ("mock1",)\ttests/test_sie03_units.py'
   # 判断生命周期（spec 设计要点 2）
   $'未签字也能成立\tinsight/claims.py\t    return (policy.signed and GATE_RANK\t    return (True and GATE_RANK\ttests/test_claims.py tests/test_properties.py'
   $'未签字策略被当作已签字\tinsight/policy.py\t    signed = bool(doc["signed_by"].strip() and doc["signed_at"].strip()) and not doc["synthetic"]\t    signed = True\ttests/test_policy.py tests/test_claims.py'
@@ -210,7 +212,7 @@ M=(
   $'调度器命令行的服务端核对失效\tinsight/scheduled.py\t        await check_server_local(conn, env)\t        pass\ttests/test_scheduled_cli.py'
   $'调度器命令行连上后不核对服务端\tinsight/scheduled.py\t        await check_server(conn, env)\n        if a.cmd == "freeze":\t        if a.cmd == "freeze":\ttests/test_scheduled_cli.py'  $'计量循环一批不满也不停\tinsight/scheduled.py\t        if n < batch:\t        if n < 0:\ttests/test_scheduled_cli.py'
   $'计量循环到了上限不报仍有到期\tinsight/scheduled.py\t    return total, max_batches, True\t    return total, max_batches, False\ttests/test_scheduled_cli.py'
-  $'仍有到期时退出码不是 1\tinsight/scheduled.py\t    return 1 if out.get("more_due") else 0\t    return 0\ttests/test_scheduled_cli.py'
+  $'仍有到期时退出码不是 1\tinsight/scheduled.py\t    return 1 if out.get("more_due") or out.get("alert") else 0\t    return 1 if out.get("alert") else 0\ttests/test_scheduled_cli.py'
   $'计量循环不核对调度器角色\tinsight/scheduled.py\t    await assert_scheduler_role(conn)\n    total = 0\t    total = 0\ttests/test_scheduled_cli.py'
   $'抽检不用调用方给的比例\tinsight/scheduled.py\tlookback_hours, ratio))\tlookback_hours, 0.5))\ttests/test_scheduled_cli.py'
   $'抽检回看小时数不限范围\tinsight/scheduled.py\t            if a.lookback_hours is not None and not 1 <= a.lookback_hours <= MAX_LOOKBACK_HOURS:\t            if False:\ttests/test_scheduled_cli.py'
@@ -223,7 +225,12 @@ M=(
   $'留存删除到了上限不报仍有到期\tinsight/scheduled.py\t    return purged, max_batches, True\t    return purged, max_batches, False\ttests/test_scheduled_cli.py'
   $'留存删除不核对调度器角色\tinsight/scheduled.py\t    await assert_scheduler_role(conn)\n    purged = 0\t    purged = 0\ttests/test_scheduled_cli.py'
   $'留存删除时钟不取数据库当前时间\tinsight/scheduled.py\tf"SELECT {PURGE_FUNC}(now(), $1::integer)"\tf"SELECT {PURGE_FUNC}(now() - interval \'1 hour\', $1::integer)"\ttests/test_scheduled_cli.py'
-  $'留存删除批量不限范围\tinsight/scheduled.py\t        if a.cmd == "model-call-purge" and not (1 <= a.batch <= MAX_PURGE_BATCH\t        if False and not (1 <= a.batch <= MAX_PURGE_BATCH\ttests/test_scheduled_cli.py'
+  $'留存删除批量不限范围\tinsight/scheduled.py\t        if a.cmd in ("model-call-purge", "retention-purge") and not (1 <= a.batch <= MAX_PURGE_BATCH\t        if False and not (1 <= a.batch <= MAX_PURGE_BATCH\ttests/test_scheduled_cli.py'
+  # PLT-23 数据维护（specs/plt23-data-maintenance，迁移 0062、0063）：partition-ensure、retention-purge
+  $'分区续建告警门槛放宽\tinsight/scheduled.py\tMIN_MONTHS_AHEAD = 3 \tMIN_MONTHS_AHEAD = 0 \ttests/test_scheduled_cli.py'
+  $'分区续建告警不影响退出码\tinsight/scheduled.py\t    return 1 if out.get("more_due") or out.get("alert") else 0\t    return 1 if out.get("more_due") else 0\ttests/test_scheduled_cli.py'
+  $'保留期清理少清一张表\tinsight/scheduled.py\t    "auth_session": "platform.retention_purge_auth_session",\n\t\ttests/test_scheduled_cli.py'
+  $'保留期清理到了上限不报仍有到期\tinsight/scheduled.py\t            more = True\t            more = False\ttests/test_scheduled_cli.py'
   $'留存删除输出不报删除条数\tinsight/scheduled.py\t            return {"job": a.cmd, "purged": total, "batches": batches, "more_due": more}\t            return {"job": a.cmd, "purged": 0, "batches": batches, "more_due": more}\ttests/test_scheduled_cli.py'
   $'周报生成中的 ValueError 也当周参数错\tinsight/jobs_cli.py\t        raise JobError("周报配置未签字：test 以外不生成") from None\t        raise JobError("周报配置未签字：test 以外不生成") from None\n    except ValueError:\n        raise JobError("周只接受已结束、35 天内的周一") from None\ttests/test_scheduled_cli.py'
   $'周报命令不先核对周参数\tinsight/jobs_cli.py\t        await check_week(store, week)\t        pass\ttests/test_scheduled_cli.py'

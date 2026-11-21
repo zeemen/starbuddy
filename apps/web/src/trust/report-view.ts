@@ -6,8 +6,8 @@
 import { pickWhy, UUID, type Audience, type Band } from './view.ts';
 
 const obj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
-const BANDS: readonly string[] = ['few_evidence', 'moderate', 'strong'];
-const SECTION_KEYS = ['node_mastery', 'node_transfer'] as const;
+export const BANDS: readonly string[] = ['few_evidence', 'moderate', 'strong'];
+export const SECTION_KEYS = ['node_mastery', 'node_transfer'] as const;
 const OUTER = ['confidence', 'evidence_ids', 'source_version', 'model_version', 'human_review_required', 'review_reasons'];
 /** 演示页一次最多取几条待验证判断的解释 */
 export const MAX_VERIFY = 5;

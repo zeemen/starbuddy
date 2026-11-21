@@ -17,7 +17,8 @@
 不新增任何写入路径，不放宽任何授权；适配器不连库（规则 1）。只连本机数据库（规则 9）：连接前用审核台命令行的 local_only
 核对连接串里的全部主机，连上后用 check_server_local 核对服务端地址（与时政下架任务同一套核对，迁移 0043 / PR D）。
 
-退出码：0 成功（verify：逐题不比平台宽）；1 平台数据不能安全导出，或 verify 有比平台宽的题；
+退出码：0 成功（verify：逐题不比平台宽，且提示原文 C9 检查是严格模式、零标记）；1 平台数据不能安全导出，或 verify 有比平台宽的题、
+C9 检查不是严格模式或有被标记的题（只列题号，不输出提示原文；specs/tech-debt-batch3 B）；
 2 输入不对（内容包、平台快照的形状或枚举，输出文件已存在等）、不是本机库、角色不对或库拒绝。只输出简短说明，不打堆栈。
 
 导出规则——副本只能比平台更严（spec 第 7 节“共享核对库保证副本落后时只会更严”）：
@@ -280,10 +281,24 @@ def check_not_more_lenient(pack: dict[str, Any], snapshot: dict[str, Any]) -> di
             same += 1
         else:
             stricter += 1
+    # T01 / T15（specs/tech-debt-batch3 B）：提示原文 C9 检查必须是严格模式且零标记才能发布。非严格模式下带标记的题，teach 仍会返回
+    # 提示原文（specs/release-gate-sprint4/lessons.md 第一部分待人确认 #5）；只列题号，不输出提示文本
+    scan = pack.get("hint_scan")
+    mode = scan.get("mode") if isinstance(scan, dict) else None
+    flagged = scan.get("flagged_items") if isinstance(scan, dict) else None
+    scan_problems: list[dict[str, Any]] = []
+    if not isinstance(scan, dict) or scan.get("check") != "C9" or mode != "strict" or not isinstance(flagged, list):
+        scan_problems.append({"item_id": None, "pack": mode if isinstance(mode, str) else None, "platform": None,
+                              "reason": "hint_scan_not_strict"})
+    for iid in sorted({x for x in flagged if isinstance(x, str)} if isinstance(flagged, list) else ()):
+        scan_problems.append({"item_id": iid, "pack": None, "platform": None, "reason": "hint_scan_flagged"})
+    violations = scan_problems + violations
     note = None if published else (f"内容版本在平台上是 {seg['status']}，不是已发布：比 source_unverified 宽的题"
                                    "（pending_review、admitted）一律不合格")
     return {"format": VERIFY_FORMAT, "six_segment": six_segment(seg), "status": seg["status"], "note": note,
             "pack_version": pack.get("pack_version"), "items": len(pack["items"]), "same": same, "stricter": stricter,
+            "hint_scan": {"mode": mode if isinstance(mode, str) else None,
+                          "flagged_count": len(flagged) if isinstance(flagged, list) else None},
             "violations": violations[:MAX_LISTED], "violation_count": len(violations), "ok": not violations}
 
 

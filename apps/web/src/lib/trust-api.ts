@@ -3,7 +3,7 @@
 // 每个调用先过前端开关（src/shell/features.ts）：开关关时不发任何请求，直接按 404 返回（4-H“信任界面预留”验收）。
 // 前端不判断授权、不生成关于学生的文字：BFF 与数据库判断；这里只转交，返回值再由 src/trust/view.ts 挑字段、再断言。
 import { trustEnabled, type TrustFeature } from '../shell/features.ts';
-import { bffBaseUrl, bffHeaders, type BffSession } from './bff.ts';
+import { bffBaseUrl, bffFetch, bffHeaders, type BffSession } from './bff.ts';
 import type { Api } from './shell-api.ts';
 
 const OFF = { ok: false, status: 404, code: 'NOT_FOUND' } as const;
@@ -13,17 +13,13 @@ async function call<T>(feature: TrustFeature, s: BffSession, method: 'GET' | 'PO
   const write = method !== 'GET';
   const headers: Record<string, string> = await bffHeaders(s, write);
   if (body !== undefined) headers['content-type'] = 'application/json';
-  let r: Response;
-  try {
-    r = await fetch(`${bffBaseUrl()}/bff/v0${path}`, {
-      method, headers, body: body === undefined ? undefined : JSON.stringify(body), cache: 'no-store', redirect: 'error',
-    });
-  } catch {
-    return { ok: false, status: 503, code: 'UNAVAILABLE' };
-  }
-  const text = await r.text();
+  // 断连、超时（原来没有明确超时，内测前整改 P2）：503 UNAVAILABLE，页面显示“暂时无法获取”
+  const r = await bffFetch(`${bffBaseUrl()}/bff/v0${path}`, {
+    method, headers, body: body === undefined ? undefined : JSON.stringify(body), cache: 'no-store', redirect: 'error',
+  });
+  if (r === null) return { ok: false, status: 503, code: 'UNAVAILABLE' };
   let json: unknown = null;
-  try { json = JSON.parse(text); } catch { /* 非 JSON：按错误处理 */ }
+  try { json = JSON.parse(r.text); } catch { /* 非 JSON：按错误处理 */ }
   if (r.ok) return { ok: true, value: json as T };
   const code = json && typeof json === 'object' && typeof (json as { code?: unknown }).code === 'string' ? (json as { code: string }).code : 'INTERNAL';
   return { ok: false, status: r.status, code };
@@ -82,18 +78,20 @@ export const confirmErasure = (s: BffSession, student: string, request: string, 
 export const cancelErasure = (s: BffSession, student: string, request: string) =>
   call<{ request_id: string; status: string }>('data_rights', s, 'POST', `${S(student)}/erasure/${request}/cancel`);
 
+/**
+ * 导出包下载的时限（PR 28 合并前安全审查第 4 条）：凭据在 BFF 一兑换就作废，包大或网络慢时按通用的 10 秒（src/lib/bff.ts）可能在读响应体时超时，
+ * 家长只能重新发起导出。下载单独给 60 秒
+ */
+export const EXPORT_DOWNLOAD_TIMEOUT_MS = 60_000;
+
 /** 兑换一次性下载凭据：原样取回导出包（JSON 文本），不解析、不缓存；凭据不对、已用过、过期一律 404 */
 export async function downloadExport(s: BffSession, student: string, job: string, downloadRef: string)
   : Promise<{ ok: true; body: string } | { ok: false; status: number }> {
   if (!trustEnabled('data_rights')) return { ok: false, status: 404 };
   const headers: Record<string, string> = { ...(await bffHeaders(s, true)), 'content-type': 'application/json' };
-  try {
-    const r = await fetch(`${bffBaseUrl()}/bff/v0${S(student)}/exports/${job}/download`, {
-      method: 'POST', headers, body: JSON.stringify({ download_ref: downloadRef }), cache: 'no-store', redirect: 'error',
-    });
-    const body = await r.text();
-    return r.ok ? { ok: true, body } : { ok: false, status: r.status };
-  } catch {
-    return { ok: false, status: 503 };
-  }
+  const r = await bffFetch(`${bffBaseUrl()}/bff/v0${S(student)}/exports/${job}/download`, {
+    method: 'POST', headers, body: JSON.stringify({ download_ref: downloadRef }), cache: 'no-store', redirect: 'error',
+  }, EXPORT_DOWNLOAD_TIMEOUT_MS);
+  if (r === null) return { ok: false, status: 503 };
+  return r.ok ? { ok: true, body: r.text } : { ok: false, status: r.status };
 }
