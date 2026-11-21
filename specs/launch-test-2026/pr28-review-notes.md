@@ -70,7 +70,14 @@
 | N5 | 安全审查 | 契约 README 的安装命令改为按带哈希的锁文件装（`40425d3`，`packages/contracts` 下，`[NEEDS-HUMAN]`） |
 | N7 | 安全审查 | 访问日志的 `note` / `observe` 不得用 `node_id`、`cognitive_level`（测试钉住）（`76e0d7f`） |
 
-## 请人定（未改）
+## 请人定 → 用户 2026-11-21 定（“按建议，前两条都做，第三条另起”）
+- **N2 已做**：BFF 闸门结果字段 `gate` 改名 `gate_result`，四份白名单去掉 `gate`（学习服务里同名的掌握门槛状态现在误写进日志也会被丢掉，测试钉住）。
+- **N6 已做**：安装脚本、CI、五个 Dockerfile 按锁文件装 Python 依赖时一律 `--only-binary=:all:`；只有知识服务的 `jieba`（只发布源码包）用
+  `--no-binary=jieba` 放开，它的构建依赖（setuptools）仍不校验哈希，是剩下的口子。九份锁文件在 Python 3.11 / 3.13 上逐份核过；新测试
+  `deploy/tests/test_check_workflow.py::test_pip_installs_only_prebuilt_wheels` 钉住。
+- **N8 另起**：导出凭据改为“响应写完再作废”，已建议另起一个任务（不在本 PR）。
+
+原表：
 | # | 事项 | 建议 |
 |---|---|---|
 | N2 | 日志字段 `gate` 撞名：BFF 里是闸门结果（admitted / queued / rejected），学习服务里同名的 `gate` 是学生在某节点上的掌握门槛状态（`mastery/api.py:101`）。今天没有日志写出后者；以后若有人用动态键把掌握状态写进日志，白名单会放行 | 闸门字段改名 `gate_result`（还没部署，改名成本低），并加一条“`node_id` 与 `gate` 不得同行”的检查 |

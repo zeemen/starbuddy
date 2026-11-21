@@ -69,7 +69,7 @@
 | W5 | SW 缓存范围复核；健康 / 指标端点攻击面登记范围；RDS 错误日志可能含 CHECK 失败整行的访问与留存 | LT-07 8、LT-03 7、LT-06 10 |
 | W5 | 白名单当前条目文件长期存放跳板加密盘是否可接受；作废前已签发验证码 ≤ 5 分钟的处置 | LT-06 5–6 |
 | — | 0061 的四个计量函数只改了错误文本，是否仍需计量负责人单独签字 | `specs/plt-db-raise-redaction/lessons.md` 第 2 条 |
-| 合并前 | 知情：日志字段白名单（安全审查 B）新增 7 个字段：闸门的 `gate`、`gate_subject`、`gate_queue_ms`、`gate_reason`，以及 `caller`、`node_id`（公共节点编码）、`cognitive_level`；取值全是固定枚举或公共编码，不含学生、账号与内容 | `specs/gate-log-fields/lessons.md`、`specs/log-field-audit/lessons.md` **〔11-21〕** |
+| 合并前 | 知情：日志字段白名单（安全审查 B）新增 7 个字段：闸门的 `gate_result`（原名 `gate`，11-21 改名）、`gate_subject`、`gate_queue_ms`、`gate_reason`，以及 `caller`、`node_id`（公共节点编码）、`cognitive_level`；取值全是固定枚举或公共编码，不含学生、账号与内容 | `specs/gate-log-fields/lessons.md`、`specs/log-field-audit/lessons.md` **〔11-21〕** |
 
 ## 六、产品 / 设计 / 运营
 

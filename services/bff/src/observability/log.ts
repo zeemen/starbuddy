@@ -22,8 +22,9 @@ export const LOG_FIELDS: ReadonlySet<string> = new Set([...ENVELOPE,
   'explain', 'export_job', 'export_store', 'generate', 'guardian_op', 'human_review_required', 'lexicon', 'lexicon_hits',
   'monthly_plan', 'policy_version', 'prediction', 'reconciliation', 'report', 'route_group', 'sms', 'star_nodes',
   'star_nodes_mismatch', 'star_statements', 'template_fingerprint', 'weekly',
-  // 分学科闸门（src/gate/subject-gate.ts，specs/gate-log-fields）：取值都是固定枚举（结果、学科码、排队分档、被拒原因）
-  'gate', 'gate_subject', 'gate_queue_ms', 'gate_reason',
+  // 分学科闸门（src/gate/subject-gate.ts，specs/gate-log-fields）：取值都是固定枚举（结果、学科码、排队分档、被拒原因）。
+  // 结果叫 gate_result 不叫 gate：学习服务里的 gate 是学生在某节点上的掌握门槛状态，白名单不放行那个名字（PR 28 合并前安全审查 N2）
+  'gate_result', 'gate_subject', 'gate_queue_ms', 'gate_reason',
   // 调用方枚举、公共知识层节点编码与认知层级（specs/log-field-audit）：不是个人数据
   'caller', 'node_id', 'cognitive_level']);
 /** BFF 访问日志里的学生、账号：带密钥 HMAC 截断（不是标识原文）；只收 16 位小写十六进制 */

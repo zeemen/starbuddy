@@ -247,7 +247,7 @@ jobs:
       - name: 契约检查依赖（含 PyYAML）
         run: |
           python -m venv .venv-contracts
-          .venv-contracts/bin/pip install -q --require-hashes -r packages/contracts/requirements-dev.lock
+          .venv-contracts/bin/pip install -q --require-hashes --only-binary=:all: -r packages/contracts/requirements-dev.lock
 
       - name: 数据库变异测试（分片 ${{ matrix.shard }}/12，严格模式）
         run: make db-mutation CONTRACT_STRICT=1 PYTHON=.venv-contracts/bin/python PGBIN=/usr/lib/postgresql/16/bin DBMUT_SHARD=${{ matrix.shard }}/12

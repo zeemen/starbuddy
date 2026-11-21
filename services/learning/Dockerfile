@@ -34,7 +34,7 @@ WORKDIR /srv/starbuddy
 
 # 先装锁定的第三方依赖（这一层只在锁文件变化时重建）
 COPY services/learning/requirements.lock services/learning/requirements.lock
-RUN python -m pip install --require-hashes -r services/learning/requirements.lock
+RUN python -m pip install --require-hashes --only-binary=:all: -r services/learning/requirements.lock
 
 # 契约共享库：非可编辑安装，再放置并核对契约 YAML
 COPY packages/contracts/python/pyproject.toml packages/contracts/python/pyproject.toml

@@ -19,9 +19,9 @@ WORKDIR /srv/starbuddy
 COPY services/insight/requirements.lock services/insight/requirements.lock
 COPY services/learning/requirements.lock services/learning/requirements.lock
 RUN python -m venv services/insight/.venv \
- && services/insight/.venv/bin/python -m pip install --require-hashes -r services/insight/requirements.lock \
+ && services/insight/.venv/bin/python -m pip install --require-hashes --only-binary=:all: -r services/insight/requirements.lock \
  && python -m venv services/learning/.venv \
- && services/learning/.venv/bin/python -m pip install --require-hashes -r services/learning/requirements.lock
+ && services/learning/.venv/bin/python -m pip install --require-hashes --only-binary=:all: -r services/learning/requirements.lock
 
 COPY packages/contracts/python/pyproject.toml packages/contracts/python/pyproject.toml
 COPY packages/contracts/python/starbuddy_contract packages/contracts/python/starbuddy_contract

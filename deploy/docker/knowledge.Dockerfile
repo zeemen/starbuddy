@@ -18,7 +18,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /srv/starbuddy
 
 COPY services/knowledge/requirements.lock services/knowledge/requirements.lock
-RUN python -m pip install --require-hashes -r services/knowledge/requirements.lock
+RUN python -m pip install --require-hashes --only-binary=:all: --no-binary=jieba -r services/knowledge/requirements.lock  # jieba 只有源码包
 
 COPY packages/contracts/openapi packages/contracts/openapi
 COPY services/knowledge/knowledge services/knowledge/knowledge

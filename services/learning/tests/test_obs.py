@@ -641,8 +641,8 @@ def test_source_log_calls_carry_no_forbidden_fields():
 def test_log_field_audit_fields_survive_the_formatter():
     """specs/log-field-audit：caller、node_id、cognitive_level 与闸门四个字段经真实 JsonFormatter 后保留；改用已登记字段的几处照常输出"""
     d = _log("starbuddy.test.audit", json.dumps({"event": "x", "caller": "bff", "node_id": "MATH.SYN.P1.N1", "cognitive_level": "apply",
-                                                  "gate": "rejected", "gate_subject": "aya", "gate_queue_ms": "lt100", "gate_reason": "full"}))
-    for k, v in (("caller", "bff"), ("node_id", "MATH.SYN.P1.N1"), ("cognitive_level", "apply"), ("gate", "rejected"),
+                                                  "gate_result": "rejected", "gate_subject": "aya", "gate_queue_ms": "lt100", "gate_reason": "full"}))
+    for k, v in (("caller", "bff"), ("node_id", "MATH.SYN.P1.N1"), ("cognitive_level", "apply"), ("gate_result", "rejected"),
                  ("gate_subject", "aya"), ("gate_queue_ms", "lt100"), ("gate_reason", "full")):
         assert d.get(k) == v, k
     d = _log("starbuddy.test.audit", json.dumps({"event": "model_call_log_write_failed", "items": 3, "error_class": "RuntimeError"}))
@@ -666,3 +666,17 @@ def test_unit_log_keeps_node_and_level():
     d = json.loads(buf.getvalue().splitlines()[-1])
     assert d["event"] == "mastery_unit_failed" and d["node_id"] == "MATH.SYN.P1.N1" and d["cognitive_level"] == "apply"
     assert d["error_class"] == "RuntimeError"
+
+
+def test_mastery_gate_is_not_logged():
+    """学习服务里的 gate 是学生在某节点上的掌握门槛状态（mastery/api.py）：不在日志白名单里，误写进日志也被整项丢掉（PR 28 合并前安全审查 N2）"""
+    assert "gate" not in obs.LOG_FIELDS
+    d = _log("starbuddy.test.audit", json.dumps({"event": "x", "node_id": "MATH.SYN.P1.N1", "cognitive_level": "apply", "gate": "transfer"}))
+    assert "gate" not in d and d["node_id"] == "MATH.SYN.P1.N1"
+
+
+def test_mastery_gate_is_not_logged():
+    """学习服务里的 gate 是学生在某节点上的掌握门槛状态（mastery/api.py）：不在日志白名单里，误写进日志也被整项丢掉（PR 28 合并前安全审查 N2）"""
+    assert "gate" not in obs.LOG_FIELDS
+    d = _log("starbuddy.test.audit", json.dumps({"event": "x", "node_id": "MATH.SYN.P1.N1", "cognitive_level": "apply", "gate": "transfer"}))
+    assert "gate" not in d and d["node_id"] == "MATH.SYN.P1.N1"

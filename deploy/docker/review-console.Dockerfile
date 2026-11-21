@@ -15,7 +15,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /srv/starbuddy
 
 COPY services/learning/requirements.lock services/learning/requirements.lock
-RUN python -m pip install --require-hashes -r services/learning/requirements.lock
+RUN python -m pip install --require-hashes --only-binary=:all: -r services/learning/requirements.lock
 
 COPY packages/contracts/python/pyproject.toml packages/contracts/python/pyproject.toml
 COPY packages/contracts/python/starbuddy_contract packages/contracts/python/starbuddy_contract

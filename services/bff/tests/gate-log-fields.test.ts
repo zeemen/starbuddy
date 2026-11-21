@@ -23,15 +23,16 @@ test('访问日志的键都在白名单里（两参数的 note 与闸门 observe
     const t = readFileSync(f, 'utf8');
     for (const m of t.matchAll(/\b(?:note|observe)\??\.?\(\s*'([a-z_]+)'\s*,/g)) keys.set(m[1]!, relative(BFF, f));
   }
-  for (const k of ['gate', 'gate_subject', 'gate_queue_ms', 'gate_reason', 'route_group', 'outcome']) assert.ok(keys.has(k), `扫描到了 ${k}`);
+  for (const k of ['gate_result', 'gate_subject', 'gate_queue_ms', 'gate_reason', 'route_group', 'outcome']) assert.ok(keys.has(k), `扫描到了 ${k}`);
+  assert.ok(!LOG_FIELDS.has('gate'), 'gate 不在白名单（学习服务里同名的是掌握门槛状态）');
   const missing = [...keys].filter(([k]) => !LOG_FIELDS.has(k) && !HASHED_FIELDS.has(k)).map(([k, f]) => `${k}（${f}）`);
   assert.deepEqual(missing, [], '这些键在生产日志里会被整项丢掉：加进 LOG_FIELDS（并同步 Python 三份 obs.py）');
 });
 
 test('真实 format 输出里有闸门的四个字段', () => {
-  const line = JSON.parse(format('info', { event: 'http_request', route: '/bff/v0/x', status: 503, gate: 'rejected', gate_subject: 'aya',
+  const line = JSON.parse(format('info', { event: 'http_request', route: '/bff/v0/x', status: 503, gate_result: 'rejected', gate_subject: 'aya',
                                           gate_queue_ms: 'lt100', gate_reason: 'full' })) as Record<string, unknown>;
-  assert.equal(line['gate'], 'rejected');
+  assert.equal(line['gate_result'], 'rejected');
   assert.equal(line['gate_subject'], 'aya');
   assert.equal(line['gate_queue_ms'], 'lt100');
   assert.equal(line['gate_reason'], 'full');

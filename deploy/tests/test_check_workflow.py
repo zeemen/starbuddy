@@ -198,6 +198,25 @@ def test_contracts_dev_deps_install_from_hashed_lock():
     assert all(n > 0 for n in pinned.values()), [k for k, n in pinned.items() if n == 0]
     ci = (ROOT / ".github/workflows/check.yml").read_text(encoding="utf-8")
     boot = (ROOT / "scripts/bootstrap-deps.sh").read_text(encoding="utf-8")
-    assert ".venv-contracts/bin/pip install -q --require-hashes -r packages/contracts/requirements-dev.lock" in ci
+    assert ".venv-contracts/bin/pip install -q --require-hashes --only-binary=:all: -r packages/contracts/requirements-dev.lock" in ci
     assert "-r packages/contracts/requirements-dev.txt" not in ci
-    assert 'local req="packages/contracts/requirements-dev.lock"' in boot and '--require-hashes -r "$req"' in boot
+    assert 'local req="packages/contracts/requirements-dev.lock"' in boot and '"${PIP_LOCKED[@]}" -r "$req"' in boot
+    assert "PIP_LOCKED=(--require-hashes --only-binary=:all: --no-binary=jieba)" in boot
+
+
+def test_pip_installs_only_prebuilt_wheels():
+    """按锁文件装 Python 依赖时一律只装预编译包（PR 28 合并前安全审查 N6）：缺预编译包时 pip 会退回构建源码包，构建依赖不校验哈希。
+    只有 jieba（只发布源码包）单独放开，且只在用到它的知识服务与安装脚本里"""
+    texts = {p: p.read_text(encoding="utf-8") for p in [ROOT / ".github/workflows/check.yml", ROOT / "scripts/bootstrap-deps.sh",
+                                                          *sorted((ROOT / "deploy/docker").glob("*.Dockerfile")), ROOT / "services/learning/Dockerfile"]}
+    seen = 0
+    for p, t in texts.items():
+        for line in t.splitlines():
+            if "pip install" in line and "--require-hashes" in line:
+                seen += 1
+                assert "--only-binary=:all:" in line, f"{p.name}：{line.strip()}"
+            if "--no-binary=" in line:
+                assert "--no-binary=jieba" in line and (p.name in ("knowledge.Dockerfile", "bootstrap-deps.sh")), f"{p.name}：只许给 jieba 开例外"
+    assert seen >= 7, seen
+    boot = texts[ROOT / "scripts/bootstrap-deps.sh"]
+    assert boot.count('"${PIP_LOCKED[@]}"') == 2, "安装脚本两处 pip install 都用 PIP_LOCKED"

@@ -3,7 +3,7 @@
 - 2026-11-20 用户“按建议，默认值都同意，开始实现”：间隔 60 秒；白名单直接加四个字段（请安全负责人知情）；IaC 日志索引这次不改。
 
 ## 做了什么
-- **白名单**：`gate`、`gate_subject`、`gate_queue_ms`、`gate_reason` 加进 BFF `src/observability/log.ts` 的 `LOG_FIELDS`，
+- **白名单**：`gate_result`（原名 `gate`，11-21 改名）、`gate_subject`、`gate_queue_ms`、`gate_reason` 加进 BFF `src/observability/log.ts` 的 `LOG_FIELDS`，
   同步到学习、洞察、知识服务三份 `obs.py`（`deploy/tests/test_obs_shared.py` 核对四份逐项相同）。
 - **定时汇总**：`src/gate/subject-gate.ts` 新增 `startGateStatsLog`（间隔 `GATE_STATS_INTERVAL_MS` = 60 秒，定时器 `unref()`）与 `statsForLog`；
   `src/main.ts` 在闸门建好之后启动，写 `emit('info', { event: 'subject_gate_stats', counts })`。闸门关时不建闸门，也不启动汇总。
@@ -25,6 +25,6 @@
 - `BFFMUT_FILTER=闸门日志：` 的 3 条变异全部被发现。
 
 ## 待人确认
-1. **安全负责人知情**：日志白名单（安全审查 B）多了四个字段，取值全是代码里的固定枚举：`gate` 是 admitted / queued / rejected / bypassed，
+1. **安全负责人知情**：日志白名单（安全审查 B）多了四个字段，取值全是代码里的固定枚举：`gate_result` 是 admitted / queued / rejected / bypassed，
    `gate_subject` 是学科码，`gate_queue_ms` 是 0 / lt100 / lt500 / lt2000 / ge2000，`gate_reason` 是被拒原因编码。
 2. **日志索引**（spec 待人确认第 3 条的另一选项）：要在 SLS 按闸门字段建索引时，改 `deploy/iac/check_iac.py` 的 `LOG_INDEX_FIELDS` 与 IaC，按约定 apply 前给 plan 摘要。

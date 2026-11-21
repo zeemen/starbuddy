@@ -628,7 +628,7 @@ SM=(
   $'数据库超时：还回池前不摘监听\tsrc/metering/db.ts\t    if (!broken) client.off?.(\'error\', onError);\n\t\n'
   $'数据库超时：池不监听 error\tsrc/main.ts\tpool.on(\'error\', (e: Error & { code?: unknown }) => {\tpool.once(\'connect\', (e: Error & { code?: unknown }) => {'
   # 闸门的日志字段与定时汇总（specs/gate-log-fields）：跑 tests/gate-log-fields.test.ts（BFFMUT_FILTER=闸门日志：）
-  $'闸门日志：白名单漏 gate_subject\tsrc/observability/log.ts\t  \'gate\', \'gate_subject\', \'gate_queue_ms\'\t  \'gate\', \'gate_queue_ms\''
+  $'闸门日志：白名单漏 gate_subject\tsrc/observability/log.ts\t  \'gate_result\', \'gate_subject\', \'gate_queue_ms\'\t  \'gate_result\', \'gate_queue_ms\''
   $'闸门日志：汇总不带计数\tsrc/gate/subject-gate.ts\tcounts: statsForLog(gate.stats())\tcounts: {}'
   $'闸门日志：汇总按原名写计数\tsrc/gate/subject-gate.ts\tcounts: statsForLog(gate.stats())\tcounts: gate.stats()'
   $'闸门日志：学生散列与知识点同行\tsrc/observability/log.ts\t  if (\'student\' in out || \'account\' in out) for (const k of NOT_WITH_PERSON) delete out[k];\t'

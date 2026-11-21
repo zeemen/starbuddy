@@ -254,18 +254,18 @@ export async function withSubjectSlot<R>(gate: SubjectGate | undefined, req: Slo
   const observe = req.observe;
   observe?.('gate_subject', req.subject);
   if (req.bypass === true) {
-    observe?.('gate', 'bypassed');
+    observe?.('gate_result', 'bypassed');
     return fn();
   }
   const g = await gate.acquire(req.subject, { student: req.student, ...(req.signal ? { signal: req.signal } : {}) });
   if (g.ok && req.signal?.aborted) {
     g.release();
-    observe?.('gate', 'rejected');
+    observe?.('gate_result', 'rejected');
     observe?.('gate_queue_ms', queueBucket(g.waitedMs));
     observe?.('gate_reason', 'aborted');
     return busy(1);
   }
-  observe?.('gate', g.ok ? g.result : 'rejected');
+  observe?.('gate_result', g.ok ? g.result : 'rejected');
   observe?.('gate_queue_ms', queueBucket(g.waitedMs));
   if (!g.ok) {
     observe?.('gate_reason', g.reason);
