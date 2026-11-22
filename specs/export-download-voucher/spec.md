@@ -1,6 +1,6 @@
 # 导出下载凭据：响应写完才作废（PR 28 合并前增量审查 N8）
 
-状态：草稿（待人确认，见末节）
+状态：已确认（用户 2026-11-22：“按默认建议全部确认”，待人确认 1–6 均按默认）
 关联：SIE-03 PR③ 数据权利（`specs/sie-03-dispute-reconcile/`）· 冲刺 5-H 信任界面 · `specs/launch-test-2026/pr28-review-notes.md` 增量审查 N4、N8
 基线：PR zeemen/starbuddy#28 的头分支 `claude/busy-edison-5365e8`（`a42bed7`）。本任务在其上开分支，见待人确认 5。
 
@@ -30,7 +30,8 @@
    - 删掉 `take()`，不留两套兑换入口（`purgeStudent`、`put` 不动）。
 2. **HTTP 层给 handler 一个“响应结果”回调**（`routes.ts` 的 `Ctx`、`server.ts`）：
    - `Ctx.onDelivered?(cb: (delivered: boolean) => void)`：handler 登记，服务器在本次请求结束时恰好调用一次：
-     - handler 的回复由 `send()` 写出且 `res` 触发 `finish` → `true`；
+     - handler 的回复由 `send()` 写出且 `res` 触发 `finish`，并且那一刻 socket 没有销毁、没有出错 → `true`
+       （实现中发现：对端重置连接时 Node 仍会发 `finish`，见 lessons）；
      - `close` 早于 `finish`、`send()` 因连接已断或响应头已发而没写出、handler 之后的事务提交失败或任何异常转成 500 / 其他错误回复 → `false`。
    - 三种上下文（自管事务、会话事务、公开）都提供；回调抛错不影响请求（吞掉并记 `error_class`）。
    - 只是进程内回调，不改任何响应头、状态码、响应体。
@@ -38,7 +39,7 @@
    拿到则 `ctx.onDelivered(ok => ok ? commit() : release())`。拿不到 `onDelivered` 的上下文（单测里直接调 handler）退回“立即作废”，失败即关闭。
 4. **日志只记元数据**（规则 13，只用白名单里已有的键，不改 `LOG_FIELDS`）：
    - 访问日志行加 `export_store`：`claimed` / `miss`（凭据不对、已用、过期、不是本人、正被占用、次数用完，不细分，避免日志成为凭据状态的旁路）；
-   - 写出结束另起一行：`event: export_download_settled`、`export_job`、`account`（`logHash`）、`outcome`（`delivered` / `released` / `released_final`）、
+   - 写出结束另起一行：`event: export_download_settled`、`export_job`、`account`（`logHash`）、`outcome`（`delivered` / `released` / `released_final` / `stale`：这次占用已不是当前占用，例如被清掉或超时被接手）、
      `attempts`（第几次占用）。不记凭据、凭据摘要、包大小以外的任何内容；包大小也不记。
 5. **测试与变异**（见验收标准）、`lessons.md`。
 

@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { disputeBody, displayableItemRefs, httpDisputeClient, pickDispute, pickPrediction, pickReconciliation } from '../src/trust/clients.ts';
 import { randomKeys } from '../src/http/config.ts';
-import { MAX_HOLD_MS, MemoryExportStore } from '../src/trust/exports.ts';
+import { CLAIM_HOLD_MS, MAX_CLAIMS, MAX_HOLD_MS, MemoryExportStore } from '../src/trust/exports.ts';
 import { REAUTH_WINDOW_MS, RecentLogins, trustMac } from '../src/trust/proof.ts';
 import { parseTrustFeatures } from '../src/trust/features.ts';
 import { pickObjective, pickWeeklySentence } from '../src/trust/weekly.ts';
@@ -129,17 +129,25 @@ test('预测：按契约核对（区间 0–150、level 0.8、带 claim_id）', 
   assert.equal(pickPrediction({ ...p, interval_level: 0.95 }), null);
 });
 
+/** 一次送达的兑换：占用后立即确认（与“响应写完”同义）；拿不到占用为 null */
+const take = (s: MemoryExportStore, ref: string, m: { jobId: string; studentId: string; accountId: string }, now: number): string | null => {
+  const c = s.claim(ref, m, now);
+  if (!c) return null;
+  c.commit();
+  return c.body;
+};
+
 test('导出包暂存：只能兑换一次；账号、任务、学生不对不兑换也不作废；过期与上限', () => {
   const s = new MemoryExportStore(2, 64);
   const ref = `dl_${'a'.repeat(64)}`;
   const e = { jobId: U('50'), studentId: U('51'), accountId: U('52'), expiresAt: 1000, body: '{"format":"starbuddy-export@1"}' };
   assert.ok(s.put(ref, e, 0));
-  assert.equal(s.take(ref, { jobId: U('50'), studentId: U('51'), accountId: U('53') }, 1), null, '别的账号');
-  assert.equal(s.take(ref, { jobId: U('59'), studentId: U('51'), accountId: U('52') }, 1), null, '别的任务');
-  assert.equal(s.take(ref, { jobId: U('50'), studentId: U('51'), accountId: U('52') }, 1), e.body);
-  assert.equal(s.take(ref, { jobId: U('50'), studentId: U('51'), accountId: U('52') }, 2), null, '只能一次');
+  assert.equal(take(s, ref, { jobId: U('50'), studentId: U('51'), accountId: U('53') }, 1), null, '别的账号');
+  assert.equal(take(s, ref, { jobId: U('59'), studentId: U('51'), accountId: U('52') }, 1), null, '别的任务');
+  assert.equal(take(s, ref, { jobId: U('50'), studentId: U('51'), accountId: U('52') }, 1), e.body);
+  assert.equal(take(s, ref, { jobId: U('50'), studentId: U('51'), accountId: U('52') }, 2), null, '只能一次');
   assert.ok(s.put(ref, e, 0));
-  assert.equal(s.take(ref, { jobId: U('50'), studentId: U('51'), accountId: U('52') }, 1000), null, '到期');
+  assert.equal(take(s, ref, { jobId: U('50'), studentId: U('51'), accountId: U('52') }, 1000), null, '到期');
   assert.equal(s.put(`dl_${'b'.repeat(64)}`, { ...e, body: 'x'.repeat(65) }, 0), false, '单包超上限');
   assert.ok(s.put(`dl_${'c'.repeat(64)}`, e, 0));
   assert.ok(s.put(`dl_${'d'.repeat(64)}`, e, 0));
@@ -151,17 +159,107 @@ test('导出包暂存：最长 1 小时（即使库里 24 小时）；总字节�
   const e = { jobId: U('60'), studentId: U('61'), accountId: U('62'), expiresAt: 24 * 3600_000, body: 'x'.repeat(60) };
   const m = { jobId: U('60'), studentId: U('61'), accountId: U('62') };
   assert.ok(s.put(`dl_${'1'.repeat(64)}`, e, 0));
-  assert.equal(s.take(`dl_${'1'.repeat(64)}`, m, MAX_HOLD_MS), null, '1 小时后失效');
+  assert.equal(take(s, `dl_${'1'.repeat(64)}`, m, MAX_HOLD_MS), null, '1 小时后失效');
   assert.ok(s.put(`dl_${'2'.repeat(64)}`, e, 0));
   assert.ok(s.put(`dl_${'3'.repeat(64)}`, { ...e, accountId: U('63') }, 0));
   assert.equal(s.put(`dl_${'4'.repeat(64)}`, e, 0), false, '总字节超上限');
   assert.equal(s.totalBytes, 120);
   assert.equal(s.purgeStudent(U('61'), U('63')), 1, '只清这位家长的');
-  assert.equal(s.take(`dl_${'2'.repeat(64)}`, m, 1), e.body);
+  assert.equal(take(s, `dl_${'2'.repeat(64)}`, m, 1), e.body);
   assert.ok(s.put(`dl_${'5'.repeat(64)}`, e, 0));
   assert.equal(s.purgeStudent(U('61')), 1);
   assert.equal(s.size, 0);
   assert.equal(s.totalBytes, 0);
+});
+
+test('导出凭据占用：占用期间同一凭据不放行第二个；写完（commit）作废；没写完（release）可再兑换，拿到同一份包', () => {
+  const s = new MemoryExportStore();
+  const ref = `dl_${'a'.repeat(64)}`;
+  const m = { jobId: U('70'), studentId: U('71'), accountId: U('72') };
+  assert.ok(s.put(ref, { ...m, expiresAt: 600_000, body: '{"p":1}' }, 0));
+  const c1 = s.claim(ref, m, 1)!;
+  assert.equal(c1.body, '{"p":1}');
+  assert.equal(c1.attempt, 1);
+  assert.equal(s.claim(ref, m, 2), null, '占用中：并发只放行一个');
+  assert.equal(c1.release(), 'released');
+  assert.equal(c1.release(), 'stale', '释放只生效一次');
+  const c2 = s.claim(ref, m, 3)!;
+  assert.equal(c2.body, '{"p":1}', '释放后同一凭据可再兑换');
+  assert.equal(c2.attempt, 2);
+  c2.commit();
+  assert.equal(c2.release(), 'stale', 'commit 之后的 release 不起作用');
+  assert.equal(s.claim(ref, m, 4), null, '写完即作废');
+  assert.equal(s.size, 0);
+  assert.equal(s.totalBytes, 0);
+  // 占用不放松绑定：别的账号、任务、学生拿同一凭据仍然拿不到，也不消耗次数
+  assert.ok(s.put(ref, { ...m, expiresAt: 600_000, body: '{}' }, 0));
+  assert.equal(s.claim(ref, { ...m, accountId: U('73') }, 1), null);
+  assert.equal(s.claim(ref, { ...m, jobId: U('79') }, 1), null);
+  assert.equal(s.claim(ref, { ...m, studentId: U('79') }, 1), null);
+  assert.equal(s.claim(ref, m, 1)!.attempt, 1);
+});
+
+test(`导出凭据占用：最多 ${MAX_CLAIMS} 次，最后一次没写完即作废；超时 ${CLAIM_HOLD_MS / 1000} 秒视为已释放，被接手后旧释放不解除新占用、旧确认作废`, () => {
+  assert.equal(MAX_CLAIMS, 3);
+  assert.equal(CLAIM_HOLD_MS, 120_000);
+  const s = new MemoryExportStore();
+  const ref = `dl_${'b'.repeat(64)}`;
+  const m = { jobId: U('80'), studentId: U('81'), accountId: U('82') };
+  assert.ok(s.put(ref, { ...m, expiresAt: 3_000_000, body: '{}' }, 0));
+  assert.equal(s.claim(ref, m, 1)!.release(), 'released');
+  assert.equal(s.claim(ref, m, 2)!.release(), 'released');
+  assert.equal(s.claim(ref, m, 3)!.release(), 'released_final', '第 3 次没写完：作废');
+  assert.equal(s.claim(ref, m, 4), null);
+  assert.equal(s.size, 0);
+  // 超时：到点前不放行，到点后放行；旧占用晚到的 release 不解除新占用
+  assert.ok(s.put(ref, { ...m, expiresAt: 3_000_000, body: '{}' }, 0));
+  const old = s.claim(ref, m, 10)!;
+  assert.equal(s.claim(ref, m, 10 + CLAIM_HOLD_MS - 1), null, '超时之前仍占用');
+  const fresh = s.claim(ref, m, 10 + CLAIM_HOLD_MS)!;
+  assert.equal(fresh.attempt, 2, '超时也算一次');
+  assert.equal(old.release(), 'stale');
+  assert.equal(s.claim(ref, m, 10 + CLAIM_HOLD_MS + 1), null, '新占用没被旧释放解除');
+  assert.equal(fresh.release(), 'released');
+  // 旧占用写完（超时之后才 finish）：照样作废（包已送达过一次），新占用的 release 是空操作
+  assert.equal(s.purgeStudent(m.studentId), 1);
+  assert.ok(s.put(ref, { ...m, expiresAt: 3_000_000, body: '{}' }, 0));
+  const a = s.claim(ref, m, 1_000_000)!;
+  const b = s.claim(ref, m, 1_000_000 + CLAIM_HOLD_MS)!;
+  assert.equal(b.attempt, 2);
+  a.commit();
+  assert.equal(b.release(), 'stale');
+  assert.equal(s.size, 0);
+  // 最后一次占用超时也没有结果：下一次兑换作废
+  assert.ok(s.put(ref, { ...m, expiresAt: 3_000_000, body: '{}' }, 0));
+  s.claim(ref, m, 1)!.release();
+  s.claim(ref, m, 2)!.release();
+  s.claim(ref, m, 3);
+  assert.equal(s.claim(ref, m, 3 + CLAIM_HOLD_MS), null);
+  assert.equal(s.size, 0);
+});
+
+test('导出凭据占用：占用中到期或被按学生清掉，commit / release 不报错、不复活条目，字节计数正确', () => {
+  const s = new MemoryExportStore();
+  const m = { jobId: U('90'), studentId: U('91'), accountId: U('92') };
+  const r1 = `dl_${'c'.repeat(64)}`;
+  const r2 = `dl_${'d'.repeat(64)}`;
+  assert.ok(s.put(r1, { ...m, expiresAt: 100, body: 'x'.repeat(10) }, 0));
+  assert.ok(s.put(r2, { ...m, expiresAt: 600_000, body: 'y'.repeat(20) }, 0));
+  const c1 = s.claim(r1, m, 1)!;
+  const c2 = s.claim(r2, m, 1)!;
+  assert.equal(s.purgeStudent(m.studentId), 2, '占用中的条目照样被清掉');
+  assert.equal(c2.release(), 'stale');
+  c1.commit();
+  assert.equal(s.size, 0);
+  assert.equal(s.totalBytes, 0);
+  assert.equal(s.claim(r2, m, 2), null, '清掉之后不复活');
+  // 占用中过期：清扫照常删掉，晚到的 release 是空操作
+  assert.ok(s.put(r1, { ...m, expiresAt: 100, body: 'x'.repeat(10) }, 0));
+  const c3 = s.claim(r1, m, 50)!;
+  assert.ok(s.put(r2, { ...m, expiresAt: 600_000, body: 'y'.repeat(20) }, 100));  // put 触发清扫
+  assert.equal(c3.release(), 'stale');
+  assert.equal(s.size, 1);
+  assert.equal(s.totalBytes, 20);
 });
 
 test('近期登录：10 分钟内算；按会话；专用密钥（换密钥即不认，与限流、CSRF 的密钥分开）', () => {

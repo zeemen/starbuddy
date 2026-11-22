@@ -75,7 +75,7 @@
 - **N6 已做**：安装脚本、CI、五个 Dockerfile 按锁文件装 Python 依赖时一律 `--only-binary=:all:`；只有知识服务的 `jieba`（只发布源码包）用
   `--no-binary=jieba` 放开，它的构建依赖（setuptools）仍不校验哈希，是剩下的口子。九份锁文件在 Python 3.11 / 3.13 上逐份核过；新测试
   `deploy/tests/test_check_workflow.py::test_pip_installs_only_prebuilt_wheels` 钉住。
-- **N8 另起**：导出凭据改为“响应写完再作废”，已建议另起一个任务（不在本 PR）。
+- **N8 另起**：导出凭据改为“响应写完再作废”，已建议另起一个任务（不在本 PR）。已另起：`specs/export-download-voucher/`（2026-11-22 spec 按默认确认并实现，PR 合到本 PR 的头分支）。
 
 原表：
 | # | 事项 | 建议 |
