@@ -220,3 +220,24 @@ def test_pip_installs_only_prebuilt_wheels():
     assert seen >= 7, seen
     boot = texts[ROOT / "scripts/bootstrap-deps.sh"]
     assert boot.count('"${PIP_LOCKED[@]}"') == 2, "安装脚本两处 pip install 都用 PIP_LOCKED"
+
+
+def test_jieba_build_deps_installed_by_hash():
+    """jieba（知识服务，只有源码包、没有 pyproject.toml）构建用的 setuptools 先按哈希装好，再关掉构建隔离构建，构建依赖不另下载
+    （specs/jieba-hashed-build）。没有这一步时 pip 会在隔离环境里装不校验哈希的 setuptools"""
+    lock = (ROOT / "services/knowledge/build-requirements.lock").read_text(encoding="utf-8")
+    pkgs = re.findall(r"^([A-Za-z0-9_.-]+)==\S+", lock, re.M)
+    assert pkgs == ["setuptools"], pkgs
+    assert len(re.findall(r"--hash=sha256:[0-9a-f]{64}", lock)) >= 1
+    docker = (ROOT / "deploy/docker/knowledge.Dockerfile").read_text(encoding="utf-8")
+    first = docker.index("-r services/knowledge/build-requirements.lock")
+    main = docker.index("--no-binary=jieba")
+    assert first < main, "先装构建依赖，再装主锁"
+    main_line = docker[docker.rfind("\n", 0, main) + 1: docker.find("\n", main)]
+    assert "--no-build-isolation" in main_line and "--require-hashes" in main_line, main_line
+    boot = (ROOT / "scripts/bootstrap-deps.sh").read_text(encoding="utf-8")
+    assert 'local build_lock="$dir/build-requirements.lock" no_iso=()' in boot
+    assert 'no_iso=(--no-build-isolation)' in boot and '"${PIP_LOCKED[@]}" "${no_iso[@]}" -r requirements-dev.lock' in boot
+    assert "--require-hashes --only-binary=:all: -r build-requirements.lock" in boot
+    # 用到 --no-binary 的只有知识服务：其他服务目录不该有构建依赖锁
+    assert sorted(p.parent.name for p in (ROOT / "services").glob("*/build-requirements.lock")) == ["knowledge"]

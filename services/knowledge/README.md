@@ -29,8 +29,10 @@ KGE-03 编译层（`specs/kge-03-compile-layer/spec.md`）。本目录现在包�
 
 ## 常用命令
 ```bash
-python3 -m venv .venv && .venv/bin/pip install --require-hashes -r requirements-dev.lock   # 在本目录执行（.venv 已被 .gitignore 忽略）
-# 只装运行依赖（部署、页面仓库 CI 的检查工具制品）：pip install --require-hashes -r requirements.lock
+python3 -m venv .venv && .venv/bin/pip install --require-hashes --only-binary=:all: -r build-requirements.lock \
+  && .venv/bin/pip install --require-hashes --only-binary=:all: --no-binary=jieba --no-build-isolation -r requirements-dev.lock   # 在本目录执行（.venv 已被 .gitignore 忽略）
+# jieba 只有源码包：先按哈希装构建用的 setuptools，再关掉构建隔离构建它（specs/jieba-hashed-build）。scripts/bootstrap-deps.sh 就是这么装的
+# 只装运行依赖（部署、页面仓库 CI 的检查工具制品）：同上两步，第二步换成 requirements.lock
 make knowledge-test knowledge-mutation                                       # 在仓库根目录：单测 + 端到端 + 变异
 make knowledge-cache-mutation                                                # PLT-19 公共层只读缓存的变异（约 1–2 分钟）
 
@@ -139,7 +141,7 @@ KNOWLEDGE_ENV=dev KNOWLEDGE_DATABASE_URL=... KNOWLEDGE_TOKEN_ORCHESTRATOR=... KN
 | pip-tools（只在 .venv 里生成锁文件） | 7.6.1 | BSD-3-Clause | 生成带哈希的 `requirements.lock` / `requirements-dev.lock`（`pip-compile --generate-hashes`）；不是运行依赖，不进锁文件 |
 
 供应链：`requirements.lock`（运行）与 `requirements-dev.lock`（运行 + pytest）由 `requirements*.txt` 用 pip-compile 生成，逐包带 sha256；
-安装一律 `pip install --require-hashes -r <锁文件>`。改 `requirements*.txt` 后必须重新生成锁文件并复核许可证（命令写在锁文件头部）。
+安装一律按哈希、只装预编译包（`--require-hashes --only-binary=:all:`）；只有 jieba 例外，先装 `build-requirements.lock` 再 `--no-build-isolation`（见上）。改 `requirements*.txt` 后必须重新生成锁文件并复核许可证（命令写在锁文件头部）。
 
 LaTeX 解析没有引入 `sympy.parsing.latex`（需要 antlr4 或 lark 运行时，属新增依赖）：体检自带一个 LaTeX 子集转换器
 （`knowledge/lint/mathcheck.py`，分式、根式、乘方、下标变量、四则、括号、π），转换结果先过字符与标识符白名单再交给 SymPy。
