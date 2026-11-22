@@ -1,5 +1,6 @@
 // 数学自适应诊断的 BFF 客户端（SIE-02a；只在服务端调用，浏览器不直连 BFF）。接口见 services/bff/openapi/diagnosis.v0.yaml。
 // BFF 只回题面、步骤序号、题型与进度，不回答案、题号、节点、对错；这里再按白名单取一遍字段再交给页面。
+import { parseRetryAfter } from './retry-after.ts';
 import { bffBaseUrl, bffHeaders, type BffSession } from './bff.ts';
 import { pickRich, type RichItem } from './rich-item.ts';
 import { isUuid } from './star-map.ts';
@@ -28,7 +29,9 @@ export const isKey = (s: unknown): s is string => typeof s === 'string' && UUID_
  * reason：402 时 BFF 给的原因编码（例如 curfew = 宵禁时段）；409 SESSION_INCONSISTENT 时 reason = grade_changed 表示会话中途届别被改，
  * sessionId 是要“重新开始”（放弃）的那个会话（迁移 0049）
  */
-export type Result<T> = { ok: true; value: T } | { ok: false; status: number; code: string | null; reason?: string | null; sessionId?: string | null };
+export type Result<T> = { ok: true; value: T } | { ok: false; status: number; code: string | null; reason?: string | null; sessionId?: string | null;
+  /** 响应带合口径的 retry-after 时的秒数（src/lib/retry-after.ts；specs/diagnosis-probe-retry），没有时不出现 */
+  retryAfterSec?: number };
 
 async function call<T>(account: BffSession, student: string, method: 'GET' | 'POST', path: string, body?: unknown): Promise<Result<T>> {
   if (!isUuid(student)) return { ok: false, status: 403, code: 'FORBIDDEN' };
@@ -53,7 +56,9 @@ async function call<T>(account: BffSession, student: string, method: 'GET' | 'PO
   if (!r.ok) {
     const field = (k: string): string | null => parsed && typeof parsed === 'object' && typeof (parsed as Record<string, unknown>)[k] === 'string'
       ? (parsed as Record<string, string>)[k]! : null;
-    return failure(r.status, field('code'), field('reason'), field('session_id'));
+    const f = failure(r.status, field('code'), field('reason'), field('session_id'));
+    const retryAfterSec = parseRetryAfter(r.headers.get('retry-after'));
+    return retryAfterSec === null || f.ok ? f : { ...f, retryAfterSec };
   }
   return { ok: true, value: parsed as T };
 }
