@@ -10,7 +10,7 @@ info:
     只写不读：行为事件与探针只给 Agent 用，学生、家长界面都不显示，响应只回记录 ID，不回显 payload（CLAUDE.md 规则 11、12）。
     授权、payload 白名单、时间窗（最近 1 天内、不晚于现在 5 分钟）与幂等全部由迁移 0025 的库函数决定；BFF 先做一遍请求体校验
     （未知键、自由文本、类型不对一律 422）。不消耗额度，不走计量预留。请求体上限 16 KB。
-    家长、其他学生、学生不存在一律同一个 403。首次写入回 201 与响应头 `idempotent-replayed: false`；同一幂等键重放（含离线超过 1 天后的重放）
+    其他学生、学生不存在、路径参数不合法一律同一个 404，与其他路由的“不存在”逐字节相同（specs/not-self-404，原来是 403）；家长会话在任何查询之前回 403（账号类型不对）。首次写入回 201 与响应头 `idempotent-replayed: false`；同一幂等键重放（含离线超过 1 天后的重放）
     回 200、原记录 ID 与响应头 `idempotent-replayed: true`，库里不新写任何行（与 learning-internal 契约同一约定）。
     同一幂等键内容不同回 409 `IDEMPOTENCY_KEY_REUSED`：原样重试永远不会成功，客户端应换新键重发或丢弃。
     同一学生 24 小时内最多写 2000 条行为事件、500 条探针（迁移 0025），超出回 429 `TOO_MANY`。
@@ -25,7 +25,7 @@ paths:
     post:
       x-sb-auth: student
       x-sb-rate-buckets: []
-      x-sb-not-self: 403
+      x-sb-not-self: 404
       operationId: postBehaviorEvent
       description: 写一条行为事件（insight.record_behavior_event）。学生端只收 session_start、session_end、plan_done、plan_skip。
       requestBody:
@@ -52,7 +52,7 @@ paths:
     post:
       x-sb-auth: student
       x-sb-rate-buckets: []
-      x-sb-not-self: 403
+      x-sb-not-self: 404
       operationId: postConfidenceProbe
       description: 题目展示前“这道题你觉得能做对吗？”的回答（insight.record_confidence_probe）。跳过不调用。实际对错不在这里存。
       requestBody:
@@ -83,7 +83,7 @@ paths:
     post:
       x-sb-auth: student
       x-sb-rate-buckets: []
-      x-sb-not-self: 403
+      x-sb-not-self: 404
       operationId: linkProbeAttempt
       description: >
         作答提交后把探针与作答关联（insight.link_probe_attempt）。作答必须是这个学生的、同一道题，且发生在库里写入探针之后

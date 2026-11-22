@@ -6,7 +6,8 @@ info:
   version: 0.1.0
   description: >
     学生本人做数学基线诊断：开始 / 续做、取当前题、提交“能做对吗”探针、提交作答、暂停、放弃。
-    只认学生本人：家长、其他学生、学生或会话不存在一律同一个 403（与 events.v0.yaml 同一套错误码）；未登录 401。
+    只认学生本人：其他学生、学生或会话不存在、路径参数不合法一律同一个 404，与其他路由的“不存在”逐字节相同（specs/not-self-404，原来是 403）；
+    家长会话在任何查询之前回 403（账号类型不对）；未登录 401。
     返回给前端的只有题面、步骤序号、题型与进度（已用秒数、上限、题数），不含答案、题号、知识节点、选题理由与对错；
     诊断不产生任何对学生、家长可见的结论（CLAUDE.md 规则 3、11）。判分只来自阿鸦验证器，经学习服务落库。
     计量（规则 4）：开始时以学生身份预留一次 diagnosis_full（幂等键即请求的 idempotency_key，usage_id 由键派生，迁移 0009），
@@ -31,7 +32,7 @@ paths:
     post:
       x-sb-auth: student
       x-sb-rate-buckets: [diagnosis.session.minute]
-      x-sb-not-self: 403
+      x-sb-not-self: 404
       operationId: startDiagnosis
       description: 开始诊断；已有未结束（进行中或暂停）的会话时续做它。
       requestBody:
@@ -64,7 +65,7 @@ paths:
     get:
       x-sb-auth: student
       x-sb-rate-buckets: [diagnosis.session.minute]
-      x-sb-not-self: 403
+      x-sb-not-self: 404
       operationId: getDiagnosisCurrent
       description: >
         当前题与进度。会话结束时 step 为空；结束页不给结论：作答过过程题（process_tasks 为真）时说“完成了，老师会看你的过程”，
@@ -95,7 +96,7 @@ paths:
     post:
       x-sb-auth: student
       x-sb-rate-buckets: [diagnosis.session.minute]
-      x-sb-not-self: 403
+      x-sb-not-self: 404
       operationId: postDiagnosisProbe
       description: 当前题出题前的“这道题你觉得能做对吗？”（跳过不调用）。写 insight.confidence_probe（学生自述），作答后自动关联作答。
       requestBody:
@@ -125,7 +126,7 @@ paths:
     post:
       x-sb-auth: student
       x-sb-rate-buckets: [diagnosis.session.minute]
-      x-sb-not-self: 403
+      x-sb-not-self: 404
       operationId: postDiagnosisAnswer
       description: >
         提交当前题的作答。判分只来自验证器，结果不返回（只回会话状态）。过程题（process）与讲解题（explain）另带 work（写出的全过程 /
@@ -157,7 +158,7 @@ paths:
     post:
       x-sb-auth: student
       x-sb-rate-buckets: [diagnosis.session.minute]
-      x-sb-not-self: 403
+      x-sb-not-self: 404
       operationId: pauseDiagnosis
       description: 暂停（可跨天续做）。带上当前题已用秒数，续做时接着算；暂停期间不计时。
       requestBody:
@@ -182,7 +183,7 @@ paths:
     post:
       x-sb-auth: student
       x-sb-rate-buckets: [diagnosis.session.minute]
-      x-sb-not-self: 403
+      x-sb-not-self: 404
       operationId: abandonDiagnosis
       description: >
         放弃本次诊断：还没答过题时释放开始时的额度预留，答过题不退；之后可以重新开始。

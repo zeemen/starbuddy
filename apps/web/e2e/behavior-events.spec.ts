@@ -3,7 +3,7 @@
 // 会话状态 cookie 带 HMAC 签名：端到端的前端用 playwright.config.ts 里固定的合成密钥，用例据此构造“已超时”“被篡改”的 cookie。
 // 覆盖：进入壳写 session_start、壳内换页接着同一次会话；超时后再进入补记 session_end 并开始新会话（同一结束只记一次）；被篡改的 cookie 不补记；
 // 页面开着无活动满 30 分钟写 session_end（Playwright 假时钟）；退出学生模式先补记 session_end 再删 cookie；
-// 越权学生被拒（BFF 403、经本站路由也写不进）；家长会话 POST 不改 cookie、不写库；axe 不退化。
+// 越权学生被拒（BFF 404、经本站路由也写不进）；家长会话 POST 不改 cookie、不写库；axe 不退化。
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import AxeBuilder from '@axe-core/playwright';
@@ -160,7 +160,7 @@ test('退出学生模式：先补记这次会话的 session_end，再删会话�
   expect(await presenceCookie(page)).toBeUndefined();
 });
 
-test('越权：学生给别的学生写事件 BFF 403、经本站路由也写不进；家长会话 POST 不改 cookie、不写库，家长直接写 403', async ({ page }) => {
+test('越权：学生给别的学生写事件 BFF 404（与“不存在”相同，specs/not-self-404）、经本站路由也写不进；家长会话 POST 不改 cookie、不写库，家长直接写 403（账号类型不对）', async ({ page }) => {
   const other = () => count(GR, 'session_start') + count(GR, 'session_end');
   const before = other();
   await enter(page);
@@ -172,7 +172,7 @@ test('越权：学生给别的学生写事件 BFF 403、经本站路由也写不
       body: JSON.stringify({ kind, payload, occurred_at: new Date().toISOString(), idempotency_key: randomUUID() }),
     });
   for (const [kind, payload] of [['session_start', { entry: 'today' }], ['session_end', { duration_sec: 10 }]] as const) {
-    expect((await post(s.token, s.csrf, GR, kind, payload)).status, kind).toBe(403);
+    expect((await post(s.token, s.csrf, GR, kind, payload)).status, kind).toBe(404);
   }
   const ping = (student: string, csrf: string) => page.evaluate(async ([st, c]) => (await fetch(`/s/${st}/presence`, {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ csrf: c, op: 'ping', entry: 'today' }),

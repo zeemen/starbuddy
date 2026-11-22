@@ -3,14 +3,14 @@
 // 这里的校验是第一道：未知键、自由文本、类型不对一律 422，不送进库。
 //   - 不消耗额度，不走计量预留（spec 设计要点 2）；
 //   - 行为事件、探针只给 Agent 用：本模块只写不读，响应只回记录 ID，不回显 payload（规则 11、12）；
-//   - 42501 无权 → forbidden（403）；22023 等取值不合要求 → invalid（422）；23505 同一幂等键内容不同、探针已关联别的作答 → conflict（409，
+//   - 42501 无权 → not_found（404，与“不存在”逐字节相同，specs/not-self-404）；22023 等取值不合要求 → invalid（422）；23505 同一幂等键内容不同、探针已关联别的作答 → conflict（409，
 //     由 server.ts 按接口给不同的错误码）；54000 24 小时写入上限（事件 2000、探针 500，0025）→ too_many（429）；
 //   - 库函数返回 (id, replayed)：同一幂等键重放返回原记录并标 replayed，server.ts 据此回 200 与响应头 idempotent-replayed: true。
 import type { Pool, PoolClient } from 'pg';
 import { withAccount } from '../metering/db.ts';
 import { isUuid } from '../star-map/query.ts';
 
-export type WriteOutcome<T> = { kind: 'ok'; value: T } | { kind: 'forbidden' } | { kind: 'invalid' } | { kind: 'conflict' } | { kind: 'too_many' };
+export type WriteOutcome<T> = { kind: 'ok'; value: T } | { kind: 'not_found' } | { kind: 'invalid' } | { kind: 'conflict' } | { kind: 'too_many' };
 
 /** 学生端只收这四种；appeal、exit_after_errors 由后端与编排层写（spec 设计要点 2） */
 export const EVENT_KINDS = ['session_start', 'session_end', 'plan_done', 'plan_skip'] as const;
@@ -98,12 +98,12 @@ const INVALID_CODES = new Set(['22023', '23514', '22P02', '22007', '22008', '235
 
 async function run<T>(pool: Pool, account: string, student: string, fn: (c: PoolClient) => Promise<T>): Promise<WriteOutcome<T>> {
   // 路径里的学生 ID 不合法与无权同样处理：不区分“不存在”与“不是你”
-  if (!isUuid(student) || !isUuid(account)) return { kind: 'forbidden' };
+  if (!isUuid(student) || !isUuid(account)) return { kind: 'not_found' };
   try {
     return { kind: 'ok', value: await withAccount(pool, account, fn) };
   } catch (e) {
     const code = (e as { code?: string }).code ?? '';
-    if (code === '42501') return { kind: 'forbidden' };
+    if (code === '42501') return { kind: 'not_found' };
     if (INVALID_CODES.has(code)) return { kind: 'invalid' };
     if (code === '23505') return { kind: 'conflict' };
     if (code === '54000') return { kind: 'too_many' };

@@ -4,7 +4,7 @@
 // 接口形状与错误码不变（openapi/star-map、onboarding、events、diagnosis.v0.yaml），差别只有：
 //   - 身份：请求头 x-sb-session（apps/web 从 HttpOnly cookie 转交），开发身份桩已删除；
 //   - 改变状态的请求另要 Origin 等于壳的来源、带与会话绑定的 x-csrf-token（与认证路由相同）；
-//   - 只认学生本人的接口（事件、探针、诊断）auth = student：家长会话在任何查询之前就 403，与原来“不是本人”同一个 403；
+//   - 只认学生本人的接口（事件、探针、诊断）auth = student：家长会话在任何查询之前就 403（账号类型不对）；不是本人、学生或会话不存在一律 404（specs/not-self-404，原来是 403）；
 //   - 路径参数不是 UUID 时与“不存在”同一个 404（原来事件、诊断是 403）。
 // 这些 handler 复用原有的查询模块，各自在 withAccount 里开事务（ownTx），不占用中间件的事务。
 import { getStarMap } from '../star-map/query.ts';
@@ -83,7 +83,7 @@ const onboardingExam: Handler = async (ctx) => {
 /** 首次写入 201；同一幂等键重放 200 与原 ID，响应头标明是重放（库里没有新写任何行） */
 const created = (r: Recorded): Reply => json(r.replayed ? 200 : 201, { id: r.id }, { 'idempotent-replayed': r.replayed ? 'true' : 'false' });
 const writeReply = <T>(o: WriteOutcome<T>, conflict: string, ok: (v: T) => Reply): Reply =>
-  o.kind === 'forbidden' ? problem(P.FORBIDDEN) : o.kind === 'invalid' ? problem(P.INVALID)
+  o.kind === 'not_found' ? problem(P.NOT_FOUND) : o.kind === 'invalid' ? problem(P.INVALID)
     : o.kind === 'conflict' ? problem(conflict) : o.kind === 'too_many' ? problem(P.WRITE_CAP) : ok(o.value);
 
 const events: Handler = async (ctx) => {

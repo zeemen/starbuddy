@@ -12,6 +12,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { createServer as netServer, type AddressInfo } from 'node:net';
 import { after, before, describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { P } from '../src/http/problems.ts';
 import { httpDiagnosisLearning, type DiagnosisLearning } from '../src/diagnosis/learning-client.ts';
 import { fetchAs, startShell, type ShellHarness } from './shell-harness.ts';
 import { counters, createFamily, HAS_DB, ledgerConsistent, reservationsByStudent, setupHarness, type Harness } from './harness.ts';
@@ -191,27 +192,29 @@ describe('数学自适应诊断（BFF 学生端）', { skip: READY ? false : '�
     throw new Error('session did not finish');
   }
 
-  test('只认学生本人：未登录 401，家长、其他学生、不存在一律 403；不预留、不建会话', async () => {
+  test('只认学生本人：未登录 401；家长 403（账号类型不对）；其他学生、不存在一律与“不存在”逐字节相同的 404（specs/not-self-404）；不预留、不建会话', async () => {
     const fam = await createFamily(h, { source: 'pilot_virtual', children: 2 });
     const [s1, s2] = fam.students as [{ id: string; account: string }, { id: string; account: string }];
     assert.equal((await call('POST', url(s1.id), undefined, startBody())).status, 401);
-    for (const who of [fam.guardian, s2.account]) {
-      const r = await call('POST', url(s1.id), who, startBody());
-      assert.equal(r.status, 403);
-      assert.equal(r.body['code'], 'FORBIDDEN');
-    }
-    assert.equal((await call('POST', url(randomUUID()), s1.account, startBody())).status, 403);
+    const g = await call('POST', url(s1.id), fam.guardian, startBody());
+    assert.equal(g.status, 403);
+    assert.equal(g.body['code'], 'FORBIDDEN', '家长会话：账号类型不对，在任何查询之前');
+    const other = await call('POST', url(s1.id), s2.account, startBody());
+    const missing = await call('POST', url(randomUUID()), s1.account, startBody());
+    assert.equal(other.status, 404);
+    assert.equal(other.raw, P.NOT_FOUND, '其他学生：与其他路由的“不存在”逐字节相同');
+    assert.equal(missing.raw, P.NOT_FOUND, '学生不存在：同一个 404');
     assert.equal((await reservationsByStudent(h, s1.id)).length, 0);
     const started = await call('POST', url(s1.id), s1.account, startBody());
     assert.equal(started.status, 201, started.raw);
     const sid = started.body['session_id'] as string;
-    for (const who of [fam.guardian, s2.account]) {
-      assert.equal((await call('GET', url(s1.id, `/${sid}`), who)).status, 403);
-      assert.equal((await call('POST', url(s1.id, `/${sid}/pause`), who, { idempotency_key: randomUUID() })).status, 403);
-      // 其他学生拿自己的路径访问 s1 的会话也不行
-      assert.equal((await call('GET', url(s2.id, `/${sid}`), s2.account)).status, 403);
+    for (const [who, code] of [[fam.guardian, 403], [s2.account, 404]] as const) {
+      assert.equal((await call('GET', url(s1.id, `/${sid}`), who)).status, code);
+      assert.equal((await call('POST', url(s1.id, `/${sid}/pause`), who, { idempotency_key: randomUUID() })).status, code);
     }
-    assert.equal((await call('GET', url(s1.id, `/${randomUUID()}`), s1.account)).status, 403);
+    // 其他学生拿自己的路径访问 s1 的会话也不行；会话不存在同一个 404
+    assert.equal((await call('GET', url(s2.id, `/${sid}`), s2.account)).raw, P.NOT_FOUND);
+    assert.equal((await call('GET', url(s1.id, `/${randomUUID()}`), s1.account)).raw, P.NOT_FOUND);
     assert.equal((await call('GET', url(s1.id, `/${sid}`))).status, 401);
     // 请求体：未知键、非阿鸦学科、坏键一律 422，不回显
     for (const bad of [{ ...startBody(), extra: 1 }, { subject: 'wenli', idempotency_key: randomUUID() }, { subject: 'aya', idempotency_key: 'k' }]) {
@@ -221,8 +224,8 @@ describe('数学自适应诊断（BFF 学生端）', { skip: READY ? false : '�
     }
     const abandoned = await call('POST', url(s1.id, `/${sid}/abandon`), s1.account, { idempotency_key: randomUUID() });
     assert.equal(abandoned.status, 200);
-    // 会话已结束（取题不再经过宵禁关卡，H3 的 meter_guard_status 也不再替它挡）：其他学生仍然 403，守住的是会话归属核对本身
-    assert.equal((await call('GET', url(s1.id, `/${sid}`), s2.account)).status, 403);
+    // 会话已结束（取题不再经过宵禁关卡，H3 的 meter_guard_status 也不再替它挡）：其他学生仍然 404，守住的是会话归属核对本身
+    assert.equal((await call('GET', url(s1.id, `/${sid}`), s2.account)).status, 404);
     // 日志只记学生 ID 的哈希，不记作答
     assert.ok(logs.every((l) => l['student'] === undefined || !String(l['student']).includes('-')));
   });
@@ -417,8 +420,8 @@ describe('数学自适应诊断（BFF 学生端）', { skip: READY ? false : '�
     const stuck = await call('POST', url(a.id), a.account, startBody());
     assert.equal(stuck.status, 409, stuck.raw);
     assert.deepEqual([stuck.body['code'], stuck.body['reason'], stuck.body['session_id']], ['SESSION_INCONSISTENT', 'grade_changed', sidA]);
-    // 别的学生拿不到这个会话 ID：同一路径下仍是 403
-    assert.equal((await call('POST', url(a.id), b.account, startBody())).status, 403);
+    // 别的学生拿不到这个会话 ID：同一路径下仍是 404
+    assert.equal((await call('POST', url(a.id), b.account, startBody())).status, 404);
     // 放弃在学习服务已生效，但 BFF 拿不到结果（结果未知）：这一次没退成（退回审查 S5）
     learning.override = { ...learning.real!, abandon: async (...x) => { await learning.real!.abandon(...x); return { kind: 'unknown', reason: 'lost' }; } };
     try {

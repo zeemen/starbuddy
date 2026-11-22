@@ -306,8 +306,8 @@ const pathFor = (r: Route, student: string, ids: Ids = {}, subject = 'math') =>
   r.path.replace('{student_id}', student).replace('{subject}', subject)
     .replace(/\{([a-z_]+)\}/g, (_, n: string) => ids[n as keyof Ids] ?? MISSING);
 const bodyFor = (r: Route, ids: Ids = {}): Body | undefined => SAMPLES[keyOf(r)]?.body?.(ids);
-/** “不是本人”的拒绝：只认学生本人的路由按接口定义的 x-sb-not-self，其余一律 404 */
-const denialOf = (r: Route): string => (opOf(r).notSelf === 403 ? P.FORBIDDEN : P.NOT_FOUND);
+/** “不是本人”的拒绝：一律与“不存在”逐字节相同的 404（specs/not-self-404；原来诊断、事件按 x-sb-not-self 是 403） */
+const denialOf = (_r: Route): string => P.NOT_FOUND;
 
 async function account(kind: 'guardian' | 'student'): Promise<string> {
   const id = randomUUID();
@@ -441,7 +441,9 @@ test('H6 路由表覆盖：开关全开的每条路由都有合成样例；谁�
     const op = opOf(r);
     assert.ok(op, `${k} 不在 openapi/*.v0.yaml 里`);
     assert.equal(r.auth, op.auth, `${k}：路由表的 auth 与接口定义的 x-sb-auth（${op.file}）一致`);
-    if (r.auth === 'student' && r.path.includes('{student_id}')) assert.ok(op.notSelf === 403 || op.notSelf === 404, `${k}：x-sb-not-self`);
+    // 不是本人 / 不存在只能是 404（specs/not-self-404）：以后不再有 403 的例外
+    if (r.auth === 'student' && r.path.includes('{student_id}')) assert.equal(op.notSelf, 404, `${k}：x-sb-not-self 只能是 404`);
+    if (op.notSelf !== null) assert.equal(op.notSelf, 404, `${k}：x-sb-not-self 只能是 404`);
   }
   for (const k of Object.keys(RATE_EXEMPT)) assert.ok(keys.includes(k), `豁免表里的 ${k} 不在路由表里`);
   // 开关全开的集合 = 固定路由表 + 信任界面路由；缺省部署只有固定路由表
