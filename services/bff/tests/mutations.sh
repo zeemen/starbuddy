@@ -155,7 +155,8 @@ SM=(
   $'信任：导出凭据不设重试上限\tsrc/trust/exports.ts\t        if (e.attempts >= MAX_CLAIMS) {\\n          this.#drop(k);\\n          return \'released_final\';\\n        }\\n\t'
   $'信任：导出凭据超时接手后旧释放解除新占用\tsrc/trust/exports.ts\tif (!current() || e.claimSeq !== seq) return \'stale\';\tif (!current()) return \'stale\';'
   $'信任：导出下载 finish 即送达（不看连接是否已断）\tsrc/http/server.ts\tconst intact = (): boolean => sock !== null && !sock.destroyed && !sock.errored;\tconst intact = (): boolean => true;'
-  $'信任：导出下载 close 早于 finish 当成送达\tsrc/http/server.ts\tres.once(\'close\', () => settle(false));\tres.once(\'close\', () => settle(true));'
+  # “close 早于 finish 当成送达”不登记：Node 22 里调用过 res.end() 之后，对端重置、服务器自己销毁连接都先发 finish 再发 close，
+  # 这个分支走不到，是等价变异（specs/export-download-voucher/lessons.md 经验 3）；分支留作防御
   $'信任：导出下载事务提交失败不释放\tsrc/http/server.ts\t      settle(false);  // handler 的回复没送出去\t      // handler 的回复没送出去'
   $'信任：导出下载写完不结算\tsrc/http/trust-routes.ts\t      if (delivered) claim.commit();\t      if (delivered) { /* 不作废 */ }'
   $'信任：删除确认不要求近期登录\tsrc/http/trust-routes.ts\tif (!recentLogins(ctx.deps).fresh(ctx.deps.keys, ctx.session!.token, nowMs(ctx.deps))) return problem(P.REAUTH_REQUIRED);\t'

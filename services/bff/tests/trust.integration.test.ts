@@ -17,7 +17,7 @@ import { TRUST_ROUTES } from '../src/http/trust-routes.ts';
 import { loadShellConfig, type ShellConfig } from '../src/shell/config.ts';
 import type { ExplainRequest, InsightClient, RenderedStatement } from '../src/shell/insight-client.ts';
 import type { DisputeClient, DisputeOutcome, DisputeRequest, ExamViewClient, ExamViewRequest } from '../src/trust/clients.ts';
-import { MemoryExportStore } from '../src/trust/exports.ts';
+import { CLAIM_HOLD_MS, MemoryExportStore } from '../src/trust/exports.ts';
 import { TRUST_FEATURES } from '../src/trust/features.ts';
 import { HASHED_FIELDS, LOG_FIELDS } from '../src/observability/log.ts';
 import { HAS_DB, setupHarness, type Harness } from './harness.ts';
@@ -614,6 +614,12 @@ test('导出凭据：中途断开可在原有效期内再兑换；占用中并�
   assert.equal(text, x.body, '重试拿到完整的同一份包');
   assert.deepEqual(await waitSettled(x.job, 2), ['released', 'delivered']);
   same(await post(F.guardian, dl, { download_ref: x.ref }), wrong, '写完即作废');
+  offset += CLAIM_HOLD_MS + 1;  // 是作废而不是一直占着：拨过占用超时仍 404
+  try {
+    same(await post(F.guardian, dl, { download_ref: x.ref }), wrong, '拨过占用超时仍作废');
+  } finally {
+    offset -= CLAIM_HOLD_MS + 1;
+  }
   assert.equal(settledLines(x.job).length, 2, '拿不到占用的请求不结算');
 });
 

@@ -13,7 +13,7 @@ import { loadAuthConfig, randomKeys } from '../src/http/config.ts';
 import type { ShellDeps } from '../src/http/routes.ts';
 import { csrfFor, SESSION_TOKEN } from '../src/http/secrets.ts';
 import { createShellServer } from '../src/http/server.ts';
-import { MemoryExportStore } from '../src/trust/exports.ts';
+import { CLAIM_HOLD_MS, MemoryExportStore } from '../src/trust/exports.ts';
 
 const ORIGIN = 'http://shell.test';
 const GUARDIAN = randomUUID();
@@ -25,6 +25,7 @@ const keys = randomKeys();
 const store = new MemoryExportStore(20, 64 * 1024 * 1024, 256 * 1024 * 1024);
 const logs: Record<string, unknown>[] = [];
 const db = { failCommit: false, commits: 0 };
+let skew = 0;  // 注入时钟的偏移：拨过占用超时
 
 const client = {
   query: async (sql: string) => {
@@ -48,6 +49,7 @@ const pool = {
 };
 
 const server = createShellServer({ pool, config: loadAuthConfig(), keys, env: 'test', shellOrigin: ORIGIN, log: (l: Record<string, unknown>) => logs.push(l),
+                                   now: () => new Date(Date.now() + skew),
                                    trust: { features: new Set(['data_rights']), exports: store } } as unknown as ShellDeps, { readyCacheMs: 0 });
 let port = 0;
 before(async () => {
@@ -107,6 +109,12 @@ test('写完才作废：读完整个响应 → delivered，同一凭据再兑换
   assert.equal(line!['outcome'], 'delivered');
   assert.equal(line!['attempts'], '1');
   assert.equal((await download(x.job, x.ref, 'read')).status, 404);
+  skew = CLAIM_HOLD_MS + 1;  // 作废而不是一直占着：拨过占用超时仍 404
+  try {
+    assert.equal((await download(x.job, x.ref, 'read')).status, 404);
+  } finally {
+    skew = 0;
+  }
   await new Promise((r) => setTimeout(r, 100));
   assert.equal(settled(x.job).length, 1, '拿不到占用的请求不结算');
 });
