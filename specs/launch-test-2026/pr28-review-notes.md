@@ -73,7 +73,7 @@
 ## 请人定 → 用户 2026-11-21 定（“按建议，前两条都做，第三条另起”）
 - **N2 已做**：BFF 闸门结果字段 `gate` 改名 `gate_result`，四份白名单去掉 `gate`（学习服务里同名的掌握门槛状态现在误写进日志也会被丢掉，测试钉住）。
 - **N6 已做**：安装脚本、CI、五个 Dockerfile 按锁文件装 Python 依赖时一律 `--only-binary=:all:`；只有知识服务的 `jieba`（只发布源码包）用
-  `--no-binary=jieba` 放开，它的构建依赖（setuptools）仍不校验哈希，是剩下的口子。九份锁文件在 Python 3.11 / 3.13 上逐份核过；新测试
+  `--no-binary=jieba` 放开；它的构建依赖（setuptools）原来不校验哈希，2026-11-21 合并后已补（先按哈希装构建依赖、再关掉构建隔离，`specs/jieba-hashed-build/`）。九份锁文件在 Python 3.11 / 3.13 上逐份核过；新测试
   `deploy/tests/test_check_workflow.py::test_pip_installs_only_prebuilt_wheels` 钉住。
 - **N8 另起**：导出凭据改为“响应写完再作废”，已建议另起一个任务（不在本 PR）。
 

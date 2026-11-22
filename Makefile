@@ -639,7 +639,7 @@ kge-inventory:
 # PR ②：知识服务读工具（HTTP + MCP）、页面快照导出与 page.get；库上测试、契约一致性（knowledge-service.v0.9 严格校验）、
 # 端到端在 tests/pgkge.py 起的一次性 Postgres 上跑（约 25 秒）。没有 Postgres 时库上测试非严格跳过、严格失败
 # PR ③：兜底检索（jieba + 进程内 BM25，只切公共层）、node.resolve 接全文检索、补页面信号、M1 报表（tests/test_retrieval.py、test_m1.py）
-# 依赖需先安装（带哈希的锁文件）：cd services/knowledge && python3 -m venv .venv && .venv/bin/pip install --require-hashes -r requirements-dev.lock
+# 依赖需先安装（带哈希的锁文件，两步：先 build-requirements.lock，再 --no-build-isolation 装 requirements-dev.lock；见 services/knowledge/README.md）：bash scripts/bootstrap-deps.sh
 KNOWLEDGE_MISSING = [ ! -x services/knowledge/.venv/bin/pytest ] || ! services/knowledge/.venv/bin/python -c "import fastapi, asyncpg, mcp, jsonschema, jieba" 2>/dev/null
 knowledge-test:
 	@if $(KNOWLEDGE_MISSING); then \

@@ -1,0 +1,9 @@
+# 由 build-requirements.in 生成的带哈希锁文件：知识服务装 jieba（只有源码包）前先按哈希装好构建用的 setuptools（specs/jieba-hashed-build）。
+# 安装：pip install --require-hashes --only-binary=:all: -r build-requirements.lock，再以 --no-build-isolation 装 requirements(-dev).lock。
+# 重新生成（Python 3.11）：pip-compile --generate-hashes --allow-unsafe --strip-extras --no-header -o build-requirements.lock build-requirements.in
+# （pip-tools 7.6.1）。setuptools 为 MIT 许可证。
+
+setuptools==84.2.1 \
+    --hash=sha256:3ff8b3b5492a0aa66960f4419365a86b84e013070d4313e4d4a6894f5d64d6bc \
+    --hash=sha256:ca140b45d5325a9478f880e351484f62fef15f336462e449ca0c03c873d589c2
+    # via -r build-requirements.in

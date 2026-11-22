@@ -14,9 +14,9 @@
 
 | 优先 | 事项 | 出处 |
 |---|---|---|
-| **1** | **审阅并合并分支 `claude/busy-edison-5365e8`**（PR zeemen/starbuddy#28）。首行是 `[NEEDS-HUMAN]` 的提交有四类：PLT-23（迁移草稿 0062、0063）、PLT-24（服务间鉴权）、数据库连接池超时（`71bfb33`，计量事务多一种失败方式）、CI 供应链固定（`5e67e9a`，`packages/contracts` 下新增锁文件） | 各提交说明 **〔11-19〕** |
+| ~~1~~ | ~~审阅并合并分支 `claude/busy-edison-5365e8`（PR zeemen/starbuddy#28）~~：**已合并（2026-11-21，`main` 上 `9cff366`）**；审定评论与审查材料见 PR 与 `pr28-review-notes.md`。合并后仍要人做的：0062、0063 副本演练后执行，staging 新增 `starbuddy-learning` 的 `session-token` | PR #28 **〔11-21〕** |
 | ~~2~~ | ~~合并前在 Actions 手动跑一次 `scope=mutation`~~：**已跑（2026-11-11，run 42976770389，提交 `22b07d3`）；合并前审查 S1–S2 改了 0062 与 80 号测试后重跑（2026-11-16，run 43798172361，提交 `562d206`，23 个 job 通过、extra-browsers 未开）**。之后再有改迁移、RLS、鉴权、计量的提交进 PR，合并前要再跑 | `specs/tech-debt-batch3/lessons.md` 末节 |
-| 3 | 合并进默认分支后 SessionStart 钩子才生效 | `blockers.md` 第一节 |
+| ~~3~~ | ~~合并进默认分支后 SessionStart 钩子才生效~~：**已生效（2026-11-21 核对：`main` 上 `.claude/settings.json` 登记了钩子，脚本本机执行退出码 0、按锁文件跳过未变依赖）** | `blockers.md` 第一节 **〔11-21〕** |
 | ~~4~~ | ~~GitHub Actions 固定到提交哈希（防供应链）~~：**已做（2026-11-19，`5e67e9a`）**，12 处 `uses:` 固定到提交哈希并有测试钉住 | `specs/ci-supply-chain-pins/` **〔11-19〕** |
 | ~~5~~ | ~~契约测试依赖是否补带哈希的锁文件~~：**已做（2026-11-19，`5e67e9a`）**，`packages/contracts/requirements-dev.lock`，CI 与安装脚本按哈希装 | 同上 **〔11-19〕** |
 | ~~7~~ | ~~Actions 升级到 Node 24 原生的新大版本~~：**已做（2026-11-20）**，四个 Action 都升到 v7 并仍固定哈希，setup-node 显式关自动缓存 | `specs/ci-actions-node24/` **〔11-19〕** |
