@@ -12,6 +12,7 @@ import {
   type Answer, type DiagnosisView,
 } from '../../../lib/diagnosis.ts';
 import { isUuid } from '../../../lib/star-map.ts';
+import { probeRetryable } from '../../../diagnosis/probe-retry.ts';
 import { PREDICTION_OPTIONS, type Prediction } from '../../../probe/copy.ts';
 
 async function account(csrf: string): Promise<BffSession | null> {
@@ -57,13 +58,17 @@ export async function abandonAction(csrf: string, student: string, session: stri
   return { ok: (await abandonDiagnosis(who, student, session, key)).ok };
 }
 
-export async function probeAction(csrf: string, student: string, session: string, seq: number, prediction: Prediction, key: string): Promise<{ ok: boolean; curfew?: boolean }> {
+/** retryable / retryAfterSec：只在可重试的失败时带（src/diagnosis/probe-retry.ts，specs/diagnosis-probe-retry） */
+export async function probeAction(csrf: string, student: string, session: string, seq: number, prediction: Prediction, key: string)
+  : Promise<{ ok: boolean; curfew?: boolean; retryable?: boolean; retryAfterSec?: number | null }> {
   const who = await account(csrf);
   if (!who || !isUuid(student) || !isUuid(session) || !isSeq(seq) || !isKey(key) || !PREDICTION_OPTIONS.some((o) => o.code === prediction)) {
     return { ok: false };
   }
   const r = await probeDiagnosis(who, student, session, seq, prediction, key);
-  return r.ok ? { ok: true } : { ok: false, curfew: isCurfew(r) };
+  if (r.ok) return { ok: true };
+  if (isCurfew(r)) return { ok: false, curfew: true };
+  return probeRetryable(r) ? { ok: false, curfew: false, retryable: true, retryAfterSec: r.retryAfterSec ?? null } : { ok: false, curfew: false };
 }
 
 export async function answerAction(csrf: string, student: string, session: string, seq: number, answer: Answer, work: string | null, elapsedSec: number,

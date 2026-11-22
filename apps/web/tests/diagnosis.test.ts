@@ -53,7 +53,8 @@ test('诊断中不评价、不给结论；结束页只说完成了', () => {
   const src = readFileSync(join(WEB, 'src/diagnosis/Diagnosis.tsx'), 'utf8');
   assert.match(src, /view\?\.status === 'finished' && view\.process_tasks \? C\.finished : C\.endedNeutral/);
   assert.match(src, /if \(r\.curfew\) return toCurfew\(\);/);
-  assert.equal((src.match(/\.curfew\) return toCurfew\(\);/g) ?? []).length, 4);  // 开始 / 续做、取题、探针、作答
+  assert.equal((src.match(/\.curfew\) return toCurfew\(\);/g) ?? []).length, 3);  // 开始 / 续做、取题、作答
+  assert.match(src, /if \(next === 'curfew'\) return toCurfew\(\);/);  // 探针（经 nextAfterProbe，specs/diagnosis-probe-retry）
 });
 
 test('组件与演示页源码不接触题号、答案、对错、节点、选题理由', () => {

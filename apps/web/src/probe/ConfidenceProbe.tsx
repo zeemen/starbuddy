@@ -7,14 +7,16 @@
 import { useId, useState } from 'react';
 import { PREDICTION_OPTIONS, PROBE_COPY, type Prediction } from './copy.ts';
 
-export function ConfidenceProbe({ onAnswer, onSkip }: {
+/** cooling：提交被拒后的冷却中（specs/diagnosis-probe-retry），按钮禁用、带 data-cooldown="on" */
+export function ConfidenceProbe({ onAnswer, onSkip, cooling = false }: {
   onAnswer: (prediction: Prediction) => void | Promise<void>;
   onSkip: () => void;
+  cooling?: boolean;
 }) {
   const questionId = useId();
   const [busy, setBusy] = useState(false);
   const answer = async (p: Prediction) => {
-    if (busy) return;
+    if (busy || cooling) return;
     setBusy(true);
     try {
       await onAnswer(p);
@@ -27,11 +29,12 @@ export function ConfidenceProbe({ onAnswer, onSkip }: {
       <p id={questionId} className="probe-question">{PROBE_COPY.question}</p>
       <p className="probe-options">
         {PREDICTION_OPTIONS.map((o) => (
-          <button key={o.code} type="button" data-prediction={o.code} disabled={busy} onClick={() => void answer(o.code)}>
+          <button key={o.code} type="button" data-prediction={o.code} disabled={busy || cooling} data-cooldown={cooling ? 'on' : 'off'}
+                  onClick={() => void answer(o.code)}>
             {o.label}
           </button>
         ))}
-        <button type="button" className="probe-skip" disabled={busy} onClick={onSkip}>{PROBE_COPY.skip}</button>
+        <button type="button" className="probe-skip" disabled={busy || cooling} onClick={onSkip}>{PROBE_COPY.skip}</button>
       </p>
     </div>
   );

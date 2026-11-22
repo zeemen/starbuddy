@@ -11,7 +11,10 @@ import type { Answer, DiagnosisView } from '../lib/diagnosis.ts';
 import { ConfidenceProbe } from '../probe/ConfidenceProbe.tsx';
 import type { Prediction } from '../probe/copy.ts';
 import { RichParagraphs, RichRuns } from '../shell/RichItem.tsx';
+import { cooldownMs } from '../lib/retry-after.ts';
+import { useCooldown } from '../practice/use-cooldown.ts';
 import { DIAGNOSIS_COPY as C, formatDuration } from './copy.ts';
+import { nextAfterProbe, type ProbeOutcome } from './probe-retry.ts';
 
 /**
  * curfew：宵禁时段（服务端已把会话置为暂停），组件停在“今天先到这里”。
@@ -21,7 +24,7 @@ import { DIAGNOSIS_COPY as C, formatDuration } from './copy.ts';
 export interface DiagnosisApi {
   start(): Promise<{ ok: boolean; sessionId?: string; curfew?: boolean; restart?: string }>;
   current(sessionId: string): Promise<{ ok: boolean; view?: DiagnosisView; curfew?: boolean; restart?: string }>;
-  probe(sessionId: string, seq: number, prediction: Prediction): Promise<{ ok: boolean; curfew?: boolean }>;
+  probe(sessionId: string, seq: number, prediction: Prediction): Promise<ProbeOutcome>;
   answer(sessionId: string, seq: number, answer: Answer, work: string | null, elapsedSec: number): Promise<{ ok: boolean; curfew?: boolean; restart?: string }>;
   pause(sessionId: string, seq: number | null, stepElapsedSec: number): Promise<{ ok: boolean }>;
   abandon(sessionId: string): Promise<{ ok: boolean }>;
@@ -42,6 +45,8 @@ export function Diagnosis({ api }: { api: DiagnosisApi }) {
   const [, tick] = useState(0);
   const stepStartedAt = useRef<number | null>(null);   // 这道题开始计时的时刻（看题时）
   const skippedProbe = useRef<number | null>(null);    // 这一步已跳过探针
+  const retriedProbe = useRef<number | null>(null);    // 这一步的探针已因可重试的失败冷却过一次（specs/diagnosis-probe-retry）
+  const { cooling: probeCooling, start: startProbeCooldown } = useCooldown();
   const heading = useRef<HTMLHeadingElement>(null);
   const started = useRef(false);
 
@@ -134,14 +139,25 @@ export function Diagnosis({ api }: { api: DiagnosisApi }) {
 
   const onPredict = async (p: Prediction) => {
     if (!session || !view?.step) return;
-    const r = await api.probe(session, view.step.seq, p);
-    if (r.curfew) return toCurfew();
-    if (!r.ok) skippedProbe.current = view.step.seq;  // 没记下也不挡做题
+    const seq = view.step.seq;
+    const r = await api.probe(session, seq, p);
+    const next = nextAfterProbe(r, retriedProbe.current === seq);
+    if (next === 'curfew') return toCurfew();
+    if (next === 'cooldown') {
+      // 可重试的失败、这一步还没重试过：探针留在原处，按 retry-after 冷却后由学生再选一次或跳过（不自动重发）
+      retriedProbe.current = seq;
+      setMessage(C.notSaved);
+      startProbeCooldown(cooldownMs(r.retryAfterSec));
+      return;
+    }
+    if (next === 'skip') skippedProbe.current = seq;  // 没记下也不挡做题
+    setMessage('');
     await load(session);
   };
   const onSkip = () => {
     if (!view?.step) return;
     skippedProbe.current = view.step.seq;
+    setMessage('');
     show(view);
   };
 
@@ -204,7 +220,7 @@ export function Diagnosis({ api }: { api: DiagnosisApi }) {
       {phase === 'probe' && step ? (
         <>
           <p className="muted">{C.stepLabel(step.seq)}</p>
-          <ConfidenceProbe onAnswer={onPredict} onSkip={onSkip} />
+          <ConfidenceProbe onAnswer={onPredict} onSkip={onSkip} cooling={probeCooling} />
         </>
       ) : null}
       {phase === 'item' && step ? (
