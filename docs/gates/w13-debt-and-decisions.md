@@ -322,7 +322,7 @@
 | T47、T49 | 已完成 | staging 新增 `session-token`；安全负责人过目 | `specs/plt24-auth-tightening/` |
 | T10 | 已完成 | — | `tools/e2e-cohort/sample/run_metadata.json`（`worktree_dirty: false`） |
 | T11 | 已完成 | — | 登记脚本迁到 `tools/content-register/`；`tools/content-register/tests/placement.test.ts` |
-| T13 | 已完成 | 地图版本交叉核对已加；v0 申诉一条因 v0 下线关闭；申诉期间原证据是否临时降级另起〔人：掌握口径〕 | `specs/plt25-map-version-check/` |
+| T13 | 已完成 | 地图版本交叉核对已加；v0 申诉一条因 v0 下线关闭；申诉期间原证据是否临时降级：2026-11-22 定为维持现状（选 A），申诉入口立项前再议 | `specs/plt25-map-version-check/`、`specs/appeal-original-evidence/` |
 | T35 | 部分完成 | 前端请求体与后端模型自动核对已做（`specs/review-console-types-t35`）；响应类型 2026-11-11 起也由后端导出核对（`specs/review-console-responses`，错误码见 `specs/review-console-error-codes`）；撤下依据清单、逐条确认高风险差异等〔人〕 | `apps/web/tests/review-requests.test.ts` |
 | T17 | 部分完成 | 函数越权矩阵已扩到全部应用 schema；部署后角色继承巡检（H2）〔人：真实集群〕 | `db/tests/80_attack_surface.sql` 第六节；`specs/tech-debt-batch3/` |
 | T01 | 部分完成 | 第二部分（0039、0042、准入导出与走查）已做，发布门禁拒收非严格或带标记的 C9 检查；各科真实签字的版本记录〔人〕 | `specs/release-gate-sprint4/lessons.md`；`specs/tech-debt-batch3/` |
