@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { after, before, test } from 'node:test';
 import pg from 'pg';
+import { P } from '../src/http/problems.ts';
 import { fetchAs, startShell, type ShellHarness } from './shell-harness.ts';
 
 const HAS_DB = Boolean(process.env['PGHOST']);
@@ -114,17 +115,18 @@ test('学生本人写四种事件：201 只回 ID，库里来源类型是客观�
   }
 });
 
-test('家长、其他学生、别家家长、学生不存在：同一个 403；非法 ID 404；未登录 401', { skip: !HAS_DB }, async () => {
+test('家长、别家家长 403（账号类型不对）；其他学生、学生不存在、非法 ID 同一个 404（与“不存在”逐字节相同，specs/not-self-404）；未登录 401', { skip: !HAS_DB }, async () => {
   const before = await count(`SELECT count(*) AS n FROM insight.behavior_event`, []);
   const ref = await post(url(ID.missing, 'events'), ID.S1acc, start());
-  assert.equal(ref.status, 403);
+  assert.equal(ref.status, 404);
   const refBody = await ref.text();
-  for (const [student, account] of [[ID.S1, ID.gS], [ID.S1, ID.S2acc], [ID.S1, ID.gO], [ID.S2, ID.S1acc]] as const) {
+  assert.equal(refBody, P.NOT_FOUND, '与其他路由的“不存在”逐字节相同');
+  for (const [student, account, code] of [[ID.S1, ID.gS, 403], [ID.S1, ID.S2acc, 404], [ID.S1, ID.gO, 403], [ID.S2, ID.S1acc, 404]] as const) {
     const r = await post(url(student, 'events'), account, start());
-    assert.equal(r.status, 403, `${student} ${account}`);
-    assert.equal(await r.text(), refBody);
+    assert.equal(r.status, code, `${student} ${account}`);
+    if (code === 404) assert.equal(await r.text(), refBody);
     const p = await post(url(student, 'probes'), account, probe());
-    assert.equal(p.status, 403, `probe ${student} ${account}`);
+    assert.equal(p.status, code, `probe ${student} ${account}`);
   }
   // 路径参数不是 UUID：路由表按“不存在”处理（统一壳：表内形状、参数不合法一律 404）
   assert.equal((await post(url('not-a-uuid', 'events'), ID.S1acc, start())).status, 404);
@@ -199,8 +201,10 @@ test('计划完成 / 跳过（PLT-15）：本人当天任务可写；别人的�
     rejected.push(await r.text());
   }
   assert.equal(new Set(rejected).size, 1, '三种拒绝的响应体相同');
-  // 家长、兄妹、别家家长替孩子写：403（只认学生本人）
-  for (const account of [ID.gS, ID.S2acc, ID.gO]) assert.equal((await post(url(ID.S1, 'events'), account, plan(mine))).status, 403, account);
+  // 家长、别家家长替孩子写：403（账号类型不对）；兄妹：404（只认学生本人，与“不存在”相同）
+  for (const [account, code] of [[ID.gS, 403], [ID.S2acc, 404], [ID.gO, 403]] as const) {
+    assert.equal((await post(url(ID.S1, 'events'), account, plan(mine))).status, code, account);
+  }
   assert.equal(await count(`SELECT count(*) AS n FROM insight.behavior_event WHERE student_id = $1 AND kind IN ('plan_done', 'plan_skip')`, [ID.S1]),
                before, '被拒的一条都没写');
   // 本人：当天与前一天的任务都能写；同一幂等键（前端同一张票据内固定）重放 200、时间不同 409，都只有一行
@@ -295,13 +299,13 @@ test('探针：学生自述入库，不存实际对错；题目未登记、学�
   }
 });
 
-test('探针关联作答：本人同题作答 200、重复关联幂等；别的作答 409；别人的作答 422；家长 403', { skip: !HAS_DB }, async () => {
+test('探针关联作答：本人同题作答 200、重复关联幂等；别的作答 409；别人的作答 422；家长 403；其他学生 404', { skip: !HAS_DB }, async () => {
   const { id } = (await (await post(url(ID.S1, 'probes'), ID.S1acc, probe({ prediction: 'no' }))).json()) as { id: string };
   const mine = await syntheticAttempt(ID.S1, ID.S1zxEvidence);
   const link = (attempt: string, account = ID.S1acc, probeId = id, student = ID.S1) =>
     post(url(student, `probes/${probeId}/attempt`), account, { attempt_id: attempt });
   assert.equal((await link(mine, ID.gS)).status, 403, '家长不能关联');
-  assert.equal((await link(mine, ID.S2acc)).status, 403, '其他学生不能关联');
+  assert.equal((await link(mine, ID.S2acc)).status, 404, '其他学生不能关联（与“不存在”相同）');
   const theirs = await syntheticAttempt(ID.S2, ID.S2zxEvidence);
   assert.equal((await link(theirs)).status, 422, '不能关联别人的作答');
   assert.equal((await link(randomUUID())).status, 422, '作答不存在');

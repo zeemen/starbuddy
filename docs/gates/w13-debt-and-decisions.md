@@ -328,7 +328,7 @@
 | T01 | 部分完成 | 第二部分（0039、0042、准入导出与走查）已做，发布门禁拒收非严格或带标记的 C9 检查；各科真实签字的版本记录〔人〕 | `specs/release-gate-sprint4/lessons.md`；`specs/tech-debt-batch3/` |
 | T15 | 部分完成 | 发布门禁部分已做；C9 词表来源〔停〕；plan、teach 跳过 rejected 题〔人：方法行为变更〕 | 同上 |
 | T22 | 已完成 | CI 手动开关 `extra_browsers`；2026-11-09 首跑 WebKit、Firefox 数据权利用例 4 项全部通过 | run 42637392388 的 extra-browsers job |
-| T26 | 部分完成 | 词表检查并入 `sie-dictionary-check`、删去多余构建；403 / 404 口径〔人〕；探针关联窗口在 0025〔停〕 | `Makefile` |
+| T26 | 部分完成 | 词表检查并入 `sie-dictionary-check`、删去多余构建；403 / 404 口径 2026-11-22 已统一为 404（`specs/not-self-404/`，安全负责人过目）；探针关联窗口在 0025〔停〕 | `Makefile` |
 | T34 | 部分完成 | 判分转写脚本已写；采分点挂观点的约束〔停〕；道法打标并入 item_tag〔人〕 | `evals/daofa-grading/transcribe.py` |
 | T52 | 部分完成 | 模板已补“输入契约”“禁止修改的范围”；错因映射签字〔人〕 | `specs/_template/spec.md` |
 | T24、T27、T30、T33、T38 | 部分完成 | 均卡在签字或人（ADR 11 / 13、契约 1.1.0、指标频率、留出集执行人、通过线） | 各自来源 lessons |

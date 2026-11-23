@@ -627,6 +627,9 @@ SM=(
   $'数据库超时：借出的连接不监听 error\tsrc/metering/db.ts\t  client.on?.(\'error\', onError);\t'
   $'数据库超时：还回池前不摘监听\tsrc/metering/db.ts\t    if (!broken) client.off?.(\'error\', onError);\n\t\n'
   $'数据库超时：池不监听 error\tsrc/main.ts\tpool.on(\'error\', (e: Error & { code?: unknown }) => {\tpool.once(\'connect\', (e: Error & { code?: unknown }) => {'
+  # 不是本人 / 不存在统一 404（specs/not-self-404）：跑诊断、事件集成测试与授权矩阵（BFFMUT_FILTER=不是本人：）
+  $'不是本人：诊断开始退回 403\tsrc/diagnosis/service.ts\t  if (!(await isSelf(deps.pool, account, student))) return NOT_FOUND;\t  if (!(await isSelf(deps.pool, account, student))) return { status: 403, body: JSON.parse(P.FORBIDDEN) as unknown };'
+  $'不是本人：事件写入退回 403\tsrc/http/feature-routes.ts\to.kind === \'not_found\' ? problem(P.NOT_FOUND)\to.kind === \'not_found\' ? problem(P.FORBIDDEN)'
   # 闸门的日志字段与定时汇总（specs/gate-log-fields）：跑 tests/gate-log-fields.test.ts（BFFMUT_FILTER=闸门日志：）
   $'闸门日志：白名单漏 gate_subject\tsrc/observability/log.ts\t  \'gate_result\', \'gate_subject\', \'gate_queue_ms\'\t  \'gate_result\', \'gate_queue_ms\''
   $'闸门日志：汇总不带计数\tsrc/gate/subject-gate.ts\tcounts: statsForLog(gate.stats())\tcounts: {}'
@@ -702,6 +705,7 @@ star_run() {  # $1 副本根目录，$2 变异名（“计量：”开头的跑�
   [[ "${2:-}" == 节点名：* ]] && tests="tests/node-names.test.ts tests/node-names.integration.test.ts"
   [[ "${2:-}" == 数据库超时：* ]] && tests="tests/db-timeouts.test.ts"
   [[ "${2:-}" == 闸门日志：* ]] && tests="tests/gate-log-fields.test.ts"
+  [[ "${2:-}" == 不是本人：* ]] && tests="tests/diagnosis.integration.test.ts tests/events.integration.test.ts tests/route-matrix.integration.test.ts"
   [[ "${2:-}" == OTP：* ]] && tests="tests/staging-otp-units.test.ts tests/staging-otp.integration.test.ts tests/shell-startup.test.ts tests/star-map-v1.test.ts"
   [[ "${2:-}" == 内测：* ]] && tests="tests/internal-test-units.test.ts tests/internal-test.integration.test.ts tests/staging-otp-units.test.ts tests/auth.integration.test.ts tests/shell-openapi.test.ts"
   [[ "${2:-}" == 内测工具：* ]] && tests="../../tools/internal-test/tests/internal-test.test.ts"

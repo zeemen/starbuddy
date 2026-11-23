@@ -112,7 +112,7 @@ test('只经 BFF 现有事件接口写行为事件：静默、409 算已记下�
   assert.match(events, /post\(account, student, 'events', \{ kind: e\.kind, payload: e\.payload, occurred_at: occurredAt\.toISOString\(\), idempotency_key: key \}\)/);
   assert.match(events, /bffBaseUrl\(\);\s*try \{/, 'bffBaseUrl 在 try 之外');
   // 403 与 422 单独计，其余按类别（PLT-15 PR2 审查建议）
-  assert.match(events, /countWrite\(e\.kind, r\.status === 403 \|\| r\.status === 422 \? String\(r\.status\) : `\$\{Math\.floor\(r\.status \/ 100\)\}xx`\);/);
+  assert.match(events, /countWrite\(e\.kind, r\.status === 404 \|\| r\.status === 422 \? String\(r\.status\) : `\$\{Math\.floor\(r\.status \/ 100\)\}xx`\);/);
   assert.match(events, /return r\.ok \|\| r\.status === 409;\s*\} catch \{\s*countWrite\(e\.kind, 'network'\);\s*return false;/);
   assert.match(events, /console\.info\(`behavior_event write kind=\$\{kind\} result=\$\{result\} count=\$\{n\}`\)/);
   const writers = src.filter((f) => /postEventQuietly\(/.test(code(f.text)) && f.path !== 'src/lib/events.ts').map((f) => f.path).sort();

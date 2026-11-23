@@ -34,7 +34,7 @@ export type Result<T> = { ok: true; value: T } | { ok: false; status: number; co
   retryAfterSec?: number };
 
 async function call<T>(account: BffSession, student: string, method: 'GET' | 'POST', path: string, body?: unknown): Promise<Result<T>> {
-  if (!isUuid(student)) return { ok: false, status: 403, code: 'FORBIDDEN' };
+  if (!isUuid(student)) return { ok: false, status: 404, code: 'NOT_FOUND' };  // 与 BFF 一致（specs/not-self-404）
   let r: Response;
   try {
     r = await fetch(`${bffBaseUrl()}/bff/v0/students/${student}/diagnosis/sessions${path}`, {
@@ -95,7 +95,7 @@ export const startDiagnosis = (account: BffSession, student: string, key: string
   call<{ session_id: string; status: string }>(account, student, 'POST', '', { subject: 'aya', idempotency_key: key });
 
 export async function currentDiagnosis(account: BffSession, student: string, session: string): Promise<Result<DiagnosisView>> {
-  if (!isUuid(session)) return { ok: false, status: 403, code: 'FORBIDDEN' };
+  if (!isUuid(session)) return { ok: false, status: 404, code: 'NOT_FOUND' };
   const r = await call<DiagnosisView>(account, student, 'GET', `/${session}`);
   return r.ok ? { ok: true, value: pickView(r.value) } : r;
 }

@@ -19,7 +19,7 @@ const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f
 export const isKey = (s: unknown): s is string => typeof s === 'string' && UUID_V4.test(s);
 
 async function post(account: BffSession, student: string, sub: string, body: unknown): Promise<{ ok: boolean; status: number }> {
-  if (!isUuid(student)) return { ok: false, status: 403 };
+  if (!isUuid(student)) return { ok: false, status: 404 };  // 与 BFF 一致：不是本人、不存在、参数不合法同一个 404（specs/not-self-404）
   const r = await fetch(`${bffBaseUrl()}/bff/v0/students/${student}/${sub}`, {
     method: 'POST',
     headers: { ...(await bffHeaders(account, true)), 'content-type': 'application/json' },
@@ -53,8 +53,8 @@ export async function postEventQuietly(account: BffSession, student: string, e: 
   bffBaseUrl();  // 配置错误在这里抛出，不当作“没写入”
   try {
     const r = await postSessionEvent(account, student, e, key, occurredAt);
-    // 403（不是本人）与 422（取值不合要求，含任务 ID 不属于该生当天快照）单独计，其余按类别（审查建议；不带学生 ID 与任务 ID）
-    countWrite(e.kind, r.status === 403 || r.status === 422 ? String(r.status) : `${Math.floor(r.status / 100)}xx`);
+    // 404（不是本人或不存在，specs/not-self-404）与 422（取值不合要求，含任务 ID 不属于该生当天快照）单独计，其余按类别（审查建议；不带学生 ID 与任务 ID）
+    countWrite(e.kind, r.status === 404 || r.status === 422 ? String(r.status) : `${Math.floor(r.status / 100)}xx`);
     return r.ok || r.status === 409;
   } catch {
     countWrite(e.kind, 'network');

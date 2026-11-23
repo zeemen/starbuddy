@@ -56,7 +56,11 @@ export interface Reply { status: number; body: unknown; headers?: Record<string,
 
 const problem = (status: number, code: string, title: string, extra: Record<string, unknown> = {}): Reply =>
   ({ status, body: { type: `/problems/${code.toLowerCase()}`, title, status, code, ...extra } });
-export const FORBIDDEN = problem(403, 'FORBIDDEN', 'not allowed');
+/**
+ * 不是本人、学生或会话不存在、库端无权（42501）、学习服务 404：一律与其他路由逐字节相同的 404（specs/not-self-404，T26；
+ * 原来是 403）。不区分“不存在”与“不是你”
+ */
+export const NOT_FOUND: Reply = { status: 404, body: JSON.parse(P.NOT_FOUND) as unknown };
 const INVALID = problem(422, 'INVALID', 'invalid request');
 const KEY_REUSED = problem(409, 'IDEMPOTENCY_KEY_REUSED', 'idempotency key reused with different content');
 const UNAVAILABLE = problem(503, 'UPSTREAM_UNAVAILABLE', 'diagnosis service unavailable, retry with the same request');
@@ -158,14 +162,14 @@ async function openSessionId(pool: Pool, account: string, student: string): Prom
 }
 
 // ---------- 宵禁（安全审查 B2） ----------
-// 宵禁判断（计量只读函数 meter_guard_status 的 in_curfew）在 src/metering/curfew.ts，与错题再练共用；'forbidden' 在这里回 403。
+// 宵禁判断（计量只读函数 meter_guard_status 的 in_curfew）在 src/metering/curfew.ts，与错题再练共用；'forbidden'（看不到这个学生）在这里回 404。
 
 export const CURFEW = problem(402, 'QUOTA_UNAVAILABLE', 'not available during curfew hours', { reason: 'curfew' });
 
 /** 宵禁中：先请学习服务把会话置为暂停（尽力而为），再回 402 curfew；不在宵禁回 null */
 async function curfewGate(deps: DiagnosisDeps, account: string, student: string, session: string | null): Promise<Reply | null> {
   const curfew = await inCurfew(deps.pool, account, student);
-  if (curfew === 'forbidden') return FORBIDDEN;
+  if (curfew === 'forbidden') return NOT_FOUND;
   if (!curfew) return null;
   if (session !== null) {
     const p = await withRetry(deps, () => deps.learning.pause(student, session, null, null));
@@ -205,7 +209,7 @@ export async function withRetry<T>(deps: Pick<DiagnosisDeps, 'sleep' | 'retryDel
  */
 function fromFailure(p: { status: number; problem: { code?: string; session_id?: unknown; reason?: unknown } }, expected: string | null): Reply {
   const code = p.problem.code ?? '';
-  if (p.status === 404) return FORBIDDEN;
+  if (p.status === 404) return NOT_FOUND;
   if (p.status === 501) return problem(503, 'DIAGNOSIS_UNAVAILABLE', 'diagnosis is not available');
   if (p.status === 409 && code === 'SESSION_INCONSISTENT' && p.problem.reason === 'grade_changed'
       && expected !== null && p.problem.session_id === expected) {
@@ -241,7 +245,7 @@ async function releaseQuietly(deps: DiagnosisDeps, account: string, usage: strin
 
 // ---------- 开始 / 续做 ----------
 export async function startDiagnosis(deps: DiagnosisDeps, account: string, student: string, input: StartInput): Promise<Reply> {
-  if (!(await isSelf(deps.pool, account, student))) return FORBIDDEN;
+  if (!(await isSelf(deps.pool, account, student))) return NOT_FOUND;
   // 闸门：续做与预留之前（被拒的请求本次没有预留）；同一幂等键已经预留过（结果未知后的重放）绕过闸门，不再被拒
   const replay = deps.gate !== undefined && (await keyReserved(deps.pool, account, usageIdFor(input.idempotency_key)));
   return withSubjectSlot(deps.gate, slot(deps, 'aya', student, replay), subjectBusy, () => startAdmitted(deps, account, student, input));
@@ -337,7 +341,7 @@ async function settleIfDone(deps: DiagnosisDeps, account: string,
 }
 
 export async function currentStep(deps: DiagnosisDeps, account: string, student: string, session: string): Promise<Reply> {
-  if (!(await ownsSession(deps.pool, account, student, session))) return FORBIDDEN;
+  if (!(await ownsSession(deps.pool, account, student, session))) return NOT_FOUND;
   // 闸门：包住转发（结算在名额内、闸门之后）
   return withSubjectSlot(deps.gate, slot(deps, 'aya', student), subjectBusy, () => currentAdmitted(deps, account, student, session));
 }
@@ -360,7 +364,7 @@ export const DIAG_PROBE_NAMESPACE = '6c2f9d4e-1b7a-4e53-8f0c-2a9d5e7b3c61';
 export const probeKeyFor = (session: string, seq: number): string => uuidv5(DIAG_PROBE_NAMESPACE, `${session}|${seq}`);
 
 export async function submitProbe(deps: DiagnosisDeps, account: string, student: string, session: string, input: ProbeInput): Promise<Reply> {
-  if (!(await ownsSession(deps.pool, account, student, session))) return FORBIDDEN;
+  if (!(await ownsSession(deps.pool, account, student, session))) return NOT_FOUND;
   const blocked = await curfewGate(deps, account, student, session);  // 宵禁：探针
   if (blocked) return blocked;
   // 闸门：宵禁检查之后包住转发
@@ -385,7 +389,7 @@ async function probeAdmitted(deps: DiagnosisDeps, account: string, student: stri
       [student, step.subject, step.item_id, input.prediction, input.asked_at, probeKey])).rows[0]!.id) };
   } catch (e) {
     const code = (e as { code?: string }).code ?? '';
-    if (code === '42501') return FORBIDDEN;
+    if (code === '42501') return NOT_FOUND;
     // 同一步已有一条探针（并发提交或上一次没记到步骤上）：不另写，按派生键请学习服务记那一条（只认第一次的预测）
     if (code === '23505') ref = { probe_key: probeKey };
     else if (code === '54000') return problem(429, 'TOO_MANY', 'too many writes');
@@ -400,7 +404,7 @@ async function probeAdmitted(deps: DiagnosisDeps, account: string, student: stri
 
 // ---------- 作答 ----------
 export async function submitAnswer(deps: DiagnosisDeps, account: string, student: string, session: string, input: AnswerInput): Promise<Reply> {
-  if (!(await ownsSession(deps.pool, account, student, session))) return FORBIDDEN;
+  if (!(await ownsSession(deps.pool, account, student, session))) return NOT_FOUND;
   const blocked = await curfewGate(deps, account, student, session);  // 宵禁：作答
   if (blocked) return blocked;
   // 闸门：宵禁检查之后包住转发（判分后的结算在名额内、闸门之后）
@@ -430,7 +434,7 @@ async function answerAdmitted(deps: DiagnosisDeps, account: string, student: str
 
 // ---------- 暂停 / 放弃 ----------
 export async function pauseSession(deps: DiagnosisDeps, account: string, student: string, session: string, input: PauseInput): Promise<Reply> {
-  if (!(await ownsSession(deps.pool, account, student, session))) return FORBIDDEN;
+  if (!(await ownsSession(deps.pool, account, student, session))) return NOT_FOUND;
   const r = await withRetry(deps, () => deps.learning.pause(student, session, input.seq, input.step_elapsed_sec));
   if (r.kind === 'unknown') return UNAVAILABLE;
   if (r.kind === 'failure') return fromFailure(r, session);
@@ -438,7 +442,7 @@ export async function pauseSession(deps: DiagnosisDeps, account: string, student
 }
 
 export async function abandonSession(deps: DiagnosisDeps, account: string, student: string, session: string): Promise<Reply> {
-  if (!(await ownsSession(deps.pool, account, student, session))) return FORBIDDEN;
+  if (!(await ownsSession(deps.pool, account, student, session))) return NOT_FOUND;
   const r = await withRetry(deps, () => deps.learning.abandon(student, session));
   if (r.kind === 'unknown') return UNAVAILABLE;
   if (r.kind === 'failure') return fromFailure(r, session);
