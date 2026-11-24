@@ -106,6 +106,36 @@ export function createShellHandler(deps: ShellDeps): (req: IncomingMessage, res:
       });
       res.end(r.body);
     };
+    // 响应结果回调（Ctx.onDelivered）：恰好调用一次；回调出错不影响请求，另记一行（只记异常类名）
+    const deliveredCbs: Array<(delivered: boolean) => void> = [];
+    let settled = false;
+    const settle = (delivered: boolean): void => {
+      if (settled) return;
+      settled = true;
+      for (const cb of deliveredCbs) {
+        try {
+          cb(delivered);
+        } catch (e) {
+          log({ request_id: requestId, route: record['route'], event: 'on_delivered_error',
+                error_class: e instanceof Error ? e.constructor.name.slice(0, 48) : 'unknown' });
+        }
+      }
+    };
+    const onDelivered = (cb: (delivered: boolean) => void): void => { deliveredCbs.push(cb); };
+    // handler 的回复交给 send 之后：没写出（连接已断、响应头已发）为 false；否则等 finish，close 先到为 false。
+    // 只看 finish 不够：对端重置连接（ECONNRESET）时 Node 仍会给响应发 finish，那一刻 socket 已销毁且带错误（本机复现，lessons）。
+    // 所以 finish 时 socket 还在、没有出错才算写完
+    const watchDelivery = (): void => {
+      if (deliveredCbs.length === 0) return;
+      const sock = res.socket;
+      const intact = (): boolean => sock !== null && !sock.destroyed && !sock.errored;
+      if (!res.writableEnded) settle(false);
+      else if (res.writableFinished) settle(intact());
+      else {
+        res.once('finish', () => settle(intact()));
+        res.once('close', () => settle(false));  // finish 没来就关了
+      }
+    };
     try {
       // 形状对上但参数不是 UUID：与“不存在”同一个 404
       if (hit.length === 0) throw new Stop(P.NOT_FOUND);
@@ -202,21 +232,23 @@ export function createShellHandler(deps: ShellDeps): (req: IncomingMessage, res:
       if (session && route.ownTx) {
         // handler 自己按会话账号开事务（feature-routes.ts）；这里不给查询入口，防止在事务外查询
         const q: Query = () => Promise.reject(new Error('route manages its own transaction'));
-        reply = await route.handler({ deps, params, body, session, q, presentedToken: presented, note, ...(signal ? { signal } : {}) });
+        reply = await route.handler({ deps, params, body, session, q, presentedToken: presented, note, onDelivered, ...(signal ? { signal } : {}) });
       } else if (session) {
         const s = session;
         // 会话账号只在本事务内生效（set_config 第三个参数 true），连接池复用不串号（第二轮 N4）
         reply = await withAccount(deps.pool, s.accountId, (client) => {
           const q: Query = (sql, p) => client.query(sql, p);
-          const ctx: Ctx = { deps, params, body, session: s, q, presentedToken: presented, note };
+          const ctx: Ctx = { deps, params, body, session: s, q, presentedToken: presented, note, onDelivered };
           return route.handler(ctx);
         });
       } else {
         const q: Query = (sql, p) => deps.pool.query(sql, p);
-        reply = await route.handler({ deps, params, body, session: null, q, presentedToken: presented, note });
+        reply = await route.handler({ deps, params, body, session: null, q, presentedToken: presented, note, onDelivered });
       }
       send(reply);
+      watchDelivery();
     } catch (e) {
+      settle(false);  // handler 的回复没送出去（事务提交失败、异常）：登记过的回调一律按未送达
       if (e instanceof Stop) {
         send(e.reply);
       } else {
