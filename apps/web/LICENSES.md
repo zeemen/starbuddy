@@ -23,15 +23,15 @@
 | 包 | 版本 | 许可证 | 用途 | 可选 |
 |---|---|---|---|---|
 | @axe-core/playwright | 4.13.0 | MPL-2.0 | 开发 |  |
-| @next/env | 16.3.6 | MIT | 运行 |  |
-| @next/swc-darwin-arm64 | 16.3.6 | MIT | 运行 | 可选 |
-| @next/swc-darwin-x64 | 16.3.6 | MIT | 运行 | 可选 |
-| @next/swc-linux-arm64-gnu | 16.3.6 | MIT | 运行 | 可选 |
-| @next/swc-linux-arm64-musl | 16.3.6 | MIT | 运行 | 可选 |
-| @next/swc-linux-x64-gnu | 16.3.6 | MIT | 运行 | 可选 |
-| @next/swc-linux-x64-musl | 16.3.6 | MIT | 运行 | 可选 |
-| @next/swc-win32-arm64-msvc | 16.3.6 | MIT | 运行 | 可选 |
-| @next/swc-win32-x64-msvc | 16.3.6 | MIT | 运行 | 可选 |
+| @next/env | 16.4.6 | MIT | 运行 |  |
+| @next/swc-darwin-arm64 | 16.4.6 | MIT | 运行 | 可选 |
+| @next/swc-darwin-x64 | 16.4.6 | MIT | 运行 | 可选 |
+| @next/swc-linux-arm64-gnu | 16.4.6 | MIT | 运行 | 可选 |
+| @next/swc-linux-arm64-musl | 16.4.6 | MIT | 运行 | 可选 |
+| @next/swc-linux-x64-gnu | 16.4.6 | MIT | 运行 | 可选 |
+| @next/swc-linux-x64-musl | 16.4.6 | MIT | 运行 | 可选 |
+| @next/swc-win32-arm64-msvc | 16.4.6 | MIT | 运行 | 可选 |
+| @next/swc-win32-x64-msvc | 16.4.6 | MIT | 运行 | 可选 |
 | @playwright/test | 1.56.1 | Apache-2.0 | 开发（next 的可选同伴依赖） |  |
 | @swc/helpers | 0.5.23 | Apache-2.0 | 运行 |  |
 | @types/node | 22.20.4 | MIT | 开发 |  |
@@ -44,7 +44,7 @@
 | csstype | 3.2.3 | MIT | 开发 |  |
 | fsevents | 2.3.2 | MIT | 开发 | 可选 |
 | nanoid | 3.3.19 | MIT | 运行 |  |
-| next | 16.3.6 | MIT | 运行 |  |
+| next | 16.4.6 | MIT | 运行 |  |
 | picocolors | 1.1.1 | ISC | 运行 |  |
 | playwright-core | 1.56.1 | Apache-2.0 | 开发（next 的可选同伴依赖） |  |
 | playwright | 1.56.1 | Apache-2.0 | 开发（next 的可选同伴依赖） |  |
@@ -53,7 +53,7 @@
 | react | 19.3.0 | MIT | 运行 |  |
 | scheduler | 0.28.0 | MIT | 运行 |  |
 | sharp | 0.0.0-starbuddy-stub | MIT | 运行 |  |
-| source-map-js | 1.2.1 | BSD-3-Clause | 运行 |  |
+| source-map-js | 1.2.2 | BSD-3-Clause | 运行 |  |
 | styled-jsx | 5.1.6 | MIT | 运行 |  |
 | tslib | 2.8.1 | 0BSD | 运行 |  |
 | typescript | 5.9.3 | Apache-2.0 | 开发 |  |

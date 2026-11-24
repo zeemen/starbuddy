@@ -1,9 +1,9 @@
 # 前端与适配器依赖的已知漏洞：Next.js 升到 16.4.6，source-map-js、fast-uri 升补丁版 · 规格草稿
 
-- 状态：**草稿，待人确认第五节**（2026-11-24）。
+- 状态：**已确认（2026-11-24，用户“按建议，默认值都同意，开始实现”）**：第五节三条都按默认。实现记录见 lessons.md。
 - 来源：2026-11-24 对仓库内所有带锁文件的 Node 包跑 `npm audit`（只读）。BFF、`tools/kge-coverage`、`tools/kge-inventory` 为 0；
   `apps/web` 2 项（1 critical、1 high），三个适配器各 1 项（moderate）。
-- 不涉及必停项：只升已有依赖的版本，不新增依赖、不新增第三方服务；不改契约、迁移、计量、判分、人设。许可证不变（都是 MIT），
+- 不涉及必停项：只升已有依赖的版本，不新增依赖、不新增第三方服务；不改契约、迁移、计量、判分、人设。许可证不变（`next` 为 MIT；`source-map-js`、`fast-uri` 为 BSD-3-Clause，与升级前相同），
   `apps/web/LICENSES.md` 由 `node scripts/license-check.mjs --write` 重生。
 
 ## 一、现状（2026-11-24 核对）
