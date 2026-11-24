@@ -139,3 +139,11 @@
 20. WeKnora 与知识库供应链中台：规格与 ADR 待起草（需要能读到中台代码：推到 GitHub 或经 Remote Control 共享）；staging 节点规格（现为 2 × ecs.g7.xlarge）是否足以同时承载 WeKnora 及其依赖，待评估。
 - 用户在控制台开通 ACK Pro（经“创建集群”页的依赖检查，未在控制台建集群；只读核对北京地域集群列表为空）。阶段 C 重新 plan 为新增 2、删除 0。
 - 用户决定测试阶段暂不建集群（决定记录第 18 条），计划文件已删。tfvars 里 `k8s_version = 1.36.2-aliyun.1`、`node_key_pair_name`、`arms_prometheus_enabled = false` 保留，恢复时直接重新 plan。
+
+## 补记（2026-11-24）：恢复前的只读核对与阶段 C 重新 plan（仍暂不建集群）
+- 用户选“恢复 staging（先只读）”。只读核对：网络（`registry.opentofu.org`、STS、OSS、OTS 锁表端点、ACK、VPC、RDS、RAM）都通；凭据有效（RAM 子账号 `tf-staging`，只核对变量名与身份）；
+  状态桶私有、阻止公共访问、版本控制开、OSS 完全托管加密（AES256）；子账号没有 `oss:GetBucketLogging`（最小权限），**访问日志是否开启须人在控制台确认**；
+  `tofu init`（`-lockfile=readonly`）与 `state list` 正常，状态 51 个资源（阶段 A、B、B'、B2），没有 ACK。
+- 阶段 C 重新 plan：新增 2 / 修改 0 / 删除 0（ACK Pro `ack.pro.small` 1.36.2-aliyun.1、删除保护、无公网 API 与 SLB、RRSA、不写集群证书进状态；节点池 2 × ecs.g7.xlarge、120GB 加密 ESSD），
+  与 2026-11-01 的计划逐项相同；plan 加锁、解锁成功，锁表可用。
+- 用户决定“暂不建集群”（决定记录第 18 条维持），计划文件已删。
