@@ -14,7 +14,8 @@
 
 ## 验证
 - 三个适配器单测（`make adapter-aya-test`、`adapter-zhixing-test`、`adapter-wenli-test`）、`make conformance`、`make check-fast` 通过（`CONTRACT_STRICT=1`）。
-- `make web-test`：见下一节（本机）；以 CI 为准。
+- `make web-test`（本机）：单测 280 项、生产构建通过；端到端 181 过、2 失败（`e2e/glyphs.spec.ts` DPR 2 两条），与升级前同一台机器的结果相同，
+  是本机 Chromium 153 的抗锯齿差异（CI 上通过，见 PR zeemen/starbuddy#35）。以 CI 为准。
 
 ## 待人确认
 - 无新增。
