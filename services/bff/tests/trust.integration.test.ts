@@ -8,6 +8,7 @@
 // 周报（冲刺 5-H，0036）：学生读学生版、家长读家长版，每句库内再核判断，删掉或降为不可见的判断对应句子消失。
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { request, type IncomingMessage } from 'node:http';
 import { after, before, test } from 'node:test';
 import { loadAuthConfig } from '../src/http/config.ts';
 import { P } from '../src/http/problems.ts';
@@ -16,10 +17,11 @@ import { TRUST_ROUTES } from '../src/http/trust-routes.ts';
 import { loadShellConfig, type ShellConfig } from '../src/shell/config.ts';
 import type { ExplainRequest, InsightClient, RenderedStatement } from '../src/shell/insight-client.ts';
 import type { DisputeClient, DisputeOutcome, DisputeRequest, ExamViewClient, ExamViewRequest } from '../src/trust/clients.ts';
-import { MemoryExportStore } from '../src/trust/exports.ts';
+import { CLAIM_HOLD_MS, MemoryExportStore } from '../src/trust/exports.ts';
 import { TRUST_FEATURES } from '../src/trust/features.ts';
+import { HASHED_FIELDS, LOG_FIELDS } from '../src/observability/log.ts';
 import { HAS_DB, setupHarness, type Harness } from './harness.ts';
-import { callAs, startShell, type ShellHarness } from './shell-harness.ts';
+import { callAs, ORIGIN, startShell, type ShellHarness } from './shell-harness.ts';
 
 const TPL = 'syn.trust.node_mastery';      // 对外白名单里
 const TPL_HIDDEN = 'syn.trust.not_listed'; // 已审核但不在白名单里
@@ -30,7 +32,8 @@ let shell: ShellHarness;  // 开关全开
 let off: ShellHarness;    // 缺省（开关全关）
 const logs: Record<string, unknown>[] = [];
 let offset = 0;  // 注入时钟的偏移（删除确认的近期登录窗口用）
-const store = new MemoryExportStore();
+// 单包上限放大：中途断开的用例用 32 MB 合成包，保证本机回环的内核缓冲吃不下（specs/export-download-voucher）
+const store = new MemoryExportStore(200, 64 * 1024 * 1024, 256 * 1024 * 1024);
 
 // ---------------------------------------------------------------- 假洞察服务
 class FakeDispute implements DisputeClient {
@@ -539,6 +542,136 @@ test('导出：绑定家长建任务、拿一次性凭据；经 BFF 兑换一次
   const lines = logs.filter((l) => l['guardian_op'] === 'export' || l['guardian_op'] === 'export_download');
   assert.ok(lines.length >= 3 && lines.every((l) => /^[0-9a-f]{16}$/.test(String(l['account'])) && l['account'] !== F.guardian));
   assert.ok(lines.some((l) => l['export_job'] === x.body.export_job_id));
+});
+
+// ---------------------------------------------------------------- 导出凭据：响应写完才作废（specs/export-download-voucher，PR 28 增量审查 N8）
+
+const BIG = 32 * 1024 * 1024;
+/** 暂存一份合成大包（绑定给定家长与孩子），返回凭据、任务与内容 */
+function stageBig(account: string, kid: string): { ref: string; job: string; body: string } {
+  const ref = `dl_${randomUUID().replace(/-/g, '')}${randomUUID().replace(/-/g, '')}`;
+  const job = randomUUID();
+  const body = JSON.stringify({ format: 'starbuddy-export@1', pad: 'x'.repeat(BIG) });
+  const now = Date.now() + offset;
+  assert.ok(store.put(ref, { jobId: job, studentId: kid, accountId: account, expiresAt: now + 600_000, body }, now));
+  return { ref, job, body };
+}
+
+interface Held { status: number; rest: () => Promise<string>; drop: () => void }
+/** 原始 HTTP 兑换：收到响应头即返回，响应体暂不读（rest 读完、drop 断开） */
+async function rawDownload(account: string, kid: string, job: string, ref: string): Promise<Held> {
+  const s = await sess(account);
+  const u = new URL(shell.base);
+  const payload = JSON.stringify({ download_ref: ref });
+  return new Promise((resolve, reject) => {
+    const req = request({ host: u.hostname, port: Number(u.port), method: 'POST', path: `/bff/v0/students/${kid}/exports/${job}/download`, agent: false,
+                          headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload), origin: ORIGIN,
+                                     'x-sb-session': s.token, 'x-csrf-token': s.csrf } }, (res: IncomingMessage) => {
+      res.pause();
+      resolve({
+        status: res.statusCode ?? 0,
+        rest: () => new Promise((ok, bad) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (c: Buffer) => chunks.push(c));
+          res.on('end', () => ok(Buffer.concat(chunks).toString('utf8')));
+          res.on('error', bad);
+          res.resume();
+        }),
+        drop: () => { res.destroy(); req.destroy(); },
+      });
+    });
+    req.on('error', () => undefined);  // drop 之后的连接错误
+    req.once('error', reject);
+    req.end(payload);
+  });
+}
+
+const settledLines = (job: string) => logs.filter((l) => l['event'] === 'export_download_settled' && l['export_job'] === job);
+async function waitSettled(job: string, n: number): Promise<string[]> {
+  for (let i = 0; i < 400 && settledLines(job).length < n; i += 1) await new Promise((r) => setTimeout(r, 25));
+  const got = settledLines(job);
+  assert.equal(got.length, n, `结算行 ${got.length} 条，应为 ${n}`);
+  return got.map((l) => String(l['outcome']));
+}
+const dropOnce = async (account: string, kid: string, x: { job: string; ref: string }) => {
+  const r = await rawDownload(account, kid, x.job, x.ref);
+  assert.equal(r.status, 200);
+  r.drop();
+};
+
+test('导出凭据：中途断开可在原有效期内再兑换；占用中并发的第二个请求与“凭据不对”同一个 404；写完才作废', { skip: !HAS_DB, timeout: 120_000 }, async () => {
+  const x = stageBig(F.guardian, F.kid.id);
+  const dl = `/students/${F.kid.id}/exports/${x.job}/download`;
+  const wrong = await post(F.guardian, dl, { download_ref: `dl_${'e'.repeat(64)}` });
+  assert.equal(wrong.status, 404);
+  await dropOnce(F.guardian, F.kid.id, x);
+  assert.deepEqual(await waitSettled(x.job, 1), ['released'], '收到响应头就断开：释放');
+  const held = await rawDownload(F.guardian, F.kid.id, x.job, x.ref);
+  assert.equal(held.status, 200, '断开之后同一凭据可再兑换');
+  same(await post(F.guardian, dl, { download_ref: x.ref }), wrong, '占用中：第二个请求与凭据不对逐字节相同');
+  const text = await held.rest();
+  assert.equal(text.length, x.body.length);
+  assert.equal(text, x.body, '重试拿到完整的同一份包');
+  assert.deepEqual(await waitSettled(x.job, 2), ['released', 'delivered']);
+  same(await post(F.guardian, dl, { download_ref: x.ref }), wrong, '写完即作废');
+  offset += CLAIM_HOLD_MS + 1;  // 是作废而不是一直占着：拨过占用超时仍 404
+  try {
+    same(await post(F.guardian, dl, { download_ref: x.ref }), wrong, '拨过占用超时仍作废');
+  } finally {
+    offset -= CLAIM_HOLD_MS + 1;
+  }
+  assert.equal(settledLines(x.job).length, 2, '拿不到占用的请求不结算');
+});
+
+test('导出凭据：最多 3 次，第 3 次也没写完即作废；之后 404', { skip: !HAS_DB, timeout: 120_000 }, async () => {
+  const x = stageBig(F.guardian, F.kid.id);
+  for (let i = 1; i <= 3; i += 1) {
+    await dropOnce(F.guardian, F.kid.id, x);
+    await waitSettled(x.job, i);
+  }
+  assert.deepEqual(settledLines(x.job).map((l) => [l['outcome'], l['attempts']]), [['released', '1'], ['released', '2'], ['released_final', '3']]);
+  assert.equal((await post(F.guardian, `/students/${F.kid.id}/exports/${x.job}/download`, { download_ref: x.ref })).status, 404);
+});
+
+test('导出凭据：占用中家长解除绑定，断开后再兑换 404 并清掉暂存；重新绑定也不能再用（授权口径不变）', { skip: !HAS_DB, timeout: 120_000 }, async () => {
+  const x = stageBig(coGuardian, F.kid.id);
+  const held = await rawDownload(coGuardian, F.kid.id, x.job, x.ref);
+  assert.equal(held.status, 200);
+  // 别的家长、别的孩子路径带这张凭据：404（占用不放松绑定）
+  assert.equal((await post(F.guardian, `/students/${F.kid.id}/exports/${x.job}/download`, { download_ref: x.ref })).status, 404);
+  assert.equal((await post(O.guardian, `/students/${O.kid.id}/exports/${x.job}/download`, { download_ref: x.ref })).status, 404);
+  await h.su.query(`UPDATE platform.guardian_student_link SET status = 'revoked' WHERE guardian_account_id = $1 AND student_id = $2 AND status = 'active'`, [coGuardian, F.kid.id]);
+  try {
+    held.drop();
+    assert.deepEqual(await waitSettled(x.job, 1), ['released']);
+    assert.equal((await post(coGuardian, `/students/${F.kid.id}/exports/${x.job}/download`, { download_ref: x.ref })).status, 404);
+  } finally {
+    await relink(coGuardian, F.kid.id);
+  }
+  assert.equal(store.purgeStudent(F.kid.id, coGuardian), 0, '解除绑定时的兑换尝试已清掉暂存');
+  assert.equal((await post(coGuardian, `/students/${F.kid.id}/exports/${x.job}/download`, { download_ref: x.ref })).status, 404);
+});
+
+test('导出凭据：兑换与结算的日志只有白名单里的元数据，账号是摘要，不含凭据与包内容', { skip: !HAS_DB, timeout: 60_000 }, async () => {
+  const x = stageBig(F.guardian, F.kid.id);
+  const held = await rawDownload(F.guardian, F.kid.id, x.job, x.ref);
+  await held.rest();
+  await waitSettled(x.job, 1);
+  const access = logs.filter((l) => l['guardian_op'] === 'export_download' && l['export_job'] === x.job);
+  assert.equal(access.length, 1);
+  assert.equal(access[0]!['export_store'], 'claimed');
+  assert.equal(access[0]!['attempts'], '1');
+  for (const l of [...access, ...settledLines(x.job)]) {
+    for (const k of Object.keys(l)) assert.ok(LOG_FIELDS.has(k) || HASHED_FIELDS.has(k), `日志键 ${k} 不在白名单`);
+    assert.match(String(l['account']), /^[0-9a-f]{16}$/);
+  }
+  const text = JSON.stringify(logs);
+  assert.ok(!text.includes(x.ref) && !text.includes(x.ref.slice(3)), '日志不含凭据');
+  assert.ok(!text.includes('"pad"') && !text.includes('x'.repeat(64)), '日志不含包内容');
+  // 拿不到占用：访问日志记 miss，不细分原因
+  await post(F.guardian, `/students/${F.kid.id}/exports/${x.job}/download`, { download_ref: x.ref });
+  const miss = logs.filter((l) => l['guardian_op'] === 'export_download' && l['export_job'] === x.job);
+  assert.equal(miss.at(-1)!['export_store'], 'miss');
 });
 
 // ---------------------------------------------------------------- 删除
