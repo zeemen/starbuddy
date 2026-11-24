@@ -9,10 +9,10 @@ import { devRuntimeAllowed } from '../../../lib/dev-pages.ts';
 import { actionSession } from '../../../lib/session.ts';
 import {
   abandonDiagnosis, answerDiagnosis, currentDiagnosis, isCurfew, isKey, pauseDiagnosis, probeDiagnosis, restartSession, startDiagnosis,
-  type Answer, type DiagnosisView,
+  type Answer, type AnswerOutcome, type DiagnosisView,
 } from '../../../lib/diagnosis.ts';
 import { isUuid } from '../../../lib/star-map.ts';
-import { probeRetryable } from '../../../diagnosis/probe-retry.ts';
+import { retryableFailure } from '../../../lib/retry-after.ts';
 import { PREDICTION_OPTIONS, type Prediction } from '../../../probe/copy.ts';
 
 async function account(csrf: string): Promise<BffSession | null> {
@@ -58,7 +58,7 @@ export async function abandonAction(csrf: string, student: string, session: stri
   return { ok: (await abandonDiagnosis(who, student, session, key)).ok };
 }
 
-/** retryable / retryAfterSec：只在可重试的失败时带（src/diagnosis/probe-retry.ts，specs/diagnosis-probe-retry） */
+/** retryable / retryAfterSec：只在可重试的失败时带（src/lib/retry-after.ts 的 retryableFailure，specs/diagnosis-probe-retry） */
 export async function probeAction(csrf: string, student: string, session: string, seq: number, prediction: Prediction, key: string)
   : Promise<{ ok: boolean; curfew?: boolean; retryable?: boolean; retryAfterSec?: number | null }> {
   const who = await account(csrf);
@@ -68,11 +68,12 @@ export async function probeAction(csrf: string, student: string, session: string
   const r = await probeDiagnosis(who, student, session, seq, prediction, key);
   if (r.ok) return { ok: true };
   if (isCurfew(r)) return { ok: false, curfew: true };
-  return probeRetryable(r) ? { ok: false, curfew: false, retryable: true, retryAfterSec: r.retryAfterSec ?? null } : { ok: false, curfew: false };
+  return retryableFailure(r) ? { ok: false, curfew: false, retryable: true, retryAfterSec: r.retryAfterSec ?? null } : { ok: false, curfew: false };
 }
 
+/** retryable / retryAfterSec：只在可重试的失败时带，组件据此冷却提交按钮（specs/diagnosis-answer-cooldown）；宵禁、届别变化照旧 */
 export async function answerAction(csrf: string, student: string, session: string, seq: number, answer: Answer, work: string | null, elapsedSec: number,
-  key: string): Promise<{ ok: boolean; curfew?: boolean; restart?: string }> {
+  key: string): Promise<AnswerOutcome> {
   const who = await account(csrf);
   if (!who || !isUuid(student) || !isUuid(session) || !isSeq(seq) || !isKey(key) || !isAnswer(answer) || !isSec(elapsedSec)
       || (work !== null && (typeof work !== 'string' || work.length === 0 || work.length > 20000))) {
@@ -80,8 +81,10 @@ export async function answerAction(csrf: string, student: string, session: strin
   }
   const r = await answerDiagnosis(who, student, session, seq, answer, work, elapsedSec, key);
   if (r.ok) return { ok: true };
+  if (isCurfew(r)) return { ok: false, curfew: true };
   const restart = restartSession(r);
-  return { ok: false, curfew: isCurfew(r), ...(restart ? { restart } : {}) };
+  if (restart) return { ok: false, curfew: false, restart };
+  return retryableFailure(r) ? { ok: false, curfew: false, retryable: true, retryAfterSec: r.retryAfterSec ?? null } : { ok: false, curfew: false };
 }
 
 export async function pauseAction(csrf: string, student: string, session: string, seq: number | null, stepElapsedSec: number, key: string): Promise<{ ok: boolean }> {

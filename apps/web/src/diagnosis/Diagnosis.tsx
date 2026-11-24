@@ -7,7 +7,7 @@
 //   - 原生表单控件，键盘可操作；选项用 fieldset + legend，输入框都有 label；状态提示走 role="status"。
 // 文案全部在 copy.ts（过禁语检查）。
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react';
-import type { Answer, DiagnosisView } from '../lib/diagnosis.ts';
+import type { Answer, AnswerOutcome, DiagnosisView } from '../lib/diagnosis.ts';
 import { ConfidenceProbe } from '../probe/ConfidenceProbe.tsx';
 import type { Prediction } from '../probe/copy.ts';
 import { RichParagraphs, RichRuns } from '../shell/RichItem.tsx';
@@ -25,7 +25,7 @@ export interface DiagnosisApi {
   start(): Promise<{ ok: boolean; sessionId?: string; curfew?: boolean; restart?: string }>;
   current(sessionId: string): Promise<{ ok: boolean; view?: DiagnosisView; curfew?: boolean; restart?: string }>;
   probe(sessionId: string, seq: number, prediction: Prediction): Promise<ProbeOutcome>;
-  answer(sessionId: string, seq: number, answer: Answer, work: string | null, elapsedSec: number): Promise<{ ok: boolean; curfew?: boolean; restart?: string }>;
+  answer(sessionId: string, seq: number, answer: Answer, work: string | null, elapsedSec: number): Promise<AnswerOutcome>;
   pause(sessionId: string, seq: number | null, stepElapsedSec: number): Promise<{ ok: boolean }>;
   abandon(sessionId: string): Promise<{ ok: boolean }>;
 }
@@ -47,6 +47,8 @@ export function Diagnosis({ api }: { api: DiagnosisApi }) {
   const skippedProbe = useRef<number | null>(null);    // 这一步已跳过探针
   const retriedProbe = useRef<number | null>(null);    // 这一步的探针已因可重试的失败冷却过一次（specs/diagnosis-probe-retry）
   const { cooling: probeCooling, start: startProbeCooldown } = useCooldown();
+  // 作答被闸门拒或被限流后提交按钮的冷却（specs/diagnosis-answer-cooldown）：不限次、不自动重发，作答与过程原样留着；换题时清掉
+  const { cooling: answerCooling, start: startAnswerCooldown, clear: clearAnswerCooldown } = useCooldown();
   const heading = useRef<HTMLHeadingElement>(null);
   const started = useRef(false);
 
@@ -58,6 +60,7 @@ export function Diagnosis({ api }: { api: DiagnosisApi }) {
   const show = useCallback((v: DiagnosisView) => {
     setView(v);
     setText(''); setWork(''); setChoice([]);
+    clearAnswerCooldown();
     stepStartedAt.current = null;
     if (v.status === 'finished' || v.status === 'abandoned') return setPhase('finished');
     if (v.status === 'paused') return setPhase('paused');
@@ -65,7 +68,7 @@ export function Diagnosis({ api }: { api: DiagnosisApi }) {
     if (!v.step.probe_recorded && skippedProbe.current !== v.step.seq) return setPhase('probe');
     stepStartedAt.current = Date.now();
     setPhase('item');
-  }, []);
+  }, [clearAnswerCooldown]);
 
   const toCurfew = useCallback(() => {
     stepStartedAt.current = null;
@@ -163,7 +166,7 @@ export function Diagnosis({ api }: { api: DiagnosisApi }) {
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!session || !view?.step || busy) return;
+    if (!session || !view?.step || busy || answerCooling) return;
     const step = view.step;
     const answer: Answer | null = step.item.format === 'fill' ? (text.trim() ? { text: text.trim() } : null)
       : (choice.length ? { choice } : null);
@@ -176,7 +179,11 @@ export function Diagnosis({ api }: { api: DiagnosisApi }) {
       const r = await api.answer(session, step.seq, answer, needsWork ? work : null, Math.min(7200, stepElapsed()));
       if (r.curfew) return toCurfew();
       if (r.restart) return toRestart(r.restart);
-      if (!r.ok) return setMessage(C.notSaved);
+      if (!r.ok) {
+        // 可重试的失败（闸门被拒、限流、断连）：按 retry-after 冷却提交按钮；再交时学习服务对同一步、内容相同的作答回原结果，不会算两次
+        if (r.retryable === true) startAnswerCooldown(cooldownMs(r.retryAfterSec));
+        return setMessage(C.notSaved);
+      }
       setMessage('');
       await load(session);
     } finally {
@@ -261,7 +268,7 @@ export function Diagnosis({ api }: { api: DiagnosisApi }) {
             </fieldset>
           )}
           <p className="diagnosis-actions">
-            <button type="submit" disabled={busy}>{C.submit}</button>
+            <button type="submit" disabled={busy || answerCooling} data-cooldown={answerCooling ? 'on' : 'off'}>{C.submit}</button>
           </p>
         </form>
       ) : null}

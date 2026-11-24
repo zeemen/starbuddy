@@ -4,19 +4,20 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { nextAfterProbe, probeRetryable } from '../src/diagnosis/probe-retry.ts';
+import { nextAfterProbe } from '../src/diagnosis/probe-retry.ts';
+import { retryableFailure } from '../src/lib/retry-after.ts';
 
 const WEB = fileURLToPath(new URL('..', import.meta.url));
 const read = (p: string) => readFileSync(join(WEB, p), 'utf8');
 
 test('可重试：闸门被拒 503 SUBJECT_BUSY、限流 429、断连 / 超时（503 无错误码）；其他不重试', () => {
   for (const f of [{ status: 503, code: 'SUBJECT_BUSY' }, { status: 429, code: 'TOO_MANY_REQUESTS' }, { status: 429, code: null }, { status: 503, code: null }]) {
-    assert.equal(probeRetryable(f), true, JSON.stringify(f));
+    assert.equal(retryableFailure(f), true, JSON.stringify(f));
   }
   for (const f of [{ status: 400, code: 'INVALID_REQUEST' }, { status: 403, code: 'FORBIDDEN' }, { status: 404, code: 'NOT_FOUND' },
                    { status: 409, code: 'SESSION_INCONSISTENT' }, { status: 402, code: 'QUOTA_UNAVAILABLE' }, { status: 503, code: 'UPSTREAM_UNAVAILABLE' },
                    { status: 500, code: 'INTERNAL' }]) {
-    assert.equal(probeRetryable(f), false, JSON.stringify(f));
+    assert.equal(retryableFailure(f), false, JSON.stringify(f));
   }
 });
 
@@ -35,7 +36,7 @@ test('server action：只在可重试的失败时带 retryable 与 retryAfterSec
   const fn = t.slice(t.indexOf('export async function probeAction('), t.indexOf('export async function answerAction('));
   assert.match(fn, /if \(r\.ok\) return \{ ok: true \};/);
   assert.match(fn, /if \(isCurfew\(r\)\) return \{ ok: false, curfew: true \};/);
-  assert.match(fn, /return probeRetryable\(r\) \? \{ ok: false, curfew: false, retryable: true, retryAfterSec: r\.retryAfterSec \?\? null \} : \{ ok: false, curfew: false \};/);
+  assert.match(fn, /return retryableFailure\(r\) \? \{ ok: false, curfew: false, retryable: true, retryAfterSec: r\.retryAfterSec \?\? null \} : \{ ok: false, curfew: false \};/);
   const lib = read('src/lib/diagnosis.ts');
   assert.match(lib, /const retryAfterSec = parseRetryAfter\(r\.headers\.get\('retry-after'\)\);/);
 });

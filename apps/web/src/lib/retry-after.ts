@@ -20,3 +20,15 @@ export function cooldownMs(retryAfterSec: number | null | undefined): number {
   const s = typeof retryAfterSec === 'number' && Number.isInteger(retryAfterSec) && retryAfterSec >= 1 ? Math.min(retryAfterSec, COOLDOWN_MAX_SEC) : COOLDOWN_DEFAULT_SEC;
   return s * 1000;
 }
+
+/** 一次失败的 BFF 返回：status、code 与 src/lib/diagnosis.ts 的 Result 相同（断连 / 超时归为 503、code 为空） */
+export interface FailureStatus { status: number; code: string | null }
+
+/**
+ * 可以等一会儿再交一次的失败（诊断的探针与作答共用：specs/diagnosis-probe-retry、specs/diagnosis-answer-cooldown）：
+ * 分学科闸门被拒 503 SUBJECT_BUSY、限流 429、断连 / 超时（503 无错误码）。其他（400、403、404、409、402 等）重交也不会成功。
+ */
+export function retryableFailure(f: FailureStatus): boolean {
+  if (f.status === 429) return true;
+  return f.status === 503 && (f.code === 'SUBJECT_BUSY' || f.code === null);
+}

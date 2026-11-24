@@ -33,6 +33,12 @@ export type Result<T> = { ok: true; value: T } | { ok: false; status: number; co
   /** 响应带合口径的 retry-after 时的秒数（src/lib/retry-after.ts；specs/diagnosis-probe-retry），没有时不出现 */
   retryAfterSec?: number };
 
+/**
+ * 作答提交的结果（server action 的返回，组件 Diagnosis.tsx 按它分支）：retryable / retryAfterSec 只在可重试的失败时出现，
+ * 组件据此冷却提交按钮（specs/diagnosis-answer-cooldown）
+ */
+export interface AnswerOutcome { ok: boolean; curfew?: boolean; restart?: string; retryable?: boolean; retryAfterSec?: number | null }
+
 async function call<T>(account: BffSession, student: string, method: 'GET' | 'POST', path: string, body?: unknown): Promise<Result<T>> {
   if (!isUuid(student)) return { ok: false, status: 404, code: 'NOT_FOUND' };  // 与 BFF 一致（specs/not-self-404）
   let r: Response;
