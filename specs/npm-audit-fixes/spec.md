@@ -33,7 +33,10 @@
 
 ### 试升结果（2026-11-24，只在本机工作区，未提交）
 - `next` 改为 16.4.6、`overrides` 加 `source-map-js: 1.2.2`，`npm install` 改了 5 个包（`next`、`@next/env`、各平台 `@next/swc-*`、`source-map-js`），
-  之后 `npm audit` 为 0；`license-check --write` 重生 `LICENSES.md`。单测、构建与端到端结果见 lessons（实现时记录）。
+  之后 `npm audit` 为 0；`license-check --write` 重生 `LICENSES.md`（11 行版本号变化，许可证不变）。
+- 本机 `make web-test`：单测 280 项通过，生产构建通过；端到端 181 过、2 失败，失败的是 `e2e/glyphs.spec.ts` DPR 2 两条，
+  与升级前在同一台机器上的结果完全相同（本机 Chromium 153 与 Playwright 自带版本不同的抗锯齿差异，CI 上这两条通过，见 PR zeemen/starbuddy#35）。
+  即升级没有引入新的失败。试升改动已还原，实现时重做并以 CI 为准。
 
 ## 二、默认做法
 1. **版本选择**：只选发布满两周的版本（与 Actions 升级同一口径）：`next` 16.4.6（2026-11-09 发布）、`source-map-js` 1.2.2（2026-09-30）、
