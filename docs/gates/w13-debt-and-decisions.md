@@ -306,6 +306,7 @@
 | T50 | 点点评测：两组数字同一次调用的口径、修订签字后需重跑、留出集汇总须带入、自助法次数统一 | `specs/diandian-consistency-r2-sprint3/lessons.md:58-65,43`；`specs/diandian-consistency-r1-sprint2/lessons.md:45` | 硬3 报告口径 | 1 月 |
 | T51 | 点点用例覆盖缺口（双层架构、风格串味、情境角色边界、出场协议若干、记忆两类）；回复入库口径统一 | `specs/diandian-cases-v0-sprint1/lessons.md:44-45,49` | 人设回归覆盖 | 2 月 |
 | T52 | 错因映射签字后各科适配器按表填写 `cross_subject_category`；ADR 14 签字后模板补两节 | `docs/mapping/error-taxonomy.md:110-112`；`specs/adr-11-15/lessons.md:25` | 跨科错因 | 1 月 |
+| T53 | Node 依赖已知漏洞定期核对：每月或升级依赖前，对所有带锁文件的 Node 包手动跑 `npm audit`，结果记在这一行；不进 CI 卡口（2026-11-24 新增） | `specs/npm-audit-fixes/spec.md` 第五节第 2 条 | 供应链 | 每月 |
 
 ### 2026-11-09 核对（上表写于 10 月初，之后未逐行更新；本节以文件与提交为准，上表不改行，便于对照）
 
@@ -331,6 +332,7 @@
 | T26 | 部分完成 | 词表检查并入 `sie-dictionary-check`、删去多余构建；403 / 404 口径 2026-11-22 已统一为 404（`specs/not-self-404/`，安全负责人过目）；探针关联窗口在 0025〔停〕 | `Makefile` |
 | T34 | 部分完成 | 判分转写脚本已写；采分点挂观点的约束〔停〕；道法打标并入 item_tag〔人〕 | `evals/daofa-grading/transcribe.py` |
 | T52 | 部分完成 | 模板已补“输入契约”“禁止修改的范围”；错因映射签字〔人〕 | `specs/_template/spec.md` |
+| T53 | 2026-11-24 首次核对并修复 | `apps/web` 的 `next` 16.3.6 → 16.4.6、`source-map-js` 1.2.1 → 1.2.2，三个适配器 `fast-uri` 3.1.8 → 3.1.9，之后全部为 0；下次 2026-12 | `specs/npm-audit-fixes/` |
 | T24、T27、T30、T33、T38 | 部分完成 | 均卡在签字或人（ADR 11 / 13、契约 1.1.0、指标频率、留出集执行人、通过线） | 各自来源 lessons |
 | T02、T03、T14、T16、T23、T25、T28、T29、T31、T32、T36、T37、T39、T40、T42–T45、T48、T50、T51 | 未做 | 均卡在人或必停 | `specs/tech-debt-batch3/spec.md` 第二节 |
 
