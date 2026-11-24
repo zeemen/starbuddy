@@ -121,6 +121,9 @@ export interface Ctx {
   note: (k: string, v: string) => void;
   /** 请求方断开（响应写完之前连接关闭）时触发；只在分学科并发闸门打开时有（PLT-16：排队中断开即离队） */
   signal?: AbortSignal;
+  /** 登记“本次响应是否写完”的回调（server.ts，specs/export-download-voucher）：每个请求恰好调用一次——handler 的回复写出且 res 触发
+   *  finish 为 true；close 早于 finish、没写出、handler 之后的事务提交失败或异常转成错误回复为 false。只是进程内回调，不改响应 */
+  onDelivered?: (cb: (delivered: boolean) => void) => void;
 }
 
 export interface Reply { status: number; body: string; headers?: Record<string, string> }

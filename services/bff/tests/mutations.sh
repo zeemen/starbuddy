@@ -136,7 +136,7 @@ SM=(
   $'信任：预测不核对判断可见\tsrc/http/trust-routes.ts\tconst view = p && shown.has(p.claim_id) ? p : null;\tconst view = p;'
   $'信任：对账句子不核对判断可见\tsrc/http/trust-routes.ts\tconst statements = card.statements.filter((s) => shown.get(s.claim_id) === templateRef(s.template_key, s.template_version) && s.display === \'solid\');\tconst statements = card.statements;'
   $'信任：对账卡保留没有 claim_id 的句子\tsrc/trust/clients.ts\tif (st) statements.push(st); else dropped += 1;\tstatements.push((st ?? s) as RenderedStatement);'
-  $'信任：导出凭据可重复兑换\tsrc/trust/exports.ts\tthis.#drop(k);  // 一次性：兑换即删\t'
+  $'信任：导出凭据可重复兑换\tsrc/trust/exports.ts\tif (current()) this.#drop(k);  // 送达即作废\t'
   $'信任：导出兑换不核对发起账号\tsrc/trust/exports.ts\t || e.accountId !== match.accountId) return null;\t) return null;'
   $'信任：导出兑换不再核绑定\tsrc/http/trust-routes.ts\tif (rows[0]?.linked !== true) {\tif (false) {'
   $'信任：删除确认不核对会话内凭据\tsrc/http/trust-routes.ts\tif (!safeEqual(b[\'confirm_token\'], confirmTokenFor(ctx, requestId))) return problem(P.CONFIRM_REQUIRED);\t'
@@ -149,6 +149,16 @@ SM=(
   $'信任：导出下载日志不记账号摘要\tsrc/http/trust-routes.ts\t  ctx.note(\'account\', logHash(ctx.deps.keys, account));\t'
   $'信任：暂存不限 1 小时\tsrc/trust/exports.ts\texpiresAt: Math.min(entry.expiresAt, now + MAX_HOLD_MS)\texpiresAt: entry.expiresAt'
   $'信任：暂存总量不设上限\tsrc/trust/exports.ts\t || this.#total + size > this.maxTotalBytes) return false;\t) return false;'
+  # 导出凭据响应写完才作废（specs/export-download-voucher，PR 28 增量审查 N8）：占用排他、断开可重试、重试上限、超时接手、送达判据
+  $'信任：导出凭据占用不排他\tsrc/trust/exports.ts\tif (e.claimUntil > now) return null;\tif (false) return null;'
+  $'信任：导出凭据释放即作废\tsrc/trust/exports.ts\t        e.claimUntil = 0;\\n        return \'released\';\t        this.#drop(k);\\n        return \'released\';'
+  $'信任：导出凭据不设重试上限\tsrc/trust/exports.ts\t        if (e.attempts >= MAX_CLAIMS) {\\n          this.#drop(k);\\n          return \'released_final\';\\n        }\\n\t'
+  $'信任：导出凭据超时接手后旧释放解除新占用\tsrc/trust/exports.ts\tif (!current() || e.claimSeq !== seq) return \'stale\';\tif (!current()) return \'stale\';'
+  $'信任：导出下载 finish 即送达（不看连接是否已断）\tsrc/http/server.ts\tconst intact = (): boolean => sock !== null && !sock.destroyed && !sock.errored;\tconst intact = (): boolean => true;'
+  # “close 早于 finish 当成送达”不登记：Node 22 里调用过 res.end() 之后，对端重置、服务器自己销毁连接都先发 finish 再发 close，
+  # 这个分支走不到，是等价变异（specs/export-download-voucher/lessons.md 经验 3）；分支留作防御
+  $'信任：导出下载事务提交失败不释放\tsrc/http/server.ts\t      settle(false);  // handler 的回复没送出去\t      // handler 的回复没送出去'
+  $'信任：导出下载写完不结算\tsrc/http/trust-routes.ts\t      if (delivered) claim.commit();\t      if (delivered) { /* 不作废 */ }'
   $'信任：删除确认不要求近期登录\tsrc/http/trust-routes.ts\tif (!recentLogins(ctx.deps).fresh(ctx.deps.keys, ctx.session!.token, nowMs(ctx.deps))) return problem(P.REAUTH_REQUIRED);\t'
   $'信任：对账卡不核对预测判断\tsrc/http/trust-routes.ts\tif (!pred || pred.prediction_id !== card.prediction_id || !shown.has(pred.claim_id)) {\tif (false) {'
   $'信任：异议结果不要求 fact_ref\tsrc/trust/clients.ts\tif (step === \'open_fact_for_correction\' && (typeof r[\'fact_ref\'] !== \'string\' || !FACT_REF.test(r[\'fact_ref\']))) return null;\t'
@@ -683,7 +693,7 @@ star_run() {  # $1 副本根目录，$2 变异名（“计量：”开头的跑�
   [[ "${2:-}" == 诊断：* ]] && tests="tests/diagnosis.integration.test.ts"
   [[ "${2:-}" == 认证：* ]] && tests="tests/auth.integration.test.ts"
   [[ "${2:-}" == 页面：* ]] && tests="tests/shell-pages.integration.test.ts"
-  [[ "${2:-}" == 信任：* ]] && tests="tests/trust-units.test.ts tests/trust.integration.test.ts"
+  [[ "${2:-}" == 信任：* ]] && tests="tests/trust-units.test.ts tests/export-delivery.test.ts tests/trust.integration.test.ts"
   [[ "${2:-}" == H6：* ]] && tests="tests/route-matrix.integration.test.ts"
   [[ "${2:-}" == 星图v1：* ]] && tests="tests/star-map-v1.test.ts tests/star-map-v1.integration.test.ts"
   [[ "${2:-}" == 语音：* ]] && tests="tests/voice-minutes.test.ts tests/voice-minutes.integration.test.ts"

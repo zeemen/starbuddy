@@ -14,12 +14,13 @@
 // 禁用推断（规则 11、12）：BFF 不生成任何关于学生的文字。异议类型、结论、偏差方向、调整只传编码；前端能看到的句子只来自判断
 // （每句带 claim_id，并在库里核对该判断对当前受众可见、成立或假设、未过期、模板在对外白名单里），其余句子丢弃并记计数。
 import { withAccount } from '../metering/db.ts';
+import { emit } from '../observability/log.ts';
 import { loadShellConfig, type ShellConfig } from '../shell/config.ts';
 import type { Audience } from '../shell/insight-client.ts';
 import { linkIdFor, resolveStatements, templateRef, type StatementJob } from '../shell/statements.ts';
 import { productOf } from './shell-routes.ts';
 import { DISPUTE_KINDS, IDEMPOTENCY_KEY, pickPrediction, pickReconciliation, type DisputeKind, type Who } from '../trust/clients.ts';
-import { MemoryExportStore, type ExportStore } from '../trust/exports.ts';
+import { MemoryExportStore, type ExportStore, type ReleaseOutcome } from '../trust/exports.ts';
 import { forbiddenHits, lexicon } from '../trust/lexicon.ts';
 import { pickObjective, pickWeeklySentence, WEEKLY_SECTIONS, type WeeklySentence } from '../trust/weekly.ts';
 import {
@@ -595,9 +596,29 @@ const exportDownload: Handler = async (ctx) => {
     return problem(P.NOT_FOUND);
   }
   // 兑换留痕：库里的 export_job 对 BFF 不可读、也没有兑换记录列（迁移，必停，lessons）；访问日志记账号摘要与任务 ID
-  const body = exportStore(ctx.deps).take(b['download_ref'], { jobId, studentId: id, accountId: account }, nowMs(ctx.deps));
-  if (body === null) return problem(P.NOT_FOUND);  // 凭据不对、已用过、过期、不是本人发起：同一个 404
-  return { status: 200, body, headers: { 'content-disposition': `attachment; filename="starbuddy-export-${jobId}.json"` } };
+  // 只占用、不作废（specs/export-download-voucher，PR 28 增量审查 N8）：响应写完才作废，没写完（写出失败、连接中途断开、事务提交失败）
+  // 解除占用，凭据在原有效期内可再用（最多 MAX_CLAIMS 次）
+  const claim = exportStore(ctx.deps).claim(b['download_ref'], { jobId, studentId: id, accountId: account }, nowMs(ctx.deps));
+  if (claim === null) {
+    ctx.note('export_store', 'miss');  // 凭据不对、已用过、过期、不是本人发起、正被占用、次数用完：同一个 404，日志也不细分
+    return problem(P.NOT_FOUND);
+  }
+  ctx.note('export_store', 'claimed');
+  ctx.note('attempts', String(claim.attempt));
+  if (!ctx.onDelivered) {
+    claim.commit();  // 没有响应结果回调（直接调 handler）：退回兑换即作废，失败即关闭
+  } else {
+    const keys = ctx.deps.keys;
+    const log = ctx.deps.log ?? ((line: Record<string, unknown>) => emit('info', line));
+    ctx.onDelivered((delivered) => {
+      let outcome: 'delivered' | ReleaseOutcome = 'delivered';
+      if (delivered) claim.commit();
+      else outcome = claim.release();
+      // 写出结束另记一行（访问日志在写出之前已落）：只有元数据
+      log({ event: 'export_download_settled', export_job: jobId, account: logHash(keys, account), outcome, attempts: String(claim.attempt) });
+    });
+  }
+  return { status: 200, body: claim.body, headers: { 'content-disposition': `attachment; filename="starbuddy-export-${jobId}.json"` } };
 };
 
 /** 删除的会话内二次确认凭据：绑定本次会话与这条删除请求（带密钥 HMAC）；换了会话、换了请求都对不上 */
