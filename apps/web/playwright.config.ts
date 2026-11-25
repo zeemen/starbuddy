@@ -24,7 +24,9 @@ const practicePort = Number(process.env['WEB_PRACTICE_PORT'] ?? 3104);
 // 另四套都关（trust-off 里的 retest-off.spec.ts 核对入口不出现、页面 404、BFF 路由不注册）。
 // 今日计划跨科编排（PLT-11，e2e/today-orch.spec.ts）也在这一套：前端与第五个 BFF 另开 STARBUDDY_TODAY_ORCH=today_orch（桩另实现
 // /internal/v1/today）；另四套都关（trust-off 里的 today-orch-off.spec.ts 核对今日页没有跨科列表、BFF 响应没有 ordered）。
-const PRACTICE_SPECS = /(^|\/)(practice|retest|today-orch)\.spec\.ts$/;
+// 学生端诊断入口（specs/diagnosis-student-entry，e2e/diagnosis-entry.spec.ts）也在这一套：前端另开 STARBUDDY_DIAGNOSIS_UI=diagnosis；
+// 另五套前端都关（trust-off 里的 diagnosis-entry-off.spec.ts 核对入口不出现、页面 404）。
+const PRACTICE_SPECS = /(^|\/)(practice|retest|today-orch|diagnosis-entry)\.spec\.ts$/;
 // KGE-06 审核台封测周修订支持（e2e/review-kge06.spec.ts）也在这一套前端：另开 STARBUDDY_REVIEW_FEATURES=tag_worklist,revision_preflight
 // （审核台后端由 scripts/e2e.sh 打开同名功能）；另五套前端都关（trust-off 里的 review-kge06-off.spec.ts 核对两个页面 404）。
 const REVIEW_KGE06_SPECS = /(^|\/)review-kge06\.spec\.ts$/;
@@ -183,6 +185,7 @@ export default defineConfig({
         STARBUDDY_BFF_URL: process.env['STARBUDDY_PRACTICE_BFF_URL'] ?? 'http://127.0.0.1:8794',
         STARBUDDY_PRACTICE: 'practice',
         STARBUDDY_RETEST_UI: 'retest',
+        STARBUDDY_DIAGNOSIS_UI: 'diagnosis',
         STARBUDDY_TODAY_ORCH: 'today_orch',
         STARBUDDY_REVIEW_FEATURES: 'tag_worklist,revision_preflight',
       },

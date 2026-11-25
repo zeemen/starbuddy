@@ -37,6 +37,15 @@ export const DIAGNOSIS_COPY = {
   needWork: '先写好过程再提交。',
 } as const;
 
+/**
+ * 学生端入口与做题页的导航文案（specs/diagnosis-student-entry）：面向学生的新话术属人设必停，人写人审之前一律是明显占位
+ * {{TODO_COPY:diagnosis.*}}，占位后附中性提示便于走查（同再练、复测、PWA 的做法）。
+ */
+export const DIAGNOSIS_ENTRY_COPY = {
+  entry: '{{TODO_COPY:diagnosis.entry}} 诊断',
+  back: '{{TODO_COPY:diagnosis.back}} 返回科目',
+} as const;
+
 /** 开发环境演示页（只在开发、测试构建里存在）的文案 */
 export const DIAGNOSIS_DEMO_COPY = {
   title: '数学诊断演示（开发环境）',
@@ -50,7 +59,7 @@ export function allDiagnosisCopy(): string[] {
     c.heading, c.intro, c.starting, c.timerLabel, c.timerOf('03:20', '35:00'), c.stepLabel(3), c.stemHeading, c.choiceLegend,
     c.choiceLegendMulti, c.answerLabel, c.processHint, c.processLabel, c.explainHint, c.explainLabel, c.submit, c.submitting, c.pause,
     c.paused, c.resume, c.finished, c.endedNeutral, c.curfew, c.gradeChanged, c.restart, c.notSaved, c.unavailable, c.needAnswer, c.needWork,
-    DIAGNOSIS_DEMO_COPY.title, DIAGNOSIS_DEMO_COPY.note,
+    DIAGNOSIS_DEMO_COPY.title, DIAGNOSIS_DEMO_COPY.note, DIAGNOSIS_ENTRY_COPY.entry, DIAGNOSIS_ENTRY_COPY.back,
   ];
 }
 

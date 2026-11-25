@@ -10,15 +10,16 @@ const WEB = fileURLToPath(new URL('..', import.meta.url));
 const read = (p: string) => readFileSync(join(WEB, p), 'utf8');
 
 test('server action：宵禁、届别变化照旧；只在可重试的失败时带 retryable 与 retryAfterSec', () => {
-  const t = read('src/app/dev/diagnosis/actions.ts');
-  const fn = t.slice(t.indexOf('export async function answerAction('), t.indexOf('export async function pauseAction('));
+  // 参数校验与 BFF 调用在 src/diagnosis/ops.ts（正式做题页与开发演示页共用，specs/diagnosis-student-entry）
+  const t = read('src/diagnosis/ops.ts');
+  const fn = t.slice(t.indexOf('export async function answerOp('), t.indexOf('export async function pauseOp('));
   assert.match(fn, /Promise<AnswerOutcome>/);
   const ok = fn.indexOf('if (r.ok) return { ok: true };');
   const curfew = fn.indexOf('if (isCurfew(r)) return { ok: false, curfew: true };');
   const restart = fn.indexOf('if (restart) return { ok: false, curfew: false, restart };');
   const retry = fn.indexOf('return retryableFailure(r) ? { ok: false, curfew: false, retryable: true, retryAfterSec: r.retryAfterSec ?? null } : { ok: false, curfew: false };');
   assert.ok(ok > 0 && curfew > ok && restart > curfew && retry > restart, '先成功，再宵禁、届别变化，最后才看可不可重试');
-  assert.match(t, /import \{ retryableFailure \} from '\.\.\/\.\.\/\.\.\/lib\/retry-after\.ts';/, '与探针共用同一个分类');
+  assert.match(t, /import \{ retryableFailure \} from '\.\.\/lib\/retry-after\.ts';/, '与探针共用同一个分类');
 });
 
 test('组件接线：可重试才冷却（按 retry-after），沿用已有文案、不重发、不清作答；冷却中不提交；换题清冷却', () => {

@@ -32,8 +32,9 @@ test('下一步：记上 → recorded；宵禁 → curfew；可重试且这一�
 });
 
 test('server action：只在可重试的失败时带 retryable 与 retryAfterSec；宵禁照旧', () => {
-  const t = read('src/app/dev/diagnosis/actions.ts');
-  const fn = t.slice(t.indexOf('export async function probeAction('), t.indexOf('export async function answerAction('));
+  // 参数校验与 BFF 调用在 src/diagnosis/ops.ts（正式做题页与开发演示页共用，specs/diagnosis-student-entry）
+  const t = read('src/diagnosis/ops.ts');
+  const fn = t.slice(t.indexOf('export async function probeOp('), t.indexOf('export async function answerOp('));
   assert.match(fn, /if \(r\.ok\) return \{ ok: true \};/);
   assert.match(fn, /if \(isCurfew\(r\)\) return \{ ok: false, curfew: true \};/);
   assert.match(fn, /return retryableFailure\(r\) \? \{ ok: false, curfew: false, retryable: true, retryAfterSec: r\.retryAfterSec \?\? null \} : \{ ok: false, curfew: false \};/);

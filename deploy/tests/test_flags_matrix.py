@@ -20,7 +20,7 @@ from conftest import ROOT
 from names import name_exists, read_sources
 
 FLAG_VARS = {"STARBUDDY_TRUST_UI", "STARBUDDY_STARMAP", "STARBUDDY_PRACTICE", "STARBUDDY_RETEST_UI", "STARBUDDY_TODAY_ORCH",
-             "STARBUDDY_MONTHLY_PLAN", "STARBUDDY_FAMILY_GOALS", "STARBUDDY_SUBJECT_GATE", "STARBUDDY_INTERNAL_TEST"}
+             "STARBUDDY_MONTHLY_PLAN", "STARBUDDY_FAMILY_GOALS", "STARBUDDY_SUBJECT_GATE", "STARBUDDY_INTERNAL_TEST", "STARBUDDY_DIAGNOSIS_UI"}
 REQUIRED_ON = {"math", "daofa", "chinese_grading", "today_plan", "diagnosis", "practice", "retest", "star_map", "trust_ui", "review_console"}
 REQUIRED_OFF = {"english", "mock_exam", "monthly_plan", "stage_whiteboard", "knowledge_read_cache", "internal_test_ops", "model_call_log",
                 "knowledge_weknora_backend"}

@@ -16,6 +16,7 @@ import { trustFeatures } from '../../apps/web/src/shell/features.ts';
 import { starMapFeatures } from '../../apps/web/src/star/features.ts';
 import { practiceEnabled } from '../../apps/web/src/practice/features.ts';
 import { retestEnabled } from '../../apps/web/src/retest/features.ts';
+import { diagnosisEnabled } from '../../apps/web/src/diagnosis/features.ts';
 import { todayOrchEnabled } from '../../apps/web/src/shell/today-orch.ts';
 import { monthlyPlanEnabled } from '../../apps/web/src/monthly-plan/features.ts';
 import { familyGoalsEnabled } from '../../apps/web/src/family-goals/features.ts';
@@ -41,7 +42,7 @@ const bff: Record<string, (env: RunEnv, raw: string | undefined) => ReadonlySet<
 const web: Record<string, (env: Record<string, string | undefined>) => ReadonlySet<string> | boolean> = {
   STARBUDDY_TRUST_UI: trustFeatures, STARBUDDY_STARMAP: starMapFeatures, STARBUDDY_PRACTICE: practiceEnabled,
   STARBUDDY_RETEST_UI: retestEnabled, STARBUDDY_TODAY_ORCH: todayOrchEnabled, STARBUDDY_MONTHLY_PLAN: monthlyPlanEnabled,
-  STARBUDDY_FAMILY_GOALS: familyGoalsEnabled, STARBUDDY_INTERNAL_TEST: internalTestEnabled,
+  STARBUDDY_FAMILY_GOALS: familyGoalsEnabled, STARBUDDY_INTERNAL_TEST: internalTestEnabled, STARBUDDY_DIAGNOSIS_UI: diagnosisEnabled,
 };
 const on = (r: ReadonlySet<string> | boolean, want: string[]): boolean => (typeof r === 'boolean' ? r === want.length > 0 : sameSet(r, want));
 const off = (r: ReadonlySet<string> | boolean): boolean => (typeof r === 'boolean' ? !r : r.size === 0);

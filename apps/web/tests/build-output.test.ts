@@ -56,8 +56,10 @@ test('生产构建里没有开发专用页面（探针演示页、数学诊断�
   assert.ok(!existsSync(join(NEXT, 'server', 'app', 'dev', 'first-report')));  // 首份报告演示页（SIE-02b 第二步 PR 2）
   assert.ok(!existsSync(join(NEXT, 'server', 'app', 'dev', 'stage')));  // 舞台样张页（specs/stage-whiteboard-step1）
   const markers = ['探针演示', '\\u63a2\\u9488\\u6f14\\u793a', 'probe-demo', 'page.dev', 'first-report-page', 'data-report-verify',
-    '数学诊断演示', '\\u6570\\u5b66\\u8bca\\u65ad\\u6f14\\u793a', 'diagnosis-page', '老师会看你的过程', '星形符号样张',
-    '\\u8001\\u5e08\\u4f1a\\u770b\\u4f60\\u7684\\u8fc7\\u7a0b',
+    // 数学诊断演示页：页面标题、说明与 testid。诊断组件本身（含结束页文案“老师会看你的过程”）自 specs/diagnosis-student-entry 起
+    // 随学生端正式做题页进入生产构建（运行时由前端开关 STARBUDDY_DIAGNOSIS_UI 决定是否可达），不再作为演示页的标记
+    '数学诊断演示', '\\u6570\\u5b66\\u8bca\\u65ad\\u6f14\\u793a', 'diagnosis-page', ...['只用于本地开发与测试'].flatMap((s) => [s, escapeUnicode(s)]),
+    '星形符号样张',
     // 舞台样张页与 packages/stage（只有样张页引用它）：页面标记、白板的属性名、合成样例标题（原文与 \u 转义两种写法）
     'data-stage-page', 'data-stage-demo', 'data-stage-part', ...['舞台样张', '（合成样例）一元一次方程'].flatMap((s) => [s, escapeUnicode(s)])];
   const hits = files(NEXT).filter((p) => /\.(css|html|js|json|rsc|txt)$/.test(p))  // 不查 .map：源码映射里带注释原文
