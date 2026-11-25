@@ -11,7 +11,7 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { pageExtensionsFor, repoRoot, turbopackRootFor } from '../next.config.ts';
 import * as web from '../src/lib/rich-item.ts';
-import { STAGE_INVALID_SAMPLE, STAGE_SAMPLE } from '../src/stage/sample.ts';
+import { STAGE_INVALID_SAMPLE, STAGE_SAMPLE, STAGE_SCRIPT } from '../src/stage/sample.ts';
 import * as stage from '../../../packages/stage/src/index.ts';
 
 const WEB = fileURLToPath(new URL('..', import.meta.url));
@@ -37,6 +37,12 @@ test('合成样例通过校验，非法样例被拒（外链、HTML、多余字�
   const ok = stage.validateStageDsl(STAGE_SAMPLE);
   assert.ok(ok.ok, JSON.stringify(!ok.ok && ok.errors));
   assert.ok(stage.isValidated(ok.dsl));
+  // v0.2（specs/stage-dsl-v0.2）：有台词的样例与台词稿配对通过；台词全是“（合成台词）”占位；样张页读入走版本迁移入口
+  assert.equal(ok.dsl.narrated, true);
+  const pair = stage.validateStagePair(ok.dsl, STAGE_SCRIPT);
+  assert.ok(pair.ok, JSON.stringify(!pair.ok && pair.errors));
+  for (const l of STAGE_SCRIPT.lines) assert.ok(l.text.startsWith('（合成台词）'), l.text);
+  assert.ok(stage.migrateStageDsl(STAGE_SAMPLE).ok);
   const bad = stage.validateStageDsl(STAGE_INVALID_SAMPLE);
   assert.ok(!bad.ok);
   assert.deepEqual(bad.errors.map((e) => `${e.path} ${e.code}`), [

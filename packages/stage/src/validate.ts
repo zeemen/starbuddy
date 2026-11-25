@@ -1,11 +1,12 @@
-// 讲解 DSL v0.1.0 的确定性校验器（spec 范围 1）：字段白名单、步数与单行长度上限、拒绝 URL / HTML / 外链 / 脚本、坐标在画布内、
+// 讲解 DSL v0.2.0 的确定性校验器（specs/stage-whiteboard-step1 范围 1；v0.2 的台词引用、“说 / 画”配对、point 与槽位见 specs/stage-dsl-v0.2）：字段白名单、步数与单行长度上限、拒绝 URL / HTML / 外链 / 脚本、坐标在画布内、
 // 元素 id 唯一、高亮与擦除只指向白板上现有的元素、讲解权只给本节出场的角色。
 // 合格时按白名单逐字段重建一份新对象（不带输入里的任何其他东西），深冻结并登记为“已校验”；渲染器只接收登记过的对象。
 // 同一输入永远得到同一结果（错误按遍历顺序排列，不依赖时间、随机数或环境）。
 
 import {
-  ACTION_FIELDS, ACTION_TYPES, CANVAS_FIELDS, DSL_VERSION, FONT_SIZE, ID_RE, LIMITS, ROLES, STEP_FIELDS, TOP_FIELDS,
-  type ActionType, type FontSize, type Role, type StageAction, type StageDsl, type StageStep,
+  ACTION_FIELDS, ACTION_TYPES, BOARD_WRITE_TYPES, CANVAS_FIELDS, DSL_VERSION, FONT_SIZE, ID_RE, LIMITS, POINT_MODES, ROLES, SLOT_FIELDS, SLOT_KINDS,
+  STEP_FIELDS, STEP_OPTIONAL, TOP_FIELDS, TOP_OPTIONAL,
+  type ActionType, type FontSize, type PointMode, type Role, type Slot, type SlotKind, type StageAction, type StageDsl, type StageStep,
 } from './dsl.ts';
 import { latexToText, LATEX_RE } from './latex.ts';
 import { codePoints, textProblem, textWidthEm } from './text.ts';
@@ -15,7 +16,11 @@ export type ErrorCode =
   | 'empty' | 'too_long' | 'invisible_char' | 'html' | 'link_or_script' | 'bad_latex' | 'out_of_canvas' | 'bad_number'
   | 'unknown_target' | 'bad_role' | 'bad_enum'
   // 版本与迁移（src/version.ts，specs/stage-dsl-versioning）：比当前更新、阶梯上找不到、迁移失败
-  | 'future_version' | 'unknown_version' | 'migration_failed';
+  | 'future_version' | 'unknown_version' | 'migration_failed'
+  // v0.2（specs/stage-dsl-v0.2）：有板书没台词、无声板书里出现台词或指向、指向的步骤没台词
+  | 'unpaired_board' | 'not_narrated' | 'point_without_say'
+  // 台词稿（src/script.ts）：引用了稿里没有的台词、稿里有没被引用的台词、超过句数上限
+  | 'unknown_line' | 'unused_line' | 'too_many_sentences';
 
 export interface DslError { path: string; code: ErrorCode }
 
@@ -97,6 +102,9 @@ interface Scope {
   used: Set<string>;
   /** 白板上现有的元素 id → 是否是高亮 */
   alive: Map<string, boolean>;
+  /** 文档声明的槽位 id（point 可以指向；不能被高亮或擦除） */
+  slots: Set<string>;
+  narrated: boolean;
 }
 
 /** 文字落在画布内：基线 y 以上留一个字号，右边按估算宽度不越界 */
@@ -217,7 +225,47 @@ function action(c: Collector, s: Scope, v: unknown, path: string): StageAction |
       if (role !== 'none' && !(typeof role === 'string' && (s.roles as string[]).includes(role))) { c.add(`${path}.role`, 'bad_role'); return null; }
       return { type: 'speaker', role: role as Role | 'none' };
     }
+    case 'point': {
+      if (!s.narrated) { c.add(path, 'not_narrated'); return null; }
+      const target = v['target'];
+      const mode = v['mode'];
+      const okTarget = id(c, target, `${path}.target`);
+      const okMode = typeof mode === 'string' && (POINT_MODES as readonly string[]).includes(mode);
+      if (!okMode) c.add(`${path}.mode`, 'bad_enum');
+      // 只能指向白板上现存的非高亮元素，或文档声明的槽位
+      if (okTarget && s.alive.get(target) !== false && !s.slots.has(target)) c.add(`${path}.target`, 'unknown_target');
+      if (!okTarget || !okMode || (s.alive.get(target) !== false && !s.slots.has(target))) return null;
+      return { type: 'point', target, mode: mode as PointMode };
+    }
   }
+}
+
+/** 槽位声明：字段白名单、类型、坐标在画布内、id 与元素共用命名空间（不重复） */
+function slots(c: Collector, s: Scope, v: unknown): Slot[] | null {
+  if (v === undefined) return null;
+  if (!Array.isArray(v)) { c.add('$.slots', 'bad_type'); return null; }
+  if (v.length === 0) { c.add('$.slots', 'empty'); return null; }
+  if (v.length > LIMITS.maxSlots) { c.add('$.slots', 'too_many'); return null; }
+  const out: Slot[] = [];
+  for (const [i, x] of v.entries()) {
+    const path = `$.slots[${i}]`;
+    if (!isRecord(x)) { c.add(path, 'not_object'); continue; }
+    if (!fields(c, x, path, SLOT_FIELDS, [])) continue;
+    const okId = id(c, x['id'], `${path}.id`);
+    if (okId && s.used.has(x['id'] as string)) c.add(`${path}.id`, 'duplicate_id');
+    const kind = x['kind'];
+    const okKind = typeof kind === 'string' && (SLOT_KINDS as readonly string[]).includes(kind);
+    if (!okKind) c.add(`${path}.kind`, 'bad_enum');
+    const nums = (['x', 'y', 'w', 'h'] as const).map((k) => int(c, x[k], `${path}.${k}`));
+    if (!okId || s.used.has(x['id'] as string) || !okKind || !nums.every(Boolean)) continue;
+    const [sx, sy, w, h] = [x['x'], x['y'], x['w'], x['h']] as number[];
+    if (w! < 1 || h! < 1) { c.add(path, 'empty'); continue; }
+    if (sx! < 0 || sy! < 0 || sx! + w! > s.canvas.width || sy! + h! > s.canvas.height) { c.add(path, 'out_of_canvas'); continue; }
+    s.used.add(x['id'] as string);
+    s.slots.add(x['id'] as string);
+    out.push({ id: x['id'] as string, kind: kind as SlotKind, x: sx!, y: sy!, w: w!, h: h! });
+  }
+  return out;
 }
 
 /** 高亮的目标被擦掉后，高亮本身也不在白板上了：按 board.ts 的口径同步 alive 表 */
@@ -250,7 +298,7 @@ export function validateStageDsl(raw: unknown): ValidationResult {
   const input = snapshot(raw);
   if (input === UNSERIALIZABLE) return { ok: false, errors: [{ path: '$', code: 'not_serializable' }] };
   if (!isRecord(input)) return { ok: false, errors: [{ path: '$', code: 'not_object' }] };
-  if (!fields(c, input, '$', TOP_FIELDS, [])) return { ok: false, errors: c.errors };
+  if (!fields(c, input, '$', TOP_FIELDS, TOP_OPTIONAL)) return { ok: false, errors: c.errors };
 
   if (input['dsl_version'] !== DSL_VERSION) c.add('$.dsl_version', 'bad_version');
   line(c, input['title'], '$.title', LIMITS.maxTitleChars);
@@ -275,6 +323,9 @@ export function validateStageDsl(raw: unknown): ValidationResult {
     || !roles.includes('teacher')) c.add('$.roles', 'bad_role');
   else okRoles = true;
 
+  const narrated = input['narrated'];
+  if (typeof narrated !== 'boolean') c.add('$.narrated', 'bad_type');
+
   const steps = input['steps'];
   if (!Array.isArray(steps)) { c.add('$.steps', 'bad_type'); return { ok: false, errors: c.errors }; }
   if (steps.length === 0) c.add('$.steps', 'empty');
@@ -282,9 +333,11 @@ export function validateStageDsl(raw: unknown): ValidationResult {
   const totalActions = steps.reduce<number>((n, st) => n + (isRecord(st) && Array.isArray(st['actions']) ? st['actions'].length : 0), 0);
   if (totalActions > LIMITS.maxActions) { c.add('$.steps', 'too_many'); return { ok: false, errors: c.errors }; }
   // 画布或角色不合格时，坐标与讲解权无从核对：先报这些错误
-  if (cw === 0 || ch === 0 || !okRoles) return { ok: false, errors: c.errors };
+  if (cw === 0 || ch === 0 || !okRoles || typeof narrated !== 'boolean') return { ok: false, errors: c.errors };
 
-  const scope: Scope = { canvas: { width: cw, height: ch }, roles: roles as Role[], used: new Set(), alive: new Map() };
+  const scope: Scope = { canvas: { width: cw, height: ch }, roles: roles as Role[], used: new Set(), alive: new Map(), slots: new Set(), narrated };
+  const outSlots = slots(c, scope, input['slots']);
+  const sayIds = new Set<string>();
   const highlights = new Map<string, string>();
   const stepIds = new Set<string>();
   const outSteps: StageStep[] = [];
@@ -292,14 +345,24 @@ export function validateStageDsl(raw: unknown): ValidationResult {
     if (c.full) break;
     const path = `$.steps[${i}]`;
     if (!isRecord(st)) { c.add(path, 'not_object'); continue; }
-    if (!fields(c, st, path, STEP_FIELDS, [])) continue;
+    if (!fields(c, st, path, STEP_FIELDS, STEP_OPTIONAL)) continue;
     if (id(c, st['id'], `${path}.id`)) {
       if (stepIds.has(st['id'])) c.add(`${path}.id`, 'duplicate_id');
       stepIds.add(st['id']);
     }
+    // 台词引用：只在 narrated 时允许；编号格式同元素 id；一句台词只用一次
+    const say = st['say'];
+    let okSay = say === undefined;
+    if (say !== undefined) {
+      if (!narrated) c.add(`${path}.say`, 'not_narrated');
+      else if (id(c, say, `${path}.say`)) {
+        if (sayIds.has(say)) c.add(`${path}.say`, 'duplicate_id');
+        else { sayIds.add(say); okSay = true; }
+      }
+    }
     const actions = st['actions'];
     if (!Array.isArray(actions)) { c.add(`${path}.actions`, 'bad_type'); continue; }
-    if (actions.length === 0) { c.add(`${path}.actions`, 'empty'); continue; }
+    if (actions.length === 0 && say === undefined) { c.add(`${path}.actions`, 'empty'); continue; }
     if (actions.length > LIMITS.maxActionsPerStep) { c.add(`${path}.actions`, 'too_many'); continue; }
     const out: StageAction[] = [];
     for (const [j, a] of actions.entries()) {
@@ -309,7 +372,12 @@ export function validateStageDsl(raw: unknown): ValidationResult {
       if (r?.type === 'clear') dropOrphanHighlights(scope, highlights);
       if (r) out.push(r);
     }
-    outSteps.push({ id: st['id'] as string, actions: out });
+    // “说 / 画”配对：有台词的讲解里，带书写或作图的步骤必须有台词；指向必须配台词；一步最多指一处
+    const points = out.filter((a) => a.type === 'point').length;
+    if (points > 1) c.add(`${path}.actions`, 'too_many');
+    if (narrated && say === undefined && out.some((a) => (BOARD_WRITE_TYPES as readonly string[]).includes(a.type))) c.add(path, 'unpaired_board');
+    if (points > 0 && say === undefined) c.add(path, 'point_without_say');
+    outSteps.push({ id: st['id'] as string, actions: out, ...(okSay && say !== undefined ? { say: say as string } : {}) });
   }
   if (c.errors.length > 0) return { ok: false, errors: c.errors };
 
@@ -318,6 +386,8 @@ export function validateStageDsl(raw: unknown): ValidationResult {
     title: input['title'] as string,
     canvas: { width: cw, height: ch },
     roles: [...(roles as Role[])],
+    narrated,
+    ...(outSlots ? { slots: outSlots } : {}),
     steps: outSteps,
   };
   deepFreeze(dsl);

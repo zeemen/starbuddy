@@ -1,10 +1,10 @@
 'use client';
-// 舞台样张页的客户端部分（specs/stage-whiteboard-step1）：合成 DSL 经 packages/stage 的版本迁移入口与校验器后，由播放状态机驱动白板逐步播放。
+// 舞台样张页的客户端部分（specs/stage-whiteboard-step1、specs/stage-dsl-v0.2）：合成 DSL 经 packages/stage 的版本迁移入口与校验器、台词稿经配对核对后，由播放状态机驱动白板逐步播放。
 // 只在内存里算，不连 BFF、不接 teach、不计量、不落库、不写任何浏览器存储。apps/web 只经 packages/stage 的接口使用舞台（ADR 07 决定 7）。
 import { createElement, useEffect, useMemo, useReducer, useState } from 'react';
-import { initialPlayer, LAYOUT_NAMES, migrateStageDsl, step, type LayoutName } from '../../../../packages/stage/src/index.ts';
+import { captionAt, initialPlayer, LAYOUT_NAMES, migrateStageDsl, step, validateStagePair, type LayoutName } from '../../../../packages/stage/src/index.ts';
 import { createWhiteboard } from '../../../../packages/stage/src/Whiteboard.tsx';
-import { STAGE_INVALID_SAMPLE, STAGE_SAMPLE } from './sample.ts';
+import { STAGE_INVALID_SAMPLE, STAGE_SAMPLE, STAGE_SCRIPT } from './sample.ts';
 
 const Whiteboard = createWhiteboard(createElement);
 
@@ -18,6 +18,8 @@ export function StageDemo() {
   // 经版本迁移入口读入（specs/stage-dsl-versioning）：当前版本直接校验，旧版本沿迁移阶梯升级后再校验
   const valid = useMemo(() => migrateStageDsl(STAGE_SAMPLE), []);
   const invalid = useMemo(() => migrateStageDsl(STAGE_INVALID_SAMPLE), []);
+  // 台词稿与 DSL 配对核对（specs/stage-dsl-v0.2）：只有核对通过的稿才出字幕，字幕文字只取自稿，组件不拼接
+  const pair = useMemo(() => (valid.ok ? validateStagePair(valid.dsl, STAGE_SCRIPT) : null), [valid]);
   const total = valid.ok ? valid.dsl.steps.length : 1;
   const [player, dispatch] = useReducer(step, total, initialPlayer);
   const [layout, setLayout] = useState<LayoutName>('desktop');
@@ -28,7 +30,8 @@ export function StageDemo() {
     return () => clearTimeout(t);
   }, [player]);
 
-  if (!valid.ok) return <p role="alert" data-stage-error>合成样例没有通过校验</p>;
+  if (!valid.ok || !pair?.ok) return <p role="alert" data-stage-error>合成样例没有通过校验</p>;
+  const caption = captionAt(valid.dsl, pair.script, player.cursor);
   return (
     <>
       <section aria-labelledby="stage-play" data-stage-demo>
@@ -45,6 +48,9 @@ export function StageDemo() {
         <div className={`stage-frame stage-frame-${layout}`}>
           <Whiteboard dsl={valid.dsl} cursor={player.cursor} layout={layout} className="stage-svg" />
         </div>
+        <p aria-live="polite" className="stage-caption" data-stage-caption={caption?.id ?? ''} data-stage-caption-role={caption?.role ?? 'none'}>
+          {caption?.text ?? ''}
+        </p>
         <p aria-live="polite" data-stage-status={player.status} data-stage-cursor={player.cursor}>
           {STATUS_LABEL[player.status]} · 第 {player.cursor} / {player.total} 步
         </p>

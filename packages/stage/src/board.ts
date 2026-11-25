@@ -1,7 +1,7 @@
 // 白板状态：把前 cursor 步的动作依次折叠出“此刻白板上有什么、谁持有讲解权”。纯函数，只在内存里算，不持久化（ADR 07 决定 4）。
 // 后退与跳转都是从头重算，所以任何一步的画面只取决于 DSL 与步数。
 
-import { FONT_SIZE, type Role, type StageDsl, type StageAction } from './dsl.ts';
+import { FONT_SIZE, type PointMode, type Role, type StageDsl, type StageAction } from './dsl.ts';
 import { latexToText } from './latex.ts';
 import { textWidthEm } from './text.ts';
 
@@ -21,6 +21,8 @@ export interface BoardState {
   speaker: Role | 'none';
   /** 最近一步新写上的元素 id（渲染器用来标“当前书写行”，角色不得遮挡） */
   latest: string[];
+  /** 最近一步的指向（只在这一步有效，下一步自动收起；specs/stage-dsl-v0.2）：目标是元素或槽位 */
+  point: { target: string; mode: PointMode; box: Box } | null;
 }
 
 /** 高亮带四周留白（画布单位） */
@@ -49,7 +51,10 @@ export function highlightBox(target: Box, canvas: { width: number; height: numbe
   return { x, y, w: x2 - x, h: y2 - y };
 }
 
-function apply(state: { elements: BoardElement[]; speaker: Role | 'none'; latest: string[] }, a: StageAction, canvas: StageDsl['canvas']): void {
+type Working = { elements: BoardElement[]; speaker: Role | 'none'; latest: string[]; point: BoardState['point'] };
+
+function apply(state: Working, a: StageAction, dsl: StageDsl): void {
+  const canvas = dsl.canvas;
   switch (a.type) {
     case 'write_text':
       state.elements.push({ kind: 'text', id: a.id, x: a.x, y: a.y, text: a.text, fontSize: FONT_SIZE[a.size ?? 'md'], formula: false });
@@ -86,16 +91,24 @@ function apply(state: { elements: BoardElement[]; speaker: Role | 'none'; latest
     case 'speaker':
       state.speaker = a.role;
       return;
+    case 'point': {
+      const el = state.elements.find((e) => e.id === a.target && e.kind !== 'highlight');
+      const slot = dsl.slots?.find((x) => x.id === a.target);
+      const box = el ? bbox(el) : slot ? { x: slot.x, y: slot.y, w: slot.w, h: slot.h } : null;
+      if (box) state.point = { target: a.target, mode: a.mode, box };
+      return;
+    }
   }
 }
 
 /** 前 cursor 步之后的白板（cursor 夹在 0..步数） */
 export function boardAt(dsl: StageDsl, cursor: number): BoardState {
   const n = Math.max(0, Math.min(dsl.steps.length, Math.trunc(cursor)));
-  const state = { elements: [] as BoardElement[], speaker: 'none' as Role | 'none', latest: [] as string[] };
+  const state: Working = { elements: [], speaker: 'none', latest: [], point: null };
   for (let i = 0; i < n; i++) {
     state.latest = [];
-    for (const a of dsl.steps[i]!.actions) apply(state, a, dsl.canvas);
+    state.point = null;
+    for (const a of dsl.steps[i]!.actions) apply(state, a, dsl);
   }
-  return { cursor: n, elements: state.elements, speaker: state.speaker, latest: state.latest };
+  return { cursor: n, elements: state.elements, speaker: state.speaker, latest: state.latest, point: state.point };
 }

@@ -62,6 +62,23 @@ function element<N>(h: CreateElement<N>, el: BoardElement, latest: boolean): N {
   }
 }
 
+/** 指向的描边（画布单位）：聚光是目标外接框四周留白后的粗描边；激光笔是目标左侧中线上的小三角。只用形状与线宽，不靠颜色 */
+const POINT_WIDTH = 6;
+const POINT_PAD = 10;
+const LASER_SIZE = 14;
+
+function pointMark<N>(h: CreateElement<N>, p: NonNullable<ReturnType<typeof boardAt>['point']>, canvas: { width: number; height: number }): N {
+  const mark = { key: 'point', 'data-point': p.mode, 'data-target': p.target };
+  if (p.mode === 'spotlight') {
+    const x = Math.max(0, p.box.x - POINT_PAD); const y = Math.max(0, p.box.y - POINT_PAD);
+    const w = Math.min(canvas.width, p.box.x + p.box.w + POINT_PAD) - x; const hh = Math.min(canvas.height, p.box.y + p.box.h + POINT_PAD) - y;
+    return h('rect', { ...mark, x, y, width: w, height: hh, rx: 8, fill: 'none', stroke: 'currentColor', strokeWidth: POINT_WIDTH });
+  }
+  const cy = r3(p.box.y + p.box.h / 2); const tip = Math.max(LASER_SIZE, p.box.x - 4);
+  return h('polygon', { ...mark, points: `${tip},${cy} ${tip - LASER_SIZE},${r3(cy - LASER_SIZE / 2)} ${tip - LASER_SIZE},${r3(cy + LASER_SIZE / 2)}`,
+    fill: 'currentColor' });
+}
+
 /** 白板的元素树（纯函数；未校验的 DSL 返回 null） */
 export function renderWhiteboard<N>(h: CreateElement<N>, { dsl, cursor, layout = 'desktop', className }: WhiteboardProps): N | null {
   if (!isValidated(dsl)) return null;
@@ -79,7 +96,11 @@ export function renderWhiteboard<N>(h: CreateElement<N>, { dsl, cursor, layout =
     stroke: 'currentColor', strokeOpacity: 0.35, strokeWidth: 1 }),
   h('svg', { 'data-stage-part': 'board', x: wb.x, y: wb.y, width: wb.w, height: wb.h, viewBox: `0 0 ${dsl.canvas.width} ${dsl.canvas.height}`,
     preserveAspectRatio: 'xMidYMid meet', overflow: 'hidden' },
-  ...ordered.map((el) => element(h, el, latest.has(el.id)))),
+  // 槽位：空框（内容由调用方运行时在内存里填充，DSL 不含学生数据）；没有槽位、没有指向时输出与 v0.1 相同
+  ...(dsl.slots ?? []).map((sl) => h('rect', { key: `slot-${sl.id}`, 'data-slot': sl.id, 'data-slot-kind': sl.kind, x: sl.x, y: sl.y, width: sl.w, height: sl.h,
+    rx: 4, fill: 'none', stroke: 'currentColor', strokeOpacity: 0.5, strokeWidth: 2, strokeDasharray: '8 6' })),
+  ...ordered.map((el) => element(h, el, latest.has(el.id))),
+  board.point ? pointMark(h, board.point, dsl.canvas) : null),
   h('g', { 'data-stage-part': 'anchors', 'aria-hidden': 'true' },
     h('rect', { 'data-stage-part': 'dialogue', x: L.dialogue.x, y: L.dialogue.y, width: L.dialogue.w, height: L.dialogue.h, rx: 6,
       fill: 'none', stroke: 'currentColor', strokeOpacity: 0.35, strokeWidth: 1 }),

@@ -13,7 +13,7 @@ const ids = (dsl: StageDsl, cursor: number) => boardAt(dsl, cursor).elements.map
 
 test('逐步折叠样例', () => {
   const dsl = valid(sample());
-  assert.deepEqual(boardAt(dsl, 0), { cursor: 0, elements: [], speaker: 'none', latest: [] });
+  assert.deepEqual(boardAt(dsl, 0), { cursor: 0, elements: [], speaker: 'none', latest: [], point: null });
   assert.deepEqual(ids(dsl, 1), ['t1']);
   assert.equal(boardAt(dsl, 1).speaker, 'teacher');
   assert.deepEqual(ids(dsl, 2), ['t1', 'f1', 'l1']);

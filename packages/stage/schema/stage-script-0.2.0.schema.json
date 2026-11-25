@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:starbuddy:stage-script:0.2.0",
+  "title": "讲解台词稿 v0.2.0（packages/stage）",
+  "description": "讲解台词与板书分开存：DSL 的步骤只引用台词编号（say），台词正文在这份稿里，由人设审核（CLAUDE.md 规则 7）。本 schema 只表达静态结构；以下由 src/script.ts 的 validateStagePair 核对：DSL 引用的台词都在、稿里没有未被引用的台词、每句台词的角色等于说这句时持有讲解权的角色、台词编号不重复、每句最多两个句末标点、文字不含不可见字符 / HTML / 链接与脚本写法。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "dsl_version",
+    "lines"
+  ],
+  "properties": {
+    "dsl_version": {
+      "const": "0.2.0"
+    },
+    "lines": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "$ref": "#/$defs/line"
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,31}$"
+    },
+    "line": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "role",
+        "text"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "role": {
+          "enum": [
+            "teacher",
+            "buddy"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        }
+      }
+    }
+  }
+}
