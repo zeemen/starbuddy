@@ -669,6 +669,24 @@ export const PROCESS_STATUS = {
   still: T('status.still', '还在处理，请稍等'),
 } as const;
 
+/**
+ * 讲解白板“指着元素提问”（specs/stage-point-to-ask 第二节第 4、5 条）：菜单四种问题、取消、问这一步、读屏标签、收到提示。
+ * 面向学生的新文案，人写人审前一律是占位；{step}、{index}、{intent} 由调用方替换，不拼接其他文字。
+ */
+export const STAGE_ASK = {
+  why_step: T('ask.why_step', '这一步为什么这样做'),
+  what_is: T('ask.what_is', '这里是什么意思'),
+  where_from: T('ask.where_from', '这个是从哪来的'),
+  again: T('ask.again', '再讲一遍这一步'),
+  cancel: T('ask.cancel', '取消'),
+  ask_step: T('ask.ask_step', '问这一步'),
+  menu: T('ask.menu', '想问什么'),
+  element_label: T('ask.element_label', '第 {step} 步写的第 {index} 项'),
+  slot_item_figure: T('ask.slot_item_figure', '题图'),
+  slot_student_answer: T('ask.slot_student_answer', '我的作答'),
+  received: T('ask.received', '已收到：第 {step} 步 · {intent}（回答要等讲评课上线）'),
+} as const;
+
 /** 信任界面的全部文案（静态检查逐条扫描；端到端的“每个文本节点”核对也用它） */
 export const ALL_TRUST_COPY: string[] = [
   ...Object.values(TRUST), ...Object.values(WHY), ...Object.values(WHY_STATUS), ...Object.values(EVIDENCE_SOURCE),
@@ -704,4 +722,5 @@ export const ALL_SHELL_COPY: string[] = [
   FAMILY_SHELL.consentGrant, FAMILY_SHELL.consentFor('孩子 1 · 八年级'), FAMILY_SHELL.onboarding, FAMILY_SHELL.timeSettings,
   FAMILY_SHELL.backToFamily, ...Object.values(FAMILY_SHELL_RESULT), ...Object.values(TRUST_SLOT),
   ...ALL_TRUST_COPY, ...ALL_PRACTICE_COPY, ...ALL_RETEST_COPY, ...ALL_TODAY_ORCH_COPY, ...Object.values(PROCESS_STATUS),
+  ...Object.values(STAGE_ASK),
 ];

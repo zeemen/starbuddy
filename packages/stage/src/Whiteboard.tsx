@@ -6,9 +6,10 @@
 //   - 无状态：画面只取决于 dsl 与 cursor，不读写任何存储、不发请求、不持久化。
 // react 是同伴依赖，本文件不 import react：调用方把 React.createElement 传进 createWhiteboard，得到一个 React 函数组件。
 // 这样本包在任何位置都不需要解析 react（apps/web 以相对路径引用本包，不改 npm 工作区；tests 用 react-dom/server 渲染）。
-import { bbox, boardAt, type BoardElement } from './board.ts';
+import { bbox, boardAt, type BoardElement, type Box } from './board.ts';
 import type { Role } from './dsl.ts';
 import { lineUnit, OUTLINE_LINES, SPEAKER_OUTLINE_LINES, STAGE_LAYOUTS, type LayoutName, type Rect } from './layout.ts';
+import { originsAt, type StageAnchor } from './question.ts';
 import { isValidated, type ValidatedStageDsl } from './validate.ts';
 
 export interface WhiteboardProps {
@@ -17,6 +18,20 @@ export interface WhiteboardProps {
   cursor: number;
   layout?: LayoutName;
   className?: string;
+  /**
+   * 可提问模式（specs/stage-point-to-ask 第二节第 4 条）。缺省关闭：关闭时输出与以前逐字节相同。
+   * 打开时白板上每个元素（高亮框除外）与每个槽位各盖一层透明点击区（role=button、可 Tab 聚焦，回车或空格选中），
+   * 选中的锚点画虚线细框。组件无状态：选中谁、弹不弹菜单、暂停播放都由调用方决定；组件不联网、不存储。
+   */
+  askable?: AskableProps;
+}
+
+export interface AskableProps {
+  /** 当前选中的锚点（没有选中为 null） */
+  selected: StageAnchor | null;
+  onSelect: (anchor: StageAnchor) => void;
+  /** 点击区的读屏标签：由调用方从文案取（组件不念 DSL 里的文字与公式原文）。step 是元素写上去的步序号（1 起算），index 是此刻白板上的第几项 */
+  label: (anchor: StageAnchor, step: number | null, index: number) => string;
 }
 
 type Child<N> = N | string | null;
@@ -79,8 +94,60 @@ function pointMark<N>(h: CreateElement<N>, p: NonNullable<ReturnType<typeof boar
     fill: 'currentColor' });
 }
 
+/**
+ * 点击区的最小边长（舞台逻辑单位）。各套布局的舞台宽度取该类设备的名义 CSS 宽度（桌面 1000、手机 400），按名义尺寸渲染时
+ * 点击区 ≥ 52 CSS 像素；缩到名义宽度的 85% 时仍 ≥ 44（spec：换算到屏幕不小于 44 × 44；端到端按实际像素再核一次）
+ */
+export const ASK_MIN_STAGE_UNITS = 52;
+/** 选中框：虚线细框，与老师的聚光（实线粗框）、激光笔（小三角）只用形状与线宽区分 */
+const ASK_SELECTED_WIDTH = 2;
+const ASK_PAD = 4;
+
+/** 把外接框四周补到至少 min 宽高（居中扩展），再夹在画布内 */
+function hitBox(b: Box, min: number, canvas: { width: number; height: number }): Box {
+  const w = Math.max(b.w + 2 * ASK_PAD, min); const hh = Math.max(b.h + 2 * ASK_PAD, min);
+  const x = Math.max(0, Math.min(canvas.width - w, b.x + b.w / 2 - w / 2));
+  const y = Math.max(0, Math.min(canvas.height - hh, b.y + b.h / 2 - hh / 2));
+  return { x: r3(x), y: r3(y), w: r3(Math.min(w, canvas.width)), h: r3(Math.min(hh, canvas.height)) };
+}
+
+function askLayer<N>(h: CreateElement<N>, dsl: ValidatedStageDsl, board: ReturnType<typeof boardAt>, wb: Rect, ask: AskableProps): N[] {
+  if (board.cursor === 0) return [];
+  // 舞台单位 / 画布单位（preserveAspectRatio meet：取两向较小的缩放）
+  const scale = Math.min(wb.w / dsl.canvas.width, wb.h / dsl.canvas.height);
+  const min = Math.ceil(ASK_MIN_STAGE_UNITS / scale);
+  const origins = originsAt(dsl, board.cursor);
+  const targets: { anchor: StageAnchor; box: Box; step: number | null }[] = [
+    ...board.elements.filter((e) => e.kind !== 'highlight' && origins.has(e.id))
+      .map((e) => ({ anchor: { kind: 'element' as const, id: e.id }, box: bbox(e), step: origins.get(e.id)! + 1 })),
+    ...(dsl.slots ?? []).map((sl) => ({ anchor: { kind: 'slot' as const, id: sl.id }, box: { x: sl.x, y: sl.y, w: sl.w, h: sl.h }, step: null })),
+  ];
+  const out: N[] = [];
+  targets.forEach((t, i) => {
+    const key = `${t.anchor.kind}:${t.anchor.id}`;
+    const hb = hitBox(t.box, min, dsl.canvas);
+    const choose = (): void => ask.onSelect(t.anchor);
+    out.push(h('rect', {
+      key: `ask-${key}`, 'data-ask': key, role: 'button', tabIndex: 0, 'aria-label': ask.label(t.anchor, t.step, i + 1),
+      'aria-pressed': ask.selected?.kind === t.anchor.kind && ask.selected.id === t.anchor.id ? 'true' : 'false',
+      x: hb.x, y: hb.y, width: hb.w, height: hb.h, fill: 'transparent', pointerEvents: 'all', className: 'stage-ask',
+      onClick: choose,
+      onKeyDown: (e: { key: string; preventDefault: () => void }) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose(); } },
+    }));
+  });
+  const sel = ask.selected;
+  const hit = sel && targets.find((t) => t.anchor.kind === sel.kind && t.anchor.id === sel.id);
+  if (hit) {
+    const b = hit.box;
+    out.push(h('rect', { key: 'ask-selected', 'data-ask-selected': `${hit.anchor.kind}:${hit.anchor.id}`, 'aria-hidden': 'true',
+      x: r3(Math.max(0, b.x - ASK_PAD)), y: r3(Math.max(0, b.y - ASK_PAD)), width: r3(b.w + 2 * ASK_PAD), height: r3(b.h + 2 * ASK_PAD), rx: 4,
+      fill: 'none', stroke: 'currentColor', strokeWidth: ASK_SELECTED_WIDTH, strokeDasharray: '4 4', pointerEvents: 'none' }));
+  }
+  return out;
+}
+
 /** 白板的元素树（纯函数；未校验的 DSL 返回 null） */
-export function renderWhiteboard<N>(h: CreateElement<N>, { dsl, cursor, layout = 'desktop', className }: WhiteboardProps): N | null {
+export function renderWhiteboard<N>(h: CreateElement<N>, { dsl, cursor, layout = 'desktop', className, askable }: WhiteboardProps): N | null {
   if (!isValidated(dsl)) return null;
   const L = STAGE_LAYOUTS[layout];
   const board = boardAt(dsl, cursor);
@@ -100,7 +167,9 @@ export function renderWhiteboard<N>(h: CreateElement<N>, { dsl, cursor, layout =
   ...(dsl.slots ?? []).map((sl) => h('rect', { key: `slot-${sl.id}`, 'data-slot': sl.id, 'data-slot-kind': sl.kind, x: sl.x, y: sl.y, width: sl.w, height: sl.h,
     rx: 4, fill: 'none', stroke: 'currentColor', strokeOpacity: 0.5, strokeWidth: 2, strokeDasharray: '8 6' })),
   ...ordered.map((el) => element(h, el, latest.has(el.id))),
-  board.point ? pointMark(h, board.point, dsl.canvas) : null),
+  board.point ? pointMark(h, board.point, dsl.canvas) : null,
+  // 可提问模式的点击区与选中框（缺省关闭：不输出任何东西）
+  ...(askable ? askLayer(h, dsl, board, wb, askable) : [])),
   h('g', { 'data-stage-part': 'anchors', 'aria-hidden': 'true' },
     h('rect', { 'data-stage-part': 'dialogue', x: L.dialogue.x, y: L.dialogue.y, width: L.dialogue.w, height: L.dialogue.h, rx: 6,
       fill: 'none', stroke: 'currentColor', strokeOpacity: 0.35, strokeWidth: 1 }),

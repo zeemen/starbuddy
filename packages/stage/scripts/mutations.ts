@@ -111,6 +111,26 @@ const MUTATIONS: Mutation[] = [
   ['schema id 格式放宽', 'schema/stage-dsl-0.1.0.schema.json', '"pattern": "^[a-z][a-z0-9_]{0,31}$"', '"pattern": "^[A-Za-z0-9_]{1,64}$"'],
   ['schema 动作允许任意字段', 'schema/stage-dsl-0.1.0.schema.json',
     '"required": ["type", "id", "target"],', '"required": ["type", "id", "target"], "additionalProperties": true,'],
+  // 指着元素提问（specs/stage-point-to-ask）
+  ['提问放过未来的元素', 'src/question.ts', "else if (cursorOk && !originsAt(dsl, cursor as number).has(id))", 'else if (false)'],
+  ['提问放过未来的步', 'src/question.ts', 'else if (cursorOk && idx >= (cursor as number))', 'else if (false)'],
+  ['高亮框可以被指', 'src/question.ts', "if (a.type === 'write_text' || a.type === 'write_formula' || a.type === 'draw_line' || a.type === 'draw_shape') ids.add(a.id);",
+    "ids.add((a as { id?: string }).id ?? '');"],
+  ['提问不核对版本', 'src/question.ts', "if (raw['dsl_version'] !== DSL_VERSION)", 'if (false)'],
+  ['提问收自由文字字段', 'src/question.ts', "if (!(QUESTION_FIELDS as readonly string[]).includes(k)) errors.push({ path: `$.${k}`, code: 'unknown_field' });", ''],
+  ['提问步数可以越界', 'src/question.ts', 'cursor >= 1 && cursor <= total', 'cursor >= 0'],
+  ['擦掉的元素仍可指', 'src/question.ts', '          else for (const t of a.targets) alive.delete(t);', '          else void a.targets;'],
+  ['清屏后旧元素仍可指', 'src/question.ts', 'if (a.targets === undefined) alive.clear();', 'if (a.targets === undefined) void 0;'],
+  ['再讲一遍跳到下一步', 'src/question.ts', "return originsAt(dsl, q.cursor).get(q.anchor.id) ?? q.cursor - 1;", "return (originsAt(dsl, q.cursor).get(q.anchor.id) ?? q.cursor - 1) + 1;"],
+  ['提问结果不冻结', 'src/question.ts', '    question: Object.freeze({', '    question: ({'],
+  ['不开可提问模式也输出点击区', 'src/Whiteboard.tsx', '...(askable ? askLayer(h, dsl, board, wb, askable) : [])', "...askLayer(h, dsl, board, wb, askable ?? { selected: null, onSelect: () => {}, label: () => '' })"],
+  ['点击区不补到最小边长', 'src/Whiteboard.tsx', 'const w = Math.max(b.w + 2 * ASK_PAD, min); const hh = Math.max(b.h + 2 * ASK_PAD, min);',
+    'const w = b.w + 2 * ASK_PAD; const hh = b.h + 2 * ASK_PAD;'],
+  ['高亮框也有点击区', 'src/Whiteboard.tsx', "board.elements.filter((e) => e.kind !== 'highlight' && origins.has(e.id))", 'board.elements.filter((e) => true)'],
+  ['点击区不可聚焦', 'src/Whiteboard.tsx', "role: 'button', tabIndex: 0,", "role: 'button',"],
+  ['空格不选中', 'src/Whiteboard.tsx', "if (e.key === 'Enter' || e.key === ' ')", "if (e.key === 'Enter')"],
+  ['选中框画成实线', 'src/Whiteboard.tsx', "strokeDasharray: '4 4', pointerEvents: 'none'", "pointerEvents: 'none'"],
+  ['读屏标签念 DSL 原文', 'src/Whiteboard.tsx', "'aria-label': ask.label(t.anchor, t.step, i + 1),", "'aria-label': ask.label(t.anchor, t.step, i + 1) + ((board.elements.find((e) => e.id === t.anchor.id) as { text?: string } | undefined)?.text ?? ''),"],
 ];
 
 function prepare(root: string, m: Mutation | null): string {

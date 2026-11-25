@@ -26,6 +26,22 @@ const SNAPSHOTS: [name: string, cursor: number, layout: LayoutName][] = [
   ['desktop-5', 5, 'desktop'], ['tablet-3', 3, 'tablet'], ['mobile-2', 2, 'mobile'], ['desktop-0', 0, 'desktop'],
 ];
 
+/** 可提问模式的快照（specs/stage-point-to-ask）：点击区、读屏标签、选中虚线框；不开模式时上面四张快照逐字节不变 */
+const ASK_SNAPSHOTS: [name: string, cursor: number, selected: { kind: 'element' | 'slot'; id: string } | null][] = [
+  ['desktop-3-askable', 3, null], ['desktop-4-askable-selected', 4, { kind: 'element', id: 'f3' }],
+];
+const askLabel = (a: { kind: string; id: string }, step: number | null, index: number) => `（合成标签）${a.kind}·${step ?? '-'}·${index}`;
+
+test('SSR 快照（可提问模式）', () => {
+  for (const [name, cursor, selected] of ASK_SNAPSHOTS) {
+    const expected = readFileSync(new URL(`./snapshots/${name}.svg`, import.meta.url), 'utf8').trimEnd();
+    const actual = renderToStaticMarkup(createElement(Whiteboard, { dsl: DSL, cursor, layout: 'desktop',
+      askable: { selected, onSelect: () => {}, label: askLabel } }));
+    assert.equal(actual, expected, `快照 ${name} 不一致；实际输出：\n${actual}`);
+    assert.doesNotMatch(actual, FORBIDDEN_MARKUP);
+  }
+});
+
 test('SSR 快照', () => {
   for (const [name, cursor, layout] of SNAPSHOTS) {
     const expected = readFileSync(new URL(`./snapshots/${name}.svg`, import.meta.url), 'utf8').trimEnd();
@@ -33,7 +49,8 @@ test('SSR 快照', () => {
     assert.equal(actual, expected, `快照 ${name} 不一致；实际输出：\n${actual}`);
   }
   // 快照目录里没有多余的旧快照
-  assert.deepEqual(readdirSync(new URL('./snapshots/', import.meta.url)).sort(), SNAPSHOTS.map(([n]) => `${n}.svg`).sort());
+  assert.deepEqual(readdirSync(new URL('./snapshots/', import.meta.url)).sort(),
+    [...SNAPSHOTS.map(([n]) => `${n}.svg`), ...ASK_SNAPSHOTS.map(([n]) => `${n}.svg`)].sort());
 });
 
 test('渲染结果没有外链、脚本、内联样式；文字被转义', () => {

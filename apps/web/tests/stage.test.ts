@@ -75,7 +75,25 @@ test('样张页是开发页：只有 page.dev.tsx，渲染前核对运行环境�
   }
   // 客户端组件只经 packages/stage 的两个接口文件使用舞台
   const imports = [...demo.matchAll(/from '([^']+)'/g)].map((m) => m[1]);
-  assert.deepEqual(imports, ['react', '../../../../packages/stage/src/index.ts', '../../../../packages/stage/src/Whiteboard.tsx', './sample.ts']);
+  assert.deepEqual(imports, ['react', '../../../../packages/stage/src/index.ts', '../../../../packages/stage/src/Whiteboard.tsx', '../shell/copy.ts',
+    './sample.ts']);
+});
+
+test('指着元素提问（specs/stage-point-to-ask）：文案全是占位并入壳文案扫描；样张页只经校验后的提问对象，不发请求、不作证据', async () => {
+  const { ALL_SHELL_COPY, STAGE_ASK } = await import('../src/shell/copy.ts');
+  for (const [k, v] of Object.entries(STAGE_ASK)) {
+    assert.ok(v.startsWith(`{{TODO_COPY:ask.${k}}}`), `${k}: ${v}`);
+    assert.ok(ALL_SHELL_COPY.includes(v), k);
+  }
+  for (const intent of stage.QUESTION_INTENTS) assert.ok(intent in STAGE_ASK, intent);
+  const demo = read('src/stage/StageDemo.tsx').replace(/^\s*\/\/.*$/gm, '');
+  assert.ok(demo.includes('validateStageQuestion(dsl, {'), '提问对象必须经校验');
+  assert.ok(demo.includes('askable={{ selected, onSelect: select, label }}'));
+  // 只显示占位，不把提问对象交给任何网络或存储（上一条测试已禁 fetch、存储、server action）；不出现自由文字输入
+  for (const bad of [/<input[^>]*type="text"/, /<textarea/, /contentEditable/, /evidence/i, /record\(/]) assert.ok(!bad.test(demo), `${bad}`);
+  // 菜单与标签文字只来自文案，组件不拼接其他中文
+  const strings = [...demo.matchAll(/'([^'\n]*[\u4e00-\u9fff][^'\n]*)'/g)].map((m) => m[1]);
+  assert.deepEqual(strings.filter((x) => !['桌面', '平板', '手机', '未开始', '播放中', '已暂停', '已结束'].includes(x!)), []);
 });
 
 test('apps/web 里只有样张页链路引用 packages/stage', () => {
