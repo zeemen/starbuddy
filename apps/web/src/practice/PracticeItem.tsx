@@ -12,6 +12,7 @@ import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 
 import type { Answer } from '../lib/diagnosis.ts';
 import { PRACTICE as C, PRACTICE_AFTER, PRACTICE_ERROR, PRACTICE_VERDICT } from '../shell/copy.ts';
 import { RichParagraphs, RichRuns } from '../shell/RichItem.tsx';
+import { ProcessStatus } from '../shell/ProcessStatus.tsx';
 import { answerPracticeAction, nextPracticeAction } from './actions.ts';
 import { cooldownMs } from '../lib/retry-after.ts';
 import { useCooldown } from './use-cooldown.ts';
@@ -72,7 +73,6 @@ export function PracticeItem({ csrf, student, subject, entry, listHref }: { csrf
     sent.current = answer;
     setBusy(true);
     setError(null);
-    setMessage(C.submitting);
     try {
       const r = await answerPracticeAction(csrf, student, subject, entry, ready.ticket, answer);
       if (r.kind === 'result') {
@@ -99,7 +99,7 @@ export function PracticeItem({ csrf, student, subject, entry, listHref }: { csrf
 
   return (
     <section className="practice-item" data-testid="practice-item" data-phase={phase} data-error={error ?? ''} aria-labelledby={ids.heading}>
-      {phase === 'loading' ? <h2 id={ids.heading}>{C.loading}</h2> : null}
+      {phase === 'loading' ? <h2 id={ids.heading}><ProcessStatus stage="preparing" /></h2> : null}
       {phase === 'item' && ready && item ? (
         <form onSubmit={submit} noValidate data-format={item.format}>
           <h2 id={ids.heading} ref={heading} tabIndex={-1}>{C.itemHeading}</h2>
@@ -158,7 +158,7 @@ export function PracticeItem({ csrf, student, subject, entry, listHref }: { csrf
       ) : null}
       {phase === 'empty' ? <h2 id={ids.heading} ref={heading} tabIndex={-1} data-testid="practice-empty">{C.itemUnavailable}</h2> : null}
       {phase === 'stopped' ? <h2 id={ids.heading} ref={heading} tabIndex={-1} data-testid="practice-stopped">{errorText}</h2> : null}
-      <p role="status" data-testid="practice-status">{phase === 'item' && error ? errorText : message}</p>
+      <p role="status" data-testid="practice-status">{busy ? <ProcessStatus stage="submitting" /> : phase === 'item' && error ? errorText : message}</p>
       <p><a href={listHref} data-testid="practice-back-to-list">{C.backToList}</a></p>
     </section>
   );

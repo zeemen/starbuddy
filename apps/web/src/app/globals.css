@@ -290,3 +290,16 @@ main { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16
   main input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]) { font: inherit; min-height: 44px; }
   main textarea { font: inherit; }
 }
+
+/* 做题等待时的动作级过程状态（specs/process-status）：形状标记 + 动作标签 + 已等待秒数。状态不靠颜色表达；
+   进行中的空心圆环缓慢转动（缺一段，转动可见），reduce-motion 时不转（仍是同一个形状） */
+.process-status { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.5em; }
+.process-mark { display: inline-block; width: 0.9em; height: 0.9em; border: 2px solid var(--fg); border-top-color: transparent;
+  border-radius: 50%; animation: process-spin 1.6s linear infinite; flex: none; }
+.process-waited { color: var(--muted); font-variant-numeric: tabular-nums; }
+.process-waited > span + span { margin-left: 0.15em; }
+.process-still { color: var(--muted); }
+@keyframes process-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .process-mark { animation: none; }
+}

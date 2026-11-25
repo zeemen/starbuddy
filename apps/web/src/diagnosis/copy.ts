@@ -8,7 +8,6 @@
 export const DIAGNOSIS_COPY = {
   heading: '数学：二次函数',
   intro: '接下来有一组二次函数的题，按自己的节奏做，可以随时暂停，下次接着做。',
-  starting: '正在准备题目……',
   timerLabel: '已用时间',
   timerOf: (used: string, budget: string) => `${used}，共 ${budget}`,
   stepLabel: (seq: number) => `第 ${seq} 步`,
@@ -21,7 +20,6 @@ export const DIAGNOSIS_COPY = {
   explainHint: '这道题请用自己的话讲给老师听：你是怎么想的，为什么这样做。最后写出答案。',
   explainLabel: '讲给老师听',
   submit: '提交',
-  submitting: '正在提交……',
   pause: '暂停',
   paused: '已暂停，暂停期间不计时。',
   resume: '继续',
@@ -56,8 +54,8 @@ export const DIAGNOSIS_DEMO_COPY = {
 export function allDiagnosisCopy(): string[] {
   const c = DIAGNOSIS_COPY;
   return [
-    c.heading, c.intro, c.starting, c.timerLabel, c.timerOf('03:20', '35:00'), c.stepLabel(3), c.stemHeading, c.choiceLegend,
-    c.choiceLegendMulti, c.answerLabel, c.processHint, c.processLabel, c.explainHint, c.explainLabel, c.submit, c.submitting, c.pause,
+    c.heading, c.intro, c.timerLabel, c.timerOf('03:20', '35:00'), c.stepLabel(3), c.stemHeading, c.choiceLegend,
+    c.choiceLegendMulti, c.answerLabel, c.processHint, c.processLabel, c.explainHint, c.explainLabel, c.submit, c.pause,
     c.paused, c.resume, c.finished, c.endedNeutral, c.curfew, c.gradeChanged, c.restart, c.notSaved, c.unavailable, c.needAnswer, c.needWork,
     DIAGNOSIS_DEMO_COPY.title, DIAGNOSIS_DEMO_COPY.note, DIAGNOSIS_ENTRY_COPY.entry, DIAGNOSIS_ENTRY_COPY.back,
   ];
