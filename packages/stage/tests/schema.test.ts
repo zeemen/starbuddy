@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { ACTION_FIELDS, ACTION_TYPES, DSL_VERSION, FONT_SIZE, ID_RE, LIMITS, ROLES } from '../src/index.ts';
 import { CANVAS_FIELDS, STEP_FIELDS, TOP_FIELDS } from '../src/dsl.ts';
 
-const schema = JSON.parse(readFileSync(new URL('../schema/stage-dsl-0.1.0.schema.json', import.meta.url), 'utf8'));
+const schema = JSON.parse(readFileSync(new URL(`../schema/stage-dsl-${DSL_VERSION}.schema.json`, import.meta.url), 'utf8'));
 const defs = schema.$defs;
 const sorted = (a: readonly string[]) => [...a].sort();
 

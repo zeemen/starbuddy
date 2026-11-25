@@ -1,0 +1,11 @@
+{
+  "//": "讲解 DSL 已发布版本的格式指纹与冻结的 JSON Schema（specs/stage-dsl-versioning）。format_sha256 = sha256(src/version.ts 的 formatSpec())；schema_sha256 = schema 文件逐字节的 sha256。只追加、不修改已有行；升版本流程见 ../README.md。",
+  "versions": [
+    {
+      "version": "0.1.0",
+      "format_sha256": "dd6326d1c83745d78cfd67bdcfeb593236bddf9607c3853be673ac8a86f30d23",
+      "schema": "stage-dsl-0.1.0.schema.json",
+      "schema_sha256": "3d58a168469c47f91122a147ab05ed02c28c548fd61c227edd0eb48118846a12"
+    }
+  ]
+}

@@ -13,7 +13,9 @@ import { codePoints, textProblem, textWidthEm } from './text.ts';
 export type ErrorCode =
   | 'not_object' | 'not_serializable' | 'unknown_field' | 'missing_field' | 'bad_type' | 'bad_version' | 'bad_id' | 'duplicate_id' | 'too_many'
   | 'empty' | 'too_long' | 'invisible_char' | 'html' | 'link_or_script' | 'bad_latex' | 'out_of_canvas' | 'bad_number'
-  | 'unknown_target' | 'bad_role' | 'bad_enum';
+  | 'unknown_target' | 'bad_role' | 'bad_enum'
+  // 版本与迁移（src/version.ts，specs/stage-dsl-versioning）：比当前更新、阶梯上找不到、迁移失败
+  | 'future_version' | 'unknown_version' | 'migration_failed';
 
 export interface DslError { path: string; code: ErrorCode }
 

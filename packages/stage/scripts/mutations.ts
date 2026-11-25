@@ -78,6 +78,15 @@ const MUTATIONS: Mutation[] = [
   ['桌面白板不足 65%', 'src/layout.ts', 'whiteboard: { x: 20, y: 20, w: 960, h: 440 }', 'whiteboard: { x: 20, y: 20, w: 960, h: 400 }'],
   ['手机老师高度不是 18%', 'src/layout.ts', 'teacher: { x: 280, y: 578.4, w: 108, h: 129.6 }', 'teacher: { x: 280, y: 578.4, w: 108, h: 140 }'],
   ['单行上限常量改动而 schema 未改', 'src/dsl.ts', 'maxLineChars: 60,', 'maxLineChars: 80,'],
+  // 版本与迁移（specs/stage-dsl-versioning）
+  ['指纹漏掉上限常量（改上限不升版本也不报错）', 'src/version.ts', 'fontSize: FONT_SIZE, limits: LIMITS,', 'fontSize: FONT_SIZE,'],
+  ['未来版本当作当前版本', 'src/version.ts', 'if (cmp > 0) return', 'if (cmp > 1000) return'],
+  ['迁移后不再完整校验', 'src/version.ts', '  const r = validateStageDsl(doc);\n  if (!r.ok) return', '  const r = { ok: true as const, dsl: doc as ValidatedStageDsl };\n  if (!r.ok) return'],
+  ['迁移改了文字也放过', 'src/version.ts', "if (before.length !== after.length || before.some((t, j) => t !== after[j])) throw new Error('迁移改动了文字');", ''],
+  ['阶梯断档也照迁', 'src/version.ts', "if (ladderProblems(ladder, current).length > 0) return { ok: false, errors: [{ path: '$', code: 'migration_failed' }], from: version };", ''],
+  ['阶梯检查不查首尾相接', 'src/version.ts', 'if (i > 0 && ladder[i - 1]!.to !== m.from)', 'if (false)'],
+  ['版本按字符串比较', 'src/version.ts', 'const d = Number(x[i]) - Number(y[i]);', 'const d = x[i]! < y[i]! ? -1 : x[i]! > y[i]! ? 1 : 0;'],
+  ['已发布 schema 被改动', 'schema/stage-dsl-0.1.0.schema.json', '"$schema": "https://json-schema.org/draft/2020-12/schema",', '"$schema": "https://json-schema.org/draft/2020-12/schema", "$comment": "x",'],
   // schema
   ['schema 单行上限放宽', 'schema/stage-dsl-0.1.0.schema.json', '"text": { "type": "string", "minLength": 1, "maxLength": 60 }', '"text": { "type": "string", "minLength": 1, "maxLength": 80 }'],
   ['schema id 格式放宽', 'schema/stage-dsl-0.1.0.schema.json', '"pattern": "^[a-z][a-z0-9_]{0,31}$"', '"pattern": "^[A-Za-z0-9_]{1,64}$"'],
@@ -88,6 +97,7 @@ const MUTATIONS: Mutation[] = [
 function prepare(root: string, m: Mutation | null): string {
   const dir = mkdtempSync(join(root, 'm-'));
   for (const d of ['src', 'tests', 'schema']) cpSync(join(PKG, d), join(dir, d), { recursive: true });
+  cpSync(join(PKG, 'package.json'), join(dir, 'package.json'));  // tests/version.test.ts 核对 exports 指向当前版本的 schema
   if (m) {
     const [name, file, from, to, all] = m;
     const p = join(dir, file);
