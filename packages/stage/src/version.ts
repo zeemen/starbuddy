@@ -4,8 +4,12 @@
 //     “改了格式却没升版本”“改了已发布版本的 schema”都会让 make stage-test 失败（指纹只在测试里算哈希，本文件不依赖 node:crypto，浏览器可用）；
 //   - 迁移阶梯 DSL_MIGRATIONS：有序、首尾相接、不跳级；每级是纯函数、幂等，只改结构、不改任何文字与公式；
 //   - migrateStageDsl：沿阶梯升到当前版本后再过一遍完整校验；比当前更新的版本、阶梯上找不到的版本、迁移失败一律拒收（不降级、不猜测）。
-// 本期阶梯为空（只有 0.1.0）；第一级真实迁移随 DSL v0.2 落地。机制用测试里注入的合成阶梯验证。
-import { ACTION_FIELDS, ACTION_TYPES, CANVAS_FIELDS, DSL_VERSION, FONT_SIZE, ID_RE, LIMITS, ROLES, STEP_FIELDS, TOP_FIELDS } from './dsl.ts';
+// 第一级真实迁移 0.1.0 → 0.2.0（specs/stage-dsl-v0.2）：补 narrated: false（无声板书，与 v0.1 相同），其余不动；机制另用测试里注入的合成阶梯验证。
+import {
+  ACTION_FIELDS, ACTION_TYPES, BOARD_WRITE_TYPES, CANVAS_FIELDS, DSL_VERSION, FONT_SIZE, ID_RE, LIMITS, POINT_MODES, ROLES, SLOT_FIELDS, SLOT_KINDS,
+  STEP_FIELDS, STEP_OPTIONAL, TOP_FIELDS, TOP_OPTIONAL,
+} from './dsl.ts';
+import { LINE_FIELDS, SCRIPT_FIELDS, SCRIPT_LIMITS } from './script.ts';
 import { LATEX_COMMANDS, LATEX_RE } from './latex.ts';
 import { validateStageDsl, type DslError, type ValidatedStageDsl } from './validate.ts';
 
@@ -20,8 +24,11 @@ export interface DslMigration { from: string; to: string; migrate(doc: Json): Js
 /** 当前版本里装文字与公式的字段：标题、write_text.text、write_formula.latex */
 export const TEXT_KEYS: readonly string[] = Object.freeze(['title', 'text', 'latex']);
 
-/** 真实的迁移阶梯（按版本从旧到新）。本期为空；改格式时追加一级，并在 versions.lock.json 追加该版本 */
-export const DSL_MIGRATIONS: readonly DslMigration[] = Object.freeze([]);
+/** 真实的迁移阶梯（按版本从旧到新）。改格式时追加一级，并在 versions.lock.json 追加该版本 */
+export const DSL_MIGRATIONS: readonly DslMigration[] = Object.freeze([
+  // 0.1.0 → 0.2.0：v0.1 没有台词，迁移过来是无声板书；步骤、动作、文字都不动
+  Object.freeze({ from: '0.1.0', to: '0.2.0', migrate: (d: Json): Json => ({ ...d, narrated: false }) }),
+]);
 
 const SEMVER = /^(0|[1-9]\d{0,3})\.(0|[1-9]\d{0,3})\.(0|[1-9]\d{0,3})$/;
 
@@ -53,8 +60,10 @@ export function formatSpec(): string {
   const sortKeys = (v: unknown): unknown => (Array.isArray(v) ? v.map(sortKeys)
     : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, sortKeys((v as Json)[k])])) : v);
   return JSON.stringify(sortKeys({
-    top: TOP_FIELDS, step: STEP_FIELDS, canvas: CANVAS_FIELDS, actionTypes: ACTION_TYPES, actionFields: ACTION_FIELDS, roles: ROLES,
+    top: TOP_FIELDS, topOptional: TOP_OPTIONAL, step: STEP_FIELDS, stepOptional: STEP_OPTIONAL, canvas: CANVAS_FIELDS, actionTypes: ACTION_TYPES,
+    actionFields: ACTION_FIELDS, boardWrite: BOARD_WRITE_TYPES, pointModes: POINT_MODES, slotFields: SLOT_FIELDS, slotKinds: SLOT_KINDS, roles: ROLES,
     fontSize: FONT_SIZE, limits: LIMITS, id: `${ID_RE.source}/${ID_RE.flags}`, latexCommands: LATEX_COMMANDS, latexForbidden: `${LATEX_RE.source}/${LATEX_RE.flags}`,
+    script: { fields: SCRIPT_FIELDS, line: LINE_FIELDS, limits: SCRIPT_LIMITS },
   }));
 }
 

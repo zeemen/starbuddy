@@ -1,6 +1,6 @@
 # @starbuddy/stage · 舞台
 
-讲解 DSL 的类型、JSON Schema、确定性校验器、版本迁移、播放状态机与最小 SVG 白板（ADR 07；`specs/stage-whiteboard-step1`、`specs/stage-dsl-versioning`）。
+讲解 DSL 的类型、JSON Schema、确定性校验器、台词稿、版本迁移、播放状态机与最小 SVG 白板（ADR 07；`specs/stage-whiteboard-step1`、`specs/stage-dsl-versioning`、`specs/stage-dsl-v0.2`）。
 其他模块只经 `src/index.ts` 与 `src/Whiteboard.tsx` 使用本包；读入讲解 DSL 一律经 `migrateStageDsl`（当前版本直接校验，旧版本沿迁移阶梯升级后再校验）。
 
 ## 版本规则
@@ -23,3 +23,11 @@
 ## 拒收规则（fail-closed）
 - 比当前更新的版本：`future_version`；阶梯上找不到的版本：`unknown_version`；迁移抛错、改了文字、升级后不合格、阶梯不合规：`migration_failed`（升级后不合格时同时带出校验错误）。
 - 不降级、不猜测；已审核内容迁移失败或需要改文字时进重审（发布闸门与审核台落地后实现）。
+
+## v0.2：“说 / 画 / 指”与台词稿（`specs/stage-dsl-v0.2`）
+- 台词与板书分开存：DSL 的步骤只写 `say: "<台词编号>"`；台词正文在台词稿（`src/script.ts`，`schema/stage-script-0.2.0.schema.json`）里，由人设审核。
+  播放前用 `validateStagePair(dsl, script)` 核对：引用的台词都在、没有多余台词、每句的角色等于说这句时持有讲解权的角色、每句 ≤ 60 码点且最多两句。
+  字幕只用 `captionAt` 从核对过的稿里取，组件不拼接文字。
+- `narrated: true`：带书写或作图的步骤必须有台词（`unpaired_board`）；`point` 必须配台词、一步最多一个。`narrated: false` 是无声板书（v0.1 迁移过来就是它），不得有台词与指向。
+- `point`：`spotlight`（目标外接框加粗描边）或 `laser`（目标左侧小三角），只指当步、下一步收起；目标是白板上现存的非高亮元素或 `slots` 里声明的槽位。
+- `slots`：题图（`item_figure`）或学生作答切片（`student_answer`）的区域，只渲染空框；内容由调用方运行时在内存里填充，DSL 与台词稿都不含学生数据（ADR 07 决定 4）。

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { ACTION_FIELDS, ACTION_TYPES, DSL_VERSION, FONT_SIZE, ID_RE, LIMITS, ROLES } from '../src/index.ts';
-import { CANVAS_FIELDS, STEP_FIELDS, TOP_FIELDS } from '../src/dsl.ts';
+import { CANVAS_FIELDS, POINT_MODES, SLOT_FIELDS, SLOT_KINDS, STEP_FIELDS, STEP_OPTIONAL, TOP_FIELDS, TOP_OPTIONAL } from '../src/dsl.ts';
 
 const schema = JSON.parse(readFileSync(new URL(`../schema/stage-dsl-${DSL_VERSION}.schema.json`, import.meta.url), 'utf8'));
 const defs = schema.$defs;
@@ -15,7 +15,12 @@ test('顶层、画布、步骤：字段白名单与上限', () => {
   assert.equal(schema.properties.dsl_version.const, DSL_VERSION);
   assert.equal(schema.additionalProperties, false);
   assert.deepEqual(sorted(schema.required), sorted(TOP_FIELDS));
-  assert.deepEqual(sorted(Object.keys(schema.properties)), sorted(TOP_FIELDS));
+  assert.deepEqual(sorted(Object.keys(schema.properties)), sorted([...TOP_FIELDS, ...TOP_OPTIONAL]));
+  assert.equal(schema.properties.narrated.type, 'boolean');
+  assert.equal(schema.properties.slots.maxItems, LIMITS.maxSlots);
+  assert.equal(defs.slot.additionalProperties, false);
+  assert.deepEqual(sorted(defs.slot.required), sorted(SLOT_FIELDS));
+  assert.deepEqual(defs.slot.properties.kind.enum, [...SLOT_KINDS]);
   assert.equal(schema.properties.title.maxLength, LIMITS.maxTitleChars);
   const cv = schema.properties.canvas;
   assert.equal(cv.additionalProperties, false);
@@ -27,6 +32,7 @@ test('顶层、画布、步骤：字段白名单与上限', () => {
   assert.equal(schema.properties.steps.maxItems, LIMITS.maxSteps);
   assert.equal(defs.step.additionalProperties, false);
   assert.deepEqual(sorted(defs.step.required), sorted(STEP_FIELDS));
+  assert.deepEqual(sorted(Object.keys(defs.step.properties)), sorted([...STEP_FIELDS, ...STEP_OPTIONAL]));
   assert.equal(defs.step.properties.actions.maxItems, LIMITS.maxActionsPerStep);
   assert.equal(defs.id.pattern, ID_RE.source);
   assert.deepEqual(defs.size.enum, Object.keys(FONT_SIZE));
@@ -47,6 +53,7 @@ test('每个动作：类型、必填与可选字段、上限与枚举', () => {
   assert.equal(defs.clear.properties.targets.maxItems, LIMITS.maxClearTargets);
   assert.deepEqual(defs.speaker.properties.role.enum, [...ROLES, 'none']);
   assert.deepEqual(defs.draw_shape.properties.shape.enum, ['rect', 'ellipse']);
+  assert.deepEqual(defs.point.properties.mode.enum, [...POINT_MODES]);
 });
 
 test('schema 里没有允许链接、样式或任意字段的口子', () => {

@@ -1,4 +1,5 @@
-// 舞台样张页端到端（specs/stage-whiteboard-step1 验收）：合成 DSL 在 /dev/stage 逐步播放（前进、后退、跳转、播放到结束、重来）；
+// 舞台样张页端到端（specs/stage-whiteboard-step1、specs/stage-dsl-v0.2 验收）：合成 DSL 在 /dev/stage 逐步播放（前进、后退、跳转、播放到结束、重来），
+// 每步的字幕、讲解权与指向对齐；
 // 非法样例被拒；三套布局下白板占舞台高度 ≥ 65%；讲解权只用 1.25 线表示；axe 无违规；全部请求同源、渲染结果无外链；
 // 不写任何浏览器存储。样张页只在测试构建里存在（scripts/e2e.sh），生产构建里没有（tests/build-output.test.ts）。全部合成数据。
 import AxeBuilder from '@axe-core/playwright';
@@ -6,6 +7,7 @@ import { expect, test, type Page } from '@playwright/test';
 
 const board = (page: Page) => page.locator('svg[data-stage-layout]');
 const status = (page: Page) => page.locator('[data-stage-status]');
+const caption = (page: Page) => page.locator('[data-stage-caption]');
 const axe = async (page: Page) =>
   expect((await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze()).violations.map((v) => v.id)).toEqual([]);
 
@@ -26,6 +28,11 @@ test('样张页：逐步播放、后退、跳转、播放到结束、重来', as
   await expect(status(page)).toHaveAttribute('data-stage-status', 'paused');
   await expect(board(page).locator('[data-anchor="teacher"]')).toHaveAttribute('data-speaking', 'true');
   await expect(board(page).locator('[data-el="t1"]')).toHaveText('（合成）解方程');
+  // v0.2（specs/stage-dsl-v0.2）：这一步说一句（字幕取自台词稿、角色与讲解权一致），并用聚光指着题图槽位（空框）
+  await expect(caption(page)).toHaveText('（合成台词）先看题目。');
+  await expect(caption(page)).toHaveAttribute('data-stage-caption-role', 'teacher');
+  await expect(board(page).locator('[data-slot="fig"]')).toHaveAttribute('data-slot-kind', 'item_figure');
+  await expect(board(page).locator('[data-point="spotlight"]')).toHaveAttribute('data-target', 'fig');
   const teacher = Number(await board(page).locator('[data-anchor="teacher"] rect').getAttribute('data-outline-width'));
   const buddy = Number(await board(page).locator('[data-anchor="buddy"] rect').getAttribute('data-outline-width'));
   expect(teacher / (143 / 48)).toBeCloseTo(1.25, 2);
@@ -38,17 +45,21 @@ test('样张页：逐步播放、后退、跳转、播放到结束、重来', as
   await expect(board(page).locator('[data-anchor="teacher"]')).toHaveAttribute('data-speaking', 'false');
   await expect(board(page).locator('[data-el="f3"]')).toHaveText('x = (4)/(2)');
   await expect(board(page).locator('[data-kind="highlight"]')).toHaveCount(1);
+  await expect(caption(page)).toHaveAttribute('data-stage-caption-role', 'buddy');
+  await expect(board(page).locator('[data-point]')).toHaveCount(0);  // 第 3 步的激光笔到第 4 步已收起
 
   // 后退一步：点点的公式消失
   await page.locator('[data-stage-action="prev"]').click();
   await expect(board(page)).toHaveAttribute('data-stage-cursor', '3');
   await expect(board(page).locator('[data-el="f3"]')).toHaveCount(0);
+  await expect(board(page).locator('[data-point="laser"]')).toHaveAttribute('data-target', 'f2');
 
   // 播放：按计时逐步前进直到结束；第 5 步擦掉 f2 时连同高亮
   await page.locator('[data-stage-action="play"]').click();
   await expect(status(page)).toHaveAttribute('data-stage-status', 'playing');
   await expect(status(page)).toHaveAttribute('data-stage-status', 'ended', { timeout: 10_000 });
-  await expect(board(page)).toHaveAttribute('data-stage-cursor', '6');
+  await expect(board(page)).toHaveAttribute('data-stage-cursor', '7');
+  await expect(caption(page)).toHaveText('');  // 最后一步不说话
   await expect(board(page).locator('[data-el="f2"]')).toHaveCount(0);
   await expect(board(page).locator('[data-kind="highlight"]')).toHaveCount(0);
   await expect(board(page).locator('[data-speaking="true"]')).toHaveCount(0);
@@ -59,6 +70,7 @@ test('样张页：逐步播放、后退、跳转、播放到结束、重来', as
   await page.locator('[data-stage-action="reset"]').click();
   await expect(board(page)).toHaveAttribute('data-stage-cursor', '0');
   await expect(board(page).locator('[data-el]')).toHaveCount(0);
+  await expect(caption(page)).toHaveText('');
 
   expect(off).toEqual([]);
 });
