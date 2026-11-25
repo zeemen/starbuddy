@@ -26,10 +26,11 @@ CFG, EV, G, BKT, W, CON = ("learning/mastery/config.py", "learning/mastery/evide
                            "learning/mastery/bkt.py", "learning/mastery/write.py", "learning/mastery/consistency.py")
 ST, R, SV, JB = "learning/mastery/store.py", "learning/mastery/recompute.py", "learning/service.py", "learning/jobs.py"
 API, ROUTES, APP = "learning/mastery/api.py", "learning/mastery_routes.py", "learning/app.py"
-PF, RD = "learning/mastery/profile.py", "learning/mastery/render.py"
+PF, RD, QT = "learning/mastery/profile.py", "learning/mastery/render.py", "learning/mastery/quotes.py"
 DB_TESTS = ["tests/test_mastery_store.py", "tests/test_mastery_db.py", "tests/test_mastery_api.py", "tests/test_mastery_profile_db.py",
-            "tests/test_mastery_star_map.py"]
-PURE_EXCLUDE = {"test_mastery_db.py", "test_mastery_api.py", "test_mastery_profile_db.py", "test_mastery_star_map.py"}  # 库上测试在第二组跑
+            "tests/test_mastery_star_map.py", "tests/test_mastery_quotes_db.py"]
+PURE_EXCLUDE = {"test_mastery_db.py", "test_mastery_api.py", "test_mastery_profile_db.py", "test_mastery_star_map.py",
+                "test_mastery_quotes_db.py"}  # 库上测试在第二组跑
 
 # 名字 → [(文件, 原文, 替换为), …]
 MUTATIONS: dict[str, list[tuple[str, str, str]]] = {
@@ -111,6 +112,22 @@ MUTATIONS: dict[str, list[tuple[str, str, str]]] = {
     "待验证判断可作陈述": [(CON, 'VISIBLE_STATUSES = ("established", "hypothesis")', 'VISIBLE_STATUSES = ("established", "hypothesis", "to_verify")')],
     "程度词不遮掉（尚不稳定误判为结论）": [(CON, 'text = text.replace(w, "\\u0000" * len(w))', "pass")],
     "阻断后仍发布衔接语": [(CON, 'Section(s.key, "", tuple(', "Section(s.key, s.connective, tuple(")],
+    # 引语逐字校验（specs/quote-verbatim-guard）
+    "引语没有核对结果当通过": [(CON, "if verdicts.get((sec.key, q.key)) != QUOTE_OK:",
+                       "if verdicts.get((sec.key, q.key)) not in (QUOTE_OK, None):")],
+    "引语不查受众": [(CON, "    if not quotes_allowed:\n", "    if False:\n")],
+    "引语不核对判断依据": [(CON, "if cv is None or q.evidence_id not in cv.evidence_ids:", "if cv is None:")],
+    "引号表少一个字符": [(CON, "“”‘’", "”‘’")],
+    "自由文字的引号不查": [(CON, 'out.append(Violation("unmarked_quote", sec.key, ids, ""))', "pass")],
+    "占位与引语声明不核对": [(CON, " or set(used) != set(declared)", "")],
+    "引语长度不限": [(CON, "if not 1 <= len(normalize(q.text)) <= QUOTE_MAX_CHARS:", "if not 1 <= len(normalize(q.text)):")],
+    "一节多段引语": [(CON, "if len(sec.quotes) > QUOTES_PER_SECTION:", "if False:")],
+    "引语不进禁用推断": [(CON, "full_text.extend(q.text for q in sec.quotes)", "pass")],
+    "衔接短语表收带引号的短语": [(CON, 'raise ConfigError("固定衔接短语不能含引号', 'print("固定衔接短语不能含引号')],
+    "逐字比较去掉标点": [(QT, "return 1 <= len(q) <= consistency.QUOTE_MAX_CHARS and q in consistency.normalize(source)",
+                  "return 1 <= len(q) <= consistency.QUOTE_MAX_CHARS and re.sub(r'[，。！？,.!?]', '', q) in "
+                  "re.sub(r'[，。！？,.!?]', '', consistency.normalize(source))")],
+    "逐字比较不限长度": [(QT, "return 1 <= len(q) <= consistency.QUOTE_MAX_CHARS and q in", "return 1 <= len(q) and q in")],
     # 学情档案页编译器（KGE-04 第二步 PR 4）
     "档案页把待验证判断作陈述": [(PF, "        if r.status == TODO_STATUS:\n            if len(todo[sec])", "        if False:\n            if len(todo[sec])")],
     "档案页编译不跑一致性检查": [(PF, "page = consistency.finalize(check_secs, views, cfg.check, forbidden)",
@@ -147,6 +164,16 @@ MUTATIONS: dict[str, list[tuple[str, str, str]]] = {
 
 # 第二组（库上）：名字 → [(文件, 原文, 替换为), …]
 DB_MUTATIONS: dict[str, list[tuple[str, str, str]]] = {
+    # 引语原文核对（specs/quote-verbatim-guard 第二节第 4、5 条）
+    "引语核对不查证据属于该生": [(QT, "JOIN platform.evidence_event e ON e.evidence_id = q.evidence_id AND e.student_id = $1::uuid",
+                         "JOIN platform.evidence_event e ON e.evidence_id = q.evidence_id")],
+    "引语核对不查判断属于该生": [(QT, "JOIN insight.claim c ON c.id = q.claim_id AND c.student_id = $1::uuid AND",
+                         "JOIN insight.claim c ON c.id = q.claim_id AND")],
+    "引语核对不查通道（拍照、语音也认）": [(QT, "AND e.kind = $4 AND e.channel = $5", "AND e.kind = ANY (ARRAY[$4, 'ocr_transcription', "
+                                  "'asr_transcription']) AND ($5 IS NOT NULL OR e.channel = $5)")],
+    "引语核对不查判断依据": [(QT, " AND q.evidence_id = ANY (c.evidence_ids)", "")],
+    "引语核对不查复核任务": [(QT, 'if r["disputed"]:', "if False:")],
+    "引语核对复核结案后仍算争议": [(QT, "AND t.status <> 'resolved'", "")],
     "去掉 advisory lock": [(R, 'await conn.execute("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",',
                           'await conn.execute("SELECT $1::text",')],
     "间隔改按 occurred_at（读取层取客户端时间）": [(ST, 'recorded_at=r["recorded_at"], hint_level', 'recorded_at=r["occurred_at"], hint_level')],

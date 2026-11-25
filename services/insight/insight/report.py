@@ -121,7 +121,9 @@ def build_first_report(claims: Sequence[ReportClaim], audience: str, policy: Pol
         connective = policy.report.connectives[cat]
         sections.append({"key": cat, "connective": connective, "sentences": sentences})
         check_sections.append(consistency.Section(cat, connective, tuple(stmts)))
-    result = consistency.check_page(check_sections, views, check_cfg, forbidden)
+    # 引语（specs/quote-verbatim-guard）：只有学生版可以带引语；家长版出现即阻断。本期各节都没有引语，也没有原文核对结果
+    # （洞察服务调学习服务核对原文要经 learning-internal 契约追加接口，待人确认），所以一旦出现引语一律按未核对阻断
+    result = consistency.check_page(check_sections, views, check_cfg, forbidden, quotes_allowed=audience == "student")
     blocked.extend(v.code for v in result.violations)
     fixed = "\n".join([policy.report.notice, policy.report.titles[audience]])
     if forbidden(fixed):

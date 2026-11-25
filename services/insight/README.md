@@ -20,6 +20,7 @@ SIE-03 PR②（`specs/sie-03-dispute-reconcile/spec.md`）：异议三路、考�
 | `insight/metrics.py` | 中圈指标八项（SIE 第五章定义与最低样本）的纯函数计算；结果只写 `visibility = {agent}` 的 metric 判断，只到“假设” |
 | `insight/render.py` | 判断 → 契约 `RenderedStatement`：模板渲染（`{变量}` 只收编码），渲染结果过禁用推断词表；待验证画虚线 |
 | `insight/report.py` | 首份画像报告的结构化内容（学生版 / 家长版）：提示语 + 标题 + 分节（衔接短语 + 判断渲染句，每句带判断 ID）；渲染后跑陈述—判断一致性检查（复用 `learning.mastery.consistency`）与禁用推断检查，任一不过不出报告；`shadow_judgments` 导出影子评审比对的输入 |
+| （引语逐字校验） | `specs/quote-verbatim-guard`：首份报告与周报的一致性检查按受众传 `quotes_allowed`（只有学生版为真，家长版出现引语即阻断）；洞察服务不读证据原文，原文核对在学习服务（`learning/mastery/quotes.py`），洞察服务调用它要经 learning-internal 契约追加接口（待人确认），之前没有核对结果，出现引语一律按未核对阻断；本期没有任何一节带引语，输出不变 |
 | `insight/policy.py` | 判断策略配置（`config/claims.synthetic.json`）与报告检查词表（`config/report-check.synthetic.json`，格式同 KGE-04 档案页）的加载与校验 |
 | `insight/store.py` | 数据库层：角色断言、按受众与可见范围读判断（与 0010 策略同一条件，洞察服务自己的 RLS 全放行所以这一道必需；中圈指标对前端一律不返回）、同一学生一个事务内“加锁 → 读现有判断与历史 → 生成操作 → 逐条写（每条带原因）”、中圈指标读取、到期扫描 |
 | `insight/jobs.py` | 服务内接口（不在契约里、不对外开放）：`sync_mastery`、`sync_mastery_from_db`（KGE-04 第二步 PR 3：读真实节点键掌握行后生成判断、结案“我其实会”）、`recompute_metrics`、`sweep`、`first_report` / `report_inputs`（对外经契约工具 `insight.report`）；命令行入口 `python -m insight.jobs sync|sweep|metrics`（`insight/jobs_cli.py`）；SIE-03 的 `settle_fact_corrections`、`confirm_data`、`sweep_disputes`、`dispute_metrics`、`reconcile_exam`、`evaluate_triggers`、`dispatch_triggers`，以及调度器入口 `freeze_due_predictions`、`execute_due_erasures`；冲刺 5-H 的每周任务 `weekly_reports` |

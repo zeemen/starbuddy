@@ -259,7 +259,9 @@ def build_weekly(claims: Sequence[WeeklyClaim], audience: str, week_start: date,
             views[c.claim_id] = consistency.ClaimView(c.claim_id, c.status, c.template_key)
         sections.append({"key": key, "connective": weekly.connectives[key], "sentences": sentences})
         check_sections.append(consistency.Section(key, weekly.connectives[key], tuple(stmts)))
-    result = consistency.check_page(check_sections, views, check_cfg, forbidden)
+    # 引语（specs/quote-verbatim-guard）：只有学生版可以带引语；家长版出现即阻断。本期各节都没有引语，也没有原文核对结果
+    # （洞察服务调学习服务核对原文要经 learning-internal 契约追加接口，待人确认），所以一旦出现引语一律按未核对阻断
+    result = consistency.check_page(check_sections, views, check_cfg, forbidden, quotes_allowed=audience == "student")
     blocked.extend(v.code for v in result.violations)
     title = weekly.titles[audience]
     if forbidden(title):

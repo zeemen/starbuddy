@@ -241,6 +241,7 @@ def compile_page(cands: Sequence[ClaimRow], cfg: ProfileConfig, forbidden: consi
         st = tuple(consistency.Statement(r.claim_id, text) for r, text in stmts[k])
         check_secs.append(consistency.Section(k, source(k, st) if st else "", st))
     views = {r.claim_id: consistency.ClaimView(r.claim_id, r.status, r.template_key) for r in cands}
+    # 档案页学生、家长共用（0037 陈述视图）：不允许引语（quotes_allowed 缺省 False，specs/quote-verbatim-guard）
     page = consistency.finalize(check_secs, views, cfg.check, forbidden)
     by_id = {r.claim_id: r for r in cands}
     sections = [{"key": s.key, "connective": s.connective, "statements": [_ref(by_id[st.claim_id]) for st in s.statements],
