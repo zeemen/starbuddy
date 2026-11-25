@@ -241,6 +241,7 @@ services:
       STARBUDDY_STARMAP: starmap_v1
       STARBUDDY_PRACTICE: practice
       STARBUDDY_RETEST_UI: retest
+      STARBUDDY_DIAGNOSIS_UI: diagnosis
       STARBUDDY_TODAY_ORCH: today_orch
     healthcheck:
       test: ["CMD", "node", "-e", "require('node:http').get({host:'172.28.0.40',port:3000,path:'/readyz',timeout:2000},(r)=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1)).on('timeout',()=>process.exit(1))"]

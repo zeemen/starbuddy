@@ -157,6 +157,7 @@ services:
       STARBUDDY_STARMAP: starmap_v1
       STARBUDDY_PRACTICE: practice
       STARBUDDY_RETEST_UI: retest
+      STARBUDDY_DIAGNOSIS_UI: diagnosis
       STARBUDDY_TODAY_ORCH: today_orch
     depends_on:
       bff: {condition: service_healthy}

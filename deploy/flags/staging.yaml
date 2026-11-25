@@ -77,10 +77,12 @@ features:
     title: 诊断（数学自适应诊断）
     state: "on"
     pending: [migration_0058, signed_content]
-    notes: 待教研签字内容：BFF 配了学习服务地址即注册诊断路由；学习服务只有合成题面（只允许 test），present_item 签字前 staging 回 501；
+    notes: 学生端入口由前端开关 STARBUDDY_DIAGNOSIS_UI 决定（数学科目页的入口与 /s/{学生}/learn/math/diagnosis，specs/diagnosis-student-entry；入口文案待人写人审）；
+      待教研签字内容：BFF 配了学习服务地址即注册诊断路由；学习服务只有合成题面（只允许 test），present_item 签字前 staging 回 501；
       learning-internal v1 已签字（LT-04），诊断作答按会话的 diagnosis_full 预留核对计量，待人执行 0058
     switches:
       - {service: bff, var: BFF_LEARNING_URL, value: "http://172.28.0.10:8788", source: services/bff/src/main.ts}
+      - {service: web, var: STARBUDDY_DIAGNOSIS_UI, value: diagnosis, source: apps/web/src/diagnosis/features.ts}
       - {service: learning, var: LEARNING_DIAGNOSIS_PRESENTER, value: null, source: services/learning/learning/config.py}
   - id: practice
     title: 再练（错题再练）

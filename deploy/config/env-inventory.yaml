@@ -167,7 +167,7 @@ services:
   web:
     sources: [apps/web/src/lib/bff.ts, apps/web/src/lib/review.ts, apps/web/src/app/family/shell-actions.ts, apps/web/src/today/plan-mark-server.ts,
               apps/web/src/lib/dev-pages.ts, apps/web/next.config.ts, apps/web/src/shell/features.ts, apps/web/src/star/features.ts,
-              apps/web/src/practice/features.ts, apps/web/src/retest/features.ts, apps/web/src/shell/today-orch.ts,
+              apps/web/src/practice/features.ts, apps/web/src/retest/features.ts, apps/web/src/diagnosis/features.ts, apps/web/src/shell/today-orch.ts,
               apps/web/src/monthly-plan/features.ts, apps/web/src/family-goals/features.ts, apps/web/src/lib/review-features.ts,
               apps/web/src/lib/serve-env.ts, apps/web/src/lib/consent-version.ts, apps/web/src/internal-test/features.ts,
               apps/web/src/pwa/features.ts, apps/web/src/pwa/build-version.ts]
@@ -181,6 +181,7 @@ services:
       - {name: STARBUDDY_STARMAP, purpose: 星图 v1 开关（矩阵；staging 只 starmap_v1）, secret: false, default: null, envs: all}
       - {name: STARBUDDY_PRACTICE, purpose: 再练开关（矩阵）, secret: false, default: null, envs: all}
       - {name: STARBUDDY_RETEST_UI, purpose: 复测开关（矩阵）, secret: false, default: null, envs: all}
+      - {name: STARBUDDY_DIAGNOSIS_UI, purpose: 学生端诊断入口开关（矩阵；specs/diagnosis-student-entry）, secret: false, default: null, envs: all}
       - {name: STARBUDDY_TODAY_ORCH, purpose: 今日编排开关（矩阵）, secret: false, default: null, envs: all}
       - {name: STARBUDDY_MONTHLY_PLAN, purpose: 月度计划开关（只 dev/test）, secret: false, default: null, envs: local}
       - {name: STARBUDDY_FAMILY_GOALS, purpose: 家长诉求开关（只 dev/test）, secret: false, default: null, envs: local}

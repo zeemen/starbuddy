@@ -363,6 +363,8 @@ for _ in $(seq 1 80); do
   sleep 0.25
 done
 
+# 前端开关只由 playwright.config.ts 的各套 webServer 显式打开：不从调用方环境继承（学生端诊断入口，specs/diagnosis-student-entry）
+unset STARBUDDY_DIAGNOSIS_UI
 # STARBUDDY_NEXT_DIST_DIR：构建与 next start（playwright.config.ts 的 webServer）都读 .next-e2e
 export STARBUDDY_BFF_URL="http://127.0.0.1:$BFF_PORT" STARBUDDY_REVIEW_URL="http://127.0.0.1:$REVIEW_PORT" WEB_PORT STARBUDDY_DEV_PAGES=1 STARBUDDY_ENV=test NEXT_TELEMETRY_DISABLED=1 \
   STARBUDDY_NEXT_DIST_DIR=.next-e2e STARBUDDY_TRUST_BFF_URL="http://127.0.0.1:$TRUST_BFF_PORT" WEB_TRUST_PORT \

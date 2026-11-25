@@ -1,6 +1,6 @@
 # 学生端数学诊断入口：科目页入口与正式做题页（前端开关 STARBUDDY_DIAGNOSIS_UI） · 规格草稿
 
-- 状态：**草稿，待人确认第五节**（2026-11-25）。
+- 状态：**已确认（2026-11-25，用户“按建议，默认值都同意，开始实现”）**：第五节三条都按默认。实现记录与差异见 lessons.md。
 - 来源：`specs/launch-test-2026/spec.md` 第 19 行把“诊断”列进 12 月内部成员测试的学生端功能；`deploy/flags/staging.yaml` 的 `diagnosis` 项
   `state: "on"`（只等 0058 与教研签字）。但学生端至今**没有诊断页**：诊断组件 `apps/web/src/diagnosis/Diagnosis.tsx` 只挂在开发演示路由
   `app/dev/diagnosis/[studentId]`（文件名 `page.dev.tsx`，生产与 staging 构建里不存在），科目页也没有入口。`specs/diagnosis-probe-retry`、

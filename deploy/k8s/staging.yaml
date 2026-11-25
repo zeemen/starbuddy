@@ -407,6 +407,7 @@ spec:
             - {name: STARBUDDY_STARMAP, value: starmap_v1}
             - {name: STARBUDDY_PRACTICE, value: practice}
             - {name: STARBUDDY_RETEST_UI, value: retest}
+            - {name: STARBUDDY_DIAGNOSIS_UI, value: diagnosis}
             - {name: STARBUDDY_TODAY_ORCH, value: today_orch}
           volumeMounts:
             - {name: tmp, mountPath: /tmp}

@@ -59,7 +59,8 @@ test('诊断中不评价、不给结论；结束页只说完成了', () => {
 
 test('组件与演示页源码不接触题号、答案、对错、节点、选题理由', () => {
   const files = ['src/diagnosis/Diagnosis.tsx', 'src/app/dev/diagnosis/[studentId]/DiagnosisDemo.tsx',
-    'src/app/dev/diagnosis/[studentId]/page.dev.tsx'];
+    'src/app/dev/diagnosis/[studentId]/page.dev.tsx', 'src/diagnosis/DiagnosisStudent.tsx', 'src/diagnosis/DiagnosisPages.tsx',
+    'src/diagnosis/actions.ts', 'src/diagnosis/ops.ts', 'src/app/s/[studentId]/learn/[subject]/diagnosis/page.tsx'];
   for (const f of files) {
     const t = readFileSync(join(WEB, f), 'utf8').replace(/^\s*\/\/.*$/gm, '');
     assert.ok(!/item_id|verdict|correct|node_id|reason_code|usage_id|answer_key|break_point/.test(t), f);
@@ -79,10 +80,15 @@ test('演示页是 page.dev.tsx；它的 action 与客户端只被演示页引�
   for (const p of src.filter((f) => !f.startsWith(demoDir))) {
     assert.ok(!/dev\/diagnosis\/actions|DiagnosisDemo/.test(readFileSync(join(WEB, p), 'utf8')), `${p} 不能引用演示页的 action 或客户端`);
   }
-  // 诊断组件目前只被演示页用（做题页随冲刺 4 接入）：生产页面不引用它
+  // 生产页面只经 src/diagnosis/DiagnosisPages.tsx（开关闸门 + 只认学生本人，specs/diagnosis-student-entry）用诊断组件，
+  // 不直接引用组件或客户端包装；引用它的只有数学科目页与诊断做题页
+  const users: string[] = [];
   for (const p of src.filter((f) => f.startsWith('src/app/') && !f.startsWith(demoDir))) {
-    assert.ok(!/diagnosis\/Diagnosis/.test(readFileSync(join(WEB, p), 'utf8')), p);
+    const t = readFileSync(join(WEB, p), 'utf8');
+    assert.ok(!/diagnosis\/(Diagnosis|DiagnosisStudent)\.tsx|diagnosis\/actions|diagnosis\/ops/.test(t), p);
+    if (/diagnosis\/DiagnosisPages\.tsx/.test(t)) users.push(p);
   }
+  assert.deepEqual(users.sort(), ['src/app/s/[studentId]/learn/[subject]/diagnosis/page.tsx', 'src/app/s/[studentId]/learn/[subject]/page.tsx']);
 });
 
 test('BFF 视图按白名单取字段；计时格式', () => {
