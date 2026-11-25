@@ -118,6 +118,9 @@ async def test_other_students_evidence_not_found(mpools, student, template):
     theirs = await evidence(admin, other)
     mixed = await claim(admin, student, [theirs])
     assert await verify(mpools, student, (mixed, theirs, "先移项")) == {"q0": "not_found"}
+    # 本生的证据被写进别的学生的判断：判断也必须属于该生
+    foreign = await claim(admin, other, [ev])
+    assert await verify(mpools, student, (foreign, ev, "先移项")) == {"q0": "not_found"}
 
 
 async def test_disputed_until_resolved(mpools, student, template):
