@@ -39,7 +39,10 @@ M=(
   $'报告收待验证的判断\tinsight/report.py\tREPORT_STATUSES = ("hypothesis", "established")\tREPORT_STATUSES = ("hypothesis", "established", "to_verify")\ttests/test_report.py'
   $'报告不按受众可见范围\tinsight/report.py\t and audience in rc.visibility\t and True\ttests/test_report.py'
   $'报告收中圈指标\tinsight/report.py\tand rc.target_type == "node" and\tand rc.target_type in ("node", "metric") and\ttests/test_report.py'
-  $'报告不跑一致性检查\tinsight/report.py\t    result = consistency.check_page(check_sections, views, check_cfg, forbidden)\t    result = consistency.CheckResult()\ttests/test_report.py'
+  # 引语逐字校验接线（specs/quote-verbatim-guard）：家长版也允许引语
+  $'报告家长版允许引语\tinsight/report.py\tquotes_allowed=audience == "student")\tquotes_allowed=True)\ttests/test_quote_guard.py'
+  $'周报家长版允许引语\tinsight/weekly.py\tquotes_allowed=audience == "student")\tquotes_allowed=True)\ttests/test_quote_guard.py'
+  $'报告不跑一致性检查\tinsight/report.py\t    result = consistency.check_page(check_sections, views, check_cfg, forbidden, quotes_allowed=audience == "student")\t    result = consistency.CheckResult()\ttests/test_report.py'
   $'报告提示语与标题不查禁用词\tinsight/report.py\t    if forbidden(fixed):\t    if False:\ttests/test_report.py'
   $'家长版不附置信度说明\tinsight/report.py\t            if audience == "guardian":\t            if False:\ttests/test_report.py tests/test_service_db.py'
   # 渲染规则只有一份（learning/mastery/render.py，规则本身的变异在 services/learning/scripts/mastery_mutations.py）；这里改调用点
@@ -137,7 +140,7 @@ M=(
   $'周报收待验证的判断\tinsight/weekly.py\tSTATUSES = ("hypothesis", "established")\tSTATUSES = ("hypothesis", "established", "to_verify")\ttests/test_weekly.py'
   $'周报不按受众可见范围\tinsight/weekly.py\t and audience in wc.visibility\t and True\ttests/test_weekly.py'
   $'学生版收家长观察来源的判断\tinsight/weekly.py\t            and not (audience == "student" and wc.source_type == "guardian"))\t            and True)\ttests/test_weekly.py'
-  $'周报不跑一致性检查\tinsight/weekly.py\t    result = consistency.check_page(check_sections, views, check_cfg, forbidden)\t    result = consistency.CheckResult()\ttests/test_weekly.py'
+  $'周报不跑一致性检查\tinsight/weekly.py\t    result = consistency.check_page(check_sections, views, check_cfg, forbidden, quotes_allowed=audience == "student")\t    result = consistency.CheckResult()\ttests/test_weekly.py'
   $'周报不查排除词（同伴比较、排名、家长评价）\tinsight/weekly.py\t    if any(w in full for w in weekly.excluded_terms[audience]):\t    if False:\ttests/test_weekly.py'
   $'周报标题不查禁用推断\tinsight/weekly.py\t    if forbidden(title):\t    if False:\ttests/test_weekly.py'
   $'点亮不看是否本周\tinsight/weekly.py\t    if cat == "node_transfer" and week[0] <= wc.created_at < week[1]:\t    if cat == "node_transfer":\ttests/test_weekly.py'

@@ -12,6 +12,16 @@
   4. number_in_connective    衔接语不得包含数字
   5. forbidden_inference     全文命中禁用推断词表（docs/design/sie/sie_lexicon.py）
   6. persona_language        衔接语出现人设名或口头禅
+  引语（specs/quote-verbatim-guard，OpenMAIC 借鉴第 3 点；只追加阻断，不放宽上面任何一条）：
+  7. unmarked_quote          衔接语的自由文字部分出现引号类字符：引语只能结构化标出（Section.quotes + 占位 {q:<key>}）
+  8. quote_placeholder       占位与 quotes 对不上（未声明、未使用、重复、key 格式不对）
+  9. quote_too_long / too_many_quotes
+                             一段引语规范化后为空或超过 QUOTE_MAX_CHARS 个码点；一节超过 QUOTES_PER_SECTION 段
+  10. quote_not_cited        引语的判断不是本节所引的可见判断，或证据不在那条判断的 evidence_ids 里
+  11. quote_unverified       原文核对没有给出 ok（没有核对结果也算：fail closed）。核对由学习服务查证据原文完成
+                             （learning.mastery.quotes），本引擎不读原文
+  12. quote_audience         调用方没有声明“受众只有学生本人”（quotes_allowed=False，缺省）却出现引语或占位
+  占位以外的衔接语照常跑第 2–6 条；第 0 条按含占位的整句比对；禁用推断查全文，引语文字一起查。
 阻断后不发布衔接语：页面降级为纯模板版本（check_status = blocked_fallback），并返回阻断记录。
 """
 from __future__ import annotations
@@ -33,6 +43,14 @@ _INVISIBLE = re.compile(r"[\s​-‏⁠﻿]+")
 _DIGITS = re.compile(r"[0-9%]|[零〇一二两三四五六七八九十百千万]+\s*(个|道|次|题|分|成|倍|天|周|%)")
 
 Forbidden = Callable[[str], Sequence[str]]
+
+# ---- 引语（specs/quote-verbatim-guard 第二节；待人确认 #1–#5 按默认）
+QUOTE_MAX_CHARS = 30          # 一段引语规范化后的码点上限（待人确认 #4，数字待 SIE 负责人与教研定）
+QUOTES_PER_SECTION = 1
+QUOTE_MARKS = frozenset("\"'“”‘’「」『』＂＇﹁﹂﹃﹄〝〞〟‟„‚‛‹›«»")
+QUOTE_KEY_RE = re.compile(r"^[a-z][a-z_]{0,15}$")   # 不含数字：占位不该触发“衔接语无数字”
+_PLACEHOLDER = re.compile(r"\{q:([^{}]*)\}")
+QUOTE_OK = "ok"
 
 
 def normalize(text: str) -> str:
@@ -72,9 +90,11 @@ def parse_check_config(doc: Mapping[str, Any], *, env: str) -> CheckConfig:
     if not all(isinstance(v, list) and set(v) <= set(doc["conclusion_words"]) for v in tcon.values()):
         raise ConfigError("template_conclusions 只能引用 conclusion_words 里的词")
     for phrase in doc["connective_phrases"]:
-        p = normalize(phrase)
+        p = normalize(_PLACEHOLDER.sub("", phrase))
         if any(normalize(w) in p for w in list(deg) + doc["conclusion_words"] + doc["persona_terms"]) or _DIGITS.search(p):
             raise ConfigError("固定衔接短语不能含程度词、结论词、人设词或数字")
+        if any(ch in QUOTE_MARKS for ch in _PLACEHOLDER.sub("", phrase)):
+            raise ConfigError("固定衔接短语不能含引号：引语只能经占位 {q:<key>} 结构化标出")
     return CheckConfig(
         degree_words={normalize(k): v for k, v in deg.items()},
         template_degrees=dict(tdeg),
@@ -115,6 +135,7 @@ class ClaimView:
     status: str
     template_key: str
     readable: bool = True
+    evidence_ids: tuple[str, ...] = ()   # 判断的依据（insight.claim.evidence_ids）；引语只能出自这里
 
 
 @dataclass(frozen=True)
@@ -124,10 +145,21 @@ class Statement:
 
 
 @dataclass(frozen=True)
+class Quote:
+    """衔接语里 {q:<key>} 处的一段学生原话：出自所引判断 claim_id 的证据 evidence_id，文字须逐字是该证据原文的连续子串。
+    引号由显示程序加，text 本身不带引号。"""
+    key: str
+    claim_id: str
+    evidence_id: str
+    text: str
+
+
+@dataclass(frozen=True)
 class Section:
     key: str
     connective: str
     statements: tuple[Statement, ...] = ()
+    quotes: tuple[Quote, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -161,10 +193,51 @@ def _scan(text: str, words: Sequence[str]) -> tuple[list[str], str]:
     return hits, text
 
 
+QuoteVerdicts = Mapping[tuple[str, str], str]   # (节, 引语 key) → "ok" 或原因编码（learning.mastery.quotes）
+
+
+def quote_requests(sections: Sequence[Section]) -> list[tuple[str, Quote]]:
+    """要交给原文核对的引语（节, 引语）；核对结果按 (节, key) 传回 check_page 的 quote_verdicts"""
+    return [(sec.key, q) for sec in sections for q in sec.quotes]
+
+
+def _check_quotes(sec: Section, raw_free: str, valid: Sequence[ClaimView], *, quotes_allowed: bool,
+                  verdicts: QuoteVerdicts) -> list[Violation]:
+    ids = tuple(c.claim_id for c in valid)
+    out: list[Violation] = []
+    if any(ch in QUOTE_MARKS for ch in raw_free) or any(ch in QUOTE_MARKS for ch in unicodedata.normalize("NFKC", raw_free)):
+        out.append(Violation("unmarked_quote", sec.key, ids, ""))
+    used = _PLACEHOLDER.findall(sec.connective)
+    if not used and not sec.quotes:
+        return out
+    if not quotes_allowed:
+        out.append(Violation("quote_audience", sec.key, ids, ""))
+    declared = [q.key for q in sec.quotes]
+    if (len(set(used)) != len(used) or len(set(declared)) != len(declared) or set(used) != set(declared)
+            or not all(QUOTE_KEY_RE.fullmatch(k) for k in used + declared)):
+        out.append(Violation("quote_placeholder", sec.key, ids, ""))
+    if len(sec.quotes) > QUOTES_PER_SECTION:
+        out.append(Violation("too_many_quotes", sec.key, ids, ""))
+    by_id = {c.claim_id: c for c in valid}
+    for q in sec.quotes:
+        if not 1 <= len(normalize(q.text)) <= QUOTE_MAX_CHARS:
+            out.append(Violation("quote_too_long", sec.key, ids, ""))
+        cv = by_id.get(q.claim_id)
+        if cv is None or q.evidence_id not in cv.evidence_ids:
+            out.append(Violation("quote_not_cited", sec.key, ids, ""))
+        if verdicts.get((sec.key, q.key)) != QUOTE_OK:
+            out.append(Violation("quote_unverified", sec.key, ids, ""))  # 片段不记引语文字（规则 8）
+    return out
+
+
 def check_page(sections: Sequence[Section], claims: Mapping[str, ClaimView], cfg: CheckConfig,
-               forbidden: Forbidden) -> CheckResult:
+               forbidden: Forbidden, *, quotes_allowed: bool = False,
+               quote_verdicts: QuoteVerdicts | None = None) -> CheckResult:
+    """quotes_allowed：调用方确认这份输出的受众只有学生本人（家长版、学生与家长共用的视图一律 False）。
+    quote_verdicts：原文核对结果；没有某段引语的结果即视为未通过。"""
     out: list[Violation] = []
     full_text: list[str] = []
+    verdicts = quote_verdicts or {}
     for sec in sections:
         valid: list[ClaimView] = []
         for st in sec.statements:
@@ -181,12 +254,15 @@ def check_page(sections: Sequence[Section], claims: Mapping[str, ClaimView], cfg
                 continue
             valid.append(cv)
         ids = tuple(c.claim_id for c in valid)
-        conn = normalize(sec.connective)
-        full_text.append(sec.connective)
-        if not conn:
+        raw_free = _PLACEHOLDER.sub("", sec.connective)   # 占位以外的自由文字
+        out.extend(_check_quotes(sec, raw_free, valid, quotes_allowed=quotes_allowed, verdicts=verdicts))
+        full_text.append(raw_free)
+        full_text.extend(q.text for q in sec.quotes)
+        if not normalize(sec.connective):
             continue
-        if conn not in cfg.connective_phrases:
-            out.append(Violation("connective_unapproved", sec.key, ids, sec.connective))
+        if normalize(sec.connective) not in cfg.connective_phrases:   # 第 0 条按含占位的整句比对
+            out.append(Violation("connective_unapproved", sec.key, ids, raw_free))
+        conn = normalize(raw_free)
         degree_hits, masked = _scan(conn, list(cfg.degree_words))
         group_degree = max((cfg.template_degrees.get(c.template_key, 0) for c in valid), default=None)
         for w in degree_hits:
@@ -200,7 +276,7 @@ def check_page(sections: Sequence[Section], claims: Mapping[str, ClaimView], cfg
             if w not in allowed:
                 out.append(Violation("new_conclusion", sec.key, ids, w))
         if _DIGITS.search(conn):
-            out.append(Violation("number_in_connective", sec.key, ids, sec.connective))
+            out.append(Violation("number_in_connective", sec.key, ids, raw_free))
         for term in cfg.persona_terms:
             if term in conn:
                 out.append(Violation("persona_language", sec.key, ids, term))
@@ -218,9 +294,10 @@ class CompiledPage:
 
 
 def finalize(sections: Sequence[Section], claims: Mapping[str, ClaimView], cfg: CheckConfig,
-             forbidden: Forbidden) -> CompiledPage:
-    """检查通过就原样发布；否则降级为纯模板版本：去掉全部衔接语，只留引用了可见判断的陈述，并返回阻断记录。"""
-    res = check_page(sections, claims, cfg, forbidden)
+             forbidden: Forbidden, *, quotes_allowed: bool = False,
+             quote_verdicts: QuoteVerdicts | None = None) -> CompiledPage:
+    """检查通过就原样发布；否则降级为纯模板版本：去掉全部衔接语（连同引语），只留引用了可见判断的陈述，并返回阻断记录。"""
+    res = check_page(sections, claims, cfg, forbidden, quotes_allowed=quotes_allowed, quote_verdicts=quote_verdicts)
     if res.passed:
         return CompiledPage(tuple(sections), "passed")
     fallback = tuple(
