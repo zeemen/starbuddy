@@ -55,6 +55,26 @@ test('“去做”：复测 → 复测页，再练 → 再练页；计划任务�
   assert.equal(goHref('not-a-student', { source: 'plan', subject: 'math', entry_id: null }, ON), null);
 });
 
+test('“去做”：数学的诊断类计划任务在诊断开关开时直达诊断页；开关关、道法 / 语文的诊断任务、别的类别仍去科目页（specs/today-diagnose-link）', () => {
+  const DIAG = { ...ON, STARBUDDY_DIAGNOSIS_UI: 'diagnosis' };
+  assert.equal(goHref(S, { source: 'plan', subject: 'math', entry_id: null, kind: 'diagnose' }, DIAG), `/s/${S}/learn/math/diagnosis`);
+  assert.equal(goHref(S, { source: 'plan', subject: 'math', entry_id: E, kind: 'diagnose' }, DIAG), `/s/${S}/learn/math/diagnosis`, '诊断页不带条目');
+  assert.equal(goHref(S, { source: 'plan', subject: 'math', entry_id: null, kind: 'diagnose' }, ON), `/s/${S}/learn/math`, '诊断开关关');
+  assert.equal(goHref(S, { source: 'plan', subject: 'math', entry_id: null, kind: 'diagnose' }, { ...DIAG, STARBUDDY_ENV: 'pilot' }), `/s/${S}/learn/math`);
+  for (const subject of ['politics', 'chinese']) {
+    assert.equal(goHref(S, { source: 'plan', subject, entry_id: null, kind: 'diagnose' }, DIAG), `/s/${S}/learn/${subject}`, `${subject} 没有学生端诊断页`);
+  }
+  for (const kind of ['practice', 'review', 'lesson', undefined]) {
+    assert.equal(goHref(S, { source: 'plan', subject: 'math', entry_id: null, kind }, DIAG), `/s/${S}/learn/math`, String(kind));
+  }
+  // 复测、再练条目不因类别改道
+  assert.equal(goHref(S, { source: 'retest', subject: 'math', entry_id: E, kind: 'diagnose' }, DIAG), `/s/${S}/learn/math/retest/${E}`);
+  assert.equal(goHref(S, { source: 'practice', subject: 'math', entry_id: E, kind: 'diagnose' }, DIAG), `/s/${S}/learn/math/practice/${E}`);
+  assert.equal(goHref(S, { source: 'plan', subject: '../admin', entry_id: null, kind: 'diagnose' }, DIAG), null);
+  // 今日编排列表把条目原样交给 goHref（条目自带 kind）
+  assert.match(readFileSync(join(WEB, 'src/today/OrderedTaskList.tsx'), 'utf8'), /const href = goHref\(studentId, t\);/);
+});
+
 test('文案：全部是 {{TODO_COPY:today.*}} 占位，已并入壳文案；类别只给占位键、不附提示', () => {
   for (const s of ALL_TODAY_ORCH_COPY) {
     assert.match(s, /^\{\{TODO_COPY:today\.[a-z_.]+\}\}/, s);
