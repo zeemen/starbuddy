@@ -1032,7 +1032,7 @@ knowledge-semantic-mutation:
 # 舞台第一步（specs/stage-whiteboard-step1，全程合成数据）：packages/stage 的讲解 DSL v0.1.0（类型、JSON Schema、确定性校验器）、
 # 播放状态机与最小 SVG 白板（零新依赖：本包不装依赖，借用 apps/web 已安装的 typescript、react 与 @types）。
 # stage-test：类型检查 + 单测（校验器正反例、状态机、白板折叠、三套布局令牌、schema 与常量一致、SSR 快照、渲染无外链、讲解权 1.25 线、
-#   只渲染已校验的 DSL、源码不碰存储与网络）。样张页 /dev/stage 的接线与端到端随 web-test 运行（tests/stage.test.ts、e2e/stage.spec.ts）
+#   只渲染已校验的 DSL、源码不碰存储与网络；版本规则：格式指纹与已发布 schema 锁在 schema/versions.lock.json，迁移阶梯与拒收，specs/stage-dsl-versioning）。样张页 /dev/stage 的接线与端到端随 web-test 运行（tests/stage.test.ts、e2e/stage.spec.ts）
 # stage-mutation：校验器、文字安全、公式排版、状态机、白板折叠、组件、布局令牌与 schema 逐条改坏，断言测试能发现（约 2 分钟）
 # 缺 apps/web 依赖时非严格跳过、严格失败
 STAGE_MISSING = [ ! -d apps/web/node_modules/react ] || [ ! -x apps/web/node_modules/.bin/tsc ]

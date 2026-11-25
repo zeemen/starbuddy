@@ -1,8 +1,8 @@
 'use client';
-// 舞台样张页的客户端部分（specs/stage-whiteboard-step1）：合成 DSL 经 packages/stage 的校验器后，由播放状态机驱动白板逐步播放。
+// 舞台样张页的客户端部分（specs/stage-whiteboard-step1）：合成 DSL 经 packages/stage 的版本迁移入口与校验器后，由播放状态机驱动白板逐步播放。
 // 只在内存里算，不连 BFF、不接 teach、不计量、不落库、不写任何浏览器存储。apps/web 只经 packages/stage 的接口使用舞台（ADR 07 决定 7）。
 import { createElement, useEffect, useMemo, useReducer, useState } from 'react';
-import { initialPlayer, LAYOUT_NAMES, step, validateStageDsl, type LayoutName } from '../../../../packages/stage/src/index.ts';
+import { initialPlayer, LAYOUT_NAMES, migrateStageDsl, step, type LayoutName } from '../../../../packages/stage/src/index.ts';
 import { createWhiteboard } from '../../../../packages/stage/src/Whiteboard.tsx';
 import { STAGE_INVALID_SAMPLE, STAGE_SAMPLE } from './sample.ts';
 
@@ -15,8 +15,9 @@ const LAYOUT_LABEL: Record<LayoutName, string> = { desktop: '桌面', tablet: '�
 const STATUS_LABEL = { idle: '未开始', playing: '播放中', paused: '已暂停', ended: '已结束' } as const;
 
 export function StageDemo() {
-  const valid = useMemo(() => validateStageDsl(STAGE_SAMPLE), []);
-  const invalid = useMemo(() => validateStageDsl(STAGE_INVALID_SAMPLE), []);
+  // 经版本迁移入口读入（specs/stage-dsl-versioning）：当前版本直接校验，旧版本沿迁移阶梯升级后再校验
+  const valid = useMemo(() => migrateStageDsl(STAGE_SAMPLE), []);
+  const invalid = useMemo(() => migrateStageDsl(STAGE_INVALID_SAMPLE), []);
   const total = valid.ok ? valid.dsl.steps.length : 1;
   const [player, dispatch] = useReducer(step, total, initialPlayer);
   const [layout, setLayout] = useState<LayoutName>('desktop');
