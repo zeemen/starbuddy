@@ -125,6 +125,12 @@ a { color: inherit; }
 .stage-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .stage-controls button, .stage-controls select { font: inherit; min-height: 44px; min-width: 88px; }
 .stage-caption { min-height: 1.6em; font-size: 1.1em; }  /* 讲解字幕（specs/stage-dsl-v0.2）：空的时候也占一行，播放时版面不跳 */
+/* 指着元素提问（specs/stage-point-to-ask）：点击区透明，聚焦时用描边表示（不靠颜色）；菜单按钮至少 44 像素高 */
+.stage-ask { cursor: pointer; outline: none; }
+.stage-ask:focus-visible { stroke: currentColor; stroke-width: 3; stroke-dasharray: 2 3; }
+.stage-ask-row { display: flex; gap: 8px; margin: 4px 0; }
+.stage-ask-row button, .stage-ask-menu button { font: inherit; min-height: 44px; min-width: 88px; }
+.stage-ask-menu { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0; padding: 8px; border: 1px solid var(--rule); border-radius: 8px; }
 
 /* 点亮：描边外发光 0 → 6 线宽 → 0，1.2 秒，一次，不循环（视觉规范第五章） */
 @keyframes star-light-up {

@@ -1,6 +1,6 @@
 # @starbuddy/stage · 舞台
 
-讲解 DSL 的类型、JSON Schema、确定性校验器、台词稿、版本迁移、播放状态机与最小 SVG 白板（ADR 07；`specs/stage-whiteboard-step1`、`specs/stage-dsl-versioning`、`specs/stage-dsl-v0.2`）。
+讲解 DSL 的类型、JSON Schema、确定性校验器、台词稿、版本迁移、播放状态机与最小 SVG 白板（ADR 07；`specs/stage-whiteboard-step1`、`specs/stage-dsl-versioning`、`specs/stage-dsl-v0.2`、`specs/stage-point-to-ask`）。
 其他模块只经 `src/index.ts` 与 `src/Whiteboard.tsx` 使用本包；读入讲解 DSL 一律经 `migrateStageDsl`（当前版本直接校验，旧版本沿迁移阶梯升级后再校验）。
 
 ## 版本规则
@@ -31,3 +31,13 @@
 - `narrated: true`：带书写或作图的步骤必须有台词（`unpaired_board`）；`point` 必须配台词、一步最多一个。`narrated: false` 是无声板书（v0.1 迁移过来就是它），不得有台词与指向。
 - `point`：`spotlight`（目标外接框加粗描边）或 `laser`（目标左侧小三角），只指当步、下一步收起；目标是白板上现存的非高亮元素或 `slots` 里声明的槽位。
 - `slots`：题图（`item_figure`）或学生作答切片（`student_answer`）的区域，只渲染空框；内容由调用方运行时在内存里填充，DSL 与台词稿都不含学生数据（ADR 07 决定 4）。
+
+## 指着元素提问（`specs/stage-point-to-ask` 第一阶段）
+- 提问对象 `StageQuestion = { dsl_version, cursor, anchor: { kind: element | slot | step, id }, intent }`（`src/question.ts`），
+  意图只有四个编码：`why_step`、`what_is`、`where_from`、`again`，不收自由文字；只含 DSL 里的 id、步数与编码，不含学生数据。
+- `validateStageQuestion(dsl, q)`：只能指已经出现的东西——此刻白板上的元素（高亮框不能单独被指）、声明过的槽位、已播放过的步；
+  错误码 `not_visible`、`unknown_anchor`、`bad_intent`、`bad_version`、`bad_cursor`、`unknown_field`、`not_object`。
+- `originsAt(dsl, cursor)`：白板上每个元素是第几步写上去的；`replayCursor(dsl, q)`：“再讲一遍”要 seek 到的步数（之后再 play）。
+- 白板 `askable` 属性（缺省关闭，关闭时输出不变）：元素与槽位各一个透明点击区（`role="button"`、可 Tab 聚焦、回车或空格选中），
+  选中画虚线细框；读屏标签由调用方给。提问对象**不是** DSL 序列化格式的一部分，不升 `DSL_VERSION`。
+- 回答（契约、人设、模型、计量）是第二阶段，必停，另起。

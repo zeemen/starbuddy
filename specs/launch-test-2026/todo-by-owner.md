@@ -75,7 +75,7 @@
 
 | 截止 | 事项 | 出处 |
 |---|---|---|
-| **W6** | **人写人审全部占位文案：家长端与 PWA（`apps/web/src/pwa/copy.ts`、离线页）、内测反馈与退出页（`TODO_COPY`）、学生端诊断入口与返回（`apps/web/src/diagnosis/copy.ts` 的 `DIAGNOSIS_ENTRY_COPY`）、做题等待时的过程状态（`apps/web/src/shell/copy.ts` 的 `PROCESS_STATUS`）；应用名** | LT-07 1、LT-06；`specs/diagnosis-student-entry/`、`specs/process-status/` **〔11-25〕** |
+| **W6** | **人写人审全部占位文案：家长端与 PWA（`apps/web/src/pwa/copy.ts`、离线页）、内测反馈与退出页（`TODO_COPY`）、学生端诊断入口与返回（`apps/web/src/diagnosis/copy.ts` 的 `DIAGNOSIS_ENTRY_COPY`）、做题等待时的过程状态（`apps/web/src/shell/copy.ts` 的 `PROCESS_STATUS`）、讲解白板指着元素提问的菜单与提示（同文件的 `STAGE_ASK`）；应用名** | LT-07 1、LT-06；`specs/diagnosis-student-entry/`、`specs/process-status/`、`specs/stage-point-to-ask/` **〔11-25〕** |
 | W6 | 图标与主题色；16 张移动视觉基线签字；包体积阈值与 3G 首屏目标签字 | LT-07 2–4 |
 | W6 | 视觉负责人在锁定环境里更新“错题再练 列表”桌面基线（102、103 两行改显示知识点名称；本机 Chromium 版本不同，判断不了） | `specs/practice-retest-list-polish/lessons.md` 待人确认第 1 条 **〔11-19〕** |
 | ~~诊断上线前~~ | ~~诊断探针提交失败时的处理~~：**已定并实现（2026-11-22）**——可重试的（闸门被拒、限流、断连）留在原处、冷却后再给一次机会，其余照旧跳过；请 SIE 负责人知情 | `specs/diagnosis-probe-retry/` **〔11-22〕** |
