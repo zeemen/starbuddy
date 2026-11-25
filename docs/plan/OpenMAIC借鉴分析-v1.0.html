@@ -113,9 +113,9 @@ td:first-child{font-weight:500}
   <h1>OpenMAIC 借鉴分析</h1>
   <p class="sub">面向"阿鸦"AI 一对一辅导产品的产品思路、学习方法与架构对照</p>
   <div class="meta">
-    <div><b>版本</b>v1.0.1</div>
-    <div><b>日期</b>2026 年 9 月 21 日</div>
-    <div><b>分析对象</b>THU-MAIC/OpenMAIC v0.3.2（MIT）</div>
+    <div><b>版本</b>v1.1</div>
+    <div><b>日期</b>2026 年 9 月 21 日（v1.1 增补：2026 年 11 月 25 日）</div>
+    <div><b>分析对象</b>THU-MAIC/OpenMAIC v0.3.2（MIT）；v1.1 增补对照 1.5.0 及 2026-11-25 主干</div>
     <div><b>适用产品</b>阿鸦 · 南京初中数学 AI 一对一</div>
     <div><b>密级</b>内部讨论稿</div>
   </div>
@@ -129,6 +129,9 @@ td:first-child{font-weight:500}
     <p class="lead">OpenMAIC 与阿鸦不是同一类产品。前者解决"把任意主题一键变成一堂课"，后者解决"把一个具体学生带到中考目标线"。</p>
     <p class="lead">最值得借鉴的不是整体，而是三块可拆下来的零件：<strong>课堂化的呈现层</strong>、<strong>事件驱动的引擎架构</strong>、<strong>"AI 同学"这一学习机制</strong>。</p>
     <p class="lead">阿鸦的护城河——学习者模型、课标与考情锚定、长期陪伴的 IP——恰是 OpenMAIC 的空白，追赶它的功能时不能稀释这三样。</p>
+    <div class="callout">
+      <p><strong>v1.1 增补（2026-11-25）：</strong>OpenMAIC 已到 1.5.0。v0.3.2 之后的变化、对平台（不只阿鸦）的六点吸收计划与落地顺序见第八章；本章到第七章保持 v1.0.1 原文，只作历史记录。</p>
+    </div>
     <div class="callout gold">
       <p><strong>一个动作建议：</strong>本周在本地跑起 OpenMAIC，把"上传一张南京期中试卷 → 自动生成阿鸦讲评课"走通一遍。这是最能让家长感知价值的功能，也是验证复用可行性成本最低的实验。</p>
     </div>
@@ -438,13 +441,56 @@ td:first-child{font-weight:500}
   </div>
 </section>
 
+<!-- 8 v1.1 增补 -->
+<section>
+  <div class="margin"><span class="n">八</span>v1.1 增补</div>
+  <div class="body">
+    <h2>v0.3.2 → 1.5.0：变了什么、吸收什么</h2>
+    <p>依据：2026-11-25 只读核查 OpenMAIC 主干（提交 09467b5）的 README、CHANGELOG、源码与 eval/、skills/ 目录，未运行。下文的“平台”指点斗 StarBuddy 七科平台，不限于阿鸦。</p>
+
+    <h3>8.1 三个月里的变化</h3>
+    <div class="tbl"><table>
+      <tr><th>版本</th><th>日期</th><th>要点</th></tr>
+      <tr><td>1.0.0</td><td>08-27</td><td>Agent 工作台；可持久的 agent 运行时（会话写 PostgreSQL，可恢复）；教学法“技能”（费曼法、螺旋课程）</td></tr>
+      <tr><td>1.0.1–1.0.3</td><td>09-06 至 09-15</td><td>以安全修复为主（SSRF、DNS 重绑定、幻灯片 HTML 净化、渲染服务 CSP）；最近发展区（ZPD）习题课技能；选择题答案键匹配不上或匹配多个即判失败</td></tr>
+      <tr><td>1.1.0</td><td>09-24</td><td>课堂聊天默认改为 agent 循环；学生可指着幻灯片、互动组件或白板上的某个元素提问；每个生成步骤可单独选模型</td></tr>
+      <tr><td>1.2.0</td><td>10-16</td><td>服务端优先：必须用 PostgreSQL 与常驻 Node 进程；生成可断点续跑、失败步骤单独重试；模型按 slot 统一配置，可锁定、可禁止用户自带 key</td></tr>
+      <tr><td>1.3.0</td><td>10-29</td><td>知识库（资料解析一次、跨会话复用）；互动页依赖改为自托管，不走公共 CDN</td></tr>
+      <tr><td>1.4.0</td><td>11-04</td><td>PBL v3：沙箱里跑真实编程项目，四个 AI 教学角色、里程碑测试、学习报告</td></tr>
+      <tr><td>1.5.0</td><td>11-24</td><td>首页即工作台；手机适配；对话上下文压缩；国内模型的语音与 OCR</td></tr>
+      <tr><td>主干</td><td>11-25</td><td>PBL 导师伴随窗与讲解白板（默认关闭）</td></tr>
+    </table></div>
+    <p>没变的：仍没有跨课的学习者模型；没有内容审核层；检索不到未成年人相关设计；各 @openmaic/* 包仍是 0.x（dsl 0.13、renderer 0.2、editor 0.0.x）；根目录与各包仍是 MIT，LGPL 的 mathml2omml 仍只用于 PPTX 公式导出。ADR 07 第 6 节已据此补记事实，决定不变。</p>
+
+    <h3>8.2 吸收的六点与落地顺序（2026-11-25 用户确认“按建议落地 6 点”）</h3>
+    <div class="tbl"><table>
+      <tr><th>#</th><th>借鉴什么（OpenMAIC 依据）</th><th>平台里怎么落</th><th>顺序与性质</th></tr>
+      <tr><td>2</td><td>DSL 有独立于包版本的格式版本号，格式一变就升版本、追加一级纯函数迁移；比当前更新的版本拒收；CI 强制改格式必升版本（packages/@openmaic/dsl/src/version.ts）</td><td>packages/stage：格式指纹锁文件、已发布 schema 冻结、迁移阶梯、未来 / 未知版本与迁移失败一律拒收；迁移不改任何文字</td><td><b>第一步</b>；工程项，不涉及必停项；specs/stage-dsl-versioning</td></tr>
+      <tr><td>1</td><td>讲解拆成“说 / 画 / 指”交错的步骤，“指”可指向学生自己的作答（lib/pbl/v3/narration.ts 与讲解技能）</td><td>讲解 DSL v0.2：每段台词显式配一个白板动作；新增“指向”动作，可指向题图元素或学生作答切片；台词仍走人设审核，与板书分开存</td><td>第二步，随 2 月数学白板讲评课；DSL v0.2 是迁移阶梯的第一级真实迁移</td></tr>
+      <tr><td>3</td><td>学习报告每条结论必须引用真实记录 ID，引语必须是学生原话的子串，否则整条丢弃；不推断性格与掌握，“测试通过不等于理解”（lib/server/pbl-v3/report-analysis.ts）</td><td>模型生成的周报、讲评说明等文字加确定性守门：陈述必须引用判断（规则 11，已有），引语必须逐字出自学生原文，否则不显示；并入陈述—判断一致性检查</td><td>第三步；洞察服务的守门层，规格先给 SIE 负责人看</td></tr>
+      <tr><td>4</td><td>学生指着幻灯片、白板或互动组件上的元素提问（1.1.0）</td><td>学生点白板上的某一步或题图上的某个点问“这一步为什么”，上下文结构化，少自由输入，便于审核</td><td>第四步；需要直播态（插话转模型），随讲评课第二步</td></tr>
+      <tr><td>5</td><td>ZPD 习题课的验收区分独立作答、受助作答、新题复核，用人工检查清单，不按关键词计分（eval/zone-of-proximal-development）</td><td>与证据的 evidence_kind（独立 / 提示 / 迁移 / 延迟复测）同一思路；借它的检查清单做讲评课的教研验收表</td><td>随讲评课验收另起</td></tr>
+      <tr><td>6</td><td>确定性验证器：期望输出只留在宿主侧，反馈只回传本次提交应得的部分；答案键匹配失败即判失败（lib/server/pbl-v3/evaluation.ts、quiz-feedback.ts）</td><td>原则已一致；写阿鸦、知行验证器与评审时对照检查，不单独立项</td><td>持续</td></tr>
+    </table></div>
+
+    <h3>8.3 不吸收</h3>
+    <ul>
+      <li>简答题由模型打分、解析失败默认给一半分（app/api/quiz-grade/route.ts）：违反“判分只来自验证器或 Rubric”（规则 3）。</li>
+      <li>SEL 技能里引导学生说出感受：触及规则 12 的情绪推断边界。</li>
+      <li>PBL 编程沙箱与四角色同时上场：太重、计费敞口大，初中生的注意力预算也撑不起（与第六章“不做”一致）。</li>
+      <li>匿名 cookie 400 天、默认示例接海外模型：不符合未成年人与数据驻留要求。</li>
+      <li>直接引入 @openmaic/* 包：仍是 0.x 且要求服务端常驻；继续自研 packages/stage、只借设计，到它的渲染层 1.0 后按 ADR 07 选项 A 重评。mathml2omml 维持不引入。</li>
+    </ul>
+  </div>
+</section>
+
 <!-- 8 附录 -->
 <section>
   <div class="margin"><span class="n">附</span>参考</div>
   <div class="body">
     <h2>来源与版本记录</h2>
     <ul>
-      <li>仓库：<a href="https://github.com/THU-MAIC/OpenMAIC">github.com/THU-MAIC/OpenMAIC</a>（README 与 CHANGELOG，2026-09-21 访问）</li>
+      <li>仓库：<a href="https://github.com/THU-MAIC/OpenMAIC">github.com/THU-MAIC/OpenMAIC</a>（README 与 CHANGELOG，2026-09-21 访问；v1.1 于 2026-11-25 只读核查主干 09467b5）</li>
       <li>论文：Yu JF 等，From MOOC to MAIC: Reimagine Online Teaching and Learning Through LLM-Driven Agents，JCST 41(1): 394–414, 2026</li>
       <li>在线演示：open.maic.chat</li>
     </ul>
@@ -453,6 +499,7 @@ td:first-child{font-weight:500}
         <tr><th>版本</th><th>日期</th><th>变更</th></tr>
         <tr><td>v1.0</td><td>2026-09-21</td><td>首版：基于 OpenMAIC v0.3.2 的定位、架构对照与借鉴建议</td></tr>
         <tr><td>v1.0.1</td><td>2026-09-25</td><td>按四科盘点更正阿鸦既有技术栈（第二章“技术栈”，第三章架构对照图的基础层与对照表“基础”一行）：没有 shadcn、没有 Railway，模型是 DeepSeek 与 DashScope 而非 Anthropic，部署在 Vercel。借鉴结论不变</td></tr>
+        <tr><td>v1.1</td><td>2026-11-25</td><td>新增第八章：对照 OpenMAIC 1.5.0 及 11-25 主干的变化、六点吸收计划与落地顺序（用户确认“按建议落地 6 点”）、不吸收清单；第一至七章保持 v1.0.1 原文。ADR 07 第 6 节同步补记事实。文件名沿用 v1.0 以免断链</td></tr>
       </table>
     </div>
   </div>
