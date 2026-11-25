@@ -9,6 +9,7 @@ import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 
 import type { Answer } from '../lib/diagnosis.ts';
 import { RETEST as C, RETEST_AFTER, RETEST_ERROR, RETEST_VERDICT } from '../shell/copy.ts';
 import { RichParagraphs, RichRuns } from '../shell/RichItem.tsx';
+import { ProcessStatus } from '../shell/ProcessStatus.tsx';
 import { cooldownMs } from '../lib/retry-after.ts';
 import { useCooldown } from '../practice/use-cooldown.ts';
 import { keepsTicket, needsNewItem, resubmitsSnapshot, type UiError } from '../practice/view.ts';
@@ -69,7 +70,6 @@ export function RetestItem({ csrf, student, subject, entry, listHref }: { csrf: 
     sent.current = answer;
     setBusy(true);
     setError(null);
-    setMessage(C.submitting);
     try {
       const r = await answerRetestAction(csrf, student, subject, entry, ready.ticket, answer);
       if (r.kind === 'result') {
@@ -95,7 +95,7 @@ export function RetestItem({ csrf, student, subject, entry, listHref }: { csrf: 
 
   return (
     <section className="practice-item" data-testid="retest-item" data-phase={phase} data-error={error ?? ''} aria-labelledby={ids.heading}>
-      {phase === 'loading' ? <h2 id={ids.heading}>{C.loading}</h2> : null}
+      {phase === 'loading' ? <h2 id={ids.heading}><ProcessStatus stage="preparing" /></h2> : null}
       {phase === 'item' && ready && item ? (
         <form onSubmit={submit} noValidate data-format={item.format}>
           <h2 id={ids.heading} ref={heading} tabIndex={-1}>{C.itemHeading}</h2>
@@ -148,7 +148,7 @@ export function RetestItem({ csrf, student, subject, entry, listHref }: { csrf: 
       ) : null}
       {phase === 'empty' ? <h2 id={ids.heading} ref={heading} tabIndex={-1} data-testid="retest-empty">{C.itemUnavailable}</h2> : null}
       {phase === 'stopped' ? <h2 id={ids.heading} ref={heading} tabIndex={-1} data-testid="retest-stopped">{errorText}</h2> : null}
-      <p role="status" data-testid="retest-status">{phase === 'item' && error ? errorText : message}</p>
+      <p role="status" data-testid="retest-status">{busy ? <ProcessStatus stage="submitting" /> : phase === 'item' && error ? errorText : message}</p>
       <p><a href={listHref} data-testid="retest-back-to-list">{C.backToList}</a></p>
     </section>
   );

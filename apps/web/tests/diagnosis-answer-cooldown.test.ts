@@ -28,7 +28,10 @@ test('组件接线：可重试才冷却（按 retry-after），沿用已有文�
   assert.match(d, /const \{ cooling: answerCooling, start: startAnswerCooldown, clear: clearAnswerCooldown \} = useCooldown\(\);/);
   const fn = d.slice(d.indexOf('const submit = async'), d.indexOf('const pause = async'));
   assert.match(fn, /if \(!session \|\| !view\?\.step \|\| busy \|\| answerCooling\) return;/, '冷却中按 Enter 提交也不发请求');
-  const fail = fn.slice(fn.indexOf('if (!r.ok) {'), fn.indexOf("setMessage('');\n      await load(session);"));
+  const start = fn.indexOf('if (!r.ok) {');
+  const end = fn.indexOf("setPending('next');");  // 作答成功后读下一题（specs/process-status）
+  assert.ok(start > 0 && end > start, '失败分支在“读下一题”之前');
+  const fail = fn.slice(start, end);
   assert.match(fail, /if \(r\.retryable === true\) startAnswerCooldown\(cooldownMs\(r\.retryAfterSec\)\);/);
   assert.match(fail, /return setMessage\(C\.notSaved\);/, '沿用已有文案，不新增');
   assert.doesNotMatch(fail, /api\.answer|setText|setWork|setChoice/, '不自动重发，作答与过程原样留着');

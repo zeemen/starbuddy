@@ -486,12 +486,10 @@ export const PRACTICE = {
   nextRoundAt: T('practice.next_round_at', '下一轮开放时间'),
   start: T('practice.start', '再练一道同类题'),
   itemHeading: T('practice.item.heading', '题目'),
-  loading: T('practice.loading', '正在准备题目'),
   choiceLegend: T('practice.choice', '选一个答案'),
   choiceLegendMulti: T('practice.choice_multi', '选出所有合适的答案'),
   answerLabel: T('practice.answer', '答案'),
   submit: T('practice.submit', '提交'),
-  submitting: T('practice.submitting', '正在提交'),
   needAnswer: T('practice.need_answer', '先写好答案再提交'),
   retry: T('practice.retry', '再提交一次'),
   newItem: T('practice.new_item', '换一道题'),
@@ -569,12 +567,10 @@ export const RETEST = {
   colStatus: T('retest.col.status', '状态'),
   start: T('retest.start', '开始'),
   itemHeading: T('retest.item.heading', '题目'),
-  loading: T('retest.loading', '正在准备题目'),
   choiceLegend: T('retest.choice', '选一个答案'),
   choiceLegendMulti: T('retest.choice_multi', '选出所有合适的答案'),
   answerLabel: T('retest.answer', '答案'),
   submit: T('retest.submit', '提交'),
-  submitting: T('retest.submitting', '正在提交'),
   needAnswer: T('retest.need_answer', '先写好答案再提交'),
   retry: T('retest.retry', '再提交一次'),
   newItem: T('retest.new_item', '换一道题'),
@@ -660,6 +656,19 @@ export const TODAY_MARK = {
 } as const;
 export const ALL_TODAY_ORCH_COPY: string[] = [...Object.values(TODAY_ORCH), ...Object.values(TODAY_ORCH_KIND), ...Object.values(TODAY_MARK)];
 
+/**
+ * 做题等待时的动作级过程状态（specs/process-status；诊断、再练、复测共用，组件 src/shell/ProcessStatus.tsx）。
+ * 一律是明显占位 {{TODO_COPY:status.…}}（面向学生的话术人写人审，必停），占位后附中性短语便于走查。
+ * 只说“在做什么动作”，不说服务端内部步骤（不写“正在核对答案”“正在判分”），不评价、不预计时间、不说快慢原因。
+ */
+export const PROCESS_STATUS = {
+  preparing: T('status.preparing', '正在准备'),
+  submitting: T('status.submitting', '正在提交'),
+  next: T('status.next', '正在准备下一步'),
+  seconds: T('status.seconds', '秒'),
+  still: T('status.still', '还在处理，请稍等'),
+} as const;
+
 /** 信任界面的全部文案（静态检查逐条扫描；端到端的“每个文本节点”核对也用它） */
 export const ALL_TRUST_COPY: string[] = [
   ...Object.values(TRUST), ...Object.values(WHY), ...Object.values(WHY_STATUS), ...Object.values(EVIDENCE_SOURCE),
@@ -694,5 +703,5 @@ export const ALL_SHELL_COPY: string[] = [
   FAMILY_SHELL.regionLabel, FAMILY_SHELL.birthLabel, FAMILY_SHELL.create, FAMILY_SHELL.consentHeading, FAMILY_SHELL.consentText,
   FAMILY_SHELL.consentGrant, FAMILY_SHELL.consentFor('孩子 1 · 八年级'), FAMILY_SHELL.onboarding, FAMILY_SHELL.timeSettings,
   FAMILY_SHELL.backToFamily, ...Object.values(FAMILY_SHELL_RESULT), ...Object.values(TRUST_SLOT),
-  ...ALL_TRUST_COPY, ...ALL_PRACTICE_COPY, ...ALL_RETEST_COPY, ...ALL_TODAY_ORCH_COPY,
+  ...ALL_TRUST_COPY, ...ALL_PRACTICE_COPY, ...ALL_RETEST_COPY, ...ALL_TODAY_ORCH_COPY, ...Object.values(PROCESS_STATUS),
 ];

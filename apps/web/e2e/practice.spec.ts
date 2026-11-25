@@ -11,7 +11,7 @@
 // 视觉回归（@visual，只由 make web-visual 运行）：列表与作答页各一张，基线在 __screenshots__/practice.spec.ts/（首次提交要有视觉负责人签字）。
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
-import { ALL_SHELL_COPY, PRACTICE, PRACTICE_ERROR, PRACTICE_SOURCE, PRACTICE_VERDICT } from '../src/shell/copy.ts';
+import { ALL_SHELL_COPY, PRACTICE, PRACTICE_ERROR, PRACTICE_SOURCE, PRACTICE_VERDICT, PROCESS_STATUS } from '../src/shell/copy.ts';
 import { expectNoDomLeak } from './dom-leak.ts';
 import { checkHeaders, checkHtml } from './headers-check.ts';
 import { targets } from './crawl-pages.ts';
@@ -194,7 +194,7 @@ test('待复核：只显示“等待复核”，不显示判分结论；条目�
 });
 
 test('作答被闸门拒：提交按钮按 retry-after 冷却，冷却完由学生再点，用同一张票据提交成功（specs/retry-after-cooldown）', async ({ page }) => {
-  // 第五个 BFF 的闸门测试配置：每科每生同时 1 个、retry-after 1 秒（scripts/e2e.sh）。桩对填空作答 SLOW-SYN 晚 3 秒才答：
+  // 第五个 BFF 的闸门测试配置：每科每生同时 1 个、retry-after 1 秒（scripts/e2e.sh）。桩对填空作答 SLOW-SYN 晚 5 秒才答：
   // 第一页占着本学生在数学的唯一名额，第二页的作答被 BFF 拒（503 SUBJECT_BUSY，不到桩）
   await loginStudent(page, P1);
   const other = await page.context().newPage();
@@ -206,6 +206,10 @@ test('作答被闸门拒：提交按钮按 retry-after 冷却，冷却完由学�
   await other.getByLabel(/答案/).fill('合成作答');
   const before = fakeLearningRequests();
   await page.getByTestId('practice-submit').click();
+  // 等待时的动作级过程状态（specs/process-status）：状态行换成“正在提交”，不出现服务端内部阶段
+  const waiting = page.getByTestId('practice-status').getByTestId('process-status');
+  await expect(waiting).toHaveAttribute('data-stage', 'submitting');
+  await expect(waiting).toContainText(PROCESS_STATUS.submitting);
   await expect.poll(() => fakeLearningRequests(), { message: '第一页的作答已到桩（占着名额）' }).toBeGreaterThan(before);
   const atStub = fakeLearningRequests();
   const btn = other.getByTestId('practice-submit');
@@ -223,7 +227,13 @@ test('作答被闸门拒：提交按钮按 retry-after 冷却，冷却完由学�
   await expect(btn).toHaveAttribute('data-cooldown', 'off', { timeout: 5_000 });
   expect(Date.now() - t0, '按 retry-after（1 秒）冷却').toBeGreaterThanOrEqual(700);
   await expect(btn).toBeEnabled();
+  // 第一页还在等（桩 5 秒才答）：超过 3 秒显示已等待的秒数（读屏不播报，aria-hidden），文本节点仍全是文案或 data-value
+  await expect(page.getByTestId('process-waited')).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByTestId('process-waited')).toHaveAttribute('aria-hidden', 'true');
+  expect(Number(await page.locator('[data-value="waited-sec"]').innerText())).toBeGreaterThanOrEqual(3);
+  await onlyCopy(page);
   await expect(page.getByTestId('practice-result')).toHaveAttribute('data-pending-review', 'true', { timeout: 10_000 });
+  await expect(page.getByTestId('process-status')).toHaveCount(0);  // 有结果后状态行恢复
   expect(fakeLearningRequests(), '被拒与冷却中的点击都没到桩').toBe(atStub);
   await btn.click();                                       // 冷却结束不自动重发：学生自己点
   await expect(other.getByTestId('practice-result')).toHaveAttribute('data-pending-review', 'true');

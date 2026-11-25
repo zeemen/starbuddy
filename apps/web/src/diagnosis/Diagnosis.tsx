@@ -13,6 +13,8 @@ import type { Prediction } from '../probe/copy.ts';
 import { RichParagraphs, RichRuns } from '../shell/RichItem.tsx';
 import { cooldownMs } from '../lib/retry-after.ts';
 import { useCooldown } from '../practice/use-cooldown.ts';
+import { ProcessStatus } from '../shell/ProcessStatus.tsx';
+import type { ProcessStage } from '../shell/process-status.ts';
 import { DIAGNOSIS_COPY as C, formatDuration } from './copy.ts';
 import { nextAfterProbe, type ProbeOutcome } from './probe-retry.ts';
 
@@ -39,6 +41,8 @@ export function Diagnosis({ api }: { api: DiagnosisApi }) {
   const [view, setView] = useState<DiagnosisView | null>(null);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  // 等待中的动作（specs/process-status）：作答请求进行中 submitting、作答成功后读下一题 next、答完探针读题 preparing；为空时状态行照常显示 message
+  const [pending, setPending] = useState<ProcessStage | null>(null);
   const [text, setText] = useState('');
   const [work, setWork] = useState('');
   const [choice, setChoice] = useState<string[]>([]);
@@ -155,7 +159,12 @@ export function Diagnosis({ api }: { api: DiagnosisApi }) {
     }
     if (next === 'skip') skippedProbe.current = seq;  // 没记下也不挡做题
     setMessage('');
-    await load(session);
+    setPending('preparing');
+    try {
+      await load(session);
+    } finally {
+      setPending(null);
+    }
   };
   const onSkip = () => {
     if (!view?.step) return;
@@ -174,7 +183,8 @@ export function Diagnosis({ api }: { api: DiagnosisApi }) {
     const needsWork = step.kind !== 'adaptive';
     if (needsWork && !work.trim()) return setMessage(C.needWork);
     setBusy(true);
-    setMessage(C.submitting);
+    setMessage('');
+    setPending('submitting');
     try {
       const r = await api.answer(session, step.seq, answer, needsWork ? work : null, Math.min(7200, stepElapsed()));
       if (r.curfew) return toCurfew();
@@ -185,8 +195,10 @@ export function Diagnosis({ api }: { api: DiagnosisApi }) {
         return setMessage(C.notSaved);
       }
       setMessage('');
+      setPending('next');
       await load(session);
     } finally {
+      setPending(null);
       setBusy(false);
     }
   };
@@ -223,7 +235,7 @@ export function Diagnosis({ api }: { api: DiagnosisApi }) {
           </span>
         </p>
       ) : null}
-      {phase === 'loading' ? <p>{C.starting}</p> : null}
+      {phase === 'loading' ? <p><ProcessStatus stage="preparing" /></p> : null}
       {phase === 'probe' && step ? (
         <>
           <p className="muted">{C.stepLabel(step.seq)}</p>
@@ -294,7 +306,7 @@ export function Diagnosis({ api }: { api: DiagnosisApi }) {
       {phase === 'probe' || phase === 'item' ? (
         <p className="diagnosis-actions"><button type="button" className="diagnosis-pause" disabled={busy} onClick={() => void pause()}>{C.pause}</button></p>
       ) : null}
-      <p role="status">{message}</p>
+      <p role="status">{pending ? <ProcessStatus stage={pending} /> : message}</p>
     </section>
   );
 }
