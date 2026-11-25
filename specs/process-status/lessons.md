@@ -13,7 +13,7 @@
     （以前这两段没有任何提示）；删去 `DIAGNOSIS_COPY.starting / submitting`。按钮禁用、冷却、宵禁、届别变化逻辑不变。
 - 测试：`tests/process-status.test.ts`（阶段与阈值、文案占位与禁用词、组件静态检查、三处接入与诊断阶段顺序）；`tests/diagnosis-answer-cooldown.test.ts`
   的切片锚点改到 `setPending('next')`（原锚点因本改动消失，旧写法会静默切到文件末尾）。
-- 端到端：再练桩的慢作答 `SLOW-SYN` 由 3 秒改为 5 秒（长过 3 秒阈值）；`e2e/practice.spec.ts` 的“作答被闸门拒”用例在第一页等待期间核对：
+- 端到端（`e2e/dom-leak.ts` 的 ATTRS 登记 `data-stage`，取值只许三个阶段）：再练桩的慢作答 `SLOW-SYN` 由 3 秒改为 5 秒（长过 3 秒阈值）；`e2e/practice.spec.ts` 的“作答被闸门拒”用例在第一页等待期间核对：
   状态行是 `submitting`、超过 3 秒出现秒数且 `aria-hidden`、文本节点全是文案或 data-value、有结果后组件消失。
 
 ## 与 spec 的差异
@@ -22,3 +22,8 @@
 
 ## 待人确认
 - 五条状态文案由人写人审（已登记）。
+
+## 验证
+- 前端单测 288 项通过；`make check-fast` 通过。
+- 本机定向端到端（再练、复测、诊断、诊断入口、探针，不含 `@visual`）23 项全部通过；首轮有 1 项失败，原因是运行时 DOM 泄露检查要求每个 `data-*`
+  属性都登记，新加的 `data-stage` 没登记，已补。以 CI 为准。

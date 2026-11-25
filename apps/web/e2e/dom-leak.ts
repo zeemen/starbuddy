@@ -19,6 +19,7 @@ import {
   WEEKLY_SOURCE, WHY, WHY_STATUS, DISPUTE,
 } from '../src/shell/copy.ts';
 import { TRUST_FEATURES } from '../src/shell/features.ts';
+import { PROCESS_STAGES } from '../src/shell/process-status.ts';
 import { ENTRY_STATUSES, SOURCES, VERDICTS } from '../src/practice/view.ts';
 import { ANSWER_FIELD_NAMES } from '../src/lib/rich-item.ts';
 
@@ -90,6 +91,7 @@ export const ATTRS: Record<string, Rule> = {
   phase: ['loading', 'item', 'result', 'empty', 'stopped'],
   format: ['single', 'multi', 'fill'],
   cooldown: ['on', 'off'],                                             // 作答被拒后提交按钮在不在冷却（specs/retry-after-cooldown）
+  stage: [...PROCESS_STAGES],                                          // 做题等待时的动作级阶段（specs/process-status）
   // 手机上按卡片排列时每格前的列名（specs/practice-retest-list-polish）：只许是再练、复测列表表头的同一条文案
   // 信任界面的证据表与异议表（specs/trust-tables-mobile）同样只许表头文案
   label: [PRACTICE.colSource, PRACTICE.colNode, PRACTICE.colLevel, PRACTICE.colStatus, PRACTICE.colRound,
