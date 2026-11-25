@@ -1,6 +1,6 @@
 # Python 依赖的已知漏洞：certifi、opentelemetry-api 升补丁版 · 规格草稿
 
-- 状态：**草稿，待人确认第五节**（2026-11-25）。
+- 状态：**已确认（2026-11-25，用户“按建议，默认值都同意，开始实现”）**：第五节三条都按默认。实现记录与差异见 lessons.md。
 - 来源：`specs/npm-audit-fixes/spec.md` 第三节“Python 依赖的漏洞核对另起任务”。2026-11-25 对仓库内全部 Python 锁文件
   （`packages/contracts/requirements-dev.lock`、`services/{learning,insight,knowledge,scheduler}/requirements*.lock`、`services/knowledge/build-requirements.lock`，
   共 55 个包与版本）逐个查 PyPI 的漏洞字段（数据来自 OSV / GitHub 通告库），只读，不装新工具。
