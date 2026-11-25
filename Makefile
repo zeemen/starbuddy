@@ -1113,3 +1113,12 @@ kge-irt-mutation:
 	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; fi
 	@$(call skip_rest,$(KGE_CALIBRATE_MISSING))PYTHONDONTWRITEBYTECODE=1 $(KGE_CALIBRATE_PY) tools/kge-irt/mutations.py; rc=$$?; \
 	  if [ $$rc -eq 3 ] && [ "$(CONTRACT_STRICT)" != "1" ]; then exit 0; else exit $$rc; fi
+
+# 依赖已知漏洞核对（W13 技术债 T53，specs/npm-audit-fixes、specs/py-audit-fixes）：每月或升级依赖前手动跑，要联网，不进 check / CI。
+# Node：每个带锁文件的包各跑一次 npm audit；Python：tools/dep-audit/pypi_vulns.py 查 PyPI 的漏洞字段。任一处有通告或查询失败即非零退出。
+NPM_AUDIT_DIRS := apps/web services/bff adapters/aya adapters/wenli adapters/zhixing tools/kge-coverage tools/kge-inventory
+.PHONY: dep-audit
+dep-audit:
+	@$(PYTHON) -I tools/dep-audit/pypi_vulns.py --self-test
+	@rc=0; for d in $(NPM_AUDIT_DIRS); do echo "== npm audit: $$d"; (cd $$d && npm audit) || rc=1; done; \
+	  echo "== Python 锁文件"; $(PYTHON) -I tools/dep-audit/pypi_vulns.py || rc=1; exit $$rc
