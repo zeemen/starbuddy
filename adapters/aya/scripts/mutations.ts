@@ -26,6 +26,7 @@ const TESTS = [
   "tests/hint-scan.test.ts",
   "tests/present.test.ts",
   "tests/lesson-answer.test.ts",
+  "tests/lesson-open.test.ts",
 ];
 const P = "src/methods/plan.ts";
 const V = "src/methods/variation.ts";
@@ -161,6 +162,18 @@ const MUTATIONS: Record<string, Edit[]> = {
   "讲评课台词稿不校验（原样当作合格稿）": [[L, "const s = migrateStageScript(d.dsl, l.script);",
     "const s = { ok: true as const, script: l.script as ValidatedStageScript, from: null } as ReturnType<typeof migrateStageScript>;"]],
   "讲评课内容包开关没开也读": [[L, "  if (!candidateAllowed) {\n    throw new Error(`讲评课内容包", "  if (false) {\n    throw new Error(`讲评课内容包"]],
+  // ---------- 打开讲评课（specs/stage-lesson-session ③b-2） ----------
+  "打开讲评课把预制答疑一起下发": [[T, "const lines = lesson.script.lines.filter((l) => said.has(l.id)).map((l) => ({ id: l.id, role: l.role, text: l.text }));",
+    "const lines = lesson.script.lines.map((l) => ({ id: l.id, role: l.role, text: l.text }));"]],
+  "打开讲评课提交前也下发含答案的讲解": [[T, "&& [...dslTexts(lesson.dsl), ...lines.map((l) => l.text)].some((t) => hintRevealsAnswer(t, item.answer))) {",
+    "&& false) {"]],
+  "打开讲评课只查字幕不查板书": [[T, "[...dslTexts(lesson.dsl), ...lines.map((l) => l.text)]", "[...lines.map((l) => l.text)]"]],
+  "打开讲评课不看 answer_submitted（提交后也不下发）": [[T, "if (item && req.answer_submitted !== true && item.format === \"fill\"\n      && [...dslTexts",
+    "if (item && item.format === \"fill\"\n      && [...dslTexts"]],
+  "打开讲评课不核对 skill_node": [[T, '  if (localId(req.skill_node) !== lesson.skillNode) throw new ProblemError(422, "INVALID_REQUEST", "skill_node does not match the lesson");\n  const reqItem = req.item_ref === undefined ? undefined : localId(req.item_ref);\n  if (reqItem !== lesson.itemId) throw new ProblemError(422, "INVALID_REQUEST", "item_ref does not match the lesson");\n  const said',
+    "  const said"]],
+  "带 lesson_ref 也走讲解页面": [[A, "const opened = r.lesson_ref !== undefined;", "const opened = false;"]],
+  "打开讲评课记成 1 级提示": [[T, "    hintLevelUsed: 0,\n    ...(item ? { item } : {}),\n  };\n}", "    hintLevelUsed: 1,\n    ...(item ? { item } : {}),\n  };\n}"]],
 };
 
 function sh(cmd: string, args: string[], cwd: string, timeoutMs = 240_000): Promise<number> {

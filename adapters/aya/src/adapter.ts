@@ -15,7 +15,8 @@ import { ProblemError, type ProblemCode } from "./problem.ts";
 import { planTasks, PLAN_ALGORITHM, type PlanInput } from "./methods/plan.ts";
 import { buildReport, REPORT_ALGORITHM, type ReportInput } from "./methods/report.ts";
 import {
-  checkTeachConfig, DEFAULT_TEACH_CONFIG, HINT_ALGORITHM, LESSON_ANSWER_ALGORITHM, PAGE_LESSON_ALGORITHM, teachHint, teachLesson, teachQuestion,
+  checkTeachConfig, DEFAULT_TEACH_CONFIG, HINT_ALGORITHM, LESSON_ANSWER_ALGORITHM, LESSON_OPEN_ALGORITHM, PAGE_LESSON_ALGORITHM, teachHint, teachLesson,
+  teachLessonOpen, teachQuestion,
   type TeachConfig, type TeachQuestionInput,
 } from "./methods/teach.ts";
 import { NO_LESSONS, type LoadedLessons } from "./lessons.ts";
@@ -501,14 +502,17 @@ export function createAdapter(deps: AdapterDeps) {
     v1Method("teach", "TeachRequest", body, (req, _fp, version) => {
       const r = req as unknown as {
         mode: "hint" | "lesson"; skill_node: string; item_ref?: string; allowed_hint_level: number; knowledge_page?: { body_md: string };
-        answer_submitted?: boolean; question?: TeachQuestionInput;
+        answer_submitted?: boolean; question?: TeachQuestionInput; lesson_ref?: { lesson_id: string; lesson_version: string };
       };
       const hint = r.mode === "hint";
       // v1.1 草稿内追加：带结构化提问（契约保证只在 lesson 模式、对话为空）→ 只从讲评课内容包取预制答疑
       const asked = r.question !== undefined;
+      // ③b-2：带 lesson_ref（契约保证只在 lesson 模式、不带提问、对话为空）→ 打开讲评课，下发讲解 DSL 与字幕台词
+      const opened = r.lesson_ref !== undefined;
       const out = asked ? teachQuestion(content, lessons, { ...r, question: r.question! })
-        : hint ? teachHint(content, r, teachConfig) : teachLesson(content, r);
-      const algorithm = asked ? LESSON_ANSWER_ALGORITHM : hint ? HINT_ALGORITHM : PAGE_LESSON_ALGORITHM;
+        : opened ? teachLessonOpen(content, lessons, { ...r, lesson_ref: r.lesson_ref! })
+          : hint ? teachHint(content, r, teachConfig) : teachLesson(content, r);
+      const algorithm = asked ? LESSON_ANSWER_ALGORITHM : opened ? LESSON_OPEN_ALGORITHM : hint ? HINT_ALGORITHM : PAGE_LESSON_ALGORITHM;
       return selfCheck("TeachResponse", {
         contract_version: version,
         result: {
@@ -519,7 +523,7 @@ export function createAdapter(deps: AdapterDeps) {
           referral_triggered: false,
         },
         evidence_ids: [],
-        source_version: asked ? sourceVersion(`algo:${algorithm}`, `items:aya-lessons@${lessons.version}`) : sourceVersion(`algo:${algorithm}`),
+        source_version: asked || opened ? sourceVersion(`algo:${algorithm}`, `items:aya-lessons@${lessons.version}`) : sourceVersion(`algo:${algorithm}`),
         model_version: `algo:${algorithm}`,
         ...contentEnvelope(out.item ? [out.item] : [], true),
       }, version);
