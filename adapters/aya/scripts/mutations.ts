@@ -25,6 +25,7 @@ const TESTS = [
   "tests/pack-format3.test.ts",
   "tests/hint-scan.test.ts",
   "tests/present.test.ts",
+  "tests/lesson-answer.test.ts",
 ];
 const P = "src/methods/plan.ts";
 const V = "src/methods/variation.ts";
@@ -37,6 +38,7 @@ const AD = "src/pack/admission.ts";
 const HS = "src/pack/hint-scan.ts";
 const PR = "src/methods/present.ts";
 const RT = "src/rich-text.ts";
+const L = "src/lessons.ts";
 
 type Edit = [file: string, from: string, to: string];
 // 名字 → 改动（原文必须恰好出现，替换第一处）
@@ -92,7 +94,7 @@ const MUTATIONS: Record<string, Edit[]> = {
   "含答案时降级到低一级（旧做法）而不是只指回题目": [[T, "hintRevealsAnswer(item.hintPath[level]!, item.answer)) return -1;", "hintRevealsAnswer(item.hintPath[level]!, item.answer)) return level > 0 ? hintLevelFor(item, level - 1, maxBeforeSubmit) : -1;"]],
   "越级：连同低等级提示一起返回": [[T, 'return { segments: [{ type: "text", text: item.hintPath[level]! }], hintLevelUsed: level, item };', 'return { segments: item.hintPath.slice(0, level + 2).map((text) => ({ type: "text" as const, text })), hintLevelUsed: level, item };']],
   "页面直出加了话术": [[T, 'return { segments: parts.map((text) => ({ type: "text", text })), hintLevelUsed: 0 };', 'return { segments: [{ type: "text", text: "（合成话术）" }, ...parts.map((text) => ({ type: "text" as const, text }))], hintLevelUsed: 0 };']],
-  "lesson 没有页面时改走提示阶梯": [[A, "const out = hint ? teachHint(content, r, teachConfig) : teachLesson(content, r);", "const out = hint || !r.knowledge_page ? teachHint(content, r, teachConfig) : teachLesson(content, r);"]],
+  "lesson 没有页面时改走提示阶梯": [[A, ": hint ? teachHint(content, r, teachConfig) : teachLesson(content, r);", ": hint || !r.knowledge_page ? teachHint(content, r, teachConfig) : teachLesson(content, r);"]],
   "skill_node 与题目不符不拒绝": [[T, "if (!item.mainNodes.includes(localId(req.skill_node))) {", "if (item.mainNodes.includes(\"\" + localId(req.skill_node).slice(99))) {"]],
   "身份披露置真（写了话术却不经人设层）": [[A, "          ai_disclosure_shown: false,", "          ai_disclosure_shown: true,"]],
   // ---------- 共同 ----------
@@ -142,6 +144,23 @@ const MUTATIONS: Record<string, Edit[]> = {
   "文字片段允许尖括号": [[RT, "export const TEXT_RE = /^[^<>\\u0000", "export const TEXT_RE = /^[^\\u0000"]],
   "公式允许 \\href": [[RT, "(?:href|url|", "(?:url|"]],
   "能力声明 1.1.0 不声明 present_item": [[A, '...(contract.version === "1.1.0" ? { present_item: { implemented: true, async: false } } : {}),', ""]],
+  // ---------- 讲评课结构化提问 → 预制答疑（specs/stage-point-to-ask-answer PR ③a） ----------
+  "提问不再核“只能指已经出现的东西”": [[T, "  if (!checked.ok) throw new ProblemError(422, \"INVALID_REQUEST\", \"question does not point at something already shown in the lesson\");\n", ""],
+    [T, "lesson.dsl.steps[replayCursor(lesson.dsl, checked.question)]!.id", "lesson.dsl.steps[Math.min(q.cursor, lesson.dsl.steps.length) - 1]!.id"]],
+  "讲解 DSL 版本不核对": [[T, "if (!lesson || lesson.dsl.dsl_version !== q.dsl_version) {", "if (!lesson) {"]],
+  "skill_node 不核对": [[T, '  if (localId(req.skill_node) !== lesson.skillNode) throw new ProblemError(422, "INVALID_REQUEST", "skill_node does not match the lesson");\n', ""]],
+  "item_ref 不核对": [[T, '  if (reqItem !== lesson.itemId) throw new ProblemError(422, "INVALID_REQUEST", "item_ref does not match the lesson");\n', ""]],
+  "提示等级上限为 0 也答": [[T, "if (req.allowed_hint_level < LESSON_ANSWER_HINT_LEVEL)", "if (false)"]],
+  "答疑含答案也在提交前给": [[T, 'item.format === "fill" && hintRevealsAnswer(line.text, item.answer)', "false"]],
+  "提交前守门不看 answer_submitted（提交后也不给）": [[T, "req.answer_submitted !== true && item.format", "item.format"]],
+  "锚点按当前步取答疑（不按元素写上去的那一步）": [[T, "lesson.dsl.steps[replayCursor(lesson.dsl, checked.question)]!.id", "lesson.dsl.steps[q.cursor - 1]!.id"]],
+  "答疑帮助记 0 级": [[T, "export const LESSON_ANSWER_HINT_LEVEL = 1;", "export const LESSON_ANSWER_HINT_LEVEL = 0;"]],
+  "带提问也走讲解页面": [[A, "const asked = r.question !== undefined;", "const asked = false;"]],
+  "讲评课内容包不核对节点": [[L, "if (!nodeId || !content.nodeById.has(nodeId))", "if (!nodeId)"]],
+  "讲评课内容包不核对题的主节点": [[L, '      if (!it.mainNodes.includes(nodeId)) throw new Error(`${where}（${key}）：skill_node 不是这道题的主节点`);\n', ""]],
+  "讲评课台词稿不校验（原样当作合格稿）": [[L, "const s = migrateStageScript(d.dsl, l.script);",
+    "const s = { ok: true as const, script: l.script as ValidatedStageScript, from: null } as ReturnType<typeof migrateStageScript>;"]],
+  "讲评课内容包开关没开也读": [[L, "  if (!candidateAllowed) {\n    throw new Error(`讲评课内容包", "  if (false) {\n    throw new Error(`讲评课内容包"]],
 };
 
 function sh(cmd: string, args: string[], cwd: string, timeoutMs = 240_000): Promise<number> {

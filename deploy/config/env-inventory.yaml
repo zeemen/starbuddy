@@ -197,7 +197,7 @@ services:
       - {name: STARBUDDY_NEXT_DIST_DIR, purpose: 端到端测试构建目录（开发开关）, secret: false, default: null, envs: local}
       - {name: STARBUDDY_PWA_KILL_SWITCH, purpose: PWA 停用开关（LT-07：只认 1；打开时 /sw.js 发自毁版 Service Worker——清缓存、注销、重新导航，页面不再注册；缺省关）, secret: false, default: null, envs: all}
   adapter-aya:
-    sources: [adapters/aya/src/main.ts, adapters/aya/src/content.ts]
+    sources: [adapters/aya/src/main.ts, adapters/aya/src/content.ts, adapters/aya/src/lessons.ts]
     vars:
       - {name: AYA_ADAPTER_SERVICE_TOKEN, purpose: 平台 → 适配器令牌, secret: true, default: null, envs: all, required_in_staging: true}
       - {name: PORT, purpose: 监听端口（只监听 127.0.0.1）, secret: false, default: "8787", envs: all}
@@ -205,6 +205,7 @@ services:
       - {name: STARBUDDY_ALLOW_CANDIDATE_CONTRACT, purpose: 候选契约开关（开发开关；适配器不改代码、自身不区分环境，staging 编排一律不设，由编排测试把关）, secret: false, default: null, envs: local}
       - {name: AYA_CONTENT_PACK, purpose: 换内容包（只给测试与演练；只在候选契约开关打开时才读，否则拒绝启动）, secret: false, default: null, envs: local}
       - {name: AYA_STEM_OVERLAY, purpose: 题面叠加文件（同上）, secret: false, default: null, envs: local}
+      - {name: AYA_LESSON_PACK, purpose: 讲评课内容包（合成讲评课，只给测试与演练；同上，只在候选契约开关打开时才读）, secret: false, default: null, envs: local}
   adapter-zhixing:
     sources: [adapters/zhixing/src/main.ts, adapters/zhixing/src/startup.ts]
     vars:

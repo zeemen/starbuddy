@@ -14,7 +14,11 @@ import { canonical, deriveUuid, requestFingerprint } from "./ids.ts";
 import { ProblemError, type ProblemCode } from "./problem.ts";
 import { planTasks, PLAN_ALGORITHM, type PlanInput } from "./methods/plan.ts";
 import { buildReport, REPORT_ALGORITHM, type ReportInput } from "./methods/report.ts";
-import { checkTeachConfig, DEFAULT_TEACH_CONFIG, HINT_ALGORITHM, PAGE_LESSON_ALGORITHM, teachHint, teachLesson, type TeachConfig } from "./methods/teach.ts";
+import {
+  checkTeachConfig, DEFAULT_TEACH_CONFIG, HINT_ALGORITHM, LESSON_ANSWER_ALGORITHM, PAGE_LESSON_ALGORITHM, teachHint, teachLesson, teachQuestion,
+  type TeachConfig, type TeachQuestionInput,
+} from "./methods/teach.ts";
+import { NO_LESSONS, type LoadedLessons } from "./lessons.ts";
 import { selectVariants, VARIANT_ALGORITHM, type VariationInput } from "./methods/variation.ts";
 import { PRESENT_ALGORITHM, presentItem } from "./methods/present.ts";
 import type { AyaTaxonomy } from "./taxonomy.ts";
@@ -122,6 +126,8 @@ export interface AdapterDeps {
   teach?: Partial<TeachConfig>;
   /** 候选版（CANDIDATE_CONTRACT_VERSIONS）签字前只在测试与演练里接受：未开时声明候选版的请求返回 CONTRACT_VERSION_UNSUPPORTED */
   allowCandidate?: boolean;
+  /** 讲评课内容包（v1.1 草稿内追加的结构化提问，src/lessons.ts）。缺省没有讲评课：带 question 的请求一律 404 */
+  lessons?: LoadedLessons;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -129,6 +135,7 @@ const round3 = (x: number) => Math.round(x * 1000) / 1000;
 
 export function createAdapter(deps: AdapterDeps) {
   const { content, taxonomy, contract } = deps;
+  const lessons = deps.lessons ?? NO_LESSONS;
   const teachConfig = checkTeachConfig({ ...DEFAULT_TEACH_CONFIG, ...deps.teach });
   const log = deps.log ?? (() => {});
   const cacheSize = deps.idempotencyCacheSize ?? 10_000;
@@ -492,10 +499,16 @@ export function createAdapter(deps: AdapterDeps) {
 
   const teach = (body: unknown): HandlerResult =>
     v1Method("teach", "TeachRequest", body, (req, _fp, version) => {
-      const r = req as unknown as { mode: "hint" | "lesson"; skill_node: string; item_ref?: string; allowed_hint_level: number; knowledge_page?: { body_md: string } };
+      const r = req as unknown as {
+        mode: "hint" | "lesson"; skill_node: string; item_ref?: string; allowed_hint_level: number; knowledge_page?: { body_md: string };
+        answer_submitted?: boolean; question?: TeachQuestionInput;
+      };
       const hint = r.mode === "hint";
-      const out = hint ? teachHint(content, r, teachConfig) : teachLesson(content, r);
-      const algorithm = hint ? HINT_ALGORITHM : PAGE_LESSON_ALGORITHM;
+      // v1.1 草稿内追加：带结构化提问（契约保证只在 lesson 模式、对话为空）→ 只从讲评课内容包取预制答疑
+      const asked = r.question !== undefined;
+      const out = asked ? teachQuestion(content, lessons, { ...r, question: r.question! })
+        : hint ? teachHint(content, r, teachConfig) : teachLesson(content, r);
+      const algorithm = asked ? LESSON_ANSWER_ALGORITHM : hint ? HINT_ALGORITHM : PAGE_LESSON_ALGORITHM;
       return selfCheck("TeachResponse", {
         contract_version: version,
         result: {
@@ -506,7 +519,7 @@ export function createAdapter(deps: AdapterDeps) {
           referral_triggered: false,
         },
         evidence_ids: [],
-        source_version: sourceVersion(`algo:${algorithm}`),
+        source_version: asked ? sourceVersion(`algo:${algorithm}`, `items:aya-lessons@${lessons.version}`) : sourceVersion(`algo:${algorithm}`),
         model_version: `algo:${algorithm}`,
         ...contentEnvelope(out.item ? [out.item] : [], true),
       }, version);
