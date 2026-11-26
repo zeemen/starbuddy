@@ -82,3 +82,43 @@
 ### 待人确认
 - **P3**：答疑台词是人设话术，现在全是“（合成答疑）”占位。真实答疑随讲评课内容由人设写、教研核对内容，跑人设回归。
 - **P4**：兜底文案 `STAGE_ASK.no_answer` 是占位，已在 W6 的 `STAGE_ASK` 范围内。
+
+## PR ③a：阿鸦按结构化提问取预制答疑
+### 拆分
+规格第二节第 7 条的 PR ③ 原本包括“阿鸦 teach + BFF teach 路由（计量按节、幂等键）”，实现时拆成两半：
+- ③a：阿鸦这一侧，本 PR；
+- ③b：学习服务与 BFF 的路由、按节计量。
+
+理由：③b 要新增学习服务内部路由与 BFF 路由，还要定“按节扣一次”的计量做法（同一节课里多次提问共用一次预留，还是每问一笔），这些都是计量必停项。单独审更清楚。
+
+### 做了什么
+- **讲评课内容包**（新文件 `adapters/aya/src/lessons.ts`，格式 `aya-lesson-pack/1`）：
+  - 每节课：`lesson_id`、`lesson_version`、`skill_node`、`item_ref`（可选）、`dsl`、`script`；
+  - 讲解 DSL 与台词稿用 `packages/stage` 的 `migrateStageDsl`、`migrateStageScript` 读入，不另写校验；
+  - 节点、题必须在内容包里，且题的主节点等于 `skill_node`；
+  - 任何一节不合格就整包拒绝、拒绝启动，错误信息不带讲解文字。
+  - 真实讲评课还没有，缺省为空。合成讲评课只能经 `AYA_LESSON_PACK` / `--lesson-pack` 读，且只在候选版开关打开时读，与替代内容包同一口径。
+- **`teach` 带 `question` 时**（`src/methods/teach.ts` 的 `teachQuestion`，算法 `aya-lesson-answer@0.1.0`），按顺序处理：
+  1. `lesson_ref` 不在内容包里，或讲解 DSL 版本不对 → 404 `CONTENT_VERSION_NOT_FOUND`；
+  2. `skill_node`、`item_ref` 与讲评课不一致 → 422 `INVALID_REQUEST`；
+  3. 用 `validateStageQuestion` 再核“只能指已经出现的东西” → 不过 422 `INVALID_REQUEST`；
+  4. 锚点落在哪一步：用 `replayCursor`，与前端“再讲一遍”同一口径；
+  5. 以下情形一律 422 `MODE_NOT_SUPPORTED`（不答，平台给兜底）：
+     - 提示等级上限是 0；
+     - 台词稿里没有这一条答疑；
+     - 作答提交前（`answer_submitted` 不是 true）答疑含这道填空题的标准答案原文，口径与提示阶梯的 `hintRevealsAnswer` 相同。
+  - 回答：一段 `text`，就是答疑台词原文；记 `hint_level_used = 1`。
+  - `source_version` 带 `items:aya-lessons@<讲评课内容包版本>`：契约只允许 rubric / verifier / prompt / items / algo / graph 几类，讲评课是内容，归 items。
+  - 不新增错误码，不读对话与证据，不写话术，不产生证据。
+- 测试：
+  - `tests/lesson-answer.test.ts` 共 11 条：
+    - 回答与契约自检；锚点落在哪一步；
+    - 没有答疑与上限为 0；提交前后的答案守门；“只能指已经出现的东西”；
+    - 讲评课引用、节点与题的核对；没有内容包；契约挡住的四种请求；
+    - 日志不含文字、幂等重放；内容包读入的各种不合格；内容包文件与开关。
+  - 变异加了 15 条（`scripts/mutations.ts`），结果见 PR 描述。
+
+### 待人确认
+- **Q5**：预制答疑记 `hint_level_used = 1`，理由是它算一次讲解帮助，平台据此不把随后的作答当独立作答（讲评课验收清单 A3、A4）。若教研认为答疑不算提示等级，可改成 0；但那样，答完再作答就可能被记成独立作答。
+- **Q6**：讲评课内容包还没有构建脚本与 C9 禁语扫描（提示阶梯有 `scripts/build-content-pack.ts` 与 `hint-scan`）。真实讲评课入包前，要把台词与答疑也过同一套禁语扫描。随讲评课内容生产另起。
+- **Q7**：没有答疑时回 422 `MODE_NOT_SUPPORTED`，而不是 200 加占位段：契约要求 `segments` 至少一段，适配器又不写话术。平台（③b）要把这个 422 当作“不答”，显示兜底，且不扣次数。

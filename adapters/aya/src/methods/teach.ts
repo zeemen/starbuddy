@@ -3,12 +3,20 @@
 // - lesson：知识页面直出 aya-page-lesson@0.1.0，只切分编排层放进请求的已发布页面 body_md，原文不改、不加阿鸦话术。
 // 两种模式都不读、不存、不回显 conversation、recent_evidence、persona（只参与请求体指纹）；不做身份披露与转介
 // （由平台人设层负责）；不输出 verified_statements；不判对错，不写关于学生的判断（评审 sie-#3）；不产生证据。
+import {
+  answerFor, replayCursor, validateStageQuestion, type QuestionIntent,
+} from "../../../../packages/stage/src/index.ts";
 import type { LoadedPack, PackItem } from "../content.ts";
+import { lessonKey, type LoadedLessons } from "../lessons.ts";
 import { ProblemError } from "../problem.ts";
 import { localId } from "./shared.ts";
 
 export const HINT_ALGORITHM = "aya-hint-ladder@0.1.0";
 export const PAGE_LESSON_ALGORITHM = "aya-page-lesson@0.1.0";
+/** 讲评课白板上的结构化提问 → 台词稿里的预制答疑（specs/stage-point-to-ask-answer PR ③a；契约 v1.1 草稿内追加的 TeachRequest.question） */
+export const LESSON_ANSWER_ALGORITHM = "aya-lesson-answer@0.1.0";
+/** 预制答疑算一次讲解帮助：记第 1 级（平台据此不把随后的作答当独立作答；lessons 待人确认 Q5） */
+export const LESSON_ANSWER_HINT_LEVEL = 1;
 /** 作答提交之后最多给到第 5 级；第 6 级（变式题）交给 generate_variation（规格书 §3.1） */
 export const MAX_HINT_LEVEL = 5;
 /**
@@ -126,4 +134,50 @@ export function teachLesson(content: LoadedPack, req: { skill_node: string; know
   const parts = splitPage(req.knowledge_page.body_md);
   if (parts.length === 0) throw new ProblemError(422, "INVALID_REQUEST", "knowledge_page body is empty");
   return { segments: parts.map((text) => ({ type: "text", text })), hintLevelUsed: 0 };
+}
+
+export interface TeachQuestionInput {
+  lesson_ref: { lesson_id: string; lesson_version: string };
+  dsl_version: string;
+  cursor: number;
+  anchor: { kind: "element" | "slot" | "step"; id: string };
+  intent: Exclude<QuestionIntent, "again">;
+}
+
+/**
+ * 讲评课白板上的结构化提问（v1.1 草稿内追加）：只从讲评课内容包里取已审核的预制答疑，不调模型、不写话术、不读对话与证据。
+ * 按顺序：
+ *   1. lesson_ref 不在讲评课内容包里，或请求的讲解 DSL 版本与这一版讲评课不同 → 404 CONTENT_VERSION_NOT_FOUND；
+ *   2. skill_node、item_ref 与讲评课不一致 → 422 INVALID_REQUEST；
+ *   3. 按讲解 DSL 再核一遍“只能指已经出现的东西”（packages/stage 的 validateStageQuestion）→ 不过 422 INVALID_REQUEST；
+ *   4. 锚点落在哪一步：元素是它写上去的那一步，整一步是那一步，槽位是当前这一步（replayCursor 同一口径）；
+ *   5. 平台给的提示等级上限是 0（不许任何讲解帮助）、台词稿里没有这一步这一问的答疑、或作答提交前答疑含这道填空题的标准答案原文
+ *      → 422 MODE_NOT_SUPPORTED（不答；平台显示兜底与“再讲一遍”）。不新增错误码。
+ * 回答只有一段 text：台词稿里那句答疑的原文，记第 1 级帮助。
+ */
+export function teachQuestion(
+  content: LoadedPack,
+  lessons: LoadedLessons,
+  req: { skill_node: string; item_ref?: string; allowed_hint_level: number; answer_submitted?: boolean; question: TeachQuestionInput },
+): TeachOutcome {
+  const q = req.question;
+  const lesson = lessons.byRef.get(lessonKey(q.lesson_ref.lesson_id, q.lesson_ref.lesson_version));
+  if (!lesson || lesson.dsl.dsl_version !== q.dsl_version) {
+    throw new ProblemError(404, "CONTENT_VERSION_NOT_FOUND", "lesson_ref or dsl_version is not served by this adapter");
+  }
+  if (localId(req.skill_node) !== lesson.skillNode) throw new ProblemError(422, "INVALID_REQUEST", "skill_node does not match the lesson");
+  const reqItem = req.item_ref === undefined ? undefined : localId(req.item_ref);
+  if (reqItem !== lesson.itemId) throw new ProblemError(422, "INVALID_REQUEST", "item_ref does not match the lesson");
+  const checked = validateStageQuestion(lesson.dsl, { dsl_version: q.dsl_version, cursor: q.cursor, anchor: q.anchor, intent: q.intent });
+  if (!checked.ok) throw new ProblemError(422, "INVALID_REQUEST", "question does not point at something already shown in the lesson");
+  if (req.allowed_hint_level < LESSON_ANSWER_HINT_LEVEL) throw new ProblemError(422, "MODE_NOT_SUPPORTED", "no explanation is allowed at this hint level");
+  const stepId = lesson.dsl.steps[replayCursor(lesson.dsl, checked.question)]!.id;
+  const line = answerFor(lesson.dsl, lesson.script, stepId, q.intent);
+  if (!line) throw new ProblemError(422, "MODE_NOT_SUPPORTED", "no prepared answer for this question");
+  // 提交前不露答案：与提示阶梯同一口径（填空题按答案原文查；选择题的答案是选项键，不查）
+  const item = lesson.itemId === undefined ? undefined : content.itemById.get(lesson.itemId);
+  if (item && req.answer_submitted !== true && item.format === "fill" && hintRevealsAnswer(line.text, item.answer)) {
+    throw new ProblemError(422, "MODE_NOT_SUPPORTED", "prepared answer is withheld before the answer is submitted");
+  }
+  return { segments: [{ type: "text", text: line.text }], hintLevelUsed: LESSON_ANSWER_HINT_LEVEL, ...(item ? { item } : {}) };
 }

@@ -8,14 +8,18 @@
 //   AYA_STEM_OVERLAY           题面叠加文件（文件路径；只给测试与演练：给真实内容包里的几道题加合成题面）
 //                              这两项只在候选版开关打开时才读；开关没开却设了，拒绝启动（审查阻断 3）。
 //                              用了它们时，内容版本号接上文件 sha256 前 8 位（items 段与题面 item_version）
+//   AYA_LESSON_PACK            讲评课内容包（文件路径；只给测试与演练：合成讲评课，specs/stage-point-to-ask-answer PR ③a）。
+//                              同样只在候选版开关打开时才读；不设时没有讲评课（带 question 的 teach 请求一律 404）
 // 命令行参数（优先于环境变量；一致性测试的 cli.py 不向适配器进程透传环境变量，用参数选版本）：
 //   --contract-version <v>        同 AYA_CONTRACT_VERSION
 //   --allow-candidate-contract    同 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1
 //   --content-pack <path>         同 AYA_CONTENT_PACK
 //   --stem-overlay <path>         同 AYA_STEM_OVERLAY
+//   --lesson-pack <path>          同 AYA_LESSON_PACK
 import { parseArgs } from "node:util";
 import { createAdapter } from "./adapter.ts";
 import { loadPackFrom, PACK_PATH_ENV, STEM_OVERLAY_ENV, type LoadedPack } from "./content.ts";
+import { LESSON_PACK_ENV, loadLessonsFrom, type LoadedLessons } from "./lessons.ts";
 import { CANDIDATE_CONTRACT_VERSIONS, DEFAULT_CONTRACT_VERSION, isSupportedVersion, loadContract } from "./contract.ts";
 import { createAdapterServer } from "./server.ts";
 import { loadTaxonomy } from "./taxonomy.ts";
@@ -31,6 +35,7 @@ const { values: args } = parseArgs({
     "allow-candidate-contract": { type: "boolean", default: false },
     "content-pack": { type: "string" },
     "stem-overlay": { type: "string" },
+    "lesson-pack": { type: "string" },
   },
 });
 const defaultVersion = args["contract-version"] || process.env.AYA_CONTRACT_VERSION || DEFAULT_CONTRACT_VERSION;
@@ -54,8 +59,16 @@ try {
   console.error(`aya-adapter: ${(e as Error).message.split("\n")[0]!.slice(0, 300)}，拒绝启动`);
   process.exit(1);
 }
+let lessons: LoadedLessons;
+try {
+  lessons = loadLessonsFrom(args["lesson-pack"] || process.env[LESSON_PACK_ENV] || undefined, content, candidateAllowed);
+} catch (e) {
+  console.error(`aya-adapter: ${(e as Error).message.split("\n")[0]!.slice(0, 300)}，拒绝启动`);
+  process.exit(1);
+}
 const adapter = createAdapter({
   content,
+  lessons,
   taxonomy: loadTaxonomy(),
   contract: loadContract({ defaultVersion }),
   allowCandidate: candidateAllowed,

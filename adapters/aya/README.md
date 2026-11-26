@@ -22,7 +22,7 @@ v1.1 候选版（`plugin-api.v1.1.yaml`，PLT-12）：六个方法照旧，另�
 | `POST /plugin/v0/grade` | 客观题（单选、多选、填空）。过程题（拍照）在后续冲刺 |
 | `POST /plugin/v0/diagnose` | `mode = intake / gap_test` |
 | `POST /plugin/v0/plan` | 只按 v1.0：学科内候选任务（复测按 `next_retest_at` 时刻排序、练习按 legacy 优先级公式），输出只有 ID、编码、数字 |
-| `POST /plugin/v0/teach` | 只按 v1.0：`hint` 为确定性提示阶梯（作答提交前最多 3 级，配置 `max_hint_level_before_submit`；v1.0 没有“已提交”信号，4 级及以上一律不给；含标准答案的那一级只返回题目引用），`lesson` 只直出请求里的已发布知识页面；不调模型、不写话术 |
+| `POST /plugin/v0/teach` | 只按 v1.0：`hint` 为确定性提示阶梯（作答提交前最多 3 级，配置 `max_hint_level_before_submit`；v1.0 没有“已提交”信号，4 级及以上一律不给；含标准答案的那一级只返回题目引用），`lesson` 只直出请求里的已发布知识页面；不调模型、不写话术。**1.1.0 带结构化提问 `question`**（`specs/stage-point-to-ask-answer` PR ③a）：只从讲评课内容包（`src/lessons.ts`，`AYA_LESSON_PACK`，签字前只给测试与演练）取台词稿里的预制答疑，按讲解 DSL 再核“只能指已经出现的东西”；没有答疑、提示等级上限为 0、提交前答疑含填空题答案 → 422 `MODE_NOT_SUPPORTED`；讲评课或讲解 DSL 版本不对 → 404 |
 | `POST /plugin/v0/generate_variation` | 只按 v1.0：从 `item_family` 或内容包**选**已准入的题（目前 721 道全部未准入，一律返回空结果 `no_admitted_candidate`；准入随平台导出的准入决定重建，见下文“内容包格式 3”） |
 | `POST /plugin/v0/report` | 只按 v1.0：时间窗内的能力点趋势与作答数、错因分布、亮点编码；不写结论句、没有预测 |
 
