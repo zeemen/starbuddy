@@ -15,6 +15,8 @@ RESP = "PresentItemResponseAya"
 WITHHELD = "PresentItemResponseAyaWithheld"
 ZX = "PresentItemResponseZhixing"
 TQ = "TeachRequestAyaQuestion"
+LO = "TeachRequestAyaLessonOpen"
+LR = "TeachResponseAyaLessonOpen"
 EVIDENCE = "00000000-0000-4000-8000-00000000e701"
 
 
@@ -137,4 +139,26 @@ V11_CASES = [
     Case("讲评课引用夹带讲解内容", "LessonRef 只有 id 与版本", "TeachRequest", TQ, _set("question.lesson_ref.body", "（合成）")),
     Case("提问缺讲解 DSL 版本", "TeachQuestion 必填 dsl_version", "TeachRequest", TQ, _set("question.dsl_version", _DELETE)),
     Case("作答已提交写成字符串", "answer_submitted 是布尔", "TeachRequest", TQ, _set("answer_submitted", "yes")),
+    # ---- 打开讲评课与台词稿（v1.1 草稿内追加，specs/stage-lesson-session ③b-1） ----
+    Case("打开讲评课用在提示模式", "带 lesson_ref 只能是 mode: lesson", "TeachRequest", LO, _set("mode", "hint")),
+    Case("打开讲评课同时带提问", "打开讲评课不同时带 question", "TeachRequest", LO,
+         _set("question", {"lesson_ref": {"lesson_id": "syn.lesson.qf_0301", "lesson_version": "0.1.0"}, "dsl_version": "0.3.0",
+                           "cursor": 1, "anchor": {"kind": "step", "id": "s1"}, "intent": "why_step"})),
+    Case("打开讲评课带自由文字对话", "打开讲评课时 conversation 为空", "TeachRequest", LO,
+         _set("conversation", [{"turn_id": "00000000-0000-4000-8000-0000000000c3", "role": "student", "content": "（合成）开始"}])),
+    Case("讲评课引用夹带讲解内容（打开时）", "LessonRef 只有 id 与版本", "TeachRequest", LO, _set("lesson_ref.dsl", {"steps": []})),
+    Case("台词稿挂在 text 片段上", "台词稿只跟着讲解 DSL 走", "TeachResponse", LR,
+         lambda v: v["result"]["segments"].append({"type": "text", "text": "（合成）", "script": {"dsl_version": "0.3.0", "lines": []}})),
+    Case("带台词稿的片段缺讲解 DSL", "台词稿与 dsl、dsl_version 同在", "TeachResponse", LR, _set("result.segments.0.dsl", _DELETE)),
+    Case("台词稿夹带多余字段", "StageScript 不放开字段", "TeachResponse", LR, _set("result.segments.0.script.note", "（合成）")),
+    Case("台词稿缺 lines", "StageScript 必填 lines", "TeachResponse", LR, _set("result.segments.0.script.lines", _DELETE)),
+    Case("台词超过 60 个字", "台词每句 ≤ 60 码点", "TeachResponse", LR, _set("result.segments.0.script.lines.0.text", "（合成）" + "长" * 60)),
+    Case("台词夹带 HTML", "台词是纯文本", "TeachResponse", LR, _set("result.segments.0.script.lines.0.text", "<b>（合成）重点</b>")),
+    Case("台词夹带零宽字符", "台词不含不可见字符", "TeachResponse", LR, _set("result.segments.0.script.lines.0.text", "（合成）\u200b先看")),
+    Case("台词角色不在名单里", "台词角色只有 teacher / buddy", "TeachResponse", LR, _set("result.segments.0.script.lines.0.role", "student")),
+    Case("台词编号不合 id 规则", "台词编号与讲解 DSL 的 ID_RE 一致", "TeachResponse", LR, _set("result.segments.0.script.lines.0.id", "L1")),
+    Case("台词夹带说话人姓名", "台词只有 id、role、text", "TeachResponse", LR, _set("result.segments.0.script.lines.0.speaker_name", "（合成）")),
+    Case("答疑问法是再讲一遍", "答疑问法只有三种", "TeachResponse", LR, _set("result.segments.0.script.answers.0.intent", "again")),
+    Case("答疑夹带正文", "答疑只引用台词编号", "TeachResponse", LR, _set("result.segments.0.script.answers.0.text", "（合成）因为……")),
+    Case("答疑步骤不合 id 规则", "答疑步骤与讲解 DSL 的 ID_RE 一致", "TeachResponse", LR, _set("result.segments.0.script.answers.0.step", "S1")),
 ]

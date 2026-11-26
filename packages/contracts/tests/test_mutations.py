@@ -344,6 +344,17 @@ V1_MUTATIONS = {
 # ---------- v1.1 候选版（PLT-12 present_item，specs/present-item-contract/spec.md 验收第 1 条） ----------
 PI = f"{S}.PresentedItem"
 V11_MUTATIONS = {
+    # 打开讲评课与台词稿（v1.1 草稿内追加，specs/stage-lesson-session ③b-1）
+    "去掉“打开讲评课只能是 lesson、不带提问”的规则": lambda d: d["components"]["schemas"]["TeachRequest"]["allOf"].pop(),
+    "lesson_ref 改成必填": lambda d: d["components"]["schemas"]["TeachRequest"]["required"].append("lesson_ref"),
+    "台词稿放开多余字段": assign(f"{S}.StageScript.additionalProperties", True),
+    "台词放开多余字段": delete(f"{S}.StageScriptLine.additionalProperties"),
+    "台词去掉长度上限": delete(f"{S}.StageScriptLine.properties.text.maxLength"),
+    "台词去掉 pattern（可夹带 HTML）": delete(f"{S}.StageScriptLine.properties.text.pattern"),
+    "台词角色放开": delete(f"{S}.StageScriptLine.properties.role.enum"),
+    "答疑问法加上 again": lambda d: d["components"]["schemas"]["StageScriptAnswer"]["properties"]["intent"]["enum"].append("again"),
+    "台词稿条数上限放宽": assign(f"{S}.StageScript.properties.lines.maxItems", 200),
+    "去掉“台词稿只跟着讲解 DSL 走”的规则": delete(f"{S}.TeachSegment.allOf"),
     # teach 的结构化提问（v1.1 草稿内追加，specs/stage-point-to-ask-answer PR ①）
     "提问放开多余字段（可夹带自由文字）": assign(f"{S}.TeachQuestion.additionalProperties", True),
     "提问意图加上本地处理的 again": lambda d: d["components"]["schemas"]["TeachQuestion"]["properties"]["intent"]["enum"].append("again"),
