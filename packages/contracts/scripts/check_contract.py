@@ -427,6 +427,8 @@ PRESENT_PROBES = {
                                *INVISIBLE_PROBES],
                               ["（合成）把下面的式子化简：x = 1", "第 2 步：a+b", "温度 30°C，é"]),
     ("RichImageRun", "alt"): (["<b>图</b>", "a\u0007b", *INVISIBLE_PROBES], ["（合成）一个直角三角形"]),
+    # ③b-1：讲解台词稿的台词正文（与题面文字片段同一口径；不收换行）
+    ("StageScriptLine", "text"): (["<b>重点</b>", "a\u0000b", "a\nb", "a\u001bb", *INVISIBLE_PROBES], ["（合成台词）先看第一行。", "x=2，对吗？"]),
     ("RichMathRun", "latex"): (["\\href{https://x.invalid}{y}", "\\url{https://x.invalid}", "\\includegraphics{a.png}",
                                 "\\htmlClass{a}{b}", "\\def\\x{1}", "\\newcommand{\\a}{b}", "x^{\\input{f}}", "解：x=1"],
                                ["\\frac{1}{2}", "\\left(x-1\\right)^2", "x<3", "\\sqrt{2}\\times 3", "\\text{cm}"]),
@@ -522,14 +524,27 @@ def check_present_item(doc: dict, errors: list[str]) -> None:
 V11_VERSION_CONSTS = (("RequestContext", "contract_version"), ("PluginResultBase", "contract_version"), ("Capabilities", "contract_version"))
 # v1.1 草稿内追加（specs/stage-point-to-ask-answer PR ①）：teach 的结构化提问。TeachRequest 只多这两个可选字段与一条条件规则，
 # 另加三个新 schema；/teach 只多一个请求示例。check_v11_additive 剥掉它们之后再与 v1.0 逐项比对，并核对追加内容本身一字不差
-TEACH_QUESTION_SCHEMAS = {"TeachQuestion", "LessonRef", "StageAnchor"}
+TEACH_QUESTION_SCHEMAS = {"TeachQuestion", "LessonRef", "StageAnchor", "StageScript", "StageScriptLine", "StageScriptAnswer"}
 TEACH_QUESTION_PROPS = {
     "question": {"$ref": "#/components/schemas/TeachQuestion"},
     "answer_submitted": {"type": "boolean"},
+    # ③b-1（specs/stage-lesson-session）：打开讲评课
+    "lesson_ref": {"$ref": "#/components/schemas/LessonRef"},
 }
 TEACH_QUESTION_RULE = {"if": {"required": ["question"]},
                        "then": {"properties": {"mode": {"const": "lesson"}, "conversation": {"maxItems": 0}}}}
+TEACH_LESSON_OPEN_RULE = {"if": {"required": ["lesson_ref"]},
+                          "then": {"properties": {"mode": {"const": "lesson"}, "conversation": {"maxItems": 0}},
+                                   "not": {"required": ["question"]}}}
+TEACH_QUESTION_RULES = (TEACH_QUESTION_RULE, TEACH_LESSON_OPEN_RULE)
+# TeachSegment 的 whiteboard_dsl 片段带台词稿：只多这一个字段与一条规则
+TEACH_SEGMENT_SCRIPT = {"$ref": "#/components/schemas/StageScript"}
+TEACH_SEGMENT_RULE = {"if": {"required": ["script"]},
+                      "then": {"properties": {"type": {"const": "whiteboard_dsl"}}, "required": ["dsl", "dsl_version"]}}
 TEACH_QUESTION_EXAMPLE = ("aya_lesson_question", "TeachRequestAyaQuestion")
+TEACH_REQUEST_EXAMPLES = (TEACH_QUESTION_EXAMPLE, ("aya_lesson_open", "TeachRequestAyaLessonOpen"))
+TEACH_RESPONSE_EXAMPLES = (("aya_lesson_open", "TeachResponseAyaLessonOpen"),)
+TEACH_NEW_EXAMPLES = {n for _, n in (*TEACH_REQUEST_EXAMPLES, *TEACH_RESPONSE_EXAMPLES)}
 
 
 STAGE_SRC = HERE.parents[1] / "stage" / "src"
@@ -563,6 +578,39 @@ def check_teach_question_alignment(v11: dict, errors: list[str], stage_src: Path
     m = re.search(r"maxSteps: (\d+),", d)
     if not m or tq.get("cursor", {}).get("maximum") != int(m.group(1)):
         errors.append("TeachQuestion.cursor 的上限与 packages/stage 的 LIMITS.maxSteps 不一致")
+    # 台词稿（③b-1）：字段、角色、问法与上限与 packages/stage 的 script.ts 一致
+    try:
+        sc = (stage_src / "script.ts").read_text(encoding="utf-8")
+    except OSError as exc:
+        errors.append(f"读不了 packages/stage/src/script.ts：{type(exc).__name__}")
+        return
+    ss, line, ans = sch.get("StageScript", {}), sch.get("StageScriptLine", {}), sch.get("StageScriptAnswer", {})
+
+    def limit(name: str) -> int | None:
+        m = re.search(rf"{name}: (\d+),", sc)
+        return int(m.group(1)) if m else None
+
+    if sorted(ss.get("required", [])) != sorted(consts(sc, "SCRIPT_FIELDS")) or \
+            sorted(ss.get("properties", {})) != sorted(consts(sc, "SCRIPT_FIELDS") + consts(sc, "SCRIPT_OPTIONAL")):
+        errors.append("StageScript 的字段与 packages/stage 的 SCRIPT_FIELDS / SCRIPT_OPTIONAL 不一致")
+    if sorted(line.get("required", [])) != sorted(consts(sc, "LINE_FIELDS")) or sorted(line.get("properties", {})) != sorted(consts(sc, "LINE_FIELDS")):
+        errors.append("StageScriptLine 的字段与 packages/stage 的 LINE_FIELDS 不一致")
+    if sorted(ans.get("required", [])) != sorted(consts(sc, "ANSWER_FIELDS")) or sorted(ans.get("properties", {})) != sorted(consts(sc, "ANSWER_FIELDS")):
+        errors.append("StageScriptAnswer 的字段与 packages/stage 的 ANSWER_FIELDS 不一致")
+    if line.get("properties", {}).get("role", {}).get("enum") != consts(d, "ROLES"):
+        errors.append("StageScriptLine.role 与 packages/stage 的 ROLES 不一致")
+    if ans.get("properties", {}).get("intent", {}).get("enum") != intents:
+        errors.append("StageScriptAnswer.intent 与 packages/stage 的 ANSWER_INTENTS 不一致")
+    for field, want in (("lines", limit("maxLines")), ("answers", limit("maxAnswers"))):
+        if want is None or ss.get("properties", {}).get(field, {}).get("maxItems") != want:
+            errors.append(f"StageScript.{field} 的条数上限与 packages/stage 的 SCRIPT_LIMITS 不一致")
+    if limit("maxSayChars") is None or line.get("properties", {}).get("text", {}).get("maxLength") != limit("maxSayChars"):
+        errors.append("StageScriptLine.text 的长度上限与 packages/stage 的 SCRIPT_LIMITS.maxSayChars 不一致")
+    pat = anchor.get("id", {}).get("pattern")
+    for name, sub in (("StageScriptLine.id", line), ("StageScriptAnswer.step", ans), ("StageScriptAnswer.line", ans)):
+        key = name.split(".")[1]
+        if sub.get("properties", {}).get(key, {}).get("pattern") != pat:
+            errors.append(f"{name} 的 pattern 与 packages/stage 的 ID_RE 不一致")
 
 
 def _strip_teach_question(s11: dict, errors: list[str]) -> None:
@@ -577,10 +625,25 @@ def _strip_teach_question(s11: dict, errors: list[str]) -> None:
     if set(tr.get("required", [])) & set(TEACH_QUESTION_PROPS):
         errors.append("v1.1 的 TeachRequest 不能把 question / answer_submitted 改成必填（旧请求要照常有效）")
     rules = tr.get("allOf", [])
-    hits = [r for r in rules if {k: v for k, v in r.items() if k != "description"} == TEACH_QUESTION_RULE]
-    if len(hits) != 1:
-        errors.append("v1.1 的 TeachRequest 必须恰好有一条“带 question 时只能是 lesson、conversation 为空”的规则")
+    hits = []
+    for want in TEACH_QUESTION_RULES:
+        h = [r for r in rules if {k: v for k, v in r.items() if k != "description"} == want]
+        if len(h) != 1:
+            errors.append(f"v1.1 的 TeachRequest 必须恰好有一条规则 {want}")
+        hits += h
     tr["allOf"] = [r for r in rules if r not in hits]
+    seg = s11.get("TeachSegment", {})
+    got = {k: v for k, v in seg.get("properties", {}).get("script", {}).items() if k != "description"}
+    if got != TEACH_SEGMENT_SCRIPT:
+        errors.append(f"v1.1 的 TeachSegment.script 必须是 {TEACH_SEGMENT_SCRIPT}")
+    seg.get("properties", {}).pop("script", None)
+    if "script" in seg.get("required", []):
+        errors.append("v1.1 的 TeachSegment 不能把 script 改成必填")
+    srules = seg.get("allOf", [])
+    sh = [r for r in srules if {k: v for k, v in r.items() if k != "description"} == TEACH_SEGMENT_RULE]
+    if len(sh) != 1 or len(srules) != 1:
+        errors.append("v1.1 的 TeachSegment 必须恰好有一条“台词稿只跟着讲解 DSL 走”的规则，且没有别的规则")
+    seg.pop("allOf", None)
 
 
 def _bump_versions(value, old: str, new: str):
@@ -630,12 +693,14 @@ def check_v11_additive(v1: dict, v11: dict, errors: list[str]) -> None:
         errors.append(f"v1.1 缺 teach 结构化提问的 schema：{sorted(TEACH_QUESTION_SCHEMAS - set(s11))}")
     p1, p11 = v1.get("paths", {}), copy.deepcopy(v11.get("paths", {}))
     try:
-        teach_ex = p11["/teach"]["post"]["requestBody"]["content"]["application/json"]["examples"]
-        key, name = TEACH_QUESTION_EXAMPLE
-        if teach_ex.pop(key, None) != {"$ref": f"#/components/examples/{name}"}:
-            errors.append(f"v1.1 的 /teach 必须挂上示例 {name}")
+        teach_post = p11["/teach"]["post"]
+        for where, pairs in ((teach_post["requestBody"]["content"]["application/json"]["examples"], TEACH_REQUEST_EXAMPLES),
+                             (teach_post["responses"]["200"]["content"]["application/json"]["examples"], TEACH_RESPONSE_EXAMPLES)):
+            for key, name in pairs:
+                if where.pop(key, None) != {"$ref": f"#/components/examples/{name}"}:
+                    errors.append(f"v1.1 的 /teach 必须挂上示例 {name}")
     except (KeyError, TypeError):
-        errors.append("v1.1 的 /teach 请求示例结构不对")
+        errors.append("v1.1 的 /teach 示例结构不对")
     for path, item in p1.items():
         if p11.get(path) != item:
             errors.append(f"v1.1 改动或删掉了 v1.0 的路径 {path}")
@@ -654,7 +719,7 @@ def check_v11_additive(v1: dict, v11: dict, errors: list[str]) -> None:
             errors.append(f"v1.1 删掉了 v1.0 的示例 {name}")
         elif e11[name] != _bump_versions(ex, "1.0.0", "1.1.0"):
             errors.append(f"v1.1 改动了 v1.0 的示例 {name}（只允许把 contract_version 换成 1.1.0）")
-    if any(not n.startswith("PresentItem") and n != TEACH_QUESTION_EXAMPLE[1] for n in set(e11) - set(e1)):
+    if any(not n.startswith("PresentItem") and n not in TEACH_NEW_EXAMPLES for n in set(e11) - set(e1)):
         errors.append(f"v1.1 新增的示例只能是 present_item 与 teach 结构化提问的：{sorted(set(e11) - set(e1))}")
 
 

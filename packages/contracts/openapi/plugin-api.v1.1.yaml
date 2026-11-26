@@ -36,6 +36,14 @@ info:
       `hint_level_used` 与 `referral_triggered`；回答只讲内容，不写关于学生的判断（同 `TeachSegment`）。
     - 不新增错误码；1.0.0 请求带 `question` 按 v1.0 的 `additionalProperties: false` 拒收（400）。
 
+    ## v1.1 草稿内追加（续）：打开讲评课（`specs/stage-lesson-session` ③b-1，待评审签字）
+    - `TeachRequest` 再加可选字段 `lesson_ref`（`LessonRef`）：表示“打开这节讲评课”，只在 `mode: lesson`、不带 `question`、`conversation`
+      为空时出现。适配器从自己的已发布讲评课内容里取这一版的讲解 DSL 与台词稿，平台不携带讲解内容。
+    - `TeachSegment` 的 `whiteboard_dsl` 片段再加可选字段 `script`（`StageScript`，讲解台词稿：台词 `lines`、可选的预制答疑 `answers`），
+      只能出现在 `whiteboard_dsl` 片段上，且同时带 `dsl` 与 `dsl_version`。字段、角色、问法与上限和 `packages/stage` 的台词稿一致（契约检查核对）；
+      “引用的台词都在、角色等于讲解权”等跨字段规则由平台用 `packages/stage` 的 `validateStagePair` 核对，不合格不下发。
+    - 讲评课是公共层内容，台词稿不含学生数据；回答（`question`）仍只用 `text` 片段。不新增错误码。
+
     ## 以下为 v1.0 候选版原文（起草依据与约定不变）
     起草依据：v0.9（`plugin-api.v0.9.yaml`）、完整方案 v1.1、KGE V1.1、SIE V1.1、技术蓝图 v2.1 专章、
     ADR 01/03/04/06/09/11/13/15。
@@ -223,6 +231,8 @@ paths:
                 $ref: '#/components/examples/TeachRequestAyaWithPage'
               aya_lesson_question:
                 $ref: '#/components/examples/TeachRequestAyaQuestion'
+              aya_lesson_open:
+                $ref: '#/components/examples/TeachRequestAyaLessonOpen'
       responses:
         '200':
           description: 教学片段
@@ -232,6 +242,8 @@ paths:
               examples:
                 aya_hint:
                   $ref: '#/components/examples/TeachResponseAya'
+                aya_lesson_open:
+                  $ref: '#/components/examples/TeachResponseAyaLessonOpen'
         default: { $ref: '#/components/responses/Error' }
 
   /grade:
@@ -1146,6 +1158,9 @@ components:
         answer_submitted:
           type: boolean
           description: v1.1 草稿内追加：本次讲解对应的那道题学生是否已提交作答；缺省按未提交，提示与回答都按“提交前不露答案”守门。
+        lesson_ref:
+          description: 'v1.1 草稿内追加（`specs/stage-lesson-session`）：打开这节讲评课。只在 lesson 模式、不带 `question`、`conversation` 为空时出现。'
+          $ref: '#/components/schemas/LessonRef'
       allOf:
         - description: 请求学科为 wenli 时，引用前缀必须一致（评审 N7）。
           if: { properties: { context: { properties: { subject: { const: wenli } }, required: [subject] } }, required: [context] }
@@ -1176,6 +1191,13 @@ components:
             properties:
               mode: { const: lesson }
               conversation: { maxItems: 0 }
+        - description: v1.1 草稿内追加：打开讲评课只能是讲评课模式，不同时带提问，不带自由文字对话（`specs/stage-lesson-session`）。
+          if: { required: [lesson_ref] }
+          then:
+            properties:
+              mode: { const: lesson }
+              conversation: { maxItems: 0 }
+            not: { required: [question] }
 
     LessonRef:
       type: object
@@ -1228,6 +1250,58 @@ components:
         dsl: { type: object, description: 讲解 DSL（ADR 07；内容需经发布闸门）。, additionalProperties: true }
         dsl_version: { type: string, pattern: '^\d+\.\d+\.\d+$' }
         item_ref: { $ref: '#/components/schemas/ItemRef' }
+        script:
+          description: v1.1 草稿内追加（`specs/stage-lesson-session`）：讲解台词稿，只在 `whiteboard_dsl` 片段上，且同时带 `dsl` 与 `dsl_version`。
+          $ref: '#/components/schemas/StageScript'
+      allOf:
+        - description: v1.1 草稿内追加：台词稿只跟着讲解 DSL 走。
+          if: { required: [script] }
+          then:
+            properties:
+              type: { const: whiteboard_dsl }
+            required: [dsl, dsl_version]
+
+    StageScript:
+      type: object
+      description: |
+        v1.1 草稿内追加：讲解台词稿（`packages/stage` 的 `StageScript`，台词与板书分开存，由人设审核）。字段、角色、问法与上限与
+        `packages/stage` 一致（契约检查核对）；跨字段规则由平台用 `validateStagePair` 核对。公共层内容，不含学生数据。
+      required: [dsl_version, lines]
+      additionalProperties: false
+      properties:
+        dsl_version: { type: string, pattern: '^\d+\.\d+\.\d+$' }
+        lines:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/StageScriptLine' }
+        answers:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/StageScriptAnswer' }
+
+    StageScriptLine:
+      type: object
+      required: [id, role, text]
+      additionalProperties: false
+      properties:
+        id: { type: string, pattern: '^[a-z][a-z0-9_]{0,31}$' }
+        role: { type: string, enum: [teacher, buddy] }
+        text:
+          type: string
+          description: 台词正文（人设审核过的教学内容）。纯文本：与题面文字片段同一口径，不含尖括号、控制字符、双向控制符、零宽字符与行段分隔符。
+          minLength: 1
+          maxLength: 60
+          pattern: '^[^<>\u0000-\u001F\u007F-\u009F\u200B-\u200F\u2028\u2029\u202A-\u202E\u2066-\u2069\uFEFF]{1,60}$'
+
+    StageScriptAnswer:
+      type: object
+      description: 预制答疑：第 step 步被问 intent 时，回答是台词 line（specs/stage-point-to-ask-answer）。
+      required: [step, intent, line]
+      additionalProperties: false
+      properties:
+        step: { type: string, pattern: '^[a-z][a-z0-9_]{0,31}$' }
+        intent: { type: string, enum: [why_step, what_is, where_from] }
+        line: { type: string, pattern: '^[a-z][a-z0-9_]{0,31}$' }
 
     TeachResult:
       type: object
@@ -2320,6 +2394,59 @@ components:
           cursor: 3
           anchor: { kind: element, id: f1 }
           intent: why_step
+
+    TeachRequestAyaLessonOpen:
+      value:
+        context:
+          request_id: 00000000-0000-4000-8000-000000000304
+          contract_version: 1.1.0
+          subject: aya
+          student_ref: 00000000-0000-4000-8000-00000000a002
+          data_class: L2
+          usage_id: 00000000-0000-4000-8000-00000000b00b
+          idempotency_key: 00000000-0000-4000-8000-00000000c304
+        mode: lesson
+        skill_node: 'aya:K-QF-0301'
+        item_ref: 'aya:synthetic-0301-07'
+        allowed_hint_level: 2
+        persona: { persona_id: aya, prompt_version: 1.1.0 }
+        lesson_ref: { lesson_id: syn.lesson.qf_0301, lesson_version: 0.1.0 }
+
+    TeachResponseAyaLessonOpen:
+      value:
+        contract_version: 1.1.0
+        result:
+          segments:
+            - type: whiteboard_dsl
+              dsl_version: 0.3.0
+              dsl:
+                dsl_version: 0.3.0
+                title: （合成示例）配方法
+                canvas: { width: 960, height: 440 }
+                roles: [teacher]
+                narrated: true
+                steps:
+                  - id: s1
+                    say: l1
+                    actions:
+                      - { type: speaker, role: teacher }
+                      - { type: write_text, id: t1, x: 40, y: 64, text: （合成示例）配方 }
+              script:
+                dsl_version: 0.3.0
+                lines:
+                  - { id: l1, role: teacher, text: （合成台词）先看这一行。 }
+                  - { id: a1, role: teacher, text: （合成答疑）因为要凑成完全平方。 }
+                answers:
+                  - { step: s1, intent: why_step, line: a1 }
+          hint_level_used: 0
+          ai_disclosure_shown: false
+          referral_triggered: false
+        evidence_ids: []
+        source_version: 'algo:aya-lesson-open@0.1.0;items:aya-lessons@syn00001'
+        model_version: 'algo:aya-lesson-open@0.1.0'
+        confidence: 1
+        semantics: practice
+        human_review_required: false
 
     ProblemUnauthenticated:
       value: { type: 'about:blank', title: 服务令牌无效, status: 401, code: UNAUTHENTICATED, retryable: false }
