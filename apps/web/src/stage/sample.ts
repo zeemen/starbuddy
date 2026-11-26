@@ -1,9 +1,9 @@
-// 舞台样张页（/dev/stage，只在开发、测试构建里存在）用的合成讲解 DSL v0.2 与台词稿（规则 8：全部合成，不含学生数据；
+// 舞台样张页（/dev/stage，只在开发、测试构建里存在）用的合成讲解 DSL v0.3 与台词稿（含两条预制答疑）（规则 8：全部合成，不含学生数据；
 // 板书文字只为演示各类动作；台词是明显的“（合成台词）”占位，不是人设话术——真实台词走人设审核，规则 7）。
 // 一份有台词的合格样例逐步播放（说 / 画 / 指对齐，含一个空的题图槽位），一份非法样例展示校验器的拒绝结果。
 
 export const STAGE_SAMPLE = {
-  dsl_version: '0.2.0',
+  dsl_version: '0.3.0',
   title: '（合成样例）一元一次方程',
   canvas: { width: 960, height: 440 },
   roles: ['teacher', 'buddy'],
@@ -45,7 +45,7 @@ export const STAGE_SAMPLE = {
 
 /** 样例的台词稿：每句的角色等于说这句时持有讲解权的角色（validateStagePair 核对）；全部是合成占位 */
 export const STAGE_SCRIPT = {
-  dsl_version: '0.2.0',
+  dsl_version: '0.3.0',
   lines: [
     { id: 'l1', role: 'teacher', text: '（合成台词）先看题目。' },
     { id: 'l2', role: 'teacher', text: '（合成台词）写下等式。' },
@@ -53,12 +53,19 @@ export const STAGE_SCRIPT = {
     { id: 'l4', role: 'buddy', text: '（合成台词）两边除以二。' },
     { id: 'l5', role: 'teacher', text: '（合成台词）代回去检验。' },
     { id: 'l6', role: 'teacher', text: '（合成台词）这一步结束。' },
+    // 预制答疑（specs/stage-point-to-ask-answer PR ②）：学生指着某一步问某种问题时的回答，由这一步讲话的人来答；全部是合成占位
+    { id: 'a1', role: 'teacher', text: '（合成答疑）把加三移到右边，就变成减三。' },
+    { id: 'a2', role: 'teacher', text: '（合成答疑）这是题目给的等式。' },
+  ],
+  answers: [
+    { step: 's3', intent: 'why_step', line: 'a1' },
+    { step: 's2', intent: 'what_is', line: 'a2' },
   ],
 } as const;
 
 /** 非法样例：外链、HTML、多余的样式字段、越界坐标、认不出的公式命令、给未出场角色讲解权 */
 export const STAGE_INVALID_SAMPLE = {
-  dsl_version: '0.2.0',
+  dsl_version: '0.3.0',
   title: '（合成）非法样例',
   canvas: { width: 640, height: 360 },
   roles: ['teacher'],

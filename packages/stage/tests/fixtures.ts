@@ -1,7 +1,7 @@
 // 合成的讲解 DSL 夹具（规则 8：全部是合成内容，不含任何学生数据；文字只为覆盖各类动作，不是讲解台词）。
 
 export const SAMPLE = {
-  dsl_version: '0.2.0',
+  dsl_version: '0.3.0',
   title: '（合成样例）一元一次方程',
   canvas: { width: 960, height: 440 },
   roles: ['teacher', 'buddy'],
@@ -39,7 +39,7 @@ export const sample = (): Record<string, any> => JSON.parse(JSON.stringify(SAMPL
 
 /** 只有老师、一步、一个动作的最小合格 DSL */
 export const minimal = (actions: unknown[] = [{ type: 'write_text', id: 'a', x: 10, y: 40, text: '（合成）' }]): Record<string, any> => ({
-  dsl_version: '0.2.0', title: '（合成）最小', canvas: { width: 640, height: 360 }, roles: ['teacher'], narrated: false, steps: [{ id: 's1', actions }],
+  dsl_version: '0.3.0', title: '（合成）最小', canvas: { width: 640, height: 360 }, roles: ['teacher'], narrated: false, steps: [{ id: 's1', actions }],
 });
 
 /** v0.1.0 写法的同一份样例（没有 narrated）：用来核对 0.1.0 → 0.2.0 的真实迁移 */
@@ -53,7 +53,7 @@ export const SAMPLE_V01 = (() => {
  * 台词是明显的合成占位，不是人设话术（规则 7：真实台词走人设审核）。
  */
 export const NARRATED = {
-  dsl_version: '0.2.0',
+  dsl_version: '0.3.0',
   title: '（合成样例）说画指',
   canvas: { width: 960, height: 440 },
   roles: ['teacher', 'buddy'],
@@ -72,7 +72,7 @@ export const NARRATED = {
 } as const;
 
 export const NARRATED_SCRIPT = {
-  dsl_version: '0.2.0',
+  dsl_version: '0.3.0',
   lines: [
     { id: 'l1', role: 'teacher', text: '（合成台词）先看题图。' },
     { id: 'l2', role: 'teacher', text: '（合成台词）写下等式。' },

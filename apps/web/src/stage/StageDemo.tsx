@@ -1,12 +1,13 @@
 'use client';
 // 舞台样张页的客户端部分（specs/stage-whiteboard-step1、specs/stage-dsl-v0.2）：合成 DSL 经 packages/stage 的版本迁移入口与校验器、台词稿经配对核对后，由播放状态机驱动白板逐步播放。
 // 只在内存里算，不连 BFF、不接 teach、不计量、不落库、不写任何浏览器存储。apps/web 只经 packages/stage 的接口使用舞台（ADR 07 决定 7）。
-// 可提问模式（specs/stage-point-to-ask 第一阶段）：指着白板元素、槽位或这一步，从四种问题里选一个；“再讲一遍”在本地跳回那一步重放，
-// 其余三种只在下方显示合成占位（回答要等第二阶段）。提问对象经 validateStageQuestion 校验，不发请求、不写存储、不作证据。
+// 可提问模式（specs/stage-point-to-ask 第一阶段）：指着白板元素、槽位或这一步，从四种问题里选一个；“再讲一遍”在本地跳回那一步重放。
+// 其余三种（specs/stage-point-to-ask-answer PR ②，预制答疑）：回答只取台词稿里审过的那句（answerFor），找不到就给兜底与“再讲一遍”；
+// 不调模型、不发请求、不写存储、不作证据。提问对象经 validateStageQuestion 校验，台词稿经 migrateStageScript 读入。
 import { createElement, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
-  captionAt, DSL_VERSION, initialPlayer, LAYOUT_NAMES, migrateStageDsl, originsAt, QUESTION_INTENTS, replayCursor, step, validateStagePair,
-  validateStageQuestion, type LayoutName, type QuestionIntent, type StageAnchor, type StageQuestion, type ValidatedStageDsl,
+  answerFor, captionAt, DSL_VERSION, initialPlayer, LAYOUT_NAMES, migrateStageDsl, migrateStageScript, originsAt, QUESTION_INTENTS, replayCursor, step,
+  validateStageQuestion, type LayoutName, type QuestionIntent, type ScriptLine, type StageAnchor, type StageQuestion, type ValidatedStageDsl,
 } from '../../../../packages/stage/src/index.ts';
 import { createWhiteboard } from '../../../../packages/stage/src/Whiteboard.tsx';
 import { STAGE_ASK as C } from '../shell/copy.ts';
@@ -34,12 +35,13 @@ export function StageDemo() {
   const valid = useMemo(() => migrateStageDsl(STAGE_SAMPLE), []);
   const invalid = useMemo(() => migrateStageDsl(STAGE_INVALID_SAMPLE), []);
   // 台词稿与 DSL 配对核对（specs/stage-dsl-v0.2）：只有核对通过的稿才出字幕，字幕文字只取自稿，组件不拼接
-  const pair = useMemo(() => (valid.ok ? validateStagePair(valid.dsl, STAGE_SCRIPT) : null), [valid]);
+  const pair = useMemo(() => (valid.ok ? migrateStageScript(valid.dsl, STAGE_SCRIPT) : null), [valid]);
   const total = valid.ok ? valid.dsl.steps.length : 1;
   const [player, dispatch] = useReducer(step, total, initialPlayer);
   const [layout, setLayout] = useState<LayoutName>('desktop');
   const [selected, setSelected] = useState<StageAnchor | null>(null);
-  const [received, setReceived] = useState<StageQuestion | null>(null);
+  // 最近一次提问与它的预制答疑（没有答疑时 line 为 null，显示兜底与“再讲一遍”）
+  const [answered, setAnswered] = useState<{ question: StageQuestion; line: ScriptLine | null } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const stepButtonRef = useRef<HTMLButtonElement>(null);
   const restoreFocus = useRef<StageAnchor | null>(null);
@@ -47,7 +49,7 @@ export function StageDemo() {
   // 选中后先暂停（第五节第 5 条），弹出菜单
   const select = useCallback((a: StageAnchor) => {
     if (player.status === 'playing') dispatch({ type: 'pause' });
-    setReceived(null);
+    setAnswered(null);
     setSelected(a);
   }, [player.status]);
   const close = useCallback((refocus: boolean) => {
@@ -91,18 +93,22 @@ export function StageDemo() {
     if (a.kind === 'slot') return dsl.slots?.find((x) => x.id === a.id)?.kind === 'student_answer' ? C.slot_student_answer : C.slot_item_figure;
     return C.element_label.replace('{step}', String(at ?? '')).replace('{index}', String(index));
   };
+  // 本地重放：跳回那一步的开头再播放（不出提问对象）
+  const replay = (q: StageQuestion) => {
+    dispatch({ type: 'seek', step: replayCursor(dsl, q) });
+    dispatch({ type: 'play' });
+  };
   const choose = (intent: QuestionIntent) => {
     if (!selected) return;
     const r = validateStageQuestion(dsl, { dsl_version: DSL_VERSION, cursor: player.cursor, anchor: selected, intent });
     if (!r.ok) { close(false); return; }
     if (intent === 'again') {
-      // 本地重放：跳回那一步的开头再播放（不出提问对象）
-      dispatch({ type: 'seek', step: replayCursor(dsl, r.question) });
-      dispatch({ type: 'play' });
+      replay(r.question);
       setSelected(null);
       return;
     }
-    setReceived(r.question);
+    const stepId = dsl.steps[anchorStep(dsl, r.question) - 1]!.id;
+    setAnswered({ question: r.question, line: answerFor(dsl, pair.script, stepId, intent) });
     close(true);
   };
   return (
@@ -139,11 +145,17 @@ export function StageDemo() {
             <button type="button" data-stage-ask-cancel onClick={() => close(true)}>{C.cancel}</button>
           </div>
         ) : null}
-        <p aria-live="polite" data-stage-ask-received={received?.intent ?? ''} data-stage-ask-anchor={received ? anchorKey(received.anchor) : ''}>
-          {received
-            ? C.received.replace('{step}', String(anchorStep(dsl, received))).replace('{intent}', INTENT_LABEL[received.intent])
-            : ''}
-        </p>
+        <div aria-live="polite" data-stage-ask-received={answered?.question.intent ?? ''}
+          data-stage-ask-anchor={answered ? anchorKey(answered.question.anchor) : ''}>
+          {answered?.line ? (
+            <p className="stage-caption" data-stage-ask-answer={answered.line.id} data-stage-ask-answer-role={answered.line.role}>{answered.line.text}</p>
+          ) : answered ? (
+            <p data-stage-ask-fallback>
+              {C.no_answer}{' '}
+              <button type="button" data-stage-ask-again onClick={() => replay(answered.question)}>{C.again}</button>
+            </p>
+          ) : null}
+        </div>
         <p aria-live="polite" data-stage-status={player.status} data-stage-cursor={player.cursor}>
           {STATUS_LABEL[player.status]} · 第 {player.cursor} / {player.total} 步
         </p>

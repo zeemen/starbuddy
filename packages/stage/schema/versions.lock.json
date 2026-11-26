@@ -14,6 +14,14 @@
       "schema_sha256": "3e81e6104b60cb6647eb8fbdc6c984d679a2af21aca000dc97f9cf6631cb0e77",
       "script_schema": "stage-script-0.2.0.schema.json",
       "script_schema_sha256": "8e44cf2e0f85186381970e31dbcbc06ab6f4b14a6519617070d1699f1eefa526"
+    },
+    {
+      "version": "0.3.0",
+      "format_sha256": "b77fdc8dbb89ea95703569fce244c573037ed0a8ab063130b9c02682b685ef36",
+      "schema": "stage-dsl-0.3.0.schema.json",
+      "schema_sha256": "f77787a7c0c0d560afc1a930396059688f583e61e86d24c04730fff34e8a992d",
+      "script_schema": "stage-script-0.3.0.schema.json",
+      "script_schema_sha256": "82ae76985830c675c9826e1f74b38f7da0654cd38aa91278eb587cfa376d3c0b"
     }
   ]
 }

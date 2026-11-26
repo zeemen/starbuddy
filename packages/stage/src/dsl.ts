@@ -1,11 +1,12 @@
-// 讲解 DSL v0.2.0 的类型与上限（specs/stage-whiteboard-step1、specs/stage-dsl-v0.2；ADR 07 决定 4、7）。
-// 这里只有类型与常量，没有运行时依赖；JSON Schema 见 ../schema/stage-dsl-0.2.0.schema.json（tests/schema.test.ts 核对两边一致）。
+// 讲解 DSL v0.3.0 的类型与上限（specs/stage-whiteboard-step1、specs/stage-dsl-v0.2；ADR 07 决定 4、7）。
+// 这里只有类型与常量，没有运行时依赖；JSON Schema 见 ../schema/stage-dsl-0.3.0.schema.json（tests/schema.test.ts 核对两边一致）。
+// v0.3（specs/stage-point-to-ask-answer PR ②）：DSL 本身的结构不变，只是台词稿多了预制答疑 answers（见 script.ts），两者共用一个版本号。
 // v0.2：每步可引用一句台词（say，台词正文在单独的台词稿里，见 script.ts）；narrated 为真时“有板书的步骤必须有台词”；
 // 新动作 point（聚光 / 激光笔）指向白板元素或文档声明的槽位（题图、学生作答切片；内容运行时在内存填充，DSL 不含学生数据）。
 // 坐标是白板画布的逻辑单位（整数，原点在左上角，y 向下）；文字与公式的 y 是基线。
 // DSL 只描述白板上画什么、谁持有讲解权，不含颜色、样式、链接、图片、脚本或任何关于学生的陈述。
 
-export const DSL_VERSION = '0.2.0';
+export const DSL_VERSION = '0.3.0';
 
 /** 白板上的元素 id、步骤 id：小写字母开头，最长 32 */
 export const ID_RE = /^[a-z][a-z0-9_]{0,31}$/;
