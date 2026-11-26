@@ -94,7 +94,7 @@ const MUTATIONS: Record<string, Edit[]> = {
   "含答案时降级到低一级（旧做法）而不是只指回题目": [[T, "hintRevealsAnswer(item.hintPath[level]!, item.answer)) return -1;", "hintRevealsAnswer(item.hintPath[level]!, item.answer)) return level > 0 ? hintLevelFor(item, level - 1, maxBeforeSubmit) : -1;"]],
   "越级：连同低等级提示一起返回": [[T, 'return { segments: [{ type: "text", text: item.hintPath[level]! }], hintLevelUsed: level, item };', 'return { segments: item.hintPath.slice(0, level + 2).map((text) => ({ type: "text" as const, text })), hintLevelUsed: level, item };']],
   "页面直出加了话术": [[T, 'return { segments: parts.map((text) => ({ type: "text", text })), hintLevelUsed: 0 };', 'return { segments: [{ type: "text", text: "（合成话术）" }, ...parts.map((text) => ({ type: "text" as const, text }))], hintLevelUsed: 0 };']],
-  "lesson 没有页面时改走提示阶梯": [[A, "const out = hint ? teachHint(content, r, teachConfig) : teachLesson(content, r);", "const out = hint || !r.knowledge_page ? teachHint(content, r, teachConfig) : teachLesson(content, r);"]],
+  "lesson 没有页面时改走提示阶梯": [[A, ": hint ? teachHint(content, r, teachConfig) : teachLesson(content, r);", ": hint || !r.knowledge_page ? teachHint(content, r, teachConfig) : teachLesson(content, r);"]],
   "skill_node 与题目不符不拒绝": [[T, "if (!item.mainNodes.includes(localId(req.skill_node))) {", "if (item.mainNodes.includes(\"\" + localId(req.skill_node).slice(99))) {"]],
   "身份披露置真（写了话术却不经人设层）": [[A, "          ai_disclosure_shown: false,", "          ai_disclosure_shown: true,"]],
   // ---------- 共同 ----------
@@ -158,7 +158,8 @@ const MUTATIONS: Record<string, Edit[]> = {
   "带提问也走讲解页面": [[A, "const asked = r.question !== undefined;", "const asked = false;"]],
   "讲评课内容包不核对节点": [[L, "if (!nodeId || !content.nodeById.has(nodeId))", "if (!nodeId)"]],
   "讲评课内容包不核对题的主节点": [[L, '      if (!it.mainNodes.includes(nodeId)) throw new Error(`${where}（${key}）：skill_node 不是这道题的主节点`);\n', ""]],
-  "讲评课台词稿不校验": [[L, "    if (!s.ok) throw new Error(", "    if (false) throw new Error("]],
+  "讲评课台词稿不校验": [[L, "    if (!s.ok) throw new Error(", "    if (!s.ok && false) throw new Error("],
+    [L, "dsl: d.dsl, script: s.script }", "dsl: d.dsl, script: (s as { script: ValidatedStageScript }).script }"]],
   "讲评课内容包开关没开也读": [[L, "  if (!candidateAllowed) {\n    throw new Error(`讲评课内容包", "  if (false) {\n    throw new Error(`讲评课内容包"]],
 };
 

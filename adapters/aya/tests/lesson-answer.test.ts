@@ -188,8 +188,13 @@ test("讲评课内容包的读入：格式、编号、节点、题、DSL 与台�
   assert.throws(() => indexLessons({ format: LESSON_PACK_FORMAT, lessons: [LESSON, LESSON] }, realPack), /重复/);
   assert.throws(bad((l) => { l.lesson_id = "Bad Id"; }));
   assert.throws(bad((l) => { l.lesson_version = "v1"; }));
-  assert.throws(bad((l) => { l.skill_node = "aya:NO-SUCH-NODE"; }));
-  assert.throws(bad((l) => { l.item_ref = "aya:NO-SUCH-ITEM"; }));
+  assert.throws(bad((l) => { l.skill_node = "aya:NO-SUCH-NODE"; }), /skill_node 不在内容包里/);
+  assert.throws(bad((l) => { l.item_ref = "aya:NO-SUCH-ITEM"; }), /item_ref 不在内容包里/);
+  // 节点在内容包里，但不是这道题的主节点
+  const notMain = realPack.pack.nodes.find((n) => !ITEM.mainNodes.includes(n.id))!;
+  assert.throws(bad((l) => { l.skill_node = `aya:${notMain.id}`; }), /不是这道题的主节点/);
+  // 不针对某道题的讲评课：节点在内容包里即可
+  assert.equal(indexLessons({ format: LESSON_PACK_FORMAT, lessons: [{ ...structuredClone(LESSON), item_ref: undefined, skill_node: `aya:${notMain.id}` }] }, realPack).byRef.size, 1);
   assert.throws(bad((l) => { l.note = "（合成）"; }), /多余字段/);
   assert.throws(bad((l) => { (l.dsl as Json).steps = []; }), /讲解 DSL 不合格/);
   assert.throws(bad((l) => { ((l.script as Json).answers as Json[]).push({ step: "s1", intent: "why_step", line: "a3" }); }), /台词稿不合格/);
