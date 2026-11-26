@@ -111,7 +111,7 @@ test('样张页：非法样例被拒；渲染结果没有外链；不写浏览�
 });
 
 // 指着元素提问（specs/stage-point-to-ask 第一阶段）：键盘与鼠标都能指着白板元素、槽位或这一步，选四种问题之一；
-// “再讲一遍”跳回对应那一步重放；其余三种只显示合成占位；播放中选中先暂停；Esc 取消后焦点回到原元素；点击区不小于 44 像素；
+// “再讲一遍”跳回对应那一步重放；其余三种显示台词稿里的预制答疑，没有就兜底加“再讲一遍”；播放中选中先暂停；Esc 取消后焦点回到原元素；点击区不小于 44 像素；
 // 提问不发请求、不写存储。
 const ask = (page: Page, key: string) => board(page).locator(`[data-ask="${key}"]`);
 const menu = (page: Page) => page.locator('[data-stage-ask-menu]');
@@ -151,13 +151,24 @@ test('样张页：指着元素提问（键盘、鼠标、再讲一遍、暂停�
   await expect(ask(page, first)).toBeFocused();
   await expect(board(page).locator('[data-ask-selected]')).toHaveCount(0);
 
-  // 鼠标：点题图槽位，选“为什么” → 只显示合成占位，菜单收起，步数不变
+  // 鼠标：点题图槽位，选“为什么” → 槽位算当前这一步（第 3 步），显示台词稿里这一步的预制答疑，菜单收起，步数不变
   await ask(page, 'slot:fig').click();
   await page.locator('[data-stage-ask-intent="why_step"]').click();
   await expect(menu(page)).toHaveCount(0);
   await expect(received(page)).toHaveAttribute('data-stage-ask-received', 'why_step');
   await expect(received(page)).toHaveAttribute('data-stage-ask-anchor', 'slot:fig');
-  await expect(received(page)).toContainText('{{TODO_COPY:ask.received}}');
+  await expect(received(page).locator('[data-stage-ask-answer="a1"]')).toHaveText('（合成答疑）把加三移到右边，就变成减三。');
+  await expect(received(page).locator('[data-stage-ask-answer="a1"]')).toHaveAttribute('data-stage-ask-answer-role', 'teacher');
+  await expect(board(page)).toHaveAttribute('data-stage-cursor', '3');
+  // 第 1 步写的元素问“是什么”：台词稿里没有这一条 → 兜底加“再讲一遍”，点了就跳回第 1 步重放
+  await ask(page, first).click();
+  await page.locator('[data-stage-ask-intent="what_is"]').click();
+  await expect(received(page).locator('[data-stage-ask-answer]')).toHaveCount(0);
+  await expect(received(page).locator('[data-stage-ask-fallback]')).toContainText('{{TODO_COPY:ask.no_answer}}');
+  await received(page).locator('[data-stage-ask-again]').click();
+  await expect(status(page)).toHaveAttribute('data-stage-status', 'playing');
+  await page.locator('[data-stage-action="pause"]').click();
+  await page.locator('[data-stage-action="seek"]').selectOption('3');
   await expect(board(page)).toHaveAttribute('data-stage-cursor', '3');
 
   // 点空白处取消

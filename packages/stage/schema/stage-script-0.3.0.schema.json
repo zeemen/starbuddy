@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:starbuddy:stage-script:0.3.0",
+  "title": "讲解台词稿 v0.3.0（packages/stage）",
+  "description": "讲解台词与板书分开存：DSL 的步骤只引用台词编号（say），台词正文在这份稿里，由人设审核（CLAUDE.md 规则 7）。本 schema 只表达静态结构；以下由 src/script.ts 的 validateStagePair 核对：DSL 引用的台词都在、稿里没有未被引用的台词、每句台词的角色等于说这句时持有讲解权的角色、台词编号不重复、每句最多两个句末标点、文字不含不可见字符 / HTML / 链接与脚本写法。 v0.3（specs/stage-point-to-ask-answer）：可选的预制答疑 answers：学生指着某一步问某种问题时的回答，只能是稿里审过的台词。另由 validateStagePair 核对：只在有台词的讲解（narrated 为真）里出现；步骤存在；同一步同一问法只有一句；答疑台词在稿里、不兼作字幕台词、一句只答一处；答疑台词的角色等于这一步持有讲解权的角色。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "dsl_version",
+    "lines"
+  ],
+  "properties": {
+    "dsl_version": {
+      "const": "0.3.0"
+    },
+    "lines": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "$ref": "#/$defs/line"
+      }
+    },
+    "answers": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "$ref": "#/$defs/answer"
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,31}$"
+    },
+    "line": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "role",
+        "text"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "role": {
+          "enum": [
+            "teacher",
+            "buddy"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        }
+      }
+    },
+    "answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "step",
+        "intent",
+        "line"
+      ],
+      "properties": {
+        "step": {
+          "$ref": "#/$defs/id"
+        },
+        "intent": {
+          "enum": [
+            "why_step",
+            "what_is",
+            "where_from"
+          ]
+        },
+        "line": {
+          "$ref": "#/$defs/id"
+        }
+      }
+    }
+  }
+}

@@ -61,10 +61,10 @@ test('顶层：不是对象、多余字段、缺字段、版本不对', () => {
   rejects({ ...minimal(), script: 'alert(1)' }, 'unknown_field', '$.script');
   const { roles: _r, ...noRoles } = minimal();
   rejects(noRoles, 'missing_field', '$.roles');
-  for (const v of ['0.1.0', '0.3.0', '0.1', '1.0.0', 1]) rejects({ ...minimal(), dsl_version: v }, 'bad_version', '$.dsl_version');
+  for (const v of ['0.1.0', '0.2.0', '0.4.0', '0.1', '1.0.0', 1]) rejects({ ...minimal(), dsl_version: v }, 'bad_version', '$.dsl_version');
   // __proto__ 作为自有字段（JSON.parse 产生）也算多余字段；非普通对象（类实例、Map）不算对象
   rejects(JSON.parse(`{"__proto__":{"x":1},${JSON.stringify(minimal()).slice(1)}`), 'unknown_field', '$.__proto__');
-  class Fake { dsl_version = '0.2.0'; }
+  class Fake { dsl_version = '0.3.0'; }
   rejects(new Fake(), 'not_object', '$');
   rejects(new Map(Object.entries(minimal())), 'not_object', '$');
 });

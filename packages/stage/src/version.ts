@@ -5,11 +5,13 @@
 //   - 迁移阶梯 DSL_MIGRATIONS：有序、首尾相接、不跳级；每级是纯函数、幂等，只改结构、不改任何文字与公式；
 //   - migrateStageDsl：沿阶梯升到当前版本后再过一遍完整校验；比当前更新的版本、阶梯上找不到的版本、迁移失败一律拒收（不降级、不猜测）。
 // 第一级真实迁移 0.1.0 → 0.2.0（specs/stage-dsl-v0.2）：补 narrated: false（无声板书，与 v0.1 相同），其余不动；机制另用测试里注入的合成阶梯验证。
+// 第二级 0.2.0 → 0.3.0（specs/stage-point-to-ask-answer PR ②）：DSL 结构不变，只升版本号；格式变化在台词稿（可选的预制答疑 answers）。
+// 台词稿另有自己的读入入口 migrateStageScript：0.2.0 的稿没有 answers，升到 0.3.0 只改版本号；台词文字逐字不变（执行器核对）。
 import {
   ACTION_FIELDS, ACTION_TYPES, BOARD_WRITE_TYPES, CANVAS_FIELDS, DSL_VERSION, FONT_SIZE, ID_RE, LIMITS, POINT_MODES, ROLES, SLOT_FIELDS, SLOT_KINDS,
   STEP_FIELDS, STEP_OPTIONAL, TOP_FIELDS, TOP_OPTIONAL,
 } from './dsl.ts';
-import { LINE_FIELDS, SCRIPT_FIELDS, SCRIPT_LIMITS } from './script.ts';
+import { ANSWER_FIELDS, ANSWER_INTENTS, LINE_FIELDS, SCRIPT_FIELDS, SCRIPT_LIMITS, SCRIPT_OPTIONAL, validateStagePair, type PairResult } from './script.ts';
 import { LATEX_COMMANDS, LATEX_RE } from './latex.ts';
 import { validateStageDsl, type DslError, type ValidatedStageDsl } from './validate.ts';
 
@@ -28,6 +30,14 @@ export const TEXT_KEYS: readonly string[] = Object.freeze(['title', 'text', 'lat
 export const DSL_MIGRATIONS: readonly DslMigration[] = Object.freeze([
   // 0.1.0 → 0.2.0：v0.1 没有台词，迁移过来是无声板书；步骤、动作、文字都不动
   Object.freeze({ from: '0.1.0', to: '0.2.0', migrate: (d: Json): Json => ({ ...d, narrated: false }) }),
+  // 0.2.0 → 0.3.0：DSL 结构不变（预制答疑在台词稿里），只升版本号
+  Object.freeze({ from: '0.2.0', to: '0.3.0', migrate: (d: Json): Json => ({ ...d }) }),
+]);
+
+/** 台词稿的迁移阶梯：台词稿从 0.2.0 起才有（v0.1 没有台词）。改台词稿格式时与 DSL 同步升版本，在这里追加一级 */
+export const SCRIPT_MIGRATIONS: readonly DslMigration[] = Object.freeze([
+  // 0.2.0 → 0.3.0：旧稿没有预制答疑，只升版本号；台词一句不动
+  Object.freeze({ from: '0.2.0', to: '0.3.0', migrate: (s: Json): Json => ({ ...s }) }),
 ]);
 
 const SEMVER = /^(0|[1-9]\d{0,3})\.(0|[1-9]\d{0,3})\.(0|[1-9]\d{0,3})$/;
@@ -63,7 +73,7 @@ export function formatSpec(): string {
     top: TOP_FIELDS, topOptional: TOP_OPTIONAL, step: STEP_FIELDS, stepOptional: STEP_OPTIONAL, canvas: CANVAS_FIELDS, actionTypes: ACTION_TYPES,
     actionFields: ACTION_FIELDS, boardWrite: BOARD_WRITE_TYPES, pointModes: POINT_MODES, slotFields: SLOT_FIELDS, slotKinds: SLOT_KINDS, roles: ROLES,
     fontSize: FONT_SIZE, limits: LIMITS, id: `${ID_RE.source}/${ID_RE.flags}`, latexCommands: LATEX_COMMANDS, latexForbidden: `${LATEX_RE.source}/${LATEX_RE.flags}`,
-    script: { fields: SCRIPT_FIELDS, line: LINE_FIELDS, limits: SCRIPT_LIMITS },
+    script: { fields: SCRIPT_FIELDS, optional: SCRIPT_OPTIONAL, line: LINE_FIELDS, answer: ANSWER_FIELDS, answerIntents: ANSWER_INTENTS, limits: SCRIPT_LIMITS },
   }));
 }
 
@@ -127,4 +137,42 @@ export function migrateStageDsl(raw: unknown, ladder: readonly DslMigration[] = 
   const r = validateStageDsl(doc);
   if (!r.ok) return { ok: false, errors: [{ path: '$', code: 'migration_failed' }, ...r.errors], from: version };
   return { ...r, from: version };
+}
+
+export type ScriptMigrationResult = (PairResult & { from: string | null });
+
+/** 台词稿里的全部台词文字，按出现顺序（每级迁移前后必须逐字相同） */
+const scriptTexts = (doc: unknown): string[] =>
+  isRecord(doc) && Array.isArray(doc['lines']) ? doc['lines'].map((l) => (isRecord(l) && typeof l['text'] === 'string' ? l['text'] : '\u0000')) : [];
+
+/**
+ * 读入任意版本的台词稿，并与已校验（已迁移到当前版本）的 DSL 配对：当前版本直接配对核对；旧版本沿 SCRIPT_MIGRATIONS 逐级升级、
+ * 核对台词逐字未变，再配对核对；比当前更新、阶梯上找不到、迁移失败一律拒收。输入不会被改动。
+ */
+export function migrateStageScript(dsl: ValidatedStageDsl, raw: unknown, ladder: readonly DslMigration[] = SCRIPT_MIGRATIONS,
+  current: string = DSL_VERSION): ScriptMigrationResult {
+  const version = isRecord(raw) ? raw['dsl_version'] : undefined;
+  if (typeof version !== 'string' || compareVersions(version, current) === null) return { ...validateStagePair(dsl, raw), from: null };
+  const cmp = compareVersions(version, current)!;
+  if (cmp > 0) return { ok: false, errors: [{ path: '$.dsl_version', code: 'future_version' }], from: version };
+  if (cmp === 0) return { ...validateStagePair(dsl, raw), from: version };
+  if (ladderProblems(ladder, current).length > 0) return { ok: false, errors: [{ path: '$', code: 'migration_failed' }], from: version };
+  const start = ladder.findIndex((m) => m.from === version);
+  if (start < 0) return { ok: false, errors: [{ path: '$.dsl_version', code: 'unknown_version' }], from: version };
+  let doc: unknown;
+  try {
+    doc = clone(raw);
+    for (const m of ladder.slice(start)) {
+      const next = m.migrate(clone(doc) as Json);
+      if (!isRecord(next)) throw new Error('迁移结果不是对象');
+      const out = { ...clone(next) as Json, dsl_version: m.to };
+      const before = scriptTexts(doc); const after = scriptTexts(out);
+      if (before.length !== after.length || before.some((t, j) => t !== after[j])) throw new Error('迁移改动了台词');
+      doc = out;
+    }
+  } catch {
+    return { ok: false, errors: [{ path: '$', code: 'migration_failed' }], from: version };
+  }
+  const r = validateStagePair(dsl, doc);
+  return r.ok ? { ...r, from: version } : { ok: false, errors: [{ path: '$', code: 'migration_failed' }, ...r.errors], from: version };
 }

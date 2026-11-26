@@ -670,8 +670,8 @@ export const PROCESS_STATUS = {
 } as const;
 
 /**
- * 讲解白板“指着元素提问”（specs/stage-point-to-ask 第二节第 4、5 条）：菜单四种问题、取消、问这一步、读屏标签、收到提示。
- * 面向学生的新文案，人写人审前一律是占位；{step}、{index}、{intent} 由调用方替换，不拼接其他文字。
+ * 讲解白板“指着元素提问”（specs/stage-point-to-ask 第二节第 4、5 条；预制答疑见 specs/stage-point-to-ask-answer）：菜单四种问题、取消、问这一步、读屏标签、没有答疑时的兜底。
+ * 面向学生的新文案，人写人审前一律是占位；{step}、{index} 由调用方替换，不拼接其他文字。
  */
 export const STAGE_ASK = {
   why_step: T('ask.why_step', '这一步为什么这样做'),
@@ -684,7 +684,7 @@ export const STAGE_ASK = {
   element_label: T('ask.element_label', '第 {step} 步写的第 {index} 项'),
   slot_item_figure: T('ask.slot_item_figure', '题图'),
   slot_student_answer: T('ask.slot_student_answer', '我的作答'),
-  received: T('ask.received', '已收到：第 {step} 步 · {intent}（回答要等讲评课上线）'),
+  no_answer: T('ask.no_answer', '这一步还没有准备好回答，可以再讲一遍这一步'),
 } as const;
 
 /** 信任界面的全部文案（静态检查逐条扫描；端到端的“每个文本节点”核对也用它） */

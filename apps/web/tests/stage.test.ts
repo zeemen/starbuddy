@@ -41,7 +41,10 @@ test('合成样例通过校验，非法样例被拒（外链、HTML、多余字�
   assert.equal(ok.dsl.narrated, true);
   const pair = stage.validateStagePair(ok.dsl, STAGE_SCRIPT);
   assert.ok(pair.ok, JSON.stringify(!pair.ok && pair.errors));
-  for (const l of STAGE_SCRIPT.lines) assert.ok(l.text.startsWith('（合成台词）'), l.text);
+  for (const l of STAGE_SCRIPT.lines) assert.ok(l.text.startsWith('（合成台词）') || l.text.startsWith('（合成答疑）'), l.text);
+  // v0.3（specs/stage-point-to-ask-answer PR ②）：预制答疑合格，按步骤与问法能取到；样张页台词稿经迁移入口读入
+  assert.equal(pair.ok && stage.answerFor(ok.dsl, pair.script, 's3', 'why_step')?.id, 'a1');
+  assert.equal(pair.ok && stage.answerFor(ok.dsl, pair.script, 's1', 'what_is'), null);
   assert.ok(stage.migrateStageDsl(STAGE_SAMPLE).ok);
   const bad = stage.validateStageDsl(STAGE_INVALID_SAMPLE);
   assert.ok(!bad.ok);
@@ -88,6 +91,8 @@ test('指着元素提问（specs/stage-point-to-ask）：文案全是占位并�
   for (const intent of stage.QUESTION_INTENTS) assert.ok(intent in STAGE_ASK, intent);
   const demo = read('src/stage/StageDemo.tsx').replace(/^\s*\/\/.*$/gm, '');
   assert.ok(demo.includes('validateStageQuestion(dsl, {'), '提问对象必须经校验');
+  assert.ok(demo.includes('migrateStageScript(valid.dsl, STAGE_SCRIPT)'), '台词稿经迁移入口读入');
+  assert.ok(demo.includes('answerFor(dsl, pair.script, stepId, intent)'), '回答只取台词稿里的预制答疑');
   assert.ok(demo.includes('askable={{ selected, onSelect: select, label }}'));
   // 只显示占位，不把提问对象交给任何网络或存储（上一条测试已禁 fetch、存储、server action）；不出现自由文字输入
   for (const bad of [/<input[^>]*type="text"/, /<textarea/, /contentEditable/, /evidence/i, /record\(/]) assert.ok(!bad.test(demo), `${bad}`);
