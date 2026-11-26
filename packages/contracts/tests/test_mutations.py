@@ -344,6 +344,17 @@ V1_MUTATIONS = {
 # ---------- v1.1 候选版（PLT-12 present_item，specs/present-item-contract/spec.md 验收第 1 条） ----------
 PI = f"{S}.PresentedItem"
 V11_MUTATIONS = {
+    # teach 的结构化提问（v1.1 草稿内追加，specs/stage-point-to-ask-answer PR ①）
+    "提问放开多余字段（可夹带自由文字）": assign(f"{S}.TeachQuestion.additionalProperties", True),
+    "提问意图加上本地处理的 again": lambda d: d["components"]["schemas"]["TeachQuestion"]["properties"]["intent"]["enum"].append("again"),
+    "提问意图放开成任意文字": delete(f"{S}.TeachQuestion.properties.intent.enum"),
+    "锚点放开多余字段": delete(f"{S}.StageAnchor.additionalProperties"),
+    "锚点 id 去掉 pattern": delete(f"{S}.StageAnchor.properties.id.pattern"),
+    "提问步数去掉上限": delete(f"{S}.TeachQuestion.properties.cursor.maximum"),
+    "讲评课引用放开多余字段（可夹带讲解内容）": delete(f"{S}.LessonRef.additionalProperties"),
+    "去掉“带提问只能是讲评课、对话为空”的规则": lambda d: d["components"]["schemas"]["TeachRequest"]["allOf"].pop(),
+    "answer_submitted 改成必填": lambda d: d["components"]["schemas"]["TeachRequest"]["required"].append("answer_submitted"),
+    "answer_submitted 改成字符串": assign(f"{S}.TeachRequest.properties.answer_submitted.type", "string"),
     # 答案类字段
     "题面结果加 answer 字段（受约束的编码，自由文本扫描看不出来）": assign(f"{PI}.properties.answer",
                                                             {"type": "array", "maxItems": 10, "items": {"type": "string", "pattern": "^[A-Z]$"}}),
@@ -604,6 +615,7 @@ def main() -> int:
     v11_base = cc.load(cc.V11_SPEC)
     v11_baseline = cc.run_checks(v11_base, cc.V11_SPEC)
     cc.check_v11_additive(v1_base, v11_base, v11_baseline)
+    cc.check_teach_question_alignment(v11_base, v11_baseline)
     if v11_baseline:
         print("mutation-test: v1.1 候选版基线本身就不通过，先修契约：")
         for e in v11_baseline:
@@ -615,6 +627,7 @@ def main() -> int:
         errs = cc.run_checks(doc, cc.V11_SPEC)
         try:
             cc.check_v11_additive(v1_base, doc, errs)
+            cc.check_teach_question_alignment(doc, errs)
         except Exception as exc:  # noqa: BLE001 - 结构被改坏导致检查崩溃不算“发现”
             errs.append(f"无法完成：{type(exc).__name__}")
         if not [e for e in errs if "OpenAPI 3.1 校验失败" not in e and "无法完成" not in e]:

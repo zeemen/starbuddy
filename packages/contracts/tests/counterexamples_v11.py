@@ -14,6 +14,7 @@ REQ = "PresentItemRequestAya"
 RESP = "PresentItemResponseAya"
 WITHHELD = "PresentItemResponseAyaWithheld"
 ZX = "PresentItemResponseZhixing"
+TQ = "TeachRequestAyaQuestion"
 EVIDENCE = "00000000-0000-4000-8000-00000000e701"
 
 
@@ -117,4 +118,23 @@ V11_CASES = [
     # ---- 能力声明 ----
     Case("能力声明缺 present_item", "v1.1：能力声明逐一声明七个方法", "Capabilities", "CapabilitiesAya",
          _set("methods.present_item", _DELETE)),
+    # ---- teach 的结构化提问（v1.1 草稿内追加，specs/stage-point-to-ask-answer PR ①）：不收自由文字、只能是讲评课、只含 id 与编码 ----
+    Case("提问用在提示模式", "带 question 只能是 mode: lesson", "TeachRequest", TQ, _set("mode", "hint")),
+    Case("提问同时带自由文字对话", "带 question 时 conversation 为空", "TeachRequest", TQ,
+         _set("conversation", [{"turn_id": "00000000-0000-4000-8000-0000000000c2", "role": "student", "content": "（合成）为什么"}])),
+    Case("提问夹带自由文字", "TeachQuestion 不收自由文字", "TeachRequest", TQ, _set("question.text", "（合成）这一步为什么要移项")),
+    Case("提问夹带讲解 DSL", "讲解内容由平台按 lesson_ref 取，请求不携带", "TeachRequest", TQ, _set("question.dsl", {"steps": []})),
+    Case("提问夹带学生作答", "提问对象不含学生数据", "TeachRequest", TQ, _set("question.answer_text", "（合成）x=3")),
+    Case("提问意图是再讲一遍", "再讲一遍在前端本地处理，不进契约", "TeachRequest", TQ, _set("question.intent", "again")),
+    Case("提问意图是任意文字", "意图只有三种编码", "TeachRequest", TQ, _set("question.intent", "why")),
+    Case("锚点类型不在枚举里", "锚点只能是 element / slot / step", "TeachRequest", TQ, _set("question.anchor.kind", "node")),
+    Case("锚点 id 不合 id 规则", "锚点 id 与讲解 DSL 的 ID_RE 一致", "TeachRequest", TQ, _set("question.anchor.id", "F1")),
+    Case("锚点夹带坐标", "锚点只有 kind 与 id", "TeachRequest", TQ, _set("question.anchor.x", 40)),
+    Case("提问步数为 0", "cursor 从 1 起", "TeachRequest", TQ, _set("question.cursor", 0)),
+    Case("提问步数超过讲解 DSL 上限", "cursor ≤ 100", "TeachRequest", TQ, _set("question.cursor", 101)),
+    Case("提问缺讲评课引用", "TeachQuestion 必填 lesson_ref", "TeachRequest", TQ, _set("question.lesson_ref", _DELETE)),
+    Case("讲评课版本不是 x.y.z", "lesson_version 是语义化版本", "TeachRequest", TQ, _set("question.lesson_ref.lesson_version", "v1")),
+    Case("讲评课引用夹带讲解内容", "LessonRef 只有 id 与版本", "TeachRequest", TQ, _set("question.lesson_ref.body", "（合成）")),
+    Case("提问缺讲解 DSL 版本", "TeachQuestion 必填 dsl_version", "TeachRequest", TQ, _set("question.dsl_version", _DELETE)),
+    Case("作答已提交写成字符串", "answer_submitted 是布尔", "TeachRequest", TQ, _set("answer_submitted", "yes")),
 ]
