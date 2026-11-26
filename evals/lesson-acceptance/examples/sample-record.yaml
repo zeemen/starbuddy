@@ -1,0 +1,108 @@
+# 合成示例记录（specs/lesson-acceptance-checklist 第二节第 3 条）：只用来测检查器，不是任何一次真实验收。
+# 讲评课还没有上线：下面的“实际结果”都是明显的占位文字，结论也是编的。真实验收记录放教研台账，不进本仓库（待人确认 #4）。
+# 清单一改，checklist_sha256 就要跟着更新（python check.py 会提示）。
+schema_version: lesson-acceptance-record/0.1
+checklist_version: 0.1.0
+checklist_sha256: 58bd56bf99dc1830c80eb4bfc7b7bdc41566a11200a5d77b0c5531970780d131
+tested_versions:
+  dsl: 0.2.0
+  adapter: aya-syn@0.0.0
+  persona_prompt: syn-0.0.0
+  model_route: syn-route@0.0.0
+  contract: plugin-api 1.1.0
+environment: local
+tester: （合成）测试者甲
+date: 2026-11-26
+synthetic_inputs: true
+items:
+  A1:
+    result: （合成示例）按清单 A1 操作，观察结果与期望一致
+    outcome: pass
+    evidence_kind_actual: independent
+    attachments: [syn-shot-001]
+  A2:
+    result: （合成示例）按清单 A2 操作，观察结果与期望一致
+    outcome: pass
+    evidence_kind_actual: hinted
+  A3:
+    result: （合成示例）按清单 A3 操作，观察结果与期望一致
+    outcome: pass
+    evidence_kind_actual: hinted
+  A4:
+    result: （合成示例）按清单 A4 操作，观察结果与期望一致
+    outcome: pass
+    evidence_kind_actual: hinted
+  A5:
+    result: （合成示例）按清单 A5 操作，观察结果与期望一致
+    outcome: pass
+    evidence_kind_actual: transfer
+  A6:
+    result: （合成示例）按清单 A6 操作，观察结果与期望一致
+    outcome: pass
+    evidence_kind_actual: independent
+  A7:
+    result: （合成示例）按清单 A7 操作，观察结果与期望一致
+    outcome: pass
+  B1:
+    result: （合成示例）按清单 B1 操作，观察结果与期望一致
+    outcome: pass
+  B2:
+    result: （合成示例）按清单 B2 操作，观察结果与期望一致
+    outcome: pass
+  B3:
+    result: （合成示例）重复了整段导入，没有给新挑战
+    outcome: fail
+    repro: （合成示例）新会话 → 输入“这类题我会了” → 点“开始” → 出现完整导入
+  B4:
+    result: （合成示例）按清单 B4 操作，观察结果与期望一致
+    outcome: pass
+  C1:
+    result: （合成示例）按清单 C1 操作，观察结果与期望一致
+    outcome: pass
+  C2:
+    result: （合成示例）按清单 C2 操作，观察结果与期望一致
+    outcome: pass
+  C3:
+    result: （合成示例）按清单 C3 操作，观察结果与期望一致
+    outcome: pass
+  C4:
+    result: （合成示例）按清单 C4 操作，观察结果与期望一致
+    outcome: pass
+  D1:
+    result: （合成示例）按清单 D1 操作，观察结果与期望一致
+    outcome: pass
+  D2:
+    result: （合成示例）按清单 D2 操作，观察结果与期望一致
+    outcome: pass
+  D3:
+    result: （合成示例）按清单 D3 操作，观察结果与期望一致
+    outcome: pass
+  D4:
+    result: （合成示例）按清单 D4 操作，观察结果与期望一致
+    outcome: pass
+  D5:
+    result: （合成示例）按清单 D5 操作，观察结果与期望一致
+    outcome: pass
+  E1:
+    result: （合成示例）按清单 E1 操作，观察结果与期望一致
+    outcome: pass
+  E2:
+    result: （合成示例）按清单 E2 操作，观察结果与期望一致
+    outcome: pass
+  E3:
+    result: （合成示例）合成环境里刷新功能还没接上
+    outcome: blocked
+    repro: （合成示例）讲到第 3 步 → 刷新 → 页面报错，无法继续核对
+  E4:
+    result: （合成示例）按清单 E4 操作，观察结果与期望一致
+    outcome: pass
+  F1:
+    result: （合成示例）按清单 F1 操作，观察结果与期望一致
+    outcome: pass
+  F2:
+    result: （合成示例）按清单 F2 操作，观察结果与期望一致
+    outcome: pass
+  F3:
+    result: （合成示例）本次未改人设 Prompt
+    outcome: n_a
+    n_a_reason: （合成示例）人设 Prompt 版本与上次验收相同

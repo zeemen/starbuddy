@@ -1,0 +1,240 @@
+# 讲评课教研验收清单（specs/lesson-acceptance-checklist；借鉴 OpenMAIC eval/zone-of-proximal-development 的人工验收清单）。
+# 草稿：条目由工程起草，待教研负责人逐条修改并签字（待人确认 #1）；签字后改条目归教研，工程不改。未签字的清单只能做试跑。
+# 测试输入一律由测试者构造（合成数据，规则 8）；不用留出集（规则 14）。每条报告实际结果，不按关键词计分，不用模型判。
+# 字段：id、section、must（必过项 true / 观察项 false）、title、setup（构造什么合成输入）、steps（怎么做）、expect（应观察到什么）、
+#       evidence_kind_expect（期望系统记下的证据情境：independent / hinted / transfer / delayed_retest；没有就不写）、refs（依据，仓库相对路径）。
+schema_version: lesson-acceptance/0.1
+checklist_version: 0.1.0
+status: draft
+signed_by: ''
+signed_at: ''
+sections:
+  A: 证据情境
+  B: 支架
+  C: 提交前不露答案
+  D: 讲解内容
+  E: 路线与记录
+  F: 边界
+items:
+  - id: A1
+    section: A
+    must: true
+    title: 首次独立作答记为独立
+    setup: 合成学生账号；一道这节讲评课还没讲过、也没给过提示的题
+    steps: 不打开提示、不看讲解，直接作答并提交
+    expect: 这次作答的证据情境是独立，提示等级为 0
+    evidence_kind_expect: independent
+    refs: [services/learning/learning/mastery/evidence.py]
+  - id: A2
+    section: A
+    must: true
+    title: 看过提示后作答记为提示
+    setup: 合成学生账号；一道有提示阶梯的题
+    steps: 打开第 1 级提示后作答并提交
+    expect: 证据情境是提示，并记下用到的提示等级
+    evidence_kind_expect: hinted
+    refs: [services/learning/learning/mastery/evidence.py, adapters/aya/src/methods/teach.ts]
+  - id: A3
+    section: A
+    must: true
+    title: 看过示范或解答后的重做不算独立
+    setup: 合成学生账号；先在这节课里看完某题的完整示范或解答
+    steps: 示范结束后重做同一道题并提交
+    expect: 重做只检验功能能用，证据情境记为提示，不记独立（借鉴 OpenMAIC：示范后重做不能当首次独立表现）
+    evidence_kind_expect: hinted
+    refs: [services/learning/learning/mastery/evidence.py]
+  - id: A4
+    section: A
+    must: true
+    title: 同一轮里讲过答案的题，后面再答不算独立
+    setup: 合成学生账号；这节课前面已经讲出了某题的答案
+    steps: 同一节课后面再出到这道题时作答并提交
+    expect: 证据情境不是独立（借鉴 OpenMAIC：前面出现过的答案不算学生自己给出的证据）
+    evidence_kind_expect: hinted
+    refs: [services/learning/learning/mastery/evidence.py]
+  - id: A5
+    section: A
+    must: true
+    title: 不同题目族的新题复核记为迁移
+    setup: 合成学生账号；讲评后给出的新题与讲过的题属于不同题目族、考同一节点
+    steps: 不看提示独立作答并提交
+    expect: 证据情境是迁移
+    evidence_kind_expect: transfer
+    refs: [services/learning/learning/mastery/evidence.py]
+  - id: A6
+    section: A
+    must: true
+    title: 同一题目族只换数字的新题不记迁移
+    setup: 合成学生账号；讲评后给出的新题与讲过的题属于同一题目族、只换了数字
+    steps: 不看提示独立作答并提交
+    expect: 证据情境不是迁移
+    evidence_kind_expect: independent
+    refs: [services/learning/learning/mastery/evidence.py]
+  - id: A7
+    section: A
+    must: true
+    title: 一次作答不点亮星
+    setup: 合成学生账号；某节点讲评前没有任何证据
+    steps: 讲评后对这个节点独立做对一道题，然后看星图
+    expect: 星不亮；星亮仍按五道门槛与星亮门槛，不因一次作答改变（借鉴 OpenMAIC：一次回答得不出稳定的能力分）
+    refs: [services/learning/learning/mastery/gates.py, apps/web/src/star/StarMapV1.tsx]
+  - id: B1
+    section: B
+    must: false
+    title: 卡住时补讲解后把一道题还给学生
+    setup: 合成学生账号；在一道题上提交一个构造的错误解法
+    steps: 说出卡在哪一步
+    expect: 先补这一步需要的讲解，然后留一道题让学生自己做并等待，不连着把整题讲完
+    refs: [docs/personas/阿鸦-规格书-V1.1.md]
+  - id: B2
+    section: B
+    must: false
+    title: 做对后减少帮助
+    setup: 接 B1，学生按讲解做对了留下的那道题
+    steps: 继续这节课
+    expect: 帮助减少，给一道新题，新题在提交前不露答案
+    refs: [docs/personas/阿鸦-规格书-V1.1.md]
+  - id: B3
+    section: B
+    must: false
+    title: 说“会了”的学生得到适度新挑战
+    setup: 新会话的合成学生账号；开场说“这类题我会了，想要下一个挑战”
+    steps: 按讲评课流程继续
+    expect: 给适度的新挑战或只问一个必要的澄清，不重复整段导入；也不因为这一句话就判“已掌握”
+    refs: [docs/personas/阿鸦-规格书-V1.1.md, CLAUDE.md]
+  - id: B4
+    section: B
+    must: false
+    title: 前置不会的学生得到更窄的先备任务
+    setup: 新会话的合成学生账号；开场说明前置的概念还分不清
+    steps: 按讲评课流程继续
+    expect: 先给一个范围更窄的先备任务，而不只是给更强的提示
+    refs: [docs/personas/阿鸦-规格书-V1.1.md]
+  - id: C1
+    section: C
+    must: true
+    title: 首题提交前不露答案
+    setup: 合成学生账号；讲评课的第一道题
+    steps: 提交前逐一查看讲解、白板、台词与可用的提示
+    expect: 提交前任何地方都不出现这道题的答案
+    refs: [adapters/aya/src/methods/teach.ts]
+  - id: C2
+    section: C
+    must: true
+    title: 新题提交前不露答案
+    setup: 合成学生账号；讲评后给出的新题
+    steps: 提交前逐一查看讲解、白板、台词与可用的提示
+    expect: 提交前任何地方都不出现这道新题的答案
+    refs: [adapters/aya/src/methods/teach.ts]
+  - id: C3
+    section: C
+    must: true
+    title: 提示等级不超过平台给的上限
+    setup: 合成学生账号；平台给的提示等级上限设为 2
+    steps: 连续请求提示直到不再给出
+    expect: 实际给出的提示不超过第 2 级；作答提交前不超过第 3 级
+    refs: [packages/contracts/openapi/plugin-api.v1.1.yaml, adapters/aya/src/methods/teach.ts]
+  - id: C4
+    section: C
+    must: true
+    title: “再讲一遍”只重放讲解
+    setup: 合成学生账号；白板讲解播放到一半
+    steps: 指着白板上的一步，选“再讲一遍”
+    expect: 跳回那一步的开头重放，不给出答案、不跳到后面的讲解
+    refs: [specs/stage-point-to-ask/spec.md]
+  - id: D1
+    section: D
+    must: true
+    title: 预设的错例不说成学生的错
+    setup: 合成学生账号；讲评课里含一段教研预设的错误示例
+    steps: 播放到错例那一段
+    expect: 错例明确是示例，不说成“你刚才这样写错了”（借鉴 OpenMAIC：预设错例不当学生的错）
+    refs: [specs/quote-verbatim-guard/spec.md]
+  - id: D2
+    section: D
+    must: true
+    title: 讲解里没有关于学生的判断
+    setup: 合成学生账号；完整播放一节讲评课
+    steps: 记下讲解与台词里所有提到“你”的句子
+    expect: 只讲内容，不出现“你最近……”“你总是……”一类关于学生的判断；关于学生的陈述只能来自判断账本的渲染句（规则 11）
+    refs: [packages/contracts/openapi/plugin-api.v1.1.yaml, CLAUDE.md]
+  - id: D3
+    section: D
+    must: false
+    title: 引用学生原话逐字
+    setup: 合成学生账号；讲评课里引用了学生的作答
+    steps: 对照学生的原始作答
+    expect: 引语逐字出自学生键盘输入的作答；自动检查（引语逐字校验）跑过且通过
+    refs: [specs/quote-verbatim-guard/spec.md]
+  - id: D4
+    section: D
+    must: false
+    title: 白板说、画、指对齐
+    setup: 这节课的讲解 DSL 与台词稿
+    steps: 看 DSL 与台词稿的配对校验结果，并播放一遍
+    expect: 配对校验通过；每一步写、说、指对齐
+    refs: [specs/stage-dsl-v0.2/spec.md]
+  - id: D5
+    section: D
+    must: false
+    title: 禁用推断词表不命中
+    setup: 这节课全部讲解与台词文字
+    steps: 看禁用推断检查的结果
+    expect: 不命中（规则 12）
+    refs: [docs/design/sie/sie_lexicon.py]
+  - id: E1
+    section: E
+    must: false
+    title: 求助路线走一遍
+    setup: 合成学生账号
+    steps: 每一处能求助的地方都选求助，走完整节课
+    expect: 每一步都能继续，最后能完成这节课
+    refs: [specs/lesson-acceptance-checklist/spec.md]
+  - id: E2
+    section: E
+    must: false
+    title: 跳过路线走一遍
+    setup: 合成学生账号
+    steps: 每一处能跳过的地方都选跳过，走完整节课
+    expect: 每一步都能继续，最后能完成这节课；跳过的题不记成做对
+    refs: [specs/lesson-acceptance-checklist/spec.md]
+  - id: E3
+    section: E
+    must: false
+    title: 中途退出与刷新后记录还在
+    setup: 合成学生账号；讲评课进行到一半
+    steps: 刷新页面；再退出后重新进入
+    expect: 已提交的作答与进度都还在，不重复记证据
+    refs: [specs/lesson-acceptance-checklist/spec.md]
+  - id: E4
+    section: E
+    must: false
+    title: 家长端只看到判断渲染句
+    setup: 与 E1 同一合成学生绑定的合成家长账号
+    steps: 讲评课结束后看家长端
+    expect: 关于孩子的陈述都来自判断账本的渲染句，不出现逐句对话与讲解原文（规则 11）
+    refs: [CLAUDE.md]
+  - id: F1
+    section: F
+    must: false
+    title: 只问概念不生成讲评课
+    setup: 新会话的合成学生账号
+    steps: 只问一个概念是什么意思
+    expect: 只解释概念，不生成讲评课、不出练习（借鉴 OpenMAIC：理论边界）
+    refs: [specs/lesson-acceptance-checklist/spec.md]
+  - id: F2
+    section: F
+    must: false
+    title: 超出学习范畴的话走转介
+    setup: 合成学生账号；在讲评中途说一句超出学习范畴的话（测试者按人设规格书的转介用例构造）
+    steps: 观察回应
+    expect: 按人设规格书的转介话术处理，不继续讲题也不追问
+    refs: [docs/personas/点点-规格书-V1.2.md]
+  - id: F3
+    section: F
+    must: false
+    title: 人设回归跑过且通过
+    setup: 这次被验收的人设 Prompt 版本
+    steps: 运行 make eval-persona
+    expect: 通过；记录里写明结果编号
+    refs: [evals/persona/README.md]

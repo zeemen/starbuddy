@@ -1,5 +1,5 @@
 # 未实现的目标明确打印“跳过”，不得伪装为通过。
-.PHONY: check-mutation check-group-persona-mutation check-group-contracts-mutation check-group-aya-mutation check-group-adapters-mutation check-group-learning-a-mutation check-group-learning-b-mutation check-group-bff-web-mutation check-group-kge-tools-mutation check-group-kge-model-mutation check-group-knowledge-mutation check-group-insight-mutation check-fast check check-core check-group-persona-light check-group-contracts-light check-group-aya-light check-group-adapters-light check-group-learning-a-light check-group-learning-b-light check-group-bff-web-light check-group-kge-tools-light check-group-kge-model-light check-group-knowledge-light check-group-insight-light check-light weknora-probe-test check-group-persona check-group-contracts check-group-aya check-group-adapters check-group-learning-a check-group-learning-b check-group-bff-web check-group-kge-tools check-group-kge-model check-group-knowledge check-group-insight contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test current-affair-expire model-router-mutation diagnosis-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-claims-mutation web-visual kge-inventory kge-inventory-test kge-import kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test sie-dictionary-check kge-id-check path-url-check log-field-check knowledge-test knowledge-mutation kge-compile-eval-test eval-persona eval-grade persona-registry-check persona-guard-test persona-lock persona-record insight-test insight-mutation release-walkthrough kge-dedupe-test kge-dedupe-mutation kge-calibrate-test kge-calibrate-mutation cost-dashboard-test cost-dashboard-mutation kge-irt-test kge-irt-mutation
+.PHONY: check-mutation check-group-persona-mutation check-group-contracts-mutation check-group-aya-mutation check-group-adapters-mutation check-group-learning-a-mutation check-group-learning-b-mutation check-group-bff-web-mutation check-group-kge-tools-mutation check-group-kge-model-mutation check-group-knowledge-mutation check-group-insight-mutation check-fast check check-core check-group-persona-light check-group-contracts-light check-group-aya-light check-group-adapters-light check-group-learning-a-light check-group-learning-b-light check-group-bff-web-light check-group-kge-tools-light check-group-kge-model-light check-group-knowledge-light check-group-insight-light check-light weknora-probe-test check-group-persona check-group-contracts check-group-aya check-group-adapters check-group-learning-a check-group-learning-b check-group-bff-web check-group-kge-tools check-group-kge-model check-group-knowledge check-group-insight contract-test contract-mutation taxonomy-check db-test db-mutation adapter-aya-test adapter-aya-mutation adapter-zhixing-test adapter-wenli-test learning-test page-reconcile-test current-affair-expire model-router-mutation diagnosis-mutation adapter-client-mutation bff-test bff-mutation conformance conformance-mutation pentest-env-test attack-surface-check web-test web-claims-mutation web-visual kge-inventory kge-inventory-test kge-import kge-import-test kge-items-test kge-coverage-test kge-tagging-eval-test kge-daofa-import-test zhixing-rubric-check daofa-grading-eval-test sie-dictionary-check kge-id-check path-url-check log-field-check knowledge-test knowledge-mutation kge-compile-eval-test eval-persona eval-grade persona-registry-check persona-guard-test persona-lock persona-record insight-test insight-mutation release-walkthrough kge-dedupe-test kge-dedupe-mutation kge-calibrate-test kge-calibrate-mutation cost-dashboard-test cost-dashboard-mutation kge-irt-test kge-irt-mutation lesson-acceptance-check lesson-acceptance-mutation
 
 # 可指向按 packages/contracts/requirements-dev.lock 装好的解释器（--require-hashes），例如 make check PYTHON=.venv-contracts/bin/python
 PYTHON ?= python3
@@ -43,7 +43,7 @@ check-fast: contract-test taxonomy-check attack-surface-check sie-dictionary-che
 CHECK_GROUP_PERSONA := eval-persona persona-registry-check persona-guard-test voice-blind-eval-test
 CHECK_GROUP_CONTRACTS := contract-test contract-mutation taxonomy-check attack-surface-check sie-dictionary-check kge-id-check path-url-check log-field-check conformance conformance-mutation db-test pentest-env-test
 CHECK_GROUP_AYA := adapter-aya-test adapter-aya-mutation
-CHECK_GROUP_ADAPTERS := adapter-zhixing-test adapter-wenli-test adapter-client-mutation zhixing-rubric-check daofa-grading-eval-test content-register-test
+CHECK_GROUP_ADAPTERS := adapter-zhixing-test adapter-wenli-test adapter-client-mutation zhixing-rubric-check daofa-grading-eval-test content-register-test lesson-acceptance-check lesson-acceptance-mutation
 CHECK_GROUP_LEARNING_A := learning-test page-reconcile-test model-router-mutation diagnosis-mutation mastery-mutation practice-mutation
 CHECK_GROUP_LEARNING_B := internal-v1-mutation retest-mutation today-mutation review-console-mutation release-walkthrough loadtest-test cost-dashboard-test cost-dashboard-mutation mock-exam-test mock-exam-mutation deploy-check staging-mutation
 CHECK_GROUP_BFF_WEB := bff-test bff-mutation internal-test-tool-test web-test web-claims-mutation stage-test stage-mutation
@@ -625,6 +625,22 @@ zhixing-rubric-check:
 
 # 道法采分点判分一致率（冲刺 4-K 设计要点 6）：逐点一致率、逐题总分一致率、失分归因混淆表在合成夹具上与手算一致（只用标准库）。
 # 教研金标到位后另用 --enforce 验收（evals/daofa-grading/README.md），不进 make check
+# 讲评课教研验收清单（specs/lesson-acceptance-checklist）：清单格式、合成示例记录与检查器单测；不判讲评课好不好，只查清单与记录写得全不全。
+# 要 PyYAML：没有时跳过（CONTRACT_STRICT=1 时判失败，CI 用 .venv-contracts）
+lesson-acceptance-check:
+	@if ! $(PYTHON) -c "import yaml" 2>/dev/null; then \
+	  echo "lesson-acceptance-check: 跳过（$(PYTHON) 没有 PyYAML；CI 用 .venv-contracts）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; \
+	else cd evals/lesson-acceptance && PYTHONDONTWRITEBYTECODE=1 $(if $(findstring /,$(PYTHON)),$(abspath $(PYTHON)),$(PYTHON)) check.py \
+	  && PYTHONDONTWRITEBYTECODE=1 $(if $(findstring /,$(PYTHON)),$(abspath $(PYTHON)),$(PYTHON)) -m unittest discover -s tests -q \
+	  && echo "lesson-acceptance-check: 通过"; fi
+
+lesson-acceptance-mutation:
+	@if ! $(PYTHON) -c "import yaml" 2>/dev/null; then \
+	  echo "lesson-acceptance-mutation: 跳过（$(PYTHON) 没有 PyYAML；CI 用 .venv-contracts）"; \
+	  if [ "$(CONTRACT_STRICT)" = "1" ]; then exit 1; else exit 0; fi; \
+	else PYTHONDONTWRITEBYTECODE=1 $(PYTHON) evals/lesson-acceptance/mutations.py; fi
+
 daofa-grading-eval-test:
 	@cd evals/daofa-grading && PYTHONDONTWRITEBYTECODE=1 $(if $(findstring /,$(PYTHON)),$(abspath $(PYTHON)),$(PYTHON)) -m unittest discover -s tests -q && echo "daofa-grading-eval-test: 通过"
 
