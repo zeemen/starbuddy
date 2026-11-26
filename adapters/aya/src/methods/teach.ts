@@ -4,7 +4,7 @@
 // 两种模式都不读、不存、不回显 conversation、recent_evidence、persona（只参与请求体指纹）；不做身份披露与转介
 // （由平台人设层负责）；不输出 verified_statements；不判对错，不写关于学生的判断（评审 sie-#3）；不产生证据。
 import {
-  answerFor, replayCursor, validateStageQuestion, type QuestionIntent,
+  answerFor, dslTexts, replayCursor, validateStageQuestion, type QuestionIntent,
 } from "../../../../packages/stage/src/index.ts";
 import type { LoadedPack, PackItem } from "../content.ts";
 import { lessonKey, type LoadedLessons } from "../lessons.ts";
@@ -15,6 +15,8 @@ export const HINT_ALGORITHM = "aya-hint-ladder@0.1.0";
 export const PAGE_LESSON_ALGORITHM = "aya-page-lesson@0.1.0";
 /** 讲评课白板上的结构化提问 → 台词稿里的预制答疑（specs/stage-point-to-ask-answer PR ③a；契约 v1.1 草稿内追加的 TeachRequest.question） */
 export const LESSON_ANSWER_ALGORITHM = "aya-lesson-answer@0.1.0";
+/** 打开讲评课：把讲解 DSL 与台词稿下发给平台（specs/stage-lesson-session ③b-2；契约 v1.1 草稿内追加的 TeachRequest.lesson_ref） */
+export const LESSON_OPEN_ALGORITHM = "aya-lesson-open@0.1.0";
 /** 预制答疑算一次讲解帮助：记第 1 级（平台据此不把随后的作答当独立作答；lessons 待人确认 Q5） */
 export const LESSON_ANSWER_HINT_LEVEL = 1;
 /** 作答提交之后最多给到第 5 级；第 6 级（变式题）交给 generate_variation（规格书 §3.1） */
@@ -51,7 +53,11 @@ export function checkTeachConfig(c: TeachConfig): TeachConfig {
 /** 契约 TeachSegment.text 的上限 */
 export const SEGMENT_MAX_CHARS = 4000;
 
-export type TeachSegment = { type: "text"; text: string } | { type: "item_ref"; item_ref: string };
+export interface DeliveredScript { dsl_version: string; lines: { id: string; role: string; text: string }[] }
+export type TeachSegment =
+  | { type: "text"; text: string }
+  | { type: "item_ref"; item_ref: string }
+  | { type: "whiteboard_dsl"; dsl_version: string; dsl: Record<string, unknown>; script: DeliveredScript };
 export interface TeachOutcome {
   segments: TeachSegment[];
   hintLevelUsed: number;
@@ -180,4 +186,37 @@ export function teachQuestion(
     throw new ProblemError(422, "MODE_NOT_SUPPORTED", "prepared answer is withheld before the answer is submitted");
   }
   return { segments: [{ type: "text", text: line.text }], hintLevelUsed: LESSON_ANSWER_HINT_LEVEL, ...(item ? { item } : {}) };
+}
+
+/**
+ * 打开讲评课（v1.1 草稿内追加的 lesson_ref）：从讲评课内容包取这一版的讲解 DSL 与台词稿，作为一段 whiteboard_dsl 下发。
+ *   1. lesson_ref 不在讲评课内容包里 → 404 CONTENT_VERSION_NOT_FOUND；skill_node、item_ref 与讲评课不一致 → 422 INVALID_REQUEST；
+ *   2. **预制答疑不随讲评课下发**：台词稿只留字幕台词（被某一步 say 引用的），去掉 answers 与只给答疑用的台词。
+ *      答疑只能经结构化提问逐条取，才能逐条过“提交前不露答案”守门（teachQuestion），前端拿不到整份答疑；
+ *   3. 作答提交前（answer_submitted 不是 true），讲解与字幕里出现这道填空题的标准答案原文 → 422 MODE_NOT_SUPPORTED（不下发；
+ *      与提示阶梯、预制答疑同一口径 hintRevealsAnswer）。讲解本身是讲内容，不算提示：记 0 级。
+ */
+export function teachLessonOpen(
+  content: LoadedPack,
+  lessons: LoadedLessons,
+  req: { skill_node: string; item_ref?: string; answer_submitted?: boolean; lesson_ref: { lesson_id: string; lesson_version: string } },
+): TeachOutcome {
+  const lesson = lessons.byRef.get(lessonKey(req.lesson_ref.lesson_id, req.lesson_ref.lesson_version));
+  if (!lesson) throw new ProblemError(404, "CONTENT_VERSION_NOT_FOUND", "lesson_ref is not served by this adapter");
+  if (localId(req.skill_node) !== lesson.skillNode) throw new ProblemError(422, "INVALID_REQUEST", "skill_node does not match the lesson");
+  const reqItem = req.item_ref === undefined ? undefined : localId(req.item_ref);
+  if (reqItem !== lesson.itemId) throw new ProblemError(422, "INVALID_REQUEST", "item_ref does not match the lesson");
+  const said = new Set(lesson.dsl.steps.map((st) => st.say).filter((x): x is string => x !== undefined));
+  const lines = lesson.script.lines.filter((l) => said.has(l.id)).map((l) => ({ id: l.id, role: l.role, text: l.text }));
+  const item = lesson.itemId === undefined ? undefined : content.itemById.get(lesson.itemId);
+  if (item && req.answer_submitted !== true && item.format === "fill"
+      && [...dslTexts(lesson.dsl), ...lines.map((l) => l.text)].some((t) => hintRevealsAnswer(t, item.answer))) {
+    throw new ProblemError(422, "MODE_NOT_SUPPORTED", "lesson is withheld before the answer is submitted");
+  }
+  const dsl = JSON.parse(JSON.stringify(lesson.dsl)) as Record<string, unknown>;
+  return {
+    segments: [{ type: "whiteboard_dsl", dsl_version: lesson.dsl.dsl_version, dsl, script: { dsl_version: lesson.dsl.dsl_version, lines } }],
+    hintLevelUsed: 0,
+    ...(item ? { item } : {}),
+  };
 }
