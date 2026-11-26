@@ -24,6 +24,18 @@ info:
     - 错误沿用 Problem：题目不存在 `ITEM_NOT_FOUND`（404）、内容版本不对 `CONTENT_VERSION_NOT_FOUND`（404）、限流
       `RATE_LIMITED`（429）；0.9.0 / 1.0.0 请求调用 present_item 返回 501 `METHOD_NOT_IMPLEMENTED`。没有新增错误码。
 
+    ## v1.1 草稿内追加：teach 的结构化提问（`specs/stage-point-to-ask-answer` PR ①，待评审签字）
+    - `TeachRequest` 新增两个可选字段，v1.0 的其余部分逐字不变（`check_v11_additive` 断言只多这两项、一条条件规则与三个新 schema）：
+      - `question`（`TeachQuestion`）：学生在讲评课白板上“指着元素提问”。只含讲评课内容引用（`lesson_ref`）、讲解 DSL 版本、
+        提问时已播放的步数、锚点（白板元素 / 槽位 / 整一步的 id）与意图编码（为什么、是什么、从哪来），**不收自由文字**，不含学生数据。
+        “再讲一遍”在前端本地重放，不进契约。带 `question` 时必须是 `mode: lesson`，且 `conversation` 为空。
+        讲解内容由平台按 `lesson_ref` 取已发布、已审核的那一版，不由请求携带；平台与适配器都要按讲解 DSL 再核一遍
+        “只能指已经出现的东西”（`packages/stage` 的 `validateStageQuestion` 同一口径）。
+      - `answer_submitted`（布尔）：本次讲解对应的那道题学生是否已提交作答；缺省按未提交处理，提示与回答都按“提交前不露答案”守门。
+    - 带 `question` 的回答只用 `segments` 里的 `text` 片段（适配器自检；JSON Schema 不跨请求与响应表达），照常带
+      `hint_level_used` 与 `referral_triggered`；回答只讲内容，不写关于学生的判断（同 `TeachSegment`）。
+    - 不新增错误码；1.0.0 请求带 `question` 按 v1.0 的 `additionalProperties: false` 拒收（400）。
+
     ## 以下为 v1.0 候选版原文（起草依据与约定不变）
     起草依据：v0.9（`plugin-api.v0.9.yaml`）、完整方案 v1.1、KGE V1.1、SIE V1.1、技术蓝图 v2.1 专章、
     ADR 01/03/04/06/09/11/13/15。
@@ -209,6 +221,8 @@ paths:
                 $ref: '#/components/examples/TeachRequestAya'
               aya_lesson_with_page:
                 $ref: '#/components/examples/TeachRequestAyaWithPage'
+              aya_lesson_question:
+                $ref: '#/components/examples/TeachRequestAyaQuestion'
       responses:
         '200':
           description: 教学片段
@@ -1124,6 +1138,14 @@ components:
         knowledge_page:
           description: 编排层从知识服务 `page.get` 取的已发布知识页面（公共层内容，评审 svc-#6）。
           $ref: './knowledge-service.v0.9.yaml#/components/schemas/PageGetResponse/allOf/1/properties/result'
+        question:
+          description: |
+            v1.1 草稿内追加（`specs/stage-point-to-ask-answer`）：讲评课白板上的结构化提问。不收自由文字；带它时只能是 `mode: lesson`，
+            且 `conversation` 为空。讲解内容由平台按 `lesson_ref` 取已审核版本，不由请求携带。
+          $ref: '#/components/schemas/TeachQuestion'
+        answer_submitted:
+          type: boolean
+          description: v1.1 草稿内追加：本次讲解对应的那道题学生是否已提交作答；缺省按未提交，提示与回答都按“提交前不露答案”守门。
       allOf:
         - description: 请求学科为 wenli 时，引用前缀必须一致（评审 N7）。
           if: { properties: { context: { properties: { subject: { const: wenli } }, required: [subject] } }, required: [context] }
@@ -1148,6 +1170,51 @@ components:
             allOf:
               - { properties: { item_ref: { pattern: '^echo:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } }
               - { properties: { skill_node: { pattern: '^echo:[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$' } } }
+        - description: v1.1 草稿内追加：带结构化提问时只能是讲评课，且不带自由文字对话（`specs/stage-point-to-ask-answer`）。
+          if: { required: [question] }
+          then:
+            properties:
+              mode: { const: lesson }
+              conversation: { maxItems: 0 }
+
+    LessonRef:
+      type: object
+      description: v1.1 草稿内追加：已发布讲评课的内容引用；平台按它取已审核的讲解 DSL 与台词稿，请求不携带讲解内容。
+      required: [lesson_id, lesson_version]
+      additionalProperties: false
+      properties:
+        lesson_id: { type: string, pattern: '^[a-z][a-z0-9_.\-]{0,63}$' }
+        lesson_version: { type: string, pattern: '^\d+\.\d+\.\d+$' }
+
+    StageAnchor:
+      type: object
+      description: v1.1 草稿内追加：学生指着的东西。kind 与 id 规则与 packages/stage 的 ANCHOR_KINDS、ID_RE 一致（契约检查核对）。
+      required: [kind, id]
+      additionalProperties: false
+      properties:
+        kind: { type: string, enum: [element, slot, step] }
+        id: { type: string, pattern: '^[a-z][a-z0-9_]{0,31}$' }
+
+    TeachQuestion:
+      type: object
+      description: |
+        v1.1 草稿内追加：讲评课白板上的结构化提问（`specs/stage-point-to-ask` 第一阶段的提问对象去掉“再讲一遍”，加上讲评课引用）。
+        意图只有三种编码，不收自由文字；只含 id、步数与编码，不含学生数据。
+      required: [lesson_ref, dsl_version, cursor, anchor, intent]
+      additionalProperties: false
+      properties:
+        lesson_ref: { $ref: '#/components/schemas/LessonRef' }
+        dsl_version: { type: string, pattern: '^\d+\.\d+\.\d+$' }
+        cursor:
+          type: integer
+          description: 提问时已播放的步数（1 起算；上限与讲解 DSL 的最大步数一致）。
+          minimum: 1
+          maximum: 100
+        anchor: { $ref: '#/components/schemas/StageAnchor' }
+        intent:
+          type: string
+          description: why_step 这一步为什么这样做；what_is 这里是什么意思；where_from 这个是从哪来的。“再讲一遍”在前端本地处理，不进契约。
+          enum: [why_step, what_is, where_from]
 
     TeachSegment:
       type: object
@@ -2230,6 +2297,29 @@ components:
           page_version: 1.0.0
           body_md: '（合成示例）配方法：把二次三项式写成完全平方加常数。'
           atom_refs: ['node:MA.ALG.EXP_0001']
+
+    TeachRequestAyaQuestion:
+      value:
+        context:
+          request_id: 00000000-0000-4000-8000-000000000303
+          contract_version: 1.1.0
+          subject: aya
+          student_ref: 00000000-0000-4000-8000-00000000a002
+          data_class: L2
+          usage_id: 00000000-0000-4000-8000-00000000b00a
+          idempotency_key: 00000000-0000-4000-8000-00000000c303
+        mode: lesson
+        skill_node: 'aya:K-QF-0301'
+        item_ref: 'aya:synthetic-0301-07'
+        allowed_hint_level: 2
+        persona: { persona_id: aya, prompt_version: 1.1.0 }
+        answer_submitted: false
+        question:
+          lesson_ref: { lesson_id: syn.lesson.qf_0301, lesson_version: 0.1.0 }
+          dsl_version: 0.2.0
+          cursor: 3
+          anchor: { kind: element, id: f1 }
+          intent: why_step
 
     ProblemUnauthenticated:
       value: { type: 'about:blank', title: 服务令牌无效, status: 401, code: UNAUTHENTICATED, retryable: false }

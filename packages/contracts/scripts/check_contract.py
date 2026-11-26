@@ -520,6 +520,67 @@ def check_present_item(doc: dict, errors: list[str]) -> None:
 
 
 V11_VERSION_CONSTS = (("RequestContext", "contract_version"), ("PluginResultBase", "contract_version"), ("Capabilities", "contract_version"))
+# v1.1 草稿内追加（specs/stage-point-to-ask-answer PR ①）：teach 的结构化提问。TeachRequest 只多这两个可选字段与一条条件规则，
+# 另加三个新 schema；/teach 只多一个请求示例。check_v11_additive 剥掉它们之后再与 v1.0 逐项比对，并核对追加内容本身一字不差
+TEACH_QUESTION_SCHEMAS = {"TeachQuestion", "LessonRef", "StageAnchor"}
+TEACH_QUESTION_PROPS = {
+    "question": {"$ref": "#/components/schemas/TeachQuestion"},
+    "answer_submitted": {"type": "boolean"},
+}
+TEACH_QUESTION_RULE = {"if": {"required": ["question"]},
+                       "then": {"properties": {"mode": {"const": "lesson"}, "conversation": {"maxItems": 0}}}}
+TEACH_QUESTION_EXAMPLE = ("aya_lesson_question", "TeachRequestAyaQuestion")
+
+
+STAGE_SRC = HERE.parents[1] / "stage" / "src"
+
+
+def check_teach_question_alignment(v11: dict, errors: list[str], stage_src: Path = STAGE_SRC) -> None:
+    """契约里的锚点类型、意图编码、id 规则、步数上限与 packages/stage 的常量一致（第一阶段的提问对象是前端的真相源）：
+    ANCHOR_KINDS 相同；QUESTION_INTENTS 去掉本地处理的 again 后相同；ID_RE 相同；cursor 上限 = LIMITS.maxSteps"""
+    try:
+        q = (stage_src / "question.ts").read_text(encoding="utf-8")
+        d = (stage_src / "dsl.ts").read_text(encoding="utf-8")
+    except OSError as exc:
+        errors.append(f"读不了 packages/stage 的源码：{type(exc).__name__}")
+        return
+
+    def consts(src: str, name: str) -> list[str]:
+        m = re.search(rf"export const {name} = \[([^\]]*)\] as const;", src)
+        return re.findall(r"'([^']+)'", m.group(1)) if m else []
+
+    sch = _schemas(v11)
+    tq, anchor = sch.get("TeachQuestion", {}).get("properties", {}), sch.get("StageAnchor", {}).get("properties", {})
+    kinds = consts(q, "ANCHOR_KINDS")
+    if not kinds or anchor.get("kind", {}).get("enum") != kinds:
+        errors.append(f"StageAnchor.kind 与 packages/stage 的 ANCHOR_KINDS 不一致：{anchor.get('kind', {}).get('enum')} / {kinds}")
+    intents = [i for i in consts(q, "QUESTION_INTENTS") if i != "again"]
+    if not intents or tq.get("intent", {}).get("enum") != intents:
+        errors.append(f"TeachQuestion.intent 与 packages/stage 的 QUESTION_INTENTS（去掉 again）不一致：{tq.get('intent', {}).get('enum')} / {intents}")
+    m = re.search(r"export const ID_RE = /(.+)/;", d)
+    if not m or anchor.get("id", {}).get("pattern") != m.group(1):
+        errors.append("StageAnchor.id 的 pattern 与 packages/stage 的 ID_RE 不一致")
+    m = re.search(r"maxSteps: (\d+),", d)
+    if not m or tq.get("cursor", {}).get("maximum") != int(m.group(1)):
+        errors.append("TeachQuestion.cursor 的上限与 packages/stage 的 LIMITS.maxSteps 不一致")
+
+
+def _strip_teach_question(s11: dict, errors: list[str]) -> None:
+    """从 v1.1 的 TeachRequest 剥掉这次追加的字段与条件规则（原地修改副本）；追加内容与约定不一致时报错"""
+    tr = s11.get("TeachRequest", {})
+    props = tr.get("properties", {})
+    for name, want in TEACH_QUESTION_PROPS.items():
+        got = {k: v for k, v in props.get(name, {}).items() if k != "description"}
+        if got != want:
+            errors.append(f"v1.1 的 TeachRequest.{name} 必须是 {want}（不能改成别的形状或去掉）")
+        props.pop(name, None)
+    if set(tr.get("required", [])) & set(TEACH_QUESTION_PROPS):
+        errors.append("v1.1 的 TeachRequest 不能把 question / answer_submitted 改成必填（旧请求要照常有效）")
+    rules = tr.get("allOf", [])
+    hits = [r for r in rules if {k: v for k, v in r.items() if k != "description"} == TEACH_QUESTION_RULE]
+    if len(hits) != 1:
+        errors.append("v1.1 的 TeachRequest 必须恰好有一条“带 question 时只能是 lesson、conversation 为空”的规则")
+    tr["allOf"] = [r for r in rules if r not in hits]
 
 
 def _bump_versions(value, old: str, new: str):
@@ -541,6 +602,7 @@ def check_v11_additive(v1: dict, v11: dict, errors: list[str]) -> None:
     if str(v11["info"]["version"]) != "1.1.0":
         errors.append(f"v1.1 的 info.version 应为 1.1.0，实为 {v11['info']['version']}")
     s1, s11 = copy.deepcopy(_schemas(v1)), copy.deepcopy(_schemas(v11))
+    _strip_teach_question(s11, errors)
     for name, prop in V11_VERSION_CONSTS:
         for s in (s1, s11):
             s.get(name, {}).get("properties", {}).get(prop, {}).pop("const", None)
@@ -562,9 +624,18 @@ def check_v11_additive(v1: dict, v11: dict, errors: list[str]) -> None:
         elif s11[name] != sch:
             errors.append(f"v1.1 改动了 v1.0 的 schema {name}（只允许增量）")
     extra = set(s11) - set(s1)
-    if extra - PRESENT_SCHEMAS:
-        errors.append(f"v1.1 新增了 present_item 之外的 schema：{sorted(extra - PRESENT_SCHEMAS)}")
-    p1, p11 = v1.get("paths", {}), v11.get("paths", {})
+    if extra - PRESENT_SCHEMAS - TEACH_QUESTION_SCHEMAS:
+        errors.append(f"v1.1 新增了 present_item 与 teach 结构化提问之外的 schema：{sorted(extra - PRESENT_SCHEMAS - TEACH_QUESTION_SCHEMAS)}")
+    if TEACH_QUESTION_SCHEMAS - set(s11):
+        errors.append(f"v1.1 缺 teach 结构化提问的 schema：{sorted(TEACH_QUESTION_SCHEMAS - set(s11))}")
+    p1, p11 = v1.get("paths", {}), copy.deepcopy(v11.get("paths", {}))
+    try:
+        teach_ex = p11["/teach"]["post"]["requestBody"]["content"]["application/json"]["examples"]
+        key, name = TEACH_QUESTION_EXAMPLE
+        if teach_ex.pop(key, None) != {"$ref": f"#/components/examples/{name}"}:
+            errors.append(f"v1.1 的 /teach 必须挂上示例 {name}")
+    except (KeyError, TypeError):
+        errors.append("v1.1 的 /teach 请求示例结构不对")
     for path, item in p1.items():
         if p11.get(path) != item:
             errors.append(f"v1.1 改动或删掉了 v1.0 的路径 {path}")
@@ -583,8 +654,8 @@ def check_v11_additive(v1: dict, v11: dict, errors: list[str]) -> None:
             errors.append(f"v1.1 删掉了 v1.0 的示例 {name}")
         elif e11[name] != _bump_versions(ex, "1.0.0", "1.1.0"):
             errors.append(f"v1.1 改动了 v1.0 的示例 {name}（只允许把 contract_version 换成 1.1.0）")
-    if any(not n.startswith("PresentItem") for n in set(e11) - set(e1)):
-        errors.append(f"v1.1 新增的示例只能是 present_item 的：{sorted(set(e11) - set(e1))}")
+    if any(not n.startswith("PresentItem") and n != TEACH_QUESTION_EXAMPLE[1] for n in set(e11) - set(e1)):
+        errors.append(f"v1.1 新增的示例只能是 present_item 与 teach 结构化提问的：{sorted(set(e11) - set(e1))}")
 
 
 def run_checks(doc: dict, path: Path = DEFAULT_SPEC) -> list[str]:
@@ -1000,6 +1071,11 @@ def main() -> int:
         except Exception as exc:  # noqa: BLE001
             additive.append(f"check_v11_additive 无法完成：{type(exc).__name__}: {exc}")
         errors += [f"v1.1：{e}" for e in additive]
+        try:
+            check_teach_question_alignment(v11, additive := [])
+        except Exception as exc:  # noqa: BLE001
+            additive = [f"check_teach_question_alignment 无法完成：{type(exc).__name__}: {exc}"]
+        errors += [f"v1.1 teach 结构化提问：{e}" for e in additive]
     internal_refs = check_internal(errors) if len(sys.argv) <= 1 else None
     service_summary = None
     if len(sys.argv) <= 1:
