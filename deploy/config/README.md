@@ -85,7 +85,7 @@ learning-internal v1 已于 2026-10-20 签字为 1.1.0（specs/launch-lt04-learn
 ## 5.2 环境变量的反向核对（契约审查 A3）
 `deploy/tests/test_env_reads.py` 扫描各服务源码里读取环境变量的调用，被读取的名字都必须在 `env-inventory.yaml` 登记；白名单例外（运行时自带、
 只读检测的代理变量、不在服务启动路径上的构建工具）在测试里逐个写明理由。适配器的候选契约开关（`STARBUDDY_ALLOW_CANDIDATE_CONTRACT`、
-阿鸦的 `AYA_CONTENT_PACK` / `AYA_STEM_OVERLAY`）只在 dev / test；适配器不改代码、自身不区分环境，staging 编排一律不设，由编排测试把关。
+阿鸦的 `AYA_CONTENT_PACK` / `AYA_STEM_OVERLAY` / `AYA_LESSON_PACK`）只在 dev / test；适配器不改代码、自身不区分环境，staging 编排一律不设，由编排测试把关。
 
 ## 6. 校验
 `make deploy-check`：静态校验（Dockerfile、.dockerignore、编排、清单）+ 开关矩阵 + 环境变量清单 + 迁移执行器单测与一次性库上的副本演练
