@@ -158,8 +158,8 @@ const MUTATIONS: Record<string, Edit[]> = {
   "带提问也走讲解页面": [[A, "const asked = r.question !== undefined;", "const asked = false;"]],
   "讲评课内容包不核对节点": [[L, "if (!nodeId || !content.nodeById.has(nodeId))", "if (!nodeId)"]],
   "讲评课内容包不核对题的主节点": [[L, '      if (!it.mainNodes.includes(nodeId)) throw new Error(`${where}（${key}）：skill_node 不是这道题的主节点`);\n', ""]],
-  "讲评课台词稿不校验": [[L, "    if (!s.ok) throw new Error(", "    if (!s.ok && false) throw new Error("],
-    [L, "dsl: d.dsl, script: s.script }", "dsl: d.dsl, script: (s as { script: ValidatedStageScript }).script }"]],
+  "讲评课台词稿不校验（原样当作合格稿）": [[L, "const s = migrateStageScript(d.dsl, l.script);",
+    "const s = { ok: true as const, script: l.script as ValidatedStageScript, from: null } as ReturnType<typeof migrateStageScript>;"]],
   "讲评课内容包开关没开也读": [[L, "  if (!candidateAllowed) {\n    throw new Error(`讲评课内容包", "  if (false) {\n    throw new Error(`讲评课内容包"]],
 };
 
