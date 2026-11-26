@@ -143,6 +143,7 @@ DECLARE
   v_ev uuid := t.q_id(s, 'evidence'); v_at uuid := t.q_id(s, 'attempt'); v_gr uuid := t.q_id(s, 'grade');
   v_node uuid := t.q_id(s, 'claim.node'); v_old uuid := t.q_id(s, 'claim.old'); v_exam uuid := t.q_id(s, 'claim.exam');
   v_key text := 'synthetic-coverage-' || p_token;
+  v_lkey uuid := gen_random_uuid();
 BEGIN
   -- ---- 家长侧入口（BFF 函数）：同意、开通、选科、时长守护、自由文本、邀请与另一位家长兑换
   PERFORM t.p_bff(g, format($f$INSERT INTO platform.consent_record (student_id, guardian_account_id, consent_type, document_version, decision)
@@ -326,6 +327,22 @@ BEGIN
       (%L, %L, 1, 'aya', 'practice', 'practice', 'MATH.FUNC.QUAD.GRAPH', 8, %L, NULL),
       (%L, %L, 2, 'aya', 'lesson', 'plan', NULL, 5, NULL, 'prerequisite_of_many') RETURNING 'ok'$f$,
       t.q_id(s, 'today.1'), s, t.q_id(s, 'today.entry'), t.q_id(s, 'today.2'), s));
+  -- 讲评课会话（0064，③b-3）：经 BFF 的 meter_reserve 预留一次讲评课（试用、试点开通的档位不一定有讲评课额度，没有时以超级用户补一笔
+  -- 同额度桶的预留，触发器与约束照常生效），再经 starbuddy_learning 新建会话（守卫核对预留）、改为已下发；不存文字，覆盖靠 ID 标记与逐表计数
+  v_out := t.p_bff(acct, format($f$SELECT platform.meter_reserve(%L, 'lesson_whiteboard', %L, %L, 1, NULL, 'teach')::text$f$,
+                                s, v_lkey, repeat('2', 64)))::jsonb;
+  IF v_out ->> 'outcome' IS DISTINCT FROM 'reserved' THEN
+    INSERT INTO platform.usage_reservation (usage_id, idempotency_key, request_fingerprint, entitlement_id, student_id, resource_type,
+                                            reserved_qty, source_method, reserved_at, expires_at)
+    SELECT platform.meter_usage_id(v_lkey::text), v_lkey::text, repeat('2', 64), e.id, s, 'lesson_whiteboard',
+           1, 'teach', platform.meter_now(), platform.meter_now() + interval '90 minutes'
+      FROM platform.entitlement e WHERE e.student_id = s AND e.resource_type = 'lesson_whiteboard' ORDER BY e.period_end DESC LIMIT 1;
+  END IF;
+  PERFORM t.m_as('starbuddy_learning', NULL, format($f$INSERT INTO platform.lesson_session (id, student_id, subject, lesson_id, lesson_version,
+      usage_id, idempotency_key) VALUES (%L, %L, 'aya', 'syn.lesson.coverage', '0.1.0', %L, %L) RETURNING 'ok'$f$,
+      t.q_id(s, 'lesson'), s, platform.meter_usage_id(v_lkey::text), v_lkey));
+  PERFORM t.m_as('starbuddy_learning', NULL, format($f$UPDATE platform.lesson_session SET status = 'open' WHERE id = %L RETURNING 'ok'$f$,
+      t.q_id(s, 'lesson')));
   -- 内部测试反馈与退出测试（0059，LT-06）：学生本人一条（学生自述）、家长一条（家长观察），文本都带该学生的内容标记，经 BFF 身份写；
   -- 随后家长发起退出测试（撤回同意、作废学生会话、写退出记录；退出记录是豁免表，已有数据保留到删除执行）
   PERFORM t.m_as('starbuddy_bff', acct, format($f$WITH i AS (INSERT INTO platform.feedback (submitter_account_id, student_id, source, category, body,

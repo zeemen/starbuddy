@@ -83,7 +83,9 @@ INSERT INTO t.export_col_ok VALUES
   ('status', '元数据：处理状态'), ('result_note_code', '元数据：结论码（枚举）'),
   -- 0037（KGE-04 第二步）：掌握记录的节点键与复测任务、档案页的状态与时间（只导 ID、状态与时间，不导引用、文字与推断参数）
   ('node_id', '元数据：对象键（知识节点）'), ('cognitive_level', '元数据：对象键（认知层次）'), ('due_at', '元数据：时间'),
-  ('closed_at', '元数据：时间'), ('compiled_at', '元数据：时间'), ('check_status', '元数据：处理状态');
+  ('closed_at', '元数据：时间'), ('compiled_at', '元数据：时间'), ('check_status', '元数据：处理状态'),
+  -- 0064（讲评课会话 ③b-3）：讲评课引用是公共层内容的对象键；已提问次数只是计数（不导提问与回答，表里也没有）
+  ('lesson_id', '元数据：对象键（讲评课）'), ('lesson_version', '元数据：对象键（讲评课版本）'), ('question_count', '元数据：计数（讲评课提问次数）');
 SELECT t.ok(NOT EXISTS (
   SELECT 1 FROM platform.personal_table_registry g, unnest(g.export_columns) c
    WHERE g.export_columns IS NOT NULL
