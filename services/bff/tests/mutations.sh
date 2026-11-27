@@ -648,6 +648,29 @@ SM=(
   # 内测前整改 P1（畸形请求不得让进程退出，src/http/server.ts）：跑 tests/malformed-request.test.ts（BFFMUT_FILTER=畸形请求：）
   $'畸形请求：路径解析不兜底\tsrc/http/server.ts\t    } catch {\\n      return false;\\n    }\\n    const hit = table\t    } catch (e) {\\n      throw e;\\n    }\\n    const hit = table'
   $'畸形请求：处理链不兜底\tsrc/http/server.ts\t    }).catch((e: unknown) => {\\n\t    }).catch((e: unknown) => {\\n      throw e;\\n'
+  # 讲评课会话（specs/stage-lesson-session ③b-4b）：只认学生本人、开关、按节计量（只预留一次、下发即结算、确定拒绝即释放、结果未知不动、提问不扣次）、
+  # 票据绑定学生、本地过期、宵禁、响应白名单、失败映射；这几条跑 tests/lesson-units.test.ts、tests/lesson.integration.test.ts、tests/shell-openapi.test.ts
+  $'讲评课：打开不核对学生本人\tsrc/lesson/service.ts\t  if (!(await isSelf(deps.pool, account, student))) return NOT_FOUND;\\n  const key = input.idempotency_key;\t  const key = input.idempotency_key;'
+  # “提问不核对学生本人”是等价变异：宵禁检查（inCurfew，经 RLS）对不是本人的学生同样回 404，所以不列
+  $'讲评课：开关关闭也注册路由\tsrc/http/routes.ts\t...(lesson ? LESSON_ROUTES : [])\t...LESSON_ROUTES'
+  $'讲评课：打开改成家长也能调\tsrc/http/lesson-routes.ts\t{ method: \'POST\', path: `${S}/open`, auth: \'student\'\t{ method: \'POST\', path: `${S}/open`, auth: \'session\''
+  $'讲评课：不限流\tsrc/http/lesson-routes.ts\tconst RL = [{ bucket: \'lesson.session.minute\', dim: \'session\' }] as const;\tconst RL = [] as const;'
+  $'讲评课：下发后不结算\tsrc/lesson/service.ts\t  await settleQuietly(deps, account, usage);  // 讲评课内容成功下发即结算\t  // 讲评课内容成功下发即结算'
+  $'讲评课：确定拒绝不释放\tsrc/lesson/service.ts\t    if (holding) await releaseQuietly(deps, account, usage, \'upstream_rejected\');\t'
+  $'讲评课：结果未知就释放\tsrc/lesson/service.ts\t  if (r.kind === \'unknown\') return UNAVAILABLE;  // 不释放\t  if (r.kind === \'unknown\') { if (holding) await releaseQuietly(deps, account, usage, \'unknown\'); return UNAVAILABLE; }  // 不释放'
+  $'讲评课：usage_id 不由幂等键派生\tsrc/lesson/service.ts\t  const usage = usageIdFor(key);\t  const usage = key;'
+  $'讲评课：指纹不含讲评课引用\tsrc/lesson/service.ts\t                                                        lesson_ref: input.lesson_ref, skill_node: input.skill_node,\t                                                        skill_node: input.skill_node,'
+  $'讲评课：已释放的键重放照样打开\tsrc/lesson/service.ts\t  if (res.outcome === \'existing\' && res.state === \'released\') return\t  if (false) return'
+  $'讲评课：额度拒绝不回 402\tsrc/lesson/service.ts\t      return problem(402, \'QUOTA_UNAVAILABLE\', \'no lesson quota available right now\', { reason: res.outcome });\t      break;'
+  $'讲评课：不核对学习服务的 usage_id\tsrc/lesson/service.ts\t  if (o.usage_id !== usage || \t  if ('
+  $'讲评课：票据不绑定学生\tsrc/lesson/ticket.ts\t`starbuddy-lesson-ticket:v1:${student}`\t`starbuddy-lesson-ticket:v1`'
+  $'讲评课：本地不判过期\tsrc/lesson/service.ts\t  if (Date.parse(t.expiresAt) <= deps.now()) return TICKET_EXPIRED;\t'
+  $'讲评课：提问不挡宵禁\tsrc/lesson/service.ts\t  if (curfew) return CURFEW;\t'
+  $'讲评课：下发学习服务票据\tsrc/lesson/service.ts\t ticket: sealed, expires_at: o.expires_at,\t ticket: o.ticket, expires_at: o.expires_at,'
+  $'讲评课：回答不过白名单\tsrc/lesson/service.ts\tbody: answerView(r.body) };\tbody: r.body };'
+  $'讲评课：打开请求体放过未知键\tsrc/lesson/service.ts\t  if (!exactKeys(b, [\'subject\', \'lesson_ref\', \'skill_node\', \'idempotency_key\'], [\'item_ref\'])) return null;\t  if (![\'subject\', \'lesson_ref\', \'skill_node\', \'idempotency_key\'].every((k) => k in b)) return null;'
+  $'讲评课：提问收“再讲一遍”\tsrc/lesson/service.ts\tconst INTENTS = [\'why_step\', \'what_is\', \'where_from\'] as const;\tconst INTENTS = [\'why_step\', \'what_is\', \'where_from\', \'again\'] as const;'
+  $'讲评课：会话失效映射成不答\tsrc/lesson/service.ts\t    if (r.status === 409) return LESSON_CLOSED;\t    if (r.status === 409) return { status: 200, body: { outcome: \'no_answer\', reason: \'not_available\', questions_left: 0 } };'
 )
 # 副本保持仓库结构（测试按 ../../../ 找仓库根：adapters/aya 的登记脚本、db/seeds 的种子），adapters、db 软链接回仓库。
 # 安全审查阻断 1：原来的副本不保持结构，测试的 before 在任何代码下都失败，变异全部“被发现”却不说明任何问题。
@@ -700,6 +723,7 @@ star_run() {  # $1 副本根目录，$2 变异名（“计量：”开头的跑�
   [[ "${2:-}" == 报告：* ]] && tests="tests/report-units.test.ts tests/report.integration.test.ts"
   [[ "${2:-}" == 再练：* ]] && tests="tests/practice-units.test.ts tests/practice.integration.test.ts tests/shell-openapi.test.ts"
   [[ "${2:-}" == 复测：* ]] && tests="tests/retest-units.test.ts tests/retest.integration.test.ts tests/shell-openapi.test.ts"
+  [[ "${2:-}" == 讲评课：* ]] && tests="tests/lesson-units.test.ts tests/lesson.integration.test.ts tests/shell-openapi.test.ts"
   [[ "${2:-}" == 届别：* ]] && tests="tests/cohort.integration.test.ts"
   [[ "${2:-}" == 题面：* ]] && tests="tests/item-rich.test.ts"
   [[ "${2:-}" == 编排：* ]] && tests="tests/today-orch-units.test.ts tests/today-orch.integration.test.ts"

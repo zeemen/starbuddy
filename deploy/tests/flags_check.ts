@@ -7,6 +7,7 @@ import { parseTrustFeatures } from '../../services/bff/src/trust/features.ts';
 import { parseStarMapFeatures } from '../../services/bff/src/star-map/features.ts';
 import { parsePracticeFeature } from '../../services/bff/src/practice/features.ts';
 import { parseRetestFeature } from '../../services/bff/src/retest/features.ts';
+import { parseLessonFeature } from '../../services/bff/src/lesson/features.ts';
 import { parseTodayOrchFeature } from '../../services/bff/src/shell/today-orch.ts';
 import { parseFamilyGoalsFeature } from '../../services/bff/src/family/features.ts';
 import { parseMonthlyPlanFeature } from '../../services/bff/src/family/monthly-plan.ts';
@@ -36,7 +37,7 @@ const bff: Record<string, (env: RunEnv, raw: string | undefined) => ReadonlySet<
   STARBUDDY_TRUST_UI: parseTrustFeatures, STARBUDDY_STARMAP: parseStarMapFeatures, STARBUDDY_PRACTICE: parsePracticeFeature,
   STARBUDDY_RETEST_UI: parseRetestFeature, STARBUDDY_TODAY_ORCH: parseTodayOrchFeature, STARBUDDY_FAMILY_GOALS: parseFamilyGoalsFeature,
   STARBUDDY_MONTHLY_PLAN: parseMonthlyPlanFeature, STARBUDDY_SUBJECT_GATE: parseSubjectGateFeature,
-  STARBUDDY_INTERNAL_TEST: parseInternalTestFeature,
+  STARBUDDY_INTERNAL_TEST: parseInternalTestFeature, STARBUDDY_LESSON: parseLessonFeature,
 };
 // 前端：(env 对象) → 集合或布尔；不认识的环境按关
 const web: Record<string, (env: Record<string, string | undefined>) => ReadonlySet<string> | boolean> = {

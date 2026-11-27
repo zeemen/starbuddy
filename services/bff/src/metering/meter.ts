@@ -28,7 +28,8 @@ export interface ReserveInput {
   requestFingerprint: string;
   quantity: number;
   contentFingerprint?: string | undefined;
-  sourceMethod: MeteredMethod;
+  /** teach：讲评课按节预留 lesson_whiteboard（src/lesson/service.ts，specs/stage-lesson-session ③b-4b）；库里 meter_method_allowed 只放 teach */
+  sourceMethod: MeteredMethod | 'teach';
 }
 
 export type ReserveResult =

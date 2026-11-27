@@ -45,6 +45,9 @@
 //   STARBUDDY_RETEST_UI    dev / test：复测与验证题的开关（只认 retest；src/retest/features.ts，KGE-05）；缺省关、三条路由不注册；
 //                          其余环境设了就拒绝启动。经 BFF_LEARNING_URL 调学习服务 retest 内部接口（同一个服务间令牌），
 //                          不配学习服务时打开开关也一律 503。作答默认沿用题库自练计次（platform.meter_practice，待人确认）
+//   STARBUDDY_LESSON       dev / test：讲评课会话的开关（只认 lesson；src/lesson/features.ts，③b-4b）；缺省关、两条路由不注册；
+//                          其余环境（含 staging）设了就拒绝启动。经 BFF_LEARNING_URL 调学习服务 lesson 内部接口（会话令牌），
+//                          不配学习服务时打开开关也一律 503。打开讲评课按节预留并结算一次 lesson_whiteboard，课内提问不扣次
 //   STARBUDDY_TODAY_ORCH   dev / test：今日计划跨科编排的开关（只认 today_orch；src/shell/today-orch.ts，PLT-11）；缺省关、today 响应不变；
 //                          其余环境设了就拒绝启动。打开时学生本人的 today 另带 ordered，经 BFF_LEARNING_URL 调学习服务 /internal/v1/today
 //                          （同一个服务间令牌、同一个计划时限）；不配学习服务时 ordered 为 null
@@ -89,6 +92,8 @@ import { parsePracticeFeature } from './practice/features.ts';
 import { httpPracticeLearning } from './practice/learning-client.ts';
 import { parseRetestFeature } from './retest/features.ts';
 import { httpRetestLearning } from './retest/learning-client.ts';
+import { parseLessonFeature } from './lesson/features.ts';
+import { httpLessonLearning } from './lesson/learning-client.ts';
 import { parseFamilyGoalsFeature } from './family/features.ts';
 import { parseInternalTestFeature } from './internal-test/features.ts';
 import { exitGuardAvailable } from './http/internal-test-routes.ts';
@@ -110,6 +115,7 @@ try {
   const starMapFeatures = parseStarMapFeatures(env, process.env['STARBUDDY_STARMAP']);  // 非 dev / test 设了就拒绝启动
   const practiceOn = parsePracticeFeature(env, process.env['STARBUDDY_PRACTICE']);     // 同上
   const retestOn = parseRetestFeature(env, process.env['STARBUDDY_RETEST_UI']);        // 同上
+  const lessonOn = parseLessonFeature(env, process.env['STARBUDDY_LESSON']);           // 只 dev / test，其余环境设了就拒绝启动
   const orchOn = parseTodayOrchFeature(env, process.env['STARBUDDY_TODAY_ORCH']);      // 同上
   const familyGoalsOn = parseFamilyGoalsFeature(env, process.env['STARBUDDY_FAMILY_GOALS']);  // 同上
   const monthlyPlanOn = parseMonthlyPlanFeature(env, process.env['STARBUDDY_MONTHLY_PLAN']);  // 同上
@@ -145,7 +151,8 @@ try {
                 shell: { config: shellConfigPath === undefined ? loadShellConfig() : loadShellConfig(shellConfigPath), orch: { enabled: orchOn } },
                 trust: { features: parseTrustFeatures(env, process.env['STARBUDDY_TRUST_UI']) },
                 starMap: { features: starMapFeatures }, practice: { enabled: practiceOn }, retest: { enabled: retestOn },
-                familyGoals: { enabled: familyGoalsOn }, monthlyPlan: { enabled: monthlyPlanOn }, internalTest: { enabled: internalTestOn } };
+                familyGoals: { enabled: familyGoalsOn }, monthlyPlan: { enabled: monthlyPlanOn }, internalTest: { enabled: internalTestOn },
+                lesson: { enabled: lessonOn } };
   // 分学科并发闸门（PLT-16）：开关关时不读配置、不建闸门（与开关上线前逐字节一致）
   if (gateOn) {
     const gateConfig = concurrencyPath === undefined ? loadConcurrencyConfig() : loadConcurrencyConfig(concurrencyPath);
@@ -212,7 +219,7 @@ try {
   process.exit(2);
 }
 if (learning) {
-  // PLT-24：会话令牌只给诊断、错题再练、复测、今日编排；写入令牌只给今日计划与星图（契约 v1 的 bffServiceToken）
+  // PLT-24：会话令牌只给诊断、错题再练、复测、今日编排、讲评课；写入令牌只给今日计划与星图（契约 v1 的 bffServiceToken）
   const { url: learningUrl, write: learningCredential, session: learningSession } = learning;
   shellDeps.diagnosis = { learning: httpDiagnosisLearning({ baseUrl: learningUrl, token: learningSession }) };
   shellDeps.shell!.plan = httpPlanClient({ baseUrl: learningUrl, token: learningCredential, timeoutMs: shellDeps.shell!.config!.plan.timeoutMs });
@@ -224,6 +231,7 @@ if (learning) {
   }
   if (shellDeps.practice!.enabled) shellDeps.practice!.learning = httpPracticeLearning({ baseUrl: learningUrl, token: learningSession });
   if (shellDeps.retest!.enabled) shellDeps.retest!.learning = httpRetestLearning({ baseUrl: learningUrl, token: learningSession });
+  if (shellDeps.lesson!.enabled) shellDeps.lesson!.learning = httpLessonLearning({ baseUrl: learningUrl, token: learningSession });
 }
 const insightUrl = process.env['BFF_INSIGHT_URL'];
 const insightCredential = process.env['BFF_INSIGHT_TOKEN'] ?? '';

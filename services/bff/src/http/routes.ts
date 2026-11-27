@@ -19,6 +19,7 @@ import { TRUST_ROUTES } from './trust-routes.ts';
 import { STAR_MAP_V1_ROUTES } from './star-map-v1-routes.ts';
 import { PRACTICE_ROUTES } from './practice-routes.ts';
 import { RETEST_ROUTES } from './retest-routes.ts';
+import { LESSON_ROUTES } from './lesson-routes.ts';
 import { FAMILY_GOALS_ROUTES } from './family-goals-routes.ts';
 import { MONTHLY_PLAN_ROUTES } from './monthly-plan-routes.ts';
 import { INTERNAL_TEST_ROUTES } from './internal-test-routes.ts';
@@ -27,6 +28,7 @@ import type { MonthlyPlanClient, TemplateLibrary } from '../family/monthly-plan.
 import type { Lexicon } from '../trust/lexicon.ts';
 import type { PracticeOptions } from '../practice/service.ts';
 import type { RetestOptions } from '../retest/service.ts';
+import type { LessonOptions } from '../lesson/service.ts';
 import type { TrustFeature } from '../trust/features.ts';
 import type { StarMapFeature } from '../star-map/features.ts';
 import type { StarMapNodesClient } from '../star-map/nodes-client.ts';
@@ -84,6 +86,9 @@ export interface ShellDeps {
   /** 复测与验证题（retest-routes.ts，specs/retest-delivery-kge05）：开关 retest（STARBUDDY_RETEST_UI，缺省关，路由不注册）、
    *  学习服务复测客户端（开关打开但不配时三条路由 503） */
   retest?: RetestOptions;
+  /** 讲评课会话（lesson-routes.ts，specs/stage-lesson-session ③b-4b）：开关 lesson（STARBUDDY_LESSON，缺省关，路由不注册）、
+   *  学习服务讲评课客户端（开关打开但不配时两条路由 503） */
+  lesson?: LessonOptions;
   /** 家长诉求（family-goals-routes.ts，PLT-14 第 1 步）：开关 family_goals（STARBUDDY_FAMILY_GOALS，缺省关，路由不注册） */
   familyGoals?: { enabled: boolean };
   /** 月度计划（monthly-plan-routes.ts，PLT-14 第 3 步）：开关 monthly_plan（STARBUDDY_MONTHLY_PLAN，缺省关，路由不注册）、洞察服务生成接口
@@ -380,13 +385,14 @@ export const ROUTES: readonly Route[] = [
 ];
 
 /** 本次部署实际注册的路由：固定路由表 + 已打开开关的信任界面路由 + 星图 v1（starmap_v1）+ 错题再练（practice）+ 复测（retest）
- *  + 家长诉求（family_goals，PLT-14）+ 月度计划（monthly_plan，PLT-14 第 3 步）（开关缺省全关） */
+ *  + 家长诉求（family_goals，PLT-14）+ 月度计划（monthly_plan，PLT-14 第 3 步）+ 讲评课（lesson，③b-4b）（开关缺省全关） */
 export function activeRoutes(features: ReadonlySet<TrustFeature> = new Set(), starMap: ReadonlySet<StarMapFeature> = new Set(),
-                             practice = false, retest = false, familyGoals = false, monthlyPlan = false, internalTest = false): readonly Route[] {
+                             practice = false, retest = false, familyGoals = false, monthlyPlan = false, internalTest = false,
+                             lesson = false): readonly Route[] {
   return [...ROUTES, ...TRUST_ROUTES.filter((r) => r.feature !== undefined && features.has(r.feature)),
           ...(starMap.has('starmap_v1') ? STAR_MAP_V1_ROUTES : []), ...(practice ? PRACTICE_ROUTES : []), ...(retest ? RETEST_ROUTES : []),
           ...(familyGoals ? FAMILY_GOALS_ROUTES : []), ...(monthlyPlan ? MONTHLY_PLAN_ROUTES : []),
-          ...(internalTest ? INTERNAL_TEST_ROUTES : [])];
+          ...(internalTest ? INTERNAL_TEST_ROUTES : []), ...(lesson ? LESSON_ROUTES : [])];
 }
 
 /** 路由模板编译成正则：路径参数（student_id、session_id、probe_id、claim_id、exam_id、export_job_id、request_id、entry_id）一律只匹配小写 UUID；学科码 {subject} 只匹配小写字母（H4） */

@@ -141,9 +141,11 @@ features:
   - id: stage_whiteboard
     title: 讲评白板（舞台）
     state: "off"
-    notes: 只有开发专用页面 /dev/stage（page.dev.tsx），staging 构建不含开发页面
+    notes: 只有开发专用页面 /dev/stage（page.dev.tsx），staging 构建不含开发页面；讲评课会话（BFF 路由与学习服务接口，③b-4）只在 dev / test，staging 设了就拒绝启动
     switches:
       - {service: web, var: STARBUDDY_DEV_PAGES, value: null, source: apps/web/src/lib/dev-pages.ts}
+      - {service: bff, var: STARBUDDY_LESSON, value: null, source: services/bff/src/lesson/features.ts}
+      - {service: learning, var: LEARNING_LESSON_TICKET_SECRET, value: null, source: services/learning/learning/config.py}
   - id: knowledge_read_cache
     title: 知识读缓存
     state: "off"
