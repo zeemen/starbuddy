@@ -224,6 +224,7 @@
   - 合成学习服务桩（`scripts/fake-learning-practice.ts`）实现讲评课两个内部接口，按固定剧本：每节 3 问，“是什么”没有答疑，`syn.lesson.broken` 打不开；
   - 第五个 BFF 打开 `STARBUDDY_LESSON`，practice-on 的前端打开 `STARBUDDY_LESSON`；
   - 合成种子 `db/seeds/dev/practice-synthetic.sql` 给 P1 的讲评课额度桶加一笔合成调整 +5，计数与流水一起写。
+- 部署清单：前端的 `STARBUDDY_LESSON` 登记进 `deploy/config/env-inventory.yaml`（`envs: local`）与开关矩阵 `deploy/flags/staging.yaml` 的讲评白板一项（关）；`deploy/tests/flags_check.ts` 用真实的 `lessonEnabled` 核对 staging 按关、pilot / 生产按关。
 
 ### 决定与差异
 1. **路由是开发页（`page.dev.tsx`）**：页面以相对路径引用 `packages/stage`，而 Turbopack 根目录只在含开发页的构建里才放到仓库根（`next.config.ts`），生产构建解析不到它。讲评课开关本来就只在 dev / test，所以页面也只在开发、测试构建里存在；运行时再核对环境与本机 Host，与 `/dev/stage` 同一口径。要上 staging，得先定 `packages/stage` 怎么进生产构建（npm 工作区或构建期复制），见待人确认 L10。

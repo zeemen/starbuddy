@@ -22,6 +22,7 @@ import { todayOrchEnabled } from '../../apps/web/src/shell/today-orch.ts';
 import { monthlyPlanEnabled } from '../../apps/web/src/monthly-plan/features.ts';
 import { familyGoalsEnabled } from '../../apps/web/src/family-goals/features.ts';
 import { internalTestEnabled } from '../../apps/web/src/internal-test/features.ts';
+import { lessonEnabled } from '../../apps/web/src/lesson/features.ts';
 import { parseInternalTestFeature } from '../../services/bff/src/internal-test/features.ts';
 
 type Vals = Record<string, string | null>;
@@ -44,6 +45,7 @@ const web: Record<string, (env: Record<string, string | undefined>) => ReadonlyS
   STARBUDDY_TRUST_UI: trustFeatures, STARBUDDY_STARMAP: starMapFeatures, STARBUDDY_PRACTICE: practiceEnabled,
   STARBUDDY_RETEST_UI: retestEnabled, STARBUDDY_TODAY_ORCH: todayOrchEnabled, STARBUDDY_MONTHLY_PLAN: monthlyPlanEnabled,
   STARBUDDY_FAMILY_GOALS: familyGoalsEnabled, STARBUDDY_INTERNAL_TEST: internalTestEnabled, STARBUDDY_DIAGNOSIS_UI: diagnosisEnabled,
+  STARBUDDY_LESSON: lessonEnabled,
 };
 const on = (r: ReadonlySet<string> | boolean, want: string[]): boolean => (typeof r === 'boolean' ? r === want.length > 0 : sameSet(r, want));
 const off = (r: ReadonlySet<string> | boolean): boolean => (typeof r === 'boolean' ? !r : r.size === 0);
