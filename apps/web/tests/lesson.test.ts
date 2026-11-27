@@ -3,7 +3,7 @@
 //   - 视图只挑白名单字段（会话 ID、usage_id、过期时间、第几问不进页面）；票据只认 BFF 封装的 sbl1.；错误编码映射；
 //   - 地址栏参数：讲评课 ID、版本、节点、题只认合规的写法；
 //   - 静态：讲评课的 BFF 调用只在 src/lib/lesson-api.ts 的 call 一处 fetch；不直连学习服务；票据不进 DOM 属性与地址栏、不写浏览器存储；
-//     页面载入不打开讲评课（要点“开始”，打开会计一次）；路由文件是开发页（page.dev.tsx）；
+//     页面载入不打开讲评课（要点“开始”，打开会计一次）；路由文件是普通页面（page.tsx，specs/stage-production-build），只挂组件；
 //   - 文案：全部是 {{TODO_COPY:lesson.*}} 占位并已并入壳文案（禁语等扫描在 tests/shell.test.ts）。
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
@@ -117,9 +117,13 @@ test('静态：只在 src/lib/lesson-api.ts 的 call 一处 fetch；不直连学
   assert.ok(actions.indexOf('lessonEnabled()') < actions.indexOf('actionSession('));
   const page = code(read('src/lesson/LessonPage.tsx'));
   assert.ok(page.indexOf('lessonEnabled()') < page.indexOf('requireOwnStudent('));
-  // 路由文件是开发页：只在开发、测试构建里存在
-  assert.ok(existsSync(join(WEB, 'src/app/s/[studentId]/learn/[subject]/lesson/[lessonId]/page.dev.tsx')));
-  assert.ok(!existsSync(join(WEB, 'src/app/s/[studentId]/learn/[subject]/lesson/[lessonId]/page.tsx')));
+  // 路由文件是普通页面（生产构建里也有，可达与否由开关决定）：只挂 LessonPage，开关与会话都在 LessonPage 里先后核对
+  const ROUTE = 'src/app/s/[studentId]/learn/[subject]/lesson/[lessonId]';
+  assert.ok(existsSync(join(WEB, ROUTE, 'page.tsx')));
+  assert.ok(!existsSync(join(WEB, ROUTE, 'page.dev.tsx')));
+  const route = code(read(`${ROUTE}/page.tsx`));
+  assert.match(route, /return <LessonPage /);
+  assert.ok(!/lessonEnabled|requireOwnStudent|cookies\(|headers\(|fetch\(/.test(route), '路由文件只挂组件');
 });
 
 test('文案：全部是 {{TODO_COPY:lesson.*}} 占位，已并入壳文案', () => {

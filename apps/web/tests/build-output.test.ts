@@ -60,12 +60,22 @@ test('生产构建里没有开发专用页面（探针演示页、数学诊断�
     // 随学生端正式做题页进入生产构建（运行时由前端开关 STARBUDDY_DIAGNOSIS_UI 决定是否可达），不再作为演示页的标记
     '数学诊断演示', '\\u6570\\u5b66\\u8bca\\u65ad\\u6f14\\u793a', 'diagnosis-page', ...['只用于本地开发与测试'].flatMap((s) => [s, escapeUnicode(s)]),
     '星形符号样张',
-    // 舞台样张页与 packages/stage（只有样张页引用它）：页面标记、白板的属性名、合成样例标题（原文与 \u 转义两种写法）
-    'data-stage-page', 'data-stage-demo', 'data-stage-part', ...['舞台样张', '（合成样例）一元一次方程'].flatMap((s) => [s, escapeUnicode(s)])];
+    // 舞台样张页：页面标记与合成样例标题（原文与 \u 转义两种写法）。白板本身（packages/stage，属性名 data-stage-part 等）自
+    // specs/stage-production-build 起随讲评课页面进入生产构建（运行时由前端开关 STARBUDDY_LESSON 决定是否可达），不再作为标记
+    'data-stage-page', 'data-stage-demo', ...['舞台样张', '（合成样例）一元一次方程'].flatMap((s) => [s, escapeUnicode(s)])];
   const hits = files(NEXT).filter((p) => /\.(css|html|js|json|rsc|txt)$/.test(p))  // 不查 .map：源码映射里带注释原文
     .filter((p) => { const t = readFileSync(p, 'utf8'); return markers.some((m) => t.includes(m)); })
     .map((p) => relative(NEXT, p));
   assert.deepEqual(hits, []);
+});
+
+// 讲评课页面（specs/stage-production-build）：普通页面，生产构建里有这个路由，并且已经把 packages/stage 的白板编进产物
+// （构建与开发阶段 Turbopack 根目录放到仓库根，next.config.ts）。是否可达由运行时开关决定，staging、pilot、生产一律 404。
+test('生产构建里有讲评课页面，白板随它编进产物', { skip: BUILT ? false : '没有 .next 构建产物（先 next build）' }, () => {
+  const routes = JSON.parse(readFileSync(join(NEXT, 'app-path-routes-manifest.json'), 'utf8')) as Record<string, string>;
+  assert.ok(Object.values(routes).includes('/s/[studentId]/learn/[subject]/lesson/[lessonId]'));
+  const withBoard = files(NEXT).filter((p) => /\.js$/.test(p)).filter((p) => readFileSync(p, 'utf8').includes('data-stage-part'));
+  assert.ok(withBoard.length > 0, '产物里找不到白板（data-stage-part）');
 });
 
 // 开发身份桩（4-H H2 删除）：生产构建里找不到它的任何痕迹——请求头名、cookie 名、开关名、开发登录与写 cookie 的路由、

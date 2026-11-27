@@ -1,6 +1,6 @@
 # 舞台进生产构建：`packages/stage` 怎么进 apps/web 的生产构建 · 规格草稿
 
-- 状态：**草稿，待人确认**（第五节）。确认前不动代码。
+- 状态：**已确认（2026-11-27，用户“按建议，默认值都同意，开始实现”）**：第五节四条都按默认。实现记录见 lessons.md。
 - 来源：`specs/stage-lesson-session` lessons ③b-5 待人确认 L10：讲评课页面只能做成开发页，因为生产构建解析不到 `packages/stage`；上 staging 之前要定办法。
   更早的同一问题：`specs/stage-whiteboard-step1` lessons 待人确认第 2 条（“接受 next.config.ts 的做法，或改为 npm 工作区”），当时没有定。
   用户 2026-11-27 说“按建议起草 L10 的规格”。

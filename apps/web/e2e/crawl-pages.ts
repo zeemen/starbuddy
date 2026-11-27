@@ -32,6 +32,9 @@ export const CRAWL: Record<string, CrawlPage | Excluded> = {
   // 复测与验证题（specs/retest-delivery-kge05）：开关 STARBUDDY_RETEST_UI 只在 practice-on 一套里打开，所以同样按 practiceOn 登记
   's/[studentId]/learn/[subject]/retest/page.tsx': { who: 'student', path: (s) => `/s/${s}/learn/math/retest`, practiceOn: true },
   's/[studentId]/learn/[subject]/retest/[entryId]/page.tsx': { who: 'student', path: (s) => `/s/${s}/learn/math/retest/${NO_ID}`, practiceOn: true },
+  // 讲评课（specs/stage-production-build：转为普通页面）：开关 STARBUDDY_LESSON 只在 practice-on 一套里打开，所以按 practiceOn 登记；
+  // 开关关的各套里同一地址是 404 页；打开时的安全头由 e2e/lesson.spec.ts 按这张表核对（只看地址，不点“开始”，不扣次）
+  's/[studentId]/learn/[subject]/lesson/[lessonId]/page.tsx': { who: 'student', path: (s) => `/s/${s}/learn/math/lesson/syn.lesson.e2e?v=0.1.0&node=K-QF-0301`, practiceOn: true },
   // 学生端数学诊断（specs/diagnosis-student-entry）：开关 STARBUDDY_DIAGNOSIS_UI 在爬取的各套里都关，同一地址一律是 404 页（安全头照样核对）；
   // 只在 practice-on 一套的前端打开，打开时的页面与安全头由 e2e/diagnosis-entry.spec.ts 核对（页面一打开就开始诊断，不放进通用爬取）
   's/[studentId]/learn/[subject]/diagnosis/page.tsx': { who: 'student', path: (s) => `/s/${s}/learn/math/diagnosis`, status: 404 },
@@ -107,6 +110,7 @@ export function targets(who: CrawlPage['who'], student: string, trustOn: boolean
     .map((p) => {
       const path = p.path(student);
       const off = (p.trustOn === true && !trustOn) || (p.practiceOn === true && !practiceOn);
-      return { path, status: off ? 404 : p.status ?? 200, final: off ? path : (p.final?.(student) ?? path) };
+      // 爬取比较的是最终地址的路径部分（pathname），登记的地址可以带查询参数（讲评课页面），这里去掉
+      return { path, status: off ? 404 : p.status ?? 200, final: (off ? path : (p.final?.(student) ?? path)).split('?')[0]! };
     });
 }
