@@ -52,7 +52,7 @@ SM=(
   $'日志记原始 student_id\tsrc/http/server.ts\trecord[\'student\'] = logHash(deps.keys, params[\'student_id\']);\trecord[\'student\'] = params[\'student_id\'];'
   # 行为事件与探针（冲刺 2-L）：日志不记学生 ID 原文；BFF 拒收未知键；无权回 403
   $'事件请求体放过未知键\tsrc/events/query.ts\treturn got.length === want.length && got.every((k, i) => k === want[i]);\treturn want.every((k) => got.includes(k));'
-  $'事件无权当成功\tsrc/events/query.ts\tif (code === \'42501\') return { kind: \'forbidden\' };\tif (code === \'42501\') return { kind: \'ok\', value: null as T };'
+  $'事件无权当成功\tsrc/events/query.ts\tif (code === \'42501\') return { kind: \'not_found\' };\tif (code === \'42501\') return { kind: \'ok\', value: null as T };'
   # 审查处理（契约审查 6、安全审查 B1）：重放回 200 并带响应头；54000 映射 429；幂等键冲突与“已关联别的作答”各有错误码
   $'事件重放也回 201\tsrc/http/feature-routes.ts\tjson(r.replayed ? 200 : 201,\tjson(201,'
   $'事件重放不标响应头\tsrc/http/feature-routes.ts\t{ \'idempotent-replayed\': r.replayed ? \'true\' : \'false\' }\t{ \'idempotent-replayed\': \'false\' }'
@@ -76,8 +76,8 @@ SM=(
   $'计量：信封改了调用方的请求体\tsrc/metering/learning-client.ts\tconst context = (body[\'context\'] ?? {}) as Record<string, unknown>;\tconst context = (body[\'context\'] ?? {}) as Record<string, unknown>; context[\'contract_version\'] = LEARNING_CONTRACT_VERSION;'
   # 数学自适应诊断（SIE-02a）：只认学生本人、计量（开始预留、结束结算、放弃与确定失败释放、结果未知不释放、续做不另占）、
   # 视图不带题号、日志只记哈希；这几条跑诊断集成测试（学习服务与阿鸦适配器进程）
-  $'诊断：开始不核对学生本人\tsrc/diagnosis/service.ts\tif (!(await isSelf(deps.pool, account, student))) return FORBIDDEN;\t'
-  $'诊断：取当前题不核对会话归属\tsrc/diagnosis/service.ts\tif (!(await ownsSession(deps.pool, account, student, session))) return FORBIDDEN;\t'
+  $'诊断：开始不核对学生本人\tsrc/diagnosis/service.ts\tif (!(await isSelf(deps.pool, account, student))) return NOT_FOUND;\t'
+  $'诊断：取当前题不核对会话归属\tsrc/diagnosis/service.ts\tsession: string): Promise<Reply> {\\n  if (!(await ownsSession(deps.pool, account, student, session))) return NOT_FOUND;\\n  // 闸门：包住转发\tsession: string): Promise<Reply> {\\n  // 闸门：包住转发'
   $'诊断：学习服务确定拒绝时不释放\tsrc/diagnosis/service.ts\t    if (holding) await releaseQuietly(deps, account, usage, \'upstream_rejected\');\t'
   $'诊断：结果未知就释放\tsrc/diagnosis/service.ts\t  if (r.kind === \'unknown\') return UNAVAILABLE;  // 不释放\t  if (r.kind === \'unknown\') { await releaseQuietly(deps, account, usage, \'unknown\'); return UNAVAILABLE; }  // 不释放'
   $'诊断：续做也另占一笔额度\tsrc/diagnosis/service.ts\t  if (open !== null) {\t  if (open === \'never\') {'
@@ -268,7 +268,7 @@ SM=(
   # 安全审查 M1：跨对象（自己孩子的路径带兄妹的导出任务与凭据）
   $'H6：导出兑换不核对学生\tsrc/trust/exports.ts\t || e.studentId !== match.studentId || \t || '
   # 契约审查 M3：只认本人路由的拒绝码按接口定义（x-sb-not-self）
-  $'H6：事件与探针的“不是本人”改回 404\tsrc/http/feature-routes.ts\to.kind === \'forbidden\' ? problem(P.FORBIDDEN)\to.kind === \'forbidden\' ? problem(P.NOT_FOUND)'
+  $'H6：事件与探针的“不是本人”改回 403\tsrc/http/feature-routes.ts\tReply): Reply =>\\n  o.kind === \'not_found\' ? problem(P.NOT_FOUND)\tReply): Reply =>\\n  o.kind === \'not_found\' ? problem(P.FORBIDDEN)'
   $'H6：方法不对回 404\tsrc/http/server.ts\tif (!found) throw new Stop(P.METHOD_NOT_ALLOWED);\tif (!found) throw new Stop(P.NOT_FOUND);'
   # 7.2 身份注入
   $'H6：身份改从查询参数读\tsrc/http/server.ts\tsession = { token: presented, accountId: rows[0].account_id,\tsession = { token: presented, accountId: url.searchParams.get(\'account_id\') ?? rows[0].account_id,'
@@ -445,7 +445,7 @@ SM=(
   $'闸门：重复释放多空出位置\tsrc/gate/subject-gate.ts\t      if (released) return;\\n\t'
   $'闸门：各科共用一条线\tsrc/gate/subject-gate.ts\tconst lane = lanes.get(subject);\tconst lane = lanes.get(\'aya\');'
   $'闸门：被拒的请求照样执行（碰了计量再拒）\tsrc/gate/subject-gate.ts\t    observe?.(\'gate_reason\', g.reason);\\n    return busy(g.retryAfterSec);\t    observe?.(\'gate_reason\', g.reason);\\n    await fn();\\n    return busy(g.retryAfterSec);'
-  $'闸门：放行不记日志\tsrc/gate/subject-gate.ts\t  observe?.(\'gate\', g.ok ? g.result : \'rejected\');\\n\t'
+  $'闸门：放行不记日志\tsrc/gate/subject-gate.ts\t  observe?.(\'gate_result\', g.ok ? g.result : \'rejected\');\\n\t'
   $'闸门：被拒不带 retry-after\tsrc/practice/service.ts\t({ ...fixed(P.SUBJECT_BUSY), headers: busyHeaders(retryAfterSec) })\t({ ...fixed(P.SUBJECT_BUSY) })'
   $'闸门：被拒与上游不可用同一个问题码\tsrc/http/problems.ts\tproblem(503, \'SUBJECT_BUSY\',\tproblem(503, \'UPSTREAM_UNAVAILABLE\','
   $'闸门：诊断开始不经闸门\tsrc/diagnosis/service.ts\treturn withSubjectSlot(deps.gate, slot(deps, \'aya\', student, replay), subjectBusy, () => startAdmitted(deps, account, student, input));\treturn startAdmitted(deps, account, student, input);'
@@ -516,7 +516,7 @@ SM=(
   $'内测：退出判据放过只读请求\tsrc/http/internal-test-routes.ts\t  if (ALLOW_AFTER_EXIT.has(\t  if (route.method === \'GET\' || ALLOW_AFTER_EXIT.has('
   $'内测：例外清单含今日计划\tsrc/http/internal-test-routes.ts\t  \'GET /students/{student_id}/internal-test\', \'POST\t  \'GET /students/{student_id}/today\', \'GET /students/{student_id}/internal-test\', \'POST'
   $'内测：服务器不调退出判据\tsrc/http/server.ts\t      if (await exitedGuard(deps, route, session, params[\'student_id\'])) throw new Stop(P.TEST_EXITED);\t'
-  $'内测：开关关也注册路由\tsrc/http/routes.ts\t          ...(internalTest ? INTERNAL_TEST_ROUTES : [])];\t          ...INTERNAL_TEST_ROUTES];'
+  $'内测：开关关也注册路由\tsrc/http/routes.ts\t          ...(internalTest ? INTERNAL_TEST_ROUTES : []), ...(lesson ? LESSON_ROUTES : [])];\t          ...INTERNAL_TEST_ROUTES, ...(lesson ? LESSON_ROUTES : [])];'
   $'内测：开关在生产也收\tsrc/internal-test/features.ts\t  if (!launchFeatureEnv(env)) throw\t  if (false) throw'
   $'内测：两份文书只看隐私政策\tsrc/http/routes.ts\texport const REQUIRED_CONSENTS = [\'guardian_consent_under14\', \'privacy_policy\'] as const;\texport const REQUIRED_CONSENTS = [\'privacy_policy\'] as const;'
   $'内测：两份文书不看撤回\tsrc/http/routes.ts\tlatest.some((r) => r.t === t && r.d === \'granted\')\tlatest.some((r) => r.t === t)'
@@ -697,7 +697,7 @@ declare -A EXPECT_H6=(
   ["H6：诊断开始收前端带来的字段"]="H6 计量入口（静态）|诊断开始拒收"
   ["H6：诊断失败不释放预留"]="H6 计量入口（集成）|学习服务确定失败时预留被释放"
   ["H6：导出兑换不核对学生"]="H6 跨对象|跨对象（兄妹 S2 的二级 ID）POST /students/{student_id}/exports/{export_job_id}/download"
-  ["H6：事件与探针的“不是本人”改回 404"]="H6 授权矩阵|x-sb-not-self 403"
+  ["H6：事件与探针的“不是本人”改回 403"]="H6 授权矩阵|不存在 POST /students/{student_id}/events（x-sb-not-self 404）"
   ["H6：考试成绩不核对考试属于这个学生"]="H6 跨对象|跨对象（另一户 T 的二级 ID）POST /students/{student_id}/exams/{exam_id}/score"
 )
 h6_first() {  # $1 测试输出文件，$2 变异名：第一条 not ok 的测试名与它的错误块要含登记的片段
