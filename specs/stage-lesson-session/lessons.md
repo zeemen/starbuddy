@@ -192,3 +192,46 @@
 ### 待人确认
 - **L7**：限流桶 `lesson.session.minute` 每分钟 60 次是合成默认值。
 - **L8**：讲评课开关只在 dev / test。等插件契约 1.1.0 签字、真实讲评课内容与页面（③b-5）落地后，再由人决定 staging 开不开。
+
+## ③b-5：讲评课页面（开关缺省关闭）
+### 做了什么
+- 新模块 `apps/web/src/lesson/`：
+  - `features.ts`：开关 `STARBUDDY_LESSON=lesson`，只在 dev / test；只有数学（前端 `math` 对应 BFF 的 `aya`）；
+  - `view.ts`：地址栏参数解析、BFF 返回值按白名单挑字段（会话 ID、`usage_id`、过期时间、第几问都不进页面）、错误映射；
+  - `actions.ts`：两个 server action（打开、提问），先过开关，再做双重提交核对，然后转 BFF；
+  - `LessonPlayer.tsx`：播放组件，见下；
+  - `LessonPage.tsx`：页面组件，先过开关，再只认学生本人。
+- `src/lib/lesson-api.ts`：讲评课的 BFF 客户端，只在服务端调用，全文件一处 `fetch`。
+- 路由 `/s/{studentId}/learn/{subject}/lesson/{lessonId}?v=&node=&item=`，是开发页（`page.dev.tsx`），见“决定与差异”第 1 条。讲评课目录与推荐另起（规格第三节），所以没有入口，只能按地址打开。
+- **播放组件**：
+  1. 页面载入不打开，要学生点“开始”：打开会计一次讲评课；
+  2. 打开后讲解 DSL 与台词稿经 `packages/stage` 的 `migrateStageDsl` / `migrateStageScript` 再读一次，不合格不播放（补上 ③b-4a L5 说的前端那一道）；
+  3. 逐步播放，字幕取自台词稿；
+  4. 可提问模式沿用第一阶段：指着白板元素、槽位或这一步，从菜单选问题。“再讲一遍”在本地跳回那一步重放，不发请求；其余三种经 server action 转 BFF，不扣次；
+  5. 回答显示在字幕区下方；没有答疑、到了上限显示兜底与“再讲一遍”；到了上限菜单只剩“再讲一遍”；
+  6. 等待用过程状态组件；结果未知时用同一个键重试（打开不重扣，提问不重计）；
+  7. 票据只在组件内存里。
+- 文案：`LESSON`、`LESSON_ERROR` 全是 `{{TODO_COPY:lesson.*}}` 占位，已并入 `ALL_SHELL_COPY`（禁语等扫描）；菜单与兜底沿用 `STAGE_ASK`，等待沿用 `PROCESS_STATUS`。
+- 测试：
+  - 新增 `apps/web/tests/lesson.test.ts` 7 条：开关、关时不发请求、地址栏参数、视图白名单、错误映射、静态检查（一处 `fetch`、不直连学习服务、票据不进 DOM 与存储、页面载入不打开、播放前再读一次、开关在读会话之前、路由是开发页）、文案占位；
+  - `tests/stage.test.ts`：允许引用 `packages/stage` 的文件多了播放组件，并锁住只有讲评课页面链路引用它。
+- 端到端（`e2e/lesson.spec.ts`，practice-on 那一套）：
+  - 打开：点“开始”才打开，逐步播放字幕；
+  - 提问：问“为什么”得到回答；指着元素问“是什么”得到兜底与“再讲一遍”；问满 3 次后菜单只剩“再讲一遍”；
+  - 这节课打不开、额度不足、地址栏参数不合格各一条；每页过 axe、浏览器只请求本前端、页面与浏览器存储里没有票据；
+  - `e2e/practice-off.spec.ts` 加一条：开关关时讲评课页面 404、BFF 两条路由 404、桩收到 0 个请求。
+- 端到端环境：
+  - 合成学习服务桩（`scripts/fake-learning-practice.ts`）实现讲评课两个内部接口，按固定剧本：每节 3 问，“是什么”没有答疑，`syn.lesson.broken` 打不开；
+  - 第五个 BFF 打开 `STARBUDDY_LESSON`，practice-on 的前端打开 `STARBUDDY_LESSON`；
+  - 合成种子 `db/seeds/dev/practice-synthetic.sql` 给 P1 的讲评课额度桶加一笔合成调整 +5，计数与流水一起写。
+- 部署清单：前端的 `STARBUDDY_LESSON` 登记进 `deploy/config/env-inventory.yaml`（`envs: local`）与开关矩阵 `deploy/flags/staging.yaml` 的讲评白板一项（关）；`deploy/tests/flags_check.ts` 用真实的 `lessonEnabled` 核对 staging 按关、pilot / 生产按关。
+
+### 决定与差异
+1. **路由是开发页（`page.dev.tsx`）**：页面以相对路径引用 `packages/stage`，而 Turbopack 根目录只在含开发页的构建里才放到仓库根（`next.config.ts`），生产构建解析不到它。讲评课开关本来就只在 dev / test，所以页面也只在开发、测试构建里存在；运行时再核对环境与本机 Host，与 `/dev/stage` 同一口径。要上 staging，得先定 `packages/stage` 怎么进生产构建（npm 工作区或构建期复制），见待人确认 L10。
+2. **页面载入不打开**：规格写的是“播放由学习服务下发的 DSL 与台词稿”，没说什么时候打开。打开会计一次，所以要学生点“开始”，避免预取、刷新扣次。
+3. **讲评课从地址栏打开**：没有目录，`lesson_ref`、节点与题都从地址栏取，由 BFF 与学习服务再核一遍（适配器核对节点与题和讲评课一致）。
+
+### 待人确认
+- **L9**：讲评课页面文案全是占位（`lesson.*`），由人写、人审，属于 W6 范围；“开始后计一次讲评课”这句提示是否保留也请定。
+- **L10**：讲评课页面是开发页，只在开发、测试构建里存在。上 staging 之前要定 `packages/stage` 进生产构建的办法（ADR 07 决定 7 只说“经 packages/stage 的接口使用舞台”）。
+- **L11**：P1 的讲评课额度来自合成种子里的一笔调整（`actor = staff`，原因 `synthetic_lesson_grant`），只在开发库与一次性测试库。
