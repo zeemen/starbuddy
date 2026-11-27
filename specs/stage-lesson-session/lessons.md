@@ -129,7 +129,7 @@
 - 配置：`LEARNING_LESSON_TICKET_SECRET`（≥ 32 字符，与其他令牌和密钥各不相同），设了即开讲评课接口；签字前需同时设候选契约开关，所以只在 dev / test。启动时核对迁移 0064 已执行。已登记进 `deploy/config/env-inventory.yaml`。
 - 镜像：`services/learning/Dockerfile` 与它的 `.dockerignore` 加上两份 0.3.0 schema。
 - 测试：
-  - 新增 `tests/test_lesson_session.py` 34 条：打开、重放与换课、四种预留状态、预留对不上、请求不合格、适配器确定拒绝与暂时失败、8 种内容不合格、`answer_submitted`；
+  - 新增 `tests/test_lesson_session.py` 34 条（`tests/test_token_matrix.py` 登记两条新路由为 BFF 会话令牌组）：打开、重放与换课、四种预留状态、预留对不上、请求不合格、适配器确定拒绝与暂时失败、8 种内容不合格、`answer_submitted`；
   - 提问：回答与计数不扣次、重放、没有答疑、到上限不调适配器、票据（换学生、伪造、换前缀、过期）、不合格提问不占次数、预留已释放、已结算照样放行；
   - 日志不含文字与学生 ID、没配置 501、写入令牌 401、纯函数、配置开关、接口文档与源码和响应一致；
   - `tests/fixtures/meter_provision.sql` 的代建预留支持 `teach → lesson_whiteboard`。
