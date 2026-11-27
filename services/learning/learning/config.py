@@ -35,6 +35,8 @@
                                  未签字的配置在 test / dev 以外不启动这一模块（接口 501），不合法拒绝启动
   LEARNING_PRACTICE_PRESENTER    不设 = next / answer 回 501；synthetic = 合成题面（只允许 LEARNING_ENV=test，present_item 签字前不接真实题库）
   LEARNING_PRACTICE_TICKET_SECRET  再练票据的 HMAC 密钥（≥ 32 字符，与所有令牌各不相同）；设了 LEARNING_PRACTICE_CONFIG 就必须设
+  LEARNING_LESSON_TICKET_SECRET    讲评课票据的 HMAC 密钥（≥ 32 字符，与所有令牌各不相同）；设了即开讲评课接口（③b-4，迁移 0064），
+                                   签字前需同时设 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1（只 dev / test）
   选题经知识服务（LEARNING_KNOWLEDGE_URL / LEARNING_KNOWLEDGE_TOKEN，同上）；不设 = next 回 501
   复测与验证题交付（KGE-05，specs/retest-delivery-kge05）：
   LEARNING_RETEST_CONFIG         synthetic（合成占位，只允许 test / dev）或配置文件路径。不设 = 复测接口一律 501 RETEST_UNAVAILABLE；
@@ -154,6 +156,9 @@ class Settings:
     metrics_port: int | None = None
     # 模型调用记录落库（迁移 0060）：缺省关；打开时调用记录另写 platform.model_call_log（有界队列异步批量）
     model_call_log: bool = False
+    # 讲评课会话（specs/stage-lesson-session ③b-4，迁移 0064）：票据密钥；None = 讲评课接口一律 501。
+    # 走插件契约 1.1.0 候选版的 teach(lesson_ref / question)：签字前只在候选开关打开时允许（STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1）
+    lesson_ticket_secret: str | None = field(default=None, repr=False)
 
     @staticmethod
     def from_env(environ: dict[str, str] | None = None) -> "Settings":
@@ -229,6 +234,13 @@ class Settings:
         practice_secret = e.get("LEARNING_PRACTICE_TICKET_SECRET") or None
         if practice_cfg and (practice_secret is None or len(practice_secret) < 32):
             raise RuntimeError("设了 LEARNING_PRACTICE_CONFIG 就必须设 LEARNING_PRACTICE_TICKET_SECRET（≥ 32 字符）")
+        lesson_secret = e.get("LEARNING_LESSON_TICKET_SECRET") or None
+        if lesson_secret is not None:
+            if len(lesson_secret) < 32:
+                raise RuntimeError("LEARNING_LESSON_TICKET_SECRET 少于 32 个字符")
+            if e.get("STARBUDDY_ALLOW_CANDIDATE_CONTRACT") != "1":
+                raise RuntimeError("讲评课走插件契约 1.1.0 候选版的 teach(lesson_ref / question)：签字前只在测试里开"
+                                   "（设 LEARNING_LESSON_TICKET_SECRET 需同时设 STARBUDDY_ALLOW_CANDIDATE_CONTRACT=1）")
         retest_cfg = e.get("LEARNING_RETEST_CONFIG") or None
         if retest_cfg and not practice_cfg:
             raise RuntimeError("LEARNING_RETEST_CONFIG 复用再练的选题、题面与票据密钥：必须同时设 LEARNING_PRACTICE_CONFIG")
@@ -256,9 +268,10 @@ class Settings:
             raise RuntimeError("LEARNING_ORCHESTRATOR_CLIENT_TOKEN 少于 32 个字符")
         tokens = [credential, *([session_tok] if session_tok else []), *(a.credential for a in adapters.values()), *route_clients.values(),
                   *([knowledge.credential] if knowledge else []), *([insight_tok] if insight_tok else []),
-                  *([orch_tok] if orch_tok else []), *([practice_secret] if practice_secret else [])]
+                  *([orch_tok] if orch_tok else []), *([practice_secret] if practice_secret else []),
+                  *([lesson_secret] if lesson_secret else [])]
         if len(set(tokens)) != len(tokens):
-            raise RuntimeError("写入与会话令牌、适配器令牌、路由客户端令牌、知识服务令牌、洞察服务与编排层客户端令牌、再练票据密钥必须各不相同")
+            raise RuntimeError("写入与会话令牌、适配器令牌、路由客户端令牌、知识服务令牌、洞察服务与编排层客户端令牌、再练与讲评课票据密钥必须各不相同")
         snapshot_raw = e.get("LEARNING_TODAY_SNAPSHOT", "")
         if snapshot_raw not in ("", "0", "1"):
             raise RuntimeError("LEARNING_TODAY_SNAPSHOT 只能不设、0 或 1")
@@ -282,7 +295,7 @@ class Settings:
                         practice_presenter=practice_presenter, practice_ticket_secret=practice_secret,
                         present_item_source=present_source, retest_config=retest_cfg,
                         today_config=today_cfg, today_snapshot=snapshot_raw == "1", host=host, route_port=route_port,
-                        metrics_port=mport, model_call_log=call_log_raw == "1")
+                        metrics_port=mport, model_call_log=call_log_raw == "1", lesson_ticket_secret=lesson_secret)
 
 
 def _route_port(raw: str | None, main_raw: str | None, env: str) -> int | None:

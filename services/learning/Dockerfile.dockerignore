@@ -11,6 +11,8 @@
 !docs/design/sie/sie_lexicon.py
 !docs/design/sie/forbidden-inference.v0.yaml
 !docs/mapping/error-taxonomy.v0.9.yaml
+!packages/stage/schema/stage-dsl-0.3.0.schema.json
+!packages/stage/schema/stage-script-0.3.0.schema.json
 **/__pycache__
 **/*.pyc
 # 白名单之后再排除一次：即使白名单目录里出现 .env 类文件、测试与夹具，也不进构建上下文

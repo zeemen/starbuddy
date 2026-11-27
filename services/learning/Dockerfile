@@ -47,6 +47,8 @@ RUN python -m pip install --no-deps ./packages/contracts/python \
 # 服务代码与它按相对路径读取的文件
 COPY docs/design/sie/sie_lexicon.py docs/design/sie/forbidden-inference.v0.yaml docs/design/sie/
 COPY docs/mapping/error-taxonomy.v0.9.yaml docs/mapping/
+# 讲评课（③b-4）按 packages/stage 冻结的 schema 校验讲解 DSL 与台词稿（learning/lesson/service.py）
+COPY packages/stage/schema/stage-dsl-0.3.0.schema.json packages/stage/schema/stage-script-0.3.0.schema.json packages/stage/schema/
 COPY services/learning/config services/learning/config
 COPY services/learning/learning services/learning/learning
 

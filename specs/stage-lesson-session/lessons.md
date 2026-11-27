@@ -99,3 +99,46 @@
 - **L2**：BFF 不读会话表，家长只能经导出看到“打开过哪些讲评课、问了几次”。若前端要显示，要定可见范围：家长看不看得到提问次数。这属于画像可见范围，必停。
 - **L3**：导出列加了讲评课引用与提问次数。79p 白名单要求导出列是字段字典里对家长可见的字段或通用元数据，这三列按元数据放行。若认为提问次数是关于学生的数据、要进字段字典，就要另起字典变更。
 - **L4**：重放只认最近一问的键（见上）。若要求任意一问都能重放，就要另建一张按问记幂等键的子表（仍不存文字）。
+
+## ③b-4a：学习服务的讲评课内部接口
+### 拆分
+规格第二节第 7 条的 ③b-4 包括学习服务 `lesson/open`、`lesson/ask` 与 BFF 路由、讲评课票据、按节计量。实现时拆成两半：
+- ③b-4a：学习服务这一侧，本 PR；
+- ③b-4b：BFF 的学生端路由、票据封装、预留与结算，以及路由矩阵与 H6 计量用例。
+理由：BFF 那一侧要动路由表、计量入口登记（`METER_CALLERS`）与它的集成用例、限流桶和密钥派生，都是计量必停项，单独审更清楚；学习服务这一半可以独立测试（真实库加假适配器）。
+
+### 做了什么
+- 新接口定义 `services/learning/openapi/lesson-internal.v0.yaml`，与诊断、再练的内部接口同一先例，不进 `packages/contracts`。
+- 新模块 `services/learning/learning/lesson/`：
+  - `ticket.py`：讲评课票据 `lt1`，HMAC 签名、不落库，与再练票据同一套编码；内容是学生、会话、学科、讲评课引用、打开时的节点与题、DSL 版本、会话过期时间；
+  - `store.py`：会话的查、建、改状态，调 `platform.lesson_session_ask`，按作答记录判定 `answer_submitted`；
+  - `service.py`：打开与提问的流程，见下；
+  - `api.py`：两个接口，只认 BFF 的会话令牌，请求体规则与诊断相同，日志不记请求体与文字。
+- **打开**（`POST /internal/v1/lesson/open`）：
+  1. 同一学生、同一预留键已有会话就按幂等重放；没有就新建，库里的守卫核对预留，对不上回 409 `IDEMPOTENCY_KEY_SEALED`，不调适配器；
+  2. 调适配器 `teach(mode: lesson, lesson_ref)`：契约 1.1.0，`usage_id` 是那笔预留，幂等键由（会话，是否已交题）派生，`allowed_hint_level = 1`，人设 `aya@1.1.0`；
+  3. 校验：契约 `TeachResponse`；恰好一段 `whiteboard_dsl`、版本 0.3.0；讲解 DSL 与台词稿各按 `packages/stage` 冻结的 0.3.0 schema 校验，再做配对核对：每个 `say` 有台词、每句台词都被引用、角色与讲话人一致、步骤 id 不重复、不带 `answers`；
+  4. 合格 → 会话 `open`，签发票据，返回讲解 DSL、台词稿、票据、过期时间、提问上限与次数；
+  5. 适配器确定拒绝（400 / 404 / 409 / 422）→ 会话 `failed`、回 422 `LESSON_NOT_AVAILABLE`；内容不合格 → `failed`、回 502；暂时失败 → 留在 `opening`、回 503，同一个键重试。
+- **提问**（`POST /internal/v1/lesson/ask`）：
+  1. 验票（学生一致、未过期），核对提问对象的结构（不合格 400，不占次数）；
+  2. 库里放行：`none` 404、`not_open` 409、`expired` 410、`unpaid` 409 `IDEMPOTENCY_KEY_SEALED`、`limit` 200 `no_answer`（不调适配器）；
+  3. `admitted` / `replay` → 调适配器 `teach(question)`，`usage_id` 用会话那一笔，幂等键由（会话，第几问）派生，重放拿同一结果；
+  4. 适配器 422 `MODE_NOT_SUPPORTED` → 200 `no_answer`（lessons Q7）；其他确定拒绝 → 422 `QUESTION_NOT_ANSWERABLE`；暂时失败 → 503。
+- **`answer_submitted` 由平台判定**：这道题学生有作答记录就是 true，请求里不收这个字段（前端自报会被用来提前拿答案）。这回答了 ③b-2 的 R1 后半句“由平台在打开前判断”。
+- 配置：`LEARNING_LESSON_TICKET_SECRET`（≥ 32 字符，与其他令牌和密钥各不相同），设了即开讲评课接口；签字前需同时设候选契约开关，所以只在 dev / test。启动时核对迁移 0064 已执行。已登记进 `deploy/config/env-inventory.yaml`。
+- 镜像：`services/learning/Dockerfile` 与它的 `.dockerignore` 加上两份 0.3.0 schema。
+- 测试：
+  - 新增 `tests/test_lesson_session.py` 34 条：打开、重放与换课、四种预留状态、预留对不上、请求不合格、适配器确定拒绝与暂时失败、8 种内容不合格、`answer_submitted`；
+  - 提问：回答与计数不扣次、重放、没有答疑、到上限不调适配器、票据（换学生、伪造、换前缀、过期）、不合格提问不占次数、预留已释放、已结算照样放行；
+  - 日志不含文字与学生 ID、没配置 501、写入令牌 401、纯函数、配置开关、接口文档与源码和响应一致；
+  - `tests/fixtures/meter_provision.sql` 的代建预留支持 `teach → lesson_whiteboard`。
+
+### 决定与差异
+- **讲解校验用同一份 schema 加同一组配对规则，不是 `migrateStageDsl` 本身**（规格第二节第 1 条写的是用 `packages/stage` 的同一套入口）。学习服务是 Python，读不了 TS 的入口。没有覆盖的是 `packages/stage` 的文字安全检查（`src/text.ts`）；台词文字另有契约 `StageScriptLine.text` 的字符规则把关，前端播放前（③b-5）还会用 `migrateStageDsl` / `migrateStageScript` 再读一次。见待人确认 L5。
+- **节点与题放在票据里**：会话表（0064，已合并）不存节点与题，提问时适配器又要它们，所以随票据签名下发、提问时原样带回。票据由学习服务签名，前端改不了。
+- **不合格的提问在库里放行之前就拒绝**，不占次数；适配器拒收的提问（例如指着还没出现的东西）已经占了一次，因为学习服务没有讲解 DSL，判断不了。见待人确认 L6。
+
+### 待人确认
+- **L5**：讲解 DSL 与台词稿的文字安全检查只在前端（③b-5）做一次。若要求平台下发前就做，学习服务要用 Python 重写一份 `src/text.ts` 的规则，并加一致性检查。
+- **L6**：适配器拒收的提问也算一次。2a 上限 20 问，影响不大；2b 改成 10 问时可能要改成不算。
