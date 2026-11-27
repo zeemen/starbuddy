@@ -304,6 +304,10 @@ col|platform.item.license_status|starbuddy_authz|UPDATE|SUPERUSER
 col|platform.item.skill_local_id|starbuddy_learning|UPDATE|SUPERUSER
 col|platform.item.source_ref|starbuddy_authz|UPDATE|SUPERUSER
 col|platform.item.source_type|starbuddy_authz|UPDATE|SUPERUSER
+col|platform.lesson_session.last_ask_key|starbuddy_authz|UPDATE|SUPERUSER
+col|platform.lesson_session.question_count|starbuddy_authz|UPDATE|SUPERUSER
+col|platform.lesson_session.status|starbuddy_learning|UPDATE|SUPERUSER
+col|platform.lesson_session.student_id|starbuddy_eraser|SELECT|SUPERUSER
 col|platform.mastery_estimate.id|starbuddy_authz|SELECT|SUPERUSER
 col|platform.mastery_estimate.is_current|starbuddy_learning|UPDATE|SUPERUSER
 col|platform.mastery_estimate.student_id|starbuddy_authz|SELECT|SUPERUSER
@@ -805,6 +809,9 @@ func|platform.item_admission_digest(platform.subject,text)|starbuddy_learning|EX
 func|platform.item_admission_digest(platform.subject,text)|starbuddy_review|EXECUTE|starbuddy_authz
 func|platform.learning_meter_check(uuid,text,uuid,text)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.learning_meter_check(uuid,text,uuid,text)|starbuddy_learning|EXECUTE|starbuddy_authz
+func|platform.lesson_session_ask(uuid,uuid,uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
+func|platform.lesson_session_ask(uuid,uuid,uuid)|starbuddy_learning|EXECUTE|starbuddy_authz
+func|platform.lesson_session_guard()|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.lookup_accounts_by_phone(text)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.meter_apply_subject_limits(uuid,text,platform.plan_tier)|starbuddy_authz|EXECUTE|starbuddy_authz
 func|platform.meter_authorize_usage(uuid)|starbuddy_authz|EXECUTE|starbuddy_authz
@@ -1051,6 +1058,8 @@ owner|platform.is_linked_guardian(uuid)|starbuddy_authz
 owner|platform.is_self_student(uuid)|starbuddy_authz
 owner|platform.item_admission_digest(platform.subject,text)|starbuddy_authz
 owner|platform.learning_meter_check(uuid,text,uuid,text)|starbuddy_authz
+owner|platform.lesson_session_ask(uuid,uuid,uuid)|starbuddy_authz
+owner|platform.lesson_session_guard()|starbuddy_authz
 owner|platform.lookup_accounts_by_phone(text)|starbuddy_authz
 owner|platform.meter_apply_subject_limits(uuid,text,platform.plan_tier)|starbuddy_authz
 owner|platform.meter_authorize_usage(uuid)|starbuddy_authz
@@ -1385,6 +1394,10 @@ rel|platform.item|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.item|starbuddy_bff|SELECT|SUPERUSER
 rel|platform.item|starbuddy_learning|INSERT|SUPERUSER
 rel|platform.item|starbuddy_learning|SELECT|SUPERUSER
+rel|platform.lesson_session|starbuddy_authz|SELECT|SUPERUSER
+rel|platform.lesson_session|starbuddy_eraser|DELETE|SUPERUSER
+rel|platform.lesson_session|starbuddy_learning|INSERT|SUPERUSER
+rel|platform.lesson_session|starbuddy_learning|SELECT|SUPERUSER
 rel|platform.map_change_signoff|starbuddy_authz|INSERT|SUPERUSER
 rel|platform.map_change_signoff|starbuddy_authz|SELECT|SUPERUSER
 rel|platform.mastery_estimate|starbuddy_authz|SELECT|SUPERUSER
@@ -1657,6 +1670,8 @@ secdef|platform.is_linked_guardian(uuid)
 secdef|platform.is_self_student(uuid)
 secdef|platform.item_admission_digest(platform.subject,text)
 secdef|platform.learning_meter_check(uuid,text,uuid,text)
+secdef|platform.lesson_session_ask(uuid,uuid,uuid)
+secdef|platform.lesson_session_guard()
 secdef|platform.lookup_accounts_by_phone(text)
 secdef|platform.meter_apply_subject_limits(uuid,text,platform.plan_tier)
 secdef|platform.meter_authorize_usage(uuid)

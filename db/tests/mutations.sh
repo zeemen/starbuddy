@@ -1564,6 +1564,53 @@ M+=(
   ["数据维护：续建函数体被改（调用记录多建一个月）"]="$(afr "$EPA" "'''platform.model_call_log''::regclass, v_from, 7)'" "'''platform.model_call_log''::regclass, v_from, 8)'")"
 )
 
+# 讲评课会话（0064 platform.lesson_session 与课内提问放行 platform.lesson_session_ask，specs/stage-lesson-session ③b-3）：由 79zk 发现
+# （授权类的同时由 80 的快照、清单类由 79p、删除覆盖由 79q 发现）。DBMUT_FILTER=讲评课会话 只跑这一组
+LSG='platform.lesson_session_guard()'
+LSA='platform.lesson_session_ask(uuid, uuid, uuid)'
+M+=(
+  ["讲评课会话：新建接受已结算的预留"]="$(afr "$LSG" "'AND r.state = ''reserved'' AND r.expires_at > v_now;'" "'AND r.expires_at > v_now;'")"
+  ["讲评课会话：新建接受已过期的预留"]="$(afr "$LSG" "' AND r.expires_at > v_now;'" "';'")"
+  ["讲评课会话：新建不核对幂等键"]="$(afr "$LSG" "'r.idempotency_key = NEW.idempotency_key::text AND '" "''")"
+  ["讲评课会话：新建不核对学生"]="$(afr "$LSG" "' AND r.student_id = NEW.student_id'" "''")"
+  ["讲评课会话：新建不核对资源"]="$(afr "$LSG" "' AND r.resource_type = ''lesson_whiteboard'''" "''")"
+  ["讲评课会话：新建不核对来源方法"]="$(afr "$LSG" "'r.source_method = ''teach'' AND '" "''")"
+  ["讲评课会话：新建可带创建时间"]="$(afr "$LSG" "'NEW.created_at := v_now;'" "'NULL;'")"
+  ["讲评课会话：新建可带过期时间"]="$(afr "$LSG" "'NEW.expires_at := v_expires;'" "'NULL;'")"
+  ["讲评课会话：可以 open 新建"]="$(afr "$LSG" "'IF NEW.status <> ''opening'' OR '" "'IF '")"
+  ["讲评课会话：已删除的学生可建"]="$(afr "$LSG" "' OR v_erased IS NOT NULL'" "''")"
+  ["讲评课会话：状态可以再变"]="$(afr "$LSG" "'IF OLD.status <> ''opening'' THEN'" "'IF false THEN'")"
+  ["讲评课会话：过期后仍可下发"]="$(afr "$LSG" "'IF NEW.status = ''open'' AND v_now >= OLD.expires_at THEN'" "'IF false THEN'")"
+  ["讲评课会话：有效期可改"]="$(afr "$LSG" "'NEW.created_at, NEW.expires_at)'" "'NEW.created_at, OLD.expires_at)'")"
+  ["讲评课会话：次数一次可加 2"]="$(afr "$LSG" "'NEW.question_count <> OLD.question_count + 1 OR '" "'NEW.question_count < OLD.question_count OR '")"
+  ["讲评课会话：加次数不必换键"]="$(afr "$LSG" "' OR NEW.last_ask_key IS NOT DISTINCT FROM OLD.last_ask_key'" "''")"
+  ["讲评课会话：过期后仍可加次数"]="$(afr "$LSG" "' OR NEW.status <> ''open'' OR v_now >= OLD.expires_at'" "' OR NEW.status <> ''open'''")"
+  ["讲评课会话：放行不核对学生"]="$(afr "$LSA" "' AND student_id = p_student FOR UPDATE'" "' FOR UPDATE'")"
+  ["讲评课会话：放行不看状态"]="$(afr "$LSA" "'IF s.status <> ''open'' THEN'" "'IF false THEN'")"
+  ["讲评课会话：放行不看有效期"]="$(afr "$LSA" "'IF v_now >= s.expires_at THEN'" "'IF false THEN'")"
+  ["讲评课会话：放行不核对预留"]="$(afr "$LSA" "'IF NOT EXISTS (SELECT 1 FROM platform.usage_reservation r'" "'IF false AND NOT EXISTS (SELECT 1 FROM platform.usage_reservation r'")"
+  ["讲评课会话：放行接受已过期的预留"]="$(afr "$LSA" "'(r.state = ''settled'' OR '" "'(r.state IN (''settled'', ''expired'') OR '")"
+  ["讲评课会话：放行接受已释放的预留"]="$(afr "$LSA" "'(r.state = ''settled'' OR '" "'(r.state IN (''settled'', ''released'') OR '")"
+  ["讲评课会话：不认重放"]="$(afr "$LSA" "'IF s.last_ask_key = p_ask_key THEN'" "'IF false THEN'")"
+  ["讲评课会话：不限次"]="$(afr "$LSA" "'IF s.question_count >= s.question_limit THEN'" "'IF false THEN'")"
+  ["讲评课会话：放行返回过期时间"]="$(afr "$LSA" "'''question_seq'', s.question_count + 1);'" "'''question_seq'', s.question_count + 1, ''expires_at'', s.expires_at);'")"
+  ["讲评课会话：空参数不拦"]="$(afr "$LSA" "'p_session IS NULL OR p_student IS NULL OR p_ask_key IS NULL'" "'false'")"
+  ["讲评课会话：放行授给 BFF"]="GRANT EXECUTE ON FUNCTION $LSA TO starbuddy_bff;"
+  ["讲评课会话：放行改为调用者权限"]="ALTER FUNCTION $LSA SECURITY INVOKER;"
+  ["讲评课会话：放行不固定 search_path"]="ALTER FUNCTION $LSA RESET search_path;"
+  ["讲评课会话：学习服务能直接改次数"]="GRANT UPDATE (question_count, last_ask_key) ON platform.lesson_session TO starbuddy_learning;"
+  ["讲评课会话：学习服务能改有效期"]="GRANT UPDATE (expires_at) ON platform.lesson_session TO starbuddy_learning;"
+  ["讲评课会话：学习服务能删"]="GRANT DELETE ON platform.lesson_session TO starbuddy_learning;"
+  ["讲评课会话：BFF 能读本人与绑定家长"]="GRANT SELECT ON platform.lesson_session TO starbuddy_bff; CREATE POLICY t_ls_bff ON platform.lesson_session FOR SELECT TO starbuddy_bff USING (platform.can_read_student(student_id));"
+  ["讲评课会话：洞察服务能读"]="GRANT SELECT ON platform.lesson_session TO starbuddy_insight; CREATE POLICY t_ls_insight ON platform.lesson_session FOR SELECT TO starbuddy_insight USING (true);"
+  ["讲评课会话：不强制 RLS"]="ALTER TABLE platform.lesson_session NO FORCE ROW LEVEL SECURITY;"
+  ["讲评课会话：删除执行身份能读讲评课引用"]="GRANT SELECT (lesson_id) ON platform.lesson_session TO starbuddy_eraser;"
+  ["讲评课会话：不登记个人层清单"]="DELETE FROM platform.personal_table_registry WHERE nspname = 'platform' AND relname = 'lesson_session';"
+  ["讲评课会话：导出带计量键"]="UPDATE platform.personal_table_registry SET export_columns = export_columns || ARRAY['usage_id'] WHERE relname = 'lesson_session';"
+  ["讲评课会话：提问上限不封顶"]="ALTER TABLE platform.lesson_session DROP CONSTRAINT lesson_session_question_limit_check;"
+  ["讲评课会话：讲评课引用不限格式"]="ALTER TABLE platform.lesson_session DROP CONSTRAINT lesson_session_lesson_id_check;"
+)
+
 M+=(
   ["攻击面：周报不分受众"]="DROP POLICY weekly_report_front_read ON insight.weekly_report; CREATE POLICY weekly_report_front_read ON insight.weekly_report FOR SELECT TO starbuddy_bff USING (status = 'generated' AND platform.can_read_student(student_id));"
   ["攻击面：家长看得到同一学生其他家长的绑定"]="DROP POLICY link_read ON platform.guardian_student_link; CREATE POLICY link_read ON platform.guardian_student_link FOR SELECT TO starbuddy_bff USING ((guardian_account_id = platform.current_account_id() AND platform.is_active_guardian()) OR platform.is_self_student(student_id) OR platform.is_linked_guardian(student_id));"
