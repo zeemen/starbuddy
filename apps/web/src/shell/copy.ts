@@ -687,6 +687,40 @@ export const STAGE_ASK = {
   no_answer: T('ask.no_answer', '这一步还没有准备好回答，可以再讲一遍这一步'),
 } as const;
 
+/**
+ * 讲评课页面（specs/stage-lesson-session ③b-5）：开始、余量、上限、各种不能继续的原因。一律是明显占位 {{TODO_COPY:lesson.…}}
+ * （面向学生的话术人写人审，必停），占位后附中性短语便于走查。菜单、兜底与“再讲一遍”沿用 STAGE_ASK；等待用 PROCESS_STATUS。
+ * 只陈述事实，不评价学生、不说为什么额度不够。{n} 由调用方替换为数字（放在 data-value 里），不拼接其他文字。
+ */
+export const LESSON = {
+  heading: T('lesson.heading', '讲评课'),
+  start: T('lesson.start', '开始这节讲评课'),
+  startHint: T('lesson.start_hint', '开始后计一次讲评课'),
+  questionsLeft: T('lesson.questions_left', '这节课还可以问'),
+  questionsUnit: T('lesson.questions_unit', '次'),
+  limit: T('lesson.limit', '这节课的提问次数用完了，可以再讲一遍这一步'),
+  play: T('lesson.play', '播放'),
+  pause: T('lesson.pause', '暂停'),
+  prev: T('lesson.prev', '上一步'),
+  next: T('lesson.next', '下一步'),
+  restart: T('lesson.restart', '从头再讲'),
+  back: T('lesson.back', '返回学科'),
+} as const;
+export const LESSON_ERROR = {
+  login: T('lesson.error.login', '请重新登录'),
+  not_found: T('lesson.error.not_found', '没有找到这节讲评课'),
+  quota: T('lesson.error.quota', '现在不能开始这节讲评课'),
+  curfew: T('lesson.error.curfew', '现在是休息时间'),
+  expired: T('lesson.error.expired', '这节讲评课已结束，可以重新开始'),
+  closed: T('lesson.error.closed', '这节讲评课不能继续了，可以重新开始'),
+  retry: T('lesson.error.retry', '暂时没有连上，请再试一次'),
+  unavailable: T('lesson.error.unavailable', '这节讲评课暂时打不开'),
+  invalid: T('lesson.error.invalid', '这个问题暂时问不了'),
+  content: T('lesson.error.content', '这节讲评课的内容暂时打不开'),
+  retryButton: T('lesson.error.retry_button', '再试一次'),
+} as const;
+export const ALL_LESSON_COPY: string[] = [...Object.values(LESSON), ...Object.values(LESSON_ERROR)];
+
 /** 信任界面的全部文案（静态检查逐条扫描；端到端的“每个文本节点”核对也用它） */
 export const ALL_TRUST_COPY: string[] = [
   ...Object.values(TRUST), ...Object.values(WHY), ...Object.values(WHY_STATUS), ...Object.values(EVIDENCE_SOURCE),
@@ -722,5 +756,5 @@ export const ALL_SHELL_COPY: string[] = [
   FAMILY_SHELL.consentGrant, FAMILY_SHELL.consentFor('孩子 1 · 八年级'), FAMILY_SHELL.onboarding, FAMILY_SHELL.timeSettings,
   FAMILY_SHELL.backToFamily, ...Object.values(FAMILY_SHELL_RESULT), ...Object.values(TRUST_SLOT),
   ...ALL_TRUST_COPY, ...ALL_PRACTICE_COPY, ...ALL_RETEST_COPY, ...ALL_TODAY_ORCH_COPY, ...Object.values(PROCESS_STATUS),
-  ...Object.values(STAGE_ASK),
+  ...Object.values(STAGE_ASK), ...ALL_LESSON_COPY,
 ];

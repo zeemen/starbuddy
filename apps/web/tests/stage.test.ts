@@ -101,12 +101,16 @@ test('指着元素提问（specs/stage-point-to-ask）：文案全是占位并�
   assert.deepEqual(strings.filter((x) => !['桌面', '平板', '手机', '未开始', '播放中', '已暂停', '已结束'].includes(x!)), []);
 });
 
-test('apps/web 里只有样张页链路引用 packages/stage', () => {
+test('apps/web 里只有样张页与讲评课（开发页）链路引用 packages/stage', () => {
   const src = join(WEB, 'src');
   const users = files(src).filter((p) => /\.tsx?$/.test(p)).filter((p) => /packages\/stage/.test(readFileSync(p, 'utf8').replace(/^\s*\/\/.*$/gm, ''))).map((p) => relative(WEB, p));
-  assert.deepEqual(users, ['src/stage/StageDemo.tsx']);
+  assert.deepEqual(users.sort(), ['src/lesson/LessonPlayer.tsx', 'src/stage/StageDemo.tsx']);
   const importers = files(src).filter((p) => /from '[^']*\/StageDemo\.tsx'/.test(readFileSync(p, 'utf8'))).map((p) => relative(WEB, p));
   assert.deepEqual(importers, ['src/app/dev/stage/page.dev.tsx']);
+  // 讲评课（③b-5）：播放组件只由讲评课页面组件引用，页面组件只由开发页路由引用（page.dev.tsx：只在开发、测试构建里存在）
+  const of = (name: string) => files(src).filter((p) => new RegExp(`from '[^']*/${name}\\.tsx'`).test(readFileSync(p, 'utf8'))).map((p) => relative(WEB, p));
+  assert.deepEqual(of('LessonPlayer'), ['src/lesson/LessonPage.tsx']);
+  assert.deepEqual(of('LessonPage'), ['src/app/s/[studentId]/learn/[subject]/lesson/[lessonId]/page.dev.tsx']);
 });
 
 test('Turbopack 根目录只在包含开发页的构建里放到仓库根', () => {
