@@ -57,7 +57,7 @@ test('地址栏参数：讲评课 ID、版本、节点、题只认合规写法',
   assert.deepEqual(parseLessonRef('syn.lesson.a', '0.1.0', 'K-QF-0301', 'SYN-1')?.item, 'SYN-1');
   for (const args of [['Syn', '0.1.0', 'K', undefined], ['syn', 'v1', 'K', undefined], ['syn', '0.1.0', 'aya:K', undefined],
                       ['syn', '0.1.0', '', undefined], ['syn', '0.1.0', 'K', '../x'], ['syn', undefined, 'K', undefined]] as const) {
-    assert.equal(parseLessonRef(...args), null, JSON.stringify(args));
+    assert.equal(parseLessonRef(args[0], args[1], args[2], args[3]), null, JSON.stringify(args));
   }
 });
 

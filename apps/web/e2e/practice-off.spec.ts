@@ -32,3 +32,22 @@ test('开关关：科目页没有再练入口；再练页面 404；BFF 的再练
   }
   expect(fakeLearningRequests() - before, '开关关时合成学习服务桩收到的请求数').toBe(0);
 });
+
+// 讲评课（specs/stage-lesson-session ③b-5）：trust-off 这一套的前端与 BFF 都不开 lesson——讲评课页面 404，BFF 的两条讲评课路由不注册，桩收到 0 个请求
+test('讲评课开关关：讲评课页面 404；BFF 的讲评课路由 404；合成学习服务桩收到 0 个请求', async ({ page }) => {
+  const before = fakeLearningRequests();
+  await loginStudent(page, P1);
+  expect((await page.goto(`/s/${P1}/learn/math/lesson/syn.lesson.e2e?v=0.1.0&node=K-QF-0301`))?.status()).toBe(404);
+  const s = await cookieSession(page);
+  for (const [tail, body] of [['open', { subject: 'aya', lesson_ref: { lesson_id: 'syn.lesson.e2e', lesson_version: '0.1.0' }, skill_node: 'aya:K-QF-0301',
+                                         idempotency_key: '59000000-0000-4000-8000-0000000001f1' }],
+                              ['ask', { ticket: 'sbl1.AAAA', question: { cursor: 1, anchor: { kind: 'step', id: 's1' }, intent: 'why_step' },
+                                        idempotency_key: '59000000-0000-4000-8000-0000000001f2' }]] as const) {
+    const r = await fetch(`${BFF}/bff/v0/students/${P1}/lessons/${tail}`, {
+      method: 'POST', headers: { 'x-sb-session': s.token, 'x-csrf-token': s.csrf, origin: BASE, 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    expect(r.status, tail).toBe(404);
+  }
+  expect(fakeLearningRequests() - before, '开关关时合成学习服务桩收到的请求数').toBe(0);
+});

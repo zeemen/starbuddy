@@ -3,6 +3,7 @@
 // 只实现错题再练的三个内部接口（services/learning/openapi/practice-internal.v0.yaml）：queue、next、answer，按该文件的响应形状返回；
 // 另实现复测与验证题的内部接口（retest-internal.v0.yaml，specs/retest-delivery-kge05：queue、next、answer 与只读的 check、replay，
 // 剧本见文件后部）与今日计划跨科编排的只读接口（today-internal.v0.yaml，PLT-11：/internal/v1/today，剧本见文件后部）；
+// 另实现讲评课会话的两个内部接口（lesson-internal.v0.yaml，specs/stage-lesson-session ③b-5：open、ask，剧本见文件后部）；
 // 其余路径（今日计划、诊断、星图等）一律 501（BFF 按“暂无安排 / 暂时无法获取”处理）。
 // 不是学习服务的实现：错题判定、选题、票据验签、经 grade 写入落库与掌握重算在 services/learning，有它自己的单测与库上集成测试；
 // 这里的条目、题面、判分全是合成的固定剧本（学生 P1、P2、P3 见 db/seeds/dev/practice-synthetic.sql），状态只在进程内存里。
@@ -327,6 +328,62 @@ function today(b: Record<string, unknown>) {
   return { status: 200, body: { snapshot, items, truncated_count: b['student_ref'] === P1 ? 2 : 0, budget_minutes: 30, sources, plan } };
 }
 
+// ---------- 讲评课会话（specs/stage-lesson-session ③b-5；e2e/lesson.spec.ts）：POST /internal/v1/lesson/open、/ask（lesson-internal.v0.yaml 的响应形状） ----------
+// 剧本：讲评课 syn.lesson.e2e 下发一份合成讲解（三步，两句字幕台词，不带预制答疑）；syn.lesson.broken 422 LESSON_NOT_AVAILABLE（BFF 释放预留）。
+// 每节最多 3 问：why_step、where_from 回一句合成答疑，what_is 回“不答”（not_available）；同一个提问键是重放（不加次数）；第 4 问起 limit。
+// 票据是桩自己的不透明串（lt1. 开头），只认签发给的学生；会话状态只在进程内存里。
+const LESSON_DSL = {
+  dsl_version: '0.3.0', title: '（合成）讲评课', canvas: { width: 960, height: 440 }, roles: ['teacher', 'buddy'], narrated: true,
+  steps: [
+    { id: 's1', say: 'l1', actions: [{ type: 'speaker', role: 'teacher' }, { type: 'write_text', id: 't1', x: 40, y: 64, text: '（合成）第一行' }] },
+    { id: 's2', say: 'l2', actions: [{ type: 'write_text', id: 't2', x: 40, y: 140, text: '（合成）第二行' }] },
+    { id: 's3', actions: [{ type: 'speaker', role: 'none' }] },
+  ],
+};
+const LESSON_SCRIPT = { dsl_version: '0.3.0', lines: [{ id: 'l1', role: 'teacher', text: '（合成台词）先看第一行。' },
+                                                      { id: 'l2', role: 'teacher', text: '（合成台词）再看第二行。' }] };
+const LESSON_ANSWER = '（合成答疑）因为这样写能看清楚每一步。';
+const LESSON_LIMIT = 3;
+interface LessonSession { student: string; count: number; lastKey: string | null; usage: string; expiresAt: string }
+const LESSONS = new Map<string, LessonSession>();   // 票据 → 会话
+const LESSON_BY_KEY = new Map<string, string>();     // 预留键 → 票据（同一个键重放同一个会话）
+
+function lessonOpen(b: Record<string, unknown>) {
+  const ref = b['lesson_ref'] as Record<string, unknown> | undefined;
+  if (!exact(b, ['student_ref', 'subject', 'lesson_ref', 'skill_node', 'usage_id', 'idempotency_key', ...('item_ref' in b ? ['item_ref'] : [])])
+      || b['subject'] !== 'aya' || !ref || typeof ref['lesson_id'] !== 'string' || typeof b['idempotency_key'] !== 'string'
+      || typeof b['student_ref'] !== 'string' || typeof b['usage_id'] !== 'string') return problem(400, 'INVALID_REQUEST');
+  if (ref['lesson_id'] === 'syn.lesson.broken') return problem(422, 'LESSON_NOT_AVAILABLE');
+  if (ref['lesson_id'] !== 'syn.lesson.e2e') return problem(404, 'SESSION_NOT_FOUND');
+  let ticket = LESSON_BY_KEY.get(b['idempotency_key']);
+  const replayed = ticket !== undefined;
+  if (!ticket) {
+    ticket = `lt1.${randomBytes(24).toString('base64url')}.${randomBytes(16).toString('base64url')}`;
+    LESSON_BY_KEY.set(b['idempotency_key'], ticket);
+    LESSONS.set(ticket, { student: b['student_ref'], count: 0, lastKey: null, usage: b['usage_id'],
+                          expiresAt: new Date(Date.now() + 80 * 60_000).toISOString() });
+  }
+  const s = LESSONS.get(ticket)!;
+  return { status: replayed ? 200 : 201, replayed, body: {
+    session_id: id('a01'), usage_id: s.usage, dsl_version: '0.3.0', dsl: LESSON_DSL, script: LESSON_SCRIPT, ticket, expires_at: s.expiresAt,
+    question_limit: LESSON_LIMIT, question_count: s.count } };
+}
+
+function lessonAsk(b: Record<string, unknown>) {
+  if (!exact(b, ['student_ref', 'ticket', 'question', 'idempotency_key']) || typeof b['idempotency_key'] !== 'string') return problem(400, 'INVALID_REQUEST');
+  const s = typeof b['ticket'] === 'string' ? LESSONS.get(b['ticket']) : undefined;
+  if (!s || s.student !== b['student_ref']) return problem(422, 'TICKET_INVALID');
+  const q = b['question'] as Record<string, unknown>;
+  let replayed = false;
+  if (s.lastKey === b['idempotency_key']) replayed = true;
+  else if (s.count >= LESSON_LIMIT) return { status: 200, body: { outcome: 'no_answer', reason: 'limit', question_seq: null, questions_left: 0 } };
+  else { s.count += 1; s.lastKey = b['idempotency_key']; }
+  const left = LESSON_LIMIT - s.count;
+  const body = q['intent'] === 'what_is' ? { outcome: 'no_answer', reason: 'not_available', question_seq: s.count, questions_left: left }
+    : { outcome: 'answered', text: LESSON_ANSWER, question_seq: s.count, questions_left: left };
+  return { status: 200, replayed, body };
+}
+
 const SLOW_ANSWER = 'SLOW-SYN';
 const SLOW_MS = 5_000;  // 比过程状态显示秒数的 3 秒阈值长（specs/process-status），也够第二页在占位期间被拒
 const PRACTICE_PATHS = ['/internal/v1/practice/queue', '/internal/v1/practice/next', '/internal/v1/practice/answer'];
@@ -338,12 +395,15 @@ createServer((req, res) => {
     let out: { status: number; body: unknown; replayed?: boolean };
     const path = req.url ?? '';
     if (REQUEST_LOG) appendFileSync(REQUEST_LOG, `${JSON.stringify({ method: req.method ?? '', path: path.slice(0, 200) })}\n`);
-    const sessionPath = /^\/internal\/v1\/(diagnosis|practice|retest|today)(\/|\?|$)/.test(path);  // 与学习服务的四组会话接口一致
+    const sessionPath = /^\/internal\/v1\/(diagnosis|practice|retest|today|lesson)(\/|\?|$)/.test(path);  // 与学习服务的会话接口一致（③b-4 起含讲评课）
     const auth = req.headers['authorization'];
     if (auth !== `Bearer ${sessionPath ? TOKEN : WRITE_TOKEN}`) out = problem(401, 'UNAUTHENTICATED');
     else if (req.method === 'POST' && path === '/internal/v1/today') {
       const b = await readBody(req);
       out = b ? today(b) : problem(400, 'INVALID_REQUEST');
+    } else if (req.method === 'POST' && (path === '/internal/v1/lesson/open' || path === '/internal/v1/lesson/ask')) {
+      const b = await readBody(req);
+      out = !b ? problem(400, 'INVALID_REQUEST') : path.endsWith('/open') ? lessonOpen(b) : lessonAsk(b);
     } else if (req.method !== 'POST' || ![...PRACTICE_PATHS, ...RETEST_PATHS].includes(path)) {
       out = problem(501, 'NOT_IMPLEMENTED');
     } else {
@@ -357,7 +417,9 @@ createServer((req, res) => {
         : path.endsWith('/queue') ? (retest ? rqueue(b) : queue(b)) : path.endsWith('/next') ? (retest ? rnext(b) : next(b)) : (retest ? ranswer(b) : answer(b));
     }
     const headers: Record<string, string> = { 'content-type': out.status === 200 ? 'application/json' : 'application/problem+json' };
-    if ((path.endsWith('/answer') || path.endsWith('/replay')) && out.status === 200) headers['idempotent-replayed'] = out.replayed ? 'true' : 'false';
+    if ((path.endsWith('/answer') || path.endsWith('/replay') || path.startsWith('/internal/v1/lesson/')) && out.status < 300) {
+      headers['idempotent-replayed'] = out.replayed ? 'true' : 'false';
+    }
     res.writeHead(out.status, headers);
     res.end(JSON.stringify(out.body));
   })();

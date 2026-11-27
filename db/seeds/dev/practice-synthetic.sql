@@ -66,6 +66,20 @@ BEGIN
   END LOOP;
 END $$;
 
+-- 讲评课会话（specs/stage-lesson-session ③b-5，e2e/lesson.spec.ts）：P1 是基础档（讲评课 0 次），给它的讲评课额度桶加一笔合成调整 +5
+-- （计数与调整流水一起写，platform.meter_check_entitlement 核对一致）；P2、P3 不加（P3 没有权益，测额度不足）
+DO $$
+DECLARE v_e uuid;
+BEGIN
+  SELECT e.id INTO v_e FROM platform.entitlement e
+   WHERE e.student_id = '59000000-0000-4000-8000-0000000000c1' AND e.resource_type = 'lesson_whiteboard'
+     AND platform.meter_now() >= e.period_start AND platform.meter_now() < e.period_end;
+  UPDATE platform.entitlement SET granted = granted + 5 WHERE id = v_e;
+  INSERT INTO platform.usage_ledger (occurred_at, entitlement_id, student_id, kind, quantity, actor, reason_code)
+  VALUES (platform.meter_now(), v_e, '59000000-0000-4000-8000-0000000000c1', 'adjust', 5, 'staff', 'synthetic_lesson_grant');
+  PERFORM platform.meter_check_entitlement(v_e);
+END $$;
+
 -- P2 的宵禁：直接写表（以迁移执行者身份，模拟家长经 platform.set_time_guard 设定；起止覆盖缺省 22:00–06:00，与该函数的规则一致）
 INSERT INTO platform.student_time_guard (student_id, daily_cap_minutes, curfew_start, curfew_end, updated_at, updated_by)
 VALUES ('59000000-0000-4000-8000-0000000000c2', NULL, time '09:00', time '06:00', now(), '59000000-0000-4000-8000-0000000000a1');

@@ -234,6 +234,8 @@ trap 'kill "$BFF_PID" "$TRUST_BFF_PID" "$TFI_PID" "$SM_BFF_PID" "$SM_LEARNING_PI
 #     e2e/practice-off.spec.ts 在 trust-off 项目里核对，并按桩的请求记录核对这期间桩收到 0 个请求）。
 #   - 复测与验证题（specs/retest-delivery-kge05；e2e/retest.spec.ts）也在这一套：第五个 BFF 另开 STARBUDDY_RETEST_UI=retest，桩另实现
 #     retest 的三个内部接口；另四套 BFF 不开（e2e/retest-off.spec.ts 在 trust-off 项目里核对路由 404、桩收到 0 个请求）。
+#   - 讲评课会话（specs/stage-lesson-session ③b-5；e2e/lesson.spec.ts）也在这一套：第五个 BFF 另开 STARBUDDY_LESSON=lesson，桩另实现
+#     lesson 的两个内部接口；P1 的讲评课额度来自合成种子里的一笔调整（+5），P3 没有权益。
 #   - 今日计划跨科编排（PLT-11；e2e/today-orch.spec.ts）也在这一套：第五个 BFF 另开 STARBUDDY_TODAY_ORCH=today_orch，桩另实现 /internal/v1/today；
 #     另四套 BFF 不开（e2e/today-orch-off.spec.ts 在 trust-off 项目里核对今日页没有跨科列表、BFF 响应没有 ordered）。
 PGOPTIONS='-c starbuddy.allow_synthetic_seed=on' psql -X -q -v ON_ERROR_STOP=1 -f "$ROOT/db/seeds/dev/practice-synthetic.sql" >/dev/null
@@ -266,7 +268,7 @@ FL_PID=$!
   export BFF_DATABASE_URL="postgresql://bff_app@/starbuddy_test?host=$PGHOST" PORT="$PR_BFF_PORT" BFF_AUTH_CONFIG="$AUTH_CFG" \
     BFF_LEARNING_URL="http://127.0.0.1:$FL_PORT" BFF_LEARNING_TOKEN="$FL_WRITE_CRED" BFF_LEARNING_SESSION_TOKEN="$FL_CRED" \
     STARBUDDY_ENV=test BFF_SHELL_ORIGIN="http://127.0.0.1:$WEB_PRACTICE_PORT" BFF_SMS_CAPTURE_FILE="$SMS_INBOX" \
-    STARBUDDY_PRACTICE=practice STARBUDDY_RETEST_UI=retest STARBUDDY_TODAY_ORCH=today_orch \
+    STARBUDDY_PRACTICE=practice STARBUDDY_RETEST_UI=retest STARBUDDY_TODAY_ORCH=today_orch STARBUDDY_LESSON=lesson \
     STARBUDDY_SUBJECT_GATE=subject_gate BFF_CONCURRENCY_CONFIG="$PR_GATE_CFG"
   exec node --no-warnings src/main.ts ) > "$PRLOG" 2>&1 < /dev/null &
 PR_BFF_PID=$!
