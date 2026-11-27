@@ -2,14 +2,15 @@
 //   - packages/stage 的公式排版与 apps/web 的 latexToText 同一口径（命令表一致、同一组用例输出一致、禁用命令表一致）；
 //   - 样张页的合成样例能通过校验、非法样例被拒；
 //   - 样张页只是开发页（page.dev.tsx，渲染前核对运行环境与本机 Host）；不连 BFF、不读会话、不计量、不落库；
-//   - apps/web 里只有样张页这一条链路引用 packages/stage，且只经它的接口文件（index.ts、Whiteboard.tsx）；
-//   - Turbopack 根目录只在包含开发页的构建里放到仓库根。
+//   - apps/web 里只有样张页与讲评课页面两条链路引用 packages/stage，且只经它的接口文件（index.ts、Whiteboard.tsx）；
+//   - Turbopack 根目录在构建与开发阶段放到仓库根，运行阶段（next start）不放、不调用 repoRoot()（specs/stage-production-build）。
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { pageExtensionsFor, repoRoot, turbopackRootFor } from '../next.config.ts';
+import { PHASE_DEVELOPMENT_SERVER, PHASE_EXPORT, PHASE_PRODUCTION_BUILD, PHASE_PRODUCTION_SERVER, PHASE_TEST } from 'next/constants.js';
+import nextConfig, { pageExtensionsFor, repoRoot, turbopackRootFor } from '../next.config.ts';
 import * as web from '../src/lib/rich-item.ts';
 import { STAGE_INVALID_SAMPLE, STAGE_SAMPLE, STAGE_SCRIPT } from '../src/stage/sample.ts';
 import * as stage from '../../../packages/stage/src/index.ts';
@@ -101,25 +102,37 @@ test('指着元素提问（specs/stage-point-to-ask）：文案全是占位并�
   assert.deepEqual(strings.filter((x) => !['桌面', '平板', '手机', '未开始', '播放中', '已暂停', '已结束'].includes(x!)), []);
 });
 
-test('apps/web 里只有样张页与讲评课（开发页）链路引用 packages/stage', () => {
+test('apps/web 里只有样张页（开发页）与讲评课页面链路引用 packages/stage', () => {
   const src = join(WEB, 'src');
   const users = files(src).filter((p) => /\.tsx?$/.test(p)).filter((p) => /packages\/stage/.test(readFileSync(p, 'utf8').replace(/^\s*\/\/.*$/gm, ''))).map((p) => relative(WEB, p));
   assert.deepEqual(users.sort(), ['src/lesson/LessonPlayer.tsx', 'src/stage/StageDemo.tsx']);
   const importers = files(src).filter((p) => /from '[^']*\/StageDemo\.tsx'/.test(readFileSync(p, 'utf8'))).map((p) => relative(WEB, p));
   assert.deepEqual(importers, ['src/app/dev/stage/page.dev.tsx']);
-  // 讲评课（③b-5）：播放组件只由讲评课页面组件引用，页面组件只由开发页路由引用（page.dev.tsx：只在开发、测试构建里存在）
+  // 讲评课：播放组件只由讲评课页面组件引用，页面组件只由讲评课路由引用（specs/stage-production-build 起是普通页面 page.tsx）
   const of = (name: string) => files(src).filter((p) => new RegExp(`from '[^']*/${name}\\.tsx'`).test(readFileSync(p, 'utf8'))).map((p) => relative(WEB, p));
   assert.deepEqual(of('LessonPlayer'), ['src/lesson/LessonPage.tsx']);
-  assert.deepEqual(of('LessonPage'), ['src/app/s/[studentId]/learn/[subject]/lesson/[lessonId]/page.dev.tsx']);
+  assert.deepEqual(of('LessonPage'), ['src/app/s/[studentId]/learn/[subject]/lesson/[lessonId]/page.tsx']);
 });
 
-test('Turbopack 根目录只在包含开发页的构建里放到仓库根', () => {
-  assert.equal(turbopackRootFor({}), undefined);
-  assert.equal(turbopackRootFor({ STARBUDDY_DEV_PAGES: '1', STARBUDDY_ENV: 'staging' }), undefined);
-  assert.equal(turbopackRootFor({ STARBUDDY_ENV: 'test' }), undefined);
-  assert.equal(turbopackRootFor({ STARBUDDY_DEV_PAGES: '1', STARBUDDY_ENV: 'test' }), repoRoot());
+test('Turbopack 根目录：构建与开发阶段放到仓库根，运行阶段（next start）与其他阶段保持默认', () => {
+  assert.equal(turbopackRootFor(PHASE_PRODUCTION_BUILD), repoRoot());
+  assert.equal(turbopackRootFor(PHASE_DEVELOPMENT_SERVER), repoRoot());
+  for (const ph of [PHASE_PRODUCTION_SERVER, PHASE_EXPORT, PHASE_TEST, '']) assert.equal(turbopackRootFor(ph), undefined, ph);
+  // 与开发页开关、运行环境无关：生产口径的构建（不设 STARBUDDY_DEV_PAGES）同样放宽
+  assert.deepEqual((nextConfig(PHASE_PRODUCTION_BUILD) as { turbopack?: unknown }).turbopack, { root: repoRoot() });
+  assert.equal((nextConfig(PHASE_PRODUCTION_SERVER) as { turbopack?: unknown }).turbopack, undefined);
+  // 其余配置三个阶段相同（安全头、输出目录、页面扩展名）
+  const { turbopack: _t, ...build } = nextConfig(PHASE_PRODUCTION_BUILD);
+  assert.deepEqual(build, nextConfig(PHASE_PRODUCTION_SERVER));
   assert.equal(repoRoot(), fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, ''));
   assert.equal(repoRoot(WEB), repoRoot());
+});
+
+test('运行阶段不调用 repoRoot()：运行镜像里没有 packages/stage 也能加载配置', () => {
+  const cfg = read('next.config.ts').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');  // 去掉注释
+  // 顶层不调用 repoRoot()（模块加载时不碰文件系统）；只有 turbopackRootFor 在构建、开发阶段调用
+  assert.equal(cfg.match(/repoRoot\(\)/g)?.length, 1);
+  assert.match(cfg, /phase === PHASE_PRODUCTION_BUILD \|\| phase === PHASE_DEVELOPMENT_SERVER \? repoRoot\(\) : undefined/);
 });
 
 test('repoRoot 失败即停：算出的目录里没有 packages/stage/package.json 就抛错', () => {

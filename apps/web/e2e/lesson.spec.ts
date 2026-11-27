@@ -6,9 +6,12 @@
 //   - 提问：指着这一步问“为什么”→ 回答显示在字幕区下方；问“是什么”→ 没有答疑，显示兜底与“再讲一遍”；到了上限只剩“再讲一遍”，提问不扣次；
 //   - 兜底：这节课打不开（学习服务确定拒绝，BFF 释放预留，不扣）；额度不足（P3，402）；
 //   - 页面上没有票据与内部字段；axe 无违规；浏览器只请求本前端；地址栏参数不合格 404。
+//   - 安全头：讲评课页面（普通页面，specs/stage-production-build）的 CSP、no-store 等与壳内其他页面一致。
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { LESSON, LESSON_ERROR, STAGE_ASK } from '../src/shell/copy.ts';
+import { checkHeaders, checkHtml } from './headers-check.ts';
+import { targets } from './crawl-pages.ts';
 import { loginStudent, PRACTICE_BASE } from './session.ts';
 
 const P1 = '59000000-0000-4000-8000-0000000000c1';
@@ -101,5 +104,16 @@ test('地址栏参数不合格、学科没有讲评课：404', async ({ page }) 
                      `/s/${P1}/learn/math/lesson/syn.lesson.e2e?v=0.1.0`, `/s/${P1}/learn/politics/lesson/syn.lesson.e2e?v=0.1.0&node=K-1`]) {
     const r = await page.goto(bad);
     expect(r?.status(), bad).toBe(404);
+  }
+});
+
+test('安全头：讲评课页面的 CSP、no-store 等与壳内其他页面一致（只打开地址，不点“开始”）', async ({ page }) => {
+  await loginStudent(page, P1);
+  const ts = targets('student', P1, false, false, true).filter((x) => x.path.includes('/lesson/'));
+  expect(ts.length).toBe(1);
+  for (const t of ts) {
+    const res = await page.goto(t.path);
+    expect(res!.status(), t.path).toBe(t.status);
+    checkHtml(await res!.text(), checkHeaders(res!.headers(), t.path), t.path);
   }
 });

@@ -16,7 +16,8 @@ WORKDIR /srv/starbuddy/apps/web
 COPY apps/web/package.json apps/web/package-lock.json ./
 COPY apps/web/vendor ./vendor
 RUN npm ci --ignore-scripts --no-audit --no-fund
-# 舞台样张页（开发专用）在源码里引用 packages/stage：生产构建不含该页，但类型检查要能解析，保持仓库相对结构
+# 讲评课页面与舞台样张页以相对路径引用 packages/stage：构建阶段 Turbopack 根目录放到仓库根（next.config.ts，specs/stage-production-build），
+# 白板随讲评课页面编进 .next；保持仓库相对结构。运行阶段不拷 packages/stage（next start 不放宽根目录，不调用 repoRoot()）
 COPY packages/stage/package.json /srv/starbuddy/packages/stage/package.json
 COPY packages/stage/src /srv/starbuddy/packages/stage/src
 COPY packages/stage/schema /srv/starbuddy/packages/stage/schema

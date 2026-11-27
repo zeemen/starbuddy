@@ -234,4 +234,5 @@
 ### 待人确认
 - **L9**：讲评课页面文案全是占位（`lesson.*`），由人写、人审，属于 W6 范围；“开始后计一次讲评课”这句提示是否保留也请定。
 - **L10**：讲评课页面是开发页，只在开发、测试构建里存在。上 staging 之前要定 `packages/stage` 进生产构建的办法（ADR 07 决定 7 只说“经 packages/stage 的接口使用舞台”）。
+  **已定（2026-11-27）**：`specs/stage-production-build` 做法 A，构建与开发阶段 Turbopack 根目录放到仓库根，`next start` 不放；讲评课路由转为普通页面，开关仍只 dev / test。
 - **L11**：P1 的讲评课额度来自合成种子里的一笔调整（`actor = staff`，原因 `synthetic_lesson_grant`），只在开发库与一次性测试库。

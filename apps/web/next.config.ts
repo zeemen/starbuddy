@@ -13,6 +13,7 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { NextConfig } from 'next';
+import { PHASE_DEVELOPMENT_SERVER, PHASE_PRODUCTION_BUILD } from 'next/constants.js';
 
 type Env = Record<string, string | undefined>;
 
@@ -32,9 +33,11 @@ export const distDirFor = (env: Env = process.env): string =>
   env['STARBUDDY_NEXT_DIST_DIR'] === E2E_DIST_DIR ? E2E_DIST_DIR : '.next';
 
 /**
- * 舞台样张页（/dev/stage，specs/stage-whiteboard-step1）以相对路径引用仓库里的 packages/stage（不改 npm 工作区）。Turbopack 默认只解析
- * 项目根（apps/web）以内的文件，所以只在包含开发专用页面的构建里把 Turbopack 根目录放到仓库根；生产构建不引用 packages/stage，
- * 根目录保持默认。Next 以 CommonJS 方式加载本文件时有 __dirname；单测以 ESM 加载时退回当前目录（单测都在 apps/web 下运行）。
+ * 样张页（/dev/stage）与讲评课页面以相对路径引用仓库里的 packages/stage（不改 npm 工作区，specs/stage-production-build 做法 A）。
+ * Turbopack 默认只解析项目根（apps/web）以内的文件，所以构建（next build）与开发（next dev）两个阶段一律把 Turbopack 根目录放到仓库根；
+ * 运行阶段（next start）也加载本文件，但运行镜像里没有 packages/stage，所以不放宽、也不调用 repoRoot()。
+ * 解析范围放宽到整个仓库后，apps/web/src 能引用到哪里由 tests/stage.test.ts 限定：仓库外只放行 packages/stage 的两个接口文件。
+ * Next 以 CommonJS 方式加载本文件时有 __dirname；单测以 ESM 加载时退回当前目录（单测都在 apps/web 下运行）。
  */
 export function repoRoot(webDir: string = typeof __dirname === 'string' ? __dirname : process.cwd()): string {
   const root = resolve(webDir, '..', '..');
@@ -44,14 +47,14 @@ export function repoRoot(webDir: string = typeof __dirname === 'string' ? __dirn
   }
   return root;
 }
-export const turbopackRootFor = (env: Env = process.env): string | undefined => (devPagesEnabled(env) ? repoRoot() : undefined);
+/** 构建与开发阶段放到仓库根；其余阶段（next start 等）保持默认 */
+export const turbopackRootFor = (phase: string): string | undefined =>
+  phase === PHASE_PRODUCTION_BUILD || phase === PHASE_DEVELOPMENT_SERVER ? repoRoot() : undefined;
 
 const distDir = distDirFor();
-const turbopackRoot = turbopackRootFor();
 
-const config: NextConfig = {
+const base: NextConfig = {
   distDir,
-  ...(turbopackRoot ? { turbopack: { root: turbopackRoot } } : {}),
   // 测试构建换一份 tsconfig：它只包含 .next-e2e 的路由类型；Next 在构建时补写 include 也只会写到这份文件里
   ...(distDir === E2E_DIST_DIR ? { typescript: { tsconfigPath: 'tsconfig.e2e.json' } } : {}),
   pageExtensions: pageExtensionsFor(),
@@ -79,4 +82,8 @@ const config: NextConfig = {
   },
 };
 
-export default config;
+/** Next 按阶段调用：构建与开发阶段加上 Turbopack 根目录，运行阶段原样返回 */
+export default function nextConfig(phase: string): NextConfig {
+  const root = turbopackRootFor(phase);
+  return root ? { ...base, turbopack: { root } } : base;
+}
