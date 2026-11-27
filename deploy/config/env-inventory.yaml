@@ -159,6 +159,7 @@ services:
       - {name: STARBUDDY_STARMAP, purpose: 星图 v1 开关（矩阵）, secret: false, default: null, envs: all}
       - {name: STARBUDDY_PRACTICE, purpose: 再练开关（矩阵）, secret: false, default: null, envs: all}
       - {name: STARBUDDY_RETEST_UI, purpose: 复测开关（矩阵）, secret: false, default: null, envs: all}
+      - {name: STARBUDDY_LESSON, purpose: 讲评课会话开关（只认 lesson；只 dev/test，③b-4b）, secret: false, default: null, envs: local}
       - {name: STARBUDDY_TODAY_ORCH, purpose: 今日编排开关（矩阵）, secret: false, default: null, envs: all}
       - {name: STARBUDDY_FAMILY_GOALS, purpose: 家长诉求开关（只 dev/test）, secret: false, default: null, envs: local}
       - {name: STARBUDDY_MONTHLY_PLAN, purpose: 月度计划开关（只 dev/test）, secret: false, default: null, envs: local}

@@ -41,6 +41,8 @@ import type { StarMapNodesClient } from '../src/star-map/nodes-client.ts';
 import type { PracticeLearning } from '../src/practice/learning-client.ts';
 import { parseAnswer as parsePracticeAnswer } from '../src/practice/service.ts';
 import type { RetestLearning } from '../src/retest/learning-client.ts';
+import type { LessonLearning } from '../src/lesson/learning-client.ts';
+import { parseOpen as parseLessonOpen } from '../src/lesson/service.ts';
 import { parseRetestAnswer } from '../src/retest/service.ts';
 import type { MonthlyPlanClient } from '../src/family/monthly-plan.ts';
 import { createFamily, HAS_DB, setupHarness, type Harness } from './harness.ts';
@@ -49,7 +51,7 @@ import { callAs, ORIGIN, startShell, type Sess, type ShellHarness } from './shel
 
 /** 本次部署可能注册的全部路由（信任界面开关全开，H5 星图 v1 开关全开，错题再练开关打开，复测与验证题开关打开，家长诉求与月度计划打开，
  *  内部测试运营打开（LT-06：反馈、退出状态、退出测试）） */
-const ALL: readonly Route[] = activeRoutes(new Set(TRUST_FEATURES), new Set(STAR_MAP_FEATURES), true, true, true, true, true);
+const ALL: readonly Route[] = activeRoutes(new Set(TRUST_FEATURES), new Set(STAR_MAP_FEATURES), true, true, true, true, true, true);
 const keyOf = (r: Route) => `${r.method} ${r.path}`;
 const OPS = operations();
 const opOf = (r: Route) => OPS.get(`${r.method} ${PREFIX}${r.path}`)!;
@@ -133,6 +135,12 @@ export const SAMPLES: Record<string, Sample> = {
   'GET /students/{student_id}/retest/{subject}': none,
   'POST /students/{student_id}/retest/{subject}/entries/{entry_id}/next': none,
   'POST /students/{student_id}/retest/{subject}/answer': b(() => ({ ticket: `sbr1.${'A'.repeat(64)}`, answer: { text: '1' } })),
+  // 讲评课会话（specs/stage-lesson-session ③b-4b，开关 lesson）：打开时学习服务（假实现）确定拒绝，BFF 释放预留；
+  // 提问的票据是格式合法的假票据（解不开，阳性对照得到 422 TICKET_INVALID）
+  'POST /students/{student_id}/lessons/open': b(() => ({ subject: 'aya', lesson_ref: { lesson_id: 'syn.lesson.h6', lesson_version: '0.1.0' },
+                                                         skill_node: 'aya:K-QF-0301', idempotency_key: randomUUID() })),
+  'POST /students/{student_id}/lessons/ask': b(() => ({ ticket: `sbl1.${'A'.repeat(64)}`, question: { cursor: 1, anchor: { kind: 'step', id: 's1' },
+                                                                                                        intent: 'why_step' }, idempotency_key: randomUUID() })),
   // 家长诉求（PLT-14 第 1 步，开关 family_goals）：只给家长，学生会话一律 404（guardianOnly404）；样例只设关注学科（S 在读数学）
   'GET /students/{student_id}/family-goals': none,
   'PUT /students/{student_id}/family-goals': b(() => ({ focus_subjects: ['aya'], target_scores: [], school_id: null, note: null })),
@@ -247,11 +255,17 @@ const retestLearning: RetestLearning = {
   async check(student) { retestCalls.push(`check:${student}`); return { kind: 'failure', status: 409, problem: { code: 'RETEST_NOT_DUE' } }; },
   async replay(student) { retestCalls.push(`replay:${student}`); return { kind: 'failure', status: 404, problem: { code: 'REPLAY_NOT_FOUND' } }; },
 };
+/** 讲评课的学习服务内部接口（越权请求一次也不能到达；阳性对照：打开时确定拒绝 422 LESSON_NOT_AVAILABLE，BFF 释放预留） */
+const lessonCalls: string[] = [];
+const lessonLearning: LessonLearning = {
+  async open(b) { lessonCalls.push(`open:${b.student_ref}`); return { kind: 'failure', status: 422, problem: { code: 'LESSON_NOT_AVAILABLE' } }; },
+  async ask(b) { lessonCalls.push(`ask:${b.student_ref}`); return { kind: 'failure', status: 404, problem: { code: 'SESSION_NOT_FOUND' } }; },
+};
 /** 月度计划生成（洞察服务）：按“没有权益”回答，不写任何快照 */
 const monthlyCalls: string[] = [];
 const monthlyPlanClient: MonthlyPlanClient = { async generate(student) { monthlyCalls.push(student); return 'not_available'; } };
 const callCount = () => calls.plan.length + calls.diagnosis.length + calls.dispute + calls.exams + starCalls.length + readCalls + practiceCalls.length
-  + retestCalls.length + monthlyCalls.length;
+  + retestCalls.length + monthlyCalls.length + lessonCalls.length;
 const practiceLogCount = async (): Promise<number> => (await h.su.query(`SELECT count(*)::int AS n FROM platform.practice_log`)).rows[0].n;
 
 // ---------------------------------------------------------------- 合成家庭、账号与二级资源
@@ -406,6 +420,7 @@ before(async () => {
     familyGoals: { enabled: true },
     monthlyPlan: { enabled: true, client: monthlyPlanClient },
     internalTest: { enabled: true },
+    lesson: { enabled: true, learning: lessonLearning, retryDelaysMs: [1] },
   });
   // 会话都在改状态之前拿到（学生会话经 gF 打开学生模式）
   for (const a of [A.gF, A.gO, A.gU, A.gR, A.gD2, A.gX, A.aS, A.aS2, A.aT]) await sess(a);
@@ -789,7 +804,9 @@ const srcFiles = (dir: URL): string[] => readdirSync(dir).flatMap((n) => {
 // src/voice/minutes.ts：语音分钟计量辅助（冲刺 4-I 第二部分），还没有挂到任何路由；接路由前须先补 H6 的集成用例锁住（见下方静态断言）
 // src/practice/service.ts：错题再练作答按题库自练计次（platform.meter_practice，specs/practice-loop-stage1 PR 3）；集成用例在
 // tests/practice.integration.test.ts（同 key 只计一次、本地可判的拒绝不计次、列表与取题不计次），这里锁参数与调用点
-const METER_CALLERS = ['src/diagnosis/service.ts', 'src/voice/minutes.ts', 'src/practice/service.ts'];
+// src/lesson/service.ts：讲评课按节预留并结算一次 lesson_whiteboard（specs/stage-lesson-session ③b-4b）；集成用例在
+// tests/lesson.integration.test.ts（只预留一次、下发即结算、确定拒绝即释放、同键重放不重扣、提问不扣次），这里锁参数与调用点
+const METER_CALLERS = ['src/diagnosis/service.ts', 'src/voice/minutes.ts', 'src/practice/service.ts', 'src/lesson/service.ts'];
 
 test('H6 计量入口（静态）：只有登记的文件导入消耗类计量函数；诊断开始的资源类型、数量、usage_id 由 BFF 决定，请求体不收这些字段', () => {
   const METER_FNS = /\b(reserve|settle|release|meteredCall)\b/;
@@ -823,6 +840,20 @@ test('H6 计量入口（静态）：只有登记的文件导入消耗类计量�
   }
   // 错题再练：计次参数只有（路径里已核对本人的学生、票据里 BFF 生成的幂等键），次数、资源、usage_id 都由库决定；usage_id 与库返回的核对一致；
   // 只有作答计次（列表、取题不调）；请求体不收幂等键（审查 H2：一张票据最多扣一次）
+  // 讲评课：资源类型、数量、来源方法是常量，usage_id 由幂等键派生；结算数量固定为 1；只在打开时预留与结算（提问不调）；
+  // 请求体不收 usage_id、数量、资源类型与 answer_submitted
+  const ls = readFileSync(new URL('../src/lesson/service.ts', import.meta.url), 'utf8').replace(/\/\/.*$/gm, '');
+  assert.match(ls, /reserve\(deps\.pool, account, \{ studentId: student, resourceType: 'lesson_whiteboard', idempotencyKey: key,\s*requestFingerprint: lessonFingerprint\(student, input\), quantity: 1, sourceMethod: 'teach' \}\)/);
+  assert.equal(ls.match(/\breserve\(/g)?.length, 1, '讲评课只有一处预留');
+  assert.match(ls, /const usage = usageIdFor\(key\);/);
+  assert.match(ls, /const s = await settle\(deps\.pool, account, usage, 1\);/, '讲评课结算数量固定为 1');
+  const askBody = ls.slice(ls.indexOf('export async function askLesson'));
+  assert.ok(!/\b(reserve|settle|release)\(/.test(askBody.slice(0, askBody.indexOf('function answerView'))), '课内提问不预留、不结算、不释放');
+  const okOpen = { subject: 'aya', lesson_ref: { lesson_id: 'syn.lesson.a', lesson_version: '0.1.0' }, skill_node: 'aya:K-1', idempotency_key: randomUUID() };
+  assert.ok(parseLessonOpen(okOpen));
+  for (const extra of [{ usage_id: randomUUID() }, { quantity: 2 }, { resource_type: 'mistake_analysis' }, { answer_submitted: true }, { student_ref: MISSING }]) {
+    assert.equal(parseLessonOpen({ ...okOpen, ...extra }), null, `讲评课打开拒收 ${Object.keys(extra)[0]}`);
+  }
   const pr = readFileSync(new URL('../src/practice/service.ts', import.meta.url), 'utf8').replace(/\/\/.*$/gm, '');
   assert.match(pr, /'SELECT platform\.meter_practice\(\$1::uuid, \$2\) AS r', \[student, key\]/);
   assert.equal(pr.match(/platform\.meter_practice\(/g)?.length, 1, '只有一处计次');

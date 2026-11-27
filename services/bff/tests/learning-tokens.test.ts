@@ -42,6 +42,7 @@ test('静态：src/main.ts 的学习服务客户端按能力分组拿令牌（�
     httpDiagnosisLearning: 'learningSession',
     httpPracticeLearning: 'learningSession',
     httpRetestLearning: 'learningSession',
+    httpLessonLearning: 'learningSession',  // 讲评课会话（③b-4b）：学习服务的讲评课接口只认会话令牌
     httpTodayOrchClient: 'learningSession',
     httpPlanClient: 'learningCredential',
     httpStarMapClient: 'learningCredential',

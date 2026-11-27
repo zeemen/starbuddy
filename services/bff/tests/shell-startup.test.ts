@@ -78,6 +78,7 @@ test('staging 反例：开发开关、范围外开关、坏的监听地址、合
     [{ STARBUDDY_STARMAP: 'starmap_v1,starmap_dashed' }, /STARBUDDY_STARMAP/],
     [{ STARBUDDY_MONTHLY_PLAN: 'monthly_plan' }, /STARBUDDY_MONTHLY_PLAN/],
     [{ STARBUDDY_FAMILY_GOALS: 'family_goals' }, /STARBUDDY_FAMILY_GOALS/],
+    [{ STARBUDDY_LESSON: 'lesson' }, /STARBUDDY_LESSON/],  // 讲评课（③b-4b）：插件契约 1.1.0 签字前 staging 也不开
     [{ BFF_AUTH_CONFIG: '/nonexistent/auth.json' }, /BFF_AUTH_CONFIG/],
     [{ BFF_SMS_CAPTURE_FILE: join(tmp, 'sms') }, /BFF_SMS_CAPTURE_FILE/],
     [{ BFF_HOST: '0.0.0.0' }, /BFF_HOST/],
@@ -103,7 +104,8 @@ test('dev / test 与 pilot、生产不变：BFF_HOST、BFF_CONSENT_VERSIONS、BF
   }
   for (const env of ['pilot', 'production']) {
     // 开关在短信发送方之前解析的三个：错误信息就是开关的；信任界面开关在其后解析（单测 trust-units 核对 pilot 拒绝）
-    const featureCases: Record<string, string>[] = [{ STARBUDDY_PRACTICE: 'practice' }, { STARBUDDY_RETEST_UI: 'retest' }, { STARBUDDY_TODAY_ORCH: 'today_orch' }];
+    const featureCases: Record<string, string>[] = [{ STARBUDDY_PRACTICE: 'practice' }, { STARBUDDY_RETEST_UI: 'retest' }, { STARBUDDY_TODAY_ORCH: 'today_orch' },
+                                                     { STARBUDDY_LESSON: 'lesson' }];
     for (const extra of featureCases) {
       const r = start({ STARBUDDY_ENV: env, BFF_LOG_HMAC_KEY: hex(), BFF_AUTH_SECRET: hex(), BFF_TRUST_SECRET: hex(),
                         BFF_SHELL_ORIGIN: 'https://shell.example.invalid', ...extra });

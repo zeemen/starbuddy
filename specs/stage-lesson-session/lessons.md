@@ -142,3 +142,53 @@
 ### 待人确认
 - **L5**：讲解 DSL 与台词稿的文字安全检查只在前端（③b-5）做一次。若要求平台下发前就做，学习服务要用 Python 重写一份 `src/text.ts` 的规则，并加一致性检查。
 - **L6**：适配器拒收的提问也算一次。2a 上限 20 问，影响不大；2b 改成 10 问时可能要改成不算。
+
+## ③b-4b：BFF 的讲评课路由、票据与按节计量
+### 做了什么
+- 新模块 `services/bff/src/lesson/`：
+  - `features.ts`：开关 `STARBUDDY_LESSON=lesson`，只在 dev / test；staging、pilot、生产设了就拒绝启动。学习服务那一侧要候选契约开关，讲评课页面（③b-5）也还没有；
+  - `ticket.ts`：把学习服务的 `lt1` 票据连同会话 ID、过期时间一起用 AES-256-GCM 封装成不透明的 `sbl1.`。密钥由 `BFF_AUTH_SECRET` 派生（`keys.lesson`），附加数据是学生 ID，换学生解不开；
+  - `learning-client.ts`：调学习服务的 `lesson/open`、`lesson/ask`，用会话令牌，结果分三类（与诊断、再练同一套）；
+  - `service.ts`：打开与提问的流程，见下。
+- 两条学生端路由（`src/http/lesson-routes.ts`，接口定义 `openapi/lesson.v0.yaml`）：
+  - `POST /bff/v0/students/{student_id}/lessons/open`
+  - `POST /bff/v0/students/{student_id}/lessons/ask`
+  - 只给学生本人，开 CSRF，限流桶 `lesson.session.minute`（每分钟 60 次，合成默认值，已写进 `config/auth.json`）。
+- **打开**（按节计量）：
+  1. 核对本人；
+  2. 以学生身份预留一次 `lesson_whiteboard`：方法 `teach`、数量 1，`usage_id` 由请求的幂等键派生；计量指纹包含讲评课引用、节点与题，同一个键换内容回 409；
+  3. 额度不足、基础档、宵禁等由 `meter_reserve` 判定，回 402；
+  4. 转学习服务 `lesson/open`。结果未知 → 503，不结算、不释放；确定拒绝 → 释放，回 422 `LESSON_NOT_AVAILABLE`；
+  5. 成功 → 核对学习服务返回的 `usage_id` 就是这一笔，结算一次，封装票据下发。下发内容只有讲解 DSL、台词稿、票据、过期时间与提问余量。
+  6. 同一个键再打开：预留在就不再预留，结算是幂等的，响应标为重放；预留已释放或已过期回 409，要换一个键。
+- **提问**（不扣次）：
+  1. 核对本人与宵禁（402 `curfew`）；
+  2. 解票据：换学生或伪造回 422，过期回 410，都在 BFF 本地拒绝，不调学习服务；
+  3. 转学习服务 `lesson/ask`。回答只转结果、文字或原因、余量，第几问不给前端；
+  4. 学习服务的 409 映射为 `LESSON_CLOSED`（要重新打开），410 为过期，404 为不存在，`QUESTION_NOT_ANSWERABLE` 为 422 `INVALID`。
+- `meter.ts` 的 `ReserveInput.sourceMethod` 加了 `teach`。没有改计量函数与规则：库里的 `meter_method_allowed` 本来就只让 `lesson_whiteboard` 用 `teach`。
+- 接线：`routes.ts` 的 `activeRoutes` 多一个开关参数；`server.ts`、`main.ts` 接上开关与学习服务客户端；`config.ts` 多一把派生密钥。
+- 部署清单：
+  - `deploy/config/env-inventory.yaml` 登记 `STARBUDDY_LESSON`；
+  - 开关矩阵 `deploy/flags/staging.yaml` 的讲评白板一项，加上 BFF 的 `STARBUDDY_LESSON` 与学习服务的 `LEARNING_LESSON_TICKET_SECRET`，两个都关；
+  - `deploy/tests/flags_check.ts` 用真实解析函数核对新开关。
+- 测试：
+  - 新增 `tests/lesson-units.test.ts` 6 条：开关、票据、两个请求体、计量指纹、客户端请求形状；
+  - 新增 `tests/lesson.integration.test.ts` 12 条，用真库：
+    - 开关关闭与没配学习服务；
+    - 打开：预留一次、下发即结算、白名单、重放不重扣、换内容 409、确定拒绝即释放、结果未知不动、基础档 402、请求体不合格不预留；
+    - 只认本人；
+    - 提问：不扣次、本地拒绝不调学习服务、拒绝映射、宵禁；
+    - 日志不含学生 ID、票据与讲解文字；
+  - 路由矩阵（`tests/route-matrix.integration.test.ts`）：开关全开时包含讲评课两条路由，有合成样例与假学习服务；`METER_CALLERS` 登记 `src/lesson/service.ts`，静态断言锁住资源、数量、方法、`usage_id` 派生、结算数量 1、提问不预留，以及打开拒收 `usage_id`、数量、资源、`answer_submitted`；
+  - 接口定义一致性（`tests/shell-openapi.test.ts`、`tests/openapi-ops.ts`）与启动测试（`tests/shell-startup.test.ts`，staging、pilot、生产拒绝开关）；
+  - 变异（`tests/mutations.sh`）加了“讲评课：”一组 21 条，结果见 PR 描述。
+
+### 决定与差异
+- **课内提问不经分学科并发闸门**（PLT-16）。诊断、再练、复测接了闸门，讲评课这次没接：提问只读预制答疑，不调模型。2b 接模型回答时再接。
+- **提问的幂等键由前端带**：再练是一张票据一次作答，幂等键放在票据里；讲评课一张票据要问很多次，所以每一问由前端带一个键，同一问重试带同一个键。
+- **打开不挡宵禁之外的时段**：打开时宵禁由 `meter_reserve` 判（`curfew` / `curfew_soon`）；提问另查 `meter_guard_status`，与诊断、再练同一口径。
+
+### 待人确认
+- **L7**：限流桶 `lesson.session.minute` 每分钟 60 次是合成默认值。
+- **L8**：讲评课开关只在 dev / test。等插件契约 1.1.0 签字、真实讲评课内容与页面（③b-5）落地后，再由人决定 staging 开不开。

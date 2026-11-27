@@ -130,6 +130,8 @@ export interface Keys {
   trust: Buffer;
   /** 错题再练票据的封装密钥（AES-256-GCM，src/practice/ticket.ts），由 BFF_AUTH_SECRET 派生；轮换只让已下发、未作答的再练题失效（重新取题即可） */
   practice: Buffer;
+  /** 讲评课票据的封装密钥（AES-256-GCM，src/lesson/ticket.ts），由 BFF_AUTH_SECRET 派生；轮换只让已打开、未问完的讲评课票据失效（重新打开即可） */
+  lesson: Buffer;
 }
 
 function readKey(name: string, env: RunEnv, vars: Record<string, string | undefined>): Buffer {
@@ -147,9 +149,10 @@ export function loadKeys(env: RunEnv, vars: Record<string, string | undefined> =
   const root = readKey('BFF_AUTH_SECRET', env, vars);
   const derive = (label: string) => createHmac('sha256', root).update(`starbuddy-bff:${label}`).digest();
   const trust = readKey('BFF_TRUST_SECRET', env, vars);
-  return { log, otp: derive('otp'), rate: derive('rate'), csrf: derive('csrf'), trust, practice: derive('practice-ticket') };
+  return { log, otp: derive('otp'), rate: derive('rate'), csrf: derive('csrf'), trust, practice: derive('practice-ticket'),
+           lesson: derive('lesson-ticket') };
 }
 
 /** 测试用：随机密钥 */
 export const randomKeys = (): Keys => ({ log: randomBytes(32), otp: randomBytes(32), rate: randomBytes(32), csrf: randomBytes(32), trust: randomBytes(32),
-                                         practice: randomBytes(32) });
+                                         practice: randomBytes(32), lesson: randomBytes(32) });

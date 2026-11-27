@@ -64,7 +64,8 @@ export function createShellHandler(deps: ShellDeps): (req: IncomingMessage, res:
   // 开关关闭的路由不注册（表外 404）
   // 内部成员测试运营（LT-06，开关 internal_test）：反馈、退出测试与退出状态三条路由；已退出档案的统一判据见下方 exitedGuard
   const routes = activeRoutes(deps.trust?.features, deps.starMap?.features, deps.practice?.enabled === true, deps.retest?.enabled === true,
-                              deps.familyGoals?.enabled === true, deps.monthlyPlan?.enabled === true, deps.internalTest?.enabled === true);
+                              deps.familyGoals?.enabled === true, deps.monthlyPlan?.enabled === true, deps.internalTest?.enabled === true,
+                              deps.lesson?.enabled === true);
   const table = compile(routes);
   const shapes = templateShapes(routes);
   // 访问日志（LT-05）：缺省经 observability/log.ts 一行 JSON（ts、level、service）并集中脱敏；测试可注入
