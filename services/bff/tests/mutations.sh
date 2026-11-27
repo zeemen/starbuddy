@@ -651,7 +651,7 @@ SM=(
   # 讲评课会话（specs/stage-lesson-session ③b-4b）：只认学生本人、开关、按节计量（只预留一次、下发即结算、确定拒绝即释放、结果未知不动、提问不扣次）、
   # 票据绑定学生、本地过期、宵禁、响应白名单、失败映射；这几条跑 tests/lesson-units.test.ts、tests/lesson.integration.test.ts、tests/shell-openapi.test.ts
   $'讲评课：打开不核对学生本人\tsrc/lesson/service.ts\t  if (!(await isSelf(deps.pool, account, student))) return NOT_FOUND;\\n  const key = input.idempotency_key;\t  const key = input.idempotency_key;'
-  $'讲评课：提问不核对学生本人\tsrc/lesson/service.ts\t  if (!(await isSelf(deps.pool, account, student))) return NOT_FOUND;\\n  const curfew = await inCurfew(\t  const curfew = await inCurfew('
+  # “提问不核对学生本人”是等价变异：宵禁检查（inCurfew，经 RLS）对不是本人的学生同样回 404，所以不列
   $'讲评课：开关关闭也注册路由\tsrc/http/routes.ts\t...(lesson ? LESSON_ROUTES : [])\t...LESSON_ROUTES'
   $'讲评课：打开改成家长也能调\tsrc/http/lesson-routes.ts\t{ method: \'POST\', path: `${S}/open`, auth: \'student\'\t{ method: \'POST\', path: `${S}/open`, auth: \'session\''
   $'讲评课：不限流\tsrc/http/lesson-routes.ts\tconst RL = [{ bucket: \'lesson.session.minute\', dim: \'session\' }] as const;\tconst RL = [] as const;'

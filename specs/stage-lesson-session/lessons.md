@@ -174,15 +174,15 @@
   - `deploy/tests/flags_check.ts` 用真实解析函数核对新开关。
 - 测试：
   - 新增 `tests/lesson-units.test.ts` 6 条：开关、票据、两个请求体、计量指纹、客户端请求形状；
-  - 新增 `tests/lesson.integration.test.ts` 12 条，用真库：
+  - 新增 `tests/lesson.integration.test.ts` 13 条，用真库：
     - 开关关闭与没配学习服务；
-    - 打开：预留一次、下发即结算、白名单、重放不重扣、换内容 409、确定拒绝即释放、结果未知不动、基础档 402、请求体不合格不预留；
+    - 打开：预留一次、下发即结算、白名单、重放不重扣、换内容 409、确定拒绝即释放、结果未知不动、学习服务回了另一笔预留时不结算不下发、基础档 402、请求体不合格不预留；
     - 只认本人；
     - 提问：不扣次、本地拒绝不调学习服务、拒绝映射、宵禁；
     - 日志不含学生 ID、票据与讲解文字；
   - 路由矩阵（`tests/route-matrix.integration.test.ts`）：开关全开时包含讲评课两条路由，有合成样例与假学习服务；`METER_CALLERS` 登记 `src/lesson/service.ts`，静态断言锁住资源、数量、方法、`usage_id` 派生、结算数量 1、提问不预留，以及打开拒收 `usage_id`、数量、资源、`answer_submitted`；
   - 接口定义一致性（`tests/shell-openapi.test.ts`、`tests/openapi-ops.ts`）与启动测试（`tests/shell-startup.test.ts`，staging、pilot、生产拒绝开关）；
-  - 变异（`tests/mutations.sh`）加了“讲评课：”一组 21 条，结果见 PR 描述。
+  - 变异（`tests/mutations.sh`）加了“讲评课：”一组 20 条，全部被发现。另有一条“提问不核对学生本人”是等价变异（宵禁检查经 RLS 对不是本人的学生同样回 404），没有列入。
 
 ### 决定与差异
 - **课内提问不经分学科并发闸门**（PLT-16）。诊断、再练、复测接了闸门，讲评课这次没接：提问只读预制答疑，不调模型。2b 接模型回答时再接。

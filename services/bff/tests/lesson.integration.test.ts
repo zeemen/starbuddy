@@ -193,6 +193,22 @@ describe('讲评课会话（BFF 学生端路由与按节计量）', { skip: HAS_
     }
   });
 
+  test('学习服务的会话挂在另一笔预留上（不应发生）：503，不结算、不释放（留给过期任务），不下发', async () => {
+    openImpl = (b) => ({ kind: 'ok', status: 201, replayed: false, body: {
+      session_id: randomUUID(), usage_id: randomUUID(), dsl_version: '0.3.0', dsl: DSL, script: SCRIPT, ticket: learningTicket(b.student_ref, randomUUID()),
+      expires_at: new Date(clock + 80 * 60_000).toISOString(), question_limit: 20, question_count: 0 } });
+    try {
+      const body = openBody();
+      const r = await callAs(shell.base, 'POST', oPath(F.S), await sess(F.aS), body);
+      assert.equal(r.status, 503, r.text);
+      assert.ok(!r.text.includes('合成'), '不下发讲解');
+      assert.equal((await h.su.query(`SELECT state::text FROM platform.usage_reservation WHERE usage_id = $1`, [usageIdFor(body.idempotency_key)]))
+        .rows[0].state, 'reserved');
+    } finally {
+      openImpl = null;
+    }
+  });
+
   test('基础档（讲评课 0 次）402 QUOTA_UNAVAILABLE，不调学习服务；请求体不合格 422 INVALID，不预留', async () => {
     const n = opens.length;
     const r = await callAs(shell.base, 'POST', oPath(B.S), await sess(B.aS), openBody());
