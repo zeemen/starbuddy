@@ -40,6 +40,7 @@ from .model_router import ModelRouter
 from .model_router.config import load_for_deployment
 from .model_router.ledger import MODEL_CALL_COLUMNS
 from .plan import plan_today
+from .lesson import api as lesson_api
 from .practice import api as practice_api
 from .practice import config as practice_config
 from .retest import api as retest_api
@@ -206,6 +207,7 @@ def create_app(
     profile: ProfilePages | None = None,
     practice_clock=None,
     practice_lock_pool: asyncpg.Pool | None = None,
+    lesson_clock=None,
     diagnosis_clock=None,
     call_log_pool: asyncpg.Pool | None = None,
 ) -> FastAPI:
@@ -334,6 +336,18 @@ def create_app(
                 from .retest.service import RetestService
                 state["retest"] = RetestService(practice=state["practice"], cfg=retest_cfg,
                                                clock=state["practice"].clock)
+        if settings.lesson_ticket_secret is not None:
+            # 讲评课会话（③b-4）：依赖迁移 0064（会话表与提问放行函数）
+            if not await p.fetchval("SELECT to_regprocedure('platform.lesson_session_ask(uuid, uuid, uuid)') IS NOT NULL"):
+                await client.aclose()
+                if own_lock_pool and lock_pool is not None:
+                    await lock_pool.close()
+                if own_pool:
+                    await p.close()
+                raise RuntimeError("platform.lesson_session is missing: run migration 0064 before setting LEARNING_LESSON_TICKET_SECRET")
+            from .lesson.service import LessonService
+            state["lesson"] = LessonService(p, client, settings.adapters, settings.lesson_ticket_secret,
+                                            **({"clock": lesson_clock} if lesson_clock is not None else {}))
         if today_cfg is not None:
             # 今日计划快照（PLT-15）：开关打开时写 platform.today_plan_item，依赖迁移 0055
             if settings.today_snapshot and not await p.fetchval("SELECT to_regclass('platform.today_plan_item') IS NOT NULL"):
@@ -441,6 +455,7 @@ def create_app(
     practice_api.register(app, session_ok, state)      # 错题再练（specs/practice-loop-stage1 第 4 节）
     retest_api.register(app, session_ok, state)        # 复测与验证题（KGE-05）
     today_api.register(app, session_ok, state)         # 今日计划跨科编排（PLT-11）
+    lesson_api.register(app, session_ok, state)        # 讲评课会话（specs/stage-lesson-session ③b-4）
     # learning-internal 1.1.0（KGE-04 第二步 PR 3）：掌握读取只认编排层令牌；验证任务与撤销只认洞察服务令牌（未配置即一律 401）；
     # BFF 服务令牌对这四个接口一律 401；档案页 ensure 认编排层（会话开始）与洞察服务（周报），read 只认编排层（PR 4）；
     # 星图节点星态只认 BFF 服务令牌（H5 星图 v1 PR 1）

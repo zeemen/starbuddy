@@ -43,6 +43,7 @@ services:
       - {name: LEARNING_PROFILE_PAGE_CONFIG, purpose: 学情档案页配置（staging 只收签字配置）, secret: false, default: null, envs: all}
       - {name: LEARNING_PRACTICE_CONFIG, purpose: 再练配置（synthetic 只在 dev/test；staging 只收签字配置文件）, secret: false, default: null, envs: all}
       - {name: LEARNING_PRACTICE_TICKET_SECRET, purpose: 再练票据 HMAC 密钥, secret: true, default: null, envs: all}
+      - {name: LEARNING_LESSON_TICKET_SECRET, purpose: 讲评课票据 HMAC 密钥（设了即开讲评课接口；需候选契约开关，只 dev/test）, secret: true, default: null, envs: local}
       - {name: LEARNING_RETEST_CONFIG, purpose: 复测配置（同上）, secret: false, default: null, envs: all}
       - {name: LEARNING_TODAY_CONFIG, purpose: 今日编排配置（同上）, secret: false, default: null, envs: all}
       - {name: LEARNING_TODAY_SNAPSHOT, purpose: 今日计划快照 0/1, secret: false, default: "0", envs: all}

@@ -3,7 +3,8 @@
 -- 学习服务的测试不经 BFF，所以由这个只在测试库里存在的函数代建：
 --   learningtest.provision_meter(usage_id, 幂等键, 学生, 方法, counted)：
 --     counted = true  → 题库自练计次一行（再练、复测作答）；
---     counted = false → 该生的测试订阅与额度桶（没有就建）上一笔预留中的预留（grade → mistake_analysis，diagnose → diagnosis_full）。
+--     counted = false → 该生的测试订阅与额度桶（没有就建）上一笔预留中的预留（grade → mistake_analysis，diagnose → diagnosis_full，
+--                       teach → lesson_whiteboard：讲评课会话 ③b-4）。
 --   usage_id 或幂等键已有记录、学生不存在时什么都不做（核对照常按真实记录判定）。
 -- 只由超级用户调用（conftest 的 admin 池、联调栈的 admin 池）：schema 与函数一律不授给 starbuddy_learning 或任何业务角色——
 -- 否则学习服务角色自己就能造预留，计量核对形同虚设（安全审查阻断）。
@@ -43,7 +44,7 @@ CREATE OR REPLACE FUNCTION learningtest.provision_meter(p_usage uuid, p_key text
   RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, platform, pg_temp
   AS $$
 DECLARE
-  v_res text := CASE WHEN p_method = 'diagnose' THEN 'diagnosis_full' ELSE 'mistake_analysis' END;
+  v_res text := CASE p_method WHEN 'diagnose' THEN 'diagnosis_full' WHEN 'teach' THEN 'lesson_whiteboard' ELSE 'mistake_analysis' END;
   v_sub uuid;
   v_ent uuid;
   v_now timestamptz := platform.meter_now();
