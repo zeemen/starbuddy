@@ -2,7 +2,7 @@
 
 打开讲评课（open）：
 - 讲评课的节点与题由这里按讲评课目录补全（catalog.py，适配器 list_lessons；specs/lesson-catalog PR B）：目录里没有这节课 →
-  422 LESSON_NOT_AVAILABLE，不建会话、不调 teach；BFF 过渡期仍带来的节点与题必须与目录一致，否则同样 422；
+  422 LESSON_NOT_AVAILABLE，不建会话、不调 teach；调用方只给讲评课引用（过渡期的可选节点与题已删，带了是 400 请求不合格）；
 - BFF 已按学生身份预留一次 lesson_whiteboard（teach，数量 1），把 usage_id 与预留幂等键交给这里；
 - 建会话：库里的守卫（0064）核对这笔预留（usage_id、幂等键、学生、teach、lesson_whiteboard、未过期），对不上 → 409
   IDEMPOTENCY_KEY_SEALED（不调适配器）；同一个预留键再来按幂等重放处理（同一个会话）；
@@ -181,17 +181,15 @@ class LessonService:
                 await store.set_status(conn, session, "failed")
 
     # ---------- 打开讲评课 ----------
-    async def open(self, *, student: str, subject: str, lesson_id: str, lesson_version: str, usage_id: str, key: str,
-                   skill_node: str | None = None, item_ref: str | None = None) -> tuple[dict, bool]:
-        """返回（响应体，是否幂等重放）。skill_node、item_ref 由目录补全；调用方给了就必须与目录一致（BFF 过渡期）"""
+    async def open(self, *, student: str, subject: str, lesson_id: str, lesson_version: str, usage_id: str, key: str) -> tuple[dict, bool]:
+        """返回（响应体，是否幂等重放）。调用方只给讲评课引用；节点与题由目录补全（specs/lesson-catalog）"""
         if subject not in SUBJECTS:
             raise err(400, "SUBJECT_NOT_SUPPORTED", "lessons are only available for aya in the pilot")
         if not (UUID_RE.fullmatch(student) and UUID_RE.fullmatch(usage_id) and UUID4_RE.fullmatch(key)
-                and T.LESSON_ID_RE.fullmatch(lesson_id) and T.SEMVER_RE.fullmatch(lesson_version)
-                and (skill_node is None or _ref(skill_node, subject) is not None) and (item_ref is None or _ref(item_ref, subject) is not None)):
+                and T.LESSON_ID_RE.fullmatch(lesson_id) and T.SEMVER_RE.fullmatch(lesson_version)):
             raise err(400, "INVALID_REQUEST", "bad field values")
         entry = await self.catalog.find(subject, lesson_id, lesson_version)  # 目录暂时取不到 → 503（BFF 用同一个键重试）
-        if entry is None or (skill_node is not None and skill_node != entry.skill_node) or (item_ref is not None and item_ref != entry.item_ref):
+        if entry is None:
             raise err(422, "LESSON_NOT_AVAILABLE", "this lesson could not be opened")
         skill_node, item_ref = entry.skill_node, entry.item_ref
         lesson_ref = {"lesson_id": lesson_id, "lesson_version": lesson_version}
