@@ -11,6 +11,7 @@
     "test": "node --test --test-reporter=dot tests/*.test.ts",
     "build:pack": "node --import ./scripts/legacy-loader.ts scripts/build-content-pack.ts",
     "rebuild:pack": "node scripts/rebuild-content-pack.ts",
+    "build:lessons": "node --no-warnings scripts/build-lesson-pack.ts",
     "register:sql": "node ../../tools/content-register/aya.ts",
     "mutation": "node --no-warnings scripts/mutations.ts"
   },
