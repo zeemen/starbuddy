@@ -165,6 +165,11 @@ const MUTATIONS: Record<string, Edit[]> = {
   "讲评课内容包不核对题的主节点": [[L, '      if (!it.mainNodes.includes(nodeId)) throw new Error(`${where}（${key}）：skill_node 不是这道题的主节点`);\n', ""]],
   "讲评课台词稿不校验（原样当作合格稿）": [[L, "const s = migrateStageScript(d.dsl, l.script);",
     "const s = { ok: true as const, script: l.script as ValidatedStageScript, from: null } as ReturnType<typeof migrateStageScript>;"]],
+  // 契约口径（specs/lesson-catalog C2）：加载与构建时核对标题与台词
+  "讲评课不按契约口径核对文字": [[L, "    const off = contractTextProblem(d.dsl, s.script);\n    if (off) throw", "    const off = contractTextProblem(d.dsl, s.script);\n    if (false) throw"]],
+  "讲评课契约口径只查标题不查台词": [[L, "  const bad = script.lines.find((x) => !CONTRACT_LINE_RE.test(x.text));", "  const bad = undefined as { id: string } | undefined;"]],
+  "讲评课契约口径放过尖括号": [[L, 'const CONTRACT_TEXT_CLASS = "[^<>', 'const CONTRACT_TEXT_CLASS = "[^']],
+  "讲评课契约口径不加 u 标志": [[L, 'const CONTRACT_TITLE_RE = new RegExp(CONTRACT_TITLE_PATTERN, "u");', 'const CONTRACT_TITLE_RE = new RegExp(CONTRACT_TITLE_PATTERN);']],
   "讲评课内容包开关没开也读": [[L, "  if (!candidateAllowed) {\n    throw new Error(`讲评课内容包", "  if (false) {\n    throw new Error(`讲评课内容包"]],
   // ---------- 讲评课目录 list_lessons（specs/lesson-catalog PR A） ----------
   "目录夹带台词稿": [[LL, "      step_count: l.dsl.steps.length,\n", "      step_count: l.dsl.steps.length,\n      script: l.script,\n"]],
