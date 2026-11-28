@@ -35,7 +35,7 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [student_ref, subject, lesson_ref, skill_node, usage_id, idempotency_key]
+              required: [student_ref, subject, lesson_ref, usage_id, idempotency_key]
               properties:
                 student_ref: { type: string, format: uuid, description: 小写 UUID }
                 subject: { enum: [aya], description: 只有阿鸦有讲评课；其余 400 SUBJECT_NOT_SUPPORTED }
@@ -46,8 +46,8 @@ paths:
                   properties:
                     lesson_id: { type: string, pattern: '^[a-z][a-z0-9_.\-]{0,63}$' }
                     lesson_version: { type: string, pattern: '^\d{1,3}\.\d{1,3}\.\d{1,4}$' }
-                skill_node: { type: string, description: '带学科前缀，例如 aya:K-QF-0301' }
-                item_ref: { type: string, description: '带学科前缀；讲评课针对某道题时给出' }
+                skill_node: { type: string, description: '可选，带学科前缀。由学习服务按讲评课目录补全（specs/lesson-catalog PR B）；BFF 过渡期仍可带来，带了必须与目录一致，否则 422' }
+                item_ref: { type: string, description: '可选，带学科前缀。同上：按目录补全，带了必须一致' }
                 usage_id: { type: string, format: uuid, description: BFF 预留的 lesson_whiteboard 的 usage_id }
                 idempotency_key: { type: string, description: 那笔预留的幂等键（小写 UUIDv4） }
       responses:
@@ -64,11 +64,40 @@ paths:
           description: IDEMPOTENCY_KEY_SEALED（没有对得上的讲评课预留）、IDEMPOTENCY_CONFLICT（同一个键开过另一节课）
           content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } }
         '422':
-          description: LESSON_NOT_AVAILABLE（适配器确定拒绝，或这节课之前已打开失败）
+          description: LESSON_NOT_AVAILABLE（讲评课目录里没有这节课、带来的节点或题与目录不一致——这两种不建会话；适配器确定拒绝，或这节课之前已打开失败）
           content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } }
         '501': { $ref: '#/components/responses/Problem' }
         '502':
           description: ADAPTER_RESULT_REJECTED（讲解 DSL 或台词稿不合格，不下发）
+          content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } }
+        '503': { $ref: '#/components/responses/Problem' }
+  /internal/v1/lesson/catalog:
+    post:
+      operationId: lessonCatalog
+      description: >
+        讲评课目录（specs/lesson-catalog PR B）：一科已发布的讲评课，经适配器只读方法 list_lessons（插件契约 1.1.0 草稿内追加）取得，
+        按学科在进程内缓存 5 分钟。只给编号、版本、标题与步数；节点与题不出学习服务。不计量、不建会话；与学生无关，student_ref 只用于库层处理判据。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [student_ref, subject]
+              properties:
+                student_ref: { type: string, format: uuid }
+                subject: { enum: [aya], description: 只有阿鸦有讲评课；其余 400 SUBJECT_NOT_SUPPORTED }
+      responses:
+        '200':
+          description: 目录（没有讲评课时为空数组）
+          content: { application/json: { schema: { $ref: '#/components/schemas/LessonCatalog' } } }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '501': { $ref: '#/components/responses/Problem' }
+        '502':
+          description: ADAPTER_RESULT_REJECTED（适配器的目录不合契约，整份拒绝）
           content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } }
         '503': { $ref: '#/components/responses/Problem' }
   /internal/v1/lesson/ask:
@@ -150,6 +179,29 @@ components:
         expires_at: { type: string, format: date-time, description: 会话过期时间（即那笔预留的过期时间） }
         question_limit: { type: integer, minimum: 1, maximum: 20 }
         question_count: { type: integer, minimum: 0 }
+    LessonCatalog:
+      type: object
+      additionalProperties: false
+      required: [subject, lessons]
+      properties:
+        subject: { enum: [aya] }
+        lessons:
+          type: array
+          maxItems: 500
+          items:
+            type: object
+            additionalProperties: false
+            required: [lesson_ref, title, step_count]
+            properties:
+              lesson_ref:
+                type: object
+                additionalProperties: false
+                required: [lesson_id, lesson_version]
+                properties:
+                  lesson_id: { type: string, pattern: '^[a-z][a-z0-9_.\-]{0,63}$' }
+                  lesson_version: { type: string, pattern: '^\d+\.\d+\.\d+$' }
+              title: { type: string, minLength: 1, maxLength: 40, description: 讲解 DSL 的标题（公共层内容） }
+              step_count: { type: integer, minimum: 1, maximum: 100 }
     AskAnswered:
       type: object
       additionalProperties: false

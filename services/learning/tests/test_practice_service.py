@@ -1161,3 +1161,30 @@ async def test_switch_on_choice_item_and_withheld(api_with, student):
     e = await due_entry(off, student, N2)
     r = await off.next(student, e["entry_id"])
     assert r.status_code == 501 and r.json()["code"] == "PRESENTER_UNAVAILABLE"
+
+
+# ---------- 讲评课目录（specs/lesson-catalog PR B）：条目带讲原题的那节课 ----------
+class StubLessons:
+    """代替学习服务的讲评课目录：只用 by_item（题目引用 → 讲评课引用）"""
+
+    def __init__(self, refs: dict[str, dict]) -> None:
+        self.refs, self.calls = refs, 0
+
+    async def by_item(self, subject: str) -> dict[str, dict]:
+        self.calls += 1
+        return dict(self.refs)
+
+
+LESSON_P1 = {"lesson_id": "syn.lesson.p1", "lesson_version": "0.1.0"}
+
+
+async def test_entry_carries_lesson_ref_for_its_source_item(api, student):
+    await api.grade(student, "SYNP-0001", "41")
+    assert "lesson_ref" not in await due_entry(api, student), "没接讲评课目录时不带"
+    api.svc.lessons = StubLessons({"aya:SYNP-0001": LESSON_P1, "aya:SYNP-0009": {"lesson_id": "syn.lesson.other", "lesson_version": "0.1.0"}})
+    e = await due_entry(api, student)
+    assert e["lesson_ref"] == LESSON_P1 and e["source_item_ref"] == "aya:SYNP-0001"
+    _validator("Entry").validate(e)
+    no_forbidden(e)
+    api.svc.lessons = StubLessons({"aya:SYNP-0009": LESSON_P1})
+    assert "lesson_ref" not in await due_entry(api, student), "原题没有讲评课时不带"

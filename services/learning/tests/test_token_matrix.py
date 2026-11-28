@@ -49,6 +49,7 @@ GROUPS: dict[tuple[str, str], str] = {
     ("POST", "/internal/v1/today"): "bff_session",
     ("POST", "/internal/v1/lesson/open"): "bff_session",
     ("POST", "/internal/v1/lesson/ask"): "bff_session",
+    ("POST", "/internal/v1/lesson/catalog"): "bff_session",
     ("POST", "/internal/v1/profile-page/ensure"): "other",
     ("POST", "/internal/v1/profile-page/read"): "other",
     ("POST", "/internal/v1/mastery/get"): "other",

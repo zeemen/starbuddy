@@ -1,6 +1,8 @@
 """讲评课会话服务（specs/stage-lesson-session 第二节第 1、4、5 条，PR ③b-4）。
 
 打开讲评课（open）：
+- 讲评课的节点与题由这里按讲评课目录补全（catalog.py，适配器 list_lessons；specs/lesson-catalog PR B）：目录里没有这节课 →
+  422 LESSON_NOT_AVAILABLE，不建会话、不调 teach；BFF 过渡期仍带来的节点与题必须与目录一致，否则同样 422；
 - BFF 已按学生身份预留一次 lesson_whiteboard（teach，数量 1），把 usage_id 与预留幂等键交给这里；
 - 建会话：库里的守卫（0064）核对这笔预留（usage_id、幂等键、学生、teach、lesson_whiteboard、未过期），对不上 → 409
   IDEMPOTENCY_KEY_SEALED（不调适配器）；同一个预留键再来按幂等重放处理（同一个会话）；
@@ -38,6 +40,7 @@ from ..contract import plugin_contract
 from ..errors import IngestError
 from . import store
 from . import ticket as T
+from .catalog import LessonCatalog
 
 CONTRACT = "1.1.0"
 DSL_VERSION = "0.3.0"
@@ -137,7 +140,7 @@ def check_question(q: object) -> dict:
 
 class LessonService:
     def __init__(self, pool: asyncpg.Pool, client: httpx.AsyncClient, adapters: dict[str, AdapterTarget], ticket_secret: str,
-                 clock: Callable[[], datetime] = utcnow, timeout: float = TIMEOUT) -> None:
+                 clock: Callable[[], datetime] = utcnow, timeout: float = TIMEOUT, catalog: LessonCatalog | None = None) -> None:
         plugin_contract(CONTRACT)  # 候选开关没开时启动即失败（与 present_item 同一口径）
         if len(ticket_secret) < 32:
             raise ValueError("lesson ticket secret must be at least 32 characters")
@@ -147,6 +150,7 @@ class LessonService:
         self.secret = ticket_secret
         self.clock = clock
         self.timeout = timeout
+        self.catalog = catalog if catalog is not None else LessonCatalog(client, adapters, timeout=timeout)
 
     def _target(self, subject: str) -> AdapterTarget:
         target = self.adapters.get(subject)
@@ -177,15 +181,19 @@ class LessonService:
                 await store.set_status(conn, session, "failed")
 
     # ---------- 打开讲评课 ----------
-    async def open(self, *, student: str, subject: str, lesson_id: str, lesson_version: str, skill_node: str, item_ref: str | None,
-                   usage_id: str, key: str) -> tuple[dict, bool]:
-        """返回（响应体，是否幂等重放）"""
+    async def open(self, *, student: str, subject: str, lesson_id: str, lesson_version: str, usage_id: str, key: str,
+                   skill_node: str | None = None, item_ref: str | None = None) -> tuple[dict, bool]:
+        """返回（响应体，是否幂等重放）。skill_node、item_ref 由目录补全；调用方给了就必须与目录一致（BFF 过渡期）"""
         if subject not in SUBJECTS:
             raise err(400, "SUBJECT_NOT_SUPPORTED", "lessons are only available for aya in the pilot")
         if not (UUID_RE.fullmatch(student) and UUID_RE.fullmatch(usage_id) and UUID4_RE.fullmatch(key)
                 and T.LESSON_ID_RE.fullmatch(lesson_id) and T.SEMVER_RE.fullmatch(lesson_version)
-                and _ref(skill_node, subject) is not None and (item_ref is None or _ref(item_ref, subject) is not None)):
+                and (skill_node is None or _ref(skill_node, subject) is not None) and (item_ref is None or _ref(item_ref, subject) is not None)):
             raise err(400, "INVALID_REQUEST", "bad field values")
+        entry = await self.catalog.find(subject, lesson_id, lesson_version)  # 目录暂时取不到 → 503（BFF 用同一个键重试）
+        if entry is None or (skill_node is not None and skill_node != entry.skill_node) or (item_ref is not None and item_ref != entry.item_ref):
+            raise err(422, "LESSON_NOT_AVAILABLE", "this lesson could not be opened")
+        skill_node, item_ref = entry.skill_node, entry.item_ref
         lesson_ref = {"lesson_id": lesson_id, "lesson_version": lesson_version}
         # 建会话之前先按契约核一遍请求（键用占位）：不合格的请求不留下 opening 的会话
         self._request(subject=subject, student=student, usage_id=usage_id, key=derived_key("probe"), request_id=str(uuid.uuid4()),

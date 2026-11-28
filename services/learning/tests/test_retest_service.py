@@ -672,3 +672,17 @@ async def test_answer_meter_check_accepts_counted_only(api, ppools, student, met
 async def student(ppools) -> str:
     _, admin = ppools
     return await new_student(admin)
+
+
+# ---------- 讲评课目录（specs/lesson-catalog PR B）：复测条目带讲原题的那节课 ----------
+async def test_retest_entry_carries_lesson_ref_for_its_source_item(api, ppools, student):
+    from test_practice_service import LESSON_P1, StubLessons
+    await reach_execute(api, student)
+    e = await one_entry(api, student)
+    assert "lesson_ref" not in e
+    # 参照题是最近一次作答的 SYNP-0004（见上面的复测用例）
+    api.svc.practice.lessons = StubLessons({"aya:SYNP-0004": LESSON_P1})
+    e = await one_entry(api, student)
+    assert e["lesson_ref"] == LESSON_P1
+    _validator("Entry").validate(e)
+    no_forbidden(e)

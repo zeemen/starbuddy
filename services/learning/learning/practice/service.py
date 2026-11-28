@@ -16,7 +16,7 @@ import uuid
 from collections import Counter
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
-from typing import Callable
+from typing import Any, Callable
 
 import asyncpg
 import httpx
@@ -69,6 +69,8 @@ class PracticeService:
     # 作答串行锁（会话级咨询锁）专用的小连接池（审查 B2）：锁连接要在整个判分期间握着，放在业务池里会和 ingest 争连接，
     # 并发作答数达到业务池上限时互相等死。None = 与业务池相同（只供不并发的单测用；app 一律给独立的锁池）
     lock_pool: asyncpg.Pool | None = None
+    # 讲评课目录（specs/lesson-catalog PR B；只用 by_item）：讲评课开着时由 app 接上，条目视图据此带讲这道原题的那节课；None = 不带
+    lessons: Any = None
 
     def __post_init__(self) -> None:
         if self.stats is None:
@@ -97,17 +99,26 @@ class PracticeService:
     def entries(self, snap: store.Snapshot, now: datetime, *, capped: bool = True) -> list[Q.Entry]:
         return Q.build(snap.attempts, snap.hint_tasks, snap.retest_due, self.cfg, now, capped=capped)
 
-    def view(self, student: str, subject: str, e: Q.Entry) -> dict:
-        """对 BFF 的条目视图：只有单元、来源、状态、轮次、时间与原题引用。"""
-        return {"entry_id": Q.entry_id(student, subject, e.unit), "node_id": e.unit.node_id, "cognitive_level": e.unit.cognitive_level,
-                "source": e.source, "status": e.status, "round": e.round, "max_rounds": self.cfg.max_rounds,
-                "source_item_ref": f"{subject}:{e.source_item_id}" if e.source_item_id else None,
-                "next_round_at": iso(e.next_round_at), "retest_due": e.retest_due, "same_family_only": e.same_family_only,
-                "empty_reason": e.empty_reason}
+    def view(self, student: str, subject: str, e: Q.Entry, lessons: dict[str, dict] | None = None) -> dict:
+        """对 BFF 的条目视图：只有单元、来源、状态、轮次、时间与原题引用；原题有讲评课时另带那节课的引用（lesson_ref）。"""
+        source_ref = f"{subject}:{e.source_item_id}" if e.source_item_id else None
+        out = {"entry_id": Q.entry_id(student, subject, e.unit), "node_id": e.unit.node_id, "cognitive_level": e.unit.cognitive_level,
+               "source": e.source, "status": e.status, "round": e.round, "max_rounds": self.cfg.max_rounds,
+               "source_item_ref": source_ref,
+               "next_round_at": iso(e.next_round_at), "retest_due": e.retest_due, "same_family_only": e.same_family_only,
+               "empty_reason": e.empty_reason}
+        if source_ref is not None and lessons and source_ref in lessons:
+            out["lesson_ref"] = dict(lessons[source_ref])
+        return out
+
+    async def lesson_refs(self, subject: str) -> dict[str, dict]:
+        """题目引用 → 讲评课引用；没接目录、目录暂时取不到都为空（不影响再练与复测本身）"""
+        return await self.lessons.by_item(subject) if self.lessons is not None else {}
 
     # ---------- 列表 ----------
     async def queue(self, student: str, subject: str) -> dict:
         self.check_subject(student, subject)
+        lessons = await self.lesson_refs(subject)  # 网络调用放在事务之外
         now = self.clock()
         async with store.tx(self.pool) as conn:
             snap = await store.load(conn, student, subject, self.cfg, now)
@@ -131,7 +142,7 @@ class PracticeService:
             out.append(e)
         self.stats.update(f"queue_{e.status}" for e in out)
         log.info(json.dumps({"event": "practice_queue", "subject": subject, "counts": dict(Q.counts(out))}, ensure_ascii=False))
-        return {"subject": subject, "entries": [self.view(student, subject, e) for e in out]}
+        return {"subject": subject, "entries": [self.view(student, subject, e, lessons) for e in out]}
 
     # ---------- 出题 ----------
     def _unavailable(self, reason: str) -> dict:

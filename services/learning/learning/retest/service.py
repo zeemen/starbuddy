@@ -60,14 +60,20 @@ class RetestService:
     def entries(self, rs: RS.RetestSnapshot, now: datetime, *, capped: bool = True) -> list[K.Entry]:
         return K.build(rs.tasks, rs.practice.attempts, rs.keys, rs.estimated, self.cfg, now, capped=capped)
 
-    def view(self, student: str, subject: str, e: K.Entry, status: str, empty_reason: str | None) -> dict:
-        """对 BFF 的条目视图：只有条目 ID、单元、类别（复测 / 验证）、状态与空原因编码。"""
-        return {"entry_id": K.entry_id(student, subject, e.anchor), "node_id": e.unit.node_id, "cognitive_level": e.unit.cognitive_level,
-                "kind": e.kind, "status": status, "empty_reason": empty_reason}
+    def view(self, student: str, subject: str, e: K.Entry, status: str, empty_reason: str | None,
+             lessons: dict[str, dict] | None = None) -> dict:
+        """对 BFF 的条目视图：只有条目 ID、单元、类别（复测 / 验证）、状态与空原因编码；原题有讲评课时另带那节课的引用（lesson_ref）。"""
+        out = {"entry_id": K.entry_id(student, subject, e.anchor), "node_id": e.unit.node_id, "cognitive_level": e.unit.cognitive_level,
+               "kind": e.kind, "status": status, "empty_reason": empty_reason}
+        source_ref = f"{subject}:{e.source_item_id}" if e.source_item_id else None
+        if source_ref is not None and lessons and source_ref in lessons:
+            out["lesson_ref"] = dict(lessons[source_ref])
+        return out
 
     # ---------- 列表 ----------
     async def queue(self, student: str, subject: str) -> dict:
         self.check_subject(student, subject)
+        lessons = await self.practice.lesson_refs(subject)  # 网络调用放在事务之外
         now = self.clock()
         async with P.tx(self.practice.pool) as conn:
             rs = await RS.load(conn, student, subject, self.practice.cfg, now, with_estimates=self.cfg.followup_enabled)
@@ -86,7 +92,7 @@ class RetestService:
                     status, reason = "unavailable", f.empty_reason
                 elif S.tier(f.kept, rs.practice.used_families(e.unit), prefer_new_family=True).same_family_only:
                     status, reason = "unavailable", S.NO_NEW_FAMILY
-            out.append(self.view(student, subject, e, status, reason))
+            out.append(self.view(student, subject, e, status, reason, lessons))
         self.stats.update(f"queue_{v['kind']}_{v['status']}" for v in out)
         log.info(json.dumps({"event": "retest_queue", "subject": subject, "counts": dict(Counter(f"{v['kind']}_{v['status']}" for v in out))},
                             ensure_ascii=False))
