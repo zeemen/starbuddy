@@ -5,12 +5,14 @@
 // 计量：打开只预留一次 lesson_whiteboard、下发即结算、确定拒绝即释放、结果未知不结算不释放、同一个键重放不重扣、换内容 409、
 // 基础档 402、额度用尽 402；课内提问不扣次（预留与额度桶不变）、换学生或伪造票据 422 与过期 410 都不调学习服务、宵禁 402；
 // 响应白名单（不转会话 ID、usage_id、学习服务票据、第几问）；日志不记学生 ID、票据、讲解与回答。
+// 讲评课目录（specs/lesson-catalog PR C）：打开只收讲评课引用与幂等键（带节点或题 422）；目录路由只回编号、版本、标题与步数，
+// 开关关 404、只认本人、不扣次，学习服务形状不对整份 503。
 // 全部合成数据（规则 8）。
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { after, before, describe, test } from 'node:test';
 import { P } from '../src/http/problems.ts';
-import type { AskBody, AskRequest, LessonLearning, LessonOutcome, OpenBody, OpenRequest } from '../src/lesson/learning-client.ts';
+import type { AskBody, AskRequest, CatalogBody, CatalogRequest, LessonLearning, LessonOutcome, OpenBody, OpenRequest } from '../src/lesson/learning-client.ts';
 import { usageIdFor } from '../src/metering/uuid.ts';
 import { counters, createFamily, HAS_DB, ledgerConsistent, setupHarness, type Harness } from './harness.ts';
 import { callAs, startShell, type ShellHarness } from './shell-harness.ts';
@@ -31,10 +33,15 @@ describe('讲评课会话（BFF 学生端路由与按节计量）', { skip: HAS_
   const notes: string[] = [];
   const opens: OpenRequest[] = [];
   const asks: AskRequest[] = [];
+  const catalogs: CatalogRequest[] = [];
   /** 假学习服务的会话：预留键 → 会话 ID（同键重放同一个会话，与学习服务一致） */
   const sessions = new Map<string, string>();
   let openImpl: ((b: OpenRequest) => LessonOutcome<OpenBody>) | null = null;
   let askImpl: ((b: AskRequest) => LessonOutcome<AskBody>) | null = null;
+  let catalogImpl: ((b: CatalogRequest) => LessonOutcome<CatalogBody>) | null = null;
+  /** 学习服务目录的一条（学习服务本来就不回节点与题；这里故意多带，核对 BFF 按白名单投影） */
+  const LESSON_ROW = { lesson_ref: { lesson_id: 'syn.lesson.a', lesson_version: '0.1.0' }, title: '（合成）讲评课', step_count: 3,
+                       skill_node: 'aya:K-SYN-NODE', item_ref: 'aya:SYN-CAT-ITEM' };
   const F = { g: '', S: '', aS: '', S2: '', aS2: '' };
   const O = { g: '', T: '', aT: '' };
   const B = { g: '', S: '', aS: '' };  // 基础档（trial）：讲评课 0 次
@@ -58,14 +65,19 @@ describe('讲评课会话（BFF 学生端路由与按节计量）', { skip: HAS_
       if (askImpl) return askImpl(b);
       return { kind: 'ok', status: 200, replayed: false, body: { outcome: 'answered', text: ANSWER, question_seq: 1, questions_left: 19 } };
     },
+    async catalog(b) {
+      catalogs.push({ ...b });
+      if (catalogImpl) return catalogImpl(b);
+      return { kind: 'ok', status: 200, replayed: false, body: { subject: 'aya', lessons: [LESSON_ROW] } };
+    },
   };
 
   const sess = (account: string) => shell.sessionFor(account);
   const oPath = (student: string) => `/students/${student}/lessons/open`;
   const qPath = (student: string) => `/students/${student}/lessons/ask`;
+  const cPath = (student: string, code = 'math') => `/students/${student}/lessons/catalog/${code}`;
   const openBody = (over: Record<string, unknown> = {}) => ({
-    subject: 'aya', lesson_ref: { lesson_id: 'syn.lesson.a', lesson_version: '0.1.0' }, skill_node: 'aya:K-QF-0301', item_ref: 'aya:SYN-1',
-    idempotency_key: randomUUID(), ...over });
+    subject: 'aya', lesson_ref: { lesson_id: 'syn.lesson.a', lesson_version: '0.1.0' }, idempotency_key: randomUUID(), ...over });
   const reservations = async (student: string) => (await h.su.query(
     `SELECT state::text, resource_type, reserved_qty::int, settled_qty::int, source_method FROM platform.usage_reservation WHERE student_id = $1
       ORDER BY reserved_at`, [student])).rows as { state: string; resource_type: string; reserved_qty: number; settled_qty: number | null;
@@ -98,7 +110,7 @@ describe('讲评课会话（BFF 学生端路由与按节计量）', { skip: HAS_
     await h?.close();
   });
 
-  test('开关关闭：两条路由不注册，与表外路径逐字节相同的 404；开关打开但没配学习服务：503 LESSON_UNAVAILABLE', async () => {
+  test('开关关闭：三条路由不注册，与表外路径逐字节相同的 404；开关打开但没配学习服务：503 LESSON_UNAVAILABLE', async () => {
     const st = await off.sessionFor(F.aS);
     const outside = await callAs(off.base, 'GET', '/bff/v0/definitely-not-a-route', st);
     for (const [p, b] of [[oPath(F.S), openBody()], [qPath(F.S), { ticket: 'sbl1.AAAA', question: QUESTION, idempotency_key: randomUUID() }]] as const) {
@@ -110,7 +122,13 @@ describe('讲评课会话（BFF 学生端路由与按节计量）', { skip: HAS_
       assert.equal(y.status, 503, y.text);
       assert.equal(y.body.code, 'LESSON_UNAVAILABLE');
     }
-    assert.equal(opens.length + asks.length, 0);
+    const c = await callAs(off.base, 'GET', cPath(F.S), st);
+    assert.equal(c.status, 404);
+    assert.equal(c.text, outside.text);
+    const cb = await callAs(bare.base, 'GET', cPath(F.S), await bare.sessionFor(F.aS));
+    assert.equal(cb.status, 503, cb.text);
+    assert.equal(cb.body.code, 'LESSON_UNAVAILABLE');
+    assert.equal(opens.length + asks.length + catalogs.length, 0);
     assert.deepEqual(await reservations(F.S), []);
   });
 
@@ -128,7 +146,8 @@ describe('讲评课会话（BFF 学生端路由与按节计量）', { skip: HAS_
     for (const banned of ['lt1.', F.S, 'session_id', 'usage_id', sessions.get(body.idempotency_key)!]) assert.ok(!r.text.includes(banned), banned);
     // 转给学习服务的：学生来自路径（已核对本人），usage_id 由幂等键派生，幂等键原样；不带 answer_submitted
     const sent = opens.at(-1)!;
-    assert.deepEqual(sent, { student_ref: F.S, subject: 'aya', lesson_ref: body.lesson_ref, skill_node: body.skill_node, item_ref: body.item_ref,
+    // 只带讲评课引用：节点与题由学习服务按目录补全（specs/lesson-catalog PR C）
+    assert.deepEqual(sent, { student_ref: F.S, subject: 'aya', lesson_ref: body.lesson_ref,
                              usage_id: usageIdFor(body.idempotency_key), idempotency_key: body.idempotency_key });
     const after = await counters(h, F.S, 'lesson_whiteboard');
     assert.equal(after.settled, before.settled + 1);
@@ -216,7 +235,8 @@ describe('讲评课会话（BFF 学生端路由与按节计量）', { skip: HAS_
     assert.equal(r.body.code, 'QUOTA_UNAVAILABLE');
     assert.equal(opens.length, n);
     for (const bad of [openBody({ usage_id: randomUUID() }), openBody({ subject: 'politics' }), openBody({ answer_submitted: true }),
-                       openBody({ idempotency_key: 'k' }), openBody({ skill_node: 'zhixing:K-1' })]) {
+                       openBody({ idempotency_key: 'k' }), openBody({ skill_node: 'aya:K-QF-0301' }), openBody({ item_ref: 'aya:SYN-1' }),
+                       openBody({ lesson_ref: { lesson_id: 'syn.lesson.a', lesson_version: '0.1.0', item_ref: 'aya:SYN-1' } })]) {
       const x = await callAs(shell.base, 'POST', oPath(F.S2), await sess(F.aS2), bad);
       assert.equal(x.status, 422, JSON.stringify(bad));
       assert.equal(x.text, P.INVALID);
@@ -328,6 +348,71 @@ describe('讲评课会话（BFF 学生端路由与按节计量）', { skip: HAS_
       assert.equal(asks.length, n);
     } finally {
       await h.su.query(`DELETE FROM platform.student_time_guard WHERE student_id = $1`, [F.S]);
+    }
+  });
+
+  test('目录：只回编号、版本、标题与步数（不回节点与题）；学科码换成学习服务的；学生来自路径；不扣次、不预留', async () => {
+    const before = await counters(h, F.S2, 'lesson_whiteboard');
+    const r = await callAs(shell.base, 'GET', cPath(F.S2), await sess(F.aS2));
+    assert.equal(r.status, 200, r.text);
+    assert.deepEqual(r.body, { subject: 'math', lessons: [{ lesson_ref: { lesson_id: 'syn.lesson.a', lesson_version: '0.1.0' },
+                                                            title: '（合成）讲评课', step_count: 3 }] });
+    for (const banned of ['skill_node', 'item_ref', 'K-SYN-NODE', 'SYN-CAT-ITEM', 'aya:', F.S2]) assert.ok(!r.text.includes(banned), banned);
+    assert.deepEqual(catalogs.at(-1), { student_ref: F.S2, subject: 'aya' });
+    assert.deepEqual(await counters(h, F.S2, 'lesson_whiteboard'), before);
+    assert.deepEqual(await reservations(F.S2), []);
+    catalogImpl = () => ({ kind: 'ok', status: 200, replayed: false, body: { subject: 'aya', lessons: [] } });
+    try {
+      const e = await callAs(shell.base, 'GET', cPath(F.S2), await sess(F.aS2));
+      assert.equal(e.status, 200, e.text);
+      assert.deepEqual(e.body, { subject: 'math', lessons: [] });
+    } finally {
+      catalogImpl = null;
+    }
+  });
+
+  test('目录只认学生本人与有讲评课的学科：兄妹、另一户、不存在、别的学科码 404（不调学习服务）；家长会话 403；POST 405', async () => {
+    const n = catalogs.length;
+    for (const [acct, path] of [[F.aS2, cPath(F.S)], [O.aT, cPath(F.S)], [F.aS, cPath(randomUUID())], [F.aS, cPath(F.S, 'politics')],
+                                [F.aS, cPath(F.S, 'aya')], [F.aS, cPath(F.S, 'chinese')]] as const) {
+      const r = await callAs(shell.base, 'GET', path, await sess(acct));
+      assert.equal(r.status, 404, `${path} ${r.text}`);
+      assert.equal(r.text, P.NOT_FOUND);
+    }
+    const g = await callAs(shell.base, 'GET', cPath(F.S), await sess(F.g));
+    assert.equal(g.status, 403, g.text);
+    const p = await callAs(shell.base, 'POST', cPath(F.S), await sess(F.aS), {});
+    assert.equal(p.status, 405, p.text);
+    assert.equal(catalogs.length, n);
+  });
+
+  test('目录：学习服务形状不对整份 503（不挑着给）；没有讲评课方法 503 LESSON_UNAVAILABLE；结果未知 503 UPSTREAM_UNAVAILABLE', async () => {
+    const row = (o: Record<string, unknown>) => ({ ...LESSON_ROW, ...o });
+    try {
+      for (const body of [{ subject: 'zhixing', lessons: [LESSON_ROW] }, { subject: 'aya' }, { subject: 'aya', lessons: [LESSON_ROW, row({ title: '' })] },
+                          { subject: 'aya', lessons: [row({ title: '长'.repeat(41) })] }, { subject: 'aya', lessons: [row({ step_count: 0 })] },
+                          { subject: 'aya', lessons: [row({ step_count: 101 })] }, { subject: 'aya', lessons: [row({ lesson_ref: { lesson_id: 'Bad' } })] },
+                          { subject: 'aya', lessons: [row({ lesson_ref: { lesson_id: 'syn.lesson.a', lesson_version: '0.1.0', item_ref: 'aya:SYN-1' } })] },
+                          { subject: 'aya', lessons: ['syn.lesson.a'] }]) {
+        catalogImpl = () => ({ kind: 'ok', status: 200, replayed: false, body: body as unknown as CatalogBody });
+        const r = await callAs(shell.base, 'GET', cPath(F.S), await sess(F.aS));
+        assert.equal(r.status, 503, JSON.stringify(body));
+        assert.equal(r.body.code, 'UPSTREAM_UNAVAILABLE');
+      }
+      catalogImpl = () => ({ kind: 'ok', status: 200, replayed: false, body: { subject: 'aya', lessons: [row({ title: '长'.repeat(40) })] } });
+      assert.equal((await callAs(shell.base, 'GET', cPath(F.S), await sess(F.aS))).status, 200, '标题 40 个字以内照常');
+      catalogImpl = () => ({ kind: 'failure', status: 501, problem: { code: 'LESSON_UNAVAILABLE' } });
+      const u = await callAs(shell.base, 'GET', cPath(F.S), await sess(F.aS));
+      assert.equal(u.status, 503);
+      assert.equal(u.body.code, 'LESSON_UNAVAILABLE');
+      const n = catalogs.length;
+      catalogImpl = () => ({ kind: 'unknown', reason: 'timeout' });
+      const x = await callAs(shell.base, 'GET', cPath(F.S), await sess(F.aS));
+      assert.equal(x.status, 503);
+      assert.equal(x.body.code, 'UPSTREAM_UNAVAILABLE');
+      assert.equal(catalogs.length, n + 3, '结果未知时重试（只读，没有副作用）');
+    } finally {
+      catalogImpl = null;
     }
   });
 

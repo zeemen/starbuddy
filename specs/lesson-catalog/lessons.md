@@ -92,3 +92,35 @@
 
 ### 待人确认
 - **B1**：同一道题有几节讲评课时，条目只带一节（编号、版本最小的那节）。若要按版本取最新一节、或者都列出来，请定。
+
+## PR C：BFF 目录路由、打开只收讲评课引用、条目转出 `lesson_ref`
+### 做了什么
+- **新学生端路由 `GET /bff/v0/students/{student_id}/lessons/catalog/{subject}`**：
+  - 转学习服务 `POST /internal/v1/lesson/catalog`（`{student_ref, subject}`，学生只进请求体）；
+  - 只回 `{subject, lessons: [{lesson_ref: {lesson_id, lesson_version}, title, step_count}]}`，逐条按白名单投影。学习服务的形状不对（学科不对、标题空或超过 40 个字、步数不在 1–100、引用多键）整份 503，不挑着给；
+  - 只认学生本人：家长 403；兄妹、另一户、不存在、没有讲评课的学科码一律同一个 404，都不调学习服务；
+  - 不扣次、不预留、不受宵禁限制；限流用讲评课已有的每会话桶 `lesson.session.minute`；
+  - 学习服务回 501 → 503 `LESSON_UNAVAILABLE`；结果未知 → 重试后仍未知 503 `UPSTREAM_UNAVAILABLE`。
+- **打开讲评课**：请求体只收 `subject`、`lesson_ref`、`idempotency_key`。带了节点或题 422 `INVALID`；转学习服务时也不再带。计量指纹去掉节点与题，只剩学生、学科与讲评课引用。预留、结算、释放的规则不变。
+- **再练与复测的列表条目**：讲评课开关开着且配了学习服务时，转出学习服务给的可选 `lesson_ref`（按 `src/lesson/ref.ts` 校验，只有编号与版本；不合格整页不给）；开关关着或没配学习服务时不转，也不看这个字段。
+- **讲评课引用的校验抽成 `src/lesson/ref.ts`**：打开、目录、条目三处共用。
+- **接口定义**：`lesson.v0.yaml` 升到 0.2.0（目录路径、`LessonRef`、`LessonCatalog`，打开请求体去掉节点与题）；`practice.v0.yaml`、`retest.v0.yaml` 的 `Entry` 加可选 `lesson_ref`。
+- **前端两处跟着改**（不然 e2e 断）：`apps/web/src/lesson/actions.ts` 打开时不再带节点与题；e2e 的假学习服务 `lessonOpen` 改为只收新形状；`e2e/practice-off.spec.ts` 的请求体同步。讲评课地址里的 `node`、`item` 照旧能读，PR D 改地址时一并去掉。
+- **测试**：
+  - `tests/lesson-units.test.ts`：打开请求体（节点与题 422）、指纹（换课、换版本不同）、讲评课引用、目录投影、客户端目录请求；
+  - `tests/lesson.integration.test.ts` 加 3 条：目录白名单与不扣次、只认本人与有讲评课的学科（含 POST 405）、形状不对整份 503 与 501、未知；开关关与没配学习服务两条改为覆盖三条路由；
+  - `tests/practice-units.test.ts`、`tests/retest-units.test.ts` 各 1 条；`tests/practice.integration.test.ts`、`tests/retest.integration.test.ts` 各 1 条（开关开、没配学习服务、开关关三种外壳）；
+  - 路由矩阵登记目录样例；计量静态检查加“目录不预留、不结算、不释放”与“打开拒收节点与题”；
+  - `tests/mutations.sh`：改 4 条过时锚点，新增 15 条（讲评课 9 条、再练 3 条、复测 3 条）。
+
+### 验证
+（见下方“检查结果”）
+
+### 决定与差异
+1. **路径与规格不同**：规格写的是 `GET .../lessons?subject=`。BFF 的路由表只按路径分发，查询参数不交给 handler（再练、复测都是这个原因把学科码放路径里），所以学科码放路径。
+   - 先试过 `.../lessons/{subject}`：`open`、`ask` 也合 `{subject}` 的形状，`GET .../lessons/open` 会落到目录、回 404，而不是像其他表内路径那样 405。路由矩阵的“表内路径的其他方法 405”拦住了这一点；
+   - 所以多一段 `catalog`，三条路由的形状互不重叠。
+2. **路径里是前端学科码**（`math`），与再练、复测同一套；只有 `math` 有讲评课，其余学科码 404（不是空列表），前端只在有讲评课的学科调。
+3. **计量指纹变了**：以前含节点与题，现在只有讲评课引用。只影响开关打开（dev / test）时、本 PR 之前用某个键打开、本 PR 之后又用同一个键重试的那一次（409 换内容），重新打开即可；staging 以上开关一律关闭，没有影响。
+4. **条目上的 `lesson_ref` 跟讲评课开关走**：学习服务那边在讲评课配好时才带；BFF 这边再看自己的讲评课开关与学习服务配置，两边都开着才转，免得前端出现点了打不开的入口。
+5. **学习服务打开接口的可选 `skill_node`、`item_ref`**：BFF 从本 PR 起不再带。删除这两个字段另起小改动（学习服务与它的接口定义），不放在本 PR。

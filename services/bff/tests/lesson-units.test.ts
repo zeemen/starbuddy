@@ -1,17 +1,18 @@
-// 讲评课会话的单元测试（specs/stage-lesson-session ③b-4b）：开关解析、票据封装、请求体解析、计量指纹、学习服务客户端的请求形状。
+// 讲评课会话的单元测试（specs/stage-lesson-session ③b-4b；目录见 specs/lesson-catalog PR C）：开关解析、票据封装、请求体解析、计量指纹、
+// 讲评课引用与目录的白名单投影、学习服务客户端的请求形状。
 // 不连库；计量与路由在 tests/lesson.integration.test.ts。全部合成数据（规则 8）。
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { test } from 'node:test';
 import { parseLessonFeature } from '../src/lesson/features.ts';
 import { httpLessonLearning } from '../src/lesson/learning-client.ts';
-import { lessonFingerprint, parseAsk, parseOpen } from '../src/lesson/service.ts';
+import { parseLessonRef } from '../src/lesson/ref.ts';
+import { lessonFingerprint, parseAsk, parseOpen, pickCatalog } from '../src/lesson/service.ts';
 import { LESSON_SEALED_PREFIX, MAX_SEALED, openLessonTicket, sealLessonTicket } from '../src/lesson/ticket.ts';
 import { sealTicket } from '../src/practice/ticket.ts';
 
 const S = randomUUID();
-const OPEN = { subject: 'aya', lesson_ref: { lesson_id: 'syn.lesson.a', lesson_version: '0.1.0' }, skill_node: 'aya:K-QF-0301',
-               item_ref: 'aya:SYN-1', idempotency_key: randomUUID() };
+const OPEN = { subject: 'aya', lesson_ref: { lesson_id: 'syn.lesson.a', lesson_version: '0.1.0' }, idempotency_key: randomUUID() };
 const Q = { cursor: 2, anchor: { kind: 'element', id: 't1' }, intent: 'what_is' };
 
 test('开关：只认 lesson，只在 dev / test；staging、pilot、生产设了都拒绝；没设是关', () => {
@@ -41,14 +42,12 @@ test('票据：往返一致；换学生、换密钥、篡改、再练票据、�
   assert.ok(sealLessonTicket(key, S, { ...content, ticket: 'l'.repeat(1024) }).length <= MAX_SEALED);
 });
 
-test('打开的请求体：只收学科、讲评课引用、节点、题与幂等键', () => {
+test('打开的请求体：只收学科、讲评课引用与幂等键；节点与题不再收（学习服务按目录补全）', () => {
   assert.deepEqual(parseOpen({ ...OPEN }), OPEN);
-  const { item_ref: _drop, ...noItem } = OPEN;
-  assert.deepEqual(parseOpen(noItem), noItem);
   for (const bad of [{ ...OPEN, subject: 'math' }, { ...OPEN, lesson_ref: { lesson_id: 'Bad', lesson_version: '0.1.0' } },
                      { ...OPEN, lesson_ref: { lesson_id: 'a', lesson_version: 'v1' } }, { ...OPEN, lesson_ref: { lesson_id: 'a', lesson_version: '0.1.0', x: 1 } },
-                     { ...OPEN, skill_node: 'zhixing:K-1' }, { ...OPEN, item_ref: 'aya:' }, { ...OPEN, idempotency_key: randomUUID().toUpperCase() },
-                     { ...OPEN, dsl: {} }, { ...OPEN, answer_submitted: true }]) {
+                     { ...OPEN, skill_node: 'aya:K-QF-0301' }, { ...OPEN, item_ref: 'aya:SYN-1' }, { ...OPEN, idempotency_key: randomUUID().toUpperCase() },
+                     { ...OPEN, dsl: {} }, { ...OPEN, answer_submitted: true }, { subject: 'aya', idempotency_key: randomUUID() }]) {
     assert.equal(parseOpen(bad as Record<string, unknown>), null, JSON.stringify(bad));
   }
 });
@@ -65,16 +64,37 @@ test('提问的请求体：只收票据、结构化提问（不收自由文字�
   assert.equal(parseAsk({ ...ok, lesson_ref: {} }), null);
 });
 
-test('计量指纹：同一节课同一指纹；换课、换节点、换题、换学生都不同；幂等键不进指纹', () => {
+test('计量指纹：同一节课同一指纹；换课、换版本、换学生都不同；幂等键不进指纹', () => {
   const o = parseOpen({ ...OPEN })!;
   const fp = lessonFingerprint(S, o);
   assert.match(fp, /^[0-9a-f]{64}$/);
   assert.equal(lessonFingerprint(S, { ...o, idempotency_key: randomUUID() }), fp);
-  for (const other of [{ ...o, lesson_ref: { lesson_id: 'syn.lesson.b', lesson_version: '0.1.0' } }, { ...o, skill_node: 'aya:K-2' },
-                       { ...o, item_ref: 'aya:SYN-2' }]) {
+  for (const other of [{ ...o, lesson_ref: { lesson_id: 'syn.lesson.b', lesson_version: '0.1.0' } },
+                       { ...o, lesson_ref: { lesson_id: 'syn.lesson.a', lesson_version: '0.2.0' } }]) {
     assert.notEqual(lessonFingerprint(S, other), fp);
   }
   assert.notEqual(lessonFingerprint(randomUUID(), o), fp);
+});
+
+test('讲评课引用：只收编号与版本两个键，格式不对一律不收', () => {
+  assert.deepEqual(parseLessonRef({ lesson_id: 'syn.lesson.a', lesson_version: '0.1.0' }), { lesson_id: 'syn.lesson.a', lesson_version: '0.1.0' });
+  for (const bad of [null, [], 'syn.lesson.a', {}, { lesson_id: 'syn.lesson.a' }, { lesson_id: 'syn.lesson.a', lesson_version: '0.1.0', item_ref: 'aya:SYN-1' },
+                     { lesson_id: 'Syn', lesson_version: '0.1.0' }, { lesson_id: 'syn', lesson_version: '0.1' }, { lesson_id: 1, lesson_version: '0.1.0' }]) {
+    assert.equal(parseLessonRef(bad), null, JSON.stringify(bad));
+  }
+});
+
+test('目录投影：逐条只留编号、版本、标题与步数；学科不对、任何一条不合格整份不给', () => {
+  const row = { lesson_ref: { lesson_id: 'syn.lesson.a', lesson_version: '0.1.0' }, title: '（合成）讲评课', step_count: 3, skill_node: 'aya:K-1', item_ref: 'aya:I-1' };
+  assert.deepEqual(pickCatalog({ subject: 'aya', lessons: [row] }, 'aya'),
+                   [{ lesson_ref: { lesson_id: 'syn.lesson.a', lesson_version: '0.1.0' }, title: '（合成）讲评课', step_count: 3 }]);
+  assert.deepEqual(pickCatalog({ subject: 'aya', lessons: [] }, 'aya'), []);
+  assert.ok(pickCatalog({ subject: 'aya', lessons: [{ ...row, title: '😀'.repeat(40) }] }, 'aya'), '按字符数而不是 UTF-16 码元数');
+  for (const bad of [null, { subject: 'zhixing', lessons: [row] }, { subject: 'aya' }, { subject: 'aya', lessons: {} }, { subject: 'aya', lessons: [null] },
+                     { subject: 'aya', lessons: [row, { ...row, title: ' ' }] }, { subject: 'aya', lessons: [{ ...row, title: 'x'.repeat(41) }] },
+                     { subject: 'aya', lessons: [{ ...row, step_count: 1.5 }] }, { subject: 'aya', lessons: [{ ...row, lesson_ref: undefined }] }]) {
+    assert.equal(pickCatalog(bad, 'aya'), null, JSON.stringify(bad));
+  }
 });
 
 test('学习服务客户端：会话令牌、请求体原样、学生不进 URL、不跟随重定向；5xx 与 retryable 是结果未知，4xx 是确定失败', async () => {
@@ -100,4 +120,10 @@ test('学习服务客户端：会话令牌、请求体原样、学生不进 URL�
   assert.equal(f.kind, 'failure');
   reply = new Response(JSON.stringify({ code: 'UPSTREAM_UNAVAILABLE', retryable: true }), { status: 409 });
   assert.equal((await client.ask(body)).kind, 'unknown');
+  reply = new Response(JSON.stringify({ subject: 'aya', lessons: [] }), { status: 200 });
+  const c = await client.catalog({ student_ref: S, subject: 'aya' });
+  assert.equal(c.kind, 'ok');
+  assert.equal(seen.at(-1)!.url, 'http://learning.test/internal/v1/lesson/catalog');
+  assert.deepEqual(JSON.parse(String(seen.at(-1)!.init.body)), { student_ref: S, subject: 'aya' });
+  assert.equal(seen.at(-1)!.init.method, 'POST');
 });

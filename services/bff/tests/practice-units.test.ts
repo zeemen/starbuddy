@@ -117,6 +117,17 @@ test('条目白名单：原题引用、复测标记、同族限定标记与任�
   }
 });
 
+test('条目上的讲评课引用（specs/lesson-catalog PR C）：讲评课开关开着才转，只有编号与版本；不合格整页不给；关着时不看', () => {
+  const ref = { lesson_id: 'syn.lesson.a', lesson_version: '0.1.0' };
+  assert.deepEqual(pickEntry(entry({ lesson_ref: ref }), true)!['lesson_ref'], ref);
+  assert.equal('lesson_ref' in pickEntry(entry({ lesson_ref: ref }))!, false, '开关关着不转');
+  assert.equal('lesson_ref' in pickEntry(entry(), true)!, false, '原题没有讲评课就不带');
+  for (const bad of [{ ...ref, item_ref: 'aya:SYN-PR-ITEM-00' }, { lesson_id: 'syn.lesson.a' }, 'syn.lesson.a', null]) {
+    assert.equal(pickEntry(entry({ lesson_ref: bad }), true), null, JSON.stringify(bad));
+    assert.ok(pickEntry(entry({ lesson_ref: bad })), '开关关着不看这个字段');
+  }
+});
+
 test('作答结果白名单：只有判分结论、待复核标记与条目新状态', () => {
   const id = randomUUID();
   const v = { verdict: 'incorrect', entry: { entry_id: id, status: 'waiting', round: 2, next_round_at: '2026-10-07T02:00:00Z', mastery: 0.2 },

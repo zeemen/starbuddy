@@ -30,6 +30,7 @@ import type { Pool } from 'pg';
 import { busyHeaders, withSubjectSlot, type GateObserve, type SubjectGate } from '../gate/subject-gate.ts';
 import { inCurfew } from '../metering/curfew.ts';
 import { withAccount } from '../metering/db.ts';
+import { parseLessonRef } from '../lesson/ref.ts';
 import { usageIdFor } from '../metering/uuid.ts';
 import { P } from '../http/problems.ts';
 import type { Reply } from '../http/routes.ts';
@@ -68,6 +69,8 @@ export interface PracticeDeps {
   gate?: SubjectGate;
   observe?: GateObserve;
   signal?: AbortSignal | undefined;
+  /** 讲评课开关（STARBUDDY_LESSON）开着且配了学习服务：条目转出 lesson_ref */
+  lessons?: boolean;
 }
 
 const problem = (status: number, code: string, title: string, extra: Record<string, unknown> = {}): Reply =>
@@ -257,7 +260,9 @@ const LEVELS = ['know', 'understand', 'apply', 'synthesize'];
 const oneOf = (xs: readonly string[], v: unknown): boolean => typeof v === 'string' && xs.includes(v);
 
 /** 条目：只挑这些字段；原题引用、复测标记、同族限定标记与任何多出来的字段不转 */
-export function pickEntry(e: unknown): Record<string, unknown> | null {
+/** lessons：讲评课开关开着时转出可选的 lesson_ref（原题有讲评课；只有编号与版本，specs/lesson-catalog PR C）；关着时不转。
+ *  lesson_ref 不合格与别的字段一样整页不给 */
+export function pickEntry(e: unknown, lessons = false): Record<string, unknown> | null {
   if (!isRecord(e)) return null;
   const { entry_id, node_id, cognitive_level, source, status, round, max_rounds, next_round_at, empty_reason } = e;
   if (typeof entry_id !== 'string' || !UUID.test(entry_id) || typeof node_id !== 'string' || node_id === '' || node_id.length > 128
@@ -267,7 +272,9 @@ export function pickEntry(e: unknown): Record<string, unknown> | null {
       || (empty_reason !== null && (typeof empty_reason !== 'string' || !CODE.test(empty_reason)))) {
     return null;
   }
-  return { entry_id, node_id, cognitive_level, source, status, round, max_rounds, next_round_at, empty_reason };
+  const ref = lessons && e['lesson_ref'] !== undefined ? parseLessonRef(e['lesson_ref']) : undefined;
+  if (ref === null) return null;
+  return { entry_id, node_id, cognitive_level, source, status, round, max_rounds, next_round_at, empty_reason, ...(ref ? { lesson_ref: ref } : {}) };
 }
 
 interface Ready {
@@ -324,7 +331,7 @@ export async function practiceQueue(deps: PracticeDeps, account: string, student
   if (r.kind === 'failure') return fromFailure(r, 'queue');
   const body = r.body;
   if (!isRecord(body) || !Array.isArray(body['entries'])) return UPSTREAM_UNAVAILABLE;
-  const entries = body['entries'].map(pickEntry);
+  const entries = body['entries'].map((e) => pickEntry(e, deps.lessons === true));
   if (entries.some((e) => e === null)) return UPSTREAM_UNAVAILABLE;  // 形状不对整页不给（不挑着给一部分）
   // 知识点名（已发布地图，与今日计划同一口径）：取不到时为 null，列表照常返回（specs/practice-retest-list-polish）
   const picked = entries as Record<string, unknown>[];

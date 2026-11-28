@@ -64,6 +64,17 @@ test('条目白名单：只转条目 ID、节点、层次、类别与状态；�
   }
 });
 
+test('条目上的讲评课引用（specs/lesson-catalog PR C）：讲评课开关开着才转，只有编号与版本；不合格整页不给；关着时不看', () => {
+  const ref = { lesson_id: 'syn.lesson.a', lesson_version: '0.1.0' };
+  assert.deepEqual(pickRetestEntry(entry({ lesson_ref: ref }), true)!['lesson_ref'], ref);
+  assert.equal('lesson_ref' in pickRetestEntry(entry({ lesson_ref: ref }))!, false, '开关关着不转');
+  assert.equal('lesson_ref' in pickRetestEntry(entry(), true)!, false, '原题没有讲评课就不带');
+  for (const bad of [{ ...ref, skill_node: 'aya:K-1' }, { lesson_version: '0.1.0' }, 42]) {
+    assert.equal(pickRetestEntry(entry({ lesson_ref: bad }), true), null, JSON.stringify(bad));
+    assert.ok(pickRetestEntry(entry({ lesson_ref: bad })), '开关关着不看这个字段');
+  }
+});
+
 test('取题白名单：题目引用与学习服务票据之外只留题面、类别与过期时间；类别不认识、条目不对、题型不对返回 null', () => {
   const id = randomUUID();
   const v = { status: 'ready', entry_id: id, kind: 'verify', item_ref: 'aya:SYN-RT-ITEM-01', ticket: 'rt1.x.y', expires_at: '2026-10-09T10:00:00Z',

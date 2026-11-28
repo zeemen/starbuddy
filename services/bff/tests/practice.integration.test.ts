@@ -15,7 +15,17 @@ import { isUuidV4, usageIdFor } from '../src/metering/uuid.ts';
 import type { PracticeLearning, PracticeOutcome } from '../src/practice/learning-client.ts';
 import { EXPIRY_MARGIN_MS } from '../src/practice/service.ts';
 import { createFamily, HAS_DB, setupHarness, type Harness } from './harness.ts';
+import type { LessonLearning } from '../src/lesson/learning-client.ts';
 import { callAs, startShell, type ShellHarness } from './shell-harness.ts';
+
+/** 原题有讲评课（学习服务按目录给，只有编号与版本；specs/lesson-catalog PR C） */
+const LESSON_REF = { lesson_id: 'syn.lesson.a', lesson_version: '0.1.0' };
+/** 讲评课学习服务（这里只用来让讲评课开关算作“配好了”；条目视图不调它） */
+const LESSON_STUB: LessonLearning = {
+  async open() { return { kind: 'failure', status: 404, problem: { code: 'SESSION_NOT_FOUND' } }; },
+  async ask() { return { kind: 'failure', status: 404, problem: { code: 'SESSION_NOT_FOUND' } }; },
+  async catalog() { return { kind: 'failure', status: 501, problem: { code: 'LESSON_UNAVAILABLE' } }; },
+};
 
 const ITEM_REF = 'aya:SYN-PR-ITEM-01';
 const NODE = 'MATH.SYN.PR.A';
@@ -32,6 +42,8 @@ describe('错题再练（BFF 学生端路由与计量）', { skip: HAS_DB ? fals
   let shell: ShellHarness;
   let off: ShellHarness;
   let bare: ShellHarness;
+  let withLesson: ShellHarness;
+  let lessonBare: ShellHarness;
   let clock = Date.now();
   const logs: Record<string, unknown>[] = [];
   const notes: string[] = [];
@@ -51,7 +63,7 @@ describe('错题再练（BFF 学生端路由与计量）', { skip: HAS_DB ? fals
       sent.push({ op: 'queue', student, subject });
       return { kind: 'ok', status: 200, replayed: false, body: { subject, entries: [{
         entry_id: entryOf.get(student) ?? randomUUID(), node_id: NODE, cognitive_level: 'apply', source: 'wrong', status: 'due', round: 1, max_rounds: 3,
-        source_item_ref: 'aya:SYN-PR-ITEM-00', next_round_at: null, retest_due: true, same_family_only: true, empty_reason: null,
+        source_item_ref: 'aya:SYN-PR-ITEM-00', next_round_at: null, retest_due: true, same_family_only: true, empty_reason: null, lesson_ref: LESSON_REF,
         p_mastery: 0.31, confidence: 0.7, evidence_ids: [randomUUID()], error_category: 'aya:sign' }] } };
     },
     async next(student, subject, entry) {
@@ -107,6 +119,8 @@ describe('错题再练（BFF 学生端路由与计量）', { skip: HAS_DB ? fals
     shell = await startShell(h.bff, h.su, { ...common, practice: { enabled: true, learning: fake, retryDelaysMs: [1, 1], note: (e) => notes.push(e) } });
     off = await startShell(h.bff, h.su, common);
     bare = await startShell(h.bff, h.su, { ...common, practice: { enabled: true } });
+    withLesson = await startShell(h.bff, h.su, { ...common, practice: { enabled: true, learning: fake, retryDelaysMs: [1, 1] }, lesson: { enabled: true, learning: LESSON_STUB } });
+    lessonBare = await startShell(h.bff, h.su, { ...common, practice: { enabled: true, learning: fake, retryDelaysMs: [1, 1] }, lesson: { enabled: true } });
     const f = await family('pilot_virtual', 2);
     Object.assign(F, { g: f.g, S: f.kids[0]!.id, aS: f.kids[0]!.account, S2: f.kids[1]!.id, aS2: f.kids[1]!.account });
     const o = await family('pilot_virtual');
@@ -117,6 +131,8 @@ describe('错题再练（BFF 学生端路由与计量）', { skip: HAS_DB ? fals
     await shell?.close();
     await off?.close();
     await bare?.close();
+    await withLesson?.close();
+    await lessonBare?.close();
     await h?.close();
   });
 
@@ -134,6 +150,20 @@ describe('错题再练（BFF 学生端路由与计量）', { skip: HAS_DB ? fals
       assert.equal(y.body.code, 'PRACTICE_UNAVAILABLE');
     }
     assert.equal(sent.length, 0);
+  });
+
+  test('条目上的讲评课（specs/lesson-catalog PR C）：讲评课开关开着、配了学习服务才转 lesson_ref（只有编号与版本）；否则不转', async () => {
+    const r = await callAs(withLesson.base, 'GET', qPath(F.S), await withLesson.sessionFor(F.aS));
+    assert.equal(r.status, 200, r.text);
+    assert.deepEqual(r.body.entries[0].lesson_ref, LESSON_REF);
+
+    for (const banned of ['item_ref', 'skill_node']) assert.ok(!r.text.includes(banned), banned);
+    for (const sh of [lessonBare, shell]) {
+      const x = await callAs(sh.base, 'GET', qPath(F.S), await sh.sessionFor(F.aS));
+      assert.equal(x.status, 200, x.text);
+      assert.ok(x.body.entries.every((e: Record<string, unknown>) => !('lesson_ref' in e)), '讲评课关着或没配学习服务：不转');
+      assert.ok(!x.text.includes('syn.lesson'));
+    }
   });
 
   test('列表：只认学生本人；只转白名单字段（不转原题引用、复测标记、同族限定标记、掌握、置信度、证据 ID、错因）；学科码换成学习服务的；不计次', async () => {
