@@ -10,6 +10,10 @@
 //     加载时不再跑词表（运行镜像里没有 Python），只核对发布记录与内容对得上：逐节摘要、按角色的文字条数、扫描模式与词表版本；
 //     对不上就整包拒绝。仓库里还没有真实讲评课，所以不带这个文件，缺省为空（带 lesson_ref / question 的请求一律 404）；
 //   - 合成讲评课内容包（格式 1，AYA_LESSON_PACK）：只给测试与演练，与替代内容包同样只在候选版开关打开时读；设了它就不读已发布的包。
+// - 契约口径（specs/lesson-catalog C2）：讲解标题（目录里的 title）与台词稿每一行（字幕台词与预制答疑）还要合插件契约 1.1.0 的文字口径
+//   （LessonCatalogEntry.title、StageScriptLine.text：不含尖括号、控制字符、双向控制符、零宽字符与行段分隔符，标题 ≤ 40、台词 ≤ 60 个字符）。
+//   packages/stage 的口径更宽（例如 `x < y` 可以），不合契约的讲评课到了 list_lessons、teach 的响应自检才会整份回 500；
+//   所以加载时（也就是 build:lessons 构建时）就整包拒绝。两条正则与契约原文逐字一致（tests/lessons.test.ts 核对）。
 // 本模块只读文件、不联网、不写任何东西；讲评课文字不进日志。
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
@@ -32,6 +36,19 @@ const LESSON_FIELDS = ["lesson_id", "lesson_version", "skill_node", "item_ref", 
 const LESSON_ID_RE = /^[a-z][a-z0-9_.-]{0,63}$/;
 const SEMVER_RE = /^\d+\.\d+\.\d+$/;
 const LOCAL_REF_RE = /^aya:([A-Za-z0-9][A-Za-z0-9_.-]{0,63})$/;
+/** 插件契约 1.1.0 的文字口径（与 plugin-api.v1.1.yaml 逐字一致）。u 标志：与 ajv 的正则口径相同，按码位计长度 */
+const CONTRACT_TEXT_CLASS = "[^<>\\u0000-\\u001F\\u007F-\\u009F\\u200B-\\u200F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069\\uFEFF]";
+export const CONTRACT_TITLE_PATTERN = `^${CONTRACT_TEXT_CLASS}{1,40}$`;
+export const CONTRACT_LINE_PATTERN = `^${CONTRACT_TEXT_CLASS}{1,60}$`;
+const CONTRACT_TITLE_RE = new RegExp(CONTRACT_TITLE_PATTERN, "u");
+const CONTRACT_LINE_RE = new RegExp(CONTRACT_LINE_PATTERN, "u");
+
+/** 讲解标题与台词稿每一行是否合契约口径；不合格时返回位置（title 或 line:<台词编号>），不带文字本身 */
+export function contractTextProblem(dsl: ValidatedStageDsl, script: ValidatedStageScript): string | null {
+  if (!CONTRACT_TITLE_RE.test(dsl.title)) return "title";
+  const bad = script.lines.find((x) => !CONTRACT_LINE_RE.test(x.text));
+  return bad ? `line:${bad.id}` : null;
+}
 
 export interface Lesson {
   lesson_id: string;
@@ -86,6 +103,8 @@ export function indexLessons(raw: unknown, content: LoadedPack, version = "inlin
     if (!d.ok) throw new Error(`${where}（${key}）：讲解 DSL 不合格（${d.errors.slice(0, 3).map((e) => e.code).join(", ")}）`);
     const s = migrateStageScript(d.dsl, l.script);
     if (!s.ok) throw new Error(`${where}（${key}）：台词稿不合格（${s.errors.slice(0, 3).map((e) => e.code).join(", ")}）`);
+    const off = contractTextProblem(d.dsl, s.script);
+    if (off) throw new Error(`${where}（${key}）：文字不合插件契约口径（${off}；不收尖括号、控制字符与零宽字符，标题不超过 40 个字、台词不超过 60 个字）`);
     byRef.set(key, Object.freeze({ lesson_id: id, lesson_version: ver, skillNode: nodeId, ...(itemId ? { itemId } : {}), dsl: d.dsl, script: s.script }));
   }
   return Object.freeze({ byRef, version });

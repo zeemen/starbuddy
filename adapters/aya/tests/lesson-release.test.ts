@@ -7,8 +7,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
+import { parse } from "yaml";
 import {
-  indexReleasedLessons, LESSON_PACK_FORMAT, LESSON_RELEASE_FORMAT, lessonDigest, lessonTexts, loadLessonsFrom, NO_LESSONS,
+  CONTRACT_LINE_PATTERN, CONTRACT_TITLE_PATTERN, indexLessons, indexReleasedLessons, LESSON_PACK_FORMAT, LESSON_RELEASE_FORMAT, lessonDigest, lessonTexts, loadLessonsFrom, NO_LESSONS,
 } from "../src/lessons.ts";
 import type { GuardScanOutput } from "../src/pack/hint-scan.ts";
 import {
@@ -20,10 +22,10 @@ const ITEM = realPack.pack.items.find((i) => i.format === "fill")!;
 const NODE = ITEM.mainNodes[0]!;
 const BAD = "（合成）含禁语-91f0";  // 假扫描器把含这个标记的文字判为命中
 
-const lesson = (id: string, opts: { line2?: string; buddy?: string; board?: string } = {}) => ({
+const lesson = (id: string, opts: { line2?: string; buddy?: string; board?: string; title?: string; answer?: string } = {}) => ({
   lesson_id: id, lesson_version: "0.1.0", skill_node: `aya:${NODE}`, item_ref: `aya:${ITEM.id}`,
   dsl: {
-    dsl_version: "0.3.0", title: "（合成）讲评课", canvas: { width: 960, height: 440 }, roles: ["teacher", "buddy"], narrated: true,
+    dsl_version: "0.3.0", title: opts.title ?? "（合成）讲评课", canvas: { width: 960, height: 440 }, roles: ["teacher", "buddy"], narrated: true,
     steps: [
       { id: "s1", say: "l1", actions: [{ type: "speaker", role: "teacher" }, { type: "write_text", id: "t1", x: 40, y: 64, text: opts.board ?? "（合成）第一行" }] },
       { id: "s2", say: "l2", actions: [{ type: "speaker", role: "buddy" }] },
@@ -34,7 +36,7 @@ const lesson = (id: string, opts: { line2?: string; buddy?: string; board?: stri
     lines: [
       { id: "l1", role: "teacher", text: opts.line2 ?? "（合成台词）先看第一行。" },
       { id: "l2", role: "buddy", text: opts.buddy ?? "（合成台词）我也来看看。" },
-      { id: "a1", role: "teacher", text: "（合成答疑）因为这样写清楚。" },
+      { id: "a1", role: "teacher", text: opts.answer ?? "（合成答疑）因为这样写清楚。" },
     ],
     answers: [{ step: "s1", intent: "why_step", line: "a1" }],
   },
@@ -120,6 +122,44 @@ test("草稿与审核记录：不合格就失败；审核记录里有草稿中�
                      reviewsOf({ ...review(a), digest: "sha256:abc" }), reviewsOf(review(a), review(a)), reviewsOf({ ...review(a), reviewer: "某老师" } as never)]) {
     assert.throws(() => parseLessonReviews(bad), /审核记录|reviews\[/, JSON.stringify(bad).slice(0, 80));
   }
+});
+
+test("契约口径（specs/lesson-catalog C2）：标题或台词含尖括号等契约不收的字符，构建时就整包失败；错误只报位置，不带文字", () => {
+  // 这几条 packages/stage 都收（报错是“文字不合插件契约口径”，不是讲解 DSL 或台词稿不合格），契约不收
+  const cases: [Parameters<typeof lesson>[1], string][] = [
+    [{ title: "（合成）x < y 的讲评课" }, "title"],
+    [{ title: "（合成）配方 a>0" }, "title"],
+    [{ line2: "（合成台词）看 x < 3 这一行。" }, "line:l1"],
+    [{ buddy: "（合成台词）a > b 吗？" }, "line:l2"],
+    [{ answer: "（合成答疑）因为 1 < 2。" }, "line:a1"],
+  ];
+  for (const [opts, where] of cases) {
+    const l = lesson("syn.lesson.c2", opts);
+    const seen: Record<string, string[]> = {};
+    assert.throws(() => buildLessonRelease(draftOf(l), reviewsOf(review(l)), realPack, fakeRunner(seen)), (e: Error) => {
+      assert.match(e.message, new RegExp(`syn\\.lesson\\.c2@0\\.1\\.0.*文字不合插件契约口径（${where}；`), JSON.stringify(opts));
+      for (const t of [opts?.title, opts?.line2, opts?.buddy, opts?.answer]) if (t) assert.ok(!e.message.includes(t), "错误信息不带讲解文字");
+      return true;
+    });
+    assert.deepEqual(seen, {}, "不合契约时不跑词表");
+    // 加载时同样拒绝（合成包与已发布的包都经 indexLessons）
+    assert.throws(() => indexLessons(draftOf(l), realPack), /文字不合插件契约口径/);
+  }
+  // 边界：标题正好 40 个字、台词正好 60 个字照常；全角括号与“≤”这类符号照常
+  const ok = lesson("syn.lesson.c2ok", { title: "（合成）" + "题".repeat(36), line2: "（合成台词）" + "看".repeat(53) + "。", buddy: "（合成台词）x ≤ y 吗？" });
+  assert.equal(indexLessons(draftOf(ok), realPack).byRef.size, 1);
+  // 按码位计长度（与 ajv 的 u 标志同口径）：辅助平面字符（数学斜体 𝑥）每个算一个字
+  const astral = lesson("syn.lesson.c2astral", { title: "（合成）" + "𝑥".repeat(36) });
+  assert.equal(indexLessons(draftOf(astral), realPack).byRef.size, 1);
+});
+
+test("契约口径的两条正则与插件契约 1.1.0 原文逐字一致（LessonCatalogEntry.title、StageScriptLine.text）", () => {
+  const doc = parse(readFileSync(new URL("../../../packages/contracts/openapi/plugin-api.v1.1.yaml", import.meta.url), "utf8"));
+  const schemas = doc.components.schemas;
+  assert.equal(schemas.LessonCatalogEntry.properties.title.pattern, CONTRACT_TITLE_PATTERN);
+  assert.equal(schemas.StageScriptLine.properties.text.pattern, CONTRACT_LINE_PATTERN);
+  assert.equal(schemas.LessonCatalogEntry.properties.title.maxLength, 40);
+  assert.equal(schemas.StageScriptLine.properties.text.maxLength, 60);
 });
 
 test("同一草稿、同一审核记录、同一词表两次生成逐字节相同；审核记录的顺序不影响摘要", () => {
