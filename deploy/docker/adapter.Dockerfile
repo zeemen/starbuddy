@@ -3,6 +3,9 @@
 #   - 多阶段：deps 阶段只按 package-lock.json 装运行依赖（npm ci --omit=dev --ignore-scripts）；运行阶段只拷依赖、源码与内容包。
 #   - 基础镜像以摘要给出（ARG NODE_IMAGE，没有缺省值；决定记录第 11 条）。
 #   - 适配器按仓库相对位置读 packages/contracts/openapi（插件契约）与 docs/mapping/error-taxonomy.v0.9.yaml（错因映射），镜像里保持同样结构。
+#   - 阿鸦以相对路径导入 packages/stage（讲解 DSL 与台词稿的校验，src/lessons.ts、src/methods/teach.ts）：拷 package.json（"type": "module"，
+#     决定 .ts 按 ES 模块加载）与 src，保持仓库相对结构；schema 运行时不读，不拷。三科共用一份镜像定义，另外两科不导入它，多拷无害。
+#     适配器源码里指向仓库别处的相对导入都必须在这里拷进镜像（deploy/tests/test_static.py 核对，specs/stage-lesson-staging PR 0）。
 #   - 只监听 127.0.0.1:$PORT（src/main.ts，不改）；不带令牌（<学科>_ADAPTER_SERVICE_TOKEN 由运行环境注入）；不读任何模型供应商地址或 Key。
 #   - 非 root（uid 10001）、只读根文件系统可运行、TCP 健康检查（回环）。
 # 构建：docker build -f deploy/docker/adapter.Dockerfile --build-arg NODE_IMAGE=<仓库>/node:22-bookworm-slim@sha256:<摘要> --build-arg ADAPTER=aya -t starbuddy-adapter-aya:<版本> .
@@ -20,6 +23,8 @@ ARG ADAPTER
 ENV NODE_ENV=production
 WORKDIR /srv/starbuddy
 COPY packages/contracts/openapi packages/contracts/openapi
+COPY packages/stage/package.json packages/stage/package.json
+COPY packages/stage/src packages/stage/src
 COPY docs/mapping/error-taxonomy.v0.9.yaml docs/mapping/
 COPY --from=deps /srv/starbuddy/adapters/${ADAPTER}/node_modules adapters/${ADAPTER}/node_modules
 COPY adapters/${ADAPTER}/package.json adapters/${ADAPTER}/package.json

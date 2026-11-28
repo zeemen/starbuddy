@@ -304,3 +304,98 @@ def test_k8s_storage_and_internal_lb(k8s_docs):
     assert ann[pre + "protocol-port"] == "https:443" and ann[pre + "cert-id"].startswith("<由人填写")
     assert ann[pre + "health-check-uri"] == "/readyz"
     assert lbs[0]["spec"]["ports"] == [{"name": "https", "port": 443, "targetPort": 3000}]
+
+
+# ---------------------------------------------------------------- 镜像里的相对导入（specs/stage-lesson-staging PR 0）
+# 反方向的核对：上面一条只管“拷进镜像的都在白名单里”，这里管“镜像里的 TS / JS 源码以相对路径导入的东西都拷进了同一阶段”。
+# 起因：阿鸦自 ③a 起导入 packages/stage，适配器镜像没拷，按镜像结构启动报 ERR_MODULE_NOT_FOUND，而镜像构建不在 CI 里。
+# 做法：逐个阶段把 COPY 换算成“仓库里的来源 → 镜像里的位置”（镜像里的仓库根是 /srv/starbuddy）；扫描拷进来的 .ts / .tsx / .mjs / .js
+# （跳过 node_modules 与测试），把相对导入按镜像里的位置解析，目标必须落在这个阶段拷进来的东西里，并且在仓库里真有其文件。
+# COPY --from 来的（依赖、构建产物）只算“在镜像里”，不扫描、不核对文件。
+IMAGE_ROOT = "/srv/starbuddy"
+SOURCE_EXT = (".ts", ".tsx", ".mjs", ".js")
+REL_IMPORT = re.compile(r"""(?:\bfrom\s*|\bimport\s*\(\s*|^\s*import\s+)["'](\.{1,2}/[^"']+)["']""", re.M)
+
+
+def image_stages(path: Path) -> list[tuple[str, list[tuple[str | None, str]]]]:
+    """每个阶段（按适配器展开 ${ADAPTER}）：(名字, [(仓库里的来源或 None（--from）, 镜像里相对仓库根的位置)])"""
+    import posixpath
+    text_ins = instructions(path)
+    variants = ADAPTERS if any("${ADAPTER}" in a for _, a in text_ins) else (None,)
+    out = []
+    for adapter in variants:
+        sub = (lambda s: s.replace("${ADAPTER}", adapter)) if adapter else (lambda s: s)
+        for i, st in enumerate(stages(text_ins)):
+            workdir, copies = "/", []
+            for op, arg in st:
+                arg = sub(arg)
+                if op == "WORKDIR":
+                    workdir = posixpath.join(workdir, arg)
+                if op != "COPY":
+                    continue
+                parts = [p for p in arg.split() if not p.startswith("--")]
+                from_stage = "--from=" in arg
+                *srcs, dest = parts
+                dest_abs = dest if dest.startswith("/") else posixpath.join(workdir, dest)
+                for s in srcs:
+                    d = posixpath.join(dest_abs, posixpath.basename(s.rstrip("/"))) if (dest.endswith("/") or len(srcs) > 1) else dest_abs
+                    d = posixpath.normpath(d)
+                    if not d.startswith(IMAGE_ROOT + "/"):
+                        continue
+                    copies.append((None if from_stage else s.rstrip("/"), d[len(IMAGE_ROOT) + 1:]))
+            out.append((f"{path.name}{'[' + adapter + ']' if adapter else ''}#{i}", copies))
+    return out
+
+
+def missing_relative_imports(copies: list[tuple[str | None, str]], root: Path = ROOT) -> list[str]:
+    """拷进来的源码里，相对导入的目标不在这个阶段的镜像里、或仓库里没有这个文件的，逐条列出"""
+    import posixpath
+    def in_image(p: str) -> Path | None | bool:
+        for src, dst in copies:
+            if p == dst or p.startswith(dst + "/"):
+                if src is None:
+                    return True  # --from 来的：在镜像里，不核对文件
+                return root / (src + p[len(dst):])
+        return None
+    bad = []
+    for src, dst in copies:
+        if src is None:
+            continue
+        base = root / src
+        files = [base] if base.is_file() else sorted(base.rglob("*")) if base.is_dir() else []
+        for f in files:
+            rel_parts = f.relative_to(root).parts
+            if not f.is_file() or f.suffix not in SOURCE_EXT or "node_modules" in rel_parts or "tests" in rel_parts:
+                continue
+            img = dst + f.as_posix()[len(base.as_posix()):]
+            for spec in REL_IMPORT.findall(f.read_text(encoding="utf-8")):
+                target = posixpath.normpath(posixpath.join(posixpath.dirname(img), spec))
+                hit = in_image(target)
+                if hit is None or (hit is not True and not hit.is_file()):
+                    bad.append(f"{f.relative_to(root)} → {spec}（镜像里 {target} 不存在）")
+    return bad
+
+
+@pytest.mark.parametrize("path", DOCKERFILES, ids=lambda p: p.name)
+def test_image_relative_imports_are_copied(path):
+    problems = []
+    for name, copies in image_stages(path):
+        problems += [f"{name}：{b}" for b in missing_relative_imports(copies)]
+    assert problems == [], "\n".join(problems)
+
+
+def test_image_relative_imports_check_catches_missing_package():
+    """反例：去掉适配器镜像里 packages/stage 的拷贝，阿鸦的导入要被报出来；web 构建阶段去掉它也一样"""
+    adapter = DEPLOY / "docker" / "adapter.Dockerfile"
+    aya = [c for n, c in image_stages(adapter) if n.startswith("adapter.Dockerfile[aya]")][-1]
+    assert missing_relative_imports(aya) == []
+    cut = [(s, d) for s, d in aya if not (d.startswith("packages/stage") and s is not None)]
+    bad = missing_relative_imports(cut)
+    assert any("adapters/aya/src/lessons.ts" in b and "packages/stage/src/index.ts" in b for b in bad), bad
+    web_build = next(c for _, c in image_stages(DEPLOY / "docker" / "web.Dockerfile") if any(d == "apps/web/src" for _, d in c))
+    assert missing_relative_imports(web_build) == []
+    bad = missing_relative_imports([(s, d) for s, d in web_build if not d.startswith("packages/stage/src")])
+    assert any("apps/web/src/lesson/LessonPlayer.tsx" in b for b in bad), bad
+    # 拷了 package.json 却漏了 src，同样报出
+    only_pkg = [(s, d) for s, d in aya if d != "packages/stage/src"]
+    assert any("packages/stage/src/index.ts" in b for b in missing_relative_imports(only_pkg))
