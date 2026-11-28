@@ -3,6 +3,7 @@
 // 错题再练入口（specs/practice-loop-stage1 PR 4）：PracticeLink 在开关关、学科不在再练范围时返回 null（与开关打开前零差异）。
 // 复测入口（specs/retest-delivery-kge05）：RetestLink 同理，开关 STARBUDDY_RETEST_UI 关时返回 null。
 // 诊断入口（specs/diagnosis-student-entry）：DiagnosisLink 只在数学、开关 STARBUDDY_DIAGNOSIS_UI 开时渲染，关时返回 null。
+// 讲评课列表（specs/lesson-catalog PR D）：LessonList 只在数学、开关 STARBUDDY_LESSON 开时渲染（并取一次目录），关时返回 null。
 import { notFound, redirect } from 'next/navigation';
 import { fetchToday } from '../../../../../lib/shell-api.ts';
 import { subjectLabel, SUBJECTS } from '../../../../../shell/copy.ts';
@@ -10,6 +11,7 @@ import { requireStudent } from '../../../../../shell/guard.ts';
 import { ChineseEntry } from '../../../../../subjects/chinese/Entry.tsx';
 import { MathEntry } from '../../../../../subjects/math/Entry.tsx';
 import { DiagnosisLink } from '../../../../../diagnosis/DiagnosisPages.tsx';
+import { LessonList } from '../../../../../lesson/LessonList.tsx';
 import { PoliticsEntry } from '../../../../../subjects/politics/Entry.tsx';
 import { PracticeLink } from '../../../../../practice/PracticePages.tsx';
 import { RetestLink } from '../../../../../retest/RetestPages.tsx';
@@ -42,6 +44,7 @@ export default async function SubjectPage({ params }: { params: Promise<{ studen
       <RetestLink studentId={studentId} subject={m.code} />
       <DiagnosisLink studentId={studentId} subject={m.code} />
       {body}
+      <LessonList session={ps.session} studentId={studentId} subject={m.code} />
     </main>
   );
 }

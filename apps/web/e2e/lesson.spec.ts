@@ -7,9 +7,11 @@
 //   - 兜底：这节课打不开（学习服务确定拒绝，BFF 释放预留，不扣）；额度不足（P3，402）；
 //   - 页面上没有票据与内部字段；axe 无违规；浏览器只请求本前端；地址栏参数不合格 404。
 //   - 安全头：讲评课页面（普通页面，specs/stage-production-build）的 CSP、no-store 等与壳内其他页面一致。
+//   - 讲评课目录（specs/lesson-catalog PR D，第六节 D）：科目页列表 → 点进讲评课页面打开、播放；再练（106）与复测（402）作答之后
+//     出现“看这道题的讲评课”，作答前不出现；地址只带编号与版本，以前带 node、item 的地址 404。
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
-import { LESSON, LESSON_ERROR, STAGE_ASK } from '../src/shell/copy.ts';
+import { LESSON, LESSON_ERROR, PRACTICE, RETEST, STAGE_ASK } from '../src/shell/copy.ts';
 import { checkHeaders, checkHtml } from './headers-check.ts';
 import { targets } from './crawl-pages.ts';
 import { loginStudent, PRACTICE_BASE } from './session.ts';
@@ -17,9 +19,10 @@ import { loginStudent, PRACTICE_BASE } from './session.ts';
 const P1 = '59000000-0000-4000-8000-0000000000c1';
 const P3 = '59000000-0000-4000-8000-0000000000c3';
 const ANSWER = '（合成答疑）因为这样写能看清楚每一步。';
-const url = (s: string, lesson = 'syn.lesson.e2e') => `/s/${s}/learn/math/lesson/${lesson}?v=0.1.0&node=K-QF-0301`;
+const url = (s: string, lesson = 'syn.lesson.e2e') => `/s/${s}/learn/math/lesson/${lesson}?v=0.1.0`;
+const E = (n: string) => `59000000-0000-4000-8000-000000000${n}`;
 const board = (page: Page) => page.locator('svg[data-stage-layout]');
-const INTERNAL = ['sbl1.', 'lt1.', 'usage_id', 'session_id', 'question_seq', 'idempotency_key', 'syn.lesson.e2e@'];
+const INTERNAL = ['sbl1.', 'lt1.', 'usage_id', 'session_id', 'question_seq', 'idempotency_key', 'syn.lesson.e2e@', 'skill_node', 'item_ref', 'K-QF-0301'];
 
 const axe = async (page: Page) => {
   const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
@@ -100,12 +103,68 @@ test('额度不足（P3 没有权益）：402 → “现在不能开始”，不
 
 test('地址栏参数不合格、学科没有讲评课：404', async ({ page }) => {
   await loginStudent(page, P1);
-  for (const bad of [`/s/${P1}/learn/math/lesson/Bad?v=0.1.0&node=K-1`, `/s/${P1}/learn/math/lesson/syn.lesson.e2e?v=v1&node=K-1`,
-                     `/s/${P1}/learn/math/lesson/syn.lesson.e2e?v=0.1.0`, `/s/${P1}/learn/politics/lesson/syn.lesson.e2e?v=0.1.0&node=K-1`]) {
+  for (const bad of [`/s/${P1}/learn/math/lesson/Bad?v=0.1.0`, `/s/${P1}/learn/math/lesson/syn.lesson.e2e?v=v1`,
+                     `/s/${P1}/learn/math/lesson/syn.lesson.e2e`, `/s/${P1}/learn/politics/lesson/syn.lesson.e2e?v=0.1.0`,
+                     // 以前带节点与题的地址（specs/lesson-catalog 第五节第 4 条）
+                     `/s/${P1}/learn/math/lesson/syn.lesson.e2e?v=0.1.0&node=K-QF-0301`, `/s/${P1}/learn/math/lesson/syn.lesson.e2e?v=0.1.0&item=SYN-1`]) {
     const r = await page.goto(bad);
     expect(r?.status(), bad).toBe(404);
   }
 });
+
+test('目录（E1）：科目页列出这一科的讲评课（标题与步数），点进讲评课页面打开、播放；列表不含节点与题', async ({ page }) => {
+  const off: string[] = [];
+  page.on('request', (r) => { if (!r.url().startsWith(PRACTICE_BASE) && !r.url().startsWith('data:')) off.push(r.url()); });
+  await loginStudent(page, P1);
+  await page.goto(`/s/${P1}/learn/math`);
+  const list = page.getByTestId('lesson-catalog');
+  await expect(list.getByRole('heading')).toHaveText(LESSON.catalogHeading);
+  const links = list.getByTestId('lesson-catalog-link');
+  await expect(links).toHaveText(['（合成）配方法讲评课', '（合成）暂时打不开的讲评课']);
+  await expect(list.locator('[data-value="step-count"]')).toHaveText(['3', '2']);
+  await expect(links.first()).toHaveAttribute('href', url(P1));
+  await noLeak(page);
+  await axe(page);
+  // 只有数学有讲评课：道法、语文的科目页没有这一节
+  for (const subject of ['politics', 'chinese']) {
+    await page.goto(`/s/${P1}/learn/${subject}`);
+    await expect(page.getByTestId('subject-page')).toBeVisible();
+    await expect(page.getByTestId('lesson-catalog')).toHaveCount(0);
+  }
+  await page.goto(`/s/${P1}/learn/math`);
+  await page.getByTestId('lesson-catalog-link').first().click();
+  await expect(page).toHaveURL(new RegExp(`${url(P1).replace(/[.?]/g, '\\$&')}$`));
+  await expect(page.locator('[data-lesson-start]')).toHaveText(LESSON.start);
+  await page.locator('[data-lesson-start]').click();
+  await expect(board(page)).toBeVisible();
+  await page.locator('[data-stage-action="next"]').click();
+  await expect(page.locator('[data-stage-caption]')).toHaveText('（合成台词）先看第一行。');
+  await noLeak(page);
+  expect(off).toEqual([]);
+});
+
+for (const [kind, entry, copy] of [['practice', E('106'), PRACTICE], ['retest', E('402'), RETEST]] as const) {
+  test(`判分之后的入口（E2，${kind}）：作答前没有“看这道题的讲评课”，判分结果出来之后才有，点进讲评课页面`, async ({ page }) => {
+    await loginStudent(page, P1);
+    await page.goto(`/s/${P1}/learn/math/${kind}/${entry}`);
+    const section = page.getByTestId(`${kind}-item`);
+    await expect(section).toHaveAttribute('data-phase', 'item');
+    await expect(page.getByTestId(`${kind}-lesson`)).toHaveCount(0);
+    await expect(page.locator('a[href*="/lesson/"]')).toHaveCount(0);
+    await expect(page.getByText(LESSON.forItem)).toHaveCount(0);
+    await page.getByLabel(/答案/).fill('合成作答');
+    await page.getByTestId(`${kind}-submit`).click();
+    await expect(page.getByTestId(`${kind}-verdict`)).toHaveText(copy.pendingReview);
+    const link = page.getByTestId(`${kind}-lesson`);
+    await expect(link).toHaveText(LESSON.forItem);
+    await expect(link).toHaveAttribute('href', url(P1));
+    await noLeak(page);
+    await axe(page);
+    await link.click();
+    await expect(page.getByTestId('lesson-page')).toBeVisible();
+    await expect(page.locator('[data-lesson-start]')).toBeVisible();
+  });
+}
 
 test('安全头：讲评课页面的 CSP、no-store 等与壳内其他页面一致（只打开地址，不点“开始”）', async ({ page }) => {
   await loginStudent(page, P1);

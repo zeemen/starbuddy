@@ -5,7 +5,11 @@
 // 别人的学生 404）；BFF 再按会话与数据库判断一次（家长 403、非本人 404）。
 // 只陈述事实：不显示错因、掌握度、星态与任何评价；空原因编码、题目引用、复测与同族标记都不上页面（src/practice/view.ts 挑字段）。
 // 条目来源只以文案占位出现，不另放进 DOM 属性；知识节点编号不合前端口径时这一格留空，其余照常。
+// 讲评课入口（specs/lesson-catalog PR D，E2）：讲评课开关开着、原题有讲评课时，页面先取一次列表找到这一条的讲评课引用，
+// 交给作答组件；组件只在判分结果出来之后显示“看这道题的讲评课”，作答前不显示（规格第五节第 7 条）。
 import { notFound, redirect } from 'next/navigation';
+import { isLessonSubject, lessonEnabled } from '../lesson/features.ts';
+import { entryLessonRef, lessonHref } from '../lesson/view.ts';
 import { fetchPracticeQueue } from '../lib/practice-api.ts';
 import { PRACTICE, PRACTICE_LEVEL, PRACTICE_SOURCE, PRACTICE_STATUS, subjectLabel } from '../shell/copy.ts';
 import { requireOwnStudent } from '../shell/guard.ts';
@@ -81,11 +85,14 @@ export async function PracticeItemPage({ studentId, subject, entryId }: { studen
   if (!practiceEnabled()) notFound();
   if (!isPracticeSubject(subject) || !UUID.test(entryId)) notFound();
   const ps = await requireOwnStudent(studentId);
+  const q = lessonEnabled() && isLessonSubject(subject) ? await fetchPracticeQueue(ps.session, studentId, subject) : null;
+  const ref = q?.ok ? entryLessonRef(q.value, entryId) : null;  // 取不到就是没有入口，作答照常
   return (
     <main data-testid="practice-page" data-practice-root="item" data-subject={subject}>
       <h1>{PRACTICE.heading}</h1>
       <p className="muted">{subjectLabel(subject)}</p>
-      <PracticeItem csrf={ps.session.csrf} student={studentId} subject={subject} entry={entryId} listHref={listPath(studentId, subject)} />
+      <PracticeItem csrf={ps.session.csrf} student={studentId} subject={subject} entry={entryId} listHref={listPath(studentId, subject)}
+                    lessonHref={ref ? lessonHref(studentId, subject, ref) : null} />
     </main>
   );
 }

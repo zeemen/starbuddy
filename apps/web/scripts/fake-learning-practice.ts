@@ -3,7 +3,7 @@
 // 只实现错题再练的三个内部接口（services/learning/openapi/practice-internal.v0.yaml）：queue、next、answer，按该文件的响应形状返回；
 // 另实现复测与验证题的内部接口（retest-internal.v0.yaml，specs/retest-delivery-kge05：queue、next、answer 与只读的 check、replay，
 // 剧本见文件后部）与今日计划跨科编排的只读接口（today-internal.v0.yaml，PLT-11：/internal/v1/today，剧本见文件后部）；
-// 另实现讲评课会话的两个内部接口（lesson-internal.v0.yaml，specs/stage-lesson-session ③b-5：open、ask，剧本见文件后部）；
+// 另实现讲评课的三个内部接口（lesson-internal.v0.yaml，specs/stage-lesson-session ③b-5：open、ask；specs/lesson-catalog PR D：catalog，剧本见文件后部）；
 // 其余路径（今日计划、诊断、星图等）一律 501（BFF 按“暂无安排 / 暂时无法获取”处理）。
 // 不是学习服务的实现：错题判定、选题、票据验签、经 grade 写入落库与掌握重算在 services/learning，有它自己的单测与库上集成测试；
 // 这里的条目、题面、判分全是合成的固定剧本（学生 P1、P2、P3 见 db/seeds/dev/practice-synthetic.sql），状态只在进程内存里。
@@ -39,6 +39,8 @@ const P1 = '59000000-0000-4000-8000-0000000000c1';
 const P2 = '59000000-0000-4000-8000-0000000000c2';
 const P3 = '59000000-0000-4000-8000-0000000000c3';
 const id = (n: string) => `59000000-0000-4000-8000-000000000${n}`;
+/** e2e 的合成讲评课（讲评课剧本见文件后部）：目录、再练 106 与复测 402 的原题都指向它 */
+const LESSON_E2E_REF = { lesson_id: 'syn.lesson.e2e', lesson_version: '0.1.0' };
 
 type Format = 'single' | 'multi' | 'fill';
 type Status = 'due' | 'waiting' | 'closed' | 'exhausted' | 'unavailable';
@@ -90,6 +92,8 @@ const wire = (e: Entry) => ({
   entry_id: e.entry_id, node_id: e.node_id, cognitive_level: e.cognitive_level, source: e.source, status: e.status, round: e.round,
   max_rounds: e.max_rounds, source_item_ref: `aya:item-SYN-${e.entry_id.slice(-3)}-src`, next_round_at: e.next_round_at,
   retest_due: e.entry_id === id('101'), same_family_only: e.entry_id === id('106'), empty_reason: e.empty_reason,
+  // 讲评课目录（specs/lesson-catalog PR D）：106 的原题有讲评课（判分待复核、条目仍 due，可以反复作答，e2e/lesson.spec.ts 用它看判分之后的入口）
+  ...(e.entry_id === id('106') ? { lesson_ref: LESSON_E2E_REF } : {}),
 });
 const short = (e: Entry) => ({ entry_id: e.entry_id, status: e.status as Exclude<Status, 'unavailable'>, round: e.round, next_round_at: e.next_round_at });
 
@@ -225,7 +229,8 @@ const DONE_RETEST = new Set<string>();
 function rqueue(b: Record<string, unknown>) {
   if (!exact(b, ['student_ref', 'subject'])) return problem(400, 'INVALID_REQUEST');
   return subjectCheck(b) ?? { status: 200, body: { subject: b['subject'], entries: retestOf(b).filter((e) => !DONE_RETEST.has(e.entry_id)).map((e) => ({
-    entry_id: e.entry_id, node_id: e.node_id, cognitive_level: 'apply', kind: e.kind, status: e.status, empty_reason: e.empty_reason, reason: e.reason })) } };
+    entry_id: e.entry_id, node_id: e.node_id, cognitive_level: 'apply', kind: e.kind, status: e.status, empty_reason: e.empty_reason, reason: e.reason,
+    ...(e.entry_id === id('402') ? { lesson_ref: LESSON_E2E_REF } : {}) })) } };  // 402（待复核、仍 due）的原题有讲评课
 }
 
 function rnext(b: Record<string, unknown>) {
@@ -348,6 +353,16 @@ interface LessonSession { student: string; count: number; lastKey: string | null
 const LESSONS = new Map<string, LessonSession>();   // 票据 → 会话
 const LESSON_BY_KEY = new Map<string, string>();     // 预留键 → 票据（同一个键重放同一个会话）
 
+// 讲评课目录（specs/lesson-catalog PR D）：POST /internal/v1/lesson/catalog（lesson-internal.v0.yaml 的 LessonCatalog 形状：只有编号、版本、标题与步数）
+const LESSON_CATALOG = [
+  { lesson_ref: LESSON_E2E_REF, title: '（合成）配方法讲评课', step_count: 3 },
+  { lesson_ref: { lesson_id: 'syn.lesson.broken', lesson_version: '0.1.0' }, title: '（合成）暂时打不开的讲评课', step_count: 2 },
+];
+function lessonCatalog(b: Record<string, unknown>) {
+  if (!exact(b, ['student_ref', 'subject']) || typeof b['student_ref'] !== 'string' || !UUID.test(b['student_ref'])) return problem(400, 'INVALID_REQUEST');
+  return b['subject'] === 'aya' ? { status: 200, body: { subject: 'aya', lessons: LESSON_CATALOG } } : problem(422, 'SUBJECT_NOT_SUPPORTED');
+}
+
 function lessonOpen(b: Record<string, unknown>) {
   const ref = b['lesson_ref'] as Record<string, unknown> | undefined;
   // BFF 只带讲评课引用（specs/lesson-catalog PR C）：节点与题由学习服务按目录补全，带来了就是 BFF 的请求不合格
@@ -402,9 +417,9 @@ createServer((req, res) => {
     else if (req.method === 'POST' && path === '/internal/v1/today') {
       const b = await readBody(req);
       out = b ? today(b) : problem(400, 'INVALID_REQUEST');
-    } else if (req.method === 'POST' && (path === '/internal/v1/lesson/open' || path === '/internal/v1/lesson/ask')) {
+    } else if (req.method === 'POST' && (path === '/internal/v1/lesson/open' || path === '/internal/v1/lesson/ask' || path === '/internal/v1/lesson/catalog')) {
       const b = await readBody(req);
-      out = !b ? problem(400, 'INVALID_REQUEST') : path.endsWith('/open') ? lessonOpen(b) : lessonAsk(b);
+      out = !b ? problem(400, 'INVALID_REQUEST') : path.endsWith('/open') ? lessonOpen(b) : path.endsWith('/ask') ? lessonAsk(b) : lessonCatalog(b);
     } else if (req.method !== 'POST' || ![...PRACTICE_PATHS, ...RETEST_PATHS].includes(path)) {
       out = problem(501, 'NOT_IMPLEMENTED');
     } else {
@@ -418,7 +433,7 @@ createServer((req, res) => {
         : path.endsWith('/queue') ? (retest ? rqueue(b) : queue(b)) : path.endsWith('/next') ? (retest ? rnext(b) : next(b)) : (retest ? ranswer(b) : answer(b));
     }
     const headers: Record<string, string> = { 'content-type': out.status === 200 ? 'application/json' : 'application/problem+json' };
-    if ((path.endsWith('/answer') || path.endsWith('/replay') || path.startsWith('/internal/v1/lesson/')) && out.status < 300) {
+    if ((path.endsWith('/answer') || path.endsWith('/replay') || path === '/internal/v1/lesson/open' || path === '/internal/v1/lesson/ask') && out.status < 300) {
       headers['idempotent-replayed'] = out.replayed ? 'true' : 'false';
     }
     res.writeHead(out.status, headers);
