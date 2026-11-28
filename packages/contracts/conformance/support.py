@@ -139,8 +139,9 @@ def coverage_report(caps: dict, results: dict[str, list[str]], subject: str | No
 
 
 def context(fx: Fixtures, case: dict) -> dict:
-    if case["method"] == "present_item":
-        # v1.1 PresentItemContext：题面与学生无关，不带 student_ref、usage_id；幂等键可选（默认不带），最低 L1
+    if case["method"] in READ_ONLY_METHODS:
+        # v1.1 只读方法（present_item、list_lessons）用 PresentItemContext：与学生无关，不带 student_ref、usage_id；
+        # 幂等键可选（默认不带），最低 L1
         ctx = {
             "request_id": str(uuid.uuid4()),
             "contract_version": CONTRACT_VERSION,
@@ -189,8 +190,9 @@ def build_request(fx: Fixtures, case: dict) -> dict:
                 for a in body["attempts"]:
                     a.setdefault("attempt_id", str(uuid.uuid4()))
         body.update(copy.deepcopy(case.get("body", {})))
-    elif m == "present_item":
-        # v1.1：取题面（只读、非消耗类）。内容版本取夹具的六段标识；夹具的 body 只给 item_ref
+    elif m in ("present_item", "list_lessons"):
+        # v1.1：取题面 / 讲评课目录（只读、非消耗类）。内容版本取夹具的六段标识；present_item 的夹具 body 只给 item_ref，
+        # list_lessons 不需要别的字段
         body["content_version"] = dict(fx.content_version)
         body.update(copy.deepcopy(case.get("body", {})))
     else:
@@ -430,6 +432,51 @@ def present_problems(body: object, *, secrets: list[str], answer_secrets: list[s
             continue
         if OBJSTORE_RE.fullmatch(v):
             continue  # 图片引用（契约已限定为对象存储引用）
+        controlled = UUID_RE.fullmatch(v) or CODE_RE.fullmatch(v) or SEMVER_RE.fullmatch(v) or any(p.fullmatch(v) for p in patterns)
+        if not controlled:
+            problems.append(f"{path}: 不是受控值")
+    return problems
+
+
+# ---------- list_lessons（v1.1 草稿内追加，specs/lesson-catalog）的泄露检查 ----------
+# 标题是讲评课内容（教研内容），允许出现夹具里登记的全局秘密（同题面内容）；其他位置只能是受控值。
+# 用例自己的 secrets（答案、讲解与台词里的原文）在任何位置都不许出现，包括标题。
+CATALOG_TITLE_LEAF = re.compile(r"/result/lessons/\d+/title")
+CATALOG_ENTRY_KEYS = frozenset({"lesson_ref", "skill_node", "item_ref", "title", "step_count"})
+CATALOG_NUMERIC = frozenset({"confidence", "step_count"})
+
+
+def lesson_catalog_problems(body: object, *, secrets: list[str], answer_secrets: list[str]) -> list[str]:
+    """list_lessons 响应的平台侧核对与泄露检查（只报路径，不回显值）：
+    1. 目录条目只有引用、节点、题、标题与步数（不含讲解 DSL、台词、答疑）；任何位置都没有答案类字段名；不产生证据；
+    2. 用例的秘密在任何位置都不出现；标题之外的字符串只能是受控值，且不含夹具的全局秘密；数字只在步数与置信度。"""
+    if not isinstance(body, dict):
+        return ["/: 响应不是对象"]
+    lessons = (body.get("result") or {}).get("lessons") if isinstance(body.get("result"), dict) else None
+    if not isinstance(lessons, list):
+        return ["/result/lessons: 不是数组"]
+    problems = [f"/result/lessons/{i}: 目录条目只能有 {sorted(CATALOG_ENTRY_KEYS)}"
+                for i, e in enumerate(lessons) if not isinstance(e, dict) or not set(e) <= CATALOG_ENTRY_KEYS]
+    problems += [f"{p}: 答案类字段名" for p in answer_field_paths(body)]
+    if body.get("evidence_ids") or "evidence" in body:
+        problems.append("/evidence_ids: 目录不得产生证据")
+    lesson_id = re.compile(_schemas()["LessonRef"]["properties"]["lesson_id"]["pattern"])
+    patterns = [_contract_pattern(n) for n in ("SkillNodeRef", "ItemRef", "ModelVersion", "SourceVersion")] + [lesson_id]
+    for path, v in _leaves(body):
+        if isinstance(v, bool) or v is None:
+            continue
+        if isinstance(v, (int, float)):
+            if path.rsplit("/", 1)[-1] not in CATALOG_NUMERIC:
+                problems.append(f"{path}: 数字出现在白名单之外的字段")
+            continue
+        if _secret_hit(v, answer_secrets):
+            problems.append(f"{path}: 出现了用例标注的秘密")
+            continue
+        if CATALOG_TITLE_LEAF.fullmatch(path):
+            continue  # 标题：讲评课内容，字符口径由契约约束
+        if _secret_hit(v, secrets):
+            problems.append(f"{path}: 出现了夹具标注的秘密")
+            continue
         controlled = UUID_RE.fullmatch(v) or CODE_RE.fullmatch(v) or SEMVER_RE.fullmatch(v) or any(p.fullmatch(v) for p in patterns)
         if not controlled:
             problems.append(f"{path}: 不是受控值")

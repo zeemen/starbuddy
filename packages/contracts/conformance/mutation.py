@@ -65,9 +65,10 @@ def report_problems(report: dict) -> list[str]:
         out.append(f"覆盖率分母不是六个学科方法：of={report.get('of')}，methods={sorted(report.get('methods', {}))}")
     if report.get("implemented", 0) > len(SUBJECT_METHODS) or report.get("passed", 0) > len(SUBJECT_METHODS):
         out.append("implemented / passed 超过六个学科方法")
-    ro = report.get("read_only_methods", {}).get("present_item", {})
-    if not (ro.get("implemented") and ro.get("passed") and ro.get("tests")):
-        out.append("read_only_methods.present_item 没有单列，或没有跑过、没有通过")
+    for name in ("present_item", "list_lessons"):  # v1.1 的只读方法都单列（list_lessons：specs/lesson-catalog）
+        ro = report.get("read_only_methods", {}).get(name, {})
+        if not (ro.get("implemented") and ro.get("passed") and ro.get("tests")):
+            out.append(f"read_only_methods.{name} 没有单列，或没有跑过、没有通过")
     return out
 
 
@@ -75,11 +76,11 @@ def check_report_denominator() -> list[str]:
     """契约 1.1.0 下跑一遍参考假适配器并读覆盖率报告；另用合成输入直接核对报告函数（七个方法都实现且通过时 of 仍是 6）。"""
     from support import coverage_report  # noqa: PLC0415
 
-    caps = {"methods": {m: {"implemented": True} for m in (*SUBJECT_METHODS, "present_item")}}
-    synthetic = coverage_report(caps, {m: ["passed"] for m in caps["methods"]}, "aya", 0, [], read_only=("present_item",))
+    caps = {"methods": {m: {"implemented": True} for m in (*SUBJECT_METHODS, "present_item", "list_lessons")}}
+    synthetic = coverage_report(caps, {m: ["passed"] for m in caps["methods"]}, "aya", 0, [], read_only=("present_item", "list_lessons"))
     problems = [f"合成输入：{p}" for p in report_problems(synthetic)]
     if synthetic.get("implemented") != 6 or synthetic.get("passed") != 6:
-        problems.append("合成输入：七个方法都实现且通过时，implemented / passed 应为 6")
+        problems.append("合成输入：八个方法都实现且通过时，implemented / passed 应为 6")
     with tempfile.TemporaryDirectory() as d:
         path = Path(d) / "report.json"
         rc, _ = run(None, contract="1.1.0", report=path)

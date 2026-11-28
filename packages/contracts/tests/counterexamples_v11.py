@@ -17,6 +17,8 @@ ZX = "PresentItemResponseZhixing"
 TQ = "TeachRequestAyaQuestion"
 LO = "TeachRequestAyaLessonOpen"
 LR = "TeachResponseAyaLessonOpen"
+LLQ = "ListLessonsRequestAya"
+LLR = "ListLessonsResponseAya"
 EVIDENCE = "00000000-0000-4000-8000-00000000e701"
 
 
@@ -161,4 +163,23 @@ V11_CASES = [
     Case("答疑问法是再讲一遍", "答疑问法只有三种", "TeachResponse", LR, _set("result.segments.0.script.answers.0.intent", "again")),
     Case("答疑夹带正文", "答疑只引用台词编号", "TeachResponse", LR, _set("result.segments.0.script.answers.0.text", "（合成）因为……")),
     Case("答疑步骤不合 id 规则", "答疑步骤与讲解 DSL 的 ID_RE 一致", "TeachResponse", LR, _set("result.segments.0.script.answers.0.step", "S1")),
+    # ---- 讲评课目录 list_lessons（v1.1 草稿内追加（再续），specs/lesson-catalog） ----
+    Case("目录请求带学生 ID", "目录与学生无关（PresentItemContext）", "ListLessonsRequest", LLQ,
+         _set("context.student_ref", "00000000-0000-4000-8000-00000000a7ff")),
+    Case("目录请求带计量 ID", "目录只读、不计量", "ListLessonsRequest", LLQ, _set("context.usage_id", "00000000-0000-4000-8000-00000000b7ff")),
+    Case("目录请求缺内容版本", "ListLessonsRequest 必填 content_version", "ListLessonsRequest", LLQ, _set("content_version", _DELETE)),
+    Case("目录请求夹带讲评课编号过滤", "目录请求只有 context 与 content_version", "ListLessonsRequest", LLQ, _set("skill_node", "aya:synthetic-0301")),
+    Case("目录条目夹带讲解 DSL", "目录不含讲解内容", "ListLessonsResponse", LLR, _set("result.lessons.0.dsl", {"steps": []})),
+    Case("目录条目夹带台词稿", "目录不含台词与答疑", "ListLessonsResponse", LLR, _set("result.lessons.0.script", {"dsl_version": "0.3.0", "lines": []})),
+    Case("目录条目夹带答案", "目录不含答案", "ListLessonsResponse", LLR, _set("result.lessons.0.answer", ["2(x-1)"])),
+    Case("目录条目缺标题", "LessonCatalogEntry 必填 title", "ListLessonsResponse", LLR, _set("result.lessons.0.title", _DELETE)),
+    Case("目录标题夹带 HTML", "标题是纯文本", "ListLessonsResponse", LLR, _set("result.lessons.0.title", "<b>（合成）讲评</b>")),
+    Case("目录标题超过 40 个字", "标题 ≤ 40（packages/stage 的标题上限）", "ListLessonsResponse", LLR,
+         _set("result.lessons.0.title", "（合成）" + "长" * 40)),
+    Case("目录标题夹带换行", "标题不收换行", "ListLessonsResponse", LLR, _set("result.lessons.0.title", "（合成）第一行\n第二行")),
+    Case("目录步数为 0", "step_count 从 1 起", "ListLessonsResponse", LLR, _set("result.lessons.0.step_count", 0)),
+    Case("目录步数超过讲解 DSL 上限", "step_count ≤ 100", "ListLessonsResponse", LLR, _set("result.lessons.0.step_count", 101)),
+    Case("目录产生证据", "目录不产生证据", "ListLessonsResponse", LLR, _add_evidence),
+    Case("目录信封外夹带评语", "信封之外不允许任何字段", "ListLessonsResponse", LLR, _set("commentary", "（合成）推荐你看这节")),
+    Case("目录结果夹带推荐理由", "目录不写关于学生的陈述", "ListLessonsResponse", LLR, _set("result.recommended_for", "（合成）薄弱节点")),
 ]

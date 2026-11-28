@@ -344,6 +344,21 @@ V1_MUTATIONS = {
 # ---------- v1.1 候选版（PLT-12 present_item，specs/present-item-contract/spec.md 验收第 1 条） ----------
 PI = f"{S}.PresentedItem"
 V11_MUTATIONS = {
+    # 讲评课目录 list_lessons（v1.1 草稿内追加（再续），specs/lesson-catalog）
+    "目录条目放开多余字段（可夹带讲解内容）": delete(f"{S}.LessonCatalogEntry.additionalProperties"),
+    "目录条目加 dsl 字段（受约束的对象，自由文本扫描看不出来）": assign(f"{S}.LessonCatalogEntry.properties.dsl", {"type": "object", "additionalProperties": False}),
+    "目录条目加 answers 字段": assign(f"{S}.LessonCatalogEntry.properties.answers",
+                                    {"type": "array", "maxItems": 5, "items": {"type": "string", "pattern": "^[a-z]$"}}),
+    "目录标题去掉 pattern（可夹带 HTML）": delete(f"{S}.LessonCatalogEntry.properties.title.pattern"),
+    "目录标题上限与 packages/stage 不一致": assign(f"{S}.LessonCatalogEntry.properties.title.maxLength", 60),
+    "目录步数上限与 packages/stage 不一致": assign(f"{S}.LessonCatalogEntry.properties.step_count.maximum", 200),
+    "目录数组去掉条数上限": delete(f"{S}.LessonCatalog.properties.lessons.maxItems"),
+    "目录请求的 context 换成计量上下文": assign(f"{S}.ListLessonsRequest.properties.context", {"$ref": "#/components/schemas/MeteredContext"}),
+    "目录请求放开多余字段": assign(f"{S}.ListLessonsRequest.additionalProperties", True),
+    "目录响应允许证据": delete(f"{S}.ListLessonsResponse.allOf.1.not"),
+    "目录不在 Method 枚举里": lambda d: d["components"]["schemas"]["Method"]["enum"].remove("list_lessons"),
+    "能力声明不要求 list_lessons": lambda d: d["components"]["schemas"]["Capabilities"]["properties"]["methods"]["required"].remove("list_lessons"),
+    "去掉 /list_lessons 路径": lambda d: d["paths"].pop("/list_lessons"),
     # 打开讲评课与台词稿（v1.1 草稿内追加，specs/stage-lesson-session ③b-1）
     "去掉“打开讲评课只能是 lesson、不带提问”的规则": lambda d: d["components"]["schemas"]["TeachRequest"]["allOf"].pop(),
     "lesson_ref 改成必填": lambda d: d["components"]["schemas"]["TeachRequest"]["required"].append("lesson_ref"),
