@@ -74,6 +74,7 @@ make adapter-aya-mutation                # 四个新方法与内容包格式 3 �
 AYA_ADAPTER_SERVICE_TOKEN=... npm start  # 启动（令牌 ≥ 32 字符，由部署环境注入）
 AYA_LEGACY_ROOT=/path/to/ayaheshui npm run build:pack   # 从 legacy 重新生成内容包（参数同下）
 npm run rebuild:pack -- --decisions <准入决定文件>        # 按平台导出的准入决定重建（--c9 strict|flag、--report、--out）
+npm run build:lessons -- --draft <讲评课草稿> --reviews <审核记录>   # 生成已发布的讲评课内容包 content/lessons.json（--out、--report）
 npm run register:sql > aya-register.sql  # 生成登记 SQL；目标库由执行人决定（pilot 与生产由人执行）
 ```
 
@@ -129,6 +130,19 @@ npm run register:sql > aya-register.sql  # 生成登记 SQL；目标库由执行
 - 加载时拒绝“严格模式却有标记”的记录。失败即关闭：解释器不可用、guard 报错、结果条数或顺序对不上，都当作失败。
 - 需要 `python3` 与 PyYAML（`PYTHON` 环境变量可指定解释器）；单测里没有时非严格模式跳过，`CONTRACT_STRICT=1` 下失败。
 - 词表更新后，用 `npm run rebuild:pack` 重建，刷新 `hint_scan` 里的词表版本。
+
+## 讲评课内容包（`specs/stage-lesson-staging` PR 1）
+- 两种来源（`src/lessons.ts`）：
+  - **已发布的讲评课内容包** `content/lessons.json`（格式 `aya-lesson-pack/2`）：不需要候选版开关，缺省读它；仓库里还没有真实讲评课，所以不带这个文件，缺省为空；
+  - **合成讲评课**（格式 1，`AYA_LESSON_PACK`）：只给测试与演练，只在候选版开关打开时读；设了它就不读已发布的包。
+- 生成（`npm run build:lessons`，`src/pack/lesson-release.ts`）：
+  - 草稿（格式 1）整包按加载规则读入，任何一节不合格就失败；
+  - 审核记录（格式 `aya-lesson-reviews/1`）：每节一行，写编号、版本、审核时的内容摘要 `digest`（`lessonDigest`），以及教研、人设两项结论（`approved` / `rejected`）。只有结论，不写审核人；
+  - 只发布两项都通过、且摘要与现在内容一致的讲评课；其余在报告里列出原因（没有审核、审核后内容改过、教研退回、人设退回）；
+  - 已发布的讲评课的台词稿每一行与板书原文过 C9 词表检查：老师台词、答疑与板书用阿鸦的词表，点点台词用点点的；只有严格模式，有命中就失败、不写文件；
+  - 报告（`--report`）只有编号、结论、文字位置与规则编号，不含讲解文字；同一输入两次生成逐字节相同。
+- 加载时（运行镜像里没有 Python，不再跑词表）核对发布记录与内容对得上：逐节摘要、按角色的文字条数、严格模式与词表版本；对不上整包拒绝，阿鸦拒绝启动。
+- 人设回归（`evals/persona`）纳入讲评课台词另起（规格第五节第 7 条）。
 
 ## 依赖与许可证（规则 10）
 | 包 | 版本 | 许可证 | 用途 |

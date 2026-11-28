@@ -74,12 +74,16 @@ export function hintTexts(pack: Pick<ContentPack, "items">): HintText[] {
 
 const REPO_ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "../../../..");
 
-/** 默认的扫描器：本仓 packages/personas 的 guard 命令行（PYTHON 环境变量可指定解释器，默认 python3） */
-export function guardRunner(opts: { python?: string; repoRoot?: string } = {}): GuardRunner {
+/**
+ * 默认的扫描器：本仓 packages/personas 的 guard 命令行（PYTHON 环境变量可指定解释器，默认 python3）。
+ * persona 缺省为阿鸦（提示阶梯）；讲评课台词按角色分别用阿鸦与点点的词表（src/pack/lesson-release.ts）。
+ */
+export function guardRunner(opts: { python?: string; repoRoot?: string; persona?: string } = {}): GuardRunner {
   const python = opts.python ?? process.env.PYTHON ?? "python3";
   const root = opts.repoRoot ?? REPO_ROOT;
+  const persona = opts.persona ?? HINT_SCAN_PERSONA;
   return (texts) => {
-    const r = spawnSync(python, ["-m", "personas.guard", "scan", "--persona", HINT_SCAN_PERSONA, "--stdin-json", "--exit-zero"], {
+    const r = spawnSync(python, ["-m", "personas.guard", "scan", "--persona", persona, "--stdin-json", "--exit-zero"], {
       cwd: root,
       input: JSON.stringify(texts),
       encoding: "utf8",

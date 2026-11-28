@@ -27,6 +27,7 @@ const TESTS = [
   "tests/present.test.ts",
   "tests/lesson-answer.test.ts",
   "tests/lesson-open.test.ts",
+  "tests/lesson-release.test.ts",
 ];
 const P = "src/methods/plan.ts";
 const V = "src/methods/variation.ts";
@@ -40,6 +41,7 @@ const HS = "src/pack/hint-scan.ts";
 const PR = "src/methods/present.ts";
 const RT = "src/rich-text.ts";
 const L = "src/lessons.ts";
+const LR = "src/pack/lesson-release.ts";
 
 type Edit = [file: string, from: string, to: string];
 // 名字 → 改动（原文必须恰好出现，替换第一处）
@@ -162,6 +164,20 @@ const MUTATIONS: Record<string, Edit[]> = {
   "讲评课台词稿不校验（原样当作合格稿）": [[L, "const s = migrateStageScript(d.dsl, l.script);",
     "const s = { ok: true as const, script: l.script as ValidatedStageScript, from: null } as ReturnType<typeof migrateStageScript>;"]],
   "讲评课内容包开关没开也读": [[L, "  if (!candidateAllowed) {\n    throw new Error(`讲评课内容包", "  if (false) {\n    throw new Error(`讲评课内容包"]],
+  // ---------- 讲评课内容包的发布与加载（specs/stage-lesson-staging PR 1） ----------
+  "讲评课发布不核对审核时的摘要": [[LR, '  if (review.digest !== digest) return "digest_mismatch";\n', ""]],
+  "讲评课发布不看教研审核": [[LR, '  if (review.content_review !== "approved") return "content_rejected";\n', ""]],
+  "讲评课发布不看人设审核": [[LR, '  if (review.persona_review !== "approved") return "persona_rejected";\n', ""]],
+  "讲评课发布 C9 有命中也放行": [[LR, "  if (hits.length > 0) {", "  if (false) {"]],
+  "讲评课发布不扫点点的台词": [[LR, 'for (const persona of ["aya", "diandian"] as const) {', 'for (const persona of ["aya"] as const) {']],
+  "讲评课发布不扫板书": [[L, "  return [...lines, ...board];", "  return [...lines];"]],
+  "讲评课点点台词按阿鸦的词表扫": [[L, "persona: LESSON_PERSONAS[x.role], text: x.text }));", "persona: LESSON_PERSONAS.teacher, text: x.text }));"]],
+  "讲评课发布不核对扫描结果条数": [[LR, "if (!Array.isArray(out.results) || out.results.length !== mine.length)", "if (!Array.isArray(out.results))"]],
+  "讲评课发布审核记录有草稿外的讲评课也放行": [[LR, "  if (unknown.length) throw", "  if (false) throw"]],
+  "已发布的讲评课包不核对 digest": [[L, "    if (lessonDigest(rest) !== digest) throw", "    if (false) throw"]],
+  "已发布的讲评课包不核对文字条数": [[L, "(Object.keys(want) as LessonPersona[]).some((p) => got[p] !== want[p])", "false"]],
+  "已发布的讲评课包接受非严格模式": [[L, 'scan.check !== "C9" || scan.mode !== "strict" ||', 'scan.check !== "C9" ||']],
+  "已发布的讲评课包不读（一律为空）": [[L, "    if (!existsSync(published)) return NO_LESSONS;", "    return NO_LESSONS;"]],
   // ---------- 打开讲评课（specs/stage-lesson-session ③b-2） ----------
   "打开讲评课把预制答疑一起下发": [[T, "const lines = lesson.script.lines.filter((l) => said.has(l.id)).map((l) => ({ id: l.id, role: l.role, text: l.text }));",
     "const lines = lesson.script.lines.map((l) => ({ id: l.id, role: l.role, text: l.text }));"]],
