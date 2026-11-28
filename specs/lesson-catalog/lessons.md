@@ -83,7 +83,7 @@
 
 ### 验证
 - `tests/test_lesson_session.py` 48 条、`tests/test_lesson_catalog.py` 4 条、令牌矩阵 55 条通过；再练与复测新加的 2 条通过。
-- `check-group-learning-a`、`check-group-learning-b` 的结果见 PR。
+- `check-group-learning-a`、`check-group-learning-b`（严格模式）通过：学习服务全量单测 4165 条；诊断、掌握、再练、复测、今日编排、learning-internal v1、审核台、模考、staging 的变异全部被发现；`deploy-check` 通过。
 
 ### 决定与差异
 1. **目录接口带 `student_ref`**：目录与学生无关，但学习服务的每个内部接口都先过库层处理判据（退出、删除、没有有效同意 → 404），这里照旧。
