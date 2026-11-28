@@ -19,13 +19,16 @@ export async function LessonList({ session, studentId, subject }: { session: Bff
       {!lessons ? <p className="muted" data-unavailable="lesson-catalog">{LESSON.catalogUnavailable}</p>
         : lessons.length === 0 ? <p className="muted" data-testid="lesson-catalog-empty">{LESSON.catalogEmpty}</p> : (
           <ul data-testid="lesson-catalog-list">
-            {lessons.map((l) => (
-              <li key={`${l.lessonId}@${l.lessonVersion}`}>
-                <a href={lessonHref(studentId, subject, l)} data-testid="lesson-catalog-link">{l.title}</a>
+            {lessons.map((l) => {
+              const href = lessonHref(studentId, subject, l);  // 编号与版本已唯一，地址也唯一：直接当 key
+              return (
+              <li key={href}>
+                <a href={href} data-testid="lesson-catalog-link">{l.title}</a>
                 {' '}<span className="muted">{LESSON.catalogSteps}</span>{' '}<span data-value="step-count">{l.stepCount}</span>
                 {' '}<span className="muted">{LESSON.catalogStepsUnit}</span>
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
     </section>
