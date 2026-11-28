@@ -5,6 +5,8 @@
 //   - 静态：讲评课的 BFF 调用只在 src/lib/lesson-api.ts 的 call 一处 fetch；不直连学习服务；票据不进 DOM 属性与地址栏、不写浏览器存储；
 //     页面载入不打开讲评课（要点“开始”，打开会计一次）；路由文件是普通页面（page.tsx，specs/stage-production-build），只挂组件；
 //   - 文案：全部是 {{TODO_COPY:lesson.*}} 占位并已并入壳文案（禁语等扫描在 tests/shell.test.ts）。
+//   - 讲评课目录（specs/lesson-catalog PR D）：地址只带编号与版本（node、item 404）；目录与条目上的引用只挑白名单字段；
+//     科目页列表与再练、复测的入口先过开关；入口只在判分结果之后渲染。
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -12,7 +14,7 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { ALL_LESSON_COPY, ALL_SHELL_COPY, LESSON, LESSON_ERROR } from '../src/shell/copy.ts';
 import { isLessonSubject, LESSON_SUBJECTS, lessonEnabled } from '../src/lesson/features.ts';
-import { parseLessonRef, pickAsk, pickOpen, uiError } from '../src/lesson/view.ts';
+import { entryLessonRef, lessonHref, parseLessonRef, pickAsk, pickCatalog, pickOpen, pickWireRef, uiError } from '../src/lesson/view.ts';
 
 const WEB = fileURLToPath(new URL('..', import.meta.url));
 const read = (p: string) => readFileSync(join(WEB, p), 'utf8');
@@ -38,9 +40,10 @@ test('开关关时 BFF 客户端不发任何请求（按 404 返回）', async (
   try {
     delete process.env['STARBUDDY_LESSON'];
     process.env['STARBUDDY_ENV'] = 'test';
-    const { askLesson, openLesson } = await import('../src/lib/lesson-api.ts');
+    const { askLesson, fetchLessonCatalog, openLesson } = await import('../src/lib/lesson-api.ts');
     const s = { token: 'a'.repeat(64), csrf: 'b'.repeat(64) };
-    for (const r of [await openLesson(s, '00000000-0000-4000-8000-00000000a001', {}), await askLesson(s, '00000000-0000-4000-8000-00000000a001', {})]) {
+    for (const r of [await openLesson(s, '00000000-0000-4000-8000-00000000a001', {}), await askLesson(s, '00000000-0000-4000-8000-00000000a001', {}),
+                     await fetchLessonCatalog(s, '00000000-0000-4000-8000-00000000a001', 'math')]) {
       assert.deepEqual(r, { ok: false, status: 404, code: 'NOT_FOUND', reason: null });
     }
     assert.equal(calls, 0);
@@ -51,13 +54,53 @@ test('开关关时 BFF 客户端不发任何请求（按 404 返回）', async (
   }
 });
 
-test('地址栏参数：讲评课 ID、版本、节点、题只认合规写法', () => {
-  assert.deepEqual(parseLessonRef('syn.lesson.a', '0.1.0', 'K-QF-0301', undefined),
-                   { lessonId: 'syn.lesson.a', lessonVersion: '0.1.0', node: 'K-QF-0301', item: null });
-  assert.deepEqual(parseLessonRef('syn.lesson.a', '0.1.0', 'K-QF-0301', 'SYN-1')?.item, 'SYN-1');
-  for (const args of [['Syn', '0.1.0', 'K', undefined], ['syn', 'v1', 'K', undefined], ['syn', '0.1.0', 'aya:K', undefined],
-                      ['syn', '0.1.0', '', undefined], ['syn', '0.1.0', 'K', '../x'], ['syn', undefined, 'K', undefined]] as const) {
-    assert.equal(parseLessonRef(args[0], args[1], args[2], args[3]), null, JSON.stringify(args));
+test('地址栏参数：只认讲评课编号与版本；地址由编号与版本拼出，不带节点与题', () => {
+  assert.deepEqual(parseLessonRef('syn.lesson.a', '0.1.0'), { lessonId: 'syn.lesson.a', lessonVersion: '0.1.0' });
+  for (const args of [['Syn', '0.1.0'], ['syn', 'v1'], ['syn', undefined], [undefined, '0.1.0'], ['../x', '0.1.0'], ['syn', ['0.1.0']]] as const) {
+    assert.equal(parseLessonRef(args[0], args[1]), null, JSON.stringify(args));
+  }
+  const S = '00000000-0000-4000-8000-00000000a001';
+  assert.equal(lessonHref(S, 'math', { lessonId: 'syn.lesson.a', lessonVersion: '0.1.0' }), `/s/${S}/learn/math/lesson/syn.lesson.a?v=0.1.0`);
+  // 以前带 node、item 的地址 404：页面在读会话之前判断
+  const page = code(read('src/lesson/LessonPage.tsx'));
+  assert.match(page, /if \('node' in search \|\| 'item' in search\) notFound\(\);/);
+  assert.ok(page.indexOf("'node' in search") < page.indexOf('requireOwnStudent('));
+});
+
+test('目录与条目上的讲评课引用：只挑编号、版本、标题与步数；任何一条不合格整份不显示；条目引用不合格当作没有', () => {
+  const row = { lesson_ref: { lesson_id: 'syn.lesson.a', lesson_version: '0.1.0' }, title: '（合成）讲评课', step_count: 3, skill_node: 'aya:K-1' };
+  assert.deepEqual(pickCatalog({ subject: 'math', lessons: [row] }), [{ lessonId: 'syn.lesson.a', lessonVersion: '0.1.0', title: '（合成）讲评课', stepCount: 3 }]);
+  assert.deepEqual(pickCatalog({ subject: 'math', lessons: [] }), []);
+  for (const bad of [null, {}, { lessons: {} }, { lessons: [row, { ...row, title: '' }] }, { lessons: [{ ...row, title: 'x'.repeat(41) }] },
+                     { lessons: [{ ...row, title: '（合成）\u0007' }] }, { lessons: [{ ...row, step_count: 0 }] }, { lessons: [{ ...row, step_count: 101 }] },
+                     { lessons: [{ ...row, lesson_ref: { lesson_id: 'syn.lesson.a', lesson_version: '0.1.0', item_ref: 'aya:SYN-1' } }] },
+                     { lessons: Array.from({ length: 201 }, () => row) }]) {
+    assert.equal(pickCatalog(bad), null, JSON.stringify(bad).slice(0, 80));
+  }
+  assert.deepEqual(pickWireRef({ lesson_id: 'syn.lesson.a', lesson_version: '0.1.0' }), { lessonId: 'syn.lesson.a', lessonVersion: '0.1.0' });
+  const E = '00000000-0000-4000-8000-00000000e001';
+  const q = { entries: [{ entry_id: E, lesson_ref: { lesson_id: 'syn.lesson.a', lesson_version: '0.1.0' } }, { entry_id: 'other' }] };
+  assert.deepEqual(entryLessonRef(q, E), { lessonId: 'syn.lesson.a', lessonVersion: '0.1.0' });
+  assert.equal(entryLessonRef(q, 'other'), null);
+  assert.equal(entryLessonRef(q, 'missing'), null);
+  assert.equal(entryLessonRef({ entries: [{ entry_id: E, lesson_ref: { lesson_id: 'Bad', lesson_version: '0.1.0' } }] }, E), null);
+  assert.equal(entryLessonRef(null, E), null);
+});
+
+test('静态：科目页列表与再练、复测的入口先过讲评课开关与学科；入口只在判分结果之后渲染', () => {
+  const list = code(read('src/lesson/LessonList.tsx'));
+  assert.ok(list.indexOf('lessonEnabled()') < list.indexOf('fetchLessonCatalog('), '开关关时不取目录');
+  assert.match(list, /if \(!lessonEnabled\(\) \|\| !isLessonSubject\(subject\)\) return null;/);
+  assert.match(code(read('src/app/s/[studentId]/learn/[subject]/page.tsx')), /<LessonList session=\{ps\.session\} studentId=\{studentId\} subject=\{m\.code\} \/>/);
+  for (const [pages, item, q, tid] of [['src/practice/PracticePages.tsx', 'src/practice/PracticeItem.tsx', 'fetchPracticeQueue', 'practice-lesson'],
+                                       ['src/retest/RetestPages.tsx', 'src/retest/RetestItem.tsx', 'fetchRetestQueue', 'retest-lesson']] as const) {
+    const p = code(read(pages));
+    assert.match(p, new RegExp(`lessonEnabled\\(\\) && isLessonSubject\\(subject\\) \\? await ${q}\\(`), `${pages}：先过开关再取列表`);
+    const c = code(read(item));
+    const link = c.indexOf(`data-testid="${tid}"`);
+    assert.ok(link > 0, item);
+    assert.equal(c.match(/lessonHref \?/g)?.length, 1, `${item}：入口只有一处`);
+    assert.ok(c.lastIndexOf("phase === 'result'", link) > c.lastIndexOf("phase === 'item'", link), `${item}：入口在判分结果那一段里`);
   }
 });
 
@@ -98,8 +141,10 @@ test('错误映射：401 登录；403、404 没有找到；402 宵禁与额度�
 test('静态：只在 src/lib/lesson-api.ts 的 call 一处 fetch；不直连学习服务；票据不进 DOM 属性、地址栏与浏览器存储；页面载入不打开', () => {
   const api = code(read('src/lib/lesson-api.ts'));
   assert.equal(api.match(/\bfetch\(/g)?.length, 1);
+  assert.match(api, /`catalog\/\$\{subject\}`/, '目录走同一个 call');
   assert.ok(api.includes('/bff/v0/students/${student}/lessons/${tail}'));
-  for (const f of ['src/lesson/LessonPlayer.tsx', 'src/lesson/LessonPage.tsx', 'src/lesson/actions.ts', 'src/lesson/view.ts', 'src/lesson/features.ts']) {
+  for (const f of ['src/lesson/LessonPlayer.tsx', 'src/lesson/LessonPage.tsx', 'src/lesson/LessonList.tsx', 'src/lesson/actions.ts', 'src/lesson/view.ts',
+                   'src/lesson/features.ts']) {
     const t = code(read(f));
     assert.ok(!/\bfetch\(|\/internal\/v1|localStorage|sessionStorage|indexedDB|document\.cookie/.test(t), f);
     assert.ok(!/data-[a-z-]*=\{[^}]*ticket/i.test(t), `${f}：票据不进 DOM 属性`);

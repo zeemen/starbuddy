@@ -705,6 +705,13 @@ export const LESSON = {
   next: T('lesson.next', '下一步'),
   restart: T('lesson.restart', '从头再讲'),
   back: T('lesson.back', '返回学科'),
+  // 讲评课目录（specs/lesson-catalog PR D，W6 占位）：科目页列表与再练、复测判分之后的入口
+  catalogHeading: T('lesson.catalog.heading', '讲评课'),
+  catalogSteps: T('lesson.catalog.steps', '共'),
+  catalogStepsUnit: T('lesson.catalog.steps_unit', '步'),
+  catalogEmpty: T('lesson.catalog.empty', '这一科还没有讲评课'),
+  catalogUnavailable: T('lesson.catalog.unavailable', '讲评课列表暂时无法获取'),
+  forItem: T('lesson.for_item', '看这道题的讲评课'),
 } as const;
 export const LESSON_ERROR = {
   login: T('lesson.error.login', '请重新登录'),

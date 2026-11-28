@@ -4,6 +4,8 @@
 // 两页都先过前端开关 STARBUDDY_RETEST_UI（关时 404，不读会话、不发请求），再只认学生本人（requireOwnStudent）；BFF 再判断一次。
 // 只陈述事实：任务说明只用固定占位（类别 → 纯占位键），不显示任务原因、错因、掌握度、星态与任何评价（规则 11、12）。
 import { notFound, redirect } from 'next/navigation';
+import { isLessonSubject, lessonEnabled } from '../lesson/features.ts';
+import { entryLessonRef, lessonHref } from '../lesson/view.ts';
 import { fetchRetestQueue } from '../lib/retest-api.ts';
 import { RETEST, RETEST_KIND, RETEST_LEVEL, RETEST_STATUS, subjectLabel } from '../shell/copy.ts';
 import { requireOwnStudent } from '../shell/guard.ts';
@@ -69,11 +71,15 @@ export async function RetestItemPage({ studentId, subject, entryId }: { studentI
   if (!retestEnabled()) notFound();
   if (!isRetestSubject(subject) || !UUID.test(entryId)) notFound();
   const ps = await requireOwnStudent(studentId);
+  // 讲评课入口（specs/lesson-catalog PR D，E2）：同再练。复测条目作答后会离开列表，所以在作答之前取引用
+  const q = lessonEnabled() && isLessonSubject(subject) ? await fetchRetestQueue(ps.session, studentId, subject) : null;
+  const ref = q?.ok ? entryLessonRef(q.value, entryId) : null;
   return (
     <main data-testid="retest-page" data-retest-root="item" data-subject={subject}>
       <h1>{RETEST.heading}</h1>
       <p className="muted">{subjectLabel(subject)}</p>
-      <RetestItem csrf={ps.session.csrf} student={studentId} subject={subject} entry={entryId} listHref={listPath(studentId, subject)} />
+      <RetestItem csrf={ps.session.csrf} student={studentId} subject={subject} entry={entryId} listHref={listPath(studentId, subject)}
+                  lessonHref={ref ? lessonHref(studentId, subject, ref) : null} />
     </main>
   );
 }

@@ -7,7 +7,7 @@
 // 文案全部在 src/shell/copy.ts（占位 {{TODO_COPY:retest.*}}）。
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import type { Answer } from '../lib/diagnosis.ts';
-import { RETEST as C, RETEST_AFTER, RETEST_ERROR, RETEST_VERDICT } from '../shell/copy.ts';
+import { LESSON, RETEST as C, RETEST_AFTER, RETEST_ERROR, RETEST_VERDICT } from '../shell/copy.ts';
 import { RichParagraphs, RichRuns } from '../shell/RichItem.tsx';
 import { ProcessStatus } from '../shell/ProcessStatus.tsx';
 import { cooldownMs } from '../lib/retry-after.ts';
@@ -18,7 +18,11 @@ import type { RetestAnswerView, RetestReadyView } from './view.ts';
 
 type Phase = 'loading' | 'item' | 'result' | 'empty' | 'stopped';
 
-export function RetestItem({ csrf, student, subject, entry, listHref }: { csrf: string; student: string; subject: string; entry: string; listHref: string }) {
+export function RetestItem({ csrf, student, subject, entry, listHref, lessonHref = null }: {
+  csrf: string; student: string; subject: string; entry: string; listHref: string;
+  /** 原题的讲评课页面地址（讲评课开关开着、原题有讲评课时才有）；只在判分结果之后显示 */
+  lessonHref?: string | null;
+}) {
   const ids = { heading: useId(), answer: useId() };
   const [phase, setPhase] = useState<Phase>('loading');
   const [ready, setReady] = useState<RetestReadyView | null>(null);
@@ -144,6 +148,7 @@ export function RetestItem({ csrf, student, subject, entry, listHref }: { csrf: 
           {result.entry.status === 'due' ? (
             <p className="diagnosis-actions"><button type="button" onClick={() => void load()} data-testid="retest-another">{C.another}</button></p>
           ) : null}
+          {lessonHref ? <p><a href={lessonHref} data-testid="retest-lesson">{LESSON.forItem}</a></p> : null}
         </div>
       ) : null}
       {phase === 'empty' ? <h2 id={ids.heading} ref={heading} tabIndex={-1} data-testid="retest-empty">{C.itemUnavailable}</h2> : null}

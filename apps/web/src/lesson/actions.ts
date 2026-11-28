@@ -7,7 +7,7 @@ import { redirect } from 'next/navigation';
 import { askLesson, openLesson } from '../lib/lesson-api.ts';
 import { actionSession } from '../lib/session.ts';
 import { isLessonSubject, LESSON_SUBJECTS, lessonEnabled } from './features.ts';
-import { pickAsk, pickOpen, TICKET, uiError, UUID, UUID_V4, LESSON_ID, LOCAL_REF, SEMVER, type AskView, type LessonRef, type OpenView, type UiError } from './view.ts';
+import { pickAsk, pickOpen, TICKET, uiError, UUID, UUID_V4, LESSON_ID, SEMVER, type AskView, type LessonRef, type OpenView, type UiError } from './view.ts';
 
 export type OpenOutcome = { kind: 'open'; view: OpenView } | { kind: 'error'; error: UiError };
 export type AskOutcome = { kind: 'ask'; view: AskView } | { kind: 'error'; error: UiError };
@@ -30,8 +30,8 @@ async function begin(csrf: unknown, student: unknown, subject: unknown) {
 const refOk = (r: unknown): r is LessonRef => {
   if (!r || typeof r !== 'object') return false;
   const o = r as Record<string, unknown>;
-  return typeof o['lessonId'] === 'string' && LESSON_ID.test(o['lessonId']) && typeof o['lessonVersion'] === 'string' && SEMVER.test(o['lessonVersion'])
-    && typeof o['node'] === 'string' && LOCAL_REF.test(o['node']) && (o['item'] === null || (typeof o['item'] === 'string' && LOCAL_REF.test(o['item'])));
+  return Object.keys(o).length === 2 && typeof o['lessonId'] === 'string' && LESSON_ID.test(o['lessonId'])
+    && typeof o['lessonVersion'] === 'string' && SEMVER.test(o['lessonVersion']);
 };
 
 const questionOk = (q: unknown): q is AskInput => {
@@ -47,7 +47,7 @@ export async function openLessonAction(csrf: string, student: string, subject: s
   const b = await begin(csrf, student, subject);
   if (!b || !refOk(ref) || typeof key !== 'string' || !UUID_V4.test(key)) return err('not_found');
   const prefix = LESSON_SUBJECTS[b.subject];
-  // 只带讲评课引用：节点与题由学习服务按目录补全（specs/lesson-catalog PR C）。地址里的 node、item 在 PR D 改地址时一并去掉
+  // 只带讲评课引用：节点与题由学习服务按目录补全（specs/lesson-catalog PR C）
   const r = await openLesson(b.s, b.student, {
     subject: prefix, lesson_ref: { lesson_id: ref.lessonId, lesson_version: ref.lessonVersion }, idempotency_key: key });
   if (!r.ok) return err(uiError(r));

@@ -10,7 +10,7 @@
 // 文案全部在 src/shell/copy.ts（占位 {{TODO_COPY:practice.*}}，过禁语与禁用推断词表检查）。
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import type { Answer } from '../lib/diagnosis.ts';
-import { PRACTICE as C, PRACTICE_AFTER, PRACTICE_ERROR, PRACTICE_VERDICT } from '../shell/copy.ts';
+import { LESSON, PRACTICE as C, PRACTICE_AFTER, PRACTICE_ERROR, PRACTICE_VERDICT } from '../shell/copy.ts';
 import { RichParagraphs, RichRuns } from '../shell/RichItem.tsx';
 import { ProcessStatus } from '../shell/ProcessStatus.tsx';
 import { answerPracticeAction, nextPracticeAction } from './actions.ts';
@@ -20,7 +20,11 @@ import { keepsTicket, needsNewItem, resubmitsSnapshot, shanghaiMinute, type Answ
 
 type Phase = 'loading' | 'item' | 'result' | 'empty' | 'stopped';
 
-export function PracticeItem({ csrf, student, subject, entry, listHref }: { csrf: string; student: string; subject: string; entry: string; listHref: string }) {
+export function PracticeItem({ csrf, student, subject, entry, listHref, lessonHref = null }: {
+  csrf: string; student: string; subject: string; entry: string; listHref: string;
+  /** 原题的讲评课页面地址（讲评课开关开着、原题有讲评课时才有）；只在判分结果之后显示 */
+  lessonHref?: string | null;
+}) {
   const ids = { heading: useId(), answer: useId() };
   const [phase, setPhase] = useState<Phase>('loading');
   const [ready, setReady] = useState<ReadyView | null>(null);
@@ -154,6 +158,7 @@ export function PracticeItem({ csrf, student, subject, entry, listHref }: { csrf
           {result.entry.status === 'due' ? (
             <p className="diagnosis-actions"><button type="button" onClick={() => void load()} data-testid="practice-another">{C.another}</button></p>
           ) : null}
+          {lessonHref ? <p><a href={lessonHref} data-testid="practice-lesson">{LESSON.forItem}</a></p> : null}
         </div>
       ) : null}
       {phase === 'empty' ? <h2 id={ids.heading} ref={heading} tabIndex={-1} data-testid="practice-empty">{C.itemUnavailable}</h2> : null}
