@@ -120,8 +120,7 @@ async def reserve(admin, student: str, state: str = "reserved") -> tuple[str, st
 
 
 def open_body(student: str, usage: str, key: str, **over) -> dict:
-    b = {"student_ref": student, "subject": "aya", "lesson_ref": dict(LESSON), "skill_node": NODE, "item_ref": ITEM,
-         "usage_id": usage, "idempotency_key": key}
+    b = {"student_ref": student, "subject": "aya", "lesson_ref": dict(LESSON), "usage_id": usage, "idempotency_key": key}
     b.update(over)
     return b
 
@@ -207,7 +206,9 @@ async def test_open_bad_requests(lapi, pools, student):
     usage, key = await reserve(admin, student)
     cases = [
         (open_body(student, usage, key, subject="zhixing"), 400, "SUBJECT_NOT_SUPPORTED"),
-        (open_body(student, usage, key, skill_node="zhixing:K-1"), 400, "INVALID_REQUEST"),
+        # 节点与题由目录补全，调用方不能再带（过渡期的两个可选字段已删，specs/lesson-catalog）
+        (open_body(student, usage, key, skill_node=NODE), 400, "INVALID_REQUEST"),
+        (open_body(student, usage, key, item_ref=ITEM), 400, "INVALID_REQUEST"),
         (open_body(student, usage, key, lesson_ref={"lesson_id": "Bad", "lesson_version": "0.1.0"}), 400, "INVALID_REQUEST"),
         (open_body(student, usage, "not-a-uuid"), 400, "INVALID_REQUEST"),
         ({**open_body(student, usage, key), "dsl": {}}, 400, "INVALID_REQUEST"),
@@ -561,9 +562,7 @@ async def test_catalog_bad_requests(lapi, student):
 async def test_open_fills_node_and_item_from_catalog(lapi, pools, adapter, student):
     _, admin = pools
     usage, key = await reserve(admin, student)
-    body = open_body(student, usage, key)
-    del body["skill_node"], body["item_ref"]
-    r = await lapi.post("/internal/v1/lesson/open", json=body)
+    r = await lapi.post("/internal/v1/lesson/open", json=open_body(student, usage, key))
     assert r.status_code == 201, r.text
     teach = adapter.calls[-1]
     assert teach["skill_node"] == NODE and teach["item_ref"] == ITEM and teach["lesson_ref"] == LESSON
@@ -572,8 +571,6 @@ async def test_open_fills_node_and_item_from_catalog(lapi, pools, adapter, stude
 @pytest.mark.parametrize("over", [
     {"lesson_ref": {"lesson_id": "syn.lesson.missing", "lesson_version": "0.1.0"}},   # 目录里没有
     {"lesson_ref": {"lesson_id": LESSON["lesson_id"], "lesson_version": "9.9.9"}},     # 版本不对
-    {"skill_node": "aya:K-SYN-9999"},                                                    # 带来的节点与目录不一致
-    {"item_ref": "aya:SYN-OTHER"},                                                       # 带来的题与目录不一致
 ])
 async def test_open_not_in_catalog_is_definite_and_creates_no_session(lapi, pools, adapter, student, over):
     _, admin = pools

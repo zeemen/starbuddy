@@ -46,8 +46,6 @@ paths:
                   properties:
                     lesson_id: { type: string, pattern: '^[a-z][a-z0-9_.\-]{0,63}$' }
                     lesson_version: { type: string, pattern: '^\d{1,3}\.\d{1,3}\.\d{1,4}$' }
-                skill_node: { type: string, description: '可选，带学科前缀。由学习服务按讲评课目录补全（specs/lesson-catalog PR B）；BFF 过渡期仍可带来，带了必须与目录一致，否则 422' }
-                item_ref: { type: string, description: '可选，带学科前缀。同上：按目录补全，带了必须一致' }
                 usage_id: { type: string, format: uuid, description: BFF 预留的 lesson_whiteboard 的 usage_id }
                 idempotency_key: { type: string, description: 那笔预留的幂等键（小写 UUIDv4） }
       responses:

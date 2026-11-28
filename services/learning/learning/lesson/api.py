@@ -61,8 +61,8 @@ def register(app: FastAPI, authorized: Callable[[Request], bool], state: dict) -
     async def open_lesson(request: Request) -> JSONResponse:
         async def fn():
             b = await _body(request)
-            # 节点与题由学习服务按讲评课目录补全（specs/lesson-catalog PR B）；BFF 过渡期仍可带来，带了必须与目录一致
-            _keys(b, {"student_ref", "subject", "lesson_ref", "usage_id", "idempotency_key"}, {"skill_node", "item_ref"})
+            # 只收讲评课引用：节点与题由学习服务按讲评课目录补全（specs/lesson-catalog）；带了就是请求不合格（400）
+            _keys(b, {"student_ref", "subject", "lesson_ref", "usage_id", "idempotency_key"})
             ref: Any = b["lesson_ref"]
             if not (all(isinstance(b[k], str) for k in b if k != "lesson_ref") and isinstance(ref, dict)
                     and set(ref) == {"lesson_id", "lesson_version"} and all(isinstance(v, str) for v in ref.values())):
@@ -70,8 +70,7 @@ def register(app: FastAPI, authorized: Callable[[Request], bool], state: dict) -
             s = svc()
             await allowed(b["student_ref"])
             out, replayed = await s.open(student=b["student_ref"].lower(), subject=b["subject"], lesson_id=ref["lesson_id"],
-                                         lesson_version=ref["lesson_version"], skill_node=b.get("skill_node"), item_ref=b.get("item_ref"),
-                                         usage_id=b["usage_id"].lower(), key=b["idempotency_key"])
+                                         lesson_version=ref["lesson_version"], usage_id=b["usage_id"].lower(), key=b["idempotency_key"])
             return (200 if replayed else 201), out, replay(replayed)
         return await run("open", request, fn)
 
