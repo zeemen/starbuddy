@@ -3,7 +3,7 @@
 鉴权与诊断、再练同一做法：只认 BFF 的会话令牌（LEARNING_SESSION_TOKEN，PLT-24），sha256 后常量时间比较。请求体限 64 KB，
 JSON 拒绝 NaN 与重复键，未知键一律 400。日志只记接口名、状态码、错误码、耗时，不记请求体（提问、票据）、讲解与回答文字、学生 ID。
 学习服务不认学生身份：BFF 负责“只认学生本人”，这里只核对会话与票据属于请求里的 student_ref。
-没有配置讲评课（LEARNING_LESSON_TICKET_SECRET 未设）时两个接口一律 501 LESSON_UNAVAILABLE。
+没有配置讲评课（LEARNING_LESSON_TICKET_SECRET 未设）时三个接口一律 501 LESSON_UNAVAILABLE。
 """
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse
 from .. import processing
 from ..diagnosis.api import _body, _keys
 from ..errors import IngestError
+from .service import SUBJECTS, UUID_RE
 
 log = logging.getLogger("starbuddy.learning.lesson")
 
@@ -60,7 +61,8 @@ def register(app: FastAPI, authorized: Callable[[Request], bool], state: dict) -
     async def open_lesson(request: Request) -> JSONResponse:
         async def fn():
             b = await _body(request)
-            _keys(b, {"student_ref", "subject", "lesson_ref", "skill_node", "usage_id", "idempotency_key"}, {"item_ref"})
+            # 节点与题由学习服务按讲评课目录补全（specs/lesson-catalog PR B）；BFF 过渡期仍可带来，带了必须与目录一致
+            _keys(b, {"student_ref", "subject", "lesson_ref", "usage_id", "idempotency_key"}, {"skill_node", "item_ref"})
             ref: Any = b["lesson_ref"]
             if not (all(isinstance(b[k], str) for k in b if k != "lesson_ref") and isinstance(ref, dict)
                     and set(ref) == {"lesson_id", "lesson_version"} and all(isinstance(v, str) for v in ref.values())):
@@ -68,10 +70,28 @@ def register(app: FastAPI, authorized: Callable[[Request], bool], state: dict) -
             s = svc()
             await allowed(b["student_ref"])
             out, replayed = await s.open(student=b["student_ref"].lower(), subject=b["subject"], lesson_id=ref["lesson_id"],
-                                         lesson_version=ref["lesson_version"], skill_node=b["skill_node"], item_ref=b.get("item_ref"),
+                                         lesson_version=ref["lesson_version"], skill_node=b.get("skill_node"), item_ref=b.get("item_ref"),
                                          usage_id=b["usage_id"].lower(), key=b["idempotency_key"])
             return (200 if replayed else 201), out, replay(replayed)
         return await run("open", request, fn)
+
+    @app.post("/internal/v1/lesson/catalog")
+    async def catalog(request: Request) -> JSONResponse:
+        """讲评课目录（specs/lesson-catalog PR B）：只给编号、版本、标题与步数；节点与题不出学习服务。不计量、不建会话。"""
+        async def fn():
+            b = await _body(request)
+            _keys(b, {"student_ref", "subject"})
+            if not (isinstance(b["student_ref"], str) and isinstance(b["subject"], str)):
+                raise IngestError(400, "INVALID_REQUEST", "bad field types")
+            s = svc()
+            if not UUID_RE.fullmatch(b["student_ref"].lower()):
+                raise IngestError(400, "INVALID_REQUEST", "bad field values")
+            if b["subject"] not in SUBJECTS:
+                raise IngestError(400, "SUBJECT_NOT_SUPPORTED", "lessons are only available for aya in the pilot")
+            await allowed(b["student_ref"])
+            entries = await s.catalog.entries(b["subject"])
+            return 200, {"subject": b["subject"], "lessons": [e.public() for e in entries]}, None
+        return await run("catalog", request, fn)
 
     @app.post("/internal/v1/lesson/ask")
     async def ask(request: Request) -> JSONResponse:

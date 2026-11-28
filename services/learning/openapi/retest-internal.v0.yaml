@@ -215,6 +215,14 @@ components:
         kind: { enum: [retest, verify], description: 复测（复测轮、衰减、8 周复测点）或验证（平台内验证、自述验证）；不给任务原因 }
         status: { enum: [due, unavailable] }
         empty_reason: { type: [string, 'null'], description: 只在 unavailable 时有值 }
+        lesson_ref:
+          type: object
+          additionalProperties: false
+          required: [lesson_id, lesson_version]
+          description: 可选（specs/lesson-catalog PR B）：原题有讲评课时，讲这道题的那节课（讲评课开着、目录取得到时才有；题目引用不出学习服务以外不变）
+          properties:
+            lesson_id: { type: string, pattern: '^[a-z][a-z0-9_.\-]{0,63}$' }
+            lesson_version: { type: string, pattern: '^\d+\.\d+\.\d+$' }
     NextReady:
       type: object
       additionalProperties: false

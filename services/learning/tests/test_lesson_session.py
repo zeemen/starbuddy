@@ -52,6 +52,11 @@ class FakeLessonAdapter:
 
     def __init__(self) -> None:
         self.calls: list[dict] = []
+        # 讲评课目录（list_lessons，specs/lesson-catalog PR B）：缺省就是这里打开的那一节
+        self.catalog = [{"lesson_ref": dict(LESSON), "skill_node": NODE, "item_ref": ITEM, "title": "（合成）讲评课", "step_count": 3}]
+        self.catalog_status = 200
+        self.catalog_problem: dict = {}
+        self.catalog_calls: list[dict] = []
         self.open_status = 200
         self.open_problem: dict = {}
         self.mutate_open = None
@@ -60,6 +65,15 @@ class FakeLessonAdapter:
 
     async def handler(self, request: httpx.Request) -> httpx.Response:
         assert request.headers["authorization"] == f"Bearer {ADAPTER_CREDENTIAL}"
+        if request.url.path.endswith("/plugin/v0/list_lessons"):
+            body = json.loads(request.content)
+            self.catalog_calls.append(body)
+            if self.catalog_status != 200:
+                return httpx.Response(self.catalog_status, json=self.catalog_problem)
+            return httpx.Response(200, json={"contract_version": "1.1.0", "result": {"lessons": copy.deepcopy(self.catalog)}, "evidence_ids": [],
+                                             "source_version": "algo:aya-lesson-list@0.1.0;items:aya-lessons@syn00001",
+                                             "model_version": "algo:aya-lesson-list@0.1.0", "confidence": 1, "semantics": "practice",
+                                             "human_review_required": False})
         assert request.url.path.endswith("/plugin/v0/teach")
         body = json.loads(request.content)
         self.calls.append(body)
@@ -153,8 +167,10 @@ async def test_open_delivers_lesson_and_ticket(lapi, pools, adapter, student):
     assert "question" not in req and "conversation" not in req
 
 
-async def test_open_replay_returns_same_session(lapi, pools, student):
+async def test_open_replay_returns_same_session(lapi, pools, adapter, student):
     _, admin = pools
+    adapter.catalog.append({"lesson_ref": {"lesson_id": "syn.lesson.other", "lesson_version": "0.1.0"}, "skill_node": NODE, "item_ref": ITEM,
+                            "title": "（合成）另一节", "step_count": 2})
     usage, key = await reserve(admin, student)
     a = await lapi.post("/internal/v1/lesson/open", json=open_body(student, usage, key))
     b = await lapi.post("/internal/v1/lesson/open", json=open_body(student, usage, key))
@@ -460,7 +476,7 @@ def test_internal_openapi_matches_api_keys():
     doc = yaml.safe_load(OPENAPI.read_text(encoding="utf-8"))
     src = (Path(__file__).resolve().parents[1] / "learning/lesson/api.py").read_text(encoding="utf-8")
     routes = re.findall(r'@app\.post\("([^"]+)"\)(.*?)(?=@app\.|\Z)', src, re.S)
-    assert {p for p, _ in routes} == set(doc["paths"]) == {"/internal/v1/lesson/open", "/internal/v1/lesson/ask"}
+    assert {p for p, _ in routes} == set(doc["paths"]) == {"/internal/v1/lesson/open", "/internal/v1/lesson/ask", "/internal/v1/lesson/catalog"}
     for path, body in routes:
         m = re.search(r"_keys\(b, (\{[^}]*\})(?:, (\{[^}]*\}))?\)", body)
         assert m, path
@@ -484,6 +500,99 @@ async def test_internal_openapi_matches_responses(lapi, pools, adapter, student)
     v("AskAnswered").validate((await lapi.post("/internal/v1/lesson/ask", json=ask_body(student, o["ticket"]))).json())
     adapter.ask_status, adapter.ask_problem = 422, {"code": "MODE_NOT_SUPPORTED", "retryable": False}
     v("AskNoAnswer").validate((await lapi.post("/internal/v1/lesson/ask", json=ask_body(student, o["ticket"]))).json())
+    v("LessonCatalog").validate((await lapi.post("/internal/v1/lesson/catalog", json={"student_ref": student, "subject": "aya"})).json())
+
+
+# ---------- 讲评课目录（specs/lesson-catalog PR B） ----------
+def catalog_body(student: str, **over) -> dict:
+    return {"student_ref": student, "subject": "aya", **over}
+
+
+async def test_catalog_lists_public_fields_and_caches(lapi, adapter, student):
+    adapter.catalog.append({"lesson_ref": {"lesson_id": "syn.lesson.no_item", "lesson_version": "0.1.0"}, "skill_node": NODE,
+                            "title": "（合成）不针对某道题", "step_count": 5})
+    r = await lapi.post("/internal/v1/lesson/catalog", json=catalog_body(student))
+    assert r.status_code == 200, r.text
+    assert r.json() == {"subject": "aya", "lessons": [
+        {"lesson_ref": {"lesson_id": "syn.lesson.no_item", "lesson_version": "0.1.0"}, "title": "（合成）不针对某道题", "step_count": 5},
+        {"lesson_ref": dict(LESSON), "title": "（合成）讲评课", "step_count": 3}]}
+    assert NODE not in r.text and ITEM not in r.text, "节点与题不出学习服务"
+    # 目录请求：PresentItemContext（不带学生、不计量），内容版本与诊断同一组六段
+    call = adapter.catalog_calls[0]
+    assert set(call["context"]) == {"request_id", "contract_version", "subject", "data_class"} and call["context"]["data_class"] == "L1"
+    assert call["content_version"]["subject"] == "aya"
+    # 同一进程 5 分钟内再取不再调适配器
+    assert (await lapi.post("/internal/v1/lesson/catalog", json=catalog_body(student))).status_code == 200
+    assert len(adapter.catalog_calls) == 1
+
+
+@pytest.mark.parametrize("mutate", [
+    lambda c: c[0].__setitem__("script", {"dsl_version": "0.3.0", "lines": []}),        # 夹带台词稿（不合契约）
+    lambda c: c[0].__setitem__("skill_node", "zhixing:K-1"),                             # 节点不是这一科
+    lambda c: c[0].__setitem__("item_ref", "wenli:SYN-1"),                               # 题不是这一科
+    lambda c: c.append(dict(c[0])),                                                      # 同一节课两次
+    lambda c: c[0].__setitem__("title", "<b>（合成）</b>"),                                 # 标题不合契约口径
+])
+async def test_catalog_rejects_bad_adapter_catalog_and_does_not_cache(lapi, adapter, student, mutate):
+    mutate(adapter.catalog)
+    r = await lapi.post("/internal/v1/lesson/catalog", json=catalog_body(student))
+    assert r.status_code == 502 and r.json()["code"] == "ADAPTER_RESULT_REJECTED"
+    adapter.catalog = [{"lesson_ref": dict(LESSON), "skill_node": NODE, "item_ref": ITEM, "title": "（合成）讲评课", "step_count": 3}]
+    assert (await lapi.post("/internal/v1/lesson/catalog", json=catalog_body(student))).status_code == 200
+    assert len(adapter.catalog_calls) == 2, "不合格的目录不缓存"
+
+
+async def test_catalog_adapter_without_method_is_empty_and_outage_is_503(lapi, adapter, student):
+    adapter.catalog_status, adapter.catalog_problem = 503, {"code": "UPSTREAM_UNAVAILABLE", "retryable": True}
+    r = await lapi.post("/internal/v1/lesson/catalog", json=catalog_body(student))
+    assert r.status_code == 503 and r.json()["retryable"] is True
+    adapter.catalog_status, adapter.catalog_problem = 501, {"code": "METHOD_NOT_IMPLEMENTED", "retryable": False}
+    r = await lapi.post("/internal/v1/lesson/catalog", json=catalog_body(student))
+    assert r.status_code == 200 and r.json()["lessons"] == []
+
+
+async def test_catalog_bad_requests(lapi, student):
+    for body, code in [(catalog_body(student, subject="zhixing"), "SUBJECT_NOT_SUPPORTED"), (catalog_body("not-a-uuid"), "INVALID_REQUEST"),
+                       (catalog_body(student, skill_node=NODE), "INVALID_REQUEST"), ({"student_ref": student}, "INVALID_REQUEST")]:
+        r = await lapi.post("/internal/v1/lesson/catalog", json=body)
+        assert r.status_code == 400 and r.json()["code"] == code, body
+
+
+async def test_open_fills_node_and_item_from_catalog(lapi, pools, adapter, student):
+    _, admin = pools
+    usage, key = await reserve(admin, student)
+    body = open_body(student, usage, key)
+    del body["skill_node"], body["item_ref"]
+    r = await lapi.post("/internal/v1/lesson/open", json=body)
+    assert r.status_code == 201, r.text
+    teach = adapter.calls[-1]
+    assert teach["skill_node"] == NODE and teach["item_ref"] == ITEM and teach["lesson_ref"] == LESSON
+
+
+@pytest.mark.parametrize("over", [
+    {"lesson_ref": {"lesson_id": "syn.lesson.missing", "lesson_version": "0.1.0"}},   # 目录里没有
+    {"lesson_ref": {"lesson_id": LESSON["lesson_id"], "lesson_version": "9.9.9"}},     # 版本不对
+    {"skill_node": "aya:K-SYN-9999"},                                                    # 带来的节点与目录不一致
+    {"item_ref": "aya:SYN-OTHER"},                                                       # 带来的题与目录不一致
+])
+async def test_open_not_in_catalog_is_definite_and_creates_no_session(lapi, pools, adapter, student, over):
+    _, admin = pools
+    usage, key = await reserve(admin, student)
+    r = await lapi.post("/internal/v1/lesson/open", json=open_body(student, usage, key, **over))
+    assert r.status_code == 422 and r.json()["code"] == "LESSON_NOT_AVAILABLE" and r.json()["retryable"] is False
+    assert adapter.calls == [], "目录里没有就不调 teach"
+    assert await _sessions(admin, student) == [], "不建会话"
+
+
+async def test_open_catalog_outage_is_retryable_and_creates_no_session(lapi, pools, adapter, student):
+    _, admin = pools
+    usage, key = await reserve(admin, student)
+    adapter.catalog_status, adapter.catalog_problem = 503, {"code": "UPSTREAM_UNAVAILABLE", "retryable": True}
+    r = await lapi.post("/internal/v1/lesson/open", json=open_body(student, usage, key))
+    assert r.status_code == 503 and r.json()["retryable"] is True
+    assert adapter.calls == [] and await _sessions(admin, student) == []
+    adapter.catalog_status = 200
+    assert (await lapi.post("/internal/v1/lesson/open", json=open_body(student, usage, key))).status_code == 201, "恢复后用同一个键重试"
 
 
 # ---------- 工具 ----------

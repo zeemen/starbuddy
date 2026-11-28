@@ -348,6 +348,9 @@ def create_app(
             from .lesson.service import LessonService
             state["lesson"] = LessonService(p, client, settings.adapters, settings.lesson_ticket_secret,
                                             **({"clock": lesson_clock} if lesson_clock is not None else {}))
+            # 讲评课目录（specs/lesson-catalog PR B）：再练与复测的条目视图据此带讲原题的那节课（复测经 practice 用同一个）
+            if state.get("practice") is not None:
+                state["practice"].lessons = state["lesson"].catalog
         if today_cfg is not None:
             # 今日计划快照（PLT-15）：开关打开时写 platform.today_plan_item，依赖迁移 0055
             if settings.today_snapshot and not await p.fetchval("SELECT to_regclass('platform.today_plan_item') IS NOT NULL"):
