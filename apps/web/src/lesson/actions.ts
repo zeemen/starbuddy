@@ -47,9 +47,9 @@ export async function openLessonAction(csrf: string, student: string, subject: s
   const b = await begin(csrf, student, subject);
   if (!b || !refOk(ref) || typeof key !== 'string' || !UUID_V4.test(key)) return err('not_found');
   const prefix = LESSON_SUBJECTS[b.subject];
+  // 只带讲评课引用：节点与题由学习服务按目录补全（specs/lesson-catalog PR C）。地址里的 node、item 在 PR D 改地址时一并去掉
   const r = await openLesson(b.s, b.student, {
-    subject: prefix, lesson_ref: { lesson_id: ref.lessonId, lesson_version: ref.lessonVersion }, skill_node: `${prefix}:${ref.node}`,
-    ...(ref.item ? { item_ref: `${prefix}:${ref.item}` } : {}), idempotency_key: key });
+    subject: prefix, lesson_ref: { lesson_id: ref.lessonId, lesson_version: ref.lessonVersion }, idempotency_key: key });
   if (!r.ok) return err(uiError(r));
   const view = pickOpen(r.value);
   return view ? { kind: 'open', view } : err('unavailable');

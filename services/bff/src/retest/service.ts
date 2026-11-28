@@ -21,6 +21,7 @@ import { P } from '../http/problems.ts';
 import type { Reply } from '../http/routes.ts';
 import { nodeNamesOrEmpty } from '../node-names.ts';
 import { pickRich, type RichItem } from '../item-rich.ts';
+import { parseLessonRef } from '../lesson/ref.ts';
 import { usageIdFor } from '../metering/uuid.ts';
 import {
   alreadyCounted, answerFits, countPractice, curfewBlocked, EXPIRY_MARGIN_MS, isDeterministic, isSelf, SUBJECTS, gateSlot, subjectBusy, VERDICTS, withRetry,
@@ -58,6 +59,8 @@ export interface RetestDeps {
   gate?: SubjectGate;
   observe?: GateObserve;
   signal?: AbortSignal | undefined;
+  /** 讲评课开关（STARBUDDY_LESSON）开着且配了学习服务：条目转出 lesson_ref */
+  lessons?: boolean;
 }
 
 const problem = (status: number, code: string, title: string, extra: Record<string, unknown> = {}): Reply =>
@@ -142,14 +145,18 @@ const replayHeader = (replayed: boolean) => ({ 'idempotent-replayed': replayed ?
 
 // ---------- 响应白名单 ----------
 /** 条目：只挑这些字段；空原因编码、任务原因与任何多出来的字段不转 */
-export function pickRetestEntry(e: unknown): Record<string, unknown> | null {
+/** lessons：讲评课开关开着时转出可选的 lesson_ref（原题有讲评课；只有编号与版本，specs/lesson-catalog PR C）；关着时不转。
+ *  lesson_ref 不合格与别的字段一样整页不给 */
+export function pickRetestEntry(e: unknown, lessons = false): Record<string, unknown> | null {
   if (!isRecord(e)) return null;
   const { entry_id, node_id, cognitive_level, kind, status } = e;
   if (typeof entry_id !== 'string' || !UUID.test(entry_id) || typeof node_id !== 'string' || node_id === '' || node_id.length > 128
       || !oneOf(LEVELS, cognitive_level) || !oneOf(KINDS, kind) || !oneOf(ENTRY_STATUSES, status)) {
     return null;
   }
-  return { entry_id, node_id, cognitive_level, kind, status };
+  const ref = lessons && e['lesson_ref'] !== undefined ? parseLessonRef(e['lesson_ref']) : undefined;
+  if (ref === null) return null;
+  return { entry_id, node_id, cognitive_level, kind, status, ...(ref ? { lesson_ref: ref } : {}) };
 }
 
 interface Ready {
@@ -199,7 +206,7 @@ export async function retestQueue(deps: RetestDeps, account: string, student: st
   if (r.kind === 'failure') return fromRetestFailure(r, 'queue');
   const body = r.body;
   if (!isRecord(body) || !Array.isArray(body['entries'])) return UPSTREAM_UNAVAILABLE;
-  const entries = body['entries'].map(pickRetestEntry);
+  const entries = body['entries'].map((e) => pickRetestEntry(e, deps.lessons === true));
   if (entries.some((e) => e === null)) return UPSTREAM_UNAVAILABLE;  // 形状不对整页不给
   // 知识点名（已发布地图，与今日计划同一口径）：取不到时为 null，列表照常返回（specs/practice-retest-list-polish）
   const picked = entries as Record<string, unknown>[];

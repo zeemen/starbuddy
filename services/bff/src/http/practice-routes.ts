@@ -20,6 +20,8 @@ const practice = (op: Op): Handler => async (ctx) => {
     ...(p.retryBudgetMs !== undefined ? { retryBudgetMs: p.retryBudgetMs } : {}), ...(p.monotonic ? { monotonic: p.monotonic } : {}),
     // 分学科并发闸门（PLT-16，开关关时不传，服务直接执行原来的代码）
     ...(ctx.deps.subjectGate ? { gate: ctx.deps.subjectGate, observe: ctx.note, signal: ctx.signal } : {}),
+    // 讲评课目录（specs/lesson-catalog PR C）：讲评课开关开着、配了学习服务时，条目带“这道题有讲评课”的 lesson_ref
+    ...(ctx.deps.lesson?.enabled === true && ctx.deps.lesson.learning ? { lessons: true } : {}),
   };
   return op(deps, ctx, ctx.session!.accountId, ctx.params['student_id']!, ctx.params['subject']!);
 };

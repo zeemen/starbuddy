@@ -12,6 +12,9 @@
 //     预留已释放或已过期 → 409，换一个键重新打开。
 //   - 课内提问不扣次、不预留：BFF 先核票据（学生、未过期），转学习服务；学习服务按会话的那一笔预留放行（platform.lesson_session_ask），
 //     只累计会话上的提问次数。宵禁中不问（402 reason = curfew），不调学习服务。
+//
+// 讲评课目录（specs/lesson-catalog PR C）：打开只收讲评课引用与幂等键，节点与题由学习服务按目录补全（地址与请求体里都不再有题号）；
+// 目录接口只回编号、版本、标题与步数（公共层内容，与学生无关，规则 11 不涉及），不扣次、不预留。
 import type { Pool } from 'pg';
 import { CURFEW, NOT_FOUND, withRetry } from '../diagnosis/service.ts';
 import { P } from '../http/problems.ts';
@@ -21,7 +24,8 @@ import { inCurfew } from '../metering/curfew.ts';
 import { release, reserve, settle } from '../metering/meter.ts';
 import { usageIdFor } from '../metering/uuid.ts';
 import { isUuid } from '../star-map/query.ts';
-import type { AskBody, LessonLearning } from './learning-client.ts';
+import type { AskBody, CatalogBody, LessonLearning } from './learning-client.ts';
+import { parseLessonRef, type LessonRef } from './ref.ts';
 import { openLessonTicket, sealLessonTicket } from './ticket.ts';
 
 export interface LessonOptions {
@@ -65,9 +69,6 @@ const TICKET_EXPIRED = problem(410, 'TICKET_EXPIRED', 'the lesson has expired; o
 const LESSON_CLOSED = problem(409, 'LESSON_CLOSED', 'this lesson can no longer take questions; open it again');
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const LESSON_ID = /^[a-z][a-z0-9_.-]{0,63}$/;
-const SEMVER = /^\d{1,3}\.\d{1,3}\.\d{1,4}$/;
-const REF = /^aya:[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
 const STAGE_ID = /^[a-z][a-z0-9_]{0,31}$/;
 const ANCHOR_KINDS = ['element', 'slot', 'step'] as const;
 /** “再讲一遍”在前端本地重放，不进这里（规格 stage-point-to-ask-answer 第五节） */
@@ -79,23 +80,17 @@ const exactKeys = (o: Record<string, unknown>, required: readonly string[], opti
 const isInt = (v: unknown, lo: number, hi: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= lo && v <= hi;
 
 // ---------- 请求体 ----------
-export interface OpenInput {
-  subject: 'aya'; lesson_ref: { lesson_id: string; lesson_version: string }; skill_node: string; item_ref?: string; idempotency_key: string;
-}
+export interface OpenInput { subject: 'aya'; lesson_ref: LessonRef; idempotency_key: string }
 export interface Question { cursor: number; anchor: { kind: (typeof ANCHOR_KINDS)[number]; id: string }; intent: (typeof INTENTS)[number] }
 export interface AskInput { ticket: string; question: Question; idempotency_key: string }
 
-/** 打开：学科（只有 aya）、讲评课引用、节点、题（可选）与幂等键；不收 usage_id、数量、资源类型、answer_submitted（由平台决定） */
+/** 打开：学科（只有 aya）、讲评课引用与幂等键。不收节点与题（学习服务按目录补全），也不收 usage_id、数量、资源类型、answer_submitted（由平台决定） */
 export function parseOpen(b: Record<string, unknown>): OpenInput | null {
-  if (!exactKeys(b, ['subject', 'lesson_ref', 'skill_node', 'idempotency_key'], ['item_ref'])) return null;
-  const { subject, lesson_ref: ref, skill_node: node, item_ref: item, idempotency_key: key } = b;
+  if (!exactKeys(b, ['subject', 'lesson_ref', 'idempotency_key'])) return null;
+  const { subject, idempotency_key: key } = b;
   if (subject !== 'aya' || typeof key !== 'string' || !UUID_V4.test(key)) return null;
-  if (!isRecord(ref) || !exactKeys(ref, ['lesson_id', 'lesson_version'])) return null;
-  const { lesson_id: id, lesson_version: ver } = ref;
-  if (typeof id !== 'string' || !LESSON_ID.test(id) || typeof ver !== 'string' || !SEMVER.test(ver)) return null;
-  if (typeof node !== 'string' || !REF.test(node) || (item !== undefined && (typeof item !== 'string' || !REF.test(item)))) return null;
-  return { subject: 'aya', lesson_ref: { lesson_id: id, lesson_version: ver }, skill_node: node,
-           ...(typeof item === 'string' ? { item_ref: item } : {}), idempotency_key: key };
+  const ref = parseLessonRef(b['lesson_ref']);
+  return ref ? { subject: 'aya', lesson_ref: ref, idempotency_key: key } : null;
 }
 
 /** 提问：票据、第一阶段的结构化提问（cursor、anchor、intent，不收自由文字）、这一问的幂等键（同一问重试带同一个键） */
@@ -119,11 +114,11 @@ async function isSelf(pool: Pool, account: string, student: string): Promise<boo
     (await c.query<{ ok: boolean }>('SELECT platform.is_self_student($1::uuid) AS ok', [student])).rows[0]!.ok === true);
 }
 
-/** 计量指纹：同一幂等键换一节课（或换节点、换题）是 409 IDEMPOTENCY_KEY_REUSED。与 meteringFingerprint 同一规范化（canonical + SHA-256） */
+/** 计量指纹：同一幂等键换一节课（编号或版本）是 409 IDEMPOTENCY_KEY_REUSED。与 meteringFingerprint 同一规范化（canonical + SHA-256）。
+ *  节点与题由学习服务按目录从讲评课引用补全，不再进指纹（PR C 之前的指纹含这两项，只在 dev / test 有过，见 lessons PR C） */
 export function lessonFingerprint(student: string, input: OpenInput): string {
   return sha256Hex(canonical({ method: 'teach', body: { context: { subject: input.subject, student_ref: student }, mode: 'lesson',
-                                                        lesson_ref: input.lesson_ref, skill_node: input.skill_node,
-                                                        item_ref: input.item_ref ?? null } }));
+                                                        lesson_ref: input.lesson_ref } }));
 }
 
 const replayHeader = (replayed: boolean) => ({ 'idempotent-replayed': replayed ? 'true' : 'false' });
@@ -158,8 +153,7 @@ export async function openLesson(deps: LessonDeps, account: string, student: str
   const holding = res.outcome === 'reserved' || res.outcome === 'dedup' || (res.outcome === 'existing' && res.state === 'reserved');
   deps.note?.(res.outcome === 'existing' ? `reserve_existing_${res.state}` : 'reserved');
   const r = await withRetry(deps, () => deps.learning.open({
-    student_ref: student, subject: input.subject, lesson_ref: input.lesson_ref, skill_node: input.skill_node,
-    ...(input.item_ref !== undefined ? { item_ref: input.item_ref } : {}), usage_id: usage, idempotency_key: key }));
+    student_ref: student, subject: input.subject, lesson_ref: input.lesson_ref, usage_id: usage, idempotency_key: key }));
   if (r.kind === 'unknown') return UNAVAILABLE;  // 不释放：结果未知，同一个键重试会找回同一笔预留与同一个会话
   if (r.kind === 'failure') {
     if (holding) await releaseQuietly(deps, account, usage, 'upstream_rejected');
@@ -167,7 +161,7 @@ export async function openLesson(deps: LessonDeps, account: string, student: str
     if (r.status === 501) return LESSON_UNAVAILABLE;
     if (r.status === 409 && r.problem.code === 'IDEMPOTENCY_CONFLICT') return KEY_REUSED;
     if (r.status === 409) return problem(409, 'KEY_FAILED_PREVIOUSLY', 'open again with a new key');
-    return NOT_AVAILABLE;  // LESSON_NOT_AVAILABLE 与其他确定拒绝（学习服务回 400 说明 BFF 的请求不合格，按这节课打不开处理）
+    return NOT_AVAILABLE;  // LESSON_NOT_AVAILABLE（目录里没有这节课）与其他确定拒绝（学习服务回 400 说明 BFF 的请求不合格，按这节课打不开处理）
   }
   const o = r.body;
   if (o.usage_id !== usage || !isUuid(o.session_id) || typeof o.ticket !== 'string' || !Number.isFinite(Date.parse(o.expires_at))) {
@@ -210,4 +204,38 @@ export async function askLesson(deps: LessonDeps, account: string, student: stri
 function answerView(a: AskBody): Record<string, unknown> {
   return a.outcome === 'answered' ? { outcome: 'answered', text: a.text, questions_left: a.questions_left }
     : { outcome: 'no_answer', reason: a.reason, questions_left: a.questions_left };
+}
+
+// ---------- 讲评课目录 ----------
+/** 有讲评课的学科（前端学科码 → 学习服务学科）；其余学科码与表外一样 404 */
+export const LESSON_SUBJECTS: Readonly<Record<string, 'aya'>> = { math: 'aya' };
+const TITLE_MAX = 40;
+
+/** 目录逐条按白名单投影：编号、版本、标题、步数；任何一条不合格整份不给（不挑着给一部分） */
+export function pickCatalog(v: unknown, subject: string): { lesson_ref: LessonRef; title: string; step_count: number }[] | null {
+  if (!isRecord(v) || v['subject'] !== subject || !Array.isArray(v['lessons'])) return null;
+  const out: { lesson_ref: LessonRef; title: string; step_count: number }[] = [];
+  for (const e of v['lessons'] as unknown[]) {
+    if (!isRecord(e)) return null;
+    const ref = parseLessonRef(e['lesson_ref']);
+    const { title, step_count } = e;
+    if (!ref || typeof title !== 'string' || title.trim() === '' || [...title].length > TITLE_MAX || !isInt(step_count, 1, 100)) return null;
+    out.push({ lesson_ref: ref, title, step_count });
+  }
+  return out;
+}
+
+export async function lessonCatalog(deps: LessonDeps, account: string, student: string, code: string): Promise<Reply> {
+  const subject = LESSON_SUBJECTS[code];
+  if (subject === undefined) return NOT_FOUND;
+  if (!(await isSelf(deps.pool, account, student))) return NOT_FOUND;
+  const r = await withRetry(deps, () => deps.learning.catalog({ student_ref: student, subject }));
+  if (r.kind === 'unknown') return UNAVAILABLE;
+  if (r.kind === 'failure') {
+    if (r.status === 404) return NOT_FOUND;
+    if (r.status === 501) return LESSON_UNAVAILABLE;
+    return UNAVAILABLE;
+  }
+  const lessons = pickCatalog(r.body as CatalogBody, subject);
+  return lessons ? { status: 200, body: { subject: code, lessons } } : UNAVAILABLE;
 }

@@ -184,6 +184,14 @@ components:
         max_rounds: { type: integer, minimum: 1 }
         next_round_at: { type: [string, 'null'], format: date-time }
         empty_reason: { type: [string, 'null'] }
+        lesson_ref:
+          type: object
+          additionalProperties: false
+          required: [lesson_id, lesson_version]
+          description: 原题有讲评课时才有（讲评课开关 STARBUDDY_LESSON 开着时；只有编号与版本，题目引用不转；specs/lesson-catalog PR C）。前端只在判分结果之后显示入口
+          properties:
+            lesson_id: { type: string, pattern: '^[a-z][a-z0-9_.\-]{0,63}$' }
+            lesson_version: { type: string, pattern: '^\d{1,3}\.\d{1,3}\.\d{1,4}$' }
     NextReady:
       type: object
       additionalProperties: false

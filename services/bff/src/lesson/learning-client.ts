@@ -2,14 +2,16 @@
 // 鉴权与响应归类照诊断与再练客户端：Bearer 会话令牌（LEARNING_SESSION_TOKEN）、不跟随重定向、带超时；
 // ok（2xx）、failure（确定没有执行：4xx 且 retryable 不为真）、unknown（5xx、超时、断连、retryable）。
 // 学生 ID 只进请求体，不进 URL。
+// 打开只带讲评课引用：节点与题由学习服务按目录补全（specs/lesson-catalog PR C）；目录接口只回编号、版本、标题与步数。
 import { classify, type DiagOutcome } from '../diagnosis/learning-client.ts';
 
 export type LessonOutcome<T> = DiagOutcome<T>;
 
 export interface OpenRequest {
-  student_ref: string; subject: string; lesson_ref: { lesson_id: string; lesson_version: string }; skill_node: string; item_ref?: string;
-  usage_id: string; idempotency_key: string;
+  student_ref: string; subject: string; lesson_ref: { lesson_id: string; lesson_version: string }; usage_id: string; idempotency_key: string;
 }
+export interface CatalogRequest { student_ref: string; subject: string }
+export interface CatalogBody { subject: string; lessons: unknown }
 export interface OpenBody {
   session_id: string; usage_id: string; dsl_version: string; dsl: unknown; script: unknown; ticket: string; expires_at: string;
   question_limit: number; question_count: number;
@@ -22,6 +24,7 @@ export type AskBody =
 export interface LessonLearning {
   open(body: OpenRequest, timeoutMs?: number): Promise<LessonOutcome<OpenBody>>;
   ask(body: AskRequest, timeoutMs?: number): Promise<LessonOutcome<AskBody>>;
+  catalog(body: CatalogRequest, timeoutMs?: number): Promise<LessonOutcome<CatalogBody>>;
 }
 
 export interface HttpLessonOptions {
@@ -60,5 +63,6 @@ export function httpLessonLearning(opts: HttpLessonOptions): LessonLearning {
   return {
     open: (b, t) => call<OpenBody>('open', b, t),
     ask: (b, t) => call<AskBody>('ask', b, t),
+    catalog: (b, t) => call<CatalogBody>('catalog', b, t),
   };
 }

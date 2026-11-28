@@ -350,7 +350,8 @@ const LESSON_BY_KEY = new Map<string, string>();     // 预留键 → 票据（�
 
 function lessonOpen(b: Record<string, unknown>) {
   const ref = b['lesson_ref'] as Record<string, unknown> | undefined;
-  if (!exact(b, ['student_ref', 'subject', 'lesson_ref', 'skill_node', 'usage_id', 'idempotency_key', ...('item_ref' in b ? ['item_ref'] : [])])
+  // BFF 只带讲评课引用（specs/lesson-catalog PR C）：节点与题由学习服务按目录补全，带来了就是 BFF 的请求不合格
+  if (!exact(b, ['student_ref', 'subject', 'lesson_ref', 'usage_id', 'idempotency_key'])
       || b['subject'] !== 'aya' || !ref || typeof ref['lesson_id'] !== 'string' || typeof b['idempotency_key'] !== 'string'
       || typeof b['student_ref'] !== 'string' || typeof b['usage_id'] !== 'string') return problem(400, 'INVALID_REQUEST');
   if (ref['lesson_id'] === 'syn.lesson.broken') return problem(422, 'LESSON_NOT_AVAILABLE');

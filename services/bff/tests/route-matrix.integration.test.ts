@@ -138,9 +138,11 @@ export const SAMPLES: Record<string, Sample> = {
   // 讲评课会话（specs/stage-lesson-session ③b-4b，开关 lesson）：打开时学习服务（假实现）确定拒绝，BFF 释放预留；
   // 提问的票据是格式合法的假票据（解不开，阳性对照得到 422 TICKET_INVALID）
   'POST /students/{student_id}/lessons/open': b(() => ({ subject: 'aya', lesson_ref: { lesson_id: 'syn.lesson.h6', lesson_version: '0.1.0' },
-                                                         skill_node: 'aya:K-QF-0301', idempotency_key: randomUUID() })),
+                                                         idempotency_key: randomUUID() })),
   'POST /students/{student_id}/lessons/ask': b(() => ({ ticket: `sbl1.${'A'.repeat(64)}`, question: { cursor: 1, anchor: { kind: 'step', id: 's1' },
                                                                                                         intent: 'why_step' }, idempotency_key: randomUUID() })),
+  // 讲评课目录（specs/lesson-catalog PR C）：学习服务（假实现）回空目录
+  'GET /students/{student_id}/lessons/catalog/{subject}': none,
   // 家长诉求（PLT-14 第 1 步，开关 family_goals）：只给家长，学生会话一律 404（guardianOnly404）；样例只设关注学科（S 在读数学）
   'GET /students/{student_id}/family-goals': none,
   'PUT /students/{student_id}/family-goals': b(() => ({ focus_subjects: ['aya'], target_scores: [], school_id: null, note: null })),
@@ -260,6 +262,7 @@ const lessonCalls: string[] = [];
 const lessonLearning: LessonLearning = {
   async open(b) { lessonCalls.push(`open:${b.student_ref}`); return { kind: 'failure', status: 422, problem: { code: 'LESSON_NOT_AVAILABLE' } }; },
   async ask(b) { lessonCalls.push(`ask:${b.student_ref}`); return { kind: 'failure', status: 404, problem: { code: 'SESSION_NOT_FOUND' } }; },
+  async catalog(b) { lessonCalls.push(`catalog:${b.student_ref}`); return { kind: 'ok', status: 200, replayed: false, body: { subject: b.subject, lessons: [] } }; },
 };
 /** 月度计划生成（洞察服务）：按“没有权益”回答，不写任何快照 */
 const monthlyCalls: string[] = [];
@@ -849,9 +852,12 @@ test('H6 计量入口（静态）：只有登记的文件导入消耗类计量�
   assert.match(ls, /const s = await settle\(deps\.pool, account, usage, 1\);/, '讲评课结算数量固定为 1');
   const askBody = ls.slice(ls.indexOf('export async function askLesson'));
   assert.ok(!/\b(reserve|settle|release)\(/.test(askBody.slice(0, askBody.indexOf('function answerView'))), '课内提问不预留、不结算、不释放');
-  const okOpen = { subject: 'aya', lesson_ref: { lesson_id: 'syn.lesson.a', lesson_version: '0.1.0' }, skill_node: 'aya:K-1', idempotency_key: randomUUID() };
+  const catBody = ls.slice(ls.indexOf('export async function lessonCatalog'));
+  assert.ok(catBody.length > 100 && !/\b(reserve|settle|release)\(/.test(catBody), '讲评课目录不预留、不结算、不释放');
+  const okOpen = { subject: 'aya', lesson_ref: { lesson_id: 'syn.lesson.a', lesson_version: '0.1.0' }, idempotency_key: randomUUID() };
   assert.ok(parseLessonOpen(okOpen));
-  for (const extra of [{ usage_id: randomUUID() }, { quantity: 2 }, { resource_type: 'mistake_analysis' }, { answer_submitted: true }, { student_ref: MISSING }]) {
+  for (const extra of [{ usage_id: randomUUID() }, { quantity: 2 }, { resource_type: 'mistake_analysis' }, { answer_submitted: true }, { student_ref: MISSING },
+                       { skill_node: 'aya:K-1' }, { item_ref: 'aya:SYN-1' }]) {
     assert.equal(parseLessonOpen({ ...okOpen, ...extra }), null, `讲评课打开拒收 ${Object.keys(extra)[0]}`);
   }
   const pr = readFileSync(new URL('../src/practice/service.ts', import.meta.url), 'utf8').replace(/\/\/.*$/gm, '');
