@@ -392,6 +392,8 @@ export function createAdapter(deps: AdapterDeps) {
         report: { implemented: true, async: false, notes_code: "counts_only" },
         // v1.1（PLT-12）：能力声明逐一声明七个方法；1.1.0 以下的能力声明没有这一项（v1.0 Capabilities 不允许多余方法）
         ...(contract.version === "1.1.0" ? { present_item: { implemented: true, async: false } } : {}),
+        // v1.1 草稿内追加（specs/lesson-catalog）：知行没有讲评课，目录不实现（请求回 501）
+        ...(contract.version === "1.1.0" ? { list_lessons: { implemented: false } } : {}),
       },
     }, contract.version);
 
@@ -847,7 +849,7 @@ export function createAdapter(deps: AdapterDeps) {
     }, version);
   };
 
-  const NOT_IMPLEMENTED = new Set(["teach"]);
+  const NOT_IMPLEMENTED = new Set(["teach", "list_lessons"]);
   const KNOWN_ROUTES = new Set(["capabilities", "grade", "diagnose", "generate_variation", "plan", "report", "present_item", ...NOT_IMPLEMENTED]);
 
   /** 路由（路径不含 /plugin/v0 前缀）。所有错误都转成契约 Problem。 */

@@ -499,3 +499,9 @@ cases:
     since: 1.1.0
     body: {item_ref: "aya:Q-ALG-U01-R-001"}
     expect: {content_state: complete, item_type: single_choice, license_state: unverified}
+
+  # v1.1 草稿内追加 list_lessons（specs/lesson-catalog）：一致性测试那一遍不带讲评课内容包，仓库里也没有已发布的讲评课，所以目录为空
+  - id: lessons-catalog-empty
+    method: list_lessons
+    since: 1.1.0
+    expect: {lesson_count: 0}

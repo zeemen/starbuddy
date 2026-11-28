@@ -47,6 +47,8 @@ export type SchemaName =
   | "ReportResponse"
   | "PresentItemRequest"
   | "PresentItemResponse"
+  | "ListLessonsRequest"
+  | "ListLessonsResponse"
   | "Problem";
 
 export type ValidationResult = { ok: true } | { ok: false; errors: string[] };

@@ -52,3 +52,9 @@ cases:
     body: {item_ref: "zhixing:REF-2"}
     conflict_body: {item_ref: "zhixing:REF-1"}
     expect: {content_state: complete, item_type: single_choice}
+  # v1.1 草稿内追加 list_lessons（specs/lesson-catalog）：只在契约 1.1.0 下跑。secrets 是参考讲评课台词里的原文：目录任何位置都不许出现
+  - id: lessons-catalog
+    method: list_lessons
+    since: 1.1.0
+    secrets: ["先看第一行"]
+    expect: {lesson_count: 1}

@@ -429,6 +429,8 @@ PRESENT_PROBES = {
     ("RichImageRun", "alt"): (["<b>图</b>", "a\u0007b", *INVISIBLE_PROBES], ["（合成）一个直角三角形"]),
     # ③b-1：讲解台词稿的台词正文（与题面文字片段同一口径；不收换行）
     ("StageScriptLine", "text"): (["<b>重点</b>", "a\u0000b", "a\nb", "a\u001bb", *INVISIBLE_PROBES], ["（合成台词）先看第一行。", "x=2，对吗？"]),
+    # 讲评课目录（specs/lesson-catalog）：标题与台词正文同一口径，上限 40（packages/stage 的 LIMITS.maxTitleChars）
+    ("LessonCatalogEntry", "title"): (["<b>讲评</b>", "a\u0000b", "a\nb", "讲" * 41, *INVISIBLE_PROBES], ["（合成）提公因式讲评", "第 2 课：x=2"]),
     ("RichMathRun", "latex"): (["\\href{https://x.invalid}{y}", "\\url{https://x.invalid}", "\\includegraphics{a.png}",
                                 "\\htmlClass{a}{b}", "\\def\\x{1}", "\\newcommand{\\a}{b}", "x^{\\input{f}}", "解：x=1"],
                                ["\\frac{1}{2}", "\\left(x-1\\right)^2", "x<3", "\\sqrt{2}\\times 3", "\\text{cm}"]),
@@ -521,6 +523,73 @@ def check_present_item(doc: dict, errors: list[str]) -> None:
         errors.append("PresentItemResponse 不得产生证据（evidence_ids 为空、不带 evidence）")
 
 
+# ---------- v1.1 草稿内追加（再续）：list_lessons（specs/lesson-catalog） ----------
+LIST_LESSONS_SCHEMAS = {"ListLessonsRequest", "ListLessonsResponse", "LessonCatalog", "LessonCatalogEntry"}
+LESSON_CATALOG_FIELDS = {"lesson_ref", "skill_node", "item_ref", "title", "step_count"}
+LESSON_CATALOG_REQUIRED = {"lesson_ref", "skill_node", "title", "step_count"}
+# 目录里不得出现讲解内容：讲解 DSL、台词稿与预制答疑的字段名（再加答案类字段名，与 present_item 同一份）
+LESSON_CONTENT_FIELD_NAMES = {"dsl", "dsl_version", "script", "lines", "answers", "steps", "say", "text", "segments", "board"}
+
+
+def check_list_lessons(doc: dict, errors: list[str], stage_src: Path | None = None) -> None:
+    """v1.1 起：list_lessons 的结构要求。
+    1. 目录 schema 树（含引用）里没有讲解内容与答案类字段名；每个对象都 additionalProperties: false，每个数组都有 maxItems；
+    2. 目录条目恰好是 LESSON_CATALOG_FIELDS（必填 LESSON_CATALOG_REQUIRED）；
+    3. 请求只收 context（PresentItemContext，与学生无关、不计量）与 content_version；响应不得带证据；
+    4. 标题上限与 packages/stage 的 LIMITS.maxTitleChars 一致，步数上限与 LIMITS.maxSteps 一致（标题字符口径由 PRESENT_PROBES 探针核对）。"""
+    if _ver(doc) < (1, 1, 0):
+        return
+    sys.path.insert(0, str(HERE.parent / "python"))
+    from starbuddy_contract.present import ANSWER_FIELD_NAMES  # noqa: PLC0415
+
+    schemas = _schemas(doc)
+    missing = sorted(LIST_LESSONS_SCHEMAS - set(schemas))
+    if missing:
+        errors.append(f"v1.1 缺少 list_lessons 的 schema：{missing}")
+        return
+    banned = LESSON_CONTENT_FIELD_NAMES | {str(n).lower() for n in ANSWER_FIELD_NAMES}
+    # 只查目录本身（result）；信封 PluginResultBase 是各方法共用的，另有六方法信封检查
+    for node in _local_refs(schemas["LessonCatalog"], schemas, {"LessonCatalog"}):
+        for k in node.get("properties", {}) if isinstance(node.get("properties"), dict) else {}:
+            if str(k).lower() in banned:
+                errors.append(f"list_lessons 目录里出现讲解内容或答案类字段 {k}（目录只给引用、标题与步数）")
+        if node.get("patternProperties") or node.get("unevaluatedProperties") is True:
+            errors.append("list_lessons 目录不得用 patternProperties / unevaluatedProperties: true 放开字段")
+    for node in _local_refs(schemas["LessonCatalog"], schemas, {"LessonCatalog"}):
+        if node.get("type") == "object" and node.get("additionalProperties") is not False:
+            errors.append("list_lessons 目录的对象必须 additionalProperties: false")
+        if node.get("type") == "array" and "maxItems" not in node:
+            errors.append("list_lessons 目录的数组必须有 maxItems")
+    entry = schemas["LessonCatalogEntry"]
+    if set(entry.get("properties", {})) != LESSON_CATALOG_FIELDS or set(entry.get("required", [])) != LESSON_CATALOG_REQUIRED:
+        errors.append(f"LessonCatalogEntry 的字段必须恰好是 {sorted(LESSON_CATALOG_FIELDS)}，必填 {sorted(LESSON_CATALOG_REQUIRED)}")
+    req = schemas["ListLessonsRequest"]
+    if set(req.get("properties", {})) != {"context", "content_version"} or set(req.get("required", [])) != {"context", "content_version"} \
+            or req.get("additionalProperties") is not False:
+        errors.append("ListLessonsRequest 只收 context 与 content_version（都必填），不放开多余字段")
+    if req.get("properties", {}).get("context", {}).get("$ref") != "#/components/schemas/PresentItemContext":
+        errors.append("ListLessonsRequest.context 必须是 PresentItemContext（与学生无关、不计量）")
+    resp = schemas["ListLessonsResponse"]
+    resp_parts = resp.get("allOf", [])
+    extra = resp_parts[1] if len(resp_parts) > 1 else {}
+    if extra.get("properties", {}).get("evidence_ids", {}).get("maxItems") != 0 or extra.get("not") != {"required": ["evidence"]}:
+        errors.append("ListLessonsResponse 不得产生证据（evidence_ids 为空、不带 evidence）")
+    if extra.get("properties", {}).get("result", {}).get("$ref") != "#/components/schemas/LessonCatalog" or resp.get("unevaluatedProperties") is not False:
+        errors.append("ListLessonsResponse 的结果必须是 LessonCatalog，信封之外不放开字段")
+    try:
+        d = ((stage_src or STAGE_SRC) / "dsl.ts").read_text(encoding="utf-8")
+    except OSError as exc:
+        errors.append(f"读不了 packages/stage 的源码：{type(exc).__name__}")
+        return
+    props = entry.get("properties", {})
+    for key, prop, attr in (("maxTitleChars", "title", "maxLength"), ("maxSteps", "step_count", "maximum")):
+        m = re.search(rf"{key}: (\d+),", d)
+        if not m or props.get(prop, {}).get(attr) != int(m.group(1)):
+            errors.append(f"LessonCatalogEntry.{prop} 的上限与 packages/stage 的 LIMITS.{key} 不一致")
+
+
+# v1.1 在 v1.0 六个方法之后追加的只读方法（顺序即 Method 枚举里的顺序）
+V11_READ_ONLY_METHODS = ("present_item", "list_lessons")
 V11_VERSION_CONSTS = (("RequestContext", "contract_version"), ("PluginResultBase", "contract_version"), ("Capabilities", "contract_version"))
 # v1.1 草稿内追加（specs/stage-point-to-ask-answer PR ①）：teach 的结构化提问。TeachRequest 只多这两个可选字段与一条条件规则，
 # 另加三个新 schema；/teach 只多一个请求示例。check_v11_additive 剥掉它们之后再与 v1.0 逐项比对，并核对追加内容本身一字不差
@@ -658,8 +727,8 @@ def _bump_versions(value, old: str, new: str):
 def check_v11_additive(v1: dict, v11: dict, errors: list[str]) -> None:
     """v1.1 只做增量（spec 范围第 1 条：不改 v1.0 正在表决的 61 项）：
     v1.0 的每个 schema、路径、响应、示例在 v1.1 里逐字不变；只允许三处契约版本常量改成 1.1.0、Method 枚举与能力声明
-    多一个 present_item、示例里的 contract_version 改成 1.1.0、能力声明示例多一个 present_item；新增的只能是 present_item 的
-    路径与 schema、示例。"""
+    多出只读方法（V11_READ_ONLY_METHODS：present_item，草稿内追加 list_lessons）、示例里的 contract_version 改成 1.1.0、
+    能力声明示例多出这两个方法；新增的只能是这两个方法的路径与 schema、示例，以及 teach 结构化提问的 schema 与示例。"""
     import copy  # noqa: PLC0415
 
     if str(v11["info"]["version"]) != "1.1.0":
@@ -670,15 +739,16 @@ def check_v11_additive(v1: dict, v11: dict, errors: list[str]) -> None:
         for s in (s1, s11):
             s.get(name, {}).get("properties", {}).get(prop, {}).pop("const", None)
     m1, m11 = s1.get("Method", {}).get("enum", []), s11.get("Method", {}).get("enum", [])
-    if m11 != [*m1, "present_item"]:
-        errors.append(f"v1.1 的 Method 枚举必须是 v1.0 的六个方法加 present_item，实为 {m11}")
+    if m11 != [*m1, *V11_READ_ONLY_METHODS]:
+        errors.append(f"v1.1 的 Method 枚举必须是 v1.0 的六个方法加 {list(V11_READ_ONLY_METHODS)}，实为 {m11}")
     s11.get("Method", {})["enum"] = list(m1)
     caps = s11.get("Capabilities", {}).get("properties", {}).get("methods", {})
-    if "present_item" not in caps.get("required", []) or "present_item" not in caps.get("properties", {}):
-        errors.append("v1.1 的能力声明必须声明 present_item")
-    caps.get("properties", {}).pop("present_item", None)
+    for ro in V11_READ_ONLY_METHODS:
+        if ro not in caps.get("required", []) or ro not in caps.get("properties", {}):
+            errors.append(f"v1.1 的能力声明必须声明 {ro}")
+        caps.get("properties", {}).pop(ro, None)
     if isinstance(caps.get("required"), list):
-        caps["required"] = [m for m in caps["required"] if m != "present_item"]
+        caps["required"] = [m for m in caps["required"] if m not in V11_READ_ONLY_METHODS]
     caps.pop("description", None)
     s1.get("Capabilities", {}).get("properties", {}).get("methods", {}).pop("description", None)
     for name, sch in s1.items():
@@ -687,8 +757,9 @@ def check_v11_additive(v1: dict, v11: dict, errors: list[str]) -> None:
         elif s11[name] != sch:
             errors.append(f"v1.1 改动了 v1.0 的 schema {name}（只允许增量）")
     extra = set(s11) - set(s1)
-    if extra - PRESENT_SCHEMAS - TEACH_QUESTION_SCHEMAS:
-        errors.append(f"v1.1 新增了 present_item 与 teach 结构化提问之外的 schema：{sorted(extra - PRESENT_SCHEMAS - TEACH_QUESTION_SCHEMAS)}")
+    if extra - PRESENT_SCHEMAS - TEACH_QUESTION_SCHEMAS - LIST_LESSONS_SCHEMAS:
+        errors.append("v1.1 新增了 present_item、teach 结构化提问与 list_lessons 之外的 schema："
+                      f"{sorted(extra - PRESENT_SCHEMAS - TEACH_QUESTION_SCHEMAS - LIST_LESSONS_SCHEMAS)}")
     if TEACH_QUESTION_SCHEMAS - set(s11):
         errors.append(f"v1.1 缺 teach 结构化提问的 schema：{sorted(TEACH_QUESTION_SCHEMAS - set(s11))}")
     p1, p11 = v1.get("paths", {}), copy.deepcopy(v11.get("paths", {}))
@@ -704,8 +775,8 @@ def check_v11_additive(v1: dict, v11: dict, errors: list[str]) -> None:
     for path, item in p1.items():
         if p11.get(path) != item:
             errors.append(f"v1.1 改动或删掉了 v1.0 的路径 {path}")
-    if set(p11) - set(p1) != {"/present_item"}:
-        errors.append(f"v1.1 新增的路径只能是 /present_item，实为 {sorted(set(p11) - set(p1))}")
+    if set(p11) - set(p1) != {f"/{m}" for m in V11_READ_ONLY_METHODS}:
+        errors.append(f"v1.1 新增的路径只能是 {sorted(f'/{m}' for m in V11_READ_ONLY_METHODS)}，实为 {sorted(set(p11) - set(p1))}")
     for key in ("responses", "securitySchemes"):
         if v1["components"].get(key) != v11["components"].get(key):
             errors.append(f"v1.1 改动了 v1.0 的 components.{key}")
@@ -713,14 +784,15 @@ def check_v11_additive(v1: dict, v11: dict, errors: list[str]) -> None:
         errors.append("v1.1 改动了 v1.0 的 security / servers")
     e1, e11 = v1["components"].get("examples", {}), copy.deepcopy(v11["components"].get("examples", {}))
     cap_ex = e11.get("CapabilitiesAya", {}).get("value", {}).get("methods", {})
-    cap_ex.pop("present_item", None)
+    for ro in V11_READ_ONLY_METHODS:
+        cap_ex.pop(ro, None)
     for name, ex in e1.items():
         if name not in e11:
             errors.append(f"v1.1 删掉了 v1.0 的示例 {name}")
         elif e11[name] != _bump_versions(ex, "1.0.0", "1.1.0"):
             errors.append(f"v1.1 改动了 v1.0 的示例 {name}（只允许把 contract_version 换成 1.1.0）")
-    if any(not n.startswith("PresentItem") and n not in TEACH_NEW_EXAMPLES for n in set(e11) - set(e1)):
-        errors.append(f"v1.1 新增的示例只能是 present_item 与 teach 结构化提问的：{sorted(set(e11) - set(e1))}")
+    if any(not n.startswith(("PresentItem", "ListLessons")) and n not in TEACH_NEW_EXAMPLES for n in set(e11) - set(e1)):
+        errors.append(f"v1.1 新增的示例只能是 present_item、list_lessons 与 teach 结构化提问的：{sorted(set(e11) - set(e1))}")
 
 
 def run_checks(doc: dict, path: Path = DEFAULT_SPEC) -> list[str]:
@@ -729,7 +801,7 @@ def run_checks(doc: dict, path: Path = DEFAULT_SPEC) -> list[str]:
         validate_openapi(doc, base_uri=path.resolve().as_uri())
     except Exception as exc:  # noqa: BLE001 - 打印校验器的原始信息
         errors.append(f"OpenAPI 3.1 校验失败：{str(exc)[:500]}")
-    for fn in (check_structure, check_versions, check_v1_rules, check_present_item):
+    for fn in (check_structure, check_versions, check_v1_rules, check_present_item, check_list_lessons):
         try:
             fn(doc, errors)
         except Exception as exc:  # noqa: BLE001 - 结构不完整时报错而不是崩溃

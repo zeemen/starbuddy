@@ -44,6 +44,12 @@ info:
       “引用的台词都在、角色等于讲解权”等跨字段规则由平台用 `packages/stage` 的 `validateStagePair` 核对，不合格不下发。
     - 讲评课是公共层内容，台词稿不含学生数据；回答（`question`）仍只用 `text` 片段。不新增错误码。
 
+    ## v1.1 草稿内追加（再续）：讲评课目录（`specs/lesson-catalog` PR A，待评审签字）
+    - 新增只读方法 `list_lessons`（`Method` 枚举与能力声明各多一项）：列出一科已发布的讲评课，供平台的讲评课目录与入口使用。
+      与 `present_item` 同口径：`context` 用 `PresentItemContext`（与学生无关、不计量），不产生证据，同一内容版本下目录逐字节不变。
+    - 目录条目 `LessonCatalogEntry` 只有讲评课引用、节点、题（可选）、标题与步数；**不含**讲解 DSL、台词、预制答疑与答案（契约检查核对）。
+      标题上限与 `packages/stage` 的讲解标题一致、字符口径与台词正文一致，步数上限与讲解 DSL 的步数上限一致。不新增错误码。
+
     ## 以下为 v1.0 候选版原文（起草依据与约定不变）
     起草依据：v0.9（`plugin-api.v0.9.yaml`）、完整方案 v1.1、KGE V1.1、SIE V1.1、技术蓝图 v2.1 专章、
     ADR 01/03/04/06/09/11/13/15。
@@ -382,6 +388,37 @@ paths:
                   $ref: '#/components/examples/PresentItemResponseZhixing'
         default: { $ref: '#/components/responses/Error' }
 
+  /list_lessons:
+    post:
+      tags: [methods]
+      operationId: listLessons
+      summary: 讲评课目录：这一科已发布的讲评课（只读、非消耗类；v1.1 草稿内追加，specs/lesson-catalog）
+      description: |
+        从适配器自己的已发布讲评课内容包列出讲评课，供平台的讲评课目录与入口使用。**只读**：不计量、不产生证据，
+        也不写任何关于学生的陈述（规则 3、11）；与学生无关，`context` 用 `PresentItemContext`（不带 `student_ref`、`usage_id`）。
+        **只给目录字段**：讲评课引用、节点、题（可选）、标题与步数；**不得**返回讲解 DSL、台词、预制答疑与答案。
+        讲解内容仍只经 `teach`（`lesson_ref`）按节下发并计量。同一内容版本下目录逐字节不变，平台可以按（适配器、内容版本）缓存。
+        没有讲评课时 `lessons` 为空数组（不是错误）。
+        错误：`CONTENT_VERSION_NOT_FOUND`（404）、`SUBJECT_MISMATCH`（400）、`RATE_LIMITED`（429）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ListLessonsRequest' }
+            examples:
+              aya:
+                $ref: '#/components/examples/ListLessonsRequestAya'
+      responses:
+        '200':
+          description: 讲评课目录
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ListLessonsResponse' }
+              examples:
+                aya:
+                  $ref: '#/components/examples/ListLessonsResponseAya'
+        default: { $ref: '#/components/responses/Error' }
+
   /jobs/{job_id}:
     get:
       tags: [jobs]
@@ -441,7 +478,7 @@ components:
 
     Method:
       type: string
-      enum: [diagnose, plan, teach, grade, generate_variation, report, present_item]
+      enum: [diagnose, plan, teach, grade, generate_variation, report, present_item, list_lessons]
 
     SkillNodeRef:
       type: string
@@ -2017,6 +2054,59 @@ components:
             evidence_ids: { maxItems: 0 }
           not: { required: [evidence] }
 
+    # ---------- list_lessons（v1.1 草稿内追加，specs/lesson-catalog） ----------
+    ListLessonsRequest:
+      type: object
+      description: |
+        列出一科的已发布讲评课。只读、非消耗类、与学生无关：`context` 用 `PresentItemContext`。`content_version` 指明按哪一版内容列，
+        其学科必须与 `context.subject` 一致；`context.content_version` 同时出现时两者必须相同（适配器与平台侧校验，schema 表达不了）。
+      required: [context, content_version]
+      additionalProperties: false
+      properties:
+        context: { $ref: '#/components/schemas/PresentItemContext' }
+        content_version: { $ref: '#/components/schemas/ContentVersion' }
+
+    LessonCatalogEntry:
+      type: object
+      description: |
+        目录里的一节讲评课：只有引用与展示用的标题、步数，不含讲解 DSL、台词与答疑。`skill_node` 与 `item_ref`（若有）与打开讲评课时
+        `teach` 请求要带的一致；标题即讲解 DSL 的标题（与 packages/stage 的标题上限一致，契约检查核对）。
+      required: [lesson_ref, skill_node, title, step_count]
+      additionalProperties: false
+      properties:
+        lesson_ref: { $ref: '#/components/schemas/LessonRef' }
+        skill_node: { $ref: '#/components/schemas/SkillNodeRef' }
+        item_ref: { $ref: '#/components/schemas/ItemRef' }
+        title:
+          type: string
+          minLength: 1
+          maxLength: 40
+          description: 与台词正文同一口径：拒收尖括号、控制字符、双向控制符、零宽字符、行段分隔符，不收换行。
+          pattern: '^[^<>\u0000-\u001F\u007F-\u009F\u200B-\u200F\u2028\u2029\u202A-\u202E\u2066-\u2069\uFEFF]{1,40}$'
+        step_count: { type: integer, minimum: 1, maximum: 100 }
+
+    LessonCatalog:
+      type: object
+      required: [lessons]
+      additionalProperties: false
+      properties:
+        lessons:
+          type: array
+          maxItems: 500
+          items: { $ref: '#/components/schemas/LessonCatalogEntry' }
+
+    ListLessonsResponse:
+      description: |
+        信封之外不允许任何字段。目录不是判分，也不是关于学生的陈述：不产生证据（`evidence_ids` 为空，不带 `evidence`），
+        `semantics` 为 practice，`human_review_required` 为假。
+      unevaluatedProperties: false
+      allOf:
+        - $ref: '#/components/schemas/PluginResultBase'
+        - properties:
+            result: { $ref: '#/components/schemas/LessonCatalog' }
+            evidence_ids: { maxItems: 0 }
+          not: { required: [evidence] }
+
     # ---------- 异步任务 ----------
     JobAccepted:
       type: object
@@ -2071,8 +2161,8 @@ components:
           type: object
           description: |
             方法逐一声明。Gate 0 契约覆盖率按六个学科方法统计（阿鸦 6/6、知行与文砺 ≥ 5/6、开口成章 ≥ 4/6）；
-            v1.1 另声明只读方法 present_item（不计入 Gate 0 覆盖率分母）。
-          required: [diagnose, plan, teach, grade, generate_variation, report, present_item]
+            v1.1 另声明只读方法 present_item 与 list_lessons（不计入 Gate 0 覆盖率分母）。
+          required: [diagnose, plan, teach, grade, generate_variation, report, present_item, list_lessons]
           additionalProperties: false
           properties:
             diagnose: { $ref: '#/components/schemas/MethodCapability' }
@@ -2082,6 +2172,7 @@ components:
             generate_variation: { $ref: '#/components/schemas/MethodCapability' }
             report: { $ref: '#/components/schemas/MethodCapability' }
             present_item: { $ref: '#/components/schemas/MethodCapability' }
+            list_lessons: { $ref: '#/components/schemas/MethodCapability' }
         verifiers:
           type: array
           items:
@@ -2165,6 +2256,7 @@ components:
           generate_variation: { implemented: true }
           report: { implemented: true }
           present_item: { implemented: true }
+          list_lessons: { implemented: true }
         verifiers:
           - { verifier_id: aya-symbolic-ts, version: 0.1.0 }
 
@@ -2745,6 +2837,38 @@ components:
           textbook_version: bubian-2024
           subject: aya
           content_version: 0.1.0
+
+    ListLessonsRequestAya:
+      value:
+        context:
+          request_id: 00000000-0000-4000-8000-000000000711
+          contract_version: 1.1.0
+          subject: aya
+          data_class: L1
+        content_version:
+          region: nanjing
+          exam_year: 2027
+          grade: 9
+          textbook_version: bubian-2024
+          subject: aya
+          content_version: 0.1.0
+
+    ListLessonsResponseAya:
+      value:
+        contract_version: 1.1.0
+        result:
+          lessons:
+            - lesson_ref: { lesson_id: syn.lesson.factor, lesson_version: 0.1.0 }
+              skill_node: 'aya:synthetic-0301'
+              item_ref: 'aya:synthetic-0301-07'
+              title: （合成示例）提公因式讲评
+              step_count: 6
+        evidence_ids: []
+        confidence: 1.0
+        source_version: 'algo:aya-lesson-list@0.1.0;items:aya-lessons@r0a1b2c3d'
+        model_version: 'algo:aya-lesson-list@0.1.0'
+        human_review_required: false
+        semantics: practice
 
     PresentItemResponseAya:
       value:

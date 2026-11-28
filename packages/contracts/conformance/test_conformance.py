@@ -26,6 +26,8 @@ from support import (
     build_request,
     conflict_variant,
     leak_problems,
+    READ_ONLY_METHODS,
+    lesson_catalog_problems,
     present_problems,
     string_leaves,
     student_inputs,
@@ -93,7 +95,7 @@ def _negatives(method: str, subject: str):
     def setc(k, v):
         return lambda b: b["context"].__setitem__(k, v)
 
-    present = method == "present_item"
+    present = method in READ_ONLY_METHODS  # v1.1 只读方法（present_item、list_lessons）都用 PresentItemContext
     if not present:  # v1.1 PresentItemContext 的幂等键可选、允许 L1、不带 student_ref
         yield "no_idempotency_key", drop("idempotency_key")
     yield "short_idempotency_key", setc("idempotency_key", "short")
@@ -114,10 +116,14 @@ def _negatives(method: str, subject: str):
             b["context"]["content_version"]["subject"] = other
     yield "wrong_subject", wrong_subject
     yield "extra_top_level_field", lambda b: b.__setitem__("commentary", "free text")
-    if method == "present_item":
-        # v1.1：题面只读、不计量，带了计量 ID 的请求必须拒绝（契约 PresentItemRequest.context 不允许 usage_id）
+    if present:
+        # v1.1：只读、不计量，带了计量 ID 的请求必须拒绝（契约 PresentItemContext 不允许 usage_id）
         yield "usage_id_on_read_only", setc("usage_id", "00000000-0000-4000-8000-00000000b7ff")
+    if method == "present_item":
         yield "answer_field_requested", lambda b: b.__setitem__("include_answer", True)
+    if method == "list_lessons":
+        # 目录不收任何讲解内容的请求（ListLessonsRequest 只有 context 与 content_version）
+        yield "lesson_content_requested", lambda b: b.__setitem__("include_script", True)
 
 
 def test_bad_requests_are_rejected(request, client, capabilities, fx, method_case):
@@ -165,6 +171,14 @@ def test_case(request, client, capabilities, fx, case):
             if k in exp:
                 assert resp["result"][k] == exp[k], f"题面的 {k} 与夹具不一致"
         return
+    if method == "list_lessons":
+        # v1.1 草稿内追加（specs/lesson-catalog）：目录只有引用、标题与步数，不产生证据；夹具里的期望条数
+        problems = lesson_catalog_problems(resp, secrets=fx.secrets, answer_secrets=[str(s) for s in case.get("secrets", [])])
+        assert problems == []
+        exp = case.get("expect", {})
+        if "lesson_count" in exp:
+            assert len(resp["result"]["lessons"]) == exp["lesson_count"], "目录条数与夹具不一致"
+        return
     if method not in SUPPORTED_METHODS:
         return  # 平台侧核对与泄露检查尚未覆盖这个方法（README“检查边界”）
     try:
@@ -207,8 +221,8 @@ def test_idempotency(request, client, capabilities, fx, method_case):
         pytest.skip("未实现")
     _tag(request, method)
     body = build_request(fx, method_case)
-    if method == "present_item":
-        # 只读：不要求幂等键、不进适配器幂等缓存（不做冲突检测）。同一版本的题面逐字节不变（PresentedItem.item_version），
+    if method in READ_ONLY_METHODS:
+        # 只读：不要求幂等键、不进适配器幂等缓存（不做冲突检测）。同一版本的题面与目录逐字节不变，
         # 带不带幂等键、换不换 request_id 结果都一样
         _, r1, _ = client.invoke(method, body)
         assert r1 is not None
@@ -216,7 +230,7 @@ def test_idempotency(request, client, capabilities, fx, method_case):
         keyed["context"]["idempotency_key"] = "00000000-0000-4000-8000-00000000c7ff"
         keyed["context"]["request_id"] = "00000000-0000-4000-8000-00000000abce"
         _, r2, _ = client.invoke(method, keyed)
-        assert r2 is not None and r2 == r1, "同一道题、同一内容版本，两次取到的题面不一致"
+        assert r2 is not None and r2 == r1, "同一请求、同一内容版本，两次取到的结果不一致"
         return
     f1, r1, job1 = client.invoke(method, body)
     assert r1 is not None, f"返回 {f1.status}"

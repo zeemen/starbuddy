@@ -28,6 +28,7 @@ const TESTS = [
   "tests/lesson-answer.test.ts",
   "tests/lesson-open.test.ts",
   "tests/lesson-release.test.ts",
+  "tests/list-lessons.test.ts",
 ];
 const P = "src/methods/plan.ts";
 const V = "src/methods/variation.ts";
@@ -42,6 +43,7 @@ const PR = "src/methods/present.ts";
 const RT = "src/rich-text.ts";
 const L = "src/lessons.ts";
 const LR = "src/pack/lesson-release.ts";
+const LL = "src/methods/list-lessons.ts";
 
 type Edit = [file: string, from: string, to: string];
 // 名字 → 改动（原文必须恰好出现，替换第一处）
@@ -164,6 +166,13 @@ const MUTATIONS: Record<string, Edit[]> = {
   "讲评课台词稿不校验（原样当作合格稿）": [[L, "const s = migrateStageScript(d.dsl, l.script);",
     "const s = { ok: true as const, script: l.script as ValidatedStageScript, from: null } as ReturnType<typeof migrateStageScript>;"]],
   "讲评课内容包开关没开也读": [[L, "  if (!candidateAllowed) {\n    throw new Error(`讲评课内容包", "  if (false) {\n    throw new Error(`讲评课内容包"]],
+  // ---------- 讲评课目录 list_lessons（specs/lesson-catalog PR A） ----------
+  "目录夹带台词稿": [[LL, "      step_count: l.dsl.steps.length,\n", "      step_count: l.dsl.steps.length,\n      script: l.script,\n"]],
+  "目录按编号倒序": [[LL, "a.lesson_ref.lesson_id < b.lesson_ref.lesson_id ? -1 : a.lesson_ref.lesson_id > b.lesson_ref.lesson_id ? 1", "a.lesson_ref.lesson_id < b.lesson_ref.lesson_id ? 1 : a.lesson_ref.lesson_id > b.lesson_ref.lesson_id ? -1"]],
+  "目录对 1.0 请求也应答": [[A, 'throw new ProblemError(501, "METHOD_NOT_IMPLEMENTED", "list_lessons is implemented for contract 1.1.0 only");', "void 0;"]],
+  "目录不核对两处内容版本是否一致": [[A, "    if (req.context.content_version && canonical(req.context.content_version) !== canonical(req.content_version)) {\n      throw new ProblemError(400, \"INVALID_REQUEST\", \"context.content_version and content_version differ\");\n    }\n    checkContext({ ...req.context, content_version: req.content_version } as unknown as RequestContext, true);\n    return selfCheck(\"ListLessonsResponse\"",
+    "    checkContext({ ...req.context, content_version: req.content_version } as unknown as RequestContext, true);\n    return selfCheck(\"ListLessonsResponse\""]],
+  "能力声明不声明 list_lessons": [[A, '        ...(contract.version === "1.1.0" ? { list_lessons: { implemented: true, async: false } } : {}),\n', ""]],
   // ---------- 讲评课内容包的发布与加载（specs/stage-lesson-staging PR 1） ----------
   "讲评课发布不核对审核时的摘要": [[LR, '  if (review.digest !== digest) return "digest_mismatch";\n', ""]],
   "讲评课发布不看教研审核": [[LR, '  if (review.content_review !== "approved") return "content_rejected";\n', ""]],

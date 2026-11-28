@@ -21,6 +21,7 @@ import {
 } from "./methods/teach.ts";
 import { NO_LESSONS, type LoadedLessons } from "./lessons.ts";
 import { selectVariants, VARIANT_ALGORITHM, type VariationInput } from "./methods/variation.ts";
+import { LESSON_LIST_ALGORITHM, listLessons } from "./methods/list-lessons.ts";
 import { PRESENT_ALGORITHM, presentItem } from "./methods/present.ts";
 import type { AyaTaxonomy } from "./taxonomy.ts";
 import {
@@ -337,6 +338,8 @@ export function createAdapter(deps: AdapterDeps) {
         report: v1Methods ? { implemented: true, async: false } : { implemented: false },
         // v1.1（PLT-12）：能力声明逐一声明七个方法；1.1.0 以下的能力声明没有这一项（v1.0 Capabilities 不允许多余方法）
         ...(contract.version === "1.1.0" ? { present_item: { implemented: true, async: false } } : {}),
+        // v1.1 草稿内追加（specs/lesson-catalog）：讲评课目录，只读、同步
+        ...(contract.version === "1.1.0" ? { list_lessons: { implemented: true, async: false } } : {}),
       },
       verifiers: [{ verifier_id: VERIFIER_ID, version: VERIFIER_VERSION }],
     }, contract.version);
@@ -601,13 +604,42 @@ export function createAdapter(deps: AdapterDeps) {
     }, version);
   };
 
+  // ---------- 讲评课目录 list_lessons（v1.1 草稿内追加，specs/lesson-catalog） ----------
+  /**
+   * 列出已发布的讲评课：只有讲评课引用、节点、题、标题（讲解 DSL 的标题）与步数，不含讲解 DSL、台词与答疑。
+   * 与 present_item 同口径：只读、非消耗类、与学生无关，不进幂等缓存；content_version 必须是本适配器服务的那一版。
+   * 没有讲评课时为空数组。按讲评课编号、版本排序，同一内容版本下逐字节不变。
+   */
+  const listLessonsRoute = (body: unknown): HandlerResult => {
+    const version = requestVersion(body);
+    if (version !== "1.1.0") {
+      throw new ProblemError(501, "METHOD_NOT_IMPLEMENTED", "list_lessons is implemented for contract 1.1.0 only");
+    }
+    validateOrThrow("ListLessonsRequest", body, version);
+    const req = body as { context: { subject: string; content_version?: Record<string, string | number> }; content_version: Record<string, string | number> };
+    if (req.context.content_version && canonical(req.context.content_version) !== canonical(req.content_version)) {
+      throw new ProblemError(400, "INVALID_REQUEST", "context.content_version and content_version differ");
+    }
+    checkContext({ ...req.context, content_version: req.content_version } as unknown as RequestContext, true);
+    return selfCheck("ListLessonsResponse", {
+      contract_version: version,
+      result: { lessons: listLessons(lessons) },
+      evidence_ids: [],
+      confidence: 1,
+      source_version: sourceVersion(`algo:${LESSON_LIST_ALGORITHM}`, `items:aya-lessons@${lessons.version}`),
+      model_version: `algo:${LESSON_LIST_ALGORITHM}`,
+      human_review_required: false,
+      semantics: "practice",
+    }, version);
+  };
+
   const V1_ROUTES: Record<(typeof V1_ONLY_METHODS)[number], (body: unknown) => HandlerResult> = {
     plan,
     teach,
     generate_variation: generateVariation,
     report,
   };
-  const KNOWN_ROUTES = new Set<string>(["capabilities", "grade", "diagnose", "present_item", ...V1_ONLY_METHODS]);
+  const KNOWN_ROUTES = new Set<string>(["capabilities", "grade", "diagnose", "present_item", "list_lessons", ...V1_ONLY_METHODS]);
 
   /** 路由（路径不含 /plugin/v0 前缀）。所有错误都转成契约 Problem。 */
   const handle = (method: string, path: string, body: unknown): HandlerResult => {
@@ -625,6 +657,7 @@ export function createAdapter(deps: AdapterDeps) {
       else if (method === "POST" && name === "diagnose") result = diagnose(body);
       else if (method === "POST" && Object.hasOwn(V1_ROUTES, name)) result = V1_ROUTES[name as keyof typeof V1_ROUTES](body);
       else if (method === "POST" && name === "present_item") result = present(body);
+      else if (method === "POST" && name === "list_lessons") result = listLessonsRoute(body);
       else if (method === "GET" && name.startsWith("jobs/")) {
         throw new ProblemError(404, "JOB_NOT_FOUND", "the aya adapter runs synchronously and has no jobs");
       } else throw new ProblemError(404, "INVALID_REQUEST", "unknown route");

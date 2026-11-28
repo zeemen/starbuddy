@@ -68,10 +68,15 @@ FAULTS = {
     "present_accepts_usage": ("题面请求带计量 ID 也照常应答", "test_bad_requests_are_rejected"),
     "present_accepts_student": ("题面请求带学生 ID 也照常应答", "test_bad_requests_are_rejected"),
     "present_nondeterministic": ("同一道题两次取到的题面不一样", "test_idempotency"),
+    # v1.1 草稿内追加 list_lessons（specs/lesson-catalog）：同样只在契约 1.1.0 下有意义
+    "lessons_leak_script": ("目录条目夹带台词稿", "test_case"),
+    "lessons_with_evidence": ("目录产生证据", "test_case"),
+    "lessons_accepts_student": ("目录请求带学生 ID 也照常应答", "test_bad_requests_are_rejected"),
+    "lessons_nondeterministic": ("同一内容版本两次取到的目录不一样", "test_idempotency"),
 }
 ASYNC_FAULTS = {"async_new_job_id"}  # 这些违约只在异步模式下有意义
 # 只在某个契约版本下才有意义的违约 → 版本（mutation.py 只以这个版本运行一致性测试；不在这里的违约 0.9.0 与 1.0.0 两版都跑）
-FAULT_CONTRACT = {f: "1.1.0" for f in FAULTS if f.startswith("present_")}
+FAULT_CONTRACT = {f: "1.1.0" for f in FAULTS if f.startswith(("present_", "lessons_"))}
 # 合成题面（规则 8）：与 ITEMS 同号；REF-1 是填空（题面里有公式），REF-2 是单选
 PRESENT = {
     "REF-1": {"item_type": "fill_blank", "stem": [{"type": "paragraph", "runs": [
@@ -222,12 +227,28 @@ class ReferenceAdapter:
             env["evidence_ids"] = [self._id(key, fp, "present")]
         return env
 
+    def list_lessons(self, body, key, fp):
+        """v1.1 讲评课目录（只读、同步）：合成目录一节，只有引用、标题与步数；不产生证据。"""
+        self.lesson_calls = getattr(self, "lesson_calls", 0) + 1
+        entry = {"lesson_ref": {"lesson_id": "ref.lesson.n1", "lesson_version": "1.0.0"}, "skill_node": f"{self.subject}:REF-N1",
+                 "item_ref": f"{self.subject}:REF-1", "title": "（合成）参考讲评课",
+                 "step_count": 3 + (self.lesson_calls if self.fault == "lessons_nondeterministic" else 0)}
+        if self.fault == "lessons_leak_script":
+            entry["script"] = {"dsl_version": "0.3.0", "lines": [{"id": "l1", "role": "teacher", "text": "（合成台词）先看第一行。"}]}
+        env = {"contract_version": CONTRACT_VERSION, "result": {"lessons": [entry]}, "evidence_ids": [], "confidence": 1,
+               "source_version": "algo:ref-lesson-list@1.0.0;items:ref-lessons@1.0.0", "model_version": "algo:ref-lesson-list@1.0.0",
+               "human_review_required": False, "semantics": "practice"}
+        if self.fault == "lessons_with_evidence":
+            env["evidence_ids"] = [self._id(key, fp, "lessons")]
+        return env
+
     def capabilities(self):
         m = {k: {"implemented": False} for k in ("diagnose", "plan", "teach", "grade", "generate_variation", "report")}
         m["grade"] = {"implemented": True, "async": self.asynchronous}
         m["diagnose"] = {"implemented": True, "async": self.asynchronous}
-        if CONTRACT_VERSION == "1.1.0":  # v1.1 的能力声明逐一声明七个方法；题面只读、同步
+        if CONTRACT_VERSION == "1.1.0":  # v1.1 的能力声明逐一声明八个方法；题面与讲评课目录只读、同步
             m["present_item"] = {"implemented": True, "async": False}
+            m["list_lessons"] = {"implemented": True, "async": False}
         return {"subject": self.subject, "adapter_version": "1.0.0",
                 "contract_version": "0.8.0" if self.fault == "bad_capabilities" else CONTRACT_VERSION, "methods": m}
 
@@ -250,7 +271,7 @@ class ReferenceAdapter:
             return 200, job
         if verb != "POST":
             return 404, _problem(404, "INVALID_REQUEST", "unknown route")
-        served = ("grade", "diagnose", "present_item") if CONTRACT_VERSION == "1.1.0" else ("grade", "diagnose")
+        served = ("grade", "diagnose", "present_item", "list_lessons") if CONTRACT_VERSION == "1.1.0" else ("grade", "diagnose")
         if name not in served:
             if self.fault == "unimplemented_200":
                 return 200, {}
@@ -260,9 +281,11 @@ class ReferenceAdapter:
         except ValueError:
             return 400, _problem(400, "INVALID_REQUEST", "invalid JSON")
         if self.fault != "accepts_bad_request":
-            schema = {"grade": "GradeRequest", "diagnose": "DiagnoseRequest", "present_item": "PresentItemRequest"}[name]
+            schema = {"grade": "GradeRequest", "diagnose": "DiagnoseRequest", "present_item": "PresentItemRequest",
+                      "list_lessons": "ListLessonsRequest"}[name]
             checked = body
-            lax = {"present_accepts_usage": "usage_id", "present_accepts_student": "student_ref"}.get(self.fault or "")
+            lax = {"present_accepts_usage": "usage_id", "present_accepts_student": "student_ref",
+                   "lessons_accepts_student": "student_ref"}.get(self.fault or "")
             if lax and isinstance(body, dict) and isinstance(body.get("context"), dict):
                 checked = {**body, "context": {k: v for k, v in body["context"].items() if k != lax}}
             errs = plugin_contract().validate(schema, checked)
@@ -286,6 +309,8 @@ class ReferenceAdapter:
         fp = hashlib.sha256(_canonical(b).encode()).hexdigest()
         if name == "present_item":  # 只读：不进幂等缓存、不做冲突检测（PresentItemContext）
             return 200, self.present_item(body, key, fp)
+        if name == "list_lessons":  # 同上（v1.1 草稿内追加，specs/lesson-catalog）
+            return 200, self.list_lessons(body, key, fp)
         with self.lock:
             prev = self.seen.setdefault(f"{name}|{key}", fp)
         if prev != fp and self.fault != "no_conflict":
