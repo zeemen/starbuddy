@@ -13,6 +13,8 @@
 !adapters/wenli/content
 !adapters/wenli/src
 !packages/contracts/openapi
+!packages/stage/package.json
+!packages/stage/src
 !docs/mapping/error-taxonomy.v0.9.yaml
 **/node_modules
 **/.env*
